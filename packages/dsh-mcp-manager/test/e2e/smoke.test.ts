@@ -1,4 +1,3 @@
-// @ts-nocheck
 // dsh-mcp-manager 冒烟测试（vitest e2e project）—— 无外部依赖、不发起真实网络连接。
 //
 // 覆盖：
@@ -19,15 +18,27 @@
 // 顺序执行，顺序语义不变），所有断言逐条保留。e2e 层走真实端口/子进程/临时目录，超时由
 // vitest 的 e2e project 统一给出（不在此硬编码）。
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync, rmSync, utimesSync } from "node:fs";
+import type { IncomingMessage, ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import type { Context, LoggerService } from "@deepseek-ai/cordis";
+import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
+import type {
+  PreToolDecision,
+  ToolDefinition,
+  ToolExecution,
+  ToolExecutionInput,
+  ToolRunContext,
+} from "@deepseek-ai/dsh-tools";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import type { MiddlewareHost } from "../../lib/server/connection/runtime/deps.js";
+import type { ServerConfig } from "../../lib/index.js";
 import {
   assertClientProductContract,
   assertClientSourceContract,
 } from "../../../../test/smoke-lib.ts";
-import { pollUntil } from "../helpers.ts";
+import { fakeManagerCtx, pollUntil } from "../helpers.ts";
 const pkgDir = fileURLToPath(new URL("../../", import.meta.url));
 import {
   apply,
@@ -80,41 +91,104 @@ import {
 // 服务契约门禁（#476）与结构化单元/集成测试由 vitest 的 unit / integration project 收集；
 // 本文件（e2e project）不再以包内 glob 聚合方式执行，避免同一文件被求值两遍。
 
-function fakeCtx(overrides = {}) {
+/** 假路由：fakeCtx.webServer 收到的注册项，只表达测试回读的面（path/handler）。 */
+interface FakeRoute {
+  path: string;
+  handler: (req: FakeReq, res: FakeRes) => unknown;
+}
+
+/** 假 HTTP 请求的可观测面（与 IncomingMessage 取交集，保证 handler 调用位合法）。 */
+interface FakeReqShape {
+  method: string;
+  url: string;
+  socket: { remoteAddress: string };
+  headers: Record<string, string>;
+  [Symbol.asyncIterator](): AsyncGenerator<Buffer>;
+}
+type FakeReq = FakeReqShape & IncomingMessage;
+
+/** 假 HTTP 响应的可观测面（与 ServerResponse 取交集，保证 handler 调用位合法）。 */
+interface FakeResState {
+  status: number;
+  headers: Record<string, string>;
+  body: string;
+}
+interface FakeResShape {
+  state: FakeResState;
+  writeHead: (status: number, headers: Record<string, string>) => void;
+  end: (body: string) => void;
+}
+type FakeRes = FakeResShape & ServerResponse;
+
+/** 假 section：apply 实际传入静态文本（见 src/index.ts），测试读 name/order/text。 */
+interface FakeSection {
+  name: string;
+  order: number;
+  text: string;
+}
+
+type FakeListener = (...args: unknown[]) => unknown;
+
+/**
+ * 假 ctx 的可回读状态 + 宿主注入面。返回 FakeCtx & Context：回读走 FakeCtx，
+ * 传 apply 时走 Context（假体与真实 Context 的结构差由一处 seam cast 桥接，
+ * 成例：test/helpers.ts fakeManagerCtx）。
+ */
+interface FakeCtx {
+  routes: FakeRoute[];
+  sections: FakeSection[];
+  effects: (string | undefined)[];
+  registeredTools: ToolDefinition[];
+  listeners: Map<string, FakeListener[]>;
+  tools: { register: (definition: ToolDefinition) => () => void };
+  webServer: { register: (route: FakeRoute) => () => void };
+  systemPrompt: { section: (section: FakeSection) => () => void };
+  on: (event: string, handler: FakeListener) => () => void;
+  logger: LoggerService;
+  effect: (fn: () => unknown, label?: string) => () => void;
+}
+
+/** 假 logger：被测体只读 warn/info/error，其余 LoggerService 面按 seam cast。 */
+function fakeLogger(): LoggerService {
+  return { warn: () => {}, info: () => {}, error: () => {} } as unknown as LoggerService;
+}
+
+function fakeCtx(overrides: Record<string, unknown> = {}): FakeCtx & Context {
   const state = {
-    routes: [],
-    sections: [],
-    effects: [],
-    registeredTools: [],
-    listeners: new Map(),
+    routes: [] as FakeRoute[],
+    sections: [] as FakeSection[],
+    effects: [] as (string | undefined)[],
+    registeredTools: [] as ToolDefinition[],
+    listeners: new Map<string, FakeListener[]>(),
   };
   const ctx = {
     ...state,
     tools: {
-      register: (definition) => {
+      register: (definition: ToolDefinition) => {
         state.registeredTools.push(definition);
         return () => {};
       },
     },
     webServer: {
-      register: (route) => {
+      register: (route: FakeRoute) => {
         state.routes.push(route);
         return () => {};
       },
     },
     systemPrompt: {
-      section: (section) => {
+      section: (section: FakeSection) => {
         state.sections.push(section);
         return () => {};
       },
     },
-    on: (event, handler) => {
-      if (!state.listeners.has(event)) state.listeners.set(event, []);
-      state.listeners.get(event).push(handler);
+    on: (event: string, handler: FakeListener) => {
+      const handlers = state.listeners.get(event) ?? [];
+      handlers.push(handler);
+      state.listeners.set(event, handlers);
       return () => {};
     },
-    logger: { warn: () => {}, info: () => {}, error: () => {} },
-    effect: (fn, label) => {
+    logger: fakeLogger(),
+    effect: (fn: () => unknown, label?: string) => {
       state.effects.push(label);
       const disposer = fn();
       return () => {
@@ -123,22 +197,105 @@ function fakeCtx(overrides = {}) {
     },
     ...overrides,
   };
-  return ctx;
+  return ctx as unknown as FakeCtx & Context;
 }
 
-/** 伪造 node:http res。 */
-function fakeRes() {
-  const state = { status: 0, headers: {}, body: "" };
-  return {
+/** 伪造 node:http res（可回读 state；传 handler 处按 ServerResponse 面兼容）。 */
+function fakeRes(): FakeRes {
+  const state: FakeResState = { status: 0, headers: {}, body: "" };
+  const res: FakeResShape = {
     state,
-    writeHead(status, headers) {
+    writeHead(status: number, headers: Record<string, string>) {
       state.status = status;
       Object.assign(state.headers, headers);
     },
-    end(body) {
+    end(body: string) {
       state.body = body;
     },
   };
+  return res as unknown as FakeRes;
+}
+
+/**
+ * 中间层装配夹具 ctx：只实现 tools.register（捕获注册的工具定义供断言）。
+ * 其余宿主面按测试 seam cast 到 Context（成例：test/helpers.ts fakeManagerCtx）。
+ */
+function captureCtx(registered: ToolDefinition[]): Context {
+  return {
+    tools: {
+      register: (def: ToolDefinition) => {
+        registered.push(def);
+        return () => {};
+      },
+    },
+  } as unknown as Context;
+}
+
+/** 在已断言注册名的前提下按名取工具定义：缺失即抛（测试失败），顺带收窄 undefined。 */
+function mustTool(registered: ToolDefinition[], name: string): ToolDefinition {
+  const def = registered.find((d) => d.name === name);
+  if (def === undefined) throw new Error(`中间层工具未注册: ${name}`);
+  return def;
+}
+
+/** search 执行结果的可断言面（与产品 executeSearch 返回同形，只取测试回读的键）。 */
+interface SmokeSearchHit {
+  server: string;
+  tool?: string;
+}
+interface SmokeSearchResult {
+  results: SmokeSearchHit[];
+  unavailable: unknown[];
+  truncated: boolean;
+}
+
+/** list 执行结果的可断言面（与产品 executeList 返回同形，只取测试回读的键）。 */
+interface SmokeListServer {
+  server: string;
+  tools: { name: string }[];
+}
+interface SmokeListResult {
+  servers: SmokeListServer[];
+  totalServers: number;
+  totalTools: number;
+  message: string;
+  workspace: string;
+}
+
+/** detail 执行结果的可断言面（与产品 findToolDetail 返回同形，只取测试回读的键）。 */
+interface SmokeDetailResult {
+  server: string;
+  tool: string;
+}
+
+/** execute 的 exec 入参桩：被测体只读 agent（工作空间反解），其余面按测试 seam cast。 */
+function execWithAgent(agent: unknown): ToolRunContext {
+  return { agent } as unknown as ToolRunContext;
+}
+
+/** tools/pre-execute guard 形态（与产品 middleware-register.ts 注册签名同形）。 */
+type SmokeGuard = (
+  exec: Pick<ToolExecution, "name" | "arguments" | "agent" | "parent">,
+  next: () => Promise<PreToolDecision>,
+) => Promise<PreToolDecision>;
+
+/** resolveRoot 桩从 agent 取 cwd：宿主约定的 session.header.cwd 形状，此处收窄读取。 */
+function agentCwd(agent: unknown): string | undefined {
+  if (typeof agent !== "object" || agent === null) return undefined;
+  const session = "session" in agent ? agent.session : undefined;
+  if (typeof session !== "object" || session === null) return undefined;
+  const header = "header" in session ? session.header : undefined;
+  if (typeof header !== "object" || header === null) return undefined;
+  const cwd = "cwd" in header ? header.cwd : undefined;
+  return typeof cwd === "string" ? cwd : undefined;
+}
+
+/** 测试路由桩：/proj 会话回项目根，/no-project 回 @global（单池后组合根同款回落）。 */
+function testResolveRoot(agent: unknown, globalRoot?: string): Promise<string | undefined> {
+  const cwd = agentCwd(agent);
+  if (cwd === "/proj") return Promise.resolve("/proj");
+  if (globalRoot !== undefined && cwd === "/no-project") return Promise.resolve(globalRoot);
+  return Promise.resolve(undefined);
 }
 
 /** 在临时目录建一个空 store，返回 { store, path, cleanup }。 */
@@ -176,7 +333,7 @@ it("client product contract（执行断言：arrive 可解析/apply/inject）", 
 // #767 B0 / §7.3 A12：客户端产物不得出现宿主路径字面量 `~/.dsh`——存储布局迁移后客户端
 // 不应泄漏/承诺宿主路径。锚点只认 `~/.dsh` 这一个串：`scopeProjectOpt` 的项目级路径
 // （<项目>/.dsh/@wingsky-1/dsh-mcp-manager/mcp.json）随项目走，是合法展示，不在本轮降级面内。
-const hostPathLiteralHits = (code) => code.match(/~\/\.dsh/g) ?? [];
+const hostPathLiteralHits = (code: string) => code.match(/~\/\.dsh/g) ?? [];
 it("client 产物不含宿主路径字面量 ~/.dsh（#767 A12 存储布局迁移）", () => {
   const clientSrc = readFileSync(new URL("../../lib/client.js", import.meta.url), "utf8");
   const hits = hostPathLiteralHits(clientSrc);
@@ -193,30 +350,23 @@ it("宿主路径断言锚点有效性（反例：含 ~/.dsh 的产物必须被�
 it("中间层工具注册（ws_mcp_search / ws_mcp_call / ws_mcp_list / ws_mcp_detail + 路由一致性）", async () => {
   const { registerMiddlewareTools, McpMiddleware, fullServerName, parseFullServerName } =
     await import("../../lib/index.js");
-  const registered = [];
-  const ctx = {
-    tools: {
-      register: (def) => {
-        registered.push(def);
-        return () => {};
-      },
-    },
-  };
-  const host = {
+  const registered: ToolDefinition[] = [];
+  const ctx = captureCtx(registered);
+  const host: MiddlewareHost = {
     ctx,
-    logger: { info: () => {}, warn: () => {}, error: () => {} },
+    logger: fakeLogger(),
     projectServersFor: async () => [],
     globalServers: () => [],
-    normalizedProjectRoot: async (cwd) => (cwd === "/proj" ? "/proj" : undefined),
+    normalizedProjectRoot: async (cwd: string | undefined) =>
+      cwd === "/proj" ? "/proj" : undefined,
     saveUserState: async () => {},
     emitStatus: () => {},
     catalogCachePath: () => "/tmp/cache.json",
+    isGlobalServer: () => false,
+    isRuntimeServer: () => false,
   };
   const mw = new McpMiddleware(host);
-  const dispose = registerMiddlewareTools(ctx, mw, async (agent) => {
-    const cwd = agent?.session?.header?.cwd;
-    return cwd === "/proj" ? "/proj" : undefined;
-  });
+  const dispose = registerMiddlewareTools(ctx, mw, (agent: unknown) => testResolveRoot(agent));
   const names = registered.map((def) => def.name).sort();
   expect(names, "四个中间层工具注册").toEqual([
     "ws_mcp_call",
@@ -224,79 +374,84 @@ it("中间层工具注册（ws_mcp_search / ws_mcp_call / ws_mcp_list / ws_mcp_d
     "ws_mcp_list",
     "ws_mcp_search",
   ]);
-  expect(
-    registered.find((d) => d.name === "ws_mcp_search").description,
-    "search 描述引导先搜后调",
-  ).toMatch(/ws_mcp_call/);
-  expect(
-    registered.find((d) => d.name === "ws_mcp_search").description,
-    "search 描述互引完整盘点",
-  ).toMatch(/ws_mcp_list/);
-  expect(
-    registered.find((d) => d.name === "ws_mcp_call").description,
-    "call 描述互引参数 schema 查询",
-  ).toMatch(/ws_mcp_detail/);
-  expect(
-    registered.find((d) => d.name === "ws_mcp_list").description,
-    "list 描述互引 detail",
-  ).toMatch(/ws_mcp_detail/);
-  expect(
-    registered.find((d) => d.name === "ws_mcp_list").description,
-    "list 描述写明不做什么",
-  ).toMatch(/Does not return inputSchema/);
-  expect(
-    registered.find((d) => d.name === "ws_mcp_detail").description,
-    "detail 描述说明完整 schema",
-  ).toMatch(/inputSchema/);
-  expect(
-    registered.find((d) => d.name === "ws_mcp_detail").description,
-    "detail 描述写明不做什么",
-  ).toMatch(/Does not perform keyword search/);
+  expect(mustTool(registered, "ws_mcp_search").description, "search 描述引导先搜后调").toMatch(
+    /ws_mcp_call/,
+  );
+  expect(mustTool(registered, "ws_mcp_search").description, "search 描述互引完整盘点").toMatch(
+    /ws_mcp_list/,
+  );
+  expect(mustTool(registered, "ws_mcp_call").description, "call 描述互引参数 schema 查询").toMatch(
+    /ws_mcp_detail/,
+  );
+  expect(mustTool(registered, "ws_mcp_list").description, "list 描述互引 detail").toMatch(
+    /ws_mcp_detail/,
+  );
+  expect(mustTool(registered, "ws_mcp_list").description, "list 描述写明不做什么").toMatch(
+    /Does not return inputSchema/,
+  );
+  expect(mustTool(registered, "ws_mcp_detail").description, "detail 描述说明完整 schema").toMatch(
+    /inputSchema/,
+  );
+  expect(mustTool(registered, "ws_mcp_detail").description, "detail 描述写明不做什么").toMatch(
+    /Does not perform keyword search/,
+  );
   // Anthropic 规范：parameters 每个字段都带 description。
   for (const def of registered) {
-    const props = def.parameters?.properties ?? {};
+    const props = (def.parameters as { properties?: Record<string, unknown> }).properties ?? {};
     for (const [key, prop] of Object.entries(props)) {
       expect(
-        typeof prop.description === "string" && prop.description !== "",
+        typeof prop === "object" &&
+          prop !== null &&
+          "description" in prop &&
+          typeof prop.description === "string" &&
+          prop.description !== "",
         `参数 ${def.name}.${key} 带 description`,
       ).toBeTruthy();
     }
   }
   // search 输出 schema 含 truncated 字段。
-  const searchSchemaProps = registered.find((d) => d.name === "ws_mcp_search").output.schema
-    .properties;
-  expect(typeof searchSchemaProps.truncated, "search 输出含 truncated 字段").toBe("object");
+  const searchSchemaProps = mustTool(registered, "ws_mcp_search").output.schema.properties;
+  expect(typeof searchSchemaProps?.truncated, "search 输出含 truncated 字段").toBe("object");
   // 路由：agent-less → 显式失败
-  const searchDef = registered.find((d) => d.name === "ws_mcp_search");
-  const callDef = registered.find((d) => d.name === "ws_mcp_call");
-  const listDef = registered.find((d) => d.name === "ws_mcp_list");
-  const detailDef = registered.find((d) => d.name === "ws_mcp_detail");
+  const searchDef = mustTool(registered, "ws_mcp_search");
+  const callDef = mustTool(registered, "ws_mcp_call");
+  const listDef = mustTool(registered, "ws_mcp_list");
+  const detailDef = mustTool(registered, "ws_mcp_detail");
   // search 输出补 truncated 字段：空目录 → false。
-  const emptySearch = await searchDef.execute(
+  const emptySearch = (await searchDef.execute(
     {},
-    { agent: { session: { header: { cwd: "/proj" } } } },
-  );
+    execWithAgent({ session: { header: { cwd: "/proj" } } }),
+  )) as { truncated: boolean; unavailable: unknown[] };
   expect(emptySearch.truncated, "空目录 truncated=false").toBe(false);
   expect(emptySearch.unavailable).toEqual([]);
-  await expect(() => searchDef.execute({}, { agent: undefined })).rejects.toThrow(
+  await expect(() => searchDef.execute({}, execWithAgent(undefined))).rejects.toThrow(
     /无法确定工作空间/,
   );
-  await expect(() => listDef.execute({}, { agent: undefined })).rejects.toThrow(/无法确定工作空间/);
-  await expect(() => detailDef.execute({}, { agent: undefined })).rejects.toThrow(
+  await expect(() => listDef.execute({}, execWithAgent(undefined))).rejects.toThrow(
+    /无法确定工作空间/,
+  );
+  await expect(() => detailDef.execute({}, execWithAgent(undefined))).rejects.toThrow(
     /无法确定工作空间/,
   );
   // 路由：有 agent 但 cwd 无项目 → 显式失败（ws_mcp_call 缺 server 参数先报必填）
   await expect(() =>
-    callDef.execute({}, { agent: { session: { header: { cwd: "/other" } } } }),
+    callDef.execute({}, execWithAgent({ session: { header: { cwd: "/other" } } })),
   ).rejects.toThrow(/无法确定工作空间|server 与 tool 均为必填/);
   // 空返回提示：无项目配置 → list 返回 message
-  const emptyList = await listDef.execute({}, { agent: { session: { header: { cwd: "/proj" } } } });
+  const emptyList = (await listDef.execute(
+    {},
+    execWithAgent({ session: { header: { cwd: "/proj" } } }),
+  )) as {
+    totalServers: number;
+    totalTools: number;
+    message: string;
+  };
   expect(emptyList.totalServers).toBe(0);
   expect(emptyList.totalTools).toBe(0);
   expect(emptyList.message, "空返回明确提示").toMatch(/没有可用 MCP 服务器|没有项目级 MCP 配置/);
   // detail 必填校验
   await expect(() =>
-    detailDef.execute({}, { agent: { session: { header: { cwd: "/proj" } } } }),
+    detailDef.execute({}, execWithAgent({ session: { header: { cwd: "/proj" } } })),
   ).rejects.toThrow(/server 与 tool 均为必填/);
   // server 全名解析往返
   const full = fullServerName("/proj", "ctx");
@@ -319,32 +474,25 @@ it("中间层工具注册（ws_mcp_search / ws_mcp_call / ws_mcp_list / ws_mcp_d
 });
 it("search 早退分支（unit undefined）返回 truncated=false（P1-1）", async () => {
   const { registerMiddlewareTools, McpMiddleware } = await import("../../lib/index.js");
-  const registered = [];
-  const ctx = {
-    tools: {
-      register: (def) => {
-        registered.push(def);
-        return () => {};
-      },
-    },
-  };
-  const host = {
+  const registered: ToolDefinition[] = [];
+  const ctx = captureCtx(registered);
+  const host: MiddlewareHost = {
     ctx,
-    logger: { info: () => {}, warn: () => {}, error: () => {} },
+    logger: fakeLogger(),
     projectServersFor: async () => undefined, // 无项目标记 → projectUnitFor 返回 undefined
     globalServers: () => [],
-    normalizedProjectRoot: async (cwd) => (cwd === "/proj" ? "/proj" : undefined),
+    normalizedProjectRoot: async (cwd: string | undefined) =>
+      cwd === "/proj" ? "/proj" : undefined,
     saveUserState: async () => {},
     emitStatus: () => {},
     catalogCachePath: () => "/tmp/cache.json",
+    isGlobalServer: () => false,
+    isRuntimeServer: () => false,
   };
   const mw = new McpMiddleware(host);
-  const dispose = registerMiddlewareTools(ctx, mw, async (agent) => {
-    const cwd = agent?.session?.header?.cwd;
-    return cwd === "/proj" ? "/proj" : undefined;
-  });
-  const searchDef = registered.find((d) => d.name === "ws_mcp_search");
-  const out = await searchDef.execute({}, { agent: { session: { header: { cwd: "/proj" } } } });
+  const dispose = registerMiddlewareTools(ctx, mw, (agent: unknown) => testResolveRoot(agent));
+  const searchDef = mustTool(registered, "ws_mcp_search");
+  const out = await searchDef.execute({}, execWithAgent({ session: { header: { cwd: "/proj" } } }));
   expect(out, "早退分支补 truncated=false（output.schema required）").toEqual({
     results: [],
     unavailable: [],
@@ -355,28 +503,21 @@ it("search 早退分支（unit undefined）返回 truncated=false（P1-1）", as
 it("中间层 all 模式：@global 覆盖（list/search 可见全局，call 放行 @global）", async () => {
   const { registerMiddlewareTools, McpMiddleware, fullServerName, MIDDLEWARE_GLOBAL_ROOT } =
     await import("../../lib/index.js");
-  const registered = [];
-  const ctx = {
-    tools: {
-      register: (def) => {
-        registered.push(def);
-        return () => {};
-      },
-    },
-  };
+  const registered: ToolDefinition[] = [];
+  const ctx = captureCtx(registered);
   // 目录投影的文案随「发现完成」这一步变换：hook 住描述即可让最后一次投影成为断言面。
   const globalToolDescription = { value: "全局工具" };
-  const host = {
+  const host: MiddlewareHost = {
     ctx,
-    logger: { info: () => {}, warn: () => {}, error: () => {} },
+    logger: fakeLogger(),
     // 目录内存态归 catalog 域后，夹具不再能直接往单元里塞目录：改由**真实虚拟连接路径**
     // 投影（ensureConnected 的 toolDefinitions 分支），目录由产物自身的域实例写入。
-    projectServersFor: async (root) => {
+    projectServersFor: async (root: string) => {
       if (root === MIDDLEWARE_GLOBAL_ROOT)
         return [
           {
             name: "gctx",
-            transport: "stdio",
+            transport: "stdio" as const,
             command: "npx",
             enabled: true,
             toolDefinitions: [
@@ -390,25 +531,34 @@ it("中间层 all 模式：@global 覆盖（list/search 可见全局，call 放�
                 execute: async () => {
                   throw new Error("未连接");
                 },
-              },
+              } as unknown as ToolDefinition,
             ],
-          },
+          } as unknown as ServerConfig,
         ];
       return [
         {
           name: "ctx",
-          transport: "stdio",
+          transport: "stdio" as const,
           command: "npx",
           enabled: true,
-          toolDefinitions: [{ name: "use_ctx", description: "项目工具", parameters: {} }],
-        },
+          toolDefinitions: [
+            {
+              name: "use_ctx",
+              description: "项目工具",
+              parameters: {},
+            } as unknown as ToolDefinition,
+          ],
+        } as unknown as ServerConfig,
       ];
     },
     globalServers: () => [{ name: "gctx", transport: "stdio", command: "npx", enabled: true }],
-    normalizedProjectRoot: async (cwd) => (cwd === "/proj" ? "/proj" : undefined),
+    normalizedProjectRoot: async (cwd: string | undefined) =>
+      cwd === "/proj" ? "/proj" : undefined,
     saveUserState: async () => {},
     emitStatus: () => {},
     catalogCachePath: () => "/tmp/cache.json",
+    isGlobalServer: () => false,
+    isRuntimeServer: () => false,
   };
   const mw = new McpMiddleware(host);
   // 预置目录（模拟 last-good 已发现；不 spawn 子进程）：虚拟连接会把 toolDefinitions
@@ -416,14 +566,14 @@ it("中间层 all 模式：@global 覆盖（list/search 可见全局，call 放�
   const projUnit = {
     root: "/proj",
     connections: new Map(),
-    userDisabled: new Set(),
+    userDisabled: new Set<string>(),
     lastTouchedAt: Date.now(),
     inFlight: new Map(),
   };
   const globalUnit = {
     root: MIDDLEWARE_GLOBAL_ROOT,
     connections: new Map(),
-    userDisabled: new Set(),
+    userDisabled: new Set<string>(),
     lastTouchedAt: Date.now(),
     inFlight: new Map(),
   };
@@ -432,12 +582,9 @@ it("中间层 all 模式：@global 覆盖（list/search 可见全局，call 放�
   await mw.ensureConnected("/proj", "ctx");
   await mw.ensureConnected(MIDDLEWARE_GLOBAL_ROOT, "gctx");
   // projUnit 是手工塞进 units 的，projectUnitFor 会原样返回它；gctx 的目录同理随后填充。
-  const dispose = registerMiddlewareTools(ctx, mw, async (agent) => {
-    const cwd = agent?.session?.header?.cwd;
-    // 模拟组合根 src/index.ts 的 resolveRoot 回落：cwd 无项目 → @global（单池后无条件回落）。
-    if (cwd === "/no-project") return MIDDLEWARE_GLOBAL_ROOT;
-    return cwd === "/proj" ? "/proj" : undefined;
-  });
+  const dispose = registerMiddlewareTools(ctx, mw, (agent: unknown) =>
+    testResolveRoot(agent, MIDDLEWARE_GLOBAL_ROOT),
+  );
   const names = registered.map((def) => def.name).sort();
   expect(names, "all 模式注册四个工具").toEqual([
     "ws_mcp_call",
@@ -445,13 +592,13 @@ it("中间层 all 模式：@global 覆盖（list/search 可见全局，call 放�
     "ws_mcp_list",
     "ws_mcp_search",
   ]);
-  const searchDef = registered.find((d) => d.name === "ws_mcp_search");
-  const callDef = registered.find((d) => d.name === "ws_mcp_call");
-  const listDef = registered.find((d) => d.name === "ws_mcp_list");
-  const detailDef = registered.find((d) => d.name === "ws_mcp_detail");
+  const searchDef = mustTool(registered, "ws_mcp_search");
+  const callDef = mustTool(registered, "ws_mcp_call");
+  const listDef = mustTool(registered, "ws_mcp_list");
+  const detailDef = mustTool(registered, "ws_mcp_detail");
   const agent = { session: { header: { cwd: "/proj" } } };
   // list：项目 root + @global 合并可见
-  const listed = await listDef.execute({}, { agent });
+  const listed = (await listDef.execute({}, execWithAgent(agent))) as SmokeListResult;
   expect(
     listed.servers.some((s) => s.server === fullServerName("/proj", "ctx")),
     "list 含项目服务器",
@@ -466,17 +613,20 @@ it("中间层 all 模式：@global 覆盖（list/search 可见全局，call 放�
     "ws_mcp_list output schema 的 required 恰好 5 项且无 mode",
   ).toEqual(["workspace", "servers", "totalServers", "totalTools", "toolsTruncated"]);
   // search：合并查询命中 @global 工具
-  const found = await searchDef.execute({ query: "全局" }, { agent });
+  const found = (await searchDef.execute(
+    { query: "全局" },
+    execWithAgent(agent),
+  )) as SmokeSearchResult;
   expect(
     found.results.some((hit) => hit.server === fullServerName(MIDDLEWARE_GLOBAL_ROOT, "gctx")),
     "all 模式 search 含 @global 命中",
   ).toBeTruthy();
   expect(found.truncated, "all 模式 search 未达 limit → truncated=false").toBe(false);
   // detail：@global 可查
-  const detail = await detailDef.execute(
+  const detail = (await detailDef.execute(
     { server: fullServerName(MIDDLEWARE_GLOBAL_ROOT, "gctx"), tool: "use_g" },
-    { agent },
-  );
+    execWithAgent(agent),
+  )) as SmokeDetailResult;
   expect(detail.server).toBe(fullServerName(MIDDLEWARE_GLOBAL_ROOT, "gctx"));
   expect(detail.tool).toBe("use_g");
   // call：all 模式放行 @global root（预置 client 无法调用——此处断言路由放行后
@@ -484,16 +634,19 @@ it("中间层 all 模式：@global 覆盖（list/search 可见全局，call 放�
   await expect(() =>
     callDef.execute(
       { server: fullServerName(MIDDLEWARE_GLOBAL_ROOT, "gctx"), tool: "use_g" },
-      { agent },
+      execWithAgent(agent),
     ),
   ).rejects.toThrow(/未连接|未就绪|连接失败|已禁用/);
   // call：非当前 root 的项目 root 仍拒绝（防跨空间串台）。
   await expect(() =>
-    callDef.execute({ server: fullServerName("/other", "ctx"), tool: "use_ctx" }, { agent }),
+    callDef.execute(
+      { server: fullServerName("/other", "ctx"), tool: "use_ctx" },
+      execWithAgent(agent),
+    ),
   ).rejects.toThrow(/不属于当前工作空间/);
   // P1-2：all 模式无项目 cwd（root 本身为 @global）→ visibleRoots 去重不翻倍。
   const gAgent = { session: { header: { cwd: "/no-project" } } };
-  const listedGlobalOnly = await listDef.execute({}, { agent: gAgent });
+  const listedGlobalOnly = (await listDef.execute({}, execWithAgent(gAgent))) as SmokeListResult;
   const globalNames = listedGlobalOnly.servers.map((s) => s.server);
   expect(listedGlobalOnly.totalServers, "@global 去重：totalServers 不翻倍").toBe(1);
   expect(
@@ -505,7 +658,7 @@ it("中间层 all 模式：@global 覆盖（list/search 可见全局，call 放�
   const freshGlobal = {
     root: MIDDLEWARE_GLOBAL_ROOT,
     connections: new Map(),
-    userDisabled: new Set(),
+    userDisabled: new Set<string>(),
     lastTouchedAt: Date.now(),
     inFlight: new Map(),
   };
@@ -517,13 +670,16 @@ it("中间层 all 模式：@global 覆盖（list/search 可见全局，call 放�
   // 目录就绪后再挂「等待窗口」标记：list/search 仍必须等它结算才返回（P1-3 语义），
   // 而目录内容已是发现完成后的那一份。
   freshGlobal.inFlight.set("gctx", new Promise((resolve) => setTimeout(resolve, 100)));
-  const listedAfterWait = await listDef.execute({}, { agent: gAgent });
+  const listedAfterWait = (await listDef.execute({}, execWithAgent(gAgent))) as SmokeListResult;
   const freshEntry = listedAfterWait.servers.find(
     (s) => s.server === fullServerName(MIDDLEWARE_GLOBAL_ROOT, "gctx"),
   );
   expect(freshEntry !== undefined, "@global 首次触达等待 in-flight 后可见").toBeTruthy();
-  expect(freshEntry.tools.length, "发现完成的工具列出").toBe(1);
-  const foundAfterWait = await searchDef.execute({ query: "发现完成" }, { agent: gAgent });
+  expect(freshEntry!.tools.length, "发现完成的工具列出").toBe(1);
+  const foundAfterWait = (await searchDef.execute(
+    { query: "发现完成" },
+    execWithAgent(gAgent),
+  )) as SmokeSearchResult;
   expect(
     foundAfterWait.results.some(
       (hit) => hit.server === fullServerName(MIDDLEWARE_GLOBAL_ROOT, "gctx"),
@@ -552,18 +708,11 @@ it("MCP_GUIDANCE 与隐藏后的模型面一致：全局与项目级同走 ws_mc
 it("#362 A2 / #767 笔 1a：project root 会话下 @global 可达（「改 mcp__ 直呼」拒绝门已删）", async () => {
   const { registerMiddlewareTools, McpMiddleware, fullServerName, MIDDLEWARE_GLOBAL_ROOT } =
     await import("../../lib/index.js");
-  const registered = [];
-  const ctx = {
-    tools: {
-      register: (def) => {
-        registered.push(def);
-        return () => {};
-      },
-    },
-  };
+  const registered: ToolDefinition[] = [];
+  const ctx = captureCtx(registered);
   const globalServer = {
     name: "gctx",
-    transport: "stdio",
+    transport: "stdio" as const,
     command: "npx",
     enabled: true,
     toolDefinitions: [
@@ -572,54 +721,65 @@ it("#362 A2 / #767 笔 1a：project root 会话下 @global 可达（「改 mcp__
         description: "全局工具",
         parameters: {},
         execute: async () => ({ content: [] }),
-      },
+      } as unknown as ToolDefinition,
     ],
-  };
-  const host = {
+  } as unknown as ServerConfig;
+  const host: MiddlewareHost = {
     ctx,
-    logger: { info: () => {}, warn: () => {}, error: () => {} },
-    projectServersFor: async (root) =>
+    logger: fakeLogger(),
+    projectServersFor: async (root: string) =>
       root === MIDDLEWARE_GLOBAL_ROOT ? [globalServer] : undefined,
     globalServers: () => [globalServer],
-    normalizedProjectRoot: async (cwd) => (cwd === "/proj" ? "/proj" : undefined),
+    normalizedProjectRoot: async (cwd: string | undefined) =>
+      cwd === "/proj" ? "/proj" : undefined,
     saveUserState: async () => {},
     emitStatus: () => {},
     catalogCachePath: () => "/tmp/cache.json",
-    isGlobalServer: (name) => name === "gctx",
+    isGlobalServer: (name: string) => name === "gctx",
+    isRuntimeServer: () => false,
   };
   const mw = new McpMiddleware(host);
   // @global 单元 + 虚拟连接：目录投影的真实来源，detail 才能真正命中。
   await mw.projectUnitFor(MIDDLEWARE_GLOBAL_ROOT);
   await mw.ensureConnected(MIDDLEWARE_GLOBAL_ROOT, "gctx");
-  const dispose = registerMiddlewareTools(ctx, mw, async (agent) =>
-    agent?.session?.header?.cwd === "/proj" ? "/proj" : undefined,
-  );
-  const detailDef = registered.find((d) => d.name === "ws_mcp_detail");
-  const callDef = registered.find((d) => d.name === "ws_mcp_call");
+  const dispose = registerMiddlewareTools(ctx, mw, (agent: unknown) => testResolveRoot(agent));
+  const detailDef = mustTool(registered, "ws_mcp_detail");
+  const callDef = mustTool(registered, "ws_mcp_call");
   const agent = { session: { header: { cwd: "/proj" } } };
   const globalFull = fullServerName(MIDDLEWARE_GLOBAL_ROOT, "gctx");
   // 可达性三件套之一（A.1）：project root 会话里 @global 不再被拒——detail 直接命中。
-  const detail = await detailDef.execute({ server: globalFull, tool: "use_g" }, { agent });
+  const detail = (await detailDef.execute(
+    { server: globalFull, tool: "use_g" },
+    execWithAgent(agent),
+  )) as SmokeDetailResult;
   expect(detail.server, "@global 全局服务器经 ws_mcp_detail 可达").toBe(globalFull);
   expect(detail.tool, "命中的是全局工具").toBe("use_g");
   // call 同样不再是路由拒绝（该走执行面）：错误里不得再出现旧的「改 mcp__ 直呼」引导词。
-  const callErr = await callDef.execute({ server: globalFull, tool: "use_g" }, { agent }).then(
-    () => "",
-    (error) => String(error?.message ?? error),
-  );
+  const callErr = await callDef
+    .execute({ server: globalFull, tool: "use_g" }, execWithAgent(agent))
+    .then(
+      () => "",
+      (error: unknown) =>
+        String(
+          typeof error === "object" && error !== null && "message" in error ? error.message : error,
+        ),
+    );
   expect(callErr, "call 不落旧的路由引导门").not.toMatch(
     /全局级（global scope）服务器|不属于当前工作空间/,
   );
   // 非 global 其他 root 仍硬拒绝（防跨空间串台，不回归）。
   await expect(() =>
-    detailDef.execute({ server: fullServerName("/other", "ctx"), tool: "use_ctx" }, { agent }),
+    detailDef.execute(
+      { server: fullServerName("/other", "ctx"), tool: "use_ctx" },
+      execWithAgent(agent),
+    ),
   ).rejects.toThrow(/不属于当前工作空间/);
   // 未知 @global 服务器同理不再被路由拒绝：门打开后落**查表失败**（不再是「改直呼」引导）。
   await expect(
     () =>
       detailDef.execute(
         { server: fullServerName(MIDDLEWARE_GLOBAL_ROOT, "ghost"), tool: "x" },
-        { agent },
+        execWithAgent(agent),
       ),
     "未知 @global 服务器落查表失败（路由门已删）",
   ).rejects.toThrow(/ws_mcp_detail: server 未连接或未发现/);
@@ -631,7 +791,7 @@ it("#362 isGlobalServer 双源：runtime 注册的 codegraph 判全局（P1 修�
   try {
     const store = new McpStore(join(dir, "mcp.json"));
     store.data = { version: 1, servers: [] };
-    const manager = new McpManager({ logger: { warn: () => {}, info: () => {} } }, store);
+    const manager = new McpManager(fakeManagerCtx(), store);
     // runtime 注册（不落 store）→ isGlobalServer 必须返回 true。
     await manager.registerServer({
       name: "codegraph",
@@ -653,52 +813,47 @@ it("#362 isGlobalServer 双源：runtime 注册的 codegraph 判全局（P1 修�
 it("#362 A1：ws_mcp_list 带 serverFilter 过滤 0 命中 → message 可归因（不谎报未配置）", async () => {
   const { registerMiddlewareTools, McpMiddleware, fullServerName, MIDDLEWARE_GLOBAL_ROOT } =
     await import("../../lib/index.js");
-  const registered = [];
-  const ctx = {
-    tools: {
-      register: (def) => {
-        registered.push(def);
-        return () => {};
-      },
-    },
-  };
-  const host = {
+  const registered: ToolDefinition[] = [];
+  const ctx = captureCtx(registered);
+  const host: MiddlewareHost = {
     ctx,
-    logger: { info: () => {}, warn: () => {}, error: () => {} },
+    logger: fakeLogger(),
     // 虚拟连接（toolDefinitions）让目录走真实投影路径落进产物侧的域实例。
     projectServersFor: async () => [
       {
         name: "ctx",
-        transport: "stdio",
+        transport: "stdio" as const,
         command: "npx",
         enabled: true,
-        toolDefinitions: [{ name: "use_ctx", description: "项目工具", parameters: {} }],
-      },
+        toolDefinitions: [
+          { name: "use_ctx", description: "项目工具", parameters: {} } as unknown as ToolDefinition,
+        ],
+      } as unknown as ServerConfig,
     ],
     globalServers: () => [],
-    normalizedProjectRoot: async (cwd) => (cwd === "/proj" ? "/proj" : undefined),
+    normalizedProjectRoot: async (cwd: string | undefined) =>
+      cwd === "/proj" ? "/proj" : undefined,
     saveUserState: async () => {},
     emitStatus: () => {},
     catalogCachePath: () => "/tmp/cache.json",
     isGlobalServer: () => false,
+    isRuntimeServer: () => false,
   };
   const mw = new McpMiddleware(host);
   // 预置目录（模拟 last-good 已发现；不 spawn 子进程）：经真实虚拟连接路径投影。
   mw.units.set("/proj", {
     root: "/proj",
     connections: new Map(),
-    userDisabled: new Set(),
+    userDisabled: new Set<string>(),
     lastTouchedAt: Date.now(),
     inFlight: new Map(),
   });
   await mw.ensureConnected("/proj", "ctx");
-  const dispose = registerMiddlewareTools(ctx, mw, async (agent) =>
-    agent?.session?.header?.cwd === "/proj" ? "/proj" : undefined,
-  );
-  const listDef = registered.find((d) => d.name === "ws_mcp_list");
+  const dispose = registerMiddlewareTools(ctx, mw, (agent: unknown) => testResolveRoot(agent));
+  const listDef = mustTool(registered, "ws_mcp_list");
   const agent = { session: { header: { cwd: "/proj" } } };
   // 过滤不存在的 server → 0 命中 + 可归因 message。
-  const out = await listDef.execute({ server: "nope" }, { agent });
+  const out = (await listDef.execute({ server: "nope" }, execWithAgent(agent))) as SmokeListResult;
   expect(out.totalServers).toBe(0);
   expect(out.message, "A1：message 归因到过滤条件").toMatch(
     /没有匹配 server="nope" 的项目级服务器/,
@@ -710,14 +865,15 @@ it("#362 A1：ws_mcp_list 带 serverFilter 过滤 0 命中 → message 可归因
   expect(out.message, "E1：改教经 ws_mcp_call 按全名访问").toMatch(/ws_mcp_call/);
   expect(out.message, "E1：全局级全名写法 @global/<server>").toMatch(/@global\/<server>/);
   // 同笔：ws_mcp_detail 的 tool 形参描述不再宣传模型已无从发现的直呼名（能力仍在，只是不宣传）。
-  const detailDef = registered.find((d) => d.name === "ws_mcp_detail");
+  const detailDef = mustTool(registered, "ws_mcp_detail");
   expect(
-    detailDef.parameters.properties.tool.description,
+    (detailDef.parameters as { properties: Record<string, { description: string }> }).properties
+      .tool.description,
     "E2：detail 的 tool 形参描述不含 mcp__",
   ).not.toMatch(/mcp__/);
   // 不带过滤 → 列出可见单元全部服务器。单池（#767 笔 1a）：可见单元恒为
   // 「项目 root + @global」——@global 不再随模式开关（旧实现 project 模式下只列项目 root）。
-  const out2 = await listDef.execute({}, { agent });
+  const out2 = (await listDef.execute({}, execWithAgent(agent))) as SmokeListResult;
   const listed = out2.servers.map((s) => s.server);
   expect(listed, "项目 root 的服务器可见").toContain(fullServerName("/proj", "ctx"));
   expect(listed, "@global 的服务器同样可见").toContain(
@@ -752,10 +908,10 @@ it("#362 P0-1：工具级禁用三入口一致（callTool / pre-execute guard / 
     false,
   );
   // 2) registerMiddlewareTools 的 pre-execute guard：mcp__ 直呼被 deny。
-  const registered = [];
+  const registered: ToolDefinition[] = [];
   const ctx = {
     tools: {
-      register: (def) => {
+      register: (def: ToolDefinition) => {
         registered.push(def);
         return () => {};
       },
@@ -763,19 +919,19 @@ it("#362 P0-1：工具级禁用三入口一致（callTool / pre-execute guard / 
       // value 是远端原始结果（projectCallToolResult 吃的就是它）。
       execute: async () => ({ isError: false, content: [], value: { content: [] } }),
     },
-    on: (event, handler) => {
+    on: (event: string, handler: SmokeGuard) => {
       guards.set(event, handler);
       return () => {};
     },
-  };
-  const guards = new Map();
-  const host = {
+  } as unknown as Context;
+  const guards = new Map<string, SmokeGuard>();
+  const host: MiddlewareHost = {
     ctx,
-    logger: { info: () => {}, warn: () => {}, error: () => {} },
+    logger: fakeLogger(),
     projectServersFor: async () => [
       {
         name: "ctx",
-        transport: "stdio",
+        transport: "stdio" as const,
         command: "x",
         enabled: true,
         // 目录条目（use_ctx）经真实虚拟连接路径投影，供 ws_mcp_detail 与 stats 记录消费。
@@ -789,7 +945,7 @@ it("#362 P0-1：工具级禁用三入口一致（callTool / pre-execute guard / 
             execute: async () => {
               throw new Error("未连接");
             },
-          },
+          } as unknown as ToolDefinition,
           // 未禁用工具走正常调用：返回空 content，与「远端执行器返回空 content」同形
           // （投影后的 content 为空数组），保住该断言的原判据。
           {
@@ -797,49 +953,63 @@ it("#362 P0-1：工具级禁用三入口一致（callTool / pre-execute guard / 
             description: "其他工具",
             parameters: {},
             execute: async () => ({ content: [] }),
-          },
+          } as unknown as ToolDefinition,
         ],
-      },
+      } as unknown as ServerConfig,
     ],
     globalServers: () => [],
-    normalizedProjectRoot: async (cwd) => (cwd === "/proj" ? "/proj" : undefined),
+    normalizedProjectRoot: async (cwd: string | undefined) =>
+      cwd === "/proj" ? "/proj" : undefined,
     saveUserState: async () => {},
     emitStatus: () => {},
     catalogCachePath: () => "/tmp/cache.json",
     isGlobalServer: () => false,
+    isRuntimeServer: () => false,
   };
   const mw = new McpMiddleware(host);
-  const dispose = registerMiddlewareTools(
-    ctx,
-    mw,
-    async (agent) => (agent?.session?.header?.cwd === "/proj" ? "/proj" : undefined),
-    { disabledTools: map },
-  );
+  const dispose = registerMiddlewareTools(ctx, mw, (agent: unknown) => testResolveRoot(agent), {
+    disabledTools: map,
+  });
   const guard = guards.get("tools/pre-execute");
   expect(typeof guard === "function", "pre-execute guard 已注册").toBeTruthy();
-  const deny = await guard(
-    { name: "mcp__ctx__use_ctx", agent: { session: { header: { cwd: "/proj" } } } },
-    async () => ({ kind: "allow" }),
+  const deny = await guard!(
+    {
+      name: "mcp__ctx__use_ctx",
+      agent: { session: { header: { cwd: "/proj" } } },
+    } as unknown as Parameters<SmokeGuard>[0],
+    async () => ({ kind: "allow" }) as PreToolDecision,
   );
   expect(deny.kind, "mcp__ 直呼被禁用表 deny").toBe("deny");
-  expect(deny.reason, "拒绝原因含禁用语义声明").toMatch(/已被用户在「MCP」浮窗禁用/);
-  const allow = await guard(
-    { name: "mcp__ctx__other", agent: { session: { header: { cwd: "/proj" } } } },
-    async () => ({ kind: "allow" }),
+  expect((deny as unknown as { reason: string }).reason, "拒绝原因含禁用语义声明").toMatch(
+    /已被用户在「MCP」浮窗禁用/,
+  );
+  const allow = await guard!(
+    {
+      name: "mcp__ctx__other",
+      agent: { session: { header: { cwd: "/proj" } } },
+    } as unknown as Parameters<SmokeGuard>[0],
+    async () => ({ kind: "allow" }) as PreToolDecision,
   );
   expect(allow.kind, "未禁用工具放行").toBe("allow");
   // agent-less → 按最宽可见范围放行（@global 记录仍生效）。
-  const gDeny = await guard({ name: "mcp__gctx__use_g" }, async () => ({ kind: "allow" }));
+  const gDeny = await guard!(
+    { name: "mcp__gctx__use_g" } as unknown as Parameters<SmokeGuard>[0],
+    async () => ({ kind: "allow" }) as PreToolDecision,
+  );
   expect(gDeny.kind, "agent-less 时 @global 共享记录仍 deny").toBe("deny");
   // 超长哈希名（含非法字符被替换）→ 不误禁。
-  const hashed = await guard({ name: "mcp__ctx__use_ctx_0123456789ab" }, async () => ({
-    kind: "allow",
-  }));
+  const hashed = await guard!(
+    { name: "mcp__ctx__use_ctx_0123456789ab" } as unknown as Parameters<SmokeGuard>[0],
+    async () => ({ kind: "allow" }) as PreToolDecision,
+  );
   expect(hashed.kind, "哈希后缀名按未知 server 放行").toBe("allow");
   // ws_mcp_call guard：禁用命中 → deny。
-  const callDeny = await guard(
-    { name: "ws_mcp_call", arguments: { server: fullServerName("/proj", "ctx"), tool: "use_ctx" } },
-    async () => ({ kind: "allow" }),
+  const callDeny = await guard!(
+    {
+      name: "ws_mcp_call",
+      arguments: { server: fullServerName("/proj", "ctx"), tool: "use_ctx" },
+    } as unknown as Parameters<SmokeGuard>[0],
+    async () => ({ kind: "allow" }) as PreToolDecision,
   );
   expect(callDeny.kind, "ws_mcp_call guard 查禁用表").toBe("deny");
   expect(
@@ -855,19 +1025,19 @@ it("#362 P0-1：工具级禁用三入口一致（callTool / pre-execute guard / 
   await mw.ensureConnected("/proj", "ctx");
   // callTool 的第 5 形参换成身份对象（agent / callId / rootCallId / parent）：dispatch 要拿它
   // 合成子调用 id 并透传 parent。本用例只走本地守卫与投影，给最小身份即可。
-  const IDENTITY = { callId: "smoke-call-1" };
+  const IDENTITY = { callId: "smoke-call-1" as ToolExecutionInput["callId"] };
   await expect(
     () => mw.callTool(fullServerName("/proj", "ctx"), "use_ctx", {}, undefined, IDENTITY),
     "callTool 先查禁用表（三入口一致）",
   ).rejects.toThrow(/已被用户在「MCP」浮窗禁用/);
   // 未禁用工具正常放行到调用。
-  const okValue = await mw.callTool(
+  const okValue = (await mw.callTool(
     fullServerName("/proj", "ctx"),
     "other",
     {},
     undefined,
     IDENTITY,
-  );
+  )) as { content: unknown };
   // 判据面随夹具换面（#767 S1-3b）：原夹具是远端条目，投影后 content 为空数组；现夹具
   // 走封装直呼分支（无 output.render），渲染器把封装返回值按 JSON 文本投影成一个 text 块。
   // 夹具确定性（execute 恒返回 {content:[]}），故这里逐字钉死投影结果。
@@ -882,44 +1052,44 @@ it("#362 P0-1：工具级禁用三入口一致（callTool / pre-execute guard / 
   try {
     const statsCollector = new McpStatsCollector({ enabled: true, filePath: testStatsFile });
     // 提取注册的原子工具
-    const statsRegTools: any[] = [];
+    const statsRegTools: ToolDefinition[] = [];
     const statsCtx = {
       tools: {
-        register: (def: any) => {
+        register: (def: ToolDefinition) => {
           statsRegTools.push(def);
           return () => {};
         },
       },
       on: () => () => {},
-    };
+    } as unknown as Context;
     // 目录条目在连接路径上投影：detail/stats 段的执行前先建单元、再走一次虚拟连接
     // （ensureConnected 对未在册 root 直接返回，不会自己建单元）。
     await mw.projectUnitFor("/proj");
     await mw.ensureConnected("/proj", "ctx");
-    const statsMwDispose = registerMiddlewareTools(statsCtx as any, mw, async () => "/proj", {
+    const statsMwDispose = registerMiddlewareTools(statsCtx, mw, async () => "/proj", {
       stats: statsCollector,
     });
 
-    const searchTool = statsRegTools.find((t) => t.name === "ws_mcp_search");
-    const listTool = statsRegTools.find((t) => t.name === "ws_mcp_list");
-    const detailTool = statsRegTools.find((t) => t.name === "ws_mcp_detail");
-    const callTool = statsRegTools.find((t) => t.name === "ws_mcp_call");
+    const searchTool = mustTool(statsRegTools, "ws_mcp_search");
+    const listTool = mustTool(statsRegTools, "ws_mcp_list");
+    const detailTool = mustTool(statsRegTools, "ws_mcp_detail");
+    const callTool = mustTool(statsRegTools, "ws_mcp_call");
 
     expect(searchTool && listTool && detailTool && callTool, "四个原子工具均已注册").toBeTruthy();
 
     // 执行四个原子工具
     await searchTool.execute(
       { query: "codegraph" },
-      { agent: { session: { header: { cwd: "/proj" } } } },
+      execWithAgent({ session: { header: { cwd: "/proj" } } }),
     );
-    await listTool.execute({}, { agent: { session: { header: { cwd: "/proj" } } } });
+    await listTool.execute({}, execWithAgent({ session: { header: { cwd: "/proj" } } }));
     await detailTool.execute(
       { server: fullServerName("/proj", "ctx"), tool: "use_ctx" },
-      { agent: { session: { header: { cwd: "/proj" } } } },
+      execWithAgent({ session: { header: { cwd: "/proj" } } }),
     );
     await callTool.execute(
       { server: fullServerName("/proj", "ctx"), tool: "other" },
-      { agent: { session: { header: { cwd: "/proj" } } } },
+      execWithAgent({ session: { header: { cwd: "/proj" } } }),
     );
 
     statsCollector.flushSync();
@@ -951,10 +1121,7 @@ it("#362 P1：disabledTools 持久化（合并式写盘 + 重启保留）", asyn
     // 预置磁盘记录（模拟另一工作空间已禁用），并让 manager 加载（等价
     // initMiddleware 的 loadDisabledTools 路径——进程内完整视图）。
     await saveDisabledTools(file, parseDisabledTools({ "/other": { s2: ["t2"] } }));
-    const manager = new McpManager(
-      { logger: { warn: () => {}, info: () => {} } },
-      new McpStore(join(dir, "mcp.json")),
-    );
+    const manager = new McpManager(fakeManagerCtx(), new McpStore(join(dir, "mcp.json")));
     manager.userStatePath = file;
     manager.disabledTools = await loadDisabledTools(file);
     // 多空间共存：新增 /proj 记录，/other 记录保留（不整表覆盖）。
@@ -1291,7 +1458,7 @@ it("F1（qa 实测 #128）：浮窗面板内容更新后重定位 + toggleFloat 
 
 it("Config 导出且含 ui 子对象（默认值与合法值域）", () => {
   expect(typeof Config === "function", "Config 是 schemastery schema（可调用）").toBeTruthy();
-  const parsed = Config({});
+  const parsed = Config({} as Parameters<typeof Config>[0]);
   expect(parsed.ui.position, "ui.position 默认 top-right").toBe("top-right");
   expect(parsed.ui.offset, "ui.offset 默认 {x:8,y:8,blankY:40}").toEqual({
     x: 8,
@@ -1307,10 +1474,10 @@ it("Config 导出且含 ui 子对象（默认值与合法值域）", () => {
   ).toBe(10);
   // 合法值域：四角全部透传（#128 补左上/左下）
   for (const p of ["top-left", "bottom-left"] as const) {
-    const parsedP = Config({ ui: { position: p } });
+    const parsedP = Config({ ui: { position: p } } as Parameters<typeof Config>[0]);
     expect(parsedP.ui.position, `#128 ${p} 是合法 position`).toBe(p);
   }
-  const bottom = Config({ ui: { position: "bottom-right" } });
+  const bottom = Config({ ui: { position: "bottom-right" } } as Parameters<typeof Config>[0]);
   expect(bottom.ui.position, "bottom-right 是合法 position").toBe("bottom-right");
   // #767 笔 2：两个中间层配置键删净——顶层键集恰好 6 项且不含 middleware / middlewarePolicy
   // （键集判据用逐字相等，多键少键都红；storePath 无默认值，不在其中）。
@@ -1460,9 +1627,9 @@ it("lib/index.js 导出 sseData 且输出与 shared/host-utils.js 一致（#472�
   expect(libSseData({ type: "ping" })).toBe('data: {"type":"ping"}\n\n');
 });
 it("broadcastFrame 向全部连接写帧（掉线忽略）", () => {
-  const written = [];
+  const written: string[] = [];
   const conn = {
-    write: (chunk) => {
+    write: (chunk: string) => {
       written.push(chunk);
     },
   };
@@ -1471,7 +1638,10 @@ it("broadcastFrame 向全部连接写帧（掉线忽略）", () => {
       throw new Error("closed");
     },
   };
-  broadcastFrame(new Set([conn, dead]), 'data: {"type":"summary"}\n\n');
+  broadcastFrame(
+    new Set([conn, dead] as unknown as ServerResponse[]),
+    'data: {"type":"summary"}\n\n',
+  );
   expect(written).toEqual(['data: {"type":"summary"}\n\n']);
   broadcastFrame(undefined, "x"); // 无连接不抛
 });
@@ -1594,7 +1764,7 @@ it("stdio 服务器规范化", () => {
   ).toBe(undefined);
   expect(
     normalizeServer({ name: "a", transport: "stdio", command: "x", description: "长".repeat(200) })
-      .description.length,
+      .description?.length,
     "描述完整返回不截断",
   ).toBe(200);
 });
@@ -1734,10 +1904,10 @@ it("保存并读回", async () => {
 it("upsert / remove", async () => {
   const { store, cleanup } = tempStore();
   try {
-    store.upsert({ name: "a" });
-    store.upsert({ name: "b" });
+    store.upsert({ name: "a" } as ServerConfig);
+    store.upsert({ name: "b" } as ServerConfig);
     expect(store.data.servers.length).toBe(2);
-    store.upsert({ name: "a", extra: 1 });
+    store.upsert({ name: "a", extra: 1 } as unknown as ServerConfig);
     expect(store.data.servers.length).toBe(2);
     store.remove("a");
     expect(store.find("a")).toBe(undefined);
@@ -1776,7 +1946,16 @@ it("reloadIfChanged：外部修改重读 / 未变跳过 / 删除清空", async (
 });
 
 describe("项目根发现（findProjectRoot / setSession）", () => {
-  let base, deep, home, leetcode, proj, projSub, nomark, findProjectRoot, manager, prevDshHome;
+  let base: string;
+  let deep: string;
+  let home: string;
+  let leetcode: string;
+  let proj: string;
+  let projSub: string;
+  let nomark: string;
+  let findProjectRoot: (cwd: string | undefined) => Promise<string>;
+  let manager: McpManager;
+  let prevDshHome: string | undefined;
 
   beforeAll(async () => {
     base = mkdtempSync(join(tmpdir(), "dsh-mcp-manager-root-"));
@@ -1823,10 +2002,7 @@ describe("项目根发现（findProjectRoot / setSession）", () => {
     prevDshHome = process.env.DSH_HOME;
     process.env.DSH_HOME = join(home, ".dsh");
     ({ findProjectRoot } = await import("../../lib/index.js"));
-    manager = new McpManager(
-      { logger: { warn: () => {}, info: () => {}, error: () => {} } },
-      new McpStore(join(base, "dsh-mcp.json")),
-    );
+    manager = new McpManager(fakeManagerCtx(), new McpStore(join(base, "dsh-mcp.json")));
   });
 
   afterAll(async () => {
@@ -1842,7 +2018,11 @@ describe("项目根发现（findProjectRoot / setSession）", () => {
     await manager.setSession(leetcode);
     expect(manager.projectRoot).toBe(leetcode);
     expect(manager.projectStore !== undefined).toBeTruthy();
-    expect(manager.summary().servers.filter((s) => s.scope === "project").length).toBe(0);
+    expect(
+      (manager.summary() as unknown as { servers: { scope: string }[] }).servers.filter(
+        (s: { scope: string }) => s.scope === "project",
+      ).length,
+    ).toBe(0);
   });
 
   it("子目录向上命中项目 .dsh 标记", async () => {
@@ -1877,7 +2057,13 @@ describe("项目根发现（findProjectRoot / setSession）", () => {
 });
 
 describe("目录数据源按工作区计算（切换工作区不抖动）", () => {
-  let base, rootA, rootB, subA, noReconnect, gstore, manager;
+  let base: string;
+  let rootA: string;
+  let rootB: string;
+  let subA: string;
+  let noReconnect: { reconnect: { enabled: boolean } };
+  let gstore: McpStore;
+  let manager: McpManager;
 
   beforeAll(async () => {
     base = mkdtempSync(join(tmpdir(), "dsh-mcp-manager-cat-"));
@@ -1912,10 +2098,7 @@ describe("目录数据源按工作区计算（切换工作区不抖动）", () =
     gstore.data.servers = [
       normalizeServer({ name: "g1", transport: "stdio", command: "true", ...noReconnect }),
     ];
-    manager = new McpManager(
-      { logger: { warn: () => {}, info: () => {}, error: () => {} } },
-      gstore,
-    );
+    manager = new McpManager(fakeManagerCtx(), gstore);
   });
 
   afterAll(async () => {
@@ -1946,7 +2129,7 @@ describe("目录数据源按工作区计算（切换工作区不抖动）", () =
 
   it("同名项目级被全局顶掉", async () => {
     // projB 里放一台与全局同名的服务器
-    const storeB = await manager.projectStoreFor(rootB);
+    const storeB = (await manager.projectStoreFor(rootB))!;
     storeB.upsert(
       normalizeServer({ name: "g1", transport: "stdio", command: "true", ...noReconnect }),
     );
@@ -1984,7 +2167,20 @@ describe("目录数据源按工作区计算（切换工作区不抖动）", () =
 });
 
 describe("外部配置变更自动重读（refreshFromDisk / reconcileServers）", () => {
-  let base, proj, cfg, gstore, manager, poolUnit, released, ensured;
+  let base: string;
+  let proj: string;
+  let cfg: string;
+  let gstore: McpStore;
+  let manager: McpManager;
+  let poolUnit: {
+    root: string;
+    connections: Map<string, Record<string, unknown>>;
+    userDisabled: Set<string>;
+    lastTouchedAt: number;
+    inFlight: Map<string, Promise<unknown>>;
+  };
+  let released: string[];
+  let ensured: string[];
 
   /** 往池替身里塞一条「已连接」的 ghost 条目（不 spawn 真实连接）。 */
   function seedGhost() {
@@ -2014,10 +2210,7 @@ describe("外部配置变更自动重读（refreshFromDisk / reconcileServers）
       normalizeServer({ name: "g1", transport: "stdio", command: "true", enabled: false }),
     ];
     await gstore.save();
-    manager = new McpManager(
-      { logger: { warn: () => {}, info: () => {}, error: () => {} } },
-      gstore,
-    );
+    manager = new McpManager(fakeManagerCtx(), gstore);
     await manager.setSession(proj);
     // 单池（#767 笔 1a）：连接唯一账本是中间层单元表。这里挂一个最小池替身，只回答
     // 「释放了哪条连接」「确保连接了哪条」——真正的装载/拆除语义（releaseServer 的调用序）
@@ -2028,25 +2221,25 @@ describe("外部配置变更自动重读（refreshFromDisk / reconcileServers）
     poolUnit = {
       root: proj,
       connections: new Map(),
-      userDisabled: new Set(),
+      userDisabled: new Set<string>(),
       lastTouchedAt: Date.now(),
       inFlight: new Map(),
     };
     manager.middleware = {
       units: new Map([[proj, poolUnit]]),
-      releaseConnection: (root, name) => {
+      releaseConnection: (root: string, name: string) => {
         released.push(root + "\u0000" + name);
         return poolUnit.connections.delete(name);
       },
       projectUnitFor: async () => undefined,
-      ensureConnected: async (root, name) => {
+      ensureConnected: async (root: string, name: string) => {
         ensured.push(root + "\u0000" + name);
       },
       abandonInFlight: () => {},
       statusOf: () => undefined,
       toolCountOf: () => 0,
       dispose: async () => {},
-    };
+    } as unknown as McpManager["middleware"];
     seedGhost();
   });
 
@@ -2056,7 +2249,7 @@ describe("外部配置变更自动重读（refreshFromDisk / reconcileServers）
   });
 
   it("项目级配置初始为空（setSession 后不自动 spawn）", () => {
-    expect(manager.projectStore.data.servers.length).toBe(0);
+    expect(manager.projectStore!.data.servers.length).toBe(0);
   });
 
   it("外部新增 disabled 服务器 → refreshFromDisk 重读并进 summary（不 spawn）", async () => {
@@ -2072,10 +2265,11 @@ describe("外部配置变更自动重读（refreshFromDisk / reconcileServers）
     );
     utimesSync(cfg, Date.now() / 1000 + 10, Date.now() / 1000 + 10);
     await manager.refreshFromDisk();
-    const names = manager
-      .summary()
-      .servers.filter((s) => s.scope === SCOPE_PROJECT)
-      .map((s) => s.name);
+    const names = (
+      manager.summary() as unknown as { servers: { scope: string; name: string }[] }
+    ).servers
+      .filter((s: { scope: string }) => s.scope === SCOPE_PROJECT)
+      .map((s: { name: string }) => s.name);
     expect(names, "外部新增出现在面板数据").toEqual(["p1"]);
     expect(
       ensured.some((k) => k.endsWith("\u0000p1")),
@@ -2117,7 +2311,52 @@ describe("外部配置变更自动重读（refreshFromDisk / reconcileServers）
 });
 
 describe("路由（makeRoutes / events / health / tool-disable / resume）", () => {
-  let store, cleanup, managerState, uiCfg, manager, routes, find, fakeReq, fakeFenceBroken;
+  let store: McpStore;
+  let cleanup: () => void;
+  let managerState: {
+    sessionCwd: string | undefined;
+    lastScope: string | undefined;
+    resumed: number;
+  };
+  let uiCfg: {
+    position: string;
+    offsetX: number;
+    offsetY: number;
+    blankY: number;
+    zIndexBase?: number;
+  };
+  let manager: {
+    store: McpStore;
+    logger: { warn: () => void; info: () => void; error: () => void };
+    summary: () => { servers: unknown[]; counts: Record<string, unknown> };
+    uiConfig: () => {
+      position: string;
+      offsetX: number;
+      offsetY: number;
+      blankY: number;
+      zIndexBase?: number;
+    };
+    updateUiConfig: (raw: unknown) => Promise<{
+      position: string;
+      offsetX: number;
+      offsetY: number;
+      blankY: number;
+      zIndexBase?: number;
+    }>;
+    refreshFromDisk: () => Promise<void>;
+    setSession: (cwd: string | undefined) => Promise<void>;
+    add: (body: Record<string, unknown>, scope?: string) => Promise<ServerConfig>;
+    update: (nm: string, patch: Record<string, unknown>, scope?: string) => Promise<ServerConfig>;
+    remove: (nm: string, scope?: string) => Promise<void>;
+    connect: () => Promise<void>;
+    disconnect: () => Promise<void>;
+    reconnect: () => Promise<void>;
+    resumeReconnect: () => Promise<void>;
+  };
+  let routes: WebRoute[];
+  let find: (path: string) => WebRoute;
+  let fakeReq: (method: string, url: string, body?: unknown) => IncomingMessage;
+  let fakeFenceBroken: (method: string, url: string, body?: unknown) => IncomingMessage;
 
   beforeAll(async () => {
     ({ store, cleanup } = tempStore());
@@ -2129,15 +2368,15 @@ describe("路由（makeRoutes / events / health / tool-disable / resume）", () 
       logger: { warn: () => {}, info: () => {}, error: () => {} },
       summary: () => ({ servers: [], counts: {} }),
       uiConfig: () => uiCfg,
-      updateUiConfig: async (raw) => {
-        uiCfg = normalizeUiConfig(raw);
+      updateUiConfig: async (raw: unknown) => {
+        uiCfg = normalizeUiConfig(raw) as unknown as typeof uiCfg;
         return uiCfg;
       },
       refreshFromDisk: async () => {},
-      setSession: async (cwd) => {
+      setSession: async (cwd: string | undefined) => {
         managerState.sessionCwd = cwd;
       },
-      add: async (body, scope) => {
+      add: async (body: Record<string, unknown>, scope?: string) => {
         managerState.lastScope = scope;
         const server = normalizeServer(body);
         if (store.find(server.name) !== undefined) {
@@ -2146,13 +2385,17 @@ describe("路由（makeRoutes / events / health / tool-disable / resume）", () 
         store.upsert(server);
         return server;
       },
-      update: async (nm, patch, scope) => {
+      update: async (nm: string, patch: Record<string, unknown>, scope?: string) => {
         managerState.lastScope = scope;
-        const server = normalizeServer({ ...store.find(nm), ...patch, name: nm });
+        const server = normalizeServer({
+          ...(store.find(nm) as unknown as Record<string, unknown>),
+          ...patch,
+          name: nm,
+        });
         store.upsert(server);
         return server;
       },
-      remove: async (nm, scope) => {
+      remove: async (nm: string, scope?: string) => {
         managerState.lastScope = scope;
         store.remove(nm);
       },
@@ -2164,28 +2407,30 @@ describe("路由（makeRoutes / events / health / tool-disable / resume）", () 
         managerState.resumed += 1;
       },
     };
-    routes = makeRoutes(manager, process.cwd());
-    find = (path) => routes.find((route) => route.path === path);
-    fakeReq = (method, url, body) => ({
-      method,
-      url,
-      socket: { remoteAddress: "127.0.0.1" },
-      headers: {
-        host: "localhost:3080",
-        origin: "http://localhost:3080",
-        "sec-fetch-site": "same-origin",
-      },
-      async *[Symbol.asyncIterator]() {
-        if (body !== undefined) yield Buffer.from(JSON.stringify(body));
-      },
-    });
-    fakeFenceBroken = (method, url) => ({
-      method,
-      url,
-      socket: { remoteAddress: "10.0.0.5" },
-      headers: { host: "localhost:3080" },
-      async *[Symbol.asyncIterator]() {},
-    });
+    routes = makeRoutes(manager as unknown as Parameters<typeof makeRoutes>[0], process.cwd());
+    find = (path: string) => routes.find((route) => route.path === path) as WebRoute;
+    fakeReq = (method: string, url: string, body?: unknown) =>
+      ({
+        method,
+        url,
+        socket: { remoteAddress: "127.0.0.1" },
+        headers: {
+          host: "localhost:3080",
+          origin: "http://localhost:3080",
+          "sec-fetch-site": "same-origin",
+        },
+        async *[Symbol.asyncIterator]() {
+          if (body !== undefined) yield Buffer.from(JSON.stringify(body));
+        },
+      }) as unknown as IncomingMessage;
+    fakeFenceBroken = (method: string, url: string, _body?: unknown) =>
+      ({
+        method,
+        url,
+        socket: { remoteAddress: "10.0.0.5" },
+        headers: { host: "localhost:3080" },
+        async *[Symbol.asyncIterator]() {},
+      }) as unknown as IncomingMessage;
   });
 
   afterAll(async () => {
@@ -2211,7 +2456,7 @@ describe("路由（makeRoutes / events / health / tool-disable / resume）", () 
       res,
     );
     expect(res.state.status).toBe(201);
-    expect(store.find("github").command).toBe("npx");
+    expect(store.find("github")!.command).toBe("npx");
   });
 
   it("POST 重复名称 → 400", async () => {
@@ -2230,7 +2475,7 @@ describe("路由（makeRoutes / events / health / tool-disable / resume）", () 
       res,
     );
     expect(res.state.status).toBe(200);
-    expect(store.find("github").args).toEqual(["-y", "x"]);
+    expect(store.find("github")!.args).toEqual(["-y", "x"]);
   });
 
   it("DELETE → 200 + 移除", async () => {
@@ -2337,7 +2582,9 @@ describe("路由（makeRoutes / events / health / tool-disable / resume）", () 
   });
 
   it("events 非 loopback → 403 / 方法错 → 405（围栏不回归）", async () => {
-    const eventsRoute = makeEventsRoute(manager);
+    const eventsRoute = makeEventsRoute(
+      manager as unknown as Parameters<typeof makeEventsRoute>[0],
+    );
     const res403 = fakeRes();
     await eventsRoute.handler(fakeFenceBroken("GET", ROUTES.events), res403);
     expect(res403.state.status).toBe(403);
@@ -2347,7 +2594,9 @@ describe("路由（makeRoutes / events / health / tool-disable / resume）", () 
   });
 
   it("health 非 loopback → 403 / 方法错 → 405（围栏不回归）", async () => {
-    const healthRoute = makeHealthRoute(manager);
+    const healthRoute = makeHealthRoute(
+      manager as unknown as Parameters<typeof makeHealthRoute>[0],
+    );
     const res403 = fakeRes();
     await healthRoute.handler(fakeFenceBroken("GET", ROUTES.health), res403);
     expect(res403.state.status).toBe(403);
@@ -2367,7 +2616,7 @@ describe("路由（makeRoutes / events / health / tool-disable / resume）", () 
     expect(res.state.status).toBe(200);
     const body = JSON.parse(res.state.body);
     expect(body.imported).toEqual(["alpha"]);
-    expect(store.find("alpha").command).toBe("npx");
+    expect(store.find("alpha")!.command).toBe("npx");
   });
 
   it("import/json 非法 JSON → 400", async () => {
@@ -2438,13 +2687,19 @@ describe("路由（makeRoutes / events / health / tool-disable / resume）", () 
       );
     }
     const eventsWrong = fakeRes();
-    await makeEventsRoute(manager).handler(fakeReq("POST", ROUTES.events), eventsWrong);
+    await makeEventsRoute(manager as unknown as Parameters<typeof makeEventsRoute>[0]).handler(
+      fakeReq("POST", ROUTES.events),
+      eventsWrong,
+    );
     expect(eventsWrong.state.status).toBe(405);
     expect(JSON.parse(eventsWrong.state.body).error, "events 405 文案逐字").toBe(
       "method not allowed: POST",
     );
     const healthWrong = fakeRes();
-    await makeHealthRoute(manager).handler(fakeReq("POST", ROUTES.health), healthWrong);
+    await makeHealthRoute(manager as unknown as Parameters<typeof makeHealthRoute>[0]).handler(
+      fakeReq("POST", ROUTES.health),
+      healthWrong,
+    );
     expect(healthWrong.state.status).toBe(405);
     expect(JSON.parse(healthWrong.state.body).error, "health 405 文案逐字").toBe(
       "method not allowed: POST",
@@ -2483,16 +2738,19 @@ describe("路由（makeRoutes / events / health / tool-disable / resume）", () 
   });
 
   it("tool-disable：合法请求 → 200 且调用 setToolDisabled（scope=global → @global root）", async () => {
-    const calls = [];
+    const calls: { root: string; server: string; tool: string; disabled: boolean }[] = [];
     const tdManager = {
       ...manager,
       projectRoot: "/proj",
-      setToolDisabled: async (root, server, tool, disabled) => {
+      setToolDisabled: async (root: string, server: string, tool: string, disabled: boolean) => {
         calls.push({ root, server, tool, disabled });
       },
     };
-    const tdRoutes = makeRoutes(tdManager, process.cwd());
-    const tdRoute = tdRoutes.find((route) => route.path === ROUTES.toolDisable);
+    const tdRoutes = makeRoutes(
+      tdManager as unknown as Parameters<typeof makeRoutes>[0],
+      process.cwd(),
+    );
+    const tdRoute = tdRoutes.find((route) => route.path === ROUTES.toolDisable)!;
     const res = fakeRes();
     await tdRoute.handler(
       fakeReq("PATCH", ROUTES.toolDisable, {
@@ -2658,13 +2916,17 @@ it("config POST 经 apply 注入 settings：update 保留 this 不再 400（回�
   // 若调用链解构丢 this，this 为 undefined → this.write 抛 TypeError → 路由 400。
   let scopeValue = { ui: { position: "top-right", offset: { x: 8, y: 8, blankY: 40 } } };
   const settingsStub = {
-    register(_ns, _schema, _opts) {
+    register(_ns: string, _schema: unknown, _opts?: unknown) {
       return { get: () => ({ ...scopeValue }), watch: () => {} };
     },
-    async write(ns, patch) {
-      scopeValue = { ...(scopeValue ?? {}), ...(patch ?? {}) };
+    async write(ns: string, patch: unknown) {
+      scopeValue = { ...(scopeValue ?? {}), ...((patch ?? {}) as Record<string, unknown>) };
     },
-    update(ns, patch) {
+    update(
+      this: { write: (ns: string, patch: unknown) => Promise<unknown> },
+      ns: string,
+      patch: unknown,
+    ) {
       if (!this || typeof this.write !== "function") {
         throw new TypeError("settings.update 被以错误 this 调用（this.write undefined）");
       }
@@ -2673,36 +2935,37 @@ it("config POST 经 apply 注入 settings：update 保留 this 不再 400（回�
   };
   const sctx = {
     settings: settingsStub,
-    effect: (fn) => {
+    effect: (fn: () => unknown) => {
       fn();
       return () => {};
     },
   };
   const ctx = fakeCtx({
-    inject: (keys, cb) => {
+    inject: (keys: unknown, cb: (s: typeof sctx) => void) => {
       if (Array.isArray(keys) && keys.includes("settings")) cb(sctx);
       return () => {};
     },
   });
-  const localReq = (method, url, body) => ({
-    method,
-    url,
-    socket: { remoteAddress: "127.0.0.1" },
-    headers: {
-      host: "localhost:3080",
-      origin: "http://localhost:3080",
-      "sec-fetch-site": "same-origin",
-    },
-    async *[Symbol.asyncIterator]() {
-      if (body !== undefined) yield Buffer.from(JSON.stringify(body));
-    },
-  });
+  const localReq = (method: string, url: string, body?: unknown) =>
+    ({
+      method,
+      url,
+      socket: { remoteAddress: "127.0.0.1" },
+      headers: {
+        host: "localhost:3080",
+        origin: "http://localhost:3080",
+        "sec-fetch-site": "same-origin",
+      },
+      async *[Symbol.asyncIterator]() {
+        if (body !== undefined) yield Buffer.from(JSON.stringify(body));
+      },
+    }) as unknown as FakeReq;
   try {
     await apply(ctx, { enabled: true, storePath: join(dir, "dsh-mcp.json") });
     const configRoute = ctx.routes.find((route) => route.path === ROUTES.config);
     expect(configRoute, "config 路由已注册").toBeTruthy();
     const write = fakeRes();
-    await configRoute.handler(
+    await configRoute!.handler(
       localReq("POST", ROUTES.config, {
         position: "bottom-right",
         offsetX: 12,
@@ -2737,7 +3000,11 @@ it("composeCatalogEntries 数据源（配置优先 → 缓存摘要 → 仅名�
     ["srv-c", { server: { description: undefined }, tools: [], toolMeta: new Map() }],
   ]);
   const cache = new Map([["srv-b", { summary: "缓存摘要 B" }]]);
-  const entries = composeCatalogEntries(supervisors, 6, cache);
+  const entries = composeCatalogEntries(
+    supervisors as unknown as Parameters<typeof composeCatalogEntries>[0],
+    6,
+    cache,
+  );
   expect(entries[0].text, "用户配置优先").toBe("自定义描述 A");
   expect(entries[1].text, "缓存摘要 fallback（无需用户配置）").toBe("缓存摘要 B");
   expect(entries[2].name, "无配置无缓存 → 条目按名称保留").toBe("srv-c");
@@ -2766,7 +3033,13 @@ it("composeCatalogEntries 数据源（配置优先 → 缓存摘要 → 仅名�
     ["srv-c", { server: { description: undefined }, tools: [], toolMeta: new Map() }],
   ]);
   expect(
-    digestCatalogEntries(composeCatalogEntries(connected, 6, cache)),
+    digestCatalogEntries(
+      composeCatalogEntries(
+        connected as unknown as Parameters<typeof composeCatalogEntries>[0],
+        6,
+        cache,
+      ),
+    ),
     "连接状态变化 digest 不变（不触发重复注入）",
   ).toBe(digestCatalogEntries(entries));
 });
@@ -2808,7 +3081,7 @@ it("summarizeToolDescriptions 排序稳定与首句聚合", () => {
 it("recordCatalogTools 仅实质变化落盘", async () => {
   const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-catalog-"));
   const store = new McpStore(join(dir, "mcp.json"));
-  const manager = new McpManager({ logger: { warn: () => {}, info: () => {} } }, store);
+  const manager = new McpManager(fakeManagerCtx(), store);
   manager.catalogCachePath = join(dir, "catalog.json");
   await manager.loadCatalogCache();
   expect(manager.catalogCache.size, "空缓存加载").toBe(0);
@@ -2826,7 +3099,7 @@ it("recordCatalogTools 仅实质变化落盘", async () => {
   await manager.recordCatalogTools("srv", new Map([["mcp__s__a", { description: "新描述" }]]));
   expect(manager.catalogCache.get("srv")?.summary).toBe("新描述");
   // 重新加载（模拟重启）
-  const manager2 = new McpManager({ logger: { warn: () => {} } }, store);
+  const manager2 = new McpManager(fakeManagerCtx(), store);
   manager2.catalogCachePath = join(dir, "catalog.json");
   await manager2.loadCatalogCache();
   expect(manager2.catalogCache.get("srv")?.summary, "重启后缓存恢复").toBe("新描述");
@@ -2836,7 +3109,10 @@ it("composeCatalogEntries 条目上限", () => {
   const supervisors = new Map();
   for (let i = 0; i < 10; i += 1)
     supervisors.set(`s${i}`, { server: { description: "d" }, tools: [], toolMeta: new Map() });
-  expect(composeCatalogEntries(supervisors, 3).length).toBe(3);
+  expect(
+    composeCatalogEntries(supervisors as unknown as Parameters<typeof composeCatalogEntries>[0], 3)
+      .length,
+  ).toBe(3);
 });
 it("digestCatalogEntries 只含服务器集合（描述变化不触发注入）", () => {
   const a = [{ name: "x", text: "d1" }];
@@ -2868,32 +3144,32 @@ it("renderMcpCatalogMessage 结构与声明", () => {
   const msg = renderMcpCatalogMessage([{ name: "code-graph", text: "代码图谱", scope: "project" }]);
   expect(msg.role).toBe("user");
   // #723：source 改为宿主词表内的通用形态（自造 kind 会被 dsh v2→v3 迁移的封闭白名单拒绝）
-  expect(msg.source.kind).toBe("plugin");
-  expect(msg.source.plugin).toBe("@wingsky-1/dsh-mcp-manager");
-  expect(msg.source.form).toBe("snapshot");
+  expect(msg.source!.kind).toBe("plugin");
+  expect(msg.source!.plugin).toBe("@wingsky-1/dsh-mcp-manager");
+  expect(msg.source!.form).toBe("snapshot");
   expect(isCatalogSource(msg.source)).toBe(true);
-  expect(msg.content[0].type).toBe("text");
-  expect(msg.content[0].text).toMatch(/available_mcp_servers/);
-  expect(msg.content[0].text).toMatch(/does not reflect active connection status/);
-  expect(msg.content[0].text, "#228 目录文案引导经中间层调用").toMatch(/ws_mcp_search/);
-  expect(msg.content[0].text).toMatch(/`code-graph`: 代码图谱/);
+  expect(msg.content![0]!.type).toBe("text");
+  expect(msg.content![0]!.text).toMatch(/available_mcp_servers/);
+  expect(msg.content![0]!.text).toMatch(/does not reflect active connection status/);
+  expect(msg.content![0]!.text, "#228 目录文案引导经中间层调用").toMatch(/ws_mcp_search/);
+  expect(msg.content![0]!.text).toMatch(/`code-graph`: 代码图谱/);
   expect(typeof msg.id === "string" && msg.id.length > 0).toBeTruthy();
 
   // 纯 global 条目 → 同样引导经中间层（#767 笔 2：`mcp__*` 已不在模型可见面，
   // 原来「全局一律直呼」的那条 mode 分支是笔 1b 之后已假的事实，随 `mode` 删除）。
   const onlyGlobal = renderMcpCatalogMessage([{ name: "ctx", scope: "global" }]);
-  expect(onlyGlobal.content[0].text, "纯 global 引导经中间层检索").toMatch(/ws_mcp_search/);
-  expect(onlyGlobal.content[0].text, "纯 global 用 ws_mcp_call 触达").toMatch(/ws_mcp_call/);
-  expect(onlyGlobal.content[0].text, "不再给出 mcp__ 直呼引导").not.toMatch(/mcp__<id>__<tool>/);
+  expect(onlyGlobal.content![0]!.text, "纯 global 引导经中间层检索").toMatch(/ws_mcp_search/);
+  expect(onlyGlobal.content![0]!.text, "纯 global 用 ws_mcp_call 触达").toMatch(/ws_mcp_call/);
+  expect(onlyGlobal.content![0]!.text, "不再给出 mcp__ 直呼引导").not.toMatch(/mcp__<id>__<tool>/);
 
   // #192 AC-3：双缺省行仅渲染名字（无冒号描述），带描述条目渲染不变
   const mixed = renderMcpCatalogMessage([
     { name: "bare-x" },
     { name: "code-graph", text: "代码图谱" },
   ]);
-  expect(mixed.content[0].text, "双缺省行仅名字").toMatch(/^- `bare-x`$/m);
-  expect(mixed.content[0].text).not.toMatch(/`bare-x`: /);
-  expect(mixed.content[0].text, "带描述行保持").toMatch(/^- `code-graph`: 代码图谱$/m);
+  expect(mixed.content![0]!.text, "双缺省行仅名字").toMatch(/^- `bare-x`$/m);
+  expect(mixed.content![0]!.text).not.toMatch(/`bare-x`: /);
+  expect(mixed.content![0]!.text, "带描述行保持").toMatch(/^- `code-graph`: 代码图谱$/m);
 });
 it("findCatalogMessage 定位既有目录", () => {
   const catalog = renderMcpCatalogMessage([{ name: "a", text: "b" }]);
@@ -2912,13 +3188,13 @@ it("findCatalogMessage 定位既有目录", () => {
 
 // 模拟 agent：session.snapshotEvents() 持久化 + surface 可见性（与真实 agent 同构；
 // 0.1.2-rc.1 起 events getter 移除，fake 暴露方法形态）
-function makeAgent() {
-  const events = [];
+function makeAgent(): NonNullable<Parameters<typeof resolveCatalogInjection>[5]> {
+  const events: { type: string; data: unknown; seq: number }[] = [];
   const session = {
     header: { cwd: "/tmp" },
-    surface: { nodes: new Set() },
+    surface: { nodes: new Set<number>() },
     snapshotEvents: () => events,
-    append(type, data) {
+    append(type: string, data: unknown) {
       const seq = events.length;
       const event = { type, data, seq };
       events.push(event);
@@ -2926,19 +3202,29 @@ function makeAgent() {
       return event;
     },
   };
-  return { session };
+  return { session } as unknown as NonNullable<Parameters<typeof resolveCatalogInjection>[5]>;
 }
 
 // 模拟一轮 pre-step：调用决策并把新增目录消息持久化进 events（agent-loop 行为）
-function runStep(decision, messages, supervisors, cache, agent) {
+function runStep(
+  decision: Parameters<typeof resolveCatalogInjection>[0],
+  messages: Parameters<typeof resolveCatalogInjection>[1],
+  supervisors: Parameters<typeof resolveCatalogInjection>[2],
+  cache: Parameters<typeof resolveCatalogInjection>[4],
+  agent: Parameters<typeof resolveCatalogInjection>[5],
+) {
   const result = resolveCatalogInjection(decision, messages, supervisors, 6, cache, agent);
-  const known = new Set();
-  for (const evt of agent.session.snapshotEvents()) {
-    if (evt.type === "user/message" && isCatalogSource(evt.data?.source)) known.add(evt.data.id);
+  const known = new Set<unknown>();
+  for (const evt of agent!.session!.snapshotEvents!()) {
+    if (evt.type === "user/message" && isCatalogSource(evt.data?.source))
+      known.add((evt.data as unknown as { id: unknown }).id);
   }
   for (const msg of result.messages) {
     if (isCatalogSource(msg.source) && !known.has(msg.id))
-      agent.session.append("user/message", msg);
+      (agent!.session as unknown as { append: (type: string, data: unknown) => unknown }).append(
+        "user/message",
+        msg,
+      );
   }
   return result;
 }
@@ -2946,7 +3232,7 @@ function runStep(decision, messages, supervisors, cache, agent) {
 it("resolveCatalogInjection：history-based 去重（核心：多轮不重复注入）", () => {
   const supervisors = new Map([
     ["code-graph", { server: { description: "代码图谱" }, tools: [], toolMeta: new Map() }],
-  ]);
+  ]) as unknown as Parameters<typeof resolveCatalogInjection>[2];
   const agent = makeAgent();
 
   // 真实语义：decision.messages 只含本轮新消息（历史在 session.snapshotEvents()）
@@ -2957,9 +3243,9 @@ it("resolveCatalogInjection：history-based 去重（核心：多轮不重复注
       messages: [{ id: `user-${round}`, role: "user", content: [] }],
     };
     const result = runStep(decision, decision.messages, supervisors, undefined, agent);
-    historyCount = agent.session
-      .snapshotEvents()
-      .filter((e) => e.type === "user/message" && isCatalogSource(e.data?.source)).length;
+    historyCount = agent.session!.snapshotEvents!().filter(
+      (e) => e.type === "user/message" && isCatalogSource(e.data?.source),
+    ).length;
     const inMessages = result.messages.filter((m) => isCatalogSource(m.source)).length;
     if (round === 1) {
       expect(historyCount, "首轮注入 1 条").toBe(1);
@@ -2975,9 +3261,11 @@ it("resolveCatalogInjection：history-based 去重（核心：多轮不重复注
 it("resolveCatalogInjection：描述/缓存变化不注入、集合变化注入更新消息", () => {
   const base = new Map([
     ["code-graph", { server: { description: "代码图谱" }, tools: [], toolMeta: new Map() }],
-  ]);
+  ]) as unknown as Parameters<typeof resolveCatalogInjection>[2];
   const agent = makeAgent();
-  let messages = [{ id: "m1", role: "user", content: [] }];
+  let messages: Parameters<typeof resolveCatalogInjection>[1] = [
+    { id: "m1", role: "user", content: [] },
+  ];
 
   // 首次注入
   let result = runStep(
@@ -2988,14 +3276,16 @@ it("resolveCatalogInjection：描述/缓存变化不注入、集合变化注入�
     agent,
   );
   messages = result.messages;
-  const firstId = agent.session.snapshotEvents().find((e) => isCatalogSource(e.data?.source))
-    .data.id;
+  const firstId = (
+    agent.session!.snapshotEvents!().find((e) => isCatalogSource(e.data?.source))!
+      .data as unknown as { id: unknown }
+  ).id;
   expect(firstId, "首次注入").toBeTruthy();
 
   // 描述变化（集合不变）→ 不注入
   const descChanged = new Map([
     ["code-graph", { server: { description: "新描述" }, tools: [], toolMeta: new Map() }],
-  ]);
+  ]) as unknown as Parameters<typeof resolveCatalogInjection>[2];
   result = runStep(
     { kind: "enter", messages: [...messages, { id: "u2", role: "user", content: [] }] },
     messages,
@@ -3004,7 +3294,7 @@ it("resolveCatalogInjection：描述/缓存变化不注入、集合变化注入�
     agent,
   );
   expect(
-    agent.session.snapshotEvents().filter((e) => isCatalogSource(e.data?.source)).length,
+    agent.session!.snapshotEvents!().filter((e) => isCatalogSource(e.data?.source)).length,
     "描述变化不注入",
   ).toBe(1);
 
@@ -3012,7 +3302,7 @@ it("resolveCatalogInjection：描述/缓存变化不注入、集合变化注入�
   const added = new Map([
     ["code-graph", { server: { description: "代码图谱" }, tools: [], toolMeta: new Map() }],
     ["playwright", { server: { description: "浏览器自动化" }, tools: [], toolMeta: new Map() }],
-  ]);
+  ]) as unknown as Parameters<typeof resolveCatalogInjection>[2];
   result = runStep(
     { kind: "enter", messages: [...messages, { id: "u3", role: "user", content: [] }] },
     messages,
@@ -3020,10 +3310,11 @@ it("resolveCatalogInjection：描述/缓存变化不注入、集合变化注入�
     undefined,
     agent,
   );
-  const afterAdd = agent.session.snapshotEvents().filter((e) => isCatalogSource(e.data?.source));
+  const afterAdd = agent.session!.snapshotEvents!().filter((e) => isCatalogSource(e.data?.source));
   expect(afterAdd.length, "集合变化注入更新消息（历史目录无法删除，新消息声明作废）").toBe(2);
-  expect(afterAdd[1].data.content[0].text).toMatch(/replaces all previous available_mcp_servers/);
-  expect(afterAdd[1].data.content[0].text).toMatch(/playwright/);
+  const afterAddContent = (afterAdd[1]!.data as unknown as { content: { text: string }[] }).content;
+  expect(afterAddContent[0]!.text).toMatch(/replaces all previous available_mcp_servers/);
+  expect(afterAddContent[0]!.text).toMatch(/playwright/);
 
   // 更新后同集合不再注入
   result = runStep(
@@ -3034,7 +3325,7 @@ it("resolveCatalogInjection：描述/缓存变化不注入、集合变化注入�
     agent,
   );
   expect(
-    agent.session.snapshotEvents().filter((e) => isCatalogSource(e.data?.source)).length,
+    agent.session!.snapshotEvents!().filter((e) => isCatalogSource(e.data?.source)).length,
     "更新后不再注入",
   ).toBe(2);
 });
@@ -3042,9 +3333,11 @@ it("resolveCatalogInjection：描述/缓存变化不注入、集合变化注入�
 it("resolveCatalogInjection：compaction 后重建 + 门控 + reject", () => {
   const supervisors = new Map([
     ["code-graph", { server: { description: "代码图谱" }, tools: [], toolMeta: new Map() }],
-  ]);
+  ]) as unknown as Parameters<typeof resolveCatalogInjection>[2];
   const agent = makeAgent();
-  let messages = [{ id: "m1", role: "user", content: [] }];
+  let messages: Parameters<typeof resolveCatalogInjection>[1] = [
+    { id: "m1", role: "user", content: [] },
+  ];
   let result = runStep(
     { kind: "enter", messages: [...messages] },
     messages,
@@ -3054,12 +3347,12 @@ it("resolveCatalogInjection：compaction 后重建 + 门控 + reject", () => {
   );
   messages = result.messages;
   expect(
-    agent.session.snapshotEvents().filter((e) => isCatalogSource(e.data?.source)).length,
+    agent.session!.snapshotEvents!().filter((e) => isCatalogSource(e.data?.source)).length,
     "首次注入",
   ).toBe(1);
 
   // compaction 模拟：surface 清空（旧目录不可见）→ 重新注入
-  agent.session.surface.nodes.clear();
+  (agent.session as unknown as { surface: { nodes: Set<number> } }).surface.nodes.clear();
   result = runStep(
     { kind: "enter", messages: [{ id: "m1", role: "user", content: [] }] },
     messages,
@@ -3067,9 +3360,9 @@ it("resolveCatalogInjection：compaction 后重建 + 门控 + reject", () => {
     undefined,
     agent,
   );
-  const afterCompact = agent.session
-    .snapshotEvents()
-    .filter((e) => isCatalogSource(e.data?.source));
+  const afterCompact = agent.session!.snapshotEvents!().filter((e) =>
+    isCatalogSource(e.data?.source),
+  );
   expect(afterCompact.length >= 1, "compaction 后按可见性重建").toBeTruthy();
   expect(result.messages.filter((m) => isCatalogSource(m.source)).length).toBe(1);
 
@@ -3087,7 +3380,7 @@ it("resolveCatalogInjection：compaction 后重建 + 门控 + reject", () => {
 
   // reject 不处理
   const rejected = resolveCatalogInjection(
-    { kind: "reject" },
+    { kind: "reject", messages: [] } as unknown as Parameters<typeof resolveCatalogInjection>[0],
     [],
     supervisors,
     6,
@@ -3105,7 +3398,11 @@ it("composeCatalogEntries 双缺省条目干净可序列化（#192 AC-1/AC-2）"
     ["bare-b", { server: {}, tools: [], toolMeta: new Map() }],
     ["with-desc", { server: { description: "有描述" }, tools: [], toolMeta: new Map() }],
   ]);
-  const entries = composeCatalogEntries(supervisors, 6, undefined);
+  const entries = composeCatalogEntries(
+    supervisors as unknown as Parameters<typeof composeCatalogEntries>[0],
+    6,
+    undefined,
+  );
   expect(entries.length, "双缺省服务器按名称保留不丢弃").toBe(3);
   expect(entries.map((e) => e.name)).toEqual(["bare-a", "bare-b", "with-desc"]);
   for (const bare of [entries[0], entries[1]]) {
@@ -3119,7 +3416,7 @@ it("composeCatalogEntries 双缺省条目干净可序列化（#192 AC-1/AC-2）"
     expect(JSON.parse(JSON.stringify(rendered)), "完整消息 JSON 往返深度相等").toEqual(rendered);
     // #723：source 改为宿主通用形态（plugin + snapshot sections），条目正文全在段文本里，
     // 故「双缺省条目不产出 text: undefined」的约束落在正文渲染上。
-    const sections = rendered.source.sections;
+    const sections = (rendered.source as unknown as { sections: { text: string }[] }).sections;
     expect(Array.isArray(sections) && sections.length, "snapshot 只有一个目录段").toBe(1);
     for (const name of ["bare-a", "bare-b", "with-desc"]) {
       expect(sections[0].text.includes(`- \`${name}\``), `正文含条目 ${name}`).toBeTruthy();
@@ -3134,9 +3431,11 @@ it("composeCatalogEntries 双缺省条目干净可序列化（#192 AC-1/AC-2）"
 it("双缺省服务器目录消息可 append 为 user/message 且去重（#192 AC-4）", () => {
   const supervisors = new Map([
     ["bare-only", { server: { description: "" }, tools: [], toolMeta: new Map() }],
-  ]);
+  ]) as unknown as Parameters<typeof resolveCatalogInjection>[2];
   const agent = makeAgent();
-  let messages = [{ id: "m1", role: "user", content: [] }];
+  let messages: Parameters<typeof resolveCatalogInjection>[1] = [
+    { id: "m1", role: "user", content: [] },
+  ];
   let result = runStep(
     { kind: "enter", messages: [...messages] },
     messages,
@@ -3145,11 +3444,13 @@ it("双缺省服务器目录消息可 append 为 user/message 且去重（#192 A
     agent,
   );
   messages = result.messages;
-  const catalogEvents = agent.session
-    .snapshotEvents()
-    .filter((e) => e.type === "user/message" && isCatalogSource(e.data?.source));
+  const catalogEvents = agent.session!.snapshotEvents!().filter(
+    (e) => e.type === "user/message" && isCatalogSource(e.data?.source),
+  );
   expect(catalogEvents.length, "首轮注入成功（append 为 user/message 未被拒绝）").toBe(1);
-  const appended = catalogEvents[0].data;
+  const appended = catalogEvents[0]!.data as unknown as {
+    source: { kind: unknown; form: unknown; sections: { text: string }[] };
+  };
   // #723：新形态 source 只含 plugin/snapshot sections，条目正文全在段文本里
   expect(appended.source.kind).toBe("plugin");
   expect(appended.source.form).toBe("snapshot");
@@ -3172,9 +3473,9 @@ it("双缺省服务器目录消息可 append 为 user/message 且去重（#192 A
     agent,
   );
   expect(
-    agent.session
-      .snapshotEvents()
-      .filter((e) => e.type === "user/message" && isCatalogSource(e.data?.source)).length,
+    agent.session!.snapshotEvents!().filter(
+      (e) => e.type === "user/message" && isCatalogSource(e.data?.source),
+    ).length,
     "次轮不重复注入（digest 去重不变）",
   ).toBe(1);
 });
@@ -3183,14 +3484,21 @@ it("双缺省服务器目录消息可 append 为 user/message 且去重（#192 A
 // 用 enabled:false 的服务器（不连接、不 spawn 子进程，避免重连悬挂）验证登记语义。
 
 describe("核心化 service（#329 阶段1）：runtimeRegistry / registerServer / unregisterServer", () => {
-  let dir, store, manager;
-  const quiet = () => ({ transport: "stdio", command: "echo", args: ["ok"], enabled: false });
+  let dir: string;
+  let store: McpStore;
+  let manager: McpManager;
+  const quiet = () => ({
+    transport: "stdio" as const,
+    command: "echo",
+    args: ["ok"],
+    enabled: false,
+  });
 
   beforeAll(async () => {
     dir = mkdtempSync(join(tmpdir(), "dsh-mcp-manager-service-"));
     store = new McpStore(join(dir, "mcp.json"));
     store.data = { version: 1, servers: [] };
-    manager = new McpManager({ logger: { warn: () => {}, info: () => {} } }, store);
+    manager = new McpManager(fakeManagerCtx(), store);
   });
 
   afterAll(async () => {
@@ -3252,11 +3560,13 @@ describe("核心化 service（#329 阶段1）：runtimeRegistry / registerServer
 
   it("summary 并入 runtime 条目（查询面可见 / disabled 工具列表为空）", async () => {
     await manager.registerServer({ name: "svc-q", ...quiet() });
-    const sum = manager.summary();
-    const qEntry = (sum.servers ?? []).find((s) => s.name === "svc-q");
+    const sum = manager.summary() as unknown as {
+      servers: { name: string; scope: string; status: string; tools: unknown[] }[];
+    };
+    const qEntry = sum.servers.find((s: { name: string }) => s.name === "svc-q");
     expect(qEntry !== undefined, "summary 含 runtime 条目（查询面可见）").toBeTruthy();
-    expect(qEntry.scope, "runtime 条目 scope 为 global").toBe("global");
-    expect(qEntry.status, "enabled:false → disabled 状态").toBe("disabled");
-    expect(qEntry.tools, "disabled 服务器工具列表为空").toEqual([]);
+    expect(qEntry!.scope, "runtime 条目 scope 为 global").toBe("global");
+    expect(qEntry!.status, "enabled:false → disabled 状态").toBe("disabled");
+    expect(qEntry!.tools, "disabled 服务器工具列表为空").toEqual([]);
   });
 });
