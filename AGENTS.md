@@ -62,14 +62,14 @@ worktree 内。在仓库根直接跑出的读数是「某个落后提交」的�
 浏览器实测优先 `@wingsky-1/dsh-verify-isolated`（临时 `DSH_HOME` + 独立 profile + 独立
 端口）：先 `dsh plugin --profile web list | grep dsh-verify-isolated` 自检；未装则报缺，
 或按 DEVELOPMENT §5 手工临时 `DSH_HOME` 验证，也可请用户安装——**不得改用户 profile 代装**。
-`.dsh/mcp.json` 的浏览器 MCP 同理：需 `dsh-mcp-manager` 已装才生效。
+[`.dsh/mcp.json`](.dsh/mcp.json) 的浏览器 MCP 同理：需 `dsh-mcp-manager` 已装才生效。
 
 ## 任务与流程
 
 - **任务来自 issue**：无人值守 / 自治循环场景，改动前先在 issue 内认领或创建 issue 并让
   PR 关联（流程见 [CONTRIBUTING.md](CONTRIBUTING.md)、[ISSUE-WORKFLOW.md](docs/ISSUE-WORKFLOW.md)）。
   用户直接指派的任务直接做，按上「硬约束」约束，不强制补建 issue。
-- **红线须先评审**：公共 API 行为变更、新增第三方依赖、`.github/` 下 workflow 与分支保护、
+- **红线须先评审**：公共 API 行为变更、新增第三方依赖、[`.github/`](.github/) 下 workflow 与分支保护、
   发版——先在**原 issue 内**起草方案评论、打 `needs-proposal-review`，获维护者 `approved`
   后再动手（不单开决策 issue）。
 - **分支 + PR + squash merge**，CI 全绿后合并；提交信息用 Conventional Commits
@@ -87,7 +87,7 @@ worktree 内。在仓库根直接跑出的读数是「某个落后提交」的�
 | 快线     | `pnpm gate:changed`                       | 迭代反复跑：diff 命中包切片 |
 | 最小集   | `pnpm gate:pr`                            | 开 PR 前本地最后一遍       |
 | 收尾     | `pnpm gate:full`                          | 动构建链/包结构/发版前     |
-| 全量     | CI 夜间班次（`observe.yml`）              | 本地不跑；需覆盖率加 `--with-coverage` |
+| 全量     | CI 夜间班次（[`observe.yml`](.github/workflows/observe.yml)）              | 本地不跑；需覆盖率加 `--with-coverage` |
 | 提交钩子 | `lefthook`（`pre-commit` / `commit-msg`） | 只拦 staged lint 与提交信息 |
 
 改动类型 → 归属层矩阵、闸名单、数量与阈值见 [docs/GATE.md](docs/GATE.md) §2（唯一语义出处，本地不重述）。
@@ -98,21 +98,21 @@ worktree 内。在仓库根直接跑出的读数是「某个落后提交」的�
 - **退出码三态**：`0` = 通过；`1` = 判红可信；`2` = **门禁故障，不可信 ⇒ 禁止合并**，
   原 issue 开 P0 跟踪，**不允许以「环境抖动」结案**；同一判词 30 天内第二次即熔断（`blocked-human`）。
 - 新增 `homedir()` / `process.env.HOME` / `untildify()` 调用**没有豁免通道**：
-  一律改走 `shared/dsh-home.js` 的 `dshHome()` 接缝。
+  一律改走 [`shared/dsh-home.js`](shared/dsh-home.js) 的 `dshHome()` 接缝。
 
 ## 测试纪律
 
 - **离线 + 断言全覆盖**：smoke 全部无网络、无真实凭据，本地可离线跑；新功能 / 修复必须
   带 smoke 断言（含路由 403/405 围栏用例与 client 契约断言）。
 - **产物零污染**：测试落盘必须进 `mkdtempSync` 生成的隔离目录，严禁在仓库内留下
-  运行时产物（`.gitignore` 已兜底，但仍属红线）。
+  运行时产物（[`.gitignore`](.gitignore) 已兜底，但仍属红线）。
 - 改完自查：`git status --porcelain` 只允许出现**预期的产物路径**——你本次要提交的文件；
-  **其余任何未跟踪文件一律视为违规**。`.gitignore` 兜底 ≠ 许可。
+  **其余任何未跟踪文件一律视为违规**。[`.gitignore`](.gitignore) 兜底 ≠ 许可。
 
 ## 仓库约定（无副本，勿外移）
 
 - **版本适配只锚 rc**：只适配 dsh rc、不承诺 alpha。适配基线唯一事实源是
-  `pnpm-workspace.yaml` 的 catalog（peer 与其锁步）；本机 `dsh` 版本可能更高，**不得**据此
+  [`pnpm-workspace.yaml`](pnpm-workspace.yaml) 的 catalog（peer 与其锁步）；本机 `dsh` 版本可能更高，**不得**据此
   自行升级基线。面向用户的声明见根 README「版本适配（只适配 rc）」。
 - **发布物自包含**：第三方依赖一律构建期由 esbuild 内联，不以运行时 npm 依赖分发；内联
   = 分发副本，故 license 由构建链归集到 `lib/THIRD-PARTY-LICENSES`，`pack:check` 断言覆盖。
@@ -122,12 +122,12 @@ worktree 内。在仓库根直接跑出的读数是「某个落后提交」的�
 - **命名**：新包一律 `dsh-` 前缀，npm 包名 `@wingsky-1/dsh-*`，聚合包 `dsh-plugins-all`。
 - **安全语义**：涉及密钥 / 凭据 / 远程执行 / 令牌的改动，同步更新包 README 的
   `## 安全模型` 与测试。
-- **布局**：`packages/dsh-<name>/` 功能包、`packages/dsh-plugins-all/` 聚合包（patch 由
-  `scripts/gate/aggregate.ts` 生成）、`shared/` 宿主与客户端共享模块（清单见
-  [shared/README.md](shared/README.md)）、`scripts/`（build / gate / lib / release / test /
-  data）、`agents/` 自治循环角色规程、`.dsh/skills/` 项目级 skill、`.dsh/mcp.json` 浏览器 MCP。
+- **布局**：`packages/dsh-<name>/` 功能包、[`packages/dsh-plugins-all/`](packages/dsh-plugins-all/) 聚合包（patch 由
+  [`scripts/gate/aggregate.ts`](scripts/gate/aggregate.ts) 生成）、[`shared/`](shared/) 宿主与客户端共享模块（清单见
+  [shared/README.md](shared/README.md)）、[`scripts/`](scripts/)（build / gate / lib / release / test /
+  data）、[`agents/`](agents/) 自治循环角色规程、[`.dsh/skills/`](.dsh/skills/) 项目级 skill、[`.dsh/mcp.json`](.dsh/mcp.json) 浏览器 MCP。
 - **non-goals**：不做与插件集无关的通用工具库；不发运行时依赖；内部 / 私有治理文档不入库；
-  临时脚本与草稿不入库（用 `.maintenance-drafts/`，已在 .gitignore）。
+  临时脚本与草稿不入库（用 `.maintenance-drafts/`，已在 [`.gitignore`](.gitignore)）。
 
 ## 按需加载（细则不在本文件，动手前读）
 
