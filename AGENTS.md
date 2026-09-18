@@ -80,7 +80,7 @@ worktree 内。在仓库根直接跑出的读数是「某个落后提交」的�
 
 ## 门禁（分层：快线 / 最小集 / 收尾全量）
 
-首次贡献先读 CONTRIBUTING 开发流程 + DEVELOPMENT §0，需要才看下表归属层中属于你的那一行。
+首次贡献先读 CONTRIBUTING 开发流程 + DEVELOPMENT §0，需要才看 [docs/GATE.md](docs/GATE.md) §2 归属矩阵中属于你的那一行。
 
 | 层       | 命令                                      | 何时用                   |
 | -------- | ----------------------------------------- | ------------------------ |
@@ -90,45 +90,15 @@ worktree 内。在仓库根直接跑出的读数是「某个落后提交」的�
 | 全量     | CI 夜间班次（`observe.yml`）              | 本地不跑；需覆盖率加 `--with-coverage` |
 | 提交钩子 | `lefthook`（`pre-commit` / `commit-msg`） | 只拦 staged lint 与提交信息 |
 
-包面归属取自 `ci.yml` 的 paths-filter（唯一事实源，本地不重述路径规则）；
-命中全局面自动升级为 `gate:pr`，解析失败回退全量（fail-closed）。
-快线只跑命中包 build+test+typecheck；最小集与收尾是全仓口径（含全仓产物闸），
-收尾另加豁免到期台账，`--with-coverage` 再补 cov/crap；收尾 ≠ 夜间口径
-（夜间另含覆盖率与全量变异基线入档，且不跑全仓 test/typecheck）。
-
-| 改动类型                                                                     | 归属层                                                                                         |
-| ---------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| 新增 / 退役包、改 `cordis.patch.yml`                                         | `gate:full`（含全仓 `aggregate:check` + `verify:npmlayout`）                                   |
-| 新增 `*.src.test.ts`                                                         | `gate:pr` 起（含 `test:src-tests`）                                                            |
-| 改 `src/` 里 HOME 来源 API                                                   | `gate:pr` 起（含 `gate:homedir`）                                                              |
-| 改 `scripts/` / workflow                                                     | `gate:pr` 起（含 `test:scripts`）；改 `.github/` 属红线，先评审                                |
-| 改 README、新增文档链接                                                      | `gate:pr` 起（含 `docs:check`）                                                                |
-| 改任意手写源码（`packages/*/src`、`packages/*/test`、`shared/`、`scripts/`） | `gate:pr` 起（含 `lint`：ESLint 复杂度门禁，阈值见门禁事实源） |
-| 提交前最终一遍                                                               | `pnpm gate:pr`；单包迭代用 `pnpm gate:changed`                                                 |
+改动类型 → 归属层矩阵、闸名单、数量与阈值见 [docs/GATE.md](docs/GATE.md) §2（唯一语义出处，本地不重述）。
 
 - 分层**不减少检查，只改变时机**；高风险改动打 `gate:full` 标签在 PR 上补跑。
-- **变异不在本地任何档，但 PR 上强制跑**：命中切片的 PR 实例化变异矩阵并聚合判分
-  （`mutation-gate` / `mutation-verdict`，打不打 `gate:full` 标签都跑），
-  改命中包 `test/**` 该包基线主动失效退化为全量。因此**本地 `gate:*` 全绿不等于 CI 绿**；
-  `gate:full` 标签在 PR 上追加的是覆盖率与全仓产物闸。
+- **本地 `gate:*` 全绿不等于 CI 绿**——变异只在 PR/CI 上判分。
 - 结论里**逐条粘贴实际 exit code**；任一非 0 不得声称完成。
-- **退出码三态是契约**：`0` = 通过；`1` = 判红可信；`2` = **门禁故障，不可信**，
-  既不读通过也不读不达标。exit 2 经 `scripts/lib/gate-exit.mjs` 的 `failClosed()` 出口
-  （裸写法由 `scripts/gate/forbid-raw-exit2.mjs` 拦），上游 `failure` 靠状态文件 +
-  `GATE_FAILURE_CLASS` 区分（缺省 `crashed`，fail-closed）。
-  exit 2 一律按「门禁不可信 ⇒ **禁止合并**」处理，并在原 issue 开一条 P0 跟踪项，
-  **不允许以「环境抖动」结案**；同一判词 30 天内第二次出现即升级为熔断（`blocked-human`）。
-  本契约按门禁逐个收口；未收口门禁的 exit 2 同按不可信处理，不得读成全仓已收口。
-  各脚本头部「退出码：」只讲它自己的归类（用法面），语义分歧以本节为准。
+- **退出码三态**：`0` = 通过；`1` = 判红可信；`2` = **门禁故障，不可信 ⇒ 禁止合并**，
+  原 issue 开 P0 跟踪，**不允许以「环境抖动」结案**；同一判词 30 天内第二次即熔断（`blocked-human`）。
 - 新增 `homedir()` / `process.env.HOME` / `untildify()` 调用**没有豁免通道**：
-  一律改走 `shared/dsh-home.js` 的 `dshHome()` 接缝（见 `scripts/gate/forbid-homedir-src.mjs`），
-  写在插件 src 里即判红。确有「DSH_HOME 域之外」合法场景先在 #765 讨论，
-  不得在闸内复活豁免常量或注释词法。
-- 质量指标 `pnpm cov` / `pnpm crap`：覆盖率事实源 `scripts/data/coverage.config.json`
- （降线由 `scripts/gate/threshold-monotonic.mjs` 对比 `origin/main` 拦截，
-  面完整性由 `verify:coverage-scope` 守），变异与 CRAP 事实源 `scripts/data/gauntlet.config.json`。
-  观察期开关不得自行改，开启时机另行裁决；数据源缺失或解析失败 fail-closed `exit 2`
-  （见 `scripts/gate/crap-check.mjs`）。
+  一律改走 `shared/dsh-home.js` 的 `dshHome()` 接缝。
 
 ## 测试纪律
 
@@ -166,6 +136,7 @@ worktree 内。在仓库根直接跑出的读数是「某个落后提交」的�
 | 发版、推 tag 时 | `.dsh/skills/dsh-plugin-release/SKILL.md` |
 | 改宿主/客户端实现时 | [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) |
 | 证明重构没改行为时 | [DEVELOPMENT.md §4.1 验证三件套](docs/DEVELOPMENT.md#user-content-equivalence-refactor) |
+| 查门禁口径细节时 | [docs/GATE.md](docs/GATE.md) |
 | 新建插件施工时 | `.dsh/skills/dsh-plugin-hub-dev/SKILL.md` |
 | 评审 PR 时 | `.dsh/skills/dsh-plugin-hub-pr-review/SKILL.md` + `.dsh/skills/dsh-plugin-hub-pr-review/references/pr-images.md` |
 | 处理 issue 全周期时 | [docs/ISSUE-WORKFLOW.md](docs/ISSUE-WORKFLOW.md) |
