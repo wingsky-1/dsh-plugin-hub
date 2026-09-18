@@ -10,7 +10,9 @@
  * schema − DEFAULTS 的差集必须恰为 UI 豁免表（两条都由 config-matrix 门禁强制）。
  * 注意它不等于宿主 DEFAULT_OPTIONS：后者只覆盖 host / port / httpsPort / targetHost。
  */
-export const DEFAULTS: Record<string, any> = {
+import type { LanProxySettingsView } from "./view.ts";
+
+export const DEFAULTS: LanProxySettingsView = {
   enabled: true,
   port: 3081,
   httpsEnabled: true,

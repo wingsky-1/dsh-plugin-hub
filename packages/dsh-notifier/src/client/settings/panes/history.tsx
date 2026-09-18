@@ -11,13 +11,14 @@ import type { NotifySeverity } from "../../../shared/interface.ts";
 import { KIND_KEYS } from "../../locales.ts";
 import type { Translate } from "../../locale.ts";
 import { deliveryLines } from "../parts/rows.tsx";
+import type { HistoryRecordView } from "../types.ts";
 
 /**
  * 历史列表片：清理/测试/刷新工具行 + 最近记录列表。
  * deliveryLines 的调用点在本模块内（reason-text 契约断言按此读文件）。
  */
 export function historyPane(
-  history: any[] | null,
+  history: HistoryRecordView[] | null,
   clearArmed: boolean,
   confirmClear: () => void,
   sendTest: (id?: string) => void,
@@ -59,7 +60,7 @@ export function historyPane(
         <div className="dn-set-note">{t("historyEmpty")}</div>
       ) : (
         <ul className="dn-set-history">
-          {history.map(function (r: any, i: number) {
+          {history.map(function (r, i: number) {
             const d = new Date(r.ts);
             const pad = function (n: number) {
               return n < 10 ? "0" + n : String(n);

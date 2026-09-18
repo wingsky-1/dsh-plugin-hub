@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck
 import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";

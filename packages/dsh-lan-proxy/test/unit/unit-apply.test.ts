@@ -2106,3 +2106,121 @@ describe("Config schema 直测：schemastery 默认值与上界（#147 变异加
     expect(() => Config({ httpCompressLevel: 4 })).toThrow();
   });
 });
+// ===== apply 内 readUser 真实闭包（CRAP 56/7 未覆盖 → 覆盖后 7） =====
+// 命中 apply.ts:409 的 readUser 箭头函数：经真实 apply 装配 + config 路由 GET 驱动，
+// 不 mock readUser 本身。隔离：mkdtemp DSH_HOME + 端口 0 + disposers 回收，产物零污染。
+describe("apply 内 readUser 真实闭包（CRAP 覆盖）", () => {
+  let snapUser;
+  let snapRevision;
+  let snapWritable;
+
+  beforeAll(async () => {
+    const home = mkdtempSync(join(tmpdir(), "dsh-lan-proxy-readuser-"));
+    const prevHome = process.env.DSH_HOME;
+    process.env.DSH_HOME = home;
+    const routes = [];
+    const disposers = [];
+    const scope = {
+      _val: {
+        port: 0,
+        httpsPort: 0,
+        httpsEnabled: false,
+        wsCompressEnabled: false,
+        httpCompressEnabled: false,
+      },
+      get() {
+        return this._val;
+      },
+      async update(patch) {
+        Object.assign(this._val, patch);
+      },
+      async replace(section) {
+        this._val = { ...section };
+      },
+      watch(cb) {
+        cb();
+        return () => {};
+      },
+    };
+    const settingsService = {
+      register() {
+        return scope;
+      },
+      describe() {
+        return [{ ns: SETTINGS_NS, user: { port: 4100 }, revision: 42 }];
+      },
+    };
+    const ws = makeFakeWebServer({ register: (route) => routes.push(route) });
+    const ctx = {
+      logger: { info: () => {}, warn: () => {}, error: () => {} },
+      webServer: ws,
+      inject(services, fn) {
+        if (services.includes("settings")) {
+          const sctx = {
+            settings: settingsService,
+            effect(fn2) {
+              const d = fn2();
+              disposers.push(d);
+              return d;
+            },
+          };
+          fn(sctx);
+        }
+      },
+      effect(fn) {
+        const d = fn();
+        if (typeof d === "function") disposers.push(d);
+        return d;
+      },
+    };
+    apply(ctx, {
+      host: "127.0.0.1",
+      port: 0,
+      httpsPort: 0,
+      httpsEnabled: false,
+      printBanner: false,
+      wsCompressEnabled: false,
+      httpCompressEnabled: false,
+    });
+    await sleep(50);
+    const configRoute = routes.find((r) => r.path === ROUTES.config);
+    let body = "";
+    configRoute.handler(
+      {
+        method: "GET",
+        socket: { remoteAddress: "127.0.0.1" },
+        headers: { host: "127.0.0.1:3080" },
+        url: ROUTES.config,
+      },
+      {
+        writeHead: () => {},
+        end: (c) => {
+          body = String(c);
+        },
+      },
+    );
+    const snap = JSON.parse(body);
+    snapUser = snap.user;
+    snapRevision = snap.revision;
+    snapWritable = snap.writable;
+    for (const d of [...disposers].reverse()) {
+      try {
+        d();
+      } catch {}
+    }
+    process.env.DSH_HOME = prevHome;
+    rmSync(home, { recursive: true, force: true });
+  }, 30000);
+
+  it("readUser 透出 descriptor.user", () => {
+    expect(snapUser).toEqual({ port: 4100 });
+  });
+
+  it("readUser 透出 revision", () => {
+    expect(snapRevision).toBe(42);
+  });
+
+  it("writable 为 true（attach 成功）", () => {
+    expect(snapWritable).toBe(true);
+  });
+});

@@ -293,3 +293,16 @@ describe("SettingsCard 保存基线", () => {
     await act(async () => {});
   });
 });
+
+describe("SettingsCard 加载失败（CRAP 20/4 未覆盖 → 覆盖后 4）", () => {
+  it("GET 失败走 catch 且保持加载态（loadFail 分支覆盖）", async () => {
+    const servingFetch = globalThis.fetch;
+    globalThis.fetch = async (input, init) => {
+      if (!init?.method && String(input).endsWith("/config")) throw new Error("boom-load");
+      return servingFetch(input, init);
+    };
+    const view = render(card());
+    await act(async () => {});
+    expect(view.getByText("settingsLoading")).toBeTruthy();
+  });
+});

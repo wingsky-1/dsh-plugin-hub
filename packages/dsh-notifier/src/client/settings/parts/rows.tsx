@@ -9,7 +9,7 @@ import { deliveryViewOf, type DeliveryView } from "../../reason-text.ts";
 import type { Translate } from "../../locale.ts";
 
 /** 频道卡体行（cap + 控件 + 可选 hint；CSS dn-ch-row/dn-ch-cap/dn-ch-ctl）。 */
-export function chRow(cap: string, control: any, hint?: string) {
+export function chRow(cap: string, control: React.ReactNode, hint?: string) {
   return (
     <div className="dn-ch-row">
       <span className="dn-ch-cap">{cap}</span>
@@ -20,7 +20,7 @@ export function chRow(cap: string, control: any, hint?: string) {
 }
 
 /** 折叠区行（cap + 控件；CSS dn-adv-row）。 */
-export function advRow(cap: string, control: any) {
+export function advRow(cap: string, control: React.ReactNode) {
   return (
     <div className="dn-adv-row">
       <span className="dn-adv-cap">{cap}</span>

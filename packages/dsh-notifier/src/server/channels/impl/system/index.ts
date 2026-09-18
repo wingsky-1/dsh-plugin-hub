@@ -358,6 +358,78 @@ function prepareSound(probe: PlatformProbe, tone: string): SoundPrep {
 }
 
 /**
+ * 只响不弹分支（原 sendSystem 的 !popup 段）：声音是唯一动作。
+ * 临时文件写不进去 = 一条命令都构造不出来——终态 skipped；放不出声同理。
+ */
+async function runSoundOnly(
+  prep: SoundPrep,
+  target: SystemTarget,
+  probe: PlatformProbe,
+): Promise<DeliverResult> {
+  // 只响不弹：声音是唯一动作。临时文件写不进去 = 一条命令都构造不出来——本次没有可执行的动作，
+  // 终态是 `skipped`（`failed` 的定义是「执行过动作而它失败了」），但成因要能查。
+  if (prep.kind === "unwritable") return unwritableSound(target, prep.cause);
+  // `!selfPlay` 只可能是枚举外的平台（三平台里 linux 恒自播，darwin / win32 在 `!pop` 时都自播）；
+  // 它和「放不出声」是同一件事：本次没有可执行的动作。
+  if (prep.kind !== "ready") return unexecutable(target, probe);
+  const played = await playChain(prep, target);
+  return played.ok
+    ? delivered()
+    : failed("reasonSystemSoundFailed", { bin: chainBin(prep.commands) }, played.detail);
+}
+
+/**
+ * 弹窗路径下播放未就绪分支（原 sendSystem 的 prep !== ready 段，需弹窗已构造）。
+ * 空动作优先判：一条命令都没构造出来时，「弹窗失败」与「声音失败」都无从谈起。
+ * 弹窗已经出去了：声音是尽力而为，但成因仍要留**一条** warn。
+ */
+function handleUnreadyPrepWithPopup(
+  prep: Exclude<SoundPrep, { readonly kind: "ready" }>,
+  pop: readonly string[],
+  popRan: boolean,
+  popOk: boolean,
+  target: SystemTarget,
+  probe: PlatformProbe,
+): DeliverResult {
+  // 空动作优先判：一条命令都没构造出来时，「弹窗失败」与「声音失败」都无从谈起。这一格旧实现
+  // 在 linux / darwin 上是零输出、零状态、零日志——正是本次要修的静默。
+  if (!popRan) {
+    return prep.kind === "unwritable"
+      ? unwritableSound(target, prep.cause)
+      : unexecutable(target, probe);
+  }
+  // 弹窗已经出去了：声音这一格是尽力而为，但成因仍要留**一条** warn。
+  if (prep.kind === "unwritable") target.logger.warn(toneUnwritableWarn(prep.cause));
+  return popOk ? delivered() : failed("reasonSystemPopupFailed", { bin: commandNameOf(pop) });
+}
+
+/**
+ * 弹窗路径下播放就绪后的收尾（原 sendSystem 尾段：打包缺陷 warn + 双失败判定）。
+ * 声音只在它是本次唯一动作时才翻转终态；toast 已经出去时声音是尽力而为。
+ */
+function finishPopupWithSound(
+  prep: Extract<SoundPrep, { kind: "ready" }>,
+  pop: readonly string[],
+  popRan: boolean,
+  popOk: boolean,
+  played: ChainOutcome,
+  target: SystemTarget,
+  probe: PlatformProbe,
+): DeliverResult {
+  // 弹窗没构造出来而声音还在跑：win32 的脚本缺失是**打包缺陷**，不能被「这次还有声音」盖掉
+  // ——旧实现在这一格是无条件出声的。
+  if (!popRan && toastScriptMissing(probe)) target.logger.warn(toastScriptMissingWarn(target));
+  // 弹窗命令非空说明工具确实在：它的非零退出是真失败，不再是「无桌面会话」那类常态环境
+  // （后者走的是 `!notifySendAvailable`，命令根本构造不出来）。
+  if (!popOk) return failed("reasonSystemPopupFailed", { bin: commandNameOf(pop) });
+  // 声音只在它是本次唯一动作时才翻转终态；toast 已经出去时声音是尽力而为。
+  if (!played.ok && !popRan) {
+    return failed("reasonSystemSoundFailed", { bin: chainBin(prep.commands) }, played.detail);
+  }
+  return delivered();
+}
+
+/**
  * 弹窗与提示音是两个独立动作，但**终态只有一个**：执行过动作而它失败了就翻转终态，一条命令都
  * 构造不出来才是空动作。弹窗场景下自播失败不改终态——toast 已经出去了，声音是尽力而为。
  */
@@ -375,18 +447,7 @@ export async function sendSystem(
   const selfPlay = shouldSelfPlay(target.popup, target.sound, probe.platform);
   const prep = selfPlay ? prepareSound(probe, toneOf(target.sound)) : NO_SOUND;
 
-  if (!target.popup) {
-    // 只响不弹：声音是唯一动作。临时文件写不进去 = 一条命令都构造不出来——本次没有可执行的动作，
-    // 终态是 `skipped`（`failed` 的定义是「执行过动作而它失败了」），但成因要能查。
-    if (prep.kind === "unwritable") return unwritableSound(target, prep.cause);
-    // `!selfPlay` 只可能是枚举外的平台（三平台里 linux 恒自播，darwin / win32 在 `!pop` 时都自播）；
-    // 它和「放不出声」是同一件事：本次没有可执行的动作。
-    if (prep.kind !== "ready") return unexecutable(target, probe);
-    const played = await playChain(prep, target);
-    return played.ok
-      ? delivered()
-      : failed("reasonSystemSoundFailed", { bin: chainBin(prep.commands) }, played.detail);
-  }
+  if (!target.popup) return runSoundOnly(prep, target, probe);
 
   const pop = buildSystemCommand(
     probe,
@@ -400,30 +461,11 @@ export async function sendSystem(
 
   // 本次没有可执行的播放命令：临时目录写不进去，或素材 / 候选播放器一个都没有。
   if (prep.kind !== "ready") {
-    // 空动作优先判：一条命令都没构造出来时，「弹窗失败」与「声音失败」都无从谈起。这一格旧实现
-    // 在 linux / darwin 上是零输出、零状态、零日志——正是本次要修的静默。
-    if (!popRan) {
-      return prep.kind === "unwritable"
-        ? unwritableSound(target, prep.cause)
-        : unexecutable(target, probe);
-    }
-    // 弹窗已经出去了：声音这一格是尽力而为，但成因仍要留**一条** warn。
-    if (prep.kind === "unwritable") target.logger.warn(toneUnwritableWarn(prep.cause));
-    return popOk ? delivered() : failed("reasonSystemPopupFailed", { bin: commandNameOf(pop) });
+    return handleUnreadyPrepWithPopup(prep, pop, popRan, popOk, target, probe);
   }
 
   const played = await playChain(prep, target);
-  // 弹窗没构造出来而声音还在跑：win32 的脚本缺失是**打包缺陷**，不能被「这次还有声音」盖掉
-  // ——旧实现在这一格是无条件出声的。
-  if (!popRan && toastScriptMissing(probe)) target.logger.warn(toastScriptMissingWarn(target));
-  // 弹窗命令非空说明工具确实在：它的非零退出是真失败，不再是「无桌面会话」那类常态环境
-  // （后者走的是 `!notifySendAvailable`，命令根本构造不出来）。
-  if (!popOk) return failed("reasonSystemPopupFailed", { bin: commandNameOf(pop) });
-  // 声音只在它是本次唯一动作时才翻转终态；toast 已经出去时声音是尽力而为。
-  if (!played.ok && !popRan) {
-    return failed("reasonSystemSoundFailed", { bin: chainBin(prep.commands) }, played.detail);
-  }
-  return delivered();
+  return finishPopupWithSound(prep, pop, popRan, popOk, played, target, probe);
 }
 
 /** 跑回退链：素材一定就绪（`prep.kind === "ready"`），临时文件在链尾结算后交还给 `finally` 收走。 */

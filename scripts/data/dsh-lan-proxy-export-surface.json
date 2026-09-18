@@ -228,7 +228,7 @@
     "export declare const zh: { readonly settingsName: \"局域网访问（dsh-lan-proxy）\"; readonly settingsDescription: \"LAN 端口 / HTTPS / 证书 / 响应压缩 / 启动横幅\"; readonly settingsLoading: \"局域网访问：加载中…\"; readonly enable: \"启用\"; readonly lanPort: \"LAN 端口（HTTP）\"; readonly httpsCoexist: \"HTTPS 并存\"; readonly httpsPort: \"HTTPS 端口\"; readonly certFile: \"证书文件（PEM）\"; readonly certPlaceholder: \"留空 = 自动生成自签名证书\"; readonly keyFile: \"私钥文件（PEM）\"; readonly keyPlaceholder: \"与证书文件成对\"; readonly printBanner: \"启动时打印访问地址\"; readonly wsBridge: \"WebSocket 桥接（保活，默认开）\"; readonly wsCompress: \"WebSocket 压缩（事件流）\"; readonly wsPaths: \"压缩路径（逗号分隔）\"; readonly wsPathsHint: \"仅控制压缩范围；清空 = 桥接不压缩，保活不受影响（手机端不再频繁断连重连）\"; readonly httpCompress: \"HTTP 响应压缩（Brotli/gzip）\"; readonly compressLevel: \"压缩档位\"; readonly level0: \"默认（gzip 6 / br 4）\"; readonly level1: \"低（最快：gzip 1 / br 2）\"; readonly level2: \"中（均衡：gzip 5 / br 5）\"; readonly level3: \"高（最高压缩比：gzip 9 / br 9）\"; readonly injectToken: \"局域网免 token 直入\"; readonly injectTokenOnHint: \"已开启：局域网内任何能访问该端口的设备都无需登录 token 即可完整控制 dsh（含终端命令执行），等效信任整个局域网。仅在可信家庭/办公内网开启；关闭后已登录设备的会话在有效期内仍然有效（约 30 天），不即时吊销。\"; readonly ownsHostCompat: \"向非回环页面声明 ownsHost（兼容）\"; readonly ownsHostCompatHint: \"已开启：向非回环页面声明 ownsHost，等同伪造上游拓扑事实位——远程页与本机页在界面上不再可区分。解锁的行为：设置持久化落盘 <DSH_HOME>/settings.yaml（文件不存在时新建）、宿主原生「打开配置文件」动作。这不是服务端授权变化（/api 围栏与 launch token / 会话 cookie 认证不变）。仅在你清楚后果时开启；零伪造替代路径见 README「安全模型」的 ssh -L 方案。\"; readonly hostTrustStatusLoopback: \"拓扑事实位：本机页，设置持久化可用（无需兼容开关）\"; readonly hostTrustStatusCompat: \"拓扑事实位：兼容模式已生效（本页已声明 ownsHost）\"; readonly hostTrustStatusDrift: \"拓扑事实位告警：注入 marker 在，但上游 isLoopback 仍非 true——上游契约可能已漂移，本次注入很可能已失效，请按 dsh-upgrade 流程复核\"; readonly hostTrustStatusOff: \"拓扑事实位：本页设置面不可用（上游已按非回环页面降级为内存 scope）。开启上方兼容开关并重新加载本页即可恢复持久化设置。\"; readonly hostTrustHostFacts: \"宿主侧事实：兼容开关 {compat}\"; readonly hostTrustOn: \"开\"; readonly hostTrustOff: \"关\"; readonly bodyHint: \"保存即热更新（配置写入宿主统一设置存储，无需重启 dsh web）。修改后内网设备访问新端口，旧端口立即失效。\"; readonly compressOff: \"HTTP 响应压缩：已关闭\"; readonly compressInactive: \"HTTP 响应压缩：未生效\"; readonly compressOn: \"HTTP 响应压缩：已启用 · 协商 {neg} 次 · 直通 {pass} 次\"; readonly loadFail: \"设置加载失败：{msg}\"; readonly portRangeFail: \"保存失败：LAN 端口（HTTP）需为 1-65535 的整数\"; readonly httpsPortRangeFail: \"保存失败：HTTPS 端口需为 1-65535 的整数\"; readonly levelRangeFail: \"保存失败：压缩档位需为 0-3 的整数\"; readonly unchanged: \"未修改\"; readonly savedOk: \"已保存，已热更新\"; readonly saveFailConflict: \"保存失败：{msg}（请关闭本卡片重新打开后重试）\"; readonly saveFail: \"保存失败：{msg}\"; readonly save: \"保存\"; };",
     "export declare function SettingsCard(props: SettingsCardProps): React.JSX.Element;",
     "export declare function apply(ctx: Context, config?: LanProxyConfig): void;",
-    "export declare function apply(ctx: any): void;",
+    "export declare function apply(ctx: ClientContext): void;",
     "export declare function applyConfigPatch(deps: ConfigRouteDeps, payload: unknown): Promise<PatchResult>;",
     "export declare function applyHostTrustInjection(html: string, enabled: boolean): string;",
     "export declare function bridgeCompressedWs(req: IncomingMessage, socket: Socket, head: Buffer, target: WsBridgeTarget): void;",
@@ -647,7 +647,7 @@
           "export declare const inject: string[];"
         ],
         "apply": [
-          "export declare function apply(ctx: any): void;"
+          "export declare function apply(ctx: ClientContext): void;"
         ],
         "en": [
           "export declare const en: Record<LanProxyLocaleKey, string>;"

@@ -47,25 +47,15 @@ export type PatchResult =
 /** 清除证书路径时需要从用户层剔除的键（空字符串 = 显式清除，恢复自签名）。 */
 const TLS_PAIR_KEYS = ["tlsCertFile", "tlsKeyFile"] as const;
 
-/**
- * 配置保存纯函数（PUT /config 的主体，独立导出供 smoke 单测）：
- * validate 定位首个非法键 → sanitize 净化 → tls 成对校验 → 写入官方存储。
- * 默认走 update 增量 merge；仅当 raw patch 以空字符串表达「清除证书路径」时
- * 走 replace（update 是 merge 语义无法 unset，owner scope 无 mutate 面）：
- * 从当前用户层复制全节、剔除被清除的键后整节替换，其余语义不变。
- */
-export async function applyConfigPatch(
-  deps: ConfigRouteDeps,
-  payload: unknown,
-): Promise<PatchResult> {
-  if (!deps.writable()) {
-    return {
-      ok: false,
-      status: 503,
-      code: "settings-unavailable",
-      details: "settings 服务不可用，无法保存配置",
-    };
-  }
+/** PUT 负载包络：raw patch、期望版本与 raw 键视图（三处共用同一空对象回退口径）。 */
+interface PatchEnvelope {
+  readonly rawPatch: unknown;
+  readonly expectedRevision: number | undefined;
+  readonly rawSrc: Record<string, unknown>;
+}
+
+/** 解析 PUT 负载包络（原 applyConfigPatch 首段：body 回退 + 版本归一化 + raw 视图）。 */
+function extractPatchEnvelope(payload: unknown): PatchEnvelope {
   const body = (typeof payload === "object" && payload !== null ? payload : {}) as {
     patch?: unknown;
     expectedRevision?: unknown;
@@ -75,49 +65,56 @@ export async function applyConfigPatch(
       ? body.expectedRevision
       : undefined;
   const rawPatch = body.patch;
-  // 先定位首个非法键（issue #33 子项 1）：错误文案指明字段与合法范围。
-  const invalid = validateSettings(rawPatch);
-  if (invalid !== null) {
-    return {
-      ok: false,
-      status: 400,
-      code: "invalid",
-      details: `配置项「${invalid.key}」非法：${invalid.hint}`,
-    };
-  }
-  const sanitized = sanitizeSettings(rawPatch);
-  if (sanitized === null) {
-    return { ok: false, status: 400, code: "invalid", details: "非法配置值（未知键或类型错误）" };
-  }
   const rawSrc = (typeof rawPatch === "object" && rawPatch !== null ? rawPatch : {}) as Record<
     string,
     unknown
   >;
-  // 证书成对约束（#467 固化成对语义）：raw 层按「键是否显式出现」判定形态——
-  // 只显式给出单侧（另一侧未提交 = undefined）即拒绝；"一空一缺"与"一非空一缺"
-  // 同属单侧出现。注意须用键存在性（rawSrc[key] !== undefined）而非字符串判型：
-  // 单侧显式空串意在清除，另一侧缺席时若漏判会进入 clearingTls 分支，删除循环
-  // 只剔"显式空串"侧，user 层残留另一侧孤儿（半套证书）。"同空（双空串）"=
-  // 整套清除、"同非空"= 整套设置，均两侧同时显式出现，不落此分支。
+  return { rawPatch, expectedRevision, rawSrc };
+}
+
+/** TLS 成对错误（两层共用同一文案与状态码）。 */
+function tlsPairError(): PatchResult {
+  return {
+    ok: false,
+    status: 400,
+    code: "tls-pair",
+    details: "证书文件与私钥文件必须成对提供（或都留空以使用自签名证书）",
+  };
+}
+
+/**
+ * 证书成对约束（#467 固化成对语义）：raw 层按「键是否显式出现」判定形态——
+ * 只显式给出单侧（另一侧未提交 = undefined）即拒绝；"一空一缺"与"一非空一缺"
+ * 同属单侧出现。注意须用键存在性（rawSrc[key] !== undefined）而非字符串判型：
+ * 单侧显式空串意在清除，另一侧缺席时若漏判会进入 clearingTls 分支，删除循环
+ * 只剔"显式空串"侧，user 层残留另一侧孤儿（半套证书）。"同空（双空串）"=
+ * 整套清除、"同非空"= 整套设置，均两侧同时显式出现，不落此分支。
+ * 成对约束第二层（sanitize 后判定，口径与历史版本一致）：只给单侧值。
+ * 返回 undefined 表示通过，否则为直接返回的错误结果。
+ */
+function checkTlsPair(
+  rawSrc: Record<string, unknown>,
+  sanitized: NonNullable<ReturnType<typeof sanitizeSettings>>,
+): PatchResult | undefined {
   const rawCertExplicit = rawSrc.tlsCertFile !== undefined;
   const rawKeyExplicit = rawSrc.tlsKeyFile !== undefined;
-  if (rawCertExplicit !== rawKeyExplicit) {
-    return {
-      ok: false,
-      status: 400,
-      code: "tls-pair",
-      details: "证书文件与私钥文件必须成对提供（或都留空以使用自签名证书）",
-    };
-  }
-  // 成对约束第二层（sanitize 后判定，口径与历史版本一致）：只给单侧值。
-  if (Boolean(sanitized.tlsCertFile) !== Boolean(sanitized.tlsKeyFile)) {
-    return {
-      ok: false,
-      status: 400,
-      code: "tls-pair",
-      details: "证书文件与私钥文件必须成对提供（或都留空以使用自签名证书）",
-    };
-  }
+  if (rawCertExplicit !== rawKeyExplicit) return tlsPairError();
+  if (Boolean(sanitized.tlsCertFile) !== Boolean(sanitized.tlsKeyFile)) return tlsPairError();
+  return undefined;
+}
+
+/**
+ * 落盘 patch（原 applyConfigPatch 尾段：clearing 分流 + 写入 + 错误映射）。
+ * 默认走 update 增量 merge；仅当 raw patch 以空字符串表达「清除证书路径」时
+ * 走 replace（update 是 merge 语义无法 unset，owner scope 无 mutate 面）：
+ * 从当前用户层复制全节、剔除被清除的键后整节替换，其余语义不变。
+ */
+async function persistPatchedConfig(
+  deps: ConfigRouteDeps,
+  sanitized: NonNullable<ReturnType<typeof sanitizeSettings>>,
+  rawSrc: Record<string, unknown>,
+  expectedRevision: number | undefined,
+): Promise<PatchResult> {
   const clearingTls = TLS_PAIR_KEYS.some((key) => rawSrc[key] === "");
   try {
     if (clearingTls) {
@@ -151,6 +148,45 @@ export async function applyConfigPatch(
     return { ok: false, status: 500, code: "error", details: "保存失败，请查看服务端日志" };
   }
   return { ok: true, value: deps.readUser() };
+}
+
+/**
+ * 配置保存纯函数（PUT /config 的主体，独立导出供 smoke 单测）：
+ * validate 定位首个非法键 → sanitize 净化 → tls 成对校验 → 写入官方存储。
+ * 默认走 update 增量 merge；仅当 raw patch 以空字符串表达「清除证书路径」时
+ * 走 replace（update 是 merge 语义无法 unset，owner scope 无 mutate 面）：
+ * 从当前用户层复制全节、剔除被清除的键后整节替换，其余语义不变。
+ */
+export async function applyConfigPatch(
+  deps: ConfigRouteDeps,
+  payload: unknown,
+): Promise<PatchResult> {
+  if (!deps.writable()) {
+    return {
+      ok: false,
+      status: 503,
+      code: "settings-unavailable",
+      details: "settings 服务不可用，无法保存配置",
+    };
+  }
+  const { rawPatch, expectedRevision, rawSrc } = extractPatchEnvelope(payload);
+  // 先定位首个非法键（issue #33 子项 1）：错误文案指明字段与合法范围。
+  const invalid = validateSettings(rawPatch);
+  if (invalid !== null) {
+    return {
+      ok: false,
+      status: 400,
+      code: "invalid",
+      details: `配置项「${invalid.key}」非法：${invalid.hint}`,
+    };
+  }
+  const sanitized = sanitizeSettings(rawPatch);
+  if (sanitized === null) {
+    return { ok: false, status: 400, code: "invalid", details: "非法配置值（未知键或类型错误）" };
+  }
+  const tlsErr = checkTlsPair(rawSrc, sanitized);
+  if (tlsErr !== undefined) return tlsErr;
+  return persistPatchedConfig(deps, sanitized, rawSrc, expectedRevision);
 }
 
 /**

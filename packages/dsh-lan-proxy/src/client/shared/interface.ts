@@ -5,3 +5,9 @@
  * 「客户端端内共享了什么」有唯一可被评审的答案。
  */
 export { DEFAULTS } from "./defaults.ts";
+export type {
+  CompressSnapshotView,
+  ConfigSnapshotView,
+  LanProxySettingsView,
+  PutResultView,
+} from "./view.ts";

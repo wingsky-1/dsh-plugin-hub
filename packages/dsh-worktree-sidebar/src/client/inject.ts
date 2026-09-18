@@ -112,6 +112,18 @@ function seeding(view: SessionView, face: Record<string, unknown>): Record<strin
     detachVisible = undefined;
   };
 
+  /** 页签 abort 时的清理：摘掉本页签，空表时释放订阅（attach 的 abort 分支外提以降复杂度）。 */
+  const watchAbort = (tabId: string, signal: AbortSignal | undefined): void => {
+    signal?.addEventListener(
+      "abort",
+      () => {
+        watched.delete(tabId);
+        if (watched.size === 0) release();
+      },
+      { once: true },
+    );
+  };
+
   const attach = (
     tabId: string,
     fallback: string,
@@ -122,14 +134,7 @@ function seeding(view: SessionView, face: Record<string, unknown>): Record<strin
     watched.set(tabId, { seeded, fallback, signal });
     unsubscribe ??= view.root.subscribe(reseed);
     detachVisible ??= refreshWhenVisible(refresh);
-    signal?.addEventListener(
-      "abort",
-      () => {
-        watched.delete(tabId);
-        if (watched.size === 0) release();
-      },
-      { once: true },
-    );
+    watchAbort(tabId, signal);
   };
 
   const start: FaceStart = (tabId, root, signal) => {

@@ -14,7 +14,7 @@ interface ChannelStatus {
   lastStatus?: string;
   lastError?: unknown;
 }
-type ChannelStatusMap = Record<string, ChannelStatus | undefined>;
+export type ChannelStatusMap = Record<string, ChannelStatus | undefined>;
 
 export function padTime(ts: number) {
   const d = new Date(ts);

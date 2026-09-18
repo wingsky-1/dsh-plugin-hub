@@ -12,6 +12,12 @@
 import * as React from "react";
 import { t } from "../../../../shared/client/i18n.js";
 import { DEFAULTS as CLIENT_DEFAULTS } from "./shared/interface.ts";
+import type {
+  CompressSnapshotView,
+  ConfigSnapshotView,
+  LanProxySettingsView,
+  PutResultView,
+} from "./shared/view.ts";
 import {
   evaluateHostTrust,
   readHostTrustSignals,
@@ -23,7 +29,7 @@ const CONFIG_ROUTE = "/api/dsh-lan-proxy/config";
 const HEALTH_ROUTE = "/api/dsh-lan-proxy/health";
 
 /** 增量 diff 的键值比较：路径白名单数组按元素逐一比较，其余严格相等。 */
-function sameSetting(key: string, a: any, b: any): boolean {
+function sameSetting(key: string, a: unknown, b: unknown): boolean {
   if (key === "wsCompressPaths") {
     const la = Array.isArray(a) ? a : [];
     const lb = Array.isArray(b) ? b : [];
@@ -36,12 +42,73 @@ function sameSetting(key: string, a: any, b: any): boolean {
   return a === b;
 }
 
+/** 保存数字键归一化结果（validateSaveNumbers 成功形态）。 */
+type SaveNumbers = {
+  readonly portValue: number;
+  readonly httpsPortValue: number;
+  readonly levelValue: number;
+};
+
+/** 保存数字键校验失败形态（错误键由调用方经 t() 转文案，保持纯函数无 i18n 依赖）。 */
+type SaveNumbersError = {
+  readonly error: "portRangeFail" | "httpsPortRangeFail" | "levelRangeFail";
+};
+
+/**
+ * 本地预校验（issue #33 子项 1，原 save 首段）：数字键先归一化，非法值返回错误键——
+ * 不依赖宿主整体拒绝后才报错。成功返回归一化三值，失败返回错误键（调用方 setSaved）。
+ */
+function validateSaveNumbers(
+  settingsValue: Record<string, unknown>,
+): SaveNumbers | SaveNumbersError {
+  const portValue = Number(settingsValue.port);
+  if (!Number.isInteger(portValue) || portValue < 1 || portValue > 65535) {
+    return { error: "portRangeFail" };
+  }
+  const httpsPortValue = Number(settingsValue.httpsPort);
+  if (!Number.isInteger(httpsPortValue) || httpsPortValue < 1 || httpsPortValue > 65535) {
+    return { error: "httpsPortRangeFail" };
+  }
+  const levelValue = Number(settingsValue.httpCompressLevel);
+  if (!Number.isInteger(levelValue) || levelValue < 0 || levelValue > 3) {
+    return { error: "levelRangeFail" };
+  }
+  return { portValue, httpsPortValue, levelValue };
+}
+
+/**
+ * 增量提交构造（issue #33 子项 2，原 save 中段）：只发送与加载基线不同的键，未改动的键
+ * 不提交——组合层 base 设值不会被客户端默认值静默覆盖回写。
+ * 基线只确认本次提交的规范化快照，不把等待期间的新编辑算作已保存。
+ */
+function buildSavePatch(
+  settingsValue: Record<string, unknown>,
+  validated: SaveNumbers,
+  baseline: Record<string, unknown>,
+  defaults: Record<string, unknown>,
+): { readonly snapshot: Record<string, unknown>; readonly payload: Record<string, unknown> } {
+  const normalized: Record<string, unknown> = {
+    port: validated.portValue,
+    httpsPort: validated.httpsPortValue,
+    httpCompressLevel: validated.levelValue,
+  };
+  const snapshot: Record<string, unknown> = {};
+  const payload: Record<string, unknown> = {};
+  for (const key in defaults) {
+    const cur = key in normalized ? normalized[key] : settingsValue[key];
+    snapshot[key] = Array.isArray(cur) ? [...cur] : cur;
+    if (!sameSetting(key, cur, baseline[key])) payload[key] = snapshot[key];
+  }
+  return { snapshot, payload };
+}
+
 /** HTTP 压缩状态行文案（issue #33 子项 3）；无快照返回 null（不渲染该行）。 */
-function compressStatusLine(c: any): string | null {
+function compressStatusLine(c: unknown): string | null {
   if (!c || typeof c !== "object") return null;
-  if (c.httpCompressEnabled === false) return t("compressOff");
-  if (c.httpCompressMounted !== true) return t("compressInactive");
-  const stats = c.httpCompressStats || {};
+  const snap = c as CompressSnapshotView;
+  if (snap.httpCompressEnabled === false) return t("compressOff");
+  if (snap.httpCompressMounted !== true) return t("compressInactive");
+  const stats = snap.httpCompressStats || {};
   return t("compressOn", { neg: stats.compressed || 0, pass: stats.passthrough || 0 });
 }
 
@@ -52,7 +119,7 @@ function compressStatusLine(c: any): string | null {
  */
 export interface SettingsCardProps {
   /** 调用方注入的宿主端默认值快照。 */
-  defaults?: Record<string, any>;
+  defaults?: LanProxySettingsView;
   /** host trust 信号读取器（issue #856）；缺省时只读页面侧信号（无 ctx.remote）。 */
   hostTrustSignals?: () => HostTrustSignals;
 }
@@ -67,7 +134,7 @@ export function SettingsCard(props: SettingsCardProps) {
   const useState = React.useState;
   const useEffect = React.useEffect;
   // 显式声明状态形状：useState(null) 会把状态推成字面 null，写入任何非 null 值都编不过。
-  const draft = useState(null as Record<string, any> | null);
+  const draft = useState(null as LanProxySettingsView | null);
   const settings = draft[0];
   const setSettings = draft[1];
   // 保存反馈（i18n 重构：msg + err 结构化状态，不能用文案内容判断错误态）
@@ -86,11 +153,11 @@ export function SettingsCard(props: SettingsCardProps) {
   const open = openState[0];
   const setOpen = openState[1];
   // HTTP 压缩运行快照（issue #33 子项 3）：GET 快照附带，底部轻量状态行展示。
-  const compressDraft = useState(null as Record<string, any> | null);
+  const compressDraft = useState(null as CompressSnapshotView | null);
   const compress = compressDraft[0];
   const setCompress = compressDraft[1];
   // 宿主侧 host trust 事实（issue #856）：来自 health 路由；页面侧事实由纯函数判定。
-  const hostFactsDraft = useState(null as Record<string, any> | null);
+  const hostFactsDraft = useState(null as Record<string, unknown> | null);
   const hostFacts = hostFactsDraft[0];
   const setHostFacts = hostFactsDraft[1];
   // 加载基线（issue #33 子项 2）：保存时只提交与基线不同的键（增量 diff），
@@ -106,19 +173,19 @@ export function SettingsCard(props: SettingsCardProps) {
 
   function loadCard(alive: { value: boolean }) {
     fetch(CONFIG_ROUTE, { headers: { accept: "application/json" } })
-      .then((r: any) => r.json())
-      .then((v: any) => {
+      .then((r: Response) => r.json())
+      .then((v: ConfigSnapshotView) => {
         if (!alive.value) return;
-        const merged: Record<string, any> = {};
+        const merged: LanProxySettingsView = {};
         // 展示校准（issue #33 子项 2）：DEFAULTS 兜底 → 宿主生效值（组合层
         // base 设值的键显示实际生效值）→ 用户层（上次在本卡片保存的内容，
         // 作为编辑基线；descriptor.user 的键存在即用户设过值）。
         for (const key in DEFAULTS) merged[key] = DEFAULTS[key];
-        const effective = (v && v.effective) || {};
+        const effective: Record<string, unknown> = (v && v.effective) || {};
         for (const ek in DEFAULTS) {
           if (effective[ek] !== undefined && effective[ek] !== null) merged[ek] = effective[ek];
         }
-        const user = (v && v.user) || {};
+        const user: Record<string, unknown> = (v && v.user) || {};
         for (const pk in user) merged[pk] = user[pk];
         committed.current = {
           baseline: { ...merged },
@@ -128,16 +195,17 @@ export function SettingsCard(props: SettingsCardProps) {
         setCompress((v && v.compress) || null);
         setSettings(merged);
       })
-      .catch((e: any) => {
+      .catch((e: unknown) => {
         if (!alive.value) return;
-        setSaved(t("loadFail", { msg: (e && e.message) || e }), true);
+        const detail = e instanceof Error ? e.message : undefined;
+        setSaved(t("loadFail", { msg: detail || e }), true);
       });
     // 宿主侧事实（issue #856）：health 带 ownsHostCompat。
     // 页面侧事实（marker / isLoopback）宿主看不到，两侧在卡片里合在一处显示；
     // 该诊断行失败不影响卡片主体（例如直连非本插件服务的页面会 403）。
     fetch(HEALTH_ROUTE, { headers: { accept: "application/json" } })
-      .then((r: any) => r.json())
-      .then((v: any) => {
+      .then((r: Response) => r.json())
+      .then((v: Record<string, unknown> | null) => {
         if (!alive.value) return;
         setHostFacts(v && typeof v === "object" ? v : null);
       })
@@ -162,7 +230,7 @@ export function SettingsCard(props: SettingsCardProps) {
   // 收窄带进它们的闭包，直接引用 settings 会被判 possibly null。
   const settingsValue = settings;
 
-  function patch(p: any) {
+  function patch(p: Record<string, unknown>) {
     setSettings(Object.assign({}, settingsValue, p));
     setSaved("");
   }
@@ -171,39 +239,14 @@ export function SettingsCard(props: SettingsCardProps) {
     const alive = lifetime.current;
     const base = committed.current;
     if (!alive?.value || base === null || inFlight.current) return;
-    // 本地预校验（issue #33 子项 1）：数字键先归一化，非法值在提交前就
-    // 指明字段与合法范围——不依赖宿主整体拒绝后才报错。
-    const portValue = Number(settingsValue.port);
-    if (!Number.isInteger(portValue) || portValue < 1 || portValue > 65535) {
-      setSaved(t("portRangeFail"), true);
+    const validated = validateSaveNumbers(settingsValue);
+    if ("error" in validated) {
+      if (validated.error === "portRangeFail") setSaved(t("portRangeFail"), true);
+      else if (validated.error === "httpsPortRangeFail") setSaved(t("httpsPortRangeFail"), true);
+      else setSaved(t("levelRangeFail"), true);
       return;
     }
-    const httpsPortValue = Number(settingsValue.httpsPort);
-    if (!Number.isInteger(httpsPortValue) || httpsPortValue < 1 || httpsPortValue > 65535) {
-      setSaved(t("httpsPortRangeFail"), true);
-      return;
-    }
-    const levelValue = Number(settingsValue.httpCompressLevel);
-    if (!Number.isInteger(levelValue) || levelValue < 0 || levelValue > 3) {
-      setSaved(t("levelRangeFail"), true);
-      return;
-    }
-    // 增量提交（issue #33 子项 2）：只发送与加载基线不同的键，未改动的键
-    // 不提交——组合层 base 设值不会被客户端默认值静默覆盖回写；宿主端把
-    // patch 经 scope.update 增量合并进官方设置存储的用户层。
-    const normalized: Record<string, any> = {
-      port: portValue,
-      httpsPort: httpsPortValue,
-      httpCompressLevel: levelValue,
-    };
-    // 基线只确认本次提交的规范化快照，不把等待期间的新编辑算作已保存。
-    const snapshot: Record<string, unknown> = {};
-    const payload: Record<string, unknown> = {};
-    for (const key in DEFAULTS) {
-      const cur = key in normalized ? normalized[key] : settingsValue[key];
-      snapshot[key] = Array.isArray(cur) ? [...cur] : cur;
-      if (!sameSetting(key, cur, base.baseline[key])) payload[key] = snapshot[key];
-    }
+    const { snapshot, payload } = buildSavePatch(settingsValue, validated, base.baseline, DEFAULTS);
     if (Object.keys(payload).length === 0) {
       setSaved(t("unchanged"));
       return;
@@ -216,16 +259,17 @@ export function SettingsCard(props: SettingsCardProps) {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ patch: payload, expectedRevision: base.revision }),
     })
-      .then((r: any) => {
-        return r.json().then((body: any) => {
+      .then((r: Response) => {
+        return r.json().then((body: PutResultView) => {
           if (!r.ok) {
-            const err = (body && body.error) || {};
-            throw new Error(err.details || err.code || "HTTP " + r.status);
+            const nested = body.error;
+            const errObj = typeof nested === "object" && nested !== null ? nested : undefined;
+            throw new Error((errObj && (errObj.details || errObj.code)) || "HTTP " + r.status);
           }
           return body;
         });
       })
-      .then((body: any) => {
+      .then((body: PutResultView) => {
         if (!alive.value) return;
         committed.current = {
           baseline: snapshot,
@@ -239,9 +283,9 @@ export function SettingsCard(props: SettingsCardProps) {
           if (alive.value) setSaved("");
         }, 2200);
       })
-      .catch((e: any) => {
+      .catch((e: unknown) => {
         if (!alive.value) return;
-        const msg = (e && e.message) || e;
+        const msg = (e instanceof Error ? e.message : undefined) || e;
         setSaved(
           String(msg).indexOf("已被其他窗口修改") >= 0
             ? t("saveFailConflict", { msg: msg })
@@ -297,7 +341,9 @@ export function SettingsCard(props: SettingsCardProps) {
               id="lp-set-enabled"
               type="checkbox"
               checked={settings.enabled}
-              onChange={(e: any) => patch({ enabled: e.target.checked })}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                patch({ enabled: e.target.checked })
+              }
             />
           </div>
           <div className="lp-set-row">
@@ -310,7 +356,7 @@ export function SettingsCard(props: SettingsCardProps) {
               min={1}
               max={65535}
               value={settings.port}
-              onChange={(e: any) => patch({ port: e.target.value })}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => patch({ port: e.target.value })}
             />
           </div>
           <div className="lp-set-row">
@@ -319,7 +365,9 @@ export function SettingsCard(props: SettingsCardProps) {
               id="lp-set-https-enabled"
               type="checkbox"
               checked={settings.httpsEnabled}
-              onChange={(e: any) => patch({ httpsEnabled: e.target.checked })}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                patch({ httpsEnabled: e.target.checked })
+              }
             />
           </div>
           <div className="lp-set-row">
@@ -332,7 +380,9 @@ export function SettingsCard(props: SettingsCardProps) {
               min={1}
               max={65535}
               value={settings.httpsPort}
-              onChange={(e: any) => patch({ httpsPort: e.target.value })}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                patch({ httpsPort: e.target.value })
+              }
             />
           </div>
           <div className="lp-set-row">
@@ -343,7 +393,9 @@ export function SettingsCard(props: SettingsCardProps) {
               type="text"
               placeholder={t("certPlaceholder")}
               value={settings.tlsCertFile}
-              onChange={(e: any) => patch({ tlsCertFile: e.target.value })}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                patch({ tlsCertFile: e.target.value })
+              }
             />
           </div>
           <div className="lp-set-row">
@@ -354,7 +406,9 @@ export function SettingsCard(props: SettingsCardProps) {
               type="text"
               placeholder={t("keyPlaceholder")}
               value={settings.tlsKeyFile}
-              onChange={(e: any) => patch({ tlsKeyFile: e.target.value })}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                patch({ tlsKeyFile: e.target.value })
+              }
             />
           </div>
           <div className="lp-set-row">
@@ -363,7 +417,9 @@ export function SettingsCard(props: SettingsCardProps) {
               id="lp-set-banner"
               type="checkbox"
               checked={settings.printBanner}
-              onChange={(e: any) => patch({ printBanner: e.target.checked })}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                patch({ printBanner: e.target.checked })
+              }
             />
           </div>
           {/* WS 桥接总开关（issue #552 解耦）：默认开——所有 WS 走「终结 + 桥接」
@@ -375,7 +431,9 @@ export function SettingsCard(props: SettingsCardProps) {
               id="lp-set-ws-bridge"
               type="checkbox"
               checked={settings.wsBridgeEnabled !== false}
-              onChange={(e: any) => patch({ wsBridgeEnabled: e.target.checked })}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                patch({ wsBridgeEnabled: e.target.checked })
+              }
             />
           </div>
           <div className="lp-set-row">
@@ -384,7 +442,9 @@ export function SettingsCard(props: SettingsCardProps) {
               id="lp-set-ws-compress"
               type="checkbox"
               checked={settings.wsCompressEnabled}
-              onChange={(e: any) => patch({ wsCompressEnabled: e.target.checked })}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                patch({ wsCompressEnabled: e.target.checked })
+              }
             />
           </div>
           <div className="lp-set-row">
@@ -396,7 +456,7 @@ export function SettingsCard(props: SettingsCardProps) {
               placeholder="/api/remote.mux"
               title={t("wsPathsHint")}
               value={(settings.wsCompressPaths || []).join(", ")}
-              onChange={(e: any) => {
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                 const parts = e.target.value
                   .split(",")
                   .map((s: string) => s.trim())
@@ -411,7 +471,9 @@ export function SettingsCard(props: SettingsCardProps) {
               id="lp-set-http-compress"
               type="checkbox"
               checked={settings.httpCompressEnabled}
-              onChange={(e: any) => patch({ httpCompressEnabled: e.target.checked })}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                patch({ httpCompressEnabled: e.target.checked })
+              }
             />
           </div>
           <div className="lp-set-row">
@@ -420,7 +482,9 @@ export function SettingsCard(props: SettingsCardProps) {
               id="lp-set-level"
               className="lp-set-input"
               value={String(settings.httpCompressLevel)}
-              onChange={(e: any) => patch({ httpCompressLevel: Number(e.target.value) })}
+              onChange={(e: React.ChangeEvent<HTMLSelectElement>) =>
+                patch({ httpCompressLevel: Number(e.target.value) })
+              }
             >
               <option value="0">{t("level0")}</option>
               <option value="1">{t("level1")}</option>
@@ -436,7 +500,9 @@ export function SettingsCard(props: SettingsCardProps) {
               id="lp-set-inject-token"
               type="checkbox"
               checked={settings.injectToken}
-              onChange={(e: any) => patch({ injectToken: e.target.checked })}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                patch({ injectToken: e.target.checked })
+              }
             />
           </div>
           {settings.injectToken ? (
@@ -450,7 +516,9 @@ export function SettingsCard(props: SettingsCardProps) {
               id="lp-set-owns-host-compat"
               type="checkbox"
               checked={settings.ownsHostCompat === true}
-              onChange={(e: any) => patch({ ownsHostCompat: e.target.checked })}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                patch({ ownsHostCompat: e.target.checked })
+              }
             />
           </div>
           {settings.ownsHostCompat === true ? (

@@ -54,14 +54,25 @@ function injectedScript(html: string): string {
 }
 
 /**
+ * vm realm 全局：location 恒有；注入脚本按条件写 `__DSH_TRANSPORT__`/marker。
+ * transport 按存在声明（未写时读到 undefined）：realm 是动态全局，逐处收窄要给 6 处
+ * 断言加噪，而缺失读到的 undefined 本就是部分断言的期望值，行为零差异。
+ */
+interface InjectedRealm {
+  location: { hostname: string };
+  __DSH_TRANSPORT__: Record<string, unknown>;
+  [key: string]: unknown;
+}
+
+/**
  * 在 `node:vm` 里执行注入脚本，返回该 realm 的全局对象。
  * `hostname` 模拟 `location.hostname`；`transport` 非 undefined 时预置前序 transport。
  */
 function runInjectedScript(
   html: string,
-  options: { hostname: string; transport?: unknown },
-): Record<string, any> {
-  const sandbox: Record<string, any> = { location: { hostname: options.hostname } };
+  options: { hostname: string; transport?: Record<string, unknown> },
+): InjectedRealm {
+  const sandbox = { location: { hostname: options.hostname } } as InjectedRealm;
   if (options.transport !== undefined) sandbox.__DSH_TRANSPORT__ = options.transport;
   runInContext(injectedScript(html), createContext(sandbox));
   return sandbox;
@@ -182,7 +193,10 @@ function makeHostTrustCtx() {
     },
     inject(services: string[], fn: (c: unknown) => void) {
       if (services.includes("settings")) {
-        fn({ settings: { register: () => scope, describe: () => [] }, effect: (f: any) => f() });
+        fn({
+          settings: { register: () => scope, describe: () => [] },
+          effect: (f: () => unknown) => f(),
+        });
       }
     },
     effect(fn: () => unknown, label: string) {

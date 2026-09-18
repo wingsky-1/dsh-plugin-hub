@@ -12,6 +12,8 @@ import { credentialFieldKey, credentialFieldView } from "../mask.ts";
 import { chRow } from "../parts/rows.tsx";
 import { numInput, switchToggle, textInput } from "../parts/controls.tsx";
 import { failBadge, statusDotClass, statusText, testBtn } from "../parts/status.tsx";
+import type { ChannelStatusMap } from "../parts/status.tsx";
+import type { SettingsChannelView } from "../types.ts";
 import { iconEl } from "./channel-icon.tsx";
 
 /**
@@ -37,7 +39,7 @@ const WEBHOOK_PRESETS: Record<string, { auth: string; template: string }> = {
  * JSON 模板编辑器（占位符 chips 光标处插入）。渲染契约见 channel-webhook.ts。
  */
 export function webhookCard(
-  ch: any,
+  ch: SettingsChannelView,
   idx: number,
   delArmedId: string | null,
   setDelArmedId: (v: string | null) => void,
@@ -48,7 +50,7 @@ export function webhookCard(
   chPatch: (idx: number, part: Record<string, unknown>) => void,
   chRemove: (idx: number) => void,
   sendTest: (id?: string) => void,
-  statusMap: Record<string, any>,
+  statusMap: ChannelStatusMap,
   t: Translate,
 ) {
   const channelKey = channelIdFor(ch);
@@ -62,7 +64,7 @@ export function webhookCard(
   const chId = String(ch.id);
 
   /** webhook 字段 patch（函数式基于最新 channels，防同帧后写覆盖）。 */
-  function whPatch(part: Record<string, any>) {
+  function whPatch(part: Record<string, unknown>) {
     chPatch(idx, part);
   }
 
@@ -72,7 +74,7 @@ export function webhookCard(
     const key = credentialFieldKey(chId, field);
     const shown = revealMap[key] === true;
     const fieldView = credentialFieldView(ch[field], secretEdited[key] === true, t(placeholderKey));
-    const part: Record<string, any> = {};
+    const part: Record<string, unknown> = {};
     return (
       <span className="dn-secret" key={field}>
         <input
@@ -81,7 +83,7 @@ export function webhookCard(
           value={fieldView.value}
           placeholder={fieldView.placeholder}
           aria-label={t(placeholderKey)}
-          onChange={function (e: any) {
+          onChange={function (e: React.ChangeEvent<HTMLInputElement>) {
             markSecretEdited(key);
             part[field] = e.target.value;
             whPatch(part);
@@ -116,13 +118,13 @@ export function webhookCard(
     whPatch({ template: ta.value.slice(0, at) + token + ta.value.slice(at) });
   }
 
-  const authCtl: any[] = [
+  const authCtl: React.ReactNode[] = [
     <select
       key="auth-select"
       className="dn-set-input dn-set-select"
       value={authValue}
       aria-label={t("whAuth")}
-      onChange={function (e: any) {
+      onChange={function (e: React.ChangeEvent<HTMLSelectElement>) {
         whPatch({ auth: e.target.value });
       }}
     >
@@ -142,7 +144,7 @@ export function webhookCard(
         value={ch.username || ""}
         placeholder={t("whAuthUsername")}
         aria-label={t("whAuthUsername")}
-        onChange={function (e: any) {
+        onChange={function (e: React.ChangeEvent<HTMLInputElement>) {
           whPatch({ username: e.target.value });
         }}
       />,
@@ -157,7 +159,7 @@ export function webhookCard(
         value={ch.headerName || ""}
         placeholder={t("whAuthHeaderName")}
         aria-label={t("whAuthHeaderName")}
-        onChange={function (e: any) {
+        onChange={function (e: React.ChangeEvent<HTMLInputElement>) {
           whPatch({ headerName: e.target.value });
         }}
       />,
@@ -173,7 +175,7 @@ export function webhookCard(
     "{{priority}}",
     "{{source}}",
   ];
-  const tplChips: any[] = textTokens.map(function (tok: string) {
+  const tplChips: React.ReactNode[] = textTokens.map(function (tok: string) {
     return (
       <button
         type="button"
@@ -234,7 +236,7 @@ export function webhookCard(
             className="dn-set-input dn-set-select"
             value=""
             aria-label={t("whPreset")}
-            onChange={function (e: any) {
+            onChange={function (e: React.ChangeEvent<HTMLSelectElement>) {
               const p = WEBHOOK_PRESETS[e.target.value];
               if (!p) return;
               // preset 落配置（{{priority}} 频道感知映射的依据）；认证与模板随预设填充，URL 不覆盖（防丢已填内容）
@@ -294,7 +296,7 @@ export function webhookCard(
             spellCheck={false}
             aria-label={t("whTemplate")}
             value={ch.template || ""}
-            onChange={function (e: any) {
+            onChange={function (e: React.ChangeEvent<HTMLTextAreaElement>) {
               whPatch({ template: e.target.value });
             }}
           />

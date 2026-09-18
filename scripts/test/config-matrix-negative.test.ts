@@ -170,7 +170,7 @@ test("lan-proxy: DEFAULTS 增 schema 外键 → 红且报错含键名", () => {
       edit(root, "dsh-lan-proxy", "client/shared/defaults.ts", (s) =>
         // 锚点只锁声明本身：缩进归 Prettier（顶层块的多余缩进会被归一化），
         // 注入行自带格式化器口径的缩进，避免判据绑死在某一版排版上。
-        s.replace(/const DEFAULTS: Record<string, any> = \{\n/, "$&  fakeKey: 1,\n"),
+        s.replace(/const DEFAULTS: LanProxySettingsView = \{\n/, "$&  fakeKey: 1,\n"),
       );
     },
     "fakeKey",

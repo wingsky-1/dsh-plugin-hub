@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck
 /**
  * threshold-registry — 阈值事实源**声明表**的读取、自洽校验与通用比较器（#843 D5）。
  *

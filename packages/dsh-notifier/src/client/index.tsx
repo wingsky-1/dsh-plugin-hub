@@ -57,11 +57,27 @@ import { createSaveGuard } from "./settings/save-guard.ts";
 // 一次失败请求的结构化结论（是否围栏拒答 / 引导文案 / 展示正文）与结构化字段挂载：
 // 判定顺序是两端契约（结构化优先、状态码与文案兜底），故收在纯函数模块里由单测直接打红。
 import { apiFailureOf, markHttpFailure } from "./api-error.ts";
+import type { HttpFailure } from "./api-error.ts";
 // 设置卡的渲染原子层：普通函数返回 JSX，依赖（t / statusMap / patch / sendTest / 平台 / 诊断
 // 视图）一律显式传参——原子层不读卡片状态，搬家不会让闭包静默捕获到旧 state。
 import { channelsPane } from "./settings/panes/channels.tsx";
 import { eventsPane } from "./settings/panes/events.tsx";
 import { historyPane } from "./settings/panes/history.tsx";
+import type { ChannelStatusMap } from "./settings/parts/status.tsx";
+import type {
+  ClearHistoryResult,
+  ConflictLatest,
+  ConfigSnapshot,
+  HistoryRecordView,
+  MetaView,
+  PostKindResult,
+  PutResult,
+  RegisteredKindView,
+  SendTestResult,
+  SettingsChannelView,
+  SettingsPatch,
+  SettingsView,
+} from "./settings/types.ts";
 // 两端共享面 src/shared/interface.ts：音色白名单、通知类型表、频道 id 归一化、webhook 预设
 // （模板 / 认证白名单）与理由 code 的事实源都在这里，客户端只消费，不再各写一份副本——跨端
 // 漂移的症状是「设置页选得到、宿主拒收」与「勾了频道却收不到」。该目录的模块必须零 import
@@ -126,7 +142,7 @@ function severityOf(kind: string): NotifySeverity {
  * 请求浏览器通知权限（必须在用户手势内调用，Chrome 才接受）。
  * 完成后回调（无论结果），用于刷新卡片权限状态。
  */
-function requestPermission(onDone: any) {
+function requestPermission(onDone?: () => void) {
   if (!("Notification" in window)) return;
   try {
     Notification.requestPermission()
@@ -261,11 +277,17 @@ function showNotification(
   if (policy.selfPlay && audioEngine.gate()) audioEngine.playTone(policy.tone);
 }
 
-function handleNotifyFrame(payload: any, owner: object) {
+function handleNotifyFrame(payload: Record<string, unknown>, owner: object) {
+  // 帧字段按展示契约收窄：SSE 载荷恒为服务端序列化的通知帧；缺失回落空串（标签拼装恒有
+  // 定义，不把 "undefined" 拼进 tag）。判定字段（whenVisible/playOnly/sound）保持 unknown
+  // 原样交判定侧（frameAccepted/soundPolicyOf 本就按 unknown 解释）。
+  const kind = typeof payload.kind === "string" ? payload.kind : "";
+  const title = typeof payload.title === "string" ? payload.title : "";
+  const message = typeof payload.message === "string" ? payload.message : "";
   // 测试通知无条件提醒；其余帧在页面可见时不打扰，除非帧自带 whenVisible——判定见 notify/policy.ts
   if (
     !frameAccepted({
-      kind: payload.kind,
+      kind: kind,
       whenVisible: payload.whenVisible,
       playOnly: payload.playOnly,
       visibility: document.visibilityState,
@@ -274,9 +296,9 @@ function handleNotifyFrame(payload: any, owner: object) {
     return;
   }
   showNotification(
-    payload.kind,
-    payload.title,
-    payload.message,
+    kind,
+    title,
+    message,
     {
       sound: payload.sound,
       playOnly: payload.playOnly === true,
@@ -302,21 +324,23 @@ const eventsHandle: { current: NotifySession | null } = { current: null };
  * 诊断面把拒答体当自检载荷。`body` 传的是已解析的响应体，围栏体的 code/status 才挂得上。
  * 抛错不是给用户看的（各调用点的 catch 决定降级），是为了让「非 2xx」不再伪装成一份空数据。
  */
-function assertOk(r: any, body: any): void {
+function assertOk(r: Response, body: unknown): void {
   if (!r.ok) throw markHttpFailure(new Error("HTTP " + r.status), r.status, body);
 }
 
 /** 加载 GET /config 包装体 → 结构化 {user, revision, effective, writable}。 */
-function fetchConfig(): Promise<any> {
-  return fetch(ROUTES.config, { headers: { accept: "application/json" } }).then(function (r: any) {
-    return r.json().then(function (body: any) {
+function fetchConfig(): Promise<ConfigSnapshot> {
+  return fetch(ROUTES.config, { headers: { accept: "application/json" } }).then(function (
+    r: Response,
+  ) {
+    return r.json().then(function (body: ConfigSnapshot) {
       if (!r.ok) {
-        const err = (body && body.error) || {};
-        throw markHttpFailure(
-          new Error(err.details || err.error || "HTTP " + r.status),
-          r.status,
-          body,
-        );
+        const nested = body.error;
+        const detail =
+          typeof nested === "object" && nested !== null
+            ? nested.details || nested.error
+            : undefined;
+        throw markHttpFailure(new Error(detail || "HTTP " + r.status), r.status, body);
       }
       return body;
     });
@@ -324,23 +348,30 @@ function fetchConfig(): Promise<any> {
 }
 
 /** 拉取最近历史记录（最近 10 条，倒序）。 */
-function fetchHistory(): Promise<any[]> {
-  return fetch(ROUTES.history, { headers: { accept: "application/json" } }).then(function (r: any) {
-    return r.json().then(function (body: any) {
+function fetchHistory(): Promise<HistoryRecordView[]> {
+  return fetch(ROUTES.history, { headers: { accept: "application/json" } }).then(function (
+    r: Response,
+  ) {
+    return r.json().then(function (body: { records?: unknown }) {
       assertOk(r, body);
-      const records = (body && body.records) || [];
-      return records.slice(-10).reverse();
+      const records: unknown = body.records;
+      return (Array.isArray(records) ? records : []).slice(-10).reverse() as HistoryRecordView[];
     });
   });
 }
 
 /** 拉取频道投递状态（per-channel 最近投递终态）。
  *  失败向上抛（调用方决定保留旧态而非清空状态行）。 */
-function fetchStatus(): Promise<any> {
-  return fetch(ROUTES.status, { headers: { accept: "application/json" } }).then(function (r: any) {
-    return r.json().then(function (body: any) {
+function fetchStatus(): Promise<ChannelStatusMap> {
+  return fetch(ROUTES.status, { headers: { accept: "application/json" } }).then(function (
+    r: Response,
+  ) {
+    return r.json().then(function (body: { channels?: unknown }) {
       assertOk(r, body);
-      return (body && body.channels) || {};
+      const channels: unknown = body.channels;
+      return (
+        typeof channels === "object" && channels !== null ? channels : {}
+      ) as ChannelStatusMap;
     });
   });
 }
@@ -351,12 +382,13 @@ function fetchStatus(): Promise<any> {
  * 失败一律回落空清单（调用点的既有降级：清单区显示「暂无」），故这里自己吞掉 `assertOk` 抛出的
  * 错误——判据仍在（非 2xx 的 body 不再被当清单读），只是不给用户报错。
  */
-function fetchKinds(): Promise<any[]> {
+function fetchKinds(): Promise<RegisteredKindView[]> {
   return fetch(ROUTES.kinds, { headers: { accept: "application/json" } })
-    .then(function (r: any) {
-      return r.json().then(function (body: any) {
+    .then(function (r: Response) {
+      return r.json().then(function (body: { kinds?: unknown }) {
         assertOk(r, body);
-        return (body && body.kinds) || [];
+        const kinds: unknown = body.kinds;
+        return (Array.isArray(kinds) ? kinds : []) as RegisteredKindView[];
       });
     })
     .catch(function () {
@@ -372,10 +404,10 @@ function fetchKinds(): Promise<any[]> {
  *  与宿主 OS 可异机，所以不能拿 navigator.platform 猜。失败/未知一律 null，由渲染侧回落通用文案。 */
 function fetchHealth(): Promise<string | null> {
   return fetch(ROUTES.health, { headers: { accept: "application/json" } })
-    .then(function (r: any) {
-      return r.json().then(function (body: any) {
+    .then(function (r: Response) {
+      return r.json().then(function (body: { platform?: unknown }) {
         assertOk(r, body);
-        return typeof body.platform === "string" ? (body.platform as string) : null;
+        return typeof body.platform === "string" ? body.platform : null;
       });
     })
     .catch(function () {
@@ -406,43 +438,43 @@ function fetchDiagnostics(): Promise<unknown> {
 }
 
 /** 动态 kind 确认（POST /kinds {kind, confirmed}）。 */
-function postKind(kind: string, confirmed: boolean): Promise<any> {
+function postKind(kind: string, confirmed: boolean): Promise<PostKindResult> {
   return fetch(ROUTES.kinds, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ kind: kind, confirmed: confirmed }),
-  }).then(function (r: any) {
-    return r.json().then(function (body: any) {
-      if (!r.ok)
-        throw markHttpFailure(
-          new Error(
-            (body && body.error && (body.error.details || body.error.error)) || "HTTP " + r.status,
-          ),
-          r.status,
-          body,
-        );
+  }).then(function (r: Response) {
+    return r.json().then(function (body: PostKindResult) {
+      if (!r.ok) {
+        const nested = body.error;
+        const detail =
+          typeof nested === "object" && nested !== null
+            ? nested.details || nested.error
+            : undefined;
+        throw markHttpFailure(new Error(detail || "HTTP " + r.status), r.status, body);
+      }
       return body;
     });
   });
 }
 
 /** 测试通知（channelId 可选——per-channel 测试，收敛到 service 管线）。 */
-function sendTestReq(channelId?: string): Promise<any> {
+function sendTestReq(channelId?: string): Promise<SendTestResult> {
   return fetch(ROUTES.test, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(channelId ? { channelId: channelId } : {}),
-  }).then(function (r: any) {
-    return r.json().then(function (body: any) {
+  }).then(function (r: Response) {
+    return r.json().then(function (body: SendTestResult) {
       if (!r.ok) {
-        const err = (body && body.error) || {};
+        const nested = body.error;
+        const detail =
+          typeof nested === "object" && nested !== null
+            ? nested.details || nested.error
+            : undefined;
         // 围栏拒绝体的 error 是裸字符串；403 的 https 引导改由结构化 code/status 判定，
         // 文案里的状态码只作旧宿主的兜底（见 api-error.ts），故两者都挂上。
-        throw markHttpFailure(
-          new Error(err.details || err.error || "HTTP " + r.status),
-          r.status,
-          body,
-        );
+        throw markHttpFailure(new Error(detail || "HTTP " + r.status), r.status, body);
       }
       return body;
     });
@@ -462,14 +494,12 @@ function SettingsCard() {
   const useEffect = ReactHooks.useEffect;
   // 设置草稿：形状是服务端 settings 对象，客户端只读其中几个键（真正的形状声明在宿主侧）。
   // 声明成 Record 而不是让 useState(null) 推成 null：否则每次读键都要靠调用方把值当 any 传进来。
-  const draft = useState(null as Record<string, any> | null);
+  const draft = useState(null as SettingsView | null);
   const settings = draft[0];
   const setSettings = draft[1];
   // 声明形状而不是让 useState(null) 推成 null：读侧只取 writable，但写成 never 的话
   // 任何一次读取都要靠调用方把值当 any 传进来才编得过（就是本行原先的形态）。
-  const meta = useState(
-    null as { user: any; revision: any; effective: any; writable: boolean } | null,
-  );
+  const meta = useState(null as MetaView | null);
   const metaValue = meta[0];
   const setMeta = meta[1];
   // 保存反馈（i18n 重构：msg + err 结构化状态，不能用文案内容判断错误态）
@@ -478,17 +508,17 @@ function SettingsCard() {
   const setSaved = function (msg: string, err?: boolean) {
     savedDraft[1](msg ? { msg: msg, err: err === true } : null);
   };
-  const historyDraft = useState(null as any[] | null);
+  const historyDraft = useState(null as HistoryRecordView[] | null);
   const history = historyDraft[0];
   const setHistory = historyDraft[1];
   const clearArmed = useState(false);
   const clearArmedValue = clearArmed[0];
   const setClearArmed = clearArmed[1];
   // 频道投递状态（/status channels map，键=bark:<id>）/ 动态 kind 清单（/kinds）
-  const statusDraft = useState({} as Record<string, any>);
+  const statusDraft = useState({} as ChannelStatusMap);
   const statusMap = statusDraft[0];
   const setStatusMap = statusDraft[1];
-  const kindsDraft = useState([] as any[]);
+  const kindsDraft = useState([] as RegisteredKindView[]);
   const kindsList = kindsDraft[0];
   const setKindsList = kindsDraft[1];
   // 宿主能力自检载荷（/diagnostics 原样收下；归一化与文案在 capabilities.ts）。
@@ -542,12 +572,12 @@ function SettingsCard() {
   // 加载基线：保存时只提交与基线不同的键（增量 diff），未改动的键不提交。
   // 用 useRef 持久化：组件每次渲染局部变量会重置为 null，导致 save() 闭包里读不到
   // 基线而永远判定「无变化」。
-  const baselineRef = ReactHooks.useRef(null as Record<string, any> | null);
+  const baselineRef = ReactHooks.useRef(null as SettingsView | null);
   // settings / meta（revision）ref 收口——异步回调（保存成功 / trailing 补发）
   // 一律读 ref 而非渲染闭包值，杜绝「连点第二个 PUT 带旧 revision」「补发漏提交在途
   // 新编辑」两类陈旧闭包问题。settingsRef 由 patch（唯一写入口）在 updater 内同步。
-  const settingsRef = ReactHooks.useRef(null as Record<string, any> | null);
-  const metaRef = ReactHooks.useRef(null as any);
+  const settingsRef = ReactHooks.useRef(null as SettingsView | null);
+  const metaRef = ReactHooks.useRef(null as MetaView | null);
   // 保存串行 guard（模块级纯工厂）——同一时刻仅一个在途 PUT。
   const saveGuardRef = ReactHooks.useRef(null as ReturnType<typeof createSaveGuard> | null);
   if (saveGuardRef.current === null) saveGuardRef.current = createSaveGuard();
@@ -559,7 +589,7 @@ function SettingsCard() {
   // 409 冲突横幅态。null=无冲突；非 null={ entry, latest }——
   // latest 为冲突时拉取的服务端最新 {effective, revision}（「加载最新/覆盖」动作
   // 的数据源）。横幅期间用户可继续编辑（非模态），动作触发时实时重算本地变更。
-  const conflictDraft = useState(null as null | { entry: string; latest: any });
+  const conflictDraft = useState(null as null | { entry: string; latest: ConflictLatest });
   const conflict = conflictDraft[0];
   const setConflict = conflictDraft[1];
 
@@ -575,7 +605,7 @@ function SettingsCard() {
 
   function loadStatus(alive: { value: boolean }) {
     fetchStatus()
-      .then(function (map: any) {
+      .then(function (map) {
         if (alive.value) setStatusMap(map);
       })
       .catch(function () {
@@ -587,7 +617,7 @@ function SettingsCard() {
   function loadKinds(alive: { value: boolean }) {
     // 与上面的 loadStatus 同款：失败保留已加载列表，不清空（瞬时抖动不该丢已展示内容）
     fetchKinds()
-      .then(function (list: any[]) {
+      .then(function (list) {
         if (alive.value) setKindsList(list);
       })
       .catch(function () {});
@@ -613,9 +643,10 @@ function SettingsCard() {
 
   function loadCard(alive: { value: boolean }) {
     fetchConfig()
-      .then(function (v: any) {
+      .then(function (v) {
         if (!alive.value) return;
-        const effective = (v && v.effective) || {};
+        // 服务端快照收成客户端视图（HTTP 边界断言，字段形态见 settings/types.ts）。
+        const effective = ((v && v.effective) || {}) as SettingsView;
         commitSettings(Object.assign({}, effective));
         baselineRef.current = Object.assign({}, effective);
         const nextMeta = {
@@ -628,7 +659,7 @@ function SettingsCard() {
         setMeta(nextMeta);
         if (v.writable === false) setSaved(t("settingsUnavailable"), true);
       })
-      .catch(function (e: any) {
+      .catch(function (e: unknown) {
         if (!alive.value) return;
         const failure = apiFailureOf(e, t);
         setSaved(t("loadFail", { msg: failure.message, hint: failure.hint }), true);
@@ -661,9 +692,10 @@ function SettingsCard() {
    *  switchControl / discardChanges / 各 patch 调用方）统一走本函数，保证
    *  异步回调读 settingsRef.current 恒为最新草稿。
    *  p 为对象时浅合并；为函数时以最新 prev 计算（prev => next）。 */
-  function patch(p: any) {
-    setSettings(function (prev: any) {
-      const next = typeof p === "function" ? p(prev) : Object.assign({}, prev, p);
+  function patch(p: SettingsPatch) {
+    setSettings(function (prev) {
+      const cur: SettingsView = prev === null ? {} : prev;
+      const next = typeof p === "function" ? p(cur) : Object.assign({}, cur, p);
       settingsRef.current = next;
       return next;
     });
@@ -674,7 +706,7 @@ function SettingsCard() {
    *  setState——调用方（loadCard / 冲突恢复 rebase / 静默刷新）随后可能立即
    *  读 ref（如覆盖重提 saveFor），不能等 updater 异步执行。事件级增量编辑
    *  仍走 patch（updater 内写 ref，天然与 state 计算同步）。 */
-  function commitSettings(next: Record<string, any>) {
+  function commitSettings(next: SettingsView) {
     settingsRef.current = next;
     setSettings(next);
     setSaved("");
@@ -684,7 +716,7 @@ function SettingsCard() {
    *  逻辑收敛在模块级纯函数 diffSettingsPayload（供测试直测）。
    *  读 settingsRef（非渲染闭包 settings）——trailing 补发在 .then 回调里
    *  触发，必须取最新草稿；渲染期调用时 ref 与 state 同值，无行为差异。 */
-  function diffPayload(): Record<string, any> {
+  function diffPayload(): Record<string, unknown> {
     // 两个来源都可能是 null（配置还没读回来）：空草稿与 null 在 diffSettingsPayload 里同样是
     // 「没有可提交的键」（它只遍历自有键），故显式给 {} 让类型与运行期取值一致。
     return diffSettingsPayload(settingsRef.current || settings || {}, baselineRef.current);
@@ -693,7 +725,7 @@ function SettingsCard() {
   /** 409 冲突恢复：拉最新 → 无脏静默刷新 / 有脏弹双动作横幅。 */
   function handleConflict(entry: string) {
     fetchConfig()
-      .then(function (v: any) {
+      .then(function (v) {
         if (!v) return;
         const latest = {
           effective: (v && v.effective) || {},
@@ -717,9 +749,10 @@ function SettingsCard() {
 
   /** 无脏静默刷新：settings/baseline/meta 全部切到服务端最新（不丢任何草稿——
    *  调用前已确认本地无脏）。 */
-  function applyLatestQuiet(latest: any) {
-    commitSettings(Object.assign({}, latest.effective));
-    baselineRef.current = Object.assign({}, latest.effective);
+  function applyLatestQuiet(latest: ConflictLatest) {
+    const fresh = Object.assign({}, latest.effective) as SettingsView;
+    commitSettings(fresh);
+    baselineRef.current = Object.assign({}, fresh);
     const nextMeta = {
       user: latest.user || {},
       revision: latest.revision,
@@ -737,7 +770,7 @@ function SettingsCard() {
    *  挂起）可能永不 settle → finally 永不执行 → 按钮永久「保存中」。加 15s
    *  AbortController 超时兜底：超时中断请求（服务端写入与否未知，UI 必须恢复），
    *  释放 guard 并提示重试。 */
-  function putAndCommit(payload: Record<string, any>, entry: string) {
+  function putAndCommit(payload: Record<string, unknown>, entry: string) {
     const expectedRevision =
       metaRef.current && typeof metaRef.current.revision === "number"
         ? metaRef.current.revision
@@ -755,25 +788,26 @@ function SettingsCard() {
       body: JSON.stringify({ patch: payload, expectedRevision: expectedRevision }),
       signal: ctrl ? ctrl.signal : undefined,
     })
-      .then(function (r: any) {
-        return r.json().then(function (body: any) {
+      .then(function (r: Response) {
+        return r.json().then(function (body: PutResult) {
           if (!r.ok) {
-            const err = (body && body.error) || {};
+            const nested = body.error;
+            const detail =
+              typeof nested === "object" && nested !== null
+                ? nested.details || nested.error
+                : undefined;
             // 挂 code 供 catch 按契约分流：409 判定优先
             // err.code === "SETTINGS_CONFLICT"，不再依赖错误文案中文匹配
             // （文案是本地化/可改的，code 是契约字段）。文案保留进 message。
             // markHttpFailure 两种形状都取：SETTINGS_CONFLICT 在 `body.error.code`，
             // 围栏拒答的 code 与 error 平铺（它同时补上 status，供失败判定用）。
-            throw markHttpFailure(
-              new Error(err.error || err.details || err.code || "HTTP " + r.status),
-              r.status,
-              body,
-            );
+            const code = typeof nested === "object" && nested !== null ? nested.code : undefined;
+            throw markHttpFailure(new Error(detail || code || "HTTP " + r.status), r.status, body);
           }
           return body;
         });
       })
-      .then(function (body: any) {
+      .then(function (body: PutResult) {
         // 事务性基线推进：只并入本次 PUT 实际提交的 payload
         // 键——若并入点击后的 settings 全量，在途期间的编辑会被固化为基线而丢失；
         // 键级并入后，在途新编辑（非 payload 键）仍在 diff 中，由 trailing 补发提交。
@@ -792,17 +826,18 @@ function SettingsCard() {
           setSaved("");
         }, 2200);
       })
-      .catch(function (e: any) {
+      .catch(function (e: unknown) {
         const failure = apiFailureOf(e, t);
+        const errCode = e instanceof Error ? (e as HttpFailure).code : undefined;
         // 409 判定：code 契约优先，中文文案仅作旧服务端回退
-        if ((e && e.code === "SETTINGS_CONFLICT") || failure.message.indexOf("版本冲突") >= 0) {
+        if (errCode === "SETTINGS_CONFLICT" || failure.message.indexOf("版本冲突") >= 0) {
           // 版本冲突：进入双动作恢复（不再仅提示手动关闭重开）
           handleConflict(entry);
           return;
         }
         // AbortError（15s 超时兜底）：服务端可能已写入也可能未写入——提示重试，
         // 用户重试时 revision 若已推进会自然走 409 恢复流程，语义自洽。
-        if (e && e.name === "AbortError") {
+        if (e instanceof Error && e.name === "AbortError") {
           setSaved(t("saveTimeout"), true);
           return;
         }
@@ -818,7 +853,7 @@ function SettingsCard() {
 
   /** 从全量 diff 中按入口过滤出本次要提交的键（域保存；
    *  纯逻辑收敛在模块级 domainPayload，供测试直测）。 */
-  function diffPayloadFor(entry: string): Record<string, any> {
+  function diffPayloadFor(entry: string): Record<string, unknown> {
     return domainPayload(diffPayload(), entry);
   }
 
@@ -833,13 +868,14 @@ function SettingsCard() {
    *  - guard.end() 放 finally：成功/失败/异常任何路径都释放，防按钮永久卡死。 */
   function saveFor(entry: string, quietIfEmpty?: boolean) {
     if (!saveGuard.tryBegin(entry)) return; // 在途：记 pending=entry，由在途 finally 补发
-    let payload: Record<string, any>;
+    let payload: Record<string, unknown>;
     try {
       payload = diffPayloadFor(entry);
     } catch (error) {
       // 防御：tryBegin 后同步异常（diff 计算等理论不可达路径）必须释放 guard
       saveGuard.end();
-      setSaved(t("saveFail", { msg: String((error && (error as any).message) || error) }), true);
+      const detail = error instanceof Error ? error.message : undefined;
+      setSaved(t("saveFail", { msg: String(detail || error) }), true);
       return;
     }
     if (Object.keys(payload).length === 0) {
@@ -875,9 +911,9 @@ function SettingsCard() {
     const entry = conflict.entry;
     const latest = conflict.latest;
     const localChanges = diffPayloadFor(entry); // 实时重算（相对旧基线的当前脏）
-    const merged = rebaseSettings(localChanges, latest.effective || {});
+    const merged = rebaseSettings(localChanges, latest.effective || {}) as SettingsView;
     commitSettings(merged); // 同步写 ref：随后 saveFor 立即以 merged 计算 diff
-    baselineRef.current = Object.assign({}, latest.effective || {});
+    baselineRef.current = Object.assign({}, latest.effective || {}) as SettingsView;
     const nextMeta = {
       user: latest.user || {},
       revision: latest.revision,
@@ -908,7 +944,7 @@ function SettingsCard() {
   /** 发送测试通知（channelId 可选——per-channel 测试；完成后刷新状态行）。 */
   function sendTest(channelId?: string) {
     sendTestReq(channelId)
-      .then(function (data: any) {
+      .then(function (data) {
         toast(
           t(
             channelId ? "testChannelOk" : "testSent",
@@ -917,7 +953,7 @@ function SettingsCard() {
         );
         loadStatus({ value: true });
       })
-      .catch(function (error: any) {
+      .catch(function (error: unknown) {
         const failure = apiFailureOf(error, t);
         toast(t("testFail", { msg: failure.message, hint: failure.hint }));
       });
@@ -937,10 +973,11 @@ function SettingsCard() {
 
   /** 更新第 idx 个频道实例（字段经 assignChannelFields 合并——空串/undefined
    *  删键；函数式基于最新 channels，防后写覆盖）。 */
-  function chPatch(idx: number, part: Record<string, any>) {
-    patch(function (prev: any) {
+  function chPatch(idx: number, part: Record<string, unknown>) {
+    patch(function (prev) {
       const list = (prev.channels || []).slice();
-      list[idx] = assignChannelFields(list[idx] || {}, part);
+      // 合并结果恒为频道字段集（assignChannelFields 只做删键/浅覆盖，见 settings/diff.ts）。
+      list[idx] = assignChannelFields(list[idx] || {}, part) as SettingsChannelView;
       return Object.assign({}, prev, { channels: list });
     });
   }
@@ -948,7 +985,7 @@ function SettingsCard() {
   /** 写/删某实例的 levels 映射（kind→level；level 为空删除该 kind；函数式基于最新 channels）。 */
   function chLevelsSet(idx: number, kind: string, level: string) {
     if (!kind || kind === "__proto__" || kind === "constructor" || kind === "prototype") return;
-    patch(function (prev: any) {
+    patch(function (prev) {
       const list = (prev.channels || []).slice();
       const ch = Object.assign({}, list[idx]);
       const levels = Object.assign({}, ch.levels || {});
@@ -963,7 +1000,7 @@ function SettingsCard() {
 
   /** 删除第 idx 个频道实例（函数式基于最新 channels）。 */
   function chRemove(idx: number) {
-    patch(function (prev: any) {
+    patch(function (prev) {
       const list = (prev.channels || []).slice();
       list.splice(idx, 1);
       return Object.assign({}, prev, { channels: list });
@@ -978,17 +1015,17 @@ function SettingsCard() {
    *  未填保存由服务端 400 拦（url 非法即整组拒绝，语义正确）。超时缺省 10s 由
    *  服务端 normalize 兜底。 */
   function chAdd(kind: string) {
-    patch(function (prev: any) {
+    patch(function (prev) {
       const list = prev.channels || [];
       let seq = 1;
       const taken = new Set(
-        list.map(function (c: any) {
+        list.map(function (c) {
           return String(c.id);
         }),
       );
       while (taken.has(kind + "-" + seq)) seq += 1;
       const id = kind + "-" + seq;
-      const base: Record<string, any> =
+      const base: SettingsChannelView =
         kind === "webhook"
           ? {
               id: id,
@@ -1015,13 +1052,13 @@ function SettingsCard() {
 
   /** 当前 kind 的路由数组（undefined = 跟随默认广播）。 */
   function routeOf(kind: string): string[] | undefined {
-    const routes = settings?.kindRoutes || {};
+    const routes: Record<string, string[]> = settings?.kindRoutes || {};
     return routes[kind];
   }
 
   /** 写/清 kind 路由条目（ids=null 删除条目恢复默认；函数式基于最新 kindRoutes）。 */
   function routeSetKind(kind: string, ids: string[] | null) {
-    patch(function (prev: any) {
+    patch(function (prev) {
       const routes = Object.assign({}, prev.kindRoutes || {});
       if (ids === null || ids.length === 0) delete routes[kind];
       else routes[kind] = ids;
@@ -1030,7 +1067,7 @@ function SettingsCard() {
   }
 
   /** 频道显示名：内置用固定文案（它们的 name 不参与配置），实例用 name 回退 id。 */
-  function channelLabel(c: any): string {
+  function channelLabel(c: SettingsChannelView): string {
     if (c.type === "browser") return t("chBrowserNotify");
     if (c.type === "system") return t("chSystemNotify");
     return c.name || String(c.id);
@@ -1038,9 +1075,9 @@ function SettingsCard() {
 
   /** 当前「跟随默认」投递面（路由 id 列表）：内置与实例同一判据——`enabled`（发不发）。
    *  chips 点亮态（无条目时）与首次切换物化的快照都以本函数为准——所见即所得。 */
-  function defaultRouteIds(prev: any): string[] {
+  function defaultRouteIds(prev: SettingsView): string[] {
     const ids: string[] = [];
-    (prev.channels || []).forEach(function (c: any) {
+    (prev.channels || []).forEach(function (c) {
       if (c.enabled === true) ids.push(channelIdOf(c));
     });
     return ids;
@@ -1050,8 +1087,10 @@ function SettingsCard() {
    *  禁点——投递面 = 启用频道 ∩ 路由，未启用频道即使点亮也不投递，假点亮误导。
    *  enabled 标志供 chips 置灰/title 提示；已勾选未启用频道不自动清除，
    *  用户启用后即恢复有效）。候选顺序即 `channels` 顺序：内置恒在最前。 */
-  function routeOptions(prev: any): Array<{ id: string; label: string; enabled: boolean }> {
-    return (prev.channels || []).map(function (c: any) {
+  function routeOptions(
+    prev: SettingsView,
+  ): Array<{ id: string; label: string; enabled: boolean }> {
+    return (prev.channels || []).map(function (c) {
       return { id: channelIdOf(c), label: channelLabel(c), enabled: c.enabled === true };
     });
   }
@@ -1066,9 +1105,10 @@ function SettingsCard() {
    * - 清空（全灭）= 删除条目恢复跟随默认（与旧实现「空数组即 delete」一致）。
    */
   function routeToggle(kind: string, oid: string, checked: boolean) {
-    patch(function (prev: any) {
-      const routes = Object.assign({}, prev.kindRoutes || {});
-      const cur = routes[kind] === undefined ? defaultRouteIds(prev).slice() : routes[kind].slice();
+    patch(function (prev) {
+      const routes: Record<string, string[]> = Object.assign({}, prev.kindRoutes || {});
+      const prior = routes[kind];
+      const cur = prior === undefined ? defaultRouteIds(prev).slice() : prior.slice();
       const at = cur.indexOf(oid);
       if (checked && at === -1) cur.push(oid);
       else if (!checked && at !== -1) cur.splice(at, 1);
@@ -1084,7 +1124,7 @@ function SettingsCard() {
    *  （无并发的纯版本链断点，比连点更高频）。 */
   function confirmOne(kind: string, confirmed: boolean) {
     postKind(kind, confirmed)
-      .then(function (body: any) {
+      .then(function (body) {
         const freshRevision = body && typeof body.revision === "number" ? body.revision : undefined;
         if (freshRevision !== undefined && metaRef.current) {
           const nextMeta = Object.assign({}, metaRef.current, { revision: freshRevision });
@@ -1092,10 +1132,11 @@ function SettingsCard() {
           setMeta(nextMeta);
         }
         toast(t("kindConfirmOk"));
-        return loadKinds({ value: true }) as any;
+        return loadKinds({ value: true });
       })
-      .catch(function (e: any) {
-        toast(t("kindConfirmFail", { msg: (e && e.message) || e }));
+      .catch(function (e: unknown) {
+        const detail = e instanceof Error ? e.message : undefined;
+        toast(t("kindConfirmFail", { msg: detail || e }));
       });
   }
 
@@ -1109,17 +1150,17 @@ function SettingsCard() {
     }
     setClearArmed(false);
     fetch(ROUTES.history, { method: "DELETE" })
-      .then(function (r: any) {
+      .then(function (r: Response) {
         // 只挂响应码、不读响应体：DELETE 的失败体未必是 JSON，解析它会把一条失败请求
         // 变成两条（读体再抛）。状态码足以让判定侧不再依赖「文案里含 403」这条兜底。
         if (!r.ok) throw markHttpFailure(new Error("HTTP " + r.status), r.status);
         return r.json();
       })
-      .then(function (data: any) {
+      .then(function (data: ClearHistoryResult) {
         toast(t("cleared", { n: data.removed || 0 }));
         loadHistory({ value: true });
       })
-      .catch(function (error: any) {
+      .catch(function (error: unknown) {
         const failure = apiFailureOf(error, t);
         toast(t("clearFail", { msg: failure.message, hint: failure.hint }));
       });
@@ -1134,8 +1175,10 @@ function SettingsCard() {
    */
   function routeChipsRow(kind: string) {
     const routes = routeOf(kind);
-    const options = routeOptions(settings);
-    const litIds = routes === undefined ? defaultRouteIds(settings) : routes.slice();
+    // 本函数只在 settings 已加载的渲染路径被调用（651 行守卫之后）；`?? {}` 只是让
+    // 嵌套函数体内丢失的 narrowing 仍有定义（该分支不可达，原先是直接读 null 抛错）。
+    const options = routeOptions(settings ?? {});
+    const litIds = routes === undefined ? defaultRouteIds(settings ?? {}) : routes.slice();
     const litSet: Record<string, boolean> = {};
     litIds.forEach(function (id: string) {
       litSet[id] = true;
@@ -1202,7 +1245,7 @@ function SettingsCard() {
 
   // 三端降级文案（浏览器通知权限状态行已移入「浏览器通知」频道卡，
   // 这里只保留服务不可用 / 非安全上下文 / 平台不支持三条全局降级说明）
-  const degradation: any[] = [];
+  const degradation: React.ReactNode[] = [];
   if (metaValue && metaValue.writable === false) {
     degradation.push(
       <div className="dn-set-note" key="settings-unavailable">
@@ -1229,7 +1272,7 @@ function SettingsCard() {
   // ---- 卡内三 tab（通知事件 / 通知频道 / 通知记录）----
 
   // 待确认动态 kind 计数（「通知事件」tab 徽标——确认流是安全设计，不可被 tab 埋没）
-  const pendingKinds = kindsList.filter(function (k: any) {
+  const pendingKinds = kindsList.filter(function (k) {
     return !k.confirmed;
   }).length;
 
@@ -1399,7 +1442,31 @@ function SettingsCard() {
  */
 const pageOwner: { current: object | null } = { current: null };
 
-export function apply(ctx: any) {
+/** 宿主 locale 服务读形态（本包只用 register/bind/subscribe/getSnapshot；缺失即回落 key 本体）。 */
+interface LocaleServiceView {
+  register: (ns: string, dict: { zh: unknown; en: unknown }) => void;
+  bind: (ns: string) => unknown;
+  subscribe?: (listener: () => void) => () => void;
+  getSnapshot?: () => unknown;
+}
+
+/** 宿主插槽读形态（本包只用 settings.section 的 inject/register；缺失即 tab 不挂载）。 */
+interface SlotsView {
+  inject: (name: string, setup: () => unknown) => void;
+  register: (item: Record<string, unknown>, render: () => unknown) => unknown;
+}
+
+/**
+ * 浏览器端上下文的窄面（本包实际使用的面：get + effect），与 inject 声明的
+ * ["slots", "locale"] 对齐；slots/locale 各自的读形态见上。effect 面与 DisposerHost
+ * 同形（finally 里 stack.attach 直接消费）。
+ */
+interface ClientContext {
+  get: (name: string) => unknown;
+  effect: (callback: () => () => void, id: string) => void;
+}
+
+export function apply(ctx: ClientContext): void {
   // 清理栈：边装配边采集 teardown，登记点（attach）放在 finally——中途同步抛错时，
   // 已建立的那些资源也仍有 disposer 可摘（见 shared/disposers.ts 文件头对登记点在后的说明）。
   const stack = createDisposerStack();
@@ -1452,21 +1519,28 @@ export function apply(ctx: any) {
     });
 
     // i18n：注册本插件字典；t 绑定官方 locale 服务（未装配回落 key 本体）。
-    const locale: any = ctx.get("locale");
+    const locale = ctx.get("locale") as LocaleServiceView | null | undefined;
     // 订阅取消函数供 disposer 卸载调用（守卫对齐 provider-usage/
     // mcp-manager 的 undefined 形态——不预设 subscribe 返回 null，防其返回
     // null 时 null 初始化遮蔽导致守卫失效），防重复 apply 后旧订阅持续重绑
     // 已停用实例。
     let unsubLocale: (() => void) | undefined;
     if (locale && typeof locale.register === "function") {
+      // 收窄后的别名：嵌套回调内 narrowing 会重置，别名本身即非空类型，回调内照常可用。
+      const localeService = locale;
+      const bindLocale = localeService.bind;
       try {
-        locale.register(NS, { zh: zh, en: en });
+        localeService.register(NS, { zh: zh, en: en });
         // 宿主 bind 出的签名以本包字典键为参数，比端口声明的 string 更窄——收口在适配这一处
-        bindTranslate(locale.bind(NS) as Translate);
-        if (typeof locale.subscribe === "function" && typeof locale.getSnapshot === "function") {
-          unsubLocale = locale.subscribe(function () {
+        bindTranslate(bindLocale(NS) as Translate);
+        if (
+          typeof localeService.subscribe === "function" &&
+          typeof localeService.getSnapshot === "function"
+        ) {
+          const subscribe = localeService.subscribe;
+          unsubLocale = subscribe(function () {
             try {
-              bindTranslate(locale.bind(NS) as Translate);
+              bindTranslate(bindLocale(NS) as Translate);
             } catch {
               /* 忽略 */
             }
@@ -1530,13 +1604,14 @@ export function apply(ctx: any) {
     // 独立顶层页）；label 为导航显示文本。旧运行时若不声明该插槽，inject
     // 回调不执行 → tab 不挂载、通知半区照常工作（与 provider-usage 同语义，
     // 不做 plugin.item 双插槽重复展示）。
-    const slots = ctx.get("slots");
+    const slots = ctx.get("slots") as SlotsView | null | undefined;
     if (slots && typeof slots.inject === "function") {
+      const slotHost = slots;
       // 就地兜住插槽接线：这里失败只意味着设置 tab 没挂上，通知半区照常工作；冒到外层会被
       // 报成整段「挂载失败」，把一次可降级的缺页说成插件不可用。
       try {
-        slots.inject("settings.section", function () {
-          return slots.register(
+        slotHost.inject("settings.section", function () {
+          return slotHost.register(
             // label 传 thunk：宿主 nav rows 每次读取经 resolveSlotLabel
             // 求值 + shell 订阅 locale 重渲染，切语言即跟随（注册期求值字符串快照是旧行为）。
             // t 走 client/locale.ts 的当前绑定（locale.subscribe 回调重绑），thunk 保持最小

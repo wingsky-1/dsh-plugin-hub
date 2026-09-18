@@ -8,6 +8,7 @@ import * as React from "react";
 import { SOUND_IDS, channelIdOf, isSoundId } from "../../../shared/interface.ts";
 import type { SoundId } from "../../../shared/interface.ts";
 import type { AudioEngine } from "../../notify/audio.ts";
+import type { SettingsChannelView } from "../types.ts";
 import type { Translate } from "../../locale.ts";
 import { switchToggle } from "../parts/controls.tsx";
 
@@ -27,7 +28,7 @@ const SOUND_OPTION_KEYS: Record<SoundId, string> = {
  *  纯后台页面自播需此前任意手势解锁；试听点击本身即手势）。 */
 export function soundRow(
   index: number,
-  ch: any,
+  ch: SettingsChannelView,
   channelLabel: string,
   soundOn: boolean,
   t: Translate,
@@ -36,7 +37,7 @@ export function soundRow(
 ) {
   const soundVal = ch.sound;
   const toneValue = isSoundId(soundVal) ? soundVal : "";
-  const toneOpts: any[] = [
+  const toneOpts: React.ReactElement[] = [
     <option value="" key="sys">
       {t("chSoundFollow")}
     </option>,
@@ -67,7 +68,7 @@ export function soundRow(
             className="dn-set-input dn-set-select"
             value={toneValue}
             aria-label={t("chSoundTone")}
-            onChange={function (e: any) {
+            onChange={function (e: React.ChangeEvent<HTMLSelectElement>) {
               audioEngine.unlock();
               chPatch(index, { sound: e.target.value === "" ? true : e.target.value });
             }}

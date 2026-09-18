@@ -14,6 +14,7 @@ import type { NotifierLocaleKey } from "../../locales.ts";
 import type { Translate } from "../../locale.ts";
 import { switchControl, switchToggle } from "../parts/controls.tsx";
 import { advRow } from "../parts/rows.tsx";
+import type { QuietHoursView, RegisteredKindView, SettingsPatch, SettingsView } from "../types.ts";
 
 // i18n：label 列存字典 key（渲染期 t 求值，模块加载时 t 尚未装配）。
 // 两列各自锚在 shared 的 KindSwitchKey 与本文案字典 key 上：任一侧改名或漏配都是编译错误，
@@ -43,16 +44,16 @@ const EVENT_KIND_MAP: Record<string, string> = Object.fromEntries(
  * 由调用方显式传入。
  */
 export function eventsPane(
-  settings: any,
-  kindsList: any[],
-  patch: (p: any) => void,
+  settings: SettingsView,
+  kindsList: RegisteredKindView[],
+  patch: (p: SettingsPatch) => void,
   confirmOne: (kind: string, confirmed: boolean) => void,
-  routeChipsRow: (kind: string) => any,
+  routeChipsRow: (kind: string) => React.ReactNode,
   severityOf: (kind: string) => NotifySeverity,
   t: Translate,
 ) {
   // 事件区：内置事件卡（sev 色点 + kind 码 + switch + 路由 chips）
-  const eventChildren: any[] = [];
+  const eventChildren: React.ReactNode[] = [];
   EVENT_KEYS.forEach(function (kv) {
     const key = kv[0],
       labelKey = kv[1];
@@ -76,7 +77,7 @@ export function eventsPane(
   // 动态 kind（插件提议的通知类型）：待确认 = 允许/拒绝 + 路由提示；已允许 = 同款
   // 路由 chips（动态 kind 也支持配置投递频道——kindRoutes 天然支持动态
   // kind id 作 key，与服务端 resolveRoutes 的 kind 无关路由解析一致）。
-  const kindRows: any[] = kindsList.map(function (k: any) {
+  const kindRows: React.ReactNode[] = kindsList.map(function (k) {
     const nameText = k.label && k.label !== k.id ? k.label : k.id;
     if (k.confirmed) {
       return (
@@ -156,7 +157,7 @@ export function eventsPane(
             className="dn-set-input dn-set-numInput"
             aria-label={t("historyRetention")}
             value={settings.historyMaxAgeDays}
-            onChange={function (e: any) {
+            onChange={function (e: React.ChangeEvent<HTMLInputElement>) {
               patch({ historyMaxAgeDays: Number(e.target.value) });
             }}
           />,
@@ -165,7 +166,7 @@ export function eventsPane(
     </details>
   );
 
-  const qh = settings.quietHours || {};
+  const qh: QuietHoursView = settings.quietHours || {};
   const allows = qh.allowKinds || [];
   function setAllowKinds(next: string[]) {
     patch({ quietHours: Object.assign({}, qh, { allowKinds: next }) });
@@ -176,8 +177,8 @@ export function eventsPane(
    *  diffPayload() 读的正是那个 ref——绕过它这次改动就进不了 diff，用户在未做其它编辑时
    *  点保存会看到「未修改」，改动被静默丢弃。 */
   function allowFollowEnabled() {
-    patch(function (prev: any) {
-      const nextQh = prev.quietHours || {};
+    patch(function (prev) {
+      const nextQh: QuietHoursView = prev.quietHours || {};
       const next = EVENT_KEYS.filter(function (kv) {
         return prev[kv[0]] === true;
       }).map(function (kv) {
@@ -256,7 +257,7 @@ export function eventsPane(
               className="dn-set-input"
               aria-label={t("dndStart")}
               value={qh.start || "22:00"}
-              onChange={function (e: any) {
+              onChange={function (e: React.ChangeEvent<HTMLInputElement>) {
                 patch({ quietHours: Object.assign({}, qh, { start: e.target.value }) });
               }}
             />
@@ -266,7 +267,7 @@ export function eventsPane(
               className="dn-set-input"
               aria-label={t("dndEnd")}
               value={qh.end || "08:00"}
-              onChange={function (e: any) {
+              onChange={function (e: React.ChangeEvent<HTMLInputElement>) {
                 patch({ quietHours: Object.assign({}, qh, { end: e.target.value }) });
               }}
             />

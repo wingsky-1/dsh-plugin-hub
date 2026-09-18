@@ -112,6 +112,113 @@ async function resumeMigrateFromBak(
 }
 
 /**
+ * 缺失态分流（migrateFileConfig 步骤 0-1）：config.json 不存在时决定幂等或重放。
+ * 返回 outcome 表示已定论（调用方直接返回），undefined 表示存在 config.json、需继续改名迁移。
+ */
+async function handleMissingMigratedConfig(
+  cfgPath: string,
+  bakPath: string,
+  scope: Pick<OwnerScopeLike, "update">,
+  logger?: { warn?: (...a: unknown[]) => void },
+): Promise<MigrationOutcome | undefined> {
+  // 中断态优先于幂等判定：config.json 与 .bak 同时不存在才是真正的已迁移稳态。
+  if (!existsSync(cfgPath)) {
+    if (existsSync(bakPath)) return resumeMigrateFromBak(bakPath, scope, logger);
+    return {
+      performed: false,
+      migrated: false,
+      rolledBack: false,
+      skippedCorrupt: false,
+      resumed: false,
+    };
+  }
+  return undefined;
+}
+
+/**
+ * 读 bak 并解析 JSON（migrateFileConfig 步骤 3 前半）。
+ * 成功返回解析值；损坏时按原口径 warn 并返回 undefined（调用方映射为已标记 corrupt）。
+ */
+function readMigratedBakJson(
+  bakPath: string,
+  logger?: { warn?: (...a: unknown[]) => void },
+): unknown | undefined {
+  try {
+    return JSON.parse(readFileSync(bakPath, "utf8"));
+  } catch {
+    logger?.warn?.(
+      `lan-proxy: 存量 config.json 不是合法 JSON — 仅标记为已迁移（${MIGRATED_BAK_NAME}），不写入设置`,
+    );
+    return undefined;
+  }
+}
+
+/**
+ * 净化已解析的 bak 内容（migrateFileConfig 步骤 3 后半 + 步骤 4 前半）。
+ * 非对象 / 含非法值时按原口径 warn 并返回 null；空对象返回 null（原口径无 warn）；
+ * 成功返回归一化后的 sanitized（复用 normalizeMigratedWsCompressPaths）。
+ */
+function sanitizeMigratedParsed(
+  parsed: unknown,
+  logger?: { warn?: (...a: unknown[]) => void },
+): Exclude<ReturnType<typeof sanitizeSettings>, null> | null {
+  if (typeof parsed !== "object" || parsed === null) {
+    logger?.warn?.(
+      `lan-proxy: 存量 config.json 不是配置对象 — 仅标记为已迁移（${MIGRATED_BAK_NAME}），不写入设置`,
+    );
+    return null;
+  }
+  const sanitized0 = sanitizeSettings(parsed);
+  if (sanitized0 === null) {
+    // 含类型非法值：整体不写入（与保存通道同口径，宁可不迁也不迁一半）。
+    logger?.warn?.(
+      `lan-proxy: 存量 config.json 含非法配置值 — 仅标记为已迁移（${MIGRATED_BAK_NAME}），不写入设置`,
+    );
+    return null;
+  }
+  if (Object.keys(sanitized0).length === 0) {
+    return null;
+  }
+  return normalizeMigratedWsCompressPaths(sanitized0) as Exclude<
+    ReturnType<typeof sanitizeSettings>,
+    null
+  >;
+}
+
+/** 已标记 corrupt 的统一返回（migrateFileConfig 步骤 3 的三种损坏形态共用）。 */
+function migratedCorruptOutcome(): MigrationOutcome {
+  return {
+    performed: true,
+    migrated: false,
+    rolledBack: false,
+    skippedCorrupt: true,
+    resumed: false,
+  };
+}
+
+/**
+ * 回滚改名并落日志（migrateFileConfig 步骤 5）。
+ * 数据始终存在于 config.json 或 bak 之一；回滚失败时按原口径先报回滚失败、再报写入失败。
+ */
+function rollbackMigratedRename(
+  cfgPath: string,
+  bakPath: string,
+  logger: { warn?: (...a: unknown[]) => void } | undefined,
+  err: unknown,
+): void {
+  try {
+    if (!existsSync(cfgPath)) renameSync(bakPath, cfgPath);
+  } catch (rollbackErr) {
+    logger?.warn?.(
+      `lan-proxy: 迁移回滚失败（${errorMessage(rollbackErr)}）— 数据保留在 ${MIGRATED_BAK_NAME}，请手动恢复`,
+    );
+  }
+  logger?.warn?.(
+    `lan-proxy: 存量 config.json 迁移写入设置失败（${errorMessage(err)}）— 已回滚，下次启动重试`,
+  );
+}
+
+/**
  * 存量 config.json 一次性迁移到官方 settings 命名空间（rename-first marker）。
  *
  * 时序（issue #110 修订路线）：
@@ -138,71 +245,15 @@ export async function migrateFileConfig(
 ): Promise<MigrationOutcome> {
   const cfgPath = join(configDir, "config.json");
   const bakPath = join(configDir, MIGRATED_BAK_NAME);
-  // 中断态优先于幂等判定：config.json 与 .bak 同时不存在才是真正的已迁移稳态。
-  if (!existsSync(cfgPath)) {
-    if (existsSync(bakPath)) return resumeMigrateFromBak(bakPath, scope, logger);
-    return {
-      performed: false,
-      migrated: false,
-      rolledBack: false,
-      skippedCorrupt: false,
-      resumed: false,
-    };
-  }
+  const missing = await handleMissingMigratedConfig(cfgPath, bakPath, scope, logger);
+  if (missing !== undefined) return missing;
   // Windows 上 rename 到已存在目标会抛错；先移除历史 bak（见函数注释）。
   if (existsSync(bakPath)) unlinkSync(bakPath);
   renameSync(cfgPath, bakPath);
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(readFileSync(bakPath, "utf8"));
-  } catch {
-    logger?.warn?.(
-      `lan-proxy: 存量 config.json 不是合法 JSON — 仅标记为已迁移（${MIGRATED_BAK_NAME}），不写入设置`,
-    );
-    return {
-      performed: true,
-      migrated: false,
-      rolledBack: false,
-      skippedCorrupt: true,
-      resumed: false,
-    };
-  }
-  if (typeof parsed !== "object" || parsed === null) {
-    logger?.warn?.(
-      `lan-proxy: 存量 config.json 不是配置对象 — 仅标记为已迁移（${MIGRATED_BAK_NAME}），不写入设置`,
-    );
-    return {
-      performed: true,
-      migrated: false,
-      rolledBack: false,
-      skippedCorrupt: true,
-      resumed: false,
-    };
-  }
-  const sanitized0 = sanitizeSettings(parsed);
-  if (sanitized0 === null) {
-    // 含类型非法值：整体不写入（与保存通道同口径，宁可不迁也不迁一半）。
-    logger?.warn?.(
-      `lan-proxy: 存量 config.json 含非法配置值 — 仅标记为已迁移（${MIGRATED_BAK_NAME}），不写入设置`,
-    );
-    return {
-      performed: true,
-      migrated: false,
-      rolledBack: false,
-      skippedCorrupt: true,
-      resumed: false,
-    };
-  }
-  if (Object.keys(sanitized0).length === 0) {
-    return {
-      performed: true,
-      migrated: false,
-      rolledBack: false,
-      skippedCorrupt: true,
-      resumed: false,
-    };
-  }
-  const sanitized = normalizeMigratedWsCompressPaths(sanitized0);
+  const parsed = readMigratedBakJson(bakPath, logger);
+  if (parsed === undefined) return migratedCorruptOutcome();
+  const sanitized = sanitizeMigratedParsed(parsed, logger);
+  if (sanitized === null) return migratedCorruptOutcome();
   try {
     await scope.update(sanitized as Record<string, unknown>);
     return {
@@ -214,16 +265,7 @@ export async function migrateFileConfig(
     };
   } catch (err) {
     // 写入失败：回滚改名，让下次启动重试（数据始终存在于 config.json 或 bak 之一）。
-    try {
-      if (!existsSync(cfgPath)) renameSync(bakPath, cfgPath);
-    } catch (rollbackErr) {
-      logger?.warn?.(
-        `lan-proxy: 迁移回滚失败（${errorMessage(rollbackErr)}）— 数据保留在 ${MIGRATED_BAK_NAME}，请手动恢复`,
-      );
-    }
-    logger?.warn?.(
-      `lan-proxy: 存量 config.json 迁移写入设置失败（${errorMessage(err)}）— 已回滚，下次启动重试`,
-    );
+    rollbackMigratedRename(cfgPath, bakPath, logger, err);
     return {
       performed: true,
       migrated: false,

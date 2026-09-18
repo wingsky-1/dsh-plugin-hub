@@ -11,7 +11,7 @@ import * as React from "react";
  * browser=地球 / system=显示器 / webhook=闪电 / 其余（bark）=铃铛。
  */
 export function iconEl(channelType: string) {
-  let paths: any[];
+  let paths: React.ReactElement[];
   if (channelType === "browser") {
     paths = [
       <circle cx={12} cy={12} r={9} key="c" />,

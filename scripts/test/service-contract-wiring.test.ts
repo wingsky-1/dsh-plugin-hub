@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck
 "use strict";
 
 /**
@@ -227,6 +226,7 @@ const EXPECT_FILES: Record<string, string[]> = {
     "unit/host-agents.test.ts",
     "unit/host-sessions.test.ts",
     "unit/host-typert.test.ts",
+    "unit/inject-attach.test.ts",
     "unit/scope.test.ts",
     "unit/tools.test.ts",
   ],

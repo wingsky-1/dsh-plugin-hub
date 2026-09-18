@@ -55,7 +55,24 @@ const CSS_VERSION = "4";
 
 // ------------------------------------------------------------ 装配
 
-export function apply(ctx: any) {
+/**
+ * 浏览器端上下文的窄面（本包实际使用的面：remote/get/effect），与 inject 声明的
+ * ["slots", "locale", "remote"] 对齐；slots 的读形态见 SlotsView，locale 的读形态
+ * 见 apply 内的内联声明。写成结构类型之后，多用一个服务却忘了声明会在类型层先露出来。
+ */
+interface ClientContext {
+  readonly remote?: unknown;
+  get: (name: string) => unknown;
+  effect: (execute: () => () => void, label?: string) => unknown;
+}
+
+/** 宿主插槽读形态（本包只用 settings.plugin.item 的 inject/register；缺失即卡片不挂载）。 */
+interface SlotsView {
+  inject: (name: string, setup: () => unknown) => void;
+  register: (item: Record<string, unknown>, render: () => unknown) => unknown;
+}
+
+export function apply(ctx: ClientContext): void {
   try {
     // host trust 观测（issue #856）：只交出信号读取器，判定在卡片渲染期做——
     // 缓存判定结果会让「兼容开关刚被保存但页面未重载」这类中间态显示错。
@@ -73,7 +90,7 @@ export function apply(ctx: any) {
       /* 观测失败不得影响页面启动 */
     }
 
-    const slots = ctx.get("slots");
+    const slots = ctx.get("slots") as SlotsView | null | undefined;
     if (!slots) {
       console.warn("[dsh-lan-proxy] 缺少 slots 服务，设置面板未挂载");
       return;
@@ -82,8 +99,15 @@ export function apply(ctx: any) {
     ensureStyle({ id: STYLE_ID, cssText: STYLE, version: CSS_VERSION });
 
     // i18n（issue #348）：注册本插件字典；t 绑定官方 locale 服务（未装配回落 key 本体）。
-    const locale: any = ctx.get("locale");
-    let unsubLocale: any = null;
+    const locale = ctx.get("locale") as
+      | {
+          register?: (ns: string, dict: { zh: unknown; en: unknown }) => void;
+          subscribe?: (listener: () => void) => () => void;
+          getSnapshot?: () => unknown;
+        }
+      | null
+      | undefined;
+    let unsubLocale: (() => void) | null = null;
     if (locale && typeof locale.register === "function") {
       try {
         locale.register(NS, { zh: zh, en: en });

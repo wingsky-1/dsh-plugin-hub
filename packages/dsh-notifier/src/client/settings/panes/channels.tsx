@@ -17,15 +17,17 @@ import type { AudioEngine } from "../../notify/audio.ts";
 import { barkCard } from "../channels/bark-card.tsx";
 import { builtinCard } from "../channels/builtin-card.tsx";
 import { webhookCard } from "../channels/webhook-card.tsx";
+import type { ChannelStatusMap } from "../parts/status.tsx";
+import type { RegisteredKindView, SettingsChannelView, SettingsView } from "../types.ts";
 
 /** 频道 tab 的依赖面（三张卡的并集 + 本片自用的添加/域保存入口）。 */
 interface ChannelsPaneDeps {
-  settings: any;
-  statusMap: Record<string, any>;
+  settings: SettingsView;
+  statusMap: ChannelStatusMap;
   hostPlatform: string | null;
   diag: ClientDiagnosticsView;
-  channelLabel: (c: any) => string;
-  chPatch: (idx: number, part: Record<string, any>) => void;
+  channelLabel: (c: SettingsChannelView) => string;
+  chPatch: (idx: number, part: Record<string, unknown>) => void;
   chRemove: (idx: number) => void;
   chLevelsSet: (idx: number, kind: string, level: string) => void;
   chAdd: (kind: string) => void;
@@ -33,7 +35,7 @@ interface ChannelsPaneDeps {
   isSecureContext: () => boolean;
   requestNotificationPermission: () => void;
   audioEngine: AudioEngine;
-  kindsList: any[];
+  kindsList: RegisteredKindView[];
   delArmedId: string | null;
   setDelArmedId: (v: string | null) => void;
   levelsNew: Record<string, { kind: string; level: string }>;
@@ -83,8 +85,8 @@ export function channelsPane(deps: ChannelsPaneDeps) {
 
   // 频道区：`channels` 逐项按类型分派（内置两卡 + bark/webhook 实例卡）+ 添加按钮。
   // 先按**真实下标**遍历再分派：chPatch / chRemove 都按下标操作，先 filter 会让编辑打到隔壁条目。
-  const channelsChildren: any[] = [];
-  (settings.channels || []).forEach(function (c: any, i: number) {
+  const channelsChildren: React.ReactNode[] = [];
+  (settings.channels || []).forEach(function (c, i: number) {
     if (c.type === "browser" || c.type === "system") {
       channelsChildren.push(
         builtinCard(

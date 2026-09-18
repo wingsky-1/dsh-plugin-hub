@@ -5,6 +5,7 @@
  * 同步 settingsRef），原子层不持有写路径，也不读卡片状态。
  */
 import * as React from "react";
+import type { SettingsView } from "../types.ts";
 
 /** switch 开关底层（track 40×22 + 透明 input 覆盖 44×32 触控区；
  *  aria-label 提供可访问名——switch 无内联文本，WCAG 4.1.2）。 */
@@ -15,7 +16,7 @@ export function switchToggle(checked: boolean, onChange: (v: boolean) => void, a
         type="checkbox"
         aria-label={ariaLabel}
         checked={checked === true}
-        onChange={function (e: any) {
+        onChange={function (e: React.ChangeEvent<HTMLInputElement>) {
           onChange(e.target.checked === true);
         }}
       />
@@ -29,14 +30,14 @@ export function switchToggle(checked: boolean, onChange: (v: boolean) => void, a
 export function switchControl(
   key: string,
   ariaLabel: string,
-  settings: Record<string, unknown>,
-  patch: (p: (prev: Record<string, unknown>) => Record<string, unknown>) => void,
+  settings: SettingsView,
+  patch: (p: (prev: SettingsView) => SettingsView) => void,
 ) {
   return switchToggle(
     settings[key] === true,
     function (v: boolean) {
-      patch(function (prev: any) {
-        const next = Object.assign({}, prev);
+      patch(function (prev: SettingsView) {
+        const next: SettingsView = Object.assign({}, prev);
         next[key] = v;
         return next;
       });
@@ -46,7 +47,7 @@ export function switchControl(
 }
 
 export function textInput(
-  value: any,
+  value: unknown,
   onChange: (v: string) => void,
   opts?: { type?: string; placeholder?: string; ariaLabel?: string },
 ) {
@@ -57,7 +58,7 @@ export function textInput(
       value={value === undefined || value === null ? "" : String(value)}
       placeholder={opts && opts.placeholder}
       aria-label={(opts && opts.ariaLabel) || (opts && opts.placeholder) || undefined}
-      onChange={function (e: any) {
+      onChange={function (e: React.ChangeEvent<HTMLInputElement>) {
         onChange(e.target.value);
       }}
     />
@@ -65,7 +66,7 @@ export function textInput(
 }
 
 export function numInput(
-  value: any,
+  value: unknown,
   onChange: (v: number | undefined) => void,
   opts?: { ariaLabel?: string; min?: number; max?: number },
 ) {
@@ -78,7 +79,7 @@ export function numInput(
       max={opts && opts.max}
       aria-label={opts && opts.ariaLabel}
       value={value === undefined || value === null ? "" : String(value)}
-      onChange={function (e: any) {
+      onChange={function (e: React.ChangeEvent<HTMLInputElement>) {
         onChange(e.target.value === "" ? undefined : Number(e.target.value));
       }}
     />

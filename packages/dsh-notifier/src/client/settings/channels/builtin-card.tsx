@@ -12,6 +12,8 @@ import type { ClientDiagnosticsView } from "../../capabilities.ts";
 import type { Translate } from "../../locale.ts";
 import type { AudioEngine } from "../../notify/audio.ts";
 import { switchToggle } from "../parts/controls.tsx";
+import type { ChannelStatusMap } from "../parts/status.tsx";
+import type { SettingsChannelView } from "../types.ts";
 import {
   browserDiagnosticsLine,
   browserPermLine,
@@ -25,7 +27,7 @@ import { soundRow } from "./sound-row.tsx";
 
 /** 声音设置是否处于「开」：true 与内置音色 id 都算开，false 与脏值算关。
  *  三态摘要、卡体提示、声音行开关三处共用这一条口径——各判一遍就会出现「卡片说有声、开关说没有」。 */
-function soundIsOn(value: any): boolean {
+function soundIsOn(value: unknown): boolean {
   return value === true || isSoundId(value);
 }
 
@@ -48,9 +50,9 @@ function soundIsOn(value: any): boolean {
  */
 export function builtinCard(
   index: number,
-  ch: any,
+  ch: SettingsChannelView,
   label: string,
-  statusMap: Record<string, any>,
+  statusMap: ChannelStatusMap,
   hostPlatform: string | null,
   diag: ClientDiagnosticsView,
   chPatch: (idx: number, part: Record<string, unknown>) => void,
@@ -70,7 +72,7 @@ export function builtinCard(
     : !popup && soundOn
       ? t("chStateSound")
       : t("chStateOn");
-  const extras: any[] = [];
+  const extras: React.ReactNode[] = [];
   extras.push(
     chRow(
       t("chPopup"),

@@ -13,6 +13,8 @@ import { credentialFieldKey, credentialFieldView } from "../mask.ts";
 import { advRow, chRow } from "../parts/rows.tsx";
 import { numInput, switchToggle, textInput } from "../parts/controls.tsx";
 import { failBadge, statusDotClass, statusText, testBtn } from "../parts/status.tsx";
+import type { ChannelStatusMap } from "../parts/status.tsx";
+import type { RegisteredKindView, SettingsChannelView } from "../types.ts";
 import { iconEl } from "./channel-icon.tsx";
 
 /**
@@ -21,9 +23,9 @@ import { iconEl } from "./channel-icon.tsx";
  * 整卡 details 可折叠（非受控 + key remount），未启用默认收起。
  */
 export function barkCard(
-  ch: any,
+  ch: SettingsChannelView,
   idx: number,
-  kindsList: any[],
+  kindsList: RegisteredKindView[],
   delArmedId: string | null,
   setDelArmedId: (v: string | null) => void,
   levelsNew: Record<string, { kind: string; level: string }>,
@@ -34,13 +36,13 @@ export function barkCard(
   chLevelsSet: (idx: number, kind: string, level: string) => void,
   chRemove: (idx: number) => void,
   sendTest: (id?: string) => void,
-  statusMap: Record<string, any>,
+  statusMap: ChannelStatusMap,
   t: Translate,
 ) {
   const channelKey = channelIdFor(ch);
   const armed = delArmedId === ch.id;
   const deviceKeyKey = credentialFieldKey(String(ch.id), "deviceKey");
-  const levelOpts: any[] = [
+  const levelOpts: React.ReactElement[] = [
     <option value="" key="auto">
       {t("chLevelAuto")}
     </option>,
@@ -54,13 +56,13 @@ export function barkCard(
   });
   // levels（kind→level）编辑：kind 建议 = 内置 7 kind + 动态已注册 kind；datalist id 按实例唯一
   const suggestKinds: string[] = Object.keys(KIND_KEYS);
-  (kindsList || []).forEach(function (k: any) {
+  (kindsList || []).forEach(function (k) {
     if (suggestKinds.indexOf(String(k.id)) === -1) suggestKinds.push(String(k.id));
   });
   const dlId = "dn-levels-suggest-" + String(ch.id);
-  const levels = ch.levels || {};
+  const levels: Record<string, string> = ch.levels || {};
   const levelKeys = Object.keys(levels);
-  const levelsRows: any[] = levelKeys.map(function (kind) {
+  const levelsRows: React.ReactNode[] = levelKeys.map(function (kind) {
     return (
       <div className="dn-levels-row" key={"lv-" + kind}>
         <span className="dn-levels-kind">
@@ -69,7 +71,7 @@ export function barkCard(
         <select
           className="dn-set-input dn-set-select"
           value={levels[kind] || ""}
-          onChange={function (e: any) {
+          onChange={function (e: React.ChangeEvent<HTMLSelectElement>) {
             chLevelsSet(idx, kind, e.target.value);
           }}
         >
@@ -97,7 +99,7 @@ export function barkCard(
         list={dlId}
         placeholder={t("chLevelsKindPlaceholder")}
         value={newRow.kind}
-        onChange={function (e: any) {
+        onChange={function (e: React.ChangeEvent<HTMLInputElement>) {
           setLevelsNew(
             Object.assign({}, levelsNew, {
               [String(ch.id)]: { kind: e.target.value, level: newRow.level },
@@ -108,7 +110,7 @@ export function barkCard(
       <select
         className="dn-set-input dn-set-select"
         value={newRow.level}
-        onChange={function (e: any) {
+        onChange={function (e: React.ChangeEvent<HTMLSelectElement>) {
           setLevelsNew(
             Object.assign({}, levelsNew, {
               [String(ch.id)]: { kind: newRow.kind, level: e.target.value },
@@ -205,7 +207,7 @@ export function barkCard(
                 ).placeholder
               }
               aria-label={t("chBarkDeviceKey")}
-              onChange={function (e: any) {
+              onChange={function (e: React.ChangeEvent<HTMLInputElement>) {
                 markSecretEdited(deviceKeyKey);
                 chPatch(idx, { deviceKey: e.target.value });
               }}
@@ -274,7 +276,7 @@ export function barkCard(
                 className="dn-set-input dn-set-select"
                 value={ch.level || ""}
                 aria-label={t("chBarkLevel")}
-                onChange={function (e: any) {
+                onChange={function (e: React.ChangeEvent<HTMLSelectElement>) {
                   chPatch(idx, { level: e.target.value || undefined });
                 }}
               >

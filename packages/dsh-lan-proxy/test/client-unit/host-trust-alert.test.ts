@@ -24,9 +24,16 @@ const MARKER_GLOBAL = "__DSH_LAN_PROXY_HOST_TRUST__";
 /** 告警前缀：与 apply 里其它 warn 共用，用来把本告警从别的 warn 里挑出来。 */
 const PREFIX = "[dsh-lan-proxy]";
 
+/** 最小假 ctx：只提供 apply 真正读到的面（slots / locale / remote / effect）。 */
+interface FakeCtx {
+  remote?: unknown;
+  get: (name: string) => unknown;
+  effect: () => undefined;
+}
+
 /** 一次假装配的可观测面。 */
 interface FakeBoot {
-  readonly ctx: any;
+  readonly ctx: FakeCtx;
   /** 被登记进 settings.plugin.item 的工厂；本文件一律不调用它 = 卡片未挂载。 */
   readonly slotFactories: Array<() => unknown>;
 }
@@ -46,7 +53,7 @@ function makeCtx(options: { withSlots?: boolean; remote?: unknown } = {}): FakeB
       return () => {};
     },
   };
-  const ctx: any = {
+  const ctx: FakeCtx = {
     remote: "remote" in options ? options.remote : { $host: { isLoopback: false } },
     get(name: string) {
       if (name === "slots") return options.withSlots === false ? undefined : slots;
