@@ -32,6 +32,7 @@ import process from "node:process";
 import { computeCiMatrix } from "../ci/ci-matrix.mjs";
 import { TIER_ALIAS, tierSteps } from "./gate-steps.mjs";
 import { planChangedScope, shouldEscalateChangedTier } from "./local-scope.mjs";
+import { failClosed } from "../lib/gate-exit.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const PNPM = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
@@ -79,8 +80,7 @@ function main(argv) {
   const tierArg = valueOf(argv, "--tier") ?? "changed";
   const tier = TIER_ALIAS[tierArg];
   if (tier === undefined) {
-    console.error(`[local-gate] 未知 --tier ${tierArg}（可选 changed / pr / full）`);
-    return 2;
+    failClosed(`[local-gate] 未知 --tier ${tierArg}（可选 changed / pr / full）`);
   }
   const base = valueOf(argv, "--base") ?? "origin/main";
   const dryRun = argv.includes("--dry-run");

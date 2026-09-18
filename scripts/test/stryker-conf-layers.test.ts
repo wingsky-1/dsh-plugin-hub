@@ -836,3 +836,36 @@ for (const value of [
     }
   });
 }
+
+test("fail-closed：基准 ref 不可解析 → exit 2 且统一故障注解", () => {
+  const root = makeFixtureRoot();
+  try {
+    const res = spawnSync(
+      process.execPath,
+      [GENERATOR, "--check", "--base", "refs/heads/no-such-ref-xyz"],
+      { cwd: ROOT, encoding: "utf8", env: { ...process.env, GEN_STRYKER_ROOT: root } },
+    );
+    assert.equal(res.status, 2, `${res.stdout}${res.stderr}`);
+    assert.match(
+      String(res.stderr),
+      /^::error::门禁故障（非判据结论）：\[gen-stryker-conf\] 基准 ref refs\/heads\/no-such-ref-xyz 不可解析/m,
+    );
+    assert.equal(String(res.stdout), "");
+  } finally {
+    removeFixtureRoot(root);
+  }
+});
+
+test("CLI 三态：判据⑦ 判红仍 exit 1 且无故障注解", () => {
+  const root = makeFixtureRoot(RATCHET_FILES, ratchetTopology(SEG2_BOTH));
+  try {
+    writeTopology(root, ATTACKED());
+    assert.equal(runGenerator(root).status, 0, "重生成应成功");
+    const res = runGenerator(root, ["--check"]);
+    assert.equal(res.status, 1, `攻击态必须判红：\n${res.out}`);
+    assert.doesNotMatch(res.out, /::error::门禁故障/);
+    assert.match(res.out, /变异面并集相对基准收缩/);
+  } finally {
+    removeFixtureRoot(root);
+  }
+});

@@ -73,6 +73,7 @@ import {
   projectTestSurface,
   readTestMin,
 } from "./test-surface.mjs";
+import { failClosed } from "../lib/gate-exit.mjs";
 
 const repoRoot =
   process.env.GEN_STRYKER_ROOT ?? join(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -645,8 +646,7 @@ function main() {
     // 判据⑦ 与上面各条独立：环境故障（基准 ref 读不到 / 台账坏）走 exit 2，不伪装成「有违规」。
     const ratchet = faceRatchetCheck(topology);
     if (ratchet.envError !== undefined) {
-      console.error(`[gen-stryker-conf] ${ratchet.envError} —— 环境故障按 fail-closed 处理`);
-      return 2;
+      failClosed(`[gen-stryker-conf] ${ratchet.envError} —— 环境故障按 fail-closed 处理`);
     }
     const problems = [...check.problems, ...ratchet.problems, ...ratchet.operatorProblems];
     for (const p of problems) console.error(`[gen-stryker-conf] ${p}`);

@@ -59,3 +59,13 @@ test("full 档：pr 档的全部 + 豁免到期台账收集", () => {
 // scripts/test/gate-wiring.test.ts（直接 import 步骤表做端点比对，两侧一起看）。
 // 本文件只留上面那些「档位**结构**」事实——产物闸是全仓口径还是切片、台账在不在、
 // full 与 pr 的包含关系。
+
+test("fail-closed：未知 --tier → exit 2 且统一故障注解", () => {
+  const r = spawnSync(process.execPath, [SCRIPT, "--tier", "bogus-tier-xyz"], {
+    cwd: ROOT,
+    encoding: "utf8",
+  });
+  assert.equal(r.status, 2, String(r.stderr));
+  assert.match(String(r.stderr), /^::error::门禁故障（非判据结论）：\[local-gate\] 未知 --tier/m);
+  assert.equal(String(r.stdout), "");
+});
