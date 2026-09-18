@@ -4,7 +4,7 @@
 > 功能一句话：**DSH 的 MCP 服务器管理器**——管理 stdio / streamable-http 两种传输的 MCP 服务器，把已连接服务器的工具收敛为四个原子工具（`ws_mcp_list` / `ws_mcp_detail` / `ws_mcp_search` / `ws_mcp_call`）供模型访问。
 >
 > 快速上手（安装 / 配置 / 验证）与全量安全语义见 [包 README](../../packages/dsh-mcp-manager/README.md)；本文按 TOGAF 四视图（业务 BA / 应用 AA / 数据 DA / 技术 TA）讲**原理与运行机制**。
-> 证据基线：`32bcfd18`；证据为 `路径:行号`（取自该树，后续提交会漂移，以符号搜索兜底）或可复现常量。
+> 证据基线：`8928c051`（S2-D/筆3已含；图源本笔落盘）；证据为 `路径:行号`（取自该树，后续提交会漂移，以符号搜索兜底）或可复现常量。
 > `src/…` 省略包目录前缀（即 `packages/dsh-mcp-manager/`）。机制结论来自源码核对，不将历史图片或既有测试文件当成本次实测结果。
 >
 > 唯一事实源（本文不复述会漂移的计数，条数以源码为准）：配置键见 `src/server/config/config-schema.ts`；存储布局与权限见 `src/server/shared/paths.ts`；跨端状态键与路由见 `src/shared/status.ts` 与 `src/shared/routes.ts` 的 `ROUTES`；模型可见注册名的唯一派生点是 `src/server/shared/tool-names.ts` 的 `publicToolName`；调用预算与目录边界常量见 `src/server/connection/runtime/limits.ts` 与 `src/server/shared/constants.ts`。
@@ -13,12 +13,12 @@
 
 | 视图 | 回答的问题 | 章节 | 图件 |
 | --- | --- | --- | --- |
-| BA | 能力、单池归属与显式非目标 | [§1](#ba) | `diagrams/mcp-manager-ba.svg`（B 批待归档，见 §5） |
-| AA | 组合根装配、域分工与调用链路 | [§2](#aa) | `diagrams/mcp-manager-aa.svg`（B 批待归档，见 §5） |
-| DA | 落盘物、配置一致性、SSE、迁移与卸载 | [§3](#da) | `diagrams/mcp-manager-da.svg`（B 批待归档，见 §5） |
-| TA | 挂载、构建、安全边界、门禁与待核项 | [§4](#ta) | `diagrams/mcp-manager-ta.svg`（B 批待归档，见 §5） |
+| BA | 能力、单池归属与显式非目标 | [§1](#ba) | `diagrams/mcp-manager-ba.svg` |
+| AA | 组合根装配、域分工与调用链路 | [§2](#aa) | `diagrams/mcp-manager-aa.svg` |
+| DA | 落盘物、配置一致性、SSE、迁移与卸载 | [§3](#da) | `diagrams/mcp-manager-da.svg` |
+| TA | 挂载、构建、安全边界、门禁与待核项 | [§4](#ta) | `diagrams/mcp-manager-ta.svg` |
 
-> 各视图节首留 SVG 占位（图未到不硬嵌，B 批归档后生效）；节内 mermaid 讲关系逻辑（链路、依赖方向、判定分支）。两者不是同一张图的两种画法，改一处不必同步另一处。
+> 各视图节首 SVG 已生效（见 §5）；节内 mermaid 讲关系逻辑（链路、依赖方向、判定分支）。两者不是同一张图的两种画法，改一处不必同步另一处。
 
 <a id="ba"></a>
 
@@ -26,7 +26,7 @@
 
 ![BA：单池能力与显式非目标](diagrams/mcp-manager-ba.svg)
 
-> 图源 `diagrams/mcp-manager-ba.html`（B 批待归档；占位先行，见 §5）。
+> 图源 `diagrams/mcp-manager-ba.html`（已归档，见 §5；证据基线 8928c051，S2-D/笔3 已含）。
 
 **单池前导**：全部服务器只有一条轨道——项目级、全局级（`@global`）与 runtime 注入的封装定义条目都由中间层连接池持有，模型面恒为四个原子工具（两级发现：list 盘点 → detail 拉 schema），统一经 `ws_mcp_call` 寻址执行。池归属恒为「全部服务器」：每个工作空间一套常驻连接（project root 或虚拟 root `@global`），按会话 cwd 路由、跨空间不串台。代价是多一跳（中间层转发）；目录是 last-good 快照，`tools/list_changed` 变化需重连/刷新。
 
@@ -68,7 +68,7 @@ flowchart LR
 
 ![AA：组合根、域分工与调用链路](diagrams/mcp-manager-aa.svg)
 
-> 图源 `diagrams/mcp-manager-aa.html`（B 批待归档；占位先行，见 §5）。
+> 图源 `diagrams/mcp-manager-aa.html`（已归档，见 §5；证据基线 8928c051，S2-D/笔3 已含）。
 
 ### 2.1 组合根与域分工
 
@@ -225,7 +225,7 @@ stateDiagram-v2
 
 ![DA：落盘物、一致性与迁移卸载](diagrams/mcp-manager-da.svg)
 
-> 图源 `diagrams/mcp-manager-da.html`（B 批待归档；占位先行，见 §5）。
+> 图源 `diagrams/mcp-manager-da.html`（已归档，见 §5；证据基线 8928c051，S2-D/笔3 已含）。
 
 ### 3.1 落盘物全表与 file-io 收敛（S2-C）
 
@@ -307,7 +307,7 @@ M3（能力缺口单列）：`allowTools`/`denyTools` 准入闸随策略键消�
 
 ![TA：挂载、构建与安全兼容边界](diagrams/mcp-manager-ta.svg)
 
-> 图源 `diagrams/mcp-manager-ta.html`（B 批待归档；占位先行，见 §5）。
+> 图源 `diagrams/mcp-manager-ta.html`（已归档，见 §5；证据基线 8928c051，S2-D/笔3 已含）。
 
 ### 4.1 挂载与构建
 
@@ -344,8 +344,8 @@ M3（能力缺口单列）：`allowTools`/`denyTools` 准入闸随策略键消�
 
 ## 5. 图源与维护
 
-- `diagrams/mcp-manager-ba.html`、`diagrams/mcp-manager-aa.html`、`diagrams/mcp-manager-da.html`、`diagrams/mcp-manager-ta.html` 为四视图独立图源（B 批待归档；节首 SVG 占位届时生效）。
+- `diagrams/mcp-manager-ba.html`、`diagrams/mcp-manager-aa.html`、`diagrams/mcp-manager-da.html`、`diagrams/mcp-manager-ta.html` 为四视图独立图源（已归档；节首 SVG 即时生效，证据基线 8928c051，S2-D/笔3 已含）。
 - 原 [mcp-manager-architecture.svg](diagrams/mcp-manager-architecture.svg) 与 [HTML](diagrams/mcp-manager-architecture.html) 保留为历史单图，不作为当前事实源。
 - 方法论：[ARCHITECTURE-METHOD.md](../ARCHITECTURE-METHOD.md)；构建验证：[DEVELOPMENT.md](../DEVELOPMENT.md)。
 
-B 批导出命令（届时执行，结论以交付说明为准，不由文中推定）：`python3 scripts/lib/export-diagram-svg.py docs/architecture/diagrams/mcp-manager-ba.html`，其余视图替换 `ba` 为 `aa`/`da`/`ta`。
+导出命令（已执行，四视图均 OK/XML valid，明细见交付说明，不由文中推定）：`python3 scripts/lib/export-diagram-svg.py docs/architecture/diagrams/mcp-manager-ba.html`，其余视图替换 `ba` 为 `aa`/`da`/`ta`。

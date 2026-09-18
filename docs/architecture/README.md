@@ -97,7 +97,7 @@ flowchart LR
 | [dsh-lan-proxy.md](dsh-lan-proxy.md) | DA 数据架构 | [图源 HTML](diagrams/lan-proxy-da.html) |
 | [dsh-lan-proxy.md](dsh-lan-proxy.md) | TA 技术架构 | [图源 HTML](diagrams/lan-proxy-ta.html) |
 | [dsh-lan-proxy.md](dsh-lan-proxy.md) | 转发架构图（历史图源） | `diagrams/lan-proxy-architecture.html` |
-| [dsh-mcp-manager.md](dsh-mcp-manager.md) | BA / AA / DA / TA 四视图（B 批待归档） | `diagrams/mcp-manager-{ba,aa,da,ta}.html` |
+| [dsh-mcp-manager.md](dsh-mcp-manager.md) | BA / AA / DA / TA 四视图 | `diagrams/mcp-manager-{ba,aa,da,ta}.html` |
 | [dsh-mcp-manager.md](dsh-mcp-manager.md) | 双轨架构图（历史单图，非事实源） | `diagrams/mcp-manager-architecture.html` |
 | [dsh-notifier.md](dsh-notifier.md) | BA 业务架构 | [图源 HTML](diagrams/notifier-ba.html) |
 | [dsh-notifier.md](dsh-notifier.md) | AA 应用架构 | [图源 HTML](diagrams/notifier-aa.html) |
@@ -113,3 +113,5 @@ flowchart LR
 > 调整方法：用浏览器打开源 HTML → 修改 SVG 内容 → 重新导出 SVG
 > （`python3 scripts/lib/export-diagram-svg.py <源.html>`）替换文档中的引用。
 > Mermaid 图直接改 md 源码块即可（GitHub 原生渲染）。
+>
+> 包内 archify 旧物归档（#767 DIAGRAM-A）：`packages/dsh-mcp-manager/docs/diagrams/` 的 `mcp-manager-archify-overview.html` 与 `mcp-manager-overview.architecture.json` 已移入同包 `docs/archive/`（历史留档，非事实源）；6 个 `visual-check` 生成物已删除。

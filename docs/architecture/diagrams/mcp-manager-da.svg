@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg viewBox="0 0 1160 800" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="t d">
+      <title id="t">DA：落盘物、一致性与迁移卸载</title>
+      <desc id="d">落盘物全表与 file-io 收敛、一致性否定式、迁移与卸载链路。</desc>
+      <defs><style>@import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&amp;family=Geist:wght@400;500;600&amp;family=Geist+Mono:wght@400;500;600&amp;display=swap');</style>
+        <pattern id="dots" width="22" height="22" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r="0.9" fill="rgba(45,49,66,0.10)"/></pattern>
+        <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/></marker>
+        <marker id="arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#eb6c36"/></marker>
+      </defs>
+      <rect width="100%" height="100%" fill="#f5f5f5"/>
+      <rect width="100%" height="100%" fill="url(#dots)" opacity="0.55"/>
+      <text x="40" y="36" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" letter-spacing="0.14em">STORE · 落盘物全表与 file-io 收敛 S2-C（与 md §3.1 同表 · paths.ts 单点）</text>
+      <rect x="40" y="46" width="350" height="132" rx="6" fill="#f5f5f5" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+      <text x="215" y="68" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">全局配置 mcp.json · 0o600</text>
+      <text x="215" y="86" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif" text-anchor="middle">configFile()（DSH_HOME 下包私有目录）</text>
+      <text x="215" y="100" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif" text-anchor="middle">store.save 登记路径取表 · 未登记回落既有直写</text>
+      <text x="215" y="114" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif" text-anchor="middle">序列化不动（JSON 2 空格逐字节不变）</text>
+      <text x="215" y="132" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">paths.ts:19 CONFIG_FILE_NAME=mcp.json</text>
+      <text x="215" y="146" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">file-io.ts:54 writeFileAtomic</text>
+      <rect x="400" y="46" width="350" height="132" rx="6" fill="#f5f5f5" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+      <text x="575" y="68" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">项目级配置 mcp.json · 随项目权限</text>
+      <text x="575" y="86" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif" text-anchor="middle">projectConfigFile()（项目根 .dsh 下包私有目录）</text>
+      <text x="575" y="100" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif" text-anchor="middle">写面只认新形态 · 旧扁平形态只读</text>
+      <text x="575" y="114" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif" text-anchor="middle">just-in-time 经 upgrade 端口 settle（S2-D）</text>
+      <text x="575" y="132" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">paths.ts:96 · isProjectConfigFile</text>
+      <text x="575" y="146" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">withSettledProjectConfig 包装内卡序</text>
+      <rect x="760" y="46" width="360" height="132" rx="6" fill="#f5f5f5" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+      <text x="940" y="68" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">用户状态与目录缓存 · 0o644</text>
+      <text x="940" y="86" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif" text-anchor="middle">user-state.json（userStatePath 三段 root→server→tool）</text>
+      <text x="940" y="100" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif" text-anchor="middle">目录条目 catalog/hash.json（catalogFile 登记）</text>
+      <text x="940" y="114" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif" text-anchor="middle">目录摘要 catalogSummaryFile · manager 缓存路径</text>
+      <text x="940" y="132" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">writeStateFile 双档 · R1 硬化（笔3）</text>
+      <text x="940" y="146" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">readCatalogServerFromDisk 经 readJsonFile</text>
+      <rect x="40" y="186" width="350" height="118" rx="6" fill="#f5f5f5" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+      <text x="215" y="208" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">调用统计 stats.json · 0o644</text>
+      <text x="215" y="226" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif" text-anchor="middle">debounce 1000ms 合并写（临时文件+rename）</text>
+      <text x="215" y="240" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif" text-anchor="middle">flushSync 同步原子落盘（同步拼写禁异步）</text>
+      <text x="215" y="254" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif" text-anchor="middle">loadExisting 缺失/损坏/目录→忽略重计</text>
+      <text x="215" y="272" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">stats/impl/collector.ts:288/299</text>
+      <rect x="400" y="186" width="350" height="118" rx="6" fill="#f5f5f5" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+      <text x="575" y="208" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">存储刻度 version · 0o644</text>
+      <text x="575" y="226" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif" text-anchor="middle">versionFile（升级链走到哪一版）</text>
+      <text x="575" y="240" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif" text-anchor="middle">链成功后写 · 不抢先前移</text>
+      <text x="575" y="254" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif" text-anchor="middle">targetVersion 是存储代际非包版本</text>
+      <text x="575" y="272" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">upgrade/impl/steps/index.ts:20 STEPS</text>
+      <rect x="760" y="186" width="360" height="118" rx="6" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1" stroke-dasharray="5 3"/>
+      <text x="940" y="208" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">旧布局（读面）· 只读不回写</text>
+      <text x="940" y="226" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif" text-anchor="middle">LEGACY_LAYOUT + legacyFile（根下两键）</text>
+      <text x="940" y="240" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif" text-anchor="middle">可再生目录型旧路径随 S2-a 退出迁移面</text>
+      <text x="940" y="254" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif" text-anchor="middle">新代码引用旧路径字面量即漂移（判红）</text>
+      <text x="940" y="272" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">paths.ts:40 LEGACY_LAYOUT</text>
+      <rect x="40" y="312" width="1080" height="150" rx="8" fill="rgba(235,108,54,0.05)" stroke="#eb6c36" stroke-width="1"/>
+      <text x="60" y="336" fill="#eb6c36" font-size="9" font-family="'Geist Mono', monospace" letter-spacing="0.14em">FILE-IO · 唯一收敛点 server/shared/file-io.ts（登记/未登记双档 fail-closed 方向）</text>
+      <text x="60" y="358" fill="#2d3142" font-size="9" font-family="'Geist Mono', monospace">ensureDir（目录取表）+ writeFileAtomic（唯一临时名 → 显式 mode 写入 → rename 覆盖 → 失败清理并上抛原错误）+ writeChains 同路径串行</text>
+      <text x="60" y="376" fill="#2d3142" font-size="9" font-family="'Geist Mono', monospace">readTextFile / readJsonFile（不存在/不可读/是目录/解析失败一律回落 null，由各域按既有语义回落空值）</text>
+      <text x="60" y="394" fill="#2d3142" font-size="9" font-family="'Geist Mono', monospace">登记路径经 writeFileAtomic（mode 取表+串行+清理）· 未登记路径（单测 tmp 覆盖/调用方自定义）回落硬化直写：随机后缀 + 失败清理（笔3 R1/R2，store.save 的 S2-B 同式）</text>
+      <text x="60" y="412" fill="#2d3142" font-size="9" font-family="'Geist Mono', monospace">同步禁调：stats flushSync 不调异步 writeFileAtomic（同步契约要求返回时盘上已有数据）· 此处用同步拼写 mkdirOptionsFor/writeOptionsFor</text>
+      <text x="60" y="430" fill="#2d3142" font-size="9" font-family="'Geist Mono', monospace">序列化逐字节不变：目录 version1+entries · 禁用 version1+disabled · 统计 snapshot，均保持既有 JSON 2 空格形状 · 否定式：没有 revision（并发写只串行不判冲）</text>
+      <text x="60" y="448" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace">fileMode 未登记即抛 I6（写函数不替调用点做权限决定）· 直接调 writeFileAtomic 等于把回落写盘变成写失败</text>
+      <text x="40" y="488" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" letter-spacing="0.14em">CONSTANTS · 阈值常量原样（事实源 limits.ts / constants.ts）</text>
+      <text x="60" y="510" fill="#2d3142" font-size="8.5" font-family="'Geist Mono', monospace">CALL_TIMEOUT_MS=30_000 · CATALOG_TTL_MS=24h · MAX_TOOLS_PER_SERVER=512 · MAX_BYTES_PER_TOOL=4096 · MAX_TOTAL_CATALOG_BYTES=256KiB</text>
+      <text x="60" y="526" fill="#2d3142" font-size="8.5" font-family="'Geist Mono', monospace">LIST_MAX_TOOLS_PER_SERVER=500 · LIST_DEFAULT_TOOLS_PER_SERVER=50 · DEFAULT_TOOL_CALL_TIMEOUT_MS=15_000（withTimeout 兜底+2s）· CONNECT/DISCOVERY_TIMEOUT_MS=10_000</text>
+      <text x="60" y="542" fill="#2d3142" font-size="8.5" font-family="'Geist Mono', monospace">DEFAULT_RESULT_TRUNCATE_BYTES=8192（extractText 现状不截断）· DEFAULT_CATALOG_MAX_ENTRIES=6 · 重连 500ms 起/30s 封顶/10 次上限 · SSE 心跳 30s · 统计 debounce 1000ms · 自有目录 0o700</text>
+      <text x="40" y="568" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" letter-spacing="0.14em">MIGRATE · 迁移与卸载（STEPS 0.0.0→0.2.5 migrateStorageLayout）</text>
+      <text x="60" y="590" fill="#2d3142" font-size="9" font-family="'Geist Mono', monospace">链在各域装配前跑完：按目标版本升序执行，任何一步失败即抛（存储没升完就被按错误形态解释）· 跑完与插件版本对账 reportGap（落差告警不自动降级）</text>
+      <text x="60" y="608" fill="#2d3142" font-size="9" font-family="'Geist Mono', monospace">布局迁移：旧文件写到新位置后归档 .migrated.bak · 项目级 just-in-time 经 orchestrator upgrade 端口调 settleProjectConfig · 无旧文件不凭空写默认内容</text>
+      <text x="60" y="626" fill="#2d3142" font-size="9" font-family="'Geist Mono', monospace">逆序释放：disposeInjection → disposeSection → disposeRoutes → disposeMiddleware → disposeVisibility → watchCleanup → manager.dispose → releaseLifecycle → 账本排空 → releaseUpgrade</text>
+      <text x="60" y="644" fill="#2d3142" font-size="9" font-family="'Geist Mono', monospace">不等在飞写：禁用表与目录缓存落盘失败吞错不阻塞主流程 · manager.dispose 走 fire-and-forget（官方 dispose 会等在途首连，装载账本单独排空一次）</text>
+      <text x="60" y="662" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace">旧 4a-da 映射：沿用落盘全表骨架 · 改真（旧路径 config.json→mcp.json 同构 · runtime 派生单列→connection 子层 · 目录只增不删→last-good+TTL+摘要变化才落盘）· 4a-da 无 src.json（无源不立事实源地位）</text>
+      <line x1="40" y1="678" x2="1120" y2="678" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/>
+      <text x="40" y="694" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.18em">LEGEND</text>
+      <text x="100" y="694" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">登记路径走 file-io 原语 · 未登记回落硬化直写 · 同步契约禁异步</text>
+      <text x="40" y="714" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace">图注：路径省略包前缀 · 行号取自基线树，漂移时以符号搜索兜底 · 旧 4a 草稿映射见交付说明 · 4a 草稿区冻结不动</text>
+      <text x="40" y="730" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace">SSE 不是队列（断线不补帧，重连以最新 summary 为准，不要套 notifier 序号水位解读）· M2 重验结论：三旁路等价接入后旧文件照常启动、损坏回落空值</text>
+      <text x="40" y="746" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace">禁裸计数：落盘物为表内所列，不在图外复述条数</text>
+    </svg>

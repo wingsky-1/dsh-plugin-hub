@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>dsh-mcp-manager TA 挂载构建与安全兼容边界</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root { --color-paper: #f5f5f5; --color-ink: #2d3142; --color-muted: #4f5d75; --color-accent: #eb6c36;
+      --font-sans: 'Geist', system-ui, sans-serif; --font-serif: 'Instrument Serif', serif; --font-mono: 'Geist Mono', ui-monospace, monospace; }
+    body { font-family: var(--font-sans); background: var(--color-paper); color: var(--color-ink); min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 2rem; }
+    .frame { max-width: 1240px; width: 100%; }
+    .eyebrow { font-family: var(--font-mono); font-size: 0.66rem; font-weight: 500; letter-spacing: 0.18em; text-transform: uppercase; color: var(--color-muted); margin-bottom: 0.5rem; }
+    h1 { font-family: var(--font-serif); font-size: clamp(1.4rem, 2.2vw + 0.7rem, 1.9rem); font-weight: 400; letter-spacing: -0.02em; line-height: 1.15; color: var(--color-ink); margin-bottom: 0.4rem; }
+    .meta { font-family: var(--font-mono); font-size: 0.72rem; color: var(--color-muted); margin-bottom: 1.25rem; }
+    svg { width: 100%; min-width: 1040px; display: block; }
+  </style>
+</head>
+<body>
+  <div class="frame">
+    <p class="eyebrow">Architecture · dsh-mcp-manager · TA</p>
+    <h1>挂载、构建与安全兼容边界（现状）</h1>
+    <p class="meta">证据基线 8928c051（S2-D / S2-C 笔3 已含）· 不修改 DSH 源码（cordis.patch.yml + profile 挂载）· 关系逻辑见 dsh-mcp-manager.md §4 mermaid（非同图两画法）</p>
+    <svg viewBox="0 0 1160 720" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="t d">
+      <title id="t">TA：挂载、构建与安全兼容边界</title>
+      <desc id="d">挂载构建链、安全围栏到方法到异常、平台兼容边界与已删面退役注。</desc>
+      <defs>
+        <pattern id="dots" width="22" height="22" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r="0.9" fill="rgba(45,49,66,0.10)"/></pattern>
+        <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/></marker>
+        <marker id="arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#eb6c36"/></marker>
+      </defs>
+      <rect width="100%" height="100%" fill="#f5f5f5"/>
+      <rect width="100%" height="100%" fill="url(#dots)" opacity="0.55"/>
+      <rect x="40" y="16" width="1080" height="170" rx="8" fill="rgba(235,108,54,0.05)" stroke="#eb6c36" stroke-width="1"/>
+      <text x="60" y="40" fill="#eb6c36" font-size="9" font-family="'Geist Mono', monospace" letter-spacing="0.14em">MOUNT · 挂载与构建（cordis.patch.yml + profile，不改 DSH 源码）</text>
+      <text x="60" y="64" fill="#2d3142" font-size="9" font-family="'Geist Mono', monospace">insert: id ui-dsh-mcp-manager · name @wingsky-1/dsh-mcp-manager → dsh web 重启时组合 bundle</text>
+      <text x="60" y="82" fill="#2d3142" font-size="9" font-family="'Geist Mono', monospace">宿主 exports . → lib/index.js（Node 进程 apply(ctx)，注入 webServer/tools/settings/connection）· 客户端 exports ./client → lib/client.js（干净模块 apply+inject）</text>
+      <text x="60" y="100" fill="#2d3142" font-size="9" font-family="'Geist Mono', monospace">构建：清理 → TypeScript 编译 → bundle-host.ts（第三方依赖构建期内联，发布物自包含 · license 归集 lib/THIRD-PARTY-LICENSES）</text>
+      <text x="60" y="118" fill="#2d3142" font-size="9" font-family="'Geist Mono', monospace">engines: node &#62;=20.0.0（部署口径，不复抄）· 适配基线以仓库 pnpm-workspace.yaml rc catalog 为准，不以本机 dsh 版本推断</text>
+      <text x="60" y="140" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace">客户端构建期内联（仓库全景约定）· 通过 __DSH_ROUTES__ 拿真实路由表 · 各插件彼此独立（ctx.mcpManager 为可选消费面）</text>
+      <text x="60" y="158" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace">dsh-plugins-all 聚合包由 scripts/aggregate.ts 生成，禁止手改</text>
+      <text x="40" y="212" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" letter-spacing="0.14em">SECURITY · 安全（围栏 → 方法 → 异常 · 与包 README 安全模型节同源，本文只留机制行）</text>
+      <rect x="40" y="222" width="350" height="140" rx="6" fill="#f5f5f5" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+      <text x="215" y="244" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">env 净化 → redact 脱敏</text>
+      <text x="215" y="262" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif" text-anchor="middle">父进程环境过滤后再合并显式 env</text>
+      <text x="215" y="276" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif" text-anchor="middle">显式值支持 $&#123;ENV&#125; 引用展开</text>
+      <text x="215" y="290" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif" text-anchor="middle">错误消息逐值替换 [REDACTED]</text>
+      <text x="215" y="310" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">config/impl/env SECRET_ENV_NAME</text>
+      <text x="215" y="324" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">/(KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|AUTH)/i</text>
+      <text x="215" y="338" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">pipeline/impl/redact 全配置收集</text>
+      <rect x="400" y="222" width="350" height="140" rx="6" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1"/>
+      <text x="575" y="244" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">loopback 围栏（Focal）</text>
+      <text x="575" y="262" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif" text-anchor="middle">remoteAddress + Host + 非跨站 + Origin 同源</text>
+      <text x="575" y="276" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif" text-anchor="middle">非法 403 / 方法错 405 · 403 先于 405</text>
+      <text x="575" y="290" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif" text-anchor="middle">config GET 只读非敏感展示豁免</text>
+      <text x="575" y="310" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">ROUTE_FENCE + shared/loopback.js</text>
+      <text x="575" y="324" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">isLoopbackRequest 唯一事实源</text>
+      <text x="575" y="338" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">经 lan-proxy 回环同源可满足围栏</text>
+      <rect x="760" y="222" width="360" height="140" rx="6" fill="#f5f5f5" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+      <text x="940" y="244" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">落盘权限 · 进程权限 · 空间隔离</text>
+      <text x="940" y="262" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif" text-anchor="middle">配置 0o600 · 其余登记 0o644 · 项目随缘</text>
+      <text x="940" y="276" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif" text-anchor="middle">stdio 继承宿主权限：仅配置可信服务器</text>
+      <text x="940" y="290" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif" text-anchor="middle">cwd 路由+全名一致性校验防串台</text>
+      <text x="940" y="310" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">paths.ts 登记表 + file-io 未登记拒写</text>
+      <text x="940" y="324" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">工具结果或含敏感信息，先确认再操作</text>
+      <text x="940" y="338" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">工具级禁用三入口统一 isToolDenied</text>
+      <text x="40" y="388" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" letter-spacing="0.14em">PLATFORM · 传输与兼容边界（官方客户端承接 · 本包只做配置与装载编排）</text>
+      <rect x="40" y="398" width="1080" height="118" rx="8" fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/>
+      <text x="60" y="422" fill="#2d3142" font-size="9" font-family="'Geist Mono', monospace">stdio 与 streamable-http 由官方客户端实现 · stdio 环境与 streamable-http headers 走配置值展开面 · Mcp-Session-Id 会话保持与 SSE 流式响应由官方客户端承担</text>
+      <text x="60" y="440" fill="#2d3142" font-size="9" font-family="'Geist Mono', monospace">官方耦合面（loader、settings、connection、agent 作用域事件）升级时需复核 · 宿主能力只在装配期现取 · 类型面只走官方类型层 catalog 锁版（import type）</text>
+      <text x="60" y="458" fill="#2d3142" font-size="9" font-family="'Geist Mono', monospace">退出条件：官方装载语义变化时先改 servers/lifecycle 域，不在本文另起第二套描述</text>
+      <text x="60" y="480" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace">已删面（传输自研栈退役注）：自研传输与协议适配层 S1-5c 整体退役 4 文件 · 直连账本退役（单池恒真）· 模式键与策略键笔 2 删除（allowTools/denyTools 缺口单列归阶段 3 governance/visibility）</text>
+      <text x="60" y="498" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace">旧 4a-ta 映射：沿用挂载链与围栏表 · 改真（自研连接栈→官方客户端 · 双轨直呼→单池禁直呼 · config.json→mcp.json）· 删除 ta-runtime 单列（runtime 为 connection 子层）· 目标态验收卡不进现状图</text>
+      <text x="40" y="542" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" letter-spacing="0.14em">GATE · 门禁证据与待核项（本次只交静态文档/图件证据）</text>
+      <text x="60" y="564" fill="#2d3142" font-size="9" font-family="'Geist Mono', monospace">结构门禁守跨域 interface/deps、值依赖环与导出面（条目以仓库 AGENTS 与门禁脚本为准，不在本文复制阈值与用例数）</text>
+      <text x="60" y="582" fill="#2d3142" font-size="9" font-family="'Geist Mono', monospace">新增文档链接最终门禁按 AGENTS.md 执行 gate:pr · 本次子任务整合门禁由主代理报告，不宣称 CI 通过</text>
+      <text x="60" y="600" fill="#2d3142" font-size="9" font-family="'Geist Mono', monospace">待核：B 批四视图归档后的图-码对账 · 真实多服务器长稳/跨平台 stdio/SSE 半开自愈等部署结果不能由文档替代 · S2-D/笔3 增量已含本次（目录第四旁路+回落硬化+settle 内收）</text>
+      <line x1="40" y1="616" x2="1120" y2="616" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/>
+      <text x="40" y="632" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.18em">LEGEND</text>
+      <rect x="100" y="624" width="14" height="10" rx="2" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1"/>
+      <text x="120" y="632" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">Focal（围栏主路径）</text>
+      <text x="280" y="632" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">全量安全语义见包 README 安全模型节（瘦身归口）</text>
+      <text x="40" y="652" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace">图注：路径省略包前缀 · 行号取自基线树，漂移时以符号搜索兜底 · 旧 4a 草稿映射见交付说明 · 4a 草稿区冻结不动</text>
+      <text x="40" y="668" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace">禁裸计数：路由为 ROUTES 所列，不在图外复述条数 · 常量原样（engines node&#62;=20.0.0 · 心跳 30s · 403 先于 405）</text>
+      <text x="40" y="684" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace">禁 emoji · 黑话沿用（改真/收口/事实源/fail-closed/判红/留档/归口/显式非目标）</text>
+    </svg>
+  </div>
+</body>
+</html>

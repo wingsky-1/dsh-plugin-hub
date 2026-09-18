@@ -1,0 +1,126 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg viewBox="0 0 1160 780" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="aa-title aa-desc">
+      <title id="aa-title">AA：组合根、域分工与调用链路</title>
+      <desc id="aa-desc">组合根按依赖顺序装配十三域并逆序释放；调用链路经守卫路由与分支派发；依赖方向为 Pick 关系。</desc>
+      <defs><style>@import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&amp;family=Geist:wght@400;500;600&amp;family=Geist+Mono:wght@400;500;600&amp;display=swap');</style>
+        <pattern id="dots" width="22" height="22" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r="0.9" fill="rgba(45,49,66,0.10)"/></pattern>
+        <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/></marker>
+        <marker id="arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#eb6c36"/></marker>
+      </defs>
+      <rect width="100%" height="100%" fill="#f5f5f5"/>
+      <rect width="100%" height="100%" fill="url(#dots)" opacity="0.55"/>
+      <rect x="40" y="16" width="1080" height="196" rx="8" fill="rgba(235,108,54,0.05)" stroke="#eb6c36" stroke-width="1"/>
+      <text x="60" y="40" fill="#eb6c36" font-size="9" font-family="'Geist Mono', monospace" letter-spacing="0.14em">COMPOSITION ROOT · src/index.ts#apply（升级链最先 · 卸载逆序释放）</text>
+      <text x="60" y="66" fill="#2d3142" font-size="9" font-family="'Geist Mono', monospace">releaseUpgrade 复位 → await installUpgrade（runUpgradeChain 最先跑完 §3.6）</text>
+      <text x="60" y="82" fill="#2d3142" font-size="9" font-family="'Geist Mono', monospace">→ installLifecycle（宿主 loader 调用时现取） → new McpStore + load（S2-D：manager 侧 new，settle 在 upgrade 包装内）</text>
+      <text x="60" y="98" fill="#2d3142" font-size="9" font-family="'Geist Mono', monospace">→ settings 接线 + stats.configure + uiUpdate 写 sink → enabled 分支：loadDisabledTools 独立载入</text>
+      <text x="60" y="114" fill="#2d3142" font-size="9" font-family="'Geist Mono', monospace">→ initMiddleware（F3：先于 startAll，防先建后停） → startAgentVisibility（必须先于 startAll，三触发点 reconcile）</text>
+      <text x="60" y="130" fill="#2d3142" font-size="9" font-family="'Geist Mono', monospace">→ startAll → reconcileServers 双源合流（store + runtime 内存注入，同名 runtime 优先）→ loadCatalogCache 读目录缓存</text>
+      <text x="60" y="146" fill="#2d3142" font-size="9" font-family="'Geist Mono', monospace">→ settings 合并面兜底 → L1 注入 announceCatalog → 注册 /api/dsh-mcp/* + SSE + health → fs.watch 防重入 → systemPrompt</text>
+      <text x="60" y="166" fill="#eb6c36" font-size="9" font-family="'Geist Mono', monospace">逆序释放：disposeInjection → disposeSection → disposeRoutes → disposeMiddleware → disposeVisibility → watchCleanup → manager.dispose → releaseLifecycle → 账本排空 → releaseUpgrade</text>
+      <text x="60" y="186" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace">S2-D 反转装饰：settle 唯一调用点在 withSettledProjectConfig 内（upgrade/impl/steps/project-layout.ts:51 · orchestrator/deps.ts:10）· per-root 失败穿透禁回落</text>
+      <text x="60" y="200" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace">S2-C 笔3：目录读段经 readJsonFile（空回落同族）· 写段经 writeDirectoryCacheFile（登记走 writeFileAtomic，未登记回落随机后缀+清理）</text>
+      <text x="40" y="238" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" letter-spacing="0.14em">DOMAINS · 域分工与实际能力依赖（谁 Pick 谁 · 与 md §2.1 同表）</text>
+      <rect x="40" y="248" width="168" height="118" rx="6" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1"/>
+      <text x="124" y="270" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">upgrade（最先）</text>
+      <text x="124" y="286" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif" text-anchor="middle">存量迁移 runUpgradeChain</text>
+      <text x="124" y="300" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif" text-anchor="middle">STEPS 0.0.0→0.2.5</text>
+      <text x="124" y="314" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif" text-anchor="middle">成功才写 version 刻度</text>
+      <text x="124" y="330" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">Pick：日志+显式路径</text>
+      <text x="124" y="344" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">出 settle 包装（S2-D）</text>
+      <rect x="216" y="248" width="168" height="118" rx="6" fill="#f5f5f5" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+      <text x="300" y="270" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">config</text>
+      <text x="300" y="286" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif" text-anchor="middle">schema·归一·env 净化</text>
+      <text x="300" y="300" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif" text-anchor="middle">官方 settings 接线</text>
+      <text x="300" y="314" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif" text-anchor="middle">未知键静默丢弃</text>
+      <text x="300" y="330" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">SECRET_ENV_NAME 词根</text>
+      <text x="300" y="344" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">RECONNECT_DEFAULTS</text>
+      <rect x="392" y="248" width="168" height="118" rx="6" fill="#f5f5f5" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+      <text x="476" y="270" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">store</text>
+      <text x="476" y="286" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif" text-anchor="middle">全局+项目 McpStore</text>
+      <text x="476" y="300" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif" text-anchor="middle">禁用表·目录条目读写</text>
+      <text x="476" y="314" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif" text-anchor="middle">store.save 取表+回落</text>
+      <text x="476" y="330" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">Pick：paths+file-io</text>
+      <text x="476" y="344" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">R1 回落硬化（笔3）</text>
+      <rect x="568" y="248" width="168" height="118" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <text x="652" y="270" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">connection</text>
+      <text x="652" y="286" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif" text-anchor="middle">McpManager 期望集合</text>
+      <text x="652" y="300" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif" text-anchor="middle">单元路由·状态广播</text>
+      <text x="652" y="314" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif" text-anchor="middle">R2 回落硬化（笔3）</text>
+      <text x="652" y="330" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">Pick：store·装载·目录</text>
+      <text x="652" y="344" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">units per root</text>
+      <rect x="744" y="248" width="168" height="118" rx="6" fill="#f5f5f5" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+      <text x="828" y="270" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">catalog</text>
+      <text x="828" y="286" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif" text-anchor="middle">采集·digest·检索</text>
+      <text x="828" y="300" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif" text-anchor="middle">ensureRootLoaded 读段</text>
+      <text x="828" y="314" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif" text-anchor="middle">persistRoot 写段（笔3）</text>
+      <text x="828" y="330" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">Pick：LIST_DEFAULT(50)</text>
+      <text x="828" y="344" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">与 inject 同源</text>
+      <rect x="920" y="248" width="200" height="118" rx="6" fill="#f5f5f5" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+      <text x="1020" y="270" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">lifecycle</text>
+      <text x="1020" y="286" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif" text-anchor="middle">官方客户端装载</text>
+      <text x="1020" y="300" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif" text-anchor="middle">stdio/streamable-http</text>
+      <text x="1020" y="314" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif" text-anchor="middle">六态推进·装载结算</text>
+      <text x="1020" y="330" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">Pick：宿主 loader 现取</text>
+      <text x="1020" y="344" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">重连官方承接</text>
+      <rect x="40" y="374" width="168" height="118" rx="6" fill="#f5f5f5" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+      <text x="124" y="396" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">visibility</text>
+      <text x="124" y="412" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif" text-anchor="middle">per-agent restrict</text>
+      <text x="124" y="426" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif" text-anchor="middle">摘掉 mcp__* 三触发点</text>
+      <text x="124" y="440" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif" text-anchor="middle">名单记忆+重入闸</text>
+      <text x="124" y="456" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">Pick：单元活引用+</text>
+      <text x="124" y="470" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">注册面现算名单</text>
+      <rect x="216" y="374" width="168" height="118" rx="6" fill="#f5f5f5" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+      <text x="300" y="396" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">dispatch</text>
+      <text x="300" y="412" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif" text-anchor="middle">executeMcpCall 守卫</text>
+      <text x="300" y="426" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif" text-anchor="middle">路由→分支派发</text>
+      <text x="300" y="440" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif" text-anchor="middle">六态守卫·预算·redact</text>
+      <text x="300" y="456" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">Pick：禁用表·预算</text>
+      <text x="300" y="470" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">不带 agent 走全局面</text>
+      <rect x="392" y="374" width="168" height="118" rx="6" fill="#f5f5f5" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+      <text x="476" y="396" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">inject</text>
+      <text x="476" y="412" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif" text-anchor="middle">ws_mcp_* 注册+A+</text>
+      <text x="476" y="426" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif" text-anchor="middle">图片准入 finalizeContent</text>
+      <text x="476" y="440" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif" text-anchor="middle">拒绝只降级不抛错</text>
+      <text x="476" y="456" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">Pick：接缝+晚读 thunk</text>
+      <text x="476" y="470" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">只读三工具+call</text>
+      <rect x="568" y="374" width="168" height="118" rx="6" fill="#f5f5f5" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+      <text x="652" y="396" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">workspace</text>
+      <text x="652" y="412" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif" text-anchor="middle">全名解析归一</text>
+      <text x="652" y="426" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif" text-anchor="middle">@global/@@global 等价</text>
+      <text x="652" y="440" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif" text-anchor="middle">工厂产物纯内存</text>
+      <text x="652" y="456" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">Pick：无域依赖</text>
+      <text x="652" y="470" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">一致性校验防串台</text>
+      <rect x="744" y="374" width="168" height="118" rx="6" fill="#f5f5f5" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+      <text x="828" y="396" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">pipeline</text>
+      <text x="828" y="412" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif" text-anchor="middle">超时·redact·渲染</text>
+      <text x="828" y="426" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif" text-anchor="middle">withTimeout +2s 兜底</text>
+      <text x="828" y="440" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif" text-anchor="middle">各调用点递入</text>
+      <text x="828" y="456" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">CALL_TIMEOUT_MS=30000</text>
+      <text x="828" y="470" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">缺省 15000（常量）</text>
+      <rect x="920" y="374" width="200" height="118" rx="6" fill="#f5f5f5" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+      <text x="1020" y="396" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">stats · api</text>
+      <text x="1020" y="412" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif" text-anchor="middle">debounce 写盘+同步刷盘</text>
+      <text x="1020" y="426" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif" text-anchor="middle">管理路由·健康·SSE</text>
+      <text x="1020" y="440" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif" text-anchor="middle">api Pick manager 活引用</text>
+      <text x="1020" y="456" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">stats 登记表取 mode</text>
+      <text x="1020" y="470" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">同步拼写（禁异步）</text>
+      <rect x="40" y="506" width="1080" height="150" rx="8" fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/>
+      <text x="60" y="530" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" letter-spacing="0.14em">CALL CHAIN · 单次 ws_mcp_call（dispatch/impl/call/index.ts#executeMcpCall）· 反模板声明</text>
+      <text x="60" y="552" fill="#2d3142" font-size="9" font-family="'Geist Mono', monospace">guard（isToolDenied 前置裁决）→ parseFullServerName + 六态守卫 → normalizeToolName → stale 提示 → normalizeArguments → 调用预算 → 分支派发</text>
+      <text x="60" y="570" fill="#2d3142" font-size="9" font-family="'Geist Mono', monospace">封装定义路径：toolDefinitions 直呼调用方 execute（+ output.render 投影）· 远端路径：ctx.tools.execute 子调用（注册名 publicToolName 派生，不带 agent）</text>
+      <text x="60" y="588" fill="#2d3142" font-size="9" font-family="'Geist Mono', monospace">不要套 notifier 八域单例模板：各域以 interface.ts 门面 + deps.ts 端口接入 · servers 为装配实现层（无独立 deps/interface，不画对等域）</text>
+      <text x="60" y="606" fill="#2d3142" font-size="9" font-family="'Geist Mono', monospace">server/shared（paths/file-io/constants/tool-names）为叶子事实源 · publicToolName：mcp__下划线id下划线tool（≤64 直用，否则 sha256 前 12 位后缀）</text>
+      <text x="60" y="628" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace">远端转发不带 agent：挂回该 agent 作用域会被自家 deny 打死；不带走全局面（guard 靠 parent 放行）· A+ 经 finalizeContent 补回图片准入</text>
+      <text x="60" y="644" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace">旧 4a-aa 映射：沿用域表骨架 · 改真（loader 自研→官方客户端 · serverName 随机→publicToolName · 虚拟单元 deny→双路径派发）· 删除 ta-runtime 单列（并入生命周期）</text>
+      <line x1="40" y1="670" x2="1120" y2="670" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/>
+      <text x="40" y="686" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.18em">LEGEND</text>
+      <rect x="100" y="678" width="14" height="10" rx="2" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1"/>
+      <text x="120" y="686" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">最先装配 / 组合根</text>
+      <rect x="260" y="678" width="14" height="10" rx="2" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <text x="280" y="686" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">连接池宿主面</text>
+      <text x="420" y="686" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">依赖方向读 Pick 行（谁 Pick 谁）</text>
+      <text x="40" y="706" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace">图注：路径省略包前缀 · 行号取自基线树，漂移时以符号搜索兜底 · 装配时序与释放顺序以 src/index.ts#apply 为准</text>
+      <text x="40" y="722" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace">4a-da 缺 src.json（无源不立事实源地位）· review-notes 基线 1ff8874 图码差已对齐 mcp.json 同构（S2-a/b）· 4a 草稿区冻结不动</text>
+      <text x="40" y="738" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace">禁裸计数：域数为表内所列，不在图外复述条数</text>
+    </svg>

@@ -1,0 +1,155 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg viewBox="0 0 1160 660" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="ba-title ba-desc">
+      <title id="ba-title">BA：单池能力与显式非目标</title>
+      <desc id="ba-desc">全部服务器只有一条轨道：全局、项目级与 runtime 注入条目由中间层连接池持有，模型面恒为四个原子工具，经 ws_mcp_call 统一寻址；显式非目标单列。</desc>
+      <defs><style>@import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&amp;family=Geist:wght@400;500;600&amp;family=Geist+Mono:wght@400;500;600&amp;display=swap');</style>
+        <pattern id="dots" width="22" height="22" patternUnits="userSpaceOnUse">
+          <circle cx="1" cy="1" r="0.9" fill="rgba(45,49,66,0.10)"/>
+        </pattern>
+        <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/></marker>
+        <marker id="arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#eb6c36"/></marker>
+      </defs>
+
+      <rect width="100%" height="100%" fill="#f5f5f5"/>
+      <rect width="100%" height="100%" fill="url(#dots)" opacity="0.55"/>
+
+      <!-- 单池前导带 -->
+      <rect x="40" y="20" width="1080" height="150" rx="8" fill="rgba(235,108,54,0.05)" stroke="#eb6c36" stroke-width="1"/>
+      <text x="60" y="44" fill="#eb6c36" font-size="9" font-family="'Geist Mono', monospace" letter-spacing="0.14em">SINGLE POOL · 单池前导（池归属恒为全部服务器）</text>
+
+      <rect x="60" y="58" width="170" height="92" rx="6" fill="#f5f5f5" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+      <text x="145" y="84" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">全局服务器</text>
+      <text x="145" y="102" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">全局 mcp.json</text>
+      <text x="145" y="118" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">paths.ts:57 configFile</text>
+      <text x="145" y="132" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">@global 全名寻址</text>
+
+      <rect x="250" y="58" width="170" height="92" rx="6" fill="#f5f5f5" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+      <text x="335" y="84" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">项目级服务器</text>
+      <text x="335" y="102" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">项目级 mcp.json</text>
+      <text x="335" y="118" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">paths.ts:96 projectConfigFile</text>
+      <text x="335" y="132" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">@&#60;root&#62;/&#60;s&#62; 防串台</text>
+
+      <rect x="440" y="58" width="170" height="92" rx="6" fill="#f5f5f5" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+      <text x="525" y="84" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">runtime 注入条目</text>
+      <text x="525" y="102" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">内存态不落盘</text>
+      <text x="525" y="118" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">同名 runtime 优先</text>
+      <text x="525" y="132" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">registerServer 经封装定义</text>
+
+      <rect x="630" y="58" width="200" height="92" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <text x="730" y="84" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">中间层连接池</text>
+      <text x="730" y="102" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">units per root · 按 cwd 路由</text>
+      <text x="730" y="118" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">orchestrator/manager.ts</text>
+      <text x="730" y="132" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">reconcileServers 双源合流</text>
+
+      <rect x="850" y="58" width="210" height="92" rx="6" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1"/>
+      <text x="955" y="84" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">模型面四原子工具</text>
+      <text x="955" y="102" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">ws_mcp_list / detail</text>
+      <text x="955" y="118" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">ws_mcp_search / call</text>
+      <text x="955" y="132" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">call 唯一执行入口</text>
+
+      <line x1="610" y1="104" x2="630" y2="104" stroke="#eb6c36" stroke-width="1.4" marker-end="url(#arrow-accent)"/>
+      <line x1="830" y1="104" x2="850" y2="104" stroke="#eb6c36" stroke-width="1.4" marker-end="url(#arrow-accent)"/>
+      <text x="620" y="94" fill="#eb6c36" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">持有</text>
+      <text x="840" y="94" fill="#eb6c36" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">收敛</text>
+
+      <!-- 能力表 -->
+      <text x="40" y="196" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" letter-spacing="0.14em">CAPABILITIES · 能力与可见结果（与 md §1.1 同表）</text>
+
+      <rect x="40" y="206" width="208" height="150" rx="6" fill="#f5f5f5" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+      <text x="144" y="230" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">服务器配置面</text>
+      <text x="144" y="248" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif" text-anchor="middle">全局与项目级 mcp.json</text>
+      <text x="144" y="262" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif" text-anchor="middle">同构布局 · 旧键 M2</text>
+      <text x="144" y="276" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif" text-anchor="middle">不报错不迁移不写回</text>
+      <text x="144" y="296" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">paths.ts:19/96</text>
+      <text x="144" y="310" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">CONFIG_FILE_NAME=mcp.json</text>
+      <text x="144" y="324" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">normalize.ts 未知键丢弃</text>
+
+      <rect x="258" y="206" width="208" height="150" rx="6" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1"/>
+      <text x="362" y="230" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">模型可见面（Focal）</text>
+      <text x="362" y="248" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif" text-anchor="middle">ws_mcp_* 四原子工具</text>
+      <text x="362" y="262" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif" text-anchor="middle">mcp__* 不在模型列表</text>
+      <text x="362" y="276" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif" text-anchor="middle">per-agent 视角隐藏禁直呼</text>
+      <text x="362" y="296" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">tool-names.ts:19</text>
+      <text x="362" y="310" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">publicToolName 唯一派生</text>
+      <text x="362" y="324" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">visibility 经 restrict</text>
+
+      <rect x="476" y="206" width="208" height="150" rx="6" fill="#f5f5f5" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+      <text x="580" y="230" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">能力目录</text>
+      <text x="580" y="248" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif" text-anchor="middle">L1 目录注入 地图</text>
+      <text x="580" y="262" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif" text-anchor="middle">按会话 cwd 静态地图</text>
+      <text x="580" y="276" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif" text-anchor="middle">digest 只含服务器集合</text>
+      <text x="580" y="296" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">catalog 域 last-good 快照</text>
+      <text x="580" y="310" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">LIST_DEFAULT=50 / MAX=500</text>
+      <text x="580" y="324" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">CATALOG_TTL_MS=24h</text>
+
+      <rect x="694" y="206" width="208" height="150" rx="6" fill="#f5f5f5" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+      <text x="798" y="230" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">状态推送</text>
+      <text x="798" y="248" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif" text-anchor="middle">SSE summary 帧广播</text>
+      <text x="798" y="262" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif" text-anchor="middle">coalesce 合并不补帧</text>
+      <text x="798" y="276" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif" text-anchor="middle">不是可靠队列</text>
+      <text x="798" y="296" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">manager.ts:337 emitStatus</text>
+      <text x="798" y="310" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">sse-hub.js 心跳 30s</text>
+      <text x="798" y="324" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">断线以最新 summary 为准</text>
+
+      <rect x="912" y="206" width="208" height="150" rx="6" fill="#f5f5f5" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+      <text x="1016" y="230" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">管理面</text>
+      <text x="1016" y="248" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif" text-anchor="middle">11 条 /api/dsh-mcp/*</text>
+      <text x="1016" y="262" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif" text-anchor="middle">loopback 围栏+方法白名单</text>
+      <text x="1016" y="276" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif" text-anchor="middle">403 先于 405</text>
+      <text x="1016" y="296" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">shared/routes.ts:14 ROUTES</text>
+      <text x="1016" y="310" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">ROUTE_FENCE 方法围栏</text>
+      <text x="1016" y="324" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">config GET 只读豁免</text>
+
+      <!-- 非目标 -->
+      <text x="40" y="382" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" letter-spacing="0.14em">NON-GOALS · 显式非目标（与 md §1.2 同表）</text>
+
+      <rect x="40" y="392" width="208" height="120" rx="6" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1" stroke-dasharray="5 3"/>
+      <text x="144" y="416" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">不提供直呼主形态</text>
+      <text x="144" y="436" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif" text-anchor="middle">单池后只经中间层触达</text>
+      <text x="144" y="450" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif" text-anchor="middle">已删模式直呼三触发点</text>
+      <text x="144" y="464" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif" text-anchor="middle">reconcile 全覆盖</text>
+      <text x="144" y="484" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">退出条件见 §2.3</text>
+
+      <rect x="258" y="392" width="208" height="120" rx="6" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1" stroke-dasharray="5 3"/>
+      <text x="362" y="416" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">不提供准入闸</text>
+      <text x="362" y="436" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif" text-anchor="middle">allowTools/denyTools</text>
+      <text x="362" y="450" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif" text-anchor="middle">随策略键删除</text>
+      <text x="362" y="464" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif" text-anchor="middle">isToolDenied 只是执行前裁决</text>
+      <text x="362" y="484" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">替代归阶段 3 治理面</text>
+
+      <rect x="476" y="392" width="208" height="120" rx="6" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1" stroke-dasharray="5 3"/>
+      <text x="580" y="416" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">不订阅 list_changed</text>
+      <text x="580" y="436" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif" text-anchor="middle">重连/手动刷新重同步</text>
+      <text x="580" y="450" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif" text-anchor="middle">目录为 last-good 快照</text>
+      <text x="580" y="464" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif" text-anchor="middle">stale 前置提示不阻塞</text>
+      <text x="580" y="484" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">采集边界见 DA 常量</text>
+
+      <rect x="694" y="392" width="208" height="120" rx="6" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1" stroke-dasharray="5 3"/>
+      <text x="798" y="416" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">不桥接非工具能力</text>
+      <text x="798" y="436" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif" text-anchor="middle">resources / prompts</text>
+      <text x="798" y="450" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif" text-anchor="middle">尚无 harness 消费接口</text>
+      <text x="798" y="464" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif" text-anchor="middle">只桥接工具能力</text>
+      <text x="798" y="484" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">已知限制见 §4.5</text>
+
+      <rect x="912" y="392" width="208" height="120" rx="6" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1" stroke-dasharray="5 3"/>
+      <text x="1016" y="416" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">不做可靠队列 / 自研栈</text>
+      <text x="1016" y="436" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif" text-anchor="middle">SSE 只广播最新帧</text>
+      <text x="1016" y="450" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif" text-anchor="middle">自研传输 S1-5c 退役</text>
+      <text x="1016" y="464" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif" text-anchor="middle">连接走官方客户端</text>
+      <text x="1016" y="484" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">双读已删只读新形态</text>
+
+      <!-- 代价注 -->
+      <line x1="40" y1="536" x2="1120" y2="536" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/>
+      <text x="40" y="552" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.18em">COST</text>
+      <text x="100" y="552" fill="#4f5d75" font-size="9" font-family="'Geist', sans-serif">代价：多一跳中间层转发 · 目录为快照（tools/list_changed 变化需重连/刷新）· 模式键删除后残留分支已清（笔 2）</text>
+      <text x="40" y="570" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.18em">LEGEND</text>
+      <rect x="100" y="562" width="14" height="10" rx="2" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1"/>
+      <text x="120" y="570" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">Focal（推荐主路径）</text>
+      <rect x="260" y="562" width="14" height="10" rx="2" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1" stroke-dasharray="3 2"/>
+      <text x="280" y="570" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">显式非目标</text>
+      <line x1="420" y1="567" x2="448" y2="567" stroke="#eb6c36" stroke-width="1.4" marker-end="url(#arrow-accent)"/>
+      <text x="456" y="570" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">持有 / 收敛</text>
+      <text x="40" y="592" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace">图注：路径省略包前缀（packages/dsh-mcp-manager/）· 行号取自基线树，漂移时以符号搜索兜底 · 旧 4a-ba 草稿映射见交付说明</text>
+      <text x="40" y="608" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace">改真点：4a-ba 双读→只读新形态 · 直呼兜底→禁直呼 · serverName 随机短串→publicToolName 唯一派生 · 虚拟单元 deny→封装定义直呼调用方 execute</text>
+      <text x="40" y="624" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace">沿用：单池主链路 · mcp.json 同构 · version 刻度</text>
+    </svg>
