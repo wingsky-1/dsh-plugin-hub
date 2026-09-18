@@ -39,6 +39,7 @@ import { stripTypeScriptTypes } from "node:module";
 import { parse } from "acorn";
 
 import { SOURCE_UNIVERSE_PATTERNS, globFiles, sourceUniverse } from "../lib/glob-files.mjs";
+import { failClosed } from "../lib/gate-exit.mjs";
 
 const ROOT = join(import.meta.dirname, "../..");
 const COVERAGE_CONFIG_REL = join("scripts", "data", "coverage.config.json");
@@ -201,30 +202,28 @@ export function inlineLiteralProblems(text) {
   return problems;
 }
 
-/** 读配置并做结构校验；失败原因已落 stderr，返回 null（main 据此 fail-closed）。 */
+/** 读配置并做结构校验；失败返回 { error }（main 据此 failClosed），成功返回 { config }。 */
 function loadCoverageConfig(configPath, configRel) {
   let config;
   try {
     config = JSON.parse(readFileSync(configPath, "utf8"));
   } catch (e) {
-    console.error(`verify-coverage-scope: 覆盖率配置不可读（${configRel}）：${e.message}`);
-    return null;
+    return { error: `verify-coverage-scope: 覆盖率配置不可读（${configRel}）：${e.message}` };
   }
   if (!Array.isArray(config.include) || config.include.length === 0) {
-    console.error(`verify-coverage-scope: ${configRel} 缺非空 include —— 覆盖率分母为空是配置错误`);
-    return null;
+    return {
+      error: `verify-coverage-scope: ${configRel} 缺非空 include —— 覆盖率分母为空是配置错误`,
+    };
   }
   if (config.thresholds === null || typeof config.thresholds !== "object") {
-    console.error(`verify-coverage-scope: ${configRel} 缺 thresholds 对象`);
-    return null;
+    return { error: `verify-coverage-scope: ${configRel} 缺 thresholds 对象` };
   }
   if (Object.keys(config.thresholds).length === 0) {
-    console.error(
-      `verify-coverage-scope: ${configRel} 的 thresholds 没有任何键 —— 全局硬门禁被摘除，fail-closed`,
-    );
-    return null;
+    return {
+      error: `verify-coverage-scope: ${configRel} 的 thresholds 没有任何键 —— 全局硬门禁被摘除，fail-closed`,
+    };
   }
-  return config;
+  return { config };
 }
 
 /** 条目腐烂：模式在覆盖率根内命中 0 个文件即指向了不存在的东西。 */
@@ -375,8 +374,9 @@ function main() {
   const configRel = argValue(process.argv, "--coverage-config", COVERAGE_CONFIG_REL);
   const configPath = join(root, configRel);
 
-  const config = loadCoverageConfig(configPath, configRel);
-  if (config === null) return 2;
+  const loaded = loadCoverageConfig(configPath, configRel);
+  if (loaded.error !== undefined) failClosed(loaded.error);
+  const config = loaded.config;
   const thresholdKeys = Object.keys(config.thresholds);
 
   const problems = [];
@@ -384,18 +384,16 @@ function main() {
 
   const vitestConfigPath = join(root, VITEST_CONFIG_REL);
   if (!existsSync(vitestConfigPath)) {
-    console.error(`verify-coverage-scope: 缺 ${VITEST_CONFIG_REL}（fail-closed）`);
-    return 2;
+    failClosed(`verify-coverage-scope: 缺 ${VITEST_CONFIG_REL}（fail-closed）`);
   }
   problems.push(...inlineLiteralProblems(readFileSync(vitestConfigPath, "utf8")));
 
   // 物理面（每次现算，不存清单）与实际计分面：universe 定义与变异面共用一份（glob-files.mjs）
   const universe = sourceUniverse(root);
   if (universe.size === 0) {
-    console.error(
+    failClosed(
       `verify-coverage-scope: universe 为空（${SOURCE_UNIVERSE_PATTERNS.join(" + ")} 没匹配到任何文件）—— 提取口径失效，fail-closed`,
     );
-    return 2;
   }
   const includePatterns = config.include;
   const excludePatterns = config.exclude.map((e) => e.pattern);

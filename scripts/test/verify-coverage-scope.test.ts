@@ -521,3 +521,63 @@ test("本仓真实快照：面完整、无逃逸 → exit 0 且打印面计数",
   assert.match(r.stdout, /universe \d+ 文件 = include \d+ − exclude \d+ → 计分 \d+/);
   assert.match(r.stdout, /阈值键 lines\/functions\/statements\/branches/);
 });
+
+test("fail-closed：覆盖率配置不可读 → exit 2 且统一故障注解", () => {
+  const root = fixture();
+  writeFileSync(join(root, "scripts/data/coverage.config.json"), "{ invalid json");
+  const r = run(root);
+  assert.equal(r.status, 2, r.stderr);
+  assert.match(
+    r.stderr,
+    /^::error::门禁故障（非判据结论）：verify-coverage-scope: 覆盖率配置不可读/m,
+  );
+  assert.equal(r.stdout, "");
+});
+
+test("fail-closed：缺 vitest.config.ts → exit 2 且统一故障注解", () => {
+  const root = fixture();
+  rmSync(join(root, "vitest.config.ts"));
+  const r = run(root);
+  assert.equal(r.status, 2, r.stderr);
+  assert.match(
+    r.stderr,
+    /^::error::门禁故障（非判据结论）：verify-coverage-scope: 缺 vitest\.config\.ts/m,
+  );
+  assert.equal(r.stdout, "");
+});
+
+test("fail-closed：universe 为空 → exit 2 且统一故障注解", () => {
+  const root = fixture();
+  rmSync(join(root, "packages"), { recursive: true, force: true });
+  rmSync(join(root, "shared"), { recursive: true, force: true });
+  const r = run(root);
+  assert.equal(r.status, 2, r.stderr);
+  assert.match(r.stderr, /^::error::门禁故障（非判据结论）：verify-coverage-scope: universe 为空/m);
+  assert.equal(r.stdout, "");
+});
+
+test("fail-closed：include 为空数组 → exit 2 且统一故障注解", () => {
+  const r = run(fixture({ ...BASE_CONFIG, include: [] }));
+  assert.equal(r.status, 2, r.stderr);
+  assert.match(
+    r.stderr,
+    /^::error::门禁故障（非判据结论）：verify-coverage-scope: .*缺非空 include/m,
+  );
+  assert.equal(r.stdout, "");
+});
+
+test("CLI 三态：判红仍 exit 1 且无故障注解", () => {
+  const r1 = run(
+    fixture(BASE_CONFIG, {
+      sourceFiles: [
+        { rel: "packages/dsh-fake/src/a.ts", content: "export const a = 1\n" },
+        { rel: "packages/dsh-fake/src/types.d.ts", content: "export type T = 1\n" },
+        { rel: "shared/x.js", content: "export const x = 1\n" },
+        { rel: "packages/dsh-fake/src/notify.ps1", content: "Write-Host hi\n" },
+      ],
+    }),
+  );
+  assert.equal(r1.status, 1, r1.stderr);
+  assert.doesNotMatch(r1.stderr, /::error::门禁故障/);
+  assert.match(r1.stderr, /既不在 include 也不在任何 exclude 条目里/);
+});
