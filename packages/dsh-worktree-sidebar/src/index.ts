@@ -38,7 +38,7 @@ export const name = "worktree-sidebar";
  */
 export const inject = ["webServer", "agents", "typert", "sessions"];
 
-/** 组合层入口配置。只有总开关：本插件没有用户配置文件。 */
+/** 组合层入口配置。只有总开关（经插件配置传入）：不在盘上读用户配置文件，绑定表由插件在 DSH_HOME 下自持。 */
 export interface WorktreeSidebarConfig {
   /** 总开关；`false` 时一律不接管、不注册工具、不挂路由。 */
   enabled?: boolean;
