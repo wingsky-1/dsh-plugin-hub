@@ -60,7 +60,6 @@ export function resolveCatalogInjection(
   maxEntries = DEFAULT_CATALOG_MAX_ENTRIES,
   cache?: CatalogCache,
   agent?: CatalogAgent,
-  mode?: string,
 ): CatalogDecision {
   if (decision.kind === "reject") return decision;
   const entries = composeCatalogEntries(supervisors, maxEntries, cache);
@@ -91,8 +90,8 @@ export function resolveCatalogInjection(
         };
   }
   const catalog = history.published
-    ? renderMcpCatalogUpdate(entries, mode)
-    : renderMcpCatalogMessage(entries, mode);
+    ? renderMcpCatalogUpdate(entries)
+    : renderMcpCatalogMessage(entries);
   return {
     kind: "enter",
     messages:

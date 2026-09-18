@@ -4,8 +4,8 @@
  * 目录域 = 能力目录条目/渲染（entries）+ digest（digest）+ 会话内历史定位
  * （history）+ 注入决策（injection）+ 注入端缓存视图（cache-view）+ 检索函数族
  * （search），其中 entries/digest/history/injection/cache-view 五块住 impl/<块>/index.ts。
- * 目录外模块**只能**从这里引用（verify-dir-imports 静态强制）；strategy 裁决族
- * （policyAllows/isToolDenied 等）仍留在 middleware-utils.ts（阶段 6 集中搬移时再归位）。
+ * 目录外模块**只能**从这里引用（verify-dir-imports 静态强制）；工具级禁用裁决
+ * （isToolDenied 等，#767 笔 2 后是唯一裁决）归执行管道域的 authorize 块。
  *
  * search 是本域唯一**暂留域根**的块——B2.4 就地重构的刻意偏差，不是漏做：它当时是
  * fileCycles 那条环签名（catalog/interface.ts|catalog/search.ts|connection/interface.ts|

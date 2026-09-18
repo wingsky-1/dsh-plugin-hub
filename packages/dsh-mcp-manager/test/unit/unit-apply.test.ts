@@ -13,16 +13,8 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { pollUntil } from "../helpers.ts";
 
-const {
-  apply,
-  McpManager,
-  McpStore,
-  resolveMiddlewareMode,
-  makeMiddlewareHotSwitch,
-  saveDisabledTools,
-} = await import("../../src/index.ts");
+const { apply, saveDisabledTools } = await import("../../src/index.ts");
 const { mountLedger, mountServer, releaseLifecycle } =
   await import("../../src/server/servers/lifecycle/interface.ts");
 
@@ -282,96 +274,11 @@ describe("apply 的 route disposer（SSE 连接清理）", () => {
   });
 });
 
-// resolveMiddlewareMode 三态（issue #664 阶段 1：配置域逻辑归位，C-CFG 契约）----
-describe("resolveMiddlewareMode 三态", () => {
-  function makeManagerFixture() {
-    const dir = makeTempDir("dsh-mcp-manager-mode-");
-    const store = new McpStore(join(dir, "mcp.json"));
-    return new McpManager({ logger: { info: () => {}, warn: () => {} } }, store);
-  }
-
-  it("settings 有值优先于 fallback", () => {
-    // 态 1：settings 持久化值 = 运行权威（覆盖 schema 默认）
-    const manager = makeManagerFixture();
-    manager.uiConfigSource = () => ({ middleware: "all" });
-    expect(resolveMiddlewareMode(manager, "project")).toBe("all");
-  });
-
-  it("settings 无值回落 fallback", () => {
-    // 态 2：settings 无值 → fallbackRaw（resolve 侧显式传值）
-    const manager = makeManagerFixture();
-    manager.uiConfigSource = () => ({});
-    expect(resolveMiddlewareMode(manager, "off")).toBe("off");
-  });
-
-  it("无 fallback 回落 schema 默认 project", () => {
-    // 态 2b：settings 无值且无 fallback → schema 默认 project（第一启动形态）
-    const manager = makeManagerFixture();
-    manager.uiConfigSource = () => ({});
-    expect(resolveMiddlewareMode(manager, undefined)).toBe("project");
-  });
-
-  it("settings 非法值回落 off", () => {
-    // 态 3：settings 非法值 → normalize 回落 off（读取兼容、不迁移写回）
-    const manager = makeManagerFixture();
-    manager.uiConfigSource = () => ({ middleware: "bogus" });
-    expect(resolveMiddlewareMode(manager, "project")).toBe("off");
-  });
-});
-
-// B20 红测：makeMiddlewareHotSwitch 热切换补 emitStatus（C-EVT 契约：summary
-// 帧源集合含热切换；现状热切换不 emitStatus → summary 帧缺失）----
-describe("B20：makeMiddlewareHotSwitch 热切换补 emitStatus", () => {
-  function makeHotSwitchFixture() {
-    const dir = makeTempDir("dsh-mcp-manager-b20-");
-    const manager = new McpManager(
-      { logger: { info: () => {}, warn: () => {}, error: () => {} } },
-      new McpStore(join(dir, "mcp.json")),
-    );
-    manager.ctx = { tools: { register: () => () => {} }, on: () => () => {} };
-    let emits = 0;
-    manager.onStatus(() => {
-      emits += 1;
-    });
-    const hotSwitch = makeMiddlewareHotSwitch(manager, {}, async () => undefined, {
-      current: () => {},
-    });
-    return { hotSwitch, emits: () => emits };
-  }
-
-  it("B20：热切换后 emitStatus 被触发（summary 帧源含热切换；现状缺失 → 红测）", async () => {
-    const { hotSwitch, emits } = makeHotSwitchFixture();
-    await hotSwitch("project");
-    await pollUntil("热切换 summary 帧（emitStatus coalesce 落定）", () => emits() >= 1);
-    expect(emits() >= 1).toBeTruthy();
-  });
-
-  it("同模式热切换短路，不重复广播", async () => {
-    const { hotSwitch, emits } = makeHotSwitchFixture();
-    await hotSwitch("project");
-    await pollUntil("热切换 summary 帧（emitStatus coalesce 落定）", () => emits() >= 1);
-    await hotSwitch("project");
-    await pollUntil("同模式短路无新广播", () => emits() >= 1);
-    expect(emits()).toBe(1);
-  });
-
-  it("B20：切回 off 同样补 summary 帧", async () => {
-    const { hotSwitch, emits } = makeHotSwitchFixture();
-    await hotSwitch("project");
-    await pollUntil("热切换 summary 帧（emitStatus coalesce 落定）", () => emits() >= 1);
-    await hotSwitch("off");
-    await pollUntil("切回 off 亦广播", () => emits() >= 2);
-    expect(emits() >= 2).toBeTruthy();
-  });
-});
-
-// D8 红测：off 模式 mcp__ 直呼命中禁用表 → deny ----
-// 现状：pre-execute guard 只在 registerMiddlewareTools 内注册（src/index.ts
-// middlewareMode !== "off" 才调用）→ off 模式 mcp__ 直呼无禁用拦截（「工具级
-// 禁用三入口」实际一入口）；修复（spec D8）：guard 挂载与中间层实例解耦、数据源
-// 直查 manager.disabledTools、独立注册路径，三模式一致；off 模式不 initMiddleware
-// （无连接池副作用，guard 只读禁用表）。
-describe("D8：off 模式 mcp__ 直呼命中禁用表 → deny", () => {
+// D8 红测：mcp__ 直呼命中禁用表 → deny ----
+// 修复（spec D8）：guard 挂载与中间层实例解耦、数据源直查 manager.disabledTools、
+// 独立注册路径；单池（#767 笔 1a）后中间层实例恒装配，guard 与模式无关，本用例的
+// 判据（guard 已挂载 + 命中毒表 deny）逐字保留。
+describe("D8：mcp__ 直呼命中禁用表 → deny", () => {
   async function applyOffModeWithDisabledTool() {
     const dir = makeTempDir("dsh-mcp-manager-d8-");
     const prevHome = process.env.DSH_HOME;
@@ -386,7 +293,7 @@ describe("D8：off 模式 mcp__ 直呼命中禁用表 → deny", () => {
     // 预置工具级禁用表（manager.userStatePath = DSH_HOME/dsh-mcp-user-state.json）。
     const disabled = new Map([["@global", new Map([["svc", new Set(["use_t"])]])]]);
     await saveDisabledTools(join(dir, "dsh-mcp-user-state.json"), disabled);
-    await apply(ctx, { enabled: true, middleware: "off", storePath: join(dir, "mcp.json") });
+    await apply(ctx, { enabled: true, storePath: join(dir, "mcp.json") });
     const restore = () => {
       if (prevHome === undefined) delete process.env.DSH_HOME;
       else process.env.DSH_HOME = prevHome;
@@ -394,7 +301,7 @@ describe("D8：off 模式 mcp__ 直呼命中禁用表 → deny", () => {
     return { guards, restore };
   }
 
-  it("D8：off 模式 pre-execute guard 已挂载（现状 off 不注册 → 红测）", async () => {
+  it("D8：pre-execute guard 已挂载", async () => {
     const { guards, restore } = await applyOffModeWithDisabledTool();
     try {
       const guard = guards.get("tools/pre-execute");
@@ -404,7 +311,7 @@ describe("D8：off 模式 mcp__ 直呼命中禁用表 → deny", () => {
     }
   });
 
-  it("D8：off 模式 mcp__ 直呼命中禁用表 → deny（现状放行 → 红测）", async () => {
+  it("D8：mcp__ 直呼命中禁用表 → deny", async () => {
     const { guards, restore } = await applyOffModeWithDisabledTool();
     try {
       const guard = guards.get("tools/pre-execute");

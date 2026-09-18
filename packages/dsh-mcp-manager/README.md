@@ -6,24 +6,24 @@ DSH（DeepSeek Harness）的 **MCP 服务器管理插件**：会话界面右上�
 快速接入（手工表单 + 粘贴 mcpServers JSON 导入，**不预设任何服务器**）。
 连接与协议交官方 `@deepseek-ai/dsh-mcp-client`（宿主 cordis loader 按包名装载到 dsh 安装内的副本），本插件只留配置面与模型可见面；官方客户端不随包分发，也无需额外安装。
 
-三档中间层模式（`middleware`）：`off`——项目级/全局都直接注册 `mcp__` 前缀工具（旧行为，**封装定义条目例外**：它没有远端实现可直呼，任何模式下都只经中间层）；
-`project`（**默认**）——项目级走中间层、全局仍以 `mcp__` 直呼注册；`all`——全局也走中间层
-（含运行时注入的封装定义服务器），cwd 无项目时回落全局虚拟 root
-`@global`，模型面完全收敛为四个原子工具
-（`ws_mcp_list` / `ws_mcp_detail` / `ws_mcp_search` / `ws_mcp_call`）。直呼注册名是
-`mcp__<id>__<tool>`：`id` 是本次装配按 (工作空间, 服务器名) 分配的不透明短串，不能由服务器名推导。
-`middleware` / `middlewarePolicy` 可在设置页热切换（保存即生效并持久化），
-也可在配置文件中设置（插件启动时读取）；两级配置文件中的服务器列表（增删/启停/改配置）支持热加载、即时生效，无需重启。
+模型可见面只有四个原子工具（`ws_mcp_list` / `ws_mcp_detail` / `ws_mcp_search` /
+`ws_mcp_call`）：项目级、全局级与运行时注入的封装定义条目**一律经中间层访问**，两级发现
+（`ws_mcp_list` 完整盘点 → `ws_mcp_detail` 按需拉完整 schema）；cwd 无项目时回落全局虚拟
+root `@global`。宿主仍按 `mcp__<id>__<tool>` 注册工具（`id` 是本次装配按
+(工作空间, 服务器名) 分配的不透明短串，不能由服务器名推导），但这些名字**会被从模型的
+工具列表中摘除**，禁止直呼。
+两级配置文件中的服务器列表（增删/启停/改配置）支持热加载、即时生效，无需重启。
+（`middleware` / `middlewarePolicy` 两个配置键已在 #767 笔 2 废除——旧配置里写了不生效、
+也不会被本插件改写。）
 
 > **升级 dsh 到 0.1.5+ 后历史会话打不开（`unclassified message source`）？**
 > 见 [故障修复：升级后历史会话打不开（#723）](#723-修复方案)，一条命令即可救回。
 
 ## 核心优势
 
-- **上下文成本可控**：项目级 MCP 默认经中间层收敛，模型面只占 `ws_mcp_list` /
-  `ws_mcp_detail` / `ws_mcp_search` / `ws_mcp_call` 四个原子工具位——当前工作空间
-  的项目级接多少台服务器、多少个工具都不膨胀系统提示词；`middleware: all` 可把
-  全局服务器也收进中间层，实现全量收敛（两级发现：`ws_mcp_list` 完整盘点 →
+- **上下文成本可控**：全部 MCP 经中间层收敛，模型面只占 `ws_mcp_list` /
+  `ws_mcp_detail` / `ws_mcp_search` / `ws_mcp_call` 四个原子工具位——接多少台
+  服务器、多少个工具都不膨胀系统提示词（两级发现：`ws_mcp_list` 完整盘点 →
   `ws_mcp_detail` 按需拉完整 schema）
 - **分工作目录维护**：项目级配置 `<项目根>/.dsh/mcp.json` 随仓库走、可提交 git 团队共享；
   全局配置 `<DSH_HOME>/dsh-mcp.json` 常连；切换会话自动加载当前目录的 MCP 集
@@ -32,7 +32,7 @@ DSH（DeepSeek Harness）的 **MCP 服务器管理插件**：会话界面右上�
 - **安全的默认值**：配置只存 `${ENV}` 引用、不落盘密钥本身（0600 权限 + 原子写入）；
   stdio 子进程环境净化，宿主凭据形状变量不透传；目录摘要与错误路径经 redactor 脱敏
 - **运维省心**：运行中/连接中/失败等分级状态一目了然；断线有界指数退避自动重连；
-  直连模式下工具结果按 8KB 截断、调用超时可按 server 覆盖（`toolCallTimeoutMs`），
+  工具结果按 8KB 截断、调用超时可按 server 覆盖（`toolCallTimeoutMs`），
   中间层调用超时固定 30s
 
 ## 安装
@@ -87,7 +87,7 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-mcp-manager
 | 服务器管理 | 增删改查（可选项目级/全局）、连接 / 断开 / 重连；配置版本化 JSON，原子写入 |
 | 两种传输 | stdio（本地子进程，env 支持 `${ENV}` 引用）与 streamable-http（远程，header 支持 `${ENV}` 引用，自动回传 `Mcp-Session-Id`） |
 | JSON 导入 | 粘贴 mcpServers JSON 文本导入（仅 JSON 格式；不扫描任何应用配置文件） |
-| 模型工具 | 全局服务器工具以 `mcp__<id>__<tool>` 直呼注册（`id` 按 (工作空间, 服务器名) 随机分配、同一次装配内稳定、不透明，只能从工具清单读；工具名仍受 64 字符 / `[A-Za-z0-9_-]` / 冲突哈希后缀约束）；封装定义条目与模式无关恒经中间层；项目级服务器默认经中间层 `ws_mcp_list` / `ws_mcp_detail` / `ws_mcp_search` / `ws_mcp_call` 访问（`middleware: project`，推荐），不同工作空间互不冲突；`middleware: all` 时全局与运行时注入服务器也统一经中间层访问，不注册 `mcp__` 前缀 |
+| 模型工具 | 全部服务器（项目级 / 全局 / runtime 注入）一律经中间层四个原子工具访问：`ws_mcp_list` / `ws_mcp_detail` / `ws_mcp_search` / `ws_mcp_call`，不同工作空间互不冲突；宿主注册名 `mcp__<id>__<tool>`（`id` 按 (工作空间, 服务器名) 随机分配、同一次装配内稳定、不透明；工具名仍受 64 字符 / `[A-Za-z0-9_-]` / 冲突哈希后缀约束）会被从模型工具列表摘除——模型不可见、不得直呼 |
 | 工作空间隔离 | 中间层按调用方会话当前 cwd 路由到对应工作空间的连接池；server 全名 `@<root>/<server>` 一致性校验防跨空间串台 |
 | 断线重连 | 有界指数退避（500ms 起、30s 上限、10 次后停止后台重试；用户手动连接或 ws_mcp_call 触发可再试） |
 | 结果截断 | 工具结果按 8KB 截断并标注（防超长 JSON 全量进上下文） |
@@ -127,8 +127,8 @@ SSE events 通道推送一变，客户端自动重新拉取 `/api/dsh-mcp/config
 
 ## 配置（中间层）
 
-项目级 MCP 经中间层访问（`middleware: project`，默认）：项目级服务器不再注册
-`mcp__` 工具，改经模型面四个原子工具访问（两级发现，业界标准形态）——
+全部 MCP 经中间层访问（单池，**没有模式开关**）：任何服务器都不产生模型可见的 `mcp__`
+直呼工具，统一经四个原子工具访问（两级发现，业界标准形态）——
 `ws_mcp_list`（完整盘点当前工作空间全部服务器 + 每台完整工具清单，不受
 `ws_mcp_search` 的 limit 截断；支持 `server` 全名/裸名过滤，`perServerLimit`
 每服务器工具条数上限默认 50 / 上限 500，超限置 `toolsTruncated`；空返回附明确
@@ -138,40 +138,32 @@ SSE events 通道推送一变，客户端自动重新拉取 `/api/dsh-mcp/config
 不存在）/ `ws_mcp_search`（关键词检索，先搜后调，输出 `truncated` 标志提示结果是否因
 limit 截断）/ `ws_mcp_call`（按 `@<root>/<server>` 全名调用，参数 schema 用
 `ws_mcp_detail` 核对），执行时按调用方会话当前 cwd 路由到对应工作空间
-连接池，不同工作空间注入不同 MCP、无命名冲突；全局服务器仍以 `mcp__` 直呼注册
-（注册名形如 `mcp__<id>__<tool>`，`id` 不透明、以工具清单为准；project 模式
-detail/call 传全局级服务器会给出这条直呼引导）。没有直呼注册的全局服务器
-（封装定义条目）只能经 `ws_mcp_call` 按 `@<root>/<server>` 触达。
-切换 `middleware: off` 回到旧行为（项目级也直接注册
-`mcp__` 工具；封装定义条目在任何模式下恒经中间层，不受该开关影响）；`middleware: all` 则全局服务器（含运行时注入的封装定义服务器）
-也走中间层（cwd 无项目时回落全局
-虚拟 root `@global`），模型面完全收敛为四个原子工具——此时 list/search/detail
-合并查询「项目 root 单元 + `@global` 单元」，call 放行 `@global` root（全局配置
-跨工作空间共享，语义成立）。注：all 模式全局服务器增删改后需重启或触发会话
-触达才刷新目录（既有行为）。
+连接池，不同工作空间注入不同 MCP、无命名冲突；cwd 无项目时回落全局虚拟 root
+`@global`，list/search/detail 恒合并查询「项目 root 单元 + `@global` 单元」，
+call 放行 `@global` root（全局配置跨工作空间共享，语义成立）。宿主注册名形如
+`mcp__<id>__<tool>`，`id` 不透明、以工具清单为准；它只作内部标识（模型工具列表里看不到），
+封装定义条目（`toolDefinitions`）只经 `ws_mcp_call` 按 `@<root>/<server>` 触达。
+注：全局服务器增删改后需重启或触发会话触达才刷新目录（既有行为）。
 
-**中间层模式可在设置页热切换**（设置 → 插件 → MCP 管理器 → 中间层模式下拉），
-保存即生效并持久化，无需重启 dsh web。
-
-| 键 | 值域 | 默认 |
-| --- | --- | --- |
-| `middleware` | `off` / `project`（推荐）/ `all` | `project` |
-| `middlewarePolicy` | `{ allowTools: {<serverKey>: [glob]}, denyTools: {<serverKey>: [glob]} }`（serverKey 为 `@<root>/<server>` 全名（工作空间隔离）或裸名（跨空间共用），全名优先；deny 优先） | `{}` |
+**已废除的配置键**（#767 笔 2）：`middleware`（`off` / `project` / `all` 三档模式）与
+`middlewarePolicy`（`allowTools` / `denyTools` 策略）。设置页的模式下拉已删除；旧配置里写了
+这两个键**不报错也不生效**（键被原样带过、没有任何消费者），本插件也不会改写用户的配置文件。
+工具级禁用是唯一的准入裁决。
 
 ### 工具级禁用（浮窗）
 
 - 服务器卡片的「工具（N）」折叠区展开后为 **checkbox 列表**，逐个启停，点击即
   经 `PATCH /api/dsh-mcp/tool-disable` 持久化（落盘 `<DSH_HOME>/dsh-mcp-user-state.json`
   的 `disabledTools`，合并写盘、重启保留）；
-- 语义：**project 模式只能禁用项目级服务器经中间层的工具；all 模式可禁用全局
-  服务器（含 runtime 注入的服务器）经中间层的工具**；默认全部启用；
+- 语义：**项目级与全局级服务器的工具都可禁用**（单池后两类都经中间层；全局记录以
+  `@global` 为 key 跨工作空间共享）；默认全部启用；
 - 工具级禁用**独立于服务器级 enabled 开关**（服务器级复活不清工具级状态）；
 - **作用于 mcp-manager 管辖的全部 MCP 工具**（mcp__ 前缀直呼与中间层 ws_mcp_*
-  一致生效，all 模式 runtime 封装工具同样受控）；插件侧自行声明的纪律裸名工具
+  一致生效，runtime 封装工具同样受控）；插件侧自行声明的纪律裸名工具
   不受影响；
 - 超长工具名（>64 字符哈希后缀）不可逆 → 按未知 server 处理，不禁用/不误禁；
-- project 模式浮窗显示全局服务器但无工具开关（全局工具此时以 `mcp__` 前缀直呼注册，
-  不经中间层），提示「切 all 模式可管理全局工具」；
+- 浮窗与管理面板的「项目级」「全局级」分组**都渲染工具开关**（单池后两类都经中间层，
+  全局组的开关同样生效）；
 - 浮窗与管理面板均按「项目级 / 全局级」两大分组展示（各自内部再按连接状态）；
 - 全名形态 `@@global/<name>` 或 `@<绝对路径>/<name>`（与宿主 `parseFullServerName`
   归一化一致）；宿主重启后 `projectRoot` 暂缺时客户端防御性跳过提交（不发送非法
@@ -196,7 +188,7 @@ detail/call 传全局级服务器会给出这条直呼引导）。没有直呼�
   （调用方可先做预处理再内部转发底层命令），跳过远端 schema 投影与
   通用 callTool，底层真实实现不外泄；
 - **没有**：维持现状（远端 schema + 通用 callTool），其他服务器零影响；
-- **无 `mcp__` 直呼注册：任何模式下都只经 `ws_mcp_call` 用裸名调用**（`@<root>/<server>`
+- **模型不可见 `mcp__` 直呼工具：只经 `ws_mcp_call` 用裸名调用**（`@<root>/<server>`
   + 裸名；封装的 execute 是调用方 JS，没有远端实现可直呼）。调用名派生仍走
   `publicToolName`（64 字符 / 哈希后缀规则不变），但它只作为中间层 callTool 的转发名；
 - **工具级禁用 / 可见性 / 能力目录对封装工具照常生效**（按服务器 + 工具名判定，与
@@ -236,13 +228,13 @@ await ctx.mcpManager.registerServer({
   可能含敏感信息；工具描述/结果按不可信输入对待
 - **工作空间隔离（中间层）**：路由以调用方会话当前 cwd 为唯一输入；server
   全名一致性校验（参数声明的 root ≠ 路由 root → 拒绝）防跨空间串台；
-  策略 guard（allowTools/denyTools，deny 优先）按 `@<root>/<server>` 全名或裸名配置（全名优先，工作空间隔离）
+  工具级禁用表按 `@<root>/<server>` 全名或裸名裁决（全名优先；`@global` 记录跨工作空间共享）
 - **中间层工具只读边界**：`ws_mcp_list` / `ws_mcp_detail` / `ws_mcp_search` 纯读
-  本地目录缓存（不触达远端服务器、不执行工具），不经过策略 guard；`ws_mcp_call`
-  是唯一执行远端工具并受策略约束（deny 优先）的入口；`ws_mcp_call` 错误消息按
+  本地目录缓存（不触达远端服务器、不执行工具）；`ws_mcp_call`
+  是唯一执行远端工具的入口，并受工具级禁用表约束；`ws_mcp_call` 错误消息按
   「显式 + 下一步」规范给出（确认 server 连接 / 用 `ws_mcp_detail` 核对参数 /
-  检查策略配置）
-- **工具级禁用（三入口一致）**：`ws_mcp_call`（callTool 先查禁用表再查策略）、
+  检查工具级禁用状态）
+- **工具级禁用（三入口一致）**：`ws_mcp_call`（callTool 查禁用表）、
   pre-execute guard（`mcp__` 前缀直呼工具）、插件侧声明的纪律裸名工具
   统一走 `isToolDenied` 裁决；禁用只作用于 `mcp__` 前缀工具，拒绝原因附语义声明；
   禁用记录 `<DSH_HOME>/dsh-mcp-user-state.json` 的 `disabledTools`（`@global` key
@@ -316,12 +308,11 @@ pnpm --filter @wingsky-1/dsh-mcp-manager test
 
 ## 已知限制
 
-- **一切直呼注册的工具名都含随机 id（含 project / off 模式的全局服务器）**：服务器由官方
-  dsh-mcp-client 装载，工具注册为 `mcp__<id>__<tool>`，`id` 是按 (工作空间, 服务器名) 分配的
-  **随机短串**（同一次插件装配内稳定；插件重载或宿主重启后变化；不透明，不能由服务器名推导）——
-  **不要在任何脚本或提示词里写死工具名**，一律用 `ws_mcp_list` /
-  `ws_mcp_detail` 取名字。把 `mcp__*` 从模型可见面屏蔽、统一经 `ws_mcp_call` 转发
-  在后续阶段收敛
+- **`mcp__` 注册名只作内部标识**：服务器由官方 dsh-mcp-client 装载，宿主注册名为
+  `mcp__<id>__<tool>`，`id` 是按 (工作空间, 服务器名) 分配的 **随机短串**（同一次插件装配内
+  稳定；插件重载或宿主重启后变化；不透明，不能由服务器名推导）。这些名字会被从模型工具列表
+  摘除，模型经 `ws_mcp_call` 转发触达——**不要在任何脚本或提示词里写死工具名**，
+  一律用 `ws_mcp_list` / `ws_mcp_detail` 取名字
 - 不订阅 MCP 的 `tools/list_changed` 通知（无 SSE 长连接）；工具列表变化在
   重连 / 手动刷新时重新同步
 - 中间层目录是「采集边界内的 last-good 快照」（单服务器 ≤512 工具 / ≤256KB 总量），

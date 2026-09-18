@@ -175,7 +175,7 @@ describe("McpManager.connect", () => {
   it("连接后池内条目已登记（单池后唯一账本是单元表）", async () => {
     const { manager } = fixture();
     await manager.add({ name: "conn", transport: "stdio", command: "echo" });
-    await manager.initMiddleware({});
+    await manager.initMiddleware();
     // 连接（smoke 已测 SDK 端到端，此处只验证方法不抛且池内条目已登记）
     await manager.connect("conn");
     const unit = manager.middleware.units.get("@global");
@@ -185,7 +185,7 @@ describe("McpManager.connect", () => {
   it("已连接时重复 connect 不抛（返回 early）", async () => {
     const { manager } = fixture();
     await manager.add({ name: "conn", transport: "stdio", command: "echo" });
-    await manager.initMiddleware({});
+    await manager.initMiddleware();
     await manager.connect("conn");
     await expect(manager.connect("conn")).resolves.toBeUndefined();
   });

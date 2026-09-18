@@ -2,8 +2,8 @@
  * dsh-mcp-manager — catalog/search.ts：能力目录检索函数族（#664 阶段 5）。
  *
  * 自 src/middleware-utils.ts 迁出（catalog 域检索族）：打分/单/多单元检索/
- * 完整盘点/单工具详情/新鲜判定/装箱。策略裁决（policyAllows/isToolDenied 等）
- * 留在 middleware-utils.ts；globMatch 归 pipeline（authorize.ts）。B10 截断事实
+ * 完整盘点/单工具详情/新鲜判定/装箱。工具级禁用裁决（isToolDenied 等）与
+ * globMatch 归 pipeline（authorize 块）。B10 截断事实
  * 口径随迁保持「恰好命中 limit 不误报」。
  */
 
@@ -134,8 +134,8 @@ export function searchCatalog(
   return { results, unavailable, truncated };
 }
 
-/** 多单元合并检索（all 模式：项目 root 单元 + @global 单元合并查询）。
- * 与 searchCatalog 同语义，仅数据源扩展为多个 root；off/project 模式行为不变。
+/** 多单元合并检索（项目 root 单元 + @global 单元合并查询）。
+ * 与 searchCatalog 同语义，仅数据源扩展为多个 root。
  * 单 root 直接委托 searchCatalog（保持原顺序，不引入跨单元排序变化）；
  * 多 root 合并后统一排序并按全局 limit 截断（truncated=合并后曾有超限结果）。 */
 export function searchCatalogMulti(
@@ -169,10 +169,10 @@ export function searchCatalogMulti(
  * 完整盘点：列出当前工作空间全部服务器 + 每台完整工具清单（不受关键词/limit
  * 截断服务器，工具数受 perServerLimit 保护）。
  * @param units 连接池单元集合。
- * @param roots 参与盘点的 root 列表（all 模式含 @global）。
+ * @param roots 参与盘点的 root 列表（当前项目 root + @global）。
  * @param serverFilter 可选：@<root>/<server> 全名或裸名过滤。
  * @param toolLimit 每服务器工具条数上限（>0；超过置 toolsTruncated）。
- * @param emptyHint 空返回时的 message（按模式区分场景）。
+ * @param emptyHint 空返回时的 message。
  * @param disabledTools 用户工具级禁用映射（root → server → Set<tool>）；
  *    命中条目在工具行标注禁用（供模型感知）。
  * @throws 全名 root 不属于当前 roots → 路由一致性错误（与 ws_mcp_call 口径一致）。
@@ -182,7 +182,6 @@ export function listCatalog(
   roots: readonly string[],
   serverFilter: string | undefined,
   toolLimit: number,
-  mode: string,
   emptyHint: string,
   disabledTools?: DisabledToolsMap,
 ): ListCatalogResult {
@@ -275,7 +274,6 @@ export function listCatalog(
   });
   const result: ListCatalogResult = {
     workspace: roots[0] ?? "@global",
-    mode,
     servers,
     totalServers: servers.length,
     totalTools,
@@ -292,7 +290,7 @@ export function listCatalog(
  * 2. 单元/服务器未发现 → 「server 未连接或未发现」；
  * 3. 工具不存在 → 「tool 不存在」。
  * @param units 连接池单元集合。
- * @param root 目标 root（all 模式可为 @global）。
+ * @param root 目标 root（可为 @global）。
  * @param server @<root>/<server> 全名。
  * @param tool 远端工具裸名（兼容 mcp__ 前缀，复用 normalizeToolName）。
  */

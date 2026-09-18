@@ -6,17 +6,16 @@
  * MCP 连接池，实现「不同工作空间注入不同 MCP、无命名冲突」：
  * - 连接池：每工作空间一套常驻连接（惰性连接 + 超时 + LRU 淘汰）；
  * - 目录：每工作空间 ToolCatalog（惰性发现 + last-good 磁盘缓存 + 检索）；
- * - 策略：server/tool 两级 glob（deny 优先），按 @root/server 全名配置；
  * - 容错：normalizeToolName / normalizeArguments / msgOf / createRedactor。
  *
- * 双轨迁移：middleware 配置为 "off"（默认直呼）/ "project"（项目级走中间层，
- * 全局 mcp__ 直呼）/ "all"（全部走中间层）。
+ * 单池（#767 笔 1a/笔 2）：全部服务器一律经中间层单元触达；配置里已无模式键
+ * （`mcp__*` 也不再在模型可见面），故本文不再有任何模式分支。
  *
  * 阶段 6 集中搬移：本文件归 connection/runtime/（中间层池），仅保留
  * McpMiddleware 类；原汇聚转发块删除（v3 §二：汇聚只留 src/index.ts）。
  *
  * #767 S1-3a：ws_mcp_call 执行路径（callTool 与 hostRedact）已迁 servers/dispatch 域，
- * callTool 缩成转发壳——执行器经 runtimePorts 的 dispatch 端口取，单元/策略/脱敏源仍由本类持有。
+ * callTool 缩成转发壳——执行器经 runtimePorts 的 dispatch 端口取，单元/禁用表/脱敏源仍由本类持有。
  *
  * #767 S1-4d：连接栈换成官方 @deepseek-ai/dsh-mcp-client。本类不再自建 transport / client，
  * 也不再自己排重连与防双进程探测——装载、拆卸与六态投影一律经 runtimePorts 的 lifecycle 端口
@@ -47,7 +46,6 @@ import type { SchemaView } from "../../catalog/interface.ts";
 import { runtimePorts } from "./impl/service/index.ts";
 import type { MiddlewareHost } from "./deps.ts";
 import type { ProjectUnit, ConnectionEntry } from "./impl/middleware/type.ts";
-import type { MiddlewarePolicy } from "../../pipeline/interface.ts";
 import type { DisabledToolsMap } from "../../store/interface.ts";
 
 // ------------------------------------------------------------ 连接池
@@ -60,8 +58,6 @@ export class McpMiddleware {
   host: MiddlewareHost;
   /** root（realpath 归一化）→ 工作空间单元。 */
   units: Map<string, ProjectUnit>;
-  /** 策略（按 @root/server 全名配置）。 */
-  policy: MiddlewarePolicy;
   /** 用户禁用映射（root → Set<server>），单元创建时合并。 */
   disabledByRoot: Map<string, Set<string>> = new Map();
   /** 工具级禁用（root → server → Set<tool>；root=@global 跨工作空间共享）。 */
@@ -74,10 +70,9 @@ export class McpMiddleware {
    */
   forwarding: Set<ToolExecutionToken> = new Set();
 
-  constructor(host: MiddlewareHost, policy: MiddlewarePolicy = {}) {
+  constructor(host: MiddlewareHost) {
     this.host = host;
     this.units = new Map();
-    this.policy = policy;
   }
 
   /** 读取/创建 root 的单元（root 无项目标记 → undefined）。 */
@@ -446,7 +441,6 @@ export class McpMiddleware {
             : catalogPort.catalogDirectory.entryFor(catalogRoot, serverName),
         allServers: () => this.allServers(),
         disabledTools: this.disabledTools,
-        policy: this.policy,
         catalogTtlMs: CATALOG_TTL_MS,
         defaultCallTimeoutMs: CALL_TIMEOUT_MS,
         pipeline,

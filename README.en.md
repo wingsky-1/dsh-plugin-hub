@@ -212,7 +212,7 @@ Access the dsh web UI over LAN: HTTP/HTTPS/WS forwarding + TLS (self-signed / cu
 
 ### `@wingsky-1/dsh-mcp-manager`
 
-MCP server manager (stdio / streamable-http): per-working-directory project/global config tiers; project-level MCP collapsed into 4 atomic tools via middleware by default (`middleware: all` folds in global servers, hot-switchable in the settings page); workspace isolation prevents cross-project interference; configs store `${ENV}` references only — no plaintext secrets on disk; runtime registration API for other plugins to inject MCP servers; optional MCP call statistics and debug mode (metadata-only, off by default)
+MCP server manager (stdio / streamable-http): per-working-directory project/global config tiers; all MCP collapsed into 4 atomic tools via the middleware (no model-visible `mcp__` direct-call tools); workspace isolation prevents cross-project interference; configs store `${ENV}` references only — no plaintext secrets on disk; runtime registration API for other plugins to inject MCP servers; optional MCP call statistics and debug mode (metadata-only, off by default)
 
 ### `@wingsky-1/dsh-verify-isolated`
 

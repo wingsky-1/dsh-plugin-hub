@@ -60,8 +60,8 @@ export type RuntimePort = Pick<typeof runtimeApi, "McpMiddleware">;
 /**
  * servers/lifecycle 域给本子层的能力面：一条直连连接的全部生命周期动作。
  *
- * 本子层自 #767 S1-5b 起是**第二张账本**的持有者（裁定 AF 形态 B）：全局（project/off 模式）
- * 与 off 模式的全部服务器由 manager 自己记账，装载 / 拆卸 / 六态投影一律经此端口交还官方
+ * 本子层自 #767 S1-5b 起是**第二张账本**的持有者（裁定 AF 形态 B）：单池之外的
+ * 全部服务器由 manager 自己记账，装载 / 拆卸 / 六态投影一律经此端口交还官方
  * 引擎的账本。只取生命周期符号，不取 `mountLedger` 对象本身——账本类未导出，Pick 出的实例
  * 类型不可名（与 runtime 子层的 LifecyclePort 同口径）。
  *

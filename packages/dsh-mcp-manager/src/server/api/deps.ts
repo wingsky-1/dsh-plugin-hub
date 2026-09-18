@@ -2,8 +2,7 @@
  * dsh-mcp-manager — api/deps.ts：API 层域的上对依赖声明（纯类型面，§3.1 规则 2）。
  *
  * 本域运行时能力消费**非零**（决策⑥ 以运行时能力消费为准）：路由控制器取 workspace 域的
- * scope 归一化 / 全名解析 / 工具名归一化 / 中间层模式归一化（真实使用行见
- * routes-controllers.ts:109/164/320/370/394），以及 config 域的 mcpServers JSON
+ * scope 归一化 / 全名解析 / 工具名归一化，以及 config 域的 mcpServers JSON
  * 解析（routes-controllers.ts:323）。宿主能力实测 0 命中（无 ctx/Context/logger/settings），
  * 故只有两条 Port——比 §3.4/§3.5 表的预期窄得多，按实测收窄。
  *
@@ -22,10 +21,10 @@
 import type * as workspaceApi from "../workspace/interface.ts";
 import type * as configModelApi from "../config/interface.ts";
 
-/** workspace 域给本域的能力面：scope 归一化 / 全名解析 / 工具名归一化 / 中间层模式归一化。 */
+/** workspace 域给本域的能力面：scope 归一化 / 全名解析 / 工具名归一化。 */
 export type WorkspacePort = Pick<
   typeof workspaceApi,
-  "normalizeScope" | "parseFullServerName" | "normalizeToolName" | "normalizeMiddlewareMode"
+  "normalizeScope" | "parseFullServerName" | "normalizeToolName"
 >;
 
 /** config 域给本域的能力面：mcpServers JSON 导入解析。 */
@@ -36,7 +35,7 @@ export type ConfigModelPort = Pick<typeof configModelApi, "parseClaudeJson">;
  * verify-dir-imports 的注入面对账强制**严格相等**（多一个键、少一个键都判红）。
  */
 export interface ApiDeps {
-  /** workspace 域：scope 归一化 / 全名解析 / 工具名归一化 / 中间层模式归一化。 */
+  /** workspace 域：scope 归一化 / 全名解析 / 工具名归一化。 */
   workspace: WorkspacePort;
   /** config 域：mcpServers JSON 导入解析。 */
   configModel: ConfigModelPort;

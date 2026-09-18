@@ -59,7 +59,7 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-plugins-all
 | `@wingsky-1/dsh-notifier` | Task-event notification center (6 event kinds; browser + system toast dual channels + Bark/Webhook push channels) |
 | `@wingsky-1/dsh-provider-usage` | Multi-provider usage capsule (v2 adapter framework: DeepSeek official and OpenCode Go built in, plug in any data source with your own mjs) |
 | `@wingsky-1/dsh-lan-proxy` | Access dsh web UI over the LAN (HTTP/HTTPS/WS forwarding + TLS; Brotli/gzip + WebSocket dual compression, WS half-open probing, launch-token auto-injection) |
-| `@wingsky-1/dsh-mcp-manager` | MCP server manager (stdio/HTTP; per-working-directory project/global config tiers, project-level MCP collapsed into 4 atomic tools via the middleware) |
+| `@wingsky-1/dsh-mcp-manager` | MCP server manager (stdio/HTTP; per-working-directory project/global config tiers, all servers collapsed into 4 atomic tools via the middleware) |
 | `@wingsky-1/dsh-verify-isolated` | Isolated-verification skill for plugin development (four-way isolation: DSH_HOME / profile / port / browser instance + bundled browser driver) |
 
 > `@wingsky-1/dsh-gzip` is retired: HTTP response compression has been merged into

@@ -2,15 +2,15 @@
  * dsh-mcp-manager — 中间层工具注册（ws_mcp_search / ws_mcp_call /
  * ws_mcp_list / ws_mcp_detail + 策略 guard）。
  *
- * 注册四个中间层工具与策略 guard 层；类型面自各域门面（store/interface.ts 的
+ * 注册四个中间层工具与工具级禁用 guard 层；类型面自各域门面（store/interface.ts 的
  * DisabledToolsMap）与 stats/interface.ts（McpStatsCollector）取，连接池类
  * McpMiddleware 自
  * connection/runtime/interface.ts 只作 `import type`（防运行值环）。跨域取数一律经
  * `injectPorts.get()`（端口声明见 ../deps.ts）——catalog 检索族、runtime 限额常量、pipeline
  * 裁决族与超时兜底、workspace 全名解析，本文件对四个提供域没有值 import。跨端契约常量
  * MIDDLEWARE_GLOBAL_ROOT 与值常量 LIST_DEFAULT_TOOLS_PER_SERVER 直接取自共享层门面（W3b 迁移）。
- * all 模式全局可见性（评审 A）：search/list/detail 合并查询「项目 root 单元 +
- * @global 单元」；call 放行 @global root。off/project 模式行为不变。
+ * 全局可见性（评审 A）：search/list/detail 恒合并查询「项目 root 单元 + @global 单元」；
+ * call 放行 @global root。单池（#767 笔 1a/笔 2）后没有模式分支。
  */
 
 import type { Context } from "@deepseek-ai/cordis";
@@ -38,16 +38,6 @@ interface MiddlewareToolContext {
   /** 图片准入要用的宿主能力（晚读 thunk）；接线点省略时退化成纯诊断（不抛）。 */
   faces: ImageAdmissionFaces;
 }
-
-/**
- * 中间层**有效**模式（#767 笔 1a 单池合并后恒为 all）。
- *
- * 全部服务器都经中间层单元 + `ws_mcp_call` 触达，配置里的 `middleware` 值已不再影响
- * 任何行为——回显它等于在诊断面上写假事实源。`ws_mcp_list` 的 `mode` 字段仍在 output
- * schema 的 `required` 里（外部形状守恒），故此处报有效事实。
- * 笔 2 随配置键一起删。
- */
-const EFFECTIVE_MIDDLEWARE_MODE = "all";
 
 /** 空 query 搜索无命中时的可归因提示（纯 render 文案，C 项）。 */
 const SEARCH_EMPTY_HINT =
@@ -84,7 +74,7 @@ async function waitForDiscovery(
  * 可见单元集合：项目 root + @global（评审 A 全局可见性修复）。
  * root 本身为 @global 时去重（防无项目 cwd 下服务器翻倍）。
  *
- * 单池（#767 笔 1a）：@global 恒可见——不再是「all 模式才合并」的模式分支。
+ * 单池（#767 笔 1a）：@global 恒可见——「按模式合并」的分支已删。
  */
 function visibleMiddlewareRoots(root: string | undefined): string[] {
   if (root === undefined) return [];
@@ -95,7 +85,7 @@ function visibleMiddlewareRoots(root: string | undefined): string[] {
  * 路由一致性校验（detail/call 共用；A2）：目标 root 必须等于当前 root，或 @global
  * （全局配置跨工作空间共享，语义成立）。
  *
- * 单池（#767 笔 1a）：**删掉**了原来「@global 且非 all 模式 → 拒绝」那道门——可达性
+ * 单池（#767 笔 1a）：原「@global 且非 all 模式 → 拒绝」那道门已删——可达性
  * 三件套之一。全局服务器不再有 mcp__ 直呼面，@global 必须对所有调用方可达。
  * 「其他 root（≠ 当前 root 且 ≠ @global）恒拒」逐字保持（防跨空间串台）。
  * @returns 校验通过的 root；抛错则拒绝。
@@ -178,7 +168,7 @@ async function executeSearch(
   if (unit === undefined) {
     return { results: [], unavailable: [], truncated: false };
   }
-  // 等待 in-flight 连接/发现（预算内），再搜索。all 模式对可见全部单元
+  // 等待 in-flight 连接/发现（预算内），再搜索。对可见全部单元
   // （含 @global 首次触达）都等待——否则全局目录首次为空（P1-3 修复）。
   for (const visible of roots) {
     const visibleUnit = visible === root ? unit : await toolCtx.mw.projectUnitFor(visible);
@@ -446,7 +436,6 @@ function formatListServerEntry(entry: Record<string, unknown>): string {
 function renderListOutput(_args: unknown, value: unknown) {
   const v = (value ?? {}) as {
     workspace?: unknown;
-    mode?: unknown;
     servers?: Array<Record<string, unknown>>;
     totalServers?: unknown;
     totalTools?: unknown;
@@ -455,7 +444,7 @@ function renderListOutput(_args: unknown, value: unknown) {
   };
   const servers = v.servers ?? [];
   const lines = servers.map(formatListServerEntry);
-  const prefix = `Workspace ${String(v.workspace ?? "")} (mode=${String(v.mode ?? "")}): ${String(v.totalServers ?? 0)} servers / ${String(v.totalTools ?? 0)} tools in total`;
+  const prefix = `Workspace ${String(v.workspace ?? "")}: ${String(v.totalServers ?? 0)} servers / ${String(v.totalTools ?? 0)} tools in total`;
   const body =
     lines.length > 0
       ? lines.join("\n\n")
@@ -508,7 +497,7 @@ async function resolveListWithoutUnit(
   const {
     catalog: { listCatalog },
   } = injectPorts.get();
-  // 单池：单元缺失也查 @global（原来「非 all 模式 → 只报项目级未配置」的模式分支已删）。
+  // 单池：单元缺失也查 @global（原「非 all 模式 → 只报项目级未配置」的分支已删）。
   const globalUnit = await mw.projectUnitFor("@global");
   if (globalUnit !== undefined) await waitForDiscovery(globalUnit);
   return listCatalog(
@@ -516,7 +505,6 @@ async function resolveListWithoutUnit(
     ["@global"],
     serverFilter,
     toolLimit,
-    EFFECTIVE_MIDDLEWARE_MODE,
     "当前工作空间没有可用 MCP 服务器（项目级与全局均未发现；若刚添加配置，请稍后重试）",
     mw.disabledTools,
   );
@@ -538,7 +526,7 @@ async function executeList(
   if (unit === undefined) {
     return resolveListWithoutUnit(toolCtx.mw, root, serverFilter, toolLimit);
   }
-  // 等待 in-flight 连接/发现（预算内），再搜索。all 模式对可见全部单元
+  // 等待 in-flight 连接/发现（预算内），再搜索。对可见全部单元
   // （含 @global 首次触达）都等待——否则全局目录首次为空（P1-3 修复）。
   for (const visible of roots) {
     const visibleUnit = visible === root ? unit : await toolCtx.mw.projectUnitFor(visible);
@@ -552,7 +540,6 @@ async function executeList(
     roots,
     serverFilter,
     toolLimit,
-    EFFECTIVE_MIDDLEWARE_MODE,
     "",
     toolCtx.mw.disabledTools,
   );
@@ -570,7 +557,7 @@ function buildListTool(toolCtx: MiddlewareToolContext): ToolDefinition {
   return {
     name: "ws_mcp_list",
     description:
-      "List all MCP servers and their complete tool inventories in current workspace (not truncated by search limit). Returns full server names, tool names, and descriptions. Does not return inputSchema (use ws_mcp_detail for full schemas). Includes global servers in all mode.",
+      "List all MCP servers and their complete tool inventories in current workspace (not truncated by search limit). Returns full server names, tool names, and descriptions. Does not return inputSchema (use ws_mcp_detail for full schemas). Includes project-level and global servers.",
     parameters: {
       type: "object",
       properties: {
@@ -590,14 +577,13 @@ function buildListTool(toolCtx: MiddlewareToolContext): ToolDefinition {
         type: "object",
         properties: {
           workspace: { type: "string" },
-          mode: { type: "string" },
           servers: { type: "array", items: {} },
           totalServers: { type: "number" },
           totalTools: { type: "number" },
           toolsTruncated: { type: "boolean" },
           message: { type: "string" },
         },
-        required: ["workspace", "mode", "servers", "totalServers", "totalTools", "toolsTruncated"],
+        required: ["workspace", "servers", "totalServers", "totalTools", "toolsTruncated"],
         additionalProperties: false,
       },
       render: renderListOutput,
@@ -717,20 +703,14 @@ function buildDetailTool(toolCtx: MiddlewareToolContext): ToolDefinition {
 function handleCallGuard(args: unknown, mw: McpMiddleware): PreToolDecision | undefined {
   const {
     workspace: { parseFullServerName, fullServerName },
-    pipeline: { isToolDenied, policyAllows, policyDenialReason, toolDisabledReason },
+    pipeline: { isToolDenied, toolDisabledReason },
   } = injectPorts.get();
   const { server, tool } = parseCallParams(args);
   const parsed = parseFullServerName(server);
   if (parsed === undefined || parsed.server === "") return undefined;
-  const policyKey = fullServerName(parsed.root, parsed.server);
-  if (isToolDenied(mw.disabledTools, mw.policy, policyKey, tool)) {
-    if (!policyAllows(mw.policy, policyKey, tool)) {
-      return {
-        kind: "deny",
-        reason: policyDenialReason(mw.policy, policyKey, tool) ?? "ws_mcp_call: 工具被策略拒绝",
-      };
-    }
-    return { kind: "deny", reason: toolDisabledReason(policyKey, tool) };
+  const serverKey = fullServerName(parsed.root, parsed.server);
+  if (isToolDenied(mw.disabledTools, serverKey, tool)) {
+    return { kind: "deny", reason: toolDisabledReason(serverKey, tool) };
   }
   return undefined;
 }
@@ -785,7 +765,7 @@ async function handleDirectMcpGuard(
     return undefined;
   }
   const serverKey = fullServerName(root, server);
-  if (isToolDenied(disabledTools, undefined, serverKey, tool)) {
+  if (isToolDenied(disabledTools, serverKey, tool)) {
     return { kind: "deny", reason: toolDisabledReason(serverKey, tool) };
   }
   return undefined;
@@ -855,19 +835,18 @@ function registerPreExecuteGuard(
 /**
  * D8：独立 mcp__ 直呼守卫（guard 挂载与中间层实例解耦）。
  *
- * off 模式不 initMiddleware（无连接池副作用），pre-execute guard 现状只在
- * registerMiddlewareTools 内注册 → mcp__ 直呼无禁用拦截（「工具级禁用三入口」
- * 实际一入口）。本守卫数据源直查禁用表（只读），独立注册路径，三模式一致；
- * ws_mcp_call 守卫依赖策略/中间层实例，仅 project/all 经 registerMiddlewareTools
- * 注册。B11 反解规格化逻辑与 registerMiddlewareTools 内 guard 同源
- * （handleDirectMcpGuard）。
+ * 历史上的动机是「模式为 off 时不建中间层实例，pre-execute guard 只在
+ * registerMiddlewareTools 内注册 → mcp__ 直呼无禁用拦截」（「工具级禁用三入口」
+ * 实际一入口）。本守卫数据源直查禁用表（只读），独立注册路径；单池（#767 笔 1a）
+ * 后中间层实例恒装配，两条注册路径并存仍是刻意的（守卫不依赖中间层实例）。
+ * B11 反解规格化逻辑与 registerMiddlewareTools 内 guard 同源（handleDirectMcpGuard）。
  */
 export function registerDirectMcpGuard(
   ctx: Context,
   disabledTools: DisabledToolsMap | undefined,
   resolveRoot: (agent: unknown) => Promise<string | undefined>,
   /**
-   * id → (root, 裸名) 反查面（off 模式下账本在 manager 自持，只有调用点给得出来）。位置参数而非
+   * id → (root, 裸名) 反查面（账本由持有者自持，只有调用点给得出来）。位置参数而非
    * options 袋：与 resolveRoot 同为「装配点现造的入参契约」，且签名落在导出面快照的**同一个
    * 声明块**里——带花括号的 options 袋会让提取器在第一个深度 0 的 `}` 截断整块。
    */
@@ -906,8 +885,8 @@ export function registerDirectMcpGuard(
  * @param resolveRoot 路由：exec.agent → 归一化项目根（agent-less → undefined）。
  * @param options 可选配置（支持传入自定义工具级禁用表）。
  *
- * 单池（#767 笔 1a）：不再接受模式入参——可见单元集合恒为「项目 root + @global」，
- * ws_mcp_list 的 mode 字段恒报有效事实 `all`（见 EFFECTIVE_MIDDLEWARE_MODE）。
+ * 单池（#767 笔 1a）：不再接受模式入参——可见单元集合恒为「项目 root + @global」；
+ * `ws_mcp_list` 的输出里没有模式字段（笔 2 随 `middleware` 配置键一并删除）。
  */
 export function registerMiddlewareTools(
   ctx: Context,
@@ -919,8 +898,8 @@ export function registerMiddlewareTools(
     /** 可选调用统计收集器。 */
     stats?: McpStatsCollector;
     /**
-     * id → (root, 裸名) 反查面（可选）。装配点递入 manager 直连账本的反查：project/off 模式下
-     * 全局服务器不在池里，只靠池侧反查会把 id 当裸名、工具级禁用对直呼路径恒 miss。
+     * id → (root, 裸名) 反查面（可选）。装配点递入 manager 账本的反查：只靠池侧反查
+     * 会把 id 当裸名、工具级禁用对直呼路径恒 miss。
      * 给出时优先，未命中回落池侧反查（`resolveServerIdFor`）。
      */
     resolveServerId?: ServerIdResolver;

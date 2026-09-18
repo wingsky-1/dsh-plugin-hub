@@ -24,7 +24,6 @@ import type { CatalogCache, CatalogViewResolver, SchemaView } from "../../catalo
 import type { McpStore } from "../../store/interface.ts";
 import type { McpStatsCollector } from "../../stats/interface.ts";
 import type { McpMiddleware } from "../runtime/interface.ts";
-import type { MiddlewareMode } from "../../workspace/interface.ts";
 import type { ConnectionEntry, ProjectUnit } from "../interface.ts";
 import type { DisabledToolsMap } from "../../store/interface.ts";
 import {
@@ -283,7 +282,7 @@ export class McpManager {
   }
 
   /**
-   * 中间层宿主：按 root 读取服务器配置。all 模式的虚拟 root "@global" 返回
+   * 中间层宿主：按 root 读取服务器配置。虚拟 root "@global" 返回
    * 全局配置 **+ runtime 注入条目**（#413：runtime 封装定义服务器由中间层接管，
    * 数据源必须可见；独立合并，不污染 store.data.servers 持久化数组）。
    */
@@ -311,7 +310,7 @@ export class McpManager {
     );
   }
 
-  /** 中间层宿主：全局服务器配置（all 模式使用）。 */
+  /** 中间层宿主：全局服务器配置（@global 单元装载用）。 */
   globalServers(): ServerConfig[] {
     return this.store.data.servers;
   }
@@ -328,30 +327,24 @@ export class McpManager {
 
   /**
    * 初始化中间层（apply 时无条件调用；幂等）。单池合并后连接池是唯一连接路径，
-   * 不再接受模式入参——池归属恒为「全部服务器」。
+   * 池归属恒为「全部服务器」——#767 笔 2 删掉 `middlewarePolicy` 后不再接受任何入参。
    */
-  async initMiddleware(policy: Record<string, unknown>): Promise<McpMiddleware> {
+  async initMiddleware(): Promise<McpMiddleware> {
     const { runtime, configStore, workspace } = orchestratorPorts.get();
     if (this.middleware !== undefined) return this.middleware;
-    const mw = new runtime.McpMiddleware(
-      {
-        ctx: this.ctx,
-        logger: this.logger,
-        projectServersFor: (root) => this.projectServersFor(root),
-        globalServers: () => this.globalServers(),
-        normalizedProjectRoot: (cwd) => workspace.normalizedProjectRoot(cwd),
-        saveUserState: (units) => this.saveUserState(units),
-        emitStatus: () => this.emitStatus(),
-        catalogCachePath: (root) => this.catalogCachePathFor(root),
-        isGlobalServer: (name) => this.isGlobalServer(name),
-        isRuntimeServer: (name) => this.isRuntimeServer(name),
-        recordCatalogTools: (name, tools) => this.recordCatalogTools(name, tools),
-      },
-      {
-        allowTools: (policy.allowTools as Record<string, string[]> | undefined) ?? undefined,
-        denyTools: (policy.denyTools as Record<string, string[]> | undefined) ?? undefined,
-      },
-    );
+    const mw = new runtime.McpMiddleware({
+      ctx: this.ctx,
+      logger: this.logger,
+      projectServersFor: (root) => this.projectServersFor(root),
+      globalServers: () => this.globalServers(),
+      normalizedProjectRoot: (cwd) => workspace.normalizedProjectRoot(cwd),
+      saveUserState: (units) => this.saveUserState(units),
+      emitStatus: () => this.emitStatus(),
+      catalogCachePath: (root) => this.catalogCachePathFor(root),
+      isGlobalServer: (name) => this.isGlobalServer(name),
+      isRuntimeServer: (name) => this.isRuntimeServer(name),
+      recordCatalogTools: (name, tools) => this.recordCatalogTools(name, tools),
+    });
     try {
       // 加载 userDisabled 并注入中间层实例（单元创建时合并；重启不丢）。
       this.disabledByRoot = await configStore.loadUserState(this.userStatePath);
@@ -375,9 +368,6 @@ export class McpManager {
 
   /** 工具级禁用（root → server → Set<tool>）；root=@global 跨工作空间共享。 */
   disabledTools: DisabledToolsMap = new Map();
-
-  /** 中间层模式热切换（apply 注入；设置页「中间层模式」下拉调用）。 */
-  setMiddlewareMode?: (mode: MiddlewareMode) => Promise<void>;
 
   /**
    * 设置/解除单个工具禁用（宿主 API PATCH /api/dsh-mcp/tool-disable 调用）。
@@ -776,7 +766,7 @@ export class McpManager {
   /**
    * 拆除中间层池中该 server 的连接（update/remove 配置变更后强制重建；
    * 不写 userDisabled——与 disconnect 的禁用语义区分）。此前 update/remove 仅
-   * 处理项目单元，all 模式全局池连接与目录残留导致「已删服务器仍可调用」。
+   * 处理项目单元，@global 池连接与目录残留导致「已删服务器仍可调用」。
    */
   private dropMiddlewareConnection(name: string): void {
     const mw = this.middleware;
@@ -1022,9 +1012,6 @@ export class McpManager {
       projectRoot: this.projectRoot ?? undefined,
       servers,
       counts: byStatus,
-      // 笔 2 随配置键一起删：单池后所有服务器都经中间层，有效模式恒为 "all"。
-      // 回显配置里的 `middleware` 值会在这个诊断面上写假事实源（它已不再影响任何行为）。
-      middlewareMode: "all",
     };
   }
 

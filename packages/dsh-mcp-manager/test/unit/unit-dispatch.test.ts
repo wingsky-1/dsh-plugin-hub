@@ -7,7 +7,7 @@
  * - 结果投影调用（projectCallToolResult 吃远端 value 与两个文案回调 / 目录过期前置提示）；
  * - 超时兜底预算（withTimeout 的预算 = 调用预算 + 2000，含缺省预算）；
  * - 凭据脱敏出口（调用/封装失败文案经 createRedactor 抹凭据；signal 中止原样上抛）；
- * - 路由与就绪/策略守卫的错误文案。
+ * - 路由与就绪/禁用守卫的错误文案。
  */
 import { describe, expect, it } from "vitest";
 import { executeMcpCall } from "../../src/server/servers/dispatch/impl/call/index.ts";
@@ -80,12 +80,6 @@ function makePipeline(overrides: Record<string, unknown> = {}) {
     },
     isToolDenied() {
       return false;
-    },
-    policyAllows() {
-      return true;
-    },
-    policyDenialReason() {
-      return undefined;
     },
     toolDisabledReason(key: string, tool: string) {
       return "工具 " + key + "/" + tool + " 已被用户在「MCP」浮窗禁用";
@@ -192,7 +186,6 @@ function makeInput(options: {
     catalogEntryFor: (serverName: string) => options.catalog?.get(serverName),
     allServers: makeServers,
     disabledTools: new Map(),
-    policy: {},
     catalogTtlMs: 24 * 60 * 60 * 1000,
     defaultCallTimeoutMs: 30000,
     // 注册名派生用**真** publicToolName：判据要钉住「dispatch 不自己拼 mcp__<id>__<tool>」，
@@ -519,7 +512,7 @@ describe("executeMcpCall：超时兜底与脱敏出口", () => {
   });
 });
 
-describe("executeMcpCall：路由与就绪/策略守卫", () => {
+describe("executeMcpCall：路由与就绪/禁用守卫", () => {
   it("全名非法 → 格式错误", async () => {
     const { pipeline } = makePipeline();
     await expect(
@@ -569,28 +562,10 @@ describe("executeMcpCall：路由与就绪/策略守卫", () => {
     );
   });
 
-  it("策略拒绝 → 附 middlewarePolicy 调整提示", async () => {
-    const { pipeline } = makePipeline({ isToolDenied: () => true, policyAllows: () => false });
-    await expect(executeMcpCall(makeInput({ pipeline }))).rejects.toThrow(
-      /被策略拒绝；如需放行请调整 middlewarePolicy 配置/,
-    );
-  });
-
-  it("工具级禁用（策略放行） → 禁用文案", async () => {
+  it("工具级禁用 → 禁用文案", async () => {
     const { pipeline } = makePipeline({ isToolDenied: () => true });
     await expect(executeMcpCall(makeInput({ pipeline }))).rejects.toThrow(
       /已被用户在「MCP」浮窗禁用/,
-    );
-  });
-
-  it("策略拒绝优先用 policyDenialReason 给的文案", async () => {
-    const { pipeline } = makePipeline({
-      isToolDenied: () => true,
-      policyAllows: () => false,
-      policyDenialReason: () => "ws_mcp_call: 工具被细则拒绝",
-    });
-    await expect(executeMcpCall(makeInput({ pipeline }))).rejects.toThrow(
-      /工具被细则拒绝；如需放行请调整 middlewarePolicy 配置/,
     );
   });
 });

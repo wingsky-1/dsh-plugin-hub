@@ -4,8 +4,8 @@
  * 本域运行时能力消费**非零**（决策⑥ 以运行时能力消费为准）：工具注册面取四个提供域的能力
  * ——catalog 的检索族（`searchCatalogMulti` / `listCatalog` / `findToolDetail`）、runtime
  * 的限额常量（`CONNECT_TIMEOUT_MS` / `DISCOVERY_TIMEOUT_MS` / `CALL_TIMEOUT_MS` /
- * `LIST_MAX_TOOLS_PER_SERVER`）、pipeline 的超时兜底与策略裁决族（`withTimeout` /
- * `policyAllows` / `policyDenialReason` / `isToolDenied` / `toolDisabledReason`）、
+ * `LIST_MAX_TOOLS_PER_SERVER`）、pipeline 的超时兜底与工具级禁用裁决（`withTimeout` /
+ * `isToolDenied` / `toolDisabledReason`）、
  * workspace 的全名解析与拼装（`parseFullServerName` / `fullServerName`）。宿主能力实测 0
  * 命中（无 ctx/Context/logger/settings），故只有四条 Port——比 §3.4 表的预期窄，按实测收窄。
  *
@@ -14,7 +14,7 @@
  * 的值常量 LIST_DEFAULT_TOOLS_PER_SERVER 已按 §3.6 规则 6 迁共享层（W3b），本域直接取自
  * `shared/` 与 `server/shared/` 门面，故不在端口面内——不为零消费者的符号开口。
  *
- * 类型面（`McpMiddleware` / `MiddlewareMode` / `DisabledToolsMap` / `McpStatsCollector`）
+ * 类型面（`McpMiddleware` / `DisabledToolsMap` / `McpStatsCollector`）
  * 走 `import type` 直连各自门面，不进 Pick：类型边编译期擦除，不是本域要取的运行时能力。
  *
  * **只许类型依赖**：本文件出现值 import 会被 verify-dir-imports 硬判红。域内取数一律经
@@ -41,10 +41,10 @@ export type RuntimeLimitsPort = Pick<
   "CONNECT_TIMEOUT_MS" | "DISCOVERY_TIMEOUT_MS" | "CALL_TIMEOUT_MS" | "LIST_MAX_TOOLS_PER_SERVER"
 >;
 
-/** pipeline 域给本域的能力面：超时兜底与策略裁决族（允许 / 拒绝文案 / 禁用 / 禁用文案）。 */
+/** pipeline 域给本域的能力面：超时兜底与工具级禁用裁决（裁决 / 禁用文案）。 */
 export type PipelinePort = Pick<
   typeof pipelineApi,
-  "withTimeout" | "policyAllows" | "policyDenialReason" | "isToolDenied" | "toolDisabledReason"
+  "withTimeout" | "isToolDenied" | "toolDisabledReason"
 >;
 
 /** workspace 域给本域的能力面：`@<root>/<server>` 全名解析与拼装。 */

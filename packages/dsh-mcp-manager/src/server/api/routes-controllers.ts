@@ -54,31 +54,41 @@ function requireNameParam(url: URL, res: Res): string | undefined {
 
 // ------------------------------------------------------------ /config
 
-/** 只读 UI 配置 + 中间层模式热切换（GET 豁免 loopback；写操作 loopback-only）。 */
+/**
+ * POST /config 接受的顶层键（M7 白名单）：客户端扁平 UI 形态，与
+ * `normalizeUiConfig` 的**扁平**读键集同源（`ui`/`offset` 嵌套形态今天没有仓内调用方，
+ * 不接受——否则白名单会退化成第三份形状定义）。
+ */
+const UI_CONFIG_KEYS: readonly string[] = [
+  "position",
+  "offsetX",
+  "offsetY",
+  "blankY",
+  "zIndexBase",
+];
+
+/** UI 配置读写（GET 豁免 loopback；写操作 loopback-only，未知顶层键 400）。 */
 export function buildConfigRoute(manager: RoutesManager, helpers: RouteHelpers): WebRoute {
   return {
     kind: "exact",
     path: ROUTES.config,
     handler: async (req: Req, res: Res) => {
-      const { workspace } = apiPorts.get();
-      // GET：只读 UI 配置 + 中间层模式（允许非 loopback，供远程页面读取非敏感的展示配置）。
+      // GET：只读 UI 配置（允许非 loopback，供远程页面读取非敏感的展示配置）。
       if (ROUTE_FENCE.config.loopbackExempt.includes(String(req.method))) {
         try {
-          writeJson(res, 200, {
-            ...manager.uiConfig(),
-            // 笔 2 随配置键一起删：单池后模式不再影响任何行为，这里报**有效事实**
-            // （恒 all），不回显设置里那个已失效的值。
-            middleware: "all",
-          });
+          writeJson(res, 200, manager.uiConfig());
         } catch (error) {
           helpers.handleError(res, error);
         }
         return;
       }
-      // POST：写入浮窗 UI 配置（position / offset），或热切换中间层模式
-      // （middleware: off/project/all）。写操作只对 loopback 开放；
-      // 经设置命名空间落盘（Config.ui），触发 scope.watch → onChange → SSE 广播一帧，
-      // 客户端收到后重新 GET /config 就地更新浮窗位置，无需重启/轮询。
+      // POST：写入浮窗 UI 配置（position / offsetX / offsetY / blankY / zIndexBase）。
+      // 写操作只对 loopback 开放；经设置命名空间落盘（Config.ui），触发
+      // scope.watch → onChange → SSE 广播一帧，客户端收到后重新 GET /config 就地更新
+      // 浮窗位置，无需重启/轮询。
+      //
+      // M7：**未知顶层键一律 400 且不落盘**（校验在任何 uiUpdate 之前）。静默丢键会让
+      // 调用方以为写入生效——错就要说错，不能把「没生效」写成 200。
       if (ROUTE_FENCE.config.guarded.includes(String(req.method))) {
         if (!guardLoopbackMethod(req, res, ROUTE_FENCE.config.guarded)) return;
         let body: unknown;
@@ -94,31 +104,9 @@ export function buildConfigRoute(manager: RoutesManager, helpers: RouteHelpers):
         }
         try {
           const rec = body as Record<string, unknown>;
-          if (typeof rec.middleware === "string") {
-            // B7：非法 middleware 显式 400 拒绝——不得静默回落 off 并热切换+落盘
-            // （合法集合与 config-schema z.union 同源，勿只依赖 normalize 兜底）。
-            if (
-              rec.middleware !== "off" &&
-              rec.middleware !== "project" &&
-              rec.middleware !== "all"
-            ) {
-              writeJson(res, 400, { error: `invalid middleware mode: ${rec.middleware}` });
-              return;
-            }
-            // 中间层模式热切换：先热生效（当前进程立即切换），再落盘（重启保留）。
-            if (typeof manager.setMiddlewareMode === "function") {
-              await manager.setMiddlewareMode(rec.middleware);
-            }
-            if (typeof manager.uiUpdate === "function") {
-              await manager.uiUpdate({
-                middleware: workspace.normalizeMiddlewareMode(rec.middleware),
-              });
-            }
-            writeJson(res, 200, {
-              ...manager.uiConfig(),
-              // 同 GET：报有效事实（单池后恒 all）；落盘的仍是用户选的配置值（笔 2 删键）。
-              middleware: "all",
-            });
+          const unknownKeys = Object.keys(rec).filter((key) => !UI_CONFIG_KEYS.includes(key));
+          if (unknownKeys.length > 0) {
+            writeJson(res, 400, { error: `unknown config key(s): ${unknownKeys.join(", ")}` });
             return;
           }
           writeJson(res, 200, await manager.updateUiConfig(body));
@@ -376,7 +364,7 @@ export function buildToolDisableRoute(manager: RoutesManager, helpers: RouteHelp
         writeJson(res, 400, { error: "server 与 tool 均为必填" });
         return;
       }
-      // 路由一致性：server 全名 root 必须属于当前工作空间（或 all 模式 @global）。
+      // 路由一致性：server 全名 root 必须属于当前工作空间（或 @global）。
       const parsed = workspace.parseFullServerName(server);
       if (parsed === undefined) {
         writeJson(res, 400, { error: "server 格式非法，应为 @<root>/<server>" });

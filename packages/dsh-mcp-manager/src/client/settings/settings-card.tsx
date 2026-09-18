@@ -23,7 +23,6 @@ export function SettingsCard() {
   // 显式声明状态形状：useState(null) 会把状态推成字面 null，写入对象只能靠整段宽化断言消音
   //（那正是 shim 时代的做法）。cfg 是宿主设置对象的副本，形状由宿主决定，故按 Record 收。
   const [cfg, setCfg] = useState(null as Record<string, any> | null);
-  const [middleware, setMiddleware] = useState("project");
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState(null as { ok: boolean; text: string } | null);
@@ -38,7 +37,6 @@ export function SettingsCard() {
       .then((c: any) => {
         if (live && c !== null && typeof c === "object") {
           setCfg(c);
-          if (typeof c.middleware === "string") setMiddleware(c.middleware);
         }
       })
       .catch(() => {});
@@ -78,8 +76,8 @@ export function SettingsCard() {
     setSaving(true);
     setMsg(null);
     try {
+      // 提交面恒为扁平 UI 5 键（与 POST /config 的白名单同源）：GET 回来的形状即提交形状。
       const payload: any = { ...cfg };
-      if (middleware !== (cfg.middleware ?? "project")) payload.middleware = middleware;
       await api(API.config, {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -141,19 +139,6 @@ export function SettingsCard() {
               <option value="top-left">{t("posTopLeft")}</option>
               <option value="bottom-right">{t("posBottomRight")}</option>
               <option value="bottom-left">{t("posBottomLeft")}</option>
-            </select>
-          </div>
-          <div className="dm-set-row">
-            <label htmlFor="dm-set-middleware">{t("modeLabel")}</label>
-            <select
-              id="dm-set-middleware"
-              className="dm-set-input"
-              value={middleware}
-              onChange={(e: any) => setMiddleware(e.target.value)}
-            >
-              <option value="project">{t("modeProject")}</option>
-              <option value="all">{t("modeAll")}</option>
-              <option value="off">{t("modeOff")}</option>
             </select>
           </div>
           <div className="dm-set-row">

@@ -52,10 +52,8 @@ export interface ToolDetail {
 
 /** ws_mcp_list 输出（多单元合并的完整盘点）。 */
 export interface ListCatalogResult {
-  /** 当前工作空间 root；all 模式无项目 cwd 时为 "@global"。 */
+  /** 当前工作空间 root；无项目 cwd 时为 "@global"。 */
   workspace: string;
-  /** 中间层模式（模型据此理解可见范围）。 */
-  mode: string;
   servers: ListServerEntry[];
   totalServers: number;
   totalTools: number;

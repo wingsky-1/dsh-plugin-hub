@@ -3,7 +3,7 @@
  *
  * 阶段 4 自 src/manager.ts（findProjectRoot/normalizedProjectRoot 方法）与
  * src/apply-runtime.ts（makeResolveRoot）迁入工作空间路由域，纯函数化
- * （不再依赖 manager 实例）；B3 修复（all 模式回落含 runtime 源）落位
+ * （不再依赖 manager 实例）；B3 修复（空 cwd 回落含 runtime 源）落位
  * makeResolveRoot。引用面经 workspace/interface.ts。
  */
 

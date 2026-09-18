@@ -44,8 +44,6 @@ export interface RoutesManager {
   reconnect(name: string, scope?: string): Promise<void>;
   /** 设置/解除单个工具禁用（工具级，独立于服务器级 enabled）。 */
   setToolDisabled?(root: string, server: string, tool: string, disabled: boolean): Promise<void>;
-  /** 中间层模式热切换（apply 注入；缺省不可用）。 */
-  setMiddlewareMode?(mode: string): Promise<void>;
   /** 切回前台受控重建当前工作空间连接（apply 注入；缺省不可用）。 */
   resumeReconnect?(): Promise<void>;
   projectStoreOrThrow(): Promise<McpStore>;

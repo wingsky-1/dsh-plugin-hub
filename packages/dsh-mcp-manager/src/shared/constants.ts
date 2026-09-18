@@ -18,5 +18,5 @@ export const SCOPE_GLOBAL = "global";
 /** 项目级作用域。 */
 export const SCOPE_PROJECT = "project";
 
-/** 中间层 all 模式的全局虚拟 root（全局服务器经中间层访问时的路由 key）。 */
+/** 全局虚拟 root（全局服务器经中间层访问时的路由 key）。 */
 export const MIDDLEWARE_GLOBAL_ROOT = "@global";

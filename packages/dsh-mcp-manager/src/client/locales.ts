@@ -43,7 +43,6 @@ export const zh = {
   groupGlobal: "全局",
   badgeScopeProject: "项目",
   badgeScopeGlobal: "全局",
-  globalToolHint: "全局工具开关需在 all 模式（中间层全量接管）下管理——切 all 模式可管理全局工具",
   serverMeta: "{status} · {tools} 工具",
   toolsCount: "工具（{n}）",
   toolsCountPlain: "{n} 工具",
@@ -96,18 +95,13 @@ export const zh = {
   posTopLeft: "左上（top-left）",
   posBottomRight: "右下（bottom-right）",
   posBottomLeft: "左下（bottom-left）",
-  modeLabel: "中间层模式",
-  modeProject: "project（项目级走中间层，推荐）",
-  modeAll: "all（全局也走中间层）",
-  modeOff: "off（全部直呼 mcp__ 工具）",
   offsetX: "水平偏移",
   offsetY: "垂直偏移",
   blankY: "空白偏移",
   zIndexBase: "层级基准",
-  settingsHint:
-    "保存即热更新：浮窗位置即时生效；中间层模式切换即时生效并持久化（无需重启 dsh web）。",
+  settingsHint: "保存即热更新：浮窗位置与偏移即时生效并持久化（无需重启 dsh web）。",
   savingNow: "保存中…",
-  settingsSavedOk: "已保存——浮窗位置与中间层模式即时生效（无需重启）",
+  settingsSavedOk: "已保存——浮窗位置即时生效（无需重启）",
 } as const;
 
 /** 字典 key 并集（LocaleNamespaceMap 声明合并用）。 */
@@ -146,8 +140,6 @@ export const en: Record<McpLocaleKey, string> = {
   groupGlobal: "Global",
   badgeScopeProject: "Project",
   badgeScopeGlobal: "Global",
-  globalToolHint:
-    "Global tool switches are managed in all mode (middleware takes over everything) — switch to all mode to manage global tools",
   serverMeta: "{status} · {tools} tools",
   toolsCount: "Tools ({n})",
   toolsCountPlain: "{n} tools",
@@ -198,17 +190,12 @@ export const en: Record<McpLocaleKey, string> = {
   posTopLeft: "Top left (top-left)",
   posBottomRight: "Bottom right (bottom-right)",
   posBottomLeft: "Bottom left (bottom-left)",
-  modeLabel: "Middleware mode",
-  modeProject: "project (project-level via middleware, recommended)",
-  modeAll: "all (global also via middleware)",
-  modeOff: "off (call mcp__ tools directly)",
   offsetX: "Horizontal offset",
   offsetY: "Vertical offset",
   blankY: "Blank-session offset",
   zIndexBase: "Z-index base",
   settingsHint:
-    "Hot reload on save: float placement applies immediately; middleware mode applies immediately and persists (no dsh web restart).",
+    "Hot reload on save: float placement and offsets apply immediately and persist (no dsh web restart).",
   savingNow: "Saving…",
-  settingsSavedOk:
-    "Saved — float placement and middleware mode take effect immediately (no restart)",
+  settingsSavedOk: "Saved — float placement takes effect immediately (no restart)",
 };

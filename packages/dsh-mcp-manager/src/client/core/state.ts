@@ -32,8 +32,6 @@ export interface McpState {
   activeTab: string;
   /** 服务器列表。 */
   servers: any[];
-  /** 中间层模式（off/project/all；来自 summary）。 */
-  middlewareMode: string;
   /** 各状态计数。 */
   counts: any;
   /** 正在编辑的服务器名称（undefined 表示新建）。 */
@@ -75,7 +73,6 @@ export function createState(): McpState {
     open: false,
     activeTab: "servers",
     servers: [],
-    middlewareMode: "project",
     counts: {},
     editingName: undefined,
     editing: undefined,

@@ -124,8 +124,8 @@ export function makeCatalogViewFor(host: CatalogViewHost): CatalogViewResolver {
         : await normalizedProjectRoot(cwd);
     for (const [name, { scope }] of servers) {
       if (name === "") continue;
-      // root 解析：project scope → 项目 root；global scope → @global（all 权威，
-      // project 模式残留兜底）。跨 scope 不混配（同名项目级/全局是两份配置）。
+      // root 解析：project scope → 项目 root；global scope → @global。
+      // 跨 scope 不混配（同名项目级/全局是两份配置）。
       const root = scope === SCOPE_PROJECT ? cwdRoot : MIDDLEWARE_GLOBAL_ROOT;
       if (root === undefined) continue;
       const summary = await middlewareCatalogSummary(mw, root, name);

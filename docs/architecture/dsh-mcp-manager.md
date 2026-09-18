@@ -2,32 +2,33 @@
 
 > 包：`@wingsky-1/dsh-mcp-manager` · 源码：`packages/dsh-mcp-manager/` · 版本：0.2.0
 > 功能一句话：**DSH 的 MCP 服务器管理器**——管理 stdio / streamable-http 两种传输的
-> MCP 服务器，把已连接服务器的工具注册给模型，并提供三档中间层模式把项目级工具面
-> 收敛为四个原子工具（`ws_mcp_list` / `ws_mcp_detail` / `ws_mcp_search` / `ws_mcp_call`）。
+> MCP 服务器，把已连接服务器的工具收敛为四个原子工具
+> （`ws_mcp_list` / `ws_mcp_detail` / `ws_mcp_search` / `ws_mcp_call`）供模型访问。
 >
 > 快速上手（安装 / 配置 / 验证）见 [包 README](../../packages/dsh-mcp-manager/README.md)；本文讲**原理与运行机制**。
 
 ---
 
-## 1. 总体架构：双轨模型面
+## 1. 总体架构：单轨模型面（单池）
 
-模型访问 MCP 工具有两条轨道——**中间层收敛**（project / all 模式，推荐）与
-**直呼注册**（off 模式 / 全局服务器）：
+**全部服务器只有一条轨道**：中间层收敛。项目级、全局级（`@global`）与 runtime 注入的
+封装定义条目都由 `McpMiddleware` 的连接池持有，模型面恒为四个原子工具
+（`ws_mcp_list` / `ws_mcp_detail` / `ws_mcp_search` / `ws_mcp_call`，两级发现：
+list 盘点 → detail 拉 schema）。
 
-![dsh-mcp-manager 双轨架构](diagrams/mcp-manager-architecture.svg)
+![dsh-mcp-manager 架构](diagrams/mcp-manager-architecture.svg)
 
 > 图源：`docs/architecture/diagrams/mcp-manager-architecture.html`（diagram-design）。
 
-两条轨道的分工与取舍：
+| 面 | 事实 |
+|---|---|
+| 模型可见面 | 4 个原子工具（`ws_mcp_*`）；宿主注册名 `mcp__<id>__<tool>` 是内部标识，**不在模型工具列表里**（笔 1b 的可见性剔除），禁止直呼 |
+| 池归属 | 恒为「全部服务器」。每个工作空间一套常驻连接（project root 或虚拟 root `@global`），按会话 cwd 路由、跨空间不串台 |
+| 配置键 | 只有 `enabled` / `announceToAgent` / `storePath` / `announceCatalog` / `catalogMaxEntries` / `debug` / `ui`——**没有**模式键或策略键（`middleware` / `middlewarePolicy` 已在 #767 笔 2 删除） |
+| 代价 | 多一跳（中间层转发）；目录是 last-good 快照，`tools/list_changed` 变化需重连/刷新 |
 
-| 轨道 | 触发条件 | 模型面 | 优势 | 代价 |
-|---|---|---|---|---|
-| **中间层收敛** | `middleware: project`（默认，项目级服务器）/ `all`（全局 + runtime 也收敛） | 4 个原子工具（两级发现：list 盘点 → detail 拉 schema） | 项目级接多少台服务器、多少个工具都不膨胀系统提示词；按会话 cwd 路由连接池、跨空间不串台 | 多一跳（中间层转发）；目录是 last-good 快照，`tools/list_changed` 变化需重连/刷新 |
-| **直呼注册** | `middleware: off`（全部）/ project 模式下的全局服务器 | 每工具一个 `mcp__<server>__<tool>`（64 字符、哈希后缀） | 零中间跳，工具定义直接进系统提示词 | 服务器多时上下文膨胀；不同工作空间同名 server 会冲突 |
-
-`middlewareTakes(name, scope)`（`manager.ts#middlewareTakes`）是唯一判定口径：`off` → 全部直呼；
-`scope===project` → 中间层接管（project 与 all 模式皆然）；`all && scope===global` →
-接管（含 runtime 注入条目）。
+`middlewareTakes(name, scope)` 那类「按模式判定池归属」的口径已随模式键整体删除：池归属
+不再有条件分支。
 
 ---
 
@@ -37,16 +38,16 @@
 
 ```mermaid
 flowchart TD
-    S(["dsh web 启动<br/>cordis.patch.yml 挂载 ⇢ apply(ctx)"]) --> A["解析 config<br/>enabled / announceToAgent / middleware ..."]
+    S(["dsh web 启动<br/>cordis.patch.yml 挂载 ⇢ apply(ctx)"]) --> A["解析 config<br/>enabled / announceToAgent / announceCatalog ..."]
     A --> B["McpStore 加载<br/>全局 dsh-mcp.json + mtime 基线"]
     B --> C["new McpManager(ctx, store)<br/>+ provide('mcpManager') 服务<br/>(注入/控制/查询三面)"]
     C --> D["settings 命名空间接线<br/>+ uiUpdate 写 sink"]
     D --> E{"enabled ?"}
     E -->|"否"| Z["不注册路由/中间层<br/>（服务仍提供）"]
-    E -->|"是"| F["initMiddleware 提前于 startAll (#382)<br/>mode=middleware 默认 project"]
+    E -->|"是"| F["initMiddleware 提前于 startAll (#382)<br/>单池：全部服务器经中间层"]
     F --> G["registerMiddlewareTools<br/>注册 ws_mcp_search/call/list/detail<br/>+ pre-execute guard"]
     G --> H["startAll() 启动全部 enabled 全局服务器<br/>→ loadCatalogCache → reconcileServers"]
-    H --> I["setMiddlewareMode 热切换函数<br/>+ syncMiddlewareFromSettings 兜底"]
+    H --> I["settings 合并面兜底<br/>（debug / stats 同步；模式同步已随键删除）"]
     I --> J["L1 能力目录注入<br/>agent/pre-step 钩子 (announceCatalog)"]
     J --> K["注册 10 条 /api/dsh-mcp/* 路由<br/>+ SSE events (30s 心跳) + health"]
     K --> L["fs.watch 变更点驱动<br/>外部落盘 → refreshFromDisk (防重入)"]
@@ -86,7 +87,7 @@ sequenceDiagram
 
 要点：
 
-- **命名规则** `publicToolName`（`supervisor.ts#publicToolName`）：`mcp__<server>__<tool>`；非法字符
+- **命名规则** `publicToolName`（`connection/runtime#publicToolName`）：`mcp__<id>__<tool>`；非法字符
   替换为 `_`；≤64 字符直接用，否则 `sha256(server\0tool)` 前 12 位做哈希后缀
   （`前51字符_<hash12>`）；
 - **工具定义**：parameters 原样直传 MCP inputSchema；输出 schema 只收严格子集，不落子集
@@ -161,10 +162,10 @@ sequenceDiagram
     participant SRV as MCP 服务器
 
     M->>G: ws_mcp_call({server:"@root/s", tool})
-    G->>G: 禁用表 + policyAllows（deny 优先）
-    G-->>M: 拒绝（禁用/策略文案）
+    G->>G: 工具级禁用表裁决（isToolDenied）
+    G-->>M: 拒绝（禁用文案）
     G->>C: 放行
-    C->>R: agent.session.header.cwd → 项目根<br/>（all 模式回退 @global）
+    C->>R: agent.session.header.cwd → 项目根<br/>（无项目 root 时回退 @global）
     C->>U: parseFullServerName → checkRoot 一致性
     C->>E: 未连接则建连 + discover（10s 超时）
     C->>X: callTool（30s+2s 超时）
@@ -180,8 +181,8 @@ sequenceDiagram
 ```
 
 **中间层只读边界**：`ws_mcp_list` / `ws_mcp_detail` / `ws_mcp_search` 纯读本地目录缓存
-（不触达远端、不执行工具、不经过策略 guard）；`ws_mcp_call` 是唯一执行远端工具并受
-`middlewarePolicy` 约束的入口。
+（不触达远端、不执行工具）；`ws_mcp_call` 是唯一执行远端工具的入口，执行前经工具级
+禁用表（`isToolDenied`）裁决。
 
 ### 3.5 传输层
 
@@ -197,7 +198,7 @@ sequenceDiagram
 
 | 路由 | 方法 | 说明 |
 |---|---|---|
-| `/api/dsh-mcp/config` | GET/POST | UI 配置 + middleware（GET 允许非 loopback 只读；POST loopback-only 热切） |
+| `/api/dsh-mcp/config` | GET/POST | UI 配置（GET 允许非 loopback 只读；POST loopback-only，未知顶层键 400 且不落盘） |
 | `/api/dsh-mcp/servers` | GET/POST/PATCH/DELETE | 纯读快照 / 新增 / 更新 / 删除（`?name=&scope=`） |
 | `/api/dsh-mcp/session` | POST | 切换会话 cwd（`{cwd}`） |
 | `/api/dsh-mcp/resume` | POST | 回前台受控重建当前工作空间连接 |

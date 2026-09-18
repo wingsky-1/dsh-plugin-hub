@@ -48,7 +48,7 @@ import type { ProjectUnit } from "./impl/middleware/type.ts";
  */
 export type CatalogPort = Pick<typeof catalogApi, "catalogDirectory">;
 
-/** pipeline 域给本子层的能力面：结果投影 / 超时兜底 / 取消息与脱敏 / 参数归一 / 策略裁决。 */
+/** pipeline 域给本子层的能力面：结果投影 / 超时兜底 / 取消息与脱敏 / 参数归一 / 禁用裁决。 */
 export type PipelinePort = Pick<
   typeof pipelineApi,
   | "defaultCallResultFallbackText"
@@ -57,8 +57,6 @@ export type PipelinePort = Pick<
   | "msgOf"
   | "createRedactor"
   | "normalizeArguments"
-  | "policyAllows"
-  | "policyDenialReason"
   | "isToolDenied"
   | "toolDisabledReason"
 >;
@@ -136,7 +134,7 @@ export interface MiddlewareHost {
   logger: LoggerService;
   /** 按 root 读取项目级服务器配置（惰性；root 无标记 → undefined）。 */
   projectServersFor(root: string): Promise<ServerConfig[] | undefined>;
-  /** 全局服务器配置（走中间层 all 模式时使用）。 */
+  /** 全局服务器配置（@global 单元装载用）。 */
   globalServers(): ServerConfig[];
   /** 路由解析：cwd → 归一化项目根。 */
   normalizedProjectRoot(cwd: string | undefined): Promise<string | undefined>;

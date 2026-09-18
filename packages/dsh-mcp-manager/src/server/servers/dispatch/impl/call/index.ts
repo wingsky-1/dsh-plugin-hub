@@ -1,12 +1,12 @@
 /**
  * dsh-mcp-manager — servers/dispatch/impl/call/index.ts：ws_mcp_call 执行器（原
- * connection/runtime/middleware.ts:583-772 的搬迁；路由/策略/封装分支与错误文案口径不变）。
+ * connection/runtime/middleware.ts:583-772 的搬迁；路由/封装分支与错误文案口径不变）。
  *
  * 为什么远端分支走 ctx.tools.execute（#767 S1-4d）：换引擎后官方运行时只导出
  * `Config / apply / inject / name`，底层 client 不外露，「拿一个 client 去 callTool」这条路
  * 不再存在。转发按设计 §5.3：合成子调用 id、透传 parent、喂 `value` 给既有投影。
  *
- * 为什么全部入参显式化：原实现依赖 McpMiddleware 的 this（units / policy / disabledTools /
+ * 为什么全部入参显式化：原实现依赖 McpMiddleware 的 this（units / disabledTools /
  * allServers / 转发登记表），搬进新域后这些状态仍归中间层持有，只能按引用递入；本域不落第二份。
  */
 import type {
@@ -74,16 +74,9 @@ export async function executeMcpCall(input: DispatchCallInput): Promise<unknown>
     );
   }
   const tool = workspace.normalizeToolName(parsed.server, input.toolRaw);
-  // 工具级禁用（先查禁用表再查策略；P0-1 三入口统一走 isToolDenied）。
+  // 工具级禁用（P0-1 三入口统一走 isToolDenied；#767 笔 2 后这是唯一裁决）。
   const policyKey = workspace.fullServerName(parsed.root, parsed.server);
-  if (pipeline.isToolDenied(input.disabledTools, input.policy, policyKey, tool)) {
-    // 策略拒绝与禁用拒绝文案区分（策略拒绝附「调整 middlewarePolicy 配置」下一步）。
-    if (!pipeline.policyAllows(input.policy, policyKey, tool)) {
-      const reason = pipeline.policyDenialReason(input.policy, policyKey, tool);
-      throw new Error(
-        `${reason ?? `ws_mcp_call: 工具 ${JSON.stringify(`${policyKey}/${tool}`)} 被策略拒绝`}；如需放行请调整 middlewarePolicy 配置`,
-      );
-    }
+  if (pipeline.isToolDenied(input.disabledTools, policyKey, tool)) {
     throw new Error(pipeline.toolDisabledReason(policyKey, tool));
   }
   const catalog = input.catalogEntryFor(parsed.server);

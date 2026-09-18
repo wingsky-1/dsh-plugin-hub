@@ -166,14 +166,6 @@
       "isType": false
     },
     {
-      "name": "MiddlewareMode",
-      "isType": true
-    },
-    {
-      "name": "MiddlewarePolicy",
-      "isType": true
-    },
-    {
       "name": "ProgressiveDisclosureStats",
       "isType": true
     },
@@ -402,10 +394,6 @@
       "isType": false
     },
     {
-      "name": "makeMiddlewareHotSwitch",
-      "isType": false
-    },
-    {
       "name": "makeResolveRoot",
       "isType": false
     },
@@ -423,10 +411,6 @@
     },
     {
       "name": "normalizeArguments",
-      "isType": false
-    },
-    {
-      "name": "normalizeMiddlewareMode",
       "isType": false
     },
     {
@@ -471,14 +455,6 @@
     },
     {
       "name": "parseFullServerName",
-      "isType": false
-    },
-    {
-      "name": "policyAllows",
-      "isType": false
-    },
-    {
-      "name": "policyDenialReason",
       "isType": false
     },
     {
@@ -527,10 +503,6 @@
     },
     {
       "name": "resolveDebugConfig",
-      "isType": false
-    },
-    {
-      "name": "resolveMiddlewareMode",
       "isType": false
     },
     {
@@ -583,8 +555,8 @@
     }
   ],
   "declBlocks": [
-    "export declare class McpManager { ctx: Context; store: McpStore; listeners: Set<() => void>; logger: LoggerService; projectRoot: string | undefined; projectStore: McpStore | undefined; reconcileBusy: boolean; projectStores: Map<string, McpStore>; catalogCache: CatalogCache; catalogCachePath: string; uiConfigSource: () => any; uiUpdate?: (patch: Record<string, unknown>) => Promise<unknown>; sseHub?: SseHub; middleware: McpMiddleware | undefined; userStatePath: string; stats: McpStatsCollector; runtimeRegistry: Map<string, ServerConfig>; private registerQueue; private catalogViewResolver; constructor(ctx: Context, store: McpStore); uiConfig(): ClientUiConfig; updateUiConfig(raw: unknown): Promise<ClientUiConfig>; loadCatalogCache(): Promise<void>; recordCatalogTools(serverName: string, toolMeta: Map<string, { description?: unknown; }>): Promise<void>; private registeredSchemas; private poolRootFor; serverNameForId(id: string): { root: string; server: string; } | undefined; registeredToolsFor(name: string): Array<{ name: string; description?: string; }>; private poolEntryFor; onStatus(handler: () => void): () => void; private redactError; private statusTimer; emitStatus(): void; projectStoreOrThrow(): Promise<McpStore>; projectServersFor(root: string): Promise<ServerConfig[] | undefined>; isRuntimeServer(name: string): boolean; isGlobalServer(name: string): boolean; globalServers(): ServerConfig[]; saveUserState(units: Map<string, ProjectUnit>): Promise<void>; catalogCachePathFor(root: string): string; initMiddleware(policy: Record<string, unknown>): Promise<McpMiddleware>; disabledByRoot: Map<string, Set<string>>; disabledTools: DisabledToolsMap; setMiddlewareMode?: (mode: MiddlewareMode) => Promise<void>; setToolDisabled(root: string, server: string, tool: string, disabled: boolean): Promise<void>; projectStoreFor(root: string | undefined): Promise<McpStore | undefined>; catalogServersFor(cwd: string | undefined): Promise<Map<string, { server: ServerConfig; scope: string; }>>; catalogViewFor(cwd: string | undefined, servers: Map<string, { server: ServerConfig; scope: string; }>): Promise<CatalogCache>; setSession(cwd: string | undefined): Promise<void>; resumeReconnect(): Promise<void>; refreshFromDisk(): Promise<void>; reconcileServers(): boolean; startAll(): Promise<void>; start(name: string, scope?: string): void; private touchGlobalUnit; private ensureMiddlewareServer; private dropMiddlewareConnection; registerServer(options: Record<string, unknown>): Promise<{ name: string; existing: boolean; }>; unregisterServer(name: string): Promise<void>; add(server: Record<string, unknown>, scope?: string): Promise<ServerConfig>; update(name: string, patch: Record<string, unknown>, scope?: string): Promise<ServerConfig>; remove(name: string, scope?: string): Promise<void>; connect(name: string, scope?: string): Promise<void>; disconnect(name: string, scope?: string): Promise<void>; reconnect(name: string, scope?: string): Promise<void>; summary(): Record<string, unknown>; private middlewareUnitFor; summarize(server: ServerConfig, scope: string): Record<string, unknown>; dispose(): Promise<void>; }",
-    "export declare class McpMiddleware { host: MiddlewareHost; units: Map<string, ProjectUnit>; policy: MiddlewarePolicy; disabledByRoot: Map<string, Set<string>>; disabledTools: DisabledToolsMap; forwarding: Set<ToolExecutionToken>; constructor(host: MiddlewareHost, policy?: MiddlewarePolicy); projectUnitFor(root: string | undefined): Promise<ProjectUnit | undefined>; ensureConnected(root: string, serverName: string, opts?: { force?: boolean; }): Promise<void>; abandonInFlight(serverName: string): void; private connectInternal; private registeredSchemas; private registeredToolMeta; private redact; statusOf(root: string, serverName: string): ServerState | undefined; toolCountOf(root: string, serverName: string): number; callTool(fullName: string, toolRaw: string, rawArgs: unknown, signal: AbortSignal | undefined, identity: { agent?: unknown; callId: ToolExecutionInput[\"callId\"]; rootCallId?: ToolExecutionInput[\"rootCallId\"]; parent?: ToolExecutionToken; }): Promise<unknown>; private allServers; releaseConnection(root: string, serverName: string): boolean; evictIfNeeded(maxUnits?: number): void; teardownUnit(root: string): void; dispose(): Promise<void>; }",
+    "export declare class McpManager { ctx: Context; store: McpStore; listeners: Set<() => void>; logger: LoggerService; projectRoot: string | undefined; projectStore: McpStore | undefined; reconcileBusy: boolean; projectStores: Map<string, McpStore>; catalogCache: CatalogCache; catalogCachePath: string; uiConfigSource: () => any; uiUpdate?: (patch: Record<string, unknown>) => Promise<unknown>; sseHub?: SseHub; middleware: McpMiddleware | undefined; userStatePath: string; stats: McpStatsCollector; runtimeRegistry: Map<string, ServerConfig>; private registerQueue; private catalogViewResolver; constructor(ctx: Context, store: McpStore); uiConfig(): ClientUiConfig; updateUiConfig(raw: unknown): Promise<ClientUiConfig>; loadCatalogCache(): Promise<void>; recordCatalogTools(serverName: string, toolMeta: Map<string, { description?: unknown; }>): Promise<void>; private registeredSchemas; private poolRootFor; serverNameForId(id: string): { root: string; server: string; } | undefined; registeredToolsFor(name: string): Array<{ name: string; description?: string; }>; private poolEntryFor; onStatus(handler: () => void): () => void; private redactError; private statusTimer; emitStatus(): void; projectStoreOrThrow(): Promise<McpStore>; projectServersFor(root: string): Promise<ServerConfig[] | undefined>; isRuntimeServer(name: string): boolean; isGlobalServer(name: string): boolean; globalServers(): ServerConfig[]; saveUserState(units: Map<string, ProjectUnit>): Promise<void>; catalogCachePathFor(root: string): string; initMiddleware(): Promise<McpMiddleware>; disabledByRoot: Map<string, Set<string>>; disabledTools: DisabledToolsMap; setToolDisabled(root: string, server: string, tool: string, disabled: boolean): Promise<void>; projectStoreFor(root: string | undefined): Promise<McpStore | undefined>; catalogServersFor(cwd: string | undefined): Promise<Map<string, { server: ServerConfig; scope: string; }>>; catalogViewFor(cwd: string | undefined, servers: Map<string, { server: ServerConfig; scope: string; }>): Promise<CatalogCache>; setSession(cwd: string | undefined): Promise<void>; resumeReconnect(): Promise<void>; refreshFromDisk(): Promise<void>; reconcileServers(): boolean; startAll(): Promise<void>; start(name: string, scope?: string): void; private touchGlobalUnit; private ensureMiddlewareServer; private dropMiddlewareConnection; registerServer(options: Record<string, unknown>): Promise<{ name: string; existing: boolean; }>; unregisterServer(name: string): Promise<void>; add(server: Record<string, unknown>, scope?: string): Promise<ServerConfig>; update(name: string, patch: Record<string, unknown>, scope?: string): Promise<ServerConfig>; remove(name: string, scope?: string): Promise<void>; connect(name: string, scope?: string): Promise<void>; disconnect(name: string, scope?: string): Promise<void>; reconnect(name: string, scope?: string): Promise<void>; summary(): Record<string, unknown>; private middlewareUnitFor; summarize(server: ServerConfig, scope: string): Record<string, unknown>; dispose(): Promise<void>; }",
+    "export declare class McpMiddleware { host: MiddlewareHost; units: Map<string, ProjectUnit>; disabledByRoot: Map<string, Set<string>>; disabledTools: DisabledToolsMap; forwarding: Set<ToolExecutionToken>; constructor(host: MiddlewareHost); projectUnitFor(root: string | undefined): Promise<ProjectUnit | undefined>; ensureConnected(root: string, serverName: string, opts?: { force?: boolean; }): Promise<void>; abandonInFlight(serverName: string): void; private connectInternal; private registeredSchemas; private registeredToolMeta; private redact; statusOf(root: string, serverName: string): ServerState | undefined; toolCountOf(root: string, serverName: string): number; callTool(fullName: string, toolRaw: string, rawArgs: unknown, signal: AbortSignal | undefined, identity: { agent?: unknown; callId: ToolExecutionInput[\"callId\"]; rootCallId?: ToolExecutionInput[\"rootCallId\"]; parent?: ToolExecutionToken; }): Promise<unknown>; private allServers; releaseConnection(root: string, serverName: string): boolean; evictIfNeeded(maxUnits?: number): void; teardownUnit(root: string): void; dispose(): Promise<void>; }",
     "export declare class McpStatsCollector { private enabled; private filePath; private logger?; private startedAt; private updatedAt; private servers; private disclosure; private flushTimer?; private isDirty; constructor(options?: { enabled?: boolean; filePath?: string; logger?: { info?: (msg: string) => void; debug?: (msg: string) => void; }; }); configure(options: { enabled?: boolean; filePath?: string; logger?: { info?: (msg: string) => void; }; }): void; isEnabled(): boolean; private loadExisting; recordCall(server: string, tool: string, durationMs: number, success: boolean, errorMsg?: string): void; recordSearch(query: string): void; recordList(serverFilter?: string): void; recordDetail(server: string, tool: string): void; snapshot(): McpStatsSnapshot; private scheduleFlush; flushSync(): void; dispose(): void; }",
     "export declare class McpStore { path: string; data: { version: number; servers: ServerConfig[]; }; mtimeMs: number | undefined; constructor(path: string); load(): Promise<void>; save(): Promise<void>; changedOnDisk(): Promise<boolean>; reloadIfChanged(): Promise<boolean>; find(name: string): ServerConfig | undefined; upsert(server: ServerConfig): void; remove(name: string): void; }",
     "export declare const API: { servers: string; connect: string; disconnect: string; reconnect: string; importJson: string; session: string; resume: string; config: string; events: string; health: string; toolDisable: string; };",
@@ -596,7 +568,7 @@
     "export declare const CATALOG_SUMMARY_PER_TOOL_CHARS = 120;",
     "export declare const CATALOG_TTL_MS: number;",
     "export declare const CONNECT_TIMEOUT_MS = 10000;",
-    "export declare const Config: z<{ enabled: boolean; announceToAgent: boolean; storePath: string; announceCatalog: boolean; catalogMaxEntries: number; middleware: \"off\" | \"project\" | \"all\"; middlewarePolicy: Record<string, unknown>; debug: { callStats: boolean; statsFile: string; }; ui: UiPlacementConfig; }",
+    "export declare const Config: z<{ enabled: boolean; announceToAgent: boolean; storePath: string; announceCatalog: boolean; catalogMaxEntries: number; debug: { callStats: boolean; statsFile: string; }; ui: UiPlacementConfig; }",
     "export declare const DEFAULT_ANNOUNCE_CATALOG = true;",
     "export declare const DEFAULT_CATALOG_MAX_ENTRIES = 6;",
     "export declare const DEFAULT_RESULT_TRUNCATE_BYTES = 8192;",
@@ -624,7 +596,7 @@
     "export declare const inject: string[];",
     "export declare const inject: string[];",
     "export declare const name = \"mcp-manager\";",
-    "export declare const zh: { readonly stConnected: \"运行中\"; readonly stConnecting: \"连接中\"; readonly stReconnecting: \"重连中\"; readonly stStopped: \"未连接\"; readonly stDisabled: \"已停用\"; readonly stFailed: \"失败\"; readonly connect: \"连接\"; readonly disconnect: \"断开\"; readonly reconnect: \"重连\"; readonly enable: \"启用\"; readonly enableAndConnect: \"启用并连接\"; readonly disable: \"禁用\"; readonly edit: \"编辑\"; readonly delete: \"删除\"; readonly save: \"保存\"; readonly cancel: \"取消\"; readonly refresh: \"刷新\"; readonly close: \"关闭\"; readonly cancelEdit: \"取消编辑\"; readonly saveFail: \"保存失败：{msg}\"; readonly actionFail: \"操作失败：{msg}\"; readonly loadFail: \"加载失败：{msg}\"; readonly floatAriaLabel: \"MCP 管理器\"; readonly floatTitle: \"MCP 管理器（点击展开）\"; readonly floatManage: \"管理\"; readonly floatEmpty: \"没有 MCP 服务器，点「管理」添加\"; readonly floatGlobalSession: \"全局会话\"; readonly groupProject: \"项目级\"; readonly groupGlobal: \"全局\"; readonly badgeScopeProject: \"项目\"; readonly badgeScopeGlobal: \"全局\"; readonly globalToolHint: \"全局工具开关需在 all 模式（中间层全量接管）下管理——切 all 模式可管理全局工具\"; readonly serverMeta: \"{status} · {tools} 工具\"; readonly toolsCount: \"工具（{n}）\"; readonly toolsCountPlain: \"{n} 工具\"; readonly statusGroupCount: \"{status}（{n}）\"; readonly panelTitle: \"MCP 管理器\"; readonly tabServers: \"服务器\"; readonly tabQuickAdd: \"快速接入\"; readonly countsConnected: \"运行中 {n}\"; readonly countsConnecting: \"连接中 {n}\"; readonly countsFailed: \"失败 {n}\"; readonly countsSummary: \"共 {n} 台 · {parts}\"; readonly countsSummaryOnly: \"共 {n} 台\"; readonly addServer: \"添加服务器\"; readonly editServer: \"编辑服务器：{name}\"; readonly nameLabel: \"服务器名称（唯一，作为 mcp__<name>__ 前缀）\"; readonly ownershipLabel: \"归属\"; readonly transportLabel: \"传输类型\"; readonly commandLabel: \"命令（stdio）\"; readonly argsLabel: \"参数（逗号分隔）\"; readonly envLabel: \"环境变量（每行 KEY=VALUE，支持 ${ENV} 引用，值为空则继承父环境）\"; readonly cwdLabel: \"工作目录（可选）\"; readonly urlLabel: \"URL（streamable-http）\"; readonly headersLabel: \"请求头（每行 KEY: VALUE，支持 ${ENV} 引用）\"; readonly enabledLabel: \"启用（保存后立即连接）\"; readonly scopeProjectOpt: \"项目级（<项目>/.dsh/mcp.json，随会话切换）\"; readonly scopeGlobalOpt: \"全局（~/.dsh/dsh-mcp.json）\"; readonly transportStdioOpt: \"stdio（本地子进程）\"; readonly transportHttpOpt: \"streamable-http（远程）\"; readonly envPlaceholder: \"每行 KEY=VALUE，如\\nCONTEXT7_API_KEY=${CONTEXT7_API_KEY}\"; readonly headersPlaceholder: \"每行 KEY: VALUE，支持 ${ENV} 引用，如\\nAuthorization: Bearer ${CONTEXT7_API_KEY}\"; readonly cwdPlaceholder: \"可选工作目录\"; readonly pasteTitle: \"粘贴 mcpServers JSON 导入\"; readonly importJson: \"导入 JSON\"; readonly importedOk: \"已导入：{names}\"; readonly importedNone: \"（无）\"; readonly importSkipped: \"跳过（已存在）：{names}\"; readonly importFail: \"导入失败：{msg}\"; readonly serversEmpty: \"还没有配置 MCP 服务器。切到「快速接入」页添加，或粘贴 mcpServers JSON 导入。\"; readonly confirmDelete: \"删除 MCP 服务器「{name}」？\"; readonly settingsLoading: \"MCP 管理器：加载中…\"; readonly settingsName: \"MCP 管理器（dsh-mcp-manager）\"; readonly settingsDescription: \"浮窗位置 / 水平·垂直·空白偏移\"; readonly anchorLabel: \"锚点\"; readonly posTopRight: \"右上（top-right）\"; readonly posTopLeft: \"左上（top-left）\"; readonly posBottomRight: \"右下（bottom-right）\"; readonly posBottomLeft: \"左下（bottom-left）\"; readonly modeLabel: \"中间层模式\"; readonly modeProject: \"project（项目级走中间层，推荐）\"; readonly modeAll: \"all（全局也走中间层）\"; readonly modeOff: \"off（全部直呼 mcp__ 工具）\"; readonly offsetX: \"水平偏移\"; readonly offsetY: \"垂直偏移\"; readonly blankY: \"空白偏移\"; readonly zIndexBase: \"层级基准\"; readonly settingsHint: \"保存即热更新：浮窗位置即时生效；中间层模式切换即时生效并持久化（无需重启 dsh web）。\"; readonly savingNow: \"保存中…\"; readonly settingsSavedOk: \"已保存——浮窗位置与中间层模式即时生效（无需重启）\"; };",
+    "export declare const zh: { readonly stConnected: \"运行中\"; readonly stConnecting: \"连接中\"; readonly stReconnecting: \"重连中\"; readonly stStopped: \"未连接\"; readonly stDisabled: \"已停用\"; readonly stFailed: \"失败\"; readonly connect: \"连接\"; readonly disconnect: \"断开\"; readonly reconnect: \"重连\"; readonly enable: \"启用\"; readonly enableAndConnect: \"启用并连接\"; readonly disable: \"禁用\"; readonly edit: \"编辑\"; readonly delete: \"删除\"; readonly save: \"保存\"; readonly cancel: \"取消\"; readonly refresh: \"刷新\"; readonly close: \"关闭\"; readonly cancelEdit: \"取消编辑\"; readonly saveFail: \"保存失败：{msg}\"; readonly actionFail: \"操作失败：{msg}\"; readonly loadFail: \"加载失败：{msg}\"; readonly floatAriaLabel: \"MCP 管理器\"; readonly floatTitle: \"MCP 管理器（点击展开）\"; readonly floatManage: \"管理\"; readonly floatEmpty: \"没有 MCP 服务器，点「管理」添加\"; readonly floatGlobalSession: \"全局会话\"; readonly groupProject: \"项目级\"; readonly groupGlobal: \"全局\"; readonly badgeScopeProject: \"项目\"; readonly badgeScopeGlobal: \"全局\"; readonly serverMeta: \"{status} · {tools} 工具\"; readonly toolsCount: \"工具（{n}）\"; readonly toolsCountPlain: \"{n} 工具\"; readonly statusGroupCount: \"{status}（{n}）\"; readonly panelTitle: \"MCP 管理器\"; readonly tabServers: \"服务器\"; readonly tabQuickAdd: \"快速接入\"; readonly countsConnected: \"运行中 {n}\"; readonly countsConnecting: \"连接中 {n}\"; readonly countsFailed: \"失败 {n}\"; readonly countsSummary: \"共 {n} 台 · {parts}\"; readonly countsSummaryOnly: \"共 {n} 台\"; readonly addServer: \"添加服务器\"; readonly editServer: \"编辑服务器：{name}\"; readonly nameLabel: \"服务器名称（唯一，作为 mcp__<name>__ 前缀）\"; readonly ownershipLabel: \"归属\"; readonly transportLabel: \"传输类型\"; readonly commandLabel: \"命令（stdio）\"; readonly argsLabel: \"参数（逗号分隔）\"; readonly envLabel: \"环境变量（每行 KEY=VALUE，支持 ${ENV} 引用，值为空则继承父环境）\"; readonly cwdLabel: \"工作目录（可选）\"; readonly urlLabel: \"URL（streamable-http）\"; readonly headersLabel: \"请求头（每行 KEY: VALUE，支持 ${ENV} 引用）\"; readonly enabledLabel: \"启用（保存后立即连接）\"; readonly scopeProjectOpt: \"项目级（<项目>/.dsh/mcp.json，随会话切换）\"; readonly scopeGlobalOpt: \"全局（本机配置）\"; readonly transportStdioOpt: \"stdio（本地子进程）\"; readonly transportHttpOpt: \"streamable-http（远程）\"; readonly envPlaceholder: \"每行 KEY=VALUE，如\\nCONTEXT7_API_KEY=${CONTEXT7_API_KEY}\"; readonly headersPlaceholder: \"每行 KEY: VALUE，支持 ${ENV} 引用，如\\nAuthorization: Bearer ${CONTEXT7_API_KEY}\"; readonly cwdPlaceholder: \"可选工作目录\"; readonly pasteTitle: \"粘贴 mcpServers JSON 导入\"; readonly importJson: \"导入 JSON\"; readonly importedOk: \"已导入：{names}\"; readonly importedNone: \"（无）\"; readonly importSkipped: \"跳过（已存在）：{names}\"; readonly importFail: \"导入失败：{msg}\"; readonly serversEmpty: \"还没有配置 MCP 服务器。切到「快速接入」页添加，或粘贴 mcpServers JSON 导入。\"; readonly confirmDelete: \"删除 MCP 服务器「{name}」？\"; readonly settingsLoading: \"MCP 管理器：加载中…\"; readonly settingsName: \"MCP 管理器（dsh-mcp-manager）\"; readonly settingsDescription: \"浮窗位置 / 水平·垂直·空白偏移\"; readonly anchorLabel: \"锚点\"; readonly posTopRight: \"右上（top-right）\"; readonly posTopLeft: \"左上（top-left）\"; readonly posBottomRight: \"右下（bottom-right）\"; readonly posBottomLeft: \"左下（bottom-left）\"; readonly offsetX: \"水平偏移\"; readonly offsetY: \"垂直偏移\"; readonly blankY: \"空白偏移\"; readonly zIndexBase: \"层级基准\"; readonly settingsHint: \"保存即热更新：浮窗位置与偏移即时生效并持久化（无需重启 dsh web）。\"; readonly savingNow: \"保存中…\"; readonly settingsSavedOk: \"已保存——浮窗位置即时生效（无需重启）\"; };",
     "export declare function SettingsCard(): JSX.Element;",
     "export declare function actionButton(label: any, onClick: any, primary?: boolean, danger?: boolean): any;",
     "export declare function api(path: any, options?: any): Promise<any>;",
@@ -679,20 +651,18 @@
     "export declare function installConfigSettings(ctx: Context, manager: McpManager, config: Record<string, unknown> | undefined, syncMiddlewareFromSettings: () => void): void;",
     "export declare function isCatalogFresh(catalog: CatalogServer | undefined): boolean;",
     "export declare function isCatalogSource(source: { kind?: unknown; plugin?: unknown; }",
-    "export declare function isToolDenied(disabledTools: DisabledToolsMap | undefined, policy: MiddlewarePolicy | undefined, serverKey: string, tool: string): boolean;",
-    "export declare function listCatalog(units: Map<string, ProjectUnit>, roots: readonly string[], serverFilter: string | undefined, toolLimit: number, mode: string, emptyHint: string, disabledTools?: DisabledToolsMap): ListCatalogResult;",
+    "export declare function isToolDenied(disabledTools: DisabledToolsMap | undefined, serverKey: string, tool: string): boolean;",
+    "export declare function listCatalog(units: Map<string, ProjectUnit>, roots: readonly string[], serverFilter: string | undefined, toolLimit: number, emptyHint: string, disabledTools?: DisabledToolsMap): ListCatalogResult;",
     "export declare function loadDisabledTools(file: string): Promise<DisabledToolsMap>;",
     "export declare function loadUserState(file: string): Promise<Map<string, Set<string>>>;",
     "export declare function makeCatalogViewFor(host: CatalogViewHost): CatalogViewResolver;",
     "export declare function makeEventsRoute(manager: RoutesManager, options?: { heartbeatMs?: number; }",
     "export declare function makeHealthRoute(manager: RoutesManager): WebRoute;",
-    "export declare function makeMiddlewareHotSwitch(manager: McpManager, middlewarePolicy: Record<string, unknown> | undefined, resolveRoot: (agent: unknown) => Promise<string | undefined>, dispose: { current: () => void; }",
     "export declare function makeResolveRoot(manager: McpManager): (agent: unknown) => Promise<string | undefined>;",
     "export declare function makeRoutes(manager: RoutesManager, _cwd?: string): WebRoute[];",
     "export declare function mountFloat(ctx: any, state: McpState, actions: UiActions): () => void;",
     "export declare function msgOf(error: unknown): string;",
     "export declare function normalizeArguments(raw: unknown): unknown;",
-    "export declare function normalizeMiddlewareMode(value: unknown): MiddlewareMode;",
     "export declare function normalizeScope(value: string): \"global\" | \"project\";",
     "export declare function normalizeServer(input: unknown): ServerConfig;",
     "export declare function normalizeToolName(serverName: string, toolName: string, caller?: string): string;",
@@ -705,8 +675,6 @@
     "export declare function parseFullServerName(name: string): { root: string; server: string; }",
     "export declare function parseKV(text: any): Record<string, string>;",
     "export declare function placePanel(state: McpState): void;",
-    "export declare function policyAllows(policy: MiddlewarePolicy | undefined, serverKey: string, tool: string): boolean;",
-    "export declare function policyDenialReason(policy: MiddlewarePolicy | undefined, serverKey: string, tool: string): string | undefined;",
     "export declare function projectCallToolResult(result: unknown, handlers?: CallResultTextHandlers): ProjectedCallResult;",
     "export declare function provideMcpManagerService(ctx: Context, manager: McpManager): void;",
     "export declare function publicToolName(serverName: string, rawName: string): string;",
@@ -720,17 +688,16 @@
     "export declare function registerDirectMcpGuard(ctx: Context, disabledTools: DisabledToolsMap | undefined, resolveRoot: (agent: unknown) => Promise<string | undefined>, resolveServerId?: ServerIdResolver): (() => void) | undefined;",
     "export declare function registerMiddlewareTools(ctx: Context, mw: McpMiddleware, resolveRoot: (agent: unknown) => Promise<string | undefined>, options?: { disabledTools?: DisabledToolsMap; stats?: McpStatsCollector; resolveServerId?: ServerIdResolver; }",
     "export declare function renderFloatPanel(state: McpState, actions: UiActions): void;",
-    "export declare function renderMcpCatalogMessage(entries: CatalogEntry[], mode?: string): CatalogMessage;",
-    "export declare function renderMcpCatalogUpdate(entries: CatalogEntry[], mode?: string): CatalogMessage;",
+    "export declare function renderMcpCatalogMessage(entries: CatalogEntry[]): CatalogMessage;",
+    "export declare function renderMcpCatalogUpdate(entries: CatalogEntry[]): CatalogMessage;",
     "export declare function renderPill(state: McpState): void;",
     "export declare function renderServer(server: any, state: McpState, actions: UiActions, opts?: { tools: boolean; openTools?: Set<string>; }",
     "export declare function renderServers(state: McpState, actions: UiActions): void;",
     "export declare function resetForm(state: McpState): void;",
     "export declare function resolveApplyOptions(config: Record<string, unknown> | undefined, settingsSource?: unknown): ApplyOptions;",
     "export declare function resolveCatalogEntries(source: CatalogSourceLike | undefined): CatalogEntry[] | undefined;",
-    "export declare function resolveCatalogInjection(decision: CatalogDecision, messages: CatalogMessage[], supervisors: Map<string, SupervisorLite>, maxEntries?: number, cache?: CatalogCache, agent?: CatalogAgent, mode?: string): CatalogDecision;",
+    "export declare function resolveCatalogInjection(decision: CatalogDecision, messages: CatalogMessage[], supervisors: Map<string, SupervisorLite>, maxEntries?: number, cache?: CatalogCache, agent?: CatalogAgent): CatalogDecision;",
     "export declare function resolveDebugConfig(config: Record<string, unknown> | undefined, settingsSource?: unknown): DebugConfig;",
-    "export declare function resolveMiddlewareMode(manager: McpManager, fallbackRaw: string | undefined): ReturnType<typeof normalizeMiddlewareMode>;",
     "export declare function resolveStorePath(config: Record<string, unknown> | undefined): string;",
     "export declare function saveDisabledTools(file: string, disabledTools: DisabledToolsMap): Promise<void>;",
     "export declare function saveForm(state: McpState, actions: UiActions): Promise<void>;",
@@ -920,14 +887,6 @@
         {
           "name": "McpStore",
           "isType": false
-        },
-        {
-          "name": "MiddlewareMode",
-          "isType": true
-        },
-        {
-          "name": "MiddlewarePolicy",
-          "isType": true
         },
         {
           "name": "ProgressiveDisclosureStats",
@@ -1158,10 +1117,6 @@
           "isType": false
         },
         {
-          "name": "makeMiddlewareHotSwitch",
-          "isType": false
-        },
-        {
           "name": "makeResolveRoot",
           "isType": false
         },
@@ -1179,10 +1134,6 @@
         },
         {
           "name": "normalizeArguments",
-          "isType": false
-        },
-        {
-          "name": "normalizeMiddlewareMode",
           "isType": false
         },
         {
@@ -1227,14 +1178,6 @@
         },
         {
           "name": "parseFullServerName",
-          "isType": false
-        },
-        {
-          "name": "policyAllows",
-          "isType": false
-        },
-        {
-          "name": "policyDenialReason",
           "isType": false
         },
         {
@@ -1283,10 +1226,6 @@
         },
         {
           "name": "resolveDebugConfig",
-          "isType": false
-        },
-        {
-          "name": "resolveMiddlewareMode",
           "isType": false
         },
         {
@@ -1399,17 +1338,11 @@
         "resolveDebugConfig": [
           "export declare function resolveDebugConfig(config: Record<string, unknown> | undefined, settingsSource?: unknown): DebugConfig;"
         ],
-        "resolveMiddlewareMode": [
-          "export declare function resolveMiddlewareMode(manager: McpManager, fallbackRaw: string | undefined): ReturnType<typeof normalizeMiddlewareMode>;"
-        ],
         "resolveStorePath": [
           "export declare function resolveStorePath(config: Record<string, unknown> | undefined): string;"
         ],
         "MCP_GUIDANCE": ["export declare const MCP_GUIDANCE: string;"],
         "createEmptyDisposers": ["export declare function createEmptyDisposers(): ApplyDisposers;"],
-        "makeMiddlewareHotSwitch": [
-          "export declare function makeMiddlewareHotSwitch(manager: McpManager, middlewarePolicy: Record<string, unknown> | undefined, resolveRoot: (agent: unknown) => Promise<string | undefined>, dispose: { current: () => void; }"
-        ],
         "registerCatalogInjection": [
           "export declare function registerCatalogInjection(ctx: Context, manager: McpManager, catalogMaxEntries: number): () => void;"
         ],
@@ -1458,10 +1391,10 @@
           "export declare function readCatalogEntries(source: { entries?: unknown; }"
         ],
         "renderMcpCatalogMessage": [
-          "export declare function renderMcpCatalogMessage(entries: CatalogEntry[], mode?: string): CatalogMessage;"
+          "export declare function renderMcpCatalogMessage(entries: CatalogEntry[]): CatalogMessage;"
         ],
         "renderMcpCatalogUpdate": [
-          "export declare function renderMcpCatalogUpdate(entries: CatalogEntry[], mode?: string): CatalogMessage;"
+          "export declare function renderMcpCatalogUpdate(entries: CatalogEntry[]): CatalogMessage;"
         ],
         "resolveCatalogEntries": [
           "export declare function resolveCatalogEntries(source: CatalogSourceLike | undefined): CatalogEntry[] | undefined;"
@@ -1473,7 +1406,7 @@
           "export declare function catalogHistory(agent: CatalogAgent | undefined): CatalogHistoryResult;"
         ],
         "resolveCatalogInjection": [
-          "export declare function resolveCatalogInjection(decision: CatalogDecision, messages: CatalogMessage[], supervisors: Map<string, SupervisorLite>, maxEntries?: number, cache?: CatalogCache, agent?: CatalogAgent, mode?: string): CatalogDecision;"
+          "export declare function resolveCatalogInjection(decision: CatalogDecision, messages: CatalogMessage[], supervisors: Map<string, SupervisorLite>, maxEntries?: number, cache?: CatalogCache, agent?: CatalogAgent): CatalogDecision;"
         ],
         "boundCatalogTools": [
           "export declare function boundCatalogTools(tools: Iterable<{ name?: unknown; description?: unknown; inputSchema?: unknown; }"
@@ -1485,7 +1418,7 @@
           "export declare function isCatalogFresh(catalog: CatalogServer | undefined): boolean;"
         ],
         "listCatalog": [
-          "export declare function listCatalog(units: Map<string, ProjectUnit>, roots: readonly string[], serverFilter: string | undefined, toolLimit: number, mode: string, emptyHint: string, disabledTools?: DisabledToolsMap): ListCatalogResult;"
+          "export declare function listCatalog(units: Map<string, ProjectUnit>, roots: readonly string[], serverFilter: string | undefined, toolLimit: number, emptyHint: string, disabledTools?: DisabledToolsMap): ListCatalogResult;"
         ],
         "scoreTool": [
           "export declare function scoreTool(query: string, server: string, toolName: string, tool: CatalogTool): { score: number; matchedTerms: string[]; };"
@@ -1497,7 +1430,7 @@
           "export declare function searchCatalogMulti(units: Map<string, ProjectUnit>, roots: readonly string[], query: string, limit: number): { results: SearchHit[]; unavailable: Array<{ server: string; reason: string; }>; truncated: boolean; };"
         ],
         "Config": [
-          "export declare const Config: z<{ enabled: boolean; announceToAgent: boolean; storePath: string; announceCatalog: boolean; catalogMaxEntries: number; middleware: \"off\" | \"project\" | \"all\"; middlewarePolicy: Record<string, unknown>; debug: { callStats: boolean; statsFile: string; }; ui: UiPlacementConfig; }"
+          "export declare const Config: z<{ enabled: boolean; announceToAgent: boolean; storePath: string; announceCatalog: boolean; catalogMaxEntries: number; debug: { callStats: boolean; statsFile: string; }; ui: UiPlacementConfig; }"
         ],
         "DEFAULT_UI_CONFIG": ["export declare const DEFAULT_UI_CONFIG: UiPlacementConfig;"],
         "buildConfigUiPatch": [
@@ -1543,7 +1476,7 @@
         ],
         "defaultStorePath": ["export declare function defaultStorePath(): string;"],
         "McpManager": [
-          "export declare class McpManager { ctx: Context; store: McpStore; listeners: Set<() => void>; logger: LoggerService; projectRoot: string | undefined; projectStore: McpStore | undefined; reconcileBusy: boolean; projectStores: Map<string, McpStore>; catalogCache: CatalogCache; catalogCachePath: string; uiConfigSource: () => any; uiUpdate?: (patch: Record<string, unknown>) => Promise<unknown>; sseHub?: SseHub; middleware: McpMiddleware | undefined; userStatePath: string; stats: McpStatsCollector; runtimeRegistry: Map<string, ServerConfig>; private registerQueue; private catalogViewResolver; constructor(ctx: Context, store: McpStore); uiConfig(): ClientUiConfig; updateUiConfig(raw: unknown): Promise<ClientUiConfig>; loadCatalogCache(): Promise<void>; recordCatalogTools(serverName: string, toolMeta: Map<string, { description?: unknown; }>): Promise<void>; private registeredSchemas; private poolRootFor; serverNameForId(id: string): { root: string; server: string; } | undefined; registeredToolsFor(name: string): Array<{ name: string; description?: string; }>; private poolEntryFor; onStatus(handler: () => void): () => void; private redactError; private statusTimer; emitStatus(): void; projectStoreOrThrow(): Promise<McpStore>; projectServersFor(root: string): Promise<ServerConfig[] | undefined>; isRuntimeServer(name: string): boolean; isGlobalServer(name: string): boolean; globalServers(): ServerConfig[]; saveUserState(units: Map<string, ProjectUnit>): Promise<void>; catalogCachePathFor(root: string): string; initMiddleware(policy: Record<string, unknown>): Promise<McpMiddleware>; disabledByRoot: Map<string, Set<string>>; disabledTools: DisabledToolsMap; setMiddlewareMode?: (mode: MiddlewareMode) => Promise<void>; setToolDisabled(root: string, server: string, tool: string, disabled: boolean): Promise<void>; projectStoreFor(root: string | undefined): Promise<McpStore | undefined>; catalogServersFor(cwd: string | undefined): Promise<Map<string, { server: ServerConfig; scope: string; }>>; catalogViewFor(cwd: string | undefined, servers: Map<string, { server: ServerConfig; scope: string; }>): Promise<CatalogCache>; setSession(cwd: string | undefined): Promise<void>; resumeReconnect(): Promise<void>; refreshFromDisk(): Promise<void>; reconcileServers(): boolean; startAll(): Promise<void>; start(name: string, scope?: string): void; private touchGlobalUnit; private ensureMiddlewareServer; private dropMiddlewareConnection; registerServer(options: Record<string, unknown>): Promise<{ name: string; existing: boolean; }>; unregisterServer(name: string): Promise<void>; add(server: Record<string, unknown>, scope?: string): Promise<ServerConfig>; update(name: string, patch: Record<string, unknown>, scope?: string): Promise<ServerConfig>; remove(name: string, scope?: string): Promise<void>; connect(name: string, scope?: string): Promise<void>; disconnect(name: string, scope?: string): Promise<void>; reconnect(name: string, scope?: string): Promise<void>; summary(): Record<string, unknown>; private middlewareUnitFor; summarize(server: ServerConfig, scope: string): Record<string, unknown>; dispose(): Promise<void>; }"
+          "export declare class McpManager { ctx: Context; store: McpStore; listeners: Set<() => void>; logger: LoggerService; projectRoot: string | undefined; projectStore: McpStore | undefined; reconcileBusy: boolean; projectStores: Map<string, McpStore>; catalogCache: CatalogCache; catalogCachePath: string; uiConfigSource: () => any; uiUpdate?: (patch: Record<string, unknown>) => Promise<unknown>; sseHub?: SseHub; middleware: McpMiddleware | undefined; userStatePath: string; stats: McpStatsCollector; runtimeRegistry: Map<string, ServerConfig>; private registerQueue; private catalogViewResolver; constructor(ctx: Context, store: McpStore); uiConfig(): ClientUiConfig; updateUiConfig(raw: unknown): Promise<ClientUiConfig>; loadCatalogCache(): Promise<void>; recordCatalogTools(serverName: string, toolMeta: Map<string, { description?: unknown; }>): Promise<void>; private registeredSchemas; private poolRootFor; serverNameForId(id: string): { root: string; server: string; } | undefined; registeredToolsFor(name: string): Array<{ name: string; description?: string; }>; private poolEntryFor; onStatus(handler: () => void): () => void; private redactError; private statusTimer; emitStatus(): void; projectStoreOrThrow(): Promise<McpStore>; projectServersFor(root: string): Promise<ServerConfig[] | undefined>; isRuntimeServer(name: string): boolean; isGlobalServer(name: string): boolean; globalServers(): ServerConfig[]; saveUserState(units: Map<string, ProjectUnit>): Promise<void>; catalogCachePathFor(root: string): string; initMiddleware(): Promise<McpMiddleware>; disabledByRoot: Map<string, Set<string>>; disabledTools: DisabledToolsMap; setToolDisabled(root: string, server: string, tool: string, disabled: boolean): Promise<void>; projectStoreFor(root: string | undefined): Promise<McpStore | undefined>; catalogServersFor(cwd: string | undefined): Promise<Map<string, { server: ServerConfig; scope: string; }>>; catalogViewFor(cwd: string | undefined, servers: Map<string, { server: ServerConfig; scope: string; }>): Promise<CatalogCache>; setSession(cwd: string | undefined): Promise<void>; resumeReconnect(): Promise<void>; refreshFromDisk(): Promise<void>; reconcileServers(): boolean; startAll(): Promise<void>; start(name: string, scope?: string): void; private touchGlobalUnit; private ensureMiddlewareServer; private dropMiddlewareConnection; registerServer(options: Record<string, unknown>): Promise<{ name: string; existing: boolean; }>; unregisterServer(name: string): Promise<void>; add(server: Record<string, unknown>, scope?: string): Promise<ServerConfig>; update(name: string, patch: Record<string, unknown>, scope?: string): Promise<ServerConfig>; remove(name: string, scope?: string): Promise<void>; connect(name: string, scope?: string): Promise<void>; disconnect(name: string, scope?: string): Promise<void>; reconnect(name: string, scope?: string): Promise<void>; summary(): Record<string, unknown>; private middlewareUnitFor; summarize(server: ServerConfig, scope: string): Record<string, unknown>; dispose(): Promise<void>; }"
         ],
         "stripMcpPrefix": [
           "export declare function stripMcpPrefix(registeredName: string, serverName: string): string;"
@@ -1560,7 +1493,7 @@
         "MAX_TOOLS_PER_SERVER": ["export declare const MAX_TOOLS_PER_SERVER = 512;"],
         "MAX_TOTAL_CATALOG_BYTES": ["export declare const MAX_TOTAL_CATALOG_BYTES: number;"],
         "McpMiddleware": [
-          "export declare class McpMiddleware { host: MiddlewareHost; units: Map<string, ProjectUnit>; policy: MiddlewarePolicy; disabledByRoot: Map<string, Set<string>>; disabledTools: DisabledToolsMap; forwarding: Set<ToolExecutionToken>; constructor(host: MiddlewareHost, policy?: MiddlewarePolicy); projectUnitFor(root: string | undefined): Promise<ProjectUnit | undefined>; ensureConnected(root: string, serverName: string, opts?: { force?: boolean; }): Promise<void>; abandonInFlight(serverName: string): void; private connectInternal; private registeredSchemas; private registeredToolMeta; private redact; statusOf(root: string, serverName: string): ServerState | undefined; toolCountOf(root: string, serverName: string): number; callTool(fullName: string, toolRaw: string, rawArgs: unknown, signal: AbortSignal | undefined, identity: { agent?: unknown; callId: ToolExecutionInput[\"callId\"]; rootCallId?: ToolExecutionInput[\"rootCallId\"]; parent?: ToolExecutionToken; }): Promise<unknown>; private allServers; releaseConnection(root: string, serverName: string): boolean; evictIfNeeded(maxUnits?: number): void; teardownUnit(root: string): void; dispose(): Promise<void>; }"
+          "export declare class McpMiddleware { host: MiddlewareHost; units: Map<string, ProjectUnit>; disabledByRoot: Map<string, Set<string>>; disabledTools: DisabledToolsMap; forwarding: Set<ToolExecutionToken>; constructor(host: MiddlewareHost); projectUnitFor(root: string | undefined): Promise<ProjectUnit | undefined>; ensureConnected(root: string, serverName: string, opts?: { force?: boolean; }): Promise<void>; abandonInFlight(serverName: string): void; private connectInternal; private registeredSchemas; private registeredToolMeta; private redact; statusOf(root: string, serverName: string): ServerState | undefined; toolCountOf(root: string, serverName: string): number; callTool(fullName: string, toolRaw: string, rawArgs: unknown, signal: AbortSignal | undefined, identity: { agent?: unknown; callId: ToolExecutionInput[\"callId\"]; rootCallId?: ToolExecutionInput[\"rootCallId\"]; parent?: ToolExecutionToken; }): Promise<unknown>; private allServers; releaseConnection(root: string, serverName: string): boolean; evictIfNeeded(maxUnits?: number): void; teardownUnit(root: string): void; dispose(): Promise<void>; }"
         ],
         "DEFAULT_RESULT_TRUNCATE_BYTES": [
           "export declare const DEFAULT_RESULT_TRUNCATE_BYTES = 8192;"
@@ -1585,13 +1518,7 @@
         ],
         "globMatch": ["export declare function globMatch(pattern: string, name: string): boolean;"],
         "isToolDenied": [
-          "export declare function isToolDenied(disabledTools: DisabledToolsMap | undefined, policy: MiddlewarePolicy | undefined, serverKey: string, tool: string): boolean;"
-        ],
-        "policyAllows": [
-          "export declare function policyAllows(policy: MiddlewarePolicy | undefined, serverKey: string, tool: string): boolean;"
-        ],
-        "policyDenialReason": [
-          "export declare function policyDenialReason(policy: MiddlewarePolicy | undefined, serverKey: string, tool: string): string | undefined;"
+          "export declare function isToolDenied(disabledTools: DisabledToolsMap | undefined, serverKey: string, tool: string): boolean;"
         ],
         "toolDisabledReason": [
           "export declare function toolDisabledReason(serverKey: string, tool: string): string;"
@@ -1625,9 +1552,6 @@
         ],
         "parseFullServerName": [
           "export declare function parseFullServerName(name: string): { root: string; server: string; }"
-        ],
-        "normalizeMiddlewareMode": [
-          "export declare function normalizeMiddlewareMode(value: unknown): MiddlewareMode;"
         ],
         "findProjectRoot": [
           "export declare function findProjectRoot(cwd: string | undefined): Promise<string>;"
@@ -1738,7 +1662,7 @@
         "apply": ["export declare function apply(ctx: any): void;"],
         "en": ["export declare const en: Record<McpLocaleKey, string>;"],
         "zh": [
-          "export declare const zh: { readonly stConnected: \"运行中\"; readonly stConnecting: \"连接中\"; readonly stReconnecting: \"重连中\"; readonly stStopped: \"未连接\"; readonly stDisabled: \"已停用\"; readonly stFailed: \"失败\"; readonly connect: \"连接\"; readonly disconnect: \"断开\"; readonly reconnect: \"重连\"; readonly enable: \"启用\"; readonly enableAndConnect: \"启用并连接\"; readonly disable: \"禁用\"; readonly edit: \"编辑\"; readonly delete: \"删除\"; readonly save: \"保存\"; readonly cancel: \"取消\"; readonly refresh: \"刷新\"; readonly close: \"关闭\"; readonly cancelEdit: \"取消编辑\"; readonly saveFail: \"保存失败：{msg}\"; readonly actionFail: \"操作失败：{msg}\"; readonly loadFail: \"加载失败：{msg}\"; readonly floatAriaLabel: \"MCP 管理器\"; readonly floatTitle: \"MCP 管理器（点击展开）\"; readonly floatManage: \"管理\"; readonly floatEmpty: \"没有 MCP 服务器，点「管理」添加\"; readonly floatGlobalSession: \"全局会话\"; readonly groupProject: \"项目级\"; readonly groupGlobal: \"全局\"; readonly badgeScopeProject: \"项目\"; readonly badgeScopeGlobal: \"全局\"; readonly globalToolHint: \"全局工具开关需在 all 模式（中间层全量接管）下管理——切 all 模式可管理全局工具\"; readonly serverMeta: \"{status} · {tools} 工具\"; readonly toolsCount: \"工具（{n}）\"; readonly toolsCountPlain: \"{n} 工具\"; readonly statusGroupCount: \"{status}（{n}）\"; readonly panelTitle: \"MCP 管理器\"; readonly tabServers: \"服务器\"; readonly tabQuickAdd: \"快速接入\"; readonly countsConnected: \"运行中 {n}\"; readonly countsConnecting: \"连接中 {n}\"; readonly countsFailed: \"失败 {n}\"; readonly countsSummary: \"共 {n} 台 · {parts}\"; readonly countsSummaryOnly: \"共 {n} 台\"; readonly addServer: \"添加服务器\"; readonly editServer: \"编辑服务器：{name}\"; readonly nameLabel: \"服务器名称（唯一，作为 mcp__<name>__ 前缀）\"; readonly ownershipLabel: \"归属\"; readonly transportLabel: \"传输类型\"; readonly commandLabel: \"命令（stdio）\"; readonly argsLabel: \"参数（逗号分隔）\"; readonly envLabel: \"环境变量（每行 KEY=VALUE，支持 ${ENV} 引用，值为空则继承父环境）\"; readonly cwdLabel: \"工作目录（可选）\"; readonly urlLabel: \"URL（streamable-http）\"; readonly headersLabel: \"请求头（每行 KEY: VALUE，支持 ${ENV} 引用）\"; readonly enabledLabel: \"启用（保存后立即连接）\"; readonly scopeProjectOpt: \"项目级（<项目>/.dsh/mcp.json，随会话切换）\"; readonly scopeGlobalOpt: \"全局（~/.dsh/dsh-mcp.json）\"; readonly transportStdioOpt: \"stdio（本地子进程）\"; readonly transportHttpOpt: \"streamable-http（远程）\"; readonly envPlaceholder: \"每行 KEY=VALUE，如\\nCONTEXT7_API_KEY=${CONTEXT7_API_KEY}\"; readonly headersPlaceholder: \"每行 KEY: VALUE，支持 ${ENV} 引用，如\\nAuthorization: Bearer ${CONTEXT7_API_KEY}\"; readonly cwdPlaceholder: \"可选工作目录\"; readonly pasteTitle: \"粘贴 mcpServers JSON 导入\"; readonly importJson: \"导入 JSON\"; readonly importedOk: \"已导入：{names}\"; readonly importedNone: \"（无）\"; readonly importSkipped: \"跳过（已存在）：{names}\"; readonly importFail: \"导入失败：{msg}\"; readonly serversEmpty: \"还没有配置 MCP 服务器。切到「快速接入」页添加，或粘贴 mcpServers JSON 导入。\"; readonly confirmDelete: \"删除 MCP 服务器「{name}」？\"; readonly settingsLoading: \"MCP 管理器：加载中…\"; readonly settingsName: \"MCP 管理器（dsh-mcp-manager）\"; readonly settingsDescription: \"浮窗位置 / 水平·垂直·空白偏移\"; readonly anchorLabel: \"锚点\"; readonly posTopRight: \"右上（top-right）\"; readonly posTopLeft: \"左上（top-left）\"; readonly posBottomRight: \"右下（bottom-right）\"; readonly posBottomLeft: \"左下（bottom-left）\"; readonly modeLabel: \"中间层模式\"; readonly modeProject: \"project（项目级走中间层，推荐）\"; readonly modeAll: \"all（全局也走中间层）\"; readonly modeOff: \"off（全部直呼 mcp__ 工具）\"; readonly offsetX: \"水平偏移\"; readonly offsetY: \"垂直偏移\"; readonly blankY: \"空白偏移\"; readonly zIndexBase: \"层级基准\"; readonly settingsHint: \"保存即热更新：浮窗位置即时生效；中间层模式切换即时生效并持久化（无需重启 dsh web）。\"; readonly savingNow: \"保存中…\"; readonly settingsSavedOk: \"已保存——浮窗位置与中间层模式即时生效（无需重启）\"; };"
+          "export declare const zh: { readonly stConnected: \"运行中\"; readonly stConnecting: \"连接中\"; readonly stReconnecting: \"重连中\"; readonly stStopped: \"未连接\"; readonly stDisabled: \"已停用\"; readonly stFailed: \"失败\"; readonly connect: \"连接\"; readonly disconnect: \"断开\"; readonly reconnect: \"重连\"; readonly enable: \"启用\"; readonly enableAndConnect: \"启用并连接\"; readonly disable: \"禁用\"; readonly edit: \"编辑\"; readonly delete: \"删除\"; readonly save: \"保存\"; readonly cancel: \"取消\"; readonly refresh: \"刷新\"; readonly close: \"关闭\"; readonly cancelEdit: \"取消编辑\"; readonly saveFail: \"保存失败：{msg}\"; readonly actionFail: \"操作失败：{msg}\"; readonly loadFail: \"加载失败：{msg}\"; readonly floatAriaLabel: \"MCP 管理器\"; readonly floatTitle: \"MCP 管理器（点击展开）\"; readonly floatManage: \"管理\"; readonly floatEmpty: \"没有 MCP 服务器，点「管理」添加\"; readonly floatGlobalSession: \"全局会话\"; readonly groupProject: \"项目级\"; readonly groupGlobal: \"全局\"; readonly badgeScopeProject: \"项目\"; readonly badgeScopeGlobal: \"全局\"; readonly serverMeta: \"{status} · {tools} 工具\"; readonly toolsCount: \"工具（{n}）\"; readonly toolsCountPlain: \"{n} 工具\"; readonly statusGroupCount: \"{status}（{n}）\"; readonly panelTitle: \"MCP 管理器\"; readonly tabServers: \"服务器\"; readonly tabQuickAdd: \"快速接入\"; readonly countsConnected: \"运行中 {n}\"; readonly countsConnecting: \"连接中 {n}\"; readonly countsFailed: \"失败 {n}\"; readonly countsSummary: \"共 {n} 台 · {parts}\"; readonly countsSummaryOnly: \"共 {n} 台\"; readonly addServer: \"添加服务器\"; readonly editServer: \"编辑服务器：{name}\"; readonly nameLabel: \"服务器名称（唯一，作为 mcp__<name>__ 前缀）\"; readonly ownershipLabel: \"归属\"; readonly transportLabel: \"传输类型\"; readonly commandLabel: \"命令（stdio）\"; readonly argsLabel: \"参数（逗号分隔）\"; readonly envLabel: \"环境变量（每行 KEY=VALUE，支持 ${ENV} 引用，值为空则继承父环境）\"; readonly cwdLabel: \"工作目录（可选）\"; readonly urlLabel: \"URL（streamable-http）\"; readonly headersLabel: \"请求头（每行 KEY: VALUE，支持 ${ENV} 引用）\"; readonly enabledLabel: \"启用（保存后立即连接）\"; readonly scopeProjectOpt: \"项目级（<项目>/.dsh/mcp.json，随会话切换）\"; readonly scopeGlobalOpt: \"全局（本机配置）\"; readonly transportStdioOpt: \"stdio（本地子进程）\"; readonly transportHttpOpt: \"streamable-http（远程）\"; readonly envPlaceholder: \"每行 KEY=VALUE，如\\nCONTEXT7_API_KEY=${CONTEXT7_API_KEY}\"; readonly headersPlaceholder: \"每行 KEY: VALUE，支持 ${ENV} 引用，如\\nAuthorization: Bearer ${CONTEXT7_API_KEY}\"; readonly cwdPlaceholder: \"可选工作目录\"; readonly pasteTitle: \"粘贴 mcpServers JSON 导入\"; readonly importJson: \"导入 JSON\"; readonly importedOk: \"已导入：{names}\"; readonly importedNone: \"（无）\"; readonly importSkipped: \"跳过（已存在）：{names}\"; readonly importFail: \"导入失败：{msg}\"; readonly serversEmpty: \"还没有配置 MCP 服务器。切到「快速接入」页添加，或粘贴 mcpServers JSON 导入。\"; readonly confirmDelete: \"删除 MCP 服务器「{name}」？\"; readonly settingsLoading: \"MCP 管理器：加载中…\"; readonly settingsName: \"MCP 管理器（dsh-mcp-manager）\"; readonly settingsDescription: \"浮窗位置 / 水平·垂直·空白偏移\"; readonly anchorLabel: \"锚点\"; readonly posTopRight: \"右上（top-right）\"; readonly posTopLeft: \"左上（top-left）\"; readonly posBottomRight: \"右下（bottom-right）\"; readonly posBottomLeft: \"左下（bottom-left）\"; readonly offsetX: \"水平偏移\"; readonly offsetY: \"垂直偏移\"; readonly blankY: \"空白偏移\"; readonly zIndexBase: \"层级基准\"; readonly settingsHint: \"保存即热更新：浮窗位置与偏移即时生效并持久化（无需重启 dsh web）。\"; readonly savingNow: \"保存中…\"; readonly settingsSavedOk: \"已保存——浮窗位置即时生效（无需重启）\"; };"
         ],
         "SettingsCard": ["export declare function SettingsCard(): JSX.Element;"]
       }

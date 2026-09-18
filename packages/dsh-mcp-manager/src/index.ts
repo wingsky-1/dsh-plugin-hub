@@ -79,12 +79,7 @@ import { bindHost, type HostFaces } from "./server/shared/interface.ts";
 import { startAgentVisibility } from "./server/visibility/interface.ts";
 import { SSE_FRAMES } from "./shared/interface.ts";
 import type { McpServerSummary, SseFramePayload } from "./shared/interface.ts";
-import type { MiddlewareMode } from "./server/workspace/interface.ts";
-import {
-  makeResolveRoot,
-  makeServerIdTable,
-  normalizeMiddlewareMode,
-} from "./server/workspace/interface.ts";
+import { makeResolveRoot, makeServerIdTable } from "./server/workspace/interface.ts";
 import * as workspaceApi from "./server/workspace/interface.ts";
 
 // 目录域的静态端口装配。三组 Port 全是静态模块引用（不需要宿主 ctx 或配置），故写在入口
@@ -183,8 +178,6 @@ interface ApplyOptions {
   announceToAgent: boolean;
   announceCatalog: boolean;
   catalogMaxEntries: number;
-  middlewarePolicy: Record<string, unknown>;
-  middlewareModeRaw: string | undefined;
   debug: DebugConfig;
 }
 
@@ -229,25 +222,8 @@ function resolveApplyOptions(
     announceToAgent: config?.announceToAgent !== false,
     announceCatalog,
     catalogMaxEntries,
-    middlewarePolicy: (config?.middlewarePolicy as Record<string, unknown> | undefined) ?? {},
-    middlewareModeRaw: config?.middleware as string | undefined,
     debug: resolveDebugConfig(config, settingsSource),
   };
-}
-
-/** 解析中间层模式（settings 持久化值优先，回落 config 默认 project，#389 M2）。 */
-export function resolveMiddlewareMode(
-  manager: McpManager,
-  fallbackRaw: string | undefined,
-): ReturnType<typeof normalizeMiddlewareMode> {
-  const settingsSource = manager.uiConfigSource();
-  const persistedMiddleware =
-    typeof settingsSource === "object" && settingsSource !== null
-      ? (settingsSource as Record<string, unknown>).middleware
-      : undefined;
-  return normalizeMiddlewareMode(
-    typeof persistedMiddleware === "string" ? persistedMiddleware : (fallbackRaw ?? "project"),
-  );
 }
 
 /**
@@ -259,7 +235,7 @@ function installConfigSettings(
   ctx: Context,
   manager: McpManager,
   config: Record<string, unknown> | undefined,
-  syncMiddlewareFromSettings: () => void,
+  syncFromSettings: () => void,
 ): void {
   const broadcastUiConfigChanged = () => {
     // #515：广播收口到共享 hub（未创建 = 尚无 events 订阅，跳过）。
@@ -271,7 +247,7 @@ function installConfigSettings(
     },
     onChange: () => {
       broadcastUiConfigChanged();
-      syncMiddlewareFromSettings();
+      syncFromSettings();
     },
   });
 }
@@ -387,40 +363,6 @@ function registerMiddlewareAndGuard(
 }
 
 /**
- * 中间层模式热切换（设置页「中间层模式」下拉；initMiddleware 幂等已有）。
- * 单池（#767 笔 1a）：模式不再决定池归属，热切换只剩「重注册中间层工具 + 收敛连接
- * 集合 + 广播一帧」；同值幂等由闭包内的 applied 记（不再是 manager 的运行时字段）。
- */
-export function makeMiddlewareHotSwitch(
-  manager: McpManager,
-  middlewarePolicy: Record<string, unknown> | undefined,
-  resolveRoot: (agent: unknown) => Promise<string | undefined>,
-  dispose: { current: () => void },
-  /** 宿主能力面（热切换要按同一份 faces 重注册中间层工具；省略时图片面退化成纯诊断）。 */
-  faces?: HostFaces,
-): (mode: MiddlewareMode) => Promise<void> {
-  // 同值幂等（防设置面每次 onChange 都走一遍重注册）。单池合并后模式不再决定池归属，
-  // 运行时的模式镜像字段已删（M9）——这里只记「上一次被要求切到的值」，不对外暴露、
-  // 不参与任何行为判定。笔 2 随配置键一起删。
-  let applied: MiddlewareMode | undefined;
-  return async (mode: MiddlewareMode): Promise<void> => {
-    const next = normalizeMiddlewareMode(mode);
-    if (next === applied) return;
-    applied = next;
-    dispose.current();
-    const mw = await manager.initMiddleware(middlewarePolicy ?? {});
-    dispose.current = registerMiddlewareAndGuard(manager.ctx, manager, mw, resolveRoot, faces);
-    // 单池后模式不再决定谁进池（全部服务器恒经中间层）：热切换只剩「收敛连接集合
-    // + 广播一帧」。reconcile 仍要跑——它负责把配置里新增/移除的服务器对齐到池。
-    manager.reconcileServers();
-    manager.logger.info(`dsh-mcp-manager: middleware mode=${next} (hot-switched)`);
-    // B20（C-EVT）：热切换后补 summary 帧——summary 帧源集合含热切换；现状
-    // 缺失致热切换后客户端无帧可回拉 GET /servers（与客户端 C10 同根）。
-    manager.emitStatus();
-  };
-}
-
-/**
  * L1 能力目录注入（history-based 去重，仿 dsh-tool-skill catalog）：
  * 决策逻辑在 resolveCatalogInjection（纯函数，可单测）。
  */
@@ -451,10 +393,6 @@ function registerCatalogInjection(
       catalogMaxEntries,
       catalogView,
       agent as unknown as CatalogAgent | undefined,
-      // 单池（#767 笔 1a）：目录文案按**有效**模式渲染——全部服务器都经中间层，
-      // 故恒 "all"（原来回显设置里的模式值，那在本笔之后已不再影响行为）。
-      // 笔 2 随配置键一起删。
-      "all",
     ) as unknown as PreStepDecision;
   });
 }
@@ -655,10 +593,11 @@ export async function apply(
   // 核心化服务（官方 storageDomain 模式）：对外暴露 ctx.mcpManager（见本文件的 provideMcpManagerService）。
   provideMcpManagerService(ctx, manager);
 
-  // #389：settings 命名空间合并面（含用户层保存的 middleware）→ 运行时同步。
+  // settings 命名空间合并面 → 运行时同步（debug/stats）。
   // 此同步函数在 settings onChange（运行期变更）与启动兜底（enabled 分支内）
   // 两处调用：前者覆盖运行期变更，后者覆盖启动时 settings 已就绪的场景。
-  const syncMiddlewareFromSettings = (): void => {
+  // #767 笔 2：原来的「中间层模式同步」整段随 `middleware` 键删除。
+  const syncFromSettings = (): void => {
     const source = manager.uiConfigSource();
     const debugCfg = resolveDebugConfig(config, source);
     manager.stats.configure({
@@ -666,24 +605,8 @@ export async function apply(
       filePath: debugCfg.statsFile || undefined,
       logger: manager.logger,
     });
-    if (typeof manager.setMiddlewareMode !== "function") return;
-    const persisted =
-      typeof source === "object" && source !== null
-        ? (source as Record<string, unknown>).middleware
-        : undefined;
-    if (typeof persisted !== "string") return;
-    const next = normalizeMiddlewareMode(persisted);
-    // 同值幂等由热切换闭包内的 applied 记（manager 的运行时模式字段已删，M9）；
-    // 这里不再需要第二处比较。
-    void manager
-      .setMiddlewareMode(next)
-      .catch((error: unknown) =>
-        manager.logger.warn(
-          `dsh-mcp-manager: sync middleware from settings failed: ${String(error)}`,
-        ),
-      );
   };
-  installConfigSettings(ctx, manager, config, syncMiddlewareFromSettings);
+  installConfigSettings(ctx, manager, config, syncFromSettings);
   injectSettingsSink(ctx, manager);
 
   // 初始化 stats 配置
@@ -703,7 +626,7 @@ export async function apply(
   };
 
   if (options.enabled) {
-    runtime = await assembleEnabledRuntime(ctx, manager, options, syncMiddlewareFromSettings, host);
+    runtime = await assembleEnabledRuntime(ctx, manager, options, syncFromSettings, host);
   }
 
   ctx.effect(
@@ -738,42 +661,21 @@ async function assembleEnabledRuntime(
     announceCatalog: boolean;
     announceToAgent: boolean;
     catalogMaxEntries: number;
-    middlewarePolicy: Record<string, unknown>;
-    middlewareModeRaw: string | undefined;
   },
-  syncMiddlewareFromSettings: () => void,
+  syncFromSettings: () => void,
   /** 组合根收窄后的宿主能力面（bindHost 的产物）：图片准入与模型可见面隐藏的取数口。 */
   faces: HostFaces,
 ): Promise<EnabledRuntimeDisposers> {
   // F3（#382）：中间层初始化提前到 startAll 之前（防「先建后停」竞态，详见
-  // 本文件运行期装配段的注释）；#389 M2：settings 合并面就绪时直接取持久化模式，
-  // 避免「先起 supervisor 再热切换 all」的启动抖动（连→断→连）。
-  const middlewareMode = resolveMiddlewareMode(manager, options.middlewareModeRaw);
-
+  // 本文件运行期装配段的注释）。
   const resolveRoot = makeResolveRoot(manager);
-  // dispose.current 由热切换闭包持有重挂（off↔project/all 重建中间层工具）。
   let currentMiddlewareDispose = () => {};
-  const middlewareDisposer = {
-    get current(): () => void {
-      return currentMiddlewareDispose;
-    },
-    set current(fn: () => void) {
-      currentMiddlewareDispose = fn;
-    },
-  };
   // 工具级禁用表在 initMiddleware **之前**独立载入：initMiddleware 会用自己的加载结果覆盖，
-  // 而载入失败时它会把中间层回退成 off —— 这条独立加载保证那种情况下守卫仍有数据源。
+  // 而载入失败时它会把中间层回退（不建实例）—— 这条独立加载保证那种情况下守卫仍有数据源。
   manager.disabledTools = await loadDisabledTools(manager.userStatePath);
   // 中间层实例 + ws_mcp_* 无条件装配（单池后它是唯一连接路径）。
-  const mw = await manager.initMiddleware(options.middlewarePolicy);
+  const mw = await manager.initMiddleware();
   currentMiddlewareDispose = registerMiddlewareAndGuard(ctx, manager, mw, resolveRoot, faces);
-  manager.setMiddlewareMode = makeMiddlewareHotSwitch(
-    manager,
-    options.middlewarePolicy,
-    resolveRoot,
-    middlewareDisposer,
-    faces,
-  );
 
   // 交付物 A（#767 笔 1b）：把 mcp__* 从每个 agent 的模型视野摘掉。**必须在 startAll 之前**——
   // 连接（以及工具注册）发生在 startAll 期间：先挂隐藏面，初始 reconcile 才能覆盖已 live 的
@@ -789,11 +691,12 @@ async function assembleEnabledRuntime(
   await manager.startAll();
   await manager.loadCatalogCache();
   manager.reconcileServers();
-  // 单池后模式不再影响任何行为：这里只报「配置里解析到的值」（诊断用，笔 2 随键删）。
-  manager.logger.info(`dsh-mcp-manager: middleware config mode=${middlewareMode} (effective: all)`);
+  manager.logger.info(
+    "dsh-mcp-manager: middleware assembled (single pool, all servers via middleware)",
+  );
 
-  // #389：启动阶段把 settings 持久化的 middleware 模式同步到运行时（兜底）。
-  syncMiddlewareFromSettings();
+  // 启动阶段把 settings 合并面的 debug/stats 同步到运行时（兜底）。
+  syncFromSettings();
 
   let disposeInjection = () => {};
   if (options.announceCatalog) {
@@ -875,7 +778,6 @@ export {
   fullServerName,
   parseFullServerName,
   normalizeToolName,
-  normalizeMiddlewareMode,
 } from "./server/workspace/interface.ts";
 // 执行管道域（两路径同构纯函数族；#664 阶段 2）
 export {
@@ -883,8 +785,6 @@ export {
   msgOf,
   createRedactor,
   globMatch,
-  policyAllows,
-  policyDenialReason,
   isToolDenied,
   toolDisabledReason,
   withTimeout,
@@ -979,7 +879,6 @@ export type {
 // 工具注册面（inject：#664 阶段 6 落位）
 export { registerMiddlewareTools, registerDirectMcpGuard } from "./server/inject/interface.ts";
 // 共享类型面（物理定义在各域 impl/<块>/type.ts，按落点域门面分组转出；#767 W11b2a）
-export type { MiddlewareMode } from "./server/workspace/interface.ts";
 export type { ProjectUnit } from "./server/connection/interface.ts";
 export type {
   SearchHit,
@@ -988,7 +887,6 @@ export type {
   ListCatalogResult,
   ToolDetail,
 } from "./server/catalog/interface.ts";
-export type { MiddlewarePolicy } from "./server/pipeline/interface.ts";
 export type { DisabledToolsMap } from "./server/store/interface.ts";
 export type { ServerConfig } from "./server/config/interface.ts";
 export type { ServerStatus } from "./server/api/interface.ts";

@@ -40,8 +40,8 @@ export function renderPill(state: McpState): void {
 /**
  * 工具级禁用开关（PATCH /api/dsh-mcp/tool-disable）。
  * 语义（#362 交互拍板 2b）：折叠式 details 展开后 checkbox 列表，逐个启停；
- * 点击调宿主 API 持久化 + 刷新。project 模式全局组不渲染 checkbox
- * （runtime 注册的全局工具在 project 模式走 supervisor 不经中间层，无法禁用）。
+ * 点击调宿主 API 持久化 + 刷新。单池（#767）后全部服务器（含全局）都经中间层，
+ * 项目组与全局组一律渲染 checkbox。
  */
 function toolCheckbox(
   server: any,
@@ -183,14 +183,14 @@ function renderFloatRow(
     actionsEl.appendChild(disable);
   }
   row.appendChild(actionsEl);
-  // 工具清单：project 模式全局组只读提示（切 all 可管理全局工具）。
+  // 工具清单（单池后项目组与全局组同权）。
   if (opts.tools)
     row.appendChild(renderFloatTools(server, state, actions, opts.openTools ?? new Set()));
   return row;
 }
 
 /** 渲染浮窗下拉面板（#362 交互拍板 1a：项目级 / 全局级两大分组，各自内部再按状态）。
- * project 模式：显示全局服务器但不显示工具开关，提示「切 all 模式可管理全局工具」。 */
+ * 单池（#767）后两大分组的服务器都经中间层，工具开关一律可用。 */
 export function renderFloatPanel(state: McpState, actions: UiActions): void {
   if (state.floatPanel === undefined) return;
   // C8：同 servers.ts——渲染前收集展开的工具组（按 server 名），重建后恢复。
@@ -221,8 +221,6 @@ export function renderFloatPanel(state: McpState, actions: UiActions): void {
     if (state.floatOpen) placePanel(state);
     return;
   }
-  const isAll = state.middlewareMode === "all";
-  const toolsEnabled = (scope: string) => scope === "project" || isAll;
   for (const scope of ["project", "global"]) {
     const list = state.servers.filter((server: any) => server.scope === scope);
     if (list.length === 0) continue;
@@ -245,14 +243,8 @@ export function renderFloatPanel(state: McpState, actions: UiActions): void {
       const bucket = byStatus.get(group.key) ?? [];
       if (bucket.length === 0) continue;
       for (const server of [...bucket].sort((a: any, b: any) => a.name.localeCompare(b.name))) {
-        section.appendChild(
-          renderFloatRow(server, state, actions, { tools: toolsEnabled(scope), openTools }),
-        );
+        section.appendChild(renderFloatRow(server, state, actions, { tools: true, openTools }));
       }
-    }
-    if (scope === "global" && !isAll) {
-      // project 模式：全局工具不经中间层（supervisor 直呼），无法工具级禁用。
-      section.appendChild(el("div", { class: "dm-float-hint", text: t("globalToolHint") }));
     }
     state.floatPanel.appendChild(section);
   }

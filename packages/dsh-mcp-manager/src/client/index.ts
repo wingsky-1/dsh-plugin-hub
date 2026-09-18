@@ -257,14 +257,12 @@ export function apply(ctx: any): void {
           // 会退化为隐性 30s 轮询（对齐 notifier 语义：ping 不驱动业务刷新）。
           if (msg?.type === SSE_FRAMES.ping) return;
           if (msg !== undefined && msg.type === SSE_FRAMES.uiConfigChanged) {
-            // 配置变更（设置页保存 position/offset / middleware）→ 重新 GET /config
-            // 就地更新浮窗位置与中间层模式，非仅刷新 /servers；更新后重新定位
-            // 胶囊与（若展开的）面板。
+            // 配置变更（设置页保存 position/offset）→ 重新 GET /config 就地更新浮窗
+            // 位置，非仅刷新 /servers；更新后重新定位胶囊与（若展开的）面板。
             void api(state.API.config)
               .then((cfg: any) => {
                 if (cfg !== null && typeof cfg === "object") {
                   state.mcpUiConfig = cfg;
-                  if (typeof cfg.middleware === "string") state.middlewareMode = cfg.middleware;
                 }
                 state.updateFloatState?.();
                 if (state.floatOpen) renderFloatPanel(state, actions);

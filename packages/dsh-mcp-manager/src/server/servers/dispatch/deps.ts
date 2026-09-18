@@ -24,11 +24,10 @@ import type {
 import type * as pipelineApi from "../../pipeline/interface.ts";
 import type * as workspaceApi from "../../workspace/interface.ts";
 import type { ServerConfig } from "../../config/interface.ts";
-import type { MiddlewarePolicy } from "../../pipeline/interface.ts";
 import type { DisabledToolsMap } from "../../store/interface.ts";
 import type { ProjectUnit } from "../../connection/runtime/interface.ts";
 
-/** pipeline 域给本域的能力面：结果投影 / 超时兜底 / 取消息与脱敏 / 参数归一 / 策略裁决。 */
+/** pipeline 域给本域的能力面：结果投影 / 超时兜底 / 取消息与脱敏 / 参数归一 / 禁用裁决。 */
 export type DispatchPipelinePort = Pick<
   typeof pipelineApi,
   | "defaultCallResultFallbackText"
@@ -37,8 +36,6 @@ export type DispatchPipelinePort = Pick<
   | "msgOf"
   | "createRedactor"
   | "normalizeArguments"
-  | "policyAllows"
-  | "policyDenialReason"
   | "isToolDenied"
   | "toolDisabledReason"
 >;
@@ -106,8 +103,6 @@ export interface DispatchCallInput {
   readonly allServers: () => readonly ServerConfig[];
   /** 工具级禁用映射（root → server → Set<tool>）。 */
   readonly disabledTools: DisabledToolsMap;
-  /** 策略（按 @root/server 全名配置）。 */
-  readonly policy: MiddlewarePolicy;
   /** 目录 TTL（ms）：判断目录提示是否过期。 */
   readonly catalogTtlMs: number;
   /** 单次调用预算缺省值（server.toolCallTimeoutMs 缺省时用它）。 */

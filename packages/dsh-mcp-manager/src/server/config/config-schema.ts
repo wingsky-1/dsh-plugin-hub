@@ -119,8 +119,6 @@ export const Config: z<{
   storePath: string;
   announceCatalog: boolean;
   catalogMaxEntries: number;
-  middleware: "off" | "project" | "all";
-  middlewarePolicy: Record<string, unknown>;
   debug: {
     callStats: boolean;
     statsFile: string;
@@ -145,18 +143,6 @@ export const Config: z<{
     .default(DEFAULT_CATALOG_MAX_ENTRIES)
     .description("目录注入条目上限")
     .disabled(true),
-  middleware: z
-    .union([z.const("off"), z.const("project"), z.const("all")])
-    .default("project")
-    .description(
-      "MCP 中间层模式：off=直接注册 mcp__ 工具（默认兼容）；project=项目级走 ws_mcp_search/ws_mcp_call（推荐）；all=全部走中间层",
-    ),
-  middlewarePolicy: z
-    .dict(z.any())
-    .default({})
-    .description(
-      "中间层策略：{ allowTools: {<server>: [glob]}, denyTools: {<server>: [glob]} }，server 为裸名",
-    ),
   debug: DebugConfigSchema.disabled(true),
   ui: UiConfigSchema,
 });

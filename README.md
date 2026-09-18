@@ -193,7 +193,7 @@ node scripts/maintenance/repair-mcp-catalog-sessions.mjs --apply  # 落盘：先
 
 ### `@wingsky-1/dsh-mcp-manager`
 
-MCP 服务器管理器（stdio / streamable-http）：项目级/全局两级配置分工作目录维护；项目级 MCP 默认经中间层收敛为 4 个原子工具（`middleware: all` 全量收敛、设置页热切换）；工作空间隔离防串台；配置只存 `${ENV}` 引用不落盘密钥；提供运行时注册接口供其他插件注入 MCP；可选 MCP 调用统计与 debug 模式（metadata-only，默认关）
+MCP 服务器管理器（stdio / streamable-http）：项目级/全局两级配置分工作目录维护；全部 MCP 经中间层收敛为 4 个原子工具（模型不可见 `mcp__` 直呼工具）；工作空间隔离防串台；配置只存 `${ENV}` 引用不落盘密钥；提供运行时注册接口供其他插件注入 MCP；可选 MCP 调用统计与 debug 模式（metadata-only，默认关）
 
 ### `@wingsky-1/dsh-verify-isolated`
 

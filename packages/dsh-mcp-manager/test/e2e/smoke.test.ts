@@ -208,7 +208,7 @@ it("中间层工具注册（ws_mcp_search / ws_mcp_call / ws_mcp_list / ws_mcp_d
     emitStatus: () => {},
     catalogCachePath: () => "/tmp/cache.json",
   };
-  const mw = new McpMiddleware(host, {});
+  const mw = new McpMiddleware(host);
   const dispose = registerMiddlewareTools(ctx, mw, async (agent) => {
     const cwd = agent?.session?.header?.cwd;
     return cwd === "/proj" ? "/proj" : undefined;
@@ -334,7 +334,7 @@ it("search 早退分支（unit undefined）返回 truncated=false（P1-1）", as
     emitStatus: () => {},
     catalogCachePath: () => "/tmp/cache.json",
   };
-  const mw = new McpMiddleware(host, {});
+  const mw = new McpMiddleware(host);
   const dispose = registerMiddlewareTools(ctx, mw, async (agent) => {
     const cwd = agent?.session?.header?.cwd;
     return cwd === "/proj" ? "/proj" : undefined;
@@ -406,7 +406,7 @@ it("中间层 all 模式：@global 覆盖（list/search 可见全局，call 放�
     emitStatus: () => {},
     catalogCachePath: () => "/tmp/cache.json",
   };
-  const mw = new McpMiddleware(host, {});
+  const mw = new McpMiddleware(host);
   // 预置目录（模拟 last-good 已发现；不 spawn 子进程）：虚拟连接会把 toolDefinitions
   // 投影进目录，与真实运行时同一条路径。
   const projUnit = {
@@ -456,7 +456,11 @@ it("中间层 all 模式：@global 覆盖（list/search 可见全局，call 放�
     listed.servers.some((s) => s.server === fullServerName(MIDDLEWARE_GLOBAL_ROOT, "gctx")),
     "all 模式 list 含 @global 服务器",
   ).toBeTruthy();
-  expect(listed.mode).toBe("all");
+  expect(Object.hasOwn(listed, "mode"), "#767 笔 2：ws_mcp_list 输出不再有 mode 字段").toBe(false);
+  expect(
+    listDef.output.schema.required,
+    "ws_mcp_list output schema 的 required 恰好 5 项且无 mode",
+  ).toEqual(["workspace", "servers", "totalServers", "totalTools", "toolsTruncated"]);
   // search：合并查询命中 @global 工具
   const found = await searchDef.execute({ query: "全局" }, { agent });
   expect(
@@ -579,7 +583,7 @@ it("#362 A2 / #767 笔 1a：project root 会话下 @global 可达（「改 mcp__
     catalogCachePath: () => "/tmp/cache.json",
     isGlobalServer: (name) => name === "gctx",
   };
-  const mw = new McpMiddleware(host, {});
+  const mw = new McpMiddleware(host);
   // @global 单元 + 虚拟连接：目录投影的真实来源，detail 才能真正命中。
   await mw.projectUnitFor(MIDDLEWARE_GLOBAL_ROOT);
   await mw.ensureConnected(MIDDLEWARE_GLOBAL_ROOT, "gctx");
@@ -674,7 +678,7 @@ it("#362 A1：ws_mcp_list 带 serverFilter 过滤 0 命中 → message 可归因
     catalogCachePath: () => "/tmp/cache.json",
     isGlobalServer: () => false,
   };
-  const mw = new McpMiddleware(host, {});
+  const mw = new McpMiddleware(host);
   // 预置目录（模拟 last-good 已发现；不 spawn 子进程）：经真实虚拟连接路径投影。
   mw.units.set("/proj", {
     root: "/proj",
@@ -728,35 +732,21 @@ it("#362 P0-1：工具级禁用三入口一致（callTool / pre-execute guard / 
   } = await import("../../lib/index.js");
   // 1) isToolDenied 纯函数：项目 root 命中 + @global 回落 + 哈希超长名不误禁。
   const map = parseDisabledTools({ "/proj": { ctx: ["use_ctx"] }, "@global": { gctx: ["use_g"] } });
+  expect(isToolDenied(map, fullServerName("/proj", "ctx"), "use_ctx"), "项目 root 记录命中").toBe(
+    true,
+  );
+  expect(isToolDenied(map, fullServerName("/proj", "ctx"), "other"), "未禁用工具放行").toBe(false);
   expect(
-    isToolDenied(map, undefined, fullServerName("/proj", "ctx"), "use_ctx"),
-    "项目 root 记录命中",
-  ).toBe(true);
-  expect(
-    isToolDenied(map, undefined, fullServerName("/proj", "ctx"), "other"),
-    "未禁用工具放行",
-  ).toBe(false);
-  expect(
-    isToolDenied(map, undefined, fullServerName("/proj", "gctx"), "use_g"),
+    isToolDenied(map, fullServerName("/proj", "gctx"), "use_g"),
     "@global 共享记录回落命中",
   ).toBe(true);
   expect(
-    isToolDenied(map, undefined, fullServerName("@global", "gctx"), "use_g"),
+    isToolDenied(map, fullServerName("@global", "gctx"), "use_g"),
     "@global root 自身记录命中",
   ).toBe(true);
-  expect(
-    isToolDenied(map, undefined, "mcp__ctx__use_ctx_hash123456", "x"),
-    "哈希超长名不可逆 → 不误禁",
-  ).toBe(false);
-  expect(
-    isToolDenied(
-      new Map(),
-      { denyTools: { ctx: ["evil"] } },
-      fullServerName("/proj", "ctx"),
-      "evil",
-    ),
-    "策略 deny 仍生效",
-  ).toBe(true);
+  expect(isToolDenied(map, "mcp__ctx__use_ctx_hash123456", "x"), "哈希超长名不可逆 → 不误禁").toBe(
+    false,
+  );
   // 2) registerMiddlewareTools 的 pre-execute guard：mcp__ 直呼被 deny。
   const registered = [];
   const ctx = {
@@ -814,7 +804,7 @@ it("#362 P0-1：工具级禁用三入口一致（callTool / pre-execute guard / 
     catalogCachePath: () => "/tmp/cache.json",
     isGlobalServer: () => false,
   };
-  const mw = new McpMiddleware(host, {});
+  const mw = new McpMiddleware(host);
   const dispose = registerMiddlewareTools(
     ctx,
     mw,
@@ -992,17 +982,19 @@ it("client 注册 settings.plugin.item 卡（id/key = 宿主命名空间 dsh-mcp
     "卡片 key/id 引用宿主命名空间 dsh-mcp-manager",
   ).toBeTruthy();
 });
-it("#362 客户端：工具级禁用 checkbox + scope 分组 + project 全局提示 + middleware 下拉", () => {
+it("#362 客户端：工具级禁用 checkbox + scope 分组 + 全局组工具开关（#767 笔 2：模式下拉已删）", () => {
   const clientSrc = readFileSync(new URL("../../lib/client.js", import.meta.url), "utf8");
   // 工具 checkbox 经 tool-disable API 持久化。
   expect(clientSrc.includes("tool-disable"), "客户端含 tool-disable API 调用").toBeTruthy();
   expect(clientSrc.includes('type: "checkbox"'), "工具开关为 checkbox").toBeTruthy();
   expect(clientSrc.includes("dm-float-tools"), "浮窗折叠式工具清单存在").toBeTruthy();
+  // #767 笔 2：全局组与项目组同权渲染工具开关（`tools: true`），模式下拉与「切 all」提示已删。
   expect(
-    clientSrc.includes("切 all 模式可管理全局工具"),
-    "project 模式全局组提示文案",
+    clientSrc.includes("{ tools: true, openTools }"),
+    "项目组与全局组一律渲染工具开关",
   ).toBeTruthy();
-  expect(clientSrc.includes("dm-set-middleware"), "设置页中间层模式下拉存在").toBeTruthy();
+  expect(clientSrc.includes("dm-set-middleware"), "设置页模式下拉已删").toBe(false);
+  expect(clientSrc.includes("globalToolHint"), "全局工具提示 key 已删").toBe(false);
   // 浮窗与管理面板均按 scope 分组。
   expect(clientSrc.includes("dm-float-group-title"), "浮窗 scope 分组标题存在").toBeTruthy();
   expect(
@@ -1316,6 +1308,16 @@ it("Config 导出且含 ui 子对象（默认值与合法值域）", () => {
   }
   const bottom = Config({ ui: { position: "bottom-right" } });
   expect(bottom.ui.position, "bottom-right 是合法 position").toBe("bottom-right");
+  // #767 笔 2：两个中间层配置键删净——顶层键集恰好 6 项且不含 middleware / middlewarePolicy
+  // （键集判据用逐字相等，多键少键都红；storePath 无默认值，不在其中）。
+  expect(Object.keys(parsed).sort(), "Config 顶层键集（8→6）").toEqual([
+    "announceCatalog",
+    "announceToAgent",
+    "catalogMaxEntries",
+    "debug",
+    "enabled",
+    "ui",
+  ]);
 });
 it("normalizeUiConfig：默认 / 合法值透传 / 非法回退（不抛）", () => {
   // 未配置 → 默认
@@ -2112,7 +2114,6 @@ describe("路由（makeRoutes / events / health / tool-disable / resume）", () 
       logger: { warn: () => {}, info: () => {}, error: () => {} },
       summary: () => ({ servers: [], counts: {} }),
       uiConfig: () => uiCfg,
-      middlewareMode: "project",
       updateUiConfig: async (raw) => {
         uiCfg = normalizeUiConfig(raw);
         return uiCfg;
@@ -2230,7 +2231,7 @@ describe("路由（makeRoutes / events / health / tool-disable / resume）", () 
     expect(res.state.status).toBe(403);
   });
 
-  it("config GET → 200 读回（默认 top-right/8/8/40 + middleware 字段）", async () => {
+  it("config GET → 200 读回（默认 top-right/8/8/40）", async () => {
     const res = fakeRes();
     await find(ROUTES.config).handler(fakeReq("GET", ROUTES.config), res);
     expect(res.state.status).toBe(200);
@@ -2239,8 +2240,13 @@ describe("路由（makeRoutes / events / health / tool-disable / resume）", () 
     expect(body.offsetX).toBe(8);
     expect(body.offsetY).toBe(8);
     expect(body.blankY).toBe(40);
-    // 单池（#767 笔 1a）：模式面恒报有效事实 "all"（笔 2 随配置键一起删）。
-    expect(body.middleware, "config GET 附带中间层有效模式").toBe("all");
+    // #767 笔 2：`middleware` 键已删，GET 只回 UI 配置（键集逐字相等防残留）。
+    expect(Object.keys(body).sort(), "键集 = UI 配置 5 键的子集且无模式键").toEqual([
+      "blankY",
+      "offsetX",
+      "offsetY",
+      "position",
+    ]);
   });
 
   it("config 非 loopback GET → 200（只读 UI 配置放开）", async () => {
@@ -2277,20 +2283,24 @@ describe("路由（makeRoutes / events / health / tool-disable / resume）", () 
       offsetY: 20,
       blankY: 60,
       zIndexBase: 10,
-      middleware: "all",
     });
   });
 
-  it("config POST middleware → 200 且读回有效模式（单池后恒 all）", async () => {
-    const write = fakeRes();
-    await find(ROUTES.config).handler(fakeReq("POST", ROUTES.config, { middleware: "off" }), write);
-    expect(write.state.status).toBe(200);
-    const read = fakeRes();
-    await find(ROUTES.config).handler(fakeReq("GET", ROUTES.config), read);
-    const readBack = JSON.parse(read.state.body);
-    // 单池：设置面写值仍被接受（配置键归笔 2），但**有效模式**恒为 all——
-    // 诊断面不回显那个已不再影响行为的配置值。
-    expect(readBack.middleware, "读回有效模式（恒 all）").toBe("all");
+  it("config POST 未知顶层键 → 400 且不落盘（M7）", async () => {
+    const readNow = async () => {
+      const read = fakeRes();
+      await find(ROUTES.config).handler(fakeReq("GET", ROUTES.config), read);
+      return JSON.parse(read.state.body);
+    };
+    const before = await readNow();
+    // `middleware` / `middlewarePolicy` 已删（笔 2）：它们与任意陌生键同走 400 路径。
+    for (const body of [{ middleware: "off" }, { middlewarePolicy: {} }, { foo: 1 }]) {
+      const write = fakeRes();
+      await find(ROUTES.config).handler(fakeReq("POST", ROUTES.config, body), write);
+      expect(write.state.status, `未知键 ${JSON.stringify(body)} 应 400`).toBe(400);
+      expect(JSON.parse(write.state.body).error).toMatch(/unknown config key\(s\)/);
+    }
+    expect(await readNow(), "未知键不落盘：读回与写前逐字相等").toEqual(before);
   });
 
   it("config POST 非 loopback → 403（写操作不开放远程页面）", async () => {
@@ -2604,60 +2614,19 @@ it("默认配置注册路由与提示词（空存储不连接）", async () => {
     rmSync(dir, { recursive: true, force: true });
   }
 });
-it("#362 中间层模式热切换：off 启动也可切到 project（设置页下拉路径）", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-manager-hotswitch-"));
+it("#767 S1-5b：apply 恒注册中间层工具（与配置键无关）", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-manager-mwtools-"));
   const ctx = fakeCtx();
   try {
-    await apply(ctx, { enabled: true, middleware: "off", storePath: join(dir, "dsh-mcp.json") });
-    // off 启动**也注册**中间层工具（#767 S1-5b 裁决 (c)'）：封装定义条目恒交中间层虚拟连接，
-    // off 下它没有 mcp__ 宿主注册可回退，触达面只能是 ws_mcp_call；目标态没有模式键，
-    // 中间层实例与工具恒在（D8 的「off 不建池」随该裁决作废）。
+    await apply(ctx, { enabled: true, storePath: join(dir, "dsh-mcp.json") });
+    // 中间层实例与 ws_mcp_* 无条件装配（单池后它是唯一连接路径）；模板状态已无模式键，
+    // 这条断言不再依赖任何热切换路径（#362 热切换用例随配置键一并删除）。
     const toolNames = ctx.registeredTools.map((def) => def.name);
-    expect(toolNames.includes("ws_mcp_call"), "off 启动也注册中间层工具").toBeTruthy();
-    const configRoute = ctx.routes.find((route) => route.path === ROUTES.config);
-    expect(configRoute, "config 路由已注册").toBeTruthy();
-    // POST middleware=project → 热切换生效：中间层工具注册。
-    const res = fakeRes();
-    const req = {
-      method: "POST",
-      url: ROUTES.config,
-      socket: { remoteAddress: "127.0.0.1" },
-      headers: {
-        host: "localhost:3080",
-        origin: "http://localhost:3080",
-        "sec-fetch-site": "same-origin",
-      },
-      async *[Symbol.asyncIterator]() {
-        yield Buffer.from(JSON.stringify({ middleware: "project" }));
-      },
-    };
-    await configRoute.handler(req, res);
-    expect(res.state.status).toBe(200);
-    const body = JSON.parse(res.state.body);
-    // 单池（#767 笔 1a）：设置面写值仍被接受，但读回的是**有效模式**（恒 all）。
-    expect(body.middleware, "热切换后 config 读回有效模式 all").toBe("all");
+    expect(toolNames.includes("ws_mcp_call"), "apply 恒注册中间层工具").toBeTruthy();
     expect(
-      ctx.registeredTools.some((def) => def.name === "ws_mcp_call"),
-      "热切换后注册中间层工具",
+      ctx.routes.some((route) => route.path === ROUTES.config),
+      "config 路由已注册",
     ).toBeTruthy();
-    // 再切回 off：中间层工具卸载。
-    const res2 = fakeRes();
-    const req2 = {
-      method: "POST",
-      url: ROUTES.config,
-      socket: { remoteAddress: "127.0.0.1" },
-      headers: {
-        host: "localhost:3080",
-        origin: "http://localhost:3080",
-        "sec-fetch-site": "same-origin",
-      },
-      async *[Symbol.asyncIterator]() {
-        yield Buffer.from(JSON.stringify({ middleware: "off" }));
-      },
-    };
-    await configRoute.handler(req2, res2);
-    expect(res2.state.status).toBe(200);
-    expect(JSON.parse(res2.state.body).middleware, "切回 off 后读回仍是有效模式 all").toBe("all");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -2741,70 +2710,6 @@ it("config POST 经 apply 注入 settings：update 保留 this 不再 400（回�
       y: 20,
       blankY: 60,
     });
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-});
-
-// #389：settings 用户层持久化的 middleware 模式，apply 启动后同步到运行时——
-// 保存路径（config POST middleware 分支）写 settings 用户层，而 apply 读组合层
-// config.middleware（不含用户层覆盖）→ 重启后回退 project。此处 settings 注入
-// 完成后 onChange 触发 syncMiddlewareFromSettings，把持久化值热切换生效。
-it("#389：settings 持久化 middleware → apply 后运行时同步", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-manager-mw389-"));
-  // scope.get() 返回 settings 合并面：含用户层保存的 middleware: "all"（config 缺省 project）。
-  let scopeValue = {
-    ui: { position: "top-right", offset: { x: 8, y: 8, blankY: 40 } },
-    middleware: "all",
-  };
-  const settingsStub = {
-    register(_ns, _schema, _opts) {
-      return { get: () => ({ ...scopeValue }), watch: () => {} };
-    },
-    async write(ns, patch) {
-      scopeValue = { ...(scopeValue ?? {}), ...(patch ?? {}) };
-    },
-    update(ns, patch) {
-      if (!this || typeof this.write !== "function") {
-        throw new TypeError("settings.update 被以错误 this 调用");
-      }
-      return this.write(ns, patch);
-    },
-  };
-  const sctx = {
-    settings: settingsStub,
-    effect: (fn) => {
-      fn();
-      return () => {};
-    },
-  };
-  const ctx = fakeCtx({
-    inject: (keys, cb) => {
-      if (Array.isArray(keys) && keys.includes("settings")) cb(sctx);
-      return () => {};
-    },
-  });
-  const localReq = (method, url, body) => ({
-    method,
-    url,
-    socket: { remoteAddress: "127.0.0.1" },
-    headers: {
-      host: "localhost:3080",
-      origin: "http://localhost:3080",
-      "sec-fetch-site": "same-origin",
-    },
-    async *[Symbol.asyncIterator]() {
-      if (body !== undefined) yield Buffer.from(JSON.stringify(body));
-    },
-  });
-  try {
-    await apply(ctx, { enabled: true, storePath: join(dir, "dsh-mcp.json") });
-    const configRoute = ctx.routes.find((route) => route.path === ROUTES.config);
-    expect(configRoute, "config 路由已注册").toBeTruthy();
-    const read = fakeRes();
-    await configRoute.handler(localReq("GET", ROUTES.config), read);
-    const body = JSON.parse(read.state.body);
-    expect(body.middleware, "settings 持久化 middleware 启动后同步（#389 重启恢复）").toBe("all");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -2959,21 +2864,12 @@ it("renderMcpCatalogMessage 结构与声明", () => {
   expect(msg.content[0].text).toMatch(/`code-graph`: 代码图谱/);
   expect(typeof msg.id === "string" && msg.id.length > 0).toBeTruthy();
 
-  // 纯 global 条目 → 直呼引导，但名字形态改成 id 口径（#767 S1-5b 裁定 AJ）
+  // 纯 global 条目 → 同样引导经中间层（#767 笔 2：`mcp__*` 已不在模型可见面，
+  // 原来「全局一律直呼」的那条 mode 分支是笔 1b 之后已假的事实，随 `mode` 删除）。
   const onlyGlobal = renderMcpCatalogMessage([{ name: "ctx", scope: "global" }]);
-  expect(onlyGlobal.content[0].text).toMatch(/mcp__<id>__<tool>/);
-  expect(onlyGlobal.content[0].text, "id 不透明：只能从工具清单读").toMatch(/opaque/);
-  // 直呼引导同时给兜底寻址：没有直呼注册的全局服务器用 ws_mcp_call。
-  expect(onlyGlobal.content[0].text, "无直呼注册的全局服务器兜底寻址").toMatch(/ws_mcp_call/);
-  expect(onlyGlobal.content[0].text).not.toMatch(/mcp__<server>__<tool>/);
-  // 主控复核恢复（写手曾以「新文案自身含 ws_mcp_search」为由删掉这一行，需实证）：
-  expect(onlyGlobal.content[0].text, "纯 global 不引导中间层检索").not.toMatch(/ws_mcp_search/);
-  // P2-4：all 模式下纯 global 条目也引导经中间层（全局走中间层，不再 mcp__ 直呼）
-  const onlyGlobalAll = renderMcpCatalogMessage([{ name: "ctx", scope: "global" }], "all");
-  expect(onlyGlobalAll.content[0].text, "all 模式纯 global 引导经中间层").toMatch(/ws_mcp_search/);
-  expect(onlyGlobalAll.content[0].text, "all 模式不再给出直呼引导").not.toMatch(
-    /mcp__<id>__<tool>/,
-  );
+  expect(onlyGlobal.content[0].text, "纯 global 引导经中间层检索").toMatch(/ws_mcp_search/);
+  expect(onlyGlobal.content[0].text, "纯 global 用 ws_mcp_call 触达").toMatch(/ws_mcp_call/);
+  expect(onlyGlobal.content[0].text, "不再给出 mcp__ 直呼引导").not.toMatch(/mcp__<id>__<tool>/);
 
   // #192 AC-3：双缺省行仅渲染名字（无冒号描述），带描述条目渲染不变
   const mixed = renderMcpCatalogMessage([
@@ -3333,6 +3229,10 @@ describe("核心化 service（#329 阶段1）：runtimeRegistry / registerServer
     });
     manager.reconcileServers();
     expect(manager.runtimeRegistry.has("svc-all"), "runtime 条目保留").toBeTruthy();
+  });
+
+  it("#767 笔 2：summary 不再回显 middlewareMode", () => {
+    expect("middlewareMode" in manager.summary(), "/servers 的 summary 已无模式字段").toBe(false);
   });
 
   it("summary 并入 runtime 条目（查询面可见 / disabled 工具列表为空）", async () => {

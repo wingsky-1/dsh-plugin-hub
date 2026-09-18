@@ -441,8 +441,10 @@ describe("health 路由", () => {
 
   it("health 补中间层连接计数", () => {
     const { payload } = healthPayload();
-    // mode 恒 "all"：单池后有效模式就是 all（笔 2 随配置键一起删）。
-    expect(payload.middleware).toEqual({ mode: "all", units: 2, connections: 2, connected: 1 });
+    // #767 笔 2：middleware 子对象只剩三个计数键——模式键已随 `middleware` 配置键删除。
+    expect(payload.middleware).toEqual({ units: 2, connections: 2, connected: 1 });
+    expect("mode" in payload.middleware).toBe(false);
+    expect(payload.middleware.units).toBe(2);
   });
 
   /** health 的计数判据必须打在真 statusOf 上：假池只能验「接线到没到」，验不了读时刷新。 */
@@ -467,7 +469,7 @@ describe("health 路由", () => {
     const { manager, route } = healthFixture();
     const servers = [{ name: "x", transport: "stdio", command: "echo", enabled: true }];
     const tools = fakeToolsService({ schemas: [{ name: "mcp__id-x__t" }] });
-    const mw = new McpMiddleware(realPoolHost(tools, servers), {});
+    const mw = new McpMiddleware(realPoolHost(tools, servers));
     mw.units.set("/root-a", {
       root: "/root-a",
       connections: new Map([
@@ -498,7 +500,6 @@ describe("health 路由", () => {
       return JSON.parse(res.state.body).middleware;
     };
     expect(middlewarePayload()).toEqual({
-      mode: "all",
       units: 1,
       connections: 1,
       connected: 1,
@@ -521,7 +522,7 @@ describe("health 路由", () => {
       toolDefinitions: [],
     };
     const tools = fakeToolsService();
-    const mw = new McpMiddleware(realPoolHost(tools, [virtual]), {});
+    const mw = new McpMiddleware(realPoolHost(tools, [virtual]));
     mw.units.set("/root-a", {
       root: "/root-a",
       connections: new Map([
@@ -734,26 +735,23 @@ describe("import/json：字段校验与 skip/overwrite", () => {
   });
 });
 
-// B7：POST /config 非法 middleware → 400 拒绝（不热切换、不落盘） ----
-describe("B7：POST /config 非法 middleware → 400 拒绝", () => {
+// M7：POST /config 未知顶层键 → 400 拒绝（且不落盘） ----
+describe("M7：POST /config 未知顶层键 → 400 拒绝", () => {
   function configFixture() {
     const { manager } = setup();
     const uiUpdates = [];
     manager.uiUpdate = async (patch) => {
-      // 记录落盘意图：非法值不得触达（现状会落盘 {middleware:"off"}）
-      uiUpdates.push(String(patch.middleware));
+      // 记录落盘意图：未知键不得触达 uiUpdate（知道错了就不许写）。
+      uiUpdates.push(patch);
     };
     const routes = makeRoutes(manager);
     const configRoute = routes.find((r) => r.path === ROUTES.config);
     return { manager, configRoute, uiUpdates };
   }
 
-  async function postBogus() {
+  async function postBody(body) {
     const fixture = configFixture();
-    const res = await callHandler(
-      fixture.configRoute,
-      fakeReq("POST", ROUTES.config, { middleware: "bogus" }),
-    );
+    const res = await callHandler(fixture.configRoute, fakeReq("POST", ROUTES.config, body));
     return { ...fixture, res };
   }
 
@@ -762,25 +760,37 @@ describe("B7：POST /config 非法 middleware → 400 拒绝", () => {
     expect(configRoute).toBeTruthy();
   });
 
-  it("B7：非法 middleware 应 400 拒绝（现状静默回落 off 并落盘）", async () => {
-    const { res } = await postBogus();
+  it("M7：未知顶层键应 400 拒绝", async () => {
+    const { res } = await postBody({ middleware: "all" });
     expect(res.status).toBe(400);
   });
 
-  it("错误文案指明 middleware 非法", async () => {
-    const { res } = await postBogus();
-    expect(res.payload.error).toMatch(/middleware/);
+  it("M7：已删配置键 middleware / middlewarePolicy 一律按未知键拒绝", async () => {
+    const mw = await postBody({ middleware: "project" });
+    expect(mw.res.status).toBe(400);
+    const policy = await postBody({ middlewarePolicy: { denyTools: {} } });
+    expect(policy.res.status).toBe(400);
   });
 
-  it("非法值不改写运行模式（运行时模式字段已随 M9 删除，无第二事实源可写）", async () => {
-    const { manager } = await postBogus();
-    // 单池（#767 笔 1a）：manager 上的模式镜像字段已删——非法值既不落盘（下一条）、
-    // 也不存在任何可被它改写的运行状态。有效模式是由行为决定的事实（恒 all）。
-    expect("middlewareMode" in manager).toBe(false);
+  it("错误文案列出全部未知键", async () => {
+    const { res } = await postBody({ foo: 1, middleware: "all" });
+    expect(res.payload.error).toBe("unknown config key(s): foo, middleware");
   });
 
-  it("非法值不触达 uiUpdate（不落盘）", async () => {
-    const { uiUpdates } = await postBogus();
+  it("未知键不触达 uiUpdate（不落盘）", async () => {
+    const { uiUpdates } = await postBody({ middleware: "all" });
     expect(uiUpdates.length).toBe(0);
+  });
+
+  it("manager 上没有模式镜像字段（无第二事实源可写）", () => {
+    const { manager } = configFixture();
+    expect("middlewareMode" in manager).toBe(false);
+    expect("setMiddlewareMode" in manager).toBe(false);
+  });
+
+  it("合法扁平 UI 键 → 200 并落盘", async () => {
+    const { res, uiUpdates } = await postBody({ position: "top-left", offsetX: 12 });
+    expect(res.status).toBe(200);
+    expect(uiUpdates.length).toBe(1);
   });
 });

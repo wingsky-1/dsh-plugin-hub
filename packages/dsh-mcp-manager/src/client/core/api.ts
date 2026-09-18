@@ -23,8 +23,8 @@ export function toolDisableServerKey(server: any, state: McpState): string | und
 
 /**
  * 会话 cwd 查询参数（C7/#412 自愈）：connect/reconnect/disable 等操作携带
- * 当前会话 cwd，宿主 maybeSession 据此恢复会话（middleware project 级连接
- * 需要；宿主 setSession 幂等短路，正常时零副作用）。空 cwd 返回空串。
+ * 当前会话 cwd，宿主 maybeSession 据此恢复会话（项目级连接需要；
+ * 宿主 setSession 幂等短路，正常时零副作用）。空 cwd 返回空串。
  */
 export function cwdQueryOf(state: McpState): string {
   return typeof state.currentCwd === "string" && state.currentCwd !== ""

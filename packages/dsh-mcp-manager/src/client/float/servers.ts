@@ -142,7 +142,7 @@ export function renderServer(
   const busy = server.status === "connecting" || server.status === "reconnecting";
   const scopeQuery = `&scope=${server.scope}`;
   // #412 复报：宿主 dsh web 重启后 projectRoot 丢失，connect/reconnect 路由的
-  // maybeSession 需 cwd 才能恢复会话（否则 middleware connect(scope=project) 抛
+  // maybeSession 需 cwd 才能恢复会话（否则 connect(scope=project) 抛
   // "no active project session"）。带上当前会话 cwd，宿主 setSession 幂等短路，
   // 正常时零副作用。
   const cwdQuery = cwdQueryOf(state);
@@ -240,7 +240,7 @@ export function renderServer(
 }
 
 /** 渲染服务器列表页（#362 交互拍板 1a：项目级 / 全局级两大分组，各自内部再按状态）。
- * project 模式：全局组显示服务器但无工具 checkbox（提示切 all 模式可管理全局工具）。 */
+ * 单池（#767）后两大分组的服务器都经中间层，工具 checkbox 一律可用。 */
 export function renderServers(state: McpState, actions: UiActions): void {
   if (state.bodyEl === undefined) return;
   // C8：checkbox 操作后 actions.refresh 全量重建会丢 <details> 折叠态——渲染
@@ -255,8 +255,6 @@ export function renderServers(state: McpState, actions: UiActions): void {
     state.bodyEl.appendChild(el("div", { class: "dm-status", text: t("serversEmpty") }));
     return;
   }
-  const isAll = state.middlewareMode === "all";
-  const toolsEnabled = (scope: string) => scope === "project" || isAll;
   for (const scope of ["project", "global"]) {
     const list = state.servers.filter((server: any) => server.scope === scope);
     if (list.length === 0) continue;
@@ -288,14 +286,9 @@ export function renderServers(state: McpState, actions: UiActions): void {
         }),
       );
       for (const server of [...bucket].sort((a: any, b: any) => a.name.localeCompare(b.name))) {
-        sub.appendChild(
-          renderServer(server, state, actions, { tools: toolsEnabled(scope), openTools }),
-        );
+        sub.appendChild(renderServer(server, state, actions, { tools: true, openTools }));
       }
       section.appendChild(sub);
-    }
-    if (scope === "global" && !isAll) {
-      section.appendChild(el("div", { class: "dm-status", text: t("globalToolHint") }));
     }
     state.bodyEl.appendChild(section);
   }

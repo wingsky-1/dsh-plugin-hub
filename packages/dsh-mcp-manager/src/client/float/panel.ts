@@ -43,7 +43,6 @@ async function doRefresh(state: McpState, actions: UiActions): Promise<boolean> 
     state.servers = payload.servers ?? [];
     state.counts = payload.counts ?? {};
     state.projectRoot = payload.projectRoot;
-    if (typeof payload.middlewareMode === "string") state.middlewareMode = payload.middlewareMode;
     renderPill(state);
     if (state.floatOpen) renderFloatPanel(state, actions);
     const countsEl = document.querySelector(".dm-counts");
@@ -157,8 +156,7 @@ export function showPanel(state: McpState, actions: UiActions): void {
   state.open = true;
   state.overlay.hidden = false;
   // C10：面板打开主动刷新（refresh 单飞去重，与 switchTab 的空列表刷新重叠无害）——
-  // 中间层热切换 reconcile 无变化不发 summary 帧时，面板旧数据会与新 middlewareMode
-  // 短期错配；打开即拉最新数据消除该窗口。
+  // 面板可能停在关闭期间的旧快照上；打开即拉最新数据消除该窗口。
   void refresh(state, actions);
   switchTab(state, actions, "servers");
 }

@@ -4,12 +4,12 @@
  *
  * 覆盖：
  * - makeResolveRoot 基本路由（agent-less → undefined / cwd 项目 root 优先）
- * - B3 红测：all 模式空 cwd 回落 @global 含 runtime 源（runtimeRegistry 并集）
+ * - B3 红测：空 cwd 回落 @global 含 runtime 源（runtimeRegistry 并集）
  *
  * - normalizeScope 全分支（#767 S1-5c 自 unit-transport.test.ts 迁入：被测对象是 workspace
  *   域的纯函数，且是全仓唯一覆盖点——随自研连接栈退役，原宿主文件已删）
  *
- * 其余域函数（findProjectRoot/normalizedProjectRoot/full-name/middleware-mode）由
+ * 其余域函数（findProjectRoot/normalizedProjectRoot/full-name）由
  * unit-manager2 / unit-middleware 既有断言面覆盖（T1：经 src/index.ts 公共 re-export 面）。
  */
 import { mkdtempSync, rmSync } from "node:fs";
