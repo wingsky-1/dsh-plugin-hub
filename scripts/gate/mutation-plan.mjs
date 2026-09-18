@@ -25,6 +25,7 @@
 import { appendFileSync, existsSync, readFileSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { failClosed } from "../lib/gate-exit.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const CONF_DIR = join(ROOT, "stryker.conf.d");
@@ -152,18 +153,16 @@ export function buildShardMatrix(segs, peaks) {
 function main() {
   const segs = listSegments();
   if (segs.length === 0) {
-    console.error(`[mutation-plan] ${CONF_DIR} 下无 dsh-*.json —— 段集合为空（fail-closed）`);
-    return 2;
+    failClosed(`[mutation-plan] ${CONF_DIR} 下无 dsh-*.json —— 段集合为空（fail-closed）`);
   }
   let ledger = null;
   if (existsSync(LEDGER_PATH)) {
     try {
       ledger = JSON.parse(readFileSync(LEDGER_PATH, "utf8"));
     } catch (e) {
-      console.error(
+      failClosed(
         `[mutation-plan] 台账不可解析：${LEDGER_PATH} —— ${String(e.message).split("\n")[0]}`,
       );
-      return 2;
     }
   }
   const peaks = fullScopePeaks(ledger);

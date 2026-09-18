@@ -16,9 +16,11 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, readdirSync } from "node:fs";
+import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { spawnSync } from "node:child_process";
 
 import {
   checkLedgerEntry,
@@ -32,6 +34,7 @@ import { checkLedger, ledgerCoverage } from "../gate/mutation-ledger.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const LEDGER_PATH = join(ROOT, "scripts", "data", "mutation-segment-ledger.json");
+const SCRIPT = join(ROOT, "scripts", "gate", "mutation-ledger.mjs");
 
 /** 构造一行 GHA 原始日志（口径：`<job>\t<step>\t<timestamp>Z <content>`，时间戳与正文间单空格）。 */
 const line = (ts, body) => `job\tSTEP\t${ts}Z ${body}`;
@@ -266,4 +269,42 @@ test("入库台账：历史段必须在 superseded 登记取代关系且指向�
     for (const r of sup.replacedBy)
       assert.ok(expected.has(r), `superseded.${s}.replacedBy 指向不存在的段 ${r}`);
   }
+});
+
+test("fail-closed：缺必填参数 → exit 2 且统一故障注解（不进入采集）", () => {
+  const r = spawnSync(process.execPath, [SCRIPT], { cwd: ROOT, encoding: "utf8" });
+  assert.equal(r.status, 2, String(r.stderr));
+  assert.match(r.stderr, /^::error::门禁故障（非判据结论）：用法：--run <id> --from-log/m);
+  assert.equal(r.stdout, "");
+});
+
+test("fail-closed：日志中无 stryker 段 → exit 2 且统一故障注解（不触网）", () => {
+  const dir = mkdtempSync(join(tmpdir(), "ledger-"));
+  const log = join(dir, "empty.log");
+  writeFileSync(log, "nothing about mutation here\n");
+  try {
+    const r = spawnSync(
+      process.execPath,
+      [SCRIPT, "--run", "1", "--from-log", log, "--scope", "full"],
+      {
+        cwd: ROOT,
+        encoding: "utf8",
+      },
+    );
+    assert.equal(r.status, 2, `${r.stdout}${r.stderr}`);
+    assert.match(
+      r.stderr,
+      /^::error::门禁故障（非判据结论）：\[ledger\] 日志中未解析到任何 stryker 段/m,
+    );
+    assert.equal(r.stdout, "");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("CLI 三态：--check 通过仍 exit 0 且无故障注解", () => {
+  const r = spawnSync(process.execPath, [SCRIPT, "--check"], { cwd: ROOT, encoding: "utf8" });
+  assert.equal(r.status, 0, String(r.stderr));
+  assert.doesNotMatch(`${r.stdout}${r.stderr}`, /::error::门禁故障/);
+  assert.match(r.stdout, /--check 通过/);
 });

@@ -195,8 +195,7 @@ function incompleteShardSegs(runId) {
 /** --check 模式：校验入库台账并打印覆盖统计。 */
 function runCheck() {
   if (!existsSync(LEDGER_PATH)) {
-    console.error(`[ledger] 台账不存在：${LEDGER_PATH}`);
-    return 2;
+    failClosed(`[ledger] 台账不存在：${LEDGER_PATH}`);
   }
   const problems = checkLedger(JSON.parse(readFileSync(LEDGER_PATH, "utf8")), currentSegs());
   for (const p of problems) console.error(`[ledger] ${p}`);
@@ -216,22 +215,23 @@ function runCheck() {
   return 0;
 }
 
-/** 生成模式的必填参数：缺失或取值非法都是用法错误（退出码 2），不进入采集。 */
+/** 生成模式的必填参数：缺失或取值非法返回 { error }（调用方 failClosed），成功返回 { args }。 */
 function resolveRunArgs() {
   const runId = opt("--run");
   const fromLog = opt("--from-log");
   if (runId === undefined || fromLog === undefined) {
-    console.error(
-      "用法：--run <id> --from-log <path> [--workflow <name>] --scope <full|incremental> --write",
-    );
-    return null;
+    return {
+      error:
+        "用法：--run <id> --from-log <path> [--workflow <name>] --scope <full|incremental> --write",
+    };
   }
   const scope = opt("--scope");
   if (scope !== "full" && scope !== "incremental") {
-    console.error("[ledger] --scope 必须是 full 或 incremental（口径必须显式，否则耗时不可比）");
-    return null;
+    return {
+      error: "[ledger] --scope 必须是 full 或 incremental（口径必须显式，否则耗时不可比）",
+    };
   }
-  return { runId, fromLog, scope };
+  return { args: { runId, fromLog, scope } };
 }
 
 /** 组装本次实测条目；结论非 success 的 shard 先排除（理由见下）。 */
@@ -290,15 +290,15 @@ function emitLedger(ledger, entry, scope) {
 }
 
 function runGenerate() {
-  const args = resolveRunArgs();
-  if (args === null) return 2;
+  const resolved = resolveRunArgs();
+  if (resolved.error !== undefined) failClosed(resolved.error);
+  const args = resolved.args;
   const logText = readFileSync(args.fromLog, "utf8");
   const parsed = parseSegmentLedger(logText);
   if (parsed.length === 0) {
-    console.error(
+    failClosed(
       `[ledger] 日志中未解析到任何 stryker 段：${args.fromLog}（run 未跑变异，或日志格式已变）`,
     );
-    return 2;
   }
   const entry = buildLedgerEntry(args.runId, args.scope, parsed);
   const ledger = existsSync(LEDGER_PATH)

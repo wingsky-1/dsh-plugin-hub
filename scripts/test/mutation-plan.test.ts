@@ -21,6 +21,7 @@ import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "n
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { spawnSync } from "node:child_process";
 
 import {
   DEFAULT_TIMEOUT_MINUTES,
@@ -34,6 +35,7 @@ import {
 } from "../gate/mutation-plan.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
+const SCRIPT = join(ROOT, "scripts", "gate", "mutation-plan.mjs");
 
 test("段清单：只认 dsh-*.json 且去后缀，与 ci-matrix / mutation-gate 同源口径", () => {
   const dir = mkdtempSync(join(tmpdir(), "mutation-plan-"));
@@ -166,4 +168,22 @@ test("真实仓库：入库台账的 full 测量值确实被超时派生消费�
     );
   }
   assert.ok(matrix.length > 0, "矩阵非空");
+});
+
+test("CLI 三态：真仓矩阵派生 exit 0 且无故障注解（shards 经隔离 GITHUB_OUTPUT）", () => {
+  const dir = mkdtempSync(join(tmpdir(), "mutation-plan-"));
+  const outFile = join(dir, "github-output");
+  writeFileSync(outFile, "");
+  try {
+    const r = spawnSync(process.execPath, [SCRIPT], {
+      cwd: ROOT,
+      encoding: "utf8",
+      env: { ...process.env, GITHUB_OUTPUT: outFile },
+    });
+    assert.equal(r.status, 0, `${r.stdout}${r.stderr}`);
+    assert.doesNotMatch(`${r.stdout}${r.stderr}`, /::error::门禁故障/);
+    assert.match(readFileSync(outFile, "utf8"), /^shards=\[/m);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
