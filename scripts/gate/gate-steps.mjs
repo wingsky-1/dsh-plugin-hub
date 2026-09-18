@@ -56,6 +56,11 @@ export function tierSteps(tier, { hitPackages, withCoverage, base, scopeLabel })
       label: "verify:coverage-scope（覆盖率面：单一事实源 + 面完整性）",
       args: ["verify:coverage-scope"],
     },
+    // #767 P6：gauntlet config/scope 散文段数与变异拓扑一致（试点，本地先行——CI 执行点另起任务接，不在本片改 .github/）。
+    {
+      label: "verify:prose-counts（散文段数：config/scope 与拓扑一致）",
+      args: ["verify:prose-counts"],
+    },
     // 批 2b：发布物面内 vendored 裸二进制（登记 + 哈希绑定 + 许可随包）。执行点在 ci.yml
     // 的 repo-gate 恒跑段，本地同款接入——少了这一条，本地绿而 CI 红的落差会立刻出现。
     {

@@ -32,8 +32,8 @@
         "fixedCovered": 92.27,
         "fixedDate": "2026-09-13",
         "fixedDuration": "10m13s",
-        "config": "stryker.conf.d/dsh-notifier-{api,channels,config,events,pipeline,sdk,shared,stores,upgrade}.json（#733 按域重写：段面 = src/server/<域>/**，新增 shared；sdk 段沿用 #669 口径并入根 index.ts）",
-        "scope": "src 级九段（#733 按域重写）：api HTTP 端点 / channels 出口 / config 配置 / events 宿主事件 / pipeline 管线 / sdk 服务面+组合根 / shared 包内共享 / stores 存储 / upgrade 存量迁移；基线为 2026-09-13 夜间全量班（run 34752395124）实测 covered 92.27%（killed 2586 / survived 217 / noCov 37），九段墙钟合计 10m13s",
+        "config": "stryker.conf.d/dsh-notifier-{api,channels,client,config,events,pipeline,sdk,shared,stores,upgrade}.json（#733 按域重写：段面 = src/server/<域>/**，新增 shared；sdk 段沿用 #669 口径并入根 index.ts）",
+        "scope": "src 级十段（#733 按域重写 + client 段）：api HTTP 端点 / channels 出口 / client 客户端半区 / config 配置 / events 宿主事件 / pipeline 管线 / sdk 服务面+组合根 / shared 包内共享 / stores 存储 / upgrade 存量迁移；基线为 2026-09-13 夜间全量班（run 34752395124）实测 covered 92.27%（killed 2586 / survived 217 / noCov 37），九段墙钟合计 10m13s；client 段实测 covered 87.38%（4m03s，见拓扑 client 段注）",
         "threshold": 60
       },
       "dsh-worktree-sidebar": {

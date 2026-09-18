@@ -68,4 +68,12 @@ test("fail-closed：未知 --tier → exit 2 且统一故障注解", () => {
   assert.equal(r.status, 2, String(r.stderr));
   assert.match(String(r.stderr), /^::error::门禁故障（非判据结论）：\[local-gate\] 未知 --tier/m);
   assert.equal(String(r.stdout), "");
+
+test("pr 档：含散文段数判据（#767 P6：config/scope 与拓扑一致）", () => {
+  const out = plannedSteps("pr");
+  assert.ok(
+    out.includes("verify:prose-counts（散文段数：config/scope 与拓扑一致）"),
+    "pr 档必须含 verify:prose-counts",
+  );
+});
 });

@@ -22,6 +22,7 @@
     "gate:module-state": "node scripts/gate/forbid-module-state-src.mjs",
     "verify:scripts-index": "node scripts/gate/verify-scripts-index.mjs",
     "verify:coverage-scope": "node scripts/gate/verify-coverage-scope.mjs",
+    "verify:prose-counts": "node scripts/gate/verify-prose-counts.mjs",
     "verify:vendored-binaries": "node scripts/gate/verify-vendored-binaries.mjs",
     "docs:check": "node scripts/gate/verify-docs.ts --strict-en",
     "typecheck": "pnpm -r --if-present run typecheck",
