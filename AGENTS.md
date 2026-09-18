@@ -2,15 +2,15 @@
 
 DeepSeek Harness（DSH）的插件集 monorepo（npm 分发）。每个插件是独立 cordis bundle
 包，经 `cordis.patch.yml` + profile 挂载到 `dsh web`。分层：全局 `~/.dsh/AGENTS.md`
-（基线）→ 本文件（仓库）→ `packages/<pkg>/AGENTS.md`（包级叠加）→ [`‹.dsh/skills/*›`](.dsh/skills/)。
+（基线）→ 本文件（仓库）→ `packages/<pkg>/AGENTS.md`（包级叠加）→ [`.dsh/skills/*`](.dsh/skills/)。
 本排序与全局“更具体的项目约定优先”一致，全局已声明具体优先，此处不再分叉。
 
 <a id="authority"></a>
 
 ## 权威顺序（冲突时按此裁决，低层不得覆盖高层）
 
-系统提示词 > 用户直接指令 > 本文件（仓库硬性）> 包级 `AGENTS.md` > [`‹.dsh/skills/*›`](.dsh/skills/)、
-[`‹agents/*›`](agents/) 规程 > [`‹docs/*›`](docs/) 详细规范 > 全局 `~/.dsh/AGENTS.md`（仅作缺省基线）。
+系统提示词 > 用户直接指令 > 本文件（仓库硬性）> 包级 `AGENTS.md` >[`.dsh/skills/*`](.dsh/skills/)、
+[`agents/*`](agents/) 规程 > [`docs/*`](docs/) 详细规范 > 全局 `~/.dsh/AGENTS.md`（仅作缺省基线）。
 高层要求与低层红线冲突时：**停下说明冲突点并等待裁决**，不得自行扩大授权。
 裁决者默认为用户；无人值守时按“开 P0 跟踪＋打 `blocked-human`＋继续不受影响工作”出口，
 不空转、不自行放行（一般冲突不触发 exit2 熔断，熔断仅属门禁节 exit-2 判词）。
@@ -133,14 +133,14 @@ worktree 内。在仓库根直接跑出的读数是「某个落后提交」的�
 
 | 当你要…时 | 去哪 |
 | --- | --- |
-| 发版、推 tag 时 | `.dsh/skills/dsh-plugin-release/SKILL.md` |
+| 发版、推 tag 时 | [`.dsh/skills/dsh-plugin-release/SKILL.md`](.dsh/skills/dsh-plugin-release/SKILL.md) |
 | 改宿主/客户端实现时 | [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) |
 | 证明重构没改行为时 | [DEVELOPMENT.md §4.1 验证三件套](docs/DEVELOPMENT.md#user-content-equivalence-refactor) |
 | 查门禁口径细节时 | [docs/GATE.md](docs/GATE.md) |
-| 新建插件施工时 | `.dsh/skills/dsh-plugin-hub-dev/SKILL.md` |
-| 评审 PR 时 | `.dsh/skills/dsh-plugin-hub-pr-review/SKILL.md` + `.dsh/skills/dsh-plugin-hub-pr-review/references/pr-images.md` |
+| 新建插件施工时 | [`.dsh/skills/dsh-plugin-hub-dev/SKILL.md`](.dsh/skills/dsh-plugin-hub-dev/SKILL.md) |
+| 评审 PR 时 | [`.dsh/skills/dsh-plugin-hub-pr-review/SKILL.md`](.dsh/skills/dsh-plugin-hub-pr-review/SKILL.md) + [`.dsh/skills/dsh-plugin-hub-pr-review/references/pr-images.md`](.dsh/skills/dsh-plugin-hub-pr-review/references/pr-images.md) |
 | 处理 issue 全周期时 | [docs/ISSUE-WORKFLOW.md](docs/ISSUE-WORKFLOW.md) |
-| 跑自治维护循环时 | `.dsh/skills/oss-pipeline/SKILL.md` |
+| 跑自治维护循环时 | [`.dsh/skills/oss-pipeline/SKILL.md`](.dsh/skills/oss-pipeline/SKILL.md) |
 | 看包级特殊约定时 | `packages/<pkg>/AGENTS.md`（若有；有特有红线才建，存在则必含定位/改动前必守/验证三节） |
 
 其余否定触发（何时不读）见各 SKILL 头部 `Do NOT trigger`，此处不复述。
