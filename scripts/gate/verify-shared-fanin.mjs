@@ -37,6 +37,7 @@ import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { walkFiles } from "../lib/walk-files.ts";
 import { argValue } from "../lib/exemption-gate.ts";
+import { failClosed } from "../lib/gate-exit.mjs";
 
 const DEFAULT_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
@@ -213,13 +214,11 @@ export function renderReport(result) {
 function main(argv) {
   const root = argValue(argv, "--root", DEFAULT_ROOT);
   if (!existsSync(root) || !statSync(root).isDirectory()) {
-    console.error(`verify-shared-fanin: --root 不是目录：${root}`);
-    return 2;
+    failClosed(`verify-shared-fanin: --root 不是目录：${root}`);
   }
   const result = evaluateFanin(root);
   if (result.error !== undefined) {
-    console.error(renderReport(result).join("\n"));
-    return 2;
+    failClosed(renderReport(result).join("\n"));
   }
   for (const line of renderReport(result)) console.log(line);
   const failed = result.rows.filter((r) => r.failed).length + result.dangling.length;

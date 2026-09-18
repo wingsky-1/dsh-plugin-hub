@@ -26,6 +26,7 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { spawnSync } from "node:child_process";
 import {
   collectConsumers,
   evaluateFanin,
@@ -409,4 +410,77 @@ test("collectConsumers：无 packages/ 目录时返回空集合（不抛）", ()
   } finally {
     cleanup();
   }
+});
+
+const SCRIPT = join(ROOT, "scripts", "gate", "verify-shared-fanin.mjs");
+
+function runCli(
+  root: string,
+  extra: string[] = [],
+): { status: number | null; stdout: string; stderr: string } {
+  try {
+    return spawnSync(process.execPath, [SCRIPT, "--root", root, ...extra], {
+      encoding: "utf8",
+    }) as unknown as {
+      status: number | null;
+      stdout: string;
+      stderr: string;
+    };
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+test("fail-closed：--root 不是目录 → exit 2 且统一故障注解", () => {
+  const { dir, cleanup } = fixtureDir();
+  const missing = join(dir, "ghost-root");
+  cleanup();
+  const r = spawnSync(process.execPath, [SCRIPT, "--root", missing], { encoding: "utf8" });
+  assert.equal(r.status, 2, String(r.stderr));
+  assert.match(
+    String(r.stderr),
+    /^::error::门禁故障（非判据结论）：verify-shared-fanin: --root 不是目录/m,
+  );
+  assert.equal(String(r.stdout), "");
+});
+
+test("fail-closed：shared/ 缺失 → exit 2 且统一故障注解", () => {
+  const { dir } = fixtureDir();
+  const r = runCli(dir);
+  assert.equal(r.status, 2, r.stderr);
+  assert.match(
+    r.stderr,
+    /^::error::门禁故障（非判据结论）：verify-shared-fanin: shared\/ 目录不存在或不可读/m,
+  );
+  assert.equal(r.stdout, "");
+});
+
+test("fail-closed：shared/ 空枚举 → exit 2 且统一故障注解", () => {
+  const { dir } = fixtureDir();
+  mkdirSync(join(dir, "shared"), { recursive: true });
+  const r = runCli(dir);
+  assert.equal(r.status, 2, r.stderr);
+  assert.match(
+    r.stderr,
+    /^::error::门禁故障（非判据结论）：verify-shared-fanin: shared\/ 下没有任何/m,
+  );
+  assert.equal(r.stdout, "");
+});
+
+test("CLI 三态：判红仍 exit 1 且无故障注解，真仓通过 exit 0", () => {
+  const bad = fixtureDir();
+  try {
+    write(bad.dir, "shared/solo.js", "export const s = 1;\n");
+    useShared(bad.dir, "pkg-a", "../../../shared/solo.js");
+    const r1 = spawnSync(process.execPath, [SCRIPT, "--root", bad.dir], { encoding: "utf8" });
+    assert.equal(r1.status, 1, String(r1.stderr));
+    assert.doesNotMatch(String(r1.stderr), /::error::门禁故障/);
+    assert.match(String(r1.stdout), /FAIL/);
+  } finally {
+    bad.cleanup();
+  }
+  const r0 = spawnSync(process.execPath, [SCRIPT], { cwd: ROOT, encoding: "utf8" });
+  assert.equal(r0.status, 0, String(r0.stderr));
+  assert.doesNotMatch(String(r0.stderr), /::error::门禁故障/);
+  assert.match(String(r0.stdout), /verify-shared-fanin: OK/);
 });
