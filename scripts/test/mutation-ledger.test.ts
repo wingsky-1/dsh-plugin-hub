@@ -351,3 +351,36 @@ test("fail-closed：--from-log 指向不存在文件 → exit 2 且统一故障�
   assert.doesNotMatch(r.stderr, /Error: ENOENT/);
   assert.equal(r.stdout, "");
 });
+
+test("fail-closed：段目录不可读 → exit 2 且统一故障注解（R1，不再抛未捕获异常）", () => {
+  const dir = mkdtempSync(join(tmpdir(), "ledger-r1-"));
+  try {
+    const ledger = join(dir, "ledger.json");
+    writeFileSync(ledger, JSON.stringify({ measurements: [], unmeasured: {} }));
+    const r = runCheckProbe({ ledgerPath: ledger, confDir: join(dir, "no-such-dir") });
+    assert.equal(r.status, 2, `${r.stdout}${r.stderr}`);
+    assert.match(r.stderr, /^::error::门禁故障（非判据结论）：\[ledger\] 段目录不可读/m);
+    assert.doesNotMatch(r.stderr, /Error: ENOENT/);
+    assert.equal(r.stdout, "");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("fail-closed：台账不可解析 → exit 2 且统一故障注解（R2，不再抛未捕获异常）", () => {
+  const dir = mkdtempSync(join(tmpdir(), "ledger-r2-"));
+  try {
+    const badLedger = join(dir, "ledger.json");
+    writeFileSync(badLedger, "{ broken");
+    const r = runCheckProbe({
+      ledgerPath: badLedger,
+      confDir: join(ROOT, "stryker.conf.d"),
+    });
+    assert.equal(r.status, 2, `${r.stdout}${r.stderr}`);
+    assert.match(r.stderr, /^::error::门禁故障（非判据结论）：\[ledger\] 台账不可解析/m);
+    assert.doesNotMatch(r.stderr, /SyntaxError/);
+    assert.equal(r.stdout, "");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
