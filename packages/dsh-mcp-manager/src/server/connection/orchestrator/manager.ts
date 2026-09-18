@@ -12,7 +12,7 @@
  * 类型自各域门面取；manager.ts 不 import apply.ts / index.ts（防循环引用）。
  */
 
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, rename, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { dirname } from "node:path";
 import type { SseHub } from "../../../../../../shared/sse-hub.js";
@@ -34,7 +34,12 @@ import {
   SERVER_STATES,
 } from "../../../shared/interface.ts";
 import { orchestratorPorts } from "./impl/service/index.ts";
-import { projectConfigFile } from "../../shared/interface.ts";
+import {
+  fileMode,
+  projectConfigFile,
+  readTextFile,
+  writeFileAtomic,
+} from "../../shared/interface.ts";
 
 /**
  * 计算期望连接集合：回答「池里该有哪些 (root, 裸名)？」——全局 store + 项目级 store
@@ -72,6 +77,33 @@ function buildDesiredServers(
     desired.set(keyFor(SCOPE_GLOBAL, name), { name, server, scope: SCOPE_GLOBAL });
   }
   return desired;
+}
+
+/**
+ * 目录缓存写盘（H2 等价接入，#767 S2-C）：登记路径（`catalogSummaryFile`）经
+ * file-io `writeFileAtomic`（mode 取登记表 + 同路径写串行 + 失败清理临时名）；
+ * 未登记路径（单测 tmp 覆盖 `catalogCachePath`）回落既有直写形状——`writeFileAtomic`
+ * 对未登记路径抛 I6，直接调等于把回落写盘变成 warn（store.save 的 S2-B 同式）。
+ * 序列化形状（`{ version: 1, entries }` + 2 空格）逐字节不变：序列化收敛不是本笔的事。
+ *
+ * 模块函数而非私有方法：类成员会进入 .d.ts 声明块（导出面快照按块比对），
+ * 纯内部分拆放模块级才能让导出面零 diff。 */
+async function writeCatalogCacheFile(file: string, data: string): Promise<void> {
+  let registered = true;
+  try {
+    fileMode(file);
+  } catch {
+    registered = false;
+  }
+  if (registered) {
+    await writeFileAtomic(file, data);
+    return;
+  }
+  const dir = dirname(file);
+  if (!existsSync(dir)) await mkdir(dir, { recursive: true });
+  const tmp = `${file}.${process.pid}.${Date.now().toString(36)}.tmp`;
+  await writeFile(tmp, data, "utf8");
+  await rename(tmp, file);
 }
 
 /**
@@ -166,8 +198,8 @@ export class McpManager {
   /** 从磁盘加载目录缓存（损坏/缺失 → 空缓存，不崩溃）。 */
   async loadCatalogCache(): Promise<void> {
     try {
-      if (!existsSync(this.catalogCachePath)) return;
-      const raw = await readFile(this.catalogCachePath, "utf8");
+      const raw = await readTextFile(this.catalogCachePath);
+      if (raw === null) return;
       const parsed = JSON.parse(raw) as { entries?: Record<string, unknown> } | null;
       if (
         parsed &&
@@ -200,12 +232,8 @@ export class McpManager {
     if (summary === undefined || summary === current) return;
     this.catalogCache.set(serverName, { summary });
     try {
-      const dir = dirname(this.catalogCachePath);
-      if (!existsSync(dir)) await mkdir(dir, { recursive: true });
-      const tmp = `${this.catalogCachePath}.${process.pid}.${Date.now().toString(36)}.tmp`;
       const payload = { version: 1, entries: Object.fromEntries(this.catalogCache) };
-      await writeFile(tmp, JSON.stringify(payload, null, 2), "utf8");
-      await rename(tmp, this.catalogCachePath);
+      await writeCatalogCacheFile(this.catalogCachePath, JSON.stringify(payload, null, 2));
     } catch (error) {
       this.logger.warn(`dsh-mcp-manager: catalog cache write failed: ${this.redactError(error)}`);
     }
@@ -540,7 +568,7 @@ export class McpManager {
     if (root !== undefined) {
       this.projectStore = await this.projectStoreFor(root);
     }
-    // 全局配置同样重读（外部手动编辑 ~/.dsh/dsh-mcp.json）。
+    // 全局配置同样重读（外部手动编辑 <DSH_HOME>/@wingsky-1/dsh-mcp-manager/mcp.json）。
     try {
       await this.store.reloadIfChanged();
     } catch (error) {

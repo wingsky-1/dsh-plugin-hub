@@ -3,14 +3,47 @@
  */
 
 import { createHash } from "node:crypto";
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, rename, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { dirname } from "node:path";
 import type { ProjectUnit } from "../../connection/interface.ts";
-import { catalogFile, userStatePath } from "../../shared/interface.ts";
+import {
+  catalogFile,
+  fileMode,
+  readJsonFile,
+  userStatePath,
+  writeFileAtomic,
+} from "../../shared/interface.ts";
 
 /** 用户已禁用的工具集合（root → server → tool 列表）。root 为 @global 时跨工作空间共享。 */
 export type DisabledToolsMap = Map<string, Map<string, Set<string>>>;
+
+/**
+ * 状态写盘（H2 等价接入，#767 S2-C）：登记路径经 file-io `writeFileAtomic`
+ * （mode 取登记表 + 同路径写串行 + 失败清理临时名并上抛原错误）；未登记路径
+ * （单测 tmp / 调用方自定义）回落既有直写形状——`writeFileAtomic` 对未登记路径
+ * 抛 I6，直接调等于把「回落写盘」变成「写失败」（store.save 的 S2-B 同式）。
+ * 旧路径字面量只许出现在 paths：本文件只认 `userStatePath`/`catalogFile` 单点。
+ *
+ * 模块函数而非类成员/导出：调用点同文件，导出会进导出面快照（零 diff 要求）。
+ */
+async function writeStateFile(file: string, data: string): Promise<void> {
+  let registered = true;
+  try {
+    fileMode(file);
+  } catch {
+    registered = false;
+  }
+  if (registered) {
+    await writeFileAtomic(file, data);
+    return;
+  }
+  const dir = dirname(file);
+  if (!existsSync(dir)) await mkdir(dir, { recursive: true });
+  const tmp = `${file}.${process.pid}.${Date.now().toString(36)}.tmp`;
+  await writeFile(tmp, data, "utf8");
+  await rename(tmp, file);
+}
 
 /** userDisabled 持久化文件路径（名字与权限的物理定义在 server/shared/paths.ts，I7 单源）。 */
 export function userStateFile() {
@@ -21,9 +54,7 @@ export function userStateFile() {
 export async function loadUserState(file: string): Promise<Map<string, Set<string>>> {
   const out = new Map<string, Set<string>>();
   try {
-    if (!existsSync(file)) return out;
-    const raw = await readFile(file, "utf8");
-    const parsed = JSON.parse(raw) as { disabled?: Record<string, string[]> } | null;
+    const parsed = await readJsonFile<{ disabled?: Record<string, string[]> } | null>(file);
     if (
       parsed &&
       typeof parsed === "object" &&
@@ -54,11 +85,7 @@ export async function saveUserState(file: string, units: Map<string, ProjectUnit
     if (names.size > 0) disabled[root] = [...names].sort();
   }
   try {
-    const dir = dirname(file);
-    if (!existsSync(dir)) await mkdir(dir, { recursive: true });
-    const tmp = `${file}.${process.pid}.${Date.now().toString(36)}.tmp`;
-    await writeFile(tmp, JSON.stringify({ version: 1, disabled }, null, 2), "utf8");
-    await rename(tmp, file);
+    await writeStateFile(file, JSON.stringify({ version: 1, disabled }, null, 2));
   } catch {
     // 落盘失败不阻塞主流程
   }
@@ -106,9 +133,7 @@ export async function readCatalogServerFromDisk(
   serverName: string,
 ): Promise<PersistedCatalogServer | undefined> {
   try {
-    if (!existsSync(file)) return undefined;
-    const raw = await readFile(file, "utf8");
-    const parsed = JSON.parse(raw) as { entries?: Record<string, unknown> } | null;
+    const parsed = await readJsonFile<{ entries?: Record<string, unknown> } | null>(file);
     const entry =
       parsed &&
       typeof parsed === "object" &&
@@ -149,9 +174,7 @@ export function parseDisabledTools(raw: unknown): DisabledToolsMap {
 /** 加载工具级禁用（disabledTools 三段：root → server → tool[]；损坏/缺失 → 空）。 */
 export async function loadDisabledTools(file: string): Promise<DisabledToolsMap> {
   try {
-    if (!existsSync(file)) return new Map();
-    const raw = await readFile(file, "utf8");
-    const parsed = JSON.parse(raw) as { disabledTools?: unknown } | null;
+    const parsed = await readJsonFile<{ disabledTools?: unknown } | null>(file);
     return parseDisabledTools(parsed?.disabledTools);
   } catch {
     // 损坏忽略
@@ -178,11 +201,7 @@ export async function saveDisabledTools(
     if (Object.keys(serverRec).length > 0) payload[root] = serverRec;
   }
   try {
-    const dir = dirname(file);
-    if (!existsSync(dir)) await mkdir(dir, { recursive: true });
-    const tmp = `${file}.${process.pid}.${Date.now().toString(36)}.tmp`;
-    await writeFile(tmp, JSON.stringify({ version: 1, disabledTools: payload }, null, 2), "utf8");
-    await rename(tmp, file);
+    await writeStateFile(file, JSON.stringify({ version: 1, disabledTools: payload }, null, 2));
   } catch {
     // 落盘失败不阻塞主流程
   }

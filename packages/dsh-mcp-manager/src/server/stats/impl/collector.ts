@@ -11,7 +11,7 @@
 
 import { mkdirSync, writeFileSync, renameSync, existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import { statsFile } from "../../shared/interface.ts";
+import { directoryMode, fileMode, statsFile } from "../../shared/interface.ts";
 import type {
   McpStatsSnapshot,
   ServerStats,
@@ -22,6 +22,36 @@ import type {
 /** 默认统计落盘路径（落点单源在 server/shared/paths.ts；此处只转发）。 */
 export function defaultStatsPath(): string {
   return statsFile();
+}
+
+/**
+ * 目录创建参数（S2-C 同步形态）：登记目录取表内 mode，未登记（单测 tmp /
+ * 用户自定义 `statsFile` 的父目录）回落既有无 mode 形状——file-io `ensureDir`
+ * 自身是异步，退出刷新链上不可调，此处是它的同步拼写（store.save 的 S2-B 同式）。
+ *
+ * 模块函数而非私有方法：类成员会进入 .d.ts 声明块（导出面快照按块比对），
+ * 纯内部分拆放模块级才能让导出面零 diff。 */
+function mkdirOptionsFor(dir: string): { recursive: true; mode?: number } {
+  try {
+    const mode = directoryMode(dir);
+    return mode === null ? { recursive: true } : { recursive: true, mode };
+  } catch {
+    return { recursive: true };
+  }
+}
+
+/**
+ * 数据文件写参数（S2-C 同步形态）：`fileMode` 取表（S2-A 口径），未登记回落
+ * 既有无 mode 形状。mode 落在临时文件上，`rename` 后即目标 mode（与 file-io 同式）。
+ *
+ * 模块函数而非私有方法：理由同上（导出面零 diff）。 */
+function writeOptionsFor(file: string): { encoding: "utf8"; mode?: number } {
+  try {
+    const mode = fileMode(file);
+    return mode === null ? { encoding: "utf8" } : { encoding: "utf8", mode };
+  } catch {
+    return { encoding: "utf8" };
+  }
 }
 
 /** 还原服务器聚合快照：回答「各 server/tool 的计数是多少？」——逐服务器/工具重建
@@ -114,7 +144,11 @@ export class McpStatsCollector {
     return this.enabled;
   }
 
-  /** 从现有磁盘文件加载既有计数（避免进程重启后归零）。 */
+  /**
+   * 从现有磁盘文件加载既有计数（避免进程重启后归零）。同步读保持：构造器 +
+   * `configure` 是同步契约，file-io 只有异步读（`readJsonFile`），此处不可调；
+   * 语义（缺失/损坏/目录 → 忽略重计）与 `readJsonFile` 的 null 回落同族。
+   */
   private loadExisting(): void {
     try {
       if (!existsSync(this.filePath)) return;
@@ -255,17 +289,23 @@ export class McpStatsCollector {
     this.flushTimer.unref?.();
   }
 
-  /** 同步原子落盘（临时文件 + 重命名）。 */
+  /**
+   * 同步原子落盘（临时文件 + 重命名）。S2-C 等价接入（同步安全形态）：mode 经
+   * 登记表取（`writeOptionsFor`/`mkdirOptionsFor`，S2-A 口径），未登记回落既有形状。
+   * **不**改调异步 `writeFileAtomic`：同步契约（构造器/`flushSync` 直写断言/B2 关闭刷盘/
+   * `manager.dispose` 的 fire-and-forget 链）要求返回时盘上已有数据；异步化会把
+   * 「退出刷新」变成不可靠的后台写。序列化形状（`snapshot()` + 2 空格）逐字节不变。
+   */
   flushSync(): void {
     if (!this.isDirty || !this.enabled) return;
     try {
       const dir = dirname(this.filePath);
       if (!existsSync(dir)) {
-        mkdirSync(dir, { recursive: true });
+        mkdirSync(dir, mkdirOptionsFor(dir));
       }
       const data = JSON.stringify(this.snapshot(), null, 2);
       const tmpPath = `${this.filePath}.tmp.${process.pid}.${Date.now()}`;
-      writeFileSync(tmpPath, data, "utf8");
+      writeFileSync(tmpPath, data, writeOptionsFor(this.filePath));
       renameSync(tmpPath, this.filePath);
       this.isDirty = false;
     } catch (err) {
