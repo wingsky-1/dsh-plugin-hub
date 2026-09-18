@@ -8,6 +8,7 @@ import { defineConfig } from 'vitest/config'
 export default defineConfig({
   test: {
     include: [
+      'packages/dsh-worktree-sidebar/test/client-dom/inject-visibility.test.ts',
       'packages/dsh-worktree-sidebar/test/integration/apply-lifecycle.test.ts',
       'packages/dsh-worktree-sidebar/test/integration/binding-store.test.ts',
       'packages/dsh-worktree-sidebar/test/integration/git-real.test.ts',

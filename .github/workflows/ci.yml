@@ -767,6 +767,9 @@ jobs:
       # 拼在同一行会让第二个包静默不检查，而接线断言两侧同写仍全绿（假接线）。
       - name: Export surface snapshot（dsh-lan-proxy 导出面与基线零 diff）
         run: node scripts/gate/export-surface-snapshot.mjs --package dsh-lan-proxy
+
+      - name: Export surface snapshot（dsh-worktree-sidebar 导出面与基线零 diff）
+        run: node scripts/gate/export-surface-snapshot.mjs --package dsh-worktree-sidebar
       - name: Verify shared fan-in（shared 模块跨包扇入；#792）
         run: node scripts/gate/verify-shared-fanin.mjs
 

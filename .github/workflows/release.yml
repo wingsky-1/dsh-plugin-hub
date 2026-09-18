@@ -145,6 +145,9 @@ jobs:
       - name: Export surface snapshot（dsh-lan-proxy）
         run: node scripts/gate/export-surface-snapshot.mjs --package dsh-lan-proxy
 
+      - name: Export surface snapshot（dsh-worktree-sidebar 导出面与基线零 diff）
+        run: node scripts/gate/export-surface-snapshot.mjs --package dsh-worktree-sidebar
+
       - name: Verify shared fan-in
         run: node scripts/gate/verify-shared-fanin.mjs
 

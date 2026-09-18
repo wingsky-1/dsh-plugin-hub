@@ -186,12 +186,8 @@
     {
       "path": "scripts/data/dsh-worktree-sidebar-*.json",
       "faces": ["dsh-worktree-sidebar"],
-      "consumerGap": {
-        "kind": "none",
-        "reason": "仓内零执行点：八处 export-surface-snapshot 调用点（.github/workflows/ci.yml / observe.yml / release.yml 各两条 step + scripts/gate/gate-steps.mjs 两条本地档位）只覆盖 dsh-notifier 与 dsh-lan-proxy，均不传 dsh-worktree-sidebar；export-faces-admission.test.ts 只读 notifier 两份；缺口载体 #847 与 data/threshold-registry.json 的 notAGate。",
-        "trackingIssue": "#847"
-      },
-      "why": "包级数据资产（#819）：导出面基线与导出面分类登记，与 dsh-notifier 的同类条目同型。归本包面后改基线即触发本包切片（ci.yml 的 dsh-worktree-sidebar filters 已登记该 glob）；执行点缺失作为真缺口登记在 consumerGap，载体见 #847 与 data/threshold-registry.json 的 notAGate。"
+      "consumers": ["scripts/test/export-surface-wiring.test.ts"],
+      "why": "包级资产：导出面基线与分类登记。#847 接入 ci.yml / observe.yml / release.yml 各一条独立 step 与 gate-steps.mjs 本地 pr/full；export-surface-snapshot 按 --package 拼名读取两份数据，直接读取方 export-surface-wiring.test.ts 校验资产与独立执行点，丢任一入口即红。"
     },
     {
       "path": "scripts/data/dsh-lan-proxy-*.json",

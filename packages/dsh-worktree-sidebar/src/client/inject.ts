@@ -103,13 +103,14 @@ function seeding(view: SessionView, face: Record<string, unknown>): Record<strin
   };
 
   const release = (): void => {
+    // 迟到的绑定响应也走 watched 查找；清空后不得再给已卸载页签播种。
+    watched.clear();
     liveSeedings.delete(release);
     unsubscribe?.();
     unsubscribe = undefined;
     detachVisible?.();
     detachVisible = undefined;
   };
-  liveSeedings.add(release);
 
   const attach = (
     tabId: string,
@@ -117,6 +118,7 @@ function seeding(view: SessionView, face: Record<string, unknown>): Record<strin
     seeded: string,
     signal: AbortSignal | undefined,
   ): void => {
+    liveSeedings.add(release);
     watched.set(tabId, { seeded, fallback, signal });
     unsubscribe ??= view.root.subscribe(reseed);
     detachVisible ??= refreshWhenVisible(refresh);

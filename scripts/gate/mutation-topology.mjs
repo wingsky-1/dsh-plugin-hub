@@ -53,6 +53,108 @@ export const COVERAGE_EXCLUDE_MIN_REASON = 10;
 export const MUTATION_FACE_GATE = "mutation-face";
 
 /**
+ * 本仓拓扑的算子值域：Stryker 实际算子名 + 两个存量字面量分类名；不接受拼写错误或任意 override。
+ *
+ * 例外说明（#847 复核实测，Stryker 10.0.0）：`ArrayLiteral` / `TemplateLiteral` 不是独立算子——
+ * 前者实际叫 `ArrayDeclaration`，后者归 `StringLiteral` 管（含模板字面量，见 instrumenter 的
+ * `string-literal-mutator`）。Stryker 的 schema 对 excludedMutations 只做 string[] 校验，
+ * 未知名静默零匹配（fail-strict 方向：多跑变异，不构成放宽）。留在这里只为兼容存量配置的
+ * 字面写法，去名需另起 PR（会改 33 份派生 conf 文本但行为不变），不得在本面顺手改。
+ */
+const MUTATION_NAMES = new Set([
+  "ArithmeticOperator",
+  "ArrayDeclaration",
+  "ArrayLiteral",
+  "ArrowFunction",
+  "AssignmentOperator",
+  "BlockStatement",
+  "BooleanLiteral",
+  "CallExpression",
+  "ConditionalExpression",
+  "EqualityOperator",
+  "LogicalOperator",
+  "MethodExpression",
+  "ObjectLiteral",
+  "OptionalChaining",
+  "Regex",
+  "StringLiteral",
+  "TemplateLiteral",
+  "UnaryOperator",
+  "UpdateOperator",
+]);
+
+function mutationNameProblems(values, label) {
+  if (!Array.isArray(values)) return [label + " 必须是数组（fail-closed）"];
+  const problems = [];
+  const seen = new Set();
+  for (const value of values) {
+    if (!MUTATION_NAMES.has(value)) problems.push(label + " 含非法算子：" + JSON.stringify(value));
+    if (seen.has(value)) problems.push(label + " 含重复算子：" + JSON.stringify(value));
+    seen.add(value);
+  }
+  return problems;
+}
+
+/** enableMutations 只能从共享排除集合减项，不是包级 excludedMutations 覆写入口。 */
+export function mutationPolicyProblems(topology) {
+  const defaults = topology?.sharedDefaults?.excludedMutations;
+  const problems = mutationNameProblems(defaults, "sharedDefaults.excludedMutations");
+  for (const [pkgName, pkgDef] of Object.entries(topology?.packages ?? {})) {
+    if (pkgDef === null || typeof pkgDef !== "object") continue;
+    problems.push(...packageMutationPolicyProblems(pkgName, pkgDef, defaults));
+  }
+  return problems;
+}
+
+function packageMutationPolicyProblems(pkgName, pkgDef, defaults) {
+  const label = "[" + pkgName + "] enableMutations";
+  const problems = [];
+  if (Object.hasOwn(pkgDef, "excludedMutations") || Object.hasOwn(pkgDef, "mutator")) {
+    problems.push("[" + pkgName + "] 不允许包级排除 override，请使用 enableMutations 减项");
+  }
+  if (!Object.hasOwn(pkgDef, "enableMutations")) return problems;
+  problems.push(...mutationNameProblems(pkgDef.enableMutations, label));
+  if (Array.isArray(pkgDef.enableMutations) && Array.isArray(defaults)) {
+    for (const name of pkgDef.enableMutations) {
+      if (!defaults.includes(name))
+        problems.push(label + " 不在共享排除集合中：" + JSON.stringify(name));
+    }
+  }
+  return problems;
+}
+
+/** 形状判据通过后才能读取；顺序继承共享默认值，生成物保持确定性。 */
+export function effectiveExcludedMutations(sharedDefaults, pkgDef) {
+  return sharedDefaults.excludedMutations.filter(
+    (name) => !(pkgDef.enableMutations ?? []).includes(name),
+  );
+}
+
+/** 有效排除集合 E_head(pkg) 必须为 E_base(pkg) 的子集；此收紧面没有豁免通道。 */
+export function mutationPolicyRatchetProblems(baseTopology, headTopology) {
+  const shape = [...mutationPolicyProblems(baseTopology), ...mutationPolicyProblems(headTopology)];
+  if (shape.length > 0) return shape.map((p) => "算子排除棘轮形状错误：" + p);
+  const problems = [];
+  for (const [pkgName, pkgDef] of Object.entries(baseTopology.packages ?? {})) {
+    const headPkg = headTopology.packages?.[pkgName];
+    if (headPkg === undefined) continue; // 整包退出由文件面棘轮负责。
+    const base = new Set(effectiveExcludedMutations(baseTopology.sharedDefaults, pkgDef));
+    const added = effectiveExcludedMutations(headTopology.sharedDefaults, headPkg).filter(
+      (name) => !base.has(name),
+    );
+    if (added.length > 0)
+      problems.push(
+        "[" +
+          pkgName +
+          "] 有效算子排除集合相对基准增加：" +
+          added.join(", ") +
+          "（E_head 必须是 E_base 的子集）",
+      );
+  }
+  return problems;
+}
+
+/**
  * 取一个包 `testLayers.coverageExcludes` 的排除 glob 清单（原样，含 `!` 前缀）。
  *
  * 生成侧（gen-stryker-conf）与断言侧（collectMutationSpecs）**唯一**的取值点：
@@ -136,7 +238,7 @@ function coverageExcludeValueProblems(entry, label, seen) {
 
 /**
  * 包登记本身的形状判据：`packages.<name>` 必须是对象，其 `segments` 也必须是对象，
- * 且每个段必须自带非空的 `excludes` 数组（#836 起必填）、数组里每条必须是以 `!` 开头的非空字符串。
+ * 且每个段必须自带 `excludes` 数组（允许显式空数组）（#836 起必填）、数组里每条必须是以 `!` 开头的非空字符串。
  *
  * 与 coverageExcludes 的形状判词同族：形状不对时**没有可判定的变异面**，必须给出可读判词，
  * 而不是让调用方在 `pkgDef.segments` 上抛栈崩掉整个 contract 段（已实测：登记为 `null` →
@@ -186,9 +288,9 @@ export function packageEntryProblems(pkgDef) {
       );
       continue;
     }
-    if (!Array.isArray(segDef.excludes) || segDef.excludes.length === 0) {
+    if (!Array.isArray(segDef.excludes)) {
       problems.push(
-        `段 "${segKey}" 的 excludes 必须是非空数组（当前 ${JSON.stringify(segDef.excludes)}）——` +
+        `段 "${segKey}" 的 excludes 必须是数组（可显式为空）（当前 ${JSON.stringify(segDef.excludes)}）——` +
           "段必须自己声明排除面（#836 起缺省回退已删除），否则会把排除面静默收敛成空集",
       );
       continue;

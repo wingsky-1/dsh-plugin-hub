@@ -164,7 +164,7 @@
     },
     {
       "source": "scripts/data/dsh-lan-proxy-export-surface.json",
-      "why": "包级资产：lan-proxy 导出面基线（#826 冻结，P1-2 让 #856 的 host-trust 域退出导出面后为 50 个符号 / 59 个声明块，覆盖主入口 . 与客户端入口 ./client），由 gate/export-surface-snapshot.mjs --package dsh-lan-proxy 逐字节比对；基线更新走 --snapshot 并随 PR 提交，无单调阈值语义。与 worktree-sidebar 那两份不同，本包的执行点已接上：ci.yml / observe.yml / release.yml 各一条独立 step + gate/gate-steps.mjs 本地档位，接线由 test/gate-wiring.test.ts 与 test/gate-scope-registry.test.ts 双向守。"
+      "why": "包级资产：lan-proxy 导出面基线（#826 冻结，P1-2 让 #856 的 host-trust 域退出导出面后为 50 个符号 / 59 个声明块，覆盖主入口 . 与客户端入口 ./client），由 gate/export-surface-snapshot.mjs --package dsh-lan-proxy 逐字节比对；基线更新走 --snapshot 并随 PR 提交，无单调阈值语义。本包的执行点已接上：ci.yml / observe.yml / release.yml 各一条独立 step + gate/gate-steps.mjs 本地档位，接线由 test/gate-wiring.test.ts 与 test/gate-scope-registry.test.ts 双向守。"
     },
     {
       "source": "scripts/data/dsh-lan-proxy-export-faces.json",
@@ -180,11 +180,11 @@
     },
     {
       "source": "scripts/data/dsh-worktree-sidebar-export-faces.json",
-      "why": "包级资产：worktree-sidebar 导出面分类登记。**已知缺口**：与同包 export-surface 基线一样已入库但零消费（全仓无调用点，ci-face-registry 对该 glob 的 why 曾误称 contract-check 消费），#843 评审 R2-M-1 要求接线或删基线，未决前如实标记，不假装它是受守的事实源。"
+      "why": "包级资产：worktree-sidebar 导出面分类登记（legacy 为空），同一次 emitDeclarations() 产物喂分类准入判据。#847 接入 ci.yml / observe.yml / release.yml 各一条独立 step 与 gate-steps.mjs 本地 pr/full，由 export-surface-wiring.test.ts 逐入口守；分类一致性是结构判据，不是阈值。"
     },
     {
       "source": "scripts/data/dsh-worktree-sidebar-export-surface.json",
-      "why": "包级资产：worktree-sidebar 导出面基线（84 块），同上零消费（实测 export-surface-snapshot --package dsh-worktree-sidebar 可跑通，但仓内八处调用点只覆盖 dsh-notifier 与 dsh-lan-proxy，均不传本包）；不属阈值面，缺口载体见 #843 裁决清单 v2 的 R2-M-1。"
+      "why": "包级资产：worktree-sidebar 导出面基线，#847 按 #871 后当前声明重新生成。消费点同分类登记：四入口独立执行 export-surface-snapshot --package dsh-worktree-sidebar；--snapshot 显式刷新，无单调阈值语义。旧快照域内声明已漂移，但不在各入口导出集合内的块不参与比对，旧 check 的 PASS 不代表完整快照未漂移。"
     },
     {
       "source": "scripts/data/gate-exemptions.json",

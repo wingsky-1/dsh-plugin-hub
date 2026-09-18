@@ -1344,6 +1344,33 @@
           "strykerReported": "15 minutes and 16 seconds"
         }
       ]
+    },
+    {
+      "run": {
+        "id": 35158431365,
+        "workflow": "Observe (nightly)",
+        "event": "schedule",
+        "conclusion": "success",
+        "createdAt": "2026-09-16T22:35:37Z",
+        "headSha": "c1ca022c7bb4850306866f2efc95d57a7d2f88e1"
+      },
+      "scope": "full",
+      "measuredAt": "2026-09-17T15:00:10.910Z",
+      "logSource": "gh run view 35158431365 --repo wingsky-1/dsh-plugin-hub --job 105003323173 --log; historical scope before #871 and zero-exclusion expansion",
+      "segments": [
+        {
+          "seg": "dsh-worktree-sidebar",
+          "startedAt": "2026-09-16T22:39:16.6685765",
+          "endedAt": "2026-09-16T22:42:20.6778118",
+          "wallSeconds": 184,
+          "mutants": 1421,
+          "dryTests": 284,
+          "dryRunSeconds": 7,
+          "reused": null,
+          "reuseTotal": null,
+          "strykerReported": "3 minutes and 4 seconds"
+        }
+      ]
     }
   ],
   "unmeasured": {
@@ -1355,8 +1382,7 @@
     "dsh-lan-proxy-proxy": "#826 段按模块目录重划并改名（旧数字段键 1..4 → 模块目录名），本段尚无改名后的实测值；待首次 CI 变异切片跑或夜间全量班由 mutation-ledger --record 入档。旧段历史值见 superseded 中 replacedBy 含本段的条目。",
     "dsh-lan-proxy-shared": "#826 段按模块目录重划并改名（旧数字段键 1..4 → 模块目录名），本段尚无改名后的实测值；待首次 CI 变异切片跑或夜间全量班由 mutation-ledger --record 入档。旧段历史值见 superseded 中 replacedBy 含本段的条目。",
     "dsh-lan-proxy-tls": "#826 段按模块目录重划并改名（旧数字段键 1..4 → 模块目录名），本段尚无改名后的实测值；待首次 CI 变异切片跑或夜间全量班由 mutation-ledger --record 入档。旧段历史值见 superseded 中 replacedBy 含本段的条目。",
-    "dsh-notifier-client": "#769 新增的客户端段（packages/dsh-notifier/src/client 下的纯 .ts 模块）。最近一次夜间全量班（observe.yml）早于本段的引入，故台账里没有它的 run 日志墙钟。本地 --force 实测 523 个变异体、concurrency 2 用时 4 分 03 秒（covered 87.38%），按台账口径不计入——本文件的值只能从 Actions run 日志解析，禁止手工编造数值；下一轮夜间全量班会把本段自动补进 measurements 并从 unmeasured 删除。",
-    "dsh-worktree-sidebar": "新增 dsh-worktree-sidebar 单段（worktree 侧边栏适配层首次登记变异面），历史上无同名段，尚无实测；待 observe 夜间全量班重建。"
+    "dsh-notifier-client": "#769 新增的客户端段（packages/dsh-notifier/src/client 下的纯 .ts 模块）。最近一次夜间全量班（observe.yml）早于本段的引入，故台账里没有它的 run 日志墙钟。本地 --force 实测 523 个变异体、concurrency 2 用时 4 分 03 秒（covered 87.38%），按台账口径不计入——本文件的值只能从 Actions run 日志解析，禁止手工编造数值；下一轮夜间全量班会把本段自动补进 measurements 并从 unmeasured 删除。"
   },
   "superseded": {
     "dsh-lan-proxy-1": {

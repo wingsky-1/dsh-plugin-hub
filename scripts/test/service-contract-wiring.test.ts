@@ -210,6 +210,7 @@ const EXPECT_FILES: Record<string, string[]> = {
     "unit/trend/unit-trend.test.ts",
   ],
   "dsh-worktree-sidebar": [
+    "client-dom/inject-visibility.test.ts",
     "helpers.ts",
     "integration/apply-lifecycle.test.ts",
     "integration/binding-store.test.ts",

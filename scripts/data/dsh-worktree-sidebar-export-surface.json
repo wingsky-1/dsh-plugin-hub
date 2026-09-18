@@ -19,13 +19,12 @@
     }
   ],
   "declBlocks": [
-    "export declare const BINDINGS_VERSION = 1;",
+    "export declare const BINDINGS_VERSION = 2;",
     "export declare const BODY_SLOT = \"sidebar.right.pane.tab\";",
     "export declare const FILES_KIND = \"files\";",
-    "export declare const OUR_TYPE_ID = \"@wingsky-1/dsh-worktree-sidebar/files\";",
+    "export declare const NO_ORIGIN: WorktreeOrigin;",
     "export declare const RESULT_SCHEMA: JsonSchemaNode;",
     "export declare const ROUTES: { readonly bindings: \"/api/dsh-worktree-sidebar/bindings\"; readonly health: \"/api/dsh-worktree-sidebar/health\"; };",
-    "export declare const TITLE_SLOT = \"sidebar.right.pane.tab.title\";",
     "export declare const apiService: ApiService;",
     "export declare const bindingService: BindingService;",
     "export declare const gitExec: GitExecPort;",
@@ -35,27 +34,31 @@
     "export declare const name = \"worktree-sidebar\";",
     "export declare const scopeService: ScopeService;",
     "export declare const toolsService: ToolsService;",
-    "export declare function addWorktree(repoRoot: string, path: string, branch: string | undefined): Promise<{ ok: true; }",
-    "export declare function addWorktreeArgs(repoRoot: string, path: string, branch: string | undefined): readonly string[];",
+    "export declare function addWorktree(repoRoot: string, path: string, branch: string | undefined, base: string | undefined): Promise<GitMutation>;",
+    "export declare function addWorktreeArgs(repoRoot: string, path: string, branch: string | undefined, base: string | undefined): readonly string[];",
     "export declare function apply(ctx: ClientContext): void;",
     "export declare function apply(ctx: Context, config?: WorktreeSidebarConfig): Promise<void>;",
     "export declare function argBool(args: unknown, key: string): boolean;",
     "export declare function argString(args: unknown, key: string): string | undefined;",
     "export declare function availableWorktrees(deps: ToolsDeps, repo: string): Promise<string>;",
-    "export declare function belongsTo(dir: string, repoRoot: string): Promise<boolean>;",
-    "export declare function bindWorktree(deps: ToolsDeps, session: SessionFace, repo: string, target: string, createdAt: string): Promise<ToolResultValue>;",
+    "export declare function belongsTo(dir: string, repoRoot: string): Promise<BelongsToReading>;",
+    "export declare function bindAgents(host: AgentHostPort): AgentPort;",
+    "export declare function bindSessions(sessions: SessionsFace, storedSessions: () => StoredSessionsFace | undefined): SessionChainPort;",
+    "export declare function bindTypert(lookups: TypertLookupsPort): TypertPort;",
+    "export declare function bindWorktree(deps: ToolsDeps, session: SessionFace, repo: string, target: string, registeredAt: string, before: WorktreeOrigin): Promise<ToolResultValue>;",
+    "export declare function bindingOrigin(deps: ScopeDeps, sessionId: string): Promise<WorktreeOrigin>;",
     "export declare function bindingsEndpoint(binding: RevisionPort, scope: EffectiveWorktreePort): Endpoint;",
     "export declare function bindingsFile(): string;",
-    "export declare function branchLabel(entry: WorktreeEntry): string;",
     "export declare function buildCreateTool(deps: ToolsDeps): ToolDefinition;",
     "export declare function buildRegisterTool(deps: ToolsDeps): ToolDefinition;",
     "export declare function buildRemoveTool(deps: ToolsDeps): ToolDefinition;",
+    "export declare function chainDiagnostics(): ReturnType<typeof scopeService.chainDiagnostics>;",
     "export declare function checkRefFormat(branch: string): Promise<boolean>;",
     "export declare function checkRefFormatArgs(branch: string): readonly string[];",
     "export declare function commonDir(dir: string): Promise<string | undefined>;",
     "export declare function commonDirArgs(dir: string): readonly string[];",
     "export declare function createBindingState(read: ReadBinding, sessionId: string): BindingState;",
-    "export declare function createFallback(port: DefaultScopePort): (sessionId: string) => Promise<FileScope | undefined>;",
+    "export declare function createInjectWrapper(viewFor: ViewFor): WrapInject;",
     "export declare function createSessionsSource(real: ObservablePort<SessionsSnapshotLike>, sessionId: string, currentPath: () => string | null): SessionsSource;",
     "export declare function directoryExists(path: string, stat?: (p: string) => StatLike | undefined): boolean;",
     "export declare function directoryProblem(target: string): string | undefined;",
@@ -67,41 +70,51 @@
     "export declare function get(sessionId: string): BindingRecord | undefined;",
     "export declare function headBranch(dir: string): Promise<string | undefined>;",
     "export declare function headBranchArgs(dir: string): readonly string[];",
-    "export declare function healthEndpoint(binding: RevisionPort): Endpoint;",
+    "export declare function healthEndpoint(binding: RevisionPort, scope: ScopeStatePort): Endpoint;",
+    "export declare function inheritedOrigin(deps: ScopeDeps, sessionId: string): Promise<{ record: BindingRecord; ownerSessionId: string; }",
     "export declare function installApi(deps: ApiDeps): void;",
     "export declare function installBinding(deps: BindingDeps): void;",
     "export declare function installGit(deps: GitDeps): void;",
     "export declare function installScope(deps: ScopeDeps): void;",
     "export declare function installTakeover(deps: TakeoverDeps): () => void;",
     "export declare function installTools(deps: ToolsDeps): void;",
-    "export declare function listWorktrees(dir: string): Promise<readonly import(\"./impl/inspect/index.ts\").WorktreeEntry[]>;",
+    "export declare function listWorktrees(dir: string): Promise<readonly WorktreeEntry[]>;",
     "export declare function loadTable(file: string): BindingsFile;",
+    "export declare function ownRecord(deps: ScopeDeps, sessionId: string): Promise<BindingRecord | undefined>;",
     "export declare function parseSingleLine(stdout: string): string | undefined;",
     "export declare function parseTable(text: string): BindingsFile;",
     "export declare function parseWorktreeList(stdout: string): readonly WorktreeEntry[];",
     "export declare function put(sessionId: string, record: BindingRecord): Promise<FileWrite>;",
     "export declare function putBinding(table: BindingsFile, sessionId: string, record: BindingRecord): BindingsFile;",
+    "export declare function readOrigin(deps: ToolsDeps, sessionId: string): Promise<OriginRead>;",
     "export declare function readTextFileSync(file: string): FileRead;",
     "export declare function registerEndpoints(register: RegisterRoute, endpoints: readonly Endpoint[], logger: LoggerPort): Array<() => void>;",
+    "export declare function releaseAllSeedings(): void;",
     "export declare function releaseApi(): void;",
     "export declare function releaseBinding(): Promise<void>;",
     "export declare function releaseGit(): void;",
     "export declare function releaseScope(): void;",
     "export declare function releaseTools(): void;",
-    "export declare function removeWorktree(repoRoot: string, path: string, force: boolean): Promise<{ ok: true; }",
+    "export declare function removeWorktree(repoRoot: string, path: string, force: boolean): Promise<GitMutation>;",
     "export declare function removeWorktreeArgs(repoRoot: string, path: string, force: boolean): readonly string[];",
     "export declare function renderResult(value: ToolResultValue): Array<{ type: \"text\"; text: string; }",
     "export declare function repoOf(deps: ToolsDeps, agent: AgentFace): Promise<string | undefined>;",
+    "export declare function resolveCommit(dir: string, rev: string): Promise<string | undefined>;",
     "export declare function resolveScope(deps: ScopeDeps, delegate: (sessionId: string) => Promise<FileScope | undefined>, sessionId: string): Promise<FileScope | undefined>;",
-    "export declare function resolveTarget(cwd: string | undefined, raw: string): string | undefined;",
-    "export declare function resultOf(state: BindingState, ok: boolean, detail: string): ToolResultValue;",
+    "export declare function resolveTarget(cwd: string, raw: string): string;",
+    "export declare function resultOf(origin: WorktreeOrigin, ok: boolean, detail: string): ToolResultValue;",
+    "export declare function revParseCommitArgs(dir: string, rev: string): readonly string[];",
     "export declare function revision(): number;",
+    "export declare function rootOf(origin: WorktreeOrigin): string | null;",
     "export declare function saveTable(file: string, table: BindingsFile): Promise<FileWrite>;",
     "export declare function serializeTable(table: BindingsFile): string;",
     "export declare function sessionOf(exec: unknown): SessionFace | undefined;",
-    "export declare function stateOf(deps: ToolsDeps, sessionId: string): BindingState;",
+    "export declare function shadowPriorityOf(official: StoredEntryLike): number;",
+    "export declare function stateOf(origin: WorktreeOrigin): BindingState;",
+    "export declare function takeoverState(): ReturnType<typeof scopeService.takeoverState>;",
     "export declare function validateRecord(value: unknown): BindingRecord | undefined;",
     "export declare function worktreeListArgs(dir: string): readonly string[];",
+    "export declare function worktreeOrigin(sessionId: string): Promise<WorktreeOrigin>;",
     "export declare function writeTextAtomic(file: string, text: string): Promise<FileWrite>;"
   ],
   "entries": {
@@ -126,12 +139,6 @@
         }
       ],
       "blocks": {
-        "BINDINGS_VERSION": [
-          "export declare const BINDINGS_VERSION = 1;"
-        ],
-        "ROUTES": [
-          "export declare const ROUTES: { readonly bindings: \"/api/dsh-worktree-sidebar/bindings\"; readonly health: \"/api/dsh-worktree-sidebar/health\"; };"
-        ],
         "inject": [
           "export declare const inject: string[];"
         ],
@@ -145,7 +152,7 @@
           "export declare function bindingsEndpoint(binding: RevisionPort, scope: EffectiveWorktreePort): Endpoint;"
         ],
         "healthEndpoint": [
-          "export declare function healthEndpoint(binding: RevisionPort): Endpoint;"
+          "export declare function healthEndpoint(binding: RevisionPort, scope: ScopeStatePort): Endpoint;"
         ],
         "registerEndpoints": [
           "export declare function registerEndpoints(register: RegisterRoute, endpoints: readonly Endpoint[], logger: LoggerPort): Array<() => void>;"
@@ -176,6 +183,9 @@
         ],
         "validateRecord": [
           "export declare function validateRecord(value: unknown): BindingRecord | undefined;"
+        ],
+        "BINDINGS_VERSION": [
+          "export declare const BINDINGS_VERSION = 2;"
         ],
         "bindingService": [
           "export declare const bindingService: BindingService;"
@@ -208,10 +218,7 @@
           "export declare const gitExec: GitExecPort;"
         ],
         "addWorktreeArgs": [
-          "export declare function addWorktreeArgs(repoRoot: string, path: string, branch: string | undefined): readonly string[];"
-        ],
-        "branchLabel": [
-          "export declare function branchLabel(entry: WorktreeEntry): string;"
+          "export declare function addWorktreeArgs(repoRoot: string, path: string, branch: string | undefined, base: string | undefined): readonly string[];"
         ],
         "checkRefFormatArgs": [
           "export declare function checkRefFormatArgs(branch: string): readonly string[];"
@@ -231,6 +238,9 @@
         "removeWorktreeArgs": [
           "export declare function removeWorktreeArgs(repoRoot: string, path: string, force: boolean): readonly string[];"
         ],
+        "revParseCommitArgs": [
+          "export declare function revParseCommitArgs(dir: string, rev: string): readonly string[];"
+        ],
         "worktreeListArgs": [
           "export declare function worktreeListArgs(dir: string): readonly string[];"
         ],
@@ -238,10 +248,10 @@
           "export declare const gitService: GitService;"
         ],
         "addWorktree": [
-          "export declare function addWorktree(repoRoot: string, path: string, branch: string | undefined): Promise<{ ok: true; }"
+          "export declare function addWorktree(repoRoot: string, path: string, branch: string | undefined, base: string | undefined): Promise<GitMutation>;"
         ],
         "belongsTo": [
-          "export declare function belongsTo(dir: string, repoRoot: string): Promise<boolean>;"
+          "export declare function belongsTo(dir: string, repoRoot: string): Promise<BelongsToReading>;"
         ],
         "checkRefFormat": [
           "export declare function checkRefFormat(branch: string): Promise<boolean>;"
@@ -256,19 +266,37 @@
           "export declare function installGit(deps: GitDeps): void;"
         ],
         "listWorktrees": [
-          "export declare function listWorktrees(dir: string): Promise<readonly import(\"./impl/inspect/index.ts\").WorktreeEntry[]>;"
+          "export declare function listWorktrees(dir: string): Promise<readonly WorktreeEntry[]>;"
         ],
         "releaseGit": [
           "export declare function releaseGit(): void;"
         ],
         "removeWorktree": [
-          "export declare function removeWorktree(repoRoot: string, path: string, force: boolean): Promise<{ ok: true; }"
+          "export declare function removeWorktree(repoRoot: string, path: string, force: boolean): Promise<GitMutation>;"
         ],
-        "createFallback": [
-          "export declare function createFallback(port: DefaultScopePort): (sessionId: string) => Promise<FileScope | undefined>;"
+        "resolveCommit": [
+          "export declare function resolveCommit(dir: string, rev: string): Promise<string | undefined>;"
+        ],
+        "bindAgents": [
+          "export declare function bindAgents(host: AgentHostPort): AgentPort;"
+        ],
+        "bindSessions": [
+          "export declare function bindSessions(sessions: SessionsFace, storedSessions: () => StoredSessionsFace | undefined): SessionChainPort;"
+        ],
+        "bindTypert": [
+          "export declare function bindTypert(lookups: TypertLookupsPort): TypertPort;"
+        ],
+        "inheritedOrigin": [
+          "export declare function inheritedOrigin(deps: ScopeDeps, sessionId: string): Promise<{ record: BindingRecord; ownerSessionId: string; }"
         ],
         "directoryExists": [
           "export declare function directoryExists(path: string, stat?: (p: string) => StatLike | undefined): boolean;"
+        ],
+        "ownRecord": [
+          "export declare function ownRecord(deps: ScopeDeps, sessionId: string): Promise<BindingRecord | undefined>;"
+        ],
+        "bindingOrigin": [
+          "export declare function bindingOrigin(deps: ScopeDeps, sessionId: string): Promise<WorktreeOrigin>;"
         ],
         "effectiveWorktree": [
           "export declare function effectiveWorktree(deps: ScopeDeps, sessionId: string): Promise<string | null>;",
@@ -277,14 +305,26 @@
         "resolveScope": [
           "export declare function resolveScope(deps: ScopeDeps, delegate: (sessionId: string) => Promise<FileScope | undefined>, sessionId: string): Promise<FileScope | undefined>;"
         ],
+        "rootOf": [
+          "export declare function rootOf(origin: WorktreeOrigin): string | null;"
+        ],
         "scopeService": [
           "export declare const scopeService: ScopeService;"
+        ],
+        "chainDiagnostics": [
+          "export declare function chainDiagnostics(): ReturnType<typeof scopeService.chainDiagnostics>;"
         ],
         "installScope": [
           "export declare function installScope(deps: ScopeDeps): void;"
         ],
         "releaseScope": [
           "export declare function releaseScope(): void;"
+        ],
+        "takeoverState": [
+          "export declare function takeoverState(): ReturnType<typeof scopeService.takeoverState>;"
+        ],
+        "worktreeOrigin": [
+          "export declare function worktreeOrigin(sessionId: string): Promise<WorktreeOrigin>;"
         ],
         "readTextFileSync": [
           "export declare function readTextFileSync(file: string): FileRead;"
@@ -295,26 +335,32 @@
         "bindingsFile": [
           "export declare function bindingsFile(): string;"
         ],
+        "NO_ORIGIN": [
+          "export declare const NO_ORIGIN: WorktreeOrigin;"
+        ],
         "availableWorktrees": [
           "export declare function availableWorktrees(deps: ToolsDeps, repo: string): Promise<string>;"
         ],
         "bindWorktree": [
-          "export declare function bindWorktree(deps: ToolsDeps, session: SessionFace, repo: string, target: string, createdAt: string): Promise<ToolResultValue>;"
+          "export declare function bindWorktree(deps: ToolsDeps, session: SessionFace, repo: string, target: string, registeredAt: string, before: WorktreeOrigin): Promise<ToolResultValue>;"
         ],
         "directoryProblem": [
           "export declare function directoryProblem(target: string): string | undefined;"
+        ],
+        "readOrigin": [
+          "export declare function readOrigin(deps: ToolsDeps, sessionId: string): Promise<OriginRead>;"
         ],
         "repoOf": [
           "export declare function repoOf(deps: ToolsDeps, agent: AgentFace): Promise<string | undefined>;"
         ],
         "resolveTarget": [
-          "export declare function resolveTarget(cwd: string | undefined, raw: string): string | undefined;"
+          "export declare function resolveTarget(cwd: string, raw: string): string;"
         ],
         "resultOf": [
-          "export declare function resultOf(state: BindingState, ok: boolean, detail: string): ToolResultValue;"
+          "export declare function resultOf(origin: WorktreeOrigin, ok: boolean, detail: string): ToolResultValue;"
         ],
         "stateOf": [
-          "export declare function stateOf(deps: ToolsDeps, sessionId: string): BindingState;"
+          "export declare function stateOf(origin: WorktreeOrigin): BindingState;"
         ],
         "buildCreateTool": [
           "export declare function buildCreateTool(deps: ToolsDeps): ToolDefinition;"
@@ -348,6 +394,9 @@
         ],
         "releaseTools": [
           "export declare function releaseTools(): void;"
+        ],
+        "ROUTES": [
+          "export declare const ROUTES: { readonly bindings: \"/api/dsh-worktree-sidebar/bindings\"; readonly health: \"/api/dsh-worktree-sidebar/health\"; };"
         ]
       }
     },
@@ -373,6 +422,12 @@
         "apply": [
           "export declare function apply(ctx: ClientContext): void;"
         ],
+        "createInjectWrapper": [
+          "export declare function createInjectWrapper(viewFor: ViewFor): WrapInject;"
+        ],
+        "releaseAllSeedings": [
+          "export declare function releaseAllSeedings(): void;"
+        ],
         "createSessionsSource": [
           "export declare function createSessionsSource(real: ObservablePort<SessionsSnapshotLike>, sessionId: string, currentPath: () => string | null): SessionsSource;"
         ],
@@ -382,14 +437,11 @@
         "FILES_KIND": [
           "export declare const FILES_KIND = \"files\";"
         ],
-        "OUR_TYPE_ID": [
-          "export declare const OUR_TYPE_ID = \"@wingsky-1/dsh-worktree-sidebar/files\";"
-        ],
-        "TITLE_SLOT": [
-          "export declare const TITLE_SLOT = \"sidebar.right.pane.tab.title\";"
-        ],
         "installTakeover": [
           "export declare function installTakeover(deps: TakeoverDeps): () => void;"
+        ],
+        "shadowPriorityOf": [
+          "export declare function shadowPriorityOf(official: StoredEntryLike): number;"
         ]
       }
     }

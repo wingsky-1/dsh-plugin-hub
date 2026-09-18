@@ -1,17 +1,11 @@
 {
   "$schema": "../node_modules/@stryker-mutator/core/schema/stryker-schema.json",
   "mutate": [
-    "packages/dsh-worktree-sidebar/src/**/*.ts",
-    "!packages/dsh-worktree-sidebar/src/client/**"
+    "packages/dsh-worktree-sidebar/src/**/*.ts"
   ],
   "testRunner": "vitest",
   "mutator": {
-    "excludedMutations": [
-      "StringLiteral",
-      "ArrayLiteral",
-      "ObjectLiteral",
-      "TemplateLiteral"
-    ]
+    "excludedMutations": []
   },
   "plugins": [
     "@stryker-mutator/vitest-runner"
@@ -36,5 +30,5 @@
   },
   "incremental": true,
   "incrementalFile": "coverage/mutation/incremental-worktree-sidebar.json",
-  "_comment": "#276 方案 A：src 级单段。客户端 src/client/** 排除——它的断言对象是官方 slots 运行时与构建产物 lib/client.js，mutate 面对它没有可杀灭的语义（与 dsh-web-file-preview 同口径）。incremental 基线随 observe 夜间全量班重建。"
+  "_comment": "#847：src/**/*.ts 单段覆盖宿主与客户端，无文件排除；通过 enableMutations 撤销共享默认的四类字面量排除，本包有效算子排除集合为空。incremental 基线随 observe 夜间全量班重建。"
 }

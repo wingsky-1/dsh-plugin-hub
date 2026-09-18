@@ -210,6 +210,43 @@ describe("树根播种：只在用户可感知的时机读绑定（没有定时�
     expect(h.starts()).toEqual([OFFICIAL_SEED, { tabId: TAB_ID, root: "/wt" }]);
   });
 
+  it("查询参数完整编码会话标识，并声明 JSON 响应类型", async () => {
+    const requests: Array<{ url: string; accept: string | null }> = [];
+    const h = mount(bindingResponse);
+    globalThis.fetch = async (input, init) => {
+      requests.push({ url: String(input), accept: new Headers(init?.headers).get("accept") });
+      return bindingResponse();
+    };
+    const face = h.capturedInject()("会话 /?&=+#") as Face;
+    face.start?.(TAB_ID, CWD);
+    await settleMicrotasks();
+    expect(requests).toEqual([
+      {
+        url: "/api/dsh-worktree-sidebar/bindings?session=%E4%BC%9A%E8%AF%9D%20%2F%3F%26%3D%2B%23",
+        accept: "application/json",
+      },
+    ]);
+  });
+
+  it.each([
+    [
+      "invalid revision",
+      () => new Response(JSON.stringify({ revision: "2", worktreePath: "/other" })),
+    ],
+    ["invalid JSON", () => new Response("not-json")],
+    ["network rejection", () => Promise.reject(new Error("offline"))],
+  ])("%s 保留上次已确认的根", async (_name, failure) => {
+    let calls = 0;
+    const h = mount(() => (++calls === 1 ? bindingResponse() : failure()));
+    const face = h.capturedInject()(SESSION_ID) as Face;
+    face.start?.(TAB_ID, CWD);
+    await settleMicrotasks();
+    expect(h.starts()).toEqual([OFFICIAL_SEED, { tabId: TAB_ID, root: "/wt" }]);
+    face.load?.(TAB_ID, "/wt");
+    await settleMicrotasks();
+    expect(h.starts()).toEqual([OFFICIAL_SEED, { tabId: TAB_ID, root: "/wt" }]);
+  });
+
   it("绑定查询永不返回时，官方那一帧照播（树不会一直空白）", async () => {
     // 端点慢/挂起时，官方正文的 state 会停在 undefined 并渲染 null；把首帧挂在这次 fetch 上，
     // 等于让**所有会话**（含从未登记的）的 Files 树一起空白。所以必须先播官方 root。
@@ -356,6 +393,23 @@ describe("树根播种：只在用户可感知的时机读绑定（没有定时�
     await settleMicrotasks();
 
     expect(h.starts().length).toBe(before);
+  });
+
+  it("卸载时仍在等待的绑定响应到达后，不再调用官方 start", async () => {
+    let resolveBinding!: (response: Response) => void;
+    const pending = new Promise<Response>((resolve) => {
+      resolveBinding = resolve;
+    });
+    const h = mount(() => pending);
+    const face = h.capturedInject()(SESSION_ID) as Face;
+    face.start?.(TAB_ID, CWD);
+    expect(h.starts()).toEqual([OFFICIAL_SEED]);
+
+    h.dispose();
+    resolveBinding(bindingResponse());
+    await settleMicrotasks();
+
+    expect(h.starts()).toEqual([OFFICIAL_SEED]);
   });
 
   it("视图缓存有上限：最冷的会话被淘汰，仍然在缓存的会话引用稳定", () => {

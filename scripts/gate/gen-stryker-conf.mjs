@@ -62,6 +62,9 @@ import {
   collectCoverageExcludePatterns,
   coverageExcludeProblems,
   mutationFaceRatchetProblems,
+  mutationPolicyProblems,
+  mutationPolicyRatchetProblems,
+  effectiveExcludedMutations,
   packageRegistrationProblems,
 } from "./mutation-topology.mjs";
 import {
@@ -145,7 +148,7 @@ function deriveConfig(sharedDefaults, pkgName, segKey, segDef, pkgDef) {
 
   const mutate = [
     ...segDef.mutate,
-    // 段 excludes 必填（#836）：形状判据已保证它是非空数组，故不再有缺省回退。
+    // 段 excludes 必填（#836）：形状判据已保证它是数组（可显式为空），故不再有缺省回退。
     ...segDef.excludes,
     // S0 覆盖断言的存量登记（#710 第二节 / #773 R4 起为 { pattern, reason, kind } 结构化条目）：
     // 门面/声明/资源/有意不度量四类。取值与断言侧同一份 collectCoverageExcludePatterns，
@@ -158,7 +161,7 @@ function deriveConfig(sharedDefaults, pkgName, segKey, segDef, pkgDef) {
     mutate,
     testRunner: sharedDefaults.testRunner,
     mutator: {
-      excludedMutations: sharedDefaults.excludedMutations,
+      excludedMutations: effectiveExcludedMutations(sharedDefaults, pkgDef),
     },
     // runner 包名由 testRunner 派生，避免 SSOT（sharedDefaults.testRunner）与插件清单两处漂移。
     plugins: [`@stryker-mutator/${sharedDefaults.testRunner}-runner`],
@@ -200,7 +203,7 @@ function deriveConfig(sharedDefaults, pkgName, segKey, segDef, pkgDef) {
  * "形状不对"只有一条判红通道——包登记为 null 时若先去读 `pkgDef.segments` 就是抛栈崩掉。
  */
 function topologyShapeProblems(topology) {
-  const problems = [...packageRegistrationProblems(topology)];
+  const problems = [...packageRegistrationProblems(topology), ...mutationPolicyProblems(topology)];
   for (const [pkgName, pkgDef] of Object.entries(topology.packages ?? {})) {
     for (const problem of coverageExcludeProblems(pkgDef)) {
       problems.push(`[${pkgName}] ${problem}`);
@@ -495,6 +498,7 @@ function faceRatchetCheck(topology) {
       expand,
       exemptions,
     }),
+    operatorProblems: mutationPolicyRatchetProblems(base.topology, topology),
     baseRef,
   };
 }
@@ -644,7 +648,7 @@ function main() {
       console.error(`[gen-stryker-conf] ${ratchet.envError} —— 环境故障按 fail-closed 处理`);
       return 2;
     }
-    const problems = [...check.problems, ...ratchet.problems];
+    const problems = [...check.problems, ...ratchet.problems, ...ratchet.operatorProblems];
     for (const p of problems) console.error(`[gen-stryker-conf] ${p}`);
     if (problems.length > 0) {
       console.error(

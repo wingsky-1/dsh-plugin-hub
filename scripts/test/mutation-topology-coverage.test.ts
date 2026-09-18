@@ -356,12 +356,11 @@ test("#773 R4 反证：包登记的 segments 缺失 / null / 非对象 → 判�
   );
 });
 
-test("#836 反证：段缺 excludes / 空 / 非数组 / 段非对象 → 逐条判词，不得抛栈", () => {
+test("#836 反证：段缺 excludes / 非数组 / 段非对象 → 逐条判词，不得抛栈（显式空数组合法，见 #847 用例）", () => {
   const pkgName = "fixture-pkg";
   const cases = [
-    ["段缺 excludes", { mutate: [`packages/${pkgName}/src/a.ts`] }, /excludes 必须是非空数组/],
-    ["excludes 是空数组", { mutate: [], excludes: [] }, /excludes 必须是非空数组/],
-    ["excludes 非数组", { mutate: [], excludes: "!packages/x/src/**" }, /excludes 必须是非空数组/],
+    ["段缺 excludes", { mutate: [`packages/${pkgName}/src/a.ts`] }, /excludes 必须是数组/],
+    ["excludes 非数组", { mutate: [], excludes: "!packages/x/src/**" }, /excludes 必须是数组/],
     ["段非对象", null, /必须是对象/],
   ];
   for (const [name, seg, re] of cases) {
@@ -623,7 +622,7 @@ test("#836 反证：段省略 excludes 时 --check 判红并点名段，不得�
   try {
     const res = runGenerator(root, ["--check"]);
     assert.equal(res.status, 1, `缺 excludes 必须判红：\n${res.out}`);
-    assert.match(res.out, /段 "only" 的 excludes 必须是非空数组/, "判词要点名是哪个段");
+    assert.match(res.out, /段 "only" 的 excludes 必须是数组/, "判词要点名是哪个段");
     assert.doesNotMatch(
       res.out,
       /TypeError|is not iterable/,

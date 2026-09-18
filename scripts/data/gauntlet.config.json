@@ -37,10 +37,19 @@
         "threshold": 60
       },
       "dsh-worktree-sidebar": {
+        "baselineScore": 79.29,
+        "baselineCovered": 80.3,
+        "baselineKilled": 1505,
+        "baselineTimeout": 11,
+        "baselineSurvived": 372,
+        "baselineTotal": 1912,
+        "baselineNoCoverage": 24,
+        "baselineErrors": 0,
+        "baselineDate": "2026-09-18",
         "config": "stryker.conf.d/dsh-worktree-sidebar.json",
         "threshold": 60,
-        "scope": "src 级单段（#276 方案 A）：mutate = packages/dsh-worktree-sidebar/src/**/*.ts，排除 src/client/**（断言对象是官方 slots 运行时与 lib/client.js 产物，无可杀灭语义）",
-        "baselineScope": "新包：基线由合入后的 observe 夜间全量班首次跑完回填 baselineScore / baselineCovered / baselineDate；在那之前 observe-check 的基线列显示 —，不参与回落判据。"
+        "scope": "src 级单段（#276 方案 A）：mutate = packages/dsh-worktree-sidebar/src/**/*.ts，零文件排除；经包级 enableMutations 撤销共享默认的 StringLiteral/ArrayLiteral/ObjectLiteral/TemplateLiteral 四类排除，有效算子排除集合为空（#847）",
+        "baselineScope": "零排除新面本地全量冷跑：2026-09-18（UTC），基线 3e69d0f1 + 本分支未提交改动（含客户端纳入、四类算子开启、6 个新增测试），1915 个变异体零 Ignored；计分 total 1912，covered 分母 1884，score 79.29% / covered 80.30%（killed 1505 / timeout 11 / survived 372 / noCov 24；另 RuntimeError 3 个按 lib 口径 excluded，不计分）。旧面历史锚（2026-09-16 run 35158431365，score 85.89% / covered 86.14%，计分口径含 386 Ignored）已作废：面扩大后分母不同，不可比。"
       },
       "dsh-mcp-manager": {
         "baselineScore": 58.74,

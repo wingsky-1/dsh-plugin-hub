@@ -719,3 +719,120 @@ test("判据⑦ 载体自证：基准拓扑无包登记（比对面为空）→ 
     removeFixtureRoot(root);
   }
 });
+
+const LITERALS = ["StringLiteral", "ArrayLiteral", "ObjectLiteral", "TemplateLiteral"];
+
+function enabledTopology() {
+  const topology = structuredClone(TOPOLOGY);
+  topology.sharedDefaults.excludedMutations = [...LITERALS];
+  topology.packages[PKG].enableMutations = [...LITERALS];
+  topology.packages[PKG].segments.only.excludes = [];
+  return topology;
+}
+
+test("#847：显式空 excludes 与四类减项派生零排除，check 仍判有效面", () => {
+  const topology = enabledTopology();
+  const root = makeFixtureRoot({}, topology);
+  try {
+    const generated = runGenerator(root);
+    assert.equal(generated.status, 0, generated.out);
+    const conf = JSON.parse(readFileSync(join(root, "stryker.conf.d", PKG + "-only.json"), "utf8"));
+    assert.deepEqual(conf.mutate, ["packages/fixture-pkg/src/**/*.ts"]);
+    assert.deepEqual(conf.mutator.excludedMutations, []);
+    const checked = runGenerator(root, ["--check"]);
+    assert.equal(checked.status, 0, checked.out);
+    topology.packages[PKG].segments.only.mutate = [];
+    writeTopology(root, topology);
+    assert.equal(runGenerator(root).status, 0);
+    const empty = runGenerator(root, ["--check"]);
+    assert.equal(empty.status, 1);
+    assert.match(empty.out, /有效面为空/);
+  } finally {
+    removeFixtureRoot(root);
+  }
+});
+
+for (const [label, change, expected] of [
+  [
+    "删除字段",
+    (t) => {
+      delete t.packages[PKG].enableMutations;
+    },
+    /有效算子排除集合相对基准增加/,
+  ],
+  [
+    "撤销部分启用",
+    (t) => {
+      t.packages[PKG].enableMutations.pop();
+    },
+    /有效算子排除集合相对基准增加：TemplateLiteral/,
+  ],
+  [
+    "全局增加排除",
+    (t) => {
+      t.sharedDefaults.excludedMutations.push("BooleanLiteral");
+    },
+    /有效算子排除集合相对基准增加：BooleanLiteral/,
+  ],
+]) {
+  test("#847：有效算子排除棘轮拦截" + label, () => {
+    const topology = enabledTopology();
+    const root = makeFixtureRoot({}, topology);
+    try {
+      change(topology);
+      writeTopology(root, topology);
+      assert.equal(runGenerator(root).status, 0);
+      const checked = runGenerator(root, ["--check"]);
+      assert.equal(checked.status, 1, checked.out);
+      assert.match(checked.out, expected);
+    } finally {
+      removeFixtureRoot(root);
+    }
+  });
+}
+
+for (const value of [
+  null,
+  "StringLiteral",
+  {},
+  [42],
+  [""],
+  ["Unknown"],
+  ["StringLiteral", "StringLiteral"],
+  ["BooleanLiteral"],
+]) {
+  test("#847：非法 enableMutations fail-closed " + JSON.stringify(value), () => {
+    const topology = enabledTopology();
+    topology.packages[PKG].enableMutations = value;
+    const root = makeFixtureRoot({}, topology);
+    try {
+      const generated = runGenerator(root);
+      assert.equal(generated.status, 1, generated.out);
+      assert.match(generated.out, /enableMutations/);
+      assert.doesNotMatch(generated.out, /TypeError/);
+    } finally {
+      removeFixtureRoot(root);
+    }
+  });
+}
+
+for (const value of [
+  null,
+  "StringLiteral",
+  [42],
+  ["Unknown"],
+  ["StringLiteral", "StringLiteral"],
+]) {
+  test("#847：非法共享排除集合 fail-closed " + JSON.stringify(value), () => {
+    const topology = enabledTopology();
+    topology.sharedDefaults.excludedMutations = value;
+    const root = makeFixtureRoot({}, topology);
+    try {
+      const generated = runGenerator(root);
+      assert.equal(generated.status, 1, generated.out);
+      assert.match(generated.out, /sharedDefaults.excludedMutations/);
+    } finally {
+      removeFixtureRoot(root);
+    }
+  });
+}

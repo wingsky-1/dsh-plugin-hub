@@ -19,6 +19,12 @@ import { buildCreateTool } from "../../src/server/tools/impl/create/index.ts";
 import { buildRegisterTool } from "../../src/server/tools/impl/register/index.ts";
 import { buildRemoveTool } from "../../src/server/tools/impl/remove/index.ts";
 import type { ToolResultValue } from "../../src/server/tools/impl/protocol/index.ts";
+import {
+  RESULT_SCHEMA,
+  argBool,
+  argString,
+  renderResult,
+} from "../../src/server/tools/impl/protocol/index.ts";
 import { cleanup, tempDir } from "../helpers.ts";
 
 let root = "";
@@ -845,6 +851,70 @@ describe("返回文本", () => {
     expect(rendered[0]?.type).toBe("text");
     // branch 取自 headBranch（假 git 恒回 "feature"），不是入参里的分支名。
     expect(rendered[0]?.text).toContain("bound worktree: " + target + " [feature]");
+  });
+
+  it("结果信封的 schema 与宿主 enforced subset 逐字一致（字段名/类型/必填/禁增改即红）", () => {
+    // 字面量逐字钉死宿主契约：这里故意不从实现 import 期望值。
+    expect(RESULT_SCHEMA).toEqual({
+      type: "object",
+      properties: {
+        ok: { type: "boolean", description: "Whether the requested operation succeeded." },
+        bound: {
+          type: "boolean",
+          description:
+            "Whether a worktree is bound to this session or inherited from a parent session after the call.",
+        },
+        worktree: {
+          type: "string",
+          description: "Absolute path of the bound worktree; empty when bound is false.",
+        },
+        branch: {
+          type: "string",
+          description: "Bound branch name; empty when bound is false or the worktree is detached.",
+        },
+        detail: {
+          type: "string",
+          description:
+            "What happened: for failures, the reason and the next thing to try; for successes, the effect.",
+        },
+      },
+      required: ["ok", "bound", "worktree", "branch", "detail"],
+      additionalProperties: false,
+    });
+  });
+
+  it("renderResult 三态逐字：绑定带分支、detached 无分支后缀、未绑定", () => {
+    expect(
+      renderResult({ ok: true, bound: true, worktree: "/wt", branch: "feat", detail: "done" }),
+    ).toEqual([{ type: "text", text: "bound worktree: /wt [feat]\ndone" }]);
+    expect(
+      renderResult({ ok: true, bound: true, worktree: "/wt", branch: "", detail: "done" }),
+    ).toEqual([{ type: "text", text: "bound worktree: /wt\ndone" }]);
+    expect(
+      renderResult({ ok: false, bound: false, worktree: "", branch: "", detail: "nope" }),
+    ).toEqual([{ type: "text", text: "no worktree bound to this session\nnope" }]);
+  });
+
+  it("argString 真值表：非对象/缺席/非串/空白视同缺席，其余 trim 后返回", () => {
+    expect(argString(null, "k")).toBe(undefined);
+    expect(argString(42, "k")).toBe(undefined);
+    expect(argString({}, "k")).toBe(undefined);
+    expect(argString({ k: 42 }, "k")).toBe(undefined);
+    expect(argString({ k: true }, "k")).toBe(undefined);
+    expect(argString({ k: "" }, "k")).toBe(undefined);
+    expect(argString({ k: "   " }, "k")).toBe(undefined);
+    expect(argString({ k: "  /wt  " }, "k")).toBe("/wt");
+    expect(argString({ k: "/wt" }, "k")).toBe("/wt");
+  });
+
+  it("argBool 真值表：只有显式 true 为真，缺席/非布尔/字符串 true 都不算", () => {
+    expect(argBool(null, "k")).toBe(false);
+    expect(argBool(42, "k")).toBe(false);
+    expect(argBool({}, "k")).toBe(false);
+    expect(argBool({ k: true }, "k")).toBe(true);
+    expect(argBool({ k: false }, "k")).toBe(false);
+    expect(argBool({ k: "true" }, "k")).toBe(false);
+    expect(argBool({ k: 1 }, "k")).toBe(false);
   });
 
   it("未绑定时状态行说明没有绑定", async () => {
