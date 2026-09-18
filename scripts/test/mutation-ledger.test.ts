@@ -308,3 +308,46 @@ test("CLI 三态：--check 通过仍 exit 0 且无故障注解", () => {
   assert.doesNotMatch(`${r.stdout}${r.stderr}`, /::error::门禁故障/);
   assert.match(r.stdout, /--check 通过/);
 });
+
+/**
+ * runCheck 直调探针：failClosed 会 exit 掉调用方，故经子进程调导出的 runCheck。
+ * CLI 入口仍只能对真仓求值（路径注入只存在于函数参数，不存在 env/argv 面）。
+ */
+function runCheckProbe(args) {
+  const dir = mkdtempSync(join(tmpdir(), "ledger-probe-"));
+  const probe = join(dir, "probe.mjs");
+  writeFileSync(
+    probe,
+    `import { runCheck } from ${JSON.stringify(join(ROOT, "scripts/gate/mutation-ledger.mjs"))};\n` +
+      `process.exitCode = runCheck(${JSON.stringify(args)});\n`,
+  );
+  try {
+    return spawnSync(process.execPath, [probe], { cwd: ROOT, encoding: "utf8" });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+test("fail-closed：台账缺失 → exit 2 且统一故障注解（注入临时路径，真仓不动）", () => {
+  const r = runCheckProbe({
+    ledgerPath: join(tmpdir(), "ledger-absent-875.json"),
+    confDir: join(ROOT, "stryker.conf.d"),
+  });
+  assert.equal(r.status, 2, `${r.stdout}${r.stderr}`);
+  assert.match(r.stderr, /^::error::门禁故障（非判据结论）：\[ledger\] 台账不存在/m);
+  assert.equal(r.stdout, "");
+});
+
+test("fail-closed：--from-log 指向不存在文件 → exit 2 且统一故障注解（T1，不再抛未捕获异常）", () => {
+  const missing = join(tmpdir(), "ledger-missing-875.log");
+  rmSync(missing, { force: true });
+  const r = spawnSync(
+    process.execPath,
+    [SCRIPT, "--run", "1", "--from-log", missing, "--scope", "full"],
+    { cwd: ROOT, encoding: "utf8" },
+  );
+  assert.equal(r.status, 2, `${r.stdout}${r.stderr}`);
+  assert.match(r.stderr, /^::error::门禁故障（非判据结论）：\[ledger\] 日志文件不可读/m);
+  assert.doesNotMatch(r.stderr, /Error: ENOENT/);
+  assert.equal(r.stdout, "");
+});

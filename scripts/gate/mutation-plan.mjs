@@ -150,18 +150,22 @@ export function buildShardMatrix(segs, peaks) {
     .map((seg) => ({ seg, timeoutMinutes: timeoutForSegment(seg, peaks) }));
 }
 
-function main() {
-  const segs = listSegments();
+/**
+ * 矩阵派生入口。路径默认指向仓库真实文件（CLI 只能对真仓求值），测试可注入临时路径；
+ * 默认行为与原来逐字一致（形态同 listSegments(confDir = CONF_DIR)）。
+ */
+export function main({ confDir = CONF_DIR, ledgerPath = LEDGER_PATH } = {}) {
+  const segs = listSegments(confDir);
   if (segs.length === 0) {
-    failClosed(`[mutation-plan] ${CONF_DIR} 下无 dsh-*.json —— 段集合为空（fail-closed）`);
+    failClosed(`[mutation-plan] ${confDir} 下无 dsh-*.json —— 段集合为空（fail-closed）`);
   }
   let ledger = null;
-  if (existsSync(LEDGER_PATH)) {
+  if (existsSync(ledgerPath)) {
     try {
-      ledger = JSON.parse(readFileSync(LEDGER_PATH, "utf8"));
+      ledger = JSON.parse(readFileSync(ledgerPath, "utf8"));
     } catch (e) {
       failClosed(
-        `[mutation-plan] 台账不可解析：${LEDGER_PATH} —— ${String(e.message).split("\n")[0]}`,
+        `[mutation-plan] 台账不可解析：${ledgerPath} —— ${String(e.message).split("\n")[0]}`,
       );
     }
   }

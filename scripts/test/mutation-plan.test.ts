@@ -170,6 +170,52 @@ test("真实仓库：入库台账的 full 测量值确实被超时派生消费�
   assert.ok(matrix.length > 0, "矩阵非空");
 });
 
+/**
+ * main 直调探针：failClosed 会 exit 掉调用方，故经子进程调导出的 main。
+ * CLI 入口仍只能对真仓求值（路径注入只存在于函数参数，不存在 env/argv 面）。
+ */
+function mainProbe(args) {
+  const dir = mkdtempSync(join(tmpdir(), "plan-probe-"));
+  const probe = join(dir, "probe.mjs");
+  writeFileSync(
+    probe,
+    `import { main } from ${JSON.stringify(join(ROOT, "scripts/gate/mutation-plan.mjs"))};\n` +
+      `process.exitCode = main(${JSON.stringify(args)});\n`,
+  );
+  try {
+    return spawnSync(process.execPath, [probe], { cwd: ROOT, encoding: "utf8" });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+test("fail-closed：空段集 → exit 2 且统一故障注解（注入空目录，真仓不动）", () => {
+  const dir = mkdtempSync(join(tmpdir(), "plan-empty-"));
+  try {
+    const r = mainProbe({ confDir: dir });
+    assert.equal(r.status, 2, `${r.stdout}${r.stderr}`);
+    assert.match(r.stderr, /^::error::门禁故障（非判据结论）：\[mutation-plan\].*段集合为空/m);
+    assert.equal(r.stdout, "");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("fail-closed：台账不可解析 → exit 2 且统一故障注解（注入坏台账，真仓不动）", () => {
+  const dir = mkdtempSync(join(tmpdir(), "plan-badledger-"));
+  try {
+    writeFileSync(join(dir, "dsh-x.json"), "{}");
+    const badLedger = join(dir, "ledger.json");
+    writeFileSync(badLedger, "{ broken");
+    const r = mainProbe({ confDir: dir, ledgerPath: badLedger });
+    assert.equal(r.status, 2, `${r.stdout}${r.stderr}`);
+    assert.match(r.stderr, /^::error::门禁故障（非判据结论）：\[mutation-plan\] 台账不可解析/m);
+    assert.equal(r.stdout, "");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("CLI 三态：真仓矩阵派生 exit 0 且无故障注解（shards 经隔离 GITHUB_OUTPUT）", () => {
   const dir = mkdtempSync(join(tmpdir(), "mutation-plan-"));
   const outFile = join(dir, "github-output");
