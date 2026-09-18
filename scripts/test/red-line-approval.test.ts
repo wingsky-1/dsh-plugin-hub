@@ -489,6 +489,26 @@ test("CLI fail-closed：缺失/不可解析的输入一律 exit 2，且不得与
   for (const { args, why } of cases) {
     const r = runCli(args);
     assert.equal(r.status, 2, `${why} 必须 exit 2（实际 ${r.status}）：${r.stderr}`);
+    assert.match(
+      r.stderr,
+      /^::error::门禁故障（非判据结论）：red-line-approval:/m,
+      `${why} 必须带统一故障注解`,
+    );
+    assert.equal(r.stdout, "", `${why} 不得污染 stdout`);
+  }
+});
+
+test("CLI fail-closed：输入不可解析 → exit 2 且统一故障注解", () => {
+  const dir = mkdtempSync(join(tmpdir(), "red-line-unparse-"));
+  try {
+    const bad = join(dir, "bad.json");
+    writeFileSync(bad, "{ not json");
+    const r = runCli(["--files-json", bad]);
+    assert.equal(r.status, 2, r.stderr);
+    assert.match(r.stderr, /^::error::门禁故障（非判据结论）：red-line-approval: 输入不可解析/m);
+    assert.equal(r.stdout, "");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
   }
 });
 
@@ -794,7 +814,8 @@ test("parseArgs/main 可被 import 直调（不产生副作用）——main 与 
   assert.equal(parseArgs(["--files", "a", "--files-json", "f.json"]).ok, false);
   assert.equal(main(["--files", ".github/x.yml"]), 1);
   assert.equal(main(["--files", ".github/x.yml", "--labels", "approved"]), 0);
-  assert.equal(main([]), 2);
+  // main([]) 不再直调断言：失败出口已改 failClosed（直调会把测试进程一起 exit 掉），
+  // exit 2 面由下面 CLI 用例覆盖（与 CLI 退出码同源）。
 });
 
 // ─────────────────────────── 四、接线（ci.yml） ───────────────────────────

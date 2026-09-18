@@ -35,6 +35,7 @@
  */
 import { readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { join, matchesGlob, normalize, relative } from "node:path";
+import { failClosed } from "../lib/gate-exit.mjs";
 
 /**
  * 红线面的**基座**：仓库 `AGENTS.md` 明写的红线之一（`.github/` 下 workflow 与分支保护）。
@@ -476,8 +477,7 @@ export function main(argv = process.argv.slice(2)) {
   }
   const parsed = parseArgs(argv);
   if (!parsed.ok) {
-    console.error(`red-line-approval: ${parsed.error} —— fail-closed（exit 2）`);
-    return 2;
+    failClosed(`red-line-approval: ${parsed.error} —— fail-closed（exit 2）`);
   }
   let changedFiles;
   let labels;
@@ -491,14 +491,12 @@ export function main(argv = process.argv.slice(2)) {
       json: parsed.mode === "json",
     });
   } catch (e) {
-    console.error(`red-line-approval: 输入不可解析（${e.message}）—— fail-closed（exit 2）`);
-    return 2;
+    failClosed(`red-line-approval: 输入不可解析（${e.message}）—— fail-closed（exit 2）`);
   }
   if (changedFiles.length === 0) {
-    console.error(
+    failClosed(
       "red-line-approval: 变更文件集为空 —— 无法判定（不是「无红线改动」），fail-closed（exit 2）",
     );
-    return 2;
   }
   const result = judgeRedLine({
     changedFiles,

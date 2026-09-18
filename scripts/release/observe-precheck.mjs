@@ -66,6 +66,7 @@
 import { execFileSync } from "node:child_process";
 import { readFileSync, realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { failClosed } from "../lib/gate-exit.mjs";
 
 export const DEFAULT_WORKFLOW = "observe.yml";
 export const DEFAULT_MAX_AGE_HOURS = 24;
@@ -387,22 +388,17 @@ function main(argv, env = process.env) {
   }
   const unknown = unknownArgs(argv);
   if (unknown.length > 0) {
-    console.error(`observe-precheck: 未知参数 ${unknown.join(" ")}（用 --help 查看可用参数）`);
-    return 2;
+    failClosed(`observe-precheck: 未知参数 ${unknown.join(" ")}（用 --help 查看可用参数）`);
   }
   const rawMaxAge = argValue(argv, "--max-age-hours", String(DEFAULT_MAX_AGE_HOURS));
   const maxAgeHours = Number(rawMaxAge);
   if (!(Number.isFinite(maxAgeHours) && maxAgeHours > 0)) {
-    console.error(`observe-precheck: --max-age-hours 需要正数（实际 ${rawMaxAge}）`);
-    return 2;
+    failClosed(`observe-precheck: --max-age-hours 需要正数（实际 ${rawMaxAge}）`);
   }
   const rawPerPage = argValue(argv, "--per-page", String(DEFAULT_PER_PAGE));
   const perPage = Number(rawPerPage);
   if (!(Number.isInteger(perPage) && perPage >= 1 && perPage <= MAX_PER_PAGE)) {
-    console.error(
-      `observe-precheck: --per-page 需要 1..${MAX_PER_PAGE} 的整数（实际 ${rawPerPage}）`,
-    );
-    return 2;
+    failClosed(`observe-precheck: --per-page 需要 1..${MAX_PER_PAGE} 的整数（实际 ${rawPerPage}）`);
   }
   const workflow = argValue(argv, "--workflow", DEFAULT_WORKFLOW);
   const repo = argValue(argv, "--repo", REPO_PLACEHOLDER);

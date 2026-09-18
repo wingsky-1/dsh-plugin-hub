@@ -149,7 +149,12 @@ test("CLI 接线：--threshold-hours 非正数一律 exit 2（fail-closed，不�
     for (const bad of ["0", "48h"]) {
       const result = runCli(dir, ["--threshold-hours", bad]);
       assert.equal(result.status, 2, `${bad}：阈值非正数必须 exit 2（参数校验在写任何文件之前）`);
-      assert.match(result.stderr, /--threshold-hours 需要正数/);
+      assert.match(
+        result.stderr,
+        /^::error::门禁故障（非判据结论）：baseline-staleness: --threshold-hours 需要正数/m,
+        `${bad}：必须带统一故障注解`,
+      );
+      assert.equal(result.stdout, "", `${bad}：不得污染 stdout`);
       assert.equal(existsSync(join(dir, "status.json")), false, `${bad}：参数非法不得落状态文件`);
     }
   } finally {

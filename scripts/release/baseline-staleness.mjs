@@ -24,6 +24,7 @@
 import { execFileSync } from "node:child_process";
 import { realpathSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { failClosed } from "../lib/gate-exit.mjs";
 
 /**
  * 告警阈值（小时）：48 = 连续两夜未入档。
@@ -174,16 +175,14 @@ function readBaselineCommit(branch) {
   return readCommitFields(JSON.parse(raw), branch);
 }
 
-/** 非法阈值只能回 null：exit 2 的语义属于 main（GHA 下非零会跳过后面的建单步骤）。 */
+/** 非法阈值回 { error }（调用方 failClosed）：exit 2 的语义属于 main（GHA 下非零会跳过后面的建单步骤）。 */
 function parseThresholdHours(argv) {
-  const thresholdHours = Number(
-    argValue(argv, "--threshold-hours", String(STALENESS_THRESHOLD_HOURS)),
-  );
+  const raw = argValue(argv, "--threshold-hours", String(STALENESS_THRESHOLD_HOURS));
+  const thresholdHours = Number(raw);
   if (!(Number.isFinite(thresholdHours) && thresholdHours > 0)) {
-    console.error(`baseline-staleness: --threshold-hours 需要正数（实际 ${thresholdHours}）`);
-    return null;
+    return { error: `baseline-staleness: --threshold-hours 需要正数（实际 ${raw}）` };
   }
-  return thresholdHours;
+  return { hours: thresholdHours };
 }
 
 function resolveNow(argv) {
@@ -250,8 +249,9 @@ function printBaselineReport(state, branch) {
  */
 function main(argv) {
   const branch = argValue(argv, "--branch", DEFAULT_BRANCH);
-  const thresholdHours = parseThresholdHours(argv);
-  if (thresholdHours === null) return 2;
+  const parsedThreshold = parseThresholdHours(argv);
+  if (parsedThreshold.error !== undefined) failClosed(parsedThreshold.error);
+  const thresholdHours = parsedThreshold.hours;
   const statusFile = argValue(argv, "--status-file", null);
   const issueFile = argValue(argv, "--issue-file", null);
   const injectedDate = argValue(argv, "--commit-date", null);

@@ -283,7 +283,12 @@ test("CLI 参数校验：非法参数 exit 2（与「判据拦下 exit 1」区�
   ]) {
     const result = runCli(args);
     assert.equal(result.status, 2, args.join(" "));
-    assert.match(result.stderr, /需要/);
+    assert.match(
+      result.stderr,
+      /^::error::门禁故障（非判据结论）：observe-precheck: --(max-age-hours|per-page)/m,
+      `${args.join(" ")} 必须带统一故障注解`,
+    );
+    assert.equal(result.stdout, "", `${args.join(" ")} 不得污染 stdout`);
   }
 });
 
@@ -299,7 +304,12 @@ test("CLI 参数校验：未知 flag / 多余位置参数一律 exit 2，不得�
     ]) {
       const result = runCli([...args, "--runs-file", freshPath, "--now", NOW]);
       assert.equal(result.status, 2, `${args.join(" ")} 必须判参数非法`);
-      assert.match(result.stderr, /未知参数/, `${args.join(" ")} 要指名未知参数`);
+      assert.match(
+        result.stderr,
+        /^::error::门禁故障（非判据结论）：observe-precheck: 未知参数/m,
+        `${args.join(" ")} 必须带统一故障注解`,
+      );
+      assert.equal(result.stdout, "", `${args.join(" ")} 不得污染 stdout`);
     }
     // 夹具本身在默认窗口下放行：上面几条一旦回落默认值就会 exit 0（静默漏网）
     assert.equal(runCli(["--runs-file", freshPath, "--now", NOW]).status, 0);
