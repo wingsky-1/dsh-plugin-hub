@@ -87,6 +87,7 @@ const UNWIRED_TEST_FACES: Record<string, string> = {
  */
 const EXPECT_FILES: Record<string, string[]> = {
   "dsh-lan-proxy": [
+    "client-dom/settings-card.test.ts",
     "client-unit/host-trust-alert.test.ts",
     "client-unit/host-trust-status.test.ts",
     "client/client-style.test.ts",

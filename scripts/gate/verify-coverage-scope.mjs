@@ -24,7 +24,8 @@
  *   5. **条目腐烂**：每条 include / exclude 模式都必须命中至少一个物理文件；命中 0 个即红
  *      （条目指向的东西已经不存在了）。
  *   6. **产物交叉断言**：若 `coverage/coverage-final.json` 存在且**比本配置新**，断言其 keys
- *      与 include 减 exclude 后的计分对象集合双向一致，既不能多出对象，也不能缺少对象。
+ *      不超出 include 减 exclude 的源码面；其中具有自身可计数语句的文件不得缺失。
+ *      纯类型与仅静态导入/重导出的模块无 Istanbul 计数器，由语法解析确认，不按文件名豁免。
  *      无产物或产物不比配置新时保留静态预检；强制新鲜度与执行指纹不属于这里的判据。
  *
  * 匹配与「源码世界」定义都用 `scripts/lib/glob-files.mjs`（与变异面判据 `gen-stryker-conf --check`
@@ -34,6 +35,8 @@
  */
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { stripTypeScriptTypes } from "node:module";
+import { parse } from "acorn";
 
 import { SOURCE_UNIVERSE_PATTERNS, globFiles, sourceUniverse } from "../lib/glob-files.mjs";
 
@@ -314,6 +317,30 @@ function unclassifiedProblems(universe, includeHits, excludeHits) {
   return problems;
 }
 
+/**
+ * Istanbul 不为仅含类型或静态导入/重导出的模块生成计数器。
+ * 用 Node 的类型擦除与已有 Acorn 解析实际语句，不按文件名放行；
+ * 不支持的语法或解析失败保守要求产物，不能据此把执行源码洗成门面。
+ */
+function hasNoInstrumentableStatements(root, file) {
+  try {
+    const source = readFileSync(join(root, file), "utf8");
+    const javascript = /\.[cm]?tsx?$/.test(file)
+      ? stripTypeScriptTypes(source, { mode: "strip" })
+      : source;
+    const ast = parse(javascript, { ecmaVersion: "latest", sourceType: "module" });
+    return ast.body.every(
+      (statement) =>
+        statement.type === "EmptyStatement" ||
+        statement.type === "ImportDeclaration" ||
+        statement.type === "ExportAllDeclaration" ||
+        (statement.type === "ExportNamedDeclaration" && statement.declaration === null),
+    );
+  } catch {
+    return false;
+  }
+}
+
 /** 产物交叉断言：产物比配置旧时它反映的是旧的面，拿它判当前面会假红。 */
 function artifactCrossCheck(root, configPath, includeHits, excludeHits, problems) {
   const artifactPath = join(root, ARTIFACT_REL);
@@ -335,11 +362,12 @@ function artifactCrossCheck(root, configPath, includeHits, excludeHits, problems
     );
   }
   const reported = new Set(keys);
-  const missing = [...scored].filter((file) => !reported.has(file));
+  const absent = [...scored].filter((file) => !reported.has(file));
+  const missing = absent.filter((file) => !hasNoInstrumentableStatements(root, file));
   for (const file of missing) {
     problems.push(`${file} 在当前计分面内但未出现在覆盖率产物里（分母与产物不一致：计分对象缺失）`);
   }
-  return `产物交叉断言：${keys.length} 个 keys，面内 ${keys.length - outside.length}，缺失 ${missing.length}`;
+  return `产物交叉断言：${keys.length} 个 keys，面内 ${keys.length - outside.length}，缺失 ${missing.length}，无自身可计数语句 ${absent.length - missing.length}`;
 }
 
 function main() {

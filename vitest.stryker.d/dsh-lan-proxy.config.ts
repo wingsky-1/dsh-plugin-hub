@@ -8,6 +8,7 @@ import { defineConfig } from 'vitest/config'
 export default defineConfig({
   test: {
     include: [
+      'packages/dsh-lan-proxy/test/client-dom/settings-card.test.ts',
       'packages/dsh-lan-proxy/test/client-unit/host-trust-alert.test.ts',
       'packages/dsh-lan-proxy/test/client-unit/host-trust-status.test.ts',
       'packages/dsh-lan-proxy/test/integration/apply-token-provider.test.ts',

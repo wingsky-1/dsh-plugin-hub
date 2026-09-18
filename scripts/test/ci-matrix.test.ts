@@ -95,7 +95,7 @@ test("ci-matrix: 场景 a - 正常命中单一 active 包 (via BASE_SET 空格�
   assert.equal(res.hasMutations, "true");
   assert.deepEqual(
     res.mutationCombos.map((c) => c.seg),
-    ["config", "entry", "host-trust", "migrate", "proxy", "shared", "tls"],
+    ["client", "config", "entry", "host-trust", "migrate", "proxy", "shared", "tls"],
   );
 });
 
@@ -215,6 +215,7 @@ test("ci-matrix: 场景 d - 变异段展开正确性 (多段配置 + 多包排�
   assert.deepEqual(
     resMulti.mutationCombos.map((c) => ({ package: c.package, seg: c.seg })),
     [
+      { package: "dsh-lan-proxy", seg: "client" },
       { package: "dsh-lan-proxy", seg: "config" },
       { package: "dsh-lan-proxy", seg: "entry" },
       { package: "dsh-lan-proxy", seg: "host-trust" },

@@ -1,0 +1,42 @@
+{
+  "$schema": "../node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "mutate": [
+    "packages/dsh-lan-proxy/src/client/**/*.ts",
+    "packages/dsh-lan-proxy/src/client/**/*.tsx",
+    "!packages/dsh-lan-proxy/src/client/**/*.d.ts",
+    "!packages/dsh-lan-proxy/src/**/interface.ts"
+  ],
+  "testRunner": "vitest",
+  "mutator": {
+    "excludedMutations": [
+      "StringLiteral",
+      "ArrayLiteral",
+      "ObjectLiteral",
+      "TemplateLiteral"
+    ]
+  },
+  "plugins": [
+    "@stryker-mutator/vitest-runner"
+  ],
+  "concurrency": 16,
+  "timeoutMS": 60000,
+  "dryRunTimeoutMinutes": 5,
+  "reporters": [
+    "progress",
+    "clear-text",
+    "json"
+  ],
+  "coverageAnalysis": "perTest",
+  "tempDirName": ".stryker-tmp",
+  "cleanTempDir": true,
+  "vitest": {
+    "related": false,
+    "configFile": "vitest.stryker.d/dsh-lan-proxy.config.ts"
+  },
+  "jsonReporter": {
+    "fileName": "coverage/mutation/dsh-lan-proxy-client.json"
+  },
+  "incremental": true,
+  "incrementalFile": "coverage/mutation/incremental-lan-proxy-client.json",
+  "_comment": "#826 客户端真实行为判据：装配、host-trust、设置卡保存生命周期与默认值/文案一并进入变异面；门面沿用包级 facade 排除。"
+}

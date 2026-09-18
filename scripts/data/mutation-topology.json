@@ -77,6 +77,14 @@
           "mutate": ["packages/dsh-lan-proxy/src/server/tls/impl/index.ts"],
           "excludes": ["!packages/dsh-lan-proxy/src/client/**"],
           "comment": "#826 域归位：tls 域（原根 cert.ts，自签证书签发与续期）；门面按 facade 口径进 coverageExcludes；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
+        },
+        "client": {
+          "mutate": [
+            "packages/dsh-lan-proxy/src/client/**/*.ts",
+            "packages/dsh-lan-proxy/src/client/**/*.tsx"
+          ],
+          "excludes": ["!packages/dsh-lan-proxy/src/client/**/*.d.ts"],
+          "comment": "#826 客户端真实行为判据：装配、host-trust、设置卡保存生命周期与默认值/文案一并进入变异面；门面沿用包级 facade 排除。"
         }
       },
       "testLayers": {

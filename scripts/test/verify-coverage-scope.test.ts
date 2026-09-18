@@ -429,6 +429,27 @@ function artifactFixture(keys, { fresh = true } = {}) {
   return root;
 }
 
+for (const [name, source, expected] of [
+  ["纯类型", "export interface Port { run(): void }; export type T = string;", 0],
+  ["类型导入", "import type { T } from './x.ts'; export type Port = T;", 0],
+  ["重导出门面", "export { x } from '../../../shared/x.js';", 0],
+  ["同名门面包含常量", "export const x = 1;", 1],
+  ["函数", "export function run() { return 1; }", 1],
+  ["类", "export class Thing { run() { return 1; } }", 1],
+  ["枚举", "export enum Flag { On, Off }", 1],
+  ["副作用", "console.log('side effect');", 1],
+  ["动态导入", "import('./other.js');", 1],
+  ["无效源码", "export const = ;", 1],
+]) {
+  test("产物缺失按语句判定而非文件名：" + name, () => {
+    const root = artifactFixture(["packages/dsh-fake/src/a.ts", "shared/x.js"]);
+    writeFileSync(join(root, "packages/dsh-fake/src/interface.ts"), source);
+    const r = run(root);
+    assert.equal(r.status, expected, r.stderr + r.stdout);
+    if (expected === 1) assert.match(r.stderr, /interface.ts 在当前计分面内但未出现在覆盖率产物里/);
+  });
+}
+
 test("产物交叉断言：少一个计分对象不能零违规绿", () => {
   const r = run(artifactFixture(["packages/dsh-fake/src/a.ts"]));
   assert.equal(r.status, 1, r.stderr + r.stdout);

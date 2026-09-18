@@ -1347,6 +1347,7 @@
     }
   ],
   "unmeasured": {
+    "dsh-lan-proxy-client": "#826 新增的客户端段（packages/dsh-lan-proxy/src/client 下的 .ts/.tsx，含设置卡保存生命周期）。历史上无同名段，尚无 Actions run 日志墙钟；待首次 CI 变异切片跑或夜间全量班由 mutation-ledger --record 入档。本地实测第二轮总分 67.52%/covered 76.25%，按台账口径不计入——本文件的值只能从 Actions run 日志解析，禁止手工编造数值。",
     "dsh-lan-proxy-config": "#826 段按模块目录重划并改名（旧数字段键 1..4 → 模块目录名），本段尚无改名后的实测值；待首次 CI 变异切片跑或夜间全量班由 mutation-ledger --record 入档。旧段历史值见 superseded 中 replacedBy 含本段的条目。",
     "dsh-lan-proxy-entry": "#826 段按模块目录重划并改名（旧数字段键 1..4 → 模块目录名），本段尚无改名后的实测值；待首次 CI 变异切片跑或夜间全量班由 mutation-ledger --record 入档。旧段历史值见 superseded 中 replacedBy 含本段的条目。",
     "dsh-lan-proxy-host-trust": "#856 新增域（host trust 兼容注入：非回环页面 ownsHost 自条件脚本 + 官方 webServer.tapIndex 注册）。历史上无同名段，尚无实测值；待首次 CI 变异切片跑或夜间全量班由 mutation-ledger --record 入档。",

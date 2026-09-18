@@ -73,7 +73,13 @@ export function SettingsCard(props: SettingsCardProps) {
   // 保存反馈（i18n 重构：msg + err 结构化状态，不能用文案内容判断错误态）
   const savedDraft = useState(null as { msg: string; err: boolean } | null);
   const saved = savedDraft[0];
+  const feedbackTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  function clearFeedbackTimer() {
+    if (feedbackTimer.current !== null) clearTimeout(feedbackTimer.current);
+    feedbackTimer.current = null;
+  }
   const setSaved = (msg: string, err?: boolean) => {
+    clearFeedbackTimer();
     savedDraft[1](msg ? { msg: msg, err: err === true } : null);
   };
   const openState = useState(false);
@@ -89,9 +95,14 @@ export function SettingsCard(props: SettingsCardProps) {
   const setHostFacts = hostFactsDraft[1];
   // 加载基线（issue #33 子项 2）：保存时只提交与基线不同的键（增量 diff），
   // 未改动的键不提交——组合层 base 设值不会被客户端默认值静默覆盖回写。
-  let baseline: Record<string, any> | null = null;
-  // 乐观并发凭据（官方 descriptor.revision）：PUT 时回传，冲突时提示刷新。
-  let revision: any = null;
+  const committed = React.useRef<{
+    baseline: Record<string, unknown>;
+    revision: number | null;
+  } | null>(null);
+  // 每次 effect 拥有独立令牌；StrictMode 重装不能复活上一代响应。
+  const lifetime = React.useRef<{ value: boolean } | null>(null);
+  const inFlight = React.useRef(false);
+  const [saving, setSaving] = useState(false);
 
   function loadCard(alive: { value: boolean }) {
     fetch(CONFIG_ROUTE, { headers: { accept: "application/json" } })
@@ -109,8 +120,11 @@ export function SettingsCard(props: SettingsCardProps) {
         }
         const user = (v && v.user) || {};
         for (const pk in user) merged[pk] = user[pk];
-        baseline = Object.assign({}, merged);
-        revision = (v && v.revision) || null;
+        committed.current = {
+          baseline: { ...merged },
+          revision:
+            typeof v?.revision === "number" && Number.isInteger(v.revision) ? v.revision : null,
+        };
         setCompress((v && v.compress) || null);
         setSettings(merged);
       })
@@ -132,9 +146,11 @@ export function SettingsCard(props: SettingsCardProps) {
 
   useEffect(() => {
     const alive = { value: true };
+    lifetime.current = alive;
     loadCard(alive);
     return () => {
       alive.value = false;
+      clearFeedbackTimer();
     };
   }, []);
 
@@ -152,6 +168,9 @@ export function SettingsCard(props: SettingsCardProps) {
   }
 
   function save() {
+    const alive = lifetime.current;
+    const base = committed.current;
+    if (!alive?.value || base === null || inFlight.current) return;
     // 本地预校验（issue #33 子项 1）：数字键先归一化，非法值在提交前就
     // 指明字段与合法范围——不依赖宿主整体拒绝后才报错。
     const portValue = Number(settingsValue.port);
@@ -177,19 +196,25 @@ export function SettingsCard(props: SettingsCardProps) {
       httpsPort: httpsPortValue,
       httpCompressLevel: levelValue,
     };
-    const payload: Record<string, any> = {};
+    // 基线只确认本次提交的规范化快照，不把等待期间的新编辑算作已保存。
+    const snapshot: Record<string, unknown> = {};
+    const payload: Record<string, unknown> = {};
     for (const key in DEFAULTS) {
       const cur = key in normalized ? normalized[key] : settingsValue[key];
-      if (baseline === null || !sameSetting(key, cur, baseline[key])) payload[key] = cur;
+      snapshot[key] = Array.isArray(cur) ? [...cur] : cur;
+      if (!sameSetting(key, cur, base.baseline[key])) payload[key] = snapshot[key];
     }
     if (Object.keys(payload).length === 0) {
       setSaved(t("unchanged"));
       return;
     }
+    inFlight.current = true;
+    setSaving(true);
+    setSaved("");
     fetch(CONFIG_ROUTE, {
       method: "PUT",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ patch: payload, expectedRevision: revision }),
+      body: JSON.stringify({ patch: payload, expectedRevision: base.revision }),
     })
       .then((r: any) => {
         return r.json().then((body: any) => {
@@ -201,14 +226,21 @@ export function SettingsCard(props: SettingsCardProps) {
         });
       })
       .then((body: any) => {
-        baseline = Object.assign({}, settingsValue);
-        revision = (body && body.revision) || revision;
+        if (!alive.value) return;
+        committed.current = {
+          baseline: snapshot,
+          revision:
+            typeof body?.revision === "number" && Number.isInteger(body.revision)
+              ? body.revision
+              : base.revision,
+        };
         setSaved(t("savedOk"));
-        setTimeout(() => {
-          setSaved("");
+        feedbackTimer.current = setTimeout(() => {
+          if (alive.value) setSaved("");
         }, 2200);
       })
       .catch((e: any) => {
+        if (!alive.value) return;
         const msg = (e && e.message) || e;
         setSaved(
           String(msg).indexOf("已被其他窗口修改") >= 0
@@ -216,6 +248,11 @@ export function SettingsCard(props: SettingsCardProps) {
             : t("saveFail", { msg: msg }),
           true,
         );
+      })
+      .finally(() => {
+        if (!alive.value) return;
+        inFlight.current = false;
+        setSaving(false);
       });
   }
 
@@ -438,7 +475,7 @@ export function SettingsCard(props: SettingsCardProps) {
             {saved ? (
               <span className={saved.err ? "lp-set-error" : "lp-set-saved"}>{saved.msg}</span>
             ) : null}
-            <button type="button" className="lp-set-save" onClick={save}>
+            <button type="button" className="lp-set-save" onClick={save} disabled={saving}>
               {t("save")}
             </button>
           </div>
