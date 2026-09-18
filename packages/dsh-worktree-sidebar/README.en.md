@@ -85,6 +85,23 @@ npx @deepseek-ai/dsh plugin --profile web remove @wingsky-1/dsh-worktree-sidebar
 npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-worktree-sidebar
 ```
 
+## Configuration
+
+- A single master switch `enabled` comes in via the plugin config (`WorktreeSidebarConfig`, `src/index.ts:41-45`): with `enabled === false` nothing is taken over, no tools are registered, no routes are mounted (`src/index.ts:98`); omitting it enables the plugin.
+- The plugin never reads a user config file from disk; it owns its binding table at `<DSH_HOME>/@wingsky-1/dsh-worktree-sidebar/bindings.json`, derived from the single variable `DSH_HOME` (`src/server/shared/paths.ts:9-17`).
+- `ws_worktree_create`'s `base` defaults to the current HEAD of the repository the session working directory is in; an explicit `base` is shape-checked (a leading `-` is rejected) and normalized to a SHA before reaching git, so the start point cannot be silently dropped.
+- `base` is a commit-ish (branch, tag, SHA, e.g. `origin/main`); an omitted branch adds an explicit `--detach`, checking out the start point detached without creating a branch.
+- With `enabled === false` the binding table is not even read; existing registrations stay on disk with no effect.
+
+## Contract
+
+- Only two things must agree on both ends, defined once in `src/shared/contract.ts:12-28`: route paths (`ROUTES`) and the binding-query response shape (`BindingResponse`); routes are additionally injected into the client at build time via `__DSH_ROUTES__`, keeping both ends consistent. See §2.4 of the architecture doc.
+- Both routes are GET and read-only: `GET /api/dsh-worktree-sidebar/bindings?session=<id>` answers `{ revision, worktreePath | null }`; `GET /api/dsh-worktree-sidebar/health` answers `{ ok, revision, scopeTakeover, scopeChain }` (`src/server/api/impl/handlers/index.ts:24-67`).
+- Minimal exposure: the binding query never returns `repoRoot` — the client only needs the directory root; a missing `session` parameter is a 400, never an empty answer that could be misread as "unbound" (`handlers/index.ts:1-8`, `30-34`).
+- `revision` is a content version, not a write counter: an empty table starts at 0, storing one binding bumps it by one; dropping a nonexistent target returns the table unchanged without bumping (`src/server/binding/impl/model/index.ts:10-13`, `67-86`).
+- The client only compares for equality and guards monotonicity: no notification when revision and path are unchanged, and a smaller revision arriving out of order is discarded (`src/client/bindings.ts:40-48`).
+- The query endpoint carries a self-healing side effect: it resolves the effective root first and reads the revision second, dropping registrations positively confirmed as stale; merely ignoring them would leave the revision unchanged and the tree pointing at a dead root (`handlers/index.ts:35-37`).
+
 ## Verification
 
 ```sh
@@ -98,6 +115,28 @@ Four **UI semantics** cannot be covered by any automated gate (there is no brows
 2. opening a file previews the worktree's copy;
 3. an unbound session — and an install without this plugin — behaves identically (no regression);
 4. a subagent or forked session's tree follows the binding held by the session that owns it up the parent chain, and the three tools report the same root.
+
+## Test strategy
+
+- Two layers: `test/unit` drives `src` modules directly (pure logic, domain assembly, client contract assertions); `test/integration` goes through the composition root with real git repositories and real temp directories; all on-disk output goes to `mkdtempSync` isolation directories (see §12 of the proposal).
+- Zero file exclusions in the mutation surface: `mutate` covers `src/**/*.ts`, the package config revokes the four shared-default literal exclusions, leaving the effective operator exclusion set empty (`scripts/data/gauntlet.config.json:51`, #847).
+- Inheritance criterion: forked and subagent sessions resolve bindings up the parent chain; in the inherited state the tool surface never drops the parent record and never calls git, reporting only the owning session and the three ways out (`test/unit/tools.test.ts:587`, "tool surface in the inherited state (#847)").
+- Routes always carry 403/405 fence cases plus a two-end route-consistency assertion (proposal §12; `src/server/api/impl/route/index.ts:41`, 403 before 405).
+- This section is read-only description: commands and gate wording follow the "Verification" section and the repository-root AGENTS.md; no commands are promised here.
+
+## Troubleshooting
+
+- Tools say bound while the sidebar still follows the cwd: check `scopeTakeover` in `/health` first — the two readings differ deliberately: the tool surface reports the registration fact (no takeover gate), and only `live` means the file root really switched (`src/server/scope/interface.ts:31-40`).
+- Liveness and state queries (use the port your local `dsh web` actually listens on; the example uses the default 3080):
+
+  ```sh
+  curl 'http://127.0.0.1:3080/api/dsh-worktree-sidebar/health'
+  curl 'http://127.0.0.1:3080/api/dsh-worktree-sidebar/bindings?session=session-1'
+  ```
+
+- Two common causes for a non-`live` `scopeTakeover`: `waiting` (provider not registered yet; startup order is not stable) and `abandoned` (the lookup table is held by a third party); `scopeChain` records the one silent degradation where the persistence read failed (`src/server/api/impl/handlers/index.ts:44-53`).
+- A failed client fetch keeps the last good state (G6): every failure yields undefined, never null, so a first-ever failure falls back to the real cwd (`src/client/index.ts:37-56`, `src/client/bindings.ts:30-39`); both ends read the revision from the same in-memory snapshot, and the client never moves the root on mismatch (G7, see "Contract").
+- Mount or takeover entry failures only speak through `console.warn`: nothing is registered and the right column keeps official behaviour (`src/client/index.ts:121-124`, `src/client/takeover.ts:226-233`).
 
 ## Compatibility (read-only coupling)
 

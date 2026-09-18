@@ -354,6 +354,23 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-lan-proxy
 
 测试单份维护、变异自动覆盖：用例按层归在 `test/{unit,integration,e2e,client}/`，其中单元与集成层直接 `import` 源码（`src/**`，白盒直连 impl），e2e 冒烟跑 `lib/` 产物（`import "../../lib/index.js"`）；stryker 经 lib→src hook 对同一份用例做变异，无需手工同步副本。
 
+<a id="配置契约附录"></a><a id="user-content-配置契约附录"></a>
+## 配置契约附录
+
+| 键 | 宿主默认 | 客户端展示缺省 | patch 声明 |
+|---|---|---|---|
+| `port` | `3081` | `3081` | 未声明 |
+| `httpsPort` | `3443` | `3443` | 未声明 |
+| `host`／`targetHost` | `"0.0.0.0"`／`"127.0.0.1"` | 无此键 | 未声明 |
+| `targetPort` | 无默认值，跟随回环 web 实际端口 | 无此键 | 未声明 |
+| `injectToken` | `true` | `true` | 未声明 |
+| `ownsHostCompat` | `false` | `false` | 未声明 |
+| `enabled`／`httpsEnabled`／`printBanner`／`wsBridgeEnabled`／`wsCompressEnabled`／`httpCompressEnabled` | `true` | `true` | 未声明 |
+| `httpCompressLevel` | `1`（0..3） | `1` | 未声明 |
+| `wsCompressPaths`／`wsDeflatePolicy`／`tlsCertFile`／`tlsKeyFile` | `["/api/remote.mux"]`／`{browser:true, uaDeny:[iPhone,iPad,iPod]}`／无默认值 | `["/api/remote.mux"]`／无此键／`""` | 未声明 |
+
+宿主默认来自 `src/server/shared/defaults.ts` 的 `DEFAULT_OPTIONS` 与 `src/server/shared/deflate.ts` 的 `DEFAULT_DEFLATE_POLICY`，经 `src/server/config/impl/model.ts` 的 `Config`／`DEFAULT_CONFIG` 生效；客户端缺省来自 `src/client/shared/defaults.ts` 的 `DEFAULTS`；`cordis.patch.yml`（`ui-dsh-lan-proxy`）独立／聚合行均不带 `config`。`injectToken` 开启等效信任整个局域网，`ownsHostCompat` 开启即向非回环页面声明 `ownsHost`，语义见「安全模型」。以上代码为单一事实源，文档与代码不一致时以代码为准。
+
 ## License
 
 MIT
