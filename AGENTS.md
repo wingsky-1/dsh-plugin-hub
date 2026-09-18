@@ -3,6 +3,7 @@
 DeepSeek Harness（DSH）的插件集 monorepo（npm 分发）。每个插件是独立 cordis bundle
 包，经 `cordis.patch.yml` + profile 挂载到 `dsh web`。分层：全局 `~/.dsh/AGENTS.md`
 （基线）→ 本文件（仓库）→ `packages/<pkg>/AGENTS.md`（包级叠加）→ `.dsh/skills/*`。
+本排序与全局“更具体的项目约定优先”一致，全局已声明具体优先，此处不再分叉。
 
 <a id="authority"></a>
 
@@ -11,6 +12,8 @@ DeepSeek Harness（DSH）的插件集 monorepo（npm 分发）。每个插件是
 系统提示词 > 用户直接指令 > 本文件（仓库硬性）> 包级 `AGENTS.md` > `.dsh/skills/*`、
 `agents/*` 规程 > `docs/*` 详细规范 > 全局 `~/.dsh/AGENTS.md`（仅作缺省基线）。
 高层要求与低层红线冲突时：**停下说明冲突点并等待裁决**，不得自行扩大授权。
+裁决者默认为用户；无人值守时按“开 P0 跟踪＋打 `blocked-human`＋继续不受影响工作”出口，
+不空转、不自行放行（一般冲突不触发 exit2 熔断，熔断仅属门禁节 exit-2 判词）。
 「按此执行」仅授权 agent 代打 `zone/*` 标签；`approved` / `api-approved` 永不代打。
 
 ## 硬约束（红线）
@@ -37,21 +40,22 @@ git worktree add -b task/<n> /mnt/ssd/worktree/dsh-plugin-hub-task-<n> origin/ma
 git worktree remove /mnt/ssd/worktree/dsh-plugin-hub-task-<n> && git worktree prune
 ```
 
-一律建在 `/mnt/ssd/worktree/<仓库名>-<分支名>`（分支名 `/` → `-`），不建在仓库内部、
-`/tmp` 或家目录；构建、提交、测试、验证都在 worktree 内完成。
+原则：必须在独立 worktree 内施工，不在主 checkout 内写。位置缺省
+`/mnt/ssd/worktree/<仓库名>-<分支名>`（分支名 `/` → `-`）；仅两种例外：A）用户直接指令指定路径
+（高层覆盖低层，按权威顺序）；B）无 `/mnt/ssd` 或不可写时停下报告并另立 issue，不得自行换址。
+两种例外仍受护栏：不在仓库内、`/tmp`、家目录散放，建前 `git worktree list`，返回值写实际路径 + exit code。
+通用纪律见全局 `~/.dsh/AGENTS.md` §七，本节只留三条本仓增量：
+
+**主 checkout 是旧树，不是测量基准**：它是在跑的 `dsh web` 的加载源（上一条禁止写操作），
+因此必然落后 `origin/main`。任何读文件、数文件、跑 `tsc` / `lint` /
+门禁判据复现，只能在两类位置做：① 打 `origin/main` 的 ref（`git show origin/main:<path>`、
+`git grep … origin/main`、`git ls-tree -r --name-only origin/main`）；② 基于 `origin/main` 建的
+worktree 内。在仓库根直接跑出的读数是「某个落后提交」的读数。
 
 需要侧边栏文件树跟随 worktree 时，用插件的 `ws_worktree_create` / `ws_worktree_register`
 （裸 `git worktree add` 不会让侧边栏换根）；本仓要求从 `origin/main` 起，
 故 `ws_worktree_create` 要显式传 `base: "origin/main"`——缺省是会话仓库当前 HEAD，
 主 checkout 落后时会静默产出旧基线。
-
-**主 checkout 是旧树，不是测量基准**：它是在跑的 `dsh web` 的加载源（上一条禁止写操作），
-因此必然落后 `origin/main`，落后幅度随会话时长增长。任何读文件、数文件、跑 `tsc` / `lint` /
-门禁判据复现，只能在两类位置做：① 打 `origin/main` 的 ref（`git show origin/main:<path>`、
-`git grep … origin/main`、`git ls-tree -r --name-only origin/main`）；② 基于 `origin/main` 建的
-worktree 内。在仓库根直接跑出的读数是「某个落后提交」的读数——已有两次把「该文件不存在」
-（`scripts/data/threshold-registry.json`，实际主干上有）与「该判据是硬编码」（实际主干上已改为
-声明表驱动）当成事实的实例。
 
 独立验证（smoke / 需启动 dsh）用隔离环境（临时 `DSH_HOME`），防 flake 纪律见
 [DEVELOPMENT.md §5](docs/DEVELOPMENT.md#user-content-5-smoke-测试防-flake-纪律)。
@@ -76,13 +80,21 @@ worktree 内。在仓库根直接跑出的读数是「某个落后提交」的�
 
 ## 门禁（分层：快线 / 最小集 / 收尾全量）
 
-| 层       | 命令                                      | 用途与口径                                                                                                                                                                                                                                                                           |
-| -------- | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 快线     | `pnpm gate:changed`                       | 迭代中反复跑：只跑 diff 命中包的 build + test + typecheck。包面归属取自 `ci.yml` 的 paths-filter（**唯一事实源**，本地不重述路径规则）；命中全局面时自动升级为 `gate:pr`，解析失败一律回退全量（fail-closed）                                                                        |
-| 最小集   | `pnpm gate:pr`                            | 开 PR 前本地最后一层安全网：**全仓口径**（本地没有 PR 上下文可切，包面恒为全部包）= 全仓 build/test/typecheck + 全仓产物闸（`contract` / `pack:check` / `verify:npmlayout` 传全包包名）+ 廉价全仓一致性闸（`threshold-monotonic`、`stryker:check`、`aggregate:check`、`test:src-tests`、`gate:homedir`、`gate:module-state`、`docs:check`、`verify:scripts-index`、`verify:coverage-scope`、`verify:vendored-binaries`、`lint`、`format:check`，均秒级且不依赖 lib 产物）+ `test:scripts`（有编译面用例依赖声明产物，本地会先跑一次编译面前置包 build）；与 `gate:full` 同口径，仅少 full 的「豁免到期台账」收集                  |
-| 收尾     | `pnpm gate:full`                          | 全仓对象面（同 `gate:pr`，另加「豁免到期台账」收集；`--with-coverage` 再补 cov / crap）：全仓 build/test/typecheck + 全仓产物闸 + 全部静态闸。**≠ 夜间班次口径**——夜间 `observe.yml` 另含覆盖率与全量变异、且不跑全仓 test/typecheck（全仓 build 在夜间两个 job 内各有一处：quality 一次 + mutation-shards 每个变异段一次，当前 35 段）；需要覆盖率时用 `pnpm gate:full --with-coverage`。改过构建链、包结构或发版前跑一遍                                                                                                                                                                    |
-| 全量     | CI 夜间班次（`observe.yml`）              | 全仓产物闸 + 覆盖率 + 全量变异与基线并集入档（原每日四班次增量班已于 #718 S2.2 退役）。本地不默认跑，需要时 `pnpm gate:full --with-coverage`。**注意变异不止在夜间**：PR 上已按命中切片强制跑（见下方「变异不在本地任何档」）                                                                                                                          |
-| 提交钩子 | `lefthook`（`pre-commit` / `commit-msg`） | 提交瞬间的最内层：`pre-commit` 只对本次 **staged 源文件**跑 lint、`commit-msg` 校验提交信息为 Conventional Commits。**不替代上面任何一层**——它不做 build / typecheck / 变异 / 覆盖率。钩子由 `pnpm install` 的 `prepare` 自动安装；跳过用 `git commit --no-verify`（仅限确认无害时） |
+首次贡献先读 CONTRIBUTING 开发流程 + DEVELOPMENT §0，需要才看下表归属层中属于你的那一行。
+
+| 层       | 命令                                      | 何时用                   |
+| -------- | ----------------------------------------- | ------------------------ |
+| 快线     | `pnpm gate:changed`                       | 迭代反复跑：diff 命中包切片 |
+| 最小集   | `pnpm gate:pr`                            | 开 PR 前本地最后一遍       |
+| 收尾     | `pnpm gate:full`                          | 动构建链/包结构/发版前     |
+| 全量     | CI 夜间班次（`observe.yml`）              | 本地不跑；需覆盖率加 `--with-coverage` |
+| 提交钩子 | `lefthook`（`pre-commit` / `commit-msg`） | 只拦 staged lint 与提交信息 |
+
+包面归属取自 `ci.yml` 的 paths-filter（唯一事实源，本地不重述路径规则）；
+命中全局面自动升级为 `gate:pr`，解析失败回退全量（fail-closed）。
+快线只跑命中包 build+test+typecheck；最小集与收尾是全仓口径（含全仓产物闸），
+收尾另加豁免到期台账，`--with-coverage` 再补 cov/crap；收尾 ≠ 夜间口径
+（夜间另含覆盖率与全量变异基线入档，且不跑全仓 test/typecheck）。
 
 | 改动类型                                                                     | 归属层                                                                                         |
 | ---------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
@@ -91,55 +103,41 @@ worktree 内。在仓库根直接跑出的读数是「某个落后提交」的�
 | 改 `src/` 里 HOME 来源 API                                                   | `gate:pr` 起（含 `gate:homedir`）                                                              |
 | 改 `scripts/` / workflow                                                     | `gate:pr` 起（含 `test:scripts`）；改 `.github/` 属红线，先评审                                |
 | 改 README、新增文档链接                                                      | `gate:pr` 起（含 `docs:check`）                                                                |
-| 改任意手写源码（`packages/*/src`、`packages/*/test`、`shared/`、`scripts/`） | `gate:pr` 起（含 `lint`：ESLint 复杂度门禁，阈值见 `gauntlet.config.json` 的 `complexity` 段） |
+| 改任意手写源码（`packages/*/src`、`packages/*/test`、`shared/`、`scripts/`） | `gate:pr` 起（含 `lint`：ESLint 复杂度门禁，阈值见门禁事实源） |
 | 提交前最终一遍                                                               | `pnpm gate:pr`；单包迭代用 `pnpm gate:changed`                                                 |
 
-- 分层**不减少检查，只改变时机**：CI 的 PR 默认路径与本地 `gate:changed` 走增量（命中包切片），
-  本地 `gate:pr` / `gate:full` 本就是**全仓对象面**（pr 已含全仓产物闸）；只有"必须全仓才能
-  判定"的覆盖率分母与全量变异基线留夜间；高风险改动打 `gate:full` 标签在 PR 上补跑（方案见 #722）。
-- **变异不在本地任何档，但 PR 上强制跑**（#742 阶段 1）：命中变异切片的 PR 一律实例化该切片
-  的变异矩阵并聚合判分（`mutation-gate` / `mutation-verdict`，打不打 `gate:full` 标签都跑），
-  改的是命中包 `test/**` 时该包基线会被主动失效、退化为全量。因此**本地 `gate:*` 全绿不等于
-  CI 绿**——变异不达标只在 CI 上暴露。`gate:full` 标签在 PR 上追加的是**覆盖率**与**全仓产物闸**。
+- 分层**不减少检查，只改变时机**；高风险改动打 `gate:full` 标签在 PR 上补跑。
+- **变异不在本地任何档，但 PR 上强制跑**：命中切片的 PR 实例化变异矩阵并聚合判分
+  （`mutation-gate` / `mutation-verdict`，打不打 `gate:full` 标签都跑），
+  改命中包 `test/**` 该包基线主动失效退化为全量。因此**本地 `gate:*` 全绿不等于 CI 绿**；
+  `gate:full` 标签在 PR 上追加的是覆盖率与全仓产物闸。
 - 结论里**逐条粘贴实际 exit code**；任一非 0 不得声称完成。
-- **退出码三态是契约**（#843 P-2）：`0` = 判据通过；`1` = 判据按设计判红（结论可信：改动确实
-  不达标）；`2` = **门禁故障（非判据结论）**——读不到输入、配置损坏、环境缺件，此时门禁不可信，
-  既不能读成「通过」也不能读成「不达标」。`scripts/gate/**` 与 `scripts/release/**` 里的 exit 2
-  一律经 `scripts/lib/gate-exit.mjs` 的 `failClosed()` 出口（裸写法由
-  `scripts/gate/forbid-raw-exit2.mjs` 拦）；上游 job 报 `failure` 时靠状态文件 +
-  `GATE_FAILURE_CLASS` 区分两类（缺省 = `crashed`，fail-closed）。**本契约目前只有部分门禁
-  实现**（经返回值交出的 `return 2` 归 L3 退出码契约归一），不得据此读成全仓已收口。
-  本节是**语义**的唯一出处；各脚本头部那行「退出码：」说明的是它自己会把哪些情形归到哪个码
-  （用法面），不构成第二份契约，语义有分歧以本节为准。
-- **exit 2 的后果**（#843 P-2）：一律按「门禁不可信 ⇒ **禁止合并**」处理，并在原 issue 开一条 P0
-  跟踪项（gate 缺陷），**不允许以「环境抖动」结案**；同一 exit-2 判词在 30 天内第二次出现即升级
-  为熔断（`blocked-human`）。
-- 新增 `homedir()` / `process.env.HOME` / `untildify()` 调用**没有豁免通道**（#765：该面
-  已收口到零豁免，豁免机制随之一并删除）：一律改走 `shared/dsh-home.js` 的 `dshHome()` 接缝，
-  写在插件 src 里即判红（见 `scripts/gate/forbid-homedir-src.mjs`）。确有「DSH_HOME 域之外」的
-  合法场景时先在 #765 讨论，不得在闸内复活豁免常量或注释词法。
-- 质量指标 `pnpm cov` / `pnpm crap`。阈值事实源按维度分处：**覆盖率**在
-  `scripts/data/coverage.config.json`（#733 计划项 3.4 起；`vitest.config.ts` 只 import 它，
-  不得再内联 `include`/`exclude`/`thresholds`；降线由 `scripts/gate/threshold-monotonic.mjs`
-  对比 `origin/main` 拦截，面完整性由 `verify:coverage-scope` 守），**变异与 CRAP** 在
-  `scripts/data/gauntlet.config.json`。CRAP 已在 #722 阶段五重建为 src 口径（复杂度取 ESLint
-  内置 `complexity` 规则、覆盖率取 `coverage/coverage-final.json`），`crap.strict=false` 是
-  **观察期**语义：超阈热点只落盘 `coverage/crap-report.json` 并 exit 0，置 true 才判红；
-  **不得自行改该字段**（开启时机与 #732 的复杂度阈值收紧同批裁决）。数据源缺失或解析失败仍
-  fail-closed `exit 2`（`scripts/gate/crap-check.mjs`），与观察期语义不矛盾。
+- **退出码三态是契约**：`0` = 通过；`1` = 判红可信；`2` = **门禁故障，不可信**，
+  既不读通过也不读不达标。exit 2 经 `scripts/lib/gate-exit.mjs` 的 `failClosed()` 出口
+  （裸写法由 `scripts/gate/forbid-raw-exit2.mjs` 拦），上游 `failure` 靠状态文件 +
+  `GATE_FAILURE_CLASS` 区分（缺省 `crashed`，fail-closed）。
+  exit 2 一律按「门禁不可信 ⇒ **禁止合并**」处理，并在原 issue 开一条 P0 跟踪项，
+  **不允许以「环境抖动」结案**；同一判词 30 天内第二次出现即升级为熔断（`blocked-human`）。
+  本契约按门禁逐个收口；未收口门禁的 exit 2 同按不可信处理，不得读成全仓已收口。
+  各脚本头部「退出码：」只讲它自己的归类（用法面），语义分歧以本节为准。
+- 新增 `homedir()` / `process.env.HOME` / `untildify()` 调用**没有豁免通道**：
+  一律改走 `shared/dsh-home.js` 的 `dshHome()` 接缝（见 `scripts/gate/forbid-homedir-src.mjs`），
+  写在插件 src 里即判红。确有「DSH_HOME 域之外」合法场景先在 #765 讨论，
+  不得在闸内复活豁免常量或注释词法。
+- 质量指标 `pnpm cov` / `pnpm crap`：覆盖率事实源 `scripts/data/coverage.config.json`
+ （降线由 `scripts/gate/threshold-monotonic.mjs` 对比 `origin/main` 拦截，
+  面完整性由 `verify:coverage-scope` 守），变异与 CRAP 事实源 `scripts/data/gauntlet.config.json`。
+  观察期开关不得自行改，开启时机另行裁决；数据源缺失或解析失败 fail-closed `exit 2`
+  （见 `scripts/gate/crap-check.mjs`）。
 
 ## 测试纪律
 
 - **离线 + 断言全覆盖**：smoke 全部无网络、无真实凭据，本地可离线跑；新功能 / 修复必须
   带 smoke 断言（含路由 403/405 围栏用例与 client 契约断言）。
-- **产物零污染（#218）**：测试落盘必须进 `mkdtempSync` 生成的隔离目录，严禁在仓库内留下
-  `undefined/`、`*.jsonl` 等运行时产物（`.gitignore` 已兜底，但仍属红线）。
-- 改完自查：`git status --porcelain` 只允许出现**预期的产物路径**——你本次要提交的文件；本仓
-  构建 / 测试产物的路径都已由 `.gitignore` 兜底，porcelain 里本就不该出现它们——**其余任何
-  未跟踪文件一律视为违规**。为什么不再写模式清单（旧版是 `grep -E 'undefined/|\.jsonl$'`）：
-  清单只覆盖已知形态，而残留物的形态永远比清单多一种，且漏检是静默的——实证是主 checkout
-  根目录一个未跟踪的 `GITHUB_ENV`（12 字节，内容 `BASH_ENV=/z`）挂了一整轮才被评审者发现。
-  `.gitignore` 兜底 ≠ 许可：已兜底仍属红线（#218）。
+- **产物零污染**：测试落盘必须进 `mkdtempSync` 生成的隔离目录，严禁在仓库内留下
+  运行时产物（`.gitignore` 已兜底，但仍属红线）。
+- 改完自查：`git status --porcelain` 只允许出现**预期的产物路径**——你本次要提交的文件；
+  **其余任何未跟踪文件一律视为违规**。`.gitignore` 兜底 ≠ 许可。
 
 ## 仓库约定（无副本，勿外移）
 
@@ -150,7 +148,7 @@ worktree 内。在仓库根直接跑出的读数是「某个落后提交」的�
   = 分发副本，故 license 由构建链归集到 `lib/THIRD-PARTY-LICENSES`，`pack:check` 断言覆盖。
 - **客户端是干净模块**：只 `export function apply(ctx)` + `export const inject`，样式独立
   `src/client/style.css`，路由强制 loopback 围栏，patch id 用 `ui-<name>`；细则见
-  [DEVELOPMENT.md §1/§2/§3](docs/DEVELOPMENT.md#1-宿主端srcindexts规范)。
+  [DEVELOPMENT.md §1/§2/§3](docs/DEVELOPMENT.md#user-content-1-宿主端srcindexts规范)。
 - **命名**：新包一律 `dsh-` 前缀，npm 包名 `@wingsky-1/dsh-*`，聚合包 `dsh-plugins-all`。
 - **安全语义**：涉及密钥 / 凭据 / 远程执行 / 令牌的改动，同步更新包 README 的
   `## 安全模型` 与测试。
@@ -163,13 +161,15 @@ worktree 内。在仓库根直接跑出的读数是「某个落后提交」的�
 
 ## 按需加载（细则不在本文件，动手前读）
 
-| 主题                                                     | 去哪                                                                        |
-| -------------------------------------------------------- | --------------------------------------------------------------------------- |
-| 发布与 release notes（中英分节、双锚跳转导航的完整写法） | `.dsh/skills/dsh-plugin-release/SKILL.md`                                   |
-| 宿主 / 客户端写法、构建契约、多端兼容、防 flake          | [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)                                  |
-| 等价重构（抽函数 / 拆模块 / 复杂度清零）怎么证明没改行为 | [DEVELOPMENT.md §4.1 验证三件套](docs/DEVELOPMENT.md#user-content-equivalence-refactor) |
-| 插件开发执行清单                                         | `.dsh/skills/dsh-plugin-hub-dev/SKILL.md`                                   |
-| PR 评审（含 PR 正文嵌图）                                | `.dsh/skills/dsh-plugin-hub-pr-review/SKILL.md` + `references/pr-images.md` |
-| issue 全周期处理、标签体系与 loop 状态机                 | [docs/ISSUE-WORKFLOW.md](docs/ISSUE-WORKFLOW.md)                            |
-| 自治维护循环（计划门 / 状态机 / 熔断）                   | `.dsh/skills/oss-pipeline/SKILL.md`                                         |
-| 包级特殊约定                                             | `packages/<pkg>/AGENTS.md`（若有；新增包按 dsh-lan-proxy 的模板补一份）     |
+| 当你要…时 | 去哪 |
+| --- | --- |
+| 发版、推 tag 时 | `.dsh/skills/dsh-plugin-release/SKILL.md` |
+| 改宿主/客户端实现时 | [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) |
+| 证明重构没改行为时 | [DEVELOPMENT.md §4.1 验证三件套](docs/DEVELOPMENT.md#user-content-equivalence-refactor) |
+| 新建插件施工时 | `.dsh/skills/dsh-plugin-hub-dev/SKILL.md` |
+| 评审 PR 时 | `.dsh/skills/dsh-plugin-hub-pr-review/SKILL.md` + `.dsh/skills/dsh-plugin-hub-pr-review/references/pr-images.md` |
+| 处理 issue 全周期时 | [docs/ISSUE-WORKFLOW.md](docs/ISSUE-WORKFLOW.md) |
+| 跑自治维护循环时 | `.dsh/skills/oss-pipeline/SKILL.md` |
+| 看包级特殊约定时 | `packages/<pkg>/AGENTS.md`（若有；有特有红线才建，存在则必含定位/改动前必守/验证三节） |
+
+其余否定触发（何时不读）见各 SKILL 头部 `Do NOT trigger`，此处不复述。
