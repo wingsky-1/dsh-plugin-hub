@@ -4202,6 +4202,7 @@ describe("#633 A4(e)：混存 round-trip（压实→重启→迟到行二次压�
 describe("#633 A4(f)：查询面零变化（dir 记账/rebuild 不影响 buckets/seriesDays）", () => {
   let buckets;
   let seriesValues;
+  let dirSnapshot;
 
   beforeAll(() => {
     // A4(f)：查询面零变化——含 dir 记账 + dir 行 rebuild 后，buckets()/seriesDays()
@@ -4268,6 +4269,9 @@ describe("#633 A4(f)：查询面零变化（dir 记账/rebuild 不影响 buckets
     );
     buckets = snapshot(agg.buckets());
     seriesValues = snapshot(agg.seriesDays(2, T0 + HOUR, "input").map((d) => d.value));
+    // A4(f)补dir：dir 面正向断言——dir 行 rebuild 进 dirDays（与 apply 平行累加合并），
+    // 无 dir 事实的行经残差投影归未识别桶（与 buckets/seriesDays 零变化断言同源）。
+    dirSnapshot = snapshot(agg.dirRows());
   });
 
   it("buckets() 固定 fixture 全等（dir 行 rebuild 不进 cells、apply 平行累加不污染）", () => {
@@ -4308,6 +4312,37 @@ describe("#633 A4(f)：查询面零变化（dir 记账/rebuild 不影响 buckets
 
   it("seriesDays 零变化（空日 null 语义保持；input=4+5 跨 provider 求和）", () => {
     expect(seriesValues).toEqual([null, 9]);
+  });
+
+  it("dir 面正向：x 行合并（calls=2/input=2+2），无 dir 行归未识别桶（input=7）", () => {
+    expect(dirSnapshot).toEqual([
+      {
+        v: TREND_ROW_VERSION,
+        kind: "dir",
+        day: DAY0,
+        dir: "x",
+        input: 2,
+        output: 4,
+        cacheRead: 0,
+        cacheWrite: 0,
+        calls: 2,
+        turns: 0,
+        toolCalls: 0,
+      },
+      {
+        v: TREND_ROW_VERSION,
+        kind: "dir",
+        day: DAY0,
+        dir: TREND_UNIDENTIFIED,
+        input: 7,
+        output: 7,
+        cacheRead: null,
+        cacheWrite: null,
+        calls: 1,
+        turns: 1,
+        toolCalls: 1,
+      },
+    ]);
   });
 });
 

@@ -14,7 +14,7 @@ import type { ReportConfig } from "../config/interface.ts";
 import { readReportIndex, runDueReport } from "./runner.ts";
 import { updateLastRun } from "../schedule/interface.ts";
 import type { ReportTaskInput, ReportTaskResult } from "../schedule/interface.ts";
-import type { TrendTracker } from "../../domain2/aggregate/interface.ts";
+import type { TrendTracker } from "../aggregate/interface.ts";
 
 export interface DueExecutorDeps {
   trend: TrendTracker;

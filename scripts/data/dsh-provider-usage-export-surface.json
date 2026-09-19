@@ -1137,7 +1137,7 @@
     "export declare class ReportScheduler { private config; private timer; private disposed; private readonly root; private readonly onDue; private readonly now; private readonly tickMs; private readonly warn; private constructor(); static start(opts: ReportSchedulerOptions): ReportScheduler; updateConfig(config: ReportConfig): void; tick(): Promise<void>; dispose(): void; }",
     "export declare class ReportTaskQueue { private readonly tasks; private tail; private readonly executor; private readonly now; private readonly warn; private readonly ttlMs; private readonly maxTasks; constructor(opts: ReportTaskQueueOptions); submit(input: ReportTaskInput): { taskId: string; existing: boolean; }; get(taskId: string): ReportTask | undefined; private run; private prune; }",
     "export declare class StatsService { readonly ctx: Context; readonly config: NormalizedConfig; readonly historyRoot: string; readonly registry: AdapterRegistry; readonly history: HistoryStore; readonly sanitizeDiagnostic: (s: string) => string; readonly recordAdapterStateDiagnostic: (message: string) => void; readonly cache: Map<string, V2PipelineResult>; readonly panelCache: Map<string, PanelCacheEntry>; readonly providerLocks: Map<string, Mutex>; private cacheGeneration; private readonly panelInFlight; private stateChain; constructor(options: StatsServiceOptions); lockOf(provider: string): Mutex; cacheFresh(provider: string): V2PipelineResult | undefined; cacheSize(): number; purgeAllCaches(): void; purgePanelCacheForProvider(provider: string): void; purgeCachesForProviders(providers: Iterable<string>): void; getPanelResult(provider: string, entry: { name: string; adapter: UsageStatsAdapter; }, range: { start: number; end: number; }): Promise<{ panelHtml?: string; error?: string; }>; warmupProviders(providers: Iterable<string>): void; scheduleWriteAdapterState(override?: Record<string, string | null>): void; persistUserAdapter(rec: UserAdapterRecord): Promise<void>; getStats(provider: string, signal?: AbortSignal): Promise<V2PipelineResult>; dispose(): void; }",
-    "export declare class TrendAggregator { private days; private dirDays; private hourDays; private pending; apply(e: TrendEmit): void; private addCall; private applyCall; private applyCorrect; private retokenCell; private addCounter; private applyCounter; rebuild(rows: Array<TrendAggRow | TrendDetailRow | TrendCounterRow | TrendDirRow | TrendHourRow>, persistedRows: boolean): void; unpersistedDays(): string[]; pendingDays(): string[]; hasUnpersisted(day: string): boolean; takeUnpersisted(): PendingEntry[]; markPersisted(entries: PendingEntry[]): void; dirRows(): TrendDirRow[]; hourRows(): TrendHourRow[]; dirStacked(n: number, gran: TrendGranularity, metric: TrendMetric, dir: string | undefined, now: number): { series: TrendStackPoint[]; dirs: Array<{ dir: string; }>; }; dirWindowSummary(n: number, gran: TrendGranularity, metric: TrendMetric, dir: string | undefined, now: number, dirSeries?: TrendStackPoint[]): TrendWindowSummary; dirTotals(startDay: string, endDay: string, metric?: TrendMetric): Array<{ dir: string; calls: number; total: number | null; }>; takeDirUnpersisted(day: string): TrendDirRow[]; rollupSnapshot(day: string): { consumed: PendingEntry[]; aggRows: TrendAggRow[]; dirRows: TrendDirRow[]; hourRows: TrendHourRow[]; }; rollupRowsOf(day: string): TrendAggRow[]; consume(entries: readonly PendingEntry[]): void; dropPending(day: string, today: string): void; pruneDays(beforeDay: string): number; rollupDay(day: string, today: string): Array<TrendAggRow | TrendDirRow | TrendHourRow>; forgetPersisted(day: string): void; buckets(): Array<{ day: string; providers: Array<{ provider: string; model: string | null; cell: TrendCell; }>; }>; seriesDays(n: number, now: number, metric: TrendMetric, provider?: string): Array<{ day: string; value: number | null; }>; seriesWeeks(n: number, now: number, metric: TrendMetric, provider?: string): Array<{ day: string; value: number | null; }>; seriesMonths(n: number, now: number, metric: TrendMetric, provider?: string): Array<{ day: string; value: number | null; }>; seriesStacked(n: number, gran: TrendGranularity, metric: TrendMetric, provider: string | undefined, byModel: boolean, now: number): { series: TrendStackPoint[]; providers: Array<{ provider: string; model: string | null; }>; }; windowSummary(n: number, gran: TrendGranularity, metric: TrendMetric, provider: string | undefined, now: number, stackSeries?: TrendStackPoint[]): TrendWindowSummary; stats(): { days: number; pendingRows: number; unpersistedRows: number; }; private cellOf; private dirCellOf; private hourCellOf; }",
+    "export declare class TrendAggregator { private days; private dirDays; private hourDays; private pending; apply(e: TrendEmit): void; private addCall; private applyCall; private applyCorrect; private retokenCell; private addCounter; private applyCounter; rebuild(rows: Array<TrendAggRow | TrendDetailRow | TrendCounterRow | TrendDirRow | TrendHourRow>, persistedRows: boolean): void; unpersistedDays(): string[]; pendingDays(): string[]; hasUnpersisted(day: string): boolean; takeUnpersisted(): PendingEntry[]; markPersisted(entries: PendingEntry[]): void; dirRows(): TrendDirRow[]; hourRows(): TrendHourRow[]; dirStacked(n: number, gran: TrendGranularity, metric: TrendMetric, dir: string | undefined, now: number): { series: TrendStackPoint[]; dirs: Array<{ dir: string; }>; }; dirWindowSummary(n: number, gran: TrendGranularity, metric: TrendMetric, dir: string | undefined, now: number, dirSeries?: TrendStackPoint[]): TrendWindowSummary; dirTotals(startDay: string, endDay: string, metric?: TrendMetric): Array<{ dir: string; calls: number; total: number | null; }>; takeDirUnpersisted(day: string): TrendDirRow[]; rollupSnapshot(day: string): { consumed: PendingEntry[]; aggRows: TrendAggRow[]; dirRows: TrendDirRow[]; hourRows: TrendHourRow[]; }; rollupRowsOf(day: string): TrendAggRow[]; consume(entries: readonly PendingEntry[]): void; dropPending(day: string, today: string): void; pruneDays(beforeDay: string): number; rollupDay(day: string, today: string): Array<TrendAggRow | TrendDirRow | TrendHourRow>; buckets(): Array<{ day: string; providers: Array<{ provider: string; model: string | null; cell: TrendCell; }>; }>; seriesDays(n: number, now: number, metric: TrendMetric, provider?: string): Array<{ day: string; value: number | null; }>; seriesWeeks(n: number, now: number, metric: TrendMetric, provider?: string): Array<{ day: string; value: number | null; }>; seriesMonths(n: number, now: number, metric: TrendMetric, provider?: string): Array<{ day: string; value: number | null; }>; seriesStacked(n: number, gran: TrendGranularity, metric: TrendMetric, provider: string | undefined, byModel: boolean, now: number): { series: TrendStackPoint[]; providers: Array<{ provider: string; model: string | null; }>; }; windowSummary(n: number, gran: TrendGranularity, metric: TrendMetric, provider: string | undefined, now: number, stackSeries?: TrendStackPoint[]): TrendWindowSummary; stats(): { days: number; pendingRows: number; unpersistedRows: number; }; private cellOf; private dirCellOf; private hourCellOf; }",
     "export declare class TrendCollector { private readonly sessions; private readonly now; private readonly emit; private readonly onAnomaly; private readonly resolveCwd; private lastSweep; constructor(opts: TrendCollectorOptions); private stateOf; private providerOf; private dirOf; handleEvent(session: string, event: SessionEvent): void; handleDisposed(session: string): void; private lazySweep; private onHeader; private onSettled; private onTurnEnd; private onToolCall; private foldKey; }",
     "export declare class TrendStore { private readonly root; private readonly warn; private detailChains; constructor(opts: { root: string; warn?: (msg: string) => void; }); private detailsDir; private aggDir; private detailsFile; private aggFile; appendRows(rows: Array<TrendDetailRow | TrendCounterRow>): Promise<Set<string>>; writeAggDay(day: string, rows: Array<TrendAggRow | TrendDirRow | TrendHourRow>): Promise<void>; deleteDetailShard(day: string): Promise<void>; readDetailShard(day: string): Promise<Array<TrendDetailRow | TrendCounterRow>>; readAggShard(day: string): Promise<TrendAggRow[]>; readAggDayShard(day: string): Promise<Array<TrendAggRow | TrendDirRow | TrendHourRow>>; private readShard; hasAggShard(day: string): Promise<boolean>; private listDays; listDetailDays(): Promise<string[]>; listAggDays(): Promise<string[]>; prune(beforeDay: string): Promise<number>; }",
     "export declare class TrendTracker { private readonly collector; private readonly aggregator; private readonly store; private readonly now; private readonly warn; private readonly flushDebounceMs; private readonly retentionDays; private flushTimer; private flushChain; private disposed; private lastFlushAt; private constructor(); static start(opts: TrendTrackerOptions): Promise<TrendTracker>; private rebuildFromDisk; handleEvent(session: unknown, event: Parameters<TrendCollector[\"handleEvent\"]>[1]): void; handleDisposed(session: unknown): void; private markDirty; flushNow(): Promise<void>; private flushInner; dispose(): Promise<void>; prune(): Promise<number>; seriesDays(n: number, metric: TrendMetric, provider?: string): Array<{ day: string; value: number | null; }>; seriesWeeks(n: number, metric: TrendMetric, provider?: string): Array<{ day: string; value: number | null; }>; seriesMonths(n: number, metric: TrendMetric, provider?: string): Array<{ day: string; value: number | null; }>; buckets(): ReturnType<TrendAggregator[\"buckets\"]>; dirRows(): ReturnType<TrendAggregator[\"dirRows\"]>; dirStacked(n: number, gran: TrendGranularity, metric: TrendMetric, dir?: string): { series: TrendStackPoint[]; dirs: Array<{ dir: string; }>; }; dirWindowSummary(n: number, gran: TrendGranularity, metric: TrendMetric, dir?: string, dirSeries?: TrendStackPoint[]): TrendWindowSummary; dirTotals(startDay: string, endDay: string, metric?: TrendMetric): Array<{ dir: string; calls: number; total: number | null; }>; hourRows(): ReturnType<TrendAggregator[\"hourRows\"]>; seriesStacked(n: number, gran: TrendGranularity, metric: TrendMetric, provider?: string, byModel?: boolean): { series: TrendStackPoint[]; providers: Array<{ provider: string; model: string | null; }>; }; windowSummary(n: number, gran: TrendGranularity, metric: TrendMetric, provider?: string, stackSeries?: TrendStackPoint[]): TrendWindowSummary; firstRecordedDay(): string | null; stats(): { days: number; pendingRows: number; unpersistedRows: number; lastFlushAt: number | null; }; }",
@@ -2601,102 +2601,6 @@
         "name": [
           "export declare const name = \"provider-usage\";"
         ],
-        "fetchWithTimeout": [
-          "export declare function fetchWithTimeout(url: string, timeoutMs?: number, init?: RequestInit): Promise<Response>;"
-        ],
-        "safeFetchData": [
-          "export declare function safeFetchData(fn: (signal: AbortSignal) => Promise<unknown>, timeoutMs?: number, externalSignal?: AbortSignal): Promise<{ data?: Record<string, unknown>; error?: string; }"
-        ],
-        "safeFormat": [
-          "export declare function safeFormat(fn: () => string, name: string, timeoutMs?: number): Promise<{ html?: string; error?: string; }"
-        ],
-        "StatsService": [
-          "export declare class StatsService { readonly ctx: Context; readonly config: NormalizedConfig; readonly historyRoot: string; readonly registry: AdapterRegistry; readonly history: HistoryStore; readonly sanitizeDiagnostic: (s: string) => string; readonly recordAdapterStateDiagnostic: (message: string) => void; readonly cache: Map<string, V2PipelineResult>; readonly panelCache: Map<string, PanelCacheEntry>; readonly providerLocks: Map<string, Mutex>; private cacheGeneration; private readonly panelInFlight; private stateChain; constructor(options: StatsServiceOptions); lockOf(provider: string): Mutex; cacheFresh(provider: string): V2PipelineResult | undefined; cacheSize(): number; purgeAllCaches(): void; purgePanelCacheForProvider(provider: string): void; purgeCachesForProviders(providers: Iterable<string>): void; getPanelResult(provider: string, entry: { name: string; adapter: UsageStatsAdapter; }, range: { start: number; end: number; }): Promise<{ panelHtml?: string; error?: string; }>; warmupProviders(providers: Iterable<string>): void; scheduleWriteAdapterState(override?: Record<string, string | null>): void; persistUserAdapter(rec: UserAdapterRecord): Promise<void>; getStats(provider: string, signal?: AbortSignal): Promise<V2PipelineResult>; dispose(): void; }"
-        ],
-        "PANEL_CACHE_TTL_MS": [
-          "export declare const PANEL_CACHE_TTL_MS = 90000;"
-        ],
-        "isPanelCacheStale": [
-          "export declare function isPanelCacheStale(entry: Pick<PanelCacheEntry, \"at\">, now: number, ttlMs?: number): boolean;"
-        ],
-        "normalizeRangeDay": [
-          "export declare function normalizeRangeDay(range: { start: number; end: number; }"
-        ],
-        "panelCacheKey": [
-          "export declare function panelCacheKey(provider: string, adapterName: string, range: { start: number; end: number; }"
-        ],
-        "runV2PanelPipeline": [
-          "export declare function runV2PanelPipeline(opts: { adapter: UsageStatsAdapter; provider: string; history: HistoryStore; range: { start: number; end: number; }; timeoutMs?: number; }"
-        ],
-        "runV2Pipeline": [
-          "export declare function runV2Pipeline(ctx: V2PipelineContext): Promise<V2PipelineResult>;"
-        ],
-        "HotReloadableAdapter": [
-          "export declare class HotReloadableAdapter { private timer; private lastStamp; private readonly onReload; private readonly file; private readonly intervalMs; private readonly checkChecksum; constructor(file: string, intervalMs: number, onReload?: (info: { ok: boolean; error?: string; }) => void, checkChecksum?: boolean); current: UsageStatsAdapter | null; start(): Promise<{ ok: boolean; error?: string; }>; stop(): void; pollOnce(): Promise<{ ok: boolean; error?: string; }>; private reload; }"
-        ],
-        "loadAndValidateAdapter": [
-          "export declare function loadAndValidateAdapter(file: string, stamp: FileStamp): Promise<{ adapter?: UsageStatsAdapter; error?: string; }"
-        ],
-        "readStamp": [
-          "export declare function readStamp(file: string): Promise<FileStamp | null>;"
-        ],
-        "stampEqual": [
-          "export declare function stampEqual(a: FileStamp | null, b: FileStamp | null): boolean;"
-        ],
-        "expandHomePath": [
-          "export declare function expandHomePath(p: string): string;"
-        ],
-        "pluginHome": [
-          "export declare function pluginHome(base?: string): string;"
-        ],
-        "resolvePath": [
-          "export declare function resolvePath(p: string): string | undefined;"
-        ],
-        "credentialsFile": [
-          "export declare function credentialsFile(dshHome?: string): string;"
-        ],
-        "opencodeAuthFile": [
-          "export declare function opencodeAuthFile(): string;"
-        ],
-        "resolveProviderConfig": [
-          "export declare function resolveProviderConfig(provider: string, ctx?: unknown, input?: ProviderConfigInput): Promise<ResolvedProviderConfig>;"
-        ],
-        "makeAdapterRegistry": [
-          "export declare function makeAdapterRegistry(opts?: { diag?: (m: string) => void; sanitizePath?: (s: string) => string; }"
-        ],
-        "loadUserAdapterChecked": [
-          "export declare function loadUserAdapterChecked(file: string, registry?: AdapterRegistry): Promise<{ ok: true; adapter: UsageStatsAdapter; }"
-        ],
-        "loadUserHostAdapterFile": [
-          "export declare function loadUserHostAdapterFile(file: string): Promise<unknown>;"
-        ],
-        "ADAPTER_STATE_BACKUP_LIMIT": [
-          "export declare const ADAPTER_STATE_BACKUP_LIMIT = 5;"
-        ],
-        "adapterStateFile": [
-          "export declare function adapterStateFile(root: string): string;"
-        ],
-        "parseUserAdapters": [
-          "export declare function parseUserAdapters(raw: string | undefined): UserAdapterRecord[];"
-        ],
-        "readAdapterState": [
-          "export declare function readAdapterState(root: string): Promise<Record<string, string | null>>;"
-        ],
-        "readAdapterStateResult": [
-          "export declare function readAdapterStateResult(root: string, options?: AdapterStateReadOptions): Promise<AdapterStateReadResult>;"
-        ],
-        "readUserAdapters": [
-          "export declare function readUserAdapters(root: string): Promise<UserAdapterRecord[]>;"
-        ],
-        "resolveAddAdapterFile": [
-          "export declare function resolveAddAdapterFile(input: unknown, dshHome?: string): string | undefined;"
-        ],
-        "userAdaptersFile": [
-          "export declare function userAdaptersFile(root: string): string;"
-        ],
-        "writeAdapterState": [
-          "export declare function writeAdapterState(root: string, state: Record<string, string | null>, durabilityDiagnostic: (message: string) => void): Promise<void>;"
-        ],
         "createAdapterRoutes": [
           "export declare function createAdapterRoutes(routes: { adapters: string; select: string; inspect: string; add: string; }"
         ],
@@ -2720,96 +2624,6 @@
         ],
         "handleStats": [
           "export declare function handleStats(req: IncomingMessage, res: ServerResponse, ctx: StatsRoutesContext): Promise<void>;"
-        ],
-        "buildDirRows": [
-          "export declare function buildDirRows(days: Map<string, Map<string, Map<string | null, TrendCell>>>, dirDays: Map<string, Map<string, TrendCell>>): TrendDirRow[];"
-        ],
-        "buildDirStackedSeries": [
-          "export declare function buildDirStackedSeries(rows: TrendDirRow[], n: number, gran: TrendGranularity, metric: TrendMetric, dir: string | undefined, now: number): { series: TrendStackPoint[]; dirs: Array<{ dir: string; }>; };"
-        ],
-        "buildDirTotals": [
-          "export declare function buildDirTotals(rows: TrendDirRow[], startDay: string, endDay: string, metric?: TrendMetric): Array<{ dir: string; calls: number; total: number | null; }"
-        ],
-        "buildDirWindowSummary": [
-          "export declare function buildDirWindowSummary(rows: TrendDirRow[], n: number, gran: TrendGranularity, metric: TrendMetric, dir: string | undefined, now: number, dirSeries?: TrendStackPoint[]): TrendWindowSummary;"
-        ],
-        "buildHourRows": [
-          "export declare function buildHourRows(hourDays: Map<string, Map<number, TrendCell>>): TrendHourRow[];"
-        ],
-        "buildStackedSeries": [
-          "export declare function buildStackedSeries(days: Map<string, Map<string, Map<string | null, TrendCell>>>, n: number, gran: TrendGranularity, metric: TrendMetric, provider: string | undefined, byModel: boolean, now: number): { series: TrendStackPoint[]; providers: Array<{ provider: string; model: string | null; }>; };"
-        ],
-        "buildWindowSummary": [
-          "export declare function buildWindowSummary(days: Map<string, Map<string, Map<string | null, TrendCell>>>, n: number, gran: TrendGranularity, metric: TrendMetric, provider: string | undefined, now: number, stackSeries?: TrendStackPoint[]): TrendWindowSummary;"
-        ],
-        "dayValueOf": [
-          "export declare function dayValueOf(days: Map<string, Map<string, Map<string | null, TrendCell>>>, day: string, metric: TrendMetric, provider?: string): number | null;"
-        ],
-        "lastNMonthKeys": [
-          "export declare function lastNMonthKeys(n: number, now: number): string[];"
-        ],
-        "lastNWeekKeys": [
-          "export declare function lastNWeekKeys(n: number, now: number): string[];"
-        ],
-        "metricValue": [
-          "export declare function metricValue(cell: TrendCell, metric: TrendMetric): number | null;"
-        ],
-        "monthRange": [
-          "export declare function monthRange(key: string): { start: string; end: string; };"
-        ],
-        "rangeValueOf": [
-          "export declare function rangeValueOf(days: Map<string, Map<string, Map<string | null, TrendCell>>>, range: { start: string; end: string; }"
-        ],
-        "weekRange": [
-          "export declare function weekRange(weekStart: string): { start: string; end: string; };"
-        ],
-        "weekStartKey": [
-          "export declare function weekStartKey(t: number): string;"
-        ],
-        "addCounterTo": [
-          "export declare function addCounterTo(agg: TrendAggRow | TrendDirRow | TrendHourRow, turns: number, toolCalls: number): void;"
-        ],
-        "addDetailTo": [
-          "export declare function addDetailTo(agg: TrendAggRow | TrendDirRow | TrendHourRow, row: TrendDetailRow): void;"
-        ],
-        "diffToken": [
-          "export declare function diffToken(aggV: number | null, dirV: number | null): number | null;"
-        ],
-        "emptyAggRow": [
-          "export declare function emptyAggRow(day: string, provider: string, model: string | null): TrendAggRow;"
-        ],
-        "emptyCell": [
-          "export declare function emptyCell(): TrendCell;"
-        ],
-        "emptyDirRow": [
-          "export declare function emptyDirRow(day: string, dir: string): TrendDirRow;"
-        ],
-        "emptyHourRow": [
-          "export declare function emptyHourRow(day: string, hour: number): TrendHourRow;"
-        ],
-        "mergeAggRows": [
-          "export declare function mergeAggRows(base: TrendAggRow[], add: TrendAggRow[]): TrendAggRow[];"
-        ],
-        "mergeCell": [
-          "export declare function mergeCell(cell: TrendCell, row: TrendAggRow | TrendDirRow | TrendHourRow): void;"
-        ],
-        "mergeDirRows": [
-          "export declare function mergeDirRows(base: TrendDirRow[], add: TrendDirRow[]): TrendDirRow[];"
-        ],
-        "mergeHourRows": [
-          "export declare function mergeHourRows(base: TrendHourRow[], add: TrendHourRow[]): TrendHourRow[];"
-        ],
-        "sub": [
-          "export declare function sub(oldV: number | null, newV: number | null): number | null;"
-        ],
-        "TrendAggregator": [
-          "export declare class TrendAggregator { private days; private dirDays; private hourDays; private pending; apply(e: TrendEmit): void; private addCall; private applyCall; private applyCorrect; private retokenCell; private addCounter; private applyCounter; rebuild(rows: Array<TrendAggRow | TrendDetailRow | TrendCounterRow | TrendDirRow | TrendHourRow>, persistedRows: boolean): void; unpersistedDays(): string[]; pendingDays(): string[]; hasUnpersisted(day: string): boolean; takeUnpersisted(): PendingEntry[]; markPersisted(entries: PendingEntry[]): void; dirRows(): TrendDirRow[]; hourRows(): TrendHourRow[]; dirStacked(n: number, gran: TrendGranularity, metric: TrendMetric, dir: string | undefined, now: number): { series: TrendStackPoint[]; dirs: Array<{ dir: string; }>; }; dirWindowSummary(n: number, gran: TrendGranularity, metric: TrendMetric, dir: string | undefined, now: number, dirSeries?: TrendStackPoint[]): TrendWindowSummary; dirTotals(startDay: string, endDay: string, metric?: TrendMetric): Array<{ dir: string; calls: number; total: number | null; }>; takeDirUnpersisted(day: string): TrendDirRow[]; rollupSnapshot(day: string): { consumed: PendingEntry[]; aggRows: TrendAggRow[]; dirRows: TrendDirRow[]; hourRows: TrendHourRow[]; }; rollupRowsOf(day: string): TrendAggRow[]; consume(entries: readonly PendingEntry[]): void; dropPending(day: string, today: string): void; pruneDays(beforeDay: string): number; rollupDay(day: string, today: string): Array<TrendAggRow | TrendDirRow | TrendHourRow>; forgetPersisted(day: string): void; buckets(): Array<{ day: string; providers: Array<{ provider: string; model: string | null; cell: TrendCell; }>; }>; seriesDays(n: number, now: number, metric: TrendMetric, provider?: string): Array<{ day: string; value: number | null; }>; seriesWeeks(n: number, now: number, metric: TrendMetric, provider?: string): Array<{ day: string; value: number | null; }>; seriesMonths(n: number, now: number, metric: TrendMetric, provider?: string): Array<{ day: string; value: number | null; }>; seriesStacked(n: number, gran: TrendGranularity, metric: TrendMetric, provider: string | undefined, byModel: boolean, now: number): { series: TrendStackPoint[]; providers: Array<{ provider: string; model: string | null; }>; }; windowSummary(n: number, gran: TrendGranularity, metric: TrendMetric, provider: string | undefined, now: number, stackSeries?: TrendStackPoint[]): TrendWindowSummary; stats(): { days: number; pendingRows: number; unpersistedRows: number; }; private cellOf; private dirCellOf; private hourCellOf; }"
-        ],
-        "TrendTracker": [
-          "export declare class TrendTracker { private readonly collector; private readonly aggregator; private readonly store; private readonly now; private readonly warn; private readonly flushDebounceMs; private readonly retentionDays; private flushTimer; private flushChain; private disposed; private lastFlushAt; private constructor(); static start(opts: TrendTrackerOptions): Promise<TrendTracker>; private rebuildFromDisk; handleEvent(session: unknown, event: Parameters<TrendCollector[\"handleEvent\"]>[1]): void; handleDisposed(session: unknown): void; private markDirty; flushNow(): Promise<void>; private flushInner; dispose(): Promise<void>; prune(): Promise<number>; seriesDays(n: number, metric: TrendMetric, provider?: string): Array<{ day: string; value: number | null; }>; seriesWeeks(n: number, metric: TrendMetric, provider?: string): Array<{ day: string; value: number | null; }>; seriesMonths(n: number, metric: TrendMetric, provider?: string): Array<{ day: string; value: number | null; }>; buckets(): ReturnType<TrendAggregator[\"buckets\"]>; dirRows(): ReturnType<TrendAggregator[\"dirRows\"]>; dirStacked(n: number, gran: TrendGranularity, metric: TrendMetric, dir?: string): { series: TrendStackPoint[]; dirs: Array<{ dir: string; }>; }; dirWindowSummary(n: number, gran: TrendGranularity, metric: TrendMetric, dir?: string, dirSeries?: TrendStackPoint[]): TrendWindowSummary; dirTotals(startDay: string, endDay: string, metric?: TrendMetric): Array<{ dir: string; calls: number; total: number | null; }>; hourRows(): ReturnType<TrendAggregator[\"hourRows\"]>; seriesStacked(n: number, gran: TrendGranularity, metric: TrendMetric, provider?: string, byModel?: boolean): { series: TrendStackPoint[]; providers: Array<{ provider: string; model: string | null; }>; }; windowSummary(n: number, gran: TrendGranularity, metric: TrendMetric, provider?: string, stackSeries?: TrendStackPoint[]): TrendWindowSummary; firstRecordedDay(): string | null; stats(): { days: number; pendingRows: number; unpersistedRows: number; lastFlushAt: number | null; }; }"
-        ],
-        "TrendStore": [
-          "export declare class TrendStore { private readonly root; private readonly warn; private detailChains; constructor(opts: { root: string; warn?: (msg: string) => void; }); private detailsDir; private aggDir; private detailsFile; private aggFile; appendRows(rows: Array<TrendDetailRow | TrendCounterRow>): Promise<Set<string>>; writeAggDay(day: string, rows: Array<TrendAggRow | TrendDirRow | TrendHourRow>): Promise<void>; deleteDetailShard(day: string): Promise<void>; readDetailShard(day: string): Promise<Array<TrendDetailRow | TrendCounterRow>>; readAggShard(day: string): Promise<TrendAggRow[]>; readAggDayShard(day: string): Promise<Array<TrendAggRow | TrendDirRow | TrendHourRow>>; private readShard; hasAggShard(day: string): Promise<boolean>; private listDays; listDetailDays(): Promise<string[]>; listAggDays(): Promise<string[]>; prune(beforeDay: string): Promise<number>; }"
         ],
         "TrendCollector": [
           "export declare class TrendCollector { private readonly sessions; private readonly now; private readonly emit; private readonly onAnomaly; private readonly resolveCwd; private lastSweep; constructor(opts: TrendCollectorOptions); private stateOf; private providerOf; private dirOf; handleEvent(session: string, event: SessionEvent): void; handleDisposed(session: string): void; private lazySweep; private onHeader; private onSettled; private onTurnEnd; private onToolCall; private foldKey; }"
@@ -2900,6 +2714,96 @@
         ],
         "registerBuiltinAdapters": [
           "export declare function registerBuiltinAdapters(port: BuiltinRegistryPort, adapters: readonly UsageStatsAdapter[]): void;"
+        ],
+        "buildDirRows": [
+          "export declare function buildDirRows(days: Map<string, Map<string, Map<string | null, TrendCell>>>, dirDays: Map<string, Map<string, TrendCell>>): TrendDirRow[];"
+        ],
+        "buildDirStackedSeries": [
+          "export declare function buildDirStackedSeries(rows: TrendDirRow[], n: number, gran: TrendGranularity, metric: TrendMetric, dir: string | undefined, now: number): { series: TrendStackPoint[]; dirs: Array<{ dir: string; }>; };"
+        ],
+        "buildDirTotals": [
+          "export declare function buildDirTotals(rows: TrendDirRow[], startDay: string, endDay: string, metric?: TrendMetric): Array<{ dir: string; calls: number; total: number | null; }"
+        ],
+        "buildDirWindowSummary": [
+          "export declare function buildDirWindowSummary(rows: TrendDirRow[], n: number, gran: TrendGranularity, metric: TrendMetric, dir: string | undefined, now: number, dirSeries?: TrendStackPoint[]): TrendWindowSummary;"
+        ],
+        "buildHourRows": [
+          "export declare function buildHourRows(hourDays: Map<string, Map<number, TrendCell>>): TrendHourRow[];"
+        ],
+        "buildStackedSeries": [
+          "export declare function buildStackedSeries(days: Map<string, Map<string, Map<string | null, TrendCell>>>, n: number, gran: TrendGranularity, metric: TrendMetric, provider: string | undefined, byModel: boolean, now: number): { series: TrendStackPoint[]; providers: Array<{ provider: string; model: string | null; }>; };"
+        ],
+        "buildWindowSummary": [
+          "export declare function buildWindowSummary(days: Map<string, Map<string, Map<string | null, TrendCell>>>, n: number, gran: TrendGranularity, metric: TrendMetric, provider: string | undefined, now: number, stackSeries?: TrendStackPoint[]): TrendWindowSummary;"
+        ],
+        "dayValueOf": [
+          "export declare function dayValueOf(days: Map<string, Map<string, Map<string | null, TrendCell>>>, day: string, metric: TrendMetric, provider?: string): number | null;"
+        ],
+        "lastNMonthKeys": [
+          "export declare function lastNMonthKeys(n: number, now: number): string[];"
+        ],
+        "lastNWeekKeys": [
+          "export declare function lastNWeekKeys(n: number, now: number): string[];"
+        ],
+        "metricValue": [
+          "export declare function metricValue(cell: TrendCell, metric: TrendMetric): number | null;"
+        ],
+        "monthRange": [
+          "export declare function monthRange(key: string): { start: string; end: string; };"
+        ],
+        "rangeValueOf": [
+          "export declare function rangeValueOf(days: Map<string, Map<string, Map<string | null, TrendCell>>>, range: { start: string; end: string; }"
+        ],
+        "weekRange": [
+          "export declare function weekRange(weekStart: string): { start: string; end: string; };"
+        ],
+        "weekStartKey": [
+          "export declare function weekStartKey(t: number): string;"
+        ],
+        "addCounterTo": [
+          "export declare function addCounterTo(agg: TrendAggRow | TrendDirRow | TrendHourRow, turns: number, toolCalls: number): void;"
+        ],
+        "addDetailTo": [
+          "export declare function addDetailTo(agg: TrendAggRow | TrendDirRow | TrendHourRow, row: TrendDetailRow): void;"
+        ],
+        "diffToken": [
+          "export declare function diffToken(aggV: number | null, dirV: number | null): number | null;"
+        ],
+        "emptyAggRow": [
+          "export declare function emptyAggRow(day: string, provider: string, model: string | null): TrendAggRow;"
+        ],
+        "emptyCell": [
+          "export declare function emptyCell(): TrendCell;"
+        ],
+        "emptyDirRow": [
+          "export declare function emptyDirRow(day: string, dir: string): TrendDirRow;"
+        ],
+        "emptyHourRow": [
+          "export declare function emptyHourRow(day: string, hour: number): TrendHourRow;"
+        ],
+        "mergeAggRows": [
+          "export declare function mergeAggRows(base: TrendAggRow[], add: TrendAggRow[]): TrendAggRow[];"
+        ],
+        "mergeCell": [
+          "export declare function mergeCell(cell: TrendCell, row: TrendAggRow | TrendDirRow | TrendHourRow): void;"
+        ],
+        "mergeDirRows": [
+          "export declare function mergeDirRows(base: TrendDirRow[], add: TrendDirRow[]): TrendDirRow[];"
+        ],
+        "mergeHourRows": [
+          "export declare function mergeHourRows(base: TrendHourRow[], add: TrendHourRow[]): TrendHourRow[];"
+        ],
+        "sub": [
+          "export declare function sub(oldV: number | null, newV: number | null): number | null;"
+        ],
+        "TrendAggregator": [
+          "export declare class TrendAggregator { private days; private dirDays; private hourDays; private pending; apply(e: TrendEmit): void; private addCall; private applyCall; private applyCorrect; private retokenCell; private addCounter; private applyCounter; rebuild(rows: Array<TrendAggRow | TrendDetailRow | TrendCounterRow | TrendDirRow | TrendHourRow>, persistedRows: boolean): void; unpersistedDays(): string[]; pendingDays(): string[]; hasUnpersisted(day: string): boolean; takeUnpersisted(): PendingEntry[]; markPersisted(entries: PendingEntry[]): void; dirRows(): TrendDirRow[]; hourRows(): TrendHourRow[]; dirStacked(n: number, gran: TrendGranularity, metric: TrendMetric, dir: string | undefined, now: number): { series: TrendStackPoint[]; dirs: Array<{ dir: string; }>; }; dirWindowSummary(n: number, gran: TrendGranularity, metric: TrendMetric, dir: string | undefined, now: number, dirSeries?: TrendStackPoint[]): TrendWindowSummary; dirTotals(startDay: string, endDay: string, metric?: TrendMetric): Array<{ dir: string; calls: number; total: number | null; }>; takeDirUnpersisted(day: string): TrendDirRow[]; rollupSnapshot(day: string): { consumed: PendingEntry[]; aggRows: TrendAggRow[]; dirRows: TrendDirRow[]; hourRows: TrendHourRow[]; }; rollupRowsOf(day: string): TrendAggRow[]; consume(entries: readonly PendingEntry[]): void; dropPending(day: string, today: string): void; pruneDays(beforeDay: string): number; rollupDay(day: string, today: string): Array<TrendAggRow | TrendDirRow | TrendHourRow>; buckets(): Array<{ day: string; providers: Array<{ provider: string; model: string | null; cell: TrendCell; }>; }>; seriesDays(n: number, now: number, metric: TrendMetric, provider?: string): Array<{ day: string; value: number | null; }>; seriesWeeks(n: number, now: number, metric: TrendMetric, provider?: string): Array<{ day: string; value: number | null; }>; seriesMonths(n: number, now: number, metric: TrendMetric, provider?: string): Array<{ day: string; value: number | null; }>; seriesStacked(n: number, gran: TrendGranularity, metric: TrendMetric, provider: string | undefined, byModel: boolean, now: number): { series: TrendStackPoint[]; providers: Array<{ provider: string; model: string | null; }>; }; windowSummary(n: number, gran: TrendGranularity, metric: TrendMetric, provider: string | undefined, now: number, stackSeries?: TrendStackPoint[]): TrendWindowSummary; stats(): { days: number; pendingRows: number; unpersistedRows: number; }; private cellOf; private dirCellOf; private hourCellOf; }"
+        ],
+        "TrendTracker": [
+          "export declare class TrendTracker { private readonly collector; private readonly aggregator; private readonly store; private readonly now; private readonly warn; private readonly flushDebounceMs; private readonly retentionDays; private flushTimer; private flushChain; private disposed; private lastFlushAt; private constructor(); static start(opts: TrendTrackerOptions): Promise<TrendTracker>; private rebuildFromDisk; handleEvent(session: unknown, event: Parameters<TrendCollector[\"handleEvent\"]>[1]): void; handleDisposed(session: unknown): void; private markDirty; flushNow(): Promise<void>; private flushInner; dispose(): Promise<void>; prune(): Promise<number>; seriesDays(n: number, metric: TrendMetric, provider?: string): Array<{ day: string; value: number | null; }>; seriesWeeks(n: number, metric: TrendMetric, provider?: string): Array<{ day: string; value: number | null; }>; seriesMonths(n: number, metric: TrendMetric, provider?: string): Array<{ day: string; value: number | null; }>; buckets(): ReturnType<TrendAggregator[\"buckets\"]>; dirRows(): ReturnType<TrendAggregator[\"dirRows\"]>; dirStacked(n: number, gran: TrendGranularity, metric: TrendMetric, dir?: string): { series: TrendStackPoint[]; dirs: Array<{ dir: string; }>; }; dirWindowSummary(n: number, gran: TrendGranularity, metric: TrendMetric, dir?: string, dirSeries?: TrendStackPoint[]): TrendWindowSummary; dirTotals(startDay: string, endDay: string, metric?: TrendMetric): Array<{ dir: string; calls: number; total: number | null; }>; hourRows(): ReturnType<TrendAggregator[\"hourRows\"]>; seriesStacked(n: number, gran: TrendGranularity, metric: TrendMetric, provider?: string, byModel?: boolean): { series: TrendStackPoint[]; providers: Array<{ provider: string; model: string | null; }>; }; windowSummary(n: number, gran: TrendGranularity, metric: TrendMetric, provider?: string, stackSeries?: TrendStackPoint[]): TrendWindowSummary; firstRecordedDay(): string | null; stats(): { days: number; pendingRows: number; unpersistedRows: number; lastFlushAt: number | null; }; }"
+        ],
+        "TrendStore": [
+          "export declare class TrendStore { private readonly root; private readonly warn; private detailChains; constructor(opts: { root: string; warn?: (msg: string) => void; }); private detailsDir; private aggDir; private detailsFile; private aggFile; appendRows(rows: Array<TrendDetailRow | TrendCounterRow>): Promise<Set<string>>; writeAggDay(day: string, rows: Array<TrendAggRow | TrendDirRow | TrendHourRow>): Promise<void>; deleteDetailShard(day: string): Promise<void>; readDetailShard(day: string): Promise<Array<TrendDetailRow | TrendCounterRow>>; readAggShard(day: string): Promise<TrendAggRow[]>; readAggDayShard(day: string): Promise<Array<TrendAggRow | TrendDirRow | TrendHourRow>>; private readShard; hasAggShard(day: string): Promise<boolean>; private listDays; listDetailDays(): Promise<string[]>; listAggDays(): Promise<string[]>; prune(beforeDay: string): Promise<number>; }"
         ],
         "normalizeReportConfig": [
           "export declare function normalizeReportConfig(raw: unknown): ReportConfig;"
@@ -3062,6 +2966,102 @@
         ],
         "startOfDay": [
           "export declare function startOfDay(time: number): number;"
+        ],
+        "fetchWithTimeout": [
+          "export declare function fetchWithTimeout(url: string, timeoutMs?: number, init?: RequestInit): Promise<Response>;"
+        ],
+        "safeFetchData": [
+          "export declare function safeFetchData(fn: (signal: AbortSignal) => Promise<unknown>, timeoutMs?: number, externalSignal?: AbortSignal): Promise<{ data?: Record<string, unknown>; error?: string; }"
+        ],
+        "safeFormat": [
+          "export declare function safeFormat(fn: () => string, name: string, timeoutMs?: number): Promise<{ html?: string; error?: string; }"
+        ],
+        "StatsService": [
+          "export declare class StatsService { readonly ctx: Context; readonly config: NormalizedConfig; readonly historyRoot: string; readonly registry: AdapterRegistry; readonly history: HistoryStore; readonly sanitizeDiagnostic: (s: string) => string; readonly recordAdapterStateDiagnostic: (message: string) => void; readonly cache: Map<string, V2PipelineResult>; readonly panelCache: Map<string, PanelCacheEntry>; readonly providerLocks: Map<string, Mutex>; private cacheGeneration; private readonly panelInFlight; private stateChain; constructor(options: StatsServiceOptions); lockOf(provider: string): Mutex; cacheFresh(provider: string): V2PipelineResult | undefined; cacheSize(): number; purgeAllCaches(): void; purgePanelCacheForProvider(provider: string): void; purgeCachesForProviders(providers: Iterable<string>): void; getPanelResult(provider: string, entry: { name: string; adapter: UsageStatsAdapter; }, range: { start: number; end: number; }): Promise<{ panelHtml?: string; error?: string; }>; warmupProviders(providers: Iterable<string>): void; scheduleWriteAdapterState(override?: Record<string, string | null>): void; persistUserAdapter(rec: UserAdapterRecord): Promise<void>; getStats(provider: string, signal?: AbortSignal): Promise<V2PipelineResult>; dispose(): void; }"
+        ],
+        "PANEL_CACHE_TTL_MS": [
+          "export declare const PANEL_CACHE_TTL_MS = 90000;"
+        ],
+        "isPanelCacheStale": [
+          "export declare function isPanelCacheStale(entry: Pick<PanelCacheEntry, \"at\">, now: number, ttlMs?: number): boolean;"
+        ],
+        "normalizeRangeDay": [
+          "export declare function normalizeRangeDay(range: { start: number; end: number; }"
+        ],
+        "panelCacheKey": [
+          "export declare function panelCacheKey(provider: string, adapterName: string, range: { start: number; end: number; }"
+        ],
+        "runV2PanelPipeline": [
+          "export declare function runV2PanelPipeline(opts: { adapter: UsageStatsAdapter; provider: string; history: HistoryStore; range: { start: number; end: number; }; timeoutMs?: number; }"
+        ],
+        "runV2Pipeline": [
+          "export declare function runV2Pipeline(ctx: V2PipelineContext): Promise<V2PipelineResult>;"
+        ],
+        "HotReloadableAdapter": [
+          "export declare class HotReloadableAdapter { private timer; private lastStamp; private readonly onReload; private readonly file; private readonly intervalMs; private readonly checkChecksum; constructor(file: string, intervalMs: number, onReload?: (info: { ok: boolean; error?: string; }) => void, checkChecksum?: boolean); current: UsageStatsAdapter | null; start(): Promise<{ ok: boolean; error?: string; }>; stop(): void; pollOnce(): Promise<{ ok: boolean; error?: string; }>; private reload; }"
+        ],
+        "loadAndValidateAdapter": [
+          "export declare function loadAndValidateAdapter(file: string, stamp: FileStamp): Promise<{ adapter?: UsageStatsAdapter; error?: string; }"
+        ],
+        "readStamp": [
+          "export declare function readStamp(file: string): Promise<FileStamp | null>;"
+        ],
+        "stampEqual": [
+          "export declare function stampEqual(a: FileStamp | null, b: FileStamp | null): boolean;"
+        ],
+        "expandHomePath": [
+          "export declare function expandHomePath(p: string): string;"
+        ],
+        "pluginHome": [
+          "export declare function pluginHome(base?: string): string;"
+        ],
+        "resolvePath": [
+          "export declare function resolvePath(p: string): string | undefined;"
+        ],
+        "credentialsFile": [
+          "export declare function credentialsFile(dshHome?: string): string;"
+        ],
+        "opencodeAuthFile": [
+          "export declare function opencodeAuthFile(): string;"
+        ],
+        "resolveProviderConfig": [
+          "export declare function resolveProviderConfig(provider: string, ctx?: unknown, input?: ProviderConfigInput): Promise<ResolvedProviderConfig>;"
+        ],
+        "makeAdapterRegistry": [
+          "export declare function makeAdapterRegistry(opts?: { diag?: (m: string) => void; sanitizePath?: (s: string) => string; }"
+        ],
+        "loadUserAdapterChecked": [
+          "export declare function loadUserAdapterChecked(file: string, registry?: AdapterRegistry): Promise<{ ok: true; adapter: UsageStatsAdapter; }"
+        ],
+        "loadUserHostAdapterFile": [
+          "export declare function loadUserHostAdapterFile(file: string): Promise<unknown>;"
+        ],
+        "ADAPTER_STATE_BACKUP_LIMIT": [
+          "export declare const ADAPTER_STATE_BACKUP_LIMIT = 5;"
+        ],
+        "adapterStateFile": [
+          "export declare function adapterStateFile(root: string): string;"
+        ],
+        "parseUserAdapters": [
+          "export declare function parseUserAdapters(raw: string | undefined): UserAdapterRecord[];"
+        ],
+        "readAdapterState": [
+          "export declare function readAdapterState(root: string): Promise<Record<string, string | null>>;"
+        ],
+        "readAdapterStateResult": [
+          "export declare function readAdapterStateResult(root: string, options?: AdapterStateReadOptions): Promise<AdapterStateReadResult>;"
+        ],
+        "readUserAdapters": [
+          "export declare function readUserAdapters(root: string): Promise<UserAdapterRecord[]>;"
+        ],
+        "resolveAddAdapterFile": [
+          "export declare function resolveAddAdapterFile(input: unknown, dshHome?: string): string | undefined;"
+        ],
+        "userAdaptersFile": [
+          "export declare function userAdaptersFile(root: string): string;"
+        ],
+        "writeAdapterState": [
+          "export declare function writeAdapterState(root: string, state: Record<string, string | null>, durabilityDiagnostic: (message: string) => void): Promise<void>;"
         ],
         "LAST_RUN_SCHEMA": [
           "export declare const LAST_RUN_SCHEMA = 2;"

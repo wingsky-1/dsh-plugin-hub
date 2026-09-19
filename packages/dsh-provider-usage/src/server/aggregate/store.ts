@@ -31,7 +31,7 @@ import {
   type TrendDetailRow,
   type TrendDirRow,
   type TrendHourRow,
-} from "../collect/interface.ts";
+} from "../../domain2/collect/interface.ts";
 
 export type TrendShardRow =
   TrendDetailRow | TrendCounterRow | TrendAggRow | TrendDirRow | TrendHourRow;
@@ -120,7 +120,8 @@ export class TrendStore {
     // 后缀 `.tmp`）。尽力而为：清理失败不影响主流程（仅告警，下轮重写时再清）。
     try {
       const files = await readdir(this.aggDir());
-      const deletePromises = [];
+      // 注解：rm 归约 Promise 集合（allSettled 逐个定责，首错 warn 后主写照常推进）。
+      const deletePromises: Array<Promise<void>> = [];
       for (const f of files) {
         if (f.startsWith(`${day}.jsonl.`) && f.endsWith(".tmp")) {
           deletePromises.push(rm(join(this.aggDir(), f), { force: true }));

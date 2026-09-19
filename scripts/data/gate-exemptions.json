@@ -172,8 +172,20 @@
     },
     {
       "gate": "verify-dir-imports",
-      "path": "dsh-provider-usage:server/execute|domain2/aggregate",
-      "reason": "#768 D3：runner/generate/executor 经 domain2/aggregate 门面复用 metricValue 纯函数与 TrendTracker 类型（D3 前为域内边，边归属同步迁移）；有状态实例经构造参数传递。复用边界由 server/execute/deps.ts 注记锁定。长期条目。",
+      "path": "dsh-provider-usage:server/execute|server/aggregate",
+      "reason": "#768 D3：runner/generate/executor 经聚合门面复用 metricValue 纯函数与 TrendTracker 类型（D3 前为域内边，D8 由 domain2/aggregate 整域迁 server/aggregate，边归属同步迁移）；有状态实例经构造参数传递。复用边界由 server/execute/deps.ts 注记锁定。长期条目。",
+      "trackingIssue": "#768"
+    },
+    {
+      "gate": "verify-dir-imports",
+      "path": "dsh-provider-usage:apply|server/aggregate",
+      "reason": "#768 D8：组合根经 aggregate 门面装配 TrendTracker/TrendStore 与聚合查询纯面（全经门面，禁直引实现文件，D8 前为基线内 apply|domain2/aggregate，边归属同步迁移）。树内 integration/aggregate 用例锁定。长期条目。",
+      "trackingIssue": "#768"
+    },
+    {
+      "gate": "verify-dir-imports",
+      "path": "dsh-provider-usage:server/aggregate|domain2/collect",
+      "reason": "#768 D8：聚合经 collect 门面复用 sumToken/hourOfDay/TREND_* 纯函数与行类型（D8 前为基线内 domain2/aggregate|domain2/collect，边归属同步迁移）；TrendCollector 实例由 TrendTracker 内部构造、不跨域直取引擎。复用边界由 server/aggregate/deps.ts 注记锁定，collect 留 domain2（D9 再迁）。长期条目。",
       "trackingIssue": "#768"
     },
     {

@@ -174,8 +174,8 @@ export {
   stampEqual,
 } from "../server/registry/interface.ts";
 // 会话用量趋势：trend 模块公共面（测试/外部消费者从 lib/index.js 导入）
-export { TrendTracker } from "../domain2/aggregate/interface.ts";
-export type { TrendTrackerOptions } from "../domain2/aggregate/interface.ts";
+export { TrendTracker } from "../server/aggregate/interface.ts";
+export type { TrendTrackerOptions } from "../server/aggregate/interface.ts";
 export { TrendCollector, TREND_DONE_MAX } from "../domain2/collect/interface.ts";
 export type {
   TrendCallRecord,
@@ -194,15 +194,15 @@ export {
   mergeAggRows,
   mergeDirRows,
   mergeHourRows,
-} from "../domain2/aggregate/interface.ts";
+} from "../server/aggregate/interface.ts";
 export type {
   TrendMetric,
   TrendGranularity,
   TrendStackPart,
   TrendStackPoint,
   TrendWindowSummary,
-} from "../domain2/aggregate/interface.ts";
-export { TrendStore } from "../domain2/aggregate/interface.ts";
+} from "../server/aggregate/interface.ts";
+export { TrendStore } from "../server/aggregate/interface.ts";
 // isValidShardRow/safeToken/safeId：分片行校验与防御提取纯函数（单测从 lib/index.js 导入）
 export {
   TREND_ROW_VERSION,

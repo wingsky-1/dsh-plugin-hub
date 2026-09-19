@@ -44,7 +44,7 @@ import { makeLayerErrorSurface } from "../server/shared/interface.ts";
 import { readAdapterStateResult, readUserAdapters } from "../server/registry/interface.ts";
 import { loadUserAdapterChecked } from "../server/registry/interface.ts";
 import { StatsServiceCtor as StatsService } from "../server/pipeline/interface.ts";
-import { TrendTracker } from "../domain2/aggregate/interface.ts";
+import { TrendTracker } from "../server/aggregate/interface.ts";
 import { ReportScheduler } from "../server/schedule/interface.ts";
 import { optionalNotifier } from "../server/execute/interface.ts";
 import { ReportConfigService, readReportConfig } from "../server/config/interface.ts";

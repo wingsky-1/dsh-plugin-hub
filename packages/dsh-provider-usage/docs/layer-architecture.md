@@ -36,7 +36,7 @@
 | 层 | 职责 | 文件(行数) | 备注 |
 |---|---|---|---|
 | E1 事件采集层 | session/event 折叠状态机 | domain2/collect/{collector(445),types(346)} | 纯逻辑，now/emit 注入 |
-| E2 聚合/压实/存储层 | 双面记账+压实+分片+自愈 | domain2/aggregate/{aggregator(701),aggregate-query(628),aggregate-rows(193),store(259),index(356)} | D2 后主类保留状态容器与方法，压实转换/查询投影为纯函数模块（不接触 this） |
+| E2 聚合/压实/存储层 | 双面记账+压实+分片+自愈 | server/aggregate/{interface.ts 门面 + deps.ts 注入面 + aggregator/aggregate-rows/aggregate-query/store/index}（#768 D8 由 domain2/aggregate 整域迁入，derive/align 聚合查询纯面 + 随行修正与冻结，A4(f) 判据锁定） | D2 后主类保留状态容器与方法，压实转换/查询投影为纯函数模块（不接触 this） |
 | E3 报告调度层 | 窗口/幂等+队列+lastRun（配置面 D1 起归 server/config） | server/schedule/{due,scheduler,tasks,store}（#768 D2 由 domain2/schedule+common/last-run 整域迁入，叶环归零） | 与 E4 经本域门面解耦（executor 持注入，推进走同一 per-root 链）；tasks 持注入 executor |
 | E4 报告执行/产出层 | 执行接线+LLM 生成+渲染+落盘 | server/execute/{report-index,runner,generate,format,executor,list-dirs}（#768 D3 由 domain2 整域迁入，零行为变更） | executor 独立工厂（含错误脱敏契约）；list-dirs 独立文件（闭包收敛）；parse+记忆化单源 |
 | E5 路由层（宿主） | /trend /report-* /health | domain2/routes/{ui(246),reports(313)} | **仅宿主** |

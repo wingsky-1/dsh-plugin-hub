@@ -25,7 +25,7 @@ import type {
   MessageId,
   StreamChunk,
 } from "@deepseek-ai/dsh-llm";
-import { metricValue } from "../../domain2/aggregate/interface.ts";
+import { metricValue } from "../aggregate/interface.ts";
 import {
   sumToken,
   TREND_UNIDENTIFIED,

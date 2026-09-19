@@ -38,13 +38,13 @@ import {
   type TrendDirRow,
   type TrendHourRow,
   type TrendTokens,
-} from "../collect/interface.ts";
+} from "../../domain2/collect/interface.ts";
 import type {
   TrendCallRecord,
   TrendCorrectRecord,
   TrendCounterRecord,
   TrendEmit,
-} from "../collect/interface.ts";
+} from "../../domain2/collect/interface.ts";
 import {
   emptyCell,
   emptyAggRow,
@@ -142,7 +142,9 @@ export class TrendAggregator {
   private applyCall(r: TrendCallRecord): void {
     const day = dayKey(r.time);
     this.addCall(this.cellOf(day, r.provider, r.model), r.tokens);
-    this.addCall(this.dirCellOf(day, r.dir), r.tokens); // 目录维度平行累加（同 record 不二次 emit）
+    // A4(f)补dir：目录维度为加性可选键——缺键只进 agg 面，不建 undefined 键桶
+    //（与 rebuild/rollupSnapshot/retokenCell 的 `dir !== undefined` 守卫同口径）。
+    if (r.dir !== undefined) this.addCall(this.dirCellOf(day, r.dir), r.tokens); // 目录维度平行累加（同 record 不二次 emit）
     this.addCall(this.hourCellOf(day, hourOfDay(r.time)), r.tokens); // 小时维度平行累加（hourOfDay 与 dayKey 同源，日界一致）
     const row: TrendDetailRow = {
       v: TREND_ROW_VERSION,
@@ -232,7 +234,8 @@ export class TrendAggregator {
   private applyCounter(r: TrendCounterRecord): void {
     const day = dayKey(r.time);
     this.addCounter(this.cellOf(day, r.provider, r.model), r.turns, r.toolCalls);
-    this.addCounter(this.dirCellOf(day, r.dir), r.turns, r.toolCalls); // 目录维度平行累加
+    // A4(f)补dir：同上（加性可选键，缺键跳过目录桶；与 call 路径对称）。
+    if (r.dir !== undefined) this.addCounter(this.dirCellOf(day, r.dir), r.turns, r.toolCalls); // 目录维度平行累加
     this.addCounter(this.hourCellOf(day, hourOfDay(r.time)), r.turns, r.toolCalls); // 小时维度平行累加
     const row: TrendCounterRow = {
       v: TREND_ROW_VERSION,
@@ -555,7 +558,7 @@ export class TrendAggregator {
    * 日切压实（一步式）：折叠为聚合行返回并从 pending 移除。
    * 仅供启动自愈等「无并发 IO 失败窗口」的同步场景使用；flush 压实路径一律走
    * rollupSnapshot + consume 两步式（IO 失败内存行保留，防丢数）。
-   * 返回混存行——agg 行在前、dir 行在后（writeAggDay 写入约定）。
+   * 返回混存行——agg 行在前、dir 行居中、hour 行在后（writeAggDay 写入约定）。
    * today 参数保留（与调用方注入时钟同源的语义锚点；消费已不依赖日键，见 consume）。
    */
   rollupDay(day: string, today: string): Array<TrendAggRow | TrendDirRow | TrendHourRow> {
@@ -563,11 +566,6 @@ export class TrendAggregator {
     const { consumed, aggRows, dirRows, hourRows } = this.rollupSnapshot(day);
     this.consume(consumed);
     return [...aggRows, ...dirRows, ...hourRows];
-  }
-
-  /** 从内存 pending 移除给定日已全部落盘的登记（重启自愈删除明细分片后同步内存视图）。 */
-  forgetPersisted(day: string): void {
-    this.pending = this.pending.filter((p) => !(p.row.day === day && p.persisted));
   }
 
   // ---------------------------------------------------------------- 查询

@@ -25,7 +25,7 @@
  *   server/schedule/interface.ts 以 type 复用；per-root 临界区链
  *   （updateLastRun）经同一门面以值复用——链归属调度域（METHOD §3 Q1
  *   有主即止），执行器的推进与路由 preset 共走同一条链，本域不自建第二条链；
- * - domain2/aggregate 的 metricValue/TrendTracker 与 domain2/collect 的
+ * - server/aggregate 的 metricValue/TrendTracker 与 domain2/collect 的
  *   sumToken/TrendCell/TREND_UNIDENTIFIED/sanitizeDirName 经各自
  *   interface.ts 以 pure + type 复用（零 node 依赖的纯函数与类型，
  *   与 D2 “store 经 common 门面复用纯解析”同形）；
