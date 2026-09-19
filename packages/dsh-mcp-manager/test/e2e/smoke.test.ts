@@ -707,6 +707,11 @@ it("MCP_GUIDANCE 与隐藏后的模型面一致：全局与项目级同走 ws_mc
   // 正对照：整段被删空时上面几条会红，但这条钉住「仍在引导」本身（project-level 与检索入口）。
   expect(MCP_GUIDANCE, "正对照：project-level 引导仍在").toMatch(/ws_mcp_search/);
   expect(MCP_GUIDANCE, "正对照：project-level 那条仍在").toMatch(/Project-level servers/);
+  // #922 D：不再写“NOT in your tool list”绝对口径——连接翻转期 SDK 里会短暂出现
+  // mcp__ 声明，文案必须给过渡态指引（仍经中间层调用、不直呼），否则即假事实。
+  expect(MCP_GUIDANCE, "过渡态仍经中间层调用").toMatch(/transiently appear/);
+  expect(MCP_GUIDANCE, "过渡态不授权直呼").toMatch(/does not authorize direct calls/);
+  expect(MCP_GUIDANCE, "绝对口径已改写").not.toMatch(/are NOT in your tool list/);
 });
 it("#362 A2 / #767 笔 1a：project root 会话下 @global 可达（「改 mcp__ 直呼」拒绝门已删）", async () => {
   const { registerMiddlewareTools, McpMiddleware, fullServerName, MIDDLEWARE_GLOBAL_ROOT } =

@@ -23,6 +23,7 @@ export default defineConfig({
       'packages/dsh-mcp-manager/test/unit/unit-config-env-policy.test.ts',
       'packages/dsh-mcp-manager/test/unit/unit-config-env.test.ts',
       'packages/dsh-mcp-manager/test/unit/unit-dispatch.test.ts',
+      'packages/dsh-mcp-manager/test/unit/unit-erasure.test.ts',
       'packages/dsh-mcp-manager/test/unit/unit-file-io-queue.test.ts',
       'packages/dsh-mcp-manager/test/unit/unit-file-io.test.ts',
       'packages/dsh-mcp-manager/test/unit/unit-hotspot.test.ts',

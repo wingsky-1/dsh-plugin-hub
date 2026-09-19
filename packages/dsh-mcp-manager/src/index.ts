@@ -78,6 +78,7 @@ import { installUpgrade, releaseUpgrade } from "./server/upgrade/interface.ts";
 import * as upgradeApi from "./server/upgrade/interface.ts";
 import { bindHost, type HostFaces } from "./server/shared/interface.ts";
 import { startAgentVisibility } from "./server/visibility/interface.ts";
+import { startSdkErasure } from "./server/erasure/interface.ts";
 import { SSE_FRAMES } from "./shared/interface.ts";
 import type { McpServerSummary, SseFramePayload } from "./shared/interface.ts";
 import { makeResolveRoot, makeServerIdTable } from "./server/workspace/interface.ts";
@@ -170,8 +171,8 @@ export { panelAnchorForPosition } from "./shared/interface.ts";
 
 export const MCP_GUIDANCE =
   "dsh-mcp-manager is active: centrally manages MCP server connections without preset servers. MCP tools execute on real servers with inherited host permissions; results may contain sensitive data — explain and obtain user consent before write or sensitive operations. Terms like 'MCP / context server' refer to this plugin. Invocation rules:\n" +
-  "- Project-level servers: search with `ws_mcp_search`, verify schema with `ws_mcp_detail` if uncertain, then invoke with `ws_mcp_call`. Do NOT call mcp__ prefixed tools directly.\n" +
-  "- Global servers: reach them the same way — `ws_mcp_call` addressed by full name `@global/<server>` (project-level servers use `@<root>/<server>`); read the full name from `ws_mcp_list` / `ws_mcp_search`. The `mcp__`-prefixed tools are NOT in your tool list and must never be called directly.\n" +
+  "- Project-level servers: search with `ws_mcp_search`, verify schema with `ws_mcp_detail` if uncertain, then invoke with `ws_mcp_call`. Do NOT call mcp__ prefixed tools directly. mcp__ tools are normally hidden from your tool list; if any mcp__ declarations transiently appear inside the SDK, treat them as hidden and keep routing through `ws_mcp_*`.\n" +
+  "- Global servers: reach them the same way — `ws_mcp_call` addressed by full name `@global/<server>` (project-level servers use `@<root>/<server>`); read the full name from `ws_mcp_list` / `ws_mcp_search`. The `mcp__`-prefixed tools are normally not in your tool list and must never be called directly — a transient appearance inside SDK declarations during connection changes does not authorize direct calls.\n" +
   "- Do not retry a failing server tool more than twice.";
 
 /** apply 顶层解析后的增强/开关配置集合。 */
@@ -543,6 +544,8 @@ interface EnabledRuntimeDisposers {
   disposeMiddleware: () => void;
   /** 模型可见面隐藏（#767 笔 1b 交付物 A）：撤掉每个 agent 上那条 restrict 并摘监听。 */
   disposeVisibility: () => void;
+  /** 装配侧兜底擦除（#922 伴随项 E）：摘组装监听，计数器随域一起释放。 */
+  disposeErasure: () => void;
   watchCleanup: () => void;
 }
 
@@ -629,6 +632,7 @@ export async function apply(
     disposeInjection: () => {},
     disposeMiddleware: () => {},
     disposeVisibility: () => {},
+    disposeErasure: () => {},
     watchCleanup: () => {},
   };
 
@@ -645,6 +649,7 @@ export async function apply(
       void runtime.disposeRoutes();
       runtime.disposeMiddleware();
       runtime.disposeVisibility();
+      runtime.disposeErasure();
       runtime.watchCleanup();
       void manager.dispose();
       // 装载账本只发起 dispose、不等结算（官方 dispose 会等在途首连，挂死的服务器能把它拖到
@@ -695,6 +700,16 @@ async function assembleEnabledRuntime(
     logger: faces.logger,
   });
 
+  // 伴随项 E（#922）：装配侧兜底擦除——visibility 的 deny 在连接翻转期必有窗口，
+  // 本监听对下游 tools:sdk 段做声明级擦除并记数告警，不修窗口本身（根因归方案 B）。
+  // 宿主事件表无本事件的类型印记时随 tsc 报错显形，不在此预支断言。
+  const disposeErasure = startSdkErasure({
+    assemble: {
+      onAssemble: (handler) => ctx.on("system-prompt/assemble", handler),
+    },
+    logger: faces.logger,
+  });
+
   await manager.startAll();
   await manager.loadCatalogCache();
   manager.reconcileServers();
@@ -735,6 +750,7 @@ async function assembleEnabledRuntime(
     disposeInjection,
     disposeMiddleware: currentMiddlewareDispose,
     disposeVisibility,
+    disposeErasure,
     watchCleanup,
   };
 }
