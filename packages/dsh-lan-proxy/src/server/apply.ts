@@ -18,6 +18,7 @@ import {
   SELF_SIGNED_CERT,
   SELF_SIGNED_KEY,
   ensureSelfSignedTls,
+  loadDownloadableCertificate,
   loadTlsFromFiles,
 } from "./tls/interface.ts";
 // 配置层值依赖单向 apply → config：默认白名单常量（单一事实源）与存量归一化纯函数
@@ -456,10 +457,22 @@ export function apply(ctx: Context, config: LanProxyConfig = {}): void {
 
   // 证书下发路由（issue #911：GET 只读；loopback 围栏 + GET 白名单；无 Cookie 要求）。
   // CA 文件逐请求读取（tlsCaCertFile 热更新即时生效，不与 sync() 周期耦合）。
+  // 证书装配由 tls 域提供（loadDownloadableCertificate）：逐请求现读 resolve()，
+  // tlsCaCertFile 热更新即时生效；目录取本轮 configDir（与 prepareTls 同源）。
   const caCertDeps: CaCertRouteDeps = {
-    resolve,
-    pluginDir: () => configDir,
-    logWarn: (message) => out.warn(message),
+    loadCertificate: (format) => {
+      const v = resolve();
+      return loadDownloadableCertificate(
+        {
+          tlsCaCertFile: v.tlsCaCertFile,
+          tlsCertFile: v.tlsCertFile,
+          tlsKeyFile: v.tlsKeyFile,
+          selfSignedDir: configDir,
+        },
+        format,
+        (message) => out.warn(message),
+      );
+    },
   };
   for (const route of buildCaCertRoutes(caCertDeps)) {
     const routeDisposer = ctx.webServer.register(route);

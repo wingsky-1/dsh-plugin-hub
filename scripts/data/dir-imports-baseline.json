@@ -4,12 +4,12 @@
   "packages": {
     "dsh-lan-proxy": {
       "modules": 6,
-      "scannedSrcFiles": 18,
-      "allSrcTsFiles": 26,
+      "scannedSrcFiles": 20,
+      "allSrcTsFiles": 29,
       "interfaceFacades": 6,
-      "leafValueEdges": 3,
-      "fileValueEdges": 27,
-      "crossModuleRefs": 35,
+      "leafValueEdges": 4,
+      "fileValueEdges": 30,
+      "crossModuleRefs": 41,
       "quality": {
         "leafModuleCycles": [],
         "fileCycles": [],
@@ -23,8 +23,7 @@
         "rootIndexImports": [],
         "clientServerImports": [],
         "unitImportFaceViolations": [
-          "test/unit/unit-apply.test.ts|src/index.ts",
-          "test/unit/unit-proxy.test.ts|src/index.ts"
+          "test/unit/unit-apply.test.ts|src/index.ts"
         ]
       }
     },

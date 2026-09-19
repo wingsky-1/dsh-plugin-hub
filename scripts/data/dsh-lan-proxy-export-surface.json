@@ -280,6 +280,7 @@
     "export declare function isLoopbackTarget(host: string): boolean;",
     "export declare function isTokenMintCandidate(method: string | undefined, url: string | undefined): boolean;",
     "export declare function legacyPluginDir(): string;",
+    "export declare function loadDownloadableCertificate(source: DownloadCertSource, format: \"der\" | \"pem\", logWarn?: (message: string) => void): DownloadCertResult;",
     "export declare function loadTlsFromFiles(certFile: string, keyFile: string): TlsMaterials;",
     "export declare function migrateFileConfig(configDir: string, scope: Pick<OwnerScopeLike, \"update\">, logger?: { warn?: (...a: unknown[]) => void; }",
     "export declare function normalizeConfig(input: unknown): LanProxyConfig;",
@@ -677,6 +678,9 @@
         ],
         "extractFirstCertificateDer": [
           "export declare function extractFirstCertificateDer(input: string | Buffer): Buffer;"
+        ],
+        "loadDownloadableCertificate": [
+          "export declare function loadDownloadableCertificate(source: DownloadCertSource, format: \"der\" | \"pem\", logWarn?: (message: string) => void): DownloadCertResult;"
         ],
         "loadTlsFromFiles": [
           "export declare function loadTlsFromFiles(certFile: string, keyFile: string): TlsMaterials;"

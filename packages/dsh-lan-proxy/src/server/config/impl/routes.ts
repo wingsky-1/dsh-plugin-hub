@@ -10,16 +10,10 @@ import {
   errorMessage,
   guardLoopbackMethod,
 } from "../../../../../../shared/host-utils.js";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
 import { sanitizeSettings, validateSettings } from "./model.ts";
 import type { HttpCompressSnapshot, ResolvedConfig } from "./model.ts";
-import {
-  SELF_SIGNED_CERT,
-  encodeCertificatePem,
-  extractFirstCertificateDer,
-} from "../../tls/interface.ts";
+import type { DownloadCertResult } from "../../tls/interface.ts";
 
 /** 与客户端共享的路由（单一来源；客户端经 shared/contract.ts 镜像 + __DSH_ROUTES__ 注入消费）。 */
 export const ROUTES = {
@@ -260,14 +254,15 @@ export function buildConfigRoutes(deps: ConfigRouteDeps): WebRoute[] {
   return [configRoute];
 }
 
-/** buildCaCertRoutes 的依赖注入面（apply 内装配；单测用 fake 直接构造）。 */
+/**
+ * buildCaCertRoutes 的依赖注入面（apply 内装配；单测用 fake 直接构造）。
+ *
+ * 证书装配由 tls 域提供（loadDownloadableCertificate），本域不读证书文件、
+ * 不引 tls 值——跨域值边在此终结，装配层组合两域（prepareTls 同口径）。
+ */
 export interface CaCertRouteDeps {
-  /** 当前生效配置（含默认值兜底；逐请求读取，tlsCaCertFile 热更新即时生效）。 */
-  resolve(): ResolvedConfig;
-  /** 本轮生效插件目录（apply 经 resolvePluginDir 抉择；自签回退读此目录）。 */
-  pluginDir(): string;
-  /** 服务端日志兜底（读取失败原文只进日志，不进响应 details）。 */
-  logWarn?(message: string): void;
+  /** 证书装配器（逐请求调用，tlsCaCertFile 热更新即时生效）。 */
+  loadCertificate(format: "der" | "pem"): DownloadCertResult;
 }
 
 /**
@@ -291,11 +286,18 @@ function parseCertFormat(url: string | undefined): "der" | "pem" | "invalid" {
  * 组装证书下发路由（GET 只读；loopback 围栏 + GET 白名单；无 Cookie 要求——
  * fresh 设备恰恰没有会话 Cookie，要求即鸡生蛋死锁；边界与 issue #380 同登记）。
  *
- * 三态（issue #911 F4）：配 CA → 返回 CA 公钥；自签模式 → 返回缓存叶子；
- * 配自定义叶子但无 CA → 404（装叶子建不起对 CA 的信任，返回即误导）。
- * 只伺服公钥：首 PEM 块非 CERTIFICATE（含误指私钥）一律 404 + 服务端 warn。
- * 导出供单测（fake deps，不依赖网络）。
+ * 本函数只做围栏 + 格式白名单 + 状态映射；证书三态装配（配 CA / 自签回退 /
+ * 自定义无 CA 404）与文件读取解析全归 tls 域（loadDownloadableCertificate），
+ * 失败码对固定文案（原文只进日志）。导出供单测（fake deps，不依赖网络）。
  */
+
+/** 下发失败码对固定响应文案（P2-2：路径等内部信息不进响应）。 */
+const DOWNLOAD_ERROR_DETAILS: Record<string, string> = {
+  "ca-unconfigured":
+    "未配置 CA 公钥（tlsCaCertFile 为空）且当前为自定义叶子模式：下发叶子无法建立信任。请配置 CA 公钥后重试，或切回自签名证书。",
+  "ca-unavailable": "证书暂不可用，请查看服务端日志",
+  "ca-invalid": "证书文件无效（须为 CERTIFICATE PEM/DER），请查看服务端日志",
+};
 export function buildCaCertRoutes(deps: CaCertRouteDeps): WebRoute[] {
   const caCertRoute: WebRoute = {
     kind: "exact",
@@ -310,66 +312,25 @@ export function buildCaCertRoutes(deps: CaCertRouteDeps): WebRoute[] {
         });
         return;
       }
-      const value = deps.resolve();
-      const has = (s: unknown): s is string => typeof s === "string" && s.length > 0;
-      let file: string | undefined;
-      if (has(value.tlsCaCertFile)) {
-        file = value.tlsCaCertFile;
-      } else if (has(value.tlsCertFile) || has(value.tlsKeyFile)) {
+      const loaded = deps.loadCertificate(format);
+      if (!loaded.ok) {
         writeJson(res, 404, {
           ok: false,
-          error: {
-            code: "ca-unconfigured",
-            details:
-              "未配置 CA 公钥（tlsCaCertFile 为空）且当前为自定义叶子模式：下发叶子无法建立信任。请配置 CA 公钥后重试，或切回自签名证书。",
-          },
-        });
-        return;
-      } else {
-        file = join(deps.pluginDir(), SELF_SIGNED_CERT);
-      }
-      let raw: Buffer;
-      try {
-        raw = readFileSync(file);
-      } catch (err) {
-        deps.logWarn?.(`lan-proxy: 证书下发读取失败（${file}）— ${(err as Error)?.message ?? err}`);
-        writeJson(res, 404, {
-          ok: false,
-          error: { code: "ca-unavailable", details: "证书暂不可用，请查看服务端日志" },
-        });
-        return;
-      }
-      let der: Buffer;
-      try {
-        der = extractFirstCertificateDer(raw);
-      } catch (err) {
-        deps.logWarn?.(
-          `lan-proxy: 证书下发解析失败（${file} 非 CERTIFICATE）— ${(err as Error)?.message ?? err}`,
-        );
-        writeJson(res, 404, {
-          ok: false,
-          error: {
-            code: "ca-invalid",
-            details: "证书文件无效（须为 CERTIFICATE PEM/DER），请查看服务端日志",
-          },
+          error: { code: loaded.code, details: DOWNLOAD_ERROR_DETAILS[loaded.code] },
         });
         return;
       }
       // 二进制路由不用 writeJson（host-utils 只管 JSON），手写头：防嗅探 +
       // 附件下载 + 禁缓存（IP 变化即重签，缓存旧 CA 会误导排障）。
-      const body = format === "pem" ? Buffer.from(encodeCertificatePem(der), "utf8") : der;
       res.writeHead(200, {
-        "content-type": format === "pem" ? "application/x-pem-file" : "application/x-x509-ca-cert",
-        "content-disposition":
-          format === "pem"
-            ? 'attachment; filename="dsh-lan-ca.pem"'
-            : 'attachment; filename="dsh-lan-ca.cer"',
-        "content-length": body.length,
+        "content-type": loaded.contentType,
+        "content-disposition": 'attachment; filename="' + loaded.filename + '"',
+        "content-length": loaded.body.length,
         "cache-control": "no-store",
         "x-content-type-options": "nosniff",
         "referrer-policy": "no-referrer",
       });
-      res.end(body);
+      res.end(loaded.body);
     },
   };
   return [caCertRoute];

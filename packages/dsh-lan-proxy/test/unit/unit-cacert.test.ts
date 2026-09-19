@@ -2,7 +2,7 @@
 /**
  * dsh-lan-proxy — issue #911 证书下发与存储命名空间单测。
  *
- * 覆盖：两端路由契约（CLIENT_ROUTES vs 宿主 ROUTES）、TLS 首证书提取、
+ * 覆盖：TLS 首证书提取与下发装配、下发路由三态与围栏、
  * 旧目录迁出（resolvePluginDir）、下发路由三态与围栏、CA 清除语义、
  * apply 接线（路由注册 + health caConfigured）。不碰真实端口与真实 DSH_HOME。
  */
@@ -17,13 +17,13 @@ import {
   buildCaCertRoutes,
 } from "../../src/server/config/impl/routes.ts";
 import { sanitizeSettings, validateSettings } from "../../src/server/config/impl/model.ts";
-import { CLIENT_ROUTES } from "../../src/client/shared/contract.ts";
 import {
   SELF_SIGNED_CERT,
   SELF_SIGNED_KEY,
   encodeCertificatePem,
   ensureSelfSignedTls,
   extractFirstCertificateDer,
+  loadDownloadableCertificate,
 } from "../../src/server/tls/impl/index.ts";
 import { MIGRATED_BAK_NAME } from "../../src/server/migrate/impl/file/index.ts";
 import { resolvePluginDir } from "../../src/server/migrate/impl/layout/index.ts";
@@ -41,15 +41,21 @@ afterEach(() => {
   rmSync(home, { recursive: true, force: true });
 });
 
-/** 下发路由 fake 调用（同步 handler；捕获状态/头/字节体）。 */
-function callCaCert(deps, options = {}) {
+/**
+ * 下发路由调用（同步 handler；捕获状态/头/字节体）。证书装配走真实 tls 域
+ * loader（与 apply 内接线同构），fake 面只剩围栏与格式——三态/读取/解析的
+ * 行为强度与直连 tls 单测等同，不重复断言 loader 内部分支。
+ */
+function callCaCert(source, options = {}) {
   const {
     method = "GET",
     remote = "127.0.0.1",
     host = "127.0.0.1:3080",
     url = ROUTES.caCert,
   } = options;
-  const route = buildCaCertRoutes(deps)[0];
+  const route = buildCaCertRoutes({
+    loadCertificate: (format) => loadDownloadableCertificate(source, format),
+  })[0];
   let status = 0;
   let headers = {};
   const chunks = [];
@@ -66,20 +72,10 @@ function callCaCert(deps, options = {}) {
   return { path: route.path, status, headers, body: Buffer.concat(chunks) };
 }
 
-describe("两端路由契约", () => {
-  it("CLIENT_ROUTES 与宿主 ROUTES 值全等（含 caCert）", () => {
-    expect({ ...CLIENT_ROUTES }).toEqual({
-      config: ROUTES.config,
-      health: ROUTES.health,
-      caCert: ROUTES.caCert,
-    });
-  });
-  it("下发路由挂在共享来源上", () => {
+describe("TLS 首证书提取", () => {
+  it("下发路由挂在共享来源上（锚：改路径同步改客户端镜像）", () => {
     expect(ROUTES.caCert).toBe("/api/dsh-lan-proxy/ca-cert");
   });
-});
-
-describe("TLS 首证书提取", () => {
   it("PEM 自签证书提首证书 DER（0x30 开头）", () => {
     const dir = mkdtempSync(join(home, "tls-"));
     const mat = ensureSelfSignedTls({ dir });
@@ -163,19 +159,19 @@ describe("旧目录迁出 resolvePluginDir", () => {
 describe("下发路由三态与围栏", () => {
   it("非回环 403（先于 405）", () => {
     const r = callCaCert(
-      { resolve: () => ({}), pluginDir: () => home },
+      { selfSignedDir: home },
       { remote: "192.168.31.99", host: "192.168.31.99:3443", method: "POST" },
     );
     expect(r.status).toBe(403);
   });
   it("回环 POST 405", () => {
-    const r = callCaCert({ resolve: () => ({}), pluginDir: () => home }, { method: "POST" });
+    const r = callCaCert({ selfSignedDir: home }, { method: "POST" });
     expect(r.status).toBe(405);
   });
   it("自签模式默认下发 DER（.cer 头齐全）", () => {
     const dir = mkdtempSync(join(home, "self-"));
     ensureSelfSignedTls({ dir });
-    const r = callCaCert({ resolve: () => ({}), pluginDir: () => dir });
+    const r = callCaCert({ selfSignedDir: dir });
     expect(r.path).toBe(ROUTES.caCert);
     expect(r.status).toBe(200);
     expect(r.body[0]).toBe(0x30);
@@ -187,10 +183,7 @@ describe("下发路由三态与围栏", () => {
   it("?format=pem 下发 PEM 文本", () => {
     const dir = mkdtempSync(join(home, "self-"));
     ensureSelfSignedTls({ dir });
-    const r = callCaCert(
-      { resolve: () => ({}), pluginDir: () => dir },
-      { url: ROUTES.caCert + "?format=pem" },
-    );
+    const r = callCaCert({ selfSignedDir: dir }, { url: ROUTES.caCert + "?format=pem" });
     expect(r.status).toBe(200);
     expect(r.headers["content-type"]).toBe("application/x-pem-file");
     expect(r.body.toString("utf8").startsWith("-----BEGIN CERTIFICATE-----")).toBe(true);
@@ -198,7 +191,7 @@ describe("下发路由三态与围栏", () => {
   it("?format=cer 显式走 DER", () => {
     const dir = mkdtempSync(join(home, "self-"));
     ensureSelfSignedTls({ dir });
-    const deps = { resolve: () => ({}), pluginDir: () => dir };
+    const deps = { selfSignedDir: dir };
     expect(callCaCert(deps, { url: ROUTES.caCert + "?format=cer" }).headers["content-type"]).toBe(
       "application/x-x509-ca-cert",
     );
@@ -206,10 +199,7 @@ describe("下发路由三态与围栏", () => {
   it("未知 format 值 400（fail-closed，不静默回落）", () => {
     const dir = mkdtempSync(join(home, "self-"));
     ensureSelfSignedTls({ dir });
-    const r = callCaCert(
-      { resolve: () => ({}), pluginDir: () => dir },
-      { url: ROUTES.caCert + "?format=bogus" },
-    );
+    const r = callCaCert({ selfSignedDir: dir }, { url: ROUTES.caCert + "?format=bogus" });
     expect(r.status).toBe(400);
     expect(JSON.parse(r.body.toString("utf8")).error.code).toBe("bad-format");
   });
@@ -219,24 +209,25 @@ describe("下发路由三态与围栏", () => {
     const leafDir = mkdtempSync(join(home, "leaf-"));
     ensureSelfSignedTls({ dir: leafDir });
     const r = callCaCert({
-      resolve: () => ({ tlsCaCertFile: join(caDir, "dsh-lan-proxy-cert.pem") }),
-      pluginDir: () => leafDir,
+      tlsCaCertFile: join(caDir, "dsh-lan-proxy-cert.pem"),
+      selfSignedDir: leafDir,
     });
     expect(r.status).toBe(200);
     expect(r.body.equals(extractFirstCertificateDer(ca.cert))).toBe(true);
   });
   it("自定义叶子无 CA 返回 404 且不给叶子", () => {
     const r = callCaCert({
-      resolve: () => ({ tlsCertFile: "/x.pem", tlsKeyFile: "/y.pem" }),
-      pluginDir: () => home,
+      tlsCertFile: "/x.pem",
+      tlsKeyFile: "/y.pem",
+      selfSignedDir: home,
     });
     expect(r.status).toBe(404);
     expect(JSON.parse(r.body.toString("utf8")).error.code).toBe("ca-unconfigured");
   });
   it("文件缺失返回 404 ca-unavailable", () => {
     const r = callCaCert({
-      resolve: () => ({ tlsCaCertFile: join(home, "nope.pem") }),
-      pluginDir: () => home,
+      tlsCaCertFile: join(home, "nope.pem"),
+      selfSignedDir: home,
     });
     expect(r.status).toBe(404);
     expect(JSON.parse(r.body.toString("utf8")).error.code).toBe("ca-unavailable");
@@ -246,8 +237,8 @@ describe("下发路由三态与围栏", () => {
     const mat = ensureSelfSignedTls({ dir });
     writeFileSync(join(dir, "key-as-ca.pem"), mat.key);
     const r = callCaCert({
-      resolve: () => ({ tlsCaCertFile: join(dir, "key-as-ca.pem") }),
-      pluginDir: () => dir,
+      tlsCaCertFile: join(dir, "key-as-ca.pem"),
+      selfSignedDir: dir,
     });
     expect(r.status).toBe(404);
     expect(JSON.parse(r.body.toString("utf8")).error.code).toBe("ca-invalid");
