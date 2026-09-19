@@ -80,12 +80,12 @@
     },
     "dsh-provider-usage": {
       "modules": 16,
-      "scannedSrcFiles": 75,
-      "allSrcTsFiles": 90,
+      "scannedSrcFiles": 77,
+      "allSrcTsFiles": 92,
       "interfaceFacades": 15,
       "leafValueEdges": 40,
-      "fileValueEdges": 146,
-      "crossModuleRefs": 180,
+      "fileValueEdges": 147,
+      "crossModuleRefs": 181,
       "quality": {
         "leafModuleCycles": [
           "server/execute|server/schedule"
@@ -98,7 +98,6 @@
         "directImpl": [],
         "uncoveredSrcFiles": [],
         "crossDomainValueEdges": [
-          "apply|domain1/adapters",
           "apply|domain1/history",
           "apply|domain1/pipeline",
           "apply|domain1/registry",
@@ -106,6 +105,7 @@
           "apply|domain2/aggregate",
           "apply|domain2/collect",
           "apply|domain2/routes",
+          "apply|server/adapters",
           "apply|server/config",
           "apply|server/execute",
           "apply|server/schedule",
@@ -126,7 +126,7 @@
           "server/schedule|server/execute",
           "server/upgrade|server/config",
           "server/upgrade|server/schedule",
-          "shared|domain1/adapters"
+          "shared|server/adapters"
         ],
         "rootIndexImports": [],
         "clientServerImports": [],

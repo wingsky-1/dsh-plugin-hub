@@ -29,9 +29,12 @@ import { installSettingsNamespace } from "../../../../shared/settings-namespace.
 import { dshHome, userHome } from "../../../../shared/dsh-home.js";
 import type { AdapterRegistry } from "../domain1/registry/interface.ts";
 import { makeAdapterRegistry } from "../domain1/registry/interface.ts";
-import { openCodeGoAdapter } from "../domain1/adapters/interface.ts";
-import { deepSeekOfficialAdapter } from "../domain1/adapters/interface.ts";
-import { zaiCodingCnAdapter } from "../domain1/adapters/interface.ts";
+import {
+  openCodeGoAdapter,
+  deepSeekOfficialAdapter,
+  zaiCodingCnAdapter,
+  registerBuiltinAdapters,
+} from "../server/adapters/interface.ts";
 import { HistoryStore, migrateLegacyV3 } from "../domain1/history/interface.ts";
 import { HotReloadableAdapter } from "../domain1/registry/interface.ts";
 import { resolvePath } from "../domain1/registry/interface.ts";
@@ -281,9 +284,12 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
     /* 迁移失败不阻断启动 */
   }
 
-  registry.register(openCodeGoAdapter, "builtin");
-  registry.register(deepSeekOfficialAdapter, "builtin");
-  registry.register(zaiCodingCnAdapter, "builtin");
+  // 内置拒收即抛（fail-fast：裸调 register 会吞掉 false，缺失内置静默为“无候选”）。
+  registerBuiltinAdapters(registry, [
+    openCodeGoAdapter,
+    deepSeekOfficialAdapter,
+    zaiCodingCnAdapter,
+  ]);
 
   if (config.adapter !== "") {
     const resolved = resolvePath(config.adapter);

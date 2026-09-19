@@ -93,7 +93,7 @@ src/
 | domain1/registry/ | interface.ts、registry.ts、user-adapters.ts、user-adapter-loader.ts、hotreload.ts、provider-config.ts、path-resolve.ts |
 | domain1/pipeline/ | interface.ts、stats-service.ts、v2.ts、guards.ts |
 | domain1/history/ | interface.ts、history.ts |
-| domain1/adapters/ | interface.ts、deepseek-official.{mjs,d.mts}、opencode-go.{mjs,d.mts}、zai-coding-cn.{mjs,d.mts} |
+| server/adapters/ | interface.ts、deps.ts、register.ts、deepseek-official.{mjs,d.mts}、opencode-go.{mjs,d.mts}、zai-coding-cn.{mjs,d.mts}（#768 D4 由 domain1/adapters 整域迁入，.mjs 零改动） |
 | domain1/routes/ | interface.ts、stats.ts、adapters.ts |
 | domain2/collect/ | interface.ts、collector.ts、types.ts |
 | domain2/aggregate/ | interface.ts、aggregator.ts、aggregate-rows.ts、aggregate-query.ts、store.ts、index.ts |

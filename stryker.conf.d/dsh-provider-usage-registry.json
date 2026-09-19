@@ -3,13 +3,14 @@
   "mutate": [
     "packages/dsh-provider-usage/src/domain1/registry/registry.ts",
     "packages/dsh-provider-usage/src/domain1/registry/user-adapter-loader.ts",
+    "packages/dsh-provider-usage/src/server/adapters/register.ts",
     "!packages/dsh-provider-usage/src/client/**",
     "!packages/dsh-provider-usage/src/**/interface.ts",
     "!packages/dsh-provider-usage/src/server/*/deps.ts",
     "!packages/dsh-provider-usage/src/**/*.d.mts",
-    "!packages/dsh-provider-usage/src/domain1/adapters/deepseek-official.mjs",
-    "!packages/dsh-provider-usage/src/domain1/adapters/opencode-go.mjs",
-    "!packages/dsh-provider-usage/src/domain1/adapters/zai-coding-cn.mjs"
+    "!packages/dsh-provider-usage/src/server/adapters/deepseek-official.mjs",
+    "!packages/dsh-provider-usage/src/server/adapters/opencode-go.mjs",
+    "!packages/dsh-provider-usage/src/server/adapters/zai-coding-cn.mjs"
   ],
   "testRunner": "vitest",
   "mutator": {
@@ -43,5 +44,5 @@
   },
   "incremental": true,
   "incrementalFile": "coverage/mutation/incremental-provider-usage-registry.json",
-  "_comment": "#342 二期：功能命名段（registry）——registry+user-adapter-loader（注册表域，25s；阶段零补 loader 盲区）；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
+  "_comment": "#342 二期：功能命名段（registry）——registry+user-adapter-loader（注册表域，25s；阶段零补 loader 盲区）；#768 D4 并入 server/adapters/register.ts（内置装配 fail-fast，杀灭面为 test/integration/adapters/composition-root）；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
 }

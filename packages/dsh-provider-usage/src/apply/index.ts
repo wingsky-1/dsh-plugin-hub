@@ -107,7 +107,7 @@ export {
   fetchOpenCodeGoV2,
   miniChartSvgMarkup,
   openCodeGoAdapter,
-} from "../domain1/adapters/interface.ts";
+} from "../server/adapters/interface.ts";
 export {
   DEEPSEEK_OFFICIAL_PROVIDER,
   DEEPSEEK_OFFICIAL_ADAPTER_ID,
@@ -130,15 +130,15 @@ export {
   dayKey,
   lastNDayKeys,
   deepSeekOfficialAdapter,
-} from "../domain1/adapters/interface.ts";
-export type { SamplePoint, DayRecord } from "../domain1/adapters/interface.ts";
+} from "../server/adapters/interface.ts";
+export type { SamplePoint, DayRecord } from "../server/adapters/interface.ts";
 export {
   ZAI_CODING_CN_PROVIDER,
   ZAI_CODING_CN_ADAPTER_ID,
   QUOTA_PATH,
   fetchData,
   zaiCodingCnAdapter,
-} from "../domain1/adapters/interface.ts";
+} from "../server/adapters/interface.ts";
 export {
   credentialsFile,
   opencodeAuthFile,

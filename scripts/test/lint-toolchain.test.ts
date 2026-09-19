@@ -167,7 +167,7 @@ test("#764 A2：超出预算时 lint 入口判红（实跑退出码）", () => {
     "packages",
     "dsh-provider-usage",
     "src",
-    "domain1",
+    "server",
     "adapters",
     "deepseek-official.d.mts",
   );

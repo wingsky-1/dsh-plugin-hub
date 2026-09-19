@@ -29,7 +29,7 @@
 | C2 注册/加载层 | 注册表+持久化+热更新+密钥链+路径 | domain1/registry/{registry(308),user-adapters(388),user-adapter-loader(36),hotreload(141),path-resolve(79),provider-config(198)} | 四职责经 stats-service 与路由双收口（C6 直连） |
 | C3 执行管道层 | 取数编排+管道+安全执行 | domain1/pipeline/{stats-service(256),v2(236),guards(132)} | 编排/管道/守卫分文件，内聚成立 |
 | C4 历史存储层 | 按天 JSONL/v3 迁移/清理 | domain1/history/history.ts(420) | 纯存储 |
-| C5 适配器实现层 | 三内置适配器 | domain1/adapters/{deepseek-official(777),opencode-go(518),zai-coding-cn(461)}(.mjs) | 自包含零 import；retention 死字段已删除 |
+| C5 适配器实现层 | 三内置适配器 | server/adapters/{deepseek-official(777),opencode-go(518),zai-coding-cn(461)}(.mjs) + interface.ts 门面 + deps.ts 注入面 + register.ts 内置装配 fail-fast（#768 D4 由 domain1/adapters 整域迁入，.mjs 零改动） | 自包含零 import；retention 死字段已删除 |
 | C6 路由层（宿主） | /stats /history /adapters* | domain1/routes/{stats(123),adapters(213)} | **仅宿主**；客户端单列跨进程 UI 层 |
 
 ### 域2 · 事件监听·趋势·报告框架
@@ -90,7 +90,7 @@
 ## 3. 当前目录结构
 
 两级「先域再层」目录化已完成（D9）：`shared/` 为共享底座；域1 与域2 各含
-registry/pipeline/history/adapters/routes 与 collect/aggregate/common/routes（schedule 已整域迁 server/schedule，#768 D2；execute 已整域迁 server/execute，#768 D3）；server/ 下设 config/shared/upgrade/schedule/execute 五域；
+registry/pipeline/history/routes 与 collect/aggregate/common/routes（schedule 已整域迁 server/schedule，#768 D2；execute 已整域迁 server/execute，#768 D3；adapters 已整域迁 server/adapters，#768 D4）；server/ 下设 config/shared/upgrade/schedule/execute/adapters 六域；
 `apply/` 为装配层组合根。每目录 `interface.ts` 为唯一对外引用面（最小面具名导出，禁整文件
 re-export；跨目录直引由 `scripts/gate/verify-dir-imports.mjs` 软报告，interface.ts 符号存在性
 硬校验）。完整目录树与文件映射见 `docs/refactor-implementation-plan.md §4/§5`。

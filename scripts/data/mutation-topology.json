@@ -337,10 +337,11 @@
         "registry": {
           "mutate": [
             "packages/dsh-provider-usage/src/domain1/registry/registry.ts",
-            "packages/dsh-provider-usage/src/domain1/registry/user-adapter-loader.ts"
+            "packages/dsh-provider-usage/src/domain1/registry/user-adapter-loader.ts",
+            "packages/dsh-provider-usage/src/server/adapters/register.ts"
           ],
           "excludes": ["!packages/dsh-provider-usage/src/client/**"],
-          "comment": "#342 二期：功能命名段（registry）——registry+user-adapter-loader（注册表域，25s；阶段零补 loader 盲区）；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
+          "comment": "#342 二期：功能命名段（registry）——registry+user-adapter-loader（注册表域，25s；阶段零补 loader 盲区）；#768 D4 并入 server/adapters/register.ts（内置装配 fail-fast，杀灭面为 test/integration/adapters/composition-root）；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
         },
         "sanitize": {
           "mutate": ["packages/dsh-provider-usage/src/shared/sanitize.ts"],
@@ -414,12 +415,12 @@
           {
             "pattern": "!packages/dsh-provider-usage/src/**/interface.ts",
             "kind": "facade",
-            "reason": "16 个目录的对外门面（apply/domain1/domain2/shared + #768 S2 新增 server/shared + S3 新增 server/upgrade + D1 新增 server/config）：逐个命名 re-export 实际被消费的类型与函数（显式禁 export * from），目录外的调用方一律经它消费，自身不含实现。条数以本 pattern 为口径事实源。"
+            "reason": "16 个目录的对外门面（apply/domain1/domain2/shared + #768 S2 新增 server/shared + S3 新增 server/upgrade + D1 新增 server/config + D2 新增 server/schedule + D3 新增 server/execute + D4 整域迁 server/adapters，domain1/adapters 旧址删除）：逐个命名 re-export 实际被消费的类型与函数（显式禁 export * from），目录外的调用方一律经它消费，自身不含实现。条数以本 pattern 为口径事实源。"
           },
           {
             "pattern": "!packages/dsh-provider-usage/src/server/*/deps.ts",
             "kind": "type-only",
-            "reason": "新增（#768 S2）：upgrade 域依赖声明出口（UpgradeDeps 窄面：logger + root 解析 + 旧文件显式读面；per-root 链留 schedule，不新建 file-io 叶）：文件体全是 export interface/type，转译后无运行时代码，没有可杀灭的变异体；窄面形状（运行时零出口 + 三项可装配）由 unit-s2-contracts 锁定。"
+            "reason": "新增（#768 S2）：upgrade 域依赖声明出口（UpgradeDeps 窄面：logger + root 解析 + 旧文件显式读面；per-root 链留 schedule，不新建 file-io 叶）：文件体全是 export interface/type，转译后无运行时代码，没有可杀灭的变异体；窄面形状（运行时零出口 + 三项可装配）由 unit-s2-contracts 锁定。#768 D2/D3 同口径新增 server/schedule、server/execute（窄面由各域 composition-root 集成用例锁定）；#768 D4 新增 server/adapters（AdapterHostUtils 8 键注入面 + BuiltinRegistryPort 注册窄面，不设聚合 AdapterDeps，窄面由 test/integration/adapters/composition-root.test.ts 锁定）。"
           },
           {
             "pattern": "!packages/dsh-provider-usage/src/**/*.d.mts",
@@ -427,19 +428,19 @@
             "reason": "三个内置适配器（deepseek-official / opencode-go / zai-coding-cn）的手写声明层：只有 declare 出来的常量、函数与接口，运行时实现全在相邻 .mjs，声明层本身零可执行代码。"
           },
           {
-            "pattern": "!packages/dsh-provider-usage/src/domain1/adapters/deepseek-official.mjs",
+            "pattern": "!packages/dsh-provider-usage/src/server/adapters/deepseek-official.mjs",
             "kind": "not-mutated",
-            "reason": "内置 DeepSeek 官方余额适配器的权威实现（区间记账法 classifyIntervalDs/aggregateDaily、B2 断轴 balanceSvg、峰谷徽标）：构建期由包内 scripts/prepare-lib-entry.ts 原样拷入 lib/domain1/adapters/（tsc 不 emit .mjs），它本身在覆盖率面内计分、但不进 .ts 域变异段；变异行为面由 test/unit/adapters/unit-deepseek-official.test.ts 直测。"
+            "reason": "内置 DeepSeek 官方余额适配器的权威实现（区间记账法 classifyIntervalDs/aggregateDaily、B2 断轴 balanceSvg、峰谷徽标）：构建期由包内 scripts/prepare-lib-entry.ts 原样拷入 lib/server/adapters/（tsc 不 emit .mjs），它本身在覆盖率面内计分、但不进 .ts 域变异段；变异行为面由 test/unit/adapters/unit-deepseek-official.test.ts 直测；#768 D4 随域迁 server/adapters（文件零改动）。"
           },
           {
-            "pattern": "!packages/dsh-provider-usage/src/domain1/adapters/opencode-go.mjs",
+            "pattern": "!packages/dsh-provider-usage/src/server/adapters/opencode-go.mjs",
             "kind": "not-mutated",
-            "reason": "内置 opencode-go 用量适配器的权威实现（三窗口取数与迷你图卡片，图表/日界函数全走宿主注入的 utils，miniChartSvgMarkup 是给测试导入面的兼容导出）：与另两个内置适配器同批 mjs 化，构建期由包内 scripts/prepare-lib-entry.ts 原样拷入 lib/domain1/adapters/，它本身在覆盖率面内计分、不进 .ts 域变异段。"
+            "reason": "内置 opencode-go 用量适配器的权威实现（三窗口取数与迷你图卡片，图表/日界函数全走宿主注入的 utils，miniChartSvgMarkup 是给测试导入面的兼容导出）：与另两个内置适配器同批 mjs 化，构建期由包内 scripts/prepare-lib-entry.ts 原样拷入 lib/server/adapters/，它本身在覆盖率面内计分、不进 .ts 域变异段；#768 D4 随域迁 server/adapters（文件零改动）。"
           },
           {
-            "pattern": "!packages/dsh-provider-usage/src/domain1/adapters/zai-coding-cn.mjs",
+            "pattern": "!packages/dsh-provider-usage/src/server/adapters/zai-coding-cn.mjs",
             "kind": "not-mutated",
-            "reason": "内置智谱 Coding Plan (CN) 配额适配器的权威实现（端点与窗口判定按 2026-08-27 真 key 实测固化：CREDIT_LIMIT 按 unit 判 5h/周、percentage 取服务端权威口径、网关 200 加业务码 404 判 bad-data）：构建期由包内 scripts/prepare-lib-entry.ts 原样拷入 lib/domain1/adapters/，它本身在覆盖率面内计分（本轮实测 13.9%）、不进 .ts 域变异段。"
+            "reason": "内置智谱 Coding Plan (CN) 配额适配器的权威实现（端点与窗口判定按 2026-08-27 真 key 实测固化：CREDIT_LIMIT 按 unit 判 5h/周、percentage 取服务端权威口径、网关 200 加业务码 404 判 bad-data）：构建期由包内 scripts/prepare-lib-entry.ts 原样拷入 lib/server/adapters/，它本身在覆盖率面内计分（本轮实测 13.9%）、不进 .ts 域变异段；#768 D4 随域迁 server/adapters（文件零改动）。"
           }
         ]
       }

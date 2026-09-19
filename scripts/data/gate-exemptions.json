@@ -196,6 +196,18 @@
     },
     {
       "gate": "verify-dir-imports",
+      "path": "dsh-provider-usage:apply|server/adapters",
+      "reason": "#768 D4：组合根经 adapters 门面装配三内置适配器 + fail-fast 注册（全经门面，禁直引 .mjs 实现文件，D4 前为 apply|domain1/adapters，边归属同步迁移）。树内 integration/adapters 用例锁定。长期条目。",
+      "trackingIssue": "#768"
+    },
+    {
+      "gate": "verify-dir-imports",
+      "path": "dsh-provider-usage:shared|server/adapters",
+      "reason": "#768 D4：共享配置经 adapters 门面取 OPENCODE_GO_PROVIDER 默认值（D4 前为 shared|domain1/adapters，边归属同步迁移；共享层反向值引域的存量形态，见 dsh-mcp-manager v5 对账注记）。长期条目。",
+      "trackingIssue": "#768"
+    },
+    {
+      "gate": "verify-dir-imports",
       "path": "dsh-provider-usage:server/execute/executor.ts|server/execute/interface.ts|server/schedule/interface.ts|server/schedule/scheduler.ts|server/schedule/store.ts",
       "reason": "#768 D3 文件环登记（门面中转环）：executor 经调度门面取引擎链（值）→store 经执行门面取纯解析（值）——环上无实现文件直引（R-A 语义 impl 直引计数保持 0）。任一边改直引即红。D13 收尾重估。长期条目。",
       "trackingIssue": "#768"

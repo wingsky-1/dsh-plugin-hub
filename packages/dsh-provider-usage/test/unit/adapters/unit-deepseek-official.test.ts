@@ -917,7 +917,7 @@ describe("G1 常量存在 + 源码注释附官方定价 URL 与核实日期", ()
 
   beforeAll(() => {
     src = readFileSync(
-      join(here, "..", "..", "..", "src", "domain1", "adapters", "deepseek-official.mjs"),
+      join(here, "..", "..", "..", "src", "server", "adapters", "deepseek-official.mjs"),
       "utf8",
     );
   });
