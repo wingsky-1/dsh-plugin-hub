@@ -288,6 +288,9 @@ function injectSettingsSink(ctx: Context, manager: McpManager): void {
  * MCP 服务器）。提供时机由调用方保证（store.load 之后 manager 已就绪）；卸载
  * 由 mcp-manager 自身 dispose() 全量清理（含 runtime 条目与 supervisor）。
  * 兼容：fake ctx（单元测试 mock）可能无 provide，可选调用静默降级。
+ *
+ * 不修项备注（#770-14 低价值收尾，用户裁决）：#5 关闭理由与官方一致（URL 由用户 review，本处不写链）；
+ * B1 按 YAGNI 保留双短路防风暴现状；contract-check 盲区与 zIndexBase 非本 issue 面，另开 issue 跟踪，本轮不修。
  */
 function provideMcpManagerService(ctx: Context, manager: McpManager): void {
   if (typeof (ctx as unknown as { provide?: unknown }).provide !== "function") return;
@@ -304,6 +307,7 @@ function provideMcpManagerService(ctx: Context, manager: McpManager): void {
       const servers = (manager.summary().servers ?? []) as Array<Record<string, unknown>>;
       const found = servers.find((s) => s.name === name);
       if (found === undefined) return undefined;
+      // 豁免（#770-14 E）：manager.summary() 宽面 Record<string, unknown>，宿主类型未声明 servers 元素形状，经 unknown 中转收窄到 McpServerSummary；不断言改动、不重构类型。
       return found as unknown as McpServerSummary;
     },
     getTools: (name: string) => {
@@ -316,6 +320,7 @@ function provideMcpManagerService(ctx: Context, manager: McpManager): void {
       // 填充，被中间层接管的服务器恒返回 []（既有缺陷 A13/B6）。
       return manager.registeredToolsFor(name);
     },
+    // 豁免（#770-14 E）：同上，summary() 宽面经 unknown 中转到 McpServerSummary[]；不断言改动、不重构类型。
     list: () => (manager.summary().servers ?? []) as unknown as McpServerSummary[],
   });
 }

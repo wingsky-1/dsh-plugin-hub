@@ -24,6 +24,27 @@ import type { DisabledToolsMap } from "../store/interface.ts";
 import { injectPorts } from "./impl/service/index.ts";
 import { projectImageAdmission, type ImageAdmissionFaces } from "./impl/image-admission/index.ts";
 
+/**
+ * #770-A4 统计落盘脱敏：回答「stats.json 的 lastError 怎么不存明文？」——收集器
+ * （McpStatsCollector）保持纯（不引 pipeline），调用方（本文件 executeCall 的
+ * catch）在传入前先脱敏：复用 C 快照（mw.host.redactionServers()，manager
+ * .getRedactionServers 的展开后快照）+ pipeline.createRedactor。脱敏失败时回落
+ * 省略 lastError（仍计 errors，不把原文落盘）。
+ *
+ * 模块函数而非类成员：本文件无类，纯函数便于单测直调（不经完整工具注册链）。
+ */
+function redactedStatsError(mw: McpMiddleware, error: unknown): string | undefined {
+  try {
+    const {
+      pipeline: { msgOf, createRedactor },
+    } = injectPorts.get();
+    const redactor = createRedactor([...mw.host.redactionServers()]);
+    return redactor(new Error(msgOf(error))).slice(0, 200);
+  } catch {
+    return undefined;
+  }
+}
+
 /** 工具执行与组装上下文。 */
 interface MiddlewareToolContext {
   mw: McpMiddleware;
@@ -317,13 +338,11 @@ async function executeCall(
   } catch (error) {
     const durationMs = Date.now() - startTime;
     if (toolCtx.stats?.isEnabled()) {
-      toolCtx.stats.recordCall(
-        parsed.server,
-        tool,
-        durationMs,
-        false,
-        error instanceof Error ? error.message : String(error),
-      );
+      // #770-A4：先脱敏再传入（复用 C 快照 + 展开，见 redactedStatsError）；
+      // 收集器保持纯，不在内部引 pipeline。回落 undefined 时仍计 errors、不存原文。
+      const redacted = redactedStatsError(toolCtx.mw, error);
+      if (redacted === undefined) toolCtx.stats.recordCall(parsed.server, tool, durationMs, false);
+      else toolCtx.stats.recordCall(parsed.server, tool, durationMs, false, redacted);
     }
     throw error;
   }

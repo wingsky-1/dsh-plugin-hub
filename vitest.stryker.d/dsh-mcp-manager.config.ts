@@ -8,6 +8,7 @@ import { defineConfig } from 'vitest/config'
 export default defineConfig({
   test: {
     include: [
+      'packages/dsh-mcp-manager/test/client-unit/unit-summary-a3-guard.test.ts',
       'packages/dsh-mcp-manager/test/integration/real-context.test.ts',
       'packages/dsh-mcp-manager/test/unit/ports/api-ports.test.ts',
       'packages/dsh-mcp-manager/test/unit/ports/catalog-ports.test.ts',
@@ -19,6 +20,7 @@ export default defineConfig({
       'packages/dsh-mcp-manager/test/unit/unit-apply.test.ts',
       'packages/dsh-mcp-manager/test/unit/unit-call-stats.test.ts',
       'packages/dsh-mcp-manager/test/unit/unit-catalog.test.ts',
+      'packages/dsh-mcp-manager/test/unit/unit-config-env-policy.test.ts',
       'packages/dsh-mcp-manager/test/unit/unit-config-env.test.ts',
       'packages/dsh-mcp-manager/test/unit/unit-dispatch.test.ts',
       'packages/dsh-mcp-manager/test/unit/unit-file-io-queue.test.ts',
@@ -34,8 +36,13 @@ export default defineConfig({
       'packages/dsh-mcp-manager/test/unit/unit-middleware.test.ts',
       'packages/dsh-mcp-manager/test/unit/unit-official-package-face.test.ts',
       'packages/dsh-mcp-manager/test/unit/unit-pipeline.test.ts',
+      'packages/dsh-mcp-manager/test/unit/unit-redaction-a1.test.ts',
+      'packages/dsh-mcp-manager/test/unit/unit-redaction.test.ts',
+      'packages/dsh-mcp-manager/test/unit/unit-routes-a2.test.ts',
       'packages/dsh-mcp-manager/test/unit/unit-routes-sse.test.ts',
+      'packages/dsh-mcp-manager/test/unit/unit-stats-a4.test.ts',
       'packages/dsh-mcp-manager/test/unit/unit-store.test.ts',
+      'packages/dsh-mcp-manager/test/unit/unit-summary-a3.test.ts',
       'packages/dsh-mcp-manager/test/unit/unit-visibility.test.ts',
       'packages/dsh-mcp-manager/test/unit/unit-workspace-id.test.ts',
       'packages/dsh-mcp-manager/test/unit/unit-workspace.test.ts',

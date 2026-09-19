@@ -15,7 +15,8 @@
  * McpMiddleware 类；原汇聚转发块删除（v3 §二：汇聚只留 src/index.ts）。
  *
  * #767 S1-3a：ws_mcp_call 执行路径（callTool 与 hostRedact）已迁 servers/dispatch 域，
- * callTool 缩成转发壳——执行器经 runtimePorts 的 dispatch 端口取，单元/禁用表/脱敏源仍由本类持有。
+ * callTool 缩成转发壳——执行器经 runtimePorts 的 dispatch 端口取，单元/禁用表仍由本类持有，
+ * 脱敏源由宿主经 MiddlewareHost.redactionServers 同步供给（#770-8，本类不拼全集）。
  *
  * #767 S1-4d：连接栈换成官方 @deepseek-ai/dsh-mcp-client。本类不再自建 transport / client，
  * 也不再自己排重连与防双进程探测——装载、拆卸与六态投影一律经 runtimePorts 的 lifecycle 端口
@@ -386,9 +387,9 @@ export class McpMiddleware {
     return meta;
   }
 
-  /** 凭据脱敏（连接/发现/调用错误路径统一使用；P1 修复）。 */
+  /** 凭据脱敏（连接/发现/调用错误路径统一使用；#770-8 经宿主全集快照，与 manager/dispatch 同源）。 */
   private redact(error: unknown): string {
-    return runtimePorts.get().pipeline.createRedactor(this.allServers())(error);
+    return runtimePorts.get().pipeline.createRedactor([...this.host.redactionServers()])(error);
   }
 
   /**
@@ -448,7 +449,8 @@ export class McpMiddleware {
   /**
    * 执行 ws_mcp_call。本片（#767 S1-3a）起只是转发壳：路由校验、策略裁决、两条执行分支与
    * 结果投影在 servers/dispatch 域（impl/call 的 executeMcpCall），中间层仍持有单元表、
-   * 策略、脱敏源与**转发登记表**，经显式入参按引用递入——不落第二份事实源。
+   * 策略与**转发登记表**，经显式入参按引用递入——不落第二份事实源。脱敏源不由本类持有，
+   * 经宿主 redactionServers 快照转供（#770-8，与 manager.redactError 同一秘密源）。
    *
    * @param identity 调用方身份（`ToolRunContext` 里 dispatch 真正需要的字段）。为什么不是
    *   单个 agent：转发改道后 dispatch 要合成子调用 id 并透传 parent（裁定 R/Y/Z），而
@@ -496,7 +498,7 @@ export class McpMiddleware {
           catalogRoot === undefined
             ? undefined
             : catalogPort.catalogDirectory.entryFor(catalogRoot, serverName),
-        allServers: () => this.allServers(),
+        allServers: () => this.host.redactionServers(),
         disabledTools: this.disabledTools,
         catalogTtlMs: CATALOG_TTL_MS,
         defaultCallTimeoutMs: CALL_TIMEOUT_MS,
@@ -507,14 +509,6 @@ export class McpMiddleware {
       // finally 是硬要求（RECON 反例 1）：漏了这一步，残留 token 就是一处永久放行位。
       if (parent !== undefined) this.forwarding.delete(parent);
     }
-  }
-
-  private allServers(): ServerConfig[] {
-    const servers: ServerConfig[] = [];
-    for (const unit of this.units.values()) {
-      for (const entry of unit.connections.values()) servers.push(entry.server);
-    }
-    return servers;
   }
 
   /**
