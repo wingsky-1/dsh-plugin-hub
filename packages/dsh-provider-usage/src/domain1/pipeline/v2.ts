@@ -13,7 +13,7 @@
 import type { UsageStatsAdapter, FetchContext } from "../../shared/interface.ts";
 import { esc } from "../../shared/interface.ts";
 import { ADAPTER_UTILS } from "../../shared/interface.ts";
-import type { HistoryStore } from "../history/interface.ts";
+import type { HistoryStore } from "../../server/history/interface.ts";
 import { safeFetchData, safeFormat } from "./guards.ts";
 import { sanitizeHtml } from "../../shared/interface.ts";
 

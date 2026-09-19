@@ -11,6 +11,7 @@ export default defineConfig({
       'packages/dsh-provider-usage/test/integration/adapters/composition-root.test.ts',
       'packages/dsh-provider-usage/test/integration/config/composition-root.test.ts',
       'packages/dsh-provider-usage/test/integration/execute/composition-root.test.ts',
+      'packages/dsh-provider-usage/test/integration/history/composition-root.test.ts',
       'packages/dsh-provider-usage/test/integration/schedule/composition-root.test.ts',
       'packages/dsh-provider-usage/test/integration/upgrade/upgrade-chain.test.ts',
       'packages/dsh-provider-usage/test/unit/adapters/unit-deepseek-official.test.ts',

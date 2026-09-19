@@ -6,7 +6,7 @@ import type { Context } from "@deepseek-ai/cordis";
 import { Mutex } from "async-mutex";
 import { errorMessage } from "../../../../../shared/host-utils.js";
 import type { NormalizedConfig } from "../../shared/interface.ts";
-import type { HistoryStore } from "../history/interface.ts";
+import type { HistoryStore } from "../../server/history/interface.ts";
 import {
   runV2Pipeline,
   runV2PanelPipeline,

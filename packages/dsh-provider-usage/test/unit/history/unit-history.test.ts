@@ -5,6 +5,10 @@
  * 覆盖：parseJsonl（坏行跳过/校验）、startOfDay（时区/闰年/边界）、
  * legacySampleToData（裸值列/缺列/空值）、pickWindow（防御式解析）、
  * HistoryStore.exportAll（#82 批次 3）。
+ *
+ * #768 D5：被测面随域迁入 server/history（经 apply/index.ts 门面 re-export，
+ * 同一引用）；本文件追加并发三条（#771 移交：大跨度 range / 同戳并发 /
+ * 故障注入），全部落盘进 mkdtempSync 隔离目录，锚点相对当前（不钉墙钟）。
  */
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 console.error("EVAL-ORDER-TAG: HISTORY");
@@ -762,5 +766,155 @@ describe("#105② pruneAll：过期清理 + 停用目录数据保留", () => {
 
   it("停用目录当日数据保留，用户回切可读", () => {
     expect(p2Today.includes('"b":2')).toBeTruthy();
+  });
+});
+
+// ---------------------------------------------------------------- #768 D5 并发三条（#771 移交）
+//
+// 白盒直连 server/history/history.ts（经 apply/index.ts 门面 re-export，同一引用）。
+// 三条各有独立 mkdtempSync 隔离根（产物零污染），时间锚点相对当前（不钉墙钟，
+// pollUntil 仍读 Date.now()）；每条多 it 互相咬合（单 it 只断一条，避免恒真）。
+
+describe("D5一 大跨度 range 查询（40 天稀疏）", () => {
+  let full, sub, hole;
+
+  beforeAll(async () => {
+    const root = mkdtempSync(join(tmpdir(), "dou-hist-span-"));
+    const store = new HistoryStore({ root });
+    const noon = new Date().setHours(12, 0, 0, 0);
+    const t0 = noon - 39 * 86400000;
+    await store.append("p", "n", { time: t0, data: { v: 0 } });
+    await store.append("p", "n", { time: t0 + 19 * 86400000, data: { v: 19 } });
+    await store.append("p", "n", { time: noon, data: { v: 39 } });
+    full = await store.query("p", "n", { start: startOfDay(t0), end: noon });
+    sub = await store.query("p", "n", {
+      start: startOfDay(t0 + 19 * 86400000),
+      end: noon,
+    });
+    hole = await store.query("p", "n", {
+      start: startOfDay(t0 + 86400000),
+      end: startOfDay(t0 + 18 * 86400000) + 3600000,
+    });
+  });
+
+  it("40 天跨度三条全量返回", () => {
+    expect(full.entries.length).toBe(3);
+  });
+
+  it("跨度结果按 time 升序", () => {
+    expect(full.entries.map((e) => e.data.v)).toEqual([0, 19, 39]);
+  });
+
+  it("子 range 只含覆盖条目", () => {
+    expect(sub.entries.map((e) => e.data.v)).toEqual([19, 39]);
+  });
+
+  it("空洞 range 返回空（缺日文件容错不抛）", () => {
+    expect(hole.entries).toEqual([]);
+  });
+});
+
+describe("D5二 同戳并发追加无丢失 + 同日 writeDirect 串行胜出", () => {
+  let q, lastEntry, finalText, day;
+
+  beforeAll(async () => {
+    const root = mkdtempSync(join(tmpdir(), "dou-hist-samestamp-"));
+    const store = new HistoryStore({ root });
+    const ts = new Date().setHours(12, 0, 0, 0);
+    // 同一毫秒 10 路并发 append：O(1) 追加互不覆盖，少一条即丢数据
+    await Promise.all(
+      Array.from({ length: 10 }, (_, i) => store.append("p", "n", { time: ts, data: { i } })),
+    );
+    q = await store.query("p", "n", { start: ts - 1000, end: ts + 1000 });
+    lastEntry = await store.last("p", "n");
+    // 同日文件并发 writeDirect 两次：实例级写链保调用序，后写完整胜出、无撕裂混行
+    day = ts;
+    await Promise.all([
+      store.writeDirect("p", "m", day, [{ time: day, data: { w: 1 } }]),
+      store.writeDirect("p", "m", day, [{ time: day, data: { w: 2 } }]),
+    ]);
+    const { readFile, readdir } = await import("node:fs/promises");
+    const files = (await readdir(join(root, "p", "m"))).filter((x) => x.endsWith(".jsonl"));
+    finalText = await readFile(join(root, "p", "m", files[0]), "utf8");
+  });
+
+  it("同戳 10 条全量返回", () => {
+    expect(q.entries.length).toBe(10);
+  });
+
+  it("同戳条目序号全集无丢失", () => {
+    expect(new Set(q.entries.map((e) => e.data.i))).toEqual(
+      new Set([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]),
+    );
+  });
+
+  it("last 取到同戳条目", () => {
+    expect(lastEntry !== null && lastEntry.time).toBe(day);
+  });
+
+  it("并发 writeDirect 后写完整胜出无撕裂", () => {
+    expect(finalText).toBe(`${JSON.stringify({ time: day, data: { w: 2 } })}\n`);
+  });
+});
+
+describe("D5三 故障注入（坏行/目录占位/写失败/prune 容错）", () => {
+  let goodOnly, appendThrew, tmpLitter, pruneThrew;
+
+  beforeAll(async () => {
+    const root = mkdtempSync(join(tmpdir(), "dou-hist-fault-"));
+    const store = new HistoryStore({ root });
+    const day = new Date().setHours(12, 0, 0, 0);
+    // (a) 日文件尾部混入坏行：查询跳过坏行，好条目不断链
+    await store.append("p", "n", { time: day, data: { v: 1 } });
+    const { writeFile, readdir } = await import("node:fs/promises");
+    const dir = join(root, "p", "n");
+    const dayFile = (await readdir(dir)).filter((x) => x.endsWith(".jsonl"))[0];
+    await writeFile(join(dir, dayFile), 'not-json\n{"time":"bad","data":{}}\n', {
+      flag: "a",
+    });
+    await store.append("p", "n", { time: day + 1000, data: { v: 2 } });
+    const q = await store.query("p", "n", { start: startOfDay(day), end: day + 3600000 });
+    goodOnly = q.entries.map((e) => e.data.v);
+    // (b) 目录被普通文件占位：append 显式抛错，不静默丢数据
+    const rootBlocked = mkdtempSync(join(tmpdir(), "dou-hist-blocked-"));
+    writeFileSync(join(rootBlocked, "p"), "occupant", "utf8");
+    const blocked = new HistoryStore({ root: rootBlocked });
+    try {
+      await blocked.append("p", "n", { time: day, data: { v: 1 } });
+      appendThrew = false;
+    } catch {
+      appendThrew = true;
+    }
+    // (c) 写失败不留 .tmp 残留：blocker 根上 writeDirect 拒收且无 litter
+    const badStore = new HistoryStore({ root: join(rootBlocked, "p") });
+    try {
+      await badStore.writeDirect("p", "n", day, [{ time: day, data: { v: 1 } }]);
+    } catch {
+      /* 预期拒收 */
+    }
+    tmpLitter = (await readdir(rootBlocked)).filter((x) => x.endsWith(".tmp"));
+    // (d) pruneAll 对文件根静默返回（与 maybePrune 缺目录语义一致）
+    try {
+      await badStore.pruneAll();
+      pruneThrew = false;
+    } catch {
+      pruneThrew = true;
+    }
+  });
+
+  it("坏行跳过，好条目不断链", () => {
+    expect(goodOnly).toEqual([1, 2]);
+  });
+
+  it("目录被占位 append 显式抛错", () => {
+    expect(appendThrew).toBe(true);
+  });
+
+  it("写失败无 .tmp 残留", () => {
+    expect(tmpLitter).toEqual([]);
+  });
+
+  it("pruneAll 文件根静默返回", () => {
+    expect(pruneThrew).toBe(false);
   });
 });

@@ -17,7 +17,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { pollUntil } from "../../helpers.ts";
 import { normalizeConfig } from "../../../src/shared/config.ts";
 import { makeAdapterRegistry } from "../../../src/domain1/registry/registry.ts";
-import { HistoryStore } from "../../../src/domain1/history/history.ts";
+import { HistoryStore } from "../../../src/server/history/history.ts";
 import { panelCacheKey } from "../../../src/domain1/pipeline/v2.ts";
 import { StatsService } from "../../../src/domain1/pipeline/stats-service.ts";
 

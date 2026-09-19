@@ -98,7 +98,6 @@
         "directImpl": [],
         "uncoveredSrcFiles": [],
         "crossDomainValueEdges": [
-          "apply|domain1/history",
           "apply|domain1/pipeline",
           "apply|domain1/registry",
           "apply|domain1/routes",
@@ -108,6 +107,7 @@
           "apply|server/adapters",
           "apply|server/config",
           "apply|server/execute",
+          "apply|server/history",
           "apply|server/schedule",
           "apply|server/upgrade",
           "domain1/pipeline|domain1/registry",

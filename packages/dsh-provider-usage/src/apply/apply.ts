@@ -35,7 +35,7 @@ import {
   zaiCodingCnAdapter,
   registerBuiltinAdapters,
 } from "../server/adapters/interface.ts";
-import { HistoryStore, migrateLegacyV3 } from "../domain1/history/interface.ts";
+import { HistoryStore, migrateLegacyV3 } from "../server/history/interface.ts";
 import { HotReloadableAdapter } from "../domain1/registry/interface.ts";
 import { resolvePath } from "../domain1/registry/interface.ts";
 import { Config, normalizeConfig, type NormalizedConfig } from "../shared/interface.ts";

@@ -8,6 +8,7 @@
  *
  * 目录结构：historyDir/<safe(provider)>/<safe(name)>/YYYY-MM-DD.jsonl
  */
+import { randomBytes } from "node:crypto";
 import { appendFile, mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { safeSegment } from "../../shared/interface.ts";
@@ -23,6 +24,11 @@ export class HistoryStore {
   private readonly root: string;
   private readonly maxAgeMs: number;
   private readonly maxSizeBytes: number;
+  /**
+   * 同目标日文件的写链：writeDirect 并发同文件时 rename 先后无保证，串行防旧数据盖新数据。
+   * 实例级（随 HistoryStore 实例生灭，无模块级可变状态——forbid-module-state-src 零新增）。
+   */
+  private readonly writeChains = new Map<string, Promise<void>>();
 
   constructor(opts: { root: string; maxAgeMs?: number; maxSizeBytes?: number }) {
     this.root = opts.root;
@@ -30,9 +36,14 @@ export class HistoryStore {
     this.maxSizeBytes = opts.maxSizeBytes ?? 20 * 1024 * 1024; // 20MB
   }
 
-  /** 适配器目录（provider/name 均安全化）。 */
+  /**
+   * 适配器目录（provider/name 均安全化）。safeSegment 保留点号（`a.b` 合法），
+   * 故 `.`/`..` 另收敛为 `unknown`——否则 join 穿透隔离根（包 AGENTS.md 落盘
+   * basename 化纪律）。收敛放本域（shared 的 safeSegment 是稳定公共契约，
+   * 单测钉死 `a.b_c` 形态，不在本域改它）。
+   */
   private dirOf(provider: string, name: string): string {
-    return join(this.root, safeSegment(provider), safeSegment(name));
+    return join(this.root, dirSegment(provider), dirSegment(name));
   }
 
   /** 当日文件名。 */
@@ -45,7 +56,7 @@ export class HistoryStore {
   /** 追加一条（O(1) appendFile；prune 已移出热路径改独立定时器）。 */
   async append(provider: string, name: string, entry: HistoryEntry): Promise<void> {
     const file = this.fileOf(provider, name, entry.time);
-    await mkdir(this.dirOf(provider, name), { recursive: true });
+    await mkdir(this.dirOf(provider, name), { recursive: true, mode: 0o700 });
     await appendFile(file, `${JSON.stringify(entry)}\n`, { encoding: "utf8", mode: 0o600 });
   }
 
@@ -239,8 +250,9 @@ export class HistoryStore {
   }
 
   /**
-   * 割接：原子写一份文件（写 tmp + rename）。
-   * 供迁移工具把旧 v3 数据拷入新格式时使用。
+   * 割接：原子写一份文件（0600，tmp + rename，失败清理临时名后上抛原错误）。
+   * 供迁移工具把旧 v3 数据拷入新格式时使用。临时名带 pid + 随机串（同毫秒并发不撞名），
+   * 同文件并发经实例级写链串行（rename 先后无保证，串行防旧数据盖新数据）。
    */
   async writeDirect(
     provider: string,
@@ -250,21 +262,41 @@ export class HistoryStore {
   ): Promise<void> {
     if (entries.length === 0) return;
     const file = this.fileOf(provider, name, day);
-    await mkdir(this.dirOf(provider, name), { recursive: true });
-    const tmp = `${file}.${Date.now()}.tmp`;
+    const previous = this.writeChains.get(file) ?? Promise.resolve();
+    const next = previous.then(
+      () => this.writeOnce(file, provider, name, entries),
+      () => this.writeOnce(file, provider, name, entries),
+    );
+    this.writeChains.set(file, next);
+    return next.finally(() => {
+      if (this.writeChains.get(file) === next) this.writeChains.delete(file);
+    });
+  }
+
+  /** writeDirect 单次落盘：建目录（0700）+ 写临时名（0600）+ rename；失败清临时名。 */
+  private async writeOnce(
+    file: string,
+    provider: string,
+    name: string,
+    entries: HistoryEntry[],
+  ): Promise<void> {
+    await mkdir(this.dirOf(provider, name), { recursive: true, mode: 0o700 });
+    const tmp = `${file}.${process.pid}.${Date.now().toString(36)}.${randomBytes(6).toString("hex")}.tmp`;
     const text = entries.map((e) => JSON.stringify(e)).join("\n") + "\n";
-    await writeFile(tmp, text, { encoding: "utf8", mode: 0o600 });
     try {
+      await writeFile(tmp, text, { encoding: "utf8", mode: 0o600 });
       await rename(tmp, file);
     } catch (e) {
-      try {
-        await rm(tmp, { force: true });
-      } catch {
-        /* 忽略 */
-      }
+      await rm(tmp, { force: true }).catch(() => undefined);
       throw e;
     }
   }
+}
+
+/** 单目录段收敛：safeSegment 后再拒收 `.`/`..`（join 穿透），空回落与 safeSegment 同口径。 */
+function dirSegment(s: string): string {
+  const seg = safeSegment(s);
+  return seg === "." || seg === ".." ? "unknown" : seg;
 }
 
 /** 解析 JSONL 文本为条目数组（跳过坏行）。 */

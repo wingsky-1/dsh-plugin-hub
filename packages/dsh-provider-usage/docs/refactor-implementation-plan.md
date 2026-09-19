@@ -92,7 +92,7 @@ src/
 | shared/ | interface.ts、contracts.ts、charts.ts、config.ts、sanitize.ts、ui-config.ts、client-logic.ts、placement-math.ts |
 | domain1/registry/ | interface.ts、registry.ts、user-adapters.ts、user-adapter-loader.ts、hotreload.ts、provider-config.ts、path-resolve.ts |
 | domain1/pipeline/ | interface.ts、stats-service.ts、v2.ts、guards.ts |
-| domain1/history/ | interface.ts、history.ts |
+| server/history/ | interface.ts、history.ts（#768 D5 由 domain1/history 整域迁入，并发语义确定化） |
 | server/adapters/ | interface.ts、deps.ts、register.ts、deepseek-official.{mjs,d.mts}、opencode-go.{mjs,d.mts}、zai-coding-cn.{mjs,d.mts}（#768 D4 由 domain1/adapters 整域迁入，.mjs 零改动） |
 | domain1/routes/ | interface.ts、stats.ts、adapters.ts |
 | domain2/collect/ | interface.ts、collector.ts、types.ts |

@@ -321,7 +321,7 @@
         },
         "pipeline": {
           "mutate": [
-            "packages/dsh-provider-usage/src/domain1/history/history.ts",
+            "packages/dsh-provider-usage/src/server/history/history.ts",
             "packages/dsh-provider-usage/src/domain1/pipeline/v2.ts",
             "packages/dsh-provider-usage/src/domain1/registry/hotreload.ts",
             "packages/dsh-provider-usage/src/domain1/registry/path-resolve.ts",
@@ -332,7 +332,7 @@
             "packages/dsh-provider-usage/src/domain1/pipeline/stats-service.ts"
           ],
           "excludes": ["!packages/dsh-provider-usage/src/client/**"],
-          "comment": "#342 v4：src 级文件组分段（5）——history/v2/hotreload/placement-math/path-resolve/client-logic/provider-config/charts/stats-service（历史/管线/热更/图表/C3 服务面；charts 纳入修复变异盲区；阶段零补 stats-service 盲区）；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
+          "comment": "#342 v4：src 级文件组分段（5）——history/v2/hotreload/placement-math/path-resolve/client-logic/provider-config/charts/stats-service（历史/管线/热更/图表/C3 服务面；charts 纳入修复变异盲区；阶段零补 stats-service 盲区）；#768 D5 历史文件随域迁 server/history（路径同步，行为零改 + writeDirect 原子写硬化）；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
         },
         "registry": {
           "mutate": [

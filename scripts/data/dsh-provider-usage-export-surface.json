@@ -1131,7 +1131,7 @@
     }
   ],
   "declBlocks": [
-    "export declare class HistoryStore { private readonly root; private readonly maxAgeMs; private readonly maxSizeBytes; constructor(opts: { root: string; maxAgeMs?: number; maxSizeBytes?: number; }); private dirOf; private fileOf; append(provider: string, name: string, entry: HistoryEntry): Promise<void>; readDay(provider: string, name: string, time: number): Promise<HistoryEntry[]>; query(provider: string, name: string, range: { start: number; end: number; }): Promise<{ entries: HistoryEntry[]; }>; last(provider: string, name: string): Promise<HistoryEntry | null>; maybePrune(provider: string, name: string): Promise<void>; pruneAll(): Promise<void>; exportAll(provider: string, name: string): Promise<HistoryEntry[]>; writeDirect(provider: string, name: string, day: number, entries: HistoryEntry[]): Promise<void>; }",
+    "export declare class HistoryStore { private readonly root; private readonly maxAgeMs; private readonly maxSizeBytes; private readonly writeChains; constructor(opts: { root: string; maxAgeMs?: number; maxSizeBytes?: number; }); private dirOf; private fileOf; append(provider: string, name: string, entry: HistoryEntry): Promise<void>; readDay(provider: string, name: string, time: number): Promise<HistoryEntry[]>; query(provider: string, name: string, range: { start: number; end: number; }): Promise<{ entries: HistoryEntry[]; }>; last(provider: string, name: string): Promise<HistoryEntry | null>; maybePrune(provider: string, name: string): Promise<void>; pruneAll(): Promise<void>; exportAll(provider: string, name: string): Promise<HistoryEntry[]>; writeDirect(provider: string, name: string, day: number, entries: HistoryEntry[]): Promise<void>; private writeOnce; }",
     "export declare class HotReloadableAdapter { private timer; private lastStamp; private readonly onReload; private readonly file; private readonly intervalMs; private readonly checkChecksum; constructor(file: string, intervalMs: number, onReload?: (info: { ok: boolean; error?: string; }) => void, checkChecksum?: boolean); current: UsageStatsAdapter | null; start(): Promise<{ ok: boolean; error?: string; }>; stop(): void; pollOnce(): Promise<{ ok: boolean; error?: string; }>; private reload; }",
     "export declare class ReportConfigService { private cfg; private chain; private readonly root; private readonly onUpdate?; constructor(opts: ReportConfigServiceOptions); get(): ReportConfig; update(next: ReportConfig): Promise<void>; }",
     "export declare class ReportScheduler { private config; private timer; private disposed; private readonly root; private readonly onDue; private readonly now; private readonly tickMs; private readonly warn; private constructor(); static start(opts: ReportSchedulerOptions): ReportScheduler; updateConfig(config: ReportConfig): void; tick(): Promise<void>; dispose(): void; }",
@@ -1189,12 +1189,14 @@
     "export declare const LEGACY_WEEKLY_PROMPT_V3: string;",
     "export declare const LEGACY_WEEKLY_PROMPT_V4: string;",
     "export declare const MAX_ANCESTRY_DEPTH = 3;",
+    "export declare const MIGRATED_SUFFIX = \".migrated.bak\";",
     "export declare const PANEL_CACHE_TTL_MS = 90000;",
     "export declare const PERIOD_BUCKETS: ReadonlyArray<{ name: string; from: number; to: number; }",
     "export declare const REPORT_GENERATE_STATUS_URL: string;",
     "export declare const ROUTES: Record<string, string>;",
     "export declare const SELECT_URL: string;",
     "export declare const STATS_URL: string;",
+    "export declare const STEPS: readonly UpgradeStep[];",
     "export declare const TREND_DIR_MAX = 256;",
     "export declare const TREND_DONE_MAX = 200;",
     "export declare const TREND_ROW_VERSION = 1;",
@@ -1213,6 +1215,7 @@
     "export declare const name = \"provider-usage\";",
     "export declare const sectionStyle: { marginBottom: number; padding: string; border: string; borderRadius: number; background: string; fontSize: number; lineHeight: number; };",
     "export declare const titleStyle: { fontSize: number; fontWeight: number; margin: string; };",
+    "export declare const upgradeRunner: UpgradeRunner;",
     "export declare const zh: { readonly justNow: \"刚刚\"; readonly minutesAgo: \"{n} 分钟前\"; readonly hoursAgo: \"{n} 小时前\"; readonly daysAgo: \"{n} 天前\"; readonly pillNotConfigured: \"未配置适配器，点击查看接入引导\"; readonly pillFetchFail: \"用量获取失败：{msg}\"; readonly pillBusy: \"取数进行中，稍候自动刷新\"; readonly pillStale: \"数据陈旧\"; readonly pillCached: \"缓存\"; readonly pillFresh: \"实时\"; readonly pillUpdatedAt: \"更新于 {t}\"; readonly providerUnknown: \"提供商未识别\"; readonly panelTitle: \"{provider} 用量\"; readonly refresh: \"刷新\"; readonly hintPrefix: \"提示：\"; readonly loading: \"加载中…\"; readonly ariaPill: \"用量统计\"; readonly settingsTab: \"用量统计\"; readonly settingsNavLabel: \"用量统计设置分区\"; readonly pageTabTrend: \"趋势\"; readonly pageTabReport: \"报告\"; readonly pageTabUsage: \"用量\"; readonly pageTabProviders: \"适配器\"; readonly pageTabFloat: \"悬浮窗\"; readonly errNoApiKey: \"未找到 API Key（走 {p}_API_KEY 环境变量或 .credentials.yaml）。\"; readonly errUnauthorized: \"API Key 无效或已过期（401/403）。\"; readonly errTimeout: \"请求超时，请重试。\"; readonly errNetwork: \"网络错误，请检查连接后重试。\"; readonly errBadData: \"数据格式异常，请检查服务商接口或适配器返回。\"; readonly errAdapterLoadFailed: \"自定义适配器加载失败，请检查文件路径与契约（设置页可见错误明细）。\"; readonly errBusy: \"上一次取数仍在进行，稍候自动刷新。\"; readonly errNoEnabledAdapter: \"该提供商有候选适配器但均未启用，请在设置面板「用量统计」启用。\"; readonly errNoAdapter: \"该提供商未配置适配器，请在设置面板「用量统计」添加。\"; readonly errHttpStatus: \"服务返回 {code}，请检查中转站状态。\"; readonly errGeneric: \"用量获取失败：{code}。\"; readonly noDataShort: \"暂无数据\"; readonly noAdapterTitle: \"该提供商暂无启用的适配器。\"; readonly noAdapterHint: \"在设置面板「用量统计」的适配器管理中启用一个候选适配器；也可复制下方引导指令，让 Agent 帮你接入用量数据源。\"; readonly copyGuide: \"复制引导指令\"; readonly copied: \"已复制 ✓\"; readonly copyFail: \"复制失败\"; readonly statusFresh: \"实时\"; readonly statusCached: \"缓存\"; readonly statusStale: \"陈旧（已降级）\"; readonly statusUnconfigured: \"未配置\"; readonly posTopRight: \"右上\"; readonly posTopLeft: \"左上\"; readonly posBottomRight: \"右下\"; readonly posBottomLeft: \"左下\"; readonly uiTitle: \"胶囊位置\"; readonly uiAnchor: \"锚点：\"; readonly offsetX: \"水平偏移\"; readonly offsetY: \"垂直偏移\"; readonly panelOffsetY: \"面板间距\"; readonly zIndexBase: \"层级基准\"; readonly savingNow: \"保存中…\"; readonly save: \"保存\"; readonly uiSavedOk: \"已保存——胶囊位置即时生效（所有设备）\"; readonly uiSaveFail: \"保存失败：{msg}\"; readonly usageTitle: \"用量可视化\"; readonly noProviders: \"暂无启用的 provider\"; readonly noData: \"暂无数据\"; readonly updatedAt: \"更新于 {t}\"; readonly badgeEnabled: \"已启用: {name}\"; readonly badgeOff: \"未启用适配器\"; readonly adapterBuiltin: \"内置\"; readonly adapterCustom: \"自定义\"; readonly switchOffTitle: \"停用该适配器（仅影响用量取数）\"; readonly switchOnTitle: \"启用该适配器\"; readonly lastError: \"最近一次错误：{msg}\"; readonly inspectKName: \"适配器名\"; readonly inspectKLabel: \"展示名\"; readonly inspectKProviders: \"归属提供商\"; readonly inspectKVersion: \"契约版本\"; readonly filePath: \"文件路径\"; readonly filePathOnly: \"（唯一输入——name/展示名/归属提供商从文件导出自动读取）\"; readonly detecting: \"检测中…\"; readonly detectFile: \"检测文件\"; readonly detectFirst: \"请先通过「检测文件」后再确认添加\"; readonly adding: \"添加中…\"; readonly confirmAdd: \"确认添加\"; readonly cancel: \"取消\"; readonly inspectFail: \"检测失败\"; readonly addFail: \"添加失败\"; readonly noCandidates: \"该提供商暂无候选适配器——可通过下方 [+ 添加适配器] 注入本地适配器文件；也可复制引导指令，让 Agent 帮你创建适配器。\"; readonly collapse: \"收起\"; readonly addAdapter: \"+ 添加适配器\"; readonly provTitle: \"提供商\"; readonly provListHint: \"提供商列表与模型配置页保持一致（共 {n} 个）；展开某个提供商以切换适配器开关或添加新适配器。\"; readonly fileLoadFail: \"用户文件 {f} 加载失败：{msg}\"; readonly noProvHint: \"未发现已配置的提供商（adapters.json 不可达或模型配置页尚未配置提供商）。可复制引导指令，让 Agent 帮你接入数据源并创建适配器。\"; readonly customProvTitle: \"自定义提供商\"; readonly customProvHint: \"以下 providers 未出现在 dsh 模型配置页（模型暂选不到该提供商，先登记适配器；在模型页补建后即可选用），不计入上方数量。\"; readonly trendTitle: \"使用趋势\"; readonly trendGranularity: \"粒度\"; readonly trendGranDay: \"日\"; readonly trendGranWeek: \"周\"; readonly trendGranMonth: \"月\"; readonly trendMetricLabel: \"指标\"; readonly trendMetricTotal: \"总 tokens\"; readonly trendMetricInput: \"输入\"; readonly trendMetricOutput: \"输出\"; readonly trendMetricCacheRead: \"缓存读\"; readonly trendMetricCacheWrite: \"缓存写\"; readonly trendMetricCalls: \"调用次数\"; readonly trendAdapterLabel: \"适配器\"; readonly trendAdapterAll: \"全部适配器\"; readonly trendByModel: \"按模型拆分\"; readonly trendCardTotal: \"窗口总量\"; readonly trendCardCalls: \"调用次数\"; readonly trendCardPeak: \"峰值桶\"; readonly trendCardTop: \"Top 适配器\"; readonly trendCardTopDir: \"Top 目录\"; readonly trendFetchFail: \"趋势数据获取失败\"; readonly trendEmptyTitle: \"暂无趋势数据\"; readonly trendEmptyHint: \"会话产生用量后，这里会展示近期的使用趋势。\"; readonly trendMountedHint: \"统计自插件挂载时点起算，早于该时点的会话不计入\"; readonly trendMountedHintDay: \"统计自 {day}（插件挂载时点）起算，早于该时点的会话不计入\"; readonly trendRangeLabel: \"范围\"; readonly trendRangeDayUnit: \"{n} 天\"; readonly trendRangeWeekUnit: \"{n} 周\"; readonly trendRangeMonthUnit: \"{n} 个月\"; readonly trendViewLabel: \"视图\"; readonly trendViewBar: \"柱状\"; readonly trendViewArea: \"面积\"; readonly trendPartialOngoing: \"进行中\"; readonly trendPartialEdge: \"部分桶\"; readonly trendNoData: \"无数据\"; readonly trendTipSum: \"合计\"; readonly trendPrevIncomplete: \"环比基准不完整\"; readonly trendHiddenParts: \"已隐藏 {k} 段（卡为全段口径）\"; readonly trendLegendToggleHint: \"点击图例可显隐对应段\"; readonly trendPeakDay: \"{day}\"; readonly trendPeakWeek: \"{day} 当周\"; readonly trendPeakMonth: \"{y} 年 {m} 月\"; readonly trendRetained: \"留存 {days} 天\"; readonly trendCardAvg: \"日均\"; readonly trendViewVisible: \"可见段\"; readonly trendDirLabel: \"目录\"; readonly trendDirAll: \"全部目录\"; readonly trendDirUnidentified: \"未识别\"; readonly trendDirUnidentifiedNote: \"无目录信息的会话\"; readonly reportTitle: \"用量报告\"; readonly reportPeriodDaily: \"日报\"; readonly reportPeriodWeekly: \"周报\"; readonly reportPeriodMonthly: \"月报\"; readonly reportEnabled: \"启用\"; readonly reportTime: \"触发时刻\"; readonly reportWeekStartsOn: \"周起点\"; readonly reportWeekMonday: \"周一\"; readonly reportWeekSunday: \"周日\"; readonly reportDayOfMonth: \"月内触发日（1–28）\"; readonly reportProvider: \"模型提供商\"; readonly reportProviderDefault: \"跟随默认\"; readonly reportModel: \"模型\"; readonly reportModelHint: \"留空跟随默认\"; readonly reportModelDefault: \"跟随默认（首个已注册模型）\"; readonly reportModelKept: \"{v}（当前配置值，不在列表中）\"; readonly reportModelFallback: \"模型列表拉取失败或为空，已降级为手动填写。\"; readonly reportDirectories: \"目录范围\"; readonly reportDirectoriesAll: \"全部目录\"; readonly reportDirectoriesSelectAll: \"全选\"; readonly reportDirectoriesClear: \"清空\"; readonly reportDirectoriesEmpty: \"暂无目录数据——会话产生用量后，这里会列出可选目录。\"; readonly reportDirectoriesHintAll: \"统计全部目录（默认口径）。\"; readonly reportDirectoriesHintScoped: \"报告只统计所选目录的目录分布（其余维度保持全量）。\"; readonly reportPromptReset: \"恢复默认\"; readonly reportPromptHint: \"三周期各自独立模板；{stats} 注入对应周期聚合统计 JSON（含峰值日/活跃天数/环比等年报维度）\"; readonly reportNoData: \"当期无用量数据，未生成报告\"; readonly reportHeroTotal: \"tokens\"; readonly reportHeroCalls: \"对话次数\"; readonly reportHeroActive: \"活跃天数\"; readonly reportHeroStreak: \"最长连续\"; readonly reportHeroPeak: \"峰值日\"; readonly reportRatioFlat: \"持平\"; readonly reportRatioPct: \"{n}%\"; readonly reportPrompt: \"提示词模板\"; readonly reportPush: \"生成后推送通知\"; readonly reportSave: \"保存更改\"; readonly reportSaved: \"已保存\"; readonly reportSaveFail: \"保存失败：{msg}\"; readonly reportGenerate: \"立即生成\"; readonly reportGenerating: \"生成中…\"; readonly reportGenerateFail: \"生成失败：{msg}\"; readonly reportStillGenerating: \"仍在后台生成，稍后刷新列表查看\"; readonly reportReused: \"该窗口已有报告，已复用现有结果（勾选「重新生成」可覆盖）\"; readonly reportForceRegen: \"重新生成（覆盖）\"; readonly reportHistory: \"报告历史\"; readonly reportEmpty: \"尚未生成过报告——配置周期或立即手动生成\"; readonly reportFetchFail: \"报告数据获取失败\"; readonly reportOk: \"成功\"; readonly reportFailed: \"失败\"; readonly reportCollapse: \"收起\"; readonly reportDetailTokens: \"生成消耗：{n} tokens\"; readonly reportPeriodSelect: \"选择周期\"; };",
     "export declare function ProviderListSection({ meta, main, extra, busy, onSwitch, onDisable, onInspect, onAdd, }",
     "export declare function ReportSection(): React.ReactElement;",
@@ -1246,6 +1249,7 @@
     "export declare function clampPointToViewport(x: number, y: number, width: number, height: number, viewportW: number, viewportH: number, safeInset?: number): ViewportPoint;",
     "export declare function clampTrendN(raw: string | null, gran: \"day\" | \"week\" | \"month\", retention: number): number;",
     "export declare function clampZIndexBase(value: unknown, dflt: number): number;",
+    "export declare function compareVersions(left: string, right: string): number;",
     "export declare function composerDockedAtBottom(seatRect: RectLike | null | undefined, containerRect: RectLike | null | undefined): boolean;",
     "export declare function copyText(text: string): Promise<boolean>;",
     "export declare function createAdapterRoutes(routes: { adapters: string; select: string; inspect: string; add: string; }",
@@ -1305,6 +1309,7 @@
     "export declare function handleTrend(req: IncomingMessage, res: ServerResponse, context: UiRoutesContext): void;",
     "export declare function handleUiConfig(req: IncomingMessage, res: ServerResponse, context: UiRoutesContext): Promise<void>;",
     "export declare function hourOfDay(t: number): number;",
+    "export declare function installUpgrade(deps: UpgradeDeps): Promise<void>;",
     "export declare function isClientProviderRenderer(v: unknown): v is ClientProviderRenderer;",
     "export declare function isClosedWindowRecord(r: LastRunRecord): boolean;",
     "export declare function isHostProviderAdapter(v: unknown): v is HostProviderAdapter;",
@@ -1318,6 +1323,8 @@
     "export declare function lastNDayKeys(n: number, now: number): string[];",
     "export declare function lastNMonthKeys(n: number, now: number): string[];",
     "export declare function lastNWeekKeys(n: number, now: number): string[];",
+    "export declare function legacyConfigFile(root: string): string;",
+    "export declare function legacyLastRunFile(root: string): string;",
     "export declare function legacySampleToData(columns: LegacyV3Bucket[\"columns\"], sample: Array<number | null>): Record<string, unknown>;",
     "export declare function levelFromWindows(windows: UsageWindow[] | undefined): SummaryLevel;",
     "export declare function listAdapters(root: string): Promise<Array<{ provider: string; name: string; }",
@@ -1335,7 +1342,10 @@
     "export declare function mergeDirRows(base: TrendDirRow[], add: TrendDirRow[]): TrendDirRow[];",
     "export declare function mergeHourRows(base: TrendHourRow[], add: TrendHourRow[]): TrendHourRow[];",
     "export declare function metricValue(cell: TrendCell, metric: TrendMetric): number | null;",
+    "export declare function migrateLastRun(deps: UpgradeDeps): Promise<void>;",
     "export declare function migrateLegacyV3(root: string, store: HistoryStore): Promise<number>;",
+    "export declare function migrateReportConfig(deps: UpgradeDeps): Promise<void>;",
+    "export declare function migrateStorageLayout(deps: UpgradeDeps): Promise<void>;",
     "export declare function miniAreaSvg(opts: { samples: Array<{ x: number; y: number; }>; color: string; lo: number; hi: number; resetsAt: string | number | undefined | null; resetPeriodMs: number; dateOnly: boolean; }",
     "export declare function monthRange(key: string): { start: string; end: string; };",
     "export declare function niceDomain(pcts: number[]): [number, number];",
@@ -1349,6 +1359,7 @@
     "export declare function notifyReport(ctx: Context, reportCfg: ReportConfig, meta: ReportMeta, snapshot: ReportStatsSnapshot, sanitizeDiagnostic: (s: string) => string): void;",
     "export declare function opencodeAuthFile(): string;",
     "export declare function optionalNotifier(ctx: Context): { send: (req: { source: string; kind: string; severity: string; title: string; body: string; }) => Promise<unknown>; registerKind?: (reg: { id: string; label: string; }) => unknown; }",
+    "export declare function packageRootFrom(fromDir: string): string | undefined;",
     "export declare function panelAnchorForPlacement(placement: string | undefined): \"top\" | \"bottom\";",
     "export declare function panelCacheKey(provider: string, adapterName: string, range: { start: number; end: number; }",
     "export declare function panelTopForAnchor(anchor: \"top\" | \"bottom\", pillTop: number, pillBottom: number, panelHeight: number, gap: number): number;",
@@ -1358,8 +1369,10 @@
     "export declare function parseReportIndexLines(raw: string): ReportMeta[];",
     "export declare function parseUserAdapters(raw: string | undefined): UserAdapterRecord[];",
     "export declare function pendingReports(cfg: ReportConfig, now: number, lastRun: Partial<Record<ReportPeriod, string>>): DueReport[];",
+    "export declare function pendingSteps(steps: readonly UpgradeStep[], recorded: string): UpgradeStep[];",
     "export declare function persistReport(historyRoot: string, meta: ReportMeta, bodyText: string): Promise<void>;",
     "export declare function pluginHome(base?: string): string;",
+    "export declare function pluginVersion(): string;",
     "export declare function presetLastRunForNewlyEnabled(prev: ReportConfig, next: ReportConfig, now: number, lastRun: Partial<Record<ReportPeriod, string>>): { lastRun: Partial<Record<ReportPeriod, string>>; changed: boolean; };",
     "export declare function prevWindowTotal(buckets: Array<{ day: string; providers: Array<{ provider: string; model: string | null; cell: TrendCell; }>; }",
     "export declare function previousClosedWindow(period: ReportPeriod, cfg: ReportConfig, now: number): DueReport;",
@@ -1372,10 +1385,14 @@
     "export declare function readReportConfig(root: string): Promise<ReportConfig>;",
     "export declare function readReportIndex(historyRoot: string): Promise<ReportMeta[]>;",
     "export declare function readStamp(file: string): Promise<FileStamp | null>;",
+    "export declare function readStoredVersion(root: string): Promise<string>;",
     "export declare function readUiConfig(root: string): Promise<UiPlacementConfig>;",
     "export declare function readUserAdapters(root: string): Promise<UserAdapterRecord[]>;",
+    "export declare function registerBuiltinAdapters(port: BuiltinRegistryPort, adapters: readonly UsageStatsAdapter[]): void;",
+    "export declare function releaseUpgrade(): void;",
     "export declare function reportBodyToHtml(bodyText: string): string;",
     "export declare function reportConfigFile(root: string): string;",
+    "export declare function reportGap(recorded: string, target: string, logger: UpgradeDeps[\"logger\"]): void;",
     "export declare function reportHtmlFile(root: string, period: ReportPeriod, key: string): string;",
     "export declare function reportIndexFile(root: string): string;",
     "export declare function reportMetaFile(root: string, period: ReportPeriod, key: string): string;",
@@ -1386,6 +1403,7 @@
     "export declare function resolveProviderConfig(provider: string, ctx?: unknown, input?: ProviderConfigInput): Promise<ResolvedProviderConfig>;",
     "export declare function resolveProviderFromSession(sessions: SessionsServiceLike | undefined, remote: RemoteLike | undefined, catalogLoader?: CatalogLoader): Promise<string | undefined>;",
     "export declare function runDueReport(params: { due: DueReport; trend: TrendTracker; ctx: Context; reportCfg: ReportConfig; historyRoot: string; sanitizeDiagnostic: (s: string) => string; }",
+    "export declare function runUpgradeChain(deps: UpgradeDeps): Promise<void>;",
     "export declare function runV2PanelPipeline(opts: { adapter: UsageStatsAdapter; provider: string; history: HistoryStore; range: { start: number; end: number; }; timeoutMs?: number; }",
     "export declare function runV2Pipeline(ctx: V2PipelineContext): Promise<V2PipelineResult>;",
     "export declare function safeFetchData(fn: (signal: AbortSignal) => Promise<unknown>, timeoutMs?: number, externalSignal?: AbortSignal): Promise<{ data?: Record<string, unknown>; error?: string; }",
@@ -1398,6 +1416,7 @@
     "export declare function saveUiConfig(cfg: UiPlacementConfig): Promise<void>;",
     "export declare function seriesColor(id: string): string;",
     "export declare function sessionAncestryChain(sessions: SessionsServiceLike | undefined, startId: string, maxDepth?: number): string[];",
+    "export declare function settleOne(source: string, target: string, initial: string | null, deps: UpgradeDeps): Promise<void>;",
     "export declare function shouldShowByModel(provider: string, dirFilter: string): boolean;",
     "export declare function shouldShowDirSelect(provider: string): boolean;",
     "export declare function smoothPath(pts: Array<{ x: number; y: number; }",
@@ -1410,6 +1429,8 @@
     "export declare function sumToken(a: number | null, b: number | null): number | null;",
     "export declare function summarizeTextFromWindows(windows: UsageWindow[] | undefined): string;",
     "export declare function summaryOf(snapshot: ReportStatsSnapshot): ReportMetaSummary;",
+    "export declare function targetConfigFile(root: string): string;",
+    "export declare function targetLastRunFile(root: string): string;",
     "export declare function timeTickStep(spanMs: number): number;",
     "export declare function timeTicks(t0: number, t1: number, minGapMs: number): number[];",
     "export declare function toEpochMs(v: string | number | undefined | null): number | undefined;",
@@ -1421,14 +1442,17 @@
     "export declare function trendYTicks(series: Array<{ total: number | null; }",
     "export declare function uiConfigFile(root: string): string;",
     "export declare function updateLastRun(root: string, patch: (prev: Partial<Record<ReportPeriod, string>>) => Partial<Record<ReportPeriod, string>> | Promise<Partial<Record<ReportPeriod, string>>>): Promise<void>;",
+    "export declare function upgradeVersionFile(root: string): string;",
     "export declare function usageError(provider: string, error: string | null, label?: string, fetchedAt?: number): ProviderUsage;",
     "export declare function usageOk(provider: string, label: string, fetchedAt: number, extra?: Partial<ProviderUsage>): ProviderUsage;",
     "export declare function userAdaptersFile(root: string): string;",
     "export declare function weekRange(weekStart: string): { start: string; end: string; };",
     "export declare function weekStartKey(t: number): string;",
     "export declare function writeAdapterState(root: string, state: Record<string, string | null>, durabilityDiagnostic: (message: string) => void): Promise<void>;",
+    "export declare function writeFileAtomic(file: string, data: string): Promise<void>;",
     "export declare function writeLastRun(root: string, state: Partial<Record<ReportPeriod, string>>): Promise<void>;",
     "export declare function writeReportConfig(root: string, cfg: ReportConfig): Promise<void>;",
+    "export declare function writeStoredVersion(root: string, version: string): Promise<void>;",
     "export declare function writeUiConfig(root: string, cfg: UiPlacementConfig): Promise<void>;"
   ],
   "entries": {
@@ -2577,27 +2601,6 @@
         "name": [
           "export declare const name = \"provider-usage\";"
         ],
-        "ReportConfigService": [
-          "export declare class ReportConfigService { private cfg; private chain; private readonly root; private readonly onUpdate?; constructor(opts: ReportConfigServiceOptions); get(): ReportConfig; update(next: ReportConfig): Promise<void>; }"
-        ],
-        "HistoryStore": [
-          "export declare class HistoryStore { private readonly root; private readonly maxAgeMs; private readonly maxSizeBytes; constructor(opts: { root: string; maxAgeMs?: number; maxSizeBytes?: number; }); private dirOf; private fileOf; append(provider: string, name: string, entry: HistoryEntry): Promise<void>; readDay(provider: string, name: string, time: number): Promise<HistoryEntry[]>; query(provider: string, name: string, range: { start: number; end: number; }): Promise<{ entries: HistoryEntry[]; }>; last(provider: string, name: string): Promise<HistoryEntry | null>; maybePrune(provider: string, name: string): Promise<void>; pruneAll(): Promise<void>; exportAll(provider: string, name: string): Promise<HistoryEntry[]>; writeDirect(provider: string, name: string, day: number, entries: HistoryEntry[]): Promise<void>; }"
-        ],
-        "legacySampleToData": [
-          "export declare function legacySampleToData(columns: LegacyV3Bucket[\"columns\"], sample: Array<number | null>): Record<string, unknown>;"
-        ],
-        "listAdapters": [
-          "export declare function listAdapters(root: string): Promise<Array<{ provider: string; name: string; }"
-        ],
-        "migrateLegacyV3": [
-          "export declare function migrateLegacyV3(root: string, store: HistoryStore): Promise<number>;"
-        ],
-        "parseJsonl": [
-          "export declare function parseJsonl(raw: string): HistoryEntry[];"
-        ],
-        "startOfDay": [
-          "export declare function startOfDay(time: number): number;"
-        ],
         "fetchWithTimeout": [
           "export declare function fetchWithTimeout(url: string, timeoutMs?: number, init?: RequestInit): Promise<Response>;"
         ],
@@ -2844,96 +2847,6 @@
         "sumToken": [
           "export declare function sumToken(a: number | null, b: number | null): number | null;"
         ],
-        "LAYER_ERROR_KEYS": [
-          "export declare const LAYER_ERROR_KEYS: readonly LayerErrorKey[];"
-        ],
-        "LAYER_ERROR_MAX_RECENT_DEFAULT": [
-          "export declare const LAYER_ERROR_MAX_RECENT_DEFAULT = 10;"
-        ],
-        "makeLayerErrorSurface": [
-          "export declare function makeLayerErrorSurface(opts?: LayerErrorSurfaceOptions): LayerErrorSurface;"
-        ],
-        "makeNoopLayerErrorSurface": [
-          "export declare function makeNoopLayerErrorSurface(): LayerErrorSurface;"
-        ],
-        "__lastRunChainForTests": [
-          "export declare function __lastRunChainForTests(root: string): Promise<void> | undefined;"
-        ],
-        "ensureLastRunMigrated": [
-          "export declare function ensureLastRunMigrated(root: string, warn?: (msg: string) => void): Promise<{ changed: boolean; before: Partial<Record<ReportPeriod, string>>; after: Partial<Record<ReportPeriod, string>>; }"
-        ],
-        "readLastRun": [
-          "export declare function readLastRun(root: string): Promise<Partial<Record<ReportPeriod, string>>>;"
-        ],
-        "updateLastRun": [
-          "export declare function updateLastRun(root: string, patch: (prev: Partial<Record<ReportPeriod, string>>) => Partial<Record<ReportPeriod, string>> | Promise<Partial<Record<ReportPeriod, string>>>): Promise<void>;"
-        ],
-        "writeLastRun": [
-          "export declare function writeLastRun(root: string, state: Partial<Record<ReportPeriod, string>>): Promise<void>;"
-        ],
-        "parseReportIndexLines": [
-          "export declare function parseReportIndexLines(raw: string): ReportMeta[];"
-        ],
-        "makeDueReportExecutor": [
-          "export declare function makeDueReportExecutor(deps: DueExecutorDeps): (input: ReportTaskInput) => Promise<ReportTaskResult>;"
-        ],
-        "reportBodyToHtml": [
-          "export declare function reportBodyToHtml(bodyText: string): string;"
-        ],
-        "PERIOD_BUCKETS": [
-          "export declare const PERIOD_BUCKETS: ReadonlyArray<{ name: string; from: number; to: number; }"
-        ],
-        "applyPromptTemplate": [
-          "export declare function applyPromptTemplate(template: string, statsJson: string): string;"
-        ],
-        "buildStatsSnapshot": [
-          "export declare function buildStatsSnapshot(input: { period: ReportPeriod; startDay: string; endDay: string; buckets: Array<{ day: string; providers: Array<{ provider: string; model: string | null; cell: TrendCell; }>; }>; dirRows?: TrendDirRow[]; hourRows?: TrendHourRow[]; prevTotal: number | null; }"
-        ],
-        "generateReport": [
-          "export declare function generateReport(opts: GenerateReportOptions): Promise<ReportResult>;"
-        ],
-        "makeListDirs": [
-          "export declare function makeListDirs(trend: TrendTracker): () => Array<{ dir: string; calls: number; total: number | null; }"
-        ],
-        "__clearReportIndexCacheForTests": [
-          "export declare function __clearReportIndexCacheForTests(): void;"
-        ],
-        "__reportIndexCacheStatsForTests": [
-          "export declare function __reportIndexCacheStatsForTests(): { hits: number; misses: number; };"
-        ],
-        "notifyReport": [
-          "export declare function notifyReport(ctx: Context, reportCfg: ReportConfig, meta: ReportMeta, snapshot: ReportStatsSnapshot, sanitizeDiagnostic: (s: string) => string): void;"
-        ],
-        "optionalNotifier": [
-          "export declare function optionalNotifier(ctx: Context): { send: (req: { source: string; kind: string; severity: string; title: string; body: string; }) => Promise<unknown>; registerKind?: (reg: { id: string; label: string; }) => unknown; }"
-        ],
-        "persistReport": [
-          "export declare function persistReport(historyRoot: string, meta: ReportMeta, bodyText: string): Promise<void>;"
-        ],
-        "prevWindowTotal": [
-          "export declare function prevWindowTotal(buckets: Array<{ day: string; providers: Array<{ provider: string; model: string | null; cell: TrendCell; }>; }"
-        ],
-        "readReportIndex": [
-          "export declare function readReportIndex(historyRoot: string): Promise<ReportMeta[]>;"
-        ],
-        "reportHtmlFile": [
-          "export declare function reportHtmlFile(root: string, period: ReportPeriod, key: string): string;"
-        ],
-        "reportIndexFile": [
-          "export declare function reportIndexFile(root: string): string;"
-        ],
-        "reportMetaFile": [
-          "export declare function reportMetaFile(root: string, period: ReportPeriod, key: string): string;"
-        ],
-        "reportsDir": [
-          "export declare function reportsDir(root: string): string;"
-        ],
-        "runDueReport": [
-          "export declare function runDueReport(params: { due: DueReport; trend: TrendTracker; ctx: Context; reportCfg: ReportConfig; historyRoot: string; sanitizeDiagnostic: (s: string) => string; }"
-        ],
-        "summaryOf": [
-          "export declare function summaryOf(snapshot: ReportStatsSnapshot): ReportMetaSummary;"
-        ],
         "createReportRoutes": [
           "export declare function createReportRoutes(routes: { reportConfig: string; reportModels: string; reports: string; reportDetail: string; reportGenerate: string; reportGenerateStatus: string; }"
         ],
@@ -2985,6 +2898,21 @@
         "handleUiConfig": [
           "export declare function handleUiConfig(req: IncomingMessage, res: ServerResponse, context: UiRoutesContext): Promise<void>;"
         ],
+        "registerBuiltinAdapters": [
+          "export declare function registerBuiltinAdapters(port: BuiltinRegistryPort, adapters: readonly UsageStatsAdapter[]): void;"
+        ],
+        "normalizeReportConfig": [
+          "export declare function normalizeReportConfig(raw: unknown): ReportConfig;"
+        ],
+        "normalizeReportDirectories": [
+          "export declare function normalizeReportDirectories(raw: unknown): string[];"
+        ],
+        "parseHHMM": [
+          "export declare function parseHHMM(v: unknown): { h: number; m: number; }"
+        ],
+        "promptFor": [
+          "export declare function promptFor(cfg: ReportConfig, period: ReportPeriod): string;"
+        ],
         "DEFAULT_DAILY_PROMPT": [
           "export declare const DEFAULT_DAILY_PROMPT: string;"
         ],
@@ -2996,9 +2924,6 @@
         ],
         "DEFAULT_PROMPT_TEMPLATE": [
           "export declare const DEFAULT_PROMPT_TEMPLATE: string;"
-        ],
-        "DEFAULT_REPORT_CONFIG": [
-          "export declare const DEFAULT_REPORT_CONFIG: ReportConfig;"
         ],
         "DEFAULT_WEEKLY_PROMPT": [
           "export declare const DEFAULT_WEEKLY_PROMPT: string;"
@@ -3042,17 +2967,11 @@
         "LEGACY_WEEKLY_PROMPT_V4": [
           "export declare const LEGACY_WEEKLY_PROMPT_V4: string;"
         ],
-        "normalizeReportConfig": [
-          "export declare function normalizeReportConfig(raw: unknown): ReportConfig;"
+        "ReportConfigService": [
+          "export declare class ReportConfigService { private cfg; private chain; private readonly root; private readonly onUpdate?; constructor(opts: ReportConfigServiceOptions); get(): ReportConfig; update(next: ReportConfig): Promise<void>; }"
         ],
-        "normalizeReportDirectories": [
-          "export declare function normalizeReportDirectories(raw: unknown): string[];"
-        ],
-        "parseHHMM": [
-          "export declare function parseHHMM(v: unknown): { h: number; m: number; }"
-        ],
-        "promptFor": [
-          "export declare function promptFor(cfg: ReportConfig, period: ReportPeriod): string;"
+        "DEFAULT_REPORT_CONFIG": [
+          "export declare const DEFAULT_REPORT_CONFIG: ReportConfig;"
         ],
         "readReportConfig": [
           "export declare function readReportConfig(root: string): Promise<ReportConfig>;"
@@ -3062,6 +2981,87 @@
         ],
         "writeReportConfig": [
           "export declare function writeReportConfig(root: string, cfg: ReportConfig): Promise<void>;"
+        ],
+        "makeDueReportExecutor": [
+          "export declare function makeDueReportExecutor(deps: DueExecutorDeps): (input: ReportTaskInput) => Promise<ReportTaskResult>;"
+        ],
+        "reportBodyToHtml": [
+          "export declare function reportBodyToHtml(bodyText: string): string;"
+        ],
+        "PERIOD_BUCKETS": [
+          "export declare const PERIOD_BUCKETS: ReadonlyArray<{ name: string; from: number; to: number; }"
+        ],
+        "applyPromptTemplate": [
+          "export declare function applyPromptTemplate(template: string, statsJson: string): string;"
+        ],
+        "buildStatsSnapshot": [
+          "export declare function buildStatsSnapshot(input: { period: ReportPeriod; startDay: string; endDay: string; buckets: Array<{ day: string; providers: Array<{ provider: string; model: string | null; cell: TrendCell; }>; }>; dirRows?: TrendDirRow[]; hourRows?: TrendHourRow[]; prevTotal: number | null; }"
+        ],
+        "generateReport": [
+          "export declare function generateReport(opts: GenerateReportOptions): Promise<ReportResult>;"
+        ],
+        "makeListDirs": [
+          "export declare function makeListDirs(trend: TrendTracker): () => Array<{ dir: string; calls: number; total: number | null; }"
+        ],
+        "parseReportIndexLines": [
+          "export declare function parseReportIndexLines(raw: string): ReportMeta[];"
+        ],
+        "__clearReportIndexCacheForTests": [
+          "export declare function __clearReportIndexCacheForTests(): void;"
+        ],
+        "__reportIndexCacheStatsForTests": [
+          "export declare function __reportIndexCacheStatsForTests(): { hits: number; misses: number; };"
+        ],
+        "notifyReport": [
+          "export declare function notifyReport(ctx: Context, reportCfg: ReportConfig, meta: ReportMeta, snapshot: ReportStatsSnapshot, sanitizeDiagnostic: (s: string) => string): void;"
+        ],
+        "optionalNotifier": [
+          "export declare function optionalNotifier(ctx: Context): { send: (req: { source: string; kind: string; severity: string; title: string; body: string; }) => Promise<unknown>; registerKind?: (reg: { id: string; label: string; }) => unknown; }"
+        ],
+        "persistReport": [
+          "export declare function persistReport(historyRoot: string, meta: ReportMeta, bodyText: string): Promise<void>;"
+        ],
+        "prevWindowTotal": [
+          "export declare function prevWindowTotal(buckets: Array<{ day: string; providers: Array<{ provider: string; model: string | null; cell: TrendCell; }>; }"
+        ],
+        "readReportIndex": [
+          "export declare function readReportIndex(historyRoot: string): Promise<ReportMeta[]>;"
+        ],
+        "reportHtmlFile": [
+          "export declare function reportHtmlFile(root: string, period: ReportPeriod, key: string): string;"
+        ],
+        "reportIndexFile": [
+          "export declare function reportIndexFile(root: string): string;"
+        ],
+        "reportMetaFile": [
+          "export declare function reportMetaFile(root: string, period: ReportPeriod, key: string): string;"
+        ],
+        "reportsDir": [
+          "export declare function reportsDir(root: string): string;"
+        ],
+        "runDueReport": [
+          "export declare function runDueReport(params: { due: DueReport; trend: TrendTracker; ctx: Context; reportCfg: ReportConfig; historyRoot: string; sanitizeDiagnostic: (s: string) => string; }"
+        ],
+        "summaryOf": [
+          "export declare function summaryOf(snapshot: ReportStatsSnapshot): ReportMetaSummary;"
+        ],
+        "HistoryStore": [
+          "export declare class HistoryStore { private readonly root; private readonly maxAgeMs; private readonly maxSizeBytes; private readonly writeChains; constructor(opts: { root: string; maxAgeMs?: number; maxSizeBytes?: number; }); private dirOf; private fileOf; append(provider: string, name: string, entry: HistoryEntry): Promise<void>; readDay(provider: string, name: string, time: number): Promise<HistoryEntry[]>; query(provider: string, name: string, range: { start: number; end: number; }): Promise<{ entries: HistoryEntry[]; }>; last(provider: string, name: string): Promise<HistoryEntry | null>; maybePrune(provider: string, name: string): Promise<void>; pruneAll(): Promise<void>; exportAll(provider: string, name: string): Promise<HistoryEntry[]>; writeDirect(provider: string, name: string, day: number, entries: HistoryEntry[]): Promise<void>; private writeOnce; }"
+        ],
+        "legacySampleToData": [
+          "export declare function legacySampleToData(columns: LegacyV3Bucket[\"columns\"], sample: Array<number | null>): Record<string, unknown>;"
+        ],
+        "listAdapters": [
+          "export declare function listAdapters(root: string): Promise<Array<{ provider: string; name: string; }"
+        ],
+        "migrateLegacyV3": [
+          "export declare function migrateLegacyV3(root: string, store: HistoryStore): Promise<number>;"
+        ],
+        "parseJsonl": [
+          "export declare function parseJsonl(raw: string): HistoryEntry[];"
+        ],
+        "startOfDay": [
+          "export declare function startOfDay(time: number): number;"
         ],
         "LAST_RUN_SCHEMA": [
           "export declare const LAST_RUN_SCHEMA = 2;"
@@ -3090,8 +3090,104 @@
         "ReportScheduler": [
           "export declare class ReportScheduler { private config; private timer; private disposed; private readonly root; private readonly onDue; private readonly now; private readonly tickMs; private readonly warn; private constructor(); static start(opts: ReportSchedulerOptions): ReportScheduler; updateConfig(config: ReportConfig): void; tick(): Promise<void>; dispose(): void; }"
         ],
+        "__lastRunChainForTests": [
+          "export declare function __lastRunChainForTests(root: string): Promise<void> | undefined;"
+        ],
+        "ensureLastRunMigrated": [
+          "export declare function ensureLastRunMigrated(root: string, warn?: (msg: string) => void): Promise<{ changed: boolean; before: Partial<Record<ReportPeriod, string>>; after: Partial<Record<ReportPeriod, string>>; }"
+        ],
+        "readLastRun": [
+          "export declare function readLastRun(root: string): Promise<Partial<Record<ReportPeriod, string>>>;"
+        ],
+        "updateLastRun": [
+          "export declare function updateLastRun(root: string, patch: (prev: Partial<Record<ReportPeriod, string>>) => Partial<Record<ReportPeriod, string>> | Promise<Partial<Record<ReportPeriod, string>>>): Promise<void>;"
+        ],
+        "writeLastRun": [
+          "export declare function writeLastRun(root: string, state: Partial<Record<ReportPeriod, string>>): Promise<void>;"
+        ],
         "ReportTaskQueue": [
           "export declare class ReportTaskQueue { private readonly tasks; private tail; private readonly executor; private readonly now; private readonly warn; private readonly ttlMs; private readonly maxTasks; constructor(opts: ReportTaskQueueOptions); submit(input: ReportTaskInput): { taskId: string; existing: boolean; }; get(taskId: string): ReportTask | undefined; private run; private prune; }"
+        ],
+        "LAYER_ERROR_KEYS": [
+          "export declare const LAYER_ERROR_KEYS: readonly LayerErrorKey[];"
+        ],
+        "LAYER_ERROR_MAX_RECENT_DEFAULT": [
+          "export declare const LAYER_ERROR_MAX_RECENT_DEFAULT = 10;"
+        ],
+        "makeLayerErrorSurface": [
+          "export declare function makeLayerErrorSurface(opts?: LayerErrorSurfaceOptions): LayerErrorSurface;"
+        ],
+        "makeNoopLayerErrorSurface": [
+          "export declare function makeNoopLayerErrorSurface(): LayerErrorSurface;"
+        ],
+        "STEPS": [
+          "export declare const STEPS: readonly UpgradeStep[];"
+        ],
+        "pendingSteps": [
+          "export declare function pendingSteps(steps: readonly UpgradeStep[], recorded: string): UpgradeStep[];"
+        ],
+        "reportGap": [
+          "export declare function reportGap(recorded: string, target: string, logger: UpgradeDeps[\"logger\"]): void;"
+        ],
+        "runUpgradeChain": [
+          "export declare function runUpgradeChain(deps: UpgradeDeps): Promise<void>;"
+        ],
+        "migrateReportConfig": [
+          "export declare function migrateReportConfig(deps: UpgradeDeps): Promise<void>;"
+        ],
+        "installUpgrade": [
+          "export declare function installUpgrade(deps: UpgradeDeps): Promise<void>;"
+        ],
+        "releaseUpgrade": [
+          "export declare function releaseUpgrade(): void;"
+        ],
+        "migrateLastRun": [
+          "export declare function migrateLastRun(deps: UpgradeDeps): Promise<void>;"
+        ],
+        "upgradeRunner": [
+          "export declare const upgradeRunner: UpgradeRunner;"
+        ],
+        "MIGRATED_SUFFIX": [
+          "export declare const MIGRATED_SUFFIX = \".migrated.bak\";"
+        ],
+        "legacyConfigFile": [
+          "export declare function legacyConfigFile(root: string): string;"
+        ],
+        "legacyLastRunFile": [
+          "export declare function legacyLastRunFile(root: string): string;"
+        ],
+        "migrateStorageLayout": [
+          "export declare function migrateStorageLayout(deps: UpgradeDeps): Promise<void>;"
+        ],
+        "settleOne": [
+          "export declare function settleOne(source: string, target: string, initial: string | null, deps: UpgradeDeps): Promise<void>;"
+        ],
+        "targetConfigFile": [
+          "export declare function targetConfigFile(root: string): string;"
+        ],
+        "targetLastRunFile": [
+          "export declare function targetLastRunFile(root: string): string;"
+        ],
+        "writeFileAtomic": [
+          "export declare function writeFileAtomic(file: string, data: string): Promise<void>;"
+        ],
+        "compareVersions": [
+          "export declare function compareVersions(left: string, right: string): number;"
+        ],
+        "packageRootFrom": [
+          "export declare function packageRootFrom(fromDir: string): string | undefined;"
+        ],
+        "pluginVersion": [
+          "export declare function pluginVersion(): string;"
+        ],
+        "readStoredVersion": [
+          "export declare function readStoredVersion(root: string): Promise<string>;"
+        ],
+        "upgradeVersionFile": [
+          "export declare function upgradeVersionFile(root: string): string;"
+        ],
+        "writeStoredVersion": [
+          "export declare function writeStoredVersion(root: string, version: string): Promise<void>;"
         ],
         "ADAPTER_UTILS": [
           "export declare const ADAPTER_UTILS: AdapterUtils;"

@@ -152,8 +152,8 @@ export {
   migrateLegacyV3,
   legacySampleToData,
   listAdapters,
-} from "../domain1/history/interface.ts";
-export type { HistoryEntry } from "../domain1/history/interface.ts";
+} from "../server/history/interface.ts";
+export type { HistoryEntry } from "../server/history/interface.ts";
 export { safeFetchData, safeFormat, fetchWithTimeout } from "../domain1/pipeline/interface.ts";
 export { sanitizeHtml } from "../shared/interface.ts";
 // 客户端行为纯函数（设置页列表拆分/徽标文案，经此透出供单元测试）。

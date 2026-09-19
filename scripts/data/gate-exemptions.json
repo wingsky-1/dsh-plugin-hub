@@ -202,6 +202,12 @@
     },
     {
       "gate": "verify-dir-imports",
+      "path": "dsh-provider-usage:apply|server/history",
+      "reason": "#768 D5：组合根经 history 门面装配按天分片 JSONL 存储 + v3 迁移（全经门面，禁直引实现文件，D5 前为基线内 apply|domain1/history，边归属同步迁移）。树内 integration/history 用例锁定。长期条目。",
+      "trackingIssue": "#768"
+    },
+    {
+      "gate": "verify-dir-imports",
       "path": "dsh-provider-usage:shared|server/adapters",
       "reason": "#768 D4：共享配置经 adapters 门面取 OPENCODE_GO_PROVIDER 默认值（D4 前为 shared|domain1/adapters，边归属同步迁移；共享层反向值引域的存量形态，见 dsh-mcp-manager v5 对账注记）。长期条目。",
       "trackingIssue": "#768"
