@@ -50,8 +50,8 @@ function collectPackages() {
 }
 
 /** 取 `--log-file value` / `--log-file=value`；未给出返回 null。 */
-export function parseLogFile(argv) {
-  const eq = argv.findLast((a) => a.startsWith("--log-file="));
+export function parseLogFile(argv: string[]): string | null {
+  const eq = argv.findLast((a: string) => a.startsWith("--log-file="));
   if (eq !== undefined) {
     const value = eq.slice("--log-file=".length);
     return value === "" ? null : value;
@@ -66,29 +66,30 @@ export function parseLogFile(argv) {
  * 落盘：父目录逐级建出（调用方只传路径，不负责建目录，避免 workflow 为此加前序步骤）。
  * 失败抛错，由 main 转成 fail-closed（exit 1）：证据写不下来不得静默放行。
  */
-export function writeLogFile(path, text) {
+export function writeLogFile(path: string, text: string): void {
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, text, "utf8");
 }
 
-export function main(argv) {
+export function main(argv: string[]): number {
   const logFile = parseLogFile(argv);
   // 镜像行：stdout / stderr 各自保持原样输出，同时收一份文本用于落盘。
-  const mirrored = [];
-  const emit = (line) => {
+  const mirrored: string[] = [];
+  const emit = (line: string): void => {
     mirrored.push(line);
     console.log(line);
   };
-  const emitErr = (line) => {
+  const emitErr = (line: string): void => {
     mirrored.push(line);
     console.error(line);
   };
-  const flush = () => {
+  const flush = (): void => {
     if (logFile === null) return;
     try {
       writeLogFile(logFile, mirrored.length === 0 ? "" : mirrored.join("\n") + "\n");
     } catch (err) {
-      console.error("[verify-version] 落盘失败（" + logFile + "）：" + err.message);
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error("[verify-version] 落盘失败（" + logFile + "）：" + msg);
       process.exit(1);
     }
   };
