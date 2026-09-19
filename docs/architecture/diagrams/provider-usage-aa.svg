@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg viewBox="0 0 1160 684" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="aa-title aa-desc">
+      <title id="aa-title">AA：组合根、十三域分工与共享一叶（目标）</title>
+      <desc id="aa-desc">上带为 src/index.ts 组合根装配顺序（upgrade 链最先，逆序释放）；下图为 server 十三域：upgrade、schedule、config、execute、adapters、registry、pipeline、collect、aggregate、history、data-routes、report-routes、ui-routes，外加 server/shared 共享叶 errsurf（层非域）。节点名与锚 v3 第 2 节同词。</desc>
+      <defs><style>@import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&amp;family=Geist:wght@400;500;600&amp;family=Geist+Mono:wght@400;500;600&amp;display=swap');</style>
+        <pattern id="dots" width="22" height="22" patternUnits="userSpaceOnUse">
+          <circle cx="1" cy="1" r="0.9" fill="rgba(45,49,66,0.10)"/>
+        </pattern>
+        <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/></marker>
+        <marker id="arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#eb6c36"/></marker>
+      </defs>
+
+      <rect width="100%" height="100%" fill="#f5f5f5"/>
+      <rect width="100%" height="100%" fill="url(#dots)" opacity="0.55"/>
+
+      <rect x="40" y="16" width="1080" height="100" rx="8" fill="rgba(235,108,54,0.05)" stroke="#eb6c36" stroke-width="1"/>
+      <text x="60" y="40" fill="#eb6c36" font-size="13" font-family="'Geist Mono', monospace" letter-spacing="0.14em">装配顺序 · SRC/INDEX.TS 组合根（UPGRADE 链最先）</text>
+
+      <g id="aa-seq" font-family="'Geist', sans-serif" font-size="15" text-anchor="middle">
+        <rect x="60" y="50" width="155" height="52" rx="7" fill="#ffffff" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+        <text x="137" y="83" fill="#2d3142">组合根</text>
+        <rect x="236" y="50" width="155" height="52" rx="7" fill="#ffffff" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+        <text x="313" y="83" fill="#2d3142">upgrade 最先</text>
+        <rect x="412" y="50" width="155" height="52" rx="7" fill="#ffffff" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+        <text x="489" y="83" fill="#2d3142">业务域装配</text>
+        <rect x="588" y="50" width="155" height="52" rx="7" fill="#ffffff" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+        <text x="665" y="83" fill="#2d3142">三路由装配</text>
+        <rect x="764" y="50" width="155" height="52" rx="7" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1.4"/>
+        <text x="841" y="83" fill="#2d3142">逆序释放</text>
+        <rect x="940" y="50" width="155" height="52" rx="7" fill="#ffffff" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+        <text x="1017" y="83" fill="#2d3142">复位标记</text>
+      </g>
+      <path d="M217 76 H234" fill="none" stroke="#4f5d75" stroke-width="1.6" marker-end="url(#arrow)"/>
+      <path d="M393 76 H410" fill="none" stroke="#4f5d75" stroke-width="1.6" marker-end="url(#arrow)"/>
+      <path d="M569 76 H586" fill="none" stroke="#4f5d75" stroke-width="1.6" marker-end="url(#arrow)"/>
+      <path d="M745 76 H762" fill="none" stroke="#4f5d75" stroke-width="1.6" marker-end="url(#arrow)"/>
+      <path d="M921 76 H938" fill="none" stroke="#4f5d75" stroke-width="1.6" marker-end="url(#arrow)"/>
+
+      <text x="40" y="142" fill="#4f5d75" font-size="13" font-family="'Geist Mono', monospace" letter-spacing="0.14em">域分工 · 13 域 + SERVER/SHARED 一叶（层非域）</text>
+
+      <g id="aa-upgrade">
+        <rect x="40" y="154" width="230" height="100" rx="8" fill="#f1f5fb" stroke="#2e5aa8" stroke-width="1.6"/>
+        <text x="155" y="192" fill="#2d3142" font-size="20" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">upgrade</text>
+        <text x="155" y="218" fill="#4f5d75" font-size="14" font-family="'Geist', sans-serif" text-anchor="middle">单一迁移域 · 三步</text>
+      </g>
+      <g id="aa-schedule">
+        <rect x="310" y="154" width="230" height="100" rx="8" fill="#ffffff" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+        <text x="425" y="192" fill="#2d3142" font-size="20" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">schedule</text>
+        <text x="425" y="218" fill="#4f5d75" font-size="14" font-family="'Geist', sans-serif" text-anchor="middle">到期判定 + 串行执行</text>
+      </g>
+      <g id="aa-config">
+        <rect x="580" y="154" width="230" height="100" rx="8" fill="#f1f5fb" stroke="#2e5aa8" stroke-width="1.6"/>
+        <text x="695" y="192" fill="#2d3142" font-size="20" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">config</text>
+        <text x="695" y="218" fill="#4f5d75" font-size="14" font-family="'Geist', sans-serif" text-anchor="middle">report-config 归此域</text>
+      </g>
+      <g id="aa-execute">
+        <rect x="850" y="154" width="230" height="100" rx="8" fill="#ffffff" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+        <text x="965" y="192" fill="#2d3142" font-size="20" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">execute</text>
+        <text x="965" y="218" fill="#4f5d75" font-size="14" font-family="'Geist', sans-serif" text-anchor="middle">parse + runner 记忆化</text>
+      </g>
+
+      <g id="aa-adapters">
+        <rect x="40" y="286" width="230" height="100" rx="8" fill="#ffffff" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+        <text x="155" y="324" fill="#2d3142" font-size="20" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">adapters</text>
+        <text x="155" y="350" fill="#4f5d75" font-size="14" font-family="'Geist', sans-serif" text-anchor="middle">契约校验 · fail-fast</text>
+      </g>
+      <g id="aa-registry">
+        <rect x="310" y="286" width="230" height="100" rx="8" fill="#ffffff" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+        <text x="425" y="324" fill="#2d3142" font-size="20" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">registry</text>
+        <text x="425" y="350" fill="#4f5d75" font-size="14" font-family="'Geist', sans-serif" text-anchor="middle">候选 + 唯一启用</text>
+      </g>
+      <g id="aa-pipeline">
+        <rect x="580" y="286" width="230" height="100" rx="8" fill="#ffffff" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+        <text x="695" y="324" fill="#2d3142" font-size="20" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">pipeline</text>
+        <text x="695" y="350" fill="#4f5d75" font-size="14" font-family="'Geist', sans-serif" text-anchor="middle">取数 · 渲染管道</text>
+      </g>
+      <g id="aa-collect">
+        <rect x="850" y="286" width="230" height="100" rx="8" fill="#ffffff" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+        <text x="965" y="324" fill="#2d3142" font-size="20" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">collect</text>
+        <text x="965" y="350" fill="#4f5d75" font-size="14" font-family="'Geist', sans-serif" text-anchor="middle">60s + 5min 汇入</text>
+      </g>
+
+      <g id="aa-aggregate">
+        <rect x="40" y="418" width="230" height="100" rx="8" fill="#ffffff" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+        <text x="155" y="456" fill="#2d3142" font-size="20" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">aggregate</text>
+        <text x="155" y="482" fill="#4f5d75" font-size="14" font-family="'Geist', sans-serif" text-anchor="middle">derive / align</text>
+      </g>
+      <g id="aa-history">
+        <rect x="310" y="418" width="230" height="100" rx="8" fill="#f1f5fb" stroke="#2e5aa8" stroke-width="1.6"/>
+        <text x="425" y="456" fill="#2d3142" font-size="20" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">history</text>
+        <text x="425" y="482" fill="#4f5d75" font-size="14" font-family="'Geist', sans-serif" text-anchor="middle">天分片 JSONL 落盘</text>
+      </g>
+      <g id="aa-data-routes">
+        <rect x="580" y="418" width="230" height="100" rx="8" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1.6"/>
+        <text x="695" y="456" fill="#2d3142" font-size="20" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">data-routes</text>
+        <text x="695" y="482" fill="#4f5d75" font-size="14" font-family="'Geist', sans-serif" text-anchor="middle">数据面</text>
+      </g>
+      <g id="aa-report-routes">
+        <rect x="850" y="418" width="230" height="100" rx="8" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1.6"/>
+        <text x="965" y="456" fill="#2d3142" font-size="20" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">report-routes</text>
+        <text x="965" y="482" fill="#4f5d75" font-size="14" font-family="'Geist', sans-serif" text-anchor="middle">执行面</text>
+      </g>
+
+      <g id="aa-ui-routes">
+        <rect x="40" y="550" width="230" height="100" rx="8" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1.6"/>
+        <text x="155" y="588" fill="#2d3142" font-size="20" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">ui-routes</text>
+        <text x="155" y="614" fill="#4f5d75" font-size="14" font-family="'Geist', sans-serif" text-anchor="middle">一域四块</text>
+      </g>
+      <g id="aa-errsurf">
+        <rect x="310" y="550" width="230" height="100" rx="8" fill="#ffffff" stroke="#7a8399" stroke-width="1.2" stroke-dasharray="6 4"/>
+        <text x="425" y="588" fill="#2d3142" font-size="20" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">errsurf</text>
+        <text x="425" y="614" fill="#4f5d75" font-size="14" font-family="'Geist', sans-serif" text-anchor="middle">层非域 · 三域写 + 健康读</text>
+      </g>
+
+      <text x="580" y="592" fill="#4f5d75" font-size="13" font-family="'Geist Mono', monospace">errsurf 为 server/shared 共享叶（层非域，不计入 13 域）</text>
+      <text x="580" y="616" fill="#4f5d75" font-size="13" font-family="'Geist Mono', monospace">common 逐件：last-run→upgrade · per-root 链→schedule · parse+runner→execute</text>
+
+      <path d="M272 204 H308" fill="none" stroke="#4f5d75" stroke-width="2" marker-end="url(#arrow)"/>
+      <text x="290" y="196" fill="#4f5d75" font-size="14" font-family="'Geist', sans-serif" text-anchor="middle" style="paint-order:stroke;stroke:#f5f5f5;stroke-width:5px">写面落盘</text>
+    </svg>

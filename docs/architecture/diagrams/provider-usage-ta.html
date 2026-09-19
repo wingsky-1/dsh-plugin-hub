@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>dsh-provider-usage TA 挂载构建与安全门禁（目标）</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --color-paper:   #f5f5f5;
+      --color-ink:     #2d3142;
+      --color-muted:   #4f5d75;
+      --color-accent:  #eb6c36;
+      --font-sans:     'Geist', system-ui, sans-serif;
+      --font-serif:    'Instrument Serif', serif;
+      --font-mono:     'Geist Mono', ui-monospace, monospace;
+    }
+    body {
+      font-family: var(--font-sans);
+      background: var(--color-paper);
+      color: var(--color-ink);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 2rem;
+    }
+    .frame { max-width: 1240px; width: 100%; }
+    .eyebrow {
+      font-family: var(--font-mono); font-size: 0.66rem; font-weight: 500;
+      letter-spacing: 0.18em; text-transform: uppercase; color: var(--color-muted);
+      margin-bottom: 0.5rem;
+    }
+    h1 {
+      font-family: var(--font-serif); font-size: clamp(1.4rem, 2.2vw + 0.7rem, 1.9rem);
+      font-weight: 400; letter-spacing: -0.02em; line-height: 1.15; color: var(--color-ink);
+      margin-bottom: 0.4rem;
+    }
+    .meta { font-family: var(--font-mono); font-size: 0.72rem; color: var(--color-muted); margin-bottom: 1.25rem; }
+    svg { width: 100%; min-width: 1040px; display: block; }
+  </style>
+</head>
+<body>
+  <div class="frame">
+    <p class="eyebrow">Architecture &middot; dsh-provider-usage &middot; TA</p>
+    <h1>挂载构建与安全门禁（目标）</h1>
+    <p class="meta">目标锚 draft-768-target-arch.md v3 &sect;4 &middot; SVG 讲结构（mermaid 讲关系，非同图两画法）</p>
+
+    <svg viewBox="0 0 1160 460" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="ta-title ta-desc">
+      <title id="ta-title">TA：挂载构建与安全门禁（目标）</title>
+      <desc id="ta-desc">上为挂载与构建：cordis 挂载、esbuild 内联、catalog 锁版；中为安全边界：5 秒超时合并、HTML 双层净化、回环围栏；下为门禁证据：环与直引清零、导出零漂移、等价标级对账。节点名与锚 v3 第 4 节同词。</desc>
+      <defs>
+        <pattern id="dots" width="22" height="22" patternUnits="userSpaceOnUse">
+          <circle cx="1" cy="1" r="0.9" fill="rgba(45,49,66,0.10)"/>
+        </pattern>
+        <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/></marker>
+        <marker id="arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#eb6c36"/></marker>
+      </defs>
+
+      <rect width="100%" height="100%" fill="#f5f5f5"/>
+      <rect width="100%" height="100%" fill="url(#dots)" opacity="0.55"/>
+
+      <text x="40" y="40" fill="#4f5d75" font-size="13" font-family="'Geist Mono', monospace" letter-spacing="0.14em">挂载与构建</text>
+
+      <g id="ta-mount">
+        <rect x="40" y="56" width="340" height="96" rx="8" fill="#ffffff" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+        <text x="210" y="102" fill="#2d3142" font-size="20" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">挂载</text>
+        <text x="210" y="128" fill="#4f5d75" font-size="14" font-family="'Geist', sans-serif" text-anchor="middle">cordis.patch.yml + profile</text>
+      </g>
+      <g id="ta-build">
+        <rect x="410" y="56" width="340" height="96" rx="8" fill="#ffffff" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+        <text x="580" y="102" fill="#2d3142" font-size="20" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">构建</text>
+        <text x="580" y="128" fill="#4f5d75" font-size="14" font-family="'Geist', sans-serif" text-anchor="middle">esbuild 内联 + 许可证归集</text>
+      </g>
+      <g id="ta-catalog">
+        <rect x="780" y="56" width="340" height="96" rx="8" fill="#ffffff" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+        <text x="950" y="102" fill="#2d3142" font-size="20" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">catalog 锁版</text>
+        <text x="950" y="128" fill="#4f5d75" font-size="14" font-family="'Geist', sans-serif" text-anchor="middle">宿主类型 import type</text>
+      </g>
+
+      <text x="40" y="188" fill="#4f5d75" font-size="13" font-family="'Geist Mono', monospace" letter-spacing="0.14em">安全边界</text>
+
+      <g id="ta-timeout">
+        <rect x="40" y="204" width="340" height="96" rx="8" fill="#ffffff" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+        <text x="210" y="250" fill="#2d3142" font-size="20" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">5s 超时合并</text>
+        <text x="210" y="276" fill="#4f5d75" font-size="14" font-family="'Geist', sans-serif" text-anchor="middle">取数信号合并 abort</text>
+      </g>
+      <g id="ta-sanitize">
+        <rect x="410" y="204" width="340" height="96" rx="8" fill="#f1f5fb" stroke="#2e5aa8" stroke-width="1.6"/>
+        <text x="580" y="250" fill="#2d3142" font-size="20" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">HTML 双层净化</text>
+        <text x="580" y="276" fill="#4f5d75" font-size="14" font-family="'Geist', sans-serif" text-anchor="middle">esc 义务 + 结构化兜底</text>
+      </g>
+      <g id="ta-loopback">
+        <rect x="780" y="204" width="340" height="96" rx="8" fill="#f1f5fb" stroke="#2e5aa8" stroke-width="1.6"/>
+        <text x="950" y="250" fill="#2d3142" font-size="20" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">回环围栏</text>
+        <text x="950" y="276" fill="#4f5d75" font-size="14" font-family="'Geist', sans-serif" text-anchor="middle">三路由 403 先于 405</text>
+      </g>
+
+      <text x="40" y="336" fill="#4f5d75" font-size="13" font-family="'Geist Mono', monospace" letter-spacing="0.14em">门禁证据</text>
+
+      <g id="ta-gate-ring">
+        <rect x="40" y="352" width="340" height="96" rx="8" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1.6"/>
+        <text x="210" y="398" fill="#2d3142" font-size="20" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">环与直引清零</text>
+        <text x="210" y="424" fill="#4f5d75" font-size="14" font-family="'Geist', sans-serif" text-anchor="middle">组合根三纪律同批验证</text>
+      </g>
+      <g id="ta-gate-export">
+        <rect x="410" y="352" width="340" height="96" rx="8" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1.6"/>
+        <text x="580" y="398" fill="#2d3142" font-size="20" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">导出面零漂移</text>
+        <text x="580" y="424" fill="#4f5d75" font-size="14" font-family="'Geist', sans-serif" text-anchor="middle">门面接线断注入必须红</text>
+      </g>
+      <g id="ta-gate-equiv">
+        <rect x="780" y="352" width="340" height="96" rx="8" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1.6"/>
+        <text x="950" y="398" fill="#2d3142" font-size="20" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">等价标级对账</text>
+        <text x="950" y="424" fill="#4f5d75" font-size="14" font-family="'Geist', sans-serif" text-anchor="middle">基线逐条对账 · 锁与幂等</text>
+      </g>
+    </svg>
+  </div>
+</body>
+</html>
