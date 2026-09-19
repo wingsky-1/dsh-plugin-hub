@@ -84,6 +84,7 @@ describe("SettingsCard 输入与显示契约", () => {
     ["httpsPort", "httpsPort", "4443", 4443],
     ["certFile", "tlsCertFile", "/tmp/cert.pem", "/tmp/cert.pem"],
     ["keyFile", "tlsKeyFile", "/tmp/key.pem", "/tmp/key.pem"],
+    ["caCertFile", "tlsCaCertFile", "/tmp/ca.pem", "/tmp/ca.pem"],
     ["compressLevel", "httpCompressLevel", "3", 3],
     ["wsPaths", "wsCompressPaths", " /a, , /b ", ["/a", "/b"]],
   ] as const)("%s 只写对应字段", async (label, key, text, value) => {
@@ -126,6 +127,11 @@ describe("SettingsCard 输入与显示契约", () => {
     expect(view.queryByText("ownsHostCompatHint")).toBe(null);
     fireEvent.click(view.getByLabelText("ownsHostCompat"));
     expect(view.getByText("ownsHostCompatHint").className).toBe("lp-set-warn");
+  });
+  it("CA 下载为直接导航链接（禁 fetch/blob，iOS 安装引导要求）", async () => {
+    const view = await mountCard();
+    const link = view.getByText("caDownloadLink").closest("a");
+    expect(link?.getAttribute("href") ?? "").toMatch(/\/api\/dsh-lan-proxy\/ca-cert\?format=cer$/);
   });
   it.each([
     [{ httpCompressEnabled: false }, "compressOff"],

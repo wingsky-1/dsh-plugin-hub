@@ -99,7 +99,10 @@ export interface DispatchCallInput {
    * 而不是整份目录——本域不持目录，也不引 catalog 域门面（免多一条跨模块边）。
    */
   readonly catalogEntryFor: (serverName: string) => CatalogEntryLite | undefined;
-  /** 凭据脱敏源：全部在册服务器（出错路径才取值，与旧 `allServers()` 同惰性）。 */
+  /** 凭据脱敏源（#770-8）：脱敏全集快照（全局 store + 全部 projectStores 缓存 +
+   * runtimeRegistry，含 disabled/unconnected），调用方须递宿主 redactionServers 快照
+   *（中间层转供的同一秘密源，与 manager.redactError/middleware.redact 同源）。
+   * 出错路径才取值（与旧 `allServers()` 同惰性），本域只读不留，避免第二个事实源。 */
   readonly allServers: () => readonly ServerConfig[];
   /** 工具级禁用映射（root → server → Set<tool>）。 */
   readonly disabledTools: DisabledToolsMap;

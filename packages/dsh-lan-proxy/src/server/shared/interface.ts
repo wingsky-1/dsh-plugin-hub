@@ -8,3 +8,4 @@ export { DEFAULT_DEFLATE_POLICY } from "./deflate.ts";
 export type { DeflatePolicy } from "./deflate.ts";
 export { DEFAULT_OPTIONS } from "./defaults.ts";
 export { isLoopbackTarget } from "./net.ts";
+export { legacyPluginDir, pluginDir } from "./paths.ts";

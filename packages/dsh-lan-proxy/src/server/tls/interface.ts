@@ -4,12 +4,20 @@
  * 独立于转发引擎——cert 回答「用哪份证书、何时重签」，引擎回答「流量如何转发」，
  * 两者无共享代码路径；引擎只消费本域产出的 TlsMaterials。
  */
-export type { TlsMaterials } from "./impl/index.ts";
+export type {
+  DownloadCertCode,
+  DownloadCertResult,
+  DownloadCertSource,
+  TlsMaterials,
+} from "./impl/index.ts";
 export {
   SELF_SIGNED_CERT,
   SELF_SIGNED_KEY,
   certStillValid,
+  encodeCertificatePem,
   ensureSelfSignedTls,
+  extractFirstCertificateDer,
+  loadDownloadableCertificate,
   loadTlsFromFiles,
   toSanEntry,
 } from "./impl/index.ts";

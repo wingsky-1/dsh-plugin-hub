@@ -13,7 +13,7 @@ import type { Translate } from "../../locale.ts";
 import type { AudioEngine } from "../../notify/audio.ts";
 import { switchToggle } from "../parts/controls.tsx";
 import type { ChannelStatusMap } from "../parts/status.tsx";
-import type { SettingsChannelView } from "../types.ts";
+import type { HistoryRecordView, SettingsChannelView } from "../types.ts";
 import {
   browserDiagnosticsLine,
   browserPermLine,
@@ -61,6 +61,7 @@ export function builtinCard(
   requestNotificationPermission: () => void,
   audioEngine: AudioEngine,
   t: Translate,
+  history: HistoryRecordView[] | null,
 ) {
   const channelId = channelIdOf(ch);
   const enabled = ch.enabled === true;
@@ -112,8 +113,8 @@ export function builtinCard(
         <span className="dn-ch-type">{t("chTypeBuiltin")}</span>
         <span className="dn-ch-stateTxt">{summaryState}</span>
         <span className={"dn-ch-statusDot " + statusDotClass(channelId, statusMap)} />
-        <span className="dn-ch-statusTxt" title={statusText(channelId, statusMap, t)}>
-          {statusText(channelId, statusMap, t)}
+        <span className="dn-ch-statusTxt" title={statusText(channelId, statusMap, t, history)}>
+          {statusText(channelId, statusMap, t, history)}
         </span>
         {failBadge(channelId, statusMap, t)}
         <span className="dn-ch-summaryRight">

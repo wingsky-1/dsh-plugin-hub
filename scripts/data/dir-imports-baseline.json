@@ -4,12 +4,12 @@
   "packages": {
     "dsh-lan-proxy": {
       "modules": 6,
-      "scannedSrcFiles": 18,
-      "allSrcTsFiles": 26,
+      "scannedSrcFiles": 20,
+      "allSrcTsFiles": 29,
       "interfaceFacades": 6,
-      "leafValueEdges": 3,
-      "fileValueEdges": 27,
-      "crossModuleRefs": 35,
+      "leafValueEdges": 4,
+      "fileValueEdges": 30,
+      "crossModuleRefs": 41,
       "quality": {
         "leafModuleCycles": [],
         "fileCycles": [],
@@ -29,11 +29,11 @@
     },
     "dsh-mcp-manager": {
       "modules": 18,
-      "scannedSrcFiles": 104,
-      "allSrcTsFiles": 118,
+      "scannedSrcFiles": 105,
+      "allSrcTsFiles": 119,
       "interfaceFacades": 18,
       "leafValueEdges": 19,
-      "fileValueEdges": 146,
+      "fileValueEdges": 148,
       "crossModuleRefs": 191,
       "quality": {
         "leafModuleCycles": [],
@@ -60,7 +60,7 @@
     "dsh-notifier": {
       "modules": 10,
       "scannedSrcFiles": 107,
-      "allSrcTsFiles": 137,
+      "allSrcTsFiles": 138,
       "interfaceFacades": 10,
       "leafValueEdges": 11,
       "fileValueEdges": 118,

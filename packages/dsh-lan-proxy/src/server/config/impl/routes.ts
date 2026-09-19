@@ -13,12 +13,15 @@ import {
 import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
 import { sanitizeSettings, validateSettings } from "./model.ts";
 import type { HttpCompressSnapshot, ResolvedConfig } from "./model.ts";
+import type { DownloadCertResult } from "../../tls/interface.ts";
 
-/** 与客户端共享的路由（单一来源）。 */
+/** 与客户端共享的路由（单一来源；客户端经 shared/contract.ts 镜像 + __DSH_ROUTES__ 注入消费）。 */
 export const ROUTES = {
   health: "/api/dsh-lan-proxy/health",
   /** 配置读写路由：GET 快照 / PUT patch（loopback 围栏）。 */
   config: "/api/dsh-lan-proxy/config",
+  /** CA/自签证书下发路由：GET 只读（loopback 围栏；issue #911 移动设备安装信任用）。 */
+  caCert: "/api/dsh-lan-proxy/ca-cert",
 };
 
 /** buildConfigRoutes 的依赖注入面（apply 内装配；smoke 用 fake 直接构造）。 */
@@ -46,6 +49,9 @@ export type PatchResult =
 
 /** 清除证书路径时需要从用户层剔除的键（空字符串 = 显式清除，恢复自签名）。 */
 const TLS_PAIR_KEYS = ["tlsCertFile", "tlsKeyFile"] as const;
+
+/** CA 公钥路径键（issue #911）：独立清除，不与 leaf/key 成对绑定（空字符串 = 显式清除）。 */
+const CA_CERT_KEY = "tlsCaCertFile";
 
 /** PUT 负载包络：raw patch、期望版本与 raw 键视图（三处共用同一空对象回退口径）。 */
 interface PatchEnvelope {
@@ -115,16 +121,20 @@ async function persistPatchedConfig(
   rawSrc: Record<string, unknown>,
   expectedRevision: number | undefined,
 ): Promise<PatchResult> {
-  const clearingTls = TLS_PAIR_KEYS.some((key) => rawSrc[key] === "");
+  // #467 叶对：显式空串任一侧即整套剔除（raw 层已保证同空同现）。
+  const clearingLeaf = TLS_PAIR_KEYS.some((key) => rawSrc[key] === "");
+  // #911 CA：独立清除，不与叶对绑定（单清 CA 不得触碰叶子配置）。
+  const clearingCa = rawSrc[CA_CERT_KEY] === "";
   try {
-    if (clearingTls) {
+    if (clearingLeaf || clearingCa) {
       const { user } = deps.readUser();
       const section: Record<string, unknown> = { ...user };
-      // #467：清除语义固化为"整套成对剔除"（同空 = 整套清除）——raw 层已保证
-      // 显式空串两侧同现，但仍整体剔除两键，杜绝单侧剔除遗留另一半的可能。
-      for (const key of TLS_PAIR_KEYS) {
-        if (rawSrc[key] === "" || user[key] !== undefined) delete section[key];
+      if (clearingLeaf) {
+        for (const key of TLS_PAIR_KEYS) {
+          if (rawSrc[key] === "" || user[key] !== undefined) delete section[key];
+        }
       }
+      if (clearingCa) delete section[CA_CERT_KEY];
       await deps.replace(
         { ...section, ...(sanitized as Record<string, unknown>) },
         expectedRevision,
@@ -242,4 +252,86 @@ export function buildConfigRoutes(deps: ConfigRouteDeps): WebRoute[] {
     },
   };
   return [configRoute];
+}
+
+/**
+ * buildCaCertRoutes 的依赖注入面（apply 内装配；单测用 fake 直接构造）。
+ *
+ * 证书装配由 tls 域提供（loadDownloadableCertificate），本域不读证书文件、
+ * 不引 tls 值——跨域值边在此终结，装配层组合两域（prepareTls 同口径）。
+ */
+export interface CaCertRouteDeps {
+  /** 证书装配器（逐请求调用，tlsCaCertFile 热更新即时生效）。 */
+  loadCertificate(format: "der" | "pem"): DownloadCertResult;
+}
+
+/**
+ * 下发格式（显式白名单，无静默回落）：der（含 cer 别名，供 iOS 描述文件安装）/
+ * pem（文本检查用）；缺失默认 der，未知值由调用方判 400（拼写错误不再静默
+ * 当证书下发，fail-closed）。
+ */
+function parseCertFormat(url: string | undefined): "der" | "pem" | "invalid" {
+  let format: string | null;
+  try {
+    format = new URL(url ?? "/", "http://lan-proxy.local").searchParams.get("format");
+  } catch {
+    return "invalid";
+  }
+  if (format === null || format === "der" || format === "cer") return "der";
+  if (format === "pem") return "pem";
+  return "invalid";
+}
+
+/**
+ * 组装证书下发路由（GET 只读；loopback 围栏 + GET 白名单；无 Cookie 要求——
+ * fresh 设备恰恰没有会话 Cookie，要求即鸡生蛋死锁；边界与 issue #380 同登记）。
+ *
+ * 本函数只做围栏 + 格式白名单 + 状态映射；证书三态装配（配 CA / 自签回退 /
+ * 自定义无 CA 404）与文件读取解析全归 tls 域（loadDownloadableCertificate），
+ * 失败码对固定文案（原文只进日志）。导出供单测（fake deps，不依赖网络）。
+ */
+
+/** 下发失败码对固定响应文案（P2-2：路径等内部信息不进响应）。 */
+const DOWNLOAD_ERROR_DETAILS: Record<string, string> = {
+  "ca-unconfigured":
+    "未配置 CA 公钥（tlsCaCertFile 为空）且当前为自定义叶子模式：下发叶子无法建立信任。请配置 CA 公钥后重试，或切回自签名证书。",
+  "ca-unavailable": "证书暂不可用，请查看服务端日志",
+  "ca-invalid": "证书文件无效（须为 CERTIFICATE PEM/DER），请查看服务端日志",
+};
+export function buildCaCertRoutes(deps: CaCertRouteDeps): WebRoute[] {
+  const caCertRoute: WebRoute = {
+    kind: "exact",
+    path: ROUTES.caCert,
+    handler: (req, res) => {
+      if (!guardLoopbackMethod(req, res, ["GET"])) return;
+      const format = parseCertFormat(req.url);
+      if (format === "invalid") {
+        writeJson(res, 400, {
+          ok: false,
+          error: { code: "bad-format", details: "format 非法（仅支持 der/cer/pem）" },
+        });
+        return;
+      }
+      const loaded = deps.loadCertificate(format);
+      if (!loaded.ok) {
+        writeJson(res, 404, {
+          ok: false,
+          error: { code: loaded.code, details: DOWNLOAD_ERROR_DETAILS[loaded.code] },
+        });
+        return;
+      }
+      // 二进制路由不用 writeJson（host-utils 只管 JSON），手写头：防嗅探 +
+      // 附件下载 + 禁缓存（IP 变化即重签，缓存旧 CA 会误导排障）。
+      res.writeHead(200, {
+        "content-type": loaded.contentType,
+        "content-disposition": 'attachment; filename="' + loaded.filename + '"',
+        "content-length": loaded.body.length,
+        "cache-control": "no-store",
+        "x-content-type-options": "nosniff",
+        "referrer-policy": "no-referrer",
+      });
+      res.end(loaded.body);
+    },
+  };
+  return [caCertRoute];
 }

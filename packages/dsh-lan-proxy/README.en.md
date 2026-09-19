@@ -42,6 +42,7 @@ without a global install, see "Without a global dsh install" below).
   makes the proxy process decompress) — acceptable within the "LAN-trusted" threat model (same
   trust boundary as `injectToken`)
 - **Private key permission**: auto-generated self-signed private keys are written with 0600
+- **Certificate serving surface (issue #911)**: the download route only serves public keys (loopback fence + GET only + no Cookie required). Only the first CERTIFICATE block is served; a mispointed private key always yields 404; responses are not cached. Custom leaf without CA yields 404 (serving the leaf cannot establish trust)
 - **Open port reminder**: `0.0.0.0` listening is visible to every device on the LAN
 - **HTTP response compression**: compression happens at the forwarding layer and only applies
   to the link between this plugin and the LAN client; it never touches dsh web's response
@@ -175,6 +176,7 @@ curl -s http://127.0.0.1:3081/api/dsh-lan-proxy/health
 | `targetPort` | auto | Upstream port (defaults to the web server's actual bound port) |
 | `httpsEnabled` | `true` | Whether to run HTTPS alongside |
 | `tlsCertFile` / `tlsKeyFile` | none | Custom certificate (mkcert, etc.) |
+| `tlsCaCertFile` | none | Self-built LAN CA public key (PEM, read-only) |
 | `printBanner` | `true` | Print the startup banner with LAN access URLs |
 | `wsBridgeEnabled` | `true` | Bridge switch; disabling it drops keep-alive and compression. |
 | `wsCompressEnabled` | `true` | Whether to apply compressed bridging to WebSockets matching `wsCompressPaths` (compression only; does not affect bridge keep-alive) |
@@ -358,10 +360,11 @@ curl http://<your-LAN-IP>:3081/api/dsh-lan-proxy/health
 
 - **Certificate sources (two tiers)**: ① configure `tlsCertFile`/`tlsKeyFile` (official
   certificate or mkcert local CA, zero browser warnings); ② auto-generate a self-signed
-  certificate (built-in `selfsigned` library generates and caches it to `<DSH_HOME>/lan-proxy/`,
+  certificate (built-in `selfsigned` library generates and caches it to `<DSH_HOME>/@wingsky-1/dsh-lan-proxy/` (legacy lan-proxy dir is migrated on first boot),
   private key permission 0600, no host openssl required)
 - The self-signed certificate needs a one-time manual "proceed" on first visit; for zero warnings
-  on LAN devices, mkcert is recommended
+  on LAN devices, a self-built LAN CA is recommended (install once per device, see below)
+- **Install certificates on mobile devices (issue #911)**: after configuring tlsCaCertFile (CA public key), the settings-page download link serves the CA (open the link directly in a browser). iPhone: install the profile then enable trust in Certificate Trust Settings; Android: install the CA certificate under Security settings; Windows: double-click into Trusted Root Certification Authorities
 
 ### Uninstall plugins (remove)
 

@@ -55,7 +55,10 @@
           "comment": "#856 新域：host trust 兼容注入（非回环页面声明 ownsHost 的自条件脚本 + 官方 webServer.tapIndex 注册）。与 config/entry 同生命周期但独立成段——域内只有 impl/injection.ts 一个实现文件，错登进 entry 会让该段的 impl 变更信号被组合根噪声淹没；门面按 facade 口径进 coverageExcludes；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
         },
         "migrate": {
-          "mutate": ["packages/dsh-lan-proxy/src/server/migrate/impl/file/index.ts"],
+          "mutate": [
+            "packages/dsh-lan-proxy/src/server/migrate/impl/file/index.ts",
+            "packages/dsh-lan-proxy/src/server/migrate/impl/layout/index.ts"
+          ],
           "excludes": ["!packages/dsh-lan-proxy/src/client/**"],
           "comment": "#826 域归位：migrate 域（原根 migrate.ts，一次性 config.json 收编）；门面按 facade 口径进 coverageExcludes；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
         },
@@ -68,7 +71,8 @@
           "mutate": [
             "packages/dsh-lan-proxy/src/server/shared/defaults.ts",
             "packages/dsh-lan-proxy/src/server/shared/deflate.ts",
-            "packages/dsh-lan-proxy/src/server/shared/net.ts"
+            "packages/dsh-lan-proxy/src/server/shared/net.ts",
+            "packages/dsh-lan-proxy/src/server/shared/paths.ts"
           ],
           "excludes": ["!packages/dsh-lan-proxy/src/client/**"],
           "comment": "#826 域归位：shared 叶子（重排时新提取的共用面——默认值 / WS 压缩策略 / 回环判定，域与配置 schema 同向依赖它）；门面按 facade 口径进 coverageExcludes；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"

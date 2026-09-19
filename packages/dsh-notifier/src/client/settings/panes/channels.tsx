@@ -18,12 +18,18 @@ import { barkCard } from "../channels/bark-card.tsx";
 import { builtinCard } from "../channels/builtin-card.tsx";
 import { webhookCard } from "../channels/webhook-card.tsx";
 import type { ChannelStatusMap } from "../parts/status.tsx";
-import type { RegisteredKindView, SettingsChannelView, SettingsView } from "../types.ts";
+import type {
+  HistoryRecordView,
+  RegisteredKindView,
+  SettingsChannelView,
+  SettingsView,
+} from "../types.ts";
 
 /** 频道 tab 的依赖面（三张卡的并集 + 本片自用的添加/域保存入口）。 */
 interface ChannelsPaneDeps {
   settings: SettingsView;
   statusMap: ChannelStatusMap;
+  history: HistoryRecordView[] | null;
   hostPlatform: string | null;
   diag: ClientDiagnosticsView;
   channelLabel: (c: SettingsChannelView) => string;
@@ -58,6 +64,7 @@ export function channelsPane(deps: ChannelsPaneDeps) {
   const {
     settings,
     statusMap,
+    history,
     hostPlatform,
     diag,
     channelLabel,
@@ -102,6 +109,7 @@ export function channelsPane(deps: ChannelsPaneDeps) {
           requestNotificationPermission,
           audioEngine,
           t,
+          history,
         ),
       );
       return;
@@ -122,6 +130,7 @@ export function channelsPane(deps: ChannelsPaneDeps) {
             sendTest,
             statusMap,
             t,
+            history,
           )
         : barkCard(
             c,
@@ -139,6 +148,7 @@ export function channelsPane(deps: ChannelsPaneDeps) {
             sendTest,
             statusMap,
             t,
+            history,
           ),
     );
   });

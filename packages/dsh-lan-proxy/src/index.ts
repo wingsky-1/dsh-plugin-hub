@@ -56,10 +56,17 @@ export type {
 } from "./server/config/interface.ts";
 export { SETTINGS_NS, installLanProxySettings } from "./server/config/interface.ts";
 export type { LanProxySettingsHooks, OwnerScopeLike } from "./server/config/interface.ts";
-export { ROUTES, applyConfigPatch, buildConfigRoutes } from "./server/config/interface.ts";
-export type { ConfigRouteDeps, PatchResult } from "./server/config/interface.ts";
+export {
+  ROUTES,
+  applyConfigPatch,
+  buildCaCertRoutes,
+  buildConfigRoutes,
+} from "./server/config/interface.ts";
+export type { CaCertRouteDeps, ConfigRouteDeps, PatchResult } from "./server/config/interface.ts";
 export { MIGRATED_BAK_NAME, migrateFileConfig } from "./server/migrate/interface.ts";
 export type { MigrationOutcome } from "./server/migrate/interface.ts";
+export { LEGACY_BAK_SUFFIX, resolvePluginDir } from "./server/migrate/interface.ts";
+export type { LayoutMigrateOptions, LayoutMigrateOutcome } from "./server/migrate/interface.ts";
 // host trust 域（#856）不进包导出面：自条件注入纯函数、官方 index 变换钩子注册与两条
 // 契约字面量都只被包内 apply 消费，属实现细节而非安装面 / 配置面 / 契约面
 // （docs/ARCHITECTURE-METHOD.md §6）。域门面 src/server/host-trust/interface.ts 保留为

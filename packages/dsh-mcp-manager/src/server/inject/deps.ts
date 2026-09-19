@@ -41,10 +41,12 @@ export type RuntimeLimitsPort = Pick<
   "CONNECT_TIMEOUT_MS" | "DISCOVERY_TIMEOUT_MS" | "CALL_TIMEOUT_MS" | "LIST_MAX_TOOLS_PER_SERVER"
 >;
 
-/** pipeline 域给本域的能力面：超时兜底与工具级禁用裁决（裁决 / 禁用文案）。 */
+/** pipeline 域给本域的能力面：超时兜底与工具级禁用裁决（裁决 / 禁用文案）
+ * + 调用统计落盘前的错误脱敏（#770-A4：msgOf 取文案、createRedactor 按 C 快照脱敏；
+ * 收集器保持纯，不引 pipeline，脱敏是调用方的职责）。 */
 export type PipelinePort = Pick<
   typeof pipelineApi,
-  "withTimeout" | "isToolDenied" | "toolDisabledReason"
+  "withTimeout" | "isToolDenied" | "toolDisabledReason" | "msgOf" | "createRedactor"
 >;
 
 /** workspace 域给本域的能力面：`@<root>/<server>` 全名解析与拼装。 */

@@ -9,12 +9,13 @@
 import type { NotifierLocaleKey } from "../src/client/locales.ts";
 import { zh } from "../src/client/locales.ts";
 
-/** 官方向翻译函数的最薄替身：`{name}` 插值 zh 字典（省略的只有 locale 服务的注册面）。 */
-export function translateWithZh(
-  key: NotifierLocaleKey,
-  params?: Readonly<Record<string, string | number>>,
-): string {
-  return zh[key].replace(/\{(\w+)\}/gu, (match, name: string) =>
+/** 官方向翻译函数的最薄替身：`{name}` 插值 zh 字典（省略的只有 locale 服务的注册面）。
+ * key 取宽 string 以适配 Translate 入参位；查不到的 key 回落 key 本体（与宿主契约一致）。 */
+export function translateWithZh(key: string, params?: Record<string, unknown>): string {
+  const template: string = Object.prototype.hasOwnProperty.call(zh, key)
+    ? zh[key as NotifierLocaleKey]
+    : key;
+  return template.replace(/\{(\w+)\}/gu, (match, name: string) =>
     params !== undefined && Object.prototype.hasOwnProperty.call(params, name)
       ? String(params[name])
       : match,

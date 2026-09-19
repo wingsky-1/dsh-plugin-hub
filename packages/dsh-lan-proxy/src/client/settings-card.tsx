@@ -3,7 +3,7 @@
  *
  * 行为：在「设置 → 插件」面板渲染 dsh-lan-proxy 配置卡片（settings.plugin.item
  * 插槽，idle 插件同款风格）：
- * - 启用开关 / LAN 端口 / HTTPS 开关与端口 / 证书与私钥文件 / 启动横幅开关；
+ * - 启用开关 / LAN 端口 / HTTPS 开关与端口 / 证书与私钥文件 / CA 公钥文件与下载直链 / 启动横幅开关；
  * - 点「保存」经 loopback HTTP 配置路由提交增量 patch，宿主端转写官方 settings
  *   命名空间（scope.update/replace），scope.watch 触发转发器热更新（保存即热
  *   更新，无需重启 dsh web）。
@@ -25,8 +25,11 @@ import {
   type HostTrustSignals,
 } from "./host-trust-status.ts";
 
-const CONFIG_ROUTE = "/api/dsh-lan-proxy/config";
-const HEALTH_ROUTE = "/api/dsh-lan-proxy/health";
+import { APP_ROUTES } from "./shared/interface.ts";
+
+const CONFIG_ROUTE = APP_ROUTES.config;
+const HEALTH_ROUTE = APP_ROUTES.health;
+const CA_CERT_ROUTE = APP_ROUTES.caCert;
 
 /** 增量 diff 的键值比较：路径白名单数组按元素逐一比较，其余严格相等。 */
 function sameSetting(key: string, a: unknown, b: unknown): boolean {
@@ -411,6 +414,26 @@ export function SettingsCard(props: SettingsCardProps) {
               }
             />
           </div>
+          <div className="lp-set-row">
+            <label htmlFor="lp-set-ca">{t("caCertFile")}</label>
+            <input
+              id="lp-set-ca"
+              className="lp-set-input"
+              type="text"
+              placeholder={t("caCertPlaceholder")}
+              value={settings.tlsCaCertFile}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                patch({ tlsCaCertFile: e.target.value })
+              }
+            />
+          </div>
+          <div className="lp-set-row">
+            <span>{t("caDownload")}</span>
+            <a className="lp-set-input" href={CA_CERT_ROUTE + "?format=cer"}>
+              {t("caDownloadLink")}
+            </a>
+          </div>
+          <div className="lp-set-hint">{t("caDownloadHint")}</div>
           <div className="lp-set-row">
             <label htmlFor="lp-set-banner">{t("printBanner")}</label>
             <input
