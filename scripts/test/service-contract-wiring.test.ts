@@ -88,6 +88,7 @@ const UNWIRED_TEST_FACES: Record<string, string> = {
 const EXPECT_FILES: Record<string, string[]> = {
   "dsh-lan-proxy": [
     "client-dom/settings-card.test.ts",
+    "client-unit/ca-status.test.ts",
     "client-unit/client-routes.test.ts",
     "client-unit/host-trust-alert.test.ts",
     "client-unit/host-trust-status.test.ts",
@@ -95,6 +96,7 @@ const EXPECT_FILES: Record<string, string[]> = {
     "e2e/smoke.test.ts",
     "integration/apply-token-provider.test.ts",
     "unit/unit-apply.test.ts",
+    "unit/unit-ca.test.ts",
     "unit/unit-cacert.test.ts",
     "unit/unit-host-trust.test.ts",
     "unit/unit-proxy.test.ts",

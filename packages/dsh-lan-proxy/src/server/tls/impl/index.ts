@@ -6,11 +6,12 @@
 // 过期判定走 node:crypto 的 X509Certificate，不依赖宿主机 openssl 子进程（issue #9）。
 // SAN 是必需的——Chrome 59+ 对缺失 SAN 的证书直接拒绝，用户无法「继续访问」。
 import { Buffer } from "node:buffer";
-import { X509Certificate } from "node:crypto";
+import { X509Certificate, randomBytes } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { isIP } from "node:net";
 import { generate as generateSelfSigned } from "selfsigned";
+import * as forge from "node-forge";
 
 /** TLS 证书材料（PEM 字符串或 Buffer）。 */
 export interface TlsMaterials {
@@ -24,6 +25,11 @@ export const SELF_SIGNED_CERT = "dsh-lan-proxy-cert.pem";
 
 /** 自签证书有效期（天）。825 ≈ 2.25 年，浏览器信任窗口友好。 */
 const CERT_DAYS = 825;
+/** 一键 CA 有效期（天）。10 年：装机一次长期信任，轮换 CA 即显式危险动作（#930 F6/F10）。 */
+const CA_DAYS = 3650;
+/** 一键生成叶子有效期（天）。398 = 现行最严交集（#930 修正评论 2026-09-19；
+ * 既有 CERT_DAYS=825 保留给自签存量兼容，不沿用）。 */
+const LEAF_DAYS = 398;
 /** 剩余有效期低于该秒数视为即将过期，需要重签（24 小时）。 */
 const MIN_REMAINING_SECONDS = 86400;
 
@@ -95,11 +101,12 @@ function hasCertPath(s: unknown): s is string {
 }
 
 /**
- * 可下发证书装配（issue #911；证书知识只归本域，调用方只给值不读文件）。
+ * 可下发证书装配（issue #911 下发面，#930 Phase 1 收紧为无 CA 不下发；证书知识
+ * 只归本域，调用方只给值不读文件）。
  *
- * 三态：配 CA → 返回 CA 公钥；自签模式（叶对均空）→ 返回缓存叶子；配自定义
- * 叶子但无 CA → ca-unconfigured（装叶子建不起信任，返回即误导）。只伺服首个
- * CERTIFICATE 块（含链/混排跳过非证书块；纯私钥/垃圾 → ca-invalid）。
+ * 两态：配 CA → 返回 CA 公钥；无 CA（一律 404 ca-unconfigured）→ 自签模式与
+ * 自定义叶子模式都不下发（自签叶子/孤叶子装了建不起信任，返回即误导）。只伺服
+ * 首个 CERTIFICATE 块（含链/混排跳过非证书块；纯私钥/垃圾 → ca-invalid）。
  * format 仅 der/pem（调用方 routes 层已白名单，非法不进本函数）。
  */
 export function loadDownloadableCertificate(
@@ -113,7 +120,9 @@ export function loadDownloadableCertificate(
   } else if (hasCertPath(source.tlsCertFile) || hasCertPath(source.tlsKeyFile)) {
     return { ok: false, code: "ca-unconfigured" };
   } else {
-    file = join(source.selfSignedDir, SELF_SIGNED_CERT);
+    // #930 Phase 1：自签模式无 CA 可下发（下发自签叶子对 iOS 无用但外观可用，
+    // 口径不诚实），与自定义无 CA 同码 404，调用方凭 caConfigured=false 联合判定。
+    return { ok: false, code: "ca-unconfigured" };
   }
   let raw: Buffer;
   try {
@@ -206,4 +215,172 @@ export function ensureSelfSignedTls(options: SelfSignedOptions): TlsMaterials {
   // 显式收敛私钥权限 0600（writeFileSync mode 受 umask 影响可能过宽）
   chmodSync(keyPath, 0o600);
   return { cert: readFileSync(certPath), key: readFileSync(keyPath) };
+}
+
+/** 一键 CA 全套材料（PEM 文本；落盘与 scope 写入归 ca 域，本函数不碰 FS/scope）。 */
+export interface CaAndLeafMaterials {
+  caCert: string;
+  caKey: string;
+  leafCert: string;
+  leafKey: string;
+}
+
+/** 仅轮换叶子时的新叶子材料（PEM 文本；CA 续用，已装设备零操作）。 */
+export interface LeafMaterials {
+  leafCert: string;
+  leafKey: string;
+}
+
+/**
+ * forge RSA 异步生成（#930 F5：回调式，不阻塞 loopback 请求）。
+ *
+ * Node 下 forge 优先走原生 `_crypto.generateKeyPair`（lib/rsa.js 回调分支），
+ * 熵源为 `require("crypto").randomBytes`（lib/prng.js seedFile 系，CSPRNG）；
+ * 只有显式 `usePureJavaScript` 才回落 Fortuna 弱熵——本包不设该 flag。
+ * 行号证据见 #930 F15（random.js CSPRNG 分支 / prng.js 15-19,328-341）。
+ */
+function generateRsaKeyPair(bits: number): Promise<forge.pki.rsa.KeyPair> {
+  return new Promise((resolve, reject) => {
+    forge.pki.rsa.generateKeyPair(bits, 0x10001, (err, keypair) => {
+      if (err) {
+        reject(err instanceof Error ? err : new Error(String(err)));
+        return;
+      }
+      resolve(keypair);
+    });
+  });
+}
+
+/** 证书序列号（CSPRNG 16 hex；同一 CA 下新签叶子不重号）。 */
+function freshSerialHex(): string {
+  return randomBytes(8).toString("hex");
+}
+
+/** 证书有效期窗口（notBefore 即刻，notAfter 按天）。 */
+function validityWindow(days: number): { notBefore: Date; notAfter: Date } {
+  return { notBefore: new Date(), notAfter: new Date(Date.now() + days * 86400 * 1000) };
+}
+
+/** 叶子 SAN：默认回环集 + 调用方快照的局域网 IP（toSanEntry 编码，IP 走 type 7）。 */
+function leafSans(extraSans: string[]): SanAltName[] {
+  return [...DEFAULT_SANS, ...extraSans.map(toSanEntry)];
+}
+
+/**
+ * 签发自签 CA 证书体（profile 全表 #930 F6：basicConstraints cA:true +
+ * keyUsage keyCertSign/cRLSign；subject/issuer 同体，sha256 自签）。
+ */
+function buildCaCertificate(publicKey: forge.pki.PublicKey): forge.pki.Certificate {
+  const cert = forge.pki.createCertificate();
+  cert.publicKey = publicKey;
+  cert.serialNumber = freshSerialHex();
+  const window = validityWindow(CA_DAYS);
+  cert.validity.notBefore = window.notBefore;
+  cert.validity.notAfter = window.notAfter;
+  const attrs = [{ name: "commonName", value: "dsh-lan-proxy CA" }];
+  cert.setSubject(attrs);
+  cert.setIssuer(attrs);
+  cert.setExtensions([
+    { name: "basicConstraints", cA: true, critical: true },
+    { name: "keyUsage", keyCertSign: true, cRLSign: true, critical: true },
+  ]);
+  return cert;
+}
+
+/**
+ * 签发 CA 下叶子证书体（profile 全表 #930 F6：cA:false + digitalSignature/
+ * keyEncipherment + serverAuth + SAN；sha256 经 CA 私钥签）。
+ */
+function buildLeafCertificate(
+  publicKey: forge.pki.PublicKey,
+  extraSans: string[],
+): forge.pki.Certificate {
+  const cert = forge.pki.createCertificate();
+  cert.publicKey = publicKey;
+  cert.serialNumber = freshSerialHex();
+  const window = validityWindow(LEAF_DAYS);
+  cert.validity.notBefore = window.notBefore;
+  cert.validity.notAfter = window.notAfter;
+  cert.setSubject([{ name: "commonName", value: "dsh-lan-proxy" }]);
+  cert.setIssuer([{ name: "commonName", value: "dsh-lan-proxy CA" }]);
+  cert.setExtensions([
+    { name: "basicConstraints", cA: false, critical: true },
+    { name: "keyUsage", digitalSignature: true, keyEncipherment: true, critical: true },
+    { name: "extKeyUsage", serverAuth: true },
+    { name: "subjectAltName", altNames: leafSans(extraSans) },
+  ]);
+  return cert;
+}
+
+/**
+ * 一键生成本地 CA 全套（#930 F2 纯函数：只回答证书字节，不碰 FS/scope；
+ * 调用方（ca 域）负责 temp+rename 落盘与 scope 写入）。
+ *
+ * 两次 RSA-2048 均为回调式异步（F5）；签名段为同步 forge 运算（ms 级，验证列实测）。
+ * 失败抛错（调用方映射 500 ca-generate-failed，原文只进日志）。
+ */
+export async function generateCaAndLeaf(extraSans: string[]): Promise<CaAndLeafMaterials> {
+  const caKeys = await generateRsaKeyPair(2048);
+  const caCert = buildCaCertificate(caKeys.publicKey);
+  caCert.sign(caKeys.privateKey, forge.md.sha256.create());
+  const leafKeys = await generateRsaKeyPair(2048);
+  const leafCert = buildLeafCertificate(leafKeys.publicKey, extraSans);
+  leafCert.sign(caKeys.privateKey, forge.md.sha256.create());
+  return {
+    caCert: forge.pki.certificateToPem(caCert),
+    caKey: forge.pki.privateKeyToPem(caKeys.privateKey),
+    leafCert: forge.pki.certificateToPem(leafCert),
+    leafKey: forge.pki.privateKeyToPem(leafKeys.privateKey),
+  };
+}
+
+/**
+ * 仅轮换叶子（#930 F10 默认动作：CA 续用，已装设备零操作）。
+ *
+ * CA 公私钥由调用方从托管文件读入（路径合法性由 ca 域 isManaged 判定，本函数
+ * 只做 PEM 解析与签发）；新叶子 398 天 + 同口径 SAN（调用方传当期 extraSans
+ * 快照，IP 变化即跟进）。失败抛错（同 generateCaAndLeaf 映射）。
+ */
+export async function generateLeafSignedByCa(
+  caCertPem: string,
+  caKeyPem: string,
+  extraSans: string[],
+): Promise<LeafMaterials> {
+  let caKey: forge.pki.PrivateKey;
+  try {
+    caKey = forge.pki.privateKeyFromPem(caKeyPem);
+    forge.pki.certificateFromPem(caCertPem);
+  } catch (err) {
+    throw new Error("invalid CA materials: " + (err instanceof Error ? err.message : String(err)));
+  }
+  const leafKeys = await generateRsaKeyPair(2048);
+  const leafCert = buildLeafCertificate(leafKeys.publicKey, extraSans);
+  leafCert.sign(caKey, forge.md.sha256.create());
+  return {
+    leafCert: forge.pki.certificateToPem(leafCert),
+    leafKey: forge.pki.privateKeyToPem(leafKeys.privateKey),
+  };
+}
+
+/** 叶子证书摘要（health certInfo 载荷；只出日期/SAN，不出路径/PEM）。 */
+export type LeafCertSummary = { ok: true; validTo: string; sans: string[] } | { ok: false };
+
+/**
+ * 读叶子证书摘要（#930 F8 数据源：health.certInfo 当期值）。
+ *
+ * 读不出/解析不出即 { ok: false }（调用方 health 置 certInfo null，不提醒；
+ * 下发端仍按三态如实 404，见 loadDownloadableCertificate）。SAN 取
+ * X509Certificate.subjectAltName 原串按“, ”切分（DNS:/IP Address: 前缀保留，
+ * 客户端只做包含比对，不过滤——丢前缀等于丢信息）。
+ */
+export function readLeafCertInfo(certPath: string): LeafCertSummary {
+  try {
+    const cert = new X509Certificate(readFileSync(certPath));
+    const raw = cert.subjectAltName ?? "";
+    const sans = raw.length === 0 ? [] : raw.split(", ");
+    // ISO 格式出 health：客户端 new Date() 可靠解析（X509 原串非 ISO，各引擎解析不一）。
+    return { ok: true, validTo: cert.validToDate.toISOString(), sans };
+  } catch {
+    return { ok: false };
+  }
 }

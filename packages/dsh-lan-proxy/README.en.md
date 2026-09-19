@@ -41,8 +41,9 @@ without a global install, see "Without a global dsh install" below).
   decompression is an amplification point (a hostile LAN client sending highly-compressed frames
   makes the proxy process decompress) — acceptable within the "LAN-trusted" threat model (same
   trust boundary as `injectToken`)
-- **Private key permission**: auto-generated self-signed private keys are written with 0600
-- **Certificate serving surface (issue #911)**: the download route only serves public keys (loopback fence + GET only + no Cookie required). Only the first CERTIFICATE block is served; a mispointed private key always yields 404; responses are not cached. Custom leaf without CA yields 404 (serving the leaf cannot establish trust)
+- **Private key permission**: auto-generated self-signed private keys are written with 0600; one-click CA private keys (CA + leaf) and .bak files are always 0600 (write + chmodSync double cover), and the certs/ directory is 0700
+- **Certificate serving surface (issue #911)**: the download route only serves public keys (loopback fence + GET only + no Cookie required). Only the first CERTIFICATE block is served; a mispointed private key always yields 404; responses are not cached. Without a CA nothing is served with 404 (self-signed/orphan leaves cannot establish trust once installed)
+- **One-click CA action surface (issue #930)**: POST-only writes (loopback fence + POST allowlist + requires a writable settings service). The CA private key filename is fixed (ca-key.pem) and never served; failure responses carry only fixed codes (ca-generate-failed, etc.) while paths and key material stay in server logs. Rotation replaces only the leaf by default (the CA is reused, installed devices keep working); rotating the CA is a separate dangerous action (trust on all installed devices breaks and each must reinstall). Superseded materials move to timestamped .bak files with only the most recent one kept
 - **Open port reminder**: `0.0.0.0` listening is visible to every device on the LAN
 - **HTTP response compression**: compression happens at the forwarding layer and only applies
   to the link between this plugin and the LAN client; it never touches dsh web's response
@@ -364,7 +365,8 @@ curl http://<your-LAN-IP>:3081/api/dsh-lan-proxy/health
   private key permission 0600, no host openssl required)
 - The self-signed certificate needs a one-time manual "proceed" on first visit; for zero warnings
   on LAN devices, a self-built LAN CA is recommended (install once per device, see below)
-- **Install certificates on mobile devices (issue #911)**: after configuring tlsCaCertFile (CA public key), the settings-page download link serves the CA (open the link directly in a browser). iPhone: install the profile then enable trust in Certificate Trust Settings; Android: install the CA certificate under Security settings; Windows: double-click into Trusted Root Certification Authorities
+- **One-click local CA (issue #930)**: on the settings page, the LAN access card offers "Generate local CA", issuing a 10-year CA plus a 398-day leaf into the managed directory `<DSH_HOME>/@wingsky-1/dsh-lan-proxy/certs/` (CA public key `ca-cert.pem` / private key `ca-key.pem` / leaf `leaf-cert.pem` + `leaf-key.pem`) with the three keys filled back automatically. "Rotate leaf certificate" only replaces the leaf by default (the CA is unchanged, installed devices keep working); "Rotate CA" is dangerous. As a zero-code alternative, mkcert works the same way (same hint as above)
+- **Install certificates on mobile devices (issue #911; #930 Phase 1: no CA, no download)**: after configuring tlsCaCertFile (CA public key), the settings-page download link serves the CA (open the link directly in a browser). Without a CA the download link always yields 404 (neither the self-signed mode nor a custom orphan leaf is served: installing them cannot establish trust) — generate a local CA from the settings page first, or configure a CA public key and retry. iPhone: install the profile then enable trust in Certificate Trust Settings; Android: install the CA certificate under Security settings; Windows: double-click into Trusted Root Certification Authorities
 
 ### Uninstall plugins (remove)
 

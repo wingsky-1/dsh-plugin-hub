@@ -22,6 +22,13 @@ export const ROUTES = {
   config: "/api/dsh-lan-proxy/config",
   /** CA/自签证书下发路由：GET 只读（loopback 围栏；issue #911 移动设备安装信任用）。 */
   caCert: "/api/dsh-lan-proxy/ca-cert",
+  /**
+   * 一键 CA 动作路由：POST 只写（loopback 围栏；#930 Phase 2 自签首建 / 托管轮换）。
+   * 处理器归 ca 域（buildCaActionRoutes），本表只收路径名（F16 ROUTES 单源；
+   * 本文件头“只服务配置读写”指处理器归属，路径名作为共享来源例外——caCert
+   * 路由同例：路径在此、语义在 tls 域）。
+   */
+  caGenerate: "/api/dsh-lan-proxy/ca/generate",
 };
 
 /** buildConfigRoutes 的依赖注入面（apply 内装配；smoke 用 fake 直接构造）。 */
@@ -294,7 +301,7 @@ function parseCertFormat(url: string | undefined): "der" | "pem" | "invalid" {
 /** 下发失败码对固定响应文案（P2-2：路径等内部信息不进响应）。 */
 const DOWNLOAD_ERROR_DETAILS: Record<string, string> = {
   "ca-unconfigured":
-    "未配置 CA 公钥（tlsCaCertFile 为空）且当前为自定义叶子模式：下发叶子无法建立信任。请配置 CA 公钥后重试，或切回自签名证书。",
+    "未配置 CA 公钥（tlsCaCertFile 为空）：下发的证书无法建立信任。请先一键生成本地 CA（设置页），或配置 CA 公钥后重试。",
   "ca-unavailable": "证书暂不可用，请查看服务端日志",
   "ca-invalid": "证书文件无效（须为 CERTIFICATE PEM/DER），请查看服务端日志",
 };

@@ -13,13 +13,15 @@ export const CLIENT_ROUTES = {
   config: "/api/dsh-lan-proxy/config",
   health: "/api/dsh-lan-proxy/health",
   caCert: "/api/dsh-lan-proxy/ca-cert",
+  /** 一键 CA 动作（POST 只写；#930 Phase 2）：与宿主 ROUTES.caGenerate 同值（单测锁定）。 */
+  caGenerate: "/api/dsh-lan-proxy/ca/generate",
 } as const;
 
 /** 构建期注入的宿主路由表（bundle-host extraDefine；缺席即 undefined）。 */
 declare const __DSH_ROUTES__: Record<string, string> | undefined;
 
 /** 取注入值（非字符串/缺席即回落镜像，保证永远是可用字符串）。 */
-function injected(key: "config" | "health" | "caCert", fallback: string): string {
+function injected(key: "config" | "health" | "caCert" | "caGenerate", fallback: string): string {
   if (typeof __DSH_ROUTES__ !== "undefined") {
     const value = __DSH_ROUTES__[key];
     if (typeof value === "string" && value.length > 0) return value;
@@ -32,8 +34,10 @@ export const APP_ROUTES: {
   readonly config: string;
   readonly health: string;
   readonly caCert: string;
+  readonly caGenerate: string;
 } = {
   config: injected("config", CLIENT_ROUTES.config),
   health: injected("health", CLIENT_ROUTES.health),
   caCert: injected("caCert", CLIENT_ROUTES.caCert),
+  caGenerate: injected("caGenerate", CLIENT_ROUTES.caGenerate),
 };

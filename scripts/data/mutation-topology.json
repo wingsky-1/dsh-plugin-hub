@@ -36,6 +36,11 @@
       "concurrency": 16,
       "timeoutMS": 60000,
       "segments": {
+        "ca": {
+          "mutate": ["packages/dsh-lan-proxy/src/server/ca/impl/*.ts"],
+          "excludes": ["!packages/dsh-lan-proxy/src/client/**"],
+          "comment": "#930 新域：一键生成本地 CA（三态判定 state.ts + POST 动作 actions.ts；forge 签发纯函数归 tls 域）。门面按 facade 口径进 coverageExcludes；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
+        },
         "config": {
           "mutate": ["packages/dsh-lan-proxy/src/server/config/impl/*.ts"],
           "excludes": ["!packages/dsh-lan-proxy/src/client/**"],
@@ -96,7 +101,12 @@
           {
             "pattern": "!packages/dsh-lan-proxy/src/**/interface.ts",
             "kind": "facade",
-            "reason": "#826 域归位（#856 补第 7 域）：本包 7 处 interface.ts（server/{shared,proxy,config,migrate,tls,host-trust} 各一 + client/shared 一）按本仓 facade 口径整体排除。facade 是**角色**口径不是内容口径——interface.ts 是本域对外承诺的入口，转译后仍可能有运行时代码（dsh-notifier 的 stores 门面即如此），只是自身不做裁决；故排除面按文件名通配，而不是按「有没有实现」判定。其中 client/shared/interface.ts 本已被各段 !src/client/** 覆盖；当前 7 段的 mutate 条目不匹配任何 interface.ts，故这条对本包是口径声明而非有效裁剪，它的作用是让该口径不随段形态变化而失效。"
+            "reason": "#826 域归位（#856 补第 7 域，#930 补第 8 域 ca）：本包 8 处 interface.ts（server/{shared,proxy,config,migrate,tls,host-trust,ca} 各一 + client/shared 一）按本仓 facade 口径整体排除。facade 是**角色**口径不是内容口径——interface.ts 是本域对外承诺的入口，转译后仍可能有运行时代码（dsh-notifier 的 stores 门面即如此），只是自身不做裁决；故排除面按文件名通配，而不是按「有没有实现」判定。其中 client/shared/interface.ts 本已被各段 !src/client/** 覆盖；当前 8 个服务端段的 mutate 条目不匹配任何 interface.ts，故这条对本包是口径声明而非有效裁剪，它的作用是让该口径不随段形态变化而失效。"
+          },
+          {
+            "pattern": "!packages/dsh-lan-proxy/src/**/deps.ts",
+            "kind": "type-only",
+            "reason": "#930 首个 deps.ts（ca 域依赖声明）：纯类型面，零运行时代码（值 import 由 verify-dir-imports 死声明/混入两判据硬禁），无可变异语句；随未来新域的 deps.ts 同口径覆盖。"
           }
         ]
       }

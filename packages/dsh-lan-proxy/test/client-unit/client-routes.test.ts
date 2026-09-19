@@ -13,11 +13,12 @@ import { ROUTES } from "../../src/server/config/impl/routes.ts";
 import { CLIENT_ROUTES } from "../../src/client/shared/contract.ts";
 
 describe("两端路由契约", () => {
-  it("CLIENT_ROUTES 与宿主 ROUTES 值全等（含 caCert）", () => {
+  it("CLIENT_ROUTES 与宿主 ROUTES 值全等（含 caCert/caGenerate）", () => {
     expect({ ...CLIENT_ROUTES }).toEqual({
       config: ROUTES.config,
       health: ROUTES.health,
       caCert: ROUTES.caCert,
+      caGenerate: ROUTES.caGenerate,
     });
   });
 });

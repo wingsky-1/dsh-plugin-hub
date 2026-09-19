@@ -2251,6 +2251,18 @@ describe("apply: 注册、围栏与 settings 命名空间接线", () => {
   let res405Body;
   let res200Status;
   let res200Payload;
+  let caDlRoute;
+  let caGenRoute;
+  let dlSelfSigned;
+  let healthSelfSigned;
+  let caGenFence403;
+  let caGenFence405;
+  let customPost409;
+  let genCreated;
+  let dlManaged;
+  let healthManaged;
+  let genNeedsConfirm;
+  let leafRotated;
 
   beforeAll(async () => {
     const applyHome = mkdtempSync(join(tmpdir(), "dsh-lan-proxy-apply-"));
@@ -2320,6 +2332,8 @@ describe("apply: 注册、围栏与 settings 命名空间接线", () => {
     rpcHandleCount = rpcHandles.length;
     healthRoute = routes.filter((r) => r.path === ROUTES.health)[0];
     configRoute = routes.filter((r) => r.path === ROUTES.config)[0];
+    caDlRoute = routes.filter((r) => r.path === ROUTES.caCert)[0];
+    caGenRoute = routes.filter((r) => r.path === ROUTES.caGenerate)[0];
 
     // 迁移是 async fire-and-forget：轮询等待（防 flake 纪律，不用固定 sleep）。
     // issue #911 起旧目录先迁入命名空间，.bak 落在新目录（旧文件搬走不断言残留）。
@@ -2422,6 +2436,101 @@ describe("apply: 注册、围栏与 settings 命名空间接线", () => {
     healthRoute.handler(fakeReq(), res200);
     res200Status = res200.status();
     res200Payload = JSON.parse(res200.body());
+
+    // 一键 CA 全链（#930 Phase 1+2，lib 产物层）：自签 404 → 围栏 → custom 门控 →
+    // 首建 200 → 托管下发 200 → 复发确认 → 叶轮换。真签发（forge）只跑两轮。
+    const caCall = async (route, method, overrides = {}, body, raw) => {
+      const text = raw !== undefined ? raw : body === undefined ? "" : JSON.stringify(body);
+      const req = Object.assign(
+        {
+          method,
+          socket: { remoteAddress: "127.0.0.1" },
+          headers: { host: "127.0.0.1:3080" },
+          url: route.path,
+          [Symbol.asyncIterator]: async function* () {
+            if (text.length > 0) yield Buffer.from(text);
+          },
+        },
+        overrides,
+      );
+      let status = 0;
+      let headersOut = {};
+      const chunks = [];
+      const res = {
+        writeHead(c, h) {
+          status = c;
+          headersOut = h ?? {};
+        },
+        end(c) {
+          if (c !== undefined) chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(String(c)));
+        },
+      };
+      await route.handler(req, res);
+      return { status: status || 200, headers: headersOut, body: Buffer.concat(chunks) };
+    };
+    const healthNow = async () => {
+      const r = fakeRes();
+      healthRoute.handler(fakeReq(), r);
+      return JSON.parse(r.body());
+    };
+    const dlSelf = await caCall(caDlRoute, "GET");
+    dlSelfSigned = { status: dlSelf.status, body: dlSelf.body.toString("utf8") };
+    healthSelfSigned = await healthNow();
+    const fence403 = await caCall(
+      caGenRoute,
+      "POST",
+      { socket: { remoteAddress: "192.168.100.9" } },
+      {},
+    );
+    caGenFence403 = fence403.status;
+    caGenFence405 = (await caCall(caGenRoute, "GET")).status;
+    // custom 门控：经真实 PUT 置孤叶子 → 带确认 POST 亦 409 → 清空恢复自签。
+    const customPut = await callRoute(
+      "PUT",
+      {},
+      {
+        patch: { tlsCertFile: "/x/c.pem", tlsKeyFile: "/x/k.pem" },
+        expectedRevision: settingsState.revision,
+      },
+    );
+    if (customPut.status !== 200) throw new Error("custom PUT setup failed: " + customPut.body);
+    const customPost = await caCall(
+      caGenRoute,
+      "POST",
+      {},
+      { confirmed: true, expectedRevision: settingsState.revision },
+    );
+    customPost409 = { status: customPost.status, body: customPost.body.toString("utf8") };
+    const restorePut = await callRoute(
+      "PUT",
+      {},
+      { patch: { tlsCertFile: "", tlsKeyFile: "" }, expectedRevision: settingsState.revision },
+    );
+    if (restorePut.status !== 200) throw new Error("restore PUT setup failed: " + restorePut.body);
+    const created = await caCall(
+      caGenRoute,
+      "POST",
+      {},
+      { expectedRevision: settingsState.revision },
+    );
+    genCreated = { status: created.status, body: created.body.toString("utf8") };
+    const dlMan = await caCall(caDlRoute, "GET");
+    dlManaged = { status: dlMan.status, headers: dlMan.headers, head: dlMan.body[0] };
+    healthManaged = await healthNow();
+    const again = await caCall(
+      caGenRoute,
+      "POST",
+      {},
+      { expectedRevision: settingsState.revision },
+    );
+    genNeedsConfirm = { status: again.status, body: again.body.toString("utf8") };
+    const rotated = await caCall(
+      caGenRoute,
+      "POST",
+      {},
+      { confirmed: true, expectedRevision: settingsState.revision },
+    );
+    leafRotated = { status: rotated.status, body: rotated.body.toString("utf8") };
 
     cleanup();
     process.env.DSH_HOME = prevHome;
@@ -2565,6 +2674,84 @@ describe("apply: 注册、围栏与 settings 命名空间接线", () => {
 
     it("payload.plugin 为 dsh-lan-proxy", () => {
       expect(res200Payload.plugin).toBe("dsh-lan-proxy");
+    });
+  });
+
+  describe("一键 CA 路由注册（#930 Phase 2）", () => {
+    it("下发路由注册", () => {
+      expect(caDlRoute).toBeTruthy();
+    });
+
+    it("动作路由注册", () => {
+      expect(caGenRoute).toBeTruthy();
+    });
+  });
+
+  describe("Phase 1 自签下载 404 + health 联合（口径诚实）", () => {
+    it("自签下载 404 ca-unconfigured", () => {
+      expect(dlSelfSigned.status).toBe(404);
+      expect(JSON.parse(dlSelfSigned.body).error.code).toBe("ca-unconfigured");
+    });
+
+    it("404 指引一键生成", () => {
+      expect(JSON.parse(dlSelfSigned.body).error.details).toContain("一键生成");
+    });
+
+    it("health 自签三元组", () => {
+      expect(healthSelfSigned.caState).toBe("self-signed");
+      expect(healthSelfSigned.certInfo).toBe(null);
+      expect(healthSelfSigned.caConfigured).toBe(false);
+    });
+  });
+
+  describe("caGenerate 围栏（403 先于 405）", () => {
+    it("非回环 403", () => {
+      expect(caGenFence403).toBe(403);
+    });
+
+    it("回环 GET 405", () => {
+      expect(caGenFence405).toBe(405);
+    });
+  });
+
+  describe("custom 服务端门控（curl 不可绕过）", () => {
+    it("带确认亦 409 ca-customized", () => {
+      expect(customPost409.status).toBe(409);
+      expect(JSON.parse(customPost409.body).error.code).toBe("ca-customized");
+    });
+  });
+
+  describe("首建 200 + 托管下发 200 + health managed", () => {
+    it("首建 200 generated", () => {
+      expect(genCreated.status).toBe(200);
+      expect(JSON.parse(genCreated.body)).toEqual({ ok: true, mode: "generated" });
+    });
+
+    it("托管下发 200 DER", () => {
+      expect(dlManaged.status).toBe(200);
+      expect(dlManaged.headers["content-type"]).toBe("application/x-x509-ca-cert");
+      expect(dlManaged.head).toBe(0x30);
+    });
+
+    it("health managed 三元组 + certInfo 形态", () => {
+      expect(healthManaged.caState).toBe("managed");
+      expect(healthManaged.caConfigured).toBe(true);
+      expect(typeof healthManaged.certInfo.leafValidTo).toBe("string");
+      expect(Number.isNaN(Date.parse(healthManaged.certInfo.leafValidTo))).toBe(false);
+      expect(Array.isArray(healthManaged.certInfo.leafSans)).toBe(true);
+      expect(Array.isArray(healthManaged.certInfo.currentIps)).toBe(true);
+    });
+  });
+
+  describe("复发确认 + 叶轮换 200", () => {
+    it("无确认 409 needs-confirm", () => {
+      expect(genNeedsConfirm.status).toBe(409);
+      expect(JSON.parse(genNeedsConfirm.body).error.code).toBe("needs-confirm");
+    });
+
+    it("确认后 200 leaf-rotated", () => {
+      expect(leafRotated.status).toBe(200);
+      expect(JSON.parse(leafRotated.body)).toEqual({ ok: true, mode: "leaf-rotated" });
     });
   });
 });
@@ -3204,6 +3391,35 @@ describe("client 契约（lib/client.js 产物字面量）", () => {
 
     it("无改动不发起保存请求", () => {
       expect(clientCode.indexOf("Object.keys(payload).length === 0") >= 0).toBeTruthy();
+    });
+  });
+
+  // issue #930 Phase 2：一键 CA 按钮/确认框/提醒走产物字面量锁定（行为由 client-dom 覆盖）。
+  describe("client 一键 CA 操作面", () => {
+    it("动作路由进产物", () => {
+      expect(clientCode.includes(ROUTES.caGenerate)).toBeTruthy();
+    });
+
+    it("生成按钮文案进产物", () => {
+      expect(clientCode.includes("一键生成本地 CA")).toBeTruthy();
+    });
+
+    it("轮换按钮文案进产物", () => {
+      expect(
+        clientCode.includes("轮换叶子证书") && clientCode.includes("轮换 CA（危险）"),
+      ).toBeTruthy();
+    });
+
+    it("确认框 key 进产物", () => {
+      expect(
+        clientCode.includes('t("caConfirmTitle"') && clientCode.includes('t("caConfirmBody"'),
+      ).toBeTruthy();
+    });
+
+    it("提醒 key 进产物", () => {
+      expect(
+        clientCode.includes('t("caExpiring"') && clientCode.includes('t("caIpChanged"'),
+      ).toBeTruthy();
     });
   });
 

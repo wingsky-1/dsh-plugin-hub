@@ -26,10 +26,13 @@ import {
 } from "./host-trust-status.ts";
 
 import { APP_ROUTES } from "./shared/interface.ts";
+import { evaluateCaWarnings } from "./ca-status.ts";
+import type { CertInfoView } from "./ca-status.ts";
 
 const CONFIG_ROUTE = APP_ROUTES.config;
 const HEALTH_ROUTE = APP_ROUTES.health;
 const CA_CERT_ROUTE = APP_ROUTES.caCert;
+const CA_GENERATE_ROUTE = APP_ROUTES.caGenerate;
 
 /** 增量 diff 的键值比较：路径白名单数组按元素逐一比较，其余严格相等。 */
 function sameSetting(key: string, a: unknown, b: unknown): boolean {
@@ -105,6 +108,23 @@ function buildSavePatch(
   return { snapshot, payload };
 }
 
+/**
+ * 动作失败体的字符串字段（throw { code, details } 与 fetch 异常两形态收口；
+ * 非对象/非字符串一律空串，调用方回落 errorText）。
+ */
+function failureField(e: unknown, field: string): string {
+  if (typeof e === "object" && e !== null && field in e) {
+    const value = (e as Record<string, unknown>)[field];
+    return typeof value === "string" ? value : "";
+  }
+  return "";
+}
+
+/** 异常文本（Error 取 message，其余 String 化）。 */
+function errorText(e: unknown): string {
+  return e instanceof Error ? e.message : String(e);
+}
+
 /** HTTP 压缩状态行文案（issue #33 子项 3）；无快照返回 null（不渲染该行）。 */
 function compressStatusLine(c: unknown): string | null {
   if (!c || typeof c !== "object") return null;
@@ -173,6 +193,19 @@ export function SettingsCard(props: SettingsCardProps) {
   const lifetime = React.useRef<{ value: boolean } | null>(null);
   const inFlight = React.useRef(false);
   const [saving, setSaving] = useState(false);
+  // 一键 CA 动作态（issue #930 Phase 2）：与保存通道独立的 inFlight + 确认框。
+  const caFlight = React.useRef(false);
+  const caSavingState = useState(false);
+  const caSaving = caSavingState[0];
+  const setCaSaving = caSavingState[1];
+  const caMsgState = useState(null as { msg: string; err: boolean } | null);
+  const caMsg = caMsgState[0];
+  const setCaMsg = (msg: string, err?: boolean) => {
+    caMsgState[1](msg ? { msg: msg, err: err === true } : null);
+  };
+  const caConfirmState = useState(null as null | { kind: "generate" | "leaf" | "ca" });
+  const caConfirm = caConfirmState[0];
+  const setCaConfirm = caConfirmState[1];
 
   function loadCard(alive: { value: boolean }) {
     fetch(CONFIG_ROUTE, { headers: { accept: "application/json" } })
@@ -254,6 +287,19 @@ export function SettingsCard(props: SettingsCardProps) {
       setSaved(t("unchanged"));
       return;
     }
+    submitSavePatch(payload, snapshot, base, alive);
+  }
+
+  /**
+   * PUT 提交与基线确认（save 与一键清空共用；草稿更新由调用方负责，基线确认
+   * 以服务端回执为准）。载荷由调用方构造，本函数只做发送与反馈。
+   */
+  function submitSavePatch(
+    payload: Record<string, unknown>,
+    snapshot: Record<string, unknown>,
+    base: { baseline: Record<string, unknown>; revision: number | null },
+    alive: { value: boolean },
+  ) {
     inFlight.current = true;
     setSaving(true);
     setSaved("");
@@ -303,11 +349,113 @@ export function SettingsCard(props: SettingsCardProps) {
       });
   }
 
+  /**
+   * 一键清空回自签（R4：隔离 PUT——载荷恒为三键空串 + revision，不合并草稿
+   * 其它未保存改动；服务端空串走 replace 清除，成功后三键基线与草稿同步）。
+   */
+  function clearTripleToSelfSigned() {
+    const alive = lifetime.current;
+    const base = committed.current;
+    if (!alive?.value || base === null || inFlight.current) return;
+    const cleared = { tlsCertFile: "", tlsKeyFile: "", tlsCaCertFile: "" };
+    setSettings(Object.assign({}, settingsValue, cleared));
+    submitSavePatch(cleared, Object.assign({}, base.baseline, cleared), base, alive);
+  }
+
+  /**
+   * 一键 CA 动作提交（issue #930 Phase 2）：kind 决定 body —— generate 首建
+   * 默认无确认（残留 409 回来再弹框补确认），leaf/ca 恒经确认框（confirmed:true，
+   * ca 另带 rotateCa:true）。成功后重 fetch（F9 即时可用）并清确认框。
+   */
+  function runCaAction(kind: "generate" | "leaf" | "ca", confirmed: boolean) {
+    const alive = lifetime.current;
+    if (!alive?.value || caFlight.current) return;
+    const revision = committed.current?.revision;
+    const payload: Record<string, unknown> = {
+      expectedRevision: typeof revision === "number" ? revision : null,
+    };
+    if (confirmed) payload.confirmed = true;
+    if (kind === "ca") payload.rotateCa = true;
+    caFlight.current = true;
+    setCaSaving(true);
+    setCaMsg("");
+    fetch(CA_GENERATE_ROUTE, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload),
+    })
+      .then((r: Response) => {
+        return r
+          .json()
+          .then((body: { ok?: unknown; error?: { code?: unknown; details?: unknown } }) => {
+            if (!r.ok) {
+              const errObj =
+                typeof body?.error === "object" && body.error !== null ? body.error : undefined;
+              const code = typeof errObj?.code === "string" ? errObj.code : "HTTP " + r.status;
+              const details = typeof errObj?.details === "string" ? errObj.details : code;
+              throw { code: code, details: details };
+            }
+            return body;
+          });
+      })
+      .then(() => {
+        if (!alive.value) return;
+        setCaConfirm(null);
+        setCaMsg(t("caGeneratedOk"));
+        loadCard(alive);
+      })
+      .catch((e: unknown) => {
+        if (!alive.value) return;
+        const code = failureField(e, "code");
+        // 自签残留态的 needs-confirm：弹框补确认后用户点确认即重发 confirmed:true。
+        if (code === "needs-confirm" && kind === "generate") {
+          setCaConfirm({ kind: "generate" });
+          return;
+        }
+        if (code === "ca-revision-stale") {
+          setCaMsg(t("caRevisionStale"), true);
+          return;
+        }
+        setCaMsg(t("caGenerateFail", { msg: failureField(e, "details") || errorText(e) }), true);
+      })
+      .finally(() => {
+        if (!alive.value) return;
+        caFlight.current = false;
+        setCaSaving(false);
+      });
+  }
+
   const compressLine = compressStatusLine(compress);
   // host trust 三段判定（issue #856）：判定是纯函数，展示走 i18n 字典。
   const hostTrustStatus = evaluateHostTrust(
     props.hostTrustSignals ? props.hostTrustSignals() : readHostTrustSignals(undefined),
   );
+  // 一键 CA 展示态（issue #930 F7/F8/F9）：health.caState 唯一来源，客户端只渲染
+  // 不判定；certInfo 缺席/不可读即无提醒（HTTP-only 无叶子同此）。
+  const caState = typeof hostFacts?.caState === "string" ? hostFacts.caState : undefined;
+  const certInfo =
+    hostFacts?.certInfo !== null && typeof hostFacts?.certInfo === "object"
+      ? (hostFacts.certInfo as CertInfoView)
+      : null;
+  let caModeKey: string | null = null;
+  if (caState === "self-signed") caModeKey = "caModeSelfSigned";
+  else if (caState === "managed") caModeKey = "caModeManaged";
+  else if (caState === "custom") caModeKey = "caModeCustom";
+  else if (caState === "error") caModeKey = "caConfigError";
+  const caWarnings = certInfo !== null ? evaluateCaWarnings(certInfo, Date.now()) : null;
+  const showCaWarnings =
+    caWarnings !== null && caState === "managed" && settingsValue.httpsEnabled !== false;
+  const caCurrentIps =
+    certInfo !== null && Array.isArray(certInfo.currentIps)
+      ? certInfo.currentIps.filter((ip): ip is string => typeof ip === "string")
+      : [];
+  const caLeafDate =
+    certInfo !== null && typeof certInfo.leafValidTo === "string"
+      ? certInfo.leafValidTo.slice(0, 10)
+      : "";
+  let caConfirmLabel = "caGenerate";
+  if (caConfirm?.kind === "leaf") caConfirmLabel = "caRotate";
+  else if (caConfirm?.kind === "ca") caConfirmLabel = "caRotateCa";
 
   return (
     <li className={"lp-set-card" + (open ? " lp-set-cardOpen" : "")}>
@@ -434,6 +582,111 @@ export function SettingsCard(props: SettingsCardProps) {
             </a>
           </div>
           <div className="lp-set-hint">{t("caDownloadHint")}</div>
+          {caModeKey ? (
+            <div className="lp-set-status" data-ca-state={caState}>
+              {t(caModeKey)}
+            </div>
+          ) : null}
+          {caState === "self-signed" ? (
+            <div className="lp-set-hint">
+              {t("caDisabledNoCa")} <a href="#lp-ca-generate">{t("caGenerate")}</a>
+            </div>
+          ) : null}
+          {caState === "custom" && hostFacts?.caConfigured !== true ? (
+            <div className="lp-set-hint">
+              {t("caDisabledNoCa")} <a href="#lp-ca-generate">{t("caGenerate")}</a>
+            </div>
+          ) : null}
+          {caState === "error" ? (
+            <div className="lp-set-hint">
+              {t("caFilesMissing")} <a href="#lp-ca-generate">{t("caClearSelfSigned")}</a>
+            </div>
+          ) : null}
+          {showCaWarnings && caWarnings?.ipChanged ? (
+            <div className="lp-set-hint">{t("caIpChanged", { ips: caCurrentIps.join(", ") })}</div>
+          ) : null}
+          {showCaWarnings && caWarnings?.expiring ? (
+            <div className="lp-set-hint">{t("caExpiring", { date: caLeafDate })}</div>
+          ) : null}
+          {caState !== undefined ? (
+            <div className="lp-set-row" id="lp-ca-generate">
+              {caState === "self-signed" ? (
+                <button
+                  type="button"
+                  className="lp-set-save"
+                  onClick={() => runCaAction("generate", false)}
+                  disabled={caSaving}
+                >
+                  {t("caGenerate")}
+                </button>
+              ) : null}
+              {caState === "managed" ? (
+                <button
+                  type="button"
+                  className="lp-set-save"
+                  onClick={() => setCaConfirm({ kind: "leaf" })}
+                  disabled={caSaving}
+                >
+                  {t("caRotate")}
+                </button>
+              ) : null}
+              {caState === "managed" ? (
+                <button
+                  type="button"
+                  className="lp-set-save"
+                  onClick={() => setCaConfirm({ kind: "ca" })}
+                  disabled={caSaving}
+                >
+                  {t("caRotateCa")}
+                </button>
+              ) : null}
+              {caState === "custom" || caState === "error" ? (
+                <button
+                  type="button"
+                  className="lp-set-save"
+                  disabled={true}
+                  title={t(caState === "error" ? "caFilesMissing" : "caDisabledNoCa")}
+                >
+                  {t("caGenerate")}
+                </button>
+              ) : null}
+              {caState === "error" ? (
+                <button
+                  type="button"
+                  className="lp-set-save"
+                  onClick={() => clearTripleToSelfSigned()}
+                  disabled={saving}
+                >
+                  {t("caClearSelfSigned")}
+                </button>
+              ) : null}
+              {caMsg ? (
+                <span className={caMsg.err ? "lp-set-error" : "lp-set-saved"}>{caMsg.msg}</span>
+              ) : null}
+            </div>
+          ) : null}
+          {caConfirm ? (
+            <div className="lp-set-row">
+              <span>{t("caConfirmTitle")}</span>
+              <span className="lp-set-hint">{t("caConfirmBody")}</span>
+              <button
+                type="button"
+                className="lp-set-save"
+                onClick={() => runCaAction(caConfirm.kind, true)}
+                disabled={caSaving}
+              >
+                {t(caConfirmLabel)}
+              </button>
+              <button
+                type="button"
+                className="lp-set-save"
+                onClick={() => setCaConfirm(null)}
+                disabled={caSaving}
+              >
+                {t("caConfirmCancel")}
+              </button>
+            </div>
+          ) : null}
           <div className="lp-set-row">
             <label htmlFor="lp-set-banner">{t("printBanner")}</label>
             <input
@@ -566,7 +819,7 @@ export function SettingsCard(props: SettingsCardProps) {
             {saved ? (
               <span className={saved.err ? "lp-set-error" : "lp-set-saved"}>{saved.msg}</span>
             ) : null}
-            <button type="button" className="lp-set-save" onClick={save} disabled={saving}>
+            <button type="button" className="lp-set-save" onClick={() => save()} disabled={saving}>
               {t("save")}
             </button>
           </div>

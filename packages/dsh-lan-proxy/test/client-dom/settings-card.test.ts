@@ -23,15 +23,23 @@ function deferred() {
   });
   return { promise, resolve };
 }
+let caWrites: unknown[];
+let caReply: () => Promise<Response>;
 beforeEach(() => {
   writes = [];
+  caWrites = [];
   initial = { effective: { port: 4000 }, user: {}, revision: 0 };
   health = {};
   reply = async () => json({ ok: true, revision: 1 });
+  caReply = async () => json({ ok: true, mode: "generated" });
   globalThis.fetch = async (input, init) => {
     if (init?.method === "PUT") {
       writes.push(JSON.parse(String(init.body)));
       return reply();
+    }
+    if (init?.method === "POST") {
+      caWrites.push(JSON.parse(String(init.body)));
+      return caReply();
     }
     return json(String(input).endsWith("/config") ? initial : health);
   };
@@ -310,5 +318,174 @@ describe("SettingsCard 加载失败（CRAP 20/4 未覆盖 → 覆盖后 4）", (
     const view = render(card());
     await act(async () => {});
     expect(view.getByText("settingsLoading")).toBeTruthy();
+  });
+});
+
+describe("SettingsCard 一键 CA 状态行与按钮（issue #930）", () => {
+  it("自签态：置灰 + 锚点链到生成按钮 + 按钮可用", async () => {
+    health = { caState: "self-signed" };
+    const view = await mountCard();
+    expect(view.getByText("caModeSelfSigned").dataset.caState).toBe("self-signed");
+    expect(view.getByText("caDisabledNoCa")).toBeTruthy();
+    const anchor = view.container.querySelector('a[href="#lp-ca-generate"]');
+    expect(anchor?.textContent).toBe("caGenerate");
+    const button = view.getByRole("button", { name: "caGenerate" });
+    expect((button as HTMLButtonElement).disabled).toBe(false);
+  });
+  it("托管态：双按钮 + 到期/IP 双提醒（https 开）", async () => {
+    health = {
+      caState: "managed",
+      caConfigured: true,
+      certInfo: {
+        leafValidTo: new Date(Date.now() + 5 * 86400 * 1000).toISOString(),
+        leafSans: ["DNS:localhost", "IP Address:127.0.0.1", "IP Address:192.168.1.5"],
+        currentIps: ["192.168.1.5", "192.168.2.9"],
+      },
+    };
+    initial = { effective: { port: 4000, httpsEnabled: true }, user: {}, revision: 0 };
+    const view = await mountCard();
+    expect(view.getByText("caModeManaged")).toBeTruthy();
+    expect(view.getByRole("button", { name: "caRotate" })).toBeTruthy();
+    expect(view.getByRole("button", { name: "caRotateCa" })).toBeTruthy();
+    expect(view.getByText("caExpiring")).toBeTruthy();
+    expect(view.getByText("caIpChanged")).toBeTruthy();
+  });
+  it("托管态 https 关即不提醒（HTTP-only 无叶子不提醒）", async () => {
+    health = {
+      caState: "managed",
+      certInfo: {
+        leafValidTo: new Date(Date.now() + 5 * 86400 * 1000).toISOString(),
+        leafSans: [],
+        currentIps: ["192.168.2.9"],
+      },
+    };
+    initial = { effective: { port: 4000, httpsEnabled: false }, user: {}, revision: 0 };
+    const view = await mountCard();
+    expect(view.getByText("caModeManaged")).toBeTruthy();
+    expect(view.queryByText("caExpiring")).toBe(null);
+    expect(view.queryByText("caIpChanged")).toBe(null);
+  });
+  it("自定义态：置灰 + 生成按钮禁用（服务端亦 409）", async () => {
+    health = { caState: "custom", caConfigured: false };
+    const view = await mountCard();
+    expect(view.getByText("caModeCustom")).toBeTruthy();
+    expect(view.getByText("caDisabledNoCa")).toBeTruthy();
+    const buttons = view.getAllByRole("button", { name: "caGenerate" });
+    const action = buttons.find((b) => (b as HTMLButtonElement).disabled);
+    expect(action).toBeTruthy();
+  });
+  it("异常态：配置异常文案", async () => {
+    health = { caState: "error" };
+    const view = await mountCard();
+    expect(view.getByText("caConfigError")).toBeTruthy();
+    expect(view.getByText("caFilesMissing")).toBeTruthy();
+  });
+  it("异常态一键清空：PUT 三键空串走服务端清空路径", async () => {
+    health = { caState: "error" };
+    initial = {
+      effective: { port: 4000 },
+      user: { tlsCertFile: "/x/c.pem", tlsKeyFile: "/x/k.pem", tlsCaCertFile: "/x/ca.pem" },
+      revision: 0,
+    };
+    const view = await mountCard();
+    const anchor = view.container.querySelector('a[href="#lp-ca-generate"]');
+    expect(anchor?.textContent).toBe("caClearSelfSigned");
+    // 草稿另有未保存改动（端口）：隔离 PUT 不得将其合并带入。
+    port(view, "4100");
+    fireEvent.click(view.getByRole("button", { name: "caClearSelfSigned" }));
+    await act(async () => {});
+    expect(writes).toEqual([
+      {
+        patch: { tlsCertFile: "", tlsKeyFile: "", tlsCaCertFile: "" },
+        expectedRevision: 0,
+      },
+    ]);
+  });
+});
+
+describe("SettingsCard 一键 CA 动作提交", () => {
+  it("自签首建直发空确认：POST 无 confirmed，成功即时重 fetch", async () => {
+    health = { caState: "self-signed" };
+    let gets = 0;
+    const servingFetch = globalThis.fetch;
+    globalThis.fetch = async (input, init) => {
+      if (!init?.method && String(input).endsWith("/config")) gets += 1;
+      return servingFetch(input, init);
+    };
+    const view = await mountCard();
+    const before = gets;
+    fireEvent.click(view.getByRole("button", { name: "caGenerate" }));
+    await act(async () => {});
+    expect(caWrites).toEqual([{ expectedRevision: 0 }]);
+    expect(view.getByText("caGeneratedOk")).toBeTruthy();
+    expect(gets).toBeGreaterThan(before);
+  });
+  it("残留 409 回来弹确认框：确认后补 confirmed:true 重发", async () => {
+    health = { caState: "self-signed" };
+    caReply = async () => json({ error: { code: "needs-confirm", details: "确认" } }, 409);
+    const view = await mountCard();
+    fireEvent.click(view.getByRole("button", { name: "caGenerate" }));
+    await act(async () => {});
+    expect(view.getByText("caConfirmTitle")).toBeTruthy();
+    caReply = async () => json({ ok: true, mode: "generated" });
+    const confirms = view.getAllByRole("button", { name: "caGenerate" });
+    expect(confirms.length).toBe(2);
+    fireEvent.click(confirms[1]);
+    await act(async () => {});
+    expect(caWrites).toEqual([{ expectedRevision: 0 }, { expectedRevision: 0, confirmed: true }]);
+    expect(view.getByText("caGeneratedOk")).toBeTruthy();
+  });
+  it("缺 revision 409 显示专用文案 caRevisionStale（不复用冲突文案）", async () => {
+    health = { caState: "self-signed" };
+    caReply = async () =>
+      json({ error: { code: "ca-revision-stale", details: "配置版本未知，请刷新后重试" } }, 409);
+    const view = await mountCard();
+    fireEvent.click(view.getByRole("button", { name: "caGenerate" }));
+    await act(async () => {});
+    expect(view.getByText("caRevisionStale").className).toBe("lp-set-error");
+    expect(view.queryByText("caConfirmTitle")).toBe(null);
+  });
+  it("叶子轮换经确认框：POST 带 confirmed 不带 rotateCa；取消可关框", async () => {
+    health = { caState: "managed" };
+    const view = await mountCard();
+    fireEvent.click(view.getByRole("button", { name: "caRotate" }));
+    expect(view.getByText("caConfirmTitle")).toBeTruthy();
+    expect(view.getByText("caConfirmBody")).toBeTruthy();
+    fireEvent.click(view.getByRole("button", { name: "caConfirmCancel" }));
+    await act(async () => {});
+    expect(view.queryByText("caConfirmTitle")).toBe(null);
+    expect(caWrites).toEqual([]);
+    fireEvent.click(view.getByRole("button", { name: "caRotate" }));
+    const confirms = view.getAllByRole("button", { name: "caRotate" });
+    expect(confirms.length).toBe(2);
+    fireEvent.click(confirms[1]);
+    await act(async () => {});
+    expect(caWrites).toEqual([{ expectedRevision: 0, confirmed: true }]);
+  });
+  it("CA 轮换经确认框：POST 带 rotateCa:true", async () => {
+    health = { caState: "managed" };
+    const view = await mountCard();
+    fireEvent.click(view.getByRole("button", { name: "caRotateCa" }));
+    const confirms = view.getAllByRole("button", { name: "caRotateCa" });
+    expect(confirms.length).toBe(2);
+    fireEvent.click(confirms[1]);
+    await act(async () => {});
+    expect(caWrites).toEqual([{ expectedRevision: 0, confirmed: true, rotateCa: true }]);
+  });
+  it("失败走 caGenerateFail 且飞行中按钮禁用", async () => {
+    health = { caState: "managed" };
+    const pending = deferred();
+    caReply = () => pending.promise;
+    const view = await mountCard();
+    fireEvent.click(view.getByRole("button", { name: "caRotate" }));
+    const confirms = view.getAllByRole("button", { name: "caRotate" });
+    expect(confirms.length).toBe(2);
+    fireEvent.click(confirms[1]);
+    expect((confirms[0] as HTMLButtonElement).disabled).toBe(true);
+    expect((confirms[1] as HTMLButtonElement).disabled).toBe(true);
+    await act(async () => {
+      pending.resolve(json({ error: { code: "ca-generate-failed", details: "boom" } }, 500));
+    });
+    expect(view.getByText("caGenerateFail")).toBeTruthy();
   });
 });
