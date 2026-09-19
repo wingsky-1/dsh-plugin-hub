@@ -45,7 +45,7 @@
    客户端问题按 DEVELOPMENT.md §2 的干净模块契约排查；CI flake 类修复**必读**
    [DEVELOPMENT.md §5](DEVELOPMENT.md#user-content-5-smoke-测试防-flake-纪律)（隔离文件路径 /
    设 `DSH_HOME` / 轮询替代固定 sleep）。
-3. **修复分支**：命名 `fix/<主题>` 或 `feat/<主题>`（与 CONTRIBUTING.md 开发流程一致）。
+3. **修复分支**：命名 `fix/<主题>` 或 `feat/<主题>`（与 CONTRIBUTING.md 开发流程一致）；自治循环批量任务用 `task/<主题>`（见 AGENTS.md worktree 节）。人工照 `fix`/`feat`，机器照 `task`。
 4. **验证证据**（涉及界面行为的改动——overlay / URL 重写 / Modal 内跳转 / 双主题 /
    窄屏等）：用 `@wingsky-1/dsh-verify-isolated` 插件包注册的
    `dsh-verify-isolated` skill 在隔离环境实测（临时 `DSH_HOME` + 独立 profile 双重
@@ -69,7 +69,7 @@
    为什么必须放在**开 PR 之前**而不是合并前：分支保护是 `strict: true`，落后主干时
    `mergeStateStatus` 会是 `BEHIND`，合并按钮被禁——最终仍要 rebase 一次，但那次 rebase
    会让**已经跑完的 CI 作废**。本仓 PR 上按命中切片强制跑变异（#742），命中全局面时是
-   32 个矩阵实例，白跑一轮的代价远高于一次秒级 rebase。
+   数十个矩阵实例（段数见 `scripts/data/mutation-topology.json`，不复述数字），白跑一轮的代价远高于一次秒级 rebase。
    与下方第 8 条的冲突路径的关系：第 8 条是**已经落后/冲突**时的补救，本条是预防。
 7. **PR 关联 issue**（二选一，推荐前者）：
    - PR 正文写 `Fixes #<编号>` —— merge 后 GitHub 自动关闭 issue；
@@ -107,7 +107,7 @@
 |---|---|
 | `zone/auto` | 允许 agent 自治处理的入场票；「按此执行」后可由 agent 代打（留痕 + 读回） |
 | `zone/red-line` | 禁止自治，须走原 issue 内 `needs-proposal-review` → 维护者 `approved` |
-| `approved` / `api-approved` | 维护者亲手批准，agent **永不代打** |
+| `approved` / `api-approved` | 维护者亲手批准，agent **永不代打**；`approved` 为红线方案评审批准 |
 | `needs-proposal-review` / `pending-ratification` | 方案待对抗评审 / 待维护者裁决 |
 | `blocked-human` | 熔断等人；恢复须移除后追加 resume 信号并校验 actor 权限 |
 

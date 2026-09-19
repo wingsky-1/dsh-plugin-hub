@@ -23,7 +23,8 @@ description: >
    每个 item 走 oss-pipeline 实施段状态机③-⑨ 或快速道
    （快速道准入四条件与压缩流程见 oss-pipeline「快速道（fast lane）」节；
    ③-⑨ 可委派 subagent 并行；
-   委派时按 oss-pipeline 纪律附带对应 `agents/<role>.md` 规程路径与
+   委派时按 oss-pipeline 纪律附带对应 `agents/<role>.md`（`spec-writer` / `coder` / `qa` /
+   `hardener` / `cleaner`，按 pipeline ③-⑨ 阶段选用）规程路径与
    [agents/_protocol.md](../../../agents/_protocol.md) 公共协议；已入批的单个异常项在认领有效时仍走 oss-pipeline 该 issue 状态机续跑，不退回重认领）
 5. **并行度 ≤3**，且节流跟随 CI 完成节奏（等 checks 再推下一个），
    禁止无脑 fan-out 造成排队雪崩

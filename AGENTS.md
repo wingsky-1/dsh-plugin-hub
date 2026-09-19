@@ -44,6 +44,7 @@ git worktree remove /mnt/ssd/worktree/dsh-plugin-hub-task-<n> && git worktree pr
 `/mnt/ssd/worktree/<仓库名>-<分支名>`（分支名 `/` → `-`）；仅两种例外：A）用户直接指令指定路径
 （高层覆盖低层，按权威顺序）；B）无 `/mnt/ssd` 或不可写时停下报告并另立 issue，不得自行换址。
 两种例外仍受护栏：不在仓库内、`/tmp`、家目录散放，建前 `git worktree list`，返回值写实际路径 + exit code。
+分支命名适用域：自治循环批量任务用 `task/<主题>`，人工贡献用 `feat/<主题>` / `fix/<主题>`；机器照前者，人照后者。
 通用纪律见全局 `~/.dsh/AGENTS.md` §七，本节只留三条本仓增量：
 
 **主 checkout 是旧树，不是测量基准**：它是在跑的 `dsh web` 的加载源（上一条禁止写操作），
@@ -119,7 +120,7 @@ worktree 内。在仓库根直接跑出的读数是「某个落后提交」的�
   = 分发副本，故 license 由构建链归集到 `lib/THIRD-PARTY-LICENSES`，`pack:check` 断言覆盖。
 - **客户端是干净模块**：只 `export function apply(ctx)` + `export const inject`，样式独立
   `src/client/style.css`，路由强制 loopback 围栏，patch id 用 `ui-<name>`；细则见
-  [DEVELOPMENT.md §1/§2/§3](docs/DEVELOPMENT.md#user-content-1-宿主端srcindexts规范)。
+  [DEVELOPMENT.md](docs/DEVELOPMENT.md)（[§1](docs/DEVELOPMENT.md#user-content-1-宿主端srcindexts规范) / [§2](docs/DEVELOPMENT.md#user-content-2-客户端规范) / [§3](docs/DEVELOPMENT.md#user-content-3-CSS规范)）。
 - **命名**：新包一律 `dsh-` 前缀，npm 包名 `@wingsky-1/dsh-*`，聚合包 `dsh-plugins-all`。
 - **安全语义**：涉及密钥 / 凭据 / 远程执行 / 令牌的改动，同步更新包 README 的
   `## 安全模型` 与测试。
@@ -138,13 +139,13 @@ worktree 内。在仓库根直接跑出的读数是「某个落后提交」的�
 | 改宿主/客户端实现时 | [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) |
 | 证明重构没改行为时 | [DEVELOPMENT.md §4.1 验证三件套](docs/DEVELOPMENT.md#user-content-equivalence-refactor) |
 | 查门禁口径细节时 | [docs/GATE.md](docs/GATE.md) |
-| 新建插件施工时 | [`.dsh/skills/dsh-plugin-hub-dev/SKILL.md`](.dsh/skills/dsh-plugin-hub-dev/SKILL.md) |
+| 改/加/新建插件施工时 | [`.dsh/skills/dsh-plugin-hub-dev/SKILL.md`](.dsh/skills/dsh-plugin-hub-dev/SKILL.md) |
 | 评审 PR 时 | [`.dsh/skills/dsh-plugin-hub-pr-review/SKILL.md`](.dsh/skills/dsh-plugin-hub-pr-review/SKILL.md) + [`.dsh/skills/dsh-plugin-hub-pr-review/references/pr-images.md`](.dsh/skills/dsh-plugin-hub-pr-review/references/pr-images.md) |
 | 深评整插件时 | [`.dsh/skills/dsh-plugin-review/SKILL.md`](.dsh/skills/dsh-plugin-review/SKILL.md) |
 | 重构宿主端按域时 | [`.dsh/skills/dsh-plugin-hub-refactor/SKILL.md`](.dsh/skills/dsh-plugin-hub-refactor/SKILL.md) |
 | 写/审测试时 | [`.dsh/skills/dsh-plugin-hub-testing/SKILL.md`](.dsh/skills/dsh-plugin-hub-testing/SKILL.md) |
 | 升 dsh rc 时 | [`.dsh/skills/dsh-upgrade/SKILL.md`](.dsh/skills/dsh-upgrade/SKILL.md) |
-| 处理 issue 全周期时 | [docs/ISSUE-WORKFLOW.md](docs/ISSUE-WORKFLOW.md) |
+| 处理 issue 全周期时（文档；批量执行走下一行） | [docs/ISSUE-WORKFLOW.md](docs/ISSUE-WORKFLOW.md) |
 | 跑自治维护循环时 | [`.dsh/skills/oss-pipeline/SKILL.md`](.dsh/skills/oss-pipeline/SKILL.md) |
 | 批量清 auto 队列 / 处理 PR 转向 / 健康巡检时 | [`oss-triage`](.dsh/skills/oss-triage/SKILL.md) / [`oss-steering`](.dsh/skills/oss-steering/SKILL.md) / [`oss-report`](.dsh/skills/oss-report/SKILL.md)（细则见 [`.dsh/skills/README.md`](.dsh/skills/README.md)） |
 | 浏览器隔离验证时 | 随包 skill（[`packages/dsh-verify-isolated/skills/dsh-verify-isolated/SKILL.md`](packages/dsh-verify-isolated/skills/dsh-verify-isolated/SKILL.md)） |
