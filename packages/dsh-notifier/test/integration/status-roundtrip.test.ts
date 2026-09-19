@@ -121,13 +121,10 @@ describe("dispatch 到 stores 到 GET /status 到 statusText（真 failed 翻页
 
     const historyFound = await pollTestHistory();
     // 三面一致其一：同一条 test 记录里 system 即失败（含投递原因码）
-    const failedItem = (historyFound[0].channels as Array<Record<string, unknown>>).find(
-      (item) => item.channelId === "system",
-    );
-    expect(failedItem && failedItem.status).toBe("failed");
-    expect(failedItem && (failedItem.reason as { code?: string }).code).toBe(
-      "reasonSystemPopupFailed",
-    );
+    const historyChannels = historyFound[0].channels ?? [];
+    const failedItem = historyChannels.find((item) => item.channelId === "system");
+    expect(failedItem?.status).toBe("failed");
+    expect(failedItem?.reason?.code).toBe("reasonSystemPopupFailed");
     const map = await pollStatusEntry("system");
     const systemEntry = map.system;
     expect(systemEntry && systemEntry.lastStatus).toBe("failed");
@@ -177,7 +174,7 @@ describe("dispatch 到 stores 到 GET /status 到 statusText（真 failed 翻页
 
 describe("POST /test 时序：先 200 受理，投递终态随后才可见", () => {
   it("响应返回时历史为空；放行投递后历史与状态相继出现", async () => {
-    let releaseGate: (() => void) | undefined = undefined;
+    let releaseGate: (() => void) | undefined;
     const gate = new Promise<void>((resolve) => {
       releaseGate = resolve;
     });
@@ -218,10 +215,9 @@ describe("POST /test 时序：先 200 受理，投递终态随后才可见", () 
 
     if (releaseGate !== undefined) releaseGate();
     const released = await pollTestHistory();
-    const okItem = (released[0].channels as Array<Record<string, unknown>>).find(
-      (item) => item.channelId === "browser",
-    );
-    expect(okItem && okItem.status).toBe("ok");
+    const releasedChannels = released[0].channels ?? [];
+    const okItem = releasedChannels.find((item) => item.channelId === "browser");
+    expect(okItem?.status).toBe("ok");
     const map = await pollStatusEntry("browser");
     const browserEntry = map.browser;
     expect(browserEntry && browserEntry.lastStatus).toBe("ok");
