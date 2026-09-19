@@ -24,7 +24,7 @@ description: >
    （快速道准入四条件与压缩流程见 oss-pipeline「快速道（fast lane）」节；
    ③-⑨ 可委派 subagent 并行；
    委派时按 oss-pipeline 纪律附带对应 `agents/<role>.md` 规程路径与
-   [agents/_protocol.md](../../../agents/_protocol.md) 公共协议）
+   [agents/_protocol.md](../../../agents/_protocol.md) 公共协议；已入批的单个异常项在认领有效时仍走 oss-pipeline 该 issue 状态机续跑，不退回重认领）
 5. **并行度 ≤3**，且节流跟随 CI 完成节奏（等 checks 再推下一个），
    禁止无脑 fan-out 造成排队雪崩
 6. 每个 worktree 独立（`git worktree`），禁止共享 checkout

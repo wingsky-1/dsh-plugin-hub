@@ -22,7 +22,7 @@
 | 独立进程执行（v2 备选） | `dsh --profile headless "job"` | 0 |
 | 房间数据协议 | — | **目录约定 + schema**（本文档即实现） |
 | loop 驱动 | 当前 dsh 会话内的主控 agent（goal 工具维持长任务） | skill/规程文档 |
-| GitHub 投影 | `gh` CLI（github-ops skill） | 评论格式约定 |
+| GitHub 投影 | `gh` CLI（纪律见 `oss-pipeline`“写后读回验证”） | 评论格式约定 |
 | 前端供数 API | dsh 插件宿主端只读路由 | 一个薄插件 |
 
 结论：**自建面 = 数据协议（纯文档+schema）+ 辅助 CLI 脚本（可选）+ 只读查询插件（前端上线时才需要）**。

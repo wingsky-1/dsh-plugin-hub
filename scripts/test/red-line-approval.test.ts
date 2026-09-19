@@ -4,7 +4,7 @@
  *
  * 判据有三层，缺一层都会给出假绿：
  *   1. 纯函数层——`judgeRedLine` 的语义（命中且无 approved 才判红）；
- *   2. 面层——红线面是**派生**的（`.github/**` ∪ 声明表里每个 guard 的 `sources` ∪ 声明表自身），
+ *   2. 面层——红线面是**派生**的（基座 `.github/**` + `.dsh/skills/**` ∪ 声明表里每个 guard 的 `sources` ∪ 声明表自身），
  *      且 `scripts/gate/**` 明确**不在**面内（#851 撤回了上一版把它当"加固面"的扩大定义）；
  *   3. 接线层——CLI 的退出码契约（0/1/2）与 ci.yml 里那个 job 真的在调它、真的挂进
  *      repo-gate 的 needs。判据本体对而接线错，是"有测试却拦不住"的经典形态。
@@ -69,7 +69,7 @@ function jobBlock(text: string, job: string) {
 
 // ─────────────────────────── 一、红线面（派生） ───────────────────────────
 
-test("红线面：由 fixture 声明表派生——每个 guard 的 sources ∪ .github/** ∪ 声明表自身", () => {
+test("红线面：由 fixture 声明表派生——每个 guard 的 sources ∪ 基座（.github/** + .dsh/skills/** + 本体单文件）∪ 声明表自身", () => {
   withRegistry(
     [
       {
@@ -80,15 +80,17 @@ test("红线面：由 fixture 声明表派生——每个 guard 的 sources ∪ 
     ],
     (registry) => {
       // 与实现比对的是**字面期望**，不是从 redLinePatterns 派生的副本——后者会让"把红线面删空"
-      // 这类改动自证通过。三个来源各有一条：基座 `.github/**`、sources 里的每个路径（含不在
+      // 这类改动自证通过。来源各有一条：基座两条（`.github/**` + `.dsh/skills/**`）、sources 里的每个路径（含不在
       // scripts/data 下的 vitest.config.ts）、声明表自身（fixture 在 /tmp，自指项按规范路径入面）。
       assert.deepEqual(
         redLinePatterns(registry, () => {}),
         [
+          ".dsh/skills/**",
           ".github/**",
           "scripts/data/coverage.config.json",
           "scripts/data/gauntlet.config.json",
           "scripts/data/threshold-registry.json",
+          "scripts/gate/red-line-approval.mjs",
           "vitest.config.ts",
         ],
       );
@@ -114,10 +116,12 @@ test("红线面：规范化——./ 前缀归一、跨 guard 重复只算一条�
       assert.deepEqual(
         redLinePatterns(registry, () => {}),
         [
+          ".dsh/skills/**",
           ".github/**",
           "scripts/data/coverage.config.json",
           "scripts/data/gauntlet.config.json",
           "scripts/data/threshold-registry.json",
+          "scripts/gate/red-line-approval.mjs",
         ],
       );
     },
@@ -142,20 +146,26 @@ test("红线面：只收 guards[].sources——notAGate 的登记面不进面（
     // 第二类登记面——与撤回 scripts/gate/** 的同一条理由。这条钉住边界，扩面必须重新裁决。
     assert.deepEqual(
       redLinePatterns(path, () => {}),
-      [".github/**", "scripts/data/gauntlet.config.json", "scripts/data/threshold-registry.json"],
+      [
+        ".dsh/skills/**",
+        ".github/**",
+        "scripts/data/gauntlet.config.json",
+        "scripts/data/threshold-registry.json",
+        "scripts/gate/red-line-approval.mjs",
+      ],
     );
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
 });
 
-test("红线面：声明表缺失 → 退化为仅 .github/** + ::warning::，不崩（#850 合入前 CI 也要能跑）", () => {
+test("红线面：声明表缺失 → 退化为仅基座面 + ::warning::，不崩（#850 合入前 CI 也要能跑）", () => {
   const dir = mkdtempSync(join(tmpdir(), "red-line-missing-"));
   try {
     const missing = join(dir, "absent-registry.json");
     const warnings: string[] = [];
     const face = redLinePatterns(missing, (m) => warnings.push(m));
-    assert.deepEqual(face, [".github/**"]);
+    assert.deepEqual(face, [".dsh/skills/**", ".github/**", "scripts/gate/red-line-approval.mjs"]);
     assert.equal(warnings.length, 1, "退化必须留痕，且只留一条");
     assert.match(warnings[0], /^::warning::/);
     assert.match(warnings[0], /声明表不可用/);
@@ -201,7 +211,7 @@ test("红线面：声明表存在但不可用 → 同样退化 + 报警，且告
       const warnings: string[] = [];
       assert.deepEqual(
         redLinePatterns(path, (m) => warnings.push(m)),
-        [".github/**"],
+        [".dsh/skills/**", ".github/**", "scripts/gate/red-line-approval.mjs"],
         c.name,
       );
       assert.match(warnings[0], c.why, `${c.name} 的告警必须点名原因`);
@@ -219,12 +229,13 @@ test("红线面：声明表存在但不可用 → 同样退化 + 报警，且告
   }
 });
 
-test("回归锚：scripts/gate/** 不在面内——把它当加固面加回去必须被这条打红（#851 裁决）", () => {
+test("回归锚：scripts/gate/** 整树仍不在面内——唯一例外是判据本体单文件（#851 + #904 裁决）", () => {
   // 上一版把 scripts/gate/** 钉进常量，是自行扩大 AGENTS.md 的红线定义（清单里没有它），且在
-  // GitHub 侧没有 approved 留痕。这条是那次裁决的回归锚。
-  assert.ok(
-    RED_LINE_PATTERNS.every((pattern) => !pattern.startsWith("scripts/gate")),
-    `派生面不得含 scripts/gate/**（实际 ${RED_LINE_PATTERNS.join(", ")}）`,
+  // GitHub 侧没有 approved 留痕——#851 撤整树；#904 经维护者 P1 建议单钉判据本体一个文件（AGENTS 已同步明文）。
+  assert.deepEqual(
+    RED_LINE_PATTERNS.filter((pattern) => pattern.startsWith("scripts/gate")),
+    ["scripts/gate/red-line-approval.mjs"],
+    "scripts/gate/ 下只允许判据本体单文件",
   );
   assert.deepEqual(judgeRedLine({ changedFiles: ["scripts/gate/xxx.mjs"], labels: [] }), {
     ok: true,
@@ -258,11 +269,43 @@ test("回归锚：scripts/gate/** 不在面内——把它当加固面加回去�
   );
 });
 
+test("基座面含 .dsh/skills/** 与判据本体单文件——改 skill/改守卫须带 approved（AGENTS 红线清单已明写）", () => {
+  // 非空洞性：同一条既证面里有它，也证判据真会拦（无 approved 判红、有 approved 放行）。
+  assert.ok(
+    RED_LINE_PATTERNS.includes(".dsh/skills/**"),
+    `默认面必须含 .dsh/skills/**（实际 ${RED_LINE_PATTERNS.join(", ")})`,
+  );
+  assert.deepEqual(
+    judgeRedLine({ changedFiles: [".dsh/skills/oss-pipeline/SKILL.md"], labels: [] }),
+    {
+      ok: false,
+      violations: [
+        "红线文件 .dsh/skills/oss-pipeline/SKILL.md 命中红线面，但本次 PR 缺少 approved 标签（#843 M1）",
+      ],
+    },
+  );
+  assert.deepEqual(
+    judgeRedLine({
+      changedFiles: [".dsh/skills/oss-pipeline/SKILL.md"],
+      labels: ["approved"],
+    }),
+    { ok: true, violations: [] },
+  );
+  assert.ok(
+    RED_LINE_PATTERNS.includes("scripts/gate/red-line-approval.mjs"),
+    "默认面必须含判据本体单文件（守卫的代码受守卫）",
+  );
+  assert.equal(
+    judgeRedLine({ changedFiles: ["scripts/gate/red-line-approval.mjs"], labels: [] }).ok,
+    false,
+  );
+});
+
 test("红线面：RED_LINE_PATTERNS 就是默认声明表的派生面，默认表路径即规范路径", () => {
   assert.equal(
     normalize(DEFAULT_REGISTRY_PATH),
     join(ROOT, REGISTRY_REL_PATH),
-    "默认声明表必须指向仓库里的规范路径（写错路径会静默退化成仅 .github/**）",
+    "默认声明表必须指向仓库里的规范路径（写错路径会静默退化成仅基座面）",
   );
   // 与 import 期算出的常量比对：把默认面改成静态常量、或让它不再读默认表，这条会红。
   assert.deepEqual([...RED_LINE_PATTERNS], [...redLinePatterns(DEFAULT_REGISTRY_PATH, () => {})]);
@@ -730,7 +773,7 @@ test("CLI：--registry 用 fixture 声明表派生面——声明源判红、app
       assert.equal(gate.status, 0, gate.stderr);
       assert.match(
         gate.stdout,
-        /红线面\[\.github\/\*\*, scripts\/data\/gauntlet\.config\.json, scripts\/data\/threshold-registry\.json\]/,
+        /红线面\[\.dsh\/skills\/\*\*, \.github\/\*\*, scripts\/data\/gauntlet\.config\.json, scripts\/data\/threshold-registry\.json, scripts\/gate\/red-line-approval\.mjs\]/,
         "OK 行必须打印实际判的那一面",
       );
     },
@@ -749,12 +792,15 @@ test("CLI：--registry 指向缺失的声明表 → 退化放行但必须打 ::w
       "--registry",
       missing,
     ]);
-    // 退化为仅 .github/**：数据文件不再进面 → 放行；但必须在 stderr 留痕，且 OK 行如实打印退化后的面
+    // 退化为仅基座面：数据文件不再进面 → 放行；但必须在 stderr 留痕，且 OK 行如实打印退化后的面
     assert.equal(r.status, 0, r.stderr);
     assert.match(r.stderr, /::warning::/);
     assert.match(r.stderr, /声明表不可用/);
     assert.match(r.stderr, /absent\.json/);
-    assert.match(r.stdout, /红线面\[\.github\/\*\*\]/);
+    assert.match(
+      r.stdout,
+      /红线面\[\.dsh\/skills\/\*\*, \.github\/\*\*, scripts\/gate\/red-line-approval\.mjs\]/,
+    );
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -763,7 +809,7 @@ test("CLI：--registry 指向缺失的声明表 → 退化放行但必须打 ::w
 test("CLI：给了 --registry / --patterns 就不再碰默认声明表——不得打出与实际面不符的退化告警", () => {
   // 默认面在 import 期是**静默**派生的（judgeRedLine 的默认值必须无副作用）；退化为基座面的告警
   // 只在本次真的用到默认面时补出（评审 ②）。否则「本次用的是注入的表」的运行里会多出一条
-  // 「退化为 .github/**……本次无额外文件进面」，与实际判定的面矛盾。
+  // 「退化为基座面……本次无额外文件进面」，与实际判定的面矛盾。
   withRegistry(
     [{ id: "mutation.strict", sources: ["scripts/data/gauntlet.config.json"] }],
     (registry) => {

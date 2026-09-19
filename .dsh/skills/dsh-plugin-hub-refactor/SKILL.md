@@ -107,7 +107,7 @@ export interface ConsumerDeps {
 
 ## 5. 类型与命名纪律
 
-- 宿主端不出现 `unknown`、显式 `| null`、显式 `| undefined` 联合、匿名对象类型。
+- 宿主端不出现 `unknown`、显式 `| null`、显式 `| undefined` 联合、匿名对象类型（前向逃生口见 §8.3：有名字两态判别式 / 写出去风格；可选参数 `?:` 不受此限）。
   收窄统一写 `cause instanceof Error ? cause.message : String(cause)`。
 - **有状态的才用 `class`**，配一个导出单例（类不外放，外面 `new` 不出第二份）。
   无状态的用纯模块函数。

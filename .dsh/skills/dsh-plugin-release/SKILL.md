@@ -61,7 +61,7 @@ description: >
 <a id="en"></a><a id="user-content-en"></a>
 ```
 
-样板可对照 `docs/release-notes/v0.2.3.md`（最新一版已按此落地）。
+样板见 `docs/release-notes/` 下任一近期版本（须双锚齐备；勿写死“最新一版”版本号，随发版腐烂；判据示例：`grep -l 'user-content-zh' docs/release-notes/v*.md | sort -V | tail -1`）。
 
 ## 4. 收尾核对
 

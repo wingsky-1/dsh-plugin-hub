@@ -30,7 +30,7 @@ DeepSeek Harness（DSH）的插件集 monorepo（npm 分发）。每个插件是
 5. **不自造环境前提**：缺依赖 / 缺网络 / 缺 `gh` 权限 / profile 未装插件时，停下报告；
    不得自行改用户 profile、不得绕过门禁。
 6. **agent 不推送 `v*` tag、不改包版本号**：发布只由维护者推 tag 触发。
-7. **禁止 emoji**（文档与提交信息）。
+7. **禁止 emoji**（文档与提交信息；评审报告内功能性判定标记 ★/✅⚠️❌ 除外）。
 
 ## Worktree（隔离施工）
 
@@ -70,8 +70,8 @@ worktree 内。在仓库根直接跑出的读数是「某个落后提交」的�
   PR 关联（流程见 [CONTRIBUTING.md](CONTRIBUTING.md)、[ISSUE-WORKFLOW.md](docs/ISSUE-WORKFLOW.md)）。
   用户直接指派的任务直接做，按上「硬约束」约束，不强制补建 issue。
 - **红线须先评审**：公共 API 行为变更、新增第三方依赖、[`.github/`](.github/) 下 workflow 与分支保护、
-  发版——先在**原 issue 内**起草方案评论、打 `needs-proposal-review`，获维护者 `approved`
-  后再动手（不单开决策 issue）。
+  发版、[`.dsh/skills/**`](.dsh/skills/) skill 规程变更及红线判据本体（[`scripts/gate/red-line-approval.mjs`](scripts/gate/red-line-approval.mjs) 单文件）——先在**原 issue 内**起草方案评论、打 `needs-proposal-review`，获维护者 `approved`
+  后再动手（不单开决策 issue；用户直接指派且本 PR 正文含完整提案时，PR 正文即提案载体，仍须 `approved` 标签）。
 - **分支 + PR + squash merge**，CI 全绿后合并；提交信息用 Conventional Commits
   （`type(scope): subject`；type 见 [CONTRIBUTING.md](CONTRIBUTING.md)）。
 - 被委派时：不向下委派（不调 subagent / workflow / ralph）；返回值按
@@ -139,8 +139,14 @@ worktree 内。在仓库根直接跑出的读数是「某个落后提交」的�
 | 查门禁口径细节时 | [docs/GATE.md](docs/GATE.md) |
 | 新建插件施工时 | [`.dsh/skills/dsh-plugin-hub-dev/SKILL.md`](.dsh/skills/dsh-plugin-hub-dev/SKILL.md) |
 | 评审 PR 时 | [`.dsh/skills/dsh-plugin-hub-pr-review/SKILL.md`](.dsh/skills/dsh-plugin-hub-pr-review/SKILL.md) + [`.dsh/skills/dsh-plugin-hub-pr-review/references/pr-images.md`](.dsh/skills/dsh-plugin-hub-pr-review/references/pr-images.md) |
+| 深评整插件时 | [`.dsh/skills/dsh-plugin-review/SKILL.md`](.dsh/skills/dsh-plugin-review/SKILL.md) |
+| 重构宿主端按域时 | [`.dsh/skills/dsh-plugin-hub-refactor/SKILL.md`](.dsh/skills/dsh-plugin-hub-refactor/SKILL.md) |
+| 写/审测试时 | [`.dsh/skills/dsh-plugin-hub-testing/SKILL.md`](.dsh/skills/dsh-plugin-hub-testing/SKILL.md) |
+| 升 dsh rc 时 | [`.dsh/skills/dsh-upgrade/SKILL.md`](.dsh/skills/dsh-upgrade/SKILL.md) |
 | 处理 issue 全周期时 | [docs/ISSUE-WORKFLOW.md](docs/ISSUE-WORKFLOW.md) |
 | 跑自治维护循环时 | [`.dsh/skills/oss-pipeline/SKILL.md`](.dsh/skills/oss-pipeline/SKILL.md) |
+| 批量清 auto 队列 / 处理 PR 转向 / 健康巡检时 | [`oss-triage`](.dsh/skills/oss-triage/SKILL.md) / [`oss-steering`](.dsh/skills/oss-steering/SKILL.md) / [`oss-report`](.dsh/skills/oss-report/SKILL.md)（细则见 [`.dsh/skills/README.md`](.dsh/skills/README.md)） |
+| 浏览器隔离验证时 | 随包 skill（[`packages/dsh-verify-isolated/skills/dsh-verify-isolated/SKILL.md`](packages/dsh-verify-isolated/skills/dsh-verify-isolated/SKILL.md)） |
 | 看包级特殊约定时 | `packages/<pkg>/AGENTS.md`（若有；有特有红线才建，存在则必含定位/改动前必守/验证三节） |
 
 其余否定触发（何时不读）见各 SKILL 头部 `Do NOT trigger`，此处不复述。
