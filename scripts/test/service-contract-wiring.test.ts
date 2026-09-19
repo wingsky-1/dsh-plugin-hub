@@ -139,7 +139,10 @@ const EXPECT_FILES: Record<string, string[]> = {
   ],
   "dsh-notifier": [
     "client-dom/apply-lifecycle.test.ts",
+    "client-dom/controls.test.ts",
+    "client-dom/diagnostics.test.ts",
     "client-dom/display.test.ts",
+    "client-dom/status.test.ts",
     "client-dom/title.test.ts",
     "client-helpers.ts",
     "client-unit/api-error.test.ts",
