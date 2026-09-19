@@ -242,16 +242,30 @@ describe("装配期跑链", () => {
     expect(readFileSync(`${legacy}.migrated.bak`, "utf8")).toBe('{"ts":7}\n');
   });
 
-  // 0.2.4 → 0.2.5 是空步：只推进刻度，不碰用户数据。判据落在「历史文件逐字不动」上——
-  // 空实现若误写存储，这里即红；刻度用字面 0.2.5 锁定这一步的目标版本。
-  it("刻度停在 0.2.4 的装机执行 0.2.4→0.2.5 空步：刻度到 0.2.5 且历史文件逐字不动", () => {
+  // 0.2.4 → 0.2.5 是空步：只推进刻度，不碰用户数据。链会从 0.2.4 出发连走后续步骤直至最新，
+  // 故终点刻度不断言字面 0.2.5（那是加新步骤前的旧事实）；判据落在「历史文件逐字不动」上——
+  // 这一步的空实现若误写存储，这里即红。
+  it("刻度停在 0.2.4 的装机执行 0.2.4→0.2.5 空步：历史文件逐字不动且链走到最新刻度", () => {
     writeTextAtomicSync(notifierFile(VERSION_FILE_NAME), "0.2.4\n");
     mkdirSync(dirname(notifierFile(HISTORY_FILE_NAME)), { recursive: true });
     writeFileSync(notifierFile(HISTORY_FILE_NAME), '{"ts":99}\n', "utf8");
 
     assemble();
 
-    expect(readFileSync(notifierFile(VERSION_FILE_NAME), "utf8").trim()).toBe("0.2.5");
+    expect(readFileSync(notifierFile(HISTORY_FILE_NAME), "utf8")).toBe('{"ts":99}\n');
+    expect(readFileSync(notifierFile(VERSION_FILE_NAME), "utf8").trim()).toBe(newestTarget());
+  });
+
+  // 0.2.5 → 0.2.6 是空步：只推进刻度，不碰用户数据。判据落在「历史文件逐字不动」上——
+  // 空实现若误写存储，这里即红；刻度用字面 0.2.6 锁定这一步的目标版本。
+  it("刻度停在 0.2.5 的装机执行 0.2.5→0.2.6 空步：刻度到 0.2.6 且历史文件逐字不动", () => {
+    writeTextAtomicSync(notifierFile(VERSION_FILE_NAME), "0.2.5\n");
+    mkdirSync(dirname(notifierFile(HISTORY_FILE_NAME)), { recursive: true });
+    writeFileSync(notifierFile(HISTORY_FILE_NAME), '{"ts":99}\n', "utf8");
+
+    assemble();
+
+    expect(readFileSync(notifierFile(VERSION_FILE_NAME), "utf8").trim()).toBe("0.2.6");
     expect(readFileSync(notifierFile(HISTORY_FILE_NAME), "utf8")).toBe('{"ts":99}\n');
   });
 

@@ -17,6 +17,12 @@ import { migrateStorageLayout } from "./storage-layout.ts";
  *
  * 按目标版本升序维护；执行顺序由链驱动排序决定，此处顺序只为便于阅读。
  */
+/** 0.2.5 → 0.2.6：可见面隐藏收紧 + SDK 兜底擦除 + 指导语——纯运行时/文案，无存储形态变化，空步推进刻度。 */
+async function migrateToV026(): Promise<void> {
+  // 本版无存储形态变化：空实现，仅让链把刻度从 0.2.5 推到 0.2.6。
+}
+
 export const STEPS: readonly UpgradeStep[] = [
   { fromVersion: "0.0.0", targetVersion: "0.2.5", run: migrateStorageLayout },
+  { fromVersion: "0.2.5", targetVersion: "0.2.6", run: migrateToV026 },
 ];
