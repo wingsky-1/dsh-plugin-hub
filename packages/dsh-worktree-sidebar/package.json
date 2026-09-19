@@ -1,6 +1,6 @@
 {
   "name": "@wingsky-1/dsh-worktree-sidebar",
-  "version": "0.1.0",
+  "version": "0.2.5",
   "description": "把某个 git worktree 登记给当前会话，使该会话的官方右侧栏文件树根指向该 worktree；会话 cwd 不变。官方提供原生 worktree 会话能力即退役的过渡适配层。",
   "type": "module",
   "main": "lib/index.js",

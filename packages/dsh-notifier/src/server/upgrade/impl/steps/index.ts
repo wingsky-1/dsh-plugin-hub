@@ -14,7 +14,13 @@ function migrateToNewLayout(deps: UpgradeDeps): void {
   migrateReasonShape();
 }
 
+/** 0.2.4 → 0.2.5：客户端半区分层重构（#769，#834）——纯客户端拆分，无存储/配置形态变化，空步推进刻度。 */
+function migrateToV025(): void {
+  // 本版无存储/配置形态变化：空实现，仅让链把刻度从 0.2.4 推到 0.2.5。
+}
+
 /** 按目标版本升序维护；执行顺序由链驱动排序决定，此处顺序只为便于阅读。 */
 export const STEPS: readonly UpgradeStep[] = [
   { fromVersion: "0.2.3", targetVersion: "0.2.4", run: migrateToNewLayout },
+  { fromVersion: "0.2.4", targetVersion: "0.2.5", run: migrateToV025 },
 ];

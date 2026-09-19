@@ -39,6 +39,13 @@ function newestTarget(): string {
   );
 }
 
+/** 步骤表里最低的目标版本：没有刻度文件时链从零跑起，制造失败的用例先红在这一步。 */
+function oldestTarget(): string {
+  return STEPS.map((step) => step.targetVersion).reduce((oldest, version) =>
+    compareVersions(version, oldest) < 0 ? version : oldest,
+  );
+}
+
 let home: { readonly dir: string; dispose: () => void };
 
 beforeEach(() => {
@@ -235,6 +242,19 @@ describe("装配期跑链", () => {
     expect(readFileSync(`${legacy}.migrated.bak`, "utf8")).toBe('{"ts":7}\n');
   });
 
+  // 0.2.4 → 0.2.5 是空步：只推进刻度，不碰用户数据。判据落在「历史文件逐字不动」上——
+  // 空实现若误写存储，这里即红；刻度用字面 0.2.5 锁定这一步的目标版本。
+  it("刻度停在 0.2.4 的装机执行 0.2.4→0.2.5 空步：刻度到 0.2.5 且历史文件逐字不动", () => {
+    writeTextAtomicSync(notifierFile(VERSION_FILE_NAME), "0.2.4\n");
+    mkdirSync(dirname(notifierFile(HISTORY_FILE_NAME)), { recursive: true });
+    writeFileSync(notifierFile(HISTORY_FILE_NAME), '{"ts":99}\n', "utf8");
+
+    assemble();
+
+    expect(readFileSync(notifierFile(VERSION_FILE_NAME), "utf8").trim()).toBe("0.2.5");
+    expect(readFileSync(notifierFile(HISTORY_FILE_NAME), "utf8")).toBe('{"ts":99}\n');
+  });
+
   // 反方向：刻度已到目标时这一步一次都不能跑。判据不能只看「新布局的内容没被覆盖」——步骤本身幂等，
   // 恒跑也绿；旧文件仍在原地才是「一次都没跑」的证据（跑了就会归档它）。
   it("刻度已到目标版本时这一步完全不执行：home 根的旧文件原地不动", () => {
@@ -262,7 +282,8 @@ describe("装配期跑链", () => {
     }
 
     expect(caught).toBeInstanceOf(Error);
-    expect((caught as Error).message).toContain(`存储版本号回写失败（${newestTarget()}）`);
+    // 无刻度文件时链从最早一步开始：回写先红在 0.2.4 这一步，点的名也必须是它。
+    expect((caught as Error).message).toContain(`存储版本号回写失败（${oldestTarget()}）`);
   });
 
   it("链失败即中止启动，并说清失败在哪一步；此时不读存量（带着半完成迁移继续跑更危险）", () => {
@@ -279,7 +300,8 @@ describe("装配期跑链", () => {
     }
 
     expect(caught).toBeInstanceOf(Error);
-    expect((caught as Error).message).toContain(`存储升级到 ${newestTarget()} 失败`);
+    // 同上：包目录被占住时先红的是最早一步（0.2.4 的存储落盘），而不是最后一步。
+    expect((caught as Error).message).toContain(`存储升级到 ${oldestTarget()} 失败`);
     // 存储那半先失败：配置那半一步都不该走（读面被碰过就说明割接已经开始了）。
     expect(legacy.reads()).toBe(0);
   });
