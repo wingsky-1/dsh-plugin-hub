@@ -41,8 +41,8 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 // W1.2 发布证据链落盘面：--log-file <path> 把本脚本的 stdout 逐字节镜像到文件
 // （逐包 PASS/FAIL 行 + 汇总行，供 release.yml 上传发布证据）。调用方传 RUNNER_TEMP 下的
 // 路径（workspace 零落盘）；父目录不存在时逐级建出。仅镜像 stdout（判据行），stderr 的
-// 跳过告警不进证据文件。落盘挂在 process exit 钩子上，故覆盖全部 process.exit 出口；
-// 落盘失败向 stderr 追加一行说明（判据退出码本身不受影响——判据结论已定，缺的是证据复件）。
+// 跳过告警不进证据文件。落盘与 verify-version / observe-precheck 同果：证据写不下来 =
+// 没有证据，一律 fail-closed（exit 1，判词注明证据缺失）——判据绿但证据缺失不得放行。
 function parseLogFile(argv) {
   const eq = argv.findLast(function (a) {
     return a.startsWith("--log-file=");
@@ -68,16 +68,51 @@ if (LOG_FILE !== null) {
     }
     return origWrite(chunk, encoding, cb);
   };
+  // 同步落盘：失败抛错，调用方一律转 fail-closed（exit 1）。
+  const flushLogFile = function () {
+    mkdirSync(dirname(LOG_FILE), { recursive: true });
+    writeFileSync(LOG_FILE, chunks.join(""), "utf8");
+  };
+  // 证据缺失判词（与 verify-version / observe-precheck 同形，可检索；显式出口与
+  // exit 钩子各落盘一次，判词只打一行）。
+  let reported = false;
+  const reportLogFailure = function (err) {
+    if (reported) return;
+    reported = true;
+    try {
+      writeSync(
+        2,
+        "[log-file] 证据缺失：落盘失败（" +
+          LOG_FILE +
+          "）：" +
+          (err && err.message) +
+          "（fail-closed，退出码置 1）\n",
+      );
+    } catch {
+      // 报错通道本身已坏，无其它可用通道
+    }
+  };
+  // 显式 process.exit 出口：先同步落盘，落盘失败则判据再绿也置 1（同因同果）。
+  const origExit = process.exit.bind(process);
+  process.exit = function (code) {
+    let requested;
+    if (typeof code === "number") requested = code;
+    else requested = process.exitCode ?? 0;
+    try {
+      flushLogFile();
+    } catch (err) {
+      reportLogFailure(err);
+      return origExit(requested === 0 ? 1 : requested);
+    }
+    return origExit(code);
+  };
+  // 正常落到脚本末尾的出口：exit 钩子里同步落盘，失败则把退出码置 1。
   process.on("exit", function () {
     try {
-      mkdirSync(dirname(LOG_FILE), { recursive: true });
-      writeFileSync(LOG_FILE, chunks.join(""), "utf8");
+      flushLogFile();
     } catch (err) {
-      try {
-        writeSync(2, "[log-file] 落盘失败（" + LOG_FILE + "）：" + (err && err.message) + "\n");
-      } catch {
-        // exit 钩子里已无其它可用的报错通道
-      }
+      reportLogFailure(err);
+      process.exitCode = 1;
     }
   });
 }

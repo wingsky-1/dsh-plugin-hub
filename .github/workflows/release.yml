@@ -102,6 +102,7 @@ jobs:
           exit 1
 
       # 发布证据上传（§6）：runs 快照 + 判定输入。禁发只来自判据 exit 1，故本步骤不带 if。
+      # artifact 仅绿盘存证，红盘看日志（失败时本步骤被跳过，看判据日志；不加 if:always）。
       - name: Upload precheck evidence（runs 快照 + 判定输入）
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
@@ -254,6 +255,7 @@ jobs:
 
       # 发布证据上传（§6）：证据目录（版本/产物日志 + SHA256SUMS + 基线状态）。tgz 本体已在
       # 收集步骤删除，不上传。禁发只来自判据 exit 1，故本步骤不带 if。
+      # artifact 仅绿盘存证，红盘看日志（失败时本步骤被跳过，看判据日志；不加 if:always）。
       - name: Upload release evidence（日志 + 校验和 + 基线状态）
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
