@@ -24,6 +24,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { EventEmitter } from "node:events";
 import { gzipSync, gunzipSync, brotliDecompressSync } from "node:zlib";
 import { createServer, request as httpRequest } from "node:http";
+import type { IncomingMessage, ServerResponse } from "node:http";
 import { request as httpsRequest } from "node:https";
 import { connect } from "node:net";
 import {
@@ -65,6 +66,12 @@ import {
   assertClientProductContract,
   assertClientSourceContract,
 } from "../../../../test/smoke-lib.ts";
+import type {
+  ConfigRouteDeps,
+  OwnerScopeLike,
+  PatchResult,
+  ResolvedConfig,
+} from "../../src/server/config/interface.ts";
 
 const pkgDir = fileURLToPath(new URL("../../", import.meta.url));
 
@@ -133,21 +140,43 @@ class FakeRes extends EventEmitter {
   }
 }
 
+/** fake settings 存储的 watch 回调（next/prev 均为 base 层与 user 层合并快照）。 */
+type FakeSettingsWatcher = (next?: Record<string, unknown>, prev?: Record<string, unknown>) => void;
+/** fake settings 存储的内存态（官方 settings 存储文档的内存形态）。 */
+interface FakeSettingsState {
+  user: Record<string, unknown>;
+  base: Record<string, unknown>;
+  revision: number;
+  registeredNs: string | null;
+  updates: Array<{ patch: Record<string, unknown>; expectedRevision?: number }>;
+  replaces: Array<{ section: Record<string, unknown>; expectedRevision?: number }>;
+  watchers: FakeSettingsWatcher[];
+  watchDisposed: number;
+}
+/** applyConfigPatch 成功分支（ok:true 携带 value）。 */
+type PatchSuccess = Extract<PatchResult, { ok: true }>;
+/** applyConfigPatch 失败分支（ok:false 携带 status/code/details）。 */
+type PatchFailure = Extract<PatchResult, { ok: false }>;
+/** PUT 路由测试桩记录的写入动作（update 增量 / replace 整节）。 */
+type PutRecord =
+  | { kind: "update"; patch: unknown; rev: number | undefined }
+  | { kind: "replace"; section: unknown; rev: number | undefined };
+
 /** 构造 fake owner scope + settings service（官方 settings 存储文档的内存形态）。 */
 function makeSettings(initialUser: Record<string, unknown> = {}) {
-  const state: any = {
+  const state: FakeSettingsState = {
     user: { ...initialUser },
     base: {},
     revision: 1,
-    registeredNs: null as string | null,
-    updates: [] as any[],
-    replaces: [] as any[],
-    watchers: [] as Array<(next?: any, prev?: any) => void>,
+    registeredNs: null,
+    updates: [],
+    replaces: [],
+    watchers: [],
     watchDisposed: 0,
   };
   const scope = {
     get: () => ({ ...state.base, ...state.user }),
-    watch: (cb: any) => {
+    watch: (cb: FakeSettingsWatcher) => {
       state.watchers.push(cb);
       return () => {
         state.watchDisposed += 1;
@@ -169,13 +198,13 @@ function makeSettings(initialUser: Record<string, unknown> = {}) {
     },
   };
   const service = {
-    register(ns: string, _schema: unknown, opts: any) {
+    register(ns: string, _schema: unknown, opts?: { base?: Record<string, unknown> }) {
       if (state.registeredNs !== null) throw new Error("duplicate register");
       state.registeredNs = ns;
       state.base = { ...(opts?.base ?? {}) };
       return scope;
     },
-    describe(_opts?: any) {
+    describe(_opts?: unknown) {
       return [
         {
           ns: state.registeredNs,
@@ -793,13 +822,13 @@ describe("e2e: 真实转发（HTTP / HTTPS / WebSocket，端口 bind(0) 动态�
       beforeAll(async () => {
         const dir = mkdtempSync(join(tmpdir(), "dsh-lan-proxy-migrate-rollback-"));
         writeFileSync(join(dir, "config.json"), JSON.stringify({ port: 4099 }));
-        const failing = {
+        const failing: Pick<OwnerScopeLike, "update"> & { updates: unknown[] } = {
           updates: [] as unknown[],
           async update() {
             throw new Error("disk full");
           },
         };
-        rollbackOutcome = await migrateFileConfig(dir, failing as any);
+        rollbackOutcome = await migrateFileConfig(dir, failing);
         configRestored = existsSync(join(dir, "config.json"));
         failingUpdatesLength = failing.updates.length;
         rmSync(dir, { recursive: true, force: true });
@@ -1589,7 +1618,7 @@ describe("unit: applyConfigPatch（PUT /config 主体：校验 → 官方存储�
             httpsPort: 3443,
             targetHost: "127.0.0.1",
             printBanner: true,
-          }) as any,
+          }) as unknown as ResolvedConfig,
         readUser: () => ({ user: { ...state.user }, revision: 7 }),
         writable: () => true,
         update: async (patch: Record<string, unknown>, expectedRevision?: number) => {
@@ -1611,7 +1640,7 @@ describe("unit: applyConfigPatch（PUT /config 主体：校验 → 官方存储�
           httpCompressMounted: true,
           httpCompressStats: { compressed: 7, passthrough: 2 },
         }),
-      } as any,
+      } as unknown as ConfigRouteDeps,
     };
   };
 
@@ -1664,7 +1693,7 @@ describe("unit: applyConfigPatch（PUT /config 主体：校验 → 官方存储�
     });
     // settings 服务不可用。
     const unavail = makeDeps();
-    (unavail.deps as any).writable = () => false;
+    unavail.deps.writable = () => false;
     na = await applyConfigPatch(unavail.deps, { patch: { port: 4000 } });
     // ── #467 验收：TLS 成对清除语义（只清 cert / 只清 key / 双清 / 清除遇 409 /
     //    user 层已不完整）。
@@ -1704,7 +1733,7 @@ describe("unit: applyConfigPatch（PUT /config 主体：校验 → 官方存储�
 
     brokenLogWarns = [];
     const brokenDeps = makeDeps({}, { broken: true });
-    (brokenDeps.deps as any).logWarn = (m: string) => brokenLogWarns.push(m);
+    brokenDeps.deps.logWarn = (m: string) => brokenLogWarns.push(m);
     broken = await applyConfigPatch(brokenDeps.deps, { patch: { port: 4000 } });
     conflict = await applyConfigPatch(makeDeps({}, { conflict: true }).deps, {
       patch: { port: 4000 },
@@ -1727,7 +1756,7 @@ describe("unit: applyConfigPatch（PUT /config 主体：校验 → 官方存储�
     });
 
     it("回执 revision 透传", () => {
-      expect((rOk as any).value.revision).toEqual(7);
+      expect((rOk as PatchSuccess).value.revision).toEqual(7);
     });
   });
 
@@ -1755,18 +1784,21 @@ describe("unit: applyConfigPatch（PUT /config 主体：校验 → 官方存储�
     });
 
     it("status 400 且 code=invalid", () => {
-      expect((badPort as any).status === 400 && (badPort as any).code).toBe("invalid");
+      expect((badPort as PatchFailure).status === 400 && (badPort as PatchFailure).code).toBe(
+        "invalid",
+      );
     });
 
     it("details 含键名与范围", () => {
       expect(
-        (badPort as any).details.includes("port") && (badPort as any).details.includes("1-65535"),
+        (badPort as PatchFailure).details.includes("port") &&
+          (badPort as PatchFailure).details.includes("1-65535"),
       ).toBeTruthy();
     });
   });
 
   it("patch 单边证书被拒（tls-pair）", () => {
-    expect(lone.ok === false && (lone as any).code).toBe("tls-pair");
+    expect(lone.ok === false && (lone as PatchFailure).code).toBe("tls-pair");
   });
 
   describe("patch 单边空串混非空值被拒（raw 层成对形态判定）", () => {
@@ -1775,11 +1807,11 @@ describe("unit: applyConfigPatch（PUT /config 主体：校验 → 官方存储�
     });
 
     it("空 cert + 非空 key → code=tls-pair", () => {
-      expect((mixedClear as any).code).toBe("tls-pair");
+      expect((mixedClear as PatchFailure).code).toBe("tls-pair");
     });
 
     it("空 cert + 非空 key → status=400", () => {
-      expect((mixedClear as any).status).toBe(400);
+      expect((mixedClear as PatchFailure).status).toBe(400);
     });
 
     it("非空 cert + 空 key → ok=false", () => {
@@ -1787,12 +1819,12 @@ describe("unit: applyConfigPatch（PUT /config 主体：校验 → 官方存储�
     });
 
     it("非空 cert + 空 key → code=tls-pair", () => {
-      expect((mixedSet as any).code).toBe("tls-pair");
+      expect((mixedSet as PatchFailure).code).toBe("tls-pair");
     });
   });
 
   it("settings 服务不可用时写入 503 拒绝", () => {
-    expect(na.ok === false && (na as any).status).toBe(503);
+    expect(na.ok === false && (na as PatchFailure).status).toBe(503);
   });
 
   describe("#467 只清 cert（另一侧未提交）400 tls-pair 拒绝，不落盘", () => {
@@ -1801,11 +1833,11 @@ describe("unit: applyConfigPatch（PUT /config 主体：校验 → 官方存储�
     });
 
     it("status 400", () => {
-      expect((clearCertOnly as any).status).toBe(400);
+      expect((clearCertOnly as PatchFailure).status).toBe(400);
     });
 
     it("code=tls-pair", () => {
-      expect((clearCertOnly as any).code).toBe("tls-pair");
+      expect((clearCertOnly as PatchFailure).code).toBe("tls-pair");
     });
   });
 
@@ -1815,11 +1847,11 @@ describe("unit: applyConfigPatch（PUT /config 主体：校验 → 官方存储�
     });
 
     it("status 400", () => {
-      expect((clearKeyOnly as any).status).toBe(400);
+      expect((clearKeyOnly as PatchFailure).status).toBe(400);
     });
 
     it("code=tls-pair", () => {
-      expect((clearKeyOnly as any).code).toBe("tls-pair");
+      expect((clearKeyOnly as PatchFailure).code).toBe("tls-pair");
     });
   });
 
@@ -1829,19 +1861,19 @@ describe("unit: applyConfigPatch（PUT /config 主体：校验 → 官方存储�
     });
 
     it("tlsCertFile 已剔除", () => {
-      expect((clearBoth as any).value.user.tlsCertFile).toBe(undefined);
+      expect((clearBoth as PatchSuccess).value.user.tlsCertFile).toBe(undefined);
     });
 
     it("tlsKeyFile 已剔除", () => {
-      expect((clearBoth as any).value.user.tlsKeyFile).toBe(undefined);
+      expect((clearBoth as PatchSuccess).value.user.tlsKeyFile).toBe(undefined);
     });
 
     it("其余键保留（port）", () => {
-      expect((clearBoth as any).value.user.port).toBe(4000);
+      expect((clearBoth as PatchSuccess).value.user.port).toBe(4000);
     });
 
     it("其余键保留（printBanner）", () => {
-      expect((clearBoth as any).value.user.printBanner).toBe(false);
+      expect((clearBoth as PatchSuccess).value.user.printBanner).toBe(false);
     });
   });
 
@@ -1851,20 +1883,20 @@ describe("unit: applyConfigPatch（PUT /config 主体：校验 → 官方存储�
     });
 
     it("status 409", () => {
-      expect((clearConflict as any).status).toBe(409);
+      expect((clearConflict as PatchFailure).status).toBe(409);
     });
 
     it("code=conflict", () => {
-      expect((clearConflict as any).code).toBe("conflict");
+      expect((clearConflict as PatchFailure).code).toBe("conflict");
     });
 
     it("固定文案", () => {
-      expect((clearConflict as any).details).toBe("设置已被其他窗口修改，请刷新后重试");
+      expect((clearConflict as PatchFailure).details).toBe("设置已被其他窗口修改，请刷新后重试");
     });
   });
 
   it("#467 双清不会产生含 undefined 段的路径（user 层干净成对）", () => {
-    const user = (brokenUser as any).value.user;
+    const user = (brokenUser as PatchSuccess).value.user;
     const fsPath = join(user?.tlsCertFile ?? "", user?.tlsKeyFile ?? "");
     expect(!fsPath.includes("undefined")).toBeTruthy();
   });
@@ -1875,7 +1907,7 @@ describe("unit: applyConfigPatch（PUT /config 主体：校验 → 官方存储�
     });
 
     it("code=tls-pair", () => {
-      expect((inPair as any).code).toBe("tls-pair");
+      expect((inPair as PatchFailure).code).toBe("tls-pair");
     });
   });
 
@@ -1885,11 +1917,11 @@ describe("unit: applyConfigPatch（PUT /config 主体：校验 → 官方存储�
     });
 
     it("tlsCertFile 已剔除", () => {
-      expect((orphanRes as any).value.user.tlsCertFile).toBe(undefined);
+      expect((orphanRes as PatchSuccess).value.user.tlsCertFile).toBe(undefined);
     });
 
     it("tlsKeyFile 已剔除", () => {
-      expect((orphanRes as any).value.user.tlsKeyFile).toBe(undefined);
+      expect((orphanRes as PatchSuccess).value.user.tlsKeyFile).toBe(undefined);
     });
 
     it("走 replace 整节替换", () => {
@@ -1903,25 +1935,25 @@ describe("unit: applyConfigPatch（PUT /config 主体：校验 → 官方存储�
     });
 
     it("code=tls-pair", () => {
-      expect((orphanLone as any).code).toBe("tls-pair");
+      expect((orphanLone as PatchFailure).code).toBe("tls-pair");
     });
   });
 
   describe("写入异常映射 500/error 且 details 不泄露底层错误原文", () => {
     it("status 500", () => {
-      expect(broken.ok === false && (broken as any).status).toBe(500);
+      expect(broken.ok === false && (broken as PatchFailure).status).toBe(500);
     });
 
     it("code=error", () => {
-      expect((broken as any).code).toBe("error");
+      expect((broken as PatchFailure).code).toBe("error");
     });
 
     it("details 为固定文案", () => {
-      expect((broken as any).details).toBe("保存失败，请查看服务端日志");
+      expect((broken as PatchFailure).details).toBe("保存失败，请查看服务端日志");
     });
 
     it("details 不含 err.message 原文", () => {
-      expect(!(broken as any).details.includes("disk full")).toBeTruthy();
+      expect(!(broken as PatchFailure).details.includes("disk full")).toBeTruthy();
     });
 
     it("err.message 走服务端日志", () => {
@@ -1931,17 +1963,17 @@ describe("unit: applyConfigPatch（PUT /config 主体：校验 → 官方存储�
 
   describe("SETTINGS_CONFLICT 映射 409/conflict", () => {
     it("status 409", () => {
-      expect(conflict.ok === false && (conflict as any).status).toBe(409);
+      expect(conflict.ok === false && (conflict as PatchFailure).status).toBe(409);
     });
 
     it("code=conflict", () => {
-      expect((conflict as any).code).toBe("conflict");
+      expect((conflict as PatchFailure).code).toBe("conflict");
     });
   });
 });
 
 describe("unit: buildConfigRoutes（GET 快照 / PUT 写入 / 围栏）", () => {
-  let putPayload: any = null;
+  let putPayload: PutRecord | null = null;
   let forbidden;
   let notAllowed;
   let got;
@@ -1966,13 +1998,13 @@ describe("unit: buildConfigRoutes（GET 快照 / PUT 写入 / 围栏）", () => 
           wsCompressPaths: [],
           httpCompressEnabled: true,
           httpCompressLevel: 2,
-        }) as any,
+        }) as unknown as ResolvedConfig,
       readUser: () => ({ user: { port: 3082 } as Record<string, unknown>, revision: 3 }),
       writable: () => true,
-      update: async (patch: any, rev: any) => {
+      update: async (patch: object, rev?: number) => {
         putPayload = { kind: "update", patch, rev };
       },
-      replace: async (section: any, rev: any) => {
+      replace: async (section: object, rev?: number) => {
         putPayload = { kind: "replace", section, rev };
       },
       compress: () => ({
@@ -1981,34 +2013,33 @@ describe("unit: buildConfigRoutes（GET 快照 / PUT 写入 / 围栏）", () => 
         httpCompressMounted: true,
         httpCompressStats: { compressed: 5, passthrough: 6 },
       }),
-    } as any;
+    } as unknown as ConfigRouteDeps;
     const route = buildConfigRoutes(deps)[0];
-    const callRoute = (method: string, overrides: any = {}, body?: any) =>
+    const callRoute = (method: string, overrides: Record<string, unknown> = {}, body?: unknown) =>
       Promise.resolve().then(async () => {
-        const req: any = Object.assign(
+        const req = Object.assign(
           { method, socket: { remoteAddress: "127.0.0.1" }, headers: { host: "127.0.0.1:3080" } },
           overrides,
-        );
+        ) as unknown as IncomingMessage & { _body?: unknown };
         if (body !== undefined) req._body = body;
         const chunks: string[] = [];
         let status = 0;
-        const res: any = {
+        const res = {
           writeHead(code: number) {
             status = code;
           },
-          end(c?: any) {
+          end(c?: unknown) {
             if (c !== undefined) chunks.push(String(c));
           },
           getHeader() {
             return undefined;
           },
           setHeader() {},
-        };
+        } as unknown as ServerResponse;
         if (body !== undefined) {
           // readBody 从 req 事件流读——这里直接给一个最小可读流形态。
           const { EventEmitter } = await import("node:events");
-          const stream: any = new EventEmitter();
-          Object.assign(stream, req);
+          const stream = Object.assign(new EventEmitter(), req) as unknown as IncomingMessage;
           process.nextTick(() => {
             stream.emit("data", Buffer.from(JSON.stringify(body)));
             stream.emit("end");
@@ -2303,29 +2334,32 @@ describe("apply: 注册、围栏与 settings 命名空间接线", () => {
     settingsRegisteredNs = settingsState.registeredNs;
 
     // GET /config 快照（经真实路由 handler）：effective + compress + user + revision。
-    const callRoute = async (method: string, overrides: any = {}, body?: any) => {
-      const req: any = Object.assign(
+    const callRoute = async (
+      method: string,
+      overrides: Record<string, unknown> = {},
+      body?: unknown,
+    ) => {
+      const req = Object.assign(
         { method, socket: { remoteAddress: "127.0.0.1" }, headers: { host: "127.0.0.1:3080" } },
         overrides,
-      );
+      ) as unknown as IncomingMessage;
       const chunks: string[] = [];
       let status = 0;
-      const res: any = {
+      const res = {
         writeHead(code: number) {
           status = code;
         },
-        end(c?: any) {
+        end(c?: unknown) {
           if (c !== undefined) chunks.push(String(c));
         },
         getHeader() {
           return undefined;
         },
         setHeader() {},
-      };
+      } as unknown as ServerResponse;
       if (body !== undefined) {
         const { EventEmitter } = await import("node:events");
-        const stream: any = new EventEmitter();
-        Object.assign(stream, req);
+        const stream = Object.assign(new EventEmitter(), req) as unknown as IncomingMessage;
         process.nextTick(() => {
           stream.emit("data", Buffer.from(JSON.stringify(body)));
           stream.emit("end");
@@ -2577,17 +2611,17 @@ describe("apply: settings 服务缺失降级", () => {
     const chunks: string[] = [];
     let status = 0;
     configRoute.handler(
-      req as any,
+      req as unknown as IncomingMessage,
       {
         writeHead: (c: number) => {
           status = c;
         },
-        end: (c?: any) => {
+        end: (c?: unknown) => {
           if (c !== undefined) chunks.push(String(c));
         },
         getHeader: () => undefined,
         setHeader: () => {},
-      } as any,
+      } as unknown as ServerResponse,
     );
     degradedStatus = status;
     degradedPayload = JSON.parse(chunks.join(""));
@@ -2846,14 +2880,16 @@ describe("apply: 运行中热关闭（PUT /config → scope.watch → 压缩卸�
     const putBody = JSON.stringify({ patch });
     const putStatus = await new Promise((resolveRoute) => {
       let status = 0;
-      const stream: any = new EventEmitter();
-      Object.assign(stream, makeReq({ method: "PUT" }));
+      const stream = Object.assign(
+        new EventEmitter(),
+        makeReq({ method: "PUT" }),
+      ) as unknown as IncomingMessage;
       const chunks: string[] = [];
-      const res: any = {
+      const res = {
         writeHead(code: number) {
           status = code;
         },
-        end(c?: any) {
+        end(c?: unknown) {
           if (c !== undefined) chunks.push(String(c));
           resolveRoute(status || 200);
         },
@@ -2861,7 +2897,7 @@ describe("apply: 运行中热关闭（PUT /config → scope.watch → 压缩卸�
           return undefined;
         },
         setHeader() {},
-      };
+      } as unknown as ServerResponse;
       process.nextTick(() => {
         stream.emit("data", Buffer.from(putBody));
         stream.emit("end");
@@ -3059,7 +3095,7 @@ const expectedLabelIds = [
   "lp-set-inject-token",
   "lp-set-owns-host-compat",
 ];
-const htmlForIds = [...clientCode.matchAll(/htmlFor:\s*"([^"]+)"/g)].map((m: any) => m[1]);
+const htmlForIds = [...clientCode.matchAll(/htmlFor:\s*"([^"]+)"/g)].map((m) => m[1]);
 const inputModeCount = [...clientCode.matchAll(/inputMode:\s*"numeric"/g)].length;
 
 describe("client 契约（lib/client.js 产物字面量）", () => {
