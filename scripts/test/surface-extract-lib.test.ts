@@ -14,13 +14,22 @@
  */
 import test from "node:test";
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import {
   attributeEmitFiles,
   declBlockName,
   extractDeclBlocks,
   extractExports,
+  loadEntryAliases,
+  resolveExportSourceTarget,
 } from "../lib/surface-extract-lib.ts";
+
+const ROOT = join(import.meta.dirname, "..", "..");
+const SCRIPT = join(ROOT, "scripts", "gate", "export-surface-snapshot.mjs");
 
 // ---------------------------------------------------------------- extractExports
 
@@ -169,4 +178,107 @@ test("归属：前缀相同的根入口不会与目录入口互相吞并（空�
   );
   assert.deepEqual(byEntry["."], ["client/index.d.ts"]);
   assert.deepEqual(byEntry["./config"], ["config/x.d.ts"]);
+});
+
+// ---------------------------------------------------------------- 入口读取别名（#768 S1，临时至 D13）
+//
+// 分工：本节只断言纯函数（命中即换源 / 未命中即原值 / 登记形态）；别名命中后的
+// 端到端判绿由 export-faces-admission 的 provider-usage 条目覆盖（同一门禁本体），
+// 去别名回红由本节末的 spawn 反例锁定——三者合起来才是正反双向，不在此复刻第二套判定。
+
+function withTmpAlias(payload, fn) {
+  const dir = mkdtempSync(join(tmpdir(), "entry-alias-"));
+  try {
+    const path = join(dir, "alias.json");
+    writeFileSync(path, payload, "utf8");
+    return fn(path);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+test("别名正向：命中包与入口即换读取源（provider-usage 点号入口读 apply 产物）", () => {
+  const aliases = withTmpAlias(
+    JSON.stringify({ aliases: { "dsh-provider-usage": { ".": "apply/index.d.ts" } } }),
+    (path) => loadEntryAliases(path),
+  );
+  assert.equal(
+    resolveExportSourceTarget("dsh-provider-usage", ".", "index.d.ts", aliases),
+    "apply/index.d.ts",
+  );
+});
+
+test("别名反向（纯函数）：未命中（他包 / 他入口 / 空登记）即回原 typesTarget", () => {
+  const aliases = { "dsh-provider-usage": { ".": "apply/index.d.ts" } };
+  assert.equal(resolveExportSourceTarget("dsh-notifier", ".", "index.d.ts", aliases), "index.d.ts");
+  assert.equal(
+    resolveExportSourceTarget("dsh-provider-usage", "./client", "client/index.d.ts", aliases),
+    "client/index.d.ts",
+  );
+  assert.equal(
+    resolveExportSourceTarget("dsh-provider-usage", ".", "index.d.ts", {}),
+    "index.d.ts",
+  );
+  assert.equal(
+    resolveExportSourceTarget("dsh-provider-usage", ".", "index.d.ts", undefined),
+    "index.d.ts",
+  );
+});
+
+test("别名登记缺失即无别名（D13 删文件不炸其他包），形态非法即抛", () => {
+  const dir = mkdtempSync(join(tmpdir(), "entry-alias-"));
+  try {
+    assert.deepEqual(loadEntryAliases(join(dir, "missing.json")), {});
+    assert.deepEqual(
+      withTmpAlias(JSON.stringify({}), (path) => loadEntryAliases(path)),
+      {},
+    );
+    assert.throws(
+      () => withTmpAlias(JSON.stringify([]), (path) => loadEntryAliases(path)),
+      /顶层必须是对象/,
+    );
+    assert.throws(
+      () =>
+        withTmpAlias(JSON.stringify({ aliases: { pkg: { ".": "" } } }), (path) =>
+          loadEntryAliases(path),
+        ),
+      /必须是非空字符串/,
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("别名反向（端到端）：去别名后 provider-usage 主入口即红（exit 1，typesTarget 缺失）", () => {
+  withTmpAlias(JSON.stringify({ aliases: {} }), (aliasPath) => {
+    const result = spawnSync(
+      process.execPath,
+      [SCRIPT, "--package", "dsh-provider-usage", "--entry-alias", aliasPath],
+      { cwd: ROOT, encoding: "utf8", timeout: 180000 },
+    );
+    assert.equal(
+      result.status,
+      1,
+      "去别名应判红，实际 " + result.status + "\n" + result.stdout + "\n" + result.stderr,
+    );
+    assert.match(result.stdout, /导出面源文件不在本次 emit 产物中：index\.d\.ts/);
+  });
+});
+
+test("别名损坏即门禁故障（exit 2，非判红）：合法 JSON 但非对象形态", () => {
+  // P2：畸形登记是「尺子坏了」不是「被测不达标」——exit 1 会被读成可信判红而合入，
+  // 必须走唯一故障出口 failClosed（exit 2，禁止合并）。
+  withTmpAlias(JSON.stringify([]), (aliasPath) => {
+    const result = spawnSync(
+      process.execPath,
+      [SCRIPT, "--package", "dsh-provider-usage", "--entry-alias", aliasPath],
+      { cwd: ROOT, encoding: "utf8", timeout: 180000 },
+    );
+    assert.equal(
+      result.status,
+      2,
+      "畸形别名应 exit 2，实际 " + result.status + "\n" + result.stdout + "\n" + result.stderr,
+    );
+    assert.match(result.stderr, /::error::门禁故障/);
+  });
 });

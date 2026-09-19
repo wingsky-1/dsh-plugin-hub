@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // @ts-nocheck
 "use strict";
+import { existsSync, readFileSync } from "node:fs";
 
 /**
  * surface-extract-lib — 包导出面提取与入口归属（单一实现）。
@@ -15,6 +16,9 @@
  * 口径（门禁自述与 docs/DEVELOPMENT.md 同步）：本文件只做「文本 → 符号/块」与
  * 「文件 → 入口」两件可判的事，不做判红决策——判红与文案留在门禁，测试可对同一
  * 实现做正反 fixture。
+ *
+ * #768 S1 追加入口读取别名（loadEntryAliases / resolveExportSourceTarget）：只回答
+ * 从哪份 emit 文件读导出面，不动归属与判定（禁双轨），临时至 D13。
  */
 
 /**
@@ -154,4 +158,53 @@ export function attributeEmitFiles(files, entries) {
   orphans.sort();
   conflicts.sort();
   return { byEntry, orphans, conflicts };
+}
+
+/**
+ * 入口导出面读取别名登记（#768 S1，临时）。
+ *
+ * 为什么需要：dsh-provider-usage 无 src/index.ts（组合根在 src/apply，lib/index.d.ts
+ * 转发由包内构建步骤在构建后生成）；门禁自跑 tsc（与是否已 build 无关），emit 内无
+ * 根 index.d.ts，主入口点号的导出面无从读取。别名只做这一处重映射，不动块归属与
+ * 一切判红决策。登记文件缺失即无别名（D13 删除文件/条目不炸其他包）；形态非法即抛
+ * （调用方 fail-closed，不静默退化为无别名）。
+ *
+ * 防腐：D13 组合根收尾（src/index.ts 落地）时必须删除 dsh-provider-usage 条目并重冻结
+ * 基线；只删条目不重冻结即红（typesTarget 缺失），见 export-entry-alias.json 登记注释。
+ */
+export function loadEntryAliases(aliasPath) {
+  if (!existsSync(aliasPath)) return {};
+  const parsed = JSON.parse(readFileSync(aliasPath, "utf8"));
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    throw new Error("入口别名登记顶层必须是对象：" + aliasPath);
+  }
+  if (parsed.aliases === undefined) return {};
+  if (
+    typeof parsed.aliases !== "object" ||
+    parsed.aliases === null ||
+    Array.isArray(parsed.aliases)
+  ) {
+    throw new Error("入口别名登记的 aliases 必须是对象：" + aliasPath);
+  }
+  for (const [pkg, perPkg] of Object.entries(parsed.aliases)) {
+    if (typeof perPkg !== "object" || perPkg === null || Array.isArray(perPkg)) {
+      throw new Error("入口别名登记包条目必须是对象：" + pkg);
+    }
+    for (const [subpath, target] of Object.entries(perPkg)) {
+      if (typeof target !== "string" || target.length === 0) {
+        throw new Error("入口别名目标必须是非空字符串：" + pkg + " " + subpath);
+      }
+    }
+  }
+  return parsed.aliases;
+}
+
+/**
+ * 入口导出面读取重映射：命中别名即读别名目标，否则读原 typesTarget。
+ * 纯函数，不做任何判红决策（METHOD 禁止双轨）。
+ */
+export function resolveExportSourceTarget(pkgName, subpath, typesTarget, aliases) {
+  const perPkg = aliases === null || aliases === undefined ? undefined : aliases[pkgName];
+  const hit = perPkg === null || perPkg === undefined ? undefined : perPkg[subpath];
+  return typeof hit === "string" && hit.length > 0 ? hit : typesTarget;
 }

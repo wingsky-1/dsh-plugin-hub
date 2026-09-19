@@ -61,6 +61,11 @@
  *   node scripts/gate/export-surface-snapshot.mjs --package <pkg> --snapshot  # 生成/更新基线
  *   node scripts/gate/export-surface-snapshot.mjs --package <pkg>             # 与基线比对（--check 同义）
  *
+ * 入口读取别名（#768 S1，临时）：scripts/data/export-entry-alias.json 登记「某包某入口
+ * 的导出面从哪份 emit 文件读」（dsh-provider-usage 的点号入口读 apply/index.d.ts——包无
+ * src/index.ts，emit 无根 index.d.ts）。别名只换读取源，不动块归属与判定；--entry-alias
+ * 可指向另一份登记（fixture 隔离用）。D13 src/index.ts 落地时删条目并重冻结基线。
+ *
  * 除基线比对外，同一次 `emitDeclarations()` 产物还喂「导出面分类登记」准入判据
  *（#733 宪法第 3 条 / M2a-3.5：包导出面 ⊆ 安装面 ∪ 配置面 ∪ 契约面）——新增导出
  * 必须在 scripts/data/<pkg>-export-faces.json 的 faces 显式登记三类面之一，未登记判红。
@@ -100,6 +105,8 @@ import {
   declBlockName,
   extractDeclBlocks,
   extractExports,
+  loadEntryAliases,
+  resolveExportSourceTarget,
 } from "../lib/surface-extract-lib.ts";
 import { listExportTypesEntries, stripLibPrefix } from "../lib/exports-types-lib.ts";
 import { failClosed } from "../lib/gate-exit.mjs";
@@ -126,6 +133,9 @@ const facesPath =
     : join(ROOT, "scripts", "data", `${pkgName}-export-faces.json`);
 const pkgDir = join(ROOT, "packages", pkgName);
 const tsconfigPath = tsconfigIdx >= 0 ? ARGV[tsconfigIdx + 1] : join(pkgDir, "tsconfig.json");
+const aliasIdx = ARGV.indexOf("--entry-alias");
+const aliasPath =
+  aliasIdx >= 0 ? ARGV[aliasIdx + 1] : join(ROOT, "scripts", "data", "export-entry-alias.json");
 
 /** 无名声明块的兜底分组键（fail-loud 同时用它保住并集自洽断言，不留静默丢块）。 */
 const UNNAMED_BLOCK_KEY = "\u0000unnamed";
@@ -234,6 +244,12 @@ if (entrySpecs.length === 0)
     }
   }
 }
+let entryAliases;
+try {
+  entryAliases = loadEntryAliases(aliasPath);
+} catch (e) {
+  failClosed("[export-surface-snapshot] 别名登记损坏（" + aliasPath + "）：" + e.message);
+}
 const { byEntry, orphans, conflicts } = attributeEmitFiles(
   allFiles,
   entrySpecs.map((e) => ({ subpath: e.subpath, prefix: e.prefix })),
@@ -245,9 +261,25 @@ for (const e of entrySpecs) {
   const owned = byEntry[e.subpath] ?? [];
   if (owned.length === 0)
     problems.push(`入口 ${e.subpath} 未辖任何 emit .d.ts（typesTarget=${e.typesTarget}）`);
-  const file = perFile.get(e.typesTarget);
+  const exportSourceTarget = resolveExportSourceTarget(
+    pkgName,
+    e.subpath,
+    e.typesTarget,
+    entryAliases,
+  );
+  if (exportSourceTarget !== e.typesTarget)
+    console.log(
+      "[export-surface-snapshot] 入口 " +
+        e.subpath +
+        " 经别名读取：" +
+        exportSourceTarget +
+        "（登记见 scripts/data/export-entry-alias.json，D13 删除）",
+    );
+  const file = perFile.get(exportSourceTarget);
   if (file === undefined) {
-    problems.push(`入口 ${e.subpath} 的 typesTarget 不在本次 emit 产物中：${e.typesTarget}`);
+    problems.push(
+      `入口 ${e.subpath} 的导出面源文件不在本次 emit 产物中：${exportSourceTarget}（types=${e.types}）`,
+    );
   }
   const blocks = owned.flatMap((f) => perFile.get(f).blocks);
   if (blocks.length === 0)
@@ -256,7 +288,7 @@ for (const e of entrySpecs) {
     );
   const exportList = file === undefined ? [] : extractExports(file.text);
   if (exportList.length === 0)
-    problems.push(`入口 ${e.subpath} 的导出面为空（typesTarget=${e.typesTarget}）`);
+    problems.push(`入口 ${e.subpath} 的导出面为空（读取源=${exportSourceTarget}）`);
   const grouped = groupBlocks(blocks);
   if (UNNAMED_BLOCK_KEY in grouped) {
     problems.push(

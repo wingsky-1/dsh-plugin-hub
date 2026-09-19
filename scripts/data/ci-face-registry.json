@@ -196,6 +196,21 @@
       "why": "包级数据资产（#767 B0 新建）：dsh-mcp-manager-export-surface.json 是本包重构前的导出面基线，由 contract-check 的 export-surface-snapshot 调用点与常驻的 test:scripts（export-faces-admission 逐包断言）消费；dsh-mcp-manager-export-faces.json 是该基线的分类登记，只被同一条准入判据消费。两者都是本包资产，故归本包面；改动任一份即改变本包的契约判据输入，必须触发本包切片。"
     },
     {
+      "path": "scripts/data/dsh-provider-usage-*.json",
+      "faces": ["dsh-provider-usage"],
+      "consumerGap": {
+        "kind": "indirect",
+        "reason": "export-surface-snapshot 与 export-faces-lib 按包名模板拼名加载，不含逐包字面量，故无字面命中的仓内直接读取方（与 dsh-mcp-manager 条目同形）。"
+      },
+      "why": "包级数据资产（#768 S1 新建）：dsh-provider-usage-export-surface.json 是 S1 时点的导出面基线（主入口经别名读 apply 产物），由 export-surface-snapshot 调用点与常驻的 test:scripts（export-faces-admission 逐包断言）消费；dsh-provider-usage-export-faces.json 是该基线的分类登记，只被同一条准入判据消费。两者都是本包资产，故归本包面；改动任一份即改变本包的契约判据输入，必须触发本包切片。"
+    },
+    {
+      "path": "scripts/data/export-entry-alias.json",
+      "faces": ["global"],
+      "consumers": ["scripts/gate/export-surface-snapshot.mjs"],
+      "why": "全仓口径数据：入口导出面读取别名登记（#768 S1 临时，D13 删条目）。改任一条即改变对应包导出面判据的读取源，影响全部包的门禁语义，故归全局面。"
+    },
+    {
       "path": "scripts/data/dsh-lan-proxy-*.json",
       "faces": ["dsh-lan-proxy"],
       "why": "包级数据资产：ui-exempt（客户端 UI 豁免表，由 config-matrix-gate 消费）与 #826 冻结的 export-surface / export-faces（导出面基线与分类准入登记，由 export-surface-snapshot 消费，执行点见 ci.yml 的 Export surface snapshot 步骤）——三者都是本包资产，故用 glob 归本包面（与 scripts/data/dsh-notifier-*.json 同形）。原名 lan-proxy-ui-exempt.json 不带包名前缀，只能靠人工记忆映射（#742 阶段 2.2 改名归位）。",

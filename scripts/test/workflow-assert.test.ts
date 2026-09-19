@@ -271,6 +271,7 @@ test("#733 E1: paths-filter 的 glob 内容集合相等（防「留键删行」�
       "scripts/ci/**",
       "scripts/data/coverage.config.json",
       "scripts/data/dir-imports-baseline.json",
+      "scripts/data/export-entry-alias.json",
       "scripts/data/gate-exemptions.json",
       "scripts/data/gate-scope-registry.json",
       "scripts/data/gauntlet.config.json",

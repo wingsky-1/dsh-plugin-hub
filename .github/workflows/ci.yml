@@ -132,9 +132,11 @@ jobs:
               # 全部 6 个带测试的包共用这一份 runner（其余 scripts/test/** 只服务
               # 常驻的 test:scripts 静态闸，见注册表的豁免条目）
               - 'scripts/test/run-vitest.mjs'
-              # 8 份全仓口径数据：改任一份都改变所有包的构建/测试/变异判据
+              # 9 份全仓口径数据：改任一份都改变所有包的构建/测试/变异判据
+              # （#768 S1 加第 9 份：入口读取别名登记，改任一条即改变对应包导出面判据的读取源）
               - 'scripts/data/coverage.config.json'
               - 'scripts/data/dir-imports-baseline.json'
+              - 'scripts/data/export-entry-alias.json'
               - 'scripts/data/gate-exemptions.json'
               - 'scripts/data/gate-scope-registry.json'
               - 'scripts/data/gauntlet.config.json'
@@ -177,6 +179,9 @@ jobs:
               - 'packages/dsh-provider-usage/**'
               - 'stryker.conf.d/dsh-provider-usage*.json'
               - 'vitest.stryker.d/dsh-provider-usage.config.ts'
+              # #768 S1：导出面基线与分类登记是本包资产，改动即改变本包导出面判据的输入
+              # （与 dsh-mcp-manager 的同名条目同形）。
+              - 'scripts/data/dsh-provider-usage-*.json'
               - 'test/smoke-lib.ts'
             dsh-lan-proxy:
               - 'packages/dsh-lan-proxy/**'
@@ -779,6 +784,11 @@ jobs:
       # 必须是独立 step（脚本只读第一个 --package，同上）。
       - name: Export surface snapshot（dsh-mcp-manager 导出面与基线零 diff）
         run: node scripts/gate/export-surface-snapshot.mjs --package dsh-mcp-manager
+      # #768 S1 起 provider-usage 也冻结导出面基线：主入口经别名读 apply 产物
+      # （登记见 scripts/data/export-entry-alias.json，D13 删别名并重冻结）。
+      # 必须是独立 step（脚本只读第一个 --package，同上）。
+      - name: Export surface snapshot（dsh-provider-usage 导出面与基线零 diff）
+        run: node scripts/gate/export-surface-snapshot.mjs --package dsh-provider-usage
       - name: Verify shared fan-in（shared 模块跨包扇入；#792）
         run: node scripts/gate/verify-shared-fanin.mjs
 

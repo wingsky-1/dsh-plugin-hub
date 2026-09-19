@@ -29,8 +29,9 @@ const ROOT = join(import.meta.dirname, "..", "..");
 const SCRIPT = join(ROOT, "scripts", "gate", "export-surface-snapshot.mjs");
 // 逐包参数化：判据与登记形态由同一实现（export-faces-lib）驱动，接入一个新包只是加一条，
 // 而不是复制一份测试逻辑——双轨会让「测试绿而门禁红」无从裁决（§9）。dsh-mcp-manager 于
-// #767 B0 接入，其 legacy 是重构前那棵树的存量全集。
-const PACKAGES = ["dsh-notifier", "dsh-mcp-manager"];
+// #767 B0 接入，其 legacy 是重构前那棵树的存量全集。dsh-provider-usage 于
+// #768 S1 接入，其 legacy 是 S1 时点的存量全集（主入口经别名读 apply 产物）。
+const PACKAGES = ["dsh-notifier", "dsh-mcp-manager", "dsh-provider-usage"];
 const registryPath = (pkg) => join(ROOT, "scripts", "data", `${pkg}-export-faces.json`);
 const baselinePath = (pkg) => join(ROOT, "scripts", "data", `${pkg}-export-surface.json`);
 
