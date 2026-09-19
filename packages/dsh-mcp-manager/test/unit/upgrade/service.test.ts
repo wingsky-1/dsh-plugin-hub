@@ -43,6 +43,13 @@ function newestTarget(): string {
   );
 }
 
+/** 步骤表里最低的目标版本：没有刻度文件时链从零跑起，制造失败的用例先红在这一步。 */
+function oldestTarget(): string {
+  return STEPS.map((step) => step.targetVersion).reduce((oldest, version) =>
+    compareVersions(version, oldest) < 0 ? version : oldest,
+  );
+}
+
 /** 装配一次升级域（链在装配期跑完）。 */
 async function assemble(overrides: Partial<UpgradeDeps> = {}) {
   const logger = overrides.logger ?? makeLogger();
@@ -98,13 +105,26 @@ describe("装配期跑链", () => {
     expect(readFileSync(versionFile(), "utf8").trim()).toBe(newestTarget());
   });
 
+  // 0.2.5 → 0.2.6 是空步：只推进刻度，不碰用户数据。判据落在「配置文件逐字不动」上——
+  // 空实现若误写存储，这里即红；刻度用字面 0.2.6 锁定这一步的目标版本。
+  it("刻度停在 0.2.5 的装机执行 0.2.5→0.2.6 空步：刻度到 0.2.6 且配置文件逐字不动", async () => {
+    seedClock("0.2.5");
+    mkdirSync(dirname(configFile()), { recursive: true });
+    writeFileSync(configFile(), '{"user":true}\n', "utf8");
+
+    await assemble();
+
+    expect(readFileSync(versionFile(), "utf8").trim()).toBe("0.2.6");
+    expect(readFileSync(configFile(), "utf8")).toBe('{"user":true}\n');
+  });
+
   it("链失败即中止装配，并且**不推进刻度**：清障后从同一步重跑才写完", async () => {
     const legacy = legacyFile(LEGACY_LAYOUT.config);
     // 旧文件读不出来（同名目录）：这一步必然失败，而刻度文件本身的落点完全可写——
     // 于是「刻度没被写」是这次失败的直接后果，不是障碍物的副作用。
     mkdirSync(legacy, { recursive: true });
 
-    await expect(assemble()).rejects.toThrow(`存储升级到 ${newestTarget()} 失败`);
+    await expect(assemble()).rejects.toThrow(`存储升级到 ${oldestTarget()} 失败`);
 
     expect(existsSync(versionFile())).toBe(false);
     // 失败点之前没有任何一项落定：中止不是「跳过失败的那项继续跑」。
@@ -124,7 +144,7 @@ describe("装配期跑链", () => {
     mkdirSync(versionFile(), { recursive: true });
     writeFileSync(join(versionFile(), "占位"), "", "utf8");
 
-    await expect(assemble()).rejects.toThrow(`存储版本号回写失败（${newestTarget()}）`);
+    await expect(assemble()).rejects.toThrow(`存储版本号回写失败（${oldestTarget()}）`);
   });
 });
 
