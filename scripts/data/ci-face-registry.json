@@ -379,6 +379,16 @@
       "why": "脚本索引文档：校索引与真实脚本集合一致。"
     },
     {
+      "path": "scripts/derive/host-contract.mjs",
+      "faces": [],
+      "consumerGap": {
+        "kind": "none",
+        "trackingIssue": "#802",
+        "reason": "人工执行暂无仓内直接读取方，接线后改 consumers"
+      },
+      "why": "P1 只读派生骨架暂未接门禁"
+    },
+    {
       "path": "scripts/tsconfig.json",
       "faces": [],
       "consumers": ["scripts/test/verify-docs-typecheck.test.ts"],

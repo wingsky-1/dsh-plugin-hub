@@ -1,9 +1,9 @@
 #!/usr/bin/env node
-// #802 机检派生脚本骨架（P1：只出派生能力，不接门禁）。
+// 宿主契约派生：只读扫描源码字面量并输出机检事实；保证只读 stdout、不写文件、不接门禁。
 // 只读：仅对仓库源码做同步读 + stdout 输出 JSON，不写任何文件，
 // 不改 scripts/gate 现有文件，不注册进任何 gate 步骤。
 // 离线：零依赖（仅 node:fs / node:path），无网络、无凭据。
-// 用法：node scripts/derive/802-derivation.mjs [--root <repo>] [--sample]
+// 用法：node scripts/derive/host-contract.mjs [--root <repo>] [--sample]
 //   默认输出完整派生 JSON；--sample 只输出 sample 节（用于交付粘贴）。
 import { readFileSync, existsSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -197,7 +197,7 @@ for (const m of workspace.matchAll(/"(@deepseek-ai\/[^"]+)"\s*:\s*([^\s#]+)/g)) 
   catalog[m[1]] = m[2];
 }
 
-// ---- 五类形态缺口清单（派生能给什么、缺什么；骨架阶段不断言，只列 gap） ----
+// ---- 五类形态缺口清单（派生能给什么、缺什么；不断言，只列 gap） ----
 const gaps = [
   {
     类: "方法语义",
@@ -245,9 +245,8 @@ const gaps = [
 ];
 
 const result = {
-  tool: "scripts/derive/802-derivation.mjs",
-  issue: 802,
-  note: "P1 骨架：只读派生，不接门禁；全部事实来自源码字面量扫描，非宿主运行时 speaks",
+  tool: "scripts/derive/host-contract.mjs",
+  note: "只读派生，不接门禁；全部事实来自源码字面量扫描，非宿主运行时实测",
   events,
   slots,
   routes: { paths: routes, registerSites },
