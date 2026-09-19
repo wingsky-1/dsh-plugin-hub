@@ -8,7 +8,7 @@
  * 本目录边界 = 无状态无缓存（layer-architecture.md §2.3）：
  * - last-run.ts：per-root 临界区链（唯一实现），调度与执行共同依赖；
  * - report-index.ts：index.jsonl 纯解析原语（读侧记忆化留在 runner，防双份缓存）；
- * - errsurf.ts：域2每层错误面（aggregate/schedule/execute）。
+ * - errsurf.ts：过渡垫片（canonical 已迁 server/shared/errsurf.ts，D13 随本目录消除）。
  */
 
 // ------------------------------------------------------------------ lastRun 持久化原语（last-run.ts）

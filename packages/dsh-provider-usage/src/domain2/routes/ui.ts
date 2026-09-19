@@ -10,7 +10,7 @@ import {
   writeJson,
 } from "../../../../../shared/host-utils.js";
 import { ADAPTER_CONTRACT_VERSION } from "../../shared/interface.ts";
-import type { LayerErrorSurface } from "../common/interface.ts";
+import type { LayerErrorSurface } from "../../server/shared/interface.ts";
 import type { StatsService } from "../../domain1/pipeline/interface.ts";
 import type { TrendTracker } from "../aggregate/interface.ts";
 import { TREND_DIR_MAX } from "../collect/interface.ts";

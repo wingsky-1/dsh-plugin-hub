@@ -294,9 +294,12 @@
           "comment": "#342 v4：src 级文件组分段（2）——apply 单列（#316 拆分后最重文件独立成段）；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
         },
         "errsurf": {
-          "mutate": ["packages/dsh-provider-usage/src/domain2/common/errsurf.ts"],
+          "mutate": [
+            "packages/dsh-provider-usage/src/domain2/common/errsurf.ts",
+            "packages/dsh-provider-usage/src/server/shared/errsurf.ts"
+          ],
           "excludes": ["!packages/dsh-provider-usage/src/client/**"],
-          "comment": "#670 阶段三 B 新段：域2每层错误面——errsurf.ts（累计计数+最近 N 条环形缓冲+snapshot/noop）；testFiles 含 unit-errsurf（杀灭面）；apply 接线与 routes/ui health per-layer 段由既有 apply/routes 段覆盖（mutate 已含对应文件）。"
+          "comment": "#670 阶段三 B 新段：域2每层错误面——errsurf.ts（累计计数+最近 N 条环形缓冲+snapshot/noop）；testFiles 含 unit-errsurf（杀灭面）；apply 接线与 routes/ui health per-layer 段由既有 apply/routes 段覆盖（mutate 已含对应文件）。#768 S2：canonical 实现迁 server/shared/errsurf.ts（Q5 尺子见文件头），domain2/common/errsurf.ts 留过渡垫片（D13 删）；两文件并列登记，杀灭面新增 unit-s2-contracts（新叶直连判据）——并集只增不减。"
         },
         "contracts": {
           "mutate": [
@@ -403,7 +406,12 @@
           {
             "pattern": "!packages/dsh-provider-usage/src/**/interface.ts",
             "kind": "facade",
-            "reason": "13 个目录的对外门面（apply/domain1/domain2/shared）：逐个命名 re-export 实际被消费的类型与函数（显式禁 export * from），目录外的调用方一律经它消费，自身不含实现。"
+            "reason": "14 个目录的对外门面（apply/domain1/domain2/shared + #768 S2 新增 server/shared）：逐个命名 re-export 实际被消费的类型与函数（显式禁 export * from），目录外的调用方一律经它消费，自身不含实现。条数以本 pattern 为口径事实源。"
+          },
+          {
+            "pattern": "!packages/dsh-provider-usage/src/server/*/deps.ts",
+            "kind": "type-only",
+            "reason": "新增（#768 S2）：upgrade 域依赖声明出口（UpgradeDeps 窄面：logger + root 解析 + 旧文件显式读面；per-root 链留 schedule，不新建 file-io 叶）：文件体全是 export interface/type，转译后无运行时代码，没有可杀灭的变异体；窄面形状（运行时零出口 + 三项可装配）由 unit-s2-contracts 锁定。"
           },
           {
             "pattern": "!packages/dsh-provider-usage/src/**/*.d.mts",

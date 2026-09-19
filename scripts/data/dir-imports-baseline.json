@@ -93,13 +93,13 @@
       }
     },
     "dsh-provider-usage": {
-      "modules": 13,
-      "scannedSrcFiles": 59,
-      "allSrcTsFiles": 74,
-      "interfaceFacades": 13,
-      "leafValueEdges": 35,
-      "fileValueEdges": 123,
-      "crossModuleRefs": 174,
+      "modules": 14,
+      "scannedSrcFiles": 62,
+      "allSrcTsFiles": 77,
+      "interfaceFacades": 14,
+      "leafValueEdges": 37,
+      "fileValueEdges": 125,
+      "crossModuleRefs": 172,
       "quality": {
         "leafModuleCycles": [
           "domain2/common|domain2/schedule"

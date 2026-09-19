@@ -18,6 +18,7 @@ export default defineConfig({
       'packages/dsh-provider-usage/test/unit/report/unit-report-executor.test.ts',
       'packages/dsh-provider-usage/test/unit/report/unit-report.test.ts',
       'packages/dsh-provider-usage/test/unit/routes/unit-routes.test.ts',
+      'packages/dsh-provider-usage/test/unit/server-shared/unit-s2-contracts.test.ts',
       'packages/dsh-provider-usage/test/unit/shared/unit-config.test.ts',
       'packages/dsh-provider-usage/test/unit/shared/unit-contract.test.ts',
       'packages/dsh-provider-usage/test/unit/shared/unit-v1.test.ts',

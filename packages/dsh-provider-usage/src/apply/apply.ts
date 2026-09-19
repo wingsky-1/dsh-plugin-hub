@@ -36,7 +36,7 @@ import { HotReloadableAdapter } from "../domain1/registry/interface.ts";
 import { resolvePath } from "../domain1/registry/interface.ts";
 import { Config, normalizeConfig, type NormalizedConfig } from "../shared/interface.ts";
 import { readUiConfig } from "../shared/interface.ts";
-import { makeLayerErrorSurface } from "../domain2/common/interface.ts";
+import { makeLayerErrorSurface } from "../server/shared/interface.ts";
 import { readAdapterStateResult, readUserAdapters } from "../domain1/registry/interface.ts";
 import { loadUserAdapterChecked } from "../domain1/registry/interface.ts";
 import { StatsServiceCtor as StatsService } from "../domain1/pipeline/interface.ts";

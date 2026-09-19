@@ -9,6 +9,7 @@
     "packages/dsh-provider-usage/src/domain2/execute/list-dirs.ts",
     "!packages/dsh-provider-usage/src/client/**",
     "!packages/dsh-provider-usage/src/**/interface.ts",
+    "!packages/dsh-provider-usage/src/server/*/deps.ts",
     "!packages/dsh-provider-usage/src/**/*.d.mts",
     "!packages/dsh-provider-usage/src/domain1/adapters/deepseek-official.mjs",
     "!packages/dsh-provider-usage/src/domain1/adapters/opencode-go.mjs",
