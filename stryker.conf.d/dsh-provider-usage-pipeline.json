@@ -4,8 +4,8 @@
     "packages/dsh-provider-usage/src/domain1/history/history.ts",
     "packages/dsh-provider-usage/src/domain1/pipeline/v2.ts",
     "packages/dsh-provider-usage/src/domain1/registry/hotreload.ts",
-    "shared/placement-math.js",
     "packages/dsh-provider-usage/src/domain1/registry/path-resolve.ts",
+    "packages/dsh-provider-usage/src/shared/placement-math.ts",
     "packages/dsh-provider-usage/src/shared/client-logic.ts",
     "packages/dsh-provider-usage/src/domain1/registry/provider-config.ts",
     "packages/dsh-provider-usage/src/shared/charts.ts",
@@ -15,8 +15,7 @@
     "!packages/dsh-provider-usage/src/**/*.d.mts",
     "!packages/dsh-provider-usage/src/domain1/adapters/deepseek-official.mjs",
     "!packages/dsh-provider-usage/src/domain1/adapters/opencode-go.mjs",
-    "!packages/dsh-provider-usage/src/domain1/adapters/zai-coding-cn.mjs",
-    "!packages/dsh-provider-usage/src/shared/placement-math.ts"
+    "!packages/dsh-provider-usage/src/domain1/adapters/zai-coding-cn.mjs"
   ],
   "testRunner": "vitest",
   "mutator": {

@@ -105,9 +105,9 @@ export function buildConfigUiPatch(raw: unknown): UiPlacementConfig {
 }
 
 /** 面板垂直定位纯函数（供 smoke 断言翻转分支；clamp 到视口内，不溢出）。
- *  #378 抽取：实现上移 shared/placement-math.js，此处 re-export 保持 index.ts
- *  导出链不变（实现见 shared 模块与两包 placement-math 薄 facade）。 */
-export { panelTopForAnchor } from "../../../../../shared/placement-math.js";
+ *  实现自持于包内 src/shared/placement-math.ts（shared-leaf 叶子约束），此处
+ *  re-export 保持 index.ts 导出链不变。 */
+export { panelTopForAnchor } from "../../shared/interface.ts";
 
 /**
  * 插件 Config schema（标准 cordis 配置注入入口；含 `ui` 子对象）。

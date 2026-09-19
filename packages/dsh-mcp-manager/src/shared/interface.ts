@@ -21,11 +21,10 @@ export {
   composerDockedAtBottom,
   bottomAnchorEdge,
   panelZIndexFor,
+  panelTopForAnchor,
 } from "./placement-math.ts";
-// 这一个符号不随上面 12 个走同一条链：placement-math.ts 已把它作为**别名**转出，
-// 而门禁的 collectExports 对 `export { A as B } from` 只登记源名 A，再经一层同名
-// 转出会解析到空（interface.ts 虚导出，规则 4 硬判红）。故别名直连仓库根单源。
-export { panelAnchorForPlacement as panelAnchorForPosition } from "../../../../shared/placement-math.js";
+// 包级命名直接由 placement-math.ts 定义并转出（自持实现，无跨目录引用）。
+export { panelAnchorForPosition } from "./placement-math.ts";
 export type { FloatBreakpoint, ViewportPoint, RectLike } from "./placement-math.ts";
 
 export { SERVER_STATES, EMPTY_STATUS_COUNTS } from "./status.ts";

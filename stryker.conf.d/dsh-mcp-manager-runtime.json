@@ -1,14 +1,12 @@
 {
   "$schema": "../node_modules/@stryker-mutator/core/schema/stryker-schema.json",
   "mutate": [
-    "shared/placement-math.js",
     "packages/dsh-mcp-manager/src/server/pipeline/**/*.ts",
     "packages/dsh-mcp-manager/src/server/catalog/**/*.ts",
     "packages/dsh-mcp-manager/src/server/shared/**/*.ts",
     "packages/dsh-mcp-manager/src/server/upgrade/**/*.ts",
     "packages/dsh-mcp-manager/src/shared/**/*.ts",
     "!packages/dsh-mcp-manager/src/client/**",
-    "!packages/dsh-mcp-manager/src/shared/placement-math.ts",
     "!packages/dsh-mcp-manager/src/**/interface.ts",
     "!packages/dsh-mcp-manager/src/server/*/deps.ts",
     "!packages/dsh-mcp-manager/src/server/*/*/deps.ts"

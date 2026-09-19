@@ -22,7 +22,6 @@
       "scopeFrom": "tree",
       "packages": ["scripts/gate", "scripts/release"],
       "why": "门禁故障码（exit 2）不得绕开唯一出口（#843 P-2）。它按**路径**限定范围而不是按包：面是两个源码目录（scripts/gate/** 与 scripts/release/**，递归），由目录结构派生、不吃 --package、也不读本文件，故为 tree。登记在此是为了让「本仓有哪些路径受限门禁」保持唯一答案（守卫是 test/gate-scope-registry.test.ts 的「forbid-*.mjs 未登记即红」）。"
-
     },
     {
       "gate": "forbid-src-tests",

@@ -184,6 +184,14 @@
       "why": "包级资产：notifier 导出面分类登记，由常驻的 test/export-faces-admission.test.ts 消费；判据是「分类与实际导出面一致」，不是阈值。"
     },
     {
+      "source": "scripts/data/dsh-mcp-manager-export-faces.json",
+      "why": "包级资产：mcp-manager 导出面分类登记（#767 B0 新建），与同包导出面基线出自同一次 emitDeclarations() 产物，喂「新增导出必须显式分类」准入判据；判据是「分类与实际导出面一致」，不是阈值。"
+    },
+    {
+      "source": "scripts/data/dsh-mcp-manager-export-surface.json",
+      "why": "包级资产：mcp-manager 导出面基线（#767 B0 新建，138 个符号），由 gate/export-surface-snapshot.mjs --package dsh-mcp-manager 逐字节比对；基线更新须手冻门禁报出的 diff 行（不用 --snapshot 全量），无单调阈值语义。"
+    },
+    {
       "source": "scripts/data/dsh-notifier-export-surface.json",
       "why": "包级资产：notifier 导出面基线（符号集 + 定义块），由包内 consumer-types 集成测试与 export-surface-snapshot.mjs 比对；基线更新走 --snapshot 并随 PR 提交，无单调阈值语义。"
     },

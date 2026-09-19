@@ -62,10 +62,8 @@ export function normalizeUiConfig(raw: unknown): UiPlacementConfig {
   };
 }
 
-/** 面板垂直定位纯函数（供 smoke 断言翻转分支；clamp 到视口内，不溢出）。
- *  实现上移 shared/placement-math.js，此处 re-export 保持 index.ts
- *  导出链不变（实现见 shared 模块与两包 placement-math 薄 facade）。 */
-export { panelTopForAnchor } from "../../../../shared/placement-math.js";
+// 面板垂直定位纯函数改由 interface.ts 直接从 placement-math.ts 转出（单源，
+// 此处不再中转——目录门面是唯一出口）。
 
 /** UI 配置持久化文件（historyRoot 下，0600）。 */
 export function uiConfigFile(root: string): string {

@@ -347,10 +347,13 @@ test("#792 PR2 登记偏差修正：四行登记以派生结果为准", () => {
   ]);
   // sse-hub：原快照整行缺失
   assert.deepEqual(rowOf(result, "sse-hub").consumers, ["dsh-mcp-manager", "dsh-notifier"]);
-  // 类型面单列：唯一消费者合规
-  const typeFace = rowOf(result, "mcp-manager-service");
-  assert.equal(typeFace.kind, "type");
-  assert.deepEqual(typeFace.consumers, ["dsh-mcp-manager"]);
+  // mcp-manager-service 类型面已不在共享层：#767 B1.5b 把 DTO 与服务类型收进包内
+  // src/shared，仓库级声明已删（rowOf 不存在即抛，故此处反向断言它确实不在派生清单里）。
+  assert.equal(
+    (result.rows ?? []).find((r) => r.base === "mcp-manager-service"),
+    undefined,
+    "mcp-manager-service 已退回包内，不应再出现在共享层派生清单里",
+  );
 });
 
 test("#792 PR2：frontmatter 已从共享层移除（不再出现在派生清单里）", () => {

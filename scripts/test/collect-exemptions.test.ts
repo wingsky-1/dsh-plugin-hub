@@ -167,7 +167,6 @@ test("本仓真实快照：17 条在册（数字变即提示同步台账与 #765
   // #847 在此快照里是 sidebar 十条 I8 存量的跟踪号（合法出现）；变异回落锚点仍不得出现。
   assert.match(r.stdout, /trackingIssue #847/);
 
-
   // #767 B0：扩包后新增的存量豁免同样必须在台账里——只判红不登记，或只登记不进台账，
   // 都会让「到期复核」失去输入（这一条是台账完整性的锚，不是计数装饰）
   assert.match(r.stdout, /\$\.exemptions\[0\] {2}gate=forbid-module-state-src/);

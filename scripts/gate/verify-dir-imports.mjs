@@ -459,7 +459,10 @@ function scanMemberBounds(text, cursor) {
 function objectLiteralKeys(text) {
   if (text[0] !== "{") return null;
   const keys = [];
-  const cursor = { depth: 0, quote: null, i: 1, start: 1 };
+  // text[0] 即对象字面量的开括号（调用方 slice 从 { 开始，i = 1 跳过它）：顶层成员本就处在深度 1。
+  // 初值 0 会让顶层 , / ; / 换行永不切分（depth === 1 才切），全靠收尾分支 push 首个冒号前的键——
+  // 两侧同错时假绿（只比首字段），文本变化打破平衡即幻影失配（#767 rebase 筆2 installRuntime 误报 settingsSource）。
+  const cursor = { depth: 1, quote: null, i: 1, start: 1 };
   cursor.take = (end) => {
     const key = memberKey(text.slice(cursor.start, end).trim());
     if (key === null) return false;
@@ -1129,7 +1132,6 @@ function collectActualTargets(modId, refs) {
  * 模块（含同模块与 src 根）一律单独判红，故不能挪到模块级判据里。
  */
 function findDeadDeclarations({ modules, refs }) {
-
   const deadDeclarations = [];
   const depsValueImports = [];
   for (const [modDir, modId] of modules) {
@@ -1203,7 +1205,6 @@ function analyzePackage(pkgName, topology) {
     dirname(srcDir),
     readPackageName(dirname(srcDir)),
   );
-
 
   const specs = collectMutationSpecs(topology, pkgName);
   // 「不适用」与「空集」的区分只在本函数内部；metrics 统一落数组（?? []），

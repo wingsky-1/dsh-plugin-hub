@@ -40,7 +40,9 @@ import type {
   McpServerListEntry as ClientServerListEntry,
 } from "../../src/client/core/state.ts";
 import type { McpServerListEntry } from "../../src/shared/interface.ts";
-import type { ToolDefinition } from "@deepseek-ai/dsh-tools";
+// 本地最小形状（service.ts 禁非同目录 import，见 shared-leaf 判据）：与官方
+// ToolDefinition 的结构子集兼容（官方对象可赋值给它），消费端只读这三字段。
+import type { EncapsulatedToolDefinition } from "../../src/shared/service.ts";
 
 // ─────────────────────────── 编译期类型断言区 ───────────────────────────
 // tsd 风格零依赖类型原语（自实现，不引第三方）。
@@ -97,7 +99,7 @@ type _SvcServerInput = Assert<
       toolCallTimeoutMs?: number;
       reconnect?: Record<string, unknown>;
       description?: string;
-      toolDefinitions?: ToolDefinition[];
+      toolDefinitions?: EncapsulatedToolDefinition[];
     }
   >
 >;

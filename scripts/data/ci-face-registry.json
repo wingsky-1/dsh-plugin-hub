@@ -177,10 +177,7 @@
     {
       "path": "scripts/data/dsh-notifier-*.json",
       "faces": ["dsh-notifier"],
-      "consumers": [
-        "packages/dsh-notifier/test/integration/consumer-types.test.ts",
-        "scripts/test/export-faces-admission.test.ts"
-      ],
+      "consumers": ["packages/dsh-notifier/test/integration/consumer-types.test.ts"],
       "why": "包级数据资产：导出面快照与导出面分类登记，两者都是本包资产，故归本包面。"
     },
     {
@@ -192,6 +189,10 @@
     {
       "path": "scripts/data/dsh-mcp-manager-*.json",
       "faces": ["dsh-mcp-manager"],
+      "consumerGap": {
+        "kind": "indirect",
+        "reason": "export-surface-snapshot 与 export-faces-lib 按 ${pkg} 模板拼名加载（scripts/data/<pkg>-export-surface.json / <pkg>-export-faces.json），不含逐包字面量，故无字面命中的仓内直接读取方。"
+      },
       "why": "包级数据资产（#767 B0 新建）：dsh-mcp-manager-export-surface.json 是本包重构前的导出面基线，由 contract-check 的 export-surface-snapshot 调用点与常驻的 test:scripts（export-faces-admission 逐包断言）消费；dsh-mcp-manager-export-faces.json 是该基线的分类登记，只被同一条准入判据消费。两者都是本包资产，故归本包面；改动任一份即改变本包的契约判据输入，必须触发本包切片。"
     },
     {

@@ -16,8 +16,6 @@
  *   过度裁剪，查询面是消费方感知服务状态所必需）。
  */
 
-import type { ToolDefinition } from "@deepseek-ai/dsh-tools";
-
 import type { McpServerSummary } from "./dto.ts";
 import type { ServerState } from "./status.ts";
 
@@ -54,7 +52,20 @@ export interface McpManagerServerInput {
    * 通用 callTool）。模型可见名仍由 manager 命名机制决定（mcp__ 前缀）；
    * 工具级禁用/可见性/能力目录照常生效。仅内存态消费，不落盘。
    */
-  toolDefinitions?: ToolDefinition[];
+  toolDefinitions?: EncapsulatedToolDefinition[];
+}
+
+/**
+ * 调用方封装工具定义的本地最小形状（shared-leaf 叶子约束：本文件禁任何非同目录
+ * import，连 `import type` 也不许——判据把类型 import 归一成值形态再解析）。
+ * 形状与消费端对齐（directory 的 wrappedToolsOf 只读 name/description/parameters，
+ * 且是 unknown 防御式读取）：官方 ToolDefinition 对象是本接口的结构超集，赋值兼容；
+ * 若官方定义增删字段，这里不需同步——多读的字段消费端本就不读。
+ */
+export interface EncapsulatedToolDefinition {
+  name: string;
+  description?: string;
+  parameters?: unknown;
 }
 
 /** ctx.mcpManager service 面（完整：注入 + 控制 + 查询）。 */

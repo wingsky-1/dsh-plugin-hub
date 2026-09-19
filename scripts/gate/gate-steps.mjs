@@ -56,7 +56,7 @@ export function tierSteps(tier, { hitPackages, withCoverage, base, scopeLabel })
       label: "verify:coverage-scope（覆盖率面：单一事实源 + 面完整性）",
       args: ["verify:coverage-scope"],
     },
-    // #767 P6：gauntlet config/scope 散文段数与变异拓扑一致（试点，本地先行——CI 执行点另起任务接，不在本片改 .github/）。
+    // #767 P6：gauntlet config/scope 散文段数与变异拓扑一致（集合比对，顺序无关）。
     {
       label: "verify:prose-counts（散文段数：config/scope 与拓扑一致）",
       args: ["verify:prose-counts"],

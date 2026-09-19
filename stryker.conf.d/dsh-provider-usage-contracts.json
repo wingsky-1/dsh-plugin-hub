@@ -8,8 +8,7 @@
     "!packages/dsh-provider-usage/src/**/*.d.mts",
     "!packages/dsh-provider-usage/src/domain1/adapters/deepseek-official.mjs",
     "!packages/dsh-provider-usage/src/domain1/adapters/opencode-go.mjs",
-    "!packages/dsh-provider-usage/src/domain1/adapters/zai-coding-cn.mjs",
-    "!packages/dsh-provider-usage/src/shared/placement-math.ts"
+    "!packages/dsh-provider-usage/src/domain1/adapters/zai-coding-cn.mjs"
   ],
   "testRunner": "vitest",
   "mutator": {

@@ -148,50 +148,6 @@
         "unitImportFaceViolations": []
       }
     },
-    "dsh-verify-isolated": {
-      "modules": 0,
-      "scannedSrcFiles": 1,
-      "allSrcTsFiles": 1,
-      "interfaceFacades": 0,
-      "leafValueEdges": 0,
-      "fileValueEdges": 0,
-      "crossModuleRefs": 0,
-      "quality": {
-        "leafModuleCycles": [],
-        "fileCycles": [],
-        "implToOtherImpl": [],
-        "missingInterface": [],
-        "directImpl": [],
-        "uncoveredSrcFiles": [],
-        "crossDomainValueEdges": [],
-        "rootIndexImports": [],
-        "clientServerImports": [],
-        "unitImportFaceViolations": []
-      }
-    },
-    "dsh-web-file-preview": {
-      "modules": 0,
-      "scannedSrcFiles": 2,
-      "allSrcTsFiles": 4,
-      "interfaceFacades": 0,
-      "leafValueEdges": 0,
-      "fileValueEdges": 1,
-      "crossModuleRefs": 0,
-      "quality": {
-        "leafModuleCycles": [],
-        "fileCycles": [],
-        "implToOtherImpl": [],
-        "missingInterface": [],
-        "directImpl": [],
-        "uncoveredSrcFiles": [],
-        "crossDomainValueEdges": [],
-        "rootIndexImports": [],
-        "clientServerImports": [],
-        "unitImportFaceViolations": [
-          "test/unit/unit-present-open.test.ts|src/index.ts"
-        ]
-      }
-    },
     "dsh-worktree-sidebar": {
       "modules": 7,
       "scannedSrcFiles": 41,

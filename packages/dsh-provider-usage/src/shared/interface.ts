@@ -95,7 +95,6 @@ export { sanitizeHtml } from "./sanitize.ts";
 export {
   DEFAULT_UI_CONFIG,
   normalizeUiConfig,
-  panelTopForAnchor,
   uiConfigFile,
   readUiConfig,
   writeUiConfig,
@@ -123,5 +122,6 @@ export {
   bottomAnchorEdge,
   panelAnchorForPlacement,
   panelZIndexFor,
+  panelTopForAnchor,
 } from "./placement-math.ts";
 export type { FloatBreakpoint, ViewportPoint, RectLike } from "./placement-math.ts";

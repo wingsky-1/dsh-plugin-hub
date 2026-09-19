@@ -261,7 +261,11 @@ test("本仓真实快照：notifier/lan-proxy 零模块级可变状态，mcp 仅
   // 台账条目被删、var 回流、或新增第二处豁免，此断言先红以提示复核 gate-exemptions.json 与客户端源码。
   // 注：汇总行「登记豁免 1 处」本身也含该词，故按明细行（带 #issue 号）计数。
   const exemptHits = r.stdout.split("\n").filter((l) => l.includes("登记豁免 #"));
-  assert.equal(exemptHits.length, 1, `应仅 panel.ts 一处登记豁免，实际 ${exemptHits.length}：\n${r.stdout}`);
+  assert.equal(
+    exemptHits.length,
+    1,
+    `应仅 panel.ts 一处登记豁免，实际 ${exemptHits.length}：\n${r.stdout}`,
+  );
 });
 
 /** 写一份范围注册表临时文件，返回其路径（--registry 注入）。 */
