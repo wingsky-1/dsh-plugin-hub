@@ -19,6 +19,7 @@ export const DEFAULTS: LanProxySettingsView = {
   httpsPort: 3443,
   tlsCertFile: "",
   tlsKeyFile: "",
+  tlsCaCertFile: "",
   printBanner: true,
   wsBridgeEnabled: true,
   wsCompressEnabled: true,

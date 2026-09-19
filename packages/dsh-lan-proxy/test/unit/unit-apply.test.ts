@@ -18,7 +18,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { createServer } from "node:http";
 
 // 单元层导入面（ARCHITECTURE-METHOD §8）：同域白盒直连 impl。
@@ -120,8 +120,9 @@ describe("pluginDir", () => {
     rmSync(tmp, { recursive: true, force: true });
   });
 
-  it("pluginDir 末段为 lan-proxy", () => {
-    expect(basename(dir)).toBe("lan-proxy");
+  it("pluginDir 末段为包名分区 dsh-lan-proxy（issue #911）", () => {
+    expect(basename(dir)).toBe("dsh-lan-proxy");
+    expect(basename(dirname(dir))).toBe("@wingsky-1");
   });
 
   it("pluginDir 在 DSH_HOME 内", () => {
@@ -1110,7 +1111,7 @@ describe("validateSettings 全字段类型矩阵（#147 变异加固接续）", 
   });
 
   // 字符串类字段：数字形态非法；空串除 targetHost（回环约束）外合法
-  const strKeys = ["host", "tlsCertFile", "tlsKeyFile"];
+  const strKeys = ["host", "tlsCertFile", "tlsKeyFile", "tlsCaCertFile"];
   const strIllegal = strKeys.map((key) => ({ title: `${key} 数字形态非法`, key }));
   it.each(strIllegal)("$title", ({ key }) => {
     expect(validateSettings({ [key]: 42 })?.key).toBe(key);

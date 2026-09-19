@@ -2,6 +2,10 @@
   "package": "dsh-lan-proxy",
   "exports": [
     {
+      "name": "CaCertRouteDeps",
+      "isType": true
+    },
+    {
       "name": "Config",
       "isType": false
     },
@@ -34,6 +38,10 @@
       "isType": true
     },
     {
+      "name": "LEGACY_BAK_SUFFIX",
+      "isType": false
+    },
+    {
       "name": "LanProxy",
       "isType": true
     },
@@ -43,6 +51,14 @@
     },
     {
       "name": "LanProxySettingsHooks",
+      "isType": true
+    },
+    {
+      "name": "LayoutMigrateOptions",
+      "isType": true
+    },
+    {
+      "name": "LayoutMigrateOutcome",
       "isType": true
     },
     {
@@ -99,6 +115,10 @@
     },
     {
       "name": "bridgeUpstreamHeaders",
+      "isType": false
+    },
+    {
+      "name": "buildCaCertRoutes",
       "isType": false
     },
     {
@@ -182,6 +202,10 @@
       "isType": false
     },
     {
+      "name": "resolvePluginDir",
+      "isType": false
+    },
+    {
       "name": "rewriteHeaders",
       "isType": false
     },
@@ -203,10 +227,12 @@
     }
   ],
   "declBlocks": [
+    "export declare const APP_ROUTES: { readonly config: string; readonly health: string; readonly caCert: string; };",
     "export declare const BOOLEAN_KEYS: readonly string[];",
+    "export declare const CLIENT_ROUTES: { readonly config: \"/api/dsh-lan-proxy/config\"; readonly health: \"/api/dsh-lan-proxy/health\"; readonly caCert: \"/api/dsh-lan-proxy/ca-cert\"; };",
     "export declare const COUNT_LIMITS: Record<string, number>;",
     "export declare const Config: z<LanProxyConfig>;",
-    "export declare const DEFAULTS: Record<string, any>;",
+    "export declare const DEFAULTS: LanProxySettingsView;",
     "export declare const DEFAULT_CONFIG: LanProxyConfig;",
     "export declare const DEFAULT_DEFLATE_POLICY: Readonly<DeflatePolicy>;",
     "export declare const DEFAULT_OPTIONS: Readonly<{ host: \"0.0.0.0\"; port: 3081; httpsPort: 3443; targetHost: \"127.0.0.1\"; }",
@@ -216,8 +242,9 @@
     "export declare const HOST_TRUST_RUNTIME_MARKER = \"__DSH_LAN_PROXY_HOST_TRUST__\";",
     "export declare const HOST_TRUST_RUNTIME_MARKER = \"__DSH_LAN_PROXY_HOST_TRUST__\";",
     "export declare const HOST_TRUST_STATUS_KEY: Record<HostTrustStatus, string>;",
+    "export declare const LEGACY_BAK_SUFFIX = \".migrated.bak\";",
     "export declare const MIGRATED_BAK_NAME = \"config.json.migrated.bak\";",
-    "export declare const ROUTES: { health: string; config: string; };",
+    "export declare const ROUTES: { health: string; config: string; caCert: string; };",
     "export declare const SELF_SIGNED_CERT = \"dsh-lan-proxy-cert.pem\";",
     "export declare const SELF_SIGNED_KEY = \"dsh-lan-proxy-key.pem\";",
     "export declare const SETTINGS_NS = \"dsh-lan-proxy\";",
@@ -225,21 +252,24 @@
     "export declare const inject: string[];",
     "export declare const inject: string[];",
     "export declare const name = \"lan-proxy\";",
-    "export declare const zh: { readonly settingsName: \"局域网访问（dsh-lan-proxy）\"; readonly settingsDescription: \"LAN 端口 / HTTPS / 证书 / 响应压缩 / 启动横幅\"; readonly settingsLoading: \"局域网访问：加载中…\"; readonly enable: \"启用\"; readonly lanPort: \"LAN 端口（HTTP）\"; readonly httpsCoexist: \"HTTPS 并存\"; readonly httpsPort: \"HTTPS 端口\"; readonly certFile: \"证书文件（PEM）\"; readonly certPlaceholder: \"留空 = 自动生成自签名证书\"; readonly keyFile: \"私钥文件（PEM）\"; readonly keyPlaceholder: \"与证书文件成对\"; readonly printBanner: \"启动时打印访问地址\"; readonly wsBridge: \"WebSocket 桥接（保活，默认开）\"; readonly wsCompress: \"WebSocket 压缩（事件流）\"; readonly wsPaths: \"压缩路径（逗号分隔）\"; readonly wsPathsHint: \"仅控制压缩范围；清空 = 桥接不压缩，保活不受影响（手机端不再频繁断连重连）\"; readonly httpCompress: \"HTTP 响应压缩（Brotli/gzip）\"; readonly compressLevel: \"压缩档位\"; readonly level0: \"默认（gzip 6 / br 4）\"; readonly level1: \"低（最快：gzip 1 / br 2）\"; readonly level2: \"中（均衡：gzip 5 / br 5）\"; readonly level3: \"高（最高压缩比：gzip 9 / br 9）\"; readonly injectToken: \"局域网免 token 直入\"; readonly injectTokenOnHint: \"已开启：局域网内任何能访问该端口的设备都无需登录 token 即可完整控制 dsh（含终端命令执行），等效信任整个局域网。仅在可信家庭/办公内网开启；关闭后已登录设备的会话在有效期内仍然有效（约 30 天），不即时吊销。\"; readonly ownsHostCompat: \"向非回环页面声明 ownsHost（兼容）\"; readonly ownsHostCompatHint: \"已开启：向非回环页面声明 ownsHost，等同伪造上游拓扑事实位——远程页与本机页在界面上不再可区分。解锁的行为：设置持久化落盘 <DSH_HOME>/settings.yaml（文件不存在时新建）、宿主原生「打开配置文件」动作。这不是服务端授权变化（/api 围栏与 launch token / 会话 cookie 认证不变）。仅在你清楚后果时开启；零伪造替代路径见 README「安全模型」的 ssh -L 方案。\"; readonly hostTrustStatusLoopback: \"拓扑事实位：本机页，设置持久化可用（无需兼容开关）\"; readonly hostTrustStatusCompat: \"拓扑事实位：兼容模式已生效（本页已声明 ownsHost）\"; readonly hostTrustStatusDrift: \"拓扑事实位告警：注入 marker 在，但上游 isLoopback 仍非 true——上游契约可能已漂移，本次注入很可能已失效，请按 dsh-upgrade 流程复核\"; readonly hostTrustStatusOff: \"拓扑事实位：本页设置面不可用（上游已按非回环页面降级为内存 scope）。开启上方兼容开关并重新加载本页即可恢复持久化设置。\"; readonly hostTrustHostFacts: \"宿主侧事实：兼容开关 {compat}\"; readonly hostTrustOn: \"开\"; readonly hostTrustOff: \"关\"; readonly bodyHint: \"保存即热更新（配置写入宿主统一设置存储，无需重启 dsh web）。修改后内网设备访问新端口，旧端口立即失效。\"; readonly compressOff: \"HTTP 响应压缩：已关闭\"; readonly compressInactive: \"HTTP 响应压缩：未生效\"; readonly compressOn: \"HTTP 响应压缩：已启用 · 协商 {neg} 次 · 直通 {pass} 次\"; readonly loadFail: \"设置加载失败：{msg}\"; readonly portRangeFail: \"保存失败：LAN 端口（HTTP）需为 1-65535 的整数\"; readonly httpsPortRangeFail: \"保存失败：HTTPS 端口需为 1-65535 的整数\"; readonly levelRangeFail: \"保存失败：压缩档位需为 0-3 的整数\"; readonly unchanged: \"未修改\"; readonly savedOk: \"已保存，已热更新\"; readonly saveFailConflict: \"保存失败：{msg}（请关闭本卡片重新打开后重试）\"; readonly saveFail: \"保存失败：{msg}\"; readonly save: \"保存\"; };",
+    "export declare const zh: { readonly settingsName: \"局域网访问（dsh-lan-proxy）\"; readonly settingsDescription: \"LAN 端口 / HTTPS / 证书 / 响应压缩 / 启动横幅\"; readonly settingsLoading: \"局域网访问：加载中…\"; readonly enable: \"启用\"; readonly lanPort: \"LAN 端口（HTTP）\"; readonly httpsCoexist: \"HTTPS 并存\"; readonly httpsPort: \"HTTPS 端口\"; readonly certFile: \"证书文件（PEM）\"; readonly certPlaceholder: \"留空 = 自动生成自签名证书\"; readonly keyFile: \"私钥文件（PEM）\"; readonly keyPlaceholder: \"与证书文件成对\"; readonly caCertFile: \"CA 公钥文件（PEM，仅读）\"; readonly caCertPlaceholder: \"留空 = 不下发 CA（自签模式下发叶子）\"; readonly caDownload: \"移动设备安装证书\"; readonly caDownloadLink: \"下载证书（.cer）\"; readonly caDownloadHint: \"iPhone 用 Safari 点下载：安装描述文件后去“设置→通用→关于本机→证书信任设置”打开信任；Android 在“设置→安全→安装 CA 证书”（自包 WebView 需放行用户 CA）；Windows 双击 .cer 装进“受信任的根证书颁发机构（本地计算机）”。装完重开即零警告；自定义叶子且无 CA 时链接 404（属正常，按提示配置 CA）。\"; readonly printBanner: \"启动时打印访问地址\"; readonly wsBridge: \"WebSocket 桥接（保活，默认开）\"; readonly wsCompress: \"WebSocket 压缩（事件流）\"; readonly wsPaths: \"压缩路径（逗号分隔）\"; readonly wsPathsHint: \"仅控制压缩范围；清空 = 桥接不压缩，保活不受影响（手机端不再频繁断连重连）\"; readonly httpCompress: \"HTTP 响应压缩（Brotli/gzip）\"; readonly compressLevel: \"压缩档位\"; readonly level0: \"默认（gzip 6 / br 4）\"; readonly level1: \"低（最快：gzip 1 / br 2）\"; readonly level2: \"中（均衡：gzip 5 / br 5）\"; readonly level3: \"高（最高压缩比：gzip 9 / br 9）\"; readonly injectToken: \"局域网免 token 直入\"; readonly injectTokenOnHint: \"已开启：局域网内任何能访问该端口的设备都无需登录 token 即可完整控制 dsh（含终端命令执行），等效信任整个局域网。仅在可信家庭/办公内网开启；关闭后已登录设备的会话在有效期内仍然有效（约 30 天），不即时吊销。\"; readonly ownsHostCompat: \"向非回环页面声明 ownsHost（兼容）\"; readonly ownsHostCompatHint: \"已开启：向非回环页面声明 ownsHost，等同伪造上游拓扑事实位——远程页与本机页在界面上不再可区分。解锁的行为：设置持久化落盘 <DSH_HOME>/settings.yaml（文件不存在时新建）、宿主原生「打开配置文件」动作。这不是服务端授权变化（/api 围栏与 launch token / 会话 cookie 认证不变）。仅在你清楚后果时开启；零伪造替代路径见 README「安全模型」的 ssh -L 方案。\"; readonly hostTrustStatusLoopback: \"拓扑事实位：本机页，设置持久化可用（无需兼容开关）\"; readonly hostTrustStatusCompat: \"拓扑事实位：兼容模式已生效（本页已声明 ownsHost）\"; readonly hostTrustStatusDrift: \"拓扑事实位告警：注入 marker 在，但上游 isLoopback 仍非 true——上游契约可能已漂移，本次注入很可能已失效，请按 dsh-upgrade 流程复核\"; readonly hostTrustStatusOff: \"拓扑事实位：本页设置面不可用（上游已按非回环页面降级为内存 scope）。开启上方兼容开关并重新加载本页即可恢复持久化设置。\"; readonly hostTrustHostFacts: \"宿主侧事实：兼容开关 {compat}\"; readonly hostTrustOn: \"开\"; readonly hostTrustOff: \"关\"; readonly bodyHint: \"保存即热更新（配置写入宿主统一设置存储，无需重启 dsh web）。修改后内网设备访问新端口，旧端口立即失效。\"; readonly compressOff: \"HTTP 响应压缩：已关闭\"; readonly compressInactive: \"HTTP 响应压缩：未生效\"; readonly compressOn: \"HTTP 响应压缩：已启用 · 协商 {neg} 次 · 直通 {pass} 次\"; readonly loadFail: \"设置加载失败：{msg}\"; readonly portRangeFail: \"保存失败：LAN 端口（HTTP）需为 1-65535 的整数\"; readonly httpsPortRangeFail: \"保存失败：HTTPS 端口需为 1-65535 的整数\"; readonly levelRangeFail: \"保存失败：压缩档位需为 0-3 的整数\"; readonly unchanged: \"未修改\"; readonly savedOk: \"已保存，已热更新\"; readonly saveFailConflict: \"保存失败：{msg}（请关闭本卡片重新打开后重试）\"; readonly saveFail: \"保存失败：{msg}\"; readonly save: \"保存\"; };",
     "export declare function SettingsCard(props: SettingsCardProps): React.JSX.Element;",
-    "export declare function apply(ctx: Context, config?: LanProxyConfig): void;",
     "export declare function apply(ctx: ClientContext): void;",
+    "export declare function apply(ctx: Context, config?: LanProxyConfig): void;",
     "export declare function applyConfigPatch(deps: ConfigRouteDeps, payload: unknown): Promise<PatchResult>;",
     "export declare function applyHostTrustInjection(html: string, enabled: boolean): string;",
     "export declare function bridgeCompressedWs(req: IncomingMessage, socket: Socket, head: Buffer, target: WsBridgeTarget): void;",
     "export declare function bridgeUpstreamHeaders(headers: IncomingHttpHeaders, targetAuthority: string): Record<string, string>;",
+    "export declare function buildCaCertRoutes(deps: CaCertRouteDeps): WebRoute[];",
     "export declare function buildConfigRoutes(deps: ConfigRouteDeps): WebRoute[];",
     "export declare function certStillValid(certPath: string): boolean;",
     "export declare function compressWsPath(paths: readonly string[] | undefined, url: string | undefined): boolean;",
     "export declare function createLanProxy(options: LanProxyOptions, logger?: LanLogger): LanProxy;",
     "export declare function deflateAllowedByPolicy(policy: DeflatePolicy | undefined, userAgent: string | undefined): boolean;",
+    "export declare function encodeCertificatePem(der: Buffer): string;",
     "export declare function ensureSelfSignedTls(options: SelfSignedOptions): TlsMaterials;",
     "export declare function evaluateHostTrust(signals: HostTrustSignals): HostTrustStatus;",
+    "export declare function extractFirstCertificateDer(input: string | Buffer): Buffer;",
     "export declare function formatAuthority(host: string, port: number): string;",
     "export declare function hasDshAuthCookie(cookieHeader: string | string[] | undefined): boolean;",
     "export declare function hostTrustAlert(status: HostTrustStatus): string | null;",
@@ -249,6 +279,8 @@
     "export declare function isLoopbackHostname(hostname: string | undefined): boolean;",
     "export declare function isLoopbackTarget(host: string): boolean;",
     "export declare function isTokenMintCandidate(method: string | undefined, url: string | undefined): boolean;",
+    "export declare function legacyPluginDir(): string;",
+    "export declare function loadDownloadableCertificate(source: DownloadCertSource, format: \"der\" | \"pem\", logWarn?: (message: string) => void): DownloadCertResult;",
     "export declare function loadTlsFromFiles(certFile: string, keyFile: string): TlsMaterials;",
     "export declare function migrateFileConfig(configDir: string, scope: Pick<OwnerScopeLike, \"update\">, logger?: { warn?: (...a: unknown[]) => void; }",
     "export declare function normalizeConfig(input: unknown): LanProxyConfig;",
@@ -257,6 +289,7 @@
     "export declare function readHostTrustSignals(remote: RemoteLike | undefined): HostTrustSignals;",
     "export declare function registerHostTrustInjection(ctx: Context, isEnabled: () => boolean): void;",
     "export declare function resolveCompressionOptions(preset: unknown): CompressionOptions;",
+    "export declare function resolvePluginDir(options: LayoutMigrateOptions): LayoutMigrateOutcome;",
     "export declare function rewriteHeaders(headers: IncomingHttpHeaders, targetAuthority: string): IncomingHttpHeaders;",
     "export declare function sanitizeSettings(raw: unknown): Partial<LanProxyConfig> | null;",
     "export declare function toSanEntry(host: string): SanAltName;",
@@ -267,6 +300,10 @@
     ".": {
       "types": "./lib/index.d.ts",
       "exports": [
+        {
+          "name": "CaCertRouteDeps",
+          "isType": true
+        },
         {
           "name": "Config",
           "isType": false
@@ -300,6 +337,10 @@
           "isType": true
         },
         {
+          "name": "LEGACY_BAK_SUFFIX",
+          "isType": false
+        },
+        {
           "name": "LanProxy",
           "isType": true
         },
@@ -309,6 +350,14 @@
         },
         {
           "name": "LanProxySettingsHooks",
+          "isType": true
+        },
+        {
+          "name": "LayoutMigrateOptions",
+          "isType": true
+        },
+        {
+          "name": "LayoutMigrateOutcome",
           "isType": true
         },
         {
@@ -365,6 +414,10 @@
         },
         {
           "name": "bridgeUpstreamHeaders",
+          "isType": false
+        },
+        {
+          "name": "buildCaCertRoutes",
           "isType": false
         },
         {
@@ -448,6 +501,10 @@
           "isType": false
         },
         {
+          "name": "resolvePluginDir",
+          "isType": false
+        },
+        {
           "name": "rewriteHeaders",
           "isType": false
         },
@@ -477,9 +534,6 @@
         ],
         "apply": [
           "export declare function apply(ctx: Context, config?: LanProxyConfig): void;"
-        ],
-        "pluginDir": [
-          "export declare function pluginDir(): string;"
         ],
         "BOOLEAN_KEYS": [
           "export declare const BOOLEAN_KEYS: readonly string[];"
@@ -515,10 +569,13 @@
           "export declare function installLanProxySettings(ctx: Context, entry: LanProxyConfig, hooks: LanProxySettingsHooks): void;"
         ],
         "ROUTES": [
-          "export declare const ROUTES: { health: string; config: string; };"
+          "export declare const ROUTES: { health: string; config: string; caCert: string; };"
         ],
         "applyConfigPatch": [
           "export declare function applyConfigPatch(deps: ConfigRouteDeps, payload: unknown): Promise<PatchResult>;"
+        ],
+        "buildCaCertRoutes": [
+          "export declare function buildCaCertRoutes(deps: CaCertRouteDeps): WebRoute[];"
         ],
         "buildConfigRoutes": [
           "export declare function buildConfigRoutes(deps: ConfigRouteDeps): WebRoute[];"
@@ -540,6 +597,12 @@
         ],
         "migrateFileConfig": [
           "export declare function migrateFileConfig(configDir: string, scope: Pick<OwnerScopeLike, \"update\">, logger?: { warn?: (...a: unknown[]) => void; }"
+        ],
+        "LEGACY_BAK_SUFFIX": [
+          "export declare const LEGACY_BAK_SUFFIX = \".migrated.bak\";"
+        ],
+        "resolvePluginDir": [
+          "export declare function resolvePluginDir(options: LayoutMigrateOptions): LayoutMigrateOutcome;"
         ],
         "DEFAULT_WS_PROBE_INTERVAL_MS": [
           "export declare const DEFAULT_WS_PROBE_INTERVAL_MS = 30000;"
@@ -592,6 +655,12 @@
         "isLoopbackTarget": [
           "export declare function isLoopbackTarget(host: string): boolean;"
         ],
+        "legacyPluginDir": [
+          "export declare function legacyPluginDir(): string;"
+        ],
+        "pluginDir": [
+          "export declare function pluginDir(): string;"
+        ],
         "SELF_SIGNED_CERT": [
           "export declare const SELF_SIGNED_CERT = \"dsh-lan-proxy-cert.pem\";"
         ],
@@ -601,8 +670,17 @@
         "certStillValid": [
           "export declare function certStillValid(certPath: string): boolean;"
         ],
+        "encodeCertificatePem": [
+          "export declare function encodeCertificatePem(der: Buffer): string;"
+        ],
         "ensureSelfSignedTls": [
           "export declare function ensureSelfSignedTls(options: SelfSignedOptions): TlsMaterials;"
+        ],
+        "extractFirstCertificateDer": [
+          "export declare function extractFirstCertificateDer(input: string | Buffer): Buffer;"
+        ],
+        "loadDownloadableCertificate": [
+          "export declare function loadDownloadableCertificate(source: DownloadCertSource, format: \"der\" | \"pem\", logWarn?: (message: string) => void): DownloadCertResult;"
         ],
         "loadTlsFromFiles": [
           "export declare function loadTlsFromFiles(certFile: string, keyFile: string): TlsMaterials;"
@@ -653,13 +731,19 @@
           "export declare const en: Record<LanProxyLocaleKey, string>;"
         ],
         "zh": [
-          "export declare const zh: { readonly settingsName: \"局域网访问（dsh-lan-proxy）\"; readonly settingsDescription: \"LAN 端口 / HTTPS / 证书 / 响应压缩 / 启动横幅\"; readonly settingsLoading: \"局域网访问：加载中…\"; readonly enable: \"启用\"; readonly lanPort: \"LAN 端口（HTTP）\"; readonly httpsCoexist: \"HTTPS 并存\"; readonly httpsPort: \"HTTPS 端口\"; readonly certFile: \"证书文件（PEM）\"; readonly certPlaceholder: \"留空 = 自动生成自签名证书\"; readonly keyFile: \"私钥文件（PEM）\"; readonly keyPlaceholder: \"与证书文件成对\"; readonly printBanner: \"启动时打印访问地址\"; readonly wsBridge: \"WebSocket 桥接（保活，默认开）\"; readonly wsCompress: \"WebSocket 压缩（事件流）\"; readonly wsPaths: \"压缩路径（逗号分隔）\"; readonly wsPathsHint: \"仅控制压缩范围；清空 = 桥接不压缩，保活不受影响（手机端不再频繁断连重连）\"; readonly httpCompress: \"HTTP 响应压缩（Brotli/gzip）\"; readonly compressLevel: \"压缩档位\"; readonly level0: \"默认（gzip 6 / br 4）\"; readonly level1: \"低（最快：gzip 1 / br 2）\"; readonly level2: \"中（均衡：gzip 5 / br 5）\"; readonly level3: \"高（最高压缩比：gzip 9 / br 9）\"; readonly injectToken: \"局域网免 token 直入\"; readonly injectTokenOnHint: \"已开启：局域网内任何能访问该端口的设备都无需登录 token 即可完整控制 dsh（含终端命令执行），等效信任整个局域网。仅在可信家庭/办公内网开启；关闭后已登录设备的会话在有效期内仍然有效（约 30 天），不即时吊销。\"; readonly ownsHostCompat: \"向非回环页面声明 ownsHost（兼容）\"; readonly ownsHostCompatHint: \"已开启：向非回环页面声明 ownsHost，等同伪造上游拓扑事实位——远程页与本机页在界面上不再可区分。解锁的行为：设置持久化落盘 <DSH_HOME>/settings.yaml（文件不存在时新建）、宿主原生「打开配置文件」动作。这不是服务端授权变化（/api 围栏与 launch token / 会话 cookie 认证不变）。仅在你清楚后果时开启；零伪造替代路径见 README「安全模型」的 ssh -L 方案。\"; readonly hostTrustStatusLoopback: \"拓扑事实位：本机页，设置持久化可用（无需兼容开关）\"; readonly hostTrustStatusCompat: \"拓扑事实位：兼容模式已生效（本页已声明 ownsHost）\"; readonly hostTrustStatusDrift: \"拓扑事实位告警：注入 marker 在，但上游 isLoopback 仍非 true——上游契约可能已漂移，本次注入很可能已失效，请按 dsh-upgrade 流程复核\"; readonly hostTrustStatusOff: \"拓扑事实位：本页设置面不可用（上游已按非回环页面降级为内存 scope）。开启上方兼容开关并重新加载本页即可恢复持久化设置。\"; readonly hostTrustHostFacts: \"宿主侧事实：兼容开关 {compat}\"; readonly hostTrustOn: \"开\"; readonly hostTrustOff: \"关\"; readonly bodyHint: \"保存即热更新（配置写入宿主统一设置存储，无需重启 dsh web）。修改后内网设备访问新端口，旧端口立即失效。\"; readonly compressOff: \"HTTP 响应压缩：已关闭\"; readonly compressInactive: \"HTTP 响应压缩：未生效\"; readonly compressOn: \"HTTP 响应压缩：已启用 · 协商 {neg} 次 · 直通 {pass} 次\"; readonly loadFail: \"设置加载失败：{msg}\"; readonly portRangeFail: \"保存失败：LAN 端口（HTTP）需为 1-65535 的整数\"; readonly httpsPortRangeFail: \"保存失败：HTTPS 端口需为 1-65535 的整数\"; readonly levelRangeFail: \"保存失败：压缩档位需为 0-3 的整数\"; readonly unchanged: \"未修改\"; readonly savedOk: \"已保存，已热更新\"; readonly saveFailConflict: \"保存失败：{msg}（请关闭本卡片重新打开后重试）\"; readonly saveFail: \"保存失败：{msg}\"; readonly save: \"保存\"; };"
+          "export declare const zh: { readonly settingsName: \"局域网访问（dsh-lan-proxy）\"; readonly settingsDescription: \"LAN 端口 / HTTPS / 证书 / 响应压缩 / 启动横幅\"; readonly settingsLoading: \"局域网访问：加载中…\"; readonly enable: \"启用\"; readonly lanPort: \"LAN 端口（HTTP）\"; readonly httpsCoexist: \"HTTPS 并存\"; readonly httpsPort: \"HTTPS 端口\"; readonly certFile: \"证书文件（PEM）\"; readonly certPlaceholder: \"留空 = 自动生成自签名证书\"; readonly keyFile: \"私钥文件（PEM）\"; readonly keyPlaceholder: \"与证书文件成对\"; readonly caCertFile: \"CA 公钥文件（PEM，仅读）\"; readonly caCertPlaceholder: \"留空 = 不下发 CA（自签模式下发叶子）\"; readonly caDownload: \"移动设备安装证书\"; readonly caDownloadLink: \"下载证书（.cer）\"; readonly caDownloadHint: \"iPhone 用 Safari 点下载：安装描述文件后去“设置→通用→关于本机→证书信任设置”打开信任；Android 在“设置→安全→安装 CA 证书”（自包 WebView 需放行用户 CA）；Windows 双击 .cer 装进“受信任的根证书颁发机构（本地计算机）”。装完重开即零警告；自定义叶子且无 CA 时链接 404（属正常，按提示配置 CA）。\"; readonly printBanner: \"启动时打印访问地址\"; readonly wsBridge: \"WebSocket 桥接（保活，默认开）\"; readonly wsCompress: \"WebSocket 压缩（事件流）\"; readonly wsPaths: \"压缩路径（逗号分隔）\"; readonly wsPathsHint: \"仅控制压缩范围；清空 = 桥接不压缩，保活不受影响（手机端不再频繁断连重连）\"; readonly httpCompress: \"HTTP 响应压缩（Brotli/gzip）\"; readonly compressLevel: \"压缩档位\"; readonly level0: \"默认（gzip 6 / br 4）\"; readonly level1: \"低（最快：gzip 1 / br 2）\"; readonly level2: \"中（均衡：gzip 5 / br 5）\"; readonly level3: \"高（最高压缩比：gzip 9 / br 9）\"; readonly injectToken: \"局域网免 token 直入\"; readonly injectTokenOnHint: \"已开启：局域网内任何能访问该端口的设备都无需登录 token 即可完整控制 dsh（含终端命令执行），等效信任整个局域网。仅在可信家庭/办公内网开启；关闭后已登录设备的会话在有效期内仍然有效（约 30 天），不即时吊销。\"; readonly ownsHostCompat: \"向非回环页面声明 ownsHost（兼容）\"; readonly ownsHostCompatHint: \"已开启：向非回环页面声明 ownsHost，等同伪造上游拓扑事实位——远程页与本机页在界面上不再可区分。解锁的行为：设置持久化落盘 <DSH_HOME>/settings.yaml（文件不存在时新建）、宿主原生「打开配置文件」动作。这不是服务端授权变化（/api 围栏与 launch token / 会话 cookie 认证不变）。仅在你清楚后果时开启；零伪造替代路径见 README「安全模型」的 ssh -L 方案。\"; readonly hostTrustStatusLoopback: \"拓扑事实位：本机页，设置持久化可用（无需兼容开关）\"; readonly hostTrustStatusCompat: \"拓扑事实位：兼容模式已生效（本页已声明 ownsHost）\"; readonly hostTrustStatusDrift: \"拓扑事实位告警：注入 marker 在，但上游 isLoopback 仍非 true——上游契约可能已漂移，本次注入很可能已失效，请按 dsh-upgrade 流程复核\"; readonly hostTrustStatusOff: \"拓扑事实位：本页设置面不可用（上游已按非回环页面降级为内存 scope）。开启上方兼容开关并重新加载本页即可恢复持久化设置。\"; readonly hostTrustHostFacts: \"宿主侧事实：兼容开关 {compat}\"; readonly hostTrustOn: \"开\"; readonly hostTrustOff: \"关\"; readonly bodyHint: \"保存即热更新（配置写入宿主统一设置存储，无需重启 dsh web）。修改后内网设备访问新端口，旧端口立即失效。\"; readonly compressOff: \"HTTP 响应压缩：已关闭\"; readonly compressInactive: \"HTTP 响应压缩：未生效\"; readonly compressOn: \"HTTP 响应压缩：已启用 · 协商 {neg} 次 · 直通 {pass} 次\"; readonly loadFail: \"设置加载失败：{msg}\"; readonly portRangeFail: \"保存失败：LAN 端口（HTTP）需为 1-65535 的整数\"; readonly httpsPortRangeFail: \"保存失败：HTTPS 端口需为 1-65535 的整数\"; readonly levelRangeFail: \"保存失败：压缩档位需为 0-3 的整数\"; readonly unchanged: \"未修改\"; readonly savedOk: \"已保存，已热更新\"; readonly saveFailConflict: \"保存失败：{msg}（请关闭本卡片重新打开后重试）\"; readonly saveFail: \"保存失败：{msg}\"; readonly save: \"保存\"; };"
         ],
         "SettingsCard": [
           "export declare function SettingsCard(props: SettingsCardProps): React.JSX.Element;"
         ],
+        "APP_ROUTES": [
+          "export declare const APP_ROUTES: { readonly config: string; readonly health: string; readonly caCert: string; };"
+        ],
+        "CLIENT_ROUTES": [
+          "export declare const CLIENT_ROUTES: { readonly config: \"/api/dsh-lan-proxy/config\"; readonly health: \"/api/dsh-lan-proxy/health\"; readonly caCert: \"/api/dsh-lan-proxy/ca-cert\"; };"
+        ],
         "DEFAULTS": [
-          "export declare const DEFAULTS: Record<string, any>;"
+          "export declare const DEFAULTS: LanProxySettingsView;"
         ]
       }
     }

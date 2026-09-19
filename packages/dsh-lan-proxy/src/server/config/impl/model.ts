@@ -33,6 +33,8 @@ export interface LanProxyConfig {
   tlsCertFile?: string;
   /** 自定义 TLS 私钥 PEM 文件路径（可选；与 tlsCertFile 成对）。 */
   tlsKeyFile?: string;
+  /** 自建 LAN CA 公钥 PEM 文件路径（可选，仅读；issue #911 设置页下发 iOS/Android/Windows 安装用）。 */
+  tlsCaCertFile?: string;
   targetHost?: string;
   targetPort?: number;
   /** 启动时是否向终端打印监听横幅（LAN 访问地址等；默认 true）。 */
@@ -112,6 +114,12 @@ export const Config: z<LanProxyConfig> = z.object({
   tlsCertFile: z.string(),
   /** 自定义 TLS 私钥 PEM 文件路径（可选；与 tlsCertFile 成对）。 */
   tlsKeyFile: z.string(),
+  /**
+   * 自建 LAN CA 公钥 PEM 文件路径（可选，仅读）。提供时设置页可下发 CA 证书
+   * 供移动设备安装信任（issue #911）；缺省时设置页回退下发自签叶子（若为自签
+   * 模式），自定义叶子且无 CA 时下发端 404。无默认值（同 tlsCertFile 系）。
+   */
+  tlsCaCertFile: z.string(),
   /** 回环上游主机。 */
   targetHost: z.string().default(DEFAULT_OPTIONS.targetHost),
   /**
@@ -178,7 +186,7 @@ export const Config: z<LanProxyConfig> = z.object({
  * 不再手写第二份默认值——默认值只写在上面 schema 的 `.default(...)` 里，改一处即改两处。
  *
  * 为什么「归一化空输入」就是默认值：schemastery 对未带默认值的字段（tlsCertFile /
- * tlsKeyFile / targetPort）在结果里直接省略，故本对象的键集比 schema 字段数少 3。这是
+ * tlsKeyFile / tlsCaCertFile / targetPort）在结果里直接省略，故本对象的键集比 schema 字段数少 4。这是
  * 事实而非缺口——config-matrix 门禁的 N1/N2 正是锁这条不变式（键集与 normalizeConfig({}) 全等）。
  */
 export const DEFAULT_CONFIG: LanProxyConfig = Config({});
@@ -230,6 +238,7 @@ const FILE_CONFIG_VALIDATORS: Record<string, (v: unknown) => boolean> = {
   httpsPort: (v) => typeof v === "number" && Number.isInteger(v) && v > 0 && v <= 65535,
   tlsCertFile: (v) => typeof v === "string",
   tlsKeyFile: (v) => typeof v === "string",
+  tlsCaCertFile: (v) => typeof v === "string",
   targetHost: (v) => typeof v === "string" && isLoopbackTarget(v),
   targetPort: (v) => typeof v === "number" && Number.isInteger(v) && v > 0 && v <= 65535,
   printBanner: (v) => typeof v === "boolean",
@@ -273,7 +282,8 @@ export function sanitizeSettings(raw: unknown): Partial<LanProxyConfig> | null {
       value = 3;
     if (value === undefined || value === null) continue;
     if (!FILE_CONFIG_VALIDATORS[key](value)) return null;
-    if ((key === "tlsCertFile" || key === "tlsKeyFile") && value === "") continue;
+    if ((key === "tlsCertFile" || key === "tlsKeyFile" || key === "tlsCaCertFile") && value === "")
+      continue;
     (out as Record<string, unknown>)[key] = value;
   }
   return out;
@@ -320,6 +330,7 @@ const SETTING_FIELD_HINTS: Record<string, string> = {
   httpsPort: "需为 1-65535 的整数",
   tlsCertFile: "需为字符串（PEM 文件路径，留空 = 自签名证书）",
   tlsKeyFile: "需为字符串（PEM 文件路径，留空 = 自签名证书）",
+  tlsCaCertFile: "需为字符串（CA 公钥 PEM 文件路径，留空 = 不下发 CA）",
   targetHost: "需为回环地址或主机名",
   targetPort: "需为 1-65535 的整数",
   printBanner: "需为布尔值",
@@ -377,6 +388,7 @@ export interface ResolvedConfig {
   httpsPort: number;
   tlsCertFile?: string;
   tlsKeyFile?: string;
+  tlsCaCertFile?: string;
   targetHost: string;
   targetPort?: number;
   printBanner: boolean;

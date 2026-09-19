@@ -7,25 +7,29 @@
  * 本模块不 import index.ts（防循环）。
  */
 import { networkInterfaces } from "node:os";
-import { join } from "node:path";
 import { mkdirSync } from "node:fs";
 import type { Context } from "@deepseek-ai/cordis";
 import { writeJson, errorMessage, guardLoopbackMethod } from "../../../../shared/host-utils.js";
-import { dshHome } from "../../../../shared/dsh-home.js";
 import { createLanProxy } from "./proxy/interface.ts";
 import type { LanProxy } from "./proxy/interface.ts";
 import { DEFAULT_DEFLATE_POLICY, DEFAULT_OPTIONS } from "./shared/interface.ts";
 import type { TlsMaterials } from "./tls/interface.ts";
-import { ensureSelfSignedTls, loadTlsFromFiles } from "./tls/interface.ts";
+import {
+  SELF_SIGNED_CERT,
+  SELF_SIGNED_KEY,
+  ensureSelfSignedTls,
+  loadDownloadableCertificate,
+  loadTlsFromFiles,
+} from "./tls/interface.ts";
 // 配置层值依赖单向 apply → config：默认白名单常量（单一事实源）与存量归一化纯函数
 // 均定义于配置域，本模块消费并 re-export（保持 apply 既有导出面不变）。
 import { normalizeLegacyWsCompressPaths, DEFAULT_WSS_COMPRESS_PATHS } from "./config/interface.ts";
 import type { HttpCompressSnapshot, LanProxyConfig, ResolvedConfig } from "./config/interface.ts";
 import { SETTINGS_NS, installLanProxySettings, warnLog } from "./config/interface.ts";
 import type { OwnerScopeLike, SettingsServiceLike } from "./config/interface.ts";
-import { migrateFileConfig } from "./migrate/interface.ts";
-import { ROUTES, buildConfigRoutes } from "./config/interface.ts";
-import type { ConfigRouteDeps } from "./config/interface.ts";
+import { MIGRATED_BAK_NAME, migrateFileConfig, resolvePluginDir } from "./migrate/interface.ts";
+import { ROUTES, buildCaCertRoutes, buildConfigRoutes } from "./config/interface.ts";
+import type { CaCertRouteDeps, ConfigRouteDeps } from "./config/interface.ts";
 // host trust 域（#856）：非回环页面的 ownsHost 自条件注入
 import { registerHostTrustInjection } from "./host-trust/interface.ts";
 
@@ -53,10 +57,9 @@ function lanIpv4Addresses(): string[] {
   return out;
 }
 
-/** 插件目录（<DSH_HOME>/lan-proxy）：自签名证书缓存 + 存量迁移备份所在。 */
-export function pluginDir(): string {
-  return join(dshHome(), "lan-proxy");
-}
+// 插件目录经 shared 域提供（issue #911 起为 <DSH_HOME>/@wingsky-1/dsh-lan-proxy）；
+// 保持 apply 既有导出面不变（src/index.ts 与单测从此导入）。
+export { pluginDir } from "./shared/interface.ts";
 
 /**
  * 挂载 LAN 转发器。配置来源（settings 命名空间解析值优先、组合层 entry 兜底）
@@ -70,8 +73,13 @@ export function pluginDir(): string {
  * @param config 解析后的插件配置（loader 已应用 schema 默认值）。
  */
 export function apply(ctx: Context, config: LanProxyConfig = {}): void {
-  // 插件目录（<DSH_HOME>/lan-proxy）：自签名证书缓存目录（配置已迁官方 settings）。
-  const configDir = pluginDir();
+  // 插件目录（issue #911 起为 <DSH_HOME>/@wingsky-1/dsh-lan-proxy）：旧扁平目录
+  // lan-proxy/ 一次性迁出先行（同步，先于 prepareTls 与 migrateFileConfig——两者
+  // 都读写本返回值目录；回落时本轮全程用旧目录，不双源）。
+  const configDir = resolvePluginDir({
+    files: [SELF_SIGNED_KEY, SELF_SIGNED_CERT, "config.json", MIGRATED_BAK_NAME],
+    logger: ctx.logger,
+  }).dir;
   mkdirSync(configDir, { recursive: true });
   /** 配置实时来源：settings 命名空间 attach 后为 scope.get()，否则组合层 entry。 */
   let current: () => LanProxyConfig = () => ({ ...config });
@@ -97,6 +105,7 @@ export function apply(ctx: Context, config: LanProxyConfig = {}): void {
       httpsPort: value.httpsPort ?? DEFAULT_OPTIONS.httpsPort,
       tlsCertFile: value.tlsCertFile,
       tlsKeyFile: value.tlsKeyFile,
+      tlsCaCertFile: value.tlsCaCertFile,
       targetHost: value.targetHost ?? DEFAULT_OPTIONS.targetHost,
       targetPort: value.targetPort,
       printBanner: value.printBanner ?? true,
@@ -210,7 +219,9 @@ export function apply(ctx: Context, config: LanProxyConfig = {}): void {
       }
     }
     try {
-      return ensureSelfSignedTls({ dir: pluginDir(), extraSans: lanIpv4Addresses() });
+      // #911：用本轮生效目录（resolvePluginDir 抉择），不用导入的 pluginDir()——
+      // 回落旧目录时两者不一致，双源即分裂。
+      return ensureSelfSignedTls({ dir: configDir, extraSans: lanIpv4Addresses() });
     } catch (err) {
       out.warn(`自签名证书生成失败（${(err as Error).message}）— HTTPS 已禁用`);
       return undefined;
@@ -444,6 +455,30 @@ export function apply(ctx: Context, config: LanProxyConfig = {}): void {
     ctx.effect(() => routeDisposer, `lan-proxy: route ${route.path}`);
   }
 
+  // 证书下发路由（issue #911：GET 只读；loopback 围栏 + GET 白名单；无 Cookie 要求）。
+  // CA 文件逐请求读取（tlsCaCertFile 热更新即时生效，不与 sync() 周期耦合）。
+  // 证书装配由 tls 域提供（loadDownloadableCertificate）：逐请求现读 resolve()，
+  // tlsCaCertFile 热更新即时生效；目录取本轮 configDir（与 prepareTls 同源）。
+  const caCertDeps: CaCertRouteDeps = {
+    loadCertificate: (format) => {
+      const v = resolve();
+      return loadDownloadableCertificate(
+        {
+          tlsCaCertFile: v.tlsCaCertFile,
+          tlsCertFile: v.tlsCertFile,
+          tlsKeyFile: v.tlsKeyFile,
+          selfSignedDir: configDir,
+        },
+        format,
+        (message) => out.warn(message),
+      );
+    },
+  };
+  for (const route of buildCaCertRoutes(caCertDeps)) {
+    const routeDisposer = ctx.webServer.register(route);
+    ctx.effect(() => routeDisposer, `lan-proxy: route ${route.path}`);
+  }
+
   // health 路由（loopback 围栏 + GET 限定）。
   const healthDisposer = ctx.webServer.register({
     path: ROUTES.health,
@@ -475,6 +510,9 @@ export function apply(ctx: Context, config: LanProxyConfig = {}): void {
         // —— 断连原因计数（issue #308；转发器重建后重置）——
         connStats: activeProxy?.connStats() ?? null,
         configDir,
+        // —— CA 下发可用性（issue #911）：只回显是否配置，不回显路径
+        // （路径进响应违反 P2-2 信息收敛口径）。
+        caConfigured: v.tlsCaCertFile !== undefined && v.tlsCaCertFile !== "",
       });
     },
   });

@@ -198,7 +198,9 @@ describe("apply HTTPS 开关", () => {
               hostname: "127.0.0.1",
               port: Number(portText),
               path: "/",
-              ca: readFileSync(join(scenario.home, "lan-proxy", "dsh-lan-proxy-cert.pem")),
+              ca: readFileSync(
+                join(scenario.home, "@wingsky-1", "dsh-lan-proxy", "dsh-lan-proxy-cert.pem"),
+              ),
               agent: false,
             },
             (res) => {

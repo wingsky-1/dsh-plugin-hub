@@ -24,5 +24,5 @@ export type {
   OwnerScopeLike,
   SettingsServiceLike,
 } from "./impl/namespace.ts";
-export { ROUTES, applyConfigPatch, buildConfigRoutes } from "./impl/routes.ts";
-export type { ConfigRouteDeps, PatchResult } from "./impl/routes.ts";
+export { ROUTES, applyConfigPatch, buildCaCertRoutes, buildConfigRoutes } from "./impl/routes.ts";
+export type { CaCertRouteDeps, ConfigRouteDeps, PatchResult } from "./impl/routes.ts";
