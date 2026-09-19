@@ -55,6 +55,12 @@ describe("statusConverged：以条目出现/lastTs 推进为收敛", () => {
       statusConverged({ browser: { lastTs: 200, lastStatus: "ok" } }, "system", undefined),
     ).toBe(false);
   });
+
+  it("条目为 null 不收敛（防御性分支：不断言即有存活变异体）", () => {
+    const map = { system: null } as unknown as StatusMapView;
+    expect(statusConverged(map, "system", undefined)).toBe(false);
+    expect(statusConverged(map, "system", 100)).toBe(false);
+  });
 });
 
 describe("pollChannelStatus：有限轮询、失败保留旧态", () => {
@@ -123,18 +129,67 @@ describe("pollChannelStatus：有限轮询、失败保留旧态", () => {
       { sleep: clock.sleep },
     );
     expect(result.converged).toBe(true);
+    expect(result.map).toEqual({ system: { lastTs: 9, lastStatus: "ok" } });
     expect(calls).toBe(2);
+    // 抛错那轮不算“读到”，下一轮前仍睡一次默认间隔
+    expect(clock.waits).toEqual([TEST_STATUS_INTERVAL_MS]);
   });
 
   it("全败时 map 为 null（调用方以此为号保留旧态，不清空状态行）", async () => {
     const clock = fakeSleep();
+    let calls = 0;
     const result = await pollChannelStatus(
-      () => Promise.reject(new Error("全挂")),
+      () => {
+        calls += 1;
+        return Promise.reject(new Error("全挂"));
+      },
       "system",
       undefined,
       { attempts: 2, sleep: clock.sleep },
     );
     expect(result).toEqual({ converged: false, map: null });
+    // 有限轮：2 轮就是 2 次读、轮间睡 1 次（默认间隔）
+    expect(calls).toBe(2);
+    expect(clock.waits).toEqual([TEST_STATUS_INTERVAL_MS]);
+  });
+
+  it("携带 prevTs 时同毫秒不收敛、变新才收敛（旧结论不冒充新结论）", async () => {
+    const clock = fakeSleep();
+    const reads: StatusMapView[] = [
+      { system: { lastTs: 100, lastStatus: "ok" } },
+      { system: { lastTs: 100, lastStatus: "failed" } },
+      { system: { lastTs: 101, lastStatus: "failed" } },
+    ];
+    const result = await pollChannelStatus(
+      () => Promise.resolve(reads.shift() ?? {}),
+      "system",
+      100,
+      { sleep: clock.sleep },
+    );
+    expect(result.converged).toBe(true);
+    expect(result.map).toEqual({ system: { lastTs: 101, lastStatus: "failed" } });
+    // 首轮同毫秒不等、次轮仍同毫秒不等，第三轮变新才停：睡 2 次默认间隔
+    expect(clock.waits).toEqual([TEST_STATUS_INTERVAL_MS, TEST_STATUS_INTERVAL_MS]);
+  });
+
+  it("别频道的终态不触发收敛：耗尽返回最后所见", async () => {
+    const clock = fakeSleep();
+    let calls = 0;
+    const result = await pollChannelStatus(
+      () => {
+        calls += 1;
+        return Promise.resolve({ browser: { lastTs: 200, lastStatus: "ok" } });
+      },
+      "system",
+      undefined,
+      { attempts: 2, sleep: clock.sleep },
+    );
+    expect(result).toEqual({
+      converged: false,
+      map: { browser: { lastTs: 200, lastStatus: "ok" } },
+    });
+    expect(calls).toBe(2);
+    expect(clock.waits).toEqual([TEST_STATUS_INTERVAL_MS]);
   });
 
   it("attempts 为 0 时一次也不读（显式关闭轮询的形态）", async () => {
@@ -158,5 +213,9 @@ describe("pollChannelStatus：有限轮询、失败保留旧态", () => {
     expect(TEST_STATUS_ATTEMPTS).toBe(8);
     expect(TEST_STATUS_INTERVAL_MS).toBe(1500);
     expect(TEST_STATUS_ATTEMPTS * TEST_STATUS_INTERVAL_MS).toBeGreaterThanOrEqual(10_000);
+    // 语义下界（与常量值解耦，调优预算时不断）：间隔必须躲开 system 1 秒节流窗，
+    // 总预算必须覆盖“能力探测 3s + 子进程投递 8s + 落盘 debounce 500ms”约 11.5s
+    expect(TEST_STATUS_INTERVAL_MS).toBeGreaterThan(1000);
+    expect(TEST_STATUS_ATTEMPTS * TEST_STATUS_INTERVAL_MS).toBeGreaterThanOrEqual(11_500);
   });
 });

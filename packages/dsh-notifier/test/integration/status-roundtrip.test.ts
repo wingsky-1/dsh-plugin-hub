@@ -119,7 +119,15 @@ describe("dispatch 到 stores 到 GET /status 到 statusText（真 failed 翻页
     );
     submit({ kind: "test", title: "标题", body: "正文" });
 
-    await pollTestHistory();
+    const historyFound = await pollTestHistory();
+    // 三面一致其一：同一条 test 记录里 system 即失败（含投递原因码）
+    const failedItem = (historyFound[0].channels as Array<Record<string, unknown>>).find(
+      (item) => item.channelId === "system",
+    );
+    expect(failedItem && failedItem.status).toBe("failed");
+    expect(failedItem && (failedItem.reason as { code?: string }).code).toBe(
+      "reasonSystemPopupFailed",
+    );
     const map = await pollStatusEntry("system");
     const systemEntry = map.system;
     expect(systemEntry && systemEntry.lastStatus).toBe("failed");
@@ -131,6 +139,7 @@ describe("dispatch 到 stores 到 GET /status 到 statusText（真 failed 翻页
     const channels = made.json().channels as Record<string, { lastStatus: string; lastTs: number }>;
     const got = channels.system;
     expect(got && got.lastStatus).toBe("failed");
+    expect(got && typeof got.lastTs).toBe("number");
 
     const text = statusText("system", channels as ChannelStatusMap, translateWithZh);
     expect(text).toContain(zh.chLastFail);
@@ -208,7 +217,11 @@ describe("POST /test 时序：先 200 受理，投递终态随后才可见", () 
     expect(await readHistory()).toEqual([]);
 
     if (releaseGate !== undefined) releaseGate();
-    await pollTestHistory();
+    const released = await pollTestHistory();
+    const okItem = (released[0].channels as Array<Record<string, unknown>>).find(
+      (item) => item.channelId === "browser",
+    );
+    expect(okItem && okItem.status).toBe("ok");
     const map = await pollStatusEntry("browser");
     const browserEntry = map.browser;
     expect(browserEntry && browserEntry.lastStatus).toBe("ok");

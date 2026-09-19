@@ -78,11 +78,14 @@ describe("normalizeChannelForCompare：双侧同一规范形", () => {
     ).toEqual({});
   });
 
-  it("非空 levels 的真删除仍脏（补齐不洗删除）", () => {
+  it("非空 levels 的真删除仍脏（双向，补齐不洗删除）", () => {
     const full = { id: "b", type: "bark", levels: { done: "active" } };
     const gone = { id: "b", type: "bark" };
     expect(diffSettingsPayload({ channels: [gone] }, { channels: [full] })).toEqual({
       channels: [gone],
+    });
+    expect(diffSettingsPayload({ channels: [full] }, { channels: [gone] })).toEqual({
+      channels: [full],
     });
   });
 
@@ -91,20 +94,35 @@ describe("normalizeChannelForCompare：双侧同一规范形", () => {
     expect(
       diffSettingsPayload({ channels: [bare] }, { channels: [{ ...bare, timeoutMs: 0 }] }),
     ).toEqual({});
+    expect(
+      diffSettingsPayload({ channels: [{ ...bare, timeoutMs: 0 }] }, { channels: [bare] }),
+    ).toEqual({});
+    expect(
+      diffSettingsPayload({ channels: [{ ...bare, timeoutMs: 10 }] }, { channels: [bare] }),
+    ).toEqual({ channels: [{ ...bare, timeoutMs: 10 }] });
     const wbare = { id: "w", type: "webhook", url: "https://x", auth: "none" };
     expect(
       diffSettingsPayload({ channels: [wbare] }, { channels: [{ ...wbare, timeoutSec: 0 }] }),
+    ).toEqual({});
+    expect(
+      diffSettingsPayload({ channels: [{ ...wbare, timeoutSec: 0 }] }, { channels: [wbare] }),
     ).toEqual({});
     expect(
       diffSettingsPayload({ channels: [{ ...wbare, timeoutSec: 10 }] }, { channels: [wbare] }),
     ).toEqual({ channels: [{ ...wbare, timeoutSec: 10 }] });
   });
 
-  it("headers 缺席与空对象同形", () => {
+  it("headers 缺席与空对象同形（双向）；非空保留", () => {
     const bare = { id: "w", type: "webhook", url: "https://x", auth: "none" };
     expect(
       diffSettingsPayload({ channels: [bare] }, { channels: [{ ...bare, headers: {} }] }),
     ).toEqual({});
+    expect(
+      diffSettingsPayload({ channels: [{ ...bare, headers: {} }] }, { channels: [bare] }),
+    ).toEqual({});
+    expect(
+      diffSettingsPayload({ channels: [{ ...bare, headers: { x: "y" } }] }, { channels: [bare] }),
+    ).toEqual({ channels: [{ ...bare, headers: { x: "y" } }] });
   });
 
   it("preset 缺席与 custom 同形（双向）；非默认保留", () => {
@@ -167,6 +185,19 @@ describe("normalizeChannelForCompare：双侧同一规范形", () => {
       id: "browser",
       type: "browser",
     });
+    // system 同属内置：不补任何域默认值
+    expect(normalizeChannelForCompare({ id: "system", type: "system" })).toEqual({
+      id: "system",
+      type: "system",
+    });
+    // 未知类型：不补（跨域键会污染提交形态，见 normalize 注释）
+    expect(normalizeChannelForCompare({ id: "u", type: "nope" })).toEqual({
+      id: "u",
+      type: "nope",
+    });
+    // 数组输入原样透传（防御分支：strip 与 normalize 双层守卫）
+    const arr = [{ id: "b" }];
+    expect(normalizeChannelForCompare(arr)).toBe(arr);
   });
 
   it("快照草稿编辑的提交形态不带跨域键（#912 回归：全量补曾让 bark 带 headers 空对象被 400）", () => {
@@ -258,6 +289,20 @@ describe("snapshotBaseline 生命周期：load 空/discard 空/save 合并空/�
       notifyTurnEnd: true,
     });
     expect(diffSettingsPayload(draftWithInflight, merged)).toEqual({ notifyTurnEnd: true });
+  });
+
+  it("快照纯读：不变更入参对象（含 channels 数组引用）", () => {
+    const input = { notifyAsk: true, channels: [{ id: "b", type: "bark" }] };
+    const before = JSON.parse(JSON.stringify(input)) as unknown;
+    const snap = snapshotBaseline(input);
+    expect(input).toEqual(before);
+    expect(snap).not.toBe(input);
+    expect(snap.channels).not.toBe(input.channels);
+  });
+
+  it("快照缺 channels 时不补键、空数组保持（只收敛既有形态）", () => {
+    expect(snapshotBaseline({ notifyAsk: true })).toEqual({ notifyAsk: true });
+    expect(snapshotBaseline({ channels: [] })).toEqual({ channels: [] });
   });
 
   it("重拉一致：服务端等价形态（残留空串版）快照后与旧基线无差异", () => {
