@@ -1,15 +1,15 @@
 /**
- * dsh-provider-usage/report — 极简调度器（官方无 cron 的先行版）。
+ * dsh-provider-usage — server/schedule 域：极简调度器（#768 D2，由 domain2/schedule/scheduler.ts 搬入，零行为变更）。
  *
  * 形态（不引入 croner）：60s tick + 候选窗口对齐 + lastRun 幂等标记 +
  * 启动补跑（首轮 tick 即检查）。单飞互斥：生成超过 tick 间隔时后续 tick 跳过
  * （busy 标志），生成失败不推进 lastRun（下轮重试同一窗口，幂等不重复扣期）。
- * lastRun 持久化原语（读/写/临界区/迁移校准）见 last-run.ts——调度与执行
- * 共同依赖该公共原语。
+ * lastRun 持久化原语（读/写/临界区/迁移校准）见同域 store.ts——调度与执行
+ * 经本域 interface.ts 门面消费同一原语（D2 前经 domain2/common 公共层，与本域构成叶循环）。
  */
-import type { ReportConfig } from "../../server/config/interface.ts";
-import { pendingReports, type DueReport } from "./schedule.ts";
-import { readLastRun, ensureLastRunMigrated } from "../common/interface.ts";
+import type { ReportConfig } from "../config/interface.ts";
+import { pendingReports, type DueReport } from "./due.ts";
+import { readLastRun, ensureLastRunMigrated } from "./store.ts";
 
 export interface ReportSchedulerOptions {
   /** 存储根（historyRoot）。 */

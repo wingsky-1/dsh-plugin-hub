@@ -41,7 +41,7 @@ import {
   readStoredVersion,
   upgradeVersionFile,
 } from "../../../src/server/upgrade/version.ts";
-import { LAST_RUN_SCHEMA } from "../../../src/domain2/schedule/interface.ts";
+import { LAST_RUN_SCHEMA } from "../../../src/server/schedule/interface.ts";
 import {
   DEFAULT_PROMPTS,
   LEGACY_DAILY_PROMPT_V1,

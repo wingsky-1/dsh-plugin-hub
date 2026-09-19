@@ -9,8 +9,8 @@
 import type { Context } from "@deepseek-ai/cordis";
 import type { ReportConfig } from "../../server/config/interface.ts";
 import { readReportIndex, runDueReport } from "./runner.ts";
-import { updateLastRun } from "../common/interface.ts";
-import type { ReportTaskInput, ReportTaskResult } from "../schedule/interface.ts";
+import { updateLastRun } from "../../server/schedule/interface.ts";
+import type { ReportTaskInput, ReportTaskResult } from "../../server/schedule/interface.ts";
 import type { TrendTracker } from "../aggregate/interface.ts";
 
 export interface DueExecutorDeps {

@@ -1,5 +1,5 @@
 /**
- * dsh-provider-usage/report — 报告生成任务队列。
+ * dsh-provider-usage — server/schedule 域：报告生成任务队列（#768 D2，由 domain2/schedule/tasks.ts 搬入，零行为变更）。
  *
  * 形态（方案定稿）：手动「立即生成」与定时 tick 共用的单一执行入口。
  * - 串行单飞：任务经 promise 链依次执行（等价于既有 reportMutex 语义），
@@ -13,8 +13,8 @@
  * - 资源：done/failed 任务按 TTL 修剪（默认 10min）与上限裁剪（默认 50）。
  */
 import { randomUUID } from "node:crypto";
-import type { ReportPeriod } from "../../server/config/interface.ts";
-import type { ReportMeta } from "../execute/interface.ts";
+import type { ReportPeriod } from "../config/interface.ts";
+import type { ReportMeta } from "../../domain2/execute/interface.ts";
 
 export type ReportTaskStatus = "queued" | "running" | "done" | "failed";
 

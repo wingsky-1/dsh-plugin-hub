@@ -1,5 +1,5 @@
 /**
- * dsh-provider-usage/report — 触发调度纯函数。
+ * dsh-provider-usage — server/schedule 域：到期判定纯函数（#768 D2，由 domain2/schedule/schedule.ts 搬入，零行为变更）。
  *
  * 语义（单一模型，三期统一）：
  * - 每期有「锚点触发时刻」：daily=当日 HH:MM（覆盖昨日全天）；weekly=周起点日 HH:MM（覆盖紧邻的前 7 天）；
@@ -11,7 +11,7 @@
  * - DST 安全：全部经本地 Date 逐字段构造与逐日回退，禁缓存时区偏移、禁毫秒减法。
  */
 import { dayKey } from "../../shared/interface.ts";
-import { parseHHMM, type ReportConfig, type ReportPeriod } from "../../server/config/interface.ts";
+import { parseHHMM, type ReportConfig, type ReportPeriod } from "../config/interface.ts";
 
 /** 一个到期报告的描述。 */
 export interface DueReport {

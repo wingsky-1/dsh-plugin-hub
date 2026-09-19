@@ -11,8 +11,8 @@
  * - readOldFile：旧文件显式读面（有名字的两态判别式，显式注入，不直连 fs）。
  *
  * 源码允许的纯面复用（非实例调用，不经本文件注入）：
- * - schedule 的 LAST_RUN_SCHEMA / deriveLastRun / alignLastRun 经
- *   schedule/interface.ts 以 type + pure 复用（零 node 依赖的纯函数）；
+ * - server/schedule 的 LAST_RUN_SCHEMA / deriveLastRun / alignLastRun 经
+ *   server/schedule/interface.ts 以 type + pure 复用（零 node 依赖的纯函数；D2 前在 domain2/schedule）；
  * - LEGACY_* 旧词锁表（LEGACY_PROMPT_TEMPLATE / LEGACY_*_V1–V4）经
  *   server/config/interface.ts 以纯数据值导入复用（D1 起物理定义在 config 域；仅 === 比较与展开，零行为复用；迁移判定基准，文本勿改）；
  * - per-root 临界区链（updateLastRun）留 schedule（METHOD §3 Q1 有主即止：

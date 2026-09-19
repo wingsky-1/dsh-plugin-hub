@@ -1,10 +1,10 @@
 /**
  * dsh-provider-usage — upgrade 域 last-run 迁移（schema 旧 → 全量重算，schema 新 → 温和对齐）。
  *
- * 语义与 common/last-run.ts 的 ensureLastRunMigrated 同源，但文件原语走 S2 注入面
+ * 语义与 server/schedule/store.ts 的 ensureLastRunMigrated 同源（D2 前在 domain2/common/last-run.ts），但文件原语走 S2 注入面
  *（deps.readOldFile 读 + 同域 writeFileAtomic 写），不调业务实例
  *（readLastRun/writeLastRun/updateLastRun/ensureLastRunMigrated 均不导入）。
- * deriveLastRun/alignLastRun/LAST_RUN_SCHEMA 经 schedule/interface.ts 以纯函数复用
+ * deriveLastRun/alignLastRun/LAST_RUN_SCHEMA 经 server/schedule/interface.ts 以纯函数复用
  *（零 node 依赖，确定性无副作用；S2 允许的 type+pure 面）。
  *
  * per-root 临界区链留 schedule（METHOD §3 Q1 有主即止）：本步在装配前单线程跑，
@@ -19,7 +19,7 @@ import {
   alignLastRun,
   deriveLastRun,
   type LastRunRecord,
-} from "../../domain2/schedule/interface.ts";
+} from "../schedule/interface.ts";
 import type { UpgradeDeps } from "./deps.ts";
 import { targetLastRunFile, writeFileAtomic } from "./storage-layout.ts";
 

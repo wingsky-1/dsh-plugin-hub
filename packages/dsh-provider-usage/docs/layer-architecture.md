@@ -37,7 +37,7 @@
 |---|---|---|---|
 | E1 事件采集层 | session/event 折叠状态机 | domain2/collect/{collector(445),types(346)} | 纯逻辑，now/emit 注入 |
 | E2 聚合/压实/存储层 | 双面记账+压实+分片+自愈 | domain2/aggregate/{aggregator(701),aggregate-query(628),aggregate-rows(193),store(259),index(356)} | D2 后主类保留状态容器与方法，压实转换/查询投影为纯函数模块（不接触 this） |
-| E3 报告调度层 | 配置归一化+窗口+lastRun+队列 | domain2/schedule/{config(538),schedule(243),scheduler(93),tasks(164)} | E3⇄E4 经域2公共层解耦（D8）；tasks 持注入 executor |
+| E3 报告调度层 | 窗口/幂等+队列+lastRun（配置面 D1 起归 server/config） | server/schedule/{due,scheduler,tasks,store}（#768 D2 由 domain2/schedule+common/last-run 整域迁入，叶环归零） | 与 E4 经本域门面解耦（executor 持注入，推进走同一 per-root 链）；tasks 持注入 executor |
 | E4 报告执行/产出层 | 执行接线+LLM 生成+渲染+落盘 | domain2/execute/{runner(284),generate(507),format(63),executor(49),list-dirs(16)} | executor 独立工厂（含错误脱敏契约）；list-dirs 独立文件（闭包收敛） |
 | E5 路由层（宿主） | /trend /report-* /health | domain2/routes/{ui(246),reports(313)} | **仅宿主** |
 
@@ -72,7 +72,7 @@
 |---|---|---|---|---|
 | E1 | 装配(session/event 订阅) | TrendCollector.handleEvent/handleDisposed；emit(call/correct/counter)；sanitizeDirName(types)；TREND_UNIDENTIFIED(types) | E2 | 事件流形状/TTL/done 上限为关键不变量 |
 | E2 | E1/装配 | TrendTracker.buckets/dirRows/seriesStacked/dirStacked/windowSummary/dirTotals/stats；TrendStore | E4/**E5 路由直连** | 四不变量：身份快照/防双计/聚合权威/残差归未识别；**台账守恒（Σ事件 == buckets == agg == dirRows + unidentified）为真缺口断言**，由 unit-trend-ledger 事件回放式端到端对账固化（D2 拆分前置安全网） |
-| E3 | 装配/E5 | normalizeReportConfig(config)/candidateWindow(schedule)/pendingReports/presetLastRun；ReportScheduler(scheduler)/ReportTaskQueue(tasks)/updateLastRun | 域2公共层（last-run/report-index） | E3⇄E4 共同依赖域2公共层（common/last-run.ts、common/report-index.ts，无状态无缓存防 indexCache 双份）；executor 独立工厂属 E4 |
+| E3 | 装配/E5 | candidateWindow/pendingReports/presetLastRun（due）；ReportScheduler/ReportTaskQueue；read/updateLastRun（store） | server/schedule 门面（归一化经 server/config 门面；index 解析经 common 纯面） | E3⇄E4 经 server/schedule 门面解耦（#768 D2；executor 独立工厂属 E4，推进走同一 per-root 链；读侧记忆化仍在 runner，防双份缓存） |
 | E4 | E3 任务/装配 executor | runDueReport(runner)/generateReport(generate)/buildStatsSnapshot/reportBodyToHtml(format)/persistReport/readReportIndex | E2（buckets/dirRows）+ 域2公共层 | LLM 失败不推进 lastRun；注入面=聚合数值+basename；executor 工厂（execute/executor.ts）含错误脱敏契约 |
 | E5 | 浏览器 | 10 路由（/trend /health /ui-config /events /report-*6） | E2/E3/E4 | **E5 直连 E2/E3/E4**（routes/ui 直调 trend 查询面；reports 经 ReportConfigService（server/config/service.ts，#768 D1 前在 apply/report-config-service.ts）收口 reportCfg） |
 
@@ -80,7 +80,7 @@
 | 共享 | 位置 | 说明 |
 |---|---|---|
 | reportCfg 双源 | apply/apply.ts `let reportCfg` + get/set | 内存态+磁盘 config.json 双源（#629 只保 lastRun 串行化）——**已由 ReportConfigService（server/config/service.ts，#768 D1 前在 apply/report-config-service.ts）收口**：内存权威 + per-root 串行写链，并发 update 不交错 |
-| lastRunChainByRoot | domain2/common/last-run.ts | per-root 临界区链（D8 归位，无状态无缓存） |
+| lastRunChainByRoot | server/schedule/store.ts | per-root 临界区链（D8 归位无状态无缓存；#768 D2 起归属调度域，叶环归零） |
 | indexCache | domain2/execute/runner.ts | 读侧投影 stat 记忆化 + `__ForTests` 钩子——**留在 E4 读侧**，common/report-index 不携带缓存（防双份） |
 | sseClients / EVENTS_URL | apply/apply.ts + client/core.ts | SSE 死面（客户端零消费，D4 文档化保留） |
 | watchedFiles | apply/apply.ts 闭包 | 热更去重 |
@@ -90,7 +90,7 @@
 ## 3. 当前目录结构
 
 两级「先域再层」目录化已完成（D9）：`shared/` 为共享底座；域1 与域2 各含
-registry/pipeline/history/adapters/routes 与 collect/aggregate/common/schedule/execute/routes；
+registry/pipeline/history/adapters/routes 与 collect/aggregate/common/execute/routes（schedule 已整域迁 server/schedule，#768 D2）；server/ 下设 config/shared/upgrade/schedule 四域；
 `apply/` 为装配层组合根。每目录 `interface.ts` 为唯一对外引用面（最小面具名导出，禁整文件
 re-export；跨目录直引由 `scripts/gate/verify-dir-imports.mjs` 软报告，interface.ts 符号存在性
 硬校验）。完整目录树与文件映射见 `docs/refactor-implementation-plan.md §4/§5`。

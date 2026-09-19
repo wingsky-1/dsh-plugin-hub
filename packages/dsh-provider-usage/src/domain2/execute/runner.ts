@@ -18,7 +18,7 @@ import {
   type ReportMetaSummary,
   type ReportStatsSnapshot,
 } from "./generate.ts";
-import type { DueReport } from "../schedule/interface.ts";
+import type { DueReport } from "../../server/schedule/interface.ts";
 import { parseReportIndexLines } from "../common/interface.ts";
 
 export function reportsDir(root: string): string {

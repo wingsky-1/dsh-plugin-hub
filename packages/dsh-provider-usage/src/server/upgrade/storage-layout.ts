@@ -19,6 +19,7 @@ import { mkdir, rename, rm, writeFile } from "node:fs/promises";
 import { randomBytes } from "node:crypto";
 import { basename, dirname, join } from "node:path";
 import type { UpgradeDeps } from "./deps.ts";
+import { LAST_RUN_SCHEMA } from "../schedule/interface.ts";
 
 /** 归档后缀：搬完留证据，也是「这一份处理过了」的标记（固定名 → 重跑不累积）。 */
 export const MIGRATED_SUFFIX = ".migrated.bak";
@@ -30,7 +31,7 @@ export const MIGRATED_SUFFIX = ".migrated.bak";
  * 故附加版本字段不改变归一化结果，只起「已落定初始形态」的标记作用。
  */
 const EMPTY_CONFIG = `${JSON.stringify({ version: 1 }, null, 2)}\n`;
-const EMPTY_LAST_RUN = `${JSON.stringify({ schema: 2 }, null, 2)}\n`;
+const EMPTY_LAST_RUN = `${JSON.stringify({ schema: LAST_RUN_SCHEMA }, null, 2)}\n`;
 
 /** 同目标路径的写链：rename 先后在并发下无保证，串行防旧数据盖新数据。 */
 const writeChains = new Map<string, Promise<void>>();
@@ -86,7 +87,7 @@ export function targetConfigFile(root: string): string {
   return join(root, "reports", "config.json");
 }
 
-/** 新形态：lastRun 投影（运行时读面见 common/last-run.ts，同字面量）。 */
+/** 新形态：lastRun 投影（运行时读面见 server/schedule/store.ts，同字面量；D2 前在 domain2/common/last-run.ts）。 */
 export function targetLastRunFile(root: string): string {
   return join(root, "reports", "last-run.json");
 }

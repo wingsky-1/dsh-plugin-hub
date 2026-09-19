@@ -26,8 +26,8 @@ import {
   LAYER_ERROR_KEYS,
 } from "../../../src/domain2/common/errsurf.ts";
 import { handleHealth } from "../../../src/domain2/routes/ui.ts";
-import { ReportTaskQueue } from "../../../src/domain2/schedule/tasks.ts";
-import { ReportScheduler } from "../../../src/domain2/schedule/scheduler.ts";
+import { ReportTaskQueue } from "../../../src/server/schedule/tasks.ts";
+import { ReportScheduler } from "../../../src/server/schedule/scheduler.ts";
 import { normalizeReportConfig } from "../../../src/server/config/normalize.ts";
 
 function fakeReq(overrides = {}) {

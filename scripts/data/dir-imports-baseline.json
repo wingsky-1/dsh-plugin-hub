@@ -23,19 +23,18 @@
         "rootIndexImports": [],
         "clientServerImports": [],
         "unitImportFaceViolations": [
-          "test/unit/unit-apply.test.ts|src/index.ts",
-          "test/unit/unit-proxy.test.ts|src/index.ts"
+          "test/unit/unit-apply.test.ts|src/index.ts"
         ]
       }
     },
     "dsh-mcp-manager": {
       "modules": 17,
       "scannedSrcFiles": 102,
-      "allSrcTsFiles": 117,
+      "allSrcTsFiles": 116,
       "interfaceFacades": 17,
       "leafValueEdges": 19,
       "fileValueEdges": 144,
-      "crossModuleRefs": 193,
+      "crossModuleRefs": 189,
       "quality": {
         "leafModuleCycles": [],
         "fileCycles": [],
@@ -56,16 +55,6 @@
           "test/unit/unit-routes-sse.test.ts|src/index.ts",
           "test/unit/unit-workspace.test.ts|src/index.ts"
         ]
-      },
-      "unitImportFaceReasons": {
-        "test/unit/unit-apply.test.ts|src/index.ts": "组装·apply装配体：apply 在组合根 src/index.ts 内就地定义，无域门面可走；对应装配点即 apply 主流程本身。saveDisabledTools 已改道 store 门面。跟踪 #767 S6-B2。",
-        "test/unit/unit-call-stats.test.ts|src/index.ts": "组装·管理器构造 + 组合根定义：new McpManager 构造即取 orchestratorPorts（manager.ts:117-118），端口仅组合根装配（src/index.ts:109 installOrchestrator）；resolveDebugConfig 在组合根内就地定义，无门面。McpStatsCollector/McpStore 已改道 stats/store 门面。跟踪 #767 S6-B2。",
-        "test/unit/unit-hotspot.test.ts|src/index.ts": "组装·apply/路由装配/管理器构造：apply 为组合根定义；makeRoutes 以 manager 装配路由；new McpManager 构造取端口（manager.ts:117-118 ← src/index.ts:109 installOrchestrator）。ROUTES/McpStore/normalizeServer 已改道 api/store/config 门面。跟踪 #767 S6-B2。",
-        "test/unit/unit-manager.test.ts|src/index.ts": "组装·管理器构造 + apply：new McpManager 构造取端口（manager.ts:117-118 ← src/index.ts:109 installOrchestrator）；apply 为组合根定义。McpStore/SCOPE_PROJECT/normalizeServer 已改道 store/shared/config 门面。跟踪 #767 S6-B2。",
-        "test/unit/unit-manager2.test.ts|src/index.ts": "组装·管理器构造 + apply + 路由装配：new McpManager/apply/makeHealthRoute（路由以 manager 装配；manager.ts:117-118 ← src/index.ts:109 installOrchestrator）。其余 19 符号已改道 config/shared/workspace/inject/api 门面。跟踪 #767 S6-B2。",
-        "test/unit/unit-middleware.test.ts|src/index.ts": "组装·中间层装配依赖：McpMiddleware 方法调用消费运行时端口、registerMiddlewareTools 调用消费注入端口，端口仅组合根装配（src/index.ts:99 installInject / :124 installRuntime）；全量去包根探针 161/210 红 exit 1（根因 catalog 域未装配）。其余纯函数与常量已改道 workspace/pipeline/catalog/runtime/store 门面。跟踪 #767 S6-B2。",
-        "test/unit/unit-routes-sse.test.ts|src/index.ts": "组装·路由装配/管理器构造/中间层：makeRoutes/makeEventsRoute/makeHealthRoute 以 manager 装配路由；new McpManager 构造取端口（manager.ts:117-118 ← src/index.ts:109 installOrchestrator）；McpMiddleware 方法消费运行时端口；sseData 无域门面（仓库共享层经包根 re-export，动定义属运行时改动越界）。其余已改道 api/store/config 门面。跟踪 #767 S6-B2。",
-        "test/unit/unit-workspace.test.ts|src/index.ts": "组装·管理器构造：new McpManager 构造取端口（manager.ts:117-118 ← src/index.ts:109 installOrchestrator）；直引域门面会跳过装配、构造即红（S6 实测 exit 1，见文件内 I8 注释）。McpStore/makeResolveRoot/normalizeServer/normalizeScope/常量已改道 store/workspace/config/shared 门面。跟踪 #767 S6-B2。"
       }
     },
     "dsh-notifier": {
@@ -85,28 +74,21 @@
         "uncoveredSrcFiles": [],
         "crossDomainValueEdges": [],
         "rootIndexImports": [],
-        "clientServerImports": [
-          "src/client/capabilities.ts|src/server/channels/impl/capabilities/type.ts",
-          "src/client/reason-text.ts|src/server/shared/reason.ts"
-        ],
+        "clientServerImports": [],
         "unitImportFaceViolations": []
       }
     },
     "dsh-provider-usage": {
       "modules": 16,
-      "scannedSrcFiles": 73,
-      "allSrcTsFiles": 88,
+      "scannedSrcFiles": 74,
+      "allSrcTsFiles": 89,
       "interfaceFacades": 16,
-      "leafValueEdges": 43,
+      "leafValueEdges": 42,
       "fileValueEdges": 147,
       "crossModuleRefs": 182,
       "quality": {
-        "leafModuleCycles": [
-          "domain2/common|domain2/schedule"
-        ],
-        "fileCycles": [
-          "domain2/common/interface.ts|domain2/common/last-run.ts|domain2/schedule/interface.ts|domain2/schedule/scheduler.ts"
-        ],
+        "leafModuleCycles": [],
+        "fileCycles": [],
         "implToOtherImpl": [],
         "missingInterface": [],
         "directImpl": [],
@@ -122,27 +104,26 @@
           "apply|domain2/common",
           "apply|domain2/execute",
           "apply|domain2/routes",
-          "apply|domain2/schedule",
           "apply|server/config",
+          "apply|server/schedule",
           "apply|server/upgrade",
           "domain1/pipeline|domain1/registry",
           "domain1/routes|domain1/registry",
           "domain2/aggregate|domain2/collect",
-          "domain2/common|domain2/schedule",
           "domain2/execute|domain2/aggregate",
           "domain2/execute|domain2/collect",
           "domain2/execute|domain2/common",
           "domain2/execute|server/config",
+          "domain2/execute|server/schedule",
           "domain2/routes|domain2/collect",
-          "domain2/routes|domain2/common",
           "domain2/routes|domain2/execute",
-          "domain2/routes|domain2/schedule",
           "domain2/routes|server/config",
-          "domain2/schedule|domain2/common",
-          "domain2/schedule|server/config",
+          "domain2/routes|server/schedule",
           "server/config|domain2/collect",
-          "server/upgrade|domain2/schedule",
+          "server/schedule|domain2/common",
+          "server/schedule|server/config",
           "server/upgrade|server/config",
+          "server/upgrade|server/schedule",
           "shared|domain1/adapters"
         ],
         "rootIndexImports": [],

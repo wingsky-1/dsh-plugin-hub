@@ -107,13 +107,13 @@
     {
       "gate": "verify-dir-imports",
       "path": "dsh-provider-usage:apply|server/config",
-      "reason": "#768 D1：组合根 apply 经 packages/dsh-provider-usage/src/server/config/interface.ts 构造 ReportConfigService（只递 root+initial+onUpdate）并读 initial，全经门面（禁直引实现文件），与既有 apply|domain2/schedule（调度器/队列装配）同形。根内无业务判断由树内 packages/dsh-provider-usage/test/integration/config/composition-root.test.ts 的三纪律用例锁定。长期条目（设计事实，非待办）。",
+      "reason": "#768 D1：组合根 apply 经 packages/dsh-provider-usage/src/server/config/interface.ts 构造 ReportConfigService（只递 root+initial+onUpdate）并读 initial，全经门面（禁直引实现文件），与 apply|server/schedule（调度器/队列装配，D2 前为 apply|domain2/schedule，边归属同步迁移）同形。根内无业务判断由树内 packages/dsh-provider-usage/test/integration/config/composition-root.test.ts 的三纪律用例锁定。长期条目（设计事实，非待办）。",
       "trackingIssue": "#768"
     },
     {
       "gate": "verify-dir-imports",
-      "path": "dsh-provider-usage:domain2/schedule|server/config",
-      "reason": "#768 D1：schedule.ts 经 packages/dsh-provider-usage/src/server/config/interface.ts 复用 parseHHMM 纯函数（零 node 依赖）与类型，归一化单答案仍归 config 域，调度面不自建判断；与既有 domain2/common|domain2/schedule 纯面复用同形。复用边界由 server/config/interface.ts 注记锁定。长期条目（设计事实，非待办）。",
+      "path": "dsh-provider-usage:server/schedule|server/config",
+      "reason": "#768 D2：due.ts 经 packages/dsh-provider-usage/src/server/schedule/../config/interface.ts 复用 parseHHMM 纯函数（零 node 依赖）与类型（D1 起即此口径，D2 随物理定义由 domain2/schedule 迁 server/schedule，边归属同步迁移），归一化单答案仍归 config 域，调度面不自建判断。复用边界由 server/schedule/deps.ts 与 server/config/interface.ts 双注记锁定。长期条目（设计事实，非待办）。",
       "trackingIssue": "#768"
     },
     {
@@ -125,7 +125,7 @@
     {
       "gate": "verify-dir-imports",
       "path": "dsh-provider-usage:domain2/routes|server/config",
-      "reason": "#768 D1：reports.ts 经 packages/dsh-provider-usage/src/server/config/interface.ts 取 normalizeReportConfig/readReportConfig/DEFAULT_PROMPTS（配置读写与默认回显），替代原边的配置面部分（调度纯函数边保留）；服务实例仍经装配参数注入，不直引。长期条目（设计事实，非待办）。",
+      "reason": "#768 D1：reports.ts 经 packages/dsh-provider-usage/src/server/config/interface.ts 取 normalizeReportConfig/readReportConfig/DEFAULT_PROMPTS（配置读写与默认回显），替代原边的配置面部分（调度纯函数边 D2 起归 domain2/routes|server/schedule）；服务实例仍经装配参数注入，不直引。长期条目（设计事实，非待办）。",
       "trackingIssue": "#768"
     },
     {
@@ -142,8 +142,32 @@
     },
     {
       "gate": "verify-dir-imports",
-      "path": "dsh-provider-usage:server/upgrade|domain2/schedule",
-      "reason": "#768 S3：upgrade 三步经 packages/dsh-provider-usage/src/domain2/schedule/interface.ts 复用纯面（LAST_RUN_SCHEMA/deriveLastRun/alignLastRun）与 LEGACY_* 映射表纯数据，不调业务实例；文件经树内 packages/dsh-provider-usage/src/server/upgrade/deps.ts 注入面（resolveRoot/readOldFile）+ 同域 writeFileAtomic，全经门面，与既有 domain2/common|domain2/schedule 同形。复用边界由 deps.ts 注记锁定，幂等三条由树内 packages/dsh-provider-usage/test/integration/upgrade/upgrade-chain.test.ts 锁定。长期条目（设计事实，非待办）。",
+      "path": "dsh-provider-usage:server/upgrade|server/schedule",
+      "reason": "#768 D2：upgrade 三步经 packages/dsh-provider-usage/src/server/schedule/interface.ts 复用纯面（LAST_RUN_SCHEMA/deriveLastRun/alignLastRun，D2 前在 domain2/schedule，边归属同步迁移），不调业务实例（read/write/update/ensure 均不导入，由树内 integration/schedule 用例锁定）；存储布局空落盘 schema 与调度域同源（LAST_RUN_SCHEMA 单一定义）。复用边界由 server/upgrade/deps.ts 注记锁定，幂等三条由树内 packages/dsh-provider-usage/test/integration/upgrade/upgrade-chain.test.ts 锁定。长期条目（设计事实，非待办）。",
+      "trackingIssue": "#768"
+    },
+    {
+      "gate": "verify-dir-imports",
+      "path": "dsh-provider-usage:domain2/execute|server/schedule",
+      "reason": "#768 D2：执行器经调度门面取 updateLastRun 单一临界区与任务类型，替代已消除的旧边。串行语义由树内调度集成用例锁定。长期条目。",
+      "trackingIssue": "#768"
+    },
+    {
+      "gate": "verify-dir-imports",
+      "path": "dsh-provider-usage:apply|server/schedule",
+      "reason": "#768 D2：组合根经调度门面装配调度器与队列，全经门面，禁直引实现文件。替代已消除的旧边，归属随物理定义迁移。树内集成用例锁定。长期条目。",
+      "trackingIssue": "#768"
+    },
+    {
+      "gate": "verify-dir-imports",
+      "path": "dsh-provider-usage:server/schedule|domain2/common",
+      "reason": "#768 D2：调度存储经 common 门面复用纯解析，本域唯一跨域值导入，单向边，旧反向边已消除，叶环归零。复用边界由调度 deps 注记锁定。长期条目。",
+      "trackingIssue": "#768"
+    },
+    {
+      "gate": "verify-dir-imports",
+      "path": "dsh-provider-usage:domain2/routes|server/schedule",
+      "reason": "#768 D2：路由写侧经调度门面取调度纯函数与读写面及队列类型，替代已消除的旧边。实例仍经装配参数注入。树内集成用例锁定。长期条目。",
       "trackingIssue": "#768"
     }
   ]

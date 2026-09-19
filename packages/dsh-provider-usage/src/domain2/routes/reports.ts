@@ -21,9 +21,12 @@ import {
   type ReportPeriod,
 } from "../../server/config/interface.ts";
 import { readReportIndex, reportHtmlFile, reportMetaFile } from "../execute/interface.ts";
-import { presetLastRunForNewlyEnabled, previousClosedWindow } from "../schedule/interface.ts";
-import { readLastRun, updateLastRun } from "../common/interface.ts";
-import type { ReportTaskQueue } from "../schedule/interface.ts";
+import {
+  presetLastRunForNewlyEnabled,
+  previousClosedWindow,
+} from "../../server/schedule/interface.ts";
+import { readLastRun, updateLastRun } from "../../server/schedule/interface.ts";
+import type { ReportTaskQueue } from "../../server/schedule/interface.ts";
 import type { ReportConfigService } from "../../apply/interface.ts";
 import { sanitizeHtml } from "../../shared/interface.ts";
 

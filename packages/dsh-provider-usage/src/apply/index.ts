@@ -234,8 +234,8 @@ export {
   deriveLastRun,
   isClosedWindowRecord,
   LAST_RUN_SCHEMA,
-} from "../domain2/schedule/interface.ts";
-export type { DueReport, LastRunRecord } from "../domain2/schedule/interface.ts";
+} from "../server/schedule/interface.ts";
+export type { DueReport, LastRunRecord } from "../server/schedule/interface.ts";
 export {
   parseHHMM,
   normalizeReportConfig,
@@ -282,27 +282,27 @@ export type {
   ReportLlmService,
   ReportTokenUsage,
 } from "../domain2/execute/interface.ts";
-export { ReportScheduler } from "../domain2/schedule/interface.ts";
+export { ReportScheduler } from "../server/schedule/interface.ts";
 export {
   readLastRun,
   writeLastRun,
   updateLastRun,
   ensureLastRunMigrated,
   __lastRunChainForTests,
-} from "../domain2/common/interface.ts";
+} from "../server/schedule/interface.ts";
 // 执行器工厂与报告配置服务（装配面公共符号，测试/外部消费者从 lib 导入）
 export { makeDueReportExecutor } from "../domain2/execute/interface.ts";
 export type { DueExecutorDeps } from "../domain2/execute/interface.ts";
 export { ReportConfigService } from "../server/config/interface.ts";
 export type { ReportConfigServiceOptions } from "../server/config/interface.ts";
 // 任务队列（手动生成与定时共用执行入口）
-export { ReportTaskQueue } from "../domain2/schedule/interface.ts";
+export { ReportTaskQueue } from "../server/schedule/interface.ts";
 export type {
   ReportTask,
   ReportTaskInput,
   ReportTaskResult,
   ReportTaskStatus,
-} from "../domain2/schedule/interface.ts";
+} from "../server/schedule/interface.ts";
 // 读侧投影（一行/窗口=最新版）与公共解析（解析原语在 report-index.ts）
 export {
   readReportIndex,

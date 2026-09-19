@@ -5,7 +5,7 @@
  * 1. server/shared 新叶 errsurf：canonical 实现 + 门面 + 旧垫片三方同构
  *    （三域写 + 健康读的数据形状；Q5 的机器可判部分）；
  * 2. schedule 纯面先行：LAST_RUN_SCHEMA / deriveLastRun / alignLastRun 经
- *    schedule/interface.ts 复用（type + pure：确定性、无副作用）；
+ *    server/schedule/interface.ts 复用（type + pure：确定性、无副作用；D2 起物理定义在调度域）；
  * 3. config 归一化单答案 / LEGACY 锁表先行：经 server/config/interface.ts
  *    复用（D1 起物理定义在 config 域；旧默认模板统一升级为三份新默认 = 单答案）；
  * 4. UpgradeDeps 窄面冻结：server/upgrade/deps.ts 纯类型面（运行时零出口，
@@ -28,7 +28,7 @@ import {
   LAST_RUN_SCHEMA,
   deriveLastRun,
   alignLastRun,
-} from "../../../src/domain2/schedule/interface.ts";
+} from "../../../src/server/schedule/interface.ts";
 import {
   normalizeReportConfig,
   DEFAULT_PROMPTS,

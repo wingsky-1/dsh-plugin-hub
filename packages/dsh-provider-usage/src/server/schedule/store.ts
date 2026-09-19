@@ -1,20 +1,17 @@
 /**
- * dsh-provider-usage/report — lastRun 持久化原语。
+ * dsh-provider-usage — server/schedule 域：lastRun 持久化原语（#768 D2，
+ * 由 domain2/common/last-run.ts 搬入，零行为变更）。
  *
  * per-root 临界区链唯一实现：读-改-写按 root 串行 + 写前重读全量快照，
  * 防多写方（保存配置 preset / 任务执行器推进）交错 lost-update。调度与执行
- * 共同依赖本原语（无状态无缓存）。
+ * 经本域 interface.ts 门面消费同一原语（D2 前在 domain2/common，
+ * 叶层与 domain2/schedule 构成值环；D2 后归属明确，环消失）。
  */
 import { readFile, writeFile, rename, mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import type { ReportPeriod } from "../../server/config/interface.ts";
-import {
-  alignLastRun,
-  deriveLastRun,
-  LAST_RUN_SCHEMA,
-  type LastRunRecord,
-} from "../schedule/interface.ts";
-import { parseReportIndexLines } from "./report-index.ts";
+import type { ReportPeriod } from "../config/interface.ts";
+import { alignLastRun, deriveLastRun, LAST_RUN_SCHEMA, type LastRunRecord } from "./due.ts";
+import { parseReportIndexLines } from "../../domain2/common/interface.ts";
 
 /** lastRun 持久化文件。 */
 function lastRunFile(root: string): string {

@@ -6,20 +6,12 @@
  * 「类型 + 函数」，禁 `export * from` 整文件 re-export。
  *
  * 本目录边界 = 无状态无缓存（layer-architecture.md §2.3）：
- * - last-run.ts：per-root 临界区链（唯一实现），调度与执行共同依赖；
- * - report-index.ts：index.jsonl 纯解析原语（读侧记忆化留在 runner，防双份缓存）；
+ * - report-index.ts：index.jsonl 纯解析原语（读侧记忆化留在 runner，防双份缓存；
+ *   lastRun 推导侧的同口径解析由 server/schedule/store.ts 经本门面复用）；
  * - errsurf.ts：过渡垫片（canonical 已迁 server/shared/errsurf.ts，D13 随本目录消除）。
+ * lastRun 持久化原语（读/写/per-root 链/校准）D2 起归 server/schedule 域
+ * （server/schedule/store.ts，唯一定义），本门面不再转发（单答案即单入口）。
  */
-
-// ------------------------------------------------------------------ lastRun 持久化原语（last-run.ts）
-
-export {
-  readLastRun,
-  writeLastRun,
-  updateLastRun,
-  ensureLastRunMigrated,
-  __lastRunChainForTests,
-} from "./last-run.ts";
 
 // ------------------------------------------------------------------ 报告索引解析（report-index.ts）
 

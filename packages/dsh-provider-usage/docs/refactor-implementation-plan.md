@@ -76,8 +76,8 @@ src/
   domain2/                         # 域2 · 事件监听 · 趋势与报告框架
     collect/    interface.ts + collector/types                  # E1
     aggregate/  interface.ts + aggregator/aggregate-rows/aggregate-query/store/index   # E2（D2 纯函数拆分）
-    common/     interface.ts + last-run/report-index/errsurf    # 域2公共层：无状态无缓存（D8 归位，errsurf 为 D2 错误面）
-    schedule/   interface.ts + schedule/scheduler/tasks  # E3（配置面已归 server/config，#768 D1）
+    common/     interface.ts + report-index/errsurf    # 域2公共层：无状态无缓存（last-run.ts 已归 server/schedule/store.ts，#768 D2；errsurf 为过渡垫片）
+    schedule/   （已消除，#768 D2：整域迁 server/schedule/interface.ts + deps.ts + due/scheduler/tasks/store）
     execute/    interface.ts + runner/generate/format/executor/list-dirs   # E4（executor 独立工厂 + list-dirs 收敛）
     routes/     interface.ts + ui/reports                       # E5 路由层（宿主）
   apply/                           # 装配层（组合根特权；零隐藏可变状态）
@@ -97,8 +97,8 @@ src/
 | domain1/routes/ | interface.ts、stats.ts、adapters.ts |
 | domain2/collect/ | interface.ts、collector.ts、types.ts |
 | domain2/aggregate/ | interface.ts、aggregator.ts、aggregate-rows.ts、aggregate-query.ts、store.ts、index.ts |
-| domain2/common/ | interface.ts、last-run.ts、report-index.ts、errsurf.ts |
-| domain2/schedule/ | interface.ts、schedule.ts、scheduler.ts、tasks.ts（配置面已归 server/config，#768 D1） |
+| domain2/common/ | interface.ts、report-index.ts、errsurf.ts（last-run.ts 已迁 server/schedule/store.ts，#768 D2） |
+| server/schedule/ | interface.ts、deps.ts、due.ts、scheduler.ts、tasks.ts、store.ts（#768 D2：到期判定两题不拆整域收拢） |
 | domain2/execute/ | interface.ts、runner.ts、generate.ts、format.ts、executor.ts、list-dirs.ts |
 | domain2/routes/ | interface.ts、ui.ts、reports.ts |
 | apply/ | interface.ts、apply.ts、index.ts（报告配置服务已归 server/config/service.ts，#768 D1） |
@@ -110,8 +110,7 @@ src/
   （charts/config/sanitize/ui-config/contracts 类型等），无跨目录直引实现文件。
 - 域2 → 域1：`domain2/routes/ui.ts` 以 **type-only** 引用 `domain1/pipeline/interface.ts` 的
   `StatsService`（D7 后仅类型 + cacheSize() 方法调用）。
-- E3⇄E4：不直接互引；`domain2/schedule/tasks.ts` 持有注入的 executor（经 `execute/interface.ts`
-  工厂），双方共同依赖 `domain2/common/`（last-run/report-index，无状态无缓存防 indexCache 双份）。
+- E3⇄E4：不直接互引；`server/schedule/tasks.ts` 持有注入的 executor（经 `domain2/execute/interface.ts` 工厂，#768 D2 前在 `domain2/schedule/tasks.ts`），推进与路由 preset 共走 server/schedule 同一 per-root 链；index 解析由调度存储经 `domain2/common/` 纯面复用（report-index，无状态无缓存防 indexCache 双份）。
 - 域1 → 域2：**零**（业务面零依赖实证成立）。
 - import 边界强制点：`scripts/gate/verify-dir-imports.mjs`（本包走 `--soft`：跨目录直引软报告
   不卡 CI；interface.ts 符号存在性两模式均硬校验）+ lib 导出面（contract/pack-check 既有）。

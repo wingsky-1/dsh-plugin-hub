@@ -1,0 +1,62 @@
+/**
+ * dsh-provider-usage — server/schedule 域对外门面（#768 D2：schedule 新域）。
+ *
+ * 域承诺 = 到期判定（候选窗口/幂等：due.ts）+ 串行执行（60s 轮询 ReportScheduler
+ * + 任务队列 ReportTaskQueue）+ lastRun 持久化原语（读/写/per-root 临界区链/
+ * 迁移校准：store.ts）：两题不拆，同域收拢（D1 配置面归 server/config 后，
+ * 本域只剩调度面；D2 把调度面整域搬过来，per-root 链与 schema 归属明确）。
+ *
+ * 目录化约定：目录外一律经本文件消费，禁 `export * from` 整文件 re-export。
+ * 复用边界（与 D1 config 域同形）：
+ * - 业务域（execute/routes）经本门面复用纯面（窗口/幂等纯函数 + 类型）与
+ *   读面（readLastRun）；有状态的 ReportScheduler/ReportTaskQueue
+ *   只由组合根构造、经参数传递，不直引；
+ * - 迁移域（upgrade/last-run-morph.ts）经本门面只复用纯函数
+ *   （LAST_RUN_SCHEMA / deriveLastRun / alignLastRun，零 node 依赖），
+ *   不调业务实例（read/write/update/ensure 均不导入）；
+ * - per-root 临界区链（updateLastRun）本域所有（METHOD §3 Q1 有主即止）：
+ *   execute 的推进、routes 的 preset 均经本门面消费同一条链，
+ *   本域不自建第二条链，不新建 file-io 叶；
+ * - 本域无聚合安装器：调度器/队列由组合根直接构造
+ *   （参见 deps.ts 注记），本门面只做收口。
+ */
+
+// ------------------------------------------------------------------ 到期判定纯函数（due.ts）
+
+export {
+  candidateWindow,
+  pendingReports,
+  presetLastRunForNewlyEnabled,
+  previousClosedWindow,
+  deriveLastRun,
+  alignLastRun,
+  isClosedWindowRecord,
+  LAST_RUN_SCHEMA,
+} from "./due.ts";
+export type { DueReport, LastRunRecord } from "./due.ts";
+
+// ------------------------------------------------------------------ 调度器（scheduler.ts）
+
+export { ReportScheduler } from "./scheduler.ts";
+export type { ReportSchedulerOptions } from "./scheduler.ts";
+
+// ------------------------------------------------------------------ 报告任务队列（tasks.ts）
+
+export { ReportTaskQueue } from "./tasks.ts";
+export type {
+  ReportTask,
+  ReportTaskInput,
+  ReportTaskResult,
+  ReportTaskStatus,
+  ReportTaskQueueOptions,
+} from "./tasks.ts";
+
+// ------------------------------------------------------------------ lastRun 持久化原语（store.ts）
+
+export {
+  readLastRun,
+  writeLastRun,
+  updateLastRun,
+  ensureLastRunMigrated,
+  __lastRunChainForTests,
+} from "./store.ts";
