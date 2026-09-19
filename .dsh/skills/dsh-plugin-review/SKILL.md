@@ -162,6 +162,8 @@ A + B。用户点名维度时以其为准（如「增加安装影响分析」→
 
 - 计划获批进入实施时：**转入 [`dsh-plugin-hub-dev`](../dsh-plugin-hub-dev/SKILL.md) 按实施 skill 执行**；
   交接物为 `REVIEW-AND-PLAN.md`（含阶段计划与决策点）。
+- 转实施后用人按 `oss-pipeline` 纪律派 `agents/` 具名角色（`coder` / `qa` / `hardener` /
+  `cleaner`，按阶段选用）；本 skill 的多维评审子 Agent 均为一次性评审身份，不转正为实施身份。
 - commit-only / 阶段门禁 / 运行时确认 / 实施常见坑等**实施细节归实施 skill**，
   本 skill 是纯只读评审，不内联（见 [references/workflow-common.md](references/workflow-common.md) §1/§3/§5）。
 - **实测验证证据**（P0/P1 断言必须实测）按 [references/verify-checklist.md](references/verify-checklist.md) 执行。
