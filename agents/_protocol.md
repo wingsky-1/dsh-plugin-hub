@@ -17,8 +17,7 @@
 
 **适用范围**：执行型角色（coder / cleaner / hardener 等以产物交付为目标的
 角色）。qa 的 judge 判定未过属验收结论而非执行失败，走断言表结论路径，不适用
-本协议；spec-writer 不涉及执行失败判定。本协议被 coder / cleaner / hardener /
-qa / spec-writer 及 oss-triage、oss-pipeline 引用，实施时同步核对各文件相关表述。
+本协议；spec-writer 不涉及执行失败判定。各角色头所列为协议全集，按本适用范围取用。本协议被 coder / cleaner / hardener / qa / spec-writer 及 oss-triage、oss-pipeline 整包引用（逐节衔接见 oss-pipeline ⑥收敛环），实施时同步核对各文件相关表述。
 
 同任务连续失败按「死因聚类 → 降粒度 / 换方法 / 上报」决策。失败计数**随每次
 主控重派重置**（重派 = 新任务单元，跨重派不累计）：
