@@ -5,9 +5,12 @@
  * 两者无共享代码路径；引擎只消费本域产出的 TlsMaterials。
  */
 export type {
+  CaAndLeafMaterials,
   DownloadCertCode,
   DownloadCertResult,
   DownloadCertSource,
+  LeafCertSummary,
+  LeafMaterials,
   TlsMaterials,
 } from "./impl/index.ts";
 export {
@@ -17,7 +20,10 @@ export {
   encodeCertificatePem,
   ensureSelfSignedTls,
   extractFirstCertificateDer,
+  generateCaAndLeaf,
+  generateLeafSignedByCa,
   loadDownloadableCertificate,
   loadTlsFromFiles,
+  readLeafCertInfo,
   toSanEntry,
 } from "./impl/index.ts";

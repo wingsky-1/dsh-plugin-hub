@@ -3,13 +3,13 @@
   "version": 2,
   "packages": {
     "dsh-lan-proxy": {
-      "modules": 6,
-      "scannedSrcFiles": 20,
-      "allSrcTsFiles": 29,
-      "interfaceFacades": 6,
-      "leafValueEdges": 4,
-      "fileValueEdges": 30,
-      "crossModuleRefs": 41,
+      "modules": 7,
+      "scannedSrcFiles": 24,
+      "allSrcTsFiles": 34,
+      "interfaceFacades": 7,
+      "leafValueEdges": 5,
+      "fileValueEdges": 36,
+      "crossModuleRefs": 49,
       "quality": {
         "leafModuleCycles": [],
         "fileCycles": [],

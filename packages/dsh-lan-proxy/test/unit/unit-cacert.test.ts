@@ -168,33 +168,43 @@ describe("下发路由三态与围栏", () => {
     const r = callCaCert({ selfSignedDir: home }, { method: "POST" });
     expect(r.status).toBe(405);
   });
-  it("自签模式默认下发 DER（.cer 头齐全）", () => {
+  it("自签模式无 CA 下发 404 并指引生成（#930 Phase 1：外观可用但无用的叶子不再下发）", () => {
     const dir = mkdtempSync(join(home, "self-"));
     ensureSelfSignedTls({ dir });
     const r = callCaCert({ selfSignedDir: dir });
     expect(r.path).toBe(ROUTES.caCert);
+    expect(r.status).toBe(404);
+    const body = JSON.parse(r.body.toString("utf8"));
+    expect(body.error.code).toBe("ca-unconfigured");
+    expect(body.error.details).toContain("一键生成");
+  });
+  it("?format=pem 下发 PEM 文本（CA 模式；自签模式已 404）", () => {
+    const dir = mkdtempSync(join(home, "ca-"));
+    const ca = ensureSelfSignedTls({ dir });
+    const r = callCaCert(
+      { tlsCaCertFile: join(dir, SELF_SIGNED_CERT), selfSignedDir: dir },
+      { url: ROUTES.caCert + "?format=pem" },
+    );
     expect(r.status).toBe(200);
-    expect(r.body[0]).toBe(0x30);
+    expect(r.headers["content-type"]).toBe("application/x-pem-file");
+    expect(
+      extractFirstCertificateDer(r.body.toString("utf8")).equals(
+        extractFirstCertificateDer(ca.cert),
+      ),
+    ).toBe(true);
+    expect(r.body.toString("utf8").startsWith("-----BEGIN CERTIFICATE-----")).toBe(true);
+  });
+  it("?format=cer 显式走 DER（CA 模式，.cer 头齐全）", () => {
+    const dir = mkdtempSync(join(home, "ca-"));
+    ensureSelfSignedTls({ dir });
+    const deps = { tlsCaCertFile: join(dir, SELF_SIGNED_CERT), selfSignedDir: dir };
+    const r = callCaCert(deps, { url: ROUTES.caCert + "?format=cer" });
+    expect(r.status).toBe(200);
     expect(r.headers["content-type"]).toBe("application/x-x509-ca-cert");
+    expect(r.body[0]).toBe(0x30);
     expect(r.headers["content-disposition"]).toContain("dsh-lan-ca.cer");
     expect(r.headers["cache-control"]).toBe("no-store");
     expect(r.headers["x-content-type-options"]).toBe("nosniff");
-  });
-  it("?format=pem 下发 PEM 文本", () => {
-    const dir = mkdtempSync(join(home, "self-"));
-    ensureSelfSignedTls({ dir });
-    const r = callCaCert({ selfSignedDir: dir }, { url: ROUTES.caCert + "?format=pem" });
-    expect(r.status).toBe(200);
-    expect(r.headers["content-type"]).toBe("application/x-pem-file");
-    expect(r.body.toString("utf8").startsWith("-----BEGIN CERTIFICATE-----")).toBe(true);
-  });
-  it("?format=cer 显式走 DER", () => {
-    const dir = mkdtempSync(join(home, "self-"));
-    ensureSelfSignedTls({ dir });
-    const deps = { selfSignedDir: dir };
-    expect(callCaCert(deps, { url: ROUTES.caCert + "?format=cer" }).headers["content-type"]).toBe(
-      "application/x-x509-ca-cert",
-    );
   });
   it("畸形 request-target 同样 400（解析抛错不回落 DER）", () => {
     const dir = mkdtempSync(join(home, "self-"));
@@ -366,5 +376,14 @@ describe("apply 接线", () => {
   it("配 CA 时 health caConfigured 为 true，否则 false", () => {
     expect(callHealth(runApply({ tlsCaCertFile: "/x/ca.pem" })).caConfigured).toBe(true);
     expect(callHealth(runApply({})).caConfigured).toBe(false);
+  });
+  it("自签模式 caConfigured=false 且下载 404 联合（#930 Phase 1 口径诚实）", () => {
+    const routes = runApply({});
+    expect(callHealth(routes).caConfigured).toBe(false);
+    const dir = mkdtempSync(join(home, "self-"));
+    ensureSelfSignedTls({ dir });
+    const r = callCaCert({ selfSignedDir: dir });
+    expect(r.status).toBe(404);
+    expect(JSON.parse(r.body.toString("utf8")).error.code).toBe("ca-unconfigured");
   });
 });

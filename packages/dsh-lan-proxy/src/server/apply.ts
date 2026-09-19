@@ -7,7 +7,7 @@
  * 本模块不 import index.ts（防循环）。
  */
 import { networkInterfaces } from "node:os";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, readdirSync, renameSync, unlinkSync } from "node:fs";
 import type { Context } from "@deepseek-ai/cordis";
 import { writeJson, errorMessage, guardLoopbackMethod } from "../../../../shared/host-utils.js";
 import { createLanProxy } from "./proxy/interface.ts";
@@ -18,9 +18,15 @@ import {
   SELF_SIGNED_CERT,
   SELF_SIGNED_KEY,
   ensureSelfSignedTls,
+  generateCaAndLeaf,
+  generateLeafSignedByCa,
   loadDownloadableCertificate,
   loadTlsFromFiles,
+  readLeafCertInfo,
 } from "./tls/interface.ts";
+import { buildCaActionRoutes, classifyCaState } from "./ca/interface.ts";
+import type { CaActionDeps } from "./ca/interface.ts";
+import { MANAGED_CERT_FILES } from "./shared/interface.ts";
 // 配置层值依赖单向 apply → config：默认白名单常量（单一事实源）与存量归一化纯函数
 // 均定义于配置域，本模块消费并 re-export（保持 apply 既有导出面不变）。
 import { normalizeLegacyWsCompressPaths, DEFAULT_WSS_COMPRESS_PATHS } from "./config/interface.ts";
@@ -62,6 +68,16 @@ function lanIpv4Addresses(): string[] {
 export { pluginDir } from "./shared/interface.ts";
 
 /**
+ * 托管叶子摘要视图（health.certInfo 载荷；#930 F8：只出日期/SAN/当期 IP）。
+ * null = 无可提醒的托管叶子（自签/custom/error/HTTP-only 或叶子不可读）。
+ */
+interface CaCertInfoView {
+  leafValidTo: string;
+  leafSans: string[];
+  currentIps: string[];
+}
+
+/**
  * 挂载 LAN 转发器。配置来源（settings 命名空间解析值优先、组合层 entry 兜底）
  * 变化时通过 sync 重建转发器，实现端口等配置的热更新（统一由 scope.watch 驱动）。
  *
@@ -77,7 +93,15 @@ export function apply(ctx: Context, config: LanProxyConfig = {}): void {
   // lan-proxy/ 一次性迁出先行（同步，先于 prepareTls 与 migrateFileConfig——两者
   // 都读写本返回值目录；回落时本轮全程用旧目录，不双源）。
   const configDir = resolvePluginDir({
-    files: [SELF_SIGNED_KEY, SELF_SIGNED_CERT, "config.json", MIGRATED_BAK_NAME],
+    // F18：托管四件套文件名入清单（legacy 根不可能持有它们，恒为 no-op；
+    // 语义是“随目录迁移的文件名”全集，来源 shared/paths.ts MANAGED_CERT_FILES）。
+    files: [
+      SELF_SIGNED_KEY,
+      SELF_SIGNED_CERT,
+      "config.json",
+      MIGRATED_BAK_NAME,
+      ...MANAGED_CERT_FILES,
+    ],
     logger: ctx.logger,
   }).dir;
   mkdirSync(configDir, { recursive: true });
@@ -479,6 +503,22 @@ export function apply(ctx: Context, config: LanProxyConfig = {}): void {
     ctx.effect(() => routeDisposer, `lan-proxy: route ${route.path}`);
   }
 
+  // 一键 CA 动作路由（#930 Phase 2：POST 只写；loopback 围栏 + POST 白名单）。
+  // 处理器归 ca 域：路径/签发函数/scope 写面全部经 deps 注入——本域不值引
+  // config/tls 域（I2①），config 面递命名空间对象（收窄类型见 CaConfigPort）。
+  const caActionDeps: CaActionDeps = {
+    path: ROUTES.caGenerate,
+    config: configDeps,
+    crypto: { generateFull: generateCaAndLeaf, generateLeaf: generateLeafSignedByCa },
+    fs: { renameSync, readdirSync, unlinkSync },
+    lanIps: lanIpv4Addresses,
+    logWarn: (message) => out.warn(message),
+  };
+  for (const route of buildCaActionRoutes(caActionDeps)) {
+    const routeDisposer = ctx.webServer.register(route);
+    ctx.effect(() => routeDisposer, `lan-proxy: route ${route.path}`);
+  }
+
   // health 路由（loopback 围栏 + GET 限定）。
   const healthDisposer = ctx.webServer.register({
     path: ROUTES.health,
@@ -490,6 +530,25 @@ export function apply(ctx: Context, config: LanProxyConfig = {}): void {
       const v = resolve();
       // 压缩快照与 GET /config 同源（compressSnapshot 单一来源）。
       const compress = compressSnapshot();
+      // 证书三态 + 托管叶子摘要（#930 F7/F8：health 为客户端唯一数据源，
+      // 不走 GET /config effective；certInfo 只出日期/SAN/当期 IP，不出路径/PEM）。
+      const caState = classifyCaState({
+        tlsCaCertFile: v.tlsCaCertFile,
+        tlsCertFile: v.tlsCertFile,
+        tlsKeyFile: v.tlsKeyFile,
+      });
+      const leafPath = v.tlsCertFile;
+      let certInfo: CaCertInfoView | null = null;
+      if (caState === "managed" && typeof leafPath === "string" && leafPath !== "") {
+        const summary = readLeafCertInfo(leafPath);
+        if (summary.ok) {
+          certInfo = {
+            leafValidTo: summary.validTo,
+            leafSans: summary.sans,
+            currentIps: lanIpv4Addresses(),
+          };
+        }
+      }
       writeJson(res, 200, {
         ok: true,
         plugin: "dsh-lan-proxy",
@@ -511,8 +570,13 @@ export function apply(ctx: Context, config: LanProxyConfig = {}): void {
         connStats: activeProxy?.connStats() ?? null,
         configDir,
         // —— CA 下发可用性（issue #911）：只回显是否配置，不回显路径
-        // （路径进响应违反 P2-2 信息收敛口径）。
+        // （路径进响应违反 P2-2 信息收敛口径）。#930 Phase 1：自签模式下为
+        // false 且下载 404（无 CA 不下发）；定义不变（= CA 路径非空）。
         caConfigured: v.tlsCaCertFile !== undefined && v.tlsCaCertFile !== "",
+        // —— 证书三态与托管叶子摘要（#930 F7/F8；certInfo 为 null 时不提醒，
+        // HTTP-only 无叶子即此）——
+        caState,
+        certInfo,
       });
     },
   });

@@ -8,4 +8,14 @@ export { DEFAULT_DEFLATE_POLICY } from "./deflate.ts";
 export type { DeflatePolicy } from "./deflate.ts";
 export { DEFAULT_OPTIONS } from "./defaults.ts";
 export { isLoopbackTarget } from "./net.ts";
-export { legacyPluginDir, pluginDir } from "./paths.ts";
+export {
+  CA_CERT_FILE,
+  CA_KEY_FILE,
+  CERTS_DIR_NAME,
+  LEAF_CERT_FILE,
+  LEAF_KEY_FILE,
+  MANAGED_CERT_FILES,
+  certsDir,
+  legacyPluginDir,
+  pluginDir,
+} from "./paths.ts";

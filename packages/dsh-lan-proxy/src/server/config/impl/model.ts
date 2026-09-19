@@ -116,8 +116,8 @@ export const Config: z<LanProxyConfig> = z.object({
   tlsKeyFile: z.string(),
   /**
    * 自建 LAN CA 公钥 PEM 文件路径（可选，仅读）。提供时设置页可下发 CA 证书
-   * 供移动设备安装信任（issue #911）；缺省时设置页回退下发自签叶子（若为自签
-   * 模式），自定义叶子且无 CA 时下发端 404。无默认值（同 tlsCertFile 系）。
+   * 供移动设备安装信任（issue #911）；缺省时设置页不下发（#930 Phase 1：自签
+   * 模式与自定义叶子无 CA 一律 404）。无默认值（同 tlsCertFile 系）。
    */
   tlsCaCertFile: z.string(),
   /** 回环上游主机。 */
