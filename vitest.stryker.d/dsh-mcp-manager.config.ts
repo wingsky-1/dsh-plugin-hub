@@ -25,6 +25,7 @@ export default defineConfig({
       'packages/dsh-mcp-manager/test/unit/unit-file-io.test.ts',
       'packages/dsh-mcp-manager/test/unit/unit-hotspot.test.ts',
       'packages/dsh-mcp-manager/test/unit/unit-image-admission.test.ts',
+      'packages/dsh-mcp-manager/test/unit/unit-init-failure.test.ts',
       'packages/dsh-mcp-manager/test/unit/unit-lifecycle-logs.test.ts',
       'packages/dsh-mcp-manager/test/unit/unit-lifecycle-mount.test.ts',
       'packages/dsh-mcp-manager/test/unit/unit-lifecycle.test.ts',

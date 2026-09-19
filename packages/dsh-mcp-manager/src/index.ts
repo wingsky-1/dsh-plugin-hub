@@ -68,7 +68,7 @@ import * as runtimeApi from "./server/connection/runtime/interface.ts";
 import * as statsApi from "./server/stats/interface.ts";
 import type { DebugConfig } from "./server/stats/interface.ts";
 import * as storeApi from "./server/store/interface.ts";
-import { defaultStorePath, loadDisabledTools, McpStore } from "./server/store/interface.ts";
+import { defaultStorePath, McpStore } from "./server/store/interface.ts";
 import {
   installInject,
   registerDirectMcpGuard,
@@ -672,9 +672,9 @@ async function assembleEnabledRuntime(
   // 本文件运行期装配段的注释）。
   const resolveRoot = makeResolveRoot(manager);
   let currentMiddlewareDispose = () => {};
-  // 工具级禁用表在 initMiddleware **之前**独立载入：initMiddleware 会用自己的加载结果覆盖，
-  // 而载入失败时它会把中间层回退（不建实例）—— 这条独立加载保证那种情况下守卫仍有数据源。
-  manager.disabledTools = await loadDisabledTools(manager.userStatePath);
+  // 禁用表不在此预载：守卫读到的是 init 后的唯一引用（先 init 后注册，预载值恒被替换、零引用）。
+  // init 失败即 apply 中止——不存在“实例缺席但守卫存活”的中间态需要保数据源（#392 遗留⑤：
+  // initMiddleware 重置 maps 后重抛，this.middleware 保持未赋值，见 manager.ts initMiddleware）。
   // 中间层实例 + ws_mcp_* 无条件装配（单池后它是唯一连接路径）。
   const mw = await manager.initMiddleware();
   currentMiddlewareDispose = registerMiddlewareAndGuard(ctx, manager, mw, resolveRoot, faces);

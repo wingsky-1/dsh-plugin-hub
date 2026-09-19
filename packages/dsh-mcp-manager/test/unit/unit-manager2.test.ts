@@ -7,6 +7,7 @@
  * - normalizeUiConfig 三形态兼容与非法回退、buildConfigUiPatch、panelAnchor /
  *   panelTop 定位函数
  * - findProjectRoot：.git / .dsh(排除全局家) / .mcp.json 标记、向上遍历、无标记回落
+ * - #770 B2：symlink 双拼写经 normalizedProjectRoot 收敛同一项目根（store/单元不分裂）、不存在路径回退不抛
  * - McpManager：uiConfig/updateUiConfig、目录缓存读写、onStatus、项目 store 缓存、
  *   catalogServersFor、setSession 幂等与切换、refreshFromDisk、reconcileServers
  *   各分支、start/stop/connect/disconnect/reconnect、summary/summarize、dispose
@@ -20,13 +21,15 @@ import {
   mkdtempSync,
   mkdirSync,
   readFileSync,
+  realpathSync,
   rmSync,
   statSync,
+  symlinkSync,
   utimesSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   assertNoGrowth,
@@ -43,6 +46,7 @@ import type { LoaderPort, LogsPort } from "../../src/server/shared/interface.ts"
 import type { ServerConfig } from "../../src/server/config/interface.ts";
 import type { ToolsRegistryPort } from "../../src/server/servers/lifecycle/deps.ts";
 import type { ProjectUnit } from "../../src/server/connection/runtime/interface.ts";
+import type { MiddlewareHost } from "../../src/server/connection/runtime/deps.ts";
 import type { ConnectionEntry } from "../../src/server/connection/runtime/interface.ts";
 import type { ToolDefinition, ToolRunContext } from "@deepseek-ai/dsh-tools";
 import type { McpManagerService } from "../../src/shared/interface.ts";
@@ -57,7 +61,7 @@ import {
 import { catalogDirectory } from "../../src/server/catalog/interface.ts";
 
 // S6-B2：McpManager 构造/apply/路由装配是装配依赖，留包根；其余纯符号改道域门面。
-const { apply, McpManager, makeHealthRoute } = await import("../../src/index.ts");
+const { apply, McpManager, McpMiddleware, makeHealthRoute } = await import("../../src/index.ts");
 const { McpStore } = await import("../../src/server/store/interface.ts");
 const {
   normalizeServer,
@@ -78,7 +82,8 @@ const {
   clampPointToViewport,
   MIDDLEWARE_GLOBAL_ROOT,
 } = await import("../../src/shared/interface.ts");
-const { findProjectRoot } = await import("../../src/server/workspace/interface.ts");
+const { findProjectRoot, normalizedProjectRoot } =
+  await import("../../src/server/workspace/interface.ts");
 const { registerMiddlewareTools } = await import("../../src/server/inject/interface.ts");
 const { ROUTES } = await import("../../src/server/api/interface.ts");
 
@@ -681,6 +686,126 @@ describe("findProjectRoot", () => {
       const fallback = await findProjectRoot(undefined);
       expect(typeof fallback).toBe("string");
     });
+  });
+});
+
+// #770 B2：symlink 双拼写收敛到同一项目根 ----
+describe("#770 B2：symlink 双拼写收敛到同一项目根", () => {
+  /** 双拼写夹具：real-proj（.git 真实标记）+ link-proj（目录 symlink）。
+   *  落盘全在 mkdtemp 内，afterEach 经 rmSync 收口，不留产物。 */
+  async function symlinkFixture(
+    body: (args: {
+      base: string;
+      realProj: string;
+      linkProj: string;
+      realCwd: string;
+      linkCwd: string;
+    }) => unknown,
+  ) {
+    const prevHome = process.env.DSH_HOME;
+    const base = makeTempDir("dsh-mcp-symlink-");
+    try {
+      const fakeHome = join(base, "fake-home");
+      mkdirSync(join(fakeHome, ".dsh"), { recursive: true });
+      process.env.DSH_HOME = fakeHome;
+      const realProj = join(base, "real-proj");
+      mkdirSync(join(realProj, ".git"), { recursive: true });
+      mkdirSync(join(realProj, "sub"), { recursive: true });
+      const linkProj = join(base, "link-proj");
+      symlinkSync(realProj, linkProj, "dir");
+      return await body({
+        base,
+        realProj,
+        linkProj,
+        realCwd: join(realProj, "sub"),
+        linkCwd: join(linkProj, "sub"),
+      });
+    } finally {
+      if (prevHome === undefined) delete process.env.DSH_HOME;
+      else process.env.DSH_HOME = prevHome;
+    }
+  }
+
+  it("symlink 拼写仍发现同一项目", async () => {
+    await symlinkFixture(async ({ realProj, linkCwd }) => {
+      // 两侧 realpath 对比：发现透过 symlink 不丢标记，只拼写不同。
+      expect(realpathSync(await findProjectRoot(linkCwd))).toBe(realpathSync(realProj));
+    });
+  });
+
+  it("双拼写 normalizedProjectRoot 相等且为 real 路径", async () => {
+    await symlinkFixture(async ({ realProj, realCwd, linkCwd }) => {
+      const fromReal = await normalizedProjectRoot(realCwd);
+      const fromLink = await normalizedProjectRoot(linkCwd);
+      expect(fromLink).toBe(fromReal);
+      expect(fromLink).toBe(realpathSync(realProj));
+    });
+  });
+
+  it("双拼写 projectStoreFor 同一实例", async () => {
+    await symlinkFixture(async ({ realCwd, linkCwd }) => {
+      const { manager } = managerFixture("dsh-mcp-symlink-store-");
+      const rootA = await normalizedProjectRoot(realCwd);
+      const rootB = await normalizedProjectRoot(linkCwd);
+      const first = await manager.projectStoreFor(rootA);
+      const second = await manager.projectStoreFor(rootB);
+      // 反证：realpath 换回 resolve 则两侧键不同，toBe 红。
+      expect(second).toBe(first);
+    });
+  });
+
+  it("双拼写 projectUnitFor 只建一个单元", async () => {
+    await symlinkFixture(async ({ realCwd, linkCwd }) => {
+      installPoolLifecycle();
+      const tools = fakeToolsService({});
+      poolToolsView = () => tools.schemas();
+      const host = {
+        ctx: { tools },
+        logger: { info: () => {}, warn: () => {}, error: () => {} },
+        projectServersFor: async () => [],
+        globalServers: () => [],
+        normalizedProjectRoot: async (cwd: string | undefined) =>
+          typeof cwd === "string" && cwd !== "" ? cwd : undefined,
+        saveUserState: async () => {},
+        emitStatus: () => {},
+        catalogCachePath: (root: string) => join(root, ".dsh-mcp-symlink-test.json"),
+      };
+      const rootA = await normalizedProjectRoot(realCwd);
+      const rootB = await normalizedProjectRoot(linkCwd);
+      const mw = new McpMiddleware(host as unknown as MiddlewareHost);
+      try {
+        const unitA = await mw.projectUnitFor(rootA);
+        const unitB = await mw.projectUnitFor(rootB);
+        // 反证：realpath 换回 resolve 则建出两个单元，size 红。
+        expect(unitB).toBe(unitA);
+        expect(mw.units.size).toBe(1);
+      } finally {
+        if (rootA !== undefined) catalogDirectory.dropRoot(rootA);
+        try {
+          await mw.dispose();
+        } catch {
+          // 收口失败不掩盖用例结论
+        }
+      }
+    });
+  });
+
+  it("不存在 cwd 回退不抛", async () => {
+    const prevHome = process.env.DSH_HOME;
+    const base = makeTempDir("dsh-mcp-symlink-missing-");
+    try {
+      const fakeHome = join(base, "fake-home");
+      mkdirSync(join(fakeHome, ".dsh"), { recursive: true });
+      process.env.DSH_HOME = fakeHome;
+      // 16 级窗口内无标记：findProjectRoot 回落不存在路径，realpath 抛错由 catch 接住。
+      let missing = base;
+      for (let i = 0; i < 16; i += 1) missing = join(missing, `d${i}`);
+      // 反证：catch 删掉则此处抛 ENOENT 红。
+      await expect(normalizedProjectRoot(missing)).resolves.toBe(resolve(missing));
+    } finally {
+      if (prevHome === undefined) delete process.env.DSH_HOME;
+      else process.env.DSH_HOME = prevHome;
+    }
   });
 });
 

@@ -4,7 +4,7 @@
 > 功能一句话：**DSH 的 MCP 服务器管理器**——管理 stdio / streamable-http 两种传输的 MCP 服务器，把已连接服务器的工具收敛为四个原子工具（`ws_mcp_list` / `ws_mcp_detail` / `ws_mcp_search` / `ws_mcp_call`）供模型访问。
 >
 > 快速上手（安装 / 配置 / 验证）与全量安全语义见 [包 README](../../packages/dsh-mcp-manager/README.md)；本文按 TOGAF 四视图（业务 BA / 应用 AA / 数据 DA / 技术 TA）讲**原理与运行机制**。
-> 证据基线：`8928c051`（S2-D/筆3已含；图源本笔落盘）；证据为 `路径:行号`（取自该树，后续提交会漂移，以符号搜索兜底）或可复现常量。
+> 证据基线：`da4eea6e`（S2-D/筆3已含；图源本笔落盘）；证据为 `路径:行号`（取自该树，后续提交会漂移，以符号搜索兜底）或可复现常量。
 > `src/…` 省略包目录前缀（即 `packages/dsh-mcp-manager/`）。机制结论来自源码核对，不将历史图片或既有测试文件当成本次实测结果。
 >
 > 唯一事实源（本文不复述会漂移的计数，条数以源码为准）：配置键见 `src/server/config/config-schema.ts`；存储布局与权限见 `src/server/shared/paths.ts`；跨端状态键与路由见 `src/shared/status.ts` 与 `src/shared/routes.ts` 的 `ROUTES`；模型可见注册名的唯一派生点是 `src/server/shared/tool-names.ts` 的 `publicToolName`；调用预算与目录边界常量见 `src/server/connection/runtime/limits.ts` 与 `src/server/shared/constants.ts`。
@@ -26,11 +26,11 @@
 
 ![BA：单池能力与显式非目标](diagrams/mcp-manager-ba.svg)
 
-> 图源 `diagrams/mcp-manager-ba.html`（已归档，见 §5；证据基线 8928c051，S2-D/笔3 已含）。
+> 图源 `diagrams/mcp-manager-ba.html`（已归档，见 §5；证据基线 da4eea6e，S2-D/笔3 已含）。
 
-**单池前导**：全部服务器只有一条轨道——项目级、全局级（`@global`）与 runtime 注入的封装定义条目都由中间层连接池持有，模型面恒为四个原子工具（两级发现：list 盘点 → detail 拉 schema），统一经 `ws_mcp_call` 寻址执行。池归属恒为「全部服务器」：每个工作空间一套常驻连接（project root 或虚拟 root `@global`），按会话 cwd 路由、跨空间不串台。代价是多一跳（中间层转发）；目录是 last-good 快照，`tools/list_changed` 变化需重连/刷新。
+**单池前导**：全部服务器只有一条轨道——项目级、全局级（`@global`）与 runtime 注入的封装定义条目都由中间层连接池持有，模型面恒为四个原子工具（两级发现：list 盘点 → detail 拉 schema），统一经 `ws_mcp_call` 寻址执行。池归属恒为「全部服务器」：每个工作空间一套常驻连接（project root 或虚拟 root `@global`），按会话 cwd 路由、跨空间不串台。请求经中间层转发一跳；目录是 last-good 快照，`tools/list_changed` 变化需重连/刷新。
 
-为什么只有一种能力：模式键与策略键已在笔 2 整体删除，保留键只会留下永远走不到的分支；放弃的是 `allowTools`/`denyTools` 准入闸能力，缺口单列、替代品归阶段 3 的 governance/visibility（见 §3.2）。
+能力面唯一：模式键与策略键已删除（Config 键集见 `src/server/config/config-schema.ts`）；`allowTools`/`denyTools` 准入闸能力缺口单列，替代品归阶段 3 的 governance/visibility（见 §3.2 M3）。
 
 ### 1.1 能力与可见结果
 
@@ -68,11 +68,11 @@ flowchart LR
 
 ![AA：组合根、域分工与调用链路](diagrams/mcp-manager-aa.svg)
 
-> 图源 `diagrams/mcp-manager-aa.html`（已归档，见 §5；证据基线 8928c051，S2-D/笔3 已含）。
+> 图源 `diagrams/mcp-manager-aa.html`（已归档，见 §5；证据基线 da4eea6e，S2-D/笔3 已含）。
 
 ### 2.1 组合根与域分工
 
-`src/index.ts#apply` 是唯一认识宿主 `ctx` 的组合根：经 `bindHost` 收窄能力面，按依赖顺序装配各域（upgrade 最先、lifecycle 次之，`enabled` 分支再装中间层与路由），卸载时逆序释放（见 §3.6）。不要套用 notifier 的八域单例模板：这里各域以 `interface.ts` 门面 + `deps.ts` 端口接入，`servers` 是装配实现层（无独立 `deps.ts`/`interface.ts`，不画成对等域），`server/shared`（`paths`/`file-io`/`constants`/`tool-names`）是叶子事实源。
+`src/index.ts#apply` 是唯一认识宿主 `ctx` 的组合根：经 `bindHost` 收窄能力面，按依赖顺序装配各域（upgrade 最先、lifecycle 次之，`enabled` 分支再装中间层与路由），卸载时逆序释放（见 §3.6）。各域以 `interface.ts` 门面 + `deps.ts` 端口接入，`servers` 是装配实现层（无独立 `deps.ts`/`interface.ts`，不画成对等域），`server/shared`（`paths`/`file-io`/`constants`/`tool-names`）是叶子事实源。
 
 | 域 | 装配与职责 | 实际能力依赖 |
 | --- | --- | --- |
@@ -104,7 +104,7 @@ flowchart TD
     ST --> C["settings 命名空间接线<br/>+ stats.configure + uiUpdate 写 sink"]
     C --> E{"enabled ?"}
     E -->|"否"| Z["不装中间层/路由<br/>（服务仍提供）"]
-    E -->|"是"| D["loadDisabledTools 独立载入<br/>+ initMiddleware 先于 startAll（F3）"]
+    E -->|"是"| D["initMiddleware 建池 + 载入禁用表<br/>先于 startAll（F3）"]
     D --> V["startAgentVisibility<br/>必须在 startAll 之前"]
     V --> H["startAll() 启动全部 enabled 服务器<br/>→ reconcileServers 双轨收敛 → loadCatalogCache 读目录缓存"]
     H --> I["settings 合并面兜底<br/>（debug / stats 同步；模式同步已随键删除）"]
@@ -116,9 +116,9 @@ flowchart TD
 
 要点：
 
-- **升级链最先**：链是异步的，不 await 就等于没有顺序保证——先装配各域会让它们读到旧形态（旧文件那时已被归档，读到的是空盘）；
+- **升级链最先**：链是异步的，先 await 跑完再装配各域（旧文件届时已归档，早装配会读到空盘）；
 - **读路径落定走包装**：项目级 store 读前落定不由调用方直调原语，而经 upgrade 的 `withSettledProjectConfig` 包装（先落定包分区新形态再跑读回调，触发时机由包装内卡；`new McpStore` 留 manager 侧经既有 ConfigStorePort；落定失败即抛，读回调不执行）；仅缓存命中后的磁盘重读（`reloadIfChanged`）保留有声 warn（见 `manager.ts#projectStoreFor`）；
-- **F3 中间层提前**：`initMiddleware` 在 `startAll` 之前（防「先建后停」竞态）；工具级禁用表在中间层之前独立载入，中间层回退时守卫仍有数据源；
+- **F3 中间层提前**：`initMiddleware` 在 `startAll` 之前（防「先建后停」竞态）；禁用表由 `initMiddleware` 内载入，失败即 `apply` 中止（无回退实例，见 `#392 遗留⑤`）；
 - **隐藏面卡位**：`startAgentVisibility` 必须在 `startAll` 之前——连接与工具注册发生在 `startAll` 期间，先挂隐藏面初始 reconcile 才能覆盖已 live 的 agent，后注册的经 `tools/change` 收敛；
 - **设置合并面兜底**：`syncFromSettings` 在运行期变更与启动后各调一次（`debug`/`stats` 同步；模式同步已随键删除）。
 
@@ -152,8 +152,8 @@ sequenceDiagram
     C-->>M: 结果
 ```
 
-- 远端转发**不带 agent**（留 `parent` / `signal`，无 signal 时现造一个）：带了等于把子调用挂回该 agent 的作用域，而本包已把 `mcp__*` 从每个 agent 的模型视野摘掉，自家转发会被自己那条 deny 一起打死；不带走全局面（guard 靠 parent 放行）。代价是官方执行器那次图片准入退化成文本，由 A+ 经 `finalizeContent` 补回来（见下）；
-- **per-agent 视角隐藏**：`mcp__*` 从每个 agent 的模型视野摘掉（visibility 域经宿主 `restrict` 实现，三触发点 reconcile），全局注册面与目录仍在（`ws_mcp_list` 可见）。为什么是隐藏而不是注销：宿主没有 `unregister`，注册方的 disposer 不交本包，唯一手段就是 per-agent `restrict`；退出条件是宿主提供注销面后再收敛；
+- 远端转发**不带 agent**（留 `parent` / `signal`，无 signal 时现造一个；带 agent 会把子调用挂回已被摘掉 `mcp__*` 的作用域而被自己的 deny 打死）。官方执行器那次图片准入退化成文本，由 A+ 经 `finalizeContent` 补回来（见下）；
+- **per-agent 视角隐藏**：`mcp__*` 从每个 agent 的模型视野摘掉（visibility 域经宿主 `restrict` 实现，三触发点 reconcile），全局注册面与目录仍在（`ws_mcp_list` 可见）。宿主没有 `unregister`（注册方的 disposer 不交本包），故用 per-agent `restrict`；宿主提供注销面后收敛；
 - **A+ 图片准入**：远端原始图片块经外层 exec 的 agent 解路由、四值白名单与 base64 校验后，由官方 `finalizeContent` 接缝换成真附件块；任何拒绝只降级成 `[image unavailable: …]` 文案、不抛错，无图片时返回 `undefined` 保持结果面不变；
 - **中间层只读边界**：`ws_mcp_list` / `ws_mcp_detail` / `ws_mcp_search` 纯读本地目录缓存（不触达远端、不执行工具）；`ws_mcp_call` 是唯一执行远端工具的入口，执行前经工具级禁用表（`isToolDenied`）裁决。
 
@@ -187,7 +187,7 @@ sequenceDiagram
 - **工具定义**：远端结果经统一投影收敛（白名单清洗，不裸透传远端字段）；文本提取走 `extractText`（image/audio/resource 降级占位符；现状不截断，截断上限常量见 `DEFAULT_RESULT_TRUNCATE_BYTES`）；调用预算读 `server.toolCallTimeoutMs`（缺省 `CALL_TIMEOUT_MS`），`withTimeout` 兜底统一 +2s；
 - **双轨 reconcile**（`orchestrator/manager.ts#reconcileServers`）：desired = 持久化 store（全局 + 项目）+ runtimeRegistry（同名 runtime 优先），变化才动作；
 - **runtime 注入**：其他插件可经 `ctx.mcpManager.registerServer({...toolDefinitions})` 运行时注册（内存态不落盘，同名 runtime 优先）；带 `toolDefinitions` 时 execute 来自调用方封装（调用方可先做预处理再内部转发底层命令），底层 client 不外露。
-- 为什么自研连接栈不再出现：四文件在 S1-5c 整体退役，连接改由官方客户端承接（换引擎后官方运行时只导出最小面，「拿一个 client 去 callTool」这条路不再存在，转发走 §2.3 的子调用链路）；退出条件是官方装载语义变化时先改 servers/lifecycle 域，不在本文另起第二套描述。
+- 连接由官方客户端承接（`servers/lifecycle`），自研栈已在 S1-5c 退役，转发走 §2.3 的子调用链路；官方装载语义变化时先改 `servers/lifecycle` 域。
 
 重连由官方客户端承接：per-server `reconnect` 键（`enabled` / `initialDelayMs` / `maxDelayMs` / `maxAttempts`，与官方 `Reconnect` schema 逐字同值；未知键静默丢弃），默认值 500ms 起、30s 封顶、10 次上限（见 `config/normalize.ts#RECONNECT_DEFAULTS`）：
 
@@ -206,7 +206,7 @@ stateDiagram-v2
     failed --> connecting: 手动 connect / reconnect
 ```
 
-- 未知重连键静默丢弃（口径与顶层未知字段一致）：配置面是用户手写 JSON，写错键宁可丢弃也不在连接期爆炸；真正改变重连语义的错值（时长越界、预算非正整数）仍在配置写入时拒绝；
+- 未知重连键静默丢弃（口径与顶层未知字段一致）；改变重连语义的错值（时长越界、预算非正整数）在配置写入时拒绝；
 - 调用守卫把「后台重连中」纳入未就绪范畴：退避窗口内派发会打到不可信的工具面，`ws_mcp_call` 在该窗口直接拒绝并提示稍后重试或重新连接。
 
 ### 2.5 模型面（四个原子工具）
@@ -226,7 +226,7 @@ stateDiagram-v2
 
 ![DA：落盘物、一致性与迁移卸载](diagrams/mcp-manager-da.svg)
 
-> 图源 `diagrams/mcp-manager-da.html`（已归档，见 §5；证据基线 8928c051，S2-D/笔3 已含）。
+> 图源 `diagrams/mcp-manager-da.html`（已归档，见 §5；证据基线 da4eea6e，S2-D/笔3 已含）。
 
 ### 3.1 落盘物全表与 file-io 收敛（S2-C）
 
@@ -245,20 +245,20 @@ stateDiagram-v2
 
 `server/shared/file-io.ts` 是落盘 IO 唯一收敛点：`ensureDir`（目录取表）＋ `writeFileAtomic`（唯一临时名 → 显式 mode 写入 → `rename` 覆盖 → 失败清理临时名并上抛原错误）＋ `readTextFile`/`readJsonFile`（不存在/不可读/是目录/解析失败一律回落 `null`，由各域按既有语义回落空值）。同目标路径的写经 `writeChains` 串行（模块级，跨调用点生效）。
 
-- **登记/未登记双档（fail-closed 方向）**：`fileMode` 未登记即抛（I6，写函数不替调用点做权限决定）。登记路径经 `writeFileAtomic`（mode 取表＋串行＋清理）；未登记路径（单测 tmp 覆盖、调用方自定义）回落既有直写形状——直接调 `writeFileAtomic` 等于把「回落写盘」变成「写失败」（`middleware-state#writeStateFile`、`manager#writeCatalogCacheFile` 与 S2-B 的 `store.save` 同式）；回落三处同式硬化（R1 `middleware-state`、R2 manager 目录缓存、`directory/` 未登记分支）：临时名加随机后缀＋失败清理临时名并上抛原错误，mode 沿既有回落形状（无 mode），只补唯一性与清理，不改写盘语义；
-- **同步禁调**：`stats#flushSync` 不调异步 `writeFileAtomic`——同步契约（构造器/`flushSync` 直写断言/关闭刷盘/`manager.dispose` 的 fire-and-forget 链）要求返回时盘上已有数据，异步化会把「退出刷新」变成不可靠的后台写；`ensureDir` 自身异步故此处用同步拼写（`mkdirOptionsFor`/`writeOptionsFor`，未登记回落既有形状）；
+- **登记/未登记双档（fail-closed 方向）**：`fileMode` 未登记即抛（I6，写函数不替调用点做权限决定）。登记路径经 `writeFileAtomic`（mode 取表＋串行＋清理）；未登记路径（单测 tmp 覆盖、调用方自定义）回落既有直写形状（`middleware-state#writeStateFile`、`manager#writeCatalogCacheFile` 与 S2-B 的 `store.save` 同式，不可直调 `writeFileAtomic`）；回落三处同式硬化（R1 `middleware-state`、R2 manager 目录缓存、`directory/` 未登记分支）：临时名加随机后缀＋失败清理临时名并上抛原错误，mode 沿既有回落形状（无 mode），只补唯一性与清理，不改写盘语义；
+- **同步禁调**：`stats#flushSync` 不调异步 `writeFileAtomic`（同步契约要求返回时盘上已有数据；`ensureDir` 自身异步故此处用同步拼写 `mkdirOptionsFor`/`writeOptionsFor`，未登记回落既有形状）；
 - **序列化逐字节不变**：收敛只换 IO 原语，不动字节——目录 `{version:1,entries}`、禁用 `{version:1,disabled}` / `{version:1,disabledTools:payload}`、统计 `snapshot()`，均保持既有 `JSON.stringify(·,null,2)` 形状；
 - **旧路径字面量归 `paths`**：`middleware-state` 只认 `userStatePath`/`catalogFile` 单点；`manager` 的旧注释已改真（外部手动编辑 `mcp.json` 指新布局）。新代码引用旧路径字面量即漂移（对账时判红）。
 
 阈值常量（原样，事实源见表上 `limits.ts` / `constants.ts`）：`CALL_TIMEOUT_MS = 30_000`；`CATALOG_TTL_MS = 24h`；`MAX_TOOLS_PER_SERVER = 512`；`MAX_BYTES_PER_TOOL = 4096`；`MAX_TOTAL_CATALOG_BYTES = 256KiB`；`LIST_MAX_TOOLS_PER_SERVER = 500`；`LIST_DEFAULT_TOOLS_PER_SERVER = 50`；`DEFAULT_TOOL_CALL_TIMEOUT_MS = 15_000`（调用预算缺省，`withTimeout` 兜底统一 +2s）；`CONNECT_TIMEOUT_MS = DISCOVERY_TIMEOUT_MS = 10_000`；`DEFAULT_RESULT_TRUNCATE_BYTES = 8192`（`extractText` 现状不截断）；`DEFAULT_CATALOG_MAX_ENTRIES = 6`；重连 `500ms` 起、`30s` 封顶、`10` 次上限；SSE 心跳 `30s`；统计 debounce `1000ms`；自有目录 `0o700`。
 
-否定式：**没有 revision**——落盘无单调计数、无冲突检测，并发写只串行不判冲（`rename` 先后无保证，旧数据可能覆盖新数据，见 `file-io.ts` 头注释）；**SSE 不是队列**（见 §3.3）。
+分层语义：`file-io` 层只串行不判冲（见其头注释）；`store.save` 在链内复检基线（mtime + 全文快照），失配即 fail-closed 抛错（见 `store.ts#writeSnapshot`）；**SSE 不是队列**（见 §3.3）。
 
 ### 3.2 配置一致性与用户确认
 
 全局与项目级 `mcp.json` 同构：写面只认新形态；旧扁平路径（全局 `dsh-mcp.json`、项目级 `.dsh/mcp.json`）只做迁移读面、不回写；runtime 注入为内存态（同名 runtime 优先）；用户禁用态落用户状态文件（见 `userStatePath()`）。
 
-M2（旧键不报错、不迁移、不写用户文件）：未知键静默丢弃；boot 时旧键照常启动——笔 2 真机已验证带已删键的旧配置仍 200 启动（历史留档）；S2-C 三旁路等价接入后重验通过（见 §3.5）。
+M2（旧键不报错、不迁移、不写用户文件）：未知键静默丢弃；boot 时旧键照常启动；S2-C 三旁路等价接入后重验通过（见 §3.5）。
 
 M3（能力缺口单列）：`allowTools`/`denyTools` 准入闸随策略键消失，替代品归阶段 3 的 governance/visibility。
 
@@ -296,9 +296,9 @@ M3（能力缺口单列）：`allowTools`/`denyTools` 准入闸随策略键消�
 
 ### 3.6 迁移与卸载
 
-`STEPS` 见 `upgrade/impl/steps/index.ts`（本次迁移的一步为 `0.0.0 → 0.2.5`，即 `migrateStorageLayout`）：`version` 文件是本次新增的刻度，存量安装一律从 `0.0.0` 起算；`targetVersion` 是存储形态代际，不是 `package.json` 值。链在各域装配前跑完：按目标版本升序执行，任何一步失败即抛（存储没升完就被按错误形态解释，比不启动糟得多），刻度在 `run` 成功后写（不抢先前移）；跑完与插件版本对账（`reportGap`，落差告警、不自动降级）。
+`STEPS` 见 `upgrade/impl/steps/index.ts`（本次迁移的一步为 `0.0.0 → 0.2.5`，即 `migrateStorageLayout`）：`version` 文件是本次新增的刻度，存量安装一律从 `0.0.0` 起算；`targetVersion` 是存储形态代际，不是 `package.json` 值。链在各域装配前跑完：按目标版本升序执行，任何一步失败即抛，刻度在 `run` 成功后写（不抢先前移）；跑完与插件版本对账（`reportGap`，落差告警、不自动降级）。
 
-- 布局迁移：旧文件写到新位置后归档 `.migrated.bak`；项目级 just-in-time 经 orchestrator 的 upgrade 端口调 `withSettledProjectConfig` 包装（先落定包分区新形态再跑读回调，两段 `await` 串行；落定原语 `settleProjectConfig` 的唯一调用点在包装内，业务域禁直调；`UpgradePort` 两键必填；upgrade 零值 import store）；无旧文件不凭空写默认内容，各域按既有语义回落空值；
+- 布局迁移：旧文件写到新位置后归档（首代固定名 `.migrated.bak`，已存在则 `.2`/`.3` 多代，目录占位仍抛）；项目级 just-in-time 经 orchestrator 的 upgrade 端口调 `withSettledProjectConfig` 包装（先落定包分区新形态再跑读回调，两段 `await` 串行；落定原语 `settleProjectConfig` 的唯一调用点在包装内，业务域禁直调；`UpgradePort` 两键必填；upgrade 零值 import store）；无旧文件不凭空写默认内容，各域按既有语义回落空值；
 - 逆序释放：`disposeInjection → disposeSection → disposeRoutes → disposeMiddleware → disposeVisibility → watchCleanup → manager.dispose → releaseLifecycle → mountLedger 排空 → releaseUpgrade`（upgrade 最先装配、最后复位；`src/index.ts#apply` 的 effect 清理）；
 - 不等在飞写：禁用表与目录缓存落盘失败吞错、不阻塞主流程；`manager.dispose` 走 fire-and-forget（官方 dispose 会等在途首连，挂死的服务器能拖到 SDK 超时，故装载账本单独排空一次，错因降日志）。
 
@@ -308,7 +308,7 @@ M3（能力缺口单列）：`allowTools`/`denyTools` 准入闸随策略键消�
 
 ![TA：挂载、构建与安全兼容边界](diagrams/mcp-manager-ta.svg)
 
-> 图源 `diagrams/mcp-manager-ta.html`（已归档，见 §5；证据基线 8928c051，S2-D/笔3 已含）。
+> 图源 `diagrams/mcp-manager-ta.html`（已归档，见 §5；证据基线 da4eea6e，S2-D/笔3 已含）。
 
 ### 4.1 挂载与构建
 
@@ -345,7 +345,7 @@ M3（能力缺口单列）：`allowTools`/`denyTools` 准入闸随策略键消�
 
 ## 5. 图源与维护
 
-- `diagrams/mcp-manager-ba.html`、`diagrams/mcp-manager-aa.html`、`diagrams/mcp-manager-da.html`、`diagrams/mcp-manager-ta.html` 为四视图独立图源（已归档；节首 SVG 即时生效，证据基线 8928c051，S2-D/笔3 已含）。
+- `diagrams/mcp-manager-ba.html`、`diagrams/mcp-manager-aa.html`、`diagrams/mcp-manager-da.html`、`diagrams/mcp-manager-ta.html` 为四视图独立图源（已归档；节首 SVG 即时生效，证据基线 da4eea6e，S2-D/笔3 已含）。
 - 原 [mcp-manager-architecture.svg](diagrams/mcp-manager-architecture.svg) 与 [HTML](diagrams/mcp-manager-architecture.html) 保留为历史单图，不作为当前事实源。
 - 方法论：[ARCHITECTURE-METHOD.md](../ARCHITECTURE-METHOD.md)；构建验证：[DEVELOPMENT.md](../DEVELOPMENT.md)。
 

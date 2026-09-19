@@ -220,10 +220,11 @@ export function renderMcpCatalogMessage(entries: CatalogEntry[]): CatalogMessage
     'Configured MCP servers in this session (**capability descriptions only, does not reflect active connection status**; tools register once connected via GUI "MCP" popup):',
     "",
     "<available_mcp_servers>",
+    // 服务器名与描述同为远端可控输入：同口径转义后才可拼入目录正文，避免标签逃逸改写注入语义；摘要仍以原始名计算，转义不改变去重口径。
     ...entries.map((entry) =>
       entry.text === undefined
-        ? `- \`${entry.name}\``
-        : `- \`${entry.name}\`: ${escapeCatalogText(entry.text)}`,
+        ? `- \`${escapeCatalogText(entry.name)}\``
+        : `- \`${escapeCatalogText(entry.name)}\`: ${escapeCatalogText(entry.text)}`,
     ),
     "</available_mcp_servers>",
     "",
@@ -331,10 +332,11 @@ function parseCatalogBody(body: string): CatalogEntry[] | undefined {
   for (const line of lines.slice(start + 1, end)) {
     const match = /^- `([^`]+)`(?:: (.*))?$/u.exec(line);
     if (match === null) return undefined;
+    // 与渲染侧对称：目录正文中的转义名还原为原始名，保证回读条目与组装条目一致，注入比对不误判。
     entries.push(
       match[2] === undefined
-        ? { name: match[1] }
-        : { name: match[1], text: unescapeCatalogText(match[2]) },
+        ? { name: unescapeCatalogText(match[1]) }
+        : { name: unescapeCatalogText(match[1]), text: unescapeCatalogText(match[2]) },
     );
   }
   return entries;

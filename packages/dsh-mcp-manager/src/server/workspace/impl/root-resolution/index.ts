@@ -7,7 +7,7 @@
  * makeResolveRoot。引用面经 workspace/interface.ts。
  */
 
-import { existsSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { dshHome } from "../../../../../../../shared/dsh-home.js";
 import type { McpManager } from "../../../connection/interface.ts";
@@ -48,7 +48,13 @@ export async function findProjectRoot(cwd: string | undefined): Promise<string> 
 /** 归一化项目根（realpath；失败回退 resolve）。中间层路由使用。 */
 export async function normalizedProjectRoot(cwd: string | undefined): Promise<string | undefined> {
   if (cwd === undefined || cwd === null || cwd === "") return undefined;
-  return findProjectRoot(cwd);
+  const root = await findProjectRoot(cwd);
+  // 同一项目经符号链接进入时拼写不同，收敛到同一键防止连接池分裂。
+  try {
+    return realpathSync(root);
+  } catch {
+    return root;
+  }
 }
 
 /** resolveRoot 路由：exec.agent → 归一化项目根（agent-less → undefined）。 */
