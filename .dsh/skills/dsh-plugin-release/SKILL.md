@@ -31,6 +31,13 @@ description: >
    > 该清单属根 [AGENTS.md 门禁矩阵](../../../AGENTS.md) 的**收尾（发版）档**（全仓口径）；
    > 完整收尾口径以该矩阵为准，本清单只作发版前逐项核对。
 2. bump 全部包版本到目标 `vX.Y.Z`（含 peer 与 catalog 的锁步检查）。
+   同笔处理 upgrade 链（`packages/<pkg>/src/server/upgrade/` 存在的包才有）：
+   - 每个包在步骤表（`impl/steps/index.ts`）追加一步 `{ fromVersion: "旧版", targetVersion: "新版" }`——
+     无形态变化也加空实现：链以步骤为刻度，漏版本会让存储刻度永久停旧值（`reportGap` 只 warn 不拦门）；
+   - 步骤表按目标版本升序；最高目标版本必须等于新包版本，否则发版即落后；
+   - mcp-manager 例外：home 级走版本化链，项目级（多 root）走 just-in-time 落定，不进步骤表；
+     项目级形态割接看各文件自带的 `version` 字段，读时按文件版本逐档迁移；
+   - 每新增一步配一条回归用例（种子旧刻度 → 断言新刻度 + 数据不动）。
 3. 写 `docs/release-notes/vX.Y.Z.md`（见 §2–§3），随 `chore(release): vX.Y.Z` 提交。
 4. 维护者推 tag：`git tag vX.Y.Z && git push origin vX.Y.Z`；随后核对 Release 页渲染。
 
