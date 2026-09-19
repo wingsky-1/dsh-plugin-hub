@@ -53,7 +53,7 @@ import { makeListDirs } from "../server/execute/interface.ts";
 import { ReportTaskQueue } from "../server/schedule/interface.ts";
 import { createStatsRoutes } from "../server/data-routes/interface.ts";
 import { createAdapterRoutes } from "../server/data-routes/interface.ts";
-import { createUiRoutes } from "../domain2/routes/interface.ts";
+import { createUiRoutes } from "../server/ui-routes/interface.ts";
 import { createReportRoutes } from "../server/report-routes/interface.ts";
 import { installUpgrade, releaseUpgrade } from "../server/upgrade/interface.ts";
 import type {} from "@deepseek-ai/dsh-session";
@@ -245,7 +245,7 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
 
   // 域2每层错误面（aggregate/schedule/execute）——装配层组合根创建，
   // 经各对象既有 warn 诊断出口接线（层代码零改动）；
-  // health per-layer 段经 UiRoutesContext 注入 routes/ui.ts 读取。
+  // health per-layer 段经 UiRoutesContext 注入 server/ui-routes 读取。
   const layerErrors = makeLayerErrorSurface();
 
   const registry = makeAdapterRegistry({

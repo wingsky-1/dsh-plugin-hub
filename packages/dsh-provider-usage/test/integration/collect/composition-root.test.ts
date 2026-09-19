@@ -84,7 +84,7 @@ const aggregateDepsSrc = readText(join(srcDir, "server", "aggregate", "deps.ts")
 const d8TestSrc = readText(
   join(pkgDir, "test", "integration", "aggregate", "composition-root.test.ts"),
 );
-const uiRoutesSrc = readText(join(srcDir, "domain2", "routes", "ui.ts"));
+const uiRoutesSrc = readText(join(srcDir, "server", "ui-routes", "trend.ts"));
 const configSrc = readText(join(srcDir, "shared", "config.ts"));
 const statsServiceSrc = readText(join(srcDir, "server", "pipeline", "stats-service.ts"));
 const topologySrc = readText(join(repoRoot, "scripts", "data", "mutation-topology.json"));
@@ -204,7 +204,7 @@ describe("D9一 经 server/collect 域门面装配", () => {
     expect(aggIndexSrc.includes("server/collect/interface")).toBe(true);
     expect(normalizeSrc.includes("server/collect/interface")).toBe(true);
     expect(runnerSrc.includes("server/collect/interface")).toBe(true);
-    expect(uiRoutesSrc.includes("../../server/collect/interface")).toBe(true);
+    expect(uiRoutesSrc.includes("../../server/collect/interface")).toBe(true); // #768 D12 起改址 server/ui-routes/trend.ts，长形态与余下消费一致
   });
 
   it("门面收口：interface 与实现同一引用（包装即红）", () => {

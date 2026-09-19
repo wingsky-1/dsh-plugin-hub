@@ -5,7 +5,8 @@
  * mkdtempSync 隔离目录（产物零污染）。三维度：
  * - D6一 经 server/pipeline 域门面装配：取数渲染管道一族只经
  *   server/pipeline/interface.ts，不走旧 domain1/pipeline 入口；apply/apply.ts、
- *   apply/index.ts、domain2/routes/ui.ts 的管线消费收口新门面；门面禁整文件
+ *   apply/index.ts、server/ui-routes/context.ts（#768 D12 起，前为
+ *   domain2/routes/ui.ts）的管线消费收口新门面；门面禁整文件
  *   re-export；包导出面（apply/index.ts 转发名）零增减。
  * - D6二 取数渲染管道 + 净化缺失必须红：入参组装 → safe 执行 → 净化 → 归一化；
  *   hostile 胶囊/面板 HTML 经 fresh/stale/panel 三路输出必被净化（先转义后清洗
@@ -66,7 +67,7 @@ const srcDir = join(here, "..", "..", "..", "src");
 const repoRoot = join(here, "..", "..", "..", "..", "..");
 const applySrc = readFileSync(join(srcDir, "apply", "apply.ts"), "utf8");
 const applyFaceSrc = readFileSync(join(srcDir, "apply", "index.ts"), "utf8");
-const uiRoutesSrc = readFileSync(join(srcDir, "domain2", "routes", "ui.ts"), "utf8");
+const uiRoutesSrc = readFileSync(join(srcDir, "server", "ui-routes", "context.ts"), "utf8");
 const pipelineFaceSrc = readFileSync(join(srcDir, "server", "pipeline", "interface.ts"), "utf8");
 const pipelineDepsSrc = readFileSync(join(srcDir, "server", "pipeline", "deps.ts"), "utf8");
 const unitStatsTestSrc = readFileSync(
@@ -142,7 +143,7 @@ describe("D6一 经 server/pipeline 域门面装配", () => {
     expect(usesOldFace(unitStatsTestSrc)).toBe(false);
     expect(applySrc.includes("server/pipeline/interface")).toBe(true);
     expect(applyFaceSrc.includes("server/pipeline/interface")).toBe(true);
-    expect(uiRoutesSrc.includes("server/pipeline/interface")).toBe(true);
+    expect(uiRoutesSrc.includes("../pipeline/interface")).toBe(true);
   });
 
   it("门面收口：interface 与实现同一引用（包装即红）", () => {

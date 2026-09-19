@@ -278,7 +278,8 @@ describe("D11一 经 server/report-routes 域门面装配", () => {
     expect(domain2FaceSrc.includes("createReportRoutes")).toBe(false);
     expect(domain2FaceSrc.includes("ReportRoutesContext")).toBe(false);
     expect(domain2FaceSrc.includes("reports.ts")).toBe(false);
-    expect(domain2FaceSrc.includes("./ui.ts")).toBe(true);
+    // #768 D12 起 ui 四块亦迁出（server/ui-routes），旧面零转发（空锚点，D13 删）。
+    expect(domain2FaceSrc.includes("./ui.ts")).toBe(false);
   });
 
   it("门面收口：interface 与实现同一引用（包装即红）", () => {

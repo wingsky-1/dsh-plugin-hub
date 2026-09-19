@@ -19,7 +19,8 @@
 准确表述：**两域业务面零直接依赖**；共享底座与路由层的跨域依赖如实标注：
 - `server/config/normalize.ts` → `server/collect/interface.ts`（TREND_DIR_MAX；#768 D1 前在 `domain2/schedule/config.ts`，D9 随域改址）
 - `server/execute/runner.ts` → `server/aggregate/interface.ts`（metricValue/TrendTracker，#768 D3 前在 `domain2/execute/runner.ts`，D8 随域改址）+ `server/collect/interface.ts`（sumToken/TrendCell，D9 随域改址）
-- `domain2/routes/ui.ts` → `server/pipeline/interface.ts`（StatsService，type-only + cacheSize() 方法调用，#768 D6 随域改址）
+- `server/ui-routes/context.ts` → `server/pipeline/interface.ts`（StatsService，type-only + cacheSize() 方法调用，#768 D6 随域改址，D12 前在 `domain2/routes/ui.ts`）
+- `server/ui-routes/trend.ts` → `server/collect/interface.ts`（TREND_DIR_MAX；D12 前在 `domain2/routes/ui.ts`，D9 随域改址）
 - 域1/域2/装配 → 共享底座一律经各目录 `interface.ts` 面具消费 `shared/interface.ts` 转发符号
 
 ### 域1 · 适配器取数与胶囊展示框架
@@ -39,7 +40,7 @@
 | E2 聚合/压实/存储层 | 双面记账+压实+分片+自愈 | server/aggregate/{interface.ts 门面 + deps.ts 注入面 + aggregator/aggregate-rows/aggregate-query/store/index}（#768 D8 由 domain2/aggregate 整域迁入，derive/align 聚合查询纯面 + 随行修正与冻结，A4(f) 判据锁定） | D2 后主类保留状态容器与方法，压实转换/查询投影为纯函数模块（不接触 this） |
 | E3 报告调度层 | 窗口/幂等+队列+lastRun（配置面 D1 起归 server/config） | server/schedule/{due,scheduler,tasks,store}（#768 D2 由 domain2/schedule+common/last-run 整域迁入，叶环归零） | 与 E4 经本域门面解耦（executor 持注入，推进走同一 per-root 链）；tasks 持注入 executor |
 | E4 报告执行/产出层 | 执行接线+LLM 生成+渲染+落盘 | server/execute/{report-index,runner,generate,format,executor,list-dirs}（#768 D3 由 domain2 整域迁入，零行为变更） | executor 独立工厂（含错误脱敏契约）；list-dirs 独立文件（闭包收敛）；parse+记忆化单源 |
-| E5 路由层（宿主） | /trend /report-* /health | domain2/routes/{interface.ts 门面 + ui} + server/report-routes/{interface.ts 门面 + deps.ts 注入面 + reports}（#768 D11 由 domain2/routes 迁入，interface 门面 + deps 注入面 + 配置窄口消费，零行为变更，释放顺序锁定） | **仅宿主** |
+| E5 路由层（宿主） | /trend /report-* /health | domain2/routes/{interface.ts 空锚点，D13 删} + server/ui-routes/{interface.ts 门面 + deps.ts 注入面 + context/health/trend/ui-config/events}（#768 D12 由 domain2/routes 迁入，一域四块不升域，零行为变更，健康读 errsurf 与 SSE 非可靠判据锁定）+ server/report-routes/{interface.ts 门面 + deps.ts 注入面 + reports}（#768 D11 由 domain2/routes 迁入，interface 门面 + deps 注入面 + 配置窄口消费，零行为变更，释放顺序锁定） | **仅宿主** |
 
 ### 客户端（跨进程 UI 层）
 - 浏览器进程：`src/client/*`（4239 行）——胶囊/面板/设置页五 tab/趋势/报告 UI
@@ -61,7 +62,7 @@
 | 层 | 上游→ | 对外主契约 | ←下游 | 穿透说明 |
 |---|---|---|---|---|
 | C1 | 全部层+客户端 | isUsageStatsAdapter(contracts)/esc(contracts)/ADAPTER_UTILS(charts)/normalizeConfig(config)/FetchContext·CapsuleInput·PanelInput | 零内部依赖（charts 不 import contracts 防环；contracts type-only charts 为弱依赖） | — |
-| C2 | C3/装配/**C6 路由** | registry.register/select/getEntry/replaceByFile/snapshot；resolveProviderConfig；HotReloadableAdapter；resolveAddAdapterFile(user-adapters)；readAdapterStateResult/writeAdapterState | C1 | **C6 直读 registry**（server/data-routes/{adapters,stats}、domain2/routes/ui.ts）——注册表非仅 stats-service 收口；registry 为公开管理对象，判断面不收口 |
+| C2 | C3/装配/**C6 路由** | registry.register/select/getEntry/replaceByFile/snapshot；resolveProviderConfig；HotReloadableAdapter；resolveAddAdapterFile(user-adapters)；readAdapterStateResult/writeAdapterState | C1 | **C6 直读 registry**（server/data-routes/{adapters,stats}、server/ui-routes/health.ts）——注册表非仅 stats-service 收口；registry 为公开管理对象，判断面不收口 |
 | C3 | C6/装配 | StatsService.getStats/cacheFresh/purge/warmup/scheduleWriteAdapterState；runV2Pipeline(pipeline/v2)；safeFetchData(guards，5s 固定)；V2PipelineResult | C2/C4/C5 | **D7 已落地**：面板缓存四段语义整体下沉为 `StatsService.getPanelResult`（key 归一 → stale 判定 → miss 删除 → 管道 → 失败不写）+ purgeAllCaches（generation 失效 + per-key 单飞）；路由不再直读写 panelCache |
 | C4 | C3/C6 | HistoryStore.append/query/last/pruneAll/migrateLegacyV3 | 无 | — |
 | C5 | C3 | 三 UsageStatsAdapter 实例（version/name/label/providers/fetchData/formatCapsule/formatPanel） | 无 | — |
@@ -74,7 +75,7 @@
 | E2 | E1/装配 | TrendTracker.buckets/dirRows/seriesStacked/dirStacked/windowSummary/dirTotals/stats；TrendStore | E4/**E5 路由直连** | 四不变量：身份快照/防双计/聚合权威/残差归未识别；**台账守恒（Σ事件 == buckets == agg == dirRows + unidentified）为真缺口断言**，由 unit-trend-ledger 事件回放式端到端对账固化（D2 拆分前置安全网） |
 | E3 | 装配/E5 | candidateWindow/pendingReports/presetLastRun（due）；ReportScheduler/ReportTaskQueue；read/updateLastRun（store） | server/schedule 门面（归一化经 server/config 门面；index 解析经 server/execute 门面纯面，#768 D3 前在 common） | E3⇄E4 经 server/schedule 门面解耦（#768 D2；executor 独立工厂属 E4，推进走同一 per-root 链；读侧记忆化在 server/execute/runner，防双份缓存） |
 | E4 | E3 任务/装配 executor | runDueReport(runner)/generateReport(generate)/buildStatsSnapshot/reportBodyToHtml(format)/persistReport/readReportIndex/parseReportIndexLines | E2（buckets/dirRows，经 domain2 门面纯面复用）+ server/config/schedule 双门面 | LLM 失败不推进 lastRun；注入面=聚合数值+basename；executor 工厂（server/execute/executor.ts，#768 D3 前在 domain2/execute）含错误脱敏契约 |
-| E5 | 浏览器 | 10 路由（/trend /health /ui-config /events /report-*6） | E2/E3/E4 | **E5 直连 E2/E3/E4**（routes/ui 直调 trend 查询面；report-routes 经 deps.ts 窄口（ReportRoutesConfigPort/ReportRoutesQueuePort）收口 reportCfg 与任务队列，#768 D11 前在 domain2/routes 且经 apply 装配面取服务类型；执行器由队列内嵌，组合根装配） |
+| E5 | 浏览器 | 10 路由（/trend /health /ui-config /events /report-*6） | E2/E3/E4 | **E5 直连 E2/E3/E4**（server/ui-routes/trend 直调 trend 查询面，#768 D12 前在 domain2/routes/ui.ts；report-routes 经 deps.ts 窄口（ReportRoutesConfigPort/ReportRoutesQueuePort）收口 reportCfg 与任务队列，#768 D11 前在 domain2/routes 且经 apply 装配面取服务类型；执行器由队列内嵌，组合根装配） |
 
 ### 2.3 隐藏共享
 | 共享 | 位置 | 说明 |

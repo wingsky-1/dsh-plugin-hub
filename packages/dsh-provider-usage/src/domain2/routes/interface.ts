@@ -1,27 +1,10 @@
 /**
- * dsh-provider-usage — domain2/routes/ 路由层对外门面（宿主）。
+ * dsh-provider-usage — domain2/routes/ 空锚点（#768 D12 起）。
  *
- * 目录化约定：目录外（apply 装配）一律经本文件消费，目录内实现
- * 文件互引保持直接相对 import。最小面 = 逐个命名导出实际被消费的符号，禁
- * `export * from` 整文件 re-export。
- *
- * UiRoutesContext 深封装（「路由 context 类」）：路由依赖
- * （statsService/trend/uiConfig/sseClients/broadcast/layerErrors）收敛为类实例，
- * 目录外只经构造入口装配依赖并交给 createUiRoutes；路由内部实现仍经类字段取用
- * （与 StatsService 门面 / executor 工厂同一深封装纪律）。
- *
- * 报告路由已迁出（#768 D11：server/report-routes/interface.ts，
- * interface 门面 + deps 注入面 + 配置窄口消费；本面不再转发）。
+ * 本文件无导出：ui 四块（health/trend/ui-config/events）+ 装配形状（context）
+ * 已迁 server/ui-routes（interface 门面 + deps 注入面，零行为变更），本面不再转发；
+ * 报告路由已于 D11 迁出。文件保留只为模块归属（verify-dir-imports 叶子粒度），
+ * D13 删除本文件并同步基线（dir-imports 基线 + gate-exemptions 台账 +
+ * ui-routes 组合根的存在性断言）。
  */
-
-// ------------------------------------------------------------------ 健康/趋势/UI 配置/SSE 路由（ui.ts）
-
-export {
-  createUiRoutes,
-  clampTrendN,
-  handleHealth,
-  handleTrend,
-  handleUiConfig,
-  handleEvents,
-} from "./ui.ts";
-export type { UiRoutesContext, UiRoutesContextOptions } from "./ui.ts";
+export {};

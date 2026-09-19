@@ -1,13 +1,17 @@
 /**
  * dsh-provider-usage — unit：路由层纯函数（E5/C6 变异段前置，评审 P1-5）
  *
- * 抽离可测面：clampTrendN（trend 窗口封顶）、isReportPeriodValid/isReportKeyValid/
- * isTaskIdValid（报告路由双白名单校验，#768 D11 起改址 server/report-routes）。
+ * 抽离可测面：clampTrendN（trend 窗口封顶，#768 D12 起改址 server/ui-routes/trend.ts）、
+ * isReportPeriodValid/isReportKeyValid/isTaskIdValid（报告路由双白名单校验，
+ * #768 D11 起改址 server/report-routes）。SSE 薄 handler 断言（handleEvents，
+ * #768 D12 起改址 server/ui-routes/events.ts，装配形状经 server/ui-routes/context.ts）。
  * 薄 handler 的其余行为经 unit-report/unit-apply/smoke 端到端覆盖。
  */
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { describe, expect, it } from "vitest";
-import { clampTrendN, handleEvents, type UiRoutesContext } from "../../../src/domain2/routes/ui.ts";
+import { clampTrendN } from "../../../src/server/ui-routes/trend.ts";
+import { handleEvents } from "../../../src/server/ui-routes/events.ts";
+import type { UiRoutesContext } from "../../../src/server/ui-routes/context.ts";
 import {
   isReportPeriodValid,
   isReportKeyValid,

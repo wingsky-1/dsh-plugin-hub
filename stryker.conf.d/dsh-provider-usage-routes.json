@@ -3,7 +3,11 @@
   "mutate": [
     "packages/dsh-provider-usage/src/server/data-routes/stats.ts",
     "packages/dsh-provider-usage/src/server/data-routes/adapters.ts",
-    "packages/dsh-provider-usage/src/domain2/routes/ui.ts",
+    "packages/dsh-provider-usage/src/server/ui-routes/context.ts",
+    "packages/dsh-provider-usage/src/server/ui-routes/health.ts",
+    "packages/dsh-provider-usage/src/server/ui-routes/trend.ts",
+    "packages/dsh-provider-usage/src/server/ui-routes/ui-config.ts",
+    "packages/dsh-provider-usage/src/server/ui-routes/events.ts",
     "packages/dsh-provider-usage/src/server/report-routes/reports.ts",
     "!packages/dsh-provider-usage/src/client/**",
     "!packages/dsh-provider-usage/src/**/interface.ts",
@@ -45,5 +49,5 @@
   },
   "incremental": true,
   "incrementalFile": "coverage/mutation/incremental-provider-usage-routes.json",
-  "_comment": "阶段一新段（评审 P1-5 前置）：E5/C6 路由面——stats+adapters+ui+reports；先抽纯函数（clampTrendN/isReportPeriodValid/isReportKeyValid/isTaskIdValid）补 unit-routes 再开段；testFiles 含 unit-routes/unit-report/unit-apply；#768 D10 stats/adapters 两文件由 domain1/routes 改名迁 server/data-routes（路径同步，零行为变更，杀灭面新增 test/integration/data-routes/composition-root）；#768 D11 reports 由 domain2/routes 迁 server/report-routes（interface 门面 + deps 注入面 + 配置窄口消费，零行为变更，杀灭面新增 test/integration/report-routes/composition-root，逆序释放判据锁定）。"
+  "_comment": "阶段一新段（评审 P1-5 前置）：E5/C6 路由面——stats+adapters+ui+reports；先抽纯函数（clampTrendN/isReportPeriodValid/isReportKeyValid/isTaskIdValid）补 unit-routes 再开段；testFiles 含 unit-routes/unit-report/unit-apply；#768 D10 stats/adapters 两文件由 domain1/routes 改名迁 server/data-routes（路径同步，零行为变更，杀灭面新增 test/integration/data-routes/composition-root）；#768 D11 reports 由 domain2/routes 迁 server/report-routes（interface 门面 + deps 注入面 + 配置窄口消费，零行为变更，杀灭面新增 test/integration/report-routes/composition-root，逆序释放判据锁定）；#768 D12 ui 四块（health/trend/ui-config/events）+ 装配形状（context）由 domain2/routes 迁 server/ui-routes（一域四块不升域，interface 门面 + deps 注入面 + 广播窄口，零行为变更，杀灭面新增 test/integration/ui-routes/composition-root，健康读 errsurf 与 SSE 非可靠判据锁定）。"
 }

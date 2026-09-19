@@ -5,7 +5,8 @@
  * mkdtempSync 隔离目录（产物零污染）。四维度：
  * - D8一 经 server/aggregate 域门面装配：TrendTracker/TrendStore/聚合查询纯面只经
  *   server/aggregate/interface.ts，不走旧 domain2/aggregate 入口；apply/apply.ts、
- *   apply/index.ts、server/execute 四文件、domain2/routes/ui.ts 的聚合消费收口新门面；
+ *   apply/index.ts、server/execute 四文件、server/ui-routes/trend.ts（#768 D12 起，
+ *   前为 domain2/routes/ui.ts）的聚合消费收口新门面；
  *   门面禁整文件 re-export；包导出面（apply/index.ts 转发名）零增减。
  * - D8二 derive/align 聚合查询纯面经门面复用（与 D2 deriveLastRun/alignLastRun 同形）：
  *   查询投影函数显式传参不接触 this；execute 经门面复用 metricValue 纯函数与
@@ -72,7 +73,7 @@ const generateSrc = readFileSync(join(srcDir, "server", "execute", "generate.ts"
 const listDirsSrc = readFileSync(join(srcDir, "server", "execute", "list-dirs.ts"), "utf8");
 const executorSrc = readFileSync(join(srcDir, "server", "execute", "executor.ts"), "utf8");
 const executeDepsSrc = readFileSync(join(srcDir, "server", "execute", "deps.ts"), "utf8");
-const uiRoutesSrc = readFileSync(join(srcDir, "domain2", "routes", "ui.ts"), "utf8");
+const uiRoutesSrc = readFileSync(join(srcDir, "server", "ui-routes", "trend.ts"), "utf8");
 const aggregateFaceSrc = readFileSync(join(srcDir, "server", "aggregate", "interface.ts"), "utf8");
 const aggregateDepsSrc = readFileSync(join(srcDir, "server", "aggregate", "deps.ts"), "utf8");
 const aggregatorSrc = readFileSync(join(srcDir, "server", "aggregate", "aggregator.ts"), "utf8");

@@ -494,6 +494,83 @@ describe("ui-config / events", () => {
   });
 });
 
+// ---------------------------------------------------------------- events 非可靠（#768 D12 验收）
+//
+// 真装配全链路：events 长连接经真 handler 接入真 sseClients 集合，ui-config POST
+// 经真 broadcast 扇出（server/ui-routes 域，apply 只装配不实现）。断线期间的帧直接
+// 丢失，重连只收新连通帧、无补帧——盼补帧的断言在此必须红。可观测面一律经 pollUntil
+//（真后台异步位不用固定 sleep；反向断言用短窗 pollUntil 守无新增而非 sleep 硬等）。
+describe("events 非可靠（断线帧丢失为预期）", () => {
+  let uiRoute;
+  let evRoute;
+  let aChunks;
+  let aEmitClose;
+  let aCountAfterFirstPost;
+
+  function openSse() {
+    const chunks = [];
+    const handlers = new Map();
+    callHandler(evRoute, fakeReq({ method: "GET" }), {
+      write: (c) => {
+        chunks.push(String(c));
+      },
+      on: (evt, fn) => {
+        const list = handlers.get(evt) ?? [];
+        list.push(fn);
+        handlers.set(evt, list);
+      },
+    });
+    return {
+      chunks,
+      emitClose: () => {
+        for (const fn of handlers.get("close") ?? []) fn();
+      },
+    };
+  }
+
+  beforeAll(async () => {
+    const { ctx, routes } = makeFakeCtx();
+    await apply(ctx, { ...ISOLATED_CONFIG });
+    uiRoute = routes.find((r) => r.path === ROUTES.uiConfig);
+    evRoute = routes.find((r) => r.path === ROUTES.events);
+    expect(uiRoute).toBeTruthy();
+    expect(evRoute).toBeTruthy();
+    const a = openSse();
+    aChunks = a.chunks;
+    aEmitClose = a.emitClose;
+    expect(aChunks).toEqual([": connected\n\n"]);
+  });
+
+  it("广播帧可观测（POST→扇出→pollUntil 见帧）", async () => {
+    await callHandler(
+      uiRoute,
+      fakeReq({ method: "POST", body: JSON.stringify({ placement: "top-right" }) }),
+    );
+    const seen = await pollUntil(
+      () => aChunks.find((c) => c.startsWith("data:") && c.includes("ui-config-changed")),
+      2000,
+      50,
+    );
+    expect(seen).toBeTruthy();
+    aCountAfterFirstPost = aChunks.length;
+  });
+
+  it("断线帧丢失（close 后再 POST，闭连接收不到新帧）", async () => {
+    aEmitClose();
+    await callHandler(
+      uiRoute,
+      fakeReq({ method: "POST", body: JSON.stringify({ placement: "top-left" }) }),
+    );
+    const leaked = await pollUntil(() => aChunks.length > aCountAfterFirstPost, 300, 25);
+    expect(leaked).toBeFalsy();
+  });
+
+  it("重连无补帧（新连接只收连通帧，盼补帧即红）", () => {
+    const b = openSse();
+    expect(b.chunks).toEqual([": connected\n\n"]);
+  });
+});
+
 // ---------------------------------------------------------------- /stats v2 响应
 
 describe("/stats v2 响应", () => {
@@ -4672,7 +4749,10 @@ describe("#633 分片 b2 D2：客户端源码契约断言", () => {
     clientContractObs.trendSource = readFileSync(join(pkgDir, "src/client/trend.tsx"), "utf8");
     clientContractObs.reportSource = readFileSync(join(pkgDir, "src/client/report.tsx"), "utf8");
     clientContractObs.mathSource = readFileSync(join(pkgDir, "src/client/trend-math.ts"), "utf8");
-    clientContractObs.routesSource = readFileSync(join(pkgDir, "src/domain2/routes/ui.ts"), "utf8");
+    clientContractObs.routesSource = readFileSync(
+      join(pkgDir, "src/server/ui-routes/trend.ts"),
+      "utf8",
+    );
     clientContractObs.localesSource = readFileSync(join(pkgDir, "src/client/locales.ts"), "utf8");
     clientContractObs.listDirsSource = readFileSync(
       join(pkgDir, "src/server/execute/list-dirs.ts"),

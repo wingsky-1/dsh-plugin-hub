@@ -101,7 +101,8 @@ src/
 | server/schedule/ | interface.ts、deps.ts、due.ts、scheduler.ts、tasks.ts、store.ts（#768 D2：到期判定两题不拆整域收拢） |
 | server/execute/ | interface.ts、deps.ts、report-index.ts、runner.ts、generate.ts、format.ts、executor.ts、list-dirs.ts（#768 D3：执行域收拢，parse+记忆化单源） |
 | server/report-routes/ | interface.ts、deps.ts、reports.ts（#768 D11 由 domain2/routes 迁入，interface 门面 + deps 注入面 + 配置窄口消费，零行为变更） |
-| domain2/routes/ | interface.ts、ui.ts（reports.ts 已迁 server/report-routes，#768 D11） |
+| server/ui-routes/ | interface.ts、deps.ts、context.ts、health.ts、trend.ts、ui-config.ts、events.ts（#768 D12 由 domain2/routes 迁入，一域四块不升域，interface 门面 + deps 注入面 + 广播窄口，零行为变更） |
+| domain2/routes/ | interface.ts（空锚点，#768 D12 起：ui 四块已迁 server/ui-routes，reports.ts 已于 D11 迁出；D13 删除本文件并同步基线） |
 | apply/ | interface.ts（空锚点，#768 D11 起：原唯一源码消费改走 server/report-routes/deps.ts 窄口，转发消除，文件保留只为模块归属）、apply.ts、index.ts（报告配置服务已归 server/config/service.ts，#768 D1） |
 | client/ | 保持目录化前布局（本轮未拆分） |
 
@@ -109,8 +110,8 @@ src/
 
 - 域1/域2/装配 → 共享底座：**一律经各目录 `interface.ts` 面具消费** `shared/interface.ts` 转发的符号
   （charts/config/sanitize/ui-config/contracts 类型等），无跨目录直引实现文件。
-- 域2 → 域1：`domain2/routes/ui.ts` 以 **type-only** 引用 `server/pipeline/interface.ts` 的
-  `StatsService`（D7 后仅类型 + cacheSize() 方法调用）。
+- 域2 → 域1：`server/ui-routes/context.ts` 以 **type-only** 引用 `server/pipeline/interface.ts`
+  的 `StatsService`（D7 后仅类型 + cacheSize() 方法调用；#768 D12 前在 `domain2/routes/ui.ts`）。
 - E3⇄E4：不直接互引；`server/schedule/tasks.ts` 持有注入的 executor（经 `server/execute/interface.ts` 工厂，#768 D3 前在 `domain2/execute/interface.ts`），推进与路由 preset 共走 server/schedule 同一 per-root 链；index 解析由调度存储经 `server/execute/` 纯面复用（report-index，无状态无缓存防 indexCache 双份，#768 D3 前在 `domain2/common/`）。
 - 域1 → 域2：**零**（业务面零依赖实证成立）。
 - import 边界强制点：`scripts/gate/verify-dir-imports.mjs`（本包走 `--soft`：跨目录直引软报告
