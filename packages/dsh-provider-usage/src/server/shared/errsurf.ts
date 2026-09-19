@@ -2,7 +2,7 @@
  * dsh-provider-usage — server/shared 错误面叶子（域2每层错误面的唯一物理定义）。
  *
  * S2 契约与共享层（#768 计划表 rev2 S2 行）：本文件是 errsurf 实现的 canonical 落点；
- * `src/domain2/common/errsurf.ts` 仅为过渡垫片（re-export，D13 随 common 目录消除）。
+ * 旧过渡垫片 `src/domain2/common/errsurf.ts`（re-export）已于 #768 D13 随 common 目录消除。
  * 表达式与旧实现逐字一致（零行为变更，见 D13 基线对账）。
  *
  * 共享层准入论证（docs/ARCHITECTURE-METHOD.md §3 四级判据 + 本叶 Q5 尺子）：

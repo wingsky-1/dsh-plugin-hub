@@ -8,9 +8,9 @@
  * 四维度：
  * - D12一 经 server/ui-routes 域门面装配：一域四块（health/trend/ui-config/events）
  *   + 跨块装配形状（context）只经 server/ui-routes/interface.ts，不走旧
- *   domain2/routes 入口；apply/apply.ts 的路由消费收口新门面；旧 domain2 面不再转发
- *   ui 符号（空锚点过渡保留，D13 删除本文件时须同步更新 dir-imports 基线 +
- *   gate-exemptions 台账 + 本文件 D12一存在性断言）；门面禁整文件 re-export；
+ *   domain2/routes 入口；apply/apply.ts 的路由消费收口新门面；旧 domain2 面已删除
+ *   （#768 D13 删空锚点：dir-imports 基线 + gate-exemptions 台账 +
+ *   本文件 D12一存在性断言已同步更新）；门面禁整文件 re-export；
  *   创建面不进包导出面。
  * - D12二 广播窄面 + 实例经参数传递：context 广播字段为 deps.ts 窄口
  *   （UiRoutesBroadcast，块内联双生子）；只暴露窄口的缝跑通 ui-config 写盘
@@ -67,7 +67,7 @@ const repoRoot = join(here, "..", "..", "..", "..", "..");
 const readText = (p: string): string => readFileSync(p, "utf8");
 const applySrc = readText(join(srcDir, "apply", "apply.ts"));
 const applyFaceSrc = readText(join(srcDir, "apply", "index.ts"));
-const domain2FaceSrc = readText(join(srcDir, "domain2", "routes", "interface.ts"));
+// #768 D13：空锚点 src/domain2/routes/interface.ts 已删，本文件不再读旧面（旧面符号改由“目录已消除”断言锁定）。
 const uiFaceSrc = readText(join(srcDir, "server", "ui-routes", "interface.ts"));
 const uiDepsSrc = readText(join(srcDir, "server", "ui-routes", "deps.ts"));
 const contextSrc = readText(join(srcDir, "server", "ui-routes", "context.ts"));
@@ -275,27 +275,10 @@ describe("D12一 经 server/ui-routes 域门面装配", () => {
     }
   });
 
-  it("旧 domain2 面不再转发 UI 符号（残留即装配分叉；空锚点 D13 删）", async () => {
-    for (const sym of [
-      "createUiRoutes",
-      "UiRoutesContext",
-      "clampTrendN",
-      "handleHealth",
-      "handleTrend",
-      "handleUiConfig",
-      "handleEvents",
-      "./ui.ts",
-      "./context.ts",
-      "./health.ts",
-      "./trend.ts",
-      "./ui-config.ts",
-      "./events.ts",
-    ]) {
-      expect(domain2FaceSrc.includes(sym)).toBe(false);
-    }
-    expect(existsSync(join(srcDir, "domain2", "routes", "interface.ts"))).toBe(true);
-    const anchorNs = await import("../../../src/domain2/routes/interface.ts");
-    expect(Object.keys(anchorNs)).toEqual([]);
+  it("旧 domain2 面已删除（残留即装配分叉回退）", () => {
+    expect(existsSync(join(srcDir, "domain2", "routes", "interface.ts"))).toBe(false);
+    expect(existsSync(join(srcDir, "domain2", "routes"))).toBe(false);
+    expect(existsSync(join(srcDir, "domain2"))).toBe(false);
   });
 
   it("门面收口：interface 与实现同一引用（包装即红）", async () => {

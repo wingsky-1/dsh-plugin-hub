@@ -4,8 +4,10 @@
  *
  * 本文件是域内跨块值文件（四特征块 health/trend/ui-config/events 共享的装配形状，
  * 与 server/aggregate/index.ts 的 TrendTracker 组合根同形）：UiRoutesContext
- * 深封装（「路由 context 类」）+ createUiRoutes 路由装配器。目录外（apply 装配）
- * 只经构造入口装配依赖并交给 createUiRoutes；特征块经 `import type` 取用本形状
+ * 深封装（「路由 context 类」，与 server/pipeline 的 StatsServiceCtor 同形，
+ * #768 D13 表述对齐）+ createUiRoutes 路由装配器。目录外（apply 装配）
+ * 只经构造入口装配依赖并交给 createUiRoutes；字段保持只读、无行为逻辑；
+ * 特征块经 `import type` 取用本形状
  * （类型边，运行时无环：本文件按值引用四块，四块只按类型引用本文件）。
  */
 import type { ServerResponse } from "node:http";

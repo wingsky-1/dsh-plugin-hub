@@ -2601,117 +2601,6 @@
         "name": [
           "export declare const name = \"provider-usage\";"
         ],
-        "createAdapterRoutes": [
-          "export declare function createAdapterRoutes(routes: { adapters: string; select: string; inspect: string; add: string; }"
-        ],
-        "handleAdapters": [
-          "export declare function handleAdapters(req: IncomingMessage, res: ServerResponse, context: AdapterRoutesContext): void;"
-        ],
-        "handleAdd": [
-          "export declare function handleAdd(req: IncomingMessage, res: ServerResponse, context: AdapterRoutesContext): Promise<void>;"
-        ],
-        "handleInspect": [
-          "export declare function handleInspect(req: IncomingMessage, res: ServerResponse, context: AdapterRoutesContext): Promise<void>;"
-        ],
-        "handleSelect": [
-          "export declare function handleSelect(req: IncomingMessage, res: ServerResponse, context: AdapterRoutesContext): Promise<void>;"
-        ],
-        "createStatsRoutes": [
-          "export declare function createStatsRoutes(routes: { stats: string; history: string; }"
-        ],
-        "handleHistory": [
-          "export declare function handleHistory(req: IncomingMessage, res: ServerResponse, ctx: StatsRoutesContext): Promise<void>;"
-        ],
-        "handleStats": [
-          "export declare function handleStats(req: IncomingMessage, res: ServerResponse, ctx: StatsRoutesContext): Promise<void>;"
-        ],
-        "TrendCollector": [
-          "export declare class TrendCollector { private readonly sessions; private readonly now; private readonly emit; private readonly onAnomaly; private readonly resolveCwd; private lastSweep; constructor(opts: TrendCollectorOptions); private stateOf; private providerOf; private dirOf; handleEvent(session: string, event: SessionEvent): void; handleDisposed(session: string): void; private lazySweep; private onHeader; private onSettled; private onTurnEnd; private onToolCall; private foldKey; }"
-        ],
-        "TREND_DONE_MAX": [
-          "export declare const TREND_DONE_MAX = 200;"
-        ],
-        "TREND_SESSION_TTL_MS": [
-          "export declare const TREND_SESSION_TTL_MS: number;"
-        ],
-        "TREND_DIR_MAX": [
-          "export declare const TREND_DIR_MAX = 256;"
-        ],
-        "TREND_ROW_VERSION": [
-          "export declare const TREND_ROW_VERSION = 1;"
-        ],
-        "TREND_UNIDENTIFIED": [
-          "export declare const TREND_UNIDENTIFIED = \"(unidentified)\";"
-        ],
-        "hourOfDay": [
-          "export declare function hourOfDay(t: number): number;"
-        ],
-        "isValidShardRow": [
-          "export declare function isValidShardRow(row: unknown): row is TrendDetailRow | TrendCounterRow | TrendAggRow | TrendDirRow | TrendHourRow;"
-        ],
-        "safeId": [
-          "export declare function safeId(v: unknown, maxLen?: number): string | null;"
-        ],
-        "safeToken": [
-          "export declare function safeToken(v: unknown): number | null;"
-        ],
-        "sanitizeDirName": [
-          "export declare function sanitizeDirName(cwd: unknown): string | null;"
-        ],
-        "sumToken": [
-          "export declare function sumToken(a: number | null, b: number | null): number | null;"
-        ],
-        "createReportRoutes": [
-          "export declare function createReportRoutes(routes: { reportConfig: string; reportModels: string; reports: string; reportDetail: string; reportGenerate: string; reportGenerateStatus: string; }"
-        ],
-        "handleReportConfig": [
-          "export declare function handleReportConfig(req: IncomingMessage, res: ServerResponse, context: ReportRoutesContext): Promise<void>;"
-        ],
-        "handleReportDetail": [
-          "export declare function handleReportDetail(req: IncomingMessage, res: ServerResponse, context: ReportRoutesContext): Promise<void>;"
-        ],
-        "handleReportGenerate": [
-          "export declare function handleReportGenerate(req: IncomingMessage, res: ServerResponse, context: ReportRoutesContext): Promise<void>;"
-        ],
-        "handleReportModels": [
-          "export declare function handleReportModels(req: IncomingMessage, res: ServerResponse, context: ReportRoutesContext): Promise<void>;"
-        ],
-        "handleReportStatus": [
-          "export declare function handleReportStatus(req: IncomingMessage, res: ServerResponse, context: ReportRoutesContext): Promise<void>;"
-        ],
-        "handleReports": [
-          "export declare function handleReports(req: IncomingMessage, res: ServerResponse, context: ReportRoutesContext): Promise<void>;"
-        ],
-        "isReportKeyValid": [
-          "export declare function isReportKeyValid(period: string, key: string): boolean;"
-        ],
-        "isReportPeriodValid": [
-          "export declare function isReportPeriodValid(period: string): boolean;"
-        ],
-        "isTaskIdValid": [
-          "export declare function isTaskIdValid(taskId: string): boolean;"
-        ],
-        "UiRoutesContext": [
-          "export declare class UiRoutesContext { readonly statsService: StatsService; readonly trend: TrendTracker; readonly uiConfig: UiPlacementConfig; readonly sseClients: Set<ServerResponse>; readonly broadcastUiConfigChanged: () => void; readonly layerErrors: LayerErrorSurface; constructor(opts: UiRoutesContextOptions); }"
-        ],
-        "clampTrendN": [
-          "export declare function clampTrendN(raw: string | null, gran: \"day\" | \"week\" | \"month\", retention: number): number;"
-        ],
-        "createUiRoutes": [
-          "export declare function createUiRoutes(routes: { health: string; trend: string; uiConfig: string; events: string; }"
-        ],
-        "handleEvents": [
-          "export declare function handleEvents(req: IncomingMessage, res: ServerResponse, context: UiRoutesContext): void;"
-        ],
-        "handleHealth": [
-          "export declare function handleHealth(req: IncomingMessage, res: ServerResponse, context: UiRoutesContext): void;"
-        ],
-        "handleTrend": [
-          "export declare function handleTrend(req: IncomingMessage, res: ServerResponse, context: UiRoutesContext): void;"
-        ],
-        "handleUiConfig": [
-          "export declare function handleUiConfig(req: IncomingMessage, res: ServerResponse, context: UiRoutesContext): Promise<void>;"
-        ],
         "registerBuiltinAdapters": [
           "export declare function registerBuiltinAdapters(port: BuiltinRegistryPort, adapters: readonly UsageStatsAdapter[]): void;"
         ],
@@ -2805,6 +2694,42 @@
         "TrendStore": [
           "export declare class TrendStore { private readonly root; private readonly warn; private detailChains; constructor(opts: { root: string; warn?: (msg: string) => void; }); private detailsDir; private aggDir; private detailsFile; private aggFile; appendRows(rows: Array<TrendDetailRow | TrendCounterRow>): Promise<Set<string>>; writeAggDay(day: string, rows: Array<TrendAggRow | TrendDirRow | TrendHourRow>): Promise<void>; deleteDetailShard(day: string): Promise<void>; readDetailShard(day: string): Promise<Array<TrendDetailRow | TrendCounterRow>>; readAggShard(day: string): Promise<TrendAggRow[]>; readAggDayShard(day: string): Promise<Array<TrendAggRow | TrendDirRow | TrendHourRow>>; private readShard; hasAggShard(day: string): Promise<boolean>; private listDays; listDetailDays(): Promise<string[]>; listAggDays(): Promise<string[]>; prune(beforeDay: string): Promise<number>; }"
         ],
+        "TrendCollector": [
+          "export declare class TrendCollector { private readonly sessions; private readonly now; private readonly emit; private readonly onAnomaly; private readonly resolveCwd; private lastSweep; constructor(opts: TrendCollectorOptions); private stateOf; private providerOf; private dirOf; handleEvent(session: string, event: SessionEvent): void; handleDisposed(session: string): void; private lazySweep; private onHeader; private onSettled; private onTurnEnd; private onToolCall; private foldKey; }"
+        ],
+        "TREND_DONE_MAX": [
+          "export declare const TREND_DONE_MAX = 200;"
+        ],
+        "TREND_SESSION_TTL_MS": [
+          "export declare const TREND_SESSION_TTL_MS: number;"
+        ],
+        "TREND_DIR_MAX": [
+          "export declare const TREND_DIR_MAX = 256;"
+        ],
+        "TREND_ROW_VERSION": [
+          "export declare const TREND_ROW_VERSION = 1;"
+        ],
+        "TREND_UNIDENTIFIED": [
+          "export declare const TREND_UNIDENTIFIED = \"(unidentified)\";"
+        ],
+        "hourOfDay": [
+          "export declare function hourOfDay(t: number): number;"
+        ],
+        "isValidShardRow": [
+          "export declare function isValidShardRow(row: unknown): row is TrendDetailRow | TrendCounterRow | TrendAggRow | TrendDirRow | TrendHourRow;"
+        ],
+        "safeId": [
+          "export declare function safeId(v: unknown, maxLen?: number): string | null;"
+        ],
+        "safeToken": [
+          "export declare function safeToken(v: unknown): number | null;"
+        ],
+        "sanitizeDirName": [
+          "export declare function sanitizeDirName(cwd: unknown): string | null;"
+        ],
+        "sumToken": [
+          "export declare function sumToken(a: number | null, b: number | null): number | null;"
+        ],
         "normalizeReportConfig": [
           "export declare function normalizeReportConfig(raw: unknown): ReportConfig;"
         ],
@@ -2885,6 +2810,30 @@
         ],
         "writeReportConfig": [
           "export declare function writeReportConfig(root: string, cfg: ReportConfig): Promise<void>;"
+        ],
+        "createAdapterRoutes": [
+          "export declare function createAdapterRoutes(routes: { adapters: string; select: string; inspect: string; add: string; }"
+        ],
+        "handleAdapters": [
+          "export declare function handleAdapters(req: IncomingMessage, res: ServerResponse, context: AdapterRoutesContext): void;"
+        ],
+        "handleAdd": [
+          "export declare function handleAdd(req: IncomingMessage, res: ServerResponse, context: AdapterRoutesContext): Promise<void>;"
+        ],
+        "handleInspect": [
+          "export declare function handleInspect(req: IncomingMessage, res: ServerResponse, context: AdapterRoutesContext): Promise<void>;"
+        ],
+        "handleSelect": [
+          "export declare function handleSelect(req: IncomingMessage, res: ServerResponse, context: AdapterRoutesContext): Promise<void>;"
+        ],
+        "createStatsRoutes": [
+          "export declare function createStatsRoutes(routes: { stats: string; history: string; }"
+        ],
+        "handleHistory": [
+          "export declare function handleHistory(req: IncomingMessage, res: ServerResponse, ctx: StatsRoutesContext): Promise<void>;"
+        ],
+        "handleStats": [
+          "export declare function handleStats(req: IncomingMessage, res: ServerResponse, ctx: StatsRoutesContext): Promise<void>;"
         ],
         "makeDueReportExecutor": [
           "export declare function makeDueReportExecutor(deps: DueExecutorDeps): (input: ReportTaskInput) => Promise<ReportTaskResult>;"
@@ -3063,6 +3012,36 @@
         "writeAdapterState": [
           "export declare function writeAdapterState(root: string, state: Record<string, string | null>, durabilityDiagnostic: (message: string) => void): Promise<void>;"
         ],
+        "createReportRoutes": [
+          "export declare function createReportRoutes(routes: { reportConfig: string; reportModels: string; reports: string; reportDetail: string; reportGenerate: string; reportGenerateStatus: string; }"
+        ],
+        "handleReportConfig": [
+          "export declare function handleReportConfig(req: IncomingMessage, res: ServerResponse, context: ReportRoutesContext): Promise<void>;"
+        ],
+        "handleReportDetail": [
+          "export declare function handleReportDetail(req: IncomingMessage, res: ServerResponse, context: ReportRoutesContext): Promise<void>;"
+        ],
+        "handleReportGenerate": [
+          "export declare function handleReportGenerate(req: IncomingMessage, res: ServerResponse, context: ReportRoutesContext): Promise<void>;"
+        ],
+        "handleReportModels": [
+          "export declare function handleReportModels(req: IncomingMessage, res: ServerResponse, context: ReportRoutesContext): Promise<void>;"
+        ],
+        "handleReportStatus": [
+          "export declare function handleReportStatus(req: IncomingMessage, res: ServerResponse, context: ReportRoutesContext): Promise<void>;"
+        ],
+        "handleReports": [
+          "export declare function handleReports(req: IncomingMessage, res: ServerResponse, context: ReportRoutesContext): Promise<void>;"
+        ],
+        "isReportKeyValid": [
+          "export declare function isReportKeyValid(period: string, key: string): boolean;"
+        ],
+        "isReportPeriodValid": [
+          "export declare function isReportPeriodValid(period: string): boolean;"
+        ],
+        "isTaskIdValid": [
+          "export declare function isTaskIdValid(taskId: string): boolean;"
+        ],
         "LAST_RUN_SCHEMA": [
           "export declare const LAST_RUN_SCHEMA = 2;"
         ],
@@ -3119,6 +3098,27 @@
         ],
         "makeNoopLayerErrorSurface": [
           "export declare function makeNoopLayerErrorSurface(): LayerErrorSurface;"
+        ],
+        "UiRoutesContext": [
+          "export declare class UiRoutesContext { readonly statsService: StatsService; readonly trend: TrendTracker; readonly uiConfig: UiPlacementConfig; readonly sseClients: Set<ServerResponse>; readonly broadcastUiConfigChanged: () => void; readonly layerErrors: LayerErrorSurface; constructor(opts: UiRoutesContextOptions); }"
+        ],
+        "createUiRoutes": [
+          "export declare function createUiRoutes(routes: { health: string; trend: string; uiConfig: string; events: string; }"
+        ],
+        "handleEvents": [
+          "export declare function handleEvents(req: IncomingMessage, res: ServerResponse, context: UiRoutesContext): void;"
+        ],
+        "handleHealth": [
+          "export declare function handleHealth(req: IncomingMessage, res: ServerResponse, context: UiRoutesContext): void;"
+        ],
+        "clampTrendN": [
+          "export declare function clampTrendN(raw: string | null, gran: \"day\" | \"week\" | \"month\", retention: number): number;"
+        ],
+        "handleTrend": [
+          "export declare function handleTrend(req: IncomingMessage, res: ServerResponse, context: UiRoutesContext): void;"
+        ],
+        "handleUiConfig": [
+          "export declare function handleUiConfig(req: IncomingMessage, res: ServerResponse, context: UiRoutesContext): Promise<void>;"
         ],
         "STEPS": [
           "export declare const STEPS: readonly UpgradeStep[];"

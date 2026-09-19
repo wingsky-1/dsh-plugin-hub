@@ -2,8 +2,9 @@
  * dsh-provider-usage — unit：S2 契约与共享层（#768 计划表 rev2 S2 行）。
  *
  * 白盒直连 src（不经包入口，不落盘——本文件零落盘，故无 mkdtemp）：
- * 1. server/shared 新叶 errsurf：canonical 实现 + 门面 + 旧垫片三方同构
- *    （三域写 + 健康读的数据形状；Q5 的机器可判部分）；
+ * 1. server/shared 新叶 errsurf：canonical 实现 + 门面二方同构
+ *    （三域写 + 健康读的数据形状；Q5 的机器可判部分；#768 D13 删旧垫片
+ *    domain2/common/errsurf.ts，common 目录已消除）；
  * 2. schedule 纯面先行：LAST_RUN_SCHEMA / deriveLastRun / alignLastRun 经
  *    server/schedule/interface.ts 复用（type + pure：确定性、无副作用；D2 起物理定义在调度域）；
  * 3. config 归一化单答案 / LEGACY 锁表先行：经 server/config/interface.ts
@@ -21,7 +22,7 @@ import {
   LAYER_ERROR_MAX_RECENT_DEFAULT,
 } from "../../../src/server/shared/errsurf.ts";
 import * as sharedFacade from "../../../src/server/shared/interface.ts";
-import * as legacyShim from "../../../src/domain2/common/errsurf.ts";
+// #768 D13：旧垫片 src/domain2/common/errsurf.ts 已删（common 目录消除），本文件不再导入旧路径。
 import * as upgradeDepsNs from "../../../src/server/upgrade/deps.ts";
 import type { UpgradeDeps } from "../../../src/server/upgrade/deps.ts";
 import {
@@ -57,12 +58,10 @@ describe("1) server/shared 新叶与旧垫片同构", () => {
     expect(sharedFacade.LAYER_ERROR_MAX_RECENT_DEFAULT).toBe(LAYER_ERROR_MAX_RECENT_DEFAULT);
   });
 
-  it("旧垫片工厂与 canonical 同一引用（D13 前旧路径可用）", () => {
-    expect(legacyShim.makeLayerErrorSurface).toBe(makeLayerErrorSurface);
-  });
-
-  it("旧垫片 noop 与 canonical 同一引用", () => {
-    expect(legacyShim.makeNoopLayerErrorSurface).toBe(makeNoopLayerErrorSurface);
+  it("旧垫片已删除（common 目录消除；复活即回退）", () => {
+    expect(existsSync(SERVER_DIR + "/../domain2/common/errsurf.ts")).toBe(false);
+    expect(existsSync(SERVER_DIR + "/../domain2/common/interface.ts")).toBe(false);
+    expect(existsSync(SERVER_DIR + "/../domain2/common")).toBe(false);
   });
 
   it("三域键齐（Q5 无单一所有者：写入方分属三域，非一域所有物）", () => {

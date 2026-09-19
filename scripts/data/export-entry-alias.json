@@ -1,8 +1,4 @@
 {
-  "$comment": "入口导出面读取别名登记（#768 S1 门禁尺子，临时）。为什么需要：dsh-provider-usage 无 src/index.ts（阶段四 #679 把组合根移入 src/apply，lib/index.d.ts 转发由包内 scripts/prepare-lib-entry.ts 在构建后生成）；export-surface-snapshot 自跑 tsc --declaration（与是否已 build 无关），emit 内无根 index.d.ts，主入口 . 的导出面无从读取。别名只做「读哪份 emit 文件取导出面」这一处重映射（. → apply/index.d.ts），块归属仍按原 prefix（根入口 prefix 为空，辖全部非 client 文件）——同一约束仍只由 export-surface 一家强制，不新增第二套判定（METHOD §9 禁止双轨）。D13 组合根收尾（src/index.ts 落地）时必须删除 dsh-provider-usage 条目并重冻结基线（届时若只删条目不重冻结，门禁即红：typesTarget 缺失 fail-closed，防腐）。其余包扩面照此加条目。",
-  "aliases": {
-    "dsh-provider-usage": {
-      ".": "apply/index.d.ts"
-    }
-  }
+  "$comment": "入口导出面读取别名登记（#768 S1 门禁尺子，临时）。dsh-provider-usage 条目已于 #768 D13 随 src/index.ts 落地删除（别名只在无根入口 emit 时做读取重映射，现主入口 . 直读 index.d.ts）；基线已同步重冻结。若某包删条目而不断面变化，须同笔重冻结，否则门禁即红（fail-closed，防腐）。其余包扩面照此加条目。",
+  "aliases": {}
 }

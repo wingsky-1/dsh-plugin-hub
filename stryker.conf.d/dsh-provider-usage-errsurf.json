@@ -1,7 +1,6 @@
 {
   "$schema": "../node_modules/@stryker-mutator/core/schema/stryker-schema.json",
   "mutate": [
-    "packages/dsh-provider-usage/src/domain2/common/errsurf.ts",
     "packages/dsh-provider-usage/src/server/shared/errsurf.ts",
     "!packages/dsh-provider-usage/src/client/**",
     "!packages/dsh-provider-usage/src/**/interface.ts",
@@ -43,5 +42,5 @@
   },
   "incremental": true,
   "incrementalFile": "coverage/mutation/incremental-provider-usage-errsurf.json",
-  "_comment": "#670 阶段三 B 新段：域2每层错误面——errsurf.ts（累计计数+最近 N 条环形缓冲+snapshot/noop）；testFiles 含 unit-errsurf（杀灭面）；apply 接线与 routes/ui health per-layer 段由既有 apply/routes 段覆盖（mutate 已含对应文件）。#768 S2：canonical 实现迁 server/shared/errsurf.ts（Q5 尺子见文件头），domain2/common/errsurf.ts 留过渡垫片（D13 删）；两文件并列登记，杀灭面新增 unit-s2-contracts（新叶直连判据）——并集只增不减。"
+  "_comment": "#670 阶段三 B 新段：域2每层错误面——errsurf.ts（累计计数+最近 N 条环形缓冲+snapshot/noop）；testFiles 含 unit-errsurf（杀灭面）；apply 接线与 routes/ui health per-layer 段由既有 apply/routes 段覆盖（mutate 已含对应文件）。#768 S2：canonical 实现迁 server/shared/errsurf.ts（Q5 尺子见文件头），domain2/common/errsurf.ts 过渡垫片 D13 已删（common 目录消除，旧路径引用同步切 server/shared）；杀灭面含 unit-s2-contracts（新叶直连判据）。"
 }

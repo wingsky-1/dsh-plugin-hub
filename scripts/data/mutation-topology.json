@@ -294,12 +294,9 @@
           "comment": "#342 v4：src 级文件组分段（2）——apply 单列（#316 拆分后最重文件独立成段）；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
         },
         "errsurf": {
-          "mutate": [
-            "packages/dsh-provider-usage/src/domain2/common/errsurf.ts",
-            "packages/dsh-provider-usage/src/server/shared/errsurf.ts"
-          ],
+          "mutate": ["packages/dsh-provider-usage/src/server/shared/errsurf.ts"],
           "excludes": ["!packages/dsh-provider-usage/src/client/**"],
-          "comment": "#670 阶段三 B 新段：域2每层错误面——errsurf.ts（累计计数+最近 N 条环形缓冲+snapshot/noop）；testFiles 含 unit-errsurf（杀灭面）；apply 接线与 routes/ui health per-layer 段由既有 apply/routes 段覆盖（mutate 已含对应文件）。#768 S2：canonical 实现迁 server/shared/errsurf.ts（Q5 尺子见文件头），domain2/common/errsurf.ts 留过渡垫片（D13 删）；两文件并列登记，杀灭面新增 unit-s2-contracts（新叶直连判据）——并集只增不减。"
+          "comment": "#670 阶段三 B 新段：域2每层错误面——errsurf.ts（累计计数+最近 N 条环形缓冲+snapshot/noop）；testFiles 含 unit-errsurf（杀灭面）；apply 接线与 routes/ui health per-layer 段由既有 apply/routes 段覆盖（mutate 已含对应文件）。#768 S2：canonical 实现迁 server/shared/errsurf.ts（Q5 尺子见文件头），domain2/common/errsurf.ts 过渡垫片 D13 已删（common 目录消除，旧路径引用同步切 server/shared）；杀灭面含 unit-s2-contracts（新叶直连判据）。"
         },
         "contracts": {
           "mutate": [
@@ -311,13 +308,14 @@
         },
         "entry": {
           "mutate": [
+            "packages/dsh-provider-usage/src/index.ts",
             "packages/dsh-provider-usage/src/apply/index.ts",
             "packages/dsh-provider-usage/src/server/registry/user-adapters.ts",
             "packages/dsh-provider-usage/src/shared/ui-config.ts",
             "packages/dsh-provider-usage/src/shared/config.ts"
           ],
           "excludes": ["!packages/dsh-provider-usage/src/client/**"],
-          "comment": "#342 v4：src 级文件组分段（1）——index+user-adapters+ui-config+config（配置/入口面）；#768 D7 注册表文件随域迁 server/registry（路径同步，行为零改 + 双启用判据）；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
+          "comment": "#342 v4：src 级文件组分段（1）——index+user-adapters+ui-config+config（配置/入口面）；#768 D7 注册表文件随域迁 server/registry（路径同步，行为零改 + 双启用判据）；#768 D13 包根入口 src/index.ts 落地（apply/index.ts 显式具名薄转发，导出面零漂移）并入本段；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
         },
         "pipeline": {
           "mutate": [

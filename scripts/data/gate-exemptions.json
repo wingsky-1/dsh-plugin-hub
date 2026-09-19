@@ -100,18 +100,6 @@
     },
     {
       "gate": "verify-dir-imports",
-      "path": "dsh-provider-usage:apply|server/upgrade",
-      "reason": "#768 S3：组合根 apply 经 packages/dsh-provider-usage/src/server/upgrade/interface.ts 装配升级域（装配前 await，失败即抛），全经门面（禁直引实现文件），与既有 apply|domain1/*、apply|domain2/* 同形。窄面依据树内 packages/dsh-provider-usage/src/server/upgrade/deps.ts（三项 logger+resolveRoot+readOldFile，无业务实例）；装配顺序由树内 packages/dsh-provider-usage/test/integration/upgrade/upgrade-chain.test.ts 的装配前 await 用例锁定。长期条目（设计事实，非待办）。",
-      "trackingIssue": "#768"
-    },
-    {
-      "gate": "verify-dir-imports",
-      "path": "dsh-provider-usage:apply|server/config",
-      "reason": "#768 D1：组合根 apply 经 packages/dsh-provider-usage/src/server/config/interface.ts 构造 ReportConfigService（只递 root+initial+onUpdate）并读 initial，全经门面（禁直引实现文件），与 apply|server/schedule（调度器/队列装配，D2 前为 apply|domain2/schedule，边归属同步迁移）同形。根内无业务判断由树内 packages/dsh-provider-usage/test/integration/config/composition-root.test.ts 的三纪律用例锁定。长期条目（设计事实，非待办）。",
-      "trackingIssue": "#768"
-    },
-    {
-      "gate": "verify-dir-imports",
       "path": "dsh-provider-usage:server/schedule|server/config",
       "reason": "#768 D2：due.ts 经 packages/dsh-provider-usage/src/server/schedule/../config/interface.ts 复用 parseHHMM 纯函数（零 node 依赖）与类型（D1 起即此口径，D2 随物理定义由 domain2/schedule 迁 server/schedule，边归属同步迁移），归一化单答案仍归 config 域，调度面不自建判断。复用边界由 server/schedule/deps.ts 与 server/config/interface.ts 双注记锁定。长期条目（设计事实，非待办）。",
       "trackingIssue": "#768"
@@ -149,13 +137,7 @@
     {
       "gate": "verify-dir-imports",
       "path": "dsh-provider-usage:server/execute|server/schedule",
-      "reason": "#768 D3：执行器经调度门面取 updateLastRun 单一临界区与任务类型、读侧取 DueReport 类型（D2 口径延续，D3 随物理定义迁移）；反向调度域经执行域门面复用纯解析，故叶粒度呈门面互消费环——双向均为门面收口（禁直引实现文件，双方 deps.ts 注记 + integration/execute 用例逐行锁定导入面），同一条目覆盖边与环两类证据。D13 收尾重估是否收敛为单向注入。长期条目。",
-      "trackingIssue": "#768"
-    },
-    {
-      "gate": "verify-dir-imports",
-      "path": "dsh-provider-usage:apply|server/schedule",
-      "reason": "#768 D2：组合根经调度门面装配调度器与队列，全经门面，禁直引实现文件。替代已消除的旧边，归属随物理定义迁移。树内集成用例锁定。长期条目。",
+      "reason": "#768 D3：执行器经调度门面取 updateLastRun 单一临界区与任务类型、读侧取 DueReport 类型（D2 口径延续，D3 随物理定义迁移）；反向调度域经执行域门面复用纯解析，故叶粒度呈门面互消费环——双向均为门面收口（禁直引实现文件，双方 deps.ts 注记 + integration/execute 用例逐行锁定导入面），同一条目覆盖边与环两类证据。D13 重估结论：维持门面环——正向（execute→schedule）取 updateLastRun 单一临界区（有状态，必须活引用，注入无意义）；反向（schedule→execute）只复用 parseReportIndexLines 纯解析（单一定义在 execute/report-index.ts，搬共享层违 METHOD§3 单一消费者禁下沉，给 store 加注入管道成本大于收益）。环上零实现直引（R-A impl=0 锁定），任一边改直引即红。长期条目。",
       "trackingIssue": "#768"
     },
     {
@@ -178,12 +160,6 @@
     },
     {
       "gate": "verify-dir-imports",
-      "path": "dsh-provider-usage:apply|server/aggregate",
-      "reason": "#768 D8：组合根经 aggregate 门面装配 TrendTracker/TrendStore 与聚合查询纯面（全经门面，禁直引实现文件，D8 前为基线内 apply|domain2/aggregate，边归属同步迁移）。树内 integration/aggregate 用例锁定。长期条目。",
-      "trackingIssue": "#768"
-    },
-    {
-      "gate": "verify-dir-imports",
       "path": "dsh-provider-usage:server/aggregate|server/collect",
       "reason": "#768 D8：聚合经 collect 门面复用 sumToken/hourOfDay/TREND_* 纯函数与行类型；#768 D9 由 domain2/collect 整域迁 server/collect（D9 前为基线内 server/aggregate|domain2/collect，边归属同步迁移）；TrendCollector 实例由 TrendTracker 内部构造、不跨域直取引擎。复用边界由 server/aggregate/deps.ts 注记锁定。长期条目。",
       "trackingIssue": "#768"
@@ -196,62 +172,8 @@
     },
     {
       "gate": "verify-dir-imports",
-      "path": "dsh-provider-usage:apply|server/execute",
-      "reason": "#768 D3：组合根经 execute 门面装配执行器工厂与查询面（全经门面，禁直引实现文件，D3 前为 apply|domain2/execute）。树内 integration/execute 用例锁定。长期条目。",
-      "trackingIssue": "#768"
-    },
-    {
-      "gate": "verify-dir-imports",
       "path": "dsh-provider-usage:server/report-routes|server/execute",
       "reason": "#768 D3：reports.ts 经 execute 门面取读面（D3 前为 domain2/routes|domain2/execute）；D11 由 domain2/routes 迁 server/report-routes，边归属同步迁移。执行器工厂不直引（队列内嵌，组合根装配）。树内 integration/report-routes 用例锁定。长期条目。",
-      "trackingIssue": "#768"
-    },
-    {
-      "gate": "verify-dir-imports",
-      "path": "dsh-provider-usage:apply|server/adapters",
-      "reason": "#768 D4：组合根经 adapters 门面装配三内置适配器 + fail-fast 注册（全经门面，禁直引 .mjs 实现文件，D4 前为 apply|domain1/adapters，边归属同步迁移）。树内 integration/adapters 用例锁定。长期条目。",
-      "trackingIssue": "#768"
-    },
-    {
-      "gate": "verify-dir-imports",
-      "path": "dsh-provider-usage:apply|server/history",
-      "reason": "#768 D5：组合根经 history 门面装配按天分片 JSONL 存储 + v3 迁移（全经门面，禁直引实现文件，D5 前为基线内 apply|domain1/history，边归属同步迁移）。树内 integration/history 用例锁定。长期条目。",
-      "trackingIssue": "#768"
-    },
-    {
-      "gate": "verify-dir-imports",
-      "path": "dsh-provider-usage:apply|server/pipeline",
-      "reason": "#768 D6：组合根经 pipeline 门面装配取数渲染管道 + 安全守卫（全经门面，禁直引实现文件，D6 前为基线内 apply|domain1/pipeline，边归属同步迁移）。树内 integration/pipeline 用例锁定。长期条目。",
-      "trackingIssue": "#768"
-    },
-    {
-      "gate": "verify-dir-imports",
-      "path": "dsh-provider-usage:apply|server/registry",
-      "reason": "#768 D7：组合根经 registry 门面装配候选+唯一启用+错误登记（全经门面，禁直引实现文件，D7 前为基线内 apply|domain1/registry，边归属同步迁移）。树内 integration/registry 用例锁定。长期条目。",
-      "trackingIssue": "#768"
-    },
-    {
-      "gate": "verify-dir-imports",
-      "path": "dsh-provider-usage:apply|server/collect",
-      "reason": "#768 D9：组合根经 collect 门面装配采集（全经门面，禁直引实现文件，D9 前为基线内 apply|domain2/collect，边归属同步迁移；D9 迁移时漏登记，D10 复核发现后补）。树内 integration/collect 用例锁定。长期条目。",
-      "trackingIssue": "#768"
-    },
-    {
-      "gate": "verify-dir-imports",
-      "path": "dsh-provider-usage:apply|server/data-routes",
-      "reason": "#768 D10：组合根经 data-routes 门面装配用量统计/历史/适配器管理六路由（全经门面，禁直引实现文件，D10 前为基线内 apply|domain1/routes，边归属同步迁移）。树内 integration/data-routes 用例锁定。长期条目。",
-      "trackingIssue": "#768"
-    },
-    {
-      "gate": "verify-dir-imports",
-      "path": "dsh-provider-usage:apply|server/report-routes",
-      "reason": "#768 D11：组合根经 report-routes 门面装配报告配置/历史/详情/手动生成六路由（全经门面，禁直引实现文件，D11 前为基线内 apply|domain2/routes，边归属同步迁移；配置服务与任务队列以 deps.ts 窄口注入）。树内 integration/report-routes 用例锁定。长期条目。",
-      "trackingIssue": "#768"
-    },
-    {
-      "gate": "verify-dir-imports",
-      "path": "dsh-provider-usage:apply|server/ui-routes",
-      "reason": "#768 D12：组合根经 ui-routes 门面装配健康/趋势/UI 配置/SSE 四路由（全经门面，禁直引实现文件，D12 前为基线内 apply|domain2/routes，边归属同步迁移；广播能力以 deps.ts 窄口注入，实例经 UiRoutesContext 参数传递）。树内 integration/ui-routes 用例锁定。长期条目。",
       "trackingIssue": "#768"
     },
     {
@@ -281,7 +203,7 @@
     {
       "gate": "verify-dir-imports",
       "path": "dsh-provider-usage:server/execute/executor.ts|server/execute/interface.ts|server/schedule/interface.ts|server/schedule/scheduler.ts|server/schedule/store.ts",
-      "reason": "#768 D3 文件环登记（门面中转环）：executor 经调度门面取引擎链（值）→store 经执行门面取纯解析（值）——环上无实现文件直引（R-A 语义 impl 直引计数保持 0）。任一边改直引即红。D13 收尾重估。长期条目。",
+      "reason": "#768 D3 文件环登记（门面中转环）：executor 经调度门面取引擎链（值）→store 经执行门面取纯解析（值）——环上无实现文件直引（R-A 语义 impl 直引计数保持 0）。任一边改直引即红。D13 重估结论同上（维持门面环：临界区活引用 + 纯解析复用，两向负载性质不同，单向化成本大于收益）。长期条目。",
       "trackingIssue": "#768"
     }
   ]

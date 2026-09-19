@@ -1,9 +1,4 @@
 {
-  "packages/dsh-provider-usage/src/client/settings/index.tsx": {
-    "sonarjs/deprecation": {
-      "count": 9
-    }
-  },
   "packages/dsh-provider-usage/src/shared/contracts.ts": {
     "sonarjs/deprecation": {
       "count": 40

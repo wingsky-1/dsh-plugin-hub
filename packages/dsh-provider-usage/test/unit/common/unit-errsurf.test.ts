@@ -1,6 +1,7 @@
 // @ts-nocheck
 /**
- * dsh-provider-usage — unit：域2每层错误面（#670 阶段三 B）+ /health per-layer 段
+ * dsh-provider-usage — unit：每层错误面（#670 阶段三 B；#768 D13 起 canonical 路径为
+ * server/shared/errsurf.ts，domain2/common/ 已消除）+ /health per-layer 段
  * + 崩溃注入冒烟。
  *
  * 覆盖：
@@ -24,7 +25,7 @@ import {
   makeLayerErrorSurface,
   makeNoopLayerErrorSurface,
   LAYER_ERROR_KEYS,
-} from "../../../src/domain2/common/errsurf.ts";
+} from "../../../src/server/shared/errsurf.ts";
 import { handleHealth } from "../../../src/server/ui-routes/health.ts";
 import { ReportTaskQueue } from "../../../src/server/schedule/tasks.ts";
 import { ReportScheduler } from "../../../src/server/schedule/scheduler.ts";

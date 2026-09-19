@@ -18,6 +18,7 @@
  */
 import {
   appendFileSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -86,7 +87,7 @@ const executorSrc = readFileSync(join(srcDir, "server", "execute", "executor.ts"
 const storeSrc = readFileSync(join(srcDir, "server", "schedule", "store.ts"), "utf8");
 const tasksSrc = readFileSync(join(srcDir, "server", "schedule", "tasks.ts"), "utf8");
 const reportsSrc = readFileSync(join(srcDir, "server", "report-routes", "reports.ts"), "utf8");
-const commonFaceSrc = readFileSync(join(srcDir, "domain2", "common", "interface.ts"), "utf8");
+// #768 D13：domain2/common/ 目录已消除（parse 唯一定义归 server/execute/report-index.ts），本文件不再读旧门面。
 
 /** 命名接缝消费（类型链接由 tsc 编译面校验可赋值性）：块 Options 用内联双生子，名称在此复用。 */
 const quietWarn: ExecuteWarn = () => undefined;
@@ -183,9 +184,10 @@ describe("D3一 经 server/execute 域门面装配", () => {
     );
   });
 
-  it("common 门面不再转发 parse（单答案即单入口）", () => {
-    expect(commonFaceSrc.includes('from "./report-index.ts"')).toBe(false);
-    expect(commonFaceSrc.includes("export { parseReportIndexLines }")).toBe(false);
+  it("common 目录已消除（parse 单答案即单入口；复活即回退）", () => {
+    expect(existsSync(join(srcDir, "domain2", "common", "interface.ts"))).toBe(false);
+    expect(existsSync(join(srcDir, "domain2", "common", "errsurf.ts"))).toBe(false);
+    expect(existsSync(join(srcDir, "domain2", "common"))).toBe(false);
   });
 
   it("report-index 类型直引同域物理定义（不经本域门面中转）", () => {

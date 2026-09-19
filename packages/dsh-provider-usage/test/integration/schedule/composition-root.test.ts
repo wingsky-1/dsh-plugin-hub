@@ -12,7 +12,7 @@
  *   per-root 链防 lost-update、默认 60s tick 与 5min 预热线路保持——拆坏任一条必须红
  *   （同文件“探针 + 朴素实现对照”证明 detector 不失明）。
  *
- * 扫描面 = src/apply/apply.ts + src/apply/interface.ts（装配逻辑；#768 D11 起 interface.ts 为空锚点）
+ * 扫描面 = src/apply/apply.ts（装配逻辑；#768 D13 删空锚点 src/apply/interface.ts，模块归属随锚点消除）
  * + 各消费方源文件（执行器/读侧/路由/迁移）：src/apply/index.ts 是 lib 导出面
  * （符号转发），不是判断——它的符号集由 export-surface-snapshot 门禁锁定，
  * 不在本用例扫描面内（误扫即把转发当判断）。
@@ -21,7 +21,7 @@
  * “对照：朴素实现丢更新（链断即丢）”——同一 detector 在脏夹具上必须报出
  * 违规，detector 失明则探针先红。
  */
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -59,10 +59,10 @@ import { DEFAULT_CONFIG } from "../../../src/shared/config.ts";
 const here = dirname(fileURLToPath(import.meta.url));
 const srcDir = join(here, "..", "..", "..", "src");
 const applySrc = readFileSync(join(srcDir, "apply", "apply.ts"), "utf8");
-const applyFaceSrc = readFileSync(join(srcDir, "apply", "interface.ts"), "utf8");
+// #768 D13：空锚点 src/apply/interface.ts 已删，扫描面只剩 apply.ts（本文件不再读该路径）。
 const schedulerSrc = readFileSync(join(srcDir, "server", "schedule", "scheduler.ts"), "utf8");
 const storeSrc = readFileSync(join(srcDir, "server", "schedule", "store.ts"), "utf8");
-const commonFaceSrc = readFileSync(join(srcDir, "domain2", "common", "interface.ts"), "utf8");
+// #768 D13：domain2/common/ 目录已消除（消费者全切 server/shared 门面），本文件不再读旧门面。
 const executorSrc = readFileSync(join(srcDir, "server", "execute", "executor.ts"), "utf8");
 const runnerSrc = readFileSync(join(srcDir, "server", "execute", "runner.ts"), "utf8");
 const reportsSrc = readFileSync(join(srcDir, "server", "report-routes", "reports.ts"), "utf8");
@@ -76,7 +76,7 @@ const storageLayoutSrc = readFileSync(
 const quietWarn: ScheduleWarn = () => undefined;
 const testClock: ScheduleClock = () => Date.now();
 
-/** 根内禁入业务判断标记：判据 = 任一标记进入 apply.ts/interface.ts 即红。 */
+/** 根内禁入业务判断标记：判据 = 任一标记进入 apply.ts 即红（#768 D13 起 interface.ts 锚点已删）。 */
 const BUSINESS_MARKERS = [
   { marker: "candidateWindow(", why: "候选窗口纯函数归调度域，组合根只提交到期回调" },
   { marker: "pendingReports(", why: "到期集合计算归调度器 tick，根内不得重算" },
@@ -160,10 +160,10 @@ describe("D2一 经 server/schedule 域门面装配", () => {
     expect(storageLayoutSrc.includes("LAST_RUN_SCHEMA")).toBe(true);
   });
 
-  it("common 门面不再转发 lastRun（单答案即单入口）", () => {
-    expect(commonFaceSrc.includes("last-run")).toBe(false);
-    expect(commonFaceSrc.includes("readLastRun")).toBe(false);
-    expect(commonFaceSrc.includes("updateLastRun")).toBe(false);
+  it("common 目录已消除（旧门面残留即回退）", () => {
+    expect(existsSync(join(srcDir, "domain2", "common", "interface.ts"))).toBe(false);
+    expect(existsSync(join(srcDir, "domain2", "common", "errsurf.ts"))).toBe(false);
+    expect(existsSync(join(srcDir, "domain2", "common"))).toBe(false);
   });
 });
 
@@ -171,9 +171,6 @@ describe("D2二 根内无业务判断（必须红）", () => {
   for (const entry of BUSINESS_MARKERS) {
     it("apply.ts 无 " + entry.marker + "（" + entry.why + "）", () => {
       expect(applySrc.includes(entry.marker)).toBe(false);
-    });
-    it("apply/interface.ts 无 " + entry.marker, () => {
-      expect(applyFaceSrc.includes(entry.marker)).toBe(false);
     });
   }
 });

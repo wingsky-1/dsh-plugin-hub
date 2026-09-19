@@ -15,9 +15,8 @@
  *   只暴露窄口方法的桩跑通全部 handler（多用一能力即 TypeError 先红）；真实例
  *   （ReportConfigService/ReportTaskQueue）可赋值窄口（tsc 编译面）；deps.ts
  *   纯类型面运行时零出口；执行器工厂不直引（实现内无 makeDueReportExecutor/
- *   DueExecutorDeps）；装配面转发消除、锚点过渡保留（apply/interface.ts 为空门面：
- *   转发零出口但文件保留作模块归属锚点；D13 删除本文件时须同步更新 dir-imports
- *   基线（apply 模块归属消失）+ 本文件 D11二存在性断言）。
+ *   DueExecutorDeps）；装配面转发消除、锚点已删除（#768 D13 删 apply/interface.ts
+ *   空门面：dir-imports 基线（apply 模块归属消失）+ 本文件 D11二存在性断言已同步更新）。
  * - D11三 围栏与正路：六端点非回环 + 错方法仍 403（顺序反了即 405 泄漏）；
  *   回环 + 错方法 405 且文案逐字节锁定；回环 + 正方法放行（config/reports 200，
  *   generate 202，status 未知任务 404）。
@@ -78,7 +77,7 @@ const repoRoot = join(here, "..", "..", "..", "..", "..");
 const readText = (p: string): string => readFileSync(p, "utf8");
 const applySrc = readText(join(srcDir, "apply", "apply.ts"));
 const applyFaceSrc = readText(join(srcDir, "apply", "index.ts"));
-const domain2FaceSrc = readText(join(srcDir, "domain2", "routes", "interface.ts"));
+// #768 D13：空锚点 src/domain2/routes/interface.ts 已删（ui 四块 D12 起归 server/ui-routes），本文件不再读旧面。
 const reportFaceSrc = readText(join(srcDir, "server", "report-routes", "interface.ts"));
 const reportDepsSrc = readText(join(srcDir, "server", "report-routes", "deps.ts"));
 const reportsSrc = readText(join(srcDir, "server", "report-routes", "reports.ts"));
@@ -274,12 +273,10 @@ describe("D11一 经 server/report-routes 域门面装配", () => {
     expect(reportsSrc.includes("../../shared/interface")).toBe(true);
   });
 
-  it("旧 domain2 面不再转发报告符号（残留即装配分叉）", () => {
-    expect(domain2FaceSrc.includes("createReportRoutes")).toBe(false);
-    expect(domain2FaceSrc.includes("ReportRoutesContext")).toBe(false);
-    expect(domain2FaceSrc.includes("reports.ts")).toBe(false);
-    // #768 D12 起 ui 四块亦迁出（server/ui-routes），旧面零转发（空锚点，D13 删）。
-    expect(domain2FaceSrc.includes("./ui.ts")).toBe(false);
+  it("旧 domain2 面已删除（残留即装配分叉回退）", () => {
+    expect(existsSync(join(srcDir, "domain2", "routes", "interface.ts"))).toBe(false);
+    expect(existsSync(join(srcDir, "domain2", "routes"))).toBe(false);
+    expect(existsSync(join(srcDir, "domain2"))).toBe(false);
   });
 
   it("门面收口：interface 与实现同一引用（包装即红）", () => {
@@ -465,12 +462,8 @@ describe("D11二 配置服务窄面消费 + 任务队列 + 执行器", () => {
     expect(reportsSrc.includes("ReportTaskQueueOptions")).toBe(false);
   });
 
-  it("装配面转发消除、锚点保留（复活转发即类型倒灌）", async () => {
-    expect(existsSync(join(srcDir, "apply", "interface.ts"))).toBe(true);
-    const anchorSrc = readText(join(srcDir, "apply", "interface.ts"));
-    expect(anchorSrc.includes(" from ")).toBe(false);
-    const anchorNs = await import("../../../src/apply/interface.ts");
-    expect(Object.keys(anchorNs)).toEqual([]);
+  it("装配面锚点已删除（复活即类型倒灌回退）", () => {
+    expect(existsSync(join(srcDir, "apply", "interface.ts"))).toBe(false);
     expect(applySrc.includes("apply/interface")).toBe(false);
     expect(reportsSrc.includes("apply/interface")).toBe(false);
   });

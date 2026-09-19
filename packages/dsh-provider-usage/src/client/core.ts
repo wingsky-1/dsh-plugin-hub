@@ -14,13 +14,13 @@ export const HISTORY_URL = __DSH_ROUTES__?.history ?? "/api/dsh-provider-usage/h
 export const HEALTH_URL = __DSH_ROUTES__?.health ?? "/api/dsh-provider-usage/health";
 /** 会话用量趋势。 */
 export const TREND_URL = __DSH_ROUTES__?.trend ?? "/api/dsh-provider-usage/trend";
-/** @deprecated v1 适配器管理路由（设置面板兼容保留；宿主可能未注册，调用方需容错）。 */
+/** 适配器管理路由（设置页主列表同源；现行 API，无替代——#768 D13 摘除误标的弃用注记，相关误报清零）。 */
 export const ADAPTERS_URL = __DSH_ROUTES__?.adapters ?? "/api/dsh-provider-usage/adapters.json";
-/** @deprecated */
+/** 适配器切换路由（现行 API，无替代）。 */
 export const SELECT_URL = __DSH_ROUTES__?.select ?? "/api/dsh-provider-usage/adapters/select";
-/** @deprecated */
+/** 适配器预览路由（现行 API，无替代）。 */
 export const INSPECT_URL = __DSH_ROUTES__?.inspect ?? "/api/dsh-provider-usage/adapters/inspect";
-/** @deprecated */
+/** 适配器登记路由（现行 API，无替代）。 */
 export const ADD_URL = __DSH_ROUTES__?.add ?? "/api/dsh-provider-usage/adapters/add";
 export const UI_CONFIG_URL = __DSH_ROUTES__?.uiConfig ?? "/api/dsh-provider-usage/ui-config";
 export const EVENTS_URL = __DSH_ROUTES__?.events ?? "/api/dsh-provider-usage/events";

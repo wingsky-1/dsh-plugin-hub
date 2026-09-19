@@ -45,7 +45,7 @@ export type StatsService = Pick<
   | "dispose"
 >;
 
-/** 装配层构造入口（完整实现；仅 apply/ 组合根应使用）。 */
+/** 构造入口（深封装）：目录外（apply 组合根）只经此构造完整实现；字段保持只读、无行为逻辑（与 server/ui-routes/context.ts 的 UiRoutesContext 同形，#768 D13 表述对齐）。 */
 export { StatsService as StatsServiceCtor } from "./stats-service.ts";
 
 // ------------------------------------------------------------------ v2 管道（v2.ts）

@@ -15,7 +15,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -180,11 +180,13 @@ test("归属：前缀相同的根入口不会与目录入口互相吞并（空�
   assert.deepEqual(byEntry["./config"], ["config/x.d.ts"]);
 });
 
-// ---------------------------------------------------------------- 入口读取别名（#768 S1，临时至 D13）
+// ---------------------------------------------------------------- 入口读取别名（#768 S1，D13 退役）
 //
 // 分工：本节只断言纯函数（命中即换源 / 未命中即原值 / 登记形态）；别名命中后的
-// 端到端判绿由 export-faces-admission 的 provider-usage 条目覆盖（同一门禁本体），
-// 去别名回红由本节末的 spawn 反例锁定——三者合起来才是正反双向，不在此复刻第二套判定。
+// 端到端判绿由 export-faces-admission 的 provider-usage 条目覆盖（同一门禁本体）。
+// #768 D13 起 provider-usage 别名条目已删、包根 src/index.ts 落地：空别名登记下
+// 主入口直读根 index.d.ts 即绿（下述 D13 终态用例锁定）；fail-closed 改由
+// “根入口缺失即红”用例锁定——正反双向仍在，不在此复刻第二套判定。
 
 function withTmpAlias(payload, fn) {
   const dir = mkdtempSync(join(tmpdir(), "entry-alias-"));
@@ -249,7 +251,7 @@ test("别名登记缺失即无别名（D13 删文件不炸其他包），形态�
   }
 });
 
-test("别名反向（端到端）：去别名后 provider-usage 主入口即红（exit 1，typesTarget 缺失）", () => {
+test("别名退役 D13 终态（端到端）：空别名登记下 provider-usage 主入口仍绿（exit 0，根直读零 diff）", () => {
   withTmpAlias(JSON.stringify({ aliases: {} }), (aliasPath) => {
     const result = spawnSync(
       process.execPath,
@@ -258,11 +260,40 @@ test("别名反向（端到端）：去别名后 provider-usage 主入口即红�
     );
     assert.equal(
       result.status,
-      1,
-      "去别名应判红，实际 " + result.status + "\n" + result.stdout + "\n" + result.stderr,
+      0,
+      "D13 终态空别名应判绿，实际 " + result.status + "\n" + result.stdout + "\n" + result.stderr,
     );
-    assert.match(result.stdout, /导出面源文件不在本次 emit 产物中：index\.d\.ts/);
+    assert.match(result.stdout, /PASS dsh-provider-usage 导出面与基线零 diff/);
   });
+});
+
+test("别名退役后 fail-closed 仍在（端到端）：根入口缺失即红（exit 1，typesTarget 缺失）", () => {
+  const indexTs = join(ROOT, "packages", "dsh-provider-usage", "src", "index.ts");
+  const dir = mkdtempSync(join(tmpdir(), "entry-index-aside-"));
+  const aside = join(dir, "index.ts");
+  assert.equal(existsSync(indexTs), true, "前置：包根入口须存在，否则本用例无意义");
+  // 跨盘 rename 会 EXDEV（worktree 与 tmp 分属不同挂载），用拷贝加删除搬移。
+  copyFileSync(indexTs, aside);
+  rmSync(indexTs);
+  try {
+    withTmpAlias(JSON.stringify({ aliases: {} }), (aliasPath) => {
+      const result = spawnSync(
+        process.execPath,
+        [SCRIPT, "--package", "dsh-provider-usage", "--entry-alias", aliasPath],
+        { cwd: ROOT, encoding: "utf8", timeout: 180000 },
+      );
+      assert.equal(
+        result.status,
+        1,
+        "缺根入口应判红，实际 " + result.status + "\n" + result.stdout + "\n" + result.stderr,
+      );
+      assert.match(result.stdout, /导出面源文件不在本次 emit 产物中：index\.d\.ts/);
+    });
+  } finally {
+    copyFileSync(aside, indexTs);
+    rmSync(dir, { recursive: true, force: true });
+  }
+  assert.equal(existsSync(indexTs), true, "收尾：包根入口须复位");
 });
 
 test("别名损坏即门禁故障（exit 2，非判红）：合法 JSON 但非对象形态", () => {

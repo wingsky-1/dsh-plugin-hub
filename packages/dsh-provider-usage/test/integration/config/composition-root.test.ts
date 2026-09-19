@@ -10,9 +10,8 @@
  * - D1③ 构造只递 root+initial+onUpdate：实参键集恰为三项，且三参可完成装配
  *   （内存权威 + 串行写链 + 落盘 roundtrip）。
  *
- * 扫描面 = src/apply/apply.ts + src/apply/interface.ts（装配逻辑；#768 D11 起 interface.ts
- * 为空锚点：原唯一源码消费改走 server/report-routes/deps.ts 窄口，转发消除，文件保留只为
- * 模块归属）；
+ * 扫描面 = src/apply/apply.ts（装配逻辑；#768 D13 删空锚点 src/apply/interface.ts：
+ * 原唯一源码消费 D11 起改走 server/report-routes/deps.ts 窄口，模块归属随锚点消除）；
  * src/apply/index.ts 是 lib 导出面（符号转发），不是判断——它的符号集由
  * export-surface-snapshot 门禁锁定，不在本用例扫描面内（误扫即把转发当判断）。
  *
@@ -32,7 +31,7 @@ import {
 const here = dirname(fileURLToPath(import.meta.url));
 const srcDir = join(here, "..", "..", "..", "src");
 const applySrc = readFileSync(join(srcDir, "apply", "apply.ts"), "utf8");
-const applyFaceSrc = readFileSync(join(srcDir, "apply", "interface.ts"), "utf8");
+// #768 D13：空锚点 src/apply/interface.ts 已删，扫描面只剩 apply.ts（本文件不再读该路径）。
 
 /** 抽取组合根 new ReportConfigService({ ... }) 的实参键集（非对象字面量返回 null）。 */
 function serviceCtorKeys(src: string): string[] | null {
@@ -45,7 +44,7 @@ function serviceCtorKeys(src: string): string[] | null {
     .sort();
 }
 
-/** 根内禁入业务判断标记：判据 = 任一标记进入 apply.ts/interface.ts 即红。 */
+/** 根内禁入业务判断标记：判据 = 任一标记进入 apply.ts 即红（#768 D13 起 interface.ts 锚点已删）。 */
 const BUSINESS_MARKERS: Array<{ marker: string; why: string }> = [
   { marker: "normalizeReportConfig(", why: "归一化调用归 config 域，组合根只传 initial" },
   { marker: "normalizeReportDirectories(", why: "目录范围归一化同上" },
@@ -110,9 +109,6 @@ describe("D1② 根内无业务判断（必须红）", () => {
   for (const { marker, why } of BUSINESS_MARKERS) {
     it("apply.ts 无 " + marker + "（" + why + "）", () => {
       expect(applySrc.includes(marker)).toBe(false);
-    });
-    it("apply/interface.ts 无 " + marker, () => {
-      expect(applyFaceSrc.includes(marker)).toBe(false);
     });
   }
 });
