@@ -121,6 +121,25 @@ function secretFieldsOf(patch: Record<string, RawSettingValue>): readonly string
   return secretFieldsOfType(patch.type).filter((field) => patch[field] === SECRET_MASK);
 }
 
+/**
+ * 还原后是否还残留掩码字面量（跨 type 残留 / 改名残留）：还原只处理「当前 type 的密钥字段」，
+ * `bark → webhook` 后残留的 `deviceKey: "********"` 这类字面量不会被还原——把它当真实凭据
+ * 发出去等于把占位符写进对端日志，静默剥离等于替用户改配置，两条路都不对，由调用方整体拒绝。
+ *
+ * 扫的是**全部已知类型的密钥字段**而不只是当前 type 的：残留恰恰发生在「字段不属于当前
+ * type」时，只扫当前 type 永远扫不到它。未知类型的密钥字段不在表里，扫不到——那种频道连
+ * 校验都过不了，到不了这一步。
+ */
+export function hasResidualMask(channel: RawSettingValue): boolean {
+  if (!isRecord(channel)) return false;
+  for (const fields of Object.values(CHANNEL_SECRET_FIELDS)) {
+    for (const field of fields) {
+      if (channel[field] === SECRET_MASK) return true;
+    }
+  }
+  return false;
+}
+
 /** 按 id 查找的结果；找不到时不带回任何值。 */
 type LookupResult = { ok: true; channel: Record<string, RawSettingValue> } | { ok: false };
 

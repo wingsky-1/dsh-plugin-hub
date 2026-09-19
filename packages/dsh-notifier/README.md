@@ -41,7 +41,9 @@
 - **通知正文与标题不再打码（#733 收敛）**：原 `sanitizeContent` 的规则表（路径 / PEM 私钥 / 连接串凭据 / 令牌 / 邮箱…）已删除——通知、历史落盘（含 suppressed 落史）与投递都是原文；正文不截断，长度由投递频道的展示上限截断。需要「日志里不出现某类文本」的部署，请自行在事件源侧处理
 - **仅存的凭据掩码在设置页视图**：`GET /config` 的 `user` + `effective` 与 `PUT` 成功响应中的频道凭据（bark `deviceKey`、webhook `token` / `password` / `headerValue`）一律掩码 `********`，提交整值掩码 = 保持原值（按实例 id 对齐回填，防数组序变化串凭据），新实例带掩码提交 400（`CHANNEL_SECRET_FIELDS` 按频道类型单一事实源）
 - **出口错误原因不再做凭据字面替换（实测风险，照实登记）**：Bark 4xx 响应体会回显 device key，webhook 的非 2xx 响应体也会回显收到的凭据——失败原因只做长度截断（webhook 响应体 200 字符；状态条目 300 字符），**不保证凭据不出现在错误文本里**。这些文本落在失败理由的 `detail` 字段里（0.2.4 起理由结构化，见「投递可靠性」），会进服务端日志、状态文件（`status.json`）与通知历史（`history.jsonl`），并随 `GET /status` 与 `GET /history` 出到设置页；对错误文本外泄敏感的部署请按上一条自行处置
-- server 内部错误仍只回固定文案（底层原因只进服务端日志）
+- server 内部错误仍只回固定文案（底层原因只进服务端日志）；dry-run 的 500 同样固定文案且不记日志（禁写面含全部 logger）
+- **草稿测试（dry-run）不落盘也不记日志**：只测 `draft.channels` 里的单条频道（掩码按 id 还原，跨类型残留掩码整体拒绝），结果同步返回且只进面板独立结果行（打标「草稿测试·未落盘」，通过不自动保存，改草稿即清、重载即丢、切 tab 保留）。回显反射残留（对端把请求体反射回来）与现行历史落盘同 exposure（原文截断后进 `reason.detail`），仅 loopback 可读，可接受
+- **dry-run 出站安全**：bark / webhook 的 URL 必须可解析为 http(s) 且无 userinfo；主机名全量 DNS 解析逐条分类（回环 / 私网 / 链路本地（含云元数据）/ 未指定 / 组播 / 保留段一律拒绝，含十进制与十六进制等非点分写法），重定向手动逐跳复检（上限 5 跳），建连钉死核验过的 IP 并验 `remoteAddress` 熔断（关 TOCTOU），TLS 的 SNI 与证书校验仍走原始主机名
 - 系统通知失败不再静默：出口**执行过动作而失败**会写状态行（`failed`）并进通知记录的逐出口明细；**一条命令都构造不出来**时收成 `skipped` 且留一条 warn（0.2.4 起 linux / darwin 也有这条日志，此前只有 win32 分支有）。原生二进制缺失/不可执行（ENOENT 等）
   会被 `error` 事件接住，**绝不冒泡成 unhandled error 把宿主进程打挂**（见 issue #1）
 - **两个通道到达的机器不同（别混淆）**：
@@ -422,7 +424,9 @@ SSE 通知帧（浏览器 EventSource 订阅；`?since=<seq>` 断线补拉）
 
 #### `/test`
 
-测试通知（收敛到 service 管线，绕过免打扰；body 可选 `{channelId}` 指定单频道测试）
+测试通知（收敛到 service 管线，绕过免打扰；body 可选 `{channelId}` 指定单频道测试）。请求体上限 16K（与 settings 端对齐）。
+
+**草稿测试（dry-run）**：body 带 `draft` 即测眼前草稿——`{channelId, draft: {channels: [...]}}`（`draft` 只认 `channels`，须含目标频道的完整条目；顶层其它键与 `revision` 忽略；此时 `channelId` 必填）。逐项校验（跳过「内置必须在场」），掩码按 id 还原（新频道无源 / 改名带掩码 / 跨类型残留掩码一律 400）；直构单目标实测（跳过 enabled 门，不走裁决 / 路由 / 节奏 / 重试，单次尝试），同步返回 `{ok, channelId, status, reason?}`（`status` 为 `ok` / `failed` / `skipped`，`reason` 为截断后的结构化理由）。**全程零落盘**：不写历史与状态、不推进 `revision`、不记日志、不推浏览器真通知（browser 返回 ok 但不 emit，以面板结果为准）。出站安全：bark / webhook 走 SSRF 安全 fetch（仅 http(s)、拒 userinfo、全量 DNS 分类、重定向逐跳复检、建连钉死核验 IP、上限 5 跳、响应体至多读 16K、单跳超时复用出口 clamp 再压 15s 上限）；system 沿用出口原函数（平台能力读共享缓存，子进程靠 KILL 8s 回收）。服务端总预算 15s（超时 408，结果丢弃，在飞的投递无法撤回）；并发帽 2（超限 429 `dry-run-busy`，不排队，请手动重试）。
 
 #### `/history`
 

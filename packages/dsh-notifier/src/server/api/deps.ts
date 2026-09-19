@@ -8,23 +8,34 @@ import type * as sdkApi from "../sdk/interface.ts";
 import type * as storesApi from "../stores/interface.ts";
 import type { LoggerPort } from "../shared/interface.ts";
 
-/** config 域给下游的能力面：设置页要读视图写设置，另含原始设置的只读面。 */
-export type ConfigPort = Pick<typeof configApi, "readConfig" | "readSettingsView" | "writeConfig">;
+/** config 域给下游的能力面：设置页要读视图写设置，另含原始设置的只读面；
+ * 草稿测试（dry-run）另要它的纯函数（resolveDraftChannels + normalizeConfig）——只读内存，
+ * 不碰写面，调用方把还原原值显式传入，不在域内另读。 */
+export type ConfigPort = Pick<
+  typeof configApi,
+  "readConfig" | "readSettingsView" | "writeConfig" | "resolveDraftChannels" | "normalizeConfig"
+>;
 
 /** stores 域给下游的能力面：通知记录与频道投递状态。 */
 export type StorePort = Pick<typeof storesApi, "readHistory" | "clearHistory" | "readStatus">;
 
-/** pipeline 域给下游的能力面：测试通知走**同一条**裁决管线。 */
-export type PipelinePort = Pick<typeof pipelineApi, "submit">;
+/** pipeline 域给下游的能力面：测试通知走**同一条**裁决管线；草稿测试（dry-run）另要它的
+ * 目标直构件与定稿（与路由同一份映射，只是不走 judge / kindRoutes / 节奏门，见 dry-run 模块头）。 */
+export type PipelinePort = Pick<
+  typeof pipelineApi,
+  "submit" | "finalizeRequest" | "barkTarget" | "browserTarget" | "systemTarget" | "webhookTarget"
+>;
 
 /** sdk 域给浏览器的能力面：动态种类的清单与用户确认。只要管理面、不要服务面——那是给兄弟插件的，设置页既不
  * 替别人登记种类，也不代人发送通知。 */
 export type KindPort = Pick<typeof sdkApi, "confirmKind" | "listKinds">;
 
-/** channels 域给浏览器的能力面：只读能力自检与平台事实。**不含** `deliver`——api 域不该能伪造通知。 */
+/** channels 域给浏览器的能力面：只读能力自检与平台事实，外加草稿测试的单目标出站。
+ * **不含** `deliver`——api 域不该能伪造通知；`dryRunTarget` 是唯一的例外，且只接受已构造好的
+ * 单个目标与固定的测试文案（目标由 pipeline 直构件产出，不接受任意通知请求），全程禁写面。 */
 export type ChannelPort = Pick<
   typeof channelsApi,
-  "probeCapabilities" | "hostPlatform" | "undeterminedCapabilities"
+  "probeCapabilities" | "hostPlatform" | "undeterminedCapabilities" | "dryRunTarget"
 >;
 
 export type { NotifyFrame } from "../channels/interface.ts";

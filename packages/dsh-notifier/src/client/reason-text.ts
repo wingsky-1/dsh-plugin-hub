@@ -110,6 +110,16 @@ export function deliveryViewOf(value: unknown, t: ReasonTranslator): DeliveryVie
   };
 }
 
+/**
+ * dry-run 结果行的理由文案（#912 F1 回归 pin）：`ok` 那一支为空串——成功没有理由可说，
+ * 与 DeliveryView 同口径；非 ok 走 reasonText。调用方（index.tsx sendTest）不得直调
+ * reasonText，否则 ok 行必挂“原因未知”。
+ */
+export function dryRunReasonText(status: string, reason: unknown, t: ReasonTranslator): string {
+  if (status === "ok") return "";
+  return reasonText(reason, t);
+}
+
 /** 读侧视图：只取渲染用得上的三个字段，其余（半截值、陌生键）不进界面。 */
 interface ReasonView {
   code: string;

@@ -69,12 +69,12 @@
     },
     "dsh-notifier": {
       "modules": 10,
-      "scannedSrcFiles": 107,
-      "allSrcTsFiles": 138,
+      "scannedSrcFiles": 112,
+      "allSrcTsFiles": 143,
       "interfaceFacades": 10,
       "leafValueEdges": 11,
-      "fileValueEdges": 118,
-      "crossModuleRefs": 105,
+      "fileValueEdges": 137,
+      "crossModuleRefs": 110,
       "quality": {
         "leafModuleCycles": [],
         "fileCycles": [],
@@ -84,10 +84,7 @@
         "uncoveredSrcFiles": [],
         "crossDomainValueEdges": [],
         "rootIndexImports": [],
-        "clientServerImports": [
-          "src/client/capabilities.ts|src/server/channels/impl/capabilities/type.ts",
-          "src/client/reason-text.ts|src/server/shared/reason.ts"
-        ],
+        "clientServerImports": [],
         "unitImportFaceViolations": []
       }
     },

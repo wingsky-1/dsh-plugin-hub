@@ -148,9 +148,16 @@ export type PutResult = {
   error?: ErrorDetail;
 };
 
-/** POST /test 成功体（调用点只读 sseConnections；失败体走 ErrorDetail）。 */
+/** POST /test 成功体（调用点只读 sseConnections；失败体走 ErrorDetail）。
+ *
+ * dry-run 成功体是另一套（服务端 B3 schema）：{ok, channelId, status, reason?}——
+ * status 为此次实测结论（ok / failed / skipped），reason 为结构化理由（只读渲染）。
+ * 调用点按有无 channelId 区分两套（dry-run 恒带 channelId）。 */
 export type SendTestResult = {
   sseConnections?: unknown;
+  channelId?: unknown;
+  status?: unknown;
+  reason?: unknown;
   error?: ErrorDetail;
 };
 

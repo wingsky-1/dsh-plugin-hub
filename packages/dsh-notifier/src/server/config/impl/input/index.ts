@@ -305,8 +305,11 @@ function requireBuiltinsPresent(list: readonly RawSettingValue[]): ValidationRes
 }
 
 /** `level` 与 `preset` 是可选键：缺省各有明确语义（前者让「severity → level」映射生效，后者归一到 custom），
- * 客户端新建频道时本就不带它们——照必填拦下等于让用户的合法提交保存不了。 */
-function validateChannel(raw: RawSettingValue): ValidationResult {
+ * 客户端新建频道时本就不带它们——照必填拦下等于让用户的合法提交保存不了。
+ *
+ * 导出给草稿测试（dry-run）逐项复用：它只审单条、不审「内置必须在场」（见 requireBuiltinsPresent），
+ * 草稿里可以只有目标频道一条。 */
+export function validateChannel(raw: RawSettingValue): ValidationResult {
   if (!isRecord(raw)) return reject("channels", "频道项需要对象");
   if (raw.type === "browser" || raw.type === "system") return validateBuiltinChannel(raw, raw.type);
   if (typeof raw.id !== "string" || raw.id === "") return reject("channels", "频道缺少 id");

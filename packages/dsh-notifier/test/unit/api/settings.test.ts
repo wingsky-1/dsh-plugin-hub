@@ -12,6 +12,7 @@ import { describe, expect, it } from "vitest";
 import type { ConfigPort } from "../../../src/server/api/deps.ts";
 import { SettingsEndpoints } from "../../../src/server/api/impl/settings/index.ts";
 import { DEFAULT_CONFIG } from "../../../src/server/config/impl/model/index.ts";
+import * as configApi from "../../../src/server/config/interface.ts";
 import { jsonReq, makeRes } from "../../helpers.ts";
 
 /** 视图与写面结果经能力面的签名可达，不请 config 域再多导出一个名字。 */
@@ -40,6 +41,9 @@ function fakeConfig(result?: WriteResult) {
       writes.push({ patch, revision });
       return result ?? { ok: true, view: VIEW };
     },
+    // dry-run 纯函数走真实实现（本文件不断言它们，端口类型要求齐成员）。
+    resolveDraftChannels: configApi.resolveDraftChannels,
+    normalizeConfig: configApi.normalizeConfig,
   };
   return { port, writes };
 }
@@ -169,6 +173,8 @@ describe("PUT /config：写面四态 → 四个状态码", () => {
       writeConfig: async () => {
         throw new Error("写盘炸了");
       },
+      resolveDraftChannels: configApi.resolveDraftChannels,
+      normalizeConfig: configApi.normalizeConfig,
     };
     const { res } = makeRes();
     await expect(

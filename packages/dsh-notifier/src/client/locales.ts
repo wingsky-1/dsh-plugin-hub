@@ -146,6 +146,16 @@ export const zh = {
   channelsDomainHint: "仅保存频道改动，不影响事件/参数等未保存修改",
   // ===== 频道卡 =====
   chTest: "发送测试",
+  // dry-run（#912 症状1）：有脏时测试按钮切文案 + 徽标 + title，结果行打标未落盘
+  chTestDraft: "用未保存配置测试",
+  chTestDraftTitle: "用当前未保存的草稿实测（不保存、不落盘）",
+  chTestDraftBadge: "未存",
+  dryRunTag: "草稿测试·未落盘",
+  dryRunPending: "草稿测试中…",
+  dryRunGoSave: "去保存",
+  dryRunDiscard: "放弃草稿",
+  dryRunNote:
+    "草稿实测：只测当前草稿，不保存、不记历史与状态；浏览器通道不真弹，以本行结论为准；重复点击会重复外发；超时中断后对方若实际收到，不会出现在历史与状态里。",
   chLastOk: "最近投递成功",
   chLastFail: "最近投递失败",
   chNeverSent: "尚未投递",
@@ -430,6 +440,15 @@ export const en: Record<NotifierLocaleKey, string> = {
   saveChannels: "Save channels",
   channelsDomainHint: "Saves channel changes only; other unsaved edits stay untouched",
   chTest: "Send test",
+  chTestDraft: "Test with unsaved draft",
+  chTestDraftTitle: "Deliver once with the current unsaved draft (nothing is saved or persisted)",
+  chTestDraftBadge: "unsaved",
+  dryRunTag: "Draft test · not persisted",
+  dryRunPending: "Draft test running…",
+  dryRunGoSave: "Go save",
+  dryRunDiscard: "Discard draft",
+  dryRunNote:
+    "Draft test: tests the current draft only; nothing is saved and no history or status is recorded; the browser channel does not really notify — this row is the verdict; repeated clicks send repeatedly; if the peer actually received a timed-out test, it will not appear in history or status.",
   chLastOk: "Last delivery OK",
   chLastFail: "Last delivery failed",
   chNeverSent: "Not delivered yet",

@@ -62,6 +62,7 @@ export function builtinCard(
   audioEngine: AudioEngine,
   t: Translate,
   history: HistoryRecordView[] | null,
+  testDirty?: boolean,
 ) {
   const channelId = channelIdOf(ch);
   const enabled = ch.enabled === true;
@@ -145,7 +146,7 @@ export function builtinCard(
         {ch.type === "system" ? systemPlatformHint(hostPlatform, t) : null}
         {/* 宿主能力自检（/diagnostics）：结论 + 处置建议 + 明细折叠 */}
         {ch.type === "system" ? hostDiagnosticsBlock(diag) : null}
-        <div className="dn-ch-actions">{testBtn(channelId, sendTest, t)}</div>
+        <div className="dn-ch-actions">{testBtn(channelId, sendTest, t, testDirty)}</div>
       </div>
     </details>
   );

@@ -153,6 +153,20 @@ describe("testBtn 测试按钮", () => {
     expect(received).toEqual(["browser"]);
   });
 
+  it("dirty 时切文案 + 脏徽标 + title（B-S1-3）", () => {
+    const html = htmlOf(testBtn("browser", () => {}, fakeT, true));
+    expect(html).toContain("[chTestDraft]");
+    expect(html).toContain("dn-test-dirty");
+    expect(html).toContain("[chTestDraftBadge]");
+    expect(html).toContain("[chTestDraftTitle]");
+  });
+
+  it("无脏时无徽标无 title（旧渲染逐字一致）", () => {
+    const html = htmlOf(testBtn("browser", () => {}, fakeT, false));
+    expect(html).not.toContain("dn-test-dirty");
+    expect(html).not.toContain("[chTestDraft]");
+  });
+
   it("点击透传 undefined", () => {
     const received: Array<string | undefined> = [];
     function sendTest(id?: string): void {

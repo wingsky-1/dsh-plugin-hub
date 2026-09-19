@@ -37,6 +37,12 @@ const historyFile = notifierFile(HISTORY_FILE_NAME);
 const statusFile = notifierFile(STATUS_FILE_NAME);
 const storeApi = await import("../../src/server/stores/interface.ts");
 const pipelineApi = await import("../../src/server/pipeline/interface.ts");
+// probe 构造要的 dry-run 出站与 config 纯函数（动态导入与上同纪）。
+const { dryRunTarget } = await import("../../src/server/channels/interface.ts");
+const { finalizeRequest, barkTarget, browserTarget, systemTarget, webhookTarget } =
+  await import("../../src/server/pipeline/interface.ts");
+const { resolveDraftChannels, normalizeConfig } =
+  await import("../../src/server/config/interface.ts");
 
 const installStores = storeApi.installStores;
 const releaseStores = storeApi.releaseStores;
@@ -200,8 +206,29 @@ describe("POST /test 时序：先 200 受理，投递终态随后才可见", () 
       undeterminedCapabilities: () => {
         throw new Error("本用例不探测");
       },
+      dryRunTarget,
     };
-    const probe = new ProbeEndpoints({ submit }, channels, makeLogger());
+    const probe = new ProbeEndpoints(
+      {
+        submit,
+        finalizeRequest,
+        barkTarget,
+        browserTarget,
+        systemTarget,
+        webhookTarget,
+      },
+      channels,
+      makeLogger(),
+      {
+        readConfig: () => ({ ...config }),
+        readSettingsView: () => {
+          throw new Error("本用例不读视图");
+        },
+        writeConfig: () => Promise.reject(new Error("本用例不写配置")),
+        resolveDraftChannels,
+        normalizeConfig,
+      },
+    );
 
     const made = makeRes();
     await probe.test(

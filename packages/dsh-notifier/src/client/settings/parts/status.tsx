@@ -75,20 +75,27 @@ export function statusDotClass(channelKey: string, statusMap: ChannelStatusMap):
   return st.lastStatus === "ok" ? "ok" : "fail";
 }
 
+/**
+ * per-channel 测试按钮：dirty 时切文案 + 脏徽标 + title（#912 症状1 B-S1-3）。
+ * dirty 缺省 false——无脏时渲染与此前逐字一致（client-dom 旧断言不动）。
+ */
 export function testBtn(
   channelId: string | undefined,
   sendTest: (id?: string) => void,
   t: Translate,
+  dirty?: boolean,
 ) {
   return (
     <button
       type="button"
-      className="dn-set-btn dn-set-btnSmall"
+      className={"dn-set-btn dn-set-btnSmall" + (dirty === true ? " dn-test-dirty" : "")}
+      title={dirty === true ? t("chTestDraftTitle") : undefined}
       onClick={function () {
         sendTest(channelId);
       }}
     >
-      {t("chTest")}
+      {dirty === true ? t("chTestDraft") : t("chTest")}
+      {dirty === true ? <span className="dn-test-dirtyBadge">{t("chTestDraftBadge")}</span> : null}
     </button>
   );
 }

@@ -19,6 +19,12 @@ import { jsonReq, makeLogger, makeRegister, pollUntil, tempDshHome, wire } from 
 
 const home = tempDshHome();
 const { installApi, releaseApi } = await import("../../../src/server/api/interface.ts");
+// 端口新增的 dry-run 纯函数走真实实现（动态导入与上同纪：config 单例的落盘路径在构造时定下）。
+const { resolveDraftChannels, normalizeConfig } =
+  await import("../../../src/server/config/interface.ts");
+const { finalizeRequest, barkTarget, browserTarget, systemTarget, webhookTarget } =
+  await import("../../../src/server/pipeline/interface.ts");
+const { dryRunTarget } = await import("../../../src/server/channels/interface.ts");
 
 /**
  * 客户端锁定的路径表（`src/client/index.tsx` 里的 URL 常量是同一份承诺）。独立写一遍而不是从源码
@@ -170,6 +176,8 @@ function assemble() {
         ok: true,
         view: { user: {}, revision: 8, writable: true, effective: {} },
       }),
+      resolveDraftChannels,
+      normalizeConfig,
     },
     stores: {
       readHistory: async () => [...HISTORY],
@@ -180,6 +188,11 @@ function assemble() {
       submit: (request) => {
         submitted.push(request);
       },
+      finalizeRequest,
+      barkTarget,
+      browserTarget,
+      systemTarget,
+      webhookTarget,
     },
     kinds: {
       listKinds: () => [...KINDS],
@@ -192,6 +205,7 @@ function assemble() {
       probeCapabilities: () => Promise.resolve(CAPABILITIES),
       hostPlatform: () => "linux",
       undeterminedCapabilities: () => CAPABILITIES,
+      dryRunTarget,
     },
   };
   installApi(deps);

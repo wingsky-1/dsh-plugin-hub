@@ -60,6 +60,18 @@ export function hostPlatform(): string {
 export { undeterminedCapabilities };
 
 /**
+ * 草稿测试（dry-run）的单目标出站：api 域经它把内存里的目标打出去，全程 bypass 正常管线的
+ * 写面（不 settle、不归档、不 emit 帧，browser 的 emit 由它在内部接空）。bark / webhook 走
+ * SSRF 安全 fetch，system 复用平台能力缓存只读。这是 api 域唯一被允许的「伪造投递」入口——
+ * 只接受已构造好的单个目标与固定的测试文案，不接受任意通知请求（见实现模块头的 bypass 清单）。
+ *
+ * 结果理由契约：返回的 failed / skipped 理由已按 FAILURE_REASON_MAX 截断并经 normalizeReason
+ * 收编（与状态落盘面同一条上限）——调用方（api 域写响应处）只做形状收窄，不再截第二遍，
+ * 跨模块值边因此不增加（目录门面只认 interface.ts，见 verify-dir-imports）。
+ */
+export { dryRunTarget } from "./impl/dry-run/index.ts";
+
+/**
  * 释放音频临时目录（自播合成音的落盘处）：组合根在卸载时调一次，端口侧在进程退出时也挂一次。
  * 幂等、never-throw——它是本域唯一会把**目录**删掉的入口（按次删目录会让并发投递互踩，
  * 故日常只 unlink 本次文件，目录留到这里）。

@@ -52,6 +52,8 @@ interface ChannelsPaneDeps {
   markSecretEdited: (key: string) => void;
   saving: boolean;
   saveFor: (entry: string, quietIfEmpty?: boolean) => void;
+  /** 频道域是否有脏（测试按钮切文案 + 徽标 + title 的依据，B-S1-3）。 */
+  testDirty: boolean;
   t: Translate;
 }
 
@@ -87,6 +89,7 @@ export function channelsPane(deps: ChannelsPaneDeps) {
     markSecretEdited,
     saving,
     saveFor,
+    testDirty,
     t,
   } = deps;
 
@@ -110,6 +113,7 @@ export function channelsPane(deps: ChannelsPaneDeps) {
           audioEngine,
           t,
           history,
+          testDirty,
         ),
       );
       return;
@@ -131,6 +135,7 @@ export function channelsPane(deps: ChannelsPaneDeps) {
             statusMap,
             t,
             history,
+            testDirty,
           )
         : barkCard(
             c,
@@ -149,6 +154,7 @@ export function channelsPane(deps: ChannelsPaneDeps) {
             statusMap,
             t,
             history,
+            testDirty,
           ),
     );
   });

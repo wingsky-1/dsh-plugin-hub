@@ -39,6 +39,7 @@ export function barkCard(
   statusMap: ChannelStatusMap,
   t: Translate,
   history: HistoryRecordView[] | null,
+  testDirty?: boolean,
 ) {
   const channelKey = channelIdFor(ch);
   const armed = delArmedId === ch.id;
@@ -304,7 +305,7 @@ export function barkCard(
           </div>
         </details>
         <div className="dn-ch-actions">
-          {testBtn(channelKey, sendTest, t)}
+          {testBtn(channelKey, sendTest, t, testDirty)}
           <button
             type="button"
             className={"dn-set-btn dn-set-btnSmall" + (armed ? " dn-set-btnDanger" : "")}

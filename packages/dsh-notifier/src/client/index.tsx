@@ -61,6 +61,7 @@ import { pollChannelStatus } from "./settings/status-poll.ts";
 // 判定顺序是两端契约（结构化优先、状态码与文案兜底），故收在纯函数模块里由单测直接打红。
 import { apiFailureOf, markHttpFailure } from "./api-error.ts";
 import type { HttpFailure } from "./api-error.ts";
+import { dryRunReasonText } from "./reason-text.ts";
 // 设置卡的渲染原子层：普通函数返回 JSX，依赖（t / statusMap / patch / sendTest / 平台 / 诊断
 // 视图）一律显式传参——原子层不读卡片状态，搬家不会让闭包静默捕获到旧 state。
 import { channelsPane } from "./settings/panes/channels.tsx";
@@ -122,7 +123,8 @@ const STYLE_ID = "dsh-notifier-style";
 // 每次样式契约变更后 bump（版本号单调递增，保证 ensureStyle 判定为新版本并重注入）
 // 声音行/三态/试听样式加入时再次 bump。
 // 能力自检行（dn-ch-diag）加入时再次 bump。
-const CSS_VERSION = "784-1";
+// dry-run 结果行与脏态测试按钮样式加入时再次 bump。
+const CSS_VERSION = "912-1";
 // 浏览器通知图标（内联 SVG data URL，零外部资源；铃铛造型）。
 const NOTIFY_ICON =
   "data:image/svg+xml;utf8," +
@@ -461,12 +463,34 @@ function postKind(kind: string, confirmed: boolean): Promise<PostKindResult> {
   });
 }
 
-/** 测试通知（channelId 可选——per-channel 测试，收敛到 service 管线）。 */
-function sendTestReq(channelId?: string): Promise<SendTestResult> {
-  return fetch(ROUTES.test, {
+/**
+ * 测试通知（channelId 可选——per-channel 测试，收敛到 service 管线）。
+ *
+ * draftChannels 给出即 dry-run（#912 症状1）：body 带 {channelId, draft: {channels}}，
+ * 测眼前草稿、同步返回实测结论，全程不写 history / status。服务端总预算 15s，客户端错峰
+ * 18s 中断（B7：让服务端的 408 先到；中断只丢弃本次结果，在飞的投递无法撤回，见面板声明）。
+ * 无 draft 时走老路（已保存配置），语义一个字不改。
+ */
+function sendTestReq(channelId?: string, draftChannels?: unknown): Promise<SendTestResult> {
+  const isDryRun = draftChannels !== undefined;
+  const ctrl: AbortController | null =
+    isDryRun && typeof AbortController !== "undefined" ? new AbortController() : null;
+  const timer: ReturnType<typeof setTimeout> | null = ctrl
+    ? setTimeout(function () {
+        ctrl!.abort();
+      }, 18000)
+    : null;
+  const body =
+    channelId === undefined
+      ? {}
+      : isDryRun
+        ? { channelId: channelId, draft: { channels: draftChannels } }
+        : { channelId: channelId };
+  let chain = fetch(ROUTES.test, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify(channelId ? { channelId: channelId } : {}),
+    body: JSON.stringify(body),
+    signal: ctrl ? ctrl.signal : undefined,
   }).then(function (r: Response) {
     return r.json().then(function (body: SendTestResult) {
       if (!r.ok) {
@@ -482,6 +506,13 @@ function sendTestReq(channelId?: string): Promise<SendTestResult> {
       return body;
     });
   });
+  if (timer !== null) {
+    const pending = timer;
+    chain = chain.finally(function () {
+      clearTimeout(pending);
+    });
+  }
+  return chain;
 }
 
 /**
@@ -597,6 +628,16 @@ function SettingsCard() {
   const conflictDraft = useState(null as null | { entry: string; latest: ConflictLatest });
   const conflict = conflictDraft[0];
   const setConflict = conflictDraft[1];
+  // dry-run 结果（#912 症状1 B-S1-4/B8）：独立态，与 poll / loadStatus 完全隔离。
+  // - pending=true：在飞；pending=false：已有结论（status 恒为服务端回的实测结论）；
+  // - 任一草稿写入口（patch / commitSettings）即清（改草稿清结果）；
+  // - 纯内存：重载即丢；切 tab 保留（state 在卡片顶层，不随 pane 条件调用走）。
+  // - 通过不自动保存：结论只渲染，不触发任何 saveFor。
+  const dryRunDraft = useState(
+    null as null | { channelId: string; pending: boolean; status?: string; reason?: string },
+  );
+  const dryRun = dryRunDraft[0];
+  const setDryRun = dryRunDraft[1];
 
   function loadHistory(alive: { value: boolean }) {
     fetchHistory()
@@ -713,6 +754,8 @@ function SettingsCard() {
       return next;
     });
     setSaved("");
+    // 任一草稿写入口变更即清 dry-run 结果（含冲突覆盖/quiet——它们走 commitSettings，见下）。
+    setDryRun(null);
   }
 
   /** 整体替换 settings：已知完整 next 时同步写 settingsRef 再
@@ -723,6 +766,7 @@ function SettingsCard() {
     settingsRef.current = next;
     setSettings(next);
     setSaved("");
+    setDryRun(null);
   }
 
   /** 基线 diff：只提交与加载基线不同的键（防组合层 base 被默认值回写覆盖）。
@@ -973,7 +1017,39 @@ function SettingsCard() {
    * 一条，沿用单次刷新。轮询全程只读 GET（不重发 POST，不撞 1 秒节流窗）；读失败保留旧态
    * （轮询内吞，null 不应用——瞬时抖动不丢已展示的终态）。
    */
+  /**
+   * 发送测试通知：channelId 给出即 dry-run（测眼前草稿，独立结果态，不触发 poll / loadStatus，
+   * 通过不自动保存）；省略即老路广播（已保存配置，单次刷新）。并发重复点击会重复外发——
+   * 服务端并发帽为 2，超限回 429 提示手动重试（见面板声明与服务端 B5）。
+   */
   function sendTest(channelId?: string) {
+    if (channelId !== undefined) {
+      const draftChannels =
+        ((settingsRef.current || settings || {}) as SettingsView).channels || [];
+      setDryRun({ channelId: channelId, pending: true });
+      sendTestReq(channelId, draftChannels)
+        .then(function (data) {
+          const status = typeof data.status === "string" ? data.status : "failed";
+          setDryRun({
+            channelId: channelId,
+            pending: false,
+            status: status,
+            reason: dryRunReasonText(status, data.reason, t),
+          });
+        })
+        .catch(function (error: unknown) {
+          const failure = apiFailureOf(error, t);
+          // 请求层失败（400 / 408 / 429 / 中断）：同样落独立结果行，不进 poll，不碰状态行。
+          setDryRun({
+            channelId: channelId,
+            pending: false,
+            status: "request-failed",
+            reason: failure.message,
+          });
+          toast(t("testFail", { msg: failure.message, hint: failure.hint }));
+        });
+      return;
+    }
     sendTestReq(channelId)
       .then(function (data) {
         toast(
@@ -1358,6 +1434,59 @@ function SettingsCard() {
   // foot 显示全量脏计数（含频道域）；「保存频道」按钮的域脏态不做单独
   // 计数——无频道域脏时点击走空 diff 的「未修改」提示（与 foot 保存同交互语义）。
   const dirtyCount = Object.keys(diffPayload()).length;
+  // 频道域脏（测试按钮 dry-run 文案的依据，B-S1-3）：只看 channels 键——事件 tab 的脏
+  // 不该让频道测试按钮改文案（它发的本来就是 channels 草稿）。
+  const channelsDirty = Object.keys(diffPayloadFor("channels")).length > 0;
+
+  /**
+   * dry-run 结果行（B-S1-4）：独立行、打标「草稿测试·未落盘」，常驻 [去保存][放弃草稿]，
+   * 通过不自动保存。state 在卡片顶层：切 tab 保留（B8），改草稿即清（patch/commitSettings）。
+   */
+  function dryRunStatusText(status: string): string {
+    if (status === "ok") return t("chStatusOk");
+    if (status === "failed") return t("chStatusFailed");
+    if (status === "skipped") return t("chStatusSkipped");
+    return status;
+  }
+  const dryRunRow =
+    dryRun === null ? null : (
+      <div className="dn-dryrun" role="status" title={t("chTestDraftTitle")}>
+        <span className="dn-dryrunTag">{t("dryRunTag")}</span>
+        {dryRun.pending ? (
+          <span className="dn-dryrunPending">{t("dryRunPending")}</span>
+        ) : (
+          <span className="dn-dryrunResult">
+            {dryRun.channelId +
+              " · " +
+              dryRunStatusText(dryRun.status || "") +
+              (dryRun.reason ? "：" + dryRun.reason : "")}
+          </span>
+        )}
+        {dryRun.pending ? null : (
+          <span className="dn-dryrunActions">
+            <button
+              type="button"
+              className="dn-set-btn dn-set-btnSmall dn-set-save"
+              disabled={saving}
+              onClick={function () {
+                saveFor("channels");
+              }}
+            >
+              {t("dryRunGoSave")}
+            </button>
+            <button
+              type="button"
+              className="dn-set-btn dn-set-btnSmall"
+              disabled={saving}
+              onClick={discardChanges}
+            >
+              {t("dryRunDiscard")}
+            </button>
+          </span>
+        )}
+        <div className="dn-dryrunNote">{t("dryRunNote")}</div>
+      </div>
+    );
 
   // 三个 pane 的**条件调用**（普通函数返回 JSX，非 active tab 根本不调用——保持既有条件渲染
   // 语义；改成组件会引入挂载/卸载）。依赖一律显式传参，pane 模块内不读本组件闭包。
@@ -1388,12 +1517,14 @@ function SettingsCard() {
     markSecretEdited,
     saving,
     saveFor,
+    testDirty: channelsDirty,
     t,
   };
   return (
     <li className="dn-set-card">
       {tabbar}
       <div className="dn-set-body">
+        {dryRunRow}
         {/* 历史独立成 tab：清理/发送测试/刷新并排工具行；请求权限按钮随权限状态行归入
             「浏览器通知」频道卡 */}
         {activeTab === "events"

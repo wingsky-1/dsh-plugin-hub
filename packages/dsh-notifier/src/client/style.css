@@ -1211,6 +1211,52 @@
 .dn-banner[data-kind="error"] {
   border-left-color: var(--dsw-alias-state-error-primary, #d92d20);
 }
+/* dry-run 测试按钮脏态（#912 症状1 B-S1-3）：描边 + 脏徽标 */
+.dn-test-dirty {
+  border-color: var(--dsw-alias-state-warning-primary, #f79009);
+}
+.dn-test-dirtyBadge {
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: 8px;
+  font-size: 11px;
+  background: var(--dsw-alias-state-warning-primary, #f79009);
+  color: #fff;
+}
+/* dry-run 独立结果行（#912 症状1 B-S1-4）：打标未落盘 + 去保存/放弃草稿 + 声明注脚 */
+.dn-dryrun {
+  margin: 8px 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px dashed var(--dsw-alias-state-warning-primary, #f79009);
+  font-size: 13px;
+}
+.dn-dryrunTag {
+  margin-right: 8px;
+  padding: 0 6px;
+  border-radius: 8px;
+  font-size: 11px;
+  background: var(--dsw-alias-state-warning-primary, #f79009);
+  color: #fff;
+}
+.dn-dryrunPending {
+  color: var(--dsw-alias-label-secondary, #646a73);
+}
+.dn-dryrunResult {
+  color: var(--dsw-alias-label-primary, #1f2329);
+  overflow-wrap: anywhere;
+}
+.dn-dryrunActions {
+  margin-left: 8px;
+}
+.dn-dryrunActions .dn-set-btn {
+  margin-left: 6px;
+}
+.dn-dryrunNote {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary, #646a73);
+}
 .dn-banner[data-kind="ask"],
 .dn-banner[data-kind="question"] {
   border-left-color: var(--dsw-alias-state-warning-primary, #f79009);
