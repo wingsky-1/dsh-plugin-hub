@@ -38,13 +38,13 @@ import {
   type TrendDirRow,
   type TrendHourRow,
   type TrendTokens,
-} from "../../domain2/collect/interface.ts";
+} from "../../server/collect/interface.ts";
 import type {
   TrendCallRecord,
   TrendCorrectRecord,
   TrendCounterRecord,
   TrendEmit,
-} from "../../domain2/collect/interface.ts";
+} from "../../server/collect/interface.ts";
 import {
   emptyCell,
   emptyAggRow,

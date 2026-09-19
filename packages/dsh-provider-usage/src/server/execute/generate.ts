@@ -32,7 +32,7 @@ import {
   type TrendCell,
   type TrendDirRow,
   type TrendHourRow,
-} from "../../domain2/collect/interface.ts";
+} from "../../server/collect/interface.ts";
 import type { ReportPeriod } from "../config/interface.ts";
 
 /** 报告生成所用 llm 服务面（LlmRuntime 最小结构面——只依赖实际用到的三个方法）。 */

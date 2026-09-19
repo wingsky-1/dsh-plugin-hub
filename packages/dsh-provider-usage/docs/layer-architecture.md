@@ -17,8 +17,8 @@
 两域仅经装配层 `apply/apply.ts` 组合。
 
 准确表述：**两域业务面零直接依赖**；共享底座与路由层的跨域依赖如实标注：
-- `server/config/normalize.ts` → `domain2/collect/interface.ts`（TREND_DIR_MAX；#768 D1 前在 `domain2/schedule/config.ts`）
-- `server/execute/runner.ts` → `domain2/aggregate/interface.ts`（metricValue/TrendTracker，#768 D3 前在 `domain2/execute/runner.ts`）+ `domain2/collect/interface.ts`（sumToken/TrendCell）
+- `server/config/normalize.ts` → `server/collect/interface.ts`（TREND_DIR_MAX；#768 D1 前在 `domain2/schedule/config.ts`，D9 随域改址）
+- `server/execute/runner.ts` → `server/aggregate/interface.ts`（metricValue/TrendTracker，#768 D3 前在 `domain2/execute/runner.ts`，D8 随域改址）+ `server/collect/interface.ts`（sumToken/TrendCell，D9 随域改址）
 - `domain2/routes/ui.ts` → `server/pipeline/interface.ts`（StatsService，type-only + cacheSize() 方法调用，#768 D6 随域改址）
 - 域1/域2/装配 → 共享底座一律经各目录 `interface.ts` 面具消费 `shared/interface.ts` 转发符号
 
@@ -35,7 +35,7 @@
 ### 域2 · 事件监听·趋势·报告框架
 | 层 | 职责 | 文件(行数) | 备注 |
 |---|---|---|---|
-| E1 事件采集层 | session/event 折叠状态机 | domain2/collect/{collector(445),types(346)} | 纯逻辑，now/emit 注入 |
+| E1 事件采集层 | session/event 折叠状态机 | server/collect/{interface.ts 门面 + deps.ts 注入面 + collector/types}（#768 D9 由 domain2/collect 整域迁入，零行为变更，resolveCwd 延期未验证） | 纯逻辑，now/emit 注入 |
 | E2 聚合/压实/存储层 | 双面记账+压实+分片+自愈 | server/aggregate/{interface.ts 门面 + deps.ts 注入面 + aggregator/aggregate-rows/aggregate-query/store/index}（#768 D8 由 domain2/aggregate 整域迁入，derive/align 聚合查询纯面 + 随行修正与冻结，A4(f) 判据锁定） | D2 后主类保留状态容器与方法，压实转换/查询投影为纯函数模块（不接触 this） |
 | E3 报告调度层 | 窗口/幂等+队列+lastRun（配置面 D1 起归 server/config） | server/schedule/{due,scheduler,tasks,store}（#768 D2 由 domain2/schedule+common/last-run 整域迁入，叶环归零） | 与 E4 经本域门面解耦（executor 持注入，推进走同一 per-root 链）；tasks 持注入 executor |
 | E4 报告执行/产出层 | 执行接线+LLM 生成+渲染+落盘 | server/execute/{report-index,runner,generate,format,executor,list-dirs}（#768 D3 由 domain2 整域迁入，零行为变更） | executor 独立工厂（含错误脱敏契约）；list-dirs 独立文件（闭包收敛）；parse+记忆化单源 |

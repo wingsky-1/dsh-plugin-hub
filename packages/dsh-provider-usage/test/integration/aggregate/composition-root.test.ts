@@ -60,7 +60,7 @@ import type {
   AggregateClock,
   AggregateResolveCwd,
 } from "../../../src/server/aggregate/deps.ts";
-import { TREND_ROW_VERSION } from "../../../src/domain2/collect/interface.ts";
+import { TREND_ROW_VERSION } from "../../../src/server/collect/interface.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const srcDir = join(here, "..", "..", "..", "src");

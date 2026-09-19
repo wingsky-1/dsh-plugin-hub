@@ -24,10 +24,10 @@
  * 源码允许的纯面复用（非实例调用，不经本文件注入）：
  * - shared 的 dayKey/lastNDayKeys 经 shared/interface.ts 直接引用
  *   （共享设施不入注入面，由实现块直接引，与 refactor skill §3 同形）；
- * - domain2/collect 的 sumToken/hourOfDay/TREND_ROW_VERSION/TREND_UNIDENTIFIED/
- *   isValidShardRow 与行类型经 domain2/collect/interface.ts 以 pure + type
+ * - server/collect 的 sumToken/hourOfDay/TREND_ROW_VERSION/TREND_UNIDENTIFIED/
+ *   isValidShardRow 与行类型经 server/collect/interface.ts 以 pure + type
  *   复用（零 node 依赖的纯函数与类型，与 D3 “execute 经门面复用纯面”同形；
- *   collect 留 domain2（D9 再迁），边 server/aggregate|domain2/collect）；
+ *   #768 D9 整域迁入（旧址在 domain2 采集目录），边 server/aggregate|server/collect）；
  * - node:fs/promises 与 node:path 是宿主能力（分片落盘 tmp+rename 载体与
  *   路径拼接），由实现块直接持有，不经域注入面。
  *

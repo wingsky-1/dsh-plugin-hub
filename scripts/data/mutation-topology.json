@@ -361,11 +361,11 @@
         },
         "trend-collect": {
           "mutate": [
-            "packages/dsh-provider-usage/src/domain2/collect/collector.ts",
-            "packages/dsh-provider-usage/src/domain2/collect/types.ts"
+            "packages/dsh-provider-usage/src/server/collect/collector.ts",
+            "packages/dsh-provider-usage/src/server/collect/types.ts"
           ],
           "excludes": ["!packages/dsh-provider-usage/src/client/**"],
-          "comment": "阶段零新段（D17 分层变异）：E1 事件采集面——collector+types（折叠状态机/归属归一）；testFiles 含 unit-trend（杀灭面为该层测试）。"
+          "comment": "阶段零新段（D17 分层变异）：E1 事件采集面——collector+types（折叠状态机/归属归一）；testFiles 含 unit-trend（杀灭面为该层测试）；#768 D9 采集两文件随域迁 server/collect（路径同步，零行为变更，杀灭面新增 test/integration/collect/composition-root）。"
         },
         "report-schedule": {
           "mutate": [

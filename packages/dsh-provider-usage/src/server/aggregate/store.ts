@@ -31,7 +31,7 @@ import {
   type TrendDetailRow,
   type TrendDirRow,
   type TrendHourRow,
-} from "../../domain2/collect/interface.ts";
+} from "../../server/collect/interface.ts";
 
 export type TrendShardRow =
   TrendDetailRow | TrendCounterRow | TrendAggRow | TrendDirRow | TrendHourRow;

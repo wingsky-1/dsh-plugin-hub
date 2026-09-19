@@ -95,7 +95,7 @@ src/
 | server/history/ | interface.ts、history.ts（#768 D5 由 domain1/history 整域迁入，并发语义确定化） |
 | server/adapters/ | interface.ts、deps.ts、register.ts、deepseek-official.{mjs,d.mts}、opencode-go.{mjs,d.mts}、zai-coding-cn.{mjs,d.mts}（#768 D4 由 domain1/adapters 整域迁入，.mjs 零改动） |
 | domain1/routes/ | interface.ts、stats.ts、adapters.ts |
-| domain2/collect/ | interface.ts、collector.ts、types.ts |
+| server/collect/ | interface.ts、deps.ts、collector.ts、types.ts（#768 D9 由 domain2/collect 整域迁入，interface 门面 + deps 注入面，零行为变更） |
 | server/aggregate/ | interface.ts、deps.ts、aggregator.ts、aggregate-rows.ts、aggregate-query.ts、store.ts、index.ts（#768 D8 由 domain2/aggregate 整域迁入，interface 门面 + deps 注入面 + 随行修正与冻结） |
 | domain2/common/ | interface.ts、errsurf.ts（last-run.ts 已迁 server/schedule/store.ts，#768 D2；report-index.ts 已迁 server/execute/report-index.ts，#768 D3） |
 | server/schedule/ | interface.ts、deps.ts、due.ts、scheduler.ts、tasks.ts、store.ts（#768 D2：到期判定两题不拆整域收拢） |

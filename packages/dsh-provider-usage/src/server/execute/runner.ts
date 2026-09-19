@@ -9,7 +9,7 @@ import { errorMessage } from "../../../../../shared/host-utils.js";
 import { dayKey, escHtml } from "../../shared/interface.ts";
 import { metricValue } from "../aggregate/interface.ts";
 import type { TrendTracker } from "../aggregate/interface.ts";
-import { sumToken, type TrendCell } from "../../domain2/collect/interface.ts";
+import { sumToken, type TrendCell } from "../../server/collect/interface.ts";
 import { promptFor, type ReportConfig, type ReportPeriod } from "../config/interface.ts";
 import { reportBodyToHtml } from "./format.ts";
 import {

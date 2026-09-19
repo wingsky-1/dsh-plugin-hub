@@ -9,7 +9,7 @@
  * 与 upgrade 复用 LEGACY 词表同形——标识符常量在值层存在、类型表达不了它，
  * 故走门面复用而非注入；截断改跳过会造出永远匹配不到任何行的键）。
  */
-import { TREND_DIR_MAX } from "../../domain2/collect/interface.ts";
+import { TREND_DIR_MAX } from "../../server/collect/interface.ts";
 import type { ReportConfig, ReportPeriod, ReportPeriodConfig, ReportPrompts } from "./shape.ts";
 import { DEFAULT_REPORT_CONFIG } from "./shape.ts";
 import {
