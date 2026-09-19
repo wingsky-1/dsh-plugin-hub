@@ -1,7 +1,7 @@
 {
   "name": "@wingsky-1/dsh-plugins-all",
   "version": "0.2.4",
-  "description": "DSH 插件全家桶聚合包：一键安装全部功能插件（notifier / provider-usage / mcp-manager / lan-proxy / verify-isolated）。装它 = 子包 dependencies 拉齐 + 聚合 cordis patch 激活。dsh-gzip / dsh-web-file-preview 等已退役包不再随全家桶分发。",
+  "description": "DSH 插件全家桶聚合包：一键安装全部功能插件（notifier / provider-usage / mcp-manager / lan-proxy / verify-isolated / worktree-sidebar）。装它 = 子包 dependencies 拉齐 + 聚合 cordis patch 激活。dsh-gzip / dsh-web-file-preview 等已退役包不再随全家桶分发。",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
@@ -32,7 +32,8 @@
     "@wingsky-1/dsh-provider-usage": "workspace:*",
     "@wingsky-1/dsh-mcp-manager": "workspace:*",
     "@wingsky-1/dsh-lan-proxy": "workspace:*",
-    "@wingsky-1/dsh-verify-isolated": "workspace:*"
+    "@wingsky-1/dsh-verify-isolated": "workspace:*",
+    "@wingsky-1/dsh-worktree-sidebar": "workspace:*"
   },
   "publishConfig": {
     "access": "public"

@@ -236,6 +236,9 @@ importers:
       '@wingsky-1/dsh-verify-isolated':
         specifier: workspace:*
         version: link:../dsh-verify-isolated
+      '@wingsky-1/dsh-worktree-sidebar':
+        specifier: workspace:*
+        version: link:../dsh-worktree-sidebar
 
   packages/dsh-provider-usage:
     devDependencies:

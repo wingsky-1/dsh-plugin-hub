@@ -4,9 +4,10 @@
     "dsh-mcp-manager",
     "dsh-notifier",
     "dsh-provider-usage",
-    "dsh-verify-isolated"
+    "dsh-verify-isolated",
+    "dsh-worktree-sidebar"
   ],
-  "standalone": ["dsh-worktree-sidebar"],
+  "standalone": [],
   "configSurfaces": [
     {
       "package": "dsh-lan-proxy",
