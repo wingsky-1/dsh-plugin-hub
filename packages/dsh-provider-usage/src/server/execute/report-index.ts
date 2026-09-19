@@ -1,11 +1,14 @@
 /**
- * dsh-provider-usage/report — report index.jsonl 格式解析。
+ * dsh-provider-usage — server/execute 域：report index.jsonl 格式解析
+ * （#768 D3，由 domain2/common/report-index.ts 搬入，零行为变更）。
  *
- * lastRun 推导与读侧投影共同依赖的**纯解析**原语；本文件无状态无缓存
- * （indexCache 记忆化留在 runner 读侧，防双份缓存漂移——该目录
- * 「无状态无缓存」边界的组成部分）。
+ * lastRun 推导（server/schedule/store.ts 经本域门面复用）与读侧投影
+ * （同域 runner.ts readReportIndex）共同依赖的**纯解析**原语；本文件
+ * 无状态无缓存（indexCache 记忆化留在 runner 读侧，防双份缓存漂移）。
+ * ReportMeta 类型直引同域 generate.ts 物理定义（type-only，不经本域
+ * interface.ts 中转，防 impl → interface → impl 类型环）。
  */
-import type { ReportMeta } from "../execute/interface.ts";
+import type { ReportMeta } from "./generate.ts";
 
 /**
  * 解析 index.jsonl 全文为记录数组（坏行跳过、字段白名单过滤）。

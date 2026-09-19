@@ -1,5 +1,6 @@
 /**
- * dsh-provider-usage/report — 报告生成（ctx.llm.stream 路线）。
+ * dsh-provider-usage — server/execute 域：报告生成（ctx.llm.stream 路线）
+ * （#768 D3，由 domain2/execute/generate.ts 搬入，零行为变更）。
  *
  * - 零凭据、零独立网络出口：模型调用经宿主 llm 服务（ctx.llm.stream），
  *   凭据由 dsh 既有 provider 配置持有，本插件不接触（README 安全模型同步口径）；
@@ -24,15 +25,15 @@ import type {
   MessageId,
   StreamChunk,
 } from "@deepseek-ai/dsh-llm";
-import { metricValue } from "../aggregate/interface.ts";
+import { metricValue } from "../../domain2/aggregate/interface.ts";
 import {
   sumToken,
   TREND_UNIDENTIFIED,
   type TrendCell,
   type TrendDirRow,
   type TrendHourRow,
-} from "../collect/interface.ts";
-import type { ReportPeriod } from "../../server/config/interface.ts";
+} from "../../domain2/collect/interface.ts";
+import type { ReportPeriod } from "../config/interface.ts";
 
 /** 报告生成所用 llm 服务面（LlmRuntime 最小结构面——只依赖实际用到的三个方法）。 */
 export interface ReportLlmService {

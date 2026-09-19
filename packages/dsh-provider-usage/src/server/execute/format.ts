@@ -1,5 +1,7 @@
 /**
- * dsh-provider-usage/report — 年报正文渲染管线（escape-then-transform）。
+ * dsh-provider-usage — server/execute 域：年报正文渲染管线
+ * （escape-then-transform；#768 D3 由 domain2/execute/format.ts 搬入，
+ * 零行为变更）。
  *
  * 安全模型：先转义、后引入标签——
  * 1. escHtml 全文转义：此后任何注入 HTML 均为实体文本，字面 `<` 不可能再现；

@@ -1,17 +1,20 @@
 /**
- * dsh-provider-usage/report — 报告生成执行器工厂。
+ * dsh-provider-usage — server/execute 域：报告生成执行器工厂
+ * （#768 D3，由 domain2/execute/executor.ts 搬入，零行为变更）。
  *
  * 执行接线器：幂等下沉（执行前重查 index，已有成功记录且非 force → 复用）、
  * LLM 生成、lastRun 推进——全部在 ReportTaskQueue 临界区内串行执行。
  * 失败不推进 lastRun（下轮按幂等重试/补跑）；错误经 sanitizeDiagnostic 脱敏后
  * 再抛（status 路由回客户端，防本地路径泄露——脱敏为工厂契约字段）。
+ * schedule/config 双门面消费：updateLastRun 单一临界区与任务类型经
+ * server/schedule 门面，配置形态经 server/config 门面（D2 起即此口径）。
  */
 import type { Context } from "@deepseek-ai/cordis";
-import type { ReportConfig } from "../../server/config/interface.ts";
+import type { ReportConfig } from "../config/interface.ts";
 import { readReportIndex, runDueReport } from "./runner.ts";
-import { updateLastRun } from "../../server/schedule/interface.ts";
-import type { ReportTaskInput, ReportTaskResult } from "../../server/schedule/interface.ts";
-import type { TrendTracker } from "../aggregate/interface.ts";
+import { updateLastRun } from "../schedule/interface.ts";
+import type { ReportTaskInput, ReportTaskResult } from "../schedule/interface.ts";
+import type { TrendTracker } from "../../domain2/aggregate/interface.ts";
 
 export interface DueExecutorDeps {
   trend: TrendTracker;

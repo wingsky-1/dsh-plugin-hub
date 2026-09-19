@@ -2656,7 +2656,7 @@ describe("#633 分片 b C3：注入面声明与 README 收敛（源码字面断�
   // C3 硬性：声明与实现一致——防「注释宣称无路径、实现泄漏路径」的声明回退。
   const here = dirname(fileURLToPath(import.meta.url));
   const pkgDir = join(here, "..", "..", "..");
-  const genSrc = readFileSync(join(pkgDir, "src/domain2/execute/generate.ts"), "utf8");
+  const genSrc = readFileSync(join(pkgDir, "src/server/execute/generate.ts"), "utf8");
   const readme = readFileSync(join(pkgDir, "README.md"), "utf8");
   const promptSrc = readFileSync(join(pkgDir, "src/server/config/prompts.ts"), "utf8");
 

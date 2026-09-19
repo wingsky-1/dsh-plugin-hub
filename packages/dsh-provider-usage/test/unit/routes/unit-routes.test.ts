@@ -5,8 +5,9 @@
  * isTaskIdValid（报告路由双白名单校验）。薄 handler 的其余行为经 unit-report/
  * unit-apply/smoke 端到端覆盖。
  */
+import type { IncomingMessage, ServerResponse } from "node:http";
 import { describe, expect, it } from "vitest";
-import { clampTrendN } from "../../../src/domain2/routes/ui.ts";
+import { clampTrendN, handleEvents, type UiRoutesContext } from "../../../src/domain2/routes/ui.ts";
 import {
   isReportPeriodValid,
   isReportKeyValid,
@@ -126,5 +127,99 @@ describe("isTaskIdValid", () => {
 
   it("非 uuid 非法", () => {
     expect(isTaskIdValid("not-a-uuid")).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------- D3 SSE 断连否定（#768 计划表 rev2 D3 验收）
+//
+// handleEvents 薄 handler：连通帧 + 注册 + close 移除。假件只提供 Behavioral 面
+// （writeHead/write/on/end 记录调用），不断言之外的行为（healthContext 先例风格；
+// ServerResponse 无测试接缝，结构假件经单点 unknown 中转——禁 as any/as never）。
+
+function fakeEventsReq(remoteAddress: string): IncomingMessage {
+  return {
+    method: "GET",
+    url: "/api/dsh-provider-usage/events",
+    socket: { remoteAddress },
+    headers: { host: "127.0.0.1:3080" },
+  } as unknown as IncomingMessage;
+}
+
+function fakeEventsRes(): {
+  res: ServerResponse;
+  chunks: string[];
+  ended: string[];
+  status: () => number;
+  emitClose: () => void;
+} {
+  const chunks: string[] = [];
+  const ended: string[] = [];
+  const handlers = new Map<string, Array<() => void>>();
+  let status = 0;
+  const res = {
+    writeHead: (s: number) => {
+      status = s;
+    },
+    write: (c: string) => {
+      chunks.push(String(c));
+    },
+    end: (c: string) => {
+      ended.push(String(c));
+    },
+    on: (evt: string, fn: () => void) => {
+      const list = handlers.get(evt) ?? [];
+      list.push(fn);
+      handlers.set(evt, list);
+    },
+  } as unknown as ServerResponse;
+  return {
+    res,
+    chunks,
+    ended,
+    status: () => status,
+    emitClose: () => {
+      for (const fn of handlers.get("close") ?? []) fn();
+    },
+  };
+}
+
+describe("handleEvents SSE 断连否定", () => {
+  it("连通帧 + 注册（首帧文案改坏必须红）", () => {
+    const clients = new Set<ServerResponse>();
+    const fake = fakeEventsRes();
+    const ctx = { sseClients: clients } as unknown as UiRoutesContext;
+    handleEvents(fakeEventsReq("127.0.0.1"), fake.res, ctx);
+    expect(fake.status()).toBe(200);
+    expect(fake.chunks).toEqual([": connected\n\n"]);
+    expect(clients.has(fake.res)).toBe(true);
+  });
+
+  it("断连移除客户端（close 处理删除即残留必须红）", () => {
+    const clients = new Set<ServerResponse>();
+    const fake = fakeEventsRes();
+    const ctx = { sseClients: clients } as unknown as UiRoutesContext;
+    handleEvents(fakeEventsReq("127.0.0.1"), fake.res, ctx);
+    expect(clients.size).toBe(1);
+    fake.emitClose();
+    expect(clients.size).toBe(0);
+  });
+
+  it("重复断连安全（二次 close 抛错必须红）", () => {
+    const clients = new Set<ServerResponse>();
+    const fake = fakeEventsRes();
+    const ctx = { sseClients: clients } as unknown as UiRoutesContext;
+    handleEvents(fakeEventsReq("127.0.0.1"), fake.res, ctx);
+    fake.emitClose();
+    fake.emitClose();
+    expect(clients.size).toBe(0);
+  });
+
+  it("非回环 403 不注册（越围栏放行必须红）", () => {
+    const clients = new Set<ServerResponse>();
+    const fake = fakeEventsRes();
+    const ctx = { sseClients: clients } as unknown as UiRoutesContext;
+    handleEvents(fakeEventsReq("8.8.8.8"), fake.res, ctx);
+    expect(fake.status()).toBe(403);
+    expect(clients.size).toBe(0);
   });
 });

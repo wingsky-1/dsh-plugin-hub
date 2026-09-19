@@ -4675,7 +4675,7 @@ describe("#633 分片 b2 D2：客户端源码契约断言", () => {
     clientContractObs.routesSource = readFileSync(join(pkgDir, "src/domain2/routes/ui.ts"), "utf8");
     clientContractObs.localesSource = readFileSync(join(pkgDir, "src/client/locales.ts"), "utf8");
     clientContractObs.listDirsSource = readFileSync(
-      join(pkgDir, "src/domain2/execute/list-dirs.ts"),
+      join(pkgDir, "src/server/execute/list-dirs.ts"),
       "utf8",
     );
   });

@@ -118,8 +118,8 @@
     },
     {
       "gate": "verify-dir-imports",
-      "path": "dsh-provider-usage:domain2/execute|server/config",
-      "reason": "#768 D1：runner.ts 经 packages/dsh-provider-usage/src/server/config/interface.ts 取 promptFor（按周期取模板）与类型，替代已消除的 domain2/execute|domain2/schedule 边（归属随物理定义迁移）；纯面复用，不调业务实例。长期条目（设计事实，非待办）。",
+      "path": "dsh-provider-usage:server/execute|server/config",
+      "reason": "#768 D3：runner.ts 经 packages/dsh-provider-usage/src/server/execute/../config/interface.ts 取 promptFor（按周期取模板）与类型（D1 起即此口径，D3 随物理定义由 domain2/execute 迁 server/execute，边归属同步迁移）；纯面复用，不调业务实例。复用边界由 server/execute/deps.ts 注记锁定。长期条目（设计事实，非待办）。",
       "trackingIssue": "#768"
     },
     {
@@ -148,8 +148,8 @@
     },
     {
       "gate": "verify-dir-imports",
-      "path": "dsh-provider-usage:domain2/execute|server/schedule",
-      "reason": "#768 D2：执行器经调度门面取 updateLastRun 单一临界区与任务类型，替代已消除的旧边。串行语义由树内调度集成用例锁定。长期条目。",
+      "path": "dsh-provider-usage:server/execute|server/schedule",
+      "reason": "#768 D3：执行器经调度门面取 updateLastRun 单一临界区与任务类型、读侧取 DueReport 类型（D2 口径延续，D3 随物理定义迁移）；反向调度域经执行域门面复用纯解析，故叶粒度呈门面互消费环——双向均为门面收口（禁直引实现文件，双方 deps.ts 注记 + integration/execute 用例逐行锁定导入面），同一条目覆盖边与环两类证据。D13 收尾重估是否收敛为单向注入。长期条目。",
       "trackingIssue": "#768"
     },
     {
@@ -160,14 +160,44 @@
     },
     {
       "gate": "verify-dir-imports",
-      "path": "dsh-provider-usage:server/schedule|domain2/common",
-      "reason": "#768 D2：调度存储经 common 门面复用纯解析，本域唯一跨域值导入，单向边，旧反向边已消除，叶环归零。复用边界由调度 deps 注记锁定。长期条目。",
+      "path": "dsh-provider-usage:server/schedule|server/execute",
+      "reason": "#768 D3：调度存储经 execute 门面只复用纯解析 parseReportIndexLines（D3 前为 server/schedule|domain2/common，边归属同步迁移），不调业务实例（read/persist/run/notify 均不导入，由树内 integration/execute 用例锁定）。复用边界由双方 deps.ts 注记锁定。长期条目（设计事实，非待办）。",
       "trackingIssue": "#768"
     },
     {
       "gate": "verify-dir-imports",
       "path": "dsh-provider-usage:domain2/routes|server/schedule",
       "reason": "#768 D2：路由写侧经调度门面取调度纯函数与读写面及队列类型，替代已消除的旧边。实例仍经装配参数注入。树内集成用例锁定。长期条目。",
+      "trackingIssue": "#768"
+    },
+    {
+      "gate": "verify-dir-imports",
+      "path": "dsh-provider-usage:server/execute|domain2/aggregate",
+      "reason": "#768 D3：runner/generate/executor 经 domain2/aggregate 门面复用 metricValue 纯函数与 TrendTracker 类型（D3 前为域内边，边归属同步迁移）；有状态实例经构造参数传递。复用边界由 server/execute/deps.ts 注记锁定。长期条目。",
+      "trackingIssue": "#768"
+    },
+    {
+      "gate": "verify-dir-imports",
+      "path": "dsh-provider-usage:server/execute|domain2/collect",
+      "reason": "#768 D3：runner/generate/list-dirs 经 domain2/collect 门面复用 sumToken/sanitizeDirName 纯函数与类型（D3 前为域内边，边归属同步迁移）。复用边界由 server/execute/deps.ts 注记锁定。长期条目。",
+      "trackingIssue": "#768"
+    },
+    {
+      "gate": "verify-dir-imports",
+      "path": "dsh-provider-usage:apply|server/execute",
+      "reason": "#768 D3：组合根经 execute 门面装配执行器工厂与查询面（全经门面，禁直引实现文件，D3 前为 apply|domain2/execute）。树内 integration/execute 用例锁定。长期条目。",
+      "trackingIssue": "#768"
+    },
+    {
+      "gate": "verify-dir-imports",
+      "path": "dsh-provider-usage:domain2/routes|server/execute",
+      "reason": "#768 D3：reports.ts 经 execute 门面取读面（D3 前为 domain2/routes|domain2/execute）。实例仍经装配参数注入。树内 integration/execute 用例锁定。长期条目。",
+      "trackingIssue": "#768"
+    },
+    {
+      "gate": "verify-dir-imports",
+      "path": "dsh-provider-usage:server/execute/executor.ts|server/execute/interface.ts|server/schedule/interface.ts|server/schedule/scheduler.ts|server/schedule/store.ts",
+      "reason": "#768 D3 文件环登记（门面中转环）：executor 经调度门面取引擎链（值）→store 经执行门面取纯解析（值）——环上无实现文件直引（R-A 语义 impl 直引计数保持 0）。任一边改直引即红。D13 收尾重估。长期条目。",
       "trackingIssue": "#768"
     }
   ]

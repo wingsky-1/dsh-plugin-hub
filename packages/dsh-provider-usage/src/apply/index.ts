@@ -252,8 +252,8 @@ export {
   applyPromptTemplate,
   buildStatsSnapshot,
   PERIOD_BUCKETS,
-} from "../domain2/execute/interface.ts";
-export { reportBodyToHtml } from "../domain2/execute/interface.ts";
+} from "../server/execute/interface.ts";
+export { reportBodyToHtml } from "../server/execute/interface.ts";
 export {
   DEFAULT_DAILY_PROMPT,
   DEFAULT_WEEKLY_PROMPT,
@@ -281,7 +281,7 @@ export type {
   ReportStatsSnapshot,
   ReportLlmService,
   ReportTokenUsage,
-} from "../domain2/execute/interface.ts";
+} from "../server/execute/interface.ts";
 export { ReportScheduler } from "../server/schedule/interface.ts";
 export {
   readLastRun,
@@ -291,8 +291,8 @@ export {
   __lastRunChainForTests,
 } from "../server/schedule/interface.ts";
 // 执行器工厂与报告配置服务（装配面公共符号，测试/外部消费者从 lib 导入）
-export { makeDueReportExecutor } from "../domain2/execute/interface.ts";
-export type { DueExecutorDeps } from "../domain2/execute/interface.ts";
+export { makeDueReportExecutor } from "../server/execute/interface.ts";
+export type { DueExecutorDeps } from "../server/execute/interface.ts";
 export { ReportConfigService } from "../server/config/interface.ts";
 export type { ReportConfigServiceOptions } from "../server/config/interface.ts";
 // 任务队列（手动生成与定时共用执行入口）
@@ -303,7 +303,7 @@ export type {
   ReportTaskResult,
   ReportTaskStatus,
 } from "../server/schedule/interface.ts";
-// 读侧投影（一行/窗口=最新版）与公共解析（解析原语在 report-index.ts）
+// 读侧投影（一行/窗口=最新版）与公共解析（解析原语在 server/execute/report-index.ts）
 export {
   readReportIndex,
   prevWindowTotal,
@@ -314,8 +314,8 @@ export {
   notifyReport,
   __clearReportIndexCacheForTests,
   __reportIndexCacheStatsForTests,
-} from "../domain2/execute/interface.ts";
-export { parseReportIndexLines } from "../domain2/common/interface.ts";
+} from "../server/execute/interface.ts";
+export { parseReportIndexLines } from "../server/execute/interface.ts";
 // 路径解析纯函数透出（供测试与调用方复用同一展开/解析规则，无行为变更）
 export { resolvePath, pluginHome, expandHomePath } from "../domain1/registry/interface.ts";
 // 配置归一化（默认值 / schemastery schema / normalizeConfig）

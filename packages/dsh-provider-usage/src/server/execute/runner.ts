@@ -1,15 +1,16 @@
 /**
- * dsh-provider-usage/report — 报告生成执行器与索引读取辅助。
+ * dsh-provider-usage — server/execute 域：报告生成执行器与索引读取辅助
+ * （#768 D3，由 domain2/execute/runner.ts 搬入，零行为变更）。
  */
 import { appendFile, mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Context } from "@deepseek-ai/cordis";
 import { errorMessage } from "../../../../../shared/host-utils.js";
 import { dayKey, escHtml } from "../../shared/interface.ts";
-import { metricValue } from "../aggregate/interface.ts";
-import type { TrendTracker } from "../aggregate/interface.ts";
-import { sumToken, type TrendCell } from "../collect/interface.ts";
-import { promptFor, type ReportConfig, type ReportPeriod } from "../../server/config/interface.ts";
+import { metricValue } from "../../domain2/aggregate/interface.ts";
+import type { TrendTracker } from "../../domain2/aggregate/interface.ts";
+import { sumToken, type TrendCell } from "../../domain2/collect/interface.ts";
+import { promptFor, type ReportConfig, type ReportPeriod } from "../config/interface.ts";
 import { reportBodyToHtml } from "./format.ts";
 import {
   buildStatsSnapshot,
@@ -18,8 +19,8 @@ import {
   type ReportMetaSummary,
   type ReportStatsSnapshot,
 } from "./generate.ts";
-import type { DueReport } from "../../server/schedule/interface.ts";
-import { parseReportIndexLines } from "../common/interface.ts";
+import type { DueReport } from "../schedule/interface.ts";
+import { parseReportIndexLines } from "./report-index.ts";
 
 export function reportsDir(root: string): string {
   return join(root, "reports");

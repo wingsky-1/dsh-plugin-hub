@@ -19,7 +19,7 @@ import {
   DEFAULT_REPORT_CONFIG,
   readLastRun,
 } from "../../../src/apply/index.ts";
-import { makeListDirs } from "../../../src/domain2/execute/list-dirs.ts";
+import { makeListDirs } from "../../../src/server/execute/list-dirs.ts";
 
 describe("ReportConfigService：串行写链 / 内存权威 / 回调顺序 / 磁盘 roundtrip", () => {
   let root: string;

@@ -21,8 +21,9 @@
  * - server/config 的 ReportConfig 类型 + parseHHMM 经
  *   server/config/interface.ts 以 type + pure 复用（零 node 依赖的纯函数，
  *   与 D1 “业务域经门面复用纯面”同形）；
- * - domain2/common 的 parseReportIndexLines 经 domain2/common/interface.ts
- *   以纯解析复用（无状态无缓存；store.ts 唯一跨域值导入）；
+ * - server/execute 的 parseReportIndexLines 经 server/execute/interface.ts
+ *   以纯解析复用（无状态无缓存；store.ts 唯一跨域值导入，D3 前在
+ *   domain2/common，边归属同步迁移）；
  * - shared 的 dayKey 经 shared/interface.ts 直揕引用（共享设施不入
  *   注入面，由实现块直接引，与 refactor skill §3 同形）。
  *

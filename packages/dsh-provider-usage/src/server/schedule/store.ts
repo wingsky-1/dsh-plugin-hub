@@ -11,7 +11,7 @@ import { readFile, writeFile, rename, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import type { ReportPeriod } from "../config/interface.ts";
 import { alignLastRun, deriveLastRun, LAST_RUN_SCHEMA, type LastRunRecord } from "./due.ts";
-import { parseReportIndexLines } from "../../domain2/common/interface.ts";
+import { parseReportIndexLines } from "../execute/interface.ts";
 
 /** lastRun 持久化文件。 */
 function lastRunFile(root: string): string {

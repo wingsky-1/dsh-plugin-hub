@@ -383,15 +383,15 @@
         },
         "report-execute": {
           "mutate": [
-            "packages/dsh-provider-usage/src/domain2/execute/runner.ts",
-            "packages/dsh-provider-usage/src/domain2/execute/generate.ts",
-            "packages/dsh-provider-usage/src/domain2/execute/format.ts",
-            "packages/dsh-provider-usage/src/domain2/common/report-index.ts",
-            "packages/dsh-provider-usage/src/domain2/execute/executor.ts",
-            "packages/dsh-provider-usage/src/domain2/execute/list-dirs.ts"
+            "packages/dsh-provider-usage/src/server/execute/report-index.ts",
+            "packages/dsh-provider-usage/src/server/execute/runner.ts",
+            "packages/dsh-provider-usage/src/server/execute/generate.ts",
+            "packages/dsh-provider-usage/src/server/execute/format.ts",
+            "packages/dsh-provider-usage/src/server/execute/executor.ts",
+            "packages/dsh-provider-usage/src/server/execute/list-dirs.ts"
           ],
           "excludes": ["!packages/dsh-provider-usage/src/client/**"],
-          "comment": "阶段零新段（D17 分层变异）：E4 报告执行/产出面——runner+generate+format；阶段二（D8）并入 report-index.ts（公共解析）/executor.ts（执行器工厂）/list-dirs.ts（目录候选工厂）；testFiles 含 unit-report/unit-report-executor。"
+          "comment": "阶段零新段（D17 分层变异）：E4 报告执行/产出面——runner+generate+format；阶段二（D8）并入 report-index.ts（公共解析）/executor.ts（执行器工厂）/list-dirs.ts（目录候选工厂）；#768 D3 起整域归 server/execute（6 文件物理迁移，interface.ts/deps.ts 以 facade/type-only 口径排除）；testFiles 含 unit-report/unit-report-executor + test/integration/execute/composition-root（门面装配与记忆化判据）+ test/integration/schedule/composition-root（D3三-轮询否定 toFake 面）。"
         },
         "routes": {
           "mutate": [

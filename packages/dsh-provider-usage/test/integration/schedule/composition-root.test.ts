@@ -25,7 +25,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { pollUntil } from "../../helpers.ts";
 import {
   ReportScheduler,
@@ -63,8 +63,8 @@ const applyFaceSrc = readFileSync(join(srcDir, "apply", "interface.ts"), "utf8")
 const schedulerSrc = readFileSync(join(srcDir, "server", "schedule", "scheduler.ts"), "utf8");
 const storeSrc = readFileSync(join(srcDir, "server", "schedule", "store.ts"), "utf8");
 const commonFaceSrc = readFileSync(join(srcDir, "domain2", "common", "interface.ts"), "utf8");
-const executorSrc = readFileSync(join(srcDir, "domain2", "execute", "executor.ts"), "utf8");
-const runnerSrc = readFileSync(join(srcDir, "domain2", "execute", "runner.ts"), "utf8");
+const executorSrc = readFileSync(join(srcDir, "server", "execute", "executor.ts"), "utf8");
+const runnerSrc = readFileSync(join(srcDir, "server", "execute", "runner.ts"), "utf8");
 const reportsSrc = readFileSync(join(srcDir, "domain2", "routes", "reports.ts"), "utf8");
 const morphSrc = readFileSync(join(srcDir, "server", "upgrade", "last-run-morph.ts"), "utf8");
 const storageLayoutSrc = readFileSync(
@@ -126,15 +126,15 @@ describe("D2一 经 server/schedule 域门面装配", () => {
   }
 
   it("执行器的推进经调度门面（不走旧 common 入口）", () => {
-    expect(executorSrc.includes("../../server/schedule/interface.ts")).toBe(true);
+    expect(executorSrc.includes('"../schedule/interface.ts"')).toBe(true);
     expect(executorSrc.includes("domain2/schedule")).toBe(false);
     expect(executorSrc.includes("common/interface")).toBe(false);
   });
 
-  it("读侧 DueReport 类型经调度门面（index 解析仍走 common 纯面）", () => {
-    expect(runnerSrc.includes("../../server/schedule/interface.ts")).toBe(true);
-    expect(runnerSrc.includes("../common/interface.ts")).toBe(true);
-    expect(runnerSrc.includes("../schedule/")).toBe(false);
+  it("读侧 DueReport 类型经调度门面（index 解析归本域同级文件）", () => {
+    expect(runnerSrc.includes('"../schedule/interface.ts"')).toBe(true);
+    expect(runnerSrc.includes('"./report-index.ts"')).toBe(true);
+    expect(runnerSrc.includes("common/interface")).toBe(false);
   });
 
   it("路由写侧经调度门面（不走旧入口）", () => {
@@ -390,14 +390,14 @@ describe("D2三-轮询 60s tick + 5min 预热汇入 getStats（改坏默认/断�
     );
   });
 
-  it("store 唯一跨域值导入是 common 纯解析（单向边，环保持断开）", () => {
-    expect(storeSrc.includes("../../domain2/common/interface.ts")).toBe(true);
+  it("store 唯一跨域值导入是 execute 纯解析（单向边，环保持断开）", () => {
+    expect(storeSrc.includes('"../execute/interface.ts"')).toBe(true);
     expect(storeSrc.includes("parseReportIndexLines")).toBe(true);
     const storeImports = storeSrc
       .split(String.fromCharCode(10))
       .filter((l) => l.startsWith("import"));
     expect(storeImports.some((l) => l.includes("domain2/schedule"))).toBe(false);
-    expect(storeImports.some((l) => l.includes("common/last-run"))).toBe(false);
+    expect(storeImports.some((l) => l.includes("domain2/common"))).toBe(false);
   });
 });
 
@@ -434,5 +434,68 @@ describe("探针：脏输入必被 flag（detector 失明则本段先红）", ()
     const dirty = "this.tickMs = opts.tickMs ?? 30_000;";
     expect(dirty.includes("?? 60_000")).toBe(false);
     expect(schedulerSrc.includes("?? 60_000")).toBe(true);
+  });
+});
+
+describe("D3三-轮询否定 toFake 面（#768 计划表 rev2 D3 验收）", () => {
+  // 时间纪律（testing skill §4）：显式声明 toFake 面，只伪造轮询定时器
+  // （setInterval/clearInterval），Date 与 setTimeout 保持真实——pollUntil 的
+  // 截止读真实 Date.now()，钉死 Date 它永不超时；pollUntil 内部 setTimeout
+  // 保持真实才能推进等待。裸 sleep（固定时长后断言未发生）在慢盘下必然 flake，
+  // 此处禁用：本文件时间纪律用例锁定无裸 sleep 字面（见末段自扫）。
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("dispose 后轮询停止：假时钟推进 5 个 tick 无新增到期提交", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    const root = mkdtempSync(join(tmpdir(), "d3-poll-neg-"));
+    try {
+      const seen: Array<{ period: string; key: string }> = [];
+      const sched = ReportScheduler.start({
+        root,
+        config: normalizeReportConfig({
+          daily: { enabled: true, time: "00:00" },
+          weekly: { enabled: false, time: "09:00", weekStartsOn: 1 },
+          monthly: { enabled: false, time: "09:00", dayOfMonth: 1 },
+        }),
+        onDue: async (due) => {
+          seen.push({ period: due.period, key: due.key });
+        },
+        tickMs: 30,
+        warn: quietWarn,
+      });
+      try {
+        for (let i = 0; i < 50 && seen.length < 1; i += 1) {
+          await vi.advanceTimersByTimeAsync(30);
+        }
+        expect(seen.length).toBeGreaterThanOrEqual(1);
+        expect(vi.getTimerCount()).toBe(1); // 假时钟下有且仅有一个轮询句柄（空转即测失明）
+        sched.dispose();
+        expect(vi.getTimerCount()).toBe(0); // 句柄已释放：不清 clearInterval 即泄漏，此断言红
+        const atDispose = seen.length;
+        await vi.advanceTimersByTimeAsync(150);
+        expect(seen.length).toBe(atDispose);
+        // 真时钟泄漏窗：若实现另起真实定时器fallback，此窗内必触发而失败——
+        // 否定式条件等待（pollUntil 语义），不用固定 sleep 假设静默。
+        const leaked = await pollUntil(() => seen.length > atDispose, 200, 10);
+        expect(leaked).not.toBe(true);
+      } finally {
+        sched.dispose();
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("toFake 面显式声明（裸 useFakeTimers 入文件必须红）", () => {
+    const selfSrc = readFileSync(join(here, "composition-root.test.ts"), "utf8");
+    expect(selfSrc.includes('toFake: ["setInterval", "clearInterval"]')).toBe(true);
+  });
+
+  it("本文件无裸 sleep（等待面唯一是 pollUntil + 假时钟推进）", () => {
+    const marker = ["new Promise((r) => set", "Timeout"].join("");
+    const selfSrc = readFileSync(join(here, "composition-root.test.ts"), "utf8");
+    expect(selfSrc.includes(marker)).toBe(false);
   });
 });

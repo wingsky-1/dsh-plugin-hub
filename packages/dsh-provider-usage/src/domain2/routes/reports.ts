@@ -20,7 +20,7 @@ import {
   readReportConfig,
   type ReportPeriod,
 } from "../../server/config/interface.ts";
-import { readReportIndex, reportHtmlFile, reportMetaFile } from "../execute/interface.ts";
+import { readReportIndex, reportHtmlFile, reportMetaFile } from "../../server/execute/interface.ts";
 import {
   presetLastRunForNewlyEnabled,
   previousClosedWindow,
