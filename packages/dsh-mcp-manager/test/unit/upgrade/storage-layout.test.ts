@@ -89,7 +89,7 @@ function fileEntries(): FileEntry[] {
 
 /** 装配入参：默认未显式接管任何路径；需要断言诊断时把 logger 传进来自己持有。 */
 function deps(overrides: Partial<UpgradeDeps> = {}): UpgradeDeps {
-  return { logger: makeLogger(), storePath: "", statsFile: "", ...overrides };
+  return { logger: makeLogger(), storePath: "", ...overrides };
 }
 
 /** statSync 的 mode 含文件类型位，逐次取权限位。 */
@@ -200,6 +200,26 @@ describe("幂等：重跑不累积、内容不变", () => {
         .map((entry) => `${basename(entry.legacy)}${MIGRATED_SUFFIX}`)
         .sort(),
     );
+  });
+
+  it("旧文件重现（降级写入）→ 第二代归档 .2，不覆盖第一代证据（#903 M-arch）", async () => {
+    for (const entry of fileEntries()) writeFileSync(entry.legacy, legacyText(entry.label), "utf8");
+    await migrateStorageLayout(deps());
+    // 降级写入：旧文件重现，内容不同。
+    for (const entry of fileEntries())
+      writeFileSync(entry.legacy, `downgraded-${entry.label}\n`, "utf8");
+    await migrateStorageLayout(deps());
+    for (const entry of fileEntries()) {
+      // 第一代证据原样保留，第二代另起 .2。
+      expect([entry.label, readFileSync(`${entry.legacy}${MIGRATED_SUFFIX}`, "utf8")]).toEqual([
+        entry.label,
+        legacyText(entry.label),
+      ]);
+      expect([entry.label, readFileSync(`${entry.legacy}${MIGRATED_SUFFIX}.2`, "utf8")]).toEqual([
+        entry.label,
+        `downgraded-${entry.label}\n`,
+      ]);
+    }
   });
 });
 

@@ -24,6 +24,4 @@ export interface UpgradeDeps {
    * 于是迁移整段跳过、刻度照常推进——静默丢用户配置。
    */
   storePath: string;
-  /** 用户**显式**配置的统计落盘路径（`debug.statsFile`）；空串 = 未配置。语义同上。 */
-  statsFile: string;
 }

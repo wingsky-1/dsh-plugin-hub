@@ -145,10 +145,27 @@ call 放行 `@global` root（全局配置跨工作空间共享，语义成立）
 封装定义条目（`toolDefinitions`）只经 `ws_mcp_call` 按 `@<root>/<server>` 触达。
 注：全局服务器增删改后需重启或触发会话触达才刷新目录（既有行为）。
 
+### 顶层配置键（Config schema）
+
+顶层键（`packages/dsh-mcp-manager/src/server/config/config-schema.ts` 的 `Config`）默认值与语义：
+
+| 键 | 默认值 | 语义 |
+| --- | --- | --- |
+| `enabled` | `true` | 是否启用本插件（插件级总开关）。 |
+| `announceToAgent` | `true` | 是否向 Agent 宣告插件（能力清单由 `<available_mcp_servers>` 承担）。 |
+| `storePath` | 留空（默认 `<DSH_HOME>/@wingsky-1/dsh-mcp-manager/mcp.json`） | 全局服务器配置路径，留空用默认路径。 |
+| `announceCatalog` | `true` | 是否注入 MCP 能力目录（`<available_mcp_servers>`）。 |
+| `catalogMaxEntries` | `6` | 目录注入条目上限。 |
+| `debug.callStats` | `false` | 是否开启调用统计调试与落盘（默认关闭，仅可通过配置文件开启；详见下节“调用统计与 Debug 模式”）。 |
+| `debug.statsFile` | 留空（默认 `<DSH_HOME>/@wingsky-1/dsh-mcp-manager/stats.json`） | 统计落盘路径，留空使用默认路径。 |
+| `ui` | 见“配置（浮窗位置）”节（`position` 默认 `top-right`；`offset.x` / `offset.y` 默认 `8`，`blankY` 默认 `40`；`zIndexBase` 默认 `10`，clamp 到 1–9000） | 浮窗位置与层级配置，详见“配置（浮窗位置）”节。 |
+
 **已废除的配置键**（#767 笔 2）：`middleware`（`off` / `project` / `all` 三档模式）与
 `middlewarePolicy`（`allowTools` / `denyTools` 策略）。设置页的模式下拉已删除；旧配置里写了
 这两个键**不报错也不生效**（键被原样带过、没有任何消费者），本插件也不会改写用户的配置文件。
 工具级禁用是唯一的准入裁决。
+
+**已退役的实现**：S1-5c 自研连接栈退役（`runtime/supervisor.ts`、`runtime/reconnect.ts` 等四文件整体退役，连接改走官方引擎）；W11b2a `src/types` 与 `src/integration` 删除（无迁移动作）。
 
 ### 工具级禁用（浮窗）
 
@@ -226,6 +243,7 @@ await ctx.mcpManager.registerServer({
   仅配置可信的服务器
 - **MCP 工具在真实服务器上执行，先确认再操作**；工具结果原样返回，
   可能含敏感信息；工具描述/结果按不可信输入对待
+- **注入信任分级**：远端工具描述/结果为不可信输入，仅展示与传参，不作指令执行；本地配置与用户显式操作为可信
 - **工作空间隔离（中间层）**：路由以调用方会话当前 cwd 为唯一输入；server
   全名一致性校验（参数声明的 root ≠ 路由 root → 拒绝）防跨空间串台；
   工具级禁用表按 `@<root>/<server>` 全名或裸名裁决（全名优先；`@global` 记录跨工作空间共享）

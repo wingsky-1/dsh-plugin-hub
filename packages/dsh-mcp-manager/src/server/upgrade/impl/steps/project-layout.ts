@@ -22,10 +22,9 @@ import { settleOne } from "./storage-layout.ts";
 export function settleProjectConfig(root: string, logger: UpgradeLogger): Promise<void> {
   return settleOne(legacyProjectConfigFile(root), projectConfigFile(root), null, {
     logger,
-    // settle 路径只用 logger：`storePath`/`statsFile` 传空串——takenOver 是 LAYOUT 层的概念，
+    // settle 路径只用 logger：`storePath` 传空串——takenOver 是 LAYOUT 层的概念，
     // 与项目级无关。
     storePath: "",
-    statsFile: "",
   });
 }
 

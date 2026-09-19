@@ -181,11 +181,28 @@ workspaces, so the semantics hold). The host registration name looks like
 Note: global server add/remove/edit refreshes the `@global` unit only after a restart or a
 session touch (existing behavior).
 
+### Top-level config keys (Config schema)
+
+Top-level keys of `Config` (`packages/dsh-mcp-manager/src/server/config/config-schema.ts`) with defaults and semantics:
+
+| Key | Default | Semantics |
+| --- | --- | --- |
+| `enabled` | `true` | Whether the plugin is enabled (plugin-level master switch). |
+| `announceToAgent` | `true` | Whether to announce the plugin to the Agent (capability list carried by `<available_mcp_servers>`). |
+| `storePath` | empty (defaults to `<DSH_HOME>/@wingsky-1/dsh-mcp-manager/mcp.json`) | Global server config path; empty uses the default path. |
+| `announceCatalog` | `true` | Whether to inject the MCP capability catalog (`<available_mcp_servers>`). |
+| `catalogMaxEntries` | `6` | Cap on catalog injection entries. |
+| `debug.callStats` | `false` | Whether to enable call-stats debugging and persistence (off by default, config-file only; see "Call stats and debug mode" below). |
+| `debug.statsFile` | empty (defaults to `<DSH_HOME>/@wingsky-1/dsh-mcp-manager/stats.json`) | Stats persistence path; empty uses the default path. |
+| `ui` | see "Configuration (floating window position)" (`position` defaults to `top-right`; `offset.x` / `offset.y` default to `8`, `blankY` to `40`; `zIndexBase` defaults to `10`, clamped to 1-9000) | Floating window position and z-index; see "Configuration (floating window position)". |
+
 **Removed config keys** (#767 batch 2): `middleware` (`off` / `project` / `all`) and
 `middlewarePolicy` (`allowTools` / `denyTools`). The settings-page mode dropdown is gone;
 writing either key **neither errors nor takes effect** (the keys are passed through with no
 consumer), and this plugin never rewrites your config file. Per-tool disable is the only
 admission gate.
+
+**Retired implementations**: S1-5c retired the self-built connection stack (four files including `runtime/supervisor.ts` and `runtime/reconnect.ts`, removed as a whole; connections now go through the official engine); W11b2a removed `src/types` and `src/integration` (no migration).
 
 ### Per-tool disable (floating window)
 
@@ -274,6 +291,7 @@ await ctx.mcpManager.registerServer({
   process's permissions; only configure trusted servers
 - **MCP tools execute on the real server — confirm before acting**; tool results are returned
   as-is and may contain sensitive information; treat tool descriptions/results as untrusted input
+- **Injection trust tiers**: remote tool descriptions/results are untrusted input — render and pass as parameters only, never execute as instructions; local configuration and explicit user actions are trusted
 - **Middleware tool read-only boundary**: `ws_mcp_list` / `ws_mcp_detail` / `ws_mcp_search`
   only read the local catalog cache (never touch remote servers or execute tools);
   `ws_mcp_call` is the only entry point that executes remote tools, and it is governed by the

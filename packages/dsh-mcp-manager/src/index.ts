@@ -328,8 +328,9 @@ function provideMcpManagerService(ctx: Context, manager: McpManager): void {
  * 宿主注册，池侧反查会把它当裸名 → 工具级禁用恒 miss）。卸载路径只有一个 `dispose.current`
  * 位置，拆成两个必然漏掉一个。`resolveServerId` 按入参递入，域间不加值边。
  *
- * 单池（#767 笔 1a）：中间层实例与 ws_mcp_* 无条件装配——全部服务器（含封装定义条目）
- * 都只经中间层单元触达，模式键已不影响任何行为。
+ * 单池（#767 笔 1a）：中间层实例与 ws_mcp_* 无条件装配——apply 完成后实例恒在，
+ * 全部服务器（含封装定义条目）都只经中间层单元触达，模式键已不影响任何行为；
+ * pre-step 窗口（装配尚未完成）实例缺失时走 B 兜底。
  */
 function registerMiddlewareAndGuard(
   ctx: Context,
@@ -563,7 +564,6 @@ export async function apply(
   await installUpgrade({
     logger: ctx.logger,
     storePath: explicitPaths.storePath,
-    statsFile: explicitPaths.statsFile,
   });
 
   // 装载生命周期域的接线（#767 S1-4c）。为什么在 apply 里而不是模块求值期：本域要的 loader 是

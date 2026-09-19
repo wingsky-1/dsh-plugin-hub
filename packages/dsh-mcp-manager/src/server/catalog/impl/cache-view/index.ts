@@ -26,7 +26,7 @@ export function catalogCacheFile() {
   return catalogSummaryFile();
 }
 
-/** catalogViewFor 的宿主最小面（manager 提供；中间层实例可能延迟装配，用读取器）。 */
+/** catalogViewFor 的宿主最小面（manager 提供；实例经读取器取——apply 完成后恒在，pre-step 窗口未装配时返回 undefined 走 B 兜底）。 */
 export interface CatalogViewHost {
   getCatalogCache(): CatalogCache;
   getMiddleware(): McpMiddleware | undefined;
@@ -46,7 +46,7 @@ export type CatalogViewResolver = (
  * - 用户手写 server.description 由 composeCatalogEntries 处理（优先级最高），
  *   不在此视图内；
  * - 本视图只负责注入端的 ②（中间层目录摘要）与 ③（B 缓存摘要）两级回退；
- * - **判 middleware 实例**（单池后实例恒在；实例缺失＝尚未装配 → 全部走 B）。
+ * - **判 middleware 实例**（apply 完成后恒在；实例缺失＝pre-step 窗口尚未装配 → 全部走 B）。
  *
  * root 映射（单池后与单元表同口径）：
  * - scope=project → 该 cwd 归一化项目 root 的单元 → 无则磁盘 last-good；

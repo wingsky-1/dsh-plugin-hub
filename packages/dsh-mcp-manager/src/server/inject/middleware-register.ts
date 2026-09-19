@@ -742,12 +742,22 @@ async function handleDirectMcpGuard(
   const segment = rest.slice(0, separator);
   const tool = rest.slice(separator + 2);
   if (tool === "") return undefined;
-  // B11（D5 定稿，规格化不可逆）：server/tool 名含连续双下划线时，第一个 `__`
-  // 分割无法唯一还原 (server, tool)（mcp__my__sv__t 既可能是 server="my"+
-  // tool="sv__t"，也可能是 server="my__sv"+tool="t"）——tool 段仍含 `__` 即
-  // 存在歧义，按未知 server 处理（不禁用不误禁，放行 next()）。映射表列入
-  // 后续增强；不改 publicToolName/INVALID_NAME_CHARS（防冲击官方 mcp__ 契约）。
-  if (tool.includes("__")) return undefined;
+  // B11（规格化不可逆；#903 B-M4 由 fail-open 改 fail-closed）：server/tool 名含连续
+  // 双下划线时，第一个 `__` 分割无法唯一还原 (server, tool)（mcp__my__sv__t 既可能是
+  // server="my"+tool="sv__t"，也可能是 server="my__sv"+tool="t"）——tool 段仍含 `__`
+  // 即存在歧义。放行会让已禁用的含 __ 工具经直呼路径绕过禁用（dispatch 侧
+  // normalizeToolName 对跨 server 前缀是 fail-closed，见 workspace/impl/full-name），
+  // 故此处同样 fail-closed：拒绝并指往 ws_mcp_call（裸名确定性裁决，含 __ 工具经由
+  // 该路径照常用）。映射表列入后续增强；不改 publicToolName/INVALID_NAME_CHARS
+  // （防冲击官方 mcp__ 契约）。
+  if (tool.includes("__")) {
+    return {
+      kind: "deny",
+      reason:
+        `工具注册名 ${JSON.stringify(name)} 含连续双下划线，无法唯一反解 (server, tool)；` +
+        "请经 ws_mcp_call 用服务器裸名与工具裸名调用（该路径确定性裁决）",
+    };
+  }
   // id 反解（#767 S1-5b 裁定 AG③ / S1-4d 遗留缺口）：注册名中段是 (root, name) 分配的 id，
   // 不是裸服务器名——不反解就把它当 server 名查禁用表，工具级禁用对直呼路径**恒 miss**。
   // 反查不到时按裸名解释：未登记 id 的注册面（旧形态名、测试注入的假条目）口径不变。
@@ -838,7 +848,8 @@ function registerPreExecuteGuard(
  * 历史上的动机是「模式为 off 时不建中间层实例，pre-execute guard 只在
  * registerMiddlewareTools 内注册 → mcp__ 直呼无禁用拦截」（「工具级禁用三入口」
  * 实际一入口）。本守卫数据源直查禁用表（只读），独立注册路径；单池（#767 笔 1a）
- * 后中间层实例恒装配，两条注册路径并存仍是刻意的（守卫不依赖中间层实例）。
+ * 后中间层实例 apply 完成后恒在（pre-step 窗口未装配走 B 兜底），两条注册路径并存
+ * 仍是刻意的（守卫不依赖中间层实例）。
  * B11 反解规格化逻辑与 registerMiddlewareTools 内 guard 同源（handleDirectMcpGuard）。
  */
 export function registerDirectMcpGuard(

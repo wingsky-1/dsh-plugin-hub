@@ -88,5 +88,9 @@ export function compareVersions(left: string, right: string): number {
 }
 
 function parseVersion(text: string): number[] {
-  return text.split(".").map((part) => Number.parseInt(part, 10) || 0);
+  // #903 parseVersion 宽松收口：预发布后缀显式剥离（旧 parseInt 截断碰巧同效，语义隐晦）；
+  // 段非纯数字仍归零——未知输入按 0.0.0 起算跑整条链（各步幂等自查），不抛
+  // （启动期读盘数据不可信，抛即崩；归零方向恒为 fail-safe）。
+  const core = text.split("-")[0] ?? "";
+  return core.split(".").map((part) => (/^\d+$/.test(part) ? Number.parseInt(part, 10) : 0));
 }

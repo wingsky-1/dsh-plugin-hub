@@ -19,17 +19,60 @@ function addSecretPair(secrets: Set<string>, value: string): void {
   }
 }
 
+/** 长 flag 精确名集合（去横线小写后全等匹配。子串匹配会把 --turkey 当成含 key 误收下个参数作秘密，过度脱敏；#903 B-M2）。覆盖旧子串口径的全部常见形态。 */
+const SECRET_FLAG_NAMES: ReadonlySet<string> = new Set([
+  "token",
+  "tokens",
+  "secret",
+  "secrets",
+  "password",
+  "passwd",
+  "pass",
+  "passphrase",
+  "key",
+  "keys",
+  "apikey",
+  "api-key",
+  "secretkey",
+  "secret-key",
+  "auth",
+  "authorization",
+  "authtoken",
+  "auth-token",
+  "cookie",
+  "cookies",
+  "credential",
+  "credentials",
+  "access-token",
+  "accesstoken",
+  "client-secret",
+  "clientsecret",
+]);
+
+/** 短 flag 精确集合（#903 B-M2：-p password 这类单字母形态旧口径漏收）。只认独占一拍的精确形态。 */
+const SECRET_SHORT_FLAGS: ReadonlySet<string> = new Set(["-p", "-k", "-s"]);
+
+/** flag 名是否为凭据形参（精确匹配；短 flag 另判）。 */
+function isSecretFlagName(flag: string): boolean {
+  return SECRET_FLAG_NAMES.has(flag.replace(/^-+/, "").toLowerCase());
+}
+
 /** 收集 stdio 形态服务器的 secret：回答「本地命令的秘密在哪？」——环境变量值
- * 全收 + 疑似凭据 flag 的参数值（`--token x` 与 `--token=x` 两种形态）；http 形态
+ * 全收 + 疑似凭据 flag 的参数值（`--token x` 与 `--token=x` 两种形态，另收 `-p/-k/-s` 短 flag 下一拍；长 flag 精确名匹配）；http 形态
  * （headers/URL 用户信息）的收集在 createRedactor 内（不同问题）。 */
 function collectStdioSecrets(server: ServerConfig, secrets: Set<string>): void {
   for (const value of Object.values(server.env ?? {})) addSecretPair(secrets, value);
   const args = server.args ?? [];
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index] ?? "";
+    if (SECRET_SHORT_FLAGS.has(argument)) {
+      const value = args[index + 1];
+      if (value !== undefined && value.length > 0) addSecretPair(secrets, value);
+      continue;
+    }
     const equals = argument.indexOf("=");
     const flag = equals < 0 ? argument : argument.slice(0, equals);
-    if (!/(?:token|secret|pass|key|auth|cookie|credential)/i.test(flag)) continue;
+    if (!isSecretFlagName(flag)) continue;
     const value = equals < 0 ? args[index + 1] : argument.slice(equals + 1);
     if (value !== undefined && value.length > 0) addSecretPair(secrets, value);
   }

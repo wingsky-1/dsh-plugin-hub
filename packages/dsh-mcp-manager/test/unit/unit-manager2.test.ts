@@ -10,6 +10,7 @@
  * - McpManager：uiConfig/updateUiConfig、目录缓存读写、onStatus、项目 store 缓存、
  *   catalogServersFor、setSession 幂等与切换、refreshFromDisk、reconcileServers
  *   各分支、start/stop/connect/disconnect/reconnect、summary/summarize、dispose
+ * - #903 M4/M5-A：fire-and-forget 拒绝记 warn、projectStoreFor 缓存命中同样 settle
  * - apply：enabled:false / announceToAgent:false / announceCatalog:false 分支、
  *   settings 注入 uiUpdate、effect disposer
  */
@@ -4097,5 +4098,82 @@ describe("#569 catalogViewFor 合成注入端目录视图", () => {
   it("磁盘无该服务器 → 保留 B", async () => {
     const { view } = await diskView();
     expect(view.get("g2")?.summary).toBe("B-global-g2");
+  });
+});
+
+// #903 M4/M5-A：fire-and-forget 拒绝处理 + 缓存命中 settle ----
+describe("#903 M4/M5-A：浮空拒绝记 warn、缓存命中同样 settle", () => {
+  function regressionFixture() {
+    const { dir, manager, log } = managerFixture("dsh-mcp-m4-");
+    // 项目目录：<dir>/proj/.git（findProjectRoot 的真实标记，与 setSession 用例同形）。
+    const proj = join(dir, "proj");
+    mkdirSync(join(proj, ".git"), { recursive: true });
+    return { dir, manager, log, proj };
+  }
+
+  it("M4-a：setSession 触达单元失败 → warn 落日志、调用方不抛", async () => {
+    const { manager, log, proj } = regressionFixture();
+    manager.middleware = {
+      projectUnitFor: async () => {
+        throw new Error("boom-touch");
+      },
+    } as unknown as McpManagerType["middleware"];
+    // 反证：把 setSession 的拒绝处理删掉 → 无 warn，pollUntil 超时红。
+    await manager.setSession(proj);
+    await pollUntil("touch 失败 warn", () =>
+      log.warn.some((message) => message.includes("setSession touch unit")),
+    );
+    expect(
+      log.warn.some(
+        (message) => message.includes("setSession touch unit") && message.includes("failed"),
+      ),
+    ).toBe(true);
+  });
+
+  it("M4-b：touchGlobalUnit 内层连接失败 → 外层 catch 记 warn", async () => {
+    const { manager, log } = regressionFixture();
+    const unit = { root: MIDDLEWARE_GLOBAL_ROOT, userDisabled: new Set<string>() };
+    manager.middleware = {
+      projectUnitFor: async () => unit,
+      ensureConnected: async () => {
+        throw new Error("boom-conn");
+      },
+    } as unknown as McpManagerType["middleware"];
+    // 反证：把 .then 回调里的 await 改回内层 void → 外层 catch 接不到，warn 缺席红。
+    (manager as unknown as { touchGlobalUnit: (name: string) => void }).touchGlobalUnit("g1");
+    await pollUntil("touchGlobalUnit 失败 warn", () =>
+      log.warn.some((message) => message.includes("touchGlobalUnit(g1) failed")),
+    );
+    expect(log.warn.some((message) => message.includes("touchGlobalUnit(g1) failed"))).toBe(true);
+  });
+
+  it("M5-A：缓存命中后旧扁平重现 → 再次 projectStoreFor 同样归位", async () => {
+    const { manager, proj } = regressionFixture();
+    const legacy = join(proj, ".dsh", "mcp.json");
+    mkdirSync(join(proj, ".dsh"), { recursive: true });
+    writeFileSync(
+      legacy,
+      JSON.stringify({
+        version: 1,
+        servers: [{ name: "p-old", transport: "stdio", command: "pcmd" }],
+      }),
+    );
+    const first = await manager.projectStoreFor(proj);
+    expect(first!.data.servers.map((server) => server.name)).toContain("p-old");
+    // 降级写：旧扁平重现（切旧分支/降级写回）。
+    writeFileSync(
+      legacy,
+      JSON.stringify({
+        version: 1,
+        servers: [{ name: "p-downgraded", transport: "stdio", command: "pcmd" }],
+      }),
+    );
+    // 反证：命中分支去掉 settle 包装 → 旧文件永不归位，existsSync(legacy) 恒真红。
+    const second = await manager.projectStoreFor(proj);
+    expect(second).toBe(first);
+    expect(existsSync(legacy)).toBe(false);
+    expect(existsSync(`${legacy}.migrated.bak.2`)).toBe(true);
+    // 目标不被历史覆盖：命中分支的 settle 只归档，读到仍是归位前的内容。
+    expect(second!.data.servers.map((server) => server.name)).toContain("p-old");
   });
 });

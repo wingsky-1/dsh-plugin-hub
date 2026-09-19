@@ -79,8 +79,24 @@ export async function loadUserState(file: string): Promise<Map<string, Set<strin
   return out;
 }
 
+/** 同文件另一键的原样保留（read-modify-write）：user-state.json 同时承载
+ * `disabled`（服务器级）与 `disabledTools`（工具级）两键，两次写必须互不抹掉
+ * 对方（#903 S1：PATCH /tool-disable 后任意 connect 即复活）。跨键保留取文件
+ * 原值、不做归一化——本函数只拥有本键的写语义（损坏/缺失的对方键由对方读端
+ * 容错，不在此静默改写）。 */
+async function otherKeyOf(file: string, key: "disabled" | "disabledTools"): Promise<unknown> {
+  try {
+    const parsed = await readJsonFile<Record<string, unknown> | null>(file);
+    if (parsed && typeof parsed === "object") return (parsed as Record<string, unknown>)[key];
+  } catch {
+    // 损坏/缺失 → 无对方键可保留
+  }
+  return undefined;
+}
+
 /** 持久化 userDisabled（合并式：先读现有文件，内存 units 覆盖，保留已淘汰
- * root 的记录——防 LRU 淘汰/卸载后禁用记录被静默抹掉，P1 修复）。 */
+ * root 的记录——防 LRU 淘汰/卸载后禁用记录被静默抹掉，P1 修复）。
+ * 同文件 `disabledTools` 键原样保留（#903 S1 双键互抹修复）。 */
 export async function saveUserState(file: string, units: Map<string, ProjectUnit>): Promise<void> {
   const merged = await loadUserState(file);
   for (const [root, unit] of units) {
@@ -91,8 +107,16 @@ export async function saveUserState(file: string, units: Map<string, ProjectUnit
   for (const [root, names] of merged) {
     if (names.size > 0) disabled[root] = [...names].sort();
   }
+  const kept = await otherKeyOf(file, "disabledTools");
   try {
-    await writeStateFile(file, JSON.stringify({ version: 1, disabled }, null, 2));
+    await writeStateFile(
+      file,
+      JSON.stringify(
+        { version: 1, disabled, ...(kept !== undefined ? { disabledTools: kept } : {}) },
+        null,
+        2,
+      ),
+    );
   } catch {
     // 落盘失败不阻塞主流程
   }
@@ -194,6 +218,7 @@ export async function loadDisabledTools(file: string): Promise<DisabledToolsMap>
  * 加载 + setToolDisabled 增量变更），直接整图写盘即满足「多工作空间互不抹掉」
  * （同一进程内所有空间共用同一映射）；跨进程并发写属读-改-写竞态，与
  * 服务器级 userDisabled（saveUserState）现状一致。
+ * 同文件 `disabled` 键原样保留（#903 S1 双键互抹修复，对称侧）。
  */
 export async function saveDisabledTools(
   file: string,
@@ -207,8 +232,16 @@ export async function saveDisabledTools(
     }
     if (Object.keys(serverRec).length > 0) payload[root] = serverRec;
   }
+  const kept = await otherKeyOf(file, "disabled");
   try {
-    await writeStateFile(file, JSON.stringify({ version: 1, disabledTools: payload }, null, 2));
+    await writeStateFile(
+      file,
+      JSON.stringify(
+        { version: 1, disabledTools: payload, ...(kept !== undefined ? { disabled: kept } : {}) },
+        null,
+        2,
+      ),
+    );
   } catch {
     // 落盘失败不阻塞主流程
   }

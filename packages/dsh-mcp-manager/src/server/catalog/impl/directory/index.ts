@@ -332,13 +332,19 @@ class CatalogDirectory {
         await rm(opts.cachePath, { force: true }).catch(() => {});
         return;
       }
-      const tmp = `${opts.cachePath}.${process.pid}.${Date.now().toString(36)}.tmp`;
-      await writeFile(
-        tmp,
-        JSON.stringify({ version: 1, root, entries: parsed.entries }, null, 2),
-        "utf8",
-      );
-      await rename(tmp, opts.cachePath);
+      // #903 crash 残留 tmp：失败分支 rm 清理 + 随机后缀（与 file-io 同式）。
+      const tmp = `${opts.cachePath}.${process.pid}.${Date.now().toString(36)}.${randomBytes(6).toString("hex")}.tmp`;
+      try {
+        await writeFile(
+          tmp,
+          JSON.stringify({ version: 1, root, entries: parsed.entries }, null, 2),
+          "utf8",
+        );
+        await rename(tmp, opts.cachePath);
+      } catch (writeError) {
+        await rm(tmp, { force: true }).catch(() => {});
+        throw writeError;
+      }
     } catch (error) {
       opts.warn(`dsh-mcp-manager: catalog cache remove failed: ${msgOf(error)}`);
     }

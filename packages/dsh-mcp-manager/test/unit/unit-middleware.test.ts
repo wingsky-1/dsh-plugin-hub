@@ -4,11 +4,12 @@
  * 覆盖：
  * - fullServerName / parseFullServerName（含非法形态）
  * - normalizeToolName（mcp__ 前缀剥离 / 跨 server 拒绝）
- * - B11 红测：server 名含连续双下划线 → guard 按未知 server 处理（不禁用不误禁）
+ * - B11：server 名含连续双下划线 → guard fail-closed 拒绝并指往 ws_mcp_call（#903 B-M4）
  * - normalizeArguments（JSON 字符串参数解析 / 标量保留）
  * - globMatch（工具名通配纯函数）
  * - scoreTool / searchCatalog（跨字段打分 / unavailable 段 / 空查询摘要）
  * - McpMiddleware：projectUnitFor 惰性创建 + userDisabled 合并 + inFlight 去重
+ * - #903 M4：projectUnitFor 后台连接失败记 warn（非 unhandled）
  * - callTool：未知 server / 未连接 / 连接中 / 路由一致性
  * - evictIfNeeded LRU 淘汰
  */
@@ -25,7 +26,7 @@ import {
   releaseLifecycle,
 } from "../../src/server/servers/lifecycle/interface.ts";
 import { catalogDirectory } from "../../src/server/catalog/interface.ts";
-import { fakeLoaderPort, fakeLogsPort, fakeToolsService } from "../helpers.ts";
+import { fakeLoaderPort, fakeLogsPort, fakeToolsService, pollUntil } from "../helpers.ts";
 import type { FakeToolEntry, FakeToolsScript } from "../helpers.ts";
 import type { MiddlewareHost } from "../../src/server/connection/runtime/deps.ts";
 import type { LoaderPort, LogsPort } from "../../src/server/shared/interface.ts";
@@ -79,7 +80,7 @@ const {
   LIST_DEFAULT_TOOLS_PER_SERVER,
   LIST_MAX_TOOLS_PER_SERVER,
 } = await import("../../src/server/connection/runtime/interface.ts");
-const { parseDisabledTools, loadUserState, saveUserState } =
+const { parseDisabledTools, loadUserState, saveUserState, loadDisabledTools, saveDisabledTools } =
   await import("../../src/server/store/interface.ts");
 
 const ROOT = "/tmp/ws-root-a";
@@ -637,6 +638,44 @@ describe("McpMiddleware：projectUnitFor / userDisabled / inFlight", () => {
   });
 });
 
+// #903 M4：后台惰性连接的浮空拒绝必须记 warn（非 unhandled） ----
+describe("#903 M4：projectUnitFor 后台连接失败记 warn", () => {
+  it("后台 ensureConnected 翻错 → warn 落日志（把 .catch 删掉即无 warn 红）", async () => {
+    const servers: ServerConfig[] = [
+      { name: "ctx", transport: "stdio", command: "npx", enabled: true },
+    ];
+    const { host } = makeHost(new Map([[ROOT, servers]]));
+    const warns: string[] = [];
+    const capturingHost = {
+      ...host,
+      logger: {
+        info: () => {},
+        warn: (message: string): void => {
+          warns.push(message);
+        },
+        error: () => {},
+      },
+    };
+    const mw = trackMw(new McpMiddleware(capturingHost as unknown as MiddlewareHost));
+    mw.ensureConnected = async () => {
+      throw new Error("boom-bg");
+    };
+    // 反证：projectUnitFor 内后台循环的 .catch 删掉 → 拒绝浮空，warn 缺席红。
+    await mw.projectUnitFor(ROOT);
+    await pollUntil("后台连接失败 warn", () =>
+      warns.some((message) => message.includes("background connect")),
+    );
+    expect(
+      warns.some(
+        (message) =>
+          message.includes("background connect") &&
+          message.includes("ctx") &&
+          message.includes("failed"),
+      ),
+    ).toBe(true);
+  });
+});
+
 // callTool：路由一致性 / 未连接 ----
 describe("callTool：路由一致性 / 未连接", () => {
   async function callToolFixture() {
@@ -747,6 +786,40 @@ describe("userState 持久化", () => {
     const { loaded } = await saveAndLoad();
     // save/load 往返保证键存在，此处断言存在。
     expect([...loaded.get(ROOT)!]).toEqual(["ctx"]);
+  });
+
+  it("双键互存 A 向：saveUserState 不抹 disabledTools（#903 S1）", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-s1a-"));
+    const file = join(dir, "user-state.json");
+    const tools: DisabledToolsMap = new Map([[ROOT, new Map([["srv", new Set(["toolA"])]])]]);
+    await saveDisabledTools(file, tools);
+    const units = new Map([[ROOT, { userDisabled: new Set(["srv"]) }]]) as unknown as Map<
+      string,
+      ProjectUnit
+    >;
+    await saveUserState(file, units);
+    const raw = JSON.parse(readFileSync(file, "utf8"));
+    expect(raw.disabled).toEqual({ [ROOT]: ["srv"] });
+    expect(raw.disabledTools).toEqual({ [ROOT]: { srv: ["toolA"] } });
+    expect([...(await loadUserState(file)).get(ROOT)!]).toEqual(["srv"]);
+    expect([...(await loadDisabledTools(file)).get(ROOT)!.get("srv")!]).toEqual(["toolA"]);
+  });
+
+  it("双键互存 B 向：saveDisabledTools 不抹 disabled（#903 S1）", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-s1b-"));
+    const file = join(dir, "user-state.json");
+    const units = new Map([[ROOT, { userDisabled: new Set(["srv"]) }]]) as unknown as Map<
+      string,
+      ProjectUnit
+    >;
+    await saveUserState(file, units);
+    const tools: DisabledToolsMap = new Map([[ROOT, new Map([["srv", new Set(["toolA"])]])]]);
+    await saveDisabledTools(file, tools);
+    const raw = JSON.parse(readFileSync(file, "utf8"));
+    expect(raw.disabled).toEqual({ [ROOT]: ["srv"] });
+    expect(raw.disabledTools).toEqual({ [ROOT]: { srv: ["toolA"] } });
+    expect([...(await loadUserState(file)).get(ROOT)!]).toEqual(["srv"]);
+    expect([...(await loadDisabledTools(file)).get(ROOT)!.get("srv")!]).toEqual(["toolA"]);
   });
 
   it("损坏文件 → 空", async () => {
@@ -2043,6 +2116,49 @@ describe("createRedactor 基线", () => {
     expect(!redacted().includes("tok-456")).toBeTruthy();
   });
 
+  it("B-M2 短 flag 下一拍脱敏（-p password；#903）", () => {
+    const redact = createRedactor([
+      {
+        name: "s",
+        transport: "stdio",
+        command: "mysql",
+        args: ["-p", "s3cr3t-pw", "-k", "k3y-v4l", "--port", "3306"],
+        enabled: true,
+      },
+    ]);
+    const out = redact(new Error("connect failed with s3cr3t-pw and k3y-v4l on 3306"));
+    expect(!out.includes("s3cr3t-pw")).toBeTruthy();
+    expect(!out.includes("k3y-v4l")).toBeTruthy();
+    // -k 只认精确独占形态：--port 的值不是秘密，保留可诊断。
+    expect(out.includes("3306")).toBeTruthy();
+  });
+
+  it("B-M2 --turkey 不误伤下个参数（精确名匹配；#903）", () => {
+    const redact = createRedactor([
+      {
+        name: "s",
+        transport: "stdio",
+        command: "cook",
+        args: ["--turkey", "thanksgiving"],
+        enabled: true,
+      },
+    ]);
+    expect(redact(new Error("roast thanksgiving")).includes("thanksgiving")).toBeTruthy();
+  });
+
+  it("B-M2 等号形态与大小写仍脱敏（--Token=xxx；#903）", () => {
+    const redact = createRedactor([
+      {
+        name: "s",
+        transport: "stdio",
+        command: "run",
+        args: ["--Token=AbC-123"],
+        enabled: true,
+      },
+    ]);
+    expect(!redact(new Error("leaked AbC-123")).includes("AbC-123")).toBeTruthy();
+  });
+
   // B8 红测（D4 决策：仅用户信息脱敏）：host/path 无凭据应保留可读——
   // 现状整 URL 全部 [REDACTED]，本断言红；commit3 改口径后绿。
   it("B8：host 应保留（仅用户信息脱敏；现状整 URL 脱敏）", () => {
@@ -2196,15 +2312,15 @@ describe("B18 红测a：callTool 应用 server.toolCallTimeoutMs", () => {
 // reconnect 配置收紧判据 + unit-lifecycle-mount 的「reconnect 原样交官方」映射判据。
 // 「曾连上、前缀消失」这一可判时点则改由 statusOf 读时刷新承担（见文末的池判据段）。
 
-// B11 红测：server 名含连续双下划线 → guard 按未知 server 处理（不禁用不误禁） ----
-// D5 定稿：规格化不可逆——含连续双下划线的 server/tool 名无法从注册全名唯一
+// B11：server 名含连续双下划线 → guard fail-closed 拒绝并指往 ws_mcp_call ----
+// 规格化不可逆——含连续双下划线的 server/tool 名无法从注册全名唯一
 // 反解（mcp__my__sv__t 既可能是 server="my"+tool="sv__t"，也可能是
-// server="my__sv"+tool="t"），guard 按未知 server 处理（放行 next()，不禁用
-// 不误禁）；不改 publicToolName/INVALID_NAME_CHARS（防冲击官方 mcp__ 契约）。
-// 现状 handleDirectMcpGuard 用第一个 __ 分割 → 错位反解（server="my",
-// tool="sv__t"），禁用表若恰有错位形态记录会**误禁**（情形 B）；真实形态记录
-// （@global/my__sv → t）则**查错漏禁**（情形 A）。
-describe("B11 红测：含连续双下划线 server 名按未知处理", () => {
+// server="my__sv"+tool="t"）。#903 B-M4 起 fail-closed（与 dispatch 侧
+// normalizeToolName 对跨 server 前缀的 fail-closed 对称）：放行会让已禁用的含 __
+// 工具经直呼路径绕过禁用；含 __ 工具经 ws_mcp_call 裸名路径照常用（确定性裁决），
+// 故直呼歧义一律拒绝并指往该路径。不改 publicToolName/INVALID_NAME_CHARS
+// （防冲击官方 mcp__ 契约）。
+describe("B11：含连续双下划线名 fail-closed 拒绝并指往 ws_mcp_call", () => {
   function guardFixture(disabledMap: DisabledToolsMap) {
     // pre-execute 订阅回调：返回裁决对象（kind 面），此处取测试读取的最小面。
     const guards = new Map<string, (...args: unknown[]) => unknown>();
@@ -2245,27 +2361,29 @@ describe("B11 红测：含连续双下划线 server 名按未知处理", () => {
     expect(typeof guards.get("tools/pre-execute") === "function").toBeTruthy();
   });
 
-  it("B11：含连续双下划线名按未知 server 处理，不误禁（现状错位反解会误禁 → 红测）", async () => {
-    // 情形 B（红）：禁用表只有「错位形态」记录（@global/my → sv__t，恰好是第一个
-    // __ 分割的产物）→ 含 __ 名按未知处理应放行（现状误禁 → 断言红）。
+  it("B11：含连续双下划线名 fail-closed 拒绝（#903 B-M4：放行会绕过禁用）", async () => {
+    // 情形 B：禁用表只有「错位形态」记录（@global/my → sv__t）→ 歧义直呼一律
+    // 拒绝（旧口径放行 → 已禁用的含 __ 工具经直呼复活）。
     const { guards } = guardFixture(parseDisabledTools({ "@global": { my: ["sv__t"] } }));
     // guard 已注册由首用例保证（同一装配器），此处断言存在；裁决形状由被测返回。
     const decisionB = (await guards.get("tools/pre-execute")!(
       { name: "mcp__my__sv__t", agent: { session: { header: { cwd: "/proj" } } } },
       async () => ({ kind: "allow" }),
-    )) as { kind: unknown };
-    expect(decisionB.kind).toBe("allow");
+    )) as { kind: unknown; reason?: unknown };
+    expect(decisionB.kind).toBe("deny");
+    expect(String(decisionB.reason)).toMatch(/ws_mcp_call/);
   });
 
-  it("B11：真实形态记录同样不命中（不可逆按未知 server 处理）", async () => {
-    // 情形 A（防回归）：禁用表只有「真实形态」记录（@global/my__sv → t）→ 同样
-    // 不可逆 → 放行（不禁用；现状查错漏禁，修复后保持不误禁不误杀）。
+  it("B11：真实形态记录同样拒绝（不可逆 → 指往裸名路径）", async () => {
+    // 情形 A：禁用表只有「真实形态」记录（@global/my__sv → t）→ 同样拒绝；
+    // 含 __ 工具经 ws_mcp_call 裸名路径照常用（确定性裁决），直呼歧义不再放行。
     const { guards } = guardFixture(parseDisabledTools({ "@global": { my__sv: ["t"] } }));
     const decisionA = (await guards.get("tools/pre-execute")!(
       { name: "mcp__my__sv__t", agent: { session: { header: { cwd: "/proj" } } } },
       async () => ({ kind: "allow" }),
-    )) as { kind: unknown };
-    expect(decisionA.kind).toBe("allow");
+    )) as { kind: unknown; reason?: unknown };
+    expect(decisionA.kind).toBe("deny");
+    expect(String(decisionA.reason)).toMatch(/ws_mcp_call/);
   });
 });
 
@@ -2979,7 +3097,8 @@ describe("CRAP-ZERO middleware tools hit", () => {
       agent: {},
       signal: new AbortController().signal,
     } as unknown as ToolRunContext);
-    expect((res as { results: unknown[] }).results.length).toBeGreaterThanOrEqual(0);
+    // 夹具含 use_ctx（名中带 use），query "use" 必须命中至少一条；恒真断言收紧（#903 M-C2）。
+    expect((res as { results: unknown[] }).results.length).toBeGreaterThan(0);
   });
   it("search render hits", () => {
     const { defs } = crapFixture();
@@ -3048,7 +3167,8 @@ describe("CRAP-ZERO middleware list detail guard", () => {
       agent: {},
       signal: new AbortController().signal,
     } as unknown as ToolRunContext);
-    expect((res as { servers: unknown[] }).servers.length).toBeGreaterThanOrEqual(0);
+    // 夹具含 ctx + @global gctx 两个目录，空返回即漏报；恒真断言收紧（#903 M-C2）。
+    expect((res as { servers: unknown[] }).servers.length).toBeGreaterThan(0);
   });
   it("list render hits with servers", () => {
     const { defs } = crapFixture2();

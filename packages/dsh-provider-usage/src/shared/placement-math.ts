@@ -3,9 +3,9 @@
  *
  * 本文件自持实现（shared-leaf 叶子约束）：src/shared/ 是客户端经 interface.ts
  * 直接消费的共享面，esbuild 会把该目录的转出目标内联进浏览器产物，故不得出现
- * 跨目录相对引用。仓库根 shared/placement-math.js 是家族共享层的同一套纯核心，
- * 两处实现必须保持逐行同构——改任一处须同步另一处（判据不覆盖跨文件一致性，
- * 靠评审保证）。
+ * 跨目录相对引用。本实现与 dsh-mcp-manager 包内 src/shared/placement-math.ts
+ * 同构（两包自持，仓库根 shared/placement-math.js 已退役），两处必须保持逐行
+ * 同构——改任一处须同步另一处（判据不覆盖跨文件一致性，靠评审保证）。
  *
  * 本文件保留包级常量 DEFAULT_Z_INDEX_BASE（对应 CSS 默认 z-index:40）与
  * panelZIndexFor 的包级默认注入（胶囊与主面板取配置值，不再派生 +30）。

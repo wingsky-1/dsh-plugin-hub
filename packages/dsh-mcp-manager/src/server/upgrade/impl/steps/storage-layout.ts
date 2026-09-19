@@ -105,6 +105,15 @@ function warnIfDowngraded(source: string, target: string, deps: UpgradeDeps): vo
   );
 }
 
+/** 常规文件判定（归档多代只跳过常规文件：占位的是目录即改名失败照抛，旧报警保留）。 */
+function isRegularFile(path: string): boolean {
+  try {
+    return statSync(path).isFile();
+  } catch {
+    return false;
+  }
+}
+
 /** 读旧文件；读不出来即抛——那是「搬不动」，不该被当成「没有旧数据」。内容一律不解析。 */
 function readSource(source: string): string {
   try {
@@ -114,11 +123,19 @@ function readSource(source: string): string {
   }
 }
 
-/** 归档源文件；本来就没有就什么都不做。后缀是固定名 = 「这一份处理过了」的标记。 */
+/**
+ * 归档源文件；本来就没有就什么都不做。首选固定名（`${source}.migrated.bak` =
+ * 「这一份处理过了」的标记，幂等语义不变）；该名已存在（降级写入让旧文件重现，
+ * 见 warnIfDowngraded）时按 `.2`、`.3`……留多代，不覆盖第一代证据（#903 M-arch）。
+ */
 function archive(source: string): void {
   if (!existsSync(source)) return;
+  let target = `${source}${MIGRATED_SUFFIX}`;
+  for (let generation = 2; isRegularFile(target); generation += 1) {
+    target = `${source}${MIGRATED_SUFFIX}.${generation}`;
+  }
   try {
-    renameSync(source, `${source}${MIGRATED_SUFFIX}`);
+    renameSync(source, target);
   } catch (cause) {
     throw new Error(`dsh-mcp-manager: 旧存储文件改名失败：${source}`, { cause });
   }

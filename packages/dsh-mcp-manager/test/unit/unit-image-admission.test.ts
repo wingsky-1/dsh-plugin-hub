@@ -264,4 +264,75 @@ describe("image-admission：A+ 自持图片准入（纯逻辑）", () => {
     ).toEqual({ provider: "p4", model: "m4" });
     expect(resolveRoute(undefined)).toEqual({ provider: undefined, model: undefined });
   });
+
+  it("B-M1 超限单张（>8 MiB）→ 整批诊断且不落库（#903）", async () => {
+    let saved = 0;
+    const big = Buffer.alloc(8 * 1024 * 1024 + 1).toString("base64");
+    const out = await projectImageAdmission(
+      request({
+        content: [{ type: "image", mimeType: "image/png", data: big }],
+        faces: {
+          attachments: () => ({
+            saveImages: async () => {
+              saved += 1;
+              return [{ id: "att-1" }];
+            },
+          }),
+          models: () => IMAGE_MODEL,
+        },
+      }),
+    );
+    expect(out!.length).toBe(1);
+    expect(textAt(out, 0)).toContain("exceeds 8 MiB");
+    expect(saved).toBe(0);
+  });
+
+  it("B-M1 超长字符串（>16MB base64）→ 直接硬拒，不进正则不解码（#903）", async () => {
+    let saved = 0;
+    // 20MB 全 A：若走 canonical 正则会回溯爆栈（实测 8MB 即抛），必须被长度门先拦下。
+    const huge = "A".repeat(20 * 1024 * 1024);
+    const out = await projectImageAdmission(
+      request({
+        content: [{ type: "image", mimeType: "image/png", data: huge }],
+        faces: {
+          attachments: () => ({
+            saveImages: async () => {
+              saved += 1;
+              return [{ id: "att-1" }];
+            },
+          }),
+          models: () => IMAGE_MODEL,
+        },
+      }),
+    );
+    expect(out!.length).toBe(1);
+    expect(textAt(out, 0)).toContain("exceeds 8 MiB");
+    expect(saved).toBe(0);
+  });
+
+  it("B-M1 超量批次（>10 张）→ 整批诊断且一字节不解（#903）", async () => {
+    let saved = 0;
+    const content = Array.from({ length: 11 }, () => ({
+      type: "image",
+      mimeType: "image/png",
+      data: PNG,
+    }));
+    const out = await projectImageAdmission(
+      request({
+        content,
+        faces: {
+          attachments: () => ({
+            saveImages: async () => {
+              saved += 1;
+              return [];
+            },
+          }),
+          models: () => IMAGE_MODEL,
+        },
+      }),
+    );
+    expect(out!.length).toBe(11);
+    expect(textAt(out, 0)).toContain("too many images");
+    expect(saved).toBe(0);
+  });
 });

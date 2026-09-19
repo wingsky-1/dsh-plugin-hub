@@ -261,9 +261,15 @@ export class McpMiddleware {
         .catalog.catalogDirectory.ensureRootLoaded(root, this.host.catalogCachePath(root));
       // 后台惰性连接（fire-and-forget，不阻塞调用方）。单池（#767 笔 1a）后本层是唯一
       // 连接路径：单元内**全部** enabled 服务器都归本层，不再有所有权过滤器。
+      // #903 M4：浮空拒绝即 unhandled——失败记 warn（错因已由 connectInternal 落
+      // entry.error，日志只记名，不重复泄露凭据面）。
       for (const server of servers) {
         if (server.enabled === false) continue;
-        void this.ensureConnected(root, server.name);
+        void this.ensureConnected(root, server.name).catch(() => {
+          this.host.logger.warn(
+            `dsh-mcp-manager: background connect ${server.name}@${root} failed (see entry error)`,
+          );
+        });
       }
     }
     unit.lastTouchedAt = Date.now();

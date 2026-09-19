@@ -10,6 +10,9 @@
  * - renderMcpCatalogMessage / renderMcpCatalogUpdate 形状
  * - resolveCatalogInjection 六条决策路径
  */
+import { chmodSync, mkdtempSync, readdirSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const {
@@ -27,6 +30,7 @@ const {
   catalogHistory,
   renderMcpCatalogUpdate,
   resolveCatalogInjection,
+  catalogDirectory,
   // I8 导入面收窄：catalog 纯函数域，直引目录门面，不再经包根组合根。
 } = await import("../../src/server/catalog/interface.ts");
 import type { CatalogMessage, CatalogSourceLike } from "../../src/server/catalog/interface.ts";
@@ -787,5 +791,37 @@ describe("#723 catalogHistory 双形态识别", () => {
         } as unknown as CatalogSourceLike),
       ),
     ).toEqual({ published: false });
+  });
+});
+
+describe("removeRootEntry 写回失败清理（#903 crash）", () => {
+  it("写回失败只 warn 且无 tmp 残留", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-catrm-"));
+    const cachePath = join(dir, "cache.json");
+    writeFileSync(
+      cachePath,
+      JSON.stringify({
+        version: 1,
+        root: "r",
+        entries: {
+          s1: { discoveredAt: 1, tools: [] },
+          s2: { discoveredAt: 2, tools: [] },
+        },
+      }),
+    );
+    // 目录只读：tmp 写不进去 → 写回失败。
+    chmodSync(dir, 0o555);
+    const warns: string[] = [];
+    try {
+      await catalogDirectory.removeRootEntry("r", "s1", {
+        cachePath,
+        warn: (message) => warns.push(message),
+      });
+    } finally {
+      chmodSync(dir, 0o755);
+    }
+    expect(warns.length).toBe(1);
+    expect(warns[0]).toMatch(/catalog cache remove failed/);
+    expect(readdirSync(dir).filter((name) => name.includes(".tmp."))).toEqual([]);
   });
 });

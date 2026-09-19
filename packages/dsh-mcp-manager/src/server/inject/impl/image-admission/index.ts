@@ -27,6 +27,18 @@ const IMAGE_MEDIA_TYPES: readonly string[] = ["image/png", "image/jpeg", "image/
 /** canonical base64：官方同款正则，且要求 decode→encode 往返逐字节相等（拒绝别名形态）。 */
 const CANONICAL_BASE64 = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
 
+/**
+ * 单张解码上限 8 MiB（#903 B-M1 DoS 面：远端结果来自可信服务器也可能作恶，
+ * 超大 base64 解码即占内存）。超限与非法同路——进 validationErrors 走既有整批诊断降级。
+ */
+const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
+
+/**
+ * 单次结果图片数上限（#903 B-M1：批量下发数百张即 O(n) 解码+落库）。超限整批转诊断，
+ * 在解码前判定——一字节都不解。
+ */
+const MAX_IMAGES_PER_RESULT = 10;
+
 /** 图片准入要用的两条宿主能力：**晚读** thunk（服务可能缺席，且 apply 期取不到）。 */
 export interface ImageAdmissionFaces {
   readonly attachments: () => AttachmentsPort | undefined;
@@ -116,12 +128,24 @@ function decodeImage(block: Record<string, unknown>): SaveImageInput {
     throw new Error("the declared media type is not PNG, JPEG, WebP, or GIF");
   }
   const data = block.data;
-  if (typeof data !== "string" || !CANONICAL_BASE64.test(data)) {
+  if (typeof data !== "string") {
+    throw new Error("the image data is not canonical base64");
+  }
+  // #903 B-M1：canonical 正则在数 MB 输入上回溯爆栈（实测 8MB 输入抛
+  // Maximum call stack size exceeded）——16MB base64 必超 8MiB 解码上限，直接硬拒，
+  // 不进正则不解码；1MB 以上跳过正则、只用解码往返判定（文案一致）。
+  if (data.length > MAX_IMAGE_BYTES * 2) {
+    throw new Error("the image data exceeds 8 MiB");
+  }
+  if (data.length <= 1024 * 1024 && !CANONICAL_BASE64.test(data)) {
     throw new Error("the image data is not canonical base64");
   }
   const bytes = Buffer.from(data, "base64");
   if (bytes.toString("base64") !== data) {
     throw new Error("the image data is not canonical base64");
+  }
+  if (bytes.length > MAX_IMAGE_BYTES) {
+    throw new Error("the image data exceeds 8 MiB");
   }
   return {
     data: bytes,
@@ -183,6 +207,17 @@ export async function projectImageAdmission(
 ): Promise<ModelContentBlock[] | undefined> {
   const { agent, content, signal, faces, formatBlock } = request;
   if (!containsRemoteImage(content)) return undefined;
+
+  // 批量上限先行（#903 B-M1）：超限整批转诊断，一字节都不解。
+  let remoteCount = 0;
+  for (const block of content) if (isRemoteImageBlock(block)) remoteCount += 1;
+  if (remoteCount > MAX_IMAGES_PER_RESULT) {
+    const reason = `too many images in one result (>${MAX_IMAGES_PER_RESULT})`;
+    return projectContent(content, formatBlock, (block) => ({
+      type: "text",
+      text: imageDiagnostic(block, reason),
+    }));
+  }
 
   const imageIndexes: number[] = [];
   const decoded: SaveImageInput[] = [];

@@ -7,6 +7,7 @@
  * - events 路由：403 围栏 / 405 / writeHead 头 / 连接登记与 close 清理
  * - health 路由：403 / 405 / 计数聚合
  * - servers PATCH|DELETE 缺 name 400、未知 method 405
+ * - connect/disconnect/reconnect：405 + 403 围栏（#903 M-B5）
  * - session 路由：body 校验 400、cwd 切换 200
  * - import/json：缺 json 字段 400、同名 skip 与 overwrite 更新
  */
@@ -668,6 +669,37 @@ describe("session / servers 边界", () => {
     );
     expect(JSON.stringify(resPatchMissing.payload)).toMatch(/not found/);
   });
+});
+
+describe("connect/disconnect/reconnect 围栏（#903 M-B5）", () => {
+  function routesFixture() {
+    const { manager } = setup();
+    const routes = makeRoutes(manager);
+    return { manager, routes, find: (path: string) => routes.find((r) => r.path === path)! };
+  }
+
+  // 三路由 guarded 均为 POST（shared/routes.ts ROUTE_FENCE）：非 POST 一律 405。
+  it.each([[ROUTES.connect], [ROUTES.disconnect], [ROUTES.reconnect]])(
+    "%s 非 POST → 405",
+    async (path) => {
+      const { find } = routesFixture();
+      const res = await callHandler(find(path), fakeReq("GET", path));
+      expect(res.status).toBe(405);
+    },
+  );
+
+  // loopback 围栏先于方法分流之外的动作：三路由非回环一律 403。
+  it.each([[ROUTES.connect], [ROUTES.disconnect], [ROUTES.reconnect]])(
+    "%s 非 loopback → 403",
+    async (path) => {
+      const { find } = routesFixture();
+      const res = await callHandler(
+        find(path),
+        fakeReq("POST", path, undefined, { remote: "8.8.8.8" }),
+      );
+      expect(res.status).toBe(403);
+    },
+  );
 });
 
 describe("import/json：字段校验与 skip/overwrite", () => {

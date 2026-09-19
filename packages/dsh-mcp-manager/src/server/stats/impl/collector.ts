@@ -9,7 +9,8 @@
  * 5. Metadata-Only：不记录任何业务 arguments 或结果 content，防隐私泄露。
  */
 
-import { mkdirSync, writeFileSync, renameSync, existsSync, readFileSync } from "node:fs";
+import { randomBytes } from "node:crypto";
+import { mkdirSync, rmSync, writeFileSync, renameSync, existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { directoryMode, fileMode, statsFile } from "../../shared/interface.ts";
 import type {
@@ -304,9 +305,20 @@ export class McpStatsCollector {
         mkdirSync(dir, mkdirOptionsFor(dir));
       }
       const data = JSON.stringify(this.snapshot(), null, 2);
-      const tmpPath = `${this.filePath}.tmp.${process.pid}.${Date.now()}`;
-      writeFileSync(tmpPath, data, writeOptionsFor(this.filePath));
-      renameSync(tmpPath, this.filePath);
+      // #903 crash 残留 tmp：kill 落在 write 后 rename 前必残留——失败分支 rm 清理；
+      // 随机后缀防同毫秒两次刷盘共用一名（与 file-io temporaryNameFor 同式）。
+      const tmpPath = `${this.filePath}.tmp.${process.pid}.${Date.now().toString(36)}.${randomBytes(6).toString("hex")}.tmp`;
+      try {
+        writeFileSync(tmpPath, data, writeOptionsFor(this.filePath));
+        renameSync(tmpPath, this.filePath);
+      } catch (writeError) {
+        try {
+          rmSync(tmpPath, { force: true });
+        } catch {
+          // 清理失败忽略，主错误优先上抛给外层日志
+        }
+        throw writeError;
+      }
       this.isDirty = false;
     } catch (err) {
       this.logger?.info?.(`[mcp:stats] flush to ${this.filePath} failed: ${String(err)}`);

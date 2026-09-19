@@ -486,8 +486,14 @@ export class McpManager {
     } else {
       // 缓存命中也要检查磁盘：项目 mcp.json 在 git 仓库内，pull/checkout/手动
       // 编辑后应自动生效，不依赖重启宿主（只重读配置，不启停连接）。
+      // #903 M5-A：命中分支同样先过 settle 包装——旧扁平 legacy 在首次缓存后重现
+      // （切旧分支/降级写）时，否则永不归位；settle 幂等，开销仅几次 existsSync。
+      // const 捕获：else 分支的非空收窄进不了回调闭包，直接用外层 store 会 TS18048。
+      const cached = store;
       try {
-        await store.reloadIfChanged();
+        await upgrade.withSettledProjectConfig(root, this.logger, async () => {
+          await cached.reloadIfChanged();
+        });
       } catch (error) {
         this.logger.warn(
           `dsh-mcp-manager: reload project config failed: ${this.redactError(error)}`,
@@ -585,9 +591,18 @@ export class McpManager {
       // 仅触达单元（fire-and-forget 惰性连接在 projectUnitFor 内）。无项目 cwd 也回落
       // 全局虚拟 root @global——单池后 @global 恒可达（可达性三件套之二）。
       const target = root ?? MIDDLEWARE_GLOBAL_ROOT;
-      void this.middleware.projectUnitFor(target).then((unit) => {
-        if (unit !== undefined) this.middleware?.evictIfNeeded();
-      });
+      void this.middleware.projectUnitFor(target).then(
+        (unit) => {
+          if (unit !== undefined) this.middleware?.evictIfNeeded();
+        },
+        (error: unknown) => {
+          // #903 M4：fire-and-forget 必须带拒绝处理，否则 projectServersFor/
+          // ensureRootLoaded 翻错即 unhandled rejection（setSession 永不挂起，但错不能丢）。
+          this.logger.warn(
+            `dsh-mcp-manager: setSession touch unit(${target}) failed: ${this.redactError(error)}`,
+          );
+        },
+      );
     }
     this.emitStatus();
   }
@@ -763,9 +778,11 @@ export class McpManager {
     if (mw === undefined) return;
     void mw
       .projectUnitFor(MIDDLEWARE_GLOBAL_ROOT)
-      .then((unit) => {
+      .then(async (unit) => {
         if (unit === undefined || unit.userDisabled.has(name)) return;
-        void mw.ensureConnected(MIDDLEWARE_GLOBAL_ROOT, name);
+        // #903 M4：内层 void 浮空时 ensureConnected 翻错无人接——await 链入外层
+        // .catch（与 ensureMiddlewareServer 同式）。
+        await mw.ensureConnected(MIDDLEWARE_GLOBAL_ROOT, name);
       })
       .catch((error: unknown) => {
         // #392 遗留⑥：不再静默吞错——projectUnitFor 失败时打 warn 日志，

@@ -46,7 +46,7 @@ function newestTarget(): string {
 /** 装配一次升级域（链在装配期跑完）。 */
 async function assemble(overrides: Partial<UpgradeDeps> = {}) {
   const logger = overrides.logger ?? makeLogger();
-  const deps: UpgradeDeps = { logger, storePath: "", statsFile: "", ...overrides };
+  const deps: UpgradeDeps = { logger, storePath: "", ...overrides };
   await installUpgrade(deps);
   return { logger, deps };
 }

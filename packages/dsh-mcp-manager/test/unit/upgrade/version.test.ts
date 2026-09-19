@@ -56,6 +56,10 @@ describe("compareVersions：逐段数值比较", () => {
     ["0.2.5", "0.2", 1],
     ["1.0.0", "0.99.99", 1],
     ["0.0.0", "0.0.0", 0],
+    // #903 parseVersion 收口：后缀显式剥离；非数值段归零（fail-safe 跑全链，不抛）。
+    ["0.2.5-rc.1", "0.2.5", 0],
+    ["a.b.c", "0.0.0", 0],
+    ["", "0.0.0", 0],
   ])("%s 与 %s 比较 → %i", (left, right, expected) => {
     expect(compareVersions(left, right)).toBe(expected);
   });
