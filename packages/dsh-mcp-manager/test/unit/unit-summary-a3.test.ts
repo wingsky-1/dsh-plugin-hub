@@ -317,3 +317,72 @@ describe("#770-L4 错误面显示侧脱敏（settled 原文可含凭据）", () 
     expect(out.error).toBeUndefined();
   });
 });
+
+describe("#925 展示侧 args 脱敏（凭据形 flag 值掩码）", () => {
+  const ARG_SECRET = "a925-fake-arg-secret-Q1w2E3";
+
+  function argsServer(args: string[]): ServerConfig {
+    return {
+      name: "s-args",
+      transport: "stdio",
+      command: "echo",
+      enabled: false,
+      args,
+    } as unknown as ServerConfig;
+  }
+
+  it("独立元素与等号形态的值被掩码，flag 名保留", () => {
+    installPorts();
+    const manager = managerWith([argsServer(["-y", "--token", ARG_SECRET, `--key=${ARG_SECRET}`])]);
+    const out = manager.summarize(
+      argsServer(["-y", "--token", ARG_SECRET, `--key=${ARG_SECRET}`]),
+      "global",
+    ) as Record<string, unknown>;
+    const text = JSON.stringify(out);
+    expect(text).not.toContain(ARG_SECRET);
+    expect(out.args).toEqual(["-y", "--token", "[REDACTED]", "--key=[REDACTED]"]);
+    expect(out.hasSecrets).toBe(true);
+  });
+
+  it("短 flag 下一拍与非秘密元素：掩码与保留并存，空值不掩", () => {
+    installPorts();
+    const manager = managerWith([argsServer(["-p", ARG_SECRET, "--turkey", "big", "--token="])]);
+    const out = manager.summarize(
+      argsServer(["-p", ARG_SECRET, "--turkey", "big", "--token="]),
+      "global",
+    ) as Record<string, unknown>;
+    expect(out.args).toEqual(["-p", "[REDACTED]", "--turkey", "big", "--token="]);
+    expect(JSON.stringify(out)).not.toContain(ARG_SECRET);
+  });
+
+  it("无秘密 args：原样下发且 hasSecrets 为 false", () => {
+    installPorts();
+    const manager = managerWith([argsServer(["-y", "pkg"])]);
+    const out = manager.summarize(argsServer(["-y", "pkg"]), "global") as Record<string, unknown>;
+    expect(out.args).toEqual(["-y", "pkg"]);
+    expect(out.hasSecrets).toBe(false);
+  });
+
+  it("投影整体回写 update 时既有 args 不变、盘上无占位符", async () => {
+    installPorts();
+    const server = argsServer(["--token", ARG_SECRET]);
+    const manager = managerWith([server]);
+    const projection = manager.summarize(server, "global") as Record<string, unknown>;
+    expect(JSON.stringify(projection.args)).toContain("[REDACTED]");
+    const merged = await manager.update("s-args", projection, "global");
+    expect((merged as unknown as ServerConfig).args).toEqual(["--token", ARG_SECRET]);
+    const stored = manager.store.find("s-args") as unknown as ServerConfig | undefined;
+    expect(stored?.args).toEqual(["--token", ARG_SECRET]);
+  });
+
+  it("add 含占位符 args 时抛错", async () => {
+    installPorts();
+    const manager = managerWith([]);
+    await expect(
+      manager.add(
+        { name: "new-args", transport: "stdio", command: "echo", args: ["--token", "[REDACTED]"] },
+        "global",
+      ),
+    ).rejects.toThrow(/REDACTED/);
+  });
+});

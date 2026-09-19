@@ -82,8 +82,11 @@ export type LifecyclePort = Pick<
   "mountServer" | "releaseServer" | "disposeServer" | "projectServerState"
 >;
 
-/** pipeline 域给本子层的能力面：错误取消息与凭据脱敏器工厂。 */
-export type PipelinePort = Pick<typeof pipelineApi, "msgOf" | "createRedactor">;
+/** pipeline 域给本子层的能力面：错误取消息、凭据脱敏器工厂与展示侧 args 脱敏。 */
+export type PipelinePort = Pick<
+  typeof pipelineApi,
+  "msgOf" | "createRedactor" | "maskSecretArgsForDisplay"
+>;
 
 /** stats 域给本子层的能力面：调用统计收集器（以 `new` 消费）。 */
 export type StatsPort = Pick<typeof statsApi, "McpStatsCollector">;

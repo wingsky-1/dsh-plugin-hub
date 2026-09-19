@@ -192,9 +192,16 @@ function projectServerForSummary(server: ServerConfig): Record<string, unknown> 
     projected.toolCallTimeoutMs = server.toolCallTimeoutMs;
   if (server.reconnect !== undefined) projected.reconnect = server.reconnect;
   if (server.description !== undefined) projected.description = server.description;
+  let argsHadSecret = false;
   if (server.transport === "stdio") {
     if (server.command !== undefined) projected.command = server.command;
-    if (server.args !== undefined) projected.args = [...(server.args ?? [])];
+    if (server.args !== undefined) {
+      // #925：凭据形 flag 的参数值掩码（与 pipeline redact 同口径，端口取）；
+      // flag 名与非秘密元素保留可诊断，掩码值回写时由 stripProjectionPatch 丢弃。
+      const masked = orchestratorPorts.get().pipeline.maskSecretArgsForDisplay(server.args ?? []);
+      projected.args = masked;
+      argsHadSecret = masked.some((entry) => entry.includes("[REDACTED]"));
+    }
     if (server.cwd !== undefined) projected.cwd = server.cwd;
     // env 整体省略（见本块头注释）；有无秘密只经 hasSecrets 告知 GUI。
   } else {
@@ -202,7 +209,7 @@ function projectServerForSummary(server: ServerConfig): Record<string, unknown> 
     if (redactedUrl !== undefined) projected.url = redactedUrl;
     // headers 整体省略（同 env）。
   }
-  projected.hasSecrets = hasProjectionSecrets(server);
+  projected.hasSecrets = hasProjectionSecrets(server) || argsHadSecret;
   return projected;
 }
 
@@ -217,6 +224,7 @@ function stripProjectionPatch(patch: Record<string, unknown>): Record<string, un
   const isProjection = (value: unknown): boolean =>
     typeof value === "string" && (value.includes("[REDACTED]") || value.includes("%5BREDACTED%5D"));
   if (isProjection(next.url)) delete next.url;
+  if (Array.isArray(next.args) && next.args.some((entry) => isProjection(entry))) delete next.args;
   for (const key of ["env", "headers"] as const) {
     const table = next[key];
     if (typeof table === "object" && table !== null && !Array.isArray(table)) {
@@ -1123,6 +1131,18 @@ export class McpManager {
         throw new Error(
           `server ${JSON.stringify(key)} must not contain projection placeholder "[REDACTED]" (re-enter the real value)`,
         );
+      }
+      if (key === "args" && Array.isArray(value)) {
+        for (const sub of value) {
+          if (
+            typeof sub === "string" &&
+            (sub.includes("[REDACTED]") || sub.includes("%5BREDACTED%5D"))
+          ) {
+            throw new Error(
+              `server ${JSON.stringify(key)} must not contain projection placeholder "[REDACTED]" (re-enter the real value)`,
+            );
+          }
+        }
       }
       if ((key === "env" || key === "headers") && typeof value === "object" && value !== null) {
         for (const sub of Object.values(value as Record<string, unknown>)) {

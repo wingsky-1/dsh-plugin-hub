@@ -33,7 +33,7 @@ export function releasePipeline(): void {
 
 export { normalizeArguments } from "./impl/args/index.ts";
 export { msgOf } from "./impl/msg/index.ts";
-export { createRedactor } from "./impl/redact/index.ts";
+export { createRedactor, maskSecretArgsForDisplay } from "./impl/redact/index.ts";
 export { withTimeout } from "./impl/timeout/index.ts";
 export { globMatch, isToolDenied, toolDisabledReason } from "./impl/authorize/index.ts";
 export { defaultCallResultFallbackText, projectCallToolResult } from "./impl/project/index.ts";
