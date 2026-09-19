@@ -148,7 +148,11 @@ async function handleServersMutation(
       const rec = body as Record<string, unknown>;
       const scope = workspace.normalizeScope(rec.scope as string);
       if (typeof rec.cwd === "string" && rec.cwd !== "") await manager.setSession(rec.cwd);
-      const server = await manager.add(rec, scope);
+      const created = await manager.add(rec, scope);
+      // #770-L3 只读投影：200 响应 server 字段不再明文回显写路径原文（与 A3 同一红线伞）。
+      // 缺省回落原文：外部 RoutesManager 实现未提供 summarize 时自身无秘密可泄（同 redactError 兼容口径）。
+      const server =
+        typeof manager.summarize === "function" ? manager.summarize(created, scope) : created;
       writeJson(res, 201, { server, summary: manager.summary() });
     } catch (error) {
       helpers.handleError(res, error);
@@ -170,7 +174,10 @@ async function handleServersMutation(
           writeJson(res, 400, { error: "invalid JSON body" });
           return true;
         }
-        const server = await manager.update(name, body as Record<string, unknown>, scope);
+        const updated = await manager.update(name, body as Record<string, unknown>, scope);
+        // #770-L3 只读投影：同 POST 分支（与 A3 同一红线伞；缺省回落原文口径同上）。
+        const server =
+          typeof manager.summarize === "function" ? manager.summarize(updated, scope) : updated;
         writeJson(res, 200, { server, summary: manager.summary() });
       }
     } catch (error) {

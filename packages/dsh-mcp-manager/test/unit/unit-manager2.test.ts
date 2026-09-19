@@ -2837,7 +2837,7 @@ describe("catalogServersFor", () => {
       }),
     );
     await manager.setSession(proj);
-    // catalogServersFor：全局 + 项目聚合，禁用过滤，同名项目级被顶掉。
+    // catalogServersFor：全局 + 项目聚合，禁用过滤，同名碰撞取项目条目（项目优先，#770-11）。
     // 上一行刚赋值，此处断言存在。
     manager.projectStore!.data.servers.push(
       normalizeServer({ ...quietServer("psrv2", { enabled: false }) }),
@@ -2864,6 +2864,18 @@ describe("catalogServersFor", () => {
     const { manager, proj } = await catalogFixture();
     // 聚合恒含项目级条目（上一用例同夹具已验 has），此处断言存在。
     expect((await manager.catalogServersFor(proj)).get("psrv")!.scope).toBe("project");
+  });
+
+  it("同名碰撞取项目条目（项目优先，#770-11）", async () => {
+    const { manager, store, proj } = await catalogFixture();
+    // 全局与项目各一台同名 dup：项目条目以不同 command 打标。
+    store.upsert(normalizeServer(quietServer("dup")));
+    manager.projectStore!.upsert(
+      normalizeServer({ ...quietServer("dup"), command: "project-cmd" }),
+    );
+    const dup = (await manager.catalogServersFor(proj)).get("dup")!;
+    expect(dup.scope).toBe("project");
+    expect(dup.server.command).toBe("project-cmd");
   });
 
   it("空 cwd 只出全局", async () => {

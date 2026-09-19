@@ -356,6 +356,7 @@ it("中间层工具注册（ws_mcp_search / ws_mcp_call / ws_mcp_list / ws_mcp_d
     ctx,
     logger: fakeLogger(),
     projectServersFor: async () => [],
+    redactionServers: () => [],
     globalServers: () => [],
     normalizedProjectRoot: async (cwd: string | undefined) =>
       cwd === "/proj" ? "/proj" : undefined,
@@ -480,6 +481,7 @@ it("search 早退分支（unit undefined）返回 truncated=false（P1-1）", as
     ctx,
     logger: fakeLogger(),
     projectServersFor: async () => undefined, // 无项目标记 → projectUnitFor 返回 undefined
+    redactionServers: () => [],
     globalServers: () => [],
     normalizedProjectRoot: async (cwd: string | undefined) =>
       cwd === "/proj" ? "/proj" : undefined,
@@ -551,6 +553,7 @@ it("中间层 all 模式：@global 覆盖（list/search 可见全局，call 放�
         } as unknown as ServerConfig,
       ];
     },
+    redactionServers: () => [],
     globalServers: () => [{ name: "gctx", transport: "stdio", command: "npx", enabled: true }],
     normalizedProjectRoot: async (cwd: string | undefined) =>
       cwd === "/proj" ? "/proj" : undefined,
@@ -729,6 +732,7 @@ it("#362 A2 / #767 笔 1a：project root 会话下 @global 可达（「改 mcp__
     logger: fakeLogger(),
     projectServersFor: async (root: string) =>
       root === MIDDLEWARE_GLOBAL_ROOT ? [globalServer] : undefined,
+    redactionServers: () => [globalServer],
     globalServers: () => [globalServer],
     normalizedProjectRoot: async (cwd: string | undefined) =>
       cwd === "/proj" ? "/proj" : undefined,
@@ -830,6 +834,7 @@ it("#362 A1：ws_mcp_list 带 serverFilter 过滤 0 命中 → message 可归因
         ],
       } as unknown as ServerConfig,
     ],
+    redactionServers: () => [],
     globalServers: () => [],
     normalizedProjectRoot: async (cwd: string | undefined) =>
       cwd === "/proj" ? "/proj" : undefined,
@@ -957,6 +962,7 @@ it("#362 P0-1：工具级禁用三入口一致（callTool / pre-execute guard / 
         ],
       } as unknown as ServerConfig,
     ],
+    redactionServers: () => [],
     globalServers: () => [],
     normalizedProjectRoot: async (cwd: string | undefined) =>
       cwd === "/proj" ? "/proj" : undefined,
@@ -2127,14 +2133,23 @@ describe("目录数据源按工作区计算（切换工作区不抖动）", () =
     expect(names).toEqual(["g1"]);
   });
 
-  it("同名项目级被全局顶掉", async () => {
-    // projB 里放一台与全局同名的服务器
+  it("同名碰撞取项目条目（项目优先，#770-11）", async () => {
+    // projB 里放一台与全局同名的服务器（描述打标，用于断言取的是项目条目）。
     const storeB = (await manager.projectStoreFor(rootB))!;
     storeB.upsert(
-      normalizeServer({ name: "g1", transport: "stdio", command: "true", ...noReconnect }),
+      normalizeServer({
+        name: "g1",
+        transport: "stdio",
+        command: "true",
+        description: "from-project",
+        ...noReconnect,
+      }),
     );
-    const names = [...(await manager.catalogServersFor(rootB)).keys()];
-    expect(names).toEqual(["g1", "b1"]);
+    const catalog = await manager.catalogServersFor(rootB);
+    expect([...catalog.keys()]).toEqual(["g1", "b1"]);
+    const g1 = catalog.get("g1")!;
+    expect(g1.scope).toBe(SCOPE_PROJECT);
+    expect(g1.server.description).toBe("from-project");
   });
 
   it("projectStoreFor 缓存复用（同 root 返回同一实例）", async () => {

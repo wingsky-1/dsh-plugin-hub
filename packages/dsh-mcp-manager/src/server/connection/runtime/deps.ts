@@ -134,6 +134,11 @@ export interface MiddlewareHost {
   logger: LoggerService;
   /** 按 root 读取项目级服务器配置（惰性；root 无标记 → undefined）。 */
   projectServersFor(root: string): Promise<ServerConfig[] | undefined>;
+  /** 脱敏秘密源的同步快照（#770-8）：持有 store/projectStores/runtimeRegistry 的一侧
+   *（McpManager.getRedactionServers）提供，全集含 disabled/unconnected。中间层与派发域的
+   * 脱敏只经此口取值，不在中间层内拼全集、不跨域直取对方状态；同步形态是刻意选择——
+   * redact/callTool 是同步路径，同步内不可 await 按 root 取配置的 async 口。 */
+  redactionServers(): readonly ServerConfig[];
   /** 全局服务器配置（@global 单元装载用）。 */
   globalServers(): ServerConfig[];
   /** 路由解析：cwd → 归一化项目根。 */

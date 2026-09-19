@@ -39,10 +39,15 @@ export type CatalogPort = Pick<
   "catalogCacheFile" | "summarizeToolDescriptions" | "makeCatalogViewFor" | "catalogDirectory"
 >;
 
-/** config 域给本子层的能力面：服务器条目与 UI 配置归一化、UI 配置补丁构造。 */
+/** config 域给本子层的能力面：服务器条目与 UI 配置归一化、UI 配置补丁构造、写边界凭据策略门、
+ * ${ENV} 模板预展开（#770-A1：脱敏快照在调用方展开，redactor 内不读 process.env）。 */
 export type ConfigModelPort = Pick<
   typeof configModelApi,
-  "normalizeServer" | "normalizeUiConfig" | "buildConfigUiPatch"
+  | "normalizeServer"
+  | "normalizeUiConfig"
+  | "buildConfigUiPatch"
+  | "expandServerEnv"
+  | "assertEnvPolicy"
 >;
 
 /** store 域给本子层的能力面：store 类 + user-state / 工具禁用 / 目录缓存路径的读写面。 */
@@ -77,8 +82,11 @@ export type LifecyclePort = Pick<
   "mountServer" | "releaseServer" | "disposeServer" | "projectServerState"
 >;
 
-/** pipeline 域给本子层的能力面：错误取消息与凭据脱敏器工厂。 */
-export type PipelinePort = Pick<typeof pipelineApi, "msgOf" | "createRedactor">;
+/** pipeline 域给本子层的能力面：错误取消息、凭据脱敏器工厂与展示侧 args 脱敏。 */
+export type PipelinePort = Pick<
+  typeof pipelineApi,
+  "msgOf" | "createRedactor" | "maskSecretArgsForDisplay"
+>;
 
 /** stats 域给本子层的能力面：调用统计收集器（以 `new` 消费）。 */
 export type StatsPort = Pick<typeof statsApi, "McpStatsCollector">;

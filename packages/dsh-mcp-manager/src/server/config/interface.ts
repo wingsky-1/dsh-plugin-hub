@@ -8,6 +8,7 @@
  */
 export { SERVER_NAME_PATTERN, normalizeServer } from "./normalize.ts";
 export { SECRET_ENV_NAME, expandEnv, expandEnvObject, expandServerEnv } from "./impl/env/index.ts";
+export { assertEnvPolicy, extractEnvRefs, isSecretEnvName } from "./impl/env/policy.ts";
 export { fromClaudeEntry, parseClaudeJson } from "./import.ts";
 export {
   DEFAULT_UI_CONFIG,

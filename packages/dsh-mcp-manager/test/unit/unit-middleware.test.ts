@@ -104,6 +104,7 @@ function makeHost(
     ctx: { tools },
     logger: { info: () => {}, warn: () => {}, error: () => {} },
     projectServersFor: async (root: string) => serversByRoot.get(root),
+    redactionServers: () => [...serversByRoot.values()].flat(),
     globalServers: () => [],
     normalizedProjectRoot: async (cwd: string | undefined) =>
       typeof cwd === "string" && cwd !== "" ? cwd : undefined,

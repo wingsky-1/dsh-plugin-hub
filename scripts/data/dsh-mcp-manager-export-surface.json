@@ -555,29 +555,37 @@
     }
   ],
   "declBlocks": [
-    "export declare class McpManager { ctx: Context; store: McpStore; listeners: Set<() => void>; logger: LoggerService; projectRoot: string | undefined; projectStore: McpStore | undefined; reconcileBusy: boolean; projectStores: Map<string, McpStore>; catalogCache: CatalogCache; catalogCachePath: string; uiConfigSource: () => any; uiUpdate?: (patch: Record<string, unknown>) => Promise<unknown>; sseHub?: SseHub; middleware: McpMiddleware | undefined; userStatePath: string; stats: McpStatsCollector; runtimeRegistry: Map<string, ServerConfig>; private registerQueue; private catalogViewResolver; constructor(ctx: Context, store: McpStore); uiConfig(): ClientUiConfig; updateUiConfig(raw: unknown): Promise<ClientUiConfig>; loadCatalogCache(): Promise<void>; recordCatalogTools(serverName: string, toolMeta: Map<string, { description?: unknown; }>): Promise<void>; private registeredSchemas; private poolRootFor; serverNameForId(id: string): { root: string; server: string; } | undefined; registeredToolsFor(name: string): Array<{ name: string; description?: string; }>; private poolEntryFor; onStatus(handler: () => void): () => void; private redactError; private statusTimer; emitStatus(): void; projectStoreOrThrow(): Promise<McpStore>; projectServersFor(root: string): Promise<ServerConfig[] | undefined>; isRuntimeServer(name: string): boolean; isGlobalServer(name: string): boolean; globalServers(): ServerConfig[]; saveUserState(units: Map<string, ProjectUnit>): Promise<void>; catalogCachePathFor(root: string): string; initMiddleware(): Promise<McpMiddleware>; disabledByRoot: Map<string, Set<string>>; disabledTools: DisabledToolsMap; setToolDisabled(root: string, server: string, tool: string, disabled: boolean): Promise<void>; projectStoreFor(root: string | undefined): Promise<McpStore | undefined>; catalogServersFor(cwd: string | undefined): Promise<Map<string, { server: ServerConfig; scope: string; }>>; catalogViewFor(cwd: string | undefined, servers: Map<string, { server: ServerConfig; scope: string; }>): Promise<CatalogCache>; setSession(cwd: string | undefined): Promise<void>; resumeReconnect(): Promise<void>; refreshFromDisk(): Promise<void>; reconcileServers(): boolean; startAll(): Promise<void>; start(name: string, scope?: string): void; private touchGlobalUnit; private ensureMiddlewareServer; private dropMiddlewareConnection; registerServer(options: Record<string, unknown>): Promise<{ name: string; existing: boolean; }>; unregisterServer(name: string): Promise<void>; add(server: Record<string, unknown>, scope?: string): Promise<ServerConfig>; update(name: string, patch: Record<string, unknown>, scope?: string): Promise<ServerConfig>; remove(name: string, scope?: string): Promise<void>; connect(name: string, scope?: string): Promise<void>; disconnect(name: string, scope?: string): Promise<void>; reconnect(name: string, scope?: string): Promise<void>; summary(): Record<string, unknown>; private middlewareUnitFor; summarize(server: ServerConfig, scope: string): Record<string, unknown>; dispose(): Promise<void>; }",
-    "export declare class McpMiddleware { host: MiddlewareHost; units: Map<string, ProjectUnit>; disabledByRoot: Map<string, Set<string>>; disabledTools: DisabledToolsMap; forwarding: Set<ToolExecutionToken>; constructor(host: MiddlewareHost); projectUnitFor(root: string | undefined): Promise<ProjectUnit | undefined>; ensureConnected(root: string, serverName: string, opts?: { force?: boolean; }): Promise<void>; abandonInFlight(serverName: string): void; private connectInternal; private registeredSchemas; private registeredToolMeta; private redact; statusOf(root: string, serverName: string): ServerState | undefined; toolCountOf(root: string, serverName: string): number; callTool(fullName: string, toolRaw: string, rawArgs: unknown, signal: AbortSignal | undefined, identity: { agent?: unknown; callId: ToolExecutionInput[\"callId\"]; rootCallId?: ToolExecutionInput[\"rootCallId\"]; parent?: ToolExecutionToken; }): Promise<unknown>; private allServers; releaseConnection(root: string, serverName: string): boolean; evictIfNeeded(maxUnits?: number): void; teardownUnit(root: string): void; dispose(): Promise<void>; }",
+    "export declare class McpManager { ctx: Context; store: McpStore; listeners: Set<() => void>; logger: LoggerService; projectRoot: string | undefined; projectStore: McpStore | undefined; reconcileBusy: boolean; projectStores: Map<string, McpStore>; catalogCache: CatalogCache; catalogCachePath: string; uiConfigSource: () => any; uiUpdate?: (patch: Record<string, unknown>) => Promise<unknown>; sseHub?: SseHub; middleware: McpMiddleware | undefined; userStatePath: string; stats: McpStatsCollector; runtimeRegistry: Map<string, ServerConfig>; private registerQueue; private catalogViewResolver; constructor(ctx: Context, store: McpStore); uiConfig(): ClientUiConfig; updateUiConfig(raw: unknown): Promise<ClientUiConfig>; loadCatalogCache(): Promise<void>; recordCatalogTools(serverName: string, toolMeta: Map<string, { description?: unknown; }>): Promise<void>; private registeredSchemas; private poolRootFor; serverNameForId(id: string): { root: string; server: string; } | undefined; registeredToolsFor(name: string): Array<{ name: string; description?: string; }>; private poolEntryFor; onStatus(handler: () => void): () => void; getRedactionServers(): ServerConfig[]; redactError(error: unknown): string; private statusTimer; emitStatus(): void; projectStoreOrThrow(): Promise<McpStore>; projectServersFor(root: string): Promise<ServerConfig[] | undefined>; isRuntimeServer(name: string): boolean; isGlobalServer(name: string): boolean; globalServers(): ServerConfig[]; saveUserState(units: Map<string, ProjectUnit>): Promise<void>; catalogCachePathFor(root: string): string; initMiddleware(): Promise<McpMiddleware>; disabledByRoot: Map<string, Set<string>>; disabledTools: DisabledToolsMap; setToolDisabled(root: string, server: string, tool: string, disabled: boolean): Promise<void>; projectStoreFor(root: string | undefined): Promise<McpStore | undefined>; catalogServersFor(cwd: string | undefined): Promise<Map<string, { server: ServerConfig; scope: string; }>>; catalogViewFor(cwd: string | undefined, servers: Map<string, { server: ServerConfig; scope: string; }>): Promise<CatalogCache>; setSession(cwd: string | undefined): Promise<void>; resumeReconnect(): Promise<void>; refreshFromDisk(): Promise<void>; reconcileServers(): boolean; startAll(): Promise<void>; start(name: string, scope?: string): void; private touchGlobalUnit; private ensureMiddlewareServer; private dropMiddlewareConnection; registerServer(options: Record<string, unknown>): Promise<{ name: string; existing: boolean; }>; unregisterServer(name: string): Promise<void>; add(server: Record<string, unknown>, scope?: string): Promise<ServerConfig>; update(name: string, patch: Record<string, unknown>, scope?: string): Promise<ServerConfig>; remove(name: string, scope?: string): Promise<void>; connect(name: string, scope?: string): Promise<void>; disconnect(name: string, scope?: string): Promise<void>; reconnect(name: string, scope?: string): Promise<void>; summary(): Record<string, unknown>; private middlewareUnitFor; summarize(server: ServerConfig, scope: string): Record<string, unknown>; dispose(): Promise<void>; }",
+    "export declare class McpMiddleware { host: MiddlewareHost; units: Map<string, ProjectUnit>; disabledByRoot: Map<string, Set<string>>; disabledTools: DisabledToolsMap; forwarding: Set<ToolExecutionToken>; constructor(host: MiddlewareHost); projectUnitFor(root: string | undefined): Promise<ProjectUnit | undefined>; ensureConnected(root: string, serverName: string, opts?: { force?: boolean; }): Promise<void>; abandonInFlight(serverName: string): void; private connectInternal; private registeredSchemas; private registeredToolMeta; private redact; statusOf(root: string, serverName: string): ServerState | undefined; toolCountOf(root: string, serverName: string): number; callTool(fullName: string, toolRaw: string, rawArgs: unknown, signal: AbortSignal | undefined, identity: { agent?: unknown; callId: ToolExecutionInput[\"callId\"]; rootCallId?: ToolExecutionInput[\"rootCallId\"]; parent?: ToolExecutionToken; }): Promise<unknown>; releaseConnection(root: string, serverName: string): boolean; evictIfNeeded(maxUnits?: number): void; teardownUnit(root: string): void; dispose(): Promise<void>; }",
     "export declare class McpStatsCollector { private enabled; private filePath; private logger?; private startedAt; private updatedAt; private servers; private disclosure; private flushTimer?; private isDirty; constructor(options?: { enabled?: boolean; filePath?: string; logger?: { info?: (msg: string) => void; debug?: (msg: string) => void; }; }); configure(options: { enabled?: boolean; filePath?: string; logger?: { info?: (msg: string) => void; }; }): void; isEnabled(): boolean; private loadExisting; recordCall(server: string, tool: string, durationMs: number, success: boolean, errorMsg?: string): void; recordSearch(query: string): void; recordList(serverFilter?: string): void; recordDetail(server: string, tool: string): void; snapshot(): McpStatsSnapshot; private scheduleFlush; flushSync(): void; dispose(): void; }",
     "export declare class McpStore { path: string; data: { version: number; servers: ServerConfig[]; }; mtimeMs: number | undefined; snapshot: string | null; constructor(path: string); load(): Promise<void>; save(): Promise<void>; private writeSnapshot; changedOnDisk(): Promise<boolean>; reloadIfChanged(): Promise<boolean>; find(name: string): ServerConfig | undefined; upsert(server: ServerConfig): void; remove(name: string): void; }",
     "export declare const API: { servers: string; connect: string; disconnect: string; reconnect: string; importJson: string; session: string; resume: string; config: string; events: string; health: string; toolDisable: string; };",
+    "export declare const BOOLEAN_KEYS: readonly string[];",
     "export declare const BREAKPOINT_NARROW_MAX = 480;",
     "export declare const BREAKPOINT_TABLET_MAX = 834;",
     "export declare const CALL_TIMEOUT_MS = 30000;",
+    "export declare const CATALOG_DIR_NAME = \"catalog\";",
     "export declare const CATALOG_ENTRY_MAX_CHARS = 180;",
     "export declare const CATALOG_SECTION_NAME = \"mcp-catalog\";",
     "export declare const CATALOG_SOURCE_PLUGIN = \"@wingsky-1/dsh-mcp-manager\";",
+    "export declare const CATALOG_SUMMARY_FILE_NAME = \"catalog-summary.json\";",
     "export declare const CATALOG_SUMMARY_MAX_CHARS = 240;",
     "export declare const CATALOG_SUMMARY_PER_TOOL_CHARS = 120;",
     "export declare const CATALOG_TTL_MS: number;",
+    "export declare const CONFIG_FILE_NAME = \"mcp.json\";",
     "export declare const CONNECT_TIMEOUT_MS = 10000;",
+    "export declare const COUNT_LIMITS: Record<string, number>;",
     "export declare const Config: z<{ enabled: boolean; announceToAgent: boolean; storePath: string; announceCatalog: boolean; catalogMaxEntries: number; debug: { callStats: boolean; statsFile: string; }; ui: UiPlacementConfig; }",
     "export declare const DEFAULT_ANNOUNCE_CATALOG = true;",
     "export declare const DEFAULT_CATALOG_MAX_ENTRIES = 6;",
+    "export declare const DEFAULT_CONFIG: { enabled: boolean; announceToAgent: boolean; storePath: string; announceCatalog: boolean; catalogMaxEntries: number; debug: { callStats: boolean; statsFile: string; }; ui: UiPlacementConfig; };",
     "export declare const DEFAULT_RESULT_TRUNCATE_BYTES = 8192;",
     "export declare const DEFAULT_TOOL_CALL_TIMEOUT_MS = 15000;",
     "export declare const DEFAULT_UI_CONFIG: UiPlacementConfig;",
     "export declare const DEFAULT_Z_INDEX_BASE = 10;",
     "export declare const DISCOVERY_TIMEOUT_MS = 10000;",
+    "export declare const EMPTY_STATUS_COUNTS: Record<ServerState, number>;",
+    "export declare const LEGACY_LAYOUT: { readonly config: \"dsh-mcp.json\"; readonly userState: \"dsh-mcp-user-state.json\"; };",
     "export declare const LIST_DEFAULT_TOOLS_PER_SERVER = 50;",
     "export declare const LIST_MAX_TOOLS_PER_SERVER = 500;",
     "export declare const MAX_BYTES_PER_TOOL = 4096;",
@@ -586,33 +594,59 @@
     "export declare const MCP_GUIDANCE: string;",
     "export declare const MCP_SECTION_ORDER = 160;",
     "export declare const MIDDLEWARE_GLOBAL_ROOT = \"@global\";",
+    "export declare const OFFICIAL_MCP_CLIENT_LOG_NAME = \"mcp-client\";",
+    "export declare const OFFICIAL_MCP_CLIENT_SPECIFIER = \"@deepseek-ai/dsh-mcp-client\";",
+    "export declare const PACKAGE_DIR_MODE = 448;",
     "export declare const ROUTES: { servers: string; config: string; session: string; resume: string; connect: string; disconnect: string; reconnect: string; importJson: string; events: string; health: string; toolDisable: string; };",
+    "export declare const ROUTE_FENCE: Record<RouteName, RouteFence>;",
     "export declare const SCOPE_GLOBAL = \"global\";",
     "export declare const SCOPE_PROJECT = \"project\";",
+    "export declare const SECRET_ENV_NAME: RegExp;",
     "export declare const SERVER_NAME_PATTERN: RegExp;",
+    "export declare const SERVER_STATES: { readonly connected: \"connected\"; readonly connecting: \"connecting\"; readonly reconnecting: \"reconnecting\"; readonly disabled: \"disabled\"; readonly stopped: \"stopped\"; readonly failed: \"failed\"; };",
+    "export declare const SSE_FRAMES: { readonly summary: \"summary\"; readonly uiConfigChanged: \"ui-config-changed\"; readonly ping: \"ping\"; };",
     "export declare const SSE_HEARTBEAT_MS = 30000;",
     "export declare const SSE_PING_FRAME: string;",
-    "export declare const STATUS_ORDER: { key: string; titleKey: McpLocaleKey; dot: string; }",
+    "export declare const STATS_FILE_NAME = \"stats.json\";",
+    "export declare const STATUS_ORDER: ({ key: \"connected\"; titleKey: McpLocaleKey; dot: string; }",
     "export declare const STATUS_TEXT: Record<string, McpLocaleKey>;",
+    "export declare const STEPS: readonly UpgradeStep[];",
+    "export declare const USER_STATE_FILE_NAME = \"user-state.json\";",
+    "export declare const VERSION_FILE_NAME = \"version\";",
     "export declare const Z_INDEX_BASE_MAX = 9000;",
     "export declare const Z_INDEX_BASE_MIN = 1;",
     "export declare const Z_INDEX_PANEL_DELTA = 30;",
+    "export declare const apiPorts: ApiPorts;",
+    "export declare const catalogDirectory: CatalogDirectory;",
+    "export declare const catalogPorts: CatalogPorts;",
     "export declare const en: Record<McpLocaleKey, string>;",
     "export declare const inject: string[];",
     "export declare const inject: string[];",
+    "export declare const injectPorts: InjectPorts;",
+    "export declare const lifecyclePorts: LifecyclePorts;",
+    "export declare const mountLedger: MountLedger;",
     "export declare const name = \"mcp-manager\";",
+    "export declare const orchestratorPorts: OrchestratorPorts;",
+    "export declare const pipelinePorts: PipelinePorts;",
+    "export declare const runtimePorts: RuntimePorts;",
+    "export declare const upgradeRunner: UpgradeRunner;",
     "export declare const zh: { readonly stConnected: \"运行中\"; readonly stConnecting: \"连接中\"; readonly stReconnecting: \"重连中\"; readonly stStopped: \"未连接\"; readonly stDisabled: \"已停用\"; readonly stFailed: \"失败\"; readonly connect: \"连接\"; readonly disconnect: \"断开\"; readonly reconnect: \"重连\"; readonly enable: \"启用\"; readonly enableAndConnect: \"启用并连接\"; readonly disable: \"禁用\"; readonly edit: \"编辑\"; readonly delete: \"删除\"; readonly save: \"保存\"; readonly cancel: \"取消\"; readonly refresh: \"刷新\"; readonly close: \"关闭\"; readonly cancelEdit: \"取消编辑\"; readonly saveFail: \"保存失败：{msg}\"; readonly actionFail: \"操作失败：{msg}\"; readonly loadFail: \"加载失败：{msg}\"; readonly floatAriaLabel: \"MCP 管理器\"; readonly floatTitle: \"MCP 管理器（点击展开）\"; readonly floatManage: \"管理\"; readonly floatEmpty: \"没有 MCP 服务器，点「管理」添加\"; readonly floatGlobalSession: \"全局会话\"; readonly groupProject: \"项目级\"; readonly groupGlobal: \"全局\"; readonly badgeScopeProject: \"项目\"; readonly badgeScopeGlobal: \"全局\"; readonly serverMeta: \"{status} · {tools} 工具\"; readonly toolsCount: \"工具（{n}）\"; readonly toolsCountPlain: \"{n} 工具\"; readonly statusGroupCount: \"{status}（{n}）\"; readonly panelTitle: \"MCP 管理器\"; readonly tabServers: \"服务器\"; readonly tabQuickAdd: \"快速接入\"; readonly countsConnected: \"运行中 {n}\"; readonly countsConnecting: \"连接中 {n}\"; readonly countsFailed: \"失败 {n}\"; readonly countsSummary: \"共 {n} 台 · {parts}\"; readonly countsSummaryOnly: \"共 {n} 台\"; readonly addServer: \"添加服务器\"; readonly editServer: \"编辑服务器：{name}\"; readonly nameLabel: \"服务器名称（唯一，作为 mcp__<name>__ 前缀）\"; readonly ownershipLabel: \"归属\"; readonly transportLabel: \"传输类型\"; readonly commandLabel: \"命令（stdio）\"; readonly argsLabel: \"参数（逗号分隔）\"; readonly envLabel: \"环境变量（每行 KEY=VALUE，支持 ${ENV} 引用，值为空则继承父环境）\"; readonly cwdLabel: \"工作目录（可选）\"; readonly urlLabel: \"URL（streamable-http）\"; readonly headersLabel: \"请求头（每行 KEY: VALUE，支持 ${ENV} 引用）\"; readonly enabledLabel: \"启用（保存后立即连接）\"; readonly scopeProjectOpt: \"项目级（<项目>/.dsh/@wingsky-1/dsh-mcp-manager/mcp.json，随会话切换）\"; readonly scopeGlobalOpt: \"全局（本机配置）\"; readonly transportStdioOpt: \"stdio（本地子进程）\"; readonly transportHttpOpt: \"streamable-http（远程）\"; readonly envPlaceholder: \"每行 KEY=VALUE，如\\nCONTEXT7_API_KEY=${CONTEXT7_API_KEY}\"; readonly headersPlaceholder: \"每行 KEY: VALUE，支持 ${ENV} 引用，如\\nAuthorization: Bearer ${CONTEXT7_API_KEY}\"; readonly cwdPlaceholder: \"可选工作目录\"; readonly pasteTitle: \"粘贴 mcpServers JSON 导入\"; readonly importJson: \"导入 JSON\"; readonly importedOk: \"已导入：{names}\"; readonly importedNone: \"（无）\"; readonly importSkipped: \"跳过（已存在）：{names}\"; readonly importFail: \"导入失败：{msg}\"; readonly serversEmpty: \"还没有配置 MCP 服务器。切到「快速接入」页添加，或粘贴 mcpServers JSON 导入。\"; readonly confirmDelete: \"删除 MCP 服务器「{name}」？\"; readonly settingsLoading: \"MCP 管理器：加载中…\"; readonly settingsName: \"MCP 管理器（dsh-mcp-manager）\"; readonly settingsDescription: \"浮窗位置 / 水平·垂直·空白偏移\"; readonly anchorLabel: \"锚点\"; readonly posTopRight: \"右上（top-right）\"; readonly posTopLeft: \"左上（top-left）\"; readonly posBottomRight: \"右下（bottom-right）\"; readonly posBottomLeft: \"左下（bottom-left）\"; readonly offsetX: \"水平偏移\"; readonly offsetY: \"垂直偏移\"; readonly blankY: \"空白偏移\"; readonly zIndexBase: \"层级基准\"; readonly settingsHint: \"保存即热更新：浮窗位置与偏移即时生效并持久化（无需重启 dsh web）。\"; readonly savingNow: \"保存中…\"; readonly settingsSavedOk: \"已保存——浮窗位置即时生效（无需重启）\"; };",
-    "export declare function SettingsCard(): JSX.Element;",
+    "export declare function SettingsCard(): React.JSX.Element;",
     "export declare function actionButton(label: any, onClick: any, primary?: boolean, danger?: boolean): any;",
     "export declare function api(path: any, options?: any): Promise<any>;",
     "export declare function apply(ctx: Context, config: Record<string, unknown> | undefined): Promise<void>;",
     "export declare function apply(ctx: any): void;",
+    "export declare function assemble<Host>(host: Host, domains: readonly DomainSpec<Host>[]): Promise<Array<() => void>>;",
+    "export declare function assertEnvPolicy(env: Record<string, unknown> | undefined, headers: Record<string, unknown> | undefined, snapshot?: Record<string, string | undefined>, url?: unknown, args?: unknown): void;",
+    "export declare function attributeOfficialLog(text: string, serverName: string): string | undefined;",
+    "export declare function awaitMountWindow(input: MountWindowInput): Promise<MountWindowOutcome>;",
     "export declare function bareServerName(name: string): string;",
     "export declare function beginEdit(state: McpState, actions: UiActions, server: any): void;",
+    "export declare function bindHost(ctx: HostContextPort): HostFaces;",
     "export declare function bindSession(ctx: any, state: McpState, actions: UiActions): () => void;",
+    "export declare function bottomAnchorEdge(containerBottom: number, seatTop: number | null | undefined, docked: boolean): number;",
     "export declare function boundCatalogTools(tools: Iterable<{ name?: unknown; description?: unknown; inputSchema?: unknown; }",
     "export declare function breakpointForWidth(width: number): FloatBreakpoint;",
-    "export declare function bottomAnchorEdge(containerBottom: number, seatTop: number | null | undefined, docked: boolean): number;",
     "export declare function broadcastFrame(connections: SseHub | Set<ServerResponse> | undefined, frame: string): void;",
     "export declare function buildConfigRoute(manager: RoutesManager, helpers: RouteHelpers): WebRoute;",
     "export declare function buildConfigUiPatch(raw: unknown): UiPlacementConfig;",
@@ -627,14 +661,20 @@
     "export declare function buildToolDisableRoute(manager: RoutesManager, helpers: RouteHelpers): WebRoute;",
     "export declare function catalogCacheFile(): string;",
     "export declare function catalogCacheFileFor(root: string): string;",
+    "export declare function catalogDir(): string;",
+    "export declare function catalogFile(hash: string): string;",
     "export declare function catalogHistory(agent: CatalogAgent | undefined): CatalogHistoryResult;",
+    "export declare function catalogSummaryFile(): string;",
     "export declare function clampPointToViewport(x: number, y: number, width: number, height: number, viewportW: number, viewportH: number, safeInset?: number): ViewportPoint;",
     "export declare function clampZIndexBase(value: unknown, dflt: number): number;",
     "export declare function close(state: McpState): void;",
+    "export declare function collectOfficialLogs(logs: LogsPort, serverName: string): OfficialLogCollector;",
+    "export declare function compareVersions(left: string, right: string): number;",
     "export declare function composeCatalogEntries(supervisors: Map<string, SupervisorLite>, maxEntries?: number, cache?: CatalogCache): CatalogEntry[];",
     "export declare function composerDockedAtBottom(seatRect: RectLike | null | undefined, containerRect: RectLike | null | undefined): boolean;",
+    "export declare function configFile(): string;",
+    "export declare function containsRemoteImage(content: readonly unknown[]): boolean;",
     "export declare function conversationHost(): any;",
-    "export declare function createEmptyDisposers(): ApplyDisposers;",
     "export declare function createRedactor(servers: readonly ServerConfig[]): (error: unknown) => string;",
     "export declare function createState(): McpState;",
     "export declare function currentCwdBody(state: McpState): Record<string, string>;",
@@ -642,12 +682,21 @@
     "export declare function defaultCallResultFallbackText(result: unknown): string;",
     "export declare function defaultStatsPath(): string;",
     "export declare function defaultStorePath(): string;",
+    "export declare function diagnosticText(lines: readonly string[]): string | undefined;",
     "export declare function digestCatalogEntries(entries: CatalogEntry[]): string;",
+    "export declare function directoryMode(dir: string): number | null;",
     "export declare function disposePanel(state: McpState): void;",
+    "export declare function disposeServer(key: string): Promise<void>;",
     "export declare function el(tag: any, attrs?: any, children?: any): any;",
     "export declare function endpointOf(server: any): string;",
+    "export declare function ensureDir(dir: string): Promise<void>;",
     "export declare function escapeCatalogText(value: unknown): string;",
+    "export declare function executeMcpCall(input: DispatchCallInput): Promise<unknown>;",
     "export declare function expandEnv(value: unknown): string;",
+    "export declare function expandEnvObject(input: Record<string, unknown> | undefined): Record<string, string>;",
+    "export declare function expandServerEnv(server: ServerConfig): ServerConfig;",
+    "export declare function extractEnvRefs(value: unknown): string[];",
+    "export declare function fileMode(file: string): number | null;",
     "export declare function fillForm(state: McpState, fill: any): void;",
     "export declare function findCatalogMessage(messages: CatalogMessage[]): CatalogMessage | undefined;",
     "export declare function findProjectRoot(cwd: string | undefined): Promise<string>;",
@@ -657,11 +706,22 @@
     "export declare function fromClaudeEntry(name: string, entry: Record<string, unknown>): ServerConfig;",
     "export declare function fullServerName(root: string, server: string): string;",
     "export declare function globMatch(pattern: string, name: string): boolean;",
-    "export declare function injectSettingsSink(ctx: Context, manager: McpManager): void;",
-    "export declare function installConfigSettings(ctx: Context, manager: McpManager, config: Record<string, unknown> | undefined, syncMiddlewareFromSettings: () => void): void;",
+    "export declare function installApi(deps: ApiDeps): void;",
+    "export declare function installCatalog(deps: CatalogDeps): void;",
+    "export declare function installInject(deps: InjectDeps): void;",
+    "export declare function installLifecycle(deps: LifecycleDeps): void;",
+    "export declare function installOrchestrator(deps: OrchestratorDeps): void;",
+    "export declare function installPipeline(deps: PipelineDeps): void;",
+    "export declare function installRuntime(deps: RuntimeDeps): void;",
+    "export declare function installUpgrade(deps: UpgradeDeps): Promise<void>;",
     "export declare function isCatalogFresh(catalog: CatalogServer | undefined): boolean;",
     "export declare function isCatalogSource(source: { kind?: unknown; plugin?: unknown; }",
+    "export declare function isProjectionValue(value: unknown): boolean;",
+    "export declare function isRemoteImageBlock(block: unknown): boolean;",
+    "export declare function isSecretEnvName(name: unknown): boolean;",
     "export declare function isToolDenied(disabledTools: DisabledToolsMap | undefined, serverKey: string, tool: string): boolean;",
+    "export declare function legacyFile(fileName: string): string;",
+    "export declare function legacyProjectConfigFile(projectRoot: string): string;",
     "export declare function listCatalog(units: Map<string, ProjectUnit>, roots: readonly string[], serverFilter: string | undefined, toolLimit: number, emptyHint: string, disabledTools?: DisabledToolsMap): ListCatalogResult;",
     "export declare function loadDisabledTools(file: string): Promise<DisabledToolsMap>;",
     "export declare function loadUserState(file: string): Promise<Map<string, Set<string>>>;",
@@ -670,14 +730,22 @@
     "export declare function makeHealthRoute(manager: RoutesManager): WebRoute;",
     "export declare function makeResolveRoot(manager: McpManager): (agent: unknown) => Promise<string | undefined>;",
     "export declare function makeRoutes(manager: RoutesManager, _cwd?: string): WebRoute[];",
+    "export declare function makeServerIdTable(options?: ServerIdTableOptions): ServerIdTable;",
+    "export declare function mcpManagerHome(): string;",
+    "export declare function migrateStorageLayout(deps: UpgradeDeps): Promise<void>;",
     "export declare function mountFloat(ctx: any, state: McpState, actions: UiActions): () => void;",
+    "export declare function mountServer(input: MountServerInput): Promise<MountServerResult>;",
     "export declare function msgOf(error: unknown): string;",
     "export declare function normalizeArguments(raw: unknown): unknown;",
+    "export declare function normalizeConfig(input: unknown): { enabled: boolean; announceToAgent: boolean; storePath: string; announceCatalog: boolean; catalogMaxEntries: number; debug: { callStats: boolean; statsFile: string; }; ui: UiPlacementConfig; };",
     "export declare function normalizeScope(value: string): \"global\" | \"project\";",
     "export declare function normalizeServer(input: unknown): ServerConfig;",
     "export declare function normalizeToolName(serverName: string, toolName: string, caller?: string): string;",
     "export declare function normalizeUiConfig(raw: unknown): ClientUiConfig;",
     "export declare function normalizedProjectRoot(cwd: string | undefined): Promise<string | undefined>;",
+    "export declare function officialLogText(record: LogRecord): string | undefined;",
+    "export declare function officialMcpConfig(server: ServerConfig, id: string, expandServerEnv: (server: ServerConfig) => ServerConfig): OfficialMcpConfig;",
+    "export declare function packageRootFrom(fromDir: string): string | undefined;",
     "export declare function panelAnchorForPosition(placement: string | undefined): \"top\" | \"bottom\";",
     "export declare function panelHost(): any;",
     "export declare function panelTopForAnchor(anchor: \"top\" | \"bottom\", pillTop: number, pillBottom: number, panelHeight: number, gap: number): number;",
@@ -686,40 +754,60 @@
     "export declare function parseDisabledTools(raw: unknown): DisabledToolsMap;",
     "export declare function parseFullServerName(name: string): { root: string; server: string; }",
     "export declare function parseKV(text: any): Record<string, string>;",
+    "export declare function pendingSteps(steps: readonly UpgradeStep[], recorded: string): UpgradeStep[];",
     "export declare function placePanel(state: McpState): void;",
+    "export declare function pluginVersion(): string;",
     "export declare function projectCallToolResult(result: unknown, handlers?: CallResultTextHandlers): ProjectedCallResult;",
-    "export declare function provideMcpManagerService(ctx: Context, manager: McpManager): void;",
+    "export declare function projectConfigFile(projectRoot: string): string;",
+    "export declare function projectImageAdmission(request: ImageAdmissionRequest): Promise<ModelContentBlock[] | undefined>;",
+    "export declare function projectServerState(id: string, input: ServerStateInput): ServerState;",
     "export declare function publicToolName(serverName: string, rawName: string): string;",
     "export declare function queryParam(url: URL, name: string): string | undefined;",
     "export declare function readCatalogEntries(source: { entries?: unknown; }",
     "export declare function readCatalogServerFromDisk(file: string, serverName: string): Promise<PersistedCatalogServer | undefined>;",
     "export declare function readForm(state: McpState): any;",
+    "export declare function readJsonFile<T>(file: string): Promise<T | null>;",
+    "export declare function readStoredVersion(): Promise<string>;",
+    "export declare function readTextFile(file: string): Promise<string | null>;",
     "export declare function rebindSession(state: McpState): Promise<unknown>;",
+    "export declare function redactMcpError(pipeline: DispatchPipelinePort, servers: readonly ServerConfig[], text: string): string;",
     "export declare function refresh(state: McpState, actions: UiActions): Promise<boolean>;",
-    "export declare function registerCatalogInjection(ctx: Context, manager: McpManager, catalogMaxEntries: number): () => void;",
     "export declare function registerDirectMcpGuard(ctx: Context, disabledTools: DisabledToolsMap | undefined, resolveRoot: (agent: unknown) => Promise<string | undefined>, resolveServerId?: ServerIdResolver): (() => void) | undefined;",
     "export declare function registerMiddlewareTools(ctx: Context, mw: McpMiddleware, resolveRoot: (agent: unknown) => Promise<string | undefined>, options?: { disabledTools?: DisabledToolsMap; stats?: McpStatsCollector; resolveServerId?: ServerIdResolver; }",
+    "export declare function releaseApi(): void;",
+    "export declare function releaseCatalog(): void;",
+    "export declare function releaseInject(): void;",
+    "export declare function releaseLifecycle(): void;",
+    "export declare function releaseOrchestrator(): void;",
+    "export declare function releasePipeline(): void;",
+    "export declare function releaseRuntime(): void;",
+    "export declare function releaseServer(key: string): void;",
+    "export declare function releaseUpgrade(): void;",
     "export declare function renderFloatPanel(state: McpState, actions: UiActions): void;",
     "export declare function renderMcpCatalogMessage(entries: CatalogEntry[]): CatalogMessage;",
     "export declare function renderMcpCatalogUpdate(entries: CatalogEntry[]): CatalogMessage;",
     "export declare function renderPill(state: McpState): void;",
     "export declare function renderServer(server: any, state: McpState, actions: UiActions, opts?: { tools: boolean; openTools?: Set<string>; }",
     "export declare function renderServers(state: McpState, actions: UiActions): void;",
+    "export declare function reportGap(recorded: string, target: string, logger: UpgradeLogger): void;",
     "export declare function resetForm(state: McpState): void;",
-    "export declare function resolveApplyOptions(config: Record<string, unknown> | undefined, settingsSource?: unknown): ApplyOptions;",
     "export declare function resolveCatalogEntries(source: CatalogSourceLike | undefined): CatalogEntry[] | undefined;",
     "export declare function resolveCatalogInjection(decision: CatalogDecision, messages: CatalogMessage[], supervisors: Map<string, SupervisorLite>, maxEntries?: number, cache?: CatalogCache, agent?: CatalogAgent): CatalogDecision;",
     "export declare function resolveDebugConfig(config: Record<string, unknown> | undefined, settingsSource?: unknown): DebugConfig;",
-    "export declare function resolveStorePath(config: Record<string, unknown> | undefined): string;",
+    "export declare function resolveRoute(agent: unknown): ImageRoute;",
+    "export declare function runUpgradeChain(deps: UpgradeDeps): Promise<void>;",
+    "export declare function safeDisposeAll(disposers: readonly (() => void)[]): void;",
     "export declare function saveDisabledTools(file: string, disabledTools: DisabledToolsMap): Promise<void>;",
     "export declare function saveForm(state: McpState, actions: UiActions): Promise<void>;",
     "export declare function saveUserState(file: string, units: Map<string, ProjectUnit>): Promise<void>;",
     "export declare function scoreTool(query: string, server: string, toolName: string, tool: CatalogTool): { score: number; matchedTerms: string[]; };",
     "export declare function searchCatalog(units: Map<string, ProjectUnit>, root: string, query: string, limit: number): { results: SearchHit[]; unavailable: Array<{ server: string; reason: string; }>; truncated: boolean; };",
     "export declare function searchCatalogMulti(units: Map<string, ProjectUnit>, roots: readonly string[], query: string, limit: number): { results: SearchHit[]; unavailable: Array<{ server: string; reason: string; }>; truncated: boolean; };",
-    "export declare function setupConfigWatchersAsync(manager: McpManager): Promise<() => void>;",
-    "export declare function setupRoutesAndBroadcast(ctx: Context, manager: McpManager): () => void;",
+    "export declare function settleOne(source: string, target: string, initial: string | null, deps: UpgradeDeps): Promise<void>;",
+    "export declare function settleProjectConfig(root: string, logger: UpgradeLogger): Promise<void>;",
     "export declare function showPanel(state: McpState, actions: UiActions): void;",
+    "export declare function startAgentVisibility(args: StartAgentVisibilityArgs): () => void;",
+    "export declare function statsFile(): string;",
     "export declare function statusDot(status: string): string;",
     "export declare function stripMcpPrefix(registeredName: string, serverName: string): string;",
     "export declare function summarizeToolDescriptions(toolMeta: Map<string, { description?: unknown; }",
@@ -730,7 +818,12 @@
     "export declare function toolDisabledReason(serverKey: string, tool: string): string;",
     "export declare function uiConfigChangedFrame(): string;",
     "export declare function userStateFile(): string;",
-    "export declare function withTimeout<T>(promise: Promise<T>, ms: number, message: string, signal?: AbortSignal): Promise<T>;"
+    "export declare function userStatePath(): string;",
+    "export declare function versionFile(): string;",
+    "export declare function withSettledProjectConfig<T>(root: string, logger: UpgradeLogger, useSettled: (settledPath: string) => Promise<T>): Promise<T>;",
+    "export declare function withTimeout<T>(promise: Promise<T>, ms: number, message: string, signal?: AbortSignal): Promise<T>;",
+    "export declare function writeFileAtomic(file: string, data: string): Promise<void>;",
+    "export declare function writeStoredVersion(version: string): Promise<void>;"
   ],
   "entries": {
     ".": {
@@ -1290,6 +1383,33 @@
         }
       ],
       "blocks": {
+        "MCP_GUIDANCE": [
+          "export declare const MCP_GUIDANCE: string;"
+        ],
+        "MCP_SECTION_ORDER": [
+          "export declare const MCP_SECTION_ORDER = 160;"
+        ],
+        "inject": [
+          "export declare const inject: string[];"
+        ],
+        "name": [
+          "export declare const name = \"mcp-manager\";"
+        ],
+        "apply": [
+          "export declare function apply(ctx: Context, config: Record<string, unknown> | undefined): Promise<void>;"
+        ],
+        "resolveDebugConfig": [
+          "export declare function resolveDebugConfig(config: Record<string, unknown> | undefined, settingsSource?: unknown): DebugConfig;"
+        ],
+        "apiPorts": [
+          "export declare const apiPorts: ApiPorts;"
+        ],
+        "installApi": [
+          "export declare function installApi(deps: ApiDeps): void;"
+        ],
+        "releaseApi": [
+          "export declare function releaseApi(): void;"
+        ],
         "buildConfigRoute": [
           "export declare function buildConfigRoute(manager: RoutesManager, helpers: RouteHelpers): WebRoute;"
         ],
@@ -1320,11 +1440,12 @@
         "queryParam": [
           "export declare function queryParam(url: URL, name: string): string | undefined;"
         ],
-        "ROUTES": [
-          "export declare const ROUTES: { servers: string; config: string; session: string; resume: string; connect: string; disconnect: string; reconnect: string; importJson: string; events: string; health: string; toolDisable: string; };"
+        "SSE_HEARTBEAT_MS": [
+          "export declare const SSE_HEARTBEAT_MS = 30000;"
         ],
-        "SSE_HEARTBEAT_MS": ["export declare const SSE_HEARTBEAT_MS = 30000;"],
-        "SSE_PING_FRAME": ["export declare const SSE_PING_FRAME: string;"],
+        "SSE_PING_FRAME": [
+          "export declare const SSE_PING_FRAME: string;"
+        ],
         "broadcastFrame": [
           "export declare function broadcastFrame(connections: SseHub | Set<ServerResponse> | undefined, frame: string): void;"
         ],
@@ -1337,62 +1458,48 @@
         "makeRoutes": [
           "export declare function makeRoutes(manager: RoutesManager, _cwd?: string): WebRoute[];"
         ],
-        "uiConfigChangedFrame": ["export declare function uiConfigChangedFrame(): string;"],
-        "injectSettingsSink": [
-          "export declare function injectSettingsSink(ctx: Context, manager: McpManager): void;"
+        "uiConfigChangedFrame": [
+          "export declare function uiConfigChangedFrame(): string;"
         ],
-        "installConfigSettings": [
-          "export declare function installConfigSettings(ctx: Context, manager: McpManager, config: Record<string, unknown> | undefined, syncMiddlewareFromSettings: () => void): void;"
+        "catalogCacheFile": [
+          "export declare function catalogCacheFile(): string;"
         ],
-        "resolveApplyOptions": [
-          "export declare function resolveApplyOptions(config: Record<string, unknown> | undefined, settingsSource?: unknown): ApplyOptions;"
-        ],
-        "resolveDebugConfig": [
-          "export declare function resolveDebugConfig(config: Record<string, unknown> | undefined, settingsSource?: unknown): DebugConfig;"
-        ],
-        "resolveStorePath": [
-          "export declare function resolveStorePath(config: Record<string, unknown> | undefined): string;"
-        ],
-        "MCP_GUIDANCE": ["export declare const MCP_GUIDANCE: string;"],
-        "createEmptyDisposers": ["export declare function createEmptyDisposers(): ApplyDisposers;"],
-        "registerCatalogInjection": [
-          "export declare function registerCatalogInjection(ctx: Context, manager: McpManager, catalogMaxEntries: number): () => void;"
-        ],
-        "setupConfigWatchersAsync": [
-          "export declare function setupConfigWatchersAsync(manager: McpManager): Promise<() => void>;"
-        ],
-        "setupRoutesAndBroadcast": [
-          "export declare function setupRoutesAndBroadcast(ctx: Context, manager: McpManager): () => void;"
-        ],
-        "provideMcpManagerService": [
-          "export declare function provideMcpManagerService(ctx: Context, manager: McpManager): void;"
-        ],
-        "MCP_SECTION_ORDER": ["export declare const MCP_SECTION_ORDER = 160;"],
-        "apply": [
-          "export declare function apply(ctx: Context, config: Record<string, unknown> | undefined): Promise<void>;"
-        ],
-        "catalogCacheFile": ["export declare function catalogCacheFile(): string;"],
         "makeCatalogViewFor": [
           "export declare function makeCatalogViewFor(host: CatalogViewHost): CatalogViewResolver;"
         ],
         "digestCatalogEntries": [
           "export declare function digestCatalogEntries(entries: CatalogEntry[]): string;"
         ],
-        "CATALOG_ENTRY_MAX_CHARS": ["export declare const CATALOG_ENTRY_MAX_CHARS = 180;"],
-        "CATALOG_SECTION_NAME": ["export declare const CATALOG_SECTION_NAME = \"mcp-catalog\";"],
+        "catalogDirectory": [
+          "export declare const catalogDirectory: CatalogDirectory;"
+        ],
+        "boundCatalogTools": [
+          "export declare function boundCatalogTools(tools: Iterable<{ name?: unknown; description?: unknown; inputSchema?: unknown; }"
+        ],
+        "isCatalogFresh": [
+          "export declare function isCatalogFresh(catalog: CatalogServer | undefined): boolean;"
+        ],
+        "CATALOG_ENTRY_MAX_CHARS": [
+          "export declare const CATALOG_ENTRY_MAX_CHARS = 180;"
+        ],
+        "CATALOG_SECTION_NAME": [
+          "export declare const CATALOG_SECTION_NAME = \"mcp-catalog\";"
+        ],
         "CATALOG_SOURCE_PLUGIN": [
           "export declare const CATALOG_SOURCE_PLUGIN = \"@wingsky-1/dsh-mcp-manager\";"
         ],
-        "CATALOG_SUMMARY_MAX_CHARS": ["export declare const CATALOG_SUMMARY_MAX_CHARS = 240;"],
+        "CATALOG_SUMMARY_MAX_CHARS": [
+          "export declare const CATALOG_SUMMARY_MAX_CHARS = 240;"
+        ],
         "CATALOG_SUMMARY_PER_TOOL_CHARS": [
           "export declare const CATALOG_SUMMARY_PER_TOOL_CHARS = 120;"
         ],
-        "DEFAULT_ANNOUNCE_CATALOG": ["export declare const DEFAULT_ANNOUNCE_CATALOG = true;"],
-        "DEFAULT_CATALOG_MAX_ENTRIES": ["export declare const DEFAULT_CATALOG_MAX_ENTRIES = 6;"],
         "composeCatalogEntries": [
           "export declare function composeCatalogEntries(supervisors: Map<string, SupervisorLite>, maxEntries?: number, cache?: CatalogCache): CatalogEntry[];"
         ],
-        "escapeCatalogText": ["export declare function escapeCatalogText(value: unknown): string;"],
+        "escapeCatalogText": [
+          "export declare function escapeCatalogText(value: unknown): string;"
+        ],
         "findCatalogMessage": [
           "export declare function findCatalogMessage(messages: CatalogMessage[]): CatalogMessage | undefined;"
         ],
@@ -1420,14 +1527,17 @@
         "resolveCatalogInjection": [
           "export declare function resolveCatalogInjection(decision: CatalogDecision, messages: CatalogMessage[], supervisors: Map<string, SupervisorLite>, maxEntries?: number, cache?: CatalogCache, agent?: CatalogAgent): CatalogDecision;"
         ],
-        "boundCatalogTools": [
-          "export declare function boundCatalogTools(tools: Iterable<{ name?: unknown; description?: unknown; inputSchema?: unknown; }"
+        "catalogPorts": [
+          "export declare const catalogPorts: CatalogPorts;"
+        ],
+        "installCatalog": [
+          "export declare function installCatalog(deps: CatalogDeps): void;"
+        ],
+        "releaseCatalog": [
+          "export declare function releaseCatalog(): void;"
         ],
         "findToolDetail": [
           "export declare function findToolDetail(units: Map<string, ProjectUnit>, root: string, server: string, tool: string): ToolDetail;"
-        ],
-        "isCatalogFresh": [
-          "export declare function isCatalogFresh(catalog: CatalogServer | undefined): boolean;"
         ],
         "listCatalog": [
           "export declare function listCatalog(units: Map<string, ProjectUnit>, roots: readonly string[], serverFilter: string | undefined, toolLimit: number, emptyHint: string, disabledTools?: DisabledToolsMap): ListCatalogResult;"
@@ -1441,15 +1551,50 @@
         "searchCatalogMulti": [
           "export declare function searchCatalogMulti(units: Map<string, ProjectUnit>, roots: readonly string[], query: string, limit: number): { results: SearchHit[]; unavailable: Array<{ server: string; reason: string; }>; truncated: boolean; };"
         ],
+        "BOOLEAN_KEYS": [
+          "export declare const BOOLEAN_KEYS: readonly string[];"
+        ],
+        "COUNT_LIMITS": [
+          "export declare const COUNT_LIMITS: Record<string, number>;"
+        ],
         "Config": [
           "export declare const Config: z<{ enabled: boolean; announceToAgent: boolean; storePath: string; announceCatalog: boolean; catalogMaxEntries: number; debug: { callStats: boolean; statsFile: string; }; ui: UiPlacementConfig; }"
         ],
-        "DEFAULT_UI_CONFIG": ["export declare const DEFAULT_UI_CONFIG: UiPlacementConfig;"],
+        "DEFAULT_CONFIG": [
+          "export declare const DEFAULT_CONFIG: { enabled: boolean; announceToAgent: boolean; storePath: string; announceCatalog: boolean; catalogMaxEntries: number; debug: { callStats: boolean; statsFile: string; }; ui: UiPlacementConfig; };"
+        ],
+        "DEFAULT_UI_CONFIG": [
+          "export declare const DEFAULT_UI_CONFIG: UiPlacementConfig;"
+        ],
         "buildConfigUiPatch": [
           "export declare function buildConfigUiPatch(raw: unknown): UiPlacementConfig;"
         ],
+        "normalizeConfig": [
+          "export declare function normalizeConfig(input: unknown): { enabled: boolean; announceToAgent: boolean; storePath: string; announceCatalog: boolean; catalogMaxEntries: number; debug: { callStats: boolean; statsFile: string; }; ui: UiPlacementConfig; };"
+        ],
         "normalizeUiConfig": [
           "export declare function normalizeUiConfig(raw: unknown): ClientUiConfig;"
+        ],
+        "SECRET_ENV_NAME": [
+          "export declare const SECRET_ENV_NAME: RegExp;"
+        ],
+        "expandEnv": [
+          "export declare function expandEnv(value: unknown): string;"
+        ],
+        "expandEnvObject": [
+          "export declare function expandEnvObject(input: Record<string, unknown> | undefined): Record<string, string>;"
+        ],
+        "expandServerEnv": [
+          "export declare function expandServerEnv(server: ServerConfig): ServerConfig;"
+        ],
+        "assertEnvPolicy": [
+          "export declare function assertEnvPolicy(env: Record<string, unknown> | undefined, headers: Record<string, unknown> | undefined, snapshot?: Record<string, string | undefined>, url?: unknown, args?: unknown): void;"
+        ],
+        "extractEnvRefs": [
+          "export declare function extractEnvRefs(value: unknown): string[];"
+        ],
+        "isSecretEnvName": [
+          "export declare function isSecretEnvName(name: unknown): boolean;"
         ],
         "fromClaudeEntry": [
           "export declare function fromClaudeEntry(name: string, entry: Record<string, unknown>): ServerConfig;"
@@ -1457,9 +1602,287 @@
         "parseClaudeJson": [
           "export declare function parseClaudeJson(text: string): ServerConfig[];"
         ],
-        "SERVER_NAME_PATTERN": ["export declare const SERVER_NAME_PATTERN: RegExp;"],
         "normalizeServer": [
           "export declare function normalizeServer(input: unknown): ServerConfig;"
+        ],
+        "orchestratorPorts": [
+          "export declare const orchestratorPorts: OrchestratorPorts;"
+        ],
+        "installOrchestrator": [
+          "export declare function installOrchestrator(deps: OrchestratorDeps): void;"
+        ],
+        "releaseOrchestrator": [
+          "export declare function releaseOrchestrator(): void;"
+        ],
+        "McpManager": [
+          "export declare class McpManager { ctx: Context; store: McpStore; listeners: Set<() => void>; logger: LoggerService; projectRoot: string | undefined; projectStore: McpStore | undefined; reconcileBusy: boolean; projectStores: Map<string, McpStore>; catalogCache: CatalogCache; catalogCachePath: string; uiConfigSource: () => any; uiUpdate?: (patch: Record<string, unknown>) => Promise<unknown>; sseHub?: SseHub; middleware: McpMiddleware | undefined; userStatePath: string; stats: McpStatsCollector; runtimeRegistry: Map<string, ServerConfig>; private registerQueue; private catalogViewResolver; constructor(ctx: Context, store: McpStore); uiConfig(): ClientUiConfig; updateUiConfig(raw: unknown): Promise<ClientUiConfig>; loadCatalogCache(): Promise<void>; recordCatalogTools(serverName: string, toolMeta: Map<string, { description?: unknown; }>): Promise<void>; private registeredSchemas; private poolRootFor; serverNameForId(id: string): { root: string; server: string; } | undefined; registeredToolsFor(name: string): Array<{ name: string; description?: string; }>; private poolEntryFor; onStatus(handler: () => void): () => void; getRedactionServers(): ServerConfig[]; redactError(error: unknown): string; private statusTimer; emitStatus(): void; projectStoreOrThrow(): Promise<McpStore>; projectServersFor(root: string): Promise<ServerConfig[] | undefined>; isRuntimeServer(name: string): boolean; isGlobalServer(name: string): boolean; globalServers(): ServerConfig[]; saveUserState(units: Map<string, ProjectUnit>): Promise<void>; catalogCachePathFor(root: string): string; initMiddleware(): Promise<McpMiddleware>; disabledByRoot: Map<string, Set<string>>; disabledTools: DisabledToolsMap; setToolDisabled(root: string, server: string, tool: string, disabled: boolean): Promise<void>; projectStoreFor(root: string | undefined): Promise<McpStore | undefined>; catalogServersFor(cwd: string | undefined): Promise<Map<string, { server: ServerConfig; scope: string; }>>; catalogViewFor(cwd: string | undefined, servers: Map<string, { server: ServerConfig; scope: string; }>): Promise<CatalogCache>; setSession(cwd: string | undefined): Promise<void>; resumeReconnect(): Promise<void>; refreshFromDisk(): Promise<void>; reconcileServers(): boolean; startAll(): Promise<void>; start(name: string, scope?: string): void; private touchGlobalUnit; private ensureMiddlewareServer; private dropMiddlewareConnection; registerServer(options: Record<string, unknown>): Promise<{ name: string; existing: boolean; }>; unregisterServer(name: string): Promise<void>; add(server: Record<string, unknown>, scope?: string): Promise<ServerConfig>; update(name: string, patch: Record<string, unknown>, scope?: string): Promise<ServerConfig>; remove(name: string, scope?: string): Promise<void>; connect(name: string, scope?: string): Promise<void>; disconnect(name: string, scope?: string): Promise<void>; reconnect(name: string, scope?: string): Promise<void>; summary(): Record<string, unknown>; private middlewareUnitFor; summarize(server: ServerConfig, scope: string): Record<string, unknown>; dispose(): Promise<void>; }"
+        ],
+        "stripMcpPrefix": [
+          "export declare function stripMcpPrefix(registeredName: string, serverName: string): string;"
+        ],
+        "runtimePorts": [
+          "export declare const runtimePorts: RuntimePorts;"
+        ],
+        "installRuntime": [
+          "export declare function installRuntime(deps: RuntimeDeps): void;"
+        ],
+        "releaseRuntime": [
+          "export declare function releaseRuntime(): void;"
+        ],
+        "CALL_TIMEOUT_MS": [
+          "export declare const CALL_TIMEOUT_MS = 30000;"
+        ],
+        "CATALOG_TTL_MS": [
+          "export declare const CATALOG_TTL_MS: number;"
+        ],
+        "LIST_MAX_TOOLS_PER_SERVER": [
+          "export declare const LIST_MAX_TOOLS_PER_SERVER = 500;"
+        ],
+        "MAX_BYTES_PER_TOOL": [
+          "export declare const MAX_BYTES_PER_TOOL = 4096;"
+        ],
+        "MAX_TOOLS_PER_SERVER": [
+          "export declare const MAX_TOOLS_PER_SERVER = 512;"
+        ],
+        "MAX_TOTAL_CATALOG_BYTES": [
+          "export declare const MAX_TOTAL_CATALOG_BYTES: number;"
+        ],
+        "McpMiddleware": [
+          "export declare class McpMiddleware { host: MiddlewareHost; units: Map<string, ProjectUnit>; disabledByRoot: Map<string, Set<string>>; disabledTools: DisabledToolsMap; forwarding: Set<ToolExecutionToken>; constructor(host: MiddlewareHost); projectUnitFor(root: string | undefined): Promise<ProjectUnit | undefined>; ensureConnected(root: string, serverName: string, opts?: { force?: boolean; }): Promise<void>; abandonInFlight(serverName: string): void; private connectInternal; private registeredSchemas; private registeredToolMeta; private redact; statusOf(root: string, serverName: string): ServerState | undefined; toolCountOf(root: string, serverName: string): number; callTool(fullName: string, toolRaw: string, rawArgs: unknown, signal: AbortSignal | undefined, identity: { agent?: unknown; callId: ToolExecutionInput[\"callId\"]; rootCallId?: ToolExecutionInput[\"rootCallId\"]; parent?: ToolExecutionToken; }): Promise<unknown>; releaseConnection(root: string, serverName: string): boolean; evictIfNeeded(maxUnits?: number): void; teardownUnit(root: string): void; dispose(): Promise<void>; }"
+        ],
+        "containsRemoteImage": [
+          "export declare function containsRemoteImage(content: readonly unknown[]): boolean;"
+        ],
+        "isRemoteImageBlock": [
+          "export declare function isRemoteImageBlock(block: unknown): boolean;"
+        ],
+        "projectImageAdmission": [
+          "export declare function projectImageAdmission(request: ImageAdmissionRequest): Promise<ModelContentBlock[] | undefined>;"
+        ],
+        "resolveRoute": [
+          "export declare function resolveRoute(agent: unknown): ImageRoute;"
+        ],
+        "injectPorts": [
+          "export declare const injectPorts: InjectPorts;"
+        ],
+        "installInject": [
+          "export declare function installInject(deps: InjectDeps): void;"
+        ],
+        "releaseInject": [
+          "export declare function releaseInject(): void;"
+        ],
+        "registerDirectMcpGuard": [
+          "export declare function registerDirectMcpGuard(ctx: Context, disabledTools: DisabledToolsMap | undefined, resolveRoot: (agent: unknown) => Promise<string | undefined>, resolveServerId?: ServerIdResolver): (() => void) | undefined;"
+        ],
+        "registerMiddlewareTools": [
+          "export declare function registerMiddlewareTools(ctx: Context, mw: McpMiddleware, resolveRoot: (agent: unknown) => Promise<string | undefined>, options?: { disabledTools?: DisabledToolsMap; stats?: McpStatsCollector; resolveServerId?: ServerIdResolver; }"
+        ],
+        "normalizeArguments": [
+          "export declare function normalizeArguments(raw: unknown): unknown;"
+        ],
+        "globMatch": [
+          "export declare function globMatch(pattern: string, name: string): boolean;"
+        ],
+        "isToolDenied": [
+          "export declare function isToolDenied(disabledTools: DisabledToolsMap | undefined, serverKey: string, tool: string): boolean;"
+        ],
+        "toolDisabledReason": [
+          "export declare function toolDisabledReason(serverKey: string, tool: string): string;"
+        ],
+        "msgOf": [
+          "export declare function msgOf(error: unknown): string;"
+        ],
+        "defaultCallResultFallbackText": [
+          "export declare function defaultCallResultFallbackText(result: unknown): string;"
+        ],
+        "projectCallToolResult": [
+          "export declare function projectCallToolResult(result: unknown, handlers?: CallResultTextHandlers): ProjectedCallResult;"
+        ],
+        "createRedactor": [
+          "export declare function createRedactor(servers: readonly ServerConfig[]): (error: unknown) => string;"
+        ],
+        "pipelinePorts": [
+          "export declare const pipelinePorts: PipelinePorts;"
+        ],
+        "withTimeout": [
+          "export declare function withTimeout<T>(promise: Promise<T>, ms: number, message: string, signal?: AbortSignal): Promise<T>;"
+        ],
+        "installPipeline": [
+          "export declare function installPipeline(deps: PipelineDeps): void;"
+        ],
+        "releasePipeline": [
+          "export declare function releasePipeline(): void;"
+        ],
+        "executeMcpCall": [
+          "export declare function executeMcpCall(input: DispatchCallInput): Promise<unknown>;"
+        ],
+        "redactMcpError": [
+          "export declare function redactMcpError(pipeline: DispatchPipelinePort, servers: readonly ServerConfig[], text: string): string;"
+        ],
+        "mountLedger": [
+          "export declare const mountLedger: MountLedger;"
+        ],
+        "attributeOfficialLog": [
+          "export declare function attributeOfficialLog(text: string, serverName: string): string | undefined;"
+        ],
+        "collectOfficialLogs": [
+          "export declare function collectOfficialLogs(logs: LogsPort, serverName: string): OfficialLogCollector;"
+        ],
+        "diagnosticText": [
+          "export declare function diagnosticText(lines: readonly string[]): string | undefined;"
+        ],
+        "officialLogText": [
+          "export declare function officialLogText(record: LogRecord): string | undefined;"
+        ],
+        "mountServer": [
+          "export declare function mountServer(input: MountServerInput): Promise<MountServerResult>;"
+        ],
+        "officialMcpConfig": [
+          "export declare function officialMcpConfig(server: ServerConfig, id: string, expandServerEnv: (server: ServerConfig) => ServerConfig): OfficialMcpConfig;"
+        ],
+        "lifecyclePorts": [
+          "export declare const lifecyclePorts: LifecyclePorts;"
+        ],
+        "projectServerState": [
+          "export declare function projectServerState(id: string, input: ServerStateInput): ServerState;"
+        ],
+        "awaitMountWindow": [
+          "export declare function awaitMountWindow(input: MountWindowInput): Promise<MountWindowOutcome>;"
+        ],
+        "disposeServer": [
+          "export declare function disposeServer(key: string): Promise<void>;"
+        ],
+        "installLifecycle": [
+          "export declare function installLifecycle(deps: LifecycleDeps): void;"
+        ],
+        "releaseLifecycle": [
+          "export declare function releaseLifecycle(): void;"
+        ],
+        "releaseServer": [
+          "export declare function releaseServer(key: string): void;"
+        ],
+        "assemble": [
+          "export declare function assemble<Host>(host: Host, domains: readonly DomainSpec<Host>[]): Promise<Array<() => void>>;"
+        ],
+        "bindHost": [
+          "export declare function bindHost(ctx: HostContextPort): HostFaces;"
+        ],
+        "safeDisposeAll": [
+          "export declare function safeDisposeAll(disposers: readonly (() => void)[]): void;"
+        ],
+        "CONNECT_TIMEOUT_MS": [
+          "export declare const CONNECT_TIMEOUT_MS = 10000;"
+        ],
+        "DEFAULT_ANNOUNCE_CATALOG": [
+          "export declare const DEFAULT_ANNOUNCE_CATALOG = true;"
+        ],
+        "DEFAULT_CATALOG_MAX_ENTRIES": [
+          "export declare const DEFAULT_CATALOG_MAX_ENTRIES = 6;"
+        ],
+        "DEFAULT_RESULT_TRUNCATE_BYTES": [
+          "export declare const DEFAULT_RESULT_TRUNCATE_BYTES = 8192;"
+        ],
+        "DEFAULT_TOOL_CALL_TIMEOUT_MS": [
+          "export declare const DEFAULT_TOOL_CALL_TIMEOUT_MS = 15000;"
+        ],
+        "DISCOVERY_TIMEOUT_MS": [
+          "export declare const DISCOVERY_TIMEOUT_MS = 10000;"
+        ],
+        "LIST_DEFAULT_TOOLS_PER_SERVER": [
+          "export declare const LIST_DEFAULT_TOOLS_PER_SERVER = 50;"
+        ],
+        "OFFICIAL_MCP_CLIENT_LOG_NAME": [
+          "export declare const OFFICIAL_MCP_CLIENT_LOG_NAME = \"mcp-client\";"
+        ],
+        "OFFICIAL_MCP_CLIENT_SPECIFIER": [
+          "export declare const OFFICIAL_MCP_CLIENT_SPECIFIER = \"@deepseek-ai/dsh-mcp-client\";"
+        ],
+        "SERVER_NAME_PATTERN": [
+          "export declare const SERVER_NAME_PATTERN: RegExp;"
+        ],
+        "ensureDir": [
+          "export declare function ensureDir(dir: string): Promise<void>;"
+        ],
+        "readJsonFile": [
+          "export declare function readJsonFile<T>(file: string): Promise<T | null>;"
+        ],
+        "readTextFile": [
+          "export declare function readTextFile(file: string): Promise<string | null>;"
+        ],
+        "writeFileAtomic": [
+          "export declare function writeFileAtomic(file: string, data: string): Promise<void>;"
+        ],
+        "CATALOG_DIR_NAME": [
+          "export declare const CATALOG_DIR_NAME = \"catalog\";"
+        ],
+        "CATALOG_SUMMARY_FILE_NAME": [
+          "export declare const CATALOG_SUMMARY_FILE_NAME = \"catalog-summary.json\";"
+        ],
+        "CONFIG_FILE_NAME": [
+          "export declare const CONFIG_FILE_NAME = \"mcp.json\";"
+        ],
+        "LEGACY_LAYOUT": [
+          "export declare const LEGACY_LAYOUT: { readonly config: \"dsh-mcp.json\"; readonly userState: \"dsh-mcp-user-state.json\"; };"
+        ],
+        "PACKAGE_DIR_MODE": [
+          "export declare const PACKAGE_DIR_MODE = 448;"
+        ],
+        "STATS_FILE_NAME": [
+          "export declare const STATS_FILE_NAME = \"stats.json\";"
+        ],
+        "USER_STATE_FILE_NAME": [
+          "export declare const USER_STATE_FILE_NAME = \"user-state.json\";"
+        ],
+        "VERSION_FILE_NAME": [
+          "export declare const VERSION_FILE_NAME = \"version\";"
+        ],
+        "catalogDir": [
+          "export declare function catalogDir(): string;"
+        ],
+        "catalogFile": [
+          "export declare function catalogFile(hash: string): string;"
+        ],
+        "catalogSummaryFile": [
+          "export declare function catalogSummaryFile(): string;"
+        ],
+        "configFile": [
+          "export declare function configFile(): string;"
+        ],
+        "directoryMode": [
+          "export declare function directoryMode(dir: string): number | null;"
+        ],
+        "fileMode": [
+          "export declare function fileMode(file: string): number | null;"
+        ],
+        "legacyFile": [
+          "export declare function legacyFile(fileName: string): string;"
+        ],
+        "legacyProjectConfigFile": [
+          "export declare function legacyProjectConfigFile(projectRoot: string): string;"
+        ],
+        "mcpManagerHome": [
+          "export declare function mcpManagerHome(): string;"
+        ],
+        "projectConfigFile": [
+          "export declare function projectConfigFile(projectRoot: string): string;"
+        ],
+        "statsFile": [
+          "export declare function statsFile(): string;"
+        ],
+        "userStatePath": [
+          "export declare function userStatePath(): string;"
+        ],
+        "versionFile": [
+          "export declare function versionFile(): string;"
+        ],
+        "publicToolName": [
+          "export declare function publicToolName(serverName: string, rawName: string): string;"
+        ],
+        "McpStatsCollector": [
+          "export declare class McpStatsCollector { private enabled; private filePath; private logger?; private startedAt; private updatedAt; private servers; private disclosure; private flushTimer?; private isDirty; constructor(options?: { enabled?: boolean; filePath?: string; logger?: { info?: (msg: string) => void; debug?: (msg: string) => void; }; }); configure(options: { enabled?: boolean; filePath?: string; logger?: { info?: (msg: string) => void; }; }): void; isEnabled(): boolean; private loadExisting; recordCall(server: string, tool: string, durationMs: number, success: boolean, errorMsg?: string): void; recordSearch(query: string): void; recordList(serverFilter?: string): void; recordDetail(server: string, tool: string): void; snapshot(): McpStatsSnapshot; private scheduleFlush; flushSync(): void; dispose(): void; }"
+        ],
+        "defaultStatsPath": [
+          "export declare function defaultStatsPath(): string;"
         ],
         "catalogCacheFileFor": [
           "export declare function catalogCacheFileFor(root: string): string;"
@@ -1482,92 +1905,69 @@
         "saveUserState": [
           "export declare function saveUserState(file: string, units: Map<string, ProjectUnit>): Promise<void>;"
         ],
-        "userStateFile": ["export declare function userStateFile(): string;"],
+        "userStateFile": [
+          "export declare function userStateFile(): string;"
+        ],
         "McpStore": [
           "export declare class McpStore { path: string; data: { version: number; servers: ServerConfig[]; }; mtimeMs: number | undefined; snapshot: string | null; constructor(path: string); load(): Promise<void>; save(): Promise<void>; private writeSnapshot; changedOnDisk(): Promise<boolean>; reloadIfChanged(): Promise<boolean>; find(name: string): ServerConfig | undefined; upsert(server: ServerConfig): void; remove(name: string): void; }"
         ],
-        "defaultStorePath": ["export declare function defaultStorePath(): string;"],
-        "McpManager": [
-          "export declare class McpManager { ctx: Context; store: McpStore; listeners: Set<() => void>; logger: LoggerService; projectRoot: string | undefined; projectStore: McpStore | undefined; reconcileBusy: boolean; projectStores: Map<string, McpStore>; catalogCache: CatalogCache; catalogCachePath: string; uiConfigSource: () => any; uiUpdate?: (patch: Record<string, unknown>) => Promise<unknown>; sseHub?: SseHub; middleware: McpMiddleware | undefined; userStatePath: string; stats: McpStatsCollector; runtimeRegistry: Map<string, ServerConfig>; private registerQueue; private catalogViewResolver; constructor(ctx: Context, store: McpStore); uiConfig(): ClientUiConfig; updateUiConfig(raw: unknown): Promise<ClientUiConfig>; loadCatalogCache(): Promise<void>; recordCatalogTools(serverName: string, toolMeta: Map<string, { description?: unknown; }>): Promise<void>; private registeredSchemas; private poolRootFor; serverNameForId(id: string): { root: string; server: string; } | undefined; registeredToolsFor(name: string): Array<{ name: string; description?: string; }>; private poolEntryFor; onStatus(handler: () => void): () => void; private redactError; private statusTimer; emitStatus(): void; projectStoreOrThrow(): Promise<McpStore>; projectServersFor(root: string): Promise<ServerConfig[] | undefined>; isRuntimeServer(name: string): boolean; isGlobalServer(name: string): boolean; globalServers(): ServerConfig[]; saveUserState(units: Map<string, ProjectUnit>): Promise<void>; catalogCachePathFor(root: string): string; initMiddleware(): Promise<McpMiddleware>; disabledByRoot: Map<string, Set<string>>; disabledTools: DisabledToolsMap; setToolDisabled(root: string, server: string, tool: string, disabled: boolean): Promise<void>; projectStoreFor(root: string | undefined): Promise<McpStore | undefined>; catalogServersFor(cwd: string | undefined): Promise<Map<string, { server: ServerConfig; scope: string; }>>; catalogViewFor(cwd: string | undefined, servers: Map<string, { server: ServerConfig; scope: string; }>): Promise<CatalogCache>; setSession(cwd: string | undefined): Promise<void>; resumeReconnect(): Promise<void>; refreshFromDisk(): Promise<void>; reconcileServers(): boolean; startAll(): Promise<void>; start(name: string, scope?: string): void; private touchGlobalUnit; private ensureMiddlewareServer; private dropMiddlewareConnection; registerServer(options: Record<string, unknown>): Promise<{ name: string; existing: boolean; }>; unregisterServer(name: string): Promise<void>; add(server: Record<string, unknown>, scope?: string): Promise<ServerConfig>; update(name: string, patch: Record<string, unknown>, scope?: string): Promise<ServerConfig>; remove(name: string, scope?: string): Promise<void>; connect(name: string, scope?: string): Promise<void>; disconnect(name: string, scope?: string): Promise<void>; reconnect(name: string, scope?: string): Promise<void>; summary(): Record<string, unknown>; private middlewareUnitFor; summarize(server: ServerConfig, scope: string): Record<string, unknown>; dispose(): Promise<void>; }"
+        "defaultStorePath": [
+          "export declare function defaultStorePath(): string;"
         ],
-        "stripMcpPrefix": [
-          "export declare function stripMcpPrefix(registeredName: string, serverName: string): string;"
+        "pendingSteps": [
+          "export declare function pendingSteps(steps: readonly UpgradeStep[], recorded: string): UpgradeStep[];"
         ],
-        "CALL_TIMEOUT_MS": ["export declare const CALL_TIMEOUT_MS = 30000;"],
-        "CATALOG_TTL_MS": ["export declare const CATALOG_TTL_MS: number;"],
-        "CONNECT_TIMEOUT_MS": ["export declare const CONNECT_TIMEOUT_MS = 10000;"],
-        "DISCOVERY_TIMEOUT_MS": ["export declare const DISCOVERY_TIMEOUT_MS = 10000;"],
-        "LIST_DEFAULT_TOOLS_PER_SERVER": [
-          "export declare const LIST_DEFAULT_TOOLS_PER_SERVER = 50;"
+        "reportGap": [
+          "export declare function reportGap(recorded: string, target: string, logger: UpgradeLogger): void;"
         ],
-        "LIST_MAX_TOOLS_PER_SERVER": ["export declare const LIST_MAX_TOOLS_PER_SERVER = 500;"],
-        "MAX_BYTES_PER_TOOL": ["export declare const MAX_BYTES_PER_TOOL = 4096;"],
-        "MAX_TOOLS_PER_SERVER": ["export declare const MAX_TOOLS_PER_SERVER = 512;"],
-        "MAX_TOTAL_CATALOG_BYTES": ["export declare const MAX_TOTAL_CATALOG_BYTES: number;"],
-        "McpMiddleware": [
-          "export declare class McpMiddleware { host: MiddlewareHost; units: Map<string, ProjectUnit>; disabledByRoot: Map<string, Set<string>>; disabledTools: DisabledToolsMap; forwarding: Set<ToolExecutionToken>; constructor(host: MiddlewareHost); projectUnitFor(root: string | undefined): Promise<ProjectUnit | undefined>; ensureConnected(root: string, serverName: string, opts?: { force?: boolean; }): Promise<void>; abandonInFlight(serverName: string): void; private connectInternal; private registeredSchemas; private registeredToolMeta; private redact; statusOf(root: string, serverName: string): ServerState | undefined; toolCountOf(root: string, serverName: string): number; callTool(fullName: string, toolRaw: string, rawArgs: unknown, signal: AbortSignal | undefined, identity: { agent?: unknown; callId: ToolExecutionInput[\"callId\"]; rootCallId?: ToolExecutionInput[\"rootCallId\"]; parent?: ToolExecutionToken; }): Promise<unknown>; private allServers; releaseConnection(root: string, serverName: string): boolean; evictIfNeeded(maxUnits?: number): void; teardownUnit(root: string): void; dispose(): Promise<void>; }"
+        "runUpgradeChain": [
+          "export declare function runUpgradeChain(deps: UpgradeDeps): Promise<void>;"
         ],
-        "DEFAULT_RESULT_TRUNCATE_BYTES": [
-          "export declare const DEFAULT_RESULT_TRUNCATE_BYTES = 8192;"
+        "upgradeRunner": [
+          "export declare const upgradeRunner: UpgradeRunner;"
         ],
-        "DEFAULT_TOOL_CALL_TIMEOUT_MS": [
-          "export declare const DEFAULT_TOOL_CALL_TIMEOUT_MS = 15000;"
+        "STEPS": [
+          "export declare const STEPS: readonly UpgradeStep[];"
         ],
-        "publicToolName": [
-          "export declare function publicToolName(serverName: string, rawName: string): string;"
+        "settleProjectConfig": [
+          "export declare function settleProjectConfig(root: string, logger: UpgradeLogger): Promise<void>;"
         ],
-        "expandEnv": ["export declare function expandEnv(value: unknown): string;"],
-        "inject": ["export declare const inject: string[];"],
-        "name": ["export declare const name = \"mcp-manager\";"],
-        "registerDirectMcpGuard": [
-          "export declare function registerDirectMcpGuard(ctx: Context, disabledTools: DisabledToolsMap | undefined, resolveRoot: (agent: unknown) => Promise<string | undefined>, resolveServerId?: ServerIdResolver): (() => void) | undefined;"
+        "withSettledProjectConfig": [
+          "export declare function withSettledProjectConfig<T>(root: string, logger: UpgradeLogger, useSettled: (settledPath: string) => Promise<T>): Promise<T>;"
         ],
-        "registerMiddlewareTools": [
-          "export declare function registerMiddlewareTools(ctx: Context, mw: McpMiddleware, resolveRoot: (agent: unknown) => Promise<string | undefined>, options?: { disabledTools?: DisabledToolsMap; stats?: McpStatsCollector; resolveServerId?: ServerIdResolver; }"
+        "migrateStorageLayout": [
+          "export declare function migrateStorageLayout(deps: UpgradeDeps): Promise<void>;"
         ],
-        "normalizeArguments": [
-          "export declare function normalizeArguments(raw: unknown): unknown;"
+        "settleOne": [
+          "export declare function settleOne(source: string, target: string, initial: string | null, deps: UpgradeDeps): Promise<void>;"
         ],
-        "globMatch": ["export declare function globMatch(pattern: string, name: string): boolean;"],
-        "isToolDenied": [
-          "export declare function isToolDenied(disabledTools: DisabledToolsMap | undefined, serverKey: string, tool: string): boolean;"
+        "compareVersions": [
+          "export declare function compareVersions(left: string, right: string): number;"
         ],
-        "toolDisabledReason": [
-          "export declare function toolDisabledReason(serverKey: string, tool: string): string;"
+        "packageRootFrom": [
+          "export declare function packageRootFrom(fromDir: string): string | undefined;"
         ],
-        "msgOf": ["export declare function msgOf(error: unknown): string;"],
-        "defaultCallResultFallbackText": [
-          "export declare function defaultCallResultFallbackText(result: unknown): string;"
+        "pluginVersion": [
+          "export declare function pluginVersion(): string;"
         ],
-        "projectCallToolResult": [
-          "export declare function projectCallToolResult(result: unknown, handlers?: CallResultTextHandlers): ProjectedCallResult;"
+        "readStoredVersion": [
+          "export declare function readStoredVersion(): Promise<string>;"
         ],
-        "createRedactor": [
-          "export declare function createRedactor(servers: readonly ServerConfig[]): (error: unknown) => string;"
+        "writeStoredVersion": [
+          "export declare function writeStoredVersion(version: string): Promise<void>;"
         ],
-        "withTimeout": [
-          "export declare function withTimeout<T>(promise: Promise<T>, ms: number, message: string, signal?: AbortSignal): Promise<T>;"
+        "installUpgrade": [
+          "export declare function installUpgrade(deps: UpgradeDeps): Promise<void>;"
         ],
-        "DEFAULT_Z_INDEX_BASE": ["export declare const DEFAULT_Z_INDEX_BASE = 10;"],
-        "BREAKPOINT_NARROW_MAX": ["export declare const BREAKPOINT_NARROW_MAX = 480;"],
-        "BREAKPOINT_TABLET_MAX": ["export declare const BREAKPOINT_TABLET_MAX = 834;"],
-        "Z_INDEX_BASE_MAX": ["export declare const Z_INDEX_BASE_MAX = 9000;"],
-        "Z_INDEX_BASE_MIN": ["export declare const Z_INDEX_BASE_MIN = 1;"],
-        "Z_INDEX_PANEL_DELTA": ["export declare const Z_INDEX_PANEL_DELTA = 30;"],
-        "bottomAnchorEdge": ["export declare function bottomAnchorEdge(containerBottom: number, seatTop: number | null | undefined, docked: boolean): number;"],
-        "breakpointForWidth": ["export declare function breakpointForWidth(width: number): FloatBreakpoint;"],
-        "clampPointToViewport": ["export declare function clampPointToViewport(x: number, y: number, width: number, height: number, viewportW: number, viewportH: number, safeInset?: number): ViewportPoint;"],
-        "clampZIndexBase": ["export declare function clampZIndexBase(value: unknown, dflt: number): number;"],
-        "composerDockedAtBottom": ["export declare function composerDockedAtBottom(seatRect: RectLike | null | undefined, containerRect: RectLike | null | undefined): boolean;"],
-        "panelAnchorForPosition": ["export declare function panelAnchorForPosition(placement: string | undefined): \"top\" | \"bottom\";"],
-        "panelTopForAnchor": ["export declare function panelTopForAnchor(anchor: \"top\" | \"bottom\", pillTop: number, pillBottom: number, panelHeight: number, gap: number): number;"],
-        "panelZIndexFor": ["export declare function panelZIndexFor(base: number): number;"],
-        "McpStatsCollector": [
-          "export declare class McpStatsCollector { private enabled; private filePath; private logger?; private startedAt; private updatedAt; private servers; private disclosure; private flushTimer?; private isDirty; constructor(options?: { enabled?: boolean; filePath?: string; logger?: { info?: (msg: string) => void; debug?: (msg: string) => void; }; }); configure(options: { enabled?: boolean; filePath?: string; logger?: { info?: (msg: string) => void; }; }): void; isEnabled(): boolean; private loadExisting; recordCall(server: string, tool: string, durationMs: number, success: boolean, errorMsg?: string): void; recordSearch(query: string): void; recordList(serverFilter?: string): void; recordDetail(server: string, tool: string): void; snapshot(): McpStatsSnapshot; private scheduleFlush; flushSync(): void; dispose(): void; }"
+        "releaseUpgrade": [
+          "export declare function releaseUpgrade(): void;"
         ],
-        "defaultStatsPath": ["export declare function defaultStatsPath(): string;"],
-        "MIDDLEWARE_GLOBAL_ROOT": ["export declare const MIDDLEWARE_GLOBAL_ROOT = \"@global\";"],
-        "bareServerName": ["export declare function bareServerName(name: string): string;"],
+        "startAgentVisibility": [
+          "export declare function startAgentVisibility(args: StartAgentVisibilityArgs): () => void;"
+        ],
+        "bareServerName": [
+          "export declare function bareServerName(name: string): string;"
+        ],
         "fullServerName": [
           "export declare function fullServerName(root: string, server: string): string;"
         ],
@@ -1586,10 +1986,77 @@
         "normalizedProjectRoot": [
           "export declare function normalizedProjectRoot(cwd: string | undefined): Promise<string | undefined>;"
         ],
-        "SCOPE_GLOBAL": ["export declare const SCOPE_GLOBAL = \"global\";"],
-        "SCOPE_PROJECT": ["export declare const SCOPE_PROJECT = \"project\";"],
         "normalizeScope": [
           "export declare function normalizeScope(value: string): \"global\" | \"project\";"
+        ],
+        "makeServerIdTable": [
+          "export declare function makeServerIdTable(options?: ServerIdTableOptions): ServerIdTable;"
+        ],
+        "MIDDLEWARE_GLOBAL_ROOT": [
+          "export declare const MIDDLEWARE_GLOBAL_ROOT = \"@global\";"
+        ],
+        "SCOPE_GLOBAL": [
+          "export declare const SCOPE_GLOBAL = \"global\";"
+        ],
+        "SCOPE_PROJECT": [
+          "export declare const SCOPE_PROJECT = \"project\";"
+        ],
+        "SSE_FRAMES": [
+          "export declare const SSE_FRAMES: { readonly summary: \"summary\"; readonly uiConfigChanged: \"ui-config-changed\"; readonly ping: \"ping\"; };"
+        ],
+        "BREAKPOINT_NARROW_MAX": [
+          "export declare const BREAKPOINT_NARROW_MAX = 480;"
+        ],
+        "BREAKPOINT_TABLET_MAX": [
+          "export declare const BREAKPOINT_TABLET_MAX = 834;"
+        ],
+        "DEFAULT_Z_INDEX_BASE": [
+          "export declare const DEFAULT_Z_INDEX_BASE = 10;"
+        ],
+        "Z_INDEX_BASE_MAX": [
+          "export declare const Z_INDEX_BASE_MAX = 9000;"
+        ],
+        "Z_INDEX_BASE_MIN": [
+          "export declare const Z_INDEX_BASE_MIN = 1;"
+        ],
+        "Z_INDEX_PANEL_DELTA": [
+          "export declare const Z_INDEX_PANEL_DELTA = 30;"
+        ],
+        "bottomAnchorEdge": [
+          "export declare function bottomAnchorEdge(containerBottom: number, seatTop: number | null | undefined, docked: boolean): number;"
+        ],
+        "breakpointForWidth": [
+          "export declare function breakpointForWidth(width: number): FloatBreakpoint;"
+        ],
+        "clampPointToViewport": [
+          "export declare function clampPointToViewport(x: number, y: number, width: number, height: number, viewportW: number, viewportH: number, safeInset?: number): ViewportPoint;"
+        ],
+        "clampZIndexBase": [
+          "export declare function clampZIndexBase(value: unknown, dflt: number): number;"
+        ],
+        "composerDockedAtBottom": [
+          "export declare function composerDockedAtBottom(seatRect: RectLike | null | undefined, containerRect: RectLike | null | undefined): boolean;"
+        ],
+        "panelAnchorForPosition": [
+          "export declare function panelAnchorForPosition(placement: string | undefined): \"top\" | \"bottom\";"
+        ],
+        "panelTopForAnchor": [
+          "export declare function panelTopForAnchor(anchor: \"top\" | \"bottom\", pillTop: number, pillBottom: number, panelHeight: number, gap: number): number;"
+        ],
+        "panelZIndexFor": [
+          "export declare function panelZIndexFor(base: number): number;"
+        ],
+        "ROUTES": [
+          "export declare const ROUTES: { servers: string; config: string; session: string; resume: string; connect: string; disconnect: string; reconnect: string; importJson: string; events: string; health: string; toolDisable: string; };"
+        ],
+        "ROUTE_FENCE": [
+          "export declare const ROUTE_FENCE: Record<RouteName, RouteFence>;"
+        ],
+        "EMPTY_STATUS_COUNTS": [
+          "export declare const EMPTY_STATUS_COUNTS: Record<ServerState, number>;"
+        ],
+        "SERVER_STATES": [
+          "export declare const SERVER_STATES: { readonly connected: \"connected\"; readonly connecting: \"connecting\"; readonly reconnecting: \"reconnecting\"; readonly disabled: \"disabled\"; readonly stopped: \"stopped\"; readonly failed: \"failed\"; };"
         ]
       }
     },
@@ -1606,8 +2073,12 @@
         }
       ],
       "blocks": {
-        "api": ["export declare function api(path: any, options?: any): Promise<any>;"],
-        "cwdQueryOf": ["export declare function cwdQueryOf(state: McpState): string;"],
+        "api": [
+          "export declare function api(path: any, options?: any): Promise<any>;"
+        ],
+        "cwdQueryOf": [
+          "export declare function cwdQueryOf(state: McpState): string;"
+        ],
         "toolDisableServerKey": [
           "export declare function toolDisableServerKey(server: any, state: McpState): string | undefined;"
         ],
@@ -1615,37 +2086,59 @@
           "export declare const API: { servers: string; connect: string; disconnect: string; reconnect: string; importJson: string; session: string; resume: string; config: string; events: string; health: string; toolDisable: string; };"
         ],
         "STATUS_ORDER": [
-          "export declare const STATUS_ORDER: { key: string; titleKey: McpLocaleKey; dot: string; }"
+          "export declare const STATUS_ORDER: ({ key: \"connected\"; titleKey: McpLocaleKey; dot: string; }"
         ],
-        "STATUS_TEXT": ["export declare const STATUS_TEXT: Record<string, McpLocaleKey>;"],
-        "statusDot": ["export declare function statusDot(status: string): string;"],
-        "el": ["export declare function el(tag: any, attrs?: any, children?: any): any;"],
-        "tStatus": ["export declare function tStatus(status: string): string;"],
+        "STATUS_TEXT": [
+          "export declare const STATUS_TEXT: Record<string, McpLocaleKey>;"
+        ],
+        "statusDot": [
+          "export declare function statusDot(status: string): string;"
+        ],
+        "el": [
+          "export declare function el(tag: any, attrs?: any, children?: any): any;"
+        ],
+        "tStatus": [
+          "export declare function tStatus(status: string): string;"
+        ],
         "bindSession": [
           "export declare function bindSession(ctx: any, state: McpState, actions: UiActions): () => void;"
         ],
         "rebindSession": [
           "export declare function rebindSession(state: McpState): Promise<unknown>;"
         ],
-        "createState": ["export declare function createState(): McpState;"],
-        "conversationHost": ["export declare function conversationHost(): any;"],
+        "createState": [
+          "export declare function createState(): McpState;"
+        ],
+        "conversationHost": [
+          "export declare function conversationHost(): any;"
+        ],
         "floatTopOffset": [
           "export declare function floatTopOffset(ctx: any, state: McpState): number;"
         ],
         "mountFloat": [
           "export declare function mountFloat(ctx: any, state: McpState, actions: UiActions): () => void;"
         ],
-        "panelHost": ["export declare function panelHost(): any;"],
-        "placePanel": ["export declare function placePanel(state: McpState): void;"],
+        "panelHost": [
+          "export declare function panelHost(): any;"
+        ],
+        "placePanel": [
+          "export declare function placePanel(state: McpState): void;"
+        ],
         "renderFloatPanel": [
           "export declare function renderFloatPanel(state: McpState, actions: UiActions): void;"
         ],
-        "renderPill": ["export declare function renderPill(state: McpState): void;"],
+        "renderPill": [
+          "export declare function renderPill(state: McpState): void;"
+        ],
         "toggleFloat": [
           "export declare function toggleFloat(state: McpState, actions: UiActions, force?: boolean): void;"
         ],
-        "close": ["export declare function close(state: McpState): void;"],
-        "disposePanel": ["export declare function disposePanel(state: McpState): void;"],
+        "close": [
+          "export declare function close(state: McpState): void;"
+        ],
+        "disposePanel": [
+          "export declare function disposePanel(state: McpState): void;"
+        ],
         "refresh": [
           "export declare function refresh(state: McpState, actions: UiActions): Promise<boolean>;"
         ],
@@ -1664,31 +2157,54 @@
         "currentCwdBody": [
           "export declare function currentCwdBody(state: McpState): Record<string, string>;"
         ],
-        "fillForm": ["export declare function fillForm(state: McpState, fill: any): void;"],
-        "formScopeValue": ["export declare function formScopeValue(state: McpState): string;"],
-        "parseKV": ["export declare function parseKV(text: any): Record<string, string>;"],
-        "readForm": ["export declare function readForm(state: McpState): any;"],
-        "resetForm": ["export declare function resetForm(state: McpState): void;"],
+        "fillForm": [
+          "export declare function fillForm(state: McpState, fill: any): void;"
+        ],
+        "formScopeValue": [
+          "export declare function formScopeValue(state: McpState): string;"
+        ],
+        "isProjectionValue": [
+          "export declare function isProjectionValue(value: unknown): boolean;"
+        ],
+        "parseKV": [
+          "export declare function parseKV(text: any): Record<string, string>;"
+        ],
+        "readForm": [
+          "export declare function readForm(state: McpState): any;"
+        ],
+        "resetForm": [
+          "export declare function resetForm(state: McpState): void;"
+        ],
         "saveForm": [
           "export declare function saveForm(state: McpState, actions: UiActions): Promise<void>;"
         ],
         "actionButton": [
           "export declare function actionButton(label: any, onClick: any, primary?: boolean, danger?: boolean): any;"
         ],
-        "endpointOf": ["export declare function endpointOf(server: any): string;"],
+        "endpointOf": [
+          "export declare function endpointOf(server: any): string;"
+        ],
         "renderServer": [
           "export declare function renderServer(server: any, state: McpState, actions: UiActions, opts?: { tools: boolean; openTools?: Set<string>; }"
         ],
         "renderServers": [
           "export declare function renderServers(state: McpState, actions: UiActions): void;"
         ],
-        "inject": ["export declare const inject: string[];"],
-        "apply": ["export declare function apply(ctx: any): void;"],
-        "en": ["export declare const en: Record<McpLocaleKey, string>;"],
+        "inject": [
+          "export declare const inject: string[];"
+        ],
+        "apply": [
+          "export declare function apply(ctx: any): void;"
+        ],
+        "en": [
+          "export declare const en: Record<McpLocaleKey, string>;"
+        ],
         "zh": [
           "export declare const zh: { readonly stConnected: \"运行中\"; readonly stConnecting: \"连接中\"; readonly stReconnecting: \"重连中\"; readonly stStopped: \"未连接\"; readonly stDisabled: \"已停用\"; readonly stFailed: \"失败\"; readonly connect: \"连接\"; readonly disconnect: \"断开\"; readonly reconnect: \"重连\"; readonly enable: \"启用\"; readonly enableAndConnect: \"启用并连接\"; readonly disable: \"禁用\"; readonly edit: \"编辑\"; readonly delete: \"删除\"; readonly save: \"保存\"; readonly cancel: \"取消\"; readonly refresh: \"刷新\"; readonly close: \"关闭\"; readonly cancelEdit: \"取消编辑\"; readonly saveFail: \"保存失败：{msg}\"; readonly actionFail: \"操作失败：{msg}\"; readonly loadFail: \"加载失败：{msg}\"; readonly floatAriaLabel: \"MCP 管理器\"; readonly floatTitle: \"MCP 管理器（点击展开）\"; readonly floatManage: \"管理\"; readonly floatEmpty: \"没有 MCP 服务器，点「管理」添加\"; readonly floatGlobalSession: \"全局会话\"; readonly groupProject: \"项目级\"; readonly groupGlobal: \"全局\"; readonly badgeScopeProject: \"项目\"; readonly badgeScopeGlobal: \"全局\"; readonly serverMeta: \"{status} · {tools} 工具\"; readonly toolsCount: \"工具（{n}）\"; readonly toolsCountPlain: \"{n} 工具\"; readonly statusGroupCount: \"{status}（{n}）\"; readonly panelTitle: \"MCP 管理器\"; readonly tabServers: \"服务器\"; readonly tabQuickAdd: \"快速接入\"; readonly countsConnected: \"运行中 {n}\"; readonly countsConnecting: \"连接中 {n}\"; readonly countsFailed: \"失败 {n}\"; readonly countsSummary: \"共 {n} 台 · {parts}\"; readonly countsSummaryOnly: \"共 {n} 台\"; readonly addServer: \"添加服务器\"; readonly editServer: \"编辑服务器：{name}\"; readonly nameLabel: \"服务器名称（唯一，作为 mcp__<name>__ 前缀）\"; readonly ownershipLabel: \"归属\"; readonly transportLabel: \"传输类型\"; readonly commandLabel: \"命令（stdio）\"; readonly argsLabel: \"参数（逗号分隔）\"; readonly envLabel: \"环境变量（每行 KEY=VALUE，支持 ${ENV} 引用，值为空则继承父环境）\"; readonly cwdLabel: \"工作目录（可选）\"; readonly urlLabel: \"URL（streamable-http）\"; readonly headersLabel: \"请求头（每行 KEY: VALUE，支持 ${ENV} 引用）\"; readonly enabledLabel: \"启用（保存后立即连接）\"; readonly scopeProjectOpt: \"项目级（<项目>/.dsh/@wingsky-1/dsh-mcp-manager/mcp.json，随会话切换）\"; readonly scopeGlobalOpt: \"全局（本机配置）\"; readonly transportStdioOpt: \"stdio（本地子进程）\"; readonly transportHttpOpt: \"streamable-http（远程）\"; readonly envPlaceholder: \"每行 KEY=VALUE，如\\nCONTEXT7_API_KEY=${CONTEXT7_API_KEY}\"; readonly headersPlaceholder: \"每行 KEY: VALUE，支持 ${ENV} 引用，如\\nAuthorization: Bearer ${CONTEXT7_API_KEY}\"; readonly cwdPlaceholder: \"可选工作目录\"; readonly pasteTitle: \"粘贴 mcpServers JSON 导入\"; readonly importJson: \"导入 JSON\"; readonly importedOk: \"已导入：{names}\"; readonly importedNone: \"（无）\"; readonly importSkipped: \"跳过（已存在）：{names}\"; readonly importFail: \"导入失败：{msg}\"; readonly serversEmpty: \"还没有配置 MCP 服务器。切到「快速接入」页添加，或粘贴 mcpServers JSON 导入。\"; readonly confirmDelete: \"删除 MCP 服务器「{name}」？\"; readonly settingsLoading: \"MCP 管理器：加载中…\"; readonly settingsName: \"MCP 管理器（dsh-mcp-manager）\"; readonly settingsDescription: \"浮窗位置 / 水平·垂直·空白偏移\"; readonly anchorLabel: \"锚点\"; readonly posTopRight: \"右上（top-right）\"; readonly posTopLeft: \"左上（top-left）\"; readonly posBottomRight: \"右下（bottom-right）\"; readonly posBottomLeft: \"左下（bottom-left）\"; readonly offsetX: \"水平偏移\"; readonly offsetY: \"垂直偏移\"; readonly blankY: \"空白偏移\"; readonly zIndexBase: \"层级基准\"; readonly settingsHint: \"保存即热更新：浮窗位置与偏移即时生效并持久化（无需重启 dsh web）。\"; readonly savingNow: \"保存中…\"; readonly settingsSavedOk: \"已保存——浮窗位置即时生效（无需重启）\"; };"
         ],
-        "SettingsCard": ["export declare function SettingsCard(): JSX.Element;"]
+        "SettingsCard": [
+          "export declare function SettingsCard(): React.JSX.Element;"
+        ]
       }
     }
   }
