@@ -22,6 +22,7 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { apply } from "../../src/client/index.tsx";
+import { t } from "../../src/client/locale.ts";
 import { titleFlasher } from "../../src/client/notify/title.ts";
 
 /** 实现写入的样式幂等键。写字面量而不是从实现 import：同源期望会让常量改成任何值都绿。 */
@@ -82,12 +83,15 @@ let visibility: "visible" | "hidden" = "visible";
  *
  * @param options.localeThrows 复现「装配中途同步抛错」——locale 在若干资源建立之后才被读取。
  */
-function makeCtx(options: { localeThrows?: boolean } = {}): Boot {
+function makeCtx(options: { localeThrows?: boolean; localeService?: unknown } = {}): Boot {
   const effects: Array<() => void> = [];
   const ctx: FakeCtx = {
     get(name: string): unknown {
       if (name === "locale" && options.localeThrows === true) {
         throw new Error("locale 服务读取失败（测试注入）");
+      }
+      if (name === "locale" && options.localeService !== undefined) {
+        return options.localeService;
       }
       return undefined;
     },
@@ -99,7 +103,7 @@ function makeCtx(options: { localeThrows?: boolean } = {}): Boot {
 }
 
 /** 驱动一次 apply 并把释放点登进兜底清单（apply 抛错时也要登记：finally 里可能已经挂上了）。 */
-function boot(options: { localeThrows?: boolean } = {}): Boot {
+function boot(options: { localeThrows?: boolean; localeService?: unknown } = {}): Boot {
   const handle = makeCtx(options);
   try {
     apply(handle.ctx);
@@ -246,5 +250,59 @@ describe("apply：页面级单例的归属判定", () => {
     second.effects[0]!();
 
     expect(styleNode()).toBeNull();
+  });
+});
+
+/** this 敏感的假 locale 服务：最小复刻宿主实现（bind 读 this 上的 bound/translate），detached 摘出调用即抛。 */
+class ThisSensitiveLocale {
+  private readonly dicts = new Map<
+    string,
+    { zh: Record<string, string>; en: Record<string, string> }
+  >();
+  private readonly bound = new Map<string, (key: string) => string>();
+  private readonly listeners = new Set<() => void>();
+  private active: "zh" | "en" = "en";
+  register(ns: string, dict: { zh: Record<string, string>; en: Record<string, string> }): void {
+    this.dicts.set(ns, dict);
+  }
+  bind(ns: string): (key: string) => string {
+    let fn = this.bound.get(ns);
+    if (fn === undefined) {
+      fn = (key: string) => this.translate(ns, key);
+      this.bound.set(ns, fn);
+    }
+    return fn;
+  }
+  private translate(ns: string, key: string): string {
+    const dict = this.dicts.get(ns);
+    if (dict === undefined) return key;
+    const table = this.active === "zh" ? dict.zh : dict.en;
+    return table[key] ?? key;
+  }
+  subscribe(listener: () => void): () => void {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
+  }
+  getSnapshot(): number {
+    return this.listeners.size;
+  }
+  setLocale(next: "zh" | "en"): void {
+    this.active = next;
+    const pending = [...this.listeners];
+    for (const listener of pending) listener();
+  }
+}
+
+describe("apply：locale 绑定必须带接收者调用", () => {
+  // 宿主 bind 依赖 this：旧代码把方法摘出再调会抛，失败被 catch 吞掉后整面板回落 key 本体。
+  // 本用例在旧代码下红在第一条断言（t 回落为 key 本体）。
+  it("装配后 t 即返回译文；切语言后订阅重绑跟随", () => {
+    const service = new ThisSensitiveLocale();
+    boot({ localeService: service });
+    expect(t("tabLabel")).toBe("Notification center");
+    service.setLocale("zh");
+    expect(t("tabLabel")).toBe("通知中心");
   });
 });

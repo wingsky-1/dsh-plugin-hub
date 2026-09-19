@@ -1528,19 +1528,18 @@ export function apply(ctx: ClientContext): void {
     if (locale && typeof locale.register === "function") {
       // 收窄后的别名：嵌套回调内 narrowing 会重置，别名本身即非空类型，回调内照常可用。
       const localeService = locale;
-      const bindLocale = localeService.bind;
+      // bind/subscribe 必须带接收者调用：宿主实现依赖 this，detached 摘出即抛，失败被各层 catch 静默吞掉后整面板回落 key 本体。
       try {
         localeService.register(NS, { zh: zh, en: en });
         // 宿主 bind 出的签名以本包字典键为参数，比端口声明的 string 更窄——收口在适配这一处
-        bindTranslate(bindLocale(NS) as Translate);
+        bindTranslate(localeService.bind(NS) as Translate);
         if (
           typeof localeService.subscribe === "function" &&
           typeof localeService.getSnapshot === "function"
         ) {
-          const subscribe = localeService.subscribe;
-          unsubLocale = subscribe(function () {
+          unsubLocale = localeService.subscribe(function () {
             try {
-              bindTranslate(bindLocale(NS) as Translate);
+              bindTranslate(localeService.bind(NS) as Translate);
             } catch {
               /* 忽略 */
             }
