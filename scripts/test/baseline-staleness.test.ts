@@ -161,3 +161,29 @@ test("CLI 接线：--threshold-hours 非正数一律 exit 2（fail-closed，不�
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("W1.4 选A：--warn-only 纯存证 warn（stale/unknown 只打 ::warning::，恒 exit 0，状态照落）", () => {
+  const dir = mkdtempSync(join(tmpdir(), "baseline-staleness-"));
+  try {
+    // stale：默认 ::error::，--warn-only 下 ::warning::，退出码都是 0
+    const plain = runCli(dir, ["--now", "2026-09-15T00:00:00Z"]);
+    assert.equal(plain.status, 0);
+    assert.match(plain.stdout, /^::error::变异基线陈旧/m);
+    const warned = runCli(dir, ["--now", "2026-09-15T00:00:00Z", "--warn-only"]);
+    assert.equal(warned.status, 0, "存证模式永不判红");
+    assert.match(warned.stdout, /^::warning::变异基线陈旧/m);
+    assert.doesNotMatch(warned.stdout, /^::error::/m, "存证模式不得打 ::error:: 注解");
+    assert.equal(JSON.parse(readFileSync(join(dir, "status.json"), "utf8")).status, "stale");
+    // unknown（--commit-date 缺失且无 gh 时走 injected=null？此处用不可解析日期触发）：状态照落，仍 exit 0
+    const unknown = spawnSync(
+      process.execPath,
+      [SCRIPT, "--warn-only", "--now", "not-a-date", "--status-file", join(dir, "u.json")],
+      { cwd: dir, encoding: "utf8" },
+    );
+    assert.equal(unknown.status, 0);
+    assert.match(unknown.stdout, /^::warning::变异基线龄无法观测/m);
+    assert.equal(JSON.parse(readFileSync(join(dir, "u.json"), "utf8")).status, "unknown");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

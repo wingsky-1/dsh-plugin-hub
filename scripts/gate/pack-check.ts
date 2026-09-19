@@ -10,7 +10,16 @@
  * client 产物断言复用 scripts/lib/client-contract-lib.ts（唯一 stub/执行实现）。
  */
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+  writeSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -38,6 +47,50 @@ import {
 import { checkCordisMergeReachability } from "../lib/dts-cordis-merge-lib.ts";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
+
+// W1.2 发布证据链落盘面：--log-file <path> 把本脚本的 stdout 逐字节镜像到文件
+// （逐包 PASS/FAIL 行 + 汇总行，供 release.yml 上传发布证据）。调用方传 RUNNER_TEMP 下的
+// 路径（workspace 零落盘）；父目录不存在时逐级建出。仅镜像 stdout（判据行），stderr 的
+// 跳过告警不进证据文件。落盘挂在 process exit 钩子上，故覆盖全部 process.exit 出口；
+// 落盘失败向 stderr 追加一行说明（判据退出码本身不受影响——判据结论已定，缺的是证据复件）。
+function parseLogFile(argv) {
+  const eq = argv.findLast(function (a) {
+    return a.startsWith("--log-file=");
+  });
+  if (eq !== undefined) {
+    const value = eq.slice("--log-file=".length);
+    return value === "" ? null : value;
+  }
+  const at = argv.lastIndexOf("--log-file");
+  if (at === -1) return null;
+  const value = argv[at + 1];
+  return value === undefined || value === "" ? null : value;
+}
+const LOG_FILE = parseLogFile(process.argv.slice(2));
+if (LOG_FILE !== null) {
+  const chunks = [];
+  const origWrite = process.stdout.write.bind(process.stdout);
+  process.stdout.write = function (chunk, encoding, cb) {
+    try {
+      chunks.push(typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8"));
+    } catch {
+      // 镜像失败不影响判据输出
+    }
+    return origWrite(chunk, encoding, cb);
+  };
+  process.on("exit", function () {
+    try {
+      mkdirSync(dirname(LOG_FILE), { recursive: true });
+      writeFileSync(LOG_FILE, chunks.join(""), "utf8");
+    } catch (err) {
+      try {
+        writeSync(2, "[log-file] 落盘失败（" + LOG_FILE + "）：" + (err && err.message) + "\n");
+      } catch {
+        // exit 钩子里已无其它可用的报错通道
+      }
+    }
+  });
+}
 
 /**
  * tar 参数装配：GNU tar 在 Windows 上把 `C:\...` 盘符路径当远程主机（rsh 语法）

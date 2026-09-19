@@ -184,7 +184,7 @@
       "keys": ["GITHUB_TOKEN", "OBSERVE_PAT"]
     },
     {
-      "step": "release.yml|observe-precheck|script:scripts/release/observe-precheck.mjs",
+      "step": "release.yml|observe-precheck|script:scripts/release/observe-precheck.mjs|$RUNNER_TEMP/release-evidence/observe-inputs.json,$RUNNER_TEMP/release-evidence/observe-runs.json,--inputs-out,--runs-out",
       "keys": ["GH_TOKEN", "SKIP_OBSERVE_CHECK"]
     }
   ],
@@ -409,6 +409,11 @@
       "step": "release.yml|publish|Tests",
       "digest": "58d3e0022881dc86",
       "envKeys": []
+    },
+    {
+      "step": "release.yml|publish|Require release notes（push 缺人工 notes 即红）",
+      "digest": "8b77390a2b9392a8",
+      "envKeys": []
     }
   ],
   "maxJobFaces": 16,
@@ -463,11 +468,11 @@
     },
     {
       "job": "release.yml|publish",
-      "digest": "033890a7cb246c7d"
+      "digest": "dea8dbcc7e659c3c"
     },
     {
       "job": "release.yml|observe-precheck",
-      "digest": "b07c67efcb7088fe"
+      "digest": "6a949d9f627768f0"
     }
   ]
 }

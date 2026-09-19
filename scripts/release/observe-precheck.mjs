@@ -64,7 +64,8 @@
  *       [--per-page 30] [--repo owner/name] [--runs-file <json>] [--now <iso>] [--override]
  */
 import { execFileSync } from "node:child_process";
-import { readFileSync, realpathSync } from "node:fs";
+import { mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { failClosed } from "../lib/gate-exit.mjs";
 
@@ -83,6 +84,7 @@ const MAX_PER_PAGE = 100;
 const USAGE =
   "用法：node scripts/release/observe-precheck.mjs [--workflow observe.yml] [--max-age-hours 24] " +
   "[--per-page 30] [--repo owner/name] [--runs-file <json>] [--now <iso>] [--override]\n" +
+  "  [--runs-out <json>] [--inputs-out <json>]（W1.5 发布证据链：取到的 runs 原样与判定输入落盘）\n" +
   `override 也可用环境变量 ${OVERRIDE_ENV}=true（release.yml 的判据步骤走的就是它）。`;
 
 /** 取 `--flag value` / `--flag=value`；未给出返回 fallback。重复给出时后者胜（单测靠它注入）。 */
@@ -101,6 +103,8 @@ const VALUE_FLAGS = new Set([
   "--repo",
   "--runs-file",
   "--now",
+  "--runs-out",
+  "--inputs-out",
 ]);
 
 /**
@@ -375,6 +379,16 @@ function readRunsFile(file) {
   return runs;
 }
 
+/**
+ * W1.5 发布证据链落盘：父目录逐级建出（调用方只传 RUNNER_TEMP 下的路径，不另加建目录步骤）。
+ * --runs-out 写取到的 runs 数组原样（与 --runs-file 同形，可直接复跑取证）；--inputs-out 写
+ * 本次判定的输入面 {workflow, maxAgeHours, perPage, now, overridden}。落盘失败抛错，调用方按
+ * fail-closed 处理（证据写不下来 = 没有证据，不静默放行）。
+ */
+function writeEvidenceFile(path, text) {
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, text, "utf8");
+}
 /** override 的两个入口：CLI 开关，或 workflow 接过来的环境变量（只认字面量 "true"）。 */
 function overrideRequested(argv, env) {
   if (argv.includes("--override")) return true;
@@ -404,10 +418,46 @@ function main(argv, env = process.env) {
   const repo = argValue(argv, "--repo", REPO_PLACEHOLDER);
   const runsFile = argValue(argv, "--runs-file", null);
   const nowArg = argValue(argv, "--now", null);
+  const runsOut = argValue(argv, "--runs-out", null);
+  const inputsOut = argValue(argv, "--inputs-out", null);
 
   // override 在校验参数之后、取数据之前：API 故障时它必须仍然可用。
   if (overrideRequested(argv, env)) {
-    console.log(`::warning::${renderVerdictLine({ status: "overridden", workflow, maxAgeHours })}`);
+    if (inputsOut !== null) {
+      try {
+        writeEvidenceFile(
+          inputsOut,
+          JSON.stringify(
+            {
+              workflow: workflow,
+              maxAgeHours: maxAgeHours,
+              perPage: perPage,
+              now: nowArg,
+              overridden: true,
+            },
+            null,
+            2,
+          ) + "\n",
+        );
+      } catch (err) {
+        console.log(
+          "::error::observe 发版前置（" +
+            workflow +
+            "，窗口 " +
+            maxAgeHours +
+            " h）：阻断（fail-closed）—— 判定输入落盘失败（" +
+            inputsOut +
+            "）：" +
+            err.message,
+        );
+        return 1;
+      }
+    }
+    // override 不取任何数据，故 --runs-out 无内容可写（缺数据不伪造“空 runs”，直接跳过）。
+    console.log(
+      "::warning::" +
+        renderVerdictLine({ status: "overridden", workflow: workflow, maxAgeHours: maxAgeHours }),
+    );
     console.log(OVERRIDE_OBLIGATION);
     return 0;
   }
@@ -416,9 +466,46 @@ function main(argv, env = process.env) {
   try {
     const runs =
       runsFile === null ? fetchRuns({ repo, workflow, perPage }) : readRunsFile(runsFile);
-    verdict = evaluateObserveRecency({ runs, now: nowArg ?? new Date(), maxAgeHours, workflow });
+    const nowInput = nowArg === null ? new Date() : nowArg;
+    verdict = evaluateObserveRecency({
+      runs: runs,
+      now: nowInput,
+      maxAgeHours: maxAgeHours,
+      workflow: workflow,
+    });
+    try {
+      if (runsOut !== null) writeEvidenceFile(runsOut, JSON.stringify(runs, null, 2) + "\n");
+      if (inputsOut !== null) {
+        writeEvidenceFile(
+          inputsOut,
+          JSON.stringify(
+            {
+              workflow: workflow,
+              maxAgeHours: maxAgeHours,
+              perPage: perPage,
+              now: nowInput instanceof Date ? nowInput.toISOString() : nowInput,
+              overridden: false,
+            },
+            null,
+            2,
+          ) + "\n",
+        );
+      }
+    } catch (err) {
+      verdict = {
+        status: "error",
+        workflow: workflow,
+        maxAgeHours: maxAgeHours,
+        reason: "证据落盘失败：" + err.message,
+      };
+    }
   } catch (err) {
-    verdict = { status: "error", workflow, maxAgeHours, reason: err.message };
+    verdict = {
+      status: "error",
+      workflow: workflow,
+      maxAgeHours: maxAgeHours,
+      reason: err.message,
+    };
   }
   const line = renderVerdictLine(verdict);
   console.log(verdict.ok === true ? line : `::error::${line}`);

@@ -225,16 +225,20 @@ function observeBaselineState(argv, { branch, injectedDate, thresholdHours, rawN
   }
 }
 
-function printBaselineReport(state, branch) {
+function printBaselineReport(state, branch, warnOnly = false) {
+  // W1.4 发布证据链（选A：纯存证 warn）：release.yml 以 --warn-only 调用本脚本，只把基线
+  // 状态落盘（--status-file），stale / unknown 仅打 ::warning:: 注解，退出码恒 0——发布链路
+  // 不因基线龄判红（阻断语义仍归 observe 前置与 health-report 周报，见本文件头部注释）。
+  const mark = warnOnly ? "::warning::" : "::error::";
   const line = renderReportLine(state);
   if (state.status === "stale") {
     console.log(
-      `::error::变异基线陈旧：龄 ${formatAgeHours(state.ageHours)} ≥ 阈值 ${state.thresholdHours} h` +
+      `${mark}变异基线陈旧：龄 ${formatAgeHours(state.ageHours)} ≥ 阈值 ${state.thresholdHours} h` +
         `（${branch} 最后提交 ${state.lastCommitDate}，SHA ${shortSha(state.sha)}）`,
     );
   }
   if (state.status === "unknown") {
-    console.log(`::error::变异基线龄无法观测：${state.reason}`);
+    console.log(`${mark}变异基线龄无法观测：${state.reason}`);
   }
   console.log(line);
 }
@@ -257,13 +261,15 @@ function main(argv) {
   const injectedDate = argValue(argv, "--commit-date", null);
   const rawNow = resolveNow(argv);
 
+  const warnOnly = argv.includes("--warn-only");
+
   const state = observeBaselineState(argv, { branch, injectedDate, thresholdHours, rawNow });
 
   // 标题随状态一并落盘：workflow 侧的幂等建/追必须与正文里引用的标题逐字相同，
   // 两处各写一份字面量的漂移后果是「每周新建一张单」而没有任何判据会发现。
   state.issueTitle = STALENESS_ISSUE_TITLE;
 
-  printBaselineReport(state, branch);
+  printBaselineReport(state, branch, warnOnly);
 
   if (statusFile !== null) writeFileSync(statusFile, `${JSON.stringify(state, null, 2)}\n`);
   if (issueFile !== null && state.status === "stale") {

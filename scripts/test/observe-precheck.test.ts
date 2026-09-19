@@ -14,7 +14,7 @@
  */
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -361,8 +361,13 @@ test("release.yml 接线：前置 job 串在 publish 之前、actions: read、ov
   );
   assert.match(
     precheckBlock,
-    /^ {8}run: node scripts\/release\/observe-precheck\.mjs$/m,
-    "判据步骤必须是「一条直接命令」的闭合形态（多行包装会被 gate-wiring 的形态断言判红）",
+    /^ {8}run: node scripts\/release\/observe-precheck\.mjs --runs-out \$RUNNER_TEMP\/release-evidence\/observe-runs.json --inputs-out \$RUNNER_TEMP\/release-evidence\/observe-inputs.json$/m,
+    "判据步骤必须是「一条直接命令」的闭合形态（多行包装会被 gate-wiring 的形态断言判红；W1.5 落盘旗逐字钉死）",
+  );
+  assert.match(
+    precheckBlock,
+    /name: release-evidence-observe-precheck/,
+    "前置证据必须上传（W1.3/§6：runs 快照 + 判定输入）",
   );
 
   assert.match(yml, /workflow_dispatch:/, "override 逃生口需要可手动派发");
@@ -402,4 +407,89 @@ test("release.yml ref 守卫：分支 ref 派发必须判红，不得以绿色�
   // 判据之后：前置校验的判词照旧打印（分支派发仍是可用的演练），run 结论由守卫接管。
   const judgmentAt = precheckBlock.indexOf("node scripts/release/observe-precheck.mjs");
   assert.ok(judgmentAt !== -1 && judgmentAt < guardAt, "ref 守卫必须在判据步骤之后");
+});
+
+test("W1.5 落盘面：--runs-out 写 runs 原样（可被 --runs-file 复跑），--inputs-out 写判定输入", () => {
+  withTmpDir((dir) => {
+    const runs = [apiRun(), apiRun({ number: 79, updatedAt: "2026-09-14T23:22:06Z" })];
+    const inPath = join(dir, "in.json");
+    writeFileSync(inPath, JSON.stringify({ workflow_runs: runs }));
+    const runsOut = join(dir, "ev", "runs.json");
+    const inputsOut = join(dir, "ev", "inputs.json");
+    const result = runCli([
+      "--runs-file",
+      inPath,
+      "--now",
+      NOW,
+      "--runs-out",
+      runsOut,
+      "--inputs-out",
+      inputsOut,
+    ]);
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    // runs 原样：复跑取证——写出的文件可直接喂回 --runs-file 得到同一结论
+    assert.deepEqual(JSON.parse(readFileSync(runsOut, "utf8")), runs);
+    const replay = runCli(["--runs-file", runsOut, "--now", NOW]);
+    assert.equal(replay.status, 0, "落盘的 runs 必须可复跑且结论一致");
+    assert.match(replay.stdout, /放行/);
+    // 判定输入面：复现本次判定所需的全部输入
+    assert.deepEqual(JSON.parse(readFileSync(inputsOut, "utf8")), {
+      workflow: "observe.yml",
+      maxAgeHours: 24,
+      perPage: 30,
+      now: NOW,
+      overridden: false,
+    });
+  });
+});
+
+test("W1.5 落盘面：判红路径同样落盘（红 run 的证据最有价值）；落盘失败即 fail-closed", () => {
+  withTmpDir((dir) => {
+    const inPath = join(dir, "stale.json");
+    writeFileSync(
+      inPath,
+      JSON.stringify({ workflow_runs: [apiRun({ updatedAt: "2026-09-13T22:44:53Z" })] }),
+    );
+    const runsOut = join(dir, "ev", "runs.json");
+    const inputsOut = join(dir, "ev", "inputs.json");
+    const result = runCli([
+      "--runs-file",
+      inPath,
+      "--now",
+      NOW,
+      "--runs-out",
+      runsOut,
+      "--inputs-out",
+      inputsOut,
+    ]);
+    assert.equal(result.status, 1, "陈旧必须判红");
+    assert.ok(JSON.parse(readFileSync(runsOut, "utf8")).length === 1, "判红也不得丢 runs 快照");
+    assert.equal(JSON.parse(readFileSync(inputsOut, "utf8")).overridden, false);
+    // 落盘失败 = 没有证据：不得静默放行（exit 1，fail-closed 方向）
+    // 注：脚本会逐级建目录，故用「父路径是文件」的形态构造必然失败
+    writeFileSync(join(dir, "blocker"), "x");
+    const blocked = join(dir, "blocker", "runs.json");
+    const failed = runCli(["--runs-file", inPath, "--now", NOW, "--runs-out", blocked]);
+    assert.equal(failed.status, 1);
+    assert.match(failed.stdout, /落盘失败/);
+  });
+});
+
+test("W1.5 落盘面：override 只写 inputs（无数据不伪造空 runs），仍不读数据", () => {
+  withTmpDir((dir) => {
+    const inputsOut = join(dir, "ov-inputs.json");
+    const runsOut = join(dir, "ov-runs.json");
+    const result = runCli([
+      "--runs-file",
+      join(dir, "missing.json"),
+      "--override",
+      "--runs-out",
+      runsOut,
+      "--inputs-out",
+      inputsOut,
+    ]);
+    assert.equal(result.status, 0);
+    assert.deepEqual(JSON.parse(readFileSync(inputsOut, "utf8")).overridden, true);
+    assert.equal(existsSync(runsOut), false, "override 无数据：不得伪造空 runs 文件");
+  });
 });

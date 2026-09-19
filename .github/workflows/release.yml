@@ -6,6 +6,9 @@ name: Release
 # 校验（D4）→ 校验每个包版本 == tag 版本（tag 是版本唯一来源）→ 全量门禁 → 按依赖序
 # pnpm publish（7 子包 → 聚合包）→ 生成 GitHub Release。
 # 需要仓库 secret NPM_TOKEN（@wingsky scope 的 npm automation token）。
+# 发布证据链（3.7）：各判据把日志/快照/状态落盘到 $RUNNER_TEMP/release-evidence/（workspace 零落盘），
+# 由两处 upload-artifact（pin ea165f8d、retention 14 天、if-no-files-found warn）上传；tgz 本体只做
+# SHA256SUMS 后删除、不上传。push 缺人工 release notes 由 Require 步骤判红，dispatch 需 allow_auto_notes。
 
 on:
   push:
@@ -28,6 +31,10 @@ on:
     inputs:
       skip_observe_check:
         description: '紧急发布逃生口：跳过「最近 24 h 内有成功 observe 班次」前置校验（必须在 PR / 发布记录写明理由）'
+        type: boolean
+        default: false
+      allow_auto_notes:
+        description: '允许自动生成 release notes（无人工 notes 文件时才可用；push 发布仍必须附带人工 notes）'
         type: boolean
         default: false
 
@@ -79,7 +86,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           # push 事件下该输入为空 ⇒ 严格校验；只有手动派发（且 ref 是 v* tag）才可能带上它
           SKIP_OBSERVE_CHECK: ${{ inputs.skip_observe_check }}
-        run: node scripts/release/observe-precheck.mjs
+        run: node scripts/release/observe-precheck.mjs --runs-out $RUNNER_TEMP/release-evidence/observe-runs.json --inputs-out $RUNNER_TEMP/release-evidence/observe-inputs.json
 
       # 分支 ref 的派发走到这里必然「什么都没发布」，但 publish 被 tag 守卫跳过后 run 整体仍是
       # success——绿色空跑会被误读成「已发布」。故补一条显式判红：误红一次的成本远低于把「没发布」
@@ -93,6 +100,15 @@ jobs:
           echo "::error::ref=${RELEASE_REF} 不是 v* tag：publish job 的 tag 守卫会跳过发布，本次 run 没有发布任何东西。"
           echo "::error::要发布请重新派发，并把 ref 选成对应的 v* tag（Actions → Release → Run workflow）。"
           exit 1
+
+      # 发布证据上传（§6）：runs 快照 + 判定输入。禁发只来自判据 exit 1，故本步骤不带 if。
+      - name: Upload precheck evidence（runs 快照 + 判定输入）
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-evidence-observe-precheck
+          path: ${{ runner.temp }}/release-evidence
+          retention-days: 14
+          if-no-files-found: warn
 
   publish:
     name: Build, test, publish, release
@@ -123,7 +139,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Verify versions（全包版本 == tag）
-        run: node scripts/release/verify-version.ts
+        run: node scripts/release/verify-version.ts --log-file $RUNNER_TEMP/release-evidence/verify-version.log
 
       - name: Build
         run: pnpm build
@@ -161,11 +177,44 @@ jobs:
         run: pnpm test:contract
 
       - name: Pack check
-        run: pnpm pack:check
+        run: pnpm pack:check -- --log-file $RUNNER_TEMP/release-evidence/pack-check.log
 
       # 解包后可加载性：与 pack:check 互补（前者验 pack 内容，后者验 npm 布局下的加载路径）。
       - name: Npm layout
-        run: pnpm verify:npmlayout
+        run: pnpm verify:npmlayout -- --log-file $RUNNER_TEMP/release-evidence/verify-npm-layout.log
+
+      # 聚合一致性 + 文档门（W1.6）：台账别名形——别名指向由 gate-wiring A12 钉住，此处只用别名。
+      - name: Aggregate check（聚合 patch 不漂移）
+        run: pnpm aggregate:check
+
+      - name: Docs check（README/链接）
+        run: pnpm docs:check
+
+      # 基线取证（W1.4 选A：纯存证 warn）——状态落盘供上传，stale/unknown 只打 ::warning::，永不判红。
+      - name: Baseline evidence（变异基线状态存证，不阻断发布）
+        run: node scripts/release/baseline-staleness.mjs --warn-only --status-file $RUNNER_TEMP/release-evidence/baseline-staleness.json
+
+      # 发布证据（W1.3）：包集合与发布步骤同源（脚本内子进程复用 publish-if-missing.ts），哈希的
+      # 正是即将发布的那组产物；tgz 本体删除后不上传。禁发只来自判据 exit 1，本步骤不带 if。
+      - name: Collect release evidence（tgz 复制 + SHA256SUMS；本体不传）
+        run: node scripts/release/collect-tgz-evidence.mjs --out-dir $RUNNER_TEMP/release-evidence
+
+      # 发布门（G5）：push 发布必须附带人工 notes（docs/release-notes/<tag>.md），缺失即红；
+      # 手动派发只有勾选 allow_auto_notes 才回落自动生成。禁发只来自判据 exit 1，本步骤不带 if。
+      - name: Require release notes（push 缺人工 notes 即红）
+        run: |
+          set -e
+          NOTES="docs/release-notes/${{ github.ref_name }}.md"
+          if [ -f "$NOTES" ]; then
+            echo "release notes: $NOTES"
+            exit 0
+          fi
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.allow_auto_notes }}" = "true" ]; then
+            echo "::warning::release notes 缺失（$NOTES 不存在），已用 allow_auto_notes 回落自动生成"
+            exit 0
+          fi
+          echo "::error::release notes 缺失：$NOTES 不存在（push 发布必须附带人工 release notes；手动派发需勾选 allow_auto_notes）"
+          exit 1
 
       - name: Publish to npm（pnpm，依赖序，幂等：版本已存在自动跳过）
         run: |
@@ -202,3 +251,13 @@ jobs:
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           generate_release_notes: true
+
+      # 发布证据上传（§6）：证据目录（版本/产物日志 + SHA256SUMS + 基线状态）。tgz 本体已在
+      # 收集步骤删除，不上传。禁发只来自判据 exit 1，故本步骤不带 if。
+      - name: Upload release evidence（日志 + 校验和 + 基线状态）
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-evidence-publish
+          path: ${{ runner.temp }}/release-evidence
+          retention-days: 14
+          if-no-files-found: warn
