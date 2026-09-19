@@ -12,6 +12,7 @@ export default defineConfig({
       'packages/dsh-provider-usage/test/integration/aggregate/composition-root.test.ts',
       'packages/dsh-provider-usage/test/integration/collect/composition-root.test.ts',
       'packages/dsh-provider-usage/test/integration/config/composition-root.test.ts',
+      'packages/dsh-provider-usage/test/integration/data-routes/composition-root.test.ts',
       'packages/dsh-provider-usage/test/integration/execute/composition-root.test.ts',
       'packages/dsh-provider-usage/test/integration/history/composition-root.test.ts',
       'packages/dsh-provider-usage/test/integration/pipeline/composition-root.test.ts',

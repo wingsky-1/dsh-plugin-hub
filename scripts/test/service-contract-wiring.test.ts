@@ -216,6 +216,7 @@ const EXPECT_FILES: Record<string, string[]> = {
     "integration/adapters/composition-root.test.ts",
     "integration/aggregate/composition-root.test.ts",
     "integration/collect/composition-root.test.ts",
+    "integration/data-routes/composition-root.test.ts",
     "integration/history/composition-root.test.ts",
     "integration/pipeline/composition-root.test.ts",
     "integration/registry/composition-root.test.ts",

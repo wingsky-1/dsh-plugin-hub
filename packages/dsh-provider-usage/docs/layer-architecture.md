@@ -30,7 +30,7 @@
 | C3 执行管道层 | 取数编排+管道+安全执行 | server/pipeline/{interface.ts 门面 + deps.ts 注入面 + stats-service/v2/guards}（#768 D6 由 domain1/pipeline 整域迁入，取数渲染管道：入参组装→safe 执行→净化→归一化，净化缺席判据锁定） | 编排/管道/守卫分文件，内聚成立 |
 | C4 历史存储层 | 按天 JSONL/v3 迁移/清理 | server/history/history.ts（#768 D5 由 domain1/history 整域迁入，interface 门面 + 并发语义确定化，pipeline 经门面 type-only 消费） | 纯存储 |
 | C5 适配器实现层 | 三内置适配器 | server/adapters/{deepseek-official(777),opencode-go(518),zai-coding-cn(461)}(.mjs) + interface.ts 门面 + deps.ts 注入面 + register.ts 内置装配 fail-fast（#768 D4 由 domain1/adapters 整域迁入，.mjs 零改动） | 自包含零 import；retention 死字段已删除 |
-| C6 路由层（宿主） | /stats /history /adapters* | domain1/routes/{stats(123),adapters(213)} | **仅宿主**；客户端单列跨进程 UI 层 |
+| C6 路由层（宿主） | /stats /history /adapters* | server/data-routes/{interface.ts 门面 + deps.ts 注入面 + stats/adapters}（#768 D10 由 domain1/routes 改名迁入，零行为变更，403 先于 405 围栏判据锁定） | **仅宿主**；客户端单列跨进程 UI 层 |
 
 ### 域2 · 事件监听·趋势·报告框架
 | 层 | 职责 | 文件(行数) | 备注 |
@@ -61,7 +61,7 @@
 | 层 | 上游→ | 对外主契约 | ←下游 | 穿透说明 |
 |---|---|---|---|---|
 | C1 | 全部层+客户端 | isUsageStatsAdapter(contracts)/esc(contracts)/ADAPTER_UTILS(charts)/normalizeConfig(config)/FetchContext·CapsuleInput·PanelInput | 零内部依赖（charts 不 import contracts 防环；contracts type-only charts 为弱依赖） | — |
-| C2 | C3/装配/**C6 路由** | registry.register/select/getEntry/replaceByFile/snapshot；resolveProviderConfig；HotReloadableAdapter；resolveAddAdapterFile(user-adapters)；readAdapterStateResult/writeAdapterState | C1 | **C6 直读 registry**（domain1/routes/{adapters,stats}、domain2/routes/ui.ts）——注册表非仅 stats-service 收口；registry 为公开管理对象，判断面不收口 |
+| C2 | C3/装配/**C6 路由** | registry.register/select/getEntry/replaceByFile/snapshot；resolveProviderConfig；HotReloadableAdapter；resolveAddAdapterFile(user-adapters)；readAdapterStateResult/writeAdapterState | C1 | **C6 直读 registry**（server/data-routes/{adapters,stats}、domain2/routes/ui.ts）——注册表非仅 stats-service 收口；registry 为公开管理对象，判断面不收口 |
 | C3 | C6/装配 | StatsService.getStats/cacheFresh/purge/warmup/scheduleWriteAdapterState；runV2Pipeline(pipeline/v2)；safeFetchData(guards，5s 固定)；V2PipelineResult | C2/C4/C5 | **D7 已落地**：面板缓存四段语义整体下沉为 `StatsService.getPanelResult`（key 归一 → stale 判定 → miss 删除 → 管道 → 失败不写）+ purgeAllCaches（generation 失效 + per-key 单飞）；路由不再直读写 panelCache |
 | C4 | C3/C6 | HistoryStore.append/query/last/pruneAll/migrateLegacyV3 | 无 | — |
 | C5 | C3 | 三 UsageStatsAdapter 实例（version/name/label/providers/fetchData/formatCapsule/formatPanel） | 无 | — |

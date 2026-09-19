@@ -51,8 +51,8 @@ import { ReportConfigService, readReportConfig } from "../server/config/interfac
 import { makeDueReportExecutor } from "../server/execute/interface.ts";
 import { makeListDirs } from "../server/execute/interface.ts";
 import { ReportTaskQueue } from "../server/schedule/interface.ts";
-import { createStatsRoutes } from "../domain1/routes/interface.ts";
-import { createAdapterRoutes } from "../domain1/routes/interface.ts";
+import { createStatsRoutes } from "../server/data-routes/interface.ts";
+import { createAdapterRoutes } from "../server/data-routes/interface.ts";
 import { createUiRoutes } from "../domain2/routes/interface.ts";
 import { createReportRoutes } from "../domain2/routes/interface.ts";
 import { installUpgrade, releaseUpgrade } from "../server/upgrade/interface.ts";

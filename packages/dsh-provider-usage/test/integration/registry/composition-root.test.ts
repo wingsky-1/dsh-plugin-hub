@@ -6,7 +6,7 @@
  * - D7一 经 server/registry 域门面装配：候选/持久化/加载校验/热更新/密钥链/路径
  *   一族只经 server/registry/interface.ts，不走旧 domain1/registry 入口；
  *   apply/apply.ts、apply/index.ts、server/pipeline/stats-service.ts、
- *   server/adapters/deps.ts、domain1/routes/adapters.ts 的注册表消费收口新门面；
+ *   server/adapters/deps.ts、server/data-routes/adapters.ts 的注册表消费收口新门面；
  *   门面禁整文件 re-export；包导出面（apply/index.ts 转发名）零增减。
  * - D7二 候选 + 唯一启用 + 错误登记：同 provider 多候选任一时刻一启用
  *   （双启用必须红）+ 非法/重名拒收登记错误（删登记即红）。
@@ -89,7 +89,10 @@ const pipelineStatsSrc = readFileSync(
   "utf8",
 );
 const adaptersDepsSrc = readFileSync(join(srcDir, "server", "adapters", "deps.ts"), "utf8");
-const routesAdaptersSrc = readFileSync(join(srcDir, "domain1", "routes", "adapters.ts"), "utf8");
+const routesAdaptersSrc = readFileSync(
+  join(srcDir, "server", "data-routes", "adapters.ts"),
+  "utf8",
+);
 const registryFaceSrc = readFileSync(join(srcDir, "server", "registry", "interface.ts"), "utf8");
 const registryDepsSrc = readFileSync(join(srcDir, "server", "registry", "deps.ts"), "utf8");
 const unitStatsTestSrc = readFileSync(
@@ -156,11 +159,12 @@ describe("D7一 经 server/registry 域门面装配", () => {
     expect(usesOldFace(unitStatsTestSrc)).toBe(false);
     expect(applySrc.includes("server/registry/interface")).toBe(true);
     expect(applyFaceSrc.includes("server/registry/interface")).toBe(true);
-    // 域内相对引用（server/pipeline 与 server/adapters 经 ../registry 取本域门面，
-    // 字面不含 server/ 前缀，判据按相对形态锚定，改回旧址即红）
+    // 域内相对引用（server/pipeline、server/adapters 与 server/data-routes 经
+    //   ../registry 取本域门面，字面不含 server/ 前缀，判据按相对形态锚定，
+    //   改回旧址即红；D10 起 data-routes 亦为 server 内域）
     expect(pipelineStatsSrc.includes("../registry/interface")).toBe(true);
     expect(adaptersDepsSrc.includes("../registry/interface")).toBe(true);
-    expect(routesAdaptersSrc.includes("server/registry/interface")).toBe(true);
+    expect(routesAdaptersSrc.includes("../registry/interface")).toBe(true);
   });
 
   it("门面收口：interface 与实现同一引用（包装即红）", () => {
