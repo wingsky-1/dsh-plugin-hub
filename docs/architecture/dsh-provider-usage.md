@@ -42,7 +42,7 @@
 
 组合根 `src/index.ts` 只做三件事：收窄宿主上下文、按依赖顺序装配、逆序释放；域间能力经各域 `deps.ts` 注入且 Pick 收窄；实现永不按值引用本域 `interface.ts`。
 
-域：adapters/history/pipeline/registry（采集管理）/ aggregate/collect/execute/schedule（聚合调度）/ data-routes（stats/history/适配器管理路由）/ report-routes（报告执行面：配置服务 + 任务队列 + 执行器）/ ui-routes（health/trend/ui-config/SSE，以实现块切分）/ config（report config 形态 + 归一化单答案；有状态配置服务归此域，路由侧经窄面消费）/ upgrade（单一迁移域：存储归位 + 配置形态割接 + last-run 迁移步；装配前同步跑完，失败即抛；仅依赖日志与旧配置显式读取面）。
+域：adapters/history/pipeline/registry（采集管理）/ aggregate/collect/execute/schedule（聚合调度）/ data-routes（stats/history/适配器管理路由）/ report-routes（报告执行面：配置服务 + 任务队列 + 执行器）/ ui-routes（health/trend/ui-config/SSE，以实现块切分）/ config（report config 形态 + 归一化单答案；有状态配置服务归此域，路由侧经窄面消费）/ upgrade（单一迁移域：存储归位 + 配置形态割接 + last-run 迁移步；运行时完全解耦（UpgradeDeps = logger + root 解析 + 旧文件显式读面，无业务实例；装配前 await，失败即抛）；源码允许纯面复用（schedule 的 LAST_RUN_SCHEMA/derive/align 经 interface type+pure 复用，非实例调用；per-root 链留 schedule 经 deps 注入，不新建 file-io 叶；LEGACY_* 旧词映射 type-only 复用，非实例））。
 
 消除：common 兜底域消失（迁移语义归 upgrade 步；per-root 链与读写原语及格式归属归 schedule；索引解析与执行记忆归 execute；进程期错误面归 server/shared 新共享叶）；跨域直引改经门面；弃用调用清零后收缩抑制基线。
 
