@@ -3608,8 +3608,17 @@ describe("#503 M3：用量报告接线", () => {
       detailRoute !== undefined &&
       genRoute !== undefined;
 
-    // b. 默认挂载（报告全关）：无 reports/ 产物；GET /report-config 返回默认配置
-    obs.noReportsDirOnDefaultMount = !existsSync(reportsDir);
+    // b. 默认挂载（报告全关）：无报告产物（html/meta/index）；S3 存储归位后 reports/ 含版本化空形
+    // （config.json{version:1}/last-run.json{schema:2}）属预期初始形态，不算报告产物。
+    try {
+      const names = readdirSync(reportsDir);
+      obs.noReportArtifactsOnDefaultMount = names.every(
+        (n) => n === "config.json" || n === "last-run.json",
+      );
+    } catch {
+      obs.noReportArtifactsOnDefaultMount = true;
+    }
+    obs.noReportsDirOnDefaultMount = obs.noReportArtifactsOnDefaultMount;
     const defaultCfg = await callHandler(cfgRoute, fakeReq({ url: ROUTES.reportConfig }));
     obs.defaultCfgOk = defaultCfg.ok;
     obs.defaultDailyEnabled = defaultCfg.config.daily.enabled;
@@ -4070,7 +4079,7 @@ describe("#503 M3：用量报告接线", () => {
     expect(obs.reportRoutesExist).toBeTruthy();
   });
 
-  it("默认挂载（报告全关）不产生 reports/ 目录", () => {
+  it("默认挂载（报告全关）无报告产物（版本化空形除外，S3存储归位）", () => {
     expect(obs.noReportsDirOnDefaultMount).toBeTruthy();
   });
 

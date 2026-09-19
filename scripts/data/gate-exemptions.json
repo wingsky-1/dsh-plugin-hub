@@ -97,6 +97,18 @@
       "trackingIssue": "#847",
       "reviewBy": "2027-03-31",
       "exitCriteria": "对应单测迁出 test/unit 或不再直引客户端实现面后删本条"
+    },
+    {
+      "gate": "verify-dir-imports",
+      "path": "dsh-provider-usage:apply|server/upgrade",
+      "reason": "#768 S3：组合根 apply 经 packages/dsh-provider-usage/src/server/upgrade/interface.ts 装配升级域（装配前 await，失败即抛），全经门面（禁直引实现文件），与既有 apply|domain1/*、apply|domain2/* 同形。窄面依据树内 packages/dsh-provider-usage/src/server/upgrade/deps.ts（三项 logger+resolveRoot+readOldFile，无业务实例）；装配顺序由树内 packages/dsh-provider-usage/test/integration/upgrade/upgrade-chain.test.ts 的装配前 await 用例锁定。长期条目（设计事实，非待办）。",
+      "trackingIssue": "#768"
+    },
+    {
+      "gate": "verify-dir-imports",
+      "path": "dsh-provider-usage:server/upgrade|domain2/schedule",
+      "reason": "#768 S3：upgrade 三步经 packages/dsh-provider-usage/src/domain2/schedule/interface.ts 复用纯面（LAST_RUN_SCHEMA/deriveLastRun/alignLastRun）与 LEGACY_* 映射表纯数据，不调业务实例；文件经树内 packages/dsh-provider-usage/src/server/upgrade/deps.ts 注入面（resolveRoot/readOldFile）+ 同域 writeFileAtomic，全经门面，与既有 domain2/common|domain2/schedule 同形。复用边界由 deps.ts 注记锁定，幂等三条由树内 packages/dsh-provider-usage/test/integration/upgrade/upgrade-chain.test.ts 锁定。长期条目（设计事实，非待办）。",
+      "trackingIssue": "#768"
     }
   ]
 }

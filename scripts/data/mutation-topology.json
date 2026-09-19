@@ -399,6 +399,11 @@
           ],
           "excludes": ["!packages/dsh-provider-usage/src/client/**"],
           "comment": "阶段一新段（评审 P1-5 前置）：E5/C6 路由面——stats+adapters+ui+reports；先抽纯函数（clampTrendN/isReportPeriodValid/isReportKeyValid/isTaskIdValid）补 unit-routes 再开段；testFiles 含 unit-routes/unit-report/unit-apply。"
+        },
+        "upgrade": {
+          "mutate": ["packages/dsh-provider-usage/src/server/upgrade/**/*.ts"],
+          "excludes": ["!packages/dsh-provider-usage/src/client/**"],
+          "comment": "#768 S3 新段：upgrade 迁移链——storage-layout（纯字节归位）+config-morph（LEGACY 映射割接）+last-run-morph（derive/align）+chain（排序/刻度/对账）+service（装配标记）+version（刻度读写）；interface.ts/deps.ts 经包级 coverageExcludes 以 facade/type-only 口径排除；杀灭面为 test/integration/upgrade/upgrade-chain（幂等三条各有集成用例）。"
         }
       },
       "testLayers": {
@@ -406,7 +411,7 @@
           {
             "pattern": "!packages/dsh-provider-usage/src/**/interface.ts",
             "kind": "facade",
-            "reason": "14 个目录的对外门面（apply/domain1/domain2/shared + #768 S2 新增 server/shared）：逐个命名 re-export 实际被消费的类型与函数（显式禁 export * from），目录外的调用方一律经它消费，自身不含实现。条数以本 pattern 为口径事实源。"
+            "reason": "15 个目录的对外门面（apply/domain1/domain2/shared + #768 S2 新增 server/shared + S3 新增 server/upgrade）：逐个命名 re-export 实际被消费的类型与函数（显式禁 export * from），目录外的调用方一律经它消费，自身不含实现。条数以本 pattern 为口径事实源。"
           },
           {
             "pattern": "!packages/dsh-provider-usage/src/server/*/deps.ts",

@@ -1,0 +1,46 @@
+{
+  "$schema": "../node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "mutate": [
+    "packages/dsh-provider-usage/src/server/upgrade/**/*.ts",
+    "!packages/dsh-provider-usage/src/client/**",
+    "!packages/dsh-provider-usage/src/**/interface.ts",
+    "!packages/dsh-provider-usage/src/server/*/deps.ts",
+    "!packages/dsh-provider-usage/src/**/*.d.mts",
+    "!packages/dsh-provider-usage/src/domain1/adapters/deepseek-official.mjs",
+    "!packages/dsh-provider-usage/src/domain1/adapters/opencode-go.mjs",
+    "!packages/dsh-provider-usage/src/domain1/adapters/zai-coding-cn.mjs"
+  ],
+  "testRunner": "vitest",
+  "mutator": {
+    "excludedMutations": [
+      "StringLiteral",
+      "ArrayLiteral",
+      "ObjectLiteral",
+      "TemplateLiteral"
+    ]
+  },
+  "plugins": [
+    "@stryker-mutator/vitest-runner"
+  ],
+  "concurrency": 16,
+  "timeoutMS": 60000,
+  "dryRunTimeoutMinutes": 5,
+  "reporters": [
+    "progress",
+    "clear-text",
+    "json"
+  ],
+  "coverageAnalysis": "perTest",
+  "tempDirName": ".stryker-tmp",
+  "cleanTempDir": true,
+  "vitest": {
+    "related": false,
+    "configFile": "vitest.stryker.d/dsh-provider-usage.config.ts"
+  },
+  "jsonReporter": {
+    "fileName": "coverage/mutation/dsh-provider-usage-upgrade.json"
+  },
+  "incremental": true,
+  "incrementalFile": "coverage/mutation/incremental-provider-usage-upgrade.json",
+  "_comment": "#768 S3 新段：upgrade 迁移链——storage-layout（纯字节归位）+config-morph（LEGACY 映射割接）+last-run-morph（derive/align）+chain（排序/刻度/对账）+service（装配标记）+version（刻度读写）；interface.ts/deps.ts 经包级 coverageExcludes 以 facade/type-only 口径排除；杀灭面为 test/integration/upgrade/upgrade-chain（幂等三条各有集成用例）。"
+}

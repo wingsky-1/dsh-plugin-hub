@@ -20,6 +20,7 @@
  * - GET /api/dsh-provider-usage/reports/generate/status  生成任务状态轮询
  */
 
+import { readFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import type { ServerResponse } from "node:http";
 import type { Context } from "@deepseek-ai/cordis";
@@ -52,6 +53,7 @@ import { createStatsRoutes } from "../domain1/routes/interface.ts";
 import { createAdapterRoutes } from "../domain1/routes/interface.ts";
 import { createUiRoutes } from "../domain2/routes/interface.ts";
 import { createReportRoutes } from "../domain2/routes/interface.ts";
+import { installUpgrade, releaseUpgrade } from "../server/upgrade/interface.ts";
 import type {} from "@deepseek-ai/dsh-session";
 
 export const ROUTES: Record<string, string> = {
@@ -252,6 +254,20 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
   };
 
   const historyRoot = config.historyDir || join(dshHome(), "dsh-provider-usage");
+  // upgrade 三步在各域装配前 await 跑完（S3，经 S2 注入面）：先装配等于让各域读到旧形态。
+  // 同进程多次 apply（宿主重载/测试多假宿主）先复位标记，链本身幂等故重跑不累积。
+  releaseUpgrade();
+  await installUpgrade({
+    logger: { warn: (message: string) => console.warn(`[dsh-provider-usage] ${message}`) },
+    resolveRoot: () => historyRoot,
+    readOldFile: async (file: string) => {
+      try {
+        return { ok: true as const, text: await readFile(file, "utf8") };
+      } catch {
+        return { ok: false as const };
+      }
+    },
+  });
   const history = new HistoryStore({
     root: historyRoot,
     maxAgeMs: config.maxAgeDays * 86400000,

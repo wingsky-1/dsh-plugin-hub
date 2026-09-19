@@ -93,13 +93,13 @@
       }
     },
     "dsh-provider-usage": {
-      "modules": 14,
-      "scannedSrcFiles": 62,
-      "allSrcTsFiles": 77,
-      "interfaceFacades": 14,
-      "leafValueEdges": 37,
-      "fileValueEdges": 125,
-      "crossModuleRefs": 172,
+      "modules": 15,
+      "scannedSrcFiles": 69,
+      "allSrcTsFiles": 84,
+      "interfaceFacades": 15,
+      "leafValueEdges": 39,
+      "fileValueEdges": 137,
+      "crossModuleRefs": 177,
       "quality": {
         "leafModuleCycles": [
           "domain2/common|domain2/schedule"
@@ -127,6 +127,7 @@
           "apply|domain2/execute",
           "apply|domain2/routes",
           "apply|domain2/schedule",
+          "apply|server/upgrade",
           "domain1/pipeline|domain1/registry",
           "domain1/routes|domain1/registry",
           "domain2/aggregate|domain2/collect",
@@ -141,6 +142,7 @@
           "domain2/routes|domain2/schedule",
           "domain2/schedule|domain2/collect",
           "domain2/schedule|domain2/common",
+          "server/upgrade|domain2/schedule",
           "shared|domain1/adapters"
         ],
         "rootIndexImports": [],

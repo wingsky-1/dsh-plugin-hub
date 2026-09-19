@@ -146,9 +146,9 @@ test("F15 反证：落盘 conf 的 mutate 面与断言口径同源（含 coverag
   }
 });
 
-test("#773 R4：coverageExcludes 是 { pattern, reason, kind } 结构化条目（3 包共 13 条）", () => {
+test("#773 R4：coverageExcludes 是 { pattern, reason, kind } 结构化条目（3 包共 14 条）", () => {
   const topology = JSON.parse(readFileSync(TOPOLOGY_PATH, "utf8"));
-  // 规模断言：形状变更范围 13 条（dsh-mcp-manager 3 / dsh-notifier 5 / dsh-provider-usage 5）。
+  // 规模断言：形状变更范围 14 条（dsh-mcp-manager 3 / dsh-notifier 5 / dsh-provider-usage 6）。
   // notifier 是 5 而不是 4：原 `**/deps.ts` 一条拆成两条——7 个纯类型域出口 + 含运行时
   // 实现的 system/deps.ts 单列（复核实测它转译后有运行时代码，不能与纯类型共用一条 reason）。
   // mcp 是 3 而不是 1（#767 B0 + B2a-wire W8）：原 facade 条重估后保留（目标形态的门面转译后仍有
@@ -159,7 +159,9 @@ test("#773 R4：coverageExcludes 是 { pattern, reason, kind } 结构化条目�
   // 数量变化必须是有意的登记动作，不能靠 diff 顺带溜过。
   // pu 6→5（#767 终轮收尾：共享层 placement-math.js 退役，两包自持实现；
   // pu 的薄 facade coverageExcludes 条目随之删除，包内实现已在 pipeline 段 mutate 面内）。
-  const expected = { "dsh-mcp-manager": 3, "dsh-notifier": 5, "dsh-provider-usage": 5 };
+  // pu 5→6（#768 S2：server/upgrade/deps.ts 纯类型窄面（UpgradeDeps 三项）新增 type-only 条目；
+  // S3 新增 server/upgrade/interface.ts 复用既有 facade 条（**/interface.ts），不新增条目）。
+  const expected = { "dsh-mcp-manager": 3, "dsh-notifier": 5, "dsh-provider-usage": 6 };
 
   const allReasons = [];
   let total = 0;
@@ -204,8 +206,8 @@ test("#773 R4：coverageExcludes 是 { pattern, reason, kind } 结构化条目�
   }
   assert.equal(
     total,
-    13,
-    "coverageExcludes 共 13 条（#773 R4 的形状变更范围：notifier deps.ts 拆分后 5 条；#840 退役 wfp（13→12）；#767 B0 mcp 第 2 条（→13）；W8 connection/runtime/deps.ts 第 3 条（→14）；#767 终轮收尾删 pu 薄 facade 条（→13））",
+    14,
+    "coverageExcludes 共 14 条（#773 R4 的形状变更范围：notifier deps.ts 拆分后 5 条；#840 退役 wfp（13→12）；#767 B0 mcp 第 2 条（→13）；W8 connection/runtime/deps.ts 第 3 条（→14）；#767 终轮收尾删 pu 薄 facade 条（→13）；#768 S2 加 pu server/upgrade/deps.ts 条（→14））",
   );
   assert.equal(
     new Set(allReasons).size,
