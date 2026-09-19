@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck
 "use strict";
 
 /**
@@ -27,7 +26,7 @@ import {
 const ROOT = join(import.meta.dirname, "../..");
 const SCRIPT = join(ROOT, "scripts/release/collect-tgz-evidence.mjs");
 
-function runCli(args) {
+function runCli(args: string[]) {
   return spawnSync(process.execPath, [SCRIPT, ...args], { cwd: ROOT, encoding: "utf8" });
 }
 

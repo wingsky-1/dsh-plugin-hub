@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck
 /**
  * 范围注册表自测（#733 计划项 3.2.1）。
  *
@@ -45,7 +44,7 @@ const PACKAGE_CALL_PATTERNS = [
 /** 调用点与脚本次引用之间允许的最大距离（同一 step 内，见下）。 */
 const CALL_SITE_WINDOW = 600;
 
-function extractPackageCallSites(text, file) {
+function extractPackageCallSites(text: string, file: string) {
   const records = [];
   for (const ref of text.matchAll(/scripts\/gate\/([a-z0-9-]+)\.(?:mjs|ts)/g)) {
     // 只看脚本引用之后的一小段：调用点写成 spawnSync([...脚本, "--package", "pkg"])，

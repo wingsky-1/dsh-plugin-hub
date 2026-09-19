@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck
 /** forbid-homedir-src.mjs 自测（#517 B5）：正反例 + 无豁免通道 + fail-closed 全组合。 */
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -12,7 +11,7 @@ const ROOT = join(import.meta.dirname, "../..");
 const SCRIPT = join(ROOT, "scripts/gate/forbid-homedir-src.mjs");
 
 /** 构造最小 fixture 仓库（--root 注入）。pkgFiles: [{ rel, content }] */
-function fixture(pkgFiles) {
+function fixture(pkgFiles: Array<{ rel: string; content: string }>) {
   const dir = mkdtempSync(join(tmpdir(), "forbid-homedir-src-test-"));
   mkdirSync(join(dir, "packages/dsh-fake/src"), { recursive: true });
   for (const { rel, content } of pkgFiles) {
@@ -23,7 +22,7 @@ function fixture(pkgFiles) {
   return dir;
 }
 
-function run(root) {
+function run(root: string) {
   try {
     return spawnSync(process.execPath, [SCRIPT, "--root", root], { encoding: "utf8" });
   } finally {
@@ -32,7 +31,9 @@ function run(root) {
 }
 
 /** 构造豁免台账临时文件（--exemptions 注入），返回其路径——用于锁定「本闸不读台账」。 */
-function exemptionsFile(entries) {
+function exemptionsFile(
+  entries: Array<{ gate: string; path: string; reason: string; trackingIssue: string }>,
+) {
   const dir = mkdtempSync(join(tmpdir(), "gate-exemptions-"));
   const p = join(dir, "gate-exemptions.json");
   writeFileSync(p, JSON.stringify({ version: 1, exemptions: entries }));

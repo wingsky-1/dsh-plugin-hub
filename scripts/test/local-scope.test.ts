@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck
 "use strict";
 
 /**
@@ -83,7 +82,7 @@ test("#742 2.1: filters 只用两套匹配器语义一致的 glob 形态（否�
   // 所以不许出现——收窄白名单（#742 阶段 2.1）后 glob 数量从 9 条涨到 45 条，这个守卫必须显式。
   const filters = parseFilterBlock(CI_YML);
   const exotic = [];
-  for (const [face, globs] of Object.entries(filters)) {
+  for (const [face, globs] of Object.entries(filters!)) {
     for (const g of globs) {
       if (/^!/.test(g) || /[{}?[\]]/.test(g)) exotic.push(`${face}: ${g}`);
     }

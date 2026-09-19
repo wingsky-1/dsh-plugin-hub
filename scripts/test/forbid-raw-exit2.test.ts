@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck
 /**
  * forbid-raw-exit2.mjs 自测（#843 P-2 的否定判据）：正反例 + AST 边界 + fail-closed。
  *
@@ -23,7 +22,7 @@ const SCRIPT = join(ROOT, "scripts", "gate", "forbid-raw-exit2.mjs");
  * 两个扫描面目录**一律先建出来**：判据对「面不可读」是 fail-closed（exit 2），
  * fixture 少建一个目录测到的就是那条分支，而不是用例想测的东西。
  */
-function fixture(files) {
+function fixture(files: Array<{ rel: string; content: string }>) {
   const dir = mkdtempSync(join(tmpdir(), "forbid-raw-exit2-"));
   mkdirSync(join(dir, "scripts", "gate"), { recursive: true });
   mkdirSync(join(dir, "scripts", "release"), { recursive: true });
@@ -35,7 +34,7 @@ function fixture(files) {
   return dir;
 }
 
-function run(files) {
+function run(files: Array<{ rel: string; content: string }>) {
   const dir = fixture(files);
   try {
     return spawnSync(process.execPath, [SCRIPT, "--root", dir], { encoding: "utf8" });
