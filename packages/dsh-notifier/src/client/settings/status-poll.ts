@@ -6,9 +6,11 @@
  * 真失败（failed）因此显示为“尚未投递”。本模块把“等终态”收成一个可判据的有限轮询。
  *
  * 收敛判据：以目标频道的条目出现/lastTs 推进为准（调用方在 POST 前记下 prevTs）。
- * - 有限轮：默认 8 轮 x 1500ms，预算约 12s，覆盖“能力探测（probe 3s 预算）+ 子进程投递
+ * - 有限轮：默认 8 轮 x 1500ms，预算约 12s，常见覆盖“能力探测（probe 3s 预算）+ 子进程投递
  *   （spawn 8s 超时）+ 落盘 debounce 500ms”。注意 GET /status 读的是内存镜像（即时），
- *   预算里的大头是投递本身，不是落盘。
+ *   预算里的大头是投递本身，不是落盘。最坏不覆盖：webhook 投递 clamp 上限 60s、冷启动能力探测
+ *   8s 与 system kill 8s 串行最坏超 12s——耗尽是 fail-safe（保留旧态 + 刷历史，不谎报），
+ *   不是正确性缺陷（常量未链接服务端超时事实源，记债 #912-T3，见 issue 债清单）。
  * - 只读轮询：轮询只打 GET /status，绝不重发 POST /test——重发会撞上 system 出口 1 秒节流窗，
  *   第二次受理变成 throttled 的 skipped（无状态可写），等于用一次“没投递”去等“投递结论”。
  *   间隔取 1500ms（> 1000ms 节流窗）是双保险：即使用户在轮询期间又点了一次测试，两次投递
@@ -24,6 +26,9 @@
  * - 取“历史直达”：skipped 的明细与原因本来就在通知历史里（dispatch 如实归档），状态行在无
  *   条目时若历史中有该频道的 skipped，就把原因与“详情见通知记录”摆出来（见 parts/status.tsx
  *   的 statusText history 形参）。值域保持 ok/failed 锁死，dispatch.test.ts 的锁死判据不动。
+ *   已知代价：poll 只收敛 status 不看 history，skipped 主导的测试必等满 12s 耗尽才刷历史
+ *   出解释（先排除 failed 的设计代价，最小实现下可接受；后续可做 history 早收敛优化，
+ *   记债 #912-T4，见 issue 债清单）。
  */
 
 /** 状态表读视图（GET /status channels 元素的渲染子集；只取判定用得上的字段）。 */
