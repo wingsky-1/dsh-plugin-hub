@@ -28,7 +28,7 @@
  * 无消费者的导出（最小导出纪律）。
  */
 import type { AdapterUtils } from "../../shared/interface.ts";
-import type { AdapterRegistry } from "../../domain1/registry/interface.ts";
+import type { AdapterRegistry } from "../registry/interface.ts";
 
 /** 适配器域的宿主工具窄面（管线按调用注入；8 键逐键有 .mjs 消费实证）。 */
 export type AdapterHostUtils = Pick<

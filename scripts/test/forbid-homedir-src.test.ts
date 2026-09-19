@@ -265,9 +265,9 @@ test("本仓真实快照：homedir 面零命中 → exit 0 且输出不含任何
   assert.match(r.stdout, /无 HOME 来源 API 直连/);
   assert.ok(!r.stdout.includes("豁免"), `输出不应出现豁免语义：${r.stdout}`);
   for (const f of [
-    "packages/dsh-provider-usage/src/domain1/registry/path-resolve.ts",
+    "packages/dsh-provider-usage/src/server/registry/path-resolve.ts",
     "packages/dsh-provider-usage/src/apply/apply.ts",
-    "packages/dsh-provider-usage/src/domain1/registry/provider-config.ts",
+    "packages/dsh-provider-usage/src/server/registry/provider-config.ts",
   ])
     assert.ok(!r.stdout.includes(f), `${f} 不应再出现在豁免台账中（该面已零豁免）`);
 });

@@ -12,8 +12,8 @@ import {
 } from "../../../../../shared/host-utils.js";
 import { ADAPTER_CONTRACT_VERSION } from "../../shared/interface.ts";
 import type { StatsService } from "../../server/pipeline/interface.ts";
-import { loadUserAdapterChecked } from "../registry/interface.ts";
-import { resolveAddAdapterFile, type UserAdapterRecord } from "../registry/interface.ts";
+import { loadUserAdapterChecked } from "../../server/registry/interface.ts";
+import { resolveAddAdapterFile, type UserAdapterRecord } from "../../server/registry/interface.ts";
 
 export interface AdapterRoutesContext {
   ctx: Context;

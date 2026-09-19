@@ -64,14 +64,14 @@ export type {
   DshUsageGlobal,
   UsageAdapterSpec,
 } from "../shared/interface.ts";
-export { makeAdapterRegistry } from "../domain1/registry/interface.ts";
+export { makeAdapterRegistry } from "../server/registry/interface.ts";
 export type {
   AdapterSource,
   AdapterErrorInfo,
   AdapterInfo,
   ReplaceFileResult,
   AdapterRegistry,
-} from "../domain1/registry/interface.ts";
+} from "../server/registry/interface.ts";
 // 共享图表工具库（AdapterUtils/ADAPTER_UTILS 等）——外部 TS 消费者可经 index 导入。
 // dayKey/lastNDayKeys 与 deepseek-official.mjs 文件级导出重名（测试导入面），
 // 此处显式排除，deepseek-official.mjs 的导出保留（同源副本，语义一致）。
@@ -143,8 +143,8 @@ export {
   credentialsFile,
   opencodeAuthFile,
   resolveProviderConfig,
-} from "../domain1/registry/interface.ts";
-export type { ProviderConfigInput, ResolvedProviderConfig } from "../domain1/registry/interface.ts";
+} from "../server/registry/interface.ts";
+export type { ProviderConfigInput, ResolvedProviderConfig } from "../server/registry/interface.ts";
 export {
   HistoryStore,
   parseJsonl,
@@ -172,7 +172,7 @@ export {
   loadAndValidateAdapter,
   readStamp,
   stampEqual,
-} from "../domain1/registry/interface.ts";
+} from "../server/registry/interface.ts";
 // 会话用量趋势：trend 模块公共面（测试/外部消费者从 lib/index.js 导入）
 export { TrendTracker } from "../domain2/aggregate/interface.ts";
 export type { TrendTrackerOptions } from "../domain2/aggregate/interface.ts";
@@ -317,7 +317,7 @@ export {
 } from "../server/execute/interface.ts";
 export { parseReportIndexLines } from "../server/execute/interface.ts";
 // 路径解析纯函数透出（供测试与调用方复用同一展开/解析规则，无行为变更）
-export { resolvePath, pluginHome, expandHomePath } from "../domain1/registry/interface.ts";
+export { resolvePath, pluginHome, expandHomePath } from "../server/registry/interface.ts";
 // 配置归一化（默认值 / schemastery schema / normalizeConfig）
 export { DEFAULT_CONFIG, Config, normalizeConfig } from "../shared/interface.ts";
 export type { NormalizedConfig } from "../shared/interface.ts";
@@ -371,8 +371,8 @@ export {
   readUserAdapters,
   readAdapterState,
   resolveAddAdapterFile,
-} from "../domain1/registry/interface.ts";
-export type { UserAdapterRecord } from "../domain1/registry/interface.ts";
+} from "../server/registry/interface.ts";
+export type { UserAdapterRecord } from "../server/registry/interface.ts";
 // 插件契约转发（apply 主流程 + 路由表实现于 apply.ts）
 export { apply, ROUTES } from "./apply.ts";
 // 路由 handler 直出（status 响应 reused 透传的单元断言面）

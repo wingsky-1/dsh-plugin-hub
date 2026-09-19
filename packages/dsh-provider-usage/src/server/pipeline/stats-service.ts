@@ -15,8 +15,8 @@ import {
   type PanelCacheEntry,
   type V2PipelineResult,
 } from "./v2.ts";
-import { resolveProviderConfig } from "../../domain1/registry/interface.ts";
-import type { AdapterRegistry } from "../../domain1/registry/interface.ts";
+import { resolveProviderConfig } from "../registry/interface.ts";
+import type { AdapterRegistry } from "../registry/interface.ts";
 import type { UsageStatsAdapter } from "../../shared/interface.ts";
 import {
   readAdapterStateResult,
@@ -24,7 +24,7 @@ import {
   userAdaptersFile,
   writeAdapterState,
   type UserAdapterRecord,
-} from "../../domain1/registry/interface.ts";
+} from "../registry/interface.ts";
 
 export interface StatsServiceOptions {
   ctx: Context;

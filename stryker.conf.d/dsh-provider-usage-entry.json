@@ -2,7 +2,7 @@
   "$schema": "../node_modules/@stryker-mutator/core/schema/stryker-schema.json",
   "mutate": [
     "packages/dsh-provider-usage/src/apply/index.ts",
-    "packages/dsh-provider-usage/src/domain1/registry/user-adapters.ts",
+    "packages/dsh-provider-usage/src/server/registry/user-adapters.ts",
     "packages/dsh-provider-usage/src/shared/ui-config.ts",
     "packages/dsh-provider-usage/src/shared/config.ts",
     "!packages/dsh-provider-usage/src/client/**",
@@ -45,5 +45,5 @@
   },
   "incremental": true,
   "incrementalFile": "coverage/mutation/incremental-provider-usage-entry.json",
-  "_comment": "#342 v4：src 级文件组分段（1）——index+user-adapters+ui-config+config（配置/入口面）；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
+  "_comment": "#342 v4：src 级文件组分段（1）——index+user-adapters+ui-config+config（配置/入口面）；#768 D7 注册表文件随域迁 server/registry（路径同步，行为零改 + 双启用判据）；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
 }

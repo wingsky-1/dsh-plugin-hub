@@ -27,8 +27,8 @@ import type { Context } from "@deepseek-ai/cordis";
 import { sseData } from "../../../../shared/host-utils.js";
 import { installSettingsNamespace } from "../../../../shared/settings-namespace.js";
 import { dshHome, userHome } from "../../../../shared/dsh-home.js";
-import type { AdapterRegistry } from "../domain1/registry/interface.ts";
-import { makeAdapterRegistry } from "../domain1/registry/interface.ts";
+import type { AdapterRegistry } from "../server/registry/interface.ts";
+import { makeAdapterRegistry } from "../server/registry/interface.ts";
 import {
   openCodeGoAdapter,
   deepSeekOfficialAdapter,
@@ -36,13 +36,13 @@ import {
   registerBuiltinAdapters,
 } from "../server/adapters/interface.ts";
 import { HistoryStore, migrateLegacyV3 } from "../server/history/interface.ts";
-import { HotReloadableAdapter } from "../domain1/registry/interface.ts";
-import { resolvePath } from "../domain1/registry/interface.ts";
+import { HotReloadableAdapter } from "../server/registry/interface.ts";
+import { resolvePath } from "../server/registry/interface.ts";
 import { Config, normalizeConfig, type NormalizedConfig } from "../shared/interface.ts";
 import { readUiConfig } from "../shared/interface.ts";
 import { makeLayerErrorSurface } from "../server/shared/interface.ts";
-import { readAdapterStateResult, readUserAdapters } from "../domain1/registry/interface.ts";
-import { loadUserAdapterChecked } from "../domain1/registry/interface.ts";
+import { readAdapterStateResult, readUserAdapters } from "../server/registry/interface.ts";
+import { loadUserAdapterChecked } from "../server/registry/interface.ts";
 import { StatsServiceCtor as StatsService } from "../server/pipeline/interface.ts";
 import { TrendTracker } from "../domain2/aggregate/interface.ts";
 import { ReportScheduler } from "../server/schedule/interface.ts";

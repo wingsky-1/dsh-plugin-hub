@@ -6,7 +6,7 @@
  * 会被 vite 系运行器按 `/\bt=\d{13}&?\b/` 剥掉毫秒整数位，只剩亚毫秒小数位参与模块标识，
  * 内核 coarse 时钟下同一 tick 的两次写入因此撞进同一模块缓存，同一断言序列时而拿到新版本、
  * 时而拿到缓存版本（#722 实证）。版本戳现已改为 `?mtime=<mtimeMs>&size=<size>`
- * （见 src/domain1/registry/hotreload.ts），vitest 内亦可直接驱动，子进程保留为原生语义护栏。
+ * （见 src/server/registry/hotreload.ts），vitest 内亦可直接驱动，子进程保留为原生语义护栏。
  * stdout 只输出一行 JSON 观测量供上层逐条断言。
  */
 import { mkdtempSync, writeFileSync, utimesSync, unlinkSync } from "node:fs";

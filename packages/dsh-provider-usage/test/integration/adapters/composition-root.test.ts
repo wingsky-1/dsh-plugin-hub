@@ -37,7 +37,7 @@ import { deepSeekOfficialAdapter as MjsDeepSeek } from "../../../src/server/adap
 import { zaiCodingCnAdapter as MjsZai } from "../../../src/server/adapters/zai-coding-cn.mjs";
 import * as adaptersDepsNs from "../../../src/server/adapters/deps.ts";
 import type { AdapterHostUtils, BuiltinRegistryPort } from "../../../src/server/adapters/deps.ts";
-import { makeAdapterRegistry } from "../../../src/domain1/registry/interface.ts";
+import { makeAdapterRegistry } from "../../../src/server/registry/interface.ts";
 import { describeUsageStatsAdapterShape, ADAPTER_UTILS } from "../../../src/shared/interface.ts";
 import type { UsageStatsAdapter } from "../../../src/shared/interface.ts";
 

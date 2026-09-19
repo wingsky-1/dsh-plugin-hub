@@ -214,8 +214,20 @@
     },
     {
       "gate": "verify-dir-imports",
-      "path": "dsh-provider-usage:server/pipeline|domain1/registry",
-      "reason": "#768 D6：管线经 registry 门面取提供商配置解析与适配器状态读写原语（owner 在 registry 域，D7 前仍在旧址；D6 前为基线内 domain1/pipeline|domain1/registry，边归属同步迁移）。树内 integration/pipeline 用例锁定。长期条目。",
+      "path": "dsh-provider-usage:apply|server/registry",
+      "reason": "#768 D7：组合根经 registry 门面装配候选+唯一启用+错误登记（全经门面，禁直引实现文件，D7 前为基线内 apply|domain1/registry，边归属同步迁移）。树内 integration/registry 用例锁定。长期条目。",
+      "trackingIssue": "#768"
+    },
+    {
+      "gate": "verify-dir-imports",
+      "path": "dsh-provider-usage:domain1/routes|server/registry",
+      "reason": "#768 D7：适配器路由经 registry 门面取加载校验与路径准入（D7 前为基线内 domain1/routes|domain1/registry，边归属同步迁移）。树内 integration/registry 用例锁定。长期条目。",
+      "trackingIssue": "#768"
+    },
+    {
+      "gate": "verify-dir-imports",
+      "path": "dsh-provider-usage:server/pipeline|server/registry",
+      "reason": "#768 D7：管线经 registry 门面取提供商配置解析与适配器状态读写原语（owner 已归 server/registry，D7 由 domain1/registry 整域迁入；D6 为 server/pipeline|domain1/registry，边归属同步迁移）。树内 integration/registry 用例锁定。长期条目。",
       "trackingIssue": "#768"
     },
     {

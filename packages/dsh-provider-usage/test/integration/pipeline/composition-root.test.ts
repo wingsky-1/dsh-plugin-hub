@@ -55,7 +55,7 @@ import {
 } from "../../../src/server/pipeline/guards.ts";
 import * as pipelineDepsNs from "../../../src/server/pipeline/deps.ts";
 import type { PipelineDiagnose, PipelineSanitize } from "../../../src/server/pipeline/deps.ts";
-import { makeAdapterRegistry } from "../../../src/domain1/registry/interface.ts";
+import { makeAdapterRegistry } from "../../../src/server/registry/interface.ts";
 import { HistoryStore } from "../../../src/server/history/interface.ts";
 import { normalizeConfig } from "../../../src/shared/interface.ts";
 import type { UsageStatsAdapter } from "../../../src/shared/interface.ts";
