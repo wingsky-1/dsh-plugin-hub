@@ -71,7 +71,7 @@
     "dsh-notifier": {
       "modules": 10,
       "scannedSrcFiles": 107,
-      "allSrcTsFiles": 137,
+      "allSrcTsFiles": 138,
       "interfaceFacades": 10,
       "leafValueEdges": 11,
       "fileValueEdges": 118,
