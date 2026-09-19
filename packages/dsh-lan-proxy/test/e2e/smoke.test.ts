@@ -2233,6 +2233,7 @@ describe("apply: 注册、围栏与 settings 命名空间接线", () => {
   let healthRoute;
   let configRoute;
   let migratedBakExists;
+  let legacyConfigMoved;
   let settingsUpdates;
   let settingsUserPort;
   let settingsRegisteredNs;
@@ -2321,13 +2322,13 @@ describe("apply: 注册、围栏与 settings 命名空间接线", () => {
     configRoute = routes.filter((r) => r.path === ROUTES.config)[0];
 
     // 迁移是 async fire-and-forget：轮询等待（防 flake 纪律，不用固定 sleep）。
+    // issue #911 起旧目录先迁入命名空间，.bak 落在新目录（旧文件搬走不断言残留）。
+    const nsDir = join(applyHome, "@wingsky-1", "dsh-lan-proxy");
     const migratedDeadline = Date.now() + 5000;
-    while (
-      !existsSync(join(applyHome, "lan-proxy", MIGRATED_BAK_NAME)) &&
-      Date.now() < migratedDeadline
-    )
+    while (!existsSync(join(nsDir, MIGRATED_BAK_NAME)) && Date.now() < migratedDeadline)
       await sleep(25);
-    migratedBakExists = existsSync(join(applyHome, "lan-proxy", MIGRATED_BAK_NAME));
+    migratedBakExists = existsSync(join(nsDir, MIGRATED_BAK_NAME));
+    legacyConfigMoved = !existsSync(join(applyHome, "lan-proxy", "config.json"));
     // 必须复制：后续 PUT 会继续往同一个 updates 数组里 push，存引用会让断言看到块尾状态
     settingsUpdates = settingsState.updates.map((u) => ({ ...u }));
     settingsUserPort = settingsState.user.port;
@@ -2440,8 +2441,11 @@ describe("apply: 注册、围栏与 settings 命名空间接线", () => {
   });
 
   describe("apply 后存量 config.json 自动迁移进官方存储（attach 即迁移）", () => {
-    it(".bak 幂等标记存在", () => {
+    it(".bak 幂等标记存在（命名空间目录）", () => {
       expect(migratedBakExists).toBe(true);
+    });
+    it("旧目录 config.json 已搬走", () => {
+      expect(legacyConfigMoved).toBe(true);
     });
 
     it("写入 scope 的 patch 与 revision", () => {
@@ -2995,6 +2999,7 @@ describe("apply: 运行中热关闭（PUT /config → scope.watch → 压缩卸�
 // 同样迁移，重新启用不丢配置）。
 describe("apply: enabled=false 启动态", () => {
   let migratedBakExists;
+  let legacyConfigMoved;
   let healthRegistered;
   let configRegistered;
   let healthPayload;
@@ -3031,13 +3036,12 @@ describe("apply: enabled=false 启动态", () => {
       },
     };
     apply(ctx, { enabled: false });
+    const nsDir = join(applyHome, "@wingsky-1", "dsh-lan-proxy");
     const migratedDeadline = Date.now() + 5000;
-    while (
-      !existsSync(join(applyHome, "lan-proxy", MIGRATED_BAK_NAME)) &&
-      Date.now() < migratedDeadline
-    )
+    while (!existsSync(join(nsDir, MIGRATED_BAK_NAME)) && Date.now() < migratedDeadline)
       await sleep(25);
-    migratedBakExists = existsSync(join(applyHome, "lan-proxy", MIGRATED_BAK_NAME));
+    migratedBakExists = existsSync(join(nsDir, MIGRATED_BAK_NAME));
+    legacyConfigMoved = !existsSync(join(applyHome, "lan-proxy", "config.json"));
     healthRegistered = ws.exact.has(ROUTES.health);
     configRegistered = ws.exact.has(ROUTES.config);
     const hRes = new FakeRes();
@@ -3055,6 +3059,9 @@ describe("apply: enabled=false 启动态", () => {
   describe("enabled=false：迁移仍执行、health/config 路由注册、转发器不启动", () => {
     it("禁用态也完成存量迁移", () => {
       expect(migratedBakExists).toBe(true);
+    });
+    it("禁用态旧目录 config.json 已搬走", () => {
+      expect(legacyConfigMoved).toBe(true);
     });
 
     it("health 路由注册", () => {
@@ -3087,6 +3094,7 @@ const expectedLabelIds = [
   "lp-set-cert",
   "lp-set-key",
   "lp-set-banner",
+  "lp-set-ca",
   "lp-set-ws-bridge",
   "lp-set-ws-compress",
   "lp-set-ws-paths",
@@ -3220,7 +3228,7 @@ describe("client 契约（lib/client.js 产物字面量）", () => {
 
   // issue #33 子项 4：可达性——label/input 经 htmlFor+id 全关联，数字输入带 inputMode。
   describe("client 全部 label 经 htmlFor/id 关联且 number 输入带 inputMode", () => {
-    it("14 行全部 htmlFor 关联", () => {
+    it("15 行全部 htmlFor 关联", () => {
       expect([...htmlForIds].sort()).toEqual([...expectedLabelIds].sort());
     });
 

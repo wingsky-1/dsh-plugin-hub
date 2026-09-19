@@ -9,7 +9,9 @@ export {
   SELF_SIGNED_CERT,
   SELF_SIGNED_KEY,
   certStillValid,
+  encodeCertificatePem,
   ensureSelfSignedTls,
+  extractFirstCertificateDer,
   loadTlsFromFiles,
   toSanEntry,
 } from "./impl/index.ts";

@@ -37,6 +37,7 @@
   permessage-deflate 解压存在放大点（LAN 内恶意客户端高压缩比帧 → 代理进程
   解压）——在「LAN 信任」威胁模型内可接受（与 injectToken 同一信任边界）
 - **私钥权限**：自动生成的自签名私钥落盘 0600
+- **证书下发面（issue #911）**：下发路由只读给公钥（loopback 围栏 + 仅 GET + 无 Cookie 要求）。只伺服首个 CERTIFICATE 块，误指私钥一律 404；响应禁缓存。自定义叶子无 CA 时 404（下发叶子建不起信任）
 - **开放端口提醒**：0.0.0.0 监听对局域网所有设备可见
 - **HTTP 响应压缩**：压缩在转发层完成，只作用于「本插件与局域网客户端之间」
   的链路，不触碰 dsh web 的响应生成；不新增可达数据面，仅增加少量 CPU 开销
@@ -150,6 +151,7 @@ curl -s http://127.0.0.1:3081/api/dsh-lan-proxy/health
 | `targetPort` | 自动 | 上游端口（默认取 web 服务器实际绑定端口） |
 | `httpsEnabled` | `true` | 是否并存 HTTPS |
 | `tlsCertFile` / `tlsKeyFile` | 无 | 自定义证书（mkcert 等） |
+| `tlsCaCertFile` | 无 | 自建 LAN CA 公钥（PEM，仅读） |
 | `printBanner` | `true` | 启动时是否在终端打印监听横幅（LAN 访问地址等） |
 | `wsBridgeEnabled` | `true` | 桥接总开关；关闭会失去保活与压缩。 |
 | `wsCompressEnabled` | `true` | 是否对命中 `wsCompressPaths` 的 WebSocket 做压缩桥接（仅控制压缩，不影响桥接保活） |
@@ -307,8 +309,9 @@ curl http://<本机局域网IP>:3081/api/dsh-lan-proxy/health
 
 - **证书来源（两级）**：① 配置 `tlsCertFile`/`tlsKeyFile`（正式证书或 mkcert
   本地 CA，浏览器零警告）；② 自动生成自签名证书（内置 selfsigned 库生成并缓存到
-  `<DSH_HOME>/lan-proxy/`，私钥权限 0600，无需宿主机 openssl）
-- 自签名证书首次访问需手动"继续访问"；内网设备零警告推荐 mkcert
+  `<DSH_HOME>/@wingsky-1/dsh-lan-proxy/`（旧 lan-proxy 目录首次启动自动迁入），私钥权限 0600，无需宿主机 openssl）
+- 自签名证书首次访问需手动"继续访问"；内网设备零警告推荐自建 LAN CA（一台设备装一次 CA，见下）
+- **移动设备安装证书（issue #911）**：配 tlsCaCertFile（CA 公钥）后，设置页下载直链即下发 CA（须用浏览器直接点开链接）。iPhone 装描述文件后去证书信任设置打开信任；Android 在设置安全项安装 CA 证书；Windows 双击装进受信任的根证书颁发机构
 
 ### 卸载插件（remove）
 

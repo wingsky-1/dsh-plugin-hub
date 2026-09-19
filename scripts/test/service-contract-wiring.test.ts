@@ -94,6 +94,7 @@ const EXPECT_FILES: Record<string, string[]> = {
     "e2e/smoke.test.ts",
     "integration/apply-token-provider.test.ts",
     "unit/unit-apply.test.ts",
+    "unit/unit-cacert.test.ts",
     "unit/unit-host-trust.test.ts",
     "unit/unit-proxy.test.ts",
     "unit/unit-tls.test.ts",

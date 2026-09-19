@@ -1,26 +1,26 @@
 {
   "version": 1,
-  "note": "lan-proxy 客户端 UI 豁免表（#733 计划项 3.2.2 数据化；出处 #765 B 表）。单一事实源：config-matrix 门禁不再内嵌这 4 条，读本文件。语义：`Config`/`FILE_CONFIG_VALIDATORS`/`SETTING_FIELD_HINTS` 三表全等（18 键），而客户端 `DEFAULTS` 少这些键——即「有配置但 GUI 卡片不渲染」的键，必须逐键给出原因才允许存在。`reason` 必填且须含「文件:行 + 一句理由」，**且该行必须是该键在 Config 里的真实定义行**——门禁按文本核验（config-matrix-gate.ts 的 exemptAnchorProblems）：本包行号锚点已连续漂移两次（重排前登记 80/96/102/119 而真身在 94/110/116/141；#826 改成 87/103/109/134 后又被 f572cca5 展开文件头 import 推到 91/107/113/138；#856 新增 ownsHostCompat（接口段 +9 行）后为 100/116/122/147），形态判据只认 /:\\d+/ 看不出来，故锚点一律带符号名（Config.<键>）双定位。`rationale` 是可读的完整理由，其中指向本文件的「文件:行」同样被核验。条目数上限（8）与超限判红是**策略**，留在门禁代码里——放进本文件等于让被约束方自己改约束。这些是**长期设计事实**（组合层装配键 / 服务端策略键），故无 reviewBy：若某条真变成待办，加 reviewBy 即自动进入 collect-exemptions 的到期台账。",
+  "note": "lan-proxy 客户端 UI 豁免表（#733 计划项 3.2.2 数据化；出处 #765 B 表）。单一事实源：config-matrix 门禁不再内嵌这 4 条，读本文件。语义：`Config`/`FILE_CONFIG_VALIDATORS`/`SETTING_FIELD_HINTS` 三表全等（19 键，#911 加 tlsCaCertFile 后），而客户端 `DEFAULTS` 少这些键——即「有配置但 GUI 卡片不渲染」的键，必须逐键给出原因才允许存在。`reason` 必填且须含「文件:行 + 一句理由」，**且该行必须是该键在 Config 里的真实定义行**——门禁按文本核验（config-matrix-gate.ts 的 exemptAnchorProblems）：本包行号锚点已连续漂移两次（重排前登记 80/96/102/119 而真身在 94/110/116/141；#826 改成 87/103/109/134 后又被 f572cca5 展开文件头 import 推到 91/107/113/138；#856 新增 ownsHostCompat（接口段 +9 行）后为 100/116/122/147；#911 新增 tlsCaCertFile（接口段 +2、schema 段 +6）后为 102/124/130/155），形态判据只认 /:\\d+/ 看不出来，故锚点一律带符号名（Config.<键>）双定位。`rationale` 是可读的完整理由，其中指向本文件的「文件:行」同样被核验。条目数上限（8）与超限判红是**策略**，留在门禁代码里——放进本文件等于让被约束方自己改约束。这些是**长期设计事实**（组合层装配键 / 服务端策略键），故无 reviewBy：若某条真变成待办，加 reviewBy 即自动进入 collect-exemptions 的到期台账。",
   "exemptKeys": [
     {
       "key": "host",
-      "reason": "packages/dsh-lan-proxy/src/server/config/impl/model.ts:100（Config.host）组合层装配键（绑定地址），GUI 卡片不编辑",
-      "rationale": "绑定地址的缺省取 DEFAULT_OPTIONS.host（见 server/config/impl/model.ts:100 的 Config.host）；GUI 卡片不渲染绑定地址，README 的安全模型章节另有说明。"
+      "reason": "packages/dsh-lan-proxy/src/server/config/impl/model.ts:102（Config.host）组合层装配键（绑定地址），GUI 卡片不编辑",
+      "rationale": "绑定地址的缺省取 DEFAULT_OPTIONS.host（见 server/config/impl/model.ts:102 的 Config.host）；GUI 卡片不渲染绑定地址，README 的安全模型章节另有说明。"
     },
     {
       "key": "targetHost",
-      "reason": "packages/dsh-lan-proxy/src/server/config/impl/model.ts:116（Config.targetHost）组合层装配键（回环上游），GUI 卡片不编辑",
-      "rationale": "回环上游主机（见 server/config/impl/model.ts:116 的 Config.targetHost）。转发安全红线只允许回环，故不开放给 GUI 编辑。"
+      "reason": "packages/dsh-lan-proxy/src/server/config/impl/model.ts:124（Config.targetHost）组合层装配键（回环上游），GUI 卡片不编辑",
+      "rationale": "回环上游主机（见 server/config/impl/model.ts:124 的 Config.targetHost）。转发安全红线只允许回环，故不开放给 GUI 编辑。"
     },
     {
       "key": "targetPort",
-      "reason": "packages/dsh-lan-proxy/src/server/config/impl/model.ts:122（Config.targetPort）组合层装配键（上游端口随 web 端口），GUI 卡片不编辑",
-      "rationale": "上游端口缺省随 web 端口（见 server/config/impl/model.ts:122 的 Config.targetPort 及其上方注释），由组合层装配，GUI 无独立控件。"
+      "reason": "packages/dsh-lan-proxy/src/server/config/impl/model.ts:130（Config.targetPort）组合层装配键（上游端口随 web 端口），GUI 卡片不编辑",
+      "rationale": "上游端口缺省随 web 端口（见 server/config/impl/model.ts:130 的 Config.targetPort 及其上方注释），由组合层装配，GUI 无独立控件。"
     },
     {
       "key": "wsDeflatePolicy",
-      "reason": "packages/dsh-lan-proxy/src/server/config/impl/model.ts:147（Config.wsDeflatePolicy）服务端策略键（协商子结构），GUI 无控件",
-      "rationale": "服务端 WS 压缩协商策略（browser/uaDeny 子结构，见 server/config/impl/model.ts:147 的 Config.wsDeflatePolicy）；GUI 无对应控件（wsCompressPaths 白名单已可编辑，覆盖了实际使用面）。"
+      "reason": "packages/dsh-lan-proxy/src/server/config/impl/model.ts:155（Config.wsDeflatePolicy）服务端策略键（协商子结构），GUI 无控件",
+      "rationale": "服务端 WS 压缩协商策略（browser/uaDeny 子结构，见 server/config/impl/model.ts:155 的 Config.wsDeflatePolicy）；GUI 无对应控件（wsCompressPaths 白名单已可编辑，覆盖了实际使用面）。"
     }
   ]
 }
