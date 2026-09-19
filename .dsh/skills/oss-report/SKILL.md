@@ -26,13 +26,15 @@ description: >
 ## 回顾段（元循环汇总出口）
 
 - 采集 `.dsh/retro/history.jsonl`（oss-pipeline 熔断时落盘的失败上下文；
-  目录与文件由 oss-pipeline 首次熔断时自动创建，日常缺失属正常）：
-  统计同一 rule / 同类失败的复现频次；**同一 rule 30 天内出现在 ≥3 个不同 PR**
-  → 判定「同类问题重复」，在报告中产出规程修订提案建议；
+  文件由 oss-pipeline 首次熔断时自动创建（`mkdir -p` 幂等），日常缺失属正常）：
+  每行 JSON 字段固定为 `ts`（unix 秒）/ `pr`（号）/ `issue`（号）/ `rule`（规则名）/ `phase`（挂起阶段）/ `round`（圈数）/ `summary`（一句话）；
+  保留期永久随仓，不删行只追加；统计同一 rule / 同类失败的复现频次；**同一 rule 30 天内出现在 ≥3 个不同 PR**
+  → 判定「同类问题重复」，在报告中产出规程修订提案建议；冷却计数查询：
+  `jq -s 'map(select(.ts > (now - 30*86400))) | group_by(.rule) | map({rule: .[0].rule, prs: (map(.pr)|unique|length)}) | map(select(.prs >= 3))' .dsh/retro/history.jsonl`；
 - **blocked-human 滞留清单**：列出打标超 72h 未恢复的 issue 及其 `suspended_at`
-  挂起点，供维护者决定 resume 或关闭；
+  挂起点，并在同一报告内开 P0 issue 跟踪至恢复（标题注明原 issue 号）；
 - **priority/critical 追认核查**：紧急通道合并超 24h 但原 issue 无决策评审留痕的，
-  标记违规并提示补追认；
+  标记违规、提示补追认，并在同一报告内开 P0 issue 跟踪至追认完成；
 - 规程修订提案本身走 oss-pipeline 决策段（原 issue 内评审），**冷却期**：
   同一规程文件 14 天内最多提案修订 2 次；每个提案必须附回退指标
   （如人工阻塞率升 20% 则自动提案回退），并强制回答「这个修订会不会过度修复」。

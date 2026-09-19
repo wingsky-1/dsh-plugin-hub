@@ -12,3 +12,5 @@
       name: '@wingsky-1/dsh-provider-usage'
     - id: dsh-verify-isolated-skill-filesystem
       name: '@deepseek-ai/dsh-skill-filesystem'
+    - id: ui-dsh-worktree-sidebar
+      name: '@wingsky-1/dsh-worktree-sidebar'

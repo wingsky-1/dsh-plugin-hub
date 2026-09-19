@@ -1,7 +1,7 @@
 # 跨 skill 工作流共享纪律（唯一事实源）
 
 > 用途：阶段式 commit、文档同步、commit-only 工作模式、跨 skill 交接指针的**唯一事实源**。
-> 各 skill（review / hub-dev / dev / opensource-contributions）在对应节「引用本文件」，**不各自内联**
+> 各 skill（review / hub-dev / dev（主仓，本仓无此文件） / opensource-contributions（外部发布流程，本仓无此 skill））在对应节「引用本文件」，**不各自内联**
 > 重复定义——改一处生效，避免多 skill 漂移。
 > 来源：dsh-plugin-review + dsh-notifier 工作流复盘。
 
@@ -39,8 +39,8 @@
 
 ```
 review（评审/计划） → 落地计划 + REVIEW-AND-PLAN 交接物 → 用户批准
-   → 转入 hub-dev（公开仓）/ dev（主仓） 实施（§3 commit-only）
-   → 完成实施 → opensource-contributions（发布，由用户显式触发）
+   → 转入 hub-dev（公开仓）/ dev（主仓，本仓无此文件） 实施（§3 commit-only）
+   → 完成实施 → opensource-contributions（外部发布流程，本仓无此 skill，由用户显式触发）
 ```
 
 - review 是纯只读：只产出计划与交接物，**不内联**实施细节（commit/门禁/常见坑）。
@@ -63,3 +63,14 @@ review（评审/计划） → 落地计划 + REVIEW-AND-PLAN 交接物 → 用�
 > 以上定义为跨 skill 共享事实；具体 skill **默认只引用本条**，不复制全文。特殊情况下
 > （某 skill 是该规则的高频触发点，如 hub-dev 的实施节）可就近重申一行要点，但必须以
 > 本文件为**权威版本**——两处同时改动时须同步，避免漂移。
+
+## 6. 严重度标尺映射（跨 skill 唯一映射）
+
+| dsh-plugin-review（P0-P3） | dsh-plugin-hub-pr-review（三级） | 说明 |
+|---|---|---|
+| P0（阻断：主场景不可用/数据损坏/安全洞） | 严重（会导致错误行为，须复现） | 阻断合并 |
+| P1（重要：明显功能错/资源泄漏/声明-实现不一致） | 严重或中等（按复现与影响裁决） | 原则当场修 |
+| P2（一般：局部体验/可维护性） | 中等 | 小问题能修则修 |
+| P3（建议：打磨项） | 轻微 | 备忘而不开 issue |
+
+注：`dsh-plugin-review` S4 的阶段 P0-P4（认知对齐/正确性/场景/新功能/生态）为实施阶段编号，不同于严重度 P0-P3；混合评审时先按本表统一标尺再分诊。
