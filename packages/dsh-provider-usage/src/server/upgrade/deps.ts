@@ -13,8 +13,8 @@
  * 源码允许的纯面复用（非实例调用，不经本文件注入）：
  * - schedule 的 LAST_RUN_SCHEMA / deriveLastRun / alignLastRun 经
  *   schedule/interface.ts 以 type + pure 复用（零 node 依赖的纯函数）；
- * - LEGACY_* 旧词映射（LEGACY_PROMPT_TEMPLATE / LEGACY_*_V1–V4）经
- *   schedule/interface.ts 以 type-only 复用（迁移判定基准，文本勿改）；
+ * - LEGACY_* 旧词锁表（LEGACY_PROMPT_TEMPLATE / LEGACY_*_V1–V4）经
+ *   server/config/interface.ts 以纯数据值导入复用（D1 起物理定义在 config 域；仅 === 比较与展开，零行为复用；迁移判定基准，文本勿改）；
  * - per-root 临界区链（updateLastRun）留 schedule（METHOD §3 Q1 有主即止：
  *   有明确领域所有者的是依赖不是共享），S3 经 schedule deps 注入，
  *   本域不自建临界区，不新建 file-io 叶（S2 禁令）。

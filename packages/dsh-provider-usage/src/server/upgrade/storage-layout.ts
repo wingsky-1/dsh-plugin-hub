@@ -81,7 +81,7 @@ export function legacyLastRunFile(root: string): string {
   return join(root, "last-run.json");
 }
 
-/** 新形态：报告配置（运行时读面见 schedule/config.ts 的 reportConfigFile，同字面量）。 */
+/** 新形态：报告配置（运行时读面见 server/config/store.ts 的 reportConfigFile，同字面量）。 */
 export function targetConfigFile(root: string): string {
   return join(root, "reports", "config.json");
 }

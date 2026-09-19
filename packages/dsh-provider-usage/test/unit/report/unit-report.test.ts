@@ -2658,7 +2658,7 @@ describe("#633 分片 b C3：注入面声明与 README 收敛（源码字面断�
   const pkgDir = join(here, "..", "..", "..");
   const genSrc = readFileSync(join(pkgDir, "src/domain2/execute/generate.ts"), "utf8");
   const readme = readFileSync(join(pkgDir, "README.md"), "utf8");
-  const cfgSrc = readFileSync(join(pkgDir, "src/domain2/schedule/config.ts"), "utf8");
+  const promptSrc = readFileSync(join(pkgDir, "src/server/config/prompts.ts"), "utf8");
 
   it("generate.ts 注入面注释为准确口径（含目录 basename）", () => {
     expect(genSrc.includes("只含聚合数值与目录 basename")).toBeTruthy();
@@ -2704,7 +2704,7 @@ describe("#633 分片 b C3：注入面声明与 README 收敛（源码字面断�
     "绝不展开为路径、绝不推测目录内容",
   ]) {
     it(`三周期模板目录硬规则哨兵在场：${sentinel}`, () => {
-      expect(cfgSrc.includes(sentinel)).toBeTruthy();
+      expect(promptSrc.includes(sentinel)).toBeTruthy();
     });
   }
 
@@ -2717,7 +2717,7 @@ describe("#633 分片 b C3：注入面声明与 README 收敛（源码字面断�
     "绝不与 byDirectory 交叉关联",
   ]) {
     it(`三周期模板时段硬规则哨兵在场：${sentinel}`, () => {
-      expect(cfgSrc.includes(sentinel)).toBeTruthy();
+      expect(promptSrc.includes(sentinel)).toBeTruthy();
     });
   }
 });

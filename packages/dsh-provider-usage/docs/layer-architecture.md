@@ -17,7 +17,7 @@
 两域仅经装配层 `apply/apply.ts` 组合。
 
 准确表述：**两域业务面零直接依赖**；共享底座与路由层的跨域依赖如实标注：
-- `domain2/schedule/config.ts` → `domain2/collect/interface.ts`（TREND_DIR_MAX）
+- `server/config/normalize.ts` → `domain2/collect/interface.ts`（TREND_DIR_MAX；#768 D1 前在 `domain2/schedule/config.ts`）
 - `domain2/execute/runner.ts` → `domain2/aggregate/interface.ts`（metricValue/TrendTracker）+ `domain2/collect/interface.ts`（sumToken/TrendCell）
 - `domain2/routes/ui.ts` → `domain1/pipeline/interface.ts`（StatsService，type-only + cacheSize() 方法调用）
 - 域1/域2/装配 → 共享底座一律经各目录 `interface.ts` 面具消费 `shared/interface.ts` 转发符号
@@ -50,7 +50,7 @@
 ### 装配层与共享底座
 | 组件 | 职责 | 文件 |
 |---|---|---|
-| 装配层 | 组合两域/16 路由注册/定时器/生命周期 | apply/apply.ts(457)+apply/index.ts(188)+apply/report-config-service.ts(43) |
+| 装配层 | 组合两域/16 路由注册/定时器/生命周期 | apply/apply.ts+apply/index.ts（报告配置服务已归 server/config/service.ts，#768 D1） |
 | 共享底座 | charts/config/sanitize/contracts 类型 + placement-math + shared/* | shared/interface.ts 门面 + charts.ts/config.ts/sanitize.ts/ui-config.ts/client-logic.ts/placement-math.ts/contracts.ts |
 
 ---
@@ -74,12 +74,12 @@
 | E2 | E1/装配 | TrendTracker.buckets/dirRows/seriesStacked/dirStacked/windowSummary/dirTotals/stats；TrendStore | E4/**E5 路由直连** | 四不变量：身份快照/防双计/聚合权威/残差归未识别；**台账守恒（Σ事件 == buckets == agg == dirRows + unidentified）为真缺口断言**，由 unit-trend-ledger 事件回放式端到端对账固化（D2 拆分前置安全网） |
 | E3 | 装配/E5 | normalizeReportConfig(config)/candidateWindow(schedule)/pendingReports/presetLastRun；ReportScheduler(scheduler)/ReportTaskQueue(tasks)/updateLastRun | 域2公共层（last-run/report-index） | E3⇄E4 共同依赖域2公共层（common/last-run.ts、common/report-index.ts，无状态无缓存防 indexCache 双份）；executor 独立工厂属 E4 |
 | E4 | E3 任务/装配 executor | runDueReport(runner)/generateReport(generate)/buildStatsSnapshot/reportBodyToHtml(format)/persistReport/readReportIndex | E2（buckets/dirRows）+ 域2公共层 | LLM 失败不推进 lastRun；注入面=聚合数值+basename；executor 工厂（execute/executor.ts）含错误脱敏契约 |
-| E5 | 浏览器 | 10 路由（/trend /health /ui-config /events /report-*6） | E2/E3/E4 | **E5 直连 E2/E3/E4**（routes/ui 直调 trend 查询面；reports 经 ReportConfigService（apply/report-config-service.ts）收口 reportCfg） |
+| E5 | 浏览器 | 10 路由（/trend /health /ui-config /events /report-*6） | E2/E3/E4 | **E5 直连 E2/E3/E4**（routes/ui 直调 trend 查询面；reports 经 ReportConfigService（server/config/service.ts，#768 D1 前在 apply/report-config-service.ts）收口 reportCfg） |
 
 ### 2.3 隐藏共享
 | 共享 | 位置 | 说明 |
 |---|---|---|
-| reportCfg 双源 | apply/apply.ts `let reportCfg` + get/set | 内存态+磁盘 config.json 双源（#629 只保 lastRun 串行化）——**已由 ReportConfigService（apply/report-config-service.ts）收口**：内存权威 + per-root 串行写链，并发 update 不交错 |
+| reportCfg 双源 | apply/apply.ts `let reportCfg` + get/set | 内存态+磁盘 config.json 双源（#629 只保 lastRun 串行化）——**已由 ReportConfigService（server/config/service.ts，#768 D1 前在 apply/report-config-service.ts）收口**：内存权威 + per-root 串行写链，并发 update 不交错 |
 | lastRunChainByRoot | domain2/common/last-run.ts | per-root 临界区链（D8 归位，无状态无缓存） |
 | indexCache | domain2/execute/runner.ts | 读侧投影 stat 记忆化 + `__ForTests` 钩子——**留在 E4 读侧**，common/report-index 不携带缓存（防双份） |
 | sseClients / EVENTS_URL | apply/apply.ts + client/core.ts | SSE 死面（客户端零消费，D4 文档化保留） |

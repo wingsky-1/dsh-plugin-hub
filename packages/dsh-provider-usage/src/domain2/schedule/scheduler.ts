@@ -7,7 +7,7 @@
  * lastRun 持久化原语（读/写/临界区/迁移校准）见 last-run.ts——调度与执行
  * 共同依赖该公共原语。
  */
-import type { ReportConfig } from "./config.ts";
+import type { ReportConfig } from "../../server/config/interface.ts";
 import { pendingReports, type DueReport } from "./schedule.ts";
 import { readLastRun, ensureLastRunMigrated } from "../common/interface.ts";
 

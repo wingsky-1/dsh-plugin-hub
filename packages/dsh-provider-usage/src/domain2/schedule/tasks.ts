@@ -13,7 +13,7 @@
  * - 资源：done/failed 任务按 TTL 修剪（默认 10min）与上限裁剪（默认 50）。
  */
 import { randomUUID } from "node:crypto";
-import type { ReportPeriod } from "./config.ts";
+import type { ReportPeriod } from "../../server/config/interface.ts";
 import type { ReportMeta } from "../execute/interface.ts";
 
 export type ReportTaskStatus = "queued" | "running" | "done" | "failed";

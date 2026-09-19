@@ -41,14 +41,14 @@ import {
   readStoredVersion,
   upgradeVersionFile,
 } from "../../../src/server/upgrade/version.ts";
+import { LAST_RUN_SCHEMA } from "../../../src/domain2/schedule/interface.ts";
 import {
   DEFAULT_PROMPTS,
-  LAST_RUN_SCHEMA,
   LEGACY_DAILY_PROMPT_V1,
   LEGACY_MONTHLY_PROMPT_V1,
   LEGACY_PROMPT_TEMPLATE,
   LEGACY_WEEKLY_PROMPT_V1,
-} from "../../../src/domain2/schedule/interface.ts";
+} from "../../../src/server/config/interface.ts";
 
 let root = "";
 let dispose: () => void = () => {};

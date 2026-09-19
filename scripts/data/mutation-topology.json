@@ -368,15 +368,18 @@
         },
         "report-schedule": {
           "mutate": [
-            "packages/dsh-provider-usage/src/domain2/schedule/config.ts",
             "packages/dsh-provider-usage/src/domain2/schedule/schedule.ts",
             "packages/dsh-provider-usage/src/domain2/schedule/scheduler.ts",
             "packages/dsh-provider-usage/src/domain2/schedule/tasks.ts",
             "packages/dsh-provider-usage/src/domain2/common/last-run.ts",
-            "packages/dsh-provider-usage/src/apply/report-config-service.ts"
+            "packages/dsh-provider-usage/src/server/config/shape.ts",
+            "packages/dsh-provider-usage/src/server/config/prompts.ts",
+            "packages/dsh-provider-usage/src/server/config/normalize.ts",
+            "packages/dsh-provider-usage/src/server/config/store.ts",
+            "packages/dsh-provider-usage/src/server/config/service.ts"
           ],
           "excludes": ["!packages/dsh-provider-usage/src/client/**"],
-          "comment": "阶段零新段（D17 分层变异）：E3 报告配置/调度面——config+schedule+scheduler+tasks；阶段二（D8）并入 last-run.ts（公共原语）与 report-config-service.ts（配置服务）；testFiles 含 unit-report/unit-report-executor。"
+          "comment": "阶段零新段（D17 分层变异）：E3 报告调度面——schedule+scheduler+tasks；阶段二（D8）并入 last-run.ts（公共原语）；#768 D1 起配置面归 server/config 域（shape/prompts/normalize/store/service，interface.ts 以 facade 口径排除）；testFiles 含 unit-report/unit-report-executor。"
         },
         "report-execute": {
           "mutate": [
@@ -411,7 +414,7 @@
           {
             "pattern": "!packages/dsh-provider-usage/src/**/interface.ts",
             "kind": "facade",
-            "reason": "15 个目录的对外门面（apply/domain1/domain2/shared + #768 S2 新增 server/shared + S3 新增 server/upgrade）：逐个命名 re-export 实际被消费的类型与函数（显式禁 export * from），目录外的调用方一律经它消费，自身不含实现。条数以本 pattern 为口径事实源。"
+            "reason": "16 个目录的对外门面（apply/domain1/domain2/shared + #768 S2 新增 server/shared + S3 新增 server/upgrade + D1 新增 server/config）：逐个命名 re-export 实际被消费的类型与函数（显式禁 export * from），目录外的调用方一律经它消费，自身不含实现。条数以本 pattern 为口径事实源。"
           },
           {
             "pattern": "!packages/dsh-provider-usage/src/server/*/deps.ts",

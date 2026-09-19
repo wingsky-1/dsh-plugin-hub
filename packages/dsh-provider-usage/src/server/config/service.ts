@@ -1,12 +1,17 @@
 /**
- * dsh-provider-usage/report — 报告配置服务（reportCfg 双源收口）。
+ * dsh-provider-usage — server/config 域：报告配置服务（reportCfg 双源收口，#768 D1）。
  *
  * 内存权威 + 串行写链（复用 updateLastRun 的 per-root promise 链模式）：
  * 并发 POST report-config 的「写盘 + 内存 + scheduler 热更」不再交错（原 apply 闭包
  * setReportCfg/writeReportConfig 无串行化，与 lastRun 曾有 lost-update 同类）。
  * 磁盘读（GET/启动）仍以文件为权威——进程外修改可见；写路径统一走 update() 串行。
+ *
+ * 构造只收 root + initial + onUpdate（组合根三纪律 D1③）：initial 由组合根经
+ * store.ts 读面装配前解析，热更回调由组合根注入 scheduler 面；本类不读磁盘、不做
+ * 归一化判断——归一化单答案归 normalize.ts，调用方（路由写侧/组合根装配）负责传合法值。
  */
-import { writeReportConfig, type ReportConfig } from "../domain2/schedule/config.ts";
+import { writeReportConfig } from "./store.ts";
+import type { ReportConfig } from "./shape.ts";
 
 export interface ReportConfigServiceOptions {
   root: string;

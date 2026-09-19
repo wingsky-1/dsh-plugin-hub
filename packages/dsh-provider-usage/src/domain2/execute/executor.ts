@@ -7,7 +7,7 @@
  * 再抛（status 路由回客户端，防本地路径泄露——脱敏为工厂契约字段）。
  */
 import type { Context } from "@deepseek-ai/cordis";
-import type { ReportConfig } from "../schedule/interface.ts";
+import type { ReportConfig } from "../../server/config/interface.ts";
 import { readReportIndex, runDueReport } from "./runner.ts";
 import { updateLastRun } from "../common/interface.ts";
 import type { ReportTaskInput, ReportTaskResult } from "../schedule/interface.ts";

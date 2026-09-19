@@ -19,7 +19,7 @@ import {
   normalizeReportConfig,
   readReportConfig,
   type ReportPeriod,
-} from "../schedule/interface.ts";
+} from "../../server/config/interface.ts";
 import { readReportIndex, reportHtmlFile, reportMetaFile } from "../execute/interface.ts";
 import { presetLastRunForNewlyEnabled, previousClosedWindow } from "../schedule/interface.ts";
 import { readLastRun, updateLastRun } from "../common/interface.ts";

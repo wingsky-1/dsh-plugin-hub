@@ -8,6 +8,7 @@ import { defineConfig } from 'vitest/config'
 export default defineConfig({
   test: {
     include: [
+      'packages/dsh-provider-usage/test/integration/config/composition-root.test.ts',
       'packages/dsh-provider-usage/test/integration/upgrade/upgrade-chain.test.ts',
       'packages/dsh-provider-usage/test/unit/adapters/unit-deepseek-official.test.ts',
       'packages/dsh-provider-usage/test/unit/apply/unit-apply.test.ts',

@@ -13,7 +13,7 @@
  * 坏文件容错（保持原状 + 诊断，不抛）；写失败即抛。
  */
 import { basename, join } from "node:path";
-import type { ReportPeriod } from "../../domain2/schedule/interface.ts";
+import type { ReportPeriod } from "../config/interface.ts";
 import {
   LAST_RUN_SCHEMA,
   alignLastRun,

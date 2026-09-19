@@ -245,12 +245,8 @@ export {
   readReportConfig,
   writeReportConfig,
   reportConfigFile,
-} from "../domain2/schedule/interface.ts";
-export type {
-  ReportConfig,
-  ReportPeriod,
-  ReportPeriodConfig,
-} from "../domain2/schedule/interface.ts";
+} from "../server/config/interface.ts";
+export type { ReportConfig, ReportPeriod, ReportPeriodConfig } from "../server/config/interface.ts";
 export {
   generateReport,
   applyPromptTemplate,
@@ -277,8 +273,8 @@ export {
   LEGACY_WEEKLY_PROMPT_V4,
   LEGACY_MONTHLY_PROMPT_V4,
   promptFor,
-} from "../domain2/schedule/interface.ts";
-export type { ReportPrompts } from "../domain2/schedule/interface.ts";
+} from "../server/config/interface.ts";
+export type { ReportPrompts } from "../server/config/interface.ts";
 export type {
   ReportMeta,
   ReportResult,
@@ -297,8 +293,8 @@ export {
 // 执行器工厂与报告配置服务（装配面公共符号，测试/外部消费者从 lib 导入）
 export { makeDueReportExecutor } from "../domain2/execute/interface.ts";
 export type { DueExecutorDeps } from "../domain2/execute/interface.ts";
-export { ReportConfigService } from "./report-config-service.ts";
-export type { ReportConfigServiceOptions } from "./report-config-service.ts";
+export { ReportConfigService } from "../server/config/interface.ts";
+export type { ReportConfigServiceOptions } from "../server/config/interface.ts";
 // 任务队列（手动生成与定时共用执行入口）
 export { ReportTaskQueue } from "../domain2/schedule/interface.ts";
 export type {

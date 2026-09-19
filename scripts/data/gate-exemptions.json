@@ -106,6 +106,42 @@
     },
     {
       "gate": "verify-dir-imports",
+      "path": "dsh-provider-usage:apply|server/config",
+      "reason": "#768 D1：组合根 apply 经 packages/dsh-provider-usage/src/server/config/interface.ts 构造 ReportConfigService（只递 root+initial+onUpdate）并读 initial，全经门面（禁直引实现文件），与既有 apply|domain2/schedule（调度器/队列装配）同形。根内无业务判断由树内 packages/dsh-provider-usage/test/integration/config/composition-root.test.ts 的三纪律用例锁定。长期条目（设计事实，非待办）。",
+      "trackingIssue": "#768"
+    },
+    {
+      "gate": "verify-dir-imports",
+      "path": "dsh-provider-usage:domain2/schedule|server/config",
+      "reason": "#768 D1：schedule.ts 经 packages/dsh-provider-usage/src/server/config/interface.ts 复用 parseHHMM 纯函数（零 node 依赖）与类型，归一化单答案仍归 config 域，调度面不自建判断；与既有 domain2/common|domain2/schedule 纯面复用同形。复用边界由 server/config/interface.ts 注记锁定。长期条目（设计事实，非待办）。",
+      "trackingIssue": "#768"
+    },
+    {
+      "gate": "verify-dir-imports",
+      "path": "dsh-provider-usage:domain2/execute|server/config",
+      "reason": "#768 D1：runner.ts 经 packages/dsh-provider-usage/src/server/config/interface.ts 取 promptFor（按周期取模板）与类型，替代已消除的 domain2/execute|domain2/schedule 边（归属随物理定义迁移）；纯面复用，不调业务实例。长期条目（设计事实，非待办）。",
+      "trackingIssue": "#768"
+    },
+    {
+      "gate": "verify-dir-imports",
+      "path": "dsh-provider-usage:domain2/routes|server/config",
+      "reason": "#768 D1：reports.ts 经 packages/dsh-provider-usage/src/server/config/interface.ts 取 normalizeReportConfig/readReportConfig/DEFAULT_PROMPTS（配置读写与默认回显），替代原边的配置面部分（调度纯函数边保留）；服务实例仍经装配参数注入，不直引。长期条目（设计事实，非待办）。",
+      "trackingIssue": "#768"
+    },
+    {
+      "gate": "verify-dir-imports",
+      "path": "dsh-provider-usage:server/upgrade|server/config",
+      "reason": "#768 D1：config-morph.ts 经 packages/dsh-provider-usage/src/server/config/interface.ts 复用 LEGACY_* 锁表与 DEFAULT_PROMPTS 纯数据（物理定义在 config 域 prompts.ts），不调用归一化行为；替代原 server/upgrade|domain2/schedule 边的词表部分（last-run 纯函数边保留）。复用边界由 server/upgrade/deps.ts 与 server/config/interface.ts 双注记锁定，幂等由树内 packages/dsh-provider-usage/test/integration/upgrade/upgrade-chain.test.ts 锁定。长期条目（设计事实，非待办）。",
+      "trackingIssue": "#768"
+    },
+    {
+      "gate": "verify-dir-imports",
+      "path": "dsh-provider-usage:server/config|domain2/collect",
+      "reason": "#768 D1：normalize.ts 经 packages/dsh-provider-usage/src/domain2/collect/interface.ts 复用 TREND_DIR_MAX 纯常量（目录范围口径与数据层同源），替代已消除的 domain2/schedule|domain2/collect 边（归属随物理定义迁移）；标识符常量在值层存在、类型表达不了它，故走门面复用而非注入。长期条目（设计事实，非待办）。",
+      "trackingIssue": "#768"
+    },
+    {
+      "gate": "verify-dir-imports",
       "path": "dsh-provider-usage:server/upgrade|domain2/schedule",
       "reason": "#768 S3：upgrade 三步经 packages/dsh-provider-usage/src/domain2/schedule/interface.ts 复用纯面（LAST_RUN_SCHEMA/deriveLastRun/alignLastRun）与 LEGACY_* 映射表纯数据，不调业务实例；文件经树内 packages/dsh-provider-usage/src/server/upgrade/deps.ts 注入面（resolveRoot/readOldFile）+ 同域 writeFileAtomic，全经门面，与既有 domain2/common|domain2/schedule 同形。复用边界由 deps.ts 注记锁定，幂等三条由树内 packages/dsh-provider-usage/test/integration/upgrade/upgrade-chain.test.ts 锁定。长期条目（设计事实，非待办）。",
       "trackingIssue": "#768"

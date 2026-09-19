@@ -6,8 +6,8 @@
  *    （三域写 + 健康读的数据形状；Q5 的机器可判部分）；
  * 2. schedule 纯面先行：LAST_RUN_SCHEMA / deriveLastRun / alignLastRun 经
  *    schedule/interface.ts 复用（type + pure：确定性、无副作用）；
- * 3. config 归一化单答案 / LEGACY 映射表先行：经 schedule/interface.ts
- *    复用（旧默认模板统一升级为三份新默认 = 单答案）；
+ * 3. config 归一化单答案 / LEGACY 锁表先行：经 server/config/interface.ts
+ *    复用（D1 起物理定义在 config 域；旧默认模板统一升级为三份新默认 = 单答案）；
  * 4. UpgradeDeps 窄面冻结：server/upgrade/deps.ts 纯类型面（运行时零出口，
  *    窄面三项可装配）；per-root 链不在本域；禁新建 file-io 叶（结构断言）。
  */
@@ -36,7 +36,7 @@ import {
   LEGACY_DAILY_PROMPT_V1,
   LEGACY_WEEKLY_PROMPT_V1,
   LEGACY_MONTHLY_PROMPT_V1,
-} from "../../../src/domain2/schedule/interface.ts";
+} from "../../../src/server/config/interface.ts";
 
 const SERVER_DIR = fileURLToPath(new URL("../../../src/server/", import.meta.url));
 

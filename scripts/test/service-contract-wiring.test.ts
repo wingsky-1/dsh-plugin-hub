@@ -213,6 +213,7 @@ const EXPECT_FILES: Record<string, string[]> = {
     "client/unit-trend-view.test.ts",
     "e2e/smoke.test.ts",
     "helpers.ts",
+    "integration/config/composition-root.test.ts",
     "integration/upgrade/upgrade-chain.test.ts",
     "smoke-pure.ts",
     "unit/adapters/unit-deepseek-official.test.ts",

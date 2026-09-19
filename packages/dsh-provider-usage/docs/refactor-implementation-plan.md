@@ -77,11 +77,11 @@ src/
     collect/    interface.ts + collector/types                  # E1
     aggregate/  interface.ts + aggregator/aggregate-rows/aggregate-query/store/index   # E2（D2 纯函数拆分）
     common/     interface.ts + last-run/report-index/errsurf    # 域2公共层：无状态无缓存（D8 归位，errsurf 为 D2 错误面）
-    schedule/   interface.ts + config/schedule/scheduler/tasks  # E3（DEFAULT_PROMPTS 在 config.ts 内）
+    schedule/   interface.ts + schedule/scheduler/tasks  # E3（配置面已归 server/config，#768 D1）
     execute/    interface.ts + runner/generate/format/executor/list-dirs   # E4（executor 独立工厂 + list-dirs 收敛）
     routes/     interface.ts + ui/reports                       # E5 路由层（宿主）
   apply/                           # 装配层（组合根特权；零隐藏可变状态）
-    interface.ts + apply/index/report-config-service
+    interface.ts + apply/index（报告配置服务已归 server/config/service.ts，#768 D1）
   client/                          # 客户端（本轮不改；双端共享经 shared/ 源码 import）
 ```
 
@@ -98,10 +98,10 @@ src/
 | domain2/collect/ | interface.ts、collector.ts、types.ts |
 | domain2/aggregate/ | interface.ts、aggregator.ts、aggregate-rows.ts、aggregate-query.ts、store.ts、index.ts |
 | domain2/common/ | interface.ts、last-run.ts、report-index.ts、errsurf.ts |
-| domain2/schedule/ | interface.ts、config.ts、schedule.ts、scheduler.ts、tasks.ts |
+| domain2/schedule/ | interface.ts、schedule.ts、scheduler.ts、tasks.ts（配置面已归 server/config，#768 D1） |
 | domain2/execute/ | interface.ts、runner.ts、generate.ts、format.ts、executor.ts、list-dirs.ts |
 | domain2/routes/ | interface.ts、ui.ts、reports.ts |
-| apply/ | interface.ts、apply.ts、index.ts、report-config-service.ts |
+| apply/ | interface.ts、apply.ts、index.ts（报告配置服务已归 server/config/service.ts，#768 D1） |
 | client/ | 保持目录化前布局（本轮未拆分） |
 
 ## 6. 跨域/跨层引用现状（实证）

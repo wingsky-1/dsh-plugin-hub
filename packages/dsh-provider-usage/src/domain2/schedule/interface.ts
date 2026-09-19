@@ -5,42 +5,11 @@
  * 目录内实现文件互引保持直接相对 import。最小面 = 逐个命名导出实际被消费的
  * 「类型 + 函数」，禁 `export * from` 整文件 re-export。
  *
- * 配置面 = reportCfg 双源收口（读侧内存权威 + 持久化磁盘 config.json 的
- * 归一化入口，ReportConfigService 收敛消费写侧）；调度面 = 窗口/幂等纯函数
- * （schedule.ts）+ ReportScheduler + ReportTaskQueue（调度→执行交接口）。
+ * 配置面已归 server/config 域（形态 + 归一化单答案 + 持久化 + 双源收口服务，
+ * #768 D1）：本域只剩调度面 = 窗口/幂等纯函数（schedule.ts）+ ReportScheduler
+ * + ReportTaskQueue（调度→执行交接口）。配置符号一律经 server/config/interface.ts
+ * 消费，本文件不再转发（单答案即单入口）。
  */
-
-// ------------------------------------------------------------------ 报告配置（config.ts）
-
-export {
-  parseHHMM,
-  normalizeReportConfig,
-  normalizeReportDirectories,
-  DEFAULT_REPORT_CONFIG,
-  DEFAULT_PROMPT_TEMPLATE,
-  readReportConfig,
-  writeReportConfig,
-  reportConfigFile,
-  DEFAULT_DAILY_PROMPT,
-  DEFAULT_WEEKLY_PROMPT,
-  DEFAULT_MONTHLY_PROMPT,
-  DEFAULT_PROMPTS,
-  LEGACY_PROMPT_TEMPLATE,
-  LEGACY_DAILY_PROMPT_V1,
-  LEGACY_WEEKLY_PROMPT_V1,
-  LEGACY_MONTHLY_PROMPT_V1,
-  LEGACY_DAILY_PROMPT_V2,
-  LEGACY_WEEKLY_PROMPT_V2,
-  LEGACY_MONTHLY_PROMPT_V2,
-  LEGACY_DAILY_PROMPT_V3,
-  LEGACY_WEEKLY_PROMPT_V3,
-  LEGACY_MONTHLY_PROMPT_V3,
-  LEGACY_DAILY_PROMPT_V4,
-  LEGACY_WEEKLY_PROMPT_V4,
-  LEGACY_MONTHLY_PROMPT_V4,
-  promptFor,
-} from "./config.ts";
-export type { ReportConfig, ReportPeriod, ReportPeriodConfig, ReportPrompts } from "./config.ts";
 
 // ------------------------------------------------------------------ 触发调度纯函数（schedule.ts）
 

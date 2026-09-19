@@ -28,7 +28,7 @@ import {
 import { handleHealth } from "../../../src/domain2/routes/ui.ts";
 import { ReportTaskQueue } from "../../../src/domain2/schedule/tasks.ts";
 import { ReportScheduler } from "../../../src/domain2/schedule/scheduler.ts";
-import { normalizeReportConfig } from "../../../src/domain2/schedule/config.ts";
+import { normalizeReportConfig } from "../../../src/server/config/normalize.ts";
 
 function fakeReq(overrides = {}) {
   return {

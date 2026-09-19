@@ -9,7 +9,7 @@ import { dayKey, escHtml } from "../../shared/interface.ts";
 import { metricValue } from "../aggregate/interface.ts";
 import type { TrendTracker } from "../aggregate/interface.ts";
 import { sumToken, type TrendCell } from "../collect/interface.ts";
-import { promptFor, type ReportConfig, type ReportPeriod } from "../schedule/interface.ts";
+import { promptFor, type ReportConfig, type ReportPeriod } from "../../server/config/interface.ts";
 import { reportBodyToHtml } from "./format.ts";
 import {
   buildStatsSnapshot,
