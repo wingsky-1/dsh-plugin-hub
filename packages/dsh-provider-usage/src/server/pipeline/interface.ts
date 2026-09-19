@@ -1,5 +1,9 @@
 /**
- * dsh-provider-usage — domain1/pipeline/ 取数管道对外门面。
+ * dsh-provider-usage — server/pipeline 域对外门面（#768 D6：pipeline 新域）。
+ *
+ * 域承诺 = 取数渲染管道（入参组装 → safe 执行 → 净化 → 归一化：v2.ts）+
+ * 缓存编排与互斥服务（stats-service.ts）+ 用户代码安全执行守卫（guards.ts）：
+ * 目录外（apply/路由/域2）一律经本文件消费；目录内互引直连。
  *
  * StatsService 深封装：本面只暴露「读 + 失效」操作——
  * getPanelResult/getStats/cacheSize/purgeAllCaches 等受控方法；不暴露
@@ -7,6 +11,12 @@
  * 入口经 StatsServiceCtor（组合根特权，完整实现仅在 apply 可见），路由/域2
  * 消费的是收窄后的 StatsService 门面类型。
  * 最小面 = 逐个命名导出，禁整文件 re-export。
+ *
+ * 复用边界（与 D2 schedule / D3 execute 同形）：
+ * - 业务域（routes）经本门面复用读面（StatsService 门面类型）与纯面
+ *   （panelCacheKey/normalizeRangeDay/isPanelCacheStale）；有状态的
+ *   StatsService 只由组合根构造、经参数传递，不直引；
+ * - 注入面见 deps.ts（PipelineSanitize/PipelineDiagnose 命名接缝与块内联双生子）。
  */
 import { StatsService as StatsServiceImpl } from "./stats-service.ts";
 

@@ -154,7 +154,7 @@ export {
   listAdapters,
 } from "../server/history/interface.ts";
 export type { HistoryEntry } from "../server/history/interface.ts";
-export { safeFetchData, safeFormat, fetchWithTimeout } from "../domain1/pipeline/interface.ts";
+export { safeFetchData, safeFormat, fetchWithTimeout } from "../server/pipeline/interface.ts";
 export { sanitizeHtml } from "../shared/interface.ts";
 // 客户端行为纯函数（设置页列表拆分/徽标文案，经此透出供单元测试）。
 export { splitProviderList, providerBadgeText } from "../shared/interface.ts";
@@ -165,8 +165,8 @@ export {
   normalizeRangeDay,
   isPanelCacheStale,
   PANEL_CACHE_TTL_MS,
-} from "../domain1/pipeline/interface.ts";
-export type { PanelCacheEntry } from "../domain1/pipeline/interface.ts";
+} from "../server/pipeline/interface.ts";
+export type { PanelCacheEntry } from "../server/pipeline/interface.ts";
 export {
   HotReloadableAdapter,
   loadAndValidateAdapter,

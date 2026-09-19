@@ -11,7 +11,7 @@
  *   工具键（8 键：miniAreaSvg/fin/dayKey/lastNDayKeys/escHtml/escAttr/
  *   niceDomain/trendOf——逐键有 .mjs 内 U.<key>/utils.<key> 消费实证，
  *   AdapterUtils 余下 4 键 timeTicks/resetTicks/downsample/smoothPath
- *   无消费即不收口）。宿主管线按调用注入（见 domain1/pipeline/v2.ts），
+ *   无消费即不收口）。宿主管线按调用注入（见 server/pipeline/v2.ts），
  *   无注入时 .mjs 回退文件内私有兜底副本；
  * - register：内置装配的注册窄面（注册表 register 的 Pick 收窄，
  *   fail-fast 只用到 builtin 一源；user-file 路径仍走 registry 门面直调）。

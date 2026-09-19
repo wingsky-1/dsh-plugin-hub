@@ -5,7 +5,7 @@
  * mkdtempSync 隔离目录（afterAll 还原 DSH_HOME 并删目录，产物零污染）。三维度：
  * - D5一 经 server/history 域门面装配：HistoryStore 一族只经
  *   server/history/interface.ts，不走旧 domain1/history 入口；apply/apply.ts、
- *   apply/index.ts、domain1/pipeline/* 的历史消费收口新门面；门面禁整文件
+ *   apply/index.ts、server/pipeline/* 的历史消费收口新门面；门面禁整文件
  *   re-export；包导出面（apply/index.ts 转发名）零增减。
  * - D5二 落盘时序 + 0600 + basename + 超龄清理：DSH_HOME 先于被测门面求值
  *   （动态 import 前指到隔离目录）；落盘文件 0600；恶意 provider/name
@@ -44,10 +44,10 @@ const repoRoot = join(here, "..", "..", "..", "..", "..");
 const applySrc = readFileSync(join(srcDir, "apply", "apply.ts"), "utf8");
 const applyFaceSrc = readFileSync(join(srcDir, "apply", "index.ts"), "utf8");
 const statsServiceSrc = readFileSync(
-  join(srcDir, "domain1", "pipeline", "stats-service.ts"),
+  join(srcDir, "server", "pipeline", "stats-service.ts"),
   "utf8",
 );
-const pipelineV2Src = readFileSync(join(srcDir, "domain1", "pipeline", "v2.ts"), "utf8");
+const pipelineV2Src = readFileSync(join(srcDir, "server", "pipeline", "v2.ts"), "utf8");
 const historyFaceSrc = readFileSync(join(srcDir, "server", "history", "interface.ts"), "utf8");
 const historyImplSrc = readFileSync(join(srcDir, "server", "history", "history.ts"), "utf8");
 const statsServiceTestSrc = readFileSync(

@@ -2,7 +2,7 @@
   "$schema": "../node_modules/@stryker-mutator/core/schema/stryker-schema.json",
   "mutate": [
     "packages/dsh-provider-usage/src/shared/contracts.ts",
-    "packages/dsh-provider-usage/src/domain1/pipeline/guards.ts",
+    "packages/dsh-provider-usage/src/server/pipeline/guards.ts",
     "!packages/dsh-provider-usage/src/client/**",
     "!packages/dsh-provider-usage/src/**/interface.ts",
     "!packages/dsh-provider-usage/src/server/*/deps.ts",
@@ -43,5 +43,5 @@
   },
   "incremental": true,
   "incrementalFile": "coverage/mutation/incremental-provider-usage-contracts.json",
-  "_comment": "#342 v4：src 级文件组分段（3）——contracts+domain1/pipeline/guards（契约面）；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
+  "_comment": "#342 v4：src 级文件组分段（3）——contracts+server/pipeline/guards（契约面，#768 D6 随域改址）；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
 }

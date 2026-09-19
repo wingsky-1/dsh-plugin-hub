@@ -43,7 +43,7 @@ import { readUiConfig } from "../shared/interface.ts";
 import { makeLayerErrorSurface } from "../server/shared/interface.ts";
 import { readAdapterStateResult, readUserAdapters } from "../domain1/registry/interface.ts";
 import { loadUserAdapterChecked } from "../domain1/registry/interface.ts";
-import { StatsServiceCtor as StatsService } from "../domain1/pipeline/interface.ts";
+import { StatsServiceCtor as StatsService } from "../server/pipeline/interface.ts";
 import { TrendTracker } from "../domain2/aggregate/interface.ts";
 import { ReportScheduler } from "../server/schedule/interface.ts";
 import { optionalNotifier } from "../server/execute/interface.ts";

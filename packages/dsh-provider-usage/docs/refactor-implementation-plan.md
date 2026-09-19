@@ -91,7 +91,7 @@ src/
 |---|---|
 | shared/ | interface.ts、contracts.ts、charts.ts、config.ts、sanitize.ts、ui-config.ts、client-logic.ts、placement-math.ts |
 | domain1/registry/ | interface.ts、registry.ts、user-adapters.ts、user-adapter-loader.ts、hotreload.ts、provider-config.ts、path-resolve.ts |
-| domain1/pipeline/ | interface.ts、stats-service.ts、v2.ts、guards.ts |
+| server/pipeline/ | interface.ts、deps.ts、stats-service.ts、v2.ts、guards.ts（#768 D6 由 domain1/pipeline 整域迁入，interface 门面 + deps 注入面 + 净化缺席判据） |
 | server/history/ | interface.ts、history.ts（#768 D5 由 domain1/history 整域迁入，并发语义确定化） |
 | server/adapters/ | interface.ts、deps.ts、register.ts、deepseek-official.{mjs,d.mts}、opencode-go.{mjs,d.mts}、zai-coding-cn.{mjs,d.mts}（#768 D4 由 domain1/adapters 整域迁入，.mjs 零改动） |
 | domain1/routes/ | interface.ts、stats.ts、adapters.ts |
@@ -108,7 +108,7 @@ src/
 
 - 域1/域2/装配 → 共享底座：**一律经各目录 `interface.ts` 面具消费** `shared/interface.ts` 转发的符号
   （charts/config/sanitize/ui-config/contracts 类型等），无跨目录直引实现文件。
-- 域2 → 域1：`domain2/routes/ui.ts` 以 **type-only** 引用 `domain1/pipeline/interface.ts` 的
+- 域2 → 域1：`domain2/routes/ui.ts` 以 **type-only** 引用 `server/pipeline/interface.ts` 的
   `StatsService`（D7 后仅类型 + cacheSize() 方法调用）。
 - E3⇄E4：不直接互引；`server/schedule/tasks.ts` 持有注入的 executor（经 `server/execute/interface.ts` 工厂，#768 D3 前在 `domain2/execute/interface.ts`），推进与路由 preset 共走 server/schedule 同一 per-root 链；index 解析由调度存储经 `server/execute/` 纯面复用（report-index，无状态无缓存防 indexCache 双份，#768 D3 前在 `domain2/common/`）。
 - 域1 → 域2：**零**（业务面零依赖实证成立）。

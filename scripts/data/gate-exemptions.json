@@ -208,6 +208,18 @@
     },
     {
       "gate": "verify-dir-imports",
+      "path": "dsh-provider-usage:apply|server/pipeline",
+      "reason": "#768 D6：组合根经 pipeline 门面装配取数渲染管道 + 安全守卫（全经门面，禁直引实现文件，D6 前为基线内 apply|domain1/pipeline，边归属同步迁移）。树内 integration/pipeline 用例锁定。长期条目。",
+      "trackingIssue": "#768"
+    },
+    {
+      "gate": "verify-dir-imports",
+      "path": "dsh-provider-usage:server/pipeline|domain1/registry",
+      "reason": "#768 D6：管线经 registry 门面取提供商配置解析与适配器状态读写原语（owner 在 registry 域，D7 前仍在旧址；D6 前为基线内 domain1/pipeline|domain1/registry，边归属同步迁移）。树内 integration/pipeline 用例锁定。长期条目。",
+      "trackingIssue": "#768"
+    },
+    {
+      "gate": "verify-dir-imports",
       "path": "dsh-provider-usage:shared|server/adapters",
       "reason": "#768 D4：共享配置经 adapters 门面取 OPENCODE_GO_PROVIDER 默认值（D4 前为 shared|domain1/adapters，边归属同步迁移；共享层反向值引域的存量形态，见 dsh-mcp-manager v5 对账注记）。长期条目。",
       "trackingIssue": "#768"

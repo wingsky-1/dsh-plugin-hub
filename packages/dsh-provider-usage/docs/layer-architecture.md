@@ -19,7 +19,7 @@
 准确表述：**两域业务面零直接依赖**；共享底座与路由层的跨域依赖如实标注：
 - `server/config/normalize.ts` → `domain2/collect/interface.ts`（TREND_DIR_MAX；#768 D1 前在 `domain2/schedule/config.ts`）
 - `server/execute/runner.ts` → `domain2/aggregate/interface.ts`（metricValue/TrendTracker，#768 D3 前在 `domain2/execute/runner.ts`）+ `domain2/collect/interface.ts`（sumToken/TrendCell）
-- `domain2/routes/ui.ts` → `domain1/pipeline/interface.ts`（StatsService，type-only + cacheSize() 方法调用）
+- `domain2/routes/ui.ts` → `server/pipeline/interface.ts`（StatsService，type-only + cacheSize() 方法调用，#768 D6 随域改址）
 - 域1/域2/装配 → 共享底座一律经各目录 `interface.ts` 面具消费 `shared/interface.ts` 转发符号
 
 ### 域1 · 适配器取数与胶囊展示框架
@@ -27,7 +27,7 @@
 |---|---|---|---|
 | C1 契约/工具散层 | v2 契约校验/esc/图表工具/配置归一化/净化 | shared/contracts.ts(425)+charts.ts(369)+config.ts(101)+sanitize.ts(319)+ui-config.ts(87)+client-logic.ts(68)+placement-math.ts(39) | **共享底座**（R6 裁定维持散层）：契约/图表/配置/净化/双端共享，不拆子目录；interface.ts 为 C1 门面 |
 | C2 注册/加载层 | 注册表+持久化+热更新+密钥链+路径 | domain1/registry/{registry(308),user-adapters(388),user-adapter-loader(36),hotreload(141),path-resolve(79),provider-config(198)} | 四职责经 stats-service 与路由双收口（C6 直连） |
-| C3 执行管道层 | 取数编排+管道+安全执行 | domain1/pipeline/{stats-service(256),v2(236),guards(132)} | 编排/管道/守卫分文件，内聚成立 |
+| C3 执行管道层 | 取数编排+管道+安全执行 | server/pipeline/{interface.ts 门面 + deps.ts 注入面 + stats-service/v2/guards}（#768 D6 由 domain1/pipeline 整域迁入，取数渲染管道：入参组装→safe 执行→净化→归一化，净化缺席判据锁定） | 编排/管道/守卫分文件，内聚成立 |
 | C4 历史存储层 | 按天 JSONL/v3 迁移/清理 | server/history/history.ts（#768 D5 由 domain1/history 整域迁入，interface 门面 + 并发语义确定化，pipeline 经门面 type-only 消费） | 纯存储 |
 | C5 适配器实现层 | 三内置适配器 | server/adapters/{deepseek-official(777),opencode-go(518),zai-coding-cn(461)}(.mjs) + interface.ts 门面 + deps.ts 注入面 + register.ts 内置装配 fail-fast（#768 D4 由 domain1/adapters 整域迁入，.mjs 零改动） | 自包含零 import；retention 死字段已删除 |
 | C6 路由层（宿主） | /stats /history /adapters* | domain1/routes/{stats(123),adapters(213)} | **仅宿主**；客户端单列跨进程 UI 层 |
