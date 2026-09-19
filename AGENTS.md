@@ -70,7 +70,7 @@ worktree 内。在仓库根直接跑出的读数是「某个落后提交」的�
   PR 关联（流程见 [CONTRIBUTING.md](CONTRIBUTING.md)、[ISSUE-WORKFLOW.md](docs/ISSUE-WORKFLOW.md)）。
   用户直接指派的任务直接做，按上「硬约束」约束，不强制补建 issue。
 - **红线须先评审**：公共 API 行为变更、新增第三方依赖、[`.github/`](.github/) 下 workflow 与分支保护、
-  发版、[`.dsh/skills/**`](.dsh/skills/) skill 规程变更——先在**原 issue 内**起草方案评论、打 `needs-proposal-review`，获维护者 `approved`
+  发版、[`.dsh/skills/**`](.dsh/skills/) skill 规程变更及红线判据本体（[`scripts/gate/red-line-approval.mjs`](scripts/gate/red-line-approval.mjs) 单文件）——先在**原 issue 内**起草方案评论、打 `needs-proposal-review`，获维护者 `approved`
   后再动手（不单开决策 issue；用户直接指派且本 PR 正文含完整提案时，PR 正文即提案载体，仍须 `approved` 标签）。
 - **分支 + PR + squash merge**，CI 全绿后合并；提交信息用 Conventional Commits
   （`type(scope): subject`；type 见 [CONTRIBUTING.md](CONTRIBUTING.md)）。

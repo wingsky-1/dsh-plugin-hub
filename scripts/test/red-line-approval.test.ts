@@ -69,7 +69,7 @@ function jobBlock(text: string, job: string) {
 
 // ─────────────────────────── 一、红线面（派生） ───────────────────────────
 
-test("红线面：由 fixture 声明表派生——每个 guard 的 sources ∪ 基座（.github/** + .dsh/skills/**）∪ 声明表自身", () => {
+test("红线面：由 fixture 声明表派生——每个 guard 的 sources ∪ 基座（.github/** + .dsh/skills/** + 本体单文件）∪ 声明表自身", () => {
   withRegistry(
     [
       {
@@ -90,6 +90,7 @@ test("红线面：由 fixture 声明表派生——每个 guard 的 sources ∪ 
           "scripts/data/coverage.config.json",
           "scripts/data/gauntlet.config.json",
           "scripts/data/threshold-registry.json",
+          "scripts/gate/red-line-approval.mjs",
           "vitest.config.ts",
         ],
       );
@@ -120,6 +121,7 @@ test("红线面：规范化——./ 前缀归一、跨 guard 重复只算一条�
           "scripts/data/coverage.config.json",
           "scripts/data/gauntlet.config.json",
           "scripts/data/threshold-registry.json",
+          "scripts/gate/red-line-approval.mjs",
         ],
       );
     },
@@ -149,6 +151,7 @@ test("红线面：只收 guards[].sources——notAGate 的登记面不进面（
         ".github/**",
         "scripts/data/gauntlet.config.json",
         "scripts/data/threshold-registry.json",
+        "scripts/gate/red-line-approval.mjs",
       ],
     );
   } finally {
@@ -162,7 +165,7 @@ test("红线面：声明表缺失 → 退化为仅基座面 + ::warning::，不�
     const missing = join(dir, "absent-registry.json");
     const warnings: string[] = [];
     const face = redLinePatterns(missing, (m) => warnings.push(m));
-    assert.deepEqual(face, [".dsh/skills/**", ".github/**"]);
+    assert.deepEqual(face, [".dsh/skills/**", ".github/**", "scripts/gate/red-line-approval.mjs"]);
     assert.equal(warnings.length, 1, "退化必须留痕，且只留一条");
     assert.match(warnings[0], /^::warning::/);
     assert.match(warnings[0], /声明表不可用/);
@@ -208,7 +211,7 @@ test("红线面：声明表存在但不可用 → 同样退化 + 报警，且告
       const warnings: string[] = [];
       assert.deepEqual(
         redLinePatterns(path, (m) => warnings.push(m)),
-        [".dsh/skills/**", ".github/**"],
+        [".dsh/skills/**", ".github/**", "scripts/gate/red-line-approval.mjs"],
         c.name,
       );
       assert.match(warnings[0], c.why, `${c.name} 的告警必须点名原因`);
@@ -226,12 +229,13 @@ test("红线面：声明表存在但不可用 → 同样退化 + 报警，且告
   }
 });
 
-test("回归锚：scripts/gate/** 不在面内——把它当加固面加回去必须被这条打红（#851 裁决）", () => {
+test("回归锚：scripts/gate/** 整树仍不在面内——唯一例外是判据本体单文件（#851 + #904 裁决）", () => {
   // 上一版把 scripts/gate/** 钉进常量，是自行扩大 AGENTS.md 的红线定义（清单里没有它），且在
-  // GitHub 侧没有 approved 留痕。这条是那次裁决的回归锚。
-  assert.ok(
-    RED_LINE_PATTERNS.every((pattern) => !pattern.startsWith("scripts/gate")),
-    `派生面不得含 scripts/gate/**（实际 ${RED_LINE_PATTERNS.join(", ")}）`,
+  // GitHub 侧没有 approved 留痕——#851 撤整树；#904 经维护者 P1 建议单钉判据本体一个文件（AGENTS 已同步明文）。
+  assert.deepEqual(
+    RED_LINE_PATTERNS.filter((pattern) => pattern.startsWith("scripts/gate")),
+    ["scripts/gate/red-line-approval.mjs"],
+    "scripts/gate/ 下只允许判据本体单文件",
   );
   assert.deepEqual(judgeRedLine({ changedFiles: ["scripts/gate/xxx.mjs"], labels: [] }), {
     ok: true,
@@ -265,7 +269,7 @@ test("回归锚：scripts/gate/** 不在面内——把它当加固面加回去�
   );
 });
 
-test("基座面含 .dsh/skills/**——改 skill 须带 approved（AGENTS 红线清单已明写）", () => {
+test("基座面含 .dsh/skills/** 与判据本体单文件——改 skill/改守卫须带 approved（AGENTS 红线清单已明写）", () => {
   // 非空洞性：同一条既证面里有它，也证判据真会拦（无 approved 判红、有 approved 放行）。
   assert.ok(
     RED_LINE_PATTERNS.includes(".dsh/skills/**"),
@@ -286,6 +290,14 @@ test("基座面含 .dsh/skills/**——改 skill 须带 approved（AGENTS 红线
       labels: ["approved"],
     }),
     { ok: true, violations: [] },
+  );
+  assert.ok(
+    RED_LINE_PATTERNS.includes("scripts/gate/red-line-approval.mjs"),
+    "默认面必须含判据本体单文件（守卫的代码受守卫）",
+  );
+  assert.equal(
+    judgeRedLine({ changedFiles: ["scripts/gate/red-line-approval.mjs"], labels: [] }).ok,
+    false,
   );
 });
 
@@ -761,7 +773,7 @@ test("CLI：--registry 用 fixture 声明表派生面——声明源判红、app
       assert.equal(gate.status, 0, gate.stderr);
       assert.match(
         gate.stdout,
-        /红线面\[\.dsh\/skills\/\*\*, \.github\/\*\*, scripts\/data\/gauntlet\.config\.json, scripts\/data\/threshold-registry\.json\]/,
+        /红线面\[\.dsh\/skills\/\*\*, \.github\/\*\*, scripts\/data\/gauntlet\.config\.json, scripts\/data\/threshold-registry\.json, scripts\/gate\/red-line-approval\.mjs\]/,
         "OK 行必须打印实际判的那一面",
       );
     },
@@ -785,7 +797,10 @@ test("CLI：--registry 指向缺失的声明表 → 退化放行但必须打 ::w
     assert.match(r.stderr, /::warning::/);
     assert.match(r.stderr, /声明表不可用/);
     assert.match(r.stderr, /absent\.json/);
-    assert.match(r.stdout, /红线面\[\.dsh\/skills\/\*\*, \.github\/\*\*\]/);
+    assert.match(
+      r.stdout,
+      /红线面\[\.dsh\/skills\/\*\*, \.github\/\*\*, scripts\/gate\/red-line-approval\.mjs\]/,
+    );
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
