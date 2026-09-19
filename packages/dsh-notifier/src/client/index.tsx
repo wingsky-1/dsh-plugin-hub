@@ -52,8 +52,11 @@ import {
   diffSettingsPayload,
   domainPayload,
   rebaseSettings,
+  snapshotBaseline,
 } from "./settings/diff.ts";
 import { createSaveGuard } from "./settings/save-guard.ts";
+// 测试投递的终态收敛轮询（#912 症状2）：纯逻辑模块，单测直测，卡片内只做薄接线。
+import { pollChannelStatus } from "./settings/status-poll.ts";
 // 一次失败请求的结构化结论（是否围栏拒答 / 引导文案 / 展示正文）与结构化字段挂载：
 // 判定顺序是两端契约（结构化优先、状态码与文案兜底），故收在纯函数模块里由单测直接打红。
 import { apiFailureOf, markHttpFailure } from "./api-error.ts";
@@ -518,6 +521,8 @@ function SettingsCard() {
   const statusDraft = useState({} as ChannelStatusMap);
   const statusMap = statusDraft[0];
   const setStatusMap = statusDraft[1];
+  // 状态表 ref 收口：sendTest 在 POST 前记下 prevTs，读 ref 而非渲染闭包（后者可能是旧帧）。
+  const statusRef = ReactHooks.useRef({} as ChannelStatusMap);
   const kindsDraft = useState([] as RegisteredKindView[]);
   const kindsList = kindsDraft[0];
   const setKindsList = kindsDraft[1];
@@ -606,7 +611,10 @@ function SettingsCard() {
   function loadStatus(alive: { value: boolean }) {
     fetchStatus()
       .then(function (map) {
-        if (alive.value) setStatusMap(map);
+        if (alive.value) {
+          statusRef.current = map;
+          setStatusMap(map);
+        }
       })
       .catch(function () {
         // 拉取失败保留已加载状态行（不清空——旧实现 catch → {} 会把
@@ -646,9 +654,14 @@ function SettingsCard() {
       .then(function (v) {
         if (!alive.value) return;
         // 服务端快照收成客户端视图（HTTP 边界断言，字段形态见 settings/types.ts）。
+        // 草稿与基线双双过比较规范形（#912 症状3）：effective 含空串与 0 与空对象等价形态，
+        // 原样浅拷贝即首屏恒脏；渲染等价（见 snapshotBaseline 注释）。
         const effective = ((v && v.effective) || {}) as SettingsView;
-        commitSettings(Object.assign({}, effective));
-        baselineRef.current = Object.assign({}, effective);
+        const snapshot = snapshotBaseline(
+          effective as unknown as Record<string, unknown>,
+        ) as SettingsView;
+        commitSettings(Object.assign({}, snapshot));
+        baselineRef.current = Object.assign({}, snapshot);
         const nextMeta = {
           user: v.user || {},
           revision: v.revision,
@@ -750,7 +763,8 @@ function SettingsCard() {
   /** 无脏静默刷新：settings/baseline/meta 全部切到服务端最新（不丢任何草稿——
    *  调用前已确认本地无脏）。 */
   function applyLatestQuiet(latest: ConflictLatest) {
-    const fresh = Object.assign({}, latest.effective) as SettingsView;
+    // 静默刷新同样收敛基线（#912 症状3）：无脏时切最新，若存原样即下一次 diff 复脏。
+    const fresh = snapshotBaseline(latest.effective || {}) as SettingsView;
     commitSettings(fresh);
     baselineRef.current = Object.assign({}, fresh);
     const nextMeta = {
@@ -811,7 +825,11 @@ function SettingsCard() {
         // 事务性基线推进：只并入本次 PUT 实际提交的 payload
         // 键——若并入点击后的 settings 全量，在途期间的编辑会被固化为基线而丢失；
         // 键级并入后，在途新编辑（非 payload 键）仍在 diff 中，由 trailing 补发提交。
-        baselineRef.current = Object.assign({}, baselineRef.current || {}, payload);
+        // 只并入本次 PUT 的 payload 键（在途编辑不固化，语义保留）；合并后再过规范形
+        // （#912 症状3：save 合并后基线仍干净，strip 形态的 payload 与规范基线同构）。
+        baselineRef.current = snapshotBaseline(
+          Object.assign({}, baselineRef.current || {}, payload),
+        ) as SettingsView;
         const nextMeta = {
           user: (body && body.user) || {},
           revision: (body && body.revision) || undefined,
@@ -911,9 +929,11 @@ function SettingsCard() {
     const entry = conflict.entry;
     const latest = conflict.latest;
     const localChanges = diffPayloadFor(entry); // 实时重算（相对旧基线的当前脏）
-    const merged = rebaseSettings(localChanges, latest.effective || {}) as SettingsView;
+    // 覆盖基线同样收敛（#912 症状3）：rebase 的底与新基线都是快照，横幅期间新编辑不丢。
+    const snapshot = snapshotBaseline(latest.effective || {}) as SettingsView;
+    const merged = rebaseSettings(localChanges, snapshot) as SettingsView;
     commitSettings(merged); // 同步写 ref：随后 saveFor 立即以 merged 计算 diff
-    baselineRef.current = Object.assign({}, latest.effective || {}) as SettingsView;
+    baselineRef.current = Object.assign({}, snapshot) as SettingsView;
     const nextMeta = {
       user: latest.user || {},
       revision: latest.revision,
@@ -934,14 +954,25 @@ function SettingsCard() {
    *  放弃即退出冲突语境：409 横幅一并关闭（否则横幅会指向已被丢弃的草稿）。 */
   function discardChanges() {
     if (baselineRef.current) {
-      commitSettings(Object.assign({}, baselineRef.current));
+      // 放弃即回到基线快照（#912 症状3）：基线恒为规范形，恢复的草稿天然干净。
+      commitSettings(
+        snapshotBaseline(baselineRef.current as unknown as Record<string, unknown>) as SettingsView,
+      );
     }
     setConflict(null);
     setSaved("");
     toast(t("discardOk"));
   }
 
-  /** 发送测试通知（channelId 可选——per-channel 测试；完成后刷新状态行）。 */
+  /**
+   * 发送测试通知（channelId 可选——per-channel 测试；完成后等终态再刷新状态行）。
+   *
+   * POST /test 只承诺已受理（#912 症状2次因）：per-channel 测试走有限轮询等该频道的新终态
+   * （判定与预算见 settings/status-poll.ts），收敛或耗尽后应用最后所见并刷新历史——skipped
+   * 的原因只在历史里，状态行经它直达（statusText 的 history 形参）。全频道广播不定项等待某
+   * 一条，沿用单次刷新。轮询全程只读 GET（不重发 POST，不撞 1 秒节流窗）；读失败保留旧态
+   * （轮询内吞，null 不应用——瞬时抖动不丢已展示的终态）。
+   */
   function sendTest(channelId?: string) {
     sendTestReq(channelId)
       .then(function (data) {
@@ -951,7 +982,19 @@ function SettingsCard() {
             channelId ? undefined : { n: data && data.sseConnections },
           ),
         );
-        loadStatus({ value: true });
+        if (channelId === undefined) {
+          loadStatus({ value: true });
+          return;
+        }
+        const prev = statusRef.current[channelId];
+        const prevTs = prev && typeof prev.lastTs === "number" ? prev.lastTs : undefined;
+        void pollChannelStatus(fetchStatus, channelId, prevTs).then(function (result) {
+          if (result.map !== null) {
+            statusRef.current = result.map;
+            setStatusMap(result.map);
+          }
+          loadHistory({ value: true });
+        });
       })
       .catch(function (error: unknown) {
         const failure = apiFailureOf(error, t);
@@ -1322,6 +1365,7 @@ function SettingsCard() {
   const channelsPaneDeps = {
     settings,
     statusMap,
+    history,
     hostPlatform,
     diag,
     channelLabel,

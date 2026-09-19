@@ -14,7 +14,7 @@ import { advRow, chRow } from "../parts/rows.tsx";
 import { numInput, switchToggle, textInput } from "../parts/controls.tsx";
 import { failBadge, statusDotClass, statusText, testBtn } from "../parts/status.tsx";
 import type { ChannelStatusMap } from "../parts/status.tsx";
-import type { RegisteredKindView, SettingsChannelView } from "../types.ts";
+import type { HistoryRecordView, RegisteredKindView, SettingsChannelView } from "../types.ts";
 import { iconEl } from "./channel-icon.tsx";
 
 /**
@@ -38,6 +38,7 @@ export function barkCard(
   sendTest: (id?: string) => void,
   statusMap: ChannelStatusMap,
   t: Translate,
+  history: HistoryRecordView[] | null,
 ) {
   const channelKey = channelIdFor(ch);
   const armed = delArmedId === ch.id;
@@ -150,8 +151,8 @@ export function barkCard(
         <span className="dn-ch-name">{ch.name || ch.id}</span>
         <span className="dn-ch-type">bark</span>
         <span className={"dn-ch-statusDot " + statusDotClass(channelKey, statusMap)} />
-        <span className="dn-ch-statusTxt" title={statusText(channelKey, statusMap, t)}>
-          {statusText(channelKey, statusMap, t)}
+        <span className="dn-ch-statusTxt" title={statusText(channelKey, statusMap, t, history)}>
+          {statusText(channelKey, statusMap, t, history)}
         </span>
         {failBadge(channelKey, statusMap, t)}
         <span className="dn-ch-summaryRight">
