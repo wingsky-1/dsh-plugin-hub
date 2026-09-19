@@ -9,7 +9,10 @@ export default defineConfig({
   test: {
     include: [
       'packages/dsh-notifier/test/client-dom/apply-lifecycle.test.ts',
+      'packages/dsh-notifier/test/client-dom/controls.test.ts',
+      'packages/dsh-notifier/test/client-dom/diagnostics.test.ts',
       'packages/dsh-notifier/test/client-dom/display.test.ts',
+      'packages/dsh-notifier/test/client-dom/status.test.ts',
       'packages/dsh-notifier/test/client-dom/title.test.ts',
       'packages/dsh-notifier/test/client-unit/api-error.test.ts',
       'packages/dsh-notifier/test/client-unit/banner.test.ts',
