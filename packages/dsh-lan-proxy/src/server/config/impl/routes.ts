@@ -275,7 +275,7 @@ function parseCertFormat(url: string | undefined): "der" | "pem" | "invalid" {
   try {
     format = new URL(url ?? "/", "http://lan-proxy.local").searchParams.get("format");
   } catch {
-    return "der";
+    return "invalid";
   }
   if (format === null || format === "der" || format === "cer") return "der";
   if (format === "pem") return "pem";

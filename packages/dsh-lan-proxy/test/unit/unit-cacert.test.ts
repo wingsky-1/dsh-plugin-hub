@@ -196,6 +196,13 @@ describe("下发路由三态与围栏", () => {
       "application/x-x509-ca-cert",
     );
   });
+  it("畸形 request-target 同样 400（解析抛错不回落 DER）", () => {
+    const dir = mkdtempSync(join(home, "self-"));
+    ensureSelfSignedTls({ dir });
+    const r = callCaCert({ selfSignedDir: dir }, { url: "http://[::1" });
+    expect(r.status).toBe(400);
+    expect(JSON.parse(r.body.toString("utf8")).error.code).toBe("bad-format");
+  });
   it("未知 format 值 400（fail-closed，不静默回落）", () => {
     const dir = mkdtempSync(join(home, "self-"));
     ensureSelfSignedTls({ dir });
