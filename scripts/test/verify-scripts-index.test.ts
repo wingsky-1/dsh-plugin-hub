@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck
 /**
  * verify-scripts-index 自测（#733 计划项 3.3 E2）：索引存在性 + 引用即登记（棘轮）+ 解析口径。
  *
@@ -20,7 +19,7 @@ const SCRIPT = join(ROOT, "scripts", "gate", "verify-scripts-index.mjs");
  * 构造最小 fixture 仓库：`package.json` 引用一个 gate 脚本 + 一份索引。
  * files: [{ rel, content }]（相对仓库根；目录自动创建）
  */
-function fixture(files) {
+function fixture(files: Array<{ rel: string; content: string }>) {
   const root = mkdtempSync(join(tmpdir(), "verify-scripts-index-"));
   for (const { rel, content } of files) {
     const p = join(root, rel);
@@ -33,7 +32,7 @@ function fixture(files) {
 const PKG = JSON.stringify({ scripts: { "demo:gate": "node scripts/gate/demo.mjs" } }, null, 2);
 const INDEX = "## gate/（根门禁）\n\n- `gate/demo.mjs` — 演示门禁。\n";
 
-function run(root) {
+function run(root: string) {
   try {
     return spawnSync(process.execPath, [SCRIPT, "--root", root], { encoding: "utf8" });
   } finally {

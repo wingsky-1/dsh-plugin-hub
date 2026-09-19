@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck
 "use strict";
 
 /**
@@ -34,7 +33,7 @@ function tempDir() {
   return { dir, cleanup: () => rmSync(dir, { recursive: true, force: true }) };
 }
 
-function fixtureShared(root) {
+function fixtureShared(root: string) {
   // 构造与真实 shared/ 同构的目录：顶层 loopback.d.ts + client/ 子目录
   const shared = join(root, "shared");
   mkdirSync(join(shared, "client"), { recursive: true });
@@ -112,7 +111,7 @@ test("#5 同源防漂移：bundle-host 复用共享 walkFiles，无私有枚举�
   const { dir, cleanup } = tempDir();
   try {
     fixtureShared(dir);
-    const walked = walkFiles(join(dir, "shared"), (f) => f.endsWith(".d.ts"));
+    const walked = walkFiles(join(dir, "shared"), (f: string) => f.endsWith(".d.ts"));
     assert.deepEqual(walked, ["client/i18n.d.ts", "loopback.d.ts"]);
   } finally {
     cleanup();

@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck
 "use strict";
 
 /**
@@ -13,9 +12,9 @@ import { readdirSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 
 /** 递归收集 dir 下满足 predicate(文件名) 的文件，返回相对路径（/ 分隔，不含目录）。 */
-export function walkFiles(dir, predicate) {
-  const out = [];
-  const visit = (cur) => {
+export function walkFiles(dir: string, predicate: (name: string) => boolean): string[] {
+  const out: string[] = [];
+  const visit = (cur: string): void => {
     for (const f of readdirSync(cur, { withFileTypes: true })) {
       const abs = join(cur, f.name);
       if (f.isDirectory()) visit(abs);

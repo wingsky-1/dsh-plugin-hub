@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck
 "use strict";
 
 /**
@@ -174,7 +173,7 @@ test("真实仓库：入库台账的 full 测量值确实被超时派生消费�
  * main 直调探针：failClosed 会 exit 掉调用方，故经子进程调导出的 main。
  * CLI 入口仍只能对真仓求值（路径注入只存在于函数参数，不存在 env/argv 面）。
  */
-function mainProbe(args) {
+function mainProbe(args: { confDir: string; ledgerPath?: string }) {
   const dir = mkdtempSync(join(tmpdir(), "plan-probe-"));
   const probe = join(dir, "probe.mjs");
   writeFileSync(

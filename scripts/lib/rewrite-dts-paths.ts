@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck
 "use strict";
 
 /**
@@ -28,7 +27,7 @@ import { join } from "node:path";
  * @param {number} depth 该文件在 lib/ 下的目录深度（顶层 0，子目录逐级 +1）
  * @returns {string} 改写后文本
  */
-export function rewriteDtsText(text, depth) {
+export function rewriteDtsText(text: string, depth: number): string {
   const prefix = "../".repeat(depth + 1);
   // rewriteRelativeImportExtensions 的 d.ts 缺口修正（#276 方案 A）：TS（5.9/7.x
   // 实测一致）只把相对 .ts 后缀 specifier 回写到 JS emit，声明文件不回写——
@@ -44,7 +43,7 @@ export function rewriteDtsText(text, depth) {
  * @param {string} dir 起始目录（bundle-host 传 libDir，depth=0）
  * @param {number} depth 当前目录深度
  */
-export function rewriteDtsPaths(dir, depth) {
+export function rewriteDtsPaths(dir: string, depth: number): void {
   for (const f of readdirSync(dir, { withFileTypes: true })) {
     const abs = join(dir, f.name);
     if (f.isDirectory()) {

@@ -17,7 +17,7 @@
   },
   "lint": {
     "note": "#764 落地项 A2：全仓 ESLint 警告预算（唯一事实源，由 tools/lint/bin/lint.mjs 消费）。为什么必须有：ESLint 自带的 --max-warnings 在本仓无效——入口走 Node API，CLI 参数会被静默丢弃，于是一千余条 warning 零约束力、只增不减。取值 = 落地时的实测值（含 error 与 warning 之和），只许降不许升；上调由 scripts/gate/threshold-monotonic.mjs 判红。数值未随一轮 lint 面修正变动（#765）：忽略规则由 `**/lib/**` 收窄为 `packages/*/lib/**`，把被误吞的 scripts/lib 15 个源码文件放回面内（面 441 → 459 文件、新增 16 条 warning），同轮清掉 16 条可修存量对冲，故仍为 671 而非 687。#765 批次降到 508：清掉 160 条可清项（未使用 import / 局部变量 / 形参、wrapper-object-types、this-alias、.cjs 里被误报的 require）里可清的 136 条，另 24 条由下划线前缀约定承接；no-unused-vars / prefer-const / no-wrapper-object-types / no-this-alias / no-require-imports五条已清零的规则从 LEGACY_WARN 摘除、回到常规面按 error 生效（#765 第 6 项同口径）。仍在降级集的只剩 ban-ts-comment（110 条，是 scripts/ 与 test/ 编译面的设计声明，见scripts/tsconfig.json 与 test/tsconfig.json）与 no-explicit-any（398 条，客户端 any 兜底风格，随 #769 客户端重构收掉）。",
-    "maxWarnings": 508
+    "maxWarnings": 215
   },
   "mutation": {
     "note": "观察期仅记录不卡点；阶段三按 #42 二期校准后接入 ci.yml 硬卡点。score 为 Stryker 报告口径（分母含 noCoverage），covered 为官方 mutationScore 口径（(killed+timeout)/(total-noCoverage)）。#151 起 tap-runner 的 RuntimeError 分类缺陷曾由 scripts/test/mutation-tap-bridge.cjs 修正（未捕获异常转写 TAP not ok），error=0，自动口径与此前人工换算口径一致；#722 起 runner 换为 @stryker-mutator/vitest-runner，该桥接随 tap-runner 一并退役，未捕获异常改由 vitest runner 归入 errorsSet 并判该次运行 Error。",

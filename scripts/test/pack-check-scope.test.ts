@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck
 "use strict";
 
 /**
@@ -42,7 +41,7 @@ const AGG_VERDICT = /(PASS|FAIL) @wingsky-1\/dsh-plugins-all/;
 const AGG_PASS = /PASS @wingsky-1\/dsh-plugins-all/;
 
 /** 跑 pack-check 并返回 { status, stdout }（非 0 也要拿到输出，不抛）。 */
-function runPackCheck(args) {
+function runPackCheck(args: string[]) {
   try {
     const stdout = execFileSync(process.execPath, [PACK_CHECK, ...args], {
       cwd: ROOT,
@@ -51,7 +50,8 @@ function runPackCheck(args) {
     });
     return { status: 0, stdout };
   } catch (e) {
-    return { status: e.status ?? 1, stdout: `${e.stdout ?? ""}` };
+    const err = e as { status?: number; stdout?: unknown };
+    return { status: err.status ?? 1, stdout: `${err.stdout ?? ""}` };
   }
 }
 

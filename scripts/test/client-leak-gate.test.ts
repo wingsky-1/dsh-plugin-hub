@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck
 "use strict";
 
 /**
@@ -97,7 +96,7 @@ test("宿主侧标识符门禁：__filename 判红，命中计数反映真实次
 
 test("宿主侧标识符门禁：泄漏让契约断言整体失败（接线有效，防写死 true）", () => {
   // 与真实产物同构的最小外壳：注册 factory → materialize 后 apply/inject 合规。
-  const product = (body) =>
+  const product = (body: string) =>
     `window.__ModuleLoader__.load({ id: "@scope/test-pkg", factory: function (require) { ${body}; return { apply: function () {}, inject: [] } } });`;
   const clean = assertClientContract("@scope/test-pkg", product('var React = require("react")'));
   assert.equal(clean.ok, true, `干净产物应整体通过：${JSON.stringify(clean.checks)}`);

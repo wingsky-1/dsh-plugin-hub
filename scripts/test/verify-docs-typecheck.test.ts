@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck
 "use strict";
 
 /**
@@ -49,8 +48,8 @@ const SCRIPTS = join(ROOT, "scripts");
 const TSC = join(ROOT, "node_modules", "typescript", "bin", "tsc");
 const TSCONFIG = join(SCRIPTS, "tsconfig.json");
 
-const isTypeScript = (name) => /\.(ts|mts|cts)$/.test(name);
-const toPosix = (p) => p.split(sep).join("/");
+const isTypeScript = (name: string) => /\.(ts|mts|cts)$/.test(name);
+const toPosix = (p: string) => p.split(sep).join("/");
 
 test("scripts 编译面接线：scripts/ 全树 .ts/.mts/.cts 入面，面外集合必须为空（#474/#776）", () => {
   assert.ok(existsSync(TSC), `仓库 tsc 应存在（${TSC}）——pnpm install 后才有`);

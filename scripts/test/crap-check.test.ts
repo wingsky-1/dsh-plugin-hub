@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck
 import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
@@ -10,7 +9,7 @@ import { spawnSync } from "node:child_process";
 const ROOT = join(import.meta.dirname, "../..");
 const SCRIPT = join(ROOT, "scripts/gate/crap-check.mjs");
 
-function fixture(strict) {
+function fixture(strict: boolean) {
   const dir = mkdtempSync(join(tmpdir(), "crap-check-test-"));
   mkdirSync(join(dir, "scripts/data"), { recursive: true });
   mkdirSync(join(dir, "coverage"), { recursive: true });
@@ -36,7 +35,7 @@ function fixture(strict) {
   return dir;
 }
 
-function run(strict) {
+function run(strict: boolean) {
   const dir = fixture(strict);
   try {
     return spawnSync(process.execPath, [SCRIPT, "--strict"], { cwd: dir, encoding: "utf8" });

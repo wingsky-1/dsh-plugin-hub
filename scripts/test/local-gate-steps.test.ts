@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck
 /**
  * local-gate 分层步骤自测（#733 计划项 3.3 E2 前置）。
  *
@@ -24,7 +23,7 @@ const ROOT = join(import.meta.dirname, "..", "..");
 const SCRIPT = join(ROOT, "scripts", "gate", "local-gate.mjs");
 
 /** 取某一档的计划步骤标签（--dry-run，不执行）。 */
-function plannedSteps(tier) {
+function plannedSteps(tier: string) {
   const r = spawnSync(process.execPath, [SCRIPT, "--tier", tier, "--dry-run"], {
     cwd: ROOT,
     encoding: "utf8",
