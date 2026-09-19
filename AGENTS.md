@@ -146,6 +146,7 @@ worktree 内。在仓库根直接跑出的读数是「某个落后提交」的�
 | 升 dsh rc 时 | [`.dsh/skills/dsh-upgrade/SKILL.md`](.dsh/skills/dsh-upgrade/SKILL.md) |
 | 处理 issue 全周期时 | [docs/ISSUE-WORKFLOW.md](docs/ISSUE-WORKFLOW.md) |
 | 跑自治维护循环时 | [`.dsh/skills/oss-pipeline/SKILL.md`](.dsh/skills/oss-pipeline/SKILL.md) |
+| 被委派做任务时 | 先读 [agents/_protocol.md](agents/_protocol.md)，再读你的角色规程（[`agents/`](agents/)） |
 | 批量清 auto 队列 / 处理 PR 转向 / 健康巡检时 | [`oss-triage`](.dsh/skills/oss-triage/SKILL.md) / [`oss-steering`](.dsh/skills/oss-steering/SKILL.md) / [`oss-report`](.dsh/skills/oss-report/SKILL.md)（细则见 [`.dsh/skills/README.md`](.dsh/skills/README.md)） |
 | 浏览器隔离验证时 | 随包 skill（[`packages/dsh-verify-isolated/skills/dsh-verify-isolated/SKILL.md`](packages/dsh-verify-isolated/skills/dsh-verify-isolated/SKILL.md)） |
 | 看包级特殊约定时 | `packages/<pkg>/AGENTS.md`（若有；有特有红线才建，存在则必含定位/改动前必守/验证三节） |
