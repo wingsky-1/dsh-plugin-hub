@@ -100,8 +100,9 @@ src/
 | domain2/common/ | interface.ts、errsurf.ts（last-run.ts 已迁 server/schedule/store.ts，#768 D2；report-index.ts 已迁 server/execute/report-index.ts，#768 D3） |
 | server/schedule/ | interface.ts、deps.ts、due.ts、scheduler.ts、tasks.ts、store.ts（#768 D2：到期判定两题不拆整域收拢） |
 | server/execute/ | interface.ts、deps.ts、report-index.ts、runner.ts、generate.ts、format.ts、executor.ts、list-dirs.ts（#768 D3：执行域收拢，parse+记忆化单源） |
-| domain2/routes/ | interface.ts、ui.ts、reports.ts |
-| apply/ | interface.ts、apply.ts、index.ts（报告配置服务已归 server/config/service.ts，#768 D1） |
+| server/report-routes/ | interface.ts、deps.ts、reports.ts（#768 D11 由 domain2/routes 迁入，interface 门面 + deps 注入面 + 配置窄口消费，零行为变更） |
+| domain2/routes/ | interface.ts、ui.ts（reports.ts 已迁 server/report-routes，#768 D11） |
+| apply/ | interface.ts（空锚点，#768 D11 起：原唯一源码消费改走 server/report-routes/deps.ts 窄口，转发消除，文件保留只为模块归属）、apply.ts、index.ts（报告配置服务已归 server/config/service.ts，#768 D1） |
 | client/ | 保持目录化前布局（本轮未拆分） |
 
 ## 6. 跨域/跨层引用现状（实证）

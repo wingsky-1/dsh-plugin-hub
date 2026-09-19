@@ -85,7 +85,7 @@ const runnerSrc = readFileSync(join(srcDir, "server", "execute", "runner.ts"), "
 const executorSrc = readFileSync(join(srcDir, "server", "execute", "executor.ts"), "utf8");
 const storeSrc = readFileSync(join(srcDir, "server", "schedule", "store.ts"), "utf8");
 const tasksSrc = readFileSync(join(srcDir, "server", "schedule", "tasks.ts"), "utf8");
-const reportsSrc = readFileSync(join(srcDir, "domain2", "routes", "reports.ts"), "utf8");
+const reportsSrc = readFileSync(join(srcDir, "server", "report-routes", "reports.ts"), "utf8");
 const commonFaceSrc = readFileSync(join(srcDir, "domain2", "common", "interface.ts"), "utf8");
 
 /** 命名接缝消费（类型链接由 tsc 编译面校验可赋值性）：块 Options 用内联双生子，名称在此复用。 */
@@ -160,9 +160,9 @@ describe("D3一 经 server/execute 域门面装配", () => {
     expect(runnerSrc.includes("common/interface")).toBe(false);
   });
 
-  it("路由读侧经 execute 门面（不走旧入口）", () => {
-    expect(reportsSrc.includes('"../../server/execute/interface.ts"')).toBe(true);
-    expect(reportsSrc.includes("../execute/")).toBe(false);
+  it("路由读侧经 execute 门面（D11 起改址 server/report-routes，同级短径，不走旧深径）", () => {
+    expect(reportsSrc.includes('"../execute/interface.ts"')).toBe(true);
+    expect(reportsSrc.includes("../../server/execute")).toBe(false);
   });
 
   it("调度存储只复用纯解析（调业务实例即红）", () => {

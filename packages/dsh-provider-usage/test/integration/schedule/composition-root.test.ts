@@ -12,7 +12,7 @@
  *   per-root 链防 lost-update、默认 60s tick 与 5min 预热线路保持——拆坏任一条必须红
  *   （同文件“探针 + 朴素实现对照”证明 detector 不失明）。
  *
- * 扫描面 = src/apply/apply.ts + src/apply/interface.ts（装配逻辑）
+ * 扫描面 = src/apply/apply.ts + src/apply/interface.ts（装配逻辑；#768 D11 起 interface.ts 为空锚点）
  * + 各消费方源文件（执行器/读侧/路由/迁移）：src/apply/index.ts 是 lib 导出面
  * （符号转发），不是判断——它的符号集由 export-surface-snapshot 门禁锁定，
  * 不在本用例扫描面内（误扫即把转发当判断）。
@@ -65,7 +65,7 @@ const storeSrc = readFileSync(join(srcDir, "server", "schedule", "store.ts"), "u
 const commonFaceSrc = readFileSync(join(srcDir, "domain2", "common", "interface.ts"), "utf8");
 const executorSrc = readFileSync(join(srcDir, "server", "execute", "executor.ts"), "utf8");
 const runnerSrc = readFileSync(join(srcDir, "server", "execute", "runner.ts"), "utf8");
-const reportsSrc = readFileSync(join(srcDir, "domain2", "routes", "reports.ts"), "utf8");
+const reportsSrc = readFileSync(join(srcDir, "server", "report-routes", "reports.ts"), "utf8");
 const morphSrc = readFileSync(join(srcDir, "server", "upgrade", "last-run-morph.ts"), "utf8");
 const storageLayoutSrc = readFileSync(
   join(srcDir, "server", "upgrade", "storage-layout.ts"),
@@ -137,8 +137,9 @@ describe("D2一 经 server/schedule 域门面装配", () => {
     expect(runnerSrc.includes("common/interface")).toBe(false);
   });
 
-  it("路由写侧经调度门面（不走旧入口）", () => {
-    expect(reportsSrc.includes("../../server/schedule/interface.ts")).toBe(true);
+  it("路由写侧经调度门面（D11 起改址 server/report-routes，同级短径，不走旧深径）", () => {
+    expect(reportsSrc.includes('"../schedule/interface.ts"')).toBe(true);
+    expect(reportsSrc.includes("../../server/schedule")).toBe(false);
     expect(reportsSrc.includes("domain2/schedule")).toBe(false);
     expect(reportsSrc.includes("../common/interface")).toBe(false);
   });

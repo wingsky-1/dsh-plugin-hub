@@ -9,6 +9,9 @@
  * （statsService/trend/uiConfig/sseClients/broadcast/layerErrors）收敛为类实例，
  * 目录外只经构造入口装配依赖并交给 createUiRoutes；路由内部实现仍经类字段取用
  * （与 StatsService 门面 / executor 工厂同一深封装纪律）。
+ *
+ * 报告路由已迁出（#768 D11：server/report-routes/interface.ts，
+ * interface 门面 + deps 注入面 + 配置窄口消费；本面不再转发）。
  */
 
 // ------------------------------------------------------------------ 健康/趋势/UI 配置/SSE 路由（ui.ts）
@@ -22,14 +25,3 @@ export {
   handleEvents,
 } from "./ui.ts";
 export type { UiRoutesContext, UiRoutesContextOptions } from "./ui.ts";
-
-// ------------------------------------------------------------------ 报告配置/历史/详情/手动生成路由（reports.ts）
-
-export {
-  createReportRoutes,
-  handleReportStatus,
-  isReportPeriodValid,
-  isReportKeyValid,
-  isTaskIdValid,
-} from "./reports.ts";
-export type { ReportRoutesContext } from "./reports.ts";

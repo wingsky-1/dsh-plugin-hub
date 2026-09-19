@@ -124,8 +124,8 @@
     },
     {
       "gate": "verify-dir-imports",
-      "path": "dsh-provider-usage:domain2/routes|server/config",
-      "reason": "#768 D1：reports.ts 经 packages/dsh-provider-usage/src/server/config/interface.ts 取 normalizeReportConfig/readReportConfig/DEFAULT_PROMPTS（配置读写与默认回显），替代原边的配置面部分（调度纯函数边 D2 起归 domain2/routes|server/schedule）；服务实例仍经装配参数注入，不直引。长期条目（设计事实，非待办）。",
+      "path": "dsh-provider-usage:server/report-routes|server/config",
+      "reason": "#768 D1：reports.ts 经 server/config 门面取 normalizeReportConfig/readReportConfig/DEFAULT_PROMPTS（配置读写与默认回显），替代原边的配置面部分（调度纯函数边 D2 起归调度边）；服务实例仍经装配参数以 deps.ts 窄口（get/update）注入，不直引；D11 由 domain2/routes 迁 server/report-routes，边归属同步迁移。树内 integration/report-routes 用例锁定。长期条目（设计事实，非待办）。",
       "trackingIssue": "#768"
     },
     {
@@ -166,8 +166,8 @@
     },
     {
       "gate": "verify-dir-imports",
-      "path": "dsh-provider-usage:domain2/routes|server/schedule",
-      "reason": "#768 D2：路由写侧经调度门面取调度纯函数与读写面及队列类型，替代已消除的旧边。实例仍经装配参数注入。树内集成用例锁定。长期条目。",
+      "path": "dsh-provider-usage:server/report-routes|server/schedule",
+      "reason": "#768 D2：路由写侧经调度门面取调度纯函数与读写面及队列窄口（submit/get），替代已消除的旧边；D11 由 domain2/routes 迁 server/report-routes，边归属同步迁移。实例仍经装配参数注入。树内 integration/report-routes 用例锁定。长期条目。",
       "trackingIssue": "#768"
     },
     {
@@ -202,8 +202,8 @@
     },
     {
       "gate": "verify-dir-imports",
-      "path": "dsh-provider-usage:domain2/routes|server/execute",
-      "reason": "#768 D3：reports.ts 经 execute 门面取读面（D3 前为 domain2/routes|domain2/execute）。实例仍经装配参数注入。树内 integration/execute 用例锁定。长期条目。",
+      "path": "dsh-provider-usage:server/report-routes|server/execute",
+      "reason": "#768 D3：reports.ts 经 execute 门面取读面（D3 前为 domain2/routes|domain2/execute）；D11 由 domain2/routes 迁 server/report-routes，边归属同步迁移。执行器工厂不直引（队列内嵌，组合根装配）。树内 integration/report-routes 用例锁定。长期条目。",
       "trackingIssue": "#768"
     },
     {
@@ -240,6 +240,12 @@
       "gate": "verify-dir-imports",
       "path": "dsh-provider-usage:apply|server/data-routes",
       "reason": "#768 D10：组合根经 data-routes 门面装配用量统计/历史/适配器管理六路由（全经门面，禁直引实现文件，D10 前为基线内 apply|domain1/routes，边归属同步迁移）。树内 integration/data-routes 用例锁定。长期条目。",
+      "trackingIssue": "#768"
+    },
+    {
+      "gate": "verify-dir-imports",
+      "path": "dsh-provider-usage:apply|server/report-routes",
+      "reason": "#768 D11：组合根经 report-routes 门面装配报告配置/历史/详情/手动生成六路由（全经门面，禁直引实现文件，D11 前为基线内 apply|domain2/routes，边归属同步迁移；配置服务与任务队列以 deps.ts 窄口注入）。树内 integration/report-routes 用例锁定。长期条目。",
       "trackingIssue": "#768"
     },
     {

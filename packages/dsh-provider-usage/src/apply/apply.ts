@@ -54,7 +54,7 @@ import { ReportTaskQueue } from "../server/schedule/interface.ts";
 import { createStatsRoutes } from "../server/data-routes/interface.ts";
 import { createAdapterRoutes } from "../server/data-routes/interface.ts";
 import { createUiRoutes } from "../domain2/routes/interface.ts";
-import { createReportRoutes } from "../domain2/routes/interface.ts";
+import { createReportRoutes } from "../server/report-routes/interface.ts";
 import { installUpgrade, releaseUpgrade } from "../server/upgrade/interface.ts";
 import type {} from "@deepseek-ai/dsh-session";
 

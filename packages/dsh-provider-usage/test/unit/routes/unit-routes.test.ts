@@ -2,8 +2,8 @@
  * dsh-provider-usage — unit：路由层纯函数（E5/C6 变异段前置，评审 P1-5）
  *
  * 抽离可测面：clampTrendN（trend 窗口封顶）、isReportPeriodValid/isReportKeyValid/
- * isTaskIdValid（报告路由双白名单校验）。薄 handler 的其余行为经 unit-report/
- * unit-apply/smoke 端到端覆盖。
+ * isTaskIdValid（报告路由双白名单校验，#768 D11 起改址 server/report-routes）。
+ * 薄 handler 的其余行为经 unit-report/unit-apply/smoke 端到端覆盖。
  */
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { describe, expect, it } from "vitest";
@@ -12,7 +12,7 @@ import {
   isReportPeriodValid,
   isReportKeyValid,
   isTaskIdValid,
-} from "../../../src/domain2/routes/reports.ts";
+} from "../../../src/server/report-routes/reports.ts";
 
 describe("clampTrendN", () => {
   it("null → 默认 day=30", () => {

@@ -1,9 +1,14 @@
 /**
- * dsh-provider-usage — 用量报告路由（配置读写、模型发现、历史索引、详情、手动生成）。
+ * dsh-provider-usage — 用量报告路由（server/report-routes 域，
+ * #768 D11 由 domain2/routes/reports.ts 迁入，零行为变更）。
  *
  * 手动生成异步化：POST /reports/generate 立即返回 202 {taskId}（幂等短路时
  * 200 {meta, reused:true}），客户端经 GET /reports/generate/status 轮询；生成在
  * ReportTaskQueue 内串行执行，HTTP 响应与 LLM 耗时解耦。
+ *
+ * 依赖方向：配置服务与任务队列只经本域 deps.ts 窄口消费
+ * （ReportRoutesConfigPort/ReportRoutesQueuePort），不经 apply 装配面；
+ * 执行器由队列内嵌（server/execute 工厂在组合根装配），本文件不直引。
  */
 import { readFile } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
@@ -19,23 +24,20 @@ import {
   normalizeReportConfig,
   readReportConfig,
   type ReportPeriod,
-} from "../../server/config/interface.ts";
-import { readReportIndex, reportHtmlFile, reportMetaFile } from "../../server/execute/interface.ts";
-import {
-  presetLastRunForNewlyEnabled,
-  previousClosedWindow,
-} from "../../server/schedule/interface.ts";
-import { readLastRun, updateLastRun } from "../../server/schedule/interface.ts";
-import type { ReportTaskQueue } from "../../server/schedule/interface.ts";
-import type { ReportConfigService } from "../../apply/interface.ts";
+} from "../config/interface.ts";
+import { readReportIndex, reportHtmlFile, reportMetaFile } from "../execute/interface.ts";
+import { presetLastRunForNewlyEnabled, previousClosedWindow } from "../schedule/interface.ts";
+import { readLastRun, updateLastRun } from "../schedule/interface.ts";
+import type { ReportRoutesConfigPort, ReportRoutesQueuePort } from "./deps.ts";
 import { sanitizeHtml } from "../../shared/interface.ts";
 
 export interface ReportRoutesContext {
   ctx: Context;
   historyRoot: string;
-  reportQueue: ReportTaskQueue;
-  /** reportCfg 双源收口（get 读内存权威；update 串行写盘+内存+scheduler 热更）。 */
-  reportCfgService: ReportConfigService;
+  /** 任务队列窄口（submit 入队去重；get 状态轮询；执行器由队列内嵌）。 */
+  reportQueue: ReportRoutesQueuePort;
+  /** reportCfg 双源收口窄口（get 读内存权威；update 串行写盘+内存+scheduler 热更）。 */
+  reportCfgService: ReportRoutesConfigPort;
   /**
    * 目录候选清单：GET /report-config 附带 dirs（trend.dirTotals
    * 全留存窗口聚合，含未识别桶），设置页目录范围多选的数据源。可选——测试/无趋势

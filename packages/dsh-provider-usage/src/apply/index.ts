@@ -376,4 +376,4 @@ export type { UserAdapterRecord } from "../server/registry/interface.ts";
 // 插件契约转发（apply 主流程 + 路由表实现于 apply.ts）
 export { apply, ROUTES } from "./apply.ts";
 // 路由 handler 直出（status 响应 reused 透传的单元断言面）
-export { handleReportStatus } from "../domain2/routes/interface.ts";
+export { handleReportStatus } from "../server/report-routes/interface.ts";

@@ -39,7 +39,7 @@
 | E2 聚合/压实/存储层 | 双面记账+压实+分片+自愈 | server/aggregate/{interface.ts 门面 + deps.ts 注入面 + aggregator/aggregate-rows/aggregate-query/store/index}（#768 D8 由 domain2/aggregate 整域迁入，derive/align 聚合查询纯面 + 随行修正与冻结，A4(f) 判据锁定） | D2 后主类保留状态容器与方法，压实转换/查询投影为纯函数模块（不接触 this） |
 | E3 报告调度层 | 窗口/幂等+队列+lastRun（配置面 D1 起归 server/config） | server/schedule/{due,scheduler,tasks,store}（#768 D2 由 domain2/schedule+common/last-run 整域迁入，叶环归零） | 与 E4 经本域门面解耦（executor 持注入，推进走同一 per-root 链）；tasks 持注入 executor |
 | E4 报告执行/产出层 | 执行接线+LLM 生成+渲染+落盘 | server/execute/{report-index,runner,generate,format,executor,list-dirs}（#768 D3 由 domain2 整域迁入，零行为变更） | executor 独立工厂（含错误脱敏契约）；list-dirs 独立文件（闭包收敛）；parse+记忆化单源 |
-| E5 路由层（宿主） | /trend /report-* /health | domain2/routes/{ui(246),reports(313)} | **仅宿主** |
+| E5 路由层（宿主） | /trend /report-* /health | domain2/routes/{interface.ts 门面 + ui} + server/report-routes/{interface.ts 门面 + deps.ts 注入面 + reports}（#768 D11 由 domain2/routes 迁入，interface 门面 + deps 注入面 + 配置窄口消费，零行为变更，释放顺序锁定） | **仅宿主** |
 
 ### 客户端（跨进程 UI 层）
 - 浏览器进程：`src/client/*`（4239 行）——胶囊/面板/设置页五 tab/趋势/报告 UI
@@ -74,7 +74,7 @@
 | E2 | E1/装配 | TrendTracker.buckets/dirRows/seriesStacked/dirStacked/windowSummary/dirTotals/stats；TrendStore | E4/**E5 路由直连** | 四不变量：身份快照/防双计/聚合权威/残差归未识别；**台账守恒（Σ事件 == buckets == agg == dirRows + unidentified）为真缺口断言**，由 unit-trend-ledger 事件回放式端到端对账固化（D2 拆分前置安全网） |
 | E3 | 装配/E5 | candidateWindow/pendingReports/presetLastRun（due）；ReportScheduler/ReportTaskQueue；read/updateLastRun（store） | server/schedule 门面（归一化经 server/config 门面；index 解析经 server/execute 门面纯面，#768 D3 前在 common） | E3⇄E4 经 server/schedule 门面解耦（#768 D2；executor 独立工厂属 E4，推进走同一 per-root 链；读侧记忆化在 server/execute/runner，防双份缓存） |
 | E4 | E3 任务/装配 executor | runDueReport(runner)/generateReport(generate)/buildStatsSnapshot/reportBodyToHtml(format)/persistReport/readReportIndex/parseReportIndexLines | E2（buckets/dirRows，经 domain2 门面纯面复用）+ server/config/schedule 双门面 | LLM 失败不推进 lastRun；注入面=聚合数值+basename；executor 工厂（server/execute/executor.ts，#768 D3 前在 domain2/execute）含错误脱敏契约 |
-| E5 | 浏览器 | 10 路由（/trend /health /ui-config /events /report-*6） | E2/E3/E4 | **E5 直连 E2/E3/E4**（routes/ui 直调 trend 查询面；reports 经 ReportConfigService（server/config/service.ts，#768 D1 前在 apply/report-config-service.ts）收口 reportCfg） |
+| E5 | 浏览器 | 10 路由（/trend /health /ui-config /events /report-*6） | E2/E3/E4 | **E5 直连 E2/E3/E4**（routes/ui 直调 trend 查询面；report-routes 经 deps.ts 窄口（ReportRoutesConfigPort/ReportRoutesQueuePort）收口 reportCfg 与任务队列，#768 D11 前在 domain2/routes 且经 apply 装配面取服务类型；执行器由队列内嵌，组合根装配） |
 
 ### 2.3 隐藏共享
 | 共享 | 位置 | 说明 |

@@ -10,7 +10,9 @@
  * - D1③ 构造只递 root+initial+onUpdate：实参键集恰为三项，且三参可完成装配
  *   （内存权威 + 串行写链 + 落盘 roundtrip）。
  *
- * 扫描面 = src/apply/apply.ts + src/apply/interface.ts（装配逻辑）；
+ * 扫描面 = src/apply/apply.ts + src/apply/interface.ts（装配逻辑；#768 D11 起 interface.ts
+ * 为空锚点：原唯一源码消费改走 server/report-routes/deps.ts 窄口，转发消除，文件保留只为
+ * 模块归属）；
  * src/apply/index.ts 是 lib 导出面（符号转发），不是判断——它的符号集由
  * export-surface-snapshot 门禁锁定，不在本用例扫描面内（误扫即把转发当判断）。
  *

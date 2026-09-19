@@ -79,13 +79,13 @@
       }
     },
     "dsh-provider-usage": {
-      "modules": 16,
-      "scannedSrcFiles": 82,
-      "allSrcTsFiles": 97,
+      "modules": 17,
+      "scannedSrcFiles": 84,
+      "allSrcTsFiles": 99,
       "interfaceFacades": 15,
-      "leafValueEdges": 40,
-      "fileValueEdges": 147,
-      "crossModuleRefs": 181,
+      "leafValueEdges": 42,
+      "fileValueEdges": 148,
+      "crossModuleRefs": 180,
       "quality": {
         "leafModuleCycles": [
           "server/execute|server/schedule"
@@ -108,12 +108,10 @@
           "apply|server/history",
           "apply|server/pipeline",
           "apply|server/registry",
+          "apply|server/report-routes",
           "apply|server/schedule",
           "apply|server/upgrade",
           "domain2/routes|server/collect",
-          "domain2/routes|server/config",
-          "domain2/routes|server/execute",
-          "domain2/routes|server/schedule",
           "server/aggregate|server/collect",
           "server/config|server/collect",
           "server/data-routes|server/registry",
@@ -122,6 +120,9 @@
           "server/execute|server/config",
           "server/execute|server/schedule",
           "server/pipeline|server/registry",
+          "server/report-routes|server/config",
+          "server/report-routes|server/execute",
+          "server/report-routes|server/schedule",
           "server/schedule|server/config",
           "server/schedule|server/execute",
           "server/upgrade|server/config",
