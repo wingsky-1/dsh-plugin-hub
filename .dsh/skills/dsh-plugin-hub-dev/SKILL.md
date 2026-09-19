@@ -77,10 +77,12 @@ IIFE 工厂、Symbol.toStringTag 装配、**load id === 包名** define 注入�
   归位 `src/client/`；宿主模块留 `src/` 根。
 - **宿主与客户端共享**的模块（如双端共用的后缀表 / 契约常量）留 `src/` 根，
   客户端经 `../grouping.js` 引用——不要把共享模块搬进 src/client/。
+- **新包先登记**：新建包目录后先到 `scripts/data/plugins-manifest.json` 登记
+  （`active` / `standalone`，见 DEVELOPMENT.md §4 契约），否则门禁 fail-closed 才暴露。
 
 ## 5. 门禁与阶段提交（改动提交前全跑，在仓库根执行）
 
-> 完成定义以根 [AGENTS.md 门禁矩阵](../../../AGENTS.md) 为**单一事实源**：`pnpm gate:pr` 就是该矩阵
+> 完成定义以根 [docs/GATE.md 归属矩阵](../../../docs/GATE.md) 为**单一事实源**（AGENTS.md 门禁节只定决策）：`pnpm gate:pr` 就是该矩阵
 > 的 pr 档（本地本就全仓口径，只少 full 的「豁免到期台账」收集），本清单只作迭代内自查，
 > 不替代该矩阵的分层门槛。
 > 旧写法 `pnpm build && pnpm test && pnpm contract && pnpm pack:check && pnpm typecheck` 自审计
