@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>dsh-provider-usage DA 落盘与命名空间割接（目标）</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --color-paper:   #f5f5f5;
+      --color-ink:     #2d3142;
+      --color-muted:   #4f5d75;
+      --color-accent:  #eb6c36;
+      --font-sans:     'Geist', system-ui, sans-serif;
+      --font-serif:    'Instrument Serif', serif;
+      --font-mono:     'Geist Mono', ui-monospace, monospace;
+    }
+    body {
+      font-family: var(--font-sans);
+      background: var(--color-paper);
+      color: var(--color-ink);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 2rem;
+    }
+    .frame { max-width: 1240px; width: 100%; }
+    .eyebrow {
+      font-family: var(--font-mono); font-size: 0.66rem; font-weight: 500;
+      letter-spacing: 0.18em; text-transform: uppercase; color: var(--color-muted);
+      margin-bottom: 0.5rem;
+    }
+    h1 {
+      font-family: var(--font-serif); font-size: clamp(1.4rem, 2.2vw + 0.7rem, 1.9rem);
+      font-weight: 400; letter-spacing: -0.02em; line-height: 1.15; color: var(--color-ink);
+      margin-bottom: 0.4rem;
+    }
+    .meta { font-family: var(--font-mono); font-size: 0.72rem; color: var(--color-muted); margin-bottom: 1.25rem; }
+    svg { width: 100%; min-width: 1040px; display: block; }
+  </style>
+</head>
+<body>
+  <div class="frame">
+    <p class="eyebrow">Architecture &middot; dsh-provider-usage &middot; DA</p>
+    <h1>落盘与命名空间割接（目标）</h1>
+    <p class="meta">目标锚 draft-768-target-arch.md v3 &sect;3 &middot; SVG 讲结构（mermaid 讲关系，非同图两画法）</p>
+
+    <svg viewBox="0 0 1160 450" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="da-title da-desc">
+      <title id="da-title">DA：落盘与命名空间割接（目标）</title>
+      <desc id="da-desc">上半为命名空间割接六规则：纯字节搬移、目标存在不覆盖、旧文件固定名留痕、版本化空形、可再生不进迁移、只搬运不校验；下半为历史天分片落盘、SSE 非可靠推送与落盘对账。节点名与锚 v3 第 3 节同词。</desc>
+      <defs>
+        <pattern id="dots" width="22" height="22" patternUnits="userSpaceOnUse">
+          <circle cx="1" cy="1" r="0.9" fill="rgba(45,49,66,0.10)"/>
+        </pattern>
+        <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/></marker>
+        <marker id="arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#eb6c36"/></marker>
+      </defs>
+
+      <rect width="100%" height="100%" fill="#f5f5f5"/>
+      <rect width="100%" height="100%" fill="url(#dots)" opacity="0.55"/>
+
+      <text x="40" y="40" fill="#4f5d75" font-size="13" font-family="'Geist Mono', monospace" letter-spacing="0.14em">命名空间割接 · 纯字节搬移六规则</text>
+
+      <g id="da-ns-move">
+        <rect x="40" y="56" width="340" height="96" rx="8" fill="#ffffff" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+        <text x="210" y="102" fill="#2d3142" font-size="19" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">纯字节搬移</text>
+        <text x="210" y="126" fill="#4f5d75" font-size="14" font-family="'Geist', sans-serif" text-anchor="middle">语义冻结搬家</text>
+      </g>
+      <g id="da-ns-exists">
+        <rect x="410" y="56" width="340" height="96" rx="8" fill="#ffffff" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+        <text x="580" y="102" fill="#2d3142" font-size="19" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">目标存在不覆盖</text>
+        <text x="580" y="126" fill="#4f5d75" font-size="14" font-family="'Geist', sans-serif" text-anchor="middle">已存在跳过</text>
+      </g>
+      <g id="da-ns-trace">
+        <rect x="780" y="56" width="340" height="96" rx="8" fill="#ffffff" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+        <text x="950" y="102" fill="#2d3142" font-size="19" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">旧文件固定名留痕</text>
+        <text x="950" y="126" fill="#4f5d75" font-size="14" font-family="'Geist', sans-serif" text-anchor="middle">搬家可审计</text>
+      </g>
+
+      <g id="da-ns-empty">
+        <rect x="40" y="168" width="340" height="96" rx="8" fill="#ffffff" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+        <text x="210" y="214" fill="#2d3142" font-size="19" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">版本化空形</text>
+        <text x="210" y="238" fill="#4f5d75" font-size="14" font-family="'Geist', sans-serif" text-anchor="middle">空结构占位</text>
+      </g>
+      <g id="da-ns-regen">
+        <rect x="410" y="168" width="340" height="96" rx="8" fill="#ffffff" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+        <text x="580" y="214" fill="#2d3142" font-size="19" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">可再生不进迁移</text>
+        <text x="580" y="238" fill="#4f5d75" font-size="14" font-family="'Geist', sans-serif" text-anchor="middle">运行时重建</text>
+      </g>
+      <g id="da-ns-novalidate">
+        <rect x="780" y="168" width="340" height="96" rx="8" fill="#f1f5fb" stroke="#2e5aa8" stroke-width="1.6"/>
+        <text x="950" y="214" fill="#2d3142" font-size="19" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">只搬运不校验</text>
+        <text x="950" y="238" fill="#4f5d75" font-size="14" font-family="'Geist', sans-serif" text-anchor="middle">校验归业务域</text>
+      </g>
+
+      <text x="40" y="300" fill="#4f5d75" font-size="13" font-family="'Geist Mono', monospace" letter-spacing="0.14em">落盘与推送 · 历史 / SSE / 对账</text>
+
+      <g id="da-history">
+        <rect x="40" y="316" width="340" height="100" rx="8" fill="#f1f5fb" stroke="#2e5aa8" stroke-width="1.6"/>
+        <text x="210" y="354" fill="#2d3142" font-size="20" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">历史天分片落盘</text>
+        <text x="210" y="380" fill="#4f5d75" font-size="14" font-family="'Geist', sans-serif" text-anchor="middle">JSONL 0600 · 超龄清理</text>
+      </g>
+      <g id="da-sse">
+        <rect x="410" y="316" width="340" height="100" rx="8" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1.6"/>
+        <text x="580" y="354" fill="#2d3142" font-size="20" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">SSE 非可靠推送</text>
+        <text x="580" y="380" fill="#4f5d75" font-size="14" font-family="'Geist', sans-serif" text-anchor="middle">断线不补 · 非队列</text>
+      </g>
+      <g id="da-archcheck">
+        <rect x="780" y="316" width="340" height="100" rx="8" fill="#ffffff" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+        <text x="950" y="354" fill="#2d3142" font-size="20" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">落盘对账</text>
+        <text x="950" y="380" fill="#4f5d75" font-size="14" font-family="'Geist', sans-serif" text-anchor="middle">按包内文档 · 缺件不通过</text>
+      </g>
+    </svg>
+  </div>
+</body>
+</html>
