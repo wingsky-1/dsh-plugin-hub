@@ -1,0 +1,129 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg viewBox="0 0 1160 720" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="da-title da-desc">
+      <title id="da-title">DA：落盘与命名空间割接（目标）</title>
+      <desc id="da-desc">上半为 upgrade 命名空间割接搬运流：旧位置经纯字节搬移写新位置，分支为目标存在不覆盖、旧文件固定名留痕、版本化空形、可再生不进迁移、只搬运不校验（校验归 config 归一化）；下半为历史天分片 JSONL、last-run 校准链 index.jsonl 经 derive/align 到 writeLastRun per-root 链、SSE 非可靠推送与落盘对账。节点名与锚 v3 第 3 节同词。</desc>
+      <defs><style>@import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&amp;family=Geist:wght@400;500;600&amp;family=Geist+Mono:wght@400;500;600&amp;display=swap');</style>
+        <pattern id="dots" width="22" height="22" patternUnits="userSpaceOnUse">
+          <circle cx="1" cy="1" r="0.9" fill="rgba(45,49,66,0.10)"/>
+        </pattern>
+        <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/></marker>
+        <marker id="arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#eb6c36"/></marker>
+        <marker id="arrow-blue" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#2e5aa8"/></marker>
+      </defs>
+
+      <rect width="100%" height="100%" fill="#f5f5f5"/>
+      <rect width="100%" height="100%" fill="url(#dots)" opacity="0.55"/>
+
+      <text x="40" y="40" fill="#4f5d75" font-size="13" font-family="'Geist Mono', monospace" letter-spacing="0.14em">命名空间割接 · upgrade 纯字节搬运流（旧→新）</text>
+
+      <g id="da-old">
+        <rect x="40" y="56" width="300" height="96" rx="8" fill="#ffffff" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+        <text x="190" y="100" fill="#2d3142" font-size="18" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">旧命名空间位置</text>
+        <text x="190" y="124" fill="#4f5d75" font-size="13" font-family="'Geist', sans-serif" text-anchor="middle">history旧桶 · 旧config · last-run v1</text>
+      </g>
+      <g id="da-move">
+        <rect x="430" y="56" width="300" height="96" rx="8" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1.6"/>
+        <text x="580" y="100" fill="#2d3142" font-size="18" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">upgrade 纯字节搬移</text>
+        <text x="580" y="124" fill="#4f5d75" font-size="13" font-family="'Geist', sans-serif" text-anchor="middle">不解析 · 只搬运</text>
+      </g>
+      <g id="da-new">
+        <rect x="820" y="56" width="300" height="96" rx="8" fill="#ffffff" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+        <text x="970" y="100" fill="#2d3142" font-size="18" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">新命名空间位置</text>
+        <text x="970" y="124" fill="#4f5d75" font-size="13" font-family="'Geist', sans-serif" text-anchor="middle">天分片JSONL · config.json · v2</text>
+      </g>
+
+      <g id="da-trace">
+        <rect x="40" y="176" width="300" height="96" rx="8" fill="#ffffff" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+        <text x="190" y="220" fill="#2d3142" font-size="18" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">旧文件固定名留痕</text>
+        <text x="190" y="244" fill="#4f5d75" font-size="13" font-family="'Geist', sans-serif" text-anchor="middle">.migrated.bak · .v3.bak</text>
+      </g>
+      <g id="da-exists">
+        <rect x="430" y="176" width="300" height="96" rx="8" fill="#ffffff" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+        <text x="580" y="220" fill="#2d3142" font-size="18" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">目标存在不覆盖</text>
+        <text x="580" y="244" fill="#4f5d75" font-size="13" font-family="'Geist', sans-serif" text-anchor="middle">已存在跳过</text>
+      </g>
+      <g id="da-empty">
+        <rect x="820" y="176" width="300" height="96" rx="8" fill="#ffffff" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+        <text x="970" y="220" fill="#2d3142" font-size="18" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">版本化空形占位</text>
+        <text x="970" y="244" fill="#4f5d75" font-size="13" font-family="'Geist', sans-serif" text-anchor="middle">缺件写空 schema=2</text>
+      </g>
+
+      <g id="da-regen">
+        <rect x="40" y="288" width="300" height="96" rx="8" fill="#ffffff" stroke="rgba(45,49,66,0.30)" stroke-width="1" stroke-dasharray="6 4"/>
+        <text x="190" y="332" fill="#2d3142" font-size="18" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">可再生不进迁移</text>
+        <text x="190" y="356" fill="#4f5d75" font-size="13" font-family="'Geist', sans-serif" text-anchor="middle">运行时重建 · 跳过</text>
+      </g>
+      <g id="da-novalidate">
+        <rect x="430" y="288" width="300" height="96" rx="8" fill="#f1f5fb" stroke="#2e5aa8" stroke-width="1.6"/>
+        <text x="580" y="332" fill="#2d3142" font-size="18" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">只搬运不校验</text>
+        <text x="580" y="356" fill="#4f5d75" font-size="13" font-family="'Geist', sans-serif" text-anchor="middle">不补默认 · 直搬</text>
+      </g>
+      <g id="da-confignorm">
+        <rect x="820" y="288" width="300" height="96" rx="8" fill="#ffffff" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+        <text x="970" y="332" fill="#2d3142" font-size="17" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">config 归一化单答案</text>
+        <text x="970" y="356" fill="#4f5d75" font-size="13" font-family="'Geist', sans-serif" text-anchor="middle">normalizeReportConfig</text>
+      </g>
+
+      <path d="M340 104 H430" fill="none" stroke="#4f5d75" stroke-width="1.6" marker-end="url(#arrow)"/>
+      <text x="385" y="92" fill="#4f5d75" font-size="13" font-family="'Geist', sans-serif" text-anchor="middle" style="paint-order:stroke;stroke:#f5f5f5;stroke-width:5px">读旧字节</text>
+      <path d="M730 104 H820" fill="none" stroke="#4f5d75" stroke-width="1.6" marker-end="url(#arrow)"/>
+      <text x="775" y="92" fill="#4f5d75" font-size="13" font-family="'Geist', sans-serif" text-anchor="middle" style="paint-order:stroke;stroke:#f5f5f5;stroke-width:5px">搬运写入</text>
+      <path d="M190 152 V176" fill="none" stroke="#4f5d75" stroke-width="1.6" marker-end="url(#arrow)"/>
+      <text x="206" y="168" fill="#4f5d75" font-size="12" font-family="'Geist', sans-serif" style="paint-order:stroke;stroke:#f5f5f5;stroke-width:5px">成功后 rename</text>
+      <path d="M580 152 V176" fill="none" stroke="#4f5d75" stroke-width="1.6" marker-end="url(#arrow)"/>
+      <text x="596" y="168" fill="#4f5d75" font-size="12" font-family="'Geist', sans-serif" style="paint-order:stroke;stroke:#f5f5f5;stroke-width:5px">已存在→跳过</text>
+      <path d="M970 152 V176" fill="none" stroke="#4f5d75" stroke-width="1.6" marker-end="url(#arrow)"/>
+      <text x="986" y="168" fill="#4f5d75" font-size="12" font-family="'Geist', sans-serif" style="paint-order:stroke;stroke:#f5f5f5;stroke-width:5px">缺件写空形</text>
+      <path d="M40 104 H20 V336 H40" fill="none" stroke="#4f5d75" stroke-width="1.6" marker-end="url(#arrow)"/>
+      <text x="28" y="228" fill="#4f5d75" font-size="12" font-family="'Geist', sans-serif" style="paint-order:stroke;stroke:#f5f5f5;stroke-width:5px">可再生→跳过</text>
+      <path d="M730 120 H760 V336 H730" fill="none" stroke="#2e5aa8" stroke-width="1.6" marker-end="url(#arrow-blue)"/>
+      <text x="775" y="232" fill="#2e5aa8" font-size="12" font-family="'Geist', sans-serif" text-anchor="middle" style="paint-order:stroke;stroke:#f5f5f5;stroke-width:5px">不校验·直搬</text>
+      <path d="M730 336 H820" fill="none" stroke="#2e5aa8" stroke-width="1.6" marker-end="url(#arrow-blue)"/>
+      <text x="775" y="324" fill="#2e5aa8" font-size="12" font-family="'Geist', sans-serif" text-anchor="middle" style="paint-order:stroke;stroke:#f5f5f5;stroke-width:5px">合法性→归一化</text>
+
+      <text x="40" y="420" fill="#4f5d75" font-size="13" font-family="'Geist Mono', monospace" letter-spacing="0.14em">落盘与推送 · 历史 / SSE / 对账</text>
+
+      <g id="da-history">
+        <rect x="40" y="436" width="340" height="100" rx="8" fill="#f1f5fb" stroke="#2e5aa8" stroke-width="1.6"/>
+        <text x="210" y="474" fill="#2d3142" font-size="19" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">历史天分片 JSONL</text>
+        <text x="210" y="500" fill="#4f5d75" font-size="13" font-family="'Geist', sans-serif" text-anchor="middle">0600 · 超龄清理留1 · 坏行跳过</text>
+      </g>
+      <g id="da-sse">
+        <rect x="410" y="436" width="340" height="100" rx="8" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1.6"/>
+        <text x="580" y="474" fill="#2d3142" font-size="19" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">SSE 非可靠推送</text>
+        <text x="580" y="500" fill="#4f5d75" font-size="13" font-family="'Geist', sans-serif" text-anchor="middle">断线不补 · 非队列 · 重连重拉</text>
+      </g>
+      <g id="da-archcheck">
+        <rect x="780" y="436" width="340" height="100" rx="8" fill="#ffffff" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+        <text x="950" y="474" fill="#2d3142" font-size="19" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">落盘对账</text>
+        <text x="950" y="500" fill="#4f5d75" font-size="13" font-family="'Geist', sans-serif" text-anchor="middle">按architecture.md · 缺件不通过</text>
+      </g>
+
+      <path d="M210 536 V552 H900 V536" fill="none" stroke="#4f5d75" stroke-width="1.6" marker-end="url(#arrow)"/>
+      <text x="555" y="544" fill="#4f5d75" font-size="12" font-family="'Geist', sans-serif" text-anchor="middle" style="paint-order:stroke;stroke:#f5f5f5;stroke-width:5px">对账输入 · 缺件不通过</text>
+      <path d="M1000 584 V536" fill="none" stroke="#4f5d75" stroke-width="1.6" marker-end="url(#arrow)"/>
+      <text x="1016" y="564" fill="#4f5d75" font-size="12" font-family="'Geist', sans-serif" style="paint-order:stroke;stroke:#f5f5f5;stroke-width:5px">校准后落盘</text>
+
+      <text x="40" y="572" fill="#4f5d75" font-size="13" font-family="'Geist Mono', monospace" letter-spacing="0.14em">last-run 校准链 · index 事实→投影（per-root 串行）</text>
+
+      <g id="da-index">
+        <rect x="40" y="588" width="340" height="100" rx="8" fill="#ffffff" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+        <text x="210" y="626" fill="#2d3142" font-size="18" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">reports/index.jsonl</text>
+        <text x="210" y="652" fill="#4f5d75" font-size="13" font-family="'Geist', sans-serif" text-anchor="middle">事实日志 · 坏行跳过</text>
+      </g>
+      <g id="da-derive">
+        <rect x="410" y="588" width="340" height="100" rx="8" fill="#ffffff" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+        <text x="580" y="626" fill="#2d3142" font-size="18" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">derive / align 纯函数</text>
+        <text x="580" y="652" fill="#4f5d75" font-size="13" font-family="'Geist', sans-serif" text-anchor="middle">全量重算 · 温和对齐</text>
+      </g>
+      <g id="da-writelastrun">
+        <rect x="780" y="588" width="340" height="100" rx="8" fill="#f1f5fb" stroke="#2e5aa8" stroke-width="1.6"/>
+        <text x="950" y="626" fill="#2d3142" font-size="17" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">writeLastRun per-root链</text>
+        <text x="950" y="652" fill="#4f5d75" font-size="13" font-family="'Geist', sans-serif" text-anchor="middle">串行 · 写前重读→last-run.json</text>
+      </g>
+
+      <path d="M380 638 H410" fill="none" stroke="#2e5aa8" stroke-width="1.6" marker-end="url(#arrow-blue)"/>
+      <text x="395" y="626" fill="#2e5aa8" font-size="12" font-family="'Geist', sans-serif" text-anchor="middle" style="paint-order:stroke;stroke:#f5f5f5;stroke-width:5px">读事实·解析</text>
+      <path d="M750 638 H780" fill="none" stroke="#2e5aa8" stroke-width="1.6" marker-end="url(#arrow-blue)"/>
+      <text x="765" y="626" fill="#2e5aa8" font-size="12" font-family="'Geist', sans-serif" text-anchor="middle" style="paint-order:stroke;stroke:#f5f5f5;stroke-width:5px">经 per-root 串行链</text>
+    </svg>

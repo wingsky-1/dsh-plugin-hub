@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg viewBox="0 0 1160 600" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="ba-title ba-desc">
+      <title id="ba-title">BA：取数主链与显式非目标（目标）</title>
+      <desc id="ba-desc">主链：60s 轮询与 5min 预热汇入 getStats（TTL 缓存 + Mutex，唯一在飞），经 pipeline 调用适配器 fetchData（5s 超时合并），外部 API 返回原始用量后 formatCapsule 成胶囊、sanitize 双层净化、history 天分片落盘、胶囊面板注入；面板可直读本地分片离线可用；密钥只活宿主内存；三内置适配器 select 唯一启用。下半为五项显式非目标。节点名与锚 v3 第 1 节同词。</desc>
+      <defs><style>@import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&amp;family=Geist:wght@400;500;600&amp;family=Geist+Mono:wght@400;500;600&amp;display=swap');</style>
+        <pattern id="dots" width="22" height="22" patternUnits="userSpaceOnUse">
+          <circle cx="1" cy="1" r="0.9" fill="rgba(45,49,66,0.10)"/>
+        </pattern>
+        <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/></marker>
+        <marker id="arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#eb6c36"/></marker>
+        <marker id="arrow-blue" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#2e5aa8"/></marker>
+      </defs>
+
+      <rect width="100%" height="100%" fill="#f5f5f5"/>
+      <rect width="100%" height="100%" fill="url(#dots)" opacity="0.55"/>
+
+      <rect x="40" y="16" width="1080" height="196" rx="8" fill="rgba(235,108,54,0.05)" stroke="#eb6c36" stroke-width="1"/>
+      <text x="60" y="42" fill="#eb6c36" font-size="13" font-family="'Geist Mono', monospace" letter-spacing="0.14em">双触发汇入同一取数入口 · 任一时刻只有一个取数在飞</text>
+
+      <g id="ba-trig-poll">
+        <rect x="60" y="60" width="220" height="104" rx="8" fill="#ffffff" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+        <text x="170" y="102" fill="#2d3142" font-size="20" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">60s 轮询</text>
+        <text x="170" y="130" fill="#4f5d75" font-size="14" font-family="'Geist', sans-serif" text-anchor="middle">scheduler tick 60_000</text>
+      </g>
+      <g id="ba-trig-warmup">
+        <rect x="292" y="60" width="220" height="104" rx="8" fill="#ffffff" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+        <text x="402" y="102" fill="#2d3142" font-size="20" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">5min 预热</text>
+        <text x="402" y="130" fill="#4f5d75" font-size="14" font-family="'Geist', sans-serif" text-anchor="middle">warmup 300s · 启动即跑</text>
+      </g>
+      <g id="ba-getstats">
+        <rect x="524" y="60" width="268" height="104" rx="8" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1.6"/>
+        <text x="658" y="102" fill="#2d3142" font-size="20" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">getStats 同一入口</text>
+        <text x="658" y="130" fill="#4f5d75" font-size="14" font-family="'Geist', sans-serif" text-anchor="middle">TTL 缓存 + Mutex · 唯一在飞</text>
+      </g>
+      <g id="ba-pipeline">
+        <rect x="816" y="60" width="284" height="104" rx="8" fill="#ffffff" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+        <text x="958" y="102" fill="#2d3142" font-size="20" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">pipeline</text>
+        <text x="958" y="130" fill="#4f5d75" font-size="14" font-family="'Geist', sans-serif" text-anchor="middle">取数渲染管道</text>
+      </g>
+
+      <path d="M170 164 V188 H658 V164" fill="none" stroke="#eb6c36" stroke-width="2" marker-end="url(#arrow-accent)"/>
+      <path d="M402 164 V188 H658 V164" fill="none" stroke="#eb6c36" stroke-width="2" marker-end="url(#arrow-accent)"/>
+      <text x="536" y="182" fill="#eb6c36" font-size="14" font-family="'Geist', sans-serif" text-anchor="middle" style="paint-order:stroke;stroke:#f5f5f5;stroke-width:5px">汇入</text>
+      <path d="M792 112 H816" fill="none" stroke="#eb6c36" stroke-width="2" marker-end="url(#arrow-accent)"/>
+      <text x="804" y="116" fill="#eb6c36" font-size="14" font-family="'Geist', sans-serif" text-anchor="middle" style="paint-order:stroke;stroke:#f5f5f5;stroke-width:5px">取数</text>
+
+      <path d="M958 164 V224 H126 V252" fill="none" stroke="#eb6c36" stroke-width="2" marker-end="url(#arrow-accent)"/>
+      <text x="542" y="216" fill="#eb6c36" font-size="14" font-family="'Geist', sans-serif" text-anchor="middle" style="paint-order:stroke;stroke:#f5f5f5;stroke-width:5px">调用适配器</text>
+
+      <text x="160" y="246" fill="#4f5d75" font-size="13" font-family="'Geist Mono', monospace" letter-spacing="0.14em">主链 · 渲染 → 落盘 → 注入</text>
+
+      <g id="ba-adapter">
+        <rect x="40" y="252" width="173" height="134" rx="8" fill="#f1f5fb" stroke="#2e5aa8" stroke-width="1.6"/>
+        <text x="126" y="292" fill="#2d3142" font-size="20" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">适配器取数</text>
+        <text x="126" y="320" fill="#4f5d75" font-size="14" font-family="'Geist', sans-serif" text-anchor="middle">fetchData · 唯一启用切换</text>
+        <text x="126" y="364" fill="#4f5d75" font-size="12" font-family="'Geist Mono', monospace" text-anchor="middle">deepseek·opencode·zai</text>
+      </g>
+      <g id="ba-api">
+        <rect x="223" y="252" width="173" height="134" rx="8" fill="#ffffff" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+        <text x="309" y="292" fill="#2d3142" font-size="20" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">外部 API</text>
+        <text x="309" y="320" fill="#4f5d75" font-size="14" font-family="'Geist', sans-serif" text-anchor="middle">外部用量 API</text>
+      </g>
+      <g id="ba-format">
+        <rect x="406" y="252" width="173" height="134" rx="8" fill="#ffffff" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+        <text x="492" y="292" fill="#2d3142" font-size="20" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">生成胶囊</text>
+        <text x="492" y="320" fill="#4f5d75" font-size="14" font-family="'Geist', sans-serif" text-anchor="middle">formatCapsule 产出</text>
+      </g>
+      <g id="ba-sanitize">
+        <rect x="589" y="252" width="173" height="134" rx="8" fill="#ffffff" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+        <text x="675" y="292" fill="#2d3142" font-size="20" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">结构净化</text>
+        <text x="675" y="320" fill="#4f5d75" font-size="14" font-family="'Geist', sans-serif" text-anchor="middle">sanitize 双层防护</text>
+      </g>
+      <g id="ba-history">
+        <rect x="772" y="252" width="173" height="134" rx="8" fill="#f1f5fb" stroke="#2e5aa8" stroke-width="1.6"/>
+        <text x="858" y="292" fill="#2d3142" font-size="20" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">历史落盘</text>
+        <text x="858" y="320" fill="#4f5d75" font-size="14" font-family="'Geist', sans-serif" text-anchor="middle">天分片 JSONL</text>
+      </g>
+      <g id="ba-panel">
+        <rect x="955" y="252" width="173" height="134" rx="8" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1.6"/>
+        <text x="1041" y="292" fill="#2d3142" font-size="20" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">胶囊面板注入</text>
+        <text x="1041" y="320" fill="#4f5d75" font-size="14" font-family="'Geist', sans-serif" text-anchor="middle">宿主产出HTML · 注入DOM</text>
+      </g>
+
+      <path d="M213 352 H223" fill="none" stroke="#eb6c36" stroke-width="2" marker-end="url(#arrow-accent)"/>
+      <text x="218" y="342" fill="#eb6c36" font-size="13.5" font-family="'Geist', sans-serif" text-anchor="middle" style="paint-order:stroke;stroke:#f5f5f5;stroke-width:5px">5s超时合并</text>
+      <path d="M396 352 H406" fill="none" stroke="#eb6c36" stroke-width="2" marker-end="url(#arrow-accent)"/>
+      <text x="401" y="342" fill="#eb6c36" font-size="13.5" font-family="'Geist', sans-serif" text-anchor="middle" style="paint-order:stroke;stroke:#f5f5f5;stroke-width:5px">原始用量返回</text>
+      <path d="M579 352 H589" fill="none" stroke="#eb6c36" stroke-width="2" marker-end="url(#arrow-accent)"/>
+      <text x="584" y="342" fill="#eb6c36" font-size="13.5" font-family="'Geist', sans-serif" text-anchor="middle" style="paint-order:stroke;stroke:#f5f5f5;stroke-width:5px">HTML进净化</text>
+      <path d="M762 352 H772" fill="none" stroke="#eb6c36" stroke-width="2" marker-end="url(#arrow-accent)"/>
+      <text x="767" y="342" fill="#eb6c36" font-size="13.5" font-family="'Geist', sans-serif" text-anchor="middle" style="paint-order:stroke;stroke:#f5f5f5;stroke-width:5px">净化后落盘</text>
+      <path d="M945 352 H955" fill="none" stroke="#eb6c36" stroke-width="2" marker-end="url(#arrow-accent)"/>
+      <text x="950" y="342" fill="#eb6c36" font-size="13.5" font-family="'Geist', sans-serif" text-anchor="middle" style="paint-order:stroke;stroke:#f5f5f5;stroke-width:5px">落盘后注入</text>
+
+      <path d="M900 386 Q940 430 992 386" fill="none" stroke="#2e5aa8" stroke-width="2" marker-end="url(#arrow-blue)"/>
+      <text x="946" y="426" fill="#2e5aa8" font-size="13.5" font-family="'Geist', sans-serif" text-anchor="middle" style="paint-order:stroke;stroke:#f5f5f5;stroke-width:5px">面板直读本地分片 · 离线可用</text>
+
+      <g id="ba-key">
+        <rect x="40" y="402" width="320" height="58" rx="8" fill="#f1f5fb" stroke="#2e5aa8" stroke-width="1.4"/>
+        <text x="200" y="426" fill="#2d3142" font-size="16" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">密钥只活宿主内存</text>
+        <text x="200" y="446" fill="#4f5d75" font-size="13" font-family="'Geist', sans-serif" text-anchor="middle">五级解析链 · 不进浏览器与设置</text>
+      </g>
+      <path d="M126 386 V402" fill="none" stroke="#2e5aa8" stroke-width="1.6" stroke-dasharray="5 3" marker-end="url(#arrow-blue)"/>
+      <text x="136" y="398" fill="#2e5aa8" font-size="13" font-family="'Geist', sans-serif" style="paint-order:stroke;stroke:#f5f5f5;stroke-width:5px">内存注入</text>
+
+      <text x="40" y="490" fill="#4f5d75" font-size="13" font-family="'Geist Mono', monospace" letter-spacing="0.14em">显式非目标</text>
+
+      <g id="ba-non">
+        <rect x="40" y="500" width="208" height="72" rx="8" fill="#ffffff" stroke="#c96a5e" stroke-width="1.2" stroke-dasharray="6 4"/>
+        <text x="144" y="544" fill="#4f5d75" font-size="16" font-family="'Geist', sans-serif" text-anchor="middle">不改适配器契约</text>
+        <rect x="258" y="500" width="208" height="72" rx="8" fill="#ffffff" stroke="#c96a5e" stroke-width="1.2" stroke-dasharray="6 4"/>
+        <text x="362" y="544" fill="#4f5d75" font-size="16" font-family="'Geist', sans-serif" text-anchor="middle">不改取数语义</text>
+        <rect x="476" y="500" width="208" height="72" rx="8" fill="#ffffff" stroke="#c96a5e" stroke-width="1.2" stroke-dasharray="6 4"/>
+        <text x="580" y="544" fill="#4f5d75" font-size="16" font-family="'Geist', sans-serif" text-anchor="middle">不改 UI 文案</text>
+        <rect x="694" y="500" width="208" height="72" rx="8" fill="#ffffff" stroke="#c96a5e" stroke-width="1.2" stroke-dasharray="6 4"/>
+        <text x="798" y="544" fill="#4f5d75" font-size="16" font-family="'Geist', sans-serif" text-anchor="middle">行为零变化验收</text>
+        <rect x="912" y="500" width="208" height="72" rx="8" fill="#ffffff" stroke="#c96a5e" stroke-width="1.2" stroke-dasharray="6 4"/>
+        <text x="1016" y="544" fill="#4f5d75" font-size="16" font-family="'Geist', sans-serif" text-anchor="middle">多错语义另立评审</text>
+      </g>
+    </svg>
