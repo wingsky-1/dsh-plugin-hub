@@ -260,7 +260,7 @@ function runLanProxy(root) {
 }
 
 function checkLanProxyTableEquality(cfgPath, problems, schema, validators, hints) {
-  // L1：三表两两全等（18 键）
+  // L1：三表两两全等（19 键，#911 加 tlsCaCertFile）
   const pairs = [
     ["Config", schema, "FILE_CONFIG_VALIDATORS", validators],
     ["Config", schema, "SETTING_FIELD_HINTS", hints],
