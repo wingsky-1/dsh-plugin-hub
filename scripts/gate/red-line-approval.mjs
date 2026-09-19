@@ -16,7 +16,7 @@
  * 不可解析」与「判红」分成两个退出码——把「判据没跑起来」伪装成「有违规」会让门禁的可信度
  * 一起贬值（1 才是违规）。
  *
- * 红线面是**派生**的，不是常量：基座只有 `AGENTS.md` 明写的 `.github/**`，其余进面的是数据
+ * 红线面是**派生**的，不是常量：基座是 `AGENTS.md` 明写的 `.github/**` 与 `.dsh/skills/**`，其余进面的是数据
  * 事实源声明表里被声明为 `sources` 的每个文件（外加声明表自身）。三条理由与代价见
  * `redLinePatterns` 的注释——一句话：关闸开关是数据不是代码，谁被声明为事实源谁就该在面内。
  *
@@ -38,13 +38,15 @@ import { join, matchesGlob, normalize, relative } from "node:path";
 import { failClosed } from "../lib/gate-exit.mjs";
 
 /**
- * 红线面的**基座**：仓库 `AGENTS.md` 明写的红线之一（`.github/` 下 workflow 与分支保护）。
+ * 红线面的**基座**：仓库 `AGENTS.md` 明写的红线（`.github/` 下 workflow 与分支保护、`.dsh/skills/**` skill 规程变更）。
  *
- * 它是本文件里唯一的静态项；其余红线面一律**派生**自数据事实源声明表（`redLinePatterns`）。
+ * 基座是本文件里仅有的静态项；其余红线面一律**派生**自数据事实源声明表（`redLinePatterns`）。
  * 上一版把 `scripts/gate/**` 也钉成静态项，等于自行扩大 `AGENTS.md` 的红线定义，且在 GitHub
- * 侧没有任何 `approved` 留痕——#851 裁决撤回，改由「被声明为事实源」派生。
+ * 侧没有任何 `approved` 留痕——#851 裁决撤回，改由「被声明为事实源」派生。`.dsh/skills/**` 不同：
+ * 它在 `AGENTS.md` 红线清单里有明文（改 skill 等于改全仓 agent 行为，blast radius 不亚于改 workflow），
+ * 且 skill PR 稀少不会造成 #851 式的自治卡死（理由②不适用）——故随 AGENTS 修訂同批入面，批准留痕即 PR 的 `approved` 标签。
  */
-export const RED_LINE_BASE_PATTERNS = [".github/**"];
+export const RED_LINE_BASE_PATTERNS = [".github/**", ".dsh/skills/**"];
 
 /** 声明表的规范仓库路径（#850）。声明表自身也在面内：改它的 `sources` 等于改红线面。 */
 export const REGISTRY_REL_PATH = "scripts/data/threshold-registry.json";
@@ -117,8 +119,8 @@ function normalizePatterns(patterns) {
  * 由声明表**派生**红线面（#843 M1 / #851 裁决后的口径）。
  *
  * 三条理由：
- *   ① `scripts/gate/**` 不在 `AGENTS.md` 的红线清单里（清单只有公共 API 行为变更 / 新增第三方
- *      依赖 / `.github/` 下 workflow 与分支保护 / 发版）。把它写进面里是**扩大红线定义**，且在
+ *   ① `scripts/gate/**` 不在 `AGENTS.md` 的红线清单里（清单：公共 API 行为变更 / 新增第三方
+ *      依赖 / `.github/` 下 workflow 与分支保护 / 发版 / `.dsh/skills/**` skill 规程变更）。把它写进面里是**扩大红线定义**，且在
  *      GitHub 侧没有 `approved` 留痕——「加固面」是无据的自我加冕；
  *   ② 代价与收益不成比例：实测最近 20 个 merged PR 有 14 个（70%）触及 `scripts/gate/**`，
  *      面落在这里只会把自治循环卡死，拦住的却是「改门禁实现」这类正常迭代；

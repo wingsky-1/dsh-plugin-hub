@@ -12,6 +12,7 @@ description: >
   docs/DEVELOPMENT.md「测试分层与变异面登记」「Smoke 测试防 flake 纪律」「测试产物零污染纪律」；
   变异加速与增量口径见 docs/mutation-testing-optimization-guide.md、
   docs/mutation-speedup-methodology.md。
+  阅读地图（必读→可选）：先读 ARCHITECTURE-METHOD §8（分层与变异面）→ DEVELOPMENT 测试三节（分层登记/防 flake/零污染）→ 变异两篇按需。
 ---
 
 # dsh-plugin-hub-testing — 测试的写法与审法
