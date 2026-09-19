@@ -63,6 +63,10 @@
 - `gate/verify-vendored-binaries.mjs` — 发布物面内 vendored 裸二进制判据（批 2b，来源 #784 遗留 D 项）：扫描面 = 各包 `package.json` 的 `files` 白名单（含 `!` 否定条目）∪ npm 无论 `files` 都强制包含的位置（`package.json`、根级 `README*`/`LICENSE*`/`CHANGELOG*`/`NOTICE*`、`bin`、`main`、`bundledDependencies` 展开出的包内 `node_modules` 子树）；判据轴是「会不会随发布物分发」，不是「文件是不是二进制」，故 `docs/` 下的 PNG 不算、`test/fixtures/*.bin` 只在被 `files` 包含时才算。**判据面是源码树（随包分发的源文件）**：未构建的工作副本扫描面会变小，构建产物由 `pack:check` 的 tarball 断言覆盖。面内的内容嗅探命中（头 8 KiB + 尾 1 KiB 双段采样）必须已在 `data/vendored-binaries.json` 登记且 sha256 一致；`kind: "vendored"`（缺省）另要求许可文本存在、非空且**同样在发布物面内**，`kind: "first-party"`（本仓自有资产）只要求哈希绑定。双向 fail-closed：未登记即红（问题文案直接带 sha256，便于登记），登记项消失/哈希漂移/内容已非二进制/登记表不可读（exit 2）也红——防「登记表腐坏后判据静默失效」；`files` 声明了但磁盘上不存在的条目与面内非普通文件（软链目录）只以 `NOTE` 报告，不判红。
 - `gate/verify-shared-fanin.mjs` — 仓库根 shared/ 的跨包扇入判据（#792 跨包档收口，把 shared/README.md 准入规则 1 从文档变成判据）：扫 `packages/<pkg>/src` 的**直接**相对 import（生产口径，test/** 不计入消费者）得「shared 模块 → 消费包集合」；值面模块 < 2 包判红、类型面模块（只有 .d.ts）单列（≥ 1 包）、退役不豁免下限（标 DEPRECATED 仍按同一下限判，见 shared/README.md 准入规则 7）、悬空引用判红。执行点是 ci.yml 的 `Verify shared fan-in` 直接步骤与本地档位的 cheapGlobal（审计 P0-1 从 contract-check 迁出），README 不再维护人肉消费方快照；同一输出即消费方的实时派生来源。
 
+## derive/（只读派生脚本，人工执行、不接门禁）
+
+- `derive/host-contract.mjs` — 宿主契约派生：ctx.on 事件名、settings slot、路由表、MCP_SECTION_ORDER、SESSION_FORMAT 锚、DOM 锚、catalog 锁版的字面量派生 + 五类形态缺口清单；仅 stdout 输出 JSON，不接任何门禁。
+
 ## maintenance/（一次性维护脚本，按需手工执行）
 
 - `maintenance/repair-mcp-catalog-sessions.mjs` — #723 一次性修复：把 dsh-mcp-manager 0.2.x 及更早写入的旧目录 source（`kind: "mcp-catalog"`）改写成宿主词表内的通用形态，救回升级 dsh 后无法加载的历史会话（默认 dry-run，`--apply` 落盘并留 `.bak-<时间戳>` 备份）。根脚本别名：`pnpm repair:mcp-catalog`。
