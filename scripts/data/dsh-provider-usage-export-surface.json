@@ -70,27 +70,11 @@
       "isType": false
     },
     {
-      "name": "DEFAULT_DAILY_PROMPT",
-      "isType": false
-    },
-    {
-      "name": "DEFAULT_MONTHLY_PROMPT",
-      "isType": false
-    },
-    {
-      "name": "DEFAULT_PROMPTS",
-      "isType": false
-    },
-    {
       "name": "DEFAULT_REPORT_CONFIG",
       "isType": false
     },
     {
       "name": "DEFAULT_UI_CONFIG",
-      "isType": false
-    },
-    {
-      "name": "DEFAULT_WEEKLY_PROMPT",
       "isType": false
     },
     {
@@ -155,58 +139,6 @@
     },
     {
       "name": "LAST_RUN_SCHEMA",
-      "isType": false
-    },
-    {
-      "name": "LEGACY_DAILY_PROMPT_V1",
-      "isType": false
-    },
-    {
-      "name": "LEGACY_DAILY_PROMPT_V2",
-      "isType": false
-    },
-    {
-      "name": "LEGACY_DAILY_PROMPT_V3",
-      "isType": false
-    },
-    {
-      "name": "LEGACY_DAILY_PROMPT_V4",
-      "isType": false
-    },
-    {
-      "name": "LEGACY_MONTHLY_PROMPT_V1",
-      "isType": false
-    },
-    {
-      "name": "LEGACY_MONTHLY_PROMPT_V2",
-      "isType": false
-    },
-    {
-      "name": "LEGACY_MONTHLY_PROMPT_V3",
-      "isType": false
-    },
-    {
-      "name": "LEGACY_MONTHLY_PROMPT_V4",
-      "isType": false
-    },
-    {
-      "name": "LEGACY_PROMPT_TEMPLATE",
-      "isType": false
-    },
-    {
-      "name": "LEGACY_WEEKLY_PROMPT_V1",
-      "isType": false
-    },
-    {
-      "name": "LEGACY_WEEKLY_PROMPT_V2",
-      "isType": false
-    },
-    {
-      "name": "LEGACY_WEEKLY_PROMPT_V3",
-      "isType": false
-    },
-    {
-      "name": "LEGACY_WEEKLY_PROMPT_V4",
       "isType": false
     },
     {
@@ -1468,27 +1400,11 @@
           "isType": false
         },
         {
-          "name": "DEFAULT_DAILY_PROMPT",
-          "isType": false
-        },
-        {
-          "name": "DEFAULT_MONTHLY_PROMPT",
-          "isType": false
-        },
-        {
-          "name": "DEFAULT_PROMPTS",
-          "isType": false
-        },
-        {
           "name": "DEFAULT_REPORT_CONFIG",
           "isType": false
         },
         {
           "name": "DEFAULT_UI_CONFIG",
-          "isType": false
-        },
-        {
-          "name": "DEFAULT_WEEKLY_PROMPT",
           "isType": false
         },
         {
@@ -1553,58 +1469,6 @@
         },
         {
           "name": "LAST_RUN_SCHEMA",
-          "isType": false
-        },
-        {
-          "name": "LEGACY_DAILY_PROMPT_V1",
-          "isType": false
-        },
-        {
-          "name": "LEGACY_DAILY_PROMPT_V2",
-          "isType": false
-        },
-        {
-          "name": "LEGACY_DAILY_PROMPT_V3",
-          "isType": false
-        },
-        {
-          "name": "LEGACY_DAILY_PROMPT_V4",
-          "isType": false
-        },
-        {
-          "name": "LEGACY_MONTHLY_PROMPT_V1",
-          "isType": false
-        },
-        {
-          "name": "LEGACY_MONTHLY_PROMPT_V2",
-          "isType": false
-        },
-        {
-          "name": "LEGACY_MONTHLY_PROMPT_V3",
-          "isType": false
-        },
-        {
-          "name": "LEGACY_MONTHLY_PROMPT_V4",
-          "isType": false
-        },
-        {
-          "name": "LEGACY_PROMPT_TEMPLATE",
-          "isType": false
-        },
-        {
-          "name": "LEGACY_WEEKLY_PROMPT_V1",
-          "isType": false
-        },
-        {
-          "name": "LEGACY_WEEKLY_PROMPT_V2",
-          "isType": false
-        },
-        {
-          "name": "LEGACY_WEEKLY_PROMPT_V3",
-          "isType": false
-        },
-        {
-          "name": "LEGACY_WEEKLY_PROMPT_V4",
           "isType": false
         },
         {

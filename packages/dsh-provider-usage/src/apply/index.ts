@@ -241,26 +241,7 @@ export {
   PERIOD_BUCKETS,
 } from "../server/execute/interface.ts";
 export { reportBodyToHtml } from "../server/execute/interface.ts";
-export {
-  DEFAULT_DAILY_PROMPT,
-  DEFAULT_WEEKLY_PROMPT,
-  DEFAULT_MONTHLY_PROMPT,
-  DEFAULT_PROMPTS,
-  LEGACY_PROMPT_TEMPLATE,
-  LEGACY_DAILY_PROMPT_V1,
-  LEGACY_WEEKLY_PROMPT_V1,
-  LEGACY_MONTHLY_PROMPT_V1,
-  LEGACY_DAILY_PROMPT_V2,
-  LEGACY_WEEKLY_PROMPT_V2,
-  LEGACY_MONTHLY_PROMPT_V2,
-  LEGACY_DAILY_PROMPT_V3,
-  LEGACY_WEEKLY_PROMPT_V3,
-  LEGACY_MONTHLY_PROMPT_V3,
-  LEGACY_DAILY_PROMPT_V4,
-  LEGACY_WEEKLY_PROMPT_V4,
-  LEGACY_MONTHLY_PROMPT_V4,
-  promptFor,
-} from "../server/config/interface.ts";
+export { promptFor } from "../server/config/interface.ts";
 export type { ReportPrompts } from "../server/config/interface.ts";
 export type {
   ReportMeta,
