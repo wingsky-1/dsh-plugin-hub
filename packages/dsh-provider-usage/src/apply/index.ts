@@ -230,10 +230,8 @@ export {
   updateLastRun,
   ensureLastRunMigrated,
 } from "../server/schedule/interface.ts";
-// 执行器工厂与报告配置服务（装配面公共符号，测试/外部消费者从 lib 导入）
-export { makeDueReportExecutor } from "../server/execute/interface.ts";
+// 执行器工厂与报告配置服务类型面（值已退役白盒直连域门面，见unit-report-executor）。
 export type { DueExecutorDeps } from "../server/execute/interface.ts";
-export { ReportConfigService } from "../server/config/interface.ts";
 export type { ReportConfigServiceOptions } from "../server/config/interface.ts";
 // 任务队列（手动生成与定时共用执行入口）
 export { ReportTaskQueue } from "../server/schedule/interface.ts";

@@ -202,10 +202,6 @@
       "isType": true
     },
     {
-      "name": "ReportConfigService",
-      "isType": false
-    },
-    {
       "name": "ReportConfigServiceOptions",
       "isType": true
     },
@@ -583,10 +579,6 @@
     },
     {
       "name": "makeAdapterRegistry",
-      "isType": false
-    },
-    {
-      "name": "makeDueReportExecutor",
       "isType": false
     },
     {
@@ -1404,10 +1396,6 @@
           "isType": true
         },
         {
-          "name": "ReportConfigService",
-          "isType": false
-        },
-        {
           "name": "ReportConfigServiceOptions",
           "isType": true
         },
@@ -1785,10 +1773,6 @@
         },
         {
           "name": "makeAdapterRegistry",
-          "isType": false
-        },
-        {
-          "name": "makeDueReportExecutor",
           "isType": false
         },
         {
