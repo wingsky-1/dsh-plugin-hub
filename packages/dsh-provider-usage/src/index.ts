@@ -79,7 +79,6 @@ export {
   lastNWeekKeys,
   legacySampleToData,
   levelFromWindows,
-  listAdapters,
   loadAndValidateAdapter,
   makeAdapterRegistry,
   makeDueReportExecutor,

@@ -578,10 +578,6 @@
       "isType": false
     },
     {
-      "name": "listAdapters",
-      "isType": false
-    },
-    {
       "name": "loadAndValidateAdapter",
       "isType": false
     },
@@ -1781,10 +1777,6 @@
         },
         {
           "name": "levelFromWindows",
-          "isType": false
-        },
-        {
-          "name": "listAdapters",
           "isType": false
         },
         {

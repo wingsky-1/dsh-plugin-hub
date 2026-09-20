@@ -295,7 +295,9 @@ describe("HistoryStore.exportAll", () => {
 // ================================================================ #150 二阶段：HistoryStore 深度分支
 
 import { readdirSync, existsSync } from "node:fs";
-import { listAdapters, migrateLegacyV3 } from "../../../src/apply/index.ts";
+import { migrateLegacyV3 } from "../../../src/apply/index.ts";
+// 白盒直连深路径（#768 B波）：历史纯面经 server/history 门面，不走组合根转发。
+import { listAdapters } from "../../../src/server/history/interface.ts";
 
 describe("构造缺省值", () => {
   let store;

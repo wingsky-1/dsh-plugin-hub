@@ -122,7 +122,6 @@ export {
   startOfDay,
   migrateLegacyV3,
   legacySampleToData,
-  listAdapters,
 } from "../server/history/interface.ts";
 export type { HistoryEntry } from "../server/history/interface.ts";
 export { safeFetchData, safeFormat, fetchWithTimeout } from "../server/pipeline/interface.ts";

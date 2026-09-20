@@ -6,7 +6,7 @@
  * - D5一 经 server/history 域门面装配：HistoryStore 一族只经
  *   server/history/interface.ts，不走旧 domain1/history 入口；apply/apply.ts、
  *   apply/index.ts、server/pipeline/* 的历史消费收口新门面；门面禁整文件
- *   re-export；包导出面（apply/index.ts 转发名）零增减。
+ *   re-export；包导出面（apply/index.ts 转发名）收窄后集合（B波）。
  * - D5二 落盘时序 + 0600 + basename + 超龄清理：DSH_HOME 先于被测门面求值
  *   （动态 import 前指到隔离目录）；落盘文件 0600；恶意 provider/name
  *   段（../、分隔符）经 safeSegment 收敛不出隔离根；pruneAll 删过期留当期。
@@ -114,14 +114,14 @@ describe("D5一 经 server/history 域门面装配", () => {
     expect(hasExportStar(codeLines)).toBe(false);
   });
 
-  it("包导出面零增减：apply/index.ts 转发名不变（改名/漏转即红）", () => {
+  it("包导出面收窄后集合：apply/index.ts 转发名与收窄后一致（改名/漏转即红）", () => {
+    // B波收窄后集合：listAdapters已退役（白盒直连域门面，见unit-history）。
     for (const name of [
       "HistoryStore",
       "parseJsonl",
       "startOfDay",
       "migrateLegacyV3",
       "legacySampleToData",
-      "listAdapters",
     ]) {
       expect(applyFaceSrc.includes(name)).toBe(true);
     }
