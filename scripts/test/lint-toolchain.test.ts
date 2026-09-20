@@ -320,7 +320,12 @@ test("#764 A5：基线的只许收缩棘轮（官方只在 CLI 侧检查，Node 
       writeFileSync(base, JSON.stringify({ [probe]: { [rule]: { count } } }), "utf8");
       return spawnSync(
         process.execPath,
-        ["tools/lint/bin/lint.mjs", `--suppressions=${base}`, probe],
+        // 固件路径用字面量（变量会被接线断言的 spawn 探测漏掉）：与 probe 同值。
+        [
+          "tools/lint/bin/lint.mjs",
+          `--suppressions=${base}`,
+          "tools/lint/fixtures/lint-probe-fixture.ts",
+        ],
         { cwd: ROOT, encoding: "utf8" },
       );
     };

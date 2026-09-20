@@ -32,6 +32,18 @@
       "reason": "变异段台账的判据（--check）只在它的自测里被调用，而该测试在 test:scripts 面内、每个 PR 都跑——判据确实执行，但执行点不在任何 workflow 的 run 步骤里，故按 indirect 登记而非 library"
     },
     {
+      "endpoint": "script:tools/lint/fixtures/lint-probe-fixture.ts",
+      "class": "indirect",
+      "via": "scripts/test/lint-toolchain.test.ts",
+      "reason": "A5 棘轮探针固件（稳定 2 处发现）：只在 lint-toolchain 自测里被 lint.mjs 显式 spawn，判据确实执行，但执行点不在任何 workflow 的 run 步骤里，故按 indirect 登记而非 library"
+    },
+    {
+      "endpoint": "script:tools/lint/fixtures/lint-probe-clean-fixture.ts",
+      "class": "indirect",
+      "via": "scripts/test/lint-toolchain.test.ts",
+      "reason": "A5 子集口径探针固件（零发现对照）：同上，只在 lint-toolchain 自测里被显式 spawn，故按 indirect 登记而非 library"
+    },
+    {
       "endpoint": "script:scripts/gate/collect-exemptions.mjs",
       "class": "tier-only",
       "reason": "豁免到期台账是纯报告（退出码恒 0），只在本地 full 档收集打印——pr 档不跑（#765 裁决：PR 上反复打印同一份存量台账只会变成噪音），CI 侧也没有对应执行点"
