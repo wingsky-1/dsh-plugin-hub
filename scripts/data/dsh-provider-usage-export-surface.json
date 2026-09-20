@@ -330,19 +330,11 @@
       "isType": false
     },
     {
-      "name": "legacySampleToData",
-      "isType": false
-    },
-    {
       "name": "loadAndValidateAdapter",
       "isType": false
     },
     {
       "name": "makeAdapterRegistry",
-      "isType": false
-    },
-    {
-      "name": "migrateLegacyV3",
       "isType": false
     },
     {
@@ -367,10 +359,6 @@
     },
     {
       "name": "panelCacheKey",
-      "isType": false
-    },
-    {
-      "name": "parseJsonl",
       "isType": false
     },
     {
@@ -431,10 +419,6 @@
     },
     {
       "name": "stampEqual",
-      "isType": false
-    },
-    {
-      "name": "startOfDay",
       "isType": false
     },
     {
@@ -1090,19 +1074,11 @@
           "isType": false
         },
         {
-          "name": "legacySampleToData",
-          "isType": false
-        },
-        {
           "name": "loadAndValidateAdapter",
           "isType": false
         },
         {
           "name": "makeAdapterRegistry",
-          "isType": false
-        },
-        {
-          "name": "migrateLegacyV3",
           "isType": false
         },
         {
@@ -1127,10 +1103,6 @@
         },
         {
           "name": "panelCacheKey",
-          "isType": false
-        },
-        {
-          "name": "parseJsonl",
           "isType": false
         },
         {
@@ -1191,10 +1163,6 @@
         },
         {
           "name": "stampEqual",
-          "isType": false
-        },
-        {
-          "name": "startOfDay",
           "isType": false
         },
         {

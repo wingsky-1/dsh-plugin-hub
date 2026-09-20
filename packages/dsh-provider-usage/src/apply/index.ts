@@ -68,13 +68,7 @@ export {
 export type { SamplePoint, DayRecord } from "../server/adapters/interface.ts";
 export { resolveProviderConfig } from "../server/registry/interface.ts";
 export type { ProviderConfigInput, ResolvedProviderConfig } from "../server/registry/interface.ts";
-export {
-  HistoryStore,
-  parseJsonl,
-  startOfDay,
-  migrateLegacyV3,
-  legacySampleToData,
-} from "../server/history/interface.ts";
+export { HistoryStore } from "../server/history/interface.ts";
 export type { HistoryEntry } from "../server/history/interface.ts";
 export { safeFetchData, safeFormat, fetchWithTimeout } from "../server/pipeline/interface.ts";
 export { sanitizeHtml } from "../shared/interface.ts";

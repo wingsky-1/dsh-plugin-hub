@@ -18,10 +18,6 @@ import {
   describeUsageStatsAdapterShape,
   sanitizeHtml,
   HistoryStore,
-  parseJsonl,
-  startOfDay,
-  migrateLegacyV3,
-  legacySampleToData,
   safeFetchData,
   safeFormat,
   normalizeConfig,
@@ -55,6 +51,12 @@ import {
 } from "../src/shared/interface.ts";
 import { credentialsFile } from "../src/server/registry/interface.ts";
 import { zaiCodingCnAdapter } from "../src/server/adapters/interface.ts";
+import {
+  parseJsonl,
+  startOfDay,
+  migrateLegacyV3,
+  legacySampleToData,
+} from "../src/server/history/interface.ts";
 
 // ---------------------------------------------------------------- esc
 

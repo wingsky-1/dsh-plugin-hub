@@ -85,17 +85,14 @@
     "inject",
     "isPanelCacheStale",
     "isUsageStatsAdapter",
-    "legacySampleToData",
     "loadAndValidateAdapter",
     "makeAdapterRegistry",
-    "migrateLegacyV3",
     "miniChartSvgMarkup",
     "name",
     "normalizeConfig",
     "normalizeRangeDay",
     "openCodeGoAdapter",
     "panelCacheKey",
-    "parseJsonl",
     "parseUsageResponse",
     "parseUserAdapters",
     "pickWindow",
@@ -111,7 +108,6 @@
     "sanitizeHtml",
     "sseData",
     "stampEqual",
-    "startOfDay",
     "userAdaptersFile"
   ]
 }

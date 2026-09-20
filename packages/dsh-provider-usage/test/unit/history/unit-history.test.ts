@@ -15,13 +15,14 @@ console.error("EVAL-ORDER-TAG: HISTORY");
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { beforeAll, describe, expect, it } from "vitest";
+import { pickWindow, HistoryStore } from "../../../src/apply/index.ts";
+// 白盒直连深路径（#768 B波续批）：历史纯面经域门面，不走组合根转发。
 import {
   parseJsonl,
   startOfDay,
   legacySampleToData,
-  pickWindow,
-  HistoryStore,
-} from "../../../src/apply/index.ts";
+  migrateLegacyV3,
+} from "../../../src/server/history/interface.ts";
 
 describe("parseJsonl", () => {
   it("空字符串返回空数组", () => {
@@ -295,8 +296,7 @@ describe("HistoryStore.exportAll", () => {
 // ================================================================ #150 二阶段：HistoryStore 深度分支
 
 import { readdirSync, existsSync } from "node:fs";
-import { migrateLegacyV3 } from "../../../src/apply/index.ts";
-// 白盒直连深路径（#768 B波）：历史纯面经 server/history 门面，不走组合根转发。
+// 白盒直连深路径（#768 B波）：历史纯面经 server/history 门面，不走组合根转发（migrateLegacyV3已随上块直连）。
 import { listAdapters } from "../../../src/server/history/interface.ts";
 
 describe("构造缺省值", () => {
