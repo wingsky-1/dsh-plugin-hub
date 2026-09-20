@@ -17,13 +17,14 @@ console.error("EVAL-ORDER-TAG: CONFIG");
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { parseUserAdapters, resolveProviderConfig } from "../../../src/apply/index.ts";
+import { resolveProviderConfig } from "../../../src/apply/index.ts";
 import { normalizeConfig, DEFAULT_CONFIG } from "../../../src/shared/interface.ts";
 // 白盒直连深路径（#768 B波）：注册表/UI配置纯面经域门面，不走组合根转发。
 import {
   expandHomePath,
   readAdapterState,
   resolveAddAdapterFile,
+  parseUserAdapters,
 } from "../../../src/server/registry/interface.ts";
 import {
   uiConfigFile,

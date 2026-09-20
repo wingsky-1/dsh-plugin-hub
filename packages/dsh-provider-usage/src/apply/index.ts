@@ -146,11 +146,7 @@ export type { UiPlacementConfig } from "../shared/interface.ts";
 // sseData 已收敛 shared/host-utils.js：单独改指共享层，导出面保持不变
 export { sseData } from "../../../../shared/host-utils.js";
 // 用户适配器持久化（清单/启用状态读写 + add 文件校验）
-export {
-  userAdaptersFile,
-  adapterStateFile,
-  parseUserAdapters,
-} from "../server/registry/interface.ts";
+export { userAdaptersFile, adapterStateFile } from "../server/registry/interface.ts";
 export type { UserAdapterRecord } from "../server/registry/interface.ts";
 // 插件契约转发（apply 主流程 + 路由表实现于 apply.ts）
 export { apply, ROUTES } from "./apply.ts";

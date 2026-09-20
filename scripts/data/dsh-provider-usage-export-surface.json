@@ -326,10 +326,6 @@
       "isType": false
     },
     {
-      "name": "parseUserAdapters",
-      "isType": false
-    },
-    {
       "name": "pickWindow",
       "isType": false
     },
@@ -995,10 +991,6 @@
         },
         {
           "name": "panelCacheKey",
-          "isType": false
-        },
-        {
-          "name": "parseUserAdapters",
           "isType": false
         },
         {
