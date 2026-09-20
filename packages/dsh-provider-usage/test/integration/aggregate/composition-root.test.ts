@@ -7,7 +7,7 @@
  *   server/aggregate/interface.ts，不走旧 domain2/aggregate 入口；apply/apply.ts、
  *   apply/index.ts、server/execute 四文件、server/ui-routes/trend.ts（#768 D12 起，
  *   前为 domain2/routes/ui.ts）的聚合消费收口新门面；
- *   门面禁整文件 re-export；包导出面（apply/index.ts 转发名）零增减。
+ *   门面禁整文件 re-export；包导出面（apply/index.ts 转发名）收窄后集合（B波）。
  * - D8二 derive/align 聚合查询纯面经门面复用（与 D2 deriveLastRun/alignLastRun 同形）：
  *   查询投影函数显式传参不接触 this；execute 经门面复用 metricValue 纯函数与
  *   TrendTracker 类型，不调业务实例（实例只由组合根构造、经参数传递）。
@@ -175,21 +175,17 @@ describe("D8一 经 server/aggregate 域门面装配", () => {
     );
   });
 
-  it("包导出面零增减：apply/index.ts 转发名不变（改名/漏转即红）", () => {
+  it("包导出面收窄后集合：apply/index.ts 转发名与收窄后一致（改名/漏转即红）", () => {
+    // B波收窄后集合：metricValue/merge*Rows/TrendStore已退役（白盒直连域门面，见unit-trend）。
     for (const name of [
       "TrendTracker",
       "TrendTrackerOptions",
       "TrendAggregator",
-      "metricValue",
       "weekStartKey",
       "lastNWeekKeys",
       "lastNMonthKeys",
       "monthRange",
       "weekRange",
-      "mergeAggRows",
-      "mergeDirRows",
-      "mergeHourRows",
-      "TrendStore",
     ]) {
       expect(applyFaceSrc.includes(name)).toBe(true);
     }

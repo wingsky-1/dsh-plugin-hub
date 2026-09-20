@@ -28,9 +28,13 @@ import {
   runV2Pipeline,
   openCodeGoAdapter,
   OPENCODE_GO_ADAPTER_ID,
-  deepSeekOfficialAdapter,
   DEEPSEEK_OFFICIAL_PROVIDER,
   DEEPSEEK_OFFICIAL_ADAPTER_ID,
+  dayKey,
+} from "../../../src/apply/index.ts";
+// 白盒直连深路径（#768 B波）：适配器纯面经 server/adapters 门面，不走组合根转发。
+import {
+  deepSeekOfficialAdapter,
   PEAK_WINDOWS_UTC,
   isPeakUtc,
   nextPeakTransition,
@@ -39,13 +43,12 @@ import {
   resolveEndpoint,
   classifyIntervalDs,
   aggregateDaily,
-  dayKey,
   lastNDayKeys,
   niceCeil,
   TOL,
   ANOMALY_NEG,
   dailyBarTitle,
-} from "../../../src/apply/index.ts";
+} from "../../../src/server/adapters/interface.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 

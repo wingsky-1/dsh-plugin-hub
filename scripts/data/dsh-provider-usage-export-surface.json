@@ -10,10 +10,6 @@
       "isType": false
     },
     {
-      "name": "ANOMALY_NEG",
-      "isType": false
-    },
-    {
       "name": "AdapterErrorCode",
       "isType": true
     },
@@ -162,10 +158,6 @@
       "isType": false
     },
     {
-      "name": "PEAK_WINDOWS_UTC",
-      "isType": false
-    },
-    {
       "name": "PERIOD_BUCKETS",
       "isType": false
     },
@@ -294,15 +286,7 @@
       "isType": true
     },
     {
-      "name": "TOL",
-      "isType": false
-    },
-    {
       "name": "TREND_DIR_MAX",
-      "isType": false
-    },
-    {
-      "name": "TREND_DONE_MAX",
       "isType": false
     },
     {
@@ -382,10 +366,6 @@
       "isType": true
     },
     {
-      "name": "TrendStore",
-      "isType": false
-    },
-    {
       "name": "TrendTokens",
       "isType": true
     },
@@ -462,10 +442,6 @@
       "isType": false
     },
     {
-      "name": "aggregateDaily",
-      "isType": false
-    },
-    {
       "name": "apply",
       "isType": false
     },
@@ -502,10 +478,6 @@
       "isType": false
     },
     {
-      "name": "classifyIntervalDs",
-      "isType": false
-    },
-    {
       "name": "composerDockedAtBottom",
       "isType": false
     },
@@ -514,15 +486,7 @@
       "isType": false
     },
     {
-      "name": "dailyBarTitle",
-      "isType": false
-    },
-    {
       "name": "dayKey",
-      "isType": false
-    },
-    {
-      "name": "deepSeekOfficialAdapter",
       "isType": false
     },
     {
@@ -622,19 +586,7 @@
       "isType": false
     },
     {
-      "name": "isPeakUtc",
-      "isType": false
-    },
-    {
       "name": "isUsageStatsAdapter",
-      "isType": false
-    },
-    {
-      "name": "isValidShardRow",
-      "isType": false
-    },
-    {
-      "name": "lastNDayKeys",
       "isType": false
     },
     {
@@ -670,22 +622,6 @@
       "isType": false
     },
     {
-      "name": "mergeAggRows",
-      "isType": false
-    },
-    {
-      "name": "mergeDirRows",
-      "isType": false
-    },
-    {
-      "name": "mergeHourRows",
-      "isType": false
-    },
-    {
-      "name": "metricValue",
-      "isType": false
-    },
-    {
       "name": "migrateLegacyV3",
       "isType": false
     },
@@ -703,14 +639,6 @@
     },
     {
       "name": "name",
-      "isType": false
-    },
-    {
-      "name": "nextPeakTransition",
-      "isType": false
-    },
-    {
-      "name": "niceCeil",
       "isType": false
     },
     {
@@ -770,10 +698,6 @@
       "isType": false
     },
     {
-      "name": "parseAmount",
-      "isType": false
-    },
-    {
       "name": "parseHHMM",
       "isType": false
     },
@@ -791,10 +715,6 @@
     },
     {
       "name": "parseUserAdapters",
-      "isType": false
-    },
-    {
-      "name": "peakBadgeHtml",
       "isType": false
     },
     {
@@ -874,10 +794,6 @@
       "isType": false
     },
     {
-      "name": "resolveEndpoint",
-      "isType": false
-    },
-    {
       "name": "resolvePath",
       "isType": false
     },
@@ -915,10 +831,6 @@
     },
     {
       "name": "safeToken",
-      "isType": false
-    },
-    {
-      "name": "sanitizeDirName",
       "isType": false
     },
     {
@@ -1340,10 +1252,6 @@
           "isType": false
         },
         {
-          "name": "ANOMALY_NEG",
-          "isType": false
-        },
-        {
           "name": "AdapterErrorCode",
           "isType": true
         },
@@ -1492,10 +1400,6 @@
           "isType": false
         },
         {
-          "name": "PEAK_WINDOWS_UTC",
-          "isType": false
-        },
-        {
           "name": "PERIOD_BUCKETS",
           "isType": false
         },
@@ -1624,15 +1528,7 @@
           "isType": true
         },
         {
-          "name": "TOL",
-          "isType": false
-        },
-        {
           "name": "TREND_DIR_MAX",
-          "isType": false
-        },
-        {
-          "name": "TREND_DONE_MAX",
           "isType": false
         },
         {
@@ -1712,10 +1608,6 @@
           "isType": true
         },
         {
-          "name": "TrendStore",
-          "isType": false
-        },
-        {
           "name": "TrendTokens",
           "isType": true
         },
@@ -1792,10 +1684,6 @@
           "isType": false
         },
         {
-          "name": "aggregateDaily",
-          "isType": false
-        },
-        {
           "name": "apply",
           "isType": false
         },
@@ -1832,10 +1720,6 @@
           "isType": false
         },
         {
-          "name": "classifyIntervalDs",
-          "isType": false
-        },
-        {
           "name": "composerDockedAtBottom",
           "isType": false
         },
@@ -1844,15 +1728,7 @@
           "isType": false
         },
         {
-          "name": "dailyBarTitle",
-          "isType": false
-        },
-        {
           "name": "dayKey",
-          "isType": false
-        },
-        {
-          "name": "deepSeekOfficialAdapter",
           "isType": false
         },
         {
@@ -1952,19 +1828,7 @@
           "isType": false
         },
         {
-          "name": "isPeakUtc",
-          "isType": false
-        },
-        {
           "name": "isUsageStatsAdapter",
-          "isType": false
-        },
-        {
-          "name": "isValidShardRow",
-          "isType": false
-        },
-        {
-          "name": "lastNDayKeys",
           "isType": false
         },
         {
@@ -2000,22 +1864,6 @@
           "isType": false
         },
         {
-          "name": "mergeAggRows",
-          "isType": false
-        },
-        {
-          "name": "mergeDirRows",
-          "isType": false
-        },
-        {
-          "name": "mergeHourRows",
-          "isType": false
-        },
-        {
-          "name": "metricValue",
-          "isType": false
-        },
-        {
           "name": "migrateLegacyV3",
           "isType": false
         },
@@ -2033,14 +1881,6 @@
         },
         {
           "name": "name",
-          "isType": false
-        },
-        {
-          "name": "nextPeakTransition",
-          "isType": false
-        },
-        {
-          "name": "niceCeil",
           "isType": false
         },
         {
@@ -2100,10 +1940,6 @@
           "isType": false
         },
         {
-          "name": "parseAmount",
-          "isType": false
-        },
-        {
           "name": "parseHHMM",
           "isType": false
         },
@@ -2121,10 +1957,6 @@
         },
         {
           "name": "parseUserAdapters",
-          "isType": false
-        },
-        {
-          "name": "peakBadgeHtml",
           "isType": false
         },
         {
@@ -2204,10 +2036,6 @@
           "isType": false
         },
         {
-          "name": "resolveEndpoint",
-          "isType": false
-        },
-        {
           "name": "resolvePath",
           "isType": false
         },
@@ -2245,10 +2073,6 @@
         },
         {
           "name": "safeToken",
-          "isType": false
-        },
-        {
-          "name": "sanitizeDirName",
           "isType": false
         },
         {

@@ -9,7 +9,7 @@
  * - D9一 经 server/collect 域门面装配：TrendCollector/防御纯函数只经
  *   server/collect/interface.ts，不走旧 domain2/collect 入口；apply/index.ts、
  *   server/aggregate 六文件、server/config/normalize.ts、server/execute 四文件
- *   的采集消费收口新门面；门面禁整文件 re-export；包导出面（apply/index.ts 转发名）零增减。
+ *   的采集消费收口新门面；门面禁整文件 re-export；包导出面（apply/index.ts 转发名）收窄后集合（B波）。
  * - D9二 采集线路钉住：60s tick 汇入（结算事件经 emit 汇入 + 60min TTL 驱逐可复现）与
  *   60s 惰性节流哨兵；5min 预热线路（apply startWarmupTimer 接 config.warmupIntervalMs
  *   默认 300000，下界 60000 钳制）。
@@ -243,10 +243,10 @@ describe("D9一 经 server/collect 域门面装配", () => {
     );
   });
 
-  it("包导出面零增减：apply/index.ts 转发名不变（改名/漏转即红）", () => {
+  it("包导出面收窄后集合：apply/index.ts 转发名与收窄后一致（改名/漏转即红）", () => {
+    // B波收窄后集合：TREND_DONE_MAX/isValidShardRow/sanitizeDirName已退役（白盒直连域门面，见unit-trend）。
     for (const name of [
       "TrendCollector",
-      "TREND_DONE_MAX",
       "TrendCallRecord",
       "TrendCorrectRecord",
       "TrendCounterRecord",
@@ -255,10 +255,8 @@ describe("D9一 经 server/collect 域门面装配", () => {
       "TREND_UNIDENTIFIED",
       "TREND_DIR_MAX",
       "sumToken",
-      "isValidShardRow",
       "safeToken",
       "safeId",
-      "sanitizeDirName",
       "hourOfDay",
       "TrendAttribution",
       "TrendTokens",

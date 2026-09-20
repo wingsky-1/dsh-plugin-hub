@@ -72,7 +72,7 @@ export type {
 } from "../server/registry/interface.ts";
 // 共享图表工具库（AdapterUtils/ADAPTER_UTILS 等）——外部 TS 消费者可经 index 导入。
 // dayKey/lastNDayKeys 与 deepseek-official.mjs 文件级导出重名（测试导入面），
-// 此处显式排除，deepseek-official.mjs 的导出保留（同源副本，语义一致）。
+// 此处显式排除 shared 版；mjs 版除 dayKey/GAP_MS 外已随 B 波退役（深路径直连）。
 export {
   fin,
   escHtml,
@@ -106,22 +106,8 @@ export {
 export {
   DEEPSEEK_OFFICIAL_PROVIDER,
   DEEPSEEK_OFFICIAL_ADAPTER_ID,
-  parseAmount,
-  resolveEndpoint,
   GAP_MS,
-  TOL,
-  ANOMALY_NEG,
-  PEAK_WINDOWS_UTC,
-  isPeakUtc,
-  nextPeakTransition,
-  peakBadgeHtml,
-  classifyIntervalDs,
-  aggregateDaily,
-  dailyBarTitle,
-  niceCeil,
   dayKey,
-  lastNDayKeys,
-  deepSeekOfficialAdapter,
 } from "../server/adapters/interface.ts";
 export type { SamplePoint, DayRecord } from "../server/adapters/interface.ts";
 export {
@@ -165,7 +151,7 @@ export {
 // 会话用量趋势：trend 模块公共面（测试/外部消费者从 lib/index.js 导入）
 export { TrendTracker } from "../server/aggregate/interface.ts";
 export type { TrendTrackerOptions } from "../server/aggregate/interface.ts";
-export { TrendCollector, TREND_DONE_MAX } from "../server/collect/interface.ts";
+export { TrendCollector } from "../server/collect/interface.ts";
 export type {
   TrendCallRecord,
   TrendCorrectRecord,
@@ -174,15 +160,11 @@ export type {
 } from "../server/collect/interface.ts";
 export {
   TrendAggregator,
-  metricValue,
   weekStartKey,
   lastNWeekKeys,
   lastNMonthKeys,
   monthRange,
   weekRange,
-  mergeAggRows,
-  mergeDirRows,
-  mergeHourRows,
 } from "../server/aggregate/interface.ts";
 export type {
   TrendMetric,
@@ -191,17 +173,15 @@ export type {
   TrendStackPoint,
   TrendWindowSummary,
 } from "../server/aggregate/interface.ts";
-export { TrendStore } from "../server/aggregate/interface.ts";
+
 // isValidShardRow/safeToken/safeId：分片行校验与防御提取纯函数（单测从 lib/index.js 导入）
 export {
   TREND_ROW_VERSION,
   TREND_UNIDENTIFIED,
   TREND_DIR_MAX,
   sumToken,
-  isValidShardRow,
   safeToken,
   safeId,
-  sanitizeDirName,
   hourOfDay,
 } from "../server/collect/interface.ts";
 export type {
