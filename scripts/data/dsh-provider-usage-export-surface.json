@@ -54,10 +54,6 @@
       "isType": false
     },
     {
-      "name": "DEFAULT_REPORT_CONFIG",
-      "isType": false
-    },
-    {
       "name": "DEFAULT_Z_INDEX_BASE",
       "isType": false
     },
@@ -967,10 +963,6 @@
         },
         {
           "name": "DEFAULT_CONFIG",
-          "isType": false
-        },
-        {
-          "name": "DEFAULT_REPORT_CONFIG",
           "isType": false
         },
         {

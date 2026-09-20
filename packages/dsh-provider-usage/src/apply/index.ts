@@ -166,11 +166,7 @@ export type {
 // 会话用量报告：report 模块公共面（测试/外部消费者从 lib/index.js 导入）
 export { previousClosedWindow } from "../server/schedule/interface.ts";
 export type { DueReport, LastRunRecord } from "../server/schedule/interface.ts";
-export {
-  normalizeReportDirectories,
-  DEFAULT_REPORT_CONFIG,
-  readReportConfig,
-} from "../server/config/interface.ts";
+export { normalizeReportDirectories, readReportConfig } from "../server/config/interface.ts";
 export type { ReportConfig, ReportPeriod, ReportPeriodConfig } from "../server/config/interface.ts";
 export { PERIOD_BUCKETS } from "../server/execute/interface.ts";
 export type { ReportPrompts } from "../server/config/interface.ts";
