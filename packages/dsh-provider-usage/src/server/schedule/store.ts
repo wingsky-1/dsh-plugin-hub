@@ -125,13 +125,21 @@ export async function ensureLastRunMigrated(
     const records = parseReportIndexLines(indexRaw) as LastRunRecord[];
     const after = schema < LAST_RUN_SCHEMA ? deriveLastRun(records) : alignLastRun(before, records);
     const changed = schema < LAST_RUN_SCHEMA || JSON.stringify(before) !== JSON.stringify(after);
-    if (changed) {
-      await writeLastRun(root, after);
-      diag(
-        `lastRun 已按 index 事实校准（schema ${schema}→${LAST_RUN_SCHEMA}）：${JSON.stringify(before)} → ${JSON.stringify(after)}`,
-      );
-    }
-    return { changed, before, after };
+    if (!changed) return { changed, before, after };
+    // 唯一写面：校准落盘经 per-root 链（与 preset/执行器同链串行）。
+    // 链内按最新快照重算（preset 同形）：链外预读定 changed，链内重算定落盘值。
+    let written: Partial<Record<ReportPeriod, string>> | undefined;
+    await updateLastRun(root, (cur) => {
+      const fresh = schema < LAST_RUN_SCHEMA ? deriveLastRun(records) : alignLastRun(cur, records);
+      written = fresh;
+      return fresh;
+    });
+    const finalAfter = written ?? after;
+    const msg =
+      `schema ${schema}→${LAST_RUN_SCHEMA}：` +
+      `${JSON.stringify(before)} → ${JSON.stringify(finalAfter)}`;
+    diag(`lastRun 已按 index 事实校准（${msg}）`);
+    return { changed, before, after: finalAfter };
   } catch (e: unknown) {
     diag(`lastRun 校准失败（保持原状）：${e instanceof Error ? e.message : String(e)}`);
     return { changed: false, before: {}, after: {} };

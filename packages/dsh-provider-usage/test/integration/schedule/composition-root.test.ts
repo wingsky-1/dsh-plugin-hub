@@ -21,7 +21,7 @@
  * “对照：朴素实现丢更新（链断即丢）”——同一 detector 在脏夹具上必须报出
  * 违规，detector 失明则探针先红。
  */
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -33,6 +33,7 @@ import {
   readLastRun,
   writeLastRun,
   updateLastRun,
+  ensureLastRunMigrated,
   candidateWindow,
   pendingReports,
   LAST_RUN_SCHEMA,
@@ -344,6 +345,123 @@ describe("D2三-链 per-root 链防 lost-update（拆坏链必须红）", () => 
   });
 });
 
+describe("D2三-链 ensure经链：校准与并发推进交错不丢更新（#771⑧）", () => {
+  it("store 经 per-root 链落盘（直写即回退）", () => {
+    const body = storeSrc.slice(storeSrc.indexOf("export async function ensureLastRunMigrated"));
+    expect(body.includes("await updateLastRun(root")).toBe(true);
+    expect(body.includes("await writeLastRun(root, after)")).toBe(false);
+  });
+
+  it("启动仍先校准后首轮（删调用即回退）", () => {
+    expect(schedulerSrc.includes("ensureLastRunMigrated(s.root, s.warn)")).toBe(true);
+  });
+
+  it("交错窗：校准与并发推进双双在场（只断言收敛）", async () => {
+    const root = mkdtempSync(join(tmpdir(), "d2-ensure-chain-"));
+    try {
+      await writeLastRun(root, { daily: "seed" });
+      // schema 新但 daily 被旧污染键遮蔽；monthly 是预置键
+      // （index 无对应记录，校准须保留）；index 仅 daily 闭环记录。
+      writeFileSync(
+        join(root, "reports", "last-run.json"),
+        JSON.stringify({
+          daily: "2026-09-06",
+          monthly: "2026-08",
+          schema: LAST_RUN_SCHEMA,
+        }),
+      );
+      const genAt = new Date(2026, 8, 7, 6, 0, 0).getTime();
+      writeFileSync(
+        join(root, "reports", "index.jsonl"),
+        `${JSON.stringify({
+          period: "daily",
+          key: "2026-09-04",
+          startDay: "2026-09-04",
+          endDay: "2026-09-04",
+          generatedAt: genAt,
+          ok: true,
+        })}\n`,
+      );
+      let started = false;
+      let releaseGate: () => void = () => undefined;
+      const gate = new Promise<void>((resolve) => {
+        releaseGate = resolve;
+      });
+      // 先占链并在 patch 内挂起：校准 patch 排到后面（#764 式交错窗）。
+      const holder = updateLastRun(root, async (cur) => {
+        started = true;
+        await gate;
+        return { ...cur, weekly: "B" };
+      });
+      await pollUntil(() => started, 3000);
+      const ensuring = ensureLastRunMigrated(root, quietWarn);
+      await pollUntil(() => true, 50);
+      releaseGate();
+      const res = await ensuring;
+      await holder;
+      const fin = await readLastRun(root);
+      expect(res.changed).toBe(true);
+      expect(res.after.daily).toBe("2026-09-04");
+      // 收敛断言：校准值 + 并发值 + 预置键三方在场；本窗不断言丢失。
+      expect(fin).toEqual({
+        daily: "2026-09-04",
+        weekly: "B",
+        monthly: "2026-08",
+      });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("启动时序：旧 schema 校准落盘且首轮补跑正常", async () => {
+    const root = mkdtempSync(join(tmpdir(), "d2-ensure-start-"));
+    try {
+      await writeLastRun(root, { daily: "seed" });
+      writeFileSync(
+        join(root, "reports", "last-run.json"),
+        JSON.stringify({ daily: "2026-09-06" }),
+      );
+      const genAt = new Date(2026, 8, 7, 6, 0, 0).getTime();
+      writeFileSync(
+        join(root, "reports", "index.jsonl"),
+        `${JSON.stringify({
+          period: "daily",
+          key: "2026-09-04",
+          startDay: "2026-09-04",
+          endDay: "2026-09-04",
+          generatedAt: genAt,
+          ok: true,
+        })}\n`,
+      );
+      const seen: Array<{ period: string; key: string }> = [];
+      const sched = ReportScheduler.start({
+        root,
+        config: normalizeReportConfig({
+          daily: { enabled: true, time: "00:00" },
+          weekly: { enabled: false, time: "09:00", weekStartsOn: 1 },
+          monthly: { enabled: false, time: "09:00", dayOfMonth: 1 },
+        }),
+        onDue: async (due) => {
+          seen.push({ period: due.period, key: due.key });
+        },
+        tickMs: 20,
+        warn: quietWarn,
+      });
+      try {
+        await pollUntil(() => seen.length >= 1, 5000);
+        expect(seen[0]?.period).toBe("daily");
+        // 污染键已回退到最近已闭环键，schema 已升版。
+        expect((await readLastRun(root)).daily).toBe("2026-09-04");
+        const raw = JSON.parse(readFileSync(join(root, "reports", "last-run.json"), "utf8"));
+        expect(raw.schema).toBe(LAST_RUN_SCHEMA);
+      } finally {
+        sched.dispose();
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
 describe("D2三-轮询 60s tick + 5min 预热汇入 getStats（改坏默认/断线必须红）", () => {
   it("调度器默认 tick 60s（源码标记保持）", () => {
     expect(schedulerSrc.includes("?? 60_000")).toBe(true);
