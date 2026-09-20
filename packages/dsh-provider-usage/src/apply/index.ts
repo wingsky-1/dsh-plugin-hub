@@ -73,8 +73,6 @@ export {
 } from "../server/pipeline/interface.ts";
 export type { PanelCacheEntry } from "../server/pipeline/interface.ts";
 export { HotReloadableAdapter, loadAndValidateAdapter } from "../server/registry/interface.ts";
-// 会话用量趋势：trend 模块公共面（测试/外部消费者从 lib/index.js 导入）
-export { TrendTracker } from "../server/aggregate/interface.ts";
 export type { TrendTrackerOptions } from "../server/aggregate/interface.ts";
 
 export type {
@@ -92,12 +90,8 @@ export type {
   TrendWindowSummary,
 } from "../server/aggregate/interface.ts";
 
-// 趋势分片版本/未识别桶/目录上限常量。
-export {
-  TREND_ROW_VERSION,
-  TREND_UNIDENTIFIED,
-  TREND_DIR_MAX,
-} from "../server/collect/interface.ts";
+// 趋势未识别桶/目录上限常量。
+export { TREND_UNIDENTIFIED, TREND_DIR_MAX } from "../server/collect/interface.ts";
 export type {
   TrendAttribution,
   TrendTokens,

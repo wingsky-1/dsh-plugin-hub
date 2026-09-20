@@ -176,8 +176,8 @@ describe("D8一 经 server/aggregate 域门面装配", () => {
   });
 
   it("包导出面收窄后集合：apply/index.ts 转发名与收窄后一致（改名/漏转即红）", () => {
-    // B波+A2波收窄后集合：metricValue/merge*Rows/TrendStore/TrendAggregator/weekStartKey/lastNWeekKeys/lastNMonthKeys/monthRange/weekRange已退役（零entry引用，见A2排查）。
-    for (const name of ["TrendTracker", "TrendTrackerOptions"]) {
+    // B波+A2波收窄后集合：metricValue/merge*Rows/TrendStore/TrendAggregator/weekStartKey/lastNWeekKeys/lastNMonthKeys/monthRange/weekRange/TrendTracker已退役（簇批双文件直连）。
+    for (const name of ["TrendTrackerOptions"]) {
       expect(applyFaceSrc.includes(name)).toBe(true);
     }
   });

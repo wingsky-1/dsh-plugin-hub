@@ -186,10 +186,6 @@
       "isType": false
     },
     {
-      "name": "TREND_ROW_VERSION",
-      "isType": false
-    },
-    {
       "name": "TREND_UNIDENTIFIED",
       "isType": false
     },
@@ -256,10 +252,6 @@
     {
       "name": "TrendTokens",
       "isType": true
-    },
-    {
-      "name": "TrendTracker",
-      "isType": false
     },
     {
       "name": "TrendTrackerOptions",
@@ -874,10 +866,6 @@
           "isType": false
         },
         {
-          "name": "TREND_ROW_VERSION",
-          "isType": false
-        },
-        {
           "name": "TREND_UNIDENTIFIED",
           "isType": false
         },
@@ -944,10 +932,6 @@
         {
           "name": "TrendTokens",
           "isType": true
-        },
-        {
-          "name": "TrendTracker",
-          "isType": false
         },
         {
           "name": "TrendTrackerOptions",
