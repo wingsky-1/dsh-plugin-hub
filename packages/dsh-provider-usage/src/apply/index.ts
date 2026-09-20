@@ -155,10 +155,8 @@ export type {
   ReportTaskStatus,
 } from "../server/schedule/interface.ts";
 
-// 路径解析纯函数透出（供测试与调用方复用同一展开/解析规则，无行为变更）
-export { pluginHome } from "../server/registry/interface.ts";
 // 配置归一化（默认值 / schemastery schema / normalizeConfig）
-export { DEFAULT_CONFIG, Config, normalizeConfig } from "../shared/interface.ts";
+export { DEFAULT_CONFIG, normalizeConfig } from "../shared/interface.ts";
 export type { NormalizedConfig } from "../shared/interface.ts";
 
 // ------------------------------------------------------------------ 类型
@@ -171,9 +169,6 @@ export const name = "provider-usage";
 // 降级（无告警、无失败），故补源码契约断言锁定（unit-trend.test.ts「inject 契约」节）。
 export const inject: string[] = ["webServer", "llm", "sessions"];
 
-// 胶囊定位/层级/断点纯函数：实现在 placement-math.ts（零依赖单一事实源，
-// 客户端 bundle 与宿主端共用同一份），此处 re-export 保持导出面不变。
-export { DEFAULT_Z_INDEX_BASE, Z_INDEX_PANEL_DELTA } from "../shared/interface.ts";
 export type { FloatBreakpoint, ViewportPoint, RectLike } from "../shared/interface.ts";
 
 export type { UiPlacementConfig } from "../shared/interface.ts";

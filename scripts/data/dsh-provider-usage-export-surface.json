@@ -34,10 +34,6 @@
       "isType": true
     },
     {
-      "name": "Config",
-      "isType": false
-    },
-    {
       "name": "DEEPSEEK_OFFICIAL_ADAPTER_ID",
       "isType": false
     },
@@ -47,10 +43,6 @@
     },
     {
       "name": "DEFAULT_CONFIG",
-      "isType": false
-    },
-    {
-      "name": "DEFAULT_Z_INDEX_BASE",
       "isType": false
     },
     {
@@ -298,10 +290,6 @@
       "isType": true
     },
     {
-      "name": "Z_INDEX_PANEL_DELTA",
-      "isType": false
-    },
-    {
       "name": "adapterStateFile",
       "isType": false
     },
@@ -395,10 +383,6 @@
     },
     {
       "name": "pickWindow",
-      "isType": false
-    },
-    {
-      "name": "pluginHome",
       "isType": false
     },
     {
@@ -810,10 +794,6 @@
           "isType": true
         },
         {
-          "name": "Config",
-          "isType": false
-        },
-        {
           "name": "DEEPSEEK_OFFICIAL_ADAPTER_ID",
           "isType": false
         },
@@ -823,10 +803,6 @@
         },
         {
           "name": "DEFAULT_CONFIG",
-          "isType": false
-        },
-        {
-          "name": "DEFAULT_Z_INDEX_BASE",
           "isType": false
         },
         {
@@ -1074,10 +1050,6 @@
           "isType": true
         },
         {
-          "name": "Z_INDEX_PANEL_DELTA",
-          "isType": false
-        },
-        {
           "name": "adapterStateFile",
           "isType": false
         },
@@ -1171,10 +1143,6 @@
         },
         {
           "name": "pickWindow",
-          "isType": false
-        },
-        {
-          "name": "pluginHome",
           "isType": false
         },
         {

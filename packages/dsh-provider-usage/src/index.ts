@@ -7,11 +7,9 @@
  */
 export {
   ADAPTER_CONTRACT_VERSION,
-  Config,
   DEEPSEEK_OFFICIAL_ADAPTER_ID,
   DEEPSEEK_OFFICIAL_PROVIDER,
   DEFAULT_CONFIG,
-  DEFAULT_Z_INDEX_BASE,
   HistoryStore,
   HotReloadableAdapter,
   OPENCODE_GO_ADAPTER_ID,
@@ -22,7 +20,6 @@ export {
   TREND_ROW_VERSION,
   TREND_UNIDENTIFIED,
   TrendTracker,
-  Z_INDEX_PANEL_DELTA,
   adapterStateFile,
   apply,
   dayKey,
@@ -47,7 +44,6 @@ export {
   parseUsageResponse,
   parseUserAdapters,
   pickWindow,
-  pluginHome,
   previousClosedWindow,
   readLastRun,
   readReportConfig,
