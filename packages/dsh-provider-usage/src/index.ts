@@ -25,7 +25,6 @@ export {
   inject,
   isPanelCacheStale,
   isUsageStatsAdapter,
-  loadAndValidateAdapter,
   miniChartSvgMarkup,
   name,
   normalizeRangeDay,

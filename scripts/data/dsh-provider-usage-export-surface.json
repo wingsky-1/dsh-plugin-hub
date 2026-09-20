@@ -310,10 +310,6 @@
       "isType": false
     },
     {
-      "name": "loadAndValidateAdapter",
-      "isType": false
-    },
-    {
       "name": "miniChartSvgMarkup",
       "isType": false
     },
@@ -987,10 +983,6 @@
         },
         {
           "name": "isUsageStatsAdapter",
-          "isType": false
-        },
-        {
-          "name": "loadAndValidateAdapter",
           "isType": false
         },
         {

@@ -14,7 +14,8 @@ import { mkdtempSync, rmSync, statSync, utimesSync, writeFileSync } from "node:f
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
-import { HotReloadableAdapter, loadAndValidateAdapter } from "../../../src/apply/index.ts";
+import { HotReloadableAdapter } from "../../../src/apply/index.ts";
+import { loadAndValidateAdapter } from "../../../src/server/registry/interface.ts";
 
 /** 合法 v2 契约适配器正文；marker 用于制造 size 变化。 */
 function adapterBody(label: string, marker = ""): string {

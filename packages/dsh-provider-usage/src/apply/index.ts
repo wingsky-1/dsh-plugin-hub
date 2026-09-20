@@ -72,7 +72,7 @@ export {
   PANEL_CACHE_TTL_MS,
 } from "../server/pipeline/interface.ts";
 export type { PanelCacheEntry } from "../server/pipeline/interface.ts";
-export { HotReloadableAdapter, loadAndValidateAdapter } from "../server/registry/interface.ts";
+export { HotReloadableAdapter } from "../server/registry/interface.ts";
 export type { TrendTrackerOptions } from "../server/aggregate/interface.ts";
 
 export type {
