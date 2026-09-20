@@ -215,23 +215,9 @@ export const inject: string[] = ["webServer", "llm", "sessions"];
 
 // 胶囊定位/层级/断点纯函数：实现在 placement-math.ts（零依赖单一事实源，
 // 客户端 bundle 与宿主端共用同一份），此处 re-export 保持导出面不变。
-export {
-  BREAKPOINT_NARROW_MAX,
-  BREAKPOINT_TABLET_MAX,
-  DEFAULT_Z_INDEX_BASE,
-  Z_INDEX_BASE_MIN,
-  Z_INDEX_BASE_MAX,
-  Z_INDEX_PANEL_DELTA,
-  breakpointForWidth,
-  clampPointToViewport,
-  clampZIndexBase,
-  panelZIndexFor,
-} from "../shared/interface.ts";
+export { DEFAULT_Z_INDEX_BASE, Z_INDEX_PANEL_DELTA } from "../shared/interface.ts";
 export type { FloatBreakpoint, ViewportPoint, RectLike } from "../shared/interface.ts";
-// 面板锚点判定同为纯函数，随定位数学一起从单一事实源 re-export。
-export { panelAnchorForPlacement } from "../shared/interface.ts";
-// 胶囊位置 UI 配置（纯函数 + 持久化读写）
-export { DEFAULT_UI_CONFIG, normalizeUiConfig, panelTopForAnchor } from "../shared/interface.ts";
+
 export type { UiPlacementConfig } from "../shared/interface.ts";
 // sseData 已收敛 shared/host-utils.js：单独改指共享层，导出面保持不变
 export { sseData } from "../../../../shared/host-utils.js";

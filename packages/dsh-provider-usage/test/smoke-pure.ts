@@ -35,21 +35,24 @@ import {
   readStamp,
   stampEqual,
   makeAdapterRegistry,
-  normalizeUiConfig,
-  DEFAULT_UI_CONFIG,
-  panelAnchorForPlacement,
-  panelTopForAnchor,
-  Z_INDEX_BASE_MIN,
-  Z_INDEX_BASE_MAX,
+} from "../src/apply/index.ts";
+// 白盒直连深路径（#768 B波）：定位/注册表/适配器纯面经域门面，不走组合根转发。
+import {
+  composerDockedAtBottom,
+  bottomAnchorEdge,
   BREAKPOINT_NARROW_MAX,
   BREAKPOINT_TABLET_MAX,
+  DEFAULT_UI_CONFIG,
+  Z_INDEX_BASE_MAX,
+  Z_INDEX_BASE_MIN,
   breakpointForWidth,
   clampPointToViewport,
   clampZIndexBase,
+  normalizeUiConfig,
+  panelAnchorForPlacement,
+  panelTopForAnchor,
   panelZIndexFor,
-} from "../src/apply/index.ts";
-// 白盒直连深路径（#768 B波）：定位/注册表/适配器纯面经域门面，不走组合根转发。
-import { composerDockedAtBottom, bottomAnchorEdge } from "../src/shared/interface.ts";
+} from "../src/shared/interface.ts";
 import { credentialsFile } from "../src/server/registry/interface.ts";
 import { zaiCodingCnAdapter } from "../src/server/adapters/interface.ts";
 

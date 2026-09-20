@@ -34,14 +34,6 @@
       "isType": true
     },
     {
-      "name": "BREAKPOINT_NARROW_MAX",
-      "isType": false
-    },
-    {
-      "name": "BREAKPOINT_TABLET_MAX",
-      "isType": false
-    },
-    {
       "name": "CapsuleInput",
       "isType": true
     },
@@ -63,10 +55,6 @@
     },
     {
       "name": "DEFAULT_REPORT_CONFIG",
-      "isType": false
-    },
-    {
-      "name": "DEFAULT_UI_CONFIG",
       "isType": false
     },
     {
@@ -342,14 +330,6 @@
       "isType": false
     },
     {
-      "name": "Z_INDEX_BASE_MAX",
-      "isType": false
-    },
-    {
-      "name": "Z_INDEX_BASE_MIN",
-      "isType": false
-    },
-    {
       "name": "Z_INDEX_PANEL_DELTA",
       "isType": false
     },
@@ -363,18 +343,6 @@
     },
     {
       "name": "axisLabelWidthPx",
-      "isType": false
-    },
-    {
-      "name": "breakpointForWidth",
-      "isType": false
-    },
-    {
-      "name": "clampPointToViewport",
-      "isType": false
-    },
-    {
-      "name": "clampZIndexBase",
       "isType": false
     },
     {
@@ -502,10 +470,6 @@
       "isType": false
     },
     {
-      "name": "normalizeUiConfig",
-      "isType": false
-    },
-    {
       "name": "openCodeGoAdapter",
       "isType": false
     },
@@ -514,19 +478,7 @@
       "isType": false
     },
     {
-      "name": "panelAnchorForPlacement",
-      "isType": false
-    },
-    {
       "name": "panelCacheKey",
-      "isType": false
-    },
-    {
-      "name": "panelTopForAnchor",
-      "isType": false
-    },
-    {
-      "name": "panelZIndexFor",
       "isType": false
     },
     {
@@ -1010,14 +962,6 @@
           "isType": true
         },
         {
-          "name": "BREAKPOINT_NARROW_MAX",
-          "isType": false
-        },
-        {
-          "name": "BREAKPOINT_TABLET_MAX",
-          "isType": false
-        },
-        {
           "name": "CapsuleInput",
           "isType": true
         },
@@ -1039,10 +983,6 @@
         },
         {
           "name": "DEFAULT_REPORT_CONFIG",
-          "isType": false
-        },
-        {
-          "name": "DEFAULT_UI_CONFIG",
           "isType": false
         },
         {
@@ -1318,14 +1258,6 @@
           "isType": false
         },
         {
-          "name": "Z_INDEX_BASE_MAX",
-          "isType": false
-        },
-        {
-          "name": "Z_INDEX_BASE_MIN",
-          "isType": false
-        },
-        {
           "name": "Z_INDEX_PANEL_DELTA",
           "isType": false
         },
@@ -1339,18 +1271,6 @@
         },
         {
           "name": "axisLabelWidthPx",
-          "isType": false
-        },
-        {
-          "name": "breakpointForWidth",
-          "isType": false
-        },
-        {
-          "name": "clampPointToViewport",
-          "isType": false
-        },
-        {
-          "name": "clampZIndexBase",
           "isType": false
         },
         {
@@ -1478,10 +1398,6 @@
           "isType": false
         },
         {
-          "name": "normalizeUiConfig",
-          "isType": false
-        },
-        {
           "name": "openCodeGoAdapter",
           "isType": false
         },
@@ -1490,19 +1406,7 @@
           "isType": false
         },
         {
-          "name": "panelAnchorForPlacement",
-          "isType": false
-        },
-        {
           "name": "panelCacheKey",
-          "isType": false
-        },
-        {
-          "name": "panelTopForAnchor",
-          "isType": false
-        },
-        {
-          "name": "panelZIndexFor",
           "isType": false
         },
         {
