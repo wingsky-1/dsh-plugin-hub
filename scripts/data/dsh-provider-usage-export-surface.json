@@ -42,10 +42,6 @@
       "isType": false
     },
     {
-      "name": "DEFAULT_CONFIG",
-      "isType": false
-    },
-    {
       "name": "DayRecord",
       "isType": true
     },
@@ -331,10 +327,6 @@
     },
     {
       "name": "name",
-      "isType": false
-    },
-    {
-      "name": "normalizeConfig",
       "isType": false
     },
     {
@@ -746,10 +738,6 @@
           "isType": false
         },
         {
-          "name": "DEFAULT_CONFIG",
-          "isType": false
-        },
-        {
           "name": "DayRecord",
           "isType": true
         },
@@ -1035,10 +1023,6 @@
         },
         {
           "name": "name",
-          "isType": false
-        },
-        {
-          "name": "normalizeConfig",
           "isType": false
         },
         {

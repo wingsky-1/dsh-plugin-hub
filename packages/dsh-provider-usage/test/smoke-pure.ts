@@ -11,13 +11,11 @@ import { tmpdir } from "node:os";
 import assert from "node:assert/strict";
 import {
   ROUTES,
-  DEFAULT_CONFIG,
   ADAPTER_CONTRACT_VERSION,
   esc,
   isUsageStatsAdapter,
   sanitizeHtml,
   HistoryStore,
-  normalizeConfig,
   resolveProviderConfig,
   OPENCODE_GO_PROVIDER,
   OPENCODE_GO_ADAPTER_ID,
@@ -26,6 +24,7 @@ import {
 } from "../src/apply/index.ts";
 import { parseUsageResponse, fetchOpenCodeGoV2 } from "../src/server/adapters/interface.ts";
 import { describeUsageStatsAdapterShape } from "../src/shared/interface.ts";
+import { DEFAULT_CONFIG, normalizeConfig } from "../src/shared/interface.ts";
 import { makeAdapterRegistry, readStamp, stampEqual } from "../src/server/registry/interface.ts";
 // 白盒直连深路径（#768 B波）：定位/注册表/适配器纯面经域门面，不走组合根转发。
 import {

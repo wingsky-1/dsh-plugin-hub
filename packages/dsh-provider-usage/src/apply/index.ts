@@ -135,8 +135,6 @@ export type {
   ReportTaskStatus,
 } from "../server/schedule/interface.ts";
 
-// 配置归一化（默认值 / schemastery schema / normalizeConfig）
-export { DEFAULT_CONFIG, normalizeConfig } from "../shared/interface.ts";
 export type { NormalizedConfig } from "../shared/interface.ts";
 
 // ------------------------------------------------------------------ 类型
