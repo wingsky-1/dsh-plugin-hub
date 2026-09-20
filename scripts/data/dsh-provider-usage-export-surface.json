@@ -450,10 +450,6 @@
       "isType": false
     },
     {
-      "name": "expandHomePath",
-      "isType": false
-    },
-    {
       "name": "fetchData",
       "isType": false
     },
@@ -654,10 +650,6 @@
       "isType": false
     },
     {
-      "name": "readAdapterState",
-      "isType": false
-    },
-    {
       "name": "readLastRun",
       "isType": false
     },
@@ -691,10 +683,6 @@
     },
     {
       "name": "resetTicks",
-      "isType": false
-    },
-    {
-      "name": "resolveAddAdapterFile",
       "isType": false
     },
     {
@@ -771,10 +759,6 @@
     },
     {
       "name": "trendOf",
-      "isType": false
-    },
-    {
-      "name": "uiConfigFile",
       "isType": false
     },
     {
@@ -1574,10 +1558,6 @@
           "isType": false
         },
         {
-          "name": "expandHomePath",
-          "isType": false
-        },
-        {
           "name": "fetchData",
           "isType": false
         },
@@ -1778,10 +1758,6 @@
           "isType": false
         },
         {
-          "name": "readAdapterState",
-          "isType": false
-        },
-        {
           "name": "readLastRun",
           "isType": false
         },
@@ -1815,10 +1791,6 @@
         },
         {
           "name": "resetTicks",
-          "isType": false
-        },
-        {
-          "name": "resolveAddAdapterFile",
           "isType": false
         },
         {
@@ -1895,10 +1867,6 @@
         },
         {
           "name": "trendOf",
-          "isType": false
-        },
-        {
-          "name": "uiConfigFile",
           "isType": false
         },
         {

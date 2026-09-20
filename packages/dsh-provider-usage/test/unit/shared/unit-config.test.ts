@@ -32,13 +32,16 @@ import {
   breakpointForWidth,
   clampPointToViewport,
   clampZIndexBase,
-  uiConfigFile,
-  readAdapterState,
   parseUserAdapters,
-  resolveAddAdapterFile,
   resolveProviderConfig,
-  expandHomePath,
 } from "../../../src/apply/index.ts";
+// 白盒直连深路径（#768 B波）：注册表/UI配置纯面经域门面，不走组合根转发。
+import {
+  expandHomePath,
+  readAdapterState,
+  resolveAddAdapterFile,
+} from "../../../src/server/registry/interface.ts";
+import { uiConfigFile } from "../../../src/shared/interface.ts";
 
 // ================================================================ #150 二阶段：resolveAddAdapterFile 路径校验矩阵
 // 位置无关：本块断言全部不依赖「本文件先于兄弟文件求值」。

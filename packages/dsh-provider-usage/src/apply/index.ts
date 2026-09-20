@@ -238,7 +238,7 @@ export {
 } from "../server/execute/interface.ts";
 export { parseReportIndexLines } from "../server/execute/interface.ts";
 // 路径解析纯函数透出（供测试与调用方复用同一展开/解析规则，无行为变更）
-export { resolvePath, pluginHome, expandHomePath } from "../server/registry/interface.ts";
+export { resolvePath, pluginHome } from "../server/registry/interface.ts";
 // 配置归一化（默认值 / schemastery schema / normalizeConfig）
 export { DEFAULT_CONFIG, Config, normalizeConfig } from "../shared/interface.ts";
 export type { NormalizedConfig } from "../shared/interface.ts";
@@ -273,12 +273,7 @@ export type { FloatBreakpoint, ViewportPoint, RectLike } from "../shared/interfa
 // 面板锚点判定同为纯函数，随定位数学一起从单一事实源 re-export。
 export { panelAnchorForPlacement } from "../shared/interface.ts";
 // 胶囊位置 UI 配置（纯函数 + 持久化读写）
-export {
-  DEFAULT_UI_CONFIG,
-  normalizeUiConfig,
-  panelTopForAnchor,
-  uiConfigFile,
-} from "../shared/interface.ts";
+export { DEFAULT_UI_CONFIG, normalizeUiConfig, panelTopForAnchor } from "../shared/interface.ts";
 export type { UiPlacementConfig } from "../shared/interface.ts";
 // sseData 已收敛 shared/host-utils.js：单独改指共享层，导出面保持不变
 export { sseData } from "../../../../shared/host-utils.js";
@@ -288,8 +283,6 @@ export {
   adapterStateFile,
   parseUserAdapters,
   readUserAdapters,
-  readAdapterState,
-  resolveAddAdapterFile,
 } from "../server/registry/interface.ts";
 export type { UserAdapterRecord } from "../server/registry/interface.ts";
 // 插件契约转发（apply 主流程 + 路由表实现于 apply.ts）
