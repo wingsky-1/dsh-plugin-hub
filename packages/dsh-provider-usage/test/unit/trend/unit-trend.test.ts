@@ -43,12 +43,9 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
-  TrendCollector,
-  TrendAggregator,
   TrendTracker,
   HistoryStore,
   dayKey,
-  sumToken,
   TREND_ROW_VERSION,
   TREND_UNIDENTIFIED,
   normalizeConfig,
@@ -56,6 +53,7 @@ import {
 } from "../../../src/apply/index.ts";
 // 白盒直连深路径（#768 B波）：趋势聚合/采集纯面经域门面，不走组合根转发。
 import {
+  TrendAggregator,
   TrendStore,
   mergeAggRows,
   mergeDirRows,
@@ -63,9 +61,11 @@ import {
   metricValue,
 } from "../../../src/server/aggregate/interface.ts";
 import {
+  TrendCollector,
   TREND_DONE_MAX,
   isValidShardRow,
   sanitizeDirName,
+  sumToken,
 } from "../../../src/server/collect/interface.ts";
 
 // ---------------------------------------------------------------- 工具

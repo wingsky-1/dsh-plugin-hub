@@ -122,7 +122,7 @@ export {
 // 会话用量趋势：trend 模块公共面（测试/外部消费者从 lib/index.js 导入）
 export { TrendTracker } from "../server/aggregate/interface.ts";
 export type { TrendTrackerOptions } from "../server/aggregate/interface.ts";
-export { TrendCollector } from "../server/collect/interface.ts";
+
 export type {
   TrendCallRecord,
   TrendCorrectRecord,
@@ -130,7 +130,6 @@ export type {
   TrendEmit,
 } from "../server/collect/interface.ts";
 export {
-  TrendAggregator,
   weekStartKey,
   lastNWeekKeys,
   lastNMonthKeys,
@@ -150,7 +149,6 @@ export {
   TREND_ROW_VERSION,
   TREND_UNIDENTIFIED,
   TREND_DIR_MAX,
-  sumToken,
   safeToken,
   safeId,
   hourOfDay,

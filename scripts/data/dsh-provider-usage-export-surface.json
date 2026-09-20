@@ -226,10 +226,6 @@
       "isType": true
     },
     {
-      "name": "TrendAggregator",
-      "isType": false
-    },
-    {
       "name": "TrendAttribution",
       "isType": true
     },
@@ -240,10 +236,6 @@
     {
       "name": "TrendCell",
       "isType": true
-    },
-    {
-      "name": "TrendCollector",
-      "isType": false
     },
     {
       "name": "TrendCorrectRecord",
@@ -582,10 +574,6 @@
       "isType": false
     },
     {
-      "name": "sumToken",
-      "isType": false
-    },
-    {
       "name": "timeTickStep",
       "isType": false
     },
@@ -614,7 +602,7 @@
     "export declare class HistoryStore { private readonly root; private readonly maxAgeMs; private readonly maxSizeBytes; private readonly writeChains; constructor(opts: { root: string; maxAgeMs?: number; maxSizeBytes?: number; }); private dirOf; private fileOf; append(provider: string, name: string, entry: HistoryEntry): Promise<void>; readDay(provider: string, name: string, time: number): Promise<HistoryEntry[]>; query(provider: string, name: string, range: { start: number; end: number; }): Promise<{ entries: HistoryEntry[]; }>; last(provider: string, name: string): Promise<HistoryEntry | null>; maybePrune(provider: string, name: string): Promise<void>; pruneAll(): Promise<void>; exportAll(provider: string, name: string): Promise<HistoryEntry[]>; writeDirect(provider: string, name: string, day: number, entries: HistoryEntry[]): Promise<void>; private writeOnce; }",
     "export declare class HotReloadableAdapter { private timer; private lastStamp; private readonly onReload; private readonly file; private readonly intervalMs; private readonly checkChecksum; constructor(file: string, intervalMs: number, onReload?: (info: { ok: boolean; error?: string; }) => void, checkChecksum?: boolean); current: UsageStatsAdapter | null; start(): Promise<{ ok: boolean; error?: string; }>; stop(): void; pollOnce(): Promise<{ ok: boolean; error?: string; }>; private reload; }",
     "export declare class ReportConfigService { private cfg; private chain; private readonly root; private readonly onUpdate?; constructor(opts: ReportConfigServiceOptions); get(): ReportConfig; update(next: ReportConfig): Promise<void>; }",
-    "export declare class ReportScheduler { private config; private timer; private disposed; private readonly root; private readonly onDue; private readonly now; private readonly tickMs; private readonly warn; private constructor(); static start(opts: ReportSchedulerOptions): ReportScheduler; updateConfig(config: ReportConfig): void; tick(): Promise<void>; dispose(): void; }",
+    "export declare class ReportScheduler { private config; private timer; private disposed; private readonly root; private readonly onDue; private readonly now; private readonly tickMs; private readonly warn; private readonly parseIndex?; private constructor(); static start(opts: ReportSchedulerOptions): ReportScheduler; updateConfig(config: ReportConfig): void; tick(): Promise<void>; dispose(): void; }",
     "export declare class ReportTaskQueue { private readonly tasks; private tail; private readonly executor; private readonly now; private readonly warn; private readonly ttlMs; private readonly maxTasks; constructor(opts: ReportTaskQueueOptions); submit(input: ReportTaskInput): { taskId: string; existing: boolean; }; get(taskId: string): ReportTask | undefined; private run; private prune; }",
     "export declare class StatsService { readonly ctx: Context; readonly config: NormalizedConfig; readonly historyRoot: string; readonly registry: AdapterRegistry; readonly history: HistoryStore; readonly sanitizeDiagnostic: (s: string) => string; readonly recordAdapterStateDiagnostic: (message: string) => void; readonly cache: Map<string, V2PipelineResult>; readonly panelCache: Map<string, PanelCacheEntry>; readonly providerLocks: Map<string, Mutex>; private cacheGeneration; private readonly panelInFlight; private stateChain; constructor(options: StatsServiceOptions); lockOf(provider: string): Mutex; cacheFresh(provider: string): V2PipelineResult | undefined; cacheSize(): number; purgeAllCaches(): void; purgePanelCacheForProvider(provider: string): void; purgeCachesForProviders(providers: Iterable<string>): void; getPanelResult(provider: string, entry: { name: string; adapter: UsageStatsAdapter; }, range: { start: number; end: number; }): Promise<{ panelHtml?: string; error?: string; }>; warmupProviders(providers: Iterable<string>): void; scheduleWriteAdapterState(override?: Record<string, string | null>): void; persistUserAdapter(rec: UserAdapterRecord): Promise<void>; getStats(provider: string, signal?: AbortSignal): Promise<V2PipelineResult>; dispose(): void; }",
     "export declare class TrendAggregator { private days; private dirDays; private hourDays; private pending; apply(e: TrendEmit): void; private addCall; private applyCall; private applyCorrect; private retokenCell; private addCounter; private applyCounter; rebuild(rows: Array<TrendAggRow | TrendDetailRow | TrendCounterRow | TrendDirRow | TrendHourRow>, persistedRows: boolean): void; unpersistedDays(): string[]; pendingDays(): string[]; hasUnpersisted(day: string): boolean; takeUnpersisted(): PendingEntry[]; markPersisted(entries: PendingEntry[]): void; dirRows(): TrendDirRow[]; hourRows(): TrendHourRow[]; dirStacked(n: number, gran: TrendGranularity, metric: TrendMetric, dir: string | undefined, now: number): { series: TrendStackPoint[]; dirs: Array<{ dir: string; }>; }; dirWindowSummary(n: number, gran: TrendGranularity, metric: TrendMetric, dir: string | undefined, now: number, dirSeries?: TrendStackPoint[]): TrendWindowSummary; dirTotals(startDay: string, endDay: string, metric?: TrendMetric): Array<{ dir: string; calls: number; total: number | null; }>; takeDirUnpersisted(day: string): TrendDirRow[]; rollupSnapshot(day: string): { consumed: PendingEntry[]; aggRows: TrendAggRow[]; dirRows: TrendDirRow[]; hourRows: TrendHourRow[]; }; rollupRowsOf(day: string): TrendAggRow[]; consume(entries: readonly PendingEntry[]): void; dropPending(day: string, today: string): void; pruneDays(beforeDay: string): number; rollupDay(day: string, today: string): Array<TrendAggRow | TrendDirRow | TrendHourRow>; buckets(): Array<{ day: string; providers: Array<{ provider: string; model: string | null; cell: TrendCell; }>; }>; seriesDays(n: number, now: number, metric: TrendMetric, provider?: string): Array<{ day: string; value: number | null; }>; seriesWeeks(n: number, now: number, metric: TrendMetric, provider?: string): Array<{ day: string; value: number | null; }>; seriesMonths(n: number, now: number, metric: TrendMetric, provider?: string): Array<{ day: string; value: number | null; }>; seriesStacked(n: number, gran: TrendGranularity, metric: TrendMetric, provider: string | undefined, byModel: boolean, now: number): { series: TrendStackPoint[]; providers: Array<{ provider: string; model: string | null; }>; }; windowSummary(n: number, gran: TrendGranularity, metric: TrendMetric, provider: string | undefined, now: number, stackSeries?: TrendStackPoint[]): TrendWindowSummary; stats(): { days: number; pendingRows: number; unpersistedRows: number; }; private cellOf; private dirCellOf; private hourCellOf; }",
@@ -751,7 +739,7 @@
     "export declare function emptyCell(): TrendCell;",
     "export declare function emptyDirRow(day: string, dir: string): TrendDirRow;",
     "export declare function emptyHourRow(day: string, hour: number): TrendHourRow;",
-    "export declare function ensureLastRunMigrated(root: string, warn?: (msg: string) => void): Promise<{ changed: boolean; before: Partial<Record<ReportPeriod, string>>; after: Partial<Record<ReportPeriod, string>>; }",
+    "export declare function ensureLastRunMigrated(root: string, warn?: (msg: string) => void, parseIndex?: ScheduleIndexParser): Promise<{ changed: boolean; before: Partial<Record<ReportPeriod, string>>; after: Partial<Record<ReportPeriod, string>>; }",
     "export declare function esc(s: unknown): string;",
     "export declare function escAttr(s: unknown): string;",
     "export declare function escHtml(s: unknown): string;",
@@ -1154,10 +1142,6 @@
           "isType": true
         },
         {
-          "name": "TrendAggregator",
-          "isType": false
-        },
-        {
           "name": "TrendAttribution",
           "isType": true
         },
@@ -1168,10 +1152,6 @@
         {
           "name": "TrendCell",
           "isType": true
-        },
-        {
-          "name": "TrendCollector",
-          "isType": false
         },
         {
           "name": "TrendCorrectRecord",
@@ -1507,10 +1487,6 @@
         },
         {
           "name": "startOfDay",
-          "isType": false
-        },
-        {
-          "name": "sumToken",
           "isType": false
         },
         {
@@ -2017,13 +1993,13 @@
           "export declare function previousClosedWindow(period: ReportPeriod, cfg: ReportConfig, now: number): DueReport;"
         ],
         "ReportScheduler": [
-          "export declare class ReportScheduler { private config; private timer; private disposed; private readonly root; private readonly onDue; private readonly now; private readonly tickMs; private readonly warn; private constructor(); static start(opts: ReportSchedulerOptions): ReportScheduler; updateConfig(config: ReportConfig): void; tick(): Promise<void>; dispose(): void; }"
+          "export declare class ReportScheduler { private config; private timer; private disposed; private readonly root; private readonly onDue; private readonly now; private readonly tickMs; private readonly warn; private readonly parseIndex?; private constructor(); static start(opts: ReportSchedulerOptions): ReportScheduler; updateConfig(config: ReportConfig): void; tick(): Promise<void>; dispose(): void; }"
         ],
         "__lastRunChainForTests": [
           "export declare function __lastRunChainForTests(root: string): Promise<void> | undefined;"
         ],
         "ensureLastRunMigrated": [
-          "export declare function ensureLastRunMigrated(root: string, warn?: (msg: string) => void): Promise<{ changed: boolean; before: Partial<Record<ReportPeriod, string>>; after: Partial<Record<ReportPeriod, string>>; }"
+          "export declare function ensureLastRunMigrated(root: string, warn?: (msg: string) => void, parseIndex?: ScheduleIndexParser): Promise<{ changed: boolean; before: Partial<Record<ReportPeriod, string>>; after: Partial<Record<ReportPeriod, string>>; }"
         ],
         "readLastRun": [
           "export declare function readLastRun(root: string): Promise<Partial<Record<ReportPeriod, string>>>;"
