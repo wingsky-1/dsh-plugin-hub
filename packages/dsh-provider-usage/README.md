@@ -345,15 +345,12 @@ plugins:
 
 加载失败 fail-fast 拒收并登记错误（设置面板可见），不影响插件其余功能。路径安全：相对路径只允许落在 `DSH_HOME` 或插件 home 内，未规整形态（`../` 穿越）一律 400 拒绝。
 
-### v1 → v2 迁移
+### v1 旧契约已删除
 
-| v1（旧） | v2（新） |
-| --- | --- |
-| `fetchUsage(ctx)` 返回归一化 ProviderUsage | `fetchData(ctx)` 返回原始对象（只包装 `{time,data}` 入库） |
-| 客户端渲染器 `.js` + 全局桥接注册 | `formatCapsule`/`formatPanel` 返回 HTML（宿主端渲染） |
-| `id` 字段 | `name` 字段（白名单校验更严） |
-| `summarize`/`samplePoint`/windows | 移除——胶囊/面板直接由 format 函数产出 |
-| 设置页运行时添加/切换适配器（v1 既有） | **保留**：设置页「用量统计」承载（检测/添加/切换/停用，自动持久化）；cordis.patch.yml 声明仅为可选叠加 |
+v1 旧契约已随破坏性变更 #932 删除，仅支持 v2 契约（`fetchData` 返回原始对象、
+`formatCapsule`/`formatPanel` 返回 HTML 由宿主端渲染，`name` 字段白名单校验，
+见 `docs/adapter-guide.md`）。设置页「用量统计」承载检测/添加/切换/停用
+（自动持久化）；cordis.patch.yml 声明仅为可选叠加。
 
 ## 安全模型
 

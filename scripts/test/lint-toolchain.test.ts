@@ -306,16 +306,18 @@ test("#764 A5：基线的只许收缩棘轮（官方只在 CLI 侧检查，Node 
   // 三档实跑：count 恰好 / 多一条（存量已修掉，该 prune）/ 少一条（超基线，错误现形）。
   // 为什么必须自己补这条：applySuppressions 把「未使用条目」算进 unused 返回，而 Node API 的
   // lintFiles 直接丢弃它——不补就没人催收缩基线，挂账只增不减。
-  const probe = "packages/dsh-provider-usage/src/shared/contracts.ts";
+  //
+  // 探针是 tools/lint/fixtures 下 synthetic 固件（lint-probe-fixture.ts，稳定 2 处发现），不依赖任何业务文件：
+  // v1 退役（#932）删掉了旧探针 contracts.ts 的 40 处 deprecated 发现——业务存量数会随重构
+  // 归零，探针计数禁止重新绑定业务文件的存量数，否则下一次删存量又要改测试。
+  const rule = "@typescript-eslint/no-unused-vars";
+  const findings = 2;
+  const probe = "tools/lint/fixtures/lint-probe-fixture.ts";
   const dir = mkdtempSync(join(tmpdir(), "lint-suppressions-"));
   try {
     const run = (count) => {
       const base = join(dir, `base-${count}.json`);
-      writeFileSync(
-        base,
-        JSON.stringify({ [probe]: { "sonarjs/deprecation": { count } } }),
-        "utf8",
-      );
+      writeFileSync(base, JSON.stringify({ [probe]: { [rule]: { count } } }), "utf8");
       return spawnSync(
         process.execPath,
         ["tools/lint/bin/lint.mjs", `--suppressions=${base}`, probe],
@@ -323,23 +325,23 @@ test("#764 A5：基线的只许收缩棘轮（官方只在 CLI 侧检查，Node 
       );
     };
 
-    const exact = run(40);
+    const exact = run(findings);
     assert.equal(exact.status, 0, `基线恰好应放行，实际 exit ${exact.status}：${exact.stdout}`);
-    assert.match(exact.stdout, /基线已抑制 40 处/);
+    assert.match(exact.stdout, /基线已抑制 2 处/);
     assert.match(
       exact.stdout,
       /^lint: 检查/m,
       "汇总行必须能在管道下存活（process.exitCode 而非 exit）",
     );
 
-    const surplus = run(41);
+    const surplus = run(findings + 1);
     assert.equal(surplus.status, 1, "基线多出条数 = 存量已修掉却没收缩，必须判红");
     assert.match(surplus.stderr, /已经失效/);
     assert.match(surplus.stderr, /--prune-suppressions/, "报错须给出可照抄的收缩命令");
 
-    const deficit = run(39);
+    const deficit = run(findings - 1);
     assert.equal(deficit.status, 1, "基线少于实际违规 = 超出基线的错误必须现形");
-    assert.match(deficit.stdout, /error 40/, "超基线时该文件 40 处错误应全部报出");
+    assert.match(deficit.stdout, /error 2/, "超基线时该文件 2 处错误应全部报出");
     assert.doesNotMatch(
       deficit.stderr,
       /已经失效/,
@@ -348,10 +350,15 @@ test("#764 A5：基线的只许收缩棘轮（官方只在 CLI 侧检查，Node 
 
     // 子集运行 = pre-commit 只喂 staged 文件：**未被 lint 的文件不在判定范围内**。
     // 少了这条口径，钩子会把其余文件的条目全判成失效并拦住提交——本回归正是被它拦出来的。
-    const subset = spawnSync(process.execPath, ["tools/lint/bin/lint.mjs", probe], {
-      cwd: ROOT,
-      encoding: "utf8",
-    });
+    // 探针用零发现固件（与三档固件同约束）：子集档测的是口径本身，不需要发现数。
+    const subset = spawnSync(
+      process.execPath,
+      ["tools/lint/bin/lint.mjs", "tools/lint/fixtures/lint-probe-clean-fixture.ts"],
+      {
+        cwd: ROOT,
+        encoding: "utf8",
+      },
+    );
     assert.equal(
       subset.status,
       0,

@@ -1,7 +1,7 @@
 {
-  "packages/dsh-provider-usage/src/shared/contracts.ts": {
-    "sonarjs/deprecation": {
-      "count": 40
+  "tools/lint/fixtures/lint-probe-fixture.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 2
     }
   }
 }

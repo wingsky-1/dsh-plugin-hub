@@ -112,7 +112,7 @@ export async function pollUntil<T = boolean>(
 
 // ---------------------------------------------------------------- sanitizeHtml 统一判定标准 v2（测试侧单一事实源）
 //
-// 本节是 sanitizeHtml 安全判据的唯一测试侧实现：smoke-pure / unit-v1 等一律
+// 本节是 sanitizeHtml 安全判据的唯一测试侧实现：smoke-pure / unit-chart 等一律
 // 引用此处，禁止再复制解码器/危险模式/判定函数（P2③——round1 的 P1-1 穿透
 // 正是「实现与判据镜像漂移、共盲放过 Tab/LF/CR 实体族」的后果）。
 //

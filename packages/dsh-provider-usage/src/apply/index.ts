@@ -33,8 +33,6 @@ export {
   isUsageStatsAdapter,
   describeUsageStatsAdapterShape,
   safeSegment,
-  summarizeTextFromWindows,
-  levelFromWindows,
 } from "../shared/interface.ts";
 export type {
   AdapterErrorCode,
@@ -42,19 +40,6 @@ export type {
   CapsuleInput,
   PanelInput,
   UsageStatsAdapter,
-  UsageWindow,
-  ProviderUsage,
-  SummaryLevel,
-  ProviderSummary,
-  SampleColumn,
-  FetchLike,
-  HostFetchContext,
-  SamplePointData,
-  HostProviderAdapter,
-  ClientProviderRenderer,
-  RenderContext,
-  DshUsageGlobal,
-  UsageAdapterSpec,
 } from "../shared/interface.ts";
 export { makeAdapterRegistry } from "../server/registry/interface.ts";
 export type {

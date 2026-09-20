@@ -235,22 +235,13 @@ export const label = "我的统计";                      // 展示名
 
 ---
 
-## 6. v1 → v2 迁移对照
+## 6. v1 旧契约已删除
 
-> 一般适配器都是新建（直接写 v2 契约），无需迁移；仅当维护旧 v1 适配器时才展开本节。
-
-<details>
-<summary>v1 → v2 迁移对照（点击展开）</summary>
-
-| v1（旧） | v2（新） |
-|---------|---------|
-| `export default { version:1, id, label, providers, fetchUsage }` | 具名导出 `version:2, name, providers, fetchData` |
-| 客户端渲染器 `.js` + `window.__DSH_USAGE__` 桥接 | `formatCapsule`/`formatPanel` 返回 HTML（宿主端渲染） |
-| `summarize`/`samplePoint`/windows 归一化 | 移除，胶囊/面板直接由 format 函数产出 |
-| 设置页运行时 add/select 适配器 | **保留并增强**：设置页「用量统计」承载检测/添加/切换/停用；cordis.patch.yml 声明降为可选叠加 |
-| 历史 v3 多文件 JSON 桶 | 按天分片 JSONL（旧数据启动时自动迁移） |
-
-</details>
+v1 旧契约已随破坏性变更 #932 删除，不再加载：适配器一律按 v2 契约编写
+（具名导出 `version:2, name, providers, fetchData`，`formatCapsule` /
+`formatPanel` 返回 HTML 由宿主端渲染）。设置页「用量统计」承载检测/添加/
+切换/停用；cordis.patch.yml 声明为可选叠加。历史按天分片 JSONL
+（旧数据启动时自动迁移）。
 
 ---
 

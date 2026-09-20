@@ -1184,7 +1184,7 @@ export function formatPanel() { return "<p>f</p>"; }
 
 // 注入窗口纪律：fetchWithTimeout 硬编码读取全局 fetch。经 injectGlobalFetch
 // 串行通道（#120）与其他模块的注入窗口互斥，save/restore 恒配对——ESM TLA
-// 交错下不再可能把他人 mock 固化为「现场」（unit-v1 慢路径 × 本窗口交错驻留实证）。
+// 交错下不再可能把他人 mock 固化为「现场」（unit-chart 慢路径 × 本窗口交错驻留实证）。
 describe("fetchWithTimeout 边界（#150 二阶段）", () => {
   let okStatus, fastCallsAtLeast1, okUrl, slowCallsAtLeast1, slowAborted, defCallsAtLeast1;
 

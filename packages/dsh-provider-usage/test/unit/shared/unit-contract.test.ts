@@ -3,10 +3,9 @@
  * dsh-provider-usage — unit：契约辅助纯函数。
  *
  * 覆盖：safeSegment（路径安全段）、sseData（SSE 序列化）、
- * parseUserAdapters（防御式解析）、summarizeTextFromWindows /
- * levelFromWindows（v1 废弃但保留的辅助函数）、esc（HTML 转义）、
+ * parseUserAdapters（防御式解析）、esc（HTML 转义）、
  * isUsageStatsAdapter / describeUsageStatsAdapterShape（v2 契约校验全分支，
- * #150 变异驱动加固）。
+ * #150 变异驱动加固）。v1 辅助函数已随 #932 删除，其断言同步移除。
  */
 console.error("EVAL-ORDER-TAG: CONTRACT");
 import { mkdtempSync, writeFileSync } from "node:fs";
@@ -19,8 +18,6 @@ import {
   safeSegment,
   sseData,
   parseUserAdapters,
-  summarizeTextFromWindows,
-  levelFromWindows,
   esc,
   isUsageStatsAdapter,
   describeUsageStatsAdapterShape,
@@ -165,101 +162,6 @@ describe("parseUserAdapters", () => {
     expect(
       parseUserAdapters('{"adapters": [{"id":"a","providers":["p1",""],"file":"/x.mjs"}]}'),
     ).toEqual([{ id: "a", label: "a", providers: ["p1"], file: "/x.mjs" }]);
-  });
-});
-
-describe("summarizeTextFromWindows (deprecated)", () => {
-  it("undefined 窗口返回空", () => {
-    expect(summarizeTextFromWindows(undefined)).toBe("");
-  });
-
-  it("空数组返回空", () => {
-    expect(summarizeTextFromWindows([])).toBe("");
-  });
-
-  it("单窗口百分比展示", () => {
-    expect(summarizeTextFromWindows([{ key: "5h", name: "5h 滚动", percent: 5 }])).toBe(
-      "5h 滚动 5%",
-    );
-  });
-
-  it("整百分比无小数", () => {
-    expect(summarizeTextFromWindows([{ key: "w", name: "每周", percent: 80 }])).toBe("每周 80%");
-  });
-
-  it("null 百分比显示 --", () => {
-    expect(
-      summarizeTextFromWindows([
-        { key: "r", name: "5h 滚动", percent: 5 },
-        { key: "w", name: "每周", percent: null },
-      ]),
-    ).toBe("5h 滚动 5% · 每周 --");
-  });
-});
-
-describe("levelFromWindows (deprecated)", () => {
-  it("undefined 窗口返回 off", () => {
-    expect(levelFromWindows(undefined)).toBe("off");
-  });
-
-  it("空数组返回 off", () => {
-    expect(levelFromWindows([])).toBe("off");
-  });
-
-  it("10% → ok", () => {
-    expect(levelFromWindows([{ key: "r", percent: 10 }])).toBe("ok");
-  });
-
-  it("80% → warn", () => {
-    expect(levelFromWindows([{ key: "r", percent: 80 }])).toBe("warn");
-  });
-
-  it("95% → err", () => {
-    expect(levelFromWindows([{ key: "r", percent: 95 }])).toBe("err");
-  });
-
-  it("100% → err", () => {
-    expect(levelFromWindows([{ key: "r", percent: 100 }])).toBe("err");
-  });
-
-  it("null 百分比 → off", () => {
-    expect(levelFromWindows([{ key: "r", percent: null }])).toBe("off");
-  });
-
-  it("多窗口取最差（90 → warn，≥80 即为 warn）", () => {
-    expect(
-      levelFromWindows([
-        { key: "r", percent: 10 },
-        { key: "w", percent: 90 },
-      ]),
-    ).toBe("warn");
-  });
-
-  it("非数组输入返回 off（#150）", () => {
-    expect(levelFromWindows("not array" as unknown as Parameters<typeof levelFromWindows>[0])).toBe(
-      "off",
-    );
-  });
-
-  it("79.9 < 80 → ok 边界（#150）", () => {
-    expect(levelFromWindows([{ key: "r", percent: 79.9 }])).toBe("ok");
-  });
-
-  it("94.9 < 95 → warn 边界（#150）", () => {
-    expect(levelFromWindows([{ key: "r", percent: 94.9 }])).toBe("warn");
-  });
-
-  it("缺 percent 字段 → off（#150）", () => {
-    expect(levelFromWindows([{ key: "r" }])).toBe("off");
-  });
-
-  it("null 混合窗口只计数值项（#150）", () => {
-    expect(
-      levelFromWindows([
-        { key: "r", percent: 30 },
-        { key: "w", percent: null },
-      ]),
-    ).toBe("ok");
   });
 });
 

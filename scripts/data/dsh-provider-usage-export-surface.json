@@ -46,10 +46,6 @@
       "isType": true
     },
     {
-      "name": "ClientProviderRenderer",
-      "isType": true
-    },
-    {
       "name": "Config",
       "isType": false
     },
@@ -82,10 +78,6 @@
       "isType": true
     },
     {
-      "name": "DshUsageGlobal",
-      "isType": true
-    },
-    {
       "name": "DueExecutorDeps",
       "isType": true
     },
@@ -99,10 +91,6 @@
     },
     {
       "name": "FetchContext",
-      "isType": true
-    },
-    {
-      "name": "FetchLike",
       "isType": true
     },
     {
@@ -120,14 +108,6 @@
     {
       "name": "HistoryStore",
       "isType": false
-    },
-    {
-      "name": "HostFetchContext",
-      "isType": true
-    },
-    {
-      "name": "HostProviderAdapter",
-      "isType": true
     },
     {
       "name": "HotReloadableAdapter",
@@ -174,23 +154,11 @@
       "isType": true
     },
     {
-      "name": "ProviderSummary",
-      "isType": true
-    },
-    {
-      "name": "ProviderUsage",
-      "isType": true
-    },
-    {
       "name": "ROUTES",
       "isType": false
     },
     {
       "name": "RectLike",
-      "isType": true
-    },
-    {
-      "name": "RenderContext",
       "isType": true
     },
     {
@@ -266,19 +234,7 @@
       "isType": true
     },
     {
-      "name": "SampleColumn",
-      "isType": true
-    },
-    {
       "name": "SamplePoint",
-      "isType": true
-    },
-    {
-      "name": "SamplePointData",
-      "isType": true
-    },
-    {
-      "name": "SummaryLevel",
       "isType": true
     },
     {
@@ -382,15 +338,7 @@
       "isType": true
     },
     {
-      "name": "UsageAdapterSpec",
-      "isType": true
-    },
-    {
       "name": "UsageStatsAdapter",
-      "isType": true
-    },
-    {
-      "name": "UsageWindow",
       "isType": true
     },
     {
@@ -567,10 +515,6 @@
     },
     {
       "name": "legacySampleToData",
-      "isType": false
-    },
-    {
-      "name": "levelFromWindows",
       "isType": false
     },
     {
@@ -818,10 +762,6 @@
       "isType": false
     },
     {
-      "name": "summarizeTextFromWindows",
-      "isType": false
-    },
-    {
       "name": "timeTickStep",
       "isType": false
     },
@@ -880,7 +820,6 @@
     "export declare class UiRoutesContext { readonly statsService: StatsService; readonly trend: TrendTracker; readonly uiConfig: UiPlacementConfig; readonly sseClients: Set<ServerResponse>; readonly broadcastUiConfigChanged: () => void; readonly layerErrors: LayerErrorSurface; constructor(opts: UiRoutesContextOptions); }",
     "export declare const ADAPTERS_URL: string;",
     "export declare const ADAPTER_CONTRACT_VERSION = 2;",
-    "export declare const ADAPTER_CONTRACT_VERSION_V1 = 1;",
     "export declare const ADAPTER_STATE_BACKUP_LIMIT = 5;",
     "export declare const ADAPTER_UTILS: AdapterUtils;",
     "export declare const ADD_URL: string;",
@@ -941,7 +880,6 @@
     "export declare const TREND_URL: string;",
     "export declare const UI_CONFIG_URL: string;",
     "export declare const UNKNOWN_PROVIDER_HINT = \"\\u63D0\\u4F9B\\u5546\\u672A\\u8BC6\\u522B\";",
-    "export declare const USAGE_GLOBAL_KEY = \"__DSH_USAGE__\";",
     "export declare const Z_INDEX_BASE_MAX = 9000;",
     "export declare const Z_INDEX_BASE_MIN = 1;",
     "export declare const Z_INDEX_PANEL_DELTA = 30;",
@@ -998,9 +936,7 @@
     "export declare function dayValueOf(days: Map<string, Map<string, Map<string | null, TrendCell>>>, day: string, metric: TrendMetric, provider?: string): number | null;",
     "export declare function decideProviderAfterDetect(input: DetectDecisionInput): DetectDecision;",
     "export declare function defaultCatalogLoader(remote: RemoteLike | undefined): Promise<string | undefined>;",
-    "export declare function defineUsageAdapter(spec: UsageAdapterSpec): HostProviderAdapter;",
     "export declare function deriveLastRun(records: LastRunRecord[]): Partial<Record<ReportPeriod, string>>;",
-    "export declare function describeAdapterShape(v: unknown): string | null;",
     "export declare function describeUsageStatsAdapterShape(v: unknown): string | null;",
     "export declare function diffToken(aggV: number | null, dirV: number | null): number | null;",
     "export declare function dirDisplayLabel(dir: unknown): string;",
@@ -1046,9 +982,7 @@
     "export declare function handleUiConfig(req: IncomingMessage, res: ServerResponse, context: UiRoutesContext): Promise<void>;",
     "export declare function hourOfDay(t: number): number;",
     "export declare function installUpgrade(deps: UpgradeDeps): Promise<void>;",
-    "export declare function isClientProviderRenderer(v: unknown): v is ClientProviderRenderer;",
     "export declare function isClosedWindowRecord(r: LastRunRecord): boolean;",
-    "export declare function isHostProviderAdapter(v: unknown): v is HostProviderAdapter;",
     "export declare function isPanelCacheStale(entry: Pick<PanelCacheEntry, \"at\">, now: number, ttlMs?: number): boolean;",
     "export declare function isReportKeyValid(period: string, key: string): boolean;",
     "export declare function isReportPeriodValid(period: string): boolean;",
@@ -1062,7 +996,6 @@
     "export declare function legacyConfigFile(root: string): string;",
     "export declare function legacyLastRunFile(root: string): string;",
     "export declare function legacySampleToData(columns: LegacyV3Bucket[\"columns\"], sample: Array<number | null>): Record<string, unknown>;",
-    "export declare function levelFromWindows(windows: UsageWindow[] | undefined): SummaryLevel;",
     "export declare function listAdapters(root: string): Promise<Array<{ provider: string; name: string; }",
     "export declare function loadAndValidateAdapter(file: string, stamp: FileStamp): Promise<{ adapter?: UsageStatsAdapter; error?: string; }",
     "export declare function loadUserAdapterChecked(file: string, registry?: AdapterRegistry): Promise<{ ok: true; adapter: UsageStatsAdapter; }",
@@ -1163,7 +1096,6 @@
     "export declare function startOfDay(time: number): number;",
     "export declare function sub(oldV: number | null, newV: number | null): number | null;",
     "export declare function sumToken(a: number | null, b: number | null): number | null;",
-    "export declare function summarizeTextFromWindows(windows: UsageWindow[] | undefined): string;",
     "export declare function summaryOf(snapshot: ReportStatsSnapshot): ReportMetaSummary;",
     "export declare function targetConfigFile(root: string): string;",
     "export declare function targetLastRunFile(root: string): string;",
@@ -1179,8 +1111,6 @@
     "export declare function uiConfigFile(root: string): string;",
     "export declare function updateLastRun(root: string, patch: (prev: Partial<Record<ReportPeriod, string>>) => Partial<Record<ReportPeriod, string>> | Promise<Partial<Record<ReportPeriod, string>>>): Promise<void>;",
     "export declare function upgradeVersionFile(root: string): string;",
-    "export declare function usageError(provider: string, error: string | null, label?: string, fetchedAt?: number): ProviderUsage;",
-    "export declare function usageOk(provider: string, label: string, fetchedAt: number, extra?: Partial<ProviderUsage>): ProviderUsage;",
     "export declare function userAdaptersFile(root: string): string;",
     "export declare function weekRange(weekStart: string): { start: string; end: string; };",
     "export declare function weekStartKey(t: number): string;",
@@ -1240,10 +1170,6 @@
           "isType": true
         },
         {
-          "name": "ClientProviderRenderer",
-          "isType": true
-        },
-        {
           "name": "Config",
           "isType": false
         },
@@ -1276,10 +1202,6 @@
           "isType": true
         },
         {
-          "name": "DshUsageGlobal",
-          "isType": true
-        },
-        {
           "name": "DueExecutorDeps",
           "isType": true
         },
@@ -1293,10 +1215,6 @@
         },
         {
           "name": "FetchContext",
-          "isType": true
-        },
-        {
-          "name": "FetchLike",
           "isType": true
         },
         {
@@ -1314,14 +1232,6 @@
         {
           "name": "HistoryStore",
           "isType": false
-        },
-        {
-          "name": "HostFetchContext",
-          "isType": true
-        },
-        {
-          "name": "HostProviderAdapter",
-          "isType": true
         },
         {
           "name": "HotReloadableAdapter",
@@ -1368,23 +1278,11 @@
           "isType": true
         },
         {
-          "name": "ProviderSummary",
-          "isType": true
-        },
-        {
-          "name": "ProviderUsage",
-          "isType": true
-        },
-        {
           "name": "ROUTES",
           "isType": false
         },
         {
           "name": "RectLike",
-          "isType": true
-        },
-        {
-          "name": "RenderContext",
           "isType": true
         },
         {
@@ -1460,19 +1358,7 @@
           "isType": true
         },
         {
-          "name": "SampleColumn",
-          "isType": true
-        },
-        {
           "name": "SamplePoint",
-          "isType": true
-        },
-        {
-          "name": "SamplePointData",
-          "isType": true
-        },
-        {
-          "name": "SummaryLevel",
           "isType": true
         },
         {
@@ -1576,15 +1462,7 @@
           "isType": true
         },
         {
-          "name": "UsageAdapterSpec",
-          "isType": true
-        },
-        {
           "name": "UsageStatsAdapter",
-          "isType": true
-        },
-        {
-          "name": "UsageWindow",
           "isType": true
         },
         {
@@ -1761,10 +1639,6 @@
         },
         {
           "name": "legacySampleToData",
-          "isType": false
-        },
-        {
-          "name": "levelFromWindows",
           "isType": false
         },
         {
@@ -2009,10 +1883,6 @@
         },
         {
           "name": "sumToken",
-          "isType": false
-        },
-        {
-          "name": "summarizeTextFromWindows",
           "isType": false
         },
         {
@@ -2742,20 +2612,8 @@
         "ADAPTER_CONTRACT_VERSION": [
           "export declare const ADAPTER_CONTRACT_VERSION = 2;"
         ],
-        "ADAPTER_CONTRACT_VERSION_V1": [
-          "export declare const ADAPTER_CONTRACT_VERSION_V1 = 1;"
-        ],
         "ERROR_CODES": [
           "export declare const ERROR_CODES: readonly [\"no-provider\", \"no-adapter\", \"no-enabled-adapter\", \"no-api-key\", \"unauthorized\", \"timeout\", \"network\", \"bad-data\", \"bad-json\", \"adapter-load-failed\", \"adapter-crash\", \"adapter-timeout\"];"
-        ],
-        "USAGE_GLOBAL_KEY": [
-          "export declare const USAGE_GLOBAL_KEY = \"__DSH_USAGE__\";"
-        ],
-        "defineUsageAdapter": [
-          "export declare function defineUsageAdapter(spec: UsageAdapterSpec): HostProviderAdapter;"
-        ],
-        "describeAdapterShape": [
-          "export declare function describeAdapterShape(v: unknown): string | null;"
         ],
         "describeUsageStatsAdapterShape": [
           "export declare function describeUsageStatsAdapterShape(v: unknown): string | null;"
@@ -2763,29 +2621,11 @@
         "esc": [
           "export declare function esc(s: unknown): string;"
         ],
-        "isClientProviderRenderer": [
-          "export declare function isClientProviderRenderer(v: unknown): v is ClientProviderRenderer;"
-        ],
-        "isHostProviderAdapter": [
-          "export declare function isHostProviderAdapter(v: unknown): v is HostProviderAdapter;"
-        ],
         "isUsageStatsAdapter": [
           "export declare function isUsageStatsAdapter(v: unknown): v is UsageStatsAdapter;"
         ],
-        "levelFromWindows": [
-          "export declare function levelFromWindows(windows: UsageWindow[] | undefined): SummaryLevel;"
-        ],
         "safeSegment": [
           "export declare function safeSegment(s: string): string;"
-        ],
-        "summarizeTextFromWindows": [
-          "export declare function summarizeTextFromWindows(windows: UsageWindow[] | undefined): string;"
-        ],
-        "usageError": [
-          "export declare function usageError(provider: string, error: string | null, label?: string, fetchedAt?: number): ProviderUsage;"
-        ],
-        "usageOk": [
-          "export declare function usageOk(provider: string, label: string, fetchedAt: number, extra?: Partial<ProviderUsage>): ProviderUsage;"
         ],
         "BREAKPOINT_NARROW_MAX": [
           "export declare const BREAKPOINT_NARROW_MAX = 480;"
