@@ -28,11 +28,9 @@
 // smoke/lint 只能从 lib/index.js 导入，故契约与核心模块一律在此 re-export。
 export {
   ADAPTER_CONTRACT_VERSION,
-  ERROR_CODES,
   esc,
   isUsageStatsAdapter,
   describeUsageStatsAdapterShape,
-  safeSegment,
 } from "../shared/interface.ts";
 export type {
   AdapterErrorCode,

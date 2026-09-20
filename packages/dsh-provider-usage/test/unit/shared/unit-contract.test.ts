@@ -15,15 +15,15 @@ import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
 import { beforeAll, describe, expect, it } from "vitest";
 import {
-  safeSegment,
   sseData,
   parseUserAdapters,
   esc,
   isUsageStatsAdapter,
   describeUsageStatsAdapterShape,
   ADAPTER_CONTRACT_VERSION,
-  ERROR_CODES,
 } from "../../../src/apply/index.ts";
+// 白盒直连深路径（#768 B波）：契约常量/路径段经 shared 门面，不走组合根转发（sseData单议暂留）。
+import { safeSegment, ERROR_CODES } from "../../../src/shared/interface.ts";
 import {
   makeAdapterRegistry,
   sanitizeHtml,

@@ -86,10 +86,6 @@
       "isType": true
     },
     {
-      "name": "ERROR_CODES",
-      "isType": false
-    },
-    {
       "name": "FetchContext",
       "isType": true
     },
@@ -706,10 +702,6 @@
       "isType": false
     },
     {
-      "name": "safeSegment",
-      "isType": false
-    },
-    {
       "name": "safeToken",
       "isType": false
     },
@@ -1176,10 +1168,6 @@
         {
           "name": "DueReport",
           "isType": true
-        },
-        {
-          "name": "ERROR_CODES",
-          "isType": false
         },
         {
           "name": "FetchContext",
@@ -1795,10 +1783,6 @@
         },
         {
           "name": "safeId",
-          "isType": false
-        },
-        {
-          "name": "safeSegment",
           "isType": false
         },
         {
