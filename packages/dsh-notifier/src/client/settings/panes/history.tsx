@@ -10,6 +10,7 @@ import * as React from "react";
 import type { NotifySeverity } from "../../../shared/interface.ts";
 import { KIND_KEYS } from "../../locales.ts";
 import type { Translate } from "../../locale.ts";
+import { sevIcon } from "../parts/kind-icons.tsx";
 import { deliveryLines } from "../parts/rows.tsx";
 import type { HistoryRecordView } from "../types.ts";
 
@@ -69,10 +70,7 @@ export function historyPane(
             const sev = severityOf(r.kind);
             return (
               <li className="dn-set-historyItem" key={String(r.ts) + "-" + i}>
-                <span
-                  className={"dn-sev" + (sev !== "info" ? " dn-sev-" + sev : "")}
-                  title={"severity: " + sev}
-                />
+                {sevIcon(sev, sev !== "info" ? "dn-sev-" + sev : undefined)}
                 <div className="dn-set-historyMain">
                   <div className="dn-set-historyHead">
                     <span className="dn-set-historyKind">

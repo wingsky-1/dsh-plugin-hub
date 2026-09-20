@@ -68,7 +68,7 @@ export function builtinCard(
   const enabled = ch.enabled === true;
   const popup = ch.popup === true;
   const soundOn = soundIsOn(ch.sound);
-  const stateCls = !enabled ? " dn-ch-off" : !popup && soundOn ? " dn-ch-sound" : " dn-ch-onEdge";
+  const stateCls = !enabled ? " dn-ch-off" : !popup && soundOn ? " dn-ch-sound" : "";
   const summaryState = !enabled
     ? t("chStateOff")
     : !popup && soundOn
