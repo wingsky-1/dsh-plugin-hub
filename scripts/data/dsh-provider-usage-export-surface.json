@@ -6,10 +6,6 @@
       "isType": false
     },
     {
-      "name": "ADAPTER_CONTRACT_VERSION_V1",
-      "isType": false
-    },
-    {
       "name": "ADAPTER_UTILS",
       "isType": false
     },
@@ -42,10 +38,6 @@
       "isType": true
     },
     {
-      "name": "BASE_URL",
-      "isType": false
-    },
-    {
       "name": "BREAKPOINT_NARROW_MAX",
       "isType": false
     },
@@ -74,10 +66,6 @@
       "isType": false
     },
     {
-      "name": "DEFAULT_BASE_URL",
-      "isType": false
-    },
-    {
       "name": "DEFAULT_CONFIG",
       "isType": false
     },
@@ -91,10 +79,6 @@
     },
     {
       "name": "DEFAULT_PROMPTS",
-      "isType": false
-    },
-    {
-      "name": "DEFAULT_PROMPT_TEMPLATE",
       "isType": false
     },
     {
@@ -242,10 +226,6 @@
       "isType": false
     },
     {
-      "name": "OPENCODE_GO_WINDOWS",
-      "isType": false
-    },
-    {
       "name": "PANEL_CACHE_TTL_MS",
       "isType": false
     },
@@ -276,10 +256,6 @@
     {
       "name": "ProviderUsage",
       "isType": true
-    },
-    {
-      "name": "QUOTA_PATH",
-      "isType": false
     },
     {
       "name": "ROUTES",
@@ -494,10 +470,6 @@
       "isType": true
     },
     {
-      "name": "USAGE_GLOBAL_KEY",
-      "isType": false
-    },
-    {
       "name": "UiPlacementConfig",
       "isType": true
     },
@@ -666,10 +638,6 @@
       "isType": false
     },
     {
-      "name": "fetchDeepSeekOfficialV2",
-      "isType": false
-    },
-    {
       "name": "fetchOpenCodeGoV2",
       "isType": false
     },
@@ -687,10 +655,6 @@
     },
     {
       "name": "fmtPctTick",
-      "isType": false
-    },
-    {
-      "name": "formatCapsuleWithBadge",
       "isType": false
     },
     {
@@ -934,10 +898,6 @@
       "isType": false
     },
     {
-      "name": "providerBadgeText",
-      "isType": false
-    },
-    {
       "name": "readAdapterState",
       "isType": false
     },
@@ -958,19 +918,11 @@
       "isType": false
     },
     {
-      "name": "readUiConfig",
-      "isType": false
-    },
-    {
       "name": "readUserAdapters",
       "isType": false
     },
     {
       "name": "reportBodyToHtml",
-      "isType": false
-    },
-    {
-      "name": "reportConfigFile",
       "isType": false
     },
     {
@@ -1046,10 +998,6 @@
       "isType": false
     },
     {
-      "name": "splitProviderList",
-      "isType": false
-    },
-    {
       "name": "sseData",
       "isType": false
     },
@@ -1075,10 +1023,6 @@
     },
     {
       "name": "timeTicks",
-      "isType": false
-    },
-    {
-      "name": "toEpochMs",
       "isType": false
     },
     {
@@ -1119,10 +1063,6 @@
     },
     {
       "name": "writeReportConfig",
-      "isType": false
-    },
-    {
-      "name": "writeUiConfig",
       "isType": false
     },
     {
@@ -1464,10 +1404,6 @@
           "isType": false
         },
         {
-          "name": "ADAPTER_CONTRACT_VERSION_V1",
-          "isType": false
-        },
-        {
           "name": "ADAPTER_UTILS",
           "isType": false
         },
@@ -1500,10 +1436,6 @@
           "isType": true
         },
         {
-          "name": "BASE_URL",
-          "isType": false
-        },
-        {
           "name": "BREAKPOINT_NARROW_MAX",
           "isType": false
         },
@@ -1532,10 +1464,6 @@
           "isType": false
         },
         {
-          "name": "DEFAULT_BASE_URL",
-          "isType": false
-        },
-        {
           "name": "DEFAULT_CONFIG",
           "isType": false
         },
@@ -1549,10 +1477,6 @@
         },
         {
           "name": "DEFAULT_PROMPTS",
-          "isType": false
-        },
-        {
-          "name": "DEFAULT_PROMPT_TEMPLATE",
           "isType": false
         },
         {
@@ -1700,10 +1624,6 @@
           "isType": false
         },
         {
-          "name": "OPENCODE_GO_WINDOWS",
-          "isType": false
-        },
-        {
           "name": "PANEL_CACHE_TTL_MS",
           "isType": false
         },
@@ -1734,10 +1654,6 @@
         {
           "name": "ProviderUsage",
           "isType": true
-        },
-        {
-          "name": "QUOTA_PATH",
-          "isType": false
         },
         {
           "name": "ROUTES",
@@ -1952,10 +1868,6 @@
           "isType": true
         },
         {
-          "name": "USAGE_GLOBAL_KEY",
-          "isType": false
-        },
-        {
           "name": "UiPlacementConfig",
           "isType": true
         },
@@ -2124,10 +2036,6 @@
           "isType": false
         },
         {
-          "name": "fetchDeepSeekOfficialV2",
-          "isType": false
-        },
-        {
           "name": "fetchOpenCodeGoV2",
           "isType": false
         },
@@ -2145,10 +2053,6 @@
         },
         {
           "name": "fmtPctTick",
-          "isType": false
-        },
-        {
-          "name": "formatCapsuleWithBadge",
           "isType": false
         },
         {
@@ -2392,10 +2296,6 @@
           "isType": false
         },
         {
-          "name": "providerBadgeText",
-          "isType": false
-        },
-        {
           "name": "readAdapterState",
           "isType": false
         },
@@ -2416,19 +2316,11 @@
           "isType": false
         },
         {
-          "name": "readUiConfig",
-          "isType": false
-        },
-        {
           "name": "readUserAdapters",
           "isType": false
         },
         {
           "name": "reportBodyToHtml",
-          "isType": false
-        },
-        {
-          "name": "reportConfigFile",
           "isType": false
         },
         {
@@ -2504,10 +2396,6 @@
           "isType": false
         },
         {
-          "name": "splitProviderList",
-          "isType": false
-        },
-        {
           "name": "sseData",
           "isType": false
         },
@@ -2533,10 +2421,6 @@
         },
         {
           "name": "timeTicks",
-          "isType": false
-        },
-        {
-          "name": "toEpochMs",
           "isType": false
         },
         {
@@ -2577,10 +2461,6 @@
         },
         {
           "name": "writeReportConfig",
-          "isType": false
-        },
-        {
-          "name": "writeUiConfig",
           "isType": false
         },
         {

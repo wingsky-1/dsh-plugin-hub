@@ -27,14 +27,12 @@
 // 注意：bundle-host 会把 tsc 产物中的子模块全部内联进 lib/index.js 并清理游离 .js，
 // smoke/lint 只能从 lib/index.js 导入，故契约与核心模块一律在此 re-export。
 export {
-  ADAPTER_CONTRACT_VERSION_V1,
   ADAPTER_CONTRACT_VERSION,
   ERROR_CODES,
   esc,
   isUsageStatsAdapter,
   describeUsageStatsAdapterShape,
   safeSegment,
-  USAGE_GLOBAL_KEY,
   isHostProviderAdapter,
   describeAdapterShape,
   isClientProviderRenderer,
@@ -91,7 +89,6 @@ export {
   timeTickStep,
   fmtAxisTime,
   axisLabelWidthPx,
-  toEpochMs,
   ADAPTER_UTILS,
 } from "../shared/interface.ts";
 export type { AdapterUtils } from "../shared/interface.ts";
@@ -100,8 +97,6 @@ export type { AdapterUtils } from "../shared/interface.ts";
 export {
   OPENCODE_GO_PROVIDER,
   OPENCODE_GO_ADAPTER_ID,
-  DEFAULT_BASE_URL,
-  OPENCODE_GO_WINDOWS,
   pickWindow,
   parseUsageResponse,
   fetchOpenCodeGoV2,
@@ -111,7 +106,6 @@ export {
 export {
   DEEPSEEK_OFFICIAL_PROVIDER,
   DEEPSEEK_OFFICIAL_ADAPTER_ID,
-  BASE_URL,
   parseAmount,
   resolveEndpoint,
   GAP_MS,
@@ -121,8 +115,6 @@ export {
   isPeakUtc,
   nextPeakTransition,
   peakBadgeHtml,
-  fetchDeepSeekOfficialV2,
-  formatCapsuleWithBadge,
   classifyIntervalDs,
   aggregateDaily,
   dailyBarTitle,
@@ -135,7 +127,6 @@ export type { SamplePoint, DayRecord } from "../server/adapters/interface.ts";
 export {
   ZAI_CODING_CN_PROVIDER,
   ZAI_CODING_CN_ADAPTER_ID,
-  QUOTA_PATH,
   fetchData,
   zaiCodingCnAdapter,
 } from "../server/adapters/interface.ts";
@@ -156,8 +147,6 @@ export {
 export type { HistoryEntry } from "../server/history/interface.ts";
 export { safeFetchData, safeFormat, fetchWithTimeout } from "../server/pipeline/interface.ts";
 export { sanitizeHtml } from "../shared/interface.ts";
-// 客户端行为纯函数（设置页列表拆分/徽标文案，经此透出供单元测试）。
-export { splitProviderList, providerBadgeText } from "../shared/interface.ts";
 export {
   runV2Pipeline,
   runV2PanelPipeline,
@@ -241,10 +230,8 @@ export {
   normalizeReportConfig,
   normalizeReportDirectories,
   DEFAULT_REPORT_CONFIG,
-  DEFAULT_PROMPT_TEMPLATE,
   readReportConfig,
   writeReportConfig,
-  reportConfigFile,
 } from "../server/config/interface.ts";
 export type { ReportConfig, ReportPeriod, ReportPeriodConfig } from "../server/config/interface.ts";
 export {
@@ -357,8 +344,6 @@ export {
   normalizeUiConfig,
   panelTopForAnchor,
   uiConfigFile,
-  readUiConfig,
-  writeUiConfig,
 } from "../shared/interface.ts";
 export type { UiPlacementConfig } from "../shared/interface.ts";
 // sseData 已收敛 shared/host-utils.js：单独改指共享层，导出面保持不变
