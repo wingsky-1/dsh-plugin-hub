@@ -9,6 +9,16 @@
 /** el() 的 attrs 是结构化属性袋：checked/disabled 只落在能接收它们的表单控件上。 */
 type FormControl = HTMLInputElement | HTMLButtonElement | HTMLSelectElement | HTMLTextAreaElement;
 
+/**
+ * 盘古之白：CJK 与拉丁字母/数字之间自动插入半角空格。
+ * 用于状态摘要等中英混排文案（不要对纯标识符/服务器名调用）。
+ */
+export function pangu(text: string): string {
+  return String(text)
+    .replace(/([㐀-鿿-鿿豈-﫿])([A-Za-z0-9@#$%^&*()[\]{}<>+\-=/\\|])/g, "$1 $2")
+    .replace(/([A-Za-z0-9@#$%^&*()[\]{}<>+\-=/\\|])([㐀-鿿豈-﫿])/g, "$1 $2");
+}
+
 /** 创建带属性/子节点的 DOM 元素。 */
 export function el(tag: any, attrs: any = {}, children?: any): any {
   // children 兼容两种传法：第三个位置参数，或 attrs.children（本插件调用点
@@ -16,7 +26,7 @@ export function el(tag: any, attrs: any = {}, children?: any): any {
   if (children === undefined) children = attrs.children ?? [];
   const node = document.createElement(tag);
   for (const [key, value] of Object.entries(attrs)) {
-    if (key === "class") node.className = value as string;
+    if (key === "class") node.className = value == null ? "" : String(value);
     else if (key === "text") node.textContent = String(value);
     else if (key === "dataset") Object.assign(node.dataset, value);
     else if (key.startsWith("on")) node.addEventListener(key.slice(2), value);
