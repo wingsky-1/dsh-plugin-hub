@@ -23,12 +23,15 @@ import {
   openCodeGoAdapter,
   esc,
   pickWindow,
-  miniChartSvgMarkup,
   fetchWithTimeout,
   sanitizeHtml,
   HistoryStore,
 } from "../../../src/apply/index.ts";
-import { parseUsageResponse, fetchOpenCodeGoV2 } from "../../../src/server/adapters/interface.ts";
+import {
+  parseUsageResponse,
+  fetchOpenCodeGoV2,
+  miniChartSvgMarkup,
+} from "../../../src/server/adapters/interface.ts";
 // 白盒直连深路径（#768 B波续批）：管线纯面经域门面，不走组合根转发。
 import {
   safeFetchData,

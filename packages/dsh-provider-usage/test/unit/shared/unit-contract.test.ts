@@ -24,7 +24,8 @@ import {
 import { describeUsageStatsAdapterShape } from "../../../src/shared/interface.ts";
 // 白盒直连深路径（#768 B波）：契约常量/路径段经 shared 门面，不走组合根转发（sseData单议暂留）。
 import { safeSegment, ERROR_CODES } from "../../../src/shared/interface.ts";
-import { sanitizeHtml, HistoryStore, miniChartSvgMarkup } from "../../../src/apply/index.ts";
+import { sanitizeHtml, HistoryStore } from "../../../src/apply/index.ts";
+import { miniChartSvgMarkup } from "../../../src/server/adapters/interface.ts";
 import {
   makeAdapterRegistry,
   readStamp,

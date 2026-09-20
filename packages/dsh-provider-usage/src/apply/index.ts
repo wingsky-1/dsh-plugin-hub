@@ -50,7 +50,6 @@ export {
   OPENCODE_GO_PROVIDER,
   OPENCODE_GO_ADAPTER_ID,
   pickWindow,
-  miniChartSvgMarkup,
   openCodeGoAdapter,
 } from "../server/adapters/interface.ts";
 export {
