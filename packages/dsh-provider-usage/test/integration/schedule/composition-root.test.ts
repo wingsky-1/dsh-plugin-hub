@@ -582,6 +582,13 @@ describe("D3三-轮询否定 toFake 面（#768 计划表 rev2 D3 验收）", () 
         expect(vi.getTimerCount()).toBe(1); // 假时钟下有且仅有一个轮询句柄（空转即测失明）
         sched.dispose();
         expect(vi.getTimerCount()).toBe(0); // 句柄已释放：不清 clearInterval 即泄漏，此断言红
+        // #929：dispose 前在飞 tick 可能落定在后（setInterval 丢弃 promise，假时钟跟踪不到），
+        // 快照前排空旧 tick，最多 60×100ms（R2b 62% 复现率下 R4 240/240 绿实证）。
+        for (let q = 0; q < 60; q += 1) {
+          const n = seen.length;
+          const grown = await pollUntil(() => seen.length > n, 100, 10);
+          if (!grown) break;
+        }
         const atDispose = seen.length;
         await vi.advanceTimersByTimeAsync(150);
         expect(seen.length).toBe(atDispose);
