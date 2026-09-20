@@ -15,7 +15,6 @@ import {
   ADAPTER_CONTRACT_VERSION,
   esc,
   isUsageStatsAdapter,
-  describeUsageStatsAdapterShape,
   sanitizeHtml,
   HistoryStore,
   normalizeConfig,
@@ -26,10 +25,9 @@ import {
   parseUsageResponse,
   fetchOpenCodeGoV2,
   loadAndValidateAdapter,
-  readStamp,
-  stampEqual,
-  makeAdapterRegistry,
 } from "../src/apply/index.ts";
+import { describeUsageStatsAdapterShape } from "../src/shared/interface.ts";
+import { makeAdapterRegistry, readStamp, stampEqual } from "../src/server/registry/interface.ts";
 // 白盒直连深路径（#768 B波）：定位/注册表/适配器纯面经域门面，不走组合根转发。
 import {
   composerDockedAtBottom,

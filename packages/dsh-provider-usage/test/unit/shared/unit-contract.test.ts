@@ -19,19 +19,17 @@ import {
   parseUserAdapters,
   esc,
   isUsageStatsAdapter,
-  describeUsageStatsAdapterShape,
   ADAPTER_CONTRACT_VERSION,
 } from "../../../src/apply/index.ts";
+import { describeUsageStatsAdapterShape } from "../../../src/shared/interface.ts";
 // 白盒直连深路径（#768 B波）：契约常量/路径段经 shared 门面，不走组合根转发（sseData单议暂留）。
 import { safeSegment, ERROR_CODES } from "../../../src/shared/interface.ts";
+import { sanitizeHtml, HistoryStore, miniChartSvgMarkup } from "../../../src/apply/index.ts";
 import {
   makeAdapterRegistry,
-  sanitizeHtml,
-  HistoryStore,
   readStamp,
   stampEqual,
-  miniChartSvgMarkup,
-} from "../../../src/apply/index.ts";
+} from "../../../src/server/registry/interface.ts";
 // 白盒直连深路径（#768 B波续批）：管线纯面经域门面，不走组合根转发。
 import {
   safeFetchData,

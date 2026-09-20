@@ -26,12 +26,7 @@
 // ------------------------------------------------------------------ 对外 re-export
 // 注意：bundle-host 会把 tsc 产物中的子模块全部内联进 lib/index.js 并清理游离 .js，
 // smoke/lint 只能从 lib/index.js 导入，故契约与核心模块一律在此 re-export。
-export {
-  ADAPTER_CONTRACT_VERSION,
-  esc,
-  isUsageStatsAdapter,
-  describeUsageStatsAdapterShape,
-} from "../shared/interface.ts";
+export { ADAPTER_CONTRACT_VERSION, esc, isUsageStatsAdapter } from "../shared/interface.ts";
 export type {
   AdapterErrorCode,
   FetchContext,
@@ -39,7 +34,7 @@ export type {
   PanelInput,
   UsageStatsAdapter,
 } from "../shared/interface.ts";
-export { makeAdapterRegistry } from "../server/registry/interface.ts";
+
 export type {
   AdapterSource,
   AdapterErrorInfo,
@@ -79,12 +74,7 @@ export {
   PANEL_CACHE_TTL_MS,
 } from "../server/pipeline/interface.ts";
 export type { PanelCacheEntry } from "../server/pipeline/interface.ts";
-export {
-  HotReloadableAdapter,
-  loadAndValidateAdapter,
-  readStamp,
-  stampEqual,
-} from "../server/registry/interface.ts";
+export { HotReloadableAdapter, loadAndValidateAdapter } from "../server/registry/interface.ts";
 // 会话用量趋势：trend 模块公共面（测试/外部消费者从 lib/index.js 导入）
 export { TrendTracker } from "../server/aggregate/interface.ts";
 export type { TrendTrackerOptions } from "../server/aggregate/interface.ts";

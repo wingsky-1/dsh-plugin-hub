@@ -78,7 +78,6 @@
     "adapterStateFile",
     "apply",
     "dayKey",
-    "describeUsageStatsAdapterShape",
     "esc",
     "fetchOpenCodeGoV2",
     "fetchWithTimeout",
@@ -86,7 +85,6 @@
     "isPanelCacheStale",
     "isUsageStatsAdapter",
     "loadAndValidateAdapter",
-    "makeAdapterRegistry",
     "miniChartSvgMarkup",
     "name",
     "normalizeConfig",
@@ -99,11 +97,9 @@
     "previousClosedWindow",
     "readLastRun",
     "readReportConfig",
-    "readStamp",
     "resolveProviderConfig",
     "sanitizeHtml",
     "sseData",
-    "stampEqual",
     "userAdaptersFile"
   ]
 }

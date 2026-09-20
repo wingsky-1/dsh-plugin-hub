@@ -23,7 +23,6 @@ export {
   adapterStateFile,
   apply,
   dayKey,
-  describeUsageStatsAdapterShape,
   esc,
   fetchOpenCodeGoV2,
   fetchWithTimeout,
@@ -31,7 +30,6 @@ export {
   isPanelCacheStale,
   isUsageStatsAdapter,
   loadAndValidateAdapter,
-  makeAdapterRegistry,
   miniChartSvgMarkup,
   name,
   normalizeConfig,
@@ -44,11 +42,9 @@ export {
   previousClosedWindow,
   readLastRun,
   readReportConfig,
-  readStamp,
   resolveProviderConfig,
   sanitizeHtml,
   sseData,
-  stampEqual,
   userAdaptersFile,
 } from "./apply/index.ts";
 export type {

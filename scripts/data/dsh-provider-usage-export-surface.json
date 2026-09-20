@@ -302,10 +302,6 @@
       "isType": false
     },
     {
-      "name": "describeUsageStatsAdapterShape",
-      "isType": false
-    },
-    {
       "name": "esc",
       "isType": false
     },
@@ -331,10 +327,6 @@
     },
     {
       "name": "loadAndValidateAdapter",
-      "isType": false
-    },
-    {
-      "name": "makeAdapterRegistry",
       "isType": false
     },
     {
@@ -386,10 +378,6 @@
       "isType": false
     },
     {
-      "name": "readStamp",
-      "isType": false
-    },
-    {
       "name": "resolveProviderConfig",
       "isType": false
     },
@@ -399,10 +387,6 @@
     },
     {
       "name": "sseData",
-      "isType": false
-    },
-    {
-      "name": "stampEqual",
       "isType": false
     },
     {
@@ -1030,10 +1014,6 @@
           "isType": false
         },
         {
-          "name": "describeUsageStatsAdapterShape",
-          "isType": false
-        },
-        {
           "name": "esc",
           "isType": false
         },
@@ -1059,10 +1039,6 @@
         },
         {
           "name": "loadAndValidateAdapter",
-          "isType": false
-        },
-        {
-          "name": "makeAdapterRegistry",
           "isType": false
         },
         {
@@ -1114,10 +1090,6 @@
           "isType": false
         },
         {
-          "name": "readStamp",
-          "isType": false
-        },
-        {
           "name": "resolveProviderConfig",
           "isType": false
         },
@@ -1127,10 +1099,6 @@
         },
         {
           "name": "sseData",
-          "isType": false
-        },
-        {
-          "name": "stampEqual",
           "isType": false
         },
         {
