@@ -306,10 +306,6 @@
       "isType": false
     },
     {
-      "name": "fetchOpenCodeGoV2",
-      "isType": false
-    },
-    {
       "name": "fetchWithTimeout",
       "isType": false
     },
@@ -351,10 +347,6 @@
     },
     {
       "name": "panelCacheKey",
-      "isType": false
-    },
-    {
-      "name": "parseUsageResponse",
       "isType": false
     },
     {
@@ -1018,10 +1010,6 @@
           "isType": false
         },
         {
-          "name": "fetchOpenCodeGoV2",
-          "isType": false
-        },
-        {
           "name": "fetchWithTimeout",
           "isType": false
         },
@@ -1063,10 +1051,6 @@
         },
         {
           "name": "panelCacheKey",
-          "isType": false
-        },
-        {
-          "name": "parseUsageResponse",
           "isType": false
         },
         {
