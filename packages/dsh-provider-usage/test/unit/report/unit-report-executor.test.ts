@@ -12,12 +12,13 @@ import { mkdtempSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { beforeEach, describe, expect, it } from "vitest";
-import { readReportConfig, readLastRun } from "../../../src/apply/index.ts";
-// 白盒直连深路径（#768 B波）：执行器工厂与配置服务经域门面，不走组合根转发。
+// 白盒直连深路径（#768 B波续批）：读面经域门面，不走组合根转发。
 import {
   DEFAULT_REPORT_CONFIG,
   ReportConfigService,
+  readReportConfig,
 } from "../../../src/server/config/interface.ts";
+import { readLastRun } from "../../../src/server/schedule/interface.ts";
 import { makeDueReportExecutor } from "../../../src/server/execute/interface.ts";
 import { makeListDirs } from "../../../src/server/execute/list-dirs.ts";
 

@@ -111,7 +111,7 @@ export type {
 // 会话用量报告：report 模块公共面（测试/外部消费者从 lib/index.js 导入）
 export { previousClosedWindow } from "../server/schedule/interface.ts";
 export type { DueReport, LastRunRecord } from "../server/schedule/interface.ts";
-export { readReportConfig } from "../server/config/interface.ts";
+
 export type { ReportConfig, ReportPeriod, ReportPeriodConfig } from "../server/config/interface.ts";
 
 export type { ReportPrompts } from "../server/config/interface.ts";
@@ -122,7 +122,7 @@ export type {
   ReportLlmService,
   ReportTokenUsage,
 } from "../server/execute/interface.ts";
-export { readLastRun } from "../server/schedule/interface.ts";
+
 // 执行器工厂与报告配置服务类型面（值已退役白盒直连域门面，见unit-report-executor）。
 export type { DueExecutorDeps } from "../server/execute/interface.ts";
 export type { ReportConfigServiceOptions } from "../server/config/interface.ts";

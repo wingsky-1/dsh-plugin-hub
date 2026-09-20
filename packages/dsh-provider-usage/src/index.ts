@@ -36,8 +36,6 @@ export {
   parseUserAdapters,
   pickWindow,
   previousClosedWindow,
-  readLastRun,
-  readReportConfig,
   resolveProviderConfig,
   sanitizeHtml,
   sseData,

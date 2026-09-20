@@ -39,9 +39,7 @@ import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { pollUntil, callHandler } from "../../helpers.ts";
 import {
   previousClosedWindow,
-  readReportConfig,
   sanitizeHtml,
-  readLastRun,
   TrendTracker,
   dayKey,
   TREND_ROW_VERSION,
@@ -60,6 +58,7 @@ import {
   presetLastRunForNewlyEnabled,
   updateLastRun,
   writeLastRun,
+  readLastRun,
 } from "../../../src/server/schedule/interface.ts";
 import {
   DEFAULT_REPORT_CONFIG,
@@ -67,6 +66,7 @@ import {
   parseHHMM,
   promptFor,
   writeReportConfig,
+  readReportConfig,
 } from "../../../src/server/config/interface.ts";
 import {
   applyPromptTemplate,
