@@ -75,6 +75,18 @@ function hasExportStar(codeLines: string[]): boolean {
   return codeLines.some((l) => l.startsWith("export *"));
 }
 
+describe("探针：脏输入必被 flag（detector 失明则本段先红）", () => {
+  it("旧门面 detector 对脏输入有效", () => {
+    expect(usesOldFace('import { x } from "../domain1/history/interface.ts"')).toBe(true);
+    expect(usesOldFace('import { x } from "../server/history/interface.ts"')).toBe(false);
+  });
+
+  it("export * detector 对脏输入有效", () => {
+    expect(hasExportStar(['export * from "./history.ts"'])).toBe(true);
+    expect(hasExportStar(['// export * from "./history.ts"'])).toBe(false);
+  });
+});
+
 describe("D5一 经 server/history 域门面装配", () => {
   it("组合根只经新门面取引史（旧入口残留必须红）", () => {
     expect(usesOldFace(applySrc)).toBe(false);
