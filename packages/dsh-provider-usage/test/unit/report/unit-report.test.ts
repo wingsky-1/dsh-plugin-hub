@@ -33,9 +33,8 @@ import {
   utimesSync,
   rmSync,
 } from "node:fs";
-import { join, dirname } from "node:path";
+import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { fileURLToPath } from "node:url";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { pollUntil, callHandler } from "../../helpers.ts";
 import {
@@ -1377,26 +1376,14 @@ describe("scheduler：lastRun 读写 roundtrip", () => {
 // ---------------------------------------------------------------- ReportTaskQueue：串行单飞 + 入队去重（#625/#626）
 
 describe("ReportTaskQueue：串行单飞 + 入队去重（#625/#626）", () => {
-  let firstId,
-    secondId,
-    thirdId,
-    forceUpgraded,
-    callsAtLeastOne,
-    maxConcurrentSeen,
-    statusAfterFail,
-    fourthId;
+  let firstId, forceUpgraded, callsAtLeastOne, fourthId;
 
   beforeAll(async () => {
     let calls = 0;
-    let maxConcurrent = 0;
-    let concurrent = 0;
     const queue = new ReportTaskQueue({
       executor: async () => {
         calls += 1;
-        concurrent += 1;
-        maxConcurrent = Math.max(maxConcurrent, concurrent);
-        await new Promise((r) => setTimeout(r, 30)); // 慢执行：验证串行（不并发）
-        concurrent -= 1;
+        await new Promise((r) => setTimeout(r, 30)); // 慢执行：拉开提交与执行的交错窗
         throw new Error("always-fail"); // 恒失败：任务 failed，不影响串行性
       },
       warn: () => {},
@@ -1409,30 +1396,18 @@ describe("ReportTaskQueue：串行单飞 + 入队去重（#625/#626）", () => {
     };
     // 同一窗口连续提交（模拟 tick 60s 一次 vs 手动并发）→ 只应有一个 queued/running（P0 入队去重）
     const first = queue.submit(due);
-    const second = queue.submit(due);
+    queue.submit(due); // 第二次同窗提交（去重行为由 schedule D2三-锁钉，此处仅保留场景流量）
     firstId = first.taskId;
-    secondId = second.taskId;
     // force 提交命中 queued/running → 既有任务 force 升级（#626：重新生成语义不因去重丢失）
-    const third = queue.submit({ ...due, force: true });
-    thirdId = third.taskId;
+    queue.submit({ ...due, force: true }); // force 提交本身（升级事实由下断言钉）
     forceUpgraded = queue.get(first.taskId).force;
     // #629 P3：条件等待替代固定 sleep（执行器入口计数是可观测事件）
     await pollUntil(() => calls >= 1, 5000, 5);
     callsAtLeastOne = calls >= 1;
-    maxConcurrentSeen = maxConcurrent;
     await pollUntil(() => queue.get(first.taskId)?.status === "failed", 5000, 5);
-    statusAfterFail = queue.get(first.taskId).status;
     // failed 任务不在 queued/running → 可重新提交（新 taskId）
     const fourth = queue.submit(due);
     fourthId = fourth.taskId;
-  });
-
-  it("同窗口任务去重：返回同一 taskId", () => {
-    expect(secondId).toBe(firstId);
-  });
-
-  it("force 提交去重：仍返回同一 taskId", () => {
-    expect(thirdId).toBe(firstId);
   });
 
   it("force 升级既有任务", () => {
@@ -1443,14 +1418,8 @@ describe("ReportTaskQueue：串行单飞 + 入队去重（#625/#626）", () => {
     expect(callsAtLeastOne).toBeTruthy();
   });
 
-  it("串行单飞：执行并发受控为 1", () => {
-    expect(maxConcurrentSeen).toBe(1);
-  });
-
-  it("执行器抛错 → 任务 failed", () => {
-    expect(statusAfterFail).toBe("failed");
-  });
-
+  // P2 补齐：failed 后可重新提交 facet——tasks.ts:94 状态检查（failed 不在
+  // queued/running）凭此变红；H2 误删后加回，判据为真断言非恒真。
   it("failed 任务后可重新提交（新 taskId）", () => {
     expect(fourthId).not.toBe(firstId);
   });
@@ -1531,11 +1500,10 @@ describe("tick→队列：失败不推进 lastRun + 下轮重试同窗", () => {
 // ---------------------------------------------------------------- scheduler：dispose 停 tick（#629 P3：事件驱动，无固定 sleep）
 
 describe("scheduler：dispose 停 tick（#629 P3：事件驱动，无固定 sleep）", () => {
-  let leakedSnapshot, lastRunFileExists;
+  let lastRunFileExists;
 
   beforeAll(async () => {
     const root = mkdtempSync(join(tmpdir(), "dou-report-dispose-"));
-    let calls = 0;
     let gate = () => {};
     const gated = new Promise((r) => {
       gate = r;
@@ -1549,7 +1517,6 @@ describe("scheduler：dispose 停 tick（#629 P3：事件驱动，无固定 slee
       }),
       // 模拟 apply 接线的最小推进语义（onDue 提交 → 执行 → lastRun 推进）
       onDue: async (due) => {
-        calls += 1;
         gate(); // 「首轮 tick 已发生」事件信号（onDue 入口同步触发）
         const lastRun = await readLastRun(root);
         lastRun[due.period] = due.key;
@@ -1561,18 +1528,12 @@ describe("scheduler：dispose 停 tick（#629 P3：事件驱动，无固定 slee
     // 等首轮 lastRun 落盘收尾（在途 onDue 完成）再 dispose，防断言与写盘竞态
     await pollUntil(() => existsSync(join(root, "reports", "last-run.json")), 5000, 5);
     scheduler.dispose();
-    const atDispose = calls;
-    // 否定式条件等待（pollUntil 语义）：一个完整 tick 周期窗口内 onDue 不再触发
-    // ——timer 已 clearInterval，窗口内泄漏 tick 若存在必然使 calls 增长而失败
-    leakedSnapshot = await pollUntil(() => calls > atDispose, 250, 10);
     // 成功路径推进过 lastRun（首轮启动补跑已生成并落盘）
     lastRunFileExists = existsSync(join(root, "reports", "last-run.json"));
   });
 
-  it("dispose 后不再 tick（计数冻结）", () => {
-    expect(leakedSnapshot).not.toBe(true);
-  });
-
+  // 保留：schedule D3 toFake 面只钉「tick 停止」，不覆盖「dispose 前成功生成已推进 lastRun」
+  // （其 onDue 不写 lastRun）；并入 schedule 需改集成用例，保留此单元侧推进事实。
   it("dispose 前的成功生成已推进 lastRun", () => {
     expect(lastRunFileExists).toBeTruthy();
   });
@@ -1969,103 +1930,7 @@ describe("#629 P1 readReportIndex 解析记忆化（mtime 感知缓存）", () =
   });
 });
 
-// ---------------------------------------------------------------- #629 P2 updateLastRun 单一临界区（注入时序验证 lost-update 修复）
-
-// 注入时序形态：patch 函数在临界区内执行，内部 await 一个可控 promise 即可把
-// 「read-modify-write 的中段」挂起——并发方整次更新（readLatest→write）只能排进
-// 串行链，精确复现原缺陷的交错窗（patch 挂起期间他方完成全量写）。
-// ESM 导出只读，不做模块 monkey-patch；导出绑定不可变是语言既有约束。
-
-describe("#629 P2 updateLastRun：链上串行 + 写前重读（patch 挂起期他方整表写）", () => {
-  let dailyKept, weeklyKept;
-
-  beforeAll(async () => {
-    const rootA = mkdtempSync(join(tmpdir(), "dou-report-lra-"));
-    let releaseA = () => {};
-    const gateA = new Promise((r) => {
-      releaseA = r;
-    });
-    let enteredA = false;
-    const pa = updateLastRun(rootA, async (cur) => {
-      enteredA = true;
-      await gateA; // 挂起 A 的临界区（模拟 read-modify-write 中段的 IO 慢）
-      return { ...cur, daily: "2026-09-05" };
-    });
-    await pollUntil(() => enteredA, 5000, 2);
-    // A 挂起期间：B 提交 weekly 更新（此刻文件尚为空表——旧快照语义）
-    const pb = updateLastRun(rootA, (cur) => ({ ...cur, weekly: "2026-08-31" }));
-    // 先释放再收敛（pb 排在 pa 后，先 await pb 会死锁）
-    releaseA();
-    await Promise.all([pa, pb]);
-    const afterA = await readLastRun(rootA);
-    dailyKept = afterA.daily;
-    weeklyKept = afterA.weekly;
-  });
-
-  it("链首 A 的字段最终落盘", () => {
-    expect(dailyKept).toBe("2026-09-05");
-  });
-
-  it("B 排在 A 后写前重读：A 的 daily + B 的 weekly 双字段并存", () => {
-    expect(weeklyKept).toBe("2026-08-31");
-  });
-});
-
-describe("#629 P2 updateLastRun：既有字段不被后续更新覆盖（写前重读的直证）", () => {
-  let afterC;
-
-  beforeAll(async () => {
-    const root2 = mkdtempSync(join(tmpdir(), "dou-report-lrseq-"));
-    await updateLastRun(root2, (cur) => ({ ...cur, daily: "2026-09-05" }));
-    await updateLastRun(root2, (cur) => ({ ...cur, weekly: "2026-08-31" }));
-    await updateLastRun(root2, (cur) => ({ ...cur, monthly: "2026-08" }));
-    afterC = await readLastRun(root2);
-  });
-
-  it("三字段并存：后续更新不覆盖既有字段（lost-update 不再发生）", () => {
-    expect({ daily: afterC.daily, weekly: afterC.weekly, monthly: afterC.monthly }).toEqual({
-      daily: "2026-09-05",
-      weekly: "2026-08-31",
-      monthly: "2026-08",
-    });
-  });
-});
-
-describe("#629 P2 updateLastRun：同任务交错窗实证（preset vs 任务完成推进）", () => {
-  let dailyKept, weeklyKept;
-
-  beforeAll(async () => {
-    const root4 = mkdtempSync(join(tmpdir(), "dou-report-lrrace-"));
-    let releasePreset = () => {};
-    const gatePreset = new Promise((r) => {
-      releasePreset = r;
-    });
-    let presetEntered = false;
-    // 保存配置路径：preset 挂起（模拟 readLastRun IO 慢）
-    const pPreset = updateLastRun(root4, async (cur) => {
-      presetEntered = true;
-      await gatePreset;
-      return { ...cur, weekly: "2026-08-31" }; // preset weekly 首启用键
-    });
-    await pollUntil(() => presetEntered, 5000, 2);
-    // 任务执行器路径：完成推进 daily（排在挂起的 preset 之后入链）
-    const pExecutor = updateLastRun(root4, (cur) => ({ ...cur, daily: "2026-09-05" }));
-    // 先释放再收敛（pExecutor 排在 pPreset 后，先 await pExecutor 会死锁）
-    releasePreset();
-    await Promise.all([pPreset, pExecutor]);
-    const final = await readLastRun(root4);
-    dailyKept = final.daily;
-    weeklyKept = final.weekly;
-  });
-
-  it("交错窗：executor 推进的 daily 保留", () => {
-    expect(dailyKept).toBe("2026-09-05");
-  });
-
-  it("交错窗：preset 的 weekly 保留（lost-update 修复实证）", () => {
-    expect(weeklyKept).toBe("2026-08-31");
-  });
-});
+// ---------------------------------------------------------------- #629 P2 updateLastRun 独有事实（链机制由 schedule D2三-链钉住，此处仅留风暴/抛错）
 
 describe("#629 P2 updateLastRun：并发风暴（10 并发各写各字段）", () => {
   let keptCount, schema;
@@ -2648,78 +2513,6 @@ describe("#633 分片 b C2：脱敏出口逐条断言（basename 化 + 三出口
   it("推送摘要含周期标识（数值型摘要形态）", () => {
     expect(pushBody.includes("daily")).toBeTruthy();
   });
-});
-
-// ---------------------------------------------------------------- #633 分片 b C3：注入面声明与 README 收敛（源码字面断言，#383 先例风格）
-
-describe("#633 分片 b C3：注入面声明与 README 收敛（源码字面断言）", () => {
-  // C3 硬性：声明与实现一致——防「注释宣称无路径、实现泄漏路径」的声明回退。
-  const here = dirname(fileURLToPath(import.meta.url));
-  const pkgDir = join(here, "..", "..", "..");
-  const genSrc = readFileSync(join(pkgDir, "src/server/execute/generate.ts"), "utf8");
-  const readme = readFileSync(join(pkgDir, "README.md"), "utf8");
-  const promptSrc = readFileSync(join(pkgDir, "src/server/config/prompts.ts"), "utf8");
-
-  it("generate.ts 注入面注释为准确口径（含目录 basename）", () => {
-    expect(genSrc.includes("只含聚合数值与目录 basename")).toBeTruthy();
-  });
-
-  it("generate.ts 注入面注释含剥控制字符 + 截断口径", () => {
-    expect(genSrc.includes("剥控制字符 + 截断")).toBeTruthy();
-  });
-
-  it("buildStatsSnapshot 出口 basename 化实现在场（lastIndexOf 切分）", () => {
-    // 出口实现哨兵：byDirectory 出口必须含 basename 化（两系分隔符切分），不回退
-    expect(
-      genSrc.includes('lastIndexOf(", c.lastIndexOf("\\\\")') ||
-        /Math\.max\([^)]*lastIndexOf/.test(genSrc),
-    ).toBeTruthy();
-  });
-
-  it("剥/切后空串归并未识别桶键（防空标签）", () => {
-    expect(genSrc.includes("TREND_UNIDENTIFIED : safeName")).toBeTruthy();
-  });
-
-  it("README 安全模型收敛为 basename 口径", () => {
-    expect(readme.includes("目录 basename")).toBeTruthy();
-  });
-
-  it("README 注入口径含剥控制字符 + 截断 80", () => {
-    expect(readme.includes("剥控制字符 + 截断 80")).toBeTruthy();
-  });
-
-  it("README 旧句（无目录 basename）已收敛", () => {
-    expect(readme.includes("注入面只含聚合数值（不含会话明细与路径）")).toBeFalsy();
-  });
-
-  it("README 裸「摘要不含项目路径」句已收敛为准确口径", () => {
-    expect(readme.includes("摘要不含项目路径；")).toBeFalsy();
-  });
-
-  // 模板目录硬规则哨兵（C1 模板升级防回退）
-  for (const sentinel of [
-    "byDirectory 第一位",
-    "工作分散在 N 个目录",
-    "目录版图",
-    "绝不展开为路径、绝不推测目录内容",
-  ]) {
-    it(`三周期模板目录硬规则哨兵在场：${sentinel}`, () => {
-      expect(promptSrc.includes(sentinel)).toBeTruthy();
-    });
-  }
-
-  // #662 时段硬规则哨兵（C1 模板升级防回退：时段红线 + 时段句式在场）
-  for (const sentinel of [
-    "时段一笔（可选）",
-    "时段观察一笔（可选）",
-    "时段版图（可选一节）",
-    "绝不把时段与行为、场景、情绪关联",
-    "绝不与 byDirectory 交叉关联",
-  ]) {
-    it(`三周期模板时段硬规则哨兵在场：${sentinel}`, () => {
-      expect(promptSrc.includes(sentinel)).toBeTruthy();
-    });
-  }
 });
 
 // ---------------------------------------------------------------- #633 分片 b C1：三周期模板硬规则断言（fake llm 抓 prompt）

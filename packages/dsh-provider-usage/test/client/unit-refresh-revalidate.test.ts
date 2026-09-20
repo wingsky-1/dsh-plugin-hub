@@ -32,22 +32,29 @@ describe("refreshStats 取数前 provider 复检外壳（issue #71 方案 A1）"
     });
 
     it("refreshStats 取数前先复检 provider（A1 主接线）", () => {
+      // H10 降级：原正则锁同函数内顺序，降为存在性；顺序语义由 worker 行为剧本钉
+      // （场景1/2a/2b：复检→重拉→跟随可观测）。
       expect(
-        /async function refreshStats[\s\S]*?await revalidateProvider\(\)/.test(src),
+        src.includes("async function refreshStats") && src.includes("await revalidateProvider()"),
       ).toBeTruthy();
     });
 
     it("detect 复检变化 → 立即重拉（切换会话即时跟随）", () => {
       // detect 变化分支 → onProviderChanged 立即重拉；未变分支 → renderPill 后仅 current
       // 会话切换时补刷（#419 diff 语义：投影/运行态噪声帧不刷，收敛高频 /stats 调用）
+      // H10 降级：顺序锁降为存在性（即时跟随由 worker 场景2a 钉）。
       expect(
-        /const changed = await revalidateProvider\(\);[\s\S]*?onProviderChanged\(\)/.test(src),
+        src.includes("const changed = await revalidateProvider();") &&
+          src.includes("onProviderChanged()"),
       ).toBeTruthy();
     });
 
     it("detect 未变分支按 current diff 判定是否补刷（#419 去高频）", () => {
+      // H10 降级：三段顺序锁降为存在性（去高频行为由 worker 场景覆盖）。
       expect(
-        /renderPill\(\);[\s\S]*?currentSessionId\(sessions\)[\s\S]*?lastDetectCurrent/.test(src),
+        src.includes("renderPill();") &&
+          src.includes("currentSessionId(sessions)") &&
+          src.includes("lastDetectCurrent"),
       ).toBeTruthy();
     });
 

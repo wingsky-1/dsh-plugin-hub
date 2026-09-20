@@ -2,9 +2,11 @@
 /**
  * dsh-provider-usage — unit：apply 宿主注入路径覆盖。
  *
- * 覆盖：installSettingsNamespace inject 回调全分支（含 isUnloading）、
- * HotReloadableAdapter onReload 回调分支、dispose 清理全分支、
- * sseClients 清理、warmupTimer 清理。
+ * 覆盖：installSettingsNamespace inject 回调分支、
+ * HotReloadableAdapter onReload 回调分支、warmup/prune 定时器清理（假时钟句柄计数）。
+ *
+ * P1 恒真（`flag=true` 无条件置位）用例已删：5a/5b isUnloading、7) dispose、
+ * 8) warmup 旧版；清理事实由 8) 句柄计数真断言与 schedule D3 toFake 面钉住。
  *
  * 此文件不重复 smoke.test.ts 已覆盖的 boot/enabled/fence 断言，仅专注
  * 于 smoke 未到达的 apply 内部分支（#82 批次 3）。
@@ -13,7 +15,7 @@ import { mkdtempSync, writeFileSync, mkdirSync } from "node:fs";
 console.error("EVAL-ORDER-TAG: APPLY");
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import fs, { existsSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
 import { injectGlobalFetch } from "../../helpers.ts";
@@ -317,104 +319,6 @@ describe("3) inject 回调：settings 服务缺 register", () => {
 // smoke.test.ts 已有的 apply 用 fake ctx 无 inject → installSettingsNamespace 走
 // "ctx.inject 不可用" 分支。本文件不重复。
 
-// ---------------------------------------------------------------- 5) isUnloading 全分支通过 inject 回调覆盖
-
-// 5a) fiber.state = "unloading" → sctx.effect disposer 内 isUnloading 返回 true →
-//     disposer 提前 return（setSource 不切回 entry）
-describe("5a) fiber.state=unloading → disposer 内 isUnloading=true 提前 return", () => {
-  let applied;
-
-  beforeAll(async () => {
-    const routes = [];
-    const ctx = {
-      logger: { warn: () => {} },
-      webServer: {
-        register(route) {
-          routes.push(route);
-          return () => {};
-        },
-      },
-      on: onStub,
-      llm: {
-        listProviders() {
-          return [];
-        },
-      },
-      fiber: { state: "unloading" },
-      inject: (deps, cb) => {
-        const scope = { get: () => ({}), watch: (_fn) => {} };
-        cb({
-          settings: { register: () => scope },
-          effect: (fn) => {
-            const disposer = fn();
-            // 模拟 fiber 卸载时调用 disposer：isUnloading(ctx) 应为 true → 提前 return
-            disposer();
-            return () => {};
-          },
-        });
-      },
-      effect: (fn) => {
-        const d = fn();
-        return typeof d === "function" ? d : () => {};
-      },
-    };
-    // setSource 应该在 register 成功后被设为 () => scope.get()，但 disposer 内
-    // isUnloading=true 时不会切回 entry。此处纯验证不抛错。
-    await apply(ctx, { apiKey: "sk-test", apiEndpoint: "http://127.0.0.1:9" });
-    applied = true;
-  });
-
-  it("isUnloading=true 分支不抛错", () => {
-    expect(applied).toBe(true);
-  });
-});
-
-// 5b) fiber.state = "disposed" → 同 unloading 分支
-describe("5b) fiber.state=disposed → 同 unloading 分支", () => {
-  let applied;
-
-  beforeAll(async () => {
-    const routes = [];
-    const ctx = {
-      logger: { warn: () => {} },
-      webServer: {
-        register(route) {
-          routes.push(route);
-          return () => {};
-        },
-      },
-      on: onStub,
-      llm: {
-        listProviders() {
-          return [];
-        },
-      },
-      fiber: { state: "disposed" },
-      inject: (deps, cb) => {
-        const scope = { get: () => ({}), watch: (_fn) => {} };
-        cb({
-          settings: { register: () => scope },
-          effect: (fn) => {
-            const disposer = fn();
-            disposer();
-            return () => {};
-          },
-        });
-      },
-      effect: (fn) => {
-        const d = fn();
-        return typeof d === "function" ? d : () => {};
-      },
-    };
-    await apply(ctx, { apiKey: "sk-test", apiEndpoint: "http://127.0.0.1:9" });
-    applied = true;
-  });
-
-  it("isUnloading=disposed 分支不抛错", () => {
-    expect(applied).toBe(true);
-  });
-});
-
 // ---------------------------------------------------------------- 6) HotReloadableAdapter onReload 回调全分支
 
 // 6a) 合法用户适配器文件 → onReload ok:true → hr.current !== null → full branch
@@ -523,136 +427,61 @@ describe("6b) 非法适配器文件 → onReload ok:false", () => {
   });
 });
 
-// ---------------------------------------------------------------- 7) dispose 清理全分支（含 hotReloaders + sseClients）
+// ---------------------------------------------------------------- 8) warmup/prune 定时器清理（假时钟句柄计数，真断言）
 
-describe("7) dispose 清理全分支（含 hotReloaders + sseClients）", () => {
-  let evRoute, disposed;
+// 时间纪律（testing skill §4）：显式声明 toFake 面，只伪造 setInterval/clearInterval
+// （Date/setTimeout 保持真实）。P1 恒真版（`cleared=true` 无条件置位，不抛错即绿）已删，
+// 清理事实改由句柄计数钉住：不清 clearInterval 即泄漏，归零断言红。
 
-  beforeAll(async () => {
-    const dir = mkdtempSync(join(tmpdir(), "dou-dispose-"));
-    const goodFile = join(dir, "dispose.mjs");
-    writeFileSync(
-      goodFile,
-      `
-export const version = 2;
-export const name = "dispose-test";
-export const label = "Dispose";
-export const providers = ["${OPENCODE_GO_PROVIDER}"];
-export async function fetchData() { return { v: 1 }; }
-export function formatCapsule() { return "<span>ok</span>"; }
-export function formatPanel() { return "<p>p</p>"; }
-`,
-      "utf8",
-    );
-
-    const disposers = [];
-    const routes = [];
-
-    // 先订阅 SSE（使 sseClients 有成员）
-    // 外部收集 disposer
-    const ctx = {
-      logger: { warn: () => {} },
-      webServer: {
-        register(route) {
-          routes.push(route);
-          return () => {};
+describe("8) disposer 清理 warmup/prune 定时器（假时钟句柄计数）", () => {
+  it("apply 注册定时器 → disposer 后句柄计数归零", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    try {
+      const base = vi.getTimerCount();
+      const disposers = [];
+      const routes = [];
+      const ctx = {
+        logger: { warn: () => {} },
+        webServer: {
+          register(route) {
+            routes.push(route);
+            return () => {};
+          },
         },
-      },
-      on: onStub,
-      llm: {
-        listProviders() {
-          return [];
+        on: onStub,
+        llm: {
+          listProviders() {
+            return [];
+          },
         },
-      },
-      fiber: { state: "active" },
-      inject: (deps, cb) => {
-        cb({ settings: {} });
-      },
-      effect: (fn) => {
-        const d = fn();
-        if (typeof d === "function") disposers.push(d);
-        return d;
-      },
-    };
-    await apply(ctx, {
-      adapter: goodFile,
-      autoReload: true,
-      apiKey: "sk-test",
-      apiEndpoint: "http://127.0.0.1:9",
-    });
-
-    // 订阅 SSE（通过 events 路由 handler 添加 SSE 客户端）
-    evRoute = routes.find((r) => r.path === ROUTES.events);
-    let _sseRes;
-    evRoute?.handler(fakeReq({ method: "GET" }), {
-      writeHead: (_code, _headers) => {},
-      write: (_chunk) => {},
-      on: (evt, cb) => {
-        if (evt === "close") _sseRes = { close: cb };
-      },
-    });
-
-    // 执行所有 disposer（包括内层 ctx.effect 的 disposer）
-    for (const d of disposers) {
-      if (typeof d === "function") d();
+        fiber: { state: "active" },
+        inject: (deps, cb) => {
+          cb({ settings: {} });
+        },
+        effect: (fn) => {
+          const d = fn();
+          if (typeof d === "function") disposers.push(d);
+          return typeof d === "function" ? d : () => {};
+        },
+      };
+      await apply(ctx, {
+        warmupIntervalMs: 60000,
+        apiKey: "sk-test",
+        apiEndpoint: "http://127.0.0.1:9",
+      });
+      // 非盲 guard：定时器确已注册——恰 3 个句柄（warmup 预热 + prune 清理 + scheduler
+      // tick，见 scheduler.ts:54），多一个少一个都先红而非归零断言空过。
+      expect(vi.getTimerCount()).toBe(base + 3);
+      // 必须 await：disposer 是异步链（await trend.dispose() 后才 scheduler.dispose()），
+      // 同步调用会让 scheduler 句柄看起来泄漏（实测 +1 残留即此因）。
+      for (const d of disposers) {
+        if (typeof d === "function") await d();
+      }
+      // 真断言：不清 clearInterval 即泄漏，此行红
+      expect(vi.getTimerCount()).toBe(base);
+    } finally {
+      vi.useRealTimers();
     }
-    disposed = true;
-  });
-
-  it("events 路由存在", () => {
-    expect(evRoute).toBeTruthy();
-  });
-
-  it("dispose 全分支不抛错", () => {
-    expect(disposed).toBe(true);
-  });
-});
-
-// ---------------------------------------------------------------- 8) 确保 warmupTimer 被清理（disposer 中）
-
-describe("8) 确保 warmupTimer 被清理（disposer 中）", () => {
-  let cleared;
-
-  beforeAll(async () => {
-    const disposers = [];
-    const routes = [];
-    const ctx = {
-      logger: { warn: () => {} },
-      webServer: {
-        register(route) {
-          routes.push(route);
-          return () => {};
-        },
-      },
-      on: onStub,
-      llm: {
-        listProviders() {
-          return [];
-        },
-      },
-      fiber: { state: "active" },
-      inject: (deps, cb) => {
-        cb({ settings: {} });
-      },
-      effect: (fn) => {
-        const d = fn();
-        if (typeof d === "function") disposers.push(d);
-        return typeof d === "function" ? d : () => {};
-      },
-    };
-    await apply(ctx, {
-      warmupIntervalMs: 60000,
-      apiKey: "sk-test",
-      apiEndpoint: "http://127.0.0.1:9",
-    });
-    for (const d of disposers) {
-      if (typeof d === "function") d();
-    }
-    cleared = true;
-  });
-
-  it("warmupTimer 清理不抛错", () => {
-    expect(cleared).toBe(true);
   });
 });
 

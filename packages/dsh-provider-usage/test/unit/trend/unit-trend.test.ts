@@ -5771,23 +5771,14 @@ describe("sumToken null 语义", () => {
 // 修法：目录面 = dirDays 快照 + 每日残差（聚合面 − 目录面），残差归未识别桶；
 // **禁止**在 rebuild 里对 agg 行补造（同一事实的 agg/dir 两个投影会双算）。
 
-/** (e) 双面总量守恒的 fixture 集（收集期静态量，供 it.each 展开）。 */
-const CONSERVATION_FIXTURES = ["a", "b", "c"];
-
-describe("#633 修复：目录面残差投影（纯函数面 a-j）", () => {
-  let aDirs;
-  let bRowsLength;
-  let bDir;
-  let bValues;
+// H9：纯函数面 a/b/e/i 已删（见各处登记），本 describe 仅留 c/d/f/g/h/j 变体。
+describe("#633 修复：目录面残差投影（纯函数面 c/d/f/g/h/j）", () => {
   let cDirsSorted;
   let dDirs;
-  let conservation;
   let fRowsLength;
   let fRowValues;
   let gDirs;
   let hDays;
-  let iBeforeLength;
-  let iAfterDays;
   let jInputBefore;
   let jInputAfter;
 
@@ -5806,55 +5797,9 @@ describe("#633 修复：目录面残差投影（纯函数面 a-j）", () => {
       dir,
       tokens: { input, output, cacheRead: null, cacheWrite: null },
     });
-    const counter = (dir) => ({
-      time: T0 - 24 * HOUR,
-      session: "s1",
-      provider: "deepseek",
-      model: "deepseek-chat",
-      dir,
-      turns: 1,
-      toolCalls: 1,
-    });
 
-    // (a) 目录面已覆盖全量（apply 平行累加）→ 残差 0 → 不补造未识别行
-    const a = mkAgg();
-    a.apply({ type: "call", record: call("alpha", 100, 20) });
-    a.apply({ type: "counter", record: counter("alpha") });
-    aDirs = snapshot(a.dirRows().map((r) => r.dir));
-
-    // (b) 只有聚合面事实（旧格式 agg 行重建）→ 残差 = 全量 → 补造一条未识别行
-    const b = mkAgg();
-    b.rebuild(
-      [
-        {
-          v: TREND_ROW_VERSION,
-          kind: "agg",
-          day,
-          provider: "deepseek",
-          model: "deepseek-chat",
-          input: 5000,
-          output: 800,
-          cacheRead: 120,
-          cacheWrite: 10,
-          calls: 30,
-          turns: 12,
-          toolCalls: 40,
-        },
-      ],
-      false,
-    );
-    const bRows = b.dirRows();
-    bRowsLength = bRows.length;
-    bDir = bRows[0].dir;
-    bValues = snapshot({
-      input: bRows[0].input,
-      output: bRows[0].output,
-      cacheRead: bRows[0].cacheRead,
-      cacheWrite: bRows[0].cacheWrite,
-      calls: bRows[0].calls,
-      turns: bRows[0].turns,
-      toolCalls: bRows[0].toolCalls,
-    });
+    // (b) 已删（H9）：旧格式 agg-only 残差形状由本文件末段真实升级 e2e 钉住
+    // （1 行/历史日/未识别/calls/分片不变/面板值）；7 字段逐值精度随删已登记。
 
     // (c) 混版日（旧 agg 行 + 新 dir 行并存）→ 残差 = 旧 agg 部分，新 dir 行照常分目录
     const c = mkAgg();
@@ -5919,38 +5864,7 @@ describe("#633 修复：目录面残差投影（纯函数面 a-j）", () => {
     );
     dDirs = snapshot(d.dirRows().map((r) => r.dir));
 
-    // (e) 双面总量守恒（本修复的核心不变量）：∀day 目录面合计 == 聚合面合计
-    const totalsOf = (agg) => {
-      const byDay = new Map();
-      for (const r of agg.dirRows()) {
-        const cur = byDay.get(r.day) ?? { input: 0, calls: 0, turns: 0, toolCalls: 0 };
-        cur.input += r.input ?? 0;
-        cur.calls += r.calls;
-        cur.turns += r.turns;
-        cur.toolCalls += r.toolCalls;
-        byDay.set(r.day, cur);
-      }
-      const out = {};
-      for (const bucket of agg.buckets()) {
-        let pInput = 0;
-        let pCalls = 0;
-        let pTurns = 0;
-        let pTool = 0;
-        for (const p of bucket.providers) {
-          pInput += p.cell.input ?? 0;
-          pCalls += p.cell.calls;
-          pTurns += p.cell.turns;
-          pTool += p.cell.toolCalls;
-        }
-        const dir = byDay.get(bucket.day) ?? { input: 0, calls: 0, turns: 0, toolCalls: 0 };
-        out[bucket.day] = {
-          dir: { input: dir.input, calls: dir.calls, turns: dir.turns, toolCalls: dir.toolCalls },
-          agg: { input: pInput, calls: pCalls, turns: pTurns, toolCalls: pTool },
-        };
-      }
-      return out;
-    };
-    conservation = { a: totalsOf(a), b: totalsOf(b), c: totalsOf(c) };
+    // (e) 已删（H9）：双面总量守恒恒等由 ledger 台账守恒对账更强钉住（四视角逐日逐字段）。
 
     // (f) 同键唯一：该日 dirDays 已有 (unidentified) 桶 + 残差 > 0（混版日）→ 合并为一行
     const f = mkAgg();
@@ -6042,44 +5956,7 @@ describe("#633 修复：目录面残差投影（纯函数面 a-j）", () => {
     });
     hDays = snapshot(h.dirRows().map((r) => r.day));
 
-    // (i) prune 后：被裁日的残差行同步消失（dirRows 不残留已裁剪日）
-    const i = mkAgg();
-    i.rebuild(
-      [
-        {
-          v: TREND_ROW_VERSION,
-          kind: "agg",
-          day: "2026-09-01",
-          provider: "deepseek",
-          model: "m",
-          input: 1,
-          output: 0,
-          cacheRead: null,
-          cacheWrite: null,
-          calls: 1,
-          turns: 0,
-          toolCalls: 0,
-        },
-        {
-          v: TREND_ROW_VERSION,
-          kind: "agg",
-          day: "2026-09-03",
-          provider: "deepseek",
-          model: "m",
-          input: 2,
-          output: 0,
-          cacheRead: null,
-          cacheWrite: null,
-          calls: 2,
-          turns: 0,
-          toolCalls: 0,
-        },
-      ],
-      false,
-    );
-    iBeforeLength = i.dirRows().length;
-    i.pruneDays("2026-09-03");
-    iAfterDays = snapshot(i.dirRows().map((r) => r.day));
+    // (i) 已删（H9）：prune 联动删除残差行由 M1(b) 单元面 pruneDays 联动钉住（同生命周期）。
 
     // (j) 校正后：旧格式（无 dir 键）明细行 correct → 残差吸收增量（dirRows 随之变化）
     const j = mkAgg();
@@ -6119,30 +5996,8 @@ describe("#633 修复：目录面残差投影（纯函数面 a-j）", () => {
     jInputAfter = j.dirRows()[0].input;
   });
 
-  it("残差为 0（目录面已含全量）→ 不补造未识别桶（不双算）", () => {
-    expect(aDirs).toEqual(["alpha"]);
-  });
-
-  it("旧格式 agg-only 日 → 恰补造一条残差行（历史不再消失）", () => {
-    expect(bRowsLength).toBe(1);
-  });
-
-  it("残差行归未识别桶（该日无目录信息）", () => {
-    expect(bDir).toBe(TREND_UNIDENTIFIED);
-  });
-
-  it("残差数值 = 聚合面全量（逐字段）", () => {
-    expect(bValues).toEqual({
-      input: 5000,
-      output: 800,
-      cacheRead: 120,
-      cacheWrite: 10,
-      calls: 30,
-      turns: 12,
-      toolCalls: 40,
-    });
-  });
-
+  // H9 已删（a/b）：残差 0 不补造由 ledger 守恒对账隐含（多造一行即总量失衡）；
+  // 旧 agg-only 三条由末段真实升级 e2e 钉住。混版（c）独无他处 pin，保留：
   it("混版日：残差 = agg − dir（归未识别），新 dir 行照常分目录，两者不重叠", () => {
     expect(cDirsSorted).toEqual([
       ["(unidentified)", 3000, 20],
@@ -6154,18 +6009,8 @@ describe("#633 修复：目录面残差投影（纯函数面 a-j）", () => {
     expect(dDirs).toEqual(["alpha"]);
   });
 
-  // 原嵌套 for (const agg of [a, b, c]) × for (const bucket of agg.buckets()) 断言展开为
-  // it.each(CONSERVATION_FIXTURES)：三例各只有一个 2026-09-03 日桶，故每例恰一条守恒断言。
-  it.each(CONSERVATION_FIXTURES)(
-    "日总量守恒（2026-09-03）：目录面 == 聚合面 [fixture %s]",
-    (key) => {
-      const byDay = conservation[key];
-      for (const [bucketDay, t] of Object.entries(byDay)) {
-        expect(t.dir, `日总量守恒（${bucketDay}）：目录面 == 聚合面`).toEqual(t.agg);
-      }
-    },
-  );
-
+  // H9 已删（e）：日总量守恒恒等由 ledger 台账守恒对账更强钉住（四视角逐日逐字段）。
+  // 同键合并（f）独无他处 pin（A4(d) 只并 dir 行，不并残差入既有未识别桶），保留：
   it("同 (day, dir) 键唯一（残差并入既有未识别桶，不另起一行）", () => {
     expect(fRowsLength).toBe(1);
   });
@@ -6182,14 +6027,8 @@ describe("#633 修复：目录面残差投影（纯函数面 a-j）", () => {
     expect(hDays).toEqual(["2026-09-06", "2026-09-07", "2026-09-08"]);
   });
 
-  it("prune 前两日残差行都在", () => {
-    expect(iBeforeLength).toBe(2);
-  });
-
-  it("prune 后被裁日的残差行同步消失（无残留）", () => {
-    expect(iAfterDays).toEqual(["2026-09-03"]);
-  });
-
+  // H9 已删（i）：prune 联动删除残差行由 M1(b) 单元面 pruneDays 联动钉住（同生命周期）。
+  // 无 dir 键（j）是 A2“旧格式无 dir 行由残差投影承担”边界的纯函数镜像，无他处 pin，保留：
   it("无 dir 键明细行 → 残差 = 10", () => {
     expect(jInputBefore).toBe(10);
   });

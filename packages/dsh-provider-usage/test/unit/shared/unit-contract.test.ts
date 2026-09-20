@@ -1472,22 +1472,9 @@ describe("hotreload：start 文件缺失失败回调；pollOnce 文件删除保�
 
 // ================================================================ #150 二阶段：图表纯函数结构断言（miniChartSvgMarkup）
 
-describe("miniChartSvgMarkup 图表纯函数结构断言", () => {
-  // 样本不足 2 点 → 空 SVG
-  it("样本 <2 返回空串", () => {
-    expect(
-      miniChartSvgMarkup({
-        samples: [{ x: 1, y: 50 }],
-        color: "#fff",
-        lo: 0,
-        hi: 100,
-        resetsAt: undefined,
-        resetPeriodMs: 0,
-        dateOnly: false,
-      }),
-    ).toBe("");
-  });
-
+// H7 审计例外：本块为 v1 miniChart 块的简化版，重复面已删，仅留 v1 未覆盖的独有 facet
+// （网格三线精确计数/重置外推历史≥2/garbage 输入/体积护栏/贝塞尔形状），已上报主控。
+describe("miniChartSvgMarkup 独有 facet（H7 审计例外保留）", () => {
   // 基本结构：svg 包裹 + 平滑曲线 + 终点圆点 + 网格线
   describe("基本结构：svg 包裹 + 平滑曲线 + 终点圆点 + 网格线", () => {
     let svg, gridLines;
@@ -1512,69 +1499,9 @@ describe("miniChartSvgMarkup 图表纯函数结构断言", () => {
       gridLines = svg.split("stroke-dasharray:3 3").length - 1;
     });
 
-    it("SVG 开头", () => {
-      expect(svg.startsWith("<svg")).toBeTruthy();
-    });
-
-    it("视口尺寸固定", () => {
-      expect(svg.includes('viewBox="0 0 320 100"')).toBeTruthy();
-    });
-
-    it("曲线使用传入色", () => {
-      expect(svg.includes("stroke:#123456")).toBeTruthy();
-    });
-
-    it("终点圆点存在", () => {
-      expect(svg.includes("<circle")).toBeTruthy();
-    });
-
+    // 独有 facet：v1 只断参考线/刻度样式，未计数 lo/mid/hi 三网格线
     it("网格虚线恰三条（lo/中位/hi 各一）", () => {
       expect(gridLines).toBe(3);
-    });
-
-    it("lo=0/hi=100 满足 lo<=100<=hi 且域宽>0.01 → 参考线存在", () => {
-      expect(svg.includes("100%")).toBeTruthy();
-    });
-  });
-
-  describe("domain 含 100% 参考线", () => {
-    let noRefLine, withRefLine;
-
-    beforeAll(() => {
-      // hi=80 时 100% 线不可见；hi<100 且 dmax>=90 强制抬到 100 的行为经 niceDomain 间接生效
-      const t0 = Date.UTC(2026, 0, 1, 0, 0);
-      noRefLine = miniChartSvgMarkup({
-        samples: [
-          { x: t0, y: 10 },
-          { x: t0 + 60000, y: 60 },
-        ],
-        color: "#000",
-        lo: 0,
-        hi: 50,
-        resetsAt: undefined,
-        resetPeriodMs: 0,
-        dateOnly: true,
-      });
-      withRefLine = miniChartSvgMarkup({
-        samples: [
-          { x: t0, y: 10 },
-          { x: t0 + 60000, y: 95 },
-        ],
-        color: "#000",
-        lo: 0,
-        hi: 100,
-        resetsAt: undefined,
-        resetPeriodMs: 0,
-        dateOnly: true,
-      });
-    });
-
-    it("hi=50 < 100 时无 100% 参考线", () => {
-      expect(noRefLine.includes("100%") === false).toBeTruthy();
-    });
-
-    it("hi=100 且域宽 >0.01 时有 100% 参考线", () => {
-      expect(withRefLine.includes("100%")).toBeTruthy();
     });
   });
 
@@ -1631,7 +1558,7 @@ describe("miniChartSvgMarkup 图表纯函数结构断言", () => {
 
   // downsample：>300 点降采样后仍 ≤301 点且保留末点
   describe("downsample：>300 点降采样", () => {
-    let circles, svg;
+    let svg;
 
     beforeAll(() => {
       const t0 = Date.UTC(2026, 0, 1, 0, 0);
@@ -1645,11 +1572,6 @@ describe("miniChartSvgMarkup 图表纯函数结构断言", () => {
         resetPeriodMs: 0,
         dateOnly: true,
       });
-      circles = svg.split("<circle").length - 1;
-    });
-
-    it("降采样后仍只有一个终点圆点（渲染未崩）", () => {
-      expect(circles).toBe(1);
     });
 
     // 仅作退化护栏（防止降采样失效导致体积爆炸的非线性增长），非精确口径：
@@ -1680,12 +1602,9 @@ describe("miniChartSvgMarkup 图表纯函数结构断言", () => {
       });
     });
 
+    // 独有 facet：v1 不断 path 平滑形状（C vs 折线 L 变异）
     it("两点曲线走三次贝塞尔（平滑）", () => {
       expect(svg.includes("C ")).toBeTruthy();
-    });
-
-    it("面积图填充透明度存在", () => {
-      expect(svg.includes("fill-opacity:.13")).toBeTruthy();
     });
   });
 });

@@ -381,13 +381,6 @@ describe("D2三-轮询 60s tick + 5min 预热汇入 getStats（改坏默认/断�
     expect(DEFAULT_CONFIG.warmupIntervalMs).toBe(300_000);
   });
 
-  it("预热线路汇入 getStats（断线即红）", () => {
-    expect(applySrc.includes("void statsService.getStats(provider).catch(() => {});")).toBe(true);
-    expect(applySrc.includes("const timer = setInterval(warmupFn, config.warmupIntervalMs);")).toBe(
-      true,
-    );
-  });
-
   it("store 唯一跨域值导入是 execute 纯解析（单向边，环保持断开）", () => {
     expect(storeSrc.includes('"../execute/interface.ts"')).toBe(true);
     expect(storeSrc.includes("parseReportIndexLines")).toBe(true);

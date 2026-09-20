@@ -33,17 +33,13 @@ describe("客户端 fetch 超时兜底外壳（issue #268 P1）", () => {
     });
 
     it("无 caller signal 时注入 AbortSignal.timeout 兜底（#268 主接线）", () => {
-      expect(
-        /return fetch\(url, \{ \.\.\.init, signal: AbortSignal\.timeout\(timeoutMs\) \}\);/.test(
-          src,
-        ),
-      ).toBeTruthy();
+      // H10 降级：整行形状锁降为机制存在性；兜底行为由 worker 场景1/2 钉。
+      expect(src.includes("AbortSignal.timeout(timeoutMs)")).toBeTruthy();
     });
 
     it("caller 自带 signal 时透传不兜底（#111 同款语义）", () => {
-      expect(
-        /if \(init\?\.signal !== undefined\) return fetch\(url, init\);/.test(src),
-      ).toBeTruthy();
+      // H10 降级：整行形状锁降为条件+透传存在性；透传行为由 worker 场景3 钉。
+      expect(src.includes("init?.signal") && src.includes("return fetch(url, init)")).toBeTruthy();
     });
   });
 

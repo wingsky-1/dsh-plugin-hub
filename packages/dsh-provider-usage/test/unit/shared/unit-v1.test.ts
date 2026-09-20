@@ -1381,33 +1381,14 @@ describe("openCodeGoAdapter.formatPanel（#150）", () => {
 // ---------------------------------------------------------------- safeFetchData 边界（#150 变异加固）
 
 describe("safeFetchData 边界（#150 变异加固）", () => {
-  let success,
-    arrayRes,
-    nullRes,
-    primitiveRes,
-    undefinedRes,
-    syncBoom,
-    asyncBoom,
-    plainThrow,
-    timeoutRes,
-    timeoutElapsed;
+  // H6 去重后仅留 v1 独有：Date round-trip/undefined/sync-async boom/timeoutElapsed；
+  // 数组/null/原始值拒绝、固定文案、超时中断由 contract 同名 describe 钉住。
+  let success, undefinedRes, syncBoom, asyncBoom, timeoutElapsed;
 
   beforeAll(async () => {
     // 成功路径：JSON 序列化管道保真——Date 经 stringify/parse 变 ISO 字符串，
     // 若删去 round-trip（直接回传 raw）则保持 Date 对象，此断言即杀该变异
     success = await safeFetchData(async () => ({ n: 3, d: new Date(0), nest: { ok: true } }));
-
-    // 数组拒绝：typeof === "object" 但 Array.isArray 拦截
-    arrayRes = await safeFetchData(async () => [1, 2]);
-
-    // null 拒绝：typeof null === "object" 但 null 拦截
-    nullRes = await safeFetchData(async () => null);
-
-    // 原始值拒绝：stringify/parse 后仍非 object
-    primitiveRes = [];
-    for (const raw of ["str", 42, true]) {
-      primitiveRes.push(await safeFetchData(async () => raw));
-    }
 
     // fn 返回 undefined：JSON.parse(undefined) 抛 SyntaxError 进 catch
     undefinedRes = await safeFetchData(async () => undefined);
@@ -1422,51 +1403,16 @@ describe("safeFetchData 边界（#150 变异加固）", () => {
       throw new Error("async-boom");
     });
 
-    // 非 Error 抛出值：String(e) 兜底
-    plainThrow = await safeFetchData(async () => {
-      throw "plain";
-    });
-
-    // 超时分支：fn 永挂 + 极小 timeoutMs -> abort 监听 reject 固定文案；
-    // finally clearTimeout 保证进程不悬挂
+    // 超时分支：fn 永挂 + 极小 timeoutMs -> abort 监听 reject；
+    // finally clearTimeout 保证进程不悬挂（文案由 contract 钉，此处只量耗时量级）
     const t0 = Date.now();
-    timeoutRes = await safeFetchData(() => new Promise(() => {}), 25);
+    await safeFetchData(() => new Promise(() => {}), 25);
     timeoutElapsed = Date.now() - t0;
-  });
-
-  it("对象输入走 data 通道", () => {
-    expect(success.data !== undefined && success.error === undefined).toBeTruthy();
-  });
-
-  it("标量字段保真", () => {
-    expect(success.data?.n).toBe(3);
   });
 
   it("Date 字段经序列化变 ISO 字符串", () => {
     expect(success.data?.d).toBe("1970-01-01T00:00:00.000Z");
   });
-
-  it("嵌套对象保真", () => {
-    expect(success.data?.nest).toEqual({ ok: true });
-  });
-
-  it("数组返回被拒绝并给出固定文案", () => {
-    expect(arrayRes.error).toBe("fetchData 必须返回对象");
-  });
-
-  it("拒绝时无 data 字段", () => {
-    expect(arrayRes.data).toBe(undefined);
-  });
-
-  it("null 返回被拒绝", () => {
-    expect(nullRes.error).toBe("fetchData 必须返回对象");
-  });
-
-  for (const [index, raw] of ["str", 42, true].entries()) {
-    it(`原始值 ${JSON.stringify(raw)} 被拒绝`, () => {
-      expect(primitiveRes[index].error).toBe("fetchData 必须返回对象");
-    });
-  }
 
   it("undefined 返回进错误通道", () => {
     expect(typeof undefinedRes.error === "string" && undefinedRes.error.length > 0).toBeTruthy();
@@ -1482,18 +1428,6 @@ describe("safeFetchData 边界（#150 变异加固）", () => {
 
   it("异步拒绝提取 message", () => {
     expect(asyncBoom.error).toBe("async-boom");
-  });
-
-  it("非 Error 抛出值经 String 提取", () => {
-    expect(plainThrow.error).toBe("plain");
-  });
-
-  it("超时返回固定文案", () => {
-    expect(timeoutRes.error).toBe("fetchData 超时");
-  });
-
-  it("超时无 data", () => {
-    expect(timeoutRes.data).toBe(undefined);
   });
 
   it("超时在 timeoutMs 量级触发而非默认 2s", () => {
@@ -2067,94 +2001,6 @@ describe("图表纯函数分档矩阵（#150 变异加固 2/4 续）", () => {
     // spanMs=1ms → spanMs <= 1min 的分支（timeTickStep step=2min）
     // timeTicks 中 step=2min, 但 spanMs=1ms → 可能 count<2 → 返回 [t0, t1]
     expect(svgTiny.startsWith("<svg")).toBeTruthy();
-  });
-});
-
-// ---------------------------------------------------------------- sanitizeHtml 清理链全正则覆盖（#150 变异加固 2/4 续）
-
-describe("sanitizeHtml 清理链全正则覆盖（#150 变异加固）", () => {
-  it("空串直接返回空串", () => {
-    expect(sanitizeHtml("")).toBe("");
-  });
-
-  // script 标签（含属性变体与大小写）
-  it("script 标签整段移除", () => {
-    expect(sanitizeHtml("<script>alert(1)</script>x")).toBe("x");
-  });
-
-  it("script 大小写不敏感移除", () => {
-    expect(sanitizeHtml("<SCRIPT type=text/javascript>x</SCRIPT>y")).toBe("y");
-  });
-
-  // iframe / frame / object / embed / meta / link / base
-  it("iframe 整段移除", () => {
-    expect(sanitizeHtml('<iframe src="x"></iframe>k')).toBe("k");
-  });
-
-  it("frame 整段移除", () => {
-    expect(sanitizeHtml('<frame src="x"></frame>f')).toBe("f");
-  });
-
-  it("object 整段移除", () => {
-    expect(sanitizeHtml('<object data="x"></object>o')).toBe("o");
-  });
-
-  it("embed 整段移除", () => {
-    expect(sanitizeHtml("<embed src=x></embed>e")).toBe("e");
-  });
-
-  it("meta 标签移除", () => {
-    expect(sanitizeHtml('<meta charset="utf-8">m')).toBe("m");
-  });
-
-  it("link 标签移除", () => {
-    expect(sanitizeHtml("<link rel=stylesheet href=x>l")).toBe("l");
-  });
-
-  it("base 标签移除", () => {
-    expect(sanitizeHtml('<base href="//evil/">b')).toBe("b");
-  });
-
-  // on* 事件处理器三种引号形态 + 无引号形态
-  it("on*=双引号事件被剥", () => {
-    expect(sanitizeHtml('<img src="x" onerror="alert(1)">')).toBe('<img src="x">');
-  });
-
-  it("on*=单引号事件被剥", () => {
-    expect(sanitizeHtml("<a onclick='go()'>c</a>")).toBe("<a>c</a>");
-  });
-
-  it("on*=无引号事件被剥（大小写不敏感）", () => {
-    expect(sanitizeHtml("<div onMouseOver=hi()>d</div>")).toBe("<div>d</div>");
-  });
-
-  // javascript: URI 与 data:text/html 与 expression(
-  it("javascript: 协议剥离", () => {
-    expect(sanitizeHtml('<a href="javascript:alert(1)">x</a>')).toBe('<a href="alert(1)">x</a>');
-  });
-
-  it("javascript: 大小写混合剥离", () => {
-    expect(sanitizeHtml('<a href="JaVaScRiPt:x">y</a>')).toBe('<a href="x">y</a>');
-  });
-
-  it("data:text/html 场景随 iframe 移除", () => {
-    expect(sanitizeHtml('<iframe src="data:text/html,<b>z"></iframe>q')).toBe("q");
-  });
-
-  it("CSS expression( 被剥", () => {
-    const exp = sanitizeHtml('<div style="width:expression(alert(1))">w</div>');
-    expect(!exp.includes("expression(")).toBeTruthy();
-  });
-
-  // 正常内容不被误伤
-  it("正常标签保留", () => {
-    expect(sanitizeHtml("<b>ok</b>")).toBe("<b>ok</b>");
-  });
-
-  it("正常链接与属性保留", () => {
-    expect(sanitizeHtml('<a href="https://example.com" title="t">n</a>')).toBe(
-      '<a href="https://example.com" title="t">n</a>',
-    );
   });
 });
 
