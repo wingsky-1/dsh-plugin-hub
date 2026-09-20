@@ -46,7 +46,7 @@ import { loadUserAdapterChecked } from "../server/registry/interface.ts";
 import { StatsServiceCtor as StatsService } from "../server/pipeline/interface.ts";
 import { TrendTracker } from "../server/aggregate/interface.ts";
 import { ReportScheduler } from "../server/schedule/interface.ts";
-import { optionalNotifier } from "../server/execute/interface.ts";
+import { optionalNotifier, parseReportIndexLines } from "../server/execute/interface.ts";
 import { ReportConfigService, readReportConfig } from "../server/config/interface.ts";
 import { makeDueReportExecutor } from "../server/execute/interface.ts";
 import { makeListDirs } from "../server/execute/interface.ts";
@@ -400,6 +400,9 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
   const reportScheduler = ReportScheduler.start({
     root: historyRoot,
     config: reportCfgService.get(),
+    // C 波单向化：index 纯解析经 ScheduleIndexParser 端口注入调度域
+    //（store 不再直引 execute 门面；updateLastRun 值边保留在执行器侧）。
+    parseIndex: parseReportIndexLines,
     // tick 只提交任务（非阻塞，队列去重吸收同窗口堆积），不再等待生成
     onDue: (due) => {
       reportQueue.submit(due);

@@ -116,10 +116,13 @@ describe("D3一 经 server/execute 域门面装配", () => {
     ).toBe(true);
   });
 
-  it("组合根经同一门面取 optionalNotifier（换源即红）", () => {
+  it("组合根经同一门面取 optionalNotifier + 纯解析注入（换源／分头即红）", () => {
     expect(
-      applySrc.includes('import { optionalNotifier } from "../server/execute/interface.ts";'),
+      applySrc.includes(
+        'import { optionalNotifier, parseReportIndexLines } from "../server/execute/interface.ts";',
+      ),
     ).toBe(true);
+    expect(applySrc.includes("parseIndex: parseReportIndexLines")).toBe(true);
   });
 
   it("组合根经同一门面取 makeListDirs（换源即红）", () => {
@@ -167,9 +170,10 @@ describe("D3一 经 server/execute 域门面装配", () => {
     expect(reportsSrc.includes("../../server/execute")).toBe(false);
   });
 
-  it("调度存储只复用纯解析（调业务实例即红）", () => {
-    expect(storeSrc.includes('"../execute/interface.ts"')).toBe(true);
-    expect(storeSrc.includes("parseReportIndexLines")).toBe(true);
+  it("调度存储不直取执行门面：纯解析经端口注入（C 波单向化，值环归零）", () => {
+    // 调度→执行方向零值边：门面与业务实例引用一律消失（残留即环复活）。
+    expect(storeSrc.includes('"../execute/interface.ts"')).toBe(false);
+    expect(storeSrc.includes("parseReportIndexLines")).toBe(false);
     const storeImports = storeSrc
       .split(String.fromCharCode(10))
       .filter((l) => l.startsWith("import"));
@@ -177,6 +181,10 @@ describe("D3一 经 server/execute 域门面装配", () => {
     expect(storeImports.some((l) => l.includes("persistReport"))).toBe(false);
     expect(storeImports.some((l) => l.includes("runDueReport"))).toBe(false);
     expect(storeImports.some((l) => l.includes("notifyReport"))).toBe(false);
+    // 端口注入面仍在：store 经 ScheduleIndexParser 取解析，执行→调度值边保留。
+    expect(storeSrc.includes("ScheduleIndexParser")).toBe(true);
+    expect(executorSrc.includes('"../schedule/interface.ts"')).toBe(true);
+    expect(executorSrc.includes("updateLastRun")).toBe(true);
   });
 
   it("队列任务 meta 类型经 execute 门面（换源即红）", () => {

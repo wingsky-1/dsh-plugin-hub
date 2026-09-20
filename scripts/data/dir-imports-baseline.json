@@ -83,16 +83,12 @@
       "scannedSrcFiles": 87,
       "allSrcTsFiles": 102,
       "interfaceFacades": 15,
-      "leafValueEdges": 26,
-      "fileValueEdges": 157,
-      "crossModuleRefs": 179,
+      "leafValueEdges": 25,
+      "fileValueEdges": 155,
+      "crossModuleRefs": 166,
       "quality": {
-        "leafModuleCycles": [
-          "server/execute|server/schedule"
-        ],
-        "fileCycles": [
-          "server/execute/executor.ts|server/execute/interface.ts|server/schedule/interface.ts|server/schedule/scheduler.ts|server/schedule/store.ts"
-        ],
+        "leafModuleCycles": [],
+        "fileCycles": [],
         "implToOtherImpl": [],
         "missingInterface": [],
         "directImpl": [],
@@ -110,7 +106,6 @@
           "server/report-routes|server/execute",
           "server/report-routes|server/schedule",
           "server/schedule|server/config",
-          "server/schedule|server/execute",
           "server/ui-routes|server/collect",
           "server/upgrade|server/config",
           "server/upgrade|server/schedule",

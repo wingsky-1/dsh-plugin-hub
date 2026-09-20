@@ -51,7 +51,12 @@ import {
   LAST_RUN_SCHEMA as ImplSchema,
 } from "../../../src/server/schedule/due.ts";
 import * as scheduleDepsNs from "../../../src/server/schedule/deps.ts";
-import type { ScheduleClock, ScheduleWarn } from "../../../src/server/schedule/deps.ts";
+import type {
+  ScheduleClock,
+  ScheduleIndexParser,
+  ScheduleWarn,
+} from "../../../src/server/schedule/deps.ts";
+import { parseReportIndexLines } from "../../../src/server/execute/interface.ts";
 import { normalizeReportConfig } from "../../../src/server/config/interface.ts";
 import type { ReportPeriod } from "../../../src/server/config/interface.ts";
 import type { ReportTaskInput } from "../../../src/server/schedule/interface.ts";
@@ -76,6 +81,11 @@ const storageLayoutSrc = readFileSync(
 /** 命名接缝消费（类型链接由 tsc 编译面校验可赋值性）：块 Options 用内联双生子，名称在此复用。 */
 const quietWarn: ScheduleWarn = () => undefined;
 const testClock: ScheduleClock = () => Date.now();
+/**
+ * C 波端口锚定（tsc 双向锁定可赋值性，误配即编译红）：
+ * 真实现可赋给端口（execute→schedule 注入方向），端口输出可喂推导。
+ */
+const scheduleParser: ScheduleIndexParser = parseReportIndexLines;
 
 /** 根内禁入业务判断标记：判据 = 任一标记进入 apply.ts 即红（#768 D13 起 interface.ts 锚点已删）。 */
 const BUSINESS_MARKERS = [
@@ -353,7 +363,12 @@ describe("D2三-链 ensure经链：校准与并发推进交错不丢更新（#77
   });
 
   it("启动仍先校准后首轮（删调用即回退）", () => {
-    expect(schedulerSrc.includes("ensureLastRunMigrated(s.root, s.warn)")).toBe(true);
+    expect(schedulerSrc.includes("ensureLastRunMigrated(s.root, s.warn, s.parseIndex)")).toBe(true);
+  });
+
+  it("调度器经端口透传解析（直取引擎门面即回退）", () => {
+    expect(schedulerSrc.includes("parseIndex")).toBe(true);
+    expect(schedulerSrc.includes("execute/interface")).toBe(false);
   });
 
   it("交错窗：校准与并发推进双双在场（只断言收敛）", async () => {
@@ -394,7 +409,7 @@ describe("D2三-链 ensure经链：校准与并发推进交错不丢更新（#77
         return { ...cur, weekly: "B" };
       });
       await pollUntil(() => started, 3000);
-      const ensuring = ensureLastRunMigrated(root, quietWarn);
+      const ensuring = ensureLastRunMigrated(root, quietWarn, scheduleParser);
       await pollUntil(() => true, 50);
       releaseGate();
       const res = await ensuring;
@@ -446,6 +461,8 @@ describe("D2三-链 ensure经链：校准与并发推进交错不丢更新（#77
         },
         tickMs: 20,
         warn: quietWarn,
+        // C 波：启动校准的 index 解析经端口注入（缺端口视同无事实）。
+        parseIndex: scheduleParser,
       });
       try {
         await pollUntil(() => seen.length >= 1, 5000);
@@ -499,14 +516,30 @@ describe("D2三-轮询 60s tick + 5min 预热汇入 getStats（改坏默认/断�
     expect(DEFAULT_CONFIG.warmupIntervalMs).toBe(300_000);
   });
 
-  it("store 唯一跨域值导入是 execute 纯解析（单向边，环保持断开）", () => {
-    expect(storeSrc.includes('"../execute/interface.ts"')).toBe(true);
-    expect(storeSrc.includes("parseReportIndexLines")).toBe(true);
+  it("store 零跨域值导入：解析经 ScheduleDeps 端口注入（C 波单向化）", () => {
+    // 调度→执行方向不再有值边（直引即环复活）：execute 门面引用彻底消失。
+    expect(storeSrc.includes("execute")).toBe(false);
+    expect(storeSrc.includes("parseReportIndexLines")).toBe(false);
     const storeImports = storeSrc
       .split(String.fromCharCode(10))
       .filter((l) => l.startsWith("import"));
     expect(storeImports.some((l) => l.includes("domain2/schedule"))).toBe(false);
     expect(storeImports.some((l) => l.includes("domain2/common"))).toBe(false);
+  });
+
+  it("store 经端口取解析（类型边，不入值图）", () => {
+    expect(storeSrc.includes("ScheduleIndexParser")).toBe(true);
+    expect(storeSrc.includes('import type { ScheduleIndexParser } from "./deps.ts";')).toBe(true);
+    expect(storeSrc.includes("parseIndex === undefined")).toBe(true);
+  });
+
+  it("组合根装配期注入真实现（换源／漏接线即红）", () => {
+    expect(
+      applySrc.includes(
+        'import { optionalNotifier, parseReportIndexLines } from "../server/execute/interface.ts";',
+      ),
+    ).toBe(true);
+    expect(applySrc.includes("parseIndex: parseReportIndexLines")).toBe(true);
   });
 });
 

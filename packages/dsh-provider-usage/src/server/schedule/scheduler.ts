@@ -10,6 +10,7 @@
 import type { ReportConfig } from "../config/interface.ts";
 import { pendingReports, type DueReport } from "./due.ts";
 import { readLastRun, ensureLastRunMigrated } from "./store.ts";
+import type { ScheduleIndexParser } from "./deps.ts";
 
 export interface ReportSchedulerOptions {
   /** 存储根（historyRoot）。 */
@@ -24,6 +25,11 @@ export interface ReportSchedulerOptions {
   tickMs?: number;
   /** 诊断出口。 */
   warn?: (msg: string) => void;
+  /**
+   * index 解析端口（execute 域纯函数，组合根装配期注入，经启动校准透传
+   * 给 store；缺省视同无事实，不校准——与 store“无 index”同语义）。
+   */
+  parseIndex?: ScheduleIndexParser;
 }
 
 export class ReportScheduler {
@@ -35,6 +41,7 @@ export class ReportScheduler {
   private readonly now: () => number;
   private readonly tickMs: number;
   private readonly warn: (msg: string) => void;
+  private readonly parseIndex?: ScheduleIndexParser;
 
   private constructor(opts: ReportSchedulerOptions) {
     this.root = opts.root;
@@ -42,6 +49,7 @@ export class ReportScheduler {
     this.onDue = opts.onDue;
     this.now = opts.now ?? Date.now;
     this.tickMs = opts.tickMs ?? 60_000;
+    this.parseIndex = opts.parseIndex;
     this.warn = opts.warn ?? ((msg) => console.warn(`[dsh-provider-usage] report: ${msg}`));
   }
 
@@ -53,7 +61,7 @@ export class ReportScheduler {
     const s = new ReportScheduler(opts);
     s.timer = setInterval(() => void s.tick(), s.tickMs);
     (s.timer as { unref?: () => void }).unref?.();
-    void ensureLastRunMigrated(s.root, s.warn).finally(() => void s.tick());
+    void ensureLastRunMigrated(s.root, s.warn, s.parseIndex).finally(() => void s.tick());
     return s;
   }
 

@@ -11,7 +11,7 @@ import { readFile, writeFile, rename, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import type { ReportPeriod } from "../config/interface.ts";
 import { alignLastRun, deriveLastRun, LAST_RUN_SCHEMA, type LastRunRecord } from "./due.ts";
-import { parseReportIndexLines } from "../execute/interface.ts";
+import type { ScheduleIndexParser } from "./deps.ts";
 
 /** lastRun 持久化文件。 */
 function lastRunFile(root: string): string {
@@ -104,10 +104,15 @@ export function __lastRunChainForTests(root: string): Promise<void> | undefined 
 /**
  * 启动时 lastRun 一致性保证：schema 旧 → 全量重算（deriveLastRun）；
  * schema 新 → 温和对齐（alignLastRun）；无 index 视作无事实，不动 lastRun。
+ *
+ * index 解析经 ScheduleIndexParser 端口注入（C 波单向化：本文件不直引
+ * 执行域门面，纯函数实现由组合根装配期经调度器透传；缺端口视同无事实，
+ * 不动 lastRun——与“无 index”同语义，不静默捏造校准值）。
  */
 export async function ensureLastRunMigrated(
   root: string,
   warn?: (msg: string) => void,
+  parseIndex?: ScheduleIndexParser,
 ): Promise<{
   changed: boolean;
   before: Partial<Record<ReportPeriod, string>>;
@@ -122,7 +127,8 @@ export async function ensureLastRunMigrated(
     const before = await readLastRun(root);
     const indexRaw = await readFile(join(root, "reports", "index.jsonl"), "utf8").catch(() => null);
     if (indexRaw === null) return { changed: false, before, after: before };
-    const records = parseReportIndexLines(indexRaw) as LastRunRecord[];
+    if (parseIndex === undefined) return { changed: false, before, after: before };
+    const records = parseIndex(indexRaw) as LastRunRecord[];
     const after = schema < LAST_RUN_SCHEMA ? deriveLastRun(records) : alignLastRun(before, records);
     const changed = schema < LAST_RUN_SCHEMA || JSON.stringify(before) !== JSON.stringify(after);
     if (!changed) return { changed, before, after };

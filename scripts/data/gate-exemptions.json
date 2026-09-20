@@ -137,13 +137,7 @@
     {
       "gate": "verify-dir-imports",
       "path": "dsh-provider-usage:server/execute|server/schedule",
-      "reason": "#768 D3：执行器经调度门面取 updateLastRun 单一临界区与任务类型、读侧取 DueReport 类型（D2 口径延续，D3 随物理定义迁移）；反向调度域经执行域门面复用纯解析，故叶粒度呈门面互消费环——双向均为门面收口（禁直引实现文件，双方 deps.ts 注记 + integration/execute 用例逐行锁定导入面），同一条目覆盖边与环两类证据。D13 重估结论：维持门面环——正向（execute→schedule）取 updateLastRun 单一临界区（有状态，必须活引用，注入无意义）；反向（schedule→execute）只复用 parseReportIndexLines 纯解析（单一定义在 execute/report-index.ts，搬共享层违 METHOD§3 单一消费者禁下沉，给 store 加注入管道成本大于收益）。环上零实现直引（R-A impl=0 锁定），任一边改直引即红。长期条目。",
-      "trackingIssue": "#768"
-    },
-    {
-      "gate": "verify-dir-imports",
-      "path": "dsh-provider-usage:server/schedule|server/execute",
-      "reason": "#768 D3：调度存储经 execute 门面只复用纯解析 parseReportIndexLines（D3 前为 server/schedule|domain2/common，边归属同步迁移），不调业务实例（read/persist/run/notify 均不导入，由树内 integration/execute 用例锁定）。复用边界由双方 deps.ts 注记锁定。长期条目（设计事实，非待办）。",
+      "reason": "#768 D3 起、C 波单向化：执行器经调度门面取 updateLastRun 单一临界区与任务类型、读侧取 DueReport 类型（D2 口径延续，D3 随物理定义迁移）；反向纯解析改由组合根装配期经 schedule 域 ScheduleIndexParser 端口注入（store 零执行域值边），模块／文件两级值环归零（verify-dir-imports 实证）。单向边仍为门面收口（禁直引实现文件，双方 deps.ts 注记 + integration/execute 用例逐行锁定导入面）。长期条目。",
       "trackingIssue": "#768"
     },
     {
@@ -198,12 +192,6 @@
       "gate": "verify-dir-imports",
       "path": "dsh-provider-usage:shared|server/adapters",
       "reason": "#768 D4：共享配置经 adapters 门面取 OPENCODE_GO_PROVIDER 默认值（D4 前为 shared|domain1/adapters，边归属同步迁移；共享层反向值引域的存量形态，见 dsh-mcp-manager v5 对账注记）。长期条目。",
-      "trackingIssue": "#768"
-    },
-    {
-      "gate": "verify-dir-imports",
-      "path": "dsh-provider-usage:server/execute/executor.ts|server/execute/interface.ts|server/schedule/interface.ts|server/schedule/scheduler.ts|server/schedule/store.ts",
-      "reason": "#768 D3 文件环登记（门面中转环）：executor 经调度门面取引擎链（值）→store 经执行门面取纯解析（值）——环上无实现文件直引（R-A 语义 impl 直引计数保持 0）。任一边改直引即红。D13 重估结论同上（维持门面环：临界区活引用 + 纯解析复用，两向负载性质不同，单向化成本大于收益）。长期条目。",
       "trackingIssue": "#768"
     }
   ]

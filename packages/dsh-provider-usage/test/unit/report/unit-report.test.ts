@@ -1648,11 +1648,11 @@ describe("#624 ensureLastRunMigrated：迁移写回 + 自愈 + 可重放", () =>
         line("monthly", "2026-08", t607, "2026-08-31"), // 已闭环
       ].join("\n") + "\n",
     );
-    res = await ensureLastRunMigrated(root, () => {});
+    res = await ensureLastRunMigrated(root, () => {}, parseReportIndexLines);
     migrated = JSON.parse(readFileSync(lastFile, "utf8"));
 
     // 场景 2：schema:2 且与事实一致 → 不再变化（幂等/可重放）
-    res2 = await ensureLastRunMigrated(root, () => {});
+    res2 = await ensureLastRunMigrated(root, () => {}, parseReportIndexLines);
 
     // 场景 3：schema:2 被旧污染键遮蔽（P0-4 自愈）→ 仍校准
     writeFileSync(
@@ -1664,7 +1664,7 @@ describe("#624 ensureLastRunMigrated：迁移写回 + 自愈 + 可重放", () =>
         schema: LAST_RUN_SCHEMA,
       }),
     );
-    res3 = await ensureLastRunMigrated(root, () => {});
+    res3 = await ensureLastRunMigrated(root, () => {}, parseReportIndexLines);
 
     // 场景 4：无 index（事实源缺失）→ 不动 lastRun
     const root2 = mkdtempSync(join(tmpdir(), "dou-report-migrate2-"));
@@ -1673,7 +1673,7 @@ describe("#624 ensureLastRunMigrated：迁移写回 + 自愈 + 可重放", () =>
       join(root2, "reports", "last-run.json"),
       JSON.stringify({ daily: "2026-09-06", schema: 1 }),
     );
-    res4 = await ensureLastRunMigrated(root2, () => {});
+    res4 = await ensureLastRunMigrated(root2, () => {}, parseReportIndexLines);
     kept = JSON.parse(readFileSync(join(root2, "reports", "last-run.json"), "utf8"));
 
     // 场景 5（#531 保护）：schema:2 + preset 键（index 无对应记录）→ 温和校准保留 preset 键，
@@ -1695,7 +1695,7 @@ describe("#624 ensureLastRunMigrated：迁移写回 + 自愈 + 可重放", () =>
       join(reports3, "index.jsonl"),
       [line("weekly", "2026-08-31", t607, "2026-09-06")].join("\n") + "\n",
     );
-    res5 = await ensureLastRunMigrated(root3, () => {});
+    res5 = await ensureLastRunMigrated(root3, () => {}, parseReportIndexLines);
     const raw5 = JSON.parse(readFileSync(join(reports3, "last-run.json"), "utf8"));
     kept5 = { daily: raw5.daily, weekly: raw5.weekly, monthly: raw5.monthly };
   });
@@ -1750,6 +1750,28 @@ describe("#624 ensureLastRunMigrated：迁移写回 + 自愈 + 可重放", () =>
 
   it("weekly 对齐到最新闭环键", () => {
     expect(kept5.weekly).toBe("2026-08-31");
+  });
+
+  it("缺解析端口（C 波）：有 index 也不校准（changed:false 且落盘不动）", async () => {
+    const root6 = mkdtempSync(join(tmpdir(), "dou-report-noport-"));
+    const reports6 = join(root6, "reports");
+    mkdirSync(reports6, { recursive: true });
+    const lastFile6 = join(reports6, "last-run.json");
+    // 旧 schema + 污染键 + 有效闭环 index：带端口必校准（同场景 1），
+    // 缺端口视同无事实——覆盖 store 缺端口早返分支。
+    writeFileSync(
+      lastFile6,
+      JSON.stringify({ daily: "2026-09-06", weekly: "2026-08-24", monthly: "2026-08" }),
+    );
+    writeFileSync(
+      join(reports6, "index.jsonl"),
+      [line("daily", "2026-09-04", t607, "2026-09-03")].join("\n") + "\n",
+    );
+    const rawBefore = readFileSync(lastFile6, "utf8");
+    const res6 = await ensureLastRunMigrated(root6, () => {});
+    expect(res6.changed).toBe(false);
+    expect(res6.after).toEqual({ daily: "2026-09-06", weekly: "2026-08-24", monthly: "2026-08" });
+    expect(readFileSync(lastFile6, "utf8")).toBe(rawBefore);
   });
 });
 

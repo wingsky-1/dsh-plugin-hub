@@ -13,9 +13,9 @@
  * - 业务域（routes）经本门面复用读面（readReportIndex/reportHtmlFile/
  *   reportMetaFile）与纯面（parseReportIndexLines/prevWindowTotal）；
  *   有状态的执行器只由组合根构造、经参数传递，不直引；
- * - 调度域（schedule/store.ts）经本门面只复用纯解析
- *   （parseReportIndexLines，零 node 依赖），不调业务实例
- *   （read/persist/run/notify 均不导入）；
+ * - 调度域经本门面只复用纯解析（parseReportIndexLines，零 node 依赖）：
+ *   C 波起由组合根装配期经 ScheduleIndexParser 端口注入（store.ts 不直引
+ *   本门面），不调业务实例（read/persist/run/notify 均不导入）；
  * - executor 工厂深封装：本面只暴露 `makeDueReportExecutor` 工厂与其
  *   依赖类型（DueExecutorDeps），执行器闭包内部（幂等下沉 → LLM 生成 →
  *   lastRun 推进 → 错误脱敏）一概不进入本面——工厂为本域唯一构造入口，
