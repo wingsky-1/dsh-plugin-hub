@@ -34,11 +34,13 @@ import {
 import { tmpdir } from "node:os";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { callHandler, pollUntil, pollUntilJsonlReady } from "../helpers.ts";
+// 白盒直连深路径（#768 B波）：g4 缓存计数须与钩子同模块实例——lib 构建内联了
+// runner.ts 的独立副本（计数器不互通），故读侧与钩子一并经深路径，不走包入口。
 import {
   __clearReportIndexCacheForTests,
   __reportIndexCacheStatsForTests,
   readReportIndex,
-} from "../../lib/index.js";
+} from "../../src/server/execute/runner.ts";
 
 // 纯函数断言区先行执行（无 @ts-nocheck、强类型）
 import "../smoke-pure.ts";
@@ -1399,6 +1401,12 @@ describe("客户端契约", () => {
     clientContractObs.directMatch = reportSource.match(
       /if \(body\.reused === true\) setGenNotice\(t\("reportReused"\)\);/,
     );
+    // #629 P2 可观测主断言面：复用接线以产物 bundle（已加载 clientCode）与
+    // HTTP 响应（下文 again.reused）为准，src 源码正则仅降级为辅助——
+    // 不新增 readFileSync(src/client) 断言。
+    clientContractObs.bundlePollReusedWiring = /reused:\s*body\.reused === true/.test(clientCode);
+    clientContractObs.bundlePollNoticeWiring =
+      /reused === true\) setGenNotice\(t\("reportReused"\)\)/.test(clientCode);
 
     // qa F1（#128 实测）：bottom-* 锚点首次打开以小高度定位、异步数据撑高面板后
     // 无重排路径 → 稳定向下溢出视口。防回归：renderPanel 尾部触发重定位 +
@@ -1566,19 +1574,29 @@ describe("客户端契约", () => {
     expect(clientContractObs.clientSourceHasSyncUiConfig).toBeTruthy();
   });
 
-  it("pollReportTask 透传 status 响应的 reused 字段（轮询路径数据源）", () => {
+  it("轮询 reused 透传进产物 bundle（可观测主断言）", () => {
+    expect(clientContractObs.bundlePollReusedWiring).toBeTruthy();
+  });
+
+  it("复用提示接线进产物 bundle（与 200 直接复用路径对称）", () => {
+    expect(clientContractObs.bundlePollNoticeWiring).toBeTruthy();
+  });
+
+  // 200 直接复用响应主断言见“未勾选 force → 幂等复用”（again.reused）；
+  // 以下四条为源码辅助断言：主断言是产物 bundle 与 HTTP 响应，源码正则仅防接线漂移。
+  it("pollReportTask 透传 status 响应的 reused 字段（源码辅助）", () => {
     expect(clientContractObs.pollRetMatch !== null).toBeTruthy();
   });
 
-  it("onGenerate 202 分支经 pollReportTask 拿 reused", () => {
+  it("onGenerate 202 分支经 pollReportTask 拿 reused（源码辅助）", () => {
     expect(clientContractObs.pollCallMatch !== null).toBeTruthy();
   });
 
-  it("轮询路径 reused → 渲染「已复用」提示（与 200 直接复用路径对称）", () => {
+  it("轮询路径 reused → 渲染「已复用」提示（源码辅助）", () => {
     expect(clientContractObs.noticeMatch !== null).toBeTruthy();
   });
 
-  it("200 直接复用路径「已复用」提示保留（对称基线）", () => {
+  it("200 直接复用路径「已复用」提示保留（源码辅助）", () => {
     expect(clientContractObs.directMatch !== null).toBeTruthy();
   });
 

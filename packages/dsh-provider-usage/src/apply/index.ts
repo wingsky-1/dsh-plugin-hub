@@ -236,7 +236,6 @@ export {
   writeLastRun,
   updateLastRun,
   ensureLastRunMigrated,
-  __lastRunChainForTests,
 } from "../server/schedule/interface.ts";
 // 执行器工厂与报告配置服务（装配面公共符号，测试/外部消费者从 lib 导入）
 export { makeDueReportExecutor } from "../server/execute/interface.ts";
@@ -260,8 +259,6 @@ export {
   reportHtmlFile,
   reportMetaFile,
   notifyReport,
-  __clearReportIndexCacheForTests,
-  __reportIndexCacheStatsForTests,
 } from "../server/execute/interface.ts";
 export { parseReportIndexLines } from "../server/execute/interface.ts";
 // 路径解析纯函数透出（供测试与调用方复用同一展开/解析规则，无行为变更）

@@ -426,18 +426,6 @@
       "isType": false
     },
     {
-      "name": "__clearReportIndexCacheForTests",
-      "isType": false
-    },
-    {
-      "name": "__lastRunChainForTests",
-      "isType": false
-    },
-    {
-      "name": "__reportIndexCacheStatsForTests",
-      "isType": false
-    },
-    {
       "name": "adapterStateFile",
       "isType": false
     },
@@ -1665,18 +1653,6 @@
         },
         {
           "name": "Z_INDEX_PANEL_DELTA",
-          "isType": false
-        },
-        {
-          "name": "__clearReportIndexCacheForTests",
-          "isType": false
-        },
-        {
-          "name": "__lastRunChainForTests",
-          "isType": false
-        },
-        {
-          "name": "__reportIndexCacheStatsForTests",
           "isType": false
         },
         {

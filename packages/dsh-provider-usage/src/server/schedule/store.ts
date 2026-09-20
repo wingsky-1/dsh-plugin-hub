@@ -50,11 +50,6 @@ export async function writeLastRun(
 }
 
 /**
- * lastRun 单一临界区：读-改-写按 root 串行（per-root promise 链）+ 写前重读。
- * 所有 lastRun 的 read-modify-write 统一收敛到本函数——patch 只在临界区内、基于
- * 链上最新文件快照计算；同一 root 的更新按提交序串行落盘。
- */
-/**
  * 读 lastRun 原始全量（不应用 daily/weekly/monthly 白名单投影）——临界区写前重读
  * 专用：投影会静默丢弃非白名单键，round-trip 即 lost-update 的读取投影变体。
  */
@@ -71,6 +66,11 @@ async function readLastRunRaw(root: string): Promise<Record<string, unknown>> {
 
 const lastRunChainByRoot = new Map<string, Promise<void>>();
 
+/**
+ * lastRun 单一临界区：读-改-写按 root 串行（per-root promise 链）+ 写前重读。
+ * 所有 lastRun 的 read-modify-write 统一收敛到本函数——patch 只在临界区内、基于
+ * 链上最新文件快照计算；同一 root 的更新按提交序串行落盘。
+ */
 export function updateLastRun(
   root: string,
   // 返回类型必须容纳 Promise：patch 允许实现成 async（用于模拟读-改-写之间的交错窗），

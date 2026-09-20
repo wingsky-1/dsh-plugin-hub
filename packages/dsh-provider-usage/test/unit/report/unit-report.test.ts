@@ -57,7 +57,6 @@ import {
   readLastRun,
   writeLastRun,
   updateLastRun,
-  __lastRunChainForTests,
   ensureLastRunMigrated,
   deriveLastRun,
   isClosedWindowRecord,
@@ -65,8 +64,6 @@ import {
   ReportTaskQueue,
   readReportIndex,
   parseReportIndexLines,
-  __clearReportIndexCacheForTests,
-  __reportIndexCacheStatsForTests,
   handleReportStatus,
   TrendTracker,
   dayKey,
@@ -98,6 +95,12 @@ import {
   LEGACY_WEEKLY_PROMPT_V4,
   LEGACY_MONTHLY_PROMPT_V4,
 } from "../../../src/server/config/interface.ts";
+// 白盒直连深路径（#768 B波）：测试钩子经 schedule/execute 深路径，不走组合根转发。
+import { __lastRunChainForTests } from "../../../src/server/schedule/store.ts";
+import {
+  __clearReportIndexCacheForTests,
+  __reportIndexCacheStatsForTests,
+} from "../../../src/server/execute/runner.ts";
 
 // ---------------------------------------------------------------- 工具
 

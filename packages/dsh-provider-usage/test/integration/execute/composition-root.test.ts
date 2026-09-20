@@ -258,6 +258,10 @@ describe("D3二 门面收口：interface 与实现同一引用（包装即红）
     expect(codeLines.some((l) => l.startsWith("export *"))).toBe(false);
   });
 
+  it("包入口无 ForTests 收录（钩子已退入口：深路径直连，入口重收录即红）", () => {
+    expect(applyFaceSrc.includes("ForTests")).toBe(false);
+  });
+
   it("deps.ts 纯类型面：运行时零出口", () => {
     expect(Object.keys(executeDepsNs)).toEqual([]);
   });
