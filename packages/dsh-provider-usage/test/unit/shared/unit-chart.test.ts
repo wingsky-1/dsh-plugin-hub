@@ -26,14 +26,17 @@ import {
   pickWindow,
   fetchOpenCodeGoV2,
   miniChartSvgMarkup,
-  safeFetchData,
-  safeFormat,
   fetchWithTimeout,
   sanitizeHtml,
   HistoryStore,
+} from "../../../src/apply/index.ts";
+// 白盒直连深路径（#768 B波续批）：管线纯面经域门面，不走组合根转发。
+import {
+  safeFetchData,
+  safeFormat,
   runV2Pipeline,
   runV2PanelPipeline,
-} from "../../../src/apply/index.ts";
+} from "../../../src/server/pipeline/interface.ts";
 
 // ---------------------------------------------------------------- openCodeGoAdapter.formatCapsule
 

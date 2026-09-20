@@ -7,7 +7,7 @@
  *   server/pipeline/interface.ts，不走旧 domain1/pipeline 入口；apply/apply.ts、
  *   apply/index.ts、server/ui-routes/context.ts（#768 D12 起，前为
  *   domain2/routes/ui.ts）的管线消费收口新门面；门面禁整文件
- *   re-export；包导出面（apply/index.ts 转发名）零增减。
+ *   re-export；包导出面（apply/index.ts 转发名）收窄后集合（B波续批）。
  * - D6二 取数渲染管道 + 净化缺失必须红：入参组装 → safe 执行 → 净化 → 归一化；
  *   hostile 胶囊/面板 HTML 经 fresh/stale/panel 三路输出必被净化（先转义后清洗
  *   双层，清洗 fail-closed 由 sanitize.ts 自证，本域只保证「不缺席」——
@@ -184,13 +184,10 @@ describe("D6一 经 server/pipeline 域门面装配", () => {
     );
   });
 
-  it("包导出面零增减：apply/index.ts 转发名不变（改名/漏转即红）", () => {
+  it("包导出面收窄后集合：apply/index.ts 转发名与收窄后一致（改名/漏转即红）", () => {
+    // B波续批收窄后集合：safeFetchData/safeFormat/runV2Pipeline/runV2PanelPipeline已退役（簇批多文件直连）。
     for (const name of [
-      "safeFetchData",
-      "safeFormat",
       "fetchWithTimeout",
-      "runV2Pipeline",
-      "runV2PanelPipeline",
       "panelCacheKey",
       "normalizeRangeDay",
       "isPanelCacheStale",

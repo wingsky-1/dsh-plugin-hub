@@ -15,7 +15,7 @@
 console.error("EVAL-ORDER-TAG: SIGNAL-LOCK");
 import { afterAll, describe, expect, it } from "vitest";
 import { getEventListeners } from "node:events";
-import { runV2Pipeline, safeFetchData } from "../../../src/apply/index.ts";
+import { runV2Pipeline, safeFetchData } from "../../../src/server/pipeline/interface.ts";
 
 /** 构造满足 v2 契约的最小适配器（format 函数恒返回占位）。 */
 function mkAdapter(name, provider, fetchData) {

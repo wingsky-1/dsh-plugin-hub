@@ -18,8 +18,6 @@ import {
   describeUsageStatsAdapterShape,
   sanitizeHtml,
   HistoryStore,
-  safeFetchData,
-  safeFormat,
   normalizeConfig,
   resolveProviderConfig,
   OPENCODE_GO_PROVIDER,
@@ -51,6 +49,7 @@ import {
 } from "../src/shared/interface.ts";
 import { credentialsFile } from "../src/server/registry/interface.ts";
 import { zaiCodingCnAdapter } from "../src/server/adapters/interface.ts";
+import { safeFetchData, safeFormat } from "../src/server/pipeline/interface.ts";
 import {
   parseJsonl,
   startOfDay,

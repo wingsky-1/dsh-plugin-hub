@@ -27,15 +27,18 @@ import { safeSegment, ERROR_CODES } from "../../../src/shared/interface.ts";
 import {
   makeAdapterRegistry,
   sanitizeHtml,
-  safeFetchData,
-  safeFormat,
-  runV2Pipeline,
-  runV2PanelPipeline,
   HistoryStore,
   readStamp,
   stampEqual,
   miniChartSvgMarkup,
 } from "../../../src/apply/index.ts";
+// 白盒直连深路径（#768 B波续批）：管线纯面经域门面，不走组合根转发。
+import {
+  safeFetchData,
+  safeFormat,
+  runV2Pipeline,
+  runV2PanelPipeline,
+} from "../../../src/server/pipeline/interface.ts";
 
 describe("safeSegment", () => {
   it("字母数字连字符原样保留", () => {

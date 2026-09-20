@@ -70,11 +70,9 @@ export { resolveProviderConfig } from "../server/registry/interface.ts";
 export type { ProviderConfigInput, ResolvedProviderConfig } from "../server/registry/interface.ts";
 export { HistoryStore } from "../server/history/interface.ts";
 export type { HistoryEntry } from "../server/history/interface.ts";
-export { safeFetchData, safeFormat, fetchWithTimeout } from "../server/pipeline/interface.ts";
+export { fetchWithTimeout } from "../server/pipeline/interface.ts";
 export { sanitizeHtml } from "../shared/interface.ts";
 export {
-  runV2Pipeline,
-  runV2PanelPipeline,
   panelCacheKey,
   normalizeRangeDay,
   isPanelCacheStale,

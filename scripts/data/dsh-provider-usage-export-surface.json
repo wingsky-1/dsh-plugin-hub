@@ -394,22 +394,6 @@
       "isType": false
     },
     {
-      "name": "runV2PanelPipeline",
-      "isType": false
-    },
-    {
-      "name": "runV2Pipeline",
-      "isType": false
-    },
-    {
-      "name": "safeFetchData",
-      "isType": false
-    },
-    {
-      "name": "safeFormat",
-      "isType": false
-    },
-    {
       "name": "sanitizeHtml",
       "isType": false
     },
@@ -1135,22 +1119,6 @@
         },
         {
           "name": "resolveProviderConfig",
-          "isType": false
-        },
-        {
-          "name": "runV2PanelPipeline",
-          "isType": false
-        },
-        {
-          "name": "runV2Pipeline",
-          "isType": false
-        },
-        {
-          "name": "safeFetchData",
-          "isType": false
-        },
-        {
-          "name": "safeFormat",
           "isType": false
         },
         {

@@ -4,7 +4,7 @@
  *
  * 白盒直连 src（读装配源码文本 + 经 server/collect 门面活装配）；落盘一律进
  * mkdtempSync 隔离目录（产物零污染；路径禁令：本文件只用隔离目录，走 dshHome 接缝检查由门禁覆盖）。
- * 中止验收经包产物入口 src/apply/index.ts（集成面定义见 METHOD §8）调用
+ * 中止验收经 server/pipeline 门面直连（白盒）调用
  * safeFetchData/runV2Pipeline。四维度 + 一验收：
  * - D9一 经 server/collect 域门面装配：TrendCollector/防御纯函数只经
  *   server/collect/interface.ts，不走旧 domain2/collect 入口；apply/index.ts、
@@ -57,7 +57,7 @@ import type {
   CollectClock,
   CollectResolveCwd,
 } from "../../../src/server/collect/deps.ts";
-import { safeFetchData, runV2Pipeline } from "../../../src/apply/index.ts";
+import { safeFetchData, runV2Pipeline } from "../../../src/server/pipeline/interface.ts";
 import { safeFetchData as ImplSafeFetch } from "../../../src/server/pipeline/guards.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -406,7 +406,8 @@ describe("D9四 resolveCwd 冻结（延期未验证，行为锁）", () => {
   });
 });
 describe("D9验收 超时悬挂必须红（5s 信号合并 abort 集成用例）", () => {
-  it("产物入口与实现同一 safeFetchData（包装即红）", () => {
+  it("域门面与实现同一 safeFetchData（包装即红）", () => {
+    // B波续批收窄后集合：产物入口转发已退役，断言域门面与实现同一。
     expect(safeFetchData).toBe(ImplSafeFetch);
   });
 
