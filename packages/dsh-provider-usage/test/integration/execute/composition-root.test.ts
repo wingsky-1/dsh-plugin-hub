@@ -138,13 +138,14 @@ describe("D3一 经 server/execute 域门面装配", () => {
     expect(applyFaceSrc.includes("domain2/execute")).toBe(false);
   });
 
-  it("包入口的 parse 经 execute 门面（不走 common 旧入口）", () => {
+  it("包入口parse收窄后集合：parse已退役白盒直连（残留即红）", () => {
+    // B波收窄后集合：parseReportIndexLines已退役（白盒直连域门面，见unit-report）。
     expect(applyFaceSrc.includes("domain2/common/interface")).toBe(false);
     expect(
       applyFaceSrc.includes(
         'export { parseReportIndexLines } from "../server/execute/interface.ts";',
       ),
-    ).toBe(true);
+    ).toBe(false);
   });
 
   it("执行器经 schedule/config 双门面（直连实现即红）", () => {

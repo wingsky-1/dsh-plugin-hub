@@ -166,33 +166,15 @@ export type {
   TrendCell,
 } from "../server/collect/interface.ts";
 // 会话用量报告：report 模块公共面（测试/外部消费者从 lib/index.js 导入）
-export {
-  candidateWindow,
-  pendingReports,
-  presetLastRunForNewlyEnabled,
-  previousClosedWindow,
-  deriveLastRun,
-  isClosedWindowRecord,
-  LAST_RUN_SCHEMA,
-} from "../server/schedule/interface.ts";
+export { previousClosedWindow } from "../server/schedule/interface.ts";
 export type { DueReport, LastRunRecord } from "../server/schedule/interface.ts";
 export {
-  parseHHMM,
-  normalizeReportConfig,
   normalizeReportDirectories,
   DEFAULT_REPORT_CONFIG,
   readReportConfig,
-  writeReportConfig,
 } from "../server/config/interface.ts";
 export type { ReportConfig, ReportPeriod, ReportPeriodConfig } from "../server/config/interface.ts";
-export {
-  generateReport,
-  applyPromptTemplate,
-  buildStatsSnapshot,
-  PERIOD_BUCKETS,
-} from "../server/execute/interface.ts";
-export { reportBodyToHtml } from "../server/execute/interface.ts";
-export { promptFor } from "../server/config/interface.ts";
+export { PERIOD_BUCKETS } from "../server/execute/interface.ts";
 export type { ReportPrompts } from "../server/config/interface.ts";
 export type {
   ReportMeta,
@@ -201,18 +183,12 @@ export type {
   ReportLlmService,
   ReportTokenUsage,
 } from "../server/execute/interface.ts";
-export { ReportScheduler } from "../server/schedule/interface.ts";
-export {
-  readLastRun,
-  writeLastRun,
-  updateLastRun,
-  ensureLastRunMigrated,
-} from "../server/schedule/interface.ts";
+export { readLastRun } from "../server/schedule/interface.ts";
 // 执行器工厂与报告配置服务类型面（值已退役白盒直连域门面，见unit-report-executor）。
 export type { DueExecutorDeps } from "../server/execute/interface.ts";
 export type { ReportConfigServiceOptions } from "../server/config/interface.ts";
 // 任务队列（手动生成与定时共用执行入口）
-export { ReportTaskQueue } from "../server/schedule/interface.ts";
+
 export type {
   ReportTask,
   ReportTaskInput,
@@ -220,16 +196,7 @@ export type {
   ReportTaskStatus,
 } from "../server/schedule/interface.ts";
 // 读侧投影（一行/窗口=最新版）与公共解析（解析原语在 server/execute/report-index.ts）
-export {
-  readReportIndex,
-  prevWindowTotal,
-  runDueReport,
-  persistReport,
-  reportHtmlFile,
-  reportMetaFile,
-  notifyReport,
-} from "../server/execute/interface.ts";
-export { parseReportIndexLines } from "../server/execute/interface.ts";
+export { prevWindowTotal } from "../server/execute/interface.ts";
 // 路径解析纯函数透出（供测试与调用方复用同一展开/解析规则，无行为变更）
 export { resolvePath, pluginHome } from "../server/registry/interface.ts";
 // 配置归一化（默认值 / schemastery schema / normalizeConfig）
@@ -278,5 +245,3 @@ export {
 export type { UserAdapterRecord } from "../server/registry/interface.ts";
 // 插件契约转发（apply 主流程 + 路由表实现于 apply.ts）
 export { apply, ROUTES } from "./apply.ts";
-// 路由 handler 直出（status 响应 reused 透传的单元断言面）
-export { handleReportStatus } from "../server/report-routes/interface.ts";

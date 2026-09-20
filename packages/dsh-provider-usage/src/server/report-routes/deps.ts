@@ -14,7 +14,7 @@
  *   GET /status 轮询；默认接线到组合根构造的 ReportTaskQueue）。
  *
  * 命名接缝直引（非双生子）：context 字段经 import type 引用本面端口——
- * ReportRoutesContext 不进包导出面（apply/index.ts 只转发 handleReportStatus），
+ * ReportRoutesContext 不进包导出面（handleReportStatus 已退役入口转发，白盒直连域门面），
  * 端口别名不触及 export-surface-snapshot 的逐入口过滤比对（该门禁只比
  * 各入口导出符号名的声明块多重集），故单一定義无漂移；名称链接由集成测试承载
  * （test/integration/report-routes/composition-root.test.ts 以

@@ -257,12 +257,13 @@ async function callStatus(
 }
 
 describe("D11一 经 server/report-routes 域门面装配", () => {
-  it("组合根与包入口只经新门面取报告路由（旧深径残留必须红）", () => {
+  it("组合根与包入口收窄后集合：入口已无路由转发白盒直连（残留即红）", () => {
+    // B波收窄后集合：handleReportStatus已退役（白盒直连域门面，见unit-report）；组合根实现仍经新门面。
     expect(usesOldFace(reportFaceSrc)).toBe(false);
     expect(usesOldFace(reportDepsSrc)).toBe(false);
     expect(usesOldFace(reportsSrc)).toBe(false);
     expect(applySrc.includes("server/report-routes/interface")).toBe(true);
-    expect(applyFaceSrc.includes("../server/report-routes/interface.ts")).toBe(true);
+    expect(applyFaceSrc.includes("../server/report-routes/interface.ts")).toBe(false);
     expect(applyFaceSrc.includes("../domain2/routes/interface.ts")).toBe(false);
   });
 

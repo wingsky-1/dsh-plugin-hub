@@ -110,10 +110,6 @@
       "isType": false
     },
     {
-      "name": "LAST_RUN_SCHEMA",
-      "isType": false
-    },
-    {
       "name": "LastRunRecord",
       "isType": true
     },
@@ -194,10 +190,6 @@
       "isType": true
     },
     {
-      "name": "ReportScheduler",
-      "isType": false
-    },
-    {
       "name": "ReportStatsSnapshot",
       "isType": true
     },
@@ -208,10 +200,6 @@
     {
       "name": "ReportTaskInput",
       "isType": true
-    },
-    {
-      "name": "ReportTaskQueue",
-      "isType": false
     },
     {
       "name": "ReportTaskResult",
@@ -374,23 +362,11 @@
       "isType": false
     },
     {
-      "name": "applyPromptTemplate",
-      "isType": false
-    },
-    {
       "name": "axisLabelWidthPx",
       "isType": false
     },
     {
       "name": "breakpointForWidth",
-      "isType": false
-    },
-    {
-      "name": "buildStatsSnapshot",
-      "isType": false
-    },
-    {
-      "name": "candidateWindow",
       "isType": false
     },
     {
@@ -406,19 +382,11 @@
       "isType": false
     },
     {
-      "name": "deriveLastRun",
-      "isType": false
-    },
-    {
       "name": "describeUsageStatsAdapterShape",
       "isType": false
     },
     {
       "name": "downsample",
-      "isType": false
-    },
-    {
-      "name": "ensureLastRunMigrated",
       "isType": false
     },
     {
@@ -458,23 +426,11 @@
       "isType": false
     },
     {
-      "name": "generateReport",
-      "isType": false
-    },
-    {
-      "name": "handleReportStatus",
-      "isType": false
-    },
-    {
       "name": "hourOfDay",
       "isType": false
     },
     {
       "name": "inject",
-      "isType": false
-    },
-    {
-      "name": "isClosedWindowRecord",
       "isType": false
     },
     {
@@ -542,19 +498,11 @@
       "isType": false
     },
     {
-      "name": "normalizeReportConfig",
-      "isType": false
-    },
-    {
       "name": "normalizeReportDirectories",
       "isType": false
     },
     {
       "name": "normalizeUiConfig",
-      "isType": false
-    },
-    {
-      "name": "notifyReport",
       "isType": false
     },
     {
@@ -582,15 +530,7 @@
       "isType": false
     },
     {
-      "name": "parseHHMM",
-      "isType": false
-    },
-    {
       "name": "parseJsonl",
-      "isType": false
-    },
-    {
-      "name": "parseReportIndexLines",
       "isType": false
     },
     {
@@ -602,23 +542,11 @@
       "isType": false
     },
     {
-      "name": "pendingReports",
-      "isType": false
-    },
-    {
-      "name": "persistReport",
-      "isType": false
-    },
-    {
       "name": "pickWindow",
       "isType": false
     },
     {
       "name": "pluginHome",
-      "isType": false
-    },
-    {
-      "name": "presetLastRunForNewlyEnabled",
       "isType": false
     },
     {
@@ -630,10 +558,6 @@
       "isType": false
     },
     {
-      "name": "promptFor",
-      "isType": false
-    },
-    {
       "name": "readLastRun",
       "isType": false
     },
@@ -642,27 +566,11 @@
       "isType": false
     },
     {
-      "name": "readReportIndex",
-      "isType": false
-    },
-    {
       "name": "readStamp",
       "isType": false
     },
     {
       "name": "readUserAdapters",
-      "isType": false
-    },
-    {
-      "name": "reportBodyToHtml",
-      "isType": false
-    },
-    {
-      "name": "reportHtmlFile",
-      "isType": false
-    },
-    {
-      "name": "reportMetaFile",
       "isType": false
     },
     {
@@ -675,10 +583,6 @@
     },
     {
       "name": "resolveProviderConfig",
-      "isType": false
-    },
-    {
-      "name": "runDueReport",
       "isType": false
     },
     {
@@ -742,10 +646,6 @@
       "isType": false
     },
     {
-      "name": "updateLastRun",
-      "isType": false
-    },
-    {
       "name": "userAdaptersFile",
       "isType": false
     },
@@ -755,14 +655,6 @@
     },
     {
       "name": "weekStartKey",
-      "isType": false
-    },
-    {
-      "name": "writeLastRun",
-      "isType": false
-    },
-    {
-      "name": "writeReportConfig",
       "isType": false
     }
   ],
@@ -1194,10 +1086,6 @@
           "isType": false
         },
         {
-          "name": "LAST_RUN_SCHEMA",
-          "isType": false
-        },
-        {
           "name": "LastRunRecord",
           "isType": true
         },
@@ -1278,10 +1166,6 @@
           "isType": true
         },
         {
-          "name": "ReportScheduler",
-          "isType": false
-        },
-        {
           "name": "ReportStatsSnapshot",
           "isType": true
         },
@@ -1292,10 +1176,6 @@
         {
           "name": "ReportTaskInput",
           "isType": true
-        },
-        {
-          "name": "ReportTaskQueue",
-          "isType": false
         },
         {
           "name": "ReportTaskResult",
@@ -1458,23 +1338,11 @@
           "isType": false
         },
         {
-          "name": "applyPromptTemplate",
-          "isType": false
-        },
-        {
           "name": "axisLabelWidthPx",
           "isType": false
         },
         {
           "name": "breakpointForWidth",
-          "isType": false
-        },
-        {
-          "name": "buildStatsSnapshot",
-          "isType": false
-        },
-        {
-          "name": "candidateWindow",
           "isType": false
         },
         {
@@ -1490,19 +1358,11 @@
           "isType": false
         },
         {
-          "name": "deriveLastRun",
-          "isType": false
-        },
-        {
           "name": "describeUsageStatsAdapterShape",
           "isType": false
         },
         {
           "name": "downsample",
-          "isType": false
-        },
-        {
-          "name": "ensureLastRunMigrated",
           "isType": false
         },
         {
@@ -1542,23 +1402,11 @@
           "isType": false
         },
         {
-          "name": "generateReport",
-          "isType": false
-        },
-        {
-          "name": "handleReportStatus",
-          "isType": false
-        },
-        {
           "name": "hourOfDay",
           "isType": false
         },
         {
           "name": "inject",
-          "isType": false
-        },
-        {
-          "name": "isClosedWindowRecord",
           "isType": false
         },
         {
@@ -1626,19 +1474,11 @@
           "isType": false
         },
         {
-          "name": "normalizeReportConfig",
-          "isType": false
-        },
-        {
           "name": "normalizeReportDirectories",
           "isType": false
         },
         {
           "name": "normalizeUiConfig",
-          "isType": false
-        },
-        {
-          "name": "notifyReport",
           "isType": false
         },
         {
@@ -1666,15 +1506,7 @@
           "isType": false
         },
         {
-          "name": "parseHHMM",
-          "isType": false
-        },
-        {
           "name": "parseJsonl",
-          "isType": false
-        },
-        {
-          "name": "parseReportIndexLines",
           "isType": false
         },
         {
@@ -1686,23 +1518,11 @@
           "isType": false
         },
         {
-          "name": "pendingReports",
-          "isType": false
-        },
-        {
-          "name": "persistReport",
-          "isType": false
-        },
-        {
           "name": "pickWindow",
           "isType": false
         },
         {
           "name": "pluginHome",
-          "isType": false
-        },
-        {
-          "name": "presetLastRunForNewlyEnabled",
           "isType": false
         },
         {
@@ -1714,10 +1534,6 @@
           "isType": false
         },
         {
-          "name": "promptFor",
-          "isType": false
-        },
-        {
           "name": "readLastRun",
           "isType": false
         },
@@ -1726,27 +1542,11 @@
           "isType": false
         },
         {
-          "name": "readReportIndex",
-          "isType": false
-        },
-        {
           "name": "readStamp",
           "isType": false
         },
         {
           "name": "readUserAdapters",
-          "isType": false
-        },
-        {
-          "name": "reportBodyToHtml",
-          "isType": false
-        },
-        {
-          "name": "reportHtmlFile",
-          "isType": false
-        },
-        {
-          "name": "reportMetaFile",
           "isType": false
         },
         {
@@ -1759,10 +1559,6 @@
         },
         {
           "name": "resolveProviderConfig",
-          "isType": false
-        },
-        {
-          "name": "runDueReport",
           "isType": false
         },
         {
@@ -1826,10 +1622,6 @@
           "isType": false
         },
         {
-          "name": "updateLastRun",
-          "isType": false
-        },
-        {
           "name": "userAdaptersFile",
           "isType": false
         },
@@ -1839,14 +1631,6 @@
         },
         {
           "name": "weekStartKey",
-          "isType": false
-        },
-        {
-          "name": "writeLastRun",
-          "isType": false
-        },
-        {
-          "name": "writeReportConfig",
           "isType": false
         }
       ],
