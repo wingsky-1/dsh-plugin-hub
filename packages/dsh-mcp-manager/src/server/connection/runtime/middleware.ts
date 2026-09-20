@@ -36,8 +36,8 @@ import type {
   ToolExecutionToken,
 } from "@deepseek-ai/dsh-tools";
 import type { ServerConfig } from "../../config/interface.ts";
-import { publicToolName } from "../../shared/interface.ts";
-import { CALL_TIMEOUT_MS, CATALOG_TTL_MS } from "./limits.ts";
+import { DEFAULT_TOOL_CALL_TIMEOUT_MS, publicToolName } from "../../shared/interface.ts";
+import { CATALOG_TTL_MS } from "./limits.ts";
 import {
   MIDDLEWARE_GLOBAL_ROOT,
   SERVER_STATES,
@@ -501,7 +501,7 @@ export class McpMiddleware {
         allServers: () => this.host.redactionServers(),
         disabledTools: this.disabledTools,
         catalogTtlMs: CATALOG_TTL_MS,
-        defaultCallTimeoutMs: CALL_TIMEOUT_MS,
+        defaultCallTimeoutMs: DEFAULT_TOOL_CALL_TIMEOUT_MS,
         pipeline,
         workspace,
       });

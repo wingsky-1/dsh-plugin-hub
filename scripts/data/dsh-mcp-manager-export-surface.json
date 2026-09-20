@@ -773,7 +773,7 @@
     "export declare function redactMcpError(pipeline: DispatchPipelinePort, servers: readonly ServerConfig[], text: string): string;",
     "export declare function refresh(state: McpState, actions: UiActions): Promise<boolean>;",
     "export declare function registerDirectMcpGuard(ctx: Context, disabledTools: DisabledToolsMap | undefined, resolveRoot: (agent: unknown) => Promise<string | undefined>, resolveServerId?: ServerIdResolver): (() => void) | undefined;",
-    "export declare function registerMiddlewareTools(ctx: Context, mw: McpMiddleware, resolveRoot: (agent: unknown) => Promise<string | undefined>, options?: { disabledTools?: DisabledToolsMap; stats?: McpStatsCollector; resolveServerId?: ServerIdResolver; }",
+    "export declare function registerMiddlewareTools(ctx: Context, mw: McpMiddleware, resolveRoot: (agent: unknown) => Promise<string | undefined>, options?: { disabledTools?: DisabledToolsMap; stats?: McpStatsCollector; resolveServerId?: ServerIdResolver; callTimeoutMs?: number; }",
     "export declare function releaseApi(): void;",
     "export declare function releaseCatalog(): void;",
     "export declare function releaseInject(): void;",
@@ -1675,7 +1675,7 @@
           "export declare function registerDirectMcpGuard(ctx: Context, disabledTools: DisabledToolsMap | undefined, resolveRoot: (agent: unknown) => Promise<string | undefined>, resolveServerId?: ServerIdResolver): (() => void) | undefined;"
         ],
         "registerMiddlewareTools": [
-          "export declare function registerMiddlewareTools(ctx: Context, mw: McpMiddleware, resolveRoot: (agent: unknown) => Promise<string | undefined>, options?: { disabledTools?: DisabledToolsMap; stats?: McpStatsCollector; resolveServerId?: ServerIdResolver; }"
+          "export declare function registerMiddlewareTools(ctx: Context, mw: McpMiddleware, resolveRoot: (agent: unknown) => Promise<string | undefined>, options?: { disabledTools?: DisabledToolsMap; stats?: McpStatsCollector; resolveServerId?: ServerIdResolver; callTimeoutMs?: number; }"
         ],
         "normalizeArguments": [
           "export declare function normalizeArguments(raw: unknown): unknown;"

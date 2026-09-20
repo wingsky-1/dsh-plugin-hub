@@ -32,3 +32,5 @@ export function releaseInject(): void {
 }
 
 export { registerMiddlewareTools, registerDirectMcpGuard } from "./middleware-register.ts";
+// 外层超时纯函数（#935）：组合根经本门面取（跨域只经门面），包导出面不转出。
+export { resolveMiddlewareCallTimeoutMs } from "./impl/call-timeout/index.ts";

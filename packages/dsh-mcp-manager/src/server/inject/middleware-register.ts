@@ -6,8 +6,9 @@
  * DisabledToolsMap）与 stats/interface.ts（McpStatsCollector）取，连接池类
  * McpMiddleware 自
  * connection/runtime/interface.ts 只作 `import type`（防运行值环）。跨域取数一律经
- * `injectPorts.get()`（端口声明见 ../deps.ts）——catalog 检索族、runtime 限额常量、pipeline
- * 裁决族与超时兜底、workspace 全名解析，本文件对四个提供域没有值 import。跨端契约常量
+ * `injectPorts.get()`（端口声明见 ../deps.ts）——catalog 检索族、pipeline
+ * 裁决族与超时兜底、workspace 全名解析，本文件对四个提供域没有值 import。外层调用超时
+ * 不再读 runtime 限额口（#935）：组合根按全量源现算经 options.callTimeoutMs 递入。跨端契约常量
  * MIDDLEWARE_GLOBAL_ROOT 与值常量 LIST_DEFAULT_TOOLS_PER_SERVER 直接取自共享层门面（W3b 迁移）。
  * 全局可见性（评审 A）：search/list/detail 恒合并查询「项目 root 单元 + @global 单元」；
  * call 放行 @global root。单池（#767 笔 1a/笔 2）后没有模式分支。
@@ -23,6 +24,7 @@ import type { McpStatsCollector } from "../stats/interface.ts";
 import type { DisabledToolsMap } from "../store/interface.ts";
 import { injectPorts } from "./impl/service/index.ts";
 import { projectImageAdmission, type ImageAdmissionFaces } from "./impl/image-admission/index.ts";
+import { resolveMiddlewareCallTimeoutMs } from "./impl/call-timeout/index.ts";
 
 /**
  * #770-A4 统计落盘脱敏：回答「stats.json 的 lastError 怎么不存明文？」——收集器
@@ -367,10 +369,7 @@ function callValueContent(value: unknown): readonly unknown[] {
   return Array.isArray(content) ? content : [];
 }
 
-function buildCallTool(toolCtx: MiddlewareToolContext): ToolDefinition {
-  const {
-    runtime: { CONNECT_TIMEOUT_MS, DISCOVERY_TIMEOUT_MS, CALL_TIMEOUT_MS },
-  } = injectPorts.get();
+function buildCallTool(toolCtx: MiddlewareToolContext, callTimeoutMs: number): ToolDefinition {
   return {
     name: "ws_mcp_call",
     description:
@@ -408,7 +407,8 @@ function buildCallTool(toolCtx: MiddlewareToolContext): ToolDefinition {
       render: renderCallOutput,
     },
     isConcurrencySafe: () => true,
-    timeoutMs: CONNECT_TIMEOUT_MS + DISCOVERY_TIMEOUT_MS + CALL_TIMEOUT_MS + 5000,
+    // 外层超时由调用方现算递入（#935：max(全量源) + 25s 内部尾；旧 55s 写死值已删）。
+    timeoutMs: callTimeoutMs,
     /**
      * 官方 `applyFinalContent` 接缝：把本包自持的图片准入投影换进模型面（返回 `undefined`
      * 则保留原内容 = 继续走 `render`）。命中即删——每次执行只消费一次。`isError` 时把内容
@@ -933,14 +933,20 @@ export function registerMiddlewareTools(
      * 给出时优先，未命中回落池侧反查（`resolveServerIdFor`）。
      */
     resolveServerId?: ServerIdResolver;
+    /**
+     * 外层 `ws_mcp_call` 注册超时（#935）：组合根按在用全量源现算（纯函数
+     * `resolveMiddlewareCallTimeoutMs`）后递入。省略（旧调用点/夹具）时按空集回落
+     * （缺省 15s + 25s 内部尾 = 40s），行为与旧缺省可调用性一致。
+     */
+    callTimeoutMs?: number;
   } = {},
   /**
    * 图片准入要用的宿主能力面（`faces.attachments` / `faces.models` 两条**晚读** thunk）。
    *
    * **为什么是 options 之后的第 5 个位置参数，而不是 options 袋里的一个键**：导出面快照按
    * 「顶层 `export declare` 块」比对，而块提取器在第一个深度 0 的 `}` 处截断（见
-   * `registerDirectMcpGuard` 的同款说明）——袋里加键会同时改写基线里
-   * `registerMiddlewareTools` 的声明块文本，本笔不许动导出面。省略时退化成纯诊断（不落图）。
+   * `registerDirectMcpGuard` 的同款说明）——#935 起袋里新增 `callTimeoutMs` 已 intentional
+   * 更新基线一次，faces 仍保持位置参数、不再动声明块。省略时退化成纯诊断（不落图）。
    */
   faces?: ImageAdmissionFaces,
 ): () => void {
@@ -958,9 +964,11 @@ export function registerMiddlewareTools(
     // 不影响任何无图片的调用面。
     faces: faces ?? { attachments: () => undefined, models: () => undefined },
   };
+  // 外层超时：调用方现算递入优先；省略时按空集回落（40s），旧调用点与夹具行为不变。
+  const callTimeoutMs = options.callTimeoutMs ?? resolveMiddlewareCallTimeoutMs([]);
   const tools = [
     buildSearchTool(toolCtx),
-    buildCallTool(toolCtx),
+    buildCallTool(toolCtx, callTimeoutMs),
     buildListTool(toolCtx),
     buildDetailTool(toolCtx),
   ];

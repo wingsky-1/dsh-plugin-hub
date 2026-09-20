@@ -73,6 +73,7 @@ import {
   installInject,
   registerDirectMcpGuard,
   registerMiddlewareTools,
+  resolveMiddlewareCallTimeoutMs,
 } from "./server/inject/interface.ts";
 import { installUpgrade, releaseUpgrade } from "./server/upgrade/interface.ts";
 import * as upgradeApi from "./server/upgrade/interface.ts";
@@ -327,6 +328,28 @@ function provideMcpManagerService(ctx: Context, manager: McpManager): void {
 }
 
 /**
+ * 外层超时源收集（#935）：`mw.units` 全 root（含 `@global`）连接条目的
+ * `server.toolCallTimeoutMs` + `manager.runtimeRegistry` 内存注入项的同字段（#413
+ * 封装定义等运行时注入不落盘：单元未建或已拆时只有这里能见到它）。原值直递（含缺席
+ * `undefined`），缺省与非法值由纯函数统一按 15s 计；跨 root 同名各算一条，max 语义下重复无害。
+ */
+function collectCallTimeoutSources(
+  manager: McpManager,
+  mw: InstanceType<typeof runtimeApi.McpMiddleware>,
+): Array<number | undefined> {
+  const sources: Array<number | undefined> = [];
+  for (const unit of mw.units.values()) {
+    for (const entry of unit.connections.values()) {
+      sources.push(entry.server.toolCallTimeoutMs);
+    }
+  }
+  for (const server of manager.runtimeRegistry.values()) {
+    sources.push(server.toolCallTimeoutMs);
+  }
+  return sources;
+}
+
+/**
  * 中间层工具（ws_mcp_*）+ mcp__ 直呼守卫的组合注册。
  *
  * 为什么合成一个 disposer：两者各管一段——中间层内注册的 pre-execute guard 放行我方转发、
@@ -337,6 +360,9 @@ function provideMcpManagerService(ctx: Context, manager: McpManager): void {
  * 单池（#767 笔 1a）：中间层实例与 ws_mcp_* 无条件装配——apply 完成后实例恒在，
  * 全部服务器（含封装定义条目）都只经中间层单元触达，模式键已不影响任何行为；
  * pre-step 窗口（装配尚未完成）实例缺失时走 B 兜底。
+ *
+ * 外层超时（#935）：注册时按全量源现算 max + 25s 内部尾经 options.callTimeoutMs 递入；
+ * 后续变更由 assemble 内的 refreshCallTimeout 追（dispose + 重注册，见该处注释）。
  */
 function registerMiddlewareAndGuard(
   ctx: Context,
@@ -347,6 +373,7 @@ function registerMiddlewareAndGuard(
   faces: HostFaces | undefined,
 ): () => void {
   const resolveServerId = (id: string) => manager.serverNameForId(id);
+  const callTimeoutMs = resolveMiddlewareCallTimeoutMs(collectCallTimeoutSources(manager, mw));
   const disposeTools = registerMiddlewareTools(
     ctx,
     mw,
@@ -355,6 +382,7 @@ function registerMiddlewareAndGuard(
       disabledTools: manager.disabledTools,
       stats: manager.stats,
       resolveServerId,
+      callTimeoutMs,
     },
     // 图片准入的两条晚读 thunk（第 5 个位置参数：options 袋里加键会改导出面声明块）。
     faces === undefined ? undefined : { attachments: faces.attachments, models: faces.models },
@@ -687,7 +715,80 @@ async function assembleEnabledRuntime(
   // initMiddleware 重置 maps 后重抛，this.middleware 保持未赋值，见 manager.ts initMiddleware）。
   // 中间层实例 + ws_mcp_* 无条件装配（单池后它是唯一连接路径）。
   const mw = await manager.initMiddleware();
+  // 外层超时基线（#935）：注册时刻全量源的 max；后续变更由 refreshCallTimeout 追。
+  let currentCallTimeoutMs = resolveMiddlewareCallTimeoutMs(collectCallTimeoutSources(manager, mw));
   currentMiddlewareDispose = registerMiddlewareAndGuard(ctx, manager, mw, resolveRoot, faces);
+  // 卸载后冻结：refresh 与方法织入在卸载后恒为 no-op（dispose 闭包内复位，见本函数末尾）。
+  let callTimeoutWatched = true;
+  /**
+   * 外层超时刷新（#935）：超时源变更后重算，变了才 dispose + 按新 max 重注册。
+   *
+   * 为什么是 dispose + 重注册而不是原地改值：宿主工具注册表只有 `register` /
+   * `schemas` 两样（`ToolsPort` 见 server/shared/host-faces.ts:87），没有改已注册定义
+   * `timeoutMs` 的口——旧值改不动，只能重建。
+   *
+   * 缺席窗口与在飞调用：外层超时是注册时刻快照语义——已派发的在飞调用按旧快照的
+   * `timeoutMs` 结算，不受重建影响；dispose 与重注册之间新到的 `ws_mcp_call` 会命中
+   * 「未知工具」（窗口内仅此一种失败形态，重试即恢复）。
+   */
+  const refreshCallTimeout = (): void => {
+    if (!callTimeoutWatched) return;
+    const next = resolveMiddlewareCallTimeoutMs(collectCallTimeoutSources(manager, mw));
+    if (next === currentCallTimeoutMs) return;
+    currentCallTimeoutMs = next;
+    currentMiddlewareDispose();
+    currentMiddlewareDispose = registerMiddlewareAndGuard(ctx, manager, mw, resolveRoot, faces);
+  };
+  // 超时源变更织入：orchestrator/runtime 域不得反向依赖 inject 域（I2①），刷新只能落
+  // 在同时持有两边实例的组合根。覆盖 add / update / remove / registerServer /
+  // unregisterServer（async：结算成功后刷，失败抛错不刷——配置没变）与 start、
+  // mw.evictIfNeeded（sync：调用后即刷）。start 是 fire-and-forget，建连落地的异步
+  // 部分由下面的 onStatus 订阅补（装载结算必经 emitStatus）。
+  {
+    const origAdd = manager.add.bind(manager);
+    manager.add = (async (...args: Parameters<typeof manager.add>) => {
+      const created = await origAdd(...args);
+      refreshCallTimeout();
+      return created;
+    }) as typeof manager.add;
+    const origUpdate = manager.update.bind(manager);
+    manager.update = (async (...args: Parameters<typeof manager.update>) => {
+      const updated = await origUpdate(...args);
+      refreshCallTimeout();
+      return updated;
+    }) as typeof manager.update;
+    const origRemove = manager.remove.bind(manager);
+    manager.remove = (async (...args: Parameters<typeof manager.remove>) => {
+      await origRemove(...args);
+      refreshCallTimeout();
+    }) as typeof manager.remove;
+    const origRegisterServer = manager.registerServer.bind(manager);
+    manager.registerServer = (async (...args: Parameters<typeof manager.registerServer>) => {
+      const result = await origRegisterServer(...args);
+      refreshCallTimeout();
+      return result;
+    }) as typeof manager.registerServer;
+    const origUnregisterServer = manager.unregisterServer.bind(manager);
+    manager.unregisterServer = (async (...args: Parameters<typeof manager.unregisterServer>) => {
+      await origUnregisterServer(...args);
+      refreshCallTimeout();
+    }) as typeof manager.unregisterServer;
+    const origStart = manager.start.bind(manager);
+    manager.start = ((...args: Parameters<typeof manager.start>) => {
+      origStart(...args);
+      refreshCallTimeout();
+    }) as typeof manager.start;
+    const origEvict = mw.evictIfNeeded.bind(mw);
+    mw.evictIfNeeded = ((...args: Parameters<typeof mw.evictIfNeeded>) => {
+      origEvict(...args);
+      refreshCallTimeout();
+    }) as typeof mw.evictIfNeeded;
+  }
+  // 异步落地兜底：建连/拆连/重连结算是异步的，落定必经 emitStatus；无变更时只是活表
+  // 扫描 + 比较，不重注册。退订随 disposeMiddleware（见本函数末尾）。
+  const timeoutStatusUnsub = manager.onStatus(() => {
+    refreshCallTimeout();
+  });
 
   // 交付物 A（#767 笔 1b）：把 mcp__* 从每个 agent 的模型视野摘掉。**必须在 startAll 之前**——
   // 连接（以及工具注册）发生在 startAll 期间：先挂隐藏面，初始 reconcile 才能覆盖已 live 的
@@ -748,7 +849,13 @@ async function assembleEnabledRuntime(
     disposeRoutes,
     disposeSection,
     disposeInjection,
-    disposeMiddleware: currentMiddlewareDispose,
+    // 闭包读当前值：refresh 重建后卸载必须拆最新一次注册（值捕获会漏拆）；同时退订
+    // 超时订阅并冻结后续刷新（防卸载后方法织入复活注册）。
+    disposeMiddleware: () => {
+      callTimeoutWatched = false;
+      timeoutStatusUnsub();
+      currentMiddlewareDispose();
+    },
     disposeVisibility,
     disposeErasure,
     watchCleanup,
