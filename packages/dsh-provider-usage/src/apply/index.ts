@@ -47,27 +47,7 @@ export type {
   ReplaceFileResult,
   AdapterRegistry,
 } from "../server/registry/interface.ts";
-// 共享图表工具库（AdapterUtils/ADAPTER_UTILS 等）——外部 TS 消费者可经 index 导入。
-// dayKey/lastNDayKeys 与 deepseek-official.mjs 文件级导出重名（测试导入面），
-// 此处显式排除 shared 版；mjs 版除 dayKey/GAP_MS 外已随 B 波退役（深路径直连）。
-export {
-  fin,
-  escHtml,
-  escAttr,
-  niceDomain,
-  trendOf,
-  timeTicks,
-  resetTicks,
-  downsample,
-  smoothPath,
-  miniAreaSvg,
-  niceStep,
-  fmtPctTick,
-  timeTickStep,
-  fmtAxisTime,
-  axisLabelWidthPx,
-  ADAPTER_UTILS,
-} from "../shared/interface.ts";
+
 export type { AdapterUtils } from "../shared/interface.ts";
 // 内置适配器 mjs 化：.mjs 为权威实现，.d.mts 提供类型声明（bundle 后 index 内联
 // 保留具名导出面——unit-contract/unit-deepseek-official 等测试从 lib/index.js 导入不变）
@@ -83,16 +63,10 @@ export {
 export {
   DEEPSEEK_OFFICIAL_PROVIDER,
   DEEPSEEK_OFFICIAL_ADAPTER_ID,
-  GAP_MS,
   dayKey,
 } from "../server/adapters/interface.ts";
 export type { SamplePoint, DayRecord } from "../server/adapters/interface.ts";
-export {
-  ZAI_CODING_CN_PROVIDER,
-  ZAI_CODING_CN_ADAPTER_ID,
-  fetchData,
-} from "../server/adapters/interface.ts";
-export { opencodeAuthFile, resolveProviderConfig } from "../server/registry/interface.ts";
+export { resolveProviderConfig } from "../server/registry/interface.ts";
 export type { ProviderConfigInput, ResolvedProviderConfig } from "../server/registry/interface.ts";
 export {
   HistoryStore,
@@ -129,13 +103,7 @@ export type {
   TrendCounterRecord,
   TrendEmit,
 } from "../server/collect/interface.ts";
-export {
-  weekStartKey,
-  lastNWeekKeys,
-  lastNMonthKeys,
-  monthRange,
-  weekRange,
-} from "../server/aggregate/interface.ts";
+
 export type {
   TrendMetric,
   TrendGranularity,
@@ -144,14 +112,11 @@ export type {
   TrendWindowSummary,
 } from "../server/aggregate/interface.ts";
 
-// isValidShardRow/safeToken/safeId：分片行校验与防御提取纯函数（单测从 lib/index.js 导入）
+// 趋势分片版本/未识别桶/目录上限常量。
 export {
   TREND_ROW_VERSION,
   TREND_UNIDENTIFIED,
   TREND_DIR_MAX,
-  safeToken,
-  safeId,
-  hourOfDay,
 } from "../server/collect/interface.ts";
 export type {
   TrendAttribution,
@@ -166,9 +131,9 @@ export type {
 // 会话用量报告：report 模块公共面（测试/外部消费者从 lib/index.js 导入）
 export { previousClosedWindow } from "../server/schedule/interface.ts";
 export type { DueReport, LastRunRecord } from "../server/schedule/interface.ts";
-export { normalizeReportDirectories, readReportConfig } from "../server/config/interface.ts";
+export { readReportConfig } from "../server/config/interface.ts";
 export type { ReportConfig, ReportPeriod, ReportPeriodConfig } from "../server/config/interface.ts";
-export { PERIOD_BUCKETS } from "../server/execute/interface.ts";
+
 export type { ReportPrompts } from "../server/config/interface.ts";
 export type {
   ReportMeta,
@@ -189,10 +154,9 @@ export type {
   ReportTaskResult,
   ReportTaskStatus,
 } from "../server/schedule/interface.ts";
-// 读侧投影（一行/窗口=最新版）与公共解析（解析原语在 server/execute/report-index.ts）
-export { prevWindowTotal } from "../server/execute/interface.ts";
+
 // 路径解析纯函数透出（供测试与调用方复用同一展开/解析规则，无行为变更）
-export { resolvePath, pluginHome } from "../server/registry/interface.ts";
+export { pluginHome } from "../server/registry/interface.ts";
 // 配置归一化（默认值 / schemastery schema / normalizeConfig）
 export { DEFAULT_CONFIG, Config, normalizeConfig } from "../shared/interface.ts";
 export type { NormalizedConfig } from "../shared/interface.ts";
@@ -220,7 +184,6 @@ export {
   userAdaptersFile,
   adapterStateFile,
   parseUserAdapters,
-  readUserAdapters,
 } from "../server/registry/interface.ts";
 export type { UserAdapterRecord } from "../server/registry/interface.ts";
 // 插件契约转发（apply 主流程 + 路由表实现于 apply.ts）

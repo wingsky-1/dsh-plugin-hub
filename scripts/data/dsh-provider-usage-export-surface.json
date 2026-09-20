@@ -6,10 +6,6 @@
       "isType": false
     },
     {
-      "name": "ADAPTER_UTILS",
-      "isType": false
-    },
-    {
       "name": "AdapterErrorCode",
       "isType": true
     },
@@ -78,10 +74,6 @@
       "isType": true
     },
     {
-      "name": "GAP_MS",
-      "isType": false
-    },
-    {
       "name": "HistoryEntry",
       "isType": true
     },
@@ -111,10 +103,6 @@
     },
     {
       "name": "PANEL_CACHE_TTL_MS",
-      "isType": false
-    },
-    {
-      "name": "PERIOD_BUCKETS",
       "isType": false
     },
     {
@@ -310,14 +298,6 @@
       "isType": true
     },
     {
-      "name": "ZAI_CODING_CN_ADAPTER_ID",
-      "isType": false
-    },
-    {
-      "name": "ZAI_CODING_CN_PROVIDER",
-      "isType": false
-    },
-    {
       "name": "Z_INDEX_PANEL_DELTA",
       "isType": false
     },
@@ -330,10 +310,6 @@
       "isType": false
     },
     {
-      "name": "axisLabelWidthPx",
-      "isType": false
-    },
-    {
       "name": "dayKey",
       "isType": false
     },
@@ -342,23 +318,7 @@
       "isType": false
     },
     {
-      "name": "downsample",
-      "isType": false
-    },
-    {
       "name": "esc",
-      "isType": false
-    },
-    {
-      "name": "escAttr",
-      "isType": false
-    },
-    {
-      "name": "escHtml",
-      "isType": false
-    },
-    {
-      "name": "fetchData",
       "isType": false
     },
     {
@@ -367,22 +327,6 @@
     },
     {
       "name": "fetchWithTimeout",
-      "isType": false
-    },
-    {
-      "name": "fin",
-      "isType": false
-    },
-    {
-      "name": "fmtAxisTime",
-      "isType": false
-    },
-    {
-      "name": "fmtPctTick",
-      "isType": false
-    },
-    {
-      "name": "hourOfDay",
       "isType": false
     },
     {
@@ -395,14 +339,6 @@
     },
     {
       "name": "isUsageStatsAdapter",
-      "isType": false
-    },
-    {
-      "name": "lastNMonthKeys",
-      "isType": false
-    },
-    {
-      "name": "lastNWeekKeys",
       "isType": false
     },
     {
@@ -422,27 +358,11 @@
       "isType": false
     },
     {
-      "name": "miniAreaSvg",
-      "isType": false
-    },
-    {
       "name": "miniChartSvgMarkup",
       "isType": false
     },
     {
-      "name": "monthRange",
-      "isType": false
-    },
-    {
       "name": "name",
-      "isType": false
-    },
-    {
-      "name": "niceDomain",
-      "isType": false
-    },
-    {
-      "name": "niceStep",
       "isType": false
     },
     {
@@ -454,15 +374,7 @@
       "isType": false
     },
     {
-      "name": "normalizeReportDirectories",
-      "isType": false
-    },
-    {
       "name": "openCodeGoAdapter",
-      "isType": false
-    },
-    {
-      "name": "opencodeAuthFile",
       "isType": false
     },
     {
@@ -490,10 +402,6 @@
       "isType": false
     },
     {
-      "name": "prevWindowTotal",
-      "isType": false
-    },
-    {
       "name": "previousClosedWindow",
       "isType": false
     },
@@ -507,18 +415,6 @@
     },
     {
       "name": "readStamp",
-      "isType": false
-    },
-    {
-      "name": "readUserAdapters",
-      "isType": false
-    },
-    {
-      "name": "resetTicks",
-      "isType": false
-    },
-    {
-      "name": "resolvePath",
       "isType": false
     },
     {
@@ -542,19 +438,7 @@
       "isType": false
     },
     {
-      "name": "safeId",
-      "isType": false
-    },
-    {
-      "name": "safeToken",
-      "isType": false
-    },
-    {
       "name": "sanitizeHtml",
-      "isType": false
-    },
-    {
-      "name": "smoothPath",
       "isType": false
     },
     {
@@ -570,27 +454,7 @@
       "isType": false
     },
     {
-      "name": "timeTickStep",
-      "isType": false
-    },
-    {
-      "name": "timeTicks",
-      "isType": false
-    },
-    {
-      "name": "trendOf",
-      "isType": false
-    },
-    {
       "name": "userAdaptersFile",
-      "isType": false
-    },
-    {
-      "name": "weekRange",
-      "isType": false
-    },
-    {
-      "name": "weekStartKey",
       "isType": false
     }
   ],
@@ -918,10 +782,6 @@
           "isType": false
         },
         {
-          "name": "ADAPTER_UTILS",
-          "isType": false
-        },
-        {
           "name": "AdapterErrorCode",
           "isType": true
         },
@@ -990,10 +850,6 @@
           "isType": true
         },
         {
-          "name": "GAP_MS",
-          "isType": false
-        },
-        {
           "name": "HistoryEntry",
           "isType": true
         },
@@ -1023,10 +879,6 @@
         },
         {
           "name": "PANEL_CACHE_TTL_MS",
-          "isType": false
-        },
-        {
-          "name": "PERIOD_BUCKETS",
           "isType": false
         },
         {
@@ -1222,14 +1074,6 @@
           "isType": true
         },
         {
-          "name": "ZAI_CODING_CN_ADAPTER_ID",
-          "isType": false
-        },
-        {
-          "name": "ZAI_CODING_CN_PROVIDER",
-          "isType": false
-        },
-        {
           "name": "Z_INDEX_PANEL_DELTA",
           "isType": false
         },
@@ -1242,10 +1086,6 @@
           "isType": false
         },
         {
-          "name": "axisLabelWidthPx",
-          "isType": false
-        },
-        {
           "name": "dayKey",
           "isType": false
         },
@@ -1254,23 +1094,7 @@
           "isType": false
         },
         {
-          "name": "downsample",
-          "isType": false
-        },
-        {
           "name": "esc",
-          "isType": false
-        },
-        {
-          "name": "escAttr",
-          "isType": false
-        },
-        {
-          "name": "escHtml",
-          "isType": false
-        },
-        {
-          "name": "fetchData",
           "isType": false
         },
         {
@@ -1279,22 +1103,6 @@
         },
         {
           "name": "fetchWithTimeout",
-          "isType": false
-        },
-        {
-          "name": "fin",
-          "isType": false
-        },
-        {
-          "name": "fmtAxisTime",
-          "isType": false
-        },
-        {
-          "name": "fmtPctTick",
-          "isType": false
-        },
-        {
-          "name": "hourOfDay",
           "isType": false
         },
         {
@@ -1307,14 +1115,6 @@
         },
         {
           "name": "isUsageStatsAdapter",
-          "isType": false
-        },
-        {
-          "name": "lastNMonthKeys",
-          "isType": false
-        },
-        {
-          "name": "lastNWeekKeys",
           "isType": false
         },
         {
@@ -1334,27 +1134,11 @@
           "isType": false
         },
         {
-          "name": "miniAreaSvg",
-          "isType": false
-        },
-        {
           "name": "miniChartSvgMarkup",
           "isType": false
         },
         {
-          "name": "monthRange",
-          "isType": false
-        },
-        {
           "name": "name",
-          "isType": false
-        },
-        {
-          "name": "niceDomain",
-          "isType": false
-        },
-        {
-          "name": "niceStep",
           "isType": false
         },
         {
@@ -1366,15 +1150,7 @@
           "isType": false
         },
         {
-          "name": "normalizeReportDirectories",
-          "isType": false
-        },
-        {
           "name": "openCodeGoAdapter",
-          "isType": false
-        },
-        {
-          "name": "opencodeAuthFile",
           "isType": false
         },
         {
@@ -1402,10 +1178,6 @@
           "isType": false
         },
         {
-          "name": "prevWindowTotal",
-          "isType": false
-        },
-        {
           "name": "previousClosedWindow",
           "isType": false
         },
@@ -1419,18 +1191,6 @@
         },
         {
           "name": "readStamp",
-          "isType": false
-        },
-        {
-          "name": "readUserAdapters",
-          "isType": false
-        },
-        {
-          "name": "resetTicks",
-          "isType": false
-        },
-        {
-          "name": "resolvePath",
           "isType": false
         },
         {
@@ -1454,19 +1214,7 @@
           "isType": false
         },
         {
-          "name": "safeId",
-          "isType": false
-        },
-        {
-          "name": "safeToken",
-          "isType": false
-        },
-        {
           "name": "sanitizeHtml",
-          "isType": false
-        },
-        {
-          "name": "smoothPath",
           "isType": false
         },
         {
@@ -1482,27 +1230,7 @@
           "isType": false
         },
         {
-          "name": "timeTickStep",
-          "isType": false
-        },
-        {
-          "name": "timeTicks",
-          "isType": false
-        },
-        {
-          "name": "trendOf",
-          "isType": false
-        },
-        {
           "name": "userAdaptersFile",
-          "isType": false
-        },
-        {
-          "name": "weekRange",
-          "isType": false
-        },
-        {
-          "name": "weekStartKey",
           "isType": false
         }
       ],

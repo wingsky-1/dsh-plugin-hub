@@ -228,7 +228,7 @@ describe("D7一 经 server/registry 域门面装配", () => {
   });
 
   it("包导出面收窄后集合：apply/index.ts 转发名与收窄后一致（改名/漏转即红）", () => {
-    // B波收窄后集合：credentialsFile已退役（白盒直连域门面，见smoke-pure）。
+    // B波+A2波收窄后集合：credentialsFile/resolvePath已退役（零entry引用，见A2排查）。
     for (const name of [
       "makeAdapterRegistry",
       "AdapterRegistry",
@@ -236,7 +236,6 @@ describe("D7一 经 server/registry 域门面装配", () => {
       "HotReloadableAdapter",
       "loadAndValidateAdapter",
       "readStamp",
-      "resolvePath",
       "pluginHome",
       "UserAdapterRecord",
     ]) {
