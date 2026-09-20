@@ -116,6 +116,7 @@ const EXPECT_FILES: Record<string, string[]> = {
     "unit/ports/runtime-ports.test.ts",
     "unit/unit-apply.test.ts",
     "unit/unit-call-stats.test.ts",
+    "unit/unit-call-timeout.test.ts",
     "unit/unit-catalog.test.ts",
     "unit/unit-config-env.test.ts",
     "unit/unit-config-env-policy.test.ts",
