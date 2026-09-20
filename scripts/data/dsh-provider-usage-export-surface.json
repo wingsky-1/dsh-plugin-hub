@@ -478,15 +478,7 @@
       "isType": false
     },
     {
-      "name": "defineUsageAdapter",
-      "isType": false
-    },
-    {
       "name": "deriveLastRun",
-      "isType": false
-    },
-    {
-      "name": "describeAdapterShape",
       "isType": false
     },
     {
@@ -558,15 +550,7 @@
       "isType": false
     },
     {
-      "name": "isClientProviderRenderer",
-      "isType": false
-    },
-    {
       "name": "isClosedWindowRecord",
-      "isType": false
-    },
-    {
-      "name": "isHostProviderAdapter",
       "isType": false
     },
     {
@@ -867,14 +851,6 @@
     },
     {
       "name": "updateLastRun",
-      "isType": false
-    },
-    {
-      "name": "usageError",
-      "isType": false
-    },
-    {
-      "name": "usageOk",
       "isType": false
     },
     {
@@ -1708,15 +1684,7 @@
           "isType": false
         },
         {
-          "name": "defineUsageAdapter",
-          "isType": false
-        },
-        {
           "name": "deriveLastRun",
-          "isType": false
-        },
-        {
-          "name": "describeAdapterShape",
           "isType": false
         },
         {
@@ -1788,15 +1756,7 @@
           "isType": false
         },
         {
-          "name": "isClientProviderRenderer",
-          "isType": false
-        },
-        {
           "name": "isClosedWindowRecord",
-          "isType": false
-        },
-        {
-          "name": "isHostProviderAdapter",
           "isType": false
         },
         {
@@ -2097,14 +2057,6 @@
         },
         {
           "name": "updateLastRun",
-          "isType": false
-        },
-        {
-          "name": "usageError",
-          "isType": false
-        },
-        {
-          "name": "usageOk",
           "isType": false
         },
         {

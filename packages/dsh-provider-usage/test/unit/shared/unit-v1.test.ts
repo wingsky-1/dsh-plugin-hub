@@ -29,12 +29,6 @@ import {
 } from "../../helpers.ts";
 console.error("EVAL-ORDER-TAG: V1");
 import {
-  isHostProviderAdapter,
-  describeAdapterShape,
-  isClientProviderRenderer,
-  defineUsageAdapter,
-  usageError,
-  usageOk,
   openCodeGoAdapter,
   esc,
   parseUsageResponse,
@@ -49,6 +43,15 @@ import {
   runV2Pipeline,
   runV2PanelPipeline,
 } from "../../../src/apply/index.ts";
+// 白盒直连深路径（#768 B波）：v1契约纯面经 shared 门面，不走组合根转发。
+import {
+  isHostProviderAdapter,
+  describeAdapterShape,
+  isClientProviderRenderer,
+  defineUsageAdapter,
+  usageError,
+  usageOk,
+} from "../../../src/shared/interface.ts";
 
 // ---------------------------------------------------------------- isHostProviderAdapter
 

@@ -33,14 +33,8 @@ export {
   isUsageStatsAdapter,
   describeUsageStatsAdapterShape,
   safeSegment,
-  isHostProviderAdapter,
-  describeAdapterShape,
-  isClientProviderRenderer,
-  usageError,
-  usageOk,
   summarizeTextFromWindows,
   levelFromWindows,
-  defineUsageAdapter,
 } from "../shared/interface.ts";
 export type {
   AdapterErrorCode,
