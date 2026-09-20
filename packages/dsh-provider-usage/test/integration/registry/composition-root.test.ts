@@ -7,7 +7,7 @@
  *   一族只经 server/registry/interface.ts，不走旧 domain1/registry 入口；
  *   apply/apply.ts、apply/index.ts、server/pipeline/stats-service.ts、
  *   server/adapters/deps.ts、server/data-routes/adapters.ts 的注册表消费收口新门面；
- *   门面禁整文件 re-export；包导出面（apply/index.ts 转发名）零增减。
+ *   门面禁整文件 re-export；包导出面（apply/index.ts 转发名）收窄后集合（B波）。
  * - D7二 候选 + 唯一启用 + 错误登记：同 provider 多候选任一时刻一启用
  *   （双启用必须红）+ 非法/重名拒收登记错误（删登记即红）。
  * - D7三 deps 注入面窄面：RegistryDiag/RegistrySanitize 命名接缝与块内联
@@ -227,11 +227,11 @@ describe("D7一 经 server/registry 域门面装配", () => {
     );
   });
 
-  it("包导出面零增减：apply/index.ts 转发名不变（改名/漏转即红）", () => {
+  it("包导出面收窄后集合：apply/index.ts 转发名与收窄后一致（改名/漏转即红）", () => {
+    // B波收窄后集合：credentialsFile已退役（白盒直连域门面，见smoke-pure）。
     for (const name of [
       "makeAdapterRegistry",
       "AdapterRegistry",
-      "credentialsFile",
       "resolveProviderConfig",
       "HotReloadableAdapter",
       "loadAndValidateAdapter",

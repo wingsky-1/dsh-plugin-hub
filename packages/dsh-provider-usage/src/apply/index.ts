@@ -93,13 +93,8 @@ export {
   ZAI_CODING_CN_PROVIDER,
   ZAI_CODING_CN_ADAPTER_ID,
   fetchData,
-  zaiCodingCnAdapter,
 } from "../server/adapters/interface.ts";
-export {
-  credentialsFile,
-  opencodeAuthFile,
-  resolveProviderConfig,
-} from "../server/registry/interface.ts";
+export { opencodeAuthFile, resolveProviderConfig } from "../server/registry/interface.ts";
 export type { ProviderConfigInput, ResolvedProviderConfig } from "../server/registry/interface.ts";
 export {
   HistoryStore,
@@ -265,8 +260,6 @@ export {
   breakpointForWidth,
   clampPointToViewport,
   clampZIndexBase,
-  composerDockedAtBottom,
-  bottomAnchorEdge,
   panelZIndexFor,
 } from "../shared/interface.ts";
 export type { FloatBreakpoint, ViewportPoint, RectLike } from "../shared/interface.ts";

@@ -26,13 +26,11 @@ import {
   safeFormat,
   normalizeConfig,
   resolveProviderConfig,
-  credentialsFile,
   OPENCODE_GO_PROVIDER,
   OPENCODE_GO_ADAPTER_ID,
   openCodeGoAdapter,
   parseUsageResponse,
   fetchOpenCodeGoV2,
-  zaiCodingCnAdapter,
   loadAndValidateAdapter,
   readStamp,
   stampEqual,
@@ -49,9 +47,11 @@ import {
   clampPointToViewport,
   clampZIndexBase,
   panelZIndexFor,
-  composerDockedAtBottom,
-  bottomAnchorEdge,
 } from "../src/apply/index.ts";
+// 白盒直连深路径（#768 B波）：定位/注册表/适配器纯面经域门面，不走组合根转发。
+import { composerDockedAtBottom, bottomAnchorEdge } from "../src/shared/interface.ts";
+import { credentialsFile } from "../src/server/registry/interface.ts";
+import { zaiCodingCnAdapter } from "../src/server/adapters/interface.ts";
 
 // ---------------------------------------------------------------- esc
 

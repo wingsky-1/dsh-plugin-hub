@@ -386,10 +386,6 @@
       "isType": false
     },
     {
-      "name": "bottomAnchorEdge",
-      "isType": false
-    },
-    {
       "name": "breakpointForWidth",
       "isType": false
     },
@@ -407,14 +403,6 @@
     },
     {
       "name": "clampZIndexBase",
-      "isType": false
-    },
-    {
-      "name": "composerDockedAtBottom",
-      "isType": false
-    },
-    {
-      "name": "credentialsFile",
       "isType": false
     },
     {
@@ -783,10 +771,6 @@
     },
     {
       "name": "writeReportConfig",
-      "isType": false
-    },
-    {
-      "name": "zaiCodingCnAdapter",
       "isType": false
     }
   ],
@@ -1494,10 +1478,6 @@
           "isType": false
         },
         {
-          "name": "bottomAnchorEdge",
-          "isType": false
-        },
-        {
           "name": "breakpointForWidth",
           "isType": false
         },
@@ -1515,14 +1495,6 @@
         },
         {
           "name": "clampZIndexBase",
-          "isType": false
-        },
-        {
-          "name": "composerDockedAtBottom",
-          "isType": false
-        },
-        {
-          "name": "credentialsFile",
           "isType": false
         },
         {
@@ -1891,10 +1863,6 @@
         },
         {
           "name": "writeReportConfig",
-          "isType": false
-        },
-        {
-          "name": "zaiCodingCnAdapter",
           "isType": false
         }
       ],

@@ -44,14 +44,11 @@ export {
   apply,
   applyPromptTemplate,
   axisLabelWidthPx,
-  bottomAnchorEdge,
   breakpointForWidth,
   buildStatsSnapshot,
   candidateWindow,
   clampPointToViewport,
   clampZIndexBase,
-  composerDockedAtBottom,
-  credentialsFile,
   dayKey,
   deriveLastRun,
   describeUsageStatsAdapterShape,
@@ -144,7 +141,6 @@ export {
   weekStartKey,
   writeLastRun,
   writeReportConfig,
-  zaiCodingCnAdapter,
 } from "./apply/index.ts";
 export type {
   AdapterErrorCode,
