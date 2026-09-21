@@ -2037,29 +2037,39 @@ export function formatPanel() { return "<p>user-panel</p>"; }
  * #120 演进：per-provider 锁落地后 warmup 改为并行 void fire-and-forget——
  * 各 provider 持各自专用锁，并行发起互不 busy、互不阻塞；本用例保留
  * 「每个启用 provider 都被采样」的主断言（40ms IO 延迟维持真实持锁窗口）。
+ * B 级（定向变异）：两适配器 fetchData 首尾打点，首轮取数窗口必须重叠——
+ * per-provider 锁改回全局单锁时两取数串行、窗口不重叠，仅该断言红。
  */
 describe("#156/#120 warmup 多 provider 采样回归", () => {
   let providerAAdapterName;
   let providerAStatus;
   let providerBAdapterName;
   let providerBStatus;
+  let warmupFirstA;
+  let warmupFirstB;
+  let warmupMarksRaw;
 
   beforeAll(async () => {
     // 构造两个用户适配器（providers 互不相同），注册表指向绝对路径 mjs
     const adapterDir = mkdtempSync(join(tmpdir(), "dou-warmup-adapters-"));
+    // B 级打点：fetchData 首尾记墙钟，首轮两窗口重叠即并行（标记落隔离 adapterDir，零污染）
+    const marksFile = join(adapterDir, "warmup-marks.jsonl");
     const mkAdapter = (name, provider) => {
       const file = join(adapterDir, `${name}.mjs`);
       writeFileSync(
         file,
         `
+import { appendFileSync } from "node:fs";
 export const version = 2;
 export const name = "${name}";
 export const label = "${name}";
 export const providers = ["${provider}"];
 export async function fetchData() {
+  const start = Date.now();
   // 模拟真实远端 IO 延迟：让持锁窗口覆盖后续 provider 的同步检查段，
   // 否则 mock 同步完成过快、两请求都排进 mutex 队列，无法复现 busy 短路
   await new Promise((r) => setTimeout(r, 40));
+  appendFileSync(${JSON.stringify(marksFile)}, JSON.stringify({ provider: "${provider}", start, end: Date.now() }) + "\\n");
   return { visits: 7 };
 }
 export function formatCapsule(input) { return "<span>" + input.data.visits + "</span>"; }
@@ -2071,6 +2081,8 @@ export function formatPanel() { return "<p>ok</p>"; }
     };
     const fileA = mkAdapter("warm-a", "prov-a");
     const fileB = mkAdapter("warm-b", "prov-b");
+    // 独立可跑：建父目录（全量跑时前序用例已建，-t 单跑本块时需自建）
+    mkdirSync(join(process.env.DSH_HOME, "dsh-provider-usage"), { recursive: true });
     writeFileSync(
       userAdaptersFile(join(process.env.DSH_HOME, "dsh-provider-usage")),
       JSON.stringify({
@@ -2117,6 +2129,21 @@ export function formatPanel() { return "<p>ok</p>"; }
     providerBAdapterName = pb.adapterName;
     providerBStatus = pb.status;
 
+    // B 级快照：首轮取数窗口（stats 30s 缓存命中，查询不产生二次取数，首记录即预热轮）
+    try {
+      warmupMarksRaw = readFileSync(marksFile, "utf8");
+    } catch {
+      warmupMarksRaw = "";
+    }
+    const firstByProvider = new Map();
+    for (const line of warmupMarksRaw.split("\n")) {
+      if (line.trim() === "") continue;
+      const mark = JSON.parse(line);
+      if (!firstByProvider.has(mark.provider)) firstByProvider.set(mark.provider, mark);
+    }
+    warmupFirstA = firstByProvider.get("prov-a");
+    warmupFirstB = firstByProvider.get("prov-b");
+
     for (const d of [...disposers].reverse()) {
       try {
         d();
@@ -2140,6 +2167,22 @@ export function formatPanel() { return "<p>ok</p>"; }
 
   it("provider B 非 stale 短路", () => {
     expect(providerBStatus, `实际 ${providerBStatus}`).not.toBe("stale");
+  });
+
+  it("B 级：双 provider 首轮取数标记齐全", () => {
+    expect(
+      warmupFirstA !== undefined && warmupFirstB !== undefined,
+      `标记原文=${warmupMarksRaw}`,
+    ).toBe(true);
+  });
+
+  it("B 级：首轮取数窗口重叠（并行预热；全局锁串行则不重叠）", () => {
+    const overlapped =
+      warmupFirstA !== undefined &&
+      warmupFirstB !== undefined &&
+      warmupFirstA.start < warmupFirstB.end &&
+      warmupFirstB.start < warmupFirstA.end;
+    expect(overlapped, `窗口未重叠，标记原文=${warmupMarksRaw}`).toBe(true);
   });
 });
 
