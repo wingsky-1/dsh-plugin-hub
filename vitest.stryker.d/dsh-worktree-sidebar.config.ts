@@ -11,6 +11,7 @@ export default defineConfig({
       'packages/dsh-worktree-sidebar/test/client-dom/inject-visibility.test.ts',
       'packages/dsh-worktree-sidebar/test/integration/apply-lifecycle.test.ts',
       'packages/dsh-worktree-sidebar/test/integration/binding-store.test.ts',
+      'packages/dsh-worktree-sidebar/test/integration/file-io-concurrency.test.ts',
       'packages/dsh-worktree-sidebar/test/integration/git-real.test.ts',
       'packages/dsh-worktree-sidebar/test/integration/tools-real.test.ts',
       'packages/dsh-worktree-sidebar/test/unit/api-routes.test.ts',
