@@ -14,7 +14,9 @@ import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
 import { beforeAll, describe, expect, it } from "vitest";
-import { sseData, ADAPTER_CONTRACT_VERSION } from "../../../src/apply/index.ts";
+import { sseData } from "../../../src/apply/index.ts";
+// 白盒直连深路径（#768 B波）：契约版本经 shared 门面，不走组合根转发。
+import { ADAPTER_CONTRACT_VERSION } from "../../../src/shared/interface.ts";
 import { parseUserAdapters } from "../../../src/server/registry/interface.ts";
 // 白盒直连深路径（#768 B波）：契约/净化纯面经 shared 门面，不走组合根转发。
 import {

@@ -11,11 +11,12 @@ import { tmpdir } from "node:os";
 import assert from "node:assert/strict";
 import {
   ROUTES,
-  ADAPTER_CONTRACT_VERSION,
   HistoryStore,
   OPENCODE_GO_PROVIDER,
   OPENCODE_GO_ADAPTER_ID,
 } from "../src/apply/index.ts";
+// 白盒直连深路径（#768 B波）：契约版本经 shared 门面，不走组合根转发。
+import { ADAPTER_CONTRACT_VERSION } from "../src/shared/interface.ts";
 import {
   parseUsageResponse,
   fetchOpenCodeGoV2,

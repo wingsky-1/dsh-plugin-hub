@@ -3,7 +3,6 @@
   "package": "dsh-provider-usage",
   "faces": {},
   "legacy": [
-    "ADAPTER_CONTRACT_VERSION",
     "AdapterErrorCode",
     "AdapterErrorInfo",
     "AdapterInfo",

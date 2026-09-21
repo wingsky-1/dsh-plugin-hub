@@ -2,10 +2,6 @@
   "package": "dsh-provider-usage",
   "exports": [
     {
-      "name": "ADAPTER_CONTRACT_VERSION",
-      "isType": false
-    },
-    {
       "name": "AdapterErrorCode",
       "isType": true
     },
@@ -597,10 +593,6 @@
     ".": {
       "types": "./lib/index.d.ts",
       "exports": [
-        {
-          "name": "ADAPTER_CONTRACT_VERSION",
-          "isType": false
-        },
         {
           "name": "AdapterErrorCode",
           "isType": true

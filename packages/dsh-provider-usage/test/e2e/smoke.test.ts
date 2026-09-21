@@ -52,12 +52,13 @@ import {
   apply,
   inject,
   ROUTES,
-  ADAPTER_CONTRACT_VERSION,
   OPENCODE_GO_PROVIDER,
   OPENCODE_GO_ADAPTER_ID,
   dayKey,
   HotReloadableAdapter,
 } from "../../lib/index.js";
+// 白盒直连深路径（#768 B波）：契约版本经 shared 门面，不走包入口。
+import { ADAPTER_CONTRACT_VERSION } from "../../src/shared/interface.ts";
 // 白盒直连深路径（#768 B波）：用户适配器路径纯面经注册表域门面，不走包入口。
 import { userAdaptersFile, adapterStateFile } from "../../src/server/registry/interface.ts";
 // 白盒直连深路径（#768 B波）：目录上限纯面经采集域门面，不走包入口。
