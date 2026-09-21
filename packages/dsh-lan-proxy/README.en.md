@@ -7,6 +7,14 @@ WebSocket/wss to the loopback web server (default `127.0.0.1:3080`).
 
 [简体中文](README.md) | **English**
 
+## Quick install
+
+```sh
+dsh plugin --profile web add @wingsky-1/dsh-lan-proxy
+```
+
+> After install / uninstall / update, **restart `dsh web` once** (bundle layers are only composed at startup) for changes to take effect.
+
 ## Quick navigation
 
 [Before you start](#before-you-start) · [Security Model](#security-model) · [Quick start](#quick-start) · [Common configuration](#common-configuration) · [Verification and troubleshooting](#verification-and-troubleshooting) · [Detailed reference](#detailed-reference) · [Development and architecture](#development-and-architecture)

@@ -1,7 +1,7 @@
 {
   "name": "@wingsky-1/dsh-mcp-manager",
   "version": "0.2.5",
-  "description": "DSH MCP 管理器：Web 侧边栏「MCP」入口，面板按状态分级展示 MCP 服务器（运行中/连接中/已配置/失败），支持快速接入（stdio / streamable-http 表单）与粘贴 mcpServers JSON 导入。已连接服务器的工具一律经中间层工具（ws_mcp_search / ws_mcp_detail / ws_mcp_call / ws_mcp_list）访问：宿主注册名 mcp__<id>__<tool> 是内部标识（id 按 (工作空间, 服务器名) 分配、不可由服务器名推导），不对模型可见，禁止直呼。",
+  "description": "Manage MCP servers (stdio / streamable-http) for dsh web; tools are reached only through four middleware tools. DSH MCP 管理器：Web 侧边栏「MCP」入口，面板按状态分级展示 MCP 服务器（运行中/连接中/已配置/失败），支持快速接入（stdio / streamable-http 表单）与粘贴 mcpServers JSON 导入。已连接服务器的工具一律经中间层工具（ws_mcp_search / ws_mcp_detail / ws_mcp_call / ws_mcp_list）访问：宿主注册名 mcp__<id>__<tool> 是内部标识（id 按 (工作空间, 服务器名) 分配、不可由服务器名推导），不对模型可见，禁止直呼。",
   "type": "module",
   "main": "lib/index.js",
   "scripts": {
@@ -25,6 +25,17 @@
     "bundle": {
       "patch": "./cordis.patch.yml",
       "bannerJs": "import { createRequire as __mcpManagerRequire } from \"node:module\";\nconst require = __mcpManagerRequire(import.meta.url);"
+    },
+    "catalog": {
+      "category": "tool",
+      "summary": {
+        "en": "Manage MCP servers (stdio / streamable-http) for dsh web; tools are reached only through four middleware tools.",
+        "zh": "DSH MCP 管理器：Web 侧边栏 MCP 入口，按状态分级展示服务器，支持表单与 JSON 导入接入"
+      },
+      "capabilities": [
+        "connection",
+        "mcp"
+      ]
     },
     "client": {
       "inject": [
@@ -89,6 +100,7 @@
   "keywords": [
     "dsh",
     "deepseek-harness",
+    "dsh-plugin",
     "plugin",
     "mcp",
     "model-context-protocol"

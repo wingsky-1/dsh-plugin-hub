@@ -10,6 +10,14 @@ DSH（DeepSeek Harness）Web GUI 插件：**多 provider 通用用量统计框�
 mjs 适配器文件即可接入（设置页检测/添加/切换热插拔，见「适配器开发指南」）。
 渲染在**宿主端**完成——适配器返回 HTML、客户端只做注入，密钥不进浏览器。
 
+## 一键安装
+
+```sh
+dsh plugin --profile web add @wingsky-1/dsh-provider-usage
+```
+
+> 安装 / 卸载 / 更新后都需**重启一次** `dsh web`（bundle 层只在启动时组合）生效。
+
 ## 核心优势
 
 - **通用框架 + 开箱即用**：一套 v2 适配器契约承载任意 provider；DeepSeek 官方与

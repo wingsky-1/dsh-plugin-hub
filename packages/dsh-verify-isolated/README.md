@@ -10,6 +10,8 @@ DSH 插件开发的**隔离环境浏览器验证** skill 插件：临时 `DSH_HO
 dsh plugin --profile web add @wingsky-1/dsh-verify-isolated
 ```
 
+> 安装 / 卸载 / 更新后都需**重启一次** `dsh web`（bundle 层只在启动时组合）生效。
+
 安装后 `dsh-verify-isolated` skill 自动注册为内置 skill，profile 内所有会话
 即可用（`/skill dsh-verify-isolated` 查看）。
 

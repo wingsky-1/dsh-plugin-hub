@@ -14,6 +14,14 @@ the settings page, see "Adapter development guide"). Rendering happens on the **
 side** — adapters return HTML, the client only injects it, and API keys never reach
 the browser.
 
+## Quick install
+
+```sh
+dsh plugin --profile web add @wingsky-1/dsh-provider-usage
+```
+
+> After install / uninstall / update, **restart `dsh web` once** (bundle layers are only composed at startup) for changes to take effect.
+
 ## Core advantages
 
 - **Generic framework, works out of the box**: one v2 adapter contract carries any

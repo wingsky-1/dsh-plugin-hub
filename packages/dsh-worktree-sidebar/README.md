@@ -7,6 +7,14 @@
 这是一个**过渡适配层**：官方若推出原生 worktree 会话能力，本插件即退役。
 原理与运行机制（五域装配、宿主/客户端链路、自愈判据、命门清单）见 [架构图解](../../docs/architecture/dsh-worktree-sidebar.md)。
 
+## 一键安装
+
+```sh
+dsh plugin --profile web add @wingsky-1/dsh-worktree-sidebar
+```
+
+> 安装 / 卸载 / 更新后都需**重启一次** `dsh web`（bundle 层只在启动时组合）生效。
+
 ## 它做什么
 
 dsh 的右侧栏文件树根固定取 `session.header.cwd`，且该字段创建后不可变（显式收养不同 cwd 的会话会抛 `ApiSessionCwdConflict`）。于是在「会话开在主 checkout、实际改动在 worktree」这一常见工作方式下，树看的是主 checkout，看错了地方。
