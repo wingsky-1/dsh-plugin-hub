@@ -186,10 +186,6 @@
       "isType": false
     },
     {
-      "name": "TREND_UNIDENTIFIED",
-      "isType": false
-    },
-    {
       "name": "TrendAggRow",
       "isType": true
     },
@@ -839,10 +835,6 @@
         },
         {
           "name": "TREND_DIR_MAX",
-          "isType": false
-        },
-        {
-          "name": "TREND_UNIDENTIFIED",
           "isType": false
         },
         {

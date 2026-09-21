@@ -37,14 +37,9 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { pollUntil, callHandler } from "../../helpers.ts";
-import {
-  previousClosedWindow,
-  sanitizeHtml,
-  dayKey,
-  TREND_UNIDENTIFIED,
-} from "../../../src/apply/index.ts";
+import { previousClosedWindow, sanitizeHtml, dayKey } from "../../../src/apply/index.ts";
 import { TrendTracker } from "../../../src/server/aggregate/interface.ts";
-import { TREND_ROW_VERSION } from "../../../src/server/collect/interface.ts";
+import { TREND_ROW_VERSION, TREND_UNIDENTIFIED } from "../../../src/server/collect/interface.ts";
 // 白盒直连深路径（#768 B波续批）：报告调度/配置/执行/路由纯面经域门面，不走组合根转发。
 import {
   LAST_RUN_SCHEMA,

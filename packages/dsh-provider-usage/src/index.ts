@@ -16,7 +16,6 @@ export {
   PANEL_CACHE_TTL_MS,
   ROUTES,
   TREND_DIR_MAX,
-  TREND_UNIDENTIFIED,
   adapterStateFile,
   apply,
   dayKey,
