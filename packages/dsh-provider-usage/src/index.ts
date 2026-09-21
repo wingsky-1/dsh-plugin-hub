@@ -29,7 +29,6 @@ export {
   normalizeRangeDay,
   openCodeGoAdapter,
   panelCacheKey,
-  pickWindow,
   previousClosedWindow,
   resolveProviderConfig,
   sanitizeHtml,

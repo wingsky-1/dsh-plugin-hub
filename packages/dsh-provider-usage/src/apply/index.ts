@@ -49,7 +49,6 @@ export type { AdapterUtils } from "../shared/interface.ts";
 export {
   OPENCODE_GO_PROVIDER,
   OPENCODE_GO_ADAPTER_ID,
-  pickWindow,
   openCodeGoAdapter,
 } from "../server/adapters/interface.ts";
 export {

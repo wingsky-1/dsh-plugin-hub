@@ -326,10 +326,6 @@
       "isType": false
     },
     {
-      "name": "pickWindow",
-      "isType": false
-    },
-    {
       "name": "previousClosedWindow",
       "isType": false
     },
@@ -991,10 +987,6 @@
         },
         {
           "name": "panelCacheKey",
-          "isType": false
-        },
-        {
-          "name": "pickWindow",
           "isType": false
         },
         {
