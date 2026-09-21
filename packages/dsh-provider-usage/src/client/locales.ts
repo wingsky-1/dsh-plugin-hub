@@ -232,7 +232,7 @@ export const zh = {
   reportCollapse: "收起",
   reportDetailTokens: "生成消耗：{n} tokens",
   reportPeriodSelect: "选择周期",
-  // #940 P0：五区折叠 + 结构化提示词
+  // #940 P0：折叠 + 结构化提示词（第一批起报告四区＋历史独立页）
   reportSectionSchedule: "调度",
   reportSectionRouting: "路由与范围",
   reportSectionPrompts: "报表提示词",
@@ -290,7 +290,7 @@ export const en: Record<ProviderUsageLocaleKey, string> = {
   loading: "Loading…",
   ariaPill: "Usage statistics",
   settingsTab: "Usage statistics",
-  // Settings page: five-tab segmenter
+  // Settings page: six-tab segmenter
   settingsNavLabel: "Usage statistics sections",
   pageTabTrend: "Trends",
   pageTabReport: "Reports",
@@ -489,7 +489,7 @@ export const en: Record<ProviderUsageLocaleKey, string> = {
   reportCollapse: "Collapse",
   reportDetailTokens: "Generation cost: {n} tokens",
   reportPeriodSelect: "Select period",
-  // #940 P0: five collapsible sections + structured prompts
+  // #940 P0: collapsible sections + structured prompts (batch 1: four report zones + history page)
   reportSectionSchedule: "Schedule",
   reportSectionRouting: "Routing & scope",
   reportSectionPrompts: "Report prompts",
@@ -507,7 +507,7 @@ export const en: Record<ProviderUsageLocaleKey, string> = {
   reportConstraintsLabel: "Hard constraints",
   reportConstraintCount: "{n} constraints",
   reportBudgetLabel: "Budget",
-  reportPromptWordUnit: "chars",
+  reportPromptWordUnit: " chars",
   reportStatsVarNote: "{stats} is the stats JSON injection point (read-only, do not rename)",
   reportPromptRawHint: "Non-standard template — editing as a whole, no text lost",
   historySub: "Expand for detail · loaded on demand",
