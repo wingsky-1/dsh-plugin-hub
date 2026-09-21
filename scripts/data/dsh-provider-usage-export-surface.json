@@ -182,10 +182,6 @@
       "isType": true
     },
     {
-      "name": "TREND_DIR_MAX",
-      "isType": false
-    },
-    {
       "name": "TrendAggRow",
       "isType": true
     },
@@ -808,10 +804,6 @@
         {
           "name": "SamplePoint",
           "isType": true
-        },
-        {
-          "name": "TREND_DIR_MAX",
-          "isType": false
         },
         {
           "name": "TrendAggRow",

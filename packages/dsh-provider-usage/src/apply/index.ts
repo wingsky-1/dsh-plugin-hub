@@ -81,8 +81,6 @@ export type {
   TrendWindowSummary,
 } from "../server/aggregate/interface.ts";
 
-// 趋势目录上限常量（未识别桶仅域内深路径，组合根不再转发）。
-export { TREND_DIR_MAX } from "../server/collect/interface.ts";
 export type {
   TrendAttribution,
   TrendTokens,

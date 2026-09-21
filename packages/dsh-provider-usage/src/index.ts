@@ -15,7 +15,6 @@ export {
   OPENCODE_GO_PROVIDER,
   PANEL_CACHE_TTL_MS,
   ROUTES,
-  TREND_DIR_MAX,
   apply,
   dayKey,
   inject,

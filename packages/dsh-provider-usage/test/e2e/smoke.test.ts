@@ -63,11 +63,12 @@ import {
   panelCacheKey,
   isPanelCacheStale,
   dayKey,
-  TREND_DIR_MAX,
   HotReloadableAdapter,
 } from "../../lib/index.js";
 // 白盒直连深路径（#768 B波）：用户适配器路径纯面经注册表域门面，不走包入口。
 import { userAdaptersFile, adapterStateFile } from "../../src/server/registry/interface.ts";
+// 白盒直连深路径（#768 B波）：目录上限纯面经采集域门面，不走包入口。
+import { TREND_DIR_MAX } from "../../src/server/collect/interface.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
