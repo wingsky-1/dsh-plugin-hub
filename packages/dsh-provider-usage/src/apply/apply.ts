@@ -48,8 +48,18 @@ import { TrendTracker } from "../server/aggregate/interface.ts";
 import { TrendCollector } from "../server/collect/interface.ts";
 import { ReportScheduler } from "../server/schedule/interface.ts";
 import { optionalNotifier, parseReportIndexLines } from "../server/execute/interface.ts";
-import { ReportConfigService, promptFor, readReportConfig } from "../server/config/interface.ts";
-import { makeDueReportExecutor } from "../server/execute/interface.ts";
+import {
+  ReportConfigService,
+  normalizeReportConfig,
+  promptFor,
+  readReportConfig,
+} from "../server/config/interface.ts";
+import {
+  makeDueReportExecutor,
+  readReportIndex,
+  reportHtmlFile,
+  reportMetaFile,
+} from "../server/execute/interface.ts";
 import { makeListDirs } from "../server/execute/interface.ts";
 import { ReportTaskQueue } from "../server/schedule/interface.ts";
 import {
@@ -505,6 +515,13 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
         previousClosedWindow,
         readLastRun,
         updateLastRun,
+        // B2 配置注入：归一化/磁盘读由组合根供给，默认表随服务返回（报告域不直引 config 值边）
+        normalizeReportConfig,
+        readReportConfig,
+        // B2 执行读面注入：只读查询闭包（报告域不直引 execute 值边）
+        readReportIndex,
+        reportHtmlFile,
+        reportMetaFile,
       },
     ),
   ];

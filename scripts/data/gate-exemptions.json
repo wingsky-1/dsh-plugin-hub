@@ -100,18 +100,6 @@
     },
     {
       "gate": "verify-dir-imports",
-      "path": "dsh-provider-usage:server/report-routes|server/config",
-      "reason": "#768 D1：reports.ts 经 server/config 门面取 normalizeReportConfig/readReportConfig/DEFAULT_PROMPTS（配置读写与默认回显），替代原边的配置面部分（调度纯函数边 D2 起归调度边）；服务实例仍经装配参数以 deps.ts 窄口（get/update）注入，不直引；D11 由 domain2/routes 迁 server/report-routes，边归属同步迁移。树内 integration/report-routes 用例锁定。长期条目（设计事实，非待办）。",
-      "trackingIssue": "#768"
-    },
-    {
-      "gate": "verify-dir-imports",
-      "path": "dsh-provider-usage:server/report-routes|server/execute",
-      "reason": "#768 D3：reports.ts 经 execute 门面取读面（D3 前为 domain2/routes|domain2/execute）；D11 由 domain2/routes 迁 server/report-routes，边归属同步迁移。执行器工厂不直引（队列内嵌，组合根装配）。树内 integration/report-routes 用例锁定。长期条目。",
-      "trackingIssue": "#768"
-    },
-    {
-      "gate": "verify-dir-imports",
       "path": "dsh-provider-usage:server/data-routes|server/registry",
       "reason": "#768 D7：适配器路由经 registry 门面取加载校验与路径准入（D7 前为基线内 domain1/routes|domain1/registry，边归属同步迁移；D10 由 domain1/routes 改名迁 server/data-routes，边归属同步迁移）。树内 integration/registry 用例锁定。长期条目。",
       "trackingIssue": "#768"

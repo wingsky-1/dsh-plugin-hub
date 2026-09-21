@@ -12,6 +12,8 @@
  * 调度面（preset/previous 纯函数 + read/update 读写）经 ReportRoutesContext
  * 注入（#768 B1：不直引 schedule 门面值边；纯函数不下沉 shared，DueReport
  * 语义留调度域；per-root 链唯一实现留 schedule 域，本域不自建第二条链）。
+ * 配置面（normalize/read/默认表）与执行读面（index/路径）经 ReportRoutesContext
+ * 注入（#768 B2：不直引 config/execute 门面值边；类型经门面以 type 复用）。
  */
 import { readFile } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
@@ -22,14 +24,8 @@ import {
   readJsonBodyOutcome,
   writeJson,
 } from "../../../../../shared/host-utils.js";
-import {
-  DEFAULT_PROMPTS,
-  normalizeReportConfig,
-  readReportConfig,
-  type ReportConfig,
-  type ReportPeriod,
-} from "../config/interface.ts";
-import { readReportIndex, reportHtmlFile, reportMetaFile } from "../execute/interface.ts";
+import type { ReportConfig, ReportPeriod } from "../config/interface.ts";
+import type { ReportMeta } from "../execute/interface.ts";
 import type { DueReport } from "../schedule/interface.ts";
 import type { ReportRoutesConfigPort, ReportRoutesQueuePort } from "./deps.ts";
 import { sanitizeHtml } from "../../shared/interface.ts";
@@ -63,6 +59,17 @@ export interface ReportRoutesContext {
       prev: Partial<Record<ReportPeriod, string>>,
     ) => Partial<Record<ReportPeriod, string>> | Promise<Partial<Record<ReportPeriod, string>>>,
   ) => Promise<void>;
+  /**
+   * 配置面注入（#768 B2：不直引 config 门面值边；归一化/磁盘读/默认表由组合根供给）。
+   */
+  normalizeReportConfig: (raw: unknown) => ReportConfig;
+  readReportConfig: (root: string) => Promise<ReportConfig>;
+  /**
+   * 执行读面注入（#768 B2：不直引 execute 门面值边；只读查询闭包，实例不直引）。
+   */
+  readReportIndex: (root: string) => Promise<ReportMeta[]>;
+  reportHtmlFile: (root: string, period: ReportPeriod, key: string) => string;
+  reportMetaFile: (root: string, period: ReportPeriod, key: string) => string;
   /**
    * 目录候选清单：GET /report-config 附带 dirs（trend.dirTotals
    * 全留存窗口聚合，含未识别桶），设置页目录范围多选的数据源。可选——测试/无趋势
@@ -105,7 +112,7 @@ export async function handleReportConfig(
   const { ctx, historyRoot } = context;
 
   if (req.method === "GET") {
-    const config = await readReportConfig(historyRoot);
+    const config = await context.readReportConfig(historyRoot);
     let providers: Array<{ id: string; name?: string }> = [];
     try {
       const listed = ctx.llm.listProviders();
@@ -137,7 +144,7 @@ export async function handleReportConfig(
       config,
       providers,
       dirs,
-      promptDefaults: DEFAULT_PROMPTS,
+      promptDefaults: context.reportCfgService.promptDefaults,
     });
   }
 
@@ -146,7 +153,7 @@ export async function handleReportConfig(
   const outcome = await readJsonBodyOutcome(req);
   if (outcome.kind !== "json") return writeJson(res, 400, { error: "bad-json" });
 
-  const normalized = normalizeReportConfig(outcome.value);
+  const normalized = context.normalizeReportConfig(outcome.value);
   const currentCfg = context.reportCfgService.get();
   // preset 写 lastRun 走单一临界区（写前重读），不与任务执行器推进互踩字段；
   // readLastRun 仅作 changed 预判（乐观跳过无变化时的写盘），真实快照在临界区内重读。
@@ -224,7 +231,7 @@ export async function handleReports(
   context: ReportRoutesContext,
 ): Promise<void> {
   if (!guardLoopbackMethod(req, res, ["GET"])) return;
-  const list = await readReportIndex(context.historyRoot);
+  const list = await context.readReportIndex(context.historyRoot);
   writeJson(res, 200, { ok: true, reports: list });
 }
 
@@ -248,7 +255,7 @@ export async function handleReportDetail(
   let html: string;
   try {
     html = sanitizeHtml(
-      await readFile(reportHtmlFile(historyRoot, period as ReportPeriod, key), "utf8"),
+      await readFile(context.reportHtmlFile(historyRoot, period as ReportPeriod, key), "utf8"),
     );
   } catch {
     return writeJson(res, 404, { error: "report-not-found" });
@@ -257,7 +264,7 @@ export async function handleReportDetail(
   let meta: unknown;
   try {
     meta = JSON.parse(
-      await readFile(reportMetaFile(historyRoot, period as ReportPeriod, key), "utf8"),
+      await readFile(context.reportMetaFile(historyRoot, period as ReportPeriod, key), "utf8"),
     );
   } catch {
     return writeJson(res, 404, { error: "report-not-found" });
@@ -293,7 +300,7 @@ export async function handleReportGenerate(
 
   // 幂等短路：窗口已有成功报告且非强制重生成 → 直接复用，不产生新任务
   if (!force) {
-    const existing = (await readReportIndex(historyRoot)).find(
+    const existing = (await context.readReportIndex(historyRoot)).find(
       (m) => m.period === due.period && m.key === due.key && m.ok === true,
     );
     if (existing !== undefined) {

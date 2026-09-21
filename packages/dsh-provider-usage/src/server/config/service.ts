@@ -11,7 +11,8 @@
  * 归一化判断——归一化单答案归 normalize.ts，调用方（路由写侧/组合根装配）负责传合法值。
  */
 import { writeReportConfig } from "./store.ts";
-import type { ReportConfig } from "./shape.ts";
+import type { ReportConfig, ReportPrompts } from "./shape.ts";
+import { DEFAULT_PROMPTS } from "./prompts.ts";
 
 export interface ReportConfigServiceOptions {
   root: string;
@@ -25,6 +26,8 @@ export class ReportConfigService {
   private chain: Promise<void> = Promise.resolve();
   private readonly root: string;
   private readonly onUpdate?: (cfg: ReportConfig) => void;
+  /** 默认模板表（#768 B2：随服务返回，路由 GET 回显不直引 config 门面值边）。 */
+  readonly promptDefaults: ReportPrompts = DEFAULT_PROMPTS;
 
   constructor(opts: ReportConfigServiceOptions) {
     this.root = opts.root;

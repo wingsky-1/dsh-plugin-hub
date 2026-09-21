@@ -22,16 +22,17 @@
  * tsc 编译面校验可赋值性 + 窄面桩跑全 handler 证明只触窄口）。
  *
  * 源码允许的纯面复用（非实例调用，不经本文件注入）：
- * - server/config 的 ReportPeriod 类型 + normalizeReportConfig/readReportConfig/
- *   DEFAULT_PROMPTS 经 server/config/interface.ts 以 type + pure + 读面复用
- *   （零 node 依赖的纯函数与读面，与 D1 “业务域经门面复用纯面”同形）；
+ * - server/config 的 ReportPeriod/ReportPrompts/ReportConfig 类型经
+ *   server/config/interface.ts 以 type 复用；归一化/磁盘读/默认表经
+ *   ReportRoutesContext 注入（组合根供给，#768 B2 值边清零）；
  * - server/schedule 的窗口/幂等纯函数（presetLastRunForNewlyEnabled/
  *   previousClosedWindow）+ lastRun 读写（readLastRun/updateLastRun）经
  *   ReportRoutesContext 注入（#768 B1：本域不直引 schedule 门面值边，值边
  *   清零；纯函数不下沉 shared，DueReport 语义留调度域；per-root 临界区链归属
  *   调度域，路由 preset 与执行器推进共走同一条链，本域不自建第二条链）；
  * - server/execute 的读面（readReportIndex/reportHtmlFile/reportMetaFile）经
- *   server/execute/interface.ts 复用（幂等短路与详情落盘读，实例不直引）；
+ *   ReportRoutesContext 只读查询闭包注入（幂等短路与详情落盘读，#768 B2 值边清零；
+ *   类型经 server/execute/interface.ts 以 type 复用，实例不直引）；
  * - shared 的 guardLoopbackMethod/readJsonBodyOutcome/writeJson 经
  *   shared/host-utils.js 直接引用，sanitizeHtml 经 shared/interface.ts 直接
  *   引用（共享设施不入注入面，由实现块直接引，与 refactor skill §3 同形）；
@@ -53,8 +54,8 @@
 import type { ReportConfigService } from "../config/interface.ts";
 import type { ReportTaskQueue } from "../schedule/interface.ts";
 
-/** 报告路由域的配置服务窄口（读内存权威 + 串行写盘 + 热更回调）。 */
-export type ReportRoutesConfigPort = Pick<ReportConfigService, "get" | "update">;
+/** 报告路由域的配置服务窄口（读内存权威 + 串行写盘 + 热更回调 + 默认模板表）。 */
+export type ReportRoutesConfigPort = Pick<ReportConfigService, "get" | "update" | "promptDefaults">;
 
 /** 报告路由域的任务队列窄口（提交去重 + 状态查询）。 */
 export type ReportRoutesQueuePort = Pick<ReportTaskQueue, "submit" | "get">;

@@ -111,9 +111,9 @@ const SLEEP_MARKER = ["new Promise((r) => set", "Timeout"].join("");
 
 describe("D3一 经 server/execute 域门面装配", () => {
   it("组合根经同一门面构造执行器（换源即红）", () => {
-    expect(
-      applySrc.includes('import { makeDueReportExecutor } from "../server/execute/interface.ts";'),
-    ).toBe(true);
+    expect(applySrc.includes("../server/execute/interface.ts")).toBe(true);
+    expect(applySrc.includes("makeDueReportExecutor")).toBe(true);
+    expect(applySrc.includes("readReportIndex,")).toBe(true);
   });
 
   it("组合根经同一门面取 optionalNotifier + 纯解析注入（换源／分头即红）", () => {

@@ -66,7 +66,16 @@ import type {
   ReportRoutesQueuePort,
 } from "../../../src/server/report-routes/deps.ts";
 import { ReportConfigService } from "../../../src/server/config/interface.ts";
-import { normalizeReportConfig } from "../../../src/server/config/interface.ts";
+import {
+  DEFAULT_PROMPTS,
+  normalizeReportConfig,
+  readReportConfig,
+} from "../../../src/server/config/interface.ts";
+import {
+  readReportIndex,
+  reportHtmlFile,
+  reportMetaFile,
+} from "../../../src/server/execute/interface.ts";
 import {
   ReportTaskQueue,
   presetLastRunForNewlyEnabled,
@@ -172,6 +181,7 @@ function stubConfigPort(): ReportRoutesConfigPort & { _current(): unknown } {
     update: async (next) => {
       current = next;
     },
+    promptDefaults: DEFAULT_PROMPTS,
   };
   return Object.assign(port, { _current: () => current });
 }
@@ -234,6 +244,11 @@ function stubReportCtx(
     previousClosedWindow,
     readLastRun,
     updateLastRun,
+    normalizeReportConfig,
+    readReportConfig,
+    readReportIndex,
+    reportHtmlFile,
+    reportMetaFile,
     listDirs: opts.throwingDirs
       ? () => {
           throw new Error("dirs-down");
@@ -272,6 +287,19 @@ describe("D11一 经 server/report-routes 域门面装配", () => {
     expect(reportsSrc.includes("import { presetLastRunForNewlyEnabled")).toBe(false);
     expect(reportsSrc.includes("import { readLastRun")).toBe(false);
     expect(reportsSrc.includes("../../shared/interface")).toBe(true);
+  });
+
+  it("B2 配置与执行读面经上下文注入（值边清零，直引残留必须红）", () => {
+    expect(reportsSrc.includes("context.normalizeReportConfig")).toBe(true);
+    expect(reportsSrc.includes("context.readReportConfig")).toBe(true);
+    expect(reportsSrc.includes("reportCfgService.promptDefaults")).toBe(true);
+    expect(reportsSrc.includes("context.readReportIndex")).toBe(true);
+    expect(reportsSrc.includes("context.reportHtmlFile")).toBe(true);
+    expect(reportsSrc.includes("context.reportMetaFile")).toBe(true);
+    expect(reportsSrc.includes("DEFAULT_PROMPTS")).toBe(false);
+    expect(reportsSrc.includes("import { readReportIndex")).toBe(false);
+    expect(applySrc.includes("normalizeReportConfig,")).toBe(true);
+    expect(applySrc.includes("readReportIndex,")).toBe(true);
   });
 
   it("旧 domain2 面已删除（残留即装配分叉回退）", () => {
