@@ -19,13 +19,8 @@ import {
   injectGlobalFetch,
 } from "../../helpers.ts";
 console.error("EVAL-ORDER-TAG: CHART");
-import {
-  openCodeGoAdapter,
-  esc,
-  fetchWithTimeout,
-  sanitizeHtml,
-  HistoryStore,
-} from "../../../src/apply/index.ts";
+import { openCodeGoAdapter, esc, sanitizeHtml, HistoryStore } from "../../../src/apply/index.ts";
+import { fetchWithTimeout } from "../../../src/server/pipeline/interface.ts";
 import {
   parseUsageResponse,
   fetchOpenCodeGoV2,

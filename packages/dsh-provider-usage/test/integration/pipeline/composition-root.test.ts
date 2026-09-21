@@ -185,9 +185,8 @@ describe("D6一 经 server/pipeline 域门面装配", () => {
   });
 
   it("包导出面收窄后集合：apply/index.ts 转发名与收窄后一致（改名/漏转即红）", () => {
-    // B波续批收窄后集合：safeFetchData/safeFormat/runV2Pipeline/runV2PanelPipeline已退役（簇批多文件直连）。
+    // B波续批收窄后集合：safeFetchData/safeFormat/runV2Pipeline/runV2PanelPipeline/fetchWithTimeout已退役（簇批多文件直连）。
     for (const name of [
-      "fetchWithTimeout",
       "panelCacheKey",
       "normalizeRangeDay",
       "isPanelCacheStale",

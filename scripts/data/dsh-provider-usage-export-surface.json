@@ -294,10 +294,6 @@
       "isType": false
     },
     {
-      "name": "fetchWithTimeout",
-      "isType": false
-    },
-    {
       "name": "inject",
       "isType": false
     },
@@ -955,10 +951,6 @@
         },
         {
           "name": "esc",
-          "isType": false
-        },
-        {
-          "name": "fetchWithTimeout",
           "isType": false
         },
         {

@@ -25,10 +25,10 @@ import {
   OPENCODE_GO_PROVIDER,
   OPENCODE_GO_ADAPTER_ID,
   ADAPTER_CONTRACT_VERSION,
-  fetchWithTimeout,
   userAdaptersFile,
   adapterStateFile,
 } from "../../../src/apply/index.ts";
+import { fetchWithTimeout } from "../../../src/server/pipeline/interface.ts";
 
 // ---------------------------------------------------------------- 工具：fakeReqs
 

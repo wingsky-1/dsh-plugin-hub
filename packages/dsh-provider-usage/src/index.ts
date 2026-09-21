@@ -21,7 +21,6 @@ export {
   apply,
   dayKey,
   esc,
-  fetchWithTimeout,
   inject,
   isPanelCacheStale,
   isUsageStatsAdapter,
