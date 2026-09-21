@@ -178,6 +178,12 @@ jobs:
               - 'stryker.conf.d/dsh-provider-usage*.json'
               - 'vitest.stryker.d/dsh-provider-usage.config.ts'
               - 'test/smoke-lib.ts'
+            dsh-jev-decide:
+              - 'packages/dsh-jev-decide/**'
+              - 'stryker.conf.d/dsh-jev-decide*.json'
+              - 'vitest.stryker.d/dsh-jev-decide.config.ts'
+              # 包级数据资产（导出面基线与分类登记）与 dsh-worktree-sidebar 同型
+              - 'scripts/data/dsh-jev-decide-*.json'
             dsh-lan-proxy:
               - 'packages/dsh-lan-proxy/**'
               - 'stryker.conf.d/dsh-lan-proxy*.json'
@@ -779,6 +785,8 @@ jobs:
       # 必须是独立 step（脚本只读第一个 --package，同上）。
       - name: Export surface snapshot（dsh-mcp-manager 导出面与基线零 diff）
         run: node scripts/gate/export-surface-snapshot.mjs --package dsh-mcp-manager
+      - name: Export surface snapshot（dsh-jev-decide 导出面与基线零 diff）
+        run: node scripts/gate/export-surface-snapshot.mjs --package dsh-jev-decide
       - name: Verify shared fan-in（shared 模块跨包扇入；#792）
         run: node scripts/gate/verify-shared-fanin.mjs
 

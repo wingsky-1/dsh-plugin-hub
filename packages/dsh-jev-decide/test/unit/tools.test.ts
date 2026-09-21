@@ -1,11 +1,8 @@
 /** tools 域单测（fetch 全注入 mock，全程离线；落盘仅内存记录器）。 */
 import { describe, expect, it } from "vitest";
 import type { DecideDeps, FetchImpl } from "../../src/server/tools/deps.ts";
-import {
-  callWithRetry,
-  createSemaphore,
-  parseVerdict,
-} from "../../src/server/tools/impl/client.ts";
+import { callWithRetry, parseVerdict } from "../../src/server/tools/impl/client.ts";
+import { createSemaphore } from "../../src/server/tools/impl/semaphore.ts";
 import { localPrecheckHit } from "../../src/server/tools/impl/precheck.ts";
 import { decide } from "../../src/server/tools/impl/service.ts";
 import { validateDecideArgs } from "../../src/server/tools/impl/validate.ts";

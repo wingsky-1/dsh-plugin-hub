@@ -9,8 +9,9 @@ import type { AutomationLevel, HistoryEntry } from "../../../shared/interface.ts
 import { rootDisplayOf, rootHashOf, stateHashOf } from "./hash.ts";
 import { redactSnippet } from "./redact.ts";
 
-/** 事件面（tools 域 DecideEvent 的结构子集，避免跨域值引用）。 */
+/** 事件面（tools 域 DecideEvent 的结构子集，避免跨域值引用）。precheckHit 命中即 snippet 全掩码（S1-A：长 PEM/残缺头不断字节上限，命中文本不存任何原文）。 */
 export interface EntryEvent {
+  readonly precheckHit: boolean;
   readonly presetId: string;
   readonly text: string;
   readonly lang: "en" | "zh" | "unknown";
@@ -41,7 +42,7 @@ export function assembleEntry(
     presetId: event.presetId,
     templateVersion: TEMPLATE_VERSION,
     stateHash: stateHashOf(event.text),
-    snippetRedacted: redactSnippet(event.text),
+    snippetRedacted: event.precheckHit ? "***" : redactSnippet(event.text),
     lang: event.lang,
     truncated: event.truncated,
     originalLength: event.originalLength,

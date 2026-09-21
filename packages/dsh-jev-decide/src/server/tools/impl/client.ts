@@ -47,36 +47,6 @@ export function defaultFetchImpl(): FetchImpl {
   };
 }
 
-/** 并发信号量（闭包状态；max≤0 即视同 1）。 */
-export function createSemaphore(max: number): {
-  readonly run: <T>(task: () => Promise<T>) => Promise<T>;
-} {
-  const limit = Number.isInteger(max) && max > 0 ? max : 1;
-  let active = 0;
-  const queue: (() => void)[] = [];
-  const pump = (): void => {
-    while (active < limit && queue.length > 0) {
-      const next = queue.shift();
-      if (next === undefined) return;
-      active += 1;
-      next();
-    }
-  };
-  const run = <T>(task: () => Promise<T>): Promise<T> =>
-    new Promise<T>((resolve, reject) => {
-      queue.push(() => {
-        task()
-          .then(resolve, reject)
-          .finally(() => {
-            active -= 1;
-            pump();
-          });
-      });
-      pump();
-    });
-  return { run };
-}
-
 /** 请求体（线协议最小面；裸漏形状即耦合源，故字段固定）。 */
 export interface JevRequestBody {
   readonly preset: string;

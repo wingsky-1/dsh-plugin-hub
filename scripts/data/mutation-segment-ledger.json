@@ -1385,7 +1385,15 @@
     "dsh-lan-proxy-tls": "#826 段按模块目录重划并改名（旧数字段键 1..4 → 模块目录名），本段尚无改名后的实测值；待首次 CI 变异切片跑或夜间全量班由 mutation-ledger --record 入档。旧段历史值见 superseded 中 replacedBy 含本段的条目。",
     "dsh-notifier-client": "#769 新增的客户端段（packages/dsh-notifier/src/client 下的纯 .ts 模块）。最近一次夜间全量班（observe.yml）早于本段的引入，故台账里没有它的 run 日志墙钟。本地 --force 实测 523 个变异体、concurrency 2 用时 4 分 03 秒（covered 87.38%），按台账口径不计入——本文件的值只能从 Actions run 日志解析，禁止手工编造数值；下一轮夜间全量班会把本段自动补进 measurements 并从 unmeasured 删除。",
     "dsh-mcp-manager-servers": "#767 S1-2b 新建段（servers/lifecycle 域骨架，尚未接线）：段面无历史测量值，wallSeconds 只能由 mutation-ledger 的生成模式从 Actions run 日志解析，不手工编造；待该段在 CI 变异切片上首次实跑后入库。",
-    "dsh-mcp-manager-client-panel": "#947 新增的客户端段（packages/dsh-mcp-manager/src/client/float/panel.ts + core/state.ts，首个直连判据 test/client-dom/panel-aria-modal.test.ts）。历史上无同名段，尚无 Actions run 日志墙钟；待首次 CI 变异切片跑或夜间全量班由 mutation-ledger --record 入档。本地实测值按台账口径不计入——本文件的值只能从 Actions run 日志解析，禁止手工编造数值。"
+    "dsh-mcp-manager-client-panel": "#947 新增的客户端段（packages/dsh-mcp-manager/src/client/float/panel.ts + core/state.ts，首个直连判据 test/client-dom/panel-aria-modal.test.ts）。历史上无同名段，尚无 Actions run 日志墙钟；待首次 CI 变异切片跑或夜间全量班由 mutation-ledger --record 入档。本地实测值按台账口径不计入——本文件的值只能从 Actions run 日志解析，禁止手工编造数值。",
+    "dsh-jev-decide-api": "按域分段（#943 对账后，单段 _single 按 server 目录名拆分为八段）：api 段尚无拆分后的 CI 切片/夜间实测值；待首次 CI 变异切片跑或夜间全量班由 mutation-ledger --record 入档。旧单段面见 superseded dsh-jev-decide。",
+    "dsh-jev-decide-config": "按域分段（#943 对账后，单段 _single 按 server 目录名拆分为八段）：config 段尚无拆分后的 CI 切片/夜间实测值；待首次 CI 变异切片跑或夜间全量班由 mutation-ledger --record 入档。旧单段面见 superseded dsh-jev-decide。",
+    "dsh-jev-decide-history": "按域分段（#943 对账后，单段 _single 按 server 目录名拆分为八段）：history 段尚无拆分后的 CI 切片/夜间实测值；待首次 CI 变异切片跑或夜间全量班由 mutation-ledger --record 入档。旧单段面见 superseded dsh-jev-decide。",
+    "dsh-jev-decide-store": "按域分段（#943 对账后，单段 _single 按 server 目录名拆分为八段）：store 段尚无拆分后的 CI 切片/夜间实测值；待首次 CI 变异切片跑或夜间全量班由 mutation-ledger --record 入档。旧单段面见 superseded dsh-jev-decide。",
+    "dsh-jev-decide-tools": "按域分段（#943 对账后，单段 _single 按 server 目录名拆分为八段）：tools 段尚无拆分后的 CI 切片/夜间实测值；待首次 CI 变异切片跑或夜间全量班由 mutation-ledger --record 入档。旧单段面见 superseded dsh-jev-decide。",
+    "dsh-jev-decide-upgrade": "按域分段（#943 对账后，单段 _single 按 server 目录名拆分为八段）：upgrade 段尚无拆分后的 CI 切片/夜间实测值；待首次 CI 变异切片跑或夜间全量班由 mutation-ledger --record 入档。旧单段面见 superseded dsh-jev-decide。",
+    "dsh-jev-decide-entry": "按域分段（#943 对账后，单段 _single 按 server 目录名拆分为八段）：entry 段（宿主唯一入口 src/index.ts + 双端共享 src/shared/**）尚无拆分后的 CI 切片/夜间实测值；待首次 CI 变异切片跑或夜间全量班由 mutation-ledger --record 入档。旧单段面见 superseded dsh-jev-decide。",
+    "dsh-jev-decide-client": "按域分段（#943 对账后，单段 _single 按 server 目录名拆分为八段）：client 段（客户端全区，仍排除 components/atoms.ts 纯样式原子）尚无拆分后的 CI 切片/夜间实测值；待首次 CI 变异切片跑或夜间全量班由 mutation-ledger --record 入档。旧单段面见 superseded dsh-jev-decide。"
   },
   "superseded": {
     "dsh-lan-proxy-1": {
@@ -1454,6 +1462,19 @@
         "dsh-notifier-channels"
       ],
       "reason": "#733 按域重写：旧 server 域（routes/sse-bus/system-notifier）解散——HTTP 端点与 SSE 归 api 域，系统出口归 channels/impl/system。"
+    },
+    "dsh-jev-decide": {
+      "replacedBy": [
+        "dsh-jev-decide-api",
+        "dsh-jev-decide-config",
+        "dsh-jev-decide-history",
+        "dsh-jev-decide-store",
+        "dsh-jev-decide-tools",
+        "dsh-jev-decide-upgrade",
+        "dsh-jev-decide-entry",
+        "dsh-jev-decide-client"
+      ],
+      "reason": "按域分段（#943 对账后）：旧单段 _single 面（packages/dsh-jev-decide/src/**/*.ts 全覆盖，仅排除 client/components/atoms.ts）按 server 目录名拆为 api/config/history/store/tools/upgrade 六域，另立 entry（宿主入口与双端共享）与 client（客户端）两段；拆分仅改变执行分片，面文件集不变。单段时代无 CI run 日志墙钟（仅一次本地冷跑全量，不计入），故不留 measurements；各段 wallSeconds 待首次 CI 切片跑或夜间全量班入库。"
     }
   }
 }

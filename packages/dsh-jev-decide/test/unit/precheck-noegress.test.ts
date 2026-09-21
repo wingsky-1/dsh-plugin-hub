@@ -40,6 +40,22 @@ const SECRETS: readonly string[] = [
 ];
 
 describe("secret-leak 本地预检命中不离境", () => {
+  it("残缺不命中、残头命中（打红点：{8,}/{16}/+/[:=] 量词）", () => {
+    for (const frag of [
+      "sk-",
+      "sk-Abc12",
+      "AKIA",
+      "ghp_",
+      "xoxb-",
+      "password",
+      "password=",
+      "api_key: ",
+    ]) {
+      expect(localPrecheckHit(frag)).toBe(false);
+    }
+    expect(localPrecheckHit("-----BEGIN PRIVATE KEY-----")).toBe(true);
+    expect(localPrecheckHit("-----BEGIN RSA PRIVATE KEY-----")).toBe(true);
+  });
   it("全密形命中；干净文本不命中", () => {
     for (const raw of SECRETS) expect(localPrecheckHit(raw)).toBe(true);
     expect(localPrecheckHit("today is sunny")).toBe(false);

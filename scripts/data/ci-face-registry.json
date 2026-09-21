@@ -187,6 +187,15 @@
       "why": "包级资产：导出面基线与分类登记。#847 接入 ci.yml / observe.yml / release.yml 各一条独立 step 与 gate-steps.mjs 本地 pr/full；export-surface-snapshot 按 --package 拼名读取两份数据，直接读取方 export-surface-wiring.test.ts 校验资产与独立执行点，丢任一入口即红。"
     },
     {
+      "path": "scripts/data/dsh-jev-decide-*.json",
+      "faces": ["dsh-jev-decide"],
+      "consumerGap": {
+        "kind": "indirect",
+        "reason": "export-surface-snapshot 与 export-faces-lib 按 ${pkg} 模板拼名加载（scripts/data/<pkg>-export-surface.json / <pkg>-export-faces.json），不含逐包字面量，故无字面命中的仓内直接读取方。"
+      },
+      "why": "包级资产：导出面基线与分类登记，与 dsh-worktree-sidebar 同型。"
+    },
+    {
       "path": "scripts/data/dsh-mcp-manager-*.json",
       "faces": ["dsh-mcp-manager"],
       "consumerGap": {
@@ -243,12 +252,29 @@
       "why": "同上（本包为包级单配置形态）。"
     },
     {
+      "path": "stryker.conf.d/dsh-jev-decide*.json",
+      "invalidatesBaseline": true,
+      "faces": ["dsh-jev-decide"],
+      "consumers": ["scripts/test/baseline-archive.test.ts"],
+      "why": "同上（本包为包级单配置形态）。"
+    },
+    {
       "path": "vitest.stryker.d/dsh-worktree-sidebar.config.ts",
       "invalidatesBaseline": true,
       "faces": ["dsh-worktree-sidebar"],
       "consumerGap": {
         "kind": "indirect",
         "reason": "stryker 经 stryker.conf.d/dsh-worktree-sidebar.json 的 vitest.configFile 读取；生成与 --check 比对在 scripts/gate/gen-stryker-conf.mjs，按派生路径拼名，不含逐包字面量，故无字面命中的仓内直接读取方。"
+      },
+      "why": "同上。"
+    },
+    {
+      "path": "vitest.stryker.d/dsh-jev-decide.config.ts",
+      "invalidatesBaseline": true,
+      "faces": ["dsh-jev-decide"],
+      "consumerGap": {
+        "kind": "indirect",
+        "reason": "stryker 经 stryker.conf.d/dsh-jev-decide.json 的 vitest.configFile 读取；生成与 --check 比对在 scripts/gate/gen-stryker-conf.mjs，按派生路径拼名，不含逐包字面量，故无字面命中的仓内直接读取方。"
       },
       "why": "同上。"
     },

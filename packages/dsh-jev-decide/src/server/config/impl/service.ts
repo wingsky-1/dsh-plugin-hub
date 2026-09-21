@@ -16,8 +16,11 @@ import { configFile, presetsFile, secretsFile, versionFile } from "./paths.ts";
 import { keyShapeCategory } from "../../../shared/interface.ts";
 import type { ConfigV1 } from "../../../shared/interface.ts";
 
-/** 无版本文件时的起点（全新安装：整条迁移链空转）。 */
-const BASELINE_VERSION = "0.0.0";
+/**
+ * 无版本文件时的起点（BASELINE 语义钉死：字面 "0.0.0"，与 "0" 数值等价——
+ * compareVersions 缺位补零，故 upgrade 侧“缺失按 0”与本字面是同一事实的两面写法）。
+ */
+export const BASELINE_VERSION = "0.0.0";
 /** 读不到插件版本时的兜底（不阻断启动）。 */
 const UNKNOWN_VERSION = "0.0.0";
 
@@ -44,6 +47,20 @@ export function writeStoredVersion(
   deps: ConfigDeps,
 ): void {
   deps.io.atomicWrite0600Sync(versionFile(home), version + "\n");
+}
+
+/** 版本号比较（逐段数值；段数不同缺位补零；预发布后缀不参与比较）。 */
+export function compareVersions(left: string, right: string): number {
+  const parse = (text: string): number[] =>
+    text.split(".").map((part) => Number.parseInt(part, 10) || 0);
+  const a = parse(left);
+  const b = parse(right);
+  const length = Math.max(a.length, b.length);
+  for (let index = 0; index < length; index += 1) {
+    const difference = (a[index] || 0) - (b[index] || 0);
+    if (difference !== 0) return difference > 0 ? 1 : -1;
+  }
+  return 0;
 }
 
 /** 本插件版本（读包根 package.json；产物形态下本模块位于 lib/server/config/impl/）。 */
@@ -106,6 +123,19 @@ export function loadState(home: string | undefined, deps: ConfigDeps): LoadedSta
   return { config: synced, plaintext, retired, storedVersion };
 }
 
+/**
+ * 开关按 id 合并（M1 写死语义：子集补丁只改命中项，未提及项保持存量，
+ * 缺失项永不按默认复活——整列替换会让 secret-leak 等开关静默回默认值）。
+ */
+function mergePresetSwitches(
+  current: ConfigV1["presets"],
+  patch: NonNullable<ConfigPutPatch["presets"]>,
+): ConfigV1["presets"] {
+  const switches = new Map(current.map((entry) => [entry.id, entry]));
+  for (const entry of patch) switches.set(entry.id, { ...entry });
+  return current.map((entry) => switches.get(entry.id) ?? entry);
+}
+
 /** 应用已校验补丁并落盘（config.json + presets.json + secrets.json 各归其位）。 */
 export function savePatch(
   home: string | undefined,
@@ -127,7 +157,7 @@ export function savePatch(
       ...(patch.truncBudget !== undefined ? { truncBudget: patch.truncBudget } : {}),
     },
     ...(patch.presets !== undefined
-      ? { presets: patch.presets.map((entry) => ({ ...entry })) }
+      ? { presets: mergePresetSwitches(current.config.presets, patch.presets) }
       : {}),
     ...(patch.history !== undefined
       ? { history: { ...current.config.history, ...patch.history } }

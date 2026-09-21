@@ -97,22 +97,6 @@
       "trackingIssue": "#847",
       "reviewBy": "2027-03-31",
       "exitCriteria": "对应单测迁出 test/unit 或不再直引客户端实现面后删本条"
-    },
-    {
-      "gate": "threshold-registry",
-      "path": "mutation.packages.dsh-jev-decide#membership",
-      "reason": "新包首版无夜间变异基线：dsh-jev-decide 有 src 且变异拓扑/配置/--min 均已登记，但 gauntlet.config.json mutation.packages 尚无条目（回落锚点须由 observe 夜间全量班首次跑完回填，本地不编造实测值）。PR 期变异质量仍由 CI 按命中切片强制跑变异覆盖，本条只豁免单调锚比较。",
-      "trackingIssue": "#943",
-      "reviewBy": "2026-10-12",
-      "exitCriteria": "observe 夜间全量班首次跑完并回填 fixedCovered 后删本条（届时反向腐烂会标红提醒）"
-    },
-    {
-      "gate": "threshold-registry",
-      "path": "mutation.packages.dsh-jev-decide#anchor",
-      "reason": "同上：回落锚点缺失是首版新包的已知缺口，非放宽存量阈值；锚点回填前回落判据对本包恒假，靠 CI 切片变异分与包内 166 用例兜底。",
-      "trackingIssue": "#943",
-      "reviewBy": "2026-10-12",
-      "exitCriteria": "observe 夜间全量班首次跑完并回填 fixedCovered 后删本条"
     }
   ]
 }

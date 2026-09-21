@@ -102,6 +102,38 @@ describe("明文形状与全大写缺口", () => {
     if (!r.ok) expect(r.failure.errorCode).toBe("NEED_CONFIRM");
     expect(validatePutBody({ apiKeyPlaintext: PLAINTEXT, confirm: true }).ok).toBe(true);
   });
+  it("confirm 显式 false 同样 NEED_CONFIRM；孤 confirm 无害空补丁", () => {
+    const denied = validatePutBody({ apiKeyPlaintext: PLAINTEXT, confirm: false });
+    expect(denied.ok).toBe(false);
+    if (!denied.ok) expect(denied.failure.errorCode).toBe("NEED_CONFIRM");
+    const lone = validatePutBody({ confirm: true });
+    expect(lone.ok).toBe(true);
+    if (lone.ok) expect(lone.patch).toEqual({});
+  });
+});
+
+describe("M1 合并语义：presets 按 id 合并，history 浅合并", () => {
+  it("presets 子集补丁只改命中项（secret-leak 不复活）", () => {
+    const home = tempHome();
+    const checked = validatePutBody({
+      presets: [{ id: "general", enabled: false, automationCap: 2 }],
+    });
+    expect(checked.ok).toBe(true);
+    if (!checked.ok) return;
+    const saved = savePatch(home, checked.patch, plainDeps());
+    expect(saved.config.presets.find((p) => p.id === "general")?.enabled).toBe(false);
+    expect(saved.config.presets.find((p) => p.id === "secret-leak")?.enabled).toBe(false);
+    expect(saved.config.presets.find((p) => p.id === "plan-review")?.enabled).toBe(true);
+    expect(saved.config.presets).toHaveLength(5);
+  });
+  it("history 部分补丁保留未提键", () => {
+    const home = tempHome();
+    const checked = validatePutBody({ history: { perSession: 100 } });
+    expect(checked.ok).toBe(true);
+    if (!checked.ok) return;
+    const saved = savePatch(home, checked.patch, plainDeps());
+    expect(saved.config.history).toMatchObject({ perSession: 100, totalSessions: 50 });
+  });
 });
 
 describe("PUT 双轨互斥 + GET 掩码 + 日志无原文", () => {

@@ -37,8 +37,3 @@ export function secretsFile(home?: string): string {
 export function versionFile(home?: string): string {
   return join(jevHome(home), VERSION_FILE_NAME);
 }
-
-/** 历史根目录（按 rootHash/sessionId 分文件）。 */
-export function historyDir(home?: string): string {
-  return join(jevHome(home), "history");
-}

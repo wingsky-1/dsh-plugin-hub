@@ -4,7 +4,7 @@
  * 传输（routes.ts）+ 契约消费（contract.ts）经此门面被 panes / index 消费；
  * 禁止绕过门面直引域内实现。
  */
-export { APP_ROUTES, CLIENT_FETCH_TIMEOUT_MS, CLIENT_ROUTES, fetchTimeout } from "./routes.ts";
+export { APP_ROUTES, CLIENT_FETCH_TIMEOUT_MS, fetchTimeout } from "./routes.ts";
 export {
   capLabel,
   clamp01,
@@ -18,7 +18,6 @@ export {
 export type {
   AutomationCap,
   AutomationLevel,
-  HttpFailure,
   JevConfigV1,
   JevHistoryEntry,
   JevLang,

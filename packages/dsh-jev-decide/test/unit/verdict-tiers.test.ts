@@ -246,4 +246,26 @@ describe("失败包络无概率 + errorCode + category", () => {
     expect(wired).toBe("中文");
     expect(Array.from(wired)).toHaveLength(2);
   });
+  it("截断即 automation 降 suggest-only（打红点：三元删去；tier 保持跟源）", async () => {
+    const out = await decide(
+      { preset_id: "general", state: { text: "abcdefghij", lang: "en" } },
+      baseDeps({
+        connection: { timeoutMs: 8000, maxConcurrency: 4, truncBudget: 4, hasPlaintextKey: false },
+        fetchImpl: okFetch({
+          resultKind: "choice",
+          choice: "A",
+          confidence: 0.8,
+          tier: 2,
+          automation: 2,
+        }),
+      }),
+    );
+    expect(out).toMatchObject({
+      ok: true,
+      truncated: true,
+      originalLength: 10,
+      tier: "high",
+      automation: "suggest-only",
+    });
+  });
 });

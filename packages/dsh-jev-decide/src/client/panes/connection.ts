@@ -12,7 +12,13 @@
  * - 高级数与历史配额随同提交（connection.timeoutMs/maxConcurrency/truncBudget +
  *   history.perSession/totalSessions）；未知键 baseUrl 永不发送。
  */
-import { APP_ROUTES, fetchTimeout, parseConfigPayload, validApiKeyRef } from "../api/interface.ts";
+import {
+  APP_ROUTES,
+  failureCategory,
+  fetchTimeout,
+  parseConfigPayload,
+  validApiKeyRef,
+} from "../api/interface.ts";
 import type { JevConfigV1 } from "../api/interface.ts";
 import {
   actionButton,
@@ -100,11 +106,9 @@ export function renderConnectionPane(host: ConnectionHost): HTMLElement {
         let category = "";
         try {
           const body: unknown = await res.json();
-          if (body !== null && typeof body === "object") {
-            const rec = body as Record<string, unknown>;
-            const v = rec["error"] ?? rec["errorCode"] ?? rec["code"] ?? rec["message"];
-            if (typeof v === "string" && v.length > 0) category = v;
-          }
+          const hit = failureCategory(res.status, body);
+          // 门面无类别时回落 "http-<status>"：仅体带类别/错误/message 才展示括号。
+          if (hit !== "http-" + res.status) category = hit;
         } catch {
           /* 非 JSON 即按状态码 */
         }
@@ -185,21 +189,9 @@ export function renderConnectionPane(host: ConnectionHost): HTMLElement {
         if (!res.ok) {
           let cat = "http-" + res.status;
           try {
-            const b: unknown = await res.json();
-            if (b !== null && typeof b === "object") {
-              const rec = b as Record<string, unknown>;
-              const nested = rec["error"];
-              if (nested !== null && typeof nested === "object" && !Array.isArray(nested)) {
-                const nrec = nested as Record<string, unknown>;
-                const v = nrec["category"] ?? nrec["errorCode"];
-                if (typeof v === "string" && v.length > 0) cat = v;
-              } else {
-                const v = rec["category"] ?? rec["errorCode"] ?? rec["error"] ?? rec["code"];
-                if (typeof v === "string" && v.length > 0) cat = v;
-              }
-            }
+            cat = failureCategory(res.status, await res.json());
           } catch {
-            /* 忽略 */
+            /* 非 JSON 即保持状态码类别 */
           }
           throw new Error(cat);
         }
@@ -275,7 +267,8 @@ export function renderConnectionPane(host: ConnectionHost): HTMLElement {
         automationCap: p.automationCap,
       })),
       history: { perSession, totalSessions },
-      ...(plain !== "" ? { apiKeyPlaintext: plain } : {}),
+      // S1-B：明文提交必带顶层 confirm:true（二次确认已勾选是前置校验；缺此键服务端恒 400）。
+      ...(plain !== "" ? { apiKeyPlaintext: plain, confirm: true } : {}),
     };
     saveBtn.disabled = true;
     showMsg(noteLine("保存中…（明文仅本次提交，不回显）"));

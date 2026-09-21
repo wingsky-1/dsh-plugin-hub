@@ -97,13 +97,3 @@ export function removeFileSync(file: string): void {
     // 缺席或删不掉都不阻断主流程。
   }
 }
-
-/** 读文件行数（jsonl 轮转用；读失败即 0）。 */
-export function countLinesSync(file: string): number {
-  const raw = readTextSync(file);
-  if (!raw.ok || raw.text.length === 0) return 0;
-  let count = 0;
-  let index = -1;
-  while ((index = raw.text.indexOf("\n", index + 1)) !== -1) count += 1;
-  return raw.text.endsWith("\n") ? count : count + 1;
-}

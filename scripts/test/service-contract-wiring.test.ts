@@ -86,6 +86,24 @@ const UNWIRED_TEST_FACES: Record<string, string> = {
  * 都不进任何 tsc program，要求它们登记才是假红。
  */
 const EXPECT_FILES: Record<string, string[]> = {
+  "dsh-jev-decide": [
+    "client-dom/panes-probability.test.ts",
+    "client-dom/tabs-mask-history.test.ts",
+    "client-helpers.ts",
+    "client-unit/routes-consistency.test.ts",
+    "integration/api.test.ts",
+    "integration/routes-fence.test.ts",
+    "unit/baseurl-guard.test.ts",
+    "unit/config.test.ts",
+    "unit/decide-contract.test.ts",
+    "unit/history-hardening.test.ts",
+    "unit/history.test.ts",
+    "unit/keys-hardening.test.ts",
+    "unit/precheck-noegress.test.ts",
+    "unit/put-envelope.test.ts",
+    "unit/tools.test.ts",
+    "unit/verdict-tiers.test.ts",
+  ],
   "dsh-lan-proxy": [
     "client-dom/settings-card.test.ts",
     "client-unit/ca-status.test.ts",

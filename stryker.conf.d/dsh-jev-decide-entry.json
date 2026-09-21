@@ -1,0 +1,40 @@
+{
+  "$schema": "../node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "mutate": [
+    "packages/dsh-jev-decide/src/index.ts",
+    "packages/dsh-jev-decide/src/shared/**/*.ts"
+  ],
+  "testRunner": "vitest",
+  "mutator": {
+    "excludedMutations": [
+      "StringLiteral",
+      "ArrayLiteral",
+      "ObjectLiteral",
+      "TemplateLiteral"
+    ]
+  },
+  "plugins": [
+    "@stryker-mutator/vitest-runner"
+  ],
+  "concurrency": 16,
+  "timeoutMS": 60000,
+  "dryRunTimeoutMinutes": 5,
+  "reporters": [
+    "progress",
+    "clear-text",
+    "json"
+  ],
+  "coverageAnalysis": "perTest",
+  "tempDirName": ".stryker-tmp",
+  "cleanTempDir": true,
+  "vitest": {
+    "related": false,
+    "configFile": "vitest.stryker.d/dsh-jev-decide.config.ts"
+  },
+  "jsonReporter": {
+    "fileName": "coverage/mutation/dsh-jev-decide-entry.json"
+  },
+  "incremental": true,
+  "incrementalFile": "coverage/mutation/incremental-jev-decide-entry.json",
+  "_comment": "按域分段（对标 lan-proxy entry 段）：宿主唯一入口 src/index.ts + 双端共享 src/shared/**（contract 契约解析在面内）；面文件集与单段时代一致，仅执行分片变化；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
+}

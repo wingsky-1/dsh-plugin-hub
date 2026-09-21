@@ -99,6 +99,7 @@ describe("脱敏截断", () => {
         tier: "high",
         automation: "auto",
         latencyMs: 1,
+        precheckHit: false,
       },
       7,
     );

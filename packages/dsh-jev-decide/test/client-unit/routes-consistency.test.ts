@@ -1,10 +1,11 @@
-/** 两端路由一致性 + 客户端契约解析（直连 src/client 纯逻辑，node 环境，全离线）。
+/** 客户端路由回落 + 契约解析（直连 src/client 纯逻辑，node 环境，全离线）。
  *
- * 守的是 client/api/routes.CLIENT_ROUTES/APP_ROUTES 与 shared ROUTES 的同值关系，
- * 以及 contract 解析的防御形态：把客户端路由改成手写字面量、解析放宽任一改动，本文件必红。
+ * 守的是 APP_ROUTES 回落共享 ROUTES 与 contract 解析的防御形态：
+ * 把路由改成手写字面量、解析放宽任一改动，本文件必红。
+ * 注：宿主已删 CLIENT_ROUTES，本文件对应断言随之移除（仅 APP_ROUTES 回落）。
  */
 import { describe, expect, it } from "vitest";
-import { APP_ROUTES, CLIENT_ROUTES } from "../../src/client/api/routes.ts";
+import { APP_ROUTES } from "../../src/client/api/routes.ts";
 import {
   capLabel,
   clamp01,
@@ -18,19 +19,12 @@ import {
 import { API_KEY_REF_RE, ROUTES } from "../../src/shared/contract.ts";
 
 describe("两端路由一致性", () => {
-  it("CLIENT_ROUTES 与共享 ROUTES 逐项同值", () => {
-    expect(CLIENT_ROUTES.health).toBe(ROUTES.health);
-    expect(CLIENT_ROUTES.config).toBe(ROUTES.config);
-    expect(CLIENT_ROUTES.presets).toBe(ROUTES.presets);
-    expect(CLIENT_ROUTES.history).toBe(ROUTES.history);
-    expect(CLIENT_ROUTES.testConnection).toBe(ROUTES.testConnection);
-  });
-  it("APP_ROUTES 无注入时回落共享 ROUTES", () => {
-    expect(APP_ROUTES.health).toBe("/api/dsh-jev-decide/health");
-    expect(APP_ROUTES.config).toBe("/api/dsh-jev-decide/config");
-    expect(APP_ROUTES.presets).toBe("/api/dsh-jev-decide/presets");
-    expect(APP_ROUTES.history).toBe("/api/dsh-jev-decide/history");
-    expect(APP_ROUTES.testConnection).toBe("/api/dsh-jev-decide/test-connection");
+  it("APP_ROUTES 无注入时逐键回落共享 ROUTES（打红点：fallback 串键）", () => {
+    expect(APP_ROUTES.health).toBe(ROUTES.health);
+    expect(APP_ROUTES.config).toBe(ROUTES.config);
+    expect(APP_ROUTES.presets).toBe(ROUTES.presets);
+    expect(APP_ROUTES.history).toBe(ROUTES.history);
+    expect(APP_ROUTES.testConnection).toBe(ROUTES.testConnection);
   });
   it("validApiKeyRef 与共享正则同判定", () => {
     for (const good of ["JEV_API_KEY", "A1"]) {
@@ -119,5 +113,84 @@ describe("客户端契约解析", () => {
     expect(clamp01(2)).toBe(1);
     expect(clamp01(-1)).toBe(0);
     expect(clamp01("x")).toBe(0);
+  });
+});
+
+describe("契约解析分支补杀", () => {
+  it("failureCategory 嵌套 code 与顶层键回落", () => {
+    expect(failureCategory(400, { error: { code: "E_CODE" } })).toBe("E_CODE");
+    expect(failureCategory(400, { error: {} })).toBe("bad-request");
+    expect(failureCategory(500, { error: "oops" })).toBe("oops");
+    expect(failureCategory(500, { message: "m" })).toBe("m");
+    expect(failureCategory(500, {})).toBe("http-500");
+  });
+  it("normalizeCap 字符串与小数档", () => {
+    expect(normalizeCap("1")).toBe(1);
+    expect(normalizeCap("2")).toBe(2);
+    expect(normalizeCap("low")).toBe(1);
+    expect(normalizeCap(1.5)).toBe(1);
+    expect(normalizeCap(0.5)).toBe(0);
+    expect(normalizeCap(-1)).toBe(0);
+    expect(normalizeCap(undefined)).toBe(0);
+    expect(capLabel(1)).toBe("low");
+  });
+  it("parseConfigPayload 缺 connection/presets 即 null；非法预设项跳过", () => {
+    const noConn = {
+      version: 1,
+      connection: null,
+      presets: [{ id: "general", enabled: true, automationCap: 2 }],
+      history: { perSession: 200, totalSessions: 50 },
+    };
+    expect(parseConfigPayload(noConn)).toBe(null);
+    const noPresets = {
+      version: 1,
+      connection: { hasPlaintextKey: false, timeoutMs: 1, maxConcurrency: 1, truncBudget: 1 },
+      presets: null,
+      history: { perSession: 1, totalSessions: 1 },
+    };
+    expect(parseConfigPayload(noPresets)).toBe(null);
+    const mixed = {
+      version: 1,
+      connection: { hasPlaintextKey: false, timeoutMs: 1, maxConcurrency: 1, truncBudget: 1 },
+      presets: [{ no: 1 }, { id: "general", enabled: 1, automationCap: 9 }],
+      history: { perSession: 1, totalSessions: 1 },
+    };
+    const got = parseConfigPayload(mixed);
+    expect(got?.presets).toHaveLength(1);
+    expect(got?.presets[0]).toMatchObject({ id: "general", enabled: false, automationCap: 2 });
+  });
+  it("parsePresetsPayload 非数组 presets 与 data 包装", () => {
+    expect(parsePresetsPayload({ presets: "x" })).toHaveLength(0);
+    const viaData = parsePresetsPayload({ data: [{ id: "g", templateVersion: "1", label: 1 }] });
+    expect(viaData).toHaveLength(1);
+    expect(viaData[0]?.templateVersion).toBe(undefined);
+    expect(viaData[0]?.label).toBe(undefined);
+  });
+  it("parseHistoryPayload 非法条目跳过；字段归一", () => {
+    const got = parseHistoryPayload({
+      entries: [
+        { ts: "7", sessionId: "s" },
+        { ts: 1 },
+        {
+          ts: 2,
+          sessionId: "s2",
+          score: Number.NaN,
+          choice: 42,
+          errorCode: 7,
+          truncated: 1,
+          automation: "assisted",
+        },
+      ],
+    });
+    expect(got).toHaveLength(1);
+    expect(got[0]?.score).toBe(undefined);
+    expect(got[0]?.choice).toBe(undefined);
+    expect(got[0]?.errorCode).toBe(undefined);
+    expect(got[0]?.truncated).toBe(false);
+    expect(got[0]?.automation).toBe("assisted");
+  });
+  it("validApiKeyRef 尾随符号拒收（锚定 $）", () => {
+    expect(validApiKeyRef("JEV_KEY!")).toBe(false);
+    expect(validApiKeyRef("JEV_KEY")).toBe(true);
   });
 });

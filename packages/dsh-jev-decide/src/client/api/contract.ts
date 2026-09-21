@@ -31,12 +31,6 @@ export interface JevPresetInfo {
   readonly description?: string;
 }
 
-/** 结构化 HTTP 失败（状态码 + 类别；密钥形状 400 仅回类别，原文永不回显）。 */
-export interface HttpFailure {
-  readonly status: number;
-  readonly category: string;
-}
-
 function pickCategory(body: unknown): string | null {
   if (body === null || typeof body !== "object" || Array.isArray(body)) return null;
   const rec = body as Record<string, unknown>;

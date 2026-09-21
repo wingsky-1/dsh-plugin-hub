@@ -9,7 +9,7 @@
 import type { Context } from "@deepseek-ai/cordis";
 import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
 import type { ToolDefinition } from "@deepseek-ai/dsh-tools";
-import { ROUTES, frozenPresetOf } from "./shared/interface.ts";
+import { ROUTES } from "./shared/interface.ts";
 import type { AutomationCap } from "./shared/interface.ts";
 import * as apiApi from "./server/api/interface.ts";
 import type { ApiDeps } from "./server/api/interface.ts";
@@ -195,8 +195,15 @@ function assemble(host: HostPort, options: JevDecideApplyConfig): (() => void)[]
         .map((item) => ({ ...item })),
     readHistory: (query) => historyApi.queryEntries(home, query, historyDeps),
     removeHistory: (query) => historyApi.deleteSession(home, query, historyDeps),
-    probeConnection: async (body) =>
-      probeConnection(body, home, configDeps, options.fetchImpl, env),
+    probeConnection: async () => {
+      const state = live();
+      const resolved = configApi.resolveApiKey(state, env, configDeps);
+      return toolsApi.probeConnection({
+        key: resolved.key,
+        timeoutMs: state.config.connection.timeoutMs,
+        fetchImpl: options.fetchImpl,
+      });
+    },
   };
   for (const tool of toolsApi.buildToolDefinitions({
     depsFor,
@@ -209,61 +216,6 @@ function assemble(host: HostPort, options: JevDecideApplyConfig): (() => void)[]
   }
   for (const dispose of apiApi.installApi(apiDeps)) disposers.push(dispose);
   return disposers;
-}
-
-/** 连接探针（空体合法；密钥取自服务端配置；不记历史）。 */
-async function probeConnection(
-  _body: unknown,
-  home: string | undefined,
-  configDeps: ConfigDeps,
-  fetchImpl: FetchImpl | undefined,
-  env: Record<string, string | undefined>,
-): Promise<
-  | { readonly ok: true; readonly latencyMs: number }
-  | {
-      readonly ok: false;
-      readonly errorCode: string;
-      readonly category: string;
-      readonly message: string;
-    }
-> {
-  const state: LoadedState = configApi.loadState(home, configDeps);
-  const resolved = configApi.resolveApiKey(state, env, configDeps);
-  if (resolved.key === undefined) {
-    return { ok: false, errorCode: "NO_KEY", category: "no-key", message: "no api key" };
-  }
-  const template = frozenPresetOf("general");
-  const started = Date.now();
-  const outcome = await toolsApi.callWithRetry(
-    {
-      preset: "general",
-      templateVersion: 1,
-      state: { text: "connection probe", lang: "unknown" },
-      questions: (template?.questions ?? []).map((q) => ({
-        id: q.id,
-        text: q.text,
-        kind: q.kind,
-        ...(q.options !== undefined ? { options: [...q.options] } : {}),
-      })),
-    },
-    resolved.key,
-    state.config.connection.timeoutMs,
-    fetchImpl ?? toolsApi.defaultFetchImpl(),
-  );
-  if (outcome.failure !== undefined || outcome.verdict === undefined) {
-    const failure = outcome.failure ?? {
-      code: "UPSTREAM",
-      category: "upstream",
-      message: "unknown",
-    };
-    return {
-      ok: false,
-      errorCode: failure.code,
-      category: failure.category,
-      message: failure.message,
-    };
-  }
-  return { ok: true, latencyMs: Date.now() - started };
 }
 
 /** 挂载 dsh-jev-decide。 */

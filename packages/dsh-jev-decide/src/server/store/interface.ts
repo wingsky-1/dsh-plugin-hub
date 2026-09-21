@@ -1,10 +1,8 @@
 /**
- * store 域门面：包内跨域引用的唯一入口（只转出，不放实现）。
+ * store 域门面：只转出组合根实际用的落盘原语（无逻辑）。
  */
-export type { LoggerPort } from "./deps.ts";
 export {
   atomicWrite0600Sync,
-  countLinesSync,
   ensureDir0700,
   listFilesSync,
   mtimeMs,

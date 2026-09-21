@@ -9,83 +9,15 @@
  * fetch 经全局桩（loopback 路由取数面），落盘无。
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { apply } from "../../src/client/index.ts";
 import { APP_ROUTES } from "../../src/client/api/routes.ts";
-
-function pollUntil(predicate: () => boolean, label: string, timeoutMs = 2000): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  const tick = async (): Promise<void> => {
-    if (predicate()) return;
-    if (Date.now() > deadline) throw new Error("pollUntil: " + label + " timeout");
-    await new Promise((r) => setTimeout(r, 5));
-    return tick();
-  };
-  return tick();
-}
-
-interface Mount {
-  readonly card: HTMLElement;
-  readonly effects: Array<() => void>;
-}
-
-function mountWithFetch(stub: (url: string) => Response): Mount {
-  const prevFetch = (globalThis as unknown as { fetch?: unknown }).fetch;
-  (globalThis as unknown as { fetch: unknown }).fetch = async (url: unknown) => stub(String(url));
-  const effects: Array<() => void> = [];
-  let render: (() => HTMLElement) | null = null;
-  const slots = {
-    inject: (_name: string, setup: () => unknown) => {
-      setup();
-      return () => {};
-    },
-    register: (_item: unknown, renderFn: () => HTMLElement) => {
-      render = renderFn;
-      return () => {};
-    },
-  };
-  const ctx = {
-    slots,
-    effect: (fn: () => () => void) => {
-      effects.push(fn());
-    },
-  };
-  apply(ctx as never);
-  if (render === null) throw new Error("card render 未注册");
-  const card = (render as () => HTMLElement)();
-  document.body.appendChild(card);
-  (mountWithFetch as unknown as { prev?: unknown }).prev = prevFetch;
-  return { card, effects };
-}
-
-function jsonResponse(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { "content-type": "application/json" },
-  });
-}
-
-const BARE_CONFIG = {
-  version: 1,
-  connection: { hasPlaintextKey: false, timeoutMs: 8000, maxConcurrency: 4, truncBudget: 32000 },
-  presets: [
-    { id: "general", enabled: true, automationCap: 2 },
-    { id: "secret-leak", enabled: false, automationCap: 0 },
-    { id: "plan-review", enabled: true, automationCap: 1 },
-    { id: "risk-check", enabled: true, automationCap: 1 },
-    { id: "custom", enabled: true, automationCap: 2 },
-  ],
-  history: { perSession: 200, totalSessions: 50 },
-};
-
-function baseStub(url: string): Response {
-  if (url.includes(APP_ROUTES.health))
-    return jsonResponse({ ok: true, version: "0.1.0", templateVersion: 1 });
-  if (url.includes(APP_ROUTES.config)) return jsonResponse(BARE_CONFIG);
-  if (url.includes(APP_ROUTES.history)) return jsonResponse({ ok: true, entries: [] });
-  if (url.includes(APP_ROUTES.presets)) return jsonResponse({ ok: true, presets: [] });
-  if (url.includes(APP_ROUTES.testConnection)) return jsonResponse({ ok: true, latencyMs: 1 });
-  return jsonResponse({}, 404);
-}
+import {
+  BARE_CONFIG,
+  baseStub,
+  installStub,
+  jsonResponse,
+  mountCard,
+  pollUntil,
+} from "../client-helpers.ts";
 
 function tabButtons(card: HTMLElement): HTMLButtonElement[] {
   return Array.from(card.querySelectorAll<HTMLButtonElement>(".dj-tab"));
@@ -95,21 +27,21 @@ function paneOf(card: HTMLElement, tab: string): HTMLElement | null {
   return card.querySelector<HTMLElement>('.dj-pane[data-tab="' + tab + '"]');
 }
 
-let prevFetchGlobal: unknown;
+let restore: (() => void) | null = null;
 beforeEach(() => {
   document.body.innerHTML = "";
-  prevFetchGlobal = (globalThis as unknown as { fetch?: unknown }).fetch;
 });
 
 afterEach(() => {
   document.body.innerHTML = "";
-  if (prevFetchGlobal === undefined) delete (globalThis as unknown as { fetch?: unknown }).fetch;
-  else (globalThis as unknown as { fetch: unknown }).fetch = prevFetchGlobal;
+  restore?.();
+  restore = null;
 });
 
 describe("三 tab 切换", () => {
   it("三 tab 俱在；点击即切换显隐（D4）", async () => {
-    const { card } = mountWithFetch(baseStub);
+    restore = installStub(baseStub).restore;
+    const { card } = mountCard();
     const buttons = tabButtons(card);
     expect(buttons.map((b) => b.textContent)).toEqual(["连接", "模板库", "历史"]);
     expect(paneOf(card, "connection")?.hidden).toBe(false);
@@ -137,7 +69,8 @@ describe("连接掩码已配置显示", () => {
       if (url.includes(APP_ROUTES.config)) return jsonResponse(masked);
       return baseStub(url);
     };
-    mountWithFetch(stub);
+    restore = installStub(stub).restore;
+    mountCard();
     await pollUntil(
       () => (document.body.textContent ?? "").includes("密钥：已配置"),
       "掩码已配置徽标",
@@ -152,7 +85,8 @@ describe("连接掩码已配置显示", () => {
 
 describe("历史空错态", () => {
   it("空历史即“暂无历史。”（D4）", async () => {
-    const { card } = mountWithFetch(baseStub);
+    restore = installStub(baseStub).restore;
+    const { card } = mountCard();
     tabButtons(card)
       .find((b) => b.textContent === "历史")
       ?.click();
@@ -164,11 +98,40 @@ describe("历史空错态", () => {
       if (url.includes(APP_ROUTES.history)) return jsonResponse({ ok: false }, 500);
       return baseStub(url);
     };
-    const { card } = mountWithFetch(stub);
+    restore = installStub(stub).restore;
+    const { card } = mountCard();
     tabButtons(card)
       .find((b) => b.textContent === "历史")
       ?.click();
     await pollUntil(() => (card.textContent ?? "").includes("加载失败"), "历史错态文案");
     expect(card.textContent).toContain("加载失败");
+  });
+});
+
+describe("健康徽标三态", () => {
+  it("health 200 即“服务可用”", async () => {
+    restore = installStub(baseStub).restore;
+    const { card } = mountCard();
+    await pollUntil(() => (card.textContent ?? "").includes("服务可用"), "服务可用");
+    expect(card.querySelector(".dj-statusOk")).not.toBe(null);
+  });
+  it("health 500 即“服务异常 状态码”", async () => {
+    const stub = (url: string): Response => {
+      if (url.includes(APP_ROUTES.health)) return jsonResponse({ ok: false }, 500);
+      return baseStub(url);
+    };
+    restore = installStub(stub).restore;
+    const { card } = mountCard();
+    await pollUntil(() => (card.textContent ?? "").includes("服务异常 500"), "服务异常");
+    expect(card.querySelector(".dj-statusErr")).not.toBe(null);
+  });
+  it("health 抛错即“服务不可达”", async () => {
+    const stub = (url: string): Response => {
+      if (url.includes(APP_ROUTES.health)) throw new Error("down");
+      return baseStub(url);
+    };
+    restore = installStub(stub).restore;
+    const { card } = mountCard();
+    await pollUntil(() => (card.textContent ?? "").includes("服务不可达"), "服务不可达");
   });
 });

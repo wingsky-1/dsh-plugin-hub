@@ -6,15 +6,6 @@
  */
 import { ROUTES } from "../../shared/interface.ts";
 
-/** 客户端路由（与共享 ROUTES 同值；两端一致性由共享保证）。 */
-export const CLIENT_ROUTES = {
-  health: ROUTES.health,
-  config: ROUTES.config,
-  presets: ROUTES.presets,
-  history: ROUTES.history,
-  testConnection: ROUTES.testConnection,
-} as const;
-
 /** 构建期注入的宿主路由表（bundle-host extraDefine；缺席即 undefined）。 */
 declare const __DSH_ROUTES__: Record<string, string> | undefined;
 

@@ -13,6 +13,8 @@
  */
 import {
   APP_ROUTES,
+  capLabel,
+  failureCategory,
   fetchTimeout,
   normalizeCap,
   parseConfigPayload,
@@ -44,12 +46,6 @@ interface RowState {
   enabled: boolean;
   cap: AutomationCap;
   readonly desc?: string;
-}
-
-function capText(cap: AutomationCap): string {
-  if (cap === 2) return "high";
-  if (cap === 1) return "low";
-  return "none（仅人工）";
 }
 
 export function renderPresetsPane(host: PresetsHost): HTMLElement {
@@ -139,10 +135,10 @@ export function renderPresetsPane(host: PresetsHost): HTMLElement {
         row.cap = normalizeCap(Number(sel.value));
       });
       capRow.appendChild(sel);
-      capRow.appendChild(el("span", { class: "dj-rangeVal", text: capText(row.cap) }));
+      capRow.appendChild(el("span", { class: "dj-rangeVal", text: capLabel(row.cap) }));
       sel.addEventListener("change", () => {
         const valEl = capRow.querySelector(".dj-rangeVal");
-        if (valEl !== null) valEl.textContent = capText(row.cap);
+        if (valEl !== null) valEl.textContent = capLabel(row.cap);
       });
       card.appendChild(capRow);
       list.appendChild(card);
@@ -274,21 +270,9 @@ export function renderPresetsPane(host: PresetsHost): HTMLElement {
         if (!res.ok) {
           let cat = "http-" + res.status;
           try {
-            const b: unknown = await res.json();
-            if (b !== null && typeof b === "object") {
-              const rec = b as Record<string, unknown>;
-              const nested = rec["error"];
-              if (nested !== null && typeof nested === "object" && !Array.isArray(nested)) {
-                const nrec = nested as Record<string, unknown>;
-                const v = nrec["category"] ?? nrec["errorCode"];
-                if (typeof v === "string" && v.length > 0) cat = v;
-              } else {
-                const v = rec["category"] ?? rec["errorCode"] ?? rec["error"] ?? rec["code"];
-                if (typeof v === "string" && v.length > 0) cat = v;
-              }
-            }
+            cat = failureCategory(res.status, await res.json());
           } catch {
-            /* 忽略 */
+            /* 非 JSON 即保持状态码类别 */
           }
           throw new Error(cat);
         }

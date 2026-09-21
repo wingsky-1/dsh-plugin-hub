@@ -148,7 +148,7 @@ test("期望集合派生：dsh- 前缀剥离 + seg=0 单配置形态", () => {
   assert.deepEqual(expectedBaselineFiles(["README.md", null]), [], "非 .json 条目不得进期望集合");
 });
 
-test("期望集合与真实仓库一致：stryker.conf.d/*.json 一条不落（40 段）", () => {
+test("期望集合与真实仓库一致：stryker.conf.d/*.json 一条不落（48 段）", () => {
   const confNames = readdirSync(join(ROOT, "stryker.conf.d")).filter((f) => f.endsWith(".json"));
   const expected = expectedBaselineFiles(confNames);
   assert.equal(expected.length, confNames.length, "每个段配置都应对应一个基线文件");
@@ -158,9 +158,10 @@ test("期望集合与真实仓库一致：stryker.conf.d/*.json 一条不落（4
   // #826 把 dsh-lan-proxy 的 4 个数字段按模块目录重划为 6 段 33 → 35；
   // #856 新增 dsh-lan-proxy host-trust 域 35 → 36；#826 新增 dsh-lan-proxy client 段 36 → 37；
   // #767 S1-2b 新增 servers 段 37 → 38；#930 新增 dsh-lan-proxy ca 域 38 → 39；
-  // #947 新增 dsh-mcp-manager client-panel 段 39 → 40），
+  // #947 新增 dsh-mcp-manager client-panel 段 39 → 40；
+  // 首登 dsh-jev-decide 单段 40 → 41；#943 对账后 jev 按域拆八段 41 → 48），
   // 否则新增段静默漏进归档期望集合也无人察觉。
-  assert.equal(expected.length, 40, `段数应为 40，实际 ${expected.length}`);
+  assert.equal(expected.length, 48, `段数应为 48，实际 ${expected.length}`);
   for (const f of expected) assert.match(f, BASELINE_FILE_RE, `文件名应匹配归档形态：${f}`);
 });
 

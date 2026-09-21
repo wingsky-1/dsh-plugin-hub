@@ -77,9 +77,11 @@ export async function decide(
   const now = deps.now ?? Date.now;
   const cap = deps.capOf(valid.presetId);
   const started = now();
-  if (localPrecheckHit(valid.text)) {
+  const hit = localPrecheckHit(valid.text);
+  if (hit) {
     safeRecord(deps, {
       sessionId: deps.sessionId,
+      precheckHit: true,
       presetId: valid.presetId,
       text: valid.text,
       lang: valid.lang,
@@ -118,6 +120,7 @@ export async function decide(
       truncated: trunc.truncated,
       originalLength: trunc.originalLength,
       resultKind: "not-executed",
+      precheckHit: hit,
       confidence: 0,
       tier: "none",
       automation: "manual",
@@ -152,6 +155,7 @@ export async function decide(
       truncated: trunc.truncated,
       originalLength: trunc.originalLength,
       resultKind: "upstream-error",
+      precheckHit: hit,
       confidence: 0,
       tier: "none",
       automation: "manual",
@@ -177,6 +181,7 @@ export async function decide(
     truncated: trunc.truncated,
     originalLength: trunc.originalLength,
     resultKind: verdict.resultKind,
+    precheckHit: hit,
     ...(verdict.choice !== undefined ? { choice: verdict.choice } : {}),
     ...(verdict.score !== undefined ? { score: verdict.score } : {}),
     confidence: verdict.confidence,

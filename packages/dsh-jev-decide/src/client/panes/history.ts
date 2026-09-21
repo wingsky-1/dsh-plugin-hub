@@ -7,7 +7,12 @@
  * 过滤区默认收起（#940：一 tab 一主焦点；历史过滤为次焦点，独立收缩）。
  * 概率条细条 + 阈值线 + 数字（禁重色块；无图表库，手写 div）。
  */
-import { APP_ROUTES, fetchTimeout, parseHistoryPayload } from "../api/interface.ts";
+import {
+  APP_ROUTES,
+  failureCategory,
+  fetchTimeout,
+  parseHistoryPayload,
+} from "../api/interface.ts";
 import type { JevHistoryEntry } from "../api/interface.ts";
 import {
   actionButton,
@@ -173,14 +178,9 @@ export function renderHistoryPane(host: HistoryHost): HTMLElement {
         if (!res.ok) {
           let cat = "http-" + res.status;
           try {
-            const b: unknown = await res.json();
-            if (b !== null && typeof b === "object") {
-              const rec = b as Record<string, unknown>;
-              const v = rec["error"] ?? rec["errorCode"] ?? rec["code"];
-              if (typeof v === "string" && v.length > 0) cat = v;
-            }
+            cat = failureCategory(res.status, await res.json());
           } catch {
-            /* 忽略 */
+            /* 非 JSON 即保持状态码类别 */
           }
           throw new Error(cat);
         }
@@ -251,14 +251,9 @@ export function renderHistoryPane(host: HistoryHost): HTMLElement {
         if (!res.ok) {
           let cat = "http-" + res.status;
           try {
-            const b: unknown = await res.json();
-            if (b !== null && typeof b === "object") {
-              const rec = b as Record<string, unknown>;
-              const v = rec["error"] ?? rec["errorCode"] ?? rec["code"];
-              if (typeof v === "string" && v.length > 0) cat = v;
-            }
+            cat = failureCategory(res.status, await res.json());
           } catch {
-            /* 忽略 */
+            /* 非 JSON 即保持状态码类别 */
           }
           throw new Error(cat);
         }

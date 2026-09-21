@@ -1,6 +1,7 @@
 /** PUT envelope normalize (D1). */
 import { describe, expect, it } from "vitest";
-import { normalizePutEnvelope, validatePutBody } from "../../src/server/config/impl/model.ts";
+import { normalizePutEnvelope } from "../../src/server/config/impl/envelope.ts";
+import { validatePutBody } from "../../src/server/config/impl/model.ts";
 
 describe("nested envelope accepted", () => {
   it("version 1 plus connection keys flatten", () => {

@@ -18,9 +18,10 @@ export interface KeyResolver {
   (): { readonly key: string | undefined; readonly source: "env" | "plaintext" | "none" };
 }
 
-/** 决议事件（tools 域的记录事实面；组合根映射为 HistoryEntry 再落盘，tools 不直引 history 域）。sessionId 由 decide 落史前校验（非法回落 unknown，随事件同行）。 */
+/** 决议事件（tools 域的记录事实面；组合根映射为 HistoryEntry 再落盘，tools 不直引 history 域）。sessionId 由 decide 落史前校验（非法回落 unknown，随事件同行）。precheckHit 为本地密形命中旗（S1-A：命中即 snippet 强制全掩码）。 */
 export interface DecideEvent {
   readonly sessionId: string;
+  readonly precheckHit: boolean;
   readonly presetId: string;
   readonly text: string;
   readonly lang: JevLang;

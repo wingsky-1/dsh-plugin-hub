@@ -15,7 +15,6 @@ export {
   noteLine,
   numberInput,
   okLine,
-  setText,
   shortId,
   textInput,
 } from "./atoms.ts";

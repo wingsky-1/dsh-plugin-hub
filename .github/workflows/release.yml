@@ -168,6 +168,9 @@ jobs:
       - name: Export surface snapshot（dsh-mcp-manager）
         run: node scripts/gate/export-surface-snapshot.mjs --package dsh-mcp-manager
 
+      - name: Export surface snapshot（dsh-jev-decide 导出面与基线零 diff）
+        run: node scripts/gate/export-surface-snapshot.mjs --package dsh-jev-decide
+
       - name: Verify shared fan-in
         run: node scripts/gate/verify-shared-fanin.mjs
 

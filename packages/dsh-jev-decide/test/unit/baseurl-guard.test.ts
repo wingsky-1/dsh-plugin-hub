@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 import { normalizeLoadedConfig, validatePutBody } from "../../src/server/config/impl/model.ts";
 import { decide } from "../../src/server/tools/impl/service.ts";
 import type { DecideDeps } from "../../src/server/tools/deps.ts";
-import { JEV_BASE_URL, RETIRED_KEYS } from "../../src/shared/contract.ts";
+import { JEV_BASE_URL } from "../../src/shared/contract.ts";
 
 const EXPECTED_BASE = "https://api.typesafe.ai/v1/systemone";
 const CONNECTION = {
@@ -21,11 +21,7 @@ describe("BaseURL 写死", () => {
   it("常量即官方基址字面量（第二事实源手写）", () => {
     expect(JEV_BASE_URL).toBe(EXPECTED_BASE);
   });
-  it("退役键表含 baseUrl 五形态", () => {
-    for (const key of ["baseUrl", "apiBaseUrl", "endpoint", "apiEndpoint", "url"]) {
-      expect(RETIRED_KEYS as readonly string[]).toContain(key);
-    }
-  });
+  // 注：退役键表成员由下条 PUT 逐键拒收断言覆盖（删表项即 UNKNOWN_KEY 而非 RETIRED_KEY），不另立表断言（去装饰）。
   it("PUT 遇退役键一律 RETIRED_KEY（顶层/connection/history 均拒）", () => {
     for (const key of ["baseUrl", "apiBaseUrl", "endpoint", "apiEndpoint", "url"]) {
       const r = validatePutBody({ [key]: "https://evil.example" });

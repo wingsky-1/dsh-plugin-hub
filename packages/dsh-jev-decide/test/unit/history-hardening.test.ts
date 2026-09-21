@@ -93,6 +93,15 @@ describe("脱敏无密钥原文", () => {
     expect(out).not.toContain("sk-Abcdef12345678");
     expect(Array.from(out).length).toBeLessThanOrEqual(200);
   });
+  it("长 PEM 整体掩码：超 200 字密钥体无残留", () => {
+    const body = "MIIEvQIBADANBgkqhkiG9w0BAQEFAASC".repeat(20);
+    const raw = "-----BEGIN PRIVATE KEY-----\n" + body + "\n-----END PRIVATE KEY-----";
+    expect(raw.length).toBeGreaterThan(600);
+    const out = redactSnippet(raw);
+    expect(out).not.toContain("MIIEvQ");
+    expect(out).not.toContain("PRIVATE KEY");
+    expect(Array.from(out).length).toBeLessThanOrEqual(200);
+  });
   it("assembleEntry 永不带密钥字段：原文不出境存证", () => {
     const secret = "sk-Abcdef12345678";
     const e = assembleEntry(
@@ -110,6 +119,7 @@ describe("脱敏无密钥原文", () => {
         tier: "high",
         automation: "auto",
         latencyMs: 1,
+        precheckHit: false,
       },
       7,
     );
@@ -117,6 +127,28 @@ describe("脱敏无密钥原文", () => {
     expect(e).toMatchObject({ provider: "official", templateVersion: 1, sessionId: "s-1", ts: 7 });
     expect(e.rootDisplay).toBe("proj");
     expect(e.rootHash).toBe(rootHashOf("/work/proj"));
+  });
+  it("precheck 命中即 snippet 全掩码（S1-A）", () => {
+    const e = assembleEntry(
+      "/work/proj",
+      "s-1",
+      {
+        presetId: "general",
+        text: "x".repeat(500),
+        lang: "en",
+        truncated: true,
+        originalLength: 500,
+        resultKind: "local-precheck",
+        choice: "human",
+        confidence: 1,
+        tier: "none",
+        automation: "manual",
+        latencyMs: 0,
+        precheckHit: true,
+      },
+      9,
+    );
+    expect(e.snippetRedacted).toBe("***");
   });
 });
 
