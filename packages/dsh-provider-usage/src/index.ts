@@ -8,8 +8,6 @@
 export {
   HistoryStore,
   HotReloadableAdapter,
-  OPENCODE_GO_ADAPTER_ID,
-  OPENCODE_GO_PROVIDER,
   ROUTES,
   apply,
   dayKey,

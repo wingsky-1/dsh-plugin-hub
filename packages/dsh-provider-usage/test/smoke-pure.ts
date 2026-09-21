@@ -9,12 +9,9 @@ console.error("EVAL-ORDER-TAG: PURE");
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import assert from "node:assert/strict";
-import {
-  ROUTES,
-  HistoryStore,
-  OPENCODE_GO_PROVIDER,
-  OPENCODE_GO_ADAPTER_ID,
-} from "../src/apply/index.ts";
+import { ROUTES, HistoryStore } from "../src/apply/index.ts";
+// 白盒直连深路径（#768 B波）：OpenCode 双值经适配器域门面，不走组合根转发。
+import { OPENCODE_GO_PROVIDER, OPENCODE_GO_ADAPTER_ID } from "../src/server/adapters/interface.ts";
 // 白盒直连深路径（#768 B波）：契约版本经 shared 门面，不走组合根转发。
 import { ADAPTER_CONTRACT_VERSION } from "../src/shared/interface.ts";
 import {

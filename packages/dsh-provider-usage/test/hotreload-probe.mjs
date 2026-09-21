@@ -12,7 +12,9 @@
 import { mkdtempSync, writeFileSync, utimesSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { HotReloadableAdapter, OPENCODE_GO_PROVIDER } from "../src/apply/index.ts";
+import { HotReloadableAdapter } from "../src/apply/index.ts";
+// 白盒直连深路径（#768 B波）：OpenCode 双值经适配器域门面，不走组合根转发。
+import { OPENCODE_GO_PROVIDER } from "../src/server/adapters/interface.ts";
 // 白盒直连深路径（#768 B波）：契约版本经 shared 门面，不走组合根转发。
 import { ADAPTER_CONTRACT_VERSION } from "../src/shared/interface.ts";
 

@@ -20,8 +20,6 @@
     "HotReloadableAdapter",
     "LastRunRecord",
     "NormalizedConfig",
-    "OPENCODE_GO_ADAPTER_ID",
-    "OPENCODE_GO_PROVIDER",
     "PanelCacheEntry",
     "PanelInput",
     "ProviderConfigInput",

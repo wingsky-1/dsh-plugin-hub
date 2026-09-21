@@ -70,14 +70,6 @@
       "isType": true
     },
     {
-      "name": "OPENCODE_GO_ADAPTER_ID",
-      "isType": false
-    },
-    {
-      "name": "OPENCODE_GO_PROVIDER",
-      "isType": false
-    },
-    {
       "name": "PanelCacheEntry",
       "isType": true
     },
@@ -660,14 +652,6 @@
         {
           "name": "NormalizedConfig",
           "isType": true
-        },
-        {
-          "name": "OPENCODE_GO_ADAPTER_ID",
-          "isType": false
-        },
-        {
-          "name": "OPENCODE_GO_PROVIDER",
-          "isType": false
         },
         {
           "name": "PanelCacheEntry",

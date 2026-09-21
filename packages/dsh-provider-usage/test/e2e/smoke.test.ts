@@ -48,15 +48,7 @@ import "../smoke-pure.ts";
 // 结构化单元测试（#83 阶段一、#670 阶段四目录镜像）由包内 `test/*.test.ts` glob
 // 直接执行（#690 S2）；此处不再 import 聚合——聚合会让同一文件在同进程内被求值两遍。
 
-import {
-  apply,
-  inject,
-  ROUTES,
-  OPENCODE_GO_PROVIDER,
-  OPENCODE_GO_ADAPTER_ID,
-  dayKey,
-  HotReloadableAdapter,
-} from "../../lib/index.js";
+import { apply, inject, ROUTES, dayKey, HotReloadableAdapter } from "../../lib/index.js";
 // 白盒直连深路径（#768 B波）：契约版本经 shared 门面，不走包入口。
 import { ADAPTER_CONTRACT_VERSION } from "../../src/shared/interface.ts";
 // 白盒直连深路径（#768 B波）：用户适配器路径纯面经注册表域门面，不走包入口。
@@ -65,10 +57,12 @@ import { userAdaptersFile, adapterStateFile } from "../../src/server/registry/in
 import { TREND_DIR_MAX } from "../../src/server/collect/interface.ts";
 // 白盒直连深路径（#768 B波）：调度纯面经调度域门面，不走包入口。
 import { previousClosedWindow } from "../../src/server/schedule/interface.ts";
-// 白盒直连深路径（#768 B波）：DeepSeek 常量经适配器域门面，不走包入口。
+// 白盒直连深路径（#768 B波）：OpenCode 双值与 DeepSeek 常量经适配器域门面，不走包入口。
 import {
   DEEPSEEK_OFFICIAL_ADAPTER_ID,
   DEEPSEEK_OFFICIAL_PROVIDER,
+  OPENCODE_GO_PROVIDER,
+  OPENCODE_GO_ADAPTER_ID,
 } from "../../src/server/adapters/interface.ts";
 // 白盒直连深路径（#768 B波）：面板缓存与归一化纯面经管线域门面，不走包入口。
 import {

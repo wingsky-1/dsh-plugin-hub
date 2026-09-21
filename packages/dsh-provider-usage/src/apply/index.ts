@@ -45,7 +45,6 @@ export type {
 export type { AdapterUtils } from "../shared/interface.ts";
 // 内置适配器 mjs 化：.mjs 为权威实现，.d.mts 提供类型声明（bundle 后 index 内联
 // 保留具名导出面——unit-contract/unit-deepseek-official 等测试从 lib/index.js 导入不变）
-export { OPENCODE_GO_PROVIDER, OPENCODE_GO_ADAPTER_ID } from "../server/adapters/interface.ts";
 export { dayKey } from "../server/adapters/interface.ts";
 export type { SamplePoint, DayRecord } from "../server/adapters/interface.ts";
 export type { ProviderConfigInput, ResolvedProviderConfig } from "../server/registry/interface.ts";

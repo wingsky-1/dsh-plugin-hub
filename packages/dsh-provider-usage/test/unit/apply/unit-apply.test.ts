@@ -19,12 +19,12 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import fs, { existsSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
 import { injectGlobalFetch } from "../../helpers.ts";
+import { apply, ROUTES } from "../../../src/apply/index.ts";
+// 白盒直连深路径（#768 B波）：OpenCode 双值经适配器域门面，不走组合根转发。
 import {
-  apply,
-  ROUTES,
   OPENCODE_GO_PROVIDER,
   OPENCODE_GO_ADAPTER_ID,
-} from "../../../src/apply/index.ts";
+} from "../../../src/server/adapters/interface.ts";
 // 白盒直连深路径（#768 B波）：契约版本经 shared 门面，不走组合根转发。
 import { ADAPTER_CONTRACT_VERSION } from "../../../src/shared/interface.ts";
 // 白盒直连深路径（#768 B波）：用户适配器路径纯面经注册表域门面，不走组合根转发。
