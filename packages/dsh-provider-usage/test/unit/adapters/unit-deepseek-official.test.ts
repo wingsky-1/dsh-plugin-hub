@@ -25,7 +25,6 @@ import {
   sanitizeHtml,
   isUsageStatsAdapter,
   resolveProviderConfig,
-  openCodeGoAdapter,
   OPENCODE_GO_ADAPTER_ID,
   DEEPSEEK_OFFICIAL_PROVIDER,
   DEEPSEEK_OFFICIAL_ADAPTER_ID,
@@ -34,6 +33,7 @@ import {
 import { runV2Pipeline } from "../../../src/server/pipeline/interface.ts";
 // 白盒直连深路径（#768 B波）：适配器纯面经 server/adapters 门面，不走组合根转发。
 import {
+  openCodeGoAdapter,
   deepSeekOfficialAdapter,
   PEAK_WINDOWS_UTC,
   isPeakUtc,

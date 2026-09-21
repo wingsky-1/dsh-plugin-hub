@@ -19,9 +19,12 @@ import {
   resolveProviderConfig,
   OPENCODE_GO_PROVIDER,
   OPENCODE_GO_ADAPTER_ID,
-  openCodeGoAdapter,
 } from "../src/apply/index.ts";
-import { parseUsageResponse, fetchOpenCodeGoV2 } from "../src/server/adapters/interface.ts";
+import {
+  parseUsageResponse,
+  fetchOpenCodeGoV2,
+  openCodeGoAdapter,
+} from "../src/server/adapters/interface.ts";
 import { describeUsageStatsAdapterShape } from "../src/shared/interface.ts";
 import { DEFAULT_CONFIG, normalizeConfig } from "../src/shared/interface.ts";
 import {

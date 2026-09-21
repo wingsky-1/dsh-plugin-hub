@@ -26,7 +26,6 @@ export {
   isUsageStatsAdapter,
   name,
   normalizeRangeDay,
-  openCodeGoAdapter,
   panelCacheKey,
   previousClosedWindow,
   resolveProviderConfig,

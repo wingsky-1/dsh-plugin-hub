@@ -314,10 +314,6 @@
       "isType": false
     },
     {
-      "name": "openCodeGoAdapter",
-      "isType": false
-    },
-    {
       "name": "panelCacheKey",
       "isType": false
     },
@@ -971,10 +967,6 @@
         },
         {
           "name": "normalizeRangeDay",
-          "isType": false
-        },
-        {
-          "name": "openCodeGoAdapter",
           "isType": false
         },
         {
