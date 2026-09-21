@@ -26,6 +26,17 @@
       "patch": "./cordis.patch.yml",
       "bannerJs": "import { createRequire as __jevDecideRequire } from \"node:module\";\nconst require = __jevDecideRequire(import.meta.url);"
     },
+    "catalog": {
+      "category": "tool",
+      "summary": {
+        "en": "Calibrated Jev decisions (Choice/Score/Noul) for DSH agents with local secret precheck.",
+        "zh": "给 DSH agent 的校准 Jev 决策（Choice/Score/Noul），本地密形预检，双轨密钥。"
+      },
+      "capabilities": [
+        "connection",
+        "decide"
+      ]
+    },
     "client": {
       "inject": [
         "@deepseek-ai/dsh-client-connection"

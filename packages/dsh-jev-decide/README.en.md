@@ -12,6 +12,12 @@ dsh plugin --profile web add @wingsky-1/dsh-jev-decide
 - Loopback routes: `/api/dsh-jev-decide/health|config|presets|history|test-connection`.
 - 5 frozen presets (templateVersion always 1): general / secret-leak (disabled by default) / plan-review / risk-check / custom.
 
+## Quick start
+
+1. Install and restart `dsh web` (command at the top); the dsh-jev-decide card appears in settings, and service-available on the connection tab means the host side is mounted.
+2. Set the key (either): put an exported ENV name in `apiKeyRef` (recommended, the value never lands on disk); or unfold the plaintext section, paste the key and double-confirm (`confirm:true`).
+3. Hit test-connection (`POST /test-connection`, empty body is legal): `ok` + `latencyMs` means end-to-end works; on `NO_KEY`, check the ENV export or whether the plaintext was saved.
+
 ## Configuration
 
 Three files under `~/.dsh/@wingsky-1/dsh-jev-decide/` (`DSH_HOME`-aware, dirs 0700 / files 0600 / atomic writes):
@@ -33,6 +39,13 @@ PUT `/config`: `apiKeyRef` must match `^[A-Z][A-Z0-9_]{1,63}$`; mutually exclusi
 ## History
 
 One jsonl file per (workdir rootHash, sessionId): 200 entries per session rotation, 50 sessions total (count semantics only; no pinning on mtime ties). Query `root` accepts a full path, a `rootHash`, or a bare basename (matched against `rootDisplay`); deletion is single-session only (`root` + `sessionId` both required, ambiguous basenames are 400).
+
+## Verification and troubleshooting
+
+- Liveness: `GET /api/dsh-jev-decide/health` returns `ok` / `version` / `templateVersion`.
+- Fence: non-loopback callers always get 403, off-table methods get 405 (403 is checked first).
+- Common failures: `NO_KEY` (no usable key), `PRESET_DISABLED` (preset switched off), `MUTUALLY_EXCLUSIVE` (`apiKeyRef` sent together with plaintext), key-shape 400s return only an `empty|too-short|charset` category.
+- Missing history: prefer a full path or `rootHash` for `root` (basenames match against `rootDisplay`, ambiguous delete is 400); `GET /history` defaults to 100 entries, max 500.
 
 ## Follow-ups (deferred, not in this version)
 
