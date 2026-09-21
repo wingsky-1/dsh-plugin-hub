@@ -304,8 +304,9 @@ export function renderServers(state: McpState, actions: UiActions): void {
   for (const scope of ["project", "global"]) {
     const list = rest.filter((server: any) => server.scope === scope);
     if (list.length === 0) continue;
-    // 标题自带数量，不再额外挂 dm-count（避免双计数）
+    // 标题自带数量，不再额外挂 dm-count（避免双计数）；字面量已带空格，
+    // 不经 pangu（计数拼装与盘古分层，避免语义错层）。
     const label = scope === "project" ? t("groupProject") : t("groupGlobal");
-    appendGroup(pangu(`${label} (${list.length})`), list, false);
+    appendGroup(`${label} (${list.length})`, list, false);
   }
 }

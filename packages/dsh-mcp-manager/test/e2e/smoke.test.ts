@@ -1467,6 +1467,45 @@ it("F1（qa 实测 #128）：浮窗面板内容更新后重定位 + toggleFloat 
   ).toBeTruthy();
 });
 
+it("Liquid Glass 失败优先 + 浮窗 Esc + 关窗时序 + 降级存在性（#938）", () => {
+  const clientSrc = readFileSync(new URL("../../lib/client.js", import.meta.url), "utf8");
+  // 失败优先：renderFloatPanel 内先挂 attention 分组（groupAttention），再走 scope 分组。
+  const renderStart = clientSrc.indexOf("function renderFloatPanel");
+  const toggleStart = clientSrc.indexOf("function toggleFloat");
+  expect(renderStart >= 0, "renderFloatPanel 标识符在产物中").toBeTruthy();
+  const renderBody = clientSrc.slice(renderStart, toggleStart);
+  expect(
+    renderBody.includes("groupAttention"),
+    "attention 分组（失败优先置顶）进产物",
+  ).toBeTruthy();
+  expect(
+    renderBody.indexOf("groupAttention") < renderBody.indexOf('["project", "global"]'),
+    "attention 分组挂载先于 scope 分组（失败优先）",
+  ).toBeTruthy();
+  // 浮窗 Esc：与模态同语义，守卫 floatOpen（M3：宣称 Esc/焦点须有实现）。
+  expect(
+    clientSrc.includes('event.key === "Escape"') && clientSrc.includes("state.floatOpen"),
+    "浮窗 Esc 关闭守卫进产物",
+  ).toBeTruthy();
+  // 关窗时序：JS setTimeout 300ms 与 CSS closing 300ms 对齐（源头不断即砍掉收尾动画）。
+  expect(
+    clientSrc.includes("setTimeout(finish, 300)"),
+    "关窗 hidden 延迟 300ms 进产物",
+  ).toBeTruthy();
+  const css = styleCssCompact();
+  expect(css, "浮窗关闭动画 300ms").toMatch(/dm-float-out 300ms/);
+  expect(css, "模态关闭动画 300ms").toMatch(/dm-modal-out 300ms/);
+  // 降级三件套存在（M2：缺一即红，防后续重构静默删 media 块）。
+  expect(css.includes("prefers-reduced-motion"), "reduced-motion 降级存在").toBeTruthy();
+  expect(css.includes("prefers-contrast"), "对比度降级存在").toBeTruthy();
+  expect(css.includes("prefers-reduced-transparency"), "减透明降级存在").toBeTruthy();
+  expect(css.includes('[data-color-mode="dark"]'), "深色三选择器含 data-color-mode").toBeTruthy();
+  // 双主题 wash：变量定义 + 深色覆写存在（M1：深色下禁止写死浅色 wash）。
+  expect(css.includes("--dm-wash:"), "主题跟随 wash 变量存在").toBeTruthy();
+  expect(css.includes("--dm-card-bg:"), "卡片底变量存在").toBeTruthy();
+  expect(css.includes("--dm-row-hover:"), "行 hover 变量存在").toBeTruthy();
+});
+
 it("Config 导出且含 ui 子对象（默认值与合法值域）", () => {
   expect(typeof Config === "function", "Config 是 schemastery schema（可调用）").toBeTruthy();
   const parsed = Config({} as Parameters<typeof Config>[0]);

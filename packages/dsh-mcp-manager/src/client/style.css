@@ -18,6 +18,12 @@
   --dm-glass-bg: rgba(255, 255, 255, 0.76);
   --dm-glass-bg-strong: rgba(255, 255, 255, 0.84);
   --dm-glass-bg-solid: var(--dsw-alias-bg-base, #fdfdfd);
+  /* 主题跟随 wash：浅色用墨 8%，深色用白 12%（M1：禁止深色下写死浅色 wash） */
+  --dm-wash: color-mix(in srgb, #1c1e26 8%, transparent);
+  /* 卡片底：浅色白 42% 霜，深色白 7% 霜（配 zinc-900/74 玻璃底） */
+  --dm-card-bg: color-mix(in srgb, #ffffff 42%, transparent);
+  /* 行 hover：浅色黑 3%，深色白 7%（深色下黑 3% 近不可见） */
+  --dm-row-hover: color-mix(in srgb, #000000 3%, transparent);
   --dm-glass-edge: rgba(20, 30, 50, 0.1);
   --dm-glass-rim: rgba(255, 255, 255, 0.92);
   --dm-glass-shadow:
@@ -40,6 +46,9 @@
   :root {
     --dm-glass-bg: rgba(24, 24, 27, 0.74);
     --dm-glass-bg-strong: rgba(24, 24, 27, 0.86);
+    --dm-wash: color-mix(in srgb, #ffffff 12%, transparent);
+    --dm-card-bg: color-mix(in srgb, #ffffff 7%, transparent);
+    --dm-row-hover: color-mix(in srgb, #ffffff 7%, transparent);
     --dm-glass-edge: rgba(255, 255, 255, 0.14);
     --dm-glass-rim: rgba(255, 255, 255, 0.12);
     --dm-glass-shadow:
@@ -58,6 +67,9 @@ html.dark,
 [data-color-mode="dark"] {
   --dm-glass-bg: rgba(24, 24, 27, 0.74);
   --dm-glass-bg-strong: rgba(24, 24, 27, 0.86);
+  --dm-wash: color-mix(in srgb, #ffffff 12%, transparent);
+  --dm-card-bg: color-mix(in srgb, #ffffff 7%, transparent);
+  --dm-row-hover: color-mix(in srgb, #ffffff 7%, transparent);
   --dm-glass-edge: rgba(255, 255, 255, 0.14);
   --dm-glass-rim: rgba(255, 255, 255, 0.12);
   --dm-glass-shadow:
@@ -76,12 +88,30 @@ html.dark,
     --dm-glass-bg: rgba(255, 255, 255, 0.94);
     --dm-glass-bg-strong: #ffffff;
     --dm-glass-edge: rgba(20, 30, 50, 0.22);
+    /* 高对比下关闭高光 wash，wash 走纯色 */
+    --dm-glass-spec: none;
+    --dm-wash: #eceff3;
+    --dm-card-bg: #ffffff;
+    --dm-row-hover: #eef1f5;
   }
   html.dark,
-  [data-theme="dark"] {
+  [data-theme="dark"],
+  [data-color-mode="dark"] {
     --dm-glass-bg: rgba(18, 18, 20, 0.96);
     --dm-glass-bg-strong: #121214;
     --dm-glass-edge: rgba(255, 255, 255, 0.28);
+    --dm-glass-spec: none;
+    --dm-wash: #2a2d34;
+    --dm-card-bg: #17171a;
+    --dm-row-hover: #26282f;
+  }
+  /* 高对比下隐藏装饰性高光层，失败行保留纯色语义底 */
+  .dm-glass::before {
+    display: none;
+  }
+  .dm-float-row.dm-float-row--fail,
+  .dm-server.dm-server--fail {
+    background: color-mix(in srgb, #e0483e 12%, var(--dm-glass-bg-strong));
   }
 }
 
@@ -124,10 +154,25 @@ html.dark,
   .dm-float-head button,
   .dm-head button,
   .dm-actions button,
-  .dm-form-actions button {
+  .dm-form-actions button,
+  .dm-server,
+  .dm-tab[data-active] {
     background: var(--dm-glass-bg-solid, var(--dsw-alias-bg-base, #fdfdfd));
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
+  }
+  /* 失败行保留语义底，但以纯色混合（相对实底）代替透明罩染 */
+  .dm-float-row.dm-float-row--fail,
+  .dm-server.dm-server--fail {
+    background: color-mix(
+      in srgb,
+      #e0483e 8%,
+      var(--dm-glass-bg-solid, var(--dsw-alias-bg-base, #fdfdfd))
+    );
+  }
+  /* 装饰性高光层在减透明下隐藏 */
+  .dm-glass::before {
+    display: none;
   }
 }
 
@@ -190,18 +235,6 @@ html.dark,
 }
 .dm-float.dm-float--fail .dm-float-fail {
   display: inline;
-}
-.dm-float.dm-float--pulse .dm-dot {
-  animation: dm-pulse-dot 700ms var(--dm-fluid) 2;
-}
-@keyframes dm-pulse-dot {
-  0%,
-  100% {
-    transform: scale(1);
-  }
-  40% {
-    transform: scale(1.35);
-  }
 }
 .dm-float:active {
   transform: scale(var(--dm-press-scale));
@@ -693,7 +726,7 @@ html.dark,
 .dm-tab[data-active] {
   color: var(--dsw-alias-label-primary, #1c1e26);
   font-weight: 600;
-  background: color-mix(in srgb, #1c1e26 8%, transparent);
+  background: var(--dm-wash);
   box-shadow: 0 0 0 0.5px var(--dm-glass-edge);
 }
 .dm-body {
@@ -758,7 +791,7 @@ html.dark,
   border-radius: 16px;
   padding: 12px 14px;
   margin-bottom: 10px;
-  background: color-mix(in srgb, #ffffff 42%, transparent);
+  background: var(--dm-card-bg);
   line-height: 1.5;
 }
 .dm-server.dm-server--fail {
@@ -1144,7 +1177,7 @@ html.dark,
     background: var(--dsw-alias-interactive-bg-hover, #eef1f5);
   }
   .dm-float-row:hover {
-    background: color-mix(in srgb, #000 3%, transparent);
+    background: var(--dm-row-hover);
   }
   .dm-head button:hover {
     background: var(--dsw-alias-interactive-bg-hover, #eef1f5);
@@ -1302,8 +1335,7 @@ html.dark,
   .dm-head button,
   .dm-actions button,
   .dm-form-actions button,
-  .dm-tab,
-  .dm-float.dm-float--pulse .dm-dot {
+  .dm-tab {
     animation: none !important;
     transition-duration: 1ms !important;
   }

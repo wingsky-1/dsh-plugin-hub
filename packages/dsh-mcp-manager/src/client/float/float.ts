@@ -401,7 +401,7 @@ export function toggleFloat(state: McpState, actions: UiActions, force?: boolean
     panel.focus({ preventScroll: true });
     return;
   }
-  pill?.classList.remove("dm-float--open", "dm-float--pulse");
+  pill?.classList.remove("dm-float--open");
   panel.classList.remove("dm-float-panel--open");
   const finish = () => {
     if (state.floatOpen) return;
@@ -517,6 +517,11 @@ export function mountFloat(ctx: any, state: McpState, actions: UiActions): () =>
     toggleFloat(state, actions, false);
   };
   document.addEventListener("focusout", onFocusOut);
+  // Esc 关闭下拉面板（与模态 panel.ts C4 同语义；具名函数配对清理防泄漏）。
+  const onKeyDown = (event: any) => {
+    if (event.key === "Escape" && state.floatOpen) toggleFloat(state, actions, false);
+  };
+  document.addEventListener("keydown", onKeyDown);
 
   let host: any;
 
@@ -659,6 +664,7 @@ export function mountFloat(ctx: any, state: McpState, actions: UiActions): () =>
   return () => {
     state.updateFloatState = undefined;
     document.removeEventListener("focusout", onFocusOut);
+    document.removeEventListener("keydown", onKeyDown);
     observer.disconnect();
     for (const detach of listeners.splice(0)) detach();
     if (rafId !== 0) {
