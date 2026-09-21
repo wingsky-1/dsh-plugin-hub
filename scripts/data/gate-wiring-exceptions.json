@@ -377,6 +377,11 @@
       "envKeys": []
     },
     {
+      "step": "ci.yml|upstream-warn|Install dependencies",
+      "digest": "f47b0f0b476ae11c",
+      "envKeys": []
+    },
+    {
       "step": "ci.yml|repo-gate|Restore package outputs into package trees",
       "digest": "3161dd398d1c9eb0",
       "envKeys": ["ALL_PACKAGES", "FULL_GATE", "HIT_PACKAGES"]
@@ -461,6 +466,10 @@
     {
       "job": "ci.yml|repo-gate",
       "digest": "064b00458b9b0ee3"
+    },
+    {
+      "job": "ci.yml|upstream-warn",
+      "digest": "e92643633a7998f9"
     },
     {
       "job": "health-report.yml|report",
