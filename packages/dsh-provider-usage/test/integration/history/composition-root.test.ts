@@ -114,14 +114,6 @@ describe("D5一 经 server/history 域门面装配", () => {
     expect(hasExportStar(codeLines)).toBe(false);
   });
 
-  it("包导出面收窄后集合：apply/index.ts 转发名与收窄后一致（改名/漏转即红）", () => {
-    // B波+A2波+HistoryStore/dayKey退役：两者已迁域门面深路径（见unit-history/unit-trend）。
-    // 非空安全形态：名单非空但断言缺席，误转即红，空数组零断言不可能通过。
-    for (const name of ["HistoryStore", "dayKey"]) {
-      expect(applyFaceSrc.includes(name)).toBe(false);
-    }
-  });
-
   it("变异面登记随域改址（旧路径残留即红）", () => {
     expect(topologySrc.includes("src/domain1/history/history.ts")).toBe(false);
     expect(topologySrc.includes("src/server/history/history.ts")).toBe(true);

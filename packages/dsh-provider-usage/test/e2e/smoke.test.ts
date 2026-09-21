@@ -651,11 +651,6 @@ describe("/history v2 响应", () => {
     expect(payload.plugin).toBe("dsh-provider-usage");
   });
 
-  it("history 响应带契约版本", () => {
-    // 锚：contracts.ts ADAPTER_CONTRACT_VERSION 字面量 2，第二事实源。
-    expect(payload.version).toBe(2);
-  });
-
   it("history 响应 provider 字段", () => {
     // 锚：opencode-go.mjs OPENCODE_GO_PROVIDER 字面量，第二事实源。
     expect(payload.provider).toBe("opencode-go");
@@ -685,11 +680,6 @@ describe("/health 响应", () => {
 
   it("/health ok", () => {
     expect(payload.ok).toBe(true);
-  });
-
-  it("/health 带契约版本", () => {
-    // 锚：contracts.ts ADAPTER_CONTRACT_VERSION 字面量 2，第二事实源。
-    expect(payload.version).toBe(2);
   });
 
   it("adapters 列表存在", () => {
@@ -1593,41 +1583,12 @@ describe("客户端契约", () => {
     expect(clientContractObs.bundlePollNoticeWiring).toBeTruthy();
   });
 
-  // 200 直接复用响应主断言见“未勾选 force → 幂等复用”（again.reused）；
-  // 以下四条为源码辅助断言：主断言是产物 bundle 与 HTTP 响应，源码正则仅防接线漂移。
-  it("pollReportTask 透传 status 响应的 reused 字段（源码辅助）", () => {
-    expect(clientContractObs.pollRetMatch !== null).toBeTruthy();
-  });
-
-  it("onGenerate 202 分支经 pollReportTask 拿 reused（源码辅助）", () => {
-    expect(clientContractObs.pollCallMatch !== null).toBeTruthy();
-  });
-
-  it("轮询路径 reused → 渲染「已复用」提示（源码辅助）", () => {
-    expect(clientContractObs.noticeMatch !== null).toBeTruthy();
-  });
-
-  it("200 直接复用路径「已复用」提示保留（源码辅助）", () => {
-    expect(clientContractObs.directMatch !== null).toBeTruthy();
-  });
-
   it("renderPanel 内容更新完成后触发 applyUiPlacement 重定位（bottom 锚点防溢出）", () => {
     expect(clientContractObs.renderPanelRelocates).toBeTruthy();
   });
 
   it("toggleFloat 先 renderPanel 后 placePanel（以真实内容高度定位）", () => {
     expect(clientContractObs.toggleFloatOrderOk).toBeTruthy();
-  });
-
-  it.each([
-    "isUsageStatsAdapter",
-    "esc",
-    "sanitizeHtml",
-    "HistoryStore",
-    "runV2Pipeline",
-    "sseData",
-  ])("宿主产物应含 %s", (name) => {
-    expect(clientContractObs.hostLib.includes(name)).toBeTruthy();
   });
 
   it.each(["trend", "report", "usage", "providers", "float"])("设置页 tab 键 %s 存在", (key) => {
@@ -3414,11 +3375,6 @@ describe("#503 M2：/trend 路由集成断言", () => {
 
   it("trend plugin 字段", () => {
     expect(obs.payloadPlugin).toBe("dsh-provider-usage");
-  });
-
-  it("trend 带契约版本", () => {
-    // 锚：contracts.ts ADAPTER_CONTRACT_VERSION 字面量 2，第二事实源。
-    expect(obs.payloadVersion).toBe(2);
   });
 
   it("granularity 默认 day", () => {

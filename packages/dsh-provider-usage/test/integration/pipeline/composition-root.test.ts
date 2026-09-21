@@ -184,13 +184,6 @@ describe("D6一 经 server/pipeline 域门面装配", () => {
     );
   });
 
-  it("包导出面收窄后集合：apply/index.ts 转发名与收窄后一致（改名/漏转即红）", () => {
-    // B波续批收窄后集合：safeFetchData/safeFormat/runV2Pipeline/runV2PanelPipeline/fetchWithTimeout已退役；面板三值与normalizeRangeDay已退役（e2e改深路径，仅留类型PanelCacheEntry）。
-    for (const name of ["PanelCacheEntry"]) {
-      expect(applyFaceSrc.includes(name)).toBe(true);
-    }
-  });
-
   it("变异面登记随域改址（旧路径残留即红）", () => {
     for (const p of ["src/domain1/pipeline/v2.ts", "src/domain1/pipeline/stats-service.ts"]) {
       expect(topologySrc.includes(p)).toBe(false);

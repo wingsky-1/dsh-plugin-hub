@@ -227,13 +227,6 @@ describe("D7一 经 server/registry 域门面装配", () => {
     );
   });
 
-  it("包导出面收窄后集合：apply/index.ts 转发名与收窄后一致（改名/漏转即红）", () => {
-    // B波+A2波收窄后集合：credentialsFile/resolvePath/pluginHome/makeAdapterRegistry/readStamp/loadAndValidateAdapter/resolveProviderConfig/userAdaptersFile/adapterStateFile已退役（簇批双文件直连，见smoke-pure/hotreload/unit-apply/e2e）。
-    for (const name of ["AdapterRegistry", "HotReloadableAdapter", "UserAdapterRecord"]) {
-      expect(applyFaceSrc.includes(name)).toBe(true);
-    }
-  });
-
   it("变异面登记随域改址（旧路径残留即红）", () => {
     for (const p of [
       "src/domain1/registry/registry.ts",

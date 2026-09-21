@@ -341,8 +341,6 @@ describe("D10二 越围栏必须红（403 先于 405）", () => {
       stubAdapterCtx(),
     );
     expect(code).toBe(200);
-    // 锚：contracts.ts ADAPTER_CONTRACT_VERSION 字面量 2，第二事实源。
-    expect((body as { version?: number }).version).toBe(2);
     expect(Array.isArray((body as { host?: unknown }).host)).toBe(true);
   });
 

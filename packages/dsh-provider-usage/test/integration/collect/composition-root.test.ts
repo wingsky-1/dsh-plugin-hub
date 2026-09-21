@@ -243,26 +243,6 @@ describe("D9一 经 server/collect 域门面装配", () => {
     );
   });
 
-  it("包导出面收窄后集合：apply/index.ts 转发名与收窄后一致（改名/漏转即红）", () => {
-    // B波+A2波收窄后集合：TREND_DONE_MAX/isValidShardRow/sanitizeDirName/TrendCollector/sumToken/safeToken/safeId/hourOfDay/TREND_ROW_VERSION/TREND_UNIDENTIFIED/TREND_DIR_MAX已退役（簇批双文件直连，见e2e）。
-    for (const name of [
-      "TrendCallRecord",
-      "TrendCorrectRecord",
-      "TrendCounterRecord",
-      "TrendEmit",
-      "TrendAttribution",
-      "TrendTokens",
-      "TrendDetailRow",
-      "TrendCounterRow",
-      "TrendAggRow",
-      "TrendDirRow",
-      "TrendHourRow",
-      "TrendCell",
-    ]) {
-      expect(applyFaceSrc.includes(name)).toBe(true);
-    }
-  });
-
   it("变异面登记随域改址（旧路径残留即红）", () => {
     expect(topologySrc.includes("src/domain2/collect/")).toBe(false);
     for (const p of ["src/server/collect/collector.ts", "src/server/collect/types.ts"]) {

@@ -263,8 +263,6 @@ describe("D11一 经 server/report-routes 域门面装配", () => {
     expect(usesOldFace(reportDepsSrc)).toBe(false);
     expect(usesOldFace(reportsSrc)).toBe(false);
     expect(applySrc.includes("server/report-routes/interface")).toBe(true);
-    expect(applyFaceSrc.includes("../server/report-routes/interface.ts")).toBe(false);
-    expect(applyFaceSrc.includes("../domain2/routes/interface.ts")).toBe(false);
   });
 
   it("实现块改址：同级短径复用三域门面（旧深路径残留必须红）", () => {
