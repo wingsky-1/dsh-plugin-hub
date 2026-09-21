@@ -32,6 +32,9 @@ const {
   isScheduleDirty,
   isRoutingDirty,
   isPromptsDirty,
+  groupReportsByPeriod,
+  filterReportsByStatus,
+  HISTORY_PAGE_SIZE,
 } = h;
 
 // 第二事实源：手写标准四段模板（不从实现 import，避免同源期望）
@@ -256,5 +259,67 @@ describe("isPromptsDirty", () => {
         { daily: "d2", weekly: "w", monthly: "m" },
       ),
     ).toBe(true);
+  });
+});
+
+// 第二事实源：手写历史行（period/key/ok/noData 四字段，不从实现 import；
+// 显式行类型——test/tsconfig noImplicitAny 下泛型约束可推导，删注解即红）。
+const HIST_ROWS: Array<{
+  period: "daily" | "weekly" | "monthly";
+  key: string;
+  ok: boolean;
+  error?: string;
+  noData?: boolean;
+}> = [
+  { period: "daily", key: "2026-03-12", ok: true },
+  { period: "weekly", key: "2026-W10", ok: true },
+  { period: "daily", key: "2026-03-11", ok: false, error: "boom" },
+  { period: "monthly", key: "2026-02", ok: false, error: "x" },
+  { period: "weekly", key: "2026-W09", ok: true, noData: true },
+];
+
+describe("HISTORY_PAGE_SIZE：分页步长锚（PM 认可 20/组，改值需同步验收）", () => {
+  it("恒为 20", () => {
+    expect(HISTORY_PAGE_SIZE).toBe(20);
+  });
+});
+
+describe("groupReportsByPeriod：period 三组", () => {
+  it("分组计数 2/2/1", () => {
+    const g = groupReportsByPeriod(HIST_ROWS);
+    expect(g.daily.length).toBe(2);
+    expect(g.weekly.length).toBe(2);
+    expect(g.monthly.length).toBe(1);
+  });
+
+  it("组内保持输入顺序（daily 先 03-12 后 03-11）", () => {
+    const g = groupReportsByPeriod(HIST_ROWS);
+    expect(g.daily.map((r: { key: string }) => r.key)).toEqual(["2026-03-12", "2026-03-11"]);
+  });
+
+  it("空输入三组全空（改坏分组键即红）", () => {
+    const g = groupReportsByPeriod([]);
+    expect([...g.daily, ...g.weekly, ...g.monthly]).toEqual([]);
+  });
+});
+
+describe("filterReportsByStatus：状态筛选", () => {
+  it("all 直通 5 行", () => {
+    expect(filterReportsByStatus(HIST_ROWS, "all").length).toBe(5);
+  });
+
+  it("ok 排除失败与空窗口（剩 2 行）", () => {
+    const out = filterReportsByStatus(HIST_ROWS, "ok");
+    expect(out.map((r: { key: string }) => r.key)).toEqual(["2026-03-12", "2026-W10"]);
+  });
+
+  it("failed 只取 ok===false（2 行，含月报）", () => {
+    const out = filterReportsByStatus(HIST_ROWS, "failed");
+    expect(out.map((r: { key: string }) => r.key)).toEqual(["2026-03-11", "2026-02"]);
+  });
+
+  it("nodata 只取空窗口（W09 一行）", () => {
+    const out = filterReportsByStatus(HIST_ROWS, "nodata");
+    expect(out.map((r: { key: string }) => r.key)).toEqual(["2026-W09"]);
   });
 });

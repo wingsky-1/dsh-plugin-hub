@@ -176,3 +176,48 @@ export function isPromptsDirty(
 ): boolean {
   return a.daily !== b.daily || a.weekly !== b.weekly || a.monthly !== b.monthly;
 }
+/**
+ * 历史独立页纯逻辑（#940 第一批：分组 + 状态筛选 + 内存分页）。
+ * 服务端读侧（GET /reports）无分页参数（全量投影，一行/窗口），故分页只发生在
+ * 客户端渲染层：一次全量拉取 → 分组/筛选 → 各组切片渲染 + “加载更多”。
+ * 上限：三周期合计约 1.2 行/天（日 1 + 周 1/7 + 月 1/30），年增约 430 行，
+ * 单行 meta 约 300B —— 十年约 4.3k 行 ≈ 1.3MB，一次 GET 可接受，无需服务端分页。
+ */
+
+/** 历史行最小形状（HistorySection 的 ReportMetaView 结构兼容）。 */
+export interface HistoryRowLike {
+  period: "daily" | "weekly" | "monthly";
+  key: string;
+  ok: boolean;
+  noData?: boolean;
+}
+
+/** 历史状态筛选（周期维度由 period 分组承担，此处只筛状态）。 */
+export type HistoryStatusFilter = "all" | "ok" | "failed" | "nodata";
+
+/** 每组初始渲染行数（PM 认可的 20/组 + 加载更多；字面量锚，改值需同步验收）。 */
+export const HISTORY_PAGE_SIZE = 20;
+
+/** 按 period 分三组（组内保持输入顺序；调用方传入已是倒序）。 */
+export function groupReportsByPeriod<T extends HistoryRowLike>(
+  rows: T[],
+): Record<"daily" | "weekly" | "monthly", T[]> {
+  const groups: Record<"daily" | "weekly" | "monthly", T[]> = {
+    daily: [],
+    weekly: [],
+    monthly: [],
+  };
+  for (const r of rows) groups[r.period].push(r);
+  return groups;
+}
+
+/** 状态筛选（all 直通；failed 含 ok===false 全部；nodata 只取空窗口行）。 */
+export function filterReportsByStatus<T extends HistoryRowLike>(
+  rows: T[],
+  filter: HistoryStatusFilter,
+): T[] {
+  if (filter === "all") return [...rows];
+  if (filter === "ok") return rows.filter((r) => r.ok && r.noData !== true);
+  if (filter === "failed") return rows.filter((r) => !r.ok);
+  return rows.filter((r) => r.noData === true);
+}

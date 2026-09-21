@@ -1259,3 +1259,63 @@
     animation: none;
   }
 }
+/* ================= #940 第一批：设置共用头 + 历史独立页 ================= */
+/* 共用头（kicker + 标题 + live providers pill；留存 pill 已砍，见方案 Q5） */
+.dou-shellTop {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  margin-bottom: 8px;
+  font-style: normal;
+}
+.dou-shellKicker {
+  font-size: 11px;
+  font-style: normal;
+  color: var(--dsw-alias-label-tertiary, #9aa0ab);
+  white-space: nowrap;
+}
+.dou-shellTitle {
+  font-size: 15px;
+  font-weight: 600;
+  font-style: normal;
+  line-height: 1.5;
+  margin: 2px 0 0;
+  color: var(--dsw-alias-label-primary, #1c1e26);
+}
+.dou-shellMeta {
+  margin-left: auto;
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-self: center;
+}
+.dou-shellPill {
+  display: inline-block;
+  font-size: 11px;
+  font-style: normal;
+  line-height: 1.5;
+  padding: 2px 10px;
+  border-radius: 99px;
+  border: 1px solid var(--dsw-alias-border-l1, #d7dae0);
+  background: var(--dsw-alias-bg-layer-1, #f8f9fb);
+  color: var(--dsw-alias-label-secondary, #5f6672);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.dou-shellPillOk {
+  color: var(--dsw-alias-state-success-primary, #3f9d63);
+  border-color: var(--dsw-alias-state-success-primary, #3f9d63);
+}
+.dou-shellPillStale {
+  color: var(--dsw-alias-state-warn-primary, #c9820b);
+  border-color: var(--dsw-alias-state-warn-primary, #c9820b);
+}
+/* 未启用周期控件禁用态（与终稿静态 markup 一致的纯表现守卫） */
+.dou-reportTime:disabled,
+.dou-reportNum:disabled,
+.dou-reportSelect:disabled {
+  opacity: 0.55;
+}
+/* 历史独立页复用报告区既有类（列表/徽标/详情/空态），无新增选择器。 */

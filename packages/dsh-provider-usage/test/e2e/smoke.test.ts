@@ -1833,7 +1833,7 @@ describe("客户端契约", () => {
     expect(clientContractObs.toggleFloatOrderOk).toBeTruthy();
   });
 
-  it("设置页 tab 键集合精确一致（五键，顺序即渲染顺序）", () => {
+  it("设置页 tab 键集合精确一致（六键，history 紧随 report）", () => {
     // 锚：settings/index.tsx TABS 字面量与 SettingsTabKey，第二事实源（增删改键必须红）。
     // 行级精确：纯 type 漂移（加成员/改名/改顺序）亦红——子串 includes 会漏检后缀追加。
     const typeLine = clientContractObs.settingsIndex
@@ -1841,13 +1841,13 @@ describe("客户端契约", () => {
       .map((l: string) => l.trim())
       .find((l: string) => l.startsWith("export type SettingsTabKey"));
     expect(typeLine).toBe(
-      'export type SettingsTabKey = "trend" | "report" | "usage" | "providers" | "float";',
+      'export type SettingsTabKey = "trend" | "report" | "history" | "usage" | "providers" | "float";',
     );
     const tabsStart = clientContractObs.settingsIndex.indexOf("const TABS");
     const tabsEnd = clientContractObs.settingsIndex.indexOf("];", tabsStart);
     const tabsBlock = clientContractObs.settingsIndex.slice(tabsStart, tabsEnd + 2);
     const keys = [...tabsBlock.matchAll(/key:\s*"([^"]+)"/g)].map((m) => m[1]);
-    expect(keys).toEqual(["trend", "report", "usage", "providers", "float"]);
+    expect(keys).toEqual(["trend", "report", "history", "usage", "providers", "float"]);
   });
 
   it("设置页窗格 keep-mounted（hidden 属性显隐，不卸载组件实例）（TSX 形态）", () => {
