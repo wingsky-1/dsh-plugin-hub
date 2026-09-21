@@ -46,7 +46,8 @@
     "@wingsky-1/dsh-mcp-manager": "workspace:*",
     "@wingsky-1/dsh-lan-proxy": "workspace:*",
     "@wingsky-1/dsh-verify-isolated": "workspace:*",
-    "@wingsky-1/dsh-worktree-sidebar": "workspace:*"
+    "@wingsky-1/dsh-worktree-sidebar": "workspace:*",
+    "@wingsky-1/dsh-jev-decide": "workspace:*"
   },
   "publishConfig": {
     "access": "public"

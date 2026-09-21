@@ -196,6 +196,14 @@
       "why": "包级资产：notifier 导出面基线（符号集 + 定义块），由包内 consumer-types 集成测试与 export-surface-snapshot.mjs 比对；基线更新走 --snapshot 并随 PR 提交，无单调阈值语义。"
     },
     {
+      "source": "scripts/data/dsh-jev-decide-export-surface.json",
+      "why": "包级资产：jev-decide 导出面基线（#943 新建，5 符号 / 128 声明块 / 2 入口），由 gate/export-surface-snapshot.mjs --package dsh-jev-decide 逐字节比对；基线更新走 --snapshot 并随 PR 提交，无单调阈值语义。"
+    },
+    {
+      "source": "scripts/data/dsh-jev-decide-export-faces.json",
+      "why": "包级资产：jev-decide 导出面分类登记（#943 新建，ROUTES/apply/inject/name 安装面与 ConfigV1 契约面，legacy 为空），喂「新增导出必须显式分类」准入判据；判据是「分类与实际导出面一致」，不是阈值。"
+    },
+    {
       "source": "scripts/data/dsh-worktree-sidebar-export-faces.json",
       "why": "包级资产：worktree-sidebar 导出面分类登记（legacy 为空），同一次 emitDeclarations() 产物喂分类准入判据。#847 接入 ci.yml / observe.yml / release.yml 各一条独立 step 与 gate-steps.mjs 本地 pr/full，由 export-surface-wiring.test.ts 逐入口守；分类一致性是结构判据，不是阈值。"
     },

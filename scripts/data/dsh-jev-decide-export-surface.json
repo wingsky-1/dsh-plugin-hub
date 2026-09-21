@@ -1,0 +1,569 @@
+{
+  "package": "dsh-jev-decide",
+  "exports": [
+    {
+      "name": "ConfigV1",
+      "isType": true
+    },
+    {
+      "name": "ROUTES",
+      "isType": false
+    },
+    {
+      "name": "apply",
+      "isType": false
+    },
+    {
+      "name": "inject",
+      "isType": false
+    },
+    {
+      "name": "name",
+      "isType": false
+    }
+  ],
+  "declBlocks": [
+    "export declare const API_KEY_REF_RE: RegExp;",
+    "export declare const APP_ROUTES: { readonly health: string; readonly config: string; readonly presets: string; readonly history: string; readonly testConnection: string; };",
+    "export declare const BASELINE_VERSION = \"0\";",
+    "export declare const CJK_RE: RegExp;",
+    "export declare const CLIENT_FETCH_TIMEOUT_MS = 10000;",
+    "export declare const CLIENT_ROUTES: { readonly health: \"/api/dsh-jev-decide/health\"; readonly config: \"/api/dsh-jev-decide/config\"; readonly presets: \"/api/dsh-jev-decide/presets\"; readonly history: \"/api/dsh-jev-decide/history\"; readonly testConnection: \"/api/dsh-jev-decide/test-connection\"; };",
+    "export declare const CONFIG_VERSION = 1;",
+    "export declare const FROZEN_PRESETS: readonly PresetTemplate[];",
+    "export declare const HIGH_LINE = 0.8;",
+    "export declare const JEV_BASE_URL = \"https: export declare const CONFIG_FILE_NAME = \"config.json\";",
+    "export declare const MAX_QUESTIONS = 20;",
+    "export declare const MAX_QUESTION_TEXT = 255;",
+    "export declare const PACKAGE_DIR = \"@wingsky-1/dsh-jev-decide\";",
+    "export declare const PRESETS_FILE_NAME = \"presets.json\";",
+    "export declare const PRESET_ID_RE: RegExp;",
+    "export declare const QUESTION_ID_RE: RegExp;",
+    "export declare const RETIRED_KEYS: readonly [\"baseUrl\", \"apiBaseUrl\", \"endpoint\", \"apiEndpoint\", \"url\"];",
+    "export declare const ROUTES: { readonly health: \"/api/dsh-jev-decide/health\"; readonly config: \"/api/dsh-jev-decide/config\"; readonly presets: \"/api/dsh-jev-decide/presets\"; readonly history: \"/api/dsh-jev-decide/history\"; readonly testConnection: \"/api/dsh-jev-decide/test-connection\"; };",
+    "export declare const SECRETS_FILE_NAME = \"secrets.json\";",
+    "export declare const SESSION_ID_RE: RegExp;",
+    "export declare const SNIPPET_MAX = 200;",
+    "export declare const STORAGE_TARGET = \"0.2.6\";",
+    "export declare const TEMPLATE_VERSION = 1;",
+    "export declare const VERSION_FILE_NAME = \"VERSION\";",
+    "export declare const inject: string[];",
+    "export declare const inject: string[];",
+    "export declare const name = \"jev-decide\";",
+    "export declare function actionButton(label: string, cls?: string): HTMLButtonElement;",
+    "export declare function appendEntry(home: string | undefined, entry: HistoryEntry, limits: { readonly perSession: number; readonly totalSessions: number; }",
+    "export declare function apply(ctx: ClientContext): void;",
+    "export declare function apply(ctx: Context, config?: JevDecideApplyConfig): void;",
+    "export declare function assembleEntry(root: string, sessionId: string, event: EntryEvent, now: number): HistoryEntry;",
+    "export declare function assertSessionId(sessionId: string): void;",
+    "export declare function atomicWrite0600Sync(file: string, text: string): void;",
+    "export declare function badge(text: string, cls?: string): HTMLElement;",
+    "export declare function buildDefaultConfig(): ConfigV1;",
+    "export declare function buildEndpoints(ports: ApiDeps): Endpoint[];",
+    "export declare function buildToolDefinitions(assembly: ToolAssembly): ToolDefinition[];",
+    "export declare function callWithRetry(body: JevRequestBody, key: string, timeoutMs: number, fetchImpl: FetchImpl): Promise<{ readonly verdict?: RemoteVerdict; readonly failure?: JevFailure; readonly retries: number; }",
+    "export declare function capLabel(cap: AutomationCap): string;",
+    "export declare function clamp01(v: unknown): number;",
+    "export declare function clear(node: HTMLElement): void;",
+    "export declare function compareVersions(left: string, right: string): number;",
+    "export declare function configFile(home?: string): string;",
+    "export declare function configFile(home?: string): string;",
+    "export declare function containsCjk(text: string): boolean;",
+    "export declare function countLinesSync(file: string): number;",
+    "export declare function createSemaphore(max: number): { readonly run: <T>(task: () => Promise<T>) => Promise<T>; };",
+    "export declare function decide(args: unknown, deps: DecideDeps): Promise<DecideOutput | ErrorEnvelope>;",
+    "export declare function defaultFetchImpl(): FetchImpl;",
+    "export declare function deleteSession(home: string | undefined, query: { readonly root?: string; readonly sessionId?: string; }",
+    "export declare function el(tag: string, attrs?: Attrs | null, children?: unknown): HTMLElement;",
+    "export declare function ensureDir0700(dir: string): void;",
+    "export declare function ensureSeeded(home: string | undefined, seed: SeedFiles, io: UpgradeIoPorts): string[];",
+    "export declare function errorLine(text: string): HTMLElement;",
+    "export declare function failureCategory(status: number, body: unknown): string;",
+    "export declare function fetchTimeout(url: string, init?: RequestInit, timeoutMs?: number): Promise<Response>;",
+    "export declare function fmtTime(ts: number): string;",
+    "export declare function fold(opts: { readonly title: string; readonly open?: boolean; readonly body: HTMLElement; }",
+    "export declare function frozenPresetOf(id: string): PresetTemplate | undefined;",
+    "export declare function historyDir(home?: string): string;",
+    "export declare function historyFile(home: string | undefined, rootHash: string, sessionId: string): string;",
+    "export declare function historyRoot(home?: string): string;",
+    "export declare function installApi(deps: ApiDeps): (() => void)[];",
+    "export declare function installUpgrade(deps: UpgradeDeps): MigrateReport;",
+    "export declare function jevHome(home?: string): string;",
+    "export declare function keyShapeCategory(key: string): KeyShapeCategory | null;",
+    "export declare function listFilesSync(dir: string): string[];",
+    "export declare function listPresets(deps: { readonly isEnabled: (presetId: string) => boolean; readonly capOf: (presetId: string) => number; }",
+    "export declare function loadState(home: string | undefined, deps: ConfigDeps): LoadedState;",
+    "export declare function localPrecheckHit(text: string): boolean;",
+    "export declare function migrate(deps: UpgradeDeps): MigrateReport;",
+    "export declare function mtimeMs(file: string): number;",
+    "export declare function namespaceDir(home?: string): string;",
+    "export declare function normalizeCap(v: unknown): AutomationCap;",
+    "export declare function normalizeLoadedConfig(raw: unknown): { readonly config: ConfigV1; readonly retired: string[]; };",
+    "export declare function normalizePutEnvelope(body: unknown): { readonly ok: true; readonly flat: Record<string, unknown>; }",
+    "export declare function noteLine(text: string): HTMLElement;",
+    "export declare function numberInput(opts: { readonly value: number; readonly min?: number; readonly max?: number; readonly step?: number; }",
+    "export declare function okLine(text: string): HTMLElement;",
+    "export declare function parseConfigPayload(payload: unknown): JevConfigV1 | null;",
+    "export declare function parseHistoryPayload(payload: unknown): JevHistoryEntry[];",
+    "export declare function parsePresetsPayload(payload: unknown): JevPresetInfo[];",
+    "export declare function parseVerdict(status: number, text: string): { readonly ok: true; readonly verdict: RemoteVerdict; }",
+    "export declare function pluginVersion(): string | undefined;",
+    "export declare function pluginVersion(): string;",
+    "export declare function presetsFile(home?: string): string;",
+    "export declare function presetsFile(home?: string): string;",
+    "export declare function probRow(entry: JevHistoryEntry): HTMLElement;",
+    "export declare function queryEntries(home: string | undefined, query: { readonly root?: string; readonly sessionId?: string; readonly limit?: number; }",
+    "export declare function readJsonSync(file: string): { readonly ok: true; readonly value: unknown; }",
+    "export declare function readStoredVersion(home: string | undefined, deps: ConfigDeps): string;",
+    "export declare function readStoredVersion(home: string | undefined, deps: UpgradeDeps): string;",
+    "export declare function readTextSync(file: string): { readonly ok: true; readonly text: string; }",
+    "export declare function redactSnippet(text: string): string;",
+    "export declare function registerEndpoints(register: RegisterRoute, endpoints: Endpoint[], logger: LoggerPort): (() => void)[];",
+    "export declare function releaseUpgrade(): void;",
+    "export declare function removeFileSync(file: string): void;",
+    "export declare function renderConnectionPane(host: ConnectionHost): HTMLElement;",
+    "export declare function renderHistoryPane(host: HistoryHost): HTMLElement;",
+    "export declare function renderPresetsPane(host: PresetsHost): HTMLElement;",
+    "export declare function resolveApiKey(state: LoadedState, env: Record<string, string | undefined>, deps: ConfigDeps): { readonly key: string | undefined; readonly source: \"env\" | \"plaintext\" | \"none\"; };",
+    "export declare function resolveRootHash(root: string): string;",
+    "export declare function rootDisplayOf(root: string): string;",
+    "export declare function rootHashOf(root: string): string;",
+    "export declare function rootOf(exec: unknown): string;",
+    "export declare function savePatch(home: string | undefined, patch: ConfigPutPatch, deps: ConfigDeps): LoadedState;",
+    "export declare function secretsFile(home?: string): string;",
+    "export declare function secretsFile(home?: string): string;",
+    "export declare function seedMissing(home: string | undefined, deps: UpgradeDeps): string[];",
+    "export declare function sendFailure(res: ServerResponse, status: number, errorCode: string, category: string, message: string): void;",
+    "export declare function sendJson(res: ServerResponse, status: number, body: unknown): void;",
+    "export declare function sessionOf(exec: unknown): string;",
+    "export declare function setText(node: HTMLElement, text: string): void;",
+    "export declare function shortId(id: string, len?: number): string;",
+    "export declare function stateHashOf(text: string): string;",
+    "export declare function textInput(opts: { readonly value?: string; readonly placeholder?: string; readonly type?: string; readonly disabled?: boolean; }",
+    "export declare function tierBadge(tier: JevTier): HTMLElement;",
+    "export declare function toMaskedConfig(state: LoadedState): ConfigV1;",
+    "export declare function toWireQuestions(questions: readonly ValidQuestion[]): JevRequestBody[\"questions\"];",
+    "export declare function truncateCodePoints(text: string, budget: number): { readonly text: string; readonly truncated: boolean; readonly originalLength: number; };",
+    "export declare function validApiKeyRef(name: string): boolean;",
+    "export declare function validateDecideArgs(args: unknown): { readonly ok: true; readonly valid: ValidDecide; }",
+    "export declare function validatePutBody(body: unknown): { readonly ok: true; readonly patch: ConfigPutPatch; }",
+    "export declare function versionFile(home?: string): string;",
+    "export declare function versionFile(home?: string): string;",
+    "export declare function writeStoredVersion(home: string | undefined, version: string, deps: ConfigDeps): void;",
+    "export declare function writeStoredVersion(home: string | undefined, version: string, deps: UpgradeDeps): void;"
+  ],
+  "entries": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "exports": [
+        {
+          "name": "ConfigV1",
+          "isType": true
+        },
+        {
+          "name": "ROUTES",
+          "isType": false
+        },
+        {
+          "name": "apply",
+          "isType": false
+        },
+        {
+          "name": "inject",
+          "isType": false
+        },
+        {
+          "name": "name",
+          "isType": false
+        }
+      ],
+      "blocks": {
+        "inject": [
+          "export declare const inject: string[];"
+        ],
+        "name": [
+          "export declare const name = \"jev-decide\";"
+        ],
+        "apply": [
+          "export declare function apply(ctx: Context, config?: JevDecideApplyConfig): void;"
+        ],
+        "buildEndpoints": [
+          "export declare function buildEndpoints(ports: ApiDeps): Endpoint[];"
+        ],
+        "registerEndpoints": [
+          "export declare function registerEndpoints(register: RegisterRoute, endpoints: Endpoint[], logger: LoggerPort): (() => void)[];"
+        ],
+        "sendFailure": [
+          "export declare function sendFailure(res: ServerResponse, status: number, errorCode: string, category: string, message: string): void;"
+        ],
+        "sendJson": [
+          "export declare function sendJson(res: ServerResponse, status: number, body: unknown): void;"
+        ],
+        "installApi": [
+          "export declare function installApi(deps: ApiDeps): (() => void)[];"
+        ],
+        "buildDefaultConfig": [
+          "export declare function buildDefaultConfig(): ConfigV1;"
+        ],
+        "normalizeLoadedConfig": [
+          "export declare function normalizeLoadedConfig(raw: unknown): { readonly config: ConfigV1; readonly retired: string[]; };"
+        ],
+        "normalizePutEnvelope": [
+          "export declare function normalizePutEnvelope(body: unknown): { readonly ok: true; readonly flat: Record<string, unknown>; }"
+        ],
+        "validatePutBody": [
+          "export declare function validatePutBody(body: unknown): { readonly ok: true; readonly patch: ConfigPutPatch; }"
+        ],
+        "configFile": [
+          "export declare function configFile(home?: string): string;",
+          "export declare function configFile(home?: string): string;"
+        ],
+        "historyDir": [
+          "export declare function historyDir(home?: string): string;"
+        ],
+        "jevHome": [
+          "export declare function jevHome(home?: string): string;"
+        ],
+        "presetsFile": [
+          "export declare function presetsFile(home?: string): string;",
+          "export declare function presetsFile(home?: string): string;"
+        ],
+        "secretsFile": [
+          "export declare function secretsFile(home?: string): string;",
+          "export declare function secretsFile(home?: string): string;"
+        ],
+        "versionFile": [
+          "export declare function versionFile(home?: string): string;",
+          "export declare function versionFile(home?: string): string;"
+        ],
+        "loadState": [
+          "export declare function loadState(home: string | undefined, deps: ConfigDeps): LoadedState;"
+        ],
+        "pluginVersion": [
+          "export declare function pluginVersion(): string;",
+          "export declare function pluginVersion(): string | undefined;"
+        ],
+        "readStoredVersion": [
+          "export declare function readStoredVersion(home: string | undefined, deps: ConfigDeps): string;",
+          "export declare function readStoredVersion(home: string | undefined, deps: UpgradeDeps): string;"
+        ],
+        "resolveApiKey": [
+          "export declare function resolveApiKey(state: LoadedState, env: Record<string, string | undefined>, deps: ConfigDeps): { readonly key: string | undefined; readonly source: \"env\" | \"plaintext\" | \"none\"; };"
+        ],
+        "savePatch": [
+          "export declare function savePatch(home: string | undefined, patch: ConfigPutPatch, deps: ConfigDeps): LoadedState;"
+        ],
+        "toMaskedConfig": [
+          "export declare function toMaskedConfig(state: LoadedState): ConfigV1;"
+        ],
+        "writeStoredVersion": [
+          "export declare function writeStoredVersion(home: string | undefined, version: string, deps: ConfigDeps): void;",
+          "export declare function writeStoredVersion(home: string | undefined, version: string, deps: UpgradeDeps): void;"
+        ],
+        "assembleEntry": [
+          "export declare function assembleEntry(root: string, sessionId: string, event: EntryEvent, now: number): HistoryEntry;"
+        ],
+        "resolveRootHash": [
+          "export declare function resolveRootHash(root: string): string;"
+        ],
+        "rootDisplayOf": [
+          "export declare function rootDisplayOf(root: string): string;"
+        ],
+        "rootHashOf": [
+          "export declare function rootHashOf(root: string): string;"
+        ],
+        "stateHashOf": [
+          "export declare function stateHashOf(text: string): string;"
+        ],
+        "historyRoot": [
+          "export declare function historyRoot(home?: string): string;"
+        ],
+        "redactSnippet": [
+          "export declare function redactSnippet(text: string): string;"
+        ],
+        "appendEntry": [
+          "export declare function appendEntry(home: string | undefined, entry: HistoryEntry, limits: { readonly perSession: number; readonly totalSessions: number; }"
+        ],
+        "assertSessionId": [
+          "export declare function assertSessionId(sessionId: string): void;"
+        ],
+        "deleteSession": [
+          "export declare function deleteSession(home: string | undefined, query: { readonly root?: string; readonly sessionId?: string; }"
+        ],
+        "historyFile": [
+          "export declare function historyFile(home: string | undefined, rootHash: string, sessionId: string): string;"
+        ],
+        "queryEntries": [
+          "export declare function queryEntries(home: string | undefined, query: { readonly root?: string; readonly sessionId?: string; readonly limit?: number; }"
+        ],
+        "atomicWrite0600Sync": [
+          "export declare function atomicWrite0600Sync(file: string, text: string): void;"
+        ],
+        "countLinesSync": [
+          "export declare function countLinesSync(file: string): number;"
+        ],
+        "ensureDir0700": [
+          "export declare function ensureDir0700(dir: string): void;"
+        ],
+        "listFilesSync": [
+          "export declare function listFilesSync(dir: string): string[];"
+        ],
+        "mtimeMs": [
+          "export declare function mtimeMs(file: string): number;"
+        ],
+        "readJsonSync": [
+          "export declare function readJsonSync(file: string): { readonly ok: true; readonly value: unknown; }"
+        ],
+        "readTextSync": [
+          "export declare function readTextSync(file: string): { readonly ok: true; readonly text: string; }"
+        ],
+        "removeFileSync": [
+          "export declare function removeFileSync(file: string): void;"
+        ],
+        "callWithRetry": [
+          "export declare function callWithRetry(body: JevRequestBody, key: string, timeoutMs: number, fetchImpl: FetchImpl): Promise<{ readonly verdict?: RemoteVerdict; readonly failure?: JevFailure; readonly retries: number; }"
+        ],
+        "createSemaphore": [
+          "export declare function createSemaphore(max: number): { readonly run: <T>(task: () => Promise<T>) => Promise<T>; };"
+        ],
+        "defaultFetchImpl": [
+          "export declare function defaultFetchImpl(): FetchImpl;"
+        ],
+        "parseVerdict": [
+          "export declare function parseVerdict(status: number, text: string): { readonly ok: true; readonly verdict: RemoteVerdict; }"
+        ],
+        "toWireQuestions": [
+          "export declare function toWireQuestions(questions: readonly ValidQuestion[]): JevRequestBody[\"questions\"];"
+        ],
+        "buildToolDefinitions": [
+          "export declare function buildToolDefinitions(assembly: ToolAssembly): ToolDefinition[];"
+        ],
+        "rootOf": [
+          "export declare function rootOf(exec: unknown): string;"
+        ],
+        "sessionOf": [
+          "export declare function sessionOf(exec: unknown): string;"
+        ],
+        "localPrecheckHit": [
+          "export declare function localPrecheckHit(text: string): boolean;"
+        ],
+        "decide": [
+          "export declare function decide(args: unknown, deps: DecideDeps): Promise<DecideOutput | ErrorEnvelope>;"
+        ],
+        "listPresets": [
+          "export declare function listPresets(deps: { readonly isEnabled: (presetId: string) => boolean; readonly capOf: (presetId: string) => number; }"
+        ],
+        "validateDecideArgs": [
+          "export declare function validateDecideArgs(args: unknown): { readonly ok: true; readonly valid: ValidDecide; }"
+        ],
+        "namespaceDir": [
+          "export declare function namespaceDir(home?: string): string;"
+        ],
+        "STORAGE_TARGET": [
+          "export declare const STORAGE_TARGET = \"0.2.6\";"
+        ],
+        "migrate": [
+          "export declare function migrate(deps: UpgradeDeps): MigrateReport;"
+        ],
+        "ensureSeeded": [
+          "export declare function ensureSeeded(home: string | undefined, seed: SeedFiles, io: UpgradeIoPorts): string[];"
+        ],
+        "seedMissing": [
+          "export declare function seedMissing(home: string | undefined, deps: UpgradeDeps): string[];"
+        ],
+        "BASELINE_VERSION": [
+          "export declare const BASELINE_VERSION = \"0\";"
+        ],
+        "compareVersions": [
+          "export declare function compareVersions(left: string, right: string): number;"
+        ],
+        "installUpgrade": [
+          "export declare function installUpgrade(deps: UpgradeDeps): MigrateReport;"
+        ],
+        "releaseUpgrade": [
+          "export declare function releaseUpgrade(): void;"
+        ],
+        "API_KEY_REF_RE": [
+          "export declare const API_KEY_REF_RE: RegExp;"
+        ],
+        "CJK_RE": [
+          "export declare const CJK_RE: RegExp;"
+        ],
+        "CONFIG_VERSION": [
+          "export declare const CONFIG_VERSION = 1;"
+        ],
+        "FROZEN_PRESETS": [
+          "export declare const FROZEN_PRESETS: readonly PresetTemplate[];"
+        ],
+        "JEV_BASE_URL": [
+          "export declare const JEV_BASE_URL = \"https: export declare const CONFIG_FILE_NAME = \"config.json\";"
+        ],
+        "MAX_QUESTIONS": [
+          "export declare const MAX_QUESTIONS = 20;"
+        ],
+        "MAX_QUESTION_TEXT": [
+          "export declare const MAX_QUESTION_TEXT = 255;"
+        ],
+        "PACKAGE_DIR": [
+          "export declare const PACKAGE_DIR = \"@wingsky-1/dsh-jev-decide\";"
+        ],
+        "PRESETS_FILE_NAME": [
+          "export declare const PRESETS_FILE_NAME = \"presets.json\";"
+        ],
+        "PRESET_ID_RE": [
+          "export declare const PRESET_ID_RE: RegExp;"
+        ],
+        "QUESTION_ID_RE": [
+          "export declare const QUESTION_ID_RE: RegExp;"
+        ],
+        "RETIRED_KEYS": [
+          "export declare const RETIRED_KEYS: readonly [\"baseUrl\", \"apiBaseUrl\", \"endpoint\", \"apiEndpoint\", \"url\"];"
+        ],
+        "ROUTES": [
+          "export declare const ROUTES: { readonly health: \"/api/dsh-jev-decide/health\"; readonly config: \"/api/dsh-jev-decide/config\"; readonly presets: \"/api/dsh-jev-decide/presets\"; readonly history: \"/api/dsh-jev-decide/history\"; readonly testConnection: \"/api/dsh-jev-decide/test-connection\"; };"
+        ],
+        "SECRETS_FILE_NAME": [
+          "export declare const SECRETS_FILE_NAME = \"secrets.json\";"
+        ],
+        "SESSION_ID_RE": [
+          "export declare const SESSION_ID_RE: RegExp;"
+        ],
+        "SNIPPET_MAX": [
+          "export declare const SNIPPET_MAX = 200;"
+        ],
+        "TEMPLATE_VERSION": [
+          "export declare const TEMPLATE_VERSION = 1;"
+        ],
+        "VERSION_FILE_NAME": [
+          "export declare const VERSION_FILE_NAME = \"VERSION\";"
+        ],
+        "containsCjk": [
+          "export declare function containsCjk(text: string): boolean;"
+        ],
+        "frozenPresetOf": [
+          "export declare function frozenPresetOf(id: string): PresetTemplate | undefined;"
+        ],
+        "keyShapeCategory": [
+          "export declare function keyShapeCategory(key: string): KeyShapeCategory | null;"
+        ],
+        "truncateCodePoints": [
+          "export declare function truncateCodePoints(text: string, budget: number): { readonly text: string; readonly truncated: boolean; readonly originalLength: number; };"
+        ]
+      }
+    },
+    "./client": {
+      "types": "./lib/client/index.d.ts",
+      "exports": [
+        {
+          "name": "apply",
+          "isType": false
+        },
+        {
+          "name": "inject",
+          "isType": false
+        }
+      ],
+      "blocks": {
+        "capLabel": [
+          "export declare function capLabel(cap: AutomationCap): string;"
+        ],
+        "clamp01": [
+          "export declare function clamp01(v: unknown): number;"
+        ],
+        "failureCategory": [
+          "export declare function failureCategory(status: number, body: unknown): string;"
+        ],
+        "normalizeCap": [
+          "export declare function normalizeCap(v: unknown): AutomationCap;"
+        ],
+        "parseConfigPayload": [
+          "export declare function parseConfigPayload(payload: unknown): JevConfigV1 | null;"
+        ],
+        "parseHistoryPayload": [
+          "export declare function parseHistoryPayload(payload: unknown): JevHistoryEntry[];"
+        ],
+        "parsePresetsPayload": [
+          "export declare function parsePresetsPayload(payload: unknown): JevPresetInfo[];"
+        ],
+        "validApiKeyRef": [
+          "export declare function validApiKeyRef(name: string): boolean;"
+        ],
+        "APP_ROUTES": [
+          "export declare const APP_ROUTES: { readonly health: string; readonly config: string; readonly presets: string; readonly history: string; readonly testConnection: string; };"
+        ],
+        "CLIENT_FETCH_TIMEOUT_MS": [
+          "export declare const CLIENT_FETCH_TIMEOUT_MS = 10000;"
+        ],
+        "CLIENT_ROUTES": [
+          "export declare const CLIENT_ROUTES: { readonly health: \"/api/dsh-jev-decide/health\"; readonly config: \"/api/dsh-jev-decide/config\"; readonly presets: \"/api/dsh-jev-decide/presets\"; readonly history: \"/api/dsh-jev-decide/history\"; readonly testConnection: \"/api/dsh-jev-decide/test-connection\"; };"
+        ],
+        "fetchTimeout": [
+          "export declare function fetchTimeout(url: string, init?: RequestInit, timeoutMs?: number): Promise<Response>;"
+        ],
+        "actionButton": [
+          "export declare function actionButton(label: string, cls?: string): HTMLButtonElement;"
+        ],
+        "badge": [
+          "export declare function badge(text: string, cls?: string): HTMLElement;"
+        ],
+        "clear": [
+          "export declare function clear(node: HTMLElement): void;"
+        ],
+        "el": [
+          "export declare function el(tag: string, attrs?: Attrs | null, children?: unknown): HTMLElement;"
+        ],
+        "errorLine": [
+          "export declare function errorLine(text: string): HTMLElement;"
+        ],
+        "fmtTime": [
+          "export declare function fmtTime(ts: number): string;"
+        ],
+        "fold": [
+          "export declare function fold(opts: { readonly title: string; readonly open?: boolean; readonly body: HTMLElement; }"
+        ],
+        "noteLine": [
+          "export declare function noteLine(text: string): HTMLElement;"
+        ],
+        "numberInput": [
+          "export declare function numberInput(opts: { readonly value: number; readonly min?: number; readonly max?: number; readonly step?: number; }"
+        ],
+        "okLine": [
+          "export declare function okLine(text: string): HTMLElement;"
+        ],
+        "setText": [
+          "export declare function setText(node: HTMLElement, text: string): void;"
+        ],
+        "shortId": [
+          "export declare function shortId(id: string, len?: number): string;"
+        ],
+        "textInput": [
+          "export declare function textInput(opts: { readonly value?: string; readonly placeholder?: string; readonly type?: string; readonly disabled?: boolean; }"
+        ],
+        "HIGH_LINE": [
+          "export declare const HIGH_LINE = 0.8;"
+        ],
+        "probRow": [
+          "export declare function probRow(entry: JevHistoryEntry): HTMLElement;"
+        ],
+        "tierBadge": [
+          "export declare function tierBadge(tier: JevTier): HTMLElement;"
+        ],
+        "inject": [
+          "export declare const inject: string[];"
+        ],
+        "apply": [
+          "export declare function apply(ctx: ClientContext): void;"
+        ],
+        "renderConnectionPane": [
+          "export declare function renderConnectionPane(host: ConnectionHost): HTMLElement;"
+        ],
+        "renderHistoryPane": [
+          "export declare function renderHistoryPane(host: HistoryHost): HTMLElement;"
+        ],
+        "renderPresetsPane": [
+          "export declare function renderPresetsPane(host: PresetsHost): HTMLElement;"
+        ]
+      }
+    }
+  }
+}

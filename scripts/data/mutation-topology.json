@@ -32,6 +32,18 @@
     }
   },
   "packages": {
+    "dsh-jev-decide": {
+      "concurrency": 16,
+      "timeoutMS": 60000,
+      "segments": {
+        "_single": {
+          "mutate": ["packages/dsh-jev-decide/src/**/*.ts"],
+          "excludes": [],
+          "comment": "feat/jev-decide 首登：src/**/*.ts 单段覆盖宿主与客户端（域拆分待后续按域重写时再分段）；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
+        }
+      },
+      "testLayers": {}
+    },
     "dsh-lan-proxy": {
       "concurrency": 16,
       "timeoutMS": 60000,

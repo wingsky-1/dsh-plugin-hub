@@ -1,0 +1,10 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "types": ["node"],
+    "rewriteRelativeImportExtensions": true,
+    "allowImportingTsExtensions": true
+  },
+  "include": ["./**/*.ts", "../src/client/css.d.ts"]
+}
