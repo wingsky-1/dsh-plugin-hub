@@ -1200,24 +1200,21 @@ export function formatPanel() { return "<p>a2</p>"; }
     disabledStaysDisabled = snap.host.find((a) => a.name === "p212-a")?.enabled;
     providerHasNoEnabled = snap.enabled.p212;
     // 持久化：adapter-state.json 轮询等待落盘 null（scheduleWriteAdapterState 为异步串行链）
-    let persisted = false;
+    // W4：手写 while+150ms 改共享 pollUntil（同 deadline/tick，不加轮次预算）。
     const stateFile = adapterStateFile(histDir);
-    const persistDeadline = Date.now() + 3000;
-    while (Date.now() < persistDeadline) {
-      if (existsSync(stateFile)) {
-        try {
-          const st = JSON.parse(readFileSync(stateFile, "utf8"));
-          if (st.p212 === null) {
-            persisted = true;
-            break;
+    persistedDisabledState =
+      (await pollUntil(
+        () => {
+          try {
+            if (!existsSync(stateFile)) return false;
+            return JSON.parse(readFileSync(stateFile, "utf8")).p212 === null;
+          } catch {
+            return false; // 写入中途，继续轮询
           }
-        } catch {
-          /* 写入中途，继续轮询 */
-        }
-      }
-      await new Promise((r) => setTimeout(r, 150));
-    }
-    persistedDisabledState = persisted;
+        },
+        3000,
+        150,
+      )) === true;
   });
 
   it("显式停用成功", () => {
@@ -1892,16 +1889,19 @@ export function formatPanel() { return "<p>user-panel</p>"; }
     // #217：轮询替代固定 sleep——注册后 warmup 采样时序不定（CI 并行下更明显），
     // 反复查 stats 直到用户版接管（adapterName=deepseek-official），超时 3s 兜底。
     const stats = routes.find((r) => r.path === ROUTES.stats);
-    let finalFresh = null;
-    const pollDeadline = Date.now() + 3000;
-    while (Date.now() < pollDeadline) {
-      const snap = await getJSON(stats, `${ROUTES.stats}?provider=${DEEPSEEK_OFFICIAL_PROVIDER}`);
-      if (snap.adapterName === "deepseek-official") {
-        finalFresh = snap;
-        break;
-      }
-      await new Promise((r) => setTimeout(r, 50));
-    }
+    // W4：手写 while+50ms 改共享 pollUntil（同 deadline/tick，不加轮次预算；async 条件）。
+    const finalFresh =
+      (await pollUntil(
+        async () => {
+          const snap = await getJSON(
+            stats,
+            `${ROUTES.stats}?provider=${DEEPSEEK_OFFICIAL_PROVIDER}`,
+          );
+          return snap.adapterName === "deepseek-official" ? snap : undefined;
+        },
+        3000,
+        50,
+      )) ?? null;
     userAdapterTakenOver = finalFresh;
     userAdapterStatus = finalFresh.status;
     userCapsuleRendered = finalFresh.capsuleHtml?.includes("USER ¥42.50");

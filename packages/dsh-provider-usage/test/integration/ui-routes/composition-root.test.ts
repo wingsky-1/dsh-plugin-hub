@@ -502,6 +502,7 @@ describe("D12四 健康读 errsurf + SSE 非可靠 + 路由单点 + 释放", () 
     expect(first.chunks).toEqual([CONNECT_FRAME]);
     expect(ctx.sseClients.size).toBe(1);
     first.emitClose();
+    first.emitClose(); // P2：重复断连幂等（不抛错，不断言，只覆盖；抛错即本用例红）。
     expect(ctx.sseClients.size).toBe(0);
     const second = makeSseRes();
     handleEvents(fakeReq({ method: "GET" }), second.res, ctx);

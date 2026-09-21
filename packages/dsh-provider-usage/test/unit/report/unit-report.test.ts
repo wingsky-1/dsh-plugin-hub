@@ -1395,7 +1395,7 @@ describe("ReportTaskQueue：串行单飞 + 入队去重（#625/#626）", () => {
     const queue = new ReportTaskQueue({
       executor: async () => {
         calls += 1;
-        await new Promise((r) => setTimeout(r, 30)); // 慢执行：拉开提交与执行的交错窗
+        // W4：删 30ms 慢执行（提交经 tail 链解耦，三次 submit 同步完成才执行，交错窗天然存在；等待面由下 pollUntil 覆盖）。
         throw new Error("always-fail"); // 恒失败：任务 failed，不影响串行性
       },
       warn: () => {},

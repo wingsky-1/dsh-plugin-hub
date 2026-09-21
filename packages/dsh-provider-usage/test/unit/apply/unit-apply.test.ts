@@ -18,7 +18,7 @@ import { tmpdir } from "node:os";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import fs, { existsSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
-import { injectGlobalFetch } from "../../helpers.ts";
+import { injectGlobalFetch, pollUntil } from "../../helpers.ts";
 import { apply, ROUTES } from "../../../src/apply/index.ts";
 // 白盒直连深路径（#768 B波）：OpenCode 双值经适配器域门面，不走组合根转发。
 import {
@@ -139,15 +139,10 @@ export function formatPanel() { return "<p>${name}</p>"; }
 `;
 }
 
-/** 轮询直到条件成立或超时（防 flake：不使用固定 sleep 判定）。 */
-async function pollUntil(cond: () => boolean, timeoutMs = 2000): Promise<boolean> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    if (cond()) return true;
-    await new Promise((r) => setTimeout(r, 10));
-  }
-  return cond();
-}
+// W5：删本地 pollUntil，统一引用 test/helpers.ts 共享版。逐行比对（本地原 142-150 vs 共享 100-112），语义不同处以共享版为准：
+// - 本地 cond 仅同步 boolean，共享 cond 可 async 且泛型返回真值（以共享为准，本文件调用仍为同步 boolean 面，true/false 语义一致）；
+// - 本地默认 2000ms/10ms，共享默认 5000ms/50ms（以共享为准，本文件 6 处调用均无显式参数，统一放宽到共享口径）；
+// - 本地 deadline 前 while+末次 cond()，共享 deadline 后返回末次 v（以共享为准，保证至少一次求值，超时返回末次假值）。
 
 const routeOf = (routes: Array<Record<string, unknown>>, path: string) =>
   routes.find((r) => r.path === path) as
