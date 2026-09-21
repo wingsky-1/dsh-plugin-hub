@@ -3,6 +3,7 @@ import type {
   AutomationCap,
   AutomationLevel,
   ConfigV1,
+  CustomPreset,
   JevLang,
   JevTier,
 } from "../../shared/interface.ts";
@@ -18,7 +19,7 @@ export interface KeyResolver {
   (): { readonly key: string | undefined; readonly source: "env" | "plaintext" | "none" };
 }
 
-/** 决议事件（tools 域的记录事实面；组合根映射为 HistoryEntry 再落盘，tools 不直引 history 域）。sessionId 由 decide 落史前校验（非法回落 unknown，随事件同行）。precheckHit 为本地密形命中旗（S1-A：命中即 snippet 强制全掩码）。 */
+/** 决议事件（tools 域的记录事实面；组合根映射为 HistoryEntry 再落盘，tools 不直引 history 域）。sessionId 由 decide 落史前校验（非法回落 unknown，随事件同行）。precheckHit 为本地密形命中旗（S1-A：命中即 snippet 强制全掩码）。questions 为调用题目快照（含候选项全列）。 */
 export interface DecideEvent {
   readonly sessionId: string;
   readonly precheckHit: boolean;
@@ -28,6 +29,7 @@ export interface DecideEvent {
   readonly truncated: boolean;
   readonly originalLength: number;
   readonly resultKind: string;
+  readonly questions: readonly ValidQuestion[];
   readonly choice?: string;
   readonly score?: number;
   readonly confidence: number;
@@ -61,6 +63,7 @@ export interface DecideDeps {
   readonly connection: ConfigV1["connection"];
   readonly isEnabled: (presetId: string) => boolean;
   readonly capOf: (presetId: string) => AutomationCap;
+  readonly customPresets?: ReadonlyMap<string, CustomPreset>;
   readonly resolveKey: KeyResolver;
   readonly recordEvent?: EventRecorder;
   /** 并发门（组合根按 maxConcurrency 创建信号量后传入；缺席即直行）。 */
@@ -85,5 +88,5 @@ export interface ValidDecide {
   readonly text: string;
   readonly lang: JevLang;
   readonly questions: readonly ValidQuestion[];
-  readonly appliedSource: "template" | "override" | "custom";
+  readonly appliedSource: "override" | "custom";
 }

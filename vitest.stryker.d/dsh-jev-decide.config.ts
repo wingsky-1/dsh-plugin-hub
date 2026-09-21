@@ -8,13 +8,16 @@ import { defineConfig } from 'vitest/config'
 export default defineConfig({
   test: {
     include: [
+      'packages/dsh-jev-decide/test/client-dom/custom-presets-ui.test.ts',
       'packages/dsh-jev-decide/test/client-dom/panes-probability.test.ts',
       'packages/dsh-jev-decide/test/client-dom/tabs-mask-history.test.ts',
+      'packages/dsh-jev-decide/test/client-unit/locale-i18n.test.ts',
       'packages/dsh-jev-decide/test/client-unit/routes-consistency.test.ts',
       'packages/dsh-jev-decide/test/integration/api.test.ts',
       'packages/dsh-jev-decide/test/integration/routes-fence.test.ts',
       'packages/dsh-jev-decide/test/unit/baseurl-guard.test.ts',
       'packages/dsh-jev-decide/test/unit/config.test.ts',
+      'packages/dsh-jev-decide/test/unit/custom-presets.test.ts',
       'packages/dsh-jev-decide/test/unit/decide-contract.test.ts',
       'packages/dsh-jev-decide/test/unit/history-hardening.test.ts',
       'packages/dsh-jev-decide/test/unit/history.test.ts',

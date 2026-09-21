@@ -94,6 +94,7 @@ describe("脱敏截断", () => {
         truncated: false,
         originalLength: 17,
         resultKind: "choice",
+        questions: [{ id: "q1", text: "Pick one.", kind: "choice", options: ["A", "B"] }],
         choice: "A",
         confidence: 1,
         tier: "high",

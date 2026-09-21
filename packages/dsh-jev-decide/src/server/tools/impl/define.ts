@@ -7,6 +7,7 @@
  * - ws_jev_list_presets 只读（不记录历史、不触网络）。
  */
 import type { ToolDefinition } from "@deepseek-ai/dsh-tools";
+import type { CustomPreset } from "../../../shared/interface.ts";
 import type { DecideDeps } from "../deps.ts";
 import { decide, listPresets } from "./service.ts";
 
@@ -16,6 +17,7 @@ export interface ToolAssembly {
   readonly snapshot: () => {
     readonly isEnabled: (presetId: string) => boolean;
     readonly capOf: (presetId: string) => number;
+    readonly customs?: readonly CustomPreset[];
   };
 }
 
@@ -86,10 +88,11 @@ export function buildToolDefinitions(assembly: ToolAssembly): ToolDefinition[] {
         },
         questions_override: {
           type: "array",
-          description: "Full replacement questions (required for custom; full-set for others)",
+          description:
+            "Caller-supplied full question set, required (1-20). Templates hold no questions.",
         },
       },
-      required: ["preset_id", "state"],
+      required: ["preset_id", "state", "questions_override"],
     },
     output: {
       schema: { type: "object" },

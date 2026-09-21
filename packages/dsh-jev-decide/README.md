@@ -1,6 +1,6 @@
 # dsh-jev-decide
 
-JEV 决策网关：frozen 预设模板 + 双轨密钥 + 本地密形预检 + SystemOne 官方调用。
+JEV 决策网关：frozen 出题规范（英文） + 双轨密钥 + 本地密形预检 + SystemOne 官方调用。
 
 一键安装（安装后重启 `dsh web` 生效）：
 
@@ -10,7 +10,8 @@ dsh plugin --profile web add @wingsky-1/dsh-jev-decide
 
 - 模型工具：`ws_jev_decide`（决议）、`ws_jev_list_presets`（只读清单）。
 - 回环路由：`/api/dsh-jev-decide/health|config|presets|history|test-connection`。
-- 5 预设 frozen（templateVersion 恒为 1）：general / secret-leak（默认关闭）/ plan-review / risk-check / custom。
+- 5 预设 frozen 出题规范（templateVersion 恒为 1，英文描述，零考题）：general / secret-leak（默认关闭）/ plan-review / risk-check / custom。调用方每次经 `questions_override` 自带全量题目（1-20 题，必填）。
+- 自建预设（`custom-presets.json`，缺席即空）：`PUT /config` 增量键 `customPresets` 全量替换（id 不可与 frozen 重名，cap 0|1|2）；自建 id 可直接决议（开关/cap 同 frozen 语义）；落史存调用题目快照（脱敏），`GET /history` enrich 展示标题（只存 id）。
 
 ## 最短上手
 

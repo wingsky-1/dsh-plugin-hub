@@ -65,7 +65,11 @@ describe("secret-leak 本地预检命中不离境", () => {
     let calls = 0;
     const events: unknown[] = [];
     const out = await decide(
-      { preset_id: "general", state: { text: "prefix " + secretText + " suffix", lang: "en" } },
+      {
+        preset_id: "general",
+        state: { text: "prefix " + secretText + " suffix", lang: "en" },
+        questions_override: [{ id: "q1", text: "Pick one.", kind: "choice", options: ["A", "B"] }],
+      },
       baseDeps({
         fetchImpl: async () => {
           calls += 1;
@@ -89,7 +93,11 @@ describe("secret-leak 本地预检命中不离境", () => {
   it("禁用预设优先于预检：secret-leak 关闭即 PRESET_DISABLED（不走 local-precheck）", async () => {
     let calls = 0;
     const out = await decide(
-      { preset_id: "secret-leak", state: { text: "my sk-Abcdef12345678 leak", lang: "en" } },
+      {
+        preset_id: "secret-leak",
+        state: { text: "my sk-Abcdef12345678 leak", lang: "en" },
+        questions_override: [{ id: "q1", text: "Pick one.", kind: "choice", options: ["A", "B"] }],
+      },
       baseDeps({
         isEnabled: (id) => id !== "secret-leak",
         fetchImpl: async () => {
@@ -112,7 +120,13 @@ describe("secret-leak 本地预检命中不离境", () => {
     try {
       let calls = 0;
       const out = await decide(
-        { preset_id: "general", state: { text: "leak sk-Abcdef12345678", lang: "en" } },
+        {
+          preset_id: "general",
+          state: { text: "leak sk-Abcdef12345678", lang: "en" },
+          questions_override: [
+            { id: "q1", text: "Pick one.", kind: "choice", options: ["A", "B"] },
+          ],
+        },
         baseDeps({
           fetchImpl: async () => {
             calls += 1;
@@ -131,7 +145,11 @@ describe("secret-leak 本地预检命中不离境", () => {
   it("无 key 与禁用同样不触网且包络结构化", async () => {
     let calls = 0;
     const noKey = await decide(
-      { preset_id: "general", state: { text: "hi", lang: "en" } },
+      {
+        preset_id: "general",
+        state: { text: "hi", lang: "en" },
+        questions_override: [{ id: "q1", text: "Pick one.", kind: "choice", options: ["A", "B"] }],
+      },
       baseDeps({
         resolveKey: () => ({ key: undefined, source: "none" as const }),
         fetchImpl: async () => {

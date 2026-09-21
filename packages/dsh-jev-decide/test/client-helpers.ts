@@ -1,5 +1,7 @@
 /** dsh-jev-decide client 测试共享夹具（支撑模块：不入任何层、不计 --min）。 */
-import { apply } from "../src/client/index.ts";
+import * as React from "react";
+import { render } from "@testing-library/react";
+import { apply } from "../src/client/index.tsx";
 import { APP_ROUTES } from "../src/client/api/routes.ts";
 
 /** 确定性轮询（不用固定 sleep 做断言；截止读真实 Date.now）。 */
@@ -84,32 +86,45 @@ export function installStub(handler: (url: string, method: string) => Response):
 
 export interface Mount {
   readonly card: HTMLElement;
+  readonly unmount: () => void;
   readonly effects: Array<() => void>;
 }
 
-/** 经真实 apply 挂载设置卡（调用方先 installStub；返回释放器由调用方兜底）。 */
+/** 经真实 apply 挂载设置独立页（先 installStub；断言 settings.section 接线）。 */
 export function mountCard(): Mount {
   const effects: Array<() => void> = [];
-  let render: (() => HTMLElement) | null = null;
+  let renderFn: (() => unknown) | null = null;
+  let injectedName = "";
   const slots = {
-    inject: (_name: string, setup: () => unknown) => {
+    inject: (name: string, setup: () => unknown) => {
+      injectedName = name;
       setup();
       return () => {};
     },
-    register: (_item: unknown, renderFn: () => HTMLElement) => {
-      render = renderFn;
+    register: (_item: unknown, renderItem: () => unknown) => {
+      renderFn = renderItem;
       return () => {};
     },
   };
   const ctx = {
-    slots,
+    get: (name: string) => (name === "slots" ? slots : undefined),
     effect: (fn: () => () => void) => {
       effects.push(fn());
     },
   };
   apply(ctx as never);
-  if (render === null) throw new Error("card render 未注册");
-  const card = (render as () => HTMLElement)();
-  document.body.appendChild(card);
-  return { card, effects };
+  if (injectedName !== "settings.section") throw new Error("未走 settings.section 独立 tab 接线");
+  if (renderFn === null) throw new Error("card render 未注册");
+  const result = render((renderFn as () => React.ReactElement)());
+  const card = result.container.firstElementChild as HTMLElement;
+  return { card, unmount: result.unmount, effects };
+}
+
+/** 挂载单个窗格（调用方在 afterEach unmount；查询一律以返回容器为根）。 */
+export function mountPane(node: React.ReactElement): {
+  readonly pane: HTMLElement;
+  readonly unmount: () => void;
+} {
+  const result = render(node);
+  return { pane: result.container as HTMLElement, unmount: result.unmount };
 }

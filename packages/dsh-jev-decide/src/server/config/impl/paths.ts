@@ -8,6 +8,7 @@ import { dshHome } from "../../../../../../shared/dsh-home.js";
 import {
   CONFIG_FILE_NAME,
   PACKAGE_DIR,
+  CUSTOM_PRESETS_FILE_NAME,
   PRESETS_FILE_NAME,
   SECRETS_FILE_NAME,
   VERSION_FILE_NAME,
@@ -26,6 +27,11 @@ export function configFile(home?: string): string {
 /** presets.json 完整路径（开关覆盖层）。 */
 export function presetsFile(home?: string): string {
   return join(jevHome(home), PRESETS_FILE_NAME);
+}
+
+/** custom-presets.json 完整路径（自建存储；缺席即空列表）。 */
+export function customPresetsFile(home?: string): string {
+  return join(jevHome(home), CUSTOM_PRESETS_FILE_NAME);
 }
 
 /** secrets.json 完整路径（明文密钥唯一落盘处，0600）。 */

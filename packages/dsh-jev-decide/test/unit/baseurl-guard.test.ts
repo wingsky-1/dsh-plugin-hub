@@ -56,7 +56,14 @@ describe("BaseURL 写死", () => {
         return { status: 200, text: JSON.stringify({ resultKind: "choice", choice: "A" }) };
       },
     };
-    const out = await decide({ preset_id: "general", state: { text: "hi", lang: "en" } }, deps);
+    const out = await decide(
+      {
+        preset_id: "general",
+        state: { text: "hi", lang: "en" },
+        questions_override: [{ id: "q1", text: "Pick one.", kind: "choice", options: ["A", "B"] }],
+      },
+      deps,
+    );
     expect(out.ok).toBe(true);
     expect(seenUrl).toBe(EXPECTED_BASE);
     expect(seenUrl).toBe(JEV_BASE_URL);

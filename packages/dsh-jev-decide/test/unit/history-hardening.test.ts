@@ -114,6 +114,7 @@ describe("脱敏无密钥原文", () => {
         truncated: false,
         originalLength: 17,
         resultKind: "choice",
+        questions: [{ id: "q1", text: "Pick one.", kind: "choice", options: ["A", secret] }],
         choice: "A",
         confidence: 1,
         tier: "high",
@@ -125,6 +126,9 @@ describe("脱敏无密钥原文", () => {
     );
     expect(JSON.stringify(e)).not.toContain(secret);
     expect(e).toMatchObject({ provider: "official", templateVersion: 1, sessionId: "s-1", ts: 7 });
+    expect(e.questions).toHaveLength(1);
+    expect(e.questions?.[0]?.options?.[1]).toBe("***");
+    expect(JSON.stringify(e)).not.toContain(secret);
     expect(e.rootDisplay).toBe("proj");
     expect(e.rootHash).toBe(rootHashOf("/work/proj"));
   });
@@ -139,6 +143,7 @@ describe("脱敏无密钥原文", () => {
         truncated: true,
         originalLength: 500,
         resultKind: "local-precheck",
+        questions: [],
         choice: "human",
         confidence: 1,
         tier: "none",

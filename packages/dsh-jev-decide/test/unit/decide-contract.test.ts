@@ -1,7 +1,7 @@
-/** 工具契约硬核：双缺省/空串/空数组400 + custom/override 全量语义 + 互斥/255/中文结构化错误（全离线）。
+/** 工具契约硬核：双缺省/空串/空数组400 + 全员显式带题 + 互斥/255/中文结构化错误（全离线）。
  *
- * 守的是 validateDecideArgs + decide 校验面：把任一规则改松（例如 custom 免 override、
- * 部分覆盖放行、255 改 256），本文件必红。fetch 经注入计数，落盘无（纯函数面）。
+ * 守的是 validateDecideArgs + decide 校验面：把任一规则改松（例如免 override、
+ * 255 改 256），本文件必红。模板零考题，全员 questions_override 必填。fetch 经注入计数，落盘无（纯函数面）。
  */
 import { describe, expect, it } from "vitest";
 import { decide } from "../../src/server/tools/impl/service.ts";
@@ -107,10 +107,10 @@ describe("custom 单 present 合法 + appliedSource", () => {
       expect(r.valid.questions).toHaveLength(1);
     }
   });
-  it("无 override 即 template；全量 override 即 override", async () => {
+  it("无 override 即 MISSING_OVERRIDE；显式带题即 override", async () => {
     const tpl = validateDecideArgs({ preset_id: "general", state: { text: "hi", lang: "en" } });
-    expect(tpl.ok).toBe(true);
-    if (tpl.ok) expect(tpl.valid.appliedSource).toBe("template");
+    expect(tpl.ok).toBe(false);
+    if (!tpl.ok) expect(tpl.failure.errorCode).toBe("MISSING_OVERRIDE");
     const full = validateDecideArgs({
       preset_id: "general",
       state: { text: "hi", lang: "en" },
@@ -135,24 +135,24 @@ describe("custom 单 present 合法 + appliedSource", () => {
     expect(calls).toBe(1);
     expect(out).toMatchObject({ ok: true, appliedSource: "override" });
   });
-  it("部分覆盖（长度/ids 不一致）即 PARTIAL_OVERRIDE", () => {
-    const wrongId = validateDecideArgs({
+  it("任意调用方题目即 override（模板零考题，无等长同 id 约束）", () => {
+    const otherId = validateDecideArgs({
       preset_id: "general",
       state: { text: "x", lang: "en" },
       questions_override: [{ id: "other", text: "Q?", kind: "choice", options: ["a", "b"] }],
     });
-    expect(wrongId.ok).toBe(false);
-    if (!wrongId.ok) expect(wrongId.failure.errorCode).toBe("PARTIAL_OVERRIDE");
-    const tooMany = validateDecideArgs({
+    expect(otherId.ok).toBe(true);
+    if (otherId.ok) expect(otherId.valid.appliedSource).toBe("override");
+    const twoQuestions = validateDecideArgs({
       preset_id: "general",
       state: { text: "x", lang: "en" },
       questions_override: [
-        { id: "choice", text: "Q1", kind: "choice", options: ["A", "B"] },
-        { id: "extra", text: "Q2", kind: "score" },
+        { id: "q1", text: "Q1", kind: "choice", options: ["A", "B"] },
+        { id: "q2", text: "Q2", kind: "score" },
       ],
     });
-    expect(tooMany.ok).toBe(false);
-    if (!tooMany.ok) expect(tooMany.failure.errorCode).toBe("PARTIAL_OVERRIDE");
+    expect(twoQuestions.ok).toBe(true);
+    if (twoQuestions.ok) expect(twoQuestions.valid.appliedSource).toBe("override");
   });
 });
 
@@ -258,6 +258,7 @@ describe("互斥/255/长度/中文 400 结构化", () => {
     const zhBody = validateDecideArgs({
       preset_id: "general",
       state: { text: "中文正文", lang: "zh" },
+      questions_override: [{ id: "q1", text: "选一个。", kind: "choice", options: ["甲", "乙"] }],
     });
     expect(zhBody.ok).toBe(true);
     const badKind = validateDecideArgs({
@@ -274,9 +275,13 @@ describe("互斥/255/长度/中文 400 结构化", () => {
     expect(fr.ok).toBe(false);
     if (!fr.ok) expect(fr.failure.errorCode).toBe("BAD_LANG");
     for (const lang of ["en", "zh", "unknown"]) {
-      expect(validateDecideArgs({ preset_id: "general", state: { text: "x", lang } }).ok).toBe(
-        true,
-      );
+      expect(
+        validateDecideArgs({
+          preset_id: "general",
+          state: { text: "x", lang },
+          questions_override: [{ id: "q1", text: "Q?", kind: "score" }],
+        }).ok,
+      ).toBe(true);
     }
   });
   it("decide 校验失败即结构化包络（含 errorCode+category，无概率字段，不触网）", async () => {

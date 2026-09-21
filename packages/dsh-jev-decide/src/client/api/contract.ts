@@ -14,6 +14,7 @@ import type {
   JevLang,
   JevTier,
 } from "../../shared/interface.ts";
+import { t } from "../locale.ts";
 
 /** 共享类型复出（子模块经 api/interface.ts 消费）。 */
 export type { AutomationCap, AutomationLevel, JevLang, JevTier };
@@ -29,6 +30,7 @@ export interface JevPresetInfo {
   readonly templateVersion?: number;
   readonly label?: string;
   readonly description?: string;
+  readonly custom?: boolean;
 }
 
 function pickCategory(body: unknown): string | null {
@@ -86,7 +88,7 @@ export function normalizeCap(v: unknown): AutomationCap {
 export function capLabel(cap: AutomationCap): string {
   if (cap === 2) return "high";
   if (cap === 1) return "low";
-  return "none（仅人工）";
+  return t("capNone");
 }
 
 /** 防御式解析 GET /config（裸 v1 或 {config}/{data} 包装均接受）。 */
@@ -152,11 +154,13 @@ export function parsePresetsPayload(payload: unknown): JevPresetInfo[] {
     const tv = item["templateVersion"];
     const label = item["label"];
     const desc = item["description"];
+    const custom = item["custom"];
     out.push({
       id: item["id"] as string,
       templateVersion: typeof tv === "number" && Number.isFinite(tv) ? tv : undefined,
       label: typeof label === "string" ? label : undefined,
       description: typeof desc === "string" ? desc : undefined,
+      custom: custom === true ? true : undefined,
     });
   }
   return out;
@@ -165,6 +169,34 @@ export function parsePresetsPayload(payload: unknown): JevPresetInfo[] {
 function normalizeAutomation(v: unknown): AutomationLevel {
   if (v === "assisted" || v === "auto" || v === "manual") return v;
   return "manual";
+}
+
+/** 防御式解析题目快照（形状不对即丢整列，不阻断条目）。 */
+function parseQuestions(raw: unknown): JevHistoryEntry["questions"] {
+  if (!Array.isArray(raw)) return undefined;
+  const out: {
+    readonly id: string;
+    readonly text: string;
+    readonly kind: "choice" | "score";
+    readonly options?: readonly string[];
+  }[] = [];
+  for (const item of raw as unknown[]) {
+    if (item === null || typeof item !== "object" || Array.isArray(item)) return undefined;
+    const rec = item as Record<string, unknown>;
+    if (typeof rec["id"] !== "string" || typeof rec["text"] !== "string") return undefined;
+    const kind = rec["kind"];
+    if (kind !== "choice" && kind !== "score") return undefined;
+    const options = rec["options"];
+    out.push({
+      id: rec["id"] as string,
+      text: rec["text"] as string,
+      kind,
+      ...(Array.isArray(options) && options.every((o) => typeof o === "string")
+        ? { options: (options as string[]).slice() }
+        : {}),
+    });
+  }
+  return out;
 }
 
 /** 防御式解析 GET /history（裸数组或 {entries}/{items}/{history}/{data} 包装均接受）。 */
@@ -191,6 +223,9 @@ export function parseHistoryPayload(payload: unknown): JevHistoryEntry[] {
     const score = item["score"];
     const choice = item["choice"];
     const errorCode = item["errorCode"];
+    const title =
+      typeof item["presetTitle"] === "string" ? (item["presetTitle"] as string) : undefined;
+    const questions = parseQuestions(item["questions"]);
     out.push({
       ts: item["ts"] as number,
       rootHash: typeof item["rootHash"] === "string" ? (item["rootHash"] as string) : "",
@@ -213,6 +248,8 @@ export function parseHistoryPayload(payload: unknown): JevHistoryEntry[] {
       provider: "official",
       latencyMs: asNumber(item["latencyMs"], 0),
       errorCode: typeof errorCode === "string" ? errorCode : undefined,
+      ...(title !== undefined ? { presetTitle: title } : {}),
+      ...(questions !== undefined ? { questions } : {}),
     });
   }
   return out;

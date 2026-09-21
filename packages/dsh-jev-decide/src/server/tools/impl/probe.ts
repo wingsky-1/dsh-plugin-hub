@@ -3,7 +3,6 @@
  *
  * 从组合根沉入本域（内聚收窄）：探针的远端调用本就是 tools 能力，组合根只做密钥解析与装配。
  */
-import { frozenPresetOf } from "../../../shared/interface.ts";
 import type { FetchImpl } from "../deps.ts";
 import { callWithRetry, defaultFetchImpl } from "./client.ts";
 
@@ -29,19 +28,13 @@ export async function probeConnection(input: ProbeInput): Promise<ProbeResult> {
   if (input.key === undefined) {
     return { ok: false, errorCode: "NO_KEY", category: "no-key", message: "no api key" };
   }
-  const template = frozenPresetOf("general");
   const started = Date.now();
   const outcome = await callWithRetry(
     {
       preset: "general",
       templateVersion: 1,
       state: { text: "connection probe", lang: "unknown" },
-      questions: (template?.questions ?? []).map((q) => ({
-        id: q.id,
-        text: q.text,
-        kind: q.kind,
-        ...(q.options !== undefined ? { options: [...q.options] } : {}),
-      })),
+      questions: [{ id: "probe", text: "Reply ok.", kind: "choice", options: ["ok", "fail"] }],
     },
     input.key,
     input.timeoutMs,

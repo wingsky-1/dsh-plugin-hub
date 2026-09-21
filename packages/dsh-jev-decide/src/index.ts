@@ -9,8 +9,8 @@
 import type { Context } from "@deepseek-ai/cordis";
 import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
 import type { ToolDefinition } from "@deepseek-ai/dsh-tools";
-import { ROUTES } from "./shared/interface.ts";
-import type { AutomationCap } from "./shared/interface.ts";
+import { ROUTES, frozenPresetOf } from "./shared/interface.ts";
+import type { AutomationCap, CustomPreset } from "./shared/interface.ts";
 import * as apiApi from "./server/api/interface.ts";
 import type { ApiDeps } from "./server/api/interface.ts";
 import * as configApi from "./server/config/interface.ts";
@@ -101,12 +101,24 @@ function assemble(host: HostPort, options: JevDecideApplyConfig): (() => void)[]
     logger: host.logger,
   };
   const live = (): LoadedState => configApi.loadState(home, configDeps);
+  const customOf = (state: LoadedState, presetId: string) =>
+    state.customPresets.find((entry) => entry.id === presetId);
   const enabledOf = (state: LoadedState, presetId: string): boolean =>
-    state.config.presets.find((entry) => entry.id === presetId)?.enabled !== false;
+    state.config.presets.find((entry) => entry.id === presetId)?.enabled ??
+    customOf(state, presetId)?.enabled ??
+    false;
   const capOfState = (state: LoadedState, presetId: string): AutomationCap => {
-    const cap = state.config.presets.find((entry) => entry.id === presetId)?.automationCap;
+    const cap =
+      state.config.presets.find((entry) => entry.id === presetId)?.automationCap ??
+      customOf(state, presetId)?.automationCap;
     return cap === 1 || cap === 2 ? cap : 0;
   };
+  const customMapOf = (state: LoadedState): ReadonlyMap<string, CustomPreset> =>
+    new Map(state.customPresets.map((entry) => [entry.id, entry]));
+  const titleOf = (state: LoadedState, presetId: string): string =>
+    state.config.presets.find((entry) => entry.id === presetId) !== undefined
+      ? (frozenPresetOf(presetId)?.label ?? presetId)
+      : (customOf(state, presetId)?.label ?? presetId);
   let gate = toolsApi.createSemaphore(live().config.connection.maxConcurrency);
   const gateFor = (maxConcurrency: number): (<T>(task: () => Promise<T>) => Promise<T>) => {
     gate = toolsApi.createSemaphore(maxConcurrency);
@@ -126,6 +138,7 @@ function assemble(host: HostPort, options: JevDecideApplyConfig): (() => void)[]
       connection: state.config.connection,
       isEnabled: (presetId) => enabledOf(state, presetId),
       capOf: (presetId) => capOfState(state, presetId),
+      customPresets: customMapOf(state),
       resolveKey: () => configApi.resolveApiKey(state, env, configDeps),
       recordEvent: (event) => {
         const entry = historyApi.assembleEntry(root, event.sessionId, event, Date.now());
@@ -186,14 +199,22 @@ function assemble(host: HostPort, options: JevDecideApplyConfig): (() => void)[]
       }
       return configApi.toMaskedConfig(configApi.savePatch(home, checked.patch, configDeps));
     },
-    readPresets: () =>
-      toolsApi
+    readPresets: () => {
+      const state = live();
+      return toolsApi
         .listPresets({
-          isEnabled: (id) => enabledOf(live(), id),
-          capOf: (id) => capOfState(live(), id),
+          isEnabled: (id) => enabledOf(state, id),
+          capOf: (id) => capOfState(state, id),
+          customs: state.customPresets,
         })
-        .map((item) => ({ ...item })),
-    readHistory: (query) => historyApi.queryEntries(home, query, historyDeps),
+        .map((item) => ({ ...item }));
+    },
+    readHistory: (query) => {
+      const state = live();
+      return historyApi
+        .queryEntries(home, query, historyDeps)
+        .map((entry) => ({ ...entry, presetTitle: titleOf(state, entry.presetId) }));
+    },
     removeHistory: (query) => historyApi.deleteSession(home, query, historyDeps),
     probeConnection: async () => {
       const state = live();
@@ -207,10 +228,14 @@ function assemble(host: HostPort, options: JevDecideApplyConfig): (() => void)[]
   };
   for (const tool of toolsApi.buildToolDefinitions({
     depsFor,
-    snapshot: () => ({
-      isEnabled: (id) => enabledOf(live(), id),
-      capOf: (id) => capOfState(live(), id),
-    }),
+    snapshot: () => {
+      const state = live();
+      return {
+        isEnabled: (id) => enabledOf(state, id),
+        capOf: (id) => capOfState(state, id),
+        customs: state.customPresets,
+      };
+    },
   })) {
     disposers.push(host.registerTool(tool));
   }

@@ -36,7 +36,11 @@ function okFetch(body: unknown): DecideDeps["fetchImpl"] {
 describe("Noul 置空 tier", () => {
   it("choice Noul 即 tier none + automation manual（上游 tier 高也置空）", async () => {
     const out = await decide(
-      { preset_id: "general", state: { text: "hello", lang: "en" } },
+      {
+        preset_id: "general",
+        state: { text: "hello", lang: "en" },
+        questions_override: [{ id: "q1", text: "Pick one.", kind: "choice", options: ["A", "B"] }],
+      },
       baseDeps({
         fetchImpl: okFetch({
           resultKind: "choice",
@@ -55,7 +59,11 @@ describe("Noul 置空 tier", () => {
   });
   it("非 Noul 按序号映射：2 high/auto、1 low/assisted、0 none/manual", async () => {
     const high = await decide(
-      { preset_id: "general", state: { text: "h", lang: "en" } },
+      {
+        preset_id: "general",
+        state: { text: "h", lang: "en" },
+        questions_override: [{ id: "q1", text: "Pick one.", kind: "choice", options: ["A", "B"] }],
+      },
       baseDeps({
         fetchImpl: okFetch({
           resultKind: "choice",
@@ -68,7 +76,11 @@ describe("Noul 置空 tier", () => {
     );
     expect(high).toMatchObject({ ok: true, tier: "high", automation: "auto" });
     const low = await decide(
-      { preset_id: "general", state: { text: "h", lang: "en" } },
+      {
+        preset_id: "general",
+        state: { text: "h", lang: "en" },
+        questions_override: [{ id: "q1", text: "Pick one.", kind: "choice", options: ["A", "B"] }],
+      },
       baseDeps({
         fetchImpl: okFetch({
           resultKind: "choice",
@@ -81,7 +93,11 @@ describe("Noul 置空 tier", () => {
     );
     expect(low).toMatchObject({ ok: true, tier: "low", automation: "assisted" });
     const none = await decide(
-      { preset_id: "general", state: { text: "h", lang: "en" } },
+      {
+        preset_id: "general",
+        state: { text: "h", lang: "en" },
+        questions_override: [{ id: "q1", text: "Pick one.", kind: "choice", options: ["A", "B"] }],
+      },
       baseDeps({
         fetchImpl: okFetch({
           resultKind: "choice",
@@ -96,7 +112,11 @@ describe("Noul 置空 tier", () => {
   });
   it("automationCap 封顶：cap 0 即使上游 high 也 none/manual", async () => {
     const out = await decide(
-      { preset_id: "general", state: { text: "h", lang: "en" } },
+      {
+        preset_id: "general",
+        state: { text: "h", lang: "en" },
+        questions_override: [{ id: "q1", text: "Pick one.", kind: "choice", options: ["A", "B"] }],
+      },
       baseDeps({
         capOf: () => 0,
         fetchImpl: okFetch({
@@ -112,7 +132,11 @@ describe("Noul 置空 tier", () => {
   });
   it("automationCap 封顶：cap 1 时上游 high 压为 low/assisted（R6）", async () => {
     const out = await decide(
-      { preset_id: "plan-review", state: { text: "h", lang: "en" } },
+      {
+        preset_id: "plan-review",
+        state: { text: "h", lang: "en" },
+        questions_override: [{ id: "q1", text: "Rate it.", kind: "score" }],
+      },
       baseDeps({
         capOf: () => 1,
         fetchImpl: okFetch({
@@ -131,7 +155,11 @@ describe("Noul 置空 tier", () => {
 describe("Score 1-5 分段", () => {
   it.each([1, 2, 3, 4, 5])("score %i 合法通过", async (score) => {
     const out = await decide(
-      { preset_id: "plan-review", state: { text: "hello", lang: "en" } },
+      {
+        preset_id: "plan-review",
+        state: { text: "hello", lang: "en" },
+        questions_override: [{ id: "q1", text: "Rate it.", kind: "score" }],
+      },
       baseDeps({
         fetchImpl: okFetch({ resultKind: "score", score, confidence: 0.5, tier: 1, automation: 1 }),
       }),
@@ -144,7 +172,11 @@ describe("Score 1-5 分段", () => {
   });
   it.each([0, 6, 9])("score %i 越界即 UPSTREAM 失败", async (score) => {
     const out = await decide(
-      { preset_id: "plan-review", state: { text: "hello", lang: "en" } },
+      {
+        preset_id: "plan-review",
+        state: { text: "hello", lang: "en" },
+        questions_override: [{ id: "q1", text: "Rate it.", kind: "score" }],
+      },
       baseDeps({ fetchImpl: okFetch({ resultKind: "score", score }) }),
     );
     expect(out.ok).toBe(false);
@@ -162,7 +194,11 @@ describe("Score 1-5 分段", () => {
 describe("失败包络无概率 + errorCode + category", () => {
   it("score 越界失败：无 choice/score/confidence/tier，有 errorCode+category", async () => {
     const bad = await decide(
-      { preset_id: "plan-review", state: { text: "hello", lang: "en" } },
+      {
+        preset_id: "plan-review",
+        state: { text: "hello", lang: "en" },
+        questions_override: [{ id: "q1", text: "Rate it.", kind: "score" }],
+      },
       baseDeps({ fetchImpl: okFetch({ resultKind: "score", score: 9 }) }),
     );
     expect(bad.ok).toBe(false);
@@ -179,7 +215,11 @@ describe("失败包络无概率 + errorCode + category", () => {
   });
   it("上游 400 失败同样无概率字段", async () => {
     const bad = await decide(
-      { preset_id: "general", state: { text: "hi", lang: "en" } },
+      {
+        preset_id: "general",
+        state: { text: "hi", lang: "en" },
+        questions_override: [{ id: "q1", text: "Pick one.", kind: "choice", options: ["A", "B"] }],
+      },
       baseDeps({ fetchImpl: async () => ({ status: 400, text: "{}" }) }),
     );
     expect(bad.ok).toBe(false);
@@ -191,7 +231,11 @@ describe("失败包络无概率 + errorCode + category", () => {
   });
   it("成功包络必带计费/重试/分层全字段", async () => {
     const out = await decide(
-      { preset_id: "general", state: { text: "hello", lang: "en" } },
+      {
+        preset_id: "general",
+        state: { text: "hello", lang: "en" },
+        questions_override: [{ id: "q1", text: "Pick one.", kind: "choice", options: ["A", "B"] }],
+      },
       baseDeps({
         fetchImpl: okFetch({
           resultKind: "choice",
@@ -206,7 +250,7 @@ describe("失败包络无概率 + errorCode + category", () => {
     expect(out).toMatchObject({
       ok: true,
       provider: "official",
-      appliedSource: "template",
+      appliedSource: "override",
       truncated: false,
       originalLength: 5,
       tier: "high",
@@ -221,7 +265,11 @@ describe("失败包络无概率 + errorCode + category", () => {
   });
   it("codepoints 缺席回落原文长度", async () => {
     const out = await decide(
-      { preset_id: "general", state: { text: "abcde", lang: "en" } },
+      {
+        preset_id: "general",
+        state: { text: "abcde", lang: "en" },
+        questions_override: [{ id: "q1", text: "Pick one.", kind: "choice", options: ["A", "B"] }],
+      },
       baseDeps({ fetchImpl: okFetch({ resultKind: "choice", choice: "A" }) }),
     );
     expect(out).toMatchObject({ ok: true, codepoints: 5 });
@@ -232,7 +280,11 @@ describe("失败包络无概率 + errorCode + category", () => {
     expect(Array.from(cut.text)).toHaveLength(3);
     let wired = "";
     const out = await decide(
-      { preset_id: "general", state: { text: "中文ab", lang: "zh" } },
+      {
+        preset_id: "general",
+        state: { text: "中文ab", lang: "zh" },
+        questions_override: [{ id: "q1", text: "Pick one.", kind: "choice", options: ["A", "B"] }],
+      },
       baseDeps({
         connection: { timeoutMs: 8000, maxConcurrency: 4, truncBudget: 2, hasPlaintextKey: false },
         fetchImpl: async (_url, init) => {
@@ -248,7 +300,11 @@ describe("失败包络无概率 + errorCode + category", () => {
   });
   it("截断即 automation 降 suggest-only（打红点：三元删去；tier 保持跟源）", async () => {
     const out = await decide(
-      { preset_id: "general", state: { text: "abcdefghij", lang: "en" } },
+      {
+        preset_id: "general",
+        state: { text: "abcdefghij", lang: "en" },
+        questions_override: [{ id: "q1", text: "Pick one.", kind: "choice", options: ["A", "B"] }],
+      },
       baseDeps({
         connection: { timeoutMs: 8000, maxConcurrency: 4, truncBudget: 4, hasPlaintextKey: false },
         fetchImpl: okFetch({

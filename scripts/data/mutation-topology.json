@@ -75,9 +75,12 @@
           "comment": "按域分段（对标 lan-proxy entry 段）：宿主唯一入口 src/index.ts + 双端共享 src/shared/**（contract 契约解析在面内）；面文件集与单段时代一致，仅执行分片变化；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
         },
         "client": {
-          "mutate": ["packages/dsh-jev-decide/src/client/**/*.ts"],
-          "excludes": ["!packages/dsh-jev-decide/src/client/components/atoms.ts"],
-          "comment": "按域分段（对标 lan-proxy client 段）：客户端全区；components/atoms.ts 纯样式原子（el/clear/setText/输入框/按钮/徽章/折叠/fmtTime，无分支语义）移出变异面，对标 lan-proxy client 段的 .d.ts/tsx 排除口径；panes 交互、probability 概率条、api/contract 解析保留在面内；面文件集与单段时代一致，仅执行分片变化；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
+          "mutate": [
+            "packages/dsh-jev-decide/src/client/**/*.ts",
+            "packages/dsh-jev-decide/src/client/**/*.tsx"
+          ],
+          "excludes": [],
+          "comment": "React 独立 tab（含 tsx 真实行为判据）：vanilla DOM 层已删，settings/*.tsx（密钥二选一、详情单开、保存守卫、清空两步、过滤）进变异面；css.d.ts 留面内保并集棘轮不收缩；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
         }
       },
       "testLayers": {}

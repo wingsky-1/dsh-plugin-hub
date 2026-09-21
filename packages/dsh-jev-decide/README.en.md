@@ -1,6 +1,6 @@
 # dsh-jev-decide
 
-JEV decision gateway: frozen preset templates + dual-track keys + local secret-shape precheck + official SystemOne calls.
+JEV decision gateway: frozen asking guides (English) + dual-track keys + local secret-shape precheck + official SystemOne calls.
 
 One-click install (restart `dsh web` afterwards to activate):
 
@@ -10,7 +10,8 @@ dsh plugin --profile web add @wingsky-1/dsh-jev-decide
 
 - Model tools: `ws_jev_decide` (decide), `ws_jev_list_presets` (read-only).
 - Loopback routes: `/api/dsh-jev-decide/health|config|presets|history|test-connection`.
-- 5 frozen presets (templateVersion always 1): general / secret-leak (disabled by default) / plan-review / risk-check / custom.
+- 5 frozen asking guides (templateVersion always 1, English prose, zero preset questions): general / secret-leak (disabled by default) / plan-review / risk-check / custom. Callers bring the full question set per call via `questions_override` (1-20 questions, required).
+- Custom presets (`custom-presets.json`, absent means empty): incremental `PUT /config` key `customPresets` (full replace; ids must not collide with frozen, cap 0|1|2); custom ids are directly decidable (same switch/cap semantics); history stores a redacted snapshot of the called questions, and `GET /history` enriches display titles (only ids are stored).
 
 ## Quick start
 
