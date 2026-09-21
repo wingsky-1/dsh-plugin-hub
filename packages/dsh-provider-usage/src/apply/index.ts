@@ -26,7 +26,7 @@
 // ------------------------------------------------------------------ 对外 re-export
 // 注意：bundle-host 会把 tsc 产物中的子模块全部内联进 lib/index.js 并清理游离 .js，
 // smoke/lint 只能从 lib/index.js 导入，故契约与核心模块一律在此 re-export。
-export { ADAPTER_CONTRACT_VERSION, esc, isUsageStatsAdapter } from "../shared/interface.ts";
+export { ADAPTER_CONTRACT_VERSION } from "../shared/interface.ts";
 export type {
   AdapterErrorCode,
   FetchContext,
@@ -56,7 +56,6 @@ export type { SamplePoint, DayRecord } from "../server/adapters/interface.ts";
 export type { ProviderConfigInput, ResolvedProviderConfig } from "../server/registry/interface.ts";
 export { HistoryStore } from "../server/history/interface.ts";
 export type { HistoryEntry } from "../server/history/interface.ts";
-export { sanitizeHtml } from "../shared/interface.ts";
 export {
   panelCacheKey,
   normalizeRangeDay,

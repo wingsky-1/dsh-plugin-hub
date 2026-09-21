@@ -19,7 +19,9 @@ import {
   injectGlobalFetch,
 } from "../../helpers.ts";
 console.error("EVAL-ORDER-TAG: CHART");
-import { esc, sanitizeHtml, HistoryStore } from "../../../src/apply/index.ts";
+import { HistoryStore } from "../../../src/apply/index.ts";
+// 白盒直连深路径（#768 B波）：契约/净化纯面经 shared 门面，不走组合根转发。
+import { esc, sanitizeHtml } from "../../../src/shared/interface.ts";
 import { openCodeGoAdapter } from "../../../src/server/adapters/interface.ts";
 import { fetchWithTimeout } from "../../../src/server/pipeline/interface.ts";
 import {

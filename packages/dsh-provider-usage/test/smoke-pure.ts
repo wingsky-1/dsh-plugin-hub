@@ -12,9 +12,6 @@ import assert from "node:assert/strict";
 import {
   ROUTES,
   ADAPTER_CONTRACT_VERSION,
-  esc,
-  isUsageStatsAdapter,
-  sanitizeHtml,
   HistoryStore,
   OPENCODE_GO_PROVIDER,
   OPENCODE_GO_ADAPTER_ID,
@@ -24,7 +21,13 @@ import {
   fetchOpenCodeGoV2,
   openCodeGoAdapter,
 } from "../src/server/adapters/interface.ts";
-import { describeUsageStatsAdapterShape } from "../src/shared/interface.ts";
+// 白盒直连深路径（#768 B波）：契约/净化纯面经 shared 门面，不走组合根转发。
+import {
+  esc,
+  isUsageStatsAdapter,
+  sanitizeHtml,
+  describeUsageStatsAdapterShape,
+} from "../src/shared/interface.ts";
 import { DEFAULT_CONFIG, normalizeConfig } from "../src/shared/interface.ts";
 import {
   makeAdapterRegistry,

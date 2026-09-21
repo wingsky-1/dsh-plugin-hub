@@ -74,15 +74,12 @@
     "adapterStateFile",
     "apply",
     "dayKey",
-    "esc",
     "inject",
     "isPanelCacheStale",
-    "isUsageStatsAdapter",
     "name",
     "normalizeRangeDay",
     "panelCacheKey",
     "previousClosedWindow",
-    "sanitizeHtml",
     "sseData",
     "userAdaptersFile"
   ]

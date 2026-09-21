@@ -286,19 +286,11 @@
       "isType": false
     },
     {
-      "name": "esc",
-      "isType": false
-    },
-    {
       "name": "inject",
       "isType": false
     },
     {
       "name": "isPanelCacheStale",
-      "isType": false
-    },
-    {
-      "name": "isUsageStatsAdapter",
       "isType": false
     },
     {
@@ -315,10 +307,6 @@
     },
     {
       "name": "previousClosedWindow",
-      "isType": false
-    },
-    {
-      "name": "sanitizeHtml",
       "isType": false
     },
     {
@@ -934,19 +922,11 @@
           "isType": false
         },
         {
-          "name": "esc",
-          "isType": false
-        },
-        {
           "name": "inject",
           "isType": false
         },
         {
           "name": "isPanelCacheStale",
-          "isType": false
-        },
-        {
-          "name": "isUsageStatsAdapter",
           "isType": false
         },
         {
@@ -963,10 +943,6 @@
         },
         {
           "name": "previousClosedWindow",
-          "isType": false
-        },
-        {
-          "name": "sanitizeHtml",
           "isType": false
         },
         {
