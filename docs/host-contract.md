@@ -1,10 +1,11 @@
-# 宿主契约面清单（#802）
+# 宿主契约面清单
 
 本仓插件集依赖上游宿主（dsh）的契约面登记：`inject` 覆盖的是服务级存在性，
 本清单登记 `inject` 覆盖不到的那一层（事件 / 字段与载荷 / slot / 路由与方法 / 复刻常量与版本锚）。
 全部单元格由派生回填：事实源是 [派生脚本](../scripts/derive/host-contract.mjs) 的实时输出，
 其落盘形态是 [快照](../scripts/data/host-contract.snapshot.json)（`result` 原样 + `sources` + `deriveVersion`）。
 本文不手写任何事件名 / slot key / 路由 / 方法 / 常量值；与快照不一致即以快照为准。
+纪律：快照只含契约面（事件名 / key / 路由 / 常量），实现重构若被迫改快照即越界当天修。
 
 复核命令（仓库根执行）：
 
@@ -18,7 +19,7 @@ pnpm docs:check
 
 rc 升级流程引用：升级 dsh rc 时按本清单逐条核对上游变更（事件删改 / slot 语义 / 路由与方法 / 常量重排），
 并与 `dsh-verify-isolated` 的真实宿主 smoke 呼应。
-`dsh-upgrade` skill 的 S1 / S3 接线（按本清单路径逐条核对）为第二 PR（见 #802 接线提案），不属本 PR。
+`dsh-upgrade` skill 的 S1 / S3 接线（按本清单路径逐条核对）门禁接线为后续工作，不属本清单。
 
 派生覆盖面（诚实声明）：派生的扫描文件清单即快照的 `sources`（`eventFiles` / `slotFiles` / `routeFiles` / `domFiles`）。
 未被扫描文件覆盖的包在各表内记“派生未覆盖”并给出全仓 grep 观察值与出处，不静默缺席；
@@ -217,4 +218,4 @@ provider-usage 经 `ctx.webServer.register`（`src/apply/apply.ts`）；notifier
 | 10 | 缺口 G5（类型版本锚） | 锁版只是期望版本；`Session.fromRestore` 第 5 参与 `EpochHeader.system` 删除等破坏点只活在存档文档里 |
 | 11 | 未验证项 | `pnpm gate:pr` 全仓门禁未跑（本 PR 为文档 PR，`gate:pr` 由 CI 覆盖）；浏览器隔离实测未做（无 UI 改动）；`dsh-jev-decide` 与 `dsh-worktree-sidebar` 的路由 / 事件派生覆盖待后续派生扩展（非本 PR 范围） |
 
-共享分档的规范正文见 [DEVELOPMENT §2.4](./DEVELOPMENT.md)（#792 定稿）；跨包共享准入见 [shared/README.md](../shared/README.md)。
+共享分档的规范正文见 [DEVELOPMENT §2.4](./DEVELOPMENT.md)；跨包共享准入见 [shared/README.md](../shared/README.md)。
