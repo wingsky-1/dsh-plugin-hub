@@ -221,3 +221,12 @@ export function filterReportsByStatus<T extends HistoryRowLike>(
   if (filter === "failed") return rows.filter((r) => !r.ok);
   return rows.filter((r) => r.noData === true);
 }
+
+/**
+ * 生成跳转目标定位（D1：Q4 自动跳转的判定点）。
+ * stale 快照缺目标（新窗口刚生成）时返回 undefined——调用方必须先重拉再定位，
+ * 仍缺则落用户可见 notice，禁止静默吞键。id 形如 period:key。
+ */
+export function locatePendingRow<T extends HistoryRowLike>(rows: T[], id: string): T | undefined {
+  return rows.find((r) => r.period + ":" + r.key === id);
+}

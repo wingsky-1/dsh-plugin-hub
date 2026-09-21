@@ -218,7 +218,7 @@ export function SettingsPage(): React.ReactElement {
       </span>
     );
 
-  // 五窗格（keep-mounted：hidden 属性切换显隐，组件实例不销毁——表单编辑态保留）
+  // 六窗格（keep-mounted：hidden 属性切换显隐，组件实例不销毁——表单编辑态保留）
   const pane = (key: SettingsTabKey, node: React.ReactElement): React.ReactElement => (
     <div className="dou-set-pane" key={key} hidden={tab !== key}>
       {node}
@@ -257,7 +257,11 @@ export function SettingsPage(): React.ReactElement {
           {pane("report", <ReportSection onGeneratedRow={onGeneratedRow} />)}
           {pane(
             "history",
-            <HistorySection pendingExpandId={pendingExpand} onConsumePending={onConsumePending} />,
+            <HistorySection
+              pendingExpandId={pendingExpand}
+              onConsumePending={onConsumePending}
+              active={tab === "history"}
+            />,
           )}
           {pane("usage", <UsageSection statsByProvider={statsByProvider} />)}
           {pane(

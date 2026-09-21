@@ -34,6 +34,7 @@ const {
   isPromptsDirty,
   groupReportsByPeriod,
   filterReportsByStatus,
+  locatePendingRow,
   HISTORY_PAGE_SIZE,
 } = h;
 
@@ -321,5 +322,25 @@ describe("filterReportsByStatus：状态筛选", () => {
   it("nodata 只取空窗口（W09 一行）", () => {
     const out = filterReportsByStatus(HIST_ROWS, "nodata");
     expect(out.map((r: { key: string }) => r.key)).toEqual(["2026-W09"]);
+  });
+});
+
+describe("locatePendingRow：D1 跳转判定点（新窗口重拉后定位）", () => {
+  it("stale 快照命中旧行（W10）", () => {
+    const stale = HIST_ROWS.slice(0, 2);
+    expect(locatePendingRow(stale, "weekly:2026-W10")?.key).toBe("2026-W10");
+  });
+
+  it("stale 快照缺新窗口行（改坏查找键即红）", () => {
+    const stale = HIST_ROWS.slice(0, 2);
+    expect(locatePendingRow(stale, "daily:2026-03-13")).toBeUndefined();
+  });
+
+  it("重拉后新行可定位（新窗口跳转路径）", () => {
+    const fresh = [
+      ...HIST_ROWS,
+      { period: "daily", key: "2026-03-13", ok: true },
+    ] as typeof HIST_ROWS;
+    expect(locatePendingRow(fresh, "daily:2026-03-13")?.key).toBe("2026-03-13");
   });
 });

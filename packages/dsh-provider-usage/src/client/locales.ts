@@ -262,6 +262,9 @@ export const zh = {
   reportForceShort: "强制覆盖",
   reportNoForceShort: "不强制覆盖",
   reportGenIdempotentHint: "窗口已有成功报告时默认幂等复用；勾选强制才会覆盖重跑。",
+  // D1 未见目标行的用户可见反馈（禁止静默吞键）
+  reportGeneratedNotVisible: "报告已生成，但列表中暂未见到，可重新加载后查看。",
+  reportReloadList: "重新加载",
 } as const;
 
 /** 字典 key 并集（LocaleNamespaceMap 声明合并用）。 */
@@ -469,7 +472,7 @@ export const en: Record<ProviderUsageLocaleKey, string> = {
   reportRatioPct: "{n}%",
   reportPrompt: "Prompt template",
   reportPush: "Push after generation",
-  reportSave: "Save changes",
+  reportSave: "Save configuration",
   reportSaved: "Saved",
   reportSaveFail: "Save failed: {msg}",
   reportGenerate: "Generate now",
@@ -516,4 +519,6 @@ export const en: Record<ProviderUsageLocaleKey, string> = {
   reportNoForceShort: "No force",
   reportGenIdempotentHint:
     "Reuses the existing successful report for the window by default; check Force to overwrite.",
+  reportGeneratedNotVisible: "Report generated but not in the list yet — reload to check.",
+  reportReloadList: "Reload",
 };

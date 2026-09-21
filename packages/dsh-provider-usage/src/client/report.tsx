@@ -665,7 +665,7 @@ export function ReportSection(props: {
         ) : null}
       </div>
       {failed ? <div className="dou-reportFetchFail">{t("reportFetchFail")}</div> : null}
-      {/* ---- 配置五区（各自独立展开收起） ---- */}
+      {/* ---- 配置四区（各自独立展开收起；历史为独立页） ---- */}
       {draft !== null ? (
         <div className="dou-reportSections">
           <ReportCollapsibleSection

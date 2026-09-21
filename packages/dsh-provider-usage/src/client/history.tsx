@@ -17,6 +17,7 @@ import {
   HISTORY_PAGE_SIZE,
   filterReportsByStatus,
   groupReportsByPeriod,
+  locatePendingRow,
 } from "./report-helpers.ts";
 import type { HistoryStatusFilter } from "./report-helpers.ts";
 import { t } from "../../../../shared/client/i18n.js";
@@ -133,8 +134,10 @@ const filterLabel = (f: HistoryStatusFilter): string =>
 export function HistorySection(props: {
   pendingExpandId: string | null;
   onConsumePending: () => void;
+  /** 所在 Tab 是否可见（keep-mounted 下切页刷新策略见下）。 */
+  active: boolean;
 }): React.ReactElement {
-  const { pendingExpandId, onConsumePending } = props;
+  const { pendingExpandId, onConsumePending, active } = props;
   const [list, setList] = React.useState<ReportMetaView[] | null>(null);
   const [listFailed, setListFailed] = React.useState(false);
   const [openId, setOpenId] = React.useState<string | null>(null);
@@ -154,9 +157,18 @@ export function HistorySection(props: {
     weekly: HISTORY_PAGE_SIZE,
     monthly: HISTORY_PAGE_SIZE,
   });
+  // D1 未见目标行的用户可见反馈（禁止静默吞键）+ 手动重拉入口。
+  const [jumpNotice, setJumpNotice] = React.useState(false);
+  const listRef = React.useRef<ReportMetaView[] | null>(null);
+  listRef.current = list;
+  const wasActive = React.useRef(active);
 
-  /** 读历史索引（倒序；失败展示错误行）。 */
-  const loadReports = React.useCallback(async (): Promise<void> => {
+  /**
+   * 读历史索引（倒序；失败展示错误行），返回行表供跳转定位复用。
+   * 刷新策略（R1）：mount 拉一次 + 切到本页重拉 + pending 到达重拉；
+   * 详情仍点击懒加载，不在此预取。
+   */
+  const fetchList = React.useCallback(async (): Promise<ReportMetaView[] | null> => {
     try {
       const res = await fetchTimeout(REPORTS_URL, {
         headers: { Accept: "application/json" },
@@ -164,16 +176,25 @@ export function HistorySection(props: {
       });
       if (!res.ok) throw new Error("HTTP " + res.status);
       const body = (await res.json()) as { ok?: boolean; reports?: ReportMetaView[] };
-      setList(Array.isArray(body.reports) ? body.reports : []);
+      const rows = Array.isArray(body.reports) ? body.reports : [];
+      setList(rows);
       setListFailed(false);
+      return rows;
     } catch {
       setListFailed(true);
+      return null;
     }
   }, []);
 
   React.useEffect(() => {
-    void loadReports();
-  }, [loadReports]);
+    void fetchList();
+  }, [fetchList]);
+
+  // 切到历史页时重拉（keep-mounted 下 mount 快照会 stale）。
+  React.useEffect(() => {
+    if (active && !wasActive.current) void fetchList();
+    wasActive.current = active;
+  }, [active, fetchList]);
 
   /** 行点击展开/收起详情（HTML 已由宿主双层净化）。 */
   const openRowDetail = React.useCallback(async (m: ReportMetaView): Promise<void> => {
@@ -205,26 +226,47 @@ export function HistorySection(props: {
     await openRowDetail(m);
   };
 
-  // Q4 生成成功自动跳转：壳传入目标行 id，本页切筛选、放行分页、展开详情后消费。
+  // Q4 生成成功自动跳转（D1 修法 a）：目标 id 到达时先在快照定位，
+  // 缺失（新窗口）则重拉再定位；仍缺则落用户可见 notice，禁止静默吞键。
   React.useEffect(() => {
-    if (pendingExpandId === null || list === null) return;
-    const target = list.find((m) => rowIdOf(m) === pendingExpandId);
-    if (target === undefined) {
-      onConsumePending();
-      return;
+    if (pendingExpandId === null) return;
+    let cancelled = false;
+    setJumpNotice(false);
+    const expand = (target: ReportMetaView): void => {
+      setStatusFilter("all");
+      setGroupOpen((g) => ({ ...g, [target.period]: true }));
+      setVisibleCount((c) => {
+        const rows = (listRef.current ?? []).filter((m) => m.period === target.period);
+        const idx = rows.findIndex((m) => rowIdOf(m) === pendingExpandId);
+        const need = idx < 0 ? c[target.period] : idx + 1;
+        if (need <= c[target.period]) return c;
+        return { ...c, [target.period]: need };
+      });
+      void openRowDetail(target).then(() => {
+        if (!cancelled) onConsumePending();
+      });
+    };
+    const first = locatePendingRow(listRef.current ?? [], pendingExpandId);
+    if (first !== undefined) {
+      expand(first);
+      return () => {
+        cancelled = true;
+      };
     }
-    setStatusFilter("all");
-    setGroupOpen((g) => ({ ...g, [target.period]: true }));
-    setVisibleCount((c) => {
-      const idx = list
-        .filter((m) => m.period === target.period)
-        .findIndex((m) => rowIdOf(m) === pendingExpandId);
-      const need = idx < 0 ? c[target.period] : idx + 1;
-      if (need <= c[target.period]) return c;
-      return { ...c, [target.period]: need };
+    void fetchList().then((fresh) => {
+      if (cancelled) return;
+      const target = fresh === null ? undefined : locatePendingRow(fresh, pendingExpandId);
+      if (target === undefined) {
+        setJumpNotice(true);
+        onConsumePending();
+        return;
+      }
+      expand(target);
     });
-    void openRowDetail(target).then(() => onConsumePending());
-  }, [pendingExpandId, list, openRowDetail, onConsumePending]);
+    return () => {
+      cancelled = true;
+    };
+  }, [pendingExpandId, fetchList, openRowDetail, onConsumePending]);
 
   const filtered = list === null ? null : filterReportsByStatus(list, statusFilter);
   const groups = filtered === null ? null : groupReportsByPeriod(filtered);
@@ -257,6 +299,21 @@ export function HistorySection(props: {
         ))}
       </div>
       {listFailed ? <div className="dou-reportFetchFail">{t("reportFetchFail")}</div> : null}
+      {jumpNotice ? (
+        <div className="dou-reportGenNotice">
+          {t("reportGeneratedNotVisible")}
+          <button
+            type="button"
+            className="dou-reportPromptReset"
+            onClick={() => {
+              setJumpNotice(false);
+              void fetchList();
+            }}
+          >
+            {t("reportReloadList")}
+          </button>
+        </div>
+      ) : null}
       {groups === null ? null : list !== null && list.length === 0 ? (
         <div className="dou-reportEmpty">{t("reportEmpty")}</div>
       ) : (
