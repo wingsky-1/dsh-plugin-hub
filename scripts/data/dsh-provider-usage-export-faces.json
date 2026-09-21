@@ -11,8 +11,6 @@
     "AdapterSource",
     "AdapterUtils",
     "CapsuleInput",
-    "DEEPSEEK_OFFICIAL_ADAPTER_ID",
-    "DEEPSEEK_OFFICIAL_PROVIDER",
     "DayRecord",
     "DueExecutorDeps",
     "DueReport",

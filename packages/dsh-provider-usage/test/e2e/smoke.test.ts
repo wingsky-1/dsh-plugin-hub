@@ -55,8 +55,6 @@ import {
   ADAPTER_CONTRACT_VERSION,
   OPENCODE_GO_PROVIDER,
   OPENCODE_GO_ADAPTER_ID,
-  DEEPSEEK_OFFICIAL_PROVIDER,
-  DEEPSEEK_OFFICIAL_ADAPTER_ID,
   PANEL_CACHE_TTL_MS,
   normalizeRangeDay,
   panelCacheKey,
@@ -70,6 +68,11 @@ import { userAdaptersFile, adapterStateFile } from "../../src/server/registry/in
 import { TREND_DIR_MAX } from "../../src/server/collect/interface.ts";
 // 白盒直连深路径（#768 B波）：调度纯面经调度域门面，不走包入口。
 import { previousClosedWindow } from "../../src/server/schedule/interface.ts";
+// 白盒直连深路径（#768 B波）：DeepSeek 常量经适配器域门面，不走包入口。
+import {
+  DEEPSEEK_OFFICIAL_ADAPTER_ID,
+  DEEPSEEK_OFFICIAL_PROVIDER,
+} from "../../src/server/adapters/interface.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 

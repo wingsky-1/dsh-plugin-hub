@@ -34,14 +34,6 @@
       "isType": true
     },
     {
-      "name": "DEEPSEEK_OFFICIAL_ADAPTER_ID",
-      "isType": false
-    },
-    {
-      "name": "DEEPSEEK_OFFICIAL_PROVIDER",
-      "isType": false
-    },
-    {
       "name": "DayRecord",
       "isType": true
     },
@@ -652,14 +644,6 @@
         {
           "name": "CapsuleInput",
           "isType": true
-        },
-        {
-          "name": "DEEPSEEK_OFFICIAL_ADAPTER_ID",
-          "isType": false
-        },
-        {
-          "name": "DEEPSEEK_OFFICIAL_PROVIDER",
-          "isType": false
         },
         {
           "name": "DayRecord",
