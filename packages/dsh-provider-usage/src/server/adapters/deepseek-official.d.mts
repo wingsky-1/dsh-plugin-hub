@@ -46,7 +46,7 @@ export declare function utcDateKey(t: number): string;
 /** 节假日判定：UTC 日期落在节假日集内即全天谷。 */
 export declare function isHolidayUtc(t: number, holidays?: ReadonlySet<string>): boolean;
 
-/** 峰值窗口表（UTC 分钟数，[start,end) 半开区间；仅周一至周五生效，周末全天谷）。 */
+/** 峰值窗口表（UTC 分钟数，[start,end) 半开区间；仅非节假日的周一至周五生效，周末与中国法定节假日全天谷）。 */
 export declare const PEAK_WINDOWS_UTC: Array<readonly [number, number]>;
 
 /** 单时刻峰谷判定（纯函数）。 */

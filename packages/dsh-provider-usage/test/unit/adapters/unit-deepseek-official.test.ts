@@ -1109,8 +1109,12 @@ describe("G4c 调休上班周末仍恒谷（R1 假设锁定：周末不因调休
 });
 
 describe("G4d utcDateKey / isHolidayUtc 基础", () => {
-  it("utcDateKey 取 UTC 分量（东八区午夜前后不漂移）", () => {
+  it("utcDateKey 取 UTC 日期分量（与北京同日示例：UTC/北京均为 02-17）", () => {
     expect(utcDateKey(Date.UTC(2026, 1, 17, 0, 30))).toBe("2026-02-17");
+  });
+
+  it("真跨日：UTC 02-16 16:30（北京 02-17 00:30）键为 UTC 日期 2026-02-16", () => {
+    expect(utcDateKey(Date.UTC(2026, 1, 16, 16, 30))).toBe("2026-02-16");
   });
 
   it("节假日返回 true", () => {
@@ -1156,6 +1160,10 @@ describe("G7b 空集对照 + 节假日长谷段（#945）", () => {
   it("tip 文案不再写死仅周末全天谷", () => {
     expect(peakBadgeHtml(MON(2, 0)).includes("周末与中国法定节假日全天谷")).toBeTruthy();
   });
+
+  it("旧短语“，周末全天谷；”已消失", () => {
+    expect(peakBadgeHtml(MON(2, 0)).includes("，周末全天谷；")).toBe(false);
+  });
 });
 
 describe("G7c UTC 跨日边界（#945）", () => {
@@ -1163,8 +1171,16 @@ describe("G7c UTC 跨日边界（#945）", () => {
     expect(isPeakUtc(utc(2026, 2, 16, 0, 0, 0, 0))).toBe(false);
   });
 
-  it("节假日前一日 23:59:59.999（普通周日）谷", () => {
+  it("02-15 23:59:59.999 谷（周日且春节放假表内，双重谷因）", () => {
     expect(isPeakUtc(utc(2026, 2, 15, 23, 59, 59, 999))).toBe(false);
+  });
+
+  it("节假日前一日普通日按窗口判定：09-30 周三（非假）23:59:59.999 谷", () => {
+    expect(isPeakUtc(utc(2026, 9, 30, 23, 59, 59, 999))).toBe(false);
+  });
+
+  it("节假日前一日普通日按窗口判定：09-30 周三 02:00 峰（不受次日假期影响）", () => {
+    expect(isPeakUtc(utc(2026, 9, 30, 2, 0))).toBe(true);
   });
 
   it("节假日末日 23:59:59.999 仍谷", () => {
@@ -1181,6 +1197,58 @@ describe("G7c UTC 跨日边界（#945）", () => {
 
   it("节假日末日深夜的下一次开峰是次日 01:00", () => {
     expect(nextPeakTransition(utc(2026, 2, 23, 23, 30)).at).toBe(utc(2026, 2, 24, 1, 0));
+  });
+});
+
+describe("G4e 节假日胶囊渲染（#945 P4：v2 契约恒用默认集）", () => {
+  let caps;
+
+  beforeAll(() => {
+    caps = deepSeekOfficialAdapter.formatCapsule({
+      time: utc(2026, 2, 17, 2, 0),
+      data: { balance: 110.5, isAvailable: true },
+      status: "fresh",
+      esc,
+    });
+  });
+
+  it("峰窗节假日时刻胶囊渲染为谷（非峰）", () => {
+    expect(caps).toMatch(/⚡谷 · 距峰 \d{2,}:\d{2}/);
+  });
+
+  it("胶囊 tip 含节假日全天谷", () => {
+    expect(caps.includes("周末与中国法定节假日全天谷")).toBeTruthy();
+  });
+
+  it("余额文案不受节假日影响", () => {
+    expect(caps.includes("余额 ¥110.50")).toBeTruthy();
+  });
+});
+
+describe("G7e 自定义集透传对照（#945 P7）", () => {
+  it("nextPeakTransition 空集：节假日峰窗时刻判峰，切谷在当日 04:00", () => {
+    const tr = nextPeakTransition(utc(2026, 2, 17, 2, 0), new Set());
+    expect(tr.toPeak).toBe(false);
+  });
+
+  it("nextPeakTransition 空集切谷点为当日 04:00", () => {
+    expect(nextPeakTransition(utc(2026, 2, 17, 2, 0), new Set()).at).toBe(utc(2026, 2, 17, 4, 0));
+  });
+
+  it("nextPeakTransition 含节假日自定义集：仅跳过表内单日，下一开峰为 02-18 01:00", () => {
+    expect(nextPeakTransition(utc(2026, 2, 17, 2, 0), new Set(["2026-02-17"])).at).toBe(
+      utc(2026, 2, 18, 1, 0),
+    );
+  });
+
+  it("peakBadgeHtml 空集：节假日峰窗时刻渲染为峰", () => {
+    expect(peakBadgeHtml(utc(2026, 2, 17, 2, 0), new Set())).toMatch(/⚡峰 · 距谷 \d{2,}:\d{2}/);
+  });
+
+  it("peakBadgeHtml 含节假日自定义集：渲染为谷", () => {
+    expect(peakBadgeHtml(utc(2026, 2, 17, 2, 0), new Set(["2026-02-17"]))).toMatch(
+      /⚡谷 · 距峰 \d{2,}:\d{2}/,
+    );
   });
 });
 
