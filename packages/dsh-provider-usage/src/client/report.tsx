@@ -727,7 +727,10 @@ export function ReportSection(): React.ReactElement {
     draft === null
       ? ""
       : (Object.keys({ daily: 1, weekly: 1, monthly: 1 }) as ReportPeriodView[])
-          .map((p) => periodLabel(p) + (draft[p].enabled ? draft[p].time : t("reportSectionOff")))
+          .map(
+            (p) =>
+              periodLabel(p) + " " + (draft[p].enabled ? draft[p].time : t("reportSectionOff")),
+          )
           .join(" · ");
   const routingSummary =
     draft === null
