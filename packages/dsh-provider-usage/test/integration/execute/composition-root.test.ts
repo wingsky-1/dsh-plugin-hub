@@ -151,7 +151,7 @@ describe("D3一 经 server/execute 域门面装配", () => {
     ).toBe(false);
   });
 
-  it("执行器经 schedule/config 双门面（B1 推进注入，直连实现即红）", () => {
+  it("执行器经 schedule/config 双门面（B1 推进注入 + B2 提示词注入，直连实现即红）", () => {
     // B1：schedule 值边清零（仅 type 复用任务类型），推进经 advanceLastRun 注入
     expect(executorSrc.includes('"../schedule/interface.ts"')).toBe(true);
     expect(executorSrc.includes("advanceLastRun")).toBe(true);
@@ -161,6 +161,12 @@ describe("D3一 经 server/execute 域门面装配", () => {
     expect(executorSrc.includes("server/schedule/tasks")).toBe(false);
     expect(executorSrc.includes("server/schedule/store")).toBe(false);
     expect(executorSrc.includes("server/config/service")).toBe(false);
+    // B2：提示词模板经 getPromptTemplate 注入，执行域不直引 promptFor 值边
+    expect(executorSrc.includes("getPromptTemplate")).toBe(true);
+    expect(executorSrc.includes("import { promptFor }")).toBe(false);
+    expect(runnerSrc.includes("promptFor")).toBe(false);
+    expect(runnerSrc.includes("import type { ReportConfig, ReportPeriod }")).toBe(true);
+    expect(applySrc.includes("getPromptTemplate")).toBe(true);
   });
 
   it("读侧同级复用索引解析（跨旧 common 即红）", () => {

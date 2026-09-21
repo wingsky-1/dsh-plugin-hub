@@ -83,8 +83,8 @@
       "scannedSrcFiles": 92,
       "allSrcTsFiles": 107,
       "interfaceFacades": 15,
-      "leafValueEdges": 22,
-      "fileValueEdges": 150,
+      "leafValueEdges": 21,
+      "fileValueEdges": 149,
       "crossModuleRefs": 158,
       "quality": {
         "leafModuleCycles": [],
@@ -95,7 +95,6 @@
         "uncoveredSrcFiles": [],
         "crossDomainValueEdges": [
           "server/data-routes|server/registry",
-          "server/execute|server/config",
           "server/pipeline|server/registry",
           "server/report-routes|server/config",
           "server/report-routes|server/execute"

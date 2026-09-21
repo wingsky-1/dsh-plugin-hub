@@ -2900,11 +2900,13 @@ describe("#633 分片 b B4：口径影响（reportCfg.directories 非空 → 快
       force: true,
     };
     // 全部（空数组）：两目录都在
+    const cfgForSnap = normalizeReportConfig({ push: { enabled: false }, directories: [] });
     const allSnap = await runDueReport({
       due,
       trend: tracker,
       ctx: fakeCtx,
-      reportCfg: normalizeReportConfig({ push: { enabled: false }, directories: [] }),
+      reportCfg: cfgForSnap,
+      promptTemplate: promptFor(cfgForSnap, "daily"),
       historyRoot: root,
       sanitizeDiagnostic: (s) => s,
     });

@@ -48,7 +48,7 @@ import { TrendTracker } from "../server/aggregate/interface.ts";
 import { TrendCollector } from "../server/collect/interface.ts";
 import { ReportScheduler } from "../server/schedule/interface.ts";
 import { optionalNotifier, parseReportIndexLines } from "../server/execute/interface.ts";
-import { ReportConfigService, readReportConfig } from "../server/config/interface.ts";
+import { ReportConfigService, promptFor, readReportConfig } from "../server/config/interface.ts";
 import { makeDueReportExecutor } from "../server/execute/interface.ts";
 import { makeListDirs } from "../server/execute/interface.ts";
 import { ReportTaskQueue } from "../server/schedule/interface.ts";
@@ -394,6 +394,8 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
       trend,
       ctx,
       getReportCfg: () => reportCfgService.get(),
+      // B2 提示词注入：组合根在已持 reportCfg 处算好字符串传入，执行域不直引 config 值边
+      getPromptTemplate: (period) => promptFor(reportCfgService.get(), period),
       historyRoot,
       sanitizeDiagnostic,
       // B1 推进注入：per-root 链唯一实现留 schedule 域，执行器不直引值边

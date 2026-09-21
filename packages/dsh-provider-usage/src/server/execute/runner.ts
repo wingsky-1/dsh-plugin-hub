@@ -10,7 +10,7 @@ import { dayKey, escHtml } from "../../shared/interface.ts";
 import { metricValue } from "../shared/interface.ts";
 import type { TrendTracker } from "../aggregate/interface.ts";
 import { sumToken, type TrendCell } from "../shared/interface.ts";
-import { promptFor, type ReportConfig, type ReportPeriod } from "../config/interface.ts";
+import type { ReportConfig, ReportPeriod } from "../config/interface.ts";
 import { reportBodyToHtml } from "./format.ts";
 import {
   buildStatsSnapshot,
@@ -205,10 +205,11 @@ export async function runDueReport(params: {
   trend: TrendTracker;
   ctx: Context;
   reportCfg: ReportConfig;
+  promptTemplate: string;
   historyRoot: string;
   sanitizeDiagnostic: (s: string) => string;
 }): Promise<ReportMeta> {
-  const { due, trend, ctx, reportCfg, historyRoot, sanitizeDiagnostic } = params;
+  const { due, trend, ctx, reportCfg, promptTemplate, historyRoot, sanitizeDiagnostic } = params;
   const buckets = trend.buckets();
   // 目录维度日汇总行进快照（trend.dirRows 含今日桶，口径见
   // aggregator.dirRows）。残差投影后旧数据（无 dir 行的分片）不再得到
@@ -258,7 +259,7 @@ export async function runDueReport(params: {
     startDay: due.startDay,
     endDay: due.endDay,
     statsJson: JSON.stringify(snapshot, null, 2),
-    promptTemplate: promptFor(reportCfg, due.period),
+    promptTemplate,
     provider: reportCfg.provider,
     model: reportCfg.model,
   });

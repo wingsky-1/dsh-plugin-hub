@@ -107,6 +107,7 @@ describe("executor 幂等短路：index 已有成功记录且非 force → 复�
       trend: {},
       ctx: {},
       getReportCfg: () => normalizeCfg({}),
+      getPromptTemplate: () => "prompt",
       historyRoot: root,
       sanitizeDiagnostic: (s) => `SAN:${s}`,
       advanceLastRun: updateLastRun,

@@ -18,9 +18,9 @@
  * ExecuteWarn/ExecuteClock 注解构造执行器与调度器，tsc 编译面校验可赋值性）。
  *
  * 源码允许的纯面复用（非实例调用，不经本文件注入）：
- * - server/config 的 ReportConfig 类型 + promptFor 经
- *   server/config/interface.ts 以 type + pure 复用（零 node 依赖的纯函数，
- *   与 D1 “业务域经门面复用纯面”同形）；
+ * - server/config 的 ReportConfig 类型经 server/config/interface.ts 以 type
+ *   复用；提示词模板经 DueExecutorDeps.getPromptTemplate 注入（组合根在已持
+ *   reportCfg 处算好字符串传入，本域不直引 promptFor 值边，#768 B2）；
  * - server/schedule 的任务类型（ReportTaskInput/ReportTaskResult）经
  *   server/schedule/interface.ts 以 type 复用；per-root 临界区链
  *   （updateLastRun）经 DueExecutorDeps.advanceLastRun 注入——链归属调度域
@@ -36,8 +36,8 @@
  * - shared 的 dayKey/escHtml 经 shared/interface.ts 直接引用（共享设施不入
  *   注入面，由实现块直接引，与 refactor skill §3 同形）。
  *
- * 能力注入保留在块级（DueExecutorDeps：trend/getReportCfg/historyRoot/
- * sanitizeDiagnostic，类型定义在 executor.ts；GenerateReportOptions.llm：
+ * 能力注入保留在块级（DueExecutorDeps：trend/getReportCfg/getPromptTemplate/
+ * historyRoot/sanitizeDiagnostic，类型定义在 executor.ts；GenerateReportOptions.llm：
  * ReportLlmService 窄面，类型定义在 generate.ts）——提到域级需要引入与
  * 各块形状的类型层循环，不值。
  * root 以快照值传递（executor/runner 的 historyRoot 参数：进程内不变，

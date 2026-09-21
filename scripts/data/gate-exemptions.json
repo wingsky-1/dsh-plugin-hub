@@ -100,12 +100,6 @@
     },
     {
       "gate": "verify-dir-imports",
-      "path": "dsh-provider-usage:server/execute|server/config",
-      "reason": "#768 D3：runner.ts 经 packages/dsh-provider-usage/src/server/execute/../config/interface.ts 取 promptFor（按周期取模板）与类型（D1 起即此口径，D3 随物理定义由 domain2/execute 迁 server/execute，边归属同步迁移）；纯面复用，不调业务实例。复用边界由 server/execute/deps.ts 注记锁定。长期条目（设计事实，非待办）。",
-      "trackingIssue": "#768"
-    },
-    {
-      "gate": "verify-dir-imports",
       "path": "dsh-provider-usage:server/report-routes|server/config",
       "reason": "#768 D1：reports.ts 经 server/config 门面取 normalizeReportConfig/readReportConfig/DEFAULT_PROMPTS（配置读写与默认回显），替代原边的配置面部分（调度纯函数边 D2 起归调度边）；服务实例仍经装配参数以 deps.ts 窄口（get/update）注入，不直引；D11 由 domain2/routes 迁 server/report-routes，边归属同步迁移。树内 integration/report-routes 用例锁定。长期条目（设计事实，非待办）。",
       "trackingIssue": "#768"

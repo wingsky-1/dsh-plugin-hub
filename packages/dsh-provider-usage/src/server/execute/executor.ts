@@ -8,6 +8,8 @@
  * 再抛（status 路由回客户端，防本地路径泄露——脱敏为工厂契约字段）。
  * 推进经 deps.advanceLastRun 注入（per-root 临界区链唯一实现留
  * server/schedule 域 store.ts，本域不直引 schedule 门面值边，#768 B1；
+ * 提示词模板经 deps.getPromptTemplate 注入（组合根算好字符串传入，
+ * 本域不直引 config 门面值边，#768 B2；
  * 任务类型经 server/schedule 门面以 type 复用，配置形态经
  * server/config 门面以 type 复用）。
  */
@@ -21,6 +23,8 @@ export interface DueExecutorDeps {
   trend: TrendTracker;
   ctx: Context;
   getReportCfg: () => ReportConfig;
+  /** 提示词模板解析（#768 B2：promptFor 不下沉 shared，DueReport 语义外；组合根在已持 reportCfg 处算好字符串传入，执行域不直引 config 门面值边）。 */
+  getPromptTemplate: (period: ReportPeriod) => string;
   historyRoot: string;
   sanitizeDiagnostic: (s: string) => string;
   /**
@@ -48,11 +52,13 @@ export function makeDueReportExecutor(
         );
         if (existing !== undefined) return { meta: existing, reused: true };
       }
+      const reportCfg = deps.getReportCfg();
       const meta = await runDueReport({
         due: input,
         trend: deps.trend,
         ctx: deps.ctx,
-        reportCfg: deps.getReportCfg(),
+        reportCfg,
+        promptTemplate: deps.getPromptTemplate(input.period),
         historyRoot: deps.historyRoot,
         sanitizeDiagnostic: deps.sanitizeDiagnostic,
       });
