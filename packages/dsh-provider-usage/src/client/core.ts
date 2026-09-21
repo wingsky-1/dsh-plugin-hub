@@ -7,26 +7,36 @@
 import { ADAPTER_CONTRACT_VERSION } from "../shared/contracts.ts";
 import { DEFAULT_Z_INDEX_BASE } from "../shared/placement-math.ts";
 
-/** 宿主端 ROUTES（构建期经 __DSH_ROUTES__ 注入）。 */
-declare const __DSH_ROUTES__: Record<string, string> | undefined;
-export const STATS_URL = __DSH_ROUTES__?.stats ?? "/api/dsh-provider-usage/stats";
-export const HISTORY_URL = __DSH_ROUTES__?.history ?? "/api/dsh-provider-usage/history";
-export const HEALTH_URL = __DSH_ROUTES__?.health ?? "/api/dsh-provider-usage/health";
-/** 会话用量趋势。 */
-export const TREND_URL = __DSH_ROUTES__?.trend ?? "/api/dsh-provider-usage/trend";
-/** 适配器管理路由（设置页主列表同源；现行 API，无替代——#768 D13 摘除误标的弃用注记，相关误报清零）。 */
-export const ADAPTERS_URL = __DSH_ROUTES__?.adapters ?? "/api/dsh-provider-usage/adapters.json";
-/** 适配器切换路由（现行 API，无替代）。 */
-export const SELECT_URL = __DSH_ROUTES__?.select ?? "/api/dsh-provider-usage/adapters/select";
-/** 适配器预览路由（现行 API，无替代）。 */
-export const INSPECT_URL = __DSH_ROUTES__?.inspect ?? "/api/dsh-provider-usage/adapters/inspect";
-/** 适配器登记路由（现行 API，无替代）。 */
-export const ADD_URL = __DSH_ROUTES__?.add ?? "/api/dsh-provider-usage/adapters/add";
-export const UI_CONFIG_URL = __DSH_ROUTES__?.uiConfig ?? "/api/dsh-provider-usage/ui-config";
-export const EVENTS_URL = __DSH_ROUTES__?.events ?? "/api/dsh-provider-usage/events";
-/** 报告生成任务状态轮询（生成异步化，POST generate 返回 taskId 后轮询此接口）。 */
-export const REPORT_GENERATE_STATUS_URL =
-  __DSH_ROUTES__?.reportGenerateStatus ?? "/api/dsh-provider-usage/reports/generate/status";
+/**
+ * 宿主端 ROUTES 经 ./shared/contract.ts 具名表（host-seams R2 收敛：路由字面量只许
+ * 落在 client/shared，本地保留同名绑定与再导出，下游经本模块的引用零改动）。
+ */
+import {
+  ADD_URL,
+  ADAPTERS_URL,
+  EVENTS_URL,
+  HEALTH_URL,
+  HISTORY_URL,
+  INSPECT_URL,
+  REPORT_GENERATE_STATUS_URL,
+  SELECT_URL,
+  STATS_URL,
+  TREND_URL,
+  UI_CONFIG_URL,
+} from "./shared/contract.ts";
+export {
+  ADD_URL,
+  ADAPTERS_URL,
+  EVENTS_URL,
+  HEALTH_URL,
+  HISTORY_URL,
+  INSPECT_URL,
+  REPORT_GENERATE_STATUS_URL,
+  SELECT_URL,
+  STATS_URL,
+  TREND_URL,
+  UI_CONFIG_URL,
+};
 
 /** 客户端 fetch 默认超时毫秒（与 dsh-mcp-manager api() 先例对齐取 10s）。 */
 export const CLIENT_FETCH_TIMEOUT_MS = 10_000;
