@@ -21,10 +21,8 @@
   --dm-glass-edge: rgba(20, 30, 50, 0.1);
   --dm-glass-rim: rgba(255, 255, 255, 0.92);
   --dm-glass-shadow:
-    inset 0 0.5px 0 rgba(255, 255, 255, 0.95),
-    inset 0 0 0 0.5px rgba(255, 255, 255, 0.45),
-    0 1px 1px rgba(20, 30, 50, 0.04),
-    0 6px 16px rgba(30, 45, 80, 0.08),
+    inset 0 0.5px 0 rgba(255, 255, 255, 0.95), inset 0 0 0 0.5px rgba(255, 255, 255, 0.45),
+    0 1px 1px rgba(20, 30, 50, 0.04), 0 6px 16px rgba(30, 45, 80, 0.08),
     0 20px 48px rgba(30, 45, 80, 0.12);
   --dm-glass-spec: linear-gradient(
     180deg,
@@ -34,14 +32,8 @@
     rgba(255, 255, 255, 0) 100%
   );
   --dm-font-ui:
-    system-ui,
-    -apple-system,
-    "Segoe UI",
-    "PingFang SC",
-    "Hiragino Sans GB",
-    "Microsoft YaHei",
-    "Noto Sans SC",
-    sans-serif;
+    system-ui, -apple-system, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei",
+    "Noto Sans SC", sans-serif;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -51,10 +43,8 @@
     --dm-glass-edge: rgba(255, 255, 255, 0.14);
     --dm-glass-rim: rgba(255, 255, 255, 0.12);
     --dm-glass-shadow:
-      inset 0 0.5px 0 rgba(255, 255, 255, 0.08),
-      inset 0 1px 0 rgba(255, 255, 255, 0.1),
-      0 24px 64px rgba(0, 0, 0, 0.5),
-      0 4px 16px rgba(0, 0, 0, 0.28);
+      inset 0 0.5px 0 rgba(255, 255, 255, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.1),
+      0 24px 64px rgba(0, 0, 0, 0.5), 0 4px 16px rgba(0, 0, 0, 0.28);
     --dm-glass-spec: linear-gradient(
       180deg,
       rgba(255, 255, 255, 0.16) 0%,
@@ -71,10 +61,8 @@ html.dark,
   --dm-glass-edge: rgba(255, 255, 255, 0.14);
   --dm-glass-rim: rgba(255, 255, 255, 0.12);
   --dm-glass-shadow:
-    inset 0 0.5px 0 rgba(255, 255, 255, 0.08),
-    inset 0 1px 0 rgba(255, 255, 255, 0.1),
-    0 24px 64px rgba(0, 0, 0, 0.5),
-    0 4px 16px rgba(0, 0, 0, 0.28);
+    inset 0 0.5px 0 rgba(255, 255, 255, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    0 24px 64px rgba(0, 0, 0, 0.5), 0 4px 16px rgba(0, 0, 0, 0.28);
   --dm-glass-spec: linear-gradient(
     180deg,
     rgba(255, 255, 255, 0.16) 0%,
@@ -111,8 +99,7 @@ html.dark,
   border: 0.5px solid var(--dm-glass-edge);
   background: var(--dm-glass-bg);
   backdrop-filter: blur(var(--dm-glass-blur)) saturate(var(--dm-glass-saturate));
-  -webkit-backdrop-filter: blur(var(--dm-glass-blur))
-    saturate(var(--dm-glass-saturate));
+  -webkit-backdrop-filter: blur(var(--dm-glass-blur)) saturate(var(--dm-glass-saturate));
   box-shadow: var(--dm-glass-shadow);
   font-family: var(--dm-font-ui);
   letter-spacing: 0;
@@ -164,8 +151,7 @@ html.dark,
   cursor: pointer;
   font-family: var(--dm-font-ui);
   backdrop-filter: blur(var(--dm-glass-blur)) saturate(var(--dm-glass-saturate));
-  -webkit-backdrop-filter: blur(var(--dm-glass-blur))
-    saturate(var(--dm-glass-saturate));
+  -webkit-backdrop-filter: blur(var(--dm-glass-blur)) saturate(var(--dm-glass-saturate));
   box-shadow:
     inset 0 0.5px 0 var(--dm-glass-rim),
     0 2px 10px rgba(15, 18, 28, 0.08);
@@ -287,8 +273,7 @@ html.dark,
   line-height: 1.55;
   letter-spacing: 0;
   backdrop-filter: blur(var(--dm-glass-blur)) saturate(var(--dm-glass-saturate));
-  -webkit-backdrop-filter: blur(var(--dm-glass-blur))
-    saturate(var(--dm-glass-saturate));
+  -webkit-backdrop-filter: blur(var(--dm-glass-blur)) saturate(var(--dm-glass-saturate));
   box-shadow: var(--dm-glass-shadow);
   opacity: 0;
   transform: scale(0.72);
@@ -405,11 +390,7 @@ html.dark,
 .dm-float-head button {
   flex: none;
   border: 0.5px solid var(--dm-glass-edge);
-  background: color-mix(
-    in srgb,
-    var(--dsw-alias-bg-base, #fff) 55%,
-    transparent
-  );
+  background: color-mix(in srgb, var(--dsw-alias-bg-base, #fff) 55%, transparent);
   color: var(--dsw-alias-label-primary, #1c1e26);
   border-radius: 99px;
   min-height: 28px;
@@ -479,12 +460,7 @@ html.dark,
 }
 .dm-float-row .dm-float-name {
   font-weight: 600;
-  font-family:
-    ui-monospace,
-    "SF Mono",
-    Consolas,
-    "PingFang SC",
-    monospace;
+  font-family: ui-monospace, "SF Mono", Consolas, "PingFang SC", monospace;
   font-size: 12px;
   line-height: 1.4;
   letter-spacing: 0;
@@ -514,11 +490,7 @@ html.dark,
 }
 .dm-float-action {
   border: 0.5px solid var(--dm-glass-edge);
-  background: color-mix(
-    in srgb,
-    var(--dsw-alias-bg-base, #fff) 50%,
-    transparent
-  );
+  background: color-mix(in srgb, var(--dsw-alias-bg-base, #fff) 50%, transparent);
   color: var(--dsw-alias-label-primary, #1c1e26);
   border-radius: 99px;
   min-height: 28px;
@@ -628,8 +600,7 @@ html.dark,
   background: var(--dm-glass-bg-strong);
   box-shadow: var(--dm-glass-shadow);
   backdrop-filter: blur(var(--dm-glass-blur)) saturate(var(--dm-glass-saturate));
-  -webkit-backdrop-filter: blur(var(--dm-glass-blur))
-    saturate(var(--dm-glass-saturate));
+  -webkit-backdrop-filter: blur(var(--dm-glass-blur)) saturate(var(--dm-glass-saturate));
   overflow: hidden;
   opacity: 0;
   transform: scale(0.78);
@@ -678,11 +649,7 @@ html.dark,
 }
 .dm-head button {
   border: 0.5px solid var(--dm-glass-edge);
-  background: color-mix(
-    in srgb,
-    var(--dsw-alias-bg-base, #fff) 55%,
-    transparent
-  );
+  background: color-mix(in srgb, var(--dsw-alias-bg-base, #fff) 55%, transparent);
   color: var(--dsw-alias-label-primary, #3a3f4b);
   border-radius: 99px;
   min-height: 28px;
@@ -808,11 +775,7 @@ html.dark,
   font-weight: 600;
   font-size: 13px;
   color: var(--dsw-alias-label-primary, #111827);
-  font-family:
-    ui-monospace,
-    Consolas,
-    "PingFang SC",
-    monospace;
+  font-family: ui-monospace, Consolas, "PingFang SC", monospace;
   overflow-wrap: anywhere;
   word-break: break-word;
   line-height: 1.4;
@@ -862,11 +825,7 @@ html.dark,
   margin: 6px 0 0;
   font-size: 11px;
   color: var(--dsw-alias-label-secondary, #8a8f9c);
-  font-family:
-    ui-monospace,
-    Consolas,
-    "PingFang SC",
-    monospace;
+  font-family: ui-monospace, Consolas, "PingFang SC", monospace;
   word-break: break-all;
   line-height: 1.5;
 }
@@ -891,11 +850,7 @@ html.dark,
   padding-left: 16px;
   font-size: 11px;
   color: var(--dsw-alias-label-primary, #3a3f4b);
-  font-family:
-    ui-monospace,
-    Consolas,
-    "PingFang SC",
-    monospace;
+  font-family: ui-monospace, Consolas, "PingFang SC", monospace;
   line-height: 1.55;
 }
 .dm-actions {
@@ -906,11 +861,7 @@ html.dark,
 }
 .dm-actions button {
   border: 0.5px solid var(--dm-glass-edge);
-  background: color-mix(
-    in srgb,
-    var(--dsw-alias-bg-base, #fff) 55%,
-    transparent
-  );
+  background: color-mix(in srgb, var(--dsw-alias-bg-base, #fff) 55%, transparent);
   color: var(--dsw-alias-label-primary, #3a3f4b);
   border-radius: 99px;
   min-height: 28px;
@@ -979,11 +930,7 @@ html.dark,
   font-size: 12px;
   color: var(--dsw-alias-label-primary, #1c1e26);
   background: color-mix(in srgb, #ffffff 55%, transparent);
-  font-family:
-    ui-monospace,
-    Consolas,
-    "PingFang SC",
-    monospace;
+  font-family: ui-monospace, Consolas, "PingFang SC", monospace;
   line-height: 1.45;
 }
 .dm-field textarea {
@@ -1010,11 +957,7 @@ html.dark,
 }
 .dm-form-actions button {
   border: 0.5px solid var(--dm-glass-edge);
-  background: color-mix(
-    in srgb,
-    var(--dsw-alias-bg-base, #fff) 55%,
-    transparent
-  );
+  background: color-mix(in srgb, var(--dsw-alias-bg-base, #fff) 55%, transparent);
   color: var(--dsw-alias-label-primary, #3a3f4b);
   border-radius: 99px;
   min-height: 32px;
@@ -1192,11 +1135,7 @@ html.dark,
 /* #128 悬停态统一包裹 @media(hover:hover) */
 @media (hover: hover) {
   .dm-float:hover {
-    background: color-mix(
-      in srgb,
-      var(--dsw-alias-interactive-bg-hover, #f2f4f8) 70%,
-      transparent
-    );
+    background: color-mix(in srgb, var(--dsw-alias-interactive-bg-hover, #f2f4f8) 70%, transparent);
   }
   .dm-float-head button:hover {
     background: var(--dsw-alias-interactive-bg-hover, #eef1f5);
