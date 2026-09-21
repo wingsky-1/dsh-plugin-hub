@@ -124,9 +124,22 @@ describe("3) config 归一化单答案 / LEGACY 映射表先行", () => {
   });
 
   it("LEGACY 三周期旧词非空（迁移判定基准文本）", () => {
-    expect(LEGACY_DAILY_PROMPT_V1.length).toBeGreaterThan(0);
-    expect(LEGACY_WEEKLY_PROMPT_V1.length).toBeGreaterThan(0);
-    expect(LEGACY_MONTHLY_PROMPT_V1.length).toBeGreaterThan(0);
+    // 锚：prompts.ts 锁表字面量长度，第二事实源（改文本必须红）。
+    expect(LEGACY_DAILY_PROMPT_V1.length).toBe(623);
+    expect(LEGACY_WEEKLY_PROMPT_V1.length).toBe(705);
+    expect(LEGACY_MONTHLY_PROMPT_V1.length).toBe(823);
+    // 形状：三词均含 {stats} 注入位 + 主笔头 + 各自时间尺度（今天/这一周/这个月）。
+    for (const text of [
+      LEGACY_DAILY_PROMPT_V1,
+      LEGACY_WEEKLY_PROMPT_V1,
+      LEGACY_MONTHLY_PROMPT_V1,
+    ]) {
+      expect(text.includes("{stats}")).toBe(true);
+      expect(text.startsWith("你是「AI 用量年报」主笔。")).toBe(true);
+    }
+    expect(LEGACY_DAILY_PROMPT_V1.includes("时间尺度以「今天」为准")).toBe(true);
+    expect(LEGACY_WEEKLY_PROMPT_V1.includes("时间尺度以「这一周」为准")).toBe(true);
+    expect(LEGACY_MONTHLY_PROMPT_V1.includes("时间尺度以「这个月」为准")).toBe(true);
   });
 
   it("旧三周期模板命中即回退当期默认（平滑升级，不丢形态）", () => {

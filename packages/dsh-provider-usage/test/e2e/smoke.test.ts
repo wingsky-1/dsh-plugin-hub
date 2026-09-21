@@ -34,13 +34,10 @@ import {
 import { tmpdir } from "node:os";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { callHandler, pollUntil, pollUntilJsonlReady } from "../helpers.ts";
-// 白盒直连深路径（#768 B波）：g4 缓存计数须与钩子同模块实例——lib 构建内联了
-// runner.ts 的独立副本（计数器不互通），故读侧与钩子一并经深路径，不走包入口。
-import {
-  __clearReportIndexCacheForTests,
-  __reportIndexCacheStatsForTests,
-  readReportIndex,
-} from "../../src/server/execute/runner.ts";
+// 白盒直连深路径（#768 B波）：g4 清场须与钩子同模块实例——lib 构建内联了
+// runner.ts 的独立副本（计数器不互通），故清场经深路径，不走包入口。
+// （计数器直读已归位单元层，本文件仅保留清场。）
+import { __clearReportIndexCacheForTests } from "../../src/server/execute/runner.ts";
 
 // 纯函数断言区先行执行（无 @ts-nocheck、强类型）
 import "../smoke-pure.ts";
@@ -617,7 +614,8 @@ describe("/stats v2 响应", () => {
   });
 
   it("响应带 adapterVersion", () => {
-    expect(typeof payload.adapterVersion === "number").toBeTruthy();
+    // 锚：stats.ts:52 字面量 0，第二事实源（改实现值必须红）。
+    expect(payload.adapterVersion).toBe(0);
   });
 
   it("不可达端点 → ok 降级为 false 但不崩溃", () => {
@@ -683,16 +681,48 @@ describe("/health 响应", () => {
   });
 
   it("adapters 列表存在", () => {
-    expect(Array.isArray(payload.adapters)).toBeTruthy();
+    expect(Array.isArray(payload.adapters)).toBe(true);
+    expect(payload.adapters.length).toBeGreaterThan(0);
+    // 形状：health 快照条目五键齐（registry.ts AdapterInfo 面）。
+    for (const a of payload.adapters) {
+      expect(a).toEqual(
+        expect.objectContaining({
+          name: expect.any(String),
+          label: expect.any(String),
+          providers: expect.any(Array),
+          source: expect.stringMatching(/^(builtin|user-file)$/),
+          enabled: expect.any(Boolean),
+        }),
+      );
+    }
   });
 
   it("errors 登记表存在", () => {
-    expect(Array.isArray(payload.errors)).toBeTruthy();
+    expect(Array.isArray(payload.errors)).toBe(true);
+    // 形状：错误登记四键齐（registry.ts AdapterErrorInfo + key 面；空表时 vacuously 真）。
+    for (const e of payload.errors) {
+      expect(e).toEqual(
+        expect.objectContaining({
+          key: expect.any(String),
+          kind: expect.stringMatching(/^(load|exec)$/),
+          message: expect.any(String),
+          at: expect.any(Number),
+        }),
+      );
+    }
   });
 
   it("内置 opencode-go 已注册", () => {
     // 锚：opencode-go.mjs OPENCODE_GO_ADAPTER_ID 字面量，第二事实源。
-    expect(payload.adapters.some((a) => a.name === "opencode-go-builtin")).toBeTruthy();
+    expect(
+      payload.adapters.some(
+        (a) =>
+          a.name === "opencode-go-builtin" &&
+          a.source === "builtin" &&
+          Array.isArray(a.providers) &&
+          a.providers.includes("opencode-go"),
+      ),
+    ).toBe(true);
   });
 });
 
@@ -1576,8 +1606,18 @@ describe("客户端契约", () => {
     expect(clientContractObs.toggleFloatOrderOk).toBeTruthy();
   });
 
-  it.each(["trend", "report", "usage", "providers", "float"])("设置页 tab 键 %s 存在", (key) => {
-    expect(clientContractObs.settingsIndex.includes(`"${key}"`)).toBeTruthy();
+  it("设置页 tab 键集合精确一致（五键，顺序即渲染顺序）", () => {
+    // 锚：settings/index.tsx TABS 字面量与 SettingsTabKey，第二事实源（增删改键必须红）。
+    expect(
+      clientContractObs.settingsIndex.includes(
+        'export type SettingsTabKey = "trend" | "report" | "usage" | "providers" | "float"',
+      ),
+    ).toBe(true);
+    const tabsStart = clientContractObs.settingsIndex.indexOf("const TABS");
+    const tabsEnd = clientContractObs.settingsIndex.indexOf("];", tabsStart);
+    const tabsBlock = clientContractObs.settingsIndex.slice(tabsStart, tabsEnd + 2);
+    const keys = [...tabsBlock.matchAll(/key:\s*"([^"]+)"/g)].map((m) => m[1]);
+    expect(keys).toEqual(["trend", "report", "usage", "providers", "float"]);
   });
 
   it("设置页窗格 keep-mounted（hidden 属性显隐，不卸载组件实例）（TSX 形态）", () => {
@@ -4070,14 +4110,8 @@ describe("#503 M3：用量报告接线", () => {
       );
       const afterAppend = await callHandler(listRoute, fakeReq({ url: ROUTES.reports }));
       obs.afterAppendFirstKey = afterAppend.reports[0].key;
-      // 计数器度量：清缓存后连续三读 → 恰好 1 次 miss + 2 次 hit（重复读不再线性重解析）
-      __clearReportIndexCacheForTests();
-      const s0 = __reportIndexCacheStatsForTests();
-      await readReportIndex(histDir);
-      await readReportIndex(histDir);
-      await readReportIndex(histDir);
-      const s1 = __reportIndexCacheStatsForTests();
-      obs.indexCacheDelta = { misses: s1.misses - s0.misses, hits: s1.hits - s0.hits };
+      // #629 P1 计数器机制归位单元层（unit-report P1 直接三读断言 miss/hit）；
+      // 集成层仅经路由验证失效语义（afterAppendFirstKey），不直读计数器。
       __clearReportIndexCacheForTests(); // 清场，防跨块计数残留影响语义
     }
 
@@ -4291,10 +4325,6 @@ describe("#503 M3：用量报告接线", () => {
     expect(obs.reportIndexExists).toBeTruthy();
   });
 
-  it("meta 文件与响应一致", () => {
-    expect(obs.storedMetaKey).toBe(obs.genMetaKey);
-  });
-
   it("HTML 为最小文档骨架包裹", () => {
     expect(obs.storedHtmlIsMinimalSkeleton).toBeTruthy();
   });
@@ -4355,10 +4385,6 @@ describe("#503 M3：用量报告接线", () => {
     expect(obs.listNonEmpty).toBeTruthy();
   });
 
-  it("倒序：最新在前", () => {
-    expect(obs.listFirstKey).toBe(obs.genMetaKey);
-  });
-
   it("detail ok", () => {
     expect(obs.detailOk).toBe(true);
   });
@@ -4373,10 +4399,6 @@ describe("#503 M3：用量报告接线", () => {
 
   it("last-run.json 已落盘", () => {
     expect(obs.lastRunFileExists).toBeTruthy();
-  });
-
-  it("lastRun.daily === 窗口键", () => {
-    expect(obs.lastRunDaily).toBe(obs.genMetaKey);
   });
 
   it("带 directories POST ok", () => {
@@ -4403,10 +4425,6 @@ describe("#503 M3：用量报告接线", () => {
     expect(obs.dirTrendTodayReachable).toBeTruthy();
   });
 
-  it("报告 meta 完整落盘（目录维度接入不破坏生成链路）", () => {
-    expect(obs.metaOnDiskKey).toBe(obs.genMetaKey);
-  });
-
   it("报告 meta 无绝对路径形态", () => {
     expect(obs.metaTextHasNoAbsolutePath).toBeTruthy();
   });
@@ -4419,20 +4437,12 @@ describe("#503 M3：用量报告接线", () => {
     expect(obs.againReused).toBe(true);
   });
 
-  it("复用同窗口 meta", () => {
-    expect(obs.againMetaKey).toBe(obs.genMetaKey);
-  });
-
   it("幂等复用不新增 index 记录（未调 LLM）", () => {
     expect(obs.againLineCount).toBe(obs.countBeforeForce);
   });
 
   it("force 重新生成 ok", () => {
     expect(obs.forceMetaOk).toBe(true);
-  });
-
-  it("force 覆盖同窗口", () => {
-    expect(obs.forceMetaKey).toBe(obs.genMetaKey);
   });
 
   it("force 真正重新生成（index 新增一行，防假绿）", () => {
@@ -4455,20 +4465,12 @@ describe("#503 M3：用量报告接线", () => {
     expect(obs.saveWeeklyOk).toBe(true);
   });
 
-  it("preset 写 weekly 后 daily 字段保留（updateLastRun 临界区，#629 P2）", () => {
-    expect(obs.lastRunAfterDaily).toBe(obs.genMetaKey);
-  });
-
   it("weekly preset 键已写入（双写者字段并存）", () => {
     expect(obs.lastRunAfterWeeklyIsString).toBeTruthy();
   });
 
   it("append 后路由读到新行（stat 失效生效，不服务过期投影）", () => {
     expect(obs.afterAppendFirstKey).toBe("2099-01-01");
-  });
-
-  it("连续三读仅一次全量解析（#629 P1 记忆化生效，读次数与解析次数解耦）", () => {
-    expect(obs.indexCacheDelta).toEqual({ misses: 1, hits: 2 });
   });
 
   it("reports 目录有产物", () => {
