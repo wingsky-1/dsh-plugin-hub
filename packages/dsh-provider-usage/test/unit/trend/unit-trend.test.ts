@@ -38,6 +38,7 @@ import {
   mkdirSync,
   utimesSync,
   rmdirSync,
+  rmSync,
 } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -2817,8 +2818,28 @@ describe("评审 #934：writeAggDay 多残留清理失败全量 warn", () => {
     expect(hit[0].includes(leakRoot)).toBe(false);
   });
 
+  it("warn 含失败原因实质（存在性，不锁措辞）", () => {
+    const hit = warns.filter((m) => m.includes("聚合分片 tmp 残留清理失败"));
+    expect(hit.length).toBe(1);
+    // 去掉固定前缀与两 basename 后仍有原因实质——“只记 basename 不记原因”的
+    // 变异体此处被杀；不断言原因措辞本身（平台 rm 文案差异不进断言）。
+    const prefix = `聚合分片 tmp 残留清理失败（${DAY0}）：`;
+    const rest = hit[0].slice(hit[0].indexOf(prefix) + prefix.length);
+    const substance = rest
+      .split(`${DAY0}.jsonl.1700000000001.tmp`)
+      .join("")
+      .split(`${DAY0}.jsonl.1700000000002.tmp`)
+      .join("");
+    expect(substance.length).toBeGreaterThan(10);
+  });
+
   it("主写照常推进", () => {
     expect(aggShardLength934).toBe(1);
+  });
+
+  afterAll(() => {
+    // P3：占位目录落 /tmp 也要收（mkdtemp 配套 rm；多失败占位目录 rm 删不掉，此处兜底）。
+    if (leakRoot) rmSync(leakRoot, { recursive: true, force: true });
   });
 });
 
