@@ -341,14 +341,15 @@ describe("3) inject 回调：settings 服务缺 register", () => {
 // 6a) 合法用户适配器文件 → onReload ok:true → hr.current !== null → full branch
 describe("6a) 合法用户适配器文件 → onReload ok:true", () => {
   let applied;
+  let dir;
 
   beforeAll(async () => {
-    const dir = mkdtempSync(join(tmpdir(), "dou-hr-"));
+    dir = mkdtempSync(join(tmpdir(), "dou-hr-"));
     const goodFile = join(dir, "good.mjs");
     writeFileSync(
       goodFile,
       `
-export const version = 2;
+export const version = ${ADAPTER_CONTRACT_VERSION};
 export const name = "hr-test";
 export const label = "HR Test";
 export const providers = ["${OPENCODE_GO_PROVIDER}"];
@@ -396,6 +397,10 @@ export function formatPanel() { return "<p>p</p>"; }
 
   it("HotReload ok:true 分支不抛错", () => {
     expect(applied).toBe(true);
+  });
+
+  it("隔离自检：落盘收敛在本块 hist 内（删 historyDir 参数即红）", () => {
+    expect(existsSync(join(dir, "hist"))).toBe(true);
   });
 });
 
