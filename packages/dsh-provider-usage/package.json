@@ -28,7 +28,7 @@
     "catalog": {
       "category": "ui",
       "summary": {
-        "en": "Multi-provider usage stats (v2 adapter contract): floating capsule plus detail panel; DeepSeek official and OpenCode Go adapters built in.",
+        "en": "Multi-provider usage stats (v2 adapter contract): floating capsule plus detail panel; DeepSeek official, OpenCode Go and Zhipu Coding Plan adapters built in.",
         "zh": "用量统计悬浮框：胶囊加详情面板，mjs 适配器接入任意数据源，密钥不出宿主"
       },
       "capabilities": [
