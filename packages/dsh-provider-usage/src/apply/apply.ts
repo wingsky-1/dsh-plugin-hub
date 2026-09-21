@@ -42,7 +42,7 @@ import { Config, normalizeConfig, type NormalizedConfig } from "../shared/interf
 import { readUiConfig } from "../shared/interface.ts";
 import { makeLayerErrorSurface } from "../server/shared/interface.ts";
 import { readAdapterStateResult, readUserAdapters } from "../server/registry/interface.ts";
-import { loadUserAdapterChecked } from "../server/registry/interface.ts";
+import { loadUserAdapterChecked, resolveAddAdapterFile } from "../server/registry/interface.ts";
 import { StatsServiceCtor as StatsService } from "../server/pipeline/interface.ts";
 import { TrendTracker } from "../server/aggregate/interface.ts";
 import { TrendCollector } from "../server/collect/interface.ts";
@@ -483,7 +483,14 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
         inspect: ROUTES.inspect,
         add: ROUTES.add,
       },
-      { ctx, statsService, ensureHotReload },
+      {
+        ctx,
+        statsService,
+        ensureHotReload,
+        // B2 注册注入：路径准入与加载校验由组合根供给（已绑定 registry 实例，路由不直引值边）
+        resolveAdapterFile: (input) => resolveAddAdapterFile(input),
+        loadAdapterChecked: (file) => loadUserAdapterChecked(file, registry),
+      },
     ),
     ...createUiRoutes(
       {

@@ -1,5 +1,8 @@
 /**
  * dsh-provider-usage — 适配器管理路由（GET /adapters.json, POST /adapters/select, inspect, add）。
+ *
+ * 加载校验与路径准入经 AdapterRoutesContext 注入（#768 B2：不直引 registry 门面值边；
+ * 组合根已绑定 registry 实例，类型经门面以 type 复用）。
  */
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { basename } from "node:path";
@@ -10,15 +13,26 @@ import {
   readJsonBodyOutcome,
   writeJson,
 } from "../../../../../shared/host-utils.js";
-import { ADAPTER_CONTRACT_VERSION } from "../../shared/interface.ts";
+import { ADAPTER_CONTRACT_VERSION, type UsageStatsAdapter } from "../../shared/interface.ts";
 import type { StatsService } from "../pipeline/interface.ts";
-import { loadUserAdapterChecked } from "../registry/interface.ts";
-import { resolveAddAdapterFile, type UserAdapterRecord } from "../registry/interface.ts";
+import type { UserAdapterRecord } from "../registry/interface.ts";
 
 export interface AdapterRoutesContext {
   ctx: Context;
   statsService: StatsService;
   ensureHotReload: (file: string) => Promise<void>;
+  /**
+   * 路径准入注入（#768 B2：不直引 registry 门面值边；组合根供给，禁穿越口径留 registry 域）。
+   */
+  resolveAdapterFile: (input: unknown) => string | undefined;
+  /**
+   * 加载校验注入（#768 B2：不直引 registry 门面值边；组合根已绑定 registry 实例）。
+   */
+  loadAdapterChecked: (
+    file: string,
+  ) => Promise<
+    { ok: true; adapter: UsageStatsAdapter } | { ok: false; code: string; detail: string }
+  >;
 }
 
 export function handleAdapters(
@@ -104,13 +118,12 @@ export async function handleInspect(
   context: AdapterRoutesContext,
 ): Promise<void> {
   if (!guardLoopbackMethod(req, res, ["POST"])) return;
-  const { statsService } = context;
 
   const outcome = await readJsonBodyOutcome(req);
   if (outcome.kind !== "json") return writeJson(res, 400, { error: "bad-json" });
   const body = outcome.value as Record<string, unknown>;
 
-  const file = resolveAddAdapterFile(body.file);
+  const file = context.resolveAdapterFile(body.file);
   if (file === undefined) {
     return writeJson(res, 400, {
       error: "invalid-file",
@@ -118,7 +131,7 @@ export async function handleInspect(
     });
   }
 
-  const loaded = await loadUserAdapterChecked(file, statsService.registry);
+  const loaded = await context.loadAdapterChecked(file);
   if (!loaded.ok) {
     return writeJson(res, 422, { error: loaded.code, detail: loaded.detail });
   }
@@ -148,7 +161,7 @@ export async function handleAdd(
   if (outcome.kind !== "json") return writeJson(res, 400, { error: "bad-json" });
   const body = outcome.value as Record<string, unknown>;
 
-  const file = resolveAddAdapterFile(body.file);
+  const file = context.resolveAdapterFile(body.file);
   if (file === undefined) {
     return writeJson(res, 400, {
       error: "invalid-file",
@@ -156,7 +169,7 @@ export async function handleAdd(
     });
   }
 
-  const loaded = await loadUserAdapterChecked(file, statsService.registry);
+  const loaded = await context.loadAdapterChecked(file);
   if (!loaded.ok) {
     return writeJson(res, 422, { error: loaded.code, detail: loaded.detail });
   }

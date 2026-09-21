@@ -21,10 +21,9 @@
  * - server/pipeline 的 StatsService 经 server/pipeline/interface.ts 以 type
  *   复用（两 context 的 statsService 字段；实例只由组合根构造、经参数传递，
  *   与 D6 “业务域经门面复用读面”同形）；
- * - server/registry 的 loadUserAdapterChecked 与 resolveAddAdapterFile 经
- *   server/registry/interface.ts 以值复用（inspect/add 的加载校验与路径准入；
- *   owner 已归 server/registry 域，#768 D7 由 domain1/registry 整域迁入；
- *   边 server/data-routes|server/registry，见 gate-exemptions 长期条目）；
+ * - server/registry 的 UserAdapterRecord 类型经 server/registry/interface.ts
+ *   以 type 复用；加载校验与路径准入经 AdapterRoutesContext 注入
+ *   （组合根已绑定 registry 实例，#768 B2 值边清零）；
  * - shared 的 guardLoopbackMethod/readJsonBodyOutcome/writeJson 经
  *   shared/host-utils.js 直接引用，ADAPTER_CONTRACT_VERSION 经
  *   shared/interface.ts 直接引用（共享设施不入注入面，由实现块直接引，

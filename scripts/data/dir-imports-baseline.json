@@ -83,9 +83,9 @@
       "scannedSrcFiles": 92,
       "allSrcTsFiles": 107,
       "interfaceFacades": 15,
-      "leafValueEdges": 19,
-      "fileValueEdges": 148,
-      "crossModuleRefs": 158,
+      "leafValueEdges": 18,
+      "fileValueEdges": 147,
+      "crossModuleRefs": 157,
       "quality": {
         "leafModuleCycles": [],
         "fileCycles": [],
@@ -94,7 +94,6 @@
         "directImpl": [],
         "uncoveredSrcFiles": [],
         "crossDomainValueEdges": [
-          "server/data-routes|server/registry",
           "server/pipeline|server/registry"
         ],
         "rootIndexImports": [],

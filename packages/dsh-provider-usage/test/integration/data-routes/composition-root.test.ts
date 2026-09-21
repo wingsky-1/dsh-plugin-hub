@@ -184,6 +184,12 @@ function stubAdapterCtx(): AdapterRoutesContext {
     ctx: {} as AdapterRoutesContext["ctx"],
     statsService: stubStatsService(),
     ensureHotReload: ensureHotReloadSeam,
+    resolveAdapterFile: () => undefined,
+    loadAdapterChecked: async () => ({
+      ok: false as const,
+      code: "adapter-load-failed",
+      detail: "stub",
+    }),
   };
 }
 
@@ -216,6 +222,15 @@ describe("D10一 经 server/data-routes 域门面装配", () => {
   it("实现块改址：adapters 经 ../registry 复用加载校验与路径准入（旧深路径残留必须红）", () => {
     expect(adaptersSrc.includes("../registry/interface")).toBe(true);
     expect(adaptersSrc.includes("../pipeline/interface")).toBe(true);
+  });
+
+  it("B2 注册注入经上下文（值边清零，直引残留必须红）", () => {
+    expect(adaptersSrc.includes("context.resolveAdapterFile")).toBe(true);
+    expect(adaptersSrc.includes("context.loadAdapterChecked")).toBe(true);
+    expect(adaptersSrc.includes("import { loadUserAdapterChecked")).toBe(false);
+    expect(adaptersSrc.includes("import { resolveAddAdapterFile")).toBe(false);
+    expect(applySrc.includes("resolveAdapterFile:")).toBe(true);
+    expect(applySrc.includes("loadAdapterChecked:")).toBe(true);
   });
 
   it("门面收口：interface 与实现同一引用（包装即红）", () => {
