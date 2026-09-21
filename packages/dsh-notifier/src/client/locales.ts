@@ -89,6 +89,16 @@ export const zh = {
   allowDisabledHint: "事件未启用",
   allowFollowEnabled: "跟随已启用事件",
   allowResetDefault: "恢复默认（审批/提问/出错）",
+  // 免打扰多时间窗（#936）：时段增删与本机回显
+  dndAddWindow: "添加时段",
+  dndRemoveWindow: "删除该时段",
+  dndWindow: "时段 {n}",
+  dndEmptyHint: "暂无时段：免打扰不会拦截任何通知",
+  dndLimitHint: "最多 5 个时段",
+  dndPreviewHit: "当前 {now} 落在 {start}–{end} 内",
+  dndPreviewMiss: "当前 {now} 不在免打扰时段内",
+  dndPreviewOff: "免打扰未启用",
+  dndPreviewNote: "按本机时间推算，仅供参考；实际是否拦截以服务端裁决与通知记录为准",
   // 权限/降级说明
   settingsSvcDown:
     "设置服务不可用：当前无法保存配置（settings 服务未挂载）。插件通知功能不受影响，但更改将被拒绝。",
@@ -388,6 +398,16 @@ export const en: Record<NotifierLocaleKey, string> = {
   allowDisabledHint: "Not enabled",
   allowFollowEnabled: "Follow enabled events",
   allowResetDefault: "Reset default (approval/question/error)",
+  dndAddWindow: "Add window",
+  dndRemoveWindow: "Remove this window",
+  dndWindow: "Window {n}",
+  dndEmptyHint: "No windows: do-not-disturb will not suppress anything",
+  dndLimitHint: "Up to 5 windows",
+  dndPreviewHit: "Now {now} falls inside {start}–{end}",
+  dndPreviewMiss: "Now {now} is outside the do-not-disturb windows",
+  dndPreviewOff: "Do-not-disturb is off",
+  dndPreviewNote:
+    "Estimated from this device clock, for reference only; actual suppression follows the server verdict and history",
   settingsSvcDown:
     "Settings service unavailable: cannot save configuration (settings service not mounted). Plugin notifications are unaffected, but changes will be rejected.",
   httpDegraded:

@@ -33,13 +33,26 @@ export type SoundSetting = boolean | SoundId;
 
 // ---------------------------------------------------------------- 免打扰
 
-/** 免打扰时段。只描述「哪段时间、放行谁」；**是否命中时段、要不要静音**由裁决层解释——配置域不认识通知业务，
+/** 单个免打扰时间窗。"HH:MM"，允许跨零点（start > end，由裁决层解释）。 */
+export type QuietWindow = {
+  start: string;
+  end: string;
+};
+
+/**
+ * 免打扰时间窗上限：写面超限 400 拒收（静默截断会让用户以为配好的时段生效了）。
+ *
+ * 事实源在 src/shared/quiet.ts（两端共享面）：设置页的「添加时段」按钮与写面读同一个数，
+ * 各写一个 5 迟早各说各话。这里只做转出，兼容既有 `../model/type.ts` 引用面。
+ */
+export { QUIET_WINDOWS_LIMIT } from "../../../../shared/interface.ts";
+
+/** 免打扰时段。只描述「哪些时间、放行谁」；**是否命中时段、要不要静音**由裁决层解释——配置域不认识通知业务，
  * 只负责把这段设置原样存下来。 */
 export type QuietHoursConfig = {
   enabled: boolean;
-  /** "HH:MM"，允许跨零点（start > end）。 */
-  start: string;
-  end: string;
+  /** 时间窗列表：命中任一窗口即压制（并集语义，重叠允许）；空数组 = 一个都不命中。 */
+  windows: QuietWindow[];
   /** 时段内仍放行的 kind；缺省语义由裁决层定义。 */
   allowKinds?: string[];
 };

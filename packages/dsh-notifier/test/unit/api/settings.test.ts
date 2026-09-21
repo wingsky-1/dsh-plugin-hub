@@ -185,12 +185,16 @@ describe("PUT /config：写面四态 → 四个状态码", () => {
   it("invalid → 400，并把出错的键与提示带回界面（界面要能定位到那一行）", async () => {
     const { rec, json } = await put(
       { body: { patch: { quietHours: "x" } } },
-      { ok: false, reason: "invalid", error: { key: "quietHours.start", hint: "格式为 HH:MM" } },
+      {
+        ok: false,
+        reason: "invalid",
+        error: { key: "quietHours", hint: "windows[0].start 需要 HH:MM" },
+      },
     );
     expect(rec.status).toBe(400);
     expect(json()).toEqual({
       ok: false,
-      error: { error: "配置校验失败: quietHours.start", hint: "格式为 HH:MM" },
+      error: { error: "配置校验失败: quietHours", hint: "windows[0].start 需要 HH:MM" },
     });
   });
 

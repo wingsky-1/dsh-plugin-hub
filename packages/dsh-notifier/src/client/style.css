@@ -568,6 +568,20 @@
 .dn-set-card .dn-dnd-cap {
   color: var(--dsw-alias-label-secondary, #5f6672);
 }
+/* --- 免打扰多时间窗行（#936）：v3 风格增量，只补多窗时间输入 ---
+ * 普通行（不套 details）；复用 dn-set-input/dn-set-btn；无左侧竖线/渐变/斜体；
+ * 颜色只走 --dsw-alias-*（本块不新增颜色，只收数字与换行）；
+ * 数字 tabular-nums（时间输入与本机回显对齐；行级 tabular-nums 已由 939 持有）。 */
+.dn-set-card .dn-dnd-row .dn-set-input[type="time"] {
+  font-variant-numeric: tabular-nums;
+  min-width: 0;
+  max-width: 140px;
+}
+@media (max-width: 480px) {
+  .dn-set-card .dn-dnd-row .dn-set-input[type="time"] {
+    flex: 1 1 120px;
+  }
+}
 .dn-set-card .dn-set-allows {
   display: flex;
   gap: 6px;

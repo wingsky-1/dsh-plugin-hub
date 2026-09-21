@@ -7,13 +7,13 @@
  * 零定时器、零模块级可变状态；依赖不从 SettingsCard 闭包取值。
  */
 import * as React from "react";
-import { KIND_SWITCHES } from "../../../shared/interface.ts";
+import { KIND_SWITCHES, QUIET_WINDOWS_LIMIT, inWindowMinutes } from "../../../shared/interface.ts";
 import type { KindSwitchKey, NotifySeverity } from "../../../shared/interface.ts";
 import { KIND_KEYS } from "../../locales.ts";
 import type { NotifierLocaleKey } from "../../locales.ts";
 import type { Translate } from "../../locale.ts";
 import { switchControl, switchToggle } from "../parts/controls.tsx";
-import { kindIcon, sevIcon } from "../parts/kind-icons.tsx";
+import { kindIcon, sevIcon, tabIcon } from "../parts/kind-icons.tsx";
 import { advRow } from "../parts/rows.tsx";
 import type { QuietHoursView, RegisteredKindView, SettingsPatch, SettingsView } from "../types.ts";
 
@@ -236,7 +236,75 @@ export function eventsPane(
       </button>
     );
   });
-  // 免打扰卡（开关 + 时段 + 豁免 chips + 快捷按钮）
+  // 免打扰时间窗（多段，#936）：windows 在场即用（含空数组），显式忽略旧形 start/end
+  // （与服务端 asQuietHours 同语义：显式 [] = 未命中，不是缺了要补）；windows 缺席才把
+  // 旧形 start/end 看成单项（读面兼容），都没给则空列表。上限读共享面 QUIET_WINDOWS_LIMIT
+  //（与服务端写面同源，改动只改共享处）。
+  type WindowRow = { start: string; end: string };
+  const windowRows: WindowRow[] = (function () {
+    if (Array.isArray(qh.windows)) {
+      return qh.windows.map(function (w) {
+        return {
+          start: typeof w.start === "string" ? w.start : "",
+          end: typeof w.end === "string" ? w.end : "",
+        };
+      });
+    }
+    if (typeof qh.start === "string" || typeof qh.end === "string") {
+      return [
+        {
+          start: typeof qh.start === "string" ? qh.start : "",
+          end: typeof qh.end === "string" ? qh.end : "",
+        },
+      ];
+    }
+    return [];
+  })();
+  // 写面一律提交 windows，并清掉旧形 start/end（升级步清的是磁盘文件，这里清的是新提交，
+  // 否则旧键会借着每一次保存重新长回来）。
+  function setWindows(next: WindowRow[]) {
+    const qhNext: QuietHoursView = Object.assign({}, qh, { windows: next });
+    delete qhNext.start;
+    delete qhNext.end;
+    patch({ quietHours: qhNext });
+  }
+  function setWindowAt(index: number, key: "start" | "end", value: string) {
+    setWindows(
+      windowRows.map(function (w, i) {
+        return i === index ? Object.assign({}, w, { [key]: value }) : w;
+      }),
+    );
+  }
+  function addWindow() {
+    if (windowRows.length >= QUIET_WINDOWS_LIMIT) return;
+    setWindows(windowRows.concat([{ start: "12:00", end: "13:00" }]));
+  }
+  function removeWindowAt(index: number) {
+    setWindows(
+      windowRows.filter(function (_w, i) {
+        return i !== index;
+      }),
+    );
+  }
+  // 本机回显：按本机时间逐窗口推算命中与否，只做回显（权威裁决在服务端 judge），故配免责文案。
+  // 命中口径读共享面 inWindowMinutes（与服务端裁决同源，改动只改共享处）。
+  function pad2(n: number): string {
+    return n < 10 ? "0" + n : "" + n;
+  }
+  const nowDate = new Date();
+  const nowText = pad2(nowDate.getHours()) + ":" + pad2(nowDate.getMinutes());
+  const nowMinutes = nowDate.getHours() * 60 + nowDate.getMinutes();
+  const hitRow = windowRows.find(function (w) {
+    return inWindowMinutes(nowMinutes, w.start, w.end);
+  });
+  const dndPreview =
+    qh.enabled !== true
+      ? t("dndPreviewOff")
+      : hitRow !== undefined
+        ? t("dndPreviewHit", { now: nowText, start: hitRow.start, end: hitRow.end })
+        : t("dndPreviewMiss", { now: nowText });
+
+  // 免打扰卡（开关 + 多时段 + 豁免 chips + 快捷按钮）
   const dndCard = (
     <div className="dn-dnd" key="dnd">
       <div className="dn-dnd-head">
@@ -252,28 +320,58 @@ export function eventsPane(
       </div>
       {qh.enabled === true ? (
         <div>
+          {windowRows.map(function (w, i) {
+            return (
+              <div className="dn-dnd-row" key={"win-" + i}>
+                {tabIcon("history")}
+                <span className="dn-dnd-cap">{t("dndWindow", { n: i + 1 })}</span>
+                <input
+                  type="time"
+                  className="dn-set-input"
+                  aria-label={t("dndStart")}
+                  value={w.start}
+                  onChange={function (e: React.ChangeEvent<HTMLInputElement>) {
+                    setWindowAt(i, "start", e.target.value);
+                  }}
+                />
+                <span className="dn-dnd-cap">{t("dndEnd")}</span>
+                <input
+                  type="time"
+                  className="dn-set-input"
+                  aria-label={t("dndEnd")}
+                  value={w.end}
+                  onChange={function (e: React.ChangeEvent<HTMLInputElement>) {
+                    setWindowAt(i, "end", e.target.value);
+                  }}
+                />
+                <button
+                  type="button"
+                  className="dn-set-btn dn-set-btnSmall"
+                  aria-label={t("dndRemoveWindow")}
+                  onClick={function () {
+                    removeWindowAt(i);
+                  }}
+                >
+                  {t("dndRemoveWindow")}
+                </button>
+              </div>
+            );
+          })}
+          {windowRows.length === 0 ? <div className="dn-set-note">{t("dndEmptyHint")}</div> : null}
           <div className="dn-dnd-row">
-            <span className="dn-dnd-cap">{t("dndStart")}</span>
-            <input
-              type="time"
-              className="dn-set-input"
-              aria-label={t("dndStart")}
-              value={qh.start || "22:00"}
-              onChange={function (e: React.ChangeEvent<HTMLInputElement>) {
-                patch({ quietHours: Object.assign({}, qh, { start: e.target.value }) });
-              }}
-            />
-            <span className="dn-dnd-cap">{t("dndEnd")}</span>
-            <input
-              type="time"
-              className="dn-set-input"
-              aria-label={t("dndEnd")}
-              value={qh.end || "08:00"}
-              onChange={function (e: React.ChangeEvent<HTMLInputElement>) {
-                patch({ quietHours: Object.assign({}, qh, { end: e.target.value }) });
-              }}
-            />
+            <button
+              type="button"
+              className="dn-set-btn dn-set-btnSmall"
+              onClick={addWindow}
+              disabled={windowRows.length >= QUIET_WINDOWS_LIMIT}
+              title={t("dndLimitHint")}
+            >
+              {t("dndAddWindow")}
+            </button>
+            <span className="dn-sec-hint">{t("dndLimitHint")}</span>
           </div>
+          <div className="dn-set-note">{dndPreview}</div>
+          <div className="dn-set-note">{t("dndPreviewNote")}</div>
           <div className="dn-dnd-row" style={{ display: "block" }}>
             <span className="dn-dnd-cap">{t("dndStillLabel") + "："}</span>
             <div className="dn-set-allows">{allowChips}</div>

@@ -6,9 +6,11 @@ import {
   BUILTIN_CHANNEL_TYPES,
   WEBHOOK_AUTHS,
   WEBHOOK_PRESETS,
+  isClockText,
   isSoundId,
 } from "../../../../shared/interface.ts";
 import { DEFAULT_CONFIG } from "../model/index.ts";
+import { QUIET_WINDOWS_LIMIT } from "../model/type.ts";
 import type {
   BarkChannelConfig,
   BarkLevel,
@@ -17,6 +19,7 @@ import type {
   ChannelConfig,
   NotifyConfig,
   QuietHoursConfig,
+  QuietWindow,
   RawSettingValue,
   SettingsPatch,
   SoundSetting,
@@ -41,8 +44,7 @@ const BARK_LEVELS: readonly BarkLevel[] = ["active", "timeSensitive", "passive",
 // webhook 认证方式与预设白名单的事实源在 src/shared/webhooks.ts（两端共享面）：设置页的选项与
 // 写入口径必须是同一份，各写一份就会出现「页面选得到、宿主拒收」。
 
-/** `"HH:MM"` 二十四小时制。 */
-const CLOCK_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
+/** `"HH:MM"` 二十四小时制：事实源在 src/shared/quiet.ts（`isClockText`），两端同源。 */
 
 /**
  * 频道实例里**合法的凭据只能走已知字段**（bark 的 `deviceKey`、webhook 的 `token`/`password`/`headerValue`），
@@ -264,13 +266,32 @@ function requireStringArray(key: string, raw: RawSettingValue): ValidationResult
   return isStringArray(raw) ? { ok: true } : reject(key, "需要字符串数组");
 }
 
+// 免打扰校验：一次只报首错（key 恒为 quietHours，设置页的定位光标只能落在一个字段上，
+// 真正指到第几行靠 hint 里的 windows[i] 下标）。旧形（带 start/end 却没有 windows）在这里 400：
+// 升级步会把它们搬进 windows[0]，放行旧形等于让停留在升级前页面上的旧客户端以为保存成功了，
+// 故提示直接给出刷新的出路。
 function validateQuietHours(raw: RawSettingValue): ValidationResult {
   if (!isRecord(raw)) return reject("quietHours", "需要对象");
   if (typeof raw.enabled !== "boolean") return reject("quietHours", "缺少 enabled");
-  if (typeof raw.start !== "string" || !CLOCK_PATTERN.test(raw.start))
-    return reject("quietHours", "start 需要 HH:MM");
-  if (typeof raw.end !== "string" || !CLOCK_PATTERN.test(raw.end))
-    return reject("quietHours", "end 需要 HH:MM");
+  if (raw.windows === undefined)
+    return reject("quietHours", "缺少 windows（页面停留在升级前时，刷新后重试）");
+  if (!Array.isArray(raw.windows)) return reject("quietHours", "windows 需要数组");
+  if (raw.windows.length > QUIET_WINDOWS_LIMIT)
+    return reject("quietHours", "windows 最多 " + QUIET_WINDOWS_LIMIT + " 个");
+  for (let index = 0; index < raw.windows.length; index += 1) {
+    const item = raw.windows[index];
+    if (!isRecord(item)) return reject("quietHours", "windows[" + index + "] 需要对象");
+    if (typeof item.start !== "string" || !isClockText(item.start))
+      return reject("quietHours", "windows[" + index + "].start 需要 HH:MM");
+    if (typeof item.end !== "string" || !isClockText(item.end))
+      return reject("quietHours", "windows[" + index + "].end 需要 HH:MM");
+    // 零长窗口写面直接拒：读面把它当未命中丢掉，而写面放行等于让用户存下一条永远不生效的时段。
+    if (item.start === item.end)
+      return reject(
+        "quietHours",
+        "windows[" + index + "].start 与 windows[" + index + "].end 不能相同",
+      );
+  }
   if ("allowKinds" in raw && !isStringArray(raw.allowKinds))
     return reject("quietHours", "allowKinds 需要字符串数组");
   return { ok: true };
@@ -471,19 +492,54 @@ function asStrings(raw: RawSettingValue): string[] {
   return Array.isArray(raw) ? raw.filter((item): item is string => typeof item === "string") : [];
 }
 
+// 免打扰归一化：永不失败。单项非法（格式错、零长）只废该项，不废整组；全废则等于未命中
+// （沿用「脏设置不吃掉所有通知」）。windows 缺席或非数组时回落 legacy：还没跑过 0.2.6 升级的
+// 文件里只有旧的 start/end，读面在这里把它们看成 windows[0]，于是老文件在升级前后行为不变；
+// 显式 [] 保持 []（空数组 = 未命中，不是「缺了要补默认」）。
 function asQuietHours(raw: RawSettingValue, fallback: QuietHoursConfig): QuietHoursConfig {
-  // 回落交出副本：默认表是共享的，调用方就地改写它会污染此后每一个读者。
-  if (!isRecord(raw)) return { ...fallback };
-  return {
-    enabled: asBoolean(raw.enabled, fallback.enabled),
-    start: asClock(raw.start, fallback.start),
-    end: asClock(raw.end, fallback.end),
-    allowKinds: asStrings(raw.allowKinds),
-  };
+  // 回落交出深副本：默认表是共享的，调用方就地改写它会污染此后每一个读者（windows 是数组，
+  // 浅拷贝仍与默认表共享同一份列表）。
+  if (!isRecord(raw)) return copyQuietHours(fallback);
+  const enabled = asBoolean(raw.enabled, fallback.enabled);
+  const allowKinds = asStrings(raw.allowKinds);
+  if (!Array.isArray(raw.windows)) {
+    return { enabled: enabled, windows: legacyWindows(raw, fallback), allowKinds: allowKinds };
+  }
+  const windows: QuietWindow[] = [];
+  for (const item of raw.windows) {
+    const window = asQuietWindow(item);
+    if (window !== null) windows.push(window);
+  }
+  return { enabled: enabled, windows: windows, allowKinds: allowKinds };
 }
 
-function asClock(raw: RawSettingValue, fallback: string): string {
-  return typeof raw === "string" && CLOCK_PATTERN.test(raw) ? raw : fallback;
+// 默认表的免打扰深副本。
+function copyQuietHours(fallback: QuietHoursConfig): QuietHoursConfig {
+  const copied: QuietHoursConfig = {
+    enabled: fallback.enabled,
+    windows: fallback.windows.map((window) => ({ ...window })),
+  };
+  if (fallback.allowKinds !== undefined) copied.allowKinds = [...fallback.allowKinds];
+  return copied;
+}
+
+// 还没升级的文件：旧 start/end 看成 windows[0]；连旧键都没有才回落默认表。
+function legacyWindows(
+  raw: Record<string, RawSettingValue>,
+  fallback: QuietHoursConfig,
+): QuietWindow[] {
+  const window = asQuietWindow({ start: raw.start, end: raw.end });
+  if (window !== null) return [window];
+  return fallback.windows.map((item) => ({ ...item }));
+}
+
+// 单个窗口的读面收窄；非法与零长一律丢项（返回 null），不连累同组的其余项。
+function asQuietWindow(raw: RawSettingValue): QuietWindow | null {
+  if (!isRecord(raw)) return null;
+  if (typeof raw.start !== "string" || !isClockText(raw.start)) return null;
+  if (typeof raw.end !== "string" || !isClockText(raw.end)) return null;
+  if (raw.start === raw.end) return null;
+  return { start: raw.start, end: raw.end };
 }
 
 /** kind → 频道 id 的稀疏路由；值不是数组的项剔除。 */

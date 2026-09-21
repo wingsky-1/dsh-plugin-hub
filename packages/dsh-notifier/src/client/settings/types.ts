@@ -83,10 +83,19 @@ export type HistoryRecordView = {
   channels?: unknown;
 };
 
+/** 单个免打扰时间窗视图（服务端 QuietWindow 到客户端的视图；脏值由调用点收窄）。 */
+export type QuietWindowView = {
+  /** "HH:MM"，允许跨零点。 */
+  start?: string;
+  end?: string;
+};
+
 /** 免打扰时段（服务端 QuietHoursConfig 到客户端的视图；缺键回落默认值由调用点处理）。 */
 export type QuietHoursView = {
   enabled?: boolean;
-  /** "HH:MM"，允许跨零点。 */
+  /** 时间窗列表；旧服务端的 start/end 由调用点看成单项（读面兼容）。 */
+  windows?: QuietWindowView[];
+  /** 旧形时钟键：只为读面兼容而保留，写面一律提交 windows。 */
   start?: string;
   end?: string;
   /** 时段内仍放行的 kind。 */

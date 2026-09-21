@@ -94,7 +94,7 @@ curl -s http://127.0.0.1:3080/api/dsh-notifier/health
   "notifySubagentDone": false,
   "notifyTaskError": true,
   "notifyTurnEnd": false,
-  "quietHours": { "enabled": false, "start": "22:00", "end": "08:00", "allowKinds": [] },
+  "quietHours": { "enabled": false, "windows": [{ "start": "22:00", "end": "08:00" }], "allowKinds": [] },
   "historyMaxAgeDays": 0,
   "channels": [
     { "type": "browser", "id": "browser", "enabled": true, "popup": true, "sound": true, "whenVisible": false },
@@ -454,8 +454,9 @@ GET 动态 kind 清单（含确认态）；POST `{kind, confirmed}` 写确认（
 
 ### 配置格式附录：默认值、迁移与掩码规则
 
-- 默认值以 `src/server/config/impl/model/index.ts` 的 `DEFAULT_CONFIG` 为准：事件开关 `notifyAsk` / `notifyQuestion` / `notifyTaskDone` / `notifyTaskError` 开、`notifySubagentDone` / `notifyTurnEnd` 关；`quietHours` 为 `{enabled:false, start:"22:00", end:"08:00"}`；`channels` 恒带两条内置条目（browser 与 system，均 `enabled` / `popup` / `sound` 开，browser 另有 `whenVisible:false`）；`kindRoutes` 与 `allowKinds` 为空，`historyMaxAgeDays` 为 0。
+- 默认值以 `src/server/config/impl/model/index.ts` 的 `DEFAULT_CONFIG` 为准：事件开关 `notifyAsk` / `notifyQuestion` / `notifyTaskDone` / `notifyTaskError` 开、`notifySubagentDone` / `notifyTurnEnd` 关；`quietHours` 为 `{enabled:false, windows:[{start:"22:00", end:"08:00"}]}`；`channels` 恒带两条内置条目（browser 与 system，均 `enabled` / `popup` / `sound` 开，browser 另有 `whenVisible:false`）；`kindRoutes` 与 `allowKinds` 为空，`historyMaxAgeDays` 为 0。
 - 0.2.3 → 0.2.4 迁移：8 个顶层渠道键（`systemEnabled` / `browserEnabled` / `systemNotify` / `browserNotify` / `notifyWhenVisible` / `notifySound` / `browserSound` / `systemSound`）在装配期搬进两条内置条目后删除（`src/server/upgrade/impl/steps/config-shape.ts`）；升级后再提交这些键一律 400 并提示刷新页面，旧键残留需手删 `config.json` 对应行。
+- 0.2.5 → 0.2.6 迁移：免打扰旧 `start`/`end` 在装配期搬进 `windows[0]` 并删除旧键（`src/server/upgrade/impl/steps/quiet-windows.ts`）；升级后再提交旧形（无 `windows`）一律 400 并提示刷新页面。
 - 掩码规则：凭据字段清单按频道类型收口于 `CHANNEL_SECRET_FIELDS`（bark 为 `deviceKey`，webhook 为 `token` / `password` / `headerValue`）；GET /config 的 `user` 与 `effective` 及 PUT 成功响应一律掩码 `********`，提交整值掩码视为保持原值（按实例 id 对齐回填）；新实例带掩码提交返回 400（`src/server/config/impl/service/index.ts` 的 `NEW_CHANNEL_MASK_HINT`）。
 
 ### 客户端契约：节流、手势解锁与帧通路
@@ -519,7 +520,7 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-notifier
   内置音色 + 试听；Linux 系统通知声音经宿主自播 freedesktop 事件音修复（原 notify-send 无声音
   hint，DE 支持参差）；详见「配置 → 每通道三个开关」小节
 - **非安全上下文降级**：局域网 HTTP 访问时浏览器禁止系统级弹窗——自动降级为「页面内横幅 + 提示音 + 标题提醒」
-- **免打扰时段**：支持跨午夜（如 22:00 → 08:00）；可设**紧急例外**（`quietHours.allowKinds`：免打扰期间仍提醒的事件）。默认候选为高频阻塞型（审批/提问/出错），设置页支持勾选**全部 6 个内置事件**（含任务完成/子任务完成/轮次完成）并一键「跟随已启用事件」或「恢复默认」；豁免与事件开关正交——关闭的事件即使豁免也不会收到通知（事件不产生），豁免项照常保留；未启用事件在设置页以弱化（降低透明度）样式展示，仍可勾选豁免。**升级提示**：放开白名单后，旧配置中原本会被过滤掉的 kind（如手改的 `done`/`turn-end`）会在免打扰期间恢复提醒——行为变化；如不希望这样，可在设置页豁免区自行调整
+- **免打扰时段（0.2.6 起多段）**：最多 5 个时间窗（`quietHours.windows`），命中任一即压制（并集语义，重叠允许），空数组等于未命中；单窗口支持跨午夜（如 22:00 → 08:00）；可设**紧急例外**（`quietHours.allowKinds`：免打扰期间仍提醒的事件）。默认候选为高频阻塞型（审批/提问/出错），设置页支持勾选**全部 6 个内置事件**（含任务完成/子任务完成/轮次完成）并一键「跟随已启用事件」或「恢复默认」；豁免与事件开关正交——关闭的事件即使豁免也不会收到通知（事件不产生），豁免项照常保留；未启用事件在设置页以弱化（降低透明度）样式展示，仍可勾选豁免。设置页逐行增删时段并按本机时间回显当前是否命中（回显仅供参考，以服务端裁决与通知记录为准）。**升级提示（0.2.6）**：旧 `start`/`end` 在装配期搬进 `windows[0]` 并删除旧键，升级后再提交旧形一律 400 并提示刷新页面。**旧升级提示**：放开白名单后，旧配置中原本会被过滤掉的 kind（如手改的 `done`/`turn-end`）会在免打扰期间恢复提醒——行为变化；如不希望这样，可在设置页豁免区自行调整
 - **设置卡片诊断**：设置 → 插件 → dsh-notifier 卡片显示浏览器通知授权状态与安全上下文提示，并含最近 10 条通知记录、发送测试通知与清理记录入口
 - **宿主能力自检（0.2.4 起）**：**系统卡的卡体**里显示宿主通道结论（弹窗/发声各自能否用 + 无法判定的维度），不可用时逐条给出处置建议（装哪个包、或改用浏览器通道）；明细（探测了哪些维度、探测到哪些播放器）折叠展示，**系统卡头**不承载它（窄屏下卡头被收起，而手机恰是最需要它的地方）。**浏览器卡的卡体**里显示浏览器通道结论，那一半在**本端**计算，换设备结论会不同。两者数据源同为 `GET /diagnostics`
 

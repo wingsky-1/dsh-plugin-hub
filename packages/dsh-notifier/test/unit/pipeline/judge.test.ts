@@ -14,7 +14,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { DEFAULT_CONFIG } from "../../../src/server/config/impl/model/index.ts";
 import type { NotifyConfig } from "../../../src/server/config/impl/model/type.ts";
-import { judgeRequest } from "../../../src/server/pipeline/impl/judge/index.ts";
+import { inWindow, judgeRequest } from "../../../src/server/pipeline/impl/judge/index.ts";
 import { BUILTIN_KINDS } from "../../../src/server/pipeline/impl/service/kinds.ts";
 import type { NotifyKind } from "../../../src/server/pipeline/impl/service/kinds.ts";
 import type { NotifyRequest } from "../../../src/server/pipeline/impl/service/type.ts";
@@ -41,8 +41,7 @@ const KIND_SWITCHES: ReadonlyArray<readonly [NotifyKind, KindSwitchKey]> = [
 /** 跨午夜窗口，用于免打扰与短路顺序两组用例。 */
 const QUIET_CROSS_MIDNIGHT: NotifyConfig["quietHours"] = {
   enabled: true,
-  start: "22:00",
-  end: "08:00",
+  windows: [{ start: "22:00", end: "08:00" }],
 };
 
 /** 2026-01-15 的某个本地时刻。 */
@@ -154,6 +153,21 @@ describe("judgeRequest 动态 kind：确认名单是唯一凭据", () => {
   });
 });
 
+describe("inWindow 纯函数：分钟级边界（不读当前时间，调用方只喂分钟数）", () => {
+  it.each<[number, string, string, boolean]>([
+    [23 * 60, "22:00", "08:00", true],
+    [8 * 60, "22:00", "08:00", false],
+    [22 * 60, "22:00", "08:00", true],
+    [13 * 60 + 30, "13:00", "14:00", true],
+    [14 * 60, "13:00", "14:00", false],
+    [12 * 60, "12:00", "12:00", false],
+    [12 * 60, "25:00", "08:00", false],
+    [12 * 60, "22:00", "nope", false],
+  ])("inWindow(%i, %s, %s) = %s", (minutes, start, end, hit) => {
+    expect(inWindow(minutes, start, end)).toBe(hit);
+  });
+});
+
 describe("免打扰：窗口两端都是闭开 [start, end)", () => {
   it.each<[number, number, boolean]>([
     [21, 59, true],
@@ -175,7 +189,7 @@ describe("免打扰：窗口两端都是闭开 [start, end)", () => {
     [14, 0, true],
   ])("同日窗口 13:00–14:00 在 %i:%i 时放行=%s", (hour, minute, allowed) => {
     const config = configAt(at(hour, minute), {
-      quietHours: { enabled: true, start: "13:00", end: "14:00" },
+      quietHours: { enabled: true, windows: [{ start: "13:00", end: "14:00" }] },
     });
     const verdict = judgeRequest(config, request("done"), true);
     expect(verdict).toEqual(allowed ? { ok: true } : { ok: false, reason: "quiet" });
@@ -183,9 +197,38 @@ describe("免打扰：窗口两端都是闭开 [start, end)", () => {
 
   it("quietHours.enabled=false 时窗口形同不存在", () => {
     const config = configAt(at(23, 0), {
-      quietHours: { enabled: false, start: "22:00", end: "08:00" },
+      quietHours: { enabled: false, windows: [{ start: "22:00", end: "08:00" }] },
     });
     expect(judgeRequest(config, request("done"), true)).toEqual({ ok: true });
+  });
+
+  it("空数组等于未命中：enabled 开着也没有可命中的窗口", () => {
+    const config = configAt(at(23, 0), { quietHours: { enabled: true, windows: [] } });
+    expect(judgeRequest(config, request("done"), true)).toEqual({ ok: true });
+  });
+
+  it("多窗口是并集语义：命中任一即压制，重叠不另判", () => {
+    const two: NotifyConfig["quietHours"] = {
+      enabled: true,
+      windows: [
+        { start: "12:00", end: "13:00" },
+        { start: "22:00", end: "08:00" },
+      ],
+    };
+    // 只在第二段内。
+    expect(judgeRequest(configAt(at(23, 0), { quietHours: two }), request("done"), true)).toEqual({
+      ok: false,
+      reason: "quiet",
+    });
+    // 只在第一段内。
+    expect(judgeRequest(configAt(at(12, 30), { quietHours: two }), request("done"), true)).toEqual({
+      ok: false,
+      reason: "quiet",
+    });
+    // 两段之外。
+    expect(judgeRequest(configAt(at(15, 0), { quietHours: two }), request("done"), true)).toEqual({
+      ok: true,
+    });
   });
 
   it("时段内仍放行的 kind（quietHours.allowKinds）逐条生效，未列出的照压", () => {
@@ -205,16 +248,31 @@ describe("免打扰：窗口两端都是闭开 [start, end)", () => {
       ["9:30", "08:00"],
       ["22:00", "nope"],
     ]) {
-      const config = configAt(at(23, 0), { quietHours: { enabled: true, start, end } });
+      const config = configAt(at(23, 0), {
+        quietHours: { enabled: true, windows: [{ start, end }] },
+      });
       expect(judgeRequest(config, request("done"), true), `start=${start} end=${end}`).toEqual({
         ok: true,
       });
     }
   });
 
+  it("非法单项只废该项：同组里的合法窗口照样命中", () => {
+    const config = configAt(at(23, 0), {
+      quietHours: {
+        enabled: true,
+        windows: [
+          { start: "nope", end: "08:00" },
+          { start: "22:00", end: "08:00" },
+        ],
+      },
+    });
+    expect(judgeRequest(config, request("done"), true)).toEqual({ ok: false, reason: "quiet" });
+  });
+
   it("零长窗口（start == end）不算命中：它更可能是没填完，而不是「静音一整天」", () => {
     const config = configAt(at(23, 0), {
-      quietHours: { enabled: true, start: "22:00", end: "22:00" },
+      quietHours: { enabled: true, windows: [{ start: "22:00", end: "22:00" }] },
     });
     expect(judgeRequest(config, request("done"), true)).toEqual({ ok: true });
   });
