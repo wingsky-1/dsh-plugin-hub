@@ -36,6 +36,12 @@ export interface RoutesManager {
   uiConfig(): ClientUiConfig;
   updateUiConfig(raw: unknown): Promise<ClientUiConfig>;
   summary(): Record<string, unknown>;
+  /** 错误文案脱敏（#770-A2：经 getRedactionServers 全集快照，路由错误边界统一调用）。
+   * 可选：旧夹具/外部实现缺省时路由回落原文（自身无秘密可泄）；真 manager 恒提供。 */
+  redactError?(error: unknown): string;
+  /** 单条只读投影（#770-L3：POST/PATCH 200 响应 server 字段经此投影，不再明文回显。
+   * 可选：旧夹具/外部实现缺省时路由回落写路径原文；真 manager 恒提供。） */
+  summarize?(server: ServerConfig, scope: string): Record<string, unknown>;
   add(server: Record<string, unknown>, scope?: string): Promise<ServerConfig>;
   update(name: string, patch: Record<string, unknown>, scope?: string): Promise<ServerConfig>;
   remove(name: string, scope?: string): Promise<void>;

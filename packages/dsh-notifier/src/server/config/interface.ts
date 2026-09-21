@@ -12,6 +12,15 @@ import type { SettingsView, WriteResult } from "./impl/service/type.ts";
 
 export type { RawSettingValue, SettingsPatch, StoredSettings } from "./impl/model/type.ts";
 
+/**
+ * 草稿测试（dry-run）的输入闸门与内存归一化：api 域经这两样把 draft 变成可投递的
+ * 生效条目，全程不碰写面（不掩码落盘、不推进 revision）。纯函数 + 只读，还原要的原值
+ * 由调用方显式传入，不在域内另读一份。
+ */
+export { normalizeConfig } from "./impl/input/index.ts";
+export { resolveDraftChannels } from "./impl/draft/index.ts";
+export type { ResolvedDraft } from "./impl/draft/index.ts";
+
 // ---------------------------------------------------------------- 装配
 
 /** 装配设置存取（组合根在 `apply` 期调用一次）。装配返回时读面已可用：文件在装配期同步读完，不存在即回落默认设置。

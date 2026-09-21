@@ -6,7 +6,7 @@
  * panel/quick-add 模块，避免循环依赖。
  */
 
-import { el } from "../core/dom.ts";
+import { el, pangu } from "../core/dom.ts";
 import { api, toolDisableServerKey, cwdQueryOf } from "../core/api.ts";
 import { STATUS_ORDER } from "../core/constants.ts";
 import { tStatus } from "../core/i18n.ts";
@@ -84,7 +84,12 @@ export function renderServer(
   actions: UiActions,
   opts: { tools: boolean; openTools?: Set<string> } = { tools: true },
 ): any {
-  const article = el("article", { class: "dm-server" });
+  const article = el("article", {
+    class:
+      server.status === "failed" || server.status === "reconnecting"
+        ? "dm-server dm-server--fail"
+        : "dm-server",
+  });
   const header = el("header");
   header.appendChild(el("span", { class: "dm-name", text: server.name }));
   header.appendChild(
@@ -252,22 +257,25 @@ export function renderServers(state: McpState, actions: UiActions): void {
   }
   state.bodyEl.textContent = "";
   if (state.servers.length === 0) {
-    state.bodyEl.appendChild(el("div", { class: "dm-status", text: t("serversEmpty") }));
+    state.bodyEl.appendChild(
+      el("div", { class: "dm-status", children: [document.createTextNode(t("serversEmpty"))] }),
+    );
     return;
   }
-  for (const scope of ["project", "global"]) {
-    const list = state.servers.filter((server: any) => server.scope === scope);
-    if (list.length === 0) continue;
+  // 失败优先：需关注组置顶（跨 scope），其余再按 project/global × 状态。
+  const attention = state.servers.filter(
+    (server: any) => server.status === "failed" || server.status === "reconnecting",
+  );
+  const rest = state.servers.filter(
+    (server: any) => server.status !== "failed" && server.status !== "reconnecting",
+  );
+  const appendGroup = (title: string, list: any[], alert: boolean): void => {
+    if (list.length === 0) return;
     const section = el("section", { class: "dm-group" });
-    const title = el("h3");
-    title.appendChild(
-      document.createTextNode(scope === "project" ? t("groupProject") : t("groupGlobal")),
-    );
-    title.appendChild(el("span", { class: "dm-count", text: `${list.length}` }));
-    section.appendChild(title);
-    // 各自内部再按状态分组（状态序：运行中 → 连接中 → 重连中 → 未连接 → 已停用 → 失败）。
-    // C13 未知状态策略：与浮窗统一口径——未知状态按 stopped 投影、不丢卡
-    // （修复前 filter(status===key) 会静默丢弃未知状态服务器）。
+    // class 键省略（勿传 undefined，否则 className="undefined"）
+    const titleEl = alert ? el("h3", { class: "dm-group-alert" }) : el("h3");
+    titleEl.appendChild(document.createTextNode(title));
+    section.appendChild(titleEl);
     const byStatus = new Map<string, any[]>();
     for (const group of STATUS_ORDER) byStatus.set(group.key, []);
     for (const server of list) {
@@ -282,7 +290,7 @@ export function renderServers(state: McpState, actions: UiActions): void {
       sub.appendChild(
         el("h4", {
           class: "dm-subgroup-title",
-          text: t("statusGroupCount", { status: t(group.titleKey), n: bucket.length }),
+          text: pangu(t("statusGroupCount", { status: t(group.titleKey), n: bucket.length })),
         }),
       );
       for (const server of [...bucket].sort((a: any, b: any) => a.name.localeCompare(b.name))) {
@@ -291,5 +299,14 @@ export function renderServers(state: McpState, actions: UiActions): void {
       section.appendChild(sub);
     }
     state.bodyEl.appendChild(section);
+  };
+  appendGroup(t("groupAttention", { n: attention.length }), attention, true);
+  for (const scope of ["project", "global"]) {
+    const list = rest.filter((server: any) => server.scope === scope);
+    if (list.length === 0) continue;
+    // 标题自带数量，不再额外挂 dm-count（避免双计数）；字面量已带空格，
+    // 不经 pangu（计数拼装与盘古分层，避免语义错层）。
+    const label = scope === "project" ? t("groupProject") : t("groupGlobal");
+    appendGroup(`${label} (${list.length})`, list, false);
   }
 }

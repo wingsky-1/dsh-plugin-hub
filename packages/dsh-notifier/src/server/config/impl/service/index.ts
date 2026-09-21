@@ -30,8 +30,11 @@ import type { SettingsView, WriteResult } from "./type.ts";
 /** 掩码还原后的写入口 patch；失败 = patch 里的新实例提交了掩码占位。 */
 type RestoredPatch = { ok: true; patch: SettingsPatch } | { ok: false };
 
-/** 新增频道提交掩码占位时的拒绝理由（掩码只表达「未修改」，新实例没有原值可还原）。 */
-const NEW_CHANNEL_MASK_HINT = "新增频道不能提交掩码占位，请填写真实凭据";
+/** 新增频道提交掩码占位时的拒绝理由（掩码只表达「未修改」，新实例没有原值可还原）。
+ *
+ * 导出给草稿测试（dry-run）复用同一句话：id 改名带掩码、无源新频道带掩码都是「没有原值可还原」
+ * 的同一种失败，两处各写一句迟早漂成两种说法。 */
+export const NEW_CHANNEL_MASK_HINT = "新增频道不能提交掩码占位，请填写真实凭据";
 
 /** 原型链上的危险键名：JSON 文本能造出自有键，展开进设置对象就会改写原型。 */
 const UNSAFE_KEYS: readonly string[] = ["__proto__", "constructor", "prototype"];

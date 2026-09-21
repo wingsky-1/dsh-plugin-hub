@@ -11,7 +11,13 @@ import {
   displayCaps,
   truncateCodePoints,
 } from "../deliver/caps.ts";
-import type { DeliverResult, NotifyMessage, NotifySeverity } from "../deliver/type.ts";
+import type {
+  DeliverResult,
+  HttpFetch,
+  HttpFetchResult,
+  NotifyMessage,
+  NotifySeverity,
+} from "../deliver/type.ts";
 import type { BarkPushBody, BarkPushResponse, BarkTarget } from "./type.ts";
 
 /** 单次推送硬超时（毫秒）：超时归属出口，不在管线可配范围内。 */
@@ -25,12 +31,22 @@ const SEVERITY_LEVEL: Readonly<Record<NotifySeverity, string>> = {
   info: "passive",
 };
 
-export async function sendBark(target: BarkTarget, message: NotifyMessage): Promise<DeliverResult> {
+/**
+ * 默认出站实现：全局 fetch。已保存路径的语义锚点——调用方不传第三个参数时走这里，
+ * 与重写前逐字一致（跟随重定向、宿主 DNS 直连）；dry-run 传自己的 SSRF 安全实现。
+ */
+const defaultFetch: HttpFetch = (url, init) => globalThis.fetch(url, init);
+
+export async function sendBark(
+  target: BarkTarget,
+  message: NotifyMessage,
+  fetchImpl: HttpFetch = defaultFetch,
+): Promise<DeliverResult> {
   const body = barkBodyOf(target, message);
 
-  let response: Response;
+  let response: HttpFetchResult;
   try {
-    response = await fetch(`${target.baseUrl}/push`, {
+    response = await fetchImpl(`${target.baseUrl}/push`, {
       method: "POST",
       headers: { "content-type": "application/json; charset=utf-8" },
       body: JSON.stringify(body),
@@ -98,7 +114,7 @@ function barkBodyOf(target: BarkTarget, message: NotifyMessage): BarkPushBody {
 }
 
 /** 非 2xx 的响应体摘要；读不到就是空串——状态码本身已是完整原因。 */
-async function errorDetailOf(response: Response): Promise<string> {
+async function errorDetailOf(response: HttpFetchResult): Promise<string> {
   try {
     return truncateCodePoints(await response.text(), RESPONSE_DETAIL_MAX);
   } catch {
@@ -120,8 +136,11 @@ function failed(
   };
 }
 
-/** 调用方给了可用的超时就照用，否则用出口的硬超时。 */
-function timeoutMsOf(target: BarkTarget): number {
+/** 调用方给了可用的超时就照用，否则用出口的硬超时。
+ *
+ * 导出给草稿测试（dry-run）复用同一 clamp 口径：它在出口硬超时之外再压一条 15s 上限
+ * （提案 B4），基数必须与这里同源，否则「已保存 10s、草稿 30s」这种分叉迟早出现。 */
+export function timeoutMsOf(target: BarkTarget): number {
   const value = target.timeoutMs;
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : BARK_TIMEOUT_MS;
 }

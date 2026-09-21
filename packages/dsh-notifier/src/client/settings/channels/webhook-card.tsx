@@ -13,7 +13,7 @@ import { chRow } from "../parts/rows.tsx";
 import { numInput, switchToggle, textInput } from "../parts/controls.tsx";
 import { failBadge, statusDotClass, statusText, testBtn } from "../parts/status.tsx";
 import type { ChannelStatusMap } from "../parts/status.tsx";
-import type { SettingsChannelView } from "../types.ts";
+import type { HistoryRecordView, SettingsChannelView } from "../types.ts";
 import { iconEl } from "./channel-icon.tsx";
 
 /**
@@ -52,6 +52,8 @@ export function webhookCard(
   sendTest: (id?: string) => void,
   statusMap: ChannelStatusMap,
   t: Translate,
+  history: HistoryRecordView[] | null,
+  testDirty?: boolean,
 ) {
   const channelKey = channelIdFor(ch);
   const armed = delArmedId === ch.id;
@@ -206,7 +208,7 @@ export function webhookCard(
 
   return (
     <details
-      className={"dn-ch-card" + (ch.enabled ? " dn-ch-onEdge" : " dn-ch-off")}
+      className={"dn-ch-card" + (ch.enabled ? "" : " dn-ch-off")}
       key={channelKey + ":" + (ch.enabled === true)}
       open={ch.enabled === true}
     >
@@ -214,9 +216,12 @@ export function webhookCard(
         {iconEl("webhook")}
         <span className="dn-ch-name">{ch.name || ch.id}</span>
         <span className="dn-ch-type">webhook</span>
+        <span className="dn-ch-stateTxt">
+          {ch.enabled === true ? t("chStateOn") : t("chStateOff")}
+        </span>
         <span className={"dn-ch-statusDot " + statusDotClass(channelKey, statusMap)} />
-        <span className="dn-ch-statusTxt" title={statusText(channelKey, statusMap, t)}>
-          {statusText(channelKey, statusMap, t)}
+        <span className="dn-ch-statusTxt" title={statusText(channelKey, statusMap, t, history)}>
+          {statusText(channelKey, statusMap, t, history)}
         </span>
         {failBadge(channelKey, statusMap, t)}
         <span className="dn-ch-summaryRight">
@@ -319,7 +324,7 @@ export function webhookCard(
           <span className="dn-ch-hint">{t("whTemplateFailHint")}</span>
         </div>
         <div className="dn-ch-actions">
-          {testBtn(channelKey, sendTest, t)}
+          {testBtn(channelKey, sendTest, t, testDirty)}
           <button
             type="button"
             className={"dn-set-btn dn-set-btnSmall" + (armed ? " dn-set-btnDanger" : "")}

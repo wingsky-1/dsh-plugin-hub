@@ -2,8 +2,10 @@
   "$schema": "../node_modules/@stryker-mutator/core/schema/stryker-schema.json",
   "mutate": [
     "packages/dsh-lan-proxy/src/server/migrate/impl/file/index.ts",
+    "packages/dsh-lan-proxy/src/server/migrate/impl/layout/index.ts",
     "!packages/dsh-lan-proxy/src/client/**",
-    "!packages/dsh-lan-proxy/src/**/interface.ts"
+    "!packages/dsh-lan-proxy/src/**/interface.ts",
+    "!packages/dsh-lan-proxy/src/**/deps.ts"
   ],
   "testRunner": "vitest",
   "mutator": {

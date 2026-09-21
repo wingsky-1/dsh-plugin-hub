@@ -273,7 +273,7 @@ export async function executeMcpCall(input: DispatchCallInput): Promise<unknown>
     // stale：仍可调用（目录只是提示），但 schema 可能过期——在结果前置提示。
   }
   const args = pipeline.normalizeArguments(input.rawArgs);
-  // B18/D6：调用预算读 server.toolCallTimeoutMs（缺省 CALL_TIMEOUT_MS），
+  // B18/D6：调用预算读 server.toolCallTimeoutMs（缺省 DEFAULT_TOOL_CALL_TIMEOUT_MS=15s），
   // withTimeout 兜底统一 +2s——两路径（supervisor SDK timeoutMs 无兜底）预算
   // 差异写入两路径契约测试的差异面签名。
   const callBudgetMs = entry.server?.toolCallTimeoutMs ?? input.defaultCallTimeoutMs;

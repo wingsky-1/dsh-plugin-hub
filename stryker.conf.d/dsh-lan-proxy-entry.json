@@ -4,7 +4,8 @@
     "packages/dsh-lan-proxy/src/index.ts",
     "packages/dsh-lan-proxy/src/server/apply.ts",
     "!packages/dsh-lan-proxy/src/client/**",
-    "!packages/dsh-lan-proxy/src/**/interface.ts"
+    "!packages/dsh-lan-proxy/src/**/interface.ts",
+    "!packages/dsh-lan-proxy/src/**/deps.ts"
   ],
   "testRunner": "vitest",
   "mutator": {

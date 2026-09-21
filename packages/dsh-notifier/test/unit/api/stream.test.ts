@@ -29,6 +29,12 @@ import { jsonReq, makeLogger, pollUntil, settleMicrotasks, tempDshHome } from ".
 
 const home = tempDshHome();
 const { installApi, releaseApi } = await import("../../../src/server/api/interface.ts");
+// 端口新增的 dry-run 纯函数走真实实现（动态导入与上同纪：config 单例的落盘路径在构造时定下）。
+const { resolveDraftChannels, normalizeConfig } =
+  await import("../../../src/server/config/interface.ts");
+const { finalizeRequest, barkTarget, browserTarget, systemTarget, webhookTarget } =
+  await import("../../../src/server/pipeline/interface.ts");
+const { dryRunTarget } = await import("../../../src/server/channels/interface.ts");
 // 动态导入而不是顶层静态 import：流实例的落盘路径在构造时定下，静态导入会先于上面的临时 home 求值。
 const { streamHub } = await import("../../../src/server/api/impl/stream/index.ts");
 
@@ -115,13 +121,22 @@ function assemble() {
       readConfig: () => ({ ...DEFAULT_CONFIG }),
       readSettingsView: () => VIEW,
       writeConfig: async () => ({ ok: true, view: VIEW }),
+      resolveDraftChannels,
+      normalizeConfig,
     },
     stores: {
       readHistory: async () => [],
       clearHistory: async () => 0,
       readStatus: async () => ({}),
     },
-    pipeline: { submit: () => {} },
+    pipeline: {
+      submit: () => {},
+      finalizeRequest,
+      barkTarget,
+      browserTarget,
+      systemTarget,
+      webhookTarget,
+    },
     kinds: { listKinds: () => [], confirmKind: async () => ({ ok: true, view: VIEW }) },
     // 流块不碰能力面，但端口是必填的：这里给一份最小实现，本文件不该因为别人的面长大而改
     channels: {
@@ -130,6 +145,7 @@ function assemble() {
       undeterminedCapabilities: () => {
         throw new Error("流块不碰能力面");
       },
+      dryRunTarget,
     },
   };
   installApi(deps);

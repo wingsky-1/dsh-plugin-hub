@@ -57,10 +57,24 @@ async function doRefresh(state: McpState, actions: UiActions): Promise<boolean> 
           }),
         );
       if (state.counts.failed > 0) parts.push(t("countsFailed", { n: state.counts.failed }));
-      countsEl.textContent =
+      const summary =
         parts.length > 0
           ? t("countsSummary", { n: state.servers.length, parts: parts.join(" · ") })
           : t("countsSummaryOnly", { n: state.servers.length });
+      // 失败计数标红（健康摘要与浮窗同语义）。
+      if (state.counts.failed > 0 && typeof summary === "string") {
+        const failedText = t("countsFailed", { n: state.counts.failed });
+        countsEl.textContent = "";
+        const chunks = summary.split(failedText);
+        chunks.forEach((chunk, index) => {
+          if (index > 0) {
+            countsEl.appendChild(el("span", { class: "dm-health-bad", text: failedText }));
+          }
+          if (chunk !== "") countsEl.appendChild(document.createTextNode(chunk));
+        });
+      } else {
+        countsEl.textContent = summary;
+      }
     }
     if (state.bodyEl !== undefined && state.activeTab === "servers") renderServers(state, actions);
     return true;
@@ -95,14 +109,30 @@ export function switchTab(state: McpState, actions: UiActions, tab: any): void {
   }
 }
 
-/** 关闭模态面板。 */
+/** 关闭模态面板（Fluid：卡片中心收束 + 遮罩淡出；完成后再 hidden）。 */
 export function close(state: McpState): void {
   if (state.overlay === undefined) return;
   state.open = false;
-  state.overlay.hidden = true;
+  const overlay = state.overlay;
+  overlay.classList.remove("dm-overlay--open");
+  const finish = () => {
+    if (state.open) return;
+    overlay.classList.remove("dm-overlay--closing");
+    overlay.hidden = true;
+  };
+  if (typeof requestAnimationFrame === "function") {
+    overlay.style.animation = "none";
+    void overlay.offsetWidth;
+    overlay.style.animation = "";
+    overlay.classList.add("dm-overlay--closing");
+    // 与 CSS .dm-overlay--closing .dm-card 的 300ms 对齐
+    window.setTimeout(finish, 300);
+  } else {
+    finish();
+  }
 }
 
-/** 打开模态面板（首次调用时创建 DOM 结构）。 */
+/** 打开模态面板（首次调用时创建 DOM 结构；Fluid：中心 scale 0.78→1）。 */
 export function showPanel(state: McpState, actions: UiActions): void {
   if (state.overlay === undefined) {
     state.overlay = el("div", { class: "dm-overlay", hidden: true });
@@ -117,8 +147,13 @@ export function showPanel(state: McpState, actions: UiActions): void {
     head.appendChild(
       el("button", { text: t("refresh"), onclick: () => void refresh(state, actions) }),
     );
+    // C10：首次构建面板头后立刻拉一次（与打开路径 refresh 同源，单飞去重）。
+    void refresh(state, actions);
     head.appendChild(el("button", { text: t("close"), onclick: () => close(state) }));
     state.card.appendChild(head);
+    state.card.setAttribute("role", "dialog");
+    state.card.setAttribute("aria-modal", "true");
+    state.card.setAttribute("aria-label", t("panelTitle"));
 
     const tabs = el("div", { class: "dm-tabs" });
     tabs.appendChild(
@@ -155,6 +190,16 @@ export function showPanel(state: McpState, actions: UiActions): void {
   }
   state.open = true;
   state.overlay.hidden = false;
+  state.overlay.classList.remove("dm-overlay--closing");
+  const armOpen = () => {
+    if (!state.open || state.overlay === undefined) return;
+    state.overlay.style.animation = "none";
+    void state.overlay.offsetWidth;
+    state.overlay.style.animation = "";
+    state.overlay.classList.add("dm-overlay--open");
+  };
+  if (typeof requestAnimationFrame === "function") requestAnimationFrame(armOpen);
+  else armOpen();
   // C10：面板打开主动刷新（refresh 单飞去重，与 switchTab 的空列表刷新重叠无害）——
   // 面板可能停在关闭期间的旧快照上；打开即拉最新数据消除该窗口。
   void refresh(state, actions);

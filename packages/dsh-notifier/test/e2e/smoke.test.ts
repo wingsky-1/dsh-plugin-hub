@@ -658,6 +658,70 @@ describe("真实 HTTP 面（真实宿主 + 真实 loopback socket）", () => {
     expect(records, "两条畸形请求一条都不许投递").toHaveLength(1);
   });
 
+  it("dry-run 零落盘：POST /test 带 draft 同步返回且不写 history/status/config", async () => {
+    const { port } = await mount();
+
+    // 先经真实 DELETE 划一次界：它把此前排队的写入清干净，于是「接下来读到空」不是抢跑得来的。
+    expect((await send(port, "/api/dsh-notifier/history", { method: "DELETE" })).status).toBe(200);
+    const configBefore = readFileSync(configFile, "utf8");
+
+    const res = await send(port, "/api/dsh-notifier/test", {
+      method: "POST",
+      body: JSON.stringify({
+        channelId: "browser",
+        draft: {
+          channels: [
+            {
+              type: "browser",
+              id: "browser",
+              enabled: true,
+              popup: true,
+              sound: false,
+              whenVisible: false,
+            },
+          ],
+          revision: 12345,
+        },
+      }),
+    });
+    expect(res.status).toBe(200);
+    expect(parseBody<unknown>(res.body)).toEqual({ ok: true, channelId: "browser", status: "ok" });
+
+    // 否定断言必须覆盖 status 落盘 debounce 窗口（500ms）：单次 sleep 只看终态，
+    // 在途写入后又被清掉的瞬态会漏网。这里在整个 800ms 窗口内连续断言为空
+    // （轮询间隔 20ms，与 pollUntil 同族的确定性轮询，非单次固定 sleep 等待）。
+    const deadline = Date.now() + 800;
+    for (;;) {
+      expect(historyLines(), "dry-run 不落历史").toEqual([]);
+      const probe = await send(port, "/api/dsh-notifier/status");
+      expect(probe.status).toBe(200);
+      expect(parseBody<{ channels: unknown }>(probe.body).channels, "dry-run 不写频道状态").toEqual(
+        {},
+      );
+      if (Date.now() >= deadline) break;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    expect(readFileSync(configFile, "utf8"), "dry-run 不碰配置文件（revision 不动）").toBe(
+      configBefore,
+    );
+  });
+
+  it("dry-run 同样过围栏：非回环 403、方法错 405", async () => {
+    const { port } = await mount();
+    const draftBody = JSON.stringify({ channelId: "browser", draft: { channels: [] } });
+
+    const rebound = await send(port, "/api/dsh-notifier/test", {
+      method: "POST",
+      headers: { host: "attacker.example" },
+      body: draftBody,
+    });
+    expect(rebound.status, "带 draft 也一样先过回环围栏").toBe(403);
+
+    const wrongMethod = await send(port, "/api/dsh-notifier/test", { method: "GET" });
+    expect(wrongMethod.status).toBe(405);
+    expect(wrongMethod.headers.allow, "405 带 allow 头").toContain("POST");
+  });
+
   it("种类端点：未登记 404、参数非法 400，登记后确认并真实落进配置", async () => {
     const { root, port } = await mount();
 

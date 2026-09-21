@@ -13,7 +13,7 @@ import type { Translate } from "../../locale.ts";
 import type { AudioEngine } from "../../notify/audio.ts";
 import { switchToggle } from "../parts/controls.tsx";
 import type { ChannelStatusMap } from "../parts/status.tsx";
-import type { SettingsChannelView } from "../types.ts";
+import type { HistoryRecordView, SettingsChannelView } from "../types.ts";
 import {
   browserDiagnosticsLine,
   browserPermLine,
@@ -61,12 +61,14 @@ export function builtinCard(
   requestNotificationPermission: () => void,
   audioEngine: AudioEngine,
   t: Translate,
+  history: HistoryRecordView[] | null,
+  testDirty?: boolean,
 ) {
   const channelId = channelIdOf(ch);
   const enabled = ch.enabled === true;
   const popup = ch.popup === true;
   const soundOn = soundIsOn(ch.sound);
-  const stateCls = !enabled ? " dn-ch-off" : !popup && soundOn ? " dn-ch-sound" : " dn-ch-onEdge";
+  const stateCls = !enabled ? " dn-ch-off" : !popup && soundOn ? " dn-ch-sound" : "";
   const summaryState = !enabled
     ? t("chStateOff")
     : !popup && soundOn
@@ -112,8 +114,8 @@ export function builtinCard(
         <span className="dn-ch-type">{t("chTypeBuiltin")}</span>
         <span className="dn-ch-stateTxt">{summaryState}</span>
         <span className={"dn-ch-statusDot " + statusDotClass(channelId, statusMap)} />
-        <span className="dn-ch-statusTxt" title={statusText(channelId, statusMap, t)}>
-          {statusText(channelId, statusMap, t)}
+        <span className="dn-ch-statusTxt" title={statusText(channelId, statusMap, t, history)}>
+          {statusText(channelId, statusMap, t, history)}
         </span>
         {failBadge(channelId, statusMap, t)}
         <span className="dn-ch-summaryRight">
@@ -144,7 +146,7 @@ export function builtinCard(
         {ch.type === "system" ? systemPlatformHint(hostPlatform, t) : null}
         {/* 宿主能力自检（/diagnostics）：结论 + 处置建议 + 明细折叠 */}
         {ch.type === "system" ? hostDiagnosticsBlock(diag) : null}
-        <div className="dn-ch-actions">{testBtn(channelId, sendTest, t)}</div>
+        <div className="dn-ch-actions">{testBtn(channelId, sendTest, t, testDirty)}</div>
       </div>
     </details>
   );

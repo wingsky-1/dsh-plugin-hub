@@ -11,6 +11,8 @@ cleans up on exit without polluting the `web` profile you are actually using.
 dsh plugin --profile web add @wingsky-1/dsh-verify-isolated
 ```
 
+> After install / uninstall / update, **restart `dsh web` once** (bundle layers are only composed at startup) for changes to take effect.
+
 After installation, the `dsh-verify-isolated` skill is automatically registered as a
 built-in skill and becomes available to all sessions in the profile (check with
 `/skill dsh-verify-isolated`).

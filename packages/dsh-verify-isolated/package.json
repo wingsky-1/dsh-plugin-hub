@@ -1,7 +1,7 @@
 {
   "name": "@wingsky-1/dsh-verify-isolated",
   "version": "0.2.5",
-  "description": "DSH 插件开发的隔离环境浏览器验证 skill：临时 DSH_HOME + 独立 verify_<随机> profile 双重隔离，一键拉起隔离 dsh web（自动构建/挂载/启动/清理），不污染正在使用的 web profile",
+  "description": "Browser verification for DSH plugin development in an isolated environment: throwaway DSH_HOME with its own profile, port and browser instance. DSH 插件开发的隔离环境浏览器验证 skill：临时 DSH_HOME + 独立 verify_<随机> profile 双重隔离，一键拉起隔离 dsh web（自动构建/挂载/启动/清理），不污染正在使用的 web profile",
   "type": "module",
   "main": "lib/index.js",
   "scripts": {
@@ -19,6 +19,16 @@
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
+    },
+    "catalog": {
+      "category": "workflow",
+      "summary": {
+        "en": "Isolated-environment browser verification for DSH plugin development: throwaway DSH_HOME, own profile, port and browser instance, cleaned up on exit.",
+        "zh": "隔离环境浏览器验证 skill：临时 DSH_HOME 加独立 profile、端口与浏览器实例，不污染 web profile"
+      },
+      "capabilities": [
+        "skill"
+      ]
     }
   },
   "files": [
@@ -33,9 +43,15 @@
     "node": ">=22.0.0"
   },
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/wingsky-1/dsh-plugin-hub.git",
+    "directory": "packages/dsh-verify-isolated"
+  },
   "keywords": [
     "dsh",
     "deepseek-harness",
+    "dsh-plugin",
     "skill",
     "isolated",
     "verification"

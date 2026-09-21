@@ -3,7 +3,8 @@
   "mutate": [
     "packages/dsh-lan-proxy/src/server/tls/impl/index.ts",
     "!packages/dsh-lan-proxy/src/client/**",
-    "!packages/dsh-lan-proxy/src/**/interface.ts"
+    "!packages/dsh-lan-proxy/src/**/interface.ts",
+    "!packages/dsh-lan-proxy/src/**/deps.ts"
   ],
   "testRunner": "vitest",
   "mutator": {

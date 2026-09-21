@@ -3,35 +3,37 @@
  * 判据不实现为抛错：本块挂在活的调用链上。
  */
 import type { EffectiveConfig } from "../../deps.ts";
-import { KIND_SWITCHES } from "../../../../shared/interface.ts";
+import { KIND_SWITCHES, inWindowMinutes } from "../../../../shared/interface.ts";
 import { isBuiltinKind } from "../service/kinds.ts";
 import type { BuiltinKind, NotifyKind } from "../service/kinds.ts";
 import type { NotifyRequest } from "../service/type.ts";
 import type { SuppressReason, Verdict } from "./type.ts";
 
-/** `"HH:MM"` → 当日分钟数；形状非法或越界返回 NaN。 */
-function parseClock(text: string): number {
-  const match = /^(\d{2}):(\d{2})$/u.exec(text);
-  if (match === null) return NaN;
-  const hours = Number(match[1]);
-  const minutes = Number(match[2]);
-  if (hours > 23 || minutes > 59) return NaN;
-  return hours * 60 + minutes;
+/**
+ * 单个窗口是否命中（纯函数：只看分钟数与起止，不读当前时间，方便逐分钟单测）。
+ *
+ * 事实源在 src/shared/quiet.ts（`inWindowMinutes`）：客户端本机回显与服务端裁决同源，
+ * 改动只改共享处。这里保留名字，兼容既有 `judge/index.ts` 引用面与单测表驱动。
+ */
+export function inWindow(minutes: number, start: string, end: string): boolean {
+  return inWindowMinutes(minutes, start, end);
 }
 
-/**
- * 是否落在免打扰时段内：支持跨午夜（`start > end`）。
- * `start === end`（零长窗口）与解析失败一律算未命中——脏设置不该把通知全部吃掉。
- */
+/** 是否落在免打扰时段内：命中任一窗口即压制（并集语义）；空数组等于未命中。
+ *
+ * 单项逐个收窄：脏项（非对象、start/end 非字符串）按未命中跳过，不抛——本块挂在活的
+ * 调用链上，判据不实现为抛错（见文件头）。 */
 function isQuietNow(now: Date, quietHours: EffectiveConfig["quietHours"]): boolean {
   if (quietHours.enabled !== true) return false;
   const minutes = now.getHours() * 60 + now.getMinutes();
-  const start = parseClock(quietHours.start);
-  const end = parseClock(quietHours.end);
-  if (Number.isNaN(start) || Number.isNaN(end)) return false;
-  if (start === end) return false;
-  if (start < end) return minutes >= start && minutes < end;
-  return minutes >= start || minutes < end;
+  const windows = Array.isArray(quietHours.windows) ? quietHours.windows : [];
+  return windows.some((window) => {
+    if (typeof window !== "object" || window === null || Array.isArray(window)) return false;
+    const start = (window as { start?: unknown }).start;
+    const end = (window as { end?: unknown }).end;
+    if (typeof start !== "string" || typeof end !== "string") return false;
+    return inWindow(minutes, start, end);
+  });
 }
 
 /**

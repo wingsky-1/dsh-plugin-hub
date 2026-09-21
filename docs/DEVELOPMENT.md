@@ -421,6 +421,8 @@ cordis `EventsService.dispatch` 对已注册监听器的过滤条件为
   - 事件内容过滤」处理（事件载荷跨宿主边界不受信，逐字段运行时校验），仅想靠
     scope 过滤防串扰的监听不应加 `global`。
 
+<a id="2-客户端规范"></a><a id="user-content-2-客户端规范"></a>
+
 ## 2. 客户端（`src/client/index.ts`）规范 — 干净模块
 
 **核心：源码只写干净模块，不写任何 loader 痕迹。**
@@ -488,6 +490,8 @@ export const inject: string[] = []; // 声明 apply 用到的 ctx 服务（如 [
   颜色用 `--dsw-alias-*` / `--dsw-hljs-*` 主题变量 + 浅色回退，明暗自适应。
 - 挂载失败 `console.warn` 不 throw，绝不让 GUI 启动失败。
 - 路由引用用构建期注入的 `__DSH_ROUTES__`（或宿主 ROUTES 字面量），防两端漂移。
+
+<a id="3-CSS规范"></a><a id="user-content-3-CSS规范"></a>
 
 ## 3. CSS 规范（独立文件，不写进 TS）
 

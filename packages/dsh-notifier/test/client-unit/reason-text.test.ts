@@ -18,7 +18,12 @@ import { describe, expect, it } from "vitest";
 import { REASON_CODES } from "../../src/server/shared/reason.ts";
 import type { NotifierLocaleKey } from "../../src/client/locales.ts";
 import { en, zh } from "../../src/client/locales.ts";
-import { deliveryViewOf, reasonDetail, reasonText } from "../../src/client/reason-text.ts";
+import {
+  deliveryViewOf,
+  dryRunReasonText,
+  reasonDetail,
+  reasonText,
+} from "../../src/client/reason-text.ts";
 
 // 用例里一律以 t 称呼翻译函数（与产品调用点同名），实现见 test/client-helpers.ts。
 import { translateWithZh as t } from "../client-helpers.ts";
@@ -143,5 +148,20 @@ describe("deliveryViewOf：历史里一条投递明细的视图", () => {
       reason: zh.reasonUnknown,
       detail: "",
     });
+  });
+});
+
+describe("dry-run 结果行理由（#912 F1）：ok 为空串，非 ok 走 reasonText", () => {
+  // F1 回归 pin：ok 行挂“原因未知”是把成功说成了有待解释的异常，此分支删了即红。
+  it("ok 时理由为空串（reason 缺席/垃圾值都不展示）", () => {
+    expect(dryRunReasonText("ok", undefined, t)).toBe("");
+    expect(dryRunReasonText("ok", { code: "reasonSystemPopupFailed" }, t)).toBe("");
+  });
+  it("非 ok 走 reasonText：failed 映射 code，skipped 映射 code，未知回落中性", () => {
+    expect(dryRunReasonText("failed", { code: "reasonSystemPopupFailed" }, t)).toBe(
+      zh.reasonSystemPopupFailed,
+    );
+    expect(dryRunReasonText("skipped", { code: "reasonSkipConfig" }, t)).toBe(zh.reasonSkipConfig);
+    expect(dryRunReasonText("failed", 42, t)).toBe(zh.reasonUnknown);
   });
 });

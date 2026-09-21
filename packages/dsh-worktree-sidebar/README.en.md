@@ -7,6 +7,14 @@ Three tools that let the agent bind a **git worktree** to the current session, s
 This is a **transitional adapter**: if the official product ships native worktree sessions, this plugin retires.
 How it works (five host domains, host/client chains, self-healing rules, the six things to remember) is documented in [docs/architecture/dsh-worktree-sidebar.md](../../docs/architecture/dsh-worktree-sidebar.md).
 
+## Quick install
+
+```sh
+dsh plugin --profile web add @wingsky-1/dsh-worktree-sidebar
+```
+
+> After install / uninstall / update, **restart `dsh web` once** (bundle layers are only composed at startup) for changes to take effect.
+
 ## What it does
 
 The right sidebar's file tree is always rooted at `session.header.cwd`, and that field is immutable once the session is created (adopting a session with a different cwd throws `ApiSessionCwdConflict`). So when a session runs in the main checkout while the actual work happens in a worktree, the tree shows the wrong place.

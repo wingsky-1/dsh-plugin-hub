@@ -1,7 +1,14 @@
 {
   "$comment": "包导出面分类登记（#733 宪法第 3 条 / M2a-3.5 准入门禁）：包导出面 ⊆ 安装面 ∪ 配置面 ∪ 契约面。 符号集不在此文件里重复枚举——判据的输入是 export-surface-snapshot.mjs 同一次 emitDeclarations() 的产物（§9 禁止双轨）。 faces：新增导出必须在此显式登记三类面之一（安装面 / 配置面 / 契约面），未登记即红； legacy：#826 冻结的存量导出白名单（50 个）。本 PR 只做「可重复证明零漂移」这一步—— 分类（保留 / 移除清单）留给后续导出面收窄 PR，届时 legacy 只许随符号退役而缩小。 #856 的 host-trust 域（applyHostTrustInjection / registerHostTrustInjection / HOST_TRUST_ELEMENT_ID / HOST_TRUST_RUNTIME_MARKER）曾按「契约面」登记，复核认定它们只被包内 apply 消费，不属安装面 / 配置面 / 契约面，故退出包导出面、faces 随之清空（域门面保留为内部 seam）。",
   "package": "dsh-lan-proxy",
-  "faces": {},
+  "faces": {
+    "buildCaCertRoutes": "配置面",
+    "CaCertRouteDeps": "配置面",
+    "resolvePluginDir": "配置面",
+    "LEGACY_BAK_SUFFIX": "配置面",
+    "LayoutMigrateOptions": "配置面",
+    "LayoutMigrateOutcome": "配置面"
+  },
   "legacy": [
     "Config",
     "ConfigRouteDeps",

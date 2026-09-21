@@ -7,18 +7,24 @@ import {
 } from "../../../../../../../shared/host-utils.js";
 import type {
   ChannelPort,
+  ConfigPort,
   HostCapabilities,
   LoggerPort,
-  NotifyRequest,
   PipelinePort,
 } from "../../deps.ts";
 import { sendFailure, sendJson } from "../route/index.ts";
 import type { RouteHandler } from "../route/type.ts";
 import { streamHub } from "../stream/index.ts";
+import { DryRunGate, executeDryRun, withDryRunBudget } from "./dry-run/index.ts";
+import { DryRunInputError, DryRunTimeoutError, TEST_NOTIFICATION } from "./dry-run/type.ts";
 import type { TestRequest } from "./type.ts";
 
-/** 请求体上限（字节）：它最多带一个频道 id。 */
-const BODY_LIMIT = 4 * 1024;
+/**
+ * 请求体上限（字节）：16K，与 settings 端对齐（提案 B5）。draft 里带模板与自定义头时
+ * 体积天然以此为界（B4「模板头体积以 BODY_LIMIT 为界」，无单字段上限）；超限 400 复用
+ * invalidBodyDetail。无 draft 的老路不受影响（原来几十字，最多一个频道 id）。
+ */
+const BODY_LIMIT = 16 * 1024;
 
 /** 畸形 body 的回应文案：与 settings/kinds 的 invalid-json 同族，并把成因说清（客户端会展示 details）。 */
 function invalidBodyDetail(reason: JsonBodyInvalidReason, limit: number): string {
@@ -27,14 +33,6 @@ function invalidBodyDetail(reason: JsonBodyInvalidReason, limit: number): string
   if (reason === "unreadable") return "请求体读取失败";
   return "请求体不是合法 JSON";
 }
-
-/** 测试通知的固定文案。不引入自由文本面：它验证的是链路本身而不是文案；取值沿用重写前的文案，用户看到的那两句
- * 不该因为一次内部重构而变。 */
-const TEST_NOTIFICATION: NotifyRequest = {
-  kind: "test",
-  title: "DSH：测试通知",
-  body: "通知链路工作正常（此通知来自测试按钮）",
-};
 
 /**
  * 能力自检的总预算（毫秒）。探测是串行的（先跑平台命令探测，再逐个试 D-Bus CLI），单次超时叠加起来
@@ -67,10 +65,14 @@ export class ProbeEndpoints {
   /** 能力自检的共享缓存。两条路由共用同一次探测：探测会起子进程，每请求各探一次就是拿用户机器当靶场。 */
   private hostCapabilities?: Promise<HostCapabilities>;
 
+  /** dry-run 并发门：实例字段（与真实投递的节奏表相互独立，见 DryRunGate）。 */
+  private readonly dryRunGate = new DryRunGate();
+
   constructor(
     private readonly pipeline: PipelinePort,
     private readonly channels: ChannelPort,
     private readonly logger: LoggerPort,
+    private readonly config: ConfigPort,
   ) {}
 
   /**
@@ -122,12 +124,75 @@ export class ProbeEndpoints {
       });
       return;
     }
+    // draft 出现即草稿测试（dry-run）：测眼前草稿、同步返回结果，全程零落盘。
+    // 无 draft 时走老路（已保存配置的广播 / onlyChannel），语义一个字不改。
+    if (body.draft !== undefined) {
+      await this.testDraft(res, channelId, body.draft);
+      return;
+    }
     this.pipeline.submit(
       channelId === undefined
         ? TEST_NOTIFICATION
         : { ...TEST_NOTIFICATION, onlyChannel: channelId },
     );
     sendJson(res, 200, { ok: true, sseConnections: streamHub.size() });
+  };
+
+  /**
+   * POST /test 的 dry-run 分支：单频道实测，同步返回 B3 schema。
+   *
+   * 禁写面落实在本函数：400 / 408 / 429 / 500 全部经 sendFailure / sendJson 直接回，
+   * 永不调 logger（含路由收口的 500 兜底——execute 只抛 DryRunInputError 与预算超时，
+   * 其余异常在这里就地收成固定文案的 500，不进日志）；stores / frames 本就没有入参，
+   * 结构上够不着。槽位按 settle / 超时释放（finally），不按子进程退出（B7）。
+   */
+  private readonly testDraft = async (
+    res: ServerResponse,
+    channelId: unknown,
+    draft: unknown,
+  ): Promise<void> => {
+    if (typeof channelId !== "string" || channelId.length === 0) {
+      sendFailure(res, 400, {
+        error: "草稿测试参数非法",
+        details: "dry-run 只测单个频道：channelId 必须为非空字符串",
+      });
+      return;
+    }
+    if (!this.dryRunGate.tryAcquire()) {
+      sendFailure(res, 429, {
+        code: "dry-run-busy",
+        error: "草稿测试并发已满，请稍后手动重试",
+        details: "同时最多 2 个 dry-run（不排队）",
+      });
+      return;
+    }
+    try {
+      const result = await withDryRunBudget(
+        executeDryRun(
+          { config: this.config, pipeline: this.pipeline, channels: this.channels },
+          channelId,
+          draft,
+        ),
+      );
+      sendJson(res, 200, result);
+    } catch (cause) {
+      if (cause instanceof DryRunInputError) {
+        sendFailure(res, 400, {
+          error: "草稿测试参数非法",
+          details: cause.message,
+        });
+      } else if (cause instanceof DryRunTimeoutError) {
+        sendFailure(res, 408, {
+          code: "dry-run-timeout",
+          error: "草稿测试超时（15s），结果已丢弃",
+          details: "在飞的投递无法撤回：若对方实际收到了，它不会出现在历史与状态里",
+        });
+      } else {
+        sendFailure(res, 500, { error: "草稿测试内部错误" });
+      }
+    } finally {
+      this.dryRunGate.release();
+    }
   };
 
   /**

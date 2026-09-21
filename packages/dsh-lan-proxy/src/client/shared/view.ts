@@ -16,6 +16,7 @@ export type LanProxySettingsView = {
   httpsPort?: number | string;
   tlsCertFile?: string;
   tlsKeyFile?: string;
+  tlsCaCertFile?: string;
   printBanner?: boolean;
   wsBridgeEnabled?: boolean;
   wsCompressEnabled?: boolean;

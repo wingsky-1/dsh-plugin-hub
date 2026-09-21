@@ -1,12 +1,12 @@
 {
   "name": "@wingsky-1/dsh-lan-proxy",
   "version": "0.2.5",
-  "description": "局域网访问 dsh web UI：在 0.0.0.0:<port> 监听，把 HTTP/HTTPS 与 WebSocket/wss 转发到回环 web 服务器（默认 127.0.0.1:3080）。重写 Host/Origin 以通过 /api 浏览器信任围栏，仅接受 IP 字面量或 localhost 的 Host 头（DNS 重绑定防护）。HTTPS 默认并存（3443），证书可配置或自动生成自签名。",
+  "description": "Expose the dsh web UI on the LAN by forwarding HTTP/HTTPS and WebSocket to the loopback server. 局域网访问 dsh web UI：在 0.0.0.0:<port> 监听，把 HTTP/HTTPS 与 WebSocket/wss 转发到回环 web 服务器（默认 127.0.0.1:3080）。重写 Host/Origin 以通过 /api 浏览器信任围栏，仅接受 IP 字面量或 localhost 的 Host 头（DNS 重绑定防护）。HTTPS 默认并存（3443），证书可配置或自动生成自签名。",
   "type": "module",
   "main": "lib/index.js",
   "scripts": {
     "build": "node ../../scripts/build/clean-lib.ts && tsc -p tsconfig.json && node ../../scripts/build/bundle-host.ts .",
-    "test": "node ../../scripts/test/run-vitest.mjs --min 10",
+    "test": "node ../../scripts/test/run-vitest.mjs --min 14",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "prepublishOnly": "pnpm run typecheck && pnpm run build && pnpm test"
   },
@@ -25,6 +25,17 @@
     "bundle": {
       "patch": "./cordis.patch.yml",
       "bannerJs": "import { createRequire as __lanProxyRequire } from \"node:module\";\nconst require = __lanProxyRequire(import.meta.url);"
+    },
+    "catalog": {
+      "category": "integration",
+      "summary": {
+        "en": "Access the dsh web UI over the LAN: HTTP/HTTPS/WebSocket forwarding to the loopback server with TLS and DNS-rebinding protection.",
+        "zh": "局域网访问 dsh web UI：HTTP/HTTPS 与 WebSocket 转发到回环服务，HTTPS 默认并存，DNS 重绑定防护"
+      },
+      "capabilities": [
+        "connection",
+        "ui-slots"
+      ]
     },
     "client": {
       "inject": [
@@ -72,6 +83,7 @@
   "keywords": [
     "dsh",
     "deepseek-harness",
+    "dsh-plugin",
     "plugin",
     "lan",
     "proxy",
@@ -87,9 +99,11 @@
     "@deepseek-ai/dsh-host-webserver": "catalog:",
     "@types/compression": "^1.7.5",
     "@types/http-proxy": "^1.17.17",
+    "@types/node-forge": "1.3.14",
     "@types/ws": "^8.18.1",
     "compression": "^1.8.1",
     "http-proxy": "1.18.1",
+    "node-forge": "1.4.0",
     "schemastery": "^3.18.0",
     "selfsigned": "^2.4.1",
     "ws": "^8.21.3"

@@ -3,6 +3,7 @@
 import type { UpgradeDeps } from "../../deps.ts";
 import type { UpgradeStep } from "../chain/type.ts";
 import { migrateConfigShape } from "./config-shape.ts";
+import { migrateQuietWindows } from "./quiet-windows.ts";
 import { migrateReasonShape } from "./reason-shape.ts";
 import { migrateStorageLayout } from "./storage-layout.ts";
 
@@ -19,8 +20,14 @@ function migrateToV025(): void {
   // 本版无存储/配置形态变化：空实现，仅让链把刻度从 0.2.4 推到 0.2.5。
 }
 
+/** 0.2.5 → 0.2.6：免打扰多时间窗（#936）——旧的 start/end 搬进 windows[0] 并删除旧键。 */
+function migrateToV026(): void {
+  migrateQuietWindows();
+}
+
 /** 按目标版本升序维护；执行顺序由链驱动排序决定，此处顺序只为便于阅读。 */
 export const STEPS: readonly UpgradeStep[] = [
   { fromVersion: "0.2.3", targetVersion: "0.2.4", run: migrateToNewLayout },
   { fromVersion: "0.2.4", targetVersion: "0.2.5", run: migrateToV025 },
+  { fromVersion: "0.2.5", targetVersion: "0.2.6", run: migrateToV026 },
 ];

@@ -27,8 +27,10 @@ export interface McpServerSummary {
 
 /**
  * 面板列表条目：GET /servers 载荷的元素形态，也是客户端编辑表单的数据源。
- * 比服务查询面的摘要宽——配置面字段（含 env / headers / url）**保留键**、值由宿主
- * 按凭据清单掩码（§6.1），客户端原样回传、由宿主按源身份还原；删键会打穿编辑面。
+ * #770-A3 只读投影：env/headers 敏感值整体省略（字段缺省，不用 "[REDACTED]"
+ * 占位符），有无秘密只经 hasSecrets 布尔告知 GUI；url 按 B8 仅脱敏
+ * userinfo/searchParams（host/path/查询键保留）。写路径（POST/PATCH）永不消费
+ * 投影值：缺键即沿用既有、占位符 URL 由宿主 update 丢弃（回写链单测锁定）。
  */
 export interface McpServerListEntry {
   name: string;
@@ -42,6 +44,8 @@ export interface McpServerListEntry {
   cwd?: string;
   url?: string;
   headers?: Record<string, string>;
+  /** 有凭据被投影省略/脱敏（env/headers 非空或 url 含 userinfo/查询值）时为 true。 */
+  hasSecrets?: boolean;
   error?: string;
   tools?: string[];
   /** 工具级被用户禁用的工具名列表（独立于服务器级 enabled）。 */

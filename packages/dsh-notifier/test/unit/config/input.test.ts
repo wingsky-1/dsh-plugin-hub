@@ -186,61 +186,77 @@ describe("normalizeConfig：永不失败（读面在脏文件下也必须交出�
     }
   });
 
-  it("quietHours 子键逐个独立回落：一个子键脏不该连带丢掉整块（用户填对的那半要留住）", () => {
+  it("quietHours 逐项独立回落：一个窗口脏不该连带丢掉整组（用户填对的那段要留住）", () => {
     const quiet = normalizeConfig({
-      quietHours: { enabled: true, start: "25:00", end: "07:30", allowKinds: ["error", 3] },
+      quietHours: {
+        enabled: true,
+        windows: [
+          { start: "25:00", end: "08:00" },
+          { start: "12:00", end: "13:00" },
+          { start: "22:00", end: "22:00" },
+        ],
+        allowKinds: ["error", 3],
+      },
     }).quietHours;
     expect(quiet.enabled).toBe(true);
-    expect(quiet.start).toBe("22:00");
-    expect(quiet.end).toBe("07:30");
+    // 格式错与零长各废一项，合法项原样保留。
+    expect(quiet.windows).toEqual([{ start: "12:00", end: "13:00" }]);
     expect(quiet.allowKinds).toEqual(["error"]);
   });
 
-  it("quietHours 不是对象时整块回落默认；缺子键补默认（读侧容忍半截对象，写侧的整块校验是另一道关）", () => {
+  it("quietHours 不是对象时整块回落默认；windows 缺席回落 legacy，显式空数组保持空（读侧容忍半截对象，写侧的整块校验是另一道关）", () => {
     // `allowKinds` 在这一支上随默认表走（表上本就没有该键，缺省语义由裁决层定义），故不在此断言。
     for (const input of ["22:00", [], 7, raw(null)]) {
       const quiet = normalizeConfig({ quietHours: input }).quietHours;
       expect(quiet.enabled, JSON.stringify(input)).toBe(false);
-      expect(quiet.start, JSON.stringify(input)).toBe("22:00");
-      expect(quiet.end, JSON.stringify(input)).toBe("08:00");
+      expect(quiet.windows, JSON.stringify(input)).toEqual([{ start: "22:00", end: "08:00" }]);
     }
     // 半截对象走的是另一支：逐子键拼装，于是可选的 allowKinds 会被补成空数组（全量输出）。
     const partial = normalizeConfig({ quietHours: { enabled: true } }).quietHours;
     expect(partial.enabled).toBe(true);
-    expect(partial.start).toBe("22:00");
-    expect(partial.end).toBe("08:00");
+    expect(partial.windows).toEqual([{ start: "22:00", end: "08:00" }]);
     expect(partial.allowKinds).toEqual([]);
-  });
-
-  it("quietHours 是「类型闸门 + 逐个格式」两道关：能强转成合法时间的数组不算时间（JSON 提交里数组是合法形状，`test()` 却会做字符串强转）", () => {
-    const badStart: SettingsPatch = {
-      quietHours: { enabled: true, start: ["22:00"], end: "08:00" },
-    };
-    expect(invalidOf(badStart).hint).toContain("start");
-    const badEnd: SettingsPatch = {
-      quietHours: { enabled: true, start: "22:00", end: ["08:00"] },
-    };
-    expect(invalidOf(badEnd).hint).toContain("end");
-
-    // 归一化侧同一口径：非字符串一律回落，不把数组当时间存进设置。
-    const quiet = normalizeConfig({
-      quietHours: { enabled: true, start: ["22:00"], end: ["08:00"] },
+    // 旧形 start/end 看成 windows[0]：还没跑过 0.2.6 升级的老文件行为不变。
+    const legacy = normalizeConfig({
+      quietHours: { enabled: true, start: "23:00", end: "07:00" },
     }).quietHours;
-    expect(quiet.start).toBe("22:00");
-    expect(quiet.end).toBe("08:00");
+    expect(legacy.enabled).toBe(true);
+    expect(legacy.windows).toEqual([{ start: "23:00", end: "07:00" }]);
+    // 显式空数组保持空：它表达的是「一个都不命中」，不是「缺了要补默认」。
+    const empty = normalizeConfig({ quietHours: { enabled: true, windows: [] } }).quietHours;
+    expect(empty.windows).toEqual([]);
   });
 
-  it("整块回落交出的是副本：调用方就地改写它不该污染全局默认表（默认值被改过之后，此后每个读者拿到的都不是默认）", () => {
-    const pristine = { ...DEFAULT_CONFIG.quietHours };
+  it("quietHours 是「类型闸门 + 逐项格式」两道关：能强转成合法时间的数组不算时间（JSON 提交里数组是合法形状，`test()` 却会做字符串强转）", () => {
+    const badStart: SettingsPatch = {
+      quietHours: { enabled: true, windows: [{ start: ["22:00"], end: "08:00" }] },
+    };
+    expect(invalidOf(badStart).hint).toContain("windows[0].start");
+    const badEnd: SettingsPatch = {
+      quietHours: { enabled: true, windows: [{ start: "22:00", end: ["08:00"] }] },
+    };
+    expect(invalidOf(badEnd).hint).toContain("windows[0].end");
+
+    // 归一化侧同一口径：非字符串的项一律丢弃，不把数组当时间存进设置；全废则等于未命中。
+    const quiet = normalizeConfig({
+      quietHours: { enabled: true, windows: [{ start: ["22:00"], end: ["08:00"] }] },
+    }).quietHours;
+    expect(quiet.windows).toEqual([]);
+  });
+
+  it("整块回落交出的是深副本：调用方就地改写它不该污染全局默认表（默认值被改过之后，此后每个读者拿到的都不是默认）", () => {
+    const pristine = {
+      ...DEFAULT_CONFIG.quietHours,
+      windows: DEFAULT_CONFIG.quietHours.windows.map((w) => ({ ...w })),
+    };
     const fallback = normalizeConfig({ quietHours: "22:00" }).quietHours;
     try {
       fallback.enabled = true;
-      fallback.start = "00:00";
+      fallback.windows[0]!.start = "00:00";
 
       const again = normalizeConfig({ quietHours: "22:00" }).quietHours;
       expect(again.enabled).toBe(pristine.enabled);
-      expect(again.start).toBe(pristine.start);
-      expect(again.end).toBe(pristine.end);
+      expect(again.windows).toEqual(pristine.windows);
     } finally {
       // 修复前这一改动落在默认表本体上：还原它，同文件后面的用例才不会继承一个被改过的默认值。
       Object.assign(DEFAULT_CONFIG.quietHours, pristine);
@@ -517,15 +533,51 @@ describe("validateSettings：只审显式提交（缺键不是错误）", () => 
       [{ allowKinds: "error" }, "allowKinds", "字符串数组"],
       [{ allowKinds: ["a", 1] }, "allowKinds", "字符串数组"],
       // quietHours：「不是对象」与「缺了哪个子键」是不同分支，提示分不开用户就改不对。
+      // 下标一律进 hint（key 恒为 quietHours）：设置页光标只能落一处，行号靠 hint 指。
       [{ quietHours: "22:00" }, "quietHours", "需要对象"],
-      [{ quietHours: { enabled: true } }, "quietHours", "start"],
-      [{ quietHours: { enabled: true, start: "9:30", end: "08:00" } }, "quietHours", "start"],
-      [{ quietHours: { enabled: true, start: "x22:00", end: "08:00" } }, "quietHours", "start"],
-      [{ quietHours: { enabled: true, start: "22:00", end: "24:00" } }, "quietHours", "end"],
-      [{ quietHours: { enabled: true, start: "22:00", end: "08:00x" } }, "quietHours", "end"],
-      [{ quietHours: { enabled: "yes", start: "22:00", end: "08:00" } }, "quietHours", "enabled"],
+      [{ quietHours: { enabled: true } }, "quietHours", "windows"],
+      [{ quietHours: { enabled: true, windows: "22:00" } }, "quietHours", "windows 需要数组"],
       [
-        { quietHours: { enabled: true, start: "22:00", end: "08:00", allowKinds: "error" } },
+        { quietHours: { enabled: true, windows: [{ start: "9:30", end: "08:00" }] } },
+        "quietHours",
+        "windows[0].start",
+      ],
+      [
+        { quietHours: { enabled: true, windows: [{ start: "x22:00", end: "08:00" }] } },
+        "quietHours",
+        "windows[0].start",
+      ],
+      [
+        { quietHours: { enabled: true, windows: [{ start: "22:00", end: "24:00" }] } },
+        "quietHours",
+        "windows[0].end",
+      ],
+      [
+        { quietHours: { enabled: true, windows: [{ start: "22:00", end: "08:00x" }] } },
+        "quietHours",
+        "windows[0].end",
+      ],
+      [
+        { quietHours: { enabled: true, windows: [{ start: "22:00", end: "08:00" }, "x"] } },
+        "quietHours",
+        "windows[1]",
+      ],
+      [
+        { quietHours: { enabled: true, windows: [{ start: "22:00", end: "22:00" }] } },
+        "quietHours",
+        "不能相同",
+      ],
+      [{ quietHours: { enabled: "yes", windows: [] } }, "quietHours", "enabled"],
+      // 旧形（有 start/end 而无 windows）写面 400：升级步会搬，旧客户端靠这句提示去刷新。
+      [{ quietHours: { enabled: true, start: "22:00", end: "08:00" } }, "quietHours", "刷新后重试"],
+      [
+        {
+          quietHours: {
+            enabled: true,
+            windows: [{ start: "22:00", end: "08:00" }],
+            allowKinds: "error",
+          },
+        },
         "quietHours",
         "allowKinds",
       ],
@@ -620,11 +672,12 @@ describe("validateSettings：只审显式提交（缺键不是错误）", () => 
   });
 
   it("quietHours.allowKinds 的元素类型与顶层同一口径：错位元素与混合数组都判非法，合法名单放行", () => {
+    const win = { start: "22:00", end: "08:00" };
     const wrongElement: SettingsPatch = {
-      quietHours: { enabled: true, start: "22:00", end: "08:00", allowKinds: [1] },
+      quietHours: { enabled: true, windows: [win], allowKinds: [1] },
     };
     const mixed: SettingsPatch = {
-      quietHours: { enabled: true, start: "22:00", end: "08:00", allowKinds: ["error", 3] },
+      quietHours: { enabled: true, windows: [win], allowKinds: ["error", 3] },
     };
     for (const patch of [wrongElement, mixed]) {
       const error = invalidOf(patch);
@@ -633,9 +686,40 @@ describe("validateSettings：只审显式提交（缺键不是错误）", () => 
     }
 
     const legal: SettingsPatch = {
-      quietHours: { enabled: true, start: "22:00", end: "08:00", allowKinds: ["error"] },
+      quietHours: { enabled: true, windows: [win], allowKinds: ["error"] },
     };
     expect(validateSettings(legal)).toEqual({ ok: true });
+  });
+
+  it("quietHours 一次只报首错：首个非法窗口的下标进 hint，后面的错不展开（设置页光标只能落一处）", () => {
+    const error = invalidOf({
+      quietHours: {
+        enabled: true,
+        windows: [
+          { start: "22:00", end: "08:00" },
+          { start: "9:30", end: "xx" },
+        ],
+      },
+    });
+    expect(error.key).toBe("quietHours");
+    expect(error.hint).toContain("windows[1].start");
+  });
+
+  it("quietHours.windows 超限 400、上限与空数组放行（静默截断会让用户以为配好的时段生效了）", () => {
+    const win = { start: "22:00", end: "08:00" };
+    const over: SettingsPatch = {
+      quietHours: { enabled: true, windows: [win, win, win, win, win, win] },
+    };
+    const error = invalidOf(over);
+    expect(error.key).toBe("quietHours");
+    expect(error.hint).toContain("5");
+    // 上限本身与空数组（未命中）都是合法提交。
+    expect(
+      validateSettings({ quietHours: { enabled: true, windows: [win, win, win, win, win] } }),
+    ).toEqual({ ok: true });
+    expect(validateSettings({ quietHours: { enabled: true, windows: [] } })).toEqual({
+      ok: true,
+    });
   });
 
   it("边界值与整份合法提交放行（闸门把用户正常保存拦住，比放过一个非法值更糟）", () => {
@@ -648,7 +732,11 @@ describe("validateSettings：只审显式提交（缺键不是错误）", () => 
       notifySubagentDone: true,
       notifyTaskError: false,
       notifyTurnEnd: true,
-      quietHours: { enabled: true, start: "23:00", end: "07:00", allowKinds: ["error"] },
+      quietHours: {
+        enabled: true,
+        windows: [{ start: "23:00", end: "07:00" }],
+        allowKinds: ["error"],
+      },
       channels: [
         ...BUILTINS,
         { ...BARK, enabled: true, level: "critical", levels: { error: "critical" } },

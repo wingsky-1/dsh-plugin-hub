@@ -6,7 +6,7 @@
  * 跨模块动作（showPanel / refresh）经 actions 注入，不直接引用 panel 模块。
  */
 
-import { el } from "../core/dom.ts";
+import { el, pangu } from "../core/dom.ts";
 import { api, toolDisableServerKey, cwdQueryOf } from "../core/api.ts";
 import { STATUS_ORDER, statusDot } from "../core/constants.ts";
 import { tStatus } from "../core/i18n.ts";
@@ -22,19 +22,43 @@ import {
   bottomAnchorEdge,
 } from "../../shared/interface.ts";
 
-/** 渲染浮窗胶囊（状态点 + 摘要计数）。 */
+/** 重播 CSS animation：强制 reflow 后再挂 class。 */
+function replayAnim(node: Element): void {
+  const style = (node as HTMLElement).style;
+  style.animation = "none";
+  void (node as HTMLElement).offsetWidth;
+  style.animation = "";
+}
+
+/** 渲染浮窗胶囊（状态点 + 摘要计数 + 失败/中性态）。 */
 export function renderPill(state: McpState): void {
   if (state.floatPill === undefined) return;
   const ok = state.counts.connected ?? 0;
   const bad = (state.counts.failed ?? 0) + (state.counts.reconnecting ?? 0);
-  const dot =
-    bad > 0
-      ? "var(--dsw-alias-state-error-primary,#e0483e)"
-      : ok > 0
-        ? "var(--dsw-alias-state-success-primary,#0f9d6e)"
-        : "var(--dsw-alias-label-tertiary,#9aa1ad)";
-  const label = state.servers.length > 0 ? `MCP ${ok}/${state.servers.length}` : "MCP";
-  state.floatPill.innerHTML = `<span class="dm-dot" style="background:${dot}"></span><span>${label}</span>`;
+  const total = state.servers.length;
+  const label = total > 0 ? `MCP ${ok}/${total}` : "MCP";
+  const fail = bad > 0;
+  // 语义：失败红 / 有连接绿 / 否则中性灰（与历史三态一致）
+  const dotColor = fail
+    ? "var(--dsw-alias-state-error-primary,#e0483e)"
+    : ok > 0
+      ? "var(--dsw-alias-state-success-primary,#0f9d6e)"
+      : "var(--dsw-alias-label-tertiary,#9aa1ad)";
+  state.floatPill.classList.toggle("dm-float--fail", fail);
+  state.floatPill.textContent = "";
+  state.floatPill.appendChild(el("span", { class: "dm-dot", style: `background:${dotColor}` }));
+  if (fail) state.floatPill.appendChild(el("span", { class: "dm-float-fail", text: "!" }));
+  state.floatPill.appendChild(el("span", { text: label }));
+  if (total > 0) {
+    state.floatPill.title =
+      bad > 0 ? `${t("floatTitle")} · ${t("healthFailed", { n: bad })}` : t("floatTitle");
+    state.floatPill.setAttribute(
+      "aria-label",
+      bad > 0
+        ? `${t("floatAriaLabel")} · ${t("healthFailed", { n: bad })}`
+        : `${t("floatAriaLabel")} · ${ok}/${total}`,
+    );
+  }
 }
 
 /**
@@ -106,29 +130,40 @@ function renderFloatTools(
   return details;
 }
 
+/** 操作主次：按 status 判定（可连接 → primary），不依赖文案字面量。 */
+function floatActionClass(server: any): string {
+  if (server.status === "failed" || server.status === "stopped")
+    return "dm-float-action dm-primary";
+  return "dm-float-action";
+}
+
 /** 浮窗面板里的一行服务器。 */
 function renderFloatRow(
   server: any,
   state: McpState,
   actions: UiActions,
-  opts: { tools: boolean; openTools?: Set<string> } = { tools: true },
+  opts: { tools: boolean; openTools?: Set<string>; stagger?: number } = { tools: true },
 ): any {
-  const row = el("div", { class: "dm-float-row" });
+  const failed = server.status === "failed" || server.status === "reconnecting";
+  const row = el("div", {
+    class: `dm-float-row${failed ? " dm-float-row--fail" : ""}${opts.stagger !== undefined ? " dm-stagger" : ""}`,
+  });
+  if (opts.stagger !== undefined) {
+    row.style.animationDelay = `${Math.min(opts.stagger, 5) * 30}ms`;
+  }
   row.appendChild(el("span", { class: "dm-dot", style: `background:${statusDot(server.status)}` }));
   row.appendChild(el("span", { class: "dm-float-name", text: server.name, title: server.name }));
   const tools = Array.isArray(server.tools) ? server.tools.length : 0;
   row.appendChild(
     el("span", {
       class: "dm-float-meta",
-      text: t("serverMeta", { status: tStatus(server.status), tools }),
+      text: pangu(t("serverMeta", { status: tStatus(server.status), tools })),
     }),
   );
   const actionsEl = el("div", { class: "dm-float-actions" });
-  const action = el("button", { class: "dm-float-action" });
-  // C7：浮窗操作带 cwd（与 servers.ts 对齐，#412 宿主重启场景自愈）——
-  // disconnect/enable/connect/disable 四操作统一携带当前会话 cwd。
   const cwdQuery = cwdQueryOf(state);
   if (server.status === "connected") {
+    const action = el("button", { class: floatActionClass(server) });
     action.textContent = t("disconnect");
     action.addEventListener("click", () => {
       void api(
@@ -138,7 +173,9 @@ function renderFloatRow(
         .then(() => actions.refresh())
         .catch((error: any) => console.warn("[dsh-mcp-manager] disconnect failed:", error));
     });
+    actionsEl.appendChild(action);
   } else if (server.status === "disabled") {
+    const action = el("button", { class: floatActionClass(server) });
     action.textContent = t("enable");
     action.addEventListener("click", () => {
       void api(
@@ -152,7 +189,9 @@ function renderFloatRow(
         .then(() => actions.refresh())
         .catch((error: any) => console.warn("[dsh-mcp-manager] enable failed:", error));
     });
+    actionsEl.appendChild(action);
   } else {
+    const action = el("button", { class: floatActionClass(server) });
     action.textContent = t("connect");
     action.addEventListener("click", () => {
       void api(
@@ -162,9 +201,8 @@ function renderFloatRow(
         .then(() => actions.refresh())
         .catch((error: any) => console.warn("[dsh-mcp-manager] connect failed:", error));
     });
+    actionsEl.appendChild(action);
   }
-  actionsEl.appendChild(action);
-  // 禁用开关：非 disabled 状态可一键禁用（PATCH enabled:false → 宿主断开并注销工具）
   if (server.status !== "disabled") {
     const disable = el("button", { class: "dm-float-action" });
     disable.textContent = t("disable");
@@ -183,28 +221,95 @@ function renderFloatRow(
     actionsEl.appendChild(disable);
   }
   row.appendChild(actionsEl);
-  // 工具清单（单池后项目组与全局组同权）。
   if (opts.tools)
     row.appendChild(renderFloatTools(server, state, actions, opts.openTools ?? new Set()));
   return row;
 }
 
-/** 渲染浮窗下拉面板（#362 交互拍板 1a：项目级 / 全局级两大分组，各自内部再按状态）。
- * 单池（#767）后两大分组的服务器都经中间层，工具开关一律可用。 */
+/** 浮窗健康摘要（一行：运行/连接/失败）。 */
+function renderFloatHealth(state: McpState): any {
+  const connected = state.counts.connected ?? 0;
+  const connecting = (state.counts.connecting ?? 0) + (state.counts.reconnecting ?? 0);
+  const failed = state.counts.failed ?? 0;
+  const stopped = state.counts.stopped ?? 0;
+  const parts: any[] = [];
+  parts.push(
+    el("span", { class: "dm-health-ok", text: pangu(t("healthRunning", { n: connected })) }),
+  );
+  if (connecting > 0)
+    parts.push(document.createTextNode(pangu(t("healthConnecting", { n: connecting }))));
+  if (stopped > 0) parts.push(document.createTextNode(pangu(t("healthStopped", { n: stopped }))));
+  if (failed > 0)
+    parts.push(
+      el("span", { class: "dm-health-bad", text: pangu(t("healthFailed", { n: failed })) }),
+    );
+  const line = el("div", { class: "dm-float-health" });
+  parts.forEach((part, index) => {
+    if (index > 0) line.appendChild(document.createTextNode(" · "));
+    line.appendChild(part);
+  });
+  return line;
+}
+
+/** 按 scope 过滤并按状态序渲染一组服务器。 */
+function appendScopeGroup(
+  panel: any,
+  scope: string,
+  list: any[],
+  state: McpState,
+  actions: UiActions,
+  openTools: Set<string>,
+  staggerBase: { n: number },
+  animateRows: boolean,
+  titleOverride?: string,
+  alert?: boolean,
+): void {
+  if (list.length === 0) return;
+  const section = el("section", { class: "dm-float-group" });
+  section.appendChild(
+    el("div", {
+      class: `dm-float-group-title${alert === true ? " dm-float-group-title--alert" : ""}`,
+      text: titleOverride ?? (scope === "project" ? t("groupProject") : t("groupGlobal")),
+    }),
+  );
+  const byStatus = new Map<string, any[]>();
+  for (const group of STATUS_ORDER) byStatus.set(group.key, []);
+  for (const server of list) {
+    const bucket = byStatus.get(server.status);
+    if (bucket !== undefined) bucket.push(server);
+    else if (byStatus.has("stopped")) byStatus.get("stopped")!.push(server);
+  }
+  for (const group of STATUS_ORDER) {
+    const bucket = byStatus.get(group.key) ?? [];
+    if (bucket.length === 0) continue;
+    for (const server of [...bucket].sort((a: any, b: any) => a.name.localeCompare(b.name))) {
+      const stagger = animateRows ? staggerBase.n : undefined;
+      if (stagger !== undefined) staggerBase.n += 1;
+      section.appendChild(
+        renderFloatRow(server, state, actions, { tools: true, openTools, stagger }),
+      );
+    }
+  }
+  panel.appendChild(section);
+}
+
+/** 渲染浮窗下拉面板（健康摘要 + 失败优先 + scope 分组）。 */
 export function renderFloatPanel(state: McpState, actions: UiActions): void {
   if (state.floatPanel === undefined) return;
-  // C8：同 servers.ts——渲染前收集展开的工具组（按 server 名），重建后恢复。
   const openTools = new Set<string>();
   for (const d of state.floatPanel.querySelectorAll("details.dm-float-tools")) {
     if (d.open && d.dataset.dmServer !== undefined) openTools.add(d.dataset.dmServer);
   }
   state.floatPanel.textContent = "";
   const head = el("div", { class: "dm-float-head" });
+  const headText = el("div", { class: "dm-float-head-text" });
   const projectName =
     typeof state.projectRoot === "string" && state.projectRoot !== ""
       ? (state.projectRoot.split(/[\\/]/).filter(Boolean).pop() ?? state.projectRoot)
       : t("floatGlobalSession");
-  head.appendChild(el("span", { class: "dm-float-title", text: projectName }));
+  headText.appendChild(el("div", { class: "dm-float-title", text: projectName }));
+  headText.appendChild(renderFloatHealth(state));
+  head.appendChild(headText);
   head.appendChild(
     el("button", {
       text: t("floatManage"),
@@ -217,56 +322,98 @@ export function renderFloatPanel(state: McpState, actions: UiActions): void {
   state.floatPanel.appendChild(head);
 
   if (state.servers.length === 0) {
-    state.floatPanel.appendChild(el("div", { class: "dm-status", text: t("floatEmpty") }));
+    const empty = el("div", { class: "dm-status" });
+    empty.appendChild(el("div", { text: t("floatEmptyTitle") }));
+    empty.appendChild(
+      el("button", {
+        class: "dm-float-action dm-primary",
+        text: t("floatEmptyCta"),
+        style: "margin-top:12px",
+        onclick: () => {
+          toggleFloat(state, actions, false);
+          actions.showPanel();
+        },
+      }),
+    );
+    state.floatPanel.appendChild(empty);
     if (state.floatOpen) placePanel(state);
     return;
   }
+
+  const animateRows = state.floatPanel.dataset.dmStagger === "1";
+  const staggerBase = { n: 0 };
+  const attention = state.servers.filter(
+    (server: any) => server.status === "failed" || server.status === "reconnecting",
+  );
+  const rest = state.servers.filter(
+    (server: any) => server.status !== "failed" && server.status !== "reconnecting",
+  );
+  appendScopeGroup(
+    state.floatPanel,
+    "attention",
+    attention,
+    state,
+    actions,
+    openTools,
+    staggerBase,
+    animateRows,
+    t("groupAttention", { n: attention.length }),
+    true,
+  );
   for (const scope of ["project", "global"]) {
-    const list = state.servers.filter((server: any) => server.scope === scope);
-    if (list.length === 0) continue;
-    const section = el("section", { class: "dm-float-group" });
-    section.appendChild(
-      el("div", {
-        class: "dm-float-group-title",
-        text: scope === "project" ? t("groupProject") : t("groupGlobal"),
-      }),
+    appendScopeGroup(
+      state.floatPanel,
+      scope,
+      rest.filter((server: any) => server.scope === scope),
+      state,
+      actions,
+      openTools,
+      staggerBase,
+      animateRows,
     );
-    // 各自内部再按状态分组（状态序：运行中 → 连接中 → 重连中 → 未连接 → 已停用 → 失败）。
-    const byStatus = new Map<string, any[]>();
-    for (const group of STATUS_ORDER) byStatus.set(group.key, []);
-    for (const server of list) {
-      const bucket = byStatus.get(server.status);
-      if (bucket !== undefined) bucket.push(server);
-      else if (byStatus.has("stopped")) byStatus.get("stopped")!.push(server);
-    }
-    for (const group of STATUS_ORDER) {
-      const bucket = byStatus.get(group.key) ?? [];
-      if (bucket.length === 0) continue;
-      for (const server of [...bucket].sort((a: any, b: any) => a.name.localeCompare(b.name))) {
-        section.appendChild(renderFloatRow(server, state, actions, { tools: true, openTools }));
-      }
-    }
-    state.floatPanel.appendChild(section);
   }
-  // qa F1 同构修复（#128）：bottom-* 锚点下面板高度增长不会自动改写 top——
-  // 内容渲染完成即同步重定位（DOM 已构建，offsetHeight 即时正确；SSE 刷新等
-  // 异步路径经 panel.ts 重渲本函数时同样覆盖），clampPointToViewport 兜底钳回。
+  delete state.floatPanel.dataset.dmStagger;
   if (state.floatOpen) placePanel(state);
 }
 
-/** 切换浮窗展开/收起。 */
+/** 切换浮窗展开/收起（Apple Fluid：锚点→对角 scale；先渲染后定位）。 */
 export function toggleFloat(state: McpState, actions: UiActions, force?: boolean): void {
   if (state.floatPanel === undefined) return;
   const next = force !== undefined ? force : !state.floatOpen;
   state.floatOpen = next;
-  state.floatPanel.hidden = !next;
+  const panel = state.floatPanel;
+  const pill = state.floatPill;
   if (next) {
-    // 先渲染再定位（F1 配套）：以真实内容高度定位，消除首帧小高度错位；
-    // 后续 SSE 刷新撑高/收缩由 renderFloatPanel 尾部的重定位兜底。
+    // F1：先渲染再定位。dataset 标记仅本次展开播行 stagger。
+    panel.dataset.dmStagger = "1";
+    panel.hidden = false;
+    panel.classList.remove("dm-float-panel--closing", "dm-float-panel--open");
     renderFloatPanel(state, actions);
     placePanel(state);
-    // 聚焦面板本身，让后续点击外部时能通过 focusout 自动关闭。
-    state.floatPanel.focus({ preventScroll: true });
+    const armOpen = () => {
+      if (!state.floatOpen) return;
+      replayAnim(panel);
+      panel.classList.add("dm-float-panel--open");
+      pill?.classList.add("dm-float--open");
+    };
+    if (typeof requestAnimationFrame === "function") requestAnimationFrame(armOpen);
+    else armOpen();
+    panel.focus({ preventScroll: true });
+    return;
+  }
+  pill?.classList.remove("dm-float--open");
+  panel.classList.remove("dm-float-panel--open");
+  const finish = () => {
+    if (state.floatOpen) return;
+    panel.classList.remove("dm-float-panel--closing");
+    panel.hidden = true;
+  };
+  if (typeof requestAnimationFrame === "function") {
+    replayAnim(panel);
+    panel.classList.add("dm-float-panel--closing");
+    window.setTimeout(finish, 300);
+  } else {
+    finish();
   }
 }
 
@@ -302,6 +449,14 @@ export function placePanel(state: McpState): void {
   panel.style.left = `${Math.round(point.x)}px`;
   panel.style.top = `${Math.round(point.y)}px`;
   panel.style.right = "auto";
+  // Fluid origin：锚点=胶囊所在角 → 向对角展开
+  panel.style.transformOrigin = isLeft
+    ? anchorBottom
+      ? "bottom left"
+      : "top left"
+    : anchorBottom
+      ? "bottom right"
+      : "top right";
 }
 
 /** 会话滚动容器：聊天消息实际滚动的区域（shell 的 data-conversation-scroll）。 */
@@ -344,7 +499,7 @@ export function mountFloat(ctx: any, state: McpState, actions: UiActions): () =>
   });
   pill.dataset.dshMcpFloat = "";
   pill.addEventListener("click", () => toggleFloat(state, actions));
-  const panel = el("div", { class: "dm-float-panel" });
+  const panel = el("div", { class: "dm-float-panel", role: "dialog" });
   panel.hidden = true;
   panel.tabIndex = -1;
   state.floatPill = pill;
@@ -362,6 +517,11 @@ export function mountFloat(ctx: any, state: McpState, actions: UiActions): () =>
     toggleFloat(state, actions, false);
   };
   document.addEventListener("focusout", onFocusOut);
+  // Esc 关闭下拉面板（与模态 panel.ts C4 同语义；具名函数配对清理防泄漏）。
+  const onKeyDown = (event: any) => {
+    if (event.key === "Escape" && state.floatOpen) toggleFloat(state, actions, false);
+  };
+  document.addEventListener("keydown", onKeyDown);
 
   let host: any;
 
@@ -504,6 +664,7 @@ export function mountFloat(ctx: any, state: McpState, actions: UiActions): () =>
   return () => {
     state.updateFloatState = undefined;
     document.removeEventListener("focusout", onFocusOut);
+    document.removeEventListener("keydown", onKeyDown);
     observer.disconnect();
     for (const detach of listeners.splice(0)) detach();
     if (rafId !== 0) {

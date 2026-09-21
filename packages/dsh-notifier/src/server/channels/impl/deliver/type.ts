@@ -29,6 +29,30 @@ export type DeliverResult =
   | { status: "failed"; stage: DeliverStage; reason: ProducedReason; retryable: boolean };
 
 /**
+ * 出站 HTTP 的最小形状：bark 与 webhook 只用这四个成员，dry-run 的 SSRF 安全实现按此形状注入。
+ *
+ * 全局 fetch 可整体代入（Response 的 ok / status / text / json 同形），故已保存路径的调用点
+ * 不必改——默认实现仍是全局 fetch，语义逐字不变。
+ */
+export interface HttpFetchInit {
+  readonly method: string;
+  readonly headers: Record<string, string>;
+  readonly body: string;
+  readonly signal: AbortSignal;
+}
+
+export interface HttpFetchResult {
+  readonly ok: boolean;
+  readonly status: number;
+  text(): Promise<string>;
+  json(): Promise<unknown>;
+}
+
+export interface HttpFetch {
+  (url: string, init: HttpFetchInit): Promise<HttpFetchResult>;
+}
+
+/**
  * 铃声设置（投递层词汇）：false = 不发声；true = 跟随系统默认；字符串 = 指定音色。
  *
  * 与配置层的 `SoundSetting` 是同一件事的两个精度：那边受内置音色白名单约束（写入口径要拒非法音色），

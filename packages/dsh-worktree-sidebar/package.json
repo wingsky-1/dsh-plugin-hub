@@ -1,7 +1,7 @@
 {
   "name": "@wingsky-1/dsh-worktree-sidebar",
   "version": "0.2.5",
-  "description": "把某个 git worktree 登记给当前会话，使该会话的官方右侧栏文件树根指向该 worktree；会话 cwd 不变。官方提供原生 worktree 会话能力即退役的过渡适配层。",
+  "description": "Point the current session's right-sidebar file tree at a git worktree without changing the session cwd. 把某个 git worktree 登记给当前会话，使该会话的官方右侧栏文件树根指向该 worktree；会话 cwd 不变。官方提供原生 worktree 会话能力即退役的过渡适配层。",
   "type": "module",
   "main": "lib/index.js",
   "scripts": {
@@ -25,6 +25,16 @@
     "bundle": {
       "patch": "./cordis.patch.yml",
       "bannerJs": "import { createRequire as __worktreeSidebarRequire } from \"node:module\";\nconst require = __worktreeSidebarRequire(import.meta.url);"
+    },
+    "catalog": {
+      "category": "ui",
+      "summary": {
+        "en": "Point the current session's right-sidebar file tree at a git worktree without changing the session cwd.",
+        "zh": "将会话右侧栏文件树根指向 git worktree，会话 cwd 不变，原生能力上线即退役"
+      },
+      "capabilities": [
+        "ui-sidebar-right"
+      ]
     },
     "client": {
       "inject": [
@@ -92,6 +102,7 @@
   "keywords": [
     "dsh",
     "deepseek-harness",
+    "dsh-plugin",
     "plugin",
     "worktree",
     "git",

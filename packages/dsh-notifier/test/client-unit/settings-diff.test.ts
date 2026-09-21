@@ -4,7 +4,7 @@
  * 这些函数决定「保存什么」：提交哪些键、什么时候整组带走 channels、清空输入算删键还是写空串。
  * 它们此前住在 index.tsx 内（node 无法导入），因此没有任何行为判据——本文件把每条语义钉住，
  * 尤其是那些「看起来等价、实际不是」的分支：删键与写 undefined、null 保留与否、
- * 必填键不参与空串剥除、未知保存入口 fail-closed、键序参与相等判定。
+ * 必填键不参与空串剥除、未知保存入口 fail-closed、键序无关（#912，stableEqual）。
  */
 import { describe, expect, it } from "vitest";
 
@@ -37,10 +37,10 @@ describe("diffSettingsPayload：只提交真正变了的键", () => {
     expect(diffSettingsPayload({ a: 1 }, { a: 1, gone: "old" })).toEqual({});
   });
 
-  it("相等判定走 JSON.stringify：同名键序不同即视为已变（口径写进判据，不是巧合）", () => {
-    expect(diffSettingsPayload({ o: { x: 1, y: 2 } }, { o: { y: 2, x: 1 } })).toEqual({
-      o: { x: 1, y: 2 },
-    });
+  // #912 改为键序无关（参照服务端 stableJson 递归排序）：Object.assign 浅拷贝与合并处的键序
+  // 取决于写路径（load/discard/rebase/putAndCommit 各不相同），与用户是否改过东西无关。
+  it("相等判定走 stableEqual：同名键序不同视为未变（#912，旧“视为已变”判据随语义退役）", () => {
+    expect(diffSettingsPayload({ o: { x: 1, y: 2 } }, { o: { y: 2, x: 1 } })).toEqual({});
   });
 
   it("只认自有键（原型链上的属性不参与 diff）", () => {

@@ -8,6 +8,15 @@ export type { NotifySeverity, OutgoingFrame } from "./deps.ts";
 export type { BuiltinKind, ExternalKind, NotifyKind } from "./impl/service/kinds.ts";
 export type { NotifyRequest } from "./impl/service/type.ts";
 
+/**
+ * 草稿测试（dry-run）的目标直构件与定稿：api 域用它们把内存归一化后的单条频道变成
+ * 投递参数，不走 judge / kindRoutes / 节奏门。映射与路由同一份（路由改映射时这里自动跟上），
+ * 门（enabled / kindRoutes / 节流 / 重试）由 dry-run 自己按提案 bypass，不在本层另开分支。
+ */
+export { barkTarget, browserTarget, systemTarget, webhookTarget } from "./impl/route/index.ts";
+export type { RouteDeps } from "./impl/route/type.ts";
+export { finalizeRequest } from "./impl/finalize/index.ts";
+
 /** 是不是内置通知种类。值出口而不只是类型出口：这是「内置 / 外部注册」的唯一判据——各域各写一份内置名单，新增
  * 一种通知时漏抄一处，那个域就会把新内置种类当成外部注册的，而外部种类要经用户确认才放行。 */
 export { isBuiltinKind } from "./impl/service/kinds.ts";
