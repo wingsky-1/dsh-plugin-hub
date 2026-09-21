@@ -2,25 +2,25 @@
 
 本仓插件集依赖上游宿主（dsh）的契约面登记：`inject` 覆盖的是服务级存在性，
 本清单登记 `inject` 覆盖不到的那一层（事件 / 字段与载荷 / slot / 路由与方法 / 复刻常量与版本锚）。
-全部单元格由派生回填：事实源是 [派生脚本](../scripts/derive/host-contract.mjs) 的实时输出，
-其落盘形态是 [快照](../scripts/data/host-contract.snapshot.json)（`result` 原样 + `sources` + `deriveVersion`）。
-本文不手写任何事件名 / slot key / 路由 / 方法 / 常量值；与快照不一致即以快照为准。
+全部单元格由派生回填：事实源是 [派生脚本](../scripts/derive/host-contract.mjs) 的实时输出（只读打印，默认输出完整派生 JSON，`--sample` 只输出 sample 节）。
+本文不手写任何事件名 / slot key / 路由 / 方法 / 常量值；单元格与派生输出不一致时以派生输出为准。
 
 复核命令（仓库根执行）：
 
 ```sh
-node scripts/derive/host-contract.mjs --check scripts/data/host-contract.snapshot.json
+node scripts/derive/host-contract.mjs
+node scripts/derive/host-contract.mjs --sample
 pnpm docs:check
 ```
 
-第一条比对实时派生与快照的 `result` 是否一致（0=一致，1=不致并点名顶层键，2=快照缺失或不可解析）；
-第二条校验本文的相对链接 / 锚点 / 命令引用。本 PR 内两条均已实跑，命令与 exit code 见表 7。
+前两条为只读观察（默认输出完整派生 JSON，`--sample` 只输出 sample 节，不写文件、不接门禁）；
+第三条校验本文的相对链接 / 锚点 / 命令引用。判据由结构门禁（实施中）与上游消解门禁（规格评审中，名称以落地为准）承担，命令与 exit code 见表 7。
 
 rc 升级流程引用：升级 dsh rc 时按本清单逐条核对上游变更（事件删改 / slot 语义 / 路由与方法 / 常量重排），
 并与 `dsh-verify-isolated` 的真实宿主 smoke 呼应。
 `dsh-upgrade` skill 的 S1 / S3 接线（按本清单路径逐条核对）门禁接线为后续工作，不属本清单。
 
-派生覆盖面（诚实声明）：派生的扫描文件清单即快照的 `sources`（`eventFiles` / `slotFiles` / `routeFiles` / `domFiles`）。
+派生覆盖面（诚实声明）：派生的扫描文件清单见派生脚本内扫描常量（`eventFiles` / `slotFiles` / `routeFiles` / `domFiles`）。
 未被扫描文件覆盖的包在各表内记“派生未覆盖”并给出全仓 grep 观察值与出处，不静默缺席；
 也不把观察值写成派生值。`dsh-plugins-all` 为聚合包（无 `src/`），各表均写明不适用理由。
 
@@ -56,7 +56,7 @@ rc 升级流程引用：升级 dsh rc 时按本清单逐条核对上游变更（
 <a id="hc-t2"></a>
 ## 表 2 宿主事件
 
-形态均为“事件”（`inject` 无法声明，fail-loud 审计覆盖不到）。出处为快照 `result.events[*].sites`。
+形态均为“事件”（`inject` 无法声明，fail-loud 审计覆盖不到）。出处为派生输出 `result.events[*].sites`。
 
 | 包 | 事件名 | 出处 |
 | --- | --- | --- |
@@ -114,7 +114,7 @@ peer 含 cordis 框架底座与仅经 `ctx.on` 事件消费的包（如 notifier
 ## 表 4 slot key 与形态
 
 形态为 slot（`settings.plugin.item` 为 keyed 形态，`settings.section` 为 order 形态）。
-出来自快照 `result.slots`（`slot` / `id` / `key` / `order` 均为字面量派生）。
+出来自派生输出 `result.slots`（`slot` / `id` / `key` / `order` 均为字面量派生）。
 
 | 包 | slot | id | key | order | 出处 |
 | --- | --- | --- | --- | --- | --- |
@@ -131,7 +131,7 @@ peer 含 cordis 框架底座与仅经 `ctx.on` 事件消费的包（如 notifier
 ## 表 5 路由与方法白名单
 
 形态为路由（本仓暴露面）与方法白名单（`guardLoopbackMethod` / 端点 `methods` 表：非回环 403、白名单外 405，403 先于 405）。
-路由出来自快照 `result.routes.paths`（39 条）；方法白名单为各路由处理函数处的字面量（mcp-manager 以 `src/shared/routes.ts` 的 `ROUTE_FENCE` 为准）。
+路由出来自派生输出 `result.routes.paths`（39 条）；方法白名单为各路由处理函数处的字面量（mcp-manager 以 `src/shared/routes.ts` 的 `ROUTE_FENCE` 为准）。
 
 | 路由 | 包 | 方法白名单 | 出处 |
 | --- | --- | --- | --- |
@@ -185,30 +185,30 @@ peer 含 cordis 框架底座与仅经 `ctx.on` 事件消费的包（如 notifier
 | （dsh-plugins-all 不适用） | dsh-plugins-all | — | 无 `src/` |
 
 注册形态：lan-proxy 经 `ctx.webServer.register`（`src/server/apply.ts`）；mcp-manager 经 `ctx.webServer.register`（`src/index.ts`）；
-provider-usage 经 `ctx.webServer.register`（`src/apply/apply.ts`）；notifier / jev-decide / worktree-sidebar 经端点表 + `registerEndpoints`（组合根转交 `RegisterRoute`窄面，见各包 `route.ts` / `service/index.ts`）。前三者即快照 `result.routes.registerSites`。
+provider-usage 经 `ctx.webServer.register`（`src/apply/apply.ts`）；notifier / jev-decide / worktree-sidebar 经端点表 + `registerEndpoints`（组合根转交 `RegisterRoute`窄面，见各包 `route.ts` / `service/index.ts`）。前三者即派生输出 `result.routes.registerSites`。
 
 <a id="hc-t6"></a>
 ## 表 6 复刻常量与版本锚
 
-形态为常量（本仓复刻或钉死的官方约定）与版本锚（升级比对基线）。值全部来自快照。
+形态为常量（本仓复刻或钉死的官方约定）与版本锚（升级比对基线）。值全部来自派生输出。
 
 | 常量 / 锚 | 值 | 形态 | 出处与断言 |
 | --- | --- | --- | --- |
 | MCP_SECTION_ORDER | 160 | 常量 | `packages/dsh-mcp-manager/src/index.ts:562`；语义“紧随部署 persona 之后、计划策略之前（0 小于 160 小于 500）”，`sectionCall=true`（843 行经 `ctx.systemPrompt` 调用），`orderRangeOk=true`；区间由 smoke 锁定 |
 | SESSION 结算口径 | 0.1.5-rc.1 起唯一事实源为 `ctx.on("session/event")`；`assistant/chunk` 已删，`assistant/message`（内嵌 stream）+ `assistant/attempt` 为结算信号 | 版本锚 | 派生自注释口径；`SESSION_FORMAT_VERSION` 无代码符号锚（仅存档文档提及 0→3），`collectorMentionsChunkRemoval=false` |
-| catalog 锁版 | `dsh-*` 17 个均为 0.1.5-rc.1，`@deepseek-ai/cordis` 独立为 4.0.2 | 版本锚 | [pnpm-workspace.yaml](../pnpm-workspace.yaml) 字面量派生（快照 `result.catalog`，18 项）；锁版只是期望版本，宿主实际版本漂移无运行时派生 |
+| catalog 锁版 | `dsh-*` 17 个均为 0.1.5-rc.1，`@deepseek-ai/cordis` 独立为 4.0.2 | 版本锚 | [pnpm-workspace.yaml](../pnpm-workspace.yaml) 字面量派生（派生输出 `result.catalog`，18 项）；锁版只是期望版本，宿主实际版本漂移无运行时派生 |
 | 官方地址复刻 | （无现存复刻：全包 `dsh-resource://` / `fileAddressFor` 0 命中，已随 dsh-web-file-preview 退役消除） | 常量 | 全仓 grep 观察值 |
-| DOM 锚（11 条） | `details.dm-float-tools`；`[data-conversation-scroll]`；`[data-pane="conversation"]`；`.pI_x6G_centerCol`；`[data-shell-overlay]`；`[data-composer-seat]`；`.${PILL_PREFIX}label`；`.${PILL_PREFIX}dot` | 版本锚（宿主 DOM 私有约定，无版本锚） | 快照 `result.domAnchors`：前 6 条出自 `packages/dsh-mcp-manager/src/client/float/float.ts`，后 5 条出自 `packages/dsh-provider-usage/src/client/index.tsx`（`[data-composer-seat]` 等 3 条两端共用）；宿主改壳即静默漂移 |
+| DOM 锚（11 条） | `details.dm-float-tools`；`[data-conversation-scroll]`；`[data-pane="conversation"]`；`.pI_x6G_centerCol`；`[data-shell-overlay]`；`[data-composer-seat]`；`.${PILL_PREFIX}label`；`.${PILL_PREFIX}dot` | 版本锚（宿主 DOM 私有约定，无版本锚） | 派生输出 `result.domAnchors`：前 6 条出自 `packages/dsh-mcp-manager/src/client/float/float.ts`，后 5 条出自 `packages/dsh-provider-usage/src/client/index.tsx`（`[data-composer-seat]` 等 3 条两端共用）；宿主改壳即静默漂移 |
 
 <a id="hc-t7"></a>
 ## 表 7 来源与断言
 
 | # | 来源 / 断言 | 值 |
 | --- | --- | --- |
-| 1 | 派生脚本 | `scripts/derive/host-contract.mjs`（零依赖，仅 `node:fs` / `node:path`；`--write` 落盘时 stdout 与默认输出逐字节相同） |
-| 2 | 快照 | `scripts/data/host-contract.snapshot.json`（`format=host-contract.snapshot/1`，`deriveVersion=1`，`result` 与派生输出原样一致，`sources` 与扫描常量同源） |
-| 3 | 扫描文件清单 | 见快照 `sources`：`eventFiles` 4 包 8 文件；`slotFiles` 4 文件；`routeFiles` 6 文件；`domFiles` 2 文件；`catalogFile=pnpm-workspace.yaml`；`sessionDoc=docs/archive/dsh-0.1.5-适配计划.md` |
-| 4 | 派生 --check | `node scripts/derive/host-contract.mjs --check scripts/data/host-contract.snapshot.json` → exit 0（本 PR 内实跑） |
+| 1 | 派生脚本 | `scripts/derive/host-contract.mjs`（零依赖，仅 `node:fs` / `node:path`；只读打印，默认输出完整派生 JSON，`--sample` 只输出 sample 节） |
+| 2 | 派生输出 | 派生脚本默认 stdout 的完整派生 JSON（`--sample` 只输出 sample 节）；不落盘，不接门禁 |
+| 3 | 扫描文件清单 | 见派生脚本内扫描常量：`eventFiles` 4 包 8 文件；`slotFiles` 4 文件；`routeFiles` 6 文件；`domFiles` 2 文件；`catalogFile=pnpm-workspace.yaml`；`sessionDoc=docs/archive/dsh-0.1.5-适配计划.md` |
+| 4 | 派生观察 | `node scripts/derive/host-contract.mjs` 与 `--sample` 均为只读打印（不写文件、不接门禁） |
 | 5 | 文档门禁 | `pnpm docs:check` → exit 0（本 PR 内实跑） |
 | 6 | 缺口 G1（方法语义） | MCP_SECTION_ORDER=160 为字面量（`orderRangeOk=true`，`sectionCall=true`）；官方 SECTION_ORDERS 在本仓无符号级锚，宿主重排只能靠 smoke 区间断言事后发现 |
 | 7 | 缺口 G2（载荷版本） | SESSION_FORMAT_VERSION 无代码符号锚；`assistant/message` 内嵌 stream / attempt 的字段级载荷版本无类型快照可派生 |
