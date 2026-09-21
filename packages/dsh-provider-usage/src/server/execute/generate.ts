@@ -25,14 +25,14 @@ import type {
   MessageId,
   StreamChunk,
 } from "@deepseek-ai/dsh-llm";
-import { metricValue } from "../aggregate/interface.ts";
+import { metricValue } from "../shared/interface.ts";
 import {
   sumToken,
   TREND_UNIDENTIFIED,
   type TrendCell,
   type TrendDirRow,
   type TrendHourRow,
-} from "../collect/interface.ts";
+} from "../shared/interface.ts";
 import type { ReportPeriod } from "../config/interface.ts";
 
 /** 报告生成所用 llm 服务面（LlmRuntime 最小结构面——只依赖实际用到的三个方法）。 */

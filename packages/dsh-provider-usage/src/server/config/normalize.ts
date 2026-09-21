@@ -5,11 +5,12 @@
  * 未自定义的旧三周期模板平滑升级——运行时读面与写面的唯一归一化入口。
  * 迁移域（server/upgrade/config-morph.ts）只做形态割接，不调用本文件：
  * 迁移跑在装配之前、读的是旧磁盘文本，调运行时归一化等于把读语义搬进迁移域。
- * 目录范围口径与数据层同源：TREND_DIR_MAX 经 collect 门面复用（零依赖纯常量，
- * 与 upgrade 复用 LEGACY 词表同形——标识符常量在值层存在、类型表达不了它，
- * 故走门面复用而非注入；截断改跳过会造出永远匹配不到任何行的键）。
+ * 目录范围口径与数据层同源：TREND_DIR_MAX 经 server/shared 门面复用（#768 A波3，
+ * 由 collect 下沉 shared；零依赖纯常量，与 upgrade 复用 LEGACY 词表同形——
+ * 标识符常量在值层存在、类型表达不了它，故走门面复用而非注入；
+ * 截断改跳过会造出永远匹配不到任何行的键）。
  */
-import { TREND_DIR_MAX } from "../collect/interface.ts";
+import { TREND_DIR_MAX } from "../shared/interface.ts";
 import type { ReportConfig, ReportPeriod, ReportPeriodConfig, ReportPrompts } from "./shape.ts";
 import { DEFAULT_REPORT_CONFIG } from "./shape.ts";
 import {
@@ -27,19 +28,11 @@ import {
   LEGACY_WEEKLY_PROMPT_V2,
   LEGACY_WEEKLY_PROMPT_V3,
   LEGACY_WEEKLY_PROMPT_V4,
-} from "./prompts.ts";
+} from "../shared/interface.ts";
 
-/** HH:MM 解析（非法返回 null；notifier quiet-hours 同款严格性）。 */
-export function parseHHMM(v: unknown): { h: number; m: number } | null {
-  if (typeof v !== "string") return null;
-  const m = /^(\d{1,2}):(\d{2})$/.exec(v.trim());
-  if (m === null) return null;
-  const h = Number(m[1]);
-  const mm = Number(m[2]);
-  if (!Number.isInteger(h) || !Number.isInteger(mm) || h < 0 || h > 23 || mm < 0 || mm > 59)
-    return null;
-  return { h, m: mm };
-}
+/** HH:MM 解析（#768 A波1：canonical 已下沉 server/shared/time.ts，本文件 re-export 门面保留旧址兼容）。 */
+export { parseHHMM } from "../shared/interface.ts";
+import { parseHHMM } from "../shared/interface.ts";
 
 /**
  * 归一化报告目录范围（与 provider/model 范围字段同构）：

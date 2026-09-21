@@ -261,7 +261,9 @@ describe("D12一 经 server/ui-routes 域门面装配", () => {
     expect(contextSrc.includes("../pipeline/interface")).toBe(true);
     expect(contextSrc.includes("../aggregate/interface")).toBe(true);
     expect(contextSrc.includes("../shared/interface")).toBe(true);
-    expect(trendSrc.includes("../collect/interface")).toBe(true);
+    // #768 A波3：TREND_DIR_MAX 已下沉 shared，trend 经 shared 门面
+    expect(trendSrc.includes("../collect/interface")).toBe(false);
+    expect(trendSrc.includes("../shared/interface")).toBe(true);
     for (const src of [healthSrc, trendSrc, uiConfigSrc, eventsSrc]) {
       expect(src.includes("./context")).toBe(true);
     }

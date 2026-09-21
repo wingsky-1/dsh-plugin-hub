@@ -12,8 +12,9 @@ import assert from "node:assert/strict";
 import { ROUTES } from "../src/apply/index.ts";
 // 白盒直连深路径（#768 B波）：历史存储经历史域门面，不走组合根转发。
 import { HistoryStore } from "../src/server/history/interface.ts";
-// 白盒直连深路径（#768 B波）：OpenCode 双值经适配器域门面，不走组合根转发。
-import { OPENCODE_GO_PROVIDER, OPENCODE_GO_ADAPTER_ID } from "../src/server/adapters/interface.ts";
+// 白盒直连深路径（#768 A波7：provider 名经跨端共享门面，适配器 id 经适配器域门面）。
+import { OPENCODE_GO_ADAPTER_ID } from "../src/server/adapters/interface.ts";
+import { OPENCODE_GO_PROVIDER } from "../src/shared/interface.ts";
 // 白盒直连深路径（#768 B波）：契约版本经 shared 门面，不走组合根转发。
 import { ADAPTER_CONTRACT_VERSION } from "../src/shared/interface.ts";
 import {

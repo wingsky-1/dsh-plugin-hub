@@ -10,7 +10,12 @@
 import { readFile, writeFile, rename, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import type { ReportPeriod } from "../config/interface.ts";
-import { alignLastRun, deriveLastRun, LAST_RUN_SCHEMA, type LastRunRecord } from "./due.ts";
+import {
+  alignLastRun,
+  deriveLastRun,
+  LAST_RUN_SCHEMA,
+  type LastRunRecord,
+} from "../shared/interface.ts";
 import type { ScheduleIndexParser } from "./deps.ts";
 
 /** lastRun 持久化文件。 */

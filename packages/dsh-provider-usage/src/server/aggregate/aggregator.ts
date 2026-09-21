@@ -38,7 +38,7 @@ import {
   type TrendDirRow,
   type TrendHourRow,
   type TrendTokens,
-} from "../collect/interface.ts";
+} from "../shared/interface.ts";
 import type {
   TrendCallRecord,
   TrendCorrectRecord,

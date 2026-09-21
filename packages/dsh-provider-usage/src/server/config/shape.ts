@@ -7,7 +7,7 @@
  *
  * 缺省引 prompts.ts 的词表（同域实现互引）：形态缺省即「三周期新默认 + 月报镜像」。
  */
-import { DEFAULT_PROMPTS, DEFAULT_PROMPT_TEMPLATE } from "./prompts.ts";
+import { DEFAULT_PROMPTS, DEFAULT_PROMPT_TEMPLATE } from "../shared/interface.ts";
 
 /** 报告周期类型。 */
 export type ReportPeriod = "daily" | "weekly" | "monthly";

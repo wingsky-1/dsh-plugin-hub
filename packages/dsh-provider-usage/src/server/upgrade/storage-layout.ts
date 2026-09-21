@@ -19,7 +19,7 @@ import { mkdir, rename, rm, writeFile } from "node:fs/promises";
 import { randomBytes } from "node:crypto";
 import { basename, dirname, join } from "node:path";
 import type { UpgradeDeps } from "./deps.ts";
-import { LAST_RUN_SCHEMA } from "../schedule/interface.ts";
+import { LAST_RUN_SCHEMA } from "../shared/interface.ts";
 
 /** 归档后缀：搬完留证据，也是「这一份处理过了」的标记（固定名 → 重跑不累积）。 */
 export const MIGRATED_SUFFIX = ".migrated.bak";

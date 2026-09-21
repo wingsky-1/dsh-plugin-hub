@@ -50,17 +50,17 @@ import { apply, inject, ROUTES, HotReloadableAdapter } from "../../lib/index.js"
 import { dayKey } from "../../src/shared/interface.ts";
 // 白盒直连深路径（#768 B波）：用户适配器路径纯面经注册表域门面，不走包入口。
 import { userAdaptersFile, adapterStateFile } from "../../src/server/registry/interface.ts";
-// 白盒直连深路径（#768 B波）：目录上限纯面经采集域门面，不走包入口。
-import { TREND_DIR_MAX } from "../../src/server/collect/interface.ts";
+// 白盒直连深路径（#768 A波3：目录上限纯面经共享门面，不走包入口）。
+import { TREND_DIR_MAX } from "../../src/server/shared/interface.ts";
 // 白盒直连深路径（#768 B波）：调度纯面经调度域门面，不走包入口。
 import { previousClosedWindow } from "../../src/server/schedule/interface.ts";
-// 白盒直连深路径（#768 B波）：OpenCode 双值与 DeepSeek 常量经适配器域门面，不走包入口。
+// 白盒直连深路径（#768 B波）：DeepSeek 常量经适配器域门面，OpenCode provider 名经跨端共享门面（#768 A波7）。
 import {
   DEEPSEEK_OFFICIAL_ADAPTER_ID,
   DEEPSEEK_OFFICIAL_PROVIDER,
-  OPENCODE_GO_PROVIDER,
   OPENCODE_GO_ADAPTER_ID,
 } from "../../src/server/adapters/interface.ts";
+import { OPENCODE_GO_PROVIDER } from "../../src/shared/interface.ts";
 // 白盒直连深路径（#768 B波）：面板缓存与归一化纯面经管线域门面，不走包入口。
 import {
   PANEL_CACHE_TTL_MS,

@@ -37,11 +37,8 @@ import { afterAll, describe, expect, it } from "vitest";
 import { dayKey } from "../../../src/shared/interface.ts";
 // 白盒直连深路径（#768 B波续批）：趋势双文件簇经域门面，不走组合根转发。
 import { TrendAggregator } from "../../../src/server/aggregate/interface.ts";
-import {
-  TrendCollector,
-  sumToken,
-  TREND_UNIDENTIFIED,
-} from "../../../src/server/collect/interface.ts";
+import { TrendCollector } from "../../../src/server/collect/interface.ts";
+import { sumToken, TREND_UNIDENTIFIED } from "../../../src/server/shared/interface.ts";
 
 // ---------------------------------------------------------------- 工具（与 unit-trend.test.ts 同口径）
 

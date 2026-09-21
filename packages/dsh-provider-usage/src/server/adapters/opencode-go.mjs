@@ -20,8 +20,9 @@
  * 样式复用 style.css 中保留的 dou-card / dou-miniChart / dou-legendDot 等类。
  */
 
-/** 内置适配器的 provider 名（如 "opencode-go"）。 */
-export const OPENCODE_GO_PROVIDER = "opencode-go";
+/** 内置适配器的 provider 名（#768 A波7：canonical 已下沉 src/shared/provider.ts，本文件经共享取，扶正域→共享方向）。 */
+import { OPENCODE_GO_PROVIDER } from "../../shared/interface.ts";
+export { OPENCODE_GO_PROVIDER };
 
 /** 内置适配器 id（设置面板候选名，历史割接目标桶）。 */
 export const OPENCODE_GO_ADAPTER_ID = "opencode-go-builtin";

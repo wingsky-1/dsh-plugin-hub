@@ -6,7 +6,7 @@
  *展开为三周期同文本（用户文本不丢）。其它字段原样保留，promptTemplate 回填为 prompts.monthly
  *镜像（旧消费方兼容）。
  *
- * LEGACY 锁表经 server/config/interface.ts 以纯数据复用（D1 起物理定义在 config 域 prompts.ts；
+ * LEGACY 锁表经 server/shared/interface.ts 以纯数据复用（#768 A波2 由 config 下沉 shared；
  * S2 允许的 type-only/纯面复用——常量无副作用，非业务实例；normalizeReportConfig 本体不调用，
  * 避免把业务读面的归一化语义搬进迁移域）。
  * 读经注入（deps.readOldFile），写经同域原语（storage-layout.ts 的 writeFileAtomic 0600），
@@ -29,7 +29,7 @@ import {
   LEGACY_WEEKLY_PROMPT_V2,
   LEGACY_WEEKLY_PROMPT_V3,
   LEGACY_WEEKLY_PROMPT_V4,
-} from "../config/interface.ts";
+} from "../shared/interface.ts";
 import type { UpgradeDeps } from "./deps.ts";
 import { targetConfigFile, writeFileAtomic } from "./storage-layout.ts";
 

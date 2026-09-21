@@ -25,13 +25,14 @@ import {
   deepSeekOfficialAdapter,
   zaiCodingCnAdapter,
   registerBuiltinAdapters,
-  OPENCODE_GO_PROVIDER,
   OPENCODE_GO_ADAPTER_ID,
   DEEPSEEK_OFFICIAL_PROVIDER,
   DEEPSEEK_OFFICIAL_ADAPTER_ID,
   ZAI_CODING_CN_PROVIDER,
   ZAI_CODING_CN_ADAPTER_ID,
 } from "../../../src/server/adapters/interface.ts";
+import { OPENCODE_GO_PROVIDER } from "../../../src/shared/interface.ts";
+import { OPENCODE_GO_PROVIDER as AdaptersProvider } from "../../../src/server/adapters/interface.ts";
 import { registerBuiltinAdapters as ImplRegister } from "../../../src/server/adapters/register.ts";
 import { openCodeGoAdapter as MjsOpenCodeGo } from "../../../src/server/adapters/opencode-go.mjs";
 import { deepSeekOfficialAdapter as MjsDeepSeek } from "../../../src/server/adapters/deepseek-official.mjs";
@@ -113,6 +114,8 @@ describe("D4一 经 server/adapters 域门面装配", () => {
 
   it("ABI 字面：provider 名与适配器 id（静默改名必须红）", () => {
     expect(OPENCODE_GO_PROVIDER).toBe("opencode-go");
+    // #768 A波7：旧址门面仍透出同一引用（兼容门面）
+    expect(AdaptersProvider).toBe(OPENCODE_GO_PROVIDER);
     expect(OPENCODE_GO_ADAPTER_ID).toBe("opencode-go-builtin");
     expect(DEEPSEEK_OFFICIAL_PROVIDER).toBe("deepseek-official");
     expect(DEEPSEEK_OFFICIAL_ADAPTER_ID).toBe("deepseek-official-builtin");

@@ -58,6 +58,10 @@ export {
 } from "./charts.ts";
 export type { AdapterUtils } from "./charts.ts";
 
+// ------------------------------------------------------------------ 跨端 provider 名（provider.ts，#768 A波7）
+
+export { OPENCODE_GO_PROVIDER } from "./provider.ts";
+
 // ------------------------------------------------------------------ 配置归一化（config.ts）
 
 export { DEFAULT_CONFIG, Config, normalizeConfig } from "./config.ts";

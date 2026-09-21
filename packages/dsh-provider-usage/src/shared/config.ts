@@ -6,7 +6,7 @@
  */
 
 import z from "schemastery";
-import { OPENCODE_GO_PROVIDER } from "../server/adapters/interface.ts";
+import { OPENCODE_GO_PROVIDER } from "./provider.ts";
 
 export const DEFAULT_CONFIG = {
   adapter: "",

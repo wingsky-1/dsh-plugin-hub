@@ -36,8 +36,8 @@ import {
   ensureLastRunMigrated,
   candidateWindow,
   pendingReports,
-  LAST_RUN_SCHEMA,
 } from "../../../src/server/schedule/interface.ts";
+import { LAST_RUN_SCHEMA } from "../../../src/server/shared/interface.ts";
 import { ReportScheduler as ImplScheduler } from "../../../src/server/schedule/scheduler.ts";
 import { ReportTaskQueue as ImplQueue } from "../../../src/server/schedule/tasks.ts";
 import {
@@ -48,8 +48,8 @@ import {
 import {
   candidateWindow as ImplCandidate,
   pendingReports as ImplPending,
-  LAST_RUN_SCHEMA as ImplSchema,
 } from "../../../src/server/schedule/due.ts";
+import { LAST_RUN_SCHEMA as ImplSchema } from "../../../src/server/shared/last-run.ts";
 import * as scheduleDepsNs from "../../../src/server/schedule/deps.ts";
 import type {
   ScheduleClock,
@@ -155,8 +155,9 @@ describe("D2一 经 server/schedule 域门面装配", () => {
     expect(reportsSrc.includes("../common/interface")).toBe(false);
   });
 
-  it("迁移步纯函数经调度门面（不调业务实例）", () => {
-    expect(morphSrc.includes('"../schedule/interface.ts"')).toBe(true);
+  it("迁移步纯函数经共享门面（#768 A波4 下沉 shared，不调业务实例）", () => {
+    expect(morphSrc.includes('"../shared/interface.ts"')).toBe(true);
+    expect(morphSrc.includes('"../schedule/interface.ts"')).toBe(false);
     expect(morphSrc.includes("domain2/schedule")).toBe(false);
     const morphImports = morphSrc
       .split(String.fromCharCode(10))
@@ -166,8 +167,8 @@ describe("D2一 经 server/schedule 域门面装配", () => {
     expect(morphImports.some((l) => l.includes("ensureLastRunMigrated"))).toBe(false);
   });
 
-  it("存储布局的空落盘 schema 与调度域同源（单一定义）", () => {
-    expect(storageLayoutSrc.includes("server/schedule/store.ts")).toBe(true);
+  it("存储布局的空落盘 schema 与共享域同源（#768 A波4 单一定义）", () => {
+    expect(storageLayoutSrc.includes('"../shared/interface.ts"')).toBe(true);
     expect(storageLayoutSrc.includes("LAST_RUN_SCHEMA")).toBe(true);
   });
 

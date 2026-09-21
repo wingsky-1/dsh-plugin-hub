@@ -7,9 +7,9 @@ import { join } from "node:path";
 import type { Context } from "@deepseek-ai/cordis";
 import { errorMessage } from "../../../../../shared/host-utils.js";
 import { dayKey, escHtml } from "../../shared/interface.ts";
-import { metricValue } from "../aggregate/interface.ts";
+import { metricValue } from "../shared/interface.ts";
 import type { TrendTracker } from "../aggregate/interface.ts";
-import { sumToken, type TrendCell } from "../collect/interface.ts";
+import { sumToken, type TrendCell } from "../shared/interface.ts";
 import { promptFor, type ReportConfig, type ReportPeriod } from "../config/interface.ts";
 import { reportBodyToHtml } from "./format.ts";
 import {

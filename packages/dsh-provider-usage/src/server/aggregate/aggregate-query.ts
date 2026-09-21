@@ -21,10 +21,9 @@ import {
   type TrendCell,
   type TrendDirRow,
   type TrendHourRow,
-} from "../collect/interface.ts";
-
-/** 聚合指标（序列查询的取值维度；total = 四项 token 之和）。 */
-export type TrendMetric = "total" | "input" | "output" | "cacheRead" | "cacheWrite" | "calls";
+  type TrendMetric,
+} from "../shared/interface.ts";
+export type { TrendMetric } from "../shared/interface.ts";
 
 /** 序列粒度。 */
 export type TrendGranularity = "day" | "week" | "month";
@@ -62,23 +61,9 @@ export interface TrendWindowSummary {
   prevComplete: boolean;
 }
 
-/** cell 的指标取值（total = 四项 token 之和）。 */
-export function metricValue(cell: TrendCell, metric: TrendMetric): number | null {
-  switch (metric) {
-    case "total":
-      return sumToken(sumToken(cell.input, cell.output), sumToken(cell.cacheRead, cell.cacheWrite));
-    case "input":
-      return cell.input;
-    case "output":
-      return cell.output;
-    case "cacheRead":
-      return cell.cacheRead;
-    case "cacheWrite":
-      return cell.cacheWrite;
-    case "calls":
-      return cell.calls;
-  }
-}
+/** cell 的指标取值（#768 A波5：canonical 已下沉 server/shared/trend.ts，本文件 re-export 门面保留旧址兼容）。 */
+export { metricValue } from "../shared/interface.ts";
+import { metricValue } from "../shared/interface.ts";
 
 /** 周一为起点的周首日 day key（本地时区；DST 安全——逐日回退不用毫秒减法）。 */
 export function weekStartKey(t: number): string {

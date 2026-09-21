@@ -22,8 +22,8 @@ import {
 } from "./aggregator.ts";
 import { TrendCollector } from "../collect/interface.ts";
 import { TrendStore } from "./store.ts";
-import type { TrendAggRow, TrendDirRow, TrendHourRow } from "../collect/interface.ts";
-import { safeId } from "../collect/interface.ts";
+import type { TrendAggRow, TrendDirRow, TrendHourRow } from "../shared/interface.ts";
+import { safeId } from "../shared/interface.ts";
 
 export interface TrendTrackerOptions {
   /** 存储根（<historyRoot>/trend）。 */

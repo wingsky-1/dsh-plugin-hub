@@ -47,7 +47,7 @@ import { dayKey } from "../../../src/shared/interface.ts";
 // 白盒直连深路径（#768 B波）：历史存储经历史域门面，不走组合根转发。
 import { HistoryStore } from "../../../src/server/history/interface.ts";
 import { TrendTracker } from "../../../src/server/aggregate/interface.ts";
-import { TREND_ROW_VERSION, TREND_UNIDENTIFIED } from "../../../src/server/collect/interface.ts";
+import { TREND_ROW_VERSION, TREND_UNIDENTIFIED } from "../../../src/server/shared/interface.ts";
 import { normalizeConfig, DEFAULT_CONFIG } from "../../../src/shared/interface.ts";
 // 白盒直连深路径（#768 B波）：趋势聚合/采集纯面经域门面，不走组合根转发。
 import {
@@ -56,15 +56,14 @@ import {
   mergeAggRows,
   mergeDirRows,
   mergeHourRows,
-  metricValue,
 } from "../../../src/server/aggregate/interface.ts";
+import { TrendCollector, TREND_DONE_MAX } from "../../../src/server/collect/interface.ts";
 import {
-  TrendCollector,
-  TREND_DONE_MAX,
   isValidShardRow,
   sanitizeDirName,
   sumToken,
-} from "../../../src/server/collect/interface.ts";
+  metricValue,
+} from "../../../src/server/shared/interface.ts";
 
 // ---------------------------------------------------------------- 工具
 

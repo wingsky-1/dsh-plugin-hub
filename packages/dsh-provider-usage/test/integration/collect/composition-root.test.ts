@@ -29,9 +29,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanupIsolatedDirs, containsAny, hasExportStar, makeIsolatedDir } from "../../helpers.ts";
+import { TrendCollector, TREND_DONE_MAX } from "../../../src/server/collect/interface.ts";
 import {
-  TrendCollector,
-  TREND_DONE_MAX,
   TREND_ROW_VERSION,
   TREND_UNIDENTIFIED,
   TREND_DIR_MAX,
@@ -41,7 +40,7 @@ import {
   safeToken,
   safeId,
   isValidShardRow,
-} from "../../../src/server/collect/interface.ts";
+} from "../../../src/server/shared/interface.ts";
 import { TrendCollector as ImplCollector } from "../../../src/server/collect/collector.ts";
 import {
   sanitizeDirName as ImplSanitize,
@@ -50,7 +49,7 @@ import {
   safeToken as ImplSafeToken,
   safeId as ImplSafeId,
   isValidShardRow as ImplValid,
-} from "../../../src/server/collect/types.ts";
+} from "../../../src/server/shared/trend.ts";
 import * as collectDepsNs from "../../../src/server/collect/deps.ts";
 import type {
   CollectWarn,
@@ -194,10 +193,15 @@ describe("D9一 经 server/collect 域门面装配", () => {
       expect(usesOldFace(src)).toBe(false);
     }
     expect(applyFaceSrc.includes("server/collect/interface")).toBe(true);
+    // #768 A波3/5/6：纯下沉 shared 后仅 TrendCollector（有状态，B波注入）仍经 collect 门面；
+    // 纯面（TREND_*/sumToken/sanitize 等）一律经 shared 门面
     expect(aggIndexSrc.includes("../collect/interface")).toBe(true);
-    expect(normalizeSrc.includes("../collect/interface")).toBe(true);
-    expect(runnerSrc.includes("../collect/interface")).toBe(true);
-    expect(uiRoutesSrc.includes("../collect/interface")).toBe(true); // #768 跨域路径统一：同级短径，与余下消费一致
+    expect(normalizeSrc.includes("../collect/interface")).toBe(false);
+    expect(normalizeSrc.includes("../shared/interface")).toBe(true);
+    expect(runnerSrc.includes("../collect/interface")).toBe(false);
+    expect(runnerSrc.includes("../shared/interface")).toBe(true);
+    expect(uiRoutesSrc.includes("../collect/interface")).toBe(false);
+    expect(uiRoutesSrc.includes("../shared/interface")).toBe(true); // #768 跨域路径统一：同级短径，与余下消费一致
   });
 
   it("门面收口：interface 与实现同一引用（包装即红）", () => {

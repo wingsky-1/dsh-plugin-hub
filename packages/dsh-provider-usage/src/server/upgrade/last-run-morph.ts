@@ -4,8 +4,8 @@
  * 语义与 server/schedule/store.ts 的 ensureLastRunMigrated 同源（D2 前在 domain2/common/last-run.ts），但文件原语走 S2 注入面
  *（deps.readOldFile 读 + 同域 writeFileAtomic 写），不调业务实例
  *（readLastRun/writeLastRun/updateLastRun/ensureLastRunMigrated 均不导入）。
- * deriveLastRun/alignLastRun/LAST_RUN_SCHEMA 经 server/schedule/interface.ts 以纯函数复用
- *（零 node 依赖，确定性无副作用；S2 允许的 type+pure 面）。
+ * deriveLastRun/alignLastRun/LAST_RUN_SCHEMA 经 server/shared/interface.ts 以纯函数复用
+ *（#768 A波4 由 schedule 下沉 shared；零 node 依赖，确定性无副作用；S2 允许的 type+pure 面）。
  *
  * per-root 临界区链留 schedule（METHOD §3 Q1 有主即止）：本步在装配前单线程跑，
  * 无并发写方（preset/执行器尚未装配），直接写安全；装配后的并发写仍走 schedule 的
@@ -19,7 +19,7 @@ import {
   alignLastRun,
   deriveLastRun,
   type LastRunRecord,
-} from "../schedule/interface.ts";
+} from "../shared/interface.ts";
 import type { UpgradeDeps } from "./deps.ts";
 import { targetLastRunFile, writeFileAtomic } from "./storage-layout.ts";
 

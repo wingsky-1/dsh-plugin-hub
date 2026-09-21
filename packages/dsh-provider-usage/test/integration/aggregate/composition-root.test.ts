@@ -61,7 +61,7 @@ import type {
   AggregateClock,
   AggregateResolveCwd,
 } from "../../../src/server/aggregate/deps.ts";
-import { TREND_ROW_VERSION } from "../../../src/server/collect/interface.ts";
+import { TREND_ROW_VERSION } from "../../../src/server/shared/interface.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const srcDir = join(here, "..", "..", "..", "src");
@@ -123,7 +123,9 @@ describe("D8一 经 server/aggregate 域门面装配", () => {
     expect(applySrc.includes("server/aggregate/interface")).toBe(true);
     expect(applyFaceSrc.includes("server/aggregate/interface")).toBe(true);
     expect(runnerSrc.includes("../aggregate/interface")).toBe(true);
-    expect(generateSrc.includes("../aggregate/interface")).toBe(true);
+    // #768 A波5：metricValue 已下沉 shared，generate 不再经 aggregate 门面（经 shared 纯面）
+    expect(generateSrc.includes("../aggregate/interface")).toBe(false);
+    expect(generateSrc.includes("../shared/interface")).toBe(true);
   });
 
   it("门面收口：interface 与实现同一引用（包装即红）", () => {

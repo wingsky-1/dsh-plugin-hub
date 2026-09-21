@@ -29,15 +29,15 @@ import {
   LAST_RUN_SCHEMA,
   deriveLastRun,
   alignLastRun,
-} from "../../../src/server/schedule/interface.ts";
+} from "../../../src/server/shared/interface.ts";
+import { normalizeReportConfig } from "../../../src/server/config/interface.ts";
 import {
-  normalizeReportConfig,
   DEFAULT_PROMPTS,
   LEGACY_PROMPT_TEMPLATE,
   LEGACY_DAILY_PROMPT_V1,
   LEGACY_WEEKLY_PROMPT_V1,
   LEGACY_MONTHLY_PROMPT_V1,
-} from "../../../src/server/config/interface.ts";
+} from "../../../src/server/shared/interface.ts";
 
 const SERVER_DIR = fileURLToPath(new URL("../../../src/server/", import.meta.url));
 

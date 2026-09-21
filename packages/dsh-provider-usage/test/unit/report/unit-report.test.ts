@@ -42,16 +42,13 @@ import { dayKey } from "../../../src/shared/interface.ts";
 // 白盒直连深路径（#768 B波）：净化纯面经 shared 门面，不走组合根转发。
 import { sanitizeHtml } from "../../../src/shared/interface.ts";
 import { TrendTracker } from "../../../src/server/aggregate/interface.ts";
-import { TREND_ROW_VERSION, TREND_UNIDENTIFIED } from "../../../src/server/collect/interface.ts";
+import { TREND_ROW_VERSION, TREND_UNIDENTIFIED } from "../../../src/server/shared/interface.ts";
 // 白盒直连深路径（#768 B波续批）：报告调度/配置/执行/路由纯面经域门面，不走组合根转发。
 import {
-  LAST_RUN_SCHEMA,
   ReportScheduler,
   ReportTaskQueue,
   candidateWindow,
-  deriveLastRun,
   ensureLastRunMigrated,
-  isClosedWindowRecord,
   pendingReports,
   presetLastRunForNewlyEnabled,
   previousClosedWindow,
@@ -60,13 +57,18 @@ import {
   readLastRun,
 } from "../../../src/server/schedule/interface.ts";
 import {
+  LAST_RUN_SCHEMA,
+  deriveLastRun,
+  isClosedWindowRecord,
+} from "../../../src/server/shared/interface.ts";
+import {
   DEFAULT_REPORT_CONFIG,
   normalizeReportConfig,
-  parseHHMM,
   promptFor,
   writeReportConfig,
   readReportConfig,
 } from "../../../src/server/config/interface.ts";
+import { parseHHMM } from "../../../src/server/shared/interface.ts";
 import {
   applyPromptTemplate,
   buildStatsSnapshot,
@@ -100,7 +102,7 @@ import {
   LEGACY_DAILY_PROMPT_V4,
   LEGACY_WEEKLY_PROMPT_V4,
   LEGACY_MONTHLY_PROMPT_V4,
-} from "../../../src/server/config/interface.ts";
+} from "../../../src/server/shared/interface.ts";
 // 白盒直连深路径（#768 B波）：测试钩子经 schedule/execute 深路径，不走组合根转发。
 import { __lastRunChainForTests } from "../../../src/server/schedule/store.ts";
 import {
