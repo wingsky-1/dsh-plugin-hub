@@ -34,7 +34,10 @@ import {
 import { OPENCODE_GO_PROVIDER } from "../../../src/shared/interface.ts";
 import { OPENCODE_GO_PROVIDER as AdaptersProvider } from "../../../src/server/adapters/interface.ts";
 import { registerBuiltinAdapters as ImplRegister } from "../../../src/server/adapters/register.ts";
-import { openCodeGoAdapter as MjsOpenCodeGo } from "../../../src/server/adapters/opencode-go.mjs";
+import {
+  openCodeGoAdapter as MjsOpenCodeGo,
+  OPENCODE_GO_PROVIDER as MjsProvider,
+} from "../../../src/server/adapters/opencode-go.mjs";
 import { deepSeekOfficialAdapter as MjsDeepSeek } from "../../../src/server/adapters/deepseek-official.mjs";
 import { zaiCodingCnAdapter as MjsZai } from "../../../src/server/adapters/zai-coding-cn.mjs";
 import * as adaptersDepsNs from "../../../src/server/adapters/deps.ts";
@@ -113,6 +116,8 @@ describe("D4一 经 server/adapters 域门面装配", () => {
   });
 
   it("ABI 字面：provider 名与适配器 id（静默改名必须红）", () => {
+    // #768 B1a 等值哨兵：mjs:24 字面与 shared/provider.ts:13 同值（双字面漂移必须红）
+    expect(MjsProvider).toBe(OPENCODE_GO_PROVIDER);
     expect(OPENCODE_GO_PROVIDER).toBe("opencode-go");
     // #768 A波7：旧址门面仍透出同一引用（兼容门面）
     expect(AdaptersProvider).toBe(OPENCODE_GO_PROVIDER);

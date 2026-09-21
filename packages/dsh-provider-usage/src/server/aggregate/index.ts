@@ -94,6 +94,8 @@ export class TrendTracker {
 
   /** 启动：载入分片重建内存聚合 + 过去日明细分片自愈压实。 */
   static async start(opts: TrendTrackerOptions): Promise<TrendTracker> {
+    // #768 B1c 运行时锁：工厂漏传在编译期外再加显式守卫（未装配占位抛错，不给空实现）。
+    if (!opts.makeCollector) throw new Error("TrendTracker.start 缺少 makeCollector 工厂");
     const resolved = {
       retentionDays: opts.retentionDays ?? 180,
       flushDebounceMs: opts.flushDebounceMs ?? 4000,

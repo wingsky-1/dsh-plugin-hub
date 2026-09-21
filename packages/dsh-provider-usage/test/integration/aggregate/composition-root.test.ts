@@ -254,6 +254,13 @@ describe("D8三 deps 注入面窄面", () => {
     expect(Object.keys(aggregateDepsNs)).toEqual([]);
   });
 
+  it("工厂漏传抛错（运行时锁，空实现即红）", async () => {
+    const dir = isolatedDir("dou-aggD8-guard-");
+    await expect(
+      TrendTracker.start({ root: dir } as unknown as Parameters<typeof TrendTracker.start>[0]),
+    ).rejects.toThrow("缺少 makeCollector");
+  });
+
   it("命名接缝装配 TrendTracker（改名断链即红；落盘走隔离目录）", async () => {
     const dir = isolatedDir("dou-aggD8-");
     const tracker = await TrendTracker.start({

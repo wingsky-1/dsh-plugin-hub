@@ -389,6 +389,24 @@ describe("D11二 配置服务窄面消费 + 任务队列 + 执行器", () => {
     expect((cfg._current() as { daily: { time: string } }).daily.time).toBe("08:00");
   });
 
+  it("首次启用翻转落盘lastRun（changed接线，断线即红）", async () => {
+    // #768 B1b：changed=true→updateLastRun 接线覆盖（翻转 daily 关闭→启用，lastRun 落盘非空）。
+    const root = isolatedDir("dou-reportroutesD11-flip-");
+    const { ctx } = stubReportCtx(root);
+    const posted = await callStatus(
+      handleReportConfig as AnyHandler,
+      fakeReq({
+        method: "POST",
+        body: JSON.stringify({ daily: { enabled: true, time: "08:00" } }),
+      }),
+      ctx,
+    );
+    expect(posted.code).toBe(200);
+    const lastRun = await readLastRun(root);
+    expect(typeof lastRun.daily).toBe("string");
+    expect((lastRun.daily as string).length).toBeGreaterThan(0);
+  });
+
   it("目录候选异常不连坐配置本身（降级空数组，误拦即红）", async () => {
     const root = isolatedDir("dou-reportroutesD11-");
     const { ctx } = stubReportCtx(root, { throwingDirs: true });
