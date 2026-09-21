@@ -97,12 +97,6 @@
       "trackingIssue": "#847",
       "reviewBy": "2027-03-31",
       "exitCriteria": "对应单测迁出 test/unit 或不再直引客户端实现面后删本条"
-    },
-    {
-      "gate": "verify-dir-imports",
-      "path": "dsh-provider-usage:server/pipeline|server/registry",
-      "reason": "#768 D7：管线经 registry 门面取提供商配置解析与适配器状态读写原语（owner 已归 server/registry，D7 由 domain1/registry 整域迁入；D6 为 server/pipeline|domain1/registry，边归属同步迁移）。树内 integration/registry 用例锁定。长期条目。",
-      "trackingIssue": "#768"
     }
   ]
 }

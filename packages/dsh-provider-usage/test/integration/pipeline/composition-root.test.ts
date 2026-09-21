@@ -70,6 +70,11 @@ const applyFaceSrc = readFileSync(join(srcDir, "apply", "index.ts"), "utf8");
 const uiRoutesSrc = readFileSync(join(srcDir, "server", "ui-routes", "context.ts"), "utf8");
 const pipelineFaceSrc = readFileSync(join(srcDir, "server", "pipeline", "interface.ts"), "utf8");
 const pipelineDepsSrc = readFileSync(join(srcDir, "server", "pipeline", "deps.ts"), "utf8");
+const statsServiceSrc = readFileSync(
+  join(srcDir, "server", "pipeline", "stats-service.ts"),
+  "utf8",
+);
+const registrySrc = readFileSync(join(srcDir, "server", "registry", "registry.ts"), "utf8");
 const unitStatsTestSrc = readFileSync(
   join(srcDir, "..", "test", "unit", "pipeline", "unit-stats-service.test.ts"),
   "utf8",
@@ -184,6 +189,17 @@ describe("D6一 经 server/pipeline 域门面装配", () => {
     for (const p of ["src/server/pipeline/v2.ts", "src/server/pipeline/stats-service.ts"]) {
       expect(topologySrc.includes(p)).toBe(true);
     }
+  });
+
+  it("B2 注册能力经实例调用（值边清零，直引残留必须红）", () => {
+    expect(statsServiceSrc.includes("this.registry.resolveProviderConfig")).toBe(true);
+    expect(statsServiceSrc.includes("this.registry.readAdapterStateResult")).toBe(true);
+    expect(statsServiceSrc.includes("this.registry.writeAdapterState")).toBe(true);
+    expect(statsServiceSrc.includes("this.registry.readUserAdapters")).toBe(true);
+    expect(statsServiceSrc.includes("this.registry.userAdaptersFile")).toBe(true);
+    expect(statsServiceSrc.includes("import { resolveProviderConfig")).toBe(false);
+    expect(statsServiceSrc.includes("import {\n  readAdapterStateResult,")).toBe(false);
+    expect(registrySrc.includes("resolveProviderConfigBound")).toBe(true);
   });
 });
 

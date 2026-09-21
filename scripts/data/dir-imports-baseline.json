@@ -83,9 +83,9 @@
       "scannedSrcFiles": 92,
       "allSrcTsFiles": 107,
       "interfaceFacades": 15,
-      "leafValueEdges": 18,
-      "fileValueEdges": 147,
-      "crossModuleRefs": 157,
+      "leafValueEdges": 17,
+      "fileValueEdges": 148,
+      "crossModuleRefs": 156,
       "quality": {
         "leafModuleCycles": [],
         "fileCycles": [],
@@ -93,9 +93,7 @@
         "missingInterface": [],
         "directImpl": [],
         "uncoveredSrcFiles": [],
-        "crossDomainValueEdges": [
-          "server/pipeline|server/registry"
-        ],
+        "crossDomainValueEdges": [],
         "rootIndexImports": [],
         "clientServerImports": [],
         "unitImportFaceViolations": []

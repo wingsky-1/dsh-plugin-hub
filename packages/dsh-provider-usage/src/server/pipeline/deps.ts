@@ -27,9 +27,9 @@
  * - server/history 的 HistoryStore 经 server/history/interface.ts 以 type
  *   复用（v2.ts 的 Pick<HistoryStore, "last"> 与统计服务的 HistoryStore
  *   整体类型；实例只由组合根构造、经 StatsServiceOptions 传入）；
- * - server/registry 的 resolveProviderConfig 与 adapter-state 读写原语经
- *   server/registry/interface.ts 以值复用（owner 已归 server/registry 域，
- *   #768 D7 由 domain1/registry 整域迁入；边 server/pipeline|server/registry）；
+ * - server/registry 的 AdapterRegistry 类型经 server/registry/interface.ts
+ *   以 type 复用；模型配置与适配器状态读写经实例方法调用（同域收口后
+ *   #768 B2 值边清零，实例只由组合根构造、经 StatsServiceOptions 传入）；
  * - node:fs/promises 与 async-mutex 是宿主能力（原子写 tmp+rename 载体与
  *   per-provider 互斥），由实现块直接持有，不经域注入面。
  *

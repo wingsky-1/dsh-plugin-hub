@@ -6,10 +6,24 @@
  * - `select(provider, name|null)` 运行时切换/清空启用
  * - `getEntry(provider)` 返回启用条目；无启用候选返回 undefined，
  *   区分 `no-adapter`（无候选）与 `no-enabled-adapter`（有候选但全禁用）
+ *
+ * #768 B2 收口：模型配置读取与适配器状态读写原语收进实例方法（同域内直引
+ * provider-config.ts/user-adapters.ts，管线经实例调用，不直引 registry 门面值边）。
  */
 import { basename } from "node:path";
 import type { UsageStatsAdapter } from "../../shared/interface.ts";
 import { isUsageStatsAdapter, describeUsageStatsAdapterShape } from "../../shared/interface.ts";
+import {
+  resolveProviderConfig,
+  type ProviderConfigInput,
+  type ResolvedProviderConfig,
+} from "./provider-config.ts";
+import {
+  readAdapterStateResult,
+  readUserAdapters,
+  userAdaptersFile,
+  writeAdapterState,
+} from "./user-adapters.ts";
 
 /** 适配器来源。 */
 export type AdapterSource = "builtin" | "user-file";
@@ -309,6 +323,15 @@ export function makeAdapterRegistry(
     return { ok: true, name: a.name };
   }
 
+  /** 模型配置读取（同域 provider-config.ts，管线经实例调用）。 */
+  function resolveProviderConfigBound(
+    provider: string,
+    ctx: unknown,
+    input?: ProviderConfigInput,
+  ): Promise<ResolvedProviderConfig> {
+    return resolveProviderConfig(provider, ctx, input);
+  }
+
   return {
     register,
     recordError,
@@ -322,6 +345,11 @@ export function makeAdapterRegistry(
     removeByFile,
     replaceByFile,
     snapshot,
+    resolveProviderConfig: resolveProviderConfigBound,
+    readAdapterStateResult,
+    readUserAdapters,
+    userAdaptersFile,
+    writeAdapterState,
   };
 }
 

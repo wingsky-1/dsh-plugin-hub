@@ -1,5 +1,8 @@
 /**
  * dsh-provider-usage — 用量统计拉取、缓存管理与互斥锁服务。
+ *
+ * 注册能力经实例调用（#768 B2：模型配置与适配器状态读写收进 AdapterRegistry
+ * 实例方法，本域不直引 registry 门面值边；类型经门面以 type 复用）。
  */
 import { rename, writeFile } from "node:fs/promises";
 import type { Context } from "@deepseek-ai/cordis";
@@ -15,16 +18,9 @@ import {
   type PanelCacheEntry,
   type V2PipelineResult,
 } from "./v2.ts";
-import { resolveProviderConfig } from "../registry/interface.ts";
 import type { AdapterRegistry } from "../registry/interface.ts";
 import type { UsageStatsAdapter } from "../../shared/interface.ts";
-import {
-  readAdapterStateResult,
-  readUserAdapters,
-  userAdaptersFile,
-  writeAdapterState,
-  type UserAdapterRecord,
-} from "../registry/interface.ts";
+import type { UserAdapterRecord } from "../registry/interface.ts";
 
 export interface StatsServiceOptions {
   ctx: Context;
@@ -170,7 +166,7 @@ export class StatsService {
     this.stateChain = this.stateChain
       .catch(() => {})
       .then(async () => {
-        const saved = await readAdapterStateResult(this.historyRoot, {
+        const saved = await this.registry.readAdapterStateResult(this.historyRoot, {
           diagnostic: this.recordAdapterStateDiagnostic,
         });
         if (saved.status === "unreadable") {
@@ -182,7 +178,7 @@ export class StatsService {
         for (const [provider, name] of Object.entries(this.registry.snapshot().enabled))
           merged[provider] = name;
         if (override !== undefined) Object.assign(merged, override);
-        await writeAdapterState(this.historyRoot, merged, (message) =>
+        await this.registry.writeAdapterState(this.historyRoot, merged, (message) =>
           this.recordAdapterStateDiagnostic(this.sanitizeDiagnostic(message)),
         );
       })
@@ -195,12 +191,12 @@ export class StatsService {
 
   async persistUserAdapter(rec: UserAdapterRecord): Promise<void> {
     const write = async (): Promise<void> => {
-      const list = await readUserAdapters(this.historyRoot);
+      const list = await this.registry.readUserAdapters(this.historyRoot);
       if (list.some((r) => r.id === rec.id)) return;
       list.push(rec);
-      const tmp = `${userAdaptersFile(this.historyRoot)}.${Date.now()}.tmp`;
+      const tmp = `${this.registry.userAdaptersFile(this.historyRoot)}.${Date.now()}.tmp`;
       await writeFile(tmp, JSON.stringify({ version: 1, adapters: list }), { mode: 0o600 });
-      await rename(tmp, userAdaptersFile(this.historyRoot));
+      await rename(tmp, this.registry.userAdaptersFile(this.historyRoot));
     };
     try {
       await (this.stateChain = this.stateChain.then(write));
@@ -240,7 +236,7 @@ export class StatsService {
         return result;
       }
 
-      const providerConfig = await resolveProviderConfig(provider, this.ctx, {
+      const providerConfig = await this.registry.resolveProviderConfig(provider, this.ctx, {
         apiEndpoint: this.config.apiEndpoint || undefined,
         apiKey: this.config.apiKey || undefined,
       });
