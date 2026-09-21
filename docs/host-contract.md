@@ -5,7 +5,6 @@
 全部单元格由派生回填：事实源是 [派生脚本](../scripts/derive/host-contract.mjs) 的实时输出，
 其落盘形态是 [快照](../scripts/data/host-contract.snapshot.json)（`result` 原样 + `sources` + `deriveVersion`）。
 本文不手写任何事件名 / slot key / 路由 / 方法 / 常量值；与快照不一致即以快照为准。
-纪律：快照只含契约面（事件名 / key / 路由 / 常量），实现重构若被迫改快照即越界当天修。
 
 复核命令（仓库根执行）：
 
