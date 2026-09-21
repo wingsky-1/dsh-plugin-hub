@@ -67,6 +67,8 @@ import { dryRunReasonText } from "./reason-text.ts";
 import { channelsPane } from "./settings/panes/channels.tsx";
 import { eventsPane } from "./settings/panes/events.tsx";
 import { historyPane } from "./settings/panes/history.tsx";
+import { tabIcon } from "./settings/parts/kind-icons.tsx";
+import { dirtyStatusText, routeSummaryText } from "./settings/parts/route-text.ts";
 import type { ChannelStatusMap } from "./settings/parts/status.tsx";
 import type {
   ClearHistoryResult,
@@ -124,7 +126,7 @@ const STYLE_ID = "dsh-notifier-style";
 // 声音行/三态/试听样式加入时再次 bump。
 // 能力自检行（dn-ch-diag）加入时再次 bump。
 // dry-run 结果行与脏态测试按钮样式加入时再次 bump。
-const CSS_VERSION = "912-1";
+const CSS_VERSION = "ui-v3-2";
 // 浏览器通知图标（内联 SVG data URL，零外部资源；铃铛造型）。
 const NOTIFY_ICON =
   "data:image/svg+xml;utf8," +
@@ -1347,14 +1349,30 @@ function SettingsCard() {
           if (isCustom) routeSetKind(kind, null);
         }}
       >
-        {isCustom ? t("routeCustomState", { n: litIds.length }) : t("routeDefaultState")}
+        {isCustom
+          ? t("routeCustomState", { n: litIds.length - staleIds.length })
+          : t("routeDefaultState")}
       </button>,
     );
+    // 默认收成投递摘要；自定义但候选无点亮（仅 stale 残留等）不得误报「跟随默认」
+    // 摘要点名的是真实投递面（启用 ∩ 点亮）：停用频道即使在快照里点亮也不投递，
+    // 点名它即假点亮（M1）。N 取快照内现存候选数（剔除已删频道的 stale 残留，
+    // stale 在展开区以独立 chip 呈现，不重复计入 N）。决策函数见 parts/route-text.ts。
+    const litLabels: string[] = [];
+    options.forEach(function (o) {
+      if (o.enabled && litSet[o.id] === true) litLabels.push(o.label);
+    });
+    const summaryText = routeSummaryText(litLabels, isCustom, litIds.length - staleIds.length, t);
     return (
-      <div className="dn-evt-routes" key={"routes-" + kind}>
-        <span className="dn-evt-routesCap">{t("routeCap")}</span>
-        {chips}
-      </div>
+      <details className="dn-evt-routeDisc" key={"routes-" + kind}>
+        <summary className="dn-evt-routeSum" title={t("routeExpandHint")}>
+          {summaryText}
+        </summary>
+        <div className="dn-evt-routes">
+          <span className="dn-evt-routesCap">{t("routeCap")}</span>
+          {chips}
+        </div>
+      </details>
     );
   }
 
@@ -1395,7 +1413,7 @@ function SettingsCard() {
     return !k.confirmed;
   }).length;
 
-  // tab 栏：三个普通 button（不引入 role=tablist 管理成本）
+  // tab 栏：三个普通 button（不引入 role=tablist 管理成本）+ 分段 icon
   const tabbar = (
     <div className="dn-set-tabs">
       <button
@@ -1405,6 +1423,7 @@ function SettingsCard() {
           setActiveTab("events");
         }}
       >
+        {tabIcon("events")}
         {t("secEvents")}
         {pendingKinds > 0 ? <span className="dn-set-tabBadge">{String(pendingKinds)}</span> : null}
       </button>
@@ -1415,6 +1434,7 @@ function SettingsCard() {
           setActiveTab("channels");
         }}
       >
+        {tabIcon("channels")}
         {t("secChannels")}
       </button>
       <button
@@ -1424,6 +1444,7 @@ function SettingsCard() {
           setActiveTab("history");
         }}
       >
+        {tabIcon("history")}
         {t("secHistory")}
       </button>
     </div>
@@ -1434,9 +1455,14 @@ function SettingsCard() {
   // foot 显示全量脏计数（含频道域）；「保存频道」按钮的域脏态不做单独
   // 计数——无频道域脏时点击走空 diff 的「未修改」提示（与 foot 保存同交互语义）。
   const dirtyCount = Object.keys(diffPayload()).length;
-  // 频道域脏（测试按钮 dry-run 文案的依据，B-S1-3）：只看 channels 键——事件 tab 的脏
-  // 不该让频道测试按钮改文案（它发的本来就是 channels 草稿）。
-  const channelsDirty = Object.keys(diffPayloadFor("channels")).length > 0;
+  // 频道域脏：domainPayload("channels") 是顶层单键负载（{} 或 {channels}），
+  // Object.keys 长度只能 0/1——文案按「域是否脏」说，不假装能数出 N 处频道字段。
+  const channelsDiff = diffPayloadFor("channels");
+  const channelsDirty = Object.keys(channelsDiff).length > 0;
+  const channelsDirtyCount = channelsDirty ? 1 : 0;
+  const otherDirtyCount = Math.max(0, dirtyCount - channelsDirtyCount);
+  // 脏文案决策见 parts/route-text.ts（M2：可执行断言覆盖三分支）。
+  const dirtyText = dirtyStatusText(dirtyCount, channelsDirty, otherDirtyCount, t);
 
   /**
    * dry-run 结果行（B-S1-4）：独立行、打标「草稿测试·未落盘」，常驻 [去保存][放弃草稿]，
@@ -1579,8 +1605,8 @@ function SettingsCard() {
         <div className="dn-set-foot">
           {saved ? (
             <span className={saved.err ? "dn-set-error" : "dn-set-saved"}>{saved.msg}</span>
-          ) : dirtyCount > 0 ? (
-            <span className="dn-dirty">{t("dirtySome", { n: dirtyCount })}</span>
+          ) : dirtyText !== null ? (
+            <span className="dn-dirty">{dirtyText}</span>
           ) : null}
           <span className="dn-spacer" />
           {/* 保存中（guard 在途）禁用「放弃更改」与「保存」——防提交窗口内矛盾操作

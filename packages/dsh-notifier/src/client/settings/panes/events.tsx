@@ -13,6 +13,7 @@ import { KIND_KEYS } from "../../locales.ts";
 import type { NotifierLocaleKey } from "../../locales.ts";
 import type { Translate } from "../../locale.ts";
 import { switchControl, switchToggle } from "../parts/controls.tsx";
+import { kindIcon, sevIcon } from "../parts/kind-icons.tsx";
 import { advRow } from "../parts/rows.tsx";
 import type { QuietHoursView, RegisteredKindView, SettingsPatch, SettingsView } from "../types.ts";
 
@@ -62,12 +63,13 @@ export function eventsPane(
     eventChildren.push(
       <div className="dn-evt" key={"ev-" + key}>
         <div className="dn-evt-head">
+          {kindIcon(kindId)}
+          <span className="dn-evt-name">{t(labelKey)}</span>
+          <span className="dn-evt-kind">{kindId}</span>
           <span
             className={"dn-sev" + (sev !== "info" ? " dn-sev-" + sev : "")}
             title={"severity: " + sev}
           />
-          <span className="dn-evt-name">{t(labelKey)}</span>
-          <span className="dn-evt-kind">{kindId}</span>
           {switchControl(key, t("evtSwitch", { name: t(labelKey) }), settings, patch)}
         </div>
         {routeChipsRow(kindId)}
@@ -83,7 +85,7 @@ export function eventsPane(
       return (
         <div className="dn-kinds dn-kinds-ok" key={k.id}>
           <div className="dn-kinds-head">
-            <span className="dn-sev" />
+            {kindIcon(k.id)}
             <span className="dn-kinds-name">{nameText}</span>
             <span className="dn-evt-kind">{k.id}</span>
             <span className="dn-kinds-actions">
@@ -105,7 +107,7 @@ export function eventsPane(
     return (
       <div className="dn-kinds" key={k.id}>
         <div className="dn-kinds-head">
-          <span className="dn-sev" />
+          {kindIcon(k.id)}
           <span className="dn-kinds-name">{nameText}</span>
           <span className="dn-evt-kind">{k.id}</span>
           <span className="dn-kinds-actions">
@@ -238,7 +240,7 @@ export function eventsPane(
   const dndCard = (
     <div className="dn-dnd" key="dnd">
       <div className="dn-dnd-head">
-        <span className="dn-sev dn-sev-warning" />
+        {sevIcon("warning", "dn-sev-warning")}
         <span className="dn-evt-name">{t("dndEnable")}</span>
         {switchToggle(
           qh.enabled === true,

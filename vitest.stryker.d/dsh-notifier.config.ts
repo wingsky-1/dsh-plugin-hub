@@ -31,6 +31,7 @@ export default defineConfig({
       'packages/dsh-notifier/test/client-unit/save-guard.test.ts',
       'packages/dsh-notifier/test/client-unit/settings-compare-912.test.ts',
       'packages/dsh-notifier/test/client-unit/settings-diff.test.ts',
+      'packages/dsh-notifier/test/client-unit/settings-ui-v3.test.ts',
       'packages/dsh-notifier/test/client-unit/status-poll.test.ts',
       'packages/dsh-notifier/test/client-unit/status-text.test.ts',
       'packages/dsh-notifier/test/integration/consumer-types.test.ts',

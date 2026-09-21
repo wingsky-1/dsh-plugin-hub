@@ -143,7 +143,7 @@ export function barkCard(
   );
   return (
     <details
-      className={"dn-ch-card" + (ch.enabled ? " dn-ch-onEdge" : " dn-ch-off")}
+      className={"dn-ch-card" + (ch.enabled ? "" : " dn-ch-off")}
       key={channelKey + ":" + (ch.enabled === true)}
       open={ch.enabled === true}
     >
@@ -151,6 +151,9 @@ export function barkCard(
         {iconEl("bark")}
         <span className="dn-ch-name">{ch.name || ch.id}</span>
         <span className="dn-ch-type">bark</span>
+        <span className="dn-ch-stateTxt">
+          {ch.enabled === true ? t("chStateOn") : t("chStateOff")}
+        </span>
         <span className={"dn-ch-statusDot " + statusDotClass(channelKey, statusMap)} />
         <span className="dn-ch-statusTxt" title={statusText(channelKey, statusMap, t, history)}>
           {statusText(channelKey, statusMap, t, history)}
