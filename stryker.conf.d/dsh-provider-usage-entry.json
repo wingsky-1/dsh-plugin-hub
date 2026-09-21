@@ -6,6 +6,7 @@
     "packages/dsh-provider-usage/src/server/registry/user-adapters.ts",
     "packages/dsh-provider-usage/src/shared/ui-config.ts",
     "packages/dsh-provider-usage/src/shared/config.ts",
+    "packages/dsh-provider-usage/src/shared/provider.ts",
     "!packages/dsh-provider-usage/src/client/**",
     "!packages/dsh-provider-usage/src/**/interface.ts",
     "!packages/dsh-provider-usage/src/server/*/deps.ts",
