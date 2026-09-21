@@ -27,7 +27,6 @@ export {
   normalizeRangeDay,
   panelCacheKey,
   previousClosedWindow,
-  resolveProviderConfig,
   sanitizeHtml,
   sseData,
   userAdaptersFile,

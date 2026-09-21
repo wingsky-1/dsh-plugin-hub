@@ -228,13 +228,8 @@ describe("D7一 经 server/registry 域门面装配", () => {
   });
 
   it("包导出面收窄后集合：apply/index.ts 转发名与收窄后一致（改名/漏转即红）", () => {
-    // B波+A2波收窄后集合：credentialsFile/resolvePath/pluginHome/makeAdapterRegistry/readStamp/loadAndValidateAdapter已退役（簇批双文件直连，见smoke-pure/hotreload）。
-    for (const name of [
-      "AdapterRegistry",
-      "resolveProviderConfig",
-      "HotReloadableAdapter",
-      "UserAdapterRecord",
-    ]) {
+    // B波+A2波收窄后集合：credentialsFile/resolvePath/pluginHome/makeAdapterRegistry/readStamp/loadAndValidateAdapter/resolveProviderConfig已退役（簇批双文件直连，见smoke-pure/hotreload）。
+    for (const name of ["AdapterRegistry", "HotReloadableAdapter", "UserAdapterRecord"]) {
       expect(applyFaceSrc.includes(name)).toBe(true);
     }
   });

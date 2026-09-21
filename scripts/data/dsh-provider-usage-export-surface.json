@@ -318,10 +318,6 @@
       "isType": false
     },
     {
-      "name": "resolveProviderConfig",
-      "isType": false
-    },
-    {
       "name": "sanitizeHtml",
       "isType": false
     },
@@ -967,10 +963,6 @@
         },
         {
           "name": "previousClosedWindow",
-          "isType": false
-        },
-        {
-          "name": "resolveProviderConfig",
           "isType": false
         },
         {
