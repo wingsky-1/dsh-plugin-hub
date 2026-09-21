@@ -699,7 +699,8 @@ describe("/health 响应", () => {
 
   it("errors 登记表存在", () => {
     expect(Array.isArray(payload.errors)).toBe(true);
-    // 形状：错误登记四键齐（registry.ts AdapterErrorInfo + key 面；空表时 vacuously 真）。
+    // 形状：错误登记四键齐（registry.ts AdapterErrorInfo + key 面；
+    // 本用例默认配置下空表 vacuously 真，非空覆盖见下节「/health errors 非空表形状」。）
     for (const e of payload.errors) {
       expect(e).toEqual(
         expect.objectContaining({
@@ -723,6 +724,45 @@ describe("/health 响应", () => {
           a.providers.includes("opencode-go"),
       ),
     ).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------- /health errors 非空表形状（坏适配器）
+//
+// 上节「errors 登记表存在」在默认配置下 errors=[]，形状循环零迭代（vacuously 真）。
+// 本节注册一坏 mjs 适配器（与下节 fail-fast 同模式），先断非空再断四键形状，
+// 保证形状循环真实执行（#768 尾波观察项 1）。
+describe("/health errors 非空表形状（坏适配器）", () => {
+  let badErrors;
+
+  beforeAll(async () => {
+    const dir = mkdtempSync(join(tmpdir(), "dou-health-errors-"));
+    const badFile = join(dir, "bad.mjs");
+    writeFileSync(badFile, `export const version = 2; export const name = "bad";`, "utf8");
+    const { ctx, routes } = makeFakeCtx();
+    await apply(ctx, { ...ISOLATED_CONFIG, adapter: badFile });
+    const health = routes.find((r) => r.path === ROUTES.health);
+    const payload = await callHandler(health, fakeReq());
+    badErrors = payload.errors;
+  });
+
+  it("坏适配器登记非空（形状循环非 vacuous）", () => {
+    expect(Array.isArray(badErrors)).toBe(true);
+    expect(badErrors.length).toBeGreaterThan(0);
+  });
+
+  it("errors 条目四键形状齐（key/kind/message/at）", () => {
+    // 形状：错误登记四键齐（registry.ts AdapterErrorInfo + key 面）。
+    for (const e of badErrors) {
+      expect(e).toEqual(
+        expect.objectContaining({
+          key: expect.any(String),
+          kind: expect.stringMatching(/^(load|exec)$/),
+          message: expect.any(String),
+          at: expect.any(Number),
+        }),
+      );
+    }
   });
 });
 
@@ -1608,11 +1648,14 @@ describe("客户端契约", () => {
 
   it("设置页 tab 键集合精确一致（五键，顺序即渲染顺序）", () => {
     // 锚：settings/index.tsx TABS 字面量与 SettingsTabKey，第二事实源（增删改键必须红）。
-    expect(
-      clientContractObs.settingsIndex.includes(
-        'export type SettingsTabKey = "trend" | "report" | "usage" | "providers" | "float"',
-      ),
-    ).toBe(true);
+    // 行级精确：纯 type 漂移（加成员/改名/改顺序）亦红——子串 includes 会漏检后缀追加。
+    const typeLine = clientContractObs.settingsIndex
+      .split("\n")
+      .map((l) => l.trim())
+      .find((l) => l.startsWith("export type SettingsTabKey"));
+    expect(typeLine).toBe(
+      'export type SettingsTabKey = "trend" | "report" | "usage" | "providers" | "float";',
+    );
     const tabsStart = clientContractObs.settingsIndex.indexOf("const TABS");
     const tabsEnd = clientContractObs.settingsIndex.indexOf("];", tabsStart);
     const tabsBlock = clientContractObs.settingsIndex.slice(tabsStart, tabsEnd + 2);
