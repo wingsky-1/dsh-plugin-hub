@@ -428,7 +428,9 @@
   min-height: 32px;
   cursor: pointer;
   font-size: 12px;
-  transition: background 160ms ease, opacity 160ms ease;
+  transition:
+    background 160ms ease,
+    opacity 160ms ease;
 }
 .dn-set-card .dn-set-btnSmall {
   min-height: 32px;
@@ -597,7 +599,9 @@
   font-size: 12px;
   min-height: 32px;
   font-variant-numeric: tabular-nums;
-  transition: border-color 160ms ease, background 160ms ease;
+  transition:
+    border-color 160ms ease,
+    background 160ms ease;
 }
 .dn-set-card .dn-set-inputText {
   width: 240px;
@@ -633,7 +637,9 @@
   color: var(--dsw-alias-label-secondary, #5f6672);
   font-size: 11px;
   user-select: none;
-  transition: color 160ms ease, background 160ms ease;
+  transition:
+    color 160ms ease,
+    background 160ms ease;
 }
 .dn-set-card .dn-ch-adv > summary::-webkit-details-marker {
   display: none;
@@ -1235,7 +1241,9 @@
   cursor: pointer;
   font-size: 12px;
   font-weight: 650;
-  transition: opacity 160ms ease, transform 160ms ease;
+  transition:
+    opacity 160ms ease,
+    transform 160ms ease;
 }
 .dn-set-card .dn-set-save:hover {
   opacity: 0.9;

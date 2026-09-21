@@ -175,6 +175,7 @@ const EXPECT_FILES: Record<string, string[]> = {
     "client-unit/save-guard.test.ts",
     "client-unit/settings-compare-912.test.ts",
     "client-unit/settings-diff.test.ts",
+    "client-unit/settings-ui-v3.test.ts",
     "client-unit/status-poll.test.ts",
     "client-unit/status-text.test.ts",
     "client/capabilities.test.ts",
