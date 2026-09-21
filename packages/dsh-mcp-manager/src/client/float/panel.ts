@@ -109,10 +109,32 @@ export function switchTab(state: McpState, actions: UiActions, tab: any): void {
   }
 }
 
-/** 关闭模态面板（Fluid：卡片中心收束 + 遮罩淡出；完成后再 hidden）。 */
+/** 关闭模态面板（Fluid：卡片中心收束 + 遮罩淡出；完成后再 hidden）。
+ *
+ * R1 状态同翻：state.open=false 的同一同步块内摘除 aria-modal（不经 300ms
+ * 动画回调——动画被打断/定时器漂移时标记与状态永久错位，见 #947）。
+ * R2 常驻壳无标记：hidden 元素仍被 querySelector 命中，故必须摘属性而非
+ * 置 "false"（裸 [aria-modal] 存在检查仍命中 "false"，且关闭态留 "false"
+ * 语义错误）。R6 关还焦：同步把焦点还给打开者（便宜且安全）。
+ */
 export function close(state: McpState): void {
   if (state.overlay === undefined) return;
   state.open = false;
+  // 与 state.open 同步翻转：card 缺失属创建/销毁不对称，显式分支不断言静默。
+  if (state.card !== undefined) state.card.removeAttribute("aria-modal");
+  // R6 还焦：opener 仍在文档内才恢复（已卸载/非元素则跳过，不抛）。
+  const opener = state.panelOpener;
+  state.panelOpener = undefined;
+  if (opener !== undefined && opener !== null && typeof opener.focus === "function") {
+    try {
+      if (typeof opener.isConnected !== "boolean" || opener.isConnected) {
+        opener.focus({ preventScroll: true });
+      }
+    } catch {
+      // 焦点恢复失败不影响关闭语义，只 warn 不抛（绝不让 GUI 挂掉）。
+      console.warn("[dsh-mcp-manager] panel opener focus restore skipped");
+    }
+  }
   const overlay = state.overlay;
   overlay.classList.remove("dm-overlay--open");
   const finish = () => {
@@ -151,8 +173,10 @@ export function showPanel(state: McpState, actions: UiActions): void {
     void refresh(state, actions);
     head.appendChild(el("button", { text: t("close"), onclick: () => close(state) }));
     state.card.appendChild(head);
+    // role 保留（静态语义；hidden 子树 AT-irrelevant）。aria-modal 不在此写：
+    // 单点写入见本函数公共路径（state.open=true 后无条件 set），与 close() 的
+    // 同步 removeAttribute 配对（R1），两处写同一值会漂移。
     state.card.setAttribute("role", "dialog");
-    state.card.setAttribute("aria-modal", "true");
     state.card.setAttribute("aria-label", t("panelTitle"));
 
     const tabs = el("div", { class: "dm-tabs" });
@@ -183,12 +207,26 @@ export function showPanel(state: McpState, actions: UiActions): void {
     // 回调（disposePanel 配对 removeEventListener）——匿名监听器在 HMR/重复
     // apply 下无移除路径，会随每次 apply 累积。
     const onKeyDown = (event: KeyboardEvent) => {
+      // R4 共享键让位：他人已 preventDefault 即不再关（多弹窗可组合）。
+      if (event.defaultPrevented) return;
       if (event.key === "Escape" && state.open) close(state);
     };
     document.addEventListener("keydown", onKeyDown);
     keydownCleanups.set(state, () => document.removeEventListener("keydown", onKeyDown));
   }
+  // R6 记录 opener（当前聚焦元素；body/非元素由 close() 侧守卫过滤）。
+  // 进焦不做（R6：聚关闭按钮以外的文本控件会唤起移动端键盘+布局跳动）。
+  // 已 open 时重入不覆写：焦点已在面板内，重记会把还焦落到 hidden 子树节点。
+  if (!state.open) {
+    state.panelOpener =
+      typeof document !== "undefined" && document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : undefined;
+  }
   state.open = true;
+  // R1 单点写入：重开路径（含 close→300ms 内重开竞态）一律恢复 true，与
+  // close() 的同步摘除配对，幂等。
+  if (state.card !== undefined) state.card.setAttribute("aria-modal", "true");
   state.overlay.hidden = false;
   state.overlay.classList.remove("dm-overlay--closing");
   const armOpen = () => {

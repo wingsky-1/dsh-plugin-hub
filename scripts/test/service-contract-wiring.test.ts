@@ -103,6 +103,7 @@ const EXPECT_FILES: Record<string, string[]> = {
     "unit/unit-tls.test.ts",
   ],
   "dsh-mcp-manager": [
+    "client-dom/panel-aria-modal.test.ts",
     "client-unit/unit-summary-a3-guard.test.ts",
     "helpers.ts",
     "integration/real-context.test.ts",

@@ -147,18 +147,19 @@ test("非 JSON 文件不参与扫描（只看 scripts/data 下的 .json）", () 
   }
 });
 
-test("本仓真实快照：17 条在册（数字变即提示同步台账与 #765）", () => {
+test("本仓真实快照：27 条在册（数字变即提示同步台账与 #765）", () => {
   // 7 = coverage.config.json 4（#769 把一条 **/client/** 拆成 per-package 的 pending-project
   //     条目：notifier 的 .tsx 渲染面 + 另外 3 个包的整个 client 面 + shared/client/**；
   //     #840 退役 dsh-web-file-preview 时删掉它那一条，7 → 6；
-  //     #883 给 lan-proxy 客户端补直连判据后删掉它那一条，6 → 5 当中的覆盖率部分 5 → 4）
+  //     #883 给 lan-proxy 客户端补直连判据后删掉它那一条，6 → 5 当中的覆盖率部分 5 → 4；
+  //     #947 把 mcp-manager 的一条整个 client 面按文件拆成 11 条（panel.ts 与 state.ts 计入分母），覆盖率部分 4 → 14）
   //     + gauntlet.config.json 1（crap.strict 观察期，仅解除条件、无到期日）
   //     + gate-exemptions.json 12（#767 B0：#770 mcp panel 单飞句柄 + #767 lan-proxy unit-apply
   //       + #847 sidebar 客户端单测 10 条，同批 unit-proxy/wfp 两条已随主干演进消除而不登记；
   //       reviewBy + exitCriteria 双全）。
   const r = spawnSync(process.execPath, [SCRIPT], { cwd: ROOT, encoding: "utf8" });
   assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stdout, /合计 17 条：已过期 0 /);
+  assert.match(r.stdout, /合计 27 条：已过期 0 /);
   assert.match(r.stdout, /仅解除条件（无到期日）1/);
   // crap.strict 的解除条件必须在台账里（只写日期会逼出「到期了再讨论一次」）
   assert.match(r.stdout, /\$\.crap {2}threshold=16/);

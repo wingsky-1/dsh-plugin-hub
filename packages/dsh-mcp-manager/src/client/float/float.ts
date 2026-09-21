@@ -519,6 +519,7 @@ export function mountFloat(ctx: any, state: McpState, actions: UiActions): () =>
   document.addEventListener("focusout", onFocusOut);
   // Esc 关闭下拉面板（与模态 panel.ts C4 同语义；具名函数配对清理防泄漏）。
   const onKeyDown = (event: any) => {
+    if (event.defaultPrevented) return;
     if (event.key === "Escape" && state.floatOpen) toggleFloat(state, actions, false);
   };
   document.addEventListener("keydown", onKeyDown);

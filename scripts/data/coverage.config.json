@@ -42,11 +42,91 @@
       "reviewBy": "2027-03-31"
     },
     {
-      "pattern": "packages/dsh-mcp-manager/src/client/**",
+      "pattern": "packages/dsh-mcp-manager/src/client/core/api.ts",
       "kind": "pending-project",
-      "reason": "mcp-manager 客户端（15 文件、约 2551 行）：该包走 inlineBareImports 内联第三方，客户端尚未按 #769 的口径重写，没有直连 src 的判据。整体计入分母会把全局 lines 拉低约 16 个百分点（实测估算），属「用一个不可判定的面去稀释阈值」。",
-      "exitCriteria": "该包客户端重写、且有直连 src 的判据后删除本条并单独度量",
-      "since": "#769",
+      "reason": "mcp-manager 客户端按面收窄（#947 首个直连判据：panel aria-modal）：本文件尚无直连判据，计入分母只稀释阈值。panel.ts 与 state.ts 已有 test/client-dom 判据并计入分母，其余文件随判据落地逐个移出本清单（抄 notifier #769 按面收窄先例）。",
+      "exitCriteria": "本文件有了直连 src 的判据后删除本条",
+      "since": "#947",
+      "reviewBy": "2027-03-31"
+    },
+    {
+      "pattern": "packages/dsh-mcp-manager/src/client/core/constants.ts",
+      "kind": "pending-project",
+      "reason": "同上（#947 按面收窄）：尚无直连判据。",
+      "exitCriteria": "本文件有了直连 src 的判据后删除本条",
+      "since": "#947",
+      "reviewBy": "2027-03-31"
+    },
+    {
+      "pattern": "packages/dsh-mcp-manager/src/client/core/dom.ts",
+      "kind": "pending-project",
+      "reason": "同上（#947 按面收窄）：尚无直连判据。",
+      "exitCriteria": "本文件有了直连 src 的判据后删除本条",
+      "since": "#947",
+      "reviewBy": "2027-03-31"
+    },
+    {
+      "pattern": "packages/dsh-mcp-manager/src/client/core/i18n.ts",
+      "kind": "pending-project",
+      "reason": "同上（#947 按面收窄）：尚无直连判据。",
+      "exitCriteria": "本文件有了直连 src 的判据后删除本条",
+      "since": "#947",
+      "reviewBy": "2027-03-31"
+    },
+    {
+      "pattern": "packages/dsh-mcp-manager/src/client/core/session.ts",
+      "kind": "pending-project",
+      "reason": "同上（#947 按面收窄）：尚无直连判据。",
+      "exitCriteria": "本文件有了直连 src 的判据后删除本条",
+      "since": "#947",
+      "reviewBy": "2027-03-31"
+    },
+    {
+      "pattern": "packages/dsh-mcp-manager/src/client/float/float.ts",
+      "kind": "pending-project",
+      "reason": "同上（#947 按面收窄）：本文件 Esc 一行变更暂无直连判据（panel Esc 由 panel-aria-modal 覆盖），计入分母稀释阈值；后续为 float 补直连判据后删除本条。",
+      "exitCriteria": "本文件有了直连 src 的判据后删除本条",
+      "since": "#947",
+      "reviewBy": "2027-03-31"
+    },
+    {
+      "pattern": "packages/dsh-mcp-manager/src/client/float/quick-add.ts",
+      "kind": "pending-project",
+      "reason": "同上（#947 按面收窄）：尚无直连判据（client-unit 仅覆盖其 guard 纯函数，不覆盖本文件整体）。",
+      "exitCriteria": "本文件有了直连 src 的判据后删除本条",
+      "since": "#947",
+      "reviewBy": "2027-03-31"
+    },
+    {
+      "pattern": "packages/dsh-mcp-manager/src/client/float/servers.ts",
+      "kind": "pending-project",
+      "reason": "同上（#947 按面收窄）：尚无直连判据。",
+      "exitCriteria": "本文件有了直连 src 的判据后删除本条",
+      "since": "#947",
+      "reviewBy": "2027-03-31"
+    },
+    {
+      "pattern": "packages/dsh-mcp-manager/src/client/index.ts",
+      "kind": "pending-project",
+      "reason": "同上（#947 按面收窄）：尚无直连判据。",
+      "exitCriteria": "本文件有了直连 src 的判据后删除本条",
+      "since": "#947",
+      "reviewBy": "2027-03-31"
+    },
+    {
+      "pattern": "packages/dsh-mcp-manager/src/client/locales.ts",
+      "kind": "pending-project",
+      "reason": "同上（#947 按面收窄）：尚无直连判据。",
+      "exitCriteria": "本文件有了直连 src 的判据后删除本条",
+      "since": "#947",
+      "reviewBy": "2027-03-31"
+    },
+    {
+      "pattern": "packages/dsh-mcp-manager/src/client/settings/settings-card.tsx",
+      "kind": "pending-project",
+      "reason": "同上（#947 按面收窄）：渲染面，等组件级渲染判据（抄 notifier .tsx 豁免口径）。",
+      "exitCriteria": "组件级渲染判据落地后删除本条",
+      "since": "#947",
       "reviewBy": "2027-03-31"
     },
     {

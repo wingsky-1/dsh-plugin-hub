@@ -170,6 +170,14 @@
           ],
           "excludes": ["!packages/dsh-mcp-manager/src/client/**"],
           "comment": "#767 B2b 重画：runtime——packages/dsh-mcp-manager/src/shared/placement-math.ts（#378 上移的 placement 纯核心，由本段 mutate 覆盖）+执行管道（pipeline）+目录（catalog）+包内共享层（server/shared）+迁移链（upgrade）+跨端共享面（src/shared）；B2b 后文件归各域段，本段只留这些。同时收敛 #767 B0 的临时超集 src/server/**/*.ts——当时目标树全新，不先挂超集会让 B1 新文件进 uncoveredSrcFiles 而 --write-baseline 拒绝接受新证据；各段并集现已覆盖它（本刀实测 uncoveredSrcFiles 仍为 0），故删除。W11b2a 删除 src/types 与 src/integration 后，原两条排除已成 0 命中死条目，随本刀删除；excludes 仅保留 client 一条（另一端）。测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
+        },
+        "client-panel": {
+          "mutate": [
+            "packages/dsh-mcp-manager/src/client/float/panel.ts",
+            "packages/dsh-mcp-manager/src/client/core/state.ts"
+          ],
+          "excludes": [],
+          "comment": "新增（#947）：面板 aria-modal 同步 + opener 还焦 + Esc 让位——首个直连判据（test/client-dom/panel-aria-modal.test.ts，happy-dom 直连 src）。只含本次有判据的两文件，其余客户端文件仍由覆盖率按面收窄逐个移入；float.ts Esc 一行暂无直连判据，随后续补判据后移入本段。"
         }
       },
       "testLayers": {

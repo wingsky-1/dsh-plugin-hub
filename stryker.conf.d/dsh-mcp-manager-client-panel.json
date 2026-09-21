@@ -1,0 +1,43 @@
+{
+  "$schema": "../node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "mutate": [
+    "packages/dsh-mcp-manager/src/client/float/panel.ts",
+    "packages/dsh-mcp-manager/src/client/core/state.ts",
+    "!packages/dsh-mcp-manager/src/**/interface.ts",
+    "!packages/dsh-mcp-manager/src/server/*/deps.ts",
+    "!packages/dsh-mcp-manager/src/server/*/*/deps.ts"
+  ],
+  "testRunner": "vitest",
+  "mutator": {
+    "excludedMutations": [
+      "StringLiteral",
+      "ArrayLiteral",
+      "ObjectLiteral",
+      "TemplateLiteral"
+    ]
+  },
+  "plugins": [
+    "@stryker-mutator/vitest-runner"
+  ],
+  "concurrency": 16,
+  "timeoutMS": 60000,
+  "dryRunTimeoutMinutes": 5,
+  "reporters": [
+    "progress",
+    "clear-text",
+    "json"
+  ],
+  "coverageAnalysis": "perTest",
+  "tempDirName": ".stryker-tmp",
+  "cleanTempDir": true,
+  "vitest": {
+    "related": false,
+    "configFile": "vitest.stryker.d/dsh-mcp-manager.config.ts"
+  },
+  "jsonReporter": {
+    "fileName": "coverage/mutation/dsh-mcp-manager-client-panel.json"
+  },
+  "incremental": true,
+  "incrementalFile": "coverage/mutation/incremental-mcp-manager-client-panel.json",
+  "_comment": "新增（#947）：面板 aria-modal 同步 + opener 还焦 + Esc 让位——首个直连判据（test/client-dom/panel-aria-modal.test.ts，happy-dom 直连 src）。只含本次有判据的两文件，其余客户端文件仍由覆盖率按面收窄逐个移入；float.ts Esc 一行暂无直连判据，随后续补判据后移入本段。"
+}

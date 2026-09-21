@@ -8,6 +8,7 @@ import { defineConfig } from 'vitest/config'
 export default defineConfig({
   test: {
     include: [
+      'packages/dsh-mcp-manager/test/client-dom/panel-aria-modal.test.ts',
       'packages/dsh-mcp-manager/test/client-unit/unit-summary-a3-guard.test.ts',
       'packages/dsh-mcp-manager/test/integration/real-context.test.ts',
       'packages/dsh-mcp-manager/test/unit/ports/api-ports.test.ts',
