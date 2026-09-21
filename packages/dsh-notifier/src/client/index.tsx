@@ -68,6 +68,7 @@ import { channelsPane } from "./settings/panes/channels.tsx";
 import { eventsPane } from "./settings/panes/events.tsx";
 import { historyPane } from "./settings/panes/history.tsx";
 import { tabIcon } from "./settings/parts/kind-icons.tsx";
+import { dirtyStatusText, routeSummaryText } from "./settings/parts/route-text.ts";
 import type { ChannelStatusMap } from "./settings/parts/status.tsx";
 import type {
   ClearHistoryResult,
@@ -1348,23 +1349,20 @@ function SettingsCard() {
           if (isCustom) routeSetKind(kind, null);
         }}
       >
-        {isCustom ? t("routeCustomState", { n: litIds.length }) : t("routeDefaultState")}
+        {isCustom
+          ? t("routeCustomState", { n: litIds.length - staleIds.length })
+          : t("routeDefaultState")}
       </button>,
     );
     // 默认收成投递摘要；自定义但候选无点亮（仅 stale 残留等）不得误报「跟随默认」
+    // 摘要点名的是真实投递面（启用 ∩ 点亮）：停用频道即使在快照里点亮也不投递，
+    // 点名它即假点亮（M1）。N 取快照内现存候选数（剔除已删频道的 stale 残留，
+    // stale 在展开区以独立 chip 呈现，不重复计入 N）。决策函数见 parts/route-text.ts。
     const litLabels: string[] = [];
     options.forEach(function (o) {
-      if (litSet[o.id] === true) litLabels.push(o.label);
+      if (o.enabled && litSet[o.id] === true) litLabels.push(o.label);
     });
-    let summaryText: string;
-    if (litLabels.length > 0) {
-      const more = litLabels.length > 2 ? litLabels.length - 2 : 0;
-      summaryText = litLabels.slice(0, 2).join(" · ") + (more > 0 ? " · +" + String(more) : "");
-    } else if (isCustom) {
-      summaryText = t("routeCustomState", { n: litIds.length });
-    } else {
-      summaryText = t("routeDefaultState");
-    }
+    const summaryText = routeSummaryText(litLabels, isCustom, litIds.length - staleIds.length, t);
     return (
       <details className="dn-evt-routeDisc" key={"routes-" + kind}>
         <summary className="dn-evt-routeSum" title={t("routeExpandHint")}>
@@ -1463,6 +1461,8 @@ function SettingsCard() {
   const channelsDirty = Object.keys(channelsDiff).length > 0;
   const channelsDirtyCount = channelsDirty ? 1 : 0;
   const otherDirtyCount = Math.max(0, dirtyCount - channelsDirtyCount);
+  // 脏文案决策见 parts/route-text.ts（M2：可执行断言覆盖三分支）。
+  const dirtyText = dirtyStatusText(dirtyCount, channelsDirty, otherDirtyCount, t);
 
   /**
    * dry-run 结果行（B-S1-4）：独立行、打标「草稿测试·未落盘」，常驻 [去保存][放弃草稿]，
@@ -1605,14 +1605,8 @@ function SettingsCard() {
         <div className="dn-set-foot">
           {saved ? (
             <span className={saved.err ? "dn-set-error" : "dn-set-saved"}>{saved.msg}</span>
-          ) : dirtyCount > 0 ? (
-            <span className="dn-dirty">
-              {channelsDirty && otherDirtyCount > 0
-                ? t("dirtyDomains")
-                : channelsDirty
-                  ? t("dirtyChannels")
-                  : t("dirtySome", { n: dirtyCount })}
-            </span>
+          ) : dirtyText !== null ? (
+            <span className="dn-dirty">{dirtyText}</span>
           ) : null}
           <span className="dn-spacer" />
           {/* 保存中（guard 在途）禁用「放弃更改」与「保存」——防提交窗口内矛盾操作

@@ -1335,7 +1335,6 @@
   z-index: 10000;
   background: var(--dsw-alias-bg-base, #ffffff);
   border: 1px solid var(--dsw-alias-border-l1, #e2e5ea);
-  border-left: none;
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.12);
   cursor: pointer;
   color: var(--dsw-alias-label-primary, #1f2329);

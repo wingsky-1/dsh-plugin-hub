@@ -13,7 +13,7 @@ import { KIND_KEYS } from "../../locales.ts";
 import type { NotifierLocaleKey } from "../../locales.ts";
 import type { Translate } from "../../locale.ts";
 import { switchControl, switchToggle } from "../parts/controls.tsx";
-import { kindIcon } from "../parts/kind-icons.tsx";
+import { kindIcon, sevIcon } from "../parts/kind-icons.tsx";
 import { advRow } from "../parts/rows.tsx";
 import type { QuietHoursView, RegisteredKindView, SettingsPatch, SettingsView } from "../types.ts";
 
@@ -240,7 +240,7 @@ export function eventsPane(
   const dndCard = (
     <div className="dn-dnd" key="dnd">
       <div className="dn-dnd-head">
-        <span className="dn-sev dn-sev-warning" />
+        {sevIcon("warning", "dn-sev-warning")}
         <span className="dn-evt-name">{t("dndEnable")}</span>
         {switchToggle(
           qh.enabled === true,
