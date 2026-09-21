@@ -175,6 +175,12 @@
       "why": "发布物面内 vendored 裸二进制的登记表（批 2b）：只声明「哪些随包分发的副本已登记许可」，不改变任何 filters，与 scripts/data/ci-face-registry.json 自身同类。"
     },
     {
+      "path": "scripts/data/host-contract.snapshot.json",
+      "faces": [],
+      "consumers": ["scripts/derive/host-contract.mjs"],
+      "why": "宿主契约派生快照基线（P0a）：被 derive --check 逐字节比对（只比 result），本 PR 不接门禁；只声明基线内容，不改变任何 filters，与 threshold-registry.json / vendored-binaries.json 自身条目同类，故 faces 显式豁免。"
+    },
+    {
       "path": "scripts/data/dsh-notifier-*.json",
       "faces": ["dsh-notifier"],
       "consumers": ["packages/dsh-notifier/test/integration/consumer-types.test.ts"],
