@@ -79,10 +79,6 @@ const FORBIDDEN_FACES = [
 ];
 
 describe("D1③ 构造只递 root+initial+onUpdate", () => {
-  it("实参键集恰为三项（多递 scheduler 实例等即红）", () => {
-    expect(serviceCtorKeys(applySrc)).toEqual(["initial", "onUpdate", "root"]);
-  });
-
   it("三参可装配：内存权威 + 串行写链 + 落盘 roundtrip（mkdtemp 隔离）", async () => {
     const root = mkdtempSync(join(tmpdir(), "d1-comproot-"));
     try {

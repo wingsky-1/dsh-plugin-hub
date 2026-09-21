@@ -78,7 +78,6 @@ const uiRoutesSrc = readFileSync(join(srcDir, "server", "ui-routes", "trend.ts")
 const aggregateFaceSrc = readFileSync(join(srcDir, "server", "aggregate", "interface.ts"), "utf8");
 const aggregateDepsSrc = readFileSync(join(srcDir, "server", "aggregate", "deps.ts"), "utf8");
 const aggregatorSrc = readFileSync(join(srcDir, "server", "aggregate", "aggregator.ts"), "utf8");
-const storeSrc = readFileSync(join(srcDir, "server", "aggregate", "store.ts"), "utf8");
 const topologySrc = readFileSync(
   join(repoRoot, "scripts", "data", "mutation-topology.json"),
   "utf8",
@@ -282,10 +281,6 @@ describe("D8三 deps 注入面窄面", () => {
 });
 
 describe("D8四 随行修正与冻结", () => {
-  it("deletePromises 具名注解（注解丢失即红）", () => {
-    expect(storeSrc.includes("const deletePromises: Array<Promise<void>> = [];")).toBe(true);
-  });
-
   it("tmp 残留清理成功分支：残留删、主写成（删清理即红）", async () => {
     const dir = isolatedDir("dou-aggD8-tmp-");
     const day = "2026-09-04";

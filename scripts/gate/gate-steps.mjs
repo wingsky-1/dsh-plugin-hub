@@ -121,6 +121,12 @@ export function tierSteps(tier, { hitPackages, withCoverage, base, scopeLabel })
       cmd: "node",
       args: ["scripts/gate/verify-shared-fanin.mjs"],
     },
+    {
+      label:
+        "verify-provider-usage-shape（provider-usage 形态锁：构造键集/历史无环境直连/聚合注解）",
+      cmd: "node",
+      args: ["scripts/gate/verify-provider-usage-shape.mjs"],
+    },
     { label: "lint（ESLint 复杂度门禁，阈值见 gauntlet.config.json）", args: ["lint"] },
     // #733 计划项 3.5：形态的 CI 执行点在 ci.yml（repo-gate 恒跑段），本地同款接入——
     // 否则「本地全绿、CI 红在 format」这种落差会天天发生。面见 .prettierignore。

@@ -791,6 +791,8 @@ jobs:
         run: node scripts/gate/export-surface-snapshot.mjs --package dsh-provider-usage
       - name: Verify shared fan-in（shared 模块跨包扇入；#792）
         run: node scripts/gate/verify-shared-fanin.mjs
+      - name: Verify provider-usage shape（provider-usage 形态锁：构造键集/历史无环境直连/聚合注解）
+        run: node scripts/gate/verify-provider-usage-shape.mjs
 
       - name: Download package outputs artifacts（F9：复用 matrix 命中包产物，避免重复构建）
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0

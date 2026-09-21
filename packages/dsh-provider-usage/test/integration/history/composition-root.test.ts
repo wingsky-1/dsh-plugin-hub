@@ -50,7 +50,6 @@ const statsServiceSrc = readFileSync(
 );
 const pipelineV2Src = readFileSync(join(srcDir, "server", "pipeline", "v2.ts"), "utf8");
 const historyFaceSrc = readFileSync(join(srcDir, "server", "history", "interface.ts"), "utf8");
-const historyImplSrc = readFileSync(join(srcDir, "server", "history", "history.ts"), "utf8");
 const statsServiceTestSrc = readFileSync(
   join(pkgDir, "test", "unit", "pipeline", "unit-stats-service.test.ts"),
   "utf8",
@@ -170,12 +169,6 @@ describe("D5二 落盘时序 + 0600 + basename + 超龄清理", () => {
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
-  });
-
-  it("模块求值期不读环境：history 实现无 dshHome/process.env（加了即红）", () => {
-    expect(historyImplSrc.includes("dshHome")).toBe(false);
-    expect(historyImplSrc.includes("process.env")).toBe(false);
-    expect(historyImplSrc.includes("homedir")).toBe(false);
   });
 });
 
