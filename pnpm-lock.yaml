@@ -123,6 +123,18 @@ importers:
         specifier: ^2.9.0
         version: 2.9.0
 
+  packages/dsh-jev-decide:
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: 'catalog:'
+        version: 4.0.2
+      '@deepseek-ai/dsh-host-webserver':
+        specifier: 'catalog:'
+        version: 0.1.5-rc.1(@deepseek-ai/cordis@4.0.2)(supports-color@7.2.0)
+      '@deepseek-ai/dsh-tools':
+        specifier: 'catalog:'
+        version: 0.1.5-rc.1(6a2f57c8c1710b9a682bbcc128a57495)
+
   packages/dsh-lan-proxy:
     devDependencies:
       '@deepseek-ai/cordis':
@@ -224,6 +236,9 @@ importers:
 
   packages/dsh-plugins-all:
     dependencies:
+      '@wingsky-1/dsh-jev-decide':
+        specifier: workspace:*
+        version: link:../dsh-jev-decide
       '@wingsky-1/dsh-lan-proxy':
         specifier: workspace:*
         version: link:../dsh-lan-proxy

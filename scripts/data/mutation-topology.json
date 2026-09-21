@@ -32,6 +32,56 @@
     }
   },
   "packages": {
+    "dsh-jev-decide": {
+      "concurrency": 16,
+      "timeoutMS": 60000,
+      "segments": {
+        "api": {
+          "mutate": ["packages/dsh-jev-decide/src/server/api/**/*.ts"],
+          "excludes": [],
+          "comment": "按域分段（#943 对账后，单段 _single 按 server 目录名拆分）：api 域全量在面内（含 interface 门面与 deps 类型面）；面文件集与单段时代一致，仅执行分片变化；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
+        },
+        "config": {
+          "mutate": ["packages/dsh-jev-decide/src/server/config/**/*.ts"],
+          "excludes": [],
+          "comment": "按域分段（#943 对账后，单段 _single 按 server 目录名拆分）：config 域全量在面内（含 interface 门面与 deps 类型面）；面文件集与单段时代一致，仅执行分片变化；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
+        },
+        "history": {
+          "mutate": ["packages/dsh-jev-decide/src/server/history/**/*.ts"],
+          "excludes": [],
+          "comment": "按域分段（#943 对账后，单段 _single 按 server 目录名拆分）：history 域全量在面内（含 interface 门面与 deps 类型面）；面文件集与单段时代一致，仅执行分片变化；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
+        },
+        "store": {
+          "mutate": ["packages/dsh-jev-decide/src/server/store/**/*.ts"],
+          "excludes": [],
+          "comment": "按域分段（#943 对账后，单段 _single 按 server 目录名拆分）：store 域全量在面内（含 interface 门面与 deps 类型面）；面文件集与单段时代一致，仅执行分片变化；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
+        },
+        "tools": {
+          "mutate": ["packages/dsh-jev-decide/src/server/tools/**/*.ts"],
+          "excludes": [],
+          "comment": "按域分段（#943 对账后，单段 _single 按 server 目录名拆分）：tools 域全量在面内（含 interface 门面与 deps 类型面）；面文件集与单段时代一致，仅执行分片变化；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
+        },
+        "upgrade": {
+          "mutate": ["packages/dsh-jev-decide/src/server/upgrade/**/*.ts"],
+          "excludes": [],
+          "comment": "按域分段（#943 对账后，单段 _single 按 server 目录名拆分）：upgrade 域全量在面内（含 interface 门面与 deps 类型面）；面文件集与单段时代一致，仅执行分片变化；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
+        },
+        "entry": {
+          "mutate": [
+            "packages/dsh-jev-decide/src/index.ts",
+            "packages/dsh-jev-decide/src/shared/**/*.ts"
+          ],
+          "excludes": [],
+          "comment": "按域分段（对标 lan-proxy entry 段）：宿主唯一入口 src/index.ts + 双端共享 src/shared/**（contract 契约解析在面内）；面文件集与单段时代一致，仅执行分片变化；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
+        },
+        "client": {
+          "mutate": ["packages/dsh-jev-decide/src/client/**/*.ts"],
+          "excludes": ["!packages/dsh-jev-decide/src/client/components/atoms.ts"],
+          "comment": "按域分段（对标 lan-proxy client 段）：客户端全区；components/atoms.ts 纯样式原子（el/clear/setText/输入框/按钮/徽章/折叠/fmtTime，无分支语义）移出变异面，对标 lan-proxy client 段的 .d.ts/tsx 排除口径；panes 交互、probability 概率条、api/contract 解析保留在面内；面文件集与单段时代一致，仅执行分片变化；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
+        }
+      },
+      "testLayers": {}
+    },
     "dsh-lan-proxy": {
       "concurrency": 16,
       "timeoutMS": 60000,

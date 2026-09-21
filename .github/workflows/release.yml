@@ -170,6 +170,8 @@ jobs:
 
       - name: Export surface snapshot（dsh-provider-usage）
         run: node scripts/gate/export-surface-snapshot.mjs --package dsh-provider-usage
+      - name: Export surface snapshot（dsh-jev-decide 导出面与基线零 diff）
+        run: node scripts/gate/export-surface-snapshot.mjs --package dsh-jev-decide
 
       - name: Verify shared fan-in
         run: node scripts/gate/verify-shared-fanin.mjs

@@ -156,7 +156,8 @@ test("本仓真实快照：27 条在册（数字变即提示同步台账与 #765
   //     + gauntlet.config.json 1（crap.strict 观察期，仅解除条件、无到期日）
   //     + gate-exemptions.json 12（#767 B0：#770 mcp panel 单飞句柄 + #767 lan-proxy unit-apply
   //       + #847 sidebar 客户端单测 10 条，同批 unit-proxy/wfp 两条已随主干演进消除而不登记；
-  //       reviewBy + exitCriteria 双全）。
+  //       reviewBy + exitCriteria 双全；首登 dsh-jev-decide 两条（#membership+#anchor）随本地实测锚
+  //       落定全部删除：#membership 随条目进表先删，#anchor 随 fixedCovered=64.84 本地锚后删）。
   const r = spawnSync(process.execPath, [SCRIPT], { cwd: ROOT, encoding: "utf8" });
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stdout, /合计 27 条：已过期 0 /);

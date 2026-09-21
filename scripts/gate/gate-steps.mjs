@@ -117,6 +117,11 @@ export function tierSteps(tier, { hitPackages, withCoverage, base, scopeLabel })
       args: ["scripts/gate/export-surface-snapshot.mjs", "--package", "dsh-provider-usage"],
     },
     {
+      label: "export-surface-snapshot（dsh-jev-decide 导出面与基线零 diff）",
+      cmd: "node",
+      args: ["scripts/gate/export-surface-snapshot.mjs", "--package", "dsh-jev-decide"],
+    },
+    {
       label: "verify-shared-fanin（shared 模块跨包扇入；#792）",
       cmd: "node",
       args: ["scripts/gate/verify-shared-fanin.mjs"],

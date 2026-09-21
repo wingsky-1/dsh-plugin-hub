@@ -332,7 +332,11 @@ test("#792 PR2 登记偏差修正：四行登记以派生结果为准", () => {
   const result = fanin(ROOT);
   // loopback：原快照登 4 包，实测 2 包——lan-proxy / provider-usage 是经 host-utils 间接用，
   // 属 host-utils 的消费者关系，不构成 loopback 的扇入
-  assert.deepEqual(rowOf(result, "loopback").consumers, ["dsh-mcp-manager", "dsh-notifier"]);
+  assert.deepEqual(rowOf(result, "loopback").consumers, [
+    "dsh-jev-decide",
+    "dsh-mcp-manager",
+    "dsh-notifier",
+  ]);
   // settings-namespace：原快照多登 notifier（零引用）
   assert.deepEqual(rowOf(result, "settings-namespace").consumers, [
     "dsh-lan-proxy",
