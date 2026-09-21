@@ -16,7 +16,6 @@
     "FetchContext",
     "FloatBreakpoint",
     "HistoryEntry",
-    "HistoryStore",
     "HotReloadableAdapter",
     "LastRunRecord",
     "NormalizedConfig",

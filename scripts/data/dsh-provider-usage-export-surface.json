@@ -54,10 +54,6 @@
       "isType": true
     },
     {
-      "name": "HistoryStore",
-      "isType": false
-    },
-    {
       "name": "HotReloadableAdapter",
       "isType": false
     },
@@ -636,10 +632,6 @@
         {
           "name": "HistoryEntry",
           "isType": true
-        },
-        {
-          "name": "HistoryStore",
-          "isType": false
         },
         {
           "name": "HotReloadableAdapter",

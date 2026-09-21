@@ -27,7 +27,8 @@ import {
 } from "../../../src/shared/interface.ts";
 // 白盒直连深路径（#768 B波）：契约常量/路径段经 shared 门面，不走组合根转发（sseData单议暂留）。
 import { safeSegment, ERROR_CODES } from "../../../src/shared/interface.ts";
-import { HistoryStore } from "../../../src/apply/index.ts";
+// 白盒直连深路径（#768 B波）：历史存储经历史域门面，不走组合根转发。
+import { HistoryStore } from "../../../src/server/history/interface.ts";
 import { miniChartSvgMarkup } from "../../../src/server/adapters/interface.ts";
 import {
   makeAdapterRegistry,

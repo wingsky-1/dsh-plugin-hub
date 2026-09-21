@@ -42,7 +42,9 @@ import {
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { HistoryStore, dayKey } from "../../../src/apply/index.ts";
+import { dayKey } from "../../../src/apply/index.ts";
+// 白盒直连深路径（#768 B波）：历史存储经历史域门面，不走组合根转发。
+import { HistoryStore } from "../../../src/server/history/interface.ts";
 import { TrendTracker } from "../../../src/server/aggregate/interface.ts";
 import { TREND_ROW_VERSION, TREND_UNIDENTIFIED } from "../../../src/server/collect/interface.ts";
 import { normalizeConfig, DEFAULT_CONFIG } from "../../../src/shared/interface.ts";

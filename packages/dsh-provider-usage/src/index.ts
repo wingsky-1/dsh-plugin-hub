@@ -6,7 +6,6 @@
  * 新增公共符号时两处同步加名（漂移即门禁红）。
  */
 export {
-  HistoryStore,
   HotReloadableAdapter,
   ROUTES,
   apply,

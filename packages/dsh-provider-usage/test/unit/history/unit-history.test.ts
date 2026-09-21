@@ -15,10 +15,10 @@ console.error("EVAL-ORDER-TAG: HISTORY");
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { beforeAll, describe, expect, it } from "vitest";
-import { HistoryStore } from "../../../src/apply/index.ts";
 import { pickWindow } from "../../../src/server/adapters/interface.ts";
-// 白盒直连深路径（#768 B波续批）：历史纯面经域门面，不走组合根转发。
+// 白盒直连深路径（#768 B波续批）：历史存储与纯面经域门面，不走组合根转发。
 import {
+  HistoryStore,
   parseJsonl,
   startOfDay,
   legacySampleToData,
