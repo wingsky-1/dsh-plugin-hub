@@ -51,8 +51,6 @@ import "../smoke-pure.ts";
 import { apply, inject, ROUTES, HotReloadableAdapter } from "../../lib/index.js";
 // 白盒直连深路径（#768 B波）：日界纯面经 shared 门面，不走包入口。
 import { dayKey } from "../../src/shared/interface.ts";
-// 白盒直连深路径（#768 B波）：契约版本经 shared 门面，不走包入口。
-import { ADAPTER_CONTRACT_VERSION } from "../../src/shared/interface.ts";
 // 白盒直连深路径（#768 B波）：用户适配器路径纯面经注册表域门面，不走包入口。
 import { userAdaptersFile, adapterStateFile } from "../../src/server/registry/interface.ts";
 // 白盒直连深路径（#768 B波）：目录上限纯面经采集域门面，不走包入口。
@@ -600,15 +598,18 @@ describe("/stats v2 响应", () => {
   });
 
   it("响应带契约版本 v2", () => {
-    expect(payload.version).toBe(ADAPTER_CONTRACT_VERSION);
+    // 锚：contracts.ts ADAPTER_CONTRACT_VERSION 字面量 2，第二事实源（改实现值必须红）。
+    expect(payload.version).toBe(2);
   });
 
   it("响应 provider 字段", () => {
-    expect(payload.provider).toBe(OPENCODE_GO_PROVIDER);
+    // 锚：opencode-go.mjs OPENCODE_GO_PROVIDER 字面量，第二事实源。
+    expect(payload.provider).toBe("opencode-go");
   });
 
   it("内置适配器名", () => {
-    expect(payload.adapterName).toBe(OPENCODE_GO_ADAPTER_ID);
+    // 锚：opencode-go.mjs OPENCODE_GO_ADAPTER_ID 字面量，第二事实源。
+    expect(payload.adapterName).toBe("opencode-go-builtin");
   });
 
   it("status 合法", () => {
@@ -651,15 +652,18 @@ describe("/history v2 响应", () => {
   });
 
   it("history 响应带契约版本", () => {
-    expect(payload.version).toBe(ADAPTER_CONTRACT_VERSION);
+    // 锚：contracts.ts ADAPTER_CONTRACT_VERSION 字面量 2，第二事实源。
+    expect(payload.version).toBe(2);
   });
 
   it("history 响应 provider 字段", () => {
-    expect(payload.provider).toBe(OPENCODE_GO_PROVIDER);
+    // 锚：opencode-go.mjs OPENCODE_GO_PROVIDER 字面量，第二事实源。
+    expect(payload.provider).toBe("opencode-go");
   });
 
   it("history 响应 adapterName", () => {
-    expect(payload.adapterName).toBe(OPENCODE_GO_ADAPTER_ID);
+    // 锚：opencode-go.mjs OPENCODE_GO_ADAPTER_ID 字面量，第二事实源。
+    expect(payload.adapterName).toBe("opencode-go-builtin");
   });
 
   it("range 形状合法", () => {
@@ -684,7 +688,8 @@ describe("/health 响应", () => {
   });
 
   it("/health 带契约版本", () => {
-    expect(payload.version).toBe(ADAPTER_CONTRACT_VERSION);
+    // 锚：contracts.ts ADAPTER_CONTRACT_VERSION 字面量 2，第二事实源。
+    expect(payload.version).toBe(2);
   });
 
   it("adapters 列表存在", () => {
@@ -696,7 +701,8 @@ describe("/health 响应", () => {
   });
 
   it("内置 opencode-go 已注册", () => {
-    expect(payload.adapters.some((a) => a.name === OPENCODE_GO_ADAPTER_ID)).toBeTruthy();
+    // 锚：opencode-go.mjs OPENCODE_GO_ADAPTER_ID 字面量，第二事实源。
+    expect(payload.adapters.some((a) => a.name === "opencode-go-builtin")).toBeTruthy();
   });
 });
 
@@ -3411,7 +3417,8 @@ describe("#503 M2：/trend 路由集成断言", () => {
   });
 
   it("trend 带契约版本", () => {
-    expect(obs.payloadVersion).toBe(ADAPTER_CONTRACT_VERSION);
+    // 锚：contracts.ts ADAPTER_CONTRACT_VERSION 字面量 2，第二事实源。
+    expect(obs.payloadVersion).toBe(2);
   });
 
   it("granularity 默认 day", () => {

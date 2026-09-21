@@ -56,7 +56,6 @@ import * as dataRoutesDepsNs from "../../../src/server/data-routes/deps.ts";
 import type { DataRoutesEnsureHotReload } from "../../../src/server/data-routes/deps.ts";
 import type { StatsService } from "../../../src/server/pipeline/interface.ts";
 import { ROUTES } from "../../../src/apply/index.ts";
-import { ADAPTER_CONTRACT_VERSION } from "../../../src/shared/interface.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const srcDir = join(here, "..", "..", "..", "src");
@@ -335,14 +334,15 @@ describe("D10二 越围栏必须红（403 先于 405）", () => {
     expect((body as { reason?: string }).reason).toBe("no-adapter");
   });
 
-  it("adapters 回环 + GET 放行 200 且契约版本同源（误拦即红）", async () => {
+  it("adapters 回环 + GET 放行 200 且契约版本字面量锚定（误拦即红）", async () => {
     const { code, body } = await callStatus(
       handleAdapters as AnyHandler,
       fakeReq({ method: "GET" }),
       stubAdapterCtx(),
     );
     expect(code).toBe(200);
-    expect((body as { version?: number }).version).toBe(ADAPTER_CONTRACT_VERSION);
+    // 锚：contracts.ts ADAPTER_CONTRACT_VERSION 字面量 2，第二事实源。
+    expect((body as { version?: number }).version).toBe(2);
     expect(Array.isArray((body as { host?: unknown }).host)).toBe(true);
   });
 
