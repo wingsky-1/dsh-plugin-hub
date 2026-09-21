@@ -29,6 +29,14 @@ them has no effect, and this plugin never rewrites your config file.)
 > [Troubleshooting: a historical session will not open after upgrading (#723)](#723-repair),
 > one command recovers it.
 
+## Quick install
+
+```sh
+dsh plugin --profile web add @wingsky-1/dsh-mcp-manager
+```
+
+> After install / uninstall / update, **restart `dsh web` once** (bundle layers are only composed at startup) for changes to take effect.
+
 ## Core advantages
 
 - **Context cost under control**: all MCP goes through the middleware — the model surface

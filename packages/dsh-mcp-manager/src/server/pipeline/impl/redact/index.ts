@@ -78,6 +78,39 @@ function collectStdioSecrets(server: ServerConfig, secrets: Set<string>): void {
   }
 }
 
+/** 展示侧 args 脱敏（#925）：凭据形 flag 的参数值替换为 "[REDACTED]"，flag 名与非秘密元素原样保留可诊断。与 collectStdioSecrets 同一套 flag 口径（`--token x` / `--token=x` / `-p/-k/-s` 下一拍，长 flag 精确名匹配），空值不掩（无秘密可泄）；非字符串元素按 String() 原样带过。调用方（summarize 只读投影）展示用，写路径见 stripProjectionPatch 丢弃占位符。 */
+export function maskSecretArgsForDisplay(args: readonly unknown[]): string[] {
+  const out = args.map((entry) => String(entry));
+  const masked = new Set<number>();
+  const maskAt = (index: number): void => {
+    if (index >= 0 && index < out.length && (out[index] as string).length > 0) {
+      out[index] = "[REDACTED]";
+      masked.add(index);
+    }
+  };
+  const maskEqualsValue = (index: number, text: string): void => {
+    const equals = text.indexOf("=");
+    if (equals >= 0 && text.slice(equals + 1).length > 0) {
+      out[index] = `${text.slice(0, equals + 1)}[REDACTED]`;
+      masked.add(index);
+    }
+  };
+  for (let index = 0; index < out.length; index += 1) {
+    if (masked.has(index)) continue;
+    const argument = out[index] as string;
+    if (SECRET_SHORT_FLAGS.has(argument)) {
+      maskAt(index + 1);
+      continue;
+    }
+    const equals = argument.indexOf("=");
+    const flag = equals < 0 ? argument : argument.slice(0, equals);
+    if (!isSecretFlagName(flag)) continue;
+    if (equals < 0) maskAt(index + 1);
+    else maskEqualsValue(index, argument);
+  }
+  return out;
+}
+
 /** 凭据脱敏器：从服务器配置收集 secret 值，替换错误消息中的出现。 */
 export function createRedactor(servers: readonly ServerConfig[]): (error: unknown) => string {
   const secrets = new Set<string>();

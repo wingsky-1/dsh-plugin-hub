@@ -28,6 +28,8 @@ export interface McpState {
   bodyEl: any;
   /** 模态面板是否打开。 */
   open: boolean;
+  /** 打开面板时的焦点归属（R6 关还焦：close 时恢复；非元素/已卸载则跳过）。 */
+  panelOpener: any;
   /** 当前激活的 tab（servers / quick）。 */
   activeTab: string;
   /** 服务器列表。 */
@@ -71,6 +73,7 @@ export function createState(): McpState {
     card: undefined,
     bodyEl: undefined,
     open: false,
+    panelOpener: undefined,
     activeTab: "servers",
     servers: [],
     counts: {},

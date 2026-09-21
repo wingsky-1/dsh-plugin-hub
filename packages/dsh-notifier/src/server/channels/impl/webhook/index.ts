@@ -15,7 +15,13 @@ import {
   displayCaps,
   truncateCodePoints,
 } from "../deliver/caps.ts";
-import type { DeliverResult, NotifyMessage, NotifySeverity } from "../deliver/type.ts";
+import type {
+  DeliverResult,
+  HttpFetch,
+  HttpFetchResult,
+  NotifyMessage,
+  NotifySeverity,
+} from "../deliver/type.ts";
 import type {
   WebhookPreset,
   WebhookRenderVars,
@@ -89,10 +95,17 @@ function renderTree(
   return node;
 }
 
+/**
+ * 默认出站实现：全局 fetch。已保存路径的语义锚点——调用方不传第三个参数时走这里，
+ * 与重写前逐字一致；dry-run 传自己的 SSRF 安全实现（见 bark 出口同款注释）。
+ */
+const defaultFetch: HttpFetch = (url, init) => globalThis.fetch(url, init);
+
 /** 请求体由模板渲染；任何失败都不重试（模板或凭据写错，重投三次还是同样的结论）。 */
 export async function sendWebhook(
   target: WebhookTarget,
   message: NotifyMessage,
+  fetchImpl: HttpFetch = defaultFetch,
 ): Promise<DeliverResult> {
   let body: string;
   try {
@@ -122,9 +135,9 @@ export async function sendWebhook(
     }
   }
 
-  let response: Response;
+  let response: HttpFetchResult;
   try {
-    response = await fetch(target.url, {
+    response = await fetchImpl(target.url, {
       method: "POST",
       headers,
       body,

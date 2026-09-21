@@ -11,10 +11,15 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type {
   ChannelPort,
+  ConfigPort,
   HostCapabilities,
   NotifyRequest,
   PipelinePort,
 } from "../../../src/server/api/deps.ts";
+import * as channelsApi from "../../../src/server/channels/interface.ts";
+import { DEFAULT_CONFIG } from "../../../src/server/config/impl/model/index.ts";
+import * as configApi from "../../../src/server/config/interface.ts";
+import * as pipelineApi from "../../../src/server/pipeline/interface.ts";
 import { ProbeEndpoints } from "../../../src/server/api/impl/probe/index.ts";
 import { streamHub } from "../../../src/server/api/impl/stream/index.ts";
 import { jsonReq, makeLogger, makeRes, wire } from "../../helpers.ts";
@@ -31,6 +36,8 @@ function fakeChannels(
     },
     hostPlatform: options.hostPlatform ?? (() => "linux"),
     undeterminedCapabilities: () => UNDETERMINED,
+    // dry-run 出站走真实实现（本文件不断言它，端口类型要求齐成员）。
+    dryRunTarget: channelsApi.dryRunTarget,
   };
   return { port, probeCalls: () => calls };
 }
@@ -81,22 +88,44 @@ function makeReq(
   });
 }
 
-/** 假裁决管线：只记下提交体（该不该发、发去哪都是管线的事）。 */
+/** 假裁决管线：只记下提交体（该不该发、发去哪都是管线的事）。
+ * dry-run 直构件走真实实现（本文件不断言它们，端口类型要求齐成员）。 */
 function fakePipeline() {
   const submitted: NotifyRequest[] = [];
   const port: PipelinePort = {
     submit: (request) => {
       submitted.push(request);
     },
+    finalizeRequest: pipelineApi.finalizeRequest,
+    barkTarget: pipelineApi.barkTarget,
+    browserTarget: pipelineApi.browserTarget,
+    systemTarget: pipelineApi.systemTarget,
+    webhookTarget: pipelineApi.webhookTarget,
   };
   return { port, submitted };
+}
+
+/** dry-run 不用的配置面：读默认空配置，纯函数走真实实现（与 dry-run.test.ts 同源）。 */
+function fakeConfig(): ConfigPort {
+  return {
+    readConfig: () => ({ ...DEFAULT_CONFIG }),
+    readSettingsView: () => {
+      throw new Error("本文件不读视图");
+    },
+    writeConfig: () => Promise.reject(new Error("本文件不写配置")),
+    resolveDraftChannels: configApi.resolveDraftChannels,
+    normalizeConfig: configApi.normalizeConfig,
+  };
 }
 
 /** POST 一次测试通知（给定请求对象）。 */
 async function postWith(req: IncomingMessage) {
   const pipeline = fakePipeline();
   const { res, rec, json } = makeRes();
-  await new ProbeEndpoints(pipeline.port, fakeChannels().port, makeLogger()).test(req, res);
+  await new ProbeEndpoints(pipeline.port, fakeChannels().port, makeLogger(), fakeConfig()).test(
+    req,
+    res,
+  );
   return { rec, json, pipeline };
 }
 
@@ -222,11 +251,12 @@ describe("POST /test：body 读不出来时 fail-closed（不许当成「没给 
   });
 
   it("超限体 → 400 invalid-json 且不提交：JSON 本身合法也不例外", async () => {
-    const { rec, json, pipeline } = await post({ body: { channelId: "a".repeat(5000) } });
+    // 上限 16K（与 settings 端对齐，PR-B）：超限体必须大于 16K 才触发 too-large。
+    const { rec, json, pipeline } = await post({ body: { channelId: "a".repeat(20000) } });
     expect(rec.status).toBe(400);
     expect(json()).toEqual({
       ok: false,
-      error: { code: "invalid-json", details: "请求体超出大小上限（4096 字节）" },
+      error: { code: "invalid-json", details: "请求体超出大小上限（16384 字节）" },
     });
     expect(pipeline.submitted).toEqual([]);
   });
@@ -264,7 +294,7 @@ describe("GET /health：报宿主平台、连接回收计数与能力面摘要",
   it("platform 取 channels 域的平台事实（客户端据此写系统通道提示，不能拿浏览器 OS 猜），sseEvicts 形状与真实枢纽逐键一致", async () => {
     const { res, rec, json } = makeRes();
     const channels = fakeChannels({ hostPlatform: () => "darwin" });
-    await new ProbeEndpoints(fakePipeline().port, channels.port, makeLogger()).health(
+    await new ProbeEndpoints(fakePipeline().port, channels.port, makeLogger(), fakeConfig()).health(
       makeReq({ method: "GET" }),
       res,
     );
@@ -297,7 +327,12 @@ describe("GET /health：报宿主平台、连接回收计数与能力面摘要",
 
   it("能力自检只探一次：连续两次请求共用同一个 Promise（每请求各探一次就是拿用户机器当靶场）", async () => {
     const channels = fakeChannels();
-    const endpoints = new ProbeEndpoints(fakePipeline().port, channels.port, makeLogger());
+    const endpoints = new ProbeEndpoints(
+      fakePipeline().port,
+      channels.port,
+      makeLogger(),
+      fakeConfig(),
+    );
 
     await endpoints.health(makeReq({ method: "GET" }), makeRes().res);
     await endpoints.health(makeReq({ method: "GET" }), makeRes().res);
@@ -314,7 +349,7 @@ describe("能力自检的兜底：诊断附属面不许把探活面拖下水", (
   it("探测抛错时 /health 不 500：既有键全在，能力面按「无法判定」上报并留恰好一条 warn", async () => {
     const channels = fakeChannels({ probe: () => Promise.reject(new Error("探测炸了")) });
     const logger = makeLogger();
-    const endpoints = new ProbeEndpoints(fakePipeline().port, channels.port, logger);
+    const endpoints = new ProbeEndpoints(fakePipeline().port, channels.port, logger, fakeConfig());
     const { res, rec, json } = makeRes();
     await endpoints.health(makeReq({ method: "GET" }), res);
 
@@ -336,7 +371,12 @@ describe("能力自检的兜底：诊断附属面不许把探活面拖下水", (
     vi.useFakeTimers();
     try {
       const channels = fakeChannels({ probe: () => new Promise<HostCapabilities>(() => {}) });
-      const endpoints = new ProbeEndpoints(fakePipeline().port, channels.port, makeLogger());
+      const endpoints = new ProbeEndpoints(
+        fakePipeline().port,
+        channels.port,
+        makeLogger(),
+        fakeConfig(),
+      );
       const { res, json } = makeRes();
       const pending = endpoints.health(makeReq({ method: "GET" }), res);
       // 不引用具体预算值（引用它就等于把常量抄成第二份）：只要求它在 10s 内到点
@@ -355,10 +395,12 @@ describe("GET /diagnostics：完整探测面", () => {
   it("给的是 channels 域那一份完整能力面（checked / players / remediation 都在）", async () => {
     const { res, rec, json } = makeRes();
     const channels = fakeChannels();
-    await new ProbeEndpoints(fakePipeline().port, channels.port, makeLogger()).diagnostics(
-      makeReq({ method: "GET" }),
-      res,
-    );
+    await new ProbeEndpoints(
+      fakePipeline().port,
+      channels.port,
+      makeLogger(),
+      fakeConfig(),
+    ).diagnostics(makeReq({ method: "GET" }), res);
     expect(rec.status).toBe(200);
     const body = wire<{ platform: string; capabilities: { host: HostCapabilities } }>(json());
     expect(body.platform).toBe("linux");

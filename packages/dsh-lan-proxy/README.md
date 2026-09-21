@@ -7,6 +7,14 @@
 
 **简体中文** | [English](README.en.md)
 
+## 一键安装
+
+```sh
+dsh plugin --profile web add @wingsky-1/dsh-lan-proxy
+```
+
+> 安装 / 卸载 / 更新后都需**重启一次** `dsh web`（bundle 层只在启动时组合）生效。
+
 ## 快速导航
 
 [使用前须知](#使用前须知) · [安全模型](#安全模型) · [最短上手](#最短上手) · [常用配置](#常用配置) · [验证与排障](#验证与排障) · [详细参考](#详细参考) · [开发与架构](#开发与架构)
@@ -36,7 +44,9 @@
   强制约束为回环，凭据只发往本机回环上游（不承诺跨进程隔离）。**压缩炸弹面**：桥接浏览器段
   permessage-deflate 解压存在放大点（LAN 内恶意客户端高压缩比帧 → 代理进程
   解压）——在「LAN 信任」威胁模型内可接受（与 injectToken 同一信任边界）
-- **私钥权限**：自动生成的自签名私钥落盘 0600
+- **私钥权限**：自动生成的自签名私钥落盘 0600；一键 CA 的 CA 私钥 + 叶子私钥 + .bak 一律 0600（write + chmodSync 双保险），certs/ 目录 0700
+- **证书下发面（issue #911）**：下发路由只读给公钥（loopback 围栏 + 仅 GET + 无 Cookie 要求）。只伺服首个 CERTIFICATE 块，误指私钥一律 404；响应禁缓存。无 CA 时一律 404（自签/孤叶子装了建不起信任，不下发）
+- **一键 CA 动作面（issue #930）**：POST 只写（loopback 围栏 + POST 白名单 + settings 可写才可用）。CA 私钥文件名固定（ca-key.pem），永不进下发源；失败响应只出固定码（ca-generate-failed 等），路径与私钥原文只进服务端日志。默认轮换仅换叶子（CA 续用，已装设备零操作）；轮换 CA 为独立危险动作（已装设备信任全部失效，需逐台重装）。旧材料搬时间戳 .bak 只留最近 1 个
 - **开放端口提醒**：0.0.0.0 监听对局域网所有设备可见
 - **HTTP 响应压缩**：压缩在转发层完成，只作用于「本插件与局域网客户端之间」
   的链路，不触碰 dsh web 的响应生成；不新增可达数据面，仅增加少量 CPU 开销
@@ -150,6 +160,7 @@ curl -s http://127.0.0.1:3081/api/dsh-lan-proxy/health
 | `targetPort` | 自动 | 上游端口（默认取 web 服务器实际绑定端口） |
 | `httpsEnabled` | `true` | 是否并存 HTTPS |
 | `tlsCertFile` / `tlsKeyFile` | 无 | 自定义证书（mkcert 等） |
+| `tlsCaCertFile` | 无 | 自建 LAN CA 公钥（PEM，仅读） |
 | `printBanner` | `true` | 启动时是否在终端打印监听横幅（LAN 访问地址等） |
 | `wsBridgeEnabled` | `true` | 桥接总开关；关闭会失去保活与压缩。 |
 | `wsCompressEnabled` | `true` | 是否对命中 `wsCompressPaths` 的 WebSocket 做压缩桥接（仅控制压缩，不影响桥接保活） |
@@ -307,8 +318,10 @@ curl http://<本机局域网IP>:3081/api/dsh-lan-proxy/health
 
 - **证书来源（两级）**：① 配置 `tlsCertFile`/`tlsKeyFile`（正式证书或 mkcert
   本地 CA，浏览器零警告）；② 自动生成自签名证书（内置 selfsigned 库生成并缓存到
-  `<DSH_HOME>/lan-proxy/`，私钥权限 0600，无需宿主机 openssl）
-- 自签名证书首次访问需手动"继续访问"；内网设备零警告推荐 mkcert
+  `<DSH_HOME>/@wingsky-1/dsh-lan-proxy/`（旧 lan-proxy 目录首次启动自动迁入），私钥权限 0600，无需宿主机 openssl）
+- 自签名证书首次访问需手动"继续访问"；内网设备零警告推荐自建 LAN CA（一台设备装一次 CA，见下）
+- **一键生成本地 CA（issue #930）**：设置页“局域网访问”卡片点“一键生成本地 CA”，即签发 10 年 CA + 398 天叶子并写入托管目录 `<DSH_HOME>/@wingsky-1/dsh-lan-proxy/certs/`（CA 公钥 `ca-cert.pem` / 私钥 `ca-key.pem` / 叶子 `leaf-cert.pem` + `leaf-key.pem`），三键自动回填。默认“轮换叶子证书”仅换叶子（CA 不变，已装设备零操作）；“轮换 CA”为危险动作。不想走 UI 时可用 mkcert 自建 CA（零代码并存路径，hint 同上）
+- **移动设备安装证书（issue #911，#930 Phase 1 无 CA 不下发）**：配 tlsCaCertFile（CA 公钥）后，设置页下载直链即下发 CA（须用浏览器直接点开链接）。无 CA 时下载链接一律 404（自签模式与自定义孤叶子都不下发：装了建不起信任）：先在设置页一键生成本地 CA，或配置 CA 公钥后重试。iPhone 装描述文件后去证书信任设置打开信任；Android 在设置安全项安装 CA 证书；Windows 双击装进受信任的根证书颁发机构
 
 ### 卸载插件（remove）
 

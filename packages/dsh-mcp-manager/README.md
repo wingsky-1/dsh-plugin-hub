@@ -19,6 +19,14 @@ root `@global`。宿主仍按 `mcp__<id>__<tool>` 注册工具（`id` 是本次�
 > **升级 dsh 到 0.1.5+ 后历史会话打不开（`unclassified message source`）？**
 > 见 [故障修复：升级后历史会话打不开（#723）](#723-修复方案)，一条命令即可救回。
 
+## 一键安装
+
+```sh
+dsh plugin --profile web add @wingsky-1/dsh-mcp-manager
+```
+
+> 安装 / 卸载 / 更新后都需**重启一次** `dsh web`（bundle 层只在启动时组合）生效。
+
 ## 核心优势
 
 - **上下文成本可控**：全部 MCP 经中间层收敛，模型面只占 `ws_mcp_list` /

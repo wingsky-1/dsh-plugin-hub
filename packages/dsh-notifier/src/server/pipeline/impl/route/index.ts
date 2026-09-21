@@ -73,8 +73,15 @@ function resolvePool(deps: RouteDeps, config: EffectiveConfig, kind: NotifyKind)
   return pool;
 }
 
-/** 浏览器内置频道 → 目标：配置原样搬运，播放决议由出口解析。 */
-function browserTarget(channel: BrowserConfig, deps: RouteDeps, kind: NotifyKind): RoutedTarget {
+/** 浏览器内置频道 → 目标：配置原样搬运，播放决议由出口解析。
+ *
+ * 导出给草稿测试（dry-run）复用同一份映射：它跳过 enabled 门直构单目标，映射本身必须与
+ * 路由一致，否则「测得通、存下来不通」。 */
+export function browserTarget(
+  channel: BrowserConfig,
+  deps: RouteDeps,
+  kind: NotifyKind,
+): RoutedTarget {
   return {
     channelId: BUILTIN_CHANNELS.browser,
     target: {
@@ -88,8 +95,10 @@ function browserTarget(channel: BrowserConfig, deps: RouteDeps, kind: NotifyKind
   };
 }
 
-/** 系统内置频道 → 目标；脚本路径由组合层推导后传入，出口不做路径猜测。 */
-function systemTarget(channel: SystemConfig, deps: RouteDeps): RoutedTarget {
+/** 系统内置频道 → 目标；脚本路径由组合层推导后传入，出口不做路径猜测。
+ *
+ * 导出理由同 browserTarget：dry-run 直构单目标时复用同一份映射。 */
+export function systemTarget(channel: SystemConfig, deps: RouteDeps): RoutedTarget {
   return {
     channelId: BUILTIN_CHANNELS.system,
     target: {
@@ -102,8 +111,10 @@ function systemTarget(channel: SystemConfig, deps: RouteDeps): RoutedTarget {
   };
 }
 
-/** bark 配置 → 投递参数；空串是归一化表达「没配置」，投递层的缺省才是真缺省。 */
-function barkTarget(channel: BarkConfig, kind: NotifyKind): BarkTarget {
+/** bark 配置 → 投递参数；空串是归一化表达「没配置」，投递层的缺省才是真缺省。
+ *
+ * 导出理由同 browserTarget：dry-run 直构单目标时复用同一份映射。 */
+export function barkTarget(channel: BarkConfig, kind: NotifyKind): BarkTarget {
   const target: BarkTarget = {
     type: "bark",
     baseUrl: channel.baseUrl,
@@ -130,8 +141,10 @@ function assignText(target: BarkTarget, key: BarkTextKey, value: string): void {
   if (value.length > 0) target[key] = value;
 }
 
-/** webhook 配置 → 投递参数；凭据在这里解析成投递层的对象。 */
-function webhookTarget(channel: WebhookConfig): WebhookTarget {
+/** webhook 配置 → 投递参数；凭据在这里解析成投递层的对象。
+ *
+ * 导出理由同 browserTarget：dry-run 直构单目标时复用同一份映射。 */
+export function webhookTarget(channel: WebhookConfig): WebhookTarget {
   const target: WebhookTarget = {
     type: "webhook",
     url: channel.url,

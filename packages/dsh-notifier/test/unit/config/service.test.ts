@@ -130,14 +130,14 @@ describe("装配与读面", () => {
     expect(view.writable).toBe(true);
   });
 
-  it("装配期同步读完文件：读面与用户层都已是文件里的值", () => {
+  it("装配期同步读完文件：读面与用户层都已是文件里的值（旧形 start/end 经 legacy 回落读成 windows[0]）", () => {
     writeConfigFile(
       '{"notifyAsk":false,"quietHours":{"enabled":true,"start":"23:00","end":"07:00"}}',
     );
     assemble();
     expect(readConfig().notifyAsk).toBe(false);
     expect(readConfig().quietHours.enabled).toBe(true);
-    expect(readConfig().quietHours.start).toBe("23:00");
+    expect(readConfig().quietHours.windows).toEqual([{ start: "23:00", end: "07:00" }]);
     expect(readSettingsView().user.notifyAsk).toBe(false);
   });
 
@@ -305,7 +305,11 @@ describe("写面的合并与凭据", () => {
     writeConfigFile('{"futureKey":{"mode":"x"},"notifyAsk":false}');
     assemble();
     await writeConfig({
-      quietHours: { enabled: true, start: "22:00", end: "08:00", allowKinds: ["error"] },
+      quietHours: {
+        enabled: true,
+        windows: [{ start: "22:00", end: "08:00" }],
+        allowKinds: ["error"],
+      },
     });
     await writeConfig({ notifyTaskDone: false });
 
@@ -314,7 +318,9 @@ describe("写面的合并与凭据", () => {
     expect(readConfig().notifyTaskDone).toBe(false);
     expect(readConfig().quietHours.allowKinds).toEqual(["error"]);
 
-    await writeConfig({ quietHours: { enabled: false, start: "23:00", end: "07:00" } });
+    await writeConfig({
+      quietHours: { enabled: false, windows: [{ start: "23:00", end: "07:00" }] },
+    });
     expect(readConfig().quietHours.enabled).toBe(false);
     expect(readConfig().quietHours.allowKinds).toEqual([]);
   });

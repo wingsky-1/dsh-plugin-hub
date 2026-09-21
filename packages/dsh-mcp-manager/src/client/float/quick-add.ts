@@ -25,6 +25,18 @@ export function parseKV(text: any): Record<string, string> {
   return out;
 }
 
+/**
+ * #770-A3 只读投影回写 guard：投影值永不进入写路径。
+ * - env/headers 在投影中整体省略（无占位符），表单空白即省略、宿主沿用既有；
+ * - url 投影含 B8 脱敏占位符 "[REDACTED]"（或其 URL 序列化形态）时视为未改动，
+ *   保存时省略该字段（PATCH 沿用既有；迁移 POST 缺 url 则中止并提示重填）。
+ */
+export function isProjectionValue(value: unknown): boolean {
+  return (
+    typeof value === "string" && (value.includes("[REDACTED]") || value.includes("%5BREDACTED%5D"))
+  );
+}
+
 /** 当前表单选择的归属（project/global）。 */
 export function formScopeValue(state: McpState): string {
   if (
@@ -101,17 +113,24 @@ export function fillForm(state: McpState, fill: any): void {
   state.formTransport.value = fill.transport ?? "stdio";
   if (fill.command !== undefined) state.formCommand.value = fill.command;
   if (Array.isArray(fill.args)) state.formArgs.value = fill.args.join(", ");
+  // #770-A3：投影省略 env/headers（缺键）时表单清零——残留旧值会被 readForm
+  // 原样读回并 PATCH 落盘（占位符同理）；缺键在宿主即「沿用既有」。
   if (fill.env !== undefined) {
     state.formEnv.value = Object.entries(fill.env)
       .map(([key, value]) => `${key}=${value}`)
       .join("\n");
+  } else if (state.formEnv !== undefined) {
+    state.formEnv.value = "";
   }
   if (fill.cwd !== undefined) state.formCwd.value = fill.cwd;
+  // url 投影为 B8 脱敏展示值（含占位符时仅展示用，保存时由 saveForm 省略，见上）。
   if (fill.url !== undefined) state.formUrl.value = fill.url;
   if (fill.headers !== undefined) {
     state.formHeaders.value = Object.entries(fill.headers)
       .map(([key, value]) => `${key}: ${value}`)
       .join("\n");
+  } else if (state.formHeaders !== undefined) {
+    state.formHeaders.value = "";
   }
   // C1 enabled 回填：resetForm 强制 checked=true，编辑 enabled:false 的服务器
   // 必须回填，否则保存时被静默重新启用并自动连接（宿主 update 分支）。
@@ -123,7 +142,36 @@ export function fillForm(state: McpState, fill: any): void {
 export async function saveForm(state: McpState, actions: UiActions): Promise<void> {
   const server = readForm(state);
   try {
-    const payload = { ...server, scope: formScopeValue(state), ...currentCwdBody(state) };
+    const payload = { ...server, scope: formScopeValue(state), ...currentCwdBody(state) } as Record<
+      string,
+      unknown
+    >;
+    // #770-A3：投影 URL（含占位符）永不进入写路径——PATCH 省略即沿用既有；
+    // 迁移 POST 无既有可保，含占位符即中止并提示重填真值。
+    if (typeof payload.url === "string" && isProjectionValue(payload.url)) {
+      const editingForGuard = state.editingName !== undefined;
+      const serverName = String((server as { name?: unknown }).name ?? "");
+      const migratedForGuard =
+        editingForGuard &&
+        (state.editingName !== serverName ||
+          (state.editing?.scope !== undefined && state.editing.scope !== payload.scope));
+      if (migratedForGuard || !editingForGuard) {
+        window.alert(t("saveFail", { msg: "URL 含脱敏占位符，请重填真实 URL 后再保存" }));
+        return;
+      }
+      delete payload.url;
+    }
+    // env/headers 占位符同理（投影本不下发占位符，此处防手工粘贴/直调污染写路径）。
+    for (const key of ["env", "headers"] as const) {
+      const table = (payload as Record<string, unknown>)[key];
+      if (typeof table === "object" && table !== null && !Array.isArray(table)) {
+        const kept = Object.entries(table as Record<string, unknown>).filter(
+          ([, value]) => !isProjectionValue(value),
+        );
+        if (kept.length === 0) delete (payload as Record<string, unknown>)[key];
+        else (payload as Record<string, unknown>)[key] = Object.fromEntries(kept);
+      }
+    }
     const editing = state.editingName !== undefined;
     // C11 迁移式保存：宿主 PATCH 按 (scope,name) 定位且强制沿用定位名——
     // 编辑改名/改归属会 404 not found 无引导。先 POST 新条目再 DELETE 旧条目，
@@ -133,6 +181,19 @@ export async function saveForm(state: McpState, actions: UiActions): Promise<voi
       (state.editingName !== server.name ||
         (state.editing?.scope !== undefined && state.editing.scope !== payload.scope));
     if (migrated) {
+      // #770-L2：改名/改归属迁移丢 stdio 秘密——POST 新条目无既有可沿用，
+      // 省略的 env/headers 即永久丢失。M7 大声失败：原条目有秘密时无条件中止
+      // （表单即便已填值也不放行：payload 完整值放行本次不做，保持 fail-closed）。
+      // 文案须指引手动路径（新建同名条目填真值后删旧条目），不得承诺“重填后保存”
+      // ——无条件拦截下该后续路径不存在，旧文案误导。
+      if ((state.editing as { hasSecrets?: unknown } | undefined)?.hasSecrets === true) {
+        window.alert(
+          t("saveFail", {
+            msg: "改名/改归属迁移不会带入原有凭据，请新建同名条目并填写真实凭据，确认可用后再删除旧条目",
+          }),
+        );
+        return;
+      }
       await api(state.API.servers, {
         method: "POST",
         headers: { "content-type": "application/json" },

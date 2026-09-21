@@ -83,10 +83,19 @@ export type HistoryRecordView = {
   channels?: unknown;
 };
 
+/** 单个免打扰时间窗视图（服务端 QuietWindow 到客户端的视图；脏值由调用点收窄）。 */
+export type QuietWindowView = {
+  /** "HH:MM"，允许跨零点。 */
+  start?: string;
+  end?: string;
+};
+
 /** 免打扰时段（服务端 QuietHoursConfig 到客户端的视图；缺键回落默认值由调用点处理）。 */
 export type QuietHoursView = {
   enabled?: boolean;
-  /** "HH:MM"，允许跨零点。 */
+  /** 时间窗列表；旧服务端的 start/end 由调用点看成单项（读面兼容）。 */
+  windows?: QuietWindowView[];
+  /** 旧形时钟键：只为读面兼容而保留，写面一律提交 windows。 */
   start?: string;
   end?: string;
   /** 时段内仍放行的 kind。 */
@@ -148,9 +157,16 @@ export type PutResult = {
   error?: ErrorDetail;
 };
 
-/** POST /test 成功体（调用点只读 sseConnections；失败体走 ErrorDetail）。 */
+/** POST /test 成功体（调用点只读 sseConnections；失败体走 ErrorDetail）。
+ *
+ * dry-run 成功体是另一套（服务端 B3 schema）：{ok, channelId, status, reason?}——
+ * status 为此次实测结论（ok / failed / skipped），reason 为结构化理由（只读渲染）。
+ * 调用点按有无 channelId 区分两套（dry-run 恒带 channelId）。 */
 export type SendTestResult = {
   sseConnections?: unknown;
+  channelId?: unknown;
+  status?: unknown;
+  reason?: unknown;
   error?: ErrorDetail;
 };
 

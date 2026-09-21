@@ -3,13 +3,13 @@
   "version": 2,
   "packages": {
     "dsh-lan-proxy": {
-      "modules": 6,
-      "scannedSrcFiles": 18,
-      "allSrcTsFiles": 26,
-      "interfaceFacades": 6,
-      "leafValueEdges": 3,
-      "fileValueEdges": 27,
-      "crossModuleRefs": 35,
+      "modules": 7,
+      "scannedSrcFiles": 24,
+      "allSrcTsFiles": 34,
+      "interfaceFacades": 7,
+      "leafValueEdges": 5,
+      "fileValueEdges": 36,
+      "crossModuleRefs": 49,
       "quality": {
         "leafModuleCycles": [],
         "fileCycles": [],
@@ -28,13 +28,13 @@
       }
     },
     "dsh-mcp-manager": {
-      "modules": 17,
-      "scannedSrcFiles": 102,
-      "allSrcTsFiles": 116,
-      "interfaceFacades": 17,
+      "modules": 18,
+      "scannedSrcFiles": 106,
+      "allSrcTsFiles": 120,
+      "interfaceFacades": 18,
       "leafValueEdges": 19,
-      "fileValueEdges": 144,
-      "crossModuleRefs": 189,
+      "fileValueEdges": 150,
+      "crossModuleRefs": 191,
       "quality": {
         "leafModuleCycles": [],
         "fileCycles": [],
@@ -59,12 +59,12 @@
     },
     "dsh-notifier": {
       "modules": 10,
-      "scannedSrcFiles": 107,
-      "allSrcTsFiles": 137,
+      "scannedSrcFiles": 114,
+      "allSrcTsFiles": 147,
       "interfaceFacades": 10,
       "leafValueEdges": 11,
-      "fileValueEdges": 118,
-      "crossModuleRefs": 105,
+      "fileValueEdges": 142,
+      "crossModuleRefs": 112,
       "quality": {
         "leafModuleCycles": [],
         "fileCycles": [],

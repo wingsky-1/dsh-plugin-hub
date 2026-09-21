@@ -490,6 +490,7 @@ export const inject: string[] = []; // 声明 apply 用到的 ctx 服务（如 [
   颜色用 `--dsw-alias-*` / `--dsw-hljs-*` 主题变量 + 浅色回退，明暗自适应。
 - 挂载失败 `console.warn` 不 throw，绝不让 GUI 启动失败。
 - 路由引用用构建期注入的 `__DSH_ROUTES__`（或宿主 ROUTES 字面量），防两端漂移。
+- 全局 DOM 副作用（过期标记/事件吞没/层叠抢占）见 [client-dom-contract](./client-dom-contract.md)（#947）：干净模块装配只管自家挂载，跨插件可观测面由该契约束缚。
 
 <a id="3-CSS规范"></a><a id="user-content-3-CSS规范"></a>
 
@@ -505,6 +506,7 @@ export const inject: string[] = []; // 声明 apply 用到的 ctx 服务（如 [
 - `src/client/css.d.ts` 提供 `declare module "*.css"`（tsc 的 `verbatimModuleSyntax`
   需要类型；仅类型面无运行时）。
 - 用**格式化多行**书写（区别于旧的字符串拼接）；前缀硬编码进 CSS 与 JS 常量保持一致。
+- 关态残留自查见 [client-dom-contract](./client-dom-contract.md) R7 检查单：提 PR 前逐条回答“关掉后还剩什么”。
 
 ## 4. 契约与门禁
 

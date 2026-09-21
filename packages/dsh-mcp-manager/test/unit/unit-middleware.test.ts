@@ -104,6 +104,7 @@ function makeHost(
     ctx: { tools },
     logger: { info: () => {}, warn: () => {}, error: () => {} },
     projectServersFor: async (root: string) => serversByRoot.get(root),
+    redactionServers: () => [...serversByRoot.values()].flat(),
     globalServers: () => [],
     normalizedProjectRoot: async (cwd: string | undefined) =>
       typeof cwd === "string" && cwd !== "" ? cwd : undefined,
@@ -2295,7 +2296,7 @@ describe("B18 红测a：callTool 应用 server.toolCallTimeoutMs", () => {
   });
 
   it(
-    "B18：超时文案带 server.toolCallTimeoutMs（不是缺省 30000）",
+    "B18：超时文案带 server.toolCallTimeoutMs（不是缺省 15000）",
     { timeout: 15_000 },
     async () => {
       const { mw } = timeoutFixture(async () => new Promise(() => {}));

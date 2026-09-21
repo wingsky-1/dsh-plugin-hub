@@ -30,7 +30,7 @@ const EXPECTED_DEFAULTS = {
   notifyTaskError: true,
   notifyTurnEnd: false,
 
-  quietHours: { enabled: false, start: "22:00", end: "08:00" },
+  quietHours: { enabled: false, windows: [{ start: "22:00", end: "08:00" }] },
   // 两条内置频道是默认形态的一部分：读面靠它们才谈得上「与默认表逐字一致」，权威形态也住在它们身上。
   channels: [
     { type: "browser", id: "browser", enabled: true, popup: true, sound: true, whenVisible: false },
@@ -61,8 +61,8 @@ describe("DEFAULT_CONFIG：默认形态以手写字面量为准，不由实现�
     expect(normalizeConfig({})).toEqual(DEFAULT_CONFIG);
   });
 
-  it("quietHours 只有 enabled / start / end：allowKinds 缺省表示「时段内不额外放行谁」（整体相等看不出多出来的键值是 undefined）", () => {
-    expect(Object.keys(DEFAULT_CONFIG.quietHours)).toEqual(["enabled", "start", "end"]);
+  it("quietHours 只有 enabled / windows：allowKinds 缺省表示「时段内不额外放行谁」（整体相等看不出多出来的键值是 undefined）", () => {
+    expect(Object.keys(DEFAULT_CONFIG.quietHours)).toEqual(["enabled", "windows"]);
     expect("allowKinds" in DEFAULT_CONFIG.quietHours).toBe(false);
   });
 });

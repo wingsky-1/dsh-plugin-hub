@@ -18,12 +18,18 @@ import { barkCard } from "../channels/bark-card.tsx";
 import { builtinCard } from "../channels/builtin-card.tsx";
 import { webhookCard } from "../channels/webhook-card.tsx";
 import type { ChannelStatusMap } from "../parts/status.tsx";
-import type { RegisteredKindView, SettingsChannelView, SettingsView } from "../types.ts";
+import type {
+  HistoryRecordView,
+  RegisteredKindView,
+  SettingsChannelView,
+  SettingsView,
+} from "../types.ts";
 
 /** 频道 tab 的依赖面（三张卡的并集 + 本片自用的添加/域保存入口）。 */
 interface ChannelsPaneDeps {
   settings: SettingsView;
   statusMap: ChannelStatusMap;
+  history: HistoryRecordView[] | null;
   hostPlatform: string | null;
   diag: ClientDiagnosticsView;
   channelLabel: (c: SettingsChannelView) => string;
@@ -46,6 +52,8 @@ interface ChannelsPaneDeps {
   markSecretEdited: (key: string) => void;
   saving: boolean;
   saveFor: (entry: string, quietIfEmpty?: boolean) => void;
+  /** 频道域是否有脏（测试按钮切文案 + 徽标 + title 的依据，B-S1-3）。 */
+  testDirty: boolean;
   t: Translate;
 }
 
@@ -58,6 +66,7 @@ export function channelsPane(deps: ChannelsPaneDeps) {
   const {
     settings,
     statusMap,
+    history,
     hostPlatform,
     diag,
     channelLabel,
@@ -80,6 +89,7 @@ export function channelsPane(deps: ChannelsPaneDeps) {
     markSecretEdited,
     saving,
     saveFor,
+    testDirty,
     t,
   } = deps;
 
@@ -102,6 +112,8 @@ export function channelsPane(deps: ChannelsPaneDeps) {
           requestNotificationPermission,
           audioEngine,
           t,
+          history,
+          testDirty,
         ),
       );
       return;
@@ -122,6 +134,8 @@ export function channelsPane(deps: ChannelsPaneDeps) {
             sendTest,
             statusMap,
             t,
+            history,
+            testDirty,
           )
         : barkCard(
             c,
@@ -139,6 +153,8 @@ export function channelsPane(deps: ChannelsPaneDeps) {
             sendTest,
             statusMap,
             t,
+            history,
+            testDirty,
           ),
     );
   });

@@ -187,7 +187,7 @@ function makeInput(options: {
     allServers: makeServers,
     disabledTools: new Map(),
     catalogTtlMs: 24 * 60 * 60 * 1000,
-    defaultCallTimeoutMs: 30000,
+    defaultCallTimeoutMs: 15000,
     // 注册名派生用**真** publicToolName：判据要钉住「dispatch 不自己拼 mcp__<id>__<tool>」，
     // 手写字符串会让这条判据在派生规则变更时静默失效。
     registeredNameFor: (id: string, tool: string) => publicToolName(id, tool),
@@ -273,7 +273,7 @@ describe("executeMcpCall：远端分支", () => {
     await executeMcpCall(makeInput({ pipeline, overrides: { execute: exec.execute } }));
     // 单次调用预算已交官方 Config（toolCallTimeoutMs，见 unit-lifecycle-mount 的映射判据）；
     // 本层只剩「超时包装的预算 = 调用预算 + 2000」这一处可观测。
-    expect(calls.timeout[0].ms).toBe(32000);
+    expect(calls.timeout[0].ms).toBe(17000);
   });
 
   it("远端结果交给 projectCallToolResult，两个文案回调口径不变", async () => {
@@ -405,7 +405,7 @@ describe("executeMcpCall：封装直呼分支", () => {
     );
     expect(seen[0][0]).toEqual({ n: 2 });
     expect((seen[0][1] as { agent: unknown }).agent).toBe(agent);
-    expect(calls.timeout[0].ms).toBe(32000);
+    expect(calls.timeout[0].ms).toBe(17000);
     expect(out).toEqual({
       content: [{ type: "text", text: "rendered:node" }],
       structuredContent: { text: "node" },
@@ -472,13 +472,13 @@ describe("executeMcpCall：超时兜底与脱敏出口", () => {
   it("withTimeout 超时 → 预算 +2000ms 且超时文案经脱敏", async () => {
     const { pipeline, calls } = makePipeline({
       withTimeout: async () => {
-        throw new Error("ws_mcp_call: 调用超时（30000ms）" + CREDENTIAL);
+        throw new Error("ws_mcp_call: 调用超时（15000ms）" + CREDENTIAL);
       },
     });
     const exec = fakeExecute({ content: [] });
     await expect(
       executeMcpCall(makeInput({ pipeline, overrides: { execute: exec.execute } })),
-    ).rejects.toThrow(/调用超时（30000ms）\*\*\*/);
+    ).rejects.toThrow(/调用超时（15000ms）\*\*\*/);
     expect(calls.redact).toHaveLength(1);
   });
 

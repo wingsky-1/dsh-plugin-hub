@@ -6,6 +6,14 @@
 
 **简体中文** | [English](README.en.md)
 
+## 一键安装
+
+```sh
+dsh plugin --profile web add @wingsky-1/dsh-notifier
+```
+
+> 安装 / 卸载 / 更新后都需**重启一次** `dsh web`（bundle 层只在启动时组合）生效。
+
 ## 快速导航
 
 [使用前须知](#使用前须知) · [部署与访问](#部署与访问方式重要) · [最短上手](#最短上手) · [常用配置](#常用配置) · [验证与排障](#验证与排障) · [详细参考](#详细参考) · [开发与架构](#开发与架构)
@@ -41,7 +49,9 @@
 - **通知正文与标题不再打码（#733 收敛）**：原 `sanitizeContent` 的规则表（路径 / PEM 私钥 / 连接串凭据 / 令牌 / 邮箱…）已删除——通知、历史落盘（含 suppressed 落史）与投递都是原文；正文不截断，长度由投递频道的展示上限截断。需要「日志里不出现某类文本」的部署，请自行在事件源侧处理
 - **仅存的凭据掩码在设置页视图**：`GET /config` 的 `user` + `effective` 与 `PUT` 成功响应中的频道凭据（bark `deviceKey`、webhook `token` / `password` / `headerValue`）一律掩码 `********`，提交整值掩码 = 保持原值（按实例 id 对齐回填，防数组序变化串凭据），新实例带掩码提交 400（`CHANNEL_SECRET_FIELDS` 按频道类型单一事实源）
 - **出口错误原因不再做凭据字面替换（实测风险，照实登记）**：Bark 4xx 响应体会回显 device key，webhook 的非 2xx 响应体也会回显收到的凭据——失败原因只做长度截断（webhook 响应体 200 字符；状态条目 300 字符），**不保证凭据不出现在错误文本里**。这些文本落在失败理由的 `detail` 字段里（0.2.4 起理由结构化，见「投递可靠性」），会进服务端日志、状态文件（`status.json`）与通知历史（`history.jsonl`），并随 `GET /status` 与 `GET /history` 出到设置页；对错误文本外泄敏感的部署请按上一条自行处置
-- server 内部错误仍只回固定文案（底层原因只进服务端日志）
+- server 内部错误仍只回固定文案（底层原因只进服务端日志）；dry-run 的 500 同样固定文案且不记日志（禁写面含全部 logger）
+- **草稿测试（dry-run）不落盘也不记日志**：只测 `draft.channels` 里的单条频道（掩码按 id 还原，跨类型残留掩码整体拒绝），结果同步返回且只进面板独立结果行（打标「草稿测试·未落盘」，通过不自动保存，改草稿即清、重载即丢、切 tab 保留）。回显反射残留（对端把请求体反射回来）与现行历史落盘同 exposure（原文截断后进 `reason.detail`），仅 loopback 可读，可接受
+- **dry-run 出站安全**：bark / webhook 的 URL 必须可解析为 http(s) 且无 userinfo；主机名全量 DNS 解析逐条分类（回环 / 私网 / 链路本地（含云元数据）/ 未指定 / 组播 / 保留段一律拒绝，含十进制与十六进制等非点分写法），重定向手动逐跳复检（上限 5 跳），建连钉死核验过的 IP 并验 `remoteAddress` 熔断（关 TOCTOU），TLS 的 SNI 与证书校验仍走原始主机名
 - 系统通知失败不再静默：出口**执行过动作而失败**会写状态行（`failed`）并进通知记录的逐出口明细；**一条命令都构造不出来**时收成 `skipped` 且留一条 warn（0.2.4 起 linux / darwin 也有这条日志，此前只有 win32 分支有）。原生二进制缺失/不可执行（ENOENT 等）
   会被 `error` 事件接住，**绝不冒泡成 unhandled error 把宿主进程打挂**（见 issue #1）
 - **两个通道到达的机器不同（别混淆）**：
@@ -92,7 +102,7 @@ curl -s http://127.0.0.1:3080/api/dsh-notifier/health
   "notifySubagentDone": false,
   "notifyTaskError": true,
   "notifyTurnEnd": false,
-  "quietHours": { "enabled": false, "start": "22:00", "end": "08:00", "allowKinds": [] },
+  "quietHours": { "enabled": false, "windows": [{ "start": "22:00", "end": "08:00" }], "allowKinds": [] },
   "historyMaxAgeDays": 0,
   "channels": [
     { "type": "browser", "id": "browser", "enabled": true, "popup": true, "sound": true, "whenVisible": false },
@@ -422,7 +432,9 @@ SSE 通知帧（浏览器 EventSource 订阅；`?since=<seq>` 断线补拉）
 
 #### `/test`
 
-测试通知（收敛到 service 管线，绕过免打扰；body 可选 `{channelId}` 指定单频道测试）
+测试通知（收敛到 service 管线，绕过免打扰；body 可选 `{channelId}` 指定单频道测试）。请求体上限 16K（与 settings 端对齐）。
+
+**草稿测试（dry-run）**：body 带 `draft` 即测眼前草稿——`{channelId, draft: {channels: [...]}}`（`draft` 只认 `channels`，须含目标频道的完整条目；顶层其它键与 `revision` 忽略；此时 `channelId` 必填）。逐项校验（跳过「内置必须在场」），掩码按 id 还原（新频道无源 / 改名带掩码 / 跨类型残留掩码一律 400）；直构单目标实测（跳过 enabled 门，不走裁决 / 路由 / 节奏 / 重试，单次尝试），同步返回 `{ok, channelId, status, reason?}`（`status` 为 `ok` / `failed` / `skipped`，`reason` 为截断后的结构化理由）。**全程零落盘**：不写历史与状态、不推进 `revision`、不记日志、不推浏览器真通知（browser 返回 ok 但不 emit，以面板结果为准）。出站安全：bark / webhook 走 SSRF 安全 fetch（仅 http(s)、拒 userinfo、全量 DNS 分类、重定向逐跳复检、建连钉死核验 IP、上限 5 跳、响应体至多读 16K、单跳超时复用出口 clamp 再压 15s 上限）；system 沿用出口原函数（平台能力读共享缓存，子进程靠 KILL 8s 回收）。服务端总预算 15s（超时 408，结果丢弃，在飞的投递无法撤回）；并发帽 2（超限 429 `dry-run-busy`，不排队，请手动重试）。
 
 #### `/history`
 
@@ -450,8 +462,9 @@ GET 动态 kind 清单（含确认态）；POST `{kind, confirmed}` 写确认（
 
 ### 配置格式附录：默认值、迁移与掩码规则
 
-- 默认值以 `src/server/config/impl/model/index.ts` 的 `DEFAULT_CONFIG` 为准：事件开关 `notifyAsk` / `notifyQuestion` / `notifyTaskDone` / `notifyTaskError` 开、`notifySubagentDone` / `notifyTurnEnd` 关；`quietHours` 为 `{enabled:false, start:"22:00", end:"08:00"}`；`channels` 恒带两条内置条目（browser 与 system，均 `enabled` / `popup` / `sound` 开，browser 另有 `whenVisible:false`）；`kindRoutes` 与 `allowKinds` 为空，`historyMaxAgeDays` 为 0。
+- 默认值以 `src/server/config/impl/model/index.ts` 的 `DEFAULT_CONFIG` 为准：事件开关 `notifyAsk` / `notifyQuestion` / `notifyTaskDone` / `notifyTaskError` 开、`notifySubagentDone` / `notifyTurnEnd` 关；`quietHours` 为 `{enabled:false, windows:[{start:"22:00", end:"08:00"}]}`；`channels` 恒带两条内置条目（browser 与 system，均 `enabled` / `popup` / `sound` 开，browser 另有 `whenVisible:false`）；`kindRoutes` 与 `allowKinds` 为空，`historyMaxAgeDays` 为 0。
 - 0.2.3 → 0.2.4 迁移：8 个顶层渠道键（`systemEnabled` / `browserEnabled` / `systemNotify` / `browserNotify` / `notifyWhenVisible` / `notifySound` / `browserSound` / `systemSound`）在装配期搬进两条内置条目后删除（`src/server/upgrade/impl/steps/config-shape.ts`）；升级后再提交这些键一律 400 并提示刷新页面，旧键残留需手删 `config.json` 对应行。
+- 0.2.5 → 0.2.6 迁移：免打扰旧 `start`/`end` 在装配期搬进 `windows[0]` 并删除旧键（`src/server/upgrade/impl/steps/quiet-windows.ts`）；升级后再提交旧形（无 `windows`）一律 400 并提示刷新页面。
 - 掩码规则：凭据字段清单按频道类型收口于 `CHANNEL_SECRET_FIELDS`（bark 为 `deviceKey`，webhook 为 `token` / `password` / `headerValue`）；GET /config 的 `user` 与 `effective` 及 PUT 成功响应一律掩码 `********`，提交整值掩码视为保持原值（按实例 id 对齐回填）；新实例带掩码提交返回 400（`src/server/config/impl/service/index.ts` 的 `NEW_CHANNEL_MASK_HINT`）。
 
 ### 客户端契约：节流、手势解锁与帧通路
@@ -515,7 +528,7 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-notifier
   内置音色 + 试听；Linux 系统通知声音经宿主自播 freedesktop 事件音修复（原 notify-send 无声音
   hint，DE 支持参差）；详见「配置 → 每通道三个开关」小节
 - **非安全上下文降级**：局域网 HTTP 访问时浏览器禁止系统级弹窗——自动降级为「页面内横幅 + 提示音 + 标题提醒」
-- **免打扰时段**：支持跨午夜（如 22:00 → 08:00）；可设**紧急例外**（`quietHours.allowKinds`：免打扰期间仍提醒的事件）。默认候选为高频阻塞型（审批/提问/出错），设置页支持勾选**全部 6 个内置事件**（含任务完成/子任务完成/轮次完成）并一键「跟随已启用事件」或「恢复默认」；豁免与事件开关正交——关闭的事件即使豁免也不会收到通知（事件不产生），豁免项照常保留；未启用事件在设置页以弱化（降低透明度）样式展示，仍可勾选豁免。**升级提示**：放开白名单后，旧配置中原本会被过滤掉的 kind（如手改的 `done`/`turn-end`）会在免打扰期间恢复提醒——行为变化；如不希望这样，可在设置页豁免区自行调整
+- **免打扰时段（0.2.6 起多段）**：最多 5 个时间窗（`quietHours.windows`），命中任一即压制（并集语义，重叠允许），空数组等于未命中；单窗口支持跨午夜（如 22:00 → 08:00）；可设**紧急例外**（`quietHours.allowKinds`：免打扰期间仍提醒的事件）。默认候选为高频阻塞型（审批/提问/出错），设置页支持勾选**全部 6 个内置事件**（含任务完成/子任务完成/轮次完成）并一键「跟随已启用事件」或「恢复默认」；豁免与事件开关正交——关闭的事件即使豁免也不会收到通知（事件不产生），豁免项照常保留；未启用事件在设置页以弱化（降低透明度）样式展示，仍可勾选豁免。设置页逐行增删时段并按本机时间回显当前是否命中（回显仅供参考，以服务端裁决与通知记录为准）。**升级提示（0.2.6）**：旧 `start`/`end` 在装配期搬进 `windows[0]` 并删除旧键，升级后再提交旧形一律 400 并提示刷新页面。**旧升级提示**：放开白名单后，旧配置中原本会被过滤掉的 kind（如手改的 `done`/`turn-end`）会在免打扰期间恢复提醒——行为变化；如不希望这样，可在设置页豁免区自行调整
 - **设置卡片诊断**：设置 → 插件 → dsh-notifier 卡片显示浏览器通知授权状态与安全上下文提示，并含最近 10 条通知记录、发送测试通知与清理记录入口
 - **宿主能力自检（0.2.4 起）**：**系统卡的卡体**里显示宿主通道结论（弹窗/发声各自能否用 + 无法判定的维度），不可用时逐条给出处置建议（装哪个包、或改用浏览器通道）；明细（探测了哪些维度、探测到哪些播放器）折叠展示，**系统卡头**不承载它（窄屏下卡头被收起，而手机恰是最需要它的地方）。**浏览器卡的卡体**里显示浏览器通道结论，那一半在**本端**计算，换设备结论会不同。两者数据源同为 `GET /diagnostics`
 

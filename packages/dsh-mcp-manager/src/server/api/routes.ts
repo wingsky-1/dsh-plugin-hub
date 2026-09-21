@@ -48,8 +48,24 @@ export { queryParam };
 
 /** 组装 /api/dsh-mcp/* 路由。cwd 参数仅用于兼容旧调用（不再被路由使用）。 */
 export function makeRoutes(manager: RoutesManager, _cwd = process.cwd()): WebRoute[] {
+  /** 统一错误边界（#770-A2）：全部控制器经 helpers.handleError 收口，文案先经
+   * manager.redactError 脱敏（C 快照：全局 store + 全部 projectStores 缓存 +
+   * runtimeRegistry，含 disabled/unconnected；400 校验类错误无秘密，脱敏恒等无害）。
+   * 缺省回落原文：外部 RoutesManager 实现未提供时自身无秘密可泄；脱敏实现抛错
+   * 同样回落原文（错误边界自身不得再抛）。 */
   const handleError = (res: Parameters<WebRoute["handler"]>[1], error: unknown) => {
-    writeJson(res, 400, { error: error instanceof Error ? error.message : String(error) });
+    let message: string;
+    try {
+      message =
+        typeof manager.redactError === "function"
+          ? manager.redactError(error)
+          : error instanceof Error
+            ? error.message
+            : String(error);
+    } catch {
+      message = error instanceof Error ? error.message : String(error);
+    }
+    writeJson(res, 400, { error: message });
   };
   /**
    * 解析 scope 查询参数（缺省 global）。

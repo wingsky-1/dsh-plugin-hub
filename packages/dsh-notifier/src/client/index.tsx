@@ -52,17 +52,23 @@ import {
   diffSettingsPayload,
   domainPayload,
   rebaseSettings,
+  snapshotBaseline,
 } from "./settings/diff.ts";
 import { createSaveGuard } from "./settings/save-guard.ts";
+// 测试投递的终态收敛轮询（#912 症状2）：纯逻辑模块，单测直测，卡片内只做薄接线。
+import { pollChannelStatus } from "./settings/status-poll.ts";
 // 一次失败请求的结构化结论（是否围栏拒答 / 引导文案 / 展示正文）与结构化字段挂载：
 // 判定顺序是两端契约（结构化优先、状态码与文案兜底），故收在纯函数模块里由单测直接打红。
 import { apiFailureOf, markHttpFailure } from "./api-error.ts";
 import type { HttpFailure } from "./api-error.ts";
+import { dryRunReasonText } from "./reason-text.ts";
 // 设置卡的渲染原子层：普通函数返回 JSX，依赖（t / statusMap / patch / sendTest / 平台 / 诊断
 // 视图）一律显式传参——原子层不读卡片状态，搬家不会让闭包静默捕获到旧 state。
 import { channelsPane } from "./settings/panes/channels.tsx";
 import { eventsPane } from "./settings/panes/events.tsx";
 import { historyPane } from "./settings/panes/history.tsx";
+import { tabIcon } from "./settings/parts/kind-icons.tsx";
+import { dirtyStatusText, routeSummaryText } from "./settings/parts/route-text.ts";
 import type { ChannelStatusMap } from "./settings/parts/status.tsx";
 import type {
   ClearHistoryResult,
@@ -119,7 +125,8 @@ const STYLE_ID = "dsh-notifier-style";
 // 每次样式契约变更后 bump（版本号单调递增，保证 ensureStyle 判定为新版本并重注入）
 // 声音行/三态/试听样式加入时再次 bump。
 // 能力自检行（dn-ch-diag）加入时再次 bump。
-const CSS_VERSION = "784-1";
+// dry-run 结果行与脏态测试按钮样式加入时再次 bump。
+const CSS_VERSION = "ui-v3-2";
 // 浏览器通知图标（内联 SVG data URL，零外部资源；铃铛造型）。
 const NOTIFY_ICON =
   "data:image/svg+xml;utf8," +
@@ -458,12 +465,34 @@ function postKind(kind: string, confirmed: boolean): Promise<PostKindResult> {
   });
 }
 
-/** 测试通知（channelId 可选——per-channel 测试，收敛到 service 管线）。 */
-function sendTestReq(channelId?: string): Promise<SendTestResult> {
-  return fetch(ROUTES.test, {
+/**
+ * 测试通知（channelId 可选——per-channel 测试，收敛到 service 管线）。
+ *
+ * draftChannels 给出即 dry-run（#912 症状1）：body 带 {channelId, draft: {channels}}，
+ * 测眼前草稿、同步返回实测结论，全程不写 history / status。服务端总预算 15s，客户端错峰
+ * 18s 中断（B7：让服务端的 408 先到；中断只丢弃本次结果，在飞的投递无法撤回，见面板声明）。
+ * 无 draft 时走老路（已保存配置），语义一个字不改。
+ */
+function sendTestReq(channelId?: string, draftChannels?: unknown): Promise<SendTestResult> {
+  const isDryRun = draftChannels !== undefined;
+  const ctrl: AbortController | null =
+    isDryRun && typeof AbortController !== "undefined" ? new AbortController() : null;
+  const timer: ReturnType<typeof setTimeout> | null = ctrl
+    ? setTimeout(function () {
+        ctrl!.abort();
+      }, 18000)
+    : null;
+  const body =
+    channelId === undefined
+      ? {}
+      : isDryRun
+        ? { channelId: channelId, draft: { channels: draftChannels } }
+        : { channelId: channelId };
+  let chain = fetch(ROUTES.test, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify(channelId ? { channelId: channelId } : {}),
+    body: JSON.stringify(body),
+    signal: ctrl ? ctrl.signal : undefined,
   }).then(function (r: Response) {
     return r.json().then(function (body: SendTestResult) {
       if (!r.ok) {
@@ -479,6 +508,13 @@ function sendTestReq(channelId?: string): Promise<SendTestResult> {
       return body;
     });
   });
+  if (timer !== null) {
+    const pending = timer;
+    chain = chain.finally(function () {
+      clearTimeout(pending);
+    });
+  }
+  return chain;
 }
 
 /**
@@ -518,6 +554,8 @@ function SettingsCard() {
   const statusDraft = useState({} as ChannelStatusMap);
   const statusMap = statusDraft[0];
   const setStatusMap = statusDraft[1];
+  // 状态表 ref 收口：sendTest 在 POST 前记下 prevTs，读 ref 而非渲染闭包（后者可能是旧帧）。
+  const statusRef = ReactHooks.useRef({} as ChannelStatusMap);
   const kindsDraft = useState([] as RegisteredKindView[]);
   const kindsList = kindsDraft[0];
   const setKindsList = kindsDraft[1];
@@ -592,6 +630,16 @@ function SettingsCard() {
   const conflictDraft = useState(null as null | { entry: string; latest: ConflictLatest });
   const conflict = conflictDraft[0];
   const setConflict = conflictDraft[1];
+  // dry-run 结果（#912 症状1 B-S1-4/B8）：独立态，与 poll / loadStatus 完全隔离。
+  // - pending=true：在飞；pending=false：已有结论（status 恒为服务端回的实测结论）；
+  // - 任一草稿写入口（patch / commitSettings）即清（改草稿清结果）；
+  // - 纯内存：重载即丢；切 tab 保留（state 在卡片顶层，不随 pane 条件调用走）。
+  // - 通过不自动保存：结论只渲染，不触发任何 saveFor。
+  const dryRunDraft = useState(
+    null as null | { channelId: string; pending: boolean; status?: string; reason?: string },
+  );
+  const dryRun = dryRunDraft[0];
+  const setDryRun = dryRunDraft[1];
 
   function loadHistory(alive: { value: boolean }) {
     fetchHistory()
@@ -606,7 +654,10 @@ function SettingsCard() {
   function loadStatus(alive: { value: boolean }) {
     fetchStatus()
       .then(function (map) {
-        if (alive.value) setStatusMap(map);
+        if (alive.value) {
+          statusRef.current = map;
+          setStatusMap(map);
+        }
       })
       .catch(function () {
         // 拉取失败保留已加载状态行（不清空——旧实现 catch → {} 会把
@@ -646,9 +697,14 @@ function SettingsCard() {
       .then(function (v) {
         if (!alive.value) return;
         // 服务端快照收成客户端视图（HTTP 边界断言，字段形态见 settings/types.ts）。
+        // 草稿与基线双双过比较规范形（#912 症状3）：effective 含空串与 0 与空对象等价形态，
+        // 原样浅拷贝即首屏恒脏；渲染等价（见 snapshotBaseline 注释）。
         const effective = ((v && v.effective) || {}) as SettingsView;
-        commitSettings(Object.assign({}, effective));
-        baselineRef.current = Object.assign({}, effective);
+        const snapshot = snapshotBaseline(
+          effective as unknown as Record<string, unknown>,
+        ) as SettingsView;
+        commitSettings(Object.assign({}, snapshot));
+        baselineRef.current = Object.assign({}, snapshot);
         const nextMeta = {
           user: v.user || {},
           revision: v.revision,
@@ -700,6 +756,8 @@ function SettingsCard() {
       return next;
     });
     setSaved("");
+    // 任一草稿写入口变更即清 dry-run 结果（含冲突覆盖/quiet——它们走 commitSettings，见下）。
+    setDryRun(null);
   }
 
   /** 整体替换 settings：已知完整 next 时同步写 settingsRef 再
@@ -710,6 +768,7 @@ function SettingsCard() {
     settingsRef.current = next;
     setSettings(next);
     setSaved("");
+    setDryRun(null);
   }
 
   /** 基线 diff：只提交与加载基线不同的键（防组合层 base 被默认值回写覆盖）。
@@ -750,7 +809,8 @@ function SettingsCard() {
   /** 无脏静默刷新：settings/baseline/meta 全部切到服务端最新（不丢任何草稿——
    *  调用前已确认本地无脏）。 */
   function applyLatestQuiet(latest: ConflictLatest) {
-    const fresh = Object.assign({}, latest.effective) as SettingsView;
+    // 静默刷新同样收敛基线（#912 症状3）：无脏时切最新，若存原样即下一次 diff 复脏。
+    const fresh = snapshotBaseline(latest.effective || {}) as SettingsView;
     commitSettings(fresh);
     baselineRef.current = Object.assign({}, fresh);
     const nextMeta = {
@@ -811,7 +871,11 @@ function SettingsCard() {
         // 事务性基线推进：只并入本次 PUT 实际提交的 payload
         // 键——若并入点击后的 settings 全量，在途期间的编辑会被固化为基线而丢失；
         // 键级并入后，在途新编辑（非 payload 键）仍在 diff 中，由 trailing 补发提交。
-        baselineRef.current = Object.assign({}, baselineRef.current || {}, payload);
+        // 只并入本次 PUT 的 payload 键（在途编辑不固化，语义保留）；合并后再过规范形
+        // （#912 症状3：save 合并后基线仍干净，strip 形态的 payload 与规范基线同构）。
+        baselineRef.current = snapshotBaseline(
+          Object.assign({}, baselineRef.current || {}, payload),
+        ) as SettingsView;
         const nextMeta = {
           user: (body && body.user) || {},
           revision: (body && body.revision) || undefined,
@@ -911,9 +975,11 @@ function SettingsCard() {
     const entry = conflict.entry;
     const latest = conflict.latest;
     const localChanges = diffPayloadFor(entry); // 实时重算（相对旧基线的当前脏）
-    const merged = rebaseSettings(localChanges, latest.effective || {}) as SettingsView;
+    // 覆盖基线同样收敛（#912 症状3）：rebase 的底与新基线都是快照，横幅期间新编辑不丢。
+    const snapshot = snapshotBaseline(latest.effective || {}) as SettingsView;
+    const merged = rebaseSettings(localChanges, snapshot) as SettingsView;
     commitSettings(merged); // 同步写 ref：随后 saveFor 立即以 merged 计算 diff
-    baselineRef.current = Object.assign({}, latest.effective || {}) as SettingsView;
+    baselineRef.current = Object.assign({}, snapshot) as SettingsView;
     const nextMeta = {
       user: latest.user || {},
       revision: latest.revision,
@@ -934,15 +1000,58 @@ function SettingsCard() {
    *  放弃即退出冲突语境：409 横幅一并关闭（否则横幅会指向已被丢弃的草稿）。 */
   function discardChanges() {
     if (baselineRef.current) {
-      commitSettings(Object.assign({}, baselineRef.current));
+      // 放弃即回到基线快照（#912 症状3）：基线恒为规范形，恢复的草稿天然干净。
+      commitSettings(
+        snapshotBaseline(baselineRef.current as unknown as Record<string, unknown>) as SettingsView,
+      );
     }
     setConflict(null);
     setSaved("");
     toast(t("discardOk"));
   }
 
-  /** 发送测试通知（channelId 可选——per-channel 测试；完成后刷新状态行）。 */
+  /**
+   * 发送测试通知（channelId 可选——per-channel 测试；完成后等终态再刷新状态行）。
+   *
+   * POST /test 只承诺已受理（#912 症状2次因）：per-channel 测试走有限轮询等该频道的新终态
+   * （判定与预算见 settings/status-poll.ts），收敛或耗尽后应用最后所见并刷新历史——skipped
+   * 的原因只在历史里，状态行经它直达（statusText 的 history 形参）。全频道广播不定项等待某
+   * 一条，沿用单次刷新。轮询全程只读 GET（不重发 POST，不撞 1 秒节流窗）；读失败保留旧态
+   * （轮询内吞，null 不应用——瞬时抖动不丢已展示的终态）。
+   */
+  /**
+   * 发送测试通知：channelId 给出即 dry-run（测眼前草稿，独立结果态，不触发 poll / loadStatus，
+   * 通过不自动保存）；省略即老路广播（已保存配置，单次刷新）。并发重复点击会重复外发——
+   * 服务端并发帽为 2，超限回 429 提示手动重试（见面板声明与服务端 B5）。
+   */
   function sendTest(channelId?: string) {
+    if (channelId !== undefined) {
+      const draftChannels =
+        ((settingsRef.current || settings || {}) as SettingsView).channels || [];
+      setDryRun({ channelId: channelId, pending: true });
+      sendTestReq(channelId, draftChannels)
+        .then(function (data) {
+          const status = typeof data.status === "string" ? data.status : "failed";
+          setDryRun({
+            channelId: channelId,
+            pending: false,
+            status: status,
+            reason: dryRunReasonText(status, data.reason, t),
+          });
+        })
+        .catch(function (error: unknown) {
+          const failure = apiFailureOf(error, t);
+          // 请求层失败（400 / 408 / 429 / 中断）：同样落独立结果行，不进 poll，不碰状态行。
+          setDryRun({
+            channelId: channelId,
+            pending: false,
+            status: "request-failed",
+            reason: failure.message,
+          });
+          toast(t("testFail", { msg: failure.message, hint: failure.hint }));
+        });
+      return;
+    }
     sendTestReq(channelId)
       .then(function (data) {
         toast(
@@ -951,7 +1060,19 @@ function SettingsCard() {
             channelId ? undefined : { n: data && data.sseConnections },
           ),
         );
-        loadStatus({ value: true });
+        if (channelId === undefined) {
+          loadStatus({ value: true });
+          return;
+        }
+        const prev = statusRef.current[channelId];
+        const prevTs = prev && typeof prev.lastTs === "number" ? prev.lastTs : undefined;
+        void pollChannelStatus(fetchStatus, channelId, prevTs).then(function (result) {
+          if (result.map !== null) {
+            statusRef.current = result.map;
+            setStatusMap(result.map);
+          }
+          loadHistory({ value: true });
+        });
       })
       .catch(function (error: unknown) {
         const failure = apiFailureOf(error, t);
@@ -1228,14 +1349,30 @@ function SettingsCard() {
           if (isCustom) routeSetKind(kind, null);
         }}
       >
-        {isCustom ? t("routeCustomState", { n: litIds.length }) : t("routeDefaultState")}
+        {isCustom
+          ? t("routeCustomState", { n: litIds.length - staleIds.length })
+          : t("routeDefaultState")}
       </button>,
     );
+    // 默认收成投递摘要；自定义但候选无点亮（仅 stale 残留等）不得误报「跟随默认」
+    // 摘要点名的是真实投递面（启用 ∩ 点亮）：停用频道即使在快照里点亮也不投递，
+    // 点名它即假点亮（M1）。N 取快照内现存候选数（剔除已删频道的 stale 残留，
+    // stale 在展开区以独立 chip 呈现，不重复计入 N）。决策函数见 parts/route-text.ts。
+    const litLabels: string[] = [];
+    options.forEach(function (o) {
+      if (o.enabled && litSet[o.id] === true) litLabels.push(o.label);
+    });
+    const summaryText = routeSummaryText(litLabels, isCustom, litIds.length - staleIds.length, t);
     return (
-      <div className="dn-evt-routes" key={"routes-" + kind}>
-        <span className="dn-evt-routesCap">{t("routeCap")}</span>
-        {chips}
-      </div>
+      <details className="dn-evt-routeDisc" key={"routes-" + kind}>
+        <summary className="dn-evt-routeSum" title={t("routeExpandHint")}>
+          {summaryText}
+        </summary>
+        <div className="dn-evt-routes">
+          <span className="dn-evt-routesCap">{t("routeCap")}</span>
+          {chips}
+        </div>
+      </details>
     );
   }
 
@@ -1276,7 +1413,7 @@ function SettingsCard() {
     return !k.confirmed;
   }).length;
 
-  // tab 栏：三个普通 button（不引入 role=tablist 管理成本）
+  // tab 栏：三个普通 button（不引入 role=tablist 管理成本）+ 分段 icon
   const tabbar = (
     <div className="dn-set-tabs">
       <button
@@ -1286,6 +1423,7 @@ function SettingsCard() {
           setActiveTab("events");
         }}
       >
+        {tabIcon("events")}
         {t("secEvents")}
         {pendingKinds > 0 ? <span className="dn-set-tabBadge">{String(pendingKinds)}</span> : null}
       </button>
@@ -1296,6 +1434,7 @@ function SettingsCard() {
           setActiveTab("channels");
         }}
       >
+        {tabIcon("channels")}
         {t("secChannels")}
       </button>
       <button
@@ -1305,6 +1444,7 @@ function SettingsCard() {
           setActiveTab("history");
         }}
       >
+        {tabIcon("history")}
         {t("secHistory")}
       </button>
     </div>
@@ -1315,6 +1455,64 @@ function SettingsCard() {
   // foot 显示全量脏计数（含频道域）；「保存频道」按钮的域脏态不做单独
   // 计数——无频道域脏时点击走空 diff 的「未修改」提示（与 foot 保存同交互语义）。
   const dirtyCount = Object.keys(diffPayload()).length;
+  // 频道域脏：domainPayload("channels") 是顶层单键负载（{} 或 {channels}），
+  // Object.keys 长度只能 0/1——文案按「域是否脏」说，不假装能数出 N 处频道字段。
+  const channelsDiff = diffPayloadFor("channels");
+  const channelsDirty = Object.keys(channelsDiff).length > 0;
+  const channelsDirtyCount = channelsDirty ? 1 : 0;
+  const otherDirtyCount = Math.max(0, dirtyCount - channelsDirtyCount);
+  // 脏文案决策见 parts/route-text.ts（M2：可执行断言覆盖三分支）。
+  const dirtyText = dirtyStatusText(dirtyCount, channelsDirty, otherDirtyCount, t);
+
+  /**
+   * dry-run 结果行（B-S1-4）：独立行、打标「草稿测试·未落盘」，常驻 [去保存][放弃草稿]，
+   * 通过不自动保存。state 在卡片顶层：切 tab 保留（B8），改草稿即清（patch/commitSettings）。
+   */
+  function dryRunStatusText(status: string): string {
+    if (status === "ok") return t("chStatusOk");
+    if (status === "failed") return t("chStatusFailed");
+    if (status === "skipped") return t("chStatusSkipped");
+    return status;
+  }
+  const dryRunRow =
+    dryRun === null ? null : (
+      <div className="dn-dryrun" role="status" title={t("chTestDraftTitle")}>
+        <span className="dn-dryrunTag">{t("dryRunTag")}</span>
+        {dryRun.pending ? (
+          <span className="dn-dryrunPending">{t("dryRunPending")}</span>
+        ) : (
+          <span className="dn-dryrunResult">
+            {dryRun.channelId +
+              " · " +
+              dryRunStatusText(dryRun.status || "") +
+              (dryRun.reason ? "：" + dryRun.reason : "")}
+          </span>
+        )}
+        {dryRun.pending ? null : (
+          <span className="dn-dryrunActions">
+            <button
+              type="button"
+              className="dn-set-btn dn-set-btnSmall dn-set-save"
+              disabled={saving}
+              onClick={function () {
+                saveFor("channels");
+              }}
+            >
+              {t("dryRunGoSave")}
+            </button>
+            <button
+              type="button"
+              className="dn-set-btn dn-set-btnSmall"
+              disabled={saving}
+              onClick={discardChanges}
+            >
+              {t("dryRunDiscard")}
+            </button>
+          </span>
+        )}
+        <div className="dn-dryrunNote">{t("dryRunNote")}</div>
+      </div>
+    );
 
   // 三个 pane 的**条件调用**（普通函数返回 JSX，非 active tab 根本不调用——保持既有条件渲染
   // 语义；改成组件会引入挂载/卸载）。依赖一律显式传参，pane 模块内不读本组件闭包。
@@ -1322,6 +1520,7 @@ function SettingsCard() {
   const channelsPaneDeps = {
     settings,
     statusMap,
+    history,
     hostPlatform,
     diag,
     channelLabel,
@@ -1344,12 +1543,14 @@ function SettingsCard() {
     markSecretEdited,
     saving,
     saveFor,
+    testDirty: channelsDirty,
     t,
   };
   return (
     <li className="dn-set-card">
       {tabbar}
       <div className="dn-set-body">
+        {dryRunRow}
         {/* 历史独立成 tab：清理/发送测试/刷新并排工具行；请求权限按钮随权限状态行归入
             「浏览器通知」频道卡 */}
         {activeTab === "events"
@@ -1404,8 +1605,8 @@ function SettingsCard() {
         <div className="dn-set-foot">
           {saved ? (
             <span className={saved.err ? "dn-set-error" : "dn-set-saved"}>{saved.msg}</span>
-          ) : dirtyCount > 0 ? (
-            <span className="dn-dirty">{t("dirtySome", { n: dirtyCount })}</span>
+          ) : dirtyText !== null ? (
+            <span className="dn-dirty">{dirtyText}</span>
           ) : null}
           <span className="dn-spacer" />
           {/* 保存中（guard 在途）禁用「放弃更改」与「保存」——防提交窗口内矛盾操作
