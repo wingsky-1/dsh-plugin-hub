@@ -71,7 +71,6 @@
     "UsageStatsAdapter",
     "UserAdapterRecord",
     "ViewportPoint",
-    "adapterStateFile",
     "apply",
     "dayKey",
     "inject",
@@ -80,7 +79,6 @@
     "normalizeRangeDay",
     "panelCacheKey",
     "previousClosedWindow",
-    "sseData",
-    "userAdaptersFile"
+    "sseData"
   ]
 }

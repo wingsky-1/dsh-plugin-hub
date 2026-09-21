@@ -274,10 +274,6 @@
       "isType": true
     },
     {
-      "name": "adapterStateFile",
-      "isType": false
-    },
-    {
       "name": "apply",
       "isType": false
     },
@@ -311,10 +307,6 @@
     },
     {
       "name": "sseData",
-      "isType": false
-    },
-    {
-      "name": "userAdaptersFile",
       "isType": false
     }
   ],
@@ -910,10 +902,6 @@
           "isType": true
         },
         {
-          "name": "adapterStateFile",
-          "isType": false
-        },
-        {
           "name": "apply",
           "isType": false
         },
@@ -947,10 +935,6 @@
         },
         {
           "name": "sseData",
-          "isType": false
-        },
-        {
-          "name": "userAdaptersFile",
           "isType": false
         }
       ],

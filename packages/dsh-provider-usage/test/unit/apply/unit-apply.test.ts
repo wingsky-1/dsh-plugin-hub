@@ -25,9 +25,9 @@ import {
   OPENCODE_GO_PROVIDER,
   OPENCODE_GO_ADAPTER_ID,
   ADAPTER_CONTRACT_VERSION,
-  userAdaptersFile,
-  adapterStateFile,
 } from "../../../src/apply/index.ts";
+// 白盒直连深路径（#768 B波）：用户适配器路径纯面经注册表域门面，不走组合根转发。
+import { userAdaptersFile, adapterStateFile } from "../../../src/server/registry/interface.ts";
 import { fetchWithTimeout } from "../../../src/server/pipeline/interface.ts";
 
 // ---------------------------------------------------------------- 工具：fakeReqs
