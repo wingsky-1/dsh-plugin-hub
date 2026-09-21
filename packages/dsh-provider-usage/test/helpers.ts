@@ -3,8 +3,9 @@
  * dsh-provider-usage — 单元测试共享辅助（纯函数断言用，不创建临时目录）。
  */
 import assert from "node:assert/strict";
-import { readFileSync, readdirSync } from "node:fs";
+import { mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
+import { tmpdir } from "node:os";
 
 // ---------------------------------------------------------------- 时序工具（#315 批次 A）
 //
@@ -205,3 +206,41 @@ export function injectGlobalFetch<T>(body: (set: (m: unknown) => void) => Promis
   return run;
 }
 let fetchChain: Promise<unknown> = Promise.resolve();
+
+// ---------------------------------------------------------------- 组合根哨兵复用（M3）
+//
+// 本节收敛 9 个组合根文件的三样板：usesOldFace 旧门面判据、hasExportStar 最小面判据、
+// isolatedDir 隔离目录样板（callHandler/pollUntil 前例）。各文件旧门面针脚（needles）
+// 为域事实保留在文件内薄包装，共享面只做子串命中循环；隔离目录的 per-file tmpDirs
+// 状态保留在文件内，共享面只做建目录/入栈与排空清理。顶部豁免保持单行，
+// 本节函数均为显式类型，不新增任何豁免。
+
+/**
+ * 最小面判据：门面代码行出现整文件 re-export 即红（调用方先滤掉星号注释行）。
+ */
+export function hasExportStar(codeLines: string[]): boolean {
+  return codeLines.some((l) => l.startsWith("export *"));
+}
+
+/**
+ * 旧门面子串命中：任一针脚命中即 true。各文件 usesOldFace 薄包装传入本域针脚。
+ */
+export function containsAny(src: string, needles: string[]): boolean {
+  return needles.some((n) => src.includes(n));
+}
+
+/**
+ * 隔离目录建目录并入 per-file 栈（调用方持有 tmpDirs，afterEach 经下式排空）。
+ */
+export function makeIsolatedDir(tmpDirs: string[], prefix: string): string {
+  const dir = mkdtempSync(join(tmpdir(), prefix));
+  tmpDirs.push(dir);
+  return dir;
+}
+
+/**
+ * 排空 per-file 隔离目录栈（LIFO 删目录）。
+ */
+export function cleanupIsolatedDirs(tmpDirs: string[]): void {
+  while (tmpDirs.length > 0) rmSync(tmpDirs.pop() as string, { recursive: true, force: true });
+}

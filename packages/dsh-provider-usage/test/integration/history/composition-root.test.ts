@@ -25,6 +25,7 @@ import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { afterAll, describe, expect, it } from "vitest";
+import { containsAny, hasExportStar } from "../../helpers.ts";
 import { dshHome } from "../../../../../shared/dsh-home.js";
 
 // 落盘时序：先设 DSH_HOME，后 import 被测门面。dsh-home.js 本体是纯函数面
@@ -65,14 +66,9 @@ afterAll(() => {
   rmSync(homeDir, { recursive: true, force: true });
 });
 
-/** 旧门面判据：任一旧 domain1/history 引用残留即红。 */
+/** 旧门面判据：任一旧 domain1/history 引用残留即红（针脚为域事实，命中循环见 helpers）。 */
 function usesOldFace(src: string): boolean {
-  return src.includes("domain1/history");
-}
-
-/** 最小面判据：门面代码行出现整文件 re-export 即红（调用方先滤掉星号注释行）。 */
-function hasExportStar(codeLines: string[]): boolean {
-  return codeLines.some((l) => l.startsWith("export *"));
+  return containsAny(src, ["domain1/history"]);
 }
 
 describe("探针：脏输入必被 flag（detector 失明则本段先红）", () => {

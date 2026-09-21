@@ -18,11 +18,11 @@
  *
  * 每条附判据句（把 X 改坏必须红）；文本哨兵仅锚真实 ABI 与装配关系，不做风格断言。
  */
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
+import { cleanupIsolatedDirs, containsAny, hasExportStar, makeIsolatedDir } from "../../helpers.ts";
 import {
   StatsServiceCtor,
   runV2Pipeline,
@@ -79,14 +79,9 @@ const topologySrc = readFileSync(
   "utf8",
 );
 
-/** 旧门面判据：任一旧 domain1/pipeline 引用残留即红。 */
+/** 旧门面判据：任一旧 domain1/pipeline 引用残留即红（针脚为域事实，命中循环见 helpers）。 */
 function usesOldFace(src: string): boolean {
-  return src.includes("domain1/pipeline");
-}
-
-/** 最小面判据：门面代码行出现整文件 re-export 即红（调用方先滤掉星号注释行）。 */
-function hasExportStar(codeLines: string[]): boolean {
-  return codeLines.some((l) => l.startsWith("export *"));
+  return containsAny(src, ["domain1/pipeline"]);
 }
 
 /** 命名接缝消费（类型链接由 tsc 编译面校验可赋值性）：窄面在此复用名称。 */
@@ -107,12 +102,10 @@ function hostileAdapter(): UsageStatsAdapter {
 
 const tmpDirs: string[] = [];
 function isolatedDir(prefix: string): string {
-  const dir = mkdtempSync(join(tmpdir(), prefix));
-  tmpDirs.push(dir);
-  return dir;
+  return makeIsolatedDir(tmpDirs, prefix);
 }
 afterEach(() => {
-  while (tmpDirs.length > 0) rmSync(tmpDirs.pop() as string, { recursive: true, force: true });
+  cleanupIsolatedDirs(tmpDirs);
 });
 
 function makeService() {

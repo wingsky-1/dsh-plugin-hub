@@ -26,12 +26,12 @@
  *
  * 每条附判据句（把 X 改坏必须红）；文本哨兵仅锚真实 ABI 与装配关系，不做风格断言。
  */
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { dirname, join } from "node:path";
-import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
+import { cleanupIsolatedDirs, containsAny, hasExportStar, makeIsolatedDir } from "../../helpers.ts";
 import {
   UiRoutesContext,
   createUiRoutes,
@@ -82,32 +82,25 @@ const strykerRoutesSrc = readText(
 );
 
 /**
- * 旧门面判据：旧 domain2 门面入口、旧深相对路径或已删装配面残留即红（头注迁入记述除外）。
+ * 旧门面判据：旧 domain2 门面入口、旧深相对路径或已删装配面残留即红（针脚为域事实，命中循环见 helpers）。
  * collect 长形态开口：trend.ts 经 ../../server/collect/interface.ts 取 TREND_DIR_MAX
  * （与余下 8 处消费同形，D9 探测器放行短形态禁令）——本判据只认旧深径（config 等），
  * collect 长形态由「实现块改址」逐字锁定 import 面（见探针 describe 双向用例）。
+ * 排除项保留在文件内（短形态禁令开口为域语义，不进共享面）。
  */
 function usesOldFace(src: string): boolean {
   return (
-    src.includes("domain2/routes/interface") ||
-    src.includes("../../apply/interface") ||
+    containsAny(src, ["domain2/routes/interface", "../../apply/interface"]) ||
     (src.includes("../../server/") && !src.includes("../../server/collect/interface"))
   );
 }
 
-/** 最小面判据：门面代码行出现整文件 re-export 即红（调用方先滤掉星号注释行）。 */
-function hasExportStar(codeLines: string[]): boolean {
-  return codeLines.some((l) => l.startsWith("export *"));
-}
-
 const tmpDirs: string[] = [];
 function isolatedDir(prefix: string): string {
-  const dir = mkdtempSync(join(tmpdir(), prefix));
-  tmpDirs.push(dir);
-  return dir;
+  return makeIsolatedDir(tmpDirs, prefix);
 }
 afterEach(() => {
-  while (tmpDirs.length > 0) rmSync(tmpDirs.pop() as string, { recursive: true, force: true });
+  cleanupIsolatedDirs(tmpDirs);
 });
 
 // ---------------------------------------------------------------- fake 请求/响应

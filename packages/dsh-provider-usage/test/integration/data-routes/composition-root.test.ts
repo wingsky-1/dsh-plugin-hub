@@ -20,12 +20,12 @@
  *
  * 每条附判据句（把 X 改坏必须红）；文本哨兵仅锚真实 ABI 与装配关系，不做风格断言。
  */
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { dirname, join } from "node:path";
-import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
+import { cleanupIsolatedDirs, containsAny, hasExportStar, makeIsolatedDir } from "../../helpers.ts";
 import {
   handleStats,
   handleHistory,
@@ -73,14 +73,9 @@ const strykerRoutesSrc = readText(
   join(repoRoot, "stryker.conf.d", "dsh-provider-usage-routes.json"),
 );
 
-/** 旧门面判据：旧 domain1/routes 长路径或旧深相对残留即红。 */
+/** 旧门面判据：旧 domain1/routes 长路径或旧深相对残留即红（针脚为域事实，命中循环见 helpers）。 */
 function usesOldFace(src: string): boolean {
-  return src.includes("domain1/routes") || src.includes("../../server/");
-}
-
-/** 最小面判据：门面代码行出现整文件 re-export 即红（调用方先滤掉星号注释行）。 */
-function hasExportStar(codeLines: string[]): boolean {
-  return codeLines.some((l) => l.startsWith("export *"));
+  return containsAny(src, ["domain1/routes", "../../server/"]);
 }
 
 /**
@@ -94,12 +89,10 @@ const ensureHotReloadSeam: DataRoutesEnsureHotReload = async (file: string): Pro
 
 const tmpDirs: string[] = [];
 function isolatedDir(prefix: string): string {
-  const dir = mkdtempSync(join(tmpdir(), prefix));
-  tmpDirs.push(dir);
-  return dir;
+  return makeIsolatedDir(tmpDirs, prefix);
 }
 afterEach(() => {
-  while (tmpDirs.length > 0) rmSync(tmpDirs.pop() as string, { recursive: true, force: true });
+  cleanupIsolatedDirs(tmpDirs);
   hotReloadCalls.length = 0;
 });
 

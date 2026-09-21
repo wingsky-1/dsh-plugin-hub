@@ -19,6 +19,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
+import { containsAny, hasExportStar } from "../../helpers.ts";
 import {
   openCodeGoAdapter,
   deepSeekOfficialAdapter,
@@ -60,19 +61,14 @@ const topologySrc = readFileSync(
 const hostUtils: AdapterHostUtils = ADAPTER_UTILS;
 const registryPort: BuiltinRegistryPort = makeAdapterRegistry();
 
-/** 旧门面判据：任一旧 domain1/adapters 引用残留即红。 */
+/** 旧门面判据：任一旧 domain1/adapters 引用残留即红（针脚为域事实，命中循环见 helpers）。 */
 function usesOldFace(src: string): boolean {
-  return src.includes("domain1/adapters");
+  return containsAny(src, ["domain1/adapters"]);
 }
 
 /** 直连判据：绕过门面直引 .mjs 实现文件即红。 */
 function directMjsRef(src: string): boolean {
   return /adapters\/[a-z0-9-]+\.mjs/.test(src);
-}
-
-/** 最小面判据：门面代码行出现整文件 re-export 即红（调用方先滤掉星号注释行）。 */
-function hasExportStar(codeLines: string[]): boolean {
-  return codeLines.some((l) => l.startsWith("export *"));
 }
 
 /** 装配 fail-fast 判据：组合根未走 registerBuiltinAdapters 即红。 */

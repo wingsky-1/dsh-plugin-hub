@@ -901,10 +901,16 @@ describe.skipIf(process.platform === "win32")(
   },
 );
 
-// ---------------------------------------------------------------- stats/history 路由围栏与数据面
+// ---------------------------------------------------------------- history 数据面（围栏经 integration+smoke 覆盖）
+//
+// 围栏删测登记（M1）：删围栏四例——stats 路由已注册弱断言、stats 非 loopback 403、
+// stats POST 405、history 非 loopback 403。覆盖去向：src 门面层由
+// integration/data-routes D10二（403 先于 405 顺序敏感 + 文案逐字节锁定）保留；
+// lib 产物层由 smoke 围栏全矩阵（十六路由 403/405 + 文案）保留。保留 history
+// existence + 数据面五例（apply 装配经由，门面桩与产物矩阵未覆盖）。
 
-describe("stats/history 路由围栏与数据面", () => {
-  let stats, historyR, res403Code, res405Code, h403Code, noAdpBody, okBody;
+describe("history 数据面（围栏经 integration+smoke 覆盖）", () => {
+  let historyR, noAdpBody, okBody;
 
   beforeAll(async () => {
     const dir = mkdtempSync(join(tmpdir(), "dou-stats-"));
@@ -919,20 +925,8 @@ describe("stats/history 路由围栏与数据面", () => {
       historyDir: join(dir, "hist"),
     });
 
-    // stats：403 非 loopback / 405 非 GET
-    stats = routeOf(routes, ROUTES.stats);
-    const res403 = makeRes();
-    await stats?.handler(fakeReq({ headers: { host: "evil.example" } }), res403);
-    res403Code = res403._code();
-    const res405 = makeRes();
-    await stats?.handler(fakeReq({ method: "POST" }), res405);
-    res405Code = res405._code();
-
-    // history：403 / 405 / 无候选 no-adapter / days clamp
+    // history 数据面：无候选 no-adapter / days clamp
     historyR = routeOf(routes, ROUTES.history);
-    const h403 = makeRes();
-    await historyR?.handler(fakeReq({ headers: { host: "x" } }), h403);
-    h403Code = h403._code();
 
     // 无启用适配器（清空选择后）→ 结构化 no-adapter
     const hNoAdp = makeRes();
@@ -945,24 +939,8 @@ describe("stats/history 路由围栏与数据面", () => {
     okBody = JSON.parse(hDays._body());
   });
 
-  it("stats 路由已注册", () => {
-    expect(stats).toBeTruthy();
-  });
-
-  it("stats 非 loopback 403", () => {
-    expect(res403Code).toBe(403);
-  });
-
-  it("stats POST 405", () => {
-    expect(res405Code).toBe(405);
-  });
-
   it("history 路由已注册", () => {
     expect(historyR).toBeTruthy();
-  });
-
-  it("history 非 loopback 403", () => {
-    expect(h403Code).toBe(403);
   });
 
   it("无候选 provider 报 no-adapter", () => {

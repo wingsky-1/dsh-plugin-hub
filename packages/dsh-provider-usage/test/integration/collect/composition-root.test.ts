@@ -24,11 +24,11 @@
  *
  * 每条附判据句（把 X 改坏必须红）；文本哨兵仅锚真实 ABI 与装配关系，不做风格断言。
  */
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
+import { cleanupIsolatedDirs, containsAny, hasExportStar, makeIsolatedDir } from "../../helpers.ts";
 import {
   TrendCollector,
   TREND_DONE_MAX,
@@ -92,14 +92,9 @@ const strykerCollectSrc = readText(
   join(repoRoot, "stryker.conf.d", "dsh-provider-usage-trend-collect.json"),
 );
 
-/** 旧门面判据：旧 domain2/collect 长路径或 ../collect 相对残留即红。 */
+/** 旧门面判据：旧 domain2/collect 长路径或 ../collect 相对残留即红（针脚为域事实，命中循环见 helpers）。 */
 function usesOldFace(src) {
-  return src.includes("domain2/collect") || src.includes("../collect/");
-}
-
-/** 最小面判据：门面代码行出现整文件 re-export 即红（调用方先滤掉星号注释行）。 */
-function hasExportStar(codeLines) {
-  return codeLines.some((l) => l.startsWith("export *"));
+  return containsAny(src, ["domain2/collect", "../collect/"]);
 }
 
 /**
@@ -112,12 +107,10 @@ const resolveCwdSeam: CollectResolveCwd = () => undefined;
 
 const tmpDirs = [];
 function isolatedDir(prefix) {
-  const dir = mkdtempSync(join(tmpdir(), prefix));
-  tmpDirs.push(dir);
-  return dir;
+  return makeIsolatedDir(tmpDirs, prefix);
 }
 afterEach(() => {
-  while (tmpDirs.length > 0) rmSync(tmpDirs.pop(), { recursive: true, force: true });
+  cleanupIsolatedDirs(tmpDirs);
 });
 
 // ---------------------------------------------------------------- 事件夹具

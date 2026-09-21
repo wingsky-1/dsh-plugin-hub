@@ -1390,19 +1390,8 @@ describe("客户端契约", () => {
       .find((l) => l.includes("?.next ?? ms?.lastUsed") || l.includes("ms?.lastUsed ?? ms?.next"));
 
     // #629 P2：手动生成轮询路径 executor 侧幂等复用与 200 直接复用路径提示对称——
-    // pollReportTask 返回 reused 且轮询分支经 setGenNotice(t("reportReused")) 渲染提示
-    const reportSource = readFileSync(join(pkgDir, "src/client/report.tsx"), "utf8");
-    clientContractObs.pollRetMatch = reportSource.match(
-      /return \{ meta: body\.meta, reused: body\.reused === true \};/,
-    );
-    clientContractObs.pollCallMatch = reportSource.match(/const polled = await pollReportTask\(/);
-    clientContractObs.noticeMatch = reportSource.match(
-      /setGenNotice\(polledReused \? t\("reportReused"\) : null\);/,
-    );
-    clientContractObs.directMatch = reportSource.match(
-      /if \(body\.reused === true\) setGenNotice\(t\("reportReused"\)\);/,
-    );
-    // #629 P2 可观测主断言面：复用接线以产物 bundle（已加载 clientCode）与
+    // 死数据清理（M1-M3 波）：src 源码四正则（pollRet/pollCall/notice/direct）赋值无消费，
+    // 可观测主断言面以产物 bundle（已加载 clientCode）与
     // HTTP 响应（下文 again.reused）为准，src 源码正则仅降级为辅助——
     // 不新增 readFileSync(src/client) 断言。
     clientContractObs.bundlePollReusedWiring = /reused:\s*body\.reused === true/.test(clientCode);
@@ -1422,8 +1411,7 @@ describe("客户端契约", () => {
         tf.indexOf("renderPanel()") < tf.indexOf("placePanel()");
     }
 
-    // lib/index.js 导出 v2 契约面
-    clientContractObs.hostLib = readFileSync(join(pkgDir, "lib/index.js"), "utf8");
+    // 死数据清理：hostLib 重复读 lib/index.js（与上文 hostCode 同文件）且无消费，已删。
 
     // #532 设置页多 tab 契约：分段器结构与窗格 keep-mounted 语义进产物/源码
     clientContractObs.clientBundle = clientCode;
