@@ -242,6 +242,10 @@
     {
       "source": "scripts/data/vendored-binaries.json",
       "why": "发布物面内 vendored 裸二进制登记（批 2b）：sha256 绑定 + 许可随包由 verify:vendored-binaries 守，属登记面。"
+    },
+    {
+      "source": "scripts/data/host-contract.snapshot.json",
+      "why": "派生快照基线，由 derive --check 逐字节比对、无单调阈值语义，类比 dsh-*-export-surface.json 条目。"
     }
   ]
 }

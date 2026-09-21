@@ -66,7 +66,7 @@
 
 ## derive/（只读派生脚本，人工执行、不接门禁）
 
-- `derive/host-contract.mjs` — 宿主契约派生：ctx.on 事件名、settings slot、路由表、MCP_SECTION_ORDER、SESSION_FORMAT 锚、DOM 锚、catalog 锁版的字面量派生 + 五类形态缺口清单；仅 stdout 输出 JSON，不接任何门禁。
+- `derive/host-contract.mjs` — 宿主契约派生：ctx.on 事件名、settings slot、路由表、MCP_SECTION_ORDER、SESSION_FORMAT 锚、DOM 锚、catalog 锁版的字面量派生 + 五类形态缺口清单；默认 stdout 输出 JSON，另支持 `--write` 落盘快照 / `--check` 逐字节比对 result（可机检）；门禁接线在第二 PR，本 PR 仍不接门禁。
 
 ## maintenance/（一次性维护脚本，按需手工执行）
 
@@ -144,6 +144,7 @@
 - `data/dsh-worktree-sidebar-export-surface.json` — dsh-worktree-sidebar 的导出面清单（#847 接线）：被 `gate/export-surface-snapshot.mjs --package dsh-worktree-sidebar` 逐字节比对，执行点见 ci.yml / observe.yml / release.yml 的 Export surface snapshot 步骤与 `gate/gate-steps.mjs` 本地档。
 - `data/dsh-worktree-sidebar-export-faces.json` — dsh-worktree-sidebar 的导出面准入清单：与基线同一次 `emitDeclarations()` 产物喂「新增导出必须显式分类」判据；与上面的导出面清单必须同批更新，改这两个文件会命中 dsh-worktree-sidebar 面（见 `data/ci-face-registry.json`）。
 - `data/export-entry-alias.json` — 入口导出面读取别名登记（#768 S1，临时至 D13）：dsh-provider-usage 的点号入口经别名读 apply 产物（包无 src/index.ts，emit 无根 index.d.ts）；被 `gate/export-surface-snapshot.mjs` 默认加载（`--entry-alias` 可覆盖，供 fixture 隔离），D13 src/index.ts 落地时删条目并重冻结基线。
+- `data/host-contract.snapshot.json` — 宿主契约派生快照基线：被 `derive/host-contract.mjs --check` 逐字节比对（只比 result），无单调阈值语义（见 `data/threshold-registry.json` 的 notAGate 登记）。
 - `data/ci-face-registry.json` — `packages/` 之外每个 tracked 文件的 CI 归属登记（#742 阶段 2.3；#843 L5 起带消费方）：`faces`（`global` / 包名 / 空数组=显式豁免）+ `why` + `consumers`（仓内直接读取方，路径必须存在且文件文本字面命中 source；没有直接读取方时改声明 `consumerGap`，`kind` ∈ none / external / indirect，两者排他）；`test/ci-face-coverage.test.ts` 用真实 `git ls-files` 与 ci.yml 的 filters 双向核对（未登记、悬空条目、面未接上、死 glob、消费方不实五类都判红）。
 
 - `data/threshold-registry.json` — 阈值事实源的**声明表**（#843 D5）：`kind` = value（数字标量，`weaken` 指明哪个方向是放宽）/ boolean（开关，`weakenValue` = 等于它就等于放宽）/ baseline（逐包回落锚点，`anchorFields` 是回退链，读法与 `gate/observe-check.mjs` 的 `fixedCovered ?? baselineCovered` 一致）/ existence（集合存在性，`universe` 从 `packages/` 目录派生、`exemptFrom` 读 `mutation-topology.json` 的 `$noMutationPackages`）；`notAGate[]` 逐条说明「为什么它不是阈值事实源」。未登记的数据文件、幽灵声明、幽灵判据三类都判红；`kind=existence` 的豁免登记在 `data/gate-exemptions.json`（gate=`threshold-registry`），**按判据分开**：path=`<guard.path>.<包名>#membership` 只豁免「包在表里」、`#anchor` 只豁免「有回落锚点」，value 守卫的删键用 `<被移除的叶子路径>#removal`；认不出的键与已无缺口的键都判红（反向腐烂）。

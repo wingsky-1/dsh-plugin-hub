@@ -1,17 +1,31 @@
 #!/usr/bin/env node
-// 宿主契约派生：只读扫描源码字面量并输出机检事实；保证只读 stdout、不写文件、不接门禁。
-// 只读：仅对仓库源码做同步读 + stdout 输出 JSON，不写任何文件，
+// 宿主契约派生：只读扫描源码字面量并输出机检事实；默认只读 stdout、不接门禁。
+// 只读：仅对仓库源码做同步读 + stdout 输出 JSON；唯一的写盘口是显式 --write <snapshot路径>（落盘快照），
 // 不改 scripts/gate 现有文件，不注册进任何 gate 步骤。
 // 离线：零依赖（仅 node:fs / node:path），无网络、无凭据。
-// 用法：node scripts/derive/host-contract.mjs [--root <repo>] [--sample]
+// 用法：node scripts/derive/host-contract.mjs [--root <repo>] [--sample] [--write <snapshot路径>] [--check [<snapshot路径>]]
 //   默认输出完整派生 JSON；--sample 只输出 sample 节（用于交付粘贴）。
-import { readFileSync, existsSync } from "node:fs";
-import { join, resolve } from "node:path";
+//   --write 把快照（result 原样 + sources + deriveVersion）落盘，stdout 与默认输出逐字节相同；
+//   --check 把实时派生与快照的 result 比对（0=一致，1=不一致，2=快照缺失或不可解析）。
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
+import { join, resolve, dirname } from "node:path";
 
 const args = process.argv.slice(2);
 const rootIdx = args.indexOf("--root");
 const ROOT = resolve(rootIdx >= 0 ? args[rootIdx + 1] : new URL("../..", import.meta.url).pathname);
 const SAMPLE_ONLY = args.includes("--sample");
+const writeIdx = args.indexOf("--write");
+const WRITE_PATH = writeIdx >= 0 ? args[writeIdx + 1] : null;
+const checkIdx = args.indexOf("--check");
+// --check 可带路径；不带路径时默认比对 ROOT 下的入库快照。
+const CHECK_PATH =
+  checkIdx >= 0
+    ? args[checkIdx + 1] !== undefined && !args[checkIdx + 1].startsWith("--")
+      ? args[checkIdx + 1]
+      : join(ROOT, "scripts/data/host-contract.snapshot.json")
+    : null;
+// 快照结构版本：改 result 形状或 sources 口径时递增（--check 只比 result，不管本号）。
+const DERIVE_VERSION = 1;
 
 function read(p) {
   const f = join(ROOT, p);
@@ -265,4 +279,73 @@ const result = {
   },
 };
 
-console.log(JSON.stringify(SAMPLE_ONLY ? result.sample : result, null, 2));
+const stdoutText = JSON.stringify(SAMPLE_ONLY ? result.sample : result, null, 2);
+
+// 快照：result 原样 + sources + deriveVersion（确定性字节：无时间戳，2 空格缩进 + 末尾换行）。
+// sources 与扫描常量同源（EVENT_FILES / SLOT_FILES / ROUTE_FILES / DOM_FILES 的值面 + catalog 与适配文档路径）。
+function buildSnapshot() {
+  return {
+    format: "host-contract.snapshot/1",
+    deriveVersion: DERIVE_VERSION,
+    sources: {
+      derive: "scripts/derive/host-contract.mjs",
+      eventFiles: Object.fromEntries(Object.entries(EVENT_FILES)),
+      slotFiles: [...SLOT_FILES],
+      routeFiles: [...ROUTE_FILES],
+      domFiles: [...DOM_FILES],
+      catalogFile: "pnpm-workspace.yaml",
+      sessionDoc: "docs/archive/dsh-0.1.5-适配计划.md",
+    },
+    result,
+  };
+}
+
+if (
+  writeIdx >= 0 &&
+  (WRITE_PATH === undefined || WRITE_PATH === null || WRITE_PATH.startsWith("--"))
+) {
+  console.error("host-contract --write: 缺 snapshot 路径（用法：--write <snapshot路径>）");
+  process.exit(2);
+}
+
+if (writeIdx >= 0) {
+  const target = resolve(WRITE_PATH);
+  try {
+    mkdirSync(dirname(target), { recursive: true });
+    writeFileSync(target, JSON.stringify(buildSnapshot(), null, 2) + "\n", "utf8");
+  } catch (e) {
+    console.error("host-contract --write: 落盘失败 " + target + "（" + (e?.message ?? e) + "）");
+    process.exit(2);
+  }
+}
+
+if (CHECK_PATH !== null) {
+  const target = resolve(CHECK_PATH);
+  let snap = null;
+  try {
+    snap = JSON.parse(readFileSync(target, "utf8"));
+  } catch (e) {
+    console.error(
+      "host-contract --check: 快照缺失或不可解析 " + target + "（" + (e?.message ?? e) + "）",
+    );
+    process.exit(2);
+  }
+  const live = JSON.stringify(result);
+  const base = JSON.stringify(snap?.result ?? null);
+  if (live === base) {
+    console.log("host-contract --check: OK " + target);
+    process.exit(0);
+  }
+  const liveKeys = Object.keys(result);
+  const baseKeys =
+    snap && snap.result && typeof snap.result === "object" ? Object.keys(snap.result) : [];
+  const diffKeys = [...new Set([...liveKeys, ...baseKeys])].filter(
+    (k) => JSON.stringify(result[k]) !== JSON.stringify(snap?.result?.[k]),
+  );
+  console.error(
+    "host-contract --check: MISMATCH " + target + "（差异顶层键：" + diffKeys.join(",") + "）",
+  );
+  process.exit(1);
+}
+
+console.log(stdoutText);
