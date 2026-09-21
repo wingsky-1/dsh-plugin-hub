@@ -207,7 +207,7 @@ together) — so no algebraic cancellation is applied; intervals are classified 
     peak shows the countdown to the next valley switch; the tooltip documents the UTC
     window definition plus a server-timezone hint.
 
-## API key resolution order (V1 config chain)
+## API key resolution order (provider config chain)
 
 1. Plugin config `apiKey` (explicit)
 2. Environment variable `{PROVIDER}_API_KEY` (uppercase, hyphens → underscores)
@@ -353,6 +353,15 @@ plugins:
 Load failures are rejected fail-fast and logged (visible in the settings panel) without
 affecting other plugin features. Path safety: relative paths must land inside `DSH_HOME`
 or the plugin home; non-normalized forms (`../` traversal) are rejected with 400.
+
+### v1 legacy contract removed
+
+The v1 legacy contract was removed by breaking change #932; only the v2
+contract is supported (`fetchData` returns raw objects, `formatCapsule`/
+`formatPanel` return HTML rendered host-side, `name` allowlist-validated,
+see `docs/adapter-guide.md`). The settings "Usage Stats" page carries
+detect/add/switch/disable (auto-persisted); cordis.patch.yml declarations
+are an optional overlay only.
 
 ## Security model
 

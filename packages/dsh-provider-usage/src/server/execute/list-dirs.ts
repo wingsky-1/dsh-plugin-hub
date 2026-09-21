@@ -7,7 +7,7 @@
  * 出口净化（sanitizeDirName）与未识别桶归位（TREND_UNIDENTIFIED）在此单一收敛。
  */
 import type { TrendTracker } from "../aggregate/interface.ts";
-import { sanitizeDirName, TREND_UNIDENTIFIED } from "../../server/collect/interface.ts";
+import { sanitizeDirName, TREND_UNIDENTIFIED } from "../collect/interface.ts";
 
 export function makeListDirs(
   trend: TrendTracker,

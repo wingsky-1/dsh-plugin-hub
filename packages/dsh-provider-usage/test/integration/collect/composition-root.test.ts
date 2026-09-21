@@ -92,9 +92,9 @@ const strykerCollectSrc = readText(
   join(repoRoot, "stryker.conf.d", "dsh-provider-usage-trend-collect.json"),
 );
 
-/** 旧门面判据：旧 domain2/collect 长路径或 ../collect 相对残留即红（针脚为域事实，命中循环见 helpers）。 */
+/** 旧门面判据：旧 domain2/collect 长路径或 ../../server/ 非规范深路径残留即红（针脚为域事实，命中循环见 helpers）。同级短径 ../collect/ 为新规（#768 跨域路径统一）。 */
 function usesOldFace(src) {
-  return containsAny(src, ["domain2/collect", "../collect/"]);
+  return containsAny(src, ["domain2/collect", "../../server/"]);
 }
 
 /**
@@ -194,10 +194,10 @@ describe("D9一 经 server/collect 域门面装配", () => {
       expect(usesOldFace(src)).toBe(false);
     }
     expect(applyFaceSrc.includes("server/collect/interface")).toBe(true);
-    expect(aggIndexSrc.includes("server/collect/interface")).toBe(true);
-    expect(normalizeSrc.includes("server/collect/interface")).toBe(true);
-    expect(runnerSrc.includes("server/collect/interface")).toBe(true);
-    expect(uiRoutesSrc.includes("../../server/collect/interface")).toBe(true); // #768 D12 起改址 server/ui-routes/trend.ts，长形态与余下消费一致
+    expect(aggIndexSrc.includes("../collect/interface")).toBe(true);
+    expect(normalizeSrc.includes("../collect/interface")).toBe(true);
+    expect(runnerSrc.includes("../collect/interface")).toBe(true);
+    expect(uiRoutesSrc.includes("../collect/interface")).toBe(true); // #768 跨域路径统一：同级短径，与余下消费一致
   });
 
   it("门面收口：interface 与实现同一引用（包装即红）", () => {
@@ -429,9 +429,9 @@ describe("D9验收 超时悬挂必须红（5s 信号合并 abort 集成用例）
 describe("探针：detector 失明则本段先红", () => {
   it("旧门面 detector 对脏输入有效", () => {
     expect(usesOldFace("import { x } from ../domain2/collect/interface.ts")).toBe(true);
-    expect(usesOldFace("import { x } from ../collect/interface.ts")).toBe(true);
+    expect(usesOldFace("import { x } from ../collect/interface.ts")).toBe(false);
     expect(usesOldFace("import { x } from ../server/collect/interface.ts")).toBe(false);
-    expect(usesOldFace("import { x } from ../../server/collect/interface.ts")).toBe(false);
+    expect(usesOldFace("import { x } from ../../server/collect/interface.ts")).toBe(true);
   });
 
   it("export * detector 对脏输入有效", () => {

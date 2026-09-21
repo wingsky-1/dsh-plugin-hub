@@ -83,15 +83,14 @@ const strykerRoutesSrc = readText(
 
 /**
  * 旧门面判据：旧 domain2 门面入口、旧深相对路径或已删装配面残留即红（针脚为域事实，命中循环见 helpers）。
- * collect 长形态开口：trend.ts 经 ../../server/collect/interface.ts 取 TREND_DIR_MAX
- * （与余下 8 处消费同形，D9 探测器放行短形态禁令）——本判据只认旧深径（config 等），
- * collect 长形态由「实现块改址」逐字锁定 import 面（见探针 describe 双向用例）。
- * 排除项保留在文件内（短形态禁令开口为域语义，不进共享面）。
+ * collect 同级短径：trend.ts 经 ../collect/interface.ts 取 TREND_DIR_MAX
+ * （与余下消费同形，#768 跨域路径统一后长形态 ../../server/ 已消除）——本判据认全部
+ * ../../server/ 深径，collect 短形态由「实现块改址」逐字锁定 import 面（见探针 describe 双向用例）。
  */
 function usesOldFace(src: string): boolean {
   return (
     containsAny(src, ["domain2/routes/interface", "../../apply/interface"]) ||
-    (src.includes("../../server/") && !src.includes("../../server/collect/interface"))
+    src.includes("../../server/")
   );
 }
 
@@ -262,7 +261,7 @@ describe("D12一 经 server/ui-routes 域门面装配", () => {
     expect(contextSrc.includes("../pipeline/interface")).toBe(true);
     expect(contextSrc.includes("../aggregate/interface")).toBe(true);
     expect(contextSrc.includes("../shared/interface")).toBe(true);
-    expect(trendSrc.includes("../../server/collect/interface")).toBe(true);
+    expect(trendSrc.includes("../collect/interface")).toBe(true);
     for (const src of [healthSrc, trendSrc, uiConfigSrc, eventsSrc]) {
       expect(src.includes("./context")).toBe(true);
     }
@@ -547,7 +546,7 @@ describe("探针：detector 失明则本段先红", () => {
     expect(usesOldFace("import { x } from ../../apply/interface.ts")).toBe(true);
     expect(usesOldFace("import { x } from ../server/ui-routes/interface.ts")).toBe(false);
     expect(usesOldFace("import { x } from ../collect/interface.ts")).toBe(false);
-    expect(usesOldFace("import { x } from ../../server/collect/interface.ts")).toBe(false);
+    expect(usesOldFace("import { x } from ../../server/collect/interface.ts")).toBe(true);
   });
 
   it("export * detector 对脏输入有效", () => {

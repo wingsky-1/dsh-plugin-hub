@@ -8,7 +8,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { guardLoopbackMethod, writeJson } from "../../../../../shared/host-utils.js";
 import { ADAPTER_CONTRACT_VERSION } from "../../shared/interface.ts";
-import { TREND_DIR_MAX } from "../../server/collect/interface.ts";
+import { TREND_DIR_MAX } from "../collect/interface.ts";
 import type { UiRoutesContext } from "./context.ts";
 
 const TREND_WINDOW: Record<string, number> = { day: 30, week: 12, month: 12 };
