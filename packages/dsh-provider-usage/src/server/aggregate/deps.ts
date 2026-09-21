@@ -40,7 +40,7 @@
  *   per-session 惰性单查缓存语义保持原状，不藉搬迁重定；
  * - A4(g) 量级留痕（1000 事件 / 5 session，cwd 恰 5 查）——耗时基线只注明
  *   取数时点，不跨机 ratify；
- * - store 多错语义（tmp 残留清理 allSettled + 首错 warn，主写照常推进）冻结——
+ * - store 多错语义（tmp 残留清理 allSettled + 全量 warn，主写照常推进）冻结——
  *   另立行为评审，任何改动即停上报。
  *
  * 故本域不设聚合 AggregateDeps：接缝随 TrendTrackerOptions 走（构造面本就是

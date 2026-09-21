@@ -2767,6 +2767,61 @@ describe("评审修复 P2-7：writeAggDay 清理同日残留 tmp", () => {
   });
 });
 
+describe("评审 #934：writeAggDay 多残留清理失败全量 warn", () => {
+  let warns;
+  let leakRoot;
+  let aggShardLength934;
+
+  beforeAll(async () => {
+    // #934：多个同日残留 tmp 删除失败时，一条 warn 列出全部失败文件 basename＋原因，
+    // 主写照常推进。rm（无 recursive）删非空目录必 reject——以此构造确定性多失败。
+    warns = [];
+    const root = mkdtempSync(join(tmpdir(), "dou-trend-warn934-"));
+    leakRoot = root;
+    const store = new TrendStore({ root, warn: (m) => warns.push(m) });
+    mkdirSync(join(root, "agg"), { recursive: true });
+    for (const name of [`${DAY0}.jsonl.1700000000001.tmp`, `${DAY0}.jsonl.1700000000002.tmp`]) {
+      const dir = join(root, "agg", name);
+      mkdirSync(dir);
+      writeFileSync(join(dir, "keep"), "x");
+    }
+    await store.writeAggDay(DAY0, [
+      {
+        v: 1,
+        kind: "agg",
+        day: DAY0,
+        provider: "p",
+        model: "m",
+        input: 1,
+        output: null,
+        cacheRead: null,
+        cacheWrite: null,
+        calls: 1,
+        turns: 0,
+        toolCalls: 0,
+      },
+    ]);
+    aggShardLength934 = (await store.readAggShard(DAY0)).length;
+  });
+
+  it("一条 warn 含全部失败文件 basename", () => {
+    const hit = warns.filter((m) => m.includes("聚合分片 tmp 残留清理失败"));
+    expect(hit.length).toBe(1);
+    expect(hit[0].includes(`${DAY0}.jsonl.1700000000001.tmp`)).toBe(true);
+    expect(hit[0].includes(`${DAY0}.jsonl.1700000000002.tmp`)).toBe(true);
+  });
+
+  it("warn 不记绝对路径", () => {
+    const hit = warns.filter((m) => m.includes("聚合分片 tmp 残留清理失败"));
+    expect(hit.length).toBe(1);
+    expect(hit[0].includes(leakRoot)).toBe(false);
+  });
+
+  it("主写照常推进", () => {
+    expect(aggShardLength934).toBe(1);
+  });
+});
+
 // ---------------------------------------------------------------- config
 
 describe("config：trendRetentionDays 归一化", () => {
