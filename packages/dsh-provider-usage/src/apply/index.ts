@@ -52,12 +52,7 @@ export type { SamplePoint, DayRecord } from "../server/adapters/interface.ts";
 export type { ProviderConfigInput, ResolvedProviderConfig } from "../server/registry/interface.ts";
 export { HistoryStore } from "../server/history/interface.ts";
 export type { HistoryEntry } from "../server/history/interface.ts";
-export {
-  panelCacheKey,
-  normalizeRangeDay,
-  isPanelCacheStale,
-  PANEL_CACHE_TTL_MS,
-} from "../server/pipeline/interface.ts";
+export { normalizeRangeDay } from "../server/pipeline/interface.ts";
 export type { PanelCacheEntry } from "../server/pipeline/interface.ts";
 export { HotReloadableAdapter } from "../server/registry/interface.ts";
 export type { TrendTrackerOptions } from "../server/aggregate/interface.ts";

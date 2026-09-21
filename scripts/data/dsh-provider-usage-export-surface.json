@@ -82,10 +82,6 @@
       "isType": false
     },
     {
-      "name": "PANEL_CACHE_TTL_MS",
-      "isType": false
-    },
-    {
       "name": "PanelCacheEntry",
       "isType": true
     },
@@ -274,19 +270,11 @@
       "isType": false
     },
     {
-      "name": "isPanelCacheStale",
-      "isType": false
-    },
-    {
       "name": "name",
       "isType": false
     },
     {
       "name": "normalizeRangeDay",
-      "isType": false
-    },
-    {
-      "name": "panelCacheKey",
       "isType": false
     },
     {
@@ -694,10 +682,6 @@
           "isType": false
         },
         {
-          "name": "PANEL_CACHE_TTL_MS",
-          "isType": false
-        },
-        {
           "name": "PanelCacheEntry",
           "isType": true
         },
@@ -886,19 +870,11 @@
           "isType": false
         },
         {
-          "name": "isPanelCacheStale",
-          "isType": false
-        },
-        {
           "name": "name",
           "isType": false
         },
         {
           "name": "normalizeRangeDay",
-          "isType": false
-        },
-        {
-          "name": "panelCacheKey",
           "isType": false
         },
         {
