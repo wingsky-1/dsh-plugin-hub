@@ -198,11 +198,20 @@ describe("1) inject 回调：settings 正常注册", () => {
         return typeof d === "function" ? d : () => {};
       },
     };
-    await apply(ctx, { apiKey: "sk-test", apiEndpoint: "http://127.0.0.1:9" });
+    // 隔离（#768 P1）：historyDir 指临时目录，否则 apply.ts:275 回落真实 ~/.dsh
+    // （installUpgrade 写 .upgrade-version、TrendTracker 建 trend 目录）。
+    const dir = mkdtempSync(join(tmpdir(), "dou-apply-inject-ok-"));
+    await apply(ctx, {
+      apiKey: "sk-test",
+      apiEndpoint: "http://127.0.0.1:9",
+      historyDir: join(dir, "hist"),
+    });
   });
 
   it("settings.register 被调用", () => {
-    expect(settingsEvents.includes("register-called")).toBeTruthy();
+    // 实现真值（shared/settings-namespace.js installSettingsNamespace）：
+    // register → sctx.effect → scope.watch 按序各推一事件，一次 inject 回调恰好三项。
+    expect(settingsEvents).toEqual(["register-called", "effect-registered", "watch-registered"]);
   });
 
   it("sctx.effect 被注册", () => {
@@ -259,7 +268,13 @@ describe("2) inject 回调：settings.register 抛错", () => {
         return typeof d === "function" ? d : () => {};
       },
     };
-    await apply(ctx, { apiKey: "sk-test", apiEndpoint: "http://127.0.0.1:9" });
+    // 隔离（#768 P1）：同 1)，无 historyDir 则回落真实 ~/.dsh 写版本与 trend 目录。
+    const dir = mkdtempSync(join(tmpdir(), "dou-apply-inject-throw-"));
+    await apply(ctx, {
+      apiKey: "sk-test",
+      apiEndpoint: "http://127.0.0.1:9",
+      historyDir: join(dir, "hist"),
+    });
   });
 
   it("settings.register 抛错应 warn", () => {
@@ -302,7 +317,13 @@ describe("3) inject 回调：settings 服务缺 register", () => {
         return typeof d === "function" ? d : () => {};
       },
     };
-    await apply(ctx, { apiKey: "sk-test", apiEndpoint: "http://127.0.0.1:9" });
+    // 隔离（#768 P1）：同 1)，无 historyDir 则回落真实 ~/.dsh 写版本与 trend 目录。
+    const dir = mkdtempSync(join(tmpdir(), "dou-apply-inject-noreg-"));
+    await apply(ctx, {
+      apiKey: "sk-test",
+      apiEndpoint: "http://127.0.0.1:9",
+      historyDir: join(dir, "hist"),
+    });
   });
 
   it("settings 缺 register 应 warn", () => {
@@ -367,6 +388,8 @@ export function formatPanel() { return "<p>p</p>"; }
       autoReload: true,
       apiKey: "sk-test",
       apiEndpoint: "http://127.0.0.1:9",
+      // 隔离（#768 P1）：复用本块 mkdtemp 目录；不传则回落真实 ~/.dsh 写版本与 trend 目录。
+      historyDir: join(dir, "hist"),
     });
     applied = true;
   });
@@ -414,6 +437,8 @@ describe("6b) 非法适配器文件 → onReload ok:false", () => {
       autoReload: true,
       apiKey: "sk-test",
       apiEndpoint: "http://127.0.0.1:9",
+      // 隔离（#768 P1）：复用本块 mkdtemp 目录；不传则回落真实 ~/.dsh 写版本与 trend 目录。
+      historyDir: join(dir, "hist"),
     });
     applied = true;
   });
@@ -460,10 +485,14 @@ describe("8) disposer 清理 warmup/prune 定时器（假时钟句柄计数）",
           return typeof d === "function" ? d : () => {};
         },
       };
+      // 隔离（#768 P1）：historyDir 指临时目录，否则回落真实 ~/.dsh
+      // （installUpgrade 写 .upgrade-version、TrendTracker 建 trend 目录）。
+      const dir = mkdtempSync(join(tmpdir(), "dou-apply-timers-"));
       await apply(ctx, {
         warmupIntervalMs: 60000,
         apiKey: "sk-test",
         apiEndpoint: "http://127.0.0.1:9",
+        historyDir: join(dir, "hist"),
       });
       // 非盲 guard：定时器确已注册——恰 3 个句柄（warmup 预热 + prune 清理 + scheduler
       // tick，见 scheduler.ts:54），多一个少一个都先红而非归零断言空过。
