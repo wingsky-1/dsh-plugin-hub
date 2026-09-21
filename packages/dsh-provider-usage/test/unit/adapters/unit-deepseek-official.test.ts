@@ -20,7 +20,8 @@ import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 import { mkdtempSync } from "node:fs";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { dayKey } from "../../../src/apply/index.ts";
+// 白盒直连深路径（#768 B波）：日界纯面经 shared 门面，不走组合根转发。
+import { dayKey } from "../../../src/shared/interface.ts";
 // 白盒直连深路径（#768 B波）：契约/净化纯面经 shared 门面，不走组合根转发。
 import { esc, sanitizeHtml, isUsageStatsAdapter } from "../../../src/shared/interface.ts";
 import { runV2Pipeline } from "../../../src/server/pipeline/interface.ts";

@@ -64,7 +64,6 @@
     "UserAdapterRecord",
     "ViewportPoint",
     "apply",
-    "dayKey",
     "inject",
     "name",
     "sseData"

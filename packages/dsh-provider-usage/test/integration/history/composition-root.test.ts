@@ -115,9 +115,9 @@ describe("D5一 经 server/history 域门面装配", () => {
   });
 
   it("包导出面收窄后集合：apply/index.ts 转发名与收窄后一致（改名/漏转即红）", () => {
-    // B波+A2波+HistoryStore退役：HistoryStore已迁历史域门面深路径（见smoke-pure/unit-history）。
+    // B波+A2波+HistoryStore/dayKey退役：两者已迁域门面深路径（见unit-history/unit-trend）。
     // 非空安全形态：名单非空但断言缺席，误转即红，空数组零断言不可能通过。
-    for (const name of ["HistoryStore"]) {
+    for (const name of ["HistoryStore", "dayKey"]) {
       expect(applyFaceSrc.includes(name)).toBe(false);
     }
   });

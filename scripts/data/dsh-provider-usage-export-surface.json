@@ -246,10 +246,6 @@
       "isType": false
     },
     {
-      "name": "dayKey",
-      "isType": false
-    },
-    {
       "name": "inject",
       "isType": false
     },
@@ -823,10 +819,6 @@
         },
         {
           "name": "apply",
-          "isType": false
-        },
-        {
-          "name": "dayKey",
           "isType": false
         },
         {

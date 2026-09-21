@@ -6,8 +6,8 @@
  * legacySampleToData（裸值列/缺列/空值）、pickWindow（防御式解析）、
  * HistoryStore.exportAll（#82 批次 3）。
  *
- * #768 D5：被测面随域迁入 server/history（经 apply/index.ts 门面 re-export，
- * 同一引用）；本文件追加并发三条（#771 移交：大跨度 range / 同戳并发 /
+ * #768 D5：被测面随域迁入 server/history（经 server/history/interface.ts
+ * 直连深路径，同一引用）；本文件追加并发三条（#771 移交：大跨度 range / 同戳并发 /
  * 故障注入），全部落盘进 mkdtempSync 隔离目录，锚点相对当前（不钉墙钟）。
  */
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";

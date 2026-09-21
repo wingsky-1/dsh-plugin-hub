@@ -5,15 +5,7 @@
  * 为什么是显式具名转发而不是 export *：export-surface-snapshot 的提取器只读具名导出与声明块（不跟随星导出），星转发会让主入口导出面读出为空而判红。
  * 新增公共符号时两处同步加名（漂移即门禁红）。
  */
-export {
-  HotReloadableAdapter,
-  ROUTES,
-  apply,
-  dayKey,
-  inject,
-  name,
-  sseData,
-} from "./apply/index.ts";
+export { HotReloadableAdapter, ROUTES, apply, inject, name, sseData } from "./apply/index.ts";
 export type {
   AdapterErrorCode,
   AdapterErrorInfo,
