@@ -62,6 +62,7 @@ import type {
   AggregateResolveCwd,
 } from "../../../src/server/aggregate/deps.ts";
 import { TREND_ROW_VERSION } from "../../../src/server/shared/interface.ts";
+import { TrendCollector } from "../../../src/server/collect/interface.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const srcDir = join(here, "..", "..", "..", "src");
@@ -256,6 +257,7 @@ describe("D8三 deps 注入面窄面", () => {
   it("命名接缝装配 TrendTracker（改名断链即红；落盘走隔离目录）", async () => {
     const dir = isolatedDir("dou-aggD8-");
     const tracker = await TrendTracker.start({
+      makeCollector: (o) => new TrendCollector(o),
       root: dir,
       now: clockSeam,
       flushDebounceMs: 60000,

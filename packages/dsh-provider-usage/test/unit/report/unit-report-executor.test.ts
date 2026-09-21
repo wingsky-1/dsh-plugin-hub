@@ -18,7 +18,7 @@ import {
   ReportConfigService,
   readReportConfig,
 } from "../../../src/server/config/interface.ts";
-import { readLastRun } from "../../../src/server/schedule/interface.ts";
+import { readLastRun, updateLastRun } from "../../../src/server/schedule/interface.ts";
 import { makeDueReportExecutor } from "../../../src/server/execute/interface.ts";
 import { makeListDirs } from "../../../src/server/execute/list-dirs.ts";
 
@@ -109,6 +109,7 @@ describe("executor 幂等短路：index 已有成功记录且非 force → 复�
       getReportCfg: () => normalizeCfg({}),
       historyRoot: root,
       sanitizeDiagnostic: (s) => `SAN:${s}`,
+      advanceLastRun: updateLastRun,
     });
     res = await executor({
       period: "daily",

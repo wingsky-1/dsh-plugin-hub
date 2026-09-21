@@ -13,7 +13,7 @@
  * - resolveCwd：目录归属解析（session id → cwd 原始值或 undefined；
  *   缺省不接 store，目录恒归未识别桶）。
  *
- * 命名接缝与块内联双生子：TrendTrackerOptions 的 warn/now/resolveCwd
+ * 命名接缝与块内联双生子：TrendTrackerOptions 的 warn/now/resolveCwd/makeCollector
  * 保留内联函数类型（与搬迁前逐字一致），不经 import type 引用本文件——
  * 入口 .d.ts 的声明块比较是文本级的，别名一改即漂移（export-surface-snapshot
  * 零漂移证明要求搬迁前后声明块多重集不变）。名称链接由集成测试承载
@@ -24,10 +24,14 @@
  * 源码允许的纯面复用（非实例调用，不经本文件注入）：
  * - shared 的 dayKey/lastNDayKeys 经 shared/interface.ts 直接引用
  *   （共享设施不入注入面，由实现块直接引，与 refactor skill §3 同形）；
- * - server/collect 的 sumToken/hourOfDay/TREND_ROW_VERSION/TREND_UNIDENTIFIED/
+ * - server/collect 的 TrendCollector 有状态类经 TrendTrackerOptions.makeCollector
+ *   注入（#768 B1：本域不直引 collect 门面值边，值边清零；组合根装配）；
+ *   纯面（sumToken/hourOfDay/TREND_*）A 波已下沉 server/shared，本域经
+ *   server/shared 门面复用；行类型与事件类型经 server/collect 门面以 type
+ *   复用（值边清零）；TREND_ROW_VERSION/TREND_UNIDENTIFIED/
  *   isValidShardRow 与行类型经 server/collect/interface.ts 以 pure + type
  *   复用（零 node 依赖的纯函数与类型，与 D3 “execute 经门面复用纯面”同形；
- *   #768 D9 整域迁入（旧址在 domain2 采集目录），边 server/aggregate|server/collect）；
+ *   #768 D9 整域迁入（旧址在 domain2 采集目录），#768 B1 值边清零）；
  * - node:fs/promises 与 node:path 是宿主能力（分片落盘 tmp+rename 载体与
  *   路径拼接），由实现块直接持有，不经域注入面。
  *

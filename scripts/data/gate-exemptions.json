@@ -112,24 +112,6 @@
     },
     {
       "gate": "verify-dir-imports",
-      "path": "dsh-provider-usage:server/execute|server/schedule",
-      "reason": "#768 D3 起、C 波单向化：执行器经调度门面取 updateLastRun 单一临界区与任务类型、读侧取 DueReport 类型（D2 口径延续，D3 随物理定义迁移）；反向纯解析改由组合根装配期经 schedule 域 ScheduleIndexParser 端口注入（store 零执行域值边），模块／文件两级值环归零（verify-dir-imports 实证）。单向边仍为门面收口（禁直引实现文件，双方 deps.ts 注记 + integration/execute 用例逐行锁定导入面）。长期条目。",
-      "trackingIssue": "#768"
-    },
-    {
-      "gate": "verify-dir-imports",
-      "path": "dsh-provider-usage:server/report-routes|server/schedule",
-      "reason": "#768 D2：路由写侧经调度门面取调度纯函数与读写面及队列窄口（submit/get），替代已消除的旧边；D11 由 domain2/routes 迁 server/report-routes，边归属同步迁移。实例仍经装配参数注入。树内 integration/report-routes 用例锁定。长期条目。",
-      "trackingIssue": "#768"
-    },
-    {
-      "gate": "verify-dir-imports",
-      "path": "dsh-provider-usage:server/aggregate|server/collect",
-      "reason": "#768 D8：聚合经 collect 门面复用 sumToken/hourOfDay/TREND_* 纯函数与行类型；#768 D9 由 domain2/collect 整域迁 server/collect（D9 前为基线内 server/aggregate|domain2/collect，边归属同步迁移）；TrendCollector 实例由 TrendTracker 内部构造、不跨域直取引擎。复用边界由 server/aggregate/deps.ts 注记锁定。长期条目。",
-      "trackingIssue": "#768"
-    },
-    {
-      "gate": "verify-dir-imports",
       "path": "dsh-provider-usage:server/report-routes|server/execute",
       "reason": "#768 D3：reports.ts 经 execute 门面取读面（D3 前为 domain2/routes|domain2/execute）；D11 由 domain2/routes 迁 server/report-routes，边归属同步迁移。执行器工厂不直引（队列内嵌，组合根装配）。树内 integration/report-routes 用例锁定。长期条目。",
       "trackingIssue": "#768"

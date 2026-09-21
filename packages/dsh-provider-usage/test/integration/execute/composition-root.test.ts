@@ -151,8 +151,11 @@ describe("D3一 经 server/execute 域门面装配", () => {
     ).toBe(false);
   });
 
-  it("执行器经 schedule/config 双门面（直连实现即红）", () => {
+  it("执行器经 schedule/config 双门面（B1 推进注入，直连实现即红）", () => {
+    // B1：schedule 值边清零（仅 type 复用任务类型），推进经 advanceLastRun 注入
     expect(executorSrc.includes('"../schedule/interface.ts"')).toBe(true);
+    expect(executorSrc.includes("advanceLastRun")).toBe(true);
+    expect(executorSrc.includes("import { updateLastRun }")).toBe(false);
     expect(executorSrc.includes('"../config/interface.ts"')).toBe(true);
     expect(executorSrc.includes("server/schedule/scheduler")).toBe(false);
     expect(executorSrc.includes("server/schedule/tasks")).toBe(false);
@@ -181,10 +184,11 @@ describe("D3一 经 server/execute 域门面装配", () => {
     expect(storeImports.some((l) => l.includes("persistReport"))).toBe(false);
     expect(storeImports.some((l) => l.includes("runDueReport"))).toBe(false);
     expect(storeImports.some((l) => l.includes("notifyReport"))).toBe(false);
-    // 端口注入面仍在：store 经 ScheduleIndexParser 取解析，执行→调度值边保留。
+    // 双向注入面：store 经 ScheduleIndexParser 取解析，执行器经 advanceLastRun 取推进（B1 值边清零）。
     expect(storeSrc.includes("ScheduleIndexParser")).toBe(true);
     expect(executorSrc.includes('"../schedule/interface.ts"')).toBe(true);
-    expect(executorSrc.includes("updateLastRun")).toBe(true);
+    expect(executorSrc.includes("advanceLastRun")).toBe(true);
+    expect(executorSrc.includes("import { updateLastRun }")).toBe(false);
   });
 
   it("队列任务 meta 类型经 execute 门面（换源即红）", () => {

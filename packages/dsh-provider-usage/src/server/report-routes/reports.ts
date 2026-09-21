@@ -9,6 +9,9 @@
  * 依赖方向：配置服务与任务队列只经本域 deps.ts 窄口消费
  * （ReportRoutesConfigPort/ReportRoutesQueuePort），不经 apply 装配面；
  * 执行器由队列内嵌（server/execute 工厂在组合根装配），本文件不直引。
+ * 调度面（preset/previous 纯函数 + read/update 读写）经 ReportRoutesContext
+ * 注入（#768 B1：不直引 schedule 门面值边；纯函数不下沉 shared，DueReport
+ * 语义留调度域；per-root 链唯一实现留 schedule 域，本域不自建第二条链）。
  */
 import { readFile } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
@@ -23,11 +26,11 @@ import {
   DEFAULT_PROMPTS,
   normalizeReportConfig,
   readReportConfig,
+  type ReportConfig,
   type ReportPeriod,
 } from "../config/interface.ts";
 import { readReportIndex, reportHtmlFile, reportMetaFile } from "../execute/interface.ts";
-import { presetLastRunForNewlyEnabled, previousClosedWindow } from "../schedule/interface.ts";
-import { readLastRun, updateLastRun } from "../schedule/interface.ts";
+import type { DueReport } from "../schedule/interface.ts";
 import type { ReportRoutesConfigPort, ReportRoutesQueuePort } from "./deps.ts";
 import { sanitizeHtml } from "../../shared/interface.ts";
 
@@ -38,6 +41,28 @@ export interface ReportRoutesContext {
   reportQueue: ReportRoutesQueuePort;
   /** reportCfg 双源收口窄口（get 读内存权威；update 串行写盘+内存+scheduler 热更）。 */
   reportCfgService: ReportRoutesConfigPort;
+  /**
+   * 调度纯函数注入（#768 B1：不直引 schedule 门面值边；纯函数不下沉
+   * shared，DueReport 语义留调度域）。
+   */
+  presetLastRunForNewlyEnabled: (
+    prev: ReportConfig,
+    next: ReportConfig,
+    now: number,
+    lastRun: Partial<Record<ReportPeriod, string>>,
+  ) => { lastRun: Partial<Record<ReportPeriod, string>>; changed: boolean };
+  previousClosedWindow: (period: ReportPeriod, cfg: ReportConfig, now: number) => DueReport;
+  /**
+   * lastRun 读写注入（per-root 临界区链唯一实现留 schedule 域 store.ts；
+   * 路由 preset 与执行器推进共走同一条链，本域不自建第二条链，#768 B1）。
+   */
+  readLastRun: (root: string) => Promise<Partial<Record<ReportPeriod, string>>>;
+  updateLastRun: (
+    root: string,
+    patch: (
+      prev: Partial<Record<ReportPeriod, string>>,
+    ) => Partial<Record<ReportPeriod, string>> | Promise<Partial<Record<ReportPeriod, string>>>,
+  ) => Promise<void>;
   /**
    * 目录候选清单：GET /report-config 附带 dirs（trend.dirTotals
    * 全留存窗口聚合，含未识别桶），设置页目录范围多选的数据源。可选——测试/无趋势
@@ -125,16 +150,17 @@ export async function handleReportConfig(
   const currentCfg = context.reportCfgService.get();
   // preset 写 lastRun 走单一临界区（写前重读），不与任务执行器推进互踩字段；
   // readLastRun 仅作 changed 预判（乐观跳过无变化时的写盘），真实快照在临界区内重读。
-  const preset = presetLastRunForNewlyEnabled(
+  const preset = context.presetLastRunForNewlyEnabled(
     currentCfg,
     normalized,
     Date.now(),
-    await readLastRun(historyRoot),
+    await context.readLastRun(historyRoot),
   );
   if (preset.changed)
-    await updateLastRun(
+    await context.updateLastRun(
       historyRoot,
-      (cur) => presetLastRunForNewlyEnabled(currentCfg, normalized, Date.now(), cur).lastRun,
+      (cur) =>
+        context.presetLastRunForNewlyEnabled(currentCfg, normalized, Date.now(), cur).lastRun,
     );
   try {
     // 写盘 + 内存权威 + scheduler 热更由 ReportConfigService 串行收口（并发 POST 不交错）
@@ -259,7 +285,11 @@ export async function handleReportGenerate(
   const force = body.force === true;
 
   // 手动生成恒定锚定已闭环的上一完整周期（日报=昨天全天，消灭凌晨漂移；不检查 enabled）
-  const due = previousClosedWindow(period as ReportPeriod, reportCfgService.get(), Date.now());
+  const due = context.previousClosedWindow(
+    period as ReportPeriod,
+    reportCfgService.get(),
+    Date.now(),
+  );
 
   // 幂等短路：窗口已有成功报告且非强制重生成 → 直接复用，不产生新任务
   if (!force) {

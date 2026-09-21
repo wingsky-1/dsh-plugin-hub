@@ -1677,7 +1677,12 @@ describe("tracker：启动重建（聚合分片权威）", () => {
       join(detDir, `${day1}.jsonl`),
       `${JSON.stringify({ v: 1, kind: "detail", time: T0, day: day1, session: "sx", turn: 1, step: 1, retry: 1, provider: "p", model: "m", input: 999, output: 999, cacheRead: null, cacheWrite: null, calls: 1 })}\n`,
     );
-    const tracker = await TrendTracker.start({ root, now: () => T0, flushDebounceMs: 50 });
+    const tracker = await TrendTracker.start({
+      makeCollector: (o) => new TrendCollector(o),
+      root,
+      now: () => T0,
+      flushDebounceMs: 50,
+    });
     const b = tracker.buckets().find((d) => d.day === day1);
     cellCalls = b.providers[0].cell.calls;
     cellInput = b.providers[0].cell.input;
@@ -1744,7 +1749,12 @@ describe("tracker：自愈压实（过去日明细无聚合分片）", () => {
         "", // 尾空行容忍
       ].join("\n"),
     );
-    const tracker = await TrendTracker.start({ root, now: () => T0, flushDebounceMs: 50 });
+    const tracker = await TrendTracker.start({
+      makeCollector: (o) => new TrendCollector(o),
+      root,
+      now: () => T0,
+      flushDebounceMs: 50,
+    });
     const b = tracker.buckets().find((d) => d.day === day1);
     cellCalls = b.providers[0].cell.calls;
     aggWritten = existsSync(join(aggDir, `${day1}.jsonl`));
@@ -1794,7 +1804,12 @@ describe("tracker：当日明细重建 + 新事件 flush（既有行不二次落
       calls: 1,
     };
     writeFileSync(join(detDir, `${today}.jsonl`), `${JSON.stringify(preRow)}\n`);
-    const tracker = await TrendTracker.start({ root, now: () => T0, flushDebounceMs: 50 });
+    const tracker = await TrendTracker.start({
+      makeCollector: (o) => new TrendCollector(o),
+      root,
+      now: () => T0,
+      flushDebounceMs: 50,
+    });
     tracker.handleEvent(
       { id: "s1" },
       ev(
@@ -1849,7 +1864,12 @@ describe("tracker：防抖刷盘 + dispose await 刷盘", () => {
   beforeAll(async () => {
     const root = mkdtempSync(join(tmpdir(), "dou-trend-flush-"));
     const today = dayKey(T0);
-    const tracker = await TrendTracker.start({ root, now: () => T0, flushDebounceMs: 30 });
+    const tracker = await TrendTracker.start({
+      makeCollector: (o) => new TrendCollector(o),
+      root,
+      now: () => T0,
+      flushDebounceMs: 30,
+    });
     tracker.handleEvent(
       { id: "s1" },
       ev(
@@ -1895,7 +1915,12 @@ describe("tracker：日切压实与重启不双算（含迟到旧日行合并）
     // 日切压实：跨天后旧日压实为聚合分片、明细分片删除、重启不双算
     const root = mkdtempSync(join(tmpdir(), "dou-trend-rollup-"));
     let nowMs = T0; // 09-04
-    let tracker = await TrendTracker.start({ root, now: () => nowMs, flushDebounceMs: 50 });
+    let tracker = await TrendTracker.start({
+      makeCollector: (o) => new TrendCollector(o),
+      root,
+      now: () => nowMs,
+      flushDebounceMs: 50,
+    });
     tracker.handleEvent({ id: "s1" }, ev("request/header", HEADER(), T0, 1));
     tracker.handleEvent({ id: "s1" }, ev("assistant/chunk", USAGE(100, 50), T0, 2));
     tracker.handleEvent(
@@ -1942,7 +1967,12 @@ describe("tracker：日切压实与重启不双算（含迟到旧日行合并）
     // 重启重建：聚合权威载入，cells 与重启前一致
     const beforeBuckets = JSON.stringify(tracker.buckets());
     await tracker.dispose();
-    tracker = await TrendTracker.start({ root, now: () => nowMs, flushDebounceMs: 50 });
+    tracker = await TrendTracker.start({
+      makeCollector: (o) => new TrendCollector(o),
+      root,
+      now: () => nowMs,
+      flushDebounceMs: 50,
+    });
     const afterCells = tracker.buckets().find((d) => d.day === day0).providers[0].cell;
     restartCalls = afterCells.calls;
     restartInput = afterCells.input;
@@ -1998,7 +2028,12 @@ describe("tracker：dispose await 最终刷盘", () => {
   beforeAll(async () => {
     // dispose await 最终刷盘：事件后立即 dispose，分片必落盘
     const root = mkdtempSync(join(tmpdir(), "dou-trend-dispose-"));
-    const tracker = await TrendTracker.start({ root, now: () => T0, flushDebounceMs: 60000 });
+    const tracker = await TrendTracker.start({
+      makeCollector: (o) => new TrendCollector(o),
+      root,
+      now: () => T0,
+      flushDebounceMs: 60000,
+    });
     tracker.handleEvent(
       { id: "s1" },
       ev(
@@ -2023,7 +2058,12 @@ describe("tracker：flushNow 语义与 handleDisposed 清理", () => {
   beforeAll(async () => {
     // session/flush 语义在 tracker 层等价 flushNow；handleDisposed 清理不崩
     const root = mkdtempSync(join(tmpdir(), "dou-trend-flushpt-"));
-    const tracker = await TrendTracker.start({ root, now: () => T0, flushDebounceMs: 60000 });
+    const tracker = await TrendTracker.start({
+      makeCollector: (o) => new TrendCollector(o),
+      root,
+      now: () => T0,
+      flushDebounceMs: 60000,
+    });
     tracker.handleEvent(
       { id: "s1" },
       ev(
@@ -2219,7 +2259,12 @@ describe("评审修复 P1-3（tracker 级）：flush 部分失败不重复 appen
     // 失败日行待下轮补上（时钟回拨过去日 + 分片目录障碍构造 EISDIR）。
     const root = mkdtempSync(join(tmpdir(), "dou-trend-partial2-"));
     const nowMs = T0; // 09-04 today
-    const tracker = await TrendTracker.start({ root, now: () => nowMs, flushDebounceMs: 60000 });
+    const tracker = await TrendTracker.start({
+      makeCollector: (o) => new TrendCollector(o),
+      root,
+      now: () => nowMs,
+      flushDebounceMs: 60000,
+    });
     const H = { header: { config: { provider: "p", model: "m" } }, reason: "initial" };
     const today = dayKey(T0);
     const pastDay = dayKey(T0 - 24 * HOUR); // 09-03
@@ -2639,6 +2684,7 @@ describe("评审修复 P2-6：tracker 侧 onAnomaly 接线到 warn", () => {
     const warns = [];
     const root = mkdtempSync(join(tmpdir(), "dou-trend-anomaly-"));
     const tracker = await TrendTracker.start({
+      makeCollector: (o) => new TrendCollector(o),
       root,
       now: () => T0,
       flushDebounceMs: 60000,
@@ -2779,6 +2825,7 @@ describe("#633 A1(a)：per-session 惰性单查（resolveCwd 恰 1 次）", () =
     const root = mkdtempSync(join(tmpdir(), "dou-trend-dir-once-"));
     const cwdCalls0 = [];
     const tracker = await TrendTracker.start({
+      makeCollector: (o) => new TrendCollector(o),
       root,
       now: () => T0,
       flushDebounceMs: 60000,
@@ -2835,6 +2882,7 @@ describe("#633 A1(b)：resolveCwd 缺失/抛错归未识别桶且各查 1 次", 
     const root = mkdtempSync(join(tmpdir(), "dou-trend-dir-miss-"));
     const counts = { s1: 0, s2: 0 };
     const tracker = await TrendTracker.start({
+      makeCollector: (o) => new TrendCollector(o),
       root,
       now: () => T0,
       flushDebounceMs: 60000,
@@ -2902,6 +2950,7 @@ describe("#633 A1(c)：cwd 经 sanitizeDirName 净化后落盘 + 纯函数面直
     const root = mkdtempSync(join(tmpdir(), "dou-trend-dir-sanitize-"));
     let flip = 0;
     const tracker = await TrendTracker.start({
+      makeCollector: (o) => new TrendCollector(o),
       root,
       now: () => T0,
       flushDebounceMs: 60000,
@@ -2985,6 +3034,7 @@ describe("#633 A1(d)：落盘 detail/counter 行均含 dir 字段且多 session 
     // A1(d)：落盘 detail/counter 行均含 dir 字段且值正确（多 session 各自归属不串桶）
     const root = mkdtempSync(join(tmpdir(), "dou-trend-dir-persist-"));
     const tracker = await TrendTracker.start({
+      makeCollector: (o) => new TrendCollector(o),
       root,
       now: () => T0,
       flushDebounceMs: 60000,
@@ -3128,6 +3178,7 @@ describe("#633 A2(a)：旧格式 fixture 重建（聚合权威 + 当日明细不
 
     const warns0 = [];
     const tracker = await TrendTracker.start({
+      makeCollector: (o) => new TrendCollector(o),
       root,
       now: () => T0,
       flushDebounceMs: 60000,
@@ -3242,6 +3293,7 @@ describe("#633 A2(b)：自愈压实路径（旧格式明细无聚合分片）", 
     );
     const warns0 = [];
     const tracker = await TrendTracker.start({
+      makeCollector: (o) => new TrendCollector(o),
       root,
       now: () => T0,
       flushDebounceMs: 60000,
@@ -3371,7 +3423,12 @@ describe("#633 A2(c)：round-trip（旧格式行 rebuild → flushNow → 重读
     };
     const originalBytes = `${JSON.stringify(legacyTodayDetail)}\n${JSON.stringify(legacyTodayCounter)}\n${JSON.stringify(legacyTodayDetail2)}\n`;
     writeFileSync(detFile, originalBytes);
-    const tracker = await TrendTracker.start({ root, now: () => T0, flushDebounceMs: 60000 });
+    const tracker = await TrendTracker.start({
+      makeCollector: (o) => new TrendCollector(o),
+      root,
+      now: () => T0,
+      flushDebounceMs: 60000,
+    });
     const cell = tracker.buckets().find((d) => d.day === dayKey(T0)).providers[0].cell;
     cellCalls = cell.calls;
     cellTurns = cell.turns;
@@ -3483,6 +3540,7 @@ describe("#633 A2(d)：未知键容忍（legacyFlag 不拒绝、不告警）", (
     );
     const warns0 = [];
     const tracker = await TrendTracker.start({
+      makeCollector: (o) => new TrendCollector(o),
       root,
       now: () => T0,
       flushDebounceMs: 60000,
@@ -3564,6 +3622,7 @@ describe("#633 A3(a)：内存态归并（tracker 全链路压实产物）", () =
     const root = mkdtempSync(join(tmpdir(), "dou-trend-a3-merge-"));
     let nowMs = T0;
     const tracker = await TrendTracker.start({
+      makeCollector: (o) => new TrendCollector(o),
       root,
       now: () => nowMs,
       flushDebounceMs: 60000,
@@ -4005,6 +4064,7 @@ describe("#633 A4(e)：混存 round-trip（压实→重启→迟到行二次压�
     const root = mkdtempSync(join(tmpdir(), "dou-trend-a4-roundtrip-"));
     let nowMs = T0;
     let tracker = await TrendTracker.start({
+      makeCollector: (o) => new TrendCollector(o),
       root,
       now: () => nowMs,
       flushDebounceMs: 60000,
@@ -4031,6 +4091,7 @@ describe("#633 A4(e)：混存 round-trip（压实→重启→迟到行二次压�
     detailShardDeleted = existsSync(join(root, "details", `${DAY0}.jsonl`));
     await tracker.dispose();
     tracker = await TrendTracker.start({
+      makeCollector: (o) => new TrendCollector(o),
       root,
       now: () => nowMs,
       flushDebounceMs: 60000,
@@ -4074,6 +4135,7 @@ describe("#633 A4(e)：混存 round-trip（压实→重启→迟到行二次压�
     round2Dirs = snapshot(round2.filter((r) => r.kind === "dir"));
     await tracker.dispose();
     tracker = await TrendTracker.start({
+      makeCollector: (o) => new TrendCollector(o),
       root,
       now: () => nowMs,
       flushDebounceMs: 60000,
@@ -4361,6 +4423,7 @@ describe("#633 A4(g)：量级留痕（1000 事件 / 5 session）", () => {
     let cwdCalls0 = 0;
     const startAt = Date.now();
     const tracker = await TrendTracker.start({
+      makeCollector: (o) => new TrendCollector(o),
       root,
       now: () => T0,
       flushDebounceMs: 60000,
@@ -4449,6 +4512,7 @@ describe("复核 M1(a)：混存分片重启重建后 dirDays 恢复（dir 行真
     const root = mkdtempSync(join(tmpdir(), "dou-trend-m1-rebuild-"));
     let nowMs = T0;
     let tracker = await TrendTracker.start({
+      makeCollector: (o) => new TrendCollector(o),
       root,
       now: () => nowMs,
       flushDebounceMs: 60000,
@@ -4470,6 +4534,7 @@ describe("复核 M1(a)：混存分片重启重建后 dirDays 恢复（dir 行真
     await tracker.flushNow(); // 压实：agg+dir 混存落盘、明细分片删除
     await tracker.dispose();
     tracker = await TrendTracker.start({
+      makeCollector: (o) => new TrendCollector(o),
       root,
       now: () => nowMs,
       flushDebounceMs: 60000,
@@ -4592,7 +4657,12 @@ describe("复核 M1(b)：自愈压实 dir 行 + pruneDays 联动删除 dirDays",
         "",
       ].join("\n"),
     );
-    const tracker = await TrendTracker.start({ root, now: () => T0, flushDebounceMs: 60000 });
+    const tracker = await TrendTracker.start({
+      makeCollector: (o) => new TrendCollector(o),
+      root,
+      now: () => T0,
+      flushDebounceMs: 60000,
+    });
     healedDirRows = snapshot(
       (await new TrendStore({ root }).readAggDayShard(day1)).filter((r) => r.kind === "dir"),
     );
@@ -5246,6 +5316,7 @@ describe("复核 P1-1(a)：常驻运行期跨天（压实后 Day0 目录面保�
     const root = mkdtempSync(join(tmpdir(), "dou-trend-p11-crossday-"));
     let nowMs = T0;
     const tracker = await TrendTracker.start({
+      makeCollector: (o) => new TrendCollector(o),
       root,
       now: () => nowMs,
       flushDebounceMs: 60000,
@@ -5327,6 +5398,7 @@ describe("复核 P1-1(b)：重启恢复后同日继续 apply（dirRows 当日 = 
     const root = mkdtempSync(join(tmpdir(), "dou-trend-p11-sameday-"));
     const nowMs = T0; // 当日（detail 分片 day === today，不走自愈压实）
     let tracker = await TrendTracker.start({
+      makeCollector: (o) => new TrendCollector(o),
       root,
       now: () => nowMs,
       flushDebounceMs: 60000,
@@ -5337,6 +5409,7 @@ describe("复核 P1-1(b)：重启恢复后同日继续 apply（dirRows 当日 = 
     await tracker.flushNow(); // 当日明细落盘（persisted=true，pending 保留）
     await tracker.dispose();
     tracker = await TrendTracker.start({
+      makeCollector: (o) => new TrendCollector(o),
       root,
       now: () => nowMs,
       flushDebounceMs: 60000,
@@ -5532,6 +5605,7 @@ describe("#654 集成级：压实 await 窗口内到达的过去日行不被连�
     const nowMs = T0; // 当日 09-04，迟到行落 09-03（时钟回拨形态）
     const pastDay = dayKey(T0 - 24 * HOUR);
     const tracker = await TrendTracker.start({
+      makeCollector: (o) => new TrendCollector(o),
       root,
       now: () => nowMs,
       flushDebounceMs: 60000,
@@ -5624,6 +5698,7 @@ describe("#654 同域：deleteDetailShard 失败不得导致下一轮磁盘双�
     const nowMs = T0;
     const pastDay = dayKey(T0 - 24 * HOUR);
     const tracker = await TrendTracker.start({
+      makeCollector: (o) => new TrendCollector(o),
       root,
       now: () => nowMs,
       flushDebounceMs: 60000,
@@ -6055,6 +6130,7 @@ describe("#633 修复：真实升级场景端到端（旧 agg-only 分片重启�
     mkdirSync(join(root, "agg"), { recursive: true });
     writeFileSync(join(root, "agg", "2026-09-03.jsonl"), `${JSON.stringify(A2_LEGACY_AGG)}\n`);
     const tracker = await TrendTracker.start({
+      makeCollector: (o) => new TrendCollector(o),
       root,
       now: () => T0,
       flushDebounceMs: 60000,

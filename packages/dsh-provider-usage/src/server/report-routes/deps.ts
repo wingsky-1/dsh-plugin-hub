@@ -27,9 +27,9 @@
  *   （零 node 依赖的纯函数与读面，与 D1 “业务域经门面复用纯面”同形）；
  * - server/schedule 的窗口/幂等纯函数（presetLastRunForNewlyEnabled/
  *   previousClosedWindow）+ lastRun 读写（readLastRun/updateLastRun）经
- *   server/schedule/interface.ts 以 pure + 读面复用（per-root 临界区链归属
- *   调度域，路由 preset 与执行器推进共走同一条链，本域不自建第二条链，
- *   与 D2 “store 经 common 门面复用纯解析”同形）；
+ *   ReportRoutesContext 注入（#768 B1：本域不直引 schedule 门面值边，值边
+ *   清零；纯函数不下沉 shared，DueReport 语义留调度域；per-root 临界区链归属
+ *   调度域，路由 preset 与执行器推进共走同一条链，本域不自建第二条链）；
  * - server/execute 的读面（readReportIndex/reportHtmlFile/reportMetaFile）经
  *   server/execute/interface.ts 复用（幂等短路与详情落盘读，实例不直引）；
  * - shared 的 guardLoopbackMethod/readJsonBodyOutcome/writeJson 经

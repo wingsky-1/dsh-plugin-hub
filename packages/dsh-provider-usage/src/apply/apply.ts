@@ -45,12 +45,19 @@ import { readAdapterStateResult, readUserAdapters } from "../server/registry/int
 import { loadUserAdapterChecked } from "../server/registry/interface.ts";
 import { StatsServiceCtor as StatsService } from "../server/pipeline/interface.ts";
 import { TrendTracker } from "../server/aggregate/interface.ts";
+import { TrendCollector } from "../server/collect/interface.ts";
 import { ReportScheduler } from "../server/schedule/interface.ts";
 import { optionalNotifier, parseReportIndexLines } from "../server/execute/interface.ts";
 import { ReportConfigService, readReportConfig } from "../server/config/interface.ts";
 import { makeDueReportExecutor } from "../server/execute/interface.ts";
 import { makeListDirs } from "../server/execute/interface.ts";
 import { ReportTaskQueue } from "../server/schedule/interface.ts";
+import {
+  presetLastRunForNewlyEnabled,
+  previousClosedWindow,
+  readLastRun,
+  updateLastRun,
+} from "../server/schedule/interface.ts";
 import { createStatsRoutes } from "../server/data-routes/interface.ts";
 import { createAdapterRoutes } from "../server/data-routes/interface.ts";
 import { createUiRoutes } from "../server/ui-routes/interface.ts";
@@ -339,6 +346,8 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
   }
 
   const trend = await TrendTracker.start({
+    // B1 有状态注入：采集器工厂由组合根装配（aggregate 不直引 collect 值边）
+    makeCollector: (opts) => new TrendCollector(opts),
     root: join(historyRoot, "trend"),
     retentionDays: config.trendRetentionDays,
     // aggregate 层错误面接线——压实失败/刷盘失败/归属异常等
@@ -387,6 +396,8 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
       getReportCfg: () => reportCfgService.get(),
       historyRoot,
       sanitizeDiagnostic,
+      // B1 推进注入：per-root 链唯一实现留 schedule 域，执行器不直引值边
+      advanceLastRun: updateLastRun,
     }),
     // execute 层错误面接线——任务执行失败（含 executor 脱敏后错误）
     // 经队列 warn 出口汇聚于此。
@@ -400,8 +411,8 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
   const reportScheduler = ReportScheduler.start({
     root: historyRoot,
     config: reportCfgService.get(),
-    // C 波单向化：index 纯解析经 ScheduleIndexParser 端口注入调度域
-    //（store 不再直引 execute 门面；updateLastRun 值边保留在执行器侧）。
+    // C 波单向化 + B1 值边清零：index 纯解析经 ScheduleIndexParser 端口注入调度域
+    //（store 不再直引 execute 门面；B1 起执行器推进经 advanceLastRun 注入，值边清零）。
     parseIndex: parseReportIndexLines,
     // tick 只提交任务（非阻塞，队列去重吸收同窗口堆积），不再等待生成
     onDue: (due) => {
@@ -487,6 +498,11 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
         reportCfgService,
         // 目录候选清单收敛为注入查询面（makeListDirs 工厂，apply 零隐藏可变状态）
         listDirs: makeListDirs(trend),
+        // B1 调度注入：纯函数不下沉 shared，读写共走 per-root 链（报告域不直引值边）
+        presetLastRunForNewlyEnabled,
+        previousClosedWindow,
+        readLastRun,
+        updateLastRun,
       },
     ),
   ];

@@ -23,7 +23,8 @@
  *   与 D1 “业务域经门面复用纯面”同形）；
  * - server/execute 的 parseReportIndexLines 经本文件 ScheduleIndexParser
  *   端口注入（C 波：store.ts 不再直引 execute 门面；纯函数实现由组合根
- *   装配期传入，execute→schedule 的 updateLastRun 值边保留，环单向化）；
+ *   装配期传入；#768 B1 起 execute→schedule 的 updateLastRun 值边亦清零
+ *   （执行器经 DueExecutorDeps.advanceLastRun 注入能力），跨域值边归零）；
  * - shared 的 dayKey 经 shared/interface.ts 直揕引用（共享设施不入
  *   注入面，由实现块直接引，与 refactor skill §3 同形）。
  *

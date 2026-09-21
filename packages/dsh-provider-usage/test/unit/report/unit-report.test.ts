@@ -42,6 +42,7 @@ import { dayKey } from "../../../src/shared/interface.ts";
 // 白盒直连深路径（#768 B波）：净化纯面经 shared 门面，不走组合根转发。
 import { sanitizeHtml } from "../../../src/shared/interface.ts";
 import { TrendTracker } from "../../../src/server/aggregate/interface.ts";
+import { TrendCollector } from "../../../src/server/collect/interface.ts";
 import { TREND_ROW_VERSION, TREND_UNIDENTIFIED } from "../../../src/server/shared/interface.ts";
 // 白盒直连深路径（#768 B波续批）：报告调度/配置/执行/路由纯面经域门面，不走组合根转发。
 import {
@@ -2195,7 +2196,12 @@ describe("#633 分片 a D1：旧格式（无 cwd/dir 键）报告生成链路回
       `${JSON.stringify(legacyDetail)}\n${JSON.stringify(legacyCounter)}\n`,
     );
     // 链路 1/2（启动重建 + 统计/趋势查询面）：不抛错、两日全量入内存
-    const tracker = await TrendTracker.start({ root, now: () => T0, flushDebounceMs: 60000 });
+    const tracker = await TrendTracker.start({
+      makeCollector: (o) => new TrendCollector(o),
+      root,
+      now: () => T0,
+      flushDebounceMs: 60000,
+    });
     const buckets = tracker.buckets();
     bucketsLen = buckets.length;
     // 链路 3（报告生成）：窗口覆盖两日（weekly 形态）——历史输出不缺失
@@ -2834,6 +2840,7 @@ describe("#633 分片 b B4：口径影响（reportCfg.directories 非空 → 快
     const root = mkdtempSync(join(tmpdir(), "dou-report-b4-scope-"));
     const nowMs = T0;
     const tracker = await TrendTracker.start({
+      makeCollector: (o) => new TrendCollector(o),
       root,
       now: () => nowMs,
       flushDebounceMs: 60000,

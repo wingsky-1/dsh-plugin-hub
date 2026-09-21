@@ -20,12 +20,18 @@ import {
   type TrendStackPoint,
   type TrendWindowSummary,
 } from "./aggregator.ts";
-import { TrendCollector } from "../collect/interface.ts";
+import type { TrendCollector, TrendCollectorOptions } from "../collect/interface.ts";
 import { TrendStore } from "./store.ts";
 import type { TrendAggRow, TrendDirRow, TrendHourRow } from "../shared/interface.ts";
 import { safeId } from "../shared/interface.ts";
 
 export interface TrendTrackerOptions {
+  /**
+   * 采集器工厂（#768 B1：TrendCollector 有状态类留 collect 域，本域不直引
+   * collect 门面值边；组合根注入 (opts) => new TrendCollector(opts)，纯面
+   * （sumToken 等）A 波已下沉 shared，本波只做有状态注入）。
+   */
+  makeCollector: (opts: TrendCollectorOptions) => TrendCollector;
   /** 存储根（<historyRoot>/trend）。 */
   root: string;
   /** 聚合分片保留天数（默认 180，可配）。 */
@@ -59,6 +65,7 @@ export class TrendTracker {
 
   private constructor(
     resolved: {
+      makeCollector: (opts: TrendCollectorOptions) => TrendCollector;
       retentionDays: number;
       flushDebounceMs: number;
       now: () => number;
@@ -73,7 +80,7 @@ export class TrendTracker {
     this.retentionDays = resolved.retentionDays;
     this.store = store;
     this.aggregator = new TrendAggregator();
-    this.collector = new TrendCollector({
+    this.collector = resolved.makeCollector({
       now: resolved.now,
       resolveCwd: resolved.resolveCwd, // 目录归属透传（collector 侧 per-session 惰性单查）
       emit: (e) => {
@@ -90,6 +97,7 @@ export class TrendTracker {
     const resolved = {
       retentionDays: opts.retentionDays ?? 180,
       flushDebounceMs: opts.flushDebounceMs ?? 4000,
+      makeCollector: opts.makeCollector,
       now: opts.now ?? Date.now,
       warn: opts.warn ?? ((msg: string) => console.warn(`[dsh-provider-usage] trend: ${msg}`)),
       resolveCwd: opts.resolveCwd,

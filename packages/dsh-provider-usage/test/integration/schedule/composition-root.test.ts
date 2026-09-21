@@ -136,8 +136,10 @@ describe("D2一 经 server/schedule 域门面装配", () => {
     });
   }
 
-  it("执行器的推进经调度门面（不走旧 common 入口）", () => {
+  it("执行器的推进经注入（B1 值边清零，不走旧 common 入口）", () => {
     expect(executorSrc.includes('"../schedule/interface.ts"')).toBe(true);
+    expect(executorSrc.includes("advanceLastRun")).toBe(true);
+    expect(executorSrc.includes("import { updateLastRun }")).toBe(false);
     expect(executorSrc.includes("domain2/schedule")).toBe(false);
     expect(executorSrc.includes("common/interface")).toBe(false);
   });
@@ -148,8 +150,10 @@ describe("D2一 经 server/schedule 域门面装配", () => {
     expect(runnerSrc.includes("common/interface")).toBe(false);
   });
 
-  it("路由写侧经调度门面（D11 起改址 server/report-routes，同级短径，不走旧深径）", () => {
+  it("路由写侧经注入（B1 值边清零，同级短径，不走旧深径）", () => {
     expect(reportsSrc.includes('"../schedule/interface.ts"')).toBe(true);
+    expect(reportsSrc.includes("context.presetLastRunForNewlyEnabled")).toBe(true);
+    expect(reportsSrc.includes("import { presetLastRunForNewlyEnabled")).toBe(false);
     expect(reportsSrc.includes("../../server/schedule")).toBe(false);
     expect(reportsSrc.includes("domain2/schedule")).toBe(false);
     expect(reportsSrc.includes("../common/interface")).toBe(false);

@@ -67,7 +67,13 @@ import type {
 } from "../../../src/server/report-routes/deps.ts";
 import { ReportConfigService } from "../../../src/server/config/interface.ts";
 import { normalizeReportConfig } from "../../../src/server/config/interface.ts";
-import { ReportTaskQueue } from "../../../src/server/schedule/interface.ts";
+import {
+  ReportTaskQueue,
+  presetLastRunForNewlyEnabled,
+  previousClosedWindow,
+  readLastRun,
+  updateLastRun,
+} from "../../../src/server/schedule/interface.ts";
 import type { ReportTask } from "../../../src/server/schedule/interface.ts";
 import { ROUTES } from "../../../src/apply/index.ts";
 
@@ -224,6 +230,10 @@ function stubReportCtx(
     historyRoot,
     reportQueue: stubQueuePort(),
     reportCfgService: cfg,
+    presetLastRunForNewlyEnabled,
+    previousClosedWindow,
+    readLastRun,
+    updateLastRun,
     listDirs: opts.throwingDirs
       ? () => {
           throw new Error("dirs-down");
@@ -254,10 +264,13 @@ describe("D11一 经 server/report-routes 域门面装配", () => {
     expect(applySrc.includes("server/report-routes/interface")).toBe(true);
   });
 
-  it("实现块改址：同级短径复用三域门面（旧深路径残留必须红）", () => {
+  it("实现块改址：同级短径复用双门面 + 调度注入（B1 值边清零，旧深路径残留必须红）", () => {
     expect(reportsSrc.includes("../config/interface")).toBe(true);
     expect(reportsSrc.includes("../execute/interface")).toBe(true);
     expect(reportsSrc.includes("../schedule/interface")).toBe(true);
+    expect(reportsSrc.includes("context.presetLastRunForNewlyEnabled")).toBe(true);
+    expect(reportsSrc.includes("import { presetLastRunForNewlyEnabled")).toBe(false);
+    expect(reportsSrc.includes("import { readLastRun")).toBe(false);
     expect(reportsSrc.includes("../../shared/interface")).toBe(true);
   });
 

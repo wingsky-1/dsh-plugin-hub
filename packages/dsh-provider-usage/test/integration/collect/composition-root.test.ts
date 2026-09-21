@@ -193,9 +193,11 @@ describe("D9一 经 server/collect 域门面装配", () => {
       expect(usesOldFace(src)).toBe(false);
     }
     expect(applyFaceSrc.includes("server/collect/interface")).toBe(true);
-    // #768 A波3/5/6：纯下沉 shared 后仅 TrendCollector（有状态，B波注入）仍经 collect 门面；
+    // #768 B1：TrendCollector 有状态注入后 aggregate 值边清零（仅 type 复用）；
     // 纯面（TREND_*/sumToken/sanitize 等）一律经 shared 门面
     expect(aggIndexSrc.includes("../collect/interface")).toBe(true);
+    expect(aggIndexSrc.includes("makeCollector")).toBe(true);
+    expect(aggIndexSrc.includes("import { TrendCollector }")).toBe(false);
     expect(normalizeSrc.includes("../collect/interface")).toBe(false);
     expect(normalizeSrc.includes("../shared/interface")).toBe(true);
     expect(runnerSrc.includes("../collect/interface")).toBe(false);

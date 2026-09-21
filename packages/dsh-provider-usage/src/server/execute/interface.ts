@@ -4,9 +4,11 @@
  * 域承诺 = 报告索引解析（report-index.ts 纯解析，由 domain2/common 迁入，
  * 本域所有）+ 读侧投影记忆化（runner.ts indexCache stat 失效键）+ 执行接线
  * （runDueReport/persistReport/notifyReport）+ LLM 生成（generate.ts）+ 正文
- * 渲染（format.ts）+ 执行器工厂（executor.ts，经 server/schedule 与
- * server/config 双门面消费：updateLastRun 单一临界区 + 任务类型 + 配置形态，
- * D2 起即此口径，D3 随物理定义迁入本域）+ 目录候选查询工厂（list-dirs.ts）。
+ * 渲染（format.ts）+ 执行器工厂（executor.ts：推进经
+ * DueExecutorDeps.advanceLastRun 注入 per-root 链能力，任务类型经
+ * server/schedule 门面以 type 复用、配置形态经 server/config 门面以 type
+ * 复用，#768 B1 值边清零；D2 起双门面口径，D3 随物理定义迁入本域）+
+ * 目录候选查询工厂（list-dirs.ts）。
  *
  * 目录化约定：目录外一律经本文件消费，禁 `export * from` 整文件 re-export。
  * 复用边界（与 D2 schedule 域同形）：
