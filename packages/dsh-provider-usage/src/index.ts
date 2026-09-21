@@ -16,7 +16,6 @@ export {
   dayKey,
   inject,
   name,
-  normalizeRangeDay,
   sseData,
 } from "./apply/index.ts";
 export type {

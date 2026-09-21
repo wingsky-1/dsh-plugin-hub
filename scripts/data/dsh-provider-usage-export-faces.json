@@ -71,7 +71,6 @@
     "dayKey",
     "inject",
     "name",
-    "normalizeRangeDay",
     "sseData"
   ]
 }

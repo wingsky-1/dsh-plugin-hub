@@ -55,7 +55,6 @@ import {
   ADAPTER_CONTRACT_VERSION,
   OPENCODE_GO_PROVIDER,
   OPENCODE_GO_ADAPTER_ID,
-  normalizeRangeDay,
   dayKey,
   HotReloadableAdapter,
 } from "../../lib/index.js";
@@ -70,11 +69,12 @@ import {
   DEEPSEEK_OFFICIAL_ADAPTER_ID,
   DEEPSEEK_OFFICIAL_PROVIDER,
 } from "../../src/server/adapters/interface.ts";
-// 白盒直连深路径（#768 B波）：面板缓存纯面经管线域门面，不走包入口。
+// 白盒直连深路径（#768 B波）：面板缓存与归一化纯面经管线域门面，不走包入口。
 import {
   PANEL_CACHE_TTL_MS,
   panelCacheKey,
   isPanelCacheStale,
+  normalizeRangeDay,
 } from "../../src/server/pipeline/interface.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));

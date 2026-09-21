@@ -274,10 +274,6 @@
       "isType": false
     },
     {
-      "name": "normalizeRangeDay",
-      "isType": false
-    },
-    {
       "name": "sseData",
       "isType": false
     }
@@ -871,10 +867,6 @@
         },
         {
           "name": "name",
-          "isType": false
-        },
-        {
-          "name": "normalizeRangeDay",
           "isType": false
         },
         {
