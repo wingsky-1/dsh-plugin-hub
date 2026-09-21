@@ -14,7 +14,8 @@
  * - D8三 deps 注入面窄面：AggregateWarn/AggregateClock/AggregateResolveCwd 命名接缝与
  *   块内联双生子（TrendTrackerOptions 保留内联函数类型，不 import type 本面）；
  *   deps.ts 纯类型面运行时零出口。
- * - D8四 随行修正与冻结：deletePromises 注解（tmp 清理行为锁）+ A4(f) 补 dir
+ * - D8四 随行修正与冻结：deletePromises 注解文本锁已迁 gate/verify-provider-usage-shape.mjs +
+ *   A4(f) 补 dir
  *   （缺键只进 agg 面）+ forgetPersisted 删除（全仓单命中死代码）；
  *   store 多错语义与 resolveCwd/性能预留冻结不动（多错分支行为锁，不改语义）。
  *

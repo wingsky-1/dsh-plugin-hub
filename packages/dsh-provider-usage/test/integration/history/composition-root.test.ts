@@ -16,8 +16,8 @@
  * 落盘时序验收（判据原文）：先设 DSH_HOME 后 import，时序反了必须红。
  * 本文件把时序钉死在两处：① probeBeforeImport 在 import 语句正上方取值并断言
  * 等于隔离目录——把设 env 行挪到 import 之后，哨兵单跑即红（scratch 反转版
- * 已实证 1 failed）；② history.ts 文本禁 dshHome/process.env
- *（落盘根只经构造注入，模块求值期不读环境——加了即红，见 D5二末条）。
+ * 已实证 1 failed）；② history.ts 文本禁 dshHome/process.env 已迁
+ * gate/verify-provider-usage-shape.mjs（落盘根只经构造注入，模块求值期不读环境）。
  * 每条附判据句（把 X 改坏必须红）；文本哨兵仅锚真实 ABI 与装配关系，不做风格断言。
  */
 import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";

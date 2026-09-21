@@ -7,8 +7,9 @@
  *   不直连域实现文件（shape/prompts/normalize/store/service），不走旧 schedule 入口；
  * - D1② 根内无业务判断：apply/ 装配逻辑内不得出现归一化调用、默认值、旧词、
  *   周期字段判断（initial 经 readReportConfig 解析是装配，不算判断——见 D1③）；
- * - D1③ 构造只递 root+initial+onUpdate：实参键集恰为三项，且三参可完成装配
- *   （内存权威 + 串行写链 + 落盘 roundtrip）。
+ * - D1③ 构造只递 root+initial+onUpdate：三参可完成装配
+ *   （内存权威 + 串行写链 + 落盘 roundtrip；实参键集文本形态锁已迁
+ *   gate/verify-provider-usage-shape.mjs，本文件仅保留行为锁+探针）。
  *
  * 扫描面 = src/apply/apply.ts（装配逻辑；#768 D13 删空锚点 src/apply/interface.ts：
  * 原唯一源码消费 D11 起改走 server/report-routes/deps.ts 窄口，模块归属随锚点消除）；
