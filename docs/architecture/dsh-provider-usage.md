@@ -160,13 +160,15 @@ DeepSeek 区间记账法：`topped_up_balance` 是充值账户当前剩余（恒
 
 | 模块 | 职责 |
 |---|---|
-| `src/index.ts` | 宿主端入口：配置归一化、7 条路由、预热定时器、持久化读写 |
-| `src/contracts.ts` | v2 契约（UsageStatsAdapter / FetchContext / esc）+ 校验器 |
-| `src/registry.ts` | per-provider 候选列表 + 唯一启用 + 错误登记 |
-| `src/pipeline/v2.ts` | 取数/面板管道：入参组装 → safe 执行 → 净化 → 归一化 |
-| `src/core/guards.ts` | 用户代码安全执行包装（超时/序列化校验/错误隔离） |
-| `src/core/history.ts` | 按天分片 JSONL + 旧 v3 桶迁移 |
-| `src/hotreload.ts` | mtime+size 轮询热更新 + 原子切换 |
-| `src/provider-config.ts` | 密钥五级解析链 |
-| `src/sanitize.ts` | HTML 结构化净化 |
+| `src/index.ts` | 组合根薄转发：显式具名 re-export（禁 export *），仅安装面/共享设施/类型 |
+| `src/apply/index.ts` | 包组合根：域门面转发 + 安装面（apply/inject/name/ROUTES）+ sseData |
+| `src/apply/apply.ts` | 装配：全经 `server/<域>/interface.ts` 注入 |
+| `src/shared/contracts.ts` | v2 契约（UsageStatsAdapter / FetchContext / esc）+ 校验器 |
+| `src/shared/sanitize.ts` | HTML 结构化净化 |
+| `src/server/registry/*` | 适配器注册表 + 密钥解析链（provider-config.ts）+ 路径解析（path-resolve.ts）+ 热更新（hotreload.ts） |
+| `src/server/pipeline/*` | 取数/面板管道（v2.ts）+ 安全执行守卫（guards.ts）+ 缓存编排（stats-service.ts） |
+| `src/server/history/history.ts` | 按天分片 JSONL + 旧 v3 桶迁移 |
+| `src/server/schedule/*` | 调度：窗口/任务/持久化（per-root 链） |
+| `src/server/adapters/*` | 内置适配器（含 opencode-go.mjs 自包含 mjs） |
+| `src/server/{aggregate,collect,config,execute,data-routes,report-routes,ui-routes,upgrade}/*` | 聚合/采集/配置/执行/路由域（各经 interface.ts 门面） |
 | `src/client/*` | 胶囊/面板/设置页 tab |

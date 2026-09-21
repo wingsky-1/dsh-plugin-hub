@@ -217,7 +217,7 @@ flowchart TD
 
 设置页主列表的数据源 `GET /adapters.json` 除返回注册表快照（host/enabled/errors）外，还经 `ctx.llm.listProviders()`（插件 `inject` 含 `llm`）带上模型配置页的提供商列表 `modelProviders`，用于把「模型配置中的 provider」与「已注册适配器认领的 provider」对齐展示。
 
-> 注意：运行时注册表**只收 v2 契约（`version === 2`）**；`contracts.ts` 保留的 v1 deprecated 类型仅为编译期引用兼容，不再有加载路径。
+> 注意：运行时注册表**只收 v2 契约（`version === 2`）**；v1 旧契约已随破坏性变更 #932 删除（`shared/contracts.ts` 仅保留 v2）。
 
 ### 5.2 时序：设置页「检测 → 添加」（运行时注入的主路径）
 
@@ -356,35 +356,35 @@ flowchart TD
 | 机制 | 实现 | 位置 |
 | --- | --- | --- |
 | 路由围栏 | 所有路由 loopback 才放行（非回环 403）、方法白名单（405） | 每个 route handler 入口 |
-| 取数超时 | `safeFetchData`: Promise.race + AbortController，强制 timeoutMs（固定 5000ms，不可配置）；结果必须过 JSON 序列化校验 | `core/guards.ts` |
-| 渲染超时 | `safeFormat`: 异步 format 超时（与取数同一 timeoutMs 注入，当前固定 5s） + 返回类型校验（同步死循环为文档化风险） | `core/guards.ts` |
-| XSS 兜底 | `sanitizeHtml` 白名单式正则净化：script/iframe/frame/object/embed/meta/link/base 标签、on* 事件、`javascript:`/`data:text/html` 协议、CSS `expression(` | `sanitize.ts` |
-| 密钥隔离 | apiKey 仅宿主内存，不入设置面板 schema、不下发浏览器 | `provider-config.ts` / `index.ts` |
-| 路径安全 | add/inspect 拒绝 `\0`、未规整相对路径；相对路径限 DSH_HOME / 插件 home 内；历史目录名 `safeSegment` 防穿越 | `index.ts` / `contracts.ts` |
-| 信息最小披露 | health/errors 中用户文件路径脱敏为 basename 或 `~` 形态 | `index.ts` / `registry.ts` |
-| 历史文件 | 按天分片 JSONL，mode 0600；清理在每次 append 后惰性触发——先删过期日文件，再在总大小超限时从最旧删起且恒保留最后 1 个文件防清零；清单文件 tmp+rename 原子写 | `core/history.ts` / `index.ts` |
-| fail-fast 加载 | 缺导出 / 类型错 / name 不合白名单 → 拒收并登记可排障错误，不影响插件其余功能 | `contracts.ts` / `registry.ts` |
+| 取数超时 | `safeFetchData`: Promise.race + AbortController，强制 timeoutMs（固定 5000ms，不可配置）；结果必须过 JSON 序列化校验 | `server/pipeline/guards.ts` |
+| 渲染超时 | `safeFormat`: 异步 format 超时（与取数同一 timeoutMs 注入，当前固定 5s） + 返回类型校验（同步死循环为文档化风险） | `server/pipeline/guards.ts` |
+| XSS 兜底 | `sanitizeHtml` 白名单式正则净化：script/iframe/frame/object/embed/meta/link/base 标签、on* 事件、`javascript:`/`data:text/html` 协议、CSS `expression(` | `shared/sanitize.ts` |
+| 密钥隔离 | apiKey 仅宿主内存，不入设置面板 schema、不下发浏览器 | `server/registry/provider-config.ts` / `index.ts` |
+| 路径安全 | add/inspect 拒绝 `\0`、未规整相对路径；相对路径限 DSH_HOME / 插件 home 内；历史目录名 `safeSegment` 防穿越 | `index.ts` / `shared/contracts.ts` |
+| 信息最小披露 | health/errors 中用户文件路径脱敏为 basename 或 `~` 形态 | `index.ts` / `server/registry/registry.ts` |
+| 历史文件 | 按天分片 JSONL，mode 0600；清理在每次 append 后惰性触发——先删过期日文件，再在总大小超限时从最旧删起且恒保留最后 1 个文件防清零；清单文件 tmp+rename 原子写 | `server/history/history.ts` / `index.ts` |
+| fail-fast 加载 | 缺导出 / 类型错 / name 不合白名单 → 拒收并登记可排障错误，不影响插件其余功能 | `shared/contracts.ts` / `server/registry/registry.ts` |
 
 ---
 
 ## 9. 关键模块索引
 
-构建链：`src/*.ts` 经 tsc 编译后由 bundle-host 把全部子模块**内联进单一 `lib/index.js`**（发布物自包含、无运行时 npm 依赖），因此契约与核心模块一律在 `src/index.ts` re-export——smoke/lint 只能从 `lib/index.js` 导入。各模块职责：
+构建链：`src/*.ts` 经 tsc 编译后由 bundle-host 把全部子模块**内联进单一 `lib/index.js`**（发布物自包含、无运行时 npm 依赖）。入口已收窄：`src/index.ts` 仅转发安装面（apply/inject/name/ROUTES）、共享设施（sseData）、暂缓项（HotReloadableAdapter）与类型——smoke/lint 只能从 `lib/index.js` 导入；测试一律走 `src/server/<域>/interface.ts` 深路径。各模块职责：
 
 | 模块 | 职责 |
 | --- | --- |
-| `src/index.ts` | 宿主端入口：配置归一化、装配顺序、7 条路由、预热定时器、持久化读写 |
-| `src/contracts.ts` | v2 契约（UsageStatsAdapter/FetchContext/CapsuleInput/PanelInput）、esc、校验器、v1 deprecated 类型 |
-| `src/registry.ts` | 适配器注册表：per-provider 候选列表 + 唯一启用 + 错误登记 + 快照 |
-| `src/pipeline/v2.ts` | 取数管道与面板管道：组装入参 → safe 执行 → 净化 → 归一化结果 |
-| `src/core/guards.ts` | 用户代码安全执行包装（超时/序列化校验/错误隔离） |
-| `src/core/history.ts` | 按天分片 JSONL 存储 + 旧 v3 桶迁移 |
-| `src/hotreload.ts` | mtime+size 轮询热更新 + 原子切换 |
-| `src/provider-config.ts` | 密钥五级解析链 |
-| `src/sanitize.ts` | HTML 结构化净化 |
+| `src/index.ts` | 组合根薄转发：显式具名 re-export（禁 export *），仅安装面/共享设施/类型 |
+| `src/apply/index.ts` | 包组合根：域门面转发 + apply/inject/name/ROUTES + sseData |
+| `src/apply/apply.ts` | 装配：全经 `server/<域>/interface.ts` 注入 |
+| `src/shared/contracts.ts` | v2 契约（UsageStatsAdapter/FetchContext/CapsuleInput/PanelInput）、esc、校验器 |
+| `src/shared/sanitize.ts` | HTML 结构化净化 |
+| `src/server/registry/*` | 适配器注册表 + 密钥解析链（provider-config.ts）+ 路径解析（path-resolve.ts）+ 热更新（hotreload.ts） |
+| `src/server/pipeline/*` | 取数/面板管道（v2.ts）+ 安全执行守卫（guards.ts）+ 缓存编排（stats-service.ts） |
+| `src/server/history/history.ts` | 按天分片 JSONL 存储 + 旧 v3 桶迁移 |
+| `src/server/schedule/*` | 调度：窗口/任务/持久化（per-root 链） |
 | `src/server/adapters/opencode-go.mjs`（+ `.d.mts`） | 内置适配器 opencode-go-builtin：OpenCode Go `/v1/usage` 三窗口用量（#215 mjs 化；另见 deepseek-official.mjs / zai-coding-cn.mjs） |
-| `src/client/index.ts` | 客户端入口：胶囊/面板挂载、轮询、provider 检测 |
-| `src/client/settings.ts` | 设置页 tab：适配器管理（检测/添加/切换/停用） |
+| `src/client/index.tsx` | 客户端入口：胶囊/面板挂载、轮询、provider 检测 |
+| `src/client/settings/` | 设置页 tab：适配器管理（检测/添加/切换/停用） |
 | `src/client/core.ts` | 客户端数据层：fetch 封装、响应类型、会话 provider 解析 |
-| `src/client-logic.ts` | 设置页纯函数：provider 列表拆分与徽标文案 |
-| `src/path-resolve.ts` | 路径解析：`~` 展开、DSH_HOME 相对路径解析（pluginHome） |
+| `src/shared/client-logic.ts` | 设置页纯函数：provider 列表拆分与徽标文案 |
+| `src/server/registry/path-resolve.ts` | 路径解析：`~` 展开、DSH_HOME 相对路径解析（pluginHome） |
