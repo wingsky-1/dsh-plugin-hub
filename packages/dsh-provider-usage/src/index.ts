@@ -22,7 +22,6 @@ export {
   name,
   normalizeRangeDay,
   panelCacheKey,
-  previousClosedWindow,
   sseData,
 } from "./apply/index.ts";
 export type {

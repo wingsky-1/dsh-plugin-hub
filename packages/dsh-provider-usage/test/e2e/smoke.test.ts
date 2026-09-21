@@ -52,7 +52,6 @@ import {
   apply,
   inject,
   ROUTES,
-  previousClosedWindow,
   ADAPTER_CONTRACT_VERSION,
   OPENCODE_GO_PROVIDER,
   OPENCODE_GO_ADAPTER_ID,
@@ -69,6 +68,8 @@ import {
 import { userAdaptersFile, adapterStateFile } from "../../src/server/registry/interface.ts";
 // 白盒直连深路径（#768 B波）：目录上限纯面经采集域门面，不走包入口。
 import { TREND_DIR_MAX } from "../../src/server/collect/interface.ts";
+// 白盒直连深路径（#768 B波）：调度纯面经调度域门面，不走包入口。
+import { previousClosedWindow } from "../../src/server/schedule/interface.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 

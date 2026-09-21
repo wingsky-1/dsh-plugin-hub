@@ -91,8 +91,6 @@ export type {
   TrendHourRow,
   TrendCell,
 } from "../server/collect/interface.ts";
-// 会话用量报告：report 模块公共面（测试/外部消费者从 lib/index.js 导入）
-export { previousClosedWindow } from "../server/schedule/interface.ts";
 export type { DueReport, LastRunRecord } from "../server/schedule/interface.ts";
 
 export type { ReportConfig, ReportPeriod, ReportPeriodConfig } from "../server/config/interface.ts";

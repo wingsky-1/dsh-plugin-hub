@@ -77,7 +77,6 @@
     "name",
     "normalizeRangeDay",
     "panelCacheKey",
-    "previousClosedWindow",
     "sseData"
   ]
 }
