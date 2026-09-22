@@ -89,9 +89,10 @@ read-only question snapshots.
 
 ## Deferred
 
-- Host locale-service subscription (notifier-style `locale.subscribe` rebind): the React tab
-  reads the browser locale once at mount, so live language switching without a reload is not
-  wired yet. The registered label is already a thunk, so adding the subscription is additive.
+- Host locale-service subscription (notifier-style `locale.subscribe` rebind): DONE in PR #963
+  (`bindTranslate`/`unbindTranslate` in `src/client/locale.ts`, `jev-decide` dict register +
+  subscribe rebind in `src/client/index.tsx`, 12 wired tests). Local-dict fallback kept
+  (unlike notifier's key fallback) so legacy runtimes still render Chinese copy.
 - Per-option probabilities in history: the official SystemOne response carries a single
   `choice`/`score` + `confidence`, so the UI renders one bar per decision instead of one bar
   per candidate until the upstream wire protocol returns per-option values.
