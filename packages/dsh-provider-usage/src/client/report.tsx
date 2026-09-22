@@ -1,13 +1,18 @@
 /**
- * dsh-provider-usage — 设置面板「用量报告」区块。
+ * dsh-provider-usage — 设置面板「用量报告」区块（#940 P0）。
  *
  * SettingsPage 子区块形态（与 TrendSection 同层挂接，从简不另开顶层 tab）：
- * - 配置卡片：日/周/月各独立开关与触发时刻 + 周起点/月内日 + provider/model 路由 +
- *   提示词模板 + 推送开关，保存走 POST /report-config（宿主归一化落盘 + 调度器热更新）；
- * - 手动生成：指定周期立即生成（POST /reports/generate，成功后刷新历史列表）；
- * - 历史列表：倒序展示（GET /reports），行点击展开详情（GET /reports/detail，
- *   宿主端已双层净化——落盘 escHtml + 读侧 sanitizeHtml，此处 innerHTML 注入安全面）；
- * - 空态为行动邀请式文案。
+ * - 配置四区各自独立展开收起（调度 / 路由与范围 / 提示词 / 手动生成），
+ *   折叠头保留摘要与脏状态（未保存），保存走 POST /report-config
+ *   （宿主归一化落盘 + 调度器热更新）；历史已搬至独立 HistorySection 页；
+ * - 提示词按任务目标 / 统计数据 / 撰写结构 / 硬性约束结构化编辑
+ *   （report-helpers.ts 纯逻辑解析合成；红线默认折叠；变量 chip 只读；
+ *   字数预算与约束计数展示；支持恢复默认；非标准结构回退整体编辑，不丢文本）；
+ * - 手动生成：指定周期立即生成（POST /reports/generate；成功经 onGeneratedRow
+ *   回调由壳切历史页并展开，Q4）；
+ * - 历史列表归 history.tsx 所有，本文件不再持有列表/详情状态。
+ * - 材质走 Liquid Glass（dou-reportGlass：半透明 +  backdrop 模糊 + 0.5px 光边，
+ *   全部颜色经 --dsw-alias-*，见 style.css）。
  *
  * 客户端干净模块纪律：只 export 组件与必要常量，不写 loader；
  * fetch 走 core.ts 既有 fetchTimeout 封装；文案全部经 locales 字典。
@@ -15,16 +20,20 @@
 import * as React from "react";
 import { fetchTimeout, REPORT_GENERATE_STATUS_URL } from "./core.ts";
 import { dirDisplayLabel, dirNeedsScopeNote, dirStackId } from "./trend-math.js";
+import {
+  composePrompt,
+  isPromptsDirty,
+  isRoutingDirty,
+  isScheduleDirty,
+  parsePrompt,
+  promptSectionStats,
+  PROMPT_STATS_VAR,
+} from "./report-helpers.ts";
+import type { ReportMetaView } from "./history.tsx";
 import { t } from "../../../../shared/client/i18n.js";
 
 /** 报告五路由经 ./shared/contract.ts 具名表（host-seams R2 收敛，字面量只留契约一份）。 */
-import {
-  REPORT_CONFIG_URL,
-  REPORT_DETAIL_URL,
-  REPORT_GENERATE_URL,
-  REPORT_MODELS_URL,
-  REPORTS_URL,
-} from "./shared/contract.ts";
+import { REPORT_CONFIG_URL, REPORT_GENERATE_URL, REPORT_MODELS_URL } from "./shared/contract.ts";
 
 /** 轮询退避：1s → 2s → 4s 封顶 5s；上限约 2 分钟。 */
 const POLL_INITIAL_DELAY_MS = 1_000;
@@ -86,86 +95,6 @@ export interface ReportModelOption {
   name?: string;
 }
 
-/** 报告元数据（/reports 列表行与 detail.meta）。 */
-export interface ReportMetaView {
-  period: ReportPeriodView;
-  key: string;
-  startDay: string;
-  endDay: string;
-  provider: string;
-  model: string;
-  generatedAt: number;
-  durationMs: number;
-  ok: boolean;
-  error?: string;
-  tokens?: {
-    inputTokens: number | null;
-    outputTokens: number | null;
-    totalTokens: number | null;
-    cacheReadTokens: number | null;
-    cacheWriteTokens: number | null;
-  };
-  /** 空窗口标记（当期无任何用量，未调模型未落盘）。 */
-  noData?: boolean;
-  /** hero 摘要（成功生成时落盘；旧报告无此字段不渲染 hero）。 */
-  summary?: {
-    total: number | null;
-    calls: number;
-    activeDays: number;
-    windowDays: number;
-    longestStreak: number;
-    wowRatio: number | null;
-    peakDay: { day: string; total: number | null } | null;
-  };
-}
-
-/** 环比箭头胶囊（null = 上一窗口无数据，不做对比）。 */
-function ratioBadge(ratio: number | null): React.ReactElement {
-  if (ratio === null) return <span className="dou-heroRatio">—</span>;
-  const up = ratio >= 1;
-  const pct = Math.round(Math.abs(ratio - 1) * 100);
-  return (
-    <span className={`dou-heroRatio ${up ? "dou-heroRatioUp" : "dou-heroRatioDown"}`}>
-      {up ? "↑" : "↓"} {pct === 0 ? t("reportRatioFlat") : t("reportRatioPct", { n: pct })}
-    </span>
-  );
-}
-
-/** 详情页年报 hero 区（海报式渐变不随主题反转，文字恒浅色）。 */
-function reportHero(s: NonNullable<ReportMetaView["summary"]>): React.ReactElement {
-  const stats: Array<[string, string]> = [
-    [t("reportHeroCalls"), `${s.calls.toLocaleString("en-US")}`],
-    [t("reportHeroActive"), `${s.activeDays} / ${s.windowDays}`],
-    [t("reportHeroStreak"), `${s.longestStreak}`],
-    [
-      t("reportHeroPeak"),
-      s.peakDay !== null ? `${(s.peakDay.total ?? 0).toLocaleString("en-US")}` : "—",
-    ],
-  ];
-  return (
-    <div className="dou-hero">
-      <div className="dou-heroBig">
-        <span className="dou-heroNum">
-          {s.total !== null ? s.total.toLocaleString("en-US") : "—"}
-        </span>
-        <span className="dou-heroNumUnit">{t("reportHeroTotal")}</span>
-        {ratioBadge(s.wowRatio)}
-      </div>
-      <div className="dou-heroStats">
-        {stats.map(([label, value]) => (
-          <div className="dou-heroStat" key={label}>
-            <small>{label}</small>
-            <b>{value}</b>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-/** 历史行唯一 id（列表展开态标记用）。 */
-const rowIdOf = (m: ReportMetaView): string => `${m.period}:${m.key}`;
-
 const PERIODS: ReportPeriodView[] = ["daily", "weekly", "monthly"];
 
 const periodLabel = (period: ReportPeriodView): string =>
@@ -175,10 +104,193 @@ const periodLabel = (period: ReportPeriodView): string =>
       ? t("reportPeriodWeekly")
       : t("reportPeriodMonthly");
 
+// ---------------------------------------------------------------- P0 折叠区
+
+/** 报告配置折叠区 id（四区各自独立展开收起；历史为独立页）。 */
+export type ReportSectionId = "schedule" | "routing" | "prompts" | "generate";
+
+/** 默认开合（#940 草图 3.4：路由与提示词展开，其余收起）。 */
+export const DEFAULT_OPEN_SECTIONS: Record<ReportSectionId, boolean> = {
+  schedule: false,
+  routing: true,
+  prompts: true,
+  generate: false,
+};
+
+/** 独立收缩折叠区（折叠头保留摘要与脏状态；内容区卸载不丢 draft）。 */
+function ReportCollapsibleSection(props: {
+  id: ReportSectionId;
+  title: string;
+  summary: string;
+  dirty: boolean;
+  open: boolean;
+  onToggle: (id: ReportSectionId) => void;
+  children: React.ReactNode;
+}): React.ReactElement {
+  const { id, title, summary, dirty, open, onToggle, children } = props;
+  return (
+    <div className="dou-reportSection dou-reportGlass">
+      <button
+        type="button"
+        className="dou-reportSectionHead"
+        aria-expanded={open}
+        aria-controls={"dou-report-" + id + "-body"}
+        onClick={() => onToggle(id)}
+      >
+        <span className="dou-reportSectionArrow" aria-hidden="true">
+          {open ? "▾" : "▸"}
+        </span>
+        <span className="dou-reportSectionTitle">{title}</span>
+        {dirty ? <span className="dou-reportDirty">{t("reportUnsaved")}</span> : null}
+        <span className="dou-reportSectionSummary">{summary}</span>
+      </button>
+      {open ? (
+        <div className="dou-reportSectionBody" id={"dou-report-" + id + "-body"}>
+          {children}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * 结构化提示词编辑器（单周期）。
+ * 标准四段结构 → 四块分开编辑（统计块为 {stats} 只读 chip；
+ * 硬性约束默认折叠）；非标准结构 → 整体 textarea 回退（文本无损）。
+ */
+function PromptEditor(props: {
+  period: ReportPeriodView;
+  text: string;
+  defaultText: string | null;
+  redlineOpen: boolean;
+  onToggleRedline: () => void;
+  onChange: (next: string) => void;
+}): React.ReactElement {
+  const { period, text, defaultText, redlineOpen, onToggleRedline, onChange } = props;
+  const parsed = parsePrompt(text);
+  const stats = promptSectionStats(text);
+  const budgetText = stats.budget !== null ? stats.budget + t("reportPromptWordUnit") : "—";
+  const setPart = (part: "goal" | "stats" | "structure" | "constraints", value: string): void => {
+    if (!parsed.ok) {
+      onChange(value);
+      return;
+    }
+    onChange(composePrompt({ ...parsed.sections, [part]: value }, period));
+  };
+  return (
+    <div className="dou-reportPromptEditor">
+      <div className="dou-reportPromptMeta">
+        <span className="dou-reportPromptChip" title={t("reportStatsVarNote")}>
+          {PROMPT_STATS_VAR}
+        </span>
+        <span className="dou-reportPromptBudget">
+          {t("reportBudgetLabel")} {budgetText}
+        </span>
+        <span className="dou-reportPromptBudget">
+          {t("reportConstraintCount", { n: stats.constraintCount })}
+        </span>
+        {defaultText !== null ? (
+          <button
+            type="button"
+            className="dou-reportPromptReset"
+            onClick={() => onChange(defaultText)}
+          >
+            {t("reportPromptReset")}
+          </button>
+        ) : null}
+      </div>
+      {parsed.ok ? (
+        <React.Fragment>
+          <label className="dou-reportCol">
+            <span className="dou-reportLabel">{t("reportGoalLabel")}</span>
+            <textarea
+              className="dou-reportTextarea"
+              rows={3}
+              value={parsed.sections.goal}
+              onChange={(e: unknown) =>
+                setPart("goal", (e as { target: { value: string } }).target.value)
+              }
+            />
+          </label>
+          <div className="dou-reportCol">
+            <span className="dou-reportLabel">{t("reportStatsLabel")}</span>
+            <div className="dou-reportPromptStatsRow">
+              <span className="dou-reportPromptChip">{PROMPT_STATS_VAR}</span>
+              <span className="dou-reportHint">{t("reportStatsVarNote")}</span>
+            </div>
+            {parsed.sections.stats.trim() !== PROMPT_STATS_VAR ? (
+              <textarea
+                className="dou-reportTextarea"
+                rows={2}
+                aria-label={t("reportStatsLabel")}
+                value={parsed.sections.stats}
+                onChange={(e: unknown) =>
+                  setPart("stats", (e as { target: { value: string } }).target.value)
+                }
+              />
+            ) : null}
+          </div>
+          <label className="dou-reportCol">
+            <span className="dou-reportLabel">{t("reportStructureLabel")}</span>
+            <textarea
+              className="dou-reportTextarea"
+              rows={6}
+              value={parsed.sections.structure}
+              onChange={(e: unknown) =>
+                setPart("structure", (e as { target: { value: string } }).target.value)
+              }
+            />
+          </label>
+          <div className="dou-reportCol">
+            <button
+              type="button"
+              className="dou-reportRedlineHead"
+              aria-expanded={redlineOpen}
+              onClick={onToggleRedline}
+            >
+              <span aria-hidden="true">{redlineOpen ? "▾" : "▸"}</span>
+              {t("reportConstraintsLabel")}
+              <span className="dou-reportSectionSummary">
+                {t("reportConstraintCount", { n: stats.constraintCount })}
+              </span>
+            </button>
+            {redlineOpen ? (
+              <textarea
+                className="dou-reportTextarea"
+                rows={5}
+                aria-label={t("reportConstraintsLabel")}
+                value={parsed.sections.constraints}
+                onChange={(e: unknown) =>
+                  setPart("constraints", (e as { target: { value: string } }).target.value)
+                }
+              />
+            ) : null}
+          </div>
+        </React.Fragment>
+      ) : (
+        <React.Fragment>
+          <span className="dou-reportHint">{t("reportPromptRawHint")}</span>
+          <textarea
+            className="dou-reportTextarea"
+            rows={7}
+            value={text}
+            onChange={(e: unknown) => onChange((e as { target: { value: string } }).target.value)}
+          />
+        </React.Fragment>
+      )}
+      <span className="dou-reportHint">{t("reportPromptHint")}</span>
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------- 组件
 
-/** 「用量报告」区块（SettingsPage 子区块）。 */
-export function ReportSection(): React.ReactElement {
+/** 「用量报告」区块（SettingsPage 子区块；历史归独立页）。
+ * onGeneratedRow：生成成功后由壳切历史页并展开对应行（Q4）。 */
+export function ReportSection(props: {
+  onGeneratedRow: (m: ReportMetaView) => void;
+}): React.ReactElement {
+  const { onGeneratedRow } = props;
   // 配置（编辑态 draft 与宿主归一化响应同构；载入前 null = 未就绪）
   const [draft, setDraft] = React.useState<ReportConfigView | null>(null);
   const [providers, setProviders] = React.useState<ReportProviderOption[]>([]);
@@ -201,14 +313,7 @@ export function ReportSection(): React.ReactElement {
     },
     [],
   );
-  const [list, setList] = React.useState<ReportMetaView[] | null>(null);
-  const [listFailed, setListFailed] = React.useState(false);
-  const [openId, setOpenId] = React.useState<string | null>(null);
-  const [detail, setDetail] = React.useState<{
-    id: string;
-    html: string;
-    meta: ReportMetaView;
-  } | null>(null);
+  // 历史列表/详情状态归 history.tsx 所有（本页仅经 onGeneratedRow 回调跳转）。
   // 模型候选：按 provider 缓存（null = 已请求且失败/为空 → 降级手填；undefined = 未请求）
   const [modelsCache, setModelsCache] = React.useState<Record<string, ReportModelOption[] | null>>(
     {},
@@ -216,6 +321,28 @@ export function ReportSection(): React.ReactElement {
   // 三周期提示词：当前编辑的周期 tab + 宿主默认模板（「恢复默认」数据源）
   const [promptTab, setPromptTab] = React.useState<ReportPeriodView>("daily");
   const [promptDefaults, setPromptDefaults] = React.useState<ReportPromptsView | null>(null);
+  // 四区独立开合（默认开合见 DEFAULT_OPEN_SECTIONS）+ 已保存基线（脏状态比对）
+  // + 红线（硬性约束）按周期各自默认折叠
+  const [openSections, setOpenSections] = React.useState<Record<ReportSectionId, boolean>>({
+    ...DEFAULT_OPEN_SECTIONS,
+  });
+  const [baseline, setBaseline] = React.useState<ReportConfigView | null>(null);
+  const [redlineOpen, setRedlineOpen] = React.useState<Record<ReportPeriodView, boolean>>({
+    daily: false,
+    weekly: false,
+    monthly: false,
+  });
+  const toggleSection = React.useCallback((id: ReportSectionId): void => {
+    setOpenSections((s) => ({ ...s, [id]: !s[id] }));
+  }, []);
+  const setAllSections = React.useCallback((open: boolean): void => {
+    setOpenSections({
+      schedule: open,
+      routing: open,
+      prompts: open,
+      generate: open,
+    });
+  }, []);
   // 手动生成的空窗口提示（区别于错误）
   const [genNotice, setGenNotice] = React.useState<string | null>(null);
 
@@ -236,6 +363,7 @@ export function ReportSection(): React.ReactElement {
       };
       if (body.config !== undefined) {
         setDraft(body.config);
+        setBaseline(body.config);
         setConfigFailed(false);
       }
       if (Array.isArray(body.providers)) setProviders(body.providers);
@@ -250,26 +378,9 @@ export function ReportSection(): React.ReactElement {
     }
   }, []);
 
-  /** 读历史索引（倒序）。 */
-  const loadReports = React.useCallback(async (): Promise<void> => {
-    try {
-      const res = await fetchTimeout(REPORTS_URL, {
-        headers: { Accept: "application/json" },
-        cache: "no-store",
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const body = (await res.json()) as { ok?: boolean; reports?: ReportMetaView[] };
-      setList(Array.isArray(body.reports) ? body.reports : []);
-      setListFailed(false);
-    } catch {
-      setListFailed(true);
-    }
-  }, []);
-
   React.useEffect(() => {
     void loadConfig();
-    void loadReports();
-  }, [loadConfig, loadReports]);
+  }, [loadConfig]);
 
   // 模型候选：provider 空串（跟随默认）按注册序首个解析（与宿主 resolveRoute 同序同源）；
   // 按需拉取 + 组件生命周期内 memo（每 provider 至多一次）；live 标志丢弃过期响应防竞态。
@@ -332,6 +443,7 @@ export function ReportSection(): React.ReactElement {
       };
       if (!res.ok || body.config === undefined) throw new Error(body.error ?? `HTTP ${res.status}`);
       setDraft(body.config);
+      setBaseline(body.config);
       setSaveState("saved");
     } catch (e) {
       setSaveState("fail");
@@ -350,6 +462,7 @@ export function ReportSection(): React.ReactElement {
    * 大概率已生成）→ 抛 PollInProgressError（调用方转「仍在生成」正向提示，
    * 绝不误报失败）。
    * 组件卸载（disposedRef）后立即中止。
+   * 单轮 abort/断网视为瞬态，退避后继续（上限内转「仍在生成」，不误报失败）。
    * reused 透传——executor 侧幂等短路复用与 200 直接复用路径提示对称。
    */
   const pollReportTask = async (
@@ -359,10 +472,25 @@ export function ReportSection(): React.ReactElement {
     for (let i = 0; i < POLL_MAX_ROUNDS; i += 1) {
       await sleep(delay);
       if (disposedRef.current) throw new PollInProgressError();
-      const res = await fetchTimeout(
-        `${REPORT_GENERATE_STATUS_URL}?taskId=${encodeURIComponent(taskId)}`,
-        { headers: { Accept: "application/json" }, cache: "no-store" },
-      );
+      // 单轮瞬态网络中断（移动端切后台/半开连接 abort）不判死：继续下一轮，
+      // 轮次上限兜底转「仍在生成」（服务端任务侧照常推进，不会因客户端等待丢失）
+      let res: Response;
+      try {
+        res = await fetchTimeout(
+          `${REPORT_GENERATE_STATUS_URL}?taskId=${encodeURIComponent(taskId)}`,
+          { headers: { Accept: "application/json" }, cache: "no-store" },
+        );
+      } catch (e) {
+        if (e instanceof DOMException && (e.name === "AbortError" || e.name === "TimeoutError")) {
+          delay = Math.min(delay * 2, POLL_MAX_DELAY_MS);
+          continue;
+        }
+        if (e instanceof TypeError) {
+          delay = Math.min(delay * 2, POLL_MAX_DELAY_MS);
+          continue;
+        }
+        throw e;
+      }
       if (res.status === 404) throw new PollInProgressError(); // 任务已修剪：转「仍在生成」
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const body = (await res.json().catch(() => ({}))) as {
@@ -382,7 +510,7 @@ export function ReportSection(): React.ReactElement {
     throw new PollInProgressError();
   };
 
-  /** 手动生成（异步任务化）：POST → 幂等复用(200+meta) 或 202+taskId 轮询 → 刷新列表并展开。 */
+  /** 手动生成（异步任务化）：POST → 幂等复用(200+meta) 或 202+taskId 轮询 → 经壳跳转历史页展开（Q4）。 */
   const onGenerate = async (): Promise<void> => {
     if (generating) return;
     setGenerating(true);
@@ -414,10 +542,11 @@ export function ReportSection(): React.ReactElement {
         }
         if (body.reused === true) setGenNotice(t("reportReused"));
         else setGenNotice(null);
-        await loadReports();
+        // 复用不跳转：用户正停留在配置页，强制切页体验差；只留提示，历史页一 tap 即达
+        // （上一行保持单语句形态：smoke 契约 #629 P2 用 bundle 正则锁定该行，改形状先改测试）
+        if (body.reused === true) return;
         if (disposedRef.current) return;
-        setOpenId(rowIdOf(body.meta)); // 生成成功后展开详情
-        return;
+        onGeneratedRow(body.meta); // 成功经壳切历史页并展开
       }
       // 202 + taskId：轮询直到完成
       let meta: ReportMetaView;
@@ -431,7 +560,6 @@ export function ReportSection(): React.ReactElement {
           if (disposedRef.current) return;
           // 超时：后端可能仍在生成——正向提示，不报失败
           setGenNotice(t("reportStillGenerating"));
-          await loadReports();
           return;
         }
         throw e;
@@ -441,11 +569,14 @@ export function ReportSection(): React.ReactElement {
         setGenNotice(t("reportNoData"));
         return;
       }
-      // executor 侧幂等短路复用 → 与 200 直接复用路径对称提示「已复用」
-      setGenNotice(polledReused ? t("reportReused") : null);
-      await loadReports();
+      // executor 侧幂等短路复用 → 与 200 直接复用路径对称：只提示，不跳转
+      if (polledReused) {
+        setGenNotice(t("reportReused"));
+        return;
+      }
+      setGenNotice(null);
       if (disposedRef.current) return;
-      setOpenId(rowIdOf(meta)); // 生成成功后展开详情
+      onGeneratedRow(meta); // 成功经壳切历史页并展开
     } catch (e) {
       if (disposedRef.current) return;
       setGenError(t("reportGenerateFail", { msg: e instanceof Error ? e.message : String(e) }));
@@ -454,466 +585,456 @@ export function ReportSection(): React.ReactElement {
     }
   };
 
-  /** 行点击展开/收起详情（HTML 已由宿主双层净化）。 */
-  const toggleDetail = async (m: ReportMetaView): Promise<void> => {
-    const id = rowIdOf(m);
-    if (openId === id) {
-      setOpenId(null);
-      setDetail(null);
-      return;
-    }
-    setOpenId(id);
-    setDetail(null);
-    try {
-      const params = new URLSearchParams({ period: m.period, key: m.key });
-      const res = await fetchTimeout(`${REPORT_DETAIL_URL}?${params.toString()}`, {
-        headers: { Accept: "application/json" },
-        cache: "no-store",
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const body = (await res.json()) as { ok?: boolean; html?: string; meta?: ReportMetaView };
-      if (typeof body.html !== "string" || body.meta === undefined) throw new Error("bad-detail");
-      setDetail({ id, html: body.html, meta: body.meta });
-    } catch {
-      setDetail({ id, html: "", meta: m });
-    }
-  };
+  const failed = configFailed;
 
-  const failed = configFailed || listFailed;
+  // ---- P0 折叠摘要与脏状态（基线 null = 尚未载入已保存配置，不标脏） ----
+  const scheduleDirty = draft !== null && baseline !== null && isScheduleDirty(draft, baseline);
+  const routingDirty =
+    draft !== null &&
+    baseline !== null &&
+    isRoutingDirty(
+      {
+        provider: draft.provider,
+        model: draft.model,
+        directories: draft.directories,
+        push: draft.push,
+      },
+      {
+        provider: baseline.provider,
+        model: baseline.model,
+        directories: baseline.directories,
+        push: baseline.push,
+      },
+    );
+  const promptsDirty =
+    draft !== null && baseline !== null && isPromptsDirty(draft.prompts, baseline.prompts);
+  const anyDirty = scheduleDirty || routingDirty || promptsDirty;
+  const scheduleSummary =
+    draft === null
+      ? ""
+      : (Object.keys({ daily: 1, weekly: 1, monthly: 1 }) as ReportPeriodView[])
+          .map(
+            (p) =>
+              periodLabel(p) + " " + (draft[p].enabled ? draft[p].time : t("reportSectionOff")),
+          )
+          .join(" · ");
+  const routingSummary =
+    draft === null
+      ? ""
+      : (() => {
+          const providerLabel = draft.provider === "" ? t("reportProviderDefault") : draft.provider;
+          const modelLabel = draft.model === "" ? t("reportModelDefault") : draft.model;
+          const dirLabel =
+            draft.directories.length === 0
+              ? t("reportDirectoriesAll")
+              : t("reportSummaryNDirs", { n: draft.directories.length });
+          return [providerLabel, modelLabel, dirLabel].join(" · ");
+        })();
+  const promptStatsNow = draft === null ? null : promptSectionStats(draft.prompts[promptTab]);
+  const promptSummary =
+    draft === null || promptStatsNow === null
+      ? ""
+      : [
+          periodLabel(promptTab),
+          (promptStatsNow.budget !== null ? promptStatsNow.budget : "—") +
+            t("reportPromptWordUnit"),
+          t("reportConstraintCount", { n: promptStatsNow.constraintCount }),
+        ].join(" · ");
+  const generateSummary =
+    periodLabel(genPeriod) + " · " + (genForce ? t("reportForceShort") : t("reportNoForceShort"));
+  // 历史摘要归历史独立页所有。
 
   return (
-    <section className="dou-report" style={{ marginBottom: 16 }}>
-      <h2 style={{ fontSize: 13, fontWeight: 600, margin: "0 0 8px" }}>{t("reportTitle")}</h2>
+    <section className="dou-report dou-reportGlass" style={{ marginBottom: 16 }}>
+      <div className="dou-reportHead">
+        <h2 style={{ fontSize: 13, fontWeight: 600, margin: 0 }}>{t("reportTitle")}</h2>
+        {anyDirty ? <span className="dou-reportDirty">{t("reportUnsaved")}</span> : null}
+        <span className="dou-reportHeadSpacer" />
+        <button
+          type="button"
+          className="dou-reportPromptReset"
+          onClick={() => setAllSections(false)}
+        >
+          {t("reportCollapseAll")}
+        </button>
+        <button
+          type="button"
+          className="dou-reportPromptReset"
+          onClick={() => setAllSections(true)}
+        >
+          {t("reportExpandAll")}
+        </button>
+        {draft !== null ? (
+          <button
+            type="button"
+            className="dou-reportSaveBtn"
+            disabled={saving}
+            onClick={() => void onSave()}
+          >
+            {t("reportSave")}
+          </button>
+        ) : null}
+        {saveState === "saved" ? (
+          <span className="dou-reportSaved">{t("reportSaved")}</span>
+        ) : saveState === "fail" ? (
+          <span className="dou-reportSaveFail">{t("reportSaveFail", { msg: "HTTP error" })}</span>
+        ) : null}
+      </div>
       {failed ? <div className="dou-reportFetchFail">{t("reportFetchFail")}</div> : null}
-      {/* ---- 配置卡片 ---- */}
+      {/* ---- 配置四区（各自独立展开收起；历史为独立页） ---- */}
       {draft !== null ? (
-        <div className="dou-reportCard">
-          {PERIODS.map((period) => (
-            <div className="dou-reportRow" key={period}>
-              <label className="dou-reportEnabled">
-                <input
-                  type="checkbox"
-                  checked={draft[period].enabled}
-                  onChange={(e: unknown) =>
-                    patchPeriod(period, {
-                      enabled: (e as { target: { checked: boolean } }).target.checked,
-                    })
-                  }
-                />
-                {periodLabel(period)}
-              </label>
-              <span className="dou-reportLabel">{t("reportTime")}</span>
-              <input
-                type="time"
-                className="dou-reportTime"
-                aria-label={`${periodLabel(period)} ${t("reportTime")}`}
-                value={draft[period].time}
-                onChange={(e: unknown) =>
-                  patchPeriod(period, { time: (e as { target: { value: string } }).target.value })
-                }
-              />
-              {period === "weekly" ? (
-                <label className="dou-reportInline">
-                  {t("reportWeekStartsOn")}
-                  <select
-                    className="dou-reportSelect"
-                    value={String(draft.weekly.weekStartsOn)}
+        <div className="dou-reportSections">
+          <ReportCollapsibleSection
+            id="schedule"
+            title={t("reportSectionSchedule")}
+            summary={scheduleSummary}
+            dirty={scheduleDirty}
+            open={openSections.schedule}
+            onToggle={toggleSection}
+          >
+            <div className="dou-reportCard">
+              {PERIODS.map((period) => (
+                <div className="dou-reportRow" key={period}>
+                  <label className="dou-reportEnabled">
+                    <input
+                      type="checkbox"
+                      checked={draft[period].enabled}
+                      onChange={(e: unknown) =>
+                        patchPeriod(period, {
+                          enabled: (e as { target: { checked: boolean } }).target.checked,
+                        })
+                      }
+                    />
+                    {periodLabel(period)}
+                  </label>
+                  <span className="dou-reportLabel">{t("reportTime")}</span>
+                  <input
+                    type="time"
+                    className="dou-reportTime"
+                    aria-label={`${periodLabel(period)} ${t("reportTime")}`}
+                    value={draft[period].time}
+                    disabled={!draft[period].enabled}
                     onChange={(e: unknown) =>
-                      patchPeriod("weekly", {
-                        weekStartsOn:
-                          (e as { target: { value: string } }).target.value === "0" ? 0 : 1,
+                      patchPeriod(period, {
+                        time: (e as { target: { value: string } }).target.value,
                       })
                     }
+                  />
+                  {period === "weekly" ? (
+                    <label className="dou-reportInline">
+                      {t("reportWeekStartsOn")}
+                      <select
+                        className="dou-reportSelect"
+                        value={String(draft.weekly.weekStartsOn)}
+                        disabled={!draft.weekly.enabled}
+                        onChange={(e: unknown) =>
+                          patchPeriod("weekly", {
+                            weekStartsOn:
+                              (e as { target: { value: string } }).target.value === "0" ? 0 : 1,
+                          })
+                        }
+                      >
+                        <option value="1">{t("reportWeekMonday")}</option>
+                        <option value="0">{t("reportWeekSunday")}</option>
+                      </select>
+                    </label>
+                  ) : null}
+                  {period === "monthly" ? (
+                    <label className="dou-reportInline">
+                      {t("reportDayOfMonth")}
+                      <input
+                        type="number"
+                        min={1}
+                        max={28}
+                        className="dou-reportNum"
+                        value={draft.monthly.dayOfMonth}
+                        disabled={!draft.monthly.enabled}
+                        onChange={(e: unknown) => {
+                          const n = Number((e as { target: { value: string } }).target.value);
+                          patchPeriod("monthly", {
+                            dayOfMonth: Number.isInteger(n) ? n : draft.monthly.dayOfMonth,
+                          });
+                        }}
+                      />
+                    </label>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          </ReportCollapsibleSection>
+          <ReportCollapsibleSection
+            id="routing"
+            title={t("reportSectionRouting")}
+            summary={routingSummary}
+            dirty={routingDirty}
+            open={openSections.routing}
+            onToggle={toggleSection}
+          >
+            <div className="dou-reportCard">
+              {/* provider / model 路由 */}
+              <div className="dou-reportRow">
+                <label className="dou-reportInline">
+                  {t("reportProvider")}
+                  <select
+                    className="dou-reportSelect"
+                    value={draft.provider}
+                    onChange={(e: unknown) =>
+                      patchTop({ provider: (e as { target: { value: string } }).target.value })
+                    }
                   >
-                    <option value="1">{t("reportWeekMonday")}</option>
-                    <option value="0">{t("reportWeekSunday")}</option>
+                    <option value="">{t("reportProviderDefault")}</option>
+                    {providers.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {typeof p.name === "string" && p.name.length > 0
+                          ? `${p.name} (${p.id})`
+                          : p.id}
+                      </option>
+                    ))}
                   </select>
                 </label>
-              ) : null}
-              {period === "monthly" ? (
                 <label className="dou-reportInline">
-                  {t("reportDayOfMonth")}
-                  <input
-                    type="number"
-                    min={1}
-                    max={28}
-                    className="dou-reportNum"
-                    value={draft.monthly.dayOfMonth}
-                    onChange={(e: unknown) => {
-                      const n = Number((e as { target: { value: string } }).target.value);
-                      patchPeriod("monthly", {
-                        dayOfMonth: Number.isInteger(n) ? n : draft.monthly.dayOfMonth,
-                      });
-                    }}
-                  />
-                </label>
-              ) : null}
-            </div>
-          ))}
-          {/* provider / model 路由 */}
-          <div className="dou-reportRow">
-            <label className="dou-reportInline">
-              {t("reportProvider")}
-              <select
-                className="dou-reportSelect"
-                value={draft.provider}
-                onChange={(e: unknown) =>
-                  patchTop({ provider: (e as { target: { value: string } }).target.value })
-                }
-              >
-                <option value="">{t("reportProviderDefault")}</option>
-                {providers.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {typeof p.name === "string" && p.name.length > 0 ? `${p.name} (${p.id})` : p.id}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="dou-reportInline">
-              {t("reportModel")}
-              {/* 模型候选已加载 → 下拉（首项「跟随默认」=空串语义=注册序首个）；
+                  {t("reportModel")}
+                  {/* 模型候选已加载 → 下拉（首项「跟随默认」=空串语义=注册序首个）；
                   当前配置值不在列表 → 兜底项渲染旧值，绝不隐式改写；未加载/失败 → 降级手填。 */}
-              {haveModels ? (
-                <select
-                  className="dou-reportSelect"
-                  value={draft.model}
-                  onChange={(e: unknown) =>
-                    patchTop({ model: (e as { target: { value: string } }).target.value })
-                  }
-                >
-                  <option key="" value="">
-                    {t("reportModelDefault")}
-                  </option>
-                  {draft.model !== "" && !models!.some((m) => m.id === draft.model) ? (
-                    <option key="__kept" value={draft.model}>
-                      {t("reportModelKept", { v: draft.model })}
-                    </option>
-                  ) : null}
-                  {models!.map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {typeof m.name === "string" && m.name.length > 0
-                        ? `${m.name} (${m.id})`
-                        : m.id}
-                    </option>
-                  ))}
-                </select>
-              ) : (
-                <input
-                  type="text"
-                  className="dou-reportInput"
-                  placeholder={t("reportModelHint")}
-                  value={draft.model}
-                  onChange={(e: unknown) =>
-                    patchTop({ model: (e as { target: { value: string } }).target.value })
-                  }
-                />
-              )}
-            </label>
-          </div>
-          {models !== null && !haveModels ? (
-            <div className="dou-reportHint">{t("reportModelFallback")}</div>
-          ) : null}
-          {/* 目录范围多选（默认全部；空数组 = 全部目录语义）。
+                  {haveModels ? (
+                    <select
+                      className="dou-reportSelect"
+                      value={draft.model}
+                      onChange={(e: unknown) =>
+                        patchTop({ model: (e as { target: { value: string } }).target.value })
+                      }
+                    >
+                      <option key="" value="">
+                        {t("reportModelDefault")}
+                      </option>
+                      {draft.model !== "" && !models!.some((m) => m.id === draft.model) ? (
+                        <option key="__kept" value={draft.model}>
+                          {t("reportModelKept", { v: draft.model })}
+                        </option>
+                      ) : null}
+                      {models!.map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {typeof m.name === "string" && m.name.length > 0
+                            ? `${m.name} (${m.id})`
+                            : m.id}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      type="text"
+                      className="dou-reportInput"
+                      placeholder={t("reportModelHint")}
+                      value={draft.model}
+                      onChange={(e: unknown) =>
+                        patchTop({ model: (e as { target: { value: string } }).target.value })
+                      }
+                    />
+                  )}
+                </label>
+              </div>
+              {models !== null && !haveModels ? (
+                <div className="dou-reportHint">{t("reportModelFallback")}</div>
+              ) : null}
+              {/* 目录范围多选（默认全部；空数组 = 全部目录语义）。
               与 provider/model 范围控件同级同风格（dou-reportRow + dou-reportInline）；
               候选 = GET dirs（含未识别桶，恒「未识别」有标签 + 口径注释）；已保存值
               不在候选（目录数据已过留存期等）→ 兜底渲染旧值，绝不隐式改写用户配置。 */}
-          <div className="dou-reportCol">
-            <div className="dou-reportRow">
-              <span className="dou-reportLabel">{t("reportDirectories")}</span>
-              <label
-                className="dou-reportInline"
-                style={dirOptions.length === 0 ? { opacity: 0.55 } : undefined}
-              >
-                {/* 候选空时禁用（无候选可取消全选，空 = 全部语义不变；视觉弱化
+              <div className="dou-reportCol">
+                <div className="dou-reportRow">
+                  <span className="dou-reportLabel">{t("reportDirectories")}</span>
+                  <label
+                    className="dou-reportInline"
+                    style={dirOptions.length === 0 ? { opacity: 0.55 } : undefined}
+                  >
+                    {/* 候选空时禁用（无候选可取消全选，空 = 全部语义不变；视觉弱化
                     提示不可交互，防点击无反馈） */}
-                <input
-                  type="checkbox"
-                  disabled={dirOptions.length === 0}
-                  checked={draft.directories.length === 0}
-                  onChange={(e: unknown) => {
-                    patchTop({
-                      directories: (e as { target: { checked: boolean } }).target.checked
-                        ? []
-                        : draft.directories,
-                    });
-                  }}
-                />
-                {t("reportDirectoriesAll")}
-              </label>
-              {dirOptions.length > 0 ? (
-                <>
-                  <button
-                    type="button"
-                    className="dou-reportPromptReset"
-                    onClick={() => {
-                      patchTop({ directories: [...dirOptions] });
-                    }}
-                  >
-                    {t("reportDirectoriesSelectAll")}
-                  </button>
-                  <button
-                    type="button"
-                    className="dou-reportPromptReset"
-                    onClick={() => {
-                      patchTop({ directories: [] });
-                    }}
-                  >
-                    {t("reportDirectoriesClear")}
-                  </button>
-                </>
-              ) : null}
-            </div>
-            {dirOptions.length > 0 ? (
-              <div className="dou-reportDirList">
-                {(draft.directories.some((d) => !dirOptions.includes(d))
-                  ? [...dirOptions, ...draft.directories.filter((d) => !dirOptions.includes(d))]
-                  : dirOptions
-                ).map((dir) => {
-                  const checked = draft.directories.includes(dir);
-                  // 未识别桶恒「未识别」+ 口径注释；异常值已由 dirStackId 归一
-                  const label = dirDisplayLabel(dir);
-                  const title = dirNeedsScopeNote(dir) ? t("trendDirUnidentifiedNote") : undefined;
-                  return (
-                    <label className="dou-reportInline dou-reportDirItem" key={dir} title={title}>
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        onChange={(e: unknown) => {
-                          const next = new Set(draft.directories);
-                          if ((e as { target: { checked: boolean } }).target.checked) next.add(dir);
-                          else next.delete(dir);
-                          patchTop({ directories: [...next] });
+                    <input
+                      type="checkbox"
+                      disabled={dirOptions.length === 0}
+                      checked={draft.directories.length === 0}
+                      onChange={(e: unknown) => {
+                        patchTop({
+                          directories: (e as { target: { checked: boolean } }).target.checked
+                            ? []
+                            : draft.directories,
+                        });
+                      }}
+                    />
+                    {t("reportDirectoriesAll")}
+                  </label>
+                  {dirOptions.length > 0 ? (
+                    <>
+                      <button
+                        type="button"
+                        className="dou-reportPromptReset"
+                        onClick={() => {
+                          patchTop({ directories: [...dirOptions] });
                         }}
-                      />
-                      {label}
-                    </label>
-                  );
-                })}
+                      >
+                        {t("reportDirectoriesSelectAll")}
+                      </button>
+                      <button
+                        type="button"
+                        className="dou-reportPromptReset"
+                        onClick={() => {
+                          patchTop({ directories: [] });
+                        }}
+                      >
+                        {t("reportDirectoriesClear")}
+                      </button>
+                    </>
+                  ) : null}
+                </div>
+                {dirOptions.length > 0 ? (
+                  <div className="dou-reportDirList">
+                    {(draft.directories.some((d) => !dirOptions.includes(d))
+                      ? [...dirOptions, ...draft.directories.filter((d) => !dirOptions.includes(d))]
+                      : dirOptions
+                    ).map((dir) => {
+                      const checked = draft.directories.includes(dir);
+                      // 未识别桶恒「未识别」+ 口径注释；异常值已由 dirStackId 归一
+                      const label = dirDisplayLabel(dir);
+                      const title = dirNeedsScopeNote(dir)
+                        ? t("trendDirUnidentifiedNote")
+                        : undefined;
+                      return (
+                        <label
+                          className="dou-reportInline dou-reportDirItem"
+                          key={dir}
+                          title={title}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={(e: unknown) => {
+                              const next = new Set(draft.directories);
+                              if ((e as { target: { checked: boolean } }).target.checked)
+                                next.add(dir);
+                              else next.delete(dir);
+                              patchTop({ directories: [...next] });
+                            }}
+                          />
+                          {label}
+                        </label>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <span className="dou-reportHint">{t("reportDirectoriesEmpty")}</span>
+                )}
+                {/* 保存后影响报告口径的提示（沿用既有 dou-reportHint 提示模式） */}
+                <span className="dou-reportHint">
+                  {draft.directories.length === 0
+                    ? t("reportDirectoriesHintAll")
+                    : t("reportDirectoriesHintScoped")}
+                </span>
               </div>
-            ) : (
-              <span className="dou-reportHint">{t("reportDirectoriesEmpty")}</span>
-            )}
-            {/* 保存后影响报告口径的提示（沿用既有 dou-reportHint 提示模式） */}
-            <span className="dou-reportHint">
-              {draft.directories.length === 0
-                ? t("reportDirectoriesHintAll")
-                : t("reportDirectoriesHintScoped")}
-            </span>
-          </div>
-          {/* 提示词模板（三周期各自独立模板 + 周期切换 tab + 恢复默认） */}
-          <div className="dou-reportCol">
-            <div className="dou-reportPromptTabs">
-              <span className="dou-reportLabel">{t("reportPrompt")}</span>
-              {PERIODS.map((p) => (
-                <button
-                  key={p}
-                  type="button"
-                  className={`dou-reportPromptTab${promptTab === p ? " dou-reportPromptTabActive" : ""}`}
-                  aria-pressed={promptTab === p}
-                  onClick={() => setPromptTab(p)}
-                >
-                  {periodLabel(p)}
-                </button>
-              ))}
-              {promptDefaults !== null ? (
-                <button
-                  type="button"
-                  className="dou-reportPromptReset"
-                  onClick={() =>
-                    patchTop({
-                      prompts: { ...draft.prompts, [promptTab]: promptDefaults[promptTab] },
-                    })
-                  }
-                >
-                  {t("reportPromptReset")}
-                </button>
-              ) : null}
+              <div className="dou-reportRow">
+                <label className="dou-reportEnabled">
+                  <input
+                    type="checkbox"
+                    checked={draft.push.enabled}
+                    onChange={(e: unknown) =>
+                      patchTop({
+                        push: { enabled: (e as { target: { checked: boolean } }).target.checked },
+                      })
+                    }
+                  />
+                  {t("reportPush")}
+                </label>
+              </div>
             </div>
-            <textarea
-              className="dou-reportTextarea"
-              rows={7}
-              value={draft.prompts[promptTab]}
-              onChange={(e: unknown) =>
-                patchTop({
-                  prompts: {
-                    ...draft.prompts,
-                    [promptTab]: (e as { target: { value: string } }).target.value,
-                  },
-                })
-              }
-            />
-            <span className="dou-reportHint">{t("reportPromptHint")}</span>
-          </div>
-          {/* 推送开关 + 保存 */}
-          <div className="dou-reportRow">
-            <label className="dou-reportEnabled">
-              <input
-                type="checkbox"
-                checked={draft.push.enabled}
-                onChange={(e: unknown) =>
-                  patchTop({
-                    push: { enabled: (e as { target: { checked: boolean } }).target.checked },
-                  })
-                }
-              />
-              {t("reportPush")}
-            </label>
-            <button
-              type="button"
-              className="dou-reportSaveBtn"
-              disabled={saving}
-              onClick={() => void onSave()}
-            >
-              {t("reportSave")}
-            </button>
-            {saveState === "saved" ? (
-              <span className="dou-reportSaved">{t("reportSaved")}</span>
-            ) : saveState === "fail" ? (
-              <span className="dou-reportSaveFail">
-                {t("reportSaveFail", { msg: "HTTP error" })}
-              </span>
-            ) : null}
-          </div>
+          </ReportCollapsibleSection>
+          <ReportCollapsibleSection
+            id="prompts"
+            title={t("reportSectionPrompts")}
+            summary={promptSummary}
+            dirty={promptsDirty}
+            open={openSections.prompts}
+            onToggle={toggleSection}
+          >
+            <div className="dou-reportCard">
+              {/* 提示词模板（三周期结构化编辑 + 周期切换 tab；恢复默认在编辑器内） */}
+              <div className="dou-reportCol">
+                <div className="dou-reportPromptTabs">
+                  <span className="dou-reportLabel">{t("reportPrompt")}</span>
+                  {PERIODS.map((p) => (
+                    <button
+                      key={p}
+                      type="button"
+                      className={`dou-reportPromptTab${promptTab === p ? " dou-reportPromptTabActive" : ""}`}
+                      aria-pressed={promptTab === p}
+                      onClick={() => setPromptTab(p)}
+                    >
+                      {periodLabel(p)}
+                    </button>
+                  ))}
+                </div>
+                <PromptEditor
+                  period={promptTab}
+                  text={draft.prompts[promptTab]}
+                  defaultText={promptDefaults !== null ? promptDefaults[promptTab] : null}
+                  redlineOpen={redlineOpen[promptTab]}
+                  onToggleRedline={() =>
+                    setRedlineOpen((r) => ({ ...r, [promptTab]: !r[promptTab] }))
+                  }
+                  onChange={(nextText) =>
+                    patchTop({ prompts: { ...draft.prompts, [promptTab]: nextText } })
+                  }
+                />
+              </div>
+            </div>
+          </ReportCollapsibleSection>
         </div>
       ) : null}
-      {/* ---- 手动生成 ---- */}
-      <div className="dou-reportRow dou-reportGenRow">
-        <select
-          className="dou-reportSelect"
-          value={genPeriod}
-          aria-label={t("reportPeriodSelect")}
-          onChange={(e: unknown) =>
-            setGenPeriod((e as { target: { value: string } }).target.value as ReportPeriodView)
-          }
-        >
-          {PERIODS.map((p) => (
-            <option key={p} value={p}>
-              {periodLabel(p)}
-            </option>
-          ))}
-        </select>
-        <button
-          type="button"
-          className="dou-reportGenBtn"
-          disabled={generating}
-          onClick={() => void onGenerate()}
-        >
-          {generating ? t("reportGenerating") : t("reportGenerate")}
-        </button>
-        <label className="dou-reportGenForce">
-          <input
-            type="checkbox"
-            checked={genForce}
-            disabled={generating}
+      <ReportCollapsibleSection
+        id="generate"
+        title={t("reportSectionGenerate")}
+        summary={generateSummary}
+        dirty={false}
+        open={openSections.generate}
+        onToggle={toggleSection}
+      >
+        <div className="dou-reportRow dou-reportGenRow">
+          <select
+            className="dou-reportSelect"
+            value={genPeriod}
+            aria-label={t("reportPeriodSelect")}
             onChange={(e: unknown) =>
-              setGenForce((e as { target: { checked: boolean } }).target.checked)
+              setGenPeriod((e as { target: { value: string } }).target.value as ReportPeriodView)
             }
-          />
-          {t("reportForceRegen")}
-        </label>
-        {genError !== null ? <span className="dou-reportGenError">{genError}</span> : null}
-        {genNotice !== null ? <span className="dou-reportGenNotice">{genNotice}</span> : null}
-      </div>
-      {/* ---- 历史列表 ---- */}
-      <h3 className="dou-reportListTitle">{t("reportHistory")}</h3>
-      {list === null ? null : list.length === 0 ? (
-        <div className="dou-reportEmpty">{t("reportEmpty")}</div>
-      ) : (
-        <ul className="dou-reportList">
-          {list.map((m) => {
-            const id = rowIdOf(m);
-            // 展开态详情（局部组装，避免深嵌套三元）：HTML 已由宿主双层净化
-            let detailNode: React.ReactNode = null;
-            if (openId === id) {
-              const parts: React.ReactNode[] = [];
-              if (detail !== null && detail.id === id) {
-                const tokens = detail.meta.tokens;
-                if (tokens !== null && tokens !== undefined && tokens.totalTokens !== null) {
-                  parts.push(
-                    <div className="dou-reportDetailMeta" key="meta">
-                      {t("reportDetailTokens", { n: tokens.totalTokens.toLocaleString("en-US") })}
-                    </div>,
-                  );
-                }
-                // 年报 hero：meta.summary 存在时渲染大数字 + 环比 + 活跃统计
-                const summary = detail.meta.summary;
-                if (summary !== null && summary !== undefined) {
-                  parts.push(reportHero(summary));
-                }
-                if (detail.meta.noData === true) {
-                  parts.push(
-                    <div className="dou-reportGenNotice" key="nodata">
-                      {t("reportNoData")}
-                    </div>,
-                  );
-                } else {
-                  parts.push(
-                    detail.html.length > 0 ? (
-                      // 数据源为本插件宿主端产物：落盘 escape-then-transform 白名单标签
-                      // 第一层 + 读侧 sanitizeHtml 第二层
-                      <div
-                        className="dou-reportDetailBody"
-                        key="body"
-                        dangerouslySetInnerHTML={{ __html: detail.html }}
-                      />
-                    ) : (
-                      <div className="dou-reportFetchFail" key="empty">
-                        {detail.meta.error ?? t("reportFetchFail")}
-                      </div>
-                    ),
-                  );
-                }
-                parts.push(
-                  <button
-                    type="button"
-                    className="dou-reportCollapse"
-                    key="collapse"
-                    onClick={() => {
-                      setOpenId(null);
-                      setDetail(null);
-                    }}
-                  >
-                    {t("reportCollapse")}
-                  </button>,
-                );
-              } else {
-                parts.push(
-                  <div className="dou-reportLoading" key="loading">
-                    {t("loading")}
-                  </div>,
-                );
+          >
+            {PERIODS.map((p) => (
+              <option key={p} value={p}>
+                {periodLabel(p)}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            className="dou-reportGenBtn"
+            disabled={generating}
+            onClick={() => void onGenerate()}
+          >
+            {generating ? t("reportGenerating") : t("reportGenerate")}
+          </button>
+          <label className="dou-reportGenForce">
+            <input
+              type="checkbox"
+              checked={genForce}
+              disabled={generating}
+              onChange={(e: unknown) =>
+                setGenForce((e as { target: { checked: boolean } }).target.checked)
               }
-              detailNode = <div className="dou-reportDetail">{parts}</div>;
-            }
-            return (
-              <li className="dou-reportItem" key={id}>
-                <button
-                  type="button"
-                  className="dou-reportItemHead"
-                  aria-expanded={openId === id}
-                  onClick={() => void toggleDetail(m)}
-                >
-                  <span className="dou-reportItemPeriod">{periodLabel(m.period)}</span>
-                  <span className="dou-reportItemKey">{m.key}</span>
-                  <span
-                    className={
-                      m.ok
-                        ? "dou-reportBadge dou-reportBadgeOk"
-                        : "dou-reportBadge dou-reportBadgeFail"
-                    }
-                  >
-                    {m.ok ? t("reportOk") : t("reportFailed")}
-                  </span>
-                  <span className="dou-reportItemTime">
-                    {new Date(m.generatedAt).toLocaleString()}
-                  </span>
-                </button>
-                {detailNode}
-              </li>
-            );
-          })}
-        </ul>
-      )}
+            />
+            {t("reportForceRegen")}
+          </label>
+          {genError !== null ? <span className="dou-reportGenError">{genError}</span> : null}
+          {genNotice !== null ? <span className="dou-reportGenNotice">{genNotice}</span> : null}
+        </div>
+        <span className="dou-reportHint">{t("reportGenIdempotentHint")}</span>
+      </ReportCollapsibleSection>
     </section>
   );
 }

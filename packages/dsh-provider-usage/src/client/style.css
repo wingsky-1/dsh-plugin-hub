@@ -542,6 +542,7 @@
   gap: 10px;
   flex-wrap: wrap;
   min-width: 0;
+  max-width: 100%;
 }
 .dou-reportCol {
   display: flex;
@@ -556,6 +557,8 @@
   gap: 5px;
   font-size: 12px;
   min-width: 0;
+  max-width: 100%;
+  flex-shrink: 0;
 }
 .dou-reportLabel {
   font-size: 11px;
@@ -590,6 +593,7 @@
 .dou-reportInput {
   width: 160px;
   min-width: 0;
+  max-width: 100%;
   font: inherit;
   font-size: 12px;
   padding: 3px 6px;
@@ -599,6 +603,8 @@
   color: var(--dsw-alias-label-primary, #1c1e26);
 }
 .dou-reportSelect {
+  max-width: 100%;
+  min-width: 0;
   font-size: 12px;
   padding: 3px 6px;
   border-radius: 6px;
@@ -829,6 +835,7 @@
   border-bottom: 1px solid var(--dsw-alias-border-l1, #e2e5ea);
   background: var(--dsw-alias-bg-layer-1, #f5f6f8);
   overflow-x: auto;
+  white-space: nowrap;
   scrollbar-width: none;
 }
 .dou-set-tabs::-webkit-scrollbar {
@@ -840,6 +847,7 @@
   gap: 6px;
   min-height: 32px;
   padding: 5px 14px;
+  flex: none;
   white-space: nowrap;
   border: 1px solid transparent;
   border-radius: 8px;
@@ -880,7 +888,7 @@
   align-items: center;
   gap: 6px;
   flex-wrap: wrap;
-  margin-bottom: 6px;
+  margin-bottom: 10px;
 }
 .dou-reportPromptTab {
   border: 1px solid var(--dsw-alias-border-l1, #e2e5ea);
@@ -1022,3 +1030,317 @@
   color: var(--dsw-alias-label-secondary, #5f6672);
   margin: 4px 0;
 }
+/* ================= #940 P0：报告五区折叠 + 结构化提示词 + Liquid Glass =================
+ * 材质：半透明白 +  backdrop 模糊（Liquid Glass）；边界 0.5px 光边（inset 阴影，禁粗分割线）；
+ * 缓动 cubic-bezier(0.16, 1, 0.3, 1)；可点击元素 active 微压感 scale(0.97)；
+ * 中文行高 1.75 + 盘古之白（中西混排字距）；数字 tabular-nums；UI 禁斜体；
+ * 颜色一律 --dsw-alias-* + 浅色回退（暗色由宿主变量保证）；reduced-motion 降级。
+ * 作用域 dou-report*（插件前缀隔离，不影响宿主与其他插件）。
+ */
+.dou-reportGlass {
+  background: var(--dsw-alias-bg-base, rgba(255, 255, 255, 0.8));
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow:
+    inset 0 0 0 0.5px var(--dsw-alias-border-l1, rgba(215, 218, 224, 0.9)),
+    0 8px 28px rgba(15, 23, 42, 0.08);
+  border-radius: 12px;
+}
+.dou-report {
+  font-style: normal;
+  line-height: 1.75;
+  word-spacing: 0.02em;
+  /* R5 外层大框内边距：无 padding 时内容贴框（真机 390px 取证） */
+  padding: 12px;
+}
+.dou-reportHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.dou-reportHeadSpacer {
+  flex: 1;
+}
+.dou-reportSections {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.dou-reportSection {
+  overflow: hidden;
+  transition:
+    box-shadow 0.35s cubic-bezier(0.16, 1, 0.3, 1),
+    transform 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.dou-reportSectionHead {
+  width: 100%;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 9px 12px;
+  border: none;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--dsw-alias-label-primary, #1c1e26);
+  font: inherit;
+  font-style: normal;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background 0.35s cubic-bezier(0.16, 1, 0.3, 1),
+    transform 0.12s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.dou-reportSectionHead:active {
+  transform: scale(0.97);
+}
+.dou-reportSectionArrow {
+  flex: none;
+  color: var(--dsw-alias-label-tertiary, #9aa0ab);
+}
+.dou-reportSectionTitle {
+  flex: none;
+  font-weight: 600;
+  font-style: normal;
+}
+.dou-reportDirty {
+  flex: none;
+  font-size: 10px;
+  font-style: normal;
+  line-height: 1.5;
+  padding: 1px 8px;
+  border-radius: 99px;
+  color: var(--dsw-alias-state-warn-primary, #c9820b);
+  border: 1px solid var(--dsw-alias-state-warn-primary, #c9820b);
+  font-variant-numeric: tabular-nums;
+}
+.dou-reportSectionSummary {
+  flex: 1;
+  min-width: 120px;
+  font-size: 11px;
+  font-style: normal;
+  color: var(--dsw-alias-label-tertiary, #9aa0ab);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.dou-reportSectionBody {
+  padding: 4px 12px 12px;
+  animation: dou-reportSectionIn 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes dou-reportSectionIn {
+  from {
+    opacity: 0;
+    transform: scale(0.99) translateY(-2px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+.dou-reportSections .dou-reportCard {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  padding: 4px 0 0;
+}
+/* 结构化提示词编辑器 */
+.dou-reportPromptEditor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.dou-reportPromptMeta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.dou-reportPromptChip {
+  display: inline-block;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-style: normal;
+  font-size: 11px;
+  padding: 1px 8px;
+  border-radius: 99px;
+  color: var(--dsw-alias-state-info-primary, #4a7dd6);
+  background: var(--dsw-alias-state-info-soft, rgba(47, 111, 237, 0.1));
+  border: 1px solid var(--dsw-alias-state-info-primary, #4a7dd6);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.dou-reportPromptBudget {
+  font-size: 11px;
+  font-style: normal;
+  color: var(--dsw-alias-label-secondary, #5f6672);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.dou-reportPromptStatsRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.dou-reportRedlineHead {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-start;
+  font: inherit;
+  font-style: normal;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--dsw-alias-border-l1, #d7dae0);
+  background: transparent;
+  color: var(--dsw-alias-label-primary, #1c1e26);
+  cursor: pointer;
+  transition:
+    background 0.35s cubic-bezier(0.16, 1, 0.3, 1),
+    transform 0.12s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.dou-reportRedlineHead:active {
+  transform: scale(0.97);
+}
+/* 中西混排盘古之白 + 中文行高：报告正文与长文案 */
+.dou-reportDetailBody,
+.dou-reportEmpty,
+.dou-reportHint,
+.dou-reportGenNotice {
+  line-height: 1.75;
+  word-spacing: 0.02em;
+  font-style: normal;
+}
+/* 数字一律 tabular-nums（摘要/徽标/时间已覆盖，此处收口按钮与输入） */
+.dou-reportTime,
+.dou-reportNum,
+.dou-reportPromptBudget,
+.dou-reportSectionHead {
+  font-variant-numeric: tabular-nums;
+}
+/* UI 禁斜体收口（报告区内不出现斜体） */
+.dou-report em,
+.dou-report i {
+  font-style: normal;
+}
+/* 键盘焦点可见（新增可点击头一律） */
+.dou-reportSectionHead:focus-visible,
+.dou-reportRedlineHead:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-info-primary, #4a7dd6);
+  outline-offset: 1px;
+}
+@media (hover: hover) {
+  .dou-reportSectionHead:hover {
+    background: var(--dsw-alias-interactive-bg-hover, #f2f3f6);
+  }
+  .dou-reportRedlineHead:hover {
+    background: var(--dsw-alias-interactive-bg-hover, #f2f3f6);
+  }
+}
+/* 窄屏：摘要允许换行占整行，不挤压标题与脏徽标 */
+@media (max-width: 480px) {
+  /* R5 窄屏大框内边距与外层对齐 */
+  .dou-report {
+    padding: 10px;
+  }
+  .dou-reportSectionSummary {
+    flex-basis: 100%;
+    white-space: normal;
+  }
+  .dou-reportSectionBody {
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+  /* R2/R3 390px：路由 label 独占一行、select 另起全宽（防一字宽竖排与视口裁切） */
+  .dou-reportRow > .dou-reportInline {
+    flex: 1 1 100%;
+    flex-wrap: wrap;
+  }
+  .dou-reportInline .dou-reportSelect,
+  .dou-reportInline .dou-reportInput {
+    flex: 1 1 100%;
+    width: 100%;
+  }
+}
+/* reduced-motion：去动画去压感（#940 材质契约） */
+@media (prefers-reduced-motion: reduce) {
+  .dou-reportSection,
+  .dou-reportSectionHead,
+  .dou-reportRedlineHead {
+    transition: none;
+    animation: none;
+  }
+  .dou-reportSectionHead:active,
+  .dou-reportRedlineHead:active {
+    transform: none;
+  }
+  .dou-reportSectionBody {
+    animation: none;
+  }
+}
+/* ================= #940 第一批：设置共用头 + 历史独立页 ================= */
+/* 共用头（kicker + 标题 + live providers pill；留存 pill 已砍，见方案 Q5） */
+.dou-shellTop {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  margin-bottom: 8px;
+  font-style: normal;
+}
+.dou-shellKicker {
+  font-size: 11px;
+  font-style: normal;
+  color: var(--dsw-alias-label-tertiary, #9aa0ab);
+  white-space: nowrap;
+}
+.dou-shellTitle {
+  font-size: 15px;
+  font-weight: 600;
+  font-style: normal;
+  line-height: 1.5;
+  margin: 2px 0 0;
+  color: var(--dsw-alias-label-primary, #1c1e26);
+}
+.dou-shellMeta {
+  margin-left: auto;
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-self: center;
+}
+.dou-shellPill {
+  display: inline-block;
+  font-size: 11px;
+  font-style: normal;
+  line-height: 1.5;
+  padding: 2px 10px;
+  border-radius: 99px;
+  border: 1px solid var(--dsw-alias-border-l1, #d7dae0);
+  background: var(--dsw-alias-bg-layer-1, #f8f9fb);
+  color: var(--dsw-alias-label-secondary, #5f6672);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.dou-shellPillOk {
+  color: var(--dsw-alias-state-success-primary, #3f9d63);
+  border-color: var(--dsw-alias-state-success-primary, #3f9d63);
+}
+.dou-shellPillStale {
+  color: var(--dsw-alias-state-warn-primary, #c9820b);
+  border-color: var(--dsw-alias-state-warn-primary, #c9820b);
+}
+/* 未启用周期控件禁用态（与终稿静态 markup 一致的纯表现守卫） */
+.dou-reportTime:disabled,
+.dou-reportNum:disabled,
+.dou-reportSelect:disabled {
+  opacity: 0.55;
+}
+/* 历史独立页复用报告区既有类（列表/徽标/详情/空态），无新增选择器。 */
