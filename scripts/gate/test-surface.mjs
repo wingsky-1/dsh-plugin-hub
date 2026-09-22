@@ -367,3 +367,66 @@ export function discoverTestPackages(root) {
   }
   return out;
 }
+
+/**
+ * 段级测试面显式回落哨兵（P2-D3）：`"*"` = 继承包级变异面（过渡态，--check 计数打印）。
+ * 缺字段 ≠ 回落：缺席是“忘了登记”，必须判红；回落是显式决定，有收敛跟踪。
+ */
+export const SEGMENT_TEST_FALLBACK = "*";
+
+/**
+ * 解析一段的测试面（P2：topology `segments.<seg>.testFiles`）。
+ *
+ * 返回 { mode, files, errors }：mode = missing（缺字段）/ fallback（"*"，files=包级面拷贝）/
+ * explicit（数组，files=去重排序后的条目）。R3：显式条目必须同时满足——磁盘存在、落在包级
+ * 变异面内（杜绝 client/e2e/support 混入回涨 dry-run）；R6：显式面不得为空。调用方按包名前缀
+ * 组装判词（与 projectTestSurface 的 errors 风格一致）。纯函数，可离线单测。
+ */
+export function resolveSegmentTestFiles({ root, segDef, segLabel, packageFace }) {
+  const raw = segDef?.testFiles;
+  if (raw === undefined) {
+    return {
+      mode: "missing",
+      files: [],
+      errors: [`${segLabel} 缺 testFiles 声明（缺席≠回落：须显式写 "*" 或清单）`],
+    };
+  }
+  if (raw === SEGMENT_TEST_FALLBACK)
+    return { mode: "fallback", files: [...packageFace], errors: [] };
+  if (!Array.isArray(raw)) {
+    return {
+      mode: "invalid",
+      files: [],
+      errors: [
+        `${segLabel} 的 testFiles 须是数组或 "*"，实为：${JSON.stringify(raw)?.slice(0, 80)}`,
+      ],
+    };
+  }
+  const errors = [];
+  const face = new Set(packageFace);
+  const files = [...new Set(raw)].sort();
+  for (const rel of files) {
+    if (typeof rel !== "string" || rel.trim() === "") {
+      errors.push(`${segLabel} 的 testFiles 含非字符串条目`);
+      continue;
+    }
+    if (!existsSync(join(root, rel)))
+      errors.push(`${segLabel} 的 testFiles 条目不存在于磁盘：${rel}`);
+    else if (!face.has(rel))
+      errors.push(
+        `${segLabel} 的 testFiles 条目不在包级变异面内：${rel} —— 须落在 mutation 层且非豁免（R3）`,
+      );
+  }
+  if (files.length === 0)
+    errors.push(`${segLabel} 的 testFiles 为空 —— 空段 include 跑零测试静默绿（R6）`);
+  return { mode: "explicit", files, errors };
+}
+
+/**
+ * 包内各段测试面的并集（P2-D2 并集棘轮的输入面；fallback 段按包级面展开）。
+ */
+export function segmentTestUnion(resolved) {
+  const union = new Set();
+  for (const r of Object.values(resolved)) for (const f of r.files) union.add(f);
+  return [...union].sort();
+}

@@ -33,8 +33,15 @@ import {
   packageEntryProblems,
   packageMutationFace,
   packageRegistrationProblems,
+  segmentTestShapeProblems,
+  segmentTestUnionProblems,
 } from "../gate/mutation-topology.mjs";
-import { mutationEntryProblems, projectTestSurface } from "../gate/test-surface.mjs";
+import {
+  mutationEntryProblems,
+  projectTestSurface,
+  resolveSegmentTestFiles,
+  segmentTestUnion,
+} from "../gate/test-surface.mjs";
 import { globFiles } from "../lib/glob-files.mjs";
 
 const ROOT = join(import.meta.dirname, "..", "..");
@@ -585,7 +592,9 @@ function makeMutationFixture(excludes) {
         packages: {
           [pkg]: {
             testLayers: {},
-            segments: { only: { mutate: [`packages/${pkg}/src/a.ts`], excludes } },
+            segments: {
+              only: { mutate: [`packages/${pkg}/src/a.ts`], excludes, testFiles: "*" },
+            },
           },
         },
       },
@@ -982,6 +991,73 @@ test("#843 判据⑦ 单元：载体自证 —— 包集合为空 / 基准 mutat
       expand,
     });
     assert.deepEqual([ok.problems, ok.packagesCompared, ok.filesCompared], [[], 1, 1]);
+
+    test("P2: 段 testFiles 形状（缺席/非法/空条目判红，星号与数组放行）", () => {
+      assert.match(segmentTestShapeProblems("p", "s", {}).join(), /缺 testFiles 声明/);
+      assert.match(segmentTestShapeProblems("p", "s", { testFiles: 3 }).join(), /须是数组/);
+      assert.match(segmentTestShapeProblems("p", "s", { testFiles: [""] }).join(), /非空字符串/);
+      assert.deepEqual(segmentTestShapeProblems("p", "s", { testFiles: "*" }), []);
+      assert.deepEqual(segmentTestShapeProblems("p", "s", { testFiles: ["a.test.ts"] }), []);
+    });
+
+    test("P2: 测试面并集恒等（缺口/越界判红，空转自证）", () => {
+      const eq = segmentTestUnionProblems({
+        pkgName: "p",
+        packageFace: ["a", "b"],
+        union: ["b", "a"],
+      });
+      assert.deepEqual([eq.problems, eq.compared], [[], 2]);
+      const gap = segmentTestUnionProblems({ pkgName: "p", packageFace: ["a", "b"], union: ["a"] });
+      assert.match(gap.problems.join(), /缺口.*b/);
+      const over = segmentTestUnionProblems({
+        pkgName: "p",
+        packageFace: ["a"],
+        union: ["a", "x"],
+      });
+      assert.match(over.problems.join(), /越界.*x/);
+    });
+
+    test("P2: 段测试面解析（回落/显式/R3 越界面/空面）", () => {
+      const face = ["packages/dsh-notifier/test/unit/a.test.ts"];
+      const fb = resolveSegmentTestFiles({
+        root: ROOT,
+        segDef: { testFiles: "*" },
+        segLabel: "[p:s]",
+        packageFace: face,
+      });
+      assert.deepEqual([fb.mode, fb.files, fb.errors], ["fallback", face, []]);
+      assert.equal(fb.files === face, false, "回落须拷贝，不得别名包级面");
+      const miss = resolveSegmentTestFiles({
+        root: ROOT,
+        segDef: {},
+        segLabel: "[p:s]",
+        packageFace: face,
+      });
+      assert.equal(miss.mode, "missing");
+      assert.match(miss.errors.join(), /缺 testFiles 声明/);
+      const bad = resolveSegmentTestFiles({
+        root: ROOT,
+        segDef: { testFiles: ["packages/dsh-notifier/test/e2e/smoke.test.ts"] },
+        segLabel: "[p:s]",
+        packageFace: face,
+      });
+      assert.match(bad.errors.join(), /不在包级变异面内/);
+      const empty = resolveSegmentTestFiles({
+        root: ROOT,
+        segDef: { testFiles: [] },
+        segLabel: "[p:s]",
+        packageFace: [],
+      });
+      assert.match(empty.errors.join(), /为空/);
+    });
+
+    test("P2: 段并集 helper（多段合并去重排序）", () => {
+      assert.deepEqual(segmentTestUnion({ a: { files: ["b", "a"] }, c: { files: ["c", "a"] } }), [
+        "a",
+        "b",
+        "c",
+      ]);
+    });
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

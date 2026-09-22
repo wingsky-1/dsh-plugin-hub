@@ -66,12 +66,16 @@ import {
   mutationPolicyRatchetProblems,
   effectiveExcludedMutations,
   packageRegistrationProblems,
+  segmentTestShapeProblems,
+  segmentTestUnionProblems,
 } from "./mutation-topology.mjs";
 import {
   discoverTestPackages,
   mutationEntryProblems,
   projectTestSurface,
   readTestMin,
+  resolveSegmentTestFiles,
+  segmentTestUnion,
 } from "./test-surface.mjs";
 import { failClosed } from "../lib/gate-exit.mjs";
 
@@ -100,6 +104,14 @@ const VITEST_CONF_DIR = "vitest.stryker.d";
 
 function vitestConfigPath(pkgName) {
   return `${VITEST_CONF_DIR}/${pkgName}.config.ts`;
+}
+
+/**
+ * P2：段级测试面配置路径（显式段专用）。命名沿用 conf 名算法（D5）：`<pkg>-<seg>.config.ts`，
+ * 故跨包拼名碰撞（包 a-b/段 c vs 包 a/段 b-c）与 conf 同理，须走同一碰撞检查。
+ */
+function vitestSegConfigPath(pkgName, segKey) {
+  return `${VITEST_CONF_DIR}/${pkgName}-${segKey}.config.ts`;
 }
 
 /**
@@ -138,7 +150,11 @@ ${include}
 `;
 }
 
-function deriveConfig(sharedDefaults, pkgName, segKey, segDef, pkgDef) {
+/**
+ * P2：segVitestFile = 该段的 vitest 测试面配置路径（fallback 段指向包级 config，
+ * explicit 段指向段级 config）。conf 里永不出现 Stryker `testFiles`（#6144）。
+ */
+function deriveConfig(sharedDefaults, pkgName, segKey, segDef, pkgDef, segVitestFile) {
   const isSingle = segKey === "_single";
   const confFileName = isSingle ? `${pkgName}.json` : `${pkgName}-${segKey}.json`;
   const reportName = isSingle ? pkgName : `${pkgName}-${segKey}`;
@@ -180,7 +196,7 @@ function deriveConfig(sharedDefaults, pkgName, segKey, segDef, pkgDef) {
     // 等价表达 = 段专用 vitest config 的 `include`（本包拓扑投影的变异面清单），
     // 故测试面与今天逐字相同、确定性不变。`related` 固定 false：不把「哪个段跑
     // 哪些测试」交给 vitest 的模块图推断（否则随导入关系漂移，与派生清单冲突）。
-    vitest: { ...sharedDefaults.vitest, configFile: vitestConfigPath(pkgName) },
+    vitest: { ...sharedDefaults.vitest, configFile: segVitestFile },
     jsonReporter: {
       fileName: `coverage/mutation/${reportName}.json`,
     },
@@ -208,6 +224,10 @@ function topologyShapeProblems(topology) {
   for (const [pkgName, pkgDef] of Object.entries(topology.packages ?? {})) {
     for (const problem of coverageExcludeProblems(pkgDef)) {
       problems.push(`[${pkgName}] ${problem}`);
+    }
+    // P2：段 testFiles 形状（缺席/非法即红；存在性与成员资格在派生阶段判）。
+    for (const [segKey, segDef] of Object.entries(pkgDef?.segments ?? {})) {
+      problems.push(...segmentTestShapeProblems(pkgName, segKey, segDef));
     }
   }
   return problems;
@@ -267,6 +287,10 @@ function reconcileRegistrations(topology, packages, noMutationPackages) {
 function deriveAllConfigs(packages, sharedDefaults, projections) {
   const derivedConfigs = new Map();
   const derivedVitestConfigs = new Map();
+  // P2：段级测试面。fallback 段沿用包级面（行为零变），explicit 段派生段级 config。
+  // fallback 计数打印给 --check（D3 收敛跟踪：全回落是合法过渡态，但必须可见）。
+  const segmentTests = new Map();
+  let fallbackSegments = 0;
   // conf 文件名 → 所属包：判据 ⑤ 的锚定与 ⑥ 的有效面都要知道「这份 conf 是谁的」，
   // 而 mutate 里的路径是仓库根相对的裸 glob，只有派生侧知道归属。
   const confOwners = new Map();
@@ -274,15 +298,44 @@ function deriveAllConfigs(packages, sharedDefaults, projections) {
   // 相撞时后写者会静默覆盖前者的内容——⑤/⑥ 与磁盘/拓扑一致性判据都看不到被覆盖的包
   // （独立复核实测：还输出「1 份配置 vs 2 份 vitest 配置」的自相矛盾）。故在派生侧 fail-closed。
   const confCollisions = [];
+  // P2：段测试面解析（fallback 计数见 D3 收敛跟踪）。vitest 名碰撞与 conf 同算法（D5）。
+  const vitestOwners = new Map();
+  const vitestCollisions = [];
   for (const [pkgName, pkgDef] of Object.entries(packages)) {
-    const testFiles = projections.get(pkgName)?.testFiles ?? [];
+    const packageFace = projections.get(pkgName)?.testFiles ?? [];
+    const resolved = {};
     for (const [segKey, segDef] of Object.entries(pkgDef.segments ?? {})) {
+      const r = resolveSegmentTestFiles({
+        root: repoRoot,
+        segDef,
+        segLabel: `[${pkgName}:${segKey}]`,
+        packageFace,
+      });
+      resolved[segKey] = r;
+      let segVitestFile = vitestConfigPath(pkgName);
+      if (r.mode === "explicit") {
+        segVitestFile = vitestSegConfigPath(pkgName, segKey);
+        derivedVitestConfigs.set(
+          segVitestFile,
+          deriveVitestConfig(`${pkgName}:${segKey}`, r.files),
+        );
+        const prev = vitestOwners.get(segVitestFile);
+        if (prev !== undefined && prev !== pkgName) {
+          vitestCollisions.push(
+            `${segVitestFile} 同时由 ${prev} 与 ${pkgName} 派生 —— 包名与段名拼出的文件名相撞`,
+          );
+        }
+        vitestOwners.set(segVitestFile, pkgName);
+      } else if (r.mode === "fallback") {
+        fallbackSegments++;
+      }
       const { confFileName, content } = deriveConfig(
         sharedDefaults,
         pkgName,
         segKey,
         segDef,
         pkgDef,
+        segVitestFile,
       );
       const previousOwner = confOwners.get(confFileName);
       if (previousOwner !== undefined && previousOwner !== pkgName) {
@@ -294,11 +347,44 @@ function deriveAllConfigs(packages, sharedDefaults, projections) {
       derivedConfigs.set(confFileName, content);
       confOwners.set(confFileName, pkgName);
     }
-    if (testFiles.length > 0) {
-      derivedVitestConfigs.set(vitestConfigPath(pkgName), deriveVitestConfig(pkgName, testFiles));
+    segmentTests.set(pkgName, resolved);
+    if (packageFace.length > 0) {
+      derivedVitestConfigs.set(vitestConfigPath(pkgName), deriveVitestConfig(pkgName, packageFace));
     }
   }
-  return { derivedConfigs, derivedVitestConfigs, confOwners, confCollisions };
+  return {
+    derivedConfigs,
+    derivedVitestConfigs,
+    confOwners,
+    confCollisions,
+    segmentTests,
+    fallbackSegments,
+    vitestCollisions,
+  };
+}
+
+/**
+ * P2：段测试面解析错误聚合＋并集恒等（D2）。返回 { problems, unionCompared }：
+ * problems 含各段 resolve 错误（存在性/R3/R6）与并集缺口/越界；unionCompared 为各包
+ * 包级面条目数之和（0 即空转，调用方 fail-closed）。纯函数（输入均为已算好的投影与解析）。
+ */
+function collectSegmentTestProblems(segmentTests, projections) {
+  const problems = [];
+  let unionCompared = 0;
+  for (const [pkgName, resolved] of segmentTests) {
+    for (const r of Object.values(resolved)) {
+      for (const e of r.errors) problems.push(`段测试面：${e}`);
+    }
+    const face = projections.get(pkgName)?.testFiles ?? [];
+    const { problems: unionProblems, compared } = segmentTestUnionProblems({
+      pkgName,
+      packageFace: face,
+      union: segmentTestUnion(resolved),
+    });
+    for (const p of unionProblems) problems.push(`测试面并集：${p}`);
+    unionCompared += compared;
+  }
+  return { problems, unionCompared };
 }
 
 /** 阶段 3：判据 ③ 的差异集——每个有测试的包 `--min` 与实际 runner 面文件数必须相等。 */
@@ -553,7 +639,15 @@ function checkModeProblems(ctx) {
 /** `--check` 通过时的汇总行。`mutateEntriesScanned` 是判据 ⑤ 实际判过的条目数，
  *  `ratchet` 是判据⑦ 实际比过的包数 / 候选文件数——两条判据都自证「真的扫过」，而不是从输入长度自证。 */
 function printCheckPassed(ctx, mutateEntriesScanned, ratchet) {
-  const { derivedConfigs, derivedVitestConfigs, projections, packages, noMutationPackages } = ctx;
+  const {
+    derivedConfigs,
+    derivedVitestConfigs,
+    projections,
+    packages,
+    noMutationPackages,
+    fallbackSegments,
+    unionCompared,
+  } = ctx;
   const totalFiles = [...projections.values()].reduce((n, p) => n + p.testFiles.length, 0);
   const skipNames = Object.keys(noMutationPackages).filter((k) => !k.startsWith("$"));
   const skipNote =
@@ -565,7 +659,9 @@ function printCheckPassed(ctx, mutateEntriesScanned, ratchet) {
       `--min 与磁盘上 ${ctx.discovered.length} 个有测试的包全部同步；` +
       `${mutateEntriesScanned} 条 mutate 条目全部命中物理文件；` +
       `变异面并集棘轮对照 ${ratchet.baseRef} 比过 ${ratchet.packagesCompared} 个包 / ` +
-      `${ratchet.filesCompared} 个候选文件，无收缩${skipNote}`,
+      `${ratchet.filesCompared} 个候选文件，无收缩；` +
+      `段测试面并集恒等比过 ${unionCompared} 个包级面条目；` +
+      `显式回落 "*" 的段 ${fallbackSegments} 个（过渡态，可见即可）${skipNote}`,
   );
 }
 
@@ -616,23 +712,33 @@ function main() {
     packages,
     noMutationPackages,
   );
-  const { derivedConfigs, derivedVitestConfigs, confOwners, confCollisions } = deriveAllConfigs(
-    packages,
-    sharedDefaults,
-    projections,
-  );
+  const {
+    derivedConfigs,
+    derivedVitestConfigs,
+    confOwners,
+    confCollisions,
+    segmentTests,
+    fallbackSegments,
+    vitestCollisions,
+  } = deriveAllConfigs(packages, sharedDefaults, projections);
   if (confCollisions.length > 0) {
     console.error("[gen-stryker-conf] 派生的 conf 名碰撞（配置名只由包名 + 段名决定）：");
     for (const collision of confCollisions) console.error(`  ${collision}`);
     return 1;
   }
+  if (vitestCollisions.length > 0) {
+    console.error("[gen-stryker-conf] 派生的段级 vitest 名碰撞（D5，与 conf 同算法）：");
+    for (const collision of vitestCollisions) console.error(`  ${collision}`);
+    return 1;
+  }
+  const segTestCheck = collectSegmentTestProblems(segmentTests, projections);
   const minMismatches = collectMinMismatches(discovered);
 
   if (isSyncMin) syncTestMin(minMismatches);
 
   if (isCheckMode) {
     const ctx = {
-      errors,
+      errors: [...errors, ...segTestCheck.problems],
       minMismatches,
       derivedConfigs,
       derivedVitestConfigs,
@@ -641,12 +747,19 @@ function main() {
       packages,
       noMutationPackages,
       discovered,
+      fallbackSegments,
+      unionCompared: segTestCheck.unionCompared,
     };
     const check = checkModeProblems(ctx);
     // 判据⑦ 与上面各条独立：环境故障（基准 ref 读不到 / 台账坏）走 exit 2，不伪装成「有违规」。
     const ratchet = faceRatchetCheck(topology);
     if (ratchet.envError !== undefined) {
       failClosed(`[gen-stryker-conf] ${ratchet.envError} —— 环境故障按 fail-closed 处理`);
+    }
+    if (segTestCheck.unionCompared === 0) {
+      check.problems.push(
+        "测试面并集空转：所有包的包级变异面条目数之和为 0 —— 判据没有比到任何载体（fail-closed）",
+      );
     }
     const problems = [...check.problems, ...ratchet.problems, ...ratchet.operatorProblems];
     for (const p of problems) console.error(`[gen-stryker-conf] ${p}`);

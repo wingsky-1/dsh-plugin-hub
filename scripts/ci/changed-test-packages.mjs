@@ -25,8 +25,11 @@ import { appendFileSync, readFileSync } from "node:fs";
 import { dirname, join, matchesGlob } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { projectTestSurface, resolveSegmentTestFiles } from "../gate/test-surface.mjs";
+
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const REGISTRY_REL = "scripts/data/ci-face-registry.json";
+const TOPOLOGY_REL = "scripts/data/mutation-topology.json";
 
 /**
  * `packages/<pkg>/test/**` 的相对路径 → 包名；不在该面内返回 null。
@@ -76,16 +79,17 @@ export function packageOfTestPath(file) {
  * 代价可接受，漏跑（假绿）不可接受。（D4：旧注释称其 4 个面只在 e2e/client 层用它，
  * 与注册表 consumers 矛盾，结论对、理由错，此处以注册表为准。）
  */
-export function packagesToInvalidate(files, registry) {
+export function packagesToInvalidate(files, registry, topology = null, rootDir = ROOT) {
   const pkgs = new Set();
   const flagged = (registry?.entries ?? []).filter(
     (e) => e.invalidatesBaseline === true && Array.isArray(e.faces) && e.faces.length > 0,
   );
+  const faceCache = new Map();
   for (const file of files) {
     if (file === "") continue;
     const own = packageOfTestPath(file);
     if (own !== null) {
-      pkgs.add(own);
+      for (const entry of testFileEntries(topology, rootDir, faceCache, own, file)) pkgs.add(entry);
       continue;
     }
     for (const face of facesHitBy(file, flagged)) {
@@ -97,11 +101,54 @@ export function packagesToInvalidate(files, registry) {
 }
 
 /**
+ * P2-L4终态：测试文件 → 认领它的段（topology `testFiles` 显式登记）。
+ *
+ * 返回条目数组（调用方直接装包）：
+ *   - topology 缺席/包未登记/形状异常 → [pkg]（旧行为：整包失效，fail-closed）；
+ *   - 任一段解析异常（missing/invalid）→ [pkg]（形状错时不静默窄化，gen --check 会另行判红）；
+ *   - 认领段为空（新测试未落位）→ [pkg]（fail-closed；⑨/并集恒等在 --check 侧同步判红）；
+ *   - 认领段 == 全段 → [pkg]（等价且噪音最小；全回落包恒走此分支，plumbing 期行为零变）；
+ *   - 否则 → 每个认领段一条 `pkg:seg`。
+ *
+ * 为什么文件级映射即安全上界（L4 复核 D1–D3 的收敛结论）：上游对改文件的测试全逐出
+ * （closeLocations），逐出粒度本就是文件；注册集命中的改文件段必删基线，故复用方向恒等于
+ * 上游行为或更严（删整段基线 vs 上游逐 mutant 重算）。未命中文件的段保留基线，段内逐 mutant
+ * 的复用/重算仍由 Stryker 自身 differ 完成——本函数只决定删哪些段文件，不替代它。
+ */
+export function testFileEntries(topology, rootDir, faceCache, pkg, file) {
+  const pkgDef = topology?.packages?.[pkg];
+  const segDefs = pkgDef?.segments;
+  if (segDefs === null || typeof segDefs !== "object" || Array.isArray(segDefs)) return [pkg];
+  const segKeys = Object.keys(segDefs);
+  if (segKeys.length === 0) return [pkg];
+  let face = faceCache.get(pkg);
+  if (face === undefined) {
+    face = projectTestSurface(rootDir, topology, pkg).testFiles;
+    faceCache.set(pkg, face);
+  }
+  const matched = [];
+  for (const segKey of segKeys) {
+    const r = resolveSegmentTestFiles({
+      root: rootDir,
+      segDef: segDefs[segKey],
+      segLabel: `[${pkg}:${segKey}]`,
+      packageFace: face,
+    });
+    if (r.mode !== "explicit" && r.mode !== "fallback") return [pkg];
+    if (r.files.includes(file)) matched.push(segKey);
+  }
+  if (matched.length === 0 || matched.length === segKeys.length) return [pkg];
+  return matched.map((segKey) => `${pkg}:${segKey}`);
+}
+
+/**
  * D2：段级配置变更映射到 `<pkg>:<seg>` 条目；非段配置返回 null（调用方回落整包）。
  *
  * 形状与 ci-matrix 的 resolveSegmentNames 同源：段名 = 文件基名剥掉 `${pkg}-` 前缀与
  * `.json` 后缀。包级 `<pkg>.json`（无段后缀）不是段配置，返回 null。
  * vitest 包级配置与 smoke-lib 等非 conf 路径同样返回 null。
+ * 段级 vitest 配置（`<pkg>-<seg>.config.ts`）随首个显式窄化 PR 原子落地：
+ * registry 条目 + filters 同步 + 本函数分支，见 P2 设计（悬空条目规则禁止提前登记）。
  */
 export function segmentEntryFor(file, face) {
   const prefix = "stryker.conf.d/";
@@ -146,6 +193,10 @@ export function loadRegistry(rootDir = ROOT) {
   return JSON.parse(readFileSync(join(rootDir, REGISTRY_REL), "utf8"));
 }
 
+export function loadTopology(rootDir = ROOT) {
+  return JSON.parse(readFileSync(join(rootDir, TOPOLOGY_REL), "utf8"));
+}
+
 export function diffTestPaths(base, rootDir = ROOT) {
   return execFileSync("git", ["diff", "--name-only", "-z", "--no-renames", `${base}...HEAD`], {
     cwd: rootDir,
@@ -180,7 +231,16 @@ function main() {
     );
     return 1;
   }
-  const pkgs = packagesToInvalidate(out.split("\0"), registry);
+  let topology;
+  try {
+    topology = loadTopology();
+  } catch (err) {
+    console.error(
+      `[changed-test-packages] 变异拓扑不可解析：${TOPOLOGY_REL} —— ${String(err.message).split("\n")[0]}`,
+    );
+    return 1;
+  }
+  const pkgs = packagesToInvalidate(out.split("\0"), registry, topology);
   const json = JSON.stringify(pkgs);
   if (process.env.GITHUB_OUTPUT) {
     appendFileSync(process.env.GITHUB_OUTPUT, `testChangedPackages=${json}\n`, "utf8");

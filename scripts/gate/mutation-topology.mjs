@@ -500,6 +500,59 @@ export function mutationFaceRatchetProblems({
   return { problems, packagesCompared, filesCompared };
 }
 
+/**
+ * 段 testFiles 的形状判据（P2：`segments.<seg>.testFiles`）。
+ *
+ * 取值域：缺席（undefined）判红——缺席是“忘了登记”，与显式回落 `"*"` 必须能区分开
+ * （D3）；`" *"` 合法；数组须全为非空字符串（存在性与变异面成员资格由 test-surface 的
+ * resolveSegmentTestFiles 在有 root 时判定，这里只做无副作用的形状检查）。
+ */
+export function segmentTestShapeProblems(pkgName, segKey, segDef) {
+  const label = `[${pkgName}:${segKey}]`;
+  const raw = segDef?.testFiles;
+  if (raw === undefined) return [`${label} 缺 testFiles 声明（须显式写 "*" 或清单，缺席≠回落）`];
+  if (raw === "*") return [];
+  if (!Array.isArray(raw)) return [`${label} 的 testFiles 须是数组或 "*"`];
+  const problems = [];
+  raw.forEach((rel, i) => {
+    if (typeof rel !== "string" || rel.trim() === "")
+      problems.push(`${label} 的 testFiles[${i}] 不是非空字符串`);
+  });
+  return problems;
+}
+
+/**
+ * 测试面并集恒等判据（P2-D2：补 ⑦ 看不见的测试面收缩）。
+ *
+ * `union` = 包内各段 testFiles 的并集（fallback 段按包级面展开，由调用方算好传入）；
+ * `packageFace` = 包级变异面投影。两者必须**集合相等**：
+ *   - face − union 非空 → 测试还在变异层、却没有任何段认领：删文件式收缩（⑦恒绿）或
+ *     新测试未落位（⑨），一律判红；文件在磁盘已删时它自然退出 packageFace，不在此列；
+ *   - union − face 非空 → 段清单含包外面文件（拼写漂移/层外混入），判红。
+ * 全回落包（union 与 face 同源）恒等，天然通过——plumbing 期零行为变更。
+ *
+ * 载体自证：返回 compared（包级面条目数），调用方在 0 时判红（防空转恒绿）。
+ */
+export function segmentTestUnionProblems({ pkgName, packageFace, union }) {
+  const problems = [];
+  const face = new Set(packageFace);
+  const uni = new Set(union);
+  for (const file of [...face].sort()) {
+    if (!uni.has(file))
+      problems.push(
+        `[${pkgName}] 测试面并集缺口：${file} 在包级变异面内，却没有任何段的 testFiles 认领` +
+          "——从段清单摘除（杀灭力静默下降）或新测试未落位；删文件请删磁盘文件本身",
+      );
+  }
+  for (const file of [...uni].sort()) {
+    if (!face.has(file))
+      problems.push(
+        `[${pkgName}] 测试面并集越界：${file} 不在包级变异面内 —— 段清单不得含层外/豁免文件`,
+      );
+  }
+  return { problems, compared: face.size };
+}
+
 /** 段 mutate/excludes（段缺 excludes 时由 packageEntryProblems 判红，不再注入默认值）
  *  + 包级覆盖排除面，合成 spec 的 glob 清单。 */
 function collectMutationGlobs(pkgDef) {
