@@ -19,7 +19,7 @@ import type { McpClientContext, McpState, UiActions } from "./state.ts";
  * （GET /servers 纯读不回写会话）。
  */
 export function rebindSession(state: McpState): Promise<unknown> {
-  return api(state.API.session, {
+  return api<unknown>(state.API.session, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ cwd: typeof state.currentCwd === "string" ? state.currentCwd : "" }),
@@ -50,7 +50,7 @@ export function bindSession(
     // 无论 cwd 是否为空都通知宿主切换：空 cwd（blank 会话/新会话还没选
     // 工作区）也要显式清空宿主的项目级 MCP，否则宿主全局单例会残留
     // 上一个会话的项目级服务器，别的会话就串台显示了。
-    void api(state.API.session, {
+    void api<unknown>(state.API.session, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ cwd: typeof cwd === "string" ? cwd : "" }),

@@ -170,3 +170,11 @@ export interface McpClientContext {
     list?: McpSessionList;
   };
 }
+
+/**
+ * 客户端 HTTP 请求选项最小面（P3-b/B6：api 二选一选 A 泛型）。
+ * 继承 DOM RequestInit（method/headers/body/signal），仅增 timeoutMs 兜底预算。
+ */
+export interface ApiRequestOptions extends RequestInit {
+  timeoutMs?: number;
+}

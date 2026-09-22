@@ -24,25 +24,29 @@ export function pangu(text: string): string {
     .replace(/([A-Za-z0-9@#$%^&*()[\]{}<>+\-=/\\|])([㐀-䶿一-鿿豈-﫿])/g, "$1 $2");
 }
 
-/** 创建带属性/子节点的 DOM 元素。 */
-export function el(tag: any, attrs: any = {}, children?: any): any {
+/** 创建带属性/子节点的 DOM 元素（泛型按标签名收窄返回）。 */
+export function el<K extends keyof HTMLElementTagNameMap>(
+  tag: K,
+  attrs: Record<string, unknown> = {},
+  children?: unknown[],
+): HTMLElementTagNameMap[K] {
   // children 兼容两种传法：第三个位置参数，或 attrs.children（本插件调用点
   // 一直把 children 放进 attrs——早期版本只读第三参数导致子节点从未挂载）。
-  if (children === undefined) children = attrs.children ?? [];
+  const kids: unknown[] = children ?? (attrs.children as unknown[] | undefined) ?? [];
   const node = document.createElement(tag);
   for (const [key, value] of Object.entries(attrs)) {
     if (key === "class") node.className = value == null ? "" : String(value);
     else if (key === "text") node.textContent = String(value);
-    else if (key === "dataset") Object.assign(node.dataset, value);
-    else if (key.startsWith("on")) node.addEventListener(key.slice(2), value);
+    else if (key === "dataset") Object.assign(node.dataset, value as Record<string, string>);
+    else if (key.startsWith("on")) node.addEventListener(key.slice(2), value as EventListener);
     else if (key === "checked") (node as HTMLInputElement).checked = value as boolean;
     else if (key === "disabled") (node as FormControl).disabled = value as boolean;
     else if (key === "children") continue;
     else node.setAttribute(key, String(value));
   }
-  for (const child of children) {
+  for (const child of kids) {
     if (child === undefined || child === null) continue;
-    node.appendChild(typeof child === "string" ? document.createTextNode(child) : child);
+    node.appendChild(typeof child === "string" ? document.createTextNode(child) : (child as Node));
   }
   return node;
 }

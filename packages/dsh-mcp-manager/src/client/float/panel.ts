@@ -10,7 +10,7 @@
 import { el } from "../core/dom.ts";
 import { api } from "../core/api.ts";
 import { t } from "../../../../../shared/client/i18n.js";
-import type { McpState, UiActions } from "../core/state.ts";
+import type { McpCounts, McpServerListEntry, McpState, UiActions } from "../core/state.ts";
 import { renderServers } from "./servers.ts";
 import { buildQuickAdd } from "./quick-add.ts";
 import { renderPill, renderFloatPanel } from "./float.ts";
@@ -39,7 +39,11 @@ async function doRefresh(state: McpState, actions: UiActions): Promise<boolean> 
     // #324：GET /servers 不再带 cwd——服务端已忽略该参数（纯读快照，零副作用），
     // 会话切换只走 POST /api/dsh-mcp/session（bindSession cwd 变化时触发）。
     // 带 cwd 曾触发服务端 setSession → 广播 → 客户端再刷新的自激循环。
-    const payload = await api(state.API.servers);
+    const payload = await api<{
+      servers?: McpServerListEntry[];
+      counts?: McpCounts;
+      projectRoot?: string;
+    }>(state.API.servers);
     state.servers = payload.servers ?? [];
     state.counts = payload.counts ?? {};
     state.projectRoot = payload.projectRoot;
@@ -93,7 +97,7 @@ async function doRefresh(state: McpState, actions: UiActions): Promise<boolean> 
 }
 
 /** 切换面板 tab（servers / quick）。 */
-export function switchTab(state: McpState, actions: UiActions, tab: any): void {
+export function switchTab(state: McpState, actions: UiActions, tab: string): void {
   state.activeTab = tab;
   for (const tabEl of document.querySelectorAll<HTMLElement>(".dm-tab")) {
     tabEl.dataset.active = tabEl.dataset.tab === tab ? "true" : "";
@@ -158,7 +162,7 @@ export function close(state: McpState): void {
 export function showPanel(state: McpState, actions: UiActions): void {
   if (state.overlay === undefined) {
     state.overlay = el("div", { class: "dm-overlay", hidden: true });
-    state.overlay!.addEventListener("click", (event: any) => {
+    state.overlay!.addEventListener("click", (event: MouseEvent) => {
       if (event.target === state.overlay) close(state);
     });
     state.card = el("div", { class: "dm-card" });

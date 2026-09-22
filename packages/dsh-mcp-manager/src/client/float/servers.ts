@@ -11,10 +11,10 @@ import { api, toolDisableServerKey, cwdQueryOf } from "../core/api.ts";
 import { STATUS_ORDER } from "../core/constants.ts";
 import { tStatus } from "../core/i18n.ts";
 import { t } from "../../../../../shared/client/i18n.js";
-import type { McpState, UiActions } from "../core/state.ts";
+import type { McpServerListEntry, McpState, UiActions } from "../core/state.ts";
 
 /** 服务器端点摘要：streamable-http 显示 URL，stdio 显示 command + args。 */
-export function endpointOf(server: any): string {
+export function endpointOf(server: McpServerListEntry): string {
   if (server.transport === "streamable-http") return server.url ?? "";
   const args =
     Array.isArray(server.args) && server.args.length > 0 ? ` ${server.args.join(" ")}` : "";
@@ -22,7 +22,12 @@ export function endpointOf(server: any): string {
 }
 
 /** 操作按钮（统一失败提示）。 */
-export function actionButton(label: any, onClick: any, primary = false, danger = false): any {
+export function actionButton(
+  label: string,
+  onClick: () => void | Promise<void>,
+  primary = false,
+  danger = false,
+): HTMLElement {
   return el("button", {
     class: `${primary ? "dm-primary" : ""} ${danger ? "dm-danger" : ""}`.trim(),
     text: label,
@@ -40,12 +45,12 @@ export function actionButton(label: any, onClick: any, primary = false, danger =
 
 /** 工具级禁用 checkbox（PATCH /api/dsh-mcp/tool-disable；#362 交互拍板 2b）。 */
 function toolCheckbox(
-  server: any,
+  server: McpServerListEntry,
   tool: string,
   disabled: boolean,
   state: McpState,
   actions: UiActions,
-): any {
+): HTMLElement {
   const label = el("label", { class: "dm-tool" });
   const input = el("input", { type: "checkbox", checked: disabled });
   input.addEventListener("change", () => {
@@ -57,7 +62,7 @@ function toolCheckbox(
       console.warn("[dsh-mcp-manager] projectRoot 缺失，跳过 tool-disable（非法 @/name 防御）");
       return;
     }
-    void api(state.API.toolDisable, {
+    void api<unknown>(state.API.toolDisable, {
       method: "PATCH",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -67,7 +72,7 @@ function toolCheckbox(
       }),
     })
       .then(() => actions.refresh())
-      .catch((error: any) => {
+      .catch((error: unknown) => {
         input.checked = !input.checked;
         console.warn("[dsh-mcp-manager] tool-disable failed:", error);
       });
@@ -79,11 +84,11 @@ function toolCheckbox(
 
 /** 渲染单台服务器卡片。 */
 export function renderServer(
-  server: any,
+  server: McpServerListEntry,
   state: McpState,
   actions: UiActions,
   opts: { tools: boolean; openTools?: Set<string> } = { tools: true },
-): any {
+): HTMLElement {
   const article = el("article", {
     class:
       server.status === "failed" || server.status === "reconnecting"
@@ -126,7 +131,7 @@ export function renderServer(
     details.appendChild(el("summary", { text: t("toolsCount", { n: toolCount }) }));
     const list = el("ul");
     const disabledSet = new Set(Array.isArray(server.disabledTools) ? server.disabledTools : []);
-    for (const tool of server.tools) {
+    for (const tool of server.tools!) {
       list.appendChild(
         el("li", {}, [toolCheckbox(server, tool, disabledSet.has(tool), state, actions)]),
       );
@@ -138,7 +143,7 @@ export function renderServer(
     if (opts.openTools?.has(server.name) === true) details.open = true;
     details.appendChild(el("summary", { text: t("toolsCount", { n: toolCount }) }));
     const list = el("ul");
-    for (const tool of server.tools) list.appendChild(el("li", { text: tool }));
+    for (const tool of server.tools!) list.appendChild(el("li", { text: tool }));
     details.appendChild(list);
     article.appendChild(details);
   }
@@ -155,7 +160,7 @@ export function renderServer(
     actionsEl.appendChild(
       actionButton(t("disconnect"), async () => {
         // C7：disconnect 同样带 cwd（#412 场景浮窗/面板操作自愈，与 connect 对齐）。
-        await api(
+        await api<unknown>(
           `${state.API.disconnect}?name=${encodeURIComponent(server.name)}${scopeQuery}${cwdQuery}`,
           { method: "POST" },
         );
@@ -164,7 +169,7 @@ export function renderServer(
     );
     actionsEl.appendChild(
       actionButton(t("reconnect"), async () => {
-        await api(
+        await api<unknown>(
           `${state.API.reconnect}?name=${encodeURIComponent(server.name)}${scopeQuery}${cwdQuery}`,
           { method: "POST" },
         );
@@ -176,12 +181,15 @@ export function renderServer(
       actionButton(
         t("enableAndConnect"),
         async () => {
-          await api(`${state.API.servers}?name=${encodeURIComponent(server.name)}${scopeQuery}`, {
-            method: "PATCH",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ enabled: true }),
-          });
-          await api(
+          await api<unknown>(
+            `${state.API.servers}?name=${encodeURIComponent(server.name)}${scopeQuery}`,
+            {
+              method: "PATCH",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ enabled: true }),
+            },
+          );
+          await api<unknown>(
             `${state.API.connect}?name=${encodeURIComponent(server.name)}${scopeQuery}${cwdQuery}`,
             { method: "POST" },
           );
@@ -195,7 +203,7 @@ export function renderServer(
       actionButton(
         t("connect"),
         async () => {
-          await api(
+          await api<unknown>(
             `${state.API.connect}?name=${encodeURIComponent(server.name)}${scopeQuery}${cwdQuery}`,
             { method: "POST" },
           );
@@ -210,7 +218,7 @@ export function renderServer(
     actionsEl.appendChild(
       actionButton(t("disable"), async () => {
         // C7：disable 同样带 cwd（与 disconnect 对齐，#412 自愈）。
-        await api(
+        await api<unknown>(
           `${state.API.servers}?name=${encodeURIComponent(server.name)}${scopeQuery}${cwdQuery}`,
           {
             method: "PATCH",
@@ -229,9 +237,12 @@ export function renderServer(
       t("delete"),
       async () => {
         if (!window.confirm(t("confirmDelete", { name: server.name }))) return;
-        await api(`${state.API.servers}?name=${encodeURIComponent(server.name)}${scopeQuery}`, {
-          method: "DELETE",
-        });
+        await api<unknown>(
+          `${state.API.servers}?name=${encodeURIComponent(server.name)}${scopeQuery}`,
+          {
+            method: "DELETE",
+          },
+        );
         if (state.editingName === server.name) actions.resetForm();
         await actions.refresh();
       },
@@ -239,7 +250,7 @@ export function renderServer(
       true,
     ),
   );
-  actionsEl.children[actionsEl.children.length - 1].disabled = busy;
+  (actionsEl.children[actionsEl.children.length - 1] as HTMLButtonElement).disabled = busy;
   article.appendChild(actionsEl);
   return article;
 }
@@ -264,19 +275,19 @@ export function renderServers(state: McpState, actions: UiActions): void {
   }
   // 失败优先：需关注组置顶（跨 scope），其余再按 project/global × 状态。
   const attention = state.servers.filter(
-    (server: any) => server.status === "failed" || server.status === "reconnecting",
+    (server: McpServerListEntry) => server.status === "failed" || server.status === "reconnecting",
   );
   const rest = state.servers.filter(
-    (server: any) => server.status !== "failed" && server.status !== "reconnecting",
+    (server: McpServerListEntry) => server.status !== "failed" && server.status !== "reconnecting",
   );
-  const appendGroup = (title: string, list: any[], alert: boolean): void => {
+  const appendGroup = (title: string, list: McpServerListEntry[], alert: boolean): void => {
     if (list.length === 0) return;
     const section = el("section", { class: "dm-group" });
     // class 键省略（勿传 undefined，否则 className="undefined"）
     const titleEl = alert ? el("h3", { class: "dm-group-alert" }) : el("h3");
     titleEl.appendChild(document.createTextNode(title));
     section.appendChild(titleEl);
-    const byStatus = new Map<string, any[]>();
+    const byStatus = new Map<string, McpServerListEntry[]>();
     for (const group of STATUS_ORDER) byStatus.set(group.key, []);
     for (const server of list) {
       const bucket = byStatus.get(server.status);
@@ -293,7 +304,9 @@ export function renderServers(state: McpState, actions: UiActions): void {
           text: pangu(t("statusGroupCount", { status: t(group.titleKey), n: bucket.length })),
         }),
       );
-      for (const server of [...bucket].sort((a: any, b: any) => a.name.localeCompare(b.name))) {
+      for (const server of [...bucket].sort((a: McpServerListEntry, b: McpServerListEntry) =>
+        a.name.localeCompare(b.name),
+      )) {
         sub.appendChild(renderServer(server, state, actions, { tools: true, openTools }));
       }
       section.appendChild(sub);
@@ -302,7 +315,7 @@ export function renderServers(state: McpState, actions: UiActions): void {
   };
   appendGroup(t("groupAttention", { n: attention.length }), attention, true);
   for (const scope of ["project", "global"]) {
-    const list = rest.filter((server: any) => server.scope === scope);
+    const list = rest.filter((server: McpServerListEntry) => server.scope === scope);
     if (list.length === 0) continue;
     // 标题自带数量，不再额外挂 dm-count（避免双计数）；字面量已带空格，
     // 不经 pangu（计数拼装与盘古分层，避免语义错层）。

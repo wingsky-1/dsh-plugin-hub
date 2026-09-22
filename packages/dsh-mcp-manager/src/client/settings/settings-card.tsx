@@ -10,6 +10,7 @@ import * as React from "react";
 import { API } from "../core/constants.ts";
 import { api } from "../core/api.ts";
 import { t } from "../../../../../shared/client/i18n.js";
+import type { ClientUiConfig } from "../../shared/interface.ts";
 
 /**
  * 设置页插件卡（settings.plugin.item）：浮窗位置 / 偏移编辑区。
@@ -20,9 +21,9 @@ import { t } from "../../../../../shared/client/i18n.js";
 export function SettingsCard() {
   const useState = React.useState;
   const useEffect = React.useEffect;
-  // 显式声明状态形状：useState(null) 会把状态推成字面 null，写入对象只能靠整段宽化断言消音
-  //（那正是 shim 时代的做法）。cfg 是宿主设置对象的副本，形状由宿主决定，故按 Record 收。
-  const [cfg, setCfg] = useState(null as Record<string, any> | null);
+  // 显式声明状态形状：useState(null) 会把状态推成字面 null，故显式泛型为扁平 UI 5 键。
+  // cfg 是 GET /config 回执的副本，形状与跨端 ClientUiConfig 同源（DTO 单点）。
+  const [cfg, setCfg] = useState<ClientUiConfig | null>(null);
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState(null as { ok: boolean; text: string } | null);
@@ -33,8 +34,8 @@ export function SettingsCard() {
 
   useEffect(() => {
     let live = true;
-    api(API.config)
-      .then((c: any) => {
+    api<ClientUiConfig | null>(API.config)
+      .then((c: ClientUiConfig | null) => {
         if (live && c !== null && typeof c === "object") {
           setCfg(c);
         }
@@ -53,9 +54,12 @@ export function SettingsCard() {
     return <li className="dm-set-card">{t("settingsLoading")}</li>;
   }
 
-  const set = (patch: any) => setCfg((c) => (c !== null ? Object.assign({}, c, patch) : c));
+  const set = (patch: Partial<ClientUiConfig>) =>
+    setCfg((c) => (c !== null ? Object.assign({}, c, patch) : c));
   // 层级基准与偏移量分开钳制：层级 1-9000（#128），偏移维持 0-2000。
-  const numInput = (key: string, label: string, min = 0, max = 2000) => (
+  // 数字键仅四枚（position 走下拉），故收为数字键联合，索引与写回皆精确。
+  type CfgNumberKey = "offsetX" | "offsetY" | "blankY" | "zIndexBase";
+  const numInput = (key: CfgNumberKey, label: string, min = 0, max = 2000) => (
     <label className="dm-set-field">
       {label}
       <input
@@ -64,9 +68,11 @@ export function SettingsCard() {
         min={min}
         max={max}
         value={String(cfg[key])}
-        onChange={(e: any) => {
+        onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
           const v = Number(e.target.value);
-          set({ [key]: Number.isFinite(v) ? Math.min(max, Math.max(min, Math.round(v))) : min });
+          set({
+            [key]: Number.isFinite(v) ? Math.min(max, Math.max(min, Math.round(v))) : min,
+          } as Partial<ClientUiConfig>);
         }}
       />
     </label>
@@ -76,9 +82,9 @@ export function SettingsCard() {
     setSaving(true);
     setMsg(null);
     try {
-      // 提交面恒为扁平 UI 5 键（与 POST /config 的白名单同源）：GET 回来的形状即提交形状。
-      const payload: any = { ...cfg };
-      await api(API.config, {
+      // 提交面恒为扁平 UI 5 键（与 POST /config 的白名单同源）：GET 回来的形状即提交形状，spread 超集保留。
+      const payload: ClientUiConfig = { ...cfg };
+      await api<unknown>(API.config, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(payload),
@@ -133,7 +139,9 @@ export function SettingsCard() {
               id="dm-set-position"
               className="dm-set-input"
               value={cfg.position}
-              onChange={(e: any) => set({ position: e.target.value })}
+              onChange={(e: React.ChangeEvent<HTMLSelectElement>) =>
+                set({ position: e.target.value as ClientUiConfig["position"] })
+              }
             >
               <option value="top-right">{t("posTopRight")}</option>
               <option value="top-left">{t("posTopLeft")}</option>

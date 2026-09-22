@@ -11,7 +11,7 @@ import { api, toolDisableServerKey, cwdQueryOf } from "../core/api.ts";
 import { STATUS_ORDER, statusDot } from "../core/constants.ts";
 import { tStatus } from "../core/i18n.ts";
 import { t } from "../../../../../shared/client/i18n.js";
-import type { McpClientContext, McpState, UiActions } from "../core/state.ts";
+import type { McpClientContext, McpServerListEntry, McpState, UiActions } from "../core/state.ts";
 import {
   DEFAULT_Z_INDEX_BASE,
   breakpointForWidth,
@@ -68,12 +68,12 @@ export function renderPill(state: McpState): void {
  * 项目组与全局组一律渲染 checkbox。
  */
 function toolCheckbox(
-  server: any,
+  server: McpServerListEntry,
   tool: string,
   disabled: boolean,
   state: McpState,
   actions: UiActions,
-): any {
+): HTMLElement {
   const label = el("label", { class: "dm-float-tool" });
   const input = el("input", {
     type: "checkbox",
@@ -89,7 +89,7 @@ function toolCheckbox(
       console.warn("[dsh-mcp-manager] projectRoot 缺失，跳过 tool-disable（非法 @/name 防御）");
       return;
     }
-    void api(state.API.toolDisable, {
+    void api<unknown>(state.API.toolDisable, {
       method: "PATCH",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -99,7 +99,7 @@ function toolCheckbox(
       }),
     })
       .then(() => actions.refresh())
-      .catch((error: any) => {
+      .catch((error: unknown) => {
         input.checked = !input.checked;
         console.warn("[dsh-mcp-manager] tool-disable failed:", error);
       });
@@ -112,11 +112,11 @@ function toolCheckbox(
 /** 折叠式工具清单（方案 2b）：summary 显示「工具（N）」，展开后 checkbox 列表。
  * openTools：C8 折叠态恢复集合（渲染前由 renderFloatPanel 收集，按 server 名）。 */
 function renderFloatTools(
-  server: any,
+  server: McpServerListEntry,
   state: McpState,
   actions: UiActions,
   openTools: Set<string>,
-): any {
+): HTMLElement {
   const tools = Array.isArray(server.tools) ? server.tools : [];
   const disabledSet = new Set(Array.isArray(server.disabledTools) ? server.disabledTools : []);
   const details = el("details", { class: "dm-float-tools", dataset: { dmServer: server.name } });
@@ -131,7 +131,7 @@ function renderFloatTools(
 }
 
 /** 操作主次：按 status 判定（可连接 → primary），不依赖文案字面量。 */
-function floatActionClass(server: any): string {
+function floatActionClass(server: McpServerListEntry): string {
   if (server.status === "failed" || server.status === "stopped")
     return "dm-float-action dm-primary";
   return "dm-float-action";
@@ -139,11 +139,11 @@ function floatActionClass(server: any): string {
 
 /** 浮窗面板里的一行服务器。 */
 function renderFloatRow(
-  server: any,
+  server: McpServerListEntry,
   state: McpState,
   actions: UiActions,
   opts: { tools: boolean; openTools?: Set<string>; stagger?: number } = { tools: true },
-): any {
+): HTMLElement {
   const failed = server.status === "failed" || server.status === "reconnecting";
   const row = el("div", {
     class: `dm-float-row${failed ? " dm-float-row--fail" : ""}${opts.stagger !== undefined ? " dm-stagger" : ""}`,
@@ -166,19 +166,19 @@ function renderFloatRow(
     const action = el("button", { class: floatActionClass(server) });
     action.textContent = t("disconnect");
     action.addEventListener("click", () => {
-      void api(
+      void api<unknown>(
         `${state.API.disconnect}?name=${encodeURIComponent(server.name)}&scope=${server.scope}${cwdQuery}`,
         { method: "POST" },
       )
         .then(() => actions.refresh())
-        .catch((error: any) => console.warn("[dsh-mcp-manager] disconnect failed:", error));
+        .catch((error: unknown) => console.warn("[dsh-mcp-manager] disconnect failed:", error));
     });
     actionsEl.appendChild(action);
   } else if (server.status === "disabled") {
     const action = el("button", { class: floatActionClass(server) });
     action.textContent = t("enable");
     action.addEventListener("click", () => {
-      void api(
+      void api<unknown>(
         `${state.API.servers}?name=${encodeURIComponent(server.name)}&scope=${server.scope}${cwdQuery}`,
         {
           method: "PATCH",
@@ -187,19 +187,19 @@ function renderFloatRow(
         },
       )
         .then(() => actions.refresh())
-        .catch((error: any) => console.warn("[dsh-mcp-manager] enable failed:", error));
+        .catch((error: unknown) => console.warn("[dsh-mcp-manager] enable failed:", error));
     });
     actionsEl.appendChild(action);
   } else {
     const action = el("button", { class: floatActionClass(server) });
     action.textContent = t("connect");
     action.addEventListener("click", () => {
-      void api(
+      void api<unknown>(
         `${state.API.connect}?name=${encodeURIComponent(server.name)}&scope=${server.scope}${cwdQuery}`,
         { method: "POST" },
       )
         .then(() => actions.refresh())
-        .catch((error: any) => console.warn("[dsh-mcp-manager] connect failed:", error));
+        .catch((error: unknown) => console.warn("[dsh-mcp-manager] connect failed:", error));
     });
     actionsEl.appendChild(action);
   }
@@ -207,7 +207,7 @@ function renderFloatRow(
     const disable = el("button", { class: "dm-float-action" });
     disable.textContent = t("disable");
     disable.addEventListener("click", () => {
-      void api(
+      void api<unknown>(
         `${state.API.servers}?name=${encodeURIComponent(server.name)}&scope=${server.scope}`,
         {
           method: "PATCH",
@@ -216,7 +216,7 @@ function renderFloatRow(
         },
       )
         .then(() => actions.refresh())
-        .catch((error: any) => console.warn("[dsh-mcp-manager] disable failed:", error));
+        .catch((error: unknown) => console.warn("[dsh-mcp-manager] disable failed:", error));
     });
     actionsEl.appendChild(disable);
   }
@@ -227,12 +227,12 @@ function renderFloatRow(
 }
 
 /** 浮窗健康摘要（一行：运行/连接/失败）。 */
-function renderFloatHealth(state: McpState): any {
+function renderFloatHealth(state: McpState): HTMLElement {
   const connected = state.counts.connected ?? 0;
   const connecting = (state.counts.connecting ?? 0) + (state.counts.reconnecting ?? 0);
   const failed = state.counts.failed ?? 0;
   const stopped = state.counts.stopped ?? 0;
-  const parts: any[] = [];
+  const parts: Node[] = [];
   parts.push(
     el("span", { class: "dm-health-ok", text: pangu(t("healthRunning", { n: connected })) }),
   );
@@ -253,9 +253,9 @@ function renderFloatHealth(state: McpState): any {
 
 /** 按 scope 过滤并按状态序渲染一组服务器。 */
 function appendScopeGroup(
-  panel: any,
+  panel: Element,
   scope: string,
-  list: any[],
+  list: McpServerListEntry[],
   state: McpState,
   actions: UiActions,
   openTools: Set<string>,
@@ -272,7 +272,7 @@ function appendScopeGroup(
       text: titleOverride ?? (scope === "project" ? t("groupProject") : t("groupGlobal")),
     }),
   );
-  const byStatus = new Map<string, any[]>();
+  const byStatus = new Map<string, McpServerListEntry[]>();
   for (const group of STATUS_ORDER) byStatus.set(group.key, []);
   for (const server of list) {
     const bucket = byStatus.get(server.status);
@@ -282,7 +282,9 @@ function appendScopeGroup(
   for (const group of STATUS_ORDER) {
     const bucket = byStatus.get(group.key) ?? [];
     if (bucket.length === 0) continue;
-    for (const server of [...bucket].sort((a: any, b: any) => a.name.localeCompare(b.name))) {
+    for (const server of [...bucket].sort((a: McpServerListEntry, b: McpServerListEntry) =>
+      a.name.localeCompare(b.name),
+    )) {
       const stagger = animateRows ? staggerBase.n : undefined;
       if (stagger !== undefined) staggerBase.n += 1;
       section.appendChild(
@@ -343,10 +345,10 @@ export function renderFloatPanel(state: McpState, actions: UiActions): void {
   const animateRows = state.floatPanel.dataset.dmStagger === "1";
   const staggerBase = { n: 0 };
   const attention = state.servers.filter(
-    (server: any) => server.status === "failed" || server.status === "reconnecting",
+    (server: McpServerListEntry) => server.status === "failed" || server.status === "reconnecting",
   );
   const rest = state.servers.filter(
-    (server: any) => server.status !== "failed" && server.status !== "reconnecting",
+    (server: McpServerListEntry) => server.status !== "failed" && server.status !== "reconnecting",
   );
   appendScopeGroup(
     state.floatPanel,
@@ -364,7 +366,7 @@ export function renderFloatPanel(state: McpState, actions: UiActions): void {
     appendScopeGroup(
       state.floatPanel,
       scope,
-      rest.filter((server: any) => server.scope === scope),
+      rest.filter((server: McpServerListEntry) => server.scope === scope),
       state,
       actions,
       openTools,
@@ -460,7 +462,7 @@ export function placePanel(state: McpState): void {
 }
 
 /** 会话滚动容器：聊天消息实际滚动的区域（shell 的 data-conversation-scroll）。 */
-export function conversationHost(): any {
+export function conversationHost(): Element {
   return (
     document.querySelector("[data-conversation-scroll]") ??
     document.querySelector('[data-pane="conversation"]') ??
@@ -470,7 +472,7 @@ export function conversationHost(): any {
 }
 
 /** 全局 overlay 层：下拉面板挂这里（fixed 定位，避免被滚动容器裁剪）。 */
-export function panelHost(): any {
+export function panelHost(): Element {
   return document.querySelector("[data-shell-overlay]") ?? document.body;
 }
 
@@ -509,7 +511,7 @@ export function mountFloat(ctx: McpClientContext, state: McpState, actions: UiAc
   if (panel.parentElement !== panelRoot) panelRoot.appendChild(panel);
 
   // 失去焦点后自动关闭：焦点离开胶囊/面板时收起下拉框。
-  const onFocusOut = (event: any) => {
+  const onFocusOut = (event: FocusEvent) => {
     if (!state.floatOpen) return;
     const next = event.relatedTarget as Node | null;
     if (next !== null && (state.floatPanel?.contains(next) || state.floatPill?.contains(next)))
@@ -518,13 +520,13 @@ export function mountFloat(ctx: McpClientContext, state: McpState, actions: UiAc
   };
   document.addEventListener("focusout", onFocusOut);
   // Esc 关闭下拉面板（与模态 panel.ts C4 同语义；具名函数配对清理防泄漏）。
-  const onKeyDown = (event: any) => {
+  const onKeyDown = (event: KeyboardEvent) => {
     if (event.defaultPrevented) return;
     if (event.key === "Escape" && state.floatOpen) toggleFloat(state, actions, false);
   };
   document.addEventListener("keydown", onKeyDown);
 
-  let host: any;
+  let host: Element | null | undefined;
 
   /**
    * 按 settings.yaml 配置把胶囊定位到对话容器四角之一（双轴：left/right × top/bottom）。
@@ -587,7 +589,7 @@ export function mountFloat(ctx: McpClientContext, state: McpState, actions: UiAc
   };
   state.updateFloatState = updateFloat;
 
-  const listeners: any[] = [];
+  const listeners: (() => void)[] = [];
 
   /** rAF 合并调度：同帧多次 scroll/resize/vv-resize 只重算一次（#128 第 7 条）。 */
   let rafId = 0;
@@ -609,7 +611,7 @@ export function mountFloat(ctx: McpClientContext, state: McpState, actions: UiAc
     scheduleUpdate();
   };
 
-  const attachListeners = (target: any) => {
+  const attachListeners = (target: Element) => {
     for (const detach of listeners.splice(0)) detach();
     target.addEventListener("scroll", scheduleUpdate, { passive: true });
     window.addEventListener("resize", scheduleUpdate);

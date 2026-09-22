@@ -115,7 +115,7 @@ export function apply(ctx: McpClientContext): void {
     disposers.push(bindSession(ctx, state, actions));
 
     // 读取 settings.yaml 中的 UI 配置（右上/右下 + 偏移量），不依赖设置页。
-    api(state.API.config)
+    api<ClientUiConfig>(state.API.config)
       .then((cfg: ClientUiConfig) => {
         if (cfg !== null && typeof cfg === "object") state.mcpUiConfig = cfg;
         state.updateFloatState?.();
@@ -230,14 +230,14 @@ export function apply(ctx: McpClientContext): void {
     const maybeRecoverSession = () => {
       const now = Date.now();
       if (now - lastRecoverAt < 10_000) return;
-      void api(state.API.servers)
+      void api<{ projectRoot?: unknown } | undefined>(state.API.servers)
         .then((payload: { projectRoot?: unknown } | undefined) => {
           if (payload?.projectRoot !== undefined) return; // 宿主状态正常
           const cwd = state.currentCwd;
           if (typeof cwd !== "string" || cwd === "") return;
           lastRecoverAt = Date.now();
           void rebindSession(state)
-            .then(() => api(state.API.resume, { method: "POST" }))
+            .then(() => api<unknown>(state.API.resume, { method: "POST" }))
             .catch(() => {});
         })
         .catch(() => {});
@@ -266,7 +266,7 @@ export function apply(ctx: McpClientContext): void {
           if (msg !== undefined && msg.type === SSE_FRAMES.uiConfigChanged) {
             // 配置变更（设置页保存 position/offset）→ 重新 GET /config 就地更新浮窗
             // 位置，非仅刷新 /servers；更新后重新定位胶囊与（若展开的）面板。
-            void api(state.API.config)
+            void api<ClientUiConfig>(state.API.config)
               .then((cfg: ClientUiConfig) => {
                 if (cfg !== null && typeof cfg === "object") {
                   state.mcpUiConfig = cfg;
@@ -333,7 +333,7 @@ export function apply(ctx: McpClientContext): void {
       if (document.hidden) return;
       forceReconnect();
       void rebindSession(state)
-        .then(() => api(state.API.resume, { method: "POST" }))
+        .then(() => api<unknown>(state.API.resume, { method: "POST" }))
         .catch(() => {});
       void refresh(state, actions).catch(() => {});
     };

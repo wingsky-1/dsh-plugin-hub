@@ -9,9 +9,10 @@ import { el } from "../core/dom.ts";
 import { api } from "../core/api.ts";
 import { t } from "../../../../../shared/client/i18n.js";
 import type { McpState, UiActions } from "../core/state.ts";
+import type { McpManagerServerInput, McpServerListEntry } from "../../shared/interface.ts";
 
 /** 解析 "KEY: VALUE" / "KEY=VALUE" 多行文本为对象。 */
-export function parseKV(text: any): Record<string, string> {
+export function parseKV(text: string): Record<string, string> {
   const out: Record<string, string> = {};
   for (const raw of text.split(/\r?\n/)) {
     const line = raw.trim();
@@ -56,17 +57,17 @@ export function currentCwdBody(state: McpState): Record<string, string> {
 }
 
 /** 表单数据 → 服务器配置对象（scope 由 formScope 决定）。 */
-export function readForm(state: McpState): any {
-  const server: any = {
+export function readForm(state: McpState): McpManagerServerInput {
+  const server: McpManagerServerInput = {
     name: state.formName?.value.trim() ?? "",
-    transport: state.formTransport?.value ?? "stdio",
+    transport: (state.formTransport?.value ?? "stdio") as McpManagerServerInput["transport"],
     enabled: state.formEnabled?.checked ?? true,
   };
   if (server.transport === "stdio") {
     server.command = state.formCommand?.value.trim() ?? "";
     const args = (state.formArgs?.value ?? "")
       .split(",")
-      .map((part: any) => part.trim())
+      .map((part: string) => part.trim())
       .filter(Boolean);
     if (args.length > 0) server.args = args;
     const env = parseKV(state.formEnv?.value ?? "");
@@ -104,7 +105,7 @@ export function resetForm(state: McpState): void {
 }
 
 /** 用服务器数据填充表单（编辑模式）。 */
-export function fillForm(state: McpState, fill: any): void {
+export function fillForm(state: McpState, fill: McpServerListEntry): void {
   // C1 链路修复：不再调 resetForm()——resetForm 会清空 editingName，导致
   // beginEdit 设置的编辑态丢失、saveForm 恒走 POST → 宿主抛 already exists
   // （编辑保存整体坏死）。表单元素由 buildQuickAdd 按 state.editing 构建，
@@ -194,17 +195,17 @@ export async function saveForm(state: McpState, actions: UiActions): Promise<voi
         );
         return;
       }
-      await api(state.API.servers, {
+      await api<unknown>(state.API.servers, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(payload),
       });
-      await api(
+      await api<unknown>(
         `${state.API.servers}?name=${encodeURIComponent(state.editingName!)}&scope=${state.editing!.scope}`,
         { method: "DELETE" },
       );
     } else if (editing) {
-      await api(
+      await api<unknown>(
         `${state.API.servers}?name=${encodeURIComponent(state.editingName!)}&scope=${formScopeValue(state)}`,
         {
           method: "PATCH",
@@ -213,7 +214,7 @@ export async function saveForm(state: McpState, actions: UiActions): Promise<voi
         },
       );
     } else {
-      await api(state.API.servers, {
+      await api<unknown>(state.API.servers, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(payload),
@@ -227,7 +228,7 @@ export async function saveForm(state: McpState, actions: UiActions): Promise<voi
 }
 
 /** 进入编辑模式：填充表单，切换到快速接入 tab。 */
-export function beginEdit(state: McpState, actions: UiActions, server: any): void {
+export function beginEdit(state: McpState, actions: UiActions, server: McpServerListEntry): void {
   state.editingName = server.name;
   state.editing = server;
   actions.switchTab("quick");
@@ -242,7 +243,7 @@ export function beginEdit(state: McpState, actions: UiActions, server: any): voi
 }
 
 /** 构建「快速接入」页面（表单 + JSON 导入）。 */
-export function buildQuickAdd(state: McpState, actions: UiActions): any {
+export function buildQuickAdd(state: McpState, actions: UiActions): HTMLElement {
   const page = el("div");
 
   // 表单
@@ -383,17 +384,20 @@ export function buildQuickAdd(state: McpState, actions: UiActions): any {
           class: "dm-primary",
           text: t("importJson"),
           onclick: async () => {
-            const result = pasteBox.querySelector(".dm-result");
+            const result = pasteBox.querySelector(".dm-result")!;
             try {
-              const payload = await api(state.API.importJson, {
-                method: "POST",
-                headers: { "content-type": "application/json" },
-                body: JSON.stringify({
-                  json: textarea.value,
-                  scope: formScopeValue(state),
-                  ...currentCwdBody(state),
-                }),
-              });
+              const payload = await api<{ imported: string[]; skipped: string[] }>(
+                state.API.importJson,
+                {
+                  method: "POST",
+                  headers: { "content-type": "application/json" },
+                  body: JSON.stringify({
+                    json: textarea.value,
+                    scope: formScopeValue(state),
+                    ...currentCwdBody(state),
+                  }),
+                },
+              );
               result.textContent = t("importedOk", {
                 names: payload.imported.join(", ") || t("importedNone"),
               });
