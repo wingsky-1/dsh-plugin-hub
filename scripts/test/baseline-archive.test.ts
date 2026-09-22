@@ -147,7 +147,7 @@ test("期望集合派生：dsh- 前缀剥离 + seg=0 单配置形态", () => {
   assert.deepEqual(expectedBaselineFiles(["README.md", null]), [], "非 .json 条目不得进期望集合");
 });
 
-test("期望集合与真实仓库一致：stryker.conf.d/*.json 一条不落（49 段）", () => {
+test("期望集合与真实仓库一致：stryker.conf.d/*.json 一条不落（51 段）", () => {
   const confNames = readdirSync(join(ROOT, "stryker.conf.d")).filter((f) => f.endsWith(".json"));
   const expected = expectedBaselineFiles(confNames);
   assert.equal(expected.length, confNames.length, "每个段配置都应对应一个基线文件");
@@ -158,9 +158,10 @@ test("期望集合与真实仓库一致：stryker.conf.d/*.json 一条不落（4
   // #856 新增 dsh-lan-proxy host-trust 域 35 → 36；#826 新增 dsh-lan-proxy client 段 36 → 37；
   // #767 S1-2b 新增 servers 段 37 → 38；#768 S3 新增 dsh-provider-usage upgrade 段 38 → 39；
   // #930 新增 dsh-lan-proxy ca 域 39 → 40；#947 新增 dsh-mcp-manager client-panel 段 40 → 41；
-  // 首登 dsh-jev-decide 单段 41 → 42；#943 对账后 jev 按域拆八段 42 → 49），
+  // 首登 dsh-jev-decide 单段 41 → 42；#943 对账后 jev 按域拆八段 42 → 49；
+  // #962 A 拆 dsh-provider-usage pipeline 大段为 pipeline-history/core/view 三段 49 → 51），
   // 否则新增段静默漏进归档期望集合也无人察觉。
-  assert.equal(expected.length, 49, `段数应为 49，实际 ${expected.length}`);
+  assert.equal(expected.length, 51, `段数应为 51，实际 ${expected.length}`);
   for (const f of expected) assert.match(f, BASELINE_FILE_RE, `文件名应匹配归档形态：${f}`);
 });
 

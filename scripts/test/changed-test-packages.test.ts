@@ -169,8 +169,8 @@ test("P2c: 其余包段条目映射", () => {
   const reg = JSON.parse(readFileSync(join(ROOT, "scripts/data/ci-face-registry.json"), "utf8"));
   const topo = JSON.parse(readFileSync(join(ROOT, "scripts/data/mutation-topology.json"), "utf8"));
   assert.deepEqual(
-    packagesToInvalidate(["stryker.conf.d/dsh-provider-usage-pipeline.json"], reg, topo),
-    ["dsh-provider-usage:pipeline"],
+    packagesToInvalidate(["stryker.conf.d/dsh-provider-usage-pipeline-core.json"], reg, topo),
+    ["dsh-provider-usage:pipeline-core"],
   );
   assert.deepEqual(
     packagesToInvalidate(["vitest.stryker.d/dsh-lan-proxy-tls.config.ts"], reg, topo),
@@ -394,7 +394,9 @@ test("D: helpers 反向断言 + 命中窄化/全段回落 + 未命中复用", ()
     [
       "dsh-provider-usage:contracts",
       "dsh-provider-usage:entry",
-      "dsh-provider-usage:pipeline",
+      "dsh-provider-usage:pipeline-core",
+      "dsh-provider-usage:pipeline-history",
+      "dsh-provider-usage:pipeline-view",
       "dsh-provider-usage:registry",
       "dsh-provider-usage:sanitize",
     ],
@@ -411,7 +413,9 @@ test("D: helpers 反向断言 + 命中窄化/全段回落 + 未命中复用", ()
     [
       "dsh-provider-usage:contracts",
       "dsh-provider-usage:entry",
-      "dsh-provider-usage:pipeline",
+      "dsh-provider-usage:pipeline-core",
+      "dsh-provider-usage:pipeline-history",
+      "dsh-provider-usage:pipeline-view",
       "dsh-provider-usage:registry",
       "dsh-provider-usage:sanitize",
     ],

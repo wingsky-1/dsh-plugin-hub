@@ -1,15 +1,11 @@
 {
   "$schema": "../node_modules/@stryker-mutator/core/schema/stryker-schema.json",
   "mutate": [
-    "packages/dsh-provider-usage/src/server/history/history.ts",
     "packages/dsh-provider-usage/src/server/pipeline/v2.ts",
+    "packages/dsh-provider-usage/src/server/pipeline/stats-service.ts",
     "packages/dsh-provider-usage/src/server/registry/hotreload.ts",
     "packages/dsh-provider-usage/src/server/registry/path-resolve.ts",
-    "packages/dsh-provider-usage/src/shared/placement-math.ts",
-    "packages/dsh-provider-usage/src/shared/client-logic.ts",
     "packages/dsh-provider-usage/src/server/registry/provider-config.ts",
-    "packages/dsh-provider-usage/src/shared/charts.ts",
-    "packages/dsh-provider-usage/src/server/pipeline/stats-service.ts",
     "!packages/dsh-provider-usage/src/client/**",
     "!packages/dsh-provider-usage/src/**/interface.ts",
     "!packages/dsh-provider-usage/src/server/*/deps.ts",
@@ -43,12 +39,12 @@
   "cleanTempDir": true,
   "vitest": {
     "related": false,
-    "configFile": "vitest.stryker.d/dsh-provider-usage-pipeline.config.ts"
+    "configFile": "vitest.stryker.d/dsh-provider-usage-pipeline-core.config.ts"
   },
   "jsonReporter": {
-    "fileName": "coverage/mutation/dsh-provider-usage-pipeline.json"
+    "fileName": "coverage/mutation/dsh-provider-usage-pipeline-core.json"
   },
   "incremental": true,
-  "incrementalFile": "coverage/mutation/incremental-provider-usage-pipeline.json",
-  "_comment": "#342 v4：src 级文件组分段（5）——history/v2/hotreload/placement-math/path-resolve/client-logic/provider-config/charts/stats-service（历史/管线/热更/图表/C3 服务面；charts 纳入修复变异盲区；阶段零补 stats-service 盲区）；#768 D5 历史文件随域迁 server/history（路径同步，行为零改 + writeDirect 原子写硬化）；#768 D6 管线三文件随域迁 server/pipeline（路径同步，行为零改 + 净化缺席判据）；#768 D7 注册表三文件随域迁 server/registry（路径同步，行为零改 + 双启用判据）；测试按段 testFiles 清单跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
+  "incrementalFile": "coverage/mutation/incremental-provider-usage-pipeline-core.json",
+  "_comment": "#962 A 拆大段（三向之一：管线-注册表服务面）——原 pipeline 段的 v2/stats-service（#768 D6 随域迁 server/pipeline，净化缺席判据；阶段零补 stats-service 盲区）+ hotreload/path-resolve/provider-config（#768 D7 随域迁 server/registry，双启用判据）；testFiles 原样继承原段 22 个（零收窄，理由同 pipeline-history）；测试按段 testFiles 清单跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
 }
