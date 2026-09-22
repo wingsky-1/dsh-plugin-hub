@@ -9,6 +9,7 @@ export default defineConfig({
   test: {
     include: [
       'packages/dsh-mcp-manager/test/client-dom/panel-aria-modal.test.ts',
+      'packages/dsh-mcp-manager/test/client-dom/settings-card.test.ts',
       'packages/dsh-mcp-manager/test/client-unit/client-context-s2.test.ts',
     ],
     environment: 'node',
