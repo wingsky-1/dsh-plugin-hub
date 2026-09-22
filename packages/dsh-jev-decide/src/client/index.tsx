@@ -10,7 +10,7 @@
 import STYLE from "./style.css";
 import { ensureStyle } from "../../../../shared/client/ensure-style.js";
 import * as React from "react";
-import { bindTranslate, t, type HostTranslate } from "./locale.ts";
+import { bindTranslate, t, unbindTranslate, type HostTranslate } from "./locale.ts";
 import { en, zh } from "./locales.ts";
 import { JevCard } from "./settings/card.tsx";
 
@@ -124,6 +124,8 @@ export function apply(ctx: ClientContext): void {
           } catch {
             /* 卸载期静默 */
           }
+          // 摘除模块级宿主绑定：否则 bound 残留 stale 宿主实现，卸载后 t() 不再回落。
+          unbindTranslate();
         };
       }, "dsh-jev-decide-locale");
     }
