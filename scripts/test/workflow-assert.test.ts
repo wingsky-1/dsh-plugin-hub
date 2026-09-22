@@ -788,12 +788,18 @@ test("#423+#722: 变异测试单份维护——禁 *.src.test.ts 回潮 + 变异
         `${tf}（${pkgName}）不得 import lib/——变异必须跑在源码上（#722）`,
       );
     }
-    const expectedRel = `vitest.stryker.d/${pkgName}.config.ts`;
+    const segDefs = topology.packages[pkgName]?.segments ?? {};
     const confFiles = readdirSync(confDir).filter(
       (x) => x.endsWith(".json") && (x === `${pkgName}.json` || x.startsWith(`${pkgName}-`)),
     );
     assert.ok(confFiles.length > 0, `${pkgName} 应有段配置`);
     for (const cf of confFiles) {
+      const segKey = cf === `${pkgName}.json` ? "_single" : cf.slice(pkgName.length + 1, -5);
+      const segList = segDefs[segKey]?.testFiles;
+      const expectedRel =
+        Array.isArray(segList) && segList.length > 0
+          ? `vitest.stryker.d/${pkgName}-${segKey}.config.ts`
+          : `vitest.stryker.d/${pkgName}.config.ts`;
       const conf = JSON.parse(readFileSync(join(confDir, cf), "utf8"));
       assert.equal(
         conf.testFiles,
@@ -803,8 +809,15 @@ test("#423+#722: 变异测试单份维护——禁 *.src.test.ts 回潮 + 变异
       assert.equal(
         conf.vitest?.configFile,
         expectedRel,
-        `${cf} 的 vitest.configFile 必须指向本包派生的测试面配置（${expectedRel}）`,
+        `${cf} 的 vitest.configFile 必须指向派生的测试面配置（${expectedRel}）`,
       );
+      if (Array.isArray(segList) && segList.length > 0) {
+        const segConfPath = join(ROOT, expectedRel);
+        assert.ok(
+          existsSync(segConfPath),
+          `显式段 ${pkgName}:${segKey} 的段级 vitest 配置必须落盘`,
+        );
+      }
     }
   }
 });

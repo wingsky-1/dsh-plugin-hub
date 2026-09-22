@@ -24,7 +24,9 @@ import {
   packagesToInvalidate,
   parseTestDiffPaths,
   segmentEntryFor,
+  testFileEntries,
 } from "../ci/changed-test-packages.mjs";
+import { projectTestSurface } from "../gate/test-surface.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const SCRIPT = join(ROOT, "scripts/ci/changed-test-packages.mjs");
@@ -228,4 +230,46 @@ test("#742 1.7: CLI 在同基线上输出空清单，基准不可解析时 fail-
     env: { ...process.env, BASE: "", GITHUB_OUTPUT: "" },
   });
   assert.equal(noBase.status, 1, "BASE 为空必须 exit 1");
+});
+
+test("P2-L4: 测试文件按 topology testFiles 映射到段（回落/显式/未认领/缺字段）", () => {
+  const reg = JSON.parse(readFileSync(join(ROOT, "scripts/data/ci-face-registry.json"), "utf8"));
+  const topo = JSON.parse(readFileSync(join(ROOT, "scripts/data/mutation-topology.json"), "utf8"));
+  const face = projectTestSurface(ROOT, topo, "dsh-notifier").testFiles;
+  assert.ok(face.length > 1, "notifier 变异面须有至少 2 个文件才可做映射断言");
+  const [fa, fb] = face;
+  // 全回落（当前仓库态）：认领段 == 全段 → 收敛为整包（与 P1 行为一致）
+  assert.deepEqual(packagesToInvalidate([fa], reg, topo), ["dsh-notifier"]);
+  // 合成窄化：一显式一回落，改文件只发射命中段
+  const narrow = structuredClone(topo);
+  narrow.packages["dsh-notifier"].segments = {
+    segA: { testFiles: [fa], mutate: [], excludes: [] },
+    segB: { testFiles: [fb], mutate: [], excludes: [] },
+    segC: { testFiles: "*", mutate: [], excludes: [] },
+  };
+  assert.deepEqual(packagesToInvalidate([fa], reg, narrow), [
+    "dsh-notifier:segA",
+    "dsh-notifier:segC",
+  ]);
+  assert.deepEqual(packagesToInvalidate([fb], reg, narrow), [
+    "dsh-notifier:segB",
+    "dsh-notifier:segC",
+  ]);
+  // 未认领（面内文件无段登记）：整包 fail-closed
+  const gap = structuredClone(topo);
+  gap.packages["dsh-notifier"].segments = {
+    segA: { testFiles: [fa], mutate: [], excludes: [] },
+  };
+  assert.deepEqual(packagesToInvalidate([fb], reg, gap), ["dsh-notifier"]);
+  // 缺字段段：整包 fail-closed（形状错时不静默窄化）
+  const missing = structuredClone(topo);
+  missing.packages["dsh-notifier"].segments = {
+    segA: { testFiles: [fa], mutate: [], excludes: [] },
+    segB: { mutate: [], excludes: [] },
+  };
+  assert.deepEqual(packagesToInvalidate([fa], reg, missing), ["dsh-notifier"]);
+  // 无 topology：旧行为（整包）
+  assert.deepEqual(packagesToInvalidate([fa], reg), ["dsh-notifier"]);
+  // testFileEntries 直调：包外形状
+  assert.deepEqual(testFileEntries(null, ROOT, new Map(), "dsh-notifier", fa), ["dsh-notifier"]);
 });

@@ -39,31 +39,37 @@
         "api": {
           "mutate": ["packages/dsh-jev-decide/src/server/api/**/*.ts"],
           "excludes": [],
+          "testFiles": "*",
           "comment": "按域分段（#943 对账后，单段 _single 按 server 目录名拆分）：api 域全量在面内（含 interface 门面与 deps 类型面）；面文件集与单段时代一致，仅执行分片变化；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
         },
         "config": {
           "mutate": ["packages/dsh-jev-decide/src/server/config/**/*.ts"],
           "excludes": [],
+          "testFiles": "*",
           "comment": "按域分段（#943 对账后，单段 _single 按 server 目录名拆分）：config 域全量在面内（含 interface 门面与 deps 类型面）；面文件集与单段时代一致，仅执行分片变化；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
         },
         "history": {
           "mutate": ["packages/dsh-jev-decide/src/server/history/**/*.ts"],
           "excludes": [],
+          "testFiles": "*",
           "comment": "按域分段（#943 对账后，单段 _single 按 server 目录名拆分）：history 域全量在面内（含 interface 门面与 deps 类型面）；面文件集与单段时代一致，仅执行分片变化；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
         },
         "store": {
           "mutate": ["packages/dsh-jev-decide/src/server/store/**/*.ts"],
           "excludes": [],
+          "testFiles": "*",
           "comment": "按域分段（#943 对账后，单段 _single 按 server 目录名拆分）：store 域全量在面内（含 interface 门面与 deps 类型面）；面文件集与单段时代一致，仅执行分片变化；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
         },
         "tools": {
           "mutate": ["packages/dsh-jev-decide/src/server/tools/**/*.ts"],
           "excludes": [],
+          "testFiles": "*",
           "comment": "按域分段（#943 对账后，单段 _single 按 server 目录名拆分）：tools 域全量在面内（含 interface 门面与 deps 类型面）；面文件集与单段时代一致，仅执行分片变化；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
         },
         "upgrade": {
           "mutate": ["packages/dsh-jev-decide/src/server/upgrade/**/*.ts"],
           "excludes": [],
+          "testFiles": "*",
           "comment": "按域分段（#943 对账后，单段 _single 按 server 目录名拆分）：upgrade 域全量在面内（含 interface 门面与 deps 类型面）；面文件集与单段时代一致，仅执行分片变化；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
         },
         "entry": {
@@ -72,6 +78,7 @@
             "packages/dsh-jev-decide/src/shared/**/*.ts"
           ],
           "excludes": [],
+          "testFiles": "*",
           "comment": "按域分段（对标 lan-proxy entry 段）：宿主唯一入口 src/index.ts + 双端共享 src/shared/**（contract 契约解析在面内）；面文件集与单段时代一致，仅执行分片变化；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
         },
         "client": {
@@ -80,6 +87,7 @@
             "packages/dsh-jev-decide/src/client/**/*.tsx"
           ],
           "excludes": [],
+          "testFiles": "*",
           "comment": "React 独立 tab（含 tsx 真实行为判据）：vanilla DOM 层已删，settings/*.tsx（密钥二选一、详情单开、保存守卫、清空两步、过滤）进变异面；css.d.ts 留面内保并集棘轮不收缩；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
         }
       },
@@ -92,11 +100,13 @@
         "ca": {
           "mutate": ["packages/dsh-lan-proxy/src/server/ca/impl/*.ts"],
           "excludes": ["!packages/dsh-lan-proxy/src/client/**"],
+          "testFiles": "*",
           "comment": "#930 新域：一键生成本地 CA（三态判定 state.ts + POST 动作 actions.ts；forge 签发纯函数归 tls 域）。门面按 facade 口径进 coverageExcludes；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
         },
         "config": {
           "mutate": ["packages/dsh-lan-proxy/src/server/config/impl/*.ts"],
           "excludes": ["!packages/dsh-lan-proxy/src/client/**"],
+          "testFiles": "*",
           "comment": "#826 域归位：段按模块目录划分（与 src/server/<域>/ 一一对应），config 域 impl（model 原根 config.ts / routes 原根 config-routes.ts / namespace 原根 settings.ts）；门面按 facade 口径进 coverageExcludes；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
         },
         "entry": {
@@ -105,11 +115,13 @@
             "packages/dsh-lan-proxy/src/server/apply.ts"
           ],
           "excludes": ["!packages/dsh-lan-proxy/src/client/**"],
+          "testFiles": "*",
           "comment": "#826 域归位：两个无模块目录归属的根文件合为 entry 段（mcp-manager / provider-usage 先例）——src/index.ts 是宿主唯一入口，tsconfig rootDir=src 要求它留在 src 根；server/apply.ts 是组合根装配。测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
         },
         "host-trust": {
           "mutate": ["packages/dsh-lan-proxy/src/server/host-trust/impl/*.ts"],
           "excludes": ["!packages/dsh-lan-proxy/src/client/**"],
+          "testFiles": "*",
           "comment": "#856 新域：host trust 兼容注入（非回环页面声明 ownsHost 的自条件脚本 + 官方 webServer.tapIndex 注册）。与 config/entry 同生命周期但独立成段——域内只有 impl/injection.ts 一个实现文件，错登进 entry 会让该段的 impl 变更信号被组合根噪声淹没；门面按 facade 口径进 coverageExcludes；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
         },
         "migrate": {
@@ -118,11 +130,13 @@
             "packages/dsh-lan-proxy/src/server/migrate/impl/layout/index.ts"
           ],
           "excludes": ["!packages/dsh-lan-proxy/src/client/**"],
+          "testFiles": "*",
           "comment": "#826 域归位：migrate 域（原根 migrate.ts，一次性 config.json 收编）；门面按 facade 口径进 coverageExcludes；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
         },
         "proxy": {
           "mutate": ["packages/dsh-lan-proxy/src/server/proxy/impl/proxy.ts"],
           "excludes": ["!packages/dsh-lan-proxy/src/client/**"],
+          "testFiles": "*",
           "comment": "#826 域归位：proxy 域——代理实现（原根 proxy.ts，单文件千行级）；沿用 #220 B 段「大文件独占一段」口径；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
         },
         "shared": {
@@ -133,11 +147,13 @@
             "packages/dsh-lan-proxy/src/server/shared/paths.ts"
           ],
           "excludes": ["!packages/dsh-lan-proxy/src/client/**"],
+          "testFiles": "*",
           "comment": "#826 域归位：shared 叶子（重排时新提取的共用面——默认值 / WS 压缩策略 / 回环判定，域与配置 schema 同向依赖它）；门面按 facade 口径进 coverageExcludes；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
         },
         "tls": {
           "mutate": ["packages/dsh-lan-proxy/src/server/tls/impl/index.ts"],
           "excludes": ["!packages/dsh-lan-proxy/src/client/**"],
+          "testFiles": "*",
           "comment": "#826 域归位：tls 域（原根 cert.ts，自签证书签发与续期）；门面按 facade 口径进 coverageExcludes；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
         },
         "client": {
@@ -146,6 +162,7 @@
             "packages/dsh-lan-proxy/src/client/**/*.tsx"
           ],
           "excludes": ["!packages/dsh-lan-proxy/src/client/**/*.d.ts"],
+          "testFiles": "*",
           "comment": "#826 客户端真实行为判据：装配、host-trust、设置卡保存生命周期与默认值/文案一并进入变异面；门面沿用包级 facade 排除。"
         }
       },
@@ -175,11 +192,13 @@
             "packages/dsh-mcp-manager/src/server/config/**/*.ts"
           ],
           "excludes": ["!packages/dsh-mcp-manager/src/client/**"],
+          "testFiles": "*",
           "comment": "#767 B2b 重画：entry——组合根 src/index.ts + workspace（工作空间解析域）+ config（归一化/导入/schema）；B2b 后文件归各域段，本段只留这三处。W11b2a 删除 src/types 与 src/integration 后，原 types/integration 两条排除已是 0 命中死条目，随本刀删除；excludes 仅保留 client 一条（另一端）。测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
         },
         "manager": {
           "mutate": ["packages/dsh-mcp-manager/src/server/connection/orchestrator/**/*.ts"],
           "excludes": ["!packages/dsh-mcp-manager/src/client/**"],
+          "testFiles": "*",
           "comment": "#767 B2b 重画：manager——connection/orchestrator（McpManager 类主体与展示投影 tool-names）；B2b 后文件归各域段，本段只留这一处。W11b2a 删除 src/types 与 src/integration 后，原两条排除已成 0 命中死条目，随本刀删除；excludes 仅保留 client 一条（另一端）。测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
         },
         "middleware": {
@@ -193,11 +212,13 @@
             "packages/dsh-mcp-manager/src/server/erasure/**/*.ts"
           ],
           "excludes": ["!packages/dsh-mcp-manager/src/client/**"],
+          "testFiles": "*",
           "comment": "#767 B2b 重画：middleware——中间层池（runtime/middleware+limits）+端口持有者（runtime/impl/）+工具注册面（inject/）+策略裁决族（pipeline/impl/authorize/）+模型可见面域（visibility/，笔 1b 新增：把 mcp__* 从每个 agent 的模型视野摘掉的 restrict 机制）；B2b 后文件归各域段，本段只留这七处（第六处之后新增的是 visibility；#922 新增 erasure/ 装配侧兜底擦除，同属模型可见面）。原 pipeline/authorize.ts 是 B1 搬迁前的字面量、实测 0 命中（真实落点已变为 pipeline/impl/authorize/），本刀替换为目录 glob；W11b2a 删除 src/types 与 src/integration 后，原两条排除已成 0 命中死条目，随本刀删除；excludes 仅保留 client 一条（另一端）。测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
         },
         "routes": {
           "mutate": ["packages/dsh-mcp-manager/src/server/api/**/*.ts"],
           "excludes": ["!packages/dsh-mcp-manager/src/client/**"],
+          "testFiles": "*",
           "comment": "#767 B2b 重画：routes——server/api（路由装配/端点控制器/查询辅助）；B2b 后文件归各域段，本段只留这一处。W11b2a 删除 src/types 与 src/integration 后，原两条排除已成 0 命中死条目，随本刀删除；excludes 仅保留 client 一条（另一端）。测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
         },
         "supervisor": {
@@ -206,11 +227,13 @@
             "packages/dsh-mcp-manager/src/server/stats/**/*.ts"
           ],
           "excludes": ["!packages/dsh-mcp-manager/src/client/**"],
+          "testFiles": "*",
           "comment": "#767 B2b 重画：supervisor——状态持久化（store）+统计（stats）；B2b 后文件归各域段。段名保留（段只是 glob 容器，ID 还绑着 stryker.conf.d 的 jsonReporter/incremental 与 mutation-segment-ledger）：#767 S1-5c 删自研连接栈后，原连接监督器与重连策略两条 glob（runtime/supervisor.ts+runtime/reconnect.ts）已是 0 命中死条目，随本刀删除，不再换新落点——本笔没有新增源文件，段名退役会连带 baseline-archive 段数哨兵 + ledger superseded + AGENTS.md 三处。W11b2a 删除 src/types 与 src/integration 后，原两条排除已成 0 命中死条目，随本刀删除；excludes 仅保留 client 一条（另一端）。测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
         },
         "servers": {
           "mutate": ["packages/dsh-mcp-manager/src/server/servers/**/*.ts"],
           "excludes": ["!packages/dsh-mcp-manager/src/client/**"],
+          "testFiles": "*",
           "comment": "新增（#767 S1-2b）：servers——面向官方引擎的服务器域族（装载生命周期 servers/lifecycle + 派发 servers/dispatch（#767 S1-3a 落地）；injection 不在本段，其实现在 src/server/catalog/impl/injection/）。为什么新建段而不是塞进旧段：源码全覆盖断言要求 src 下每个文件落在 ∪mutate ∪ ∪excludes 内，而 src/server/servers/** 不被既有任何段的 glob 覆盖；旧段的 comment 与文件归属也会因此失真。excludes 照同包其余段，仅保留 client 一条（另一端），不构成宿主侧变异面。测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
         },
         "runtime": {
@@ -222,6 +245,7 @@
             "packages/dsh-mcp-manager/src/shared/**/*.ts"
           ],
           "excludes": ["!packages/dsh-mcp-manager/src/client/**"],
+          "testFiles": "*",
           "comment": "#767 B2b 重画：runtime——packages/dsh-mcp-manager/src/shared/placement-math.ts（#378 上移的 placement 纯核心，由本段 mutate 覆盖）+执行管道（pipeline）+目录（catalog）+包内共享层（server/shared）+迁移链（upgrade）+跨端共享面（src/shared）；B2b 后文件归各域段，本段只留这些。同时收敛 #767 B0 的临时超集 src/server/**/*.ts——当时目标树全新，不先挂超集会让 B1 新文件进 uncoveredSrcFiles 而 --write-baseline 拒绝接受新证据；各段并集现已覆盖它（本刀实测 uncoveredSrcFiles 仍为 0），故删除。W11b2a 删除 src/types 与 src/integration 后，原两条排除已成 0 命中死条目，随本刀删除；excludes 仅保留 client 一条（另一端）。测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
         },
         "client-panel": {
@@ -230,6 +254,7 @@
             "packages/dsh-mcp-manager/src/client/core/state.ts"
           ],
           "excludes": [],
+          "testFiles": "*",
           "comment": "新增（#947）：面板 aria-modal 同步 + opener 还焦 + Esc 让位——首个直连判据（test/client-dom/panel-aria-modal.test.ts，happy-dom 直连 src）。只含本次有判据的两文件，其余客户端文件仍由覆盖率按面收窄逐个移入；float.ts Esc 一行暂无直连判据，随后续补判据后移入本段。"
         }
       },
@@ -272,6 +297,7 @@
         "api": {
           "mutate": ["packages/dsh-notifier/src/server/api/**/*.ts"],
           "excludes": ["!packages/dsh-notifier/src/client/**"],
+          "testFiles": "*",
           "comment": "#733 按域重写：api——HTTP 端点域（journal/kinds/probe/route/service/settings/stream）。loopback 围栏在 route 块内，端点自身只做「解析请求 → 调 pipeline/sdk 端口 → 序列化响应」，不含业务裁决。"
         },
         "channels": {
@@ -280,21 +306,25 @@
             "packages/dsh-notifier/src/shared/**/*.ts"
           ],
           "excludes": ["!packages/dsh-notifier/src/client/**"],
+          "testFiles": "*",
           "comment": "#733 按域重写：channels——出口域（bark/browser/system/webhook 四出口 + deliver 共享投递阶段与 caps 截断；tones 为系统音色表）。边界：出口只回答「本次失败可不可重试」（DeliverResult.retryable），重试/退避/节流/在途上限一律不在本域，归 pipeline/impl/dispatch。#783 起音色事实源（含三平台素材字段）迁到 src/shared/ 由两端共用，随本域一起度量；#769 把该目录整体按 glob 纳入本段（是两端契约的收口面，逐个登记会随每次收口漏改）：批 2 收口 tones/sounds/kinds，批 3 收口 channels/webhooks/reason-codes/capabilities，#769 批 4 加围栏拒答 code 表（refusal.ts，纯数据无变异体），现为九个文件。面内可变异的是 candidateNames 的平台翻译分支与 shared 里的判定/归一函数（kinds.ts 的 isBuiltinKind / isNotifySeverity、sounds.ts 的 isSoundId、channels.ts 的 isBuiltinChannelType / channelIdFor / channelIdOf、webhooks.ts 的 deliveryPresetOf / webhookTemplateOf）；其余不产生变异体——纯数据字面量由 sharedDefaults.excludedMutations 排除（ObjectLiteral/ArrayLiteral/StringLiteral），interface.ts 与 capabilities.ts 全是转出/类型，reason-codes.ts 的 code 表是字面量。"
         },
         "config": {
           "mutate": ["packages/dsh-notifier/src/server/config/**/*.ts"],
           "excludes": ["!packages/dsh-notifier/src/client/**"],
+          "testFiles": "*",
           "comment": "#733 按域重写：config——配置域（model 默认值与形状；input 解析/归一化/校验与键上限；service 读写、修订号与并发保护；redact 出站掩码）。#733 后期删除：内容脱敏规则表、错误合并窗口、完成聚合窗口、审批二次提醒（askRemindMin）四个设置面。"
         },
         "events": {
           "mutate": ["packages/dsh-notifier/src/server/events/**/*.ts"],
           "excludes": ["!packages/dsh-notifier/src/client/**"],
+          "testFiles": "*",
           "comment": "#733 按域重写：events——宿主事件域（listen 订阅装配；state 代理由 running/idle 矩阵驱动的状态机；session 完成判定证据读取；translate 事件→NotifyRequest，catalog 为内置 kind 文案表）。本域只产出请求，不做裁决。"
         },
         "pipeline": {
           "mutate": ["packages/dsh-notifier/src/server/pipeline/**/*.ts"],
           "excludes": ["!packages/dsh-notifier/src/client/**"],
+          "testFiles": "*",
           "comment": "#733 按域重写：pipeline——管线域（judge 三条裁决判据与抑制原因；route 目标解析与陈旧目标回收；finalize 严重度归一、标题截断与消息定稿；dispatch 重试/退避/节流/在途上限；service 编排与 kind 注册表）。重试状态机在本域是刻意的：出口保持无状态。"
         },
         "sdk": {
@@ -303,21 +333,25 @@
             "packages/dsh-notifier/src/server/sdk/**/*.ts"
           ],
           "excludes": ["!packages/dsh-notifier/src/client/**"],
+          "testFiles": "*",
           "comment": "#733 按域重写：sdk——服务面（registry 动态 kind 注册，service 对外 send/kinds，apiVersion 2）+ 根 index.ts 组合根并入（沿用 #669「装配层归服务面」口径：组合根单文件独立成段可杀性低、dry run 成本照付）。#733 收敛：wingsky-notify/sent 事件与 registerChannel 退役，send 返回 Promise<void>。"
         },
         "shared": {
           "mutate": ["packages/dsh-notifier/src/server/shared/**/*.ts"],
           "excludes": ["!packages/dsh-notifier/src/client/**"],
+          "testFiles": "*",
           "comment": "#733 按域重写：shared——包内共享层（logger 端口 / 原子文本读写 / 产品布局路径解析）。#733 收口：三个实现文件原被各域直引（30 条 missingInterface），现统一经 shared/interface.ts 门面。"
         },
         "stores": {
           "mutate": ["packages/dsh-notifier/src/server/stores/**/*.ts"],
           "excludes": ["!packages/dsh-notifier/src/client/**"],
+          "testFiles": "*",
           "comment": "#733 按域重写：stores——存储域（history 串行写队列与按行滚动；status 内存镜像与防抖落盘、LRU 上限）。"
         },
         "upgrade": {
           "mutate": ["packages/dsh-notifier/src/server/upgrade/**/*.ts"],
           "excludes": ["!packages/dsh-notifier/src/client/**"],
+          "testFiles": "*",
           "comment": "#733 按域重写：upgrade——存量迁移域（version 版本戳；chain 迁移链；legacy 旧位置读取；steps.storage-layout 存储布局搬迁）。"
         },
         "client": {
@@ -326,6 +360,7 @@
             "!packages/dsh-notifier/src/client/**/*.tsx",
             "!packages/dsh-notifier/src/**/*.d.ts"
           ],
+          "testFiles": "*",
           "comment": "#769 客户端半区门禁：mutate 面 = src/client 下的纯 .ts 模块（node 判据在 client-unit 层、DOM 判据在 client-dom 层，两层都已进 mutationLayers，故这里的变异体有真实杀灭来源）。实测 covered 87.38%（killed 457 / survived 66 / noCoverage 0，concurrency 2 用时 4m03s）。两处排除各有一条理由：① **/*.tsx（13 个文件、含 1494 行的 index.tsx）——渲染需要 react 运行时，全仓未安装，判据面为零，等运行时与渲染 harness 落地后收掉本条；② **/*.d.ts——声明层无运行时代码。capabilities.ts 与 reason-text.ts 曾因判据建在 in-place esbuild 的已构建副本上（静态导入图里没有目标模块、变异体一律 noCoverage）被排除，现已由 client-unit 层的直连判据补齐，排除随之收掉。"
         }
       },
@@ -367,11 +402,13 @@
         "apply": {
           "mutate": ["packages/dsh-provider-usage/src/apply/apply.ts"],
           "excludes": ["!packages/dsh-provider-usage/src/client/**"],
+          "testFiles": "*",
           "comment": "#342 v4：src 级文件组分段（2）——apply 单列（#316 拆分后最重文件独立成段）；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
         },
         "errsurf": {
           "mutate": ["packages/dsh-provider-usage/src/server/shared/errsurf.ts"],
           "excludes": ["!packages/dsh-provider-usage/src/client/**"],
+          "testFiles": "*",
           "comment": "#670 阶段三 B 新段：域2每层错误面——errsurf.ts（累计计数+最近 N 条环形缓冲+snapshot/noop）；testFiles 含 unit-errsurf（杀灭面）；apply 接线与 routes/ui health per-layer 段由既有 apply/routes 段覆盖（mutate 已含对应文件）。#768 S2：canonical 实现迁 server/shared/errsurf.ts（Q5 尺子见文件头），domain2/common/errsurf.ts 过渡垫片 D13 已删（common 目录消除，旧路径引用同步切 server/shared）；杀灭面含 unit-s2-contracts（新叶直连判据）。"
         },
         "contracts": {
@@ -380,6 +417,7 @@
             "packages/dsh-provider-usage/src/server/pipeline/guards.ts"
           ],
           "excludes": ["!packages/dsh-provider-usage/src/client/**"],
+          "testFiles": "*",
           "comment": "#342 v4：src 级文件组分段（3）——contracts+server/pipeline/guards（契约面，#768 D6 随域改址）；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
         },
         "entry": {
@@ -392,6 +430,7 @@
             "packages/dsh-provider-usage/src/shared/provider.ts"
           ],
           "excludes": ["!packages/dsh-provider-usage/src/client/**"],
+          "testFiles": "*",
           "comment": "#342 v4：src 级文件组分段（1）——index+user-adapters+ui-config+config（配置/入口面）；#768 D7 注册表文件随域迁 server/registry（路径同步，行为零改 + 双启用判据）；#768 D13 包根入口 src/index.ts 落地（apply/index.ts 显式具名薄转发，导出面零漂移）并入本段；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
         },
         "pipeline": {
@@ -407,6 +446,7 @@
             "packages/dsh-provider-usage/src/server/pipeline/stats-service.ts"
           ],
           "excludes": ["!packages/dsh-provider-usage/src/client/**"],
+          "testFiles": "*",
           "comment": "#342 v4：src 级文件组分段（5）——history/v2/hotreload/placement-math/path-resolve/client-logic/provider-config/charts/stats-service（历史/管线/热更/图表/C3 服务面；charts 纳入修复变异盲区；阶段零补 stats-service 盲区）；#768 D5 历史文件随域迁 server/history（路径同步，行为零改 + writeDirect 原子写硬化）；#768 D6 管线三文件随域迁 server/pipeline（路径同步，行为零改 + 净化缺席判据）；#768 D7 注册表三文件随域迁 server/registry（路径同步，行为零改 + 双启用判据）；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
         },
         "registry": {
@@ -416,11 +456,13 @@
             "packages/dsh-provider-usage/src/server/adapters/register.ts"
           ],
           "excludes": ["!packages/dsh-provider-usage/src/client/**"],
+          "testFiles": "*",
           "comment": "#342 二期：功能命名段（registry）——registry+user-adapter-loader（注册表域，25s；阶段零补 loader 盲区）；#768 D4 并入 server/adapters/register.ts（内置装配 fail-fast，杀灭面为 test/integration/adapters/composition-root）；#768 D7 注册表两文件随域迁 server/registry（路径同步，行为零改 + 双启用判据，杀灭面新增 test/integration/registry/composition-root）；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
         },
         "sanitize": {
           "mutate": ["packages/dsh-provider-usage/src/shared/sanitize.ts"],
           "excludes": ["!packages/dsh-provider-usage/src/client/**"],
+          "testFiles": "*",
           "comment": "#342 二期：功能命名段（sanitize）——sanitize（数据净化域，115s）；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
         },
         "trend-aggregate": {
@@ -432,6 +474,7 @@
             "packages/dsh-provider-usage/src/server/aggregate/index.ts"
           ],
           "excludes": ["!packages/dsh-provider-usage/src/client/**"],
+          "testFiles": "*",
           "comment": "阶段零新段（D17 分层变异）：E2 聚合/压实/存储面——aggregator+store+index；阶段三（#670 D2）aggregator 拆分为 aggregate-rows（压实转换纯函数）+ aggregate-query（查询投影纯函数），两新文件并入 mutate 面（防新文件变异盲区）；testFiles 含 unit-trend/unit-trend-ledger/unit-trend-view（杀灭面为该层测试，R8 台账守恒断言覆盖守恒链）；#768 D8 聚合五文件随域迁 server/aggregate（路径同步 + deletePromises 注解 + A4(f)补dir + forgetPersisted 删除，杀灭面新增 test/integration/aggregate/composition-root）；aggregator 单文件 5-8 分钟，独立段防超时。"
         },
         "trend-collect": {
@@ -441,6 +484,7 @@
             "packages/dsh-provider-usage/src/server/shared/trend.ts"
           ],
           "excludes": ["!packages/dsh-provider-usage/src/client/**"],
+          "testFiles": "*",
           "comment": "阶段零新段（D17 分层变异）：E1 事件采集面——collector+types（折叠状态机/归属归一）；testFiles 含 unit-trend（杀灭面为该层测试）；#768 D9 采集两文件随域迁 server/collect（路径同步，零行为变更，杀灭面新增 test/integration/collect/composition-root）。"
         },
         "report-schedule": {
@@ -459,6 +503,7 @@
             "packages/dsh-provider-usage/src/server/shared/last-run.ts"
           ],
           "excludes": ["!packages/dsh-provider-usage/src/client/**"],
+          "testFiles": "*",
           "comment": "阶段零新段（D17 分层变异）：E3 报告调度面——schedule+scheduler+tasks；阶段二（D8）并入 last-run.ts（公共原语）；#768 D1 起配置面归 server/config 域（shape/prompts/normalize/store/service）；#768 D2 起调度面整域归 server/schedule（due/scheduler/tasks/store，domain2/schedule 与 common/last-run 旧址删除，interface.ts/deps.ts 以 facade/type-only 口径排除）；testFiles 含 unit-report/unit-report-executor + test/integration/schedule/composition-root（串行锁与门面装配判据）。"
         },
         "report-execute": {
@@ -471,6 +516,7 @@
             "packages/dsh-provider-usage/src/server/execute/list-dirs.ts"
           ],
           "excludes": ["!packages/dsh-provider-usage/src/client/**"],
+          "testFiles": "*",
           "comment": "阶段零新段（D17 分层变异）：E4 报告执行/产出面——runner+generate+format；阶段二（D8）并入 report-index.ts（公共解析）/executor.ts（执行器工厂）/list-dirs.ts（目录候选工厂）；#768 D3 起整域归 server/execute（6 文件物理迁移，interface.ts/deps.ts 以 facade/type-only 口径排除）；testFiles 含 unit-report/unit-report-executor + test/integration/execute/composition-root（门面装配与记忆化判据）+ test/integration/schedule/composition-root（D3三-轮询否定 toFake 面）。"
         },
         "routes": {
@@ -485,11 +531,13 @@
             "packages/dsh-provider-usage/src/server/report-routes/reports.ts"
           ],
           "excludes": ["!packages/dsh-provider-usage/src/client/**"],
+          "testFiles": "*",
           "comment": "阶段一新段（评审 P1-5 前置）：E5/C6 路由面——stats+adapters+ui+reports；先抽纯函数（clampTrendN/isReportPeriodValid/isReportKeyValid/isTaskIdValid）补 unit-routes 再开段；testFiles 含 unit-routes/unit-report/unit-apply；#768 D10 stats/adapters 两文件由 domain1/routes 改名迁 server/data-routes（路径同步，零行为变更，杀灭面新增 test/integration/data-routes/composition-root）；#768 D11 reports 由 domain2/routes 迁 server/report-routes（interface 门面 + deps 注入面 + 配置窄口消费，零行为变更，杀灭面新增 test/integration/report-routes/composition-root，逆序释放判据锁定）；#768 D12 ui 四块（health/trend/ui-config/events）+ 装配形状（context）由 domain2/routes 迁 server/ui-routes（一域四块不升域，interface 门面 + deps 注入面 + 广播窄口，零行为变更，杀灭面新增 test/integration/ui-routes/composition-root，健康读 errsurf 与 SSE 非可靠判据锁定）。"
         },
         "upgrade": {
           "mutate": ["packages/dsh-provider-usage/src/server/upgrade/**/*.ts"],
           "excludes": ["!packages/dsh-provider-usage/src/client/**"],
+          "testFiles": "*",
           "comment": "#768 S3 新段：upgrade 迁移链——storage-layout（纯字节归位）+config-morph（LEGACY 映射割接）+last-run-morph（derive/align）+chain（排序/刻度/对账）+service（装配标记）+version（刻度读写）；interface.ts/deps.ts 经包级 coverageExcludes 以 facade/type-only 口径排除；杀灭面为 test/integration/upgrade/upgrade-chain（幂等三条各有集成用例）。"
         }
       },
@@ -536,6 +584,7 @@
         "_single": {
           "mutate": ["packages/dsh-worktree-sidebar/src/**/*.ts"],
           "excludes": [],
+          "testFiles": "*",
           "comment": "#847：src/**/*.ts 单段覆盖宿主与客户端，无文件排除；通过 enableMutations 撤销共享默认的四类字面量排除，本包有效算子排除集合为空。incremental 基线随 observe 夜间全量班重建。"
         }
       },
