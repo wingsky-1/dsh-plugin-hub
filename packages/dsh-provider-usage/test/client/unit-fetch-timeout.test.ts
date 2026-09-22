@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * dsh-provider-usage — unit：客户端 fetch 超时兜底外壳（issue #268 P1）。
  *
@@ -23,7 +22,7 @@ describe("客户端 fetch 超时兜底外壳（issue #268 P1）", () => {
   // ---------------------------------------------------------------- 源码契约：超时接线存在
 
   describe("源码契约：超时接线存在", () => {
-    let src;
+    let src = "";
     beforeAll(() => {
       src = readFileSync(join(pkgDir, "src/client/core.ts"), "utf8");
     });
@@ -75,7 +74,9 @@ describe("客户端 fetch 超时兜底外壳（issue #268 P1）", () => {
   // ---------------------------------------------------------------- 子进程行为级剧本
 
   describe("子进程行为级剧本", () => {
-    let stdout, workerFailed, workerFailureDetail;
+    let stdout = "";
+    let workerFailed = false;
+    let workerFailureDetail = "";
 
     beforeAll(() => {
       try {
@@ -92,9 +93,11 @@ describe("客户端 fetch 超时兜底外壳（issue #268 P1）", () => {
         workerFailed = false;
       } catch (error) {
         workerFailed = true;
-        workerFailureDetail = `client-fetch-timeout.worker 子进程失败（exit=${error.status}）`;
-        console.error("worker stdout:\n" + (error.stdout ?? ""));
-        console.error("worker stderr:\n" + (error.stderr ?? ""));
+        // execFileSync 抛错携带 status/stdout/stderr（子进程契约），unknown 收窄后取用。
+        const err = error as { status?: unknown; stdout?: unknown; stderr?: unknown };
+        workerFailureDetail = `client-fetch-timeout.worker 子进程失败（exit=${err.status}）`;
+        console.error("worker stdout:\n" + String(err.stdout ?? ""));
+        console.error("worker stderr:\n" + String(err.stderr ?? ""));
       }
     });
 

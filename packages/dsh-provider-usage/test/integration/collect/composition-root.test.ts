@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * dsh-provider-usage — integration：采集域组合根四维度 + 超时验收（#768 计划表 rev2 D9 验收）。
  *
@@ -56,6 +55,13 @@ import type {
   CollectClock,
   CollectResolveCwd,
 } from "../../../src/server/collect/deps.ts";
+import type {
+  TrendCallRecord,
+  TrendCollectorOptions,
+  TrendEmit,
+} from "../../../src/server/collect/interface.ts";
+import type { FetchContext, UsageStatsAdapter } from "../../../src/shared/interface.ts";
+import type { SessionEvent } from "@deepseek-ai/dsh-session/types";
 import { safeFetchData, runV2Pipeline } from "../../../src/server/pipeline/interface.ts";
 import { safeFetchData as ImplSafeFetch } from "../../../src/server/pipeline/guards.ts";
 
@@ -63,7 +69,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const srcDir = join(here, "..", "..", "..", "src");
 const pkgDir = join(here, "..", "..", "..");
 const repoRoot = join(here, "..", "..", "..", "..", "..");
-const readText = (p) => readFileSync(p, "utf8");
+const readText = (p: string): string => readFileSync(p, "utf8");
 const applySrc = readText(join(srcDir, "apply", "apply.ts"));
 const applyFaceSrc = readText(join(srcDir, "apply", "index.ts"));
 const collectFaceSrc = readText(join(srcDir, "server", "collect", "interface.ts"));
@@ -92,7 +98,7 @@ const strykerCollectSrc = readText(
 );
 
 /** 旧门面判据：旧 domain2/collect 长路径或 ../../server/ 非规范深路径残留即红（针脚为域事实，命中循环见 helpers）。同级短径 ../collect/ 为新规（#768 跨域路径统一）。 */
-function usesOldFace(src) {
+function usesOldFace(src: string): boolean {
   return containsAny(src, ["domain2/collect", "../../server/"]);
 }
 
@@ -104,8 +110,8 @@ const warnSeam: CollectWarn = () => undefined;
 const clockSeam: CollectClock = () => 1_700_000_000_000;
 const resolveCwdSeam: CollectResolveCwd = () => undefined;
 
-const tmpDirs = [];
-function isolatedDir(prefix) {
+const tmpDirs: string[] = [];
+function isolatedDir(prefix: string): string {
   return makeIsolatedDir(tmpDirs, prefix);
 }
 afterEach(() => {
@@ -116,15 +122,24 @@ afterEach(() => {
 const T0 = new Date(2026, 8, 4, 12, 0, 0).getTime();
 const nowBox = { t: T0 };
 const tickClock = () => nowBox.t;
-function headerEv(provider, model, time, seq = 1) {
+// 事件信封经 unknown 断言为 SessionEvent：与生产边界同构（最小 payload + 品牌类型，
+// collector 防御性解析——ledger 同款）。
+function headerEv(provider: string, model: string, time: number, seq = 1): SessionEvent {
   return {
     type: "request/header",
     seq,
     time,
     data: { header: { config: { provider, model } }, reason: "initial" },
-  };
+  } as unknown as SessionEvent;
 }
-function msgEv(turn, step, usage, time, seq = 2, source) {
+function msgEv(
+  turn: number,
+  step: number,
+  usage: Record<string, unknown> | null,
+  time: number,
+  seq = 2,
+  source?: { kind: string; provider: string; model: string },
+): SessionEvent {
   return {
     type: "assistant/message",
     seq,
@@ -138,7 +153,7 @@ function msgEv(turn, step, usage, time, seq = 2, source) {
         source: source ?? { kind: "model", provider: "deepseek", model: "deepseek-chat" },
       },
     },
-  };
+  } as unknown as SessionEvent;
 }
 const USAGE = (input = 100, output = 50) => ({
   inputTokens: input,
@@ -146,15 +161,25 @@ const USAGE = (input = 100, output = 50) => ({
   cacheReadTokens: 0,
   cacheWriteTokens: 0,
 });
-function mkCollector(extra = {}) {
-  const emitted = [];
+function mkCollector(extra: Partial<TrendCollectorOptions> = {}) {
+  const emitted: TrendEmit[] = [];
   const collector = new TrendCollector({ now: tickClock, emit: (e) => emitted.push(e), ...extra });
   nowBox.t = T0;
   return { collector, emitted };
 }
-const callsOf = (emitted) => emitted.filter((e) => e.type === "call").map((e) => e.record);
+const callsOf = (emitted: TrendEmit[]): TrendCallRecord[] =>
+  emitted
+    .filter((e): e is Extract<TrendEmit, { type: "call" }> => e.type === "call")
+    .map((e) => e.record);
 
-function mkAdapter(name, provider, fetchData) {
+// 探针 ctx：生产 v2.ts 以 `{...fetchCtx, signal, fetch} as unknown as FetchContext` 注入 fetch
+// （运行时恒有，类型面隐藏），探针侧以交集如实建模；fetch 可选以满足 UsageStatsAdapter 逆变。
+type ProbeCtx = FetchContext & { fetch?: typeof fetch };
+function mkAdapter(
+  name: string,
+  provider: string,
+  fetchData: (ctx: ProbeCtx) => Promise<Record<string, unknown>>,
+): UsageStatsAdapter {
   return {
     version: 2,
     name,
@@ -164,7 +189,7 @@ function mkAdapter(name, provider, fetchData) {
     formatPanel: () => "<p>s</p>",
   };
 }
-const hangListen = (seen) => (signal) =>
+const hangListen = (seen: { signal?: AbortSignal }) => (signal: AbortSignal) =>
   new Promise((_res, rej) => {
     seen.signal = signal;
     signal.addEventListener("abort", () => rej(new Error("adapter-aborted")), { once: true });
@@ -263,7 +288,7 @@ describe("D9二 采集线路钉住（60s tick 汇入 + 5min 预热）", () => {
     expect(calls[0].retry).toBe(1);
     expect(calls[1].retry).toBe(2);
     expect(calls[0].provider).toBe("deepseek");
-    expect(calls[0].tokens.input).toBe(10);
+    expect(calls[0].tokens!.input).toBe(10);
   });
 
   it("60min TTL 驱逐可复现：闲置会话被他会话 tick 清掉后序号重起（冻 TTL 即红）", () => {
@@ -324,7 +349,7 @@ describe("D9三 deps 注入面窄面", () => {
   });
 
   it("归属异常经 warn 接缝出声（吞告警即红）", () => {
-    const warns = [];
+    const warns: string[] = [];
     const { collector } = mkCollector({ onAnomaly: (m) => warns.push(m) });
     collector.handleEvent("s9", headerEv("deepseek", "deepseek-chat", T0));
     collector.handleEvent(
@@ -339,7 +364,7 @@ describe("D9三 deps 注入面窄面", () => {
 describe("D9四 resolveCwd 冻结（延期未验证，行为锁）", () => {
   it("per-session 惰性单查：同会话两次结算只查一次（多查即红）", () => {
     let queries = 0;
-    const seen = [];
+    const seen: string[] = [];
     const { collector } = mkCollector({
       resolveCwd: (s) => {
         queries += 1;
@@ -393,31 +418,35 @@ describe("D9验收 超时悬挂必须红（5s 信号合并 abort 集成用例）
   });
 
   it("悬挂取数超时变红：文案稳定 fetchData 超时（吞超时即红）", async () => {
-    const seen = {};
+    const seen: { signal?: AbortSignal } = {};
     const r = await safeFetchData(hangListen(seen), 25);
     expect(r.error).toBe("fetchData 超时");
     expect(r.data).toBe(undefined);
   }, 10000);
 
   it("合并信号已下发且超时后 abort：透传给 fetch 即中断真实请求（悬挂不断即红）", async () => {
-    const seen = {};
+    const seen: { signal?: AbortSignal } = {};
     await safeFetchData(hangListen(seen), 25);
     expect(seen.signal instanceof AbortSignal).toBe(true);
-    expect(seen.signal.aborted).toBe(true);
+    expect(seen.signal!.aborted).toBe(true);
   }, 10000);
 
   it("外部信号合流：宿主断连时悬挂取数立即取消（不合流即红）", async () => {
     const controller = new AbortController();
-    const seen = {};
+    const seen: { signal?: AbortSignal } = {};
     const p = safeFetchData(hangListen(seen), 5000, controller.signal);
     setTimeout(() => controller.abort(), 5);
     const r = await p;
     expect(r.error).toBe("fetchData 已被取消");
-    expect(seen.signal.aborted).toBe(true);
+    expect(seen.signal!.aborted).toBe(true);
   }, 10000);
 
   it("runV2Pipeline 悬挂端到端 stale 红帧：ok=false 且不落 fresh（挂起不红即红）", async () => {
-    const adapter = mkAdapter("hang-adp", "p-hang", () => new Promise(() => {}));
+    const adapter = mkAdapter(
+      "hang-adp",
+      "p-hang",
+      (): Promise<Record<string, unknown>> => new Promise<Record<string, unknown>>(() => {}),
+    );
     const r = await runV2Pipeline({
       adapter,
       provider: "p-hang",

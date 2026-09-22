@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * dsh-provider-usage — unit：provider 检测链（issue #69；#383 投影形状修正）。
  *
@@ -60,7 +59,7 @@ const {
 // ---------------------------------------------------------------- 构造工具
 
 /** fake sessions：list 快照 {current, byId}（0.1.2：current 来自 list 快照）。 */
-function makeSessions(byId, current) {
+function makeSessions(byId: Record<string, unknown>, current?: string) {
   return { list: { getSnapshot: () => ({ current, byId }) } };
 }
 
@@ -70,9 +69,16 @@ function makeSessions(byId, current) {
  * 槽位语义（宿主 wire view：next = pending ?? lastUsed）：默认只写 lastUsed；
  * slot:"next" 只写 next（模拟仅待确认意图）；两者并存场景在用例内联构造。
  */
-function row(provider, opts = {}) {
+/** 行构造选项（归一字段 + 槽位语义）。 */
+interface RowOpts {
+  parentId?: string;
+  parentSessionId?: string;
+  origin?: string;
+  slot?: string;
+}
+function row(provider: string | undefined, opts: RowOpts = {}) {
   const { parentId, parentSessionId, origin, slot } = opts;
-  const r = {};
+  const r: Record<string, unknown> = {};
   if (parentId !== undefined) r.parentId = parentId;
   if (parentSessionId !== undefined) r.parentSessionId = parentSessionId;
   if (origin !== undefined) r.origin = origin;
@@ -89,7 +95,7 @@ function row(provider, opts = {}) {
 }
 
 /** fake remote：modelCatalog 兜底；default 缺省 → 返回无 default 目录。 */
-function makeRemote(providerByDefault) {
+function makeRemote(providerByDefault?: string) {
   return {
     session: {
       modelCatalog: async () => {
@@ -172,7 +178,11 @@ describe("provider 检测链：子代理 / 父会话投影上溯（#69 / #383）
 // ---------------------------------------------------------------- 2) 全链投影缺失：保持上次检测 + 未识别标注 / modelCatalog 兜底
 
 describe("全链投影缺失：modelCatalog 兜底 + 保持上次检测 / 未识别标注", () => {
-  let got, noRemote, failRemote, d1, d2;
+  let got: string | undefined;
+  let noRemote: string | undefined;
+  let failRemote: string | undefined;
+  let d1: { provider: string; unknown: boolean };
+  let d2: { provider: string; unknown: boolean };
 
   beforeAll(async () => {
     // 全链（自身 + 祖先）投影均缺失 → 兜底 modelCatalog().default
@@ -242,7 +252,7 @@ describe("全链投影缺失：modelCatalog 兜底 + 保持上次检测 / 未识
 // ---------------------------------------------------------------- 2b) 客户端源码契约：未识别标注接线
 
 describe("客户端源码契约：title 标注接线真实存在（issue #348 i18n）", () => {
-  let src;
+  let src = "";
   beforeAll(() => {
     src = readFileSync(join(here, "..", "..", "src", "client", "index.tsx"), "utf8");
   });
@@ -267,7 +277,12 @@ describe("客户端源码契约：title 标注接线真实存在（issue #348 i1
 // ---------------------------------------------------------------- 3) 无任何会话 → 维持原回落行为（回归防护）
 
 describe("无任何会话 → 维持原回落行为（回归防护）", () => {
-  let noSessions, noCurrent, emptyCurrent, catalogCalls, d1, d2;
+  let noSessions: string | undefined;
+  let noCurrent: string | undefined;
+  let emptyCurrent: string | undefined;
+  let catalogCalls: number;
+  let d1: { provider: string; unknown: boolean };
+  let d2: { provider: string; unknown: boolean };
 
   beforeAll(async () => {
     // 无 sessions 服务 / 无当前会话 → 解析器直接 undefined，且不触发 modelCatalog
@@ -333,8 +348,16 @@ describe("无任何会话 → 维持原回落行为（回归防护）", () => {
 // ---------------------------------------------------------------- 4) 上溯深度封顶 / 环防御
 
 describe("上溯深度封顶 / 环防御", () => {
-  let cycResult, selfResult, deepDefault, deepCustom1, deepCustom0;
-  let noSessionsChain, noListChain, brokenChain, emptyParentChain, cycResolved;
+  let cycResult: string[];
+  let selfResult: string[];
+  let deepDefault: string[];
+  let deepCustom1: string[];
+  let deepCustom0: string[];
+  let noSessionsChain: string[];
+  let noListChain: string[];
+  let brokenChain: string[];
+  let emptyParentChain: string[];
+  let cycResolved: string | undefined;
 
   beforeAll(async () => {
     // 环：a → b → a（visited 防环，链终止于 [a, b]）
@@ -450,7 +473,10 @@ describe("成功解析优先于上溯（首个成功者胜）", () => {
 // ---------------------------------------------------------------- 7) modelCatalog 兜底缓存（#419：官方 catalog 同款）
 
 describe("#419 modelCatalog 兜底缓存：重复 detect 命中缓存", () => {
-  let a, b, c, calls;
+  let a: string | undefined;
+  let b: string | undefined;
+  let c: string | undefined;
+  let calls: number;
 
   beforeAll(async () => {
     // 重复 detect（全链投影缺失）→ 缓存命中，RPC 只打一次
@@ -489,7 +515,8 @@ describe("#419 modelCatalog 兜底缓存：重复 detect 命中缓存", () => {
 });
 
 describe("#419 modelCatalog 兜底缓存：并发共享 inflight", () => {
-  let results, calls;
+  let results: Array<string | undefined>;
+  let calls: number;
 
   beforeAll(async () => {
     // 并发共享 inflight：同一时刻多个检测只打一次 RPC
@@ -522,7 +549,11 @@ describe("#419 modelCatalog 兜底缓存：并发共享 inflight", () => {
 });
 
 describe("#419 modelCatalog 兜底缓存：失败不缓存 + reset 重拉", () => {
-  let first, second, callsAfterRetry, beforeReset, callsAfterReset;
+  let first: string | undefined;
+  let second: string | undefined;
+  let callsAfterRetry: number;
+  let beforeReset: number;
+  let callsAfterReset: number;
 
   beforeAll(async () => {
     // 失败不缓存：下次重试；reset 后重拉
@@ -567,7 +598,7 @@ describe("#419 modelCatalog 兜底缓存：失败不缓存 + reset 重拉", () =
 });
 
 describe("#419 modelCatalog 兜底缓存：TTL 过期重拉", () => {
-  let calls;
+  let calls: number;
 
   beforeAll(async () => {
     // TTL 过期 → 重拉；TTL 常量对齐宿主 stats 缓存量级（30s）
@@ -602,7 +633,11 @@ describe("#419 modelCatalog 兜底缓存：TTL 过期重拉", () => {
 });
 
 describe("#419 默认 loader（无缓存）语义不变", () => {
-  let first, second, calls, noRemote, noCatalog;
+  let first: string | undefined;
+  let second: string | undefined;
+  let calls: number;
+  let noRemote: string | undefined;
+  let noCatalog: string | undefined;
 
   beforeAll(async () => {
     // 默认 loader（无缓存）语义不变：裸调 remote

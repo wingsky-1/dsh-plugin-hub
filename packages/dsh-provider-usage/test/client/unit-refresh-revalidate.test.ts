@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * dsh-provider-usage — unit：refreshStats 取数前 provider 复检外壳（issue #71 方案 A1）。
  *
@@ -22,7 +21,7 @@ describe("refreshStats 取数前 provider 复检外壳（issue #71 方案 A1）"
   // ---------------------------------------------------------------- 源码契约：A1 接线存在
 
   describe("源码契约：A1 接线存在且被正确调用", () => {
-    let src;
+    let src = "";
     beforeAll(() => {
       src = readFileSync(join(pkgDir, "src/client/index.tsx"), "utf8");
     });
@@ -75,7 +74,9 @@ describe("refreshStats 取数前 provider 复检外壳（issue #71 方案 A1）"
   // ---------------------------------------------------------------- 子进程行为级剧本
 
   describe("子进程行为级剧本", () => {
-    let stdout, workerFailed, workerFailureDetail;
+    let stdout = "";
+    let workerFailed = false;
+    let workerFailureDetail = "";
 
     beforeAll(() => {
       try {
@@ -92,9 +93,11 @@ describe("refreshStats 取数前 provider 复检外壳（issue #71 方案 A1）"
         workerFailed = false;
       } catch (error) {
         workerFailed = true;
-        workerFailureDetail = `client-revalidate.worker 子进程失败（exit=${error.status}）`;
-        console.error("worker stdout:\n" + (error.stdout ?? ""));
-        console.error("worker stderr:\n" + (error.stderr ?? ""));
+        // execFileSync 抛错携带 status/stdout/stderr（子进程契约），unknown 收窄后取用。
+        const err = error as { status?: unknown; stdout?: unknown; stderr?: unknown };
+        workerFailureDetail = `client-revalidate.worker 子进程失败（exit=${err.status}）`;
+        console.error("worker stdout:\n" + String(err.stdout ?? ""));
+        console.error("worker stderr:\n" + String(err.stderr ?? ""));
       }
     });
 
