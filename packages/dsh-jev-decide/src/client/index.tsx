@@ -124,6 +124,7 @@ export function apply(ctx: ClientContext): void {
           } catch {
             /* 卸载期静默 */
           }
+          // 摘除模块级宿主绑定：否则 bound 残留 stale 宿主实现，卸载后 t() 不再回落。
           unbindTranslate();
         };
       }, "dsh-jev-decide-locale");

@@ -2,7 +2,7 @@
 /** dsh-jev-decide 宿主 locale 接线（happy-dom 经真实 apply）。
  *
  * 守的是 P2 locale 订阅：字典以 jev-decide 命名空间注册、bind 带接收者装配、
- * 订阅回调重绑（切语言免刷新跟随）、label 保持 thunk、卸载摘除订阅；
+ * 订阅回调重绑（切语言免刷新跟随）、label 保持 thunk、卸载摘除订阅并摘绑定回落；
  * 旧运行时（无 locale 服务 / 无 getSnapshot / register 抛错）回落本地字典。
  * 任一接线改动（命名空间串包、detached 调用、订阅泄漏）本文件必红。
  */
