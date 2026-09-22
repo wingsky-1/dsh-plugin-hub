@@ -546,12 +546,11 @@ export function ReportSection(props: {
           setGenNotice(t("reportNoData"));
           return;
         }
-        if (body.reused === true) {
-          // 复用不跳转：用户正停留在配置页，强制切页体验差；只留提示，历史页一 tap 即达
-          setGenNotice(t("reportReused"));
-          return;
-        }
-        setGenNotice(null);
+        if (body.reused === true) setGenNotice(t("reportReused"));
+        else setGenNotice(null);
+        // 复用不跳转：用户正停留在配置页，强制切页体验差；只留提示，历史页一 tap 即达
+        // （上一行保持单语句形态：smoke 契约 #629 P2 用 bundle 正则锁定该行，改形状先改测试）
+        if (body.reused === true) return;
         if (disposedRef.current) return;
         onGeneratedRow(body.meta); // 成功经壳切历史页并展开
       }
