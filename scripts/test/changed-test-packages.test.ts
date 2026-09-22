@@ -23,14 +23,34 @@ import {
   packageOfTestPath,
   packagesToInvalidate,
   parseTestDiffPaths,
+  segmentEntryFor,
 } from "../ci/changed-test-packages.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const SCRIPT = join(ROOT, "scripts/ci/changed-test-packages.mjs");
 
-test("#742 1.7: packageOfTestPath 只认 packages/<pkg>/test/ 面内路径", () => {
-  assert.equal(packageOfTestPath("packages/dsh-notifier/test/e2e/smoke.test.ts"), "dsh-notifier");
+test("#742 1.7 + P1-D1: packageOfTestPath 不认 e2e/client 层（永不进变异面）", () => {
+  assert.equal(
+    packageOfTestPath("packages/dsh-notifier/test/e2e/smoke.test.ts"),
+    null,
+    "e2e 层不进变异面，不得触发失基线",
+  );
+  assert.equal(
+    packageOfTestPath("packages/dsh-notifier/test/client/a.test.ts"),
+    null,
+    "client 层不进变异面，不得触发失基线",
+  );
   assert.equal(packageOfTestPath("packages/dsh-notifier/test/helpers.ts"), "dsh-notifier");
+  assert.equal(
+    packageOfTestPath("packages/dsh-notifier/test/client-unit/a.test.ts"),
+    "dsh-notifier",
+    "client-unit 是变异层，仍触发",
+  );
+  assert.equal(
+    packageOfTestPath("packages/dsh-notifier/test/client-dom/a.test.ts"),
+    "dsh-notifier",
+    "client-dom 是变异层，仍触发",
+  );
   assert.equal(packageOfTestPath("packages/dsh-notifier/src/index.ts"), null);
   assert.equal(packageOfTestPath("test/smoke-lib.ts"), null, "根级 test/ 不属于任何包");
   assert.equal(packageOfTestPath("packages/dsh-notifier/test"), null, "目录本身不算变更文件");
@@ -41,16 +61,17 @@ test("#742 1.7: packageOfTestPath 只认 packages/<pkg>/test/ 面内路径", () 
   );
 });
 
-test("#742 1.7: parseTestDiffPaths 去重升序，忽略空段", () => {
+test("#742 1.7 + P1-D1: parseTestDiffPaths 去重升序，忽略空段与排除层", () => {
   const z = [
     "packages/dsh-notifier/test/a.test.ts",
     "packages/dsh-lan-proxy/test/e2e/smoke.test.ts",
+    "packages/dsh-lan-proxy/test/client/a.test.ts",
     "packages/dsh-notifier/test/b.test.ts",
     "packages/dsh-notifier/src/index.ts",
     "shared/util.ts",
     "",
   ].join("\0");
-  assert.deepEqual(parseTestDiffPaths(z), ["dsh-lan-proxy", "dsh-notifier"]);
+  assert.deepEqual(parseTestDiffPaths(z), ["dsh-notifier"], "e2e/client 不得触发");
   assert.deepEqual(parseTestDiffPaths(""), []);
   assert.deepEqual(parseTestDiffPaths("\0\0"), []);
 });
@@ -71,10 +92,20 @@ test("#742 1.7: packagesToInvalidate 覆盖 test/** 之外的测试面输入（�
   assert.deepEqual(packagesToInvalidate(["vitest.stryker.d/dsh-lan-proxy.config.ts"], reg), [
     "dsh-lan-proxy",
   ]);
+  // P1-D2：单段配置变更只发射 包:段（下游仅该段失基线），不再连坐整包
   assert.deepEqual(
     packagesToInvalidate(["stryker.conf.d/dsh-provider-usage-report-execute.json"], reg),
-    ["dsh-provider-usage"],
+    ["dsh-provider-usage:report-execute"],
   );
+  assert.deepEqual(packagesToInvalidate(["stryker.conf.d/dsh-notifier-pipeline.json"], reg), [
+    "dsh-notifier:pipeline",
+  ]);
+  // e2e / client 测试变更不触发（D1），unit 仍触发
+  assert.deepEqual(packagesToInvalidate(["packages/dsh-notifier/test/e2e/smoke.test.ts"], reg), []);
+  assert.deepEqual(packagesToInvalidate(["packages/dsh-notifier/test/client/a.test.ts"], reg), []);
+  assert.deepEqual(packagesToInvalidate(["packages/dsh-notifier/test/unit/a.test.ts"], reg), [
+    "dsh-notifier",
+  ]);
   // 面外/豁免/未标记的数据资产一律不触发失基线——否则改一个 workflow 或锁文件就会让全部
   // 全部变异段退化为全量，把最坏成本变成默认成本
   for (const f of [
@@ -89,6 +120,34 @@ test("#742 1.7: packagesToInvalidate 覆盖 test/** 之外的测试面输入（�
     assert.deepEqual(packagesToInvalidate([f], reg), [], `${f} 不得触发失基线`);
   }
   assert.deepEqual(packagesToInvalidate([""], reg), [], "空路径段忽略");
+});
+
+test("P1-D2: segmentEntryFor 只认段级 conf，非段路径一律回落整包（null）", () => {
+  assert.equal(
+    segmentEntryFor("stryker.conf.d/dsh-notifier-pipeline.json", "dsh-notifier"),
+    "dsh-notifier:pipeline",
+  );
+  assert.equal(
+    segmentEntryFor("stryker.conf.d/dsh-notifier.json", "dsh-notifier"),
+    null,
+    "包级 conf 仍整包失效",
+  );
+  assert.equal(
+    segmentEntryFor("vitest.stryker.d/dsh-notifier.config.ts", "dsh-notifier"),
+    null,
+    "包级测试面配置仍整包失效",
+  );
+  assert.equal(segmentEntryFor("test/smoke-lib.ts", "dsh-notifier"), null);
+  assert.equal(
+    segmentEntryFor("stryker.conf.d/dsh-notifier-a:b.json", "dsh-notifier"),
+    null,
+    "含冒号段名 fail-closed 回整包",
+  );
+  assert.equal(
+    segmentEntryFor("stryker.conf.d/other-pkg-x.json", "dsh-notifier"),
+    null,
+    "前缀不匹配回整包",
+  );
 });
 
 test("#742 1.7: 三点 diff 口径在真实 git 仓库里成立（含改名到 test/ 的形态）", () => {

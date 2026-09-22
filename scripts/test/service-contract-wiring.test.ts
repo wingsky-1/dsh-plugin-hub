@@ -88,6 +88,7 @@ const UNWIRED_TEST_FACES: Record<string, string> = {
 const EXPECT_FILES: Record<string, string[]> = {
   "dsh-jev-decide": [
     "client-dom/custom-presets-ui.test.ts",
+    "client-dom/locale-host.test.ts",
     "client-dom/panes-probability.test.ts",
     "client-dom/tabs-mask-history.test.ts",
     "client-helpers.ts",

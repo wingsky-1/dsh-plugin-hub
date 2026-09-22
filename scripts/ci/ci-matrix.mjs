@@ -13,22 +13,44 @@ import { loadFullScopePeaks, timeoutForSegment } from "../gate/mutation-plan.mjs
 export const NO_HIT_PACKAGE = "__no-hit-package__";
 
 /**
- * 解析 changes job 传来的「`packages/<pkg>/test/**` 有变更的包」清单（#742 阶段 1.7）。
+ * 解析 changes job 传来的失基线清单（#742 阶段 1.7 + P1 段级窄化）。
  * unknown=true 表示清单缺失或不可解析 → 调用方一律失基线（fail-closed）：宁可让命中包多跑一次
  * 全量，也不要在「测试改了却复用旧结果」这个方向上静默假绿（static mutant 无覆盖信息）。
+ *
+ * 清单条目有两种形状（上游 changed-test-packages.mjs 产出，变量名不变）：
+ *   包条目 `"<pkg>"` → 该包全部段失基线；段条目 `"<pkg>:<seg>"`（单段配置变更）→ 仅该段
+ * 失基线。形状非法的含冒号串回落包集合（旧语义：命中 nothing，不静默全量也不静默复用）。
  */
 export function parseTestChangedPackages(raw) {
   if (typeof raw !== "string" || raw.trim() === "") {
-    return { packages: new Set(), unknown: true };
+    return { packages: new Set(), segments: new Set(), unknown: true };
   }
   let parsed;
   try {
     parsed = JSON.parse(raw);
   } catch {
-    return { packages: new Set(), unknown: true };
+    return { packages: new Set(), segments: new Set(), unknown: true };
   }
-  if (!Array.isArray(parsed)) return { packages: new Set(), unknown: true };
-  return { packages: new Set(parsed.filter((p) => typeof p === "string")), unknown: false };
+  if (!Array.isArray(parsed)) return { packages: new Set(), segments: new Set(), unknown: true };
+  const packages = new Set();
+  const segments = new Set();
+  for (const p of parsed) {
+    if (typeof p !== "string") continue;
+    const segEntry = parseSegmentEntry(p);
+    if (segEntry !== null) segments.add(segEntry);
+    else packages.add(p);
+  }
+  return { packages, segments, unknown: false };
+}
+
+/**
+ * `"<pkg>:<seg>"` 形状校验：两侧非空且恰含一个冒号。合法返回原串（下游按
+ * `${combo.package}:${combo.seg}` 精确比对），非法返回 null（调用方按包条目处理）。
+ */
+export function parseSegmentEntry(entry) {
+  const idx = entry.indexOf(":");
+  if (idx <= 0 || idx !== entry.lastIndexOf(":") || idx === entry.length - 1) return null;
+  return entry;
 }
 
 // 1. 读取候选包全量集合（单一事实源：plugins-manifest.json）
@@ -162,7 +184,10 @@ function buildMutationCombos(mutationPackages, confFiles, peaks, testChanged) {
         package: pkg,
         seg,
         timeoutMinutes: timeoutForSegment(segKey, peaks),
-        invalidateBaseline: testChanged.unknown || testChanged.packages.has(pkg),
+        invalidateBaseline:
+          testChanged.unknown ||
+          testChanged.packages.has(pkg) ||
+          testChanged.segments.has(`${pkg}:${seg}`),
       });
     }
   }
@@ -222,7 +247,7 @@ export function computeCiMatrix(options = {}) {
     mutationPackages,
     hasMutations,
     mutationCombos,
-    testChangedPackages: [...testChanged.packages].sort(),
+    testChangedPackages: [...testChanged.packages, ...testChanged.segments].sort(),
   };
 }
 
@@ -259,7 +284,7 @@ export function runCli(argv = process.argv, env = process.env) {
     console.log(`变异组合: ${JSON.stringify(mutationCombos)}`);
     console.log(`hasMutations: ${hasMutations}`);
     console.log(
-      `test/ 有变更的包（失基线，跑全量）: ${JSON.stringify(testChangedPackages)}` +
+      `test/ 与段配置变更（失基线，跑全量；含 包:段 条目）: ${JSON.stringify(testChangedPackages)}` +
         (mutationCombos.some((c) => c.invalidateBaseline)
           ? "（含清单不可解析的 fail-closed 形态）"
           : ""),

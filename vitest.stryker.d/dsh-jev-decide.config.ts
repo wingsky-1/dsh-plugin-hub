@@ -9,6 +9,7 @@ export default defineConfig({
   test: {
     include: [
       'packages/dsh-jev-decide/test/client-dom/custom-presets-ui.test.ts',
+      'packages/dsh-jev-decide/test/client-dom/locale-host.test.ts',
       'packages/dsh-jev-decide/test/client-dom/panes-probability.test.ts',
       'packages/dsh-jev-decide/test/client-dom/tabs-mask-history.test.ts',
       'packages/dsh-jev-decide/test/client-unit/locale-i18n.test.ts',
