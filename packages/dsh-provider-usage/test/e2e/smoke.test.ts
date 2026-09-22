@@ -365,7 +365,14 @@ function makeFakeCtx(overrides: { llmStreamChunks?: StreamChunk[]; [key: string]
 
 // ---------------------------------------------------------------- 测试公共件
 
-const mkSpyFile = (dir, fileBase, name, provider, formatPanelBody, extra = "") => {
+const mkSpyFile = (
+  dir: string,
+  fileBase: string,
+  name: string,
+  provider: string,
+  formatPanelBody: string,
+  extra = "",
+) => {
   const file = join(dir, `${fileBase}.mjs`);
   writeFileSync(
     file,
@@ -384,7 +391,7 @@ ${extra}
   return file;
 };
 
-const countingPanel = (counter) =>
+const countingPanel = (counter: string) =>
   `globalThis.${counter} = (globalThis.${counter} ?? 0) + 1;` +
   `return "<p data-calls=\\"" + globalThis.${counter} + "\\" data-n=\\"" + input.entries.length + "\\">panel</p>";`;
 
@@ -416,7 +423,8 @@ const callRoute = <T = Record<string, unknown>>(
   });
 const getHistory = (route: SmokeRoute, provider: string, days: number): Promise<HistoryPayload> =>
   callRoute<HistoryPayload>(route, { url: `${ROUTES.history}?provider=${provider}&days=${days}` });
-const postJson = (route, body) => callRoute(route, { method: "POST", body: JSON.stringify(body) });
+const postJson = (route: SmokeRoute | undefined, body: unknown) =>
+  callRoute(route!, { method: "POST", body: JSON.stringify(body) });
 
 const disposeAll = (disposers: Array<() => void>) => {
   for (const d of [...disposers].reverse()) {
@@ -534,7 +542,7 @@ describe("围栏：403 / 405", () => {
         const responses403: Array<Record<string, unknown>> = [];
         const res403 = {
           writeHead: () => {},
-          end: (chunk) => {
+          end: (chunk: string) => {
             responses403.push(JSON.parse(chunk));
           },
         };
@@ -546,10 +554,10 @@ describe("围栏：403 / 405", () => {
         const wrongMethod = POST_ROUTES.has(routePath) ? "DELETE" : "POST";
         const responses405: Array<Record<string, unknown>> = [];
         const res405 = {
-          writeHead: (code) => {
+          writeHead: (code: number) => {
             responses405.push({ __code: code });
           },
-          end: (chunk) => {
+          end: (chunk: string) => {
             responses405.push(JSON.parse(chunk));
           },
         };
@@ -684,10 +692,10 @@ describe("events 非可靠（断线帧丢失为预期）", () => {
     const chunks: string[] = [];
     const handlers = new Map();
     callHandler(evRoute!, fakeReq({ method: "GET" }), {
-      write: (c) => {
+      write: (c: unknown) => {
         chunks.push(String(c));
       },
-      on: (evt, fn) => {
+      on: (evt: string, fn: (...args: Array<unknown>) => unknown) => {
         const list = handlers.get(evt) ?? [];
         list.push(fn);
         handlers.set(evt, list);
@@ -1021,7 +1029,7 @@ describe("卸载清理不抛错", () => {
   beforeAll(async () => {
     const disposers: Array<() => void> = [];
     const { ctx } = makeFakeCtx({
-      effect(fn) {
+      effect(fn: () => () => void) {
         const d = fn();
         disposers.push(d);
         return typeof d === "function" ? d : () => {};
@@ -1830,8 +1838,8 @@ describe("客户端契约", () => {
     // 行级精确：纯 type 漂移（加成员/改名/改顺序）亦红——子串 includes 会漏检后缀追加。
     const typeLine = clientContractObs.settingsIndex
       .split("\n")
-      .map((l) => l.trim())
-      .find((l) => l.startsWith("export type SettingsTabKey"));
+      .map((l: string) => l.trim())
+      .find((l: string) => l.startsWith("export type SettingsTabKey"));
     expect(typeLine).toBe(
       'export type SettingsTabKey = "trend" | "report" | "usage" | "providers" | "float";',
     );
@@ -1888,7 +1896,7 @@ describe("#198 deepseek-official 内置适配器集成 · 场景 1（纯 builtin
   beforeAll(async () => {
     const disposers: Array<() => void> = [];
     const { ctx, routes } = makeFakeCtx({
-      effect(fn) {
+      effect(fn: () => () => void) {
         const d = fn();
         if (typeof d === "function") disposers.push(d);
         return typeof d === "function" ? d : () => {};
@@ -2020,7 +2028,7 @@ describe("#198 deepseek-official 内置适配器集成 · 场景 2（三级密�
   beforeAll(async () => {
     const disposers: Array<() => void> = [];
     const { ctx, routes } = makeFakeCtx({
-      effect(fn) {
+      effect(fn: () => () => void) {
         const d = fn();
         if (typeof d === "function") disposers.push(d);
         return typeof d === "function" ? d : () => {};
@@ -2098,7 +2106,7 @@ describe("#198 deepseek-official 内置适配器集成 · 场景 3（user-file �
   beforeAll(async () => {
     const disposers: Array<() => void> = [];
     const { ctx, routes } = makeFakeCtx({
-      effect(fn) {
+      effect(fn: () => () => void) {
         const d = fn();
         if (typeof d === "function") disposers.push(d);
         return typeof d === "function" ? d : () => {};
@@ -2282,7 +2290,7 @@ describe("#156/#120 warmup 多 provider 采样回归", () => {
     const adapterDir = mkdtempSync(join(tmpdir(), "dou-warmup-adapters-"));
     // B 级打点：fetchData 首尾记墙钟，首轮两窗口重叠即并行（标记落隔离 adapterDir，零污染）
     const marksFile = join(adapterDir, "warmup-marks.jsonl");
-    const mkAdapter = (name, provider) => {
+    const mkAdapter = (name: string, provider: string) => {
       const file = join(adapterDir, `${name}.mjs`);
       writeFileSync(
         file,
@@ -2324,7 +2332,7 @@ export function formatPanel() { return "<p>ok</p>"; }
 
     const disposers: Array<() => void> = [];
     const { ctx, routes } = makeFakeCtx({
-      effect(fn) {
+      effect(fn: () => () => void) {
         const d = fn();
         if (typeof d === "function") disposers.push(d);
         return typeof d === "function" ? d : () => {};
@@ -2334,7 +2342,7 @@ export function formatPanel() { return "<p>ok</p>"; }
     // 启动即预热一次（并行 fire-and-forget）：两个 provider 取数采样完成的历史落盘
     // 即为就绪信号（fetchData 成功帧会 append 历史 jsonl），轮询等待而非固定 sleep。
     const histRoot = join(process.env.DSH_HOME!, "dsh-provider-usage");
-    const warmupLanded = (prov, name) => {
+    const warmupLanded = (prov: string, name: string) => {
       try {
         return readdirSync(join(histRoot, prov, name)).some((f) => f.endsWith(".jsonl"));
       } catch {
@@ -2430,7 +2438,7 @@ export function formatPanel() { return "<p>ok</p>"; }
 // ---- S0：纯函数定界与 key 正确性（AC#2 / AC#8 的常量与归一化部分）
 
 describe("#105① S0：纯函数定界与 key 正确性", () => {
-  let ttlIsInteger: { actual: unknown; expected: unknown };
+  let ttlIsInteger: boolean;
   let ttlInRange: boolean;
   let staleAtExactlyTtl: boolean;
   let staleAtTtlPlusOne: boolean;
@@ -2456,12 +2464,11 @@ describe("#105① S0：纯函数定界与 key 正确性", () => {
     // AC#2：自然日粒度归一化——同日内时钟漂移不进 key，跨日/不同 days 不同 key
     const t1 = new Date(2026, 1, 10, 9, 15, 12, 345).getTime();
     const t2 = new Date(2026, 1, 10, 20, 0, 0, 500).getTime();
-    const dayOf = (t) => {
+    const dayOf = (t: number) => {
       const d = new Date(t);
       d.setHours(0, 0, 0, 0);
       return d.getTime();
     };
-    normalizedSameDay = normalizeRangeDay({ start: t1, end: t2 });
     const expectedNormalized = { start: dayOf(t1), end: dayOf(t2) };
     normalizedSameDay = {
       actual: normalizeRangeDay({ start: t1, end: t2 }),
@@ -2604,7 +2611,7 @@ describe("#105① S1：命中逐字节一致 + key 不含漂移时间戳 + appen
 
     // AC#3 主失效：等 stats TTL(5s) 到龄 → 轮询 stats 直到返回 fresh（到龄重取 fresh →
     // append 落盘 → 面板缓存全清）；事件驱动，避免固定 sleep 5200。
-    nBefore = Number(h1.panelHtml.match(/data-n="(\d+)"/)[1]);
+    nBefore = Number(h1.panelHtml.match(/data-n="(\d+)"/)![1]);
     freshSeen = await pollUntil(
       async () => {
         const s = await callRoute(statsRoute!, { url: `${ROUTES.stats}?provider=cache-prov` });
@@ -2615,7 +2622,7 @@ describe("#105① S1：命中逐字节一致 + key 不含漂移时间戳 + appen
     );
     const h3 = await getHistory(historyRoute!, "cache-prov", 7);
     afterAppendCalls = spyNs.__SPY_A;
-    nAfter = Number(h3.panelHtml.match(/data-n="(\d+)"/)[1]);
+    nAfter = Number(h3.panelHtml.match(/data-n="(\d+)"/)![1]);
 
     disposeAll(disposers);
   });
@@ -3170,7 +3177,7 @@ export function formatPanel(input) {
 
     const historyRoute = routes.find((r) => r.path === ROUTES.history);
     const m1 = await getHistory(historyRoute!, "mut-prov", 7);
-    firstComputeEntryLen = Number(m1.panelHtml.match(/data-len="(\d+)"/)[1]);
+    firstComputeEntryLen = Number(m1.panelHtml.match(/data-len="(\d+)"/)![1]);
     mutationTookEffectInFirstCompute = String(m1.panelHtml).includes('data-after="0"');
 
     const m2 = await getHistory(historyRoute!, "mut-prov", 7);
@@ -3229,11 +3236,11 @@ describe("#105① S7：不引入条件请求协商（AC#11）", () => {
         },
       }),
       {
-        writeHead: (c, h) => {
+        writeHead: (c: number, h: unknown) => {
           code = c;
           hdrs = h ?? {};
         },
-        end: (chunk) => {
+        end: (chunk: string) => {
           raw = chunk;
         },
       },
@@ -3435,7 +3442,14 @@ describe("#503 M2：/trend 路由集成断言", () => {
 
     // 合成事件流：两个会话各一次定稿调用（header 归属折叠 + usage chunk 定稿）
     const t = Date.now();
-    const emitCall = (sessionId, seqBase, provider, model, input, output) => {
+    const emitCall = (
+      sessionId: string,
+      seqBase: number,
+      provider: string,
+      model: string,
+      input: number,
+      output: number,
+    ) => {
       const s = { id: sessionId };
       emitEvent("session/event", s, {
         type: "request/header",
@@ -4879,7 +4893,14 @@ describe("#633 分片 b2 D2：双目录全链路", () => {
     // 双目录 + 一个无 cwd 会话，各一次定稿调用（时间 = 今日，落当日明细分片）
     const t = Date.now();
     const today = dayKey(t);
-    const emitCall = (sessionId, seqBase, provider, model, input, output) => {
+    const emitCall = (
+      sessionId: string,
+      seqBase: number,
+      provider: string,
+      model: string,
+      input: number,
+      output: number,
+    ) => {
       const s = { id: sessionId };
       emitEvent("session/event", s, {
         type: "request/header",
@@ -4915,10 +4936,13 @@ describe("#633 分片 b2 D2：双目录全链路", () => {
     );
     const allToday = allDirs.series.find((p) => p.key === today);
     obs.allTodayTotal = allToday!.total;
-    const partOf = (point, name) => point.parts.find((p) => p.provider === name)?.value ?? null;
-    obs.partA = partOf(allToday, DIR_A);
-    obs.partB = partOf(allToday, DIR_B);
-    obs.partUnk = partOf(allToday, UNK);
+    const partOf = (
+      point: { parts: Array<{ provider: unknown; value: unknown }> },
+      name: unknown,
+    ) => point.parts.find((p) => p.provider === name)?.value ?? null;
+    obs.partA = partOf(allToday!, DIR_A);
+    obs.partB = partOf(allToday!, DIR_B);
+    obs.partUnk = partOf(allToday!, UNK);
     obs.dirLegend = allDirs.dirs.map((d) => d.dir).sort();
 
     // 2. dir 过滤面：过滤后数值 = 该目录子集（A=300 / B=30 / 未识别=10，互不串桶）
