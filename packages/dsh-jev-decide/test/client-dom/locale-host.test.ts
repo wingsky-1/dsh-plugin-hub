@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 /** dsh-jev-decide 宿主 locale 接线（happy-dom 经真实 apply）。
  *
  * 守的是 P2 locale 订阅：字典以 jev-decide 命名空间注册、bind 带接收者装配、
