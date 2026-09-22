@@ -86,17 +86,17 @@ export function resetForm(state: McpState): void {
   state.editing = undefined;
   if (state.formName === undefined) return;
   state.formName.value = "";
-  state.formScope.value =
+  state.formScope!.value =
     state.projectRoot !== undefined && state.projectRoot !== "" ? "project" : "global";
-  state.formTransport.value = "stdio";
-  state.formCommand.value = "";
-  state.formArgs.value = "";
-  state.formEnv.value = "";
-  state.formCwd.value = "";
-  state.formUrl.value = "";
-  state.formHeaders.value = "";
-  state.formEnabled.checked = true;
-  state.formTransport.dispatchEvent(new Event("change"));
+  state.formTransport!.value = "stdio";
+  state.formCommand!.value = "";
+  state.formArgs!.value = "";
+  state.formEnv!.value = "";
+  state.formCwd!.value = "";
+  state.formUrl!.value = "";
+  state.formHeaders!.value = "";
+  state.formEnabled!.checked = true;
+  state.formTransport!.dispatchEvent(new Event("change"));
   const title = document.getElementById("dm-form-title");
   if (title !== null) title.textContent = t("addServer");
   const cancel = document.querySelector<HTMLButtonElement>("[data-dm-cancel]");
@@ -109,24 +109,24 @@ export function fillForm(state: McpState, fill: any): void {
   // beginEdit 设置的编辑态丢失、saveForm 恒走 POST → 宿主抛 already exists
   // （编辑保存整体坏死）。表单元素由 buildQuickAdd 按 state.editing 构建，
   // 此处仅覆盖字段值，编辑态（editingName）保持 beginEdit 设定。
-  if (fill.name !== undefined) state.formName.value = fill.name;
-  state.formTransport.value = fill.transport ?? "stdio";
-  if (fill.command !== undefined) state.formCommand.value = fill.command;
-  if (Array.isArray(fill.args)) state.formArgs.value = fill.args.join(", ");
+  if (fill.name !== undefined) state.formName!.value = fill.name;
+  state.formTransport!.value = fill.transport ?? "stdio";
+  if (fill.command !== undefined) state.formCommand!.value = fill.command;
+  if (Array.isArray(fill.args)) state.formArgs!.value = fill.args.join(", ");
   // #770-A3：投影省略 env/headers（缺键）时表单清零——残留旧值会被 readForm
   // 原样读回并 PATCH 落盘（占位符同理）；缺键在宿主即「沿用既有」。
   if (fill.env !== undefined) {
-    state.formEnv.value = Object.entries(fill.env)
+    state.formEnv!.value = Object.entries(fill.env)
       .map(([key, value]) => `${key}=${value}`)
       .join("\n");
   } else if (state.formEnv !== undefined) {
     state.formEnv.value = "";
   }
-  if (fill.cwd !== undefined) state.formCwd.value = fill.cwd;
+  if (fill.cwd !== undefined) state.formCwd!.value = fill.cwd;
   // url 投影为 B8 脱敏展示值（含占位符时仅展示用，保存时由 saveForm 省略，见上）。
-  if (fill.url !== undefined) state.formUrl.value = fill.url;
+  if (fill.url !== undefined) state.formUrl!.value = fill.url;
   if (fill.headers !== undefined) {
-    state.formHeaders.value = Object.entries(fill.headers)
+    state.formHeaders!.value = Object.entries(fill.headers)
       .map(([key, value]) => `${key}: ${value}`)
       .join("\n");
   } else if (state.formHeaders !== undefined) {
@@ -135,7 +135,7 @@ export function fillForm(state: McpState, fill: any): void {
   // C1 enabled 回填：resetForm 强制 checked=true，编辑 enabled:false 的服务器
   // 必须回填，否则保存时被静默重新启用并自动连接（宿主 update 分支）。
   if (state.formEnabled !== undefined) state.formEnabled.checked = fill.enabled !== false;
-  state.formTransport.dispatchEvent(new Event("change"));
+  state.formTransport!.dispatchEvent(new Event("change"));
 }
 
 /** 保存表单（新增或更新）。 */
@@ -200,12 +200,12 @@ export async function saveForm(state: McpState, actions: UiActions): Promise<voi
         body: JSON.stringify(payload),
       });
       await api(
-        `${state.API.servers}?name=${encodeURIComponent(state.editingName)}&scope=${state.editing.scope}`,
+        `${state.API.servers}?name=${encodeURIComponent(state.editingName!)}&scope=${state.editing!.scope}`,
         { method: "DELETE" },
       );
     } else if (editing) {
       await api(
-        `${state.API.servers}?name=${encodeURIComponent(state.editingName)}&scope=${formScopeValue(state)}`,
+        `${state.API.servers}?name=${encodeURIComponent(state.editingName!)}&scope=${formScopeValue(state)}`,
         {
           method: "PATCH",
           headers: { "content-type": "application/json" },
@@ -254,14 +254,14 @@ export function buildQuickAdd(state: McpState, actions: UiActions): any {
     value: state.editing?.name ?? "",
   });
   state.formScope = el("select", { id: "dm-f-scope" });
-  state.formScope.appendChild(el("option", { value: "project", text: t("scopeProjectOpt") }));
-  state.formScope.appendChild(el("option", { value: "global", text: t("scopeGlobalOpt") }));
-  state.formScope.value =
+  state.formScope!.appendChild(el("option", { value: "project", text: t("scopeProjectOpt") }));
+  state.formScope!.appendChild(el("option", { value: "global", text: t("scopeGlobalOpt") }));
+  state.formScope!.value =
     state.editing?.scope ??
     (state.projectRoot !== undefined && state.projectRoot !== "" ? "project" : "global");
   state.formTransport = el("select", { id: "dm-f-transport" });
-  state.formTransport.appendChild(el("option", { value: "stdio", text: t("transportStdioOpt") }));
-  state.formTransport.appendChild(
+  state.formTransport!.appendChild(el("option", { value: "stdio", text: t("transportStdioOpt") }));
+  state.formTransport!.appendChild(
     el("option", { value: "streamable-http", text: t("transportHttpOpt") }),
   );
   state.formCommand = el("input", { id: "dm-f-command", placeholder: "npx" });
@@ -353,15 +353,15 @@ export function buildQuickAdd(state: McpState, actions: UiActions): any {
 
   // 传输类型切换显示/隐藏
   const syncTransport = () => {
-    const isHttp = state.formTransport.value === "streamable-http";
+    const isHttp = state.formTransport!.value === "streamable-http";
     for (const field of [state.formCommand, state.formArgs, state.formEnv, state.formCwd]) {
-      field.closest(".dm-field").style.display = isHttp ? "none" : "flex";
+      (field!.closest(".dm-field") as HTMLElement).style.display = isHttp ? "none" : "flex";
     }
     for (const field of [state.formUrl, state.formHeaders]) {
-      field.closest(".dm-field").style.display = isHttp ? "flex" : "none";
+      (field!.closest(".dm-field") as HTMLElement).style.display = isHttp ? "flex" : "none";
     }
   };
-  state.formTransport.addEventListener("change", syncTransport);
+  state.formTransport!.addEventListener("change", syncTransport);
 
   // 粘贴 JSON 导入
   const paste = el("section", { class: "dm-section" });

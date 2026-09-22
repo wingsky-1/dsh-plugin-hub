@@ -48,21 +48,21 @@ async function doRefresh(state: McpState, actions: UiActions): Promise<boolean> 
     const countsEl = document.querySelector(".dm-counts");
     if (countsEl !== null) {
       const parts = [];
-      if (state.counts.connected > 0)
+      if ((state.counts.connected ?? 0) > 0)
         parts.push(t("countsConnected", { n: state.counts.connected }));
-      if (state.counts.connecting > 0 || state.counts.reconnecting > 0)
+      if ((state.counts.connecting ?? 0) > 0 || (state.counts.reconnecting ?? 0) > 0)
         parts.push(
           t("countsConnecting", {
             n: (state.counts.connecting ?? 0) + (state.counts.reconnecting ?? 0),
           }),
         );
-      if (state.counts.failed > 0) parts.push(t("countsFailed", { n: state.counts.failed }));
+      if ((state.counts.failed ?? 0) > 0) parts.push(t("countsFailed", { n: state.counts.failed }));
       const summary =
         parts.length > 0
           ? t("countsSummary", { n: state.servers.length, parts: parts.join(" · ") })
           : t("countsSummaryOnly", { n: state.servers.length });
       // 失败计数标红（健康摘要与浮窗同语义）。
-      if (state.counts.failed > 0 && typeof summary === "string") {
+      if ((state.counts.failed ?? 0) > 0 && typeof summary === "string") {
         const failedText = t("countsFailed", { n: state.counts.failed });
         countsEl.textContent = "";
         const chunks = summary.split(failedText);
@@ -158,7 +158,7 @@ export function close(state: McpState): void {
 export function showPanel(state: McpState, actions: UiActions): void {
   if (state.overlay === undefined) {
     state.overlay = el("div", { class: "dm-overlay", hidden: true });
-    state.overlay.addEventListener("click", (event: any) => {
+    state.overlay!.addEventListener("click", (event: any) => {
       if (event.target === state.overlay) close(state);
     });
     state.card = el("div", { class: "dm-card" });
@@ -172,12 +172,12 @@ export function showPanel(state: McpState, actions: UiActions): void {
     // C10：首次构建面板头后立刻拉一次（与打开路径 refresh 同源，单飞去重）。
     void refresh(state, actions);
     head.appendChild(el("button", { text: t("close"), onclick: () => close(state) }));
-    state.card.appendChild(head);
+    state.card!.appendChild(head);
     // role 保留（静态语义；hidden 子树 AT-irrelevant）。aria-modal 不在此写：
     // 单点写入见本函数公共路径（state.open=true 后无条件 set），与 close() 的
     // 同步 removeAttribute 配对（R1），两处写同一值会漂移。
-    state.card.setAttribute("role", "dialog");
-    state.card.setAttribute("aria-label", t("panelTitle"));
+    state.card!.setAttribute("role", "dialog");
+    state.card!.setAttribute("aria-label", t("panelTitle"));
 
     const tabs = el("div", { class: "dm-tabs" });
     tabs.appendChild(
@@ -196,12 +196,12 @@ export function showPanel(state: McpState, actions: UiActions): void {
         onclick: () => switchTab(state, actions, "quick"),
       }),
     );
-    state.card.appendChild(tabs);
+    state.card!.appendChild(tabs);
 
     state.bodyEl = el("div", { class: "dm-body" });
-    state.card.appendChild(state.bodyEl);
-    state.overlay.appendChild(state.card);
-    document.body.appendChild(state.overlay);
+    state.card!.appendChild(state.bodyEl!);
+    state.overlay!.appendChild(state.card!);
+    document.body.appendChild(state.overlay!);
 
     // C4 keydown 泄漏修复：Escape 监听改具名函数并经 WeakMap 登记清理
     // 回调（disposePanel 配对 removeEventListener）——匿名监听器在 HMR/重复
@@ -227,8 +227,8 @@ export function showPanel(state: McpState, actions: UiActions): void {
   // R1 单点写入：重开路径（含 close→300ms 内重开竞态）一律恢复 true，与
   // close() 的同步摘除配对，幂等。
   if (state.card !== undefined) state.card.setAttribute("aria-modal", "true");
-  state.overlay.hidden = false;
-  state.overlay.classList.remove("dm-overlay--closing");
+  state.overlay!.hidden = false;
+  state.overlay!.classList.remove("dm-overlay--closing");
   const armOpen = () => {
     if (!state.open || state.overlay === undefined) return;
     state.overlay.style.animation = "none";

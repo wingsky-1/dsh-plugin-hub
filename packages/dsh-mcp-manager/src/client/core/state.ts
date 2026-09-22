@@ -11,7 +11,7 @@
 
 import { API } from "./constants.ts";
 import { DEFAULT_Z_INDEX_BASE } from "../../shared/interface.ts";
-import type { ClientUiConfig, ServerState } from "../../shared/interface.ts";
+import type { ClientUiConfig, McpServerListEntry, ServerState } from "../../shared/interface.ts";
 
 export type { ClientUiConfig, McpServerListEntry } from "../../shared/interface.ts";
 
@@ -21,45 +21,45 @@ export type McpCounts = Partial<Record<ServerState, number>>;
 /** MCP 管理器客户端全部可变状态。 */
 export interface McpState {
   /** 模态面板遮罩层根元素。 */
-  overlay: any;
+  overlay: HTMLElement | undefined;
   /** 模态面板卡片根元素。 */
-  card: any;
+  card: HTMLElement | undefined;
   /** 模态面板 body 容器。 */
-  bodyEl: any;
+  bodyEl: HTMLElement | undefined;
   /** 模态面板是否打开。 */
   open: boolean;
   /** 打开面板时的焦点归属（R6 关还焦：close 时恢复；非元素/已卸载则跳过）。 */
-  panelOpener: any;
+  panelOpener: HTMLElement | undefined;
   /** 当前激活的 tab（servers / quick）。 */
   activeTab: string;
   /** 服务器列表。 */
-  servers: any[];
+  servers: McpServerListEntry[];
   /** 各状态计数。 */
-  counts: any;
+  counts: McpCounts;
   /** 正在编辑的服务器名称（undefined 表示新建）。 */
-  editingName: any;
+  editingName: string | undefined;
   /** 正在编辑的服务器原始数据。 */
-  editing: any;
+  editing: McpServerListEntry | undefined;
 
   // 表单 DOM 引用
-  formName: any;
-  formScope: any;
-  formTransport: any;
-  formCommand: any;
-  formArgs: any;
-  formEnv: any;
-  formCwd: any;
-  formUrl: any;
-  formHeaders: any;
-  formEnabled: any;
+  formName: HTMLInputElement | undefined;
+  formScope: HTMLSelectElement | undefined;
+  formTransport: HTMLSelectElement | undefined;
+  formCommand: HTMLInputElement | undefined;
+  formArgs: HTMLInputElement | undefined;
+  formEnv: HTMLTextAreaElement | undefined;
+  formCwd: HTMLInputElement | undefined;
+  formUrl: HTMLInputElement | undefined;
+  formHeaders: HTMLTextAreaElement | undefined;
+  formEnabled: HTMLInputElement | undefined;
 
   // 浮窗状态
-  floatPill: any;
-  floatPanel: any;
+  floatPill: HTMLElement | undefined;
+  floatPanel: HTMLElement | undefined;
   floatOpen: boolean;
-  currentCwd: any;
-  projectRoot: any;
-  updateFloatState: any;
+  currentCwd: string | undefined;
+  projectRoot: string | undefined;
+  updateFloatState: (() => void) | undefined;
   mcpUiConfig: ClientUiConfig;
 
   // 路径表（单一来源 src/shared/routes.ts，经 client/core/constants.ts 投影）。
@@ -114,7 +114,7 @@ export function createState(): McpState {
 export interface UiActions {
   refresh: () => Promise<boolean>;
   resetForm: () => void;
-  beginEdit: (server: any) => void;
+  beginEdit: (server: McpServerListEntry) => void;
   switchTab: (tab: string) => void;
   close: () => void;
   showPanel: () => void;
