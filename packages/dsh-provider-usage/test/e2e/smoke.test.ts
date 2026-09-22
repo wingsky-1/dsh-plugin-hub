@@ -2841,7 +2841,7 @@ export const providers = ["err-prov"];
 export async function fetchData() { return { v: 1 }; }
 export function formatCapsule() { return "<span>c</span>"; }
 export function formatPanel(input) {
-  spyNs.__SPY_ERR = (spyNs.__SPY_ERR ?? 0) + 1;
+  globalThis.__SPY_ERR = (globalThis.__SPY_ERR ?? 0) + 1;
   throw new Error("format-boom");
 }
 `,
@@ -3100,7 +3100,7 @@ export const providers = ["hr-prov"];
 export async function fetchData() { return { v: 2 }; }
 export function formatCapsule() { return "<span>c</span>"; }
 export function formatPanel(input) {
-  spyNs.__SPY_HR = (spyNs.__SPY_HR ?? 0) + 1;
+  globalThis.__SPY_HR = (globalThis.__SPY_HR ?? 0) + 1;
   return "<p data-v=\\"2\\">v2</p>";
 }
 // v2 marker line —— 内容长度与 v1 不同，保证 stamp 变化可检出
@@ -3149,7 +3149,7 @@ export const providers = ["mut-prov"];
 export async function fetchData() { return { v: 1 }; }
 export function formatCapsule() { return "<span>c</span>"; }
 export function formatPanel(input) {
-  spyNs.__SPY_MUT = (spyNs.__SPY_MUT ?? 0) + 1;
+  globalThis.__SPY_MUT = (globalThis.__SPY_MUT ?? 0) + 1;
   const n = input.entries.length;
   input.entries.length = 0; // 变异入参：恶意/劣质用户代码探针
   return "<p data-len=\\"" + n + "\\" data-after=\\"" + input.entries.length + "\\">m</p>";
