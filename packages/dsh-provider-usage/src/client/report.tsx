@@ -33,13 +33,7 @@ import type { ReportMetaView } from "./history.tsx";
 import { t } from "../../../../shared/client/i18n.js";
 
 /** 报告五路由经 ./shared/contract.ts 具名表（host-seams R2 收敛，字面量只留契约一份）。 */
-import {
-  REPORT_CONFIG_URL,
-  REPORT_DETAIL_URL,
-  REPORT_GENERATE_URL,
-  REPORT_MODELS_URL,
-  REPORTS_URL,
-} from "./shared/contract.ts";
+import { REPORT_CONFIG_URL, REPORT_GENERATE_URL, REPORT_MODELS_URL } from "./shared/contract.ts";
 
 /** 轮询退避：1s → 2s → 4s 封顶 5s；上限约 2 分钟。 */
 const POLL_INITIAL_DELAY_MS = 1_000;
