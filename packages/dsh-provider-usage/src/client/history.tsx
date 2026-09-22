@@ -22,10 +22,8 @@ import {
 import type { HistoryStatusFilter } from "./report-helpers.ts";
 import { t } from "../../../../shared/client/i18n.js";
 
-/** 宿主端 ROUTES（构建期经 __DSH_ROUTES__ 注入）。 */
-declare const __DSH_ROUTES__: Record<string, string> | undefined;
-const REPORTS_URL = __DSH_ROUTES__?.reports ?? "/api/dsh-provider-usage/reports";
-const REPORT_DETAIL_URL = __DSH_ROUTES__?.reportDetail ?? "/api/dsh-provider-usage/reports/detail";
+/** 报告两路由经 ./shared/contract.ts 具名表（host-seams R2 收敛，字面量只留契约一份）。 */
+import { REPORT_DETAIL_URL, REPORTS_URL } from "./shared/contract.ts";
 
 export type HistoryPeriod = "daily" | "weekly" | "monthly";
 
