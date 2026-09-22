@@ -120,17 +120,27 @@ export class TrendStore {
     // 后缀 `.tmp`）。尽力而为：清理失败不影响主流程（仅告警，下轮重写时再清）。
     try {
       const files = await readdir(this.aggDir());
-      // 注解：rm 归约 Promise 集合（allSettled 逐个定责，首错 warn 后主写照常推进）。
+      // 注解：rm 归约 Promise 集合（allSettled 逐个定责，全量 warn 后主写照常推进）。
       const deletePromises: Array<Promise<void>> = [];
+      const targets: string[] = [];
       for (const f of files) {
         if (f.startsWith(`${day}.jsonl.`) && f.endsWith(".tmp")) {
+          targets.push(f);
           deletePromises.push(rm(join(this.aggDir(), f), { force: true }));
         }
       }
       const results = await Promise.allSettled(deletePromises);
-      const firstError = results.find((r): r is PromiseRejectedResult => r.status === "rejected");
-      if (firstError) {
-        throw firstError.reason;
+      const details: string[] = [];
+      results.forEach((r, i) => {
+        if (r.status === "rejected") {
+          const file = targets[i];
+          const raw = r.reason instanceof Error ? r.reason.message : String(r.reason);
+          // 最小披露：只记 basename，不记绝对路径（rm 报错内嵌完整路径，此处回填为 basename）。
+          details.push(`${file}：${raw.split(join(this.aggDir(), file)).join(file)}`);
+        }
+      });
+      if (details.length > 0) {
+        throw new Error(details.join("；"));
       }
     } catch (e: unknown) {
       this.warn(

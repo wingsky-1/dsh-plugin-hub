@@ -38,6 +38,7 @@ import {
   mkdirSync,
   utimesSync,
   rmdirSync,
+  rmSync,
 } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -2764,6 +2765,81 @@ describe("评审修复 P2-7：writeAggDay 清理同日残留 tmp", () => {
 
   it("主流程不受清理影响", () => {
     expect(aggShardLength).toBe(1);
+  });
+});
+
+describe("评审 #934：writeAggDay 多残留清理失败全量 warn", () => {
+  let warns;
+  let leakRoot;
+  let aggShardLength934;
+
+  beforeAll(async () => {
+    // #934：多个同日残留 tmp 删除失败时，一条 warn 列出全部失败文件 basename＋原因，
+    // 主写照常推进。rm（无 recursive）删非空目录必 reject——以此构造确定性多失败。
+    warns = [];
+    const root = mkdtempSync(join(tmpdir(), "dou-trend-warn934-"));
+    leakRoot = root;
+    const store = new TrendStore({ root, warn: (m) => warns.push(m) });
+    mkdirSync(join(root, "agg"), { recursive: true });
+    for (const name of [`${DAY0}.jsonl.1700000000001.tmp`, `${DAY0}.jsonl.1700000000002.tmp`]) {
+      const dir = join(root, "agg", name);
+      mkdirSync(dir);
+      writeFileSync(join(dir, "keep"), "x");
+    }
+    await store.writeAggDay(DAY0, [
+      {
+        v: 1,
+        kind: "agg",
+        day: DAY0,
+        provider: "p",
+        model: "m",
+        input: 1,
+        output: null,
+        cacheRead: null,
+        cacheWrite: null,
+        calls: 1,
+        turns: 0,
+        toolCalls: 0,
+      },
+    ]);
+    aggShardLength934 = (await store.readAggShard(DAY0)).length;
+  });
+
+  it("一条 warn 含全部失败文件 basename", () => {
+    const hit = warns.filter((m) => m.includes("聚合分片 tmp 残留清理失败"));
+    expect(hit.length).toBe(1);
+    expect(hit[0].includes(`${DAY0}.jsonl.1700000000001.tmp`)).toBe(true);
+    expect(hit[0].includes(`${DAY0}.jsonl.1700000000002.tmp`)).toBe(true);
+  });
+
+  it("warn 不记绝对路径", () => {
+    const hit = warns.filter((m) => m.includes("聚合分片 tmp 残留清理失败"));
+    expect(hit.length).toBe(1);
+    expect(hit[0].includes(leakRoot)).toBe(false);
+  });
+
+  it("warn 含失败原因实质（存在性，不锁措辞）", () => {
+    const hit = warns.filter((m) => m.includes("聚合分片 tmp 残留清理失败"));
+    expect(hit.length).toBe(1);
+    // 去掉固定前缀与两 basename 后仍有原因实质——“只记 basename 不记原因”的
+    // 变异体此处被杀；不断言原因措辞本身（平台 rm 文案差异不进断言）。
+    const prefix = `聚合分片 tmp 残留清理失败（${DAY0}）：`;
+    const rest = hit[0].slice(hit[0].indexOf(prefix) + prefix.length);
+    const substance = rest
+      .split(`${DAY0}.jsonl.1700000000001.tmp`)
+      .join("")
+      .split(`${DAY0}.jsonl.1700000000002.tmp`)
+      .join("");
+    expect(substance.length).toBeGreaterThan(10);
+  });
+
+  it("主写照常推进", () => {
+    expect(aggShardLength934).toBe(1);
+  });
+
+  afterAll(() => {
+    // P3：占位目录落 /tmp 也要收（mkdtemp 配套 rm；多失败占位目录 rm 删不掉，此处兜底）。
+    if (leakRoot) rmSync(leakRoot, { recursive: true, force: true });
   });
 });
 
