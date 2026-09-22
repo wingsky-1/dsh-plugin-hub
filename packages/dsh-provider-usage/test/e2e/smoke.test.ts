@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * dsh-provider-usage — 宿主端冒烟测试·集成区（v2 重构版，fake ctx + 注入，无网络）。
  *
@@ -34,6 +33,166 @@ import {
 import { tmpdir } from "node:os";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { callHandler, pollUntil, pollUntilJsonlReady } from "../helpers.ts";
+import type { Context } from "@deepseek-ai/cordis";
+import type { StreamChunk } from "@deepseek-ai/dsh-llm";
+import type { ReportConfig } from "../../src/server/config/interface.ts";
+import type { ReportMeta } from "../../src/server/execute/interface.ts";
+/** 路由 JSON 响应形状（线上传输；字段源于 src 对应 handler 的 writeJson，
+ * 嵌套面按测试读取口径声明，未声明顶层键经索引落 unknown（仅 expect 可达）。 */
+interface StatsPayload {
+  plugin: string;
+  version: number;
+  provider: string;
+  adapterName: string;
+  status: string;
+  adapterVersion: number;
+  ok: boolean;
+  error: unknown;
+  capsuleHtml: string;
+  [key: string]: unknown;
+}
+interface UiConfigShape {
+  placement: string;
+  offsetX: number;
+  offsetY: number;
+  panelOffsetY: number;
+  zIndexBase: number;
+}
+interface UiPayload {
+  ok: boolean;
+  ui: UiConfigShape;
+  error?: unknown;
+  [key: string]: unknown;
+}
+interface AdaptersPayload {
+  version: number;
+  host: Array<{
+    name: string;
+    file: string | null;
+    providers: string[];
+    source?: unknown;
+    [key: string]: unknown;
+  }>;
+  enabled: Record<string, string>;
+  errors: Array<{ key: string; at: number; kind: string; message: string }>;
+  modelProviders: string[];
+  [key: string]: unknown;
+}
+interface InspectPayload {
+  ok?: boolean;
+  adapter?: { name: string; label?: string; providers: string[]; version?: number };
+  file?: string;
+  error?: string;
+  detail?: unknown;
+  [key: string]: unknown;
+}
+interface ReportConfigPayload {
+  ok: boolean;
+  // 线上形态即归一化 ReportConfig 全量（与 previousClosedWindow 入参同构）。
+  config: ReportConfig;
+  providers: string[];
+  dirs: Array<{ dir: string }>;
+  error?: unknown;
+  [key: string]: unknown;
+}
+interface GeneratePayload {
+  ok: boolean;
+  taskId: string;
+  reused?: boolean;
+  meta?: ReportMeta;
+  [key: string]: unknown;
+}
+interface GenerateStatusPayload {
+  status: string;
+  error?: unknown;
+  meta?: ReportMeta;
+  [key: string]: unknown;
+}
+interface ReportDetailPayload {
+  ok: boolean;
+  meta: { ok: boolean; [key: string]: unknown };
+  html: string;
+  [key: string]: unknown;
+}
+interface ReportsListPayload {
+  ok: boolean;
+  reports: Array<{ key: string; [key: string]: unknown }>;
+  [key: string]: unknown;
+}
+interface ModelsPayload {
+  ok: boolean;
+  models: unknown;
+  [key: string]: unknown;
+}
+interface SelectPayload {
+  ok?: boolean;
+  provider?: string;
+  adapterName?: string | null;
+  error?: string;
+  [key: string]: unknown;
+}
+interface AddPayload {
+  ok?: boolean;
+  adapter?: { name: string; label?: string; providers: string[]; file?: string };
+  enabled?: Record<string, string>;
+  error?: string;
+  detail?: unknown;
+  [key: string]: unknown;
+}
+interface HistoryPayload {
+  plugin: string;
+  provider: string;
+  adapterName: string;
+  ok: boolean;
+  panelHtml: string;
+  error: unknown;
+  range: { start: number; end: number };
+  [key: string]: unknown;
+}
+interface HealthPayload {
+  ok: boolean;
+  adapters: Array<Record<string, unknown>>;
+  errors: Array<{ key: string; kind: string; message: string; at: number }>;
+  cacheSize?: number;
+  [key: string]: unknown;
+}
+interface TrendSeriesPoint {
+  key: string;
+  total: number | null;
+  parts: Array<{ provider: string; model?: string | null; value: number | null }>;
+}
+interface TrendPayload {
+  ok: boolean;
+  plugin: string;
+  version: number;
+  granularity: string;
+  metric: string;
+  n: number;
+  byModel: boolean;
+  series: TrendSeriesPoint[];
+  providers: Array<{ provider: string }>;
+  generatedAt: number;
+  summary: {
+    calls: number;
+    total: number | null;
+    peakKey: string | null;
+    top: { provider: string; value: number } | null;
+    prevTotal: number | null;
+    prevComplete: boolean;
+  };
+  firstDay: string;
+  dir: unknown;
+  byDir: boolean;
+  dirs: Array<Record<string, unknown>>;
+  [key: string]: unknown;
+}
+/** fake webServer 收集的路由（apply 注册的真实路由对象；handler 取测试调用面二参形态）。 */
+interface SmokeRoute {
+  path: string;
+  method?: string;
+  handler: (req: unknown, res: unknown) => unknown;
+  [key: string]: unknown;
+}
 // 白盒直连深路径（#768 B波）：g4 清场须与钩子同模块实例——lib 构建内联了
 // runner.ts 的独立副本（计数器不互通），故清场经深路径，不走包入口。
 // （计数器直读已归位单元层，本文件仅保留清场。）
@@ -79,7 +238,10 @@ const here = dirname(fileURLToPath(import.meta.url));
 // （registry 已原子切换、缓存已清），断言随即读取路由可见效果，零等待。
 const hotReloaders: HotReloadableAdapter[] = [];
 const __origHotReloadStart = HotReloadableAdapter.prototype.start;
-HotReloadableAdapter.prototype.start = async function (...args) {
+// 原型桩参数透传：start 签名不定，rest 经 tuple 断言保持调用同形。
+HotReloadableAdapter.prototype.start = async function (
+  ...args: Parameters<typeof __origHotReloadStart>
+) {
   const result = await __origHotReloadStart.apply(this, args);
   hotReloaders.push(this);
   return result;
@@ -88,7 +250,7 @@ HotReloadableAdapter.prototype.start = async function (...args) {
 /** 对已登记的被监视文件驱动一次轮询；传 file 时只驱动该文件（返回即热更新已落定）。 */
 async function driveHotReloads(file?: string): Promise<void> {
   for (const hr of hotReloaders) {
-    if (file === undefined || hr.file === file) await hr.pollOnce();
+    if (file === undefined || hr["file"] === file) await hr.pollOnce();
   }
 }
 
@@ -97,6 +259,9 @@ process.env.DSH_HOME = mkdtempSync(join(tmpdir(), "dou-home-"));
 
 // 网络隔离（红线）：清掉可能存在于真实环境的密钥变量，防内置适配器发起真实请求；
 // 测试结束后恢复（#198：deepseek 系列密钥一并清空——T2 无真实凭据纪律）。
+/** 探针计数器命名空间（适配器 spy 代码经 globalThis 读写计数；
+ * 测试侧经 Record 收敛，运行时同形——contract 测试同款边界建模）。 */
+const spyNs = globalThis as unknown as Record<string, number>;
 const SAVED_ENV_KEYS = [
   "OPENCODE_GO_API_KEY",
   "OPENCODE_GO_PROVIDER_API_KEY",
@@ -116,7 +281,7 @@ const ISOLATED_CONFIG = { apiKey: "sk-smoke-test", apiEndpoint: "http://127.0.0.
 
 // ---------------------------------------------------------------- fake ctx + apply
 
-function fakeReq(overrides = {}) {
+function fakeReq(overrides: Record<string, unknown> = {}) {
   const req = {
     socket: { remoteAddress: "127.0.0.1" },
     headers: { host: "127.0.0.1:3080", "sec-fetch-site": "same-origin" },
@@ -135,23 +300,24 @@ function fakeReq(overrides = {}) {
 }
 
 /** #503 M3：报告生成的默认罐头 chunk 流（安全正文 + usage 元数据 + finish）。 */
-const DEFAULT_LLM_CHUNKS = [
+// 罐头流经 StreamChunk 类型化；finish 原因走官方对象形态（实现仅消费 text-delta/usage）。
+const DEFAULT_LLM_CHUNKS: StreamChunk[] = [
   { type: "text-delta", index: 0, text: "本周用量平稳，调用集中在工作时段，环比小幅上升。" },
   { type: "usage", usage: { inputTokens: 120, outputTokens: 60, totalTokens: 180 } },
-  { type: "finish", reason: "stop" },
+  { type: "finish", reason: { kind: "stop" } },
 ];
 
-function makeFakeCtx(overrides = {}) {
+function makeFakeCtx(overrides: { llmStreamChunks?: StreamChunk[]; [key: string]: unknown } = {}) {
   // #503 M3：llmStreamChunks 允许用例替换报告生成的产出正文（XSS 净化用例传恶意正文）
   const { llmStreamChunks, ...rest } = overrides;
-  const routes = [];
+  const routes: SmokeRoute[] = [];
   // #503：事件监听表（ctx.on 注册 / emitEvent 派发）与 effect disposer 收集
-  const listeners = new Map();
-  const effects = [];
+  const listeners = new Map<string, Array<(...args: unknown[]) => void>>();
+  const effects: Array<() => void> = [];
   const ctx = {
     logger: { warn: () => {}, info: () => {} },
     webServer: {
-      register(route) {
+      register(route: SmokeRoute) {
         routes.push(route);
         return () => {};
       },
@@ -163,22 +329,22 @@ function makeFakeCtx(overrides = {}) {
           { id: OPENCODE_GO_PROVIDER, name: "OpenCode Go" },
         ];
       },
-      async listModels(provider) {
+      async listModels(provider: string) {
         return [{ provider, id: "model-a", name: "Model A" }];
       },
       stream() {
-        const chunks = llmStreamChunks ?? DEFAULT_LLM_CHUNKS;
+        const chunks: StreamChunk[] = llmStreamChunks ?? DEFAULT_LLM_CHUNKS;
         return (async function* () {
           yield* chunks;
         })();
       },
     },
-    effect(fn) {
+    effect(fn: () => unknown) {
       const disposer = fn();
-      effects.push(typeof disposer === "function" ? disposer : () => {});
-      return effects.at(-1);
+      effects.push(typeof disposer === "function" ? () => disposer() : () => {});
+      return effects.at(-1)!;
     },
-    on(event, fn) {
+    on(event: string, fn: (...args: unknown[]) => void) {
       const arr = listeners.get(event) ?? [];
       arr.push(fn);
       listeners.set(event, arr);
@@ -190,10 +356,11 @@ function makeFakeCtx(overrides = {}) {
     },
     ...rest,
   };
-  const emitEvent = (event, ...args) => {
+  const emitEvent = (event: string, ...args: unknown[]) => {
     for (const fn of [...(listeners.get(event) ?? [])]) fn(...args);
   };
-  return { ctx, routes, listeners, effects, emitEvent };
+  // ctx 为宿主全量面，窄 fake 经 unknown 断言装配（apply 侧契约见 report/apply 单元层）。
+  return { ctx: ctx as unknown as Context, routes, listeners, effects, emitEvent };
 }
 
 // ---------------------------------------------------------------- 测试公共件
@@ -222,33 +389,36 @@ const countingPanel = (counter) =>
   `return "<p data-calls=\\"" + globalThis.${counter} + "\\" data-n=\\"" + input.entries.length + "\\">panel</p>";`;
 
 const makeCollectingCtx = () => {
-  const disposers = [];
+  const disposers: Array<() => void> = [];
   const { ctx, routes } = makeFakeCtx({
-    effect(fn) {
+    effect(fn: () => unknown) {
       const d = fn();
-      if (typeof d === "function") disposers.push(d);
-      return typeof d === "function" ? d : () => {};
+      if (typeof d === "function") disposers.push(() => d());
+      return typeof d === "function" ? () => d() : () => {};
     },
   });
   return { ctx, routes, disposers };
 };
 
-const callRoute = (route, reqOverrides) =>
+const callRoute = <T = Record<string, unknown>>(
+  route: SmokeRoute,
+  reqOverrides: Record<string, unknown>,
+): Promise<T> =>
   new Promise((resolve) => {
-    let payload;
+    let payload!: T;
     route.handler(fakeReq(reqOverrides), {
       writeHead: () => {},
-      end: (chunk) => {
+      end: (chunk: string) => {
         payload = JSON.parse(chunk);
         resolve(payload);
       },
     });
   });
-const getHistory = (route, provider, days) =>
-  callRoute(route, { url: `${ROUTES.history}?provider=${provider}&days=${days}` });
+const getHistory = (route: SmokeRoute, provider: string, days: number): Promise<HistoryPayload> =>
+  callRoute<HistoryPayload>(route, { url: `${ROUTES.history}?provider=${provider}&days=${days}` });
 const postJson = (route, body) => callRoute(route, { method: "POST", body: JSON.stringify(body) });
 
-const disposeAll = (disposers) => {
+const disposeAll = (disposers: Array<() => void>) => {
   for (const d of [...disposers].reverse()) {
     try {
       d();
@@ -261,7 +431,7 @@ const disposeAll = (disposers) => {
 // ---------------------------------------------------------------- enabled 开关
 
 describe("enabled 开关", () => {
-  let registeredRouteCount;
+  let registeredRouteCount: number;
 
   beforeAll(async () => {
     const { ctx, routes } = makeFakeCtx();
@@ -277,8 +447,8 @@ describe("enabled 开关", () => {
 // ---------------------------------------------------------------- 注册十六路由
 
 describe("注册十六路由", () => {
-  let registeredPaths;
-  let allRouteKindsValid;
+  let registeredPaths: string[];
+  let allRouteKindsValid: boolean;
 
   beforeAll(async () => {
     const { ctx, routes } = makeFakeCtx();
@@ -361,7 +531,7 @@ describe("围栏：403 / 405", () => {
       const obs: Record<string, unknown> = { exists: route !== undefined };
       if (route !== undefined) {
         // 非回环 → 403
-        const responses403 = [];
+        const responses403: Array<Record<string, unknown>> = [];
         const res403 = {
           writeHead: () => {},
           end: (chunk) => {
@@ -374,7 +544,7 @@ describe("围栏：403 / 405", () => {
         // 方法错 → 405（POST 路由用 DELETE 触发；GET 路由用 POST 触发）
         // #473 批 2（B2-4）：405 body 围栏文案断言（守卫收敛后逐字节锁定，全 10 端点）
         const wrongMethod = POST_ROUTES.has(routePath) ? "DELETE" : "POST";
-        const responses405 = [];
+        const responses405: Array<Record<string, unknown>> = [];
         const res405 = {
           writeHead: (code) => {
             responses405.push({ __code: code });
@@ -411,11 +581,11 @@ describe("围栏：403 / 405", () => {
 // ---------------------------------------------------------------- ui-config / events
 
 describe("ui-config / events", () => {
-  let bothRoutesExist;
-  let getPayload;
-  let postPayload;
-  let uiFileOnDisk;
-  let storedUiConfig;
+  let bothRoutesExist: boolean;
+  let getPayload: UiPayload;
+  let postPayload: UiPayload;
+  let uiFileOnDisk: boolean;
+  let storedUiConfig: UiConfigShape;
 
   beforeAll(async () => {
     const { ctx, routes } = makeFakeCtx();
@@ -425,11 +595,11 @@ describe("ui-config / events", () => {
     bothRoutesExist = uiRoute !== undefined && evRoute !== undefined;
 
     // GET 返回默认配置
-    getPayload = await callHandler(uiRoute, fakeReq({ method: "GET" }));
+    getPayload = await callHandler<UiPayload>(uiRoute!, fakeReq({ method: "GET" }));
 
     // POST 保存：非法 placement 回退默认、offset clamp、落盘 ui.json
-    postPayload = await callHandler(
-      uiRoute,
+    postPayload = await callHandler<UiPayload>(
+      uiRoute!,
       fakeReq({
         method: "POST",
         body: JSON.stringify({
@@ -442,7 +612,8 @@ describe("ui-config / events", () => {
     );
 
     // ui.json 已落盘（DSH_HOME 隔离目录内）
-    const uiFile = join(process.env.DSH_HOME, "dsh-provider-usage", "ui.json");
+    // DSH_HOME 由本文件顶部全局隔离赋值，恒已定义。
+    const uiFile = join(process.env.DSH_HOME!, "dsh-provider-usage", "ui.json");
     uiFileOnDisk = existsSync(uiFile);
     storedUiConfig = JSON.parse(readFileSync(uiFile, "utf8"));
   });
@@ -505,14 +676,14 @@ describe("ui-config / events", () => {
 describe("events 非可靠（断线帧丢失为预期）", () => {
   let uiRoute;
   let evRoute;
-  let aChunks;
-  let aEmitClose;
-  let aCountAfterFirstPost;
+  let aChunks: string[];
+  let aEmitClose: () => void;
+  let aCountAfterFirstPost: number;
 
   function openSse() {
-    const chunks = [];
+    const chunks: string[] = [];
     const handlers = new Map();
-    callHandler(evRoute, fakeReq({ method: "GET" }), {
+    callHandler(evRoute!, fakeReq({ method: "GET" }), {
       write: (c) => {
         chunks.push(String(c));
       },
@@ -545,7 +716,7 @@ describe("events 非可靠（断线帧丢失为预期）", () => {
 
   it("广播帧可观测（POST→扇出→pollUntil 见帧）", async () => {
     await callHandler(
-      uiRoute,
+      uiRoute!,
       fakeReq({ method: "POST", body: JSON.stringify({ placement: "top-right" }) }),
     );
     const seen = await pollUntil(
@@ -560,7 +731,7 @@ describe("events 非可靠（断线帧丢失为预期）", () => {
   it("断线帧丢失（close 后再 POST，闭连接收不到新帧）", async () => {
     aEmitClose();
     await callHandler(
-      uiRoute,
+      uiRoute!,
       fakeReq({ method: "POST", body: JSON.stringify({ placement: "top-left" }) }),
     );
     const leaked = await pollUntil(() => aChunks.length > aCountAfterFirstPost, 300, 25);
@@ -576,7 +747,7 @@ describe("events 非可靠（断线帧丢失为预期）", () => {
 // ---------------------------------------------------------------- /stats v2 响应
 
 describe("/stats v2 响应", () => {
-  let payload;
+  let payload: StatsPayload;
 
   beforeAll(async () => {
     const { ctx, routes } = makeFakeCtx();
@@ -584,8 +755,8 @@ describe("/stats v2 响应", () => {
     // #120 后无「锁忙 busy 占位帧」（busy 短路语义已废除），预热并发请求在
     // per-provider 锁上排队拿真数据帧 → 无需固定 sleep 等预热完成，直接 await handler。
     const stats = routes.find((r) => r.path === ROUTES.stats);
-    payload = await callHandler(
-      stats,
+    payload = await callHandler<StatsPayload>(
+      stats!,
       fakeReq({ url: `${ROUTES.stats}?provider=${OPENCODE_GO_PROVIDER}` }),
     );
   });
@@ -633,14 +804,14 @@ describe("/stats v2 响应", () => {
 // ---------------------------------------------------------------- /history v2 响应
 
 describe("/history v2 响应", () => {
-  let payload;
+  let payload: HistoryPayload;
 
   beforeAll(async () => {
     const { ctx, routes } = makeFakeCtx();
     await apply(ctx, { ...ISOLATED_CONFIG });
     const historyRoute = routes.find((r) => r.path === ROUTES.history);
-    payload = await callHandler(
-      historyRoute,
+    payload = await callHandler<HistoryPayload>(
+      historyRoute!,
       fakeReq({ url: `${ROUTES.history}?provider=${OPENCODE_GO_PROVIDER}&days=7` }),
     );
   });
@@ -667,13 +838,13 @@ describe("/history v2 响应", () => {
 // ---------------------------------------------------------------- /health 响应
 
 describe("/health 响应", () => {
-  let payload;
+  let payload: HealthPayload;
 
   beforeAll(async () => {
     const { ctx, routes } = makeFakeCtx();
     await apply(ctx, { ...ISOLATED_CONFIG });
     const health = routes.find((r) => r.path === ROUTES.health);
-    payload = await callHandler(health, fakeReq());
+    payload = await callHandler<HealthPayload>(health!, fakeReq());
   });
 
   it("/health ok", () => {
@@ -733,7 +904,7 @@ describe("/health 响应", () => {
 // 本节注册一坏 mjs 适配器（与下节 fail-fast 同模式），先断非空再断四键形状，
 // 保证形状循环真实执行（#768 尾波观察项 1）。
 describe("/health errors 非空表形状（坏适配器）", () => {
-  let badErrors;
+  let badErrors: HealthPayload["errors"];
 
   beforeAll(async () => {
     const dir = mkdtempSync(join(tmpdir(), "dou-health-errors-"));
@@ -742,7 +913,7 @@ describe("/health errors 非空表形状（坏适配器）", () => {
     const { ctx, routes } = makeFakeCtx();
     await apply(ctx, { ...ISOLATED_CONFIG, adapter: badFile });
     const health = routes.find((r) => r.path === ROUTES.health);
-    const payload = await callHandler(health, fakeReq());
+    const payload = await callHandler<HealthPayload>(health!, fakeReq());
     badErrors = payload.errors;
   });
 
@@ -769,9 +940,9 @@ describe("/health errors 非空表形状（坏适配器）", () => {
 // ---------------------------------------------------------------- 用户适配器加载（fail-fast）
 
 describe("用户适配器加载（fail-fast）", () => {
-  let badAdapterErrorRegistered;
-  let userAdapterAdapterName;
-  let userAdapterStatus;
+  let badAdapterErrorRegistered: boolean;
+  let userAdapterAdapterName: string;
+  let userAdapterStatus: string;
 
   beforeAll(async () => {
     // 写一个非法适配器文件
@@ -782,7 +953,7 @@ describe("用户适配器加载（fail-fast）", () => {
     const { ctx, routes } = makeFakeCtx();
     await apply(ctx, { ...ISOLATED_CONFIG, adapter: badFile });
     const health = routes.find((r) => r.path === ROUTES.health);
-    const payload = await callHandler(health, fakeReq());
+    const payload = await callHandler<HealthPayload>(health!, fakeReq());
 
     // fail-fast：非法适配器被拒收并登记错误，插件本身不崩溃
     badAdapterErrorRegistered = payload.errors.some(
@@ -812,8 +983,8 @@ export function formatPanel() { return "<p>ok</p>"; }
       provider: OPENCODE_GO_PROVIDER,
     });
     const stats = ctx2.routes.find((r) => r.path === ROUTES.stats);
-    const p2 = await callHandler(
-      stats,
+    const p2 = await callHandler<StatsPayload>(
+      stats!,
       fakeReq({ url: `${ROUTES.stats}?provider=${OPENCODE_GO_PROVIDER}` }),
     );
 
@@ -845,10 +1016,10 @@ export function formatPanel() { return "<p>ok</p>"; }
 // ---------------------------------------------------------------- 卸载清理不抛错
 
 describe("卸载清理不抛错", () => {
-  let unloadCompleted;
+  let unloadCompleted: boolean;
 
   beforeAll(async () => {
-    const disposers = [];
+    const disposers: Array<() => void> = [];
     const { ctx } = makeFakeCtx({
       effect(fn) {
         const d = fn();
@@ -871,7 +1042,8 @@ describe("卸载清理不抛错", () => {
 // ---------------------------------------------------------------- adapters.json / select / inspect / add
 
 describe("adapters.json / select / inspect / add", () => {
-  const obs = {
+  // 观测袋：键预声明（undefined 占位），值由 beforeAll 填充；读侧为 unknown，经 expect 断言。
+  const obs: Record<string, unknown> = {
     initialVersion: undefined,
     initialHostHasBuiltin: undefined,
     initialModelProvidersIsArray: undefined,
@@ -923,7 +1095,7 @@ export function formatPanel() { return "<p>p</p>"; }
     // adapters.json：初始含内置适配器 + modelProviders
     {
       const adaptersRoute = routes.find((r) => r.path === ROUTES.adapters);
-      const payload = await callHandler(adaptersRoute, fakeReq());
+      const payload = await callHandler<AdaptersPayload>(adaptersRoute!, fakeReq());
       obs.initialVersion = payload.version;
       obs.initialHostHasBuiltin = payload.host.some((a) => a.name === OPENCODE_GO_ADAPTER_ID);
       obs.initialModelProvidersIsArray = Array.isArray(payload.modelProviders);
@@ -933,10 +1105,13 @@ export function formatPanel() { return "<p>p</p>"; }
     // inspect：合法文件回显导出信息（不注册）
     {
       const inspectRoute = routes.find((r) => r.path === ROUTES.inspect);
-      const payload = await callHandler(inspectRoute, withBody(JSON.stringify({ file: goodFile })));
+      const payload = await callHandler<InspectPayload>(
+        inspectRoute!,
+        withBody(JSON.stringify({ file: goodFile })),
+      );
       obs.inspectOk = payload.ok;
-      obs.inspectName = payload.adapter.name;
-      obs.inspectProviders = payload.adapter.providers;
+      obs.inspectName = payload.adapter!.name;
+      obs.inspectProviders = payload.adapter!.providers;
     }
 
     // inspect：非法文件 → 422 + 可排障 detail
@@ -944,7 +1119,10 @@ export function formatPanel() { return "<p>p</p>"; }
       const badFile = join(dir, "bad.mjs");
       writeFileSync(badFile, `export const version = 2; export const name = "only-name";`, "utf8");
       const inspectRoute = routes.find((r) => r.path === ROUTES.inspect);
-      const payload = await callHandler(inspectRoute, withBody(JSON.stringify({ file: badFile })));
+      const payload = await callHandler<InspectPayload>(
+        inspectRoute!,
+        withBody(JSON.stringify({ file: badFile })),
+      );
       obs.badInspectError = payload.error;
       obs.badInspectDetail = payload.detail;
     }
@@ -952,8 +1130,8 @@ export function formatPanel() { return "<p>p</p>"; }
     // inspect：未规整相对路径（../ 穿越形态）→ 400 invalid-file
     {
       const inspectRoute = routes.find((r) => r.path === ROUTES.inspect);
-      const payload = await callHandler(
-        inspectRoute,
+      const payload = await callHandler<InspectPayload>(
+        inspectRoute!,
         withBody(JSON.stringify({ file: "../evil.mjs" })),
       );
       obs.relativeInspectError = payload.error;
@@ -963,8 +1141,8 @@ export function formatPanel() { return "<p>p</p>"; }
     // 但 import 阶段失败登记 adapter-load-failed）
     {
       const inspectRoute = routes.find((r) => r.path === ROUTES.inspect);
-      const payload = await callHandler(
-        inspectRoute,
+      const payload = await callHandler<InspectPayload>(
+        inspectRoute!,
         withBody(JSON.stringify({ file: "/etc/hostname" })),
       );
       obs.nonJsInspectError = payload.error;
@@ -973,22 +1151,28 @@ export function formatPanel() { return "<p>p</p>"; }
     // add：成功登记 + 成为启用者 + 持久化到 user-adapters.json
     {
       const addRoute = routes.find((r) => r.path === ROUTES.add);
-      const payload = await callHandler(addRoute, withBody(JSON.stringify({ file: goodFile })));
+      const payload = await callHandler<AddPayload>(
+        addRoute!,
+        withBody(JSON.stringify({ file: goodFile })),
+      );
       obs.addOk = payload.ok;
-      obs.addName = payload.adapter.name;
-      obs.addEnabled = payload.enabled[OPENCODE_GO_PROVIDER] === "manage-stats";
+      obs.addName = payload.adapter!.name;
+      obs.addEnabled = payload.enabled![OPENCODE_GO_PROVIDER] === "manage-stats";
 
       // adapters.json 现在有四条候选（三个内置 + 用户；#198 新增 deepseek-official-builtin、
       // #215 新增 zai-coding-cn-builtin）
       const adaptersRoute = routes.find((r) => r.path === ROUTES.adapters);
-      const meta = await callHandler(adaptersRoute, fakeReq());
+      const meta = await callHandler<AdaptersPayload>(adaptersRoute!, fakeReq());
       obs.hostLengthAfterAdd = meta.host.length;
     }
 
     // add：重复 name → 409
     {
       const addRoute = routes.find((r) => r.path === ROUTES.add);
-      const payload = await callHandler(addRoute, withBody(JSON.stringify({ file: goodFile })));
+      const payload = await callHandler<AddPayload>(
+        addRoute!,
+        withBody(JSON.stringify({ file: goodFile })),
+      );
       obs.duplicateAddError = payload.error;
     }
 
@@ -998,13 +1182,10 @@ export function formatPanel() { return "<p>p</p>"; }
     {
       const adaptersRoute = routes.find((r) => r.path === ROUTES.adapters);
       const healthRoute = routes.find((r) => r.path === ROUTES.health);
-      const readAdapters = async (): Promise<{
-        host: Array<{ name: string; label: string; file: string | null; enabled: boolean }>;
-        enabled: Record<string, string>;
-        errors: Array<{ key: string; message: string }>;
-      }> => callHandler(adaptersRoute, fakeReq());
+      const readAdapters = async (): Promise<AdaptersPayload> =>
+        callHandler<AdaptersPayload>(adaptersRoute!, fakeReq());
       const readHealth = async (): Promise<Array<{ key: string; message: string }>> => {
-        const p = await callHandler(healthRoute, fakeReq());
+        const p = await callHandler<HealthPayload>(healthRoute!, fakeReq());
         return p?.errors ?? [];
       };
       // 改文件（label 文案变化，mtime+size 均变）
@@ -1035,15 +1216,15 @@ export function formatPanel() { return "<p>p2</p>"; }
     // select：切换回内置
     {
       const selectRoute = routes.find((r) => r.path === ROUTES.select);
-      const payload = await callHandler(
-        selectRoute,
+      const payload = await callHandler<SelectPayload>(
+        selectRoute!,
         withBody(
           JSON.stringify({ provider: OPENCODE_GO_PROVIDER, adapterName: OPENCODE_GO_ADAPTER_ID }),
         ),
       );
       obs.selectOk = payload.ok;
       const adaptersRoute = routes.find((r) => r.path === ROUTES.adapters);
-      const meta = await callHandler(adaptersRoute, fakeReq());
+      const meta = await callHandler<AdaptersPayload>(adaptersRoute!, fakeReq());
       obs.selectEnabled = meta.enabled[OPENCODE_GO_PROVIDER] === OPENCODE_GO_ADAPTER_ID;
       // 等后台预热完成：select 切回内置会 fire-and-forget 预热（异步写失败帧进缓存）。
       // 若不等它落定，后续 select 清空后再查 /stats 会命中预热残留帧（fetch-failed）
@@ -1051,8 +1232,8 @@ export function formatPanel() { return "<p>p2</p>"; }
       const healthRoute = routes.find((r) => r.path === ROUTES.health);
       await pollUntil(
         async () => {
-          const h = await callHandler(healthRoute, fakeReq());
-          return h?.cacheSize >= 1 ? h : undefined;
+          const h = await callHandler<HealthPayload>(healthRoute!, fakeReq());
+          return (h?.cacheSize ?? 0) >= 1 ? h : undefined;
         },
         4000,
         50,
@@ -1062,25 +1243,25 @@ export function formatPanel() { return "<p>p2</p>"; }
     // select：清空（null）→ 该 provider 无启用
     {
       const selectRoute = routes.find((r) => r.path === ROUTES.select);
-      const payload = await callHandler(
-        selectRoute,
+      const payload = await callHandler<SelectPayload>(
+        selectRoute!,
         withBody(JSON.stringify({ provider: OPENCODE_GO_PROVIDER, adapterName: null })),
       );
       obs.clearSelectOk = payload.ok;
       const adaptersRoute = routes.find((r) => r.path === ROUTES.adapters);
-      const meta = await callHandler(adaptersRoute, fakeReq());
+      const meta = await callHandler<AdaptersPayload>(adaptersRoute!, fakeReq());
       obs.clearSelectEnabled = meta.enabled[OPENCODE_GO_PROVIDER];
 
       // D7 S1 扩展：清空 select 走 purgeAllCaches（generation 失效收口）→ 缓存归零。
       // 必须在此断言——紧随的 /stats 请求会写 no-enabled-adapter 错误帧回缓存（既有设计）。
       const healthRoute = routes.find((r) => r.path === ROUTES.health);
-      const h = await callHandler(healthRoute, fakeReq());
+      const h = await callHandler<HealthPayload>(healthRoute!, fakeReq());
       obs.clearSelectCacheSize = h.cacheSize;
 
       // 清空后 /stats 返回 no-enabled-adapter（默认 provider 已被清空）
       const stats = routes.find((r) => r.path === ROUTES.stats);
-      const s = await callHandler(
-        stats,
+      const s = await callHandler<StatsPayload>(
+        stats!,
         fakeReq({ url: `${ROUTES.stats}?provider=${OPENCODE_GO_PROVIDER}` }),
       );
       obs.clearedStatsReason = s.reason;
@@ -1120,7 +1301,7 @@ export function formatPanel() { return "<p>p2</p>"; }
   });
 
   it("detail 含可排障信息", () => {
-    expect(obs.badInspectDetail.includes("契约校验失败")).toBeTruthy();
+    expect(String(obs.badInspectDetail).includes("契约校验失败")).toBeTruthy();
   });
 
   it("未规整相对路径 inspect 400", () => {
@@ -1194,11 +1375,11 @@ export function formatPanel() { return "<p>p2</p>"; }
 // ---------------------------------------------------------------- #212-A：热更新不改写 enabled 且持久化
 
 describe("#212-A：热更新不改写 enabled 且持久化", () => {
-  let explicitDisableOk;
-  let hotReloadedWhileDisabled;
-  let disabledStaysDisabled;
-  let providerHasNoEnabled;
-  let persistedDisabledState;
+  let explicitDisableOk: boolean | undefined;
+  let hotReloadedWhileDisabled: boolean;
+  let disabledStaysDisabled: unknown;
+  let providerHasNoEnabled: string;
+  let persistedDisabledState: boolean;
 
   beforeAll(async () => {
     const dir = mkdtempSync(join(tmpdir(), "dou-212-a-"));
@@ -1236,14 +1417,12 @@ export function formatPanel() { return "<p>a1</p>"; }
 
     const adaptersRoute = routes.find((r) => r.path === ROUTES.adapters);
     const selectRoute = routes.find((r) => r.path === ROUTES.select);
-    const readAdapters = async (): Promise<{
-      host: Array<{ name: string; label: string; enabled: boolean }>;
-      enabled: Record<string, string>;
-    }> => callHandler(adaptersRoute, fakeReq());
+    const readAdapters = async (): Promise<AdaptersPayload> =>
+      callHandler<AdaptersPayload>(adaptersRoute!, fakeReq());
     // 用户显式停用（select provider null）
     {
-      const payload = await callHandler(
-        selectRoute,
+      const payload = await callHandler<SelectPayload>(
+        selectRoute!,
         fakeReq({ method: "POST", body: JSON.stringify({ provider: "p212", adapterName: null }) }),
       );
       explicitDisableOk = payload.ok;
@@ -1311,11 +1490,11 @@ export function formatPanel() { return "<p>a2</p>"; }
 // ---------------------------------------------------------------- #212-B：改名撞名 → 冲突报错 + 旧条目保留 + 无假成功
 
 describe("#212-B：改名撞名 → 冲突报错 + 旧条目保留 + 无假成功", () => {
-  let secondAdapterRegistered;
-  let conflictErrorVisible;
-  let oneEntryRetained;
-  let existingUTwoIntact;
-  let noFakeHotReloadSuccess;
+  let secondAdapterRegistered: boolean | undefined;
+  let conflictErrorVisible: boolean;
+  let oneEntryRetained: boolean;
+  let existingUTwoIntact: boolean;
+  let noFakeHotReloadSuccess: boolean;
 
   beforeAll(async () => {
     const dir = mkdtempSync(join(tmpdir(), "dou-212-b-"));
@@ -1359,8 +1538,8 @@ export function formatPanel() { return "<p>2</p>"; }
       // #313：async handler 必须 await（writeJson 在 resolve 前同步调用 end 回调）——
       // 旧「固定 sleep(80ms) 后读 payload」在 CI 慢 runner 下偶发 undefined 崩。
       // 统一走 callHandler（async handler await、同步 handler 立即返回）。
-      const payload = await callHandler(
-        addRoute,
+      const payload = await callHandler<AddPayload>(
+        addRoute!,
         fakeReq({ method: "POST", body: JSON.stringify({ file: f2 }) }),
       );
       secondAdapterRegistered = payload?.ok;
@@ -1382,12 +1561,12 @@ export function formatPanel() { return "<p>x</p>"; }
     );
     // 确定性驱动一次轮询：改名撞名的冲突判定在 onReload 内同步登记到 registry
     await driveHotReloads(f1);
-    const p = await callHandler(healthRoute, fakeReq());
+    const p = await callHandler<HealthPayload>(healthRoute!, fakeReq());
     conflictErrorVisible = (p?.errors ?? []).some(
       (e) => e.kind === "load" && e.message.includes("热更新失败") && e.message.includes("u-two"),
     );
     // 旧条目保留：one.mjs 仍以旧名 u-one 在候选列表，u-two 归属不变
-    const meta = await callHandler(adaptersRoute, fakeReq());
+    const meta = await callHandler<AdaptersPayload>(adaptersRoute!, fakeReq());
     const oneEntry = meta.host.find((a) => a.file === "one.mjs");
     oneEntryRetained = oneEntry !== undefined && oneEntry.name === "u-one";
     existingUTwoIntact = meta.host.some((a) => a.name === "u-two" && a.file === "two.mjs");
@@ -1696,18 +1875,18 @@ describe("客户端契约", () => {
 // 网络纪律：apiEndpoint 指向不可达回环（快速 network 失败），无任何出网请求。
 
 describe("#198 deepseek-official 内置适配器集成 · 场景 1（纯 builtin）", () => {
-  let builtinEnabled;
-  let builtinCandidateHasBuiltinSource;
-  let failPayloadOk;
-  let failPayloadStatus;
-  let failPayloadReason;
-  let failPayloadCapsuleHtml;
-  let failPayloadError;
-  let builtinHistDirAbsent;
-  let e5Bodies;
+  let builtinEnabled: boolean;
+  let builtinCandidateHasBuiltinSource: boolean;
+  let failPayloadOk: boolean;
+  let failPayloadStatus: string;
+  let failPayloadReason: unknown;
+  let failPayloadCapsuleHtml: string;
+  let failPayloadError: unknown;
+  let builtinHistDirAbsent: boolean;
+  let e5Bodies: Record<string, string>;
 
   beforeAll(async () => {
-    const disposers = [];
+    const disposers: Array<() => void> = [];
     const { ctx, routes } = makeFakeCtx({
       effect(fn) {
         const d = fn();
@@ -1721,13 +1900,14 @@ describe("#198 deepseek-official 内置适配器集成 · 场景 1（纯 builtin
       warmupIntervalMs: 0,
     });
 
-    const historyRoot = join(process.env.DSH_HOME, "dsh-provider-usage");
-    const withBody = (body) => fakeReq({ method: "POST", body });
-    const getJSON = async (route, url) => callHandler(route, fakeReq({ url }));
+    const historyRoot = join(process.env.DSH_HOME!, "dsh-provider-usage");
+    const withBody = (body: string) => fakeReq({ method: "POST", body });
+    const getJSON = async <T>(route: SmokeRoute, url: string): Promise<T> =>
+      callHandler<T>(route, fakeReq({ url }));
 
     // F1：默认注册后 adapters.json 启用者 = builtin、source=builtin
     const adaptersRoute = routes.find((r) => r.path === ROUTES.adapters);
-    const meta = await getJSON(adaptersRoute, ROUTES.adapters);
+    const meta = await getJSON<AdaptersPayload>(adaptersRoute!, ROUTES.adapters);
     builtinEnabled = meta.enabled[DEEPSEEK_OFFICIAL_PROVIDER] === DEEPSEEK_OFFICIAL_ADAPTER_ID;
     const dsBuiltin = meta.host.find((a) => a.name === DEEPSEEK_OFFICIAL_ADAPTER_ID);
     builtinCandidateHasBuiltinSource = dsBuiltin !== undefined && dsBuiltin.source === "builtin";
@@ -1736,8 +1916,8 @@ describe("#198 deepseek-official 内置适配器集成 · 场景 1（纯 builtin
     // select 语义自带 cache.clear()，重选 builtin 后下一次 stats 即全新取数。
     // 预热为 fire-and-forget，无需固定 sleep 等其完成——select 本身 await（callHandler）。
     const selectRoute1 = routes.find((r) => r.path === ROUTES.select);
-    await callHandler(
-      selectRoute1,
+    await callHandler<SelectPayload>(
+      selectRoute1!,
       withBody(
         JSON.stringify({
           provider: DEEPSEEK_OFFICIAL_PROVIDER,
@@ -1748,8 +1928,8 @@ describe("#198 deepseek-official 内置适配器集成 · 场景 1（纯 builtin
 
     // A1：取数失败（不可达回环）→ HTTP 形状仍 200 由路由保证；ok=false / status=stale / capsuleHtml 非空
     const stats = routes.find((r) => r.path === ROUTES.stats);
-    const failPayload = await getJSON(
-      stats,
+    const failPayload = await getJSON<StatsPayload>(
+      stats!,
       `${ROUTES.stats}?provider=${DEEPSEEK_OFFICIAL_PROVIDER}`,
     );
     failPayloadOk = failPayload.ok;
@@ -1832,13 +2012,13 @@ describe("#198 deepseek-official 内置适配器集成 · 场景 1（纯 builtin
 });
 
 describe("#198 deepseek-official 内置适配器集成 · 场景 2（三级密钥全空 E4/G8）", () => {
-  let payloadStatus;
-  let payloadError;
-  let payloadCapsuleHtml;
-  let payloadHasNoSecretShape;
+  let payloadStatus: string;
+  let payloadError: unknown;
+  let payloadCapsuleHtml: string;
+  let payloadHasNoSecretShape: boolean;
 
   beforeAll(async () => {
-    const disposers = [];
+    const disposers: Array<() => void> = [];
     const { ctx, routes } = makeFakeCtx({
       effect(fn) {
         const d = fn();
@@ -1853,10 +2033,10 @@ describe("#198 deepseek-official 内置适配器集成 · 场景 2（三级密�
       warmupIntervalMs: 0,
     });
     // 预热为 fire-and-forget，select 自带 cache.clear() + 清后立即预热挂点，无需固定 sleep 等预热。
-    const withBody = (body) => fakeReq({ method: "POST", body });
+    const withBody = (body: string) => fakeReq({ method: "POST", body });
     const selectRoute2 = routes.find((r) => r.path === ROUTES.select);
-    await callHandler(
-      selectRoute2,
+    await callHandler<SelectPayload>(
+      selectRoute2!,
       withBody(
         JSON.stringify({
           provider: DEEPSEEK_OFFICIAL_PROVIDER,
@@ -1865,8 +2045,8 @@ describe("#198 deepseek-official 内置适配器集成 · 场景 2（三级密�
       ),
     );
     const stats = routes.find((r) => r.path === ROUTES.stats);
-    const payload = await callHandler(
-      stats,
+    const payload = await callHandler<StatsPayload>(
+      stats!,
       fakeReq({ url: `${ROUTES.stats}?provider=${DEEPSEEK_OFFICIAL_PROVIDER}` }),
     );
     // #120：select 自带「清缓存 + 立即预热」挂点——本请求命中的是预热刚写入的
@@ -1902,21 +2082,21 @@ describe("#198 deepseek-official 内置适配器集成 · 场景 2（三级密�
 });
 
 describe("#198 deepseek-official 内置适配器集成 · 场景 3（user-file 原型共存 K12/F2/F4/A5）", () => {
-  let userFileAddOk;
-  let userFileAddRaw;
-  let userFileClaimsProvider;
-  let sources;
-  let metaHasNoSecret;
-  let userAdapterTakenOver;
-  let userAdapterStatus;
-  let userCapsuleRendered;
-  let statsHasNoSecret;
-  let userHistDirExists;
-  let historyAdapterName;
-  let historyHasNoSecret;
+  let userFileAddOk: boolean | undefined;
+  let userFileAddRaw: string;
+  let userFileClaimsProvider: boolean;
+  let sources: Record<string, unknown>;
+  let metaHasNoSecret: boolean;
+  let userAdapterTakenOver: StatsPayload | null;
+  let userAdapterStatus: string;
+  let userCapsuleRendered: boolean;
+  let statsHasNoSecret: boolean;
+  let userHistDirExists: boolean;
+  let historyAdapterName: string;
+  let historyHasNoSecret: boolean;
 
   beforeAll(async () => {
-    const disposers = [];
+    const disposers: Array<() => void> = [];
     const { ctx, routes } = makeFakeCtx({
       effect(fn) {
         const d = fn();
@@ -1948,19 +2128,24 @@ export function formatPanel() { return "<p>user-panel</p>"; }
       "utf8",
     );
 
-    const historyRoot = join(process.env.DSH_HOME, "dsh-provider-usage");
-    const withBody = (body) => fakeReq({ method: "POST", body });
-    const getJSON = async (route, url) => callHandler(route, fakeReq({ url }));
+    const historyRoot = join(process.env.DSH_HOME!, "dsh-provider-usage");
+    const withBody = (body: string) => fakeReq({ method: "POST", body });
+    const getJSON = async <T>(route: SmokeRoute, url: string): Promise<T> =>
+      callHandler<T>(route, fakeReq({ url }));
 
     const addRoute = routes.find((r) => r.path === ROUTES.add);
-    const addPayload = await callHandler(addRoute, withBody(JSON.stringify({ file: userFile })));
+    const addPayload = await callHandler<AddPayload>(
+      addRoute!,
+      withBody(JSON.stringify({ file: userFile })),
+    );
     userFileAddOk = addPayload.ok;
     userFileAddRaw = JSON.stringify(addPayload).slice(0, 120);
-    userFileClaimsProvider = addPayload.enabled[DEEPSEEK_OFFICIAL_PROVIDER] === "deepseek-official";
+    userFileClaimsProvider =
+      addPayload.enabled![DEEPSEEK_OFFICIAL_PROVIDER] === "deepseek-official";
 
     // F4：设置页候选列表同时展示 builtin 与 user-file 且 source 区分
     const adaptersRoute = routes.find((r) => r.path === ROUTES.adapters);
-    const meta = await getJSON(adaptersRoute, ROUTES.adapters);
+    const meta = await getJSON<AdaptersPayload>(adaptersRoute!, ROUTES.adapters);
     sources = Object.fromEntries(
       meta.host
         .filter((a) => a.providers.includes(DEEPSEEK_OFFICIAL_PROVIDER))
@@ -1976,8 +2161,8 @@ export function formatPanel() { return "<p>user-panel</p>"; }
     const finalFresh =
       (await pollUntil(
         async () => {
-          const snap = await getJSON(
-            stats,
+          const snap = await getJSON<StatsPayload>(
+            stats!,
             `${ROUTES.stats}?provider=${DEEPSEEK_OFFICIAL_PROVIDER}`,
           );
           return snap.adapterName === "deepseek-official" ? snap : undefined;
@@ -1986,8 +2171,8 @@ export function formatPanel() { return "<p>user-panel</p>"; }
         50,
       )) ?? null;
     userAdapterTakenOver = finalFresh;
-    userAdapterStatus = finalFresh.status;
-    userCapsuleRendered = finalFresh.capsuleHtml?.includes("USER ¥42.50");
+    userAdapterStatus = finalFresh!.status;
+    userCapsuleRendered = finalFresh!.capsuleHtml?.includes("USER ¥42.50");
     statsHasNoSecret = !JSON.stringify(finalFresh).includes("sk-smoke-test");
 
     // A5：成功帧正常落盘历史（对照 A3 的失败帧不落盘）——轮询等待落盘，不用固定 sleep
@@ -2007,8 +2192,8 @@ export function formatPanel() { return "<p>user-panel</p>"; }
 
     // history 路由对用户版可用（面板管线不崩）
     const historyRoute = routes.find((r) => r.path === ROUTES.history);
-    const hist = await getJSON(
-      historyRoute,
+    const hist = await getJSON<HistoryPayload>(
+      historyRoute!,
       `${ROUTES.history}?provider=${DEEPSEEK_OFFICIAL_PROVIDER}&days=1`,
     );
     historyAdapterName = hist.adapterName;
@@ -2084,13 +2269,13 @@ export function formatPanel() { return "<p>user-panel</p>"; }
  * per-provider 锁改回全局单锁时两取数串行、窗口不重叠，仅该断言红。
  */
 describe("#156/#120 warmup 多 provider 采样回归", () => {
-  let providerAAdapterName;
-  let providerAStatus;
-  let providerBAdapterName;
-  let providerBStatus;
-  let warmupFirstA;
-  let warmupFirstB;
-  let warmupMarksRaw;
+  let providerAAdapterName: string;
+  let providerAStatus: string;
+  let providerBAdapterName: string;
+  let providerBStatus: string;
+  let warmupFirstA: { start: number; end: number } | undefined;
+  let warmupFirstB: { start: number; end: number } | undefined;
+  let warmupMarksRaw: string;
 
   beforeAll(async () => {
     // 构造两个用户适配器（providers 互不相同），注册表指向绝对路径 mjs
@@ -2125,9 +2310,9 @@ export function formatPanel() { return "<p>ok</p>"; }
     const fileA = mkAdapter("warm-a", "prov-a");
     const fileB = mkAdapter("warm-b", "prov-b");
     // 独立可跑：建父目录（全量跑时前序用例已建，-t 单跑本块时需自建）
-    mkdirSync(join(process.env.DSH_HOME, "dsh-provider-usage"), { recursive: true });
+    mkdirSync(join(process.env.DSH_HOME!, "dsh-provider-usage"), { recursive: true });
     writeFileSync(
-      userAdaptersFile(join(process.env.DSH_HOME, "dsh-provider-usage")),
+      userAdaptersFile(join(process.env.DSH_HOME!, "dsh-provider-usage")),
       JSON.stringify({
         adapters: [
           { id: "warm-a", label: "Warm A", providers: ["prov-a"], file: fileA },
@@ -2137,7 +2322,7 @@ export function formatPanel() { return "<p>ok</p>"; }
       "utf8",
     );
 
-    const disposers = [];
+    const disposers: Array<() => void> = [];
     const { ctx, routes } = makeFakeCtx({
       effect(fn) {
         const d = fn();
@@ -2148,7 +2333,7 @@ export function formatPanel() { return "<p>ok</p>"; }
     await apply(ctx, { ...ISOLATED_CONFIG, warmupIntervalMs: 60000 });
     // 启动即预热一次（并行 fire-and-forget）：两个 provider 取数采样完成的历史落盘
     // 即为就绪信号（fetchData 成功帧会 append 历史 jsonl），轮询等待而非固定 sleep。
-    const histRoot = join(process.env.DSH_HOME, "dsh-provider-usage");
+    const histRoot = join(process.env.DSH_HOME!, "dsh-provider-usage");
     const warmupLanded = (prov, name) => {
       try {
         return readdirSync(join(histRoot, prov, name)).some((f) => f.endsWith(".jsonl"));
@@ -2163,8 +2348,11 @@ export function formatPanel() { return "<p>ok</p>"; }
     );
 
     const statsRoute = routes.find((r) => r.path === ROUTES.stats);
-    const queryProvider = async (provider) =>
-      callHandler(statsRoute, fakeReq({ url: `${ROUTES.stats}?provider=${provider}` }));
+    const queryProvider = async (provider: string) =>
+      callHandler<StatsPayload>(
+        statsRoute!,
+        fakeReq({ url: `${ROUTES.stats}?provider=${provider}` }),
+      );
     const pa = await queryProvider("prov-a");
     const pb = await queryProvider("prov-b");
     providerAAdapterName = pa.adapterName;
@@ -2242,18 +2430,18 @@ export function formatPanel() { return "<p>ok</p>"; }
 // ---- S0：纯函数定界与 key 正确性（AC#2 / AC#8 的常量与归一化部分）
 
 describe("#105① S0：纯函数定界与 key 正确性", () => {
-  let ttlIsInteger;
-  let ttlInRange;
-  let staleAtExactlyTtl;
-  let staleAtTtlPlusOne;
-  let freshWithinCustomTtl;
-  let staleBeyondCustomTtl;
-  let normalizedSameDay;
-  let crossDayKeysDiffer;
-  let sameDayDriftKeysEqual;
-  let rangeWindowKeysDiffer;
-  let providerInKey;
-  let adapterNameInKey;
+  let ttlIsInteger: { actual: unknown; expected: unknown };
+  let ttlInRange: boolean;
+  let staleAtExactlyTtl: boolean;
+  let staleAtTtlPlusOne: boolean;
+  let freshWithinCustomTtl: boolean;
+  let staleBeyondCustomTtl: boolean;
+  let normalizedSameDay: { actual: unknown; expected: unknown };
+  let crossDayKeysDiffer: boolean;
+  let sameDayDriftKeysEqual: boolean;
+  let rangeWindowKeysDiffer: boolean;
+  let providerInKey: boolean;
+  let adapterNameInKey: boolean;
 
   beforeAll(() => {
     // AC#8：TTL 为 [60s,120s] 内编译期常量
@@ -2350,22 +2538,22 @@ describe("#105① S0：纯函数定界与 key 正确性", () => {
 // ---- S1：命中逐字节一致 + key 不含漂移时间戳 + append 落盘全清（AC#1/#2/#3 + 形状回归）
 
 describe("#105① S1：命中逐字节一致 + key 不含漂移时间戳 + append 落盘全清", () => {
-  let firstRequestCalls;
-  let h1Ok;
-  let h1RendersFirstVersion;
-  let hitPathCalls;
-  let h2PanelHtmlMatchesH1;
-  let h2ErrorMatchesH1;
-  let h2EndDrifted;
-  let h2FieldShape;
-  let days30Calls;
-  let h30WindowIndependent;
-  let days7Calls;
-  let h7bReplaysH1;
-  let freshSeen;
-  let afterAppendCalls;
-  let nBefore;
-  let nAfter;
+  let firstRequestCalls: number;
+  let h1Ok: unknown;
+  let h1RendersFirstVersion: boolean;
+  let hitPathCalls: number;
+  let h2PanelHtmlMatchesH1: boolean;
+  let h2ErrorMatchesH1: boolean;
+  let h2EndDrifted: boolean;
+  let h2FieldShape: string[];
+  let days30Calls: number;
+  let h30WindowIndependent: boolean;
+  let days7Calls: number;
+  let h7bReplaysH1: boolean;
+  let freshSeen: Record<string, unknown> | undefined;
+  let afterAppendCalls: number;
+  let nBefore: number;
+  let nAfter: number;
 
   beforeAll(async () => {
     const dir = mkdtempSync(join(tmpdir(), "dou-105-cache-"));
@@ -2390,8 +2578,8 @@ describe("#105① S1：命中逐字节一致 + key 不含漂移时间戳 + appen
     const statsRoute = routes.find((r) => r.path === ROUTES.stats);
 
     // AC#1 冷算填缓存
-    const h1 = await getHistory(historyRoute, "cache-prov", 7);
-    firstRequestCalls = globalThis.__SPY_A;
+    const h1 = await getHistory(historyRoute!, "cache-prov", 7);
+    firstRequestCalls = spyNs.__SPY_A;
     h1Ok = h1.ok;
     h1RendersFirstVersion = String(h1.panelHtml).includes('data-calls="1"');
 
@@ -2399,19 +2587,19 @@ describe("#105① S1：命中逐字节一致 + key 不含漂移时间戳 + appen
     // （有意时间流逝断言，验证 key 不含时钟；轮询等时钟条件而非固定 sleep）
     const tClock = Date.now();
     await pollUntil(() => Date.now() - tClock >= 1000, 4000, 50);
-    const h2 = await getHistory(historyRoute, "cache-prov", 7);
-    hitPathCalls = globalThis.__SPY_A;
+    const h2 = await getHistory(historyRoute!, "cache-prov", 7);
+    hitPathCalls = spyNs.__SPY_A;
     h2PanelHtmlMatchesH1 = h2.panelHtml === h1.panelHtml;
     h2ErrorMatchesH1 = h2.error === h1.error;
     h2EndDrifted = h2.range.end > h1.range.end;
     h2FieldShape = Object.keys(h2).sort();
 
     // AC#2 不同 days 归一化为不同 key、互不串数据，range 回显各自真实 start/end
-    const h30 = await getHistory(historyRoute, "cache-prov", 30);
-    days30Calls = globalThis.__SPY_A;
+    const h30 = await getHistory(historyRoute!, "cache-prov", 30);
+    days30Calls = spyNs.__SPY_A;
     h30WindowIndependent = h30.range.end - h30.range.start > 29 * 86400000;
-    const h7b = await getHistory(historyRoute, "cache-prov", 7);
-    days7Calls = globalThis.__SPY_A;
+    const h7b = await getHistory(historyRoute!, "cache-prov", 7);
+    days7Calls = spyNs.__SPY_A;
     h7bReplaysH1 = h7b.panelHtml === h1.panelHtml;
 
     // AC#3 主失效：等 stats TTL(5s) 到龄 → 轮询 stats 直到返回 fresh（到龄重取 fresh →
@@ -2419,14 +2607,14 @@ describe("#105① S1：命中逐字节一致 + key 不含漂移时间戳 + appen
     nBefore = Number(h1.panelHtml.match(/data-n="(\d+)"/)[1]);
     freshSeen = await pollUntil(
       async () => {
-        const s = await callRoute(statsRoute, { url: `${ROUTES.stats}?provider=cache-prov` });
+        const s = await callRoute(statsRoute!, { url: `${ROUTES.stats}?provider=cache-prov` });
         return s?.status === "fresh" ? s : undefined;
       },
       8000,
       200,
     );
-    const h3 = await getHistory(historyRoute, "cache-prov", 7);
-    afterAppendCalls = globalThis.__SPY_A;
+    const h3 = await getHistory(historyRoute!, "cache-prov", 7);
+    afterAppendCalls = spyNs.__SPY_A;
     nAfter = Number(h3.panelHtml.match(/data-n="(\d+)"/)[1]);
 
     disposeAll(disposers);
@@ -2505,17 +2693,17 @@ describe("#105① S1：命中逐字节一致 + key 不含漂移时间戳 + appen
 // ---- S2：select 切换/清空挂点失效（AC#4）
 
 describe("#105① S2：select 切换/清空挂点失效（AC#4）", () => {
-  let selAColdCalls;
-  let addSelBOk;
-  let selBIsEnabledAdapter;
-  let selBCalls;
-  let switchBackOk;
-  let switchBackRecalculated;
-  let switchBackReturnsNewHtml;
-  let clearOk;
-  let clearedReason;
-  let clearedPanelHtml;
-  let clearedAdapterName;
+  let selAColdCalls: number;
+  let addSelBOk: unknown;
+  let selBIsEnabledAdapter: boolean;
+  let selBCalls: number;
+  let switchBackOk: unknown;
+  let switchBackRecalculated: number;
+  let switchBackReturnsNewHtml: boolean;
+  let clearOk: unknown;
+  let clearedReason: unknown;
+  let clearedPanelHtml: unknown;
+  let clearedAdapterName: unknown;
 
   beforeAll(async () => {
     const dir = mkdtempSync(join(tmpdir(), "dou-105-select-"));
@@ -2546,15 +2734,15 @@ describe("#105① S2：select 切换/清空挂点失效（AC#4）", () => {
     const addRoute = routes.find((r) => r.path === ROUTES.add);
     const selectRoute = routes.find((r) => r.path === ROUTES.select);
 
-    await getHistory(historyRoute, "sel-prov", 7);
-    selAColdCalls = globalThis.__SPY_SEL_A;
+    await getHistory(historyRoute!, "sel-prov", 7);
+    selAColdCalls = spyNs.__SPY_SEL_A;
 
     // 登记 sel-b（add 抢占成为启用者），按 sel-b 重算填其条目
     const added = await postJson(addRoute, { file: fileB });
     addSelBOk = added.ok;
-    const hb1 = await getHistory(historyRoute, "sel-prov", 7);
+    const hb1 = await getHistory(historyRoute!, "sel-prov", 7);
     selBIsEnabledAdapter = hb1.adapterName === "sel-spy-b";
-    selBCalls = globalThis.__SPY_SEL_B;
+    selBCalls = spyNs.__SPY_SEL_B;
 
     // 切回 sel-a：select 挂点必须已清缓存——否则这里会复用切换前的旧 sel-a 条目
     const switched = await postJson(selectRoute, {
@@ -2562,14 +2750,14 @@ describe("#105① S2：select 切换/清空挂点失效（AC#4）", () => {
       adapterName: "sel-spy-a",
     });
     switchBackOk = switched.ok;
-    const ha2 = await getHistory(historyRoute, "sel-prov", 7);
-    switchBackRecalculated = globalThis.__SPY_SEL_A;
+    const ha2 = await getHistory(historyRoute!, "sel-prov", 7);
+    switchBackRecalculated = spyNs.__SPY_SEL_A;
     switchBackReturnsNewHtml = String(ha2.panelHtml).includes('data-calls="2"');
 
     // 清空（adapterName=null）：结构化 reason，绝不回吐任何旧 HTML
     const cleared = await postJson(selectRoute, { provider: "sel-prov", adapterName: null });
     clearOk = cleared.ok;
-    const hnone = await getHistory(historyRoute, "sel-prov", 7);
+    const hnone = await getHistory(historyRoute!, "sel-prov", 7);
     clearedReason = hnone.reason;
     clearedPanelHtml = hnone.panelHtml;
     clearedAdapterName = hnone.adapterName;
@@ -2625,21 +2813,21 @@ describe("#105① S2：select 切换/清空挂点失效（AC#4）", () => {
 // ---- S3：错误与 no-adapter 响应不入缓存、条件消除立即恢复（AC#7）
 
 describe("#105① S3：错误与 no-adapter 响应不入缓存、条件消除立即恢复（AC#7）", () => {
-  let e1Ok;
-  let e1ErrorNotNil;
-  let errRecalculatedCalls;
-  let e2Ok;
-  let ghostReason;
-  let ghostPanelHtml;
-  let ghostReasonStable;
-  let ghostAdapterName;
-  let addOkSpyOk;
-  let recoveredOk;
-  let recoveredAdapterName;
-  let okESpyCalls;
-  let ghostAddOk;
-  let ghostRecoveredOk;
-  let ghostSpyCalls;
+  let e1Ok: unknown;
+  let e1ErrorNotNil: boolean;
+  let errRecalculatedCalls: number;
+  let e2Ok: unknown;
+  let ghostReason: unknown;
+  let ghostPanelHtml: unknown;
+  let ghostReasonStable: unknown;
+  let ghostAdapterName: unknown;
+  let addOkSpyOk: unknown;
+  let recoveredOk: unknown;
+  let recoveredAdapterName: unknown;
+  let okESpyCalls: number;
+  let ghostAddOk: unknown;
+  let ghostRecoveredOk: unknown;
+  let ghostSpyCalls: number;
 
   beforeAll(async () => {
     const dir = mkdtempSync(join(tmpdir(), "dou-105-err-"));
@@ -2653,7 +2841,7 @@ export const providers = ["err-prov"];
 export async function fetchData() { return { v: 1 }; }
 export function formatCapsule() { return "<span>c</span>"; }
 export function formatPanel(input) {
-  globalThis.__SPY_ERR = (globalThis.__SPY_ERR ?? 0) + 1;
+  spyNs.__SPY_ERR = (spyNs.__SPY_ERR ?? 0) + 1;
   throw new Error("format-boom");
 }
 `,
@@ -2691,7 +2879,7 @@ export function formatPanel(input) {
     const historyRoute = routes.find((r) => r.path === ROUTES.history);
     const addRoute = routes.find((r) => r.path === ROUTES.add);
 
-    const e1 = await getHistory(historyRoute, "err-prov", 7);
+    const e1 = await getHistory(historyRoute!, "err-prov", 7);
     e1Ok = e1.ok;
     e1ErrorNotNil = e1.error !== null && String(e1.error).length > 0;
 
@@ -2700,32 +2888,32 @@ export function formatPanel(input) {
     // 有意时间流逝窗口：轮询等时钟推进 ≥1.1s，而非固定 sleep。
     const tErr = Date.now();
     await pollUntil(() => Date.now() - tErr >= 1100, 4000, 50);
-    const e2 = await getHistory(historyRoute, "err-prov", 7);
-    errRecalculatedCalls = globalThis.__SPY_ERR;
+    const e2 = await getHistory(historyRoute!, "err-prov", 7);
+    errRecalculatedCalls = spyNs.__SPY_ERR;
     e2Ok = e2.ok;
 
     // no-adapter：结构化响应不入缓存（连续两次一致、无崩溃）
-    const g1 = await getHistory(historyRoute, "ghost-prov", 7);
+    const g1 = await getHistory(historyRoute!, "ghost-prov", 7);
     ghostReason = g1.reason;
     ghostPanelHtml = g1.panelHtml;
-    const g2 = await getHistory(historyRoute, "ghost-prov", 7);
+    const g2 = await getHistory(historyRoute!, "ghost-prov", 7);
     ghostReasonStable = g2.reason;
     ghostAdapterName = g2.adapterName;
 
     // 条件消除：登记正常适配器顶替错误适配器 → 下一次请求立即成功
     const added = await postJson(addRoute, { file: okFile });
     addOkSpyOk = added.ok;
-    const o1 = await getHistory(historyRoute, "err-prov", 7);
+    const o1 = await getHistory(historyRoute!, "err-prov", 7);
     recoveredOk = o1.ok;
     recoveredAdapterName = o1.adapterName;
-    okESpyCalls = globalThis.__SPY_OK_E;
+    okESpyCalls = spyNs.__SPY_OK_E;
 
     // ghost-prov 条件消除（注册适配器）后同样立即可用
     const gAdded = await postJson(addRoute, { file: ghostFile });
     ghostAddOk = gAdded.ok;
-    const g3 = await getHistory(historyRoute, "ghost-prov", 7);
+    const g3 = await getHistory(historyRoute!, "ghost-prov", 7);
     ghostRecoveredOk = g3.ok;
-    ghostSpyCalls = globalThis.__SPY_GHOST;
+    ghostSpyCalls = spyNs.__SPY_GHOST;
 
     disposeAll(disposers);
   });
@@ -2794,9 +2982,9 @@ export function formatPanel(input) {
 // ---- S4：add 挂点失效（AC#5）——登记其他 provider 适配器，唯一变量即挂点全清
 
 describe("#105① S4：add 挂点失效（AC#5）", () => {
-  let addProviderColdCalls;
-  let addOtherOk;
-  let addPurgedCacheCalls;
+  let addProviderColdCalls: number;
+  let addOtherOk: unknown;
+  let addPurgedCacheCalls: number;
 
   beforeAll(async () => {
     const dir = mkdtempSync(join(tmpdir(), "dou-105-add-"));
@@ -2832,15 +3020,15 @@ describe("#105① S4：add 挂点失效（AC#5）", () => {
     const historyRoute = routes.find((r) => r.path === ROUTES.history);
     const addRoute = routes.find((r) => r.path === ROUTES.add);
 
-    await getHistory(historyRoute, "add-prov", 7);
-    addProviderColdCalls = globalThis.__SPY_ADD_A;
+    await getHistory(historyRoute!, "add-prov", 7);
+    addProviderColdCalls = spyNs.__SPY_ADD_A;
 
     // 登记一个【其他 provider】的适配器：add-prov 启用关系不变、key 不变、TTL 未到——
     // 唯一能让下一次请求重算的机制就是 add 成功后的缓存全清
     const added = await postJson(addRoute, { file: otherFile });
     addOtherOk = added.ok;
-    await getHistory(historyRoute, "add-prov", 7);
-    addPurgedCacheCalls = globalThis.__SPY_ADD_A;
+    await getHistory(historyRoute!, "add-prov", 7);
+    addPurgedCacheCalls = spyNs.__SPY_ADD_A;
 
     disposeAll(disposers);
   });
@@ -2861,9 +3049,9 @@ describe("#105① S4：add 挂点失效（AC#5）", () => {
 // ---- S5：热更新挂点失效（AC#6）——autoReload 下文件变更 → 新版代码渲染
 
 describe("#105① S5：热更新挂点失效（AC#6）", () => {
-  let beforeHotReloadRendersV1;
-  let hotReloadTookEffect;
-  let newFormatPanelExecuted;
+  let beforeHotReloadRendersV1: boolean;
+  let hotReloadTookEffect: boolean;
+  let newFormatPanelExecuted: boolean;
 
   beforeAll(async () => {
     const dir = mkdtempSync(join(tmpdir(), "dou-105-hr-"));
@@ -2898,7 +3086,7 @@ describe("#105① S5：热更新挂点失效（AC#6）", () => {
     );
 
     const historyRoute = routes.find((r) => r.path === ROUTES.history);
-    const w1 = await getHistory(historyRoute, "hr-prov", 7);
+    const w1 = await getHistory(historyRoute!, "hr-prov", 7);
     beforeHotReloadRendersV1 = String(w1.panelHtml).includes('data-v="1"');
 
     // 改写文件 → 确定性驱动轮询一次 → onReload ok → 挂点 clear
@@ -2912,7 +3100,7 @@ export const providers = ["hr-prov"];
 export async function fetchData() { return { v: 2 }; }
 export function formatCapsule() { return "<span>c</span>"; }
 export function formatPanel(input) {
-  globalThis.__SPY_HR = (globalThis.__SPY_HR ?? 0) + 1;
+  spyNs.__SPY_HR = (spyNs.__SPY_HR ?? 0) + 1;
   return "<p data-v=\\"2\\">v2</p>";
 }
 // v2 marker line —— 内容长度与 v1 不同，保证 stamp 变化可检出
@@ -2921,9 +3109,9 @@ export function formatPanel(input) {
     );
 
     await driveHotReloads(hrFile);
-    const w2 = await getHistory(historyRoute, "hr-prov", 7);
+    const w2 = await getHistory(historyRoute!, "hr-prov", 7);
     hotReloadTookEffect = String(w2.panelHtml).includes('data-v="2"');
-    newFormatPanelExecuted = globalThis.__SPY_HR >= 2;
+    newFormatPanelExecuted = spyNs.__SPY_HR >= 2;
 
     disposeAll(disposers);
   });
@@ -2944,10 +3132,10 @@ export function formatPanel(input) {
 // ---- S6：只缓存返回值字符串层——formatPanel 变异 entries 后命中不受影响（AC#9）
 
 describe("#105① S6：只缓存返回值字符串层（AC#9）", () => {
-  let firstComputeEntryLen;
-  let mutationTookEffectInFirstCompute;
-  let hitPathDoesNotReinvoke;
-  let hitReplaysCachedString;
+  let firstComputeEntryLen: number;
+  let mutationTookEffectInFirstCompute: boolean;
+  let hitPathDoesNotReinvoke: boolean;
+  let hitReplaysCachedString: boolean;
 
   beforeAll(async () => {
     const dir = mkdtempSync(join(tmpdir(), "dou-105-mut-"));
@@ -2961,7 +3149,7 @@ export const providers = ["mut-prov"];
 export async function fetchData() { return { v: 1 }; }
 export function formatCapsule() { return "<span>c</span>"; }
 export function formatPanel(input) {
-  globalThis.__SPY_MUT = (globalThis.__SPY_MUT ?? 0) + 1;
+  spyNs.__SPY_MUT = (spyNs.__SPY_MUT ?? 0) + 1;
   const n = input.entries.length;
   input.entries.length = 0; // 变异入参：恶意/劣质用户代码探针
   return "<p data-len=\\"" + n + "\\" data-after=\\"" + input.entries.length + "\\">m</p>";
@@ -2981,12 +3169,12 @@ export function formatPanel(input) {
     await pollUntilJsonlReady(join(dir, "hist", "mut-prov", "mut-spy"));
 
     const historyRoute = routes.find((r) => r.path === ROUTES.history);
-    const m1 = await getHistory(historyRoute, "mut-prov", 7);
+    const m1 = await getHistory(historyRoute!, "mut-prov", 7);
     firstComputeEntryLen = Number(m1.panelHtml.match(/data-len="(\d+)"/)[1]);
     mutationTookEffectInFirstCompute = String(m1.panelHtml).includes('data-after="0"');
 
-    const m2 = await getHistory(historyRoute, "mut-prov", 7);
-    hitPathDoesNotReinvoke = globalThis.__SPY_MUT === 1;
+    const m2 = await getHistory(historyRoute!, "mut-prov", 7);
+    hitPathDoesNotReinvoke = spyNs.__SPY_MUT === 1;
     hitReplaysCachedString = m2.panelHtml === m1.panelHtml;
 
     disposeAll(disposers);
@@ -3012,9 +3200,9 @@ export function formatPanel(input) {
 // ---- S7：不引入条件请求协商——无 ETag/Last-Modified 头、协商头请求仍 200 全量体（AC#11）
 
 describe("#105① S7：不引入条件请求协商（AC#11）", () => {
-  let responseCode;
-  let offendingConditionalHeader;
-  let bodyHasFullShape;
+  let responseCode: number;
+  let offendingConditionalHeader: string | undefined;
+  let bodyHasFullShape: boolean;
 
   beforeAll(async () => {
     const { ctx, routes, disposers } = makeCollectingCtx();
@@ -3029,8 +3217,8 @@ describe("#105① S7：不引入条件请求协商（AC#11）", () => {
     let raw = "";
     // async handler 统一 await（等响应位）：writeJson 在 resolve 前同步触发 end 回调，
     // await 完成后 code/hdrs/raw 已就绪，无需固定 sleep。
-    await callHandler(
-      historyRoute,
+    await callHandler<HistoryPayload>(
+      historyRoute!,
       fakeReq({
         url: `${ROUTES.history}?days=7`,
         headers: {
@@ -3078,13 +3266,13 @@ describe("#105① S7：不引入条件请求协商（AC#11）", () => {
 // ---------------------------------------------------------------- #503 M1：trend 挂接（apply 集成）
 
 describe("#503 M1：trend 挂接（apply 集成）", () => {
-  let sessionEventListeners;
-  let sessionFlushListeners;
-  let sessionDisposedListeners;
-  let unpersistedRows;
-  let detailSliceLanded;
-  let detailProvider;
-  let detailInput;
+  let sessionEventListeners: number;
+  let sessionFlushListeners: number;
+  let sessionDisposedListeners: number;
+  let unpersistedRows: unknown;
+  let detailSliceLanded: boolean;
+  let detailProvider: unknown;
+  let detailInput: unknown;
 
   beforeAll(async () => {
     const { ctx, routes, listeners, emitEvent } = makeFakeCtx();
@@ -3113,15 +3301,18 @@ describe("#503 M1：trend 挂接（apply 集成）", () => {
     });
 
     // /health 观测面
-    const healthRes = [];
+    const healthRes: Array<{ trend: { unpersistedRows: number } }> = [];
     routes
-      .find((r) => r.path === ROUTES.health)
-      .handler(fakeReq(), { writeHead: () => {}, end: (c) => healthRes.push(JSON.parse(c)) });
-    unpersistedRows = healthRes.at(-1).trend.unpersistedRows;
+      .find((r) => r.path === ROUTES.health)!
+      .handler(fakeReq(), {
+        writeHead: () => {},
+        end: (c: string) => healthRes.push(JSON.parse(c)),
+      });
+    unpersistedRows = healthRes.at(-1)!.trend.unpersistedRows;
 
     // session/flush 官方排空点 → 明细分片落盘
-    await listeners.get("session/flush")[0]();
-    const trendRoot = join(process.env.DSH_HOME, "dsh-provider-usage", "trend");
+    await listeners.get("session/flush")![0]();
+    const trendRoot = join(process.env.DSH_HOME!, "dsh-provider-usage", "trend");
     const day = dayKey(t);
     detailSliceLanded = existsSync(join(trendRoot, "details", `${day}.jsonl`));
     const rows = readFileSync(join(trendRoot, "details", `${day}.jsonl`), "utf8")
@@ -3163,8 +3354,8 @@ describe("#503 M1：trend 挂接（apply 集成）", () => {
 });
 
 describe("#503 M1：热重载不双算", () => {
-  let hotReloadRowCount;
-  let hotReloadInputs;
+  let hotReloadRowCount: number;
+  let hotReloadInputs: number[];
 
   beforeAll(async () => {
     // 热重载不双算：卸载后事件不计数；重新挂载独立记账
@@ -3181,7 +3372,7 @@ describe("#503 M1：热重载不双算", () => {
         data: { turn: 1, step: 1, usage: { inputTokens: 25, outputTokens: 25 } },
       },
     );
-    await inst1.effects.at(-1)(); // 卸载（async disposer：含 trend dispose await 刷盘）
+    await inst1.effects.at(-1)!(); // 卸载（async disposer：含 trend dispose await 刷盘）
 
     inst1.emitEvent(
       "session/event",
@@ -3206,10 +3397,10 @@ describe("#503 M1：热重载不双算", () => {
         data: { turn: 1, step: 3, usage: { inputTokens: 7, outputTokens: 7 } },
       },
     );
-    await inst2.effects.at(-1)(); // 卸载即排空
+    await inst2.effects.at(-1)!(); // 卸载即排空
 
     const day = dayKey(t);
-    const trendRoot = join(process.env.DSH_HOME, "dsh-provider-usage", "trend");
+    const trendRoot = join(process.env.DSH_HOME!, "dsh-provider-usage", "trend");
     const rows = readFileSync(join(trendRoot, "details", `${day}.jsonl`), "utf8")
       .trimEnd()
       .split("\n")
@@ -3231,7 +3422,8 @@ describe("#503 M1：热重载不双算", () => {
 // ---------------------------------------------------------------- #503 M2：/trend 路由集成断言
 
 describe("#503 M2：/trend 路由集成断言", () => {
-  const obs: Record<string, any> = {};
+  const obs: Record<string, unknown> = {};
+  let badNResults: Record<string, number>;
 
   beforeAll(async () => {
     // 独立 historyDir：隔离磁盘分片（防前序块的落盘行经启动重建混进本块断言口径）
@@ -3262,13 +3454,13 @@ describe("#503 M2：/trend 路由集成断言", () => {
     emitCall("sess-trend-api-b", 1, "openai", "gpt-x", 10, 5);
 
     // 官方排空点先行刷盘（路由读内存聚合，此处主要验证 flush 与查询共存不崩）
-    await listeners.get("session/flush")[0]();
+    await listeners.get("session/flush")![0]();
 
     const today = dayKey(t);
     obs.today = today;
 
     // 默认参数（granularity=day / metric=total）：200 形状
-    const payload = await callHandler(trendRoute, fakeReq({ url: ROUTES.trend }));
+    const payload = await callHandler<TrendPayload>(trendRoute!, fakeReq({ url: ROUTES.trend }));
     obs.payloadOk = payload.ok;
     obs.payloadPlugin = payload.plugin;
     obs.payloadVersion = payload.version;
@@ -3283,8 +3475,8 @@ describe("#503 M2：/trend 路由集成断言", () => {
     // 今日桶：total = 100+50+10+5 = 165（>0）；段拆到 provider
     const todayPoint = payload.series.find((p) => p.key === today);
     obs.todayPointExists = todayPoint !== undefined;
-    obs.todayTotal = todayPoint.total;
-    const deepseekPart = todayPoint.parts.find((p) => p.provider === "deepseek");
+    obs.todayTotal = todayPoint!.total;
+    const deepseekPart = todayPoint!.parts.find((p) => p.provider === "deepseek");
     obs.todayDeepseekPartIs150 = deepseekPart && deepseekPart.value === 150;
     // 空桶补齐为 null（30 桶内仅今日有数据——独立 historyDir 保证）
     obs.emptyBucketCount = payload.series.filter((p) => p.total === null).length;
@@ -3303,44 +3495,44 @@ describe("#503 M2：/trend 路由集成断言", () => {
     obs.firstDay = payload.firstDay;
 
     // ?metric=calls 指标切换：取值维度切到调用次数
-    const callsPayload = await callHandler(
-      trendRoute,
+    const callsPayload = await callHandler<TrendPayload>(
+      trendRoute!,
       fakeReq({ url: `${ROUTES.trend}?metric=calls` }),
     );
     obs.callsMetric = callsPayload.metric;
-    obs.callsTodayTotal = callsPayload.series.find((p) => p.key === today).total;
+    obs.callsTodayTotal = callsPayload.series.find((p) => p.key === today)!.total;
     obs.callsSummaryTotal = callsPayload.summary.total;
 
     // ?granularity=week：周粒度 12 桶，本周聚合两天数据（实际仅今日）
-    const weekPayload = await callHandler(
-      trendRoute,
+    const weekPayload = await callHandler<TrendPayload>(
+      trendRoute!,
       fakeReq({ url: `${ROUTES.trend}?granularity=week` }),
     );
     obs.weekGranularity = weekPayload.granularity;
     obs.weekSeriesLength = weekPayload.series.length;
-    obs.weekCurrentTotal = weekPayload.series.at(-1).total;
+    obs.weekCurrentTotal = weekPayload.series.at(-1)!.total;
 
     // ?provider=deepseek 过滤：只剩该 provider 的段与图例
-    const filtered = await callHandler(
-      trendRoute,
+    const filtered = await callHandler<TrendPayload>(
+      trendRoute!,
       fakeReq({ url: `${ROUTES.trend}?provider=deepseek` }),
     );
-    obs.filteredTodayTotal = filtered.series.find((p) => p.key === today).total;
+    obs.filteredTodayTotal = filtered.series.find((p) => p.key === today)!.total;
     obs.filteredProvidersLength = filtered.providers.length;
 
     // ?byModel=1：段拆到 provider+model，图例并集细到 model
-    const byModelPayload = await callHandler(
-      trendRoute,
+    const byModelPayload = await callHandler<TrendPayload>(
+      trendRoute!,
       fakeReq({ url: `${ROUTES.trend}?byModel=1` }),
     );
     obs.byModelEcho = byModelPayload.byModel;
-    const byModelToday = byModelPayload.series.find((p) => p.key === today);
+    const byModelToday = byModelPayload.series.find((p) => p.key === today)!;
     obs.byModelPartsLength = byModelToday.parts.length;
     obs.byModelPartKeys = byModelToday.parts.map((p) => `${p.provider}/${p.model}`).sort();
 
     // 非法参数回退默认（守卫：未知 granularity/metric 不进查询面）
-    const fallback = await callHandler(
-      trendRoute,
+    const fallback = await callHandler<TrendPayload>(
+      trendRoute!,
       fakeReq({ url: `${ROUTES.trend}?granularity=hour&metric=evil` }),
     );
     obs.fallbackGranularity = fallback.granularity;
@@ -3351,35 +3543,35 @@ describe("#503 M2：/trend 路由集成断言", () => {
     // 未识别桶——两会话用量同入 (unidentified) 桶，正可断言过滤生效与图例形态。
     {
       // 未传 dir：现状形状零变化（providers 图例、无 dirs 数据段、dir=null 回显）
-      const noDir = await callHandler(trendRoute, fakeReq({ url: ROUTES.trend }));
+      const noDir = await callHandler<TrendPayload>(trendRoute!, fakeReq({ url: ROUTES.trend }));
       obs.noDirDir = noDir.dir;
       obs.noDirShape = noDir.providers.length === 2 && noDir.dirs.length === 0;
       obs.noDirSeries = noDir.series;
       // 传 dir=未识别桶键：过滤面生效（本块两会话均为未识别目录）
       const UNK = "(unidentified)";
       obs.UNK = UNK;
-      const withDir = await callHandler(
-        trendRoute,
+      const withDir = await callHandler<TrendPayload>(
+        trendRoute!,
         fakeReq({ url: `${ROUTES.trend}?dir=${encodeURIComponent(UNK)}` }),
       );
       obs.withDirDir = withDir.dir;
-      obs.withDirTodayTotal = withDir.series.find((p) => p.key === today).total;
+      obs.withDirTodayTotal = withDir.series.find((p) => p.key === today)!.total;
       obs.withDirLegendHasUnk = withDir.dirs.some((d) => d.dir === UNK);
       obs.withDirProvidersLength = withDir.providers.length;
       // 传不存在的目录：过滤面空集（不回退全目录、不报错）
-      const ghost = await callHandler(
-        trendRoute,
+      const ghost = await callHandler<TrendPayload>(
+        trendRoute!,
         fakeReq({ url: `${ROUTES.trend}?dir=ghost-dir` }),
       );
-      obs.ghostTodayTotal = ghost.series.find((p) => p.key === today).total;
+      obs.ghostTodayTotal = ghost.series.find((p) => p.key === today)!.total;
       obs.ghostDirsLength = ghost.dirs.length;
       // 非法 dir（超长 257 字符，超数据层 TREND_DIR_MAX=256）→ 回退全目录（与未传同形状，不 400）
       // #633 修复：原用例写 129 字符——它把「路由硬编码 128、与数据层 256 不一致」的
       // 错误行为锁死（129–256 的合法目录键被静默降级为全目录聚合）。上限改由
       // TREND_DIR_MAX 单源导出，此处按数据层真上限 +1 构造超长值。
       const longDir = "x".repeat(TREND_DIR_MAX + 1);
-      const badDir = await callHandler(
-        trendRoute,
+      const badDir = await callHandler<TrendPayload>(
+        trendRoute!,
         fakeReq({ url: `${ROUTES.trend}?dir=${encodeURIComponent(longDir)}` }),
       );
       obs.badDirSeries = badDir.series;
@@ -3387,16 +3579,16 @@ describe("#503 M2：/trend 路由集成断言", () => {
       // 边界内侧：恰为上限的目录键是合法过滤值（不再被静默降级——原 128 口径的回归防线）
       const maxLenDir = "y".repeat(TREND_DIR_MAX);
       obs.maxLenDir = maxLenDir;
-      const maxDir = await callHandler(
-        trendRoute,
+      const maxDir = await callHandler<TrendPayload>(
+        trendRoute!,
         fakeReq({ url: `${ROUTES.trend}?dir=${encodeURIComponent(maxLenDir)}` }),
       );
       obs.maxDirDir = maxDir.dir;
       obs.maxDirByDir = maxDir.byDir;
-      obs.maxDirTodayTotal = maxDir.series.find((p) => p.key === today).total;
+      obs.maxDirTodayTotal = maxDir.series.find((p) => p.key === today)!.total;
       // #633 P2：dir+byDir 同传 → 回显实际生效面（dir 过滤面生效，byDir 回显 false）
-      const bothParams = await callHandler(
-        trendRoute,
+      const bothParams = await callHandler<TrendPayload>(
+        trendRoute!,
         fakeReq({ url: `${ROUTES.trend}?dir=${encodeURIComponent(UNK)}&byDir=1` }),
       );
       obs.bothParamsDir = bothParams.dir;
@@ -3404,12 +3596,15 @@ describe("#503 M2：/trend 路由集成断言", () => {
 
       // ---------------------------------------------------------------- #633 分片 b2 D2/B1：byDir=1 全目录拆段面（加性，不影响 b1 断言）
       {
-        const byDirAll = await callHandler(trendRoute, fakeReq({ url: `${ROUTES.trend}?byDir=1` }));
+        const byDirAll = await callHandler<TrendPayload>(
+          trendRoute!,
+          fakeReq({ url: `${ROUTES.trend}?byDir=1` }),
+        );
         obs.byDirAllByDir = byDirAll.byDir;
         obs.byDirAllDir = byDirAll.dir;
-        obs.byDirAllTodayTotal = byDirAll.series.find((p) => p.key === today).total;
+        obs.byDirAllTodayTotal = byDirAll.series.find((p) => p.key === today)!.total;
         const unkPart = byDirAll.series
-          .find((p) => p.key === today)
+          .find((p) => p.key === today)!
           .parts.find((p) => p.provider === UNK);
         obs.byDirUnkPartIs165 = unkPart && unkPart.value === 165;
         obs.byDirLegendHasUnk = byDirAll.dirs.some((d) => d.dir === UNK);
@@ -3417,8 +3612,8 @@ describe("#503 M2：/trend 路由集成断言", () => {
         obs.byDirProviderCandidates = byDirAll.providers.map((p) => p.provider).sort();
         // 适配器选择 → provider 面往返链路：候选项值可直接驱动 provider 过滤查询
         const picked = byDirAll.providers.map((p) => p.provider).sort()[0];
-        const roundTrip = await callHandler(
-          trendRoute,
+        const roundTrip = await callHandler<TrendPayload>(
+          trendRoute!,
           fakeReq({ url: `${ROUTES.trend}?provider=${encodeURIComponent(picked)}` }),
         );
         obs.roundTripProvidersLength = roundTrip.providers.length;
@@ -3435,47 +3630,57 @@ describe("#503 M2：/trend 路由集成断言", () => {
     obs.payloadPrevComplete = payload.summary.prevComplete;
 
     // ?n=7：日序列 7 桶；?n=90：≤retention 上限内放行
-    const n7 = await callHandler(trendRoute, fakeReq({ url: `${ROUTES.trend}?n=7` }));
+    const n7 = await callHandler<TrendPayload>(
+      trendRoute!,
+      fakeReq({ url: `${ROUTES.trend}?n=7` }),
+    );
     obs.n7N = n7.n;
     obs.n7SeriesLength = n7.series.length;
-    const n90 = await callHandler(trendRoute, fakeReq({ url: `${ROUTES.trend}?n=90` }));
+    const n90 = await callHandler<TrendPayload>(
+      trendRoute!,
+      fakeReq({ url: `${ROUTES.trend}?n=90` }),
+    );
     obs.n90SeriesLength = n90.series.length;
-    const nOver = await callHandler(trendRoute, fakeReq({ url: `${ROUTES.trend}?n=9999` }));
+    const nOver = await callHandler<TrendPayload>(
+      trendRoute!,
+      fakeReq({ url: `${ROUTES.trend}?n=9999` }),
+    );
     obs.nOverN = nOver.n;
     obs.nOverSeriesLength = nOver.series.length;
 
     // 周粒度 clamp：cap = ⌈180/7⌉ = 26（周桶按周一对齐，26 桶跨度可能触留存边缘——属预期）
-    const w26 = await callHandler(
-      trendRoute,
+    const w26 = await callHandler<TrendPayload>(
+      trendRoute!,
       fakeReq({ url: `${ROUTES.trend}?granularity=week&n=26` }),
     );
     obs.w26SeriesLength = w26.series.length;
-    const wOver = await callHandler(
-      trendRoute,
+    const wOver = await callHandler<TrendPayload>(
+      trendRoute!,
       fakeReq({ url: `${ROUTES.trend}?granularity=week&n=99` }),
     );
     obs.wOverN = wOver.n;
 
     // 月粒度 clamp：cap = ⌈180/30⌉ = 6（月 12 档跨度 365 天 > 180 天留存——r1 方案口径错误已修正）
-    const m6 = await callHandler(
-      trendRoute,
+    const m6 = await callHandler<TrendPayload>(
+      trendRoute!,
       fakeReq({ url: `${ROUTES.trend}?granularity=month&n=6` }),
     );
     obs.m6SeriesLength = m6.series.length;
-    const mOver = await callHandler(
-      trendRoute,
+    const mOver = await callHandler<TrendPayload>(
+      trendRoute!,
       fakeReq({ url: `${ROUTES.trend}?granularity=month&n=12` }),
     );
     obs.mOverN = mOver.n;
 
     // 非法 n 回退默认（0/负数/非整数/非数字/空串）
-    obs.badNResults = {};
+    badNResults = {};
+    obs.badNResults = badNResults;
     for (const bad of ["0", "-5", "3.7", "abc", ""]) {
-      const badPayload = await callHandler(
-        trendRoute,
+      const badPayload = await callHandler<TrendPayload>(
+        trendRoute!,
         fakeReq({ url: `${ROUTES.trend}?granularity=week&n=${encodeURIComponent(bad)}` }),
       );
-      obs.badNResults[bad] = badPayload.n;
+      badNResults[bad] = badPayload.n;
     }
   });
 
@@ -3757,8 +3962,8 @@ describe("#503 M2：/trend 路由集成断言", () => {
     expect(obs.mOverN).toBe(6);
   });
 
-  it.each(["0", "-5", "3.7", "abc", ""])("非法 n=%s 回退周默认 12", (bad) => {
-    expect(obs.badNResults[bad]).toBe(12);
+  it.each(["0", "-5", "3.7", "abc", ""])("非法 n=%s 回退周默认 12", (bad: string) => {
+    expect(badNResults[bad]).toBe(12);
   });
 });
 
@@ -3796,7 +4001,10 @@ describe("#503 M3：用量报告接线", () => {
       obs.noReportArtifactsOnDefaultMount = true;
     }
     obs.noReportsDirOnDefaultMount = obs.noReportArtifactsOnDefaultMount;
-    const defaultCfg = await callHandler(cfgRoute, fakeReq({ url: ROUTES.reportConfig }));
+    const defaultCfg = await callHandler<ReportConfigPayload>(
+      cfgRoute!,
+      fakeReq({ url: ROUTES.reportConfig }),
+    );
     obs.defaultCfgOk = defaultCfg.ok;
     obs.defaultDailyEnabled = defaultCfg.config.daily.enabled;
     obs.defaultWeeklyEnabled = defaultCfg.config.weekly.enabled;
@@ -3806,8 +4014,8 @@ describe("#503 M3：用量报告接线", () => {
       Array.isArray(defaultCfg.providers) && defaultCfg.providers.length >= 2;
 
     // c. POST /report-config 保存（启用日报 22:00）→ GET 回读一致
-    const savedCfg = await callHandler(
-      cfgRoute,
+    const savedCfg = await callHandler<ReportConfigPayload>(
+      cfgRoute!,
       fakeReq({
         method: "POST",
         body: JSON.stringify({ daily: { enabled: true, time: "22:00" }, push: { enabled: false } }),
@@ -3816,7 +4024,10 @@ describe("#503 M3：用量报告接线", () => {
     obs.savedCfgOk = savedCfg.ok;
     obs.savedDailyEnabled = savedCfg.config.daily.enabled;
     obs.savedDailyTime = savedCfg.config.daily.time;
-    const reread = await callHandler(cfgRoute, fakeReq({ url: ROUTES.reportConfig }));
+    const reread = await callHandler<ReportConfigPayload>(
+      cfgRoute!,
+      fakeReq({ url: ROUTES.reportConfig }),
+    );
     obs.rereadConfig = reread.config;
     obs.savedConfigSnapshot = savedCfg.config;
 
@@ -3828,14 +4039,25 @@ describe("#503 M3：用量报告接线", () => {
         statusOf.code = code;
       },
     };
-    const badJson = await callHandler(cfgRoute, fakeReq({ method: "POST", body: "{" }), resExt);
+    const badJson = await callHandler<ReportConfigPayload>(
+      cfgRoute!,
+      fakeReq({ method: "POST", body: "{" }),
+      resExt,
+    );
     obs.badJsonStatus = statusOf.code;
     obs.badJsonError = badJson.error;
     statusOf.code = 0;
-    const noBody = await callHandler(cfgRoute, fakeReq({ method: "POST" }), resExt);
+    const noBody = await callHandler<ReportConfigPayload>(
+      cfgRoute!,
+      fakeReq({ method: "POST" }),
+      resExt,
+    );
     obs.noBodyStatus = statusOf.code;
     obs.noBodyError = noBody.error;
-    const afterBad = await callHandler(cfgRoute, fakeReq({ url: ROUTES.reportConfig }));
+    const afterBad = await callHandler<ReportConfigPayload>(
+      cfgRoute!,
+      fakeReq({ url: ROUTES.reportConfig }),
+    );
     obs.configSurvivesBadJson = afterBad.config?.daily?.time;
     obs.configSurvivesNoBody = afterBad.config?.daily?.enabled;
 
@@ -3843,18 +4065,21 @@ describe("#503 M3：用量报告接线", () => {
     {
       const modelsRoute = routes.find((r) => r.path === ROUTES.reportModels);
       obs.modelsRouteExists = modelsRoute !== undefined;
-      const modelsOk = await callHandler(
-        modelsRoute,
+      const modelsOk = await callHandler<ModelsPayload>(
+        modelsRoute!,
         fakeReq({ url: `${ROUTES.reportModels}?provider=anthropic` }),
       );
       obs.modelsOkOk = modelsOk.ok;
       obs.modelsWhitelist = modelsOk.models;
-      const modelsUnknown = await callHandler(
-        modelsRoute,
+      const modelsUnknown = await callHandler<ModelsPayload>(
+        modelsRoute!,
         fakeReq({ url: `${ROUTES.reportModels}?provider=no-such` }),
       );
       obs.modelsUnknown = modelsUnknown;
-      const modelsMissing = await callHandler(modelsRoute, fakeReq({ url: ROUTES.reportModels }));
+      const modelsMissing = await callHandler<ModelsPayload>(
+        modelsRoute!,
+        fakeReq({ url: ROUTES.reportModels }),
+      );
       obs.modelsMissing = modelsMissing;
     }
 
@@ -3879,28 +4104,31 @@ describe("#503 M3：用量报告接线", () => {
       time: t,
       data: { turn: 1, step: 1, usage: { inputTokens: 80, outputTokens: 40 } },
     });
-    await listeners.get("session/flush")[0](); // 官方排空点先行刷盘
-    const trendBefore = await callHandler(trendRoute, fakeReq({ url: ROUTES.trend }));
+    await listeners.get("session/flush")![0](); // 官方排空点先行刷盘
+    const trendBefore = await callHandler<TrendPayload>(
+      trendRoute!,
+      fakeReq({ url: ROUTES.trend }),
+    );
 
     // #625 辅助：提交生成 → 轮询 status 到 done（fake 队列立即执行；防 flake 轮询替代固定 sleep）
     const statusRoute = routes.find((r) => r.path === ROUTES.reportGenerateStatus);
     obs.statusRouteExists = statusRoute !== undefined;
     /** 每次 generateAndAwait 调用的观测（原 helper 内 5 条断言各自逐次记录） */
-    const genObs = [];
-    const generateAndAwait = async (body) => {
-      const gen = await callHandler(
-        genRoute,
+    const genObs: Array<Record<string, unknown>> = [];
+    const generateAndAwait = async (body: Record<string, unknown>) => {
+      const gen = await callHandler<GeneratePayload>(
+        genRoute!,
         fakeReq({ method: "POST", body: JSON.stringify(body) }),
       );
-      const rec: Record<string, any> = {
+      const rec: Record<string, unknown> = {
         genOk: gen.ok,
         genRaw: JSON.stringify(gen).slice(0, 160),
         hasTaskId: typeof gen.taskId === "string" && gen.taskId.length > 0,
       };
       const done = await pollUntil(
         async () => {
-          const st = await callHandler(
-            statusRoute,
+          const st = await callHandler<GenerateStatusPayload>(
+            statusRoute!,
             fakeReq({
               url: `${ROUTES.reportGenerateStatus}?taskId=${encodeURIComponent(gen.taskId)}`,
             }),
@@ -3915,7 +4143,7 @@ describe("#503 M3：用量报告接线", () => {
       rec.doneError = done?.error ?? "";
       rec.doneHasMeta = done?.meta !== undefined;
       genObs.push(rec);
-      return done.meta;
+      return done!.meta!;
     };
     obs.genObs = genObs;
 
@@ -3941,7 +4169,7 @@ describe("#503 M3：用量报告接线", () => {
       storedHtml.startsWith("<!doctype html>") && storedHtml.includes("dou-report-body");
 
     // e/f. 双断言：生成不入统计（方案 §2.3 显式断言）——生成前后 /trend 桶快照完全一致
-    const trendAfter = await callHandler(trendRoute, fakeReq({ url: ROUTES.trend }));
+    const trendAfter = await callHandler<TrendPayload>(trendRoute!, fakeReq({ url: ROUTES.trend }));
     obs.trendAfterSeries = trendAfter.series;
     obs.trendBeforeSeries = trendBefore.series;
     obs.trendAfterSummary = trendAfter.summary;
@@ -3960,14 +4188,17 @@ describe("#503 M3：用量报告接线", () => {
             text: "<script>alert(1)</script>安全正文<img onerror=x src=y>收尾",
           },
           { type: "usage", usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 } },
-          { type: "finish", reason: "stop" },
+          { type: "finish", reason: { kind: "stop" } },
         ],
       });
       await apply(xssCtx.ctx, { ...ISOLATED_CONFIG, historyDir: join(xssDir, "hist") });
       // #532：空窗口会 noData 短路不落盘——先向本 ctx 合成落在 daily 闭环窗口内的用量
       {
         const xssCfgRoute = xssCtx.routes.find((r) => r.path === ROUTES.reportConfig);
-        const xssCfg = await callHandler(xssCfgRoute, fakeReq({ url: ROUTES.reportConfig }));
+        const xssCfg = await callHandler<ReportConfigPayload>(
+          xssCfgRoute!,
+          fakeReq({ url: ROUTES.reportConfig }),
+        );
         const xssDue = previousClosedWindow("daily", xssCfg.config, Date.now());
         const [xy, xm, xd] = xssDue.endDay.split("-").map(Number);
         const xt = new Date(xy, xm - 1, xd, 12, 0, 0).getTime();
@@ -3987,19 +4218,19 @@ describe("#503 M3：用量报告接线", () => {
           time: xt,
           data: { turn: 1, step: 1, usage: { inputTokens: 80, outputTokens: 40 } },
         });
-        await xssCtx.listeners.get("session/flush")[0]();
+        await xssCtx.listeners.get("session/flush")![0]();
       }
       const xssGenRoute = xssCtx.routes.find((r) => r.path === ROUTES.reportGenerate);
       const xssStatusRoute = xssCtx.routes.find((r) => r.path === ROUTES.reportGenerateStatus);
-      const xssGenRes = await callHandler(
-        xssGenRoute,
+      const xssGenRes = await callHandler<GeneratePayload>(
+        xssGenRoute!,
         fakeReq({ method: "POST", body: JSON.stringify({ period: "daily" }) }),
       );
       obs.xssGen202 = xssGenRes.ok;
       const xssDone = await pollUntil(
         async () => {
-          const st = await callHandler(
-            xssStatusRoute,
+          const st = await callHandler<GenerateStatusPayload>(
+            xssStatusRoute!,
             fakeReq({
               url: `${ROUTES.reportGenerateStatus}?taskId=${encodeURIComponent(xssGenRes.taskId)}`,
             }),
@@ -4011,10 +4242,10 @@ describe("#503 M3：用量报告接线", () => {
       );
       obs.xssDoneStatus = xssDone?.status;
       obs.xssDoneError = xssDone?.error ?? "";
-      const xssGen = xssDone.meta;
+      const xssGen = xssDone!.meta!;
       obs.xssGenOk = xssGen.ok;
-      const xssDetail = await callHandler(
-        xssCtx.routes.find((r) => r.path === ROUTES.reportDetail),
+      const xssDetail = await callHandler<ReportDetailPayload>(
+        xssCtx.routes.find((r) => r.path === ROUTES.reportDetail)!,
         fakeReq({
           url: `${ROUTES.reportDetail}?period=daily&key=${encodeURIComponent(xssGen.key)}`,
         }),
@@ -4035,13 +4266,16 @@ describe("#503 M3：用量报告接线", () => {
     }
 
     // f2. 趋势查询对生成免疫已由 f 覆盖；此处补 list/detail 读面
-    const listPayload = await callHandler(listRoute, fakeReq({ url: ROUTES.reports }));
+    const listPayload = await callHandler<ReportsListPayload>(
+      listRoute!,
+      fakeReq({ url: ROUTES.reports }),
+    );
     obs.listOk = listPayload.ok;
     obs.listNonEmpty = Array.isArray(listPayload.reports) && listPayload.reports.length >= 1;
     obs.listFirstKey = listPayload.reports[0].key;
 
-    const detail = await callHandler(
-      detailRoute,
+    const detail = await callHandler<ReportDetailPayload>(
+      detailRoute!,
       fakeReq({
         url: `${ROUTES.reportDetail}?period=daily&key=${encodeURIComponent(genMeta.key)}`,
       }),
@@ -4058,8 +4292,8 @@ describe("#503 M3：用量报告接线", () => {
 
     // ---------------------------------------------------------------- #633 分片 b B4：报告配置目录范围 round-trip（路由读写）
     {
-      const withDirs = await callHandler(
-        cfgRoute,
+      const withDirs = await callHandler<ReportConfigPayload>(
+        cfgRoute!,
         fakeReq({
           method: "POST",
           body: JSON.stringify({
@@ -4071,11 +4305,14 @@ describe("#503 M3：用量报告接线", () => {
       );
       obs.withDirsOk = withDirs.ok;
       obs.withDirsDirectories = withDirs.config.directories;
-      const readBack = await callHandler(cfgRoute, fakeReq({ url: ROUTES.reportConfig }));
+      const readBack = await callHandler<ReportConfigPayload>(
+        cfgRoute!,
+        fakeReq({ url: ROUTES.reportConfig }),
+      );
       obs.readBackDirectories = readBack.config.directories;
       // 显式 all → 全部（空数组）
-      const allDirs = await callHandler(
-        cfgRoute,
+      const allDirs = await callHandler<ReportConfigPayload>(
+        cfgRoute!,
         fakeReq({
           method: "POST",
           body: JSON.stringify({
@@ -4087,8 +4324,8 @@ describe("#503 M3：用量报告接线", () => {
       );
       obs.allDirsDirectories = allDirs.config.directories;
       // 非法形态 → 回退空数组
-      const badDirs = await callHandler(
-        cfgRoute,
+      const badDirs = await callHandler<ReportConfigPayload>(
+        cfgRoute!,
         fakeReq({
           method: "POST",
           body: JSON.stringify({
@@ -4108,8 +4345,8 @@ describe("#503 M3：用量报告接线", () => {
     {
       const UNK = "(unidentified)";
       const dirRowsRoute = trendRoute; // 同一路由：dir 分支读 aggregator 目录查询面
-      const dirTrend = await callHandler(
-        dirRowsRoute,
+      const dirTrend = await callHandler<TrendPayload>(
+        dirRowsRoute!,
         fakeReq({ url: `${ROUTES.trend}?dir=${encodeURIComponent(UNK)}` }),
       );
       obs.dirTrendTodayReachable =
@@ -4131,13 +4368,13 @@ describe("#503 M3：用量报告接线", () => {
           .length;
       };
       const countBeforeForce = dailyLineCount();
-      const again = await callHandler(
-        genRoute,
+      const again = await callHandler<GeneratePayload>(
+        genRoute!,
         fakeReq({ method: "POST", body: JSON.stringify({ period: "daily" }) }),
       );
       obs.againOk = again.ok;
       obs.againReused = again.reused;
-      obs.againMetaKey = again.meta.key;
+      obs.againMetaKey = again.meta!.key;
       obs.againLineCount = dailyLineCount();
       obs.countBeforeForce = countBeforeForce;
       // #629 P2 复用提示对称说明：200 直接复用路径的 reused 透传已由上方 again 断言覆盖；
@@ -4148,18 +4385,21 @@ describe("#503 M3：用量报告接线", () => {
       obs.forceMetaOk = forceMeta.ok;
       obs.forceMetaKey = forceMeta.key;
       obs.forceLineCount = dailyLineCount();
-      const forceList = await callHandler(listRoute, fakeReq({ url: ROUTES.reports }));
+      const forceList = await callHandler<ReportsListPayload>(
+        listRoute!,
+        fakeReq({ url: ROUTES.reports }),
+      );
       const dailies = forceList.reports.filter(
         (m) => m.period === "daily" && m.key === genMeta.key,
       );
       obs.forceListDailyCount = dailies.length;
-      const bad1 = await callHandler(
-        statusRoute,
+      const bad1 = await callHandler<GenerateStatusPayload>(
+        statusRoute!,
         fakeReq({ url: `${ROUTES.reportGenerateStatus}?taskId=not-a-uuid` }),
       );
       obs.statusBadUuidError = bad1.error;
-      const bad2 = await callHandler(
-        statusRoute,
+      const bad2 = await callHandler<GenerateStatusPayload>(
+        statusRoute!,
         fakeReq({
           url: `${ROUTES.reportGenerateStatus}?taskId=00000000-0000-4000-8000-000000000000`,
         }),
@@ -4169,8 +4409,8 @@ describe("#503 M3：用量报告接线", () => {
 
     // g3. #629 P2 交叉写者：启用 weekly（preset 走 updateLastRun 临界区）后 lastRun.daily 不丢
     {
-      const saveWeekly = await callHandler(
-        cfgRoute,
+      const saveWeekly = await callHandler<ReportConfigPayload>(
+        cfgRoute!,
         fakeReq({
           method: "POST",
           body: JSON.stringify({
@@ -4194,7 +4434,10 @@ describe("#503 M3：用量报告接线", () => {
         indexFile,
         `${JSON.stringify({ period: "daily", key: "2099-01-01", startDay: "2099-01-01", endDay: "2099-01-01", provider: "anthropic", model: "model-a", generatedAt: Date.now() + 1000000, ok: true })}\n`,
       );
-      const afterAppend = await callHandler(listRoute, fakeReq({ url: ROUTES.reports }));
+      const afterAppend = await callHandler<ReportsListPayload>(
+        listRoute!,
+        fakeReq({ url: ROUTES.reports }),
+      );
       obs.afterAppendFirstKey = afterAppend.reports[0].key;
       // #629 P1 计数器机制归位单元层（unit-report P1 直接三读断言 miss/hit）；
       // 集成层仅经路由验证失效语义（afterAppendFirstKey），不直读计数器。
@@ -4212,23 +4455,23 @@ describe("#503 M3：用量报告接线", () => {
 
     // detail 守卫：period 枚举 + key 白名单（防路径穿越）
     {
-      const bad1 = await callHandler(
-        detailRoute,
+      const bad1 = await callHandler<ReportDetailPayload>(
+        detailRoute!,
         fakeReq({ url: `${ROUTES.reportDetail}?period=evil&key=2026-09-04` }),
       );
       obs.detailInvalidPeriodError = bad1.error;
-      const bad2 = await callHandler(
-        detailRoute,
+      const bad2 = await callHandler<ReportDetailPayload>(
+        detailRoute!,
         fakeReq({ url: `${ROUTES.reportDetail}?period=daily&key=..%2F..%2Fevil` }),
       );
       obs.detailTraversalKeyError = bad2.error;
-      const bad3 = await callHandler(
-        detailRoute,
+      const bad3 = await callHandler<ReportDetailPayload>(
+        detailRoute!,
         fakeReq({ url: `${ROUTES.reportDetail}?period=monthly&key=2026-09-04` }),
       );
       obs.detailWrongPeriodKeyError = bad3.error;
-      const bad4 = await callHandler(
-        detailRoute,
+      const bad4 = await callHandler<ReportDetailPayload>(
+        detailRoute!,
         fakeReq({ url: `${ROUTES.reportDetail}?period=daily&key=2099-01-01` }),
       );
       obs.detailNotFoundError = bad4.error;
@@ -4236,8 +4479,8 @@ describe("#503 M3：用量报告接线", () => {
 
     // generate 守卫：非法 period 拒绝
     {
-      const badGen = await callHandler(
-        genRoute,
+      const badGen = await callHandler<GeneratePayload>(
+        genRoute!,
         fakeReq({ method: "POST", body: JSON.stringify({ period: "hourly" }) }),
       );
       obs.generateInvalidPeriodError = badGen.error;
@@ -4616,8 +4859,8 @@ describe("#633 分片 b2 D2：双目录全链路", () => {
       // 无 cwd 会话：store 有行但 header.cwd 缺失 → 未识别桶（B2 数据面）
       ["sess-d2-none", undefined],
     ]);
-    const fakeSession = (_id) => ({
-      get(sid) {
+    const fakeSession = (_id: string) => ({
+      get(sid: unknown) {
         const key = String(sid);
         if (!cwdBySession.has(key)) return undefined;
         return { header: { cwd: cwdBySession.get(key) } };
@@ -4625,8 +4868,9 @@ describe("#633 分片 b2 D2：双目录全链路", () => {
     });
 
     const { ctx, routes, listeners, emitEvent } = makeFakeCtx();
-    // 挂 sessions store：resolveCwd → ctx.sessions.get(...)（分片 a A1 接线路径）
-    ctx.sessions = fakeSession("store");
+    // 挂 sessions store：resolveCwd → ctx.sessions.get(...)（分片 a A1 接线路径）。
+    // 窄 fake 经 unknown 断言装配（仅 get 面为真，与 runDueReport 侧同理）。
+    ctx.sessions = fakeSession("store") as unknown as Context["sessions"];
     await apply(ctx, { ...ISOLATED_CONFIG, historyDir: join(dir, "hist") });
     const trendRoute = routes.find((r) => r.path === ROUTES.trend);
     const cfgRoute = routes.find((r) => r.path === ROUTES.reportConfig);
@@ -4655,7 +4899,7 @@ describe("#633 分片 b2 D2：双目录全链路", () => {
     emitCall("sess-d2-none", 21, "deepseek", "deepseek-chat", 5, 5); // 未识别桶
 
     // 官方排空点先行刷盘（事件 → 分片；路由读内存聚合，与 b1 块同序）
-    await listeners.get("session/flush")[0]();
+    await listeners.get("session/flush")![0]();
 
     const DIR_A = "dsh-plugin-hub";
     const DIR_B = "xiaozhuge";
@@ -4665,9 +4909,12 @@ describe("#633 分片 b2 D2：双目录全链路", () => {
     obs.UNK = UNK;
 
     // 1. 双目录聚合数值：byDir=1 全目录面三桶各归各值（不合并不覆盖，B1 可区分性）
-    const allDirs = await callHandler(trendRoute, fakeReq({ url: `${ROUTES.trend}?byDir=1` }));
+    const allDirs = await callHandler<TrendPayload>(
+      trendRoute!,
+      fakeReq({ url: `${ROUTES.trend}?byDir=1` }),
+    );
     const allToday = allDirs.series.find((p) => p.key === today);
-    obs.allTodayTotal = allToday.total;
+    obs.allTodayTotal = allToday!.total;
     const partOf = (point, name) => point.parts.find((p) => p.provider === name)?.value ?? null;
     obs.partA = partOf(allToday, DIR_A);
     obs.partB = partOf(allToday, DIR_B);
@@ -4675,31 +4922,37 @@ describe("#633 分片 b2 D2：双目录全链路", () => {
     obs.dirLegend = allDirs.dirs.map((d) => d.dir).sort();
 
     // 2. dir 过滤面：过滤后数值 = 该目录子集（A=300 / B=30 / 未识别=10，互不串桶）
-    const onlyA = await callHandler(
-      trendRoute,
+    const onlyA = await callHandler<TrendPayload>(
+      trendRoute!,
       fakeReq({ url: `${ROUTES.trend}?dir=${encodeURIComponent(DIR_A)}` }),
     );
-    obs.onlyATodayTotal = onlyA.series.find((p) => p.key === today).total;
+    obs.onlyATodayTotal = onlyA.series.find((p) => p.key === today)!.total;
     obs.onlyASummaryTotal = onlyA.summary.total;
-    const onlyB = await callHandler(
-      trendRoute,
+    const onlyB = await callHandler<TrendPayload>(
+      trendRoute!,
       fakeReq({ url: `${ROUTES.trend}?dir=${encodeURIComponent(DIR_B)}` }),
     );
-    obs.onlyBTodayTotal = onlyB.series.find((p) => p.key === today).total;
-    const onlyUnk = await callHandler(
-      trendRoute,
+    obs.onlyBTodayTotal = onlyB.series.find((p) => p.key === today)!.total;
+    const onlyUnk = await callHandler<TrendPayload>(
+      trendRoute!,
       fakeReq({ url: `${ROUTES.trend}?dir=${encodeURIComponent(UNK)}` }),
     );
-    obs.onlyUnkTodayTotal = onlyUnk.series.find((p) => p.key === today).total;
+    obs.onlyUnkTodayTotal = onlyUnk.series.find((p) => p.key === today)!.total;
 
     // 3. provider 面零回归：cwd 接入不改既有 day×provider×model 聚合数值（A1 红线）
-    const providerFace = await callHandler(trendRoute, fakeReq({ url: ROUTES.trend }));
-    obs.providerFaceTodayTotal = providerFace.series.find((p) => p.key === today).total;
+    const providerFace = await callHandler<TrendPayload>(
+      trendRoute!,
+      fakeReq({ url: ROUTES.trend }),
+    );
+    obs.providerFaceTodayTotal = providerFace.series.find((p) => p.key === today)!.total;
     obs.providerFaceDirs = providerFace.dirs;
     obs.providerFaceDir = providerFace.dir;
 
     // 4. report-config GET 附目录候选（B4 数据源）：双目录 + 未识别桶、calls 降序、basename 形态
-    const cfgBody = await callHandler(cfgRoute, fakeReq({ url: ROUTES.reportConfig }));
+    const cfgBody = await callHandler<ReportConfigPayload>(
+      cfgRoute!,
+      fakeReq({ url: ROUTES.reportConfig }),
+    );
     obs.cfgDirsIsThree = Array.isArray(cfgBody.dirs) && cfgBody.dirs.length === 3;
     obs.cfgDirsSorted = cfgBody.dirs.map((d) => d.dir).sort();
     obs.cfgDirsWithSeparator = cfgBody.dirs
@@ -4711,8 +4964,8 @@ describe("#633 分片 b2 D2：双目录全链路", () => {
     obs.topByCallsDir = cfgBody.dirs[0].dir;
 
     // 5. directories 配置 round-trip（路由侧四同步已在 b1 断言；此处验证候选与保存值同键域）
-    const scoped = await callHandler(
-      cfgRoute,
+    const scoped = await callHandler<ReportConfigPayload>(
+      cfgRoute!,
       fakeReq({
         method: "POST",
         body: JSON.stringify({ directories: [DIR_A, UNK], push: { enabled: false } }),
