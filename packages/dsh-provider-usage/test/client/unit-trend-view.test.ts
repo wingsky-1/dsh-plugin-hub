@@ -750,8 +750,9 @@ describe("heatCells：尾部截取与归一", () => {
       ],
       2,
     );
-    expect(cells.map((c) => c.key)).toEqual(["d2", "d3"]);
-    expect(cells.map((c) => c.level)).toEqual([0, 4]);
+    type Cell = { key: string; total: number | null; level: number };
+    expect(cells.map((c: Cell) => c.key)).toEqual(["d2", "d3"]);
+    expect(cells.map((c: Cell) => c.level)).toEqual([0, 4]);
   });
   it("不足 N 全取", () => {
     expect(heatCells([{ key: "d1", total: 5, parts: [] }], 180).length).toBe(1);
