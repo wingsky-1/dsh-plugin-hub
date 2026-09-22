@@ -10,7 +10,7 @@
 import STYLE from "./style.css";
 import { ensureStyle } from "../../../../shared/client/ensure-style.js";
 import * as React from "react";
-import { bindTranslate, t, type HostTranslate } from "./locale.ts";
+import { bindTranslate, t, unbindTranslate, type HostTranslate } from "./locale.ts";
 import { en, zh } from "./locales.ts";
 import { JevCard } from "./settings/card.tsx";
 
@@ -124,6 +124,7 @@ export function apply(ctx: ClientContext): void {
           } catch {
             /* 卸载期静默 */
           }
+          unbindTranslate();
         };
       }, "dsh-jev-decide-locale");
     }

@@ -146,8 +146,18 @@ describe("宿主 locale 接线", () => {
     const { effects, host } = installHost();
     // 订阅 disposer + 样式 disposer。
     expect(effects).toHaveLength(2);
+    host.hostLang = "en";
+    host.fire();
+    expect(t("save")).toBe("Save");
+    // 本地回落语言对齐英文（afterEach 置 zh 会污染 current，此处显式复位；
+    // node 无 navigator 时 resolveLang 为 en）。
+    setLang("en");
     for (const dispose of effects) dispose();
     expect(host.unsubscribed).toBe(true);
+    expect(t("save")).toBe("Save");
+    setLang("zh");
+    // 若未 unbind，此处仍走宿主英文实现而变红——真区分断言。
+    expect(t("save")).toBe("保存");
   });
   it("无 locale 服务回落本地字典（旧运行时照常渲染）", () => {
     const effects: Array<() => void> = [];
