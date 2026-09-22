@@ -1037,6 +1037,83 @@
  * 颜色一律 --dsw-alias-* + 浅色回退（暗色由宿主变量保证）；reduced-motion 降级。
  * 作用域 dou-report*（插件前缀隔离，不影响宿主与其他插件）。
  */
+/* R5 设置窗格统一外层：usage/trend/providers/float 四页共用（padding 12px 桌面 / 10px 窄屏），
+   禁止各页各写一套；原 settings/shared.ts sectionStyle 仅留兼容，新代码一律挂此类。 */
+.dou-pane {
+  margin-bottom: 16px;
+  padding: 12px;
+  border: 1px solid var(--dsw-alias-border-l1, #e2e5ea);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-base, #ffffff);
+  font-size: 12px;
+  line-height: 1.7;
+}
+/* B2-1 用量页：donut 行 + 热力图（色阶 color-mix 相对混合，明暗自适应不分支主题） */
+.dou-donutRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.dou-donutCard {
+  flex: 1 1 200px;
+  min-width: 200px;
+}
+.dou-heatGrid {
+  display: grid;
+  grid-template-rows: repeat(7, 1fr);
+  grid-auto-flow: column;
+  gap: 3px;
+  margin: 6px 0;
+}
+.dou-heatCell {
+  aspect-ratio: 1;
+  border-radius: 2px;
+  background: var(--dsw-alias-bg-layer-1, #f1f3f7);
+}
+.dou-heatL1 {
+  background: color-mix(in srgb, #0e6e42 28%, transparent);
+}
+.dou-heatL2 {
+  background: color-mix(in srgb, #0e6e42 48%, transparent);
+}
+.dou-heatL3 {
+  background: color-mix(in srgb, #0e6e42 68%, transparent);
+}
+.dou-heatL4 {
+  background: color-mix(in srgb, #0e6e42 88%, transparent);
+}
+.dou-heatSeg {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+/* 用量页指标小卡：与趋势页 SummaryCard 同语言（描边 + 小灰 label + 粗值） */
+.dou-miniCard {
+  flex: 1 1 120px;
+  min-width: 120px;
+  padding: 8px 10px;
+  border: 1px solid var(--dsw-alias-border-l2, #e8eaf0);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-base, #fdfdfd);
+}
+.dou-miniCardLabel {
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary, #9aa0ab);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dou-miniCardValue {
+  font-size: 16px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.dou-miniCardHint {
+  font-size: 10px;
+  color: var(--dsw-alias-label-tertiary, #9aa0ab);
+}
 .dou-reportGlass {
   background: var(--dsw-alias-bg-base, rgba(255, 255, 255, 0.8));
   backdrop-filter: blur(12px);
@@ -1066,7 +1143,8 @@
 .dou-reportSections {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  /* R5 行组间距：任务书 10px 口径（第一批报告页 8px 实测，已统一对齐） */
+  gap: 10px;
 }
 .dou-reportSection {
   overflow: hidden;
@@ -1247,6 +1325,9 @@
 @media (max-width: 480px) {
   /* R5 窄屏大框内边距与外层对齐 */
   .dou-report {
+    padding: 10px;
+  }
+  .dou-pane {
     padding: 10px;
   }
   .dou-reportSectionSummary {

@@ -2,7 +2,7 @@
  * dsh-provider-usage — 设置页根组件（多 tab 化，样式基准 = 通知中心）。
  *
  * 形态：共用头（dou-shellTop）+ 整页一张大卡（dou-set-card）+ 顶部六分段器 tab
- * （使用趋势/用量报告/历史报告/用量可视化/适配器/悬浮窗），
+ * （用量可视化/使用趋势/用量报告/历史报告/适配器/悬浮窗，今日概览置首），
  * 与通知中心同语言（普通 button，不引入 role=tablist）。
  * 六个区块 keep-mounted，行为不变（历史页见 history.tsx）。
  *
@@ -37,21 +37,21 @@ import { ProviderListSection } from "./providers.tsx";
 import type { AdaptersMeta, InspectAdapter, InspectResult, AddResult } from "./providers.tsx";
 import { jsonGet } from "./shared.ts";
 
-/** 设置页 tab 键（与窗格一一对应；顺序即渲染顺序；history 紧随 report，还原生成→查看动线）。 */
-export type SettingsTabKey = "trend" | "report" | "history" | "usage" | "providers" | "float";
+/** 设置页 tab 键（与窗格一一对应；顺序即渲染顺序；usage 今日概览置首，history 紧随 report，还原生成→查看动线）。 */
+export type SettingsTabKey = "usage" | "trend" | "report" | "history" | "providers" | "float";
 
 const TABS: Array<{ key: SettingsTabKey; labelKey: string }> = [
+  { key: "usage", labelKey: "pageTabUsage" },
   { key: "trend", labelKey: "pageTabTrend" },
   { key: "report", labelKey: "pageTabReport" },
   { key: "history", labelKey: "pageTabHistory" },
-  { key: "usage", labelKey: "pageTabUsage" },
   { key: "providers", labelKey: "pageTabProviders" },
   { key: "float", labelKey: "pageTabFloat" },
 ];
 
 /** 设置页根组件：模型配置提供商列表驱动手风琴；用量可视化对启用中的 provider 拉 /stats。 */
 export function SettingsPage(): React.ReactElement {
-  const [tab, setTab] = React.useState<SettingsTabKey>("trend");
+  const [tab, setTab] = React.useState<SettingsTabKey>("usage");
   // R1 窄屏：激活 Tab 滚动可见（桌面端无视觉变化；flex:none + overflow-x:auto 见 style.css）。
   const tabsRef = React.useRef<HTMLDivElement | null>(null);
   React.useEffect(() => {
@@ -260,7 +260,8 @@ export function SettingsPage(): React.ReactElement {
           ))}
         </div>
         <div className="dou-set-body">
-          {pane("trend", <TrendSection />)}
+          {pane("usage", <UsageSection statsByProvider={statsByProvider} />)}
+          {pane("trend", <TrendSection onGotoHeat={() => setTab("usage")} />)}
           {pane("report", <ReportSection onGeneratedRow={onGeneratedRow} />)}
           {pane(
             "history",
@@ -270,7 +271,6 @@ export function SettingsPage(): React.ReactElement {
               active={tab === "history"}
             />,
           )}
-          {pane("usage", <UsageSection statsByProvider={statsByProvider} />)}
           {pane(
             "providers",
             <ProviderListSection

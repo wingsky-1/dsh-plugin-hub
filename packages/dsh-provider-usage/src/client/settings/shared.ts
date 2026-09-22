@@ -6,7 +6,9 @@
 import * as React from "react";
 import { fetchTimeout } from "../core.ts";
 
-/** 设置页分区卡样式（浅色回退 + 主题变量）。 */
+/** 设置页分区卡样式（浅色回退 + 主题变量）。
+ * @deprecated 四窗格已统一挂 style.css `.dou-pane`（R5：12px/窄屏 10px 响应式，内联 style 做不到媒体查询）；
+ * 仅留兼容既有引用，新代码一律用 `.dou-pane`。 */
 export const sectionStyle = {
   marginBottom: 16,
   padding: "10px 12px",

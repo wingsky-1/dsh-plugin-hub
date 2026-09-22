@@ -48,6 +48,13 @@ const {
   trendRequestParams,
   shouldShowDirSelect,
   shouldShowByModel,
+  donutSvg,
+  sumPartsByProvider,
+  activeDayCount,
+  heatLevel,
+  heatCells,
+  composeShares,
+  isDirMode,
 } = math;
 
 // #633 分片 b2：i18n 未装配时 t() 回落 key 本体（shared/client/i18n.js 约定），
@@ -633,5 +640,156 @@ describe("#633 P0 shouldShowDirSelect/shouldShowByModel：两维控件互斥（�
 
   it("防御：异常组合同样隐藏（状态联动保证不可达）", () => {
     expect(shouldShowByModel("p1", "proj")).toBe(false);
+  });
+});
+
+// #940 B2-1：用量页纯函数（donut/热力/分担；宿主名不受信，转义一并覆盖）
+describe("donutSvg：分段环与空态", () => {
+  it("空扇区只画 track", () => {
+    const svg = donutSvg([], 120);
+    expect(svg.includes("<title>")).toBe(false);
+    expect(svg.includes('viewBox="0 0 120 120"')).toBe(true);
+  });
+  it("全零扇区只画 track", () => {
+    const svg = donutSvg([{ label: "a", value: 0, color: "#fff" }], 120);
+    expect(svg.includes("<title>")).toBe(false);
+  });
+  it("两扇占比 3:1 进 title", () => {
+    const svg = donutSvg([
+      { label: "a", value: 3, color: "#111" },
+      { label: "b", value: 1, color: "#222" },
+    ]);
+    expect(svg.includes("75.0%")).toBe(true);
+    expect(svg.includes("25.0%")).toBe(true);
+  });
+  it("label 进 title 前转义（XSS 面）", () => {
+    const svg = donutSvg([{ label: "<img src=x onerror=alert(1)>", value: 1, color: "#111" }]);
+    expect(svg.includes("<img")).toBe(false);
+    expect(svg.includes("&lt;img")).toBe(true);
+  });
+  it("负值按零处理（不画弧）", () => {
+    const svg = donutSvg([{ label: "a", value: -5, color: "#111" }]);
+    expect(svg.includes("<title>")).toBe(false);
+  });
+});
+
+describe("sumPartsByProvider：窗口分担", () => {
+  it("跨桶累加并降序", () => {
+    const sums = sumPartsByProvider([
+      {
+        key: "2026-09-20",
+        total: 10,
+        parts: [
+          { provider: "b", value: 4 },
+          { provider: "a", value: 6 },
+        ],
+      },
+      {
+        key: "2026-09-21",
+        total: 5,
+        parts: [
+          { provider: "b", value: 5 },
+          { provider: "a", value: null },
+        ],
+      },
+    ]);
+    expect(sums).toEqual([
+      { provider: "b", value: 9 },
+      { provider: "a", value: 6 },
+    ]);
+  });
+  it("null/非正/空名跳过", () => {
+    const sums = sumPartsByProvider([
+      {
+        key: "d",
+        total: null,
+        parts: [
+          { provider: "", value: 9 },
+          { provider: "a", value: 0 },
+          { provider: "b", value: -3 },
+        ],
+      },
+    ]);
+    expect(sums).toEqual([]);
+  });
+});
+
+describe("activeDayCount：有数天", () => {
+  it("null 不计", () => {
+    expect(
+      activeDayCount([
+        { key: "a", total: 1, parts: [] },
+        { key: "b", total: null, parts: [] },
+      ]),
+    ).toBe(1);
+  });
+});
+
+describe("heatLevel：相对五档", () => {
+  it("null 与非正 max 全 0", () => {
+    expect(heatLevel(null, 100)).toBe(0);
+    expect(heatLevel(50, 0)).toBe(0);
+    expect(heatLevel(0, 100)).toBe(0);
+  });
+  it("边界 0.24/0.25/0.5/0.75", () => {
+    expect(heatLevel(24, 100)).toBe(1);
+    expect(heatLevel(25, 100)).toBe(2);
+    expect(heatLevel(50, 100)).toBe(3);
+    expect(heatLevel(75, 100)).toBe(4);
+    expect(heatLevel(100, 100)).toBe(4);
+  });
+});
+
+describe("heatCells：尾部截取与归一", () => {
+  it("取尾 N 天并按窗口 max 定档", () => {
+    const cells = heatCells(
+      [
+        { key: "d1", total: 10, parts: [] },
+        { key: "d2", total: null, parts: [] },
+        { key: "d3", total: 40, parts: [] },
+      ],
+      2,
+    );
+    type Cell = { key: string; total: number | null; level: number };
+    expect(cells.map((c: Cell) => c.key)).toEqual(["d2", "d3"]);
+    expect(cells.map((c: Cell) => c.level)).toEqual([0, 4]);
+  });
+  it("不足 N 全取", () => {
+    expect(heatCells([{ key: "d1", total: 5, parts: [] }], 180).length).toBe(1);
+  });
+});
+describe("composeShares：Top3 分担行", () => {
+  it("空窗口返回空串", () => {
+    expect(composeShares([])).toBe("");
+    expect(composeShares([{ key: "d", total: null, parts: [] }])).toBe("");
+  });
+  it("Top3 占比行", () => {
+    const line = composeShares([
+      {
+        key: "d",
+        total: 100,
+        parts: [
+          { provider: "a", value: 50 },
+          { provider: "b", value: 30 },
+          { provider: "c", value: 20 },
+        ],
+      },
+    ]);
+    expect(line).toBe("a 50% · b 30% · c 20%");
+  });
+});
+describe("isDirMode：目录维度生效判定", () => {
+  it("空数据恒假", () => {
+    expect(isDirMode(null, "")).toBe(false);
+    expect(isDirMode(null, "proj")).toBe(false);
+  });
+  it("三源任一真即真", () => {
+    expect(isDirMode({ byDir: true }, "")).toBe(true);
+    expect(isDirMode({}, "proj")).toBe(true);
+    expect(isDirMode({ dirs: [{ dir: "a" }] }, "")).toBe(true);
+  });
+  it("provider 面全空即假", () => {
+    expect(isDirMode({}, "")).toBe(false);
+    expect(isDirMode({ dirs: [] }, "")).toBe(false);
   });
 });

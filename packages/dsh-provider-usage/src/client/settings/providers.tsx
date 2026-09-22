@@ -9,7 +9,7 @@ import { fetchTimeout } from "../core.ts";
 import { providerBadgeText } from "../../shared/client-logic.ts";
 import type { ProviderListItem } from "../../shared/client-logic.ts";
 import { t } from "../../../../../shared/client/i18n.js";
-import { copyText, sectionStyle, titleStyle } from "./shared.ts";
+import { copyText, titleStyle } from "./shared.ts";
 
 /** 候选条目（adapters.json host[]）。 */
 export interface AdapterInfo {
@@ -215,6 +215,7 @@ function ProviderItem({
           {t("filePath")}
           <span className="dou-addOnly">{t("filePathOnly")}</span>
         </span>
+        <span className="dou-hint">{t("pathKeyHint")}</span>
       </div>
       <input
         className="dou-input"
@@ -378,8 +379,24 @@ export function ProviderListSection({
   );
 
   return (
-    <div style={sectionStyle}>
-      <h4 style={titleStyle}>{t("provTitle")}</h4>
+    <div className="dou-pane">
+      <div className="dou-reportHead">
+        <div>
+          <h4 style={titleStyle}>{t("provTitle")}</h4>
+          <div className="dou-hint">{t("provSub")}</div>
+        </div>
+        <span className="dou-reportHeadSpacer" />
+        <button
+          type="button"
+          className="dou-btn"
+          disabled={busy}
+          onClick={() => {
+            void onCopyGlobalGuide();
+          }}
+        >
+          {copiedGlobal ? t("copied") : t("copyGuide")}
+        </button>
+      </div>
       <div className="dou-hint">{t("provListHint", { n: main.length })}</div>
       {fileErrors.length > 0
         ? fileErrors.map(([k, e]) => (

@@ -385,3 +385,103 @@ export function stackedAreasSvg(opts: {
   parts.push(...axisLabelParts(bars, gran));
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${SVG_W} ${SVG_H}" role="img" aria-label="${escHtml(t("trendTitle"))}" style="width:100%;height:auto;display:block">${parts.join("")}</svg>`;
 }
+
+// ---------------------------------------------------------------- B2-1 用量页聚合（纯函数：donut/热力/分担）
+
+/** 环形扇区输入（value 非负；label 进 <title> 前 escHtml，宿主 provider 名不受信）。 */
+export interface DonutInput {
+  label: string;
+  value: number;
+  color: string;
+}
+
+/** 环形 SVG（stroke-dasharray 分段圆，-90° 起点；total<=0 只画 track；size=外径 px）。 */
+export function donutSvg(segs: DonutInput[], size = 120): string {
+  const r = 44;
+  const c = 2 * Math.PI * r;
+  const cx = size / 2;
+  const total = segs.reduce((a, s) => a + (s.value > 0 ? s.value : 0), 0);
+  const track = `<circle cx="${cx}" cy="${cx}" r="${r}" fill="none" stroke="var(--dsw-alias-border-l2,#e8eaf0)" stroke-width="16"/>`;
+  if (total <= 0) {
+    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size} ${size}" role="img" style="width:100%;max-width:${size}px;height:auto;display:block">${track}</svg>`;
+  }
+  let acc = 0;
+  const arcs = segs.map((s) => {
+    const v = s.value > 0 ? s.value : 0;
+    const frac = v / total;
+    const dash = `${(frac * c).toFixed(2)} ${(c - frac * c).toFixed(2)}`;
+    const off = (-acc * c).toFixed(2);
+    acc += frac;
+    const pct = `${(frac * 100).toFixed(1)}%`;
+    return `<circle cx="${cx}" cy="${cx}" r="${r}" fill="none" stroke="${s.color}" stroke-width="16" stroke-dasharray="${dash}" stroke-dashoffset="${off}" transform="rotate(-90 ${cx} ${cx})"><title>${escHtml(s.label)} ${escHtml(pct)}</title></circle>`;
+  });
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size} ${size}" role="img" style="width:100%;max-width:${size}px;height:auto;display:block">${track}${arcs.join("")}</svg>`;
+}
+/** 日桶最小形状（本模块只读 key/total/parts，不过问宿主其余字段）。 */
+export interface DayBucket {
+  key: string;
+  total: number | null;
+  parts: Array<{ provider: string; value: number | null }>;
+}
+
+/** 窗口内按 provider 累加（null/非正跳过；降序，top 即首位）。 */
+export function sumPartsByProvider(
+  series: DayBucket[],
+): Array<{ provider: string; value: number }> {
+  const acc = new Map<string, number>();
+  for (const b of series) {
+    for (const p of b.parts) {
+      if (typeof p.provider !== "string" || p.provider.length === 0) continue;
+      if (typeof p.value !== "number" || !(p.value > 0)) continue;
+      acc.set(p.provider, (acc.get(p.provider) ?? 0) + p.value);
+    }
+  }
+  return [...acc.entries()]
+    .map(([provider, value]) => ({ provider, value }))
+    .sort((a, b) => b.value - a.value);
+}
+
+/** 有数据天数（total 非 null 计 1；null 三态不区分，沿 M2.1 约定）。 */
+export function activeDayCount(series: DayBucket[]): number {
+  let n = 0;
+  for (const b of series) if (b.total !== null) n += 1;
+  return n;
+}
+
+/** 热力 5 档（0=空 … 4=满；相对窗口 max 分档；max<=0 或 null 全 0）。 */
+export function heatLevel(value: number | null, max: number): number {
+  if (value === null || !(value > 0) || !(max > 0)) return 0;
+  const r = value / max;
+  if (r >= 0.75) return 4;
+  if (r >= 0.5) return 3;
+  if (r >= 0.25) return 2;
+  return 1;
+}
+
+/** 取尾部 N 天 cells（不足 N 全取；level 按窗口 max 归一）。 */
+export function heatCells(
+  series: DayBucket[],
+  days: number,
+): Array<{ key: string; total: number | null; level: number }> {
+  const tail = series.slice(Math.max(0, series.length - days));
+  let max = 0;
+  for (const b of tail) if (typeof b.total === "number" && b.total > max) max = b.total;
+  return tail.map((b) => ({ key: b.key, total: b.total, level: heatLevel(b.total, max) }));
+}
+/** provider 面窗口分担 Top3 行（空窗口返回 ""，由调用方条件渲染）。 */
+export function composeShares(series: DayBucket[]): string {
+  const sums = sumPartsByProvider(series);
+  const total = sums.reduce((a, s) => a + s.value, 0);
+  if (total <= 0) return "";
+  return sums
+    .slice(0, 3)
+    .map((s) => `${s.provider} ${((s.value / total) * 100).toFixed(0)}%`)
+    .join(" · ");
+}
+/** 目录维度生效判定（请求三态互斥后 provider 面不再携带 byDir/dirs）。 */
+export function isDirMode(
+  data: { byDir?: boolean; dirs?: Array<{ dir?: string | null }> } | null,
+  dirFilter: string,
+): boolean {
+  return data !== null && (data.byDir === true || dirFilter !== "" || (data.dirs?.length ?? 0) > 0);
+}

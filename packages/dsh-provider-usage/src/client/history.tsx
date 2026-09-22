@@ -273,9 +273,9 @@ export function HistorySection(props: {
     <section className="dou-report dou-reportGlass" style={{ marginBottom: 16 }}>
       <div className="dou-reportHead">
         <h2 style={{ fontSize: 13, fontWeight: 600, margin: 0 }}>{t("reportSectionHistory")}</h2>
-        {list !== null ? (
+        {(filtered ?? list) !== null ? (
           <span className="dou-reportPromptBudget">
-            {t("reportSummaryNReports", { n: list.length })}
+            {t("reportSummaryNReports", { n: (filtered ?? list ?? []).length })}
           </span>
         ) : null}
       </div>
@@ -312,8 +312,10 @@ export function HistorySection(props: {
           </button>
         </div>
       ) : null}
-      {groups === null ? null : list !== null && list.length === 0 ? (
-        <div className="dou-reportEmpty">{t("reportEmpty")}</div>
+      {groups === null ? null : filtered !== null && filtered.length === 0 ? (
+        <div className="dou-reportEmpty">
+          {list !== null && list.length > 0 ? t("reportFilterEmpty") : t("reportEmpty")}
+        </div>
       ) : (
         <div className="dou-reportSections">
           {HISTORY_PERIODS.map((period) => {
@@ -431,7 +433,9 @@ export function HistorySection(props: {
                                   {m.ok ? t("reportOk") : t("reportFailed")}
                                 </span>
                                 <span className="dou-reportItemTime">
-                                  {new Date(m.generatedAt).toLocaleString()}
+                                  {new Date(m.generatedAt).toLocaleString("zh-CN", {
+                                    hour12: false,
+                                  })}
                                 </span>
                               </button>
                               {detailNode !== null ? (

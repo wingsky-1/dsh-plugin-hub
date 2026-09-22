@@ -1833,7 +1833,7 @@ describe("客户端契约", () => {
     expect(clientContractObs.toggleFloatOrderOk).toBeTruthy();
   });
 
-  it("设置页 tab 键集合精确一致（六键，history 紧随 report）", () => {
+  it("设置页 tab 键集合精确一致（六键，usage 今日置首，history 紧随 report）", () => {
     // 锚：settings/index.tsx TABS 字面量与 SettingsTabKey，第二事实源（增删改键必须红）。
     // 行级精确：纯 type 漂移（加成员/改名/改顺序）亦红——子串 includes 会漏检后缀追加。
     const typeLine = clientContractObs.settingsIndex
@@ -1841,13 +1841,13 @@ describe("客户端契约", () => {
       .map((l: string) => l.trim())
       .find((l: string) => l.startsWith("export type SettingsTabKey"));
     expect(typeLine).toBe(
-      'export type SettingsTabKey = "trend" | "report" | "history" | "usage" | "providers" | "float";',
+      'export type SettingsTabKey = "usage" | "trend" | "report" | "history" | "providers" | "float";',
     );
     const tabsStart = clientContractObs.settingsIndex.indexOf("const TABS");
     const tabsEnd = clientContractObs.settingsIndex.indexOf("];", tabsStart);
     const tabsBlock = clientContractObs.settingsIndex.slice(tabsStart, tabsEnd + 2);
     const keys = [...tabsBlock.matchAll(/key:\s*"([^"]+)"/g)].map((m) => m[1]);
-    expect(keys).toEqual(["trend", "report", "history", "usage", "providers", "float"]);
+    expect(keys).toEqual(["usage", "trend", "report", "history", "providers", "float"]);
   });
 
   it("设置页窗格 keep-mounted（hidden 属性显隐，不卸载组件实例）（TSX 形态）", () => {
@@ -5096,6 +5096,21 @@ describe("#633 分片 b2 D2：客户端源码契约断言", () => {
       "utf8",
     );
     clientContractObs.localesSource = readFileSync(join(pkgDir, "src/client/locales.ts"), "utf8");
+    clientContractObs.providersSource = readFileSync(
+      join(pkgDir, "src/client/settings/providers.tsx"),
+      "utf8",
+    );
+    clientContractObs.uiSource = readFileSync(join(pkgDir, "src/client/settings/ui.tsx"), "utf8");
+    clientContractObs.usageSource = readFileSync(
+      join(pkgDir, "src/client/settings/usage.tsx"),
+      "utf8",
+    );
+    clientContractObs.settingsIndex = readFileSync(
+      join(pkgDir, "src/client/settings/index.tsx"),
+      "utf8",
+    );
+    clientContractObs.historySource = readFileSync(join(pkgDir, "src/client/history.tsx"), "utf8");
+    clientContractObs.clientStyle = readFileSync(join(pkgDir, "src/client/style.css"), "utf8");
     clientContractObs.listDirsSource = readFileSync(
       join(pkgDir, "src/server/execute/list-dirs.ts"),
       "utf8",
@@ -5192,6 +5207,84 @@ describe("#633 分片 b2 D2：客户端源码契约断言", () => {
 
   it("locales 中英对称新增目录面 Top 标签", () => {
     expect(clientContractObs.localesSource.includes('trendCardTopDir: "Top 目录"')).toBeTruthy();
+  });
+
+  // #940 B2-2：适配器/悬浮窗两页呈现契约（副标题 + 顶层引导 + 路径密钥 hint + 动效注脚 + 材质预览 + R5）
+  it("B2-2 适配器页副标题与顶层引导按钮存在", () => {
+    expect(clientContractObs.providersSource.includes('t("provSub")')).toBeTruthy();
+    expect(clientContractObs.providersSource.includes("void onCopyGlobalGuide()")).toBeTruthy();
+  });
+
+  it("B2-2 添加表单路径密钥 hint 存在", () => {
+    expect(clientContractObs.providersSource.includes('t("pathKeyHint")')).toBeTruthy();
+    expect(clientContractObs.localesSource.includes('pathKeyHint: "仅接受本地 .mjs')).toBeTruthy();
+    expect(clientContractObs.localesSource.includes('pathKeyHint: "Local .mjs only')).toBeTruthy();
+  });
+
+  it("B2-2 悬浮窗页动效注脚与材质预览存在", () => {
+    expect(clientContractObs.uiSource.includes('t("flMotion")')).toBeTruthy();
+    expect(clientContractObs.uiSource.includes('t("floatPreview")')).toBeTruthy();
+    expect(clientContractObs.uiSource.includes("dou-reportGlass")).toBeTruthy();
+    // 文案禁代码 token（cubic-bezier/scale 不得进用户可见串；D3）
+    expect(clientContractObs.localesSource.includes('"弹出/收回带缩放淡入')).toBeTruthy();
+    expect(clientContractObs.localesSource.includes('"Pop/dismiss with scale-fade')).toBeTruthy();
+    expect(!clientContractObs.localesSource.includes("cubic-bezier")).toBeTruthy();
+  });
+
+  it("历史筛选空态与计数跟随筛选（D4）", () => {
+    expect(clientContractObs.historySource.includes('t("reportFilterEmpty")')).toBeTruthy();
+    expect(clientContractObs.historySource.includes("(filtered ?? list")).toBeTruthy();
+    expect(clientContractObs.localesSource.includes("reportFilterEmpty:")).toBeTruthy();
+  });
+
+  it("B2-2 R5 行组 gap 10px 口径", () => {
+    expect(clientContractObs.clientStyle.includes("gap: 10px;")).toBeTruthy();
+  });
+
+  it("B2-2 四窗格挂共用 dou-pane（禁止各写一套 padding）", () => {
+    for (const src of [
+      clientContractObs.providersSource,
+      clientContractObs.uiSource,
+      clientContractObs.usageSource,
+    ]) {
+      expect(src.includes('className="dou-pane"')).toBeTruthy();
+      expect(!src.includes("style={sectionStyle}")).toBeTruthy();
+    }
+    expect(clientContractObs.trendSource.includes("dou-pane")).toBeTruthy();
+    expect(clientContractObs.clientStyle.includes(".dou-pane {")).toBeTruthy();
+  });
+
+  // #940 B2-1：用量/趋势呈现契约（复用 /trend 日面，零新增宿主路由）
+  it("B2-1 用量概览拉 /trend 日面", () => {
+    expect(clientContractObs.usageSource.includes("fetchTrendDay")).toBeTruthy();
+    expect(clientContractObs.usageSource.includes("granularity=day")).toBeTruthy();
+  });
+
+  it("B2-1 双环与热力渲染存在", () => {
+    expect(clientContractObs.usageSource.includes("donutSvg")).toBeTruthy();
+    expect(clientContractObs.usageSource.includes("dou-heatGrid")).toBeTruthy();
+    expect(clientContractObs.clientStyle.includes(".dou-heatGrid")).toBeTruthy();
+    expect(clientContractObs.clientStyle.includes(".dou-heatL4")).toBeTruthy();
+  });
+
+  it("B2-1 趋势侧跳转与双卡存在", () => {
+    expect(clientContractObs.trendSource.includes("onGotoHeat")).toBeTruthy();
+    expect(clientContractObs.trendSource.includes('t("gotoHeat")')).toBeTruthy();
+    expect(clientContractObs.trendSource.includes('t("trendCaliberNote")')).toBeTruthy();
+    expect(clientContractObs.trendSource.includes("composeShares")).toBeTruthy();
+  });
+
+  it("B2-1 locales 中英关键串", () => {
+    expect(clientContractObs.localesSource.includes("usageHeat:")).toBeTruthy();
+    expect(clientContractObs.localesSource.includes("gotoHeat:")).toBeTruthy();
+    expect(clientContractObs.localesSource.includes("Usage heatmap")).toBeTruthy();
+    expect(clientContractObs.localesSource.includes("View daily heatmap")).toBeTruthy();
+  });
+
+  it("tab 默认落用量页（顺序由六键精确一致用例锁定）", () => {
+    expect(
+      clientContractObs.settingsIndex.includes('useState<SettingsTabKey>("usage")'),
+    ).toBeTruthy();
   });
 
   it("B4 空候选时「全部目录」checkbox 禁用（空=全部语义不变）", () => {
