@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * dsh-lan-proxy — 两端路由契约（issue #911，客户端层归属）。
  *

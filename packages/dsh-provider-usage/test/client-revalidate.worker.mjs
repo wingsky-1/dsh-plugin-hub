@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * dsh-provider-usage — 行为级 worker：refreshStats 取数前 provider 复检（issue #71 方案 A1）。
  *

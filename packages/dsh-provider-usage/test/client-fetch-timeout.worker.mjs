@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * dsh-provider-usage — 行为级 worker：客户端 fetch 超时兜底（issue #268 P1）。
  *

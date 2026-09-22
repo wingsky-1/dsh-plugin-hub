@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * dsh-lan-proxy — issue #911 证书下发与存储命名空间单测。
  *
@@ -10,7 +9,11 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
+import type { IncomingMessage, ServerResponse } from "node:http";
+import type { Context } from "@deepseek-ai/cordis";
+import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
 import { apply, pluginDir } from "../../src/server/apply.ts";
+import type { ConfigRouteDeps } from "../../src/server/config/interface.ts";
 import {
   ROUTES,
   applyConfigPatch,
@@ -28,8 +31,8 @@ import {
 import { MIGRATED_BAK_NAME } from "../../src/server/migrate/impl/file/index.ts";
 import { resolvePluginDir } from "../../src/server/migrate/impl/layout/index.ts";
 
-let prevHome;
-let home;
+let prevHome: string | undefined;
+let home: string;
 beforeEach(() => {
   prevHome = process.env.DSH_HOME;
   home = mkdtempSync(join(tmpdir(), "dsh-911-"));
@@ -46,7 +49,17 @@ afterEach(() => {
  * loader（与 apply 内接线同构），fake 面只剩围栏与格式——三态/读取/解析的
  * 行为强度与直连 tls 单测等同，不重复断言 loader 内部分支。
  */
-function callCaCert(source, options = {}) {
+/** 下发路由调用选项（围栏三元组 + 请求目标，缺省为回环 GET）。 */
+interface CaCertCallOptions {
+  method?: string;
+  remote?: string;
+  host?: string;
+  url?: string;
+}
+function callCaCert(
+  source: Parameters<typeof loadDownloadableCertificate>[0],
+  options: CaCertCallOptions = {},
+) {
   const {
     method = "GET",
     remote = "127.0.0.1",
@@ -54,21 +67,27 @@ function callCaCert(source, options = {}) {
     url = ROUTES.caCert,
   } = options;
   const route = buildCaCertRoutes({
-    loadCertificate: (format) => loadDownloadableCertificate(source, format),
+    loadCertificate: (format: "der" | "pem") => loadDownloadableCertificate(source, format),
   })[0];
   let status = 0;
-  let headers = {};
-  const chunks = [];
+  let headers: Record<string, string> = {};
+  const chunks: Buffer[] = [];
   const res = {
-    writeHead(c, h) {
+    writeHead(c: number, h: Record<string, string>) {
       status = c;
       headers = h;
     },
-    end(c) {
+    end(c?: unknown) {
       if (c !== undefined) chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(String(c)));
     },
-  };
-  route.handler({ method, socket: { remoteAddress: remote }, headers: { host }, url }, res);
+  } as unknown as ServerResponse;
+  const req = {
+    method,
+    socket: { remoteAddress: remote },
+    headers: { host },
+    url,
+  } as unknown as IncomingMessage;
+  route.handler(req, res);
   return { path: route.path, status, headers, body: Buffer.concat(chunks) };
 }
 
@@ -278,24 +297,27 @@ describe("CA 键校验与清除", () => {
     });
   });
   it("显式空串经 replace 独立清除", async () => {
-    let replaced = null;
+    let replaced: Record<string, unknown> | null = null;
     const deps = {
       resolve: () => ({}),
       readUser: () => ({ user: { tlsCaCertFile: "/old/ca.pem", port: 3000 }, revision: 7 }),
       writable: () => true,
       update: async () => {},
-      replace: async (s) => {
+      replace: async (s: Record<string, unknown>) => {
         replaced = s;
       },
       compress: () => ({}),
     };
-    const r = await applyConfigPatch(deps, { patch: { tlsCaCertFile: "" }, expectedRevision: 7 });
+    const r = await applyConfigPatch(deps as unknown as ConfigRouteDeps, {
+      patch: { tlsCaCertFile: "" },
+      expectedRevision: 7,
+    });
     expect(r.ok).toBe(true);
-    expect("tlsCaCertFile" in replaced).toBe(false);
-    expect(replaced.port).toBe(3000);
+    expect("tlsCaCertFile" in (replaced as unknown as Record<string, unknown>)).toBe(false);
+    expect((replaced as unknown as Record<string, unknown>).port).toBe(3000);
   });
   it("单清 CA 不连带删叶子（P1 回归）", async () => {
-    let replaced = null;
+    let replaced: Record<string, unknown> | null = null;
     const deps = {
       resolve: () => ({}),
       readUser: () => ({
@@ -309,28 +331,31 @@ describe("CA 键校验与清除", () => {
       }),
       writable: () => true,
       update: async () => {},
-      replace: async (s) => {
+      replace: async (s: Record<string, unknown>) => {
         replaced = s;
       },
       compress: () => ({}),
     };
-    const r = await applyConfigPatch(deps, { patch: { tlsCaCertFile: "" }, expectedRevision: 7 });
+    const r = await applyConfigPatch(deps as unknown as ConfigRouteDeps, {
+      patch: { tlsCaCertFile: "" },
+      expectedRevision: 7,
+    });
     expect(r.ok).toBe(true);
-    expect("tlsCaCertFile" in replaced).toBe(false);
-    expect(replaced.tlsCertFile).toBe("/c.pem");
-    expect(replaced.tlsKeyFile).toBe("/k.pem");
-    expect(replaced.port).toBe(3000);
+    expect("tlsCaCertFile" in (replaced as unknown as Record<string, unknown>)).toBe(false);
+    expect((replaced as unknown as Record<string, unknown>).tlsCertFile).toBe("/c.pem");
+    expect((replaced as unknown as Record<string, unknown>).tlsKeyFile).toBe("/k.pem");
+    expect((replaced as unknown as Record<string, unknown>).port).toBe(3000);
   });
 });
 
 describe("apply 接线", () => {
-  function runApply(entry) {
-    const routes = [];
+  function runApply(entry: Record<string, unknown>) {
+    const routes: WebRoute[] = [];
     const ctx = {
       logger: { info: () => {}, warn: () => {}, error: () => {} },
       webServer: {
         port: 3801,
-        register(r) {
+        register(r: WebRoute) {
           routes.push(r);
           return () => {};
         },
@@ -342,31 +367,32 @@ describe("apply 接线", () => {
         },
       },
       inject() {},
-      effect(fn) {
+      effect(fn: () => unknown) {
         return fn();
       },
     };
-    apply(ctx, { enabled: false, httpsEnabled: false, ...entry });
+    // fake ctx 收口到宿主 Context 类型（单点适配；行为不断言 ctx 形态）。
+    apply(ctx as unknown as Context, { enabled: false, httpsEnabled: false, ...entry });
     return routes;
   }
-  function callHealth(routes) {
-    const route = routes.find((r) => r.path === ROUTES.health);
+  function callHealth(routes: WebRoute[]) {
+    const route = routes.find((r: WebRoute) => r.path === ROUTES.health);
+    if (route === undefined) throw new Error("health route missing");
     let text = "";
-    route.handler(
-      {
-        method: "GET",
-        socket: { remoteAddress: "127.0.0.1" },
-        headers: { host: "127.0.0.1:3801" },
-        url: ROUTES.health,
+    const req = {
+      method: "GET",
+      socket: { remoteAddress: "127.0.0.1" },
+      headers: { host: "127.0.0.1:3801" },
+      url: ROUTES.health,
+    } as unknown as IncomingMessage;
+    const res = {
+      writeHead() {},
+      end(c?: unknown) {
+        text = String(c);
       },
-      {
-        writeHead() {},
-        end(c) {
-          text = String(c);
-        },
-      },
-    );
-    return JSON.parse(text);
+    } as unknown as ServerResponse;
+    route.handler(req, res);
+    return JSON.parse(text) as Record<string, unknown>;
   }
   it("注册下发路由且命名空间目录建出", () => {
     const routes = runApply({});

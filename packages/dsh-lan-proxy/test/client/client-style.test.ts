@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * dsh-lan-proxy — 客户端样式注入行为哨兵（issue #477 验收 3/8）。
  *
@@ -16,27 +15,38 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
 
+interface StyleTestNode {
+  id: string;
+  textContent: string;
+  dataset: Record<string, string>;
+  remove(): void;
+}
+/** vm 沙箱 factory 形态：require 按 spec 解析；模块 apply 接收未知上下文。 */
+type StyleTestFactory = (require: (spec: string) => unknown) => {
+  apply: (ctx: unknown) => unknown;
+};
+
 describe("客户端样式注入行为哨兵（issue #477 验收 3/8）", () => {
-  let injectIdInProduct;
-  let factoryRegistered;
-  let applyIsFunction;
-  let nodesAfterFirstApply;
-  let datasetVersionAfterFirstApply;
-  let nodesAfterSecondApply;
-  let createdAfterSecondApply;
-  let nodesAfterDispose;
-  let nodesAfterReapply;
-  let createdAfterReapply;
+  let injectIdInProduct = false;
+  let factoryRegistered = false;
+  let applyIsFunction = "";
+  let nodesAfterFirstApply = 0;
+  let datasetVersionAfterFirstApply = "";
+  let nodesAfterSecondApply = 0;
+  let createdAfterSecondApply = 0;
+  let nodesAfterDispose = 0;
+  let nodesAfterReapply = 0;
+  let createdAfterReapply = 0;
 
   beforeAll(() => {
     const clientCode = readFileSync(new URL("../../lib/client.js", import.meta.url), "utf8");
     injectIdInProduct = clientCode.includes("dsh-lan-proxy-style");
 
     const counts = { created: 0, removed: 0 };
-    const byId = new Map();
-    const headNodes = [];
-    function makeStyleNode() {
-      const node = {
+    const byId = new Map<string, StyleTestNode>();
+    const headNodes: StyleTestNode[] = [];
+    function makeStyleNode(): StyleTestNode {
+      const node: StyleTestNode = {
         id: "",
         textContent: "",
         dataset: {},
@@ -50,13 +60,20 @@ describe("客户端样式注入行为哨兵（issue #477 验收 3/8）", () => {
       return node;
     }
     const styleEl = makeStyleNode();
-    const documentStub = {
+    const documentStub: {
+      head: StyleTestNode[] & { appendChild?(node: StyleTestNode): void };
+      body: { appendChild(): void };
+      getElementById(id: string): StyleTestNode | null;
+      createElement(tag: string): unknown;
+      addEventListener(): void;
+      removeEventListener(): void;
+    } = {
       head: headNodes,
       body: { appendChild() {} },
-      getElementById(id) {
+      getElementById(id: string) {
         return byId.get(id) ?? null;
       },
-      createElement(tag) {
+      createElement(tag: string) {
         if (tag === "style") {
           counts.created += 1;
           return styleEl;
@@ -66,14 +83,15 @@ describe("客户端样式注入行为哨兵（issue #477 验收 3/8）", () => {
       addEventListener() {},
       removeEventListener() {},
     };
-    documentStub.head.appendChild = (node) => {
+    documentStub.head.appendChild = (node: StyleTestNode) => {
       headNodes.push(node);
       if (node.id !== "") byId.set(node.id, node);
     };
-    const styleNodes = () => headNodes.filter((n) => n.id === "dsh-lan-proxy-style").length;
+    const styleNodes = () =>
+      headNodes.filter((n: StyleTestNode) => n.id === "dsh-lan-proxy-style").length;
 
-    let loadedFactory = null;
-    const sandbox = {
+    let loadedFactory: unknown = null;
+    const sandbox: Record<string, unknown> = {
       console: { ...console, warn: () => {} },
       Symbol,
       Object,
@@ -88,30 +106,30 @@ describe("客户端样式注入行为哨兵（issue #477 验收 3/8）", () => {
       document: documentStub,
       localStorage: { getItem: () => null, setItem: () => {}, removeItem: () => {} },
     };
-    sandbox.window = sandbox;
-    sandbox.window.__ModuleLoader__ = {
-      load(handoff) {
+    sandbox["window"] = sandbox;
+    (sandbox["window"] as Record<string, unknown>)["__ModuleLoader__"] = {
+      load(handoff: { factory: StyleTestFactory }) {
         loadedFactory = handoff.factory;
       },
     };
     vm.createContext(sandbox);
     vm.runInContext(clientCode, sandbox);
     factoryRegistered = loadedFactory !== null;
-    const mod = loadedFactory((spec) => {
+    const mod = (loadedFactory as StyleTestFactory)((spec: string) => {
       if (spec === "react") return { createElement: () => ({}) };
       throw new Error(`unexpected require: ${spec}`);
     });
     applyIsFunction = typeof mod.apply;
 
-    const disposers = [];
+    const disposers: Array<() => void> = [];
     const ctx = {
       // slots 必须在（缺失则 apply 提前 return）：inject 只注册不执行回调
-      get(name) {
+      get(name: string): unknown {
         if (name === "slots") return { inject() {}, register() {} };
         if (name === "locale") return { register() {}, bind: () => () => "" };
         return undefined;
       },
-      effect(fn) {
+      effect(fn: () => () => void) {
         const d = fn();
         disposers.push(d);
         return d;

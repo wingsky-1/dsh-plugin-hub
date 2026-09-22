@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * dsh-lan-proxy — 宿主端（src/index.ts）结构化单测。
  *
@@ -39,6 +38,10 @@ import {
   buildConfigRoutes,
 } from "../../src/server/config/impl/routes.ts";
 import { MIGRATED_BAK_NAME, migrateFileConfig } from "../../src/server/migrate/impl/file/index.ts";
+import type { Context } from "@deepseek-ai/cordis";
+import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
+import type { IncomingMessage } from "node:http";
+import type { ConfigRouteDeps, PatchResult } from "../../src/server/config/interface.ts";
 
 // 包入口契约：cordis 靠这两个符号定位与调度本插件，写错即插件静默不加载。
 describe("包入口契约（src/index.ts）", () => {
@@ -46,23 +49,25 @@ describe("包入口契约（src/index.ts）", () => {
   it("只声明注入 webServer（回环服务器就绪后才启动）", () => expect(inject).toEqual(["webServer"]));
 });
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
-/** applyConfigPatch 的最小 fake deps（原脚本中两处逐字相同的工厂合为一处）。 */
-const basePatchDeps = (over = {}) => ({
-  resolve: () => ({ enabled: true }),
-  readUser: () => ({ user: {}, revision: 1 }),
-  writable: () => true,
-  update: async () => {},
-  replace: async () => {},
-  compress: () => ({
-    httpCompressEnabled: true,
-    httpCompressLevel: 1,
-    httpCompressMounted: false,
-    httpCompressStats: { compressed: 0, passthrough: 0 },
-  }),
-  ...over,
-});
+/** applyConfigPatch 的最小 fake deps（原脚本中两处逐字相同的工厂合为一处）。
+ * 返回经 `as unknown` 收口到 ConfigRouteDeps（单点适配；各调用点不再逐个断言）。 */
+const basePatchDeps = (over: Record<string, unknown> = {}): ConfigRouteDeps =>
+  ({
+    resolve: () => ({ enabled: true }),
+    readUser: () => ({ user: {}, revision: 1 }),
+    writable: () => true,
+    update: async () => {},
+    replace: async () => {},
+    compress: () => ({
+      httpCompressEnabled: true,
+      httpCompressLevel: 1,
+      httpCompressMounted: false,
+      httpCompressStats: { compressed: 0, passthrough: 0 },
+    }),
+    ...over,
+  }) as unknown as ConfigRouteDeps;
 
 /**
  * fake webServer：捕获 tapIndex 变换与 index-inject 订阅。
@@ -72,32 +77,32 @@ const basePatchDeps = (over = {}) => ({
  * 几次、会不会整表覆盖」全部不可断言。`fakeWebServers` 记录本轮创建的实例，供
  * 用例在同一 describe 内取用。
  */
-const fakeWebServers = [];
-function makeFakeWebServer(options = {}) {
+const fakeWebServers: Array<Record<string, unknown>> = [];
+function makeFakeWebServer(options: { port?: number; register?: (route: WebRoute) => void } = {}) {
   const { port = 3080, register } = options;
-  const taps = [];
-  const indexInjectListeners = [];
+  const taps: Array<() => unknown> = [];
+  const indexInjectListeners: Array<(table: unknown) => void> = [];
   const ws = {
     taps,
     indexInjectListeners,
     port,
-    register(route) {
+    register(route: WebRoute) {
       if (typeof register === "function") register(route);
       return () => {};
     },
-    tapIndex(transform) {
+    tapIndex(transform: () => unknown) {
       taps.push(transform);
       return () => {
         const at = taps.indexOf(transform);
         if (at !== -1) taps.splice(at, 1);
       };
     },
-    on(event, cb) {
+    on(event: string, cb: (table: unknown) => void) {
       if (event === "webserver/index-inject") indexInjectListeners.push(cb);
       return () => {};
     },
     /** 自行 emit 结构化注入表（与官方 collectIndexInjections 同形）。 */
-    emitIndexInjections(table) {
+    emitIndexInjections(table: unknown) {
       for (const cb of indexInjectListeners) cb(table);
       return table;
     },
@@ -108,8 +113,8 @@ function makeFakeWebServer(options = {}) {
 
 // ===== pluginDir =====
 describe("pluginDir", () => {
-  let dir;
-  let tmp;
+  let dir = "";
+  let tmp = "";
 
   beforeAll(() => {
     const prev = process.env.DSH_HOME;
@@ -307,28 +312,28 @@ describe("validateSettings 更多边界", () => {
   });
 
   it("enabled 非法优先", () => {
-    expect(validateSettings({ enabled: "yes", port: "abc" }).key).toBe("enabled");
+    expect(validateSettings({ enabled: "yes", port: "abc" })!.key).toBe("enabled");
   });
 
   it("wsCompressPaths 非法检测", () => {
-    expect(validateSettings({ wsCompressPaths: [1, 2] }).key).toBe("wsCompressPaths");
+    expect(validateSettings({ wsCompressPaths: [1, 2] })!.key).toBe("wsCompressPaths");
   });
 
   it("httpCompressLevel 非法检测", () => {
-    expect(validateSettings({ httpCompressLevel: 10 }).key).toBe("httpCompressLevel");
+    expect(validateSettings({ httpCompressLevel: 10 })!.key).toBe("httpCompressLevel");
   });
 
   it("hint 含档位范围", () => {
-    expect(validateSettings({ httpCompressLevel: 10 }).hint.includes("0-3")).toBeTruthy();
+    expect(validateSettings({ httpCompressLevel: 10 })!.hint.includes("0-3")).toBeTruthy();
   });
 });
 
 // ===== migrateFileConfig 边界（#110） =====
 describe("migrateFileConfig 边界（#110）", () => {
-  let outcome;
-  let bakExists;
-  let configGone;
-  let outcome2;
+  let outcome!: Awaited<ReturnType<typeof migrateFileConfig>>;
+  let bakExists = false;
+  let configGone = true;
+  let outcome2!: Awaited<ReturnType<typeof migrateFileConfig>>;
 
   beforeAll(async () => {
     // 非 object JSON：只改名标记、不写入。
@@ -373,28 +378,32 @@ describe("migrateFileConfig 边界（#110）", () => {
 
 // ===== applyConfigPatch 错误路径（#110） =====
 describe("applyConfigPatch 错误路径（#110）", () => {
-  let na;
-  let invalid;
-  let broken;
-  let logWarnHit;
+  let na!: Extract<PatchResult, { ok: false }>;
+  let invalid!: Extract<PatchResult, { ok: false }>;
+  let broken!: Extract<PatchResult, { ok: false }>;
+  let logWarnHit = false;
 
   beforeAll(async () => {
     // settings 服务不可用
-    na = await applyConfigPatch(basePatchDeps({ writable: () => false }), { patch: {} });
+    na = (await applyConfigPatch(basePatchDeps({ writable: () => false }), {
+      patch: {},
+    })) as Extract<PatchResult, { ok: false }>;
     // 非法 settings
-    invalid = await applyConfigPatch(basePatchDeps(), { patch: { port: 99999 } });
+    invalid = (await applyConfigPatch(basePatchDeps(), {
+      patch: { port: 99999 },
+    })) as Extract<PatchResult, { ok: false }>;
     // handler 内抛异常 → 500，details 固定文案（P2-2），原文走 logWarn
-    const logWarns = [];
-    broken = await applyConfigPatch(
+    const logWarns: string[] = [];
+    broken = (await applyConfigPatch(
       basePatchDeps({
         update: async () => {
           throw new Error("broken-secret");
         },
-        logWarn: (m) => logWarns.push(m),
+        logWarn: (m: string) => logWarns.push(m),
       }),
       { patch: { port: 3000 } },
-    );
-    logWarnHit = logWarns.some((m) => m.includes("broken-secret"));
+    )) as Extract<PatchResult, { ok: false }>;
+    logWarnHit = logWarns.some((m: string) => m.includes("broken-secret"));
   });
 
   it("settings 不可用 → ok=false", () => {
@@ -437,11 +446,13 @@ describe("applyConfigPatch tls 成对形态（P2-1）", () => {
     { tlsCertFile: "", tlsKeyFile: "/keep.pem" },
     { tlsCertFile: "/new.pem", tlsKeyFile: "" },
   ];
-  const mixedResults = [];
+  const mixedResults: Array<Extract<PatchResult, { ok: false }>> = [];
 
   beforeAll(async () => {
     for (const patch of tlsPatches) {
-      mixedResults.push(await applyConfigPatch(basePatchDeps(), { patch }));
+      mixedResults.push(
+        (await applyConfigPatch(basePatchDeps(), { patch })) as Extract<PatchResult, { ok: false }>,
+      );
     }
   });
 
@@ -475,26 +486,26 @@ describe("applyConfigPatch tls 成对形态（P2-1）", () => {
 // settings.register 返回 owner scope（get/watch/update/replace），触发 setSource
 // 与 onScope 回调；scope.watch 触发 isUnloading(ctx) 调用。
 describe("apply 集成：TLS 准备 + settings 命名空间（setSource/onScope/isUnloading/warn）", () => {
-  let healthRouteFound;
-  let configRouteFound;
-  let rpcHandleCount;
-  let hpOk;
-  let hpWsCompressEnabled;
-  let hpWsCompressPaths;
-  let hp2WsCompressPaths;
-  let cleanupCompleted;
-  let hostTrustRows;
-  let hpOwnsHostCompat;
-  let hp2OwnsHostCompat;
+  let healthRouteFound = false;
+  let configRouteFound = false;
+  let rpcHandleCount = 0;
+  let hpOk = false;
+  let hpWsCompressEnabled = false;
+  let hpWsCompressPaths: string[] = [];
+  let hp2WsCompressPaths: string[] = [];
+  let cleanupCompleted = false;
+  let hostTrustRows = 0;
+  let hpOwnsHostCompat = false;
+  let hp2OwnsHostCompat = false;
 
   beforeAll(async () => {
     const applyHome = mkdtempSync(join(tmpdir(), "dsh-lan-proxy-apply-tls-"));
     const prevHome = process.env.DSH_HOME;
     process.env.DSH_HOME = applyHome;
-    const routes = [];
-    const rpcHandles = [];
-    const disposers = [];
-    const scopeWatchCbs = [];
+    const routes: WebRoute[] = [];
+    const rpcHandles: Array<{ channel: string; h: unknown; opts: unknown }> = [];
+    const disposers: Array<unknown> = [];
+    const scopeWatchCbs: Array<() => void> = [];
 
     const scope = {
       _val: {
@@ -502,17 +513,18 @@ describe("apply 集成：TLS 准备 + settings 命名空间（setSource/onScope/
         wsCompressEnabled: false,
         httpCompressEnabled: false,
         wsCompressPaths: ["/api/events.host", "/api/events.mux"],
+        ownsHostCompat: false,
       },
       get() {
         return this._val;
       },
-      async update(patch) {
+      async update(patch: Record<string, unknown>) {
         Object.assign(this._val, patch);
       },
-      async replace(section) {
-        this._val = { ...section };
+      async replace(section: Record<string, unknown>) {
+        this._val = { ...(section as Record<string, unknown>) } as typeof this._val;
       },
-      watch(cb) {
+      watch(cb: () => void) {
         scopeWatchCbs.push(cb);
         // 立即触发一次，使 isUnloading(ctx) 被调用
         cb();
@@ -520,7 +532,7 @@ describe("apply 集成：TLS 准备 + settings 命名空间（setSource/onScope/
       },
     };
     const settingsService = {
-      register(_ns, _schema, _opts) {
+      register(_ns: string, _schema: unknown, _opts: unknown) {
         return scope;
       },
       describe() {
@@ -528,22 +540,26 @@ describe("apply 集成：TLS 准备 + settings 命名空间（setSource/onScope/
       },
     };
 
-    const ws = makeFakeWebServer({ register: (route) => routes.push(route) });
+    const ws = makeFakeWebServer({
+      register: (route: WebRoute) => {
+        routes.push(route);
+      },
+    });
     const ctx = {
       logger: { info: () => {}, warn: () => {}, error: () => {} },
       webServer: ws,
-      inject(services, fn) {
+      inject(services: string[], fn: (ctx: unknown) => void) {
         if (services.includes("connection")) {
           const connectionCtx = {
             connection: {
               rpc: {
-                handle(channel, h, opts) {
+                handle(channel: string, h: unknown, opts: unknown) {
                   rpcHandles.push({ channel, h, opts });
                   return () => {};
                 },
               },
             },
-            effect(fn2) {
+            effect(fn2: () => unknown) {
               return fn2();
             },
           };
@@ -552,7 +568,7 @@ describe("apply 集成：TLS 准备 + settings 命名空间（setSource/onScope/
         if (services.includes("settings")) {
           const sctx = {
             settings: settingsService,
-            effect(fn2) {
+            effect(fn2: () => unknown) {
               const d = fn2();
               // 不立即执行 disposer（由外部清理时触发）
               disposers.push(d);
@@ -562,7 +578,7 @@ describe("apply 集成：TLS 准备 + settings 命名空间（setSource/onScope/
           fn(sctx);
         }
       },
-      effect(fn) {
+      effect(fn: () => unknown) {
         const d = fn();
         if (typeof d === "function") disposers.push(d);
         return d;
@@ -571,7 +587,7 @@ describe("apply 集成：TLS 准备 + settings 命名空间（setSource/onScope/
 
     // httpsPort 显式传 0：不传会落到产品默认值 3443 并**真实监听**（端口审计实测），
     // 并发或残留进程下即 EADDRINUSE（#690 S2c 端口治理）。
-    apply(ctx, {
+    apply(ctx as unknown as Context, {
       host: "127.0.0.1",
       port: 0,
       httpsPort: 0,
@@ -585,29 +601,29 @@ describe("apply 集成：TLS 准备 + settings 命名空间（setSource/onScope/
 
     // host trust（issue #856）：官方结构化注入表必须保持为空——`kind: "global"` 行
     // 是整体赋值 + JSON 序列化，会覆盖 desktop-host 等组合先行写入的 transport。
-    hostTrustRows = ws.emitIndexInjections([]).length;
+    hostTrustRows = (ws.emitIndexInjections([]) as unknown[]).length;
 
     // 验证 health 路由注册（prepareTls 内部已同步调用）
-    const healthRoute = routes.find((r) => r.path === ROUTES.health);
+    const healthRoute = routes.find((r: WebRoute) => r.path === ROUTES.health);
     healthRouteFound = Boolean(healthRoute);
-    configRouteFound = Boolean(routes.find((r) => r.path === ROUTES.config));
+    configRouteFound = Boolean(routes.find((r: WebRoute) => r.path === ROUTES.config));
     rpcHandleCount = rpcHandles.length;
 
     // 触发 setSource 后调用 health handler → resolve() → current 已切到 scope.get()
     let healthBody = "";
-    healthRoute.handler(
+    (healthRoute as WebRoute).handler(
       {
         method: "GET",
-        socket: { remoteAddress: "127.0.0.1" },
+        socket: { remoteAddress: "127.0.0.1" } as unknown as import("node:net").Socket,
         headers: { host: "127.0.0.1:3080" },
         url: ROUTES.health,
-      },
+      } as unknown as IncomingMessage,
       {
         writeHead: () => {},
-        end: (c) => {
+        end: (c?: unknown) => {
           healthBody = String(c);
         },
-      },
+      } as unknown as import("node:http").ServerResponse,
     );
     const hp = JSON.parse(healthBody);
     hpOk = hp.ok;
@@ -620,19 +636,19 @@ describe("apply 集成：TLS 准备 + settings 命名空间（setSource/onScope/
     // host trust 开关（issue #856）：health 读的是 resolve() 的实时值，不是注册时快照。
     scope._val.ownsHostCompat = true;
     let healthBody2 = "";
-    healthRoute.handler(
+    (healthRoute as WebRoute).handler(
       {
         method: "GET",
-        socket: { remoteAddress: "127.0.0.1" },
+        socket: { remoteAddress: "127.0.0.1" } as unknown as import("node:net").Socket,
         headers: { host: "127.0.0.1:3080" },
         url: ROUTES.health,
-      },
+      } as unknown as IncomingMessage,
       {
         writeHead: () => {},
-        end: (c) => {
+        end: (c?: unknown) => {
           healthBody2 = String(c);
         },
-      },
+      } as unknown as import("node:http").ServerResponse,
     );
     const hp2 = JSON.parse(healthBody2);
     hp2WsCompressPaths = hp2.wsCompressPaths;
@@ -641,7 +657,7 @@ describe("apply 集成：TLS 准备 + settings 命名空间（setSource/onScope/
     // 执行 lifecycle 清理：触发 scope.watch 的 disposer 与 isUnloading
     for (const d of [...disposers].reverse()) {
       try {
-        d();
+        (d as unknown as () => void)();
       } catch {}
     }
     cleanupCompleted = true;
@@ -699,34 +715,34 @@ describe("apply 集成：TLS 准备 + settings 命名空间（setSource/onScope/
 
 // ===== apply：settings 服务缺少 register → warn 路径 =====
 describe("apply：settings 服务缺少 register → warn 路径", () => {
-  let warnPathCompleted;
+  let warnPathCompleted = false;
 
   beforeAll(async () => {
     const applyHome = mkdtempSync(join(tmpdir(), "dsh-lan-proxy-apply-warn-"));
     const prevHome = process.env.DSH_HOME;
     process.env.DSH_HOME = applyHome;
-    const disposers = [];
+    const disposers: Array<unknown> = [];
     const ctx = {
       logger: { info: () => {}, warn: () => {}, error: () => {} },
       webServer: makeFakeWebServer(),
-      inject(services, fn) {
+      inject(services: string[], fn: (ctx: unknown) => void) {
         if (services.includes("settings")) {
           // settings 存在但缺少 register → warn 被调用
           fn({
             settings: { noRegister: true },
-            effect(fn2) {
+            effect(fn2: () => unknown) {
               return fn2();
             },
           });
         }
       },
-      effect(fn) {
+      effect(fn: () => unknown) {
         const d = fn();
         if (typeof d === "function") disposers.push(d);
         return d;
       },
     };
-    apply(ctx, {
+    apply(ctx as unknown as Context, {
       host: "127.0.0.1",
       port: 0,
       httpsEnabled: false,
@@ -737,7 +753,7 @@ describe("apply：settings 服务缺少 register → warn 路径", () => {
     await sleep(50);
     for (const d of [...disposers].reverse()) {
       try {
-        d();
+        (d as unknown as () => void)();
       } catch {}
     }
     warnPathCompleted = true;
@@ -752,8 +768,8 @@ describe("apply：settings 服务缺少 register → warn 路径", () => {
 
 // ===== apply：监听端口被占 → listen() reject → catch 分支 =====
 describe("apply：监听端口被占 → listen() reject → catch 分支", () => {
-  let healthRouteFound;
-  let hpListening;
+  let healthRouteFound = false;
+  let hpListening = false;
 
   beforeAll(async () => {
     const applyHome = mkdtempSync(join(tmpdir(), "dsh-lan-proxy-apply-listenfail-"));
@@ -764,38 +780,42 @@ describe("apply：监听端口被占 → listen() reject → catch 分支", () =
     // listen 成功、走不到 catch 分支（covered 掉到 57.9%）；这里 occupied 先占位，apply 绑
     // 同一端口仍必然失败，被覆盖的分支不变。
     const occupied = createServer();
-    await new Promise((r) => occupied.listen(0, "127.0.0.1", r));
-    const occupiedPort = occupied.address().port;
-    const routes = [];
-    const rpcHandles = [];
-    const disposers = [];
+    await new Promise<void>((r) => occupied.listen(0, "127.0.0.1", () => r()));
+    const occupiedPort = (occupied.address() as import("node:net").AddressInfo).port;
+    const routes: WebRoute[] = [];
+    const rpcHandles: Array<{ ch: string; h: unknown; o: unknown }> = [];
+    const disposers: Array<unknown> = [];
     const ctx = {
       logger: { info: () => {}, warn: () => {}, error: () => {} },
-      webServer: makeFakeWebServer({ register: (route) => routes.push(route) }),
-      inject(services, fn) {
+      webServer: makeFakeWebServer({
+        register: (route: WebRoute) => {
+          routes.push(route);
+        },
+      }),
+      inject(services: string[], fn: (ctx: unknown) => void) {
         if (services.includes("connection")) {
           fn({
             connection: {
               rpc: {
-                handle(ch, h, o) {
+                handle(ch: string, h: unknown, o: unknown) {
                   rpcHandles.push({ ch, h, o });
                   return () => {};
                 },
               },
             },
-            effect(fn2) {
+            effect(fn2: () => unknown) {
               return fn2();
             },
           });
         }
       },
-      effect(fn) {
+      effect(fn: () => unknown) {
         const d = fn();
         if (typeof d === "function") disposers.push(d);
         return d;
       },
     };
-    apply(ctx, {
+    apply(ctx as unknown as Context, {
       host: "127.0.0.1",
       port: occupiedPort,
       httpsEnabled: false,
@@ -805,29 +825,29 @@ describe("apply：监听端口被占 → listen() reject → catch 分支", () =
     });
     await sleep(200); // 等 listen 异步 reject
     // health 路由存在，但 listening: false
-    const healthRoute = routes.find((r) => r.path === ROUTES.health);
+    const healthRoute = routes.find((r: WebRoute) => r.path === ROUTES.health);
     healthRouteFound = Boolean(healthRoute);
     let healthBody = "";
-    healthRoute.handler(
+    (healthRoute as WebRoute).handler(
       {
         method: "GET",
-        socket: { remoteAddress: "127.0.0.1" },
+        socket: { remoteAddress: "127.0.0.1" } as unknown as import("node:net").Socket,
         headers: { host: "127.0.0.1:3080" },
         url: ROUTES.health,
-      },
+      } as unknown as IncomingMessage,
       {
         writeHead: () => {},
-        end: (c) => {
+        end: (c?: unknown) => {
           healthBody = String(c);
         },
-      },
+      } as unknown as import("node:http").ServerResponse,
     );
     const hp = JSON.parse(healthBody);
     hpListening = hp.listening;
     // 清理
     for (const d of [...disposers].reverse()) {
       try {
-        d();
+        (d as unknown as () => void)();
       } catch {}
     }
     occupied.close();
@@ -846,25 +866,29 @@ describe("apply：监听端口被占 → listen() reject → catch 分支", () =
 
 // ===== apply：enabled=false 仍注册路由与迁移（#110 P0-2） =====
 describe("apply：enabled=false 仍注册路由与迁移（#110 P0-2）", () => {
-  let healthFound;
-  let configFound;
+  let healthFound = false;
+  let configFound = false;
 
   beforeAll(() => {
     const applyHome = mkdtempSync(join(tmpdir(), "dsh-lan-proxy-apply-off-"));
     const prevHome = process.env.DSH_HOME;
     process.env.DSH_HOME = applyHome;
-    const routes = [];
+    const routes: WebRoute[] = [];
     const ctx = {
       logger: { info: () => {}, warn: () => {}, error: () => {} },
-      webServer: makeFakeWebServer({ register: (route) => routes.push(route) }),
+      webServer: makeFakeWebServer({
+        register: (route: WebRoute) => {
+          routes.push(route);
+        },
+      }),
       inject() {},
-      effect(fn) {
+      effect(fn: () => unknown) {
         return fn();
       },
     };
-    apply(ctx, { enabled: false, httpsEnabled: false });
+    apply(ctx as unknown as Context, { enabled: false, httpsEnabled: false });
     healthFound = Boolean(routes.find((r) => r.path === ROUTES.health));
-    configFound = Boolean(routes.find((r) => r.path === ROUTES.config));
+    configFound = Boolean(routes.find((r: WebRoute) => r.path === ROUTES.config));
     process.env.DSH_HOME = prevHome;
     rmSync(applyHome, { recursive: true, force: true });
   });
@@ -880,46 +904,55 @@ describe("apply：enabled=false 仍注册路由与迁移（#110 P0-2）", () => 
 
 // ===== applyConfigPatch 成功语义与 tls 清除（#110，接续 #147 口径） =====
 describe("applyConfigPatch 成功语义与 tls 清除（#110，接续 #147 口径）", () => {
-  let ok;
-  let updatesAtOk;
-  let revisionAtOk;
-  let clearTls;
-  let replacesLenAtClear;
-  let tlsKeysRemovedAtClear;
-  let printBannerAtClear;
-  let halfPair;
+  let ok!: Extract<PatchResult, { ok: true }>;
+  let updatesAtOk: Array<{ patch: unknown; rev: unknown }> = [];
+  let revisionAtOk: number | undefined;
+  let clearTls!: PatchResult;
+  let replacesLenAtClear = 0;
+  let tlsKeysRemovedAtClear = false;
+  let printBannerAtClear: unknown;
+  let halfPair!: Extract<PatchResult, { ok: false }>;
 
   beforeAll(async () => {
-    const state = { user: { host: "127.0.0.1", port: 3081 }, updates: [], replaces: [] };
+    const state: {
+      user: Record<string, unknown>;
+      updates: Array<{ patch: unknown; rev: unknown }>;
+      replaces: Array<{ section: unknown; rev: unknown }>;
+    } = { user: { host: "127.0.0.1", port: 3081 }, updates: [], replaces: [] };
     const deps = {
       resolve: () => ({ enabled: true, host: "0.0.0.0", port: 3081, httpCompressLevel: 2 }),
       readUser: () => ({ user: { ...state.user }, revision: 4 }),
       writable: () => true,
-      update: async (patch, rev) => {
+      update: async (patch: unknown, rev: unknown) => {
         state.updates.push({ patch, rev });
-        Object.assign(state.user, patch);
+        Object.assign(state.user, patch as Record<string, unknown>);
       },
-      replace: async (section, rev) => {
+      replace: async (section: unknown, rev: unknown) => {
         state.replaces.push({ section, rev });
-        state.user = { ...section };
+        state.user = { ...(section as Record<string, unknown>) };
       },
       compress: () => ({ compressed: 3, passthrough: 4 }),
     };
     // 合法提交：增量 update，未携带键保持原值
-    ok = await applyConfigPatch(deps, { patch: { port: 4000 }, expectedRevision: 4 });
+    ok = (await applyConfigPatch(deps as unknown as ConfigRouteDeps, {
+      patch: { port: 4000 },
+      expectedRevision: 4,
+    })) as Extract<PatchResult, { ok: true }>;
     updatesAtOk = [...state.updates];
     revisionAtOk = ok.value.revision;
     // tls 空串清空语义：raw 显式 "" → replace 整节剔除该键
     state.user.tlsCertFile = "/a.pem";
     state.user.tlsKeyFile = "/b.pem";
-    clearTls = await applyConfigPatch(deps, {
+    clearTls = await applyConfigPatch(deps as unknown as ConfigRouteDeps, {
       patch: { tlsCertFile: "", tlsKeyFile: "", printBanner: false },
     });
     replacesLenAtClear = state.replaces.length;
     tlsKeysRemovedAtClear = !("tlsCertFile" in state.user) && !("tlsKeyFile" in state.user);
     printBannerAtClear = state.user.printBanner;
     // tls-pair 校验：只给证书不给私钥
-    halfPair = await applyConfigPatch(deps, { patch: { tlsCertFile: "/tmp/a.pem" } });
+    halfPair = (await applyConfigPatch(deps as unknown as ConfigRouteDeps, {
+      patch: { tlsCertFile: "/tmp/a.pem" },
+    })) as Extract<PatchResult, { ok: false }>;
   });
 
   it("config 合法提交成功", () => {
@@ -1046,35 +1079,35 @@ describe("sanitizeSettings 清洗语义（#147 变异加固）", () => {
 
   // 未知键被剔除、合法键保留
   it("合法键保留", () => {
-    expect(sanitizeSettings({ port: 3000, evilKey: "x" }).port).toBe(3000);
+    expect(sanitizeSettings({ port: 3000, evilKey: "x" })!.port).toBe(3000);
   });
 
   it("未知键剔除", () => {
-    expect(!("evilKey" in sanitizeSettings({ port: 3000, evilKey: "x" }))).toBeTruthy();
+    expect(!("evilKey" in sanitizeSettings({ port: 3000, evilKey: "x" })!)).toBeTruthy();
   });
 
   // level 迁移 4-9 → 3
   it("level 7 迁移为高档 3", () => {
-    expect(sanitizeSettings({ httpCompressLevel: 7 }).httpCompressLevel).toBe(3);
+    expect(sanitizeSettings({ httpCompressLevel: 7 })!.httpCompressLevel).toBe(3);
   });
 
   it("level 4 迁移为高档 3", () => {
-    expect(sanitizeSettings({ httpCompressLevel: 4 }).httpCompressLevel).toBe(3);
+    expect(sanitizeSettings({ httpCompressLevel: 4 })!.httpCompressLevel).toBe(3);
   });
 
   it("level 9 迁移为高档 3", () => {
-    expect(sanitizeSettings({ httpCompressLevel: 9 }).httpCompressLevel).toBe(3);
+    expect(sanitizeSettings({ httpCompressLevel: 9 })!.httpCompressLevel).toBe(3);
   });
 
   // tls 空串剔除
   it("tls 空串被剔除", () => {
-    const noTls = sanitizeSettings({ tlsCertFile: "", tlsKeyFile: "", httpsEnabled: true });
+    const noTls = sanitizeSettings({ tlsCertFile: "", tlsKeyFile: "", httpsEnabled: true })!;
     expect(!("tlsCertFile" in noTls) && !("tlsKeyFile" in noTls)).toBeTruthy();
   });
 
   it("其余键不受影响", () => {
     expect(
-      sanitizeSettings({ tlsCertFile: "", tlsKeyFile: "", httpsEnabled: true }).httpsEnabled,
+      sanitizeSettings({ tlsCertFile: "", tlsKeyFile: "", httpsEnabled: true })!.httpsEnabled,
     ).toBe(true);
   });
 
@@ -1162,21 +1195,25 @@ describe("变异加固块（round=3 CI 回归：迁移重放/路由面/校验分
   // 本块所有 apply 调用统一 DSH_HOME 隔离 + disposer 回收（防转发器 server /
   // scheduleSync timer 句柄泄漏挂起事件循环，也防迁移触达真实 ~/.dsh/lan-proxy）。
   const prevHome = process.env.DSH_HOME;
-  let blockHome;
-  const cleanupFns = [];
+  let blockHome = "";
+  const cleanupFns: Array<() => void> = [];
 
   /** 构造最小 fake ctx：收集 lifecycle disposer；enabled 可关避免真实 listen。 */
-  const makeCtx = (over = {}) => {
-    const disposers = [];
-    const routes = [];
+  const makeCtx = (over: Record<string, unknown> = {}) => {
+    const disposers: Array<unknown> = [];
+    const routes: WebRoute[] = [];
     const ctx = {
       logger:
         over.logger !== undefined
           ? over.logger
           : { info: () => {}, warn: () => {}, error: () => {} },
-      webServer: makeFakeWebServer({ register: (route) => routes.push(route) }),
+      webServer: makeFakeWebServer({
+        register: (route: WebRoute) => {
+          routes.push(route);
+        },
+      }),
       inject() {},
-      effect(fn) {
+      effect(fn: () => unknown) {
         const d = fn();
         if (typeof d === "function") disposers.push(d);
         return d;
@@ -1188,12 +1225,12 @@ describe("变异加固块（round=3 CI 回归：迁移重放/路由面/校验分
       [Symbol.for("dispose")]() {
         for (const d of [...disposers].reverse()) {
           try {
-            d();
+            (d as unknown as () => void)();
           } catch {}
         }
       },
     };
-    cleanupFns.push(ctx[Symbol.for("dispose")]);
+    cleanupFns.push((ctx as unknown as Record<symbol, () => void>)[Symbol.for("dispose")]);
     return ctx;
   };
 
@@ -1223,8 +1260,8 @@ describe("变异加固块（round=3 CI 回归：迁移重放/路由面/校验分
 
     it("有效 logger 收到原消息并保留方法接收者", () => {
       const logger = {
-        messages: [],
-        warn(message) {
+        messages: [] as string[],
+        warn(message: string) {
           this.messages.push(message);
         },
       };
@@ -1233,27 +1270,32 @@ describe("变异加固块（round=3 CI 回归：迁移重放/路由面/校验分
     });
 
     it("settings 缺少 register 时告警且仍注册 health 路由", () => {
-      const messages = [];
+      const messages: string[] = [];
       const ctx = makeCtx({
         logger: {
           info() {},
           error() {},
-          warn(message) {
+          warn(message: string) {
             messages.push(message);
           },
         },
-        inject(services, callback) {
+        inject(services: string[], callback: (ctx: unknown) => void) {
           if (services.includes("settings")) callback({ settings: {} });
         },
       });
       try {
-        apply(ctx, { enabled: false, httpsEnabled: false, host: "127.0.0.1", port: 0 });
+        apply(ctx as unknown as Context, {
+          enabled: false,
+          httpsEnabled: false,
+          host: "127.0.0.1",
+          port: 0,
+        });
         expect(messages).toEqual([
           "dsh-lan-proxy: settings 服务缺少 register 能力 — 设置命名空间未注册，卡片降级",
         ]);
         expect(ctx._routes.filter((r) => r.path === ROUTES.health).length).toBe(1);
       } finally {
-        ctx[Symbol.for("dispose")]();
+        (ctx as unknown as Record<symbol, () => void>)[Symbol.for("dispose")]();
       }
     });
   });
@@ -1262,7 +1304,11 @@ describe("变异加固块（round=3 CI 回归：迁移重放/路由面/校验分
   describe("B. installLanProxySettings 全分支", () => {
     // B1: ctx.inject 缺失 → 降级不抛（原脚本此分支无断言，保留其执行）。
     beforeAll(() => {
-      apply(makeCtx({ port: 3081 }), { enabled: false, host: "127.0.0.1", httpsEnabled: false });
+      apply(makeCtx({ port: 3081 }) as unknown as Context, {
+        enabled: false,
+        host: "127.0.0.1",
+        httpsEnabled: false,
+      });
     }, 30000);
 
     // B2: settings 服务存在但无 register → 降级；register 抛错 → 降级。
@@ -1279,22 +1325,27 @@ describe("变异加固块（round=3 CI 回归：迁移重放/路由面/校验分
           },
         },
       ];
-      const results = [];
+      const results: boolean[] = [];
 
       beforeAll(() => {
         for (const { service } of services) {
           const ctx = makeCtx({
-            inject(services2, fn) {
+            inject(services2: string[], fn: (ctx: unknown) => void) {
               if (services2.includes("settings"))
                 fn({
                   settings: service,
-                  effect(fn2) {
+                  effect(fn2: () => unknown) {
                     return fn2();
                   },
                 });
             },
           });
-          apply(ctx, { host: "127.0.0.1", port: 0, httpsEnabled: false, enabled: true });
+          apply(ctx as unknown as Context, {
+            host: "127.0.0.1",
+            port: 0,
+            httpsEnabled: false,
+            enabled: true,
+          });
           results.push(ctx._routes.length >= 2);
         }
       }, 30000);
@@ -1311,14 +1362,17 @@ describe("变异加固块（round=3 CI 回归：迁移重放/路由面/校验分
     // B3: attach → watch 挂接 → 非 unloading 态触发 cb 不抛；unloading 态执行 disposers 门控跳过。
     describe("B3: attach → watch 挂接 → isUnloading 门控", () => {
       const makeScope = () => {
-        const st = { watchCbs: [], disposed: false };
+        const st: { watchCbs: Array<() => void>; disposed: boolean } = {
+          watchCbs: [],
+          disposed: false,
+        };
         return {
           st,
           scope: {
             get() {
               return { port: 4321 };
             },
-            watch(cb) {
+            watch(cb: () => void) {
               st.watchCbs.push(cb);
               return () => {
                 st.disposed = true;
@@ -1329,27 +1383,27 @@ describe("变异加固块（round=3 CI 回归：迁移重放/路由面/校验分
           },
         };
       };
-      let nsSeen;
-      let watchCbsLen;
-      let gateCompleted;
+      let nsSeen: unknown;
+      let watchCbsLen = 0;
+      let gateCompleted = false;
 
       beforeAll(() => {
         const s = makeScope();
-        const fiberStates = [];
+        const fiberStates: string[] = [];
         const ctx = makeCtx({
           get fiber() {
             return { state: fiberStates[fiberStates.length - 1] };
           },
-          inject(services, fn) {
+          inject(services: string[], fn: (ctx: unknown) => void) {
             if (services.includes("settings")) {
               fn({
                 settings: {
-                  register(ns) {
+                  register(ns: string) {
                     nsSeen = ns;
                     return s.scope;
                   },
                 },
-                effect(fn2) {
+                effect(fn2: () => unknown) {
                   const d = fn2();
                   return d;
                 },
@@ -1357,12 +1411,17 @@ describe("变异加固块（round=3 CI 回归：迁移重放/路由面/校验分
             }
           },
         });
-        apply(ctx, { host: "127.0.0.1", port: 0, httpsEnabled: false, printBanner: false });
+        apply(ctx as unknown as Context, {
+          host: "127.0.0.1",
+          port: 0,
+          httpsEnabled: false,
+          printBanner: false,
+        });
         watchCbsLen = s.st.watchCbs.length;
         fiberStates.push("attached");
         s.st.watchCbs[0]();
         fiberStates.push("unloading");
-        ctx[Symbol.for("dispose")]();
+        (ctx as unknown as Record<symbol, () => void>)[Symbol.for("dispose")]();
         fiberStates.pop();
         gateCompleted = true;
       }, 30000);
@@ -1383,9 +1442,12 @@ describe("变异加固块（round=3 CI 回归：迁移重放/路由面/校验分
 
   // ---- C. migrateFileConfig 全分支 outcome 精确断言（含中断重放四分支）----
   describe("C. migrateFileConfig 全分支 outcome 精确断言", () => {
-    const okScope = () => ({
+    const okScope = (): {
+      updates: unknown[];
+      update(p: unknown): Promise<void>;
+    } => ({
       updates: [],
-      async update(p) {
+      async update(p: unknown) {
         this.updates.push(p);
         return Promise.resolve();
       },
@@ -1393,7 +1455,7 @@ describe("变异加固块（round=3 CI 回归：迁移重放/路由面/校验分
 
     // C1: 双文件都不存在 → idle 六字段全 false。
     describe("C1: 双文件都不存在 → idle", () => {
-      let idleOut;
+      let idleOut!: Awaited<ReturnType<typeof migrateFileConfig>>;
 
       beforeAll(async () => {
         const idleDir = mkdtempSync(join(tmpdir(), "dsh-lan-proxy-mut-idle-"));
@@ -1472,7 +1534,11 @@ describe("变异加固块（round=3 CI 回归：迁移重放/路由面/校验分
           },
         },
       ];
-      const records = [];
+      const records: Array<{
+        out: Awaited<ReturnType<typeof migrateFileConfig>>;
+        bakExists: boolean;
+        updates: unknown[];
+      }> = [];
 
       beforeAll(async () => {
         for (const { name, raw } of cases) {
@@ -1514,8 +1580,8 @@ describe("变异加固块（round=3 CI 回归：迁移重放/路由面/校验分
 
     // C3: 写入失败回滚 → rolledBack；config.json 还原。
     describe("C3: 写入失败回滚", () => {
-      let out;
-      let configRestored;
+      let out!: Awaited<ReturnType<typeof migrateFileConfig>>;
+      let configRestored = false;
 
       beforeAll(async () => {
         const dir = mkdtempSync(join(tmpdir(), "dsh-lan-proxy-mut-rollback-"));
@@ -1551,11 +1617,11 @@ describe("变异加固块（round=3 CI 回归：迁移重放/路由面/校验分
         { raw: "{bad", expectMigrated: false },
         { raw: JSON.stringify({ nope: 1 }), expectMigrated: false },
       ];
-      let good;
-      let goodUpdates;
-      const badRecords = [];
-      let failOut;
-      let failBakKept;
+      let good!: Awaited<ReturnType<typeof migrateFileConfig>>;
+      let goodUpdates: unknown[] = [];
+      const badRecords: Array<{ out: Awaited<ReturnType<typeof migrateFileConfig>> }> = [];
+      let failOut!: Awaited<ReturnType<typeof migrateFileConfig>>;
+      let failBakKept = false;
 
       beforeAll(async () => {
         const goodDir = mkdtempSync(join(tmpdir(), "dsh-lan-proxy-mut-resume-ok-"));
@@ -1632,9 +1698,12 @@ describe("变异加固块（round=3 CI 回归：迁移重放/路由面/校验分
 
   // ---- D. applyConfigPatch 校验链与错误映射（expectedRevision/409/logWarn 缺省）----
   describe("D. applyConfigPatch 校验链与错误映射", () => {
-    /** deps + lastWrite 观测盒（原脚本以块级 lastWrite 记录最近一次写入形态）。 */
-    const mkDeps = (over = {}) => {
-      const box = { lastWrite: null };
+    /** deps + lastWrite 观测盒（原脚本以块级 lastWrite 记录最近一次写入形态）。
+     * d 经 `as unknown` 收口到 ConfigRouteDeps（单点适配）；box 记录最近一次写入。 */
+    const mkDeps = (over: Record<string, unknown> = {}) => {
+      const box: {
+        lastWrite: { kind: string; patch?: unknown; section?: unknown; rev: unknown } | null;
+      } = { lastWrite: null };
       const d = {
         resolve: () => ({ enabled: true }),
         readUser: () => ({
@@ -1642,10 +1711,10 @@ describe("变异加固块（round=3 CI 回归：迁移重放/路由面/校验分
           revision: 9,
         }),
         writable: () => true,
-        update: async (patch, rev) => {
+        update: async (patch: unknown, rev: unknown) => {
           box.lastWrite = { kind: "update", patch, rev };
         },
-        replace: async (section, rev) => {
+        replace: async (section: unknown, rev: unknown) => {
           box.lastWrite = { kind: "replace", section, rev };
         },
         compress: () => ({
@@ -1655,18 +1724,20 @@ describe("变异加固块（round=3 CI 回归：迁移重放/路由面/校验分
           httpCompressStats: { compressed: 0, passthrough: 0 },
         }),
         ...over,
-      };
+      } as unknown as ConfigRouteDeps;
       return { d, box };
     };
 
     // D1: payload 非对象 → body={} → patch undefined → payload 定位错误。
     describe("D1: payload 非对象", () => {
       const payloads = [null, "str", 42];
-      const results = [];
+      const results: Array<Extract<PatchResult, { ok: false }>> = [];
 
       beforeAll(async () => {
         for (const payload of payloads) {
-          results.push(await applyConfigPatch(mkDeps().d, payload));
+          results.push(
+            (await applyConfigPatch(mkDeps().d, payload)) as Extract<PatchResult, { ok: false }>,
+          );
         }
       });
 
@@ -1728,10 +1799,13 @@ describe("变异加固块（round=3 CI 回归：迁移重放/路由面/校验分
 
     // D3: invalid details 含字段与范围。
     describe("D3: invalid details 含字段与范围", () => {
-      let r;
+      let r!: Extract<PatchResult, { ok: false }>;
 
       beforeAll(async () => {
-        r = await applyConfigPatch(mkDeps().d, { patch: { httpsPort: 0 } });
+        r = (await applyConfigPatch(mkDeps().d, { patch: { httpsPort: 0 } })) as Extract<
+          PatchResult,
+          { ok: false }
+        >;
       });
 
       it("httpsPort=0 → code=invalid", () => {
@@ -1745,17 +1819,17 @@ describe("变异加固块（round=3 CI 回归：迁移重放/路由面/校验分
 
     // D4: conflict 409 映射（SETTINGS_CONFLICT code）。
     describe("D4: conflict 409 映射", () => {
-      let r;
+      let r!: Extract<PatchResult, { ok: false }>;
 
       beforeAll(async () => {
-        r = await applyConfigPatch(
+        r = (await applyConfigPatch(
           mkDeps({
             update: async () => {
               throw Object.assign(new Error("stale"), { code: "SETTINGS_CONFLICT" });
             },
           }).d,
           { patch: { port: 3101 } },
-        );
+        )) as Extract<PatchResult, { ok: false }>;
       });
 
       it("SETTINGS_CONFLICT → status=409", () => {
@@ -1773,7 +1847,7 @@ describe("变异加固块（round=3 CI 回归：迁移重放/路由面/校验分
 
     // D5: logWarn 缺省（?. 短路）不抛错，仍返回固定文案。
     describe("D5: logWarn 缺省", () => {
-      let r;
+      let r!: Extract<PatchResult, { ok: false }>;
 
       beforeAll(async () => {
         const { d } = mkDeps({
@@ -1782,7 +1856,10 @@ describe("变异加固块（round=3 CI 回归：迁移重放/路由面/校验分
           },
         });
         delete d.logWarn;
-        r = await applyConfigPatch(d, { patch: { port: 3102 } });
+        r = (await applyConfigPatch(d, { patch: { port: 3102 } })) as Extract<
+          PatchResult,
+          { ok: false }
+        >;
       });
 
       it("logWarn 缺省 → status=500", () => {
@@ -1796,18 +1873,18 @@ describe("变异加固块（round=3 CI 回归：迁移重放/路由面/校验分
 
     // D6: 清除证书路径走 replace 且剔除两键；普通 patch 走 update。
     describe("D6: 清除证书路径走 replace", () => {
-      let clear;
-      let clearKind;
-      let clearSection;
-      let upd;
-      let updLastWriteIsObject;
+      let clear!: PatchResult;
+      let clearKind: unknown;
+      let clearSection: Record<string, unknown> = {};
+      let upd!: PatchResult;
+      let updLastWriteIsObject = false;
 
       beforeAll(async () => {
         const { d, box } = mkDeps();
         clear = await applyConfigPatch(d, { patch: { tlsCertFile: "", tlsKeyFile: "" } });
         // 两次调用共用 lastWrite 观测盒，故在清除之后、普通 patch 之前取快照
         clearKind = box.lastWrite?.kind;
-        clearSection = box.lastWrite?.section;
+        clearSection = (box.lastWrite?.section ?? {}) as Record<string, unknown>;
         upd = await applyConfigPatch(d, { patch: { port: 3103 } });
         updLastWriteIsObject = typeof box.lastWrite === "object";
       });
@@ -1862,24 +1939,28 @@ describe("变异加固块（round=3 CI 回归：迁移重放/路由面/校验分
         httpCompressStats: { compressed: 2, passthrough: 3 },
       }),
     };
-    const route = buildConfigRoutes(deps)[0];
+    const route = buildConfigRoutes(deps as unknown as ConfigRouteDeps)[0];
 
-    const callRoute = async (method, overrides = {}, body) => {
+    const callRoute = async (
+      method: string,
+      overrides: Record<string, unknown> = {},
+      body?: unknown,
+    ): Promise<{ status: number; body: string }> => {
       const EventEmitter = (await import("node:events")).EventEmitter;
       const stream = new EventEmitter();
       Object.assign(stream, {
         method,
-        socket: { remoteAddress: "127.0.0.1" },
+        socket: { remoteAddress: "127.0.0.1" } as unknown as import("node:net").Socket,
         headers: { host: "127.0.0.1:3080" },
         ...overrides,
       });
       let status = 0;
-      const chunks = [];
+      const chunks: string[] = [];
       const res = {
-        writeHead(c) {
+        writeHead(c: number) {
           status = c;
         },
-        end(c) {
+        end(c?: unknown) {
           if (c !== undefined) chunks.push(String(c));
         },
         getHeader() {
@@ -1890,7 +1971,7 @@ describe("变异加固块（round=3 CI 回归：迁移重放/路由面/校验分
       const done =
         body === undefined
           ? Promise.resolve()
-          : new Promise((r) =>
+          : new Promise<void>((r) =>
               process.nextTick(() => {
                 stream.emit(
                   "data",
@@ -1900,7 +1981,10 @@ describe("变异加固块（round=3 CI 回归：迁移重放/路由面/校验分
                 r();
               }),
             );
-      await route.handler(stream, res);
+      await route.handler(
+        stream as unknown as IncomingMessage,
+        res as unknown as import("node:http").ServerResponse,
+      );
       await done;
       return { status, body: chunks.join("") };
     };
@@ -1908,9 +1992,9 @@ describe("变异加固块（round=3 CI 回归：迁移重放/路由面/校验分
     // E1: 围栏与方法白名单。
     // #473 批 1（B1-4/B1-3）：403 body 围栏文案 + 405 body 文案断言（守卫收敛后逐字节锁定）
     describe("E1: 围栏与方法白名单", () => {
-      let forbidden;
-      let del405;
-      let post405;
+      let forbidden!: { status: number; body: string };
+      let del405!: { status: number; body: string };
+      let post405!: { status: number; body: string };
 
       beforeAll(async () => {
         forbidden = await callRoute("GET", { socket: { remoteAddress: "10.0.0.9" } });
@@ -1945,7 +2029,14 @@ describe("变异加固块（round=3 CI 回归：迁移重放/路由面/校验分
 
     // E2: GET 快照字段全集（user/effective/compress/revision/writable）。
     describe("E2: GET 快照字段全集", () => {
-      let snap;
+      let snap!: {
+        ok: unknown;
+        user: unknown;
+        effective: { port: number };
+        compress: { httpCompressStats: { compressed: number } };
+        revision: unknown;
+        writable: unknown;
+      };
 
       beforeAll(async () => {
         snap = JSON.parse((await callRoute("GET")).body);
@@ -1978,9 +2069,9 @@ describe("变异加固块（round=3 CI 回归：迁移重放/路由面/校验分
 
     // E3: PUT 合法 → 200 + user 层回传；非法 → 400 error.details；坏 JSON → 400 invalid-json。
     describe("E3: PUT 三态", () => {
-      let okPut;
-      let badPut;
-      let badJson;
+      let okPut!: { ok: unknown };
+      let badPut!: { error: { details: string } };
+      let badJson!: { error: { code: string } };
 
       beforeAll(async () => {
         okPut = JSON.parse(
@@ -2005,39 +2096,42 @@ describe("变异加固块（round=3 CI 回归：迁移重放/路由面/校验分
 
     // E4: writable=false → PUT 503（GET 仍可读）。
     describe("E4: 只读态 PUT 503", () => {
-      let status;
+      let status = 0;
 
       beforeAll(async () => {
         const roDeps = { ...deps, writable: () => false };
-        const roRoute = buildConfigRoutes(roDeps)[0];
+        const roRoute = buildConfigRoutes(roDeps as unknown as ConfigRouteDeps)[0];
         const EventEmitter = (await import("node:events")).EventEmitter;
         const stream = new EventEmitter();
         Object.assign(stream, {
           method: "PUT",
-          socket: { remoteAddress: "127.0.0.1" },
+          socket: { remoteAddress: "127.0.0.1" } as unknown as import("node:net").Socket,
           headers: { host: "127.0.0.1:3080" },
         });
         let s = 0;
-        const chunks = [];
-        const done = new Promise((r) =>
+        const chunks: string[] = [];
+        const done = new Promise<void>((r) =>
           process.nextTick(() => {
             stream.emit("data", Buffer.from(JSON.stringify({ patch: { port: 1 } })));
             stream.emit("end");
             r();
           }),
         );
-        await roRoute.handler(stream, {
-          writeHead(c) {
-            s = c;
-          },
-          end(c) {
-            if (c !== undefined) chunks.push(String(c));
-          },
-          getHeader() {
-            return undefined;
-          },
-          setHeader() {},
-        });
+        await roRoute.handler(
+          stream as unknown as IncomingMessage,
+          {
+            writeHead(c: number) {
+              s = c;
+            },
+            end(c?: unknown) {
+              if (c !== undefined) chunks.push(String(c));
+            },
+            getHeader() {
+              return undefined;
+            },
+            setHeader() {},
+          } as unknown as import("node:http").ServerResponse,
+        );
         await done;
         status = s;
       });
@@ -2051,7 +2145,7 @@ describe("变异加固块（round=3 CI 回归：迁移重放/路由面/校验分
 
 // ===== Config schema 直测：schemastery 默认值与上界（#147 变异加固接续） =====
 describe("Config schema 直测：schemastery 默认值与上界（#147 变异加固接续）", () => {
-  let defaults;
+  let defaults!: ReturnType<typeof Config>;
 
   beforeAll(() => {
     defaults = Config({});
@@ -2111,16 +2205,16 @@ describe("Config schema 直测：schemastery 默认值与上界（#147 变异加
 // 命中 apply.ts:409 的 readUser 箭头函数：经真实 apply 装配 + config 路由 GET 驱动，
 // 不 mock readUser 本身。隔离：mkdtemp DSH_HOME + 端口 0 + disposers 回收，产物零污染。
 describe("apply 内 readUser 真实闭包（CRAP 覆盖）", () => {
-  let snapUser;
-  let snapRevision;
-  let snapWritable;
+  let snapUser: unknown;
+  let snapRevision: unknown;
+  let snapWritable: unknown;
 
   beforeAll(async () => {
     const home = mkdtempSync(join(tmpdir(), "dsh-lan-proxy-readuser-"));
     const prevHome = process.env.DSH_HOME;
     process.env.DSH_HOME = home;
-    const routes = [];
-    const disposers = [];
+    const routes: WebRoute[] = [];
+    const disposers: Array<unknown> = [];
     const scope = {
       _val: {
         port: 0,
@@ -2132,13 +2226,13 @@ describe("apply 内 readUser 真实闭包（CRAP 覆盖）", () => {
       get() {
         return this._val;
       },
-      async update(patch) {
+      async update(patch: Record<string, unknown>) {
         Object.assign(this._val, patch);
       },
-      async replace(section) {
-        this._val = { ...section };
+      async replace(section: Record<string, unknown>) {
+        this._val = { ...(section as Record<string, unknown>) } as typeof this._val;
       },
-      watch(cb) {
+      watch(cb: () => void) {
         cb();
         return () => {};
       },
@@ -2151,15 +2245,19 @@ describe("apply 内 readUser 真实闭包（CRAP 覆盖）", () => {
         return [{ ns: SETTINGS_NS, user: { port: 4100 }, revision: 42 }];
       },
     };
-    const ws = makeFakeWebServer({ register: (route) => routes.push(route) });
+    const ws = makeFakeWebServer({
+      register: (route: WebRoute) => {
+        routes.push(route);
+      },
+    });
     const ctx = {
       logger: { info: () => {}, warn: () => {}, error: () => {} },
       webServer: ws,
-      inject(services, fn) {
+      inject(services: string[], fn: (ctx: unknown) => void) {
         if (services.includes("settings")) {
           const sctx = {
             settings: settingsService,
-            effect(fn2) {
+            effect(fn2: () => unknown) {
               const d = fn2();
               disposers.push(d);
               return d;
@@ -2168,13 +2266,13 @@ describe("apply 内 readUser 真实闭包（CRAP 覆盖）", () => {
           fn(sctx);
         }
       },
-      effect(fn) {
+      effect(fn: () => unknown) {
         const d = fn();
         if (typeof d === "function") disposers.push(d);
         return d;
       },
     };
-    apply(ctx, {
+    apply(ctx as unknown as Context, {
       host: "127.0.0.1",
       port: 0,
       httpsPort: 0,
@@ -2184,21 +2282,21 @@ describe("apply 内 readUser 真实闭包（CRAP 覆盖）", () => {
       httpCompressEnabled: false,
     });
     await sleep(50);
-    const configRoute = routes.find((r) => r.path === ROUTES.config);
+    const configRoute = routes.find((r: WebRoute) => r.path === ROUTES.config);
     let body = "";
-    configRoute.handler(
+    (configRoute as WebRoute).handler(
       {
         method: "GET",
         socket: { remoteAddress: "127.0.0.1" },
         headers: { host: "127.0.0.1:3080" },
         url: ROUTES.config,
-      },
+      } as unknown as IncomingMessage,
       {
         writeHead: () => {},
-        end: (c) => {
+        end: (c?: unknown) => {
           body = String(c);
         },
-      },
+      } as unknown as import("node:http").ServerResponse,
     );
     const snap = JSON.parse(body);
     snapUser = snap.user;
@@ -2206,7 +2304,7 @@ describe("apply 内 readUser 真实闭包（CRAP 覆盖）", () => {
     snapWritable = snap.writable;
     for (const d of [...disposers].reverse()) {
       try {
-        d();
+        (d as unknown as () => void)();
       } catch {}
     }
     process.env.DSH_HOME = prevHome;

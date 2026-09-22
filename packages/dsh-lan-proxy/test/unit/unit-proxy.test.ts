@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * dsh-lan-proxy — 转发核心（src/server/proxy/impl/proxy.ts）结构化单测。
  *
@@ -17,6 +16,8 @@
  */
 import { beforeAll, describe, expect, it } from "vitest";
 import { createServer, request as httpRequest } from "node:http";
+import type { AddressInfo } from "node:net";
+import type { IncomingHttpHeaders } from "node:http";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -46,10 +47,10 @@ import { DEFAULT_DEFLATE_POLICY } from "../../src/server/shared/deflate.ts";
 import { ensureSelfSignedTls } from "../../src/server/tls/impl/index.ts";
 import { DEFAULT_WSS_COMPRESS_PATHS } from "../../src/server/config/impl/model.ts";
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const sleep = (ms: number): Promise<void> => new Promise<void>((r) => setTimeout(r, ms));
 
 /** 轮询等待条件成立（防 flake 纪律：替代固定 sleep 猜时序）；超时返回 false。 */
-async function waitFor(predicate, deadlineMs = 5000, stepMs = 20) {
+async function waitFor(predicate: () => boolean, deadlineMs = 5000, stepMs = 20) {
   const start = Date.now();
   while (!predicate()) {
     if (Date.now() - start > deadlineMs) return false;
@@ -59,7 +60,7 @@ async function waitFor(predicate, deadlineMs = 5000, stepMs = 20) {
 }
 
 /** RFC6455 握手应答行（Sec-WebSocket-Accept 计算；供 raw 假对端完成升级）。 */
-const wsHandshakeResponse = (key) =>
+const wsHandshakeResponse = (key: string) =>
   "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n" +
   `Sec-WebSocket-Accept: ${createHash("sha1")
     .update(key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11")
@@ -74,17 +75,17 @@ async function mkUpstream() {
       ws.on("message", (data, isBinary) => ws.send(data, { binary: isBinary }));
     });
   });
-  await new Promise((r) => upServer.listen(0, "127.0.0.1", r));
-  const upPort = upServer.address().port;
+  await new Promise<void>((r) => upServer.listen(0, "127.0.0.1", () => r()));
+  const upPort = (upServer.address() as AddressInfo).port;
   return { upPort, upServer, wss };
 }
 
 /** 经代理建一条 WS 连接、等 open、重试发送帧至回显（上游段 open 竞态：桥接的
  *  浏览器段 message 监听在 upstreamWs open 后才挂载，过早帧会被丢——重试规避），
  *  关闭连接返回收到的帧。 */
-async function openAndEcho(port, path) {
+async function openAndEcho(port: number, path: string): Promise<string[]> {
   const ws = new WsClient(`ws://127.0.0.1:${port}${path}`);
-  const received = [];
+  const received: string[] = [];
   ws.on("message", (data) => received.push(data.toString()));
   await new Promise((r, j) => {
     ws.on("open", r);
@@ -177,7 +178,12 @@ describe("纯函数边界用例", () => {
     });
 
     it("多值头（string[]）同样整体覆盖为单值 authority", () => {
-      expect(rewriteHeaders({ host: ["a", "b"], origin: ["http://a"] }, "127.0.0.1:9")).toEqual({
+      expect(
+        rewriteHeaders(
+          { host: ["a", "b"], origin: ["http://a"] } as unknown as IncomingHttpHeaders,
+          "127.0.0.1:9",
+        ),
+      ).toEqual({
         host: "127.0.0.1:9",
         origin: "http://127.0.0.1:9",
       });
@@ -238,7 +244,12 @@ describe("纯函数边界用例", () => {
     });
 
     it("多值头（string[]）合并为逗号串", () => {
-      expect(bridgeUpstreamHeaders({ cookie: ["a=1", "b=2"] }, "127.0.0.1:1")).toEqual({
+      expect(
+        bridgeUpstreamHeaders(
+          { cookie: ["a=1", "b=2"] } as unknown as IncomingHttpHeaders,
+          "127.0.0.1:1",
+        ),
+      ).toEqual({
         cookie: "a=1, b=2",
         host: "127.0.0.1:1",
         origin: "http://127.0.0.1:1",
@@ -334,17 +345,17 @@ describe("纯函数边界用例", () => {
     it("1 低档 → gzip level=1", () => expect(resolveCompressionOptions(1).level).toBe(1));
 
     it("1 低档 → brotli 质量 2", () =>
-      expect(resolveCompressionOptions(1).brotli.params[Q]).toBe(2));
+      expect(resolveCompressionOptions(1).brotli!.params[Q]).toBe(2));
 
     it("2 中档 → gzip level=5", () => expect(resolveCompressionOptions(2).level).toBe(5));
 
     it("2 中档 → brotli 质量 5", () =>
-      expect(resolveCompressionOptions(2).brotli.params[Q]).toBe(5));
+      expect(resolveCompressionOptions(2).brotli!.params[Q]).toBe(5));
 
     it("3 高档 → gzip level=9", () => expect(resolveCompressionOptions(3).level).toBe(9));
 
     it("3 高档 → brotli 质量 9", () =>
-      expect(resolveCompressionOptions(3).brotli.params[Q]).toBe(9));
+      expect(resolveCompressionOptions(3).brotli!.params[Q]).toBe(9));
   });
 
   describe("launch token 判定（issue #380：hasDshAuthCookie / isTokenMintCandidate / withLaunchToken）", () => {
@@ -427,7 +438,7 @@ describe("纯函数边界用例", () => {
 // bridgeCompressedWs 不可从 index.ts 直接导入（未 re-export），
 // 只能经 createLanProxy 的 wsCompress 启用路径间接触发。
 describe("bridgeCompressedWs（WebSocket 压缩桥接）", () => {
-  let received = [];
+  let received: string[] = [];
 
   beforeAll(async () => {
     const upServer = createServer();
@@ -437,8 +448,8 @@ describe("bridgeCompressedWs（WebSocket 压缩桥接）", () => {
         ws.on("message", (data, isBinary) => ws.send(data, { binary: isBinary }));
       });
     });
-    await new Promise((r) => upServer.listen(0, "127.0.0.1", r));
-    const upPort = upServer.address().port;
+    await new Promise<void>((r) => upServer.listen(0, "127.0.0.1", () => r()));
+    const upPort = (upServer.address() as AddressInfo).port;
 
     const proxy = createLanProxy({
       host: "127.0.0.1",
@@ -450,7 +461,7 @@ describe("bridgeCompressedWs（WebSocket 压缩桥接）", () => {
     const { httpPort } = await proxy.listen();
 
     const browserWs = new WsClient(`ws://127.0.0.1:${httpPort}/api/remote.mux`);
-    const got = [];
+    const got: string[] = [];
     browserWs.on("message", (data) => {
       got.push(data.toString());
     });
@@ -481,9 +492,9 @@ describe("bridgeCompressedWs（WebSocket 压缩桥接）", () => {
 // Host/Origin 重写为回环目标、浏览器段 WS 握手头不透传（无重复头）、
 // 浏览器段压缩帧经桥接解压后上游回显可达（压缩与认证互不干扰）。
 describe("#379 桥接上游连接入站头透传", () => {
-  let echoedValue;
-  let upgradeHeaders = null;
-  let upPortValue;
+  let echoedValue = "";
+  let upgradeHeaders: IncomingHttpHeaders = {};
+  let upPortValue = 0;
 
   beforeAll(async () => {
     const upServer = createServer();
@@ -494,8 +505,8 @@ describe("#379 桥接上游连接入站头透传", () => {
         ws.on("message", (data, isBinary) => ws.send(data, { binary: isBinary }));
       });
     });
-    await new Promise((r) => upServer.listen(0, "127.0.0.1", r));
-    const upPort = upServer.address().port;
+    await new Promise<void>((r) => upServer.listen(0, "127.0.0.1", () => r()));
+    const upPort = (upServer.address() as AddressInfo).port;
     upPortValue = upPort;
 
     const proxy = createLanProxy({
@@ -514,7 +525,7 @@ describe("#379 桥接上游连接入站头透传", () => {
         "x-lan-proxy-probe": "issue-379",
       },
     });
-    const echoed = new Promise((resolve) =>
+    const echoed = new Promise<string>((resolve) =>
       browserWs.once("message", (d) => resolve(d.toString())),
     );
     await new Promise((r, j) => {
@@ -571,8 +582,8 @@ describe("#379 桥接上游连接入站头透传", () => {
 // 端最终 error/close 而非维持 open」防回归。对照：带 cookie 的升级仍成功（上方
 // #379 端到端用例已断言双向可达，此处不再重复）。
 describe("#395 L4 无 cookie 的 WS 桥接升级被上游 401 拒绝", () => {
-  let failedInTime;
-  let readyStateAfterFailure;
+  let failedInTime = false;
+  let readyStateAfterFailure = 0;
   let noCookieUpgrades = 0;
 
   beforeAll(async () => {
@@ -590,8 +601,8 @@ describe("#395 L4 无 cookie 的 WS 桥接升级被上游 401 拒绝", () => {
         ws.on("message", (data, isBinary) => ws.send(data, { binary: isBinary }));
       });
     });
-    await new Promise((r) => upServer.listen(0, "127.0.0.1", r));
-    const upPort = upServer.address().port;
+    await new Promise<void>((r) => upServer.listen(0, "127.0.0.1", () => r()));
+    const upPort = (upServer.address() as AddressInfo).port;
 
     const proxy = createLanProxy({
       host: "127.0.0.1",
@@ -603,7 +614,7 @@ describe("#395 L4 无 cookie 的 WS 桥接升级被上游 401 拒绝", () => {
     const { httpPort } = await proxy.listen();
 
     // 浏览器端无 cookie 连压缩路径：不期望成功 open，断言最终以 error/close 失败。
-    const events = [];
+    const events: string[] = [];
     const browserWs = new WsClient(`ws://127.0.0.1:${httpPort}/api/remote.mux`);
     browserWs.on("open", () => events.push("open"));
     browserWs.on("error", () => events.push("error"));
@@ -642,11 +653,11 @@ describe("#395 L4 无 cookie 的 WS 桥接升级被上游 401 拒绝", () => {
 
 // —— 断言 1 + 3：真 echo 上游（ws 库自动回 pong）→ ping 按间隔到达、连接不被误杀 ——
 describe("#268 P0-1 探活断言 1+3：ping 按间隔发出、pong 正常不误杀", () => {
-  let pingsReachedTwo;
-  let pingGapInRange;
-  let upstreamPingsReachedTwo;
-  let readyStateAlive;
-  let echoedAlive;
+  let pingsReachedTwo = false;
+  let pingGapInRange = false;
+  let upstreamPingsReachedTwo = false;
+  let readyStateAlive = 0;
+  let echoedAlive = "";
 
   beforeAll(async () => {
     const upServer = createServer();
@@ -660,8 +671,8 @@ describe("#268 P0-1 探活断言 1+3：ping 按间隔发出、pong 正常不误�
         ws.on("message", (data, isBinary) => ws.send(data, { binary: isBinary }));
       });
     });
-    await new Promise((r) => upServer.listen(0, "127.0.0.1", r));
-    const upPort = upServer.address().port;
+    await new Promise<void>((r) => upServer.listen(0, "127.0.0.1", () => r()));
+    const upPort = (upServer.address() as AddressInfo).port;
 
     const proxy = createLanProxy({
       host: "127.0.0.1",
@@ -672,7 +683,7 @@ describe("#268 P0-1 探活断言 1+3：ping 按间隔发出、pong 正常不误�
     });
     const { httpPort } = await proxy.listen();
 
-    const pings = []; // 浏览器端收到 ping 的时刻 = 浏览器段探活按间隔发出
+    const pings: number[] = []; // 浏览器端收到 ping 的时刻 = 浏览器段探活按间隔发出
     const browserWs = new WsClient(`ws://127.0.0.1:${httpPort}/api/events.mux`);
     browserWs.on("ping", () => {
       pings.push(Date.now());
@@ -689,7 +700,7 @@ describe("#268 P0-1 探活断言 1+3：ping 按间隔发出、pong 正常不误�
     // 断言 3：pong 正常（两端 ws 库自动回 pong）→ 多周期后不误杀且消息双向可达
     upstreamPingsReachedTwo = await waitFor(() => upstreamPings >= 2, 4000);
     readyStateAlive = browserWs.readyState;
-    const echoed = new Promise((resolve) =>
+    const echoed = new Promise<string>((resolve) =>
       browserWs.once("message", (d) => resolve(d.toString())),
     );
     browserWs.send("probe-alive-check");
@@ -726,16 +737,16 @@ describe("#268 P0-1 探活断言 1+3：ping 按间隔发出、pong 正常不误�
 // raw 假上游完成 RFC6455 握手后保持打开但对一切帧沉默（无 ws 库不会自动回
 // pong）→ 上游段探活超时 terminate → close 互断逻辑关闭浏览器端（1006）。
 describe("#268 P0-1 探活断言 2a：上游段 pong 缺失 → terminate 上游", () => {
-  let closeObserved;
-  let closeCode = null;
+  let closeObserved = false;
+  let closeCode: number | null = null;
 
   beforeAll(async () => {
     const silentServer = createServer((req, res) => res.destroy());
     silentServer.on("upgrade", (req, socket) => {
-      socket.write(wsHandshakeResponse(req.headers["sec-websocket-key"]));
+      socket.write(wsHandshakeResponse(req.headers["sec-websocket-key"] as string));
     });
-    await new Promise((r) => silentServer.listen(0, "127.0.0.1", r));
-    const silentPort = silentServer.address().port;
+    await new Promise<void>((r) => silentServer.listen(0, "127.0.0.1", () => r()));
+    const silentPort = (silentServer.address() as AddressInfo).port;
 
     const proxy = createLanProxy({
       host: "127.0.0.1",
@@ -773,8 +784,8 @@ describe("#268 P0-1 探活断言 2a：上游段 pong 缺失 → terminate 上游
 // —— 断言 2b：浏览器段 pong 缺失 → terminate 浏览器端 → 互断逻辑级联关闭上游 ——
 // raw 假客户端经 node:http upgrade 拿裸 socket（不回 pong）连压缩白名单路径。
 describe("#268 P0-1 探活断言 2b：浏览器段 pong 缺失 → terminate 浏览器端", () => {
-  let rawSocketHandshakeOk;
-  let upstreamClosed;
+  let rawSocketHandshakeOk = false;
+  let upstreamClosed = false;
 
   beforeAll(async () => {
     const upServer = createServer();
@@ -788,8 +799,8 @@ describe("#268 P0-1 探活断言 2b：浏览器段 pong 缺失 → terminate 浏
         });
       });
     });
-    await new Promise((r) => upServer.listen(0, "127.0.0.1", r));
-    const upPort = upServer.address().port;
+    await new Promise<void>((r) => upServer.listen(0, "127.0.0.1", () => r()));
+    const upPort = (upServer.address() as AddressInfo).port;
 
     const proxy = createLanProxy({
       host: "127.0.0.1",
@@ -813,7 +824,7 @@ describe("#268 P0-1 探活断言 2b：浏览器段 pong 缺失 → terminate 浏
       },
     });
     req.end();
-    const rawSocket = await new Promise((resolve, reject) => {
+    const rawSocket = await new Promise<import("node:net").Socket>((resolve, reject) => {
       req.on("upgrade", (_res, socket) => resolve(socket));
       req.on("error", reject);
     });
@@ -841,7 +852,7 @@ describe("#268 P0-1 探活断言 2b：浏览器段 pong 缺失 → terminate 浏
 
 // ===== createLanProxy 转发错误处理（proxy error → 502） =====
 describe("createLanProxy 转发错误处理（proxy error → 502）", () => {
-  let res;
+  let res: { status: number; body: string } = { status: 0, body: "" };
 
   beforeAll(async () => {
     const proxy = createLanProxy({
@@ -851,7 +862,7 @@ describe("createLanProxy 转发错误处理（proxy error → 502）", () => {
       targetPort: 1, // 1 端口不可达
     });
     const { httpPort } = await proxy.listen();
-    res = await new Promise((resolve) => {
+    res = await new Promise<{ status: number; body: string }>((resolve) => {
       const req = httpRequest(
         {
           hostname: "127.0.0.1",
@@ -863,7 +874,7 @@ describe("createLanProxy 转发错误处理（proxy error → 502）", () => {
         (res2) => {
           let body = "";
           res2.on("data", (c) => (body += c));
-          res2.on("end", () => resolve({ status: res2.statusCode, body }));
+          res2.on("end", () => resolve({ status: res2.statusCode ?? 0, body }));
         },
       );
       req.on("error", (e) => resolve({ status: 0, body: e.message }));
@@ -910,13 +921,13 @@ describe("createLanProxy 非法 targetPort", () => {
 // ===== createLanProxy HTTPS 降级 =====
 // 占用一个端口 → HTTPS 绑定失败 → 降级 HTTP-only（httpPort 返回、httpsPort 不返回）
 describe("createLanProxy HTTPS 降级", () => {
-  let result;
-  let httpListening;
+  let result: { httpPort: number; httpsPort?: number } = { httpPort: 0 };
+  let httpListening = false;
 
   beforeAll(async () => {
     const occupied = createServer();
-    await new Promise((r) => occupied.listen(0, "127.0.0.1", r));
-    const occupiedPort = occupied.address().port;
+    await new Promise<void>((r) => occupied.listen(0, "127.0.0.1", () => r()));
+    const occupiedPort = (occupied.address() as AddressInfo).port;
 
     const certDir = mkdtempSync(join(tmpdir(), "dsh-lan-proxy-httpsfail-"));
     const tls = ensureSelfSignedTls({ dir: certDir, extraSans: [] });
@@ -957,8 +968,11 @@ describe("createLanProxy HTTPS 降级", () => {
 describe("wsBridgeEnabled 三态路径选择（issue #552 解耦）", () => {
   // a) wsBridge=false：命中白名单路径也走透传
   describe("a) wsBridge=false", () => {
-    let got = [];
-    let cs;
+    let got: string[] = [];
+    let cs: { wsPassthroughDestroyed: number; wsBridgeClosed: number } = {
+      wsPassthroughDestroyed: 0,
+      wsBridgeClosed: 0,
+    };
 
     beforeAll(async () => {
       const u = await mkUpstream();
@@ -997,8 +1011,11 @@ describe("wsBridgeEnabled 三态路径选择（issue #552 解耦）", () => {
 
   // b) wsBridge=true：未命中白名单路径也走桥接（保活基座不依赖压缩白名单）
   describe("b) wsBridge=true", () => {
-    let got = [];
-    let cs;
+    let got: string[] = [];
+    let cs: { wsPassthroughDestroyed: number; wsBridgeClosed: number } = {
+      wsPassthroughDestroyed: 0,
+      wsBridgeClosed: 0,
+    };
 
     beforeAll(async () => {
       const u = await mkUpstream();
@@ -1034,7 +1051,10 @@ describe("wsBridgeEnabled 三态路径选择（issue #552 解耦）", () => {
 
   // c) wsBridge 缺省（旧行为兼容）：命中白名单走桥接、未命中走透传
   describe("c) wsBridge 缺省（旧行为兼容）", () => {
-    let cs;
+    let cs: { wsPassthroughDestroyed: number; wsBridgeClosed: number } = {
+      wsPassthroughDestroyed: 0,
+      wsBridgeClosed: 0,
+    };
 
     beforeAll(async () => {
       const u = await mkUpstream();

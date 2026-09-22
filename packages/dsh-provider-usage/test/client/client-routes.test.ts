@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * dsh-provider-usage — 两端路由契约（host-seams R2 收敛，客户端层归属）。
  *

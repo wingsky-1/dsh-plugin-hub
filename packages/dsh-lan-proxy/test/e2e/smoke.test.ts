@@ -1,4 +1,3 @@
-// @ts-nocheck
 // dsh-lan-proxy 冒烟测试 —— 无外部依赖。
 //
 // 起一个"假 dsh web 服务器"（回显请求要素、对 WebSocket 升级应答字节回显），
@@ -43,6 +42,7 @@ import { fileURLToPath } from "node:url";
 // host trust 真 seam（issue #856）：真实 cordis Context + 官方 WebServer 服务。
 import { Context } from "@deepseek-ai/cordis";
 import WebServer from "@deepseek-ai/dsh-host-webserver";
+import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
 import {
   apply,
   sanitizeSettings,
@@ -81,30 +81,28 @@ let UPSTREAM_PORT = 0;
 let PROXY_PORT = 0;
 let PROXY_HTTPS_PORT = 0;
 const LAN_HOST = "192.168.1.50";
-let certDir;
-let tls;
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+let certDir = "";
+let tls!: ReturnType<typeof ensureSelfSignedTls>;
+const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
 // ── HTTP 压缩层测试桩（迁移自 dsh-gzip smoke）───────────────────────────────
 class FakeRes extends EventEmitter {
-  constructor() {
-    super();
-    this.headersSent = false;
-    this._headers = new Map();
-    this._chunks = [];
-    this.ended = false;
-    this.destroyed = false;
-  }
-  getHeader(name) {
+  headersSent = false;
+  _headers = new Map<string, string>();
+  _chunks: Buffer[] = [];
+  ended = false;
+  destroyed = false;
+  statusCode = 0;
+  getHeader(name: string) {
     return this._headers.get(String(name).toLowerCase());
   }
-  setHeader(name, value) {
+  setHeader(name: string, value: string) {
     this._headers.set(String(name).toLowerCase(), value);
   }
-  removeHeader(name) {
+  removeHeader(name: string) {
     this._headers.delete(String(name).toLowerCase());
   }
-  writeHead(code, msg, headers) {
+  writeHead(code: number, msg?: string | Record<string, string>, headers?: Record<string, string>) {
     if (typeof msg === "object" && msg !== null) {
       headers = msg;
       msg = undefined;
@@ -116,9 +114,9 @@ class FakeRes extends EventEmitter {
     }
     this.headersSent = true;
   }
-  write(chunk, encoding, callback) {
+  write(chunk: unknown, encoding?: BufferEncoding, callback?: () => void) {
     if (typeof encoding === "function") {
-      callback = encoding;
+      callback = encoding as unknown as () => void;
       encoding = undefined;
     }
     const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk ?? ""), encoding);
@@ -126,9 +124,9 @@ class FakeRes extends EventEmitter {
     if (typeof callback === "function") callback();
     return true;
   }
-  end(chunk, encoding, callback) {
+  end(chunk?: unknown, encoding?: BufferEncoding, callback?: () => void) {
     if (typeof chunk === "function") {
-      callback = chunk;
+      callback = chunk as unknown as () => void;
       chunk = undefined;
     }
     if (chunk !== undefined && chunk !== null) this.write(chunk, encoding);
@@ -218,15 +216,29 @@ function makeSettings(initialUser: Record<string, unknown> = {}) {
 }
 
 /** fake webServer：prefixes/exact Map + register/registerFallback + port（转发器目标端口）。 */
+interface SmokeTestRoute {
+  kind: string;
+  path: string;
+  handler: (...args: unknown[]) => unknown;
+}
+type SmokeTestHandler = (...args: unknown[]) => unknown;
 function makeWebServer() {
-  const prefixes = new Map();
-  const exact = new Map();
-  const ws = {
+  const prefixes = new Map<string, SmokeTestRoute>();
+  const exact = new Map<string, SmokeTestRoute>();
+  const ws: {
+    prefixes: Map<string, SmokeTestRoute>;
+    exact: Map<string, SmokeTestRoute>;
+    fallback: SmokeTestHandler | undefined;
+    port: number;
+    register(route: SmokeTestRoute): () => void;
+    registerFallback(handler: SmokeTestHandler): () => void;
+    tapIndex(): () => void;
+  } = {
     prefixes,
     exact,
     fallback: undefined,
     port: 30800,
-    register(route) {
+    register(route: SmokeTestRoute) {
       const table = route.kind === "exact" ? exact : prefixes;
       if (table.has(route.path)) throw new Error("duplicate");
       table.set(route.path, route);
@@ -234,7 +246,7 @@ function makeWebServer() {
         table.delete(route.path);
       };
     },
-    registerFallback(handler) {
+    registerFallback(handler: SmokeTestHandler) {
       ws.fallback = handler;
       return () => {
         ws.fallback = undefined;
@@ -248,7 +260,7 @@ function makeWebServer() {
   return ws;
 }
 
-function makeReq(over = {}) {
+function makeReq(over: Record<string, unknown> = {}) {
   return {
     method: "GET",
     headers: { host: "127.0.0.1:3080" },
@@ -286,7 +298,7 @@ upstream.on("upgrade", (req, socket) => {
 });
 
 // proxy 在 beforeAll 里创建：targetPort 必须等 upstream 绑定到具体端口后才确定。
-let proxy;
+let proxy!: ReturnType<typeof createLanProxy>;
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 /**
@@ -296,28 +308,28 @@ let proxy;
  */
 async function freePort() {
   const probe = createServer();
-  await new Promise((r) => probe.listen(0, "127.0.0.1", r));
-  const chosen = probe.address().port;
+  await new Promise<void>((r) => probe.listen(0, "127.0.0.1", () => r()));
+  const chosen = (probe.address() as import("node:net").AddressInfo).port;
   await new Promise((r) => probe.close(r));
   return chosen;
 }
 
-function getViaProxy(headers) {
-  return new Promise((resolve, reject) => {
+function getViaProxy(headers: Record<string, string>): Promise<{ status: number; body: string }> {
+  return new Promise<{ status: number; body: string }>((resolve, reject) => {
     const req = httpRequest(
       { hostname: "127.0.0.1", port: PROXY_PORT, path: "/hello", method: "GET", headers },
       (res) => {
         let body = "";
         res.on("data", (c) => (body += c));
-        res.on("end", () => resolve({ status: res.statusCode, body }));
+        res.on("end", () => resolve({ status: res.statusCode ?? 0, body }));
       },
     );
     req.on("error", reject);
     req.end();
   });
 }
-function upgradeViaProxy() {
-  return new Promise((resolve, reject) => {
+function upgradeViaProxy(): Promise<{ status: number; echoed: string }> {
+  return new Promise<{ status: number; echoed: string }>((resolve, reject) => {
     const req = httpRequest({
       hostname: "127.0.0.1",
       port: PROXY_PORT,
@@ -336,7 +348,7 @@ function upgradeViaProxy() {
         echoed += c.toString();
         if (echoed.length >= 16) {
           socket.end();
-          resolve({ status: res.statusCode, echoed });
+          resolve({ status: res.statusCode ?? 0, echoed });
         }
       });
       socket.write("ping-from-lan-client");
@@ -346,8 +358,10 @@ function upgradeViaProxy() {
   });
 }
 /** HTTPS 版请求 helper（自签证书：rejectUnauthorized 关闭）。 */
-function getViaHttpsProxy(headers) {
-  return new Promise((resolve, reject) => {
+function getViaHttpsProxy(
+  headers: Record<string, string>,
+): Promise<{ status: number; body: string }> {
+  return new Promise<{ status: number; body: string }>((resolve, reject) => {
     const req = httpsRequest(
       {
         hostname: "127.0.0.1",
@@ -360,16 +374,24 @@ function getViaHttpsProxy(headers) {
       (res) => {
         let body = "";
         res.on("data", (c) => (body += c));
-        res.on("end", () => resolve({ status: res.statusCode, body }));
+        res.on("end", () => resolve({ status: res.statusCode ?? 0, body }));
       },
     );
     req.on("error", reject);
     req.end();
   });
 }
+/** 上游回显体（fake dsh web server 的回显 JSON 形态）。 */
+interface UpstreamEcho {
+  method: string;
+  url: string;
+  host: string;
+  origin: string | null;
+  secFetchSite: string | null;
+}
 /** HTTPS 版 wss 升级 helper。 */
-function upgradeViaHttpsProxy() {
-  return new Promise((resolve, reject) => {
+function upgradeViaHttpsProxy(): Promise<{ status: number; echoed: string }> {
+  return new Promise<{ status: number; echoed: string }>((resolve, reject) => {
     const req = httpsRequest(
       {
         hostname: "127.0.0.1",
@@ -393,7 +415,7 @@ function upgradeViaHttpsProxy() {
         echoed += c.toString();
         if (echoed.length >= 16) {
           socket.end();
-          resolve({ status: res.statusCode, echoed });
+          resolve({ status: res.statusCode ?? 0, echoed });
         }
       });
       socket.write("ping-over-wss-0123456789");
@@ -403,8 +425,8 @@ function upgradeViaHttpsProxy() {
   });
 }
 /** Hand-write a raw HTTP/1.1 request over a socket (no implicit Host). */
-function rawRequest(requestText) {
-  return new Promise((resolve, reject) => {
+function rawRequest(requestText: string): Promise<{ statusLine: string; body: string }> {
+  return new Promise<{ statusLine: string; body: string }>((resolve, reject) => {
     const socket = connect(PROXY_PORT, "127.0.0.1");
     let raw = "";
     socket.on("connect", () => socket.write(requestText));
@@ -425,13 +447,13 @@ function rawRequest(requestText) {
 // 故 proxy / upstream 的生命周期由本 describe 的 beforeAll / afterAll 持有。
 
 describe("e2e: 真实转发（HTTP / HTTPS / WebSocket，端口 bind(0) 动态分配）", () => {
-  let httpsListening;
+  let httpsListening = false;
 
   beforeAll(async () => {
     certDir = mkdtempSync(join(tmpdir(), "dsh-lan-proxy-test-"));
     tls = ensureSelfSignedTls({ dir: certDir, extraSans: [LAN_HOST] });
-    await new Promise((r) => upstream.listen(0, "127.0.0.1", r));
-    UPSTREAM_PORT = upstream.address().port;
+    await new Promise<void>((r) => upstream.listen(0, "127.0.0.1", () => r()));
+    UPSTREAM_PORT = (upstream.address() as import("node:net").AddressInfo).port;
     proxy = createLanProxy({
       host: "127.0.0.1",
       port: 0,
@@ -443,7 +465,7 @@ describe("e2e: 真实转发（HTTP / HTTPS / WebSocket，端口 bind(0) 动态�
     const listening = await proxy.listen();
     PROXY_PORT = listening.httpPort;
     httpsListening = listening.httpsPort !== undefined;
-    PROXY_HTTPS_PORT = listening.httpsPort;
+    PROXY_HTTPS_PORT = listening.httpsPort ?? 0;
   });
 
   afterAll(async () => {
@@ -457,8 +479,8 @@ describe("e2e: 真实转发（HTTP / HTTPS / WebSocket，端口 bind(0) 动态�
   });
 
   describe("http: browser-style request (Host + Origin, same-origin)", () => {
-    let browser;
-    let facts;
+    let browser!: { status: number; body: string };
+    let facts!: UpstreamEcho;
 
     beforeAll(async () => {
       browser = await getViaProxy({
@@ -491,8 +513,8 @@ describe("e2e: 真实转发（HTTP / HTTPS / WebSocket，端口 bind(0) 动态�
   });
 
   describe("http: non-browser LAN client (no Origin)", () => {
-    let plain;
-    let plainFacts;
+    let plain!: { status: number; body: string };
+    let plainFacts!: UpstreamEcho;
 
     beforeAll(async () => {
       plain = await getViaProxy({ host: `${LAN_HOST}:${PROXY_PORT}` });
@@ -515,9 +537,9 @@ describe("e2e: 真实转发（HTTP / HTTPS / WebSocket，端口 bind(0) 动态�
   });
 
   describe("http: rebinding guard", () => {
-    let evil;
-    let h11;
-    let h10;
+    let evil!: { status: number; body: string };
+    let h11!: { statusLine: string; body: string };
+    let h10!: { statusLine: string; body: string };
 
     beforeAll(async () => {
       evil = await getViaProxy({ host: "evil.com:3081" });
@@ -599,14 +621,14 @@ describe("e2e: 真实转发（HTTP / HTTPS / WebSocket，端口 bind(0) 动态�
     };
 
     describe("迁移主链：有效配置 + 幂等跳过", () => {
-      let cfgDir;
-      let firstOutcome;
-      let configExistsAfterFirst;
-      let bakExistsAfterFirst;
-      let bakRaw;
-      let userAfterFirst;
-      let secondOutcome;
-      let secondUpdatesLength;
+      let cfgDir = "";
+      let firstOutcome!: Awaited<ReturnType<typeof migrateFileConfig>>;
+      let configExistsAfterFirst = false;
+      let bakExistsAfterFirst = false;
+      let bakRaw: { port: number } = { port: 0 };
+      let userAfterFirst: Record<string, unknown> = {};
+      let secondOutcome!: Awaited<ReturnType<typeof migrateFileConfig>>;
+      let secondUpdatesLength = 0;
 
       beforeAll(async () => {
         cfgDir = mkdtempSync(join(tmpdir(), "dsh-lan-proxy-migrate-"));
@@ -677,15 +699,15 @@ describe("e2e: 真实转发（HTTP / HTTPS / WebSocket，端口 bind(0) 动态�
     });
 
     describe("中断重放（bak 重放 / 二次重放 / 坏 bak）", () => {
-      let resumeDir;
-      let resumeScope;
-      let resumeOutcome;
-      let resumeWarns;
-      let resumeBakExists;
-      let againOutcome;
-      let againUpdates;
-      let badResume;
-      let badResumeWarns;
+      let resumeDir = "";
+      let resumeScope!: ReturnType<typeof makeScope>;
+      let resumeOutcome!: Awaited<ReturnType<typeof migrateFileConfig>>;
+      let resumeWarns: string[] = [];
+      let resumeBakExists = false;
+      let againOutcome!: Awaited<ReturnType<typeof migrateFileConfig>>;
+      let againUpdates: unknown[] = [];
+      let badResume!: Awaited<ReturnType<typeof migrateFileConfig>>;
+      let badResumeWarns: string[] = [];
 
       beforeAll(async () => {
         // 中断态重放：.bak 存在且 config.json 不存在（改名成功后写入完成前进程被杀）
@@ -699,7 +721,7 @@ describe("e2e: 真实转发（HTTP / HTTPS / WebSocket，端口 bind(0) 动态�
         resumeWarns = [];
         resumeScope = makeScope();
         resumeOutcome = await migrateFileConfig(resumeDir, resumeScope, {
-          warn: (m) => resumeWarns.push(String(m)),
+          warn: (m: unknown) => resumeWarns.push(String(m)),
         });
         resumeBakExists = existsSync(join(resumeDir, MIGRATED_BAK_NAME));
 
@@ -712,7 +734,7 @@ describe("e2e: 真实转发（HTTP / HTTPS / WebSocket，端口 bind(0) 动态�
         writeFileSync(join(badBak, MIGRATED_BAK_NAME), "{not json");
         badResumeWarns = [];
         badResume = await migrateFileConfig(badBak, makeScope(), {
-          warn: (m) => badResumeWarns.push(String(m)),
+          warn: (m: unknown) => badResumeWarns.push(String(m)),
         });
         rmSync(resumeDir, { recursive: true, force: true });
         rmSync(badBak, { recursive: true, force: true });
@@ -771,7 +793,11 @@ describe("e2e: 真实转发（HTTP / HTTPS / WebSocket，端口 bind(0) 动态�
         { label: "数组 json 只标记不写", raw: JSON.stringify(["array"]) },
         { label: "含类型非法值只标记不写", raw: JSON.stringify({ port: "not-a-number" }) },
       ];
-      let records = [];
+      let records: Array<{
+        bad: Awaited<ReturnType<typeof migrateFileConfig>>;
+        bakExists: boolean;
+        updatesLength: number;
+      }> = [];
 
       beforeAll(async () => {
         records = [];
@@ -791,7 +817,7 @@ describe("e2e: 真实转发（HTTP / HTTPS / WebSocket，端口 bind(0) 动态�
       });
 
       // 原脚本把 check 写在标签循环内，故按标签展开为逐条可见用例。
-      const titled = (suffix) =>
+      const titled = (suffix: string) =>
         badPayloads.map((c, i) => ({
           title: `${c.label}（.bak 存在、scope 未被调用）：${suffix}`,
           i,
@@ -815,9 +841,9 @@ describe("e2e: 真实转发（HTTP / HTTPS / WebSocket，端口 bind(0) 动态�
     });
 
     describe("迁移：写入失败回滚 rename（config.json 还原、下次启动重试）", () => {
-      let rollbackOutcome;
-      let configRestored;
-      let failingUpdatesLength;
+      let rollbackOutcome!: Awaited<ReturnType<typeof migrateFileConfig>>;
+      let configRestored = false;
+      let failingUpdatesLength = 0;
 
       beforeAll(async () => {
         const dir = mkdtempSync(join(tmpdir(), "dsh-lan-proxy-migrate-rollback-"));
@@ -848,10 +874,10 @@ describe("e2e: 真实转发（HTTP / HTTPS / WebSocket，端口 bind(0) 动态�
     });
 
     describe("迁移：ws 压缩白名单归一化（#395 M2）", () => {
-      let m2;
-      let m2User;
-      let m2Custom;
-      let m2CustomUser;
+      let m2!: Awaited<ReturnType<typeof migrateFileConfig>>;
+      let m2User: Record<string, unknown> = {};
+      let m2Custom!: Awaited<ReturnType<typeof migrateFileConfig>>;
+      let m2CustomUser: Record<string, unknown> = {};
 
       beforeAll(async () => {
         // M2（#395）：迁移含旧默认白名单的 config.json → 写入归一化后的新值；
@@ -900,7 +926,7 @@ describe("e2e: 真实转发（HTTP / HTTPS / WebSocket，端口 bind(0) 动态�
   });
 
   describe("websocket: upgrade forwarding", () => {
-    let ws;
+    let ws!: Awaited<ReturnType<typeof upgradeViaProxy>>;
 
     beforeAll(async () => {
       ws = await upgradeViaProxy();
@@ -916,8 +942,8 @@ describe("e2e: 真实转发（HTTP / HTTPS / WebSocket，端口 bind(0) 动态�
   });
 
   describe("https: browser-style request (Host + Origin, same-origin)", () => {
-    let secure;
-    let secureFacts;
+    let secure!: { status: number; body: string };
+    let secureFacts!: UpstreamEcho;
 
     beforeAll(async () => {
       secure = await getViaHttpsProxy({
@@ -950,7 +976,7 @@ describe("e2e: 真实转发（HTTP / HTTPS / WebSocket，端口 bind(0) 动态�
   });
 
   describe("https: rebinding guard", () => {
-    let secureEvil;
+    let secureEvil!: { status: number; body: string };
 
     beforeAll(async () => {
       secureEvil = await getViaHttpsProxy({ host: "evil.com:3443" });
@@ -962,7 +988,7 @@ describe("e2e: 真实转发（HTTP / HTTPS / WebSocket，端口 bind(0) 动态�
   });
 
   describe("wss: upgrade forwarding", () => {
-    let wss;
+    let wss!: Awaited<ReturnType<typeof upgradeViaHttpsProxy>>;
 
     beforeAll(async () => {
       wss = await upgradeViaHttpsProxy();
@@ -978,15 +1004,15 @@ describe("e2e: 真实转发（HTTP / HTTPS / WebSocket，端口 bind(0) 动态�
   });
 
   describe("regression: 客户端中途断开不悬挂上游连接（keep-alive 池泄漏）", () => {
-    let afterAbort;
-    let afterAbortTls;
+    let afterAbort!: { status: number; body: string };
+    let afterAbortTls!: { status: number; body: string };
 
     beforeAll(async () => {
       // 上游 /hang 永不响应；客户端连上 30ms 后即断开（模拟关标签页/断网）。
       // 70 次超过上游池上限（64），修复前悬挂请求占满池 → 后续请求排队挂死；
       // 修复后每次断开都会销毁上游请求，池始终有可用槽位。
-      const hangAndAbort = (port) =>
-        new Promise((resolve) => {
+      const hangAndAbort = (port: number) =>
+        new Promise<void>((resolve) => {
           const req = httpRequest(
             {
               hostname: "127.0.0.1",
@@ -1061,10 +1087,12 @@ describe("unit: sanitizeSettings", () => {
 // issue #33 子项 1：校验失败指明首个非法字段与合法范围。
 describe("unit: validateSettings（非法值定位到字段与范围）", () => {
   describe("validateSettings 定位首个非法键并给出范围提示", () => {
-    let bad;
+    let bad!: NonNullable<ReturnType<typeof validateSettings>>;
 
     beforeAll(() => {
-      bad = validateSettings({ enabled: "yes", port: "abc" });
+      bad = validateSettings({ enabled: "yes", port: "abc" }) as NonNullable<
+        ReturnType<typeof validateSettings>
+      >;
     });
 
     it("非法配置返回非 null", () => {
@@ -1083,26 +1111,29 @@ describe("unit: validateSettings（非法值定位到字段与范围）", () => 
   // 原脚本把校验写在取值循环内，故按取值展开为逐条可见用例。
   describe("validateSettings 端口越界提示 1-65535", () => {
     const portValues = [0, 70000, 1.5, "4099"];
-    const titled = (suffix) => portValues.map((v) => ({ title: `port=${String(v)} ${suffix}`, v }));
+    const titled = (suffix: string) =>
+      portValues.map((v) => ({ title: `port=${String(v)} ${suffix}`, v }));
 
     it.each(titled("应非法"))("$title", ({ v }) => {
       expect(validateSettings({ port: v }) !== null).toBeTruthy();
     });
 
     it.each(titled("定位 key=port"))("$title", ({ v }) => {
-      expect(validateSettings({ port: v }).key).toBe("port");
+      expect(validateSettings({ port: v })!.key).toBe("port");
     });
 
     it.each(titled("hint 含合法范围"))("$title", ({ v }) => {
-      expect(validateSettings({ port: v }).hint.includes("1-65535")).toBeTruthy();
+      expect(validateSettings({ port: v })!.hint.includes("1-65535")).toBeTruthy();
     });
   });
 
   describe("validateSettings 档位越界提示 0-3；旧档位 4..9 迁移后合法；全合法返回 null", () => {
-    let bad;
+    let bad!: NonNullable<ReturnType<typeof validateSettings>>;
 
     beforeAll(() => {
-      bad = validateSettings({ httpCompressLevel: 10 });
+      bad = validateSettings({ httpCompressLevel: 10 }) as NonNullable<
+        ReturnType<typeof validateSettings>
+      >;
     });
 
     it("非法档位返回非 null", () => {
@@ -1234,22 +1265,31 @@ const normalRequestRounds = [0, 1, 2, 3, 4].map((round) => ({ round }));
 
 describe("integration: 转发层 HTTP 压缩（compression 中间件）", () => {
   const bigBody = JSON.stringify({ data: "y".repeat(300_000) });
-  let rBig;
-  let rBigBr;
-  let rBigPlain;
-  let rRange;
-  let rSse;
-  let rPregzip;
-  let statsOn;
-  let statsBefore403;
-  let statsAfter403;
-  let cut;
-  let upstreamDestroyedDelta;
-  let sseHoldActive;
-  let sseHoldClosed;
-  let normalRequestStatuses;
-  let upstreamDestroyedAfterNormal;
-  let rOff;
+  interface CompressResponse {
+    status: number;
+    headers: Record<string, string | string[] | undefined>;
+    body: Buffer;
+  }
+  interface CompressStats {
+    compressed: number;
+    passthrough: number;
+  }
+  let rBig!: CompressResponse;
+  let rBigBr!: CompressResponse;
+  let rBigPlain!: CompressResponse;
+  let rRange!: CompressResponse;
+  let rSse!: CompressResponse;
+  let rPregzip!: CompressResponse;
+  let statsOn!: CompressStats;
+  let statsBefore403!: CompressStats;
+  let statsAfter403!: CompressStats;
+  let cut!: { how: string; bytes: number; ms: number };
+  let upstreamDestroyedDelta = 0;
+  let sseHoldActive = 0;
+  let sseHoldClosed = 0;
+  let normalRequestStatuses: number[] = [];
+  let upstreamDestroyedAfterNormal = 0;
+  let rOff!: CompressResponse;
 
   beforeAll(async () => {
     // issue #528 反向回归：跟踪「上游长连接被销毁」次数（客户端断开后上游 close）。
@@ -1303,19 +1343,31 @@ describe("integration: 转发层 HTTP 压缩（compression 中间件）", () => 
         res.end();
       }
     });
-    await new Promise((r) => upstreamCompress.listen(0, "127.0.0.1", r));
-    const upPort = upstreamCompress.address().port;
+    await new Promise<void>((r) => upstreamCompress.listen(0, "127.0.0.1", () => r()));
+    const upPort = (upstreamCompress.address() as import("node:net").AddressInfo).port;
 
-    const requestThrough = (port, path, headers) =>
-      new Promise((resolve, reject) => {
+    const requestThrough = (
+      port: number,
+      path: string,
+      headers: Record<string, string>,
+    ): Promise<{
+      status: number;
+      headers: Record<string, string | string[] | undefined>;
+      body: Buffer;
+    }> =>
+      new Promise<{
+        status: number;
+        headers: Record<string, string | string[] | undefined>;
+        body: Buffer;
+      }>((resolve, reject) => {
         const req = httpRequest(
           { host: "127.0.0.1", port, path, headers: { host: "127.0.0.1", ...headers } },
           (res) => {
-            const chunks = [];
-            res.on("data", (c) => chunks.push(c));
+            const chunks: Buffer[] = [];
+            res.on("data", (c) => chunks.push(c as Buffer));
             res.on("end", () =>
               resolve({
-                status: res.statusCode,
+                status: res.statusCode ?? 0,
                 headers: res.headers,
                 body: Buffer.concat(chunks),
               }),
@@ -1348,7 +1400,7 @@ describe("integration: 转发层 HTTP 压缩（compression 中间件）", () => 
 
     // 计数防污染：本地生成的 403 围栏响应不得进入协商计数。
     statsBefore403 = proxyOn.httpCompressStats();
-    await new Promise((resolve) => {
+    await new Promise<void>((resolve) => {
       const req = httpRequest(
         { host: "127.0.0.1", port: pxPort, path: "/big", headers: { host: "evil.example.com" } },
         (res) => {
@@ -1363,7 +1415,7 @@ describe("integration: 转发层 HTTP 压缩（compression 中间件）", () => 
 
     // 悬挂回归（评审增量发现）：上游中途断连时 pipe 不传播错误，若不监听
     // aborted/error 终止下游，客户端将无限悬挂。修复后必须在短时限内结束。
-    cut = await new Promise((resolve) => {
+    cut = await new Promise<{ how: string; bytes: number; ms: number }>((resolve) => {
       const t0 = Date.now();
       const req = httpRequest(
         {
@@ -1377,13 +1429,13 @@ describe("integration: 转发层 HTTP 压缩（compression 中间件）", () => 
           res.on("data", (c) => {
             bytes += c.length;
           });
-          const finish = (how) => resolve({ how, bytes, ms: Date.now() - t0 });
+          const finish = (how: string) => resolve({ how, bytes, ms: Date.now() - t0 });
           res.on("end", () => finish("end"));
           res.on("close", () => finish(`close(aborted=${res.aborted})`));
-          res.on("error", (e) => finish(`error:${e.code ?? e.message}`));
+          res.on("error", (e: NodeJS.ErrnoException) => finish(`error:${e.code ?? e.message}`));
         },
       );
-      req.on("error", (e) =>
+      req.on("error", (e: NodeJS.ErrnoException) =>
         resolve({ how: `reqError:${e.code ?? e.message}`, bytes: 0, ms: Date.now() - t0 }),
       );
       req.end();
@@ -1394,7 +1446,7 @@ describe("integration: 转发层 HTTP 压缩（compression 中间件）", () => 
     // （notifier 连接顶格 16 的根因）；修复后 500ms 内上游收到 close、active 回落。
     const upDestroyBefore = proxyOn.connStats().httpUpstreamDestroyed;
     const openAndDrop = () =>
-      new Promise((resolve) => {
+      new Promise<void>((resolve) => {
         const req = httpRequest(
           { host: "127.0.0.1", port: pxPort, path: "/sse-hold", headers: { host: "127.0.0.1" } },
           (res) => {
@@ -1644,27 +1696,28 @@ describe("unit: applyConfigPatch（PUT /config 主体：校验 → 官方存储�
     };
   };
 
-  let hOk;
-  let rOk;
-  let hClear;
-  let rClear;
-  let badPort;
-  let lone;
-  let mixedClear;
-  let mixedSet;
-  let na;
-  let clearCertOnly;
-  let clearKeyOnly;
-  let clearBoth;
-  let clearConflict;
-  let brokenUser;
-  let inPair;
-  let orphanPair;
-  let orphanRes;
-  let orphanLone;
-  let broken;
-  let brokenLogWarns;
-  let conflict;
+  type DepsHandle = ReturnType<typeof makeDeps>;
+  let hOk!: DepsHandle;
+  let rOk!: PatchResult;
+  let hClear!: DepsHandle;
+  let rClear!: PatchResult;
+  let badPort!: PatchResult;
+  let lone!: PatchResult;
+  let mixedClear!: PatchResult;
+  let mixedSet!: PatchResult;
+  let na!: PatchResult;
+  let clearCertOnly!: PatchResult;
+  let clearKeyOnly!: PatchResult;
+  let clearBoth!: PatchResult;
+  let clearConflict!: PatchResult;
+  let brokenUser!: PatchResult;
+  let inPair!: PatchResult;
+  let orphanPair!: DepsHandle;
+  let orphanRes!: PatchResult;
+  let orphanLone!: PatchResult;
+  let broken!: PatchResult;
+  let brokenLogWarns: string[] = [];
+  let conflict!: PatchResult;
 
   beforeAll(async () => {
     // 合法 patch：validate/sanitize 后增量 update（expectedRevision 透传）。
@@ -1897,7 +1950,7 @@ describe("unit: applyConfigPatch（PUT /config 主体：校验 → 官方存储�
 
   it("#467 双清不会产生含 undefined 段的路径（user 层干净成对）", () => {
     const user = (brokenUser as PatchSuccess).value.user;
-    const fsPath = join(user?.tlsCertFile ?? "", user?.tlsKeyFile ?? "");
+    const fsPath = join(String(user?.tlsCertFile ?? ""), String(user?.tlsKeyFile ?? ""));
     expect(!fsPath.includes("undefined")).toBeTruthy();
   });
 
@@ -1974,14 +2027,20 @@ describe("unit: applyConfigPatch（PUT /config 主体：校验 → 官方存储�
 
 describe("unit: buildConfigRoutes（GET 快照 / PUT 写入 / 围栏）", () => {
   let putPayload: PutRecord | null = null;
-  let forbidden;
-  let notAllowed;
-  let got;
-  let gotPayload;
-  let put;
-  let putPayloadParsed;
-  let putBad;
-  let putBadPayload;
+  let forbidden!: { status: number; body: string };
+  let notAllowed!: { status: number; body: string };
+  let got!: { status: number; body: string };
+  let gotPayload!: {
+    user: unknown;
+    effective: { port: number };
+    compress: { httpCompressStats: { compressed: number } };
+    revision: unknown;
+    writable: unknown;
+  };
+  let put!: { status: number; body: string };
+  let putPayloadParsed!: { ok: unknown; user: unknown };
+  let putBad!: { status: number; body: string };
+  let putBadPayload!: { error: { details: string } };
 
   beforeAll(async () => {
     const deps = {
@@ -2123,11 +2182,11 @@ describe("unit: buildConfigRoutes（GET 快照 / PUT 写入 / 围栏）", () => 
     });
 
     it("走 update 路径", () => {
-      expect(putPayload.kind).toBe("update");
+      expect(putPayload!.kind).toBe("update");
     });
 
     it("expectedRevision 透传", () => {
-      expect(putPayload.rev).toBe(3);
+      expect(putPayload!.rev).toBe(3);
     });
   });
 
@@ -2151,21 +2210,23 @@ describe("unit: buildConfigRoutes（GET 快照 / PUT 写入 / 围栏）", () => 
 // 观测面自建（独立 fake 上游 + 独立 proxy）：共享 upstream 夹具不记录请求，且其
 // 生命周期绑定在「e2e: 真实转发」描述的 beforeAll/afterAll 上。
 describe("e2e: launch token 注入面与 Host 围栏顺序", () => {
-  let fenceProxy;
-  let fenceUpstream;
-  let fencePort;
-  const upstreamUrls = [];
+  let fenceProxy!: ReturnType<typeof createLanProxy>;
+  let fenceUpstream!: ReturnType<typeof createServer>;
+  let fencePort = 0;
+  const upstreamUrls: string[] = [];
   let tokenReads = 0;
 
   /** 经代理发一个 GET /（headers 决定围栏与注入分支）。 */
-  const getThroughFence = (headers) =>
-    new Promise((resolve, reject) => {
+  const getThroughFence = (
+    headers: Record<string, string>,
+  ): Promise<{ status: number; body: string }> =>
+    new Promise<{ status: number; body: string }>((resolve, reject) => {
       const req = httpRequest(
         { hostname: "127.0.0.1", port: fencePort, path: "/", method: "GET", headers },
         (r) => {
           let body = "";
           r.on("data", (c) => (body += c));
-          r.on("end", () => resolve({ status: r.statusCode, body }));
+          r.on("end", () => resolve({ status: r.statusCode ?? 0, body }));
         },
       );
       req.on("error", reject);
@@ -2174,16 +2235,16 @@ describe("e2e: launch token 注入面与 Host 围栏顺序", () => {
 
   beforeAll(async () => {
     fenceUpstream = createServer((req, res) => {
-      upstreamUrls.push(req.url);
+      upstreamUrls.push(req.url as string);
       res.writeHead(200, { "content-type": "text/plain" });
       res.end("ok");
     });
-    await new Promise((r) => fenceUpstream.listen(0, "127.0.0.1", r));
+    await new Promise<void>((r) => fenceUpstream.listen(0, "127.0.0.1", () => r()));
     fenceProxy = createLanProxy({
       host: "127.0.0.1",
       port: 0,
       targetHost: "127.0.0.1",
-      targetPort: fenceUpstream.address().port,
+      targetPort: (fenceUpstream.address() as import("node:net").AddressInfo).port,
       injectToken: {
         getToken: () => {
           tokenReads += 1;
@@ -2229,40 +2290,51 @@ describe("e2e: launch token 注入面与 Host 围栏顺序", () => {
 
 // fake ctx + apply：转发器用一个高位随机端口（不碰 3081），DSH_HOME 隔离。
 describe("apply: 注册、围栏与 settings 命名空间接线", () => {
-  let rpcHandleCount;
-  let healthRoute;
-  let configRoute;
-  let migratedBakExists;
-  let legacyConfigMoved;
-  let settingsUpdates;
-  let settingsUserPort;
-  let settingsRegisteredNs;
-  let settingsUserPrintBanner;
-  let settingsWatchersLength;
-  let settingsWatchDisposed;
-  let snapshot;
-  let snapshotPayload;
-  let cfg403;
-  let cfg405;
-  let put;
-  let putPayload;
-  let res403Status;
-  let res405Status;
-  let res405Body;
-  let res200Status;
-  let res200Payload;
-  let caDlRoute;
-  let caGenRoute;
-  let dlSelfSigned;
-  let healthSelfSigned;
-  let caGenFence403;
-  let caGenFence405;
-  let customPost409;
-  let genCreated;
-  let dlManaged;
-  let healthManaged;
-  let genNeedsConfirm;
-  let leafRotated;
+  let rpcHandleCount = 0;
+  let healthRoute!: WebRoute;
+  let configRoute!: WebRoute;
+  let migratedBakExists = false;
+  let legacyConfigMoved = false;
+  let settingsUpdates: unknown[] = [];
+  let settingsUserPort: unknown;
+  let settingsRegisteredNs: unknown;
+  let settingsUserPrintBanner: unknown;
+  let settingsWatchersLength = 0;
+  let settingsWatchDisposed = 0;
+  let snapshot!: { status: number; body: string };
+  let snapshotPayload!: {
+    ok: unknown;
+    effective: { port: number; host: string };
+    compress: { httpCompressMounted: boolean; httpCompressStats: { compressed: number } };
+    user: unknown;
+    revision: unknown;
+    writable: unknown;
+  };
+  let cfg403!: { status: number; body: string };
+  let cfg405!: { status: number; body: string };
+  let put!: { status: number; body: string };
+  let putPayload!: { ok: unknown; user: unknown };
+  let res403Status = 0;
+  let res405Status = 0;
+  let res405Body = "";
+  let res200Status = 0;
+  let res200Payload: Record<string, unknown> = {};
+  let caDlRoute!: WebRoute;
+  let caGenRoute!: WebRoute;
+  let dlSelfSigned!: { status: number; body: string };
+  let healthSelfSigned!: Record<string, unknown>;
+  let caGenFence403 = 0;
+  let caGenFence405 = 0;
+  let customPost409!: { status: number; body: string };
+  let genCreated!: { status: number; body: string };
+  let dlManaged!: { status: number; headers: Record<string, string>; head: number };
+  let healthManaged!: {
+    caState: string;
+    caConfigured: boolean;
+    certInfo: { leafValidTo: string; leafSans: unknown; currentIps: unknown };
+  };
+  let genNeedsConfirm!: { status: number; body: string };
+  let leafRotated!: { status: number; body: string };
 
   beforeAll(async () => {
     const applyHome = mkdtempSync(join(tmpdir(), "dsh-lan-proxy-apply-"));
@@ -2272,14 +2344,14 @@ describe("apply: 注册、围栏与 settings 命名空间接线", () => {
     mkdirSync(join(applyHome, "lan-proxy"), { recursive: true });
     writeFileSync(join(applyHome, "lan-proxy", "config.json"), JSON.stringify({ port: 19997 }));
     const { state: settingsState, service } = makeSettings();
-    const routes = [];
-    const rpcHandles = [];
-    const disposers = [];
+    const routes: WebRoute[] = [];
+    const rpcHandles: Array<{ channel: string; h: unknown; opts: unknown }> = [];
+    const disposers: Array<unknown> = [];
     const ctx = {
       logger: { info: () => {}, warn: () => {}, error: () => {} },
       webServer: {
         port: 3080,
-        register(route) {
+        register(route: WebRoute) {
           routes.push(route);
           return () => {};
         },
@@ -2287,18 +2359,18 @@ describe("apply: 注册、围栏与 settings 命名空间接线", () => {
           return () => {};
         },
       },
-      inject(services, fn) {
+      inject(services: string[], fn: (ctx: unknown) => void) {
         if (services.includes("connection")) {
           fn({
             connection: {
               rpc: {
-                handle(channel, h, opts) {
+                handle(channel: string, h: unknown, opts: unknown) {
                   rpcHandles.push({ channel, h, opts });
                   return () => {};
                 },
               },
             },
-            effect(fn2) {
+            effect(fn2: () => unknown) {
               return fn2();
             },
           });
@@ -2306,7 +2378,7 @@ describe("apply: 注册、围栏与 settings 命名空间接线", () => {
         if (services.includes("settings")) {
           fn({
             settings: service,
-            effect(fn2) {
+            effect(fn2: () => unknown) {
               const d = fn2();
               if (typeof d === "function") disposers.push(d);
               return d;
@@ -2314,17 +2386,17 @@ describe("apply: 注册、围栏与 settings 命名空间接线", () => {
           });
         }
       },
-      effect(fn) {
+      effect(fn: () => unknown) {
         const d = fn();
         if (typeof d === "function") disposers.push(d);
         return d;
       },
     };
-    apply(ctx, { host: "127.0.0.1", port: 0, httpsEnabled: false });
+    apply(ctx as unknown as Context, { host: "127.0.0.1", port: 0, httpsEnabled: false });
     const cleanup = () => {
       for (const d of disposers.reverse()) {
         try {
-          d();
+          (d as unknown as () => void)();
         } catch {}
       }
     };
@@ -2401,7 +2473,7 @@ describe("apply: 注册、围栏与 settings 命名空间接线", () => {
     settingsWatchersLength = settingsState.watchers.length;
     settingsWatchDisposed = settingsState.watchDisposed;
 
-    const fakeReq = (overrides = {}) =>
+    const fakeReq = (overrides: Record<string, unknown> = {}): IncomingMessage =>
       Object.assign(
         {
           method: "GET",
@@ -2410,36 +2482,50 @@ describe("apply: 注册、围栏与 settings 命名空间接线", () => {
           url: ROUTES.health,
         },
         overrides,
-      );
-    const fakeRes = () => {
+      ) as unknown as IncomingMessage;
+    const fakeRes = (): {
+      status: () => number;
+      body: () => string;
+      writeHead: (s: number) => void;
+      end: (payload?: unknown) => void;
+    } => {
       let status = 0;
       let body = "";
       return {
-        status: () => status,
-        body: () => body,
-        writeHead(s) {
+        status: (): number => status,
+        body: (): string => body,
+        writeHead(s: number) {
           status = s;
         },
-        end(payload) {
-          body = payload;
+        end(payload?: unknown) {
+          body = payload as string;
         },
       };
     };
     const res403 = fakeRes();
-    healthRoute.handler(fakeReq({ socket: { remoteAddress: "192.168.1.9" } }), res403);
+    healthRoute.handler(
+      fakeReq({ socket: { remoteAddress: "192.168.1.9" } }),
+      res403 as unknown as ServerResponse,
+    );
     res403Status = res403.status();
     const res405 = fakeRes();
-    healthRoute.handler(fakeReq({ method: "POST" }), res405);
+    healthRoute.handler(fakeReq({ method: "POST" }), res405 as unknown as ServerResponse);
     res405Status = res405.status();
     res405Body = res405.body();
     const res200 = fakeRes();
-    healthRoute.handler(fakeReq(), res200);
+    healthRoute.handler(fakeReq(), res200 as unknown as ServerResponse);
     res200Status = res200.status();
     res200Payload = JSON.parse(res200.body());
 
     // 一键 CA 全链（#930 Phase 1+2，lib 产物层）：自签 404 → 围栏 → custom 门控 →
     // 首建 200 → 托管下发 200 → 复发确认 → 叶轮换。真签发（forge）只跑两轮。
-    const caCall = async (route, method, overrides = {}, body, raw) => {
+    const caCall = async (
+      route: WebRoute,
+      method: string,
+      overrides: Record<string, unknown> = {},
+      body?: unknown,
+      raw?: string,
+    ) => {
       const text = raw !== undefined ? raw : body === undefined ? "" : JSON.stringify(body);
       const req = Object.assign(
         {
@@ -2454,23 +2540,23 @@ describe("apply: 注册、围栏与 settings 命名空间接线", () => {
         overrides,
       );
       let status = 0;
-      let headersOut = {};
-      const chunks = [];
+      let headersOut: Record<string, string> = {};
+      const chunks: Buffer[] = [];
       const res = {
-        writeHead(c, h) {
+        writeHead(c: number, h?: Record<string, string>) {
           status = c;
           headersOut = h ?? {};
         },
-        end(c) {
+        end(c?: unknown) {
           if (c !== undefined) chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(String(c)));
         },
       };
-      await route.handler(req, res);
+      await route.handler(req as unknown as IncomingMessage, res as unknown as ServerResponse);
       return { status: status || 200, headers: headersOut, body: Buffer.concat(chunks) };
     };
     const healthNow = async () => {
       const r = fakeRes();
-      healthRoute.handler(fakeReq(), r);
+      healthRoute.handler(fakeReq(), r as unknown as ServerResponse);
       return JSON.parse(r.body());
     };
     const dlSelf = await caCall(caDlRoute, "GET");
@@ -2758,23 +2844,25 @@ describe("apply: 注册、围栏与 settings 命名空间接线", () => {
 
 // apply：settings 服务缺失 → 降级（卡片可读不可写，主体不受影响）。
 describe("apply: settings 服务缺失降级", () => {
-  let healthRegistered;
-  let configRoute;
-  let degradedPort;
-  let degradedStatus;
-  let degradedPayload;
+  let healthRegistered = false;
+  let configRoute!: WebRoute;
+  let degradedPort = 0;
+  let degradedStatus = 0;
+  let degradedPayload: Record<string, unknown> & {
+    effective: { port: number };
+  } = { effective: { port: 0 } };
 
   beforeAll(async () => {
     const applyHome = mkdtempSync(join(tmpdir(), "dsh-lan-proxy-apply-nosettings-"));
     const prevHome = process.env.DSH_HOME;
     process.env.DSH_HOME = applyHome;
-    const routes = [];
-    const disposers = [];
+    const routes: WebRoute[] = [];
+    const disposers: Array<unknown> = [];
     const ctx = {
       logger: { info: () => {}, warn: () => {}, error: () => {} },
       webServer: {
         port: 3080,
-        register(route) {
+        register(route: WebRoute) {
           routes.push(route);
           return () => {};
         },
@@ -2783,7 +2871,7 @@ describe("apply: settings 服务缺失降级", () => {
         },
       },
       inject() {},
-      effect(fn) {
+      effect(fn: () => unknown) {
         const d = fn();
         if (typeof d === "function") disposers.push(d);
         return d;
@@ -2791,9 +2879,9 @@ describe("apply: settings 服务缺失降级", () => {
     };
     const chosenPort = await freePort();
     degradedPort = chosenPort;
-    apply(ctx, { host: "127.0.0.1", port: chosenPort, httpsEnabled: false });
-    healthRegistered = Boolean(routes.find((r) => r.path === ROUTES.health));
-    configRoute = routes.find((r) => r.path === ROUTES.config);
+    apply(ctx as unknown as Context, { host: "127.0.0.1", port: chosenPort, httpsEnabled: false });
+    healthRegistered = Boolean(routes.find((r: WebRoute) => r.path === ROUTES.health));
+    configRoute = routes.find((r: WebRoute) => r.path === ROUTES.config)!;
     const req = {
       method: "GET",
       socket: { remoteAddress: "127.0.0.1" },
@@ -2801,7 +2889,7 @@ describe("apply: settings 服务缺失降级", () => {
     };
     const chunks: string[] = [];
     let status = 0;
-    configRoute.handler(
+    (configRoute as WebRoute).handler(
       req as unknown as IncomingMessage,
       {
         writeHead: (c: number) => {
@@ -2818,7 +2906,7 @@ describe("apply: settings 服务缺失降级", () => {
     degradedPayload = JSON.parse(chunks.join(""));
     for (const d of [...disposers].reverse()) {
       try {
-        d();
+        (d as unknown as () => void)();
       } catch {}
     }
     process.env.DSH_HOME = prevHome;
@@ -2852,39 +2940,45 @@ describe("apply: settings 服务缺失降级", () => {
 
 // apply 集成：HTTP 压缩层安装 + 合并标记路由 + health 扩展字段。
 describe("apply: HTTP 压缩集成（转发 + 压缩并存 / 标记路由 / health 扩展）", () => {
-  let apiHandlerPreserved;
-  let healthRegisteredBeforeCleanup;
-  let healthPayload;
-  let apiHandlerPreservedAfterCleanup;
-  let healthRemovedAfterCleanup;
+  let apiHandlerPreserved = false;
+  let healthRegisteredBeforeCleanup = false;
+  let healthPayload: Record<string, unknown> & {
+    httpCompressStats: { compressed: number };
+  } = { httpCompressStats: { compressed: 0 } };
+  let apiHandlerPreservedAfterCleanup = false;
+  let healthRemovedAfterCleanup = false;
 
   beforeAll(async () => {
     const applyHome = mkdtempSync(join(tmpdir(), "dsh-lan-proxy-apply-httpc-"));
     const prevHome = process.env.DSH_HOME;
     process.env.DSH_HOME = applyHome;
     const ws = makeWebServer();
-    const apiHandler = (req, res) => {
+    const apiHandler = (req: unknown, res: FakeRes) => {
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify({ ok: 1, data: "y".repeat(300) }));
     };
-    ws.prefixes.set("/api", { kind: "prefix", path: "/api", handler: apiHandler });
-    const disposers = [];
+    ws.prefixes.set("/api", {
+      kind: "prefix",
+      path: "/api",
+      handler: apiHandler as SmokeTestHandler,
+    });
+    const disposers: Array<unknown> = [];
     const ctx = {
       logger: { info: () => {}, warn: () => {}, error: () => {} },
       webServer: ws,
       inject() {},
-      effect(fn) {
+      effect(fn: () => unknown) {
         const d = fn();
         if (typeof d === "function") disposers.push(d);
         return d;
       },
     };
-    apply(ctx, { host: "127.0.0.1", port: 0, httpsEnabled: false });
+    apply(ctx as unknown as Context, { host: "127.0.0.1", port: 0, httpsEnabled: false });
 
-    const apiRoute = ws.prefixes.get("/api");
+    const apiRoute = ws.prefixes.get("/api")!;
     apiHandlerPreserved = apiRoute.handler === apiHandler;
 
-    const healthRoute = ws.exact.get(ROUTES.health);
+    const healthRoute = ws.exact.get(ROUTES.health)!;
     healthRegisteredBeforeCleanup = ws.exact.has(ROUTES.health);
     const hRes = new FakeRes();
     healthRoute.handler(makeReq(), hRes);
@@ -2892,10 +2986,10 @@ describe("apply: HTTP 压缩集成（转发 + 压缩并存 / 标记路由 / heal
 
     for (const d of [...disposers].reverse()) {
       try {
-        d();
+        (d as unknown as () => void)();
       } catch {}
     }
-    apiHandlerPreservedAfterCleanup = ws.prefixes.get("/api").handler === apiHandler;
+    apiHandlerPreservedAfterCleanup = ws.prefixes.get("/api")!.handler === apiHandler;
     healthRemovedAfterCleanup = ws.exact.has(ROUTES.health);
     process.env.DSH_HOME = prevHome;
     rmSync(applyHome, { recursive: true, force: true });
@@ -2940,40 +3034,49 @@ describe("apply: HTTP 压缩集成（转发 + 压缩并存 / 标记路由 / heal
 
 // apply：httpCompressEnabled=false 只关压缩，转发不受影响。
 describe("apply: httpCompressEnabled=false 关闭压缩", () => {
-  let apiHandlerPreserved;
-  let healthRegistered;
-  let healthPayload;
+  let apiHandlerPreserved = false;
+  let healthRegistered = false;
+  let healthPayload: Record<string, unknown> = {};
 
   beforeAll(async () => {
     const applyHome = mkdtempSync(join(tmpdir(), "dsh-lan-proxy-apply-httpc-off-"));
     const prevHome = process.env.DSH_HOME;
     process.env.DSH_HOME = applyHome;
     const ws = makeWebServer();
-    const apiHandler = (req, res) => {
+    const apiHandler = (req: unknown, res: FakeRes) => {
       res.writeHead(200, { "content-type": "application/json" });
       res.end('{"ok":1}');
     };
-    ws.prefixes.set("/api", { kind: "prefix", path: "/api", handler: apiHandler });
-    const disposers = [];
+    ws.prefixes.set("/api", {
+      kind: "prefix",
+      path: "/api",
+      handler: apiHandler as SmokeTestHandler,
+    });
+    const disposers: Array<unknown> = [];
     const ctx = {
       logger: { info: () => {}, warn: () => {}, error: () => {} },
       webServer: ws,
       inject() {},
-      effect(fn) {
+      effect(fn: () => unknown) {
         const d = fn();
         if (typeof d === "function") disposers.push(d);
         return d;
       },
     };
-    apply(ctx, { host: "127.0.0.1", port: 0, httpsEnabled: false, httpCompressEnabled: false });
-    apiHandlerPreserved = ws.prefixes.get("/api").handler === apiHandler;
+    apply(ctx as unknown as Context, {
+      host: "127.0.0.1",
+      port: 0,
+      httpsEnabled: false,
+      httpCompressEnabled: false,
+    });
+    apiHandlerPreserved = ws.prefixes.get("/api")!.handler === apiHandler;
     healthRegistered = ws.exact.has(ROUTES.health);
     const hRes = new FakeRes();
-    ws.exact.get(ROUTES.health).handler(makeReq(), hRes);
+    ws.exact.get(ROUTES.health)!.handler(makeReq(), hRes);
     healthPayload = JSON.parse(Buffer.concat(hRes._chunks).toString("utf8"));
     for (const d of [...disposers].reverse()) {
       try {
-        d();
+        (d as unknown as () => void)();
       } catch {}
     }
     process.env.DSH_HOME = prevHome;
@@ -3005,26 +3108,30 @@ describe("apply: 运行中热关闭（PUT /config → scope.watch → 压缩卸�
    * 单次热关闭场景：起 fake ctx + settings service → apply → PUT /config → 等 watch 生效。
    * 原脚本以函数参数化两个场景，这里按场景展开为逐条可见用例。
    */
-  const runHotOffCase = async (patch, expectProxyOff) => {
+  const runHotOffCase = async (patch: Record<string, unknown>, expectProxyOff: boolean) => {
     const applyHome = mkdtempSync(join(tmpdir(), "dsh-lan-proxy-hotoff-"));
     const prevHome = process.env.DSH_HOME;
     process.env.DSH_HOME = applyHome;
     const ws = makeWebServer();
-    const apiHandler = (req, res) => {
+    const apiHandler = (req: unknown, res: FakeRes) => {
       res.writeHead(200, { "content-type": "application/json" });
       res.end('{"ok":1}');
     };
-    ws.prefixes.set("/api", { kind: "prefix", path: "/api", handler: apiHandler });
-    const disposers = [];
+    ws.prefixes.set("/api", {
+      kind: "prefix",
+      path: "/api",
+      handler: apiHandler as SmokeTestHandler,
+    });
+    const disposers: Array<unknown> = [];
     const { service } = makeSettings();
     const ctx = {
       logger: { info: () => {}, warn: () => {}, error: () => {} },
       webServer: ws,
-      inject(services, fn) {
+      inject(services: string[], fn: (ctx: unknown) => void) {
         if (services.includes("settings")) {
           fn({
             settings: service,
-            effect(fn2) {
+            effect(fn2: () => unknown) {
               const d = fn2();
               if (typeof d === "function") disposers.push(d);
               return d;
@@ -3032,16 +3139,16 @@ describe("apply: 运行中热关闭（PUT /config → scope.watch → 压缩卸�
           });
         }
       },
-      effect(fn) {
+      effect(fn: () => unknown) {
         const d = fn();
         if (typeof d === "function") disposers.push(d);
         return d;
       },
     };
-    apply(ctx, { host: "127.0.0.1", port: 0, httpsEnabled: false });
+    apply(ctx as unknown as Context, { host: "127.0.0.1", port: 0, httpsEnabled: false });
     const healthPayloadOf = () => {
       const hRes = new FakeRes();
-      ws.exact.get(ROUTES.health).handler(makeReq(), hRes);
+      ws.exact.get(ROUTES.health)!.handler(makeReq(), hRes);
       return JSON.parse(Buffer.concat(hRes._chunks).toString("utf8"));
     };
     const mountedBefore = healthPayloadOf().httpCompressMounted;
@@ -3049,7 +3156,7 @@ describe("apply: 运行中热关闭（PUT /config → scope.watch → 压缩卸�
     const finish = () => {
       for (const d of [...disposers].reverse()) {
         try {
-          d();
+          (d as unknown as () => void)();
         } catch {}
       }
       process.env.DSH_HOME = prevHome;
@@ -3094,7 +3201,7 @@ describe("apply: 运行中热关闭（PUT /config → scope.watch → 压缩卸�
         stream.emit("end");
       });
       void (async () => {
-        await ws.exact.get(ROUTES.config).handler(stream, res);
+        await ws.exact.get(ROUTES.config)!.handler(stream, res);
       })();
     });
 
@@ -3109,7 +3216,7 @@ describe("apply: 运行中热关闭（PUT /config → scope.watch → 压缩卸�
       // watch 防抖后按新配置重建（不影响 listening）。
       payload = healthPayloadOf();
     }
-    const apiHandlerPreserved = ws.prefixes.get("/api").handler === apiHandler;
+    const apiHandlerPreserved = ws.prefixes.get("/api")!.handler === apiHandler;
     finish();
     return { mountedBefore, putStatus, payload, apiHandlerPreserved };
   };
@@ -3130,7 +3237,7 @@ describe("apply: 运行中热关闭（PUT /config → scope.watch → 压缩卸�
   ];
 
   describe.each(hotOffCases)("$label", (hotCase) => {
-    let observed;
+    let observed!: Awaited<ReturnType<typeof runHotOffCase>>;
 
     beforeAll(async () => {
       observed = await runHotOffCase(hotCase.patch, hotCase.expectProxyOff);
@@ -3185,11 +3292,11 @@ describe("apply: 运行中热关闭（PUT /config → scope.watch → 压缩卸�
 // 存量 config.json 迁移先行于 enabled 判定（issue #110 P0-2：禁用用户升级
 // 同样迁移，重新启用不丢配置）。
 describe("apply: enabled=false 启动态", () => {
-  let migratedBakExists;
-  let legacyConfigMoved;
-  let healthRegistered;
-  let configRegistered;
-  let healthPayload;
+  let migratedBakExists = false;
+  let legacyConfigMoved = false;
+  let healthRegistered = false;
+  let configRegistered = false;
+  let healthPayload: Record<string, unknown> = {};
 
   beforeAll(async () => {
     const applyHome = mkdtempSync(join(tmpdir(), "dsh-lan-proxy-apply-all-off-"));
@@ -3202,27 +3309,27 @@ describe("apply: enabled=false 启动态", () => {
     );
     const { service: offService } = makeSettings();
     const ws = makeWebServer();
-    const disposers = [];
+    const disposers: Array<unknown> = [];
     const ctx = {
       logger: { info: () => {}, warn: () => {}, error: () => {} },
       webServer: ws,
-      inject(services, fn) {
+      inject(services: string[], fn: (ctx: unknown) => void) {
         if (services.includes("settings")) {
           fn({
             settings: offService,
-            effect(fn2) {
+            effect(fn2: () => unknown) {
               return fn2();
             },
           });
         }
       },
-      effect(fn) {
+      effect(fn: () => unknown) {
         const d = fn();
         if (typeof d === "function") disposers.push(d);
         return d;
       },
     };
-    apply(ctx, { enabled: false });
+    apply(ctx as unknown as Context, { enabled: false });
     const nsDir = join(applyHome, "@wingsky-1", "dsh-lan-proxy");
     const migratedDeadline = Date.now() + 5000;
     while (!existsSync(join(nsDir, MIGRATED_BAK_NAME)) && Date.now() < migratedDeadline)
@@ -3232,11 +3339,11 @@ describe("apply: enabled=false 启动态", () => {
     healthRegistered = ws.exact.has(ROUTES.health);
     configRegistered = ws.exact.has(ROUTES.config);
     const hRes = new FakeRes();
-    ws.exact.get(ROUTES.health).handler(makeReq(), hRes);
+    ws.exact.get(ROUTES.health)!.handler(makeReq(), hRes);
     healthPayload = JSON.parse(Buffer.concat(hRes._chunks).toString("utf8"));
     for (const d of [...disposers].reverse()) {
       try {
-        d();
+        (d as unknown as () => void)();
       } catch {}
     }
     process.env.DSH_HOME = prevHome;
@@ -3504,8 +3611,8 @@ describe("host trust 注入：真 Context + WebServer 整链（issue #856）", (
   ].join("\n");
   const HOST_TRUST_SCRIPT_OPEN = '<script id="__dshLanProxyHostTrust__">';
 
-  let home;
-  let prevHome;
+  let home = "";
+  let prevHome: string | undefined;
 
   beforeAll(() => {
     home = mkdtempSync(join(tmpdir(), "dsh-lan-proxy-host-trust-e2e-"));
@@ -3519,14 +3626,15 @@ describe("host trust 注入：真 Context + WebServer 整链（issue #856）", (
   });
 
   /** 起真实宿主（bind(0)）→ 挂本插件 → 走官方 renderIndex，返回渲染结果与端口。 */
-  async function renderWithPlugin(config) {
+  async function renderWithPlugin(config: Record<string, unknown>) {
     const root = new Context();
     const server = await root.plugin(WebServer, { host: "127.0.0.1", port: 0 });
     const fiber = await root.plugin(
       {
         name: "lan-proxy",
         inject: ["webServer"],
-        apply: (ctx, cfg) => apply(ctx, cfg),
+        apply: (ctx: Context, cfg: Record<string, unknown>) =>
+          apply(ctx, cfg as unknown as Parameters<typeof apply>[1]),
       },
       config,
     );
