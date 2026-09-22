@@ -389,7 +389,7 @@ export function TrendSection(): React.ReactElement {
       : null;
 
   return (
-    <section className="dou-trend" style={{ marginBottom: 16 }}>
+    <section className="dou-trend dou-pane" style={{ marginBottom: 16 }}>
       {/* 标题行 */}
       <h2 style={{ fontSize: 13, fontWeight: 600, margin: "0 0 8px" }}>{t("trendTitle")}</h2>
       {/* 控件行：粒度 × 范围 × 指标 × 适配器 × byModel × 形态 */}

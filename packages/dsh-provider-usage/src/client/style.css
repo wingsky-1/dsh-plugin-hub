@@ -1037,6 +1037,17 @@
  * 颜色一律 --dsw-alias-* + 浅色回退（暗色由宿主变量保证）；reduced-motion 降级。
  * 作用域 dou-report*（插件前缀隔离，不影响宿主与其他插件）。
  */
+/* R5 设置窗格统一外层：usage/trend/providers/float 四页共用（padding 12px 桌面 / 10px 窄屏），
+   禁止各页各写一套；原 settings/shared.ts sectionStyle 仅留兼容，新代码一律挂此类。 */
+.dou-pane {
+  margin-bottom: 16px;
+  padding: 12px;
+  border: 1px solid var(--dsw-alias-border-l1, #e2e5ea);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-base, #ffffff);
+  font-size: 12px;
+  line-height: 1.7;
+}
 .dou-reportGlass {
   background: var(--dsw-alias-bg-base, rgba(255, 255, 255, 0.8));
   backdrop-filter: blur(12px);
@@ -1066,7 +1077,8 @@
 .dou-reportSections {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  /* R5 行组间距：任务书 10px 口径（第一批报告页 8px 实测，已统一对齐） */
+  gap: 10px;
 }
 .dou-reportSection {
   overflow: hidden;
@@ -1247,6 +1259,9 @@
 @media (max-width: 480px) {
   /* R5 窄屏大框内边距与外层对齐 */
   .dou-report {
+    padding: 10px;
+  }
+  .dou-pane {
     padding: 10px;
   }
   .dou-reportSectionSummary {

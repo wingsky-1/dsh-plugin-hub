@@ -5,7 +5,7 @@
  */
 import * as React from "react";
 import { t } from "../../../../../shared/client/i18n.js";
-import { sectionStyle, titleStyle } from "./shared.ts";
+import { titleStyle } from "./shared.ts";
 
 /** /stats 响应中本页消费的字段（v2）。 */
 export interface StatsView {
@@ -43,7 +43,7 @@ export function UsageSection({
 }): React.ReactElement {
   const providers = Object.keys(statsByProvider);
   return (
-    <div style={sectionStyle}>
+    <div className="dou-pane">
       <h4 style={titleStyle}>{t("usageTitle")}</h4>
       {providers.length === 0 ? (
         <div style={{ color: "var(--dsw-alias-label-tertiary,#9aa0ab)" }}>{t("noProviders")}</div>
