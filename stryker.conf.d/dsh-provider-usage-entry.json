@@ -40,12 +40,12 @@
   "cleanTempDir": true,
   "vitest": {
     "related": false,
-    "configFile": "vitest.stryker.d/dsh-provider-usage.config.ts"
+    "configFile": "vitest.stryker.d/dsh-provider-usage-entry.config.ts"
   },
   "jsonReporter": {
     "fileName": "coverage/mutation/dsh-provider-usage-entry.json"
   },
   "incremental": true,
   "incrementalFile": "coverage/mutation/incremental-provider-usage-entry.json",
-  "_comment": "#342 v4：src 级文件组分段（1）——index+user-adapters+ui-config+config（配置/入口面）；#768 D7 注册表文件随域迁 server/registry（路径同步，行为零改 + 双启用判据）；#768 D13 包根入口 src/index.ts 落地（apply/index.ts 显式具名薄转发，导出面零漂移）并入本段；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
+  "_comment": "#342 v4：src 级文件组分段（1）——index+user-adapters+ui-config+config（配置/入口面）；#768 D7 注册表文件随域迁 server/registry（路径同步，行为零改 + 双启用判据）；#768 D13 包根入口 src/index.ts 落地（apply/index.ts 显式具名薄转发，导出面零漂移）并入本段；测试按段 testFiles 清单跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
 }

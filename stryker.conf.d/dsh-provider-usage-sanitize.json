@@ -35,12 +35,12 @@
   "cleanTempDir": true,
   "vitest": {
     "related": false,
-    "configFile": "vitest.stryker.d/dsh-provider-usage.config.ts"
+    "configFile": "vitest.stryker.d/dsh-provider-usage-sanitize.config.ts"
   },
   "jsonReporter": {
     "fileName": "coverage/mutation/dsh-provider-usage-sanitize.json"
   },
   "incremental": true,
   "incrementalFile": "coverage/mutation/incremental-provider-usage-sanitize.json",
-  "_comment": "#342 二期：功能命名段（sanitize）——sanitize（数据净化域，115s）；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
+  "_comment": "#342 二期：功能命名段（sanitize）——sanitize（数据净化域，115s）；测试按段 testFiles 清单跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
 }

@@ -32,12 +32,12 @@
   "cleanTempDir": true,
   "vitest": {
     "related": false,
-    "configFile": "vitest.stryker.d/dsh-lan-proxy.config.ts"
+    "configFile": "vitest.stryker.d/dsh-lan-proxy-entry.config.ts"
   },
   "jsonReporter": {
     "fileName": "coverage/mutation/dsh-lan-proxy-entry.json"
   },
   "incremental": true,
   "incrementalFile": "coverage/mutation/incremental-lan-proxy-entry.json",
-  "_comment": "#826 域归位：两个无模块目录归属的根文件合为 entry 段（mcp-manager / provider-usage 先例）——src/index.ts 是宿主唯一入口，tsconfig rootDir=src 要求它留在 src 根；server/apply.ts 是组合根装配。测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
+  "_comment": "#826 域归位：两个无模块目录归属的根文件合为 entry 段（mcp-manager / provider-usage 先例）——src/index.ts 是宿主唯一入口，tsconfig rootDir=src 要求它留在 src 根；server/apply.ts 是组合根装配。测试按段 testFiles 清单跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
 }

@@ -36,12 +36,12 @@
   "cleanTempDir": true,
   "vitest": {
     "related": false,
-    "configFile": "vitest.stryker.d/dsh-provider-usage.config.ts"
+    "configFile": "vitest.stryker.d/dsh-provider-usage-contracts.config.ts"
   },
   "jsonReporter": {
     "fileName": "coverage/mutation/dsh-provider-usage-contracts.json"
   },
   "incremental": true,
   "incrementalFile": "coverage/mutation/incremental-provider-usage-contracts.json",
-  "_comment": "#342 v4：src 级文件组分段（3）——contracts+server/pipeline/guards（契约面，#768 D6 随域改址）；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
+  "_comment": "#342 v4：src 级文件组分段（3）——contracts+server/pipeline/guards（契约面，#768 D6 随域改址）；测试按段 testFiles 清单跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
 }
