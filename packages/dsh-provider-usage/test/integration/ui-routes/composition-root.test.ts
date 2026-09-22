@@ -75,7 +75,8 @@ const healthSrc = readText(join(srcDir, "server", "ui-routes", "health.ts"));
 const trendSrc = readText(join(srcDir, "server", "ui-routes", "trend.ts"));
 const uiConfigSrc = readText(join(srcDir, "server", "ui-routes", "ui-config.ts"));
 const eventsSrc = readText(join(srcDir, "server", "ui-routes", "events.ts"));
-const clientCoreSrc = readText(join(srcDir, "client", "core.ts"));
+// host-seams R2 收敛后客户端字面量只留 client/shared/contract.ts 一份（core.ts 改经具名表 import）。
+const clientContractSrc = readText(join(srcDir, "client", "shared", "contract.ts"));
 const topologySrc = readText(join(repoRoot, "scripts", "data", "mutation-topology.json"));
 const strykerRoutesSrc = readText(
   join(repoRoot, "stryker.conf.d", "dsh-provider-usage-routes.json"),
@@ -537,7 +538,7 @@ describe("D12四 健康读 errsurf + SSE 非可靠 + 路由单点 + 释放", () 
   });
 
   it("客户端回指 ui-config（缺键即宿主与客户端分叉）", () => {
-    expect(clientCoreSrc.includes("/api/dsh-provider-usage/ui-config")).toBe(true);
+    expect(clientContractSrc.includes("/api/dsh-provider-usage/ui-config")).toBe(true);
   });
 });
 

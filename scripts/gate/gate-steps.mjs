@@ -127,6 +127,11 @@ export function tierSteps(tier, { hitPackages, withCoverage, base, scopeLabel })
       args: ["scripts/gate/verify-shared-fanin.mjs"],
     },
     {
+      label: "verify-host-seams（宿主接缝 R1-R4：事件装配点/路由镜像/slot/复刻分组）",
+      cmd: "node",
+      args: ["scripts/gate/verify-host-seams.mjs"],
+    },
+    {
       label:
         "verify-provider-usage-shape（provider-usage 形态锁：构造键集/历史无环境直连/聚合注解）",
       cmd: "node",

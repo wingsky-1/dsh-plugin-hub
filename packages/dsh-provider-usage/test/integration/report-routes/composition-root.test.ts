@@ -25,7 +25,7 @@
  *  非严格全逆序——见 D11四注记）；同进程重装配先复位标记
  *  （releaseUpgrade 缺失或晚于 install 即红）；reportScheduler 释放成对；
  *   创建面路径即 ROUTES 单点（实现内无硬编码 /api/ 字面量）；客户端六键回指同源
- *   （缺键即客户端与宿主分叉）。
+ *   （host-seams R2 收敛后字面量只留 client/shared/contract.ts 一份，缺键即分叉）。
  *
  * 每条附判据句（把 X 改坏必须红）；文本哨兵仅锚真实 ABI 与装配关系，不做风格断言。
  */
@@ -96,8 +96,8 @@ const applyFaceSrc = readText(join(srcDir, "apply", "index.ts"));
 const reportFaceSrc = readText(join(srcDir, "server", "report-routes", "interface.ts"));
 const reportDepsSrc = readText(join(srcDir, "server", "report-routes", "deps.ts"));
 const reportsSrc = readText(join(srcDir, "server", "report-routes", "reports.ts"));
-const clientCoreSrc = readText(join(srcDir, "client", "core.ts"));
-const clientReportSrc = readText(join(srcDir, "client", "report.tsx"));
+// host-seams R2 收敛后客户端字面量只留 client/shared/contract.ts 一份（core/report 改经具名表 import）。
+const clientContractSrc = readText(join(srcDir, "client", "shared", "contract.ts"));
 const topologySrc = readText(join(repoRoot, "scripts", "data", "mutation-topology.json"));
 const strykerRoutesSrc = readText(
   join(repoRoot, "stryker.conf.d", "dsh-provider-usage-routes.json"),
@@ -631,7 +631,7 @@ describe("D11四 释放顺序锁定 + 复位标记 + 路由单点 + 客户端契
     "/api/dsh-provider-usage/reports/generate",
     "/api/dsh-provider-usage/reports/generate/status",
   ])("客户端回指 %s（缺键即宿主与客户端分叉）", (literal) => {
-    expect(clientCoreSrc.includes(literal) || clientReportSrc.includes(literal)).toBe(true);
+    expect(clientContractSrc.includes(literal)).toBe(true);
   });
 });
 
