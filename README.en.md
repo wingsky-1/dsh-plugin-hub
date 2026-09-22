@@ -4,6 +4,10 @@
 [![CI](https://github.com/wingsky-1/dsh-plugin-hub/actions/workflows/ci.yml/badge.svg)](https://github.com/wingsky-1/dsh-plugin-hub/actions/workflows/ci.yml)
 [![License](https://img.shields.io/github/license/wingsky-1/dsh-plugin-hub)](LICENSE)
 
+<p align="center">
+  <img src=".github/assets/banner.png" alt="DSH Plugin Hub">
+</p>
+
 [简体中文](README.md) | **English**
 
 A collection of plugins for the **DSH (DeepSeek Harness)** web GUI, distributed via npm:
