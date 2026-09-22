@@ -14,7 +14,8 @@
  */
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
@@ -25,6 +26,7 @@ import {
   groupByPkgValue,
   isR1Allowed,
   isR2Allowed,
+  isR2LDeduped,
   isR3Allowed,
   isSlashDef,
   isSrcRootShared,
@@ -93,6 +95,22 @@ test("T5：MIME 不收", () => {
 test("T6：句中 GET 不收", () => {
   assert.deepEqual(defValues("const s = 'GET /api/x';"), []);
   assert.equal(isSlashDef("GET /api/x"), false);
+});
+
+test("N6：类属性初值与参数默认收", () => {
+  assert.deepEqual(defValues("class A { p = '/n6a'; }"), ["/n6a"]);
+  assert.deepEqual(defValues("function f(p = '/n6b') {}"), ["/n6b"]);
+});
+
+test("R2-L/R2-B 同站去重（同行留更具体的 R2-B）", () => {
+  assert.equal(isR2LDeduped({ line: 3, value: "/api/dsh-x" }, [{ line: 3, kind: "plus" }]), true);
+  assert.equal(
+    isR2LDeduped({ line: 3, value: "/api/dsh-other" }, [
+      { line: 3, kind: "nullish-right", value: "/api/dsh-x" },
+    ]),
+    false,
+  );
+  assert.equal(isR2LDeduped({ line: 4, value: "/api/dsh-x" }, [{ line: 3, kind: "plus" }]), false);
 });
 
 test("T7：空串与单斜线不收", () => {
@@ -210,6 +228,43 @@ test("fail-closed：坏 root", () => {
     encoding: "utf8",
   });
   assert.equal(r.status, 2);
+});
+
+test("红路径：越位文件真跑 exit 1 且判词格式", () => {
+  const dir = mkdtempSync(join(tmpdir(), "dsh-vhs-red-"));
+  try {
+    mkdirSync(join(dir, "packages", "p", "src", "shared"), { recursive: true });
+    writeFileSync(
+      join(dir, "packages", "p", "src", "shared", "x.ts"),
+      "export function reg(ctx: any) { ctx.on('a/b', () => {}); }\n",
+    );
+    const r = spawnSync(process.execPath, [GATE, "--root", dir], { encoding: "utf8" });
+    assert.equal(r.status, 1);
+    const err = String(r.stderr);
+    assert.ok(err.includes("verify-host-seams: R1 根共享越位"));
+    assert.ok(err.includes("FAIL（1 项"));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("红路径：R2-L/R2-B 同站真跑只报 R2-B 一条", () => {
+  const dir = mkdtempSync(join(tmpdir(), "dsh-vhs-dedup-"));
+  try {
+    mkdirSync(join(dir, "packages", "p", "src", "server", "config"), { recursive: true });
+    writeFileSync(
+      join(dir, "packages", "p", "src", "server", "config", "model.ts"),
+      "export const u = X ?? '/api/dsh-x/y';\n",
+    );
+    const r = spawnSync(process.execPath, [GATE, "--root", dir], { encoding: "utf8" });
+    assert.equal(r.status, 1);
+    const err = String(r.stderr);
+    assert.ok(err.includes("R2-B 拼接越位"));
+    assert.ok(!err.includes("R2-L 定义越位"));
+    assert.ok(err.includes("FAIL（1 项"));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("真实仓库锚：收敛后 exit 0", () => {

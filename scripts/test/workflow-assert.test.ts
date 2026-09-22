@@ -905,7 +905,7 @@ test("#843 R2-M-2: ci.yml 每个 job 必须被 repo-gate 聚合，或逐条登�
     "repo-gate": "聚合闸自身不能依赖自己（自环会让 needs 永不满足）",
     "upstream-warn":
       "上游消解只 warn 不阻塞：进 needs 会让 warn 的环境失败连坐聚合闸，与 warn 语义相悖；" +
-      "其执行点由脚本自测的真实仓库锚与交付粘贴覆盖",
+      "其执行点由脚本自测的真实仓库锚覆盖",
   };
   const jobsSection = CI.slice(CI.indexOf("\njobs:\n") + 1);
   const jobNames = [...jobsSection.matchAll(/^ {2}([a-z][a-z0-9-]*):\s*$/gm)].map((m) => m[1]);

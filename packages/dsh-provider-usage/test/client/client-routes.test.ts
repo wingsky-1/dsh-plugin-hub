@@ -64,6 +64,22 @@ describe("两端路由契约", () => {
     ).toEqual(PAIRS.map(([c]) => c).sort());
   });
 
+  it("注入优先（__DSH_ROUTES__ 存在时取注入值）", async () => {
+    const injected = await esbuildBuild({
+      entryPoints: [join(pkgDir, "src/client/shared/contract.ts")],
+      bundle: true,
+      format: "esm",
+      write: false,
+      logLevel: "silent",
+      define: { __DSH_ROUTES__: '{"stats":"/injected-stats"}' },
+    });
+    const mod = await import(
+      "data:text/javascript;base64," + Buffer.from(injected.outputFiles[0].text).toString("base64")
+    );
+    expect(mod.STATS_URL).toBe("/injected-stats");
+    expect(mod.HISTORY_URL).toBe(ROUTES.history);
+  });
+
   it("16 对值全等（任一漂移即请求 404）", () => {
     for (const [constName, routeKey] of PAIRS) {
       expect(contract[constName], constName).toBe(ROUTES[routeKey]);

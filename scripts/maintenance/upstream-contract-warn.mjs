@@ -17,11 +17,14 @@
  * （service 已定型才断言方法）。每条带 site。export const inject 数组只记 inventory。
  * B 侧 .d.ts 闭包（文本结构解析）：resolved 基线须与 catalog 锁版一致（B 恒 lock；
  * 同名多版本、版本漂移、cordis 不可解析即 exit 2；同名同版本多 peer 取并集）；自 types
- * 入口沿相对引用 BFS（export 星展开、循环截断、.ts 后缀归一、计算键不透明），收成员名
+ * 入口沿相对引用 BFS（export 星展开、循环截断、.ts 后缀归一、裸 side-effect import、计算键不透明），收成员名
  * （不比签名）与 declare module 块；另收仓内 src 的 declare module 字面量键。
  * 跳过计数：S1 超 DYN_BASE 即 FAIL；S2 超 UNTRACKED_BASE 或出新名即 FAIL；S3 须为零。
  * 断言（warn 注记）：R1 服务、R2-cordis 事件、R4-lite 方法存在性。
- * 基线更新规则：改数须带 tracking issue，且新计数连续三轮 runs 顺延稳定才可上调。
+ * R2-cordis 之名是简称，实为 B 侧全集（cordis 骨架加全部上游声明加仓内 declare module 增补）
+ * 上的事件存在性断言，非仅 cordis 单包。
+ * 基线更新规则：改数须先更新 KNOWN_TRACKING 源码注释指针并连续三轮 runs 顺延稳定才可上调；
+ * 跟踪以注释指针为唯一载体，不开 issue。
  * DYN_BASE 为 1，UNTRACKED_BASE 为 6（首轮实测校准：v2 估计为 1，实测 6 名逐项核过
  * peers 无类型声明，见 KNOWN_TRACKING；超 6 或出新名即 FAIL），KNOWN 为 6 名。
  * C1：ctx.on 字面量实得 19，v2 称 18 系行扫描漏计 provider 多行调用的 internal/service。
@@ -59,7 +62,7 @@ const KNOWN_TRACKING = {
   sessionPersistence:
     "packages/dsh-worktree-sidebar/src/index.ts 注释：官方持久会话面可选，未提供回 undefined，peers 无类型声明",
 };
-const EVENT_VERBS = ["on", "once", "emit", "parallel", "serial", "waterfall"];
+const EVENT_VERBS = ["on", "once", "emit", "parallel", "serial", "waterfall", "bail"];
 const FRAMEWORK_ONLY = new Set(["get", "provide", "inject", "effect", "plugin"]);
 
 function toPosix(p) {
@@ -739,7 +742,7 @@ export function readCatalog(root) {
     }
     if (inCatalog && /^\S/.test(line)) break;
     if (!inCatalog) continue;
-    const m = /^\s*"(@deepseek-ai\/[^\"]+)"\s*:\s*(\S+)\s*(?:#.*)?$/.exec(line);
+    const m = /^\s*["']?(@deepseek-ai\/[^"'\s:]+)["']?\s*:\s*(\S+)\s*(?:#.*)?$/.exec(line);
     if (m) versions.set(m[1], m[2]);
   }
   if (versions.size === 0)
@@ -890,6 +893,9 @@ export function closureMembers(entryAbs) {
     const re = /(?:from\s+|import\s*\(\s*|require\s*\(\s*)(["\u0027])(\.[^"\u0027]*)\1/g;
     let mt = null;
     while ((mt = re.exec(code)) !== null) specs.add(mt[2]);
+    // 裸 side-effect import（如 context 链的 import "./fiber"）：无 from/import(/require( 前缀，上式收不到。
+    const bareRe = /(^|[;{}()\s])import\s*(["\u0027])(\.[^"\u0027]*)\2/g;
+    while ((mt = bareRe.exec(code)) !== null) specs.add(mt[3]);
     for (const s of specs) {
       const r = resolveRelativeSpec(real, s);
       if (r !== null && !seen.has(realpathSync(r))) queue.push(r);
@@ -1080,6 +1086,8 @@ export function formatReport(A, B, R) {
   );
   for (const m of R.missingMethods)
     L.push(`upstream-contract-warn:   - 缺方法 ${m.svc}.${m.method}（${m.rel}:${m.line}）`);
+  for (const [svc, sites] of R.untypedSvcs)
+    L.push(`upstream-contract-warn:   - 未定型服务 ${svc}（${sites.join("，")}）`);
   L.push(
     `upstream-contract-warn: 全覆盖（A 侧 ${R.accounted} 条全部分类：断言、跳过具名、透传、祝福、inventory，零静默丢弃）`,
   );

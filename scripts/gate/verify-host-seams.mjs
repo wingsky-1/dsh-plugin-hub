@@ -42,6 +42,8 @@
  *     join\/concat 含片段即红；?? 右为纯标识符时净（注入表转发形态，如
  *     injected(key, FALLBACK) 的右操作数是标识符，不展开）。允许集内不判（契约文件
  *     内的 ?? 回退即定义本身）。
+ *   同站去重——同一文件同行同值同时命中 L 与 B 时只报更具体的 R2-B（见 isR2LDeduped；
+ *     无值形态按行去重，一行多字面量的极小过收敛可接受：行号只定判词 site）。
  *
  * R3（slot 装配点）：*.inject\/*.register（receiver 不限名——notifier 经 slotHost 别名）
  * 首参为静态串且 startsWith(settings.)，或首参为对象字面量且其 name 属性为静态串
@@ -63,6 +65,8 @@
  * 出口：fail-closed 一律经 lib\/gate-exit.mjs 的 failClosed，唯二两处——
  *   (1) CLI\/范围结构错误（--package 出现、--root 不可读、无 src 包、零扫描文件）；
  *   (2) AST 管线失败（任一文件 transform\/parse 异常，fail-closed 不读成通过）。
+ * sourcemap 单点回映缺失不属上列：行号只定判词 site，不定红绿（命中与否只看 AST），
+ * 故 best-effort 回退生成行，不计数、不 fail-closed。
  * 判据违例 exit 1（process.exit，非 gate-exit 口径）；通过 exit 0。--observe 只打印
  * 分组表（含 lan \/api\/remote.mux triple、?? 回退组、provider 镜像对的 disposition），
  * 结构错误与管线失败之外恒 exit 0。
@@ -361,6 +365,18 @@ export function groupByPkgValue(defs) {
   return groups;
 }
 
+/**
+ * R2-L\/R2-B 同站去重谓词：同一文件同行同值同时命中定义层与拼接层时，L 让位给
+ * 更具体的 B（B 钉拼接形态，L 只钉位置）。b 无 value 的形态（plus\/join-concat\/
+ * template-expr）按行去重——一行多字面量的过收敛可接受（行号只定判词 site，
+ * 同行任一定位都把该行标红）。调用方在行号回映后使用（.line 为原文行）。
+ */
+export function isR2LDeduped(lHit, bHits) {
+  return bHits.some(
+    (b) => b.line === lHit.line && (b.value === undefined || b.value === lHit.value),
+  );
+}
+
 /** R4 单组 disposition（dsh 值才判红；非 dsh 只观察）。 */
 export function decideGroup(g) {
   const holders = [...g.holders].sort();
@@ -427,6 +443,7 @@ async function scanFile(root, file) {
   } catch {
     map = null;
   }
+  // best-effort 回映：单点缺失回退生成行；行号只影响判词 site，不影响是否判红，故不 fail-closed（见头注释出口段）。
   const lineOf = (h) => {
     if (map !== null) {
       try {
@@ -518,10 +535,12 @@ async function main(argv) {
         );
     }
     if (!isR2Allowed(s.rel)) {
-      for (const h of s.r2l)
+      for (const h of s.r2l) {
+        if (isR2LDeduped(h, s.r2b)) continue;
         violations.push(
           `R2-L 定义越位 ${fmtSite(h)} 值 ${JSON.stringify(h.value)}（路由字面量只许共享\/契约\/装配文件）`,
         );
+      }
       for (const h of s.r2b)
         violations.push(`R2-B 拼接越位 ${fmtSite(h)} 形态 ${h.kind}（允许集外不得拼接路由）`);
     }

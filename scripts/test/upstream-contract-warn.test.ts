@@ -27,6 +27,8 @@ import {
   closureMembers,
   evaluate,
   extractDeclareModules,
+  formatReport,
+  readCatalog,
 } from "../maintenance/upstream-contract-warn.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -218,6 +220,65 @@ test("C3：同名双版本 exit2（fixture 根实跑）", () => {
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("事件动词含 bail（与 on 同收）", () => {
+  const r = analyze("ctx.bail('a/b', h);") as unknown as { events: Named[] };
+  assert.deepEqual(
+    r.events.map((e) => e.name),
+    ["a/b"],
+  );
+});
+
+test("C3：裸 side-effect import 进闭包（context 链形）", () => {
+  const dir = mkdtempSync(join(tmpdir(), "dsh-ucw-bare-"));
+  try {
+    writeFileSync(
+      join(dir, "context.d.ts"),
+      'import "./fiber";\nexport interface Context { svc: string; }\n',
+    );
+    writeFileSync(join(dir, "fiber.d.ts"), "export interface Fiber { run(): void; }\n");
+    const closed = closureMembers(join(dir, "context.d.ts")) as unknown as {
+      ifaces: Map<string, { members: Set<string> }>;
+      files: number;
+    };
+    assert.ok(closed.ifaces.has("Context"));
+    assert.ok(closed.ifaces.has("Fiber"));
+    assert.equal(closed.files, 2);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("readCatalog 兼容无引号与单引号键", () => {
+  const dir = mkdtempSync(join(tmpdir(), "dsh-ucw-catalog-"));
+  try {
+    writeFileSync(
+      join(dir, "pnpm-workspace.yaml"),
+      "catalog:\n  @deepseek-ai/foo: 1.0.0\n  '@deepseek-ai/bar': 2.0.0\n",
+    );
+    const v = readCatalog(dir) as unknown as Map<string, string>;
+    assert.equal(v.get("@deepseek-ai/foo"), "1.0.0");
+    assert.equal(v.get("@deepseek-ai/bar"), "2.0.0");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("R4-lite：无类型服务打印名与 sites", () => {
+  const A = emptyA();
+  A.calls = [{ ...site("p/a.ts", 7), svc: "mystery", method: "doThing" }];
+  const B = {
+    ...emptyB(),
+    peers: [],
+    versions: new Map(),
+    files: 0,
+    opaque: 0,
+  };
+  const R = evaluate(A, B) as unknown as { untypedSvcs: [string, string[]][] };
+  assert.equal(R.untypedSvcs.length, 1);
+  const lines = formatReport(A, B, R) as unknown as string[];
+  assert.ok(lines.some((l) => l.includes("mystery") && l.includes("p/a.ts:7")));
 });
 
 test("F4：注释零派生（trend.ts:16 形，AST 确认）", () => {
