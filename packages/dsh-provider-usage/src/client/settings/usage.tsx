@@ -126,9 +126,9 @@ function DonutCard({
       <div className="dou-hint" style={{ marginBottom: 4 }}>
         {title}
       </div>
-      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+      <div className="dou-donutBody">
         {/* 环孔随 SVG 缩放，中心字必须小且可省略：14/9px + ellipsis（窄屏环缩字不缩即被环切） */}
-        <div style={{ position: "relative", flex: "none", width: 110 }}>
+        <div style={{ position: "relative", flex: "none", width: "100%", maxWidth: 110 }}>
           <div dangerouslySetInnerHTML={{ __html: donutSvg(segs, 120) }} />
           <div
             style={{
@@ -141,7 +141,9 @@ function DonutCard({
               pointerEvents: "none",
             }}
           >
-            <div style={{ fontSize: 14, fontWeight: 700 }}>{centerTop}</div>
+            <div className="dou-donutCenterTop" style={{ fontWeight: 700 }}>
+              {centerTop}
+            </div>
             <div
               title={centerSub}
               style={{
@@ -157,20 +159,9 @@ function DonutCard({
             </div>
           </div>
         </div>
-        <div style={{ fontSize: 11, flex: 1, minWidth: 0 }}>
+        <div className="dou-legendRow">
           {legend.map((l) => (
-            <div
-              key={l.label}
-              title={`${l.label} ${l.text}`}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
-                minWidth: 0,
-                flexWrap: "wrap",
-                rowGap: 0,
-              }}
-            >
+            <div key={l.label} title={`${l.label} ${l.text}`} className="dou-legendItem">
               <span
                 style={{
                   width: 8,
@@ -351,20 +342,20 @@ export function UsageSection({
                 color: seriesColor(s.provider),
               }))}
             />
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, flex: "1 1 100%" }}>
-              {/* 指标小卡：与趋势页 SummaryCard 同语言（描边小卡），裸 div 列表显廉价 */}
-              <MiniCard
-                label={t("trendCardTotal")}
-                value={ov.summary.total === null ? "-" : fmtCompact(ov.summary.total)}
-                hint={delta === null ? null : delta.text}
-              />
-              <MiniCard label={t("trendCardCalls")} value={fmtCompact(ov.summary.calls)} />
-              <MiniCard label={t("usageActiveLabel")} value={`${activeDays}/${series.length}`} />
-              <MiniCard
-                label={`${t("trendCardPeak")} · ${ov.summary.peakKey === null ? "-" : ov.summary.peakKey.slice(5)}`}
-                value={peakVal === null ? "-" : fmtCompact(peakVal)}
-              />
-            </div>
+          </div>
+          {/* 指标小卡独立行（一图一栏后另起一行，不再嵌 donut 行） */}
+          <div className="dou-miniRow">
+            <MiniCard
+              label={t("trendCardTotal")}
+              value={ov.summary.total === null ? "-" : fmtCompact(ov.summary.total)}
+              hint={delta === null ? null : delta.text}
+            />
+            <MiniCard label={t("trendCardCalls")} value={fmtCompact(ov.summary.calls)} />
+            <MiniCard label={t("usageActiveLabel")} value={`${activeDays}/${series.length}`} />
+            <MiniCard
+              label={`${t("trendCardPeak")} · ${ov.summary.peakKey === null ? "-" : ov.summary.peakKey.slice(5)}`}
+              value={peakVal === null ? "-" : fmtCompact(peakVal)}
+            />
           </div>
           <div className="dou-hint" style={{ marginBottom: 4 }}>
             {t("usageHeat")}

@@ -822,6 +822,8 @@
  * 窗格 keep-mounted：hidden 属性切换显隐，组件实例不销毁（表单编辑态保留）。
  * 颜色一律 --dsw-alias-* 主题变量 + 浅色回退（暗色由宿主变量保证）。 */
 .dou-set-card {
+  /* 壳宽：原 settings/index.tsx 内联 maxWidth:560，行为不变收敛进样式表（B2 阻断项） */
+  max-width: 560px;
   border: 1px solid var(--dsw-alias-border-l1, #e2e5ea);
   border-radius: 12px;
   overflow: hidden;
@@ -1048,23 +1050,98 @@
   font-size: 12px;
   line-height: 1.7;
 }
-/* B2-1 用量页：donut 行 + 热力图（色阶 color-mix 相对混合，明暗自适应不分支主题） */
+/* B2-1 用量页：一图一栏 + 热力图（色阶 color-mix 相对混合，明暗自适应不分支主题） */
 .dou-donutRow {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
   gap: 12px;
   margin-bottom: 10px;
 }
+/* 环形卡：与指标小卡同语言（描边 + 圆角 + 同底色），不再裸奔 */
 .dou-donutCard {
-  flex: 1 1 200px;
-  min-width: 200px;
+  padding: 8px 10px;
+  border: 1px solid var(--dsw-alias-border-l2, #e8eaf0);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-base, #fdfdfd);
+}
+/* 环体内行：桌面环左文右；极窄屏自动换行（环缩至行宽，SVG 等比缩放），无媒体查询 */
+.dou-donutBody {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+/* 环中心大数字（字号进样式表，紧凑断点可收小；其余保持内联） */
+.dou-donutCenterTop {
+  font-size: 14px;
+}
+/* 极窄内容列（竖屏手机设置弹窗内容列 ~100px，桌面窄窗同理）：环与图例上下叠、
+   图例占整行、条目允许折行；521px 以上保持桌面左右布局不变 */
+@media (max-width: 520px) {
+  .dou-donutBody {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .dou-donutBody > div:first-child {
+    margin-inline: auto;
+  }
+  .dou-donutCenterTop {
+    font-size: 12px;
+  }
+  .dou-legendRow {
+    flex-basis: auto;
+  }
+  .dou-legendItem {
+    flex-wrap: wrap;
+    row-gap: 0;
+  }
+}
+/* 环 SVG 跟随容器缩放（donutSvg 固定 viewBox，不加则窄屏下环被裁、中心字外溢） */
+.dou-donutBody svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+/* 指标小卡独立行（一图一栏后另起一行；桌面一行四卡，窄屏自动换行） */
+.dou-miniRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+/* 环图图例：单行省略不参差，悬停 title 见全名 */
+/* 图例行：flex-basis:140px 是换行开关（环 110 + 间隙 + 140 放不下即换行，flex:1 会吞掉契机）；
+   min-width:0 是收缩放行（flex item 默认 min-width:auto 会按最长 provider 名 floor 顶住，
+   min()/max-width 挡不住 intrinsic floor，只有它能放行，文本截断由内部 ellipsis 负责） */
+.dou-legendRow {
+  font-size: 11px;
+  flex: 1 1 140px;
+  min-width: 0;
+}
+.dou-legendItem {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex-wrap: nowrap;
+  overflow: hidden;
+}
+/* 图例数值默认 nowrap，极窄时允许省略（桌面空间够时无视觉变化） */
+.dou-legendItem > span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .dou-heatGrid {
   display: grid;
-  grid-template-rows: repeat(7, 1fr);
+  grid-template-rows: repeat(7, 11px);
   grid-auto-flow: column;
+  grid-auto-columns: 11px;
   gap: 3px;
   margin: 6px 0;
+  max-width: 100%;
+  overflow-x: auto;
+  padding-bottom: 2px;
 }
 .dou-heatCell {
   aspect-ratio: 1;
@@ -1092,7 +1169,7 @@
 /* 用量页指标小卡：与趋势页 SummaryCard 同语言（描边 + 小灰 label + 粗值） */
 .dou-miniCard {
   flex: 1 1 120px;
-  min-width: 120px;
+  min-width: min(120px, 100%);
   padding: 8px 10px;
   border: 1px solid var(--dsw-alias-border-l2, #e8eaf0);
   border-radius: 8px;
@@ -1145,6 +1222,11 @@
   flex-direction: column;
   /* R5 行组间距：任务书 10px 口径（第一批报告页 8px 实测，已统一对齐） */
   gap: 10px;
+}
+/* 手动生成区段在 draft 门之外（配置拉取失败仍可手动生成）：兄弟选择器补同值 gap，
+   视觉一致且零 DOM 副作用（禁止把区段移入容器内——会吞掉失败态手动生成，B1） */
+.dou-reportSections + .dou-reportSection {
+  margin-top: 10px;
 }
 .dou-reportSection {
   overflow: hidden;
@@ -1369,6 +1451,7 @@
 /* 共用头（kicker + 标题 + live providers pill；留存 pill 已砍，见方案 Q5） */
 .dou-shellTop {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-start;
   gap: 10px;
   padding: 12px 14px;
@@ -1380,6 +1463,9 @@
   font-style: normal;
   color: var(--dsw-alias-label-tertiary, #9aa0ab);
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
 }
 .dou-shellTitle {
   font-size: 15px;
@@ -1390,6 +1476,9 @@
   color: var(--dsw-alias-label-primary, #1c1e26);
 }
 .dou-shellMeta {
+  /* 极窄时收进容器（否则 pill 内容宽决定 meta 宽，pill 的 max-width:100% 循环落空） */
+  min-width: 0;
+  max-width: 100%;
   margin-left: auto;
   display: flex;
   gap: 6px;
@@ -1397,8 +1486,14 @@
   justify-content: flex-end;
   align-self: center;
 }
+.dou-shellTop > div:first-child {
+  min-width: 0;
+}
 .dou-shellPill {
   display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-size: 11px;
   font-style: normal;
   line-height: 1.5;

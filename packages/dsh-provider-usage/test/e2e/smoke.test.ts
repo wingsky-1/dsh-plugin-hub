@@ -5221,13 +5221,13 @@ describe("#633 分片 b2 D2：客户端源码契约断言", () => {
     expect(clientContractObs.localesSource.includes('pathKeyHint: "Local .mjs only')).toBeTruthy();
   });
 
-  it("B2-2 悬浮窗页动效注脚与材质预览存在", () => {
-    expect(clientContractObs.uiSource.includes('t("flMotion")')).toBeTruthy();
-    expect(clientContractObs.uiSource.includes('t("floatPreview")')).toBeTruthy();
-    expect(clientContractObs.uiSource.includes("dou-reportGlass")).toBeTruthy();
+  it("悬浮窗页无预览块（仅表单）", () => {
+    expect(clientContractObs.uiSource.includes('t("floatPreview")')).toBeFalsy();
+    expect(clientContractObs.uiSource.includes('t("flMotion")')).toBeFalsy();
+    expect(clientContractObs.uiSource.includes("dou-reportGlass")).toBeFalsy();
     // 文案禁代码 token（cubic-bezier/scale 不得进用户可见串；D3）
-    expect(clientContractObs.localesSource.includes('"弹出/收回带缩放淡入')).toBeTruthy();
-    expect(clientContractObs.localesSource.includes('"Pop/dismiss with scale-fade')).toBeTruthy();
+    expect(clientContractObs.localesSource.includes('"弹出/收回带缩放淡入')).toBeFalsy();
+    expect(clientContractObs.localesSource.includes('"Pop/dismiss with scale-fade')).toBeFalsy();
     expect(!clientContractObs.localesSource.includes("cubic-bezier")).toBeTruthy();
   });
 
@@ -5267,18 +5267,44 @@ describe("#633 分片 b2 D2：客户端源码契约断言", () => {
     expect(clientContractObs.clientStyle.includes(".dou-heatL4")).toBeTruthy();
   });
 
-  it("B2-1 趋势侧跳转与双卡存在", () => {
-    expect(clientContractObs.trendSource.includes("onGotoHeat")).toBeTruthy();
-    expect(clientContractObs.trendSource.includes('t("gotoHeat")')).toBeTruthy();
-    expect(clientContractObs.trendSource.includes('t("trendCaliberNote")')).toBeTruthy();
-    expect(clientContractObs.trendSource.includes("composeShares")).toBeTruthy();
+  it("用量页一图一栏与独立指标行", () => {
+    expect(clientContractObs.usageSource.includes("dou-miniRow")).toBeTruthy();
+    expect(clientContractObs.usageSource.includes("dou-donutBody")).toBeTruthy();
+    expect(clientContractObs.clientStyle.includes(".dou-donutBody")).toBeTruthy();
+    expect(clientContractObs.usageSource.includes("dou-legendItem")).toBeTruthy();
+    expect(clientContractObs.usageSource.includes('flex: "1 1 100%"')).toBeFalsy();
+    expect(clientContractObs.settingsIndex.includes("maxWidth")).toBeFalsy();
+    expect(clientContractObs.clientStyle.includes(".dou-donutCard")).toBeTruthy();
+    expect(clientContractObs.clientStyle.includes(".dou-miniRow")).toBeTruthy();
+    expect(clientContractObs.clientStyle.includes("grid-auto-columns")).toBeTruthy();
+    expect(clientContractObs.clientStyle.includes("@media (max-width: 520px)")).toBeTruthy();
+    expect(clientContractObs.clientStyle.includes(".dou-donutCenterTop")).toBeTruthy();
+    expect(clientContractObs.usageSource.includes("dou-donutCenterTop")).toBeTruthy();
   });
 
-  it("B2-1 locales 中英关键串", () => {
+  it("报告生成区与配置区同间距", () => {
+    expect(
+      clientContractObs.clientStyle.includes(".dou-reportSections + .dou-reportSection"),
+    ).toBeTruthy();
+  });
+
+  it("趋势页底部已删除（无跳转无双卡无口径行）", () => {
+    expect(clientContractObs.trendSource.includes("onGotoHeat")).toBeFalsy();
+    expect(clientContractObs.trendSource.includes("TrendExtras")).toBeFalsy();
+    expect(clientContractObs.trendSource.includes('t("gotoHeat")')).toBeFalsy();
+    expect(clientContractObs.trendSource.includes('t("trendComposeTitle")')).toBeFalsy();
+    expect(clientContractObs.trendSource.includes('t("trendMountedHint")')).toBeFalsy();
+    expect(clientContractObs.trendSource.includes('t("trendCaliberNote")')).toBeTruthy();
+    expect(clientContractObs.trendSource.includes("composeShares")).toBeFalsy();
+  });
+
+  it("locales 已删趋势跳转与底部文案", () => {
     expect(clientContractObs.localesSource.includes("usageHeat:")).toBeTruthy();
-    expect(clientContractObs.localesSource.includes("gotoHeat:")).toBeTruthy();
+    expect(clientContractObs.localesSource.includes("gotoHeat:")).toBeFalsy();
+    expect(clientContractObs.localesSource.includes("trendComposeTitle:")).toBeFalsy();
+    expect(clientContractObs.localesSource.includes("floatPreview:")).toBeFalsy();
     expect(clientContractObs.localesSource.includes("Usage heatmap")).toBeTruthy();
-    expect(clientContractObs.localesSource.includes("View daily heatmap")).toBeTruthy();
+    expect(clientContractObs.localesSource.includes("View daily heatmap")).toBeFalsy();
   });
 
   it("tab 默认落用量页（顺序由六键精确一致用例锁定）", () => {

@@ -40,7 +40,6 @@ import {
   dirDisplayLabel,
   dirNeedsScopeNote,
   trendRequestParams,
-  composeShares,
   isDirMode,
   shouldShowDirSelect,
   shouldShowByModel,
@@ -214,13 +213,8 @@ const unitKeyOf = (gran: Gran): string =>
       ? "trendRangeWeekUnit"
       : "trendRangeMonthUnit";
 
-/** 「使用趋势」区块（SettingsPage 顶部）。 */
-export function TrendSection({
-  onGotoHeat,
-}: {
-  /** 趋势→用量热力图单向跳转（PM4；不提供则不渲染按钮，反向链接禁止）。 */
-  onGotoHeat?: () => void;
-} = {}): React.ReactElement {
+/** 「使用趋势」区块（SettingsPage 顶部；底部附加内容已按用户反馈删除，界面保持整洁）。 */
+export function TrendSection(): React.ReactElement {
   const [gran, setGran] = React.useState<Gran>("day");
   const [range, setRange] = React.useState<number | null>(null); // null=按粒度默认（trendDefaultRange）
   const [view, setView] = React.useState<"bar" | "area" | null>(null); // null=按粒度默认（月=面积）
@@ -731,68 +725,7 @@ export function TrendSection({
           <div>{t("trendEmptyHint")}</div>
         </div>
       )}
-      {/* 起算提示（常驻，防误读为全量统计）：有起算日给出具体日期 + 留存天数 */}
-      <p
-        className="dou-trend-mountHint"
-        style={{
-          fontSize: 11,
-          color: "var(--dsw-alias-label-tertiary,#9aa0ab)",
-          margin: "8px 0 0",
-        }}
-      >
-        {data?.firstDay != null && data.firstDay !== ""
-          ? `${t("trendMountedHintDay", { day: data.firstDay })}；${t("trendRetained", { days: String(data.retentionDays) })}`
-          : t("trendMountedHint")}
-      </p>
-      <TrendExtras data={data} dirMode={dirMode} hasData={hasData} onGotoHeat={onGotoHeat} />
     </section>
-  );
-}
-
-/** P2 趋势→热力跳转 + 构成/桶位双卡（独立组件：TrendSection 复杂度预算已满；
- * 目录面无 provider 分担，只出桶位卡；空态不渲染，聚焦行动邀请）。 */
-function TrendExtras({
-  data,
-  dirMode,
-  hasData,
-  onGotoHeat,
-}: {
-  data: TrendResponse | null;
-  dirMode: boolean;
-  hasData: boolean;
-  onGotoHeat?: () => void;
-}): React.ReactElement | null {
-  if (!hasData || data === null) return null;
-  const line = !dirMode ? composeShares(data.series) : "";
-  // 单排：构成卡 / 桶位卡 / 跳转按钮同行（按钮居中对齐；窄屏自动换行，不再孤儿独占一行）
-  return (
-    <>
-      <div
-        style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 8, alignItems: "center" }}
-      >
-        {line !== "" ? (
-          <div
-            className="dou-reportGlass"
-            style={{ flex: "1 1 200px", minWidth: 200, padding: "8px 10px" }}
-          >
-            <div className="dou-hint">{t("trendComposeTitle")}</div>
-            <div style={{ fontSize: 11 }}>{line}</div>
-          </div>
-        ) : null}
-        <div
-          className="dou-reportGlass"
-          style={{ flex: "1 1 200px", minWidth: 200, padding: "8px 10px" }}
-        >
-          <div className="dou-hint">{t("trendBucketsTitle")}</div>
-          <div style={{ fontSize: 11 }}>{t("trendBucketsNote")}</div>
-        </div>
-        {onGotoHeat !== undefined ? (
-          <button type="button" className="dou-btn" style={{ flex: "none" }} onClick={onGotoHeat}>
-            {t("gotoHeat")}
-          </button>
-        ) : null}
-      </div>
-    </>
   );
 }
 

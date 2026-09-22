@@ -82,8 +82,6 @@ export const zh = {
   save: "保存",
   uiSavedOk: "已保存——胶囊位置即时生效（所有设备）",
   uiSaveFail: "保存失败：{msg}",
-  floatPreview: "材质预览",
-  flMotion: "弹出/收回带缩放淡入，按下有压感反馈。",
   // 设置页：用量可视化
   usageTitle: "用量可视化",
   usageToday: "今日概览（/trend 日面；调用失败不影响下方状态点）",
@@ -160,17 +158,11 @@ export const zh = {
   trendCardCalls: "调用次数",
   trendCardPeak: "峰值桶",
   trendCaliberNote: "含进行中桶 · 尾桶未满",
-  trendComposeTitle: "构成拆解",
-  trendBucketsTitle: "桶位说明",
-  trendBucketsNote: "进行中斜纹 · 空桶虚位 · 尾桶未满",
-  gotoHeat: "查看日热力图",
   trendCardTop: "Top 适配器",
   trendCardTopDir: "Top 目录", // 目录面 Top 汇总卡标签（与 trendCardTop 同风格对称）
   trendFetchFail: "趋势数据获取失败",
   trendEmptyTitle: "暂无趋势数据",
   trendEmptyHint: "会话产生用量后，这里会展示近期的使用趋势。",
-  trendMountedHint: "统计自插件挂载时点起算，早于该时点的会话不计入",
-  trendMountedHintDay: "统计自 {day}（插件挂载时点）起算，早于该时点的会话不计入",
   // 设置页：使用趋势（视图改版）
   trendRangeLabel: "范围",
   trendRangeDayUnit: "{n} 天",
@@ -189,7 +181,6 @@ export const zh = {
   trendPeakDay: "{day}",
   trendPeakWeek: "{day} 当周",
   trendPeakMonth: "{y} 年 {m} 月",
-  trendRetained: "留存 {days} 天",
   trendCardAvg: "日均",
   trendViewVisible: "可见段",
   // 设置页：使用趋势目录维度
@@ -363,8 +354,6 @@ export const en: Record<ProviderUsageLocaleKey, string> = {
   save: "Save",
   uiSavedOk: "Saved — pill placement takes effect immediately (all devices)",
   uiSaveFail: "Save failed: {msg}",
-  floatPreview: "Material preview",
-  flMotion: "Pop/dismiss with scale-fade; press gives tactile feedback.",
   usageTitle: "Usage visualization",
   usageToday: "Today overview (/trend daily; fetch failure does not affect status dots below)",
   usageTodayTokens: "Today Tokens",
@@ -438,19 +427,11 @@ export const en: Record<ProviderUsageLocaleKey, string> = {
   trendCardCalls: "Calls",
   trendCardPeak: "Peak bucket",
   trendCaliberNote: "Includes the ongoing bucket · tail bucket incomplete",
-  trendComposeTitle: "Mix breakdown",
-  trendBucketsTitle: "Bucket legend",
-  trendBucketsNote: "Ongoing hatch · empty-bucket placeholder · incomplete tail",
-  gotoHeat: "View daily heatmap",
   trendCardTop: "Top adapter",
   trendCardTopDir: "Top directory", // directory-face top summary card label (mirrors trendCardTop)
   trendFetchFail: "Failed to load trend data",
   trendEmptyTitle: "No trend data yet",
   trendEmptyHint: "Trends for recent usage will appear here once sessions produce usage.",
-  trendMountedHint:
-    "Counting since the plugin mount time; sessions before that point are not included",
-  trendMountedHintDay:
-    "Counting since {day} (plugin mount time); sessions before that point are not included",
   // Settings: usage trend
   trendRangeLabel: "Range",
   trendRangeDayUnit: "{n}d",
@@ -469,7 +450,6 @@ export const en: Record<ProviderUsageLocaleKey, string> = {
   trendPeakDay: "{day}",
   trendPeakWeek: "week of {day}",
   trendPeakMonth: "{y}-{m}",
-  trendRetained: "{days}-day retention",
   trendCardAvg: "Daily avg",
   trendViewVisible: "visible",
   // Settings: usage trend — directory dimension

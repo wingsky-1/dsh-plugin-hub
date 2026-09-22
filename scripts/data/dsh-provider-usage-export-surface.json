@@ -261,7 +261,7 @@
   "declBlocks": [
     "export declare class HistoryStore { private readonly root; private readonly maxAgeMs; private readonly maxSizeBytes; private readonly writeChains; constructor(opts: { root: string; maxAgeMs?: number; maxSizeBytes?: number; }); private dirOf; private fileOf; append(provider: string, name: string, entry: HistoryEntry): Promise<void>; readDay(provider: string, name: string, time: number): Promise<HistoryEntry[]>; query(provider: string, name: string, range: { start: number; end: number; }): Promise<{ entries: HistoryEntry[]; }>; last(provider: string, name: string): Promise<HistoryEntry | null>; maybePrune(provider: string, name: string): Promise<void>; pruneAll(): Promise<void>; exportAll(provider: string, name: string): Promise<HistoryEntry[]>; writeDirect(provider: string, name: string, day: number, entries: HistoryEntry[]): Promise<void>; private writeOnce; }",
     "export declare class HotReloadableAdapter { private timer; private lastStamp; private readonly onReload; private readonly file; private readonly intervalMs; private readonly checkChecksum; constructor(file: string, intervalMs: number, onReload?: (info: { ok: boolean; error?: string; }) => void, checkChecksum?: boolean); current: UsageStatsAdapter | null; start(): Promise<{ ok: boolean; error?: string; }>; stop(): void; pollOnce(): Promise<{ ok: boolean; error?: string; }>; private reload; }",
-    "export declare class ReportConfigService { private cfg; private chain; private readonly root; private readonly onUpdate?; constructor(opts: ReportConfigServiceOptions); get(): ReportConfig; update(next: ReportConfig): Promise<void>; }",
+    "export declare class ReportConfigService { private cfg; private chain; private readonly root; private readonly onUpdate?; readonly promptDefaults: ReportPrompts; constructor(opts: ReportConfigServiceOptions); get(): ReportConfig; update(next: ReportConfig): Promise<void>; }",
     "export declare class ReportScheduler { private config; private timer; private disposed; private readonly root; private readonly onDue; private readonly now; private readonly tickMs; private readonly warn; private readonly parseIndex?; private constructor(); static start(opts: ReportSchedulerOptions): ReportScheduler; updateConfig(config: ReportConfig): void; tick(): Promise<void>; dispose(): void; }",
     "export declare class ReportTaskQueue { private readonly tasks; private tail; private readonly executor; private readonly now; private readonly warn; private readonly ttlMs; private readonly maxTasks; constructor(opts: ReportTaskQueueOptions); submit(input: ReportTaskInput): { taskId: string; existing: boolean; }; get(taskId: string): ReportTask | undefined; private run; private prune; }",
     "export declare class StatsService { readonly ctx: Context; readonly config: NormalizedConfig; readonly historyRoot: string; readonly registry: AdapterRegistry; readonly history: HistoryStore; readonly sanitizeDiagnostic: (s: string) => string; readonly recordAdapterStateDiagnostic: (message: string) => void; readonly cache: Map<string, V2PipelineResult>; readonly panelCache: Map<string, PanelCacheEntry>; readonly providerLocks: Map<string, Mutex>; private cacheGeneration; private readonly panelInFlight; private stateChain; constructor(options: StatsServiceOptions); lockOf(provider: string): Mutex; cacheFresh(provider: string): V2PipelineResult | undefined; cacheSize(): number; purgeAllCaches(): void; purgePanelCacheForProvider(provider: string): void; purgeCachesForProviders(providers: Iterable<string>): void; getPanelResult(provider: string, entry: { name: string; adapter: UsageStatsAdapter; }, range: { start: number; end: number; }): Promise<{ panelHtml?: string; error?: string; }>; warmupProviders(providers: Iterable<string>): void; scheduleWriteAdapterState(override?: Record<string, string | null>): void; persistUserAdapter(rec: UserAdapterRecord): Promise<void>; getStats(provider: string, signal?: AbortSignal): Promise<V2PipelineResult>; dispose(): void; }",
@@ -286,6 +286,7 @@
     "export declare const DEFAULT_CONFIG: { adapter: string; staticPath: string; provider: string; apiEndpoint: string; apiKey: string; historyDir: string; warmupIntervalMs: number; cacheDurationMs: number; fetchTimeoutMs: number; autoReload: boolean; maxAgeDays: number; maxSizeMB: number; trendRetentionDays: number; };",
     "export declare const DEFAULT_DAILY_PROMPT: string;",
     "export declare const DEFAULT_MONTHLY_PROMPT: string;",
+    "export declare const DEFAULT_OPEN_SECTIONS: Record<ReportSectionId, boolean>;",
     "export declare const DEFAULT_PROMPTS: ReportPrompts;",
     "export declare const DEFAULT_PROMPT_TEMPLATE: string;",
     "export declare const DEFAULT_REPORT_CONFIG: ReportConfig;",
@@ -297,6 +298,8 @@
     "export declare const EVENTS_URL: string;",
     "export declare const FALLBACK_PROVIDER = \"opencode-go\";",
     "export declare const HEALTH_URL: string;",
+    "export declare const HISTORY_PAGE_SIZE = 20;",
+    "export declare const HISTORY_PERIODS: HistoryPeriod[];",
     "export declare const HISTORY_URL: string;",
     "export declare const INSPECT_URL: string;",
     "export declare const LAST_RUN_SCHEMA = 2;",
@@ -317,9 +320,21 @@
     "export declare const LEGACY_WEEKLY_PROMPT_V4: string;",
     "export declare const MAX_ANCESTRY_DEPTH = 3;",
     "export declare const MIGRATED_SUFFIX = \".migrated.bak\";",
+    "export declare const OPENCODE_GO_PROVIDER = \"opencode-go\";",
     "export declare const PANEL_CACHE_TTL_MS = 90000;",
     "export declare const PERIOD_BUCKETS: ReadonlyArray<{ name: string; from: number; to: number; }",
+    "export declare const PROMPT_CONSTRAINTS_HEADER = \"\\u3010\\u786C\\u6027\\u7EA6\\u675F\\uFF08\\u8FDD\\u80CC\\u5C06\\u89C6\\u4E3A\\u4E25\\u91CD\\u9519\\u8BEF\\uFF09\\u3011\";",
+    "export declare const PROMPT_GOAL_HEADER = \"\\u3010\\u4EFB\\u52A1\\u76EE\\u6807\\u3011\";",
+    "export declare const PROMPT_STATS_HEADER = \"\\u3010\\u7EDF\\u8BA1\\u6570\\u636E\\u3011\";",
+    "export declare const PROMPT_STATS_VAR = \"{stats}",
+    "export declare const PROMPT_STRUCTURE_HEADER = \"\\u3010\\u64B0\\u5199\\u7ED3\\u6784\\u3011\";",
+    "export declare const PROMPT_STRUCTURE_HEADER_DAILY = \"\\u3010\\u64B0\\u5199\\u7ED3\\u6784\\uFF08\\u6309\\u987A\\u5E8F\\uFF09\\u3011\";",
+    "export declare const REPORTS_URL: string;",
+    "export declare const REPORT_CONFIG_URL: string;",
+    "export declare const REPORT_DETAIL_URL: string;",
     "export declare const REPORT_GENERATE_STATUS_URL: string;",
+    "export declare const REPORT_GENERATE_URL: string;",
+    "export declare const REPORT_MODELS_URL: string;",
     "export declare const ROUTES: Record<string, string>;",
     "export declare const SELECT_URL: string;",
     "export declare const STATS_URL: string;",
@@ -339,12 +354,14 @@
     "export declare const inject: string[];",
     "export declare const inject: string[];",
     "export declare const name = \"provider-usage\";",
+    "export declare const rowIdOf: (m: Pick<ReportMetaView, \"period\" | \"key\">) => string;",
     "export declare const sectionStyle: { marginBottom: number; padding: string; border: string; borderRadius: number; background: string; fontSize: number; lineHeight: number; };",
     "export declare const titleStyle: { fontSize: number; fontWeight: number; margin: string; };",
     "export declare const upgradeRunner: UpgradeRunner;",
-    "export declare const zh: { readonly justNow: \"刚刚\"; readonly minutesAgo: \"{n} 分钟前\"; readonly hoursAgo: \"{n} 小时前\"; readonly daysAgo: \"{n} 天前\"; readonly pillNotConfigured: \"未配置适配器，点击查看接入引导\"; readonly pillFetchFail: \"用量获取失败：{msg}\"; readonly pillBusy: \"取数进行中，稍候自动刷新\"; readonly pillStale: \"数据陈旧\"; readonly pillCached: \"缓存\"; readonly pillFresh: \"实时\"; readonly pillUpdatedAt: \"更新于 {t}\"; readonly providerUnknown: \"提供商未识别\"; readonly panelTitle: \"{provider} 用量\"; readonly refresh: \"刷新\"; readonly hintPrefix: \"提示：\"; readonly loading: \"加载中…\"; readonly ariaPill: \"用量统计\"; readonly settingsTab: \"用量统计\"; readonly settingsNavLabel: \"用量统计设置分区\"; readonly pageTabTrend: \"趋势\"; readonly pageTabReport: \"报告\"; readonly pageTabUsage: \"用量\"; readonly pageTabProviders: \"适配器\"; readonly pageTabFloat: \"悬浮窗\"; readonly errNoApiKey: \"未找到 API Key（走 {p}_API_KEY 环境变量或 .credentials.yaml）。\"; readonly errUnauthorized: \"API Key 无效或已过期（401/403）。\"; readonly errTimeout: \"请求超时，请重试。\"; readonly errNetwork: \"网络错误，请检查连接后重试。\"; readonly errBadData: \"数据格式异常，请检查服务商接口或适配器返回。\"; readonly errAdapterLoadFailed: \"自定义适配器加载失败，请检查文件路径与契约（设置页可见错误明细）。\"; readonly errBusy: \"上一次取数仍在进行，稍候自动刷新。\"; readonly errNoEnabledAdapter: \"该提供商有候选适配器但均未启用，请在设置面板「用量统计」启用。\"; readonly errNoAdapter: \"该提供商未配置适配器，请在设置面板「用量统计」添加。\"; readonly errHttpStatus: \"服务返回 {code}，请检查中转站状态。\"; readonly errGeneric: \"用量获取失败：{code}。\"; readonly noDataShort: \"暂无数据\"; readonly noAdapterTitle: \"该提供商暂无启用的适配器。\"; readonly noAdapterHint: \"在设置面板「用量统计」的适配器管理中启用一个候选适配器；也可复制下方引导指令，让 Agent 帮你接入用量数据源。\"; readonly copyGuide: \"复制引导指令\"; readonly copied: \"已复制 ✓\"; readonly copyFail: \"复制失败\"; readonly statusFresh: \"实时\"; readonly statusCached: \"缓存\"; readonly statusStale: \"陈旧（已降级）\"; readonly statusUnconfigured: \"未配置\"; readonly posTopRight: \"右上\"; readonly posTopLeft: \"左上\"; readonly posBottomRight: \"右下\"; readonly posBottomLeft: \"左下\"; readonly uiTitle: \"胶囊位置\"; readonly uiAnchor: \"锚点：\"; readonly offsetX: \"水平偏移\"; readonly offsetY: \"垂直偏移\"; readonly panelOffsetY: \"面板间距\"; readonly zIndexBase: \"层级基准\"; readonly savingNow: \"保存中…\"; readonly save: \"保存\"; readonly uiSavedOk: \"已保存——胶囊位置即时生效（所有设备）\"; readonly uiSaveFail: \"保存失败：{msg}\"; readonly usageTitle: \"用量可视化\"; readonly noProviders: \"暂无启用的 provider\"; readonly noData: \"暂无数据\"; readonly updatedAt: \"更新于 {t}\"; readonly badgeEnabled: \"已启用: {name}\"; readonly badgeOff: \"未启用适配器\"; readonly adapterBuiltin: \"内置\"; readonly adapterCustom: \"自定义\"; readonly switchOffTitle: \"停用该适配器（仅影响用量取数）\"; readonly switchOnTitle: \"启用该适配器\"; readonly lastError: \"最近一次错误：{msg}\"; readonly inspectKName: \"适配器名\"; readonly inspectKLabel: \"展示名\"; readonly inspectKProviders: \"归属提供商\"; readonly inspectKVersion: \"契约版本\"; readonly filePath: \"文件路径\"; readonly filePathOnly: \"（唯一输入——name/展示名/归属提供商从文件导出自动读取）\"; readonly detecting: \"检测中…\"; readonly detectFile: \"检测文件\"; readonly detectFirst: \"请先通过「检测文件」后再确认添加\"; readonly adding: \"添加中…\"; readonly confirmAdd: \"确认添加\"; readonly cancel: \"取消\"; readonly inspectFail: \"检测失败\"; readonly addFail: \"添加失败\"; readonly noCandidates: \"该提供商暂无候选适配器——可通过下方 [+ 添加适配器] 注入本地适配器文件；也可复制引导指令，让 Agent 帮你创建适配器。\"; readonly collapse: \"收起\"; readonly addAdapter: \"+ 添加适配器\"; readonly provTitle: \"提供商\"; readonly provListHint: \"提供商列表与模型配置页保持一致（共 {n} 个）；展开某个提供商以切换适配器开关或添加新适配器。\"; readonly fileLoadFail: \"用户文件 {f} 加载失败：{msg}\"; readonly noProvHint: \"未发现已配置的提供商（adapters.json 不可达或模型配置页尚未配置提供商）。可复制引导指令，让 Agent 帮你接入数据源并创建适配器。\"; readonly customProvTitle: \"自定义提供商\"; readonly customProvHint: \"以下 providers 未出现在 dsh 模型配置页（模型暂选不到该提供商，先登记适配器；在模型页补建后即可选用），不计入上方数量。\"; readonly trendTitle: \"使用趋势\"; readonly trendGranularity: \"粒度\"; readonly trendGranDay: \"日\"; readonly trendGranWeek: \"周\"; readonly trendGranMonth: \"月\"; readonly trendMetricLabel: \"指标\"; readonly trendMetricTotal: \"总 tokens\"; readonly trendMetricInput: \"输入\"; readonly trendMetricOutput: \"输出\"; readonly trendMetricCacheRead: \"缓存读\"; readonly trendMetricCacheWrite: \"缓存写\"; readonly trendMetricCalls: \"调用次数\"; readonly trendAdapterLabel: \"适配器\"; readonly trendAdapterAll: \"全部适配器\"; readonly trendByModel: \"按模型拆分\"; readonly trendCardTotal: \"窗口总量\"; readonly trendCardCalls: \"调用次数\"; readonly trendCardPeak: \"峰值桶\"; readonly trendCardTop: \"Top 适配器\"; readonly trendCardTopDir: \"Top 目录\"; readonly trendFetchFail: \"趋势数据获取失败\"; readonly trendEmptyTitle: \"暂无趋势数据\"; readonly trendEmptyHint: \"会话产生用量后，这里会展示近期的使用趋势。\"; readonly trendMountedHint: \"统计自插件挂载时点起算，早于该时点的会话不计入\"; readonly trendMountedHintDay: \"统计自 {day}（插件挂载时点）起算，早于该时点的会话不计入\"; readonly trendRangeLabel: \"范围\"; readonly trendRangeDayUnit: \"{n} 天\"; readonly trendRangeWeekUnit: \"{n} 周\"; readonly trendRangeMonthUnit: \"{n} 个月\"; readonly trendViewLabel: \"视图\"; readonly trendViewBar: \"柱状\"; readonly trendViewArea: \"面积\"; readonly trendPartialOngoing: \"进行中\"; readonly trendPartialEdge: \"部分桶\"; readonly trendNoData: \"无数据\"; readonly trendTipSum: \"合计\"; readonly trendPrevIncomplete: \"环比基准不完整\"; readonly trendHiddenParts: \"已隐藏 {k} 段（卡为全段口径）\"; readonly trendLegendToggleHint: \"点击图例可显隐对应段\"; readonly trendPeakDay: \"{day}\"; readonly trendPeakWeek: \"{day} 当周\"; readonly trendPeakMonth: \"{y} 年 {m} 月\"; readonly trendRetained: \"留存 {days} 天\"; readonly trendCardAvg: \"日均\"; readonly trendViewVisible: \"可见段\"; readonly trendDirLabel: \"目录\"; readonly trendDirAll: \"全部目录\"; readonly trendDirUnidentified: \"未识别\"; readonly trendDirUnidentifiedNote: \"无目录信息的会话\"; readonly reportTitle: \"用量报告\"; readonly reportPeriodDaily: \"日报\"; readonly reportPeriodWeekly: \"周报\"; readonly reportPeriodMonthly: \"月报\"; readonly reportEnabled: \"启用\"; readonly reportTime: \"触发时刻\"; readonly reportWeekStartsOn: \"周起点\"; readonly reportWeekMonday: \"周一\"; readonly reportWeekSunday: \"周日\"; readonly reportDayOfMonth: \"月内触发日（1–28）\"; readonly reportProvider: \"模型提供商\"; readonly reportProviderDefault: \"跟随默认\"; readonly reportModel: \"模型\"; readonly reportModelHint: \"留空跟随默认\"; readonly reportModelDefault: \"跟随默认（首个已注册模型）\"; readonly reportModelKept: \"{v}（当前配置值，不在列表中）\"; readonly reportModelFallback: \"模型列表拉取失败或为空，已降级为手动填写。\"; readonly reportDirectories: \"目录范围\"; readonly reportDirectoriesAll: \"全部目录\"; readonly reportDirectoriesSelectAll: \"全选\"; readonly reportDirectoriesClear: \"清空\"; readonly reportDirectoriesEmpty: \"暂无目录数据——会话产生用量后，这里会列出可选目录。\"; readonly reportDirectoriesHintAll: \"统计全部目录（默认口径）。\"; readonly reportDirectoriesHintScoped: \"报告只统计所选目录的目录分布（其余维度保持全量）。\"; readonly reportPromptReset: \"恢复默认\"; readonly reportPromptHint: \"三周期各自独立模板；{stats} 注入对应周期聚合统计 JSON（含峰值日/活跃天数/环比等年报维度）\"; readonly reportNoData: \"当期无用量数据，未生成报告\"; readonly reportHeroTotal: \"tokens\"; readonly reportHeroCalls: \"对话次数\"; readonly reportHeroActive: \"活跃天数\"; readonly reportHeroStreak: \"最长连续\"; readonly reportHeroPeak: \"峰值日\"; readonly reportRatioFlat: \"持平\"; readonly reportRatioPct: \"{n}%\"; readonly reportPrompt: \"提示词模板\"; readonly reportPush: \"生成后推送通知\"; readonly reportSave: \"保存更改\"; readonly reportSaved: \"已保存\"; readonly reportSaveFail: \"保存失败：{msg}\"; readonly reportGenerate: \"立即生成\"; readonly reportGenerating: \"生成中…\"; readonly reportGenerateFail: \"生成失败：{msg}\"; readonly reportStillGenerating: \"仍在后台生成，稍后刷新列表查看\"; readonly reportReused: \"该窗口已有报告，已复用现有结果（勾选「重新生成」可覆盖）\"; readonly reportForceRegen: \"重新生成（覆盖）\"; readonly reportHistory: \"报告历史\"; readonly reportEmpty: \"尚未生成过报告——配置周期或立即手动生成\"; readonly reportFetchFail: \"报告数据获取失败\"; readonly reportOk: \"成功\"; readonly reportFailed: \"失败\"; readonly reportCollapse: \"收起\"; readonly reportDetailTokens: \"生成消耗：{n} tokens\"; readonly reportPeriodSelect: \"选择周期\"; };",
+    "export declare const zh: { readonly justNow: \"刚刚\"; readonly minutesAgo: \"{n} 分钟前\"; readonly hoursAgo: \"{n} 小时前\"; readonly daysAgo: \"{n} 天前\"; readonly pillNotConfigured: \"未配置适配器，点击查看接入引导\"; readonly pillFetchFail: \"用量获取失败：{msg}\"; readonly pillBusy: \"取数进行中，稍候自动刷新\"; readonly pillStale: \"数据陈旧\"; readonly pillCached: \"缓存\"; readonly pillFresh: \"实时\"; readonly pillUpdatedAt: \"更新于 {t}\"; readonly providerUnknown: \"提供商未识别\"; readonly panelTitle: \"{provider} 用量\"; readonly refresh: \"刷新\"; readonly hintPrefix: \"提示：\"; readonly loading: \"加载中…\"; readonly ariaPill: \"用量统计\"; readonly settingsTab: \"用量统计\"; readonly settingsNavLabel: \"用量统计设置分区\"; readonly pageTabTrend: \"使用趋势\"; readonly pageTabReport: \"用量报告\"; readonly pageTabHistory: \"历史报告\"; readonly pageTabUsage: \"用量可视化\"; readonly pageTabProviders: \"适配器\"; readonly pageTabFloat: \"悬浮窗\"; readonly settingsKicker: \"Settings · Provider Usage\"; readonly settingsTitle: \"用量与报告\"; readonly settingsProvidersOk: \"{n} 个 Provider · 状态正常\"; readonly settingsProvidersStale: \"{n} 个 Provider · 部分陈旧\"; readonly errNoApiKey: \"未找到 API Key（走 {p}_API_KEY 环境变量或 .credentials.yaml）。\"; readonly errUnauthorized: \"API Key 无效或已过期（401/403）。\"; readonly errTimeout: \"请求超时，请重试。\"; readonly errNetwork: \"网络错误，请检查连接后重试。\"; readonly errBadData: \"数据格式异常，请检查服务商接口或适配器返回。\"; readonly errAdapterLoadFailed: \"自定义适配器加载失败，请检查文件路径与契约（设置页可见错误明细）。\"; readonly errBusy: \"上一次取数仍在进行，稍候自动刷新。\"; readonly errNoEnabledAdapter: \"该提供商有候选适配器但均未启用，请在设置面板「用量统计」启用。\"; readonly errNoAdapter: \"该提供商未配置适配器，请在设置面板「用量统计」添加。\"; readonly errHttpStatus: \"服务返回 {code}，请检查中转站状态。\"; readonly errGeneric: \"用量获取失败：{code}。\"; readonly noDataShort: \"暂无数据\"; readonly noAdapterTitle: \"该提供商暂无启用的适配器。\"; readonly noAdapterHint: \"在设置面板「用量统计」的适配器管理中启用一个候选适配器；也可复制下方引导指令，让 Agent 帮你接入用量数据源。\"; readonly copyGuide: \"复制引导指令\"; readonly copied: \"已复制 ✓\"; readonly copyFail: \"复制失败\"; readonly statusFresh: \"实时\"; readonly statusCached: \"缓存\"; readonly statusStale: \"陈旧（已降级）\"; readonly statusUnconfigured: \"未配置\"; readonly posTopRight: \"右上\"; readonly posTopLeft: \"左上\"; readonly posBottomRight: \"右下\"; readonly posBottomLeft: \"左下\"; readonly uiTitle: \"胶囊位置\"; readonly uiAnchor: \"锚点：\"; readonly offsetX: \"水平偏移\"; readonly offsetY: \"垂直偏移\"; readonly panelOffsetY: \"面板间距\"; readonly zIndexBase: \"层级基准\"; readonly savingNow: \"保存中…\"; readonly save: \"保存\"; readonly uiSavedOk: \"已保存——胶囊位置即时生效（所有设备）\"; readonly uiSaveFail: \"保存失败：{msg}\"; readonly usageTitle: \"用量可视化\"; readonly usageToday: \"今日概览（/trend 日面；调用失败不影响下方状态点）\"; readonly usageTodayTokens: \"今日 Token\"; readonly usageDonutIO: \"Token 构成（最新有数日）\"; readonly usageIOLabelInput: \"输入\"; readonly usageIOLabelOutput: \"输出\"; readonly usageIOLabelCache: \"缓存\"; readonly usageDonutModels: \"模型分担（窗口 byProvider）\"; readonly usageActiveLabel: \"活跃天数\"; readonly usageHeat: \"用量热力图\"; readonly usageHeatDays: \"{n} 天\"; readonly usageHeatNote: \"色阶按窗口最大值相对分档\"; readonly usageLoading: \"概览加载中…\"; readonly usageLoadFail: \"概览加载失败：{msg}\"; readonly noProviders: \"暂无启用的 provider\"; readonly noData: \"暂无数据\"; readonly updatedAt: \"更新于 {t}\"; readonly badgeEnabled: \"已启用：{name}\"; readonly badgeOff: \"未启用适配器\"; readonly adapterBuiltin: \"内置\"; readonly adapterCustom: \"自定义\"; readonly switchOffTitle: \"停用该适配器（仅影响用量取数）\"; readonly switchOnTitle: \"启用该适配器\"; readonly lastError: \"最近一次错误：{msg}\"; readonly inspectKName: \"适配器名\"; readonly inspectKLabel: \"展示名\"; readonly inspectKProviders: \"归属提供商\"; readonly inspectKVersion: \"契约版本\"; readonly filePath: \"文件路径\"; readonly filePathOnly: \"（唯一输入——name/展示名/归属提供商从文件导出自动读取）\"; readonly pathKeyHint: \"仅接受本地 .mjs · 密钥不进端\"; readonly detecting: \"检测中…\"; readonly detectFile: \"检测文件\"; readonly detectFirst: \"请先通过「检测文件」后再确认添加\"; readonly adding: \"添加中…\"; readonly confirmAdd: \"确认添加\"; readonly cancel: \"取消\"; readonly inspectFail: \"检测失败\"; readonly addFail: \"添加失败\"; readonly noCandidates: \"该提供商暂无候选适配器——可通过下方 [+ 添加适配器] 注入本地适配器文件；也可复制引导指令，让 Agent 帮你创建适配器。\"; readonly collapse: \"收起\"; readonly addAdapter: \"+ 添加适配器\"; readonly provTitle: \"提供商\"; readonly provSub: \"列表默认折叠 · 密钥不进端\"; readonly provListHint: \"提供商列表与模型配置页保持一致（共 {n} 个）；展开某个提供商以切换适配器开关或添加新适配器。\"; readonly fileLoadFail: \"用户文件 {f} 加载失败：{msg}\"; readonly noProvHint: \"未发现已配置的提供商（adapters.json 不可达或模型配置页尚未配置提供商）。可复制引导指令，让 Agent 帮你接入数据源并创建适配器。\"; readonly customProvTitle: \"自定义提供商\"; readonly customProvHint: \"以下 providers 未出现在 dsh 模型配置页（模型暂选不到该提供商，先登记适配器；在模型页补建后即可选用），不计入上方数量。\"; readonly trendTitle: \"使用趋势\"; readonly trendGranularity: \"粒度\"; readonly trendGranDay: \"日\"; readonly trendGranWeek: \"周\"; readonly trendGranMonth: \"月\"; readonly trendMetricLabel: \"指标\"; readonly trendMetricTotal: \"总 tokens\"; readonly trendMetricInput: \"输入\"; readonly trendMetricOutput: \"输出\"; readonly trendMetricCacheRead: \"缓存读\"; readonly trendMetricCacheWrite: \"缓存写\"; readonly trendMetricCalls: \"调用次数\"; readonly trendAdapterLabel: \"适配器\"; readonly trendAdapterAll: \"全部适配器\"; readonly trendByModel: \"按模型拆分\"; readonly trendCardTotal: \"窗口总量\"; readonly trendCardCalls: \"调用次数\"; readonly trendCardPeak: \"峰值桶\"; readonly trendCaliberNote: \"含进行中桶 · 尾桶未满\"; readonly trendCardTop: \"Top 适配器\"; readonly trendCardTopDir: \"Top 目录\"; readonly trendFetchFail: \"趋势数据获取失败\"; readonly trendEmptyTitle: \"暂无趋势数据\"; readonly trendEmptyHint: \"会话产生用量后，这里会展示近期的使用趋势。\"; readonly trendRangeLabel: \"范围\"; readonly trendRangeDayUnit: \"{n} 天\"; readonly trendRangeWeekUnit: \"{n} 周\"; readonly trendRangeMonthUnit: \"{n} 个月\"; readonly trendViewLabel: \"视图\"; readonly trendViewBar: \"柱状\"; readonly trendViewArea: \"面积\"; readonly trendPartialOngoing: \"进行中\"; readonly trendPartialEdge: \"部分桶\"; readonly trendNoData: \"无数据\"; readonly trendTipSum: \"合计\"; readonly trendPrevIncomplete: \"环比基准不完整\"; readonly trendHiddenParts: \"已隐藏 {k} 段（卡为全段口径）\"; readonly trendLegendToggleHint: \"点击图例可显隐对应段\"; readonly trendPeakDay: \"{day}\"; readonly trendPeakWeek: \"{day} 当周\"; readonly trendPeakMonth: \"{y} 年 {m} 月\"; readonly trendCardAvg: \"日均\"; readonly trendViewVisible: \"可见段\"; readonly trendDirLabel: \"目录\"; readonly trendDirAll: \"全部目录\"; readonly trendDirUnidentified: \"未识别\"; readonly trendDirUnidentifiedNote: \"无目录信息的会话\"; readonly reportTitle: \"用量报告\"; readonly reportPeriodDaily: \"日报\"; readonly reportPeriodWeekly: \"周报\"; readonly reportPeriodMonthly: \"月报\"; readonly reportEnabled: \"启用\"; readonly reportTime: \"触发时间\"; readonly reportWeekStartsOn: \"周起点\"; readonly reportWeekMonday: \"周一\"; readonly reportWeekSunday: \"周日\"; readonly reportDayOfMonth: \"月内第几天\"; readonly reportProvider: \"模型提供商\"; readonly reportProviderDefault: \"跟随默认\"; readonly reportModel: \"模型\"; readonly reportModelHint: \"留空跟随默认\"; readonly reportModelDefault: \"跟随默认（首个已注册模型）\"; readonly reportModelKept: \"{v}（当前配置值，不在列表中）\"; readonly reportModelFallback: \"模型列表拉取失败或为空，已降级为手动填写。\"; readonly reportDirectories: \"目录范围\"; readonly reportDirectoriesAll: \"全部目录\"; readonly reportDirectoriesSelectAll: \"全选\"; readonly reportDirectoriesClear: \"清空\"; readonly reportDirectoriesEmpty: \"暂无目录数据——会话产生用量后，这里会列出可选目录。\"; readonly reportDirectoriesHintAll: \"统计全部目录（默认口径）。\"; readonly reportDirectoriesHintScoped: \"报告只统计所选目录的目录分布（其余维度保持全量）。\"; readonly reportPromptReset: \"恢复默认\"; readonly reportPromptHint: \"分段编辑，整体保存；红线约束默认折叠。\"; readonly reportNoData: \"当期无用量数据，未生成报告\"; readonly reportHeroTotal: \"tokens\"; readonly reportHeroCalls: \"对话次数\"; readonly reportHeroActive: \"活跃天数\"; readonly reportHeroStreak: \"最长连续\"; readonly reportHeroPeak: \"峰值日\"; readonly reportRatioFlat: \"持平\"; readonly reportRatioPct: \"{n}%\"; readonly reportPrompt: \"提示词模板\"; readonly reportPush: \"生成后推送\"; readonly reportSave: \"保存配置\"; readonly reportSaved: \"已保存\"; readonly reportSaveFail: \"保存失败：{msg}\"; readonly reportGenerate: \"立即生成\"; readonly reportGenerating: \"生成中…\"; readonly reportGenerateFail: \"生成失败：{msg}\"; readonly reportStillGenerating: \"仍在后台生成，稍后刷新列表查看\"; readonly reportReused: \"该窗口已有报告，已复用现有结果（勾选「重新生成」可覆盖）\"; readonly reportForceRegen: \"重新生成（覆盖）\"; readonly reportHistory: \"报告历史\"; readonly reportEmpty: \"尚未生成过报告——配置周期或立即手动生成\"; readonly reportFilterEmpty: \"当前筛选下暂无报告——切换筛选或全部查看\"; readonly reportFetchFail: \"报告数据获取失败\"; readonly reportOk: \"成功\"; readonly reportFailed: \"失败\"; readonly reportCollapse: \"收起\"; readonly reportDetailTokens: \"生成消耗：{n} tokens\"; readonly reportPeriodSelect: \"选择周期\"; readonly reportSectionSchedule: \"调度\"; readonly reportSectionRouting: \"路由与范围\"; readonly reportSectionPrompts: \"报表提示词\"; readonly reportSectionGenerate: \"手动生成\"; readonly reportSectionHistory: \"历史报告\"; readonly reportExpandAll: \"全部展开\"; readonly reportCollapseAll: \"全部收起\"; readonly reportUnsaved: \"未保存\"; readonly reportSectionOff: \"关闭\"; readonly reportSummaryNDirs: \"{n} 个目录\"; readonly reportSummaryNReports: \"{n}份报告\"; readonly reportGoalLabel: \"任务目标\"; readonly reportStatsLabel: \"统计数据\"; readonly reportStructureLabel: \"撰写结构\"; readonly reportConstraintsLabel: \"硬性约束\"; readonly reportConstraintCount: \"{n}条约束\"; readonly reportBudgetLabel: \"字数预算\"; readonly reportPromptWordUnit: \"字\"; readonly reportStatsVarNote: \"{stats} 为统计 JSON 注入点（只读，不可改名）\"; readonly reportPromptRawHint: \"模板非标准结构，已切换整体编辑，文本无损\"; readonly historySub: \"展开查看明细 · 按需加载\"; readonly reportFilterStatus: \"状态\"; readonly reportFilterAll: \"全部\"; readonly reportFilterNoData: \"空窗口\"; readonly reportLoadMore: \"加载更多\"; readonly reportForceShort: \"强制覆盖\"; readonly reportNoForceShort: \"不强制覆盖\"; readonly reportGenIdempotentHint: \"窗口已有成功报告时默认幂等复用；勾选强制才会覆盖重跑。\"; readonly reportGeneratedNotVisible: \"报告已生成，但列表中暂未见到，可重新加载后查看。\"; readonly reportReloadList: \"重新加载\"; };",
+    "export declare function HistorySection(props: { pendingExpandId: string | null; onConsumePending: () => void; active: boolean; }",
     "export declare function ProviderListSection({ meta, main, extra, busy, onSwitch, onDisable, onInspect, onAdd, }",
-    "export declare function ReportSection(): React.ReactElement;",
+    "export declare function ReportSection(props: { onGeneratedRow: (m: ReportMetaView) => void; }",
     "export declare function SettingsPage(): React.ReactElement;",
     "export declare function TrendSection(): React.ReactElement;",
     "export declare function UiSection(): React.ReactElement | null;",
@@ -352,6 +369,7 @@
     "export declare function __clearReportIndexCacheForTests(): void;",
     "export declare function __lastRunChainForTests(root: string): Promise<void> | undefined;",
     "export declare function __reportIndexCacheStatsForTests(): { hits: number; misses: number; };",
+    "export declare function activeDayCount(series: DayBucket[]): number;",
     "export declare function adapterStateFile(root: string): string;",
     "export declare function addCounterTo(agg: TrendAggRow | TrendDirRow | TrendHourRow, turns: number, toolCalls: number): void;",
     "export declare function addDetailTo(agg: TrendAggRow | TrendDirRow | TrendHourRow, row: TrendDetailRow): void;",
@@ -376,6 +394,8 @@
     "export declare function clampTrendN(raw: string | null, gran: \"day\" | \"week\" | \"month\", retention: number): number;",
     "export declare function clampZIndexBase(value: unknown, dflt: number): number;",
     "export declare function compareVersions(left: string, right: string): number;",
+    "export declare function composePrompt(sections: Omit<PromptSections, \"structureHeader\"> & { structureHeader?: string; }",
+    "export declare function composeShares(series: DayBucket[]): string;",
     "export declare function composerDockedAtBottom(seatRect: RectLike | null | undefined, containerRect: RectLike | null | undefined): boolean;",
     "export declare function copyText(text: string): Promise<boolean>;",
     "export declare function createAdapterRoutes(routes: { adapters: string; select: string; inspect: string; add: string; }",
@@ -388,12 +408,14 @@
     "export declare function dayValueOf(days: Map<string, Map<string, Map<string | null, TrendCell>>>, day: string, metric: TrendMetric, provider?: string): number | null;",
     "export declare function decideProviderAfterDetect(input: DetectDecisionInput): DetectDecision;",
     "export declare function defaultCatalogLoader(remote: RemoteLike | undefined): Promise<string | undefined>;",
+    "export declare function defaultStructureHeader(period: \"daily\" | \"weekly\" | \"monthly\"): string;",
     "export declare function deriveLastRun(records: LastRunRecord[]): Partial<Record<ReportPeriod, string>>;",
     "export declare function describeUsageStatsAdapterShape(v: unknown): string | null;",
     "export declare function diffToken(aggV: number | null, dirV: number | null): number | null;",
     "export declare function dirDisplayLabel(dir: unknown): string;",
     "export declare function dirNeedsScopeNote(dir: unknown): boolean;",
     "export declare function dirStackId(dir: unknown): string;",
+    "export declare function donutSvg(segs: DonutInput[], size?: number): string;",
     "export declare function downsample(points: Array<{ x: number; y: number; }",
     "export declare function emptyAggRow(day: string, provider: string, model: string | null): TrendAggRow;",
     "export declare function emptyCell(): TrendCell;",
@@ -409,6 +431,7 @@
     "export declare function fetchTimeout(url: string, init?: RequestInit, timeoutMs?: number): Promise<Response>;",
     "export declare function fetchUiConfig(): Promise<UiPlacementConfig>;",
     "export declare function fetchWithTimeout(url: string, timeoutMs?: number, init?: RequestInit): Promise<Response>;",
+    "export declare function filterReportsByStatus<T extends HistoryRowLike>(rows: T[], filter: HistoryStatusFilter): T[];",
     "export declare function fin(v: number, min?: number, max?: number): number | null;",
     "export declare function fmtAxisLabel(key: string, gran: TrendGran): string;",
     "export declare function fmtAxisTime(ts: number, spanMs: number, dateOnly: boolean): string;",
@@ -416,6 +439,7 @@
     "export declare function fmtCompact(n: number | null): string;",
     "export declare function fmtPctTick(v: number): string;",
     "export declare function generateReport(opts: GenerateReportOptions): Promise<ReportResult>;",
+    "export declare function groupReportsByPeriod<T extends HistoryRowLike>(rows: T[]): Record<\"daily\" | \"weekly\" | \"monthly\", T[]>;",
     "export declare function handleAdapters(req: IncomingMessage, res: ServerResponse, context: AdapterRoutesContext): void;",
     "export declare function handleAdd(req: IncomingMessage, res: ServerResponse, context: AdapterRoutesContext): Promise<void>;",
     "export declare function handleEvents(req: IncomingMessage, res: ServerResponse, context: UiRoutesContext): void;",
@@ -432,12 +456,18 @@
     "export declare function handleStats(req: IncomingMessage, res: ServerResponse, ctx: StatsRoutesContext): Promise<void>;",
     "export declare function handleTrend(req: IncomingMessage, res: ServerResponse, context: UiRoutesContext): void;",
     "export declare function handleUiConfig(req: IncomingMessage, res: ServerResponse, context: UiRoutesContext): Promise<void>;",
+    "export declare function heatCells(series: DayBucket[], days: number): Array<{ key: string; total: number | null; level: number; }",
+    "export declare function heatLevel(value: number | null, max: number): number;",
     "export declare function hourOfDay(t: number): number;",
     "export declare function installUpgrade(deps: UpgradeDeps): Promise<void>;",
     "export declare function isClosedWindowRecord(r: LastRunRecord): boolean;",
+    "export declare function isDirMode(data: { byDir?: boolean; dirs?: Array<{ dir?: string | null; }>; }",
     "export declare function isPanelCacheStale(entry: Pick<PanelCacheEntry, \"at\">, now: number, ttlMs?: number): boolean;",
+    "export declare function isPromptsDirty(a: { daily: string; weekly: string; monthly: string; }",
     "export declare function isReportKeyValid(period: string, key: string): boolean;",
     "export declare function isReportPeriodValid(period: string): boolean;",
+    "export declare function isRoutingDirty(a: { provider: string; model: string; directories: string[]; push: { enabled: boolean; }; }",
+    "export declare function isScheduleDirty(a: { daily: { enabled: boolean; time: string; }; weekly: { enabled: boolean; time: string; weekStartsOn: 0 | 1; }; monthly: { enabled: boolean; time: string; dayOfMonth: number; }; }",
     "export declare function isTaskIdValid(taskId: string): boolean;",
     "export declare function isUsageStatsAdapter(v: unknown): v is UsageStatsAdapter;",
     "export declare function isValidShardRow(row: unknown): row is TrendDetailRow | TrendCounterRow | TrendAggRow | TrendDirRow | TrendHourRow;",
@@ -452,6 +482,7 @@
     "export declare function loadAndValidateAdapter(file: string, stamp: FileStamp): Promise<{ adapter?: UsageStatsAdapter; error?: string; }",
     "export declare function loadUserAdapterChecked(file: string, registry?: AdapterRegistry): Promise<{ ok: true; adapter: UsageStatsAdapter; }",
     "export declare function loadUserHostAdapterFile(file: string): Promise<unknown>;",
+    "export declare function locatePendingRow<T extends HistoryRowLike>(rows: T[], id: string): T | undefined;",
     "export declare function makeAdapterRegistry(opts?: { diag?: (m: string) => void; sanitizePath?: (s: string) => string; }",
     "export declare function makeCatalogCache(ttlMs?: number): { load: CatalogLoader; reset: () => void; };",
     "export declare function makeDueReportExecutor(deps: DueExecutorDeps): (input: ReportTaskInput) => Promise<ReportTaskResult>;",
@@ -487,6 +518,7 @@
     "export declare function panelZIndexFor(base: number): number;",
     "export declare function parseHHMM(v: unknown): { h: number; m: number; }",
     "export declare function parseJsonl(raw: string): HistoryEntry[];",
+    "export declare function parsePrompt(text: string): ParsedPrompt;",
     "export declare function parseReportIndexLines(raw: string): ReportMeta[];",
     "export declare function parseUserAdapters(raw: string | undefined): UserAdapterRecord[];",
     "export declare function pendingReports(cfg: ReportConfig, now: number, lastRun: Partial<Record<ReportPeriod, string>>): DueReport[];",
@@ -498,6 +530,7 @@
     "export declare function prevWindowTotal(buckets: Array<{ day: string; providers: Array<{ provider: string; model: string | null; cell: TrendCell; }>; }",
     "export declare function previousClosedWindow(period: ReportPeriod, cfg: ReportConfig, now: number): DueReport;",
     "export declare function promptFor(cfg: ReportConfig, period: ReportPeriod): string;",
+    "export declare function promptSectionStats(text: string): { budget: string | null; constraintCount: number; hasStatsVar: boolean; };",
     "export declare function providerBadgeText(item: Pick<ProviderListItem, \"enabledId\">, t?: (key: string, params?: Record<string, unknown>) => string): string;",
     "export declare function rangeValueOf(days: Map<string, Map<string, Map<string | null, TrendCell>>>, range: { start: string; end: string; }",
     "export declare function readAdapterState(root: string): Promise<Record<string, string | null>>;",
@@ -523,7 +556,8 @@
     "export declare function resolvePath(p: string): string | undefined;",
     "export declare function resolveProviderConfig(provider: string, ctx?: unknown, input?: ProviderConfigInput): Promise<ResolvedProviderConfig>;",
     "export declare function resolveProviderFromSession(sessions: SessionsServiceLike | undefined, remote: RemoteLike | undefined, catalogLoader?: CatalogLoader): Promise<string | undefined>;",
-    "export declare function runDueReport(params: { due: DueReport; trend: TrendTracker; ctx: Context; reportCfg: ReportConfig; historyRoot: string; sanitizeDiagnostic: (s: string) => string; }",
+    "export declare function routingSummaryData(cfg: { provider: string; model: string; directories: string[]; push: { enabled: boolean; }; }",
+    "export declare function runDueReport(params: { due: DueReport; trend: TrendTracker; ctx: Context; reportCfg: ReportConfig; promptTemplate: string; historyRoot: string; sanitizeDiagnostic: (s: string) => string; }",
     "export declare function runUpgradeChain(deps: UpgradeDeps): Promise<void>;",
     "export declare function runV2PanelPipeline(opts: { adapter: UsageStatsAdapter; provider: string; history: HistoryStore; range: { start: number; end: number; }; timeoutMs?: number; }",
     "export declare function runV2Pipeline(ctx: V2PipelineContext): Promise<V2PipelineResult>;",
@@ -535,6 +569,7 @@
     "export declare function sanitizeDirName(cwd: unknown): string | null;",
     "export declare function sanitizeHtml(html: string): string;",
     "export declare function saveUiConfig(cfg: UiPlacementConfig): Promise<void>;",
+    "export declare function scheduleSummaryParts(cfg: { daily: { enabled: boolean; time: string; }; weekly: { enabled: boolean; time: string; }; monthly: { enabled: boolean; time: string; }; }",
     "export declare function seriesColor(id: string): string;",
     "export declare function sessionAncestryChain(sessions: SessionsServiceLike | undefined, startId: string, maxDepth?: number): string[];",
     "export declare function settleOne(source: string, target: string, initial: string | null, deps: UpgradeDeps): Promise<void>;",
@@ -547,6 +582,7 @@
     "export declare function stampEqual(a: FileStamp | null, b: FileStamp | null): boolean;",
     "export declare function startOfDay(time: number): number;",
     "export declare function sub(oldV: number | null, newV: number | null): number | null;",
+    "export declare function sumPartsByProvider(series: DayBucket[]): Array<{ provider: string; value: number; }",
     "export declare function sumToken(a: number | null, b: number | null): number | null;",
     "export declare function summaryOf(snapshot: ReportStatsSnapshot): ReportMetaSummary;",
     "export declare function targetConfigFile(root: string): string;",
@@ -880,9 +916,6 @@
         "lastNWeekKeys": [
           "export declare function lastNWeekKeys(n: number, now: number): string[];"
         ],
-        "metricValue": [
-          "export declare function metricValue(cell: TrendCell, metric: TrendMetric): number | null;"
-        ],
         "monthRange": [
           "export declare function monthRange(key: string): { start: string; end: string; };"
         ],
@@ -949,101 +982,17 @@
         "TREND_SESSION_TTL_MS": [
           "export declare const TREND_SESSION_TTL_MS: number;"
         ],
-        "TREND_DIR_MAX": [
-          "export declare const TREND_DIR_MAX = 256;"
-        ],
-        "TREND_ROW_VERSION": [
-          "export declare const TREND_ROW_VERSION = 1;"
-        ],
-        "TREND_UNIDENTIFIED": [
-          "export declare const TREND_UNIDENTIFIED = \"(unidentified)\";"
-        ],
-        "hourOfDay": [
-          "export declare function hourOfDay(t: number): number;"
-        ],
-        "isValidShardRow": [
-          "export declare function isValidShardRow(row: unknown): row is TrendDetailRow | TrendCounterRow | TrendAggRow | TrendDirRow | TrendHourRow;"
-        ],
-        "safeId": [
-          "export declare function safeId(v: unknown, maxLen?: number): string | null;"
-        ],
-        "safeToken": [
-          "export declare function safeToken(v: unknown): number | null;"
-        ],
-        "sanitizeDirName": [
-          "export declare function sanitizeDirName(cwd: unknown): string | null;"
-        ],
-        "sumToken": [
-          "export declare function sumToken(a: number | null, b: number | null): number | null;"
-        ],
         "normalizeReportConfig": [
           "export declare function normalizeReportConfig(raw: unknown): ReportConfig;"
         ],
         "normalizeReportDirectories": [
           "export declare function normalizeReportDirectories(raw: unknown): string[];"
         ],
-        "parseHHMM": [
-          "export declare function parseHHMM(v: unknown): { h: number; m: number; }"
-        ],
         "promptFor": [
           "export declare function promptFor(cfg: ReportConfig, period: ReportPeriod): string;"
         ],
-        "DEFAULT_DAILY_PROMPT": [
-          "export declare const DEFAULT_DAILY_PROMPT: string;"
-        ],
-        "DEFAULT_MONTHLY_PROMPT": [
-          "export declare const DEFAULT_MONTHLY_PROMPT: string;"
-        ],
-        "DEFAULT_PROMPTS": [
-          "export declare const DEFAULT_PROMPTS: ReportPrompts;"
-        ],
-        "DEFAULT_PROMPT_TEMPLATE": [
-          "export declare const DEFAULT_PROMPT_TEMPLATE: string;"
-        ],
-        "DEFAULT_WEEKLY_PROMPT": [
-          "export declare const DEFAULT_WEEKLY_PROMPT: string;"
-        ],
-        "LEGACY_DAILY_PROMPT_V1": [
-          "export declare const LEGACY_DAILY_PROMPT_V1: string;"
-        ],
-        "LEGACY_DAILY_PROMPT_V2": [
-          "export declare const LEGACY_DAILY_PROMPT_V2: string;"
-        ],
-        "LEGACY_DAILY_PROMPT_V3": [
-          "export declare const LEGACY_DAILY_PROMPT_V3: string;"
-        ],
-        "LEGACY_DAILY_PROMPT_V4": [
-          "export declare const LEGACY_DAILY_PROMPT_V4: string;"
-        ],
-        "LEGACY_MONTHLY_PROMPT_V1": [
-          "export declare const LEGACY_MONTHLY_PROMPT_V1: string;"
-        ],
-        "LEGACY_MONTHLY_PROMPT_V2": [
-          "export declare const LEGACY_MONTHLY_PROMPT_V2: string;"
-        ],
-        "LEGACY_MONTHLY_PROMPT_V3": [
-          "export declare const LEGACY_MONTHLY_PROMPT_V3: string;"
-        ],
-        "LEGACY_MONTHLY_PROMPT_V4": [
-          "export declare const LEGACY_MONTHLY_PROMPT_V4: string;"
-        ],
-        "LEGACY_PROMPT_TEMPLATE": [
-          "export declare const LEGACY_PROMPT_TEMPLATE: string;"
-        ],
-        "LEGACY_WEEKLY_PROMPT_V1": [
-          "export declare const LEGACY_WEEKLY_PROMPT_V1: string;"
-        ],
-        "LEGACY_WEEKLY_PROMPT_V2": [
-          "export declare const LEGACY_WEEKLY_PROMPT_V2: string;"
-        ],
-        "LEGACY_WEEKLY_PROMPT_V3": [
-          "export declare const LEGACY_WEEKLY_PROMPT_V3: string;"
-        ],
-        "LEGACY_WEEKLY_PROMPT_V4": [
-          "export declare const LEGACY_WEEKLY_PROMPT_V4: string;"
-        ],
         "ReportConfigService": [
-          "export declare class ReportConfigService { private cfg; private chain; private readonly root; private readonly onUpdate?; constructor(opts: ReportConfigServiceOptions); get(): ReportConfig; update(next: ReportConfig): Promise<void>; }"
+          "export declare class ReportConfigService { private cfg; private chain; private readonly root; private readonly onUpdate?; readonly promptDefaults: ReportPrompts; constructor(opts: ReportConfigServiceOptions); get(): ReportConfig; update(next: ReportConfig): Promise<void>; }"
         ],
         "DEFAULT_REPORT_CONFIG": [
           "export declare const DEFAULT_REPORT_CONFIG: ReportConfig;"
@@ -1139,7 +1088,7 @@
           "export declare function reportsDir(root: string): string;"
         ],
         "runDueReport": [
-          "export declare function runDueReport(params: { due: DueReport; trend: TrendTracker; ctx: Context; reportCfg: ReportConfig; historyRoot: string; sanitizeDiagnostic: (s: string) => string; }"
+          "export declare function runDueReport(params: { due: DueReport; trend: TrendTracker; ctx: Context; reportCfg: ReportConfig; promptTemplate: string; historyRoot: string; sanitizeDiagnostic: (s: string) => string; }"
         ],
         "summaryOf": [
           "export declare function summaryOf(snapshot: ReportStatsSnapshot): ReportMetaSummary;"
@@ -1288,20 +1237,8 @@
         "isTaskIdValid": [
           "export declare function isTaskIdValid(taskId: string): boolean;"
         ],
-        "LAST_RUN_SCHEMA": [
-          "export declare const LAST_RUN_SCHEMA = 2;"
-        ],
-        "alignLastRun": [
-          "export declare function alignLastRun(lastRun: Partial<Record<ReportPeriod, string>>, records: LastRunRecord[]): Partial<Record<ReportPeriod, string>>;"
-        ],
         "candidateWindow": [
           "export declare function candidateWindow(period: ReportPeriod, cfg: ReportConfig, now: number): DueReport;"
-        ],
-        "deriveLastRun": [
-          "export declare function deriveLastRun(records: LastRunRecord[]): Partial<Record<ReportPeriod, string>>;"
-        ],
-        "isClosedWindowRecord": [
-          "export declare function isClosedWindowRecord(r: LastRunRecord): boolean;"
         ],
         "pendingReports": [
           "export declare function pendingReports(cfg: ReportConfig, now: number, lastRun: Partial<Record<ReportPeriod, string>>): DueReport[];"
@@ -1344,6 +1281,105 @@
         ],
         "makeNoopLayerErrorSurface": [
           "export declare function makeNoopLayerErrorSurface(): LayerErrorSurface;"
+        ],
+        "LAST_RUN_SCHEMA": [
+          "export declare const LAST_RUN_SCHEMA = 2;"
+        ],
+        "alignLastRun": [
+          "export declare function alignLastRun(lastRun: Partial<Record<ReportPeriod, string>>, records: LastRunRecord[]): Partial<Record<ReportPeriod, string>>;"
+        ],
+        "deriveLastRun": [
+          "export declare function deriveLastRun(records: LastRunRecord[]): Partial<Record<ReportPeriod, string>>;"
+        ],
+        "isClosedWindowRecord": [
+          "export declare function isClosedWindowRecord(r: LastRunRecord): boolean;"
+        ],
+        "DEFAULT_DAILY_PROMPT": [
+          "export declare const DEFAULT_DAILY_PROMPT: string;"
+        ],
+        "DEFAULT_MONTHLY_PROMPT": [
+          "export declare const DEFAULT_MONTHLY_PROMPT: string;"
+        ],
+        "DEFAULT_PROMPTS": [
+          "export declare const DEFAULT_PROMPTS: ReportPrompts;"
+        ],
+        "DEFAULT_PROMPT_TEMPLATE": [
+          "export declare const DEFAULT_PROMPT_TEMPLATE: string;"
+        ],
+        "DEFAULT_WEEKLY_PROMPT": [
+          "export declare const DEFAULT_WEEKLY_PROMPT: string;"
+        ],
+        "LEGACY_DAILY_PROMPT_V1": [
+          "export declare const LEGACY_DAILY_PROMPT_V1: string;"
+        ],
+        "LEGACY_DAILY_PROMPT_V2": [
+          "export declare const LEGACY_DAILY_PROMPT_V2: string;"
+        ],
+        "LEGACY_DAILY_PROMPT_V3": [
+          "export declare const LEGACY_DAILY_PROMPT_V3: string;"
+        ],
+        "LEGACY_DAILY_PROMPT_V4": [
+          "export declare const LEGACY_DAILY_PROMPT_V4: string;"
+        ],
+        "LEGACY_MONTHLY_PROMPT_V1": [
+          "export declare const LEGACY_MONTHLY_PROMPT_V1: string;"
+        ],
+        "LEGACY_MONTHLY_PROMPT_V2": [
+          "export declare const LEGACY_MONTHLY_PROMPT_V2: string;"
+        ],
+        "LEGACY_MONTHLY_PROMPT_V3": [
+          "export declare const LEGACY_MONTHLY_PROMPT_V3: string;"
+        ],
+        "LEGACY_MONTHLY_PROMPT_V4": [
+          "export declare const LEGACY_MONTHLY_PROMPT_V4: string;"
+        ],
+        "LEGACY_PROMPT_TEMPLATE": [
+          "export declare const LEGACY_PROMPT_TEMPLATE: string;"
+        ],
+        "LEGACY_WEEKLY_PROMPT_V1": [
+          "export declare const LEGACY_WEEKLY_PROMPT_V1: string;"
+        ],
+        "LEGACY_WEEKLY_PROMPT_V2": [
+          "export declare const LEGACY_WEEKLY_PROMPT_V2: string;"
+        ],
+        "LEGACY_WEEKLY_PROMPT_V3": [
+          "export declare const LEGACY_WEEKLY_PROMPT_V3: string;"
+        ],
+        "LEGACY_WEEKLY_PROMPT_V4": [
+          "export declare const LEGACY_WEEKLY_PROMPT_V4: string;"
+        ],
+        "parseHHMM": [
+          "export declare function parseHHMM(v: unknown): { h: number; m: number; }"
+        ],
+        "TREND_DIR_MAX": [
+          "export declare const TREND_DIR_MAX = 256;"
+        ],
+        "TREND_ROW_VERSION": [
+          "export declare const TREND_ROW_VERSION = 1;"
+        ],
+        "TREND_UNIDENTIFIED": [
+          "export declare const TREND_UNIDENTIFIED = \"(unidentified)\";"
+        ],
+        "hourOfDay": [
+          "export declare function hourOfDay(t: number): number;"
+        ],
+        "isValidShardRow": [
+          "export declare function isValidShardRow(row: unknown): row is TrendDetailRow | TrendCounterRow | TrendAggRow | TrendDirRow | TrendHourRow;"
+        ],
+        "metricValue": [
+          "export declare function metricValue(cell: TrendCell, metric: TrendMetric): number | null;"
+        ],
+        "safeId": [
+          "export declare function safeId(v: unknown, maxLen?: number): string | null;"
+        ],
+        "safeToken": [
+          "export declare function safeToken(v: unknown): number | null;"
+        ],
+        "sanitizeDirName": [
+          "export declare function sanitizeDirName(cwd: unknown): string | null;"
+        ],
+        "sumToken": [
+          "export declare function sumToken(a: number | null, b: number | null): number | null;"
         ],
         "UiRoutesContext": [
           "export declare class UiRoutesContext { readonly statsService: StatsService; readonly trend: TrendTracker; readonly uiConfig: UiPlacementConfig; readonly sseClients: Set<ServerResponse>; readonly broadcastUiConfigChanged: () => void; readonly layerErrors: LayerErrorSurface; constructor(opts: UiRoutesContextOptions); }"
@@ -1573,6 +1609,9 @@
         "panelZIndexFor": [
           "export declare function panelZIndexFor(base: number): number;"
         ],
+        "OPENCODE_GO_PROVIDER": [
+          "export declare const OPENCODE_GO_PROVIDER = \"opencode-go\";"
+        ],
         "sanitizeHtml": [
           "export declare function sanitizeHtml(html: string): string;"
         ],
@@ -1606,12 +1645,6 @@
         }
       ],
       "blocks": {
-        "ADAPTERS_URL": [
-          "export declare const ADAPTERS_URL: string;"
-        ],
-        "ADD_URL": [
-          "export declare const ADD_URL: string;"
-        ],
         "CATALOG_CACHE_TTL_MS": [
           "export declare const CATALOG_CACHE_TTL_MS = 30000;"
         ],
@@ -1621,38 +1654,11 @@
         "DEFAULT_CLIENT_UI_CONFIG": [
           "export declare const DEFAULT_CLIENT_UI_CONFIG: UiPlacementConfig;"
         ],
-        "EVENTS_URL": [
-          "export declare const EVENTS_URL: string;"
-        ],
         "FALLBACK_PROVIDER": [
           "export declare const FALLBACK_PROVIDER = \"opencode-go\";"
         ],
-        "HEALTH_URL": [
-          "export declare const HEALTH_URL: string;"
-        ],
-        "HISTORY_URL": [
-          "export declare const HISTORY_URL: string;"
-        ],
-        "INSPECT_URL": [
-          "export declare const INSPECT_URL: string;"
-        ],
         "MAX_ANCESTRY_DEPTH": [
           "export declare const MAX_ANCESTRY_DEPTH = 3;"
-        ],
-        "REPORT_GENERATE_STATUS_URL": [
-          "export declare const REPORT_GENERATE_STATUS_URL: string;"
-        ],
-        "SELECT_URL": [
-          "export declare const SELECT_URL: string;"
-        ],
-        "STATS_URL": [
-          "export declare const STATS_URL: string;"
-        ],
-        "TREND_URL": [
-          "export declare const TREND_URL: string;"
-        ],
-        "UI_CONFIG_URL": [
-          "export declare const UI_CONFIG_URL: string;"
         ],
         "UNKNOWN_PROVIDER_HINT": [
           "export declare const UNKNOWN_PROVIDER_HINT = \"\\u63D0\\u4F9B\\u5546\\u672A\\u8BC6\\u522B\";"
@@ -1690,6 +1696,15 @@
         "sessionAncestryChain": [
           "export declare function sessionAncestryChain(sessions: SessionsServiceLike | undefined, startId: string, maxDepth?: number): string[];"
         ],
+        "HISTORY_PERIODS": [
+          "export declare const HISTORY_PERIODS: HistoryPeriod[];"
+        ],
+        "rowIdOf": [
+          "export declare const rowIdOf: (m: Pick<ReportMetaView, \"period\" | \"key\">) => string;"
+        ],
+        "HistorySection": [
+          "export declare function HistorySection(props: { pendingExpandId: string | null; onConsumePending: () => void; active: boolean; }"
+        ],
         "inject": [
           "export declare const inject: string[];"
         ],
@@ -1700,10 +1715,70 @@
           "export declare const en: Record<ProviderUsageLocaleKey, string>;"
         ],
         "zh": [
-          "export declare const zh: { readonly justNow: \"刚刚\"; readonly minutesAgo: \"{n} 分钟前\"; readonly hoursAgo: \"{n} 小时前\"; readonly daysAgo: \"{n} 天前\"; readonly pillNotConfigured: \"未配置适配器，点击查看接入引导\"; readonly pillFetchFail: \"用量获取失败：{msg}\"; readonly pillBusy: \"取数进行中，稍候自动刷新\"; readonly pillStale: \"数据陈旧\"; readonly pillCached: \"缓存\"; readonly pillFresh: \"实时\"; readonly pillUpdatedAt: \"更新于 {t}\"; readonly providerUnknown: \"提供商未识别\"; readonly panelTitle: \"{provider} 用量\"; readonly refresh: \"刷新\"; readonly hintPrefix: \"提示：\"; readonly loading: \"加载中…\"; readonly ariaPill: \"用量统计\"; readonly settingsTab: \"用量统计\"; readonly settingsNavLabel: \"用量统计设置分区\"; readonly pageTabTrend: \"趋势\"; readonly pageTabReport: \"报告\"; readonly pageTabUsage: \"用量\"; readonly pageTabProviders: \"适配器\"; readonly pageTabFloat: \"悬浮窗\"; readonly errNoApiKey: \"未找到 API Key（走 {p}_API_KEY 环境变量或 .credentials.yaml）。\"; readonly errUnauthorized: \"API Key 无效或已过期（401/403）。\"; readonly errTimeout: \"请求超时，请重试。\"; readonly errNetwork: \"网络错误，请检查连接后重试。\"; readonly errBadData: \"数据格式异常，请检查服务商接口或适配器返回。\"; readonly errAdapterLoadFailed: \"自定义适配器加载失败，请检查文件路径与契约（设置页可见错误明细）。\"; readonly errBusy: \"上一次取数仍在进行，稍候自动刷新。\"; readonly errNoEnabledAdapter: \"该提供商有候选适配器但均未启用，请在设置面板「用量统计」启用。\"; readonly errNoAdapter: \"该提供商未配置适配器，请在设置面板「用量统计」添加。\"; readonly errHttpStatus: \"服务返回 {code}，请检查中转站状态。\"; readonly errGeneric: \"用量获取失败：{code}。\"; readonly noDataShort: \"暂无数据\"; readonly noAdapterTitle: \"该提供商暂无启用的适配器。\"; readonly noAdapterHint: \"在设置面板「用量统计」的适配器管理中启用一个候选适配器；也可复制下方引导指令，让 Agent 帮你接入用量数据源。\"; readonly copyGuide: \"复制引导指令\"; readonly copied: \"已复制 ✓\"; readonly copyFail: \"复制失败\"; readonly statusFresh: \"实时\"; readonly statusCached: \"缓存\"; readonly statusStale: \"陈旧（已降级）\"; readonly statusUnconfigured: \"未配置\"; readonly posTopRight: \"右上\"; readonly posTopLeft: \"左上\"; readonly posBottomRight: \"右下\"; readonly posBottomLeft: \"左下\"; readonly uiTitle: \"胶囊位置\"; readonly uiAnchor: \"锚点：\"; readonly offsetX: \"水平偏移\"; readonly offsetY: \"垂直偏移\"; readonly panelOffsetY: \"面板间距\"; readonly zIndexBase: \"层级基准\"; readonly savingNow: \"保存中…\"; readonly save: \"保存\"; readonly uiSavedOk: \"已保存——胶囊位置即时生效（所有设备）\"; readonly uiSaveFail: \"保存失败：{msg}\"; readonly usageTitle: \"用量可视化\"; readonly noProviders: \"暂无启用的 provider\"; readonly noData: \"暂无数据\"; readonly updatedAt: \"更新于 {t}\"; readonly badgeEnabled: \"已启用: {name}\"; readonly badgeOff: \"未启用适配器\"; readonly adapterBuiltin: \"内置\"; readonly adapterCustom: \"自定义\"; readonly switchOffTitle: \"停用该适配器（仅影响用量取数）\"; readonly switchOnTitle: \"启用该适配器\"; readonly lastError: \"最近一次错误：{msg}\"; readonly inspectKName: \"适配器名\"; readonly inspectKLabel: \"展示名\"; readonly inspectKProviders: \"归属提供商\"; readonly inspectKVersion: \"契约版本\"; readonly filePath: \"文件路径\"; readonly filePathOnly: \"（唯一输入——name/展示名/归属提供商从文件导出自动读取）\"; readonly detecting: \"检测中…\"; readonly detectFile: \"检测文件\"; readonly detectFirst: \"请先通过「检测文件」后再确认添加\"; readonly adding: \"添加中…\"; readonly confirmAdd: \"确认添加\"; readonly cancel: \"取消\"; readonly inspectFail: \"检测失败\"; readonly addFail: \"添加失败\"; readonly noCandidates: \"该提供商暂无候选适配器——可通过下方 [+ 添加适配器] 注入本地适配器文件；也可复制引导指令，让 Agent 帮你创建适配器。\"; readonly collapse: \"收起\"; readonly addAdapter: \"+ 添加适配器\"; readonly provTitle: \"提供商\"; readonly provListHint: \"提供商列表与模型配置页保持一致（共 {n} 个）；展开某个提供商以切换适配器开关或添加新适配器。\"; readonly fileLoadFail: \"用户文件 {f} 加载失败：{msg}\"; readonly noProvHint: \"未发现已配置的提供商（adapters.json 不可达或模型配置页尚未配置提供商）。可复制引导指令，让 Agent 帮你接入数据源并创建适配器。\"; readonly customProvTitle: \"自定义提供商\"; readonly customProvHint: \"以下 providers 未出现在 dsh 模型配置页（模型暂选不到该提供商，先登记适配器；在模型页补建后即可选用），不计入上方数量。\"; readonly trendTitle: \"使用趋势\"; readonly trendGranularity: \"粒度\"; readonly trendGranDay: \"日\"; readonly trendGranWeek: \"周\"; readonly trendGranMonth: \"月\"; readonly trendMetricLabel: \"指标\"; readonly trendMetricTotal: \"总 tokens\"; readonly trendMetricInput: \"输入\"; readonly trendMetricOutput: \"输出\"; readonly trendMetricCacheRead: \"缓存读\"; readonly trendMetricCacheWrite: \"缓存写\"; readonly trendMetricCalls: \"调用次数\"; readonly trendAdapterLabel: \"适配器\"; readonly trendAdapterAll: \"全部适配器\"; readonly trendByModel: \"按模型拆分\"; readonly trendCardTotal: \"窗口总量\"; readonly trendCardCalls: \"调用次数\"; readonly trendCardPeak: \"峰值桶\"; readonly trendCardTop: \"Top 适配器\"; readonly trendCardTopDir: \"Top 目录\"; readonly trendFetchFail: \"趋势数据获取失败\"; readonly trendEmptyTitle: \"暂无趋势数据\"; readonly trendEmptyHint: \"会话产生用量后，这里会展示近期的使用趋势。\"; readonly trendMountedHint: \"统计自插件挂载时点起算，早于该时点的会话不计入\"; readonly trendMountedHintDay: \"统计自 {day}（插件挂载时点）起算，早于该时点的会话不计入\"; readonly trendRangeLabel: \"范围\"; readonly trendRangeDayUnit: \"{n} 天\"; readonly trendRangeWeekUnit: \"{n} 周\"; readonly trendRangeMonthUnit: \"{n} 个月\"; readonly trendViewLabel: \"视图\"; readonly trendViewBar: \"柱状\"; readonly trendViewArea: \"面积\"; readonly trendPartialOngoing: \"进行中\"; readonly trendPartialEdge: \"部分桶\"; readonly trendNoData: \"无数据\"; readonly trendTipSum: \"合计\"; readonly trendPrevIncomplete: \"环比基准不完整\"; readonly trendHiddenParts: \"已隐藏 {k} 段（卡为全段口径）\"; readonly trendLegendToggleHint: \"点击图例可显隐对应段\"; readonly trendPeakDay: \"{day}\"; readonly trendPeakWeek: \"{day} 当周\"; readonly trendPeakMonth: \"{y} 年 {m} 月\"; readonly trendRetained: \"留存 {days} 天\"; readonly trendCardAvg: \"日均\"; readonly trendViewVisible: \"可见段\"; readonly trendDirLabel: \"目录\"; readonly trendDirAll: \"全部目录\"; readonly trendDirUnidentified: \"未识别\"; readonly trendDirUnidentifiedNote: \"无目录信息的会话\"; readonly reportTitle: \"用量报告\"; readonly reportPeriodDaily: \"日报\"; readonly reportPeriodWeekly: \"周报\"; readonly reportPeriodMonthly: \"月报\"; readonly reportEnabled: \"启用\"; readonly reportTime: \"触发时刻\"; readonly reportWeekStartsOn: \"周起点\"; readonly reportWeekMonday: \"周一\"; readonly reportWeekSunday: \"周日\"; readonly reportDayOfMonth: \"月内触发日（1–28）\"; readonly reportProvider: \"模型提供商\"; readonly reportProviderDefault: \"跟随默认\"; readonly reportModel: \"模型\"; readonly reportModelHint: \"留空跟随默认\"; readonly reportModelDefault: \"跟随默认（首个已注册模型）\"; readonly reportModelKept: \"{v}（当前配置值，不在列表中）\"; readonly reportModelFallback: \"模型列表拉取失败或为空，已降级为手动填写。\"; readonly reportDirectories: \"目录范围\"; readonly reportDirectoriesAll: \"全部目录\"; readonly reportDirectoriesSelectAll: \"全选\"; readonly reportDirectoriesClear: \"清空\"; readonly reportDirectoriesEmpty: \"暂无目录数据——会话产生用量后，这里会列出可选目录。\"; readonly reportDirectoriesHintAll: \"统计全部目录（默认口径）。\"; readonly reportDirectoriesHintScoped: \"报告只统计所选目录的目录分布（其余维度保持全量）。\"; readonly reportPromptReset: \"恢复默认\"; readonly reportPromptHint: \"三周期各自独立模板；{stats} 注入对应周期聚合统计 JSON（含峰值日/活跃天数/环比等年报维度）\"; readonly reportNoData: \"当期无用量数据，未生成报告\"; readonly reportHeroTotal: \"tokens\"; readonly reportHeroCalls: \"对话次数\"; readonly reportHeroActive: \"活跃天数\"; readonly reportHeroStreak: \"最长连续\"; readonly reportHeroPeak: \"峰值日\"; readonly reportRatioFlat: \"持平\"; readonly reportRatioPct: \"{n}%\"; readonly reportPrompt: \"提示词模板\"; readonly reportPush: \"生成后推送通知\"; readonly reportSave: \"保存更改\"; readonly reportSaved: \"已保存\"; readonly reportSaveFail: \"保存失败：{msg}\"; readonly reportGenerate: \"立即生成\"; readonly reportGenerating: \"生成中…\"; readonly reportGenerateFail: \"生成失败：{msg}\"; readonly reportStillGenerating: \"仍在后台生成，稍后刷新列表查看\"; readonly reportReused: \"该窗口已有报告，已复用现有结果（勾选「重新生成」可覆盖）\"; readonly reportForceRegen: \"重新生成（覆盖）\"; readonly reportHistory: \"报告历史\"; readonly reportEmpty: \"尚未生成过报告——配置周期或立即手动生成\"; readonly reportFetchFail: \"报告数据获取失败\"; readonly reportOk: \"成功\"; readonly reportFailed: \"失败\"; readonly reportCollapse: \"收起\"; readonly reportDetailTokens: \"生成消耗：{n} tokens\"; readonly reportPeriodSelect: \"选择周期\"; };"
+          "export declare const zh: { readonly justNow: \"刚刚\"; readonly minutesAgo: \"{n} 分钟前\"; readonly hoursAgo: \"{n} 小时前\"; readonly daysAgo: \"{n} 天前\"; readonly pillNotConfigured: \"未配置适配器，点击查看接入引导\"; readonly pillFetchFail: \"用量获取失败：{msg}\"; readonly pillBusy: \"取数进行中，稍候自动刷新\"; readonly pillStale: \"数据陈旧\"; readonly pillCached: \"缓存\"; readonly pillFresh: \"实时\"; readonly pillUpdatedAt: \"更新于 {t}\"; readonly providerUnknown: \"提供商未识别\"; readonly panelTitle: \"{provider} 用量\"; readonly refresh: \"刷新\"; readonly hintPrefix: \"提示：\"; readonly loading: \"加载中…\"; readonly ariaPill: \"用量统计\"; readonly settingsTab: \"用量统计\"; readonly settingsNavLabel: \"用量统计设置分区\"; readonly pageTabTrend: \"使用趋势\"; readonly pageTabReport: \"用量报告\"; readonly pageTabHistory: \"历史报告\"; readonly pageTabUsage: \"用量可视化\"; readonly pageTabProviders: \"适配器\"; readonly pageTabFloat: \"悬浮窗\"; readonly settingsKicker: \"Settings · Provider Usage\"; readonly settingsTitle: \"用量与报告\"; readonly settingsProvidersOk: \"{n} 个 Provider · 状态正常\"; readonly settingsProvidersStale: \"{n} 个 Provider · 部分陈旧\"; readonly errNoApiKey: \"未找到 API Key（走 {p}_API_KEY 环境变量或 .credentials.yaml）。\"; readonly errUnauthorized: \"API Key 无效或已过期（401/403）。\"; readonly errTimeout: \"请求超时，请重试。\"; readonly errNetwork: \"网络错误，请检查连接后重试。\"; readonly errBadData: \"数据格式异常，请检查服务商接口或适配器返回。\"; readonly errAdapterLoadFailed: \"自定义适配器加载失败，请检查文件路径与契约（设置页可见错误明细）。\"; readonly errBusy: \"上一次取数仍在进行，稍候自动刷新。\"; readonly errNoEnabledAdapter: \"该提供商有候选适配器但均未启用，请在设置面板「用量统计」启用。\"; readonly errNoAdapter: \"该提供商未配置适配器，请在设置面板「用量统计」添加。\"; readonly errHttpStatus: \"服务返回 {code}，请检查中转站状态。\"; readonly errGeneric: \"用量获取失败：{code}。\"; readonly noDataShort: \"暂无数据\"; readonly noAdapterTitle: \"该提供商暂无启用的适配器。\"; readonly noAdapterHint: \"在设置面板「用量统计」的适配器管理中启用一个候选适配器；也可复制下方引导指令，让 Agent 帮你接入用量数据源。\"; readonly copyGuide: \"复制引导指令\"; readonly copied: \"已复制 ✓\"; readonly copyFail: \"复制失败\"; readonly statusFresh: \"实时\"; readonly statusCached: \"缓存\"; readonly statusStale: \"陈旧（已降级）\"; readonly statusUnconfigured: \"未配置\"; readonly posTopRight: \"右上\"; readonly posTopLeft: \"左上\"; readonly posBottomRight: \"右下\"; readonly posBottomLeft: \"左下\"; readonly uiTitle: \"胶囊位置\"; readonly uiAnchor: \"锚点：\"; readonly offsetX: \"水平偏移\"; readonly offsetY: \"垂直偏移\"; readonly panelOffsetY: \"面板间距\"; readonly zIndexBase: \"层级基准\"; readonly savingNow: \"保存中…\"; readonly save: \"保存\"; readonly uiSavedOk: \"已保存——胶囊位置即时生效（所有设备）\"; readonly uiSaveFail: \"保存失败：{msg}\"; readonly usageTitle: \"用量可视化\"; readonly usageToday: \"今日概览（/trend 日面；调用失败不影响下方状态点）\"; readonly usageTodayTokens: \"今日 Token\"; readonly usageDonutIO: \"Token 构成（最新有数日）\"; readonly usageIOLabelInput: \"输入\"; readonly usageIOLabelOutput: \"输出\"; readonly usageIOLabelCache: \"缓存\"; readonly usageDonutModels: \"模型分担（窗口 byProvider）\"; readonly usageActiveLabel: \"活跃天数\"; readonly usageHeat: \"用量热力图\"; readonly usageHeatDays: \"{n} 天\"; readonly usageHeatNote: \"色阶按窗口最大值相对分档\"; readonly usageLoading: \"概览加载中…\"; readonly usageLoadFail: \"概览加载失败：{msg}\"; readonly noProviders: \"暂无启用的 provider\"; readonly noData: \"暂无数据\"; readonly updatedAt: \"更新于 {t}\"; readonly badgeEnabled: \"已启用：{name}\"; readonly badgeOff: \"未启用适配器\"; readonly adapterBuiltin: \"内置\"; readonly adapterCustom: \"自定义\"; readonly switchOffTitle: \"停用该适配器（仅影响用量取数）\"; readonly switchOnTitle: \"启用该适配器\"; readonly lastError: \"最近一次错误：{msg}\"; readonly inspectKName: \"适配器名\"; readonly inspectKLabel: \"展示名\"; readonly inspectKProviders: \"归属提供商\"; readonly inspectKVersion: \"契约版本\"; readonly filePath: \"文件路径\"; readonly filePathOnly: \"（唯一输入——name/展示名/归属提供商从文件导出自动读取）\"; readonly pathKeyHint: \"仅接受本地 .mjs · 密钥不进端\"; readonly detecting: \"检测中…\"; readonly detectFile: \"检测文件\"; readonly detectFirst: \"请先通过「检测文件」后再确认添加\"; readonly adding: \"添加中…\"; readonly confirmAdd: \"确认添加\"; readonly cancel: \"取消\"; readonly inspectFail: \"检测失败\"; readonly addFail: \"添加失败\"; readonly noCandidates: \"该提供商暂无候选适配器——可通过下方 [+ 添加适配器] 注入本地适配器文件；也可复制引导指令，让 Agent 帮你创建适配器。\"; readonly collapse: \"收起\"; readonly addAdapter: \"+ 添加适配器\"; readonly provTitle: \"提供商\"; readonly provSub: \"列表默认折叠 · 密钥不进端\"; readonly provListHint: \"提供商列表与模型配置页保持一致（共 {n} 个）；展开某个提供商以切换适配器开关或添加新适配器。\"; readonly fileLoadFail: \"用户文件 {f} 加载失败：{msg}\"; readonly noProvHint: \"未发现已配置的提供商（adapters.json 不可达或模型配置页尚未配置提供商）。可复制引导指令，让 Agent 帮你接入数据源并创建适配器。\"; readonly customProvTitle: \"自定义提供商\"; readonly customProvHint: \"以下 providers 未出现在 dsh 模型配置页（模型暂选不到该提供商，先登记适配器；在模型页补建后即可选用），不计入上方数量。\"; readonly trendTitle: \"使用趋势\"; readonly trendGranularity: \"粒度\"; readonly trendGranDay: \"日\"; readonly trendGranWeek: \"周\"; readonly trendGranMonth: \"月\"; readonly trendMetricLabel: \"指标\"; readonly trendMetricTotal: \"总 tokens\"; readonly trendMetricInput: \"输入\"; readonly trendMetricOutput: \"输出\"; readonly trendMetricCacheRead: \"缓存读\"; readonly trendMetricCacheWrite: \"缓存写\"; readonly trendMetricCalls: \"调用次数\"; readonly trendAdapterLabel: \"适配器\"; readonly trendAdapterAll: \"全部适配器\"; readonly trendByModel: \"按模型拆分\"; readonly trendCardTotal: \"窗口总量\"; readonly trendCardCalls: \"调用次数\"; readonly trendCardPeak: \"峰值桶\"; readonly trendCaliberNote: \"含进行中桶 · 尾桶未满\"; readonly trendCardTop: \"Top 适配器\"; readonly trendCardTopDir: \"Top 目录\"; readonly trendFetchFail: \"趋势数据获取失败\"; readonly trendEmptyTitle: \"暂无趋势数据\"; readonly trendEmptyHint: \"会话产生用量后，这里会展示近期的使用趋势。\"; readonly trendRangeLabel: \"范围\"; readonly trendRangeDayUnit: \"{n} 天\"; readonly trendRangeWeekUnit: \"{n} 周\"; readonly trendRangeMonthUnit: \"{n} 个月\"; readonly trendViewLabel: \"视图\"; readonly trendViewBar: \"柱状\"; readonly trendViewArea: \"面积\"; readonly trendPartialOngoing: \"进行中\"; readonly trendPartialEdge: \"部分桶\"; readonly trendNoData: \"无数据\"; readonly trendTipSum: \"合计\"; readonly trendPrevIncomplete: \"环比基准不完整\"; readonly trendHiddenParts: \"已隐藏 {k} 段（卡为全段口径）\"; readonly trendLegendToggleHint: \"点击图例可显隐对应段\"; readonly trendPeakDay: \"{day}\"; readonly trendPeakWeek: \"{day} 当周\"; readonly trendPeakMonth: \"{y} 年 {m} 月\"; readonly trendCardAvg: \"日均\"; readonly trendViewVisible: \"可见段\"; readonly trendDirLabel: \"目录\"; readonly trendDirAll: \"全部目录\"; readonly trendDirUnidentified: \"未识别\"; readonly trendDirUnidentifiedNote: \"无目录信息的会话\"; readonly reportTitle: \"用量报告\"; readonly reportPeriodDaily: \"日报\"; readonly reportPeriodWeekly: \"周报\"; readonly reportPeriodMonthly: \"月报\"; readonly reportEnabled: \"启用\"; readonly reportTime: \"触发时间\"; readonly reportWeekStartsOn: \"周起点\"; readonly reportWeekMonday: \"周一\"; readonly reportWeekSunday: \"周日\"; readonly reportDayOfMonth: \"月内第几天\"; readonly reportProvider: \"模型提供商\"; readonly reportProviderDefault: \"跟随默认\"; readonly reportModel: \"模型\"; readonly reportModelHint: \"留空跟随默认\"; readonly reportModelDefault: \"跟随默认（首个已注册模型）\"; readonly reportModelKept: \"{v}（当前配置值，不在列表中）\"; readonly reportModelFallback: \"模型列表拉取失败或为空，已降级为手动填写。\"; readonly reportDirectories: \"目录范围\"; readonly reportDirectoriesAll: \"全部目录\"; readonly reportDirectoriesSelectAll: \"全选\"; readonly reportDirectoriesClear: \"清空\"; readonly reportDirectoriesEmpty: \"暂无目录数据——会话产生用量后，这里会列出可选目录。\"; readonly reportDirectoriesHintAll: \"统计全部目录（默认口径）。\"; readonly reportDirectoriesHintScoped: \"报告只统计所选目录的目录分布（其余维度保持全量）。\"; readonly reportPromptReset: \"恢复默认\"; readonly reportPromptHint: \"分段编辑，整体保存；红线约束默认折叠。\"; readonly reportNoData: \"当期无用量数据，未生成报告\"; readonly reportHeroTotal: \"tokens\"; readonly reportHeroCalls: \"对话次数\"; readonly reportHeroActive: \"活跃天数\"; readonly reportHeroStreak: \"最长连续\"; readonly reportHeroPeak: \"峰值日\"; readonly reportRatioFlat: \"持平\"; readonly reportRatioPct: \"{n}%\"; readonly reportPrompt: \"提示词模板\"; readonly reportPush: \"生成后推送\"; readonly reportSave: \"保存配置\"; readonly reportSaved: \"已保存\"; readonly reportSaveFail: \"保存失败：{msg}\"; readonly reportGenerate: \"立即生成\"; readonly reportGenerating: \"生成中…\"; readonly reportGenerateFail: \"生成失败：{msg}\"; readonly reportStillGenerating: \"仍在后台生成，稍后刷新列表查看\"; readonly reportReused: \"该窗口已有报告，已复用现有结果（勾选「重新生成」可覆盖）\"; readonly reportForceRegen: \"重新生成（覆盖）\"; readonly reportHistory: \"报告历史\"; readonly reportEmpty: \"尚未生成过报告——配置周期或立即手动生成\"; readonly reportFilterEmpty: \"当前筛选下暂无报告——切换筛选或全部查看\"; readonly reportFetchFail: \"报告数据获取失败\"; readonly reportOk: \"成功\"; readonly reportFailed: \"失败\"; readonly reportCollapse: \"收起\"; readonly reportDetailTokens: \"生成消耗：{n} tokens\"; readonly reportPeriodSelect: \"选择周期\"; readonly reportSectionSchedule: \"调度\"; readonly reportSectionRouting: \"路由与范围\"; readonly reportSectionPrompts: \"报表提示词\"; readonly reportSectionGenerate: \"手动生成\"; readonly reportSectionHistory: \"历史报告\"; readonly reportExpandAll: \"全部展开\"; readonly reportCollapseAll: \"全部收起\"; readonly reportUnsaved: \"未保存\"; readonly reportSectionOff: \"关闭\"; readonly reportSummaryNDirs: \"{n} 个目录\"; readonly reportSummaryNReports: \"{n}份报告\"; readonly reportGoalLabel: \"任务目标\"; readonly reportStatsLabel: \"统计数据\"; readonly reportStructureLabel: \"撰写结构\"; readonly reportConstraintsLabel: \"硬性约束\"; readonly reportConstraintCount: \"{n}条约束\"; readonly reportBudgetLabel: \"字数预算\"; readonly reportPromptWordUnit: \"字\"; readonly reportStatsVarNote: \"{stats} 为统计 JSON 注入点（只读，不可改名）\"; readonly reportPromptRawHint: \"模板非标准结构，已切换整体编辑，文本无损\"; readonly historySub: \"展开查看明细 · 按需加载\"; readonly reportFilterStatus: \"状态\"; readonly reportFilterAll: \"全部\"; readonly reportFilterNoData: \"空窗口\"; readonly reportLoadMore: \"加载更多\"; readonly reportForceShort: \"强制覆盖\"; readonly reportNoForceShort: \"不强制覆盖\"; readonly reportGenIdempotentHint: \"窗口已有成功报告时默认幂等复用；勾选强制才会覆盖重跑。\"; readonly reportGeneratedNotVisible: \"报告已生成，但列表中暂未见到，可重新加载后查看。\"; readonly reportReloadList: \"重新加载\"; };"
+        ],
+        "HISTORY_PAGE_SIZE": [
+          "export declare const HISTORY_PAGE_SIZE = 20;"
+        ],
+        "PROMPT_CONSTRAINTS_HEADER": [
+          "export declare const PROMPT_CONSTRAINTS_HEADER = \"\\u3010\\u786C\\u6027\\u7EA6\\u675F\\uFF08\\u8FDD\\u80CC\\u5C06\\u89C6\\u4E3A\\u4E25\\u91CD\\u9519\\u8BEF\\uFF09\\u3011\";"
+        ],
+        "PROMPT_GOAL_HEADER": [
+          "export declare const PROMPT_GOAL_HEADER = \"\\u3010\\u4EFB\\u52A1\\u76EE\\u6807\\u3011\";"
+        ],
+        "PROMPT_STATS_HEADER": [
+          "export declare const PROMPT_STATS_HEADER = \"\\u3010\\u7EDF\\u8BA1\\u6570\\u636E\\u3011\";"
+        ],
+        "PROMPT_STATS_VAR": [
+          "export declare const PROMPT_STATS_VAR = \"{stats}"
+        ],
+        "PROMPT_STRUCTURE_HEADER": [
+          "export declare const PROMPT_STRUCTURE_HEADER = \"\\u3010\\u64B0\\u5199\\u7ED3\\u6784\\u3011\";"
+        ],
+        "PROMPT_STRUCTURE_HEADER_DAILY": [
+          "export declare const PROMPT_STRUCTURE_HEADER_DAILY = \"\\u3010\\u64B0\\u5199\\u7ED3\\u6784\\uFF08\\u6309\\u987A\\u5E8F\\uFF09\\u3011\";"
+        ],
+        "composePrompt": [
+          "export declare function composePrompt(sections: Omit<PromptSections, \"structureHeader\"> & { structureHeader?: string; }"
+        ],
+        "defaultStructureHeader": [
+          "export declare function defaultStructureHeader(period: \"daily\" | \"weekly\" | \"monthly\"): string;"
+        ],
+        "filterReportsByStatus": [
+          "export declare function filterReportsByStatus<T extends HistoryRowLike>(rows: T[], filter: HistoryStatusFilter): T[];"
+        ],
+        "groupReportsByPeriod": [
+          "export declare function groupReportsByPeriod<T extends HistoryRowLike>(rows: T[]): Record<\"daily\" | \"weekly\" | \"monthly\", T[]>;"
+        ],
+        "isPromptsDirty": [
+          "export declare function isPromptsDirty(a: { daily: string; weekly: string; monthly: string; }"
+        ],
+        "isRoutingDirty": [
+          "export declare function isRoutingDirty(a: { provider: string; model: string; directories: string[]; push: { enabled: boolean; }; }"
+        ],
+        "isScheduleDirty": [
+          "export declare function isScheduleDirty(a: { daily: { enabled: boolean; time: string; }; weekly: { enabled: boolean; time: string; weekStartsOn: 0 | 1; }; monthly: { enabled: boolean; time: string; dayOfMonth: number; }; }"
+        ],
+        "locatePendingRow": [
+          "export declare function locatePendingRow<T extends HistoryRowLike>(rows: T[], id: string): T | undefined;"
+        ],
+        "parsePrompt": [
+          "export declare function parsePrompt(text: string): ParsedPrompt;"
+        ],
+        "promptSectionStats": [
+          "export declare function promptSectionStats(text: string): { budget: string | null; constraintCount: number; hasStatsVar: boolean; };"
+        ],
+        "routingSummaryData": [
+          "export declare function routingSummaryData(cfg: { provider: string; model: string; directories: string[]; push: { enabled: boolean; }; }"
+        ],
+        "scheduleSummaryParts": [
+          "export declare function scheduleSummaryParts(cfg: { daily: { enabled: boolean; time: string; }; weekly: { enabled: boolean; time: string; }; monthly: { enabled: boolean; time: string; }; }"
+        ],
+        "DEFAULT_OPEN_SECTIONS": [
+          "export declare const DEFAULT_OPEN_SECTIONS: Record<ReportSectionId, boolean>;"
         ],
         "ReportSection": [
-          "export declare function ReportSection(): React.ReactElement;"
+          "export declare function ReportSection(props: { onGeneratedRow: (m: ReportMetaView) => void; }"
         ],
         "SettingsPage": [
           "export declare function SettingsPage(): React.ReactElement;"
@@ -1729,11 +1804,65 @@
         "UsageSection": [
           "export declare function UsageSection({ statsByProvider, }"
         ],
+        "ADAPTERS_URL": [
+          "export declare const ADAPTERS_URL: string;"
+        ],
+        "ADD_URL": [
+          "export declare const ADD_URL: string;"
+        ],
+        "EVENTS_URL": [
+          "export declare const EVENTS_URL: string;"
+        ],
+        "HEALTH_URL": [
+          "export declare const HEALTH_URL: string;"
+        ],
+        "HISTORY_URL": [
+          "export declare const HISTORY_URL: string;"
+        ],
+        "INSPECT_URL": [
+          "export declare const INSPECT_URL: string;"
+        ],
+        "REPORTS_URL": [
+          "export declare const REPORTS_URL: string;"
+        ],
+        "REPORT_CONFIG_URL": [
+          "export declare const REPORT_CONFIG_URL: string;"
+        ],
+        "REPORT_DETAIL_URL": [
+          "export declare const REPORT_DETAIL_URL: string;"
+        ],
+        "REPORT_GENERATE_STATUS_URL": [
+          "export declare const REPORT_GENERATE_STATUS_URL: string;"
+        ],
+        "REPORT_GENERATE_URL": [
+          "export declare const REPORT_GENERATE_URL: string;"
+        ],
+        "REPORT_MODELS_URL": [
+          "export declare const REPORT_MODELS_URL: string;"
+        ],
+        "SELECT_URL": [
+          "export declare const SELECT_URL: string;"
+        ],
+        "STATS_URL": [
+          "export declare const STATS_URL: string;"
+        ],
+        "TREND_URL": [
+          "export declare const TREND_URL: string;"
+        ],
+        "UI_CONFIG_URL": [
+          "export declare const UI_CONFIG_URL: string;"
+        ],
         "DIR_UNIDENTIFIED": [
           "export declare const DIR_UNIDENTIFIED = \"(unidentified)\";"
         ],
+        "activeDayCount": [
+          "export declare function activeDayCount(series: DayBucket[]): number;"
+        ],
         "bucketStartKey": [
           "export declare function bucketStartKey(key: string, gran: TrendGran): string;"
+        ],
+        "composeShares": [
+          "export declare function composeShares(series: DayBucket[]): string;"
         ],
         "dirDisplayLabel": [
           "export declare function dirDisplayLabel(dir: unknown): string;"
@@ -1744,6 +1873,9 @@
         "dirStackId": [
           "export declare function dirStackId(dir: unknown): string;"
         ],
+        "donutSvg": [
+          "export declare function donutSvg(segs: DonutInput[], size?: number): string;"
+        ],
         "fmtAxisLabel": [
           "export declare function fmtAxisLabel(key: string, gran: TrendGran): string;"
         ],
@@ -1752,6 +1884,15 @@
         ],
         "fmtCompact": [
           "export declare function fmtCompact(n: number | null): string;"
+        ],
+        "heatCells": [
+          "export declare function heatCells(series: DayBucket[], days: number): Array<{ key: string; total: number | null; level: number; }"
+        ],
+        "heatLevel": [
+          "export declare function heatLevel(value: number | null, max: number): number;"
+        ],
+        "isDirMode": [
+          "export declare function isDirMode(data: { byDir?: boolean; dirs?: Array<{ dir?: string | null; }>; }"
         ],
         "niceTicks": [
           "export declare function niceTicks(maxV: number): { ticks: number[]; top: number; };"
@@ -1770,6 +1911,9 @@
         ],
         "stackedBarsSvg": [
           "export declare function stackedBarsSvg(opts: { bars: RenderBar[]; gran: TrendGran; ticks: number[]; }"
+        ],
+        "sumPartsByProvider": [
+          "export declare function sumPartsByProvider(series: DayBucket[]): Array<{ provider: string; value: number; }"
         ],
         "trendDefaultRange": [
           "export declare function trendDefaultRange(gran: TrendGran, retentionDays: number): number;"

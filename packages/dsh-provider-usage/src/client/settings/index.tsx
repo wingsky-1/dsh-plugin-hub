@@ -241,7 +241,7 @@ export function SettingsPage(): React.ReactElement {
         </div>
         <div className="dou-shellMeta">{providerPill}</div>
       </div>
-      <div className="dou-set-card" style={{ maxWidth: 560 }}>
+      <div className="dou-set-card">
         {/* 分段器：普通 button（不用 tablist）。role 用 group——
           不可用 navigation：宿主设置弹窗的移动端适配规则带 :not(:has([role=navigation]))
           排除条件（选择器无引号形态；命中即整弹窗退回桌面 row 布局，
@@ -261,7 +261,7 @@ export function SettingsPage(): React.ReactElement {
         </div>
         <div className="dou-set-body">
           {pane("usage", <UsageSection statsByProvider={statsByProvider} />)}
-          {pane("trend", <TrendSection onGotoHeat={() => setTab("usage")} />)}
+          {pane("trend", <TrendSection />)}
           {pane("report", <ReportSection onGeneratedRow={onGeneratedRow} />)}
           {pane(
             "history",
