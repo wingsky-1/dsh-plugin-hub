@@ -7,13 +7,14 @@
  */
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   HISTORY_FILE_NAME,
   STATUS_FILE_NAME,
   notifierFile,
 } from "../../../src/server/shared/interface.ts";
+import * as fileIo from "../../../src/server/shared/file-io.ts";
 import { migrateReasonShape } from "../../../src/server/upgrade/impl/steps/reason-shape.ts";
 import { tempDshHome } from "../../helpers.ts";
 
@@ -120,9 +121,9 @@ describe("status.json 的理由形态割接", () => {
 
   // 「内容没变」不等于「没写盘」：无条件重写会与并发 append 抢同一个文件，把那一行盖掉，而只比
   // 内容看不出来。判据不能用 inode（temp+rename 后 ext4 会复用刚释放的 inode 号，实测飘）也不
-  // 能用 mtime（同一毫秒内不可分）——改成**把写路径本身占死**：第二次调用若真的落盘就必然失败
-  // 并抛出，于是「不抛」就等价于「没碰盘」。
-  it("无变化时连盘都不碰：占死原子写路径后重跑不抛（真写一次就会 EISDIR 并抛出）", () => {
+  // 能用 mtime（同一毫秒内不可分）——原来是**把写路径本身占死**，随机临时名下固定名占位不再生效，
+  // 改成 mock 写面：第二次调用若真的落盘就必然触发 mock 并抛出，于是「不抛」就等价于「没碰盘」。
+  it("无变化时连盘都不碰：写面 mock 后重跑不抛（真写一次就会触发 mock 并抛出）", () => {
     isolatedHome();
     const file = notifierFile(STATUS_FILE_NAME);
     write(
@@ -130,23 +131,36 @@ describe("status.json 的理由形态割接", () => {
       `${JSON.stringify({ "bark:a": { lastTs: 1, lastStatus: "failed", lastError: "旧散文", failStreak: 1 } })}\n`,
     );
     migrateReasonShape();
-    mkdirSync(`${file}.tmp-${process.pid}`, { recursive: true });
-
-    expect(() => migrateReasonShape()).not.toThrow();
+    // 随机后缀下无法再用固定临时名占位：mock 写面让任何一次真写都抛（目录只读的 mock 等价物）。
+    const spy = vi.spyOn(fileIo, "writeTextAtomicSync").mockImplementation(() => {
+      throw new Error("unexpected write");
+    });
+    try {
+      expect(() => migrateReasonShape()).not.toThrow();
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   // 写失败必须抛：迁移没做完而启动照常，等于让各域按错误形态去读数据（与 storage-layout 同口径）。
-  // 占住原子写的临时文件路径让写入 EISDIR —— 不靠只读目录，也不依赖 root。
-  it("割接写失败即抛出（占住 .tmp-<pid> 让原子写失败）", () => {
+  // 直接让写面回失败 —— 不依赖固定临时名（随机后缀下占位固定名不再生效），也不靠只读目录、不依赖 root。
+  // 随机名下不断言残留：失败是否留 tmp 是错误模型的事实，本补丁不动它。
+  it("割接写失败即抛出（写面失败时抛出）", () => {
     isolatedHome();
     const file = notifierFile(STATUS_FILE_NAME);
     write(
       file,
       `${JSON.stringify({ "bark:a": { lastTs: 1, lastStatus: "failed", lastError: "旧散文", failStreak: 1 } })}\n`,
     );
-    mkdirSync(`${file}.tmp-${process.pid}`, { recursive: true });
-
-    expect(() => migrateReasonShape()).toThrow(/割接写入失败/u);
+    // 等价方案：mock 写面回失败（目录只读的 mock 等价物），保持「写失败即抛」语义。
+    const spy = vi
+      .spyOn(fileIo, "writeTextAtomicSync")
+      .mockReturnValue({ ok: false, reason: "mocked EISDIR" });
+    try {
+      expect(() => migrateReasonShape()).toThrow(/割接写入失败/u);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   // 读不出的旧文件不该拦住启动：读面本来就容错（半截 JSON 从空表开始），为它抛错是更坏的结果。

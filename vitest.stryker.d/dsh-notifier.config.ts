@@ -68,6 +68,7 @@ export default defineConfig({
       'packages/dsh-notifier/test/unit/pipeline/route.test.ts',
       'packages/dsh-notifier/test/unit/pipeline/service.test.ts',
       'packages/dsh-notifier/test/unit/shared/channels.test.ts',
+      'packages/dsh-notifier/test/unit/shared/file-io-concurrency.test.ts',
       'packages/dsh-notifier/test/unit/shared/kinds.test.ts',
       'packages/dsh-notifier/test/unit/shared/paths.test.ts',
       'packages/dsh-notifier/test/unit/shared/quiet.test.ts',
