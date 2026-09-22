@@ -468,6 +468,7 @@ export function ReportSection(props: {
    * 大概率已生成）→ 抛 PollInProgressError（调用方转「仍在生成」正向提示，
    * 绝不误报失败）。
    * 组件卸载（disposedRef）后立即中止。
+   * 单轮 abort/断网视为瞬态，退避后继续（上限内转「仍在生成」，不误报失败）。
    * reused 透传——executor 侧幂等短路复用与 200 直接复用路径提示对称。
    */
   const pollReportTask = async (
@@ -477,10 +478,25 @@ export function ReportSection(props: {
     for (let i = 0; i < POLL_MAX_ROUNDS; i += 1) {
       await sleep(delay);
       if (disposedRef.current) throw new PollInProgressError();
-      const res = await fetchTimeout(
-        `${REPORT_GENERATE_STATUS_URL}?taskId=${encodeURIComponent(taskId)}`,
-        { headers: { Accept: "application/json" }, cache: "no-store" },
-      );
+      // 单轮瞬态网络中断（移动端切后台/半开连接 abort）不判死：继续下一轮，
+      // 轮次上限兜底转「仍在生成」（服务端任务侧照常推进，不会因客户端等待丢失）
+      let res: Response;
+      try {
+        res = await fetchTimeout(
+          `${REPORT_GENERATE_STATUS_URL}?taskId=${encodeURIComponent(taskId)}`,
+          { headers: { Accept: "application/json" }, cache: "no-store" },
+        );
+      } catch (e) {
+        if (e instanceof DOMException && (e.name === "AbortError" || e.name === "TimeoutError")) {
+          delay = Math.min(delay * 2, POLL_MAX_DELAY_MS);
+          continue;
+        }
+        if (e instanceof TypeError) {
+          delay = Math.min(delay * 2, POLL_MAX_DELAY_MS);
+          continue;
+        }
+        throw e;
+      }
       if (res.status === 404) throw new PollInProgressError(); // 任务已修剪：转「仍在生成」
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const body = (await res.json().catch(() => ({}))) as {
@@ -530,11 +546,14 @@ export function ReportSection(props: {
           setGenNotice(t("reportNoData"));
           return;
         }
-        if (body.reused === true) setGenNotice(t("reportReused"));
-        else setGenNotice(null);
+        if (body.reused === true) {
+          // 复用不跳转：用户正停留在配置页，强制切页体验差；只留提示，历史页一 tap 即达
+          setGenNotice(t("reportReused"));
+          return;
+        }
+        setGenNotice(null);
         if (disposedRef.current) return;
         onGeneratedRow(body.meta); // 成功经壳切历史页并展开
-        return;
       }
       // 202 + taskId：轮询直到完成
       let meta: ReportMetaView;
@@ -557,8 +576,12 @@ export function ReportSection(props: {
         setGenNotice(t("reportNoData"));
         return;
       }
-      // executor 侧幂等短路复用 → 与 200 直接复用路径对称提示「已复用」
-      setGenNotice(polledReused ? t("reportReused") : null);
+      // executor 侧幂等短路复用 → 与 200 直接复用路径对称：只提示，不跳转
+      if (polledReused) {
+        setGenNotice(t("reportReused"));
+        return;
+      }
+      setGenNotice(null);
       if (disposedRef.current) return;
       onGeneratedRow(meta); // 成功经壳切历史页并展开
     } catch (e) {
