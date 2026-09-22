@@ -101,6 +101,7 @@ export const zh = {
   inspectKVersion: "契约版本",
   filePath: "文件路径",
   filePathOnly: "（唯一输入——name/展示名/归属提供商从文件导出自动读取）",
+  pathKeyHint: "仅接受本地 .mjs · 密钥不进端",
   detecting: "检测中…",
   detectFile: "检测文件",
   detectFirst: "请先通过「检测文件」后再确认添加",
@@ -115,6 +116,7 @@ export const zh = {
   addAdapter: "+ 添加适配器",
   // 设置页：提供商列表区
   provTitle: "提供商",
+  provSub: "列表默认折叠 · 密钥不进端",
   provListHint:
     "提供商列表与模型配置页保持一致（共 {n} 个）；展开某个提供商以切换适配器开关或添加新适配器。",
   fileLoadFail: "用户文件 {f} 加载失败：{msg}",
@@ -357,6 +359,7 @@ export const en: Record<ProviderUsageLocaleKey, string> = {
   inspectKVersion: "Contract version",
   filePath: "File path",
   filePathOnly: " (the only input — name/display name/providers are read from the file exports)",
+  pathKeyHint: "Local .mjs only · keys never reach the client",
   detecting: "Detecting…",
   detectFile: "Detect file",
   detectFirst: 'Run "Detect file" before confirming',
@@ -370,6 +373,7 @@ export const en: Record<ProviderUsageLocaleKey, string> = {
   collapse: "Collapse",
   addAdapter: "+ Add adapter",
   provTitle: "Providers",
+  provSub: "Collapsed by default · keys never reach the client",
   provListHint:
     "Provider list mirrors the model configuration page ({n} total); expand a provider to switch adapters or add new ones.",
   fileLoadFail: "User file {f} failed to load: {msg}",
