@@ -418,6 +418,29 @@
 .dj-histTime {
   font-variant-numeric: tabular-nums;
 }
+.dj-opts {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+}
+.dj-opt {
+  border: 0.5px solid var(--dsw-alias-border-l1, rgba(0, 0, 0, 0.08));
+  border-radius: 8px;
+  padding: 7px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.dj-optHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--dsw-alias-label-primary, #1f2329);
+}
 .dj-histSnippet {
   font-size: 12.5px;
   line-height: 1.75;

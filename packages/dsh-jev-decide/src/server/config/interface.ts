@@ -4,7 +4,8 @@
  * upgrade 复用本域路径与版本语义（单一事实源）；其余内部符号经 impl 直引，不走门面。
  */
 export type { ConfigDeps } from "./deps.ts";
-export { buildDefaultConfig, validatePutBody } from "./impl/model.ts";
+export { buildDefaultConfig, validateCustomPresets, validatePutBody } from "./impl/model.ts";
+export type { ConfigPutPatch } from "./impl/model.ts";
 export { normalizePutEnvelope } from "./impl/envelope.ts";
 export type { LoadedState } from "./impl/service.ts";
 export {
@@ -18,4 +19,10 @@ export {
   toMaskedConfig,
   writeStoredVersion,
 } from "./impl/service.ts";
-export { configFile, presetsFile, secretsFile, versionFile } from "./impl/paths.ts";
+export {
+  configFile,
+  customPresetsFile,
+  presetsFile,
+  secretsFile,
+  versionFile,
+} from "./impl/paths.ts";

@@ -65,26 +65,23 @@ describe("参数校验 400", () => {
     const ok = validateDecideArgs({
       preset_id: "general",
       state: { text: "中文正文", lang: "zh" },
+      questions_override: [{ id: "q1", text: "选一个。", kind: "choice", options: ["甲", "乙"] }],
     });
     expect(ok.ok).toBe(true);
   });
-  it("custom 可单独 present；非 custom override 须全量", () => {
+  it("全员显式带题；任意调用方题目即 override", () => {
     const custom = validateDecideArgs({
       preset_id: "custom",
       state: { text: "x", lang: "en" },
       questions_override: [{ id: "q1", text: "Q?", kind: "choice", options: ["a", "b"] }],
     });
     expect(custom.ok).toBe(true);
-    const partial = validateDecideArgs({
-      preset_id: "general",
-      state: { text: "x", lang: "en" },
-      questions_override: [{ id: "other", text: "Q?", kind: "choice", options: ["a", "b"] }],
-    });
-    expect(partial.ok).toBe(false);
+    const missing = validateDecideArgs({ preset_id: "general", state: { text: "x", lang: "en" } });
+    expect(missing.ok).toBe(false);
     const full = validateDecideArgs({
       preset_id: "general",
       state: { text: "x", lang: "en" },
-      questions_override: [{ id: "choice", text: "Pick?", kind: "choice", options: ["A", "B"] }],
+      questions_override: [{ id: "other", text: "Q?", kind: "choice", options: ["a", "b"] }],
     });
     expect(full.ok).toBe(true);
     if (full.ok) expect(full.valid.appliedSource).toBe("override");
@@ -126,7 +123,11 @@ describe("本地预检不离境", () => {
     expect(localPrecheckHit("today is sunny")).toBe(false);
     let calls = 0;
     const out = await decide(
-      { preset_id: "general", state: { text: "my sk-Abcdef12345678 leak", lang: "en" } },
+      {
+        preset_id: "general",
+        state: { text: "my sk-Abcdef12345678 leak", lang: "en" },
+        questions_override: [{ id: "q1", text: "Pick one.", kind: "choice", options: ["A", "B"] }],
+      },
       baseDeps({
         fetchImpl: async () => {
           calls += 1;
@@ -149,7 +150,11 @@ describe("远端编排", () => {
   it("成功输出必带字段", async () => {
     const events: unknown[] = [];
     const out = await decide(
-      { preset_id: "general", state: { text: "hello", lang: "en" } },
+      {
+        preset_id: "general",
+        state: { text: "hello", lang: "en" },
+        questions_override: [{ id: "q1", text: "Pick one.", kind: "choice", options: ["A", "B"] }],
+      },
       baseDeps({
         fetchImpl: jsonFetch(200, {
           resultKind: "choice",
@@ -167,7 +172,7 @@ describe("远端编排", () => {
     expect(out).toMatchObject({
       ok: true,
       provider: "official",
-      appliedSource: "template",
+      appliedSource: "override",
       truncated: false,
       originalLength: 5,
       tier: "high",
@@ -179,7 +184,11 @@ describe("远端编排", () => {
   });
   it("Noul 置空 tier；score 越界失败无概率字段", async () => {
     const noul = await decide(
-      { preset_id: "general", state: { text: "hello", lang: "en" } },
+      {
+        preset_id: "general",
+        state: { text: "hello", lang: "en" },
+        questions_override: [{ id: "q1", text: "Pick one.", kind: "choice", options: ["A", "B"] }],
+      },
       baseDeps({
         fetchImpl: jsonFetch(200, {
           resultKind: "choice",
@@ -192,7 +201,11 @@ describe("远端编排", () => {
     );
     expect(noul).toMatchObject({ ok: true, tier: "none" });
     const bad = await decide(
-      { preset_id: "plan-review", state: { text: "hello", lang: "en" } },
+      {
+        preset_id: "plan-review",
+        state: { text: "hello", lang: "en" },
+        questions_override: [{ id: "q1", text: "Rate it.", kind: "score" }],
+      },
       baseDeps({ fetchImpl: jsonFetch(200, { resultKind: "score", score: 9 }) }),
     );
     expect(bad.ok).toBe(false);
@@ -204,12 +217,20 @@ describe("远端编排", () => {
   });
   it("无 key 与禁用预设", async () => {
     const noKey = await decide(
-      { preset_id: "general", state: { text: "hi", lang: "en" } },
+      {
+        preset_id: "general",
+        state: { text: "hi", lang: "en" },
+        questions_override: [{ id: "q1", text: "Pick one.", kind: "choice", options: ["A", "B"] }],
+      },
       baseDeps({ resolveKey: () => ({ key: undefined, source: "none" as const }) }),
     );
     expect(noKey).toMatchObject({ ok: false });
     const disabled = await decide(
-      { preset_id: "general", state: { text: "hi", lang: "en" } },
+      {
+        preset_id: "general",
+        state: { text: "hi", lang: "en" },
+        questions_override: [{ id: "q1", text: "Pick one.", kind: "choice", options: ["A", "B"] }],
+      },
       baseDeps({ isEnabled: () => false }),
     );
     expect(disabled).toMatchObject({ ok: false });
@@ -217,7 +238,11 @@ describe("远端编排", () => {
   });
   it("截断标记与原始长度", async () => {
     const out = await decide(
-      { preset_id: "general", state: { text: "abcdefghij", lang: "en" } },
+      {
+        preset_id: "general",
+        state: { text: "abcdefghij", lang: "en" },
+        questions_override: [{ id: "q1", text: "Pick one.", kind: "choice", options: ["A", "B"] }],
+      },
       baseDeps({
         connection: { ...CONNECTION, truncBudget: 4 },
         fetchImpl: jsonFetch(200, { resultKind: "choice", choice: "A" }),
@@ -233,14 +258,22 @@ describe("远端编排", () => {
       return { status: 200, text: JSON.stringify({ resultKind: "choice", choice: "A" }) };
     };
     const out = await decide(
-      { preset_id: "general", state: { text: "hi", lang: "en" } },
+      {
+        preset_id: "general",
+        state: { text: "hi", lang: "en" },
+        questions_override: [{ id: "q1", text: "Pick one.", kind: "choice", options: ["A", "B"] }],
+      },
       baseDeps({ fetchImpl: flaky }),
     );
     expect(out).toMatchObject({ ok: true, retries: 1 });
     expect(n).toBe(2);
     const seen = { count: 0 };
     const bad = await decide(
-      { preset_id: "general", state: { text: "hi", lang: "en" } },
+      {
+        preset_id: "general",
+        state: { text: "hi", lang: "en" },
+        questions_override: [{ id: "q1", text: "Pick one.", kind: "choice", options: ["A", "B"] }],
+      },
       baseDeps({ fetchImpl: jsonFetch(400, {}, seen) }),
     );
     expect(bad.ok).toBe(false);

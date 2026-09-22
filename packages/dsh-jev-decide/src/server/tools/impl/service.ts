@@ -17,6 +17,7 @@ import {
 } from "../../../shared/interface.ts";
 import type {
   AutomationLevel,
+  CustomPreset,
   DecideOutput,
   ErrorEnvelope,
   JevTier,
@@ -66,7 +67,8 @@ export async function decide(
   args: unknown,
   deps: DecideDeps,
 ): Promise<DecideOutput | ErrorEnvelope> {
-  const checked = validateDecideArgs(args);
+  const customMap = deps.customPresets;
+  const checked = validateDecideArgs(args, customMap);
   if (!checked.ok)
     return envelope(checked.failure.errorCode, "bad-request", checked.failure.message);
   const valid = checked.valid;
@@ -88,6 +90,7 @@ export async function decide(
       truncated: trunc.truncated,
       originalLength: trunc.originalLength,
       resultKind: "local-precheck",
+      questions: valid.questions,
       choice: "human",
       confidence: 1,
       tier: "none",
@@ -120,6 +123,7 @@ export async function decide(
       truncated: trunc.truncated,
       originalLength: trunc.originalLength,
       resultKind: "not-executed",
+      questions: valid.questions,
       precheckHit: hit,
       confidence: 0,
       tier: "none",
@@ -155,6 +159,7 @@ export async function decide(
       truncated: trunc.truncated,
       originalLength: trunc.originalLength,
       resultKind: "upstream-error",
+      questions: valid.questions,
       precheckHit: hit,
       confidence: 0,
       tier: "none",
@@ -181,6 +186,7 @@ export async function decide(
     truncated: trunc.truncated,
     originalLength: trunc.originalLength,
     resultKind: verdict.resultKind,
+    questions: valid.questions,
     precheckHit: hit,
     ...(verdict.choice !== undefined ? { choice: verdict.choice } : {}),
     ...(verdict.score !== undefined ? { score: verdict.score } : {}),
@@ -207,22 +213,37 @@ export async function decide(
   };
 }
 
-/** 预设清单（只读；模板 frozen，开关/上限取配置快照）。 */
+/** 预设清单（只读；frozen 规范 + 自建 customs，开关/上限取配置快照）。 */
 export function listPresets(deps: {
   readonly isEnabled: (presetId: string) => boolean;
   readonly capOf: (presetId: string) => number;
+  readonly customs?: readonly CustomPreset[];
 }): readonly {
   readonly id: string;
   readonly enabled: boolean;
   readonly templateVersion: 1;
   readonly automationCap: number;
-  readonly questionCount: number;
+  readonly label: string;
+  readonly description: string;
+  readonly custom: boolean;
 }[] {
-  return FROZEN_PRESETS.map((preset) => ({
+  const frozen = FROZEN_PRESETS.map((preset) => ({
     id: preset.id,
     enabled: deps.isEnabled(preset.id),
     templateVersion: TEMPLATE_VERSION as 1,
     automationCap: deps.capOf(preset.id),
-    questionCount: preset.questions.length,
+    label: preset.label,
+    description: preset.description,
+    custom: false as const,
   }));
+  const customs = (deps.customs ?? []).map((preset) => ({
+    id: preset.id,
+    enabled: deps.isEnabled(preset.id),
+    templateVersion: TEMPLATE_VERSION as 1,
+    automationCap: deps.capOf(preset.id),
+    label: preset.label,
+    description: preset.description,
+    custom: true as const,
+  }));
+  return [...frozen, ...customs];
 }

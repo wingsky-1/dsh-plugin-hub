@@ -22,10 +22,11 @@ if (JEV_BASE_URL !== "https://api.typesafe.ai/v1/systemone") {
   throw new Error("dsh-jev-decide: JEV_BASE_URL 被篡改，拒绝加载");
 }
 
-/** 存储文件名（命名空间目录下独立三文件 + 版本刻度）。 */
+/** 存储文件名（命名空间目录下独立四文件 + 版本刻度；custom-presets.json 缺席即空列表）。 */
 export const CONFIG_FILE_NAME = "config.json";
 export const PRESETS_FILE_NAME = "presets.json";
 export const SECRETS_FILE_NAME = "secrets.json";
+export const CUSTOM_PRESETS_FILE_NAME = "custom-presets.json";
 export const VERSION_FILE_NAME = "VERSION";
 
 /** 回环路由表（宿主 ROUTES 单一事实源经构建期注入客户端；此处常量是宿主侧定义）。 */
@@ -67,79 +68,108 @@ export type AutomationCap = 0 | 1 | 2;
 /** 自动化实际等级（suggest-only：输入被截断时的强制降级，仅建议不执行；local-precheck 的 manual 不受影响）。 */
 export type AutomationLevel = "manual" | "assisted" | "auto" | "suggest-only";
 
-/** 预设题型。 */
-export interface PresetQuestion {
-  readonly id: string;
-  readonly text: string;
-  readonly kind: "choice" | "score";
-  readonly options?: readonly string[];
-}
-
-/** frozen 预设模板（templateVersion 恒为 1，代码即事实源，不接受运行时改写）。 */
+/** frozen 预设模板：只存英文出题规范（一段自由描述），不存固定考题。调用方每次经 questions_override 自带全量题目。 */
 export interface PresetTemplate {
   readonly id: string;
   readonly label: string;
+  /** English asking guide: goal, dimensions, mutual exclusion, good vs bad asking examples, prohibitions, how to call. Free-form prose, length-checked only. */
   readonly description: string;
-  readonly questions: readonly PresetQuestion[];
   readonly defaultEnabled: boolean;
   readonly automationCap: AutomationCap;
 }
 
-/** 5 预设 frozen 模板（secret-leak 默认关闭）。 */
+/** 5 预设 frozen 规范（secret-leak 默认关闭；模板零考题）。 */
 export const FROZEN_PRESETS: readonly PresetTemplate[] = [
   {
     id: "general",
-    label: "通用二选",
-    description: "两选项通用决策。",
-    questions: [
-      { id: "choice", text: "Which option is better?", kind: "choice", options: ["A", "B"] },
-    ],
+    label: "general",
+    description:
+      "Goal: teach callers how to ask a binary choice question over two comparable options. " +
+      "Dimensions: option completeness, comparability, single conclusion. " +
+      "Mutual exclusion: the verdict must be one of the caller-supplied candidates, never a third option and never an abstention. " +
+      "Good asking: background in state.text plus two reachable, comparable candidates via questions_override (unique ids, 2-10 options per choice question). " +
+      "Bad asking: listing phenomena with no candidates, which forces a restating non-answer. " +
+      "Prohibitions: no preset questions; no third-option verdicts; no restating without deciding. " +
+      "How to call: state.text carries background, questions_override carries the two candidates.",
     defaultEnabled: true,
     automationCap: 2,
   },
   {
     id: "secret-leak",
-    label: "密钥泄漏检查",
-    description: "正文是否含必须不出境的真实密钥；命中本地密形即直转人工。默认关闭。",
-    questions: [
-      {
-        id: "verdict",
-        text: "Does the text contain a real secret that must not leave the device?",
-        kind: "choice",
-        options: ["leak", "clean"],
-      },
-    ],
+    label: "secret-leak",
+    description:
+      "Goal: teach callers how to ask whether a text contains a real secret that must not leave the device. " +
+      "Dimensions: secret-shape match, surrounding semantics, certainty grading. " +
+      "Mutual exclusion: a local shape hit goes straight to human review with no automated verdict. " +
+      "Good asking: put the text under review in state.text with leak/clean candidates; genuine key shapes yield leak and human handoff. " +
+      "Bad asking: asking about key-management concepts in general yields clean. " +
+      "Prohibitions: never store real secret examples in templates; never judge concept discussion as a leak; never let secret text leave the device. " +
+      "How to call: state.text carries the text under review (any language), candidates are leak/clean. Disabled by default.",
     defaultEnabled: false,
     automationCap: 0,
   },
   {
     id: "plan-review",
-    label: "方案评审",
-    description: "方案 1-5 打分。",
-    questions: [{ id: "score", text: "Rate the plan from 1 to 5.", kind: "score" }],
+    label: "plan-review",
+    description:
+      "Goal: teach callers how to ask a 1-5 plan rating question. " +
+      "Dimensions: completeness, feasibility, risk exposure. " +
+      "Mutual exclusion: score only, no go/no-go decision; the score never substitutes for a proceed decision. " +
+      "Good asking: per-dimension sub-scores rolled up into a total, e.g. landing at 4/5. " +
+      "Bad asking: demanding a total with no dimensions. " +
+      "Prohibitions: no preset plans in templates. " +
+      "How to call: state.text carries the plan, questions_override carries one score question (no options allowed).",
     defaultEnabled: true,
     automationCap: 1,
   },
   {
     id: "risk-check",
-    label: "风险检查",
-    description: "是否可继续推进。",
-    questions: [
-      { id: "risk", text: "Is it safe to proceed?", kind: "choice", options: ["safe", "risky"] },
-    ],
+    label: "risk-check",
+    description:
+      "Goal: teach callers how to ask a binary proceed-or-not question. " +
+      "Dimensions: safety, compliance, reversibility. " +
+      "Mutual exclusion: safe/risky only, no middle state. " +
+      "Good asking: all three dimensions pass, verdict safe. " +
+      "Bad asking: judging safe while one dimension is doubtful. " +
+      "Prohibitions: no preset checklists in templates; never substitute hand-waving for a dimension verdict. " +
+      "How to call: state.text carries the change, candidates safe/risky come from the caller.",
     defaultEnabled: true,
     automationCap: 1,
   },
   {
     id: "custom",
-    label: "自定义",
-    description: "调用方自带全量题目（questions_override 必填，1-20 题）。",
-    questions: [],
+    label: "custom",
+    description:
+      "Goal: the caller brings the full question set (1-20 questions); the template presets nothing. " +
+      "Mutual exclusion: questions_override is required and must be non-empty. " +
+      "Good calling: three mutually exclusive binary questions execute normally. " +
+      "Bad calling: empty questions are rejected outright. " +
+      "Prohibitions: no execution without questions; never rewrite caller questions. " +
+      "How to call: preset_id custom plus a full questions_override (unique ids, choice carries options, score carries none).",
     defaultEnabled: true,
     automationCap: 2,
   },
 ];
 
+/** 自建自定义预设存储版本（custom-presets.json version 字段唯一合法值）。 */
+export const CUSTOM_PRESETS_VERSION = 1;
+/** 自定义预设上限（条）。 */
+export const MAX_CUSTOM_PRESETS = 50;
+/** 自定义名上限（codepoints）。 */
+export const MAX_CUSTOM_LABEL = 64;
+/** 自定义描述上限（codepoints，超限 400）。 */
+export const MAX_CUSTOM_DESCRIPTION = 2000;
+
+/** 用户自建预设（单 description 英文自由文本，可抄 frozen 写作约定，也可自由发挥；题目永随调用传入，不存）。 */
+export interface CustomPreset {
+  readonly id: string;
+  readonly label: string;
+  readonly description: string;
+  readonly enabled: boolean;
+  readonly automationCap: AutomationCap;
+  readonly createdAt: number;
+  readonly updatedAt: number;
+}
 /** 按 id 取 frozen 模板（无则 undefined）。 */
 export function frozenPresetOf(id: string): PresetTemplate | undefined {
   for (const preset of FROZEN_PRESETS) {
@@ -169,7 +199,15 @@ export interface ConfigV1 {
   };
 }
 
-/** 历史条目（任务契约；原始密钥永不入库，snippetRedacted≤200）。 */
+/** 历史条目快照的问题（调用方传入原样存档；文本/选项经同 snippet 的脱敏后存）。 */
+export interface HistoryQuestion {
+  readonly id: string;
+  readonly text: string;
+  readonly kind: "choice" | "score";
+  readonly options?: readonly string[];
+}
+
+/** 历史条目（任务契约；原始密钥永不入库，snippetRedacted≤200；questions 为调用题目快照）。 */
 export interface HistoryEntry {
   readonly ts: number;
   readonly rootHash: string;
@@ -192,13 +230,16 @@ export interface HistoryEntry {
   readonly provider: "official";
   readonly latencyMs: number;
   readonly errorCode?: string;
+  readonly questions?: readonly HistoryQuestion[];
+  /** 读取时 enrich 的展示标题（只存 id，缺失回退短 id）；永不落盘。 */
+  readonly presetTitle?: string;
 }
 
 /** 成功输出必带字段（provider/appliedSource/truncated/originalLength/tier/automation/计费 codepoints/重试次数）。 */
 export interface DecideOutput {
   readonly ok: true;
   readonly provider: "official";
-  readonly appliedSource: "template" | "override" | "custom" | "local-precheck";
+  readonly appliedSource: "override" | "custom" | "local-precheck";
   readonly truncated: boolean;
   readonly originalLength: number;
   readonly tier: JevTier;

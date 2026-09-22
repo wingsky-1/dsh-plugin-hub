@@ -23,13 +23,15 @@ export interface HistoryQuery {
   readonly limit?: number;
 }
 
-/** 预设清单项（api 回显面）。 */
+/** 预设清单项（api 回显面；出题规范随目录下发）。 */
 export interface PresetListItem {
   readonly id: string;
   readonly enabled: boolean;
   readonly templateVersion: 1;
   readonly automationCap: number;
-  readonly questionCount: number;
+  readonly label: string;
+  readonly description: string;
+  readonly custom: boolean;
 }
 
 /** api 域运行所需注入（全部由组合根装配，域内无 ctx、无直接跨域引用）。 */

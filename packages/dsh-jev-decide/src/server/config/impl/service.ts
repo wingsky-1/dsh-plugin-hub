@@ -10,11 +10,12 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ConfigDeps } from "../deps.ts";
-import { normalizeLoadedConfig } from "./model.ts";
+import { normalizeLoadedConfig, validateCustomPresets } from "./model.ts";
 import type { ConfigPutPatch } from "./model.ts";
-import { configFile, presetsFile, secretsFile, versionFile } from "./paths.ts";
+import { configFile, customPresetsFile, presetsFile, secretsFile, versionFile } from "./paths.ts";
 import { keyShapeCategory } from "../../../shared/interface.ts";
-import type { ConfigV1 } from "../../../shared/interface.ts";
+import { CUSTOM_PRESETS_VERSION } from "../../../shared/interface.ts";
+import type { ConfigV1, CustomPreset } from "../../../shared/interface.ts";
 
 /**
  * 无版本文件时的起点（BASELINE 语义钉死：字面 "0.0.0"，与 "0" 数值等价——
@@ -30,6 +31,7 @@ export interface LoadedState {
   readonly plaintext: string | undefined;
   readonly retired: string[];
   readonly storedVersion: string;
+  readonly customPresets: readonly CustomPreset[];
 }
 
 /** 读存储版本（缺席/空即基线）。 */
@@ -77,6 +79,32 @@ export function pluginVersion(): string {
   }
 }
 
+/** 读自建自定义预设（缺席/非法即空列表 + 告警；文件缺席不播种，首存即建）。 */
+export function loadCustomPresets(home: string | undefined, deps: ConfigDeps): CustomPreset[] {
+  const raw = deps.io.readJsonSync(customPresetsFile(home));
+  if (!raw.ok) return [];
+  const value = raw.value as unknown;
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    deps.logger.warn("dsh-jev-decide: custom-presets.json 形状非法，已按空列表读");
+    return [];
+  }
+  const list = (value as Record<string, unknown>)["customPresets"];
+  if (!Array.isArray(list)) {
+    deps.logger.warn("dsh-jev-decide: custom-presets.json 缺 customPresets 数组，已按空列表读");
+    return [];
+  }
+  const checked = validateCustomPresets(list);
+  if (!checked.ok) {
+    deps.logger.warn(
+      "dsh-jev-decide: custom-presets.json 条目非法，已按空列表读（" +
+        checked.failure.errorCode +
+        ")",
+    );
+    return [];
+  }
+  return checked.list;
+}
+
 /** 加载全部状态（三文件合并：presets.json 覆盖 config.json 的开关；退役键剥离告警）。 */
 export function loadState(home: string | undefined, deps: ConfigDeps): LoadedState {
   const storedVersion = readStoredVersion(home, deps);
@@ -120,7 +148,8 @@ export function loadState(home: string | undefined, deps: ConfigDeps): LoadedSta
       hasPlaintextKey: plaintext !== undefined && plaintext.length > 0,
     },
   };
-  return { config: synced, plaintext, retired, storedVersion };
+  const customPresets = loadCustomPresets(home, deps);
+  return { config: synced, plaintext, retired, storedVersion, customPresets };
 }
 
 /**
@@ -189,7 +218,25 @@ export function savePatch(
       JSON.stringify({ presets: synced.presets }, null, 2) + "\n",
     );
   }
-  return { config: synced, plaintext, retired: [], storedVersion: current.storedVersion };
+  let customPresets = current.customPresets;
+  if (patch.customPresets !== undefined) {
+    const born = new Map(current.customPresets.map((entry) => [entry.id, entry.createdAt]));
+    customPresets = patch.customPresets.map((entry) => ({
+      ...entry,
+      createdAt: born.get(entry.id) ?? entry.createdAt,
+    }));
+    deps.io.atomicWrite0600Sync(
+      customPresetsFile(home),
+      JSON.stringify({ version: CUSTOM_PRESETS_VERSION, customPresets }, null, 2) + "\n",
+    );
+  }
+  return {
+    config: synced,
+    plaintext,
+    retired: [],
+    storedVersion: current.storedVersion,
+    customPresets,
+  };
 }
 
 /** 掩码视图（GET 回显：形状同 v1，只含 apiKeyRef 名与 hasPlaintextKey，永无原文）。 */

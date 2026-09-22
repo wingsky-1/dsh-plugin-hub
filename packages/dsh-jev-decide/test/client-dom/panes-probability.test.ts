@@ -5,15 +5,23 @@
  * panes/connection 保存守卫、components/probRow 归一分支：改宽任一分支本文件必红。
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import * as React from "react";
+import { fireEvent } from "@testing-library/react";
 import { APP_ROUTES } from "../../src/client/api/routes.ts";
 import type { JevHistoryEntry } from "../../src/client/api/interface.ts";
-import { probRow, tierBadge } from "../../src/client/components/interface.ts";
+import { ProbBar, tierBadge } from "../../src/client/settings/prob.tsx";
+import { ConnectionPane } from "../../src/client/settings/connection.tsx";
+import { HistoryPane } from "../../src/client/settings/history.tsx";
+import { PresetsPane } from "../../src/client/settings/presets.tsx";
 import {
-  renderConnectionPane,
-  renderHistoryPane,
-  renderPresetsPane,
-} from "../../src/client/panes/interface.ts";
-import { BARE_CONFIG, baseStub, installStub, jsonResponse, pollUntil } from "../client-helpers.ts";
+  BARE_CONFIG,
+  baseStub,
+  installStub,
+  jsonResponse,
+  mountPane,
+  pollUntil,
+} from "../client-helpers.ts";
+import { setLang } from "../../src/client/locale.ts";
 
 function entry(over: Partial<JevHistoryEntry> = {}): JevHistoryEntry {
   return {
@@ -53,19 +61,33 @@ function presetsStub(url: string): Response {
 }
 
 let restore: (() => void) | null = null;
+const unmounts: Array<() => void> = [];
 beforeEach(() => {
   document.body.innerHTML = "";
+  setLang("zh");
 });
 
 afterEach(() => {
+  for (const u of unmounts.splice(0)) {
+    try {
+      u();
+    } catch {
+      /* 忽略 */
+    }
+  }
   document.body.innerHTML = "";
   restore?.();
   restore = null;
 });
 
-describe("probRow 边界", () => {
+describe("ProbBar 边界", () => {
+  function barOf(over: Partial<JevHistoryEntry> = {}): HTMLElement {
+    const { pane, unmount } = mountPane(React.createElement(ProbBar, { entry: entry(over) }));
+    unmounts.push(unmount);
+    return pane;
+  }
   it("score 5 无 confidence 即 100%（score/5 归一）", () => {
-    const row = probRow(entry({ confidence: 0, score: 5, choice: undefined, resultKind: "score" }));
+    const row = barOf({ confidence: 0, score: 5, choice: undefined, resultKind: "score" });
     const fill = row.querySelector<HTMLElement>(".dj-barFill");
     expect(fill?.style.width).toBe("100%");
     const num = row.querySelector(".dj-probNum");
@@ -73,47 +95,49 @@ describe("probRow 边界", () => {
     expect(num?.getAttribute("title")).toContain("score 5/5");
   });
   it("双无即 0% 且题“无概率”", () => {
-    const row = probRow(
-      entry({ confidence: 0, score: undefined, choice: undefined, resultKind: "choice" }),
-    );
+    const row = barOf({ confidence: 0, score: undefined, choice: undefined, resultKind: "choice" });
     expect(row.querySelector<HTMLElement>(".dj-barFill")?.style.width).toBe("0%");
     const num = row.querySelector(".dj-probNum");
     expect(num?.textContent).toBe("0%");
     expect(num?.getAttribute("title")).toBe("无概率");
   });
   it("confidence 优先于 score", () => {
-    const row = probRow(entry({ confidence: 0.9, score: 3 }));
+    const row = barOf({ confidence: 0.9, score: 3 });
     expect(row.querySelector<HTMLElement>(".dj-barFill")?.style.width).toBe("90%");
     expect(row.querySelector(".dj-probNum")?.getAttribute("title")).toContain("confidence 0.9");
   });
   it("tier 决定填充类；阈值线恒 80%", () => {
-    expect(probRow(entry({ tier: "high" })).querySelector(".dj-barFillHigh")).not.toBe(null);
-    expect(probRow(entry({ tier: "low" })).querySelector(".dj-barFillLow")).not.toBe(null);
-    expect(probRow(entry({ tier: "none" })).querySelector(".dj-barFillHigh")).toBe(null);
-    expect(probRow(entry({ tier: "none" })).querySelector(".dj-barFillLow")).toBe(null);
-    expect(probRow(entry()).querySelector<HTMLElement>(".dj-barThreshold")?.style.left).toBe("80%");
+    expect(barOf({ tier: "high" }).querySelector(".dj-barFillHigh")).not.toBe(null);
+    expect(barOf({ tier: "low" }).querySelector(".dj-barFillLow")).not.toBe(null);
+    expect(barOf({ tier: "none" }).querySelector(".dj-barFillHigh")).toBe(null);
+    expect(barOf({ tier: "none" }).querySelector(".dj-barFillLow")).toBe(null);
+    expect(barOf({}).querySelector<HTMLElement>(".dj-barThreshold")?.style.left).toBe("80%");
   });
   it("tierBadge 三档文案", () => {
-    expect(tierBadge("high").textContent).toBe("high");
-    expect(tierBadge("low").textContent).toBe("low");
-    expect(tierBadge("none").textContent).toBe("none");
+    const mountBadge = (tier: "high" | "low" | "none"): HTMLElement => {
+      const { pane, unmount } = mountPane(tierBadge(tier));
+      unmounts.push(unmount);
+      return pane;
+    };
+    expect(mountBadge("high").querySelector(".dj-badgeOn")?.textContent).toBe("high");
+    expect(mountBadge("low").querySelector(".dj-badgeWarn")?.textContent).toBe("low");
+    expect(mountBadge("none").querySelector(".dj-badge")?.textContent).toBe("none");
   });
 });
 
 describe("presets 窗格交互", () => {
   it("五预设行：开关切换与阈值下拉即时刷新", async () => {
     restore = installStub(presetsStub).restore;
-    const pane = renderPresetsPane({ alive: () => true });
-    document.body.appendChild(pane);
+    const { pane, unmount } = mountPane(React.createElement(PresetsPane));
+    unmounts.push(unmount);
     await pollUntil(() => pane.querySelectorAll(".dj-preset").length === 5, "五预设行");
     expect(pane.textContent).toContain("预设 5 个");
     const box = pane.querySelector<HTMLInputElement>('input[aria-label="启用预设 general"]');
     expect(box?.checked).toBe(true);
-    box!.checked = false;
-    box!.dispatchEvent(new Event("change", { bubbles: true }));
+    fireEvent.click(box!);
     expect(pane.textContent).toContain("已关闭");
     const sel = pane.querySelector<HTMLSelectElement>('select[aria-label="自动化上限 general"]');
-    sel!.value = "1";
+    fireEvent.change(sel!, { target: { value: "1" } });
     sel!.dispatchEvent(new Event("change", { bubbles: true }));
     expect(sel!.closest(".dj-rangeRow")?.querySelector(".dj-rangeVal")?.textContent).toBe("low");
   });
@@ -123,8 +147,8 @@ describe("presets 窗格交互", () => {
       return baseStub(url);
     };
     restore = installStub(stub).restore;
-    const pane = renderPresetsPane({ alive: () => true });
-    document.body.appendChild(pane);
+    const { pane, unmount } = mountPane(React.createElement(PresetsPane));
+    unmounts.push(unmount);
     await pollUntil(() => (pane.textContent ?? "").includes("加载失败"), "预设错态");
     expect(pane.textContent).toContain("加载失败");
   });
@@ -153,8 +177,8 @@ describe("history 条目渲染与清空", () => {
   }
   it("条目：snippet/tier/截断/错误行/概率宽/计数/会话选项", async () => {
     restore = installStub(entriesStub).restore;
-    const pane = renderHistoryPane({ alive: () => true });
-    document.body.appendChild(pane);
+    const { pane, unmount } = mountPane(React.createElement(HistoryPane));
+    unmounts.push(unmount);
     await pollUntil(() => pane.querySelectorAll(".dj-histItem").length === 2, "两条目");
     expect(pane.textContent).toContain("hello");
     expect(pane.textContent).toContain("截断");
@@ -179,19 +203,19 @@ describe("history 条目渲染与清空", () => {
       return baseStub(url);
     };
     restore = installStub(stub).restore;
-    const pane = renderHistoryPane({ alive: () => true });
-    document.body.appendChild(pane);
+    const { pane, unmount } = mountPane(React.createElement(HistoryPane));
+    unmounts.push(unmount);
     await pollUntil(() => pane.querySelectorAll(".dj-histItem").length === 2, "两条目");
     const sessSel = pane.querySelector<HTMLSelectElement>('select[aria-label="会话过滤"]');
-    sessSel!.value = "sess-aaa";
+    fireEvent.change(sessSel!, { target: { value: "sess-aaa" } });
     sessSel!.dispatchEvent(new Event("change", { bubbles: true }));
     const clearBtn = Array.from(pane.querySelectorAll<HTMLButtonElement>("button")).find(
       (b) => b.textContent === "清空本会话",
     );
     await pollUntil(() => clearBtn?.disabled === false, "清空可用");
-    clearBtn?.click();
+    fireEvent.click(clearBtn!);
     expect(clearBtn?.textContent).toBe("确认清空本会话？");
-    clearBtn?.click();
+    fireEvent.click(clearBtn!);
     await pollUntil(
       () => seen.some((c) => c.startsWith("DELETE ") && c.includes("sessionId=sess-aaa")),
       "DELETE 单会话",
@@ -211,8 +235,8 @@ describe("history 条目渲染与清空", () => {
       return baseStub(url);
     };
     restore = installStub(stub).restore;
-    const pane = renderHistoryPane({ alive: () => true });
-    document.body.appendChild(pane);
+    const { pane, unmount } = mountPane(React.createElement(HistoryPane));
+    unmounts.push(unmount);
     await pollUntil(() => pane.querySelectorAll(".dj-histItem").length === 2, "两条目");
     const items = Array.from(pane.querySelectorAll(".dj-histItem"));
     expect(items[0]?.textContent).toContain("new");
@@ -224,8 +248,8 @@ describe("history 条目渲染与清空", () => {
       return baseStub(url);
     };
     restore = installStub(stub).restore;
-    const pane = renderHistoryPane({ alive: () => true });
-    document.body.appendChild(pane);
+    const { pane, unmount } = mountPane(React.createElement(HistoryPane));
+    unmounts.push(unmount);
     await pollUntil(() => (pane.textContent ?? "").includes("加载失败：E1"), "精确错码");
   });
   it("deleted:false 即清空失败错态", async () => {
@@ -236,18 +260,18 @@ describe("history 条目渲染与清空", () => {
       return baseStub(url);
     };
     restore = installStub(stub).restore;
-    const pane = renderHistoryPane({ alive: () => true });
-    document.body.appendChild(pane);
+    const { pane, unmount } = mountPane(React.createElement(HistoryPane));
+    unmounts.push(unmount);
     await pollUntil(() => pane.querySelectorAll(".dj-histItem").length === 2, "两条目");
     const sessSel = pane.querySelector<HTMLSelectElement>('select[aria-label="会话过滤"]');
-    sessSel!.value = "sess-aaa";
+    fireEvent.change(sessSel!, { target: { value: "sess-aaa" } });
     sessSel!.dispatchEvent(new Event("change", { bubbles: true }));
     const clearBtn = Array.from(pane.querySelectorAll<HTMLButtonElement>("button")).find(
       (b) => b.textContent === "清空本会话",
     );
     await pollUntil(() => clearBtn?.disabled === false, "清空可用");
-    clearBtn?.click();
-    clearBtn?.click();
+    fireEvent.click(clearBtn!);
+    fireEvent.click(clearBtn!);
     await pollUntil(() => (pane.textContent ?? "").includes("清空失败"), "清空失败错态");
     expect(pane.textContent).toContain("delete-not-confirmed");
   });
@@ -259,33 +283,66 @@ describe("connection 保存守卫", () => {
       (b) => b.textContent === "保存",
     );
   }
-  it("明文与 ENV 同填即互斥错（不发 PUT）", async () => {
-    const seen: string[] = [];
-    const stub = (url: string, method: string): Response => {
-      seen.push(method + " " + url);
+  it("二选一：同填只提交选中侧（ENV 模式忽略明文值）", async () => {
+    const handle = installStub((url, method) => {
+      if (url.includes(APP_ROUTES.config) && method === "PUT") return jsonResponse(BARE_CONFIG);
       return baseStub(url);
-    };
-    restore = installStub(stub).restore;
-    const pane = renderConnectionPane({ alive: () => true });
-    document.body.appendChild(pane);
+    });
+    restore = handle.restore;
+    const { pane, unmount } = mountPane(React.createElement(ConnectionPane));
+    unmounts.push(unmount);
     await pollUntil(() => (pane.textContent ?? "").includes("已加载配置"), "连接已加载");
-    pane.querySelector<HTMLInputElement>('input[aria-label="ENV 变量名"]')!.value = "JEV_X";
-    pane.querySelector<HTMLInputElement>('input[aria-label="明文密钥"]')!.value = "x".repeat(20);
-    saveButton(pane)?.click();
-    await pollUntil(() => (pane.textContent ?? "").includes("互斥"), "互斥错");
-    expect(seen.some((c) => c.startsWith("PUT "))).toBe(false);
+    fireEvent.change(pane.querySelector<HTMLInputElement>('input[aria-label="ENV 变量名"]')!, {
+      target: { value: "JEV_X" },
+    });
+    fireEvent.change(pane.querySelector<HTMLInputElement>('input[aria-label="明文密钥"]')!, {
+      target: { value: "x".repeat(20) },
+    });
+    fireEvent.click(saveButton(pane)!);
+    await pollUntil(
+      () => handle.calls.some((c) => c.method === "PUT" && c.url.includes(APP_ROUTES.config)),
+      "PUT 已发",
+    );
+    const put = handle.calls.find((c) => c.method === "PUT" && c.url.includes(APP_ROUTES.config));
+    expect(put?.body).toContain("JEV_X");
+    expect(put?.body).not.toContain("apiKeyPlaintext");
+  });
+  it("二选一互斥置灰：切明文即禁用 ENV，反之亦然", async () => {
+    restore = installStub(baseStub).restore;
+    const { pane, unmount } = mountPane(React.createElement(ConnectionPane));
+    unmounts.push(unmount);
+    await pollUntil(() => (pane.textContent ?? "").includes("已加载配置"), "连接已加载");
+    const envInput = pane.querySelector<HTMLInputElement>('input[aria-label="ENV 变量名"]')!;
+    const plainInput = pane.querySelector<HTMLInputElement>('input[aria-label="明文密钥"]')!;
+    expect(envInput.disabled).toBe(false);
+    expect(plainInput.disabled).toBe(true);
+    const plainRadio = pane.querySelector<HTMLInputElement>(
+      'input[name="dj-keymode"][value="plain"]',
+    )!;
+    fireEvent.click(plainRadio);
+    expect(envInput.disabled).toBe(true);
+    expect(plainInput.disabled).toBe(false);
   });
   it("明文无二次确认即阻断；非法 ENV 名即阻断", async () => {
     restore = installStub(baseStub).restore;
-    const pane = renderConnectionPane({ alive: () => true });
-    document.body.appendChild(pane);
+    const { pane, unmount } = mountPane(React.createElement(ConnectionPane));
+    unmounts.push(unmount);
     await pollUntil(() => (pane.textContent ?? "").includes("已加载配置"), "连接已加载");
-    pane.querySelector<HTMLInputElement>('input[aria-label="明文密钥"]')!.value = "y".repeat(20);
-    saveButton(pane)?.click();
+    const plainRadio = pane.querySelector<HTMLInputElement>(
+      'input[name="dj-keymode"][value="plain"]',
+    )!;
+    fireEvent.click(plainRadio);
+    fireEvent.change(pane.querySelector<HTMLInputElement>('input[aria-label="明文密钥"]')!, {
+      target: { value: "y".repeat(20) },
+    });
+    fireEvent.click(saveButton(pane)!);
     await pollUntil(() => (pane.textContent ?? "").includes("二次确认"), "确认错");
-    pane.querySelector<HTMLInputElement>('input[aria-label="明文密钥"]')!.value = "";
-    pane.querySelector<HTMLInputElement>('input[aria-label="ENV 变量名"]')!.value = "lower";
-    saveButton(pane)?.click();
+    const envRadio = pane.querySelector<HTMLInputElement>('input[name="dj-keymode"][value="env"]')!;
+    fireEvent.click(envRadio);
+    fireEvent.change(pane.querySelector<HTMLInputElement>('input[aria-label="ENV 变量名"]')!, {
+      target: { value: "lower" },
+    });
+    fireEvent.click(saveButton(pane)!);
     await pollUntil(() => (pane.textContent ?? "").includes("ENV 名非法"), "ENV 错");
   });
   it("ENV 保存成功：PUT 体含引用且重载掩码", async () => {
@@ -294,11 +351,13 @@ describe("connection 保存守卫", () => {
       return baseStub(url);
     });
     restore = handle.restore;
-    const pane = renderConnectionPane({ alive: () => true });
-    document.body.appendChild(pane);
+    const { pane, unmount } = mountPane(React.createElement(ConnectionPane));
+    unmounts.push(unmount);
     await pollUntil(() => (pane.textContent ?? "").includes("已加载配置"), "连接已加载");
-    pane.querySelector<HTMLInputElement>('input[aria-label="ENV 变量名"]')!.value = "JEV_NEW";
-    saveButton(pane)?.click();
+    fireEvent.change(pane.querySelector<HTMLInputElement>('input[aria-label="ENV 变量名"]')!, {
+      target: { value: "JEV_NEW" },
+    });
+    fireEvent.click(saveButton(pane)!);
     await pollUntil(
       () => handle.calls.some((c) => c.method === "PUT" && c.url.includes(APP_ROUTES.config)),
       "PUT 已发",
@@ -310,13 +369,13 @@ describe("connection 保存守卫", () => {
   });
   it("离线自检：成功与失败皆有文案", async () => {
     restore = installStub(baseStub).restore;
-    const pane = renderConnectionPane({ alive: () => true });
-    document.body.appendChild(pane);
+    const { pane, unmount } = mountPane(React.createElement(ConnectionPane));
+    unmounts.push(unmount);
     await pollUntil(() => (pane.textContent ?? "").includes("已加载配置"), "连接已加载");
     const testBtn = Array.from(pane.querySelectorAll<HTMLButtonElement>("button")).find(
       (b) => b.textContent === "离线自检",
     );
-    testBtn?.click();
+    fireEvent.click(testBtn!);
     await pollUntil(() => (pane.textContent ?? "").includes("自检通过"), "自检通过");
   });
   it("离线自检 500 即失败文案", async () => {
@@ -326,13 +385,13 @@ describe("connection 保存守卫", () => {
       return baseStub(url);
     };
     restore = installStub(stub).restore;
-    const pane = renderConnectionPane({ alive: () => true });
-    document.body.appendChild(pane);
+    const { pane, unmount } = mountPane(React.createElement(ConnectionPane));
+    unmounts.push(unmount);
     await pollUntil(() => (pane.textContent ?? "").includes("已加载配置"), "连接已加载");
     const testBtn = Array.from(pane.querySelectorAll<HTMLButtonElement>("button")).find(
       (b) => b.textContent === "离线自检",
     );
-    testBtn?.click();
+    fireEvent.click(testBtn!);
     await pollUntil(() => (pane.textContent ?? "").includes("自检失败"), "自检失败");
   });
 });
@@ -344,13 +403,13 @@ describe("presets 保存与导出", () => {
       return presetsStub(url);
     });
     restore = handle.restore;
-    const pane = renderPresetsPane({ alive: () => true });
-    document.body.appendChild(pane);
+    const { pane, unmount } = mountPane(React.createElement(PresetsPane));
+    unmounts.push(unmount);
     await pollUntil(() => pane.querySelectorAll(".dj-preset").length === 5, "五预设行");
     const saveBtn = Array.from(pane.querySelectorAll<HTMLButtonElement>("button")).find(
       (b) => b.textContent === "保存",
     );
-    saveBtn?.click();
+    fireEvent.click(saveBtn!);
     await pollUntil(
       () => handle.calls.some((c) => c.method === "PUT" && c.url.includes(APP_ROUTES.config)),
       "PUT presets 已发",
@@ -371,13 +430,13 @@ describe("presets 保存与导出", () => {
     URL.revokeObjectURL = (() => {}) as typeof URL.revokeObjectURL;
     try {
       restore = installStub(presetsStub).restore;
-      const pane = renderPresetsPane({ alive: () => true });
-      document.body.appendChild(pane);
+      const { pane, unmount } = mountPane(React.createElement(PresetsPane));
+      unmounts.push(unmount);
       await pollUntil(() => pane.querySelectorAll(".dj-preset").length === 5, "五预设行");
       const exportBtn = Array.from(pane.querySelectorAll<HTMLButtonElement>("button")).find(
         (b) => b.textContent === "导出 JSON",
       );
-      exportBtn?.click();
+      fireEvent.click(exportBtn!);
       await pollUntil(() => (pane.textContent ?? "").includes("已导出 5 个预设"), "已导出");
       expect(href).toBe("blob:mock");
     } finally {
@@ -392,14 +451,31 @@ describe("presets 保存与导出", () => {
       return presetsStub(url);
     };
     restore = installStub(stub).restore;
-    const pane = renderPresetsPane({ alive: () => true });
-    document.body.appendChild(pane);
+    const { pane, unmount } = mountPane(React.createElement(PresetsPane));
+    unmounts.push(unmount);
     await pollUntil(() => pane.querySelectorAll(".dj-preset").length === 5, "五预设行");
     const saveBtn = Array.from(pane.querySelectorAll<HTMLButtonElement>("button")).find(
       (b) => b.textContent === "保存",
     );
-    saveBtn?.click();
+    fireEvent.click(saveBtn!);
     await pollUntil(() => (pane.textContent ?? "").includes("保存失败：shape"), "保存失败");
+  });
+  it("详情行内单开：一次只展开一行，aria-expanded 同步", async () => {
+    restore = installStub(presetsStub).restore;
+    const { pane, unmount } = mountPane(React.createElement(PresetsPane));
+    unmounts.push(unmount);
+    await pollUntil(() => pane.querySelectorAll(".dj-preset").length === 5, "五预设行");
+    const detailBtns = Array.from(pane.querySelectorAll<HTMLButtonElement>("button")).filter(
+      (b) => b.textContent === "详情",
+    );
+    expect(detailBtns).toHaveLength(5);
+    detailBtns[0]!.click();
+    await pollUntil(() => detailBtns[0]!.getAttribute("aria-expanded") === "true", "首行展开");
+    expect(pane.textContent).toContain("desc-g");
+    detailBtns[1]!.click();
+    await pollUntil(() => detailBtns[1]!.getAttribute("aria-expanded") === "true", "次行展开");
+    expect(detailBtns[0]!.getAttribute("aria-expanded")).toBe("false");
+    expect(pane.querySelector("#dj-detail-general")).toBe(null);
   });
 });
 
@@ -415,17 +491,21 @@ describe("connection 保存成功路径", () => {
       return baseStub(url);
     });
     restore = handle.restore;
-    const pane = renderConnectionPane({ alive: () => true });
-    document.body.appendChild(pane);
+    const { pane, unmount } = mountPane(React.createElement(ConnectionPane));
+    unmounts.push(unmount);
     await pollUntil(() => (pane.textContent ?? "").includes("已加载配置"), "连接已加载");
+    const plainRadio = pane.querySelector<HTMLInputElement>(
+      'input[name="dj-keymode"][value="plain"]',
+    )!;
+    fireEvent.click(plainRadio);
     const plain = pane.querySelector<HTMLInputElement>('input[aria-label="明文密钥"]');
-    plain!.value = "z".repeat(20);
+    fireEvent.change(plain!, { target: { value: "z".repeat(20) } });
     const confirm = plain!
       .closest(".dj-field")
       ?.parentElement?.querySelector<HTMLInputElement>('input[type="checkbox"]');
     expect(confirm).not.toBe(null);
-    confirm!.checked = true;
-    saveButton(pane)?.click();
+    fireEvent.click(confirm!);
+    fireEvent.click(saveButton(pane)!);
     await pollUntil(
       () => handle.calls.some((c) => c.method === "PUT" && c.url.includes(APP_ROUTES.config)),
       "PUT 已发",
@@ -433,7 +513,7 @@ describe("connection 保存成功路径", () => {
     const put = handle.calls.find((c) => c.method === "PUT" && c.url.includes(APP_ROUTES.config));
     expect(put?.body).toContain("apiKeyPlaintext");
     expect(put?.body).not.toContain("apiKeyRef");
-    expect(plain?.value).toBe("");
+    await pollUntil(() => plain?.value === "", "明文框清空");
   });
   it("保存 400 即失败文案带类别", async () => {
     const stub = (url: string, method: string): Response => {
@@ -442,11 +522,13 @@ describe("connection 保存成功路径", () => {
       return baseStub(url);
     };
     restore = installStub(stub).restore;
-    const pane = renderConnectionPane({ alive: () => true });
-    document.body.appendChild(pane);
+    const { pane, unmount } = mountPane(React.createElement(ConnectionPane));
+    unmounts.push(unmount);
     await pollUntil(() => (pane.textContent ?? "").includes("已加载配置"), "连接已加载");
-    pane.querySelector<HTMLInputElement>('input[aria-label="ENV 变量名"]')!.value = "JEV_SAVE";
-    saveButton(pane)?.click();
+    fireEvent.change(pane.querySelector<HTMLInputElement>('input[aria-label="ENV 变量名"]')!, {
+      target: { value: "JEV_SAVE" },
+    });
+    fireEvent.click(saveButton(pane)!);
     await pollUntil(() => (pane.textContent ?? "").includes("保存失败：shape"), "保存失败");
   });
   it("加载失败现重试，重试后重载成功", async () => {
@@ -460,14 +542,14 @@ describe("connection 保存成功路径", () => {
       return baseStub(url);
     };
     restore = installStub(stub).restore;
-    const pane = renderConnectionPane({ alive: () => true });
-    document.body.appendChild(pane);
+    const { pane, unmount } = mountPane(React.createElement(ConnectionPane));
+    unmounts.push(unmount);
     await pollUntil(() => (pane.textContent ?? "").includes("加载失败"), "加载失败");
     const retryBtn = Array.from(pane.querySelectorAll<HTMLButtonElement>("button")).find(
       (b) => b.textContent === "重试",
     );
-    expect(retryBtn?.hidden).toBe(false);
-    retryBtn?.click();
+    expect(retryBtn).not.toBe(null);
+    fireEvent.click(retryBtn!);
     await pollUntil(() => (pane.textContent ?? "").includes("已加载配置"), "重试后加载");
   });
 });
@@ -480,20 +562,20 @@ describe("history 过滤与刷新", () => {
       return baseStub(url);
     });
     restore = handle.restore;
-    const pane = renderHistoryPane({ alive: () => true });
-    document.body.appendChild(pane);
+    const { pane, unmount } = mountPane(React.createElement(HistoryPane));
+    unmounts.push(unmount);
     await pollUntil(() => pane.querySelectorAll(".dj-histItem").length === 2, "两条目");
     const before = handle.calls.filter((c) => c.url.includes(APP_ROUTES.history)).length;
     const refreshBtn = Array.from(pane.querySelectorAll<HTMLButtonElement>("button")).find(
       (b) => b.textContent === "刷新",
     );
-    refreshBtn?.click();
+    fireEvent.click(refreshBtn!);
     await pollUntil(
       () => handle.calls.filter((c) => c.url.includes(APP_ROUTES.history)).length > before,
       "刷新重拉",
     );
     const rootSel = pane.querySelector<HTMLSelectElement>('select[aria-label="工作目录过滤"]');
-    rootSel!.value = "proj";
+    fireEvent.change(rootSel!, { target: { value: "proj" } });
     rootSel!.dispatchEvent(new Event("change", { bubbles: true }));
     await pollUntil(() => handle.calls.some((c) => c.url.includes("root=proj")), "过滤进串");
   });

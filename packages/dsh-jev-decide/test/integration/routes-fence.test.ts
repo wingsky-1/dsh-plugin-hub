@@ -291,7 +291,11 @@ describe("存量互斥与脱敏端到端", () => {
     const decide = tools.get("ws_jev_decide");
     expect(decide).toBeDefined();
     const out = (await decide?.execute(
-      { preset_id: "general", state: { text: "fence-case", lang: "en" } },
+      {
+        preset_id: "general",
+        state: { text: "fence-case", lang: "en" },
+        questions_override: [{ id: "q1", text: "Pick one.", kind: "choice", options: ["A", "B"] }],
+      },
       { sessionId: "fence-s1", cwd: "/work/fence" },
     )) as { ok: boolean };
     expect(out.ok).toBe(true);

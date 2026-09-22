@@ -133,10 +133,15 @@ export const ANOMALY_NEG = -1;
 //
 // DeepSeek 官方错峰定价时段（UTC 工作日固定窗口，硬编码常量、无配置项）。
 // 来源：https://api-docs.deepseek.com/quick_start/pricing （错峰折扣时段说明）
-// 核实日期：2026-08-26。官方如调整时段须改码发布，不做运行时可配。
+// 核实日期：2026-08-26；节假日口径复核：2026-09-21（#945）。
+// 官方口径：“Peak hours are 01:00 - 04:00 and 06:00 - 10:00 UTC, Monday through
+// Friday, excluding Chinese public holidays. All other hours are off-peak,
+// including weekends and Chinese public holidays in full.”
+// 官方如调整时段须改码发布，不做运行时可配。
 
 /**
- * 峰值窗口表（UTC 分钟数，[start,end) 半开区间；仅周一至周五生效，周末全天谷）。
+ * 峰值窗口表（UTC 分钟数，[start,end) 半开区间；仅非节假日的周一至周五生效，
+ * 周末与中国法定节假日全天谷）。
  * [[01:00,04:00], [06:00,10:00]]（UTC）。
  */
 export const PEAK_WINDOWS_UTC = [
@@ -144,12 +149,108 @@ export const PEAK_WINDOWS_UTC = [
   [360, 600], // 06:00–10:00 UTC
 ];
 
+/**
+ * 前瞻天数（具名常量）：nextPeakTransition 向未来扫描的最大偏移天数。
+ * 须覆盖全年最长连续谷段（2026 年为国庆段约 13.5 天：09-24 10:00 UTC → 10-08
+ * 01:00 UTC）；取 16 天留足合并长假（如中秋并入国庆）与闰年余量。
+ */
+export const PEAK_LOOKAHEAD_DAYS = 16;
+
+/**
+ * 中国法定节假日表（UTC 日期 key 集合，YYYY-MM-DD）。
+ *
+ * 年份覆盖：2026-01-01～2026-12-31（共 33 天），来源为国务院办公厅
+ * 国办发明电〔2025〕7 号（2025-11-04）“2026 年放假调休日期的具体安排”：
+ * 元旦 01-01～01-03（3 天）、春节 02-15～02-23（9 天）、清明 04-04～04-06（3 天）、
+ * 劳动节 05-01～05-05（5 天）、端午 06-19～06-21（3 天）、中秋 09-25～09-27（3 天）、
+ * 国庆 10-01～10-07（7 天）。
+ * 口径取舍：收录放假安排的全部放假日期（含调休拼入的工作日，如 01-02、05-04/05），
+ * 而非仅 11 天法定节假日本体——官方英文口径 “Chinese public holidays” 指对外公布的
+ * 公众假期表；若官方后续澄清仅指法定本体，须另案调整（放假表中连续长假内会出现峰日，
+ * 与本次“长连休全谷”验收相悖，故默认按全表）。
+ * 维护：每年 Q4 按当年国务院放假通知追加次年日期（本表随码发布，见 #945）；
+ * 调休上班的周末（如 2026-02-14、02-28、05-09、10-10 为周六，01-04、09-20 为周日）不另行收录——
+ * 周末恒谷（R1），是否调休上班不改变判定。
+ *
+ * 默认集已冻结并注明勿变异：调用方如需自定义日历请传入新 Set，切勿原地修改本集。
+ */
+export const CHINA_PUBLIC_HOLIDAYS_UTC = Object.freeze(
+  new Set([
+    // 元旦（01-01 周四～01-03 周六）
+    "2026-01-01",
+    "2026-01-02",
+    "2026-01-03",
+    // 春节（02-15 周日～02-23 周一，共 9 天）
+    "2026-02-15",
+    "2026-02-16",
+    "2026-02-17",
+    "2026-02-18",
+    "2026-02-19",
+    "2026-02-20",
+    "2026-02-21",
+    "2026-02-22",
+    "2026-02-23",
+    // 清明（04-04 周六～04-06 周一）
+    "2026-04-04",
+    "2026-04-05",
+    "2026-04-06",
+    // 劳动节（05-01 周五～05-05 周二，共 5 天）
+    "2026-05-01",
+    "2026-05-02",
+    "2026-05-03",
+    "2026-05-04",
+    "2026-05-05",
+    // 端午（06-19 周五～06-21 周日）
+    "2026-06-19",
+    "2026-06-20",
+    "2026-06-21",
+    // 中秋（09-25 周五～09-27 周日）
+    "2026-09-25",
+    "2026-09-26",
+    "2026-09-27",
+    // 国庆（10-01 周四～10-07 周三，共 7 天）
+    "2026-10-01",
+    "2026-10-02",
+    "2026-10-03",
+    "2026-10-04",
+    "2026-10-05",
+    "2026-10-06",
+    "2026-10-07",
+  ]),
+);
+
+/**
+ * UTC 日期 key（YYYY-MM-DD，纯函数）：节假日查表的键函数。
+ * 注意与本地口径 dayKey 的区别：此处刻意用 UTC 分量（getUTC*），与峰窗的 UTC 定义对齐。
+ */
+export function utcDateKey(t) {
+  const d = new Date(t);
+  const y = d.getUTCFullYear();
+  const mo = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(d.getUTCDate()).padStart(2, "0");
+  return y + "-" + mo + "-" + dd;
+}
+
+/**
+ * 节假日判定（纯函数）：UTC 日期落在节假日集内即全天谷。
+ *
+ * 等价依据：峰窗 01:00–10:00 UTC 恒等于北京 09:00–18:00 同一日（UTC+8），
+ * 窗外恒为谷——因此 UTC 日期查表与北京时间日期查表结果恒等；
+ * 约束：该等价仅当峰窗整体落在 00:00–16:00 UTC 内成立（官方若把峰窗挪到
+ * 北京时间跨日时段，须改用北京日期重写本函数，另案处理）。
+ */
+export function isHolidayUtc(t, holidays = CHINA_PUBLIC_HOLIDAYS_UTC) {
+  return holidays.has(utcDateKey(t));
+}
+
 /** 单时刻峰谷判定（纯函数）：UTC 工作日 + 分钟粒度半开区间（毫秒级边界语义等价：
- *  03:59:59.999 属峰、04:00:00.000 即属谷——分钟数不受秒/毫秒影响）。 */
-export function isPeakUtc(t) {
+ *  03:59:59.999 属峰、04:00:00.000 即属谷——分钟数不受秒/毫秒影响）；
+ *  中国法定节假日全天谷（先于周末判定，#945）。 */
+export function isPeakUtc(t, holidays = CHINA_PUBLIC_HOLIDAYS_UTC) {
+  if (isHolidayUtc(t, holidays)) return false; // 节假日全天低谷
   const d = new Date(t);
   const day = d.getUTCDay();
-  if (day === 0 || day === 6) return false; // 周末全天低谷
+  if (day === 0 || day === 6) return false; // 周末全天低谷（调休上班不改变，R1）
   const min = d.getUTCHours() * 60 + d.getUTCMinutes();
   for (const [startMin, endMin] of PEAK_WINDOWS_UTC) {
     if (min >= startMin && min < endMin) return true;
@@ -159,18 +260,21 @@ export function isPeakUtc(t) {
 
 /**
  * 下一次峰谷转换点（纯函数）：返回严格晚于 t 的最近转换边界与目标状态。
- * 谷态找下一个开峰（跨周末跳到下周一），峰态找本窗口切谷时刻。
+ * 谷态找下一个开峰（跨周末/节假日跳到下一工作日），峰态找本窗口切谷时刻。
  */
-export function nextPeakTransition(t) {
-  const peakNow = isPeakUtc(t);
+export function nextPeakTransition(t, holidays = CHINA_PUBLIC_HOLIDAYS_UTC) {
+  const peakNow = isPeakUtc(t, holidays);
   const cur = new Date(t);
   const y = cur.getUTCFullYear();
   const m = cur.getUTCMonth();
   const d0 = cur.getUTCDate();
-  for (let off = 0; off <= 7; off += 1) {
-    // 周末全天谷：不存在任何峰窗边界，直接跳过（否则会把周末 01:00 误当开峰点）
-    const dow = new Date(Date.UTC(y, m, d0 + off)).getUTCDay();
+  for (let off = 0; off <= PEAK_LOOKAHEAD_DAYS; off += 1) {
+    // 周末/节假日全天谷：不存在任何峰窗边界，直接跳过
+    // （否则会把周末或节假日的 01:00 误当开峰点）
+    const probe = new Date(Date.UTC(y, m, d0 + off));
+    const dow = probe.getUTCDay();
     if (dow === 0 || dow === 6) continue;
+    if (holidays.has(utcDateKey(probe.getTime()))) continue;
     for (const [startMin, endMin] of PEAK_WINDOWS_UTC) {
       // 同日内 start<end 且窗口按序排列，[start,end] 对遍历天然时间有序；
       // 第一个严格大于 t 且引起状态翻转的边界即答案
@@ -183,8 +287,9 @@ export function nextPeakTransition(t) {
       }
     }
   }
-  // 不可达（7 天内必有转换）；防御性兜底：返回一周后的同一时刻
-  return { toPeak: !peakNow, at: t + 7 * DAY_MS };
+  // 不可达（前瞻窗 PEAK_LOOKAHEAD_DAYS 内必有转换：2026 年最长连续谷段约 13.5 天 < 16；
+  // 若未来出现 ≥16 天的连续谷段，说明节假日表过期未更新）；防御性兜底：返回前瞻窗后的同一时刻
+  return { toPeak: !peakNow, at: t + PEAK_LOOKAHEAD_DAYS * DAY_MS };
 }
 
 /** 倒计时格式化 mm:ss 之外的 HH:MM 形态（向上取整到分钟，恒 ≥1 分钟，杜绝 "-00:00"/负值形态）。 */
@@ -204,17 +309,18 @@ function localTimeZone() {
   }
 }
 
-/** 峰谷倒计时徽标 HTML（纯本地时间计算，不依赖远端数据——stale 帧同样渲染）。 */
-export function peakBadgeHtml(nowTs) {
-  const peak = isPeakUtc(nowTs);
-  const tr = nextPeakTransition(nowTs);
+/** 峰谷倒计时徽标 HTML（纯本地时间计算，不依赖远端数据——stale 帧同样渲染）。
+ * holidays 透传节假日集（默认集）；formatCapsuleWithBadge 受 v2 契约约束恒用默认集。 */
+export function peakBadgeHtml(nowTs, holidays = CHINA_PUBLIC_HOLIDAYS_UTC) {
+  const peak = isPeakUtc(nowTs, holidays);
+  const tr = nextPeakTransition(nowTs, holidays);
   const countdown = fmtCountdown(tr.at - nowTs);
   const label = peak ? `⚡峰 · 距谷 ${countdown}` : `⚡谷 · 距峰 ${countdown}`;
   const windowsText = PEAK_WINDOWS_UTC.map(
     ([s, e]) =>
       `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}–${String(Math.floor(e / 60)).padStart(2, "0")}:${String(e % 60).padStart(2, "0")}`,
   ).join("、");
-  const tip = `DeepSeek 错峰计费：峰时段（UTC 工作日）${windowsText}，周末全天谷；时段定义为 UTC，与显示时区无关，倒计时按 UTC 换算（服务器时区 ${localTimeZone()}）`;
+  const tip = `DeepSeek 错峰计费：峰时段（UTC 工作日，非节假日）${windowsText}，周末与中国法定节假日全天谷；时段定义为 UTC，与显示时区无关，倒计时按 UTC 换算（服务器时区 ${localTimeZone()}）`;
   const cls = peak ? "dou-peak dou-peak-on" : "dou-peak dou-peak-off";
   return `<span class="${cls}" title="${eaFallback(tip)}">${hFallback(label)}</span>`;
 }

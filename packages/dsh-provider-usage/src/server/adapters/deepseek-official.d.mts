@@ -34,17 +34,32 @@ export declare const TOL: number;
 /** 大额负向净变动的异常阈值。 */
 export declare const ANOMALY_NEG: number;
 
-/** 峰值窗口表（UTC 分钟数，[start,end) 半开区间；仅周一至周五生效，周末全天谷）。 */
+/** 前瞻天数：nextPeakTransition 向未来扫描的最大偏移天数（须覆盖全年最长连续谷段）。 */
+export declare const PEAK_LOOKAHEAD_DAYS: number;
+
+/** 中国法定节假日表（UTC 日期 key 集合；默认集已冻结，勿变异）。 */
+export declare const CHINA_PUBLIC_HOLIDAYS_UTC: ReadonlySet<string>;
+
+/** UTC 日期 key（YYYY-MM-DD）。 */
+export declare function utcDateKey(t: number): string;
+
+/** 节假日判定：UTC 日期落在节假日集内即全天谷。 */
+export declare function isHolidayUtc(t: number, holidays?: ReadonlySet<string>): boolean;
+
+/** 峰值窗口表（UTC 分钟数，[start,end) 半开区间；仅非节假日的周一至周五生效，周末与中国法定节假日全天谷）。 */
 export declare const PEAK_WINDOWS_UTC: Array<readonly [number, number]>;
 
 /** 单时刻峰谷判定（纯函数）。 */
-export declare function isPeakUtc(t: number): boolean;
+export declare function isPeakUtc(t: number, holidays?: ReadonlySet<string>): boolean;
 
 /** 下一次峰谷转换点（纯函数）。 */
-export declare function nextPeakTransition(t: number): { toPeak: boolean; at: number };
+export declare function nextPeakTransition(
+  t: number,
+  holidays?: ReadonlySet<string>,
+): { toPeak: boolean; at: number };
 
 /** 峰谷倒计时徽标 HTML。 */
-export declare function peakBadgeHtml(nowTs: number): string;
+export declare function peakBadgeHtml(nowTs: number, holidays?: ReadonlySet<string>): string;
 
 /** 拉取余额（v2 fetchData，fetch 可注入）。 */
 export declare function fetchDeepSeekOfficialV2(

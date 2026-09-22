@@ -5,11 +5,19 @@
  * rootDisplay 仅 basename、snippet 先脱敏后截断≤200、密钥无字段可入——三条红线在此收口。
  */
 import { TEMPLATE_VERSION } from "../../../shared/interface.ts";
-import type { AutomationLevel, HistoryEntry } from "../../../shared/interface.ts";
+import type { AutomationLevel, HistoryEntry, HistoryQuestion } from "../../../shared/interface.ts";
 import { rootDisplayOf, rootHashOf, stateHashOf } from "./hash.ts";
 import { redactSnippet } from "./redact.ts";
 
-/** 事件面（tools 域 DecideEvent 的结构子集，避免跨域值引用）。precheckHit 命中即 snippet 全掩码（S1-A：长 PEM/残缺头不断字节上限，命中文本不存任何原文）。 */
+/** 调用题目快照元素（tools 域 ValidQuestion 的结构子集，避免跨域值引用）。 */
+export interface EntryQuestion {
+  readonly id: string;
+  readonly text: string;
+  readonly kind: "choice" | "score";
+  readonly options?: readonly string[];
+}
+
+/** 事件面（tools 域 DecideEvent 的结构子集，避免跨域值引用）。precheckHit 命中即 snippet 强制全掩码（S1-A：长 PEM/残缺头不断字节上限，命中文本不存任何原文）。questions 为调用题目快照（文本/选项同 snippet 脱敏后存）。 */
 export interface EntryEvent {
   readonly precheckHit: boolean;
   readonly presetId: string;
@@ -18,6 +26,7 @@ export interface EntryEvent {
   readonly truncated: boolean;
   readonly originalLength: number;
   readonly resultKind: string;
+  readonly questions: readonly EntryQuestion[];
   readonly choice?: string;
   readonly score?: number;
   readonly confidence: number;
@@ -55,5 +64,16 @@ export function assembleEntry(
     provider: "official",
     latencyMs: event.latencyMs,
     ...(event.errorCode !== undefined ? { errorCode: event.errorCode } : {}),
+    questions: snapshotQuestions(event),
   };
+}
+
+/** 题目快照（文本/选项先脱敏；与 snippet 同一图案集，保证密钥原文永不入库）。 */
+function snapshotQuestions(event: EntryEvent): HistoryQuestion[] {
+  return event.questions.map((q) => ({
+    id: q.id,
+    text: redactSnippet(q.text),
+    kind: q.kind,
+    ...(q.options !== undefined ? { options: q.options.map((opt) => redactSnippet(opt)) } : {}),
+  }));
 }

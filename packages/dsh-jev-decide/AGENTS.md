@@ -7,7 +7,7 @@
 
 ## 定位
 
-JEV 决策网关：frozen 预设模板（5 个，templateVersion 恒为 1）+ SystemOne 官方调用
+JEV 决策网关：frozen 出题规范（5 条英文 description，templateVersion 恒为 1，零考题）+ SystemOne 官方调用
 （基址写死）+ 双轨密钥 + 本地密形预检。模型工具 `ws_jev_decide` / `ws_jev_list_presets`，
 回环路由 `/api/dsh-jev-decide/*` 五条。配置自持于 `<DSH_HOME>/@wingsky-1/dsh-jev-decide/`
 三文件（config.json / presets.json / secrets.json）+ VERSION 存储刻度。
@@ -31,8 +31,9 @@ JEV 决策网关：frozen 预设模板（5 个，templateVersion 恒为 1）+ Sy
 1. **改 `src/` 必须 build 才生效**：dsh 经 profile 直读 `lib/` 产物，不自动编译。
 2. **双轨密钥**：ENV 引用优先，明文写入须二次确认且服务端同样校验互斥；
    密钥形状拒收 400 仅回类别；GET/PUT 成功响应一律掩码，密钥原文永不回显、不入库、不进日志。
-3. **frozen 预设**：5 预设模板 frozen 在 `FROZEN_PRESETS`，templateVersion 恒为 1；
-   `secret-leak` 默认关闭；custom 须自带全量题目，非 custom 的 override 须等长同 id 集。
+3. **frozen 预设**：5 预设出题规范（英文 `description`）frozen 在 `FROZEN_PRESETS`，templateVersion 恒为 1，
+   模板零考题；`secret-leak` 默认关闭；全员 `questions_override` 必填（1-20 题，调用方自带）。
+   自建经 `custom-presets.json`（`PUT customPresets` 全量替换，保留字拒收）；自建 id 可决议；落史题目快照脱敏；标题读取时 enrich。
 4. **官方地址写死**：`JEV_BASE_URL` 为加载断言常量，不接受任何配置覆盖；
    PUT 遇 `baseUrl` 类退役键直接 400。新增上游一律先报主代理裁决，不私自加基址。
 5. **loopback 围栏**：全部路由非回环 403 先于方法 405；smoke 必须含 403/405 围栏用例。

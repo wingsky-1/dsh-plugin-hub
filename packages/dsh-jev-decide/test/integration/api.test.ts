@@ -247,7 +247,11 @@ describe("端点往返", () => {
     const decide = tools.get("ws_jev_decide");
     expect(decide).toBeDefined();
     const out = (await decide?.execute(
-      { preset_id: "general", state: { text: "it-case", lang: "en" } },
+      {
+        preset_id: "general",
+        state: { text: "it-case", lang: "en" },
+        questions_override: [{ id: "q1", text: "Pick one.", kind: "choice", options: ["A", "B"] }],
+      },
       { sessionId: "it-s1", cwd: "/work/it" },
     )) as { ok: boolean };
     expect(out.ok).toBe(true);
@@ -258,6 +262,16 @@ describe("端点往返", () => {
       url: "/api/dsh-jev-decide/history?root=/work/it&sessionId=it-s1",
     });
     expect((got.json as { entries: unknown[] }).entries).toHaveLength(1);
+    const first = (
+      got.json as {
+        entries: Array<{
+          presetTitle?: string;
+          questions?: Array<{ id: string; options?: string[] }>;
+        }>;
+      }
+    ).entries[0];
+    expect(first?.presetTitle).toBe("general");
+    expect(first?.questions?.[0]?.options).toEqual(["A", "B"]);
     const del = await call(routes, "/api/dsh-jev-decide/history", {
       method: "DELETE",
       url: "/api/dsh-jev-decide/history?root=/work/it&sessionId=it-s1",

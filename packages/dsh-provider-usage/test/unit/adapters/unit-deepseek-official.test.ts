@@ -34,6 +34,10 @@ import {
   openCodeGoAdapter,
   deepSeekOfficialAdapter,
   PEAK_WINDOWS_UTC,
+  PEAK_LOOKAHEAD_DAYS,
+  CHINA_PUBLIC_HOLIDAYS_UTC,
+  utcDateKey,
+  isHolidayUtc,
   isPeakUtc,
   nextPeakTransition,
   peakBadgeHtml,
@@ -937,6 +941,26 @@ describe("G1 常量存在 + 源码注释附官方定价 URL 与核实日期", ()
   it("注释附核实日期", () => {
     expect(src.includes("2026-08-26")).toBeTruthy();
   });
+
+  it("注释附节假日口径复核日期（#945）", () => {
+    expect(src.includes("2026-09-21")).toBeTruthy();
+  });
+
+  it("PEAK_LOOKAHEAD_DAYS===16（具名常量）", () => {
+    expect(PEAK_LOOKAHEAD_DAYS).toBe(16);
+  });
+
+  it("节假日表为 2026 全年 33 天", () => {
+    expect(CHINA_PUBLIC_HOLIDAYS_UTC.size).toBe(33);
+  });
+
+  it("注释注明年份覆盖范围", () => {
+    expect(src.includes("2026-01-01")).toBeTruthy();
+  });
+
+  it("注释注明每年 Q4 更新次年表", () => {
+    expect(src.includes("Q4")).toBeTruthy();
+  });
 });
 
 describe("G2 半开区间（毫秒精度）", () => {
@@ -1023,6 +1047,230 @@ describe("G4 周末全天低谷（issue 点名用例）", () => {
 
   it("周一 00:00 仍谷（01:00 才开峰）", () => {
     expect(isPeakUtc(MON(0, 0, 0, 0))).toBe(false);
+  });
+});
+
+// ================================================================ G4b #945 节假日全天谷
+
+describe("G4b 节假日全天谷（#945：法定工作日节假日 01:00–10:00 UTC 全判谷）", () => {
+  // 2026-02-17 周二（春节初一）、2026-10-01 周四（国庆）、2026-05-04 周一（劳动节调休拼假）
+  // 均为工作日：无节假日逻辑时正落峰窗。
+  it("春节初一 02:00 UTC 谷", () => {
+    expect(isPeakUtc(utc(2026, 2, 17, 2, 0))).toBe(false);
+  });
+
+  it("春节初一 07:00 UTC 谷（第二峰窗）", () => {
+    expect(isPeakUtc(utc(2026, 2, 17, 7, 0))).toBe(false);
+  });
+
+  it("春节初一 01:00 边界仍谷", () => {
+    expect(isPeakUtc(utc(2026, 2, 17, 1, 0, 0, 0))).toBe(false);
+  });
+
+  it("国庆首日 02:00 UTC 谷", () => {
+    expect(isPeakUtc(utc(2026, 10, 1, 2, 0))).toBe(false);
+  });
+
+  it("劳动节调休拼假周一 07:00 UTC 谷", () => {
+    expect(isPeakUtc(utc(2026, 5, 4, 7, 0))).toBe(false);
+  });
+
+  it("节假日午间窗口外仍谷", () => {
+    expect(isPeakUtc(utc(2026, 2, 18, 12, 0))).toBe(false);
+  });
+
+  it("空集对照：同一时刻无节假日表即判峰（证明节假日参驱动行为）", () => {
+    expect(isPeakUtc(utc(2026, 2, 17, 2, 0), new Set())).toBe(true);
+  });
+
+  it("空集对照：普通周一峰窗不受影响", () => {
+    expect(isPeakUtc(MON(2, 0), new Set())).toBe(true);
+  });
+
+  it("默认集回归：普通周一峰窗仍判峰", () => {
+    expect(isPeakUtc(MON(2, 0))).toBe(true);
+  });
+});
+
+describe("G4c 调休上班周末仍恒谷（R1 假设锁定：周末不因调休变峰）", () => {
+  // 2026-02-14、2026-02-28 均为周六且为春节调休上班日；2026-05-09 为劳动节调休上班周六。
+  // 若未来官方澄清调休上班变峰，须第二集合属方案级变更另议（本用例届时重审）。
+  it("调休上班周六 02:00 UTC 谷", () => {
+    expect(isPeakUtc(utc(2026, 2, 14, 2, 0))).toBe(false);
+  });
+
+  it("调休上班周六 07:00 UTC 谷", () => {
+    expect(isPeakUtc(utc(2026, 2, 28, 7, 0))).toBe(false);
+  });
+
+  it("调休上班周六午间仍谷", () => {
+    expect(isPeakUtc(utc(2026, 5, 9, 12, 0))).toBe(false);
+  });
+});
+
+describe("G4d utcDateKey / isHolidayUtc 基础", () => {
+  it("utcDateKey 取 UTC 日期分量（与北京同日示例：UTC/北京均为 02-17）", () => {
+    expect(utcDateKey(Date.UTC(2026, 1, 17, 0, 30))).toBe("2026-02-17");
+  });
+
+  it("真跨日：UTC 02-16 16:30（北京 02-17 00:30）键为 UTC 日期 2026-02-16", () => {
+    expect(utcDateKey(Date.UTC(2026, 1, 16, 16, 30))).toBe("2026-02-16");
+  });
+
+  it("节假日返回 true", () => {
+    expect(isHolidayUtc(utc(2026, 2, 17, 12, 0))).toBe(true);
+  });
+
+  it("普通工作日返回 false", () => {
+    expect(isHolidayUtc(MON(12, 0))).toBe(false);
+  });
+
+  it("空集下节假日亦返回 false", () => {
+    expect(isHolidayUtc(utc(2026, 2, 17, 12, 0), new Set())).toBe(false);
+  });
+
+  it("默认集已冻结（勿变异）", () => {
+    expect(Object.isFrozen(CHINA_PUBLIC_HOLIDAYS_UTC)).toBe(true);
+  });
+});
+
+describe("G7b 空集对照 + 节假日长谷段（#945）", () => {
+  it("空集下周五切谷后仍跨周末到下周一（默认集回归对照）", () => {
+    expect(nextPeakTransition(utc(2026, 8, 28, 10, 0), new Set()).at).toBe(utc(2026, 8, 31, 1, 0));
+  });
+
+  it("节假日谷态下一次转换为开峰", () => {
+    expect(nextPeakTransition(utc(2026, 2, 17, 2, 0)).toPeak).toBe(true);
+  });
+
+  it("春节 9 连休：下一次开峰跳到 02-24 周二 01:00 UTC（下一工作日）", () => {
+    expect(nextPeakTransition(utc(2026, 2, 17, 2, 0)).at).toBe(utc(2026, 2, 24, 1, 0));
+  });
+
+  it("节假日徽标显示谷态倒计时", () => {
+    expect(peakBadgeHtml(utc(2026, 2, 17, 2, 0))).toMatch(/⚡谷 · 距峰 \d{2,}:\d{2}/);
+  });
+
+  it("tip 文案含节假日全天谷（#945）", () => {
+    expect(
+      peakBadgeHtml(utc(2026, 2, 17, 2, 0)).includes("周末与中国法定节假日全天谷"),
+    ).toBeTruthy();
+  });
+
+  it("tip 文案不再写死仅周末全天谷", () => {
+    expect(peakBadgeHtml(MON(2, 0)).includes("周末与中国法定节假日全天谷")).toBeTruthy();
+  });
+
+  it("旧短语“，周末全天谷；”已消失", () => {
+    expect(peakBadgeHtml(MON(2, 0)).includes("，周末全天谷；")).toBe(false);
+  });
+});
+
+describe("G7c UTC 跨日边界（#945）", () => {
+  it("节假日首日 00:00:00.000 即谷", () => {
+    expect(isPeakUtc(utc(2026, 2, 16, 0, 0, 0, 0))).toBe(false);
+  });
+
+  it("02-15 23:59:59.999 谷（周日且春节放假表内，双重谷因）", () => {
+    expect(isPeakUtc(utc(2026, 2, 15, 23, 59, 59, 999))).toBe(false);
+  });
+
+  it("节假日前一日普通日按窗口判定：09-30 周三（非假）23:59:59.999 谷", () => {
+    expect(isPeakUtc(utc(2026, 9, 30, 23, 59, 59, 999))).toBe(false);
+  });
+
+  it("节假日前一日普通日按窗口判定：09-30 周三 02:00 峰（不受次日假期影响）", () => {
+    expect(isPeakUtc(utc(2026, 9, 30, 2, 0))).toBe(true);
+  });
+
+  it("节假日末日 23:59:59.999 仍谷", () => {
+    expect(isPeakUtc(utc(2026, 2, 23, 23, 59, 59, 999))).toBe(false);
+  });
+
+  it("节后首个工作日 00:00 仍谷（01:00 才开峰）", () => {
+    expect(isPeakUtc(utc(2026, 2, 24, 0, 0, 0, 0))).toBe(false);
+  });
+
+  it("节后首个工作日 01:00 开峰", () => {
+    expect(isPeakUtc(utc(2026, 2, 24, 1, 0, 0, 0))).toBe(true);
+  });
+
+  it("节假日末日深夜的下一次开峰是次日 01:00", () => {
+    expect(nextPeakTransition(utc(2026, 2, 23, 23, 30)).at).toBe(utc(2026, 2, 24, 1, 0));
+  });
+});
+
+describe("G4e 节假日胶囊渲染（#945 P4：v2 契约恒用默认集）", () => {
+  let caps;
+
+  beforeAll(() => {
+    caps = deepSeekOfficialAdapter.formatCapsule({
+      time: utc(2026, 2, 17, 2, 0),
+      data: { balance: 110.5, isAvailable: true },
+      status: "fresh",
+      esc,
+    });
+  });
+
+  it("峰窗节假日时刻胶囊渲染为谷（非峰）", () => {
+    expect(caps).toMatch(/⚡谷 · 距峰 \d{2,}:\d{2}/);
+  });
+
+  it("胶囊 tip 含节假日全天谷", () => {
+    expect(caps.includes("周末与中国法定节假日全天谷")).toBeTruthy();
+  });
+
+  it("余额文案不受节假日影响", () => {
+    expect(caps.includes("余额 ¥110.50")).toBeTruthy();
+  });
+});
+
+describe("G7e 自定义集透传对照（#945 P7）", () => {
+  it("nextPeakTransition 空集：节假日峰窗时刻判峰，切谷在当日 04:00", () => {
+    const tr = nextPeakTransition(utc(2026, 2, 17, 2, 0), new Set());
+    expect(tr.toPeak).toBe(false);
+  });
+
+  it("nextPeakTransition 空集切谷点为当日 04:00", () => {
+    expect(nextPeakTransition(utc(2026, 2, 17, 2, 0), new Set()).at).toBe(utc(2026, 2, 17, 4, 0));
+  });
+
+  it("nextPeakTransition 含节假日自定义集：仅跳过表内单日，下一开峰为 02-18 01:00", () => {
+    expect(nextPeakTransition(utc(2026, 2, 17, 2, 0), new Set(["2026-02-17"])).at).toBe(
+      utc(2026, 2, 18, 1, 0),
+    );
+  });
+
+  it("peakBadgeHtml 空集：节假日峰窗时刻渲染为峰", () => {
+    expect(peakBadgeHtml(utc(2026, 2, 17, 2, 0), new Set())).toMatch(/⚡峰 · 距谷 \d{2,}:\d{2}/);
+  });
+
+  it("peakBadgeHtml 含节假日自定义集：渲染为谷", () => {
+    expect(peakBadgeHtml(utc(2026, 2, 17, 2, 0), new Set(["2026-02-17"]))).toMatch(
+      /⚡谷 · 距峰 \d{2,}:\d{2}/,
+    );
+  });
+});
+
+describe("G7d 16 天长连休前瞻（#945：无 t+7d 兜底误判）", () => {
+  it("春节前最后一个峰窗结束后续跳 11 天到 02-24 01:00", () => {
+    expect(nextPeakTransition(utc(2026, 2, 13, 10, 0)).at).toBe(utc(2026, 2, 24, 1, 0));
+  });
+
+  it("春节前倒计时 255 小时（非 7 天兜底）", () => {
+    expect(peakBadgeHtml(utc(2026, 2, 13, 10, 0))).toMatch(/距峰 255:00/);
+  });
+
+  it("国庆段：09-30 切谷后跳到 10-08 01:00（约 13.5 天）", () => {
+    expect(nextPeakTransition(utc(2026, 9, 30, 10, 0)).at).toBe(utc(2026, 10, 8, 1, 0));
+  });
+
+  it("国庆前倒计时 183 小时", () => {
+    expect(peakBadgeHtml(utc(2026, 9, 30, 10, 0))).toMatch(/距峰 183:00/);
+  });
+
+  it("国庆首日谷态倒计时指向 10-08 开峰", () => {
+    expect(nextPeakTransition(utc(2026, 10, 1, 2, 0)).at).toBe(utc(2026, 10, 8, 1, 0));
   });
 });
 

@@ -14,10 +14,20 @@ import {
   API_KEY_REF_RE,
   CONFIG_VERSION,
   FROZEN_PRESETS,
+  MAX_CUSTOM_DESCRIPTION,
+  MAX_CUSTOM_LABEL,
+  MAX_CUSTOM_PRESETS,
+  PRESET_ID_RE,
   RETIRED_KEYS,
+  containsCjk,
   keyShapeCategory,
 } from "../../../shared/interface.ts";
-import type { AutomationCap, ConfigV1, KeyShapeCategory } from "../../../shared/interface.ts";
+import type {
+  AutomationCap,
+  ConfigV1,
+  CustomPreset,
+  KeyShapeCategory,
+} from "../../../shared/interface.ts";
 
 /** PUT 允许键（白名单；之外一律 400。envelope.ts 共用，故导出）。 */
 export const ALLOWED_PUT_KEYS = [
@@ -28,6 +38,7 @@ export const ALLOWED_PUT_KEYS = [
   "maxConcurrency",
   "truncBudget",
   "presets",
+  "customPresets",
   "history",
 ] as const;
 
@@ -45,6 +56,7 @@ export interface ConfigPutPatch {
     readonly automationCap: AutomationCap;
   }[];
   readonly history?: { readonly perSession?: number; readonly totalSessions?: number };
+  readonly customPresets?: readonly CustomPreset[];
 }
 
 /** 校验失败（HTTP 400 的负载来源；必含 errorCode + category）。 */
@@ -151,6 +163,81 @@ export function normalizeLoadedConfig(raw: unknown): {
 }
 
 /** 校验 PUT 体（成功即补丁；失败只回类别+码，不回显原文）。 */
+/** 校验自建自定义预设整列（全量替换语义；id 保留字/形状/唯一，名与描述长度，cap 三档）。 */
+export function validateCustomPresets(
+  raw: unknown,
+):
+  | { readonly ok: true; readonly list: CustomPreset[] }
+  | { readonly ok: false; readonly failure: PutFailure } {
+  const bad = (
+    errorCode: string,
+    message: string,
+  ): { readonly ok: false; readonly failure: PutFailure } => ({
+    ok: false,
+    failure: { errorCode, category: "bad-request", message },
+  });
+  if (!Array.isArray(raw)) return bad("INVALID_CUSTOM", "customPresets must be an array");
+  if (raw.length > MAX_CUSTOM_PRESETS) {
+    return bad("INVALID_CUSTOM", "customPresets holds <=" + MAX_CUSTOM_PRESETS + " entries");
+  }
+  const frozenIds = new Set(FROZEN_PRESETS.map((preset) => preset.id));
+  const seen = new Set<string>();
+  const list: CustomPreset[] = [];
+  const now = Date.now();
+  for (const item of raw as unknown[]) {
+    if (!isRecord(item) || typeof item["id"] !== "string") {
+      return bad("INVALID_CUSTOM", "custom preset needs id");
+    }
+    const id = item["id"] as string;
+    if (!PRESET_ID_RE.test(id) || containsCjk(id)) {
+      return bad("BAD_CUSTOM_ID", "custom id must be ASCII a-z0-9- 1..64");
+    }
+    if (frozenIds.has(id)) {
+      return bad("RESERVED_PRESET", "custom id collides with a frozen preset: " + id);
+    }
+    if (seen.has(id)) return bad("DUPLICATE_CUSTOM_ID", "custom ids must be unique");
+    seen.add(id);
+    const label = item["label"];
+    if (
+      typeof label !== "string" ||
+      label.trim().length === 0 ||
+      Array.from(label).length > MAX_CUSTOM_LABEL
+    ) {
+      return bad("INVALID_CUSTOM", "custom label must be 1.." + MAX_CUSTOM_LABEL + " chars");
+    }
+    const description = item["description"];
+    if (
+      typeof description !== "string" ||
+      description.trim().length === 0 ||
+      Array.from(description).length > MAX_CUSTOM_DESCRIPTION
+    ) {
+      return bad(
+        "INVALID_CUSTOM",
+        "custom description must be 1.." + MAX_CUSTOM_DESCRIPTION + " chars",
+      );
+    }
+    if (typeof item["enabled"] !== "boolean") {
+      return bad("INVALID_CUSTOM", "custom entry needs boolean enabled");
+    }
+    const cap = item["automationCap"];
+    if (cap !== 0 && cap !== 1 && cap !== 2) {
+      return bad("INVALID_CUSTOM", "automationCap must be 0|1|2");
+    }
+    const stamp = (v: unknown): number =>
+      typeof v === "number" && Number.isFinite(v) && v >= 0 ? Math.floor(v) : now;
+    list.push({
+      id,
+      label: label as string,
+      description: description as string,
+      enabled: item["enabled"] as boolean,
+      automationCap: cap as AutomationCap,
+      createdAt: stamp(item["createdAt"]),
+      updatedAt: now,
+    });
+  }
+  return { ok: true, list };
+}
+
 export function validatePutBody(
   body: unknown,
 ):
@@ -395,6 +482,12 @@ export function validatePutBody(
       ...(totalSessions !== undefined ? { totalSessions } : {}),
     };
   }
+  let customPresets: ConfigPutPatch["customPresets"];
+  if (body["customPresets"] !== undefined) {
+    const checked = validateCustomPresets(body["customPresets"]);
+    if (!checked.ok) return checked;
+    customPresets = checked.list;
+  }
   return {
     ok: true,
     patch: {
@@ -405,6 +498,7 @@ export function validatePutBody(
       ...(truncBudget !== undefined ? { truncBudget } : {}),
       ...(presets !== undefined ? { presets } : {}),
       ...(history !== undefined ? { history } : {}),
+      ...(customPresets !== undefined ? { customPresets } : {}),
     },
   };
 }
