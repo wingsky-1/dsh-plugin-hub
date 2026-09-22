@@ -17,7 +17,7 @@ import type {
   ConfigSnapshotView,
   LanProxySettingsView,
   PutResultView,
-} from "./shared/view.ts";
+} from "./shared/interface.ts";
 import {
   evaluateHostTrust,
   readHostTrustSignals,

@@ -5,6 +5,7 @@
  */
 import { join } from "node:path";
 import { dshHome } from "../../../../../../shared/dsh-home.js";
+import { pluginHome } from "../../../../../../shared/paths.js";
 import {
   CONFIG_FILE_NAME,
   PACKAGE_DIR,
@@ -16,7 +17,7 @@ import {
 
 /** 本插件在 DSH home 下的独立命名空间目录。 */
 export function jevHome(home?: string): string {
-  return join(home ?? dshHome(), PACKAGE_DIR);
+  return pluginHome(home ?? dshHome(), PACKAGE_DIR);
 }
 
 /** config.json 完整路径。 */
