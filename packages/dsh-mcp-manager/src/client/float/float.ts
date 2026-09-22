@@ -11,7 +11,7 @@ import { api, toolDisableServerKey, cwdQueryOf } from "../core/api.ts";
 import { STATUS_ORDER, statusDot } from "../core/constants.ts";
 import { tStatus } from "../core/i18n.ts";
 import { t } from "../../../../../shared/client/i18n.js";
-import type { McpState, UiActions } from "../core/state.ts";
+import type { McpClientContext, McpState, UiActions } from "../core/state.ts";
 import {
   DEFAULT_Z_INDEX_BASE,
   breakpointForWidth,
@@ -475,7 +475,7 @@ export function panelHost(): any {
 }
 
 /** 从 settings.yaml 读取的配置决定新/老会话垂直偏移。 */
-export function floatTopOffset(ctx: any, state: McpState): number {
+export function floatTopOffset(ctx: McpClientContext, state: McpState): number {
   const snap = ctx?.sessions?.list?.getSnapshot?.();
   const current = snap?.current;
   const session = current === undefined ? undefined : snap?.byId?.[current];
@@ -490,7 +490,7 @@ export function floatTopOffset(ctx: any, state: McpState): number {
  * 挂载浮窗：胶囊继续挂在会话滚动容器（scrollBody）内并钉住右上角，下拉面板
  * fixed 跟随。返回 disposer 函数。
  */
-export function mountFloat(ctx: any, state: McpState, actions: UiActions): () => void {
+export function mountFloat(ctx: McpClientContext, state: McpState, actions: UiActions): () => void {
   const pill = el("button", {
     type: "button",
     class: "dm-float",

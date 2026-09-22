@@ -120,3 +120,53 @@ export interface UiActions {
   showPanel: () => void;
   toggleFloat: (force?: boolean) => void;
 }
+
+/**
+ * 会话快照条目（S2 ctx 形状最小面：cwd/blank；H6 不反向依赖未清洁形状）。
+ */
+export interface McpSessionEntry {
+  cwd?: string;
+  blank?: boolean;
+}
+
+/**
+ * 会话快照（S2：current/byId 最小面；成员一律 optional，调用侧 ?./typeof 守卫保留 H4）。
+ */
+export interface McpSessionSnapshot {
+  current?: string;
+  byId?: Record<string, McpSessionEntry>;
+}
+
+/** 会话列表服务最小面（成员一律 optional）。 */
+export interface McpSessionList {
+  getSnapshot?: () => McpSessionSnapshot | undefined;
+  subscribe?: (listener: () => void) => () => void;
+}
+
+/** locale 服务最小面（成员一律 optional；调用前 typeof 守卫保留 H4）。 */
+export interface McpLocaleService {
+  register?: (ns: string, dict: unknown) => void;
+  subscribe?: (listener: () => void) => () => void;
+  getSnapshot?: () => unknown;
+  bind?: (ns: string) => (key: string, params?: Record<string, unknown>) => string;
+}
+
+/** slots 服务最小面（成员一律 optional；调用侧 typeof/?. 守卫承接，G2 零行为改动）。 */
+export interface McpSlotsService {
+  inject?: (name: string, setup: () => unknown) => void;
+  register?: (item: Record<string, unknown>, render: () => unknown) => unknown;
+}
+
+/**
+ * 客户端上下文最小面（S2：get 重载 + effect + sessions?；H6 不反向依赖未清洁形状）。
+ * get("locale"/"slots")返回 optional 视图，未声明服务时为 undefined；其余名回落 unknown。
+ */
+export interface McpClientContext {
+  get(name: "locale"): McpLocaleService | undefined;
+  get(name: "slots"): McpSlotsService | undefined;
+  get(name: string): unknown;
+  effect: (fn: () => () => void, label?: string) => void;
+  sessions?: {
+    list?: McpSessionList;
+  };
+}

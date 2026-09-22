@@ -21,7 +21,14 @@ import STYLE from "./style.css";
 import { ensureStyle } from "../../../../shared/client/ensure-style.js";
 import * as React from "react";
 
-import { createState, type McpState, type UiActions } from "./core/state.ts";
+import {
+  createState,
+  type ClientUiConfig,
+  type McpClientContext,
+  type McpServerListEntry,
+  type McpState,
+  type UiActions,
+} from "./core/state.ts";
 import { api } from "./core/api.ts";
 import { refresh, switchTab, close, showPanel, disposePanel } from "./float/panel.ts";
 import { resetForm, beginEdit } from "./float/quick-add.ts";
@@ -47,7 +54,7 @@ declare module "@deepseek-ai/dsh-client-ui-slots" {
   }
 }
 
-export function apply(ctx: any): void {
+export function apply(ctx: McpClientContext): void {
   const state: McpState = createState();
   const actions: UiActions = {
     refresh: () => refresh(state, actions),
@@ -56,7 +63,7 @@ export function apply(ctx: any): void {
     showPanel: () => showPanel(state, actions),
     toggleFloat: (force?: boolean) => toggleFloat(state, actions, force),
     resetForm: () => resetForm(state),
-    beginEdit: (server: any) => beginEdit(state, actions, server),
+    beginEdit: (server: McpServerListEntry) => beginEdit(state, actions, server),
   };
 
   try {
@@ -64,7 +71,7 @@ export function apply(ctx: any): void {
     // t 经共享模块活绑定（多文件 client 共用），语言切换 subscribe 重绑
     // （浮窗/面板下次渲染即生效）。unsubLocale 供 effect 卸载时解绑（T4，
     // 对齐 provider-usage 范式），防重复 apply 后旧订阅持续重绑已停用实例。
-    const locale: any = ctx.get("locale");
+    const locale = ctx.get("locale");
     let unsubLocale: (() => void) | undefined;
     if (locale && typeof locale.register === "function") {
       try {
@@ -83,7 +90,7 @@ export function apply(ctx: any): void {
     // 注入样式（幂等；容错：重复 apply 不重复创建——幂等实现收敛 shared/client/ensure-style）
     ensureStyle({ id: "dsh-mcp-manager-style", cssText: STYLE });
 
-    const disposers: any[] = [];
+    const disposers: (() => void)[] = [];
 
     // 设置页插件卡（settings.plugin.item）：rc.7 起由 list(id) 改为 keyed(key)，
     // 需 id 与 key 双写且 key = 宿主端 installSettingsNamespace 注册的命名空间
@@ -91,7 +98,7 @@ export function apply(ctx: any): void {
     const slots = ctx.get("slots");
     if (slots && typeof slots.inject === "function") {
       slots.inject("settings.plugin.item", () =>
-        slots.register(
+        slots.register!(
           {
             name: "settings.plugin.item",
             id: "dsh-mcp-manager",
@@ -109,7 +116,7 @@ export function apply(ctx: any): void {
 
     // 读取 settings.yaml 中的 UI 配置（右上/右下 + 偏移量），不依赖设置页。
     api(state.API.config)
-      .then((cfg: any) => {
+      .then((cfg: ClientUiConfig) => {
         if (cfg !== null && typeof cfg === "object") state.mcpUiConfig = cfg;
         state.updateFloatState?.();
       })
@@ -117,7 +124,7 @@ export function apply(ctx: any): void {
 
     // 首次刷新：立即执行，失败按 500ms/1s/2s 退避重试（宿主路由可能尚未就绪，
     // 不依赖固定延迟猜测）。
-    let retryTimer: any = undefined;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined = undefined;
     const attemptRefresh = (attempt: number) => {
       refresh(state, actions)
         .then((ok) => {
@@ -125,7 +132,7 @@ export function apply(ctx: any): void {
             retryTimer = setTimeout(() => attemptRefresh(attempt + 1), 500 * 2 ** attempt);
           }
         })
-        .catch((error: any) => {
+        .catch((error: unknown) => {
           // 防御：refresh 永不 reject（内部 try/catch），但兜底避免 unhandled rejection。
           console.warn("[dsh-mcp-manager] 首刷失败：", error);
         });
@@ -141,15 +148,15 @@ export function apply(ctx: any): void {
     //   - 服务端 30s data ping 心跳（routes.ts SSE_HEARTBEAT_MS）供失活信号；
     //   - 60s watchdog：超时无帧判定半开，关旧建新；
     //   - visibilitychange 回前台：强制关旧 EventSource 重建。
-    let es: any = undefined;
-    let refreshTimer: any = undefined;
+    let es: EventSource | undefined = undefined;
+    let refreshTimer: ReturnType<typeof setTimeout> | undefined = undefined;
     let esFailures = 0;
-    let pollTimer: any = undefined;
+    let pollTimer: ReturnType<typeof setTimeout> | undefined = undefined;
     // watchdog 状态：收到任意数据帧即喂狗；超时 → 受控重建。
     const WATCHDOG_MS = 60_000;
     let lastActivity = 0;
     let lastReconnectAt = 0;
-    let watchdog: any = undefined;
+    let watchdog: ReturnType<typeof setTimeout> | undefined = undefined;
     // SSE 已放弃 → 轮询接管，禁止任何路径再建 EventSource。
     let eventsRetired = false;
     const scheduleRefresh = () => {
@@ -224,7 +231,7 @@ export function apply(ctx: any): void {
       const now = Date.now();
       if (now - lastRecoverAt < 10_000) return;
       void api(state.API.servers)
-        .then((payload: any) => {
+        .then((payload: { projectRoot?: unknown } | undefined) => {
           if (payload?.projectRoot !== undefined) return; // 宿主状态正常
           const cwd = state.currentCwd;
           if (typeof cwd !== "string" || cwd === "") return;
@@ -247,7 +254,7 @@ export function apply(ctx: any): void {
         es.onmessage = (ev: MessageEvent) => {
           // 收到任意数据帧即喂狗（含心跳 ping 帧）：链路活性证明。
           lastActivity = Date.now();
-          let msg: any;
+          let msg: { type?: string } | undefined;
           try {
             msg = JSON.parse(String(ev.data));
           } catch {
@@ -260,7 +267,7 @@ export function apply(ctx: any): void {
             // 配置变更（设置页保存 position/offset）→ 重新 GET /config 就地更新浮窗
             // 位置，非仅刷新 /servers；更新后重新定位胶囊与（若展开的）面板。
             void api(state.API.config)
-              .then((cfg: any) => {
+              .then((cfg: ClientUiConfig) => {
                 if (cfg !== null && typeof cfg === "object") {
                   state.mcpUiConfig = cfg;
                 }

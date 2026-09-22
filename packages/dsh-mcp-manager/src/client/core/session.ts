@@ -6,7 +6,7 @@
  */
 
 import { api } from "./api.ts";
-import type { McpState, UiActions } from "./state.ts";
+import type { McpClientContext, McpState, UiActions } from "./state.ts";
 
 /**
  * 强制重绑当前会话（绕过 bindSession 的 cwd 未变短路）。
@@ -27,13 +27,17 @@ export function rebindSession(state: McpState): Promise<unknown> {
 }
 
 /** 跟随当前会话：cwd 变化 → 通知宿主切换项目级 MCP + 刷新浮窗。 */
-export function bindSession(ctx: any, state: McpState, actions: UiActions): () => void {
+export function bindSession(
+  ctx: McpClientContext,
+  state: McpState,
+  actions: UiActions,
+): () => void {
   const list = ctx.sessions?.list;
   if (list === undefined || typeof list.getSnapshot !== "function") return () => {};
   const sync = () => {
-    let cwd: any;
+    let cwd: string | undefined;
     try {
-      const snapshot = list.getSnapshot();
+      const snapshot = list.getSnapshot!();
       const sessionId = snapshot?.current;
       cwd = sessionId === undefined ? undefined : snapshot?.byId?.[sessionId]?.cwd;
     } catch {
