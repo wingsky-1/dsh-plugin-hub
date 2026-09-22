@@ -6,7 +6,7 @@
  * blankY/offsetY 回落链、快照缺失）及 McpClientContext.effect 配对（label 透传 +
  * disposer 执行，对齐 apply ctx.effect 语义）。
  *
- * 离线，无落盘。直连 src/client（client-unit 层，自动落 testLayers，无 topology 改动）。
+ * 离线，无落盘。直连 src/client（client-unit 层，自动落 testLayers；已认领进 client-panel 段——所测 state.ts 归属该段，session/float 暂无归属段故同落，k 约 0；变异无信号声明见 PR 正文）。
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { bindSession } from "../../src/client/core/session.ts";
