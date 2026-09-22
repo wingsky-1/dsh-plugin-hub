@@ -888,7 +888,7 @@
   align-items: center;
   gap: 6px;
   flex-wrap: wrap;
-  margin-bottom: 6px;
+  margin-bottom: 10px;
 }
 .dou-reportPromptTab {
   border: 1px solid var(--dsw-alias-border-l1, #e2e5ea);
@@ -1050,6 +1050,8 @@
   font-style: normal;
   line-height: 1.75;
   word-spacing: 0.02em;
+  /* R5 外层大框内边距：无 padding 时内容贴框（真机 390px 取证） */
+  padding: 12px;
 }
 .dou-reportHead {
   display: flex;
@@ -1243,6 +1245,10 @@
 }
 /* 窄屏：摘要允许换行占整行，不挤压标题与脏徽标 */
 @media (max-width: 480px) {
+  /* R5 窄屏大框内边距与外层对齐 */
+  .dou-report {
+    padding: 10px;
+  }
   .dou-reportSectionSummary {
     flex-basis: 100%;
     white-space: normal;
