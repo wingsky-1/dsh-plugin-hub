@@ -4,7 +4,7 @@
  * 把路由改成手写字面量、解析放宽任一改动，本文件必红。
  * 注：宿主已删 CLIENT_ROUTES，本文件对应断言随之移除（仅 APP_ROUTES 回落）。
  */
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { APP_ROUTES } from "../../src/client/api/routes.ts";
 import {
   capLabel,
@@ -25,6 +25,53 @@ describe("两端路由一致性", () => {
     expect(APP_ROUTES.presets).toBe(ROUTES.presets);
     expect(APP_ROUTES.history).toBe(ROUTES.history);
     expect(APP_ROUTES.testConnection).toBe(ROUTES.testConnection);
+  });
+  it("有注入时非空串优先、空串/非串回落（模块重载隔离全局）", async () => {
+    const g = globalThis as unknown as Record<string, unknown>;
+    const had = "__DSH_ROUTES__" in g;
+    const prev = g.__DSH_ROUTES__;
+    try {
+      g.__DSH_ROUTES__ = { health: "/h2", config: 42, presets: "", history: "/y2" };
+      // 标准重载手法（vitest vi.resetModules）：静态说明符过 tsc 编译面，
+      // 注册表击穿后重执行模块，注入值只影响本次导入的实例。
+      vi.resetModules();
+      const reloaded = await import("../../src/client/api/routes.ts");
+      expect(reloaded.APP_ROUTES.health).toBe("/h2");
+      expect(reloaded.APP_ROUTES.config).toBe(ROUTES.config);
+      expect(reloaded.APP_ROUTES.presets).toBe(ROUTES.presets);
+      expect(reloaded.APP_ROUTES.history).toBe("/y2");
+      expect(reloaded.APP_ROUTES.testConnection).toBe(ROUTES.testConnection);
+    } finally {
+      if (had) g.__DSH_ROUTES__ = prev;
+      else delete g.__DSH_ROUTES__;
+    }
+    expect(APP_ROUTES.health).toBe(ROUTES.health);
+  });
+  it("fetchTimeout 自带 signal 直透、缺省挂超时 signal", async () => {
+    const g = globalThis as unknown as Record<string, unknown>;
+    const prevFetch = g.fetch;
+    const calls: Array<{ readonly url: unknown; readonly init: unknown }> = [];
+    try {
+      g.fetch = (async (url: unknown, init: unknown) => {
+        calls.push({ url, init });
+        return new Response("{}");
+      }) as typeof fetch;
+      vi.resetModules();
+      const mod = await import("../../src/client/api/routes.ts");
+      const sig = new AbortController().signal;
+      const init = { signal: sig };
+      await mod.fetchTimeout("https://x/health", init);
+      expect(calls).toHaveLength(1);
+      expect(calls[0]?.init).toBe(init);
+      await mod.fetchTimeout("https://x/config");
+      expect(calls).toHaveLength(2);
+      const wrapped = calls[1]?.init as { signal?: unknown };
+      expect(wrapped.signal instanceof AbortSignal).toBe(true);
+      expect(wrapped.signal).not.toBe(sig);
+    } finally {
+      if (prevFetch === undefined) delete g.fetch;
+      else g.fetch = prevFetch;
+    }
   });
   it("validApiKeyRef 与共享正则同判定", () => {
     for (const good of ["JEV_API_KEY", "A1"]) {

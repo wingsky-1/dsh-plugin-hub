@@ -12,6 +12,7 @@ export default defineConfig({
       'packages/dsh-jev-decide/test/client-dom/locale-host.test.ts',
       'packages/dsh-jev-decide/test/client-dom/panes-probability.test.ts',
       'packages/dsh-jev-decide/test/client-dom/tabs-mask-history.test.ts',
+      'packages/dsh-jev-decide/test/client-unit/format.test.ts',
       'packages/dsh-jev-decide/test/client-unit/locale-i18n.test.ts',
       'packages/dsh-jev-decide/test/client-unit/routes-consistency.test.ts',
       'packages/dsh-jev-decide/test/integration/api.test.ts',
