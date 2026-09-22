@@ -336,6 +336,58 @@ test("#742 阶段 1.7: invalidateBaseline 由 test 变更清单决定，清单�
   }
 });
 
+test("P1-D2: 段条目只失效该段（单段配置变更不再连坐整包）", () => {
+  const envOf = (over: Record<string, string | undefined>) => ({
+    GLOBAL_HIT: "false",
+    FILTER_OUTCOME: "success",
+    BASE_SET: "dsh-notifier dsh-lan-proxy",
+    FILTER_OUTPUTS: "{}",
+    ...over,
+  });
+  const pick = (res: ReturnType<typeof computeCiMatrix>) =>
+    Object.fromEntries(
+      res.mutationCombos.map((c) => [`${c.package}-${c.seg}`, c.invalidateBaseline]),
+    );
+
+  // 单段条目：只有该段失基线（#961 纯测试 PR 形状的反面：配置只动一段就只跑一段）
+  const seg = pick(
+    computeCiMatrix({
+      env: envOf({ TEST_CHANGED_PACKAGES: '["dsh-notifier:pipeline"]' }),
+      rootDir: ROOT,
+    }),
+  );
+  assert.equal(seg["dsh-notifier-pipeline"], true, "命中段必须失基线");
+  for (const [key, v] of Object.entries(seg)) {
+    if (key === "dsh-notifier-pipeline") continue;
+    assert.equal(v, false, `${key} 不得被单段条目连坐`);
+  }
+
+  // 混合：包条目仍整包失效，段条目只影响本段
+  const mixed = pick(
+    computeCiMatrix({
+      env: envOf({ TEST_CHANGED_PACKAGES: '["dsh-notifier", "dsh-lan-proxy:ca"]' }),
+      rootDir: ROOT,
+    }),
+  );
+  for (const [key, v] of Object.entries(mixed)) {
+    if (key.startsWith("dsh-notifier-")) assert.equal(v, true, `${key} 跟包条目整包失效`);
+    else if (key === "dsh-lan-proxy-ca") assert.equal(v, true, "命中段失效");
+    else assert.equal(v, false, `${key} 不得被跨包段条目连坐`);
+  }
+
+  // 形状非法的含冒号串回落包语义（命中 nothing，不静默全量也不静默复用）
+  const malformed = pick(
+    computeCiMatrix({
+      env: envOf({ TEST_CHANGED_PACKAGES: '[":", "a:b:c", ":seg"]' }),
+      rootDir: ROOT,
+    }),
+  );
+  assert.ok(
+    Object.values(malformed).every((v) => v === false),
+    "非法条目不得触发任何失基线（旧语义：包集合命中 nothing）",
+  );
+});
+
 test("#742 阶段 1.7: parseTestChangedPackages 的非法形态一律 unknown（调用方 fail-closed）", () => {
   for (const bad of [undefined, null, "", "  ", "not-json", '{"a":1}', "1"]) {
     const r = parseTestChangedPackages(bad);
@@ -345,6 +397,12 @@ test("#742 阶段 1.7: parseTestChangedPackages 的非法形态一律 unknown（
   const ok = parseTestChangedPackages('["dsh-notifier","dsh-lan-proxy"]');
   assert.equal(ok.unknown, false);
   assert.deepEqual([...ok.packages].sort(), ["dsh-lan-proxy", "dsh-notifier"]);
+  assert.deepEqual([...ok.segments], []);
+  // P1-D2：段条目拆到 segments 集，不进 packages 集
+  const seg = parseTestChangedPackages('["dsh-notifier", "dsh-notifier:pipeline"]');
+  assert.equal(seg.unknown, false);
+  assert.deepEqual([...seg.packages], ["dsh-notifier"]);
+  assert.deepEqual([...seg.segments], ["dsh-notifier:pipeline"]);
   // 数组里混入非字符串：过滤掉而不是整体判未知（清单本身可信，只是形状脏）
   const mixed = parseTestChangedPackages('["dsh-notifier",1,null]');
   assert.equal(mixed.unknown, false);
