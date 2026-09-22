@@ -32,7 +32,7 @@
   "cleanTempDir": true,
   "vitest": {
     "related": false,
-    "configFile": "vitest.stryker.d/dsh-lan-proxy.config.ts"
+    "configFile": "vitest.stryker.d/dsh-lan-proxy-client.config.ts"
   },
   "jsonReporter": {
     "fileName": "coverage/mutation/dsh-lan-proxy-client.json"

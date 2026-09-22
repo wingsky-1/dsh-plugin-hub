@@ -23,7 +23,7 @@
   "cleanTempDir": true,
   "vitest": {
     "related": false,
-    "configFile": "vitest.stryker.d/dsh-worktree-sidebar.config.ts"
+    "configFile": "vitest.stryker.d/dsh-worktree-sidebar-_single.config.ts"
   },
   "jsonReporter": {
     "fileName": "coverage/mutation/dsh-worktree-sidebar.json"

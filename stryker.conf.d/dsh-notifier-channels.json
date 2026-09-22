@@ -35,7 +35,7 @@
   "cleanTempDir": true,
   "vitest": {
     "related": false,
-    "configFile": "vitest.stryker.d/dsh-notifier.config.ts"
+    "configFile": "vitest.stryker.d/dsh-notifier-channels.config.ts"
   },
   "jsonReporter": {
     "fileName": "coverage/mutation/dsh-notifier-channels.json"

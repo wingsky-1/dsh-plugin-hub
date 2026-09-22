@@ -34,12 +34,12 @@
   "cleanTempDir": true,
   "vitest": {
     "related": false,
-    "configFile": "vitest.stryker.d/dsh-lan-proxy.config.ts"
+    "configFile": "vitest.stryker.d/dsh-lan-proxy-shared.config.ts"
   },
   "jsonReporter": {
     "fileName": "coverage/mutation/dsh-lan-proxy-shared.json"
   },
   "incremental": true,
   "incrementalFile": "coverage/mutation/incremental-lan-proxy-shared.json",
-  "_comment": "#826 域归位：shared 叶子（重排时新提取的共用面——默认值 / WS 压缩策略 / 回环判定，域与配置 schema 同向依赖它）；门面按 facade 口径进 coverageExcludes；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
+  "_comment": "#826 域归位：shared 叶子（重排时新提取的共用面——默认值 / WS 压缩策略 / 回环判定，域与配置 schema 同向依赖它）；门面按 facade 口径进 coverageExcludes；测试按段 testFiles 清单跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
 }

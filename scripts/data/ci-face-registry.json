@@ -284,6 +284,16 @@
       "why": "同上。"
     },
     {
+      "path": "vitest.stryker.d/dsh-worktree-sidebar-*.config.ts",
+      "invalidatesBaseline": true,
+      "faces": ["dsh-worktree-sidebar"],
+      "consumerGap": {
+        "kind": "indirect",
+        "reason": "stryker 经段级 stryker.conf.d/dsh-worktree-sidebar.json 的 vitest.configFile 读取（P2 显式段）；生成与 --check 比对在 scripts/gate/gen-stryker-conf.mjs，按派生路径拼名。"
+      },
+      "why": "P2 段级测试面配置：改段清单只失效该段，包级配置仍整包失效。"
+    },
+    {
       "path": "vitest.stryker.d/dsh-jev-decide.config.ts",
       "invalidatesBaseline": true,
       "faces": ["dsh-jev-decide"],
@@ -294,6 +304,16 @@
       "why": "同上。"
     },
     {
+      "path": "vitest.stryker.d/dsh-jev-decide-*.config.ts",
+      "invalidatesBaseline": true,
+      "faces": ["dsh-jev-decide"],
+      "consumerGap": {
+        "kind": "indirect",
+        "reason": "stryker 经段级 stryker.conf.d/dsh-jev-decide-<seg>.json 的 vitest.configFile 读取（P2 显式段）；生成与 --check 比对在 scripts/gate/gen-stryker-conf.mjs，按派生路径拼名。"
+      },
+      "why": "P2 段级测试面配置：改段清单只失效该段，包级配置仍整包失效。"
+    },
+    {
       "path": "vitest.stryker.d/dsh-notifier.config.ts",
       "invalidatesBaseline": true,
       "faces": ["dsh-notifier"],
@@ -302,6 +322,16 @@
         "reason": "stryker 经 stryker.conf.d/dsh-notifier-*.json 的 vitest.configFile 读取；生成与 --check 比对在 scripts/gate/gen-stryker-conf.mjs，按派生路径拼名，不含逐包字面量，故无字面命中的仓内直接读取方。"
       },
       "why": "包级 stryker 测试面配置：定义该包进变异面的测试文件清单，此前完全不在任何 filters 内（#742 阶段 2.2）。"
+    },
+    {
+      "path": "vitest.stryker.d/dsh-notifier-*.config.ts",
+      "invalidatesBaseline": true,
+      "faces": ["dsh-notifier"],
+      "consumerGap": {
+        "kind": "indirect",
+        "reason": "stryker 经段级 stryker.conf.d/dsh-notifier-<seg>.json 的 vitest.configFile 读取（P2 显式段）；生成与 --check 比对在 scripts/gate/gen-stryker-conf.mjs，按派生路径拼名。"
+      },
+      "why": "P2 段级测试面配置：改段清单只失效该段，包级配置仍整包失效。"
     },
     {
       "path": "vitest.stryker.d/dsh-mcp-manager.config.ts",
@@ -334,6 +364,16 @@
       "why": "同上。"
     },
     {
+      "path": "vitest.stryker.d/dsh-provider-usage-*.config.ts",
+      "invalidatesBaseline": true,
+      "faces": ["dsh-provider-usage"],
+      "consumerGap": {
+        "kind": "indirect",
+        "reason": "stryker 经段级 stryker.conf.d/dsh-provider-usage-<seg>.json 的 vitest.configFile 读取（P2 显式段）；生成与 --check 比对在 scripts/gate/gen-stryker-conf.mjs，按派生路径拼名。"
+      },
+      "why": "P2 段级测试面配置：改段清单只失效该段，包级配置仍整包失效。"
+    },
+    {
       "path": "vitest.stryker.d/dsh-lan-proxy.config.ts",
       "invalidatesBaseline": true,
       "faces": ["dsh-lan-proxy"],
@@ -342,6 +382,16 @@
         "reason": "stryker 经 stryker.conf.d/dsh-lan-proxy-*.json 的 vitest.configFile 读取；生成与 --check 比对在 scripts/gate/gen-stryker-conf.mjs，按派生路径拼名，不含逐包字面量，故无字面命中的仓内直接读取方。"
       },
       "why": "同上。"
+    },
+    {
+      "path": "vitest.stryker.d/dsh-lan-proxy-*.config.ts",
+      "invalidatesBaseline": true,
+      "faces": ["dsh-lan-proxy"],
+      "consumerGap": {
+        "kind": "indirect",
+        "reason": "stryker 经段级 stryker.conf.d/dsh-lan-proxy-<seg>.json 的 vitest.configFile 读取（P2 显式段）；生成与 --check 比对在 scripts/gate/gen-stryker-conf.mjs，按派生路径拼名。"
+      },
+      "why": "P2 段级测试面配置：改段清单只失效该段，包级配置仍整包失效。"
     },
     {
       "path": "test/smoke-lib.ts",

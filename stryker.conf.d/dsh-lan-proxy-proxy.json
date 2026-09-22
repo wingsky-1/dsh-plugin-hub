@@ -31,12 +31,12 @@
   "cleanTempDir": true,
   "vitest": {
     "related": false,
-    "configFile": "vitest.stryker.d/dsh-lan-proxy.config.ts"
+    "configFile": "vitest.stryker.d/dsh-lan-proxy-proxy.config.ts"
   },
   "jsonReporter": {
     "fileName": "coverage/mutation/dsh-lan-proxy-proxy.json"
   },
   "incremental": true,
   "incrementalFile": "coverage/mutation/incremental-lan-proxy-proxy.json",
-  "_comment": "#826 域归位：proxy 域——代理实现（原根 proxy.ts，单文件千行级）；沿用 #220 B 段「大文件独占一段」口径；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
+  "_comment": "#826 域归位：proxy 域——代理实现（原根 proxy.ts，单文件千行级）；沿用 #220 B 段「大文件独占一段」口径；测试按段 testFiles 清单跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
 }

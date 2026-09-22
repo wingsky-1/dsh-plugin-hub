@@ -162,6 +162,27 @@ test("P1-D2: segmentEntryFor 只认段级 conf，非段路径一律回落整包�
   );
 });
 
+test("P2c: 其余包段条目映射", () => {
+  const reg = JSON.parse(readFileSync(join(ROOT, "scripts/data/ci-face-registry.json"), "utf8"));
+  const topo = JSON.parse(readFileSync(join(ROOT, "scripts/data/mutation-topology.json"), "utf8"));
+  assert.deepEqual(
+    packagesToInvalidate(["stryker.conf.d/dsh-provider-usage-pipeline.json"], reg, topo),
+    ["dsh-provider-usage:pipeline"],
+  );
+  assert.deepEqual(
+    packagesToInvalidate(["vitest.stryker.d/dsh-lan-proxy-tls.config.ts"], reg, topo),
+    ["dsh-lan-proxy:tls"],
+  );
+  const jevClient = "packages/dsh-jev-decide/test/client-unit/format.test.ts";
+  const got = packagesToInvalidate([jevClient], reg, topo);
+  assert.ok(got.includes("dsh-jev-decide:client"), "client 测试须命中 client 段");
+  assert.ok(!got.includes("dsh-jev-decide"), "不得连坐整包");
+  assert.deepEqual(
+    packagesToInvalidate(["packages/dsh-worktree-sidebar/test/unit/tools.test.ts"], reg, topo),
+    ["dsh-worktree-sidebar"],
+  );
+});
+
 test("#742 1.7: 三点 diff 口径在真实 git 仓库里成立（含改名到 test/ 的形态）", () => {
   const repo = mkdtempSync(join(tmpdir(), "changed-test-pkgs-"));
   const git = (...args: string[]) =>
@@ -248,8 +269,11 @@ test("P2-L4: 测试文件按 topology testFiles 映射到段（回落/显式/未
   const face = projectTestSurface(ROOT, topo, "dsh-notifier").testFiles;
   assert.ok(face.length > 1, "notifier 变异面须有至少 2 个文件才可做映射断言");
   const [fa, fb] = face;
-  // 全回落（当前仓库态）：认领段 == 全段 → 收敛为整包（与 P1 行为一致）
-  assert.deepEqual(packagesToInvalidate([fa], reg, topo), ["dsh-notifier"]);
+  // P2c 起 notifier 已显式窄化：apply-lifecycle 横跨 channels/client（跨段杀灭的合法重叠）
+  assert.deepEqual(packagesToInvalidate([fa], reg, topo), [
+    "dsh-notifier:channels",
+    "dsh-notifier:client",
+  ]);
   // 合成窄化：一显式一回落，改文件只发射命中段
   const narrow = structuredClone(topo);
   narrow.packages["dsh-notifier"].segments = {

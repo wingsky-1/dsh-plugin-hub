@@ -37,7 +37,7 @@
   "cleanTempDir": true,
   "vitest": {
     "related": false,
-    "configFile": "vitest.stryker.d/dsh-provider-usage.config.ts"
+    "configFile": "vitest.stryker.d/dsh-provider-usage-trend-collect.config.ts"
   },
   "jsonReporter": {
     "fileName": "coverage/mutation/dsh-provider-usage-trend-collect.json"
