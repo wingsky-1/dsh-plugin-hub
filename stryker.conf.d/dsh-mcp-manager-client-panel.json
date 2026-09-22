@@ -32,7 +32,7 @@
   "cleanTempDir": true,
   "vitest": {
     "related": false,
-    "configFile": "vitest.stryker.d/dsh-mcp-manager.config.ts"
+    "configFile": "vitest.stryker.d/dsh-mcp-manager-client-panel.config.ts"
   },
   "jsonReporter": {
     "fileName": "coverage/mutation/dsh-mcp-manager-client-panel.json"

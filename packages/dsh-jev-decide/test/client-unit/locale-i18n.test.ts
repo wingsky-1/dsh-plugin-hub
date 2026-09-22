@@ -32,6 +32,47 @@ describe("双语平衡", () => {
   it("无 navigator 即英文（与 JEV 英文问答一致）", () => {
     expect(resolveLang()).toBe("en");
   });
+  it("navigator 属性缺席即英文（真删除全局键，非空转）", () => {
+    // 上一条在 Node 下空转（全局只读 navigator 恒存在）：本例真删除该键，
+    // 覆盖 nav?.language 的 OptionalChaining 分支（去问号即抛错打红）。
+    const prev = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+    try {
+      delete (globalThis as unknown as Record<string, unknown>).navigator;
+      expect("navigator" in globalThis).toBe(false);
+      expect(resolveLang()).toBe("en");
+    } finally {
+      if (prev !== undefined) Object.defineProperty(globalThis, "navigator", prev);
+    }
+    expect("navigator" in globalThis).toBe(true);
+  });
+  it("navigator.language 逐形态判定（大小写不敏感；缺键/非串回落英文）", () => {
+    // Node 24 全局自带只读 navigator（getter 无 setter）：直接赋值抛，须 defineProperty
+    // 打桩并按描述符原样恢复（用完即弃，不污染其他用例）。
+    const prev = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+    const stub = (value: unknown): void => {
+      Object.defineProperty(globalThis, "navigator", {
+        value,
+        configurable: true,
+        writable: true,
+      });
+    };
+    try {
+      stub({ language: "zh-CN" });
+      expect(resolveLang()).toBe("zh");
+      stub({ language: "ZH-HK" });
+      expect(resolveLang()).toBe("zh");
+      stub({ language: "en-US" });
+      expect(resolveLang()).toBe("en");
+      stub({});
+      expect(resolveLang()).toBe("en");
+      stub({ language: 42 });
+      expect(resolveLang()).toBe("en");
+    } finally {
+      if (prev === undefined) delete (globalThis as unknown as Record<string, unknown>).navigator;
+      else Object.defineProperty(globalThis, "navigator", prev);
+    }
+    expect(resolveLang()).toBe("en");
+  });
 });
 
 describe("语言切换", () => {

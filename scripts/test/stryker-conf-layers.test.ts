@@ -59,6 +59,7 @@ const TOPOLOGY = {
         only: {
           mutate: [`packages/${PKG}/src/**/*.ts`],
           excludes: [`!packages/${PKG}/src/client/**`],
+          testFiles: "*",
         },
       },
     },
@@ -549,8 +550,9 @@ function ratchetTopology(seg2Mutate, seg2Excludes = [`!packages/${PKG}/src/clien
     "1": {
       mutate: [`packages/${PKG}/src/index.ts`],
       excludes: [`!packages/${PKG}/src/client/**`],
+      testFiles: "*",
     },
-    "2": { mutate: seg2Mutate, excludes: seg2Excludes },
+    "2": { mutate: seg2Mutate, excludes: seg2Excludes, testFiles: "*" },
   };
   return base;
 }

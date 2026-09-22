@@ -33,12 +33,12 @@
   "cleanTempDir": true,
   "vitest": {
     "related": false,
-    "configFile": "vitest.stryker.d/dsh-mcp-manager.config.ts"
+    "configFile": "vitest.stryker.d/dsh-mcp-manager-supervisor.config.ts"
   },
   "jsonReporter": {
     "fileName": "coverage/mutation/dsh-mcp-manager-supervisor.json"
   },
   "incremental": true,
   "incrementalFile": "coverage/mutation/incremental-mcp-manager-supervisor.json",
-  "_comment": "#767 B2b 重画：supervisor——状态持久化（store）+统计（stats）；B2b 后文件归各域段。段名保留（段只是 glob 容器，ID 还绑着 stryker.conf.d 的 jsonReporter/incremental 与 mutation-segment-ledger）：#767 S1-5c 删自研连接栈后，原连接监督器与重连策略两条 glob（runtime/supervisor.ts+runtime/reconnect.ts）已是 0 命中死条目，随本刀删除，不再换新落点——本笔没有新增源文件，段名退役会连带 baseline-archive 段数哨兵 + ledger superseded + AGENTS.md 三处。W11b2a 删除 src/types 与 src/integration 后，原两条排除已成 0 命中死条目，随本刀删除；excludes 仅保留 client 一条（另一端）。测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
+  "_comment": "#767 B2b 重画：supervisor——状态持久化（store）+统计（stats）；B2b 后文件归各域段。段名保留（段只是 glob 容器，ID 还绑着 stryker.conf.d 的 jsonReporter/incremental 与 mutation-segment-ledger）：#767 S1-5c 删自研连接栈后，原连接监督器与重连策略两条 glob（runtime/supervisor.ts+runtime/reconnect.ts）已是 0 命中死条目，随本刀删除，不再换新落点——本笔没有新增源文件，段名退役会连带 baseline-archive 段数哨兵 + ledger superseded + AGENTS.md 三处。W11b2a 删除 src/types 与 src/integration 后，原两条排除已成 0 命中死条目，随本刀删除；excludes 仅保留 client 一条（另一端）。测试按段 testFiles 清单跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
 }

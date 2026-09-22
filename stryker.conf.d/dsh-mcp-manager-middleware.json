@@ -38,12 +38,12 @@
   "cleanTempDir": true,
   "vitest": {
     "related": false,
-    "configFile": "vitest.stryker.d/dsh-mcp-manager.config.ts"
+    "configFile": "vitest.stryker.d/dsh-mcp-manager-middleware.config.ts"
   },
   "jsonReporter": {
     "fileName": "coverage/mutation/dsh-mcp-manager-middleware.json"
   },
   "incremental": true,
   "incrementalFile": "coverage/mutation/incremental-mcp-manager-middleware.json",
-  "_comment": "#767 B2b 重画：middleware——中间层池（runtime/middleware+limits）+端口持有者（runtime/impl/）+工具注册面（inject/）+策略裁决族（pipeline/impl/authorize/）+模型可见面域（visibility/，笔 1b 新增：把 mcp__* 从每个 agent 的模型视野摘掉的 restrict 机制）；B2b 后文件归各域段，本段只留这七处（第六处之后新增的是 visibility；#922 新增 erasure/ 装配侧兜底擦除，同属模型可见面）。原 pipeline/authorize.ts 是 B1 搬迁前的字面量、实测 0 命中（真实落点已变为 pipeline/impl/authorize/），本刀替换为目录 glob；W11b2a 删除 src/types 与 src/integration 后，原两条排除已成 0 命中死条目，随本刀删除；excludes 仅保留 client 一条（另一端）。测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
+  "_comment": "#767 B2b 重画：middleware——中间层池（runtime/middleware+limits）+端口持有者（runtime/impl/）+工具注册面（inject/）+策略裁决族（pipeline/impl/authorize/）+模型可见面域（visibility/，笔 1b 新增：把 mcp__* 从每个 agent 的模型视野摘掉的 restrict 机制）；B2b 后文件归各域段，本段只留这七处（第六处之后新增的是 visibility；#922 新增 erasure/ 装配侧兜底擦除，同属模型可见面）。原 pipeline/authorize.ts 是 B1 搬迁前的字面量、实测 0 命中（真实落点已变为 pipeline/impl/authorize/），本刀替换为目录 glob；W11b2a 删除 src/types 与 src/integration 后，原两条排除已成 0 命中死条目，随本刀删除；excludes 仅保留 client 一条（另一端）。测试按段 testFiles 清单跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
 }

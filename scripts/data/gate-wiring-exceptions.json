@@ -205,7 +205,7 @@
       "step": "ci.yml|changes|base",
       "digest": "c82d977b493825ee",
       "reason": "已登记条件 `steps.base.outputs.base != ''` 的操作数来自这一步的 output（`steps.base.outputs.*`）；登记它的文本摘要，等于把「条件成立与否的输入面」也钉住——把产出改掉（例如 COUNT=0）会让条件永不成立，而条件原文一字不动",
-      "inputsDigest": "bdf07845297cd528",
+      "inputsDigest": "99b1872710f4f4af",
       "producersDigest": "e3b0c44298fc1c14"
     },
     {
@@ -445,7 +445,7 @@
     },
     {
       "job": "ci.yml|changes",
-      "digest": "4a30981dcc03e53f"
+      "digest": "488bf8c0f0f2d3f5"
     },
     {
       "job": "ci.yml|coverage",

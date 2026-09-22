@@ -92,6 +92,7 @@ const EXPECT_FILES: Record<string, string[]> = {
     "client-dom/panes-probability.test.ts",
     "client-dom/tabs-mask-history.test.ts",
     "client-helpers.ts",
+    "client-unit/format.test.ts",
     "client-unit/locale-i18n.test.ts",
     "client-unit/routes-consistency.test.ts",
     "integration/api.test.ts",
