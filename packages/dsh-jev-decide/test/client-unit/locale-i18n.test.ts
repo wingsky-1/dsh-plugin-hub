@@ -7,10 +7,18 @@
  */
 import { afterEach, describe, expect, it } from "vitest";
 import { capLabel } from "../../src/client/api/contract.ts";
-import { lang, resolveLang, setLang, t } from "../../src/client/locale.ts";
+import {
+  bindTranslate,
+  lang,
+  resolveLang,
+  setLang,
+  t,
+  unbindTranslate,
+} from "../../src/client/locale.ts";
 import { en, zh } from "../../src/client/locales.ts";
 
 afterEach(() => {
+  unbindTranslate();
   setLang("zh");
 });
 
@@ -50,6 +58,40 @@ describe("语言切换", () => {
     setLang("en");
     expect(capLabel(0)).toBe("none (manual only)");
     expect(capLabel(1)).toBe("low");
+    expect(capLabel(2)).toBe("high");
+  });
+});
+
+describe("宿主绑定（bindTranslate / unbindTranslate）", () => {
+  it("装配后 t 走宿主实现并透传 {n}（无参传 undefined）", () => {
+    const calls: Array<{ readonly key: string; readonly params?: unknown }> = [];
+    bindTranslate((key, params) => {
+      calls.push({ key, params });
+      return `H:${key}:${JSON.stringify(params ?? null)}`;
+    });
+    expect(t("save")).toBe("H:save:null");
+    expect(t("countEntries", { n: 3 })).toBe('H:countEntries:{"n":3}');
+    expect(calls).toEqual([
+      { key: "save", params: undefined },
+      { key: "countEntries", params: { n: 3 } },
+    ]);
+  });
+  it("unbind 后回落本地字典（宿主实现不再被调）", () => {
+    let hostCalls = 0;
+    bindTranslate(() => {
+      hostCalls += 1;
+      return "HOST";
+    });
+    expect(t("save")).toBe("HOST");
+    unbindTranslate();
+    setLang("zh");
+    expect(t("save")).toBe("保存");
+    expect(t("detail")).toBe("详情");
+    expect(hostCalls).toBe(1);
+  });
+  it("capLabel 经宿主绑定跟语言走", () => {
+    bindTranslate((key) => `HOST:${key}`);
+    expect(capLabel(0)).toBe("HOST:capNone");
     expect(capLabel(2)).toBe("high");
   });
 });
