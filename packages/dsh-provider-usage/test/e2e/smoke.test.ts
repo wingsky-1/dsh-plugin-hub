@@ -2272,7 +2272,8 @@ export function formatPanel() { return "<p>user-panel</p>"; }
  * 注册序第一个能采样，其余零采样数小时（#156）。
  * #120 演进：per-provider 锁落地后 warmup 改为并行 void fire-and-forget——
  * 各 provider 持各自专用锁，并行发起互不 busy、互不阻塞；本用例保留
- * 「每个启用 provider 都被采样」的主断言（40ms IO 延迟维持真实持锁窗口）。
+ * 「每个启用 provider 都被采样」的主断言（300ms IO 延迟维持真实持锁窗口；
+ * CI 实测调度毛刺可达起止错开 163ms，40ms 窗口会被误杀，300ms 留约 2 倍余量）。
  * B 级（定向变异）：两适配器 fetchData 首尾打点，首轮取数窗口必须重叠——
  * per-provider 锁改回全局单锁时两取数串行、窗口不重叠，仅该断言红。
  */
@@ -2303,8 +2304,10 @@ export const providers = ["${provider}"];
 export async function fetchData() {
   const start = Date.now();
   // 模拟真实远端 IO 延迟：让持锁窗口覆盖后续 provider 的同步检查段，
-  // 否则 mock 同步完成过快、两请求都排进 mutex 队列，无法复现 busy 短路
-  await new Promise((r) => setTimeout(r, 40));
+  // 否则 mock 同步完成过快、两请求都排进 mutex 队列，无法复现 busy 短路。
+  // 300ms 而非 40ms：CI 负载下两取数入口起止错开实测达 163ms（run 35698734409），
+  // 40ms 窗口会被调度毛刺误杀；串行回归下两窗口仍不重叠，定向变异能力不变。
+  await new Promise((r) => setTimeout(r, 300));
   appendFileSync(${JSON.stringify(marksFile)}, JSON.stringify({ provider: "${provider}", start, end: Date.now() }) + "\\n");
   return { visits: 7 };
 }
