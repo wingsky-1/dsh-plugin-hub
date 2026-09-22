@@ -12,7 +12,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { dirname } from "node:path";
@@ -25,6 +25,9 @@ import {
   parseTestDiffPaths,
   segmentEntryFor,
   testFileEntries,
+  findDirectConsumers,
+  isExemptTestFile,
+  supportFileEntries,
 } from "../ci/changed-test-packages.mjs";
 import { projectTestSurface } from "../gate/test-surface.mjs";
 
@@ -306,4 +309,146 @@ test("P2-L4: 测试文件按 topology testFiles 映射到段（回落/显式/未
   assert.deepEqual(packagesToInvalidate([fa], reg), ["dsh-notifier"]);
   // testFileEntries 直调：包外形状
   assert.deepEqual(testFileEntries(null, ROOT, new Map(), "dsh-notifier", fa), ["dsh-notifier"]);
+});
+
+test("D: 双 worker allowlist 锚 + 各 1 消费者全在豁免层 + 不失效", () => {
+  const reg = JSON.parse(readFileSync(join(ROOT, "scripts/data/ci-face-registry.json"), "utf8"));
+  const topo = JSON.parse(readFileSync(join(ROOT, "scripts/data/mutation-topology.json"), "utf8"));
+  const pkg = "dsh-provider-usage";
+  const testDir = join(ROOT, "packages", pkg, "test");
+  const workers = readdirSync(testDir)
+    .filter((f) => f.endsWith(".worker.mjs"))
+    .sort();
+  assert.deepEqual(workers, ["client-fetch-timeout.worker.mjs", "client-revalidate.worker.mjs"]);
+  const w1 = "packages/dsh-provider-usage/test/client-fetch-timeout.worker.mjs";
+  const w2 = "packages/dsh-provider-usage/test/client-revalidate.worker.mjs";
+  const c1 = findDirectConsumers(ROOT, pkg, w1);
+  const c2 = findDirectConsumers(ROOT, pkg, w2);
+  assert.deepEqual(c1, ["packages/dsh-provider-usage/test/client/unit-fetch-timeout.test.ts"]);
+  assert.deepEqual(c2, ["packages/dsh-provider-usage/test/client/unit-refresh-revalidate.test.ts"]);
+  for (const c of [...c1, ...c2]) {
+    assert.equal(isExemptTestFile(c, pkg), true, c + " 须在豁免层");
+  }
+  const surf = projectTestSurface(ROOT, topo, pkg);
+  assert.equal(surf.testFiles.includes(w1), false, "worker 不得进变异面");
+  assert.equal(surf.testFiles.includes(w2), false, "worker 不得进变异面");
+  assert.deepEqual(
+    (surf.layerFiles as Record<string, unknown>)["client-unit"],
+    [],
+    "本包无 client-unit 文件",
+  );
+  assert.deepEqual(
+    (surf.layerFiles as Record<string, unknown>)["client-dom"],
+    [],
+    "本包无 client-dom 文件",
+  );
+  assert.deepEqual(packagesToInvalidate([w1], reg, topo), [], "豁免层独占消费者：不失效");
+  assert.deepEqual(packagesToInvalidate([w2], reg, topo), [], "豁免层独占消费者：不失效");
+  assert.deepEqual(packagesToInvalidate([w1, w2], reg, topo), [], "双 worker 同改亦不失效");
+  const helpersPath = "packages/dsh-provider-usage/test/helpers.ts";
+  assert.equal(c1.includes(helpersPath), false, "helpers 不得是 worker 消费者");
+  assert.equal(c2.includes(helpersPath), false, "helpers 不得是 worker 消费者");
+  const hDirects = findDirectConsumers(ROOT, pkg, helpersPath);
+  assert.equal(hDirects.includes(w1), false, "worker 不得是 helpers 消费者");
+  assert.equal(hDirects.includes(w2), false, "worker 不得是 helpers 消费者");
+});
+
+test("D: helpers 反向断言 + 命中窄化/全段回落 + 未命中复用", () => {
+  const reg = JSON.parse(readFileSync(join(ROOT, "scripts/data/ci-face-registry.json"), "utf8"));
+  const topo = JSON.parse(readFileSync(join(ROOT, "scripts/data/mutation-topology.json"), "utf8"));
+  const pkg = "dsh-provider-usage";
+  const helpersPath = "packages/dsh-provider-usage/test/helpers.ts";
+  const hDirects = findDirectConsumers(ROOT, pkg, helpersPath);
+  assert.ok(hDirects.length >= 10, "helpers 须有变异面消费者");
+  assert.ok(hDirects.includes("packages/dsh-provider-usage/test/unit/apply/unit-apply.test.ts"));
+  assert.ok(
+    hDirects.includes(
+      "packages/dsh-provider-usage/test/integration/pipeline/composition-root.test.ts",
+    ),
+  );
+  assert.ok(
+    hDirects.includes("packages/dsh-provider-usage/test/smoke-pure.ts"),
+    "经 support 中转的 e2e 链须被闭包发现",
+  );
+  assert.equal(
+    hDirects.includes("packages/dsh-provider-usage/test/client/unit-report-p0.test.ts"),
+    false,
+    "report-helpers 不得误计为 test/helpers 消费者",
+  );
+  const surf = projectTestSurface(ROOT, topo, pkg);
+  const inFace = hDirects.filter((f) => surf.testFiles.includes(f));
+  const exempt = hDirects.filter((f) => isExemptTestFile(f, pkg));
+  assert.ok(inFace.length > 0, "helpers 闭包须交变异面");
+  assert.ok(exempt.length > 0, "helpers 亦有豁免层消费者");
+  assert.deepEqual(
+    packagesToInvalidate([helpersPath], reg, topo),
+    ["dsh-provider-usage"],
+    "helpers 并集覆盖全段：等价回落整包",
+  );
+  const probe = "packages/dsh-provider-usage/test/hotreload-probe.mjs";
+  assert.deepEqual(findDirectConsumers(ROOT, pkg, probe), [
+    "packages/dsh-provider-usage/test/unit/shared/unit-contract.test.ts",
+  ]);
+  assert.deepEqual(
+    packagesToInvalidate([probe], reg, topo),
+    [
+      "dsh-provider-usage:contracts",
+      "dsh-provider-usage:entry",
+      "dsh-provider-usage:pipeline",
+      "dsh-provider-usage:registry",
+      "dsh-provider-usage:sanitize",
+    ],
+    "仅闭包命中段失效",
+  );
+  const pure = "packages/dsh-provider-usage/test/smoke-pure.ts";
+  assert.deepEqual(findDirectConsumers(ROOT, pkg, pure), [
+    "packages/dsh-provider-usage/test/e2e/smoke.test.ts",
+  ]);
+  assert.deepEqual(packagesToInvalidate([pure], reg, topo), [], "豁免层独占：不失效");
+  const w1 = "packages/dsh-provider-usage/test/client-fetch-timeout.worker.mjs";
+  assert.deepEqual(
+    packagesToInvalidate([w1, probe], reg, topo),
+    [
+      "dsh-provider-usage:contracts",
+      "dsh-provider-usage:entry",
+      "dsh-provider-usage:pipeline",
+      "dsh-provider-usage:registry",
+      "dsh-provider-usage:sanitize",
+    ],
+    "worker 叠加不扩散",
+  );
+});
+
+test("D: 解析失败回整包 + 混合 diff 工人不扩散", () => {
+  const reg = JSON.parse(readFileSync(join(ROOT, "scripts/data/ci-face-registry.json"), "utf8"));
+  const topo = JSON.parse(readFileSync(join(ROOT, "scripts/data/mutation-topology.json"), "utf8"));
+  const pkg = "dsh-provider-usage";
+  const w1 = "packages/dsh-provider-usage/test/client-fetch-timeout.worker.mjs";
+  const w2 = "packages/dsh-provider-usage/test/client-revalidate.worker.mjs";
+  assert.deepEqual(
+    testFileEntries(topo, ROOT, new Map(), pkg, "packages/dsh-provider-usage/test/__orphan__.mjs"),
+    [pkg],
+    "孤儿支撑 fail-closed",
+  );
+  assert.deepEqual(
+    testFileEntries(topo, "/no/such/root-962d", new Map(), pkg, w1),
+    [pkg],
+    "根不可读 fail-closed",
+  );
+  assert.deepEqual(
+    supportFileEntries(topo, "/no/such/root-962d", new Map(), pkg, w1, []),
+    [pkg],
+    "闭包直调 fail-closed",
+  );
+  assert.equal(isExemptTestFile("packages/dsh-provider-usage/test/client/a.test.ts", pkg), true);
+  assert.equal(isExemptTestFile("packages/dsh-provider-usage/test/e2e/a.test.ts", pkg), true);
+  assert.equal(isExemptTestFile("packages/dsh-provider-usage/test/unit/a.test.ts", pkg), false);
+  assert.equal(isExemptTestFile("packages/dsh-provider-usage/test/helpers.ts", pkg), false);
+  const unit = "packages/dsh-provider-usage/test/unit/apply/unit-apply.test.ts";
+  const onlyUnit = packagesToInvalidate([unit], reg, topo);
+  assert.ok(onlyUnit.length > 0);
+  assert.deepEqual(packagesToInvalidate([w1, w2, unit], reg, topo), onlyUnit, "worker 不扩散");
+  const lanUnit = "packages/dsh-lan-proxy/test/unit/unit-apply.test.ts";
+  const lanOnly = packagesToInvalidate([lanUnit], reg, topo);
+  assert.deepEqual(packagesToInvalidate([w1, lanUnit], reg, topo), lanOnly, "跨包不扩散");
 });

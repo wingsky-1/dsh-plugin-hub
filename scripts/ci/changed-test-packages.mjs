@@ -21,8 +21,8 @@
  * 退出码：0 = 成功；1 = 环境错误（BASE 缺失 / git 失败）——fail-loud，不静默当成「没有变更」。
  */
 import { execFileSync } from "node:child_process";
-import { appendFileSync, readFileSync } from "node:fs";
-import { dirname, join, matchesGlob } from "node:path";
+import { appendFileSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { dirname, join, matchesGlob, posix } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { projectTestSurface, resolveSegmentTestFiles } from "../gate/test-surface.mjs";
@@ -123,8 +123,15 @@ export function testFileEntries(topology, rootDir, faceCache, pkg, file) {
   if (segKeys.length === 0) return [pkg];
   let face = faceCache.get(pkg);
   if (face === undefined) {
-    face = projectTestSurface(rootDir, topology, pkg).testFiles;
+    try {
+      face = projectTestSurface(rootDir, topology, pkg).testFiles;
+    } catch {
+      return [pkg];
+    }
     faceCache.set(pkg, face);
+  }
+  if (!face.includes(file)) {
+    return supportFileEntries(topology, rootDir, faceCache, pkg, file, face);
   }
   const matched = [];
   for (const segKey of segKeys) {
@@ -150,6 +157,146 @@ export function testFileEntries(topology, rootDir, faceCache, pkg, file) {
  * 段级 vitest 配置（`vitest.stryker.d/<pkg>-<seg>.config.ts`，P2 首个显式窄化起存在，
  * registry glob + filters 同步）同理拆段：改段清单只失效该段。
  */
+export function isExemptTestFile(file, pkg) {
+  return (
+    file.startsWith(`packages/${pkg}/test/client/`) || file.startsWith(`packages/${pkg}/test/e2e/`)
+  );
+}
+export function listPackageTestFiles(rootDir, pkg) {
+  const base = join(rootDir, "packages", pkg, "test");
+  const out = [];
+  const walk = (dir) => {
+    const entries = readdirSync(dir);
+    for (const name of entries) {
+      const abs = join(dir, name);
+      const st = statSync(abs);
+      if (st.isDirectory()) {
+        walk(abs);
+      } else if (st.isFile()) {
+        out.push(abs.slice(rootDir.length + 1));
+      }
+    }
+  };
+  walk(base);
+  out.sort();
+  return out;
+}
+export function extractQuotedLiterals(content) {
+  const lits = [];
+  let q = 0;
+  let cur = "";
+  for (let i = 0; i < content.length; i++) {
+    const c = content.charCodeAt(i);
+    if (q === 0) {
+      if (c === 34 || c === 39) {
+        q = c;
+        cur = "";
+      }
+    } else {
+      if (c === q) {
+        lits.push(cur);
+        q = 0;
+        cur = "";
+      } else if (c === 10 || c === 13) {
+        q = 0;
+        cur = "";
+      } else {
+        cur += content[i];
+      }
+    }
+  }
+  return lits;
+}
+export function literalResolvesToSupport(consumerFile, literal, supportFile, pkg) {
+  const basename = supportFile.slice(supportFile.lastIndexOf("/") + 1);
+  const clean = String(literal).split("?")[0].split("#")[0];
+  if (!clean.includes(basename)) return false;
+  if (clean.startsWith("./") || clean.startsWith("../")) {
+    const dir = consumerFile.slice(0, consumerFile.lastIndexOf("/"));
+    const resolved = posix.normalize(`${dir}/${clean}`);
+    return resolved === supportFile;
+  }
+  if (clean.startsWith("test/")) return `packages/${pkg}/${clean}` === supportFile;
+  if (clean.startsWith("packages/")) return clean === supportFile;
+  if (clean === basename) return true;
+  return false;
+}
+export function findDirectConsumers(rootDir, pkg, supportFile) {
+  const files = listPackageTestFiles(rootDir, pkg);
+  const directs = [];
+  for (const f of files) {
+    if (f === supportFile) continue;
+    const content = readFileSync(join(rootDir, f), "utf8");
+    const lits = extractQuotedLiterals(content);
+    for (const lit of lits) {
+      if (literalResolvesToSupport(f, lit, supportFile, pkg)) {
+        directs.push(f);
+        break;
+      }
+    }
+  }
+  directs.sort();
+  return directs;
+}
+export function supportFileEntries(topology, rootDir, faceCache, pkg, file, packageFace) {
+  try {
+    const pkgDef = topology?.packages?.[pkg];
+    const segDefs = pkgDef?.segments;
+    if (segDefs === null || typeof segDefs !== "object" || Array.isArray(segDefs)) return [pkg];
+    const segKeys = Object.keys(segDefs);
+    if (segKeys.length === 0) return [pkg];
+    const face = Array.isArray(packageFace) ? packageFace : (faceCache.get(pkg) ?? []);
+    if (face.includes(file)) return testFileEntries(topology, rootDir, faceCache, pkg, file);
+    const faceSet = new Set(face);
+    const visited = new Set([file]);
+    const queue = [file];
+    const mutationConsumers = new Set();
+    const exemptConsumers = new Set();
+    while (queue.length > 0) {
+      const cur = queue.shift();
+      let directs;
+      try {
+        directs = findDirectConsumers(rootDir, pkg, cur);
+      } catch {
+        return [pkg];
+      }
+      if (directs.length === 0) {
+        if (cur === file) return [pkg];
+        continue;
+      }
+      for (const d of directs) {
+        if (visited.has(d)) continue;
+        visited.add(d);
+        if (isExemptTestFile(d, pkg)) {
+          exemptConsumers.add(d);
+        } else if (faceSet.has(d)) {
+          mutationConsumers.add(d);
+        } else {
+          if (!d.startsWith(`packages/${pkg}/test/`)) return [pkg];
+          queue.push(d);
+        }
+      }
+    }
+    if (mutationConsumers.size === 0) {
+      if (exemptConsumers.size > 0) return [];
+      return [pkg];
+    }
+    const segSet = new Set();
+    for (const consumer of mutationConsumers) {
+      const entries = testFileEntries(topology, rootDir, faceCache, pkg, consumer);
+      if (entries.length === 1 && entries[0] === pkg) return [pkg];
+      for (const e of entries) {
+        if (typeof e !== "string" || !e.startsWith(`${pkg}:`)) return [pkg];
+        segSet.add(e);
+      }
+    }
+    if (segSet.size === 0) return [pkg];
+    if (segKeys.every((k) => segSet.has(`${pkg}:${k}`))) return [pkg];
+    return [...segSet].sort();
+  } catch {
+    return [pkg];
+  }
+}
 export function segmentEntryFor(file, face) {
   const segOf = (base, faceName) => {
     if (base === faceName) return null;
