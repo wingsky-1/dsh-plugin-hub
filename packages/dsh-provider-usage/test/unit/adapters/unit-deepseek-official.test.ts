@@ -1255,7 +1255,7 @@ describe("G7c UTC 跨日边界（#945）", () => {
 });
 
 describe("G4e 节假日胶囊渲染（#945 P4：v2 契约恒用默认集）", () => {
-  let caps;
+  let caps = "";
 
   beforeAll(() => {
     caps = deepSeekOfficialAdapter.formatCapsule({

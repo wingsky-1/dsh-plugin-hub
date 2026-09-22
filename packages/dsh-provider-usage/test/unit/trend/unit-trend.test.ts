@@ -2822,9 +2822,9 @@ describe("评审修复 P2-7：writeAggDay 清理同日残留 tmp", () => {
 });
 
 describe("评审 #934：writeAggDay 多残留清理失败全量 warn", () => {
-  let warns;
-  let leakRoot;
-  let aggShardLength934;
+  let warns: string[] = [];
+  let leakRoot = "";
+  let aggShardLength934 = 0;
 
   beforeAll(async () => {
     // #934：多个同日残留 tmp 删除失败时，一条 warn 列出全部失败文件 basename＋原因，
@@ -2832,7 +2832,7 @@ describe("评审 #934：writeAggDay 多残留清理失败全量 warn", () => {
     warns = [];
     const root = mkdtempSync(join(tmpdir(), "dou-trend-warn934-"));
     leakRoot = root;
-    const store = new TrendStore({ root, warn: (m) => warns.push(m) });
+    const store = new TrendStore({ root, warn: (m: string) => warns.push(m) });
     mkdirSync(join(root, "agg"), { recursive: true });
     for (const name of [`${DAY0}.jsonl.1700000000001.tmp`, `${DAY0}.jsonl.1700000000002.tmp`]) {
       const dir = join(root, "agg", name);
