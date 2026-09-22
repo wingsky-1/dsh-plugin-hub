@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * dsh-provider-usage — unit：#120 signal 接线 + per-provider 互斥配套断言。
  *
@@ -16,9 +15,17 @@ console.error("EVAL-ORDER-TAG: SIGNAL-LOCK");
 import { afterAll, describe, expect, it } from "vitest";
 import { getEventListeners } from "node:events";
 import { runV2Pipeline, safeFetchData } from "../../../src/server/pipeline/interface.ts";
+import type { FetchContext, UsageStatsAdapter } from "../../../src/shared/interface.ts";
 
+// 探针 ctx：生产 v2.ts 以 `{...fetchCtx, signal, fetch} as unknown as FetchContext` 注入 fetch
+// （运行时恒有，类型面隐藏），探针侧以交集如实建模；fetch 可选以满足 UsageStatsAdapter 逆变。
+type ProbeCtx = FetchContext & { fetch?: typeof fetch };
 /** 构造满足 v2 契约的最小适配器（format 函数恒返回占位）。 */
-function mkAdapter(name, provider, fetchData) {
+function mkAdapter(
+  name: string,
+  provider: string,
+  fetchData: (ctx: ProbeCtx) => Promise<Record<string, unknown>>,
+): UsageStatsAdapter {
   return {
     version: 2,
     name,
@@ -32,7 +39,7 @@ function mkAdapter(name, provider, fetchData) {
 describe("硬性1：超时后底层 fetch 收到 abort", () => {
   // safeFetchData 层：fn 收到合并信号；超时后该信号 aborted=true
   const probeSafeFetchDataTimeout = async () => {
-    let seen;
+    let seen: AbortSignal | undefined;
     const r = await safeFetchData(async (signal) => {
       seen = signal;
       await new Promise(() => {}); // 模拟慢远端永挂
@@ -53,17 +60,23 @@ describe("硬性1：超时后底层 fetch 收到 abort", () => {
 
   it("超时后合并信号已 abort（透传给 fetch 即中断真实请求）", async () => {
     const { seen } = await probeSafeFetchDataTimeout();
-    expect(seen.aborted).toBe(true);
+    expect(seen!.aborted).toBe(true);
   });
 
   // runV2Pipeline 层端到端：fetchData 把 ctx.signal 透传给注入的 fetch（deepseek-official
   // 直传形态），超时后底层 fetch 手里的正是同一个已 abort 的信号（接线证据链闭合）
   const probePipelineSignalPassthrough = async () => {
-    const seen = { fromAdapter: undefined, fromFetch: undefined };
+    const seen: { fromAdapter: AbortSignal | undefined; fromFetch: AbortSignal | undefined } = {
+      fromAdapter: undefined,
+      fromFetch: undefined,
+    };
     const adapter = mkAdapter("sig-adp", "p-sig", async (ctx) => {
       seen.fromAdapter = ctx.signal;
       // 模拟真实适配器：signal 原样进 RequestInit.signal，fetch 内部挂到网络上
-      return await ctx.fetch("https://gw.test/usage", { signal: ctx.signal });
+      // fetch 返回值在超时路径恒未消费（仅为接线透传），断言仅过构造面。
+      return (await ctx.fetch!("https://gw.test/usage", {
+        signal: ctx.signal,
+      })) as unknown as Record<string, unknown>;
     });
     const r = await runV2Pipeline({
       adapter,
@@ -73,8 +86,9 @@ describe("硬性1：超时后底层 fetch 收到 abort", () => {
       timeoutMs: 25,
       fetchImpl: (_url, init) =>
         new Promise((_res, rej) => {
-          seen.fromFetch = init.signal;
-          init.signal.addEventListener("abort", () => rej(new Error("aborted")), { once: true });
+          // 探针恒传 { signal }，双非空断言仅过编译面（运行时同形）。
+          seen.fromFetch = init!.signal!;
+          init!.signal!.addEventListener("abort", () => rej(new Error("aborted")), { once: true });
         }),
     });
     return { r, seen };
@@ -102,7 +116,7 @@ describe("硬性1：超时后底层 fetch 收到 abort", () => {
 
   it("超时后 fetchData 手里的信号已 abort", async () => {
     const { seen } = await probePipelineSignalPassthrough();
-    expect(seen.fromAdapter.aborted).toBe(true);
+    expect(seen.fromAdapter!.aborted).toBe(true);
   });
 
   it("底层 fetch 收到的正是下发的合并信号（同对象）", async () => {
@@ -112,7 +126,7 @@ describe("硬性1：超时后底层 fetch 收到 abort", () => {
 
   it("底层 fetch 观察到 abort（socket 可中断）", async () => {
     const { seen } = await probePipelineSignalPassthrough();
-    expect(seen.fromFetch.aborted).toBe(true);
+    expect(seen.fromFetch!.aborted).toBe(true);
   });
 
   // opencode-go 监听形态：fetchData 监听 ctx.signal 做补偿取消，超时后同样被触发
@@ -123,7 +137,7 @@ describe("硬性1：超时后底层 fetch 收到 abort", () => {
       "p-sig-l",
       (ctx) =>
         new Promise((_res, rej) => {
-          ctx.signal.addEventListener(
+          ctx.signal!.addEventListener(
             "abort",
             () => {
               notified = true;
@@ -197,7 +211,11 @@ describe("硬性3：超时失败不当 fresh 落历史", () => {
   // 失败帧三条件全破：ok=false / status='stale' / rawData===undefined
   // ——上层 append 门控（result.ok && status==='fresh' && rawData!==undefined）绝不放行
   const probeSlowFailFrame = async () => {
-    const adapter = mkAdapter("slow-adp", "p-hist", () => new Promise(() => {}));
+    const adapter = mkAdapter(
+      "slow-adp",
+      "p-hist",
+      (): Promise<Record<string, unknown>> => new Promise<Record<string, unknown>>(() => {}),
+    );
     return await runV2Pipeline({
       adapter,
       provider: "p-hist",
@@ -346,7 +364,7 @@ describe("外部信号合流（手动级联，node>=20 兼容）", () => {
 describe("fail-fast：管道内部组装断言", () => {
   // timeoutMs 非法（0/负数/NaN）时不发起任何取数，直接产出既有 error 帧；
   // 不新增配置项、不是对用户适配器的契约约束（#120 P2 判定点=管道组装）
-  const probeBadTimeout = async (bad) => {
+  const probeBadTimeout = async (bad: number) => {
     let called = false;
     const adapter = mkAdapter("ff-adp", "p-ff", async () => {
       called = true;

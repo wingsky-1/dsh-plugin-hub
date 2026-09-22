@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * dsh-provider-usage — unit：内置 DeepSeek 官方适配器（issue #198）。
  *
@@ -27,6 +26,9 @@ import { esc, sanitizeHtml, isUsageStatsAdapter } from "../../../src/shared/inte
 import { runV2Pipeline } from "../../../src/server/pipeline/interface.ts";
 import { resolveProviderConfig } from "../../../src/server/registry/interface.ts";
 // 白盒直连深路径（#768 B波）：适配器纯面经 server/adapters 门面，不走组合根转发。
+import type { SamplePoint, DayRecord } from "../../../src/server/adapters/interface.ts";
+import type { FetchContext, PanelInput } from "../../../src/shared/interface.ts";
+import type { V2PipelineResult } from "../../../src/server/pipeline/interface.ts";
 import {
   DEEPSEEK_OFFICIAL_ADAPTER_ID,
   DEEPSEEK_OFFICIAL_PROVIDER,
@@ -57,14 +59,15 @@ const here = dirname(fileURLToPath(import.meta.url));
 // ---------------------------------------------------------------- 时间戳辅助（固定 epoch，T3）
 
 /** UTC 时间戳便捷构造（月份 1–12）。 */
-const utc = (y, mo, d, hh, mi, ss = 0, ms = 0) => Date.UTC(y, mo - 1, d, hh, mi, ss, ms);
+const utc = (y: number, mo: number, d: number, hh: number, mi: number, ss = 0, ms = 0): number =>
+  Date.UTC(y, mo - 1, d, hh, mi, ss, ms);
 // 2026-08-24 为周一（24/25/26/27/28 = 一至五；29/30 = 六/日）
-const MON = (hh, mi, ss = 0, ms = 0) => utc(2026, 8, 24, hh, mi, ss, ms);
-const SAT = (hh, mi, ss = 0, ms = 0) => utc(2026, 8, 29, hh, mi, ss, ms);
-const SUN = (hh, mi, ss = 0, ms = 0) => utc(2026, 8, 30, hh, mi, ss, ms);
+const MON = (hh: number, mi: number, ss = 0, ms = 0): number => utc(2026, 8, 24, hh, mi, ss, ms);
+const SAT = (hh: number, mi: number, ss = 0, ms = 0): number => utc(2026, 8, 29, hh, mi, ss, ms);
+const SUN = (hh: number, mi: number, ss = 0, ms = 0): number => utc(2026, 8, 30, hh, mi, ss, ms);
 
 /** 构造 mock Response（官方文档示例 JSON 形态蓝本）。 */
-function mockRes(status, body) {
+function mockRes(status: number, body: unknown) {
   return {
     status,
     ok: status >= 200 && status < 300,
@@ -73,7 +76,11 @@ function mockRes(status, body) {
 }
 
 /** 构造官方 balance 响应体。 */
-function officialBody(cny = {}, extraInfos = [], isAvailable = true) {
+function officialBody(
+  cny: Record<string, unknown> = {},
+  extraInfos: Array<Record<string, unknown>> = [],
+  isAvailable = true,
+) {
   return {
     is_available: isAvailable,
     balance_infos: [
@@ -90,26 +97,37 @@ function officialBody(cny = {}, extraInfos = [], isAvailable = true) {
 }
 
 /** 捕获请求形态的 mock fetch。 */
-function capturingFetch(res) {
-  const calls = [];
-  const f = (url, init) => {
+function capturingFetch(res: unknown) {
+  const calls: Array<{ url: string; init: { headers: Record<string, string> } }> = [];
+  const f = (url: unknown, init: { headers: Record<string, string> }) => {
     calls.push({ url: String(url), init });
-    return Promise.resolve(typeof res === "function" ? res(url, init) : res);
+    return Promise.resolve(
+      typeof res === "function" ? (res as (u: unknown, i: unknown) => unknown)(url, init) : res,
+    );
   };
   return { f: f as unknown as typeof fetch, calls };
 }
 
 /** 捕获 rejection 的 error 对象（未 reject 时返回 undefined，断言随即 fail-loud）。 */
-async function catchErr(p) {
+async function catchErr(
+  p: Promise<unknown>,
+): Promise<{ message?: unknown; name?: unknown } | undefined> {
   try {
     await p;
     return undefined;
   } catch (e) {
-    return e;
+    return e as { message?: unknown; name?: unknown };
   }
 }
 
-const fetchCtx = (over = {}) => ({
+/** 适配器直调 ctx：fetch 直注（v2 管线外直调形态，fetchDeepSeekOfficialV2 声明面同款）。
+ * 恒等函数——只做类型面收敛（多余字段仍红），运行时零变化。 */
+type AdapterFetchCtx = FetchContext & { fetch?: typeof fetch };
+const adapterCtx = (ctx: AdapterFetchCtx): AdapterFetchCtx => ctx;
+/** 旧分片兼容点列：available 缺省视为可用（实现注释口径），窄类型经 unknown 断言。 */
+const ptsOf = (points: Array<Record<string, unknown>>): SamplePoint[] =>
+  points as unknown as SamplePoint[];
+const fetchCtx = (over: Partial<AdapterFetchCtx> = {}): AdapterFetchCtx => ({
   apiEndpoint: "",
   staticPath: "",
   apiKey: "sk-unit",
@@ -157,19 +175,22 @@ describe("B1 + 契约自检", () => {
 // ================================================================ B2/K1 余额解析 + 归一化输出
 
 describe("B2/K1 余额解析 + 归一化输出", () => {
-  let out, calls;
+  let out: Record<string, unknown>;
+  let calls: Array<{ url: string; init: { headers: Record<string, string> } }>;
 
   beforeAll(async () => {
     const captured = capturingFetch(mockRes(200, officialBody()));
     calls = captured.calls;
-    out = await deepSeekOfficialAdapter.fetchData({
-      apiEndpoint: "https://api.deepseek.com",
-      staticPath: "",
-      apiKey: "sk-unit",
-      provider: DEEPSEEK_OFFICIAL_PROVIDER,
-      timeoutMs: 2000,
-      fetch: captured.f,
-    });
+    out = await deepSeekOfficialAdapter.fetchData(
+      adapterCtx({
+        apiEndpoint: "https://api.deepseek.com",
+        staticPath: "",
+        apiKey: "sk-unit",
+        provider: DEEPSEEK_OFFICIAL_PROVIDER,
+        timeoutMs: 2000,
+        fetch: captured.f,
+      }),
+    );
   });
 
   it("isAvailable 透传为 true", () => {
@@ -203,7 +224,7 @@ describe("B2/K1 余额解析 + 归一化输出", () => {
 });
 
 describe("B2 金额非法形态 → null（杜绝 NaN 落盘）", () => {
-  let out;
+  let out: Record<string, unknown>;
 
   beforeAll(async () => {
     // 金额非法形态 → null（杜绝 NaN 落盘）
@@ -213,14 +234,16 @@ describe("B2 金额非法形态 → null（杜绝 NaN 落盘）", () => {
         officialBody({ total_balance: "abc", topped_up_balance: "", granted_balance: undefined }),
       ),
     );
-    out = await deepSeekOfficialAdapter.fetchData({
-      apiEndpoint: "",
-      staticPath: "",
-      apiKey: "sk-unit",
-      provider: DEEPSEEK_OFFICIAL_PROVIDER,
-      timeoutMs: 2000,
-      fetch: f,
-    });
+    out = await deepSeekOfficialAdapter.fetchData(
+      adapterCtx({
+        apiEndpoint: "",
+        staticPath: "",
+        apiKey: "sk-unit",
+        provider: DEEPSEEK_OFFICIAL_PROVIDER,
+        timeoutMs: 2000,
+        fetch: f,
+      }),
+    );
   });
 
   it("非法金额字符串 → null", () => {
@@ -273,7 +296,7 @@ describe("parseAmount", () => {
 // ================================================================ B3 多币种仅留 CNY
 
 describe("B3 多币种仅留 CNY", () => {
-  let out;
+  let out: Record<string, unknown>;
 
   beforeAll(async () => {
     const usd = {
@@ -295,7 +318,7 @@ describe("B3 多币种仅留 CNY", () => {
 
 describe("B4（修订版）无 CNY → null 正常帧", () => {
   for (const infos of [[{ currency: "USD", total_balance: "15.50" }], []]) {
-    let out;
+    let out: Record<string, unknown>;
 
     beforeAll(async () => {
       const { f } = capturingFetch(mockRes(200, { is_available: true, balance_infos: infos }));
@@ -324,21 +347,27 @@ describe("B5/K3 错误路径六态（参数化）", () => {
   };
 
   it("no-api-key", async () => {
-    const e = await catchErr(deepSeekOfficialAdapter.fetchData({ ...baseCtx, apiKey: undefined }));
+    const e = await catchErr(
+      deepSeekOfficialAdapter.fetchData(adapterCtx({ ...baseCtx, apiKey: undefined })),
+    );
     expect(e?.message).toBe("no-api-key");
   });
 
   it("AbortError 必须原样重抛（超时取消不被吞成 network）", async () => {
     const abortErr = Object.assign(new Error("The operation was aborted"), { name: "AbortError" });
     const abortF = (() => Promise.reject(abortErr)) as unknown as typeof fetch;
-    const e = await catchErr(deepSeekOfficialAdapter.fetchData({ ...baseCtx, fetch: abortF }));
+    const e = await catchErr(
+      deepSeekOfficialAdapter.fetchData(adapterCtx({ ...baseCtx, fetch: abortF })),
+    );
     expect(e?.name).toBe("AbortError");
     expect(e?.message).toBe("The operation was aborted");
   });
 
   it("连接异常 → network", async () => {
     const boomF = (() => Promise.reject(new Error("ECONNREFUSED"))) as unknown as typeof fetch;
-    const e = await catchErr(deepSeekOfficialAdapter.fetchData({ ...baseCtx, fetch: boomF }));
+    const e = await catchErr(
+      deepSeekOfficialAdapter.fetchData(adapterCtx({ ...baseCtx, fetch: boomF })),
+    );
     expect(e?.message).toBe("network");
   });
 
@@ -348,13 +377,15 @@ describe("B5/K3 错误路径六态（参数化）", () => {
     [403, "unauthorized"],
     [500, "http-500"],
     [429, "http-429"],
-  ]) {
+  ] as Array<[number, string]>) {
     it(`${status} → ${expected}`, async () => {
       const e = await catchErr(
-        deepSeekOfficialAdapter.fetchData({
-          ...baseCtx,
-          fetch: (() => Promise.resolve(mockRes(status, {}))) as unknown as typeof fetch,
-        }),
+        deepSeekOfficialAdapter.fetchData(
+          adapterCtx({
+            ...baseCtx,
+            fetch: (() => Promise.resolve(mockRes(status, {}))) as unknown as typeof fetch,
+          }),
+        ),
       );
       expect(e?.message).toBe(expected);
     });
@@ -369,7 +400,9 @@ describe("B5/K3 错误路径六态（参数化）", () => {
           throw new Error("Unexpected token");
         },
       })) as unknown as typeof fetch;
-    const e = await catchErr(deepSeekOfficialAdapter.fetchData({ ...baseCtx, fetch: badJsonF }));
+    const e = await catchErr(
+      deepSeekOfficialAdapter.fetchData(adapterCtx({ ...baseCtx, fetch: badJsonF })),
+    );
     expect(e?.message).toBe("bad-json");
   });
 });
@@ -419,19 +452,21 @@ describe("K2 端点解析（/v1 剥离）", () => {
 });
 
 describe("K2 实际请求 URL 经捕获断言（mock 注入）", () => {
-  let calls;
+  let calls: Array<{ url: string; init: { headers: Record<string, string> } }>;
 
   beforeAll(async () => {
     const captured = capturingFetch(mockRes(200, officialBody()));
     calls = captured.calls;
-    await deepSeekOfficialAdapter.fetchData({
-      apiEndpoint: "https://api.deepseek.com/v1/",
-      staticPath: "",
-      apiKey: "sk-unit",
-      provider: DEEPSEEK_OFFICIAL_PROVIDER,
-      timeoutMs: 2000,
-      fetch: captured.f,
-    });
+    await deepSeekOfficialAdapter.fetchData(
+      adapterCtx({
+        apiEndpoint: "https://api.deepseek.com/v1/",
+        staticPath: "",
+        apiKey: "sk-unit",
+        provider: DEEPSEEK_OFFICIAL_PROVIDER,
+        timeoutMs: 2000,
+        fetch: captured.f,
+      }),
+    );
   });
 
   it("实际请求 URL 剥 /v1 后拼接", () => {
@@ -442,7 +477,8 @@ describe("K2 实际请求 URL 经捕获断言（mock 注入）", () => {
 // ================================================================ E 组 三级密钥链
 
 describe("E1 显式注入优先，env 干扰不影响", () => {
-  let restore, resolved;
+  let restore: () => void;
+  let resolved: Awaited<ReturnType<typeof resolveProviderConfig>>;
 
   beforeAll(async () => {
     const savedEnvKey = process.env.DEEPSEEK_OFFICIAL_API_KEY;
@@ -468,7 +504,8 @@ describe("E1 显式注入优先，env 干扰不影响", () => {
 });
 
 describe("E2 V1 链推导：provider deepseek-official → env DEEPSEEK_OFFICIAL_API_KEY", () => {
-  let restore, resolved;
+  let restore: () => void;
+  let resolved: Awaited<ReturnType<typeof resolveProviderConfig>>;
 
   beforeAll(async () => {
     const saved = {
@@ -498,7 +535,9 @@ describe("E2 V1 链推导：provider deepseek-official → env DEEPSEEK_OFFICIAL
 });
 
 describe("E3 适配器内自查 DEEPSEEK_API_KEY 兜底（llm 能跑、余额接口 401 场景）", () => {
-  let restore, calls, out;
+  let restore: () => void;
+  let calls: Array<{ url: string; init: { headers: Record<string, string> } }>;
+  let out: Record<string, unknown>;
 
   beforeAll(async () => {
     const savedDs = process.env.DEEPSEEK_API_KEY;
@@ -509,14 +548,16 @@ describe("E3 适配器内自查 DEEPSEEK_API_KEY 兜底（llm 能跑、余额接
     process.env.DEEPSEEK_API_KEY = "sk-ds-fallback";
     const captured = capturingFetch(mockRes(200, officialBody()));
     calls = captured.calls;
-    out = await deepSeekOfficialAdapter.fetchData({
-      apiEndpoint: "",
-      staticPath: "",
-      apiKey: undefined,
-      provider: DEEPSEEK_OFFICIAL_PROVIDER,
-      timeoutMs: 2000,
-      fetch: captured.f,
-    });
+    out = await deepSeekOfficialAdapter.fetchData(
+      adapterCtx({
+        apiEndpoint: "",
+        staticPath: "",
+        apiKey: undefined,
+        provider: DEEPSEEK_OFFICIAL_PROVIDER,
+        timeoutMs: 2000,
+        fetch: captured.f,
+      }),
+    );
   });
 
   afterAll(() => restore?.());
@@ -533,7 +574,13 @@ describe("E3 适配器内自查 DEEPSEEK_API_KEY 兜底（llm 能跑、余额接
 // ================================================================ C/K4 区间记账分类（classifyIntervalDs，不做代数相消）
 
 describe("C/K4 区间记账分类（classifyIntervalDs，不做代数相消）", () => {
-  const pt = (t, balance, toppedUp, granted, available = true) => ({
+  const pt = (
+    t: number,
+    balance: number,
+    toppedUp: number | null,
+    granted: number | null,
+    available = true,
+  ) => ({
     t,
     balance,
     toppedUp,
@@ -596,7 +643,7 @@ describe("C/K4 区间记账分类（classifyIntervalDs，不做代数相消）",
 // ================================================================ 日聚合 v2.3 区间记账（归属结束端日 / GAP 注记 / 分层 / 冷启动 / 充值列示）
 
 describe("G1b 跨度 >27h 的区间落在某日 → 该日 ok/0 + 「中断」注记", () => {
-  let recs;
+  let recs: DayRecord[];
 
   beforeAll(() => {
     const t0 = MON(22, 0);
@@ -605,7 +652,7 @@ describe("G1b 跨度 >27h 的区间落在某日 → 该日 ok/0 + 「中断」�
       { t: t0, balance: 100, toppedUp: 90, granted: 10 },
       { t: t1, balance: 95, toppedUp: 90, granted: 10 },
     ];
-    recs = aggregateDaily(pts, [dayKey(t1)], false);
+    recs = aggregateDaily(ptsOf(pts), [dayKey(t1)], false);
   });
 
   it("中断区间不产生异常态", () => {
@@ -622,7 +669,8 @@ describe("G1b 跨度 >27h 的区间落在某日 → 该日 ok/0 + 「中断」�
 });
 
 describe("G2 归属规则：区间计入结束端所在日——跨午夜隔夜消费不丢失（旧基线法整段掉落）", () => {
-  let satRec, sunRec;
+  let satRec: DayRecord;
+  let sunRec: DayRecord;
 
   beforeAll(() => {
     // 本地时区构造（dayKey 归组口径）：避免 UTC 助手与本地日切错位
@@ -634,9 +682,10 @@ describe("G2 归属规则：区间计入结束端所在日——跨午夜隔夜�
       { t: sunEarly, balance: 99, toppedUp: 90, granted: 10 }, // 隔夜消耗 1 → 计入周日
       { t: sunNoon, balance: 94, toppedUp: 90, granted: 10 }, // 周日内消耗 5
     ];
-    const recs = aggregateDaily(pts, [dayKey(satNight), dayKey(sunEarly)], false);
-    satRec = recs.find((r) => r.key === dayKey(satNight));
-    sunRec = recs.find((r) => r.key === dayKey(sunEarly));
+    const recs = aggregateDaily(ptsOf(pts), [dayKey(satNight), dayKey(sunEarly)], false);
+    // 请求日键恒产出对应记录（find 命中是前置语义，! 仅过编译面）。
+    satRec = recs.find((r) => r.key === dayKey(satNight))!;
+    sunRec = recs.find((r) => r.key === dayKey(sunEarly))!;
   });
 
   it("周六仅起点帧、无结束于当日的区间 → 无可计区间", () => {
@@ -653,16 +702,16 @@ describe("G2 归属规则：区间计入结束端所在日——跨午夜隔夜�
 });
 
 describe("G3 冷启动自然成立：当日 ≥2 帧即出数（无需旧版跨日基线/日内兜底标记）", () => {
-  let recs;
+  let recs: DayRecord[];
 
   beforeAll(() => {
     const d0 = utc(2026, 8, 24, 9, 0);
     const d1 = utc(2026, 8, 24, 15, 0);
     recs = aggregateDaily(
-      [
+      ptsOf([
         { t: d0, balance: 50, toppedUp: 50, granted: 0 },
         { t: d1, balance: 47, toppedUp: 47, granted: 0 },
-      ],
+      ]),
       [dayKey(d0)],
       false,
     );
@@ -677,16 +726,17 @@ describe("G3 冷启动自然成立：当日 ≥2 帧即出数（无需旧版跨�
   });
 
   it("v2.3 无需 intraday 标记", () => {
-    expect(recs[0].intraday).toBe(undefined);
+    // intraday 字段须不存在于类型面（v2.3 移除）：经 Record 断言读缺失键。
+    expect((recs[0] as unknown as Record<string, unknown>).intraday).toBe(undefined);
   });
 });
 
 describe("C6 单帧历史：当日有帧但无可计区间 → insufficient（不得把余额绝对值误计为用量）", () => {
-  let recs;
+  let recs: DayRecord[];
 
   beforeAll(() => {
     const only = { t: MON(8, 0), balance: 88, toppedUp: 80, granted: 8 };
-    recs = aggregateDaily([only], [dayKey(MON(8, 0))], false);
+    recs = aggregateDaily(ptsOf([only]), [dayKey(MON(8, 0))], false);
   });
 
   it("无可计区间 → 样本不足", () => {
@@ -699,7 +749,7 @@ describe("C6 单帧历史：当日有帧但无可计区间 → insufficient（�
 });
 
 describe("G4 充值事件独立列示：充值区间漏计、事件额 toppedUpIn 汇出", () => {
-  let recs;
+  let recs: DayRecord[];
 
   beforeAll(() => {
     const d0 = utc(2026, 8, 24, 10, 0);
@@ -710,7 +760,7 @@ describe("G4 充值事件独立列示：充值区间漏计、事件额 toppedUpI
       { t: d1, balance: 55.62, toppedUp: 55.62, granted: 0 },
       { t: d2, balance: 54.62, toppedUp: 55.62, granted: 0 },
     ];
-    recs = aggregateDaily(pts, [dayKey(d2)], false);
+    recs = aggregateDaily(ptsOf(pts), [dayKey(d2)], false);
   });
 
   it("存在可计区间 → ok", () => {
@@ -731,18 +781,20 @@ describe("G4 充值事件独立列示：充值区间漏计、事件额 toppedUpI
 });
 
 describe("G5 分层渲染映射到 clean 降幅之和：容差归零 / 轻微负值 neg 绿柱 / 大额负值异常", () => {
-  let zero, gainSmall, anom;
+  let zero: DayRecord;
+  let gainSmall: DayRecord;
+  let anom: DayRecord;
 
   beforeAll(() => {
     const d0 = utc(2026, 8, 25, 9, 0);
     const d1 = utc(2026, 8, 25, 19, 0);
-    const mk = (bPrev, bCur) => [
+    const mk = (bPrev: number, bCur: number) => [
       { t: d0, balance: bPrev, toppedUp: 90, granted: 10 },
       { t: d1, balance: bCur, toppedUp: 90, granted: 10 },
     ];
-    zero = aggregateDaily(mk(100, 100 - TOL / 2), [dayKey(d1)], false)[0];
-    gainSmall = aggregateDaily(mk(100, 100.5), [dayKey(d1)], false)[0];
-    anom = aggregateDaily(mk(100, 102.5), [dayKey(d1)], false)[0];
+    zero = aggregateDaily(ptsOf(mk(100, 100 - TOL / 2)), [dayKey(d1)], false)[0];
+    gainSmall = aggregateDaily(ptsOf(mk(100, 100.5)), [dayKey(d1)], false)[0];
+    anom = aggregateDaily(ptsOf(mk(100, 102.5)), [dayKey(d1)], false)[0];
   });
 
   it("|u|≤TOL → ok", () => {
@@ -775,7 +827,8 @@ describe("G5 分层渲染映射到 clean 降幅之和：容差归零 / 轻微负
 });
 
 describe("G6 truncated 参数保留但不再弃首日（区间记账天然不受截断影响）", () => {
-  let withTruncated, withoutTruncated;
+  let withTruncated: Array<Array<string | number>>;
+  let withoutTruncated: Array<Array<string | number>>;
 
   beforeAll(() => {
     const d0 = utc(2026, 8, 26, 9, 0);
@@ -785,8 +838,8 @@ describe("G6 truncated 参数保留但不再弃首日（区间记账天然不受
       { t: d1, balance: 46, toppedUp: 50, granted: 0 },
     ];
     const keys = [dayKey(d1)];
-    withTruncated = aggregateDaily(pts, keys, true).map((r) => [r.status, r.u]);
-    withoutTruncated = aggregateDaily(pts, keys, false).map((r) => [r.status, r.u]);
+    withTruncated = aggregateDaily(ptsOf(pts), keys, true).map((r) => [r.status, r.u]);
+    withoutTruncated = aggregateDaily(ptsOf(pts), keys, false).map((r) => [r.status, r.u]);
   });
 
   it("truncated 与否结果一致（v2.3 无 skipFirst）", () => {
@@ -795,7 +848,8 @@ describe("G6 truncated 参数保留但不再弃首日（区间记账天然不受
 });
 
 describe("G7 不可用端点策略：is_available=false 帧两侧区间均跳过（帧值不可信），注记承载", () => {
-  let recs, okRecs;
+  let recs: DayRecord[];
+  let okRecs: DayRecord[];
 
   beforeAll(() => {
     const d0 = utc(2026, 8, 27, 8, 0);
@@ -850,7 +904,7 @@ describe("K8 日聚合时区口径", () => {
   });
 
   describe("lastNDayKeys 逐日 setDate 回退：跨月/数量/升序/今日收尾", () => {
-    let keys;
+    let keys: string[];
 
     beforeAll(() => {
       const now = new Date(2026, 2, 1, 12, 0).getTime(); // 2026-03-01 本地
@@ -918,7 +972,7 @@ describe("niceCeil", () => {
 // ================================================================ G 组 峰谷时段常量与倒计时
 
 describe("G1 常量存在 + 源码注释附官方定价 URL 与核实日期", () => {
-  let src;
+  let src = "";
 
   beforeAll(() => {
     src = readFileSync(
@@ -1275,7 +1329,10 @@ describe("G7d 16 天长连休前瞻（#945：无 t+7d 兜底误判）", () => {
 });
 
 describe('G6 边界钳制翻转：边界后滞后时刻显示新状态且倒计时 ≥0，无负值/"-00:00"', () => {
-  let justAfter, tr, badge, justBefore;
+  let justAfter: number;
+  let tr: { toPeak: boolean; at: number };
+  let badge: string;
+  let justBefore: number;
 
   beforeAll(() => {
     justAfter = MON(4, 0, 0, 500); // 04:00:00.500
@@ -1314,7 +1371,15 @@ describe('G6 边界钳制翻转：边界后滞后时刻显示新状态且倒计�
 });
 
 describe("G7 倒计时单调递减 + 长谷段有效非负", () => {
-  let t1, t2, tr1, tr2, sunNoon, trSun, remainMin, badge, friAfter;
+  let t1: number;
+  let t2: number;
+  let tr1: { toPeak: boolean; at: number };
+  let tr2: { toPeak: boolean; at: number };
+  let sunNoon: number;
+  let trSun: { toPeak: boolean; at: number };
+  let remainMin: number;
+  let badge: string;
+  let friAfter: number;
 
   beforeAll(() => {
     t1 = MON(1, 30);
@@ -1362,7 +1427,11 @@ describe("G7 倒计时单调递减 + 长谷段有效非负", () => {
 });
 
 describe("G5/G9 徽标渲染", () => {
-  let caps, capsPeak, empty, unavail, css;
+  let caps: string;
+  let capsPeak: string;
+  let empty: string;
+  let unavail: string;
+  let css: string;
 
   beforeAll(() => {
     caps = deepSeekOfficialAdapter.formatCapsule({
@@ -1456,11 +1525,18 @@ describe("G5/G9 徽标渲染", () => {
 // ================================================================ K10/D 组 面板结构（双卡 SVG）
 
 describe("K10/D 组 面板结构（双卡 SVG）", () => {
-  let panel, panelMany, emptyPanel, panelGap, panelDense, barsInCard2, circleCount, now;
+  let panel: string;
+  let panelMany: string;
+  let emptyPanel: string;
+  let panelGap: string;
+  let panelDense: string;
+  let barsInCard2: number;
+  let circleCount: number;
+  let now: number;
 
   beforeAll(() => {
     now = MON(12, 0);
-    const entries = [];
+    const entries: Array<{ time: number; data: Record<string, unknown> }> = [];
     // 近 24h 内 5 个采样点（余额递减）+ 前 3 天历史
     const balances = [100, 99, 98.5, 98.2, 98];
     for (let i = 0; i < 5; i += 1) {
@@ -1490,7 +1566,7 @@ describe("K10/D 组 面板结构（双卡 SVG）", () => {
     });
 
     // D2 注入 >15 天历史仅呈现最近 15 个自然日（SVG 内日期槽位数 = 15）
-    const manyEntries = [];
+    const manyEntries: Array<{ time: number; data: Record<string, unknown> }> = [];
     for (let i = 0; i <= 20; i += 1) {
       manyEntries.push({
         time: now - i * 86400000,
@@ -1529,7 +1605,7 @@ describe("K10/D 组 面板结构（双卡 SVG）", () => {
     });
 
     // 降采样 ≤300 点（构造 400 点折线输入）
-    const dense = [];
+    const dense: Array<{ time: number; data: Record<string, unknown> }> = [];
     for (let i = 0; i < 400; i += 1) {
       dense.push({
         time: now - (400 - i) * 60000,
@@ -1620,7 +1696,7 @@ describe("K10/D 组 面板结构（双卡 SVG）", () => {
 });
 
 describe("C8 集成面：is_available=false 帧不作为守恒端点（经 formatPanel 数据通路）", () => {
-  let panel;
+  let panel: string;
 
   beforeAll(() => {
     const now = utc(2026, 8, 26, 12, 0); // 周三
@@ -1658,7 +1734,7 @@ describe("C8 集成面：is_available=false 帧不作为守恒端点（经 forma
 });
 
 describe("v2.3 卡1 徽章消费口径：充值区间剔除后不再显示 ▲，余额上涨场景徽章显示消费≈0", () => {
-  let panel;
+  let panel: string;
 
   beforeAll(() => {
     const now = utc(2026, 8, 26, 12, 0);
@@ -1697,7 +1773,8 @@ describe("v2.3 卡1 徽章消费口径：充值区间剔除后不再显示 ▲�
 // ================================================================ A2 opencode-go 空 data 防御回归
 
 describe("A2 opencode-go 空 data 防御回归", () => {
-  let html, panelHtml;
+  let html: string;
+  let panelHtml: string;
 
   beforeAll(() => {
     html = openCodeGoAdapter.formatCapsule({
@@ -1730,7 +1807,11 @@ describe("A2 opencode-go 空 data 防御回归", () => {
 // ================================================================ 管线集成：runV2Pipeline 失败分支 stale 帧
 
 describe("管线集成：runV2Pipeline 失败分支 stale 帧", () => {
-  let result, resultWithHistory, resultBadHistory, okResult, sanitized;
+  let result: V2PipelineResult;
+  let resultWithHistory: V2PipelineResult;
+  let resultBadHistory: V2PipelineResult;
+  let okResult: V2PipelineResult;
+  let sanitized: string;
 
   beforeAll(async () => {
     const netFail = (() => Promise.reject(new Error("ECONNREFUSED"))) as unknown as typeof fetch;
@@ -1807,11 +1888,11 @@ describe("管线集成：runV2Pipeline 失败分支 stale 帧", () => {
   });
 
   it("空 data 渲染占位", () => {
-    expect(result.capsuleHtml.includes("DeepSeek 余额 --")).toBeTruthy();
+    expect(result.capsuleHtml!.includes("DeepSeek 余额 --")).toBeTruthy();
   });
 
   it("峰谷徽标 stale 帧常驻（G8）", () => {
-    expect(result.capsuleHtml.includes("dou-peak")).toBeTruthy();
+    expect(result.capsuleHtml!.includes("dou-peak")).toBeTruthy();
   });
 
   it("错误帧不带 rawData（不落盘前提）", () => {
@@ -1820,7 +1901,7 @@ describe("管线集成：runV2Pipeline 失败分支 stale 帧", () => {
 
   // I2 错误文案无插值注入面：净化后无脚本执行面
   it("capsuleHtml 无脚本载体", () => {
-    expect(!result.capsuleHtml.includes("<script")).toBeTruthy();
+    expect(!result.capsuleHtml!.includes("<script")).toBeTruthy();
   });
 
   it("带值降级仍为 stale 帧", () => {
@@ -1856,7 +1937,7 @@ describe("管线集成：runV2Pipeline 失败分支 stale 帧", () => {
   });
 
   it("成功帧胶囊渲染余额", () => {
-    expect(okResult.capsuleHtml.includes("余额 ¥110.00")).toBeTruthy();
+    expect(okResult.capsuleHtml!.includes("余额 ¥110.00")).toBeTruthy();
   });
 
   it("sanitize 后 svg 结构存活", () => {
@@ -1875,7 +1956,12 @@ describe("管线集成：runV2Pipeline 失败分支 stale 帧", () => {
 // ---- #592 dailyBarTitle 拆解：单日柱悬浮文案全分支（含聚合器不产出的防御态） ----
 
 describe("#592 dailyBarTitle 拆解：单日柱悬浮文案全分支", () => {
-  const R = (over) => ({ key: "2026-08-24", status: "ok", u: 1.5, ...over });
+  const R = (over: Partial<DayRecord> = {}): DayRecord => ({
+    key: "2026-08-24",
+    status: "ok",
+    u: 1.5,
+    ...over,
+  });
 
   it("empty 态", () => {
     expect(dailyBarTitle(R({ status: "empty", u: 0 }), 0, 3)).toBe("08-24 无采样");
@@ -1933,13 +2019,14 @@ describe("#592 dailyBarTitle 拆解：单日柱悬浮文案全分支", () => {
 // ---- #592 formatPanel 集成：柱图渲染路径（六态混合采样 → 全部柱形与文案落地） ----
 
 describe("#592 formatPanel 集成：柱图渲染路径（六态混合采样）", () => {
-  let panel, rectCount;
+  let panel: string;
+  let rectCount: number;
 
   beforeAll(() => {
     // 固定 now：UTC 正午。采样间隔全部 26~28h（>24h 保证任意时区下相邻区间
     // 结束端落不同日桶，断言与时区无关；首段 28h > GAP_MS 触发中断层）。
     const NOW = utc(2026, 9, 1, 12, 0);
-    const en = (t, balance, toppedUp = 0) => ({
+    const en = (t: number, balance: number, toppedUp = 0) => ({
       time: t,
       data: { balance, toppedUp, grantedBalance: null, isAvailable: true },
     });
@@ -1958,7 +2045,12 @@ describe("#592 formatPanel 集成：柱图渲染路径（六态混合采样）",
       en(NOW - 27 * H, 90.8),
       en(NOW - 1 * H, 90.3, 0.8),
     ];
-    panel = deepSeekOfficialAdapter.formatPanel({ entries, range: { end: NOW } });
+    // 部分输入容忍：range 缺 start、truncated/esc 缺省（实现侧 esc||hFallback、
+    // truncated===true 判空，旧调用兼容），窄类型经 unknown 断言。
+    panel = deepSeekOfficialAdapter.formatPanel({
+      entries,
+      range: { end: NOW },
+    } as unknown as PanelInput);
     rectCount = (panel.match(/<rect /g) ?? []).length;
   });
 

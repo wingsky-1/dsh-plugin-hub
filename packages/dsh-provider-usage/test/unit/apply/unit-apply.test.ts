@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * dsh-provider-usage — unit：apply 宿主注入路径覆盖。
  *
@@ -38,7 +37,7 @@ function onStub() {
   return () => {};
 }
 
-function fakeReq(overrides = {}) {
+function fakeReq(overrides: { body?: string } & Record<string, unknown> = {}) {
   return {
     socket: { remoteAddress: "127.0.0.1" },
     headers: { host: "127.0.0.1:3080", "sec-fetch-site": "same-origin" },
@@ -53,17 +52,24 @@ function fakeReq(overrides = {}) {
   };
 }
 
-function makeRes() {
-  const chunks = [];
+function makeRes(): {
+  writeHead: (c: number) => void;
+  end: (chunk: unknown) => void;
+  write: (chunk: unknown) => void;
+  on: () => void;
+  _code: () => number;
+  _body: () => string;
+} {
+  const chunks: Array<unknown> = [];
   let code = 200;
   return {
-    writeHead: (c) => {
+    writeHead: (c: number) => {
       code = c;
     },
-    end: (chunk) => {
+    end: (chunk: unknown) => {
       chunks.push(chunk);
     },
-    write: (chunk) => {
+    write: (chunk: unknown) => {
       chunks.push(chunk);
     },
     on: () => {},
@@ -123,7 +129,8 @@ function makeCtx(
     (ctx as Record<string, unknown>).get = (name: string) =>
       name === "wingsky.notifier" ? over.get : undefined;
   }
-  return { ctx, routes, disposers, listeners };
+  // apply 的 ctx 为宿主 cordis 全量服务面，窄 fake 经 unknown 断言装配（调用点同构）。
+  return { ctx: ctx as unknown as Parameters<typeof apply>[0], routes, disposers, listeners };
 }
 
 /** 合法用户适配器 mjs 文本。 */
@@ -151,15 +158,15 @@ const routeOf = (routes: Array<Record<string, unknown>>, path: string) =>
 // ---------------------------------------------------------------- 1) inject 回调：settings 正常注册
 
 describe("1) inject 回调：settings 正常注册", () => {
-  let settingsEvents;
+  let settingsEvents: string[];
 
   beforeAll(async () => {
     settingsEvents = [];
-    const routes = [];
+    const routes: Array<Record<string, unknown>> = [];
     const ctx = {
       logger: { warn: () => {} },
       webServer: {
-        register(route) {
+        register(route: Record<string, unknown>) {
           routes.push(route);
           return () => {};
         },
@@ -171,21 +178,21 @@ describe("1) inject 回调：settings 正常注册", () => {
         },
       },
       fiber: { state: "active" },
-      inject: (deps, cb) => {
+      inject: (deps: unknown, cb: (s: unknown) => void) => {
         const scope = {
           get: () => ({}),
-          watch: (_fn) => {
+          watch: (_fn: () => void) => {
             settingsEvents.push("watch-registered");
           },
         };
         const sctx = {
           settings: {
-            register: (_ns, _schema, _opts) => {
+            register: (_ns: unknown, _schema: unknown, _opts: unknown) => {
               settingsEvents.push("register-called");
               return scope;
             },
           },
-          effect: (fn) => {
+          effect: (fn: () => unknown) => {
             const disposer = fn();
             settingsEvents.push("effect-registered");
             return typeof disposer === "function" ? disposer : () => {};
@@ -193,7 +200,7 @@ describe("1) inject 回调：settings 正常注册", () => {
         };
         cb(sctx);
       },
-      effect: (fn) => {
+      effect: (fn: () => unknown) => {
         const d = fn();
         return typeof d === "function" ? d : () => {};
       },
@@ -201,7 +208,7 @@ describe("1) inject 回调：settings 正常注册", () => {
     // 隔离（#768 P1）：historyDir 指临时目录，否则 apply.ts:275 回落真实 ~/.dsh
     // （installUpgrade 写 .upgrade-version、TrendTracker 建 trend 目录）。
     const dir = mkdtempSync(join(tmpdir(), "dou-apply-inject-ok-"));
-    await apply(ctx, {
+    await apply(ctx as unknown as Parameters<typeof apply>[0], {
       apiKey: "sk-test",
       apiEndpoint: "http://127.0.0.1:9",
       historyDir: join(dir, "hist"),
@@ -226,19 +233,19 @@ describe("1) inject 回调：settings 正常注册", () => {
 // ---------------------------------------------------------------- 2) inject 回调：settings.register 抛错
 
 describe("2) inject 回调：settings.register 抛错", () => {
-  let warns;
+  let warns: string[];
 
   beforeAll(async () => {
     warns = [];
-    const routes = [];
+    const routes: Array<Record<string, unknown>> = [];
     const ctx = {
       logger: {
-        warn: (m) => {
+        warn: (m: string) => {
           warns.push(m);
         },
       },
       webServer: {
-        register(route) {
+        register(route: Record<string, unknown>) {
           routes.push(route);
           return () => {};
         },
@@ -250,27 +257,27 @@ describe("2) inject 回调：settings.register 抛错", () => {
         },
       },
       fiber: { state: "active" },
-      inject: (deps, cb) => {
+      inject: (deps: unknown, cb: (s: unknown) => void) => {
         cb({
           settings: {
             register: () => {
               throw new Error("duplicate");
             },
           },
-          effect: (fn) => {
+          effect: (fn: () => unknown) => {
             const d = fn();
             return typeof d === "function" ? d : () => {};
           },
         });
       },
-      effect: (fn) => {
+      effect: (fn: () => unknown) => {
         const d = fn();
         return typeof d === "function" ? d : () => {};
       },
     };
     // 隔离（#768 P1）：同 1)，无 historyDir 则回落真实 ~/.dsh 写版本与 trend 目录。
     const dir = mkdtempSync(join(tmpdir(), "dou-apply-inject-throw-"));
-    await apply(ctx, {
+    await apply(ctx as unknown as Parameters<typeof apply>[0], {
       apiKey: "sk-test",
       apiEndpoint: "http://127.0.0.1:9",
       historyDir: join(dir, "hist"),
@@ -285,19 +292,19 @@ describe("2) inject 回调：settings.register 抛错", () => {
 // ---------------------------------------------------------------- 3) inject 回调：settings 服务缺 register
 
 describe("3) inject 回调：settings 服务缺 register", () => {
-  let warns;
+  let warns: string[];
 
   beforeAll(async () => {
     warns = [];
-    const routes = [];
+    const routes: Array<Record<string, unknown>> = [];
     const ctx = {
       logger: {
-        warn: (m) => {
+        warn: (m: string) => {
           warns.push(m);
         },
       },
       webServer: {
-        register(route) {
+        register(route: Record<string, unknown>) {
           routes.push(route);
           return () => {};
         },
@@ -309,17 +316,17 @@ describe("3) inject 回调：settings 服务缺 register", () => {
         },
       },
       fiber: { state: "active" },
-      inject: (deps, cb) => {
+      inject: (deps: unknown, cb: (s: unknown) => void) => {
         cb({ settings: {} });
       },
-      effect: (fn) => {
+      effect: (fn: () => unknown) => {
         const d = fn();
         return typeof d === "function" ? d : () => {};
       },
     };
     // 隔离（#768 P1）：同 1)，无 historyDir 则回落真实 ~/.dsh 写版本与 trend 目录。
     const dir = mkdtempSync(join(tmpdir(), "dou-apply-inject-noreg-"));
-    await apply(ctx, {
+    await apply(ctx as unknown as Parameters<typeof apply>[0], {
       apiKey: "sk-test",
       apiEndpoint: "http://127.0.0.1:9",
       historyDir: join(dir, "hist"),
@@ -340,8 +347,8 @@ describe("3) inject 回调：settings 服务缺 register", () => {
 
 // 6a) 合法用户适配器文件 → onReload ok:true → hr.current !== null → full branch
 describe("6a) 合法用户适配器文件 → onReload ok:true", () => {
-  let applied;
-  let dir;
+  let applied: boolean;
+  let dir: string;
 
   beforeAll(async () => {
     dir = mkdtempSync(join(tmpdir(), "dou-hr-"));
@@ -360,11 +367,11 @@ export function formatPanel() { return "<p>p</p>"; }
       "utf8",
     );
 
-    const routes = [];
+    const routes: Array<Record<string, unknown>> = [];
     const ctx = {
       logger: { warn: () => {} },
       webServer: {
-        register(route) {
+        register(route: Record<string, unknown>) {
           routes.push(route);
           return () => {};
         },
@@ -376,15 +383,15 @@ export function formatPanel() { return "<p>p</p>"; }
         },
       },
       fiber: { state: "active" },
-      inject: (deps, cb) => {
+      inject: (deps: unknown, cb: (s: unknown) => void) => {
         cb({ settings: {} });
       },
-      effect: (fn) => {
+      effect: (fn: () => unknown) => {
         const d = fn();
         return typeof d === "function" ? d : () => {};
       },
     };
-    await apply(ctx, {
+    await apply(ctx as unknown as Parameters<typeof apply>[0], {
       adapter: goodFile,
       autoReload: true,
       apiKey: "sk-test",
@@ -406,18 +413,18 @@ export function formatPanel() { return "<p>p</p>"; }
 
 // 6b) 非法适配器文件 → onReload ok:false → !info.ok 分支
 describe("6b) 非法适配器文件 → onReload ok:false", () => {
-  let applied;
+  let applied: boolean;
 
   beforeAll(async () => {
     const dir = mkdtempSync(join(tmpdir(), "dou-hr-bad-"));
     const badFile = join(dir, "bad.mjs");
     writeFileSync(badFile, `export const version = 2; export const name = "bad";`, "utf8");
 
-    const routes = [];
+    const routes: Array<Record<string, unknown>> = [];
     const ctx = {
       logger: { warn: () => {} },
       webServer: {
-        register(route) {
+        register(route: Record<string, unknown>) {
           routes.push(route);
           return () => {};
         },
@@ -429,15 +436,15 @@ describe("6b) 非法适配器文件 → onReload ok:false", () => {
         },
       },
       fiber: { state: "active" },
-      inject: (deps, cb) => {
+      inject: (deps: unknown, cb: (s: unknown) => void) => {
         cb({ settings: {} });
       },
-      effect: (fn) => {
+      effect: (fn: () => unknown) => {
         const d = fn();
         return typeof d === "function" ? d : () => {};
       },
     };
-    await apply(ctx, {
+    await apply(ctx as unknown as Parameters<typeof apply>[0], {
       adapter: badFile,
       autoReload: true,
       apiKey: "sk-test",
@@ -464,12 +471,12 @@ describe("8) disposer 清理 warmup/prune 定时器（假时钟句柄计数）",
     vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
     try {
       const base = vi.getTimerCount();
-      const disposers = [];
-      const routes = [];
+      const disposers: Array<() => void> = [];
+      const routes: Array<Record<string, unknown>> = [];
       const ctx = {
         logger: { warn: () => {} },
         webServer: {
-          register(route) {
+          register(route: Record<string, unknown>) {
             routes.push(route);
             return () => {};
           },
@@ -481,19 +488,19 @@ describe("8) disposer 清理 warmup/prune 定时器（假时钟句柄计数）",
           },
         },
         fiber: { state: "active" },
-        inject: (deps, cb) => {
+        inject: (deps: unknown, cb: (s: unknown) => void) => {
           cb({ settings: {} });
         },
-        effect: (fn) => {
+        effect: (fn: () => unknown) => {
           const d = fn();
-          if (typeof d === "function") disposers.push(d);
+          if (typeof d === "function") disposers.push(d as () => void);
           return typeof d === "function" ? d : () => {};
         },
       };
       // 隔离（#768 P1）：historyDir 指临时目录，否则回落真实 ~/.dsh
       // （installUpgrade 写 .upgrade-version、TrendTracker 建 trend 目录）。
       const dir = mkdtempSync(join(tmpdir(), "dou-apply-timers-"));
-      await apply(ctx, {
+      await apply(ctx as unknown as Parameters<typeof apply>[0], {
         warmupIntervalMs: 60000,
         apiKey: "sk-test",
         apiEndpoint: "http://127.0.0.1:9",
@@ -524,7 +531,12 @@ describe("#301：apply 内部恢复隔离坏状态且诊断单次可见", () => 
     { raw: "{broken", marker: "JSON 损坏" },
     { raw: '["not","a","mapping"]', marker: "顶层结构无效" },
   ];
-  let backups, warnCounts, healthHit, fileMoved, backupFound, backupRaw;
+  let backups: string[];
+  let warnCounts: number[];
+  let healthHit: boolean[];
+  let fileMoved: boolean[];
+  let backupFound: boolean[];
+  let backupRaw: boolean[];
 
   beforeAll(async () => {
     const dir = mkdtempSync(join(tmpdir(), "dou-state-301-quarantine-apply-"));
@@ -619,8 +631,15 @@ describe("#301：apply 内部恢复隔离坏状态且诊断单次可见", () => 
 // ---------------------------------------------------------------- #301：恢复缺失候选可见 + 写入失败可见且串行链可恢复
 
 describe("#301：恢复缺失候选可见 + 写入失败可见且串行链可恢复", () => {
-  let healthDiagHit, warnOnce, persisted, tmpLeft, posixMode, selectCode;
-  let surfaced, writeErrOnce, recovered;
+  let healthDiagHit: boolean;
+  let warnOnce: number;
+  let persisted: boolean | undefined;
+  let tmpLeft: string[];
+  let posixMode: number | undefined;
+  let selectCode: number;
+  let surfaced: boolean | undefined;
+  let writeErrOnce: number;
+  let recovered: boolean | undefined;
 
   beforeAll(async () => {
     const dir = mkdtempSync(join(tmpdir(), "dou-state-301-apply-"));
@@ -798,13 +817,13 @@ describe("#301：恢复缺失候选可见 + 写入失败可见且串行链可恢
 describe.skipIf(process.platform === "win32")(
   "#301：rename 已提交后的目录 fsync 失败仅报耐久性告警",
   () => {
-    let selectCode,
-      directorySyncAttempts,
-      committed,
-      surfaced,
-      warnOnce,
-      writeErrList,
-      healthPolluted;
+    let selectCode: number;
+    let directorySyncAttempts: number;
+    let committed: boolean | undefined;
+    let surfaced: boolean | undefined;
+    let warnOnce: number;
+    let writeErrList: string[];
+    let healthPolluted: boolean;
 
     beforeAll(async () => {
       const dir = mkdtempSync(join(tmpdir(), "dou-state-301-post-rename-"));
@@ -939,7 +958,9 @@ describe.skipIf(process.platform === "win32")(
 // existence + 数据面五例（apply 装配经由，门面桩与产物矩阵未覆盖）。
 
 describe("history 数据面（围栏经 integration+smoke 覆盖）", () => {
-  let historyR, noAdpBody, okBody;
+  let historyR: ReturnType<typeof routeOf>;
+  let noAdpBody: { reason: unknown; panelHtml: unknown };
+  let okBody: { plugin: unknown; adapterName: unknown; range: { start: unknown } };
 
   beforeAll(async () => {
     const dir = mkdtempSync(join(tmpdir(), "dou-stats-"));
@@ -996,15 +1017,22 @@ describe("history 数据面（围栏经 integration+smoke 覆盖）", () => {
 // ---------------------------------------------------------------- getStats：跨 provider 并行 / 锁内二次校验 / 未配置
 
 describe("getStats：跨 provider 并行 / 锁内二次校验 / 未配置", () => {
-  let savedDshHome, probePairOk, windowOverlap, windowDetail;
-  let bSlow, bFast, slowSeqCount, landed, bNoEn;
+  let savedDshHome: string | undefined;
+  let probePairOk: boolean;
+  let windowOverlap: boolean;
+  let windowDetail: string;
+  let bSlow: Record<string, unknown>;
+  let bFast: Record<string, unknown>;
+  let slowSeqCount: number;
+  let landed: boolean | undefined;
+  let bNoEn: Record<string, unknown>;
 
   beforeAll(async () => {
     const dir = mkdtempSync(join(tmpdir(), "dou-getstats-"));
     // 隔离 DSH_HOME：避免读到真实环境的 user-adapters.json / adapter-state.json
     savedDshHome = process.env.DSH_HOME;
     process.env.DSH_HOME = join(dir, "dshhome");
-    mkdirSync(process.env.DSH_HOME, { recursive: true });
+    mkdirSync(process.env.DSH_HOME!, { recursive: true });
 
     // 两个用户适配器（providers 互不相同）：
     // - slow：80ms IO 延迟 + 调用计数（seq 经返回数据透出、formatCapsule 渲染）——
@@ -1062,7 +1090,7 @@ export function formatPanel() { return "<p>f</p>"; }
       }),
       "utf8",
     );
-    delete globalThis.__pp120;
+    delete (globalThis as unknown as Record<string, unknown>).__pp120;
 
     try {
       const { ctx, routes, disposers } = makeCtx();
@@ -1096,7 +1124,7 @@ export function formatPanel() { return "<p>f</p>"; }
       bSlow = both[1];
 
       // 场景1 断言：slow/fast 取数时间窗重叠 = 无全局队头阻塞
-      const probe = (globalThis.__pp120 ?? []) as Array<{
+      const probe = ((globalThis as unknown as Record<string, unknown>).__pp120 ?? []) as Array<{
         n: string;
         t: number;
         k: string;
@@ -1194,7 +1222,12 @@ export function formatPanel() { return "<p>f</p>"; }
 // 串行通道（#120）与其他模块的注入窗口互斥，save/restore 恒配对——ESM TLA
 // 交错下不再可能把他人 mock 固化为「现场」（unit-chart 慢路径 × 本窗口交错驻留实证）。
 describe("fetchWithTimeout 边界（#150 二阶段）", () => {
-  let okStatus, fastCallsAtLeast1, okUrl, slowCallsAtLeast1, slowAborted, defCallsAtLeast1;
+  let okStatus: number;
+  let fastCallsAtLeast1: boolean;
+  let okUrl: string;
+  let slowCallsAtLeast1: boolean;
+  let slowAborted: boolean;
+  let defCallsAtLeast1: boolean;
 
   beforeAll(async () => {
     await injectGlobalFetch(async (set) => {
@@ -1263,8 +1296,15 @@ describe("fetchWithTimeout 边界（#150 二阶段）", () => {
 // ---------------------------------------------------------------- #534：通知类型注入（可选 notifier 探测 + 动态 kind 注册/补注册）
 
 describe("#534：通知类型注入（可选 notifier 探测 + 动态 kind 注册/补注册）", () => {
-  let savedDshHome, noNotifierMounted, mountedKinds, mountedKindsId, mountedKindsLabel;
-  let preEventKindCount, svcListenerCount, postEventKindCount, reRegisteredId;
+  let savedDshHome: string | undefined;
+  let noNotifierMounted: boolean;
+  let mountedKinds: number;
+  let mountedKindsId: string | undefined;
+  let mountedKindsLabel: string | undefined;
+  let preEventKindCount: number;
+  let svcListenerCount: number;
+  let postEventKindCount: number;
+  let reRegisteredId: string | undefined;
 
   /** 假 notifier 服务：send 恒可调，registerKind 记录调用（不真正落盘）。 */
   function fakeNotifier(kinds: Array<{ id: string; label: string }>) {
@@ -1282,7 +1322,7 @@ describe("#534：通知类型注入（可选 notifier 探测 + 动态 kind 注�
     const historyDir = join(dir, "history");
     savedDshHome = process.env.DSH_HOME;
     process.env.DSH_HOME = join(dir, "dshhome");
-    mkdirSync(process.env.DSH_HOME, { recursive: true });
+    mkdirSync(process.env.DSH_HOME!, { recursive: true });
 
     const baseCfg = {
       autoReload: false,
@@ -1306,7 +1346,7 @@ describe("#534：通知类型注入（可选 notifier 探测 + 动态 kind 注�
     // 2) ctx.get 命中 wingsky.notifier（notifier 已加载）：挂载即注册 provider-usage:report
     {
       const kinds: Array<{ id: string; label: string }> = [];
-      const { ctx, _routes, disposers } = makeCtx({ get: fakeNotifier(kinds) });
+      const { ctx, disposers } = makeCtx({ get: fakeNotifier(kinds) });
       await apply(ctx, baseCfg);
       mountedKinds = kinds.length;
       mountedKindsId = kinds[0]?.id;

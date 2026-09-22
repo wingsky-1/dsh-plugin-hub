@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * dsh-provider-usage — unit：#503 会话用量趋势（M1 数据层）。
  *
@@ -57,13 +56,30 @@ import {
   mergeAggRows,
   mergeDirRows,
   mergeHourRows,
+  type TrendStackPart,
+  type TrendStackPoint,
+  type TrendWindowSummary,
 } from "../../../src/server/aggregate/interface.ts";
-import { TrendCollector, TREND_DONE_MAX } from "../../../src/server/collect/interface.ts";
+import type { PendingEntry } from "../../../src/server/aggregate/aggregator.ts";
+import {
+  TrendCollector,
+  TREND_DONE_MAX,
+  type TrendAggRow,
+  type TrendCallRecord,
+  type TrendCell,
+  type TrendCounterRecord,
+  type TrendEmit,
+  type TrendHourRow,
+} from "../../../src/server/collect/interface.ts";
+import type { SessionEvent } from "@deepseek-ai/dsh-session/types";
 import {
   isValidShardRow,
   sanitizeDirName,
   sumToken,
   metricValue,
+  type TrendCounterRow,
+  type TrendDetailRow,
+  type TrendDirRow,
 } from "../../../src/server/shared/interface.ts";
 
 // ---------------------------------------------------------------- 工具
@@ -80,29 +96,36 @@ const HOUR = 3600_000;
  * 断言继续在**原口径**上成立。非 usage 的 chunk（text-delta 等）在新形态下不构成
  * 调用证据，映射为空 stream 的 assistant/attempt（collector 对无 usage attempt 不入账）。
  */
-function ev(type, data, time, seq = 1) {
+// 事件信封经 unknown 断言为 SessionEvent：与生产边界同构（最小 payload + 品牌类型，
+// collector 防御性解析——ledger 同款）。
+function ev(type: string, data: Record<string, unknown>, time: number, seq = 1): SessionEvent {
   if (type === "assistant/chunk") {
-    if (data?.chunk?.type !== "usage") {
+    const payload = data as {
+      turn?: unknown;
+      step?: unknown;
+      chunk?: { type?: unknown; usage?: unknown };
+    };
+    if (payload.chunk?.type !== "usage") {
       return {
         type: "assistant/attempt",
         seq,
         time,
-        data: { turn: data?.turn, step: data?.step, stream: [] },
-      };
+        data: { turn: payload.turn, step: payload.step, stream: [] },
+      } as unknown as SessionEvent;
     }
     return {
       type: "assistant/message",
       seq,
       time,
       data: {
-        turn: data.turn,
-        step: data.step,
-        usage: data.chunk.usage,
-        stream: [{ type: "chunk", time, chunk: data.chunk }],
+        turn: payload.turn,
+        step: payload.step,
+        usage: payload.chunk.usage,
+        stream: [{ type: "chunk", time, chunk: payload.chunk }],
       },
-    };
+    } as unknown as SessionEvent;
   }
-  return { type, seq, time, data };
+  return { type, seq, time, data } as unknown as SessionEvent;
 }
 const HEADER = (provider = "deepseek", model = "deepseek-chat") => ({
   header: { config: { provider, model } },
@@ -121,7 +144,7 @@ const USAGE = (input = 100, output = 50, cacheRead = 0, cacheWrite = 0) => ({
     },
   },
 });
-const MESSAGE = (usage, opts = {}) => ({
+const MESSAGE = (usage: Record<string, unknown> | null, opts: { interrupted?: boolean } = {}) => ({
   turn: 1,
   step: 1,
   message: {
@@ -132,33 +155,61 @@ const MESSAGE = (usage, opts = {}) => ({
   ...(opts.interrupted ? { interrupted: true } : {}),
 });
 
-function makeCollector(now = () => T0) {
-  const emitted = [];
+function makeCollector(now: () => number = () => T0) {
+  const emitted: TrendEmit[] = [];
   const collector = new TrendCollector({ now, emit: (e) => emitted.push(e) });
   // collector 直接吃字符串 session id（id 提取在 tracker 层）；对象/null 经此解包以覆盖非法输入防御
-  const send = (session, event) =>
-    collector.handleEvent(typeof session === "string" ? session : session?.id, event);
+  // null 事件为非法输入防御用例（collector 就地吞掉）：边界断言与 ev 工厂同理。
+  const send = (session: string | { id: string }, event: SessionEvent | null) =>
+    collector.handleEvent(
+      typeof session === "string" ? session : session?.id,
+      event as SessionEvent,
+    );
   return { collector, emitted, send };
 }
 
-const callsOf = (emitted) => emitted.filter((e) => e.type === "call").map((e) => e.record);
-const correctsOf = (emitted) => emitted.filter((e) => e.type === "correct").map((e) => e.record);
-const countersOf = (emitted) => emitted.filter((e) => e.type === "counter").map((e) => e.record);
+const callsOf = (emitted: TrendEmit[]): TrendCallRecord[] =>
+  emitted
+    .filter((e): e is Extract<TrendEmit, { type: "call" }> => e.type === "call")
+    .map((e) => e.record);
+const correctsOf = (emitted: TrendEmit[]) =>
+  emitted
+    .filter((e): e is Extract<TrendEmit, { type: "correct" }> => e.type === "correct")
+    .map((e) => e.record);
+const countersOf = (emitted: TrendEmit[]): TrendCounterRecord[] =>
+  emitted
+    .filter((e): e is Extract<TrendEmit, { type: "counter" }> => e.type === "counter")
+    .map((e) => e.record);
 
 /**
  * 观测快照：在原断言点结构化复制观测值。原脚本式用例「动作 → 断言 → 新动作 →
  * 新断言」交错执行，断言读到的必须是该时点的值；迁为 it 后动作全部先在 beforeAll
  * 重放，若不复制则后续动作会改写断言读到的引用（兄弟文件曾出现条数漂移）。
  */
-const snapshot = (value) => structuredClone(value);
+const snapshot = <T>(value: T): T => structuredClone(value);
+
+/** 旧格式 call 定稿（无 dir 键）：聚合器遇缺键跳过目录累加（与显式未识别桶不等价——
+ * 补 dir 会改变 dirDays，故保持缺键原样，仅做类型面收敛）。 */
+const callOf = (record: Omit<TrendCallRecord, "dir"> & { dir?: string }): TrendEmit => ({
+  type: "call",
+  record: record as TrendCallRecord,
+});
+/** 旧格式 counter 定稿（无 dir 键 + 宽松计数；同上缺键语义）。 */
+const counterOf = (
+  record: Omit<TrendCounterRecord, "dir" | "turns" | "toolCalls"> & {
+    dir?: string;
+    turns?: number;
+    toolCalls?: number;
+  },
+): TrendEmit => ({ type: "counter", record: record as TrendCounterRecord });
 
 // ---------------------------------------------------------------- collector：定稿主信号
 // 不变量1：身份快照（event 归属折叠正确）——request/header 折叠为 per-session 归属主源，
 // usage chunk 定稿按当前折叠归属出账（R8 四不变量归组；台账守恒见 layer-architecture.md §2 E2）。
 
 describe("collector：定稿主信号——usage 到达即定稿", () => {
-  let calls;
-  let correctCount;
+  let calls: TrendCallRecord[];
+  let correctCount: number;
 
   beforeAll(() => {
     const { emitted, send } = makeCollector();
@@ -213,7 +264,7 @@ describe("collector：定稿主信号——usage 到达即定稿", () => {
 //              「重复 usage 走校正」路径随 assistant/chunk 移除而退役）。
 
 describe("collector：结算事件防双计——两处 usage 同时在场只记一份", () => {
-  let calls;
+  let calls: TrendCallRecord[];
 
   beforeAll(() => {
     const { emitted, send } = makeCollector();
@@ -255,7 +306,7 @@ describe("collector：结算事件防双计——两处 usage 同时在场只记
 // request/header 边界，也不依赖可选重试插件的事件）。
 
 describe("collector：retry 逐次计", () => {
-  let calls;
+  let calls: TrendCallRecord[];
 
   beforeAll(() => {
     const { emitted, send } = makeCollector();
@@ -281,7 +332,7 @@ describe("collector：retry 逐次计", () => {
   });
 
   it("两次消耗各自保留", () => {
-    expect([calls[0].tokens.input, calls[1].tokens.input]).toEqual([100, 70]);
+    expect([calls[0].tokens!.input, calls[1].tokens!.input]).toEqual([100, 70]);
   });
 });
 
@@ -290,7 +341,7 @@ describe("collector：retry 逐次计", () => {
 
 describe("collector：message 补记/校正/interrupted", () => {
   describe("补记：usage chunk 缺失，message.usage 到达", () => {
-    let calls;
+    let calls: TrendCallRecord[];
 
     beforeAll(() => {
       const { emitted, send } = makeCollector();
@@ -314,7 +365,7 @@ describe("collector：message 补记/校正/interrupted", () => {
   });
 
   describe("补记：无 usage（零 usage 语义）", () => {
-    let calls;
+    let calls: TrendCallRecord[];
 
     beforeAll(() => {
       const { emitted, send } = makeCollector();
@@ -334,7 +385,7 @@ describe("collector：message 补记/校正/interrupted", () => {
   });
 
   describe("interrupted 补记", () => {
-    let interrupted;
+    let interrupted: boolean | undefined;
 
     beforeAll(() => {
       const { emitted, send } = makeCollector();
@@ -358,8 +409,8 @@ describe("collector：message 补记/校正/interrupted", () => {
   });
 
   describe("同键「usage 结算 + message 结算」= 两次尝试（0.1.5 起结算自带完整 token）", () => {
-    let calls;
-    let correctCount;
+    let calls: TrendCallRecord[];
+    let correctCount: number;
 
     beforeAll(() => {
       const { emitted, send } = makeCollector();
@@ -391,7 +442,7 @@ describe("collector：message 补记/校正/interrupted", () => {
 
 describe("collector：attempt 口径（Q1/Q2）", () => {
   describe("Q1：attempt 的 usage 只在 stream 里（无顶层 usage 字段）", () => {
-    let calls;
+    let calls: TrendCallRecord[];
 
     beforeAll(() => {
       const { emitted, send } = makeCollector();
@@ -424,7 +475,7 @@ describe("collector：attempt 口径（Q1/Q2）", () => {
   });
 
   describe("Q2：无 usage 的 attempt 不入账（packed run 形态也不承载 usage）", () => {
-    let callCount;
+    let callCount: number;
 
     beforeAll(() => {
       const { emitted, send } = makeCollector();
@@ -458,7 +509,7 @@ describe("collector：attempt 口径（Q1/Q2）", () => {
 
 describe("collector：归属", () => {
   describe("归属缺失 → 未识别桶（不静默丢弃）", () => {
-    let calls;
+    let calls: TrendCallRecord[];
 
     beforeAll(() => {
       const { emitted, send } = makeCollector();
@@ -476,7 +527,7 @@ describe("collector：归属", () => {
   });
 
   describe('副源：message.source（kind:"model"）在归属缺失时补齐', () => {
-    let calls;
+    let calls: TrendCallRecord[];
 
     beforeAll(() => {
       const { emitted, send } = makeCollector();
@@ -521,7 +572,7 @@ describe("collector：归属", () => {
   });
 
   describe("mid-session 切换：新 header 覆盖归属", () => {
-    let providers;
+    let providers: string[];
 
     beforeAll(() => {
       const { emitted, send } = makeCollector();
@@ -569,8 +620,8 @@ describe("collector：归属", () => {
 
 describe("collector：turn/end 与计数", () => {
   describe("turn/end 与 tool/call 计数", () => {
-    let counters;
-    let callCount;
+    let counters: TrendCounterRecord[];
+    let callCount: number;
 
     beforeAll(() => {
       const { emitted, send } = makeCollector();
@@ -604,8 +655,8 @@ describe("collector：turn/end 与计数", () => {
   });
 
   describe("turn/end 后同键迟到结算：仍是真实尝试 → 入账且序数连续", () => {
-    let calls;
-    let turnCounters;
+    let calls: TrendCallRecord[];
+    let turnCounters: number;
 
     beforeAll(() => {
       const { emitted, send } = makeCollector();
@@ -640,7 +691,7 @@ describe("collector：turn/end 与计数", () => {
 
 describe("collector：TTL 与销毁", () => {
   describe("会话状态未到龄：序数记忆保留 → retry 连续", () => {
-    let calls;
+    let calls: TrendCallRecord[];
 
     beforeAll(() => {
       let nowMs = T0;
@@ -663,9 +714,9 @@ describe("collector：TTL 与销毁", () => {
   });
 
   describe("会话状态被清扫回收：序数记忆一并丢弃 → 同键结算视为全新会话", () => {
-    let afterFirst;
-    let afterSecond;
-    let calls;
+    let afterFirst: number;
+    let afterSecond: number;
+    let calls: TrendCallRecord[];
 
     beforeAll(() => {
       let nowMs = T0;
@@ -698,12 +749,12 @@ describe("collector：TTL 与销毁", () => {
     });
 
     it("回收后 retry 从 1 重启（60min 窗口外不追溯，口径文档化）", () => {
-      expect(calls.at(-1).retry).toBe(1);
+      expect(calls.at(-1)!.retry).toBe(1);
     });
   });
 
   describe("非法 payload 防御", () => {
-    let callCount;
+    let callCount: number;
 
     beforeAll(() => {
       const { emitted, send } = makeCollector();
@@ -729,7 +780,7 @@ describe("collector：TTL 与销毁", () => {
 // 不变量2：防双计——apply 实时累加 cells，压实只做「落盘形态转换」绝不二次累加；
 // 重建时 agg 分片权威 + 明细/计数行二选一来源（不双算）。null 语义：null 不参与求和。
 
-function cellTotals(agg, day, provider = "deepseek") {
+function cellTotals(agg: TrendAggregator, day: string, provider = "deepseek"): TrendCell | null {
   const b = agg.buckets().find((d) => d.day === day);
   if (!b) return null;
   const p = b.providers.find((x) => x.provider === provider);
@@ -737,13 +788,12 @@ function cellTotals(agg, day, provider = "deepseek") {
 }
 
 describe("aggregator：cells 累加与 null 语义", () => {
-  let cell;
+  let cell: TrendCell;
 
   beforeAll(() => {
     const agg = new TrendAggregator();
-    agg.apply({
-      type: "call",
-      record: {
+    agg.apply(
+      callOf({
         time: T0,
         session: "s1",
         turn: 1,
@@ -752,11 +802,10 @@ describe("aggregator：cells 累加与 null 语义", () => {
         provider: "deepseek",
         model: "chat",
         tokens: null,
-      },
-    });
-    agg.apply({
-      type: "call",
-      record: {
+      }),
+    );
+    agg.apply(
+      callOf({
         time: T0 + HOUR,
         session: "s1",
         turn: 2,
@@ -765,9 +814,9 @@ describe("aggregator：cells 累加与 null 语义", () => {
         provider: "deepseek",
         model: "chat",
         tokens: { input: 100, output: null, cacheRead: null, cacheWrite: null },
-      },
-    });
-    cell = snapshot(cellTotals(agg, DAY0));
+      }),
+    );
+    cell = snapshot(cellTotals(agg, DAY0)!);
   });
 
   it("calls 独立累加", () => {
@@ -788,19 +837,18 @@ describe("aggregator：cells 累加与 null 语义", () => {
 });
 
 describe("aggregator：日切压实", () => {
-  let bucketsBefore;
-  let bucketsAfter;
-  let pendingDays;
-  let aggRowCount;
-  let aggRow;
-  let hourRows;
+  let bucketsBefore: string;
+  let bucketsAfter: string;
+  let pendingDays: number;
+  let aggRowCount: number;
+  let aggRow: TrendAggRow;
+  let hourRows: TrendHourRow[];
 
   beforeAll(() => {
     // 日切压实：cells 不动、pending 移除、聚合行正确
     const agg = new TrendAggregator();
-    agg.apply({
-      type: "call",
-      record: {
+    agg.apply(
+      callOf({
         time: T0,
         session: "s1",
         turn: 1,
@@ -809,11 +857,10 @@ describe("aggregator：日切压实", () => {
         provider: "deepseek",
         model: "chat",
         tokens: { input: 10, output: 5, cacheRead: null, cacheWrite: null },
-      },
-    });
-    agg.apply({
-      type: "call",
-      record: {
+      }),
+    );
+    agg.apply(
+      callOf({
         time: T0 + HOUR,
         session: "s2",
         turn: 1,
@@ -822,27 +869,27 @@ describe("aggregator：日切压实", () => {
         provider: "deepseek",
         model: "chat",
         tokens: { input: 20, output: 5, cacheRead: null, cacheWrite: null },
-      },
-    });
-    agg.apply({
-      type: "counter",
-      record: {
+      }),
+    );
+    // toolCalls: 2 超出 0|1 字面（实现按数值累加，旧格式计数行容忍）
+    agg.apply(
+      counterOf({
         time: T0,
         session: "s1",
         provider: "deepseek",
         model: "chat",
         turns: 1,
         toolCalls: 2,
-      },
-    });
+      }),
+    );
     bucketsBefore = JSON.stringify(agg.buckets());
     const rolled = agg.rollupDay(DAY0, DAY0);
     bucketsAfter = JSON.stringify(agg.buckets());
     pendingDays = agg.pendingDays().length;
-    const aggRows = rolled.filter((r) => r.kind === "agg");
+    const aggRows = rolled.filter((r): r is TrendAggRow => r.kind === "agg");
     aggRowCount = aggRows.length;
     aggRow = snapshot(aggRows[0]);
-    hourRows = snapshot(rolled.filter((r) => r.kind === "hour"));
+    hourRows = snapshot(rolled.filter((r): r is TrendHourRow => r.kind === "hour"));
   });
 
   it("压实只转落盘形态，cells 不动（不双算）", () => {
@@ -895,15 +942,14 @@ describe("aggregator：日切压实", () => {
 });
 
 describe("aggregator：时钟回拨旧日落桶", () => {
-  let hasPastBucket;
+  let hasPastBucket: boolean;
 
   beforeAll(() => {
     // 时钟回拨：旧日事件按其本地日落桶（append-only 容忍）
     const agg = new TrendAggregator();
     const past = new Date(2026, 8, 1, 8, 0, 0).getTime(); // 09-01 < DAY0
-    agg.apply({
-      type: "call",
-      record: {
+    agg.apply(
+      callOf({
         time: past,
         session: "s1",
         turn: 1,
@@ -912,8 +958,8 @@ describe("aggregator：时钟回拨旧日落桶", () => {
         provider: "p",
         model: "m",
         tokens: { input: 7, output: 0, cacheRead: null, cacheWrite: null },
-      },
-    });
+      }),
+    );
     hasPastBucket = agg.buckets().some((d) => d.day === dayKey(past));
   });
 
@@ -923,7 +969,7 @@ describe("aggregator：时钟回拨旧日落桶", () => {
 });
 
 describe("aggregator：rebuild（agg 行 + 明细/计数行）", () => {
-  let cell;
+  let cell: TrendCell;
 
   beforeAll(() => {
     // rebuild：agg 行 + 明细/计数行重建 cells；persisted 标记防二次落盘
@@ -975,7 +1021,7 @@ describe("aggregator：rebuild（agg 行 + 明细/计数行）", () => {
       ],
       true,
     );
-    cell = snapshot(cellTotals(agg, DAY0));
+    cell = snapshot(cellTotals(agg, DAY0)!);
   });
 
   it("重建 calls = agg + 明细", () => {
@@ -996,7 +1042,7 @@ describe("aggregator：rebuild（agg 行 + 明细/计数行）", () => {
 });
 
 describe("aggregator：mergeAggRows 同键累加、null-aware", () => {
-  let merged;
+  let merged: TrendAggRow[];
 
   beforeAll(() => {
     merged = snapshot(
@@ -1015,7 +1061,7 @@ describe("aggregator：mergeAggRows 同键累加、null-aware", () => {
             calls: 1,
             turns: 0,
             toolCalls: 0,
-          },
+          } as TrendAggRow,
         ],
         [
           {
@@ -1031,7 +1077,7 @@ describe("aggregator：mergeAggRows 同键累加、null-aware", () => {
             calls: 2,
             turns: 1,
             toolCalls: 0,
-          },
+          } as TrendAggRow,
         ],
       ),
     );
@@ -1057,17 +1103,16 @@ describe("aggregator：mergeAggRows 同键累加、null-aware", () => {
 // ---------------------------------------------------------------- aggregator：序列
 
 describe("aggregator：日序列（空日 null、provider 过滤、total 指标）", () => {
-  let dayValues;
-  let onlyBValues;
-  let totalValue;
+  let dayValues: Array<number | null>;
+  let onlyBValues: Array<number | null>;
+  let totalValue: number | null;
 
   beforeAll(() => {
     const agg = new TrendAggregator();
     const d1 = new Date(2026, 8, 3, 10, 0, 0).getTime(); // 周四
     const d2 = T0; // 09-04 周五
-    agg.apply({
-      type: "call",
-      record: {
+    agg.apply(
+      callOf({
         time: d1,
         session: "s",
         turn: 1,
@@ -1076,11 +1121,10 @@ describe("aggregator：日序列（空日 null、provider 过滤、total 指标�
         provider: "a",
         model: "m",
         tokens: { input: 10, output: 0, cacheRead: null, cacheWrite: null },
-      },
-    });
-    agg.apply({
-      type: "call",
-      record: {
+      }),
+    );
+    agg.apply(
+      callOf({
         time: d2,
         session: "s",
         turn: 1,
@@ -1089,8 +1133,8 @@ describe("aggregator：日序列（空日 null、provider 过滤、total 指标�
         provider: "b",
         model: "m",
         tokens: { input: 20, output: 0, cacheRead: null, cacheWrite: null },
-      },
-    });
+      }),
+    );
     const days = agg.seriesDays(3, d2, "input");
     dayValues = snapshot(days.map((d) => d.value));
     const onlyB = agg.seriesDays(3, d2, "input", "b");
@@ -1115,16 +1159,15 @@ describe("aggregator：日序列（空日 null、provider 过滤、total 指标�
 });
 
 describe("aggregator：周序列（周一锚点）", () => {
-  let weekDays;
-  let weekValues;
+  let weekDays: string[];
+  let weekValues: Array<number | null>;
 
   beforeAll(() => {
     // 周序列：2026-09-04 为周五，周一起点 = 08-31
     const agg = new TrendAggregator();
     const monday = new Date(2026, 7, 31, 10, 0, 0).getTime(); // 08-31 周一
-    agg.apply({
-      type: "call",
-      record: {
+    agg.apply(
+      callOf({
         time: monday,
         session: "s",
         turn: 1,
@@ -1133,11 +1176,10 @@ describe("aggregator：周序列（周一锚点）", () => {
         provider: "a",
         model: "m",
         tokens: { input: 10, output: 0, cacheRead: null, cacheWrite: null },
-      },
-    });
-    agg.apply({
-      type: "call",
-      record: {
+      }),
+    );
+    agg.apply(
+      callOf({
         time: T0,
         session: "s",
         turn: 1,
@@ -1146,8 +1188,8 @@ describe("aggregator：周序列（周一锚点）", () => {
         provider: "a",
         model: "m",
         tokens: { input: 5, output: 0, cacheRead: null, cacheWrite: null },
-      },
-    });
+      }),
+    );
     const weeks = agg.seriesWeeks(2, T0, "input");
     weekDays = snapshot(weeks.map((w) => w.day));
     weekValues = snapshot(weeks.map((w) => w.value));
@@ -1163,15 +1205,14 @@ describe("aggregator：周序列（周一锚点）", () => {
 });
 
 describe("aggregator：月序列（月区间跨自然月）", () => {
-  let monthDays;
-  let monthValues;
+  let monthDays: string[];
+  let monthValues: Array<number | null>;
 
   beforeAll(() => {
     const agg = new TrendAggregator();
     const aug = new Date(2026, 7, 15, 10, 0, 0).getTime();
-    agg.apply({
-      type: "call",
-      record: {
+    agg.apply(
+      callOf({
         time: aug,
         session: "s",
         turn: 1,
@@ -1180,11 +1221,10 @@ describe("aggregator：月序列（月区间跨自然月）", () => {
         provider: "a",
         model: "m",
         tokens: { input: 8, output: 0, cacheRead: null, cacheWrite: null },
-      },
-    });
-    agg.apply({
-      type: "call",
-      record: {
+      }),
+    );
+    agg.apply(
+      callOf({
         time: T0,
         session: "s",
         turn: 1,
@@ -1193,8 +1233,8 @@ describe("aggregator：月序列（月区间跨自然月）", () => {
         provider: "a",
         model: "m",
         tokens: { input: 4, output: 0, cacheRead: null, cacheWrite: null },
-      },
-    });
+      }),
+    );
     const months = agg.seriesMonths(2, T0, "input");
     monthDays = snapshot(months.map((m) => m.day));
     monthValues = snapshot(months.map((m) => m.value));
@@ -1212,49 +1252,62 @@ describe("aggregator：月序列（月区间跨自然月）", () => {
 // ---------------------------------------------------------------- aggregator：堆叠柱序列 / 窗口摘要（#503 M2 查询面）
 
 describe("aggregator：堆叠柱序列 seriesStacked / 窗口摘要 windowSummary（#503 M2）", () => {
-  let dayKeys;
-  let daySeries0;
-  let daySeries1Parts;
-  let daySeries2Parts;
-  let daySeries2Total;
-  let dayProviders;
-  let byModelParts;
-  let byModelProviders;
-  let filteredParts;
-  let filteredProviders;
-  let filteredTotal;
-  let weekKeys;
-  let weekTotals;
-  let monthKeys;
-  let monthTotals;
-  let sumTotal;
-  let sumCalls;
-  let sumPeakKey;
-  let sumTop;
-  let sumTurns;
-  let sumPrevTotal;
-  let sumCallsTotal;
-  let sumCallsPrevTotal;
-  let sumFilteredTotal;
-  let sumFilteredCalls;
-  let sumFilteredTop;
-  let sumFilteredPrevTotal;
-  let sumPrevComplete;
-  let sumCompletePrevComplete;
-  let sumCompletePrevTotal;
-  let sumSpanPrevComplete;
-  let sumSpanPrevTotal;
-  let sumReusedSubset;
-  let sumSubset;
+  let dayKeys: string[];
+  let daySeries0: TrendStackPoint;
+  let daySeries1Parts: TrendStackPart[];
+  let daySeries2Parts: Array<Array<string | number | null>>;
+  let daySeries2Total: number | null;
+  let dayProviders: Array<{ provider: string; model: string | null }>;
+  let byModelParts: Array<Array<string | number | null>>;
+  let byModelProviders: string[];
+  let filteredParts: TrendStackPart[];
+  let filteredProviders: Array<{ provider: string; model: string | null }>;
+  let filteredTotal: number | null;
+  let weekKeys: string[];
+  let weekTotals: Array<number | null>;
+  let monthKeys: string[];
+  let monthTotals: Array<number | null>;
+  let sumTotal: number | null;
+  let sumCalls: number;
+  let sumPeakKey: string | null;
+  let sumTop: TrendWindowSummary["top"];
+  let sumTurns: number;
+  let sumPrevTotal: number | null;
+  let sumCallsTotal: number | null;
+  let sumCallsPrevTotal: number | null;
+  let sumFilteredTotal: number | null;
+  let sumFilteredCalls: number;
+  let sumFilteredTop: TrendWindowSummary["top"];
+  let sumFilteredPrevTotal: number | null;
+  let sumPrevComplete: boolean;
+  let sumCompletePrevComplete: boolean;
+  let sumCompletePrevTotal: number | null;
+  let sumSpanPrevComplete: boolean;
+  let sumSpanPrevTotal: number | null;
+  let sumReusedSubset: {
+    total: number | null;
+    calls: number;
+    peakKey: string | null;
+    top: TrendWindowSummary["top"];
+    prevTotal: number | null;
+    prevComplete: boolean;
+  };
+  let sumSubset: {
+    total: number | null;
+    calls: number;
+    peakKey: string | null;
+    top: TrendWindowSummary["top"];
+    prevTotal: number | null;
+    prevComplete: boolean;
+  };
 
   beforeAll(() => {
     // 场景：3 个 provider/model 组合、跨 3 天；dPrev 落在上一窗口（环比基准）
     const agg = new TrendAggregator();
     const d1 = new Date(2026, 8, 3, 10, 0, 0).getTime(); // 周四 09-03
     const dPrev = new Date(2026, 7, 31, 10, 0, 0).getTime(); // 周一 08-31
-    const call = (time, provider, model, input) => ({
-      type: "call",
-      record: {
+    const call = (time: number, provider: string, model: string, input: number): TrendEmit =>
+      callOf({
         time,
         session: "s",
         turn: 1,
@@ -1263,8 +1316,7 @@ describe("aggregator：堆叠柱序列 seriesStacked / 窗口摘要 windowSummar
         provider,
         model,
         tokens: { input, output: 0, cacheRead: null, cacheWrite: null },
-      },
-    });
+      });
     agg.apply(call(dPrev, "deepseek", "chat", 7));
     agg.apply(call(d1, "deepseek", "chat", 10));
     agg.apply(call(T0, "deepseek", "reasoner", 20));
@@ -1504,20 +1556,20 @@ describe("aggregator：堆叠柱序列 seriesStacked / 窗口摘要 windowSummar
 // ---------------------------------------------------------------- store
 
 describe("store：明细/聚合分片读写与 prune", () => {
-  let appendOk;
-  let expectedRows;
-  let back;
-  let hasAggBeforeWrite;
-  let hasAggAfterWrite;
-  let aggShardLength;
-  let afterDelete;
-  let removed;
-  let oldAggFileExists;
+  let appendOk: boolean;
+  let expectedRows: Array<TrendDetailRow | TrendCounterRow>;
+  let back: Array<TrendDetailRow | TrendCounterRow>;
+  let hasAggBeforeWrite: boolean;
+  let hasAggAfterWrite: boolean;
+  let aggShardLength: number;
+  let afterDelete: Array<TrendDetailRow | TrendCounterRow>;
+  let removed: number;
+  let oldAggFileExists: boolean;
 
   beforeAll(async () => {
     const root = mkdtempSync(join(tmpdir(), "dou-trend-store-"));
     const store = new TrendStore({ root });
-    const rows = [
+    const rows: Array<TrendDetailRow | TrendCounterRow> = [
       {
         v: 1,
         kind: "detail",
@@ -1619,7 +1671,7 @@ describe("store：明细/聚合分片读写与 prune", () => {
 });
 
 describe("store：坏行跳过", () => {
-  let rows;
+  let rows: Array<TrendAggRow | TrendDirRow | TrendHourRow>;
 
   beforeAll(async () => {
     const root = mkdtempSync(join(tmpdir(), "dou-trend-badline-"));
@@ -1640,14 +1692,14 @@ describe("store：坏行跳过", () => {
 // ---------------------------------------------------------------- tracker
 // 不变量2：防双计——启动重建（聚合权威）/ 当日明细防二次落盘 / 自愈压实 / 迟到旧日行合并防覆盖丢数。
 
-function writeAggShardLine(row) {
+function writeAggShardLine(row: unknown): string {
   return `${JSON.stringify(row)}\n`;
 }
 
 describe("tracker：启动重建（聚合分片权威）", () => {
-  let cellCalls;
-  let cellInput;
-  let residueDeleted;
+  let cellCalls: number;
+  let cellInput: number | null;
+  let residueDeleted: boolean;
 
   beforeAll(async () => {
     // 启动重建：聚合分片权威——同日明细分片为压实残留，忽略并自愈删除
@@ -1684,7 +1736,8 @@ describe("tracker：启动重建（聚合分片权威）", () => {
       now: () => T0,
       flushDebounceMs: 50,
     });
-    const b = tracker.buckets().find((d) => d.day === day1);
+    // buckets() 按请求日键必有桶（数据刚写入），find 命中是前置语义。
+    const b = tracker.buckets().find((d) => d.day === day1)!;
     cellCalls = b.providers[0].cell.calls;
     cellInput = b.providers[0].cell.input;
     residueDeleted = existsSync(join(detDir, `${day1}.jsonl`));
@@ -1705,9 +1758,9 @@ describe("tracker：启动重建（聚合分片权威）", () => {
 });
 
 describe("tracker：自愈压实（过去日明细无聚合分片）", () => {
-  let cellCalls;
-  let aggWritten;
-  let detailDeleted;
+  let cellCalls: number;
+  let aggWritten: boolean;
+  let detailDeleted: boolean;
 
   beforeAll(async () => {
     // 自愈压实：过去日明细分片无聚合分片 → 重建后立即压实
@@ -1756,7 +1809,7 @@ describe("tracker：自愈压实（过去日明细无聚合分片）", () => {
       now: () => T0,
       flushDebounceMs: 50,
     });
-    const b = tracker.buckets().find((d) => d.day === day1);
+    const b = tracker.buckets().find((d) => d.day === day1)!;
     cellCalls = b.providers[0].cell.calls;
     aggWritten = existsSync(join(aggDir, `${day1}.jsonl`));
     detailDeleted = existsSync(join(detDir, `${day1}.jsonl`));
@@ -1777,10 +1830,10 @@ describe("tracker：自愈压实（过去日明细无聚合分片）", () => {
 });
 
 describe("tracker：当日明细重建 + 新事件 flush（既有行不二次落盘）", () => {
-  let lineCount;
-  let s0Count;
-  let s1Count;
-  let cellCalls;
+  let lineCount: number;
+  let s0Count: number;
+  let s1Count: number;
+  let cellCalls: number;
 
   beforeAll(async () => {
     const root = mkdtempSync(join(tmpdir(), "dou-trend-today-"));
@@ -1837,7 +1890,7 @@ describe("tracker：当日明细重建 + 新事件 flush（既有行不二次落
     const parsed = lines.map((l) => JSON.parse(l));
     s0Count = parsed.filter((r) => r.session === "s0").length;
     s1Count = parsed.filter((r) => r.session === "s1").length;
-    cellCalls = tracker.buckets().find((d) => d.day === today).providers[0].cell.calls;
+    cellCalls = tracker.buckets().find((d) => d.day === today)!.providers[0].cell.calls;
     await tracker.dispose();
   });
 
@@ -1859,8 +1912,8 @@ describe("tracker：当日明细重建 + 新事件 flush（既有行不二次落
 });
 
 describe("tracker：防抖刷盘 + dispose await 刷盘", () => {
-  let unpersistedRows;
-  let flushed;
+  let unpersistedRows: number;
+  let flushed: boolean;
 
   beforeAll(async () => {
     const root = mkdtempSync(join(tmpdir(), "dou-trend-flush-"));
@@ -1901,16 +1954,16 @@ describe("tracker：防抖刷盘 + dispose await 刷盘", () => {
 });
 
 describe("tracker：日切压实与重启不双算（含迟到旧日行合并）", () => {
-  let aggShardWritten;
-  let detailShardDeleted;
-  let cellCallsAfterRollup;
-  let lateAggCalls;
-  let lateAggInput;
-  let lastLineKind;
-  let lastLineCalls;
-  let restartCalls;
-  let restartInput;
-  let restartTurns;
+  let aggShardWritten: boolean;
+  let detailShardDeleted: boolean;
+  let cellCallsAfterRollup: number;
+  let lateAggCalls: number;
+  let lateAggInput: number | null;
+  let lastLineKind: string;
+  let lastLineCalls: number;
+  let restartCalls: number;
+  let restartInput: number | null;
+  let restartTurns: number;
 
   beforeAll(async () => {
     // 日切压实：跨天后旧日压实为聚合分片、明细分片删除、重启不双算
@@ -1933,7 +1986,7 @@ describe("tracker：日切压实与重启不双算（含迟到旧日行合并）
     const day0 = dayKey(T0);
     aggShardWritten = existsSync(join(root, "agg", `${day0}.jsonl`));
     detailShardDeleted = existsSync(join(root, "details", `${day0}.jsonl`));
-    cellCallsAfterRollup = tracker.buckets().find((d) => d.day === day0).providers[0].cell.calls;
+    cellCallsAfterRollup = tracker.buckets().find((d) => d.day === day0)!.providers[0].cell.calls;
 
     // 迟到旧日行（时钟回拨）：append + 二次压实合并，不覆盖既有聚合
     tracker.handleEvent({ id: "s2" }, ev("request/header", HEADER(), T0 + HOUR, 4)); // time 仍在 09-04
@@ -1950,7 +2003,7 @@ describe("tracker：日切压实与重启不双算（含迟到旧日行合并）
     const aggRow = readFileSync(join(root, "agg", `${day0}.jsonl`), "utf8")
       .trimEnd()
       .split("\n")
-      .map((l) => JSON.parse(l))
+      .map((l: string) => JSON.parse(l))
       .filter((r) => r.kind === "agg")
       .at(-1);
     lateAggCalls = aggRow.calls;
@@ -1960,7 +2013,7 @@ describe("tracker：日切压实与重启不双算（含迟到旧日行合并）
       readFileSync(join(root, "agg", `${day0}.jsonl`), "utf8")
         .trimEnd()
         .split("\n")
-        .at(-1),
+        .at(-1)!,
     );
     lastLineKind = lastLine.kind;
     lastLineCalls = lastLine.calls;
@@ -1974,7 +2027,7 @@ describe("tracker：日切压实与重启不双算（含迟到旧日行合并）
       now: () => nowMs,
       flushDebounceMs: 50,
     });
-    const afterCells = tracker.buckets().find((d) => d.day === day0).providers[0].cell;
+    const afterCells = tracker.buckets().find((d) => d.day === day0)!.providers[0].cell;
     restartCalls = afterCells.calls;
     restartInput = afterCells.input;
     restartTurns = afterCells.turns;
@@ -2024,7 +2077,7 @@ describe("tracker：日切压实与重启不双算（含迟到旧日行合并）
 });
 
 describe("tracker：dispose await 最终刷盘", () => {
-  let detailShardExists;
+  let detailShardExists: boolean;
 
   beforeAll(async () => {
     // dispose await 最终刷盘：事件后立即 dispose，分片必落盘
@@ -2054,7 +2107,7 @@ describe("tracker：dispose await 最终刷盘", () => {
 });
 
 describe("tracker：flushNow 语义与 handleDisposed 清理", () => {
-  let unpersistedRows;
+  let unpersistedRows: number;
 
   beforeAll(async () => {
     // session/flush 语义在 tracker 层等价 flushNow；handleDisposed 清理不崩
@@ -2088,11 +2141,11 @@ describe("tracker：flushNow 语义与 handleDisposed 清理", () => {
 // ---------------------------------------------------------------- 评审修复：P0-1 交叉（HistoryStore×trend）
 
 describe("评审修复 P0-1 交叉：HistoryStore.pruneAll 不误删 trend 分片", () => {
-  let detExistsAfterPruneAll;
-  let aggExistsAfterPruneAll;
-  let usageExistsAfterPruneAll;
-  let removed;
-  let trendShardsGoneAfterPrune;
+  let detExistsAfterPruneAll: boolean;
+  let aggExistsAfterPruneAll: boolean;
+  let usageExistsAfterPruneAll: boolean;
+  let removed: number;
+  let trendShardsGoneAfterPrune: boolean;
 
   beforeAll(async () => {
     // P0-1 交叉：HistoryStore.pruneAll（默认 30 天 retention）不得误删 trend 目录分片——
@@ -2179,12 +2232,12 @@ describe("评审修复 P0-1 交叉：HistoryStore.pruneAll 不误删 trend 分�
 // ---------------------------------------------------------------- 评审修复：P1-3 appendRows 部分失败
 
 describe("评审修复 P1-3（store 级）：部分失败日不进成功集、重试后补上", () => {
-  let okDaysIsSet;
-  let okDaysList;
-  let successDayLines;
-  let failedDayLinesBefore;
-  let okDays2List;
-  let failedDayLinesAfter;
+  let okDaysIsSet: boolean;
+  let okDaysList: string[];
+  let successDayLines: number;
+  let failedDayLinesBefore: number;
+  let okDays2List: string[];
+  let failedDayLinesAfter: number;
   const pastDayKey = "2026-09-03";
 
   beforeAll(async () => {
@@ -2194,7 +2247,7 @@ describe("评审修复 P1-3（store 级）：部分失败日不进成功集、�
     const store = new TrendStore({ root, warn: () => {} });
     const dayB = "2026-09-03";
     mkdirSync(join(root, "details", `${dayB}.jsonl`), { recursive: true });
-    const rowOf = (day, session) => ({
+    const rowOf = (day: string, session: string): TrendDetailRow => ({
       v: 1,
       kind: "detail",
       time: T0,
@@ -2248,12 +2301,12 @@ describe("评审修复 P1-3（store 级）：部分失败日不进成功集、�
 });
 
 describe("评审修复 P1-3（tracker 级）：flush 部分失败不重复 append、失败日待补", () => {
-  let todayLinesAfterFirst;
-  let unpersistedAfterFirst;
-  let cellsAfterFirst;
-  let todayLinesAfterSecond;
-  let unpersistedAfterSecond;
-  let pastAggHealed;
+  let todayLinesAfterFirst: number;
+  let unpersistedAfterFirst: number;
+  let cellsAfterFirst: number;
+  let todayLinesAfterSecond: number;
+  let unpersistedAfterSecond: number;
+  let pastAggHealed: boolean;
 
   beforeAll(async () => {
     // P1-3 tracker 级：flush 部分失败后成功日不重写（不重复 append → 崩溃重建不双算）、
@@ -2279,7 +2332,7 @@ describe("评审修复 P1-3（tracker 级）：flush 部分失败不重复 appen
       .trimEnd()
       .split("\n").length;
     unpersistedAfterFirst = tracker.stats().unpersistedRows;
-    cellsAfterFirst = tracker.buckets().find((d) => d.day === today).providers[0].cell.calls;
+    cellsAfterFirst = tracker.buckets().find((d) => d.day === today)!.providers[0].cell.calls;
     rmdirSync(join(root, "details", `${pastDay}.jsonl`)); // 移除障碍
     await tracker.flushNow();
     todayLinesAfterSecond = readFileSync(join(root, "details", `${today}.jsonl`), "utf8")
@@ -2320,10 +2373,10 @@ describe("评审修复 P1-3（tracker 级）：flush 部分失败不重复 appen
 // 0.1.5 下同键两次结算即两次尝试，各自独立 token，双算由结算事件唯一性保证。
 
 describe("0.1.5 迁移：校正路径退役（同键两次结算 = 两次尝试）", () => {
-  let calls;
-  let correctCount;
-  let cellCalls;
-  let cellInput;
+  let calls: TrendCallRecord[];
+  let correctCount: number;
+  let cellCalls: number;
+  let cellInput: number | null;
 
   beforeAll(() => {
     // message 结算 + 同键后续结算 = 两次尝试（token 不互相覆盖）
@@ -2336,7 +2389,7 @@ describe("0.1.5 迁移：校正路径退役（同键两次结算 = 两次尝试�
     calls = snapshot(callsOf(emitted));
     correctCount = correctsOf(emitted).length;
     for (const e of emitted) agg.apply(e);
-    const cell = agg.buckets().find((d) => d.day === DAY0).providers[0].cell;
+    const cell = agg.buckets().find((d) => d.day === DAY0)!.providers[0].cell;
     cellCalls = cell.calls;
     cellInput = cell.input;
   });
@@ -2350,7 +2403,7 @@ describe("0.1.5 迁移：校正路径退役（同键两次结算 = 两次尝试�
   });
 
   it("两次 token 各自保留", () => {
-    expect(calls.map((c) => c.tokens.input)).toEqual([30, 300]);
+    expect(calls.map((c) => c.tokens!.input)).toEqual([30, 300]);
   });
 
   it("结算自带完整 token，无校正事件", () => {
@@ -2371,7 +2424,7 @@ describe("0.1.5 迁移：校正路径退役（同键两次结算 = 两次尝试�
 // 序数内生于结算事件，不依赖 request/header 边界。
 
 describe("done 记忆语义：结算序数跨 header 与 TTL 连续", () => {
-  let calls;
+  let calls: TrendCallRecord[];
 
   beforeAll(() => {
     // 序数记忆跨 header 与宽松 TTL 保持连续：三次同键结算 → retry 1/2/3
@@ -2400,11 +2453,11 @@ describe("done 记忆语义：结算序数跨 header 与 TTL 连续", () => {
 });
 
 describe("done 记忆语义：超 TREND_DONE_MAX 按插入序淘汰最旧键", () => {
-  let doneMax;
-  let settled;
-  let afterEvictedCount;
-  let evictedRetry;
-  let notEvictedRetry;
+  let doneMax: number;
+  let settled: number;
+  let afterEvictedCount: number;
+  let evictedRetry: number;
+  let notEvictedRetry: number;
 
   beforeAll(() => {
     // done 超 TREND_DONE_MAX 按插入序淘汰最旧键（长命会话防无界增长）。
@@ -2412,7 +2465,7 @@ describe("done 记忆语义：超 TREND_DONE_MAX 按插入序淘汰最旧键", (
     doneMax = TREND_DONE_MAX;
     const { emitted, send } = makeCollector();
     const s = { id: "s1" };
-    const usageAt = (turn) => ({
+    const usageAt = (turn: number) => ({
       turn,
       step: 1,
       chunk: { type: "usage", usage: { inputTokens: 1, outputTokens: 1 } },
@@ -2425,11 +2478,11 @@ describe("done 记忆语义：超 TREND_DONE_MAX 按插入序淘汰最旧键", (
     // 被淘汰键（turn=1）再次结算 → 无记忆 → retry 重启为 1
     send(s, ev("assistant/message", MESSAGE({ inputTokens: 9, outputTokens: 9 }), T0, 999));
     afterEvictedCount = callsOf(emitted).length;
-    evictedRetry = callsOf(emitted).at(-1).retry;
+    evictedRetry = callsOf(emitted).at(-1)!.retry;
     // 未淘汰键（turn=MAX+1）再次结算 → 序数递增为 2
     const late = { ...MESSAGE({ inputTokens: 8, outputTokens: 8 }), turn: TREND_DONE_MAX + 1 };
     send(s, ev("assistant/message", late, T0, 1000));
-    notEvictedRetry = callsOf(emitted).at(-1).retry;
+    notEvictedRetry = callsOf(emitted).at(-1)!.retry;
   });
 
   it("done 记忆上限常量", () => {
@@ -2456,23 +2509,23 @@ describe("done 记忆语义：超 TREND_DONE_MAX 按插入序淘汰最旧键", (
 // ---------------------------------------------------------------- 评审修复：P2-4 分片行校验补强
 
 describe("评审修复 P2-4：分片行校验补强（坏行拒收 + 逐行告警）", () => {
-  let validBadToken;
-  let validBadModel;
-  let validBadDay;
-  let validBadCounter;
-  let validBadAgg;
-  let validGood;
-  let detailsLength;
-  let details0Session;
-  let aggShardLength;
-  let warnsLength;
+  let validBadToken: boolean;
+  let validBadModel: boolean;
+  let validBadDay: boolean;
+  let validBadCounter: boolean;
+  let validBadAgg: boolean;
+  let validGood: boolean;
+  let detailsLength: number;
+  let details0Session: string;
+  let aggShardLength: number;
+  let warnsLength: number;
 
   beforeAll(async () => {
     // P2-4：token 字符串 "x" / model 数字 / day 非零填充格式（"2026-9-4"）→
     // isValidShardRow 拒收、readDetailShard/readAggShard 跳过并逐行告警
     //（防垃圾值进 sumToken 拼接、垃圾日键进内存桶）。
     const root = mkdtempSync(join(tmpdir(), "dou-trend-badrow-"));
-    const warns = [];
+    const warns: string[] = [];
     const store = new TrendStore({ root, warn: (m) => warns.push(m) });
     const good = {
       v: 1,
@@ -2587,18 +2640,18 @@ describe("评审修复 P2-4：分片行校验补强（坏行拒收 + 逐行告�
 // 不变量1：身份快照——主源在场且与副源不一致时仅告警不覆盖（主源 header 是记账归属权威）。
 
 describe("评审修复 P2-6：归属不一致告警（主源不被副源覆盖）", () => {
-  let anomaliesLength;
-  let anomalyHasSession;
-  let callProvider;
-  let callModel;
-  let silentLength;
-  let missingLength;
+  let anomaliesLength: number;
+  let anomalyHasSession: boolean;
+  let callProvider: string;
+  let callModel: string | null;
+  let silentLength: number;
+  let missingLength: number;
 
   beforeAll(() => {
     // P2-6：主源在场且 message.source 解析结果与之不一致 → onAnomaly 告警（带上下文）、
     // attribution 保持主源不被副源覆盖。
-    const anomalies = [];
-    const emitted = [];
+    const anomalies: string[] = [];
+    const emitted: TrendEmit[] = [];
     const collector = new TrendCollector({
       now: () => T0,
       emit: (e) => emitted.push(e),
@@ -2627,7 +2680,7 @@ describe("评审修复 P2-6：归属不一致告警（主源不被副源覆盖�
     callProvider = callsOf(emitted)[0].provider;
     callModel = callsOf(emitted)[0].model;
     // 回归：主副源一致不告警；归属缺失走副源补齐不告警（既有语义不回退）
-    const silent = [];
+    const silent: string[] = [];
     const c2 = new TrendCollector({
       now: () => T0,
       emit: () => {},
@@ -2639,7 +2692,7 @@ describe("评审修复 P2-6：归属不一致告警（主源不被副源覆盖�
       ev("assistant/message", MESSAGE({ inputTokens: 1, outputTokens: 1 }), T0, 2),
     );
     silentLength = silent.length;
-    const missing = [];
+    const missing: string[] = [];
     const c3 = new TrendCollector({
       now: () => T0,
       emit: () => {},
@@ -2678,11 +2731,11 @@ describe("评审修复 P2-6：归属不一致告警（主源不被副源覆盖�
 });
 
 describe("评审修复 P2-6：tracker 侧 onAnomaly 接线到 warn", () => {
-  let warnHit;
+  let warnHit: boolean;
 
   beforeAll(async () => {
     // P2-6 tracker 接线：collector onAnomaly → tracker 统一 warn 出口
-    const warns = [];
+    const warns: string[] = [];
     const root = mkdtempSync(join(tmpdir(), "dou-trend-anomaly-"));
     const tracker = await TrendTracker.start({
       makeCollector: (o) => new TrendCollector(o),
@@ -2722,9 +2775,9 @@ describe("评审修复 P2-6：tracker 侧 onAnomaly 接线到 warn", () => {
 });
 
 describe("评审修复 P2-7：writeAggDay 清理同日残留 tmp", () => {
-  let sameDayTmpCleared;
-  let otherDayTmpKept;
-  let aggShardLength;
+  let sameDayTmpCleared: boolean;
+  let otherDayTmpKept: boolean;
+  let aggShardLength: number;
 
   beforeAll(async () => {
     // P2-7：writeAggDay 写 tmp 前清理同日 rename 前崩溃残留 tmp（前缀 `${day}.jsonl.` 且
@@ -2846,12 +2899,12 @@ describe("评审 #934：writeAggDay 多残留清理失败全量 warn", () => {
 // ---------------------------------------------------------------- config
 
 describe("config：trendRetentionDays 归一化", () => {
-  let defaultDays;
-  let zeroDays;
-  let negativeDays;
-  let fractionalDays;
-  let upperBoundDays;
-  let passthroughDays;
+  let defaultDays: number;
+  let zeroDays: number;
+  let negativeDays: number;
+  let fractionalDays: number;
+  let upperBoundDays: number;
+  let passthroughDays: number;
 
   beforeAll(() => {
     defaultDays = normalizeConfig({}).trendRetentionDays;
@@ -2892,14 +2945,14 @@ describe("config：trendRetentionDays 归一化", () => {
 // store 无 session / cwd 缺失 / 抛错显式归 TREND_UNIDENTIFIED 桶（不静默丢弃、不重复查询）。
 
 describe("#633 A1(a)：per-session 惰性单查（resolveCwd 恰 1 次）", () => {
-  let cwdCalls;
-  let unpersistedRows;
+  let cwdCalls: string[];
+  let unpersistedRows: number;
 
   beforeAll(async () => {
     // A1(a)：per-session 惰性单查——同 session 多次 emit 事件（call 定稿/校正/counter/
     // 新 turn call），resolveCwd 恰查询 1 次（结果缓存进会话状态）
     const root = mkdtempSync(join(tmpdir(), "dou-trend-dir-once-"));
-    const cwdCalls0 = [];
+    const cwdCalls0: string[] = [];
     const tracker = await TrendTracker.start({
       makeCollector: (o) => new TrendCollector(o),
       root,
@@ -2947,16 +3000,16 @@ describe("#633 A1(a)：per-session 惰性单查（resolveCwd 恰 1 次）", () =
 });
 
 describe("#633 A1(b)：resolveCwd 缺失/抛错归未识别桶且各查 1 次", () => {
-  let countsS1;
-  let countsS2;
-  let s1Dir;
-  let s2Dir;
+  let countsS1: number;
+  let countsS2: number;
+  let s1Dir: string;
+  let s2Dir: string;
 
   beforeAll(async () => {
     // A1(b)：resolveCwd 返回 undefined（store 无该 session / cwd 缺失）或抛错 →
     // 归 TREND_UNIDENTIFIED 且各自仅查询 1 次（未识别结果同样缓存，防重复查询）
     const root = mkdtempSync(join(tmpdir(), "dou-trend-dir-miss-"));
-    const counts = { s1: 0, s2: 0 };
+    const counts: Record<string, number> = { s1: 0, s2: 0 };
     const tracker = await TrendTracker.start({
       makeCollector: (o) => new TrendCollector(o),
       root,
@@ -3010,14 +3063,14 @@ describe("#633 A1(b)：resolveCwd 缺失/抛错归未识别桶且各查 1 次", 
 });
 
 describe("#633 A1(c)：cwd 经 sanitizeDirName 净化后落盘 + 纯函数面直测", () => {
-  let dirS1;
-  let dirS2;
-  let dirS3;
-  let dirS4;
-  let countersAllBasename;
-  let sanitizedWindows;
-  let sanitizedDriveRoot;
-  let sanitizedUnc;
+  let dirS1: string;
+  let dirS2: string;
+  let dirS3: string;
+  let dirS4: string;
+  let countersAllBasename: boolean;
+  let sanitizedWindows: string | null;
+  let sanitizedDriveRoot: string | null;
+  let sanitizedUnc: string | null;
 
   beforeAll(async () => {
     // A1(c)：resolveCwd 返回含路径分隔符/尾斜杠的 cwd → 落盘为 sanitizeDirName
@@ -3052,7 +3105,8 @@ describe("#633 A1(c)：cwd 经 sanitizeDirName 净化后落盘 + 纯函数面直
       .trimEnd()
       .split("\n")
       .map((l) => JSON.parse(l));
-    const dirOf = (sid) => rows.find((r) => r.kind === "detail" && r.session === sid).dir;
+    const dirOf = (sid: string): string =>
+      rows.find((r) => r.kind === "detail" && r.session === sid).dir;
     dirS1 = dirOf("s1");
     dirS2 = dirOf("s2");
     dirS3 = dirOf("s3");
@@ -3101,10 +3155,10 @@ describe("#633 A1(c)：cwd 经 sanitizeDirName 净化后落盘 + 纯函数面直
 });
 
 describe("#633 A1(d)：落盘 detail/counter 行均含 dir 字段且多 session 不串桶", () => {
-  let dS1Dir;
-  let dS2Dir;
-  let cS1Dir;
-  let cS2Dir;
+  let dS1Dir: string;
+  let dS2Dir: string;
+  let cS1Dir: string;
+  let cS2Dir: string;
 
   beforeAll(async () => {
     // A1(d)：落盘 detail/counter 行均含 dir 字段且值正确（多 session 各自归属不串桶）
@@ -3216,14 +3270,30 @@ const A2_LEGACY_AGG = {
 };
 
 describe("#633 A2(a)：旧格式 fixture 重建（聚合权威 + 当日明细不重写）", () => {
-  let pastBucketExists;
-  let pastCell;
-  let todayCell;
-  let warns;
-  let residueDeleted;
-  let detBytesUnchangedAfterStart;
-  let aggBytesUnchanged;
-  let detBytesUnchangedAfterDispose;
+  let pastBucketExists: boolean;
+  let pastCell: {
+    input: number | null;
+    output: number | null;
+    cacheRead: number | null;
+    cacheWrite: number | null;
+    calls: number;
+    turns: number;
+    toolCalls: number;
+  };
+  let todayCell: {
+    input: number | null;
+    output: number | null;
+    cacheRead: number | null;
+    cacheWrite: number | null;
+    calls: number;
+    turns: number;
+    toolCalls: number;
+  };
+  let warns: string[];
+  let residueDeleted: boolean;
+  let detBytesUnchangedAfterStart: boolean;
+  let aggBytesUnchanged: boolean;
+  let detBytesUnchangedAfterDispose: boolean;
 
   beforeAll(async () => {
     // A2(a)：旧格式 fixture 重建（真实升级场景）——过去日聚合分片（权威）+ 当日旧版
@@ -3252,7 +3322,7 @@ describe("#633 A2(a)：旧格式 fixture 重建（聚合权威 + 当日明细不
       `${JSON.stringify(A2_LEGACY_DETAIL)}\n${JSON.stringify(A2_LEGACY_COUNTER)}\n`,
     );
 
-    const warns0 = [];
+    const warns0: string[] = [];
     const tracker = await TrendTracker.start({
       makeCollector: (o) => new TrendCollector(o),
       root,
@@ -3260,11 +3330,11 @@ describe("#633 A2(a)：旧格式 fixture 重建（聚合权威 + 当日明细不
       flushDebounceMs: 60000,
       warn: (m) => warns0.push(m),
     });
-    const bPast = tracker.buckets().find((d) => d.day === "2026-09-03");
+    const bPast = tracker.buckets().find((d) => d.day === "2026-09-03")!;
     pastBucketExists = bPast !== undefined;
     const cellPast = bPast.providers.find(
       (p) => p.provider === "deepseek" && p.model === "deepseek-chat",
-    ).cell;
+    )!.cell;
     pastCell = snapshot({
       input: cellPast.input,
       output: cellPast.output,
@@ -3274,7 +3344,7 @@ describe("#633 A2(a)：旧格式 fixture 重建（聚合权威 + 当日明细不
       turns: cellPast.turns,
       toolCalls: cellPast.toolCalls,
     });
-    const cellToday = tracker.buckets().find((d) => d.day === today).providers[0].cell;
+    const cellToday = tracker.buckets().find((d) => d.day === today)!.providers[0].cell;
     todayCell = snapshot({
       input: cellToday.input,
       output: cellToday.output,
@@ -3342,19 +3412,27 @@ describe("#633 A2(a)：旧格式 fixture 重建（聚合权威 + 当日明细不
 });
 
 describe("#633 A2(b)：自愈压实路径（旧格式明细无聚合分片）", () => {
-  let bucketExists;
-  let cellCalls;
-  let cellTurns;
-  let cellToolCalls;
-  let cellInput;
-  let cellOutput;
-  let cellCacheRead;
-  let cellCacheWrite;
-  let aggWritten;
-  let detailDeleted;
-  let aggRowCount;
-  let aggRowValues;
-  let warns;
+  let bucketExists: boolean;
+  let cellCalls: number;
+  let cellTurns: number;
+  let cellToolCalls: number;
+  let cellInput: number | null;
+  let cellOutput: number | null;
+  let cellCacheRead: number | null;
+  let cellCacheWrite: number | null;
+  let aggWritten: boolean;
+  let detailDeleted: boolean;
+  let aggRowCount: number;
+  let aggRowValues: {
+    input: number | null;
+    output: number | null;
+    cacheRead: number | null;
+    cacheWrite: number | null;
+    calls: number;
+    turns: number;
+    toolCalls: number;
+  };
+  let warns: string[];
 
   beforeAll(async () => {
     // A2(b)：自愈压实路径——过去日明细无聚合分片（旧格式行无 dir 键）→ start 触发自愈，
@@ -3367,7 +3445,7 @@ describe("#633 A2(b)：自愈压实路径（旧格式明细无聚合分片）", 
       join(detDir, "2026-09-03.jsonl"),
       `${JSON.stringify(A2_LEGACY_DETAIL)}\n${JSON.stringify(A2_LEGACY_COUNTER)}\n`,
     );
-    const warns0 = [];
+    const warns0: string[] = [];
     const tracker = await TrendTracker.start({
       makeCollector: (o) => new TrendCollector(o),
       root,
@@ -3375,11 +3453,11 @@ describe("#633 A2(b)：自愈压实路径（旧格式明细无聚合分片）", 
       flushDebounceMs: 60000,
       warn: (m) => warns0.push(m),
     });
-    const b = tracker.buckets().find((d) => d.day === "2026-09-03");
+    const b = tracker.buckets().find((d) => d.day === "2026-09-03")!;
     bucketExists = b !== undefined;
     const cell = b.providers.find(
       (p) => p.provider === "deepseek" && p.model === "deepseek-chat",
-    ).cell;
+    )!.cell;
     cellCalls = cell.calls;
     cellTurns = cell.turns;
     cellToolCalls = cell.toolCalls;
@@ -3466,15 +3544,23 @@ describe("#633 A2(b)：自愈压实路径（旧格式明细无聚合分片）", 
 });
 
 describe("#633 A2(c)：round-trip（旧格式行 rebuild → flushNow → 重读分片）", () => {
-  let cellCalls;
-  let cellTurns;
-  let cellToolCalls;
-  let cellInput;
-  let cellOutput;
-  let bytesUnchangedAfterFlush;
-  let backLength;
-  let backFields;
-  let noDirKey;
+  let cellCalls: number;
+  let cellTurns: number;
+  let cellToolCalls: number;
+  let cellInput: number | null;
+  let cellOutput: number | null;
+  let bytesUnchangedAfterFlush: boolean;
+  let backLength: number;
+  let backFields: Array<{
+    kind: string;
+    session: string;
+    time: number;
+    provider: string;
+    model: string | null;
+    input: number | null | undefined;
+    turns: number | undefined;
+  }>;
+  let noDirKey: boolean;
 
   beforeAll(async () => {
     // A2(c)：round-trip——旧格式行经 rebuild → flushNow → 重读分片：行数不增不减、
@@ -3505,7 +3591,7 @@ describe("#633 A2(c)：round-trip（旧格式行 rebuild → flushNow → 重读
       now: () => T0,
       flushDebounceMs: 60000,
     });
-    const cell = tracker.buckets().find((d) => d.day === dayKey(T0)).providers[0].cell;
+    const cell = tracker.buckets().find((d) => d.day === dayKey(T0))!.providers[0].cell;
     cellCalls = cell.calls;
     cellTurns = cell.turns;
     cellToolCalls = cell.toolCalls;
@@ -3598,9 +3684,9 @@ describe("#633 A2(c)：round-trip（旧格式行 rebuild → flushNow → 重读
 });
 
 describe("#633 A2(d)：未知键容忍（legacyFlag 不拒绝、不告警）", () => {
-  let cellCalls;
-  let cellInput;
-  let warns;
+  let cellCalls: number;
+  let cellInput: number | null;
+  let warns: string[];
 
   beforeAll(async () => {
     // A2(d)：未知键容忍——detail 行附加未知字段 legacyFlag:"x" 不被拒绝、不抛错，
@@ -3614,7 +3700,7 @@ describe("#633 A2(d)：未知键容忍（legacyFlag 不拒绝、不告警）", (
       join(detDir, "2026-09-03.jsonl"),
       `${JSON.stringify(withUnknown)}\n${JSON.stringify(A2_LEGACY_COUNTER)}\n`,
     );
-    const warns0 = [];
+    const warns0: string[] = [];
     const tracker = await TrendTracker.start({
       makeCollector: (o) => new TrendCollector(o),
       root,
@@ -3622,7 +3708,7 @@ describe("#633 A2(d)：未知键容忍（legacyFlag 不拒绝、不告警）", (
       flushDebounceMs: 60000,
       warn: (m) => warns0.push(m),
     });
-    const cell = tracker.buckets().find((d) => d.day === "2026-09-03").providers[0].cell;
+    const cell = tracker.buckets().find((d) => d.day === "2026-09-03")!.providers[0].cell;
     cellCalls = cell.calls;
     cellInput = cell.input;
     warns = snapshot(warns0);
@@ -3643,15 +3729,15 @@ describe("#633 A2(d)：未知键容忍（legacyFlag 不拒绝、不告警）", (
 });
 
 describe("#633 A2 补充：dir 值域防御不回退（空串/非字符串按坏行拒绝）", () => {
-  let rowsLength;
-  let keptSession;
-  let warnsLength;
+  let rowsLength: number;
+  let keptSession: string;
+  let warnsLength: number;
 
   beforeAll(async () => {
     // A2 补充：dir 值域防御仍是有效防线（与「未知键容忍」正交）——dir 为空字符串/
     // 非字符串时按坏行拒绝并告警，同分片合法行不受连坐（A1 校验语义不因 A2 放宽回退）。
     const root = mkdtempSync(join(tmpdir(), "dou-trend-a2-dirguard-"));
-    const warns = [];
+    const warns: string[] = [];
     const store = new TrendStore({ root, warn: (m) => warns.push(m) });
     mkdirSync(join(root, "details"), { recursive: true });
     const good = { ...A2_LEGACY_DETAIL, dir: "proj" };
@@ -3685,11 +3771,16 @@ describe("#633 A2 补充：dir 值域防御不回退（空串/非字符串按坏
 // dirDays、不进 cells（防双计）、不进 pending（不二次落盘）。
 
 describe("#633 A3(a)：内存态归并（tracker 全链路压实产物）", () => {
-  let shardKinds;
-  let shardHours;
-  let shardDirs;
-  let shardAggCells;
-  let detailShardDeleted;
+  let shardKinds: string[];
+  let shardHours: TrendHourRow[];
+  let shardDirs: TrendDirRow[];
+  let shardAggCells: Array<{
+    input: number | null;
+    output: number | null;
+    calls: number;
+    turns: number;
+  }>;
+  let detailShardDeleted: boolean;
 
   beforeAll(async () => {
     // A3(a)：内存态归并（tracker 全链路）——apply 平行累加后压实产物 dir 行：
@@ -3725,11 +3816,11 @@ describe("#633 A3(a)：内存态归并（tracker 全链路压实产物）", () =
     await tracker.flushNow();
     const shard = await new TrendStore({ root }).readAggDayShard(DAY0);
     shardKinds = snapshot(shard.map((r) => r.kind));
-    shardHours = snapshot(shard.filter((r) => r.kind === "hour"));
-    shardDirs = snapshot(shard.filter((r) => r.kind === "dir"));
+    shardHours = snapshot(shard.filter((r): r is TrendHourRow => r.kind === "hour"));
+    shardDirs = snapshot(shard.filter((r): r is TrendDirRow => r.kind === "dir"));
     shardAggCells = snapshot(
       shard
-        .filter((r) => r.kind === "agg")
+        .filter((r): r is TrendAggRow => r.kind === "agg")
         .map((r) => ({ input: r.input, output: r.output, calls: r.calls, turns: r.turns })),
     );
     detailShardDeleted = existsSync(join(root, "details", `${DAY0}.jsonl`));
@@ -3812,8 +3903,16 @@ describe("#633 A3(a)：内存态归并（tracker 全链路压实产物）", () =
 });
 
 describe("#633 A3(b)：rebuild 混存行（dir 行不进 cells / 不进 pending）", () => {
-  let cell;
-  let pendingRows;
+  let cell: {
+    input: number | null;
+    output: number | null;
+    cacheRead: number | null;
+    cacheWrite: number | null;
+    calls: number;
+    turns: number;
+    toolCalls: number;
+  };
+  let pendingRows: number;
 
   beforeAll(() => {
     // A3(b)：rebuild 混存行——agg 行 + dir 行 + 当日 detail/counter 行重放：dir 行
@@ -3881,7 +3980,7 @@ describe("#633 A3(b)：rebuild 混存行（dir 行不进 cells / 不进 pending�
       ],
       true,
     );
-    const c = cellTotals(agg, DAY0);
+    const c = cellTotals(agg, DAY0)!;
     cell = snapshot({
       input: c.input,
       output: c.output,
@@ -3912,9 +4011,9 @@ describe("#633 A3(b)：rebuild 混存行（dir 行不进 cells / 不进 pending�
 });
 
 describe("#633 A4(c)：rollup 产物字段值（agg + dir + hour 同源折算）", () => {
-  let aggAndDirRows;
-  let hourRows;
-  let secondRollup;
+  let aggAndDirRows: Array<TrendAggRow | TrendDirRow>;
+  let hourRows: TrendHourRow[];
+  let secondRollup: Array<TrendAggRow | TrendDirRow | TrendHourRow>;
 
   beforeAll(() => {
     // A4(c)：rollup 产物字段值 deepEqual——rollupDay 返回 [...aggRows, ...dirRows]，
@@ -3935,9 +4034,9 @@ describe("#633 A4(c)：rollup 产物字段值（agg + dir + hour 同源折算）
         tokens: { input: 100, output: 50, cacheRead: 10, cacheWrite: 5 },
       },
     });
-    agg.apply({
-      type: "counter",
-      record: {
+    // toolCalls: 2 超出 0|1 字面（实现按数值累加；计数行宽松口径与上同）。
+    agg.apply(
+      counterOf({
         time: T0,
         session: "s1",
         provider: "deepseek",
@@ -3945,8 +4044,8 @@ describe("#633 A4(c)：rollup 产物字段值（agg + dir + hour 同源折算）
         dir: "proj",
         turns: 1,
         toolCalls: 2,
-      },
-    });
+      }),
+    );
     agg.apply({
       type: "call",
       record: {
@@ -3962,8 +4061,10 @@ describe("#633 A4(c)：rollup 产物字段值（agg + dir + hour 同源折算）
       },
     });
     const rows = agg.rollupDay(DAY0, DAY0);
-    aggAndDirRows = snapshot(rows.filter((r) => r.kind === "agg" || r.kind === "dir"));
-    hourRows = snapshot(rows.filter((r) => r.kind === "hour"));
+    aggAndDirRows = snapshot(
+      rows.filter((r): r is TrendAggRow | TrendDirRow => r.kind === "agg" || r.kind === "dir"),
+    );
+    hourRows = snapshot(rows.filter((r): r is TrendHourRow => r.kind === "hour"));
     secondRollup = snapshot(agg.rollupDay(DAY0, DAY0));
   });
 
@@ -4036,7 +4137,7 @@ describe("#633 A4(c)：rollup 产物字段值（agg + dir + hour 同源折算）
 });
 
 describe("#633 A4(d)：mergeDirRows 纯函数（同键累加、null-aware、保序）", () => {
-  let merged;
+  let merged: TrendDirRow[];
 
   beforeAll(() => {
     // A4(d)：mergeDirRows 纯函数——同 dir 键累加（null-aware）、异 dir 独立、
@@ -4056,7 +4157,7 @@ describe("#633 A4(d)：mergeDirRows 纯函数（同键累加、null-aware、保�
             calls: 1,
             turns: 0,
             toolCalls: 0,
-          },
+          } as TrendDirRow,
           {
             v: 1,
             kind: "dir",
@@ -4069,7 +4170,7 @@ describe("#633 A4(d)：mergeDirRows 纯函数（同键累加、null-aware、保�
             calls: 2,
             turns: 1,
             toolCalls: 1,
-          },
+          } as TrendDirRow,
         ],
         [
           {
@@ -4084,7 +4185,7 @@ describe("#633 A4(d)：mergeDirRows 纯函数（同键累加、null-aware、保�
             calls: 2,
             turns: 0,
             toolCalls: 0,
-          },
+          } as TrendDirRow,
         ],
       ),
     );
@@ -4123,15 +4224,23 @@ describe("#633 A4(d)：mergeDirRows 纯函数（同键累加、null-aware、保�
 });
 
 describe("#633 A4(e)：混存 round-trip（压实→重启→迟到行二次压实→再重启）", () => {
-  let round1Kinds;
-  let round1Hours;
-  let detailShardDeleted;
-  let cellR1;
-  let round2Kinds;
-  let round2Hours;
-  let round2Dirs;
-  let cellR2Calls;
-  let finalKinds;
+  let round1Kinds: string[];
+  let round1Hours: TrendHourRow[];
+  let detailShardDeleted: boolean;
+  let cellR1: {
+    input: number | null;
+    output: number | null;
+    cacheRead: number | null;
+    cacheWrite: number | null;
+    calls: number;
+    turns: number;
+    toolCalls: number;
+  };
+  let round2Kinds: string[];
+  let round2Hours: TrendHourRow[];
+  let round2Dirs: TrendDirRow[];
+  let cellR2Calls: number;
+  let finalKinds: string[];
 
   beforeAll(async () => {
     // A4(e)：混存 round-trip——压实（混存落盘）→ 重启重建（不丢不重，dir 行不双算
@@ -4163,7 +4272,7 @@ describe("#633 A4(e)：混存 round-trip（压实→重启→迟到行二次压�
     const store = new TrendStore({ root });
     const round1 = await store.readAggDayShard(DAY0);
     round1Kinds = snapshot(round1.map((r) => r.kind));
-    round1Hours = snapshot(round1.filter((r) => r.kind === "hour"));
+    round1Hours = snapshot(round1.filter((r): r is TrendHourRow => r.kind === "hour"));
     detailShardDeleted = existsSync(join(root, "details", `${DAY0}.jsonl`));
     await tracker.dispose();
     tracker = await TrendTracker.start({
@@ -4175,8 +4284,8 @@ describe("#633 A4(e)：混存 round-trip（压实→重启→迟到行二次压�
     });
     const cellR1raw = tracker
       .buckets()
-      .find((d) => d.day === DAY0)
-      .providers.find((p) => p.provider === "deepseek").cell;
+      .find((d) => d.day === DAY0)!
+      .providers.find((p) => p.provider === "deepseek")!.cell;
     cellR1 = snapshot({
       input: cellR1raw.input,
       output: cellR1raw.output,
@@ -4207,8 +4316,8 @@ describe("#633 A4(e)：混存 round-trip（压实→重启→迟到行二次压�
     await tracker.flushNow();
     const round2 = await store.readAggDayShard(DAY0);
     round2Kinds = snapshot(round2.map((r) => r.kind));
-    round2Hours = snapshot(round2.filter((r) => r.kind === "hour"));
-    round2Dirs = snapshot(round2.filter((r) => r.kind === "dir"));
+    round2Hours = snapshot(round2.filter((r): r is TrendHourRow => r.kind === "hour"));
+    round2Dirs = snapshot(round2.filter((r): r is TrendDirRow => r.kind === "dir"));
     await tracker.dispose();
     tracker = await TrendTracker.start({
       makeCollector: (o) => new TrendCollector(o),
@@ -4219,8 +4328,8 @@ describe("#633 A4(e)：混存 round-trip（压实→重启→迟到行二次压�
     });
     const cellR2 = tracker
       .buckets()
-      .find((d) => d.day === DAY0)
-      .providers.find((p) => p.provider === "deepseek").cell;
+      .find((d) => d.day === DAY0)!
+      .providers.find((p) => p.provider === "deepseek")!.cell;
     cellR2Calls = cellR2.calls;
     finalKinds = snapshot((await store.readAggDayShard(DAY0)).map((r) => r.kind));
     await tracker.dispose();
@@ -4340,9 +4449,9 @@ describe("#633 A4(e)：混存 round-trip（压实→重启→迟到行二次压�
 });
 
 describe("#633 A4(f)：查询面零变化（dir 记账/rebuild 不影响 buckets/seriesDays）", () => {
-  let buckets;
-  let seriesValues;
-  let dirSnapshot;
+  let buckets: ReturnType<TrendAggregator["buckets"]>;
+  let seriesValues: Array<number | null>;
+  let dirSnapshot: TrendDirRow[];
 
   beforeAll(() => {
     // A4(f)：查询面零变化——含 dir 记账 + dir 行 rebuild 后，buckets()/seriesDays()
@@ -4362,9 +4471,9 @@ describe("#633 A4(f)：查询面零变化（dir 记账/rebuild 不影响 buckets
         tokens: { input: 1, output: 2, cacheRead: 0, cacheWrite: 0 },
       },
     });
-    agg.apply({
-      type: "call",
-      record: {
+    // A4(f)：无 dir 键的旧格式行与有 dir 行并存（残差投影不断言放宽，见下）。
+    agg.apply(
+      callOf({
         time: T0 + HOUR,
         session: "s2",
         turn: 1,
@@ -4373,8 +4482,8 @@ describe("#633 A4(f)：查询面零变化（dir 记账/rebuild 不影响 buckets
         provider: "deepseek",
         model: "chat",
         tokens: { input: 3, output: 4, cacheRead: null, cacheWrite: null },
-      },
-    });
+      }),
+    );
     agg.rebuild(
       [
         {
@@ -4487,10 +4596,10 @@ describe("#633 A4(f)：查询面零变化（dir 记账/rebuild 不影响 buckets
 });
 
 describe("#633 A4(g)：量级留痕（1000 事件 / 5 session）", () => {
-  let cellCalls;
-  let cwdCalls;
-  let diskRowCount;
-  let s1DirsAllCorrect;
+  let cellCalls: number;
+  let cwdCalls: number;
+  let diskRowCount: number;
+  let s1DirsAllCorrect: boolean;
 
   beforeAll(async () => {
     // A4(g)：量级留痕——1000 事件 / 5 session：resolveCwd 恰 5 次（per-session 惰性
@@ -4537,7 +4646,7 @@ describe("#633 A4(g)：量级留痕（1000 事件 / 5 session）", () => {
         );
       }
     }
-    const cell = tracker.buckets().find((d) => d.day === DAY0).providers[0].cell;
+    const cell = tracker.buckets().find((d) => d.day === DAY0)!.providers[0].cell;
     cellCalls = cell.calls;
     const disposeAt = Date.now();
     await tracker.dispose();
@@ -4574,10 +4683,25 @@ describe("#633 A4(g)：量级留痕（1000 事件 / 5 session）", () => {
 // ---------------------------------------------------------------- 复核 M1（#633）：混存分片重启重建与自愈压实
 
 describe("复核 M1(a)：混存分片重启重建后 dirDays 恢复（dir 行真读回）", () => {
-  let dirMapExists;
-  let dirMapValues;
-  let cellValues;
-  let pendingRows;
+  let dirMapExists: boolean;
+  let dirMapValues: Array<{
+    dir: string;
+    input: number | null;
+    output: number | null;
+    cacheRead: number | null;
+    cacheWrite: number | null;
+    calls: number;
+    turns: number;
+    toolCalls: number;
+  }>;
+  let cellValues: {
+    input: number | null;
+    output: number | null;
+    calls: number;
+    turns: number;
+    toolCalls: number;
+  };
+  let pendingRows: number;
 
   beforeAll(async () => {
     // M1(a)：复核 M1 修复——混存分片（agg+dir）重启重建后内存 dirDays 恢复：
@@ -4616,10 +4740,11 @@ describe("复核 M1(a)：混存分片重启重建后 dirDays 恢复（dir 行真
       flushDebounceMs: 60000,
       resolveCwd: () => undefined,
     });
-    const dirMap = tracker.aggregator.dirDays.get(DAY0);
+    // 白盒：privates 经 bracket 访问（元素访问不触发可见性检查；运行时同形）。
+    const dirMap = tracker["aggregator"]["dirDays"].get(DAY0);
     dirMapExists = dirMap !== undefined;
     dirMapValues = snapshot(
-      [...dirMap.entries()].map(([dir, c]) => ({
+      [...dirMap!.entries()].map(([dir, c]) => ({
         dir,
         input: c.input,
         output: c.output,
@@ -4630,7 +4755,7 @@ describe("复核 M1(a)：混存分片重启重建后 dirDays 恢复（dir 行真
         toolCalls: c.toolCalls,
       })),
     );
-    const cell = tracker.buckets().find((d) => d.day === DAY0).providers[0].cell;
+    const cell = tracker.buckets().find((d) => d.day === DAY0)!.providers[0].cell;
     cellValues = snapshot({
       input: cell.input,
       output: cell.output,
@@ -4638,7 +4763,7 @@ describe("复核 M1(a)：混存分片重启重建后 dirDays 恢复（dir 行真
       turns: cell.turns,
       toolCalls: cell.toolCalls,
     });
-    pendingRows = tracker.aggregator.stats().pendingRows;
+    pendingRows = tracker["aggregator"].stats().pendingRows;
     await tracker.dispose();
   }, 60_000);
 
@@ -4681,10 +4806,10 @@ describe("复核 M1(a)：混存分片重启重建后 dirDays 恢复（dir 行真
 });
 
 describe("复核 M1(b)：自愈压实 dir 行 + pruneDays 联动删除 dirDays", () => {
-  let healedDirRows;
-  let healDirDayCell;
-  let dirRowsForDay;
-  let healedCells;
+  let healedDirRows: Array<TrendAggRow | TrendDirRow | TrendHourRow>;
+  let healDirDayCell: TrendCell | undefined;
+  let dirRowsForDay: TrendDirRow[];
+  let healedCells: number;
 
   beforeAll(async () => {
     // M1(b)：复核 M1 修复——自愈压实路径 dir 行为 + pruneDays 联动删除（P1-1 口径更新）。
@@ -4742,9 +4867,9 @@ describe("复核 M1(b)：自愈压实 dir 行 + pruneDays 联动删除 dirDays",
     healedDirRows = snapshot(
       (await new TrendStore({ root }).readAggDayShard(day1)).filter((r) => r.kind === "dir"),
     );
-    healDirDayCell = snapshot(tracker.aggregator.dirDays.get(day1)?.get("heal"));
+    healDirDayCell = snapshot(tracker["aggregator"]["dirDays"].get(day1)?.get("heal"));
     dirRowsForDay = snapshot(tracker.dirRows().filter((r) => r.day === day1));
-    healedCells = tracker.buckets().find((d) => d.day === day1).providers[0].cell.calls;
+    healedCells = tracker.buckets().find((d) => d.day === day1)!.providers[0].cell.calls;
     await tracker.dispose();
   }, 60_000);
 
@@ -4804,10 +4929,10 @@ describe("复核 M1(b)：自愈压实 dir 行 + pruneDays 联动删除 dirDays",
     // pruneDays 联动（单元面）：dirDays 与 days 同生命周期，cutoff 前日桶同步删除
     // （M1 修复前只删 days，dirDays 泄漏有界但违背同生命周期口径）。
     const day1 = "2026-09-03";
-    let prunedDays;
-    let daysHasDay1;
-    let dirDaysHasDay1;
-    let keptDirInput;
+    let prunedDays: number;
+    let daysHasDay1: boolean;
+    let dirDaysHasDay1: boolean;
+    let keptDirInput: number | null | undefined;
 
     beforeAll(() => {
       const agg = new TrendAggregator();
@@ -4871,9 +4996,9 @@ describe("复核 M1(b)：自愈压实 dir 行 + pruneDays 联动删除 dirDays",
         false,
       );
       prunedDays = agg.pruneDays(DAY0);
-      daysHasDay1 = agg.days.has(day1);
-      dirDaysHasDay1 = agg.dirDays.has(day1);
-      keptDirInput = agg.dirDays.get(DAY0)?.get("keep")?.input;
+      daysHasDay1 = agg["days"].has(day1);
+      dirDaysHasDay1 = agg["dirDays"].has(day1);
+      keptDirInput = agg["dirDays"].get(DAY0)?.get("keep")?.input;
     });
 
     it("pruneDays 返回 days 侧删除日数（语义不变）", () => {
@@ -4898,15 +5023,15 @@ describe("复核 M1(b)：自愈压实 dir 行 + pruneDays 联动删除 dirDays",
 // 不变量2：防双计——小时面与 agg/dir 同一批事实的第三个投影（同源折算，不二次累加）。
 
 describe("#662(a)：apply 平行累加 hourDays + rollupDay 同源 hour 行", () => {
-  let hourRowCount;
-  let h9Calls;
-  let h9Input;
-  let h9Output;
-  let h21Input;
-  let rolledHourCount;
-  let rolledHoursJson;
-  let memoryHourRowsJson;
-  let hourRowsAfterRollup;
+  let hourRowCount: number;
+  let h9Calls: number;
+  let h9Input: number | null;
+  let h9Output: number | null;
+  let h21Input: number | null;
+  let rolledHourCount: number;
+  let rolledHoursJson: unknown;
+  let memoryHourRowsJson: unknown;
+  let hourRowsAfterRollup: number;
 
   beforeAll(() => {
     // #662(a)：apply 平行累加 hourDays（hourOfDay 本地时区现算）+ rollupDay 同源产出
@@ -4914,9 +5039,8 @@ describe("#662(a)：apply 平行累加 hourDays + rollupDay 同源 hour 行", ()
     const agg = new TrendAggregator();
     const t9 = new Date(2026, 8, 4, 9, 30, 0).getTime(); // 本地 09:30 → hour 9
     const t21 = new Date(2026, 8, 4, 21, 0, 0).getTime(); // 本地 21:00 → hour 21
-    agg.apply({
-      type: "call",
-      record: {
+    agg.apply(
+      callOf({
         time: t9,
         session: "s1",
         turn: 1,
@@ -4925,11 +5049,10 @@ describe("#662(a)：apply 平行累加 hourDays + rollupDay 同源 hour 行", ()
         provider: "p",
         model: "m",
         tokens: { input: 100, output: 50, cacheRead: null, cacheWrite: null },
-      },
-    });
-    agg.apply({
-      type: "call",
-      record: {
+      }),
+    );
+    agg.apply(
+      callOf({
         time: t9 + 60000,
         session: "s2",
         turn: 1,
@@ -4938,11 +5061,10 @@ describe("#662(a)：apply 平行累加 hourDays + rollupDay 同源 hour 行", ()
         provider: "p",
         model: "m",
         tokens: { input: 20, output: 10, cacheRead: null, cacheWrite: null },
-      },
-    });
-    agg.apply({
-      type: "call",
-      record: {
+      }),
+    );
+    agg.apply(
+      callOf({
         time: t21,
         session: "s3",
         turn: 1,
@@ -4951,16 +5073,16 @@ describe("#662(a)：apply 平行累加 hourDays + rollupDay 同源 hour 行", ()
         provider: "p",
         model: "m",
         tokens: { input: 5, output: 5, cacheRead: null, cacheWrite: null },
-      },
-    });
+      }),
+    );
     // 内存小时面（apply 平行累加，未压实亦可见）
     const rows = agg.hourRows();
     hourRowCount = rows.length;
-    const h9 = rows.find((r) => r.hour === 9);
+    const h9 = rows.find((r) => r.hour === 9)!;
     h9Calls = h9.calls;
     h9Input = h9.input;
     h9Output = h9.output;
-    const h21 = rows.find((r) => r.hour === 21);
+    const h21 = rows.find((r) => r.hour === 21)!;
     h21Input = h21.input;
     // rollupDay 同源产出三组（agg + dir + hour），hour 行与内存 hourRows 同值
     const rolled = agg.rollupDay(DAY0, DAY0);
@@ -5005,11 +5127,11 @@ describe("#662(a)：apply 平行累加 hourDays + rollupDay 同源 hour 行", ()
 });
 
 describe("#662(b)：rebuild 双分支（hour 行直入桶 + detail/counter 折算入桶）", () => {
-  let h9Calls;
-  let h21Calls;
-  let h21Input;
-  let h21Turns;
-  let h21ToolCalls;
+  let h9Calls: number;
+  let h21Calls: number;
+  let h21Input: number | null;
+  let h21Turns: number;
+  let h21ToolCalls: number;
 
   beforeAll(() => {
     // #662(b)：rebuild 双分支——hour 行直接入桶（信落盘字段）；当日 detail/counter 行
@@ -5056,15 +5178,16 @@ describe("#662(b)：rebuild 双分支（hour 行直入桶 + detail/counter 折�
           provider: "p",
           model: "m",
           turns: 1,
-          toolCalls: 2,
+          // toolCalls: 2 超出 0|1 字面（累加口径数值容忍；计数行宽松 fixture 与 apply 侧同理）。
+          toolCalls: 2 as unknown as 0 | 1,
         },
       ],
       true,
     );
     const rows = agg.hourRows();
-    const h9 = rows.find((r) => r.hour === 9);
+    const h9 = rows.find((r) => r.hour === 9)!;
     h9Calls = h9.calls;
-    const h21 = rows.find((r) => r.hour === 21);
+    const h21 = rows.find((r) => r.hour === 21)!;
     h21Calls = h21.calls;
     h21Input = h21.input;
     h21Turns = h21.turns;
@@ -5093,15 +5216,15 @@ describe("#662(b)：rebuild 双分支（hour 行直入桶 + detail/counter 折�
 });
 
 describe("#662(c)：mergeHourRows 纯函数（同键累加、null-aware、保序）", () => {
-  let mergedLength;
-  let h9Input;
-  let h9Output;
-  let h9Calls;
-  let firstHour;
+  let mergedLength: number;
+  let h9Input: number | null;
+  let h9Output: number | null;
+  let h9Calls: number;
+  let firstHour: number;
 
   beforeAll(() => {
     // #662(c)：mergeHourRows 纯函数——同 hour 键累加（null-aware）、异 hour 独立、保序
-    const base = [
+    const base: TrendHourRow[] = [
       {
         v: 1,
         kind: "hour",
@@ -5116,7 +5239,7 @@ describe("#662(c)：mergeHourRows 纯函数（同键累加、null-aware、保序
         toolCalls: 0,
       },
     ];
-    const add = [
+    const add: TrendHourRow[] = [
       {
         v: 1,
         kind: "hour",
@@ -5146,7 +5269,7 @@ describe("#662(c)：mergeHourRows 纯函数（同键累加、null-aware、保序
     ];
     const merged = mergeHourRows(base, add);
     mergedLength = merged.length;
-    const h9 = merged.find((r) => r.hour === 9);
+    const h9 = merged.find((r) => r.hour === 9)!;
     h9Input = h9.input;
     h9Output = h9.output;
     h9Calls = h9.calls;
@@ -5175,16 +5298,15 @@ describe("#662(c)：mergeHourRows 纯函数（同键累加、null-aware、保序
 });
 
 describe("#662(d)：applyCorrect 第三面（小时桶同步回退/累加）", () => {
-  let h9Input;
-  let cellInput;
+  let h9Input: number | null;
+  let cellInput: number | null;
 
   beforeAll(() => {
     // #662(d)：applyCorrect 第三面——修正明细 token 同步回退/累加小时桶（防小时面漂移）
     const agg = new TrendAggregator();
     const t9 = new Date(2026, 8, 4, 9, 30, 0).getTime();
-    agg.apply({
-      type: "call",
-      record: {
+    agg.apply(
+      callOf({
         time: t9,
         session: "s1",
         turn: 1,
@@ -5193,12 +5315,12 @@ describe("#662(d)：applyCorrect 第三面（小时桶同步回退/累加）", (
         provider: "p",
         model: "m",
         tokens: { input: 100, output: 50, cacheRead: null, cacheWrite: null },
-      },
-    });
+      }),
+    );
+    // correct 记录无 time 字段（applyCorrect 只读 fold 键 + tokens，见实现）。
     agg.apply({
       type: "correct",
       record: {
-        time: t9 + 1000,
         session: "s1",
         turn: 1,
         step: 1,
@@ -5206,7 +5328,7 @@ describe("#662(d)：applyCorrect 第三面（小时桶同步回退/累加）", (
         tokens: { input: 200, output: 50, cacheRead: null, cacheWrite: null },
       },
     });
-    const h9 = agg.hourRows().find((r) => r.hour === 9);
+    const h9 = agg.hourRows().find((r) => r.hour === 9)!;
     h9Input = h9.input;
     cellInput = agg.buckets()[0].providers[0].cell.input;
   });
@@ -5221,9 +5343,9 @@ describe("#662(d)：applyCorrect 第三面（小时桶同步回退/累加）", (
 });
 
 describe("#662(e)：pruneDays 联动删除 hourDays", () => {
-  let beforeRowCount;
-  let afterRowCount;
-  let remainingDay;
+  let beforeRowCount: number;
+  let afterRowCount: number;
+  let remainingDay: string;
 
   beforeAll(() => {
     // #662(e)：pruneDays 联动删除 hourDays（与 days/dirDays 同生命周期）
@@ -5281,22 +5403,22 @@ describe("#662(e)：pruneDays 联动删除 hourDays", () => {
 });
 
 describe("#662(f)：store 白名单与 isValidShardRow 校验（hour 行）", () => {
-  let backHourCount;
-  let backAggCount;
-  let validAggRow;
-  let validHourRow;
-  let invalidHour24;
-  let invalidHourNegative;
-  let invalidHourFractional;
-  let prunedShardLength;
-  let keptShardLength;
+  let backHourCount: number;
+  let backAggCount: number;
+  let validAggRow: boolean;
+  let validHourRow: boolean;
+  let invalidHour24: boolean;
+  let invalidHourNegative: boolean;
+  let invalidHourFractional: boolean;
+  let prunedShardLength: number;
+  let keptShardLength: number;
 
   beforeAll(async () => {
     // #662(f)：store 白名单——聚合分片写读 hour 行 round-trip（readAggDayShard 白名单
     // 漏加 hour → 重启重建后小时数据静默全丢，P0）+ isValidShardRow 校验
     const root = mkdtempSync(join(tmpdir(), "dou-trend-hour-store-"));
     const store = new TrendStore({ root });
-    const aggRow = {
+    const aggRow: TrendAggRow = {
       v: 1,
       kind: "agg",
       day: DAY0,
@@ -5310,7 +5432,7 @@ describe("#662(f)：store 白名单与 isValidShardRow 校验（hour 行）", ()
       turns: 1,
       toolCalls: 0,
     };
-    const hourRow = {
+    const hourRow: TrendHourRow = {
       v: 1,
       kind: "hour",
       day: DAY0,
@@ -5380,9 +5502,9 @@ describe("#662(f)：store 白名单与 isValidShardRow 校验（hour 行）", ()
 // ---------------------------------------------------------------- 复核 P1-1（#633）：dirDays 单源化
 
 describe("复核 P1-1(a)：常驻运行期跨天（压实后 Day0 目录面保留）", () => {
-  let day0DirRows;
-  let stackedDay0;
-  let stackedTodayParts;
+  let day0DirRows: TrendDirRow[];
+  let stackedDay0: TrendStackPoint | undefined;
+  let stackedTodayParts: TrendStackPart[] | undefined;
 
   beforeAll(async () => {
     // 复核 P1-1(a)：常驻运行期跨天——Day0 写入并压实（flushInner 日切）→ 不重启
@@ -5407,7 +5529,8 @@ describe("复核 P1-1(a)：常驻运行期跨天（压实后 Day0 目录面保�
     tracker.handleEvent({ id: "s1" }, ev("request/header", HEADER(), nowMs, 5));
     tracker.handleEvent({ id: "s1" }, ev("assistant/chunk", USAGE(3, 3), nowMs, 6));
     day0DirRows = snapshot(tracker.dirRows().filter((r) => r.day === DAY0));
-    const stacked = tracker.dirStacked(2, "day", "input", undefined, nowMs);
+    // dirStacked 确定性来自注入时钟（this.now），第 5 实参为历史死参（多余实参运行时恒忽略）。
+    const stacked = tracker.dirStacked(2, "day", "input", undefined);
     stackedDay0 = snapshot(stacked.series.find((p) => p.key === DAY0));
     stackedTodayParts = snapshot(stacked.series.find((p) => p.key === dayKey(nowMs))?.parts);
     await tracker.dispose();
@@ -5461,8 +5584,8 @@ describe("复核 P1-1(a)：常驻运行期跨天（压实后 Day0 目录面保�
 });
 
 describe("复核 P1-1(b)：重启恢复后同日继续 apply（dirRows 当日 = 真实值）", () => {
-  let dirRows;
-  let stackedTotal;
+  let dirRows: TrendDirRow[];
+  let stackedTotal: number | null;
 
   beforeAll(async () => {
     // 复核 P1-1(b)：重启恢复后同日继续 apply——dirRows()/dirStacked 当日数值 =
@@ -5496,7 +5619,7 @@ describe("复核 P1-1(b)：重启恢复后同日继续 apply（dirRows 当日 = 
     tracker.handleEvent({ id: "s2" }, ev("request/header", HEADER(), T0 + HOUR, 3));
     tracker.handleEvent({ id: "s2" }, ev("assistant/chunk", USAGE(7, 7), T0 + HOUR, 4));
     dirRows = snapshot(tracker.dirRows());
-    stackedTotal = tracker.dirStacked(1, "day", "input", undefined, nowMs).series[0].total;
+    stackedTotal = tracker.dirStacked(1, "day", "input", undefined).series[0].total;
     await tracker.dispose();
   }, 60_000);
 
@@ -5524,8 +5647,8 @@ describe("复核 P1-1(b)：重启恢复后同日继续 apply（dirRows 当日 = 
 });
 
 describe("复核 P1-1(c)：correct 校正双面同步（dirDays 不漂移）", () => {
-  let cellPair;
-  let dirDayCell;
+  let cellPair: { input: number | null; output: number | null };
+  let dirDayCell: TrendCell | undefined;
 
   beforeAll(() => {
     // 复核 P1-1(c)：correct 校正双面同步——dirDays 随 retokenCell 修正，目录查询
@@ -5546,10 +5669,10 @@ describe("复核 P1-1(c)：correct 校正双面同步（dirDays 不漂移）", (
         tokens: { input: 100, output: 50, cacheRead: 0, cacheWrite: 0 },
       },
     });
+    // correct 记录无 time 字段（同上，死字段删除）。
     agg.apply({
       type: "correct",
       record: {
-        time: T0,
         session: "s1",
         turn: 1,
         step: 1,
@@ -5557,9 +5680,9 @@ describe("复核 P1-1(c)：correct 校正双面同步（dirDays 不漂移）", (
         tokens: { input: 200, output: 60, cacheRead: 0, cacheWrite: 0 },
       },
     });
-    const cell = cellTotals(agg, DAY0);
+    const cell = cellTotals(agg, DAY0)!;
     cellPair = snapshot({ input: cell.input, output: cell.output });
-    dirDayCell = snapshot(agg.dirDays.get(DAY0)?.get("proj"));
+    dirDayCell = snapshot(agg["dirDays"].get(DAY0)?.get("proj"));
   });
 
   it("correct：cells 修正（既有语义零回归）", () => {
@@ -5583,23 +5706,22 @@ describe("复核 P1-1(c)：correct 校正双面同步（dirDays 不漂移）", (
 // 不变量2：防双计——折算与消费取同一份身份快照（await 间隙新到行不连带删除、不丢行不重算）。
 
 describe("#654 单元级：rollupSnapshot 折算与消费严格同源", () => {
-  let snap1Consumed;
-  let snap1AggRows;
-  let pendingAfterFirstConsume;
-  let unpersistedAfterFirstConsume;
-  let snap2Consumed;
-  let snap2AggRows;
-  let pendingAfterSecondConsume;
-  let pendingAfterNoopConsume;
+  let snap1Consumed: number;
+  let snap1AggRows: Array<{ calls: number; input: number | null }>;
+  let pendingAfterFirstConsume: number;
+  let unpersistedAfterFirstConsume: number;
+  let snap2Consumed: number;
+  let snap2AggRows: Array<{ calls: number; input: number | null }>;
+  let pendingAfterSecondConsume: number;
+  let pendingAfterNoopConsume: number;
 
   beforeAll(() => {
     // 单元级：rollupSnapshot 的 consumed 与折算行严格同源；consume 只删快照内 entry。
     const agg = new TrendAggregator();
     const past = T0 - 24 * HOUR;
     const pastDay = dayKey(past);
-    const call = (session, input, output) => ({
-      type: "call",
-      record: {
+    const call = (session: string, input: number, output: number): TrendEmit =>
+      callOf({
         time: past,
         session,
         turn: 1,
@@ -5609,8 +5731,7 @@ describe("#654 单元级：rollupSnapshot 折算与消费严格同源", () => {
         model: "m",
         dir: "d",
         tokens: { input, output, cacheRead: 0, cacheWrite: 0 },
-      },
-    });
+      });
     agg.apply(call("sA", 10, 5));
     const snap = agg.rollupSnapshot(pastDay);
     snap1Consumed = snap.consumed.length;
@@ -5625,9 +5746,9 @@ describe("#654 单元级：rollupSnapshot 折算与消费严格同源", () => {
     snap2AggRows = snapshot(snap2.aggRows.map((r) => ({ calls: r.calls, input: r.input })));
     agg.consume(snap2.consumed);
     pendingAfterSecondConsume = agg.stats().pendingRows;
-    // 边界：空数组 no-op、重复 entry 幂等
+    // 边界：空数组 no-op、重复 entry 幂等；异物 entry（缺字段行）消费安全（防御分支）。
     agg.consume([]);
-    agg.consume([{ row: { kind: "detail" }, persisted: true }]);
+    agg.consume([{ row: { kind: "detail" }, persisted: true } as unknown as PendingEntry]);
     pendingAfterNoopConsume = agg.stats().pendingRows;
   });
 
@@ -5665,11 +5786,11 @@ describe("#654 单元级：rollupSnapshot 折算与消费严格同源", () => {
 });
 
 describe("#654 集成级：压实 await 窗口内到达的过去日行不被连带消费", () => {
-  let gateHitAtFlush;
-  let pendingAfterGateWindow;
-  let aggRowCount;
-  let aggRowValues;
-  let pendingAfterSecondFlush;
+  let gateHitAtFlush: boolean;
+  let pendingAfterGateWindow: number;
+  let aggRowCount: number;
+  let aggRowValues: { calls: number; input: number | null; output: number | null };
+  let pendingAfterSecondFlush: number;
 
   beforeAll(async () => {
     // 集成级（#654 竞态）：压实 await 窗口内到达的过去日行不得被连带消费。
@@ -5687,18 +5808,20 @@ describe("#654 集成级：压实 await 窗口内到达的过去日行不被连�
       flushDebounceMs: 60000,
       warn: () => {},
     });
-    const store = tracker.store;
+    // 白盒：store 私有成员经 bracket 访问（元素访问不触发可见性检查；运行时同形）。
+    const store = tracker["store"];
     const origReadAggDayShard = store.readAggDayShard.bind(store);
-    let release;
+    // Promise executor 同步执行，release 在此之后恒已赋值（! 仅过编译面）。
+    let release!: (value?: unknown) => void;
     const gate = new Promise((r) => {
       release = r;
     });
-    let markEntered;
+    let markEntered: (value?: unknown) => void;
     const enteredWindow = new Promise((resolve) => {
       markEntered = resolve;
     });
     let gateHit = false;
-    store.readAggDayShard = async (day) => {
+    store.readAggDayShard = async (day: string) => {
       const rows = await origReadAggDayShard(day);
       if (day === pastDay && !gateHit) {
         gateHit = true;
@@ -5764,8 +5887,8 @@ describe("#654 集成级：压实 await 窗口内到达的过去日行不被连�
 });
 
 describe("#654 同域：deleteDetailShard 失败不得导致下一轮磁盘双算", () => {
-  let pendingAfterFailedDelete;
-  let aggRowsAfterSecondFlush;
+  let pendingAfterFailedDelete: number;
+  let aggRowsAfterSecondFlush: Array<{ calls: number; input: number | null }>;
 
   beforeAll(async () => {
     // #654 同域：deleteDetailShard 失败不得导致下一轮磁盘双算。
@@ -5780,7 +5903,7 @@ describe("#654 同域：deleteDetailShard 失败不得导致下一轮磁盘双�
       flushDebounceMs: 60000,
       warn: () => {},
     });
-    const store = tracker.store;
+    const store = tracker["store"];
     const origDelete = store.deleteDetailShard.bind(store);
     tracker.handleEvent({ id: "sA" }, ev("request/header", HEADER(), T0 - 24 * HOUR, 1));
     tracker.handleEvent({ id: "sA" }, ev("assistant/chunk", USAGE(10, 5), T0 - 24 * HOUR, 2));
@@ -5810,14 +5933,14 @@ describe("#654 同域：deleteDetailShard 失败不得导致下一轮磁盘双�
 // 0.1.5 下同键多次结算按序数逐次入账（每次尝试一条结算事件，token 各自独立）。
 
 describe("#655：同键多次尝试陆续结算（token 各自入账）", () => {
-  let calls;
-  let correctCount;
+  let calls: TrendCallRecord[];
+  let correctCount: number;
 
   beforeAll(() => {
     // 真实数据形态：同一 (session,turn,step) 的多次尝试陆续结算，token 各自入账
     let nowT = new Date(2026, 8, 8, 4, 22, 7).getTime();
     const { emitted, send } = makeCollector(() => nowT);
-    const U = (input, output) =>
+    const U = (input: number, output: number) =>
       ev(
         "assistant/chunk",
         {
@@ -5849,7 +5972,7 @@ describe("#655：同键多次尝试陆续结算（token 各自入账）", () => 
   });
 
   it("末次 token 为真实值", () => {
-    expect(calls.at(-1).tokens).toEqual({
+    expect(calls.at(-1)!.tokens).toEqual({
       input: 118593,
       output: 41240,
       cacheRead: null,
@@ -5863,13 +5986,13 @@ describe("#655：同键多次尝试陆续结算（token 各自入账）", () => 
 });
 
 describe("#655：同键结算中途新 header 仍按结算序数递增", () => {
-  let calls;
+  let calls: TrendCallRecord[];
 
   beforeAll(() => {
     // 同键结算中途出现新 header：仍按结算序数递增（header 只影响归属，不影响序数）
     let nowT = T0;
     const { emitted, send } = makeCollector(() => nowT);
-    const U = (input, output) =>
+    const U = (input: number, output: number) =>
       ev(
         "assistant/chunk",
         {
@@ -5898,8 +6021,8 @@ describe("#655：同键结算中途新 header 仍按结算序数递增", () => {
 });
 
 describe("sumToken null 语义", () => {
-  let nullPlusNumber;
-  let nullPlusNull;
+  let nullPlusNumber: number | null;
+  let nullPlusNull: number | null;
 
   beforeAll(() => {
     nullPlusNumber = sumToken(null, 5);
@@ -5926,20 +6049,20 @@ describe("sumToken null 语义", () => {
 
 // H9：纯函数面 a/b/e/i 已删（见各处登记），本 describe 仅留 c/d/f/g/h/j 变体。
 describe("#633 修复：目录面残差投影（纯函数面 c/d/f/g/h/j）", () => {
-  let cDirsSorted;
-  let dDirs;
-  let fRowsLength;
-  let fRowValues;
-  let gDirs;
-  let hDays;
-  let jInputBefore;
-  let jInputAfter;
+  let cDirsSorted: Array<Array<string | number | null>>;
+  let dDirs: string[];
+  let fRowsLength: number;
+  let fRowValues: Array<string | number | null>;
+  let gDirs: Array<Array<string | number | null>>;
+  let hDays: string[];
+  let jInputBefore: number | null;
+  let jInputAfter: number | null;
 
   beforeAll(() => {
     // 残差投影纯函数面：cells（聚合面）与 dirDays（目录面）的关系决定是否补造。
     const day = "2026-09-03";
     const mkAgg = () => new TrendAggregator();
-    const call = (dir, input, output) => ({
+    const call = (dir: string, input: number, output: number): TrendCallRecord => ({
       time: T0 - 24 * HOUR,
       session: "s1",
       turn: 1,
@@ -6192,13 +6315,13 @@ describe("#633 修复：目录面残差投影（纯函数面 c/d/f/g/h/j）", ()
 });
 
 describe("#633 修复：真实升级场景端到端（旧 agg-only 分片重启后目录面恢复）", () => {
-  let rowsLength;
-  let rowDay;
-  let rowDir;
-  let rowCalls;
-  let shardBytesUnchanged;
-  let pastBarHasValue;
-  let stackedDirs;
+  let rowsLength: number;
+  let rowDay: string;
+  let rowDir: string;
+  let rowCalls: number;
+  let shardBytesUnchanged: boolean;
+  let pastBarHasValue: boolean;
+  let stackedDirs: Array<{ dir: string }>;
 
   beforeAll(async () => {
     // 真实升级场景端到端：旧 agg-only 过去日分片 → 重启后目录面恢复历史（此前全 null）。

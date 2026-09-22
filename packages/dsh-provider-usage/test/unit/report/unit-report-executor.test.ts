@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * dsh-provider-usage — unit：D8 报告面组合收敛
  *
@@ -18,7 +17,13 @@ import {
   ReportConfigService,
   readReportConfig,
 } from "../../../src/server/config/interface.ts";
-import { readLastRun, updateLastRun } from "../../../src/server/schedule/interface.ts";
+import {
+  readLastRun,
+  updateLastRun,
+  type ReportTaskResult,
+} from "../../../src/server/schedule/interface.ts";
+import type { TrendTracker } from "../../../src/server/aggregate/interface.ts";
+import type { Context } from "@deepseek-ai/cordis";
 import { makeDueReportExecutor } from "../../../src/server/execute/interface.ts";
 import { makeListDirs } from "../../../src/server/execute/list-dirs.ts";
 
@@ -86,7 +91,7 @@ describe("ReportConfigService：update 失败（写盘拒绝）不污染内存�
 
 describe("executor 幂等短路：index 已有成功记录且非 force → 复用，不推进 lastRun", () => {
   let meta: Record<string, unknown>;
-  let res: Record<string, unknown>;
+  let res: ReportTaskResult;
   let lastRun: Record<string, unknown>;
 
   beforeEach(async () => {
@@ -104,8 +109,9 @@ describe("executor 幂等短路：index 已有成功记录且非 force → 复�
     writeFileSync(join(reportsDir, "index.jsonl"), `${JSON.stringify(meta)}\n`);
 
     const executor = makeDueReportExecutor({
-      trend: {},
-      ctx: {},
+      // 幂等短路路径不触达 trend/ctx（命中既有成功记录即复用返回），空对象断言仅为过构造面。
+      trend: {} as TrendTracker,
+      ctx: {} as Context,
       getReportCfg: () => normalizeCfg({}),
       getPromptTemplate: () => "prompt",
       historyRoot: root,
@@ -135,17 +141,18 @@ describe("executor 幂等短路：index 已有成功记录且非 force → 复�
 });
 
 describe("makeListDirs：目录候选查询面（净化出口 + 未识别桶归位）", () => {
-  let list: Array<{ dir: string; calls: number; total: number }>;
+  let list: Array<{ dir: string; calls: number; total: number | null }>;
 
   beforeEach(() => {
+    // null 行超出真实 TrendTracker.dirTotals 的窄类型（防御性覆盖：makeListDirs 须把无目录归未识别桶）。
     const trend = {
-      dirTotals: () => [
+      dirTotals: (): Array<{ dir: string | null; calls: number; total: number | null }> => [
         { dir: "/home/u/proj-a", calls: 3, total: 10 },
         { dir: "x/y", calls: 1, total: 2 },
         { dir: null, calls: 0, total: null },
       ],
     };
-    list = makeListDirs(trend)();
+    list = makeListDirs(trend as unknown as TrendTracker)();
   });
 
   it("全量返回", () => {
@@ -174,6 +181,6 @@ describe("makeListDirs：目录候选查询面（净化出口 + 未识别桶归�
 });
 
 // 工具：顶层平铺结构（daily/weekly/monthly 为 ReportConfig 顶层字段）
-function normalizeCfg(overrides) {
+function normalizeCfg(overrides: Record<string, unknown>) {
   return { ...JSON.parse(JSON.stringify(DEFAULT_REPORT_CONFIG)), ...overrides };
 }

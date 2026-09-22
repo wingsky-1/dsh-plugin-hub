@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * dsh-provider-usage — unit：历史数据纯函数与 opencode-go 解析辅助。
  *
@@ -23,7 +22,12 @@ import {
   startOfDay,
   legacySampleToData,
   migrateLegacyV3,
+  type HistoryEntry,
 } from "../../../src/server/history/interface.ts";
+/** 无名列防御覆盖：旧 v3 列声明可缺 name（实现仅读 key），窄类型经 unknown 断言。 */
+type LegacyColumns = Parameters<typeof legacySampleToData>[0];
+const namelessCols = (...keys: string[]): LegacyColumns =>
+  keys.map((key) => ({ key })) as unknown as LegacyColumns;
 
 describe("parseJsonl", () => {
   it("空字符串返回空数组", () => {
@@ -78,7 +82,7 @@ describe("parseJsonl", () => {
 // startOfDay 是本地时区操作（setHours 在本地时区归零），此处断言日期分量归零。
 describe("startOfDay", () => {
   describe("普通日期（本地时区）", () => {
-    let s;
+    let s: Date;
 
     beforeAll(() => {
       const d = new Date(2026, 5, 15, 13, 45, 30);
@@ -107,7 +111,7 @@ describe("startOfDay", () => {
   });
 
   describe("闰年 2 月 29 日", () => {
-    let s;
+    let s: Date;
 
     beforeAll(() => {
       const d = new Date(2024, 1, 29, 10, 0);
@@ -124,7 +128,7 @@ describe("startOfDay", () => {
   });
 
   describe("DST 切换日（春季调快，夏季时间）", () => {
-    let s;
+    let s: Date;
 
     beforeAll(() => {
       const d = new Date(2026, 2, 8, 12, 0); // 2026-03-08（美国 DST 生效日）
@@ -151,16 +155,13 @@ describe("legacySampleToData", () => {
   // 三窗口列
   it("三窗口 percent 列", () => {
     expect(
-      legacySampleToData(
-        [{ key: "rolling" }, { key: "weekly" }, { key: "monthly" }],
-        [1787000000000, 2, 1, 0],
-      ),
+      legacySampleToData(namelessCols("rolling", "weekly", "monthly"), [1787000000000, 2, 1, 0]),
     ).toEqual({ rolling: { percent: 2 }, weekly: { percent: 1 }, monthly: { percent: 0 } });
   });
 
   // null 值在 percent 列 → null
   it("null 值 percent 列保持 null", () => {
-    expect(legacySampleToData([{ key: "rolling" }], [1787000000000, null])).toEqual({
+    expect(legacySampleToData(namelessCols("rolling"), [1787000000000, null])).toEqual({
       rolling: { percent: null },
     });
   });
@@ -179,7 +180,7 @@ describe("legacySampleToData", () => {
 
   // 列数少于采样值 → 多余值用 colNN 通用装配
   it("列数少于采样值，多余列用 colNN 装配", () => {
-    expect(legacySampleToData([{ key: "a" }], [1787000000000, 1, 2, 3])).toEqual({
+    expect(legacySampleToData(namelessCols("a"), [1787000000000, 1, 2, 3])).toEqual({
       a: { percent: 1 },
       col2: 2,
       col3: 3,
@@ -188,9 +189,9 @@ describe("legacySampleToData", () => {
 
   // 列数多于采样值 → 缺的跳过
   it("列数多于采样值，缺列跳过", () => {
-    expect(
-      legacySampleToData([{ key: "a" }, { key: "b" }, { key: "c" }], [1787000000000, 1]),
-    ).toEqual({ a: { percent: 1 } });
+    expect(legacySampleToData(namelessCols("a", "b", "c"), [1787000000000, 1])).toEqual({
+      a: { percent: 1 },
+    });
   });
 });
 
@@ -238,7 +239,7 @@ describe("pickWindow（防御式窗口解析）", () => {
 
 describe("HistoryStore.exportAll", () => {
   describe("写入两条后可全量读出", () => {
-    let all;
+    let all: HistoryEntry[];
 
     beforeAll(async () => {
       const root = mkdtempSync(join(tmpdir(), "dou-hist-export-"));
@@ -265,7 +266,7 @@ describe("HistoryStore.exportAll", () => {
 
   // exportAll：空目录返回 []
   describe("exportAll：空目录返回 []", () => {
-    let all;
+    let all: HistoryEntry[];
 
     beforeAll(async () => {
       const root = mkdtempSync(join(tmpdir(), "dou-hist-export2-"));
@@ -280,7 +281,7 @@ describe("HistoryStore.exportAll", () => {
 
   // exportAll：目录不存在返回 []
   describe("exportAll：目录不存在返回 []", () => {
-    let all;
+    let all: HistoryEntry[];
 
     beforeAll(async () => {
       const root = mkdtempSync(join(tmpdir(), "dou-hist-export3-"));
@@ -301,7 +302,7 @@ import { readdirSync, existsSync } from "node:fs";
 import { listAdapters } from "../../../src/server/history/interface.ts";
 
 describe("构造缺省值", () => {
-  let store;
+  let store: HistoryStore;
 
   beforeAll(() => {
     const root = mkdtempSync(join(tmpdir(), "dou-hist-defaults-"));
@@ -318,7 +319,11 @@ describe("构造缺省值", () => {
 });
 
 describe("readDay / query", () => {
-  let day1, emptyDay, q, all, d2;
+  let day1: HistoryEntry[];
+  let emptyDay: HistoryEntry[];
+  let q: Awaited<ReturnType<HistoryStore["query"]>>;
+  let all: Awaited<ReturnType<HistoryStore["query"]>>;
+  let d2: number;
 
   beforeAll(async () => {
     const root = mkdtempSync(join(tmpdir(), "dou-hist-query-"));
@@ -368,7 +373,11 @@ describe("readDay / query", () => {
 });
 
 describe("last()", () => {
-  let lastAbsent, lastEntry, lastAfterTailBadLines, lastAllBad, lastNonJsonl;
+  let lastAbsent: HistoryEntry | null;
+  let lastEntry: HistoryEntry | null;
+  let lastAfterTailBadLines: HistoryEntry | null;
+  let lastAllBad: HistoryEntry | null;
+  let lastNonJsonl: HistoryEntry | null;
 
   beforeAll(async () => {
     const root = mkdtempSync(join(tmpdir(), "dou-hist-last-"));
@@ -437,7 +446,8 @@ describe("last()", () => {
 describe("maybePrune", () => {
   // 过期日文件按文件名日期删除
   describe("过期日文件按文件名日期删除", () => {
-    let oldExists, futureExists;
+    let oldExists: boolean;
+    let futureExists: boolean;
 
     beforeAll(async () => {
       const root = mkdtempSync(join(tmpdir(), "dou-prune-age-"));
@@ -462,7 +472,8 @@ describe("maybePrune", () => {
 
   // 总大小超限：从最旧逐个删，保留最后 1 个
   describe("总大小超限：从最旧逐个删，保留最后 1 个", () => {
-    let oldestExists, newestExists;
+    let oldestExists: boolean;
+    let newestExists: boolean;
 
     beforeAll(async () => {
       const root = mkdtempSync(join(tmpdir(), "dou-prune-size-"));
@@ -507,7 +518,9 @@ describe("maybePrune", () => {
 });
 
 describe("writeDirect", () => {
-  let providerDirExistsAfterEmptyWrite, entries, day;
+  let providerDirExistsAfterEmptyWrite: boolean;
+  let entries: HistoryEntry[];
+  let day: number;
 
   beforeAll(async () => {
     const root = mkdtempSync(join(tmpdir(), "dou-wdirect-"));
@@ -537,7 +550,8 @@ describe("writeDirect", () => {
 });
 
 describe("listAdapters", () => {
-  let empty, found;
+  let empty: Array<{ provider: string; name: string }>;
+  let found: Array<{ provider: string; name: string }>;
 
   beforeAll(async () => {
     const root = mkdtempSync(join(tmpdir(), "dou-listadp-"));
@@ -561,14 +575,14 @@ describe("listAdapters", () => {
 });
 
 describe("migrateLegacyV3", () => {
-  let noHistoryDir,
-    migrated,
-    entries,
-    bakExists,
-    originalExists,
-    secondRun,
-    badMigrated,
-    badOriginalKept;
+  let noHistoryDir: number;
+  let migrated: number;
+  let entries: HistoryEntry[];
+  let bakExists: boolean;
+  let originalExists: boolean;
+  let secondRun: number;
+  let badMigrated: number;
+  let badOriginalKept: boolean;
 
   beforeAll(async () => {
     const root = mkdtempSync(join(tmpdir(), "dou-mig-"));
@@ -663,7 +677,7 @@ describe("migrateLegacyV3", () => {
 
 // readDay：文件不存在返回 []（ENOENT 容错，不再依赖 existsSync 预检）
 describe("#105② readDay 文件不存在返回 []", () => {
-  let entries;
+  let entries: HistoryEntry[];
 
   beforeAll(async () => {
     const root = mkdtempSync(join(tmpdir(), "dou-hist-readday-"));
@@ -678,7 +692,7 @@ describe("#105② readDay 文件不存在返回 []", () => {
 
 // readDay：prune 并发删文件竞态容错——文件在读取前被删不抛异常
 describe("#105② readDay prune 并发删文件竞态容错", () => {
-  let entries;
+  let entries: HistoryEntry[];
 
   beforeAll(async () => {
     const root = mkdtempSync(join(tmpdir(), "dou-hist-race-"));
@@ -702,7 +716,7 @@ describe("#105② readDay prune 并发删文件竞态容错", () => {
 
 // append 不再内联 prune：追加后目录内文件数不变（prune 已移出热路径）
 describe("#105② append 不再内联 prune", () => {
-  let files;
+  let files: string[];
 
   beforeAll(async () => {
     const root = mkdtempSync(join(tmpdir(), "dou-hist-noprune-"));
@@ -723,7 +737,10 @@ describe("#105② append 不再内联 prune", () => {
 
 // pruneAll：过期日文件被清理 + 停用适配器目录数据保留（语义锁死）
 describe("#105② pruneAll：过期清理 + 停用目录数据保留", () => {
-  let p1Files, p2Files, p2Today, oldFile;
+  let p1Files: string[];
+  let p2Files: string[];
+  let p2Today: string;
+  let oldFile: string;
 
   beforeAll(async () => {
     const root = mkdtempSync(join(tmpdir(), "dou-hist-pruneall-"));
@@ -779,7 +796,9 @@ describe("#105② pruneAll：过期清理 + 停用目录数据保留", () => {
 // pollUntil 仍读 Date.now()）；每条多 it 互相咬合（单 it 只断一条，避免恒真）。
 
 describe("D5一 大跨度 range 查询（40 天稀疏）", () => {
-  let full, sub, hole;
+  let full: Awaited<ReturnType<HistoryStore["query"]>>;
+  let sub: Awaited<ReturnType<HistoryStore["query"]>>;
+  let hole: Awaited<ReturnType<HistoryStore["query"]>>;
 
   beforeAll(async () => {
     const root = mkdtempSync(join(tmpdir(), "dou-hist-span-"));
@@ -818,7 +837,10 @@ describe("D5一 大跨度 range 查询（40 天稀疏）", () => {
 });
 
 describe("D5二 同戳并发追加无丢失 + 同日 writeDirect 串行胜出", () => {
-  let q, lastEntry, finalText, day;
+  let q: Awaited<ReturnType<HistoryStore["query"]>>;
+  let lastEntry: HistoryEntry | null;
+  let finalText: string;
+  let day: number;
 
   beforeAll(async () => {
     const root = mkdtempSync(join(tmpdir(), "dou-hist-samestamp-"));
@@ -861,7 +883,10 @@ describe("D5二 同戳并发追加无丢失 + 同日 writeDirect 串行胜出", 
 });
 
 describe("D5三 故障注入（坏行/目录占位/写失败/prune 容错）", () => {
-  let goodOnly, appendThrew, tmpLitter, pruneThrew;
+  let goodOnly: Array<unknown>;
+  let appendThrew: boolean;
+  let tmpLitter: string[];
+  let pruneThrew: boolean;
 
   beforeAll(async () => {
     const root = mkdtempSync(join(tmpdir(), "dou-hist-fault-"));

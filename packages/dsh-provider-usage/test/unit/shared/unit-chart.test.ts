@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * dsh-provider-usage — unit：opencode-go 适配器 format 与图表/管道纯函数覆盖。
  *
@@ -31,6 +30,8 @@ import {
   miniChartSvgMarkup,
   pickWindow,
 } from "../../../src/server/adapters/interface.ts";
+import type { V2PipelineResult } from "../../../src/server/pipeline/interface.ts";
+import type { FetchContext } from "../../../src/shared/interface.ts";
 // 白盒直连深路径（#768 B波续批）：管线纯面经域门面，不走组合根转发。
 import {
   safeFetchData,
@@ -42,7 +43,7 @@ import {
 // ---------------------------------------------------------------- openCodeGoAdapter.formatCapsule
 
 describe("openCodeGoAdapter.formatCapsule", () => {
-  let html1;
+  let html1: string;
 
   beforeAll(() => {
     const e = esc;
@@ -78,7 +79,9 @@ describe("openCodeGoAdapter.formatCapsule", () => {
 // ---------------------------------------------------------------- openCodeGoAdapter.formatPanel（覆盖 fmtReset 分支）
 
 describe("openCodeGoAdapter.formatPanel（覆盖 fmtReset 分支）", () => {
-  let empty, withData, badDate;
+  let empty: string;
+  let withData: string;
+  let badDate: string;
 
   beforeAll(() => {
     const e = esc;
@@ -157,7 +160,7 @@ describe("openCodeGoAdapter.formatPanel（覆盖 fmtReset 分支）", () => {
 // ---------------------------------------------------------------- openCodeGoAdapter.formatCapsule 无数据窗口（仅月份有值）
 
 describe("openCodeGoAdapter.formatCapsule 无数据窗口（仅月份有值）", () => {
-  let html;
+  let html: string;
 
   beforeAll(() => {
     const e = esc;
@@ -248,7 +251,7 @@ describe("parseUsageResponse 双形状（#150）", () => {
 
 // ---------------------------------------------------------------- fetchOpenCodeGoV2 错误链（#150）
 
-const baseCtx = (overrides = {}) => ({
+const baseCtx = (overrides: Partial<FetchContext> = {}): FetchContext => ({
   apiEndpoint: "https://api.test/zen",
   staticPath: "/usage",
   apiKey: "sk-test",
@@ -258,12 +261,12 @@ const baseCtx = (overrides = {}) => ({
 });
 
 /** 断言 promise 以指定错误文案 reject（错误链判定，原文件同款语义）。 */
-async function expectRejects(promise, message) {
-  let caught = null;
+async function expectRejects(promise: Promise<unknown>, message: string): Promise<void> {
+  let caught: { message?: unknown } | null = null;
   try {
     await promise;
   } catch (e) {
-    caught = e;
+    caught = e as { message?: unknown };
   }
   expect(caught !== null && String(caught.message) === message, `错误链：${message}`).toBeTruthy();
 }
@@ -273,19 +276,29 @@ const okBody = {
   weekly: { percent: 22 },
   monthly: { percent: 33 },
 };
-const makeFetch =
-  (status, body, failJson = false, capture = []) =>
-  async (url, init) => {
+// fetch 探针：部分 Response 形状经 unknown 断言装配（被测仅读 ok/status/json）。
+interface FetchProbeInit {
+  signal?: AbortSignal | null;
+  headers?: Record<string, string>;
+  delayMs?: number;
+}
+const makeFetch = (
+  status: number,
+  body: unknown,
+  failJson = false,
+  capture: Array<{ url: unknown; auth: unknown }> = [],
+) =>
+  (async (url: unknown, init?: FetchProbeInit) => {
     capture.push({ url, auth: init?.headers?.Authorization });
     return {
       ok: status >= 200 && status < 300,
       status,
-      json: async () => {
+      json: async (): Promise<unknown> => {
         if (failJson) throw new Error("Unexpected token");
-        return typeof body === "function" ? body() : body;
+        return typeof body === "function" ? (body as () => unknown)() : body;
       },
     };
-  };
+  }) as unknown as typeof fetch;
 
 describe("fetchOpenCodeGoV2 错误链（#150）", () => {
   it("错误链：no-api-key（缺 apiKey）", async () => {
@@ -326,12 +339,27 @@ describe("fetchOpenCodeGoV2 错误链（#150）", () => {
   });
 });
 
+/** 用量窗格形状（fetchOpenCodeGoV2 解析产物断言面）。 */
+interface WindowDatum {
+  percent: number | null;
+  limit?: number;
+  raw?: string;
+  resetsAt?: string;
+}
+interface UsageWindows {
+  rolling: WindowDatum;
+  weekly: WindowDatum;
+  monthly: WindowDatum;
+}
+const asWindows = (v: unknown): UsageWindows => v as UsageWindows;
 describe("fetchOpenCodeGoV2 成功路径（#150）", () => {
-  let data, captured;
+  let data: UsageWindows;
+  let captured: Array<{ url: unknown; auth: unknown }>;
+  const asWindows = (v: unknown): UsageWindows => v as UsageWindows;
 
   beforeAll(async () => {
     captured = [];
-    data = await fetchOpenCodeGoV2(baseCtx(), makeFetch(200, okBody, false, captured));
+    data = asWindows(await fetchOpenCodeGoV2(baseCtx(), makeFetch(200, okBody, false, captured)));
   });
 
   it("成功路径 rolling 百分比", () => {
@@ -356,10 +384,12 @@ describe("fetchOpenCodeGoV2 成功路径（#150）", () => {
 });
 
 describe("fetchOpenCodeGoV2 缺失窗口补默认占位（#150）", () => {
-  let data;
+  let data: UsageWindows;
 
   beforeAll(async () => {
-    data = await fetchOpenCodeGoV2(baseCtx(), makeFetch(200, { rolling: { percent: 5 } }));
+    data = asWindows(
+      await fetchOpenCodeGoV2(baseCtx(), makeFetch(200, { rolling: { percent: 5 } })),
+    );
   });
 
   it("缺失窗口补 percent null", () => {
@@ -372,10 +402,10 @@ describe("fetchOpenCodeGoV2 缺失窗口补默认占位（#150）", () => {
 });
 
 describe("fetchOpenCodeGoV2 空 apiEndpoint 回落默认地址（#150）", () => {
-  let data;
+  let data: UsageWindows;
 
   beforeAll(async () => {
-    data = await fetchOpenCodeGoV2(baseCtx({ apiEndpoint: "" }), makeFetch(200, okBody));
+    data = asWindows(await fetchOpenCodeGoV2(baseCtx({ apiEndpoint: "" }), makeFetch(200, okBody)));
   });
 
   it("空 apiEndpoint 回落默认地址仍成功", () => {
@@ -404,7 +434,7 @@ describe("miniChartSvgMarkup 结构断言（#150）", () => {
   });
 
   describe("两点基础结构（含 100% 参考线）", () => {
-    let svg;
+    let svg: string;
 
     beforeAll(() => {
       svg = miniChartSvgMarkup({
@@ -457,7 +487,7 @@ describe("miniChartSvgMarkup 结构断言（#150）", () => {
   });
 
   describe("hi < 100：无参考线；刻度出现小数格式", () => {
-    let svg;
+    let svg: string;
 
     beforeAll(() => {
       svg = miniChartSvgMarkup({
@@ -484,7 +514,7 @@ describe("miniChartSvgMarkup 结构断言（#150）", () => {
   });
 
   describe("重置线：resetsAt 落在采样区间内", () => {
-    let svg;
+    let svg: string;
 
     beforeAll(() => {
       const resetsAt = new Date(T0 + 10 * MIN).toISOString();
@@ -516,7 +546,7 @@ describe("miniChartSvgMarkup 结构断言（#150）", () => {
   });
 
   describe("resetsAt 在区间外（早于 t0 一个周期以上）：无重置线", () => {
-    let svg;
+    let svg: string;
 
     beforeAll(() => {
       const resetsAt = new Date(T0 - 48 * 3600000).toISOString();
@@ -540,7 +570,8 @@ describe("miniChartSvgMarkup 结构断言（#150）", () => {
   });
 
   describe("x 轴刻度格式分档", () => {
-    let short, dateOnlySvg;
+    let short: string;
+    let dateOnlySvg: string;
 
     beforeAll(() => {
       // span<1 天 → HH:mm；dateOnly → M-D
@@ -580,10 +611,10 @@ describe("miniChartSvgMarkup 结构断言（#150）", () => {
   });
 
   describe("降采样：超过 300 点仍产出合法 SVG 并保留最后一点", () => {
-    let svg;
+    let svg: string;
 
     beforeAll(() => {
-      const many = [];
+      const many: Array<{ x: number; y: number }> = [];
       for (let i = 0; i < 320; i += 1) {
         many.push({ x: T0 + i * MIN, y: i % 50 });
       }
@@ -606,7 +637,11 @@ describe("miniChartSvgMarkup 结构断言（#150）", () => {
 
 // ---------------------------------------------------------------- openCodeGoAdapter.formatCapsule（#150）
 
-const capsBase = { time: T0, status: "fresh", esc: (s) => String(s) };
+const capsBase: { time: number; status: "fresh"; esc: (s: unknown) => string } = {
+  time: T0,
+  status: "fresh",
+  esc: (s: unknown) => String(s),
+};
 
 describe("openCodeGoAdapter.formatCapsule（#150）", () => {
   it("三窗口短名按序拼接", () => {
@@ -646,13 +681,22 @@ describe("openCodeGoAdapter.formatCapsule（#150）", () => {
 // ---------------------------------------------------------------- openCodeGoAdapter.formatPanel（#150）
 
 const H5 = 3600000;
-const mkEntry = (offsetMs, windows) => ({ time: T0 + offsetMs, data: windows });
+const mkEntry = (offsetMs: number, windows: Record<string, unknown>) => ({
+  time: T0 + offsetMs,
+  data: windows,
+});
 
 describe("openCodeGoAdapter.formatPanel（#150）", () => {
-  let emptyHtml, singleHtml, insufficientHtml, down, flat, resetHtml, windowedHtml;
+  let emptyHtml: string;
+  let singleHtml: string;
+  let insufficientHtml: string;
+  let down: string;
+  let flat: string;
+  let resetHtml: string;
+  let windowedHtml: string;
 
   beforeAll(() => {
-    const e = (s) => String(s);
+    const e = (s: unknown): string => String(s);
 
     emptyHtml = openCodeGoAdapter.formatPanel({
       entries: [],
@@ -787,7 +831,12 @@ describe("openCodeGoAdapter.formatPanel（#150）", () => {
 describe("safeFetchData 边界（#150 变异加固）", () => {
   // H6 去重后仅留 v1 独有：Date round-trip/undefined/sync-async boom/timeoutElapsed；
   // 数组/null/原始值拒绝、固定文案、超时中断由 contract 同名 describe 钉住。
-  let success, undefinedRes, syncBoom, asyncBoom, timeoutElapsed;
+  type FetchOutcome = Awaited<ReturnType<typeof safeFetchData>>;
+  let success: FetchOutcome;
+  let undefinedRes: FetchOutcome;
+  let syncBoom: FetchOutcome;
+  let asyncBoom: FetchOutcome;
+  let timeoutElapsed: number;
 
   beforeAll(async () => {
     // 成功路径：JSON 序列化管道保真——Date 经 stringify/parse 变 ISO 字符串，
@@ -842,7 +891,13 @@ describe("safeFetchData 边界（#150 变异加固）", () => {
 // ---------------------------------------------------------------- safeFormat 边界（#150 变异加固）
 
 describe("safeFormat 边界（#150 变异加固）", () => {
-  let success, badTypeRes, syncBoom, asyncBoom, plainThrow, timeoutRes;
+  type FormatOutcome = Awaited<ReturnType<typeof safeFormat>>;
+  let success: FormatOutcome;
+  let badTypeRes: FormatOutcome[];
+  let syncBoom: FormatOutcome;
+  let asyncBoom: FormatOutcome;
+  let plainThrow: FormatOutcome;
+  let timeoutRes: FormatOutcome;
 
   beforeAll(async () => {
     // 成功路径：字符串原样透传
@@ -851,7 +906,8 @@ describe("safeFormat 边界（#150 变异加固）", () => {
     // 非字符串拒绝：name 嵌入固定文案
     badTypeRes = [];
     for (const bad of [42, null, undefined, { obj: true }]) {
-      badTypeRes.push(await safeFormat(() => bad, "FmtB"));
+      // 非字符串返回值防御覆盖（contract 同款断言形态）。
+      badTypeRes.push(await safeFormat(() => bad as unknown as string, "FmtB"));
     }
 
     // fn 同步抛 Error：Promise.resolve().then(fn) 转 rejection 后 message 入 error
@@ -859,18 +915,28 @@ describe("safeFormat 边界（#150 变异加固）", () => {
       throw new Error("fmt-sync-boom");
     }, "FmtC");
 
-    // fn 返回 rejected promise
-    asyncBoom = await safeFormat(async () => {
-      throw new Error("fmt-async-boom");
-    }, "FmtD");
+    // fn 返回 rejected promise（恒抛 async fn 的 Promise<never> 经断言入 () => string 面）。
+    asyncBoom = await safeFormat(
+      (async () => {
+        throw new Error("fmt-async-boom");
+      }) as unknown as () => string,
+      "FmtD",
+    );
 
-    // 非 Error 抛出值：String(e) 兜底
-    plainThrow = await safeFormat(async () => {
-      throw 7;
-    }, "FmtE");
+    // 非 Error 抛出值：String(e) 兜底（同上恒抛断言）。
+    plainThrow = await safeFormat(
+      (async () => {
+        throw 7;
+      }) as unknown as () => string,
+      "FmtE",
+    );
 
     // 超时分支：fn 永挂 + 极小 timeoutMs -> 文案含适配器名
-    timeoutRes = await safeFormat(() => new Promise(() => {}), "FmtSlow", 25);
+    timeoutRes = await safeFormat(
+      () => new Promise<string>(() => {}) as unknown as string,
+      "FmtSlow",
+      25,
+    );
   });
 
   it("字符串返回走 html 通道", () => {
@@ -910,28 +976,41 @@ describe("safeFormat 边界（#150 变异加固）", () => {
 
 // ---------------------------------------------------------------- fetchWithTimeout 边界（#150 变异加固）
 
+/** fetch mock 回执形状（fetchWithTimeout 原样返回 mock 值，静态 Response 不适用）。 */
+interface MockFetchOutcome {
+  marker?: unknown;
+  aborted?: unknown;
+  url?: unknown;
+  headers?: unknown;
+}
 describe("fetchWithTimeout 边界（#150 变异加固）", () => {
-  let fast, fastSigIsAbortSignal, slow, def;
+  let fast: MockFetchOutcome;
+  let fastSigIsAbortSignal: boolean;
+  let slow: MockFetchOutcome;
+  let def: MockFetchOutcome;
 
   beforeAll(async () => {
     // mock 全局 fetch：记录入参并延迟 resolve，用 resolved 后的 signal.aborted
     // 观察超时定时器是否真的触发了 abort（不悬挂、无网络）。
     // 经 injectGlobalFetch 串行通道（#120）：与其他模块的 fetch 注入窗口互斥，
     // save/restore 恒配对，杜绝 ESM TLA 交错下的 mock 驻留污染。
-    const calls = [];
+    const calls: Array<{ url: unknown; opts: FetchProbeInit }> = [];
     await injectGlobalFetch(async (set) => {
-      set(async (url, opts) => {
+      // fetchWithTimeout 恒传 init（含自建 signal），直接访问与原文同义（! 仅过编译面）。
+      set(async (url: unknown, opts: FetchProbeInit) => {
         calls.push({ url, opts });
         await new Promise((res) => setTimeout(res, opts.delayMs ?? 0)); // 有意延迟：fetch mock 内按 delayMs 延迟（fixture）
-        return { marker: "mock", aborted: opts.signal.aborted, url, headers: opts.headers };
+        return { marker: "mock", aborted: opts.signal!.aborted, url, headers: opts.headers };
       });
 
       // 快路径：远小于超时的延迟 -> 正常返回且 signal 未 abort
-      fast = await fetchWithTimeout("https://gw.test/x", 1000, {
+      // caller signal 会被超时控制器覆盖（实现 guarantee），delayMs 由本 mock 消费——
+      // 非法 signal + 额外字段经 unknown 断言传入（运行时直通 mock）。
+      fast = (await fetchWithTimeout("https://gw.test/x", 1000, {
         headers: { "x-k": "v" },
         signal: "fake-signal",
         delayMs: 10,
-      });
+      } as unknown as RequestInit)) as unknown as MockFetchOutcome;
       // 同理按 url 过滤取 fast 的调用记录：calls 尾部在负载下可能被外部污染
       const sigFast = calls.find((c) => c.url === "https://gw.test/x")?.opts.signal;
       fastSigIsAbortSignal = sigFast instanceof AbortSignal;
@@ -942,11 +1021,16 @@ describe("fetchWithTimeout 边界（#150 变异加固）", () => {
       //   才能彻底与外部污染解耦）
       // delayMs 取 500（>> timeoutMs=20）：含 TLA 的前置模块恢复执行时会形成
       // 微任务风暴推迟宏任务定时器，小余量下 abort 可能晚于 mock 返回（实证 flake）
-      slow = await fetchWithTimeout("https://gw.test/y", 20, { delayMs: 500 });
+      slow = (await fetchWithTimeout("https://gw.test/y", 20, {
+        delayMs: 500,
+      } as unknown as RequestInit)) as unknown as MockFetchOutcome;
 
       // 默认参数形态：省略 timeoutMs 与 init 仍可完成快调用
-      set(async (url, opts) => ({ marker: "def", aborted: opts.signal.aborted }));
-      def = await fetchWithTimeout("https://gw.test/z");
+      set(async (url: unknown, opts: FetchProbeInit) => ({
+        marker: "def",
+        aborted: opts.signal!.aborted,
+      }));
+      def = (await fetchWithTimeout("https://gw.test/z")) as unknown as MockFetchOutcome;
     });
   });
 
@@ -986,11 +1070,16 @@ describe("fetchWithTimeout 边界（#150 变异加固）", () => {
 // ---------------------------------------------------------------- trendOf 阈值与取整边界（#150 变异加固，经 formatPanel 观测）
 
 describe("trendOf 阈值与取整边界（#150 变异加固）", () => {
-  let rounded, atUp, atDown, inner, outer, only;
+  let rounded: string;
+  let atUp: string;
+  let atDown: string;
+  let inner: string;
+  let outer: string;
+  let only: string;
 
   beforeAll(() => {
-    const e = (s) => String(s);
-    const panelOf = (from, to) =>
+    const e = (s: unknown): string => String(s);
+    const panelOf = (from: number, to: number): string =>
       openCodeGoAdapter.formatPanel({
         entries: [
           mkEntry(0, { rolling: { percent: from } }),
@@ -1068,7 +1157,7 @@ describe("trendOf 阈值与取整边界（#150 变异加固）", () => {
 // ---------------------------------------------------------------- resetTicks 回溯与非法输入边界（#150 变异加固，经 miniChartSvgMarkup 观测）
 
 /** 提取 SVG 中窗口重置竖线的 x1 坐标序列 */
-function resetLineXs(svg) {
+function resetLineXs(svg: string): number[] {
   return [...svg.matchAll(/<line x1="([\d.]+)" y1="14"[^]*?<title>窗口重置点<\/title>/g)].map((m) =>
     Number(m[1]),
   );
@@ -1157,25 +1246,25 @@ describe("resetTicks 回溯与非法输入边界（#150 变异加固）", () => 
 // ---------------------------------------------------------------- 图表纯函数分档矩阵（#150 变异加固 2/4 续）
 
 describe("图表纯函数分档矩阵（#150 变异加固 2/4 续）", () => {
-  let svg10m,
-    svg30m,
-    svg1h,
-    svg6h,
-    svg2d,
-    svg5d,
-    svg14d,
-    svg60d,
-    svgDateOnly,
-    svgFrac,
-    tight,
-    wide,
-    wider,
-    svgDownsample,
-    svgCurve,
-    svgTiny;
+  let svg10m: string;
+  let svg30m: string;
+  let svg1h: string;
+  let svg6h: string;
+  let svg2d: string;
+  let svg5d: string;
+  let svg14d: string;
+  let svg60d: string;
+  let svgDateOnly: string;
+  let svgFrac: string;
+  let tight: string;
+  let wide: string;
+  let wider: string;
+  let svgDownsample: string;
+  let svgCurve: string;
+  let svgTiny: string;
 
   beforeAll(() => {
-    const mk = (from, to, opts = {}) =>
+    const mk = (from: number, to: number, opts: { dateOnly?: boolean } = {}) =>
       miniChartSvgMarkup({
         samples: [
           { x: T0, y: 0 },
@@ -1227,7 +1316,7 @@ describe("图表纯函数分档矩阵（#150 变异加固 2/4 续）", () => {
 
     // niceDomain 经 formatPanel 覆盖：极差/3 映射到 niceStep 不同分档
     // niceStep 分档：norm<1.5 → step=mag；<3.5 → 2*mag；<7.5 → 5*mag；else → 10*mag
-    const panelOf = (from, to) =>
+    const panelOf = (from: number, to: number): string =>
       openCodeGoAdapter.formatPanel({
         entries: [
           mkEntry(0, { rolling: { percent: from, resetsAt: undefined } }),
@@ -1478,7 +1567,8 @@ describe("#105③ 实体编码变体（清理链补充）", () => {
 // ---------------------------------------------------------------- #105③ C1 管道级端到端：净化在管道内生效
 
 describe("#105③ C1 管道级端到端：净化在管道内生效", () => {
-  let capR, panelR;
+  let capR: V2PipelineResult;
+  let panelR: Awaited<ReturnType<typeof runV2PanelPipeline>>;
 
   beforeAll(async () => {
     // pipeContained 判据引自 test/helpers.ts 单一事实源（统一判定标准 v2：

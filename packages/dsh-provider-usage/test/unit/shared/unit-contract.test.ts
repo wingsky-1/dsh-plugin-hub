@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * dsh-provider-usage — unit：契约辅助纯函数。
  *
@@ -24,6 +23,10 @@ import {
   isUsageStatsAdapter,
   sanitizeHtml,
   describeUsageStatsAdapterShape,
+  type CapsuleInput,
+  type FetchContext,
+  type PanelInput,
+  type UsageStatsAdapter,
 } from "../../../src/shared/interface.ts";
 // 白盒直连深路径（#768 B波）：契约常量/路径段经 shared 门面，不走组合根转发（sseData单议暂留）。
 import { safeSegment, ERROR_CODES } from "../../../src/shared/interface.ts";
@@ -34,7 +37,14 @@ import {
   makeAdapterRegistry,
   readStamp,
   stampEqual,
+  type AdapterInfo,
+  type AdapterRegistry,
+  type ReplaceFileResult,
 } from "../../../src/server/registry/interface.ts";
+import type { V2PipelineResult } from "../../../src/server/pipeline/interface.ts";
+/** 注册表条目（getEntry 返回；门面未单出该名，经注册表类型推导）。 */
+type RegistryEntry = NonNullable<ReturnType<AdapterRegistry["getEntry"]>>;
+type RegistrySnapshot = ReturnType<AdapterRegistry["snapshot"]>;
 // 白盒直连深路径（#768 B波续批）：管线纯面经域门面，不走组合根转发。
 import {
   safeFetchData,
@@ -94,7 +104,7 @@ describe("sseData", () => {
 // #472 收敛锚定：lib/index.js 的 sseData（re-export 自 shared/host-utils.js）
 // 输出与 shared 单一事实源一致（防 re-export 链被误删/改指后导出面漂移）。
 describe("sseData 与 shared 单一事实源一致（#472）", () => {
-  let sharedSseData;
+  let sharedSseData: (data: unknown) => string;
 
   beforeAll(async () => {
     ({ sseData: sharedSseData } = await import("../../../../../shared/host-utils.js"));
@@ -502,7 +512,8 @@ function mkAdapter(over: Record<string, unknown> = {}): Record<string, unknown> 
 }
 
 describe("registry：register 契约失败分支（带 file / 无 file 两种诊断路径）", () => {
-  let builtinRejected, userFileRejected;
+  let builtinRejected: boolean;
+  let userFileRejected: boolean;
 
   beforeAll(() => {
     const reg = makeAdapterRegistry();
@@ -521,7 +532,10 @@ describe("registry：register 契约失败分支（带 file / 无 file 两种诊
 });
 
 describe("registry：name 重复拒绝 + registeredNames 隔离", () => {
-  let firstRegister, hasNameAfterFirst, secondRegister, entryProvY;
+  let firstRegister: boolean;
+  let hasNameAfterFirst: boolean;
+  let secondRegister: boolean;
+  let entryProvY: RegistryEntry | undefined;
 
   beforeAll(() => {
     const reg = makeAdapterRegistry();
@@ -550,13 +564,13 @@ describe("registry：name 重复拒绝 + registeredNames 隔离", () => {
 });
 
 describe("registry：enabledHint=false 只入候选不启用", () => {
-  let reg,
-    registerResult,
-    entryBeforeSelect,
-    hasCandidates,
-    isEnabledBeforeSelect,
-    selectResult,
-    isEnabledAfterSelect;
+  let reg: AdapterRegistry;
+  let registerResult: boolean;
+  let entryBeforeSelect: RegistryEntry | undefined;
+  let hasCandidates: boolean;
+  let isEnabledBeforeSelect: boolean;
+  let selectResult: boolean;
+  let isEnabledAfterSelect: boolean;
 
   beforeAll(() => {
     reg = makeAdapterRegistry();
@@ -594,7 +608,11 @@ describe("registry：enabledHint=false 只入候选不启用", () => {
 });
 
 describe("registry：select 清空幂等 / 未知名 false / get 与 getEntry 一致性", () => {
-  let clearNoop, unknownSelect, getAfterRegister, getAfterClear, enabledAfterClear;
+  let clearNoop: boolean;
+  let unknownSelect: boolean;
+  let getAfterRegister: boolean;
+  let getAfterClear: UsageStatsAdapter | undefined;
+  let enabledAfterClear: string[];
 
   beforeAll(() => {
     const reg = makeAdapterRegistry();
@@ -629,7 +647,7 @@ describe("registry：select 清空幂等 / 未知名 false / get 与 getEntry �
 });
 
 describe("registry：snapshot 多 provider 认领去重 + errors 列表", () => {
-  let snap;
+  let snap: RegistrySnapshot;
 
   beforeAll(() => {
     const reg = makeAdapterRegistry();
@@ -665,7 +683,7 @@ describe("registry：snapshot 多 provider 认领去重 + errors 列表", () => 
 });
 
 describe("registry：recordError 同 key 覆盖（只保留最近一次）", () => {
-  let dupErrors;
+  let dupErrors: RegistrySnapshot["errors"];
 
   beforeAll(() => {
     const reg = makeAdapterRegistry();
@@ -684,7 +702,13 @@ describe("registry：recordError 同 key 覆盖（只保留最近一次）", () 
 });
 
 describe("registry：removeByFile 计数 + registeredNames/enabled 引用清理", () => {
-  let removed, hasNameOne, hasNameTwo, entryProvX, entryPz, enabledAfterAllRemoved, removedGhost;
+  let removed: number;
+  let hasNameOne: boolean;
+  let hasNameTwo: boolean;
+  let entryProvX: RegistryEntry | undefined;
+  let entryPz: RegistryEntry | undefined;
+  let enabledAfterAllRemoved: string[];
+  let removedGhost: number;
 
   beforeAll(() => {
     const reg = makeAdapterRegistry();
@@ -733,7 +757,11 @@ describe("registry：removeByFile 计数 + registeredNames/enabled 引用清理"
 // ================================================================ #212：replaceByFile 热更新替换（enabled 保持 + 冲突保留旧条目）
 
 describe("#212-A1：显式停用的适配器热更新后不得变回启用（缺陷 A 回归）", () => {
-  let registerResult, selectResult, r, info, entryProvX;
+  let registerResult: boolean;
+  let selectResult: boolean;
+  let r: ReplaceFileResult;
+  let info: AdapterInfo | undefined;
+  let entryProvX: RegistryEntry | undefined;
 
   beforeAll(() => {
     const reg = makeAdapterRegistry();
@@ -766,7 +794,8 @@ describe("#212-A1：显式停用的适配器热更新后不得变回启用（缺
 });
 
 describe("#212-A2：启用中的适配器替换后仍是启用者（保持语义的另一侧）", () => {
-  let r, enabledAfterReplace;
+  let r: ReplaceFileResult;
+  let enabledAfterReplace: boolean;
 
   beforeAll(() => {
     const reg = makeAdapterRegistry();
@@ -785,7 +814,9 @@ describe("#212-A2：启用中的适配器替换后仍是启用者（保持语义
 });
 
 describe("#212-A3：多 provider 认领时逐 provider 精确恢复（部分启用部分停用）", () => {
-  let selectResult, r, snap;
+  let selectResult: boolean;
+  let r: ReplaceFileResult;
+  let snap: RegistrySnapshot;
 
   beforeAll(() => {
     const reg = makeAdapterRegistry();
@@ -817,13 +848,20 @@ describe("#212-A3：多 provider 认领时逐 provider 精确恢复（部分启�
 
 // B1：改名撞内置名 → 拒绝且旧条目原样保留（缺陷 B 回归；health 报错可见性见 smoke #212-B 集成用例）
 describe("#212-B1：改名撞内置名 → 拒绝且旧条目原样保留", () => {
-  let builtinRegister, renamerRegister, r, infos, hasNameRenamer;
+  let builtinRegister: boolean;
+  let renamerRegister: boolean;
+  let r: Extract<ReplaceFileResult, { ok: false }>;
+  let infos: AdapterInfo[];
+  let hasNameRenamer: boolean;
 
   beforeAll(() => {
     const reg = makeAdapterRegistry();
     builtinRegister = reg.register(mkAdapter({ name: "builtin-occ" }), "builtin");
     renamerRegister = reg.register(mkAdapter({ name: "renamer" }), "user-file", "/r.mjs");
-    r = reg.replaceByFile("/r.mjs", mkAdapter({ name: "builtin-occ" }));
+    r = reg.replaceByFile("/r.mjs", mkAdapter({ name: "builtin-occ" })) as Extract<
+      ReplaceFileResult,
+      { ok: false }
+    >;
     infos = reg.snapshot().infos;
     hasNameRenamer = reg.hasName("renamer");
   });
@@ -858,13 +896,17 @@ describe("#212-B1：改名撞内置名 → 拒绝且旧条目原样保留", () =
 });
 
 describe("#212-B2：改名撞另一 user-file 名 → 同样拒绝且两文件条目均保留", () => {
-  let r, infos;
+  let r: Extract<ReplaceFileResult, { ok: false }>;
+  let infos: AdapterInfo[];
 
   beforeAll(() => {
     const reg = makeAdapterRegistry();
     reg.register(mkAdapter({ name: "u-first", providers: ["pq"] }), "user-file", "/u1.mjs");
     reg.register(mkAdapter({ name: "u-second", providers: ["pr"] }), "user-file", "/u2.mjs");
-    r = reg.replaceByFile("/u2.mjs", mkAdapter({ name: "u-first", providers: ["pr"] }));
+    r = reg.replaceByFile("/u2.mjs", mkAdapter({ name: "u-first", providers: ["pr"] })) as Extract<
+      ReplaceFileResult,
+      { ok: false }
+    >;
     infos = reg.snapshot().infos;
   });
 
@@ -886,12 +928,17 @@ describe("#212-B2：改名撞另一 user-file 名 → 同样拒绝且两文件�
 });
 
 describe("#212-B3：改名不冲突 → 替换成功，旧名清理，启用关系跟随文件语义", () => {
-  let r, hasNameOld, enabledNew;
+  let r: Extract<ReplaceFileResult, { ok: true }>;
+  let hasNameOld: boolean;
+  let enabledNew: boolean;
 
   beforeAll(() => {
     const reg = makeAdapterRegistry();
     reg.register(mkAdapter({ name: "old-name" }), "user-file", "/c.mjs"); // 默认启用 prov-x
-    r = reg.replaceByFile("/c.mjs", mkAdapter({ name: "new-name" }));
+    r = reg.replaceByFile("/c.mjs", mkAdapter({ name: "new-name" })) as Extract<
+      ReplaceFileResult,
+      { ok: true }
+    >;
     hasNameOld = reg.hasName("old-name");
     enabledNew = reg.isEnabled("prov-x", "new-name");
   });
@@ -910,12 +957,13 @@ describe("#212-B3：改名不冲突 → 替换成功，旧名清理，启用关�
 });
 
 describe("#212-B4：契约失败的新版同样拒绝且保留旧条目", () => {
-  let r, keptOrig;
+  let r: Extract<ReplaceFileResult, { ok: false }>;
+  let keptOrig: boolean;
 
   beforeAll(() => {
     const reg = makeAdapterRegistry();
     reg.register(mkAdapter({ name: "orig" }), "user-file", "/o.mjs");
-    r = reg.replaceByFile("/o.mjs", { foo: 1 });
+    r = reg.replaceByFile("/o.mjs", { foo: 1 }) as Extract<ReplaceFileResult, { ok: false }>;
     keptOrig = reg.snapshot().infos.some((i) => i.name === "orig");
   });
 
@@ -1120,7 +1168,16 @@ describe("safeFormat：非字符串返回 / 抛错 / 超时", () => {
 
 // ================================================================ #150 二阶段：pipeline v2 分支
 
-function mkV2Adapter(over: Record<string, unknown> = {}): Record<string, unknown> {
+/** 管道探针适配器（as never 替代：全字段满足 UsageStatsAdapter，覆写仅收合法子集）。 */
+function mkV2Adapter(
+  over: {
+    name?: string;
+    providers?: string[];
+    fetchData?: (ctx: FetchContext) => Promise<Record<string, unknown>>;
+    formatCapsule?: (input: CapsuleInput) => string;
+    formatPanel?: (input: PanelInput) => string;
+  } = {},
+): UsageStatsAdapter {
   return {
     version: ADAPTER_CONTRACT_VERSION,
     name: "pipe-a",
@@ -1133,11 +1190,11 @@ function mkV2Adapter(over: Record<string, unknown> = {}): Record<string, unknown
 }
 
 describe("pipeline v2：成功路径：fresh + rawData + capsule 净化", () => {
-  let r;
+  let r: V2PipelineResult;
 
   beforeAll(async () => {
     r = await runV2Pipeline({
-      adapter: mkV2Adapter() as never,
+      adapter: mkV2Adapter(),
       provider: "pv",
       config: { apiEndpoint: "http://127.0.0.1:9", apiKey: "sk" },
       staticPath: "",
@@ -1163,7 +1220,7 @@ describe("pipeline v2：成功路径：fresh + rawData + capsule 净化", () => 
 });
 
 describe("pipeline v2：fetchData 失败 → fetch-failed stale", () => {
-  let r;
+  let r: V2PipelineResult;
 
   beforeAll(async () => {
     r = await runV2Pipeline({
@@ -1171,7 +1228,7 @@ describe("pipeline v2：fetchData 失败 → fetch-failed stale", () => {
         fetchData: async () => {
           throw new Error("net-down");
         },
-      }) as never,
+      }),
       provider: "pv",
       config: {},
       staticPath: "",
@@ -1197,11 +1254,11 @@ describe("pipeline v2：fetchData 失败 → fetch-failed stale", () => {
 });
 
 describe("pipeline v2：formatCapsule 注入脚本 → 净化兜底", () => {
-  let r;
+  let r: V2PipelineResult;
 
   beforeAll(async () => {
     r = await runV2Pipeline({
-      adapter: mkV2Adapter({ formatCapsule: () => '<span onclick="x()">t</span>' }) as never,
+      adapter: mkV2Adapter({ formatCapsule: () => '<span onclick="x()">t</span>' }),
       provider: "pv",
       config: {},
       staticPath: "",
@@ -1215,7 +1272,9 @@ describe("pipeline v2：formatCapsule 注入脚本 → 净化兜底", () => {
 });
 
 describe("pipeline v2：面板管道：正常 / formatPanel 抛错 / 空历史", () => {
-  let okP, badP, emptyP;
+  let okP: Awaited<ReturnType<typeof runV2PanelPipeline>>;
+  let badP: Awaited<ReturnType<typeof runV2PanelPipeline>>;
+  let emptyP: Awaited<ReturnType<typeof runV2PanelPipeline>>;
 
   beforeAll(async () => {
     const store = new HistoryStore({ root: mkdtempSync(join(tmpdir(), "dou-pipe-")) });
@@ -1223,7 +1282,7 @@ describe("pipeline v2：面板管道：正常 / formatPanel 抛错 / 空历史",
     await store.append("pv", "pipe-a", { time: day, data: { v: 1 } });
 
     okP = await runV2PanelPipeline({
-      adapter: mkV2Adapter() as never,
+      adapter: mkV2Adapter(),
       provider: "pv",
       history: store,
       range: { start: day - 1000, end: day + 1000 },
@@ -1234,7 +1293,7 @@ describe("pipeline v2：面板管道：正常 / formatPanel 抛错 / 空历史",
         formatPanel: () => {
           throw new Error("panel-boom");
         },
-      }) as never,
+      }),
       provider: "pv",
       history: store,
       range: { start: day - 1000, end: day + 1000 },
@@ -1244,7 +1303,7 @@ describe("pipeline v2：面板管道：正常 / formatPanel 抛错 / 空历史",
     emptyP = await runV2PanelPipeline({
       adapter: mkV2Adapter({
         formatPanel: (i: { entries: unknown[] }) => `n=${i.entries.length}`,
-      }) as never,
+      }),
       provider: "zz",
       history: store,
       range: { start: day - 1000, end: day + 1000 },
@@ -1307,9 +1366,17 @@ describe("hotreload：start 文件缺失失败回调；pollOnce 文件删除保�
   // `import(url + "?t=" + mtimeMs)` 被 vite 系运行器按 `/\bt=\d{13}&?\b/` 剥离毫秒整数位、
   // 只剩亚毫秒小数位参与模块标识而撞进同一模块缓存的缺陷（#722 实证，版本戳现已改为
   // `?mtime=<mtimeMs>&size=<size>`；确定性驱动覆盖见 test/unit/registry/unit-hotreload.test.ts）。
-  let startedMissing, startedMissingError, eventsLength;
-  let startedOk, currentAfterStart, polledOk, currentAfterPoll;
-  let badReloadOk, badReloadError, delPollOk, currentAfterDelete;
+  let startedMissing: { ok: boolean };
+  let startedMissingError: string;
+  let eventsLength: number;
+  let startedOk: { ok: boolean };
+  let currentAfterStart: boolean;
+  let polledOk: { ok: boolean };
+  let currentAfterPoll: boolean;
+  let badReloadOk: { ok: boolean };
+  let badReloadError: string;
+  let delPollOk: { ok: boolean };
+  let currentAfterDelete: boolean;
 
   beforeAll(() => {
     const probe = fileURLToPath(new URL("../../hotreload-probe.mjs", import.meta.url));
@@ -1319,7 +1386,7 @@ describe("hotreload：start 文件缺失失败回调；pollOnce 文件删除保�
       .split("\n")
       .filter((l) => l.trimStart().startsWith("{"))
       .pop();
-    const out = JSON.parse(line);
+    const out = JSON.parse(line!);
     startedMissing = { ok: out.startedMissingOk };
     startedMissingError = out.startedMissingError;
     eventsLength = out.eventsLength;
@@ -1385,7 +1452,8 @@ describe("hotreload：start 文件缺失失败回调；pollOnce 文件删除保�
 describe("miniChartSvgMarkup 独有 facet（H7 审计例外保留）", () => {
   // 基本结构：svg 包裹 + 平滑曲线 + 终点圆点 + 网格线
   describe("基本结构：svg 包裹 + 平滑曲线 + 终点圆点 + 网格线", () => {
-    let svg, gridLines;
+    let svg: string;
+    let gridLines: number;
 
     beforeAll(() => {
       const t0 = Date.UTC(2026, 0, 1, 0, 0);
@@ -1414,7 +1482,7 @@ describe("miniChartSvgMarkup 独有 facet（H7 审计例外保留）", () => {
   });
 
   describe("重置标记线", () => {
-    let marks;
+    let marks: number;
 
     beforeAll(() => {
       // resetsAt 落在窗口内 → title「窗口重置点」出现；周期外推的历史点也在
@@ -1441,7 +1509,7 @@ describe("miniChartSvgMarkup 独有 facet（H7 审计例外保留）", () => {
   });
 
   describe("resetsAt 无效值 → 无标记", () => {
-    let svgNone;
+    let svgNone: string;
 
     beforeAll(() => {
       const t0 = Date.UTC(2026, 0, 1, 0, 0);
@@ -1466,7 +1534,7 @@ describe("miniChartSvgMarkup 独有 facet（H7 审计例外保留）", () => {
 
   // downsample：>300 点降采样后仍 ≤301 点且保留末点
   describe("downsample：>300 点降采样", () => {
-    let svg;
+    let svg: string;
 
     beforeAll(() => {
       const t0 = Date.UTC(2026, 0, 1, 0, 0);
@@ -1492,7 +1560,7 @@ describe("miniChartSvgMarkup 独有 facet（H7 审计例外保留）", () => {
   // smoothPath：单点返回空串（pts<2 分支）
   // （smoothPath 未导出，经由 samples<2 已覆盖；此处补两点的 path 形状断言）
   describe("smoothPath：两点 path 形状", () => {
-    let svg;
+    let svg: string;
 
     beforeAll(() => {
       const t0 = Date.UTC(2026, 0, 1, 0, 0);

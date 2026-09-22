@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * dsh-provider-usage — unit：配置归一化补充（normalizeConfig 边界、parseUserAdapters）。
  *
@@ -46,7 +45,11 @@ import {
 // 位置无关：本块断言全部不依赖「本文件先于兄弟文件求值」。
 
 describe("resolveAddAdapterFile 路径校验矩阵（#150 二阶段）", () => {
-  let home, realFile, tildeProbe, tildeTarget, restoreEnv;
+  let home: string;
+  let realFile: string;
+  let tildeProbe: string;
+  let tildeTarget: string;
+  let restoreEnv: () => void;
 
   beforeAll(() => {
     // HOME/DSH_HOME 指向临时目录；~ 展开、绝对路径、目录拒绝都基于真实文件系统
@@ -291,7 +294,8 @@ function isolateCredEnv(homeDir?: string) {
 describe("resolveProviderConfig 全链", () => {
   // 1) auth.json（opencodeKeyFromAuth 全分支）：HOME 指向临时目录且无 .credentials.yaml
   describe("auth.json：opencode-go 密钥", () => {
-    let restore, resolved;
+    let restore: () => void;
+    let resolved: Awaited<ReturnType<typeof resolveProviderConfig>>;
 
     beforeAll(async () => {
       const authDir = mkdtempSync(join(tmpdir(), "dou-auth-"));
@@ -317,7 +321,8 @@ describe("resolveProviderConfig 全链", () => {
 
   // 1b) auth.json 走 opencode 旧键名
   describe("auth.json：opencode 旧键名", () => {
-    let restore, resolved;
+    let restore: () => void;
+    let resolved: Awaited<ReturnType<typeof resolveProviderConfig>>;
 
     beforeAll(async () => {
       const authDir = mkdtempSync(join(tmpdir(), "dou-auth-legacy-"));
@@ -343,12 +348,13 @@ describe("resolveProviderConfig 全链", () => {
 
   // 2) .credentials.yaml：DSH_HOME 下创建凭据文件
   describe(".credentials.yaml：DSH_HOME 下的凭据文件", () => {
-    let restore, resolved;
+    let restore: () => void;
+    let resolved: Awaited<ReturnType<typeof resolveProviderConfig>>;
 
     beforeAll(async () => {
       restore = isolateCredEnv();
       writeFileSync(
-        join(process.env.DSH_HOME, ".credentials.yaml"),
+        join(process.env.DSH_HOME!, ".credentials.yaml"),
         ["version: 1", "refs:", "  OPENCODE_GO_API_KEY: sk-from-yaml"].join("\n"),
         "utf8",
       );
@@ -364,7 +370,8 @@ describe("resolveProviderConfig 全链", () => {
 
   // 3) 显式传入的 apiKey 优先级最高
   describe("显式 apiKey 优先级最高", () => {
-    let restore, resolved;
+    let restore: () => void;
+    let resolved: Awaited<ReturnType<typeof resolveProviderConfig>>;
 
     beforeAll(async () => {
       restore = isolateCredEnv();
@@ -380,7 +387,8 @@ describe("resolveProviderConfig 全链", () => {
 
   // 4) 环境变量优先于 auth.json
   describe("环境变量优先于 auth.json", () => {
-    let restore, resolved;
+    let restore: () => void;
+    let resolved: Awaited<ReturnType<typeof resolveProviderConfig>>;
 
     beforeAll(async () => {
       const authDir = mkdtempSync(join(tmpdir(), "dou-auth-env-"));
@@ -407,7 +415,8 @@ describe("resolveProviderConfig 全链", () => {
 
   // 5) 无任何可信密钥来源 → undefined（不抛错）
   describe("无任何可信密钥来源 → undefined（不抛错）", () => {
-    let restore, resolved;
+    let restore: () => void;
+    let resolved: Awaited<ReturnType<typeof resolveProviderConfig>>;
 
     beforeAll(async () => {
       const noHome = mkdtempSync(join(tmpdir(), "dou-noauth-"));
@@ -428,7 +437,8 @@ describe("resolveProviderConfig 全链", () => {
 
   // 6) 非 opencode-go provider 不应读 auth.json
   describe("非 opencode-go provider 不应读 auth.json", () => {
-    let restore, resolved;
+    let restore: () => void;
+    let resolved: Awaited<ReturnType<typeof resolveProviderConfig>>;
 
     beforeAll(async () => {
       const authDir = mkdtempSync(join(tmpdir(), "dou-auth-x-"));
@@ -648,8 +658,16 @@ describe("parseUserAdapters 字段级异型值分支（#150 二阶段）", () =>
 // ================================================================ #150 二阶段：readAdapterState 全分支（root 直传临时目录）
 
 describe("readAdapterState 全分支（#150 二阶段）", () => {
-  let missingFile, badJson, badJsonRaw, bakFiles, legalState;
-  let topString, topNumber, topNull, topArray, plainObject;
+  let missingFile: Record<string, string | null>;
+  let badJson: Record<string, string | null>;
+  let badJsonRaw: string;
+  let bakFiles: string[];
+  let legalState: Record<string, string | null>;
+  let topString: Record<string, string | null>;
+  let topNumber: Record<string, string | null>;
+  let topNull: Record<string, string | null>;
+  let topArray: Record<string, string | null>;
+  let plainObject: Record<string, string | null>;
 
   beforeAll(async () => {
     const root = mkdtempSync(join(tmpdir(), "dou-state-"));

@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * dsh-provider-usage — unit：StatsService 缓存面（D7）
  *
@@ -20,8 +19,21 @@ import { makeAdapterRegistry } from "../../../src/server/registry/registry.ts";
 import { HistoryStore } from "../../../src/server/history/history.ts";
 import { panelCacheKey } from "../../../src/server/pipeline/v2.ts";
 import { StatsService } from "../../../src/server/pipeline/stats-service.ts";
+import type { Context } from "@deepseek-ai/cordis";
 
-function makeService(overrides = {}) {
+/** 探针适配器可变状态（门控 promise 用于单飞/世代 determinism）。 */
+interface SpyState {
+  fetchCalls: number;
+  panelCalls: number;
+  failPanel: boolean;
+  fetchGate: Promise<unknown> | null;
+  panelGate: Promise<unknown> | null;
+  fetchEntered: boolean;
+}
+type PanelOutcome = Awaited<ReturnType<StatsService["getPanelResult"]>>;
+type TestRegistry = ReturnType<typeof makeAdapterRegistry>;
+type RegistryEntry = NonNullable<ReturnType<TestRegistry["getEntry"]>>;
+function makeService(overrides: { spy?: Partial<SpyState> } = {}) {
   const dir = mkdtempSync(join(tmpdir(), "u-usage-stats-"));
   const config = normalizeConfig({
     apiKey: "sk-test",
@@ -66,7 +78,7 @@ function makeService(overrides = {}) {
     maxSizeBytes: 20 * 1024 * 1024,
   });
   const service = new StatsService({
-    ctx: {},
+    ctx: {} as Context,
     config,
     historyRoot: dir,
     registry,
@@ -78,13 +90,19 @@ function makeService(overrides = {}) {
 }
 
 const range = { start: 0, end: Date.now() };
-const entryOf = (registry) => registry.getEntry("pv");
+const entryOf = (registry: TestRegistry): RegistryEntry => registry.getEntry("pv")!;
 
 // 说明：各 describe 的 beforeAll 复现原脚本块的动作序列，并把「每条断言当时读到的
 // 观测值」快照下来；每个 it 只负责核对其中一个快照——断言强度与原脚本逐条一致。
 
 describe("getPanelResult：命中 / miss / 失败不写（L2 契约四段语义）", () => {
-  let service, spy, key, first, second, panelCallsAfterFirst, cacheHasKeyAfterFirst;
+  let service: StatsService;
+  let spy: SpyState;
+  let key: string;
+  let first: PanelOutcome;
+  let second: PanelOutcome;
+  let panelCallsAfterFirst: number;
+  let cacheHasKeyAfterFirst: boolean;
 
   beforeAll(async () => {
     const h = makeService();
@@ -121,7 +139,11 @@ describe("getPanelResult：命中 / miss / 失败不写（L2 契约四段语义�
 });
 
 describe("getPanelResult：失败不写缓存（下次仍 miss 重跑）", () => {
-  let service, spy, key, f1, cacheHasKeyAfterFirstFail;
+  let service: StatsService;
+  let spy: SpyState;
+  let key: string;
+  let f1: PanelOutcome;
+  let cacheHasKeyAfterFirstFail: boolean;
 
   beforeAll(async () => {
     const h = makeService({ spy: { failPanel: true } });
@@ -150,7 +172,11 @@ describe("getPanelResult：失败不写缓存（下次仍 miss 重跑）", () =>
 
 // ---- getPanelResult：跨自然日不同 key、同日漂移同 key（S0 归一语义走服务方法）
 describe("getPanelResult：跨自然日不同 key、同日漂移同 key（S0 归一语义走服务方法）", () => {
-  let spy, callsAfterFirst, inDayError, callsAfterInDay, callsAfterNextDay;
+  let spy: SpyState;
+  let callsAfterFirst: number;
+  let inDayError: string | undefined;
+  let callsAfterInDay: number;
+  let callsAfterNextDay: number;
 
   beforeAll(async () => {
     const h = makeService();
@@ -189,10 +215,12 @@ describe("getPanelResult：跨自然日不同 key、同日漂移同 key（S0 归
 });
 
 describe("per-key 单飞：同 key 并发 miss 不双跑 formatPanel（评审 M2）", () => {
-  let spy, r1, r2;
+  let spy: SpyState;
+  let r1: PanelOutcome;
+  let r2: PanelOutcome;
 
   beforeAll(async () => {
-    let release;
+    let release!: (value?: unknown) => void;
     const gate = new Promise((res) => {
       release = res;
     });
@@ -222,8 +250,13 @@ describe("per-key 单飞：同 key 并发 miss 不双跑 formatPanel（评审 M2
 });
 
 describe("purgeAllCaches：清 cache+panelCache，后续重新 miss（评审 M1 收口面）", () => {
-  let spy, callsBeforePurge, cacheSizeAfterStats, panelCacheSizeAfterPanel;
-  let cacheSizeAfterPurge, panelCacheSizeAfterPurge, panelCallsAfterPurge;
+  let spy: SpyState;
+  let callsBeforePurge: number;
+  let cacheSizeAfterStats: number;
+  let panelCacheSizeAfterPanel: number;
+  let cacheSizeAfterPurge: number;
+  let panelCacheSizeAfterPurge: number;
+  let panelCallsAfterPurge: number;
 
   beforeAll(async () => {
     const h = makeService();
@@ -267,11 +300,15 @@ describe("purgeAllCaches：清 cache+panelCache，后续重新 miss（评审 M1 
 });
 
 describe("generation 失效：在途 getStats 期间 purgeAllCaches → 旧结果不污染新缓存（评审 M1）", () => {
-  let spy, resultOk, fetchCallsAfterInflight, cacheSizeAfterInflight;
-  let fetchCallsAfterRefetch, cacheSizeAfterRefetch;
+  let spy: SpyState;
+  let resultOk: boolean;
+  let fetchCallsAfterInflight: number;
+  let cacheSizeAfterInflight: number;
+  let fetchCallsAfterRefetch: number;
+  let cacheSizeAfterRefetch: number;
 
   beforeAll(async () => {
-    let release;
+    let release!: (value?: unknown) => void;
     const gate = new Promise((res) => {
       release = res;
     });

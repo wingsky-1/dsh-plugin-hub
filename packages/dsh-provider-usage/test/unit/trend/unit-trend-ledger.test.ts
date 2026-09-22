@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * dsh-provider-usage — unit：R8 台账守恒（不变量4）事件回放式端到端对账（#670）。
  *
@@ -37,8 +36,14 @@ import { afterAll, describe, expect, it } from "vitest";
 import { dayKey } from "../../../src/shared/interface.ts";
 // 白盒直连深路径（#768 B波续批）：趋势双文件簇经域门面，不走组合根转发。
 import { TrendAggregator } from "../../../src/server/aggregate/interface.ts";
-import { TrendCollector } from "../../../src/server/collect/interface.ts";
+import {
+  TrendCollector,
+  type TrendCollectorOptions,
+  type TrendEmit,
+  type TrendTokens,
+} from "../../../src/server/collect/interface.ts";
 import { sumToken, TREND_UNIDENTIFIED } from "../../../src/server/shared/interface.ts";
+import type { SessionEvent } from "@deepseek-ai/dsh-session/types";
 
 // ---------------------------------------------------------------- 工具（与 unit-trend.test.ts 同口径）
 
@@ -54,36 +59,50 @@ const DAY1 = dayKey(T1);
  * 结算事件承载——这里把 usage chunk 形态映射为 assistant/message 结算形态；
  * 非 usage chunk 映射为空 stream 的 assistant/attempt（不构成调用证据）。
  */
-function ev(type, data, time, seq = 1) {
+// 事件信封经 unknown 断言为 SessionEvent：与生产边界同构（apply 经 ctx.on 收到的事件在类型面即
+// SessionEvent，运行时局部可缺 payload，collector 防御性解析——测试侧同契约）。
+function ev(type: string, data: Record<string, unknown>, time: number, seq = 1): SessionEvent {
   if (type === "assistant/chunk") {
-    if (data?.chunk?.type !== "usage") {
+    const payload = data as {
+      turn?: unknown;
+      step?: unknown;
+      chunk?: { type?: unknown; usage?: unknown };
+    };
+    if (payload.chunk?.type !== "usage") {
       return {
         type: "assistant/attempt",
         seq,
         time,
-        data: { turn: data?.turn, step: data?.step, stream: [] },
-      };
+        data: { turn: payload.turn, step: payload.step, stream: [] },
+      } as unknown as SessionEvent;
     }
     return {
       type: "assistant/message",
       seq,
       time,
       data: {
-        turn: data.turn,
-        step: data.step,
-        usage: data.chunk.usage,
-        stream: [{ type: "chunk", time, chunk: data.chunk }],
+        turn: payload.turn,
+        step: payload.step,
+        usage: payload.chunk.usage,
+        stream: [{ type: "chunk", time, chunk: payload.chunk }],
       },
-    };
+    } as unknown as SessionEvent;
   }
-  return { type, seq, time, data };
+  return { type, seq, time, data } as unknown as SessionEvent;
 }
-const HEADER = (provider, model) => ({
+const HEADER = (provider: string, model: string) => ({
   header: { config: { provider, model } },
   reason: "initial",
 });
 /** usage chunk：cacheRead/cacheWrite 省略时为 undefined → parseTokens 记 null（缺失维度语义）。 */
-const USAGE = (turn, step, input, output, cacheRead, cacheWrite) => ({
+const USAGE = (
+  turn: number,
+  step: number,
+  input: number,
+  output: number,
+  cacheRead?: number,
+  cacheWrite?: number,
+) => ({
   turn,
   step,
   chunk: {
@@ -97,7 +116,12 @@ const USAGE = (turn, step, input, output, cacheRead, cacheWrite) => ({
   },
 });
 /** assistant/message：source 缺省 = 无副源（归属缺失路径）；usage 为 null = 零 usage 补记。 */
-const MESSAGE = (turn, step, usage, opts = {}) => ({
+const MESSAGE = (
+  turn: number,
+  step: number,
+  usage: Record<string, unknown> | null,
+  opts: { source?: { kind: string; provider: string; model: string }; interrupted?: boolean } = {},
+) => ({
   turn,
   step,
   message: { role: "assistant", ...(opts.source === undefined ? {} : { source: opts.source }) },
@@ -105,16 +129,17 @@ const MESSAGE = (turn, step, usage, opts = {}) => ({
   ...(opts.interrupted ? { interrupted: true } : {}),
 });
 
-function makeCollector(resolveCwd) {
-  const emitted = [];
+function makeCollector(resolveCwd: TrendCollectorOptions["resolveCwd"]) {
+  const emitted: TrendEmit[] = [];
   const collector = new TrendCollector({ now: () => T0, resolveCwd, emit: (e) => emitted.push(e) });
-  const send = (session, event) =>
+  const send = (session: string | { id: string }, event: SessionEvent) =>
     collector.handleEvent(typeof session === "string" ? session : session?.id, event);
   return { collector, emitted, send };
 }
 
 /** #633 目录归属：s1/s3 合法 cwd（净化 basename），s2/s4 缺失（归未识别桶）。 */
-const resolveCwd = (session) => ({ s1: "/home/u/proj-a", s3: "/home/u/proj-b" })[session];
+const resolveCwd = (session: string): string | undefined =>
+  (({ s1: "/home/u/proj-a", s3: "/home/u/proj-b" }) as Record<string, string>)[session];
 
 // ---------------------------------------------------------------- 回放序列
 
@@ -176,9 +201,15 @@ send("s4", ev("request/header", HEADER("opencode", "glm-4"), T1 + 3100, 18));
 send("s4", ev("assistant/chunk", USAGE(1, 1, 8, 4, 1, 0), T1 + 4000, 19)); // call（dir=unidentified）
 
 // emitted 结构 sanity（0.1.5：一次结算一条 call；counter 独立；无校正事件）
-const calls = emitted.filter((e) => e.type === "call").map((e) => e.record);
-const corrects = emitted.filter((e) => e.type === "correct").map((e) => e.record);
-const counters = emitted.filter((e) => e.type === "counter").map((e) => e.record);
+const calls = emitted
+  .filter((e): e is Extract<TrendEmit, { type: "call" }> => e.type === "call")
+  .map((e) => e.record);
+const corrects = emitted
+  .filter((e): e is Extract<TrendEmit, { type: "correct" }> => e.type === "correct")
+  .map((e) => e.record);
+const counters = emitted
+  .filter((e): e is Extract<TrendEmit, { type: "counter" }> => e.type === "counter")
+  .map((e) => e.record);
 
 // ---------------------------------------------------------------- 对账
 
@@ -186,7 +217,17 @@ const agg = new TrendAggregator();
 for (const e of emitted) agg.apply(e);
 
 // ---- 期望值：Σ事件（a 视角）——fold 键最终 tokens（correct 覆盖语义）+ counter 计数 ----
-const ZERO = () => ({
+/** 台账合计行（token 四维 null-aware + 计数三维；TrendCell/Agg/Dir 行结构子集）。 */
+interface TotalsRow {
+  input: number | null;
+  output: number | null;
+  cacheRead: number | null;
+  cacheWrite: number | null;
+  calls: number;
+  turns: number;
+  toolCalls: number;
+}
+const ZERO = (): TotalsRow => ({
   input: null,
   output: null,
   cacheRead: null,
@@ -195,24 +236,24 @@ const ZERO = () => ({
   turns: 0,
   toolCalls: 0,
 });
-const TOKEN_FIELDS = ["input", "output", "cacheRead", "cacheWrite"];
-const NUM_FIELDS = ["calls", "turns", "toolCalls"];
+const TOKEN_FIELDS = ["input", "output", "cacheRead", "cacheWrite"] as const;
+const NUM_FIELDS = ["calls", "turns", "toolCalls"] as const;
 const ALL_FIELDS = [...TOKEN_FIELDS, ...NUM_FIELDS];
 
-function addTokens(acc, tokens) {
+function addTokens(acc: TotalsRow, tokens: TrendTokens | null) {
   if (tokens === null) return acc;
   for (const f of TOKEN_FIELDS) acc[f] = sumToken(acc[f], tokens[f]);
   return acc;
 }
 /** 十数值字段同构行（cell / agg / dir 行）并入合计。 */
-function addRowTotals(acc, row) {
+function addRowTotals(acc: TotalsRow, row: TotalsRow) {
   for (const f of TOKEN_FIELDS) acc[f] = sumToken(acc[f], row[f]);
   for (const f of NUM_FIELDS) acc[f] += row[f];
   return acc;
 }
 
 // 身份快照基准：fold 键 → { day, dir, tokens }（correct 覆盖 tokens；day/dir 取 call 定稿事实）
-const finalByKey = new Map();
+const finalByKey = new Map<string, { day: string; dir: string; tokens: TrendTokens | null }>();
 for (const e of emitted) {
   if (e.type === "call") {
     const r = e.record;
@@ -228,9 +269,9 @@ for (const e of emitted) {
   }
 }
 
-const expectByDay = new Map(); // day → 全量合计
-const expectByDayDir = new Map(); // day → Map<dir, 合计>
-const dayTotals = (day) => {
+const expectByDay = new Map<string, TotalsRow>(); // day → 全量合计
+const expectByDayDir = new Map<string, Map<string, TotalsRow>>(); // day → Map<dir, 合计>
+const dayTotals = (day: string): TotalsRow => {
   let t = expectByDay.get(day);
   if (t === undefined) {
     t = ZERO();
@@ -238,7 +279,7 @@ const dayTotals = (day) => {
   }
   return t;
 };
-const dayDirTotals = (day, dir) => {
+const dayDirTotals = (day: string, dir: string): TotalsRow => {
   let byDir = expectByDayDir.get(day);
   if (byDir === undefined) {
     byDir = new Map();
@@ -270,7 +311,7 @@ for (const c of counters) {
 }
 
 // ---- 对账断言（失败消息给出视角 / 日 / 键 / 期望与实得，精确缺账多账定位）----
-function assertEqualTotals(label, expected, actual) {
+function assertEqualTotals(label: string, expected: TotalsRow, actual: TotalsRow) {
   for (const f of ALL_FIELDS) {
     expect(
       actual[f],
@@ -279,33 +320,33 @@ function assertEqualTotals(label, expected, actual) {
   }
 }
 
-function bucketsTotalsOf(day) {
+function bucketsTotalsOf(day: string): TotalsRow {
   const acc = ZERO();
   const b = agg.buckets().find((d) => d.day === day);
   if (b !== undefined) for (const p of b.providers) addRowTotals(acc, p.cell);
   return acc;
 }
-function aggRowsTotalsOf(day) {
+function aggRowsTotalsOf(day: string): TotalsRow {
   const acc = ZERO();
   for (const r of agg.rollupSnapshot(day).aggRows) addRowTotals(acc, r);
   return acc;
 }
-function dirRowsTotalsOf(day) {
+function dirRowsTotalsOf(day: string): TotalsRow {
   const acc = ZERO();
   for (const r of agg.rollupSnapshot(day).dirRows) addRowTotals(acc, r);
   return acc;
 }
-function dirSnapshotTotalsOf(day) {
+function dirSnapshotTotalsOf(day: string): TotalsRow {
   const acc = ZERO();
   for (const r of agg.dirRows()) if (r.day === day) addRowTotals(acc, r);
   return acc;
 }
-function dirRowsOfDirTotals(day, dir) {
+function dirRowsOfDirTotals(day: string, dir: string): TotalsRow {
   const acc = ZERO();
   for (const r of agg.rollupSnapshot(day).dirRows) if (r.dir === dir) addRowTotals(acc, r);
   return acc;
 }
-function dirSnapshotOfDirTotals(day, dir) {
+function dirSnapshotOfDirTotals(day: string, dir: string): TotalsRow {
   const acc = ZERO();
   for (const r of agg.dirRows()) if (r.day === day && r.dir === dir) addRowTotals(acc, r);
   return acc;
@@ -380,14 +421,14 @@ describe("台账守恒对账（a→b→c→d 四视角逐日）", () => {
   for (const day of days) {
     for (const v of views) {
       it(`[${day}] ${v.label}`, () => {
-        assertEqualTotals(`[${day}] ${v.label}`, expectByDay.get(day), v.totalsOf(day));
+        assertEqualTotals(`[${day}] ${v.label}`, expectByDay.get(day)!, v.totalsOf(day));
       });
     }
   }
 
   // 未识别桶份额逐键对齐（归属/目录缺失不静默丢弃、不双计）
   for (const day of days) {
-    const byDir = expectByDayDir.get(day);
+    const byDir = expectByDayDir.get(day)!;
     for (const [dir, expectedDir] of byDir) {
       it(`[${day}] dir=${dir}（rollupSnapshot 折算）`, () => {
         assertEqualTotals(
@@ -423,13 +464,13 @@ describe("台账守恒链完整表达式（终态抽查）", () => {
 
   for (const c of chain) {
     it(`[${day}] 守恒链终态（${c.label}）`, () => {
-      assertEqualTotals(`[${day}] 守恒链终态`, expectByDay.get(day), c.totals());
+      assertEqualTotals(`[${day}] 守恒链终态`, expectByDay.get(day)!, c.totals());
     });
   }
 });
 
 afterAll(() => {
   console.log(
-    `unit-trend-ledger: DAY0/DAY1 四视角台账守恒全部通过（calls=${expectByDay.get(DAY0).calls + expectByDay.get(DAY1).calls}，corrects=${corrects.length}，counters=${counters.length}）`,
+    `unit-trend-ledger: DAY0/DAY1 四视角台账守恒全部通过（calls=${expectByDay.get(DAY0)!.calls + expectByDay.get(DAY1)!.calls}，corrects=${corrects.length}，counters=${counters.length}）`,
   );
 });

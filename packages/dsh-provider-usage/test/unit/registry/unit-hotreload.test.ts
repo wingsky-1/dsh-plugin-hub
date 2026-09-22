@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * dsh-provider-usage — unit：适配器热更新语义（`HotReloadableAdapter`，确定性驱动、零墙钟）。
  *
@@ -34,7 +33,7 @@ ${marker}
 describe("HotReloadableAdapter：start 与 pollOnce 确定性驱动", () => {
   it("文件缺失：start 返回失败并回调错误", async () => {
     const dir = mkdtempSync(join(tmpdir(), "dou-hr-unit-"));
-    const events = [];
+    const events: { ok: boolean; error?: string }[] = [];
     const hr = new HotReloadableAdapter(join(dir, "missing.mjs"), 60000, (i) => events.push(i));
     const started = await hr.start();
     expect(started.ok).toBe(false);
@@ -48,7 +47,7 @@ describe("HotReloadableAdapter：start 与 pollOnce 确定性驱动", () => {
     const dir = mkdtempSync(join(tmpdir(), "dou-hr-unit-"));
     const f = join(dir, "a.mjs");
     writeFileSync(f, adapterBody("v1"), "utf8");
-    const events = [];
+    const events: { ok: boolean; error?: string }[] = [];
     const hr = new HotReloadableAdapter(f, 60000, (i) => events.push(i));
     const started = await hr.start();
     expect(started.ok).toBe(true);
@@ -114,7 +113,7 @@ describe("HotReloadableAdapter：start 与 pollOnce 确定性驱动", () => {
     const dir = mkdtempSync(join(tmpdir(), "dou-hr-unit-"));
     const f = join(dir, "a.mjs");
     writeFileSync(f, adapterBody("v1"), "utf8");
-    const events = [];
+    const events: { ok: boolean; error?: string }[] = [];
     const hr = new HotReloadableAdapter(f, 60000, (i) => events.push(i));
     await hr.start();
 

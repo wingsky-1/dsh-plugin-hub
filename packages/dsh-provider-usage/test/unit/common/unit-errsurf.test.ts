@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * dsh-provider-usage — unit：每层错误面（#670 阶段三 B；#768 D13 起 canonical 路径为
  * server/shared/errsurf.ts，domain2/common/ 已消除）+ /health per-layer 段
@@ -21,17 +20,22 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { pollUntil } from "../../helpers.ts";
+import type { IncomingMessage, ServerResponse } from "node:http";
 import {
   makeLayerErrorSurface,
   makeNoopLayerErrorSurface,
   LAYER_ERROR_KEYS,
+  type LayerErrorKey,
+  type LayerErrorState,
+  type LayerErrorSurface,
 } from "../../../src/server/shared/errsurf.ts";
+import type { UiRoutesContext } from "../../../src/server/ui-routes/context.ts";
 import { handleHealth } from "../../../src/server/ui-routes/health.ts";
 import { ReportTaskQueue } from "../../../src/server/schedule/tasks.ts";
 import { ReportScheduler } from "../../../src/server/schedule/scheduler.ts";
 import { normalizeReportConfig } from "../../../src/server/config/normalize.ts";
 
-function fakeReq(overrides = {}) {
+function fakeReq(overrides: Record<string, unknown> = {}) {
   return {
     socket: { remoteAddress: "127.0.0.1" },
     headers: { host: "127.0.0.1:3080", "sec-fetch-site": "same-origin" },
@@ -41,19 +45,28 @@ function fakeReq(overrides = {}) {
   };
 }
 
-function callSyncHandler(handler, req) {
-  let payload;
+/** /health 响应 JSON 形状（断言面：ok + layerErrors + 既有段存活）。 */
+interface HealthPayload {
+  ok: boolean;
+  layerErrors: Record<LayerErrorKey, LayerErrorState>;
+  adapters: unknown[];
+  errors: unknown[];
+  trend: unknown;
+}
+function callSyncHandler<T>(handler: (req: unknown, res: unknown) => unknown, req: unknown): T {
+  let payload: T = undefined as unknown as T;
   handler(req, {
     writeHead: () => {},
-    end: (chunk) => {
-      payload = JSON.parse(String(chunk));
+    end: (chunk: unknown) => {
+      payload = JSON.parse(String(chunk)) as T;
     },
   });
   return payload;
 }
 
-/** handleHealth 的 UiRoutesContext mock（仅 health 用到的面）。 */
-function healthContext(layerErrors) {
+/** handleHealth 的 UiRoutesContext mock（仅 health 用到的面；类含 StatsService/TrendTracker
+ * 全量成员，窄 fake 经 unknown 断言装配——handleHealth 实际只读此六字段）。 */
+function healthContext(layerErrors: LayerErrorSurface): UiRoutesContext {
   return {
     statsService: {
       registry: { snapshot: () => ({ infos: [], enabled: {}, enabledProviders: [], errors: [] }) },
@@ -66,13 +79,18 @@ function healthContext(layerErrors) {
     sseClients: new Set(),
     broadcastUiConfigChanged: () => {},
     layerErrors,
-  };
+  } as unknown as UiRoutesContext;
 }
 
 describe("1) errsurf 模块行为", () => {
   // 累计计数 / 环形缓冲 / 深拷贝 / 时钟注入 / 未知层忽略共用同一现场：
   // beforeAll 复现动作序列并快照每条断言当时读到的观测值。
-  let initial, snap, again, surface, t, executeCountBeforeTamper;
+  let initial: Record<LayerErrorKey, LayerErrorState>;
+  let snap: Record<LayerErrorKey, LayerErrorState>;
+  let again: Record<LayerErrorKey, LayerErrorState>;
+  let surface: LayerErrorSurface;
+  let t: number;
+  let executeCountBeforeTamper: number;
 
   beforeAll(() => {
     t = 1_700_000_000_000;
@@ -92,7 +110,8 @@ describe("1) errsurf 模块行为", () => {
     again = surface.snapshot();
 
     // 未知层忽略（防御）
-    surface.record("bogus", "不应记录");
+    // 未知层防御：record 类型面只收 LayerErrorKey，运行时非法键须被忽略（不断言放宽）。
+    surface.record("bogus" as unknown as LayerErrorKey, "不应记录");
   });
 
   it("snapshot 三键齐（aggregate/schedule/execute）", () => {
@@ -155,7 +174,7 @@ describe("1) errsurf 模块行为", () => {
 });
 
 describe("1) errsurf 环形截断：maxRecent 自定义", () => {
-  let snap;
+  let snap: Record<LayerErrorKey, LayerErrorState>;
 
   beforeAll(() => {
     const surface = makeLayerErrorSurface({ maxRecent: 2 });
@@ -181,7 +200,7 @@ describe("1) errsurf 环形截断：maxRecent 自定义", () => {
 });
 
 describe("1) errsurf noop 实现：同形态、零副作用", () => {
-  let snap;
+  let snap: Record<LayerErrorKey, LayerErrorState>;
 
   beforeAll(() => {
     const noop = makeNoopLayerErrorSurface();
@@ -201,7 +220,7 @@ describe("1) errsurf noop 实现：同形态、零副作用", () => {
 });
 
 describe("1) errsurf context 字段按注入存在与否精确呈现（双向覆盖 if 变异）", () => {
-  let snap;
+  let snap: Record<LayerErrorKey, LayerErrorState>;
 
   beforeAll(() => {
     const surface = makeLayerErrorSurface();
@@ -224,13 +243,14 @@ describe("1) errsurf context 字段按注入存在与否精确呈现（双向覆
 });
 
 describe("2) handleHealth per-layer 段（记录→呈现链路）", () => {
-  let payload;
+  let payload: HealthPayload;
 
   beforeAll(() => {
     const surface = makeLayerErrorSurface();
     surface.record("execute", "注入故障：persist 失败（/reports/generate）", "daily 2026-01-14");
-    payload = callSyncHandler(
-      (req, res) => handleHealth(req, res, healthContext(surface)),
+    payload = callSyncHandler<HealthPayload>(
+      (req, res) =>
+        handleHealth(req as IncomingMessage, res as ServerResponse, healthContext(surface)),
       fakeReq(),
     );
   });
@@ -292,7 +312,8 @@ describe("2) handleHealth per-layer 段（记录→呈现链路）", () => {
 });
 
 describe("3) execute 层真实退出冒烟（ReportTaskQueue）", () => {
-  let surfaced, snap;
+  let surfaced: boolean | undefined;
+  let snap: Record<LayerErrorKey, LayerErrorState>;
 
   beforeAll(async () => {
     const surface = makeLayerErrorSurface();
@@ -358,44 +379,52 @@ describe("4) schedule 层真实退出冒烟（ReportScheduler onDue 失败）", 
   });
 });
 
+/** apply 集成块的路由注册探针（path + handler 供 health 查找与调用）。 */
+interface FakeRoute {
+  path: string;
+  handler: (req: unknown, res: unknown) => unknown;
+}
 describe("5) apply 集成：装配接线后 /health 携带 layerErrors", () => {
-  let savedDshHome, health, payload;
-  const disposers = [];
+  let savedDshHome: string | undefined;
+  let health: FakeRoute | undefined;
+  let payload: HealthPayload | undefined;
+  const disposers: Array<() => void> = [];
 
   beforeAll(async () => {
     const dir = mkdtempSync(join(tmpdir(), "dou-errsurf-apply-"));
     savedDshHome = process.env.DSH_HOME;
     process.env.DSH_HOME = join(dir, "dshhome");
-    mkdirSync(process.env.DSH_HOME, { recursive: true });
+    mkdirSync(process.env.DSH_HOME!, { recursive: true });
     const historyDir = join(dir, "history");
     mkdirSync(historyDir, { recursive: true });
 
     const { apply, ROUTES } = await import("../../../src/apply/index.ts");
-    const routes = [];
+    const routes: FakeRoute[] = [];
+    // apply 的 ctx 为宿主 cordis 全量服务面，窄 fake 经 unknown 断言装配（仅本块用到的面为真）。
     const ctx = {
       logger: { warn: () => {} },
       webServer: {
-        register(route) {
+        register(route: FakeRoute): () => void {
           routes.push(route);
           return () => {};
         },
       },
-      on: () => () => {},
+      on: (): (() => void) => () => {},
       llm: {
-        listProviders() {
+        listProviders(): unknown[] {
           return [];
         },
       },
       fiber: { state: "active" },
-      inject: (deps, cb) => {
+      inject: (deps: unknown, cb: (inner: { settings: Record<string, unknown> }) => void): void => {
         cb({ settings: {} });
       },
-      effect(fn) {
+      effect: (fn: () => unknown): (() => void) => {
         const d = fn();
-        if (typeof d === "function") disposers.push(d);
-        return typeof d === "function" ? d : () => {};
+        if (typeof d === "function") disposers.push(d as () => void);
+        return typeof d === "function" ? (d as () => void) : () => {};
       },
-    };
+    } as unknown as Parameters<typeof apply>[0];
     await apply(ctx, {
       autoReload: false,
       apiKey: "sk-test",
@@ -403,7 +432,8 @@ describe("5) apply 集成：装配接线后 /health 携带 layerErrors", () => {
       historyDir,
     });
     health = routes.find((r) => r.path === ROUTES.health);
-    payload = health === undefined ? undefined : callSyncHandler(health.handler, fakeReq());
+    payload =
+      health === undefined ? undefined : callSyncHandler<HealthPayload>(health.handler, fakeReq());
   });
 
   afterAll(() => {
@@ -425,16 +455,16 @@ describe("5) apply 集成：装配接线后 /health 携带 layerErrors", () => {
   });
 
   it("三键齐", () => {
-    expect(Object.keys(payload.layerErrors).sort()).toEqual([...LAYER_ERROR_KEYS].sort());
+    expect(Object.keys(payload!.layerErrors).sort()).toEqual([...LAYER_ERROR_KEYS].sort());
   });
 
   for (const layer of LAYER_ERROR_KEYS) {
     it(`初始 ${layer}.count=0（无故障时零污染）`, () => {
-      expect(payload.layerErrors[layer].count).toBe(0);
+      expect(payload!.layerErrors[layer].count).toBe(0);
     });
 
     it(`初始 ${layer}.recent 空`, () => {
-      expect(payload.layerErrors[layer].recent).toEqual([]);
+      expect(payload!.layerErrors[layer].recent).toEqual([]);
     });
   }
 });
