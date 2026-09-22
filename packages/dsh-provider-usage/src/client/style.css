@@ -542,6 +542,7 @@
   gap: 10px;
   flex-wrap: wrap;
   min-width: 0;
+  max-width: 100%;
 }
 .dou-reportCol {
   display: flex;
@@ -556,6 +557,8 @@
   gap: 5px;
   font-size: 12px;
   min-width: 0;
+  max-width: 100%;
+  flex-shrink: 0;
 }
 .dou-reportLabel {
   font-size: 11px;
@@ -590,6 +593,7 @@
 .dou-reportInput {
   width: 160px;
   min-width: 0;
+  max-width: 100%;
   font: inherit;
   font-size: 12px;
   padding: 3px 6px;
@@ -599,6 +603,8 @@
   color: var(--dsw-alias-label-primary, #1c1e26);
 }
 .dou-reportSelect {
+  max-width: 100%;
+  min-width: 0;
   font-size: 12px;
   padding: 3px 6px;
   border-radius: 6px;
@@ -829,6 +835,7 @@
   border-bottom: 1px solid var(--dsw-alias-border-l1, #e2e5ea);
   background: var(--dsw-alias-bg-layer-1, #f5f6f8);
   overflow-x: auto;
+  white-space: nowrap;
   scrollbar-width: none;
 }
 .dou-set-tabs::-webkit-scrollbar {
@@ -840,6 +847,7 @@
   gap: 6px;
   min-height: 32px;
   padding: 5px 14px;
+  flex: none;
   white-space: nowrap;
   border: 1px solid transparent;
   border-radius: 8px;
@@ -1041,6 +1049,7 @@
 .dou-report {
   font-style: normal;
   line-height: 1.75;
+  word-spacing: 0.02em;
 }
 .dou-reportHead {
   display: flex;
@@ -1241,6 +1250,16 @@
   .dou-reportSectionBody {
     padding-left: 8px;
     padding-right: 8px;
+  }
+  /* R2/R3 390px：路由 label 独占一行、select 另起全宽（防一字宽竖排与视口裁切） */
+  .dou-reportRow > .dou-reportInline {
+    flex: 1 1 100%;
+    flex-wrap: wrap;
+  }
+  .dou-reportInline .dou-reportSelect,
+  .dou-reportInline .dou-reportInput {
+    flex: 1 1 100%;
+    width: 100%;
   }
 }
 /* reduced-motion：去动画去压感（#940 材质契约） */

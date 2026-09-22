@@ -52,6 +52,13 @@ const TABS: Array<{ key: SettingsTabKey; labelKey: string }> = [
 /** 设置页根组件：模型配置提供商列表驱动手风琴；用量可视化对启用中的 provider 拉 /stats。 */
 export function SettingsPage(): React.ReactElement {
   const [tab, setTab] = React.useState<SettingsTabKey>("trend");
+  // R1 窄屏：激活 Tab 滚动可见（桌面端无视觉变化；flex:none + overflow-x:auto 见 style.css）。
+  const tabsRef = React.useRef<HTMLDivElement | null>(null);
+  React.useEffect(() => {
+    const active = tabsRef.current?.querySelector(".dou-set-tabActive") as
+      HTMLElement | null | undefined;
+    active?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+  }, [tab]);
   const [statsByProvider, setStatsByProvider] = React.useState<Record<string, StatsView | null>>(
     {},
   );
@@ -239,7 +246,7 @@ export function SettingsPage(): React.ReactElement {
           不可用 navigation：宿主设置弹窗的移动端适配规则带 :not(:has([role=navigation]))
           排除条件（选择器无引号形态；命中即整弹窗退回桌面 row 布局，
           手机上内容区被压至 ~106px）。 */}
-        <div className="dou-set-tabs" role="group" aria-label={t("settingsNavLabel")}>
+        <div className="dou-set-tabs" ref={tabsRef} role="group" aria-label={t("settingsNavLabel")}>
           {TABS.map((item) => (
             <button
               key={item.key}
