@@ -297,7 +297,7 @@ function appendScopeGroup(
 export function renderFloatPanel(state: McpState, actions: UiActions): void {
   if (state.floatPanel === undefined) return;
   const openTools = new Set<string>();
-  for (const d of state.floatPanel.querySelectorAll("details.dm-float-tools")) {
+  for (const d of state.floatPanel.querySelectorAll<HTMLDetailsElement>("details.dm-float-tools")) {
     if (d.open && d.dataset.dmServer !== undefined) openTools.add(d.dataset.dmServer);
   }
   state.floatPanel.textContent = "";

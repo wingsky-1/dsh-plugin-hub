@@ -252,7 +252,7 @@ export function renderServers(state: McpState, actions: UiActions): void {
   // 前收集当前展开的工具组（按 server 名），重建后恢复（连续禁用 N 个工具
   // 免反复展开）。
   const openTools = new Set<string>();
-  for (const d of state.bodyEl.querySelectorAll("details.dm-tools")) {
+  for (const d of state.bodyEl.querySelectorAll<HTMLDetailsElement>("details.dm-tools")) {
     if (d.open && d.dataset.dmServer !== undefined) openTools.add(d.dataset.dmServer);
   }
   state.bodyEl.textContent = "";
@@ -298,7 +298,7 @@ export function renderServers(state: McpState, actions: UiActions): void {
       }
       section.appendChild(sub);
     }
-    state.bodyEl.appendChild(section);
+    state.bodyEl!.appendChild(section);
   };
   appendGroup(t("groupAttention", { n: attention.length }), attention, true);
   for (const scope of ["project", "global"]) {
