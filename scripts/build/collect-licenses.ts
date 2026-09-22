@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck
 "use strict";
 
 /**
@@ -51,9 +50,18 @@ const VENDORED_LICENSE_FIELDS = ["path", "license", "source", "licenseFile"];
  * first-party 资产（本仓自有二进制）没有第三方许可文本可归集：把它并进第三方许可段等于给
  * 自有的东西编一个「来源 + 许可证」，是错的信息，pack-check 的覆盖断言也无从满足。
  */
-function vendoredFor(root, pkgDir) {
+interface VendoredEntry {
+  path: string;
+  license: string;
+  source: string;
+  licenseFile: string;
+  [key: string]: unknown;
+}
+function vendoredFor(root: string, pkgDir: string): VendoredEntry[] {
   if (!existsSync(join(root, REGISTRY_REL))) return [];
-  const entries = vendoredEntriesFor(root, pkgDir).filter((e) => kindOf(e) !== "first-party");
+  const entries = (vendoredEntriesFor(root, pkgDir) as VendoredEntry[]).filter(
+    (e: VendoredEntry) => kindOf(e) !== "first-party",
+  );
   for (const e of entries) {
     const missing = VENDORED_LICENSE_FIELDS.filter(
       (f) => typeof e?.[f] !== "string" || e[f].trim() === "",
@@ -73,7 +81,7 @@ function vendoredFor(root, pkgDir) {
  * vendored 裸二进制归集段。头部写明 `path`：pack-check 对最终 tarball 的覆盖断言以它为
  * 证据，改格式即改断言（两边同源）。
  */
-function vendoredSection(root, entry) {
+function vendoredSection(root: string, entry: VendoredEntry): string {
   const licPath = join(root, entry.licenseFile);
   if (!existsSync(licPath)) {
     throw new Error(`登记表条目 ${entry.path} 的 license 文本不存在：${entry.licenseFile}`);
@@ -95,9 +103,11 @@ function vendoredSection(root, entry) {
  * .pnpm 安装段（如 ".pnpm/ws@8.21.3/node_modules/ws"，供精确解析安装目录），
  * 非 pnpm 布局引用时为 null。
  */
-export function extractInlinedModuleRefs(source) {
+export function extractInlinedModuleRefs(
+  source: string,
+): { name: string; pnpmSeg: string | null }[] {
   const re = /node_modules\/((?:\.pnpm\/[^/\s]+\/node_modules\/)?)((?:@[\w.-]+\/)?[\w][\w.-]*)\//g;
-  const refs = new Map();
+  const refs = new Map<string, string | null>();
   for (const m of source.matchAll(re)) {
     const name = m[2];
     // 宿主注入模型：@deepseek-ai/* 运行时由 dsh 宿主提供（peer/inject），
@@ -111,8 +121,10 @@ export function extractInlinedModuleRefs(source) {
 }
 
 /** extractInlinedModuleRefs 的纯包名视图（门禁断言用）。 */
-export function extractInlinedPackages(source) {
-  return extractInlinedModuleRefs(source).map((r) => r.name);
+export function extractInlinedPackages(source: string): string[] {
+  return extractInlinedModuleRefs(source).map(
+    (r: { name: string; pnpmSeg: string | null }) => r.name,
+  );
 }
 
 /**
@@ -124,32 +136,45 @@ export function extractInlinedPackages(source) {
  * （无该产物的包）返回空数组；存在但内容非法 fail-loud 抛错，防「清单丢失 →
  * license 覆盖断言静默失效」。
  */
-export function readMermaidChunkRefs(libDir) {
+export function readMermaidChunkRefs(libDir: string): { name: string; pnpmSeg: string | null }[] {
   const p = join(libDir, "client-mermaid.deps.json");
   if (!existsSync(p)) return [];
-  let parsed;
+  let parsed: unknown;
   try {
     parsed = JSON.parse(readFileSync(p, "utf8"));
   } catch (e) {
-    throw new Error(`client-mermaid.deps.json 非法 JSON: ${String(e.message).split("\n")[0]}`);
+    throw new Error(
+      `client-mermaid.deps.json 非法 JSON: ${String((e as Error).message).split("\n")[0]}`,
+    );
   }
-  if (!Array.isArray(parsed) || parsed.some((r) => typeof r?.name !== "string")) {
+  if (
+    !Array.isArray(parsed) ||
+    (parsed as unknown[]).some(
+      (r: unknown) => typeof (r as Record<string, unknown>)?.name !== "string",
+    )
+  ) {
     throw new Error("client-mermaid.deps.json 形态非法（期望 {name, pnpmSeg} 数组）");
   }
-  return parsed;
+  return parsed as { name: string; pnpmSeg: string | null }[];
 }
 
 /**
  * 同名引用并入索引：后到者只有带 .pnpm 安装段、先到者没有时才顶替——传递依赖的
  * 安装目录只能靠这个精确段定位，先到者的裸包名解析不到。
  */
-function mergeRef(byName, r) {
+function mergeRef(
+  byName: Map<string, { name: string; pnpmSeg: string | null }>,
+  r: { name: string; pnpmSeg: string | null },
+): void {
   if (!byName.has(r.name)) byName.set(r.name, r);
-  else if (r.pnpmSeg && !byName.get(r.name).pnpmSeg) byName.set(r.name, r);
+  else if (r.pnpmSeg && !byName.get(r.name)!.pnpmSeg) byName.set(r.name, r);
 }
 
 /** 注释提取器可见的产物并集（minified 的 client-mermaid.js 失明，由 sidecar 补）。 */
-function mergeBundledRefs(libDir, byName) {
+function mergeBundledRefs(
+  libDir: string,
+  byName: Map<string, { name: string; pnpmSeg: string | null }>,
+): void {
   // client-mermaid.js（issue #104）：mermaid 懒加载独立 chunk 同为构建期内联产物；
   // 其 minified 产物注释被移除，包名证据来自构建期 metafile sidecar 清单
   // （readMermaidChunkRefs），不入归集则 mermaid 全树的 license 缺收（合规缺口）。
@@ -165,16 +190,22 @@ function mergeBundledRefs(libDir, byName) {
 }
 
 /** sidecar 清单在注释提取之后统一并入，故与 mergeBundledRefs 分属两段。 */
-function mergeMermaidChunkRefs(libDir, byName) {
+function mergeMermaidChunkRefs(
+  libDir: string,
+  byName: Map<string, { name: string; pnpmSeg: string | null }>,
+): void {
   for (const r of readMermaidChunkRefs(libDir)) mergeRef(byName, r);
 }
 
 /** 列出某包产物中被内联的第三方模块引用（index.js / client.js / client-mermaid.js 并集，同名取首个含 pnpmSeg 者）。 */
-export function inlinedRefsForLib(libDir) {
-  const byName = new Map();
+export function inlinedRefsForLib(libDir: string): { name: string; pnpmSeg: string | null }[] {
+  const byName = new Map<string, { name: string; pnpmSeg: string | null }>();
   mergeBundledRefs(libDir, byName);
   mergeMermaidChunkRefs(libDir, byName);
-  return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name));
+  return [...byName.values()].sort(
+    (a: { name: string; pnpmSeg: string | null }, b: { name: string; pnpmSeg: string | null }) =>
+      a.name.localeCompare(b.name),
+  );
 }
 
 /**
@@ -186,11 +217,11 @@ export function inlinedRefsForLib(libDir) {
  * 合规空段。命中多个时按字典序取首个非空文本；无命中返回 null（调用方写
  * UNKNOWN 段，pack-check 对该字样 fail-loud）。
  */
-function findLicenseFile(installDir) {
-  let candidates = [];
+function findLicenseFile(installDir: string): { file: string; text: string } | null {
+  let candidates: string[] = [];
   try {
     candidates = readdirSync(installDir)
-      .filter((f) => /^licen[cs]e(\.\w+)?$/i.test(f))
+      .filter((f: string) => /^licen[cs]e(\.\w+)?$/i.test(f))
       .sort();
   } catch {
     return null;
@@ -207,10 +238,16 @@ function findLicenseFile(installDir) {
 }
 
 /** 读取安装目录 package.json 的 name/version/license 元信息（缺失容错）。 */
-function pkgMeta(installDir) {
+function pkgMeta(installDir: string): { version: string; license: string } {
   try {
-    const j = JSON.parse(readFileSync(join(installDir, "package.json"), "utf8"));
-    return { version: j.version ?? "?", license: j.license ?? "UNKNOWN" };
+    const j = JSON.parse(readFileSync(join(installDir, "package.json"), "utf8")) as Record<
+      string,
+      unknown
+    >;
+    return {
+      version: typeof j.version === "string" ? j.version : "?",
+      license: typeof j.license === "string" ? j.license : "UNKNOWN",
+    };
   } catch {
     return { version: "?", license: "UNKNOWN" };
   }
@@ -222,7 +259,7 @@ function pkgMeta(installDir) {
  * （否则 pack-check 的合规空段断言会对「文本已在」的库误报）。按字样顺序判定，
  * 未命中返回 null 维持原值。
  */
-function detectLicenseName(text) {
+function detectLicenseName(text: string): string | null {
   if (/isc license/i.test(text)) return "ISC";
   if (/apache license/i.test(text)) return "Apache-2.0";
   if (/mit license/i.test(text)) return "MIT";
@@ -240,7 +277,10 @@ function detectLicenseName(text) {
 const DECLARED_LICENSE_ONLY = new Set(["fastdom", "schemastery"]);
 
 /** 头部许可名兜底链（文本已收但声明缺失时不得标 UNKNOWN，否则 pack-check 合规空段断言误报）。 */
-function declaredLicenseName(meta, lic) {
+function declaredLicenseName(
+  meta: { version: string; license: string },
+  lic: { file: string; text: string } | null,
+): string {
   return (
     (meta.license && meta.license !== "UNKNOWN" ? meta.license : null) ??
     (lic ? detectLicenseName(lic.text) : null) ??
@@ -249,7 +289,7 @@ function declaredLicenseName(meta, lic) {
 }
 
 /** 单个内联引用的许可段；安装目录解析不到时以警告段收场（pack-check 对「未找到」字样 fail-loud）。 */
-function refSection(absPkg, root, name, pnpmSeg) {
+function refSection(absPkg: string, root: string, name: string, pnpmSeg: string | null): string {
   // 解析真实安装目录，依次尝试：
   //   1) 包级 node_modules symlink（pnpm 布局直接依赖）
   //   2) 根 node_modules（提升安装）
@@ -259,7 +299,7 @@ function refSection(absPkg, root, name, pnpmSeg) {
     join(root, "node_modules", name),
     ...(pnpmSeg ? [join(root, "node_modules", ...pnpmSeg.split("/"))] : []),
   ];
-  const installDir = candidates.find((d) => existsSync(d));
+  const installDir = candidates.find((d: string) => existsSync(d));
   if (!installDir) {
     return `\n${"=".repeat(69)}\n${name}\n${"=".repeat(69)}\n\n[警告] 安装目录未找到，license 文本缺收。\n`;
   }
@@ -284,7 +324,7 @@ function refSection(absPkg, root, name, pnpmSeg) {
  * （测试注入临时仓库）。返回本次覆盖的被内联第三方包名列表（无内联则
  * 返回 [] 且不写文件）。
  */
-export function collectForPackage(pkgDir, root = ROOT) {
+export function collectForPackage(pkgDir: string, root: string = ROOT): string[] {
   const absPkg = resolve(root, pkgDir);
   const libDir = join(absPkg, "lib");
   if (!existsSync(libDir)) throw new Error(`${pkgDir}: 缺 lib/（先构建再归集）`);
@@ -292,7 +332,7 @@ export function collectForPackage(pkgDir, root = ROOT) {
   const vendored = vendoredFor(root, pkgDir);
   if (refs.length === 0 && vendored.length === 0) return [];
 
-  const sections = [];
+  const sections: string[] = [];
   for (const { name, pnpmSeg } of refs) {
     sections.push(refSection(absPkg, root, name, pnpmSeg));
   }
@@ -311,7 +351,10 @@ export function collectForPackage(pkgDir, root = ROOT) {
     ...sections,
   ].join("\n");
   writeFileSync(join(libDir, "THIRD-PARTY-LICENSES"), out);
-  return [...refs.map((r) => r.name), ...vendored.map((e) => e.path)];
+  return [
+    ...refs.map((r: { name: string; pnpmSeg: string | null }) => r.name),
+    ...vendored.map((e: VendoredEntry) => e.path),
+  ];
 }
 
 // ---- CLI 入口：无参数 = 全部插件包（按 manifest.retired 过滤，T1 防退役残留目录）----
@@ -340,7 +383,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
       );
     } catch (e) {
       failed++;
-      console.log(`FAIL ${t} | ${String(e.message).split("\n")[0]}`);
+      console.log(`FAIL ${t} | ${String((e as Error).message).split("\n")[0]}`);
     }
   }
   process.exit(failed === 0 ? 0 : 1);

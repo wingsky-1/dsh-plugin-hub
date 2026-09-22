@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck
 "use strict";
 
 /**
@@ -40,13 +39,24 @@ export const EXPORT_FACES = ["安装面", "配置面", "契约面"];
  * @param {string} path 登记文件路径
  * @returns {{ package?: string, faces: Record<string, string>, legacy: string[] }}
  */
-export function loadExportFaces(path) {
+export function loadExportFaces(path: string): {
+  package?: string;
+  faces: Record<string, string>;
+  legacy: string[];
+} {
   if (!existsSync(path)) throw new Error(`导出面分类登记文件不存在：${path}`);
-  const parsed = JSON.parse(readFileSync(path, "utf8"));
+  const parsed = JSON.parse(readFileSync(path, "utf8")) as {
+    package?: unknown;
+    faces?: unknown;
+    legacy?: unknown;
+  };
   return {
-    package: parsed.package,
-    faces: parsed.faces && typeof parsed.faces === "object" ? parsed.faces : {},
-    legacy: Array.isArray(parsed.legacy) ? parsed.legacy : [],
+    package: typeof parsed.package === "string" ? parsed.package : undefined,
+    faces:
+      parsed.faces && typeof parsed.faces === "object" && !Array.isArray(parsed.faces)
+        ? (parsed.faces as Record<string, string>)
+        : {},
+    legacy: Array.isArray(parsed.legacy) ? (parsed.legacy as string[]) : [],
   };
 }
 
@@ -55,7 +65,13 @@ export function loadExportFaces(path) {
  * @param {{ exports: string[], faces: Record<string, string>, legacy: string[], registryPath?: string }} input
  * @returns {string[]} 违规描述列表（空 = 合规）
  */
-export function checkExportFaces(input) {
+interface ExportFacesInput {
+  exports: string[];
+  faces: Record<string, string>;
+  legacy: string[];
+  registryPath?: string;
+}
+export function checkExportFaces(input: ExportFacesInput): string[] {
   const {
     exports: exportNames,
     faces,
@@ -74,8 +90,12 @@ export function checkExportFaces(input) {
 }
 
 /** 登记文件自身的一致性：legacy 去重，以及「既无 faces 也无 legacy」的退化形态。 */
-function checkRegistryShape(faces, legacy, legacySet) {
-  const problems = [];
+function checkRegistryShape(
+  faces: Record<string, string>,
+  legacy: string[],
+  legacySet: Set<string>,
+): string[] {
+  const problems: string[] = [];
   if (legacySet.size !== legacy.length) problems.push("legacy 含重复项");
   if (legacy.length === 0 && Object.keys(faces).length === 0) {
     problems.push("登记文件既无 faces 也无 legacy——判据退化为「无约束」，拒绝放行");
@@ -84,8 +104,8 @@ function checkRegistryShape(faces, legacy, legacySet) {
 }
 
 /** legacy 是存量白名单：符号退役后不移除，白名单会一直替已消失的符号背书。 */
-function collectLegacyProblems(legacy, exportSet) {
-  const problems = [];
+function collectLegacyProblems(legacy: string[], exportSet: Set<string>): string[] {
+  const problems: string[] = [];
   for (const name of legacy) {
     if (!exportSet.has(name))
       problems.push(`legacy 含已不存在的导出符号：${name}（符号退役后须一并从 legacy 移除）`);
@@ -94,8 +114,12 @@ function collectLegacyProblems(legacy, exportSet) {
 }
 
 /** faces 每条登记的三重约束：分类合法、与 legacy 互斥、符号确实存在。 */
-function collectFaceProblems(faces, exportSet, legacySet) {
-  const problems = [];
+function collectFaceProblems(
+  faces: Record<string, string>,
+  exportSet: Set<string>,
+  legacySet: Set<string>,
+): string[] {
+  const problems: string[] = [];
   for (const [name, face] of Object.entries(faces)) {
     if (!EXPORT_FACES.includes(face)) {
       problems.push(
@@ -109,8 +133,13 @@ function collectFaceProblems(faces, exportSet, legacySet) {
 }
 
 /** 未被 faces / legacy 覆盖的导出即新增符号：没有 legacy 通道，必须显式选一类面。 */
-function collectUnregisteredProblems(exportNames, faces, legacySet, registryPath) {
-  const problems = [];
+function collectUnregisteredProblems(
+  exportNames: string[],
+  faces: Record<string, string>,
+  legacySet: Set<string>,
+  registryPath: string,
+): string[] {
+  const problems: string[] = [];
   for (const name of exportNames) {
     if (faces[name] === undefined && !legacySet.has(name)) {
       problems.push(

@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck
 /**
  * gate-scope-registry — 路径受限门禁的**扫描范围**读取与解析（#733 计划项 3.2.1）。
  *
@@ -27,62 +26,76 @@ const SCOPE_FROM = ["registry", "cli", "tree"];
  * 读取范围注册表。任何 IO/结构错误都抛给调用方——注册表坏掉等于范围声明失效，
  * 不能退化成「没有范围约束」继续跑（那会让门禁静默变成全仓扫描或空扫描）。
  */
-export function loadScopeRegistry(path) {
+interface GateEntry {
+  gate: string;
+  script: string;
+  scopeFrom: string;
+  packages: string | string[];
+  why: string;
+}
+interface ScopeRegistry {
+  path: string;
+  version: unknown;
+  gates: Map<string, GateEntry>;
+}
+export function loadScopeRegistry(path: string): ScopeRegistry {
   const raw = readRegistryText(path);
   const json = parseRegistryText(path, raw);
   if (!Array.isArray(json.gates)) throw new Error(`范围注册表缺 gates 数组（${path}）`);
-  const gates = new Map();
+  const gates = new Map<string, GateEntry>();
   for (const item of json.gates) {
     assertGateEntry(item);
-    if (gates.has(item.gate)) throw new Error(`范围注册表存在重复 gate：${item.gate}`);
-    gates.set(item.gate, item);
+    const entry = item as GateEntry;
+    if (gates.has(entry.gate)) throw new Error(`范围注册表存在重复 gate：${entry.gate}`);
+    gates.set(entry.gate, entry);
   }
   return { path, version: json.version, gates };
 }
 
 /** 读不到注册表文本时抛出：路径必须进文案，否则调用方无从知道范围声明该修哪一份。 */
-function readRegistryText(path) {
+function readRegistryText(path: string): string {
   try {
     return readFileSync(path, "utf8");
   } catch (e) {
-    throw new Error(`范围注册表不可读（${path}）：${e.message}`);
+    throw new Error(`范围注册表不可读（${path}）：${(e as Error).message}`);
   }
 }
 
 /** JSON 语法错误同样 fail-loud：坏掉的注册表不降级为「无范围约束」。 */
-function parseRegistryText(path, raw) {
+function parseRegistryText(path: string, raw: string): Record<string, unknown> {
   try {
-    return JSON.parse(raw);
+    return JSON.parse(raw) as Record<string, unknown>;
   } catch (e) {
-    throw new Error(`范围注册表 JSON 语法错误（${path}）：${e.message}`);
+    throw new Error(`范围注册表 JSON 语法错误（${path}）：${(e as Error).message}`);
   }
 }
 
 /** 条目字段校验；调用顺序即报错顺序，同一条目多处不合规时以第一条命中为准。 */
-function assertGateEntry(item) {
+function assertGateEntry(item: unknown): void {
   if (item === null || typeof item !== "object") throw new Error("范围注册表 gates 含非对象项");
-  assertNonEmptyString(item.gate, `范围注册表条目缺 gate：${JSON.stringify(item).slice(0, 120)}`);
-  assertNonEmptyString(item.script, `${item.gate}：范围注册表条目缺 script`);
-  assertScopeFrom(item);
-  assertPackageScope(item);
+  const entry = item as Record<string, unknown>;
+  assertNonEmptyString(entry.gate, `范围注册表条目缺 gate：${JSON.stringify(item).slice(0, 120)}`);
+  assertNonEmptyString(entry.script, `${entry.gate as string}：范围注册表条目缺 script`);
+  assertScopeFrom(entry as unknown as GateEntry);
+  assertPackageScope(entry as unknown as GateEntry);
   assertNonEmptyString(
-    item.why,
-    `${item.gate}：范围注册表条目缺 why（范围是治理决策，必须写明理由）`,
+    entry.why,
+    `${entry.gate as string}：范围注册表条目缺 why（范围是治理决策，必须写明理由）`,
   );
 }
 
-function assertNonEmptyString(value, message) {
+function assertNonEmptyString(value: unknown, message: string): void {
   if (typeof value !== "string" || value.length === 0) throw new Error(message);
 }
 
-function assertScopeFrom(item) {
+function assertScopeFrom(item: GateEntry): void {
   if (!SCOPE_FROM.includes(item.scopeFrom))
     throw new Error(
       `${item.gate}：scopeFrom 须为 ${SCOPE_FROM.join(" / ")} 之一（当前 ${JSON.stringify(item.scopeFrom)}）`,
     );
 }
 
-function assertPackageScope(item) {
+function assertPackageScope(item: GateEntry): void {
   if (!isPackageScope(item.packages))
     throw new Error(
       `${item.gate}：packages 须为 "dsh-*" 形态的通配或非空包名数组（当前 ${JSON.stringify(item.packages)}）`,
@@ -90,10 +103,10 @@ function assertPackageScope(item) {
 }
 
 /** packages 字段形态：`"<prefix>*"` 通配，或非空包名数组。 */
-function isPackageScope(value) {
+function isPackageScope(value: unknown): boolean {
   if (typeof value === "string") return value.endsWith(WILDCARD_SUFFIX) && value.length > 1;
   if (Array.isArray(value))
-    return value.length > 0 && value.every((v) => typeof v === "string" && v.length > 0);
+    return value.length > 0 && value.every((v: unknown) => typeof v === "string" && v.length > 0);
   return false;
 }
 
@@ -102,7 +115,7 @@ function isPackageScope(value) {
  * 「未登记即红」不能只写在自测里，运行时同样要红——否则新门禁忘了登记会静默变成
  * 「扫 0 个包 = 零违规」的假绿。
  */
-export function scopePackages(root, registry, gate) {
+export function scopePackages(root: string, registry: ScopeRegistry, gate: string): string[] {
   const entry = registry.gates.get(gate);
   if (entry === undefined) {
     throw new Error(
@@ -130,22 +143,27 @@ export function scopePackages(root, registry, gate) {
  * 差集而非布尔，是因为两种漂移的修法不同（删条目 / 跑 --write-baseline），报错里必须
  * 同时给出两侧，否则只报「不一致」等于把定位工作再交回人。
  */
-export function packageScopeDrift(baselinePackages, registryPackages) {
+export function packageScopeDrift(
+  baselinePackages: string[],
+  registryPackages: string[],
+): { baselineOnly: string[]; registryOnly: string[] } {
   const baseline = new Set(baselinePackages);
   const registry = new Set(registryPackages);
   return {
-    baselineOnly: [...baseline].filter((p) => !registry.has(p)).sort(),
-    registryOnly: [...registry].filter((p) => !baseline.has(p)).sort(),
+    baselineOnly: [...baseline].filter((p: string) => !registry.has(p)).sort(),
+    registryOnly: [...registry].filter((p: string) => !baseline.has(p)).sort(),
   };
 }
 
 /** 展开 packages 字段；通配形态要读目录，读不到时把「读哪里失败」一并抛出。 */
-function resolvePackages(root, gate, entry) {
+function resolvePackages(root: string, gate: string, entry: GateEntry): string[] {
   if (typeof entry.packages !== "string") return [...entry.packages].sort();
   const prefix = entry.packages.slice(0, -WILDCARD_SUFFIX.length);
   try {
     return listPackageNames(root, prefix);
   } catch (e) {
-    throw new Error(`${gate} 的范围无法解析：读取 ${join(root, "packages")} 失败（${e.message}）`);
+    throw new Error(
+      `${gate} 的范围无法解析：读取 ${join(root, "packages")} 失败（${(e as Error).message}）`,
+    );
   }
 }

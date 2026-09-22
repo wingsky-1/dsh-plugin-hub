@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck
 "use strict";
 
 /**
@@ -47,9 +46,9 @@ const REL_SPEC_RE = /(?:from|import)\s*\(?\s*["'](\.[^"']*)["']/gu;
  * @param {string} dir 起始目录
  * @returns {string[]} 绝对路径列表（目录不存在时为空）
  */
-function collectTsFiles(dir) {
-  const out = [];
-  const visit = (cur) => {
+function collectTsFiles(dir: string): string[] {
+  const out: string[] = [];
+  const visit = (cur: string): void => {
     for (const entry of readdirSync(cur, { withFileTypes: true })) {
       const abs = join(cur, entry.name);
       if (entry.isDirectory()) {
@@ -69,8 +68,8 @@ function collectTsFiles(dir) {
  * @param {string} srcDir 包源码目录
  * @returns {string[]} 命中文件列表
  */
-export function srcDeclaresCordisMerge(srcDir) {
-  return collectTsFiles(srcDir).filter((f) => MERGE_RE.test(readFileSync(f, "utf8")));
+export function srcDeclaresCordisMerge(srcDir: string): string[] {
+  return collectTsFiles(srcDir).filter((f: string) => MERGE_RE.test(readFileSync(f, "utf8")));
 }
 
 /**
@@ -79,10 +78,10 @@ export function srcDeclaresCordisMerge(srcDir) {
  * @param {string} spec 相对说明符
  * @returns {string[]} 候选绝对路径（按优先级）
  */
-function dtsCandidates(fromFile, spec) {
+function dtsCandidates(fromFile: string, spec: string): string[] {
   const base = join(dirname(fromFile), spec);
   if (base.endsWith(".d.ts")) return [base];
-  const out = [];
+  const out: string[] = [];
   const stem = base.replace(/\.(?:js|mjs|cjs|jsx|ts|tsx)$/u, "");
   if (stem !== base) out.push(`${stem}.d.ts`);
   out.push(`${base}.d.ts`, join(base, "index.d.ts"));
@@ -96,11 +95,11 @@ function dtsCandidates(fromFile, spec) {
  * @param {string} entryDts 入口声明文件（`lib/index.d.ts`）
  * @returns {string[]} 闭包内文件绝对路径（含入口自身）
  */
-export function collectDtsClosure(entryDts) {
-  const seen = new Set();
-  const stack = [entryDts];
+export function collectDtsClosure(entryDts: string): string[] {
+  const seen = new Set<string>();
+  const stack: string[] = [entryDts];
   while (stack.length > 0) {
-    const file = stack.pop();
+    const file = stack.pop()!;
     if (seen.has(file) || !existsSync(file)) continue;
     seen.add(file);
     const text = readFileSync(file, "utf8");
@@ -121,8 +120,10 @@ export function collectDtsClosure(entryDts) {
  * @param {string} entryDts 入口声明文件
  * @returns {{ hit: boolean, files: string[] }} hit 与命中的声明文件列表
  */
-export function closureDeclaresCordisMerge(entryDts) {
-  const files = collectDtsClosure(entryDts).filter((f) => MERGE_RE.test(readFileSync(f, "utf8")));
+export function closureDeclaresCordisMerge(entryDts: string): { hit: boolean; files: string[] } {
+  const files = collectDtsClosure(entryDts).filter((f: string) =>
+    MERGE_RE.test(readFileSync(f, "utf8")),
+  );
   return { hit: files.length > 0, files };
 }
 
@@ -132,10 +133,12 @@ export function closureDeclaresCordisMerge(entryDts) {
  * @param {string} libIndexJs 产物入口（tarball 内 `lib/index.js`）
  * @returns {string[]} 注册的服务名列表（空 = 未注册服务）
  */
-export function detectCordisServiceProvide(libIndexJs) {
+export function detectCordisServiceProvide(libIndexJs: string): string[] {
   if (!existsSync(libIndexJs)) return [];
   const text = readFileSync(libIndexJs, "utf8");
-  return [...text.matchAll(/\.provide\(\s*["'`]([^"'`\n]+)["'`]/gu)].map((m) => m[1]);
+  return [...text.matchAll(/\.provide\(\s*["'`]([^"'`\n]+)["'`]/gu)].map(
+    (m: RegExpMatchArray) => m[1] as string,
+  );
 }
 
 /**
@@ -144,8 +147,11 @@ export function detectCordisServiceProvide(libIndexJs) {
  * @param {string} libDir tarball 解包后的 `lib/`（用于扫产物声明闭包与 provide 事实）
  * @returns {{ applicable: boolean, problem: string | null, detail: string }} applicable=false 表示本包不提供 cordis 服务（不适用）
  */
-export function checkCordisMergeReachability(pkgDir, libDir) {
-  const rel = (f) => relative(pkgDir, f).split(sep).join("/");
+export function checkCordisMergeReachability(
+  pkgDir: string,
+  libDir: string,
+): { applicable: boolean; problem: string | null; detail: string } {
+  const rel = (f: string): string => relative(pkgDir, f).split(sep).join("/");
   const srcHits = srcDeclaresCordisMerge(join(pkgDir, "src"));
   const provided = detectCordisServiceProvide(join(libDir, "index.js"));
   if (srcHits.length === 0 && provided.length === 0) {
@@ -155,7 +161,7 @@ export function checkCordisMergeReachability(pkgDir, libDir) {
       detail: "src 未声明 cordis 合并、产物未注册 cordis 服务（不适用）",
     };
   }
-  const why = [];
+  const why: string[] = [];
   if (provided.length > 0) why.push(`产物经 ctx.provide 注册服务（${provided.join(", ")}）`);
   if (srcHits.length > 0)
     why.push(`src 内含 declare module "${CORDIS_MODULE}"（${srcHits.map(rel).join(", ")}）`);

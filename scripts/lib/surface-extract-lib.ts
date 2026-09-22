@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck
 "use strict";
 import { existsSync, readFileSync } from "node:fs";
 
@@ -26,9 +25,9 @@ import { existsSync, readFileSync } from "node:fs";
  * @param {string} text
  * @returns {{ name: string, isType: boolean }[]} 按名字字典序、同名去重
  */
-export function extractExports(text) {
+export function extractExports(text: string): { name: string; isType: boolean }[] {
   const noComments = text.replace(/\/\*[\s\S]*?\*\//gu, "").replace(/\/\/[^\n]*/gu, "");
-  const out = [];
+  const out: { name: string; isType: boolean }[] = [];
   // export { A, B as C } from "./x.js"; 与 export type { ... } from ...
   const blockRe = /export\s+(type\s+)?\{([^}]*)\}\s*(?:from\s*"[^"]*")?;/gu;
   for (const m of noComments.matchAll(blockRe)) {
@@ -48,14 +47,18 @@ export function extractExports(text) {
     const isType = m[1] === "interface" || m[1] === "type" || m[1] === "enum";
     out.push({ name: m[2], isType });
   }
-  out.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+  out.sort((a: { name: string; isType: boolean }, b: { name: string; isType: boolean }) =>
+    a.name < b.name ? -1 : a.name > b.name ? 1 : 0,
+  );
   // 同名字符串去重（值与类型同名共存的形态罕见，快照内保留首见）
-  const seen = new Set();
-  return out.filter((e) => (seen.has(e.name) ? false : (seen.add(e.name), true)));
+  const seen = new Set<string>();
+  return out.filter((e: { name: string; isType: boolean }) =>
+    seen.has(e.name) ? false : (seen.add(e.name), true),
+  );
 }
 
 /** 声明块结束下标（不含）：从 `start` 扫到顶层 `;` 或与块首配平的 `}`（其后紧跟的 `;` 一并吃掉）。 */
-function findDeclBlockEnd(text, start) {
+function findDeclBlockEnd(text: string, start: number): number {
   let j = start;
   let depth = 0;
   for (; j < text.length; j += 1) {
@@ -82,9 +85,9 @@ function findDeclBlockEnd(text, start) {
  * @param {string} text
  * @returns {string[]}
  */
-export function extractDeclBlocks(text) {
+export function extractDeclBlocks(text: string): string[] {
   const noComments = text.replace(/\/\*[\s\S]*?\*\//gu, "").replace(/\/\/[^\n]*/gu, "");
-  const blocks = [];
+  const blocks: string[] = [];
   for (let i = 0; i < noComments.length; i += 1) {
     if (!noComments.startsWith("export declare", i)) continue;
     // 声明起点：从 export declare 之后扫描到块结束（; 或匹配的 }）
@@ -97,7 +100,7 @@ export function extractDeclBlocks(text) {
 }
 
 /** 声明块的声明名（`export declare function apply(...)` → `apply`）；非声明块返回 null。 */
-export function declBlockName(block) {
+export function declBlockName(block: string): string | null {
   const m =
     /^export declare (?:type |abstract )?(?:const )?(?:enum|const|function|interface|class|type) ([A-Za-z_$][\w$]*)/u.exec(
       block,
@@ -106,9 +109,13 @@ export function declBlockName(block) {
 }
 
 /** 取命中 `file` 的**最长**前缀入口集：等长多命中如实返回多项，歧义留给调用方判。 */
-function longestPrefixMatches(file, entries) {
+interface EntryRef {
+  subpath: string;
+  prefix: string;
+}
+function longestPrefixMatches(file: string, entries: EntryRef[]): EntryRef[] {
   let best = -1;
-  const matched = [];
+  const matched: EntryRef[] = [];
   for (const e of entries) {
     const hit = e.prefix === "" || file.startsWith(`${e.prefix}/`);
     if (!hit) continue;
@@ -137,11 +144,14 @@ function longestPrefixMatches(file, entries) {
  *   orphans = 未被任何 prefix 归属的文件（调用方判红，不得静默丢弃）；
  *   conflicts = 同长度多命中的文件（前缀歧义，归属不唯一 ⇒ 调用方判红）。
  */
-export function attributeEmitFiles(files, entries) {
-  const byEntry = {};
+export function attributeEmitFiles(
+  files: string[],
+  entries: EntryRef[],
+): { byEntry: Record<string, string[]>; orphans: string[]; conflicts: string[] } {
+  const byEntry: Record<string, string[]> = {};
   for (const e of entries) byEntry[e.subpath] = [];
-  const orphans = [];
-  const conflicts = [];
+  const orphans: string[] = [];
+  const conflicts: string[] = [];
   for (const file of files) {
     const matched = longestPrefixMatches(file, entries);
     if (matched.length === 0) {
@@ -172,9 +182,9 @@ export function attributeEmitFiles(files, entries) {
  * 防腐：D13 组合根收尾（src/index.ts 落地）时必须删除 dsh-provider-usage 条目并重冻结
  * 基线；只删条目不重冻结即红（typesTarget 缺失），见 export-entry-alias.json 登记注释。
  */
-export function loadEntryAliases(aliasPath) {
+export function loadEntryAliases(aliasPath: string): Record<string, Record<string, string>> {
   if (!existsSync(aliasPath)) return {};
-  const parsed = JSON.parse(readFileSync(aliasPath, "utf8"));
+  const parsed = JSON.parse(readFileSync(aliasPath, "utf8")) as Record<string, unknown>;
   if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
     throw new Error("入口别名登记顶层必须是对象：" + aliasPath);
   }
@@ -196,15 +206,21 @@ export function loadEntryAliases(aliasPath) {
       }
     }
   }
-  return parsed.aliases;
+  return parsed.aliases as Record<string, Record<string, string>>;
 }
 
 /**
  * 入口导出面读取重映射：命中别名即读别名目标，否则读原 typesTarget。
  * 纯函数，不做任何判红决策（METHOD 禁止双轨）。
  */
-export function resolveExportSourceTarget(pkgName, subpath, typesTarget, aliases) {
-  const perPkg = aliases === null || aliases === undefined ? undefined : aliases[pkgName];
+export function resolveExportSourceTarget(
+  pkgName: string,
+  subpath: string,
+  typesTarget: string,
+  aliases: unknown,
+): string {
+  const aliasMap = aliases as Record<string, Record<string, string>> | null | undefined;
+  const perPkg = aliasMap === null || aliasMap === undefined ? undefined : aliasMap[pkgName];
   const hit = perPkg === null || perPkg === undefined ? undefined : perPkg[subpath];
   return typeof hit === "string" && hit.length > 0 ? hit : typesTarget;
 }

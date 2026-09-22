@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck
 "use strict";
 
 /**
@@ -28,7 +27,7 @@ import { walkFiles } from "./walk-files.ts";
  * @param {string} root 仓库根（含 shared/ 目录）
  * @returns {string[]} 相对路径，如 ['client/i18n.d.ts', 'loopback.d.ts', ...]
  */
-export function listSharedDts(root) {
+export function listSharedDts(root: string): string[] {
   return walkFiles(join(root, "shared"), (f) => f.endsWith(".d.ts"));
 }
 
@@ -38,8 +37,8 @@ export function listSharedDts(root) {
  * @param {string[]} expected listSharedDts 结果（相对路径清单）
  * @returns {string[]} 缺失文件相对路径列表（空 = 完整）
  */
-export function assertSharedDtsPresent(pkgSharedDir, expected) {
-  return expected.filter((rel) => !existsSync(join(pkgSharedDir, rel)));
+export function assertSharedDtsPresent(pkgSharedDir: string, expected: string[]): string[] {
+  return expected.filter((rel: string) => !existsSync(join(pkgSharedDir, rel)));
 }
 
 /**
@@ -52,10 +51,10 @@ export function assertSharedDtsPresent(pkgSharedDir, expected) {
  * assertSharedDtsPresent 只查「缺」不查「多」——本出口补「多」向，pack-check 接入后
  * 残留 fail-loud。
  */
-export function assertSharedDtsNoExtras(pkgSharedDir, expected) {
+export function assertSharedDtsNoExtras(pkgSharedDir: string, expected: string[]): string[] {
   const expectedSet = new Set(expected);
-  const out = [];
-  const visit = (cur) => {
+  const out: string[] = [];
+  const visit = (cur: string): void => {
     for (const f of readdirSync(cur, { withFileTypes: true })) {
       const abs = join(cur, f.name);
       if (f.isDirectory()) {

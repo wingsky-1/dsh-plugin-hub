@@ -1,4 +1,3 @@
-// @ts-nocheck
 "use strict";
 
 /**
@@ -30,7 +29,14 @@ import { builtinModules } from "node:module";
 const NODE_BUILTIN_NAMES = new Set([...builtinModules, ...builtinModules.map((m) => `node:${m}`)]);
 
 /** 浏览器全局 stub（最小可执行集；每包独立沙箱隔离）。 */
-export function makeBrowserSandbox(calls, factories) {
+interface ClientHandoff {
+  id: string;
+  factory: (require: (spec: string) => Record<string, unknown>) => Record<string, unknown>;
+}
+export function makeBrowserSandbox(
+  calls: ClientHandoff[],
+  factories: Map<string, ClientHandoff["factory"]>,
+): Record<string, unknown> {
   const noop = () => {};
   const el = () => {
     const node = {
@@ -72,7 +78,7 @@ export function makeBrowserSandbox(calls, factories) {
     querySelectorAll: () => [],
     getElementById: () => null,
   };
-  const sandbox = {
+  const sandbox: Record<string, unknown> = {
     console,
     setTimeout,
     clearTimeout,
@@ -137,13 +143,13 @@ export function makeBrowserSandbox(calls, factories) {
         json: () => Promise.resolve({}),
         text: () => Promise.resolve(""),
       }),
-    AudioContext: function () {
+    AudioContext: function (this: Record<string, unknown>) {
       this.destination = {};
       this.currentTime = 0;
       this.createOscillator = () => ({ connect: noop, start: noop, stop: noop, frequency: {} });
       this.createGain = () => ({ connect: noop, gain: {} });
     },
-    requestAnimationFrame: (cb) => setTimeout(cb, 16),
+    requestAnimationFrame: (cb: () => void) => setTimeout(cb, 16),
     cancelAnimationFrame: clearTimeout,
     Event: class {},
     CustomEvent: class {},
@@ -156,7 +162,7 @@ export function makeBrowserSandbox(calls, factories) {
   sandbox.top = sandbox;
   sandbox.parent = sandbox;
   sandbox.__ModuleLoader__ = {
-    load: (handoff) => {
+    load: (handoff: ClientHandoff) => {
       calls.push(handoff);
       factories.set(handoff.id, handoff.factory);
     },
@@ -165,9 +171,13 @@ export function makeBrowserSandbox(calls, factories) {
 }
 
 /** 执行产物并返回 { calls, factories, error }——同构于浏览器 arrive() 的注册侧。 */
-export function executeClient(code) {
-  const calls = [];
-  const factories = new Map();
+export function executeClient(code: string): {
+  calls: ClientHandoff[];
+  factories: Map<string, ClientHandoff["factory"]>;
+  error: unknown;
+} {
+  const calls: ClientHandoff[] = [];
+  const factories = new Map<string, ClientHandoff["factory"]>();
   const sandbox = makeBrowserSandbox(calls, factories);
   vm.createContext(sandbox);
   try {
@@ -179,8 +189,10 @@ export function executeClient(code) {
 }
 
 /** materialize：factory(require) → 返回值即 module.exports（与真实 ModuleLoader 一致）；require 走安全 stub。 */
-export function materialize(factory) {
-  const stubRequire = (spec) => {
+export function materialize(
+  factory: (require: (spec: string) => Record<string, unknown>) => Record<string, unknown>,
+): { exports: Record<string, unknown> | null; error: unknown } {
+  const stubRequire = (spec: string): Record<string, unknown> => {
     if (spec === "react")
       return {
         createElement: () => null,
@@ -211,7 +223,7 @@ export function materialize(factory) {
  * `globalThis.process` 这类写法会绕开带点的匹配（已实测漏报）。产物里出现这些
  * 标识符必然来自宿主全局，故按 fail-closed 只匹配名字本身。
  */
-const FORBIDDEN_CLIENT_TOKENS = [
+const FORBIDDEN_CLIENT_TOKENS: [string, RegExp][] = [
   ["node: 内置模块", /\bnode:[a-z]/],
   ["process 全局", /\bprocess\b/],
   ["__dirname", /\b__dirname\b/],
@@ -234,16 +246,16 @@ const EXTERNAL_REQUIRE_RE = /(?<![A-Za-z0-9_$])require\(\s*['"]([^.'"/][^'"]*)['
 const REMAINING_REQUIRE_RE = /require\s*\(/g;
 
 /** 扫描客户端产物的宿主侧标识符泄漏，返回可读违例清单（空数组 = 干净）。 */
-export function findClientLeaks(code) {
-  const leaks = [];
+export function findClientLeaks(code: string): string[] {
+  const leaks: string[] = [];
   for (const [label, re] of FORBIDDEN_CLIENT_TOKENS) {
     // 每次新建带 g 的正则：清单里的字面量正则复用会残留 lastIndex，且非全局
     // 匹配拿不到真实命中次数（违例文案会恒报「1 处」而误导排查）。
     const hit = code.match(new RegExp(re.source, "g"));
     if (hit) leaks.push(`${label}（${hit.length} 处，如 ${JSON.stringify(hit[0])}）`);
   }
-  const externals = [];
-  const withoutExternal = code.replace(EXTERNAL_REQUIRE_RE, (_m, spec) => {
+  const externals: string[] = [];
+  const withoutExternal = code.replace(EXTERNAL_REQUIRE_RE, (_m: string, spec: string) => {
     externals.push(spec);
     return "";
   });
@@ -273,10 +285,13 @@ const CLIENT_EXPORT_KEYS = "apply,inject";
  *           materialize后exports.inject为数组 / materialize后exports键集恰为apply+inject /
  *           无宿主侧标识符泄漏。
  */
-export function assertClientContract(pkgName, code) {
+export function assertClientContract(
+  pkgName: string,
+  code: string,
+): { ok: boolean; checks: Record<string, boolean>; error: unknown; leaks: string[] } {
   const { calls, factories, error } = executeClient(code);
   const leaks = findClientLeaks(code);
-  const checks = {
+  const checks: Record<string, boolean> = {
     执行无异常: error === null,
     load恰好一次: calls.length === 1,
     "load id === 完整包名(含scope)": calls.length === 1 && calls[0].id === pkgName,
@@ -287,11 +302,12 @@ export function assertClientContract(pkgName, code) {
   let injectOk = false;
   let keysOk = false;
   if (checks["factories可被arrive解析"]) {
-    const factory = factories.get(pkgName);
+    const factory = factories.get(pkgName)!;
     const { exports: mod, error: matErr } = materialize(factory);
-    applyOk = matErr === null && typeof mod.apply === "function";
-    injectOk = matErr === null && Array.isArray(mod.inject);
-    keysOk = matErr === null && Object.keys(mod).sort().join(",") === CLIENT_EXPORT_KEYS;
+    const modRecord = mod as Record<string, unknown>;
+    applyOk = matErr === null && typeof modRecord.apply === "function";
+    injectOk = matErr === null && Array.isArray(modRecord.inject);
+    keysOk = matErr === null && Object.keys(modRecord).sort().join(",") === CLIENT_EXPORT_KEYS;
   }
   checks["materialize后exports.apply为函数"] = applyOk;
   checks["materialize后exports.inject为数组"] = injectOk;

@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck
 "use strict";
 
 /**
@@ -34,11 +33,11 @@ const packagesDir = join(ROOT, "packages");
 // T1（#397）：退役残留目录无 package.json，按 manifest.retired 过滤——残留目录
 // 属清理债不参与契约检查（plugins-manifest-lib 方向 B 已豁免并告警）。listPluginDirs
 // 保持物理枚举语义不变，此处仅消费侧按 manifest 过滤，不掏空「新目录必须登记」守卫。
-let manifest;
+let manifest: ReturnType<typeof loadManifest>;
 try {
   manifest = loadManifest(ROOT);
 } catch (e) {
-  console.log(`FAIL plugins-manifest | ${e.message}`);
+  console.log(`FAIL plugins-manifest | ${(e as Error).message}`);
   process.exit(1);
 }
 const { kept: pluginDirs, skipped: retiredDirs } = filterOutRetiredDirs(
@@ -114,7 +113,7 @@ for (const p of artifactDirs) {
       .map(([k, v]) => `${k}=${v ? "✓" : "✗"}`)
       .join(" ")}`,
   );
-  if (!okAll && error) console.log(`     执行错误: ${error.message}`);
+  if (!okAll && error) console.log(`     执行错误: ${(error as Error).message}`);
   // 宿主侧标识符泄漏单独列出：产物虽然「执行无异常」，但 node 全局在浏览器里会
   // 直到运行时才炸，只有逐条打印才能定位是哪一个标识符进了产物。
   if (leaks.length > 0) console.log(`     宿主侧标识符泄漏：${leaks.join("；")}`);
@@ -134,11 +133,11 @@ if (checked === 0) {
 // 多行 import 也覆盖：以 import 开头且非 import type 的语句体内出现
 // @deepseek-ai|@wingsky-1 模块名即报。
 {
-  const offenders = [];
+  const offenders: string[] = [];
   for (const p of pluginDirs) {
     const srcDir = join(packagesDir, p, "src");
     if (!existsSync(srcDir)) continue;
-    const walk = (dir) => {
+    const walk = (dir: string): void => {
       for (const e of readdirSync(dir, { withFileTypes: true })) {
         if (e.isDirectory()) {
           walk(join(dir, e.name));

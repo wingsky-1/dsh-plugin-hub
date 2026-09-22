@@ -1,4 +1,3 @@
-// @ts-nocheck
 "use strict";
 
 /**
@@ -33,7 +32,7 @@ import { basename, dirname, join } from "node:path";
 import { extractInlinedModuleRefs } from "./collect-licenses.ts";
 
 /** 契约外壳模板：零依赖干净模块 → 浏览器端 IIFE 产物（纯 JS，构建期生成不经 tsc）。 */
-function renderWrapper(entryRel) {
+function renderWrapper(entryRel: string): string {
   return `// 契约外壳（scripts/build-client.ts 生成），浏览器端全局由 dsh web 运行时提供。
 import * as impl from ${JSON.stringify("./" + entryRel)}
 window.__ModuleLoader__.load({
@@ -55,10 +54,10 @@ window.__ModuleLoader__.load({
  * 内联进 factory 函数体——factory 参数名 `require` 遮蔽外部，external 的
  * `require("react")` 即解析到注入值（对齐 dsh-web-ui 的 loader 模块表机制）。
  */
-function renderFactoryContract(packageName, cleanCjs) {
+function renderFactoryContract(packageName: string, cleanCjs: string): string {
   const indented = cleanCjs
     .split("\n")
-    .map((l) => (l.length ? "    " + l : ""))
+    .map((l: string) => (l.length ? "    " + l : ""))
     .join("\n");
   return `"use strict";
 // 契约外壳（scripts/build-client.ts 生成）：external 依赖（React 等）经 factory 注入的 require 解析
@@ -76,8 +75,8 @@ ${indented}
 }
 
 /** 提取源码顶层 bare import specifier（非相对/绝对 → 宿主注入 external；scoped 包取前两段）。 */
-function bareImports(ts) {
-  const out = new Set();
+function bareImports(ts: string): string[] {
+  const out = new Set<string>();
   for (const m of ts.matchAll(/\bfrom\s*["']([^"']+)["']/g)) {
     const spec = m[1];
     if (spec.startsWith(".") || spec.startsWith("/")) continue;
@@ -88,14 +87,24 @@ function bareImports(ts) {
 
 /** 形态检测：剥离注释后检测 __ModuleLoader__.load——干净模块注释若提到 loader
  * 会被误判 legacy（导致 wrapper 没用上，构建行为错误）。 */
-function detectClientMode(sourceText) {
+function detectClientMode(sourceText: string): string {
   const codeOnly = sourceText.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "");
   return /__ModuleLoader__\.load/.test(codeOnly) ? "legacy" : "wrapper";
 }
 
 /** externals：显式传入优先；否则 wrapper 且未声明 inlineBareImports 时按「bare
  * import = 宿主注入 external」自动提取；inlineBareImports 或 legacy → 全部内联。 */
-function resolveClientExternals({ externals, mode, inlineBareImports, sourceText }) {
+function resolveClientExternals({
+  externals,
+  mode,
+  inlineBareImports,
+  sourceText,
+}: {
+  externals: string[];
+  mode: string;
+  inlineBareImports: boolean;
+  sourceText: string;
+}): string[] {
   return externals.length > 0
     ? externals
     : mode === "wrapper" && !inlineBareImports
@@ -104,11 +113,17 @@ function resolveClientExternals({ externals, mode, inlineBareImports, sourceText
 }
 
 // base 由调用方统一装配（三条路径共用），此处只覆盖各路径的差异项。
-async function runClientBuild(base, mode, resolvedExternals, src, packageName) {
-  let code;
+async function runClientBuild(
+  base: Parameters<typeof build>[0],
+  mode: string,
+  resolvedExternals: string[],
+  src: string,
+  packageName: string,
+): Promise<string> {
+  let code: string;
   if (mode === "legacy") {
     const r = await build({ ...base, format: "iife", entryPoints: [src] });
-    code = r.outputFiles[0].text;
+    code = r.outputFiles![0].text;
   } else if (resolvedExternals.length > 0) {
     // externals 路径：干净模块 cjs（external 走 require）→ 内联进 factory
     const r = await build({
@@ -118,7 +133,7 @@ async function runClientBuild(base, mode, resolvedExternals, src, packageName) {
       external: resolvedExternals,
       entryPoints: [src],
     });
-    code = renderFactoryContract(packageName, r.outputFiles[0].text);
+    code = renderFactoryContract(packageName, r.outputFiles![0].text);
   } else {
     // 零依赖干净模块：iife + stdin wrapper
     const r = await build({
@@ -130,7 +145,7 @@ async function runClientBuild(base, mode, resolvedExternals, src, packageName) {
         sourcefile: "client-wrapper.ts",
       },
     });
-    code = r.outputFiles[0].text;
+    code = r.outputFiles![0].text;
   }
   return code;
 }
@@ -140,7 +155,12 @@ async function runClientBuild(base, mode, resolvedExternals, src, packageName) {
  * exports.apply/inject 装配必须存在——define 被局部遮蔽/占位符拼错/外壳装配
  * 出错时唯一兜底，构建即失败，不等发布后炸。
  */
-function assertClientOutputContract(code, packageName, mode, resolvedExternals) {
+function assertClientOutputContract(
+  code: string,
+  packageName: string,
+  mode: string,
+  resolvedExternals: string[],
+): void {
   const m = code.match(/__ModuleLoader__\.load\(\s*\{\s*id:\s*"([^"]+)"/);
   if (!m || m[1] !== packageName) {
     throw new Error(
@@ -186,7 +206,14 @@ export async function buildClient({
   extraDefine = {},
   externals = [],
   inlineBareImports = false,
-}) {
+}: {
+  src: string;
+  outfile: string;
+  packageName: string;
+  extraDefine?: Record<string, unknown>;
+  externals?: string[];
+  inlineBareImports?: boolean;
+}): Promise<{ code: string; mode: string }> {
   const sourceText = readFileSync(src, "utf8");
   const mode = detectClientMode(sourceText);
   const resolvedExternals = resolveClientExternals({
@@ -212,7 +239,13 @@ export async function buildClient({
     loader: { ".css": "text" },
   };
 
-  const code = await runClientBuild(base, mode, resolvedExternals, src, packageName);
+  const code = await runClientBuild(
+    base as Parameters<typeof build>[0],
+    mode,
+    resolvedExternals,
+    src,
+    packageName,
+  );
 
   assertClientOutputContract(code, packageName, mode, resolvedExternals);
   writeFileSync(outfile, code);
@@ -243,7 +276,13 @@ export async function buildClient({
  * @returns {Promise<{ bytes: number, refs: Array<{name: string, pnpmSeg: string|null}> }>}
  *   产物字节数 + 被内联第三方包引用清单（bundle-host 落盘 sidecar 用）
  */
-export async function buildMermaidChunk({ entry, outfile }) {
+export async function buildMermaidChunk({
+  entry,
+  outfile,
+}: {
+  entry: string;
+  outfile: string;
+}): Promise<{ bytes: number; refs: { name: string; pnpmSeg: string | null }[] }> {
   const r = await build({
     entryPoints: [entry],
     outfile,
@@ -257,7 +296,7 @@ export async function buildMermaidChunk({ entry, outfile }) {
     metafile: true,
     logLevel: "warning",
   });
-  const code = r.outputFiles[0].text;
+  const code = r.outputFiles![0].text;
   writeFileSync(outfile, code);
   // metafile.inputs 键即各模块相对路径（含 node_modules 安装段），与产物注释
   // 同构——直接复用注释提取器得到 {name, pnpmSeg} 清单（已排序、去重、
@@ -284,9 +323,9 @@ const CODE_FILE = /\.(ts|tsx|mts|cts|js|mjs|cjs|css)$/;
  * @param {string} srcDir 包内 src 目录
  * @returns {string[]} 相对路径列表（已排序）
  */
-export function listResources(srcDir) {
-  const out = [];
-  const walk = (dir, prefix) => {
+export function listResources(srcDir: string): string[] {
+  const out: string[] = [];
+  const walk = (dir: string, prefix: string): void => {
     for (const ent of readdirSync(dir, { withFileTypes: true })) {
       if (ent.name.startsWith(".")) continue;
       const rel = prefix ? `${prefix}/${ent.name}` : ent.name;
@@ -308,7 +347,7 @@ export function listResources(srcDir) {
  * @param {string} libDir 产物目录（lib/）
  * @returns {string[]} 复制的相对路径列表
  */
-export function copyClientResources(pkgDir, libDir) {
+export function copyClientResources(pkgDir: string, libDir: string): string[] {
   const srcDir = join(pkgDir, "src");
   if (!existsSync(srcDir)) return [];
   const resources = listResources(srcDir);
@@ -325,7 +364,7 @@ export function copyClientResources(pkgDir, libDir) {
 }
 
 /** 确保 .ps1 产物带 UTF-8 BOM；已带则原样返回 false，缺失/不完整则补写并返回 true。 */
-export function ensureUtf8Bom(filePath) {
+export function ensureUtf8Bom(filePath: string): boolean {
   const buf = readFileSync(filePath);
   if (buf.length >= 3 && buf[0] === 0xef && buf[1] === 0xbb && buf[2] === 0xbf) return false;
   const text = buf.toString("utf8").replace(/^\uFEFF/, "");

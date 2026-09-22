@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck
 "use strict";
 
 /**
@@ -22,7 +21,7 @@ const OFFICIAL_SCOPE = "@deepseek-ai/";
 const DEP_FIELDS = ["peerDependencies", "devDependencies", "dependencies"];
 
 /** 剥掉 YAML 标量两侧的成对引号（单/双均可）；未加引号时原样返回。 */
-function unquote(scalar) {
+function unquote(scalar: string): string {
   const quote = scalar[0];
   if ((quote === "'" || quote === '"') && scalar.length >= 2 && scalar.endsWith(quote)) {
     return scalar.slice(1, -1);
@@ -31,8 +30,8 @@ function unquote(scalar) {
 }
 
 /** 解析顶层 `catalog:` 段的 name → version。 */
-export function parseCatalog(yamlText) {
-  const catalog = new Map();
+export function parseCatalog(yamlText: string): Map<string, string> {
+  const catalog = new Map<string, string>();
   let inSection = false;
   for (const line of yamlText.split("\n")) {
     if (/^catalog:\s*$/.test(line)) {
@@ -49,8 +48,8 @@ export function parseCatalog(yamlText) {
 }
 
 /** 解析顶层 `minimumReleaseAgeExclude:` 段的包名集（剥离 @version 后缀）。 */
-export function parseReleaseExclude(yamlText) {
-  const names = new Set();
+export function parseReleaseExclude(yamlText: string): Set<string> {
+  const names = new Set<string>();
   let inSection = false;
   for (const line of yamlText.split("\n")) {
     if (/^minimumReleaseAgeExclude:\s*$/.test(line)) {
@@ -72,7 +71,12 @@ export function parseReleaseExclude(yamlText) {
  * 全仓校验：官方包依赖声明必须走 catalog:，且 catalog: 引用必须有条目、
  * catalog 每个键都要在供应链豁免清单里登记。
  */
-export function checkCatalogPeers(root) {
+export function checkCatalogPeers(root: string): {
+  lines: string[];
+  problems: string[];
+  catalogSize: number;
+  officialPeerCount: number;
+} {
   const yamlText = readFileSync(join(root, "pnpm-workspace.yaml"), "utf8");
   const catalog = parseCatalog(yamlText);
   const excluded = parseReleaseExclude(yamlText);
@@ -87,7 +91,7 @@ export function checkCatalogPeers(root) {
 }
 
 /** 扫描面只看 packages 下真实存在的包目录；隐藏目录与 node_modules 不是待校验对象。 */
-function packageDirs(root) {
+function packageDirs(root: string): string[] {
   return readdirSync(join(root, "packages"), { withFileTypes: true })
     .filter((e) => e.isDirectory() && !e.name.startsWith(".") && e.name !== "node_modules")
     .map((e) => e.name)
@@ -95,7 +99,7 @@ function packageDirs(root) {
 }
 
 /** 读不出或解析不了 package.json 一律跳过：那是包本身的问题，不是本门禁的判据面。 */
-function readPackageManifest(root, dir) {
+function readPackageManifest(root: string, dir: string): Record<string, unknown> | null {
   try {
     return JSON.parse(readFileSync(join(root, "packages", dir, "package.json"), "utf8"));
   } catch {
@@ -104,8 +108,13 @@ function readPackageManifest(root, dir) {
 }
 
 /** 单个包的一个依赖字段：官方包一律写 catalog:，写了 catalog: 就必须有对应条目。 */
-function collectDepProblems(dir, field, deps, catalog) {
-  const problems = [];
+function collectDepProblems(
+  dir: string,
+  field: string,
+  deps: Record<string, string>,
+  catalog: Map<string, string>,
+): { problems: string[]; officialPeerCount: number } {
+  const problems: string[] = [];
   let officialPeerCount = 0;
   for (const [name, spec] of Object.entries(deps)) {
     if (!name.startsWith(OFFICIAL_SCOPE)) continue;
@@ -122,16 +131,19 @@ function collectDepProblems(dir, field, deps, catalog) {
 }
 
 /** 逐包逐字段累计问题，并把官方 peer 声明出现次数单独带出（真实仓库的回归底线看它）。 */
-function collectPackageProblems(root, catalog) {
-  const problems = [];
+function collectPackageProblems(
+  root: string,
+  catalog: Map<string, string>,
+): { problems: string[]; officialPeerCount: number } {
+  const problems: string[] = [];
   let officialPeerCount = 0;
   for (const dir of packageDirs(root)) {
     const pkg = readPackageManifest(root, dir);
     if (pkg === null) continue;
     for (const field of DEP_FIELDS) {
-      const deps = pkg[field];
+      const deps: unknown = pkg[field];
       if (deps === undefined || deps === null || typeof deps !== "object") continue;
-      const found = collectDepProblems(dir, field, deps, catalog);
+      const found = collectDepProblems(dir, field, deps as Record<string, string>, catalog);
       problems.push(...found.problems);
       officialPeerCount += found.officialPeerCount;
     }
@@ -144,8 +156,11 @@ function collectPackageProblems(root, catalog) {
  *
  * 两处是同一份事实源的两面登记：catalog 有了键而豁免清单没跟上，说明升级时只改了半边。
  */
-function collectCatalogExemptionProblems(catalog, excluded) {
-  const problems = [];
+function collectCatalogExemptionProblems(
+  catalog: Map<string, string>,
+  excluded: Set<string>,
+): string[] {
+  const problems: string[] = [];
   for (const name of catalog.keys()) {
     if (!excluded.has(name)) {
       problems.push(

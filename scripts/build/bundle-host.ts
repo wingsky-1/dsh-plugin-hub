@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck
 "use strict";
 
 /**
@@ -71,7 +70,7 @@ try {
     banner: typeof bannerJs === "string" && bannerJs.length > 0 ? { js: bannerJs } : undefined,
   });
 } catch (e) {
-  console.error(`[bundle-host] esbuild 失败: ${e.message}`);
+  console.error(`[bundle-host] esbuild 失败: ${(e as Error).message}`);
   process.exit(1);
 }
 renameSync(tmpBundle, join(libDir, "index.js"));
@@ -122,7 +121,7 @@ if (clientSrc) {
     }
   } catch (e) {
     console.warn(
-      `[bundle-host] ${process.argv[2]}: ROUTES 注入跳过（${String(e.message).split("\n")[0]}），由 smoke 兜底`,
+      `[bundle-host] ${process.argv[2]}: ROUTES 注入跳过（${String((e as Error).message).split("\n")[0]}），由 smoke 兜底`,
     );
   }
   try {
@@ -137,7 +136,7 @@ if (clientSrc) {
       `[bundle-host] ${process.argv[2]}: 客户端构建完成（${mode} 模式，load id=${pkgName}）`,
     );
   } catch (e) {
-    console.error(`[bundle-host] 客户端构建失败: ${e.message}`);
+    console.error(`[bundle-host] 客户端构建失败: ${(e as Error).message}`);
     process.exit(1);
   }
   try {
@@ -165,7 +164,7 @@ if (clientSrc) {
         `[bundle-host] ${process.argv[2]}: mermaid chunk 构建完成（lib/client-mermaid.js，${(bytes / 1024 / 1024).toFixed(2)}MB min，${refs.length} 个内联第三方库清单）`,
       );
     } catch (e) {
-      console.error(`[bundle-host] mermaid chunk 构建失败: ${e.message}`);
+      console.error(`[bundle-host] mermaid chunk 构建失败: ${(e as Error).message}`);
       process.exit(1);
     }
     try {
@@ -182,7 +181,7 @@ for (const f of copiedResources) {
   console.log(`[bundle-host] ${process.argv[2]}: 资源 ${f} → lib/`);
 }
 
-function isTopEntryName(isRoot, name) {
+function isTopEntryName(isRoot: boolean, name: string): boolean {
   return isRoot && (name === "index.js" || name === "client.js" || name === "client-mermaid.js");
 }
 
@@ -192,7 +191,7 @@ function isTopEntryName(isRoot, name) {
 // 保留顶层 index.js/client.js/client-mermaid.js（issue #104 懒加载 chunk，
 // P0 白名单：缺它会被当游离产物删除 → 宿主路由 ENOENT 且既有门禁测不出）与
 // 全部 .d.ts（类型 re-export 需要）。
-function cleanFreeFloatingJs(dir, isRoot) {
+function cleanFreeFloatingJs(dir: string, isRoot: boolean): void {
   for (const f of readdirSync(dir, { withFileTypes: true })) {
     const abs = join(dir, f.name);
     if (f.isDirectory()) {

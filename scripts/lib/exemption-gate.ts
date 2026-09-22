@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck
 /**
  * exemption-gate — 路径受限门禁的**豁免机制**共享实现（#733 计划项 3.2.2，出处 #765 D）。
  *
@@ -24,12 +23,12 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 
 /** 两闸共用的豁免 marker 形状：`<mark> <理由，须含 #NNN>`。 */
-function markerRegex(mark) {
+function markerRegex(mark: string): RegExp {
   return new RegExp(`\\s*${mark}\\s+([^\\n]*#\\d+[^\\n]*)`);
 }
 
 /** 跳过 `start` 处的字符串字面量（`start` 处必须是引号字符），返回其后一位下标；未闭合停在行尾。 */
-function skipStringLiteral(line, start) {
+function skipStringLiteral(line: string, start: number): number {
   const q = line[start];
   let i = start + 1;
   const n = line.length;
@@ -53,7 +52,7 @@ function skipStringLiteral(line, start) {
  * 轻量词法：跟踪单/双引号与反引号（含转义；模板字符串内不做嵌套插值解析，本仓豁免注释
  * 行不依赖该场景）。无字符串外的 `//` 注释 → 返回空串。
  */
-export function lineCommentText(line) {
+export function lineCommentText(line: string): string {
   let i = 0;
   const n = line.length;
   while (i < n) {
@@ -72,7 +71,7 @@ export function lineCommentText(line) {
  * 命中行的豁免注释匹配：命中行行尾或上一行的**真实**注释含合法 marker 时返回理由文本，
  * 否则返回空串（`#NNN` 缺失即不算豁免，避免「随手一豁」）。
  */
-export function hasExemptionMarker(tsLines, lineIdx, mark) {
+export function hasExemptionMarker(tsLines: string[], lineIdx: number, mark: string): string {
   const re = markerRegex(mark);
   for (const line of [tsLines[lineIdx], tsLines[lineIdx - 1]]) {
     if (line === undefined) continue;
@@ -88,12 +87,12 @@ export function hasExemptionMarker(tsLines, lineIdx, mark) {
  * 扫描面文件过滤：`.ts/.tsx/.mts/.mjs`，排除 `.d.ts`/`.d.mts` 声明与 `*.test.*`
  * （测试用 homedir 锁默认路径契约是合法的，不该被判据命中）。
  */
-export function isScannedSourceFile(name) {
+export function isScannedSourceFile(name: string): boolean {
   return /\.(ts|tsx|mts|mjs)$/.test(name) && !/\.d\.(ts|mts)$/.test(name) && !/\.test\./.test(name);
 }
 
 /** 列出 `packages/` 下以 prefix 开头的包目录名（读不到 packages 目录时抛出，由调用方 fail-closed）。 */
-export function listPackageNames(root, prefix) {
+export function listPackageNames(root: string, prefix: string): string[] {
   return readdirSync(join(root, "packages"), { withFileTypes: true })
     .filter((e) => e.isDirectory() && e.name.startsWith(prefix))
     .map((e) => e.name)
@@ -105,11 +104,11 @@ export function listPackageNames(root, prefix) {
  * 目录不存在时静默跳过（包没建 src 不是违规），整体为空由调用方 fail-closed 判红——
  * 扫描面为空等于判据失效，不能退化成「零违规」。
  */
-export function collectSrcFiles(root, packageNames) {
-  const hits = [];
+export function collectSrcFiles(root: string, packageNames: string[]): string[] {
+  const hits: string[] = [];
   for (const pkg of packageNames) {
     const srcDir = join(root, "packages", pkg, "src");
-    const walk = (dir) => {
+    const walk = (dir: string): void => {
       let entries;
       try {
         entries = readdirSync(dir, { withFileTypes: true });
@@ -128,7 +127,7 @@ export function collectSrcFiles(root, packageNames) {
 }
 
 /** 相对 root 的 POSIX 形式路径（台账条目一律用这个形态做键）。 */
-export function relPath(root, file) {
+export function relPath(root: string, file: string): string {
   return relative(root, file).split(sep).join("/");
 }
 
@@ -137,7 +136,15 @@ export function relPath(root, file) {
  * 与 `assertExemptionTrackingFields` 合起来才是完整结构校验，拆两段只为把单函数判据数
  * 压进复杂度门禁；两段按台账字段顺序串行执行，先报哪条错误与拆分前一致。
  */
-function assertExemptionItemFields(item) {
+interface ExemptionItem {
+  gate: string;
+  path: string;
+  reason: string;
+  trackingIssue: string;
+  reviewBy?: unknown;
+  exitCriteria?: unknown;
+}
+function assertExemptionItemFields(item: ExemptionItem): void {
   if (item === null || typeof item !== "object") throw new Error("豁免台账 exemptions 含非对象项");
   if (typeof item.gate !== "string" || item.gate.length === 0)
     throw new Error(`豁免条目缺 gate：${JSON.stringify(item).slice(0, 120)}`);
@@ -151,7 +158,7 @@ function assertExemptionItemFields(item) {
  * 台账条目的跟踪字段：`trackingIssue` 必填且形如 `#123`；`reviewBy` 与 `exitCriteria`
  * 只在给出时校验（缺省 = 长期条目，见 `loadLedger` 的说明）。拆分理由同上。
  */
-function assertExemptionTrackingFields(item) {
+function assertExemptionTrackingFields(item: ExemptionItem): void {
   if (typeof item.trackingIssue !== "string" || !/^#\d+$/.test(item.trackingIssue)) {
     throw new Error(
       `${item.gate}/${item.path}：豁免 trackingIssue 须形如 #123（当前 ${JSON.stringify(item.trackingIssue)}）`,
@@ -188,21 +195,21 @@ function assertExemptionTrackingFields(item) {
  * 日期只说明何时再看一眼，条件才说明凭什么能删。本函数只做结构校验（非空字符串），语义由
  * 写条目的人承担——它是给人读的判据，机器无法验证「条件是否真的达成了」。
  */
-export function loadLedger(path, gate) {
-  let raw;
+export function loadLedger(path: string, gate: string): Map<string, ExemptionItem> {
+  let raw: string;
   try {
     raw = readFileSync(path, "utf8");
   } catch (e) {
-    throw new Error(`豁免台账不可读（${path}）：${e.message}`);
+    throw new Error(`豁免台账不可读（${path}）：${(e as Error).message}`);
   }
-  let json;
+  let json: Record<string, unknown>;
   try {
-    json = JSON.parse(raw);
+    json = JSON.parse(raw) as Record<string, unknown>;
   } catch (e) {
-    throw new Error(`豁免台账 JSON 语法错误（${path}）：${e.message}`);
+    throw new Error(`豁免台账 JSON 语法错误（${path}）：${(e as Error).message}`);
   }
   if (!Array.isArray(json.exemptions)) throw new Error(`豁免台账缺 exemptions 数组（${path}）`);
-  const items = new Map();
+  const items = new Map<string, ExemptionItem>();
   for (const item of json.exemptions) {
     assertExemptionItemFields(item);
     assertExemptionTrackingFields(item);
@@ -214,7 +221,7 @@ export function loadLedger(path, gate) {
 }
 
 /** 合法豁免的回显文本：临时条目带 reviewBy，长期条目如实说明。 */
-function legitDetail(entry) {
+function legitDetail(entry: ExemptionItem): string {
   const due =
     entry.reviewBy === undefined ? "（长期条目，无 reviewBy）" : `（reviewBy ${entry.reviewBy}）`;
   return `登记豁免 ${entry.trackingIssue}${due}`;
@@ -225,7 +232,20 @@ function legitDetail(entry) {
  * `policy` = { gate, mark, markerRequired, ledgerDisplay }；`detail` = 命中点描述（由门禁拼）。
  * `note` = 命中点紧邻注释里的豁免理由（空串=无）；`codeText` = 命中源码片段（仅违规时回显）。
  */
-export function judgeHit(policy, ledger, rel, note, detail, codeText) {
+interface JudgePolicy {
+  gate: string;
+  mark: string;
+  markerRequired: boolean;
+  ledgerDisplay: string;
+}
+export function judgeHit(
+  policy: JudgePolicy,
+  ledger: Map<string, ExemptionItem>,
+  rel: string,
+  note: string,
+  detail: string,
+  codeText: string,
+): { kind: string; detail: string } {
   const entry = ledger.get(rel);
   if (entry !== undefined) {
     if (policy.markerRequired && note === "") {
@@ -250,8 +270,13 @@ export function judgeHit(policy, ledger, rel, note, detail, codeText) {
  * 文件不存在（--root fixture / 包已整体移除）不判腐烂；文件存在但零命中 = 豁免点已删或
  * 已重构而台账没清 → 判红，逼条目随代码一起收口。
  */
-export function rotDetails(policy, ledger, root, hitFiles) {
-  const out = [];
+export function rotDetails(
+  policy: JudgePolicy,
+  ledger: Map<string, ExemptionItem>,
+  root: string,
+  hitFiles: Set<string>,
+): string[] {
+  const out: string[] = [];
   for (const [rel, entry] of ledger) {
     if (!existsSync(join(root, rel))) continue;
     if (!hitFiles.has(rel)) {
@@ -262,8 +287,8 @@ export function rotDetails(policy, ledger, root, hitFiles) {
 }
 
 /** 取 `--flag value` / `--flag=value` 形式的参数值；未给出返回 fallback。 */
-export function argValue(argv, flag, fallback) {
-  const eq = argv.find((a) => a.startsWith(`${flag}=`));
+export function argValue(argv: string[], flag: string, fallback: string): string {
+  const eq = argv.find((a: string) => a.startsWith(`${flag}=`));
   if (eq) return eq.slice(flag.length + 1);
   const idx = argv.indexOf(flag);
   return idx !== -1 && argv[idx + 1] !== undefined ? argv[idx + 1] : fallback;

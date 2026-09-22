@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck
 "use strict";
 
 /**
@@ -24,12 +23,15 @@ import { join } from "node:path";
 export const LIB_PREFIX = "./lib/";
 
 /** 从 exports 对象挑出带 `types` 条件的子路径条目（`./package.json` 等形态在此被排除）。 */
-function collectTypesEntries(exportsField) {
-  const entries = [];
+function collectTypesEntries(
+  exportsField: Record<string, unknown>,
+): { subpath: string; types: string }[] {
+  const entries: { subpath: string; types: string }[] = [];
   for (const [subpath, value] of Object.entries(exportsField)) {
     if (typeof value !== "object" || value === null || Array.isArray(value)) continue;
-    if (typeof value.types !== "string") continue;
-    entries.push({ subpath, types: value.types });
+    const record = value as Record<string, unknown>;
+    if (typeof record.types !== "string") continue;
+    entries.push({ subpath, types: record.types });
   }
   return entries;
 }
@@ -40,7 +42,7 @@ function collectTypesEntries(exportsField) {
  * @param {string} pkgRoot 包根目录（解包后的 tarball 根，或 `packages/<name>`）
  * @returns {{ subpath: string, types: string }[]} 按子路径字典序（判定面顺序稳定）
  */
-export function listExportTypesEntries(pkgRoot) {
+export function listExportTypesEntries(pkgRoot: string): { subpath: string; types: string }[] {
   const pkgJsonPath = join(pkgRoot, "package.json");
   if (!existsSync(pkgJsonPath)) throw new Error(`package.json 不存在：${pkgJsonPath}`);
   const parsed = JSON.parse(readFileSync(pkgJsonPath, "utf8"));
@@ -61,7 +63,7 @@ export function listExportTypesEntries(pkgRoot) {
  * @returns {string|null} 相对路径；不以 `./lib/` 开头（含空尾段）返回 null —— 调用方判红，
  *   不静默丢弃。
  */
-export function stripLibPrefix(typesField) {
+export function stripLibPrefix(typesField: string): string | null {
   if (typeof typesField !== "string" || !typesField.startsWith(LIB_PREFIX)) return null;
   const rel = typesField.slice(LIB_PREFIX.length);
   return rel.length === 0 ? null : rel;
@@ -72,8 +74,8 @@ export function stripLibPrefix(typesField) {
  * @param {string} pkgRoot 解包后的 tarball 根目录
  * @returns {string[]} 违规描述列表（空 = 合规）
  */
-export function checkExportTypesResolvable(pkgRoot) {
-  const problems = [];
+export function checkExportTypesResolvable(pkgRoot: string): string[] {
+  const problems: string[] = [];
   for (const { subpath, types } of listExportTypesEntries(pkgRoot)) {
     if (existsSync(join(pkgRoot, types))) continue;
     const rel = stripLibPrefix(types);

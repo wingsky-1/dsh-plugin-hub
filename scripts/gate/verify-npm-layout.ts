@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck
 "use strict";
 
 /**
@@ -43,8 +42,8 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 // 路径（workspace 零落盘）；父目录不存在时逐级建出。仅镜像 stdout（判据行），stderr 的
 // 跳过告警不进证据文件。落盘与 verify-version / observe-precheck 同果：证据写不下来 =
 // 没有证据，一律 fail-closed（exit 1，判词注明证据缺失）——判据绿但证据缺失不得放行。
-function parseLogFile(argv) {
-  const eq = argv.findLast(function (a) {
+function parseLogFile(argv: string[]): string | null {
+  const eq = argv.findLast(function (a: string): boolean {
     return a.startsWith("--log-file=");
   });
   if (eq !== undefined) {
@@ -58,16 +57,24 @@ function parseLogFile(argv) {
 }
 const LOG_FILE = parseLogFile(process.argv.slice(2));
 if (LOG_FILE !== null) {
-  const chunks = [];
+  const chunks: string[] = [];
   const origWrite = process.stdout.write.bind(process.stdout);
-  process.stdout.write = function (chunk, encoding, cb) {
+  process.stdout.write = function (
+    chunk: string | Uint8Array,
+    encoding?: BufferEncoding,
+    cb?: (err?: Error | null) => void,
+  ): boolean {
     try {
       chunks.push(typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8"));
     } catch {
       // 镜像失败不影响判据输出
     }
-    return origWrite(chunk, encoding, cb);
-  };
+    return origWrite(
+      chunk,
+      encoding as Parameters<typeof origWrite>[1],
+      cb as Parameters<typeof origWrite>[2],
+    );
+  } as typeof process.stdout.write;
   // 同步落盘：失败抛错，调用方一律转 fail-closed（exit 1）。
   const flushLogFile = function () {
     mkdirSync(dirname(LOG_FILE), { recursive: true });
@@ -76,7 +83,7 @@ if (LOG_FILE !== null) {
   // 证据缺失判词（与 verify-version / observe-precheck 同形，可检索；显式出口与
   // exit 钩子各落盘一次，判词只打一行）。
   let reported = false;
-  const reportLogFailure = function (err) {
+  const reportLogFailure = function (err: unknown): void {
     if (reported) return;
     reported = true;
     try {
@@ -85,7 +92,7 @@ if (LOG_FILE !== null) {
         "[log-file] 证据缺失：落盘失败（" +
           LOG_FILE +
           "）：" +
-          (err && err.message) +
+          ((err as { message?: unknown })?.message ?? err) +
           "（fail-closed，退出码置 1）\n",
       );
     } catch {
@@ -120,11 +127,11 @@ if (LOG_FILE !== null) {
 // T1（#397）：退役残留目录无 package.json，按 manifest.retired 过滤（残留属清理债，
 // 不参与布局验证；plugins-manifest-lib 方向 B 已豁免并告警）。listPluginDirs 保持
 // 物理枚举语义不变，仅消费侧按 manifest 过滤，不掏空「新目录必须登记」守卫。
-let manifest;
+let manifest: ReturnType<typeof loadManifest>;
 try {
   manifest = loadManifest(ROOT);
 } catch (e) {
-  console.log(`FAIL plugins-manifest | ${e.message}`);
+  console.log(`FAIL plugins-manifest | ${(e as Error).message}`);
   process.exit(1);
 }
 const { kept: plugins, skipped: retiredDirs } = filterOutRetiredDirs(
@@ -179,10 +186,10 @@ for (const p of layoutTargets) {
       cwd: ROOT,
       stdio: "pipe",
     });
-    const tgz = readdirSync(tmp).find((f) => f.endsWith(".tgz"));
-    execFileSync("tar", ["-xzf", join(tmp, tgz), "-C", tmp]);
+    const tgz = readdirSync(tmp).find((f: string) => f.endsWith(".tgz"));
+    execFileSync("tar", ["-xzf", join(tmp, tgz!), "-C", tmp]);
     const pkgRoot = join(tmp, "package");
-    const problems = [];
+    const problems: string[] = [];
 
     // 1. 宿主导出面（模拟 npm 安装后 require/import 该包）
     const idxPath = join(pkgRoot, "lib", "index.js");
@@ -212,7 +219,7 @@ for (const p of layoutTargets) {
     if (existsSync(clientPath)) {
       const { factories, error } = executeClient(readFileSync(clientPath, "utf8"));
       if (error) {
-        problems.push(`client 执行失败: ${String(error.message).split("\n")[0]}`);
+        problems.push(`client 执行失败: ${String((error as Error).message).split("\n")[0]}`);
       } else if (!factories.has(name)) {
         problems.push(`client load id 与包名不一致（期望 ${name}）`);
       }
@@ -232,7 +239,7 @@ for (const p of layoutTargets) {
     );
   } catch (e) {
     failed++;
-    console.log(`FAIL ${name} | ${String(e.message).split("\n")[0]}`);
+    console.log(`FAIL ${name} | ${String((e as Error).message).split("\n")[0]}`);
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }

@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck
 "use strict";
 
 /**
@@ -37,6 +36,8 @@ import {
   diffKeys,
   sourceLineOf,
   extractReadmeConfigKeys,
+  type AstNode,
+  type AstProgram,
 } from "./config-matrix-lib.ts";
 import { loadManifest } from "./plugins-manifest-lib.ts";
 
@@ -53,14 +54,27 @@ const UI_EXEMPT_MAX = 8;
  * 任何结构错误都转 problem：豁免机制失效不能表现为「没有豁免」——那会把合法差集报成
  * 「漏 UI」，把修复方向指错。
  */
-function loadUiExempt(root, problems) {
+interface UiExemptEntry {
+  reason: string;
+  rationale: string;
+}
+type UiExemptMap = Record<string, UiExemptEntry>;
+interface TableLoaded {
+  err?: string;
+  text?: string;
+  ast?: AstProgram;
+  init?: AstNode;
+  keys?: string[];
+  line?: number | null;
+}
+function loadUiExempt(root: string, problems: string[]): UiExemptMap {
   const filePath = join(root, UI_EXEMPT_REL);
-  let json;
+  let json: Record<string, unknown>;
   try {
-    json = JSON.parse(readFileSync(filePath, "utf8"));
+    json = JSON.parse(readFileSync(filePath, "utf8")) as Record<string, unknown>;
   } catch (e) {
     problems.push(
-      `lan-proxy UI 豁免表不可读（${UI_EXEMPT_REL}）：${String(e.message).split("\n")[0]}`,
+      `lan-proxy UI 豁免表不可读（${UI_EXEMPT_REL}）：${String((e as Error).message).split("\n")[0]}`,
     );
     return {};
   }
@@ -68,46 +82,53 @@ function loadUiExempt(root, problems) {
     problems.push(`lan-proxy UI 豁免表缺 exemptKeys 数组（${UI_EXEMPT_REL}）`);
     return {};
   }
-  const out = {};
-  for (const item of json.exemptKeys) {
+  const out: UiExemptMap = {};
+  for (const item of json.exemptKeys as unknown[]) {
     applyExemptEntry(out, item, problems);
   }
   return out;
 }
 
-function applyExemptEntry(out, item, problems) {
+function applyExemptEntry(out: UiExemptMap, item: unknown, problems: string[]): void {
+  const entry = item as Record<string, unknown>;
   if (
     item === null ||
     typeof item !== "object" ||
-    typeof item.key !== "string" ||
-    item.key.length === 0
+    typeof entry.key !== "string" ||
+    (entry.key as string).length === 0
   ) {
     problems.push(`lan-proxy UI 豁免表条目缺 key（${UI_EXEMPT_REL}）`);
     return;
   }
-  if (typeof item.reason !== "string" || item.reason.length === 0) {
-    problems.push(`lan-proxy UI 豁免键 ${item.key} 缺 reason（${UI_EXEMPT_REL}）`);
+  if (typeof entry.reason !== "string" || (entry.reason as string).length === 0) {
+    problems.push(`lan-proxy UI 豁免键 ${entry.key as string} 缺 reason（${UI_EXEMPT_REL}）`);
     return;
   }
-  if (out[item.key] !== undefined) {
-    problems.push(`lan-proxy UI 豁免表存在重复键：${item.key}`);
+  const key = entry.key as string;
+  if (out[key] !== undefined) {
+    problems.push(`lan-proxy UI 豁免表存在重复键：${key}`);
     return;
   }
-  out[item.key] = {
-    reason: item.reason,
-    rationale: typeof item.rationale === "string" ? item.rationale : "",
+  out[key] = {
+    reason: entry.reason as string,
+    rationale: typeof entry.rationale === "string" ? (entry.rationale as string) : "",
   };
 }
 
 /** 豁免表结构自检：≤8 键 + 每条 reason 含「文件:行」+ 锚点必须指向真身（见 exemptAnchorProblems）。 */
-function checkExempts(pkg, exempt, schema, cfgPath) {
-  const problems = [];
+function checkExempts(
+  pkg: string,
+  exempt: UiExemptMap,
+  schema: TableLoaded,
+  cfgPath: string,
+): string[] {
+  const problems: string[] = [];
   const keys = Object.keys(exempt);
   if (keys.length > UI_EXEMPT_MAX) {
     problems.push(`${pkg} 豁免表 ${keys.length} 键 > ${UI_EXEMPT_MAX}（超限即红，强制走评审）`);
   }
   // Config 表跨「export const Config」到校验表声明之前，锚点必须落在这个区间内。
-  const spanEnd = sourceLineOf(schema.text, "FILE_CONFIG_VALIDATORS") ?? Number.POSITIVE_INFINITY;
+  const spanEnd = sourceLineOf(schema.text!, "FILE_CONFIG_VALIDATORS") ?? Number.POSITIVE_INFINITY;
   for (const k of keys) {
     const { reason, rationale } = exempt[k];
     if (typeof reason !== "string" || reason.length === 0 || !/:\d+/.test(reason)) {
@@ -141,9 +162,17 @@ function checkExempts(pkg, exempt, schema, cfgPath) {
  * del/model.ts / scripts/data/model.ts / ../../etc/model.ts（全部落进「未指向 Config 表所在
  * 文件」）。改文件名或用不构成后缀的路径都躲不开。
  */
-function exemptAnchorProblems(pkg, k, reason, rationale, schema, cfgPath, spanEnd) {
-  const problems = [];
-  const lines = schema.text.split("\n");
+function exemptAnchorProblems(
+  pkg: string,
+  k: string,
+  reason: string,
+  rationale: string,
+  schema: TableLoaded,
+  cfgPath: string,
+  spanEnd: number,
+): string[] {
+  const problems: string[] = [];
+  const lines = schema.text!.split("\n");
   const propRe = new RegExp(`^[ \\t]*${k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}[ \\t]*:`);
   // 锚点形态「<路径>:<行>」；区间写法（`:91-95`）与 `./` 前缀都是人写锚点的自然形态，
   // 判据不该因为写法差异判红——那只会把修复方向指错。
@@ -165,7 +194,7 @@ function exemptAnchorProblems(pkg, k, reason, rationale, schema, cfgPath, spanEn
     // 区间内**任意**一行命中即算指向正确——区间常把上方注释一起括进来。
     let hit = false;
     for (let line = a.from; line <= a.to && !hit; line += 1) {
-      hit = line >= schema.line && line < spanEnd && propRe.test(lines[line - 1] ?? "");
+      hit = line >= schema.line! && line < spanEnd && propRe.test(lines[line - 1] ?? "");
     }
     if (!hit) {
       problems.push(
@@ -177,12 +206,12 @@ function exemptAnchorProblems(pkg, k, reason, rationale, schema, cfgPath, spanEn
 }
 
 /** 读取表键（容错返回 err；附带 text/ast/init/line 供下游派生断言）。 */
-function loadTable(filePath, name, shape) {
+function loadTable(filePath: string, name: string, shape: string): TableLoaded {
   let text;
   try {
     text = readFileSync(filePath, "utf8");
   } catch (e) {
-    return { err: `文件不可读: ${filePath}（${e.message}）` };
+    return { err: `文件不可读: ${filePath}（${(e as Error).message}）` };
   }
   const line = sourceLineOf(text, name);
   const ast = parseTs(text);
@@ -198,9 +227,9 @@ function loadTable(filePath, name, shape) {
   } else {
     keys =
       init.type === "ArrayExpression"
-        ? init.elements
-            .filter((e) => e && e.type === "Literal" && typeof e.value === "string")
-            .map((e) => e.value)
+        ? init
+            .elements!.filter((e) => e && e.type === "Literal" && typeof e.value === "string")
+            .map((e) => (e as AstNode).value as string)
         : [];
   }
   if (keys.length === 0) {
@@ -210,7 +239,14 @@ function loadTable(filePath, name, shape) {
 }
 
 /** 差集 → 缺/多键报错行。 */
-function diffProblems(scope, tableName, filePath, line, d, hint = "") {
+function diffProblems(
+  scope: string,
+  tableName: string,
+  filePath: string,
+  line: number | null | undefined,
+  d: { missing: string[]; extra: string[] },
+  hint: string = "",
+): string[] {
   const out = [];
   for (const k of d.missing)
     out.push(
@@ -224,9 +260,9 @@ function diffProblems(scope, tableName, filePath, line, d, hint = "") {
 }
 
 /** lan-proxy 矩阵；返回 { problems, lines }。 */
-function runLanProxy(root) {
-  const problems = [];
-  const lines = [];
+function runLanProxy(root: string): { problems: string[]; warnings: string[]; lines: string[] } {
+  const problems: string[] = [];
+  const lines: string[] = [];
   const cfgPath = join(root, "packages/dsh-lan-proxy/src/server/config/impl/model.ts");
   const clientPath = join(root, "packages/dsh-lan-proxy/src/client/shared/defaults.ts");
 
@@ -236,8 +272,8 @@ function runLanProxy(root) {
   const defaults = loadTable(clientPath, "DEFAULTS", "object");
   const failed = [schema, validators, hints, defaults].filter((t) => t.err);
   if (failed.length > 0) {
-    for (const t of failed) problems.push(t.err);
-    return { problems, lines };
+    for (const t of failed) problems.push(t.err!);
+    return { problems, warnings: [], lines };
   }
 
   checkLanProxyTableEquality(cfgPath, problems, schema, validators, hints);
@@ -252,16 +288,22 @@ function runLanProxy(root) {
   );
 
   lines.push(
-    `lan-proxy ${schema.keys.length} 键 × [schema/validators/hints] 全等 + client DEFAULTS ${defaults.keys.length}(豁免 ${exemptKeys.length})`,
+    `lan-proxy ${schema.keys!.length} 键 × [schema/validators/hints] 全等 + client DEFAULTS ${defaults.keys!.length}(豁免 ${exemptKeys.length})`,
   );
 
   const warnings = collectLanProxyReadmeWarnings(root, schema);
   return { problems, warnings, lines };
 }
 
-function checkLanProxyTableEquality(cfgPath, problems, schema, validators, hints) {
+function checkLanProxyTableEquality(
+  cfgPath: string,
+  problems: string[],
+  schema: TableLoaded,
+  validators: TableLoaded,
+  hints: TableLoaded,
+): void {
   // L1：三表两两全等（19 键，#911 加 tlsCaCertFile）
-  const pairs = [
+  const pairs: [string, TableLoaded, string, TableLoaded][] = [
     ["Config", schema, "FILE_CONFIG_VALIDATORS", validators],
     ["Config", schema, "SETTING_FIELD_HINTS", hints],
     ["FILE_CONFIG_VALIDATORS", validators, "SETTING_FIELD_HINTS", hints],
@@ -273,7 +315,7 @@ function checkLanProxyTableEquality(cfgPath, problems, schema, validators, hints
         nb,
         cfgPath,
         tb.line,
-        diffKeys(ta.keys, tb.keys),
+        diffKeys(ta.keys!, tb.keys!),
         `与 ${na} 不一致`,
       ),
     );
@@ -283,19 +325,26 @@ function checkLanProxyTableEquality(cfgPath, problems, schema, validators, hints
         na,
         cfgPath,
         ta.line,
-        diffKeys(tb.keys, ta.keys),
+        diffKeys(tb.keys!, ta.keys!),
         `与 ${nb} 不一致`,
       ),
     );
   }
 }
 
-function checkLanProxyClientDefaults(root, problems, schema, defaults, clientPath, cfgPath) {
+function checkLanProxyClientDefaults(
+  root: string,
+  problems: string[],
+  schema: TableLoaded,
+  defaults: TableLoaded,
+  clientPath: string,
+  cfgPath: string,
+): string[] {
   // L2：DEFAULTS ⊆ schema；schema − DEFAULTS == 豁免；豁免表结构自检
   const exempt = loadUiExempt(root, problems);
   problems.push(...checkExempts("lan-proxy", exempt, schema, cfgPath));
   const exemptKeys = Object.keys(exempt);
-  const d = diffKeys(schema.keys, defaults.keys);
+  const d = diffKeys(schema.keys!, defaults.keys!);
   // DEFAULTS 出现 schema 外键 → 红（客户端提交未知键被宿主白名单静默丢弃）
   for (const k of d.extra)
     problems.push(
@@ -312,7 +361,7 @@ function checkLanProxyClientDefaults(root, problems, schema, defaults, clientPat
   // （注意判据是「∈ DEFAULTS」而非「∉ 差集」——豁免键从 schema 删除时差集自然
   // 不含它，此时不算残留）
   for (const k of exemptKeys) {
-    if (defaults.keys.includes(k))
+    if (defaults.keys!.includes(k))
       problems.push(
         `lan-proxy 豁免键 ${k} 已在客户端 DEFAULTS 中（豁免残留，应移除豁免或改豁免原因）`,
       );
@@ -320,11 +369,11 @@ function checkLanProxyClientDefaults(root, problems, schema, defaults, clientPat
   return exemptKeys;
 }
 
-function collectLanProxyReadmeWarnings(root, schema) {
+function collectLanProxyReadmeWarnings(root: string, schema: TableLoaded): string[] {
   // 量级 #12：README 配置表键集一致性——代码键缺文档仅 warn 不判红（防文档漂移提示）
-  const warnings = [];
+  const warnings: string[] = [];
   const readmePath = join(root, "packages/dsh-lan-proxy/README.md");
-  let readmeText = null;
+  let readmeText: string | null = null;
   try {
     readmeText = readFileSync(readmePath, "utf8");
   } catch {
@@ -332,7 +381,7 @@ function collectLanProxyReadmeWarnings(root, schema) {
   }
   if (readmeText !== null) {
     const { keys: docKeys } = extractReadmeConfigKeys(readmeText, "lan-proxy");
-    for (const k of diffKeys(schema.keys, docKeys).missing) {
+    for (const k of diffKeys(schema.keys!, docKeys).missing) {
       warnings.push(
         `lan-proxy README 配置表缺文档键: ${k}（docs/README 与代码键集不一致，仅提示）`,
       );
@@ -348,7 +397,26 @@ function collectLanProxyReadmeWarnings(root, schema) {
  * 故这里能同步拿到 .ts 模块的导出）。同一 root 只加载一次；负例测试每次用新的 mkdtemp
  * 路径，ESM loader 缓存不串味。
  */
-function loadSurfaceExport(root, pkg, face, label, problems) {
+interface SurfaceFace {
+  module: string;
+  export: string;
+}
+interface SurfaceDecl {
+  package: string;
+  surface?: string;
+  reason?: string;
+  defaults?: SurfaceFace;
+  normalizer?: SurfaceFace;
+  booleanKeys?: SurfaceFace;
+  countLimits?: SurfaceFace;
+}
+function loadSurfaceExport(
+  root: string,
+  pkg: string,
+  face: SurfaceFace | undefined,
+  label: string,
+  problems: string[],
+): unknown {
   if (typeof face?.module !== "string" || typeof face.export !== "string") {
     problems.push(`${pkg} configSurfaces.${label} 声明结构不合法（须含 module/export 字符串）`);
     return undefined;
@@ -365,7 +433,7 @@ function loadSurfaceExport(root, pkg, face, label, problems) {
     return mod[face.export];
   } catch (e) {
     problems.push(
-      `${pkg} configSurfaces.${label} 模块加载失败: ${face.module}（${String(e.message).split("\n")[0]}）`,
+      `${pkg} configSurfaces.${label} 模块加载失败: ${face.module}（${String((e as Error).message).split("\n")[0]}）`,
     );
     return undefined;
   }
@@ -396,7 +464,10 @@ function loadSurfaceExport(root, pkg, face, label, problems) {
  * 这两层约束在 #733 重写后一度无法执行（那两个清单当时未导出，曾在门禁注释里如实登记为
  * 缺口）；notifier 侧导出后由声明驱动恢复，缺口随之关闭。
  */
-function runSurface(root, surface) {
+function runSurface(
+  root: string,
+  surface: SurfaceDecl,
+): { problems: string[]; warnings: string[]; lines: string[] } {
   const pkg = surface.package;
   // 「无配置面」是显式声明（#774）：跳过 N1–N4 但必须回显理由——否则它与「漏登记」在输出里
   // 无从区分，读者只能去翻 manifest。
@@ -407,9 +478,9 @@ function runSurface(root, surface) {
       lines: [`  ${pkg} 无用户配置面（surface: none）：${surface.reason}`],
     };
   }
-  const problems = [];
-  const warnings = [];
-  const lines = [];
+  const problems: string[] = [];
+  const warnings: string[] = [];
+  const lines: string[] = [];
 
   const loaded = loadSurfacePair(root, pkg, surface, problems);
   if (loaded === null) return { problems, warnings, lines };
@@ -427,27 +498,46 @@ function runSurface(root, surface) {
 }
 
 // N1 的前置：两个导出同属一个配置面，缺任一都无法做键集对照，整段作废（problems 已逐条记下）。
-function loadSurfacePair(root, pkg, surface, problems) {
+function loadSurfacePair(
+  root: string,
+  pkg: string,
+  surface: SurfaceDecl,
+  problems: string[],
+): {
+  defaults: Record<string, unknown>;
+  normalizer: (arg: Record<string, unknown>) => Record<string, unknown>;
+} | null {
   const defaults = loadSurfaceExport(root, pkg, surface.defaults, "defaults", problems);
   const normalizer = loadSurfaceExport(root, pkg, surface.normalizer, "normalizer", problems);
   if (defaults === undefined || normalizer === undefined) return null;
-  return { defaults, normalizer };
+  return {
+    defaults: defaults as Record<string, unknown>,
+    normalizer: normalizer as (arg: Record<string, unknown>) => Record<string, unknown>,
+  };
 }
 
-function checkSurfaceNormalization(pkg, surface, defaults, normalizer, problems) {
+function checkSurfaceNormalization(
+  pkg: string,
+  surface: SurfaceDecl,
+  defaults: Record<string, unknown>,
+  normalizer: (arg: Record<string, unknown>) => Record<string, unknown>,
+  problems: string[],
+): string[] | null {
   const base = Object.keys(defaults);
   if (base.length === 0) {
     problems.push(
-      `${pkg} configSurfaces.defaults 的导出键集为空：${surface.defaults.module} → ${surface.defaults.export}`,
+      `${pkg} configSurfaces.defaults 的导出键集为空：${surface.defaults!.module} → ${surface.defaults!.export}`,
     );
     return null;
   }
 
-  let normalized;
+  let normalized: Record<string, unknown> | undefined;
   try {
     normalized = normalizer({});
   } catch (e) {
-    problems.push(`${pkg} normalizeConfig({}) 执行失败：${String(e.message).split("\n")[0]}`);
+    problems.push(
+      `${pkg} normalizeConfig({}) 执行失败：${String((e as Error).message).split("\n")[0]}`,
+    );
     return null;
   }
   const d2 = diffKeys(base, Object.keys(normalized ?? {}));
@@ -462,7 +552,14 @@ function checkSurfaceNormalization(pkg, surface, defaults, normalizer, problems)
   return base;
 }
 
-function checkSurfaceKeyLists(root, pkg, surface, defaults, base, problems) {
+function checkSurfaceKeyLists(
+  root: string,
+  pkg: string,
+  surface: SurfaceDecl,
+  defaults: Record<string, unknown>,
+  base: string[],
+  problems: string[],
+): { booleanKeys: unknown; countLimits: unknown } | null {
   // N3/N4：布尔键清单与计数上界清单（两张清单的导出由 notifier 侧补齐后恢复执行）
   const booleanKeys = loadSurfaceExport(root, pkg, surface.booleanKeys, "booleanKeys", problems);
   const countLimits = loadSurfaceExport(root, pkg, surface.countLimits, "countLimits", problems);
@@ -474,10 +571,17 @@ function checkSurfaceKeyLists(root, pkg, surface, defaults, base, problems) {
   return { booleanKeys, countLimits };
 }
 
-function checkBooleanKeys(pkg, surface, defaults, baseSet, booleanKeys, problems) {
+function checkBooleanKeys(
+  pkg: string,
+  surface: SurfaceDecl,
+  defaults: Record<string, unknown>,
+  baseSet: Set<string>,
+  booleanKeys: unknown,
+  problems: string[],
+): void {
   if (!Array.isArray(booleanKeys)) {
     problems.push(
-      `${pkg} configSurfaces.booleanKeys 的导出不是数组（${surface.booleanKeys.export}）`,
+      `${pkg} configSurfaces.booleanKeys 的导出不是数组（${surface.booleanKeys!.export}）`,
     );
     return;
   }
@@ -492,10 +596,17 @@ function checkBooleanKeys(pkg, surface, defaults, baseSet, booleanKeys, problems
   }
 }
 
-function checkCountLimits(pkg, surface, defaults, baseSet, countLimits, problems) {
+function checkCountLimits(
+  pkg: string,
+  surface: SurfaceDecl,
+  defaults: Record<string, unknown>,
+  baseSet: Set<string>,
+  countLimits: unknown,
+  problems: string[],
+): void {
   if (countLimits === null || typeof countLimits !== "object" || Array.isArray(countLimits)) {
     problems.push(
-      `${pkg} configSurfaces.countLimits 的导出不是对象（${surface.countLimits.export}）`,
+      `${pkg} configSurfaces.countLimits 的导出不是对象（${surface.countLimits!.export}）`,
     );
     return;
   }
@@ -504,27 +615,39 @@ function checkCountLimits(pkg, surface, defaults, baseSet, countLimits, problems
   }
 }
 
-function checkCountLimitEntry(pkg, defaults, baseSet, k, limit, problems) {
+function checkCountLimitEntry(
+  pkg: string,
+  defaults: Record<string, unknown>,
+  baseSet: Set<string>,
+  k: string,
+  limit: unknown,
+  problems: string[],
+): void {
   if (!baseSet.has(k)) {
     problems.push(`${pkg} COUNT_LIMITS 含非配置键: ${k}（不在 DEFAULT_CONFIG 中）`);
     return;
   }
-  if (!Number.isInteger(limit) || limit < 0) {
+  if (typeof limit !== "number" || !Number.isInteger(limit) || (limit as number) < 0) {
     problems.push(`${pkg} COUNT_LIMITS.${k} 的上界不是非负整数: ${JSON.stringify(limit)}`);
   }
-  const fallback = defaults[k];
-  if (!Number.isInteger(fallback) || fallback < 0) {
+  const fallback: unknown = defaults[k];
+  if (typeof fallback !== "number" || !Number.isInteger(fallback) || (fallback as number) < 0) {
     problems.push(
       `${pkg} COUNT_LIMITS 覆盖的键 ${k} 在 DEFAULT_CONFIG 里不是非负整数: ${JSON.stringify(fallback)}`,
     );
-  } else if (Number.isInteger(limit) && fallback > limit) {
+  } else if (Number.isInteger(limit) && (fallback as number) > (limit as number)) {
     problems.push(
       `${pkg} DEFAULT_CONFIG.${k} = ${fallback} 超过 COUNT_LIMITS.${k} 上界 ${limit}（默认值本身越界）`,
     );
   }
 }
 
-function formatSurfaceSummaryLine(pkg, base, booleanKeys, countLimits) {
+function formatSurfaceSummaryLine(
+  pkg: string,
+  base: string[],
+  booleanKeys: unknown,
+  countLimits: unknown,
+): string {
   // 摘要里的计数用安全取值：类型不合法时上面已判红，这里不能再抛（报告要完整）。
   const boolCount = Array.isArray(booleanKeys) ? booleanKeys.length : "?";
   const limitCount =
@@ -534,7 +657,12 @@ function formatSurfaceSummaryLine(pkg, base, booleanKeys, countLimits) {
   return `${pkg} ${base.length} 键 × [defaults → normalizeConfig] 运行时取值全等 + BOOLEAN_KEYS ${boolCount} + COUNT_LIMITS ${limitCount}`;
 }
 
-function collectSurfaceReadmeWarnings(root, pkg, base, warnings) {
+function collectSurfaceReadmeWarnings(
+  root: string,
+  pkg: string,
+  base: string[],
+  warnings: string[],
+): void {
   // 量级 #12：README JSON 样例键集一致性——代码键缺文档仅 warn 不判红
   const readmePath = join(root, `packages/${pkg}/README.md`);
   let readmeText = null;
@@ -559,19 +687,24 @@ function collectSurfaceReadmeWarnings(root, pkg, base, warnings) {
  * 运行两包矩阵门禁（root 参数化：真实仓库根或 mkdtemp 副本根）。
  * @returns {{ pass: boolean, problems: string[], warnings: string[], lines: string[] }}
  */
-export function runConfigMatrix(root) {
-  const problems = [];
-  const warnings = [];
-  const lines = [];
+export function runConfigMatrix(root: string): {
+  pass: boolean;
+  problems: string[];
+  warnings: string[];
+  lines: string[];
+} {
+  const problems: string[] = [];
+  const warnings: string[] = [];
+  const lines: string[] = [];
   // 配置面声明来自 manifest（#733 计划项 3.1.1）：读不到/结构不合法即红——
   // 声明是门禁的输入面，它坏掉不能退化成「没有声明就跳过 notifier 段」。
-  let surfaces = [];
+  let surfaces: SurfaceDecl[] = [];
   try {
     const manifest = loadManifest(root);
-    surfaces = manifest.configSurfaces ?? [];
+    surfaces = (manifest.configSurfaces ?? []) as unknown as SurfaceDecl[];
   } catch (e) {
     problems.push(
-      `读取 configSurfaces 声明失败（scripts/data/plugins-manifest.json）：${e.message}`,
+      `读取 configSurfaces 声明失败（scripts/data/plugins-manifest.json）：${(e as Error).message}`,
     );
   }
   // 每个在 configSurfaces 声明的包都跑一遍声明驱动断言（#774：不再只认 notifier）。

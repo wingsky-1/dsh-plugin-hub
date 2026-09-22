@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck
 "use strict";
 
 /**
@@ -24,7 +23,7 @@ const NAME_RE = /^dsh-[a-z0-9-]+$/;
  * 枚举 packages/ 下的插件目录：仅目录（isDirectory 过滤，防同名文件裸栈）、
  * dsh- 前缀、排除聚合包、稳定排序。四个枚举入口共用此实现。
  */
-export function listPluginDirs(root) {
+export function listPluginDirs(root: string): string[] {
   return readdirSync(join(root, "packages"), { withFileTypes: true })
     .filter((e) => e.isDirectory() && e.name.startsWith("dsh-") && e.name !== AGGREGATE_NAME)
     .map((e) => e.name)
@@ -32,7 +31,7 @@ export function listPluginDirs(root) {
 }
 
 /** packages/ 下非 dsh- 前缀的目录警告（如 Dsh-Foo / dsh_foo 会被静默忽略，使其可见）。 */
-export function warnUnknownEntries(root) {
+export function warnUnknownEntries(root: string): void {
   for (const e of readdirSync(join(root, "packages"), { withFileTypes: true })) {
     if (e.isDirectory() && !e.name.startsWith("dsh-") && e.name !== AGGREGATE_NAME) {
       console.error(
@@ -43,17 +42,17 @@ export function warnUnknownEntries(root) {
 }
 
 /** `git ls-files --cached` 的原始输出（仓库根相对 posix 路径），pathspec 由调用方给。 */
-function lsFiles(root, pathspec) {
+function lsFiles(root: string, pathspec: string[]): string[] {
   const out = execFileSync("git", ["ls-files", "-z", "--cached", "--", ...pathspec], {
     cwd: root,
     encoding: "utf8",
   });
-  return out.split("\0").filter((p) => p.length > 0);
+  return out.split("\0").filter((p: string) => p.length > 0);
 }
 
 /** index 里 packages/ 下的目录名集：不过滤前缀、不过问磁盘存在性。 */
-function indexPackageDirNames(root) {
-  const names = new Set();
+function indexPackageDirNames(root: string): Set<string> {
+  const names = new Set<string>();
   for (const p of lsFiles(root, ["packages"])) {
     const slash = p.indexOf("/", "packages/".length);
     if (slash > 0) names.add(p.slice("packages/".length, slash));
@@ -73,16 +72,16 @@ function indexPackageDirNames(root) {
  * ∩ 磁盘存在这一半不可省：index 有、工作树已删（未 git rm）的目录若被当包枚举，下游按
  * package.json 读包会裸 ENOENT——与 filterOutRetiredDirs 当初要解决的是同一类故障。
  */
-export function listTrackedPluginDirs(root) {
+export function listTrackedPluginDirs(root: string): string[] {
   const indexed = indexPackageDirNames(root);
-  return listPluginDirs(root).filter((d) => indexed.has(d));
+  return listPluginDirs(root).filter((d: string) => indexed.has(d));
 }
 
 /**
  * 单个目录在 index 里是否有文件——反向断言专用。
  * pathspec 直接指到该目录，因此批量取数若因 pathspec 收窄而漏项，这里仍能给出独立答案。
  */
-export function isIndexedPackageDir(root, name) {
+export function isIndexedPackageDir(root: string, name: string): boolean {
   return lsFiles(root, [`packages/${name}`]).length > 0;
 }
 
@@ -93,10 +92,22 @@ export function isIndexedPackageDir(root, name) {
  * 校验依赖它：新目录必须登记 / 登记项必须存在）；本函数仅供「按 package.json 逐包
  * 消费」的入口过滤退役残留目录——出队顺序 = 物理枚举序，仅做名集过滤。
  */
-export function filterOutRetiredDirs(dirNames, manifest) {
-  const retiredNames = new Set((manifest.retired ?? []).map((r) => r.name));
-  const kept = [];
-  const skipped = [];
+interface RetiredEntry {
+  name: string;
+}
+interface DirManifest {
+  retired?: RetiredEntry[];
+}
+export function filterOutRetiredDirs(
+  dirNames: string[],
+  manifest: DirManifest,
+): {
+  kept: string[];
+  skipped: string[];
+} {
+  const retiredNames = new Set((manifest.retired ?? []).map((r: RetiredEntry) => r.name));
+  const kept: string[] = [];
+  const skipped: string[] = [];
   for (const d of dirNames) {
     if (retiredNames.has(d)) skipped.push(d);
     else kept.push(d);
@@ -104,13 +115,13 @@ export function filterOutRetiredDirs(dirNames, manifest) {
   return { kept, skipped };
 }
 
-function fail(msg) {
+function fail(msg: string): never {
   throw new Error(
     `scripts/data/plugins-manifest.json 解析失败：${msg}（schema 见 docs/DEVELOPMENT.md §4 插件清单）`,
   );
 }
 
-function checkName(name, where) {
+function checkName(name: unknown, where: string): void {
   if (typeof name !== "string" || !NAME_RE.test(name)) {
     fail(`${where} 含非法名字 ${JSON.stringify(name)}（须匹配 ${NAME_RE}）`);
   }
@@ -122,18 +133,24 @@ function checkName(name, where) {
  * 禁止裸 SyntaxError 栈。
  */
 /** 读取 manifest 文件并校验顶层形状；IO / 语法 / 缺节一律走单行友好错误。 */
-function readManifestJson(root) {
-  let raw;
+interface RawManifest {
+  active: string[];
+  retired: unknown[];
+  standalone?: unknown;
+  configSurfaces?: unknown;
+}
+function readManifestJson(root: string): RawManifest & Record<string, unknown> {
+  let raw: string;
   try {
     raw = readFileSync(join(root, ...MANIFEST_PATH_SEGMENTS), "utf8");
   } catch (e) {
-    fail(`无法读取文件：${e.message}`);
+    fail(`无法读取文件：${(e as Error).message}`);
   }
-  let json;
+  let json: Record<string, unknown>;
   try {
-    json = JSON.parse(raw);
+    json = JSON.parse(raw) as Record<string, unknown>;
   } catch (e) {
-    fail(`JSON 语法错误：${e.message}`);
+    fail(`JSON 语法错误：${(e as Error).message}`);
   }
   if (typeof json !== "object" || json === null || !Array.isArray(json.active)) {
     fail("缺 active 数组");
@@ -141,12 +158,12 @@ function readManifestJson(root) {
   if (!Array.isArray(json.retired)) {
     fail("缺 retired 数组");
   }
-  return json;
+  return json as RawManifest & Record<string, unknown>;
 }
 
 /** active 数组：逐个校验名字合规与重复项，返回名字集供下游互斥校验。 */
-function collectActive(active) {
-  const seen = new Set();
+function collectActive(active: string[]): Set<string> {
+  const seen = new Set<string>();
   for (const name of active) {
     checkName(name, "active");
     if (seen.has(name)) fail(`active 数组重复项：${name}`);
@@ -156,8 +173,8 @@ function collectActive(active) {
 }
 
 /** standalone 数组（可选，缺省空集）：名字合规、自身不重复，且不与 active 重名。 */
-function collectStandalone(standalone, seenActive) {
-  const seen = new Set();
+function collectStandalone(standalone: string[], seenActive: Set<string>): Set<string> {
+  const seen = new Set<string>();
   for (const name of standalone) {
     checkName(name, "standalone");
     if (seen.has(name)) fail(`standalone 数组重复项：${name}`);
@@ -168,15 +185,22 @@ function collectStandalone(standalone, seenActive) {
 }
 
 /** retired 数组：名字合规、自身不重复，且不与 active / standalone 重名。 */
-function checkRetired(retired, seenActive, seenStandalone) {
-  const seen = new Set();
+function checkRetired(
+  retired: unknown[],
+  seenActive: Set<string>,
+  seenStandalone: Set<string>,
+): void {
+  const seen = new Set<string>();
   for (const item of retired) {
     if (typeof item !== "object" || item === null) fail("retired 数组含非对象项");
-    checkName(item.name, "retired");
-    if (seen.has(item.name)) fail(`retired 数组重复项：${item.name}`);
-    seen.add(item.name);
-    if (seenActive.has(item.name)) fail(`${item.name} 同时出现在 active 与 retired`);
-    if (seenStandalone.has(item.name)) fail(`${item.name} 同时出现在 standalone 与 retired`);
+    const entry = item as Record<string, unknown>;
+    checkName(entry.name, "retired");
+    if (seen.has(entry.name as string)) fail(`retired 数组重复项：${entry.name as string}`);
+    seen.add(entry.name as string);
+    if (seenActive.has(entry.name as string))
+      fail(`${entry.name as string} 同时出现在 active 与 retired`);
+    if (seenStandalone.has(entry.name as string))
+      fail(`${entry.name as string} 同时出现在 standalone 与 retired`);
   }
 }
 
@@ -188,7 +212,13 @@ const SURFACE_FACES = ["defaults", "normalizer", "booleanKeys", "countLimits"];
  * 它与「漏登记」在数据上长得一样，理由就是两者的区别；同时禁止再带任何面字段，否则
  * 「无配置面」会被当成省略校验的旁路。
  */
-function checkSurfaceNone(item) {
+interface SurfaceItem {
+  package: string;
+  surface?: unknown;
+  reason?: unknown;
+  [key: string]: unknown;
+}
+function checkSurfaceNone(item: SurfaceItem): void {
   if (typeof item.reason !== "string" || item.reason.length === 0) {
     fail(`configSurfaces.${item.package} 声明 surface: "none" 时必填 reason（为什么没有配置面）`);
   }
@@ -207,41 +237,49 @@ function checkSurfaceNone(item) {
  * 未导出、导致这两层约束无法在门禁侧恢复；notifier 侧导出后在此要求必备——没有的包应显式
  * 声明空数组/空对象，而不是省略字段（省略会让门禁静默失去该维度）。
  */
-function checkSurfaceFaces(item) {
+function checkSurfaceFaces(item: SurfaceItem): void {
   for (const field of SURFACE_FACES) {
-    const face = item[field];
+    const face: unknown = item[field];
     if (typeof face !== "object" || face === null)
       fail(`configSurfaces.${item.package}.${field} 缺声明对象`);
-    if (typeof face.module !== "string" || face.module.length === 0)
+    const faceRecord = face as Record<string, unknown>;
+    if (typeof faceRecord.module !== "string" || (faceRecord.module as string).length === 0)
       fail(`configSurfaces.${item.package}.${field}.module 缺失`);
-    if (typeof face.export !== "string" || face.export.length === 0)
+    if (typeof faceRecord.export !== "string" || (faceRecord.export as string).length === 0)
       fail(`configSurfaces.${item.package}.${field}.export 缺失`);
   }
 }
 
 /** 单个 configSurfaces 条目：包名归属、重复登记、两种形态二选一。 */
-function checkSurfaceEntry(item, knownPackages, declared) {
+function checkSurfaceEntry(item: unknown, knownPackages: string[], declared: Set<string>): void {
   const where = "configSurfaces";
   if (typeof item !== "object" || item === null) fail(`${where} 含非对象项`);
-  checkName(item.package, where);
-  if (!knownPackages.includes(item.package)) {
-    fail(`${where} 声明了不在 active ∪ standalone 的包：${item.package}`);
+  const entry = item as SurfaceItem;
+  checkName(entry.package, where);
+  if (!knownPackages.includes(entry.package)) {
+    fail(`${where} 声明了不在 active ∪ standalone 的包：${entry.package}`);
   }
-  if (declared.has(item.package)) fail(`configSurfaces 数组重复登记：${item.package}`);
-  declared.add(item.package);
-  if (item.surface !== undefined && item.surface !== "none") {
+  if (declared.has(entry.package)) fail(`configSurfaces 数组重复登记：${entry.package}`);
+  declared.add(entry.package);
+  if (entry.surface !== undefined && entry.surface !== "none") {
     fail(
-      `configSurfaces.${item.package}.surface 取值只能是 "none"（当前 ${JSON.stringify(item.surface)}）`,
+      `configSurfaces.${entry.package}.surface 取值只能是 "none"（当前 ${JSON.stringify(entry.surface)}）`,
     );
   }
-  if (item.surface === "none") checkSurfaceNone(item);
-  else checkSurfaceFaces(item);
+  if (entry.surface === "none") checkSurfaceNone(entry);
+  else checkSurfaceFaces(entry);
 }
 
-export function loadManifest(root) {
+interface LoadedManifest {
+  active: string[];
+  standalone: string[];
+  retired: RetiredEntry[];
+  configSurfaces: Record<string, unknown>[];
+}
+export function loadManifest(root: string): LoadedManifest {
   const json = readManifestJson(root);
   // standalone：独立发包、不进聚合包的插件（demo 演进等）；可选，缺省空集。
-  const standalone = Array.isArray(json.standalone) ? json.standalone : [];
+  const standalone = Array.isArray(json.standalone) ? (json.standalone as string[]) : [];
   const seenActive = collectActive(json.active);
   const seenStandalone = collectStandalone(standalone, seenActive);
   checkRetired(json.retired, seenActive, seenStandalone);
@@ -250,8 +288,8 @@ export function loadManifest(root) {
   // （新包不登记就红）。#774 收口后「尚未接管」的 pending 节已删除：那批包全部转为正式声明，
   // 登记不再有中途态，也就没有第二个入口需要校验。
   const knownPackages = [...seenActive, ...seenStandalone];
-  const surfaces = Array.isArray(json.configSurfaces) ? json.configSurfaces : [];
-  const declared = new Set();
+  const surfaces = Array.isArray(json.configSurfaces) ? (json.configSurfaces as unknown[]) : [];
+  const declared = new Set<string>();
   for (const item of surfaces) checkSurfaceEntry(item, knownPackages, declared);
   for (const name of knownPackages) {
     if (!declared.has(name)) {
@@ -263,8 +301,8 @@ export function loadManifest(root) {
   return {
     active: [...seenActive],
     standalone: [...seenStandalone],
-    retired: json.retired.map((r) => ({ ...r })),
-    configSurfaces: surfaces.map((s) => ({ ...s })),
+    retired: (json.retired as RetiredEntry[]).map((r: RetiredEntry) => ({ ...r })),
+    configSurfaces: surfaces.map((s: unknown) => ({ ...(s as Record<string, unknown>) })),
   };
 }
 
@@ -281,11 +319,16 @@ export function loadManifest(root) {
  * 目录集语义：active（进聚合）∪ standalone（独立发包）都必须真实存在；retired 包目录应删除，
  * 不在此列——残留目录（T1）属清理债：告警不判红，但仍强制「新目录必须登记」守卫（方向 B）。
  */
-function checkDirSets(manifest, dirNames) {
-  const problems = [];
+interface ConsistencyManifest {
+  active: string[];
+  standalone?: string[];
+  retired: { name: string }[];
+}
+function checkDirSets(manifest: ConsistencyManifest, dirNames: string[]): string[] {
+  const problems: string[] = [];
   const actual = new Set(dirNames);
   const expected = new Set([...manifest.active, ...(manifest.standalone ?? [])]);
-  const retiredNames = new Set(manifest.retired.map((r) => r.name));
+  const retiredNames = new Set(manifest.retired.map((r: { name: string }) => r.name));
 
   // #1 目录集 == active ∪ standalone 集（双向）：新目录必须登记；登记项必须真实存在
   for (const d of [...manifest.active, ...(manifest.standalone ?? [])]) {
@@ -312,7 +355,12 @@ function checkDirSets(manifest, dirNames) {
 }
 
 /** 单个「多出」的聚合依赖 → 判词。三类各自的措辞是既有契约（自测按字面锁定），不合并措辞。 */
-function extraDepProblem(dep, short, standaloneNames, retiredNames) {
+function extraDepProblem(
+  dep: string,
+  short: string,
+  standaloneNames: Set<string>,
+  retiredNames: Set<string>,
+): string {
   if (standaloneNames.has(short)) {
     return `deps 多出独立发包 ${dep} —— standalone 插件不进聚合包，请删除该依赖行`;
   }
@@ -326,12 +374,15 @@ function extraDepProblem(dep, short, standaloneNames, retiredNames) {
  * #2 聚合包 dependencies 键集 == active 映射集（双向；只比键集合不比值——开发态 workspace:*、
  * 发布时 pnpm 替换版本号，存在即认可）。第三方依赖不归本校验管。
  */
-function checkAggregateDeps(manifest, aggDeps) {
-  const problems = [];
-  const own = Object.keys(aggDeps).filter((k) => k.startsWith(NPM_SCOPE));
-  const expectedDeps = new Set(manifest.active.map((d) => NPM_SCOPE + d));
+function checkAggregateDeps(
+  manifest: ConsistencyManifest,
+  aggDeps: Record<string, string>,
+): string[] {
+  const problems: string[] = [];
+  const own = Object.keys(aggDeps).filter((k: string) => k.startsWith(NPM_SCOPE));
+  const expectedDeps = new Set(manifest.active.map((d: string) => NPM_SCOPE + d));
   const standaloneNames = new Set(manifest.standalone ?? []);
-  const retiredNames = new Set(manifest.retired.map((r) => r.name));
+  const retiredNames = new Set(manifest.retired.map((r: { name: string }) => r.name));
   for (const dep of own) {
     if (expectedDeps.has(dep)) continue;
     problems.push(extraDepProblem(dep, dep.slice(NPM_SCOPE.length), standaloneNames, retiredNames));
@@ -348,13 +399,17 @@ function checkAggregateDeps(manifest, aggDeps) {
  * active 子包 patch 的实际 insert id——客户端插件 ui-<dir>、纯宿主插件如 dsh-verify-isolated
  * 用 skill- 前缀）；缺省回退历史「ui-<dir>」约定（防「门禁假设所有插件都有客户端」的过强断言）。
  */
-function checkAggregatePatchIds(manifest, aggPatchIds, expectedPatchIds) {
-  const problems = [];
+function checkAggregatePatchIds(
+  manifest: ConsistencyManifest,
+  aggPatchIds: string[],
+  expectedPatchIds: string[] | undefined,
+): string[] {
+  const problems: string[] = [];
   // 重复行检测（Set 去重会吞掉「同 id 多行」漂移，单独比对长度闭合该缺口）
-  const dupIds = aggPatchIds.filter((id, i) => aggPatchIds.indexOf(id) !== i);
+  const dupIds = aggPatchIds.filter((id: string, i: number) => aggPatchIds.indexOf(id) !== i);
   if (dupIds.length > 0)
     problems.push(`聚合 patch 存在重复 id 行: ${[...new Set(dupIds)].join(", ")}`);
-  const expectedIds = new Set(expectedPatchIds ?? manifest.active.map((d) => `ui-${d}`));
+  const expectedIds = new Set(expectedPatchIds ?? manifest.active.map((d: string) => `ui-${d}`));
   const actualIds = new Set(aggPatchIds);
   for (const id of expectedIds) {
     if (!actualIds.has(id)) problems.push(`聚合 patch 缺 ${id}（active 在册但无聚合行）`);
@@ -371,7 +426,13 @@ export function checkAggregateConsistency({
   aggDeps,
   aggPatchIds,
   expectedPatchIds,
-}) {
+}: {
+  dirNames: string[];
+  manifest: ConsistencyManifest;
+  aggDeps?: Record<string, string>;
+  aggPatchIds?: string[];
+  expectedPatchIds?: string[];
+}): string[] {
   return [
     ...checkDirSets(manifest, dirNames),
     ...(aggDeps === undefined ? [] : checkAggregateDeps(manifest, aggDeps)),

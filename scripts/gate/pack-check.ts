@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck
 "use strict";
 
 /**
@@ -53,8 +52,8 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 // 路径（workspace 零落盘）；父目录不存在时逐级建出。仅镜像 stdout（判据行），stderr 的
 // 跳过告警不进证据文件。落盘与 verify-version / observe-precheck 同果：证据写不下来 =
 // 没有证据，一律 fail-closed（exit 1，判词注明证据缺失）——判据绿但证据缺失不得放行。
-function parseLogFile(argv) {
-  const eq = argv.findLast(function (a) {
+function parseLogFile(argv: string[]): string | null {
+  const eq = argv.findLast(function (a: string): boolean {
     return a.startsWith("--log-file=");
   });
   if (eq !== undefined) {
@@ -68,16 +67,24 @@ function parseLogFile(argv) {
 }
 const LOG_FILE = parseLogFile(process.argv.slice(2));
 if (LOG_FILE !== null) {
-  const chunks = [];
+  const chunks: string[] = [];
   const origWrite = process.stdout.write.bind(process.stdout);
-  process.stdout.write = function (chunk, encoding, cb) {
+  process.stdout.write = function (
+    chunk: string | Uint8Array,
+    encoding?: BufferEncoding,
+    cb?: (err?: Error | null) => void,
+  ): boolean {
     try {
       chunks.push(typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8"));
     } catch {
       // 镜像失败不影响判据输出
     }
-    return origWrite(chunk, encoding, cb);
-  };
+    return origWrite(
+      chunk,
+      encoding as Parameters<typeof origWrite>[1],
+      cb as Parameters<typeof origWrite>[2],
+    );
+  } as typeof process.stdout.write;
   // 同步落盘：失败抛错，调用方一律转 fail-closed（exit 1）。
   const flushLogFile = function () {
     mkdirSync(dirname(LOG_FILE), { recursive: true });
@@ -86,7 +93,7 @@ if (LOG_FILE !== null) {
   // 证据缺失判词（与 verify-version / observe-precheck 同形，可检索；显式出口与
   // exit 钩子各落盘一次，判词只打一行）。
   let reported = false;
-  const reportLogFailure = function (err) {
+  const reportLogFailure = function (err: unknown): void {
     if (reported) return;
     reported = true;
     try {
@@ -95,7 +102,7 @@ if (LOG_FILE !== null) {
         "[log-file] 证据缺失：落盘失败（" +
           LOG_FILE +
           "）：" +
-          (err && err.message) +
+          ((err as { message?: unknown })?.message ?? err) +
           "（fail-closed，退出码置 1）\n",
       );
     } catch {
@@ -143,7 +150,7 @@ let manifest;
 try {
   manifest = loadManifest(ROOT);
 } catch (e) {
-  console.log(`FAIL plugins-manifest | ${e.message}`);
+  console.log(`FAIL plugins-manifest | ${(e as Error).message}`);
   process.exit(1);
 }
 // 断言面取 git index ∩ 磁盘存在，不取物理目录集（理由与代价见 lib 的 listTrackedPluginDirs）。
@@ -153,7 +160,7 @@ try {
   trackedDirs = listTrackedPluginDirs(ROOT);
 } catch (e) {
   console.log(
-    `FAIL plugins-manifest | 无法从 git index 派生包目录：${String(e.message).split("\n")[0]}`,
+    `FAIL plugins-manifest | 无法从 git index 派生包目录：${String((e as Error).message).split("\n")[0]}`,
   );
   process.exit(1);
 }
@@ -235,8 +242,8 @@ for (const p of targets) {
       cwd: ROOT,
       stdio: "pipe",
     });
-    const tgz = readdirSync(tmp).find((f) => f.endsWith(".tgz"));
-    execFileSync("tar", tarArgs(["-xzf", join(tmp, tgz), "-C", tmp]));
+    const tgz = readdirSync(tmp).find((f: string) => f.endsWith(".tgz"));
+    execFileSync("tar", tarArgs(["-xzf", join(tmp, tgz!), "-C", tmp]));
     const pkgRoot = join(tmp, "package");
 
     const problems = [];
@@ -318,7 +325,9 @@ for (const p of targets) {
         try {
           for (const r of readMermaidChunkRefs(join(pkgRoot, "lib"))) inlined.add(r.name);
         } catch (e) {
-          problems.push(`client-mermaid.deps.json 校验失败: ${String(e.message).split("\n")[0]}`);
+          problems.push(
+            `client-mermaid.deps.json 校验失败: ${String((e as Error).message).split("\n")[0]}`,
+          );
         }
         if (!existsSync(join(pkgRoot, "lib", "client-mermaid.deps.json"))) {
           problems.push(
@@ -363,7 +372,7 @@ for (const p of targets) {
       try {
         vendored = vendoredEntriesFor(ROOT, `packages/${p}`);
       } catch (e) {
-        problems.push(`vendored 登记表不可读：${String(e.message).split("\n")[0]}`);
+        problems.push(`vendored 登记表不可读：${String((e as Error).message).split("\n")[0]}`);
       }
       for (const problem of checkVendoredTarball(pkgRoot, `packages/${p}`, vendored)) {
         problems.push(problem);
@@ -377,7 +386,7 @@ for (const p of targets) {
     if (existsSync(clientPath)) {
       const { factories, error } = executeClient(readFileSync(clientPath, "utf8"));
       if (error) {
-        problems.push(`client 产物执行失败: ${String(error.message).split("\n")[0]}`);
+        problems.push(`client 产物执行失败: ${String((error as Error).message).split("\n")[0]}`);
       } else if (!factories.has(name)) {
         problems.push(
           `client load id 与包名不一致（注册: ${[...factories.keys()].join(",") || "无"}，期望: ${name}）`,
@@ -404,7 +413,7 @@ for (const p of targets) {
     );
   } catch (e) {
     failed++;
-    console.log(`FAIL ${name} | ${String(e.message).split("\n")[0]}`);
+    console.log(`FAIL ${name} | ${String((e as Error).message).split("\n")[0]}`);
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }
@@ -448,10 +457,10 @@ for (const p of targets) {
         cwd: ROOT,
         stdio: "pipe",
       });
-      const tgz = readdirSync(tmp).find((f) => f.endsWith(".tgz"));
-      execFileSync("tar", tarArgs(["-xzf", join(tmp, tgz), "-C", tmp]));
+      const tgz = readdirSync(tmp).find((f: string) => f.endsWith(".tgz"));
+      execFileSync("tar", tarArgs(["-xzf", join(tmp, tgz!), "-C", tmp]));
       const pkgRoot = join(tmp, "package");
-      const problems = [];
+      const problems: string[] = [];
       if (!existsSync(join(pkgRoot, "lib", "index.js"))) problems.push("缺 lib/index.js");
       const patch = existsSync(join(pkgRoot, "cordis.patch.yml"))
         ? readFileSync(join(pkgRoot, "cordis.patch.yml"), "utf8")
@@ -490,7 +499,7 @@ for (const p of targets) {
       );
     } catch (e) {
       failed++;
-      console.log(`FAIL ${aggName} | ${String(e.message).split("\n")[0]}`);
+      console.log(`FAIL ${aggName} | ${String((e as Error).message).split("\n")[0]}`);
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
