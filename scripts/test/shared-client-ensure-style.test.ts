@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck
 "use strict";
 
 /**
@@ -25,14 +24,33 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { ensureStyle } from "../../shared/client/ensure-style.js";
 
+/** 最小 Element 桩形态（对照文件头注释的桩约定）。 */
+interface StubNode {
+  tag: string;
+  id: string;
+  textContent: string;
+  dataset: Record<string, string>;
+  parentElement: unknown;
+  remove: () => void;
+}
+/** head 容器：节点数组 + ensureStyle 唯一用到的 appendChild（缺失态由调用方 whole 置 null 模拟）。 */
+interface StubHead extends Array<StubNode> {
+  appendChild?: (node: StubNode) => void;
+}
+/** 桩 document 形态：head 可 whole 置 null（契约 6 的输入形态）。 */
+interface StubDocument {
+  head: StubHead | null;
+  getElementById: (id: string) => StubNode | null;
+  createElement: (tag: string) => StubNode;
+}
 /** 最小 DOM 桩：head 容器数组 + 按 id 索引 + createElement/remove 计数。 */
 function makeDom() {
   const counts = { created: 0, removed: 0, appended: 0 };
-  const byId = new Map();
-  const nodes = [];
-  const head = [];
-  function makeNode(tag) {
-    const node = {
+  const byId = new Map<string, StubNode>();
+  const nodes: StubNode[] = [];
+  const head: StubHead = [];
+  function makeNode(tag: string): StubNode {
+    const node: StubNode = {
       tag,
       id: "",
       textContent: "",
@@ -50,32 +68,33 @@ function makeDom() {
     };
     return node;
   }
-  const documentStub = {
+  // appendChild 由 head 容器承接（ensureStyle 只用 document.head.appendChild）
+  head.appendChild = (node: StubNode) => {
+    counts.appended += 1;
+    node.parentElement = head;
+    head.push(node);
+    if (node.id !== "") byId.set(node.id, node);
+  };
+  const documentStub: StubDocument = {
     head,
-    getElementById(id) {
+    getElementById(id: string) {
       return byId.get(id) ?? null;
     },
-    createElement(tag) {
+    createElement(tag: string) {
       counts.created += 1;
       const node = makeNode(tag);
       nodes.push(node);
       return node;
     },
   };
-  // appendChild 由 head 容器承接（ensureStyle 只用 document.head.appendChild）
-  documentStub.head.appendChild = (node) => {
-    counts.appended += 1;
-    node.parentElement = head;
-    head.push(node);
-    if (node.id !== "") byId.set(node.id, node);
-  };
   return { document: documentStub, counts, head, nodes };
 }
 
-/** 在桩环境下跑一步（临时替换全局 document，跑完还原）。 */
-function withDom(dom, fn) {
+/** 在桩环境下跑一步（临时替换全局 document，跑完还原）。桩不是完整 Document，
+ * 挂载到 globalThis 上是测试 harness 的已知近似（实现侧按鸭子类型只用三成员）。 */
+function withDom(dom: { document: StubDocument }, fn: () => void) {
   const prev = globalThis.document;
-  globalThis.document = dom.document;
+  globalThis.document = dom.document as unknown as Document;
   try {
     fn();
   } finally {
@@ -88,7 +107,7 @@ const CSS_B = ".x{color:blue}";
 
 test("首次注入：head 挂 1 个 style 节点，id/cssText 落位", () => {
   const dom = makeDom();
-  withDom(dom, () => {
+  withDom(dom, (): void => {
     const dispose = ensureStyle({ id: "dsh-demo-style", cssText: CSS_A });
     assert.equal(typeof dispose, "function", "返回 disposer");
     assert.equal(dom.head.length, 1);
@@ -100,7 +119,7 @@ test("首次注入：head 挂 1 个 style 节点，id/cssText 落位", () => {
 
 test("同 id 幂等：重复调用仅 1 节点，不重建", () => {
   const dom = makeDom();
-  withDom(dom, () => {
+  withDom(dom, (): void => {
     ensureStyle({ id: "dsh-demo-style", cssText: CSS_A });
     ensureStyle({ id: "dsh-demo-style", cssText: CSS_A });
     assert.equal(dom.head.length, 1);
@@ -111,7 +130,7 @@ test("同 id 幂等：重复调用仅 1 节点，不重建", () => {
 
 test("version 变化 → 旧节点 remove 后重建（热更新失效）", () => {
   const dom = makeDom();
-  withDom(dom, () => {
+  withDom(dom, (): void => {
     ensureStyle({ id: "dsh-demo-style", cssText: CSS_A, version: "1" });
     const first = dom.nodes[0];
     assert.equal(first.dataset.version, "1");
@@ -126,7 +145,7 @@ test("version 变化 → 旧节点 remove 后重建（热更新失效）", () =>
 
 test("同 version → 不重建（节点引用不变、cssText 不覆盖）", () => {
   const dom = makeDom();
-  withDom(dom, () => {
+  withDom(dom, (): void => {
     ensureStyle({ id: "dsh-demo-style", cssText: CSS_A, version: "1" });
     const first = dom.nodes[0];
     ensureStyle({ id: "dsh-demo-style", cssText: CSS_B, version: "1" });
@@ -138,7 +157,7 @@ test("同 version → 不重建（节点引用不变、cssText 不覆盖）", ()
 
 test("无 version → 不写 dataset.version", () => {
   const dom = makeDom();
-  withDom(dom, () => {
+  withDom(dom, (): void => {
     ensureStyle({ id: "dsh-demo-style", cssText: CSS_A });
     assert.equal(Object.keys(dom.nodes[0].dataset).length, 0, "dataset.version 不存在");
   });
@@ -147,7 +166,7 @@ test("无 version → 不写 dataset.version", () => {
 test("head 缺失 → 静默 return 不抛（no-op），返回函数可安全调用", () => {
   const dom = makeDom();
   dom.document.head = null;
-  withDom(dom, () => {
+  withDom(dom, (): void => {
     assert.doesNotThrow(() => {
       const dispose = ensureStyle({ id: "dsh-demo-style", cssText: CSS_A });
       assert.equal(typeof dispose, "function");
@@ -160,7 +179,7 @@ test("head 缺失 → 静默 return 不抛（no-op），返回函数可安全调
 
 test("remove（disposer 卸载）后再 ensureStyle → 重新注入", () => {
   const dom = makeDom();
-  withDom(dom, () => {
+  withDom(dom, (): void => {
     const dispose = ensureStyle({ id: "dsh-demo-style", cssText: CSS_A });
     assert.equal(dom.head.length, 1);
     dispose();
@@ -174,7 +193,11 @@ test("remove（disposer 卸载）后再 ensureStyle → 重新注入", () => {
 });
 
 test("参数契约：id/cssText 缺失抛 TypeError（编程错误 fail-loud）", () => {
-  assert.throws(() => ensureStyle({ cssText: CSS_A }), TypeError);
-  assert.throws(() => ensureStyle({ id: "x" }), TypeError);
+  // 缺字段是故意的反例输入（fail-loud 契约）：实现仍按 JSDoc 把两字段标为必填，测试侧整体断言。
+  assert.throws(
+    () => ensureStyle({ cssText: CSS_A } as Parameters<typeof ensureStyle>[0]),
+    TypeError,
+  );
+  assert.throws(() => ensureStyle({ id: "x" } as Parameters<typeof ensureStyle>[0]), TypeError);
   assert.throws(() => ensureStyle({ id: "", cssText: CSS_A }), TypeError);
 });

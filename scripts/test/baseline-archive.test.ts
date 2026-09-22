@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck
 "use strict";
 
 /**
@@ -39,7 +38,7 @@ import {
 const ROOT = join(import.meta.dirname, "..", "..");
 
 /** 造一页 artifact API 响应。 */
-function page(names, totalCount) {
+function page(names: string[], totalCount?: number) {
   return { total_count: totalCount ?? names.length, artifacts: names.map((name) => ({ name })) };
 }
 
@@ -127,7 +126,7 @@ test("产物筛选：只认 mutation-incremental- 前缀，且容忍脏数据", 
     { name: "mutation-incremental-dsh-notifier-sdk" },
   ]);
   assert.deepEqual(
-    picked.map((a) => a.name),
+    picked.map((a: { name: string }) => a.name),
     ["mutation-incremental-dsh-mcp-manager-entry", "mutation-incremental-dsh-notifier-sdk"],
   );
 });
@@ -203,12 +202,12 @@ test("回归：旧实现（只读第 1 页）会丢段，新实现拿全 31 段"
     "mutation-incremental-dsh-web-file-preview-0",
     ...Array.from({ length: 15 }, (_, i) => `mutation-incremental-pkg-${i + 14}`),
   ];
-  const others = (n) => Array.from({ length: n }, (_, i) => `report-${i}`);
+  const others = (n: number) => Array.from({ length: n }, (_, i) => `report-${i}`);
   const page1 = [...mutPage1, ...others(16)];
   const page2 = [...mutPage2, ...others(23)];
   assert.equal(page1.length + page2.length, 70, "fixture 应与真实 run 的 total_count 同形");
 
-  let items = [];
+  let items: { name: string }[] = [];
   const first = mergeArtifactPage(items, page(page1, 70), 1);
   const oldWay = mutationArtifacts(first.items); // 旧实现停在第 1 页
   items = first.items;
@@ -221,9 +220,9 @@ test("回归：旧实现（只读第 1 页）会丢段，新实现拿全 31 段"
     "mutation-incremental-dsh-provider-usage-errsurf",
     "mutation-incremental-dsh-web-file-preview-0",
   ]) {
-    assert.ok(!oldWay.some((a) => a.name === name), `旧实现应缺失 ${name}`);
+    assert.ok(!oldWay.some((a: { name: string }) => a.name === name), `旧实现应缺失 ${name}`);
     assert.ok(
-      newWay.some((a) => a.name === name),
+      newWay.some((a: { name: string }) => a.name === name),
       `新实现应包含 ${name}`,
     );
   }
@@ -258,7 +257,7 @@ test("#718: restore 三态判定 —— 「取不到」与「不存在」必须�
   // 探针说「广告里没有」才是首夜，允许降级为全量变异。
   const bootstrap = decideRestoreOutcome({ probeStatus: "absent", fetchOk: false });
   assert.equal(bootstrap.action, "bootstrap");
-  assert.ok(bootstrap.reason.includes("安全降级为全量变异"), "首夜文案保持既有约定");
+  assert.ok(bootstrap.reason?.includes("安全降级为全量变异"), "首夜文案保持既有约定");
 
   // ref 确实在、只是取不到 → 数据故障，任何调用方都不得放宽（写路径上意味着删段）。
   const fetchFailed = decideRestoreOutcome({ probeStatus: "present", fetchOk: false });
@@ -269,7 +268,7 @@ test("#718: restore 三态判定 —— 「取不到」与「不存在」必须�
   assert.equal(unreachable.action, "fail", "远端不可达不得降级为首夜");
   assert.notEqual(fetchFailed.reason, unreachable.reason, "两种 fail 原因应可区分，便于定位");
   for (const r of [fetchFailed, unreachable]) {
-    assert.ok(!r.reason.includes("安全降级"), "fail 分支不得复用降级文案");
+    assert.ok(!r.reason?.includes("安全降级"), "fail 分支不得复用降级文案");
   }
 
   // 未知状态属于编程错误：宁可判红，也不能默默降级。
@@ -365,7 +364,8 @@ test("#718 S1.2: 回滚快照 tag —— 名字含旧 tip 短 sha，保留窗口
 // ── #718 S2.1 第二版：overlay 的「本该有产物却没有」三态分流 ──────────────────
 
 /** `/jobs` 返回的条目形态——只有 name 与 conclusion 两列对本判据有意义。 */
-const job = (name, conclusion) => ({ name, conclusion });
+// conclusion 含 null/undefined：非「执行过」的结论（queued/in_progress/未知取值）是故意的反例输入。
+const job = (name: string, conclusion: string | null | undefined) => ({ name, conclusion });
 /** 实测形态（PR #778 的成功 CI run）：job 级 if 为假时 GHA 仍返回条目，名字保持未展开。 */
 const SKIPPED_PLACEHOLDER = "Mutation gate (${{ matrix.combo.package }} · ${{ matrix.combo.seg }})";
 

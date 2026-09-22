@@ -1,4 +1,3 @@
-// @ts-nocheck
 "use strict";
 
 /**
@@ -29,7 +28,32 @@ const ROOT = join(import.meta.dirname, "..", "..");
 const GENERATOR = join(ROOT, "scripts", "gate", "gen-stryker-conf.mjs");
 const PKG = "fixture-pkg";
 
-const TOPOLOGY = {
+/** fixture 拓扑宽形态：各用例按需增删段/层/元键乃至非法值（fail-closed 反例），窄字面量类型承接不了，
+ * 故声明一次宽形态；形状合法性本身由门禁实现断言，测试侧不断言类型。 */
+interface FixtureSegment {
+  mutate: string[];
+  excludes: string[];
+  testFiles?: string;
+  [key: string]: unknown;
+}
+interface FixturePackage {
+  testLayers?: unknown;
+  segments: Record<string, FixtureSegment>;
+  enableMutations?: unknown;
+  [key: string]: unknown;
+}
+interface FixtureTopology {
+  $testLayers: {
+    layers: Record<string, string>;
+    mutationLayers: string[];
+    mutationExcludeLayers: string[];
+  };
+  sharedDefaults: Record<string, unknown>;
+  packages: Record<string, FixturePackage>;
+  $noMutationPackages?: Record<string, string>;
+  [key: string]: unknown;
+}
+const TOPOLOGY: FixtureTopology = {
   $testLayers: {
     layers: {
       unit: "test/unit/**/*.test.ts",
@@ -87,8 +111,8 @@ const BASE_FILES = {
  * scripts/test/threshold-monotonic.test.ts 的 gitFixture 同款做法（fixture 自带 user.name /
  * user.email，不依赖宿主 git 配置）。
  */
-function commitBase(root) {
-  const git = (...args) => spawnSync("git", args, { cwd: root, encoding: "utf8" });
+function commitBase(root: string) {
+  const git = (...args: string[]) => spawnSync("git", args, { cwd: root, encoding: "utf8" });
   git("init", "-q");
   git("config", "user.email", "test@example.invalid");
   git("config", "user.name", "test");
@@ -97,7 +121,10 @@ function commitBase(root) {
 }
 
 /** 造 fixture 仓库根（含拓扑与 stryker.conf.d），返回根路径。 */
-function makeFixtureRoot(extraFiles = {}, topologyOverride = TOPOLOGY) {
+function makeFixtureRoot(
+  extraFiles: Record<string, string> = {},
+  topologyOverride: unknown = TOPOLOGY,
+) {
   const root = mkdtempSync(join(tmpdir(), "s2b-fixture-"));
   const files = {
     ...BASE_FILES,
@@ -115,7 +142,7 @@ function makeFixtureRoot(extraFiles = {}, topologyOverride = TOPOLOGY) {
 }
 
 /** 主线程上的同步毫秒退避：Atomics.wait 是 Node 里唯一不烧 CPU 的同步 sleep。 */
-function sleepSync(ms) {
+function sleepSync(ms: number) {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 }
 
@@ -136,20 +163,21 @@ function sleepSync(ms) {
  * 296/300 vs 裸调 298/300 次 ENOTEMPTY）。退避改在 JS 里按毫秒计，口径与原来的
  * maxRetries: 10 + retryDelay: 50 线性退避一致（上限 2.75s）；窗口过后仍删不掉照样抛。
  */
-function removeFixtureRoot(root) {
+function removeFixtureRoot(root: string) {
   for (let attempt = 0; ; attempt++) {
     try {
       rmSync(root, { recursive: true, force: true });
       return;
     } catch (err) {
-      if (err.code !== "ENOTEMPTY" || attempt >= 10) throw err;
+      // 非 Error 投掷按未知故障上抛：只有 ENOTEMPTY 值得退避重试。
+      if ((err as { code?: unknown }).code !== "ENOTEMPTY" || attempt >= 10) throw err;
       sleepSync((attempt + 1) * 50);
     }
   }
 }
 
 /** 覆写 fixture 工作区的拓扑（基准 commit 不变 —— 这正是判据⑦ 要看的差异）。 */
-function writeTopology(root, topologyOverride) {
+function writeTopology(root: string, topologyOverride: unknown) {
   writeFileSync(
     join(root, "scripts", "data", "mutation-topology.json"),
     `${JSON.stringify(topologyOverride, null, 2)}\n`,
@@ -157,7 +185,7 @@ function writeTopology(root, topologyOverride) {
   );
 }
 
-function runGenerator(root, args = []) {
+function runGenerator(root: string, args: string[] = []) {
   // --base HEAD：fixture 的基准就是它自己的 base commit（默认 origin/main 在 fixture 里不存在）。
   const res = spawnSync(process.execPath, [GENERATOR, ...args, "--base", "HEAD"], {
     cwd: ROOT,
@@ -168,7 +196,7 @@ function runGenerator(root, args = []) {
 }
 
 /** 生成到磁盘（写模式），返回 conf 路径。 */
-function generate(root) {
+function generate(root: string) {
   const res = runGenerator(root);
   assert.equal(res.status, 0, `生成应成功：\n${res.out}`);
   return join(root, "stryker.conf.d", `${PKG}-only.json`);
@@ -463,7 +491,8 @@ test("P0-2b：$noMutationPackages 声明过的包放行，但其 --min 仍受限
 test("P0-3 反证：把必需层移出 mutationLayers（或加进排除层）→ 判红", () => {
   // 假绿向量：两行拓扑改动（mutationExcludeLayers 加 "unit"）能把变异面从 56 个文件削到 12 个，
   // 而「声明 ↔ 派生一致」类判据全绿。充分性下限必须由代码常量锚定。
-  for (const [label, mutate] of [
+  // [用例名, 拓扑变异]：变异函数只改内存形态，落盘由调用方做。
+  const layerCases: Array<[string, (t: FixtureTopology) => void]> = [
     [
       "unit 被移出 mutationLayers",
       (t) => {
@@ -482,7 +511,8 @@ test("P0-3 反证：把必需层移出 mutationLayers（或加进排除层）→
         t.$testLayers.mutationLayers = [];
       },
     ],
-  ]) {
+  ];
+  for (const [label, mutate] of layerCases) {
     const broken = structuredClone(TOPOLOGY);
     mutate(broken);
     const root = makeFixtureRoot({}, broken);
@@ -544,7 +574,10 @@ test("P2-7：unit 层零命中（glob 被改坏）→ 判红并点名", () => {
  *   段 1 = src/index.ts；段 2 = src/mid.ts + src/leaf.ts；两段 excludes 都排除 src/client/**
  * 基准面（并集）= {index.ts, mid.ts, leaf.ts}。
  */
-function ratchetTopology(seg2Mutate, seg2Excludes = [`!packages/${PKG}/src/client/**`]) {
+function ratchetTopology(
+  seg2Mutate: string[],
+  seg2Excludes: string[] = [`!packages/${PKG}/src/client/**`],
+) {
   const base = structuredClone(TOPOLOGY);
   base.packages[PKG].segments = {
     "1": {
@@ -632,7 +665,7 @@ test("判据⑦：段之间挪动合法（并集不变）→ 绿；真删除并�
 });
 
 /** 造一份 fixture 台账（唯一放宽通道 = scripts/data/gate-exemptions.json 的 gate=mutation-face）。 */
-function exemptionFixture(path) {
+function exemptionFixture(path: string) {
   return `${JSON.stringify(
     {
       version: 1,
@@ -654,7 +687,7 @@ function exemptionFixture(path) {
 
 test("判据⑦：台账是唯一放宽通道（精确键 / 整包键），错键与失效条目判红（反腐烂）", () => {
   const exemptPath = "scripts/data/gate-exemptions.json";
-  const fixture = (path) =>
+  const fixture = (path: string) =>
     makeFixtureRoot(
       { [exemptPath]: exemptionFixture(path), ...RATCHET_FILES },
       ratchetTopology(SEG2_BOTH),
@@ -754,7 +787,8 @@ test("#847：显式空 excludes 与四类减项派生零排除，check 仍判有
   }
 });
 
-for (const [label, change, expected] of [
+// [用例名, 拓扑变异, 期望判词]：变异函数只改拓扑内存形态，不落盘（落盘由调用方做）。
+const OPERATOR_CASES: Array<[string, (t: FixtureTopology) => void, RegExp]> = [
   [
     "删除字段",
     (t) => {
@@ -765,18 +799,19 @@ for (const [label, change, expected] of [
   [
     "撤销部分启用",
     (t) => {
-      t.packages[PKG].enableMutations.pop();
+      (t.packages[PKG].enableMutations as string[]).pop();
     },
     /有效算子排除集合相对基准增加：TemplateLiteral/,
   ],
   [
     "全局增加排除",
     (t) => {
-      t.sharedDefaults.excludedMutations.push("BooleanLiteral");
+      (t.sharedDefaults.excludedMutations as string[]).push("BooleanLiteral");
     },
     /有效算子排除集合相对基准增加：BooleanLiteral/,
   ],
-]) {
+];
+for (const [label, change, expected] of OPERATOR_CASES) {
   test("#847：有效算子排除棘轮拦截" + label, () => {
     const topology = enabledTopology();
     const root = makeFixtureRoot({}, topology);

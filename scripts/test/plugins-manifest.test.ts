@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck
 "use strict";
 
 /**
@@ -43,13 +42,19 @@ function tempRepo() {
   return { dir, cleanup: () => rmSync(dir, { recursive: true, force: true }) };
 }
 
+/** 判据调用归一（与 checkAggregateConsistency 同一实现）：lib 实现仍带 @ts-nocheck，解构入参被推断为
+ * 全必填——而缺字段正是部分用例的输入形态（各判据段独立容忍缺失，只断言自己那段；非法输入由实现判红），
+ * 测试侧按实际传入形态整体断言。lib 摘 nocheck 并把入参标为可选后，本适配器可删（调回原名）。 */
+type AggregateInput = Parameters<typeof checkAggregateConsistency>[0];
+const checkAggregate = (input: unknown) => checkAggregateConsistency(input as AggregateInput);
+
 const EXPECTED_DEPS = {
   "@wingsky-1/dsh-alpha": "workspace:*",
   "@wingsky-1/dsh-beta": "workspace:*",
 };
 
 test("#1 deps 多一行（退役包）→ 命中 retired 分支文案", () => {
-  const problems = checkAggregateConsistency({
+  const problems = checkAggregate({
     dirNames: ACTIVE,
     manifest: MANIFEST,
     aggDeps: { ...EXPECTED_DEPS, "@wingsky-1/dsh-gone": "workspace:*" },
@@ -60,7 +65,7 @@ test("#1 deps 多一行（退役包）→ 命中 retired 分支文案", () => {
 });
 
 test("#2 deps 多一行（未收录名）→ 命中「既不在 active 也不在 retired」分支", () => {
-  const problems = checkAggregateConsistency({
+  const problems = checkAggregate({
     dirNames: ACTIVE,
     manifest: MANIFEST,
     aggDeps: { ...EXPECTED_DEPS, "@wingsky-1/dsh-typo": "workspace:*" },
@@ -71,7 +76,7 @@ test("#2 deps 多一行（未收录名）→ 命中「既不在 active 也不在
 });
 
 test("#3 patch 少一行 → 报缺失 id（回归保护）", () => {
-  const problems = checkAggregateConsistency({
+  const problems = checkAggregate({
     dirNames: ACTIVE,
     manifest: MANIFEST,
     aggDeps: EXPECTED_DEPS,
@@ -81,7 +86,7 @@ test("#3 patch 少一行 → 报缺失 id（回归保护）", () => {
 });
 
 test("#3b patch 多未知 id → fail-loud", () => {
-  const problems = checkAggregateConsistency({
+  const problems = checkAggregate({
     dirNames: ACTIVE,
     manifest: MANIFEST,
     aggPatchIds: ["ui-dsh-alpha", "ui-dsh-beta", "ui-dsh-ghost"],
@@ -90,7 +95,7 @@ test("#3b patch 多未知 id → fail-loud", () => {
 });
 
 test("#3c patch 同 id 重复行 → fail-loud（Set 去重盲区闭合）", () => {
-  const problems = checkAggregateConsistency({
+  const problems = checkAggregate({
     dirNames: ACTIVE,
     manifest: MANIFEST,
     aggPatchIds: ["ui-dsh-alpha", "ui-dsh-alpha", "ui-dsh-beta"],
@@ -99,7 +104,7 @@ test("#3c patch 同 id 重复行 → fail-loud（Set 去重盲区闭合）", () 
 });
 
 test("#4 目录有包但 manifest 没有 → 报「未登记」", () => {
-  const problems = checkAggregateConsistency({
+  const problems = checkAggregate({
     dirNames: [...ACTIVE, "dsh-newkid"],
     manifest: MANIFEST,
   });
@@ -110,9 +115,9 @@ test("#4 目录有包但 manifest 没有 → 报「未登记」", () => {
 test("#4b 目录有包但只在 standalone → 双向通过；聚合 deps 误引 → fail-loud", () => {
   const manifest = { active: ACTIVE, standalone: ["dsh-demo"], retired: MANIFEST.retired };
   // 目录集 == active ∪ standalone：正向全绿（无聚合断言段）
-  assert.deepEqual(checkAggregateConsistency({ dirNames: [...ACTIVE, "dsh-demo"], manifest }), []);
+  assert.deepEqual(checkAggregate({ dirNames: [...ACTIVE, "dsh-demo"], manifest }), []);
   // 聚合 deps 误引 standalone 包 → 明确分支文案
-  const problems = checkAggregateConsistency({
+  const problems = checkAggregate({
     dirNames: [...ACTIVE, "dsh-demo"],
     manifest,
     aggDeps: { ...EXPECTED_DEPS, "@wingsky-1/dsh-demo": "workspace:*" },
@@ -128,7 +133,7 @@ test("#4c 退役残留目录（manifest.retired 已登记）→ 方向 B 豁免�
     active: ACTIVE,
     retired: [...MANIFEST.retired, { name: "dsh-leftover", reason: "T1 残留", successor: "" }],
   };
-  const problems = checkAggregateConsistency({ dirNames: [...ACTIVE, "dsh-leftover"], manifest });
+  const problems = checkAggregate({ dirNames: [...ACTIVE, "dsh-leftover"], manifest });
   assert.deepEqual(problems, [], "retired 残留目录不得再报「未登记」（告警不红，清理债）");
 });
 
@@ -145,13 +150,13 @@ test("#4d filterOutRetiredDirs：物理目录集按 manifest.retired 过滤，�
   assert.deepEqual(kept, [...ACTIVE, "dsh-newkid"], "kept 保留物理序且含未登记新目录（守卫输入）");
   assert.deepEqual(skipped, ["dsh-leftover"], "skipped 仅命中 manifest.retired 名");
   // 守卫不退化：kept 里未登记的 dsh-newkid 仍被方向 B 捕获
-  const problems = checkAggregateConsistency({ dirNames: kept, manifest });
+  const problems = checkAggregate({ dirNames: kept, manifest });
   assert.equal(problems.length, 1);
   assert.match(problems[0], /未登记 manifest: dsh-newkid/);
 });
 
 test("#5 active 引用不存在目录 → 报「不存在的目录」", () => {
-  const problems = checkAggregateConsistency({
+  const problems = checkAggregate({
     dirNames: ACTIVE,
     manifest: { active: [...ACTIVE, "dsh-vapor"], retired: [] },
   });
@@ -166,7 +171,8 @@ test("#6 JSON 语法错 → 单行友好错误（非裸 SyntaxError）", () => {
     writeFileSync(join(dir, "scripts", "data", "plugins-manifest.json"), "{ active: ");
     assert.throws(
       () => loadManifest(dir),
-      (e) => /JSON 语法错误/.test(e.message) && !/SyntaxError/.test(e.message),
+      (e: unknown) =>
+        e instanceof Error && /JSON 语法错误/.test(e.message) && !/SyntaxError/.test(e.message),
     );
   } finally {
     cleanup();
@@ -274,7 +280,7 @@ test("#9 正向全绿：真实仓库 manifest + 真实目录 + 真实聚合 deps
       `packages/${d} 在 git index 内有文件却不在派生集 —— 目录枚举面与 index 不一致`,
     );
   }
-  assert.deepEqual(checkAggregateConsistency({ dirNames: dirs, manifest }), []);
+  assert.deepEqual(checkAggregate({ dirNames: dirs, manifest }), []);
   // 聚合包真实 deps 与 patch 也应双向相等
   const aggPkg = JSON.parse(
     readFileSync(join(root, "packages", "dsh-plugins-all", "package.json"), "utf8"),
@@ -284,12 +290,12 @@ test("#9 正向全绿：真实仓库 manifest + 真实目录 + 真实聚合 deps
   // 期望 id 集 = 各 active 子包 patch 实际 insert id（不硬编码 ui-，纯宿主插件如
   // dsh-verify-isolated 用 skill- 前缀；与 aggregate「原样拼接」语义一致）
   const expectedPatchIds = [];
-  for (const dir of manifest.active) {
+  for (const dir of manifest.active as string[]) {
     const child = readFileSync(join(root, "packages", dir, "cordis.patch.yml"), "utf8");
     expectedPatchIds.push(...[...child.matchAll(/^\s*-\s+id:\s*(\S+)/gm)].map((m) => m[1]));
   }
   assert.deepEqual(
-    checkAggregateConsistency({
+    checkAggregate({
       dirNames: dirs,
       manifest,
       aggDeps: aggPkg.dependencies ?? {},
@@ -311,7 +317,7 @@ function tempGitRepo() {
 }
 
 /** 铺一个包目录下的源文件（是否进 index 由调用方决定）。 */
-function writePkgFile(dir, name, rel = "src/index.ts") {
+function writePkgFile(dir: string, name: string, rel: string = "src/index.ts") {
   const full = join(dir, "packages", name, rel);
   mkdirSync(dirname(full), { recursive: true });
   writeFileSync(full, "export {};\n", "utf8");

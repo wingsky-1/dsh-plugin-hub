@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck
 "use strict";
 
 /**
@@ -49,9 +48,9 @@ function tempDir() {
 }
 
 // 递归读目录下全部文件内容（相对路径 → 文本）
-function readTree(dir) {
-  const out = {};
-  const visit = (cur) => {
+function readTree(dir: string) {
+  const out: Record<string, string> = {};
+  const visit = (cur: string): void => {
     for (const f of readdirSync(cur, { withFileTypes: true })) {
       const abs = join(cur, f.name);
       if (f.isDirectory()) visit(abs);
@@ -63,7 +62,7 @@ function readTree(dir) {
 }
 
 // 复制真实仓库 shared/（含子目录）到目标，返回目标 shared 目录
-function copyRealShared(destRoot) {
+function copyRealShared(destRoot: string) {
   const src = join(ROOT, "shared");
   const dest = join(destRoot, "shared");
   cpSync(src, dest, { recursive: true });
@@ -154,7 +153,7 @@ test("#5a 无 shared 引用的文件内容原样不变；.ts 后缀回写 .js（
 
 // ---------- 目录级集成：完整递归遍历（锁 depth+1 传参） ----------
 
-function makeLibTree(root) {
+function makeLibTree(root: string) {
   // 构造 lib/ 目录树（root 即 lib 目录）：顶层 + client/（d=1）+ a/b/（d=2）+ a/b/c/（d=3）
   mkdirSync(join(root, "client"), { recursive: true });
   mkdirSync(join(root, "a", "b"), { recursive: true });

@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck
 import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -8,7 +7,7 @@ import { dirname, join } from "node:path";
 import { spawnSync } from "node:child_process";
 import {
   COVERAGE_THRESHOLD_KEYS,
-  parseCoverageThresholds,
+  parseCoverageThresholds as parseCoverageThresholdsImpl,
   runThresholdMonotonic,
 } from "../gate/threshold-monotonic.mjs";
 import { resolveSingle, validateDeclarations } from "../lib/threshold-registry.mjs";
@@ -22,13 +21,26 @@ const WIRING = "scripts/data/gate-wiring-exceptions.json";
 const LEDGER = "scripts/data/gate-exemptions.json";
 const REGISTRY = "scripts/data/threshold-registry.json";
 const VITEST = "vitest.config.ts";
+/** parseCoverageThresholds 结果归一：实现仍带 @ts-nocheck，动态装配的 global/scoped 被推断为
+ * 空对象/空数组——测试侧按门禁自述的形态收，null 保持（无块分支另有专条用例）。 */
+interface CoverageParsed {
+  global: Record<string, number>;
+  scoped: string[];
+}
+const parseThresholds = (text: string) =>
+  parseCoverageThresholdsImpl(text) as CoverageParsed | null;
 
 /**
  * fixture 自带一份**最小声明表**：判据要跑的正是真值声明表的同一套代码路径，所以 fixture 不能没有表，
  * 但也不能照抄整份（真值表里多数事实源在 fixture 里不存在，会撞「悬空声明」而红）。
  * 真值表的自洽性与真值判据由文件末尾的「本仓真值快照」覆盖。
  */
-const guard = (fields) => ({ why: "fixture 判据说明", hint: "fixture 修法提示", ...fields });
+// 泛型保留各 guard 字面量的自有字段（sources/paths/kind 等），下游按具体字段断言。
+const guard = <T extends { id: string } & Record<string, unknown>>(fields: T) => ({
+  why: "fixture 判据说明",
+  hint: "fixture 修法提示",
+  ...fields,
+});
 
 const COVERAGE_GUARD = guard({
   id: "coverage.thresholds",
@@ -139,13 +151,17 @@ const defaultGauntlet = () => ({
   lint: { maxWarnings: 671 },
 });
 
-function writeFixtureFile(dir, rel, content) {
+function writeFixtureFile(dir: string, rel: string, content: string) {
   mkdirSync(dirname(join(dir, rel)), { recursive: true });
   writeFileSync(join(dir, rel), content);
 }
 
 /** 构造一个带基线 commit 的临时 git 仓库；返回其路径。 */
-function gitFixture(baseVitestConfig, baseGauntlet = defaultGauntlet(), options = {}) {
+function gitFixture(
+  baseVitestConfig: string,
+  baseGauntlet: unknown = defaultGauntlet(),
+  options: { guards?: unknown; extraFiles?: Record<string, string>; notAGate?: unknown } = {},
+) {
   const { guards = BASE_GUARDS, extraFiles = {}, notAGate = [] } = options;
   const dir = mkdtempSync(join(tmpdir(), "threshold-monotonic-test-"));
   writeFixtureFile(dir, GAUNTLET, JSON.stringify(baseGauntlet));
@@ -156,7 +172,7 @@ function gitFixture(baseVitestConfig, baseGauntlet = defaultGauntlet(), options 
     JSON.stringify({ version: 1, note: "fixture", guards, notAGate }, null, 2),
   );
   for (const [rel, content] of Object.entries(extraFiles)) writeFixtureFile(dir, rel, content);
-  const git = (...args) => spawnSync("git", args, { cwd: dir, encoding: "utf8" });
+  const git = (...args: string[]) => spawnSync("git", args, { cwd: dir, encoding: "utf8" });
   git("init", "-q");
   git("config", "user.email", "test@example.invalid");
   git("config", "user.name", "test");
@@ -165,12 +181,12 @@ function gitFixture(baseVitestConfig, baseGauntlet = defaultGauntlet(), options 
   return dir;
 }
 
-function runFixture(dir) {
+function runFixture(dir: string) {
   // 捕获 console.error：函数式 API 只回 { exitCode, failures }，判词在 stderr 上，
   // 断言「说了什么」比只断言退出码更能证明判据命中预期的缺口（也才挡得住「恰好因别的理由红」）。
   const original = console.error;
-  const lines = [];
-  console.error = (...args) => lines.push(args.join(" "));
+  const lines: string[] = [];
+  console.error = (...args: unknown[]) => lines.push(args.join(" "));
   try {
     const result = runThresholdMonotonic(["HEAD"], { repoRoot: dir });
     return { ...result, stderr: lines.join("\n") };
@@ -179,27 +195,27 @@ function runFixture(dir) {
   }
 }
 
-function removeFixture(dir) {
+function removeFixture(dir: string) {
   rmSync(dir, { recursive: true, force: true });
 }
 
 /** 生成仅 lines 不同的 vitest.config.ts 文本。 */
-const vitestText = (lines) =>
+const vitestText = (lines: number) =>
   `export default { test: { coverage: { thresholds: { lines: ${lines}, functions: 80, statements: 78, branches: 70 } } } }\n`;
 
-function readGauntlet(dir) {
+function readGauntlet(dir: string) {
   return JSON.parse(readFileSync(join(dir, GAUNTLET), "utf8"));
 }
 
-function writeGauntlet(dir, value) {
+function writeGauntlet(dir: string, value: unknown) {
   writeFileSync(join(dir, GAUNTLET), JSON.stringify(value));
 }
 
 /** 捕获 console.warn（非单调旋钮的收紧方向走 warning 通道，不进 exit code）。 */
-function captureWarn(fn) {
+function captureWarn<T>(fn: () => T) {
   const original = console.warn;
-  const lines = [];
-  console.warn = (...args) => lines.push(args.join(" "));
+  const lines: string[] = [];
+  console.warn = (...args: unknown[]) => lines.push(args.join(" "));
   try {
     return { result: fn(), lines };
   } finally {
@@ -218,7 +234,7 @@ test("parseCoverageThresholds: 提取 thresholds 块内的四个数值", () => {
     "  },",
     "},",
   ].join("\n");
-  assert.deepEqual(parseCoverageThresholds(text).global, {
+  assert.deepEqual(parseThresholds(text)?.global, {
     lines: 80,
     functions: 80,
     statements: 78,
@@ -227,38 +243,38 @@ test("parseCoverageThresholds: 提取 thresholds 块内的四个数值", () => {
 });
 
 test("parseCoverageThresholds: 无 thresholds 块返回 null（与「阈值为 0」区分）", () => {
-  assert.equal(parseCoverageThresholds("export default { test: {} }"), null);
-  assert.equal(parseCoverageThresholds(""), null);
+  assert.equal(parseThresholds("export default { test: {} }"), null);
+  assert.equal(parseThresholds(""), null);
 });
 
 test("parseCoverageThresholds: 小数阈值与部分键可用", () => {
-  assert.deepEqual(parseCoverageThresholds("thresholds: { lines: 79.5 }").global, { lines: 79.5 });
+  assert.deepEqual(parseThresholds("thresholds: { lines: 79.5 }")?.global, { lines: 79.5 });
 });
 
 test("#733: glob 键在后时全局四键仍完整解析，glob 被登记为 scoped", () => {
-  const parsed = parseCoverageThresholds(
+  const parsed = parseThresholds(
     "thresholds: { lines: 80, functions: 80, statements: 78, branches: 70, 'packages/x/**': { lines: 92 } }",
   );
-  assert.deepEqual(parsed.global, { lines: 80, functions: 80, statements: 78, branches: 70 });
-  assert.deepEqual(parsed.scoped, ["packages/x/**"]);
+  assert.deepEqual(parsed?.global, { lines: 80, functions: 80, statements: 78, branches: 70 });
+  assert.deepEqual(parsed?.scoped, ["packages/x/**"]);
 });
 
 test("#733: 块内注释里的伪值与闭括号不得被采信", () => {
-  const parsed = parseCoverageThresholds(
+  const parsed = parseThresholds(
     "thresholds: {\n  // lines: 999 } 注释里的闭括号\n  /* } lines: 888 */\n  lines: 80, functions: 80, statements: 78, branches: 70,\n}",
   );
   assert.equal(
-    parsed.global.lines,
+    parsed?.global.lines,
     80,
     "注释里的 lines:999 不得覆盖真实值，且注释里的 } 不得提前截断块",
   );
-  assert.deepEqual(parsed.scoped, [], "注释不得产生幻影 glob 键");
+  assert.deepEqual(parsed?.scoped, [], "注释不得产生幻影 glob 键");
 });
 
 test("#733: perFile 一类非阈值选项被忽略，不误判为 scoped", () => {
-  const parsed = parseCoverageThresholds("thresholds: { perFile: true, lines: 80 }");
-  assert.deepEqual(parsed.global, { lines: 80 });
-  assert.deepEqual(parsed.scoped, []);
+  const parsed = parseThresholds("thresholds: { perFile: true, lines: 80 }");
+  assert.deepEqual(parsed?.global, { lines: 80 });
+  assert.deepEqual(parsed?.scoped, []);
 });
 
 test("#843 D5: 真实 coverage.config.json 的四个阈值键必须是数字（声明表的 keys 求值同口径）", () => {
@@ -388,7 +404,7 @@ test("#722: 工作区缺 thresholds 判红（fail-closed，防门禁被静默摘
 });
 
 /** 把 vitest.config.ts 写成指定 thresholds 字面量文本（片段或整份文件均可）。 */
-const configWith = (thresholds) =>
+const configWith = (thresholds: string) =>
   `export default { test: { coverage: { thresholds: ${thresholds} } } }\n`;
 
 test("#733: 分包 glob 键在前时不得顶掉全局键——glob 高值 + 全局降线必须判红", () => {
@@ -431,7 +447,7 @@ test("#733: 阈值键被移除与降线同罪——基准 lines:80、工作区�
   }
 });
 
-const gauntletWith = (budget) => ({
+const gauntletWith = (budget: number | null) => ({
   ...defaultGauntlet(),
   ...(budget === null ? { lint: undefined } : { lint: { maxWarnings: budget } }),
 });
@@ -483,13 +499,13 @@ test("#764 A2: 首次引入 lint.maxWarnings（基准无该键）放行，不得
     removeFixture(dir);
   }
 });
-const withMutation = (overrides) => ({
+const withMutation = (overrides: Record<string, unknown>) => ({
   ...defaultGauntlet(),
   mutation: { ...defaultGauntlet().mutation, ...overrides },
 });
 
 /** 逐包表与锚点的 fixture 生成器（只改被声明的那几个键，其余保持缺省）。 */
-const withPackages = (packages) => withMutation({ packages });
+const withPackages = (packages: unknown) => withMutation({ packages });
 
 test("#843 S2: mutation.strict 由 true 翻到 false 判红（判据被整体摘除）", () => {
   const dir = gitFixture(vitestText(80), withMutation({ strict: true }));
@@ -703,7 +719,7 @@ test("#843 M-1: $noMutationPackages 里的包不受本判据约束（豁免只�
   }
 });
 
-const topologyWith = (shared, pkgTimeout) =>
+const topologyWith = (shared: unknown, pkgTimeout: unknown) =>
   JSON.stringify({
     sharedDefaults: { timeoutMS: shared },
     packages: { "dsh-x": { timeoutMS: pkgTimeout } },
@@ -794,7 +810,7 @@ test("#843 M-2: 接线断言预算下调放行（缺口收口方向）", () => {
 // ── #843 对抗评审（P0-1 / P1-2 / P1-3 / P1-4 / P1-5 / P1-7 与低成本 P2）──
 
 /** 复写工作区声明表（用于「相对基准被削弱」的注入；基准侧那份由 gitFixture 的提交提供）。 */
-function writeRegistry(dir, guards, extra = {}) {
+function writeRegistry(dir: string, guards: unknown, extra: Record<string, unknown> = {}) {
   writeFixtureFile(
     dir,
     REGISTRY,
@@ -814,8 +830,8 @@ function writeRegistry(dir, guards, extra = {}) {
   );
 }
 
-const without = (ids) => BASE_GUARDS.filter((item) => !ids.includes(item.id));
-const withMinAllowed = (id) =>
+const without = (ids: string[]) => BASE_GUARDS.filter((item) => !ids.includes(item.id));
+const withMinAllowed = (id: string) =>
   BASE_GUARDS.map((item) => (item.id === id ? { ...item, minAllowed: 60 } : item));
 
 test("#843 P0-1: 声明表删掉一条 guard 判红（一行数据改动不再能摘掉判据）", () => {
@@ -1197,10 +1213,12 @@ test("#843 F-1: 基准尚无声明表时，影子源态由判词点名（仍是 
       ],
       notAGate: [],
     };
+    // 实现（scripts/lib/threshold-registry.mjs）仍带 @ts-nocheck：解构入参只从默认值推断出 dataDir，
+    // repoRoot/consumed 在实现体真实消费，测试侧按调用形态整体断言。
     const problems = validateDeclarations(registry, {
       repoRoot: dir,
       consumed: new Set(["scripts/data/gauntlet-shadow.json"]),
-    }).join("\n");
+    } as unknown as Parameters<typeof validateDeclarations>[1]).join("\n");
     assert.match(problems, /未在声明表登记/);
     assert.match(problems, /有 guard 在 sources 里列过它，但工作区里没有任何 guard 实际读到它/);
   } finally {

@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck
 "use strict";
 
 /**
@@ -49,7 +48,7 @@ const MERGE =
  * @param {Record<string, string>} files 相对 `pkg/` 的文件表
  * @param {(pkgDir: string) => void} fn 断言体
  */
-function withFixturePkg(files, fn) {
+function withFixturePkg(files: Record<string, string>, fn: (pkgDir: string) => void) {
   const root = mkdtempSync(join(tmpdir(), "dts-cordis-merge-"));
   try {
     for (const [rel, text] of Object.entries(files)) {
@@ -69,7 +68,7 @@ test("合规（入口 .ts 直写）：闭包命中，不判红", () => {
       "src/index.ts": `export const name = "x";\n${MERGE}`,
       "lib/index.d.ts": `export declare const name = "x";\n${MERGE}`,
     },
-    (pkg) => {
+    (pkg: string) => {
       const r = checkCordisMergeReachability(pkg, join(pkg, "lib"));
       assert.equal(r.applicable, true, "源面声明了合并 → 判据必须适用");
       assert.equal(r.problem, null);
@@ -87,7 +86,7 @@ test("合规（合并落在被 re-export 的域文件）：闭包可达，不得
       "lib/sdk/interface.d.ts": 'export { Svc } from "./service.js";\n',
       "lib/sdk/service.d.ts": `export interface Svc { a: 1 }\n${MERGE}`,
     },
-    (pkg) => {
+    (pkg: string) => {
       const r = checkCordisMergeReachability(pkg, join(pkg, "lib"));
       assert.equal(r.applicable, true);
       assert.equal(r.problem, null);
@@ -102,10 +101,10 @@ test("违规（源 .d.ts 形态）：src 有合并、闭包零命中 → 判红"
       "src/service.d.ts": MERGE,
       "lib/index.d.ts": 'export declare const name = "x";\n',
     },
-    (pkg) => {
+    (pkg: string) => {
       const r = checkCordisMergeReachability(pkg, join(pkg, "lib"));
       assert.equal(r.applicable, true);
-      assert.match(r.problem, /声明合并不可达/u);
+      assert.match(r.problem ?? "", /声明合并不可达/u);
     },
   );
 });
@@ -117,10 +116,10 @@ test("违规（孤儿形态）：合并进了 lib/ 但入口不引用 → 仍判
       "lib/index.d.ts": 'export declare const name = "x";\n',
       "lib/integration/service.d.ts": MERGE,
     },
-    (pkg) => {
+    (pkg: string) => {
       const r = checkCordisMergeReachability(pkg, join(pkg, "lib"));
       assert.equal(r.applicable, true, "src 声明了合并");
-      assert.match(r.problem, /声明合并不可达/u);
+      assert.match(r.problem ?? "", /声明合并不可达/u);
       // 反证：lib/ 内确实「存在」合并文件——所以「存在即可」的实现会假绿，本判据不会。
       assert.equal(closureDeclaresCordisMerge(join(pkg, "lib", "index.d.ts")).hit, false);
     },
@@ -134,12 +133,12 @@ test("违规（合并被整块删掉，产物仍注册服务）：双信号并�
       "lib/index.js": 'function apply(ctx) { return ctx.provide("demand.svc", {}); }\n',
       "lib/index.d.ts": "export declare function apply(ctx: unknown): void;\n",
     },
-    (pkg) => {
+    (pkg: string) => {
       const provided = detectCordisServiceProvide(join(pkg, "lib", "index.js"));
       assert.deepEqual(provided, ["demand.svc"], "先断言产物侧信号非空");
       const r = checkCordisMergeReachability(pkg, join(pkg, "lib"));
       assert.equal(r.applicable, true, "删除合并后仍必须适用（否则判据退化为恒绿）");
-      assert.match(r.problem, /声明合并不可达/u);
+      assert.match(r.problem ?? "", /声明合并不可达/u);
     },
   );
 });
@@ -151,7 +150,7 @@ test("不适用：src 未声明合并、产物未注册服务时一律不判红�
       "lib/index.js": 'export const name = "x";\n',
       "lib/index.d.ts": MERGE,
     },
-    (pkg) => {
+    (pkg: string) => {
       const r = checkCordisMergeReachability(pkg, join(pkg, "lib"));
       assert.equal(r.applicable, false);
       assert.equal(r.problem, null);
@@ -167,10 +166,10 @@ test("违规：src 有合并但产物缺 lib/index.d.ts → 判红（fail-closed
       "src/index.ts": MERGE,
       "lib/other.d.ts": "export {};\n",
     },
-    (pkg) => {
+    (pkg: string) => {
       const r = checkCordisMergeReachability(pkg, join(pkg, "lib"));
       assert.equal(r.applicable, true);
-      assert.match(r.problem, /缺 lib\/index\.d\.ts/u);
+      assert.match(r.problem ?? "", /缺 lib\/index\.d\.ts/u);
     },
   );
 });
@@ -183,10 +182,11 @@ test("闭包收集：不含不可达文件，且入口自身在集合内", () =>
       "lib/a/a.d.ts": "export declare const A = 1;\n",
       "lib/orphan.d.ts": "export declare const O = 1;\n",
     },
-    (pkg) => {
-      const closure = collectDtsClosure(join(pkg, "lib", "index.d.ts"));
+    (pkg: string) => {
+      // 闭包即产物声明文件路径集（下文按字符串断言）：实现仍带 @ts-nocheck，返回被推断为 unknown 数组。
+      const closure = collectDtsClosure(join(pkg, "lib", "index.d.ts")) as string[];
       assert.equal(closure.length > 0, true, "闭包集合必须先断言非空（every/some 空集恒真陷阱）");
-      const rels = closure.map((f) => f.slice(pkg.length + 1)).sort();
+      const rels = closure.map((f: string) => f.slice(pkg.length + 1)).sort();
       assert.deepEqual(rels, ["lib/a/a.d.ts", "lib/a/interface.d.ts", "lib/index.d.ts"]);
       assert.equal(rels.includes("lib/orphan.d.ts"), false, "孤儿文件不在闭包内");
     },

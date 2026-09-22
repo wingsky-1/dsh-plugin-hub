@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck
 /**
  * 「src/shared 只能做零依赖叶子」判据（此前完全缺失）。
  *
@@ -50,13 +49,22 @@ import { walkFiles } from "../lib/walk-files.ts";
 
 const ROOT = join(import.meta.dirname, "../..");
 
+/** acorn 结点鸭子形态：loc 必填（本文件 parse 恒传 locations）；其余字段按需读取，未知字段经索引签名遍历。 */
+interface WalkNode extends acorn.Node {
+  loc: acorn.SourceLocation;
+  value?: unknown;
+  source?: WalkNode | null;
+  callee?: WalkNode | null;
+  arguments?: WalkNode[];
+  [key: string]: unknown;
+}
 /** 收集 dir 下满足谓词的文件（相对路径，/ 分隔）；目录不存在时给空集而不是抛。 */
-function filesUnder(dir, predicate) {
+function filesUnder(dir: string, predicate: (name: string) => boolean) {
   return existsSync(dir) ? walkFiles(dir, predicate) : [];
 }
 
 /** 类型 import / 类型 re-export 归一成值形态（类型别名声明不动，见文件头）。 */
-function normalizeTypeImports(text) {
+function normalizeTypeImports(text: string) {
   return text
     .replace(/\bimport\s+type\s/g, "import ")
     .replace(/\bexport\s+type\s*\{/g, "export {")
@@ -67,7 +75,7 @@ function normalizeTypeImports(text) {
  * 单文件里的模块 specifier（静态 import / export-from / import= require / 动态 import），带源码行号。
  * 转译或解析失败时抛出（调用方按 fail-closed 判红）。
  */
-async function specifiersOf(file) {
+async function specifiersOf(file: string) {
   const normalized = normalizeTypeImports(readFileSync(file, "utf8"));
   const { code, map } = await transform(normalized, {
     loader: file.endsWith(".tsx") ? "tsx" : "ts",
@@ -78,43 +86,48 @@ async function specifiersOf(file) {
   const ast = acorn.parse(code, { ecmaVersion: "latest", sourceType: "module", locations: true });
   const sourceMap = map ? new SourceMap(JSON.parse(map)) : null;
   /** 转译后行号 → 源码行号（转译可能重排换行，故一律过 SourceMap）。 */
-  const lineOf = (node) => {
+  const lineOf = (node: WalkNode): number => {
     if (sourceMap) {
       const entry = sourceMap.findEntry(node.loc.start.line - 1, node.loc.start.column);
-      if (entry?.originalLine !== undefined) return entry.originalLine + 1;
+      // findEntry 未命中给空对象字面量（非 null）：in 收窄后读行号。
+      if (entry && "originalLine" in entry && entry.originalLine !== undefined) {
+        return entry.originalLine + 1;
+      }
     }
     return node.loc.start.line;
   };
-  const found = [];
-  const push = (literal) => {
+  const found: Array<{ spec: string; line: number }> = [];
+  const push = (literal: WalkNode | null | undefined): void => {
     if (literal !== undefined && literal !== null && typeof literal.value === "string") {
       found.push({ spec: literal.value, line: lineOf(literal) });
     }
   };
-  const walk = (node) => {
+  // walk 取 unknown：acorn.Node 无索引签名，鸭子字段经 n 收拢后读取；递归点均为 unknown 直传。
+  const walk = (node: unknown): void => {
     if (node === null || typeof node !== "object") return;
+    const n = node as WalkNode;
     if (Array.isArray(node)) {
       for (const item of node) walk(item);
       return;
     }
     if (
-      (node.type === "ImportDeclaration" ||
-        node.type === "ExportNamedDeclaration" ||
-        node.type === "ExportAllDeclaration") &&
-      node.source
+      (n.type === "ImportDeclaration" ||
+        n.type === "ExportNamedDeclaration" ||
+        n.type === "ExportAllDeclaration") &&
+      n.source
     ) {
-      push(node.source);
-    } else if (node.type === "ImportExpression") {
-      push(node.source);
+      push(n.source);
+    } else if (n.type === "ImportExpression") {
+      push(n.source);
     } else if (
-      node.type === "CallExpression" &&
-      node.callee?.type === "Identifier" &&
-      node.callee.name === "require"
+      n.type === "CallExpression" &&
+      n.callee?.type === "Identifier" &&
+      n.callee.name === "require"
     ) {
-      push(node.arguments[0]);
+      push(n.arguments?.[0]);
     }
-    for (const key of Object.keys(node)) {
-      if (key !== "loc") walk(node[key]);
+    for (const key of Object.keys(n)) {
+      if (key !== "loc") walk(n[key]);
     }
   };
   walk(ast);
@@ -122,7 +135,7 @@ async function specifiersOf(file) {
 }
 
 /** 一个 specifier 的违规判定；合法（同目录相对）返回 null。 */
-function violationOf(spec) {
+function violationOf(spec: string) {
   if (spec.startsWith("node:")) {
     return {
       kind: "node-builtin",
@@ -142,7 +155,7 @@ function violationOf(spec) {
 }
 
 /** 本包客户端是否经 src/shared/interface.ts 消费共享面（判据的适用前提，见文件头）。 */
-async function clientUsesFacade(pkgDir) {
+async function clientUsesFacade(pkgDir: string) {
   const facade = join(pkgDir, "src", "shared", "interface.ts");
   const clientDir = join(pkgDir, "src", "client");
   if (!existsSync(facade) || !existsSync(clientDir)) return false;
@@ -168,7 +181,7 @@ async function clientUsesFacade(pkgDir) {
 }
 
 /** 扫描面与违规清单。扫描面为空 → 一条 empty-scan 违规（判据不得恒绿）。 */
-async function scanSharedLeafImports(root) {
+async function scanSharedLeafImports(root: string) {
   const packagesDir = join(root, "packages");
   const packages = existsSync(packagesDir)
     ? readdirSync(packagesDir, { withFileTypes: true })
@@ -205,12 +218,13 @@ async function scanSharedLeafImports(root) {
     try {
       specs = await specifiersOf(entry.abs);
     } catch (e) {
+      const detail = e instanceof Error ? e.message : String(e);
       violations.push({
         file: entry.rel,
         line: 0,
         spec: "",
         kind: "parse-failed",
-        reason: "源文件解析失败（fail-closed，一律判红）：" + String(e.message).split("\n")[0],
+        reason: "源文件解析失败（fail-closed，一律判红）：" + detail.split("\n")[0],
       });
       continue;
     }
@@ -224,7 +238,7 @@ async function scanSharedLeafImports(root) {
 }
 
 /** 构造最小 fixture 仓库；files 的键是相对 fixture 根的路径。 */
-function fixture(files) {
+function fixture(files: Record<string, string>) {
   const dir = mkdtempSync(join(tmpdir(), "shared-leaf-"));
   for (const [rel, content] of Object.entries(files)) {
     const abs = join(dir, rel);
@@ -235,7 +249,7 @@ function fixture(files) {
 }
 
 /** 在隔离目录里跑一次判据并保证清理（测试不得在仓库内留产物）。 */
-async function run(files) {
+async function run(files: Record<string, string>) {
   const dir = fixture(files);
   try {
     return await scanSharedLeafImports(dir);
@@ -245,7 +259,7 @@ async function run(files) {
 }
 
 /** 一个「客户端走门面」的最小包骨架（共享面内容由各用例补）。 */
-function pkgWithFacade(sharedFiles, pkg = "fx") {
+function pkgWithFacade(sharedFiles: Record<string, string>, pkg: string = "fx") {
   const files = {
     ["packages/" + pkg + "/src/client/index.tsx"]:
       'import { A } from "../shared/interface.ts";\nexport const use = A;\n',

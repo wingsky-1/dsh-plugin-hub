@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck
 "use strict";
 
 /**
@@ -23,11 +22,16 @@ const PKG = "@wingsky-1/export-keys-test";
 const KEYSET_CHECK = "materialize后exports键集恰为apply+inject";
 
 /** 与真实产物同构的最小契约外壳：注册 factory → materialize 后返回给定的 exports 表达式。 */
-const product = (exportsExpr) =>
+/** 判据结果归一：lib 实现仍带 @ts-nocheck、字面量后动态追加的键不在推断类型里，测试侧按契约收成 string 键表。 */
+interface ContractResult {
+  ok: boolean;
+  checks: Record<string, boolean>;
+}
+const product = (exportsExpr: string) =>
   `window.__ModuleLoader__.load({ id: ${JSON.stringify(PKG)}, factory: function (require) { return ${exportsExpr}; } });`;
 
 test("导出键集：恰好 apply + inject → 通过（防判据恒假）", () => {
-  const { ok, checks } = assertClientContract(
+  const { ok, checks }: ContractResult = assertClientContract(
     PKG,
     product("{ apply: function () {}, inject: [] }"),
   );
@@ -36,7 +40,7 @@ test("导出键集：恰好 apply + inject → 通过（防判据恒假）", () 
 });
 
 test("导出键集：多导出一个键 → 判红，且只有键集判据红", () => {
-  const { ok, checks } = assertClientContract(
+  const { ok, checks }: ContractResult = assertClientContract(
     PKG,
     product("{ apply: function () {}, inject: [], helper: 1 }"),
   );
@@ -49,7 +53,10 @@ test("导出键集：多导出一个键 → 判红，且只有键集判据红", 
 });
 
 test("导出键集：缺 inject → 键集判据独立判红（不靠既有 inject 形态判据顺带红）", () => {
-  const { ok, checks } = assertClientContract(PKG, product("{ apply: function () {} }"));
+  const { ok, checks }: ContractResult = assertClientContract(
+    PKG,
+    product("{ apply: function () {} }"),
+  );
   assert.equal(
     checks["materialize后exports.inject为数组"],
     false,
@@ -74,8 +81,15 @@ test("导出键集：真实构建产物（externals 路径）多一个 export �
       ].join("\n"),
     );
     const out = join(dir, "client.js");
-    await buildClient({ src, outfile: out, packageName: PKG, externals: ["react"] });
-    const { ok, checks } = assertClientContract(PKG, readFileSync(out, "utf8"));
+    // lib 实现（scripts/build/build-client.ts）仍带 @ts-nocheck：externals 默认 [] 被推断为
+    // never[]，测试侧对参数对象整体断言，externals 本体仍传 string[]（lib 摘 nocheck 标注 string[] 后此断言可删）。
+    await buildClient({
+      src,
+      outfile: out,
+      packageName: PKG,
+      externals: ["react"],
+    } as Parameters<typeof buildClient>[0]);
+    const { ok, checks }: ContractResult = assertClientContract(PKG, readFileSync(out, "utf8"));
     assert.equal(
       checks[KEYSET_CHECK],
       false,

@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck
 "use strict";
 
 /**
@@ -48,7 +47,13 @@ const CATALOG_TEXT =
   "<system-reminder>\n<available_mcp_servers>\n- `playwright`: browser automation\n</available_mcp_servers>\n</system-reminder>";
 
 /** 造一份 v0 会话产物：header 一帧 + 事件一帧（与宿主写盘布局一致）。 */
-function writeV0Log(dir, { spliced = false, source = LEGACY_SOURCE } = {}) {
+function writeV0Log(
+  dir: string,
+  {
+    spliced = false,
+    source = LEGACY_SOURCE,
+  }: { spliced?: boolean; source?: typeof LEGACY_SOURCE } = {},
+) {
   const header = {
     type: "session",
     version: 0,
@@ -90,7 +95,7 @@ function writeV0Log(dir, { spliced = false, source = LEGACY_SOURCE } = {}) {
 }
 
 /** 造一份 v3 产物（header version=3；用于 --include-v3 与 v3 不动断言）。 */
-function writeV3Log(dir) {
+function writeV3Log(dir: string) {
   const header = {
     type: "session",
     version: 3,
@@ -120,7 +125,7 @@ function writeV3Log(dir) {
 }
 
 /** 隔离的 DSH_HOME + 单个会话目录。 */
-function withSession(run) {
+function withSession(run: (ctx: { root: string; sessionDir: string }) => void) {
   const root = mkdtempSync(join(tmpdir(), "repair-mcp-catalog-"));
   try {
     const sessionDir = join(root, "sessions", "--tmp-proj--", "session-test");
@@ -138,8 +143,8 @@ async function loadHostChain() {
     process.env.DSH_HOST_NODE_MODULES,
     join(dirname(dirname(process.execPath)), "lib", "node_modules"),
     join(process.cwd(), "node_modules"),
-  ].filter((value) => typeof value === "string" && value.length > 0);
-  let base;
+  ].filter((value): value is string => typeof value === "string" && value.length > 0);
+  let base: string | undefined;
   for (const candidate of candidates) {
     try {
       const require = createRequire(join(candidate, "anchor.js"));
@@ -154,7 +159,7 @@ async function loadHostChain() {
     }
   }
   if (base === undefined) return undefined;
-  const load = (name) => import(pathToFileURL(join(base, name, "lib", "index.js")).href);
+  const load = (name: string) => import(pathToFileURL(join(base, name, "lib", "index.js")).href);
   try {
     const [format, v0, v1, v2] = await Promise.all([
       load("dsh-session-format"),
@@ -169,12 +174,15 @@ async function loadHostChain() {
 }
 
 /** 用宿主真实迁移链把 v0 行回放到 v3；失败时抛出宿主原始错误。 */
-async function runHostMigration(chain, lines) {
+async function runHostMigration(
+  chain: NonNullable<Awaited<ReturnType<typeof loadHostChain>>>,
+  lines: string[],
+) {
   const [headerRow, ...eventRows] = lines.map((line) => JSON.parse(line));
   const decoded = new chain.format.SessionFormatEventCollector();
   const ctx = {
-    emitEvent: (event) => decoded.emitEvent(event),
-    emitRun: (run) => decoded.emitRun(run),
+    emitEvent: (event: unknown) => decoded.emitEvent(event),
+    emitRun: (run: unknown) => decoded.emitRun(run),
   };
   const decoder = chain.v0.releasedV0SessionFormatCodec.createDecoder(headerRow, "strict");
   for (const row of eventRows) decoder.decodeRow(row, ctx);
@@ -195,8 +203,8 @@ async function runHostMigration(chain, lines) {
   ]) {
     const out = new chain.format.SessionFormatEventCollector();
     const outCtx = {
-      emitEvent: (event) => out.emitEvent(event),
-      emitRun: (run) => out.emitRun(run),
+      emitEvent: (event: unknown) => out.emitEvent(event),
+      emitRun: (run: unknown) => out.emitRun(run),
     };
     const stage = migration.createStage({
       sourceHeader: header,
@@ -316,7 +324,9 @@ test("planSession：v3 默认也修（未来 v3→v4 同款闸门前置），--l
     assert.equal(planV3.status, "needs-repair");
     assert.equal(planV3.sources, 1);
     assert.equal(planV3.file, "session.v3.jsonl.zstd");
-    assert.equal(planV3.rows[0].version, 3, "header 原样保留");
+    // needs-repair 分支恒带 rows（与 file 同一返回对象）：实现仍带 @ts-nocheck，联合推断把 rows 收成
+    // unknown，测试侧按已断言的分支形态收窄（只读不断言新语义）。
+    assert.equal((planV3.rows as Array<{ version: number }>)[0].version, 3, "header 原样保留");
     assert.deepEqual(readFileSync(path), before, "规划阶段不动盘");
     // 落盘后：新形态、仍是 v3、可被宿主严格恢复、再跑幂等
     applyRepair(sessionDir, planV3.file, planV3.rows);
@@ -377,7 +387,7 @@ test("端到端：修复前宿主迁移被拒，修复后同一条链跑通（us
 
       const events = await runHostMigration(chain, repaired);
       assert.ok(events.length >= 3, "修复后迁移应产出 v3 事件");
-      const catalogEvent = events.find((event) => event.type === "user/message");
+      const catalogEvent = events.find((event: { type: string }) => event.type === "user/message");
       assert.equal(catalogEvent.data.source.kind, "plugin");
       assert.equal(catalogEvent.data.source.plugin, CATALOG_SOURCE_PLUGIN);
       assert.equal(catalogEvent.data.source.form, "snapshot");
@@ -402,7 +412,7 @@ test("端到端：修复前宿主迁移被拒，修复后同一条链跑通（ag
     assert.equal(stats.sources, 1);
 
     const events = await runHostMigration(chain, repaired);
-    const spliced = events.find((event) => event.type === "agent/inbox/spliced");
+    const spliced = events.find((event: { type: string }) => event.type === "agent/inbox/spliced");
     assert.equal(spliced.data.inserted[0].source.kind, "plugin");
     assert.equal(spliced.data.inserted[0].source.sections[0].text, CATALOG_TEXT);
   } finally {

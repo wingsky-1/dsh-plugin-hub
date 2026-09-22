@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck
 "use strict";
 
 /**
@@ -23,13 +22,18 @@ import { buildClient } from "../build/build-client.ts";
 import { assertClientContract } from "../lib/client-contract-lib.ts";
 
 const PKG = "@wingsky-1/buildclient-test";
+/** 沙箱 factory 形态归一：require 按 spec 解析；模块 apply 返回未知渲染结果，用例内按需收窄。 */
+interface ClientFactoryModule {
+  apply: (...args: never[]) => unknown;
+}
+type ClientFactory = (require: (spec: string) => unknown) => ClientFactoryModule;
 
 function tempDir() {
   const dir = mkdtempSync(join(tmpdir(), "bc-test-"));
   return {
     dir,
     rm: () => rmSync(dir, { recursive: true, force: true }),
-    src: (name = "client.ts", content) => {
+    src: (name: string = "client.ts", content: string) => {
       const p = join(dir, name);
       writeFileSync(p, content);
       return p;
@@ -140,7 +144,14 @@ test("externals 路径：干净模块 import React → external require 经 fact
       ].join("\n"),
     );
     const out = join(t.dir, "client.js");
-    await buildClient({ src, outfile: out, packageName: PKG, externals: ["react"] });
+    // lib 实现（scripts/build/build-client.ts）仍带 @ts-nocheck：externals 默认 [] 被推断为
+    // never[]，测试侧对参数对象整体断言，externals 本体仍传 string[]（lib 摘 nocheck 标注 string[] 后此断言可删）。
+    await buildClient({
+      src,
+      outfile: out,
+      packageName: PKG,
+      externals: ["react"],
+    } as Parameters<typeof buildClient>[0]);
     const code = readFileSync(out, "utf8");
     assert.ok(/require\(["']react["']\)/.test(code), 'external react 应编译为 require("react")');
     const { ok } = assertClientContract(PKG, code);
@@ -158,15 +169,21 @@ test("externals 路径：干净模块 import React → external require 经 fact
       Math,
       Date,
       Promise,
-      __ModuleLoader__: { load: (h) => factories.set(h.id, h.factory) },
+      __ModuleLoader__: {
+        load: (h: { id: string; factory: ClientFactory }) => factories.set(h.id, h.factory),
+      },
     };
     sandbox.window = sandbox;
     vm.createContext(sandbox);
     vm.runInContext(code, sandbox);
     const factory = factories.get(PKG);
     const fakeReact = { createToken: "INJECTED_REACT" };
-    const mod = factory((spec) => (spec === "react" ? fakeReact : {}));
-    assert.equal(mod.apply()(), "INJECTED_REACT", "React 应经 factory 注入 require 解析（非全局）");
+    const mod = factory((spec: string) => (spec === "react" ? fakeReact : {}));
+    assert.equal(
+      (mod.apply() as () => unknown)(),
+      "INJECTED_REACT",
+      "React 应经 factory 注入 require 解析（非全局）",
+    );
   } finally {
     t.rm();
   }
@@ -236,22 +253,24 @@ test("TSX 语法支持：.tsx 客户端源码中 JSX 语法正确编译为 React
       Math,
       Date,
       Promise,
-      __ModuleLoader__: { load: (h) => factories.set(h.id, h.factory) },
+      __ModuleLoader__: {
+        load: (h: { id: string; factory: ClientFactory }) => factories.set(h.id, h.factory),
+      },
     };
     sandbox.window = sandbox;
     vm.createContext(sandbox);
     vm.runInContext(code, sandbox);
     const factory = factories.get(PKG);
-    const calls = [];
+    const calls: { type: string; props: Record<string, string>; children: unknown[] }[] = [];
     const fakeReact = {
-      createElement: (type, props, ...children) => {
+      createElement: (type: string, props: Record<string, string>, ...children: unknown[]) => {
         const elem = { type, props, children };
         calls.push(elem);
         return elem;
       },
     };
-    const mod = factory((spec) => (spec === "react" ? fakeReact : {}));
-    const render = mod.apply();
+    const mod = factory((spec: string) => (spec === "react" ? fakeReact : {}));
+    const render = mod.apply() as () => { props: Record<string, string> };
     const vdom = render();
     assert.ok(calls.length >= 2, "JSX 嵌套应至少调用 2 次 createElement");
     assert.equal(calls[calls.length - 1].type, "div");

@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck
 "use strict";
 
 /**
@@ -30,6 +29,12 @@ import {
 
 const ROOT = join(import.meta.dirname, "..", "..");
 const SCRIPT = join(ROOT, "scripts", "gate", "export-surface-snapshot.mjs");
+/** attributeEmitFiles 结果归一：lib 实现仍带 @ts-nocheck，动态装配的 byEntry 被推断为空对象字面量类型，测试侧按键表收。 */
+interface AttributedFiles {
+  byEntry: Record<string, string[]>;
+  orphans: string[];
+  conflicts: string[];
+}
 
 // ---------------------------------------------------------------- extractExports
 
@@ -124,7 +129,7 @@ const ENTRIES = [
 ];
 
 test("归属：按最长前缀——client/index.d.ts 归 ./client，而非被根入口吸收（F-1 修复点）", () => {
-  const { byEntry, orphans, conflicts } = attributeEmitFiles(
+  const { byEntry, orphans, conflicts }: AttributedFiles = attributeEmitFiles(
     ["client/index.d.ts", "client/locales.d.ts", "index.d.ts", "server/routes.d.ts"],
     ENTRIES,
   );
@@ -137,13 +142,16 @@ test("归属：按最长前缀——client/index.d.ts 归 ./client，而非被�
 });
 
 test('归属：前缀只匹配目录形态——同名顶层文件 client.d.ts 不被 "client" 前缀吃掉', () => {
-  const { byEntry } = attributeEmitFiles(["client.d.ts", "client/index.d.ts"], ENTRIES);
+  const { byEntry }: AttributedFiles = attributeEmitFiles(
+    ["client.d.ts", "client/index.d.ts"],
+    ENTRIES,
+  );
   assert.deepEqual(byEntry["."], ["client.d.ts"]);
   assert.deepEqual(byEntry["./client"], ["client/index.d.ts"]);
 });
 
 test("归属：未被任何前缀覆盖的文件进 orphans（调用方判红，不得静默丢弃）", () => {
-  const { byEntry, orphans } = attributeEmitFiles(
+  const { byEntry, orphans }: AttributedFiles = attributeEmitFiles(
     ["a.d.ts", "b.d.ts"],
     [{ subpath: "./client", prefix: "client" }],
   );
@@ -152,7 +160,7 @@ test("归属：未被任何前缀覆盖的文件进 orphans（调用方判红，
 });
 
 test("归属：同长度多命中进 conflicts（归属不唯一 ⇒ 调用方判红）", () => {
-  const { conflicts, byEntry } = attributeEmitFiles(
+  const { conflicts, byEntry }: AttributedFiles = attributeEmitFiles(
     ["client/a.d.ts"],
     [
       { subpath: "./client", prefix: "client" },
@@ -169,7 +177,7 @@ test("归属：同长度多命中进 conflicts（归属不唯一 ⇒ 调用方�
 });
 
 test("归属：前缀相同的根入口不会与目录入口互相吞并（空前缀是兜底，非最长命中）", () => {
-  const { byEntry } = attributeEmitFiles(
+  const { byEntry }: AttributedFiles = attributeEmitFiles(
     ["client/index.d.ts", "config/x.d.ts"],
     [
       { subpath: ".", prefix: "" },
@@ -188,7 +196,7 @@ test("归属：前缀相同的根入口不会与目录入口互相吞并（空�
 // 主入口直读根 index.d.ts 即绿（下述 D13 终态用例锁定）；fail-closed 改由
 // “根入口缺失即红”用例锁定——正反双向仍在，不在此复刻第二套判定。
 
-function withTmpAlias(payload, fn) {
+function withTmpAlias(payload: string, fn: (path: string) => unknown) {
   const dir = mkdtempSync(join(tmpdir(), "entry-alias-"));
   try {
     const path = join(dir, "alias.json");
@@ -202,7 +210,7 @@ function withTmpAlias(payload, fn) {
 test("别名正向：命中包与入口即换读取源（provider-usage 点号入口读 apply 产物）", () => {
   const aliases = withTmpAlias(
     JSON.stringify({ aliases: { "dsh-provider-usage": { ".": "apply/index.d.ts" } } }),
-    (path) => loadEntryAliases(path),
+    (path: string) => loadEntryAliases(path),
   );
   assert.equal(
     resolveExportSourceTarget("dsh-provider-usage", ".", "index.d.ts", aliases),
@@ -232,16 +240,16 @@ test("别名登记缺失即无别名（D13 删文件不炸其他包），形态�
   try {
     assert.deepEqual(loadEntryAliases(join(dir, "missing.json")), {});
     assert.deepEqual(
-      withTmpAlias(JSON.stringify({}), (path) => loadEntryAliases(path)),
+      withTmpAlias(JSON.stringify({}), (path: string) => loadEntryAliases(path)),
       {},
     );
     assert.throws(
-      () => withTmpAlias(JSON.stringify([]), (path) => loadEntryAliases(path)),
+      () => withTmpAlias(JSON.stringify([]), (path: string) => loadEntryAliases(path)),
       /顶层必须是对象/,
     );
     assert.throws(
       () =>
-        withTmpAlias(JSON.stringify({ aliases: { pkg: { ".": "" } } }), (path) =>
+        withTmpAlias(JSON.stringify({ aliases: { pkg: { ".": "" } } }), (path: string) =>
           loadEntryAliases(path),
         ),
       /必须是非空字符串/,
@@ -252,7 +260,7 @@ test("别名登记缺失即无别名（D13 删文件不炸其他包），形态�
 });
 
 test("别名退役 D13 终态（端到端）：空别名登记下 provider-usage 主入口仍绿（exit 0，根直读零 diff）", () => {
-  withTmpAlias(JSON.stringify({ aliases: {} }), (aliasPath) => {
+  withTmpAlias(JSON.stringify({ aliases: {} }), (aliasPath: string) => {
     const result = spawnSync(
       process.execPath,
       [SCRIPT, "--package", "dsh-provider-usage", "--entry-alias", aliasPath],
@@ -276,7 +284,7 @@ test("别名退役后 fail-closed 仍在（端到端）：根入口缺失即红�
   copyFileSync(indexTs, aside);
   rmSync(indexTs);
   try {
-    withTmpAlias(JSON.stringify({ aliases: {} }), (aliasPath) => {
+    withTmpAlias(JSON.stringify({ aliases: {} }), (aliasPath: string) => {
       const result = spawnSync(
         process.execPath,
         [SCRIPT, "--package", "dsh-provider-usage", "--entry-alias", aliasPath],
@@ -299,7 +307,7 @@ test("别名退役后 fail-closed 仍在（端到端）：根入口缺失即红�
 test("别名损坏即门禁故障（exit 2，非判红）：合法 JSON 但非对象形态", () => {
   // P2：畸形登记是「尺子坏了」不是「被测不达标」——exit 1 会被读成可信判红而合入，
   // 必须走唯一故障出口 failClosed（exit 2，禁止合并）。
-  withTmpAlias(JSON.stringify([]), (aliasPath) => {
+  withTmpAlias(JSON.stringify([]), (aliasPath: string) => {
     const result = spawnSync(
       process.execPath,
       [SCRIPT, "--package", "dsh-provider-usage", "--entry-alias", aliasPath],

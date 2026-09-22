@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck
 /**
  * verify-prose-counts 自测（#767 P6 试点）：config 三形态解析 + scope 段数词 + 失配判红 +
  * 未知形态 fail-closed（exit 2）+ 空段 fail-closed + 本地接线。
@@ -26,14 +25,14 @@ const ROOT = join(import.meta.dirname, "..", "..");
 const SCRIPT = join(ROOT, "scripts", "gate", "verify-prose-counts.mjs");
 
 /** 构造最小 fixture 仓库：只写两份数据文件（gauntlet 散文面 + topology 事实源）。 */
-function fixture(gauntletPkgs, topoPkgs) {
+function fixture(gauntletPkgs: Record<string, unknown>, topoPkgs: Record<string, string[]>) {
   const root = mkdtempSync(join(tmpdir(), "prose-counts-"));
   mkdirSync(join(root, "scripts", "data"), { recursive: true });
   writeFileSync(
     join(root, "scripts", "data", "gauntlet.config.json"),
     JSON.stringify({ mutation: { packages: gauntletPkgs } }, null, 2),
   );
-  const segments = {};
+  const segments: Record<string, unknown> = {};
   for (const [pkg, keys] of Object.entries(topoPkgs)) {
     segments[pkg] = { segments: Object.fromEntries(keys.map((k) => [k, {}])) };
   }
@@ -44,7 +43,7 @@ function fixture(gauntletPkgs, topoPkgs) {
   return root;
 }
 
-function run(root, extra = []) {
+function run(root: string, extra: string[] = []) {
   try {
     return spawnSync(process.execPath, [SCRIPT, "--root", root, ...extra], { encoding: "utf8" });
   } finally {

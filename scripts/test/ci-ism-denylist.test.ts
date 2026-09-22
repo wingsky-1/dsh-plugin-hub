@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck
 /**
  * ci-ism-denylist.mjs 自测（#843 评论侧 L4）：真实仓库扫描 + 注入对照（应判红 / 应放行）+ 载体自证 + fail-closed。
  *
@@ -24,7 +23,15 @@ import {
 const ROOT = join(import.meta.dirname, "..", "..");
 
 /** 真实 git 仓库 fixture：目录项与「未跟踪/被忽略」都由真 git 判定，不在测试里替它猜。 */
-function fixtureRepo({ ignore = [], files = [], withMarker = true } = {}) {
+function fixtureRepo({
+  ignore = [],
+  files = [],
+  withMarker = true,
+}: {
+  ignore?: string[];
+  files?: { rel: string; content: string }[];
+  withMarker?: boolean;
+} = {}) {
   const dir = mkdtempSync(join(tmpdir(), "ci-ism-denylist-"));
   const git = spawnSync("git", ["init", "-q", "."], { cwd: dir, encoding: "utf8" });
   assert.equal(git.status, 0, git.stderr);
@@ -38,7 +45,7 @@ function fixtureRepo({ ignore = [], files = [], withMarker = true } = {}) {
   return dir;
 }
 
-function run(dir, fn) {
+function run(dir: string, fn: (d: string) => void) {
   try {
     return fn(dir);
   } finally {
@@ -53,7 +60,7 @@ test("放行：仓库根只有开发草稿（未跟踪的 md / 草稿目录）�
       { rel: ".maintenance-drafts/plan.md", content: "draft\n" },
     ],
   });
-  run(dir, (d) => {
+  run(dir, (d: string) => {
     const r = scanRepoRoot(d);
     assert.deepEqual(r.violations, []);
     assert.deepEqual(r.selfProofProblems, []);
@@ -63,7 +70,7 @@ test("放行：仓库根只有开发草稿（未跟踪的 md / 草稿目录）�
 
 test("判红：仓库根 GITHUB_ENV（未跟踪、未被 ignore）→ 点名该文件（#843 评论侧 L4 的验收形态）", () => {
   const dir = fixtureRepo({ files: [{ rel: "GITHUB_ENV", content: "BASH_ENV=/z\n" }] });
-  run(dir, (d) => {
+  run(dir, (d: string) => {
     const r = scanRepoRoot(d);
     assert.equal(r.violations.length, 1, JSON.stringify(r.violations));
     assert.equal(r.violations[0].path, "GITHUB_ENV");
@@ -80,7 +87,7 @@ test("判红：GITHUB_ENV 被 .gitignore 兜底时仍然判红（兜底不等于
       { rel: "undefined/a.txt", content: "artifact\n" },
     ],
   });
-  run(dir, (d) => {
+  run(dir, (d: string) => {
     const r = scanRepoRoot(d);
     assert.deepEqual(
       r.violations.map((v) => v.path).sort(),
@@ -98,7 +105,7 @@ test("放行：仓库根的其他文件（含 .gitignore 兜底的常规产物�
       { rel: "coverage/coverage-final.json", content: "{}\n" },
     ],
   });
-  run(dir, (d) => {
+  run(dir, (d: string) => {
     const r = scanRepoRoot(d);
     assert.deepEqual(r.violations, [], JSON.stringify(r.violations));
   });
@@ -106,7 +113,7 @@ test("放行：仓库根的其他文件（含 .gitignore 兜底的常规产物�
 
 test("边界：命中的同名文件已进 git index 时只记 note、不判红（可见性由 diff/评审保证）", () => {
   const dir = fixtureRepo({ files: [{ rel: "GITHUB_ENV", content: "x\n" }] });
-  run(dir, (d) => {
+  run(dir, (d: string) => {
     const add = spawnSync("git", ["add", "GITHUB_ENV"], { cwd: d, encoding: "utf8" });
     assert.equal(add.status, 0, add.stderr);
     const r = scanRepoRoot(d);
@@ -146,7 +153,7 @@ test("载体自证：扫描面为空 / 不是仓库根 → 自证失败（--root
 
 test("fail-closed：非 git 目录不是「没有残留」而是探测失败（抛错，不返回绿色）", () => {
   const dir = mkdtempSync(join(tmpdir(), "ci-ism-nongit-"));
-  run(dir, (d) => {
+  run(dir, (d: string) => {
     assert.throws(() => probeRepoRoot(d), /git status 退出码/);
   });
 });

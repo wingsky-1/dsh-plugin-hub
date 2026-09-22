@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck
 "use strict";
 
 /**
@@ -95,7 +94,10 @@ function makeRepo({
   return dir;
 }
 
-function withRepo(options, fn) {
+function withRepo(
+  options: { peer?: string; catalogLine?: string; excludeLine?: string },
+  fn: (dir: string) => void,
+) {
   const dir = makeRepo(options);
   try {
     return fn(dir);
@@ -105,7 +107,7 @@ function withRepo(options, fn) {
 }
 
 test("负向：peer 写显式字面版本 → 判红", () => {
-  withRepo({ peer: "0.1.2-rc.1" }, (dir) => {
+  withRepo({ peer: "0.1.2-rc.1" }, (dir: string) => {
     const { problems } = checkCatalogPeers(dir);
     assert.equal(problems.length, 1);
     assert.match(problems[0], /一律写 catalog:/);
@@ -115,7 +117,7 @@ test("负向：peer 写显式字面版本 → 判红", () => {
 test("负向：catalog: 引用无对应条目 → 判红", () => {
   withRepo(
     { catalogLine: "  '@deepseek-ai/other': 1.0.0", excludeLine: "  - '@deepseek-ai/other@1.0.0'" },
-    (dir) => {
+    (dir: string) => {
       const { problems } = checkCatalogPeers(dir);
       assert.ok(
         problems.some((p) => /无此 catalog 条目/.test(p)),
@@ -126,7 +128,7 @@ test("负向：catalog: 引用无对应条目 → 判红", () => {
 });
 
 test("负向：catalog 键未登记供应链豁免清单 → 判红", () => {
-  withRepo({ excludeLine: "  - '@deepseek-ai/unrelated@1.0.0'" }, (dir) => {
+  withRepo({ excludeLine: "  - '@deepseek-ai/unrelated@1.0.0'" }, (dir: string) => {
     const { problems } = checkCatalogPeers(dir);
     assert.ok(
       problems.some((p) => /未登记进 minimumReleaseAgeExclude/.test(p)),

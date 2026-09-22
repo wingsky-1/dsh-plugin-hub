@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck
 "use strict";
 
 /**
@@ -37,7 +36,7 @@ const LEDGER_PATH = join(ROOT, "scripts", "data", "mutation-segment-ledger.json"
 const SCRIPT = join(ROOT, "scripts", "gate", "mutation-ledger.mjs");
 
 /** 构造一行 GHA 原始日志（口径：`<job>\t<step>\t<timestamp>Z <content>`，时间戳与正文间单空格）。 */
-const line = (ts, body) => `job\tSTEP\t${ts}Z ${body}`;
+const line = (ts: string, body: string) => `job\tSTEP\t${ts}Z ${body}`;
 
 const FIXTURE = [
   line("2026-09-11T08:00:00.0000000", "##[group]stryker dsh-x-a"),
@@ -83,7 +82,7 @@ test("解析器：单空格前缀 + ANSI 剥离 + 栈式配对 + 未闭合段宁
 
 test("解析器：时间戳与正文间的空格必须剥离（否则 group 前缀判定永不成立）", () => {
   const parsed = parseLogLine(line("2026-09-11T08:00:00.0000000", "##[group]stryker dsh-x-a"));
-  assert.equal(parsed.body, "##[group]stryker dsh-x-a");
+  assert.equal(parsed?.body, "##[group]stryker dsh-x-a");
 });
 
 // ── 矩阵形态（#718 S1.1 之后：每段一个独立 job，无 group 包裹）────────────────
@@ -91,7 +90,8 @@ test("解析器：时间戳与正文间的空格必须剥离（否则 group 前�
 // （台账会静默停止更新），以及只认 INFO 行会低估被杀段的墙钟（进度行不带 `(pid) INFO`）。
 
 /** 矩阵形态的日志行：`<job 名>\t<step 名>\t<ts>Z <content>`。 */
-const shardLine = (seg, step, ts, body) => `Mutation shard (${seg})\t${step}\t${ts}Z ${body}`;
+const shardLine = (seg: string, step: string, ts: string, body: string) =>
+  `Mutation shard (${seg})\t${step}\t${ts}Z ${body}`;
 
 const MATRIX_FIXTURE = [
   shardLine(
@@ -313,7 +313,7 @@ test("CLI 三态：--check 通过仍 exit 0 且无故障注解", () => {
  * runCheck 直调探针：failClosed 会 exit 掉调用方，故经子进程调导出的 runCheck。
  * CLI 入口仍只能对真仓求值（路径注入只存在于函数参数，不存在 env/argv 面）。
  */
-function runCheckProbe(args) {
+function runCheckProbe(args: unknown) {
   const dir = mkdtempSync(join(tmpdir(), "ledger-probe-"));
   const probe = join(dir, "probe.mjs");
   writeFileSync(

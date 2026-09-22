@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck
 "use strict";
 
 /**
@@ -32,17 +31,17 @@ const SCRIPT = join(ROOT, "scripts", "gate", "export-surface-snapshot.mjs");
 // #767 B0 接入，其 legacy 是重构前那棵树的存量全集。dsh-provider-usage 于
 // #768 S1 接入，其 legacy 是 S1 时点的存量全集（主入口经别名读 apply 产物）。
 const PACKAGES = ["dsh-notifier", "dsh-mcp-manager", "dsh-provider-usage"];
-const registryPath = (pkg) => join(ROOT, "scripts", "data", `${pkg}-export-faces.json`);
-const baselinePath = (pkg) => join(ROOT, "scripts", "data", `${pkg}-export-surface.json`);
+const registryPath = (pkg: string) => join(ROOT, "scripts", "data", `${pkg}-export-faces.json`);
+const baselinePath = (pkg: string) => join(ROOT, "scripts", "data", `${pkg}-export-surface.json`);
 
 /** 在隔离目录写一份登记文件并返回路径（用完即弃，产物零污染）。 */
-function writeRegistry(dir, payload) {
+function writeRegistry(dir: string, payload: unknown) {
   const path = join(dir, "faces.json");
   writeFileSync(path, JSON.stringify(payload, null, 2), "utf8");
   return path;
 }
 
-function withTmp(fn) {
+function withTmp(fn: (dir: string) => void) {
   const dir = mkdtempSync(join(tmpdir(), "export-faces-"));
   try {
     return fn(dir);
@@ -117,13 +116,13 @@ test("违规：legacy 含重复项 → 判红", () => {
 });
 
 test("loadExportFaces：登记文件缺失即抛（不静默降级）", () => {
-  withTmp((dir) => {
+  withTmp((dir: string) => {
     assert.throws(() => loadExportFaces(join(dir, "missing.json")), /登记文件不存在/);
   });
 });
 
 test("loadExportFaces：字段缺失时按空集合读取（由 checkExportFaces 的空集合判据兜底）", () => {
-  withTmp((dir) => {
+  withTmp((dir: string) => {
     const path = writeRegistry(dir, { package: "x" });
     const loaded = loadExportFaces(path);
     assert.deepEqual(loaded.faces, {});
@@ -155,7 +154,7 @@ for (const pkg of PACKAGES) {
   test(`真实登记文件（${pkg}）：package 匹配且覆盖基线全部导出符号`, () => {
     const registry = loadExportFaces(registryPath(pkg));
     const baselineExports = JSON.parse(readFileSync(baselinePath(pkg), "utf8")).exports.map(
-      (e) => e.name,
+      (e: { name: string }) => e.name,
     );
     assert.equal(baselineExports.length > 0, true, "基线导出符号集必须非空（先断言集合非空）");
     assert.equal(registry.package, pkg);
@@ -191,7 +190,7 @@ for (const pkg of PACKAGES) {
   });
 
   test(`端到端（${pkg}）：模拟新增未登记导出（把一个存量符号移出 legacy）→ 真实门禁脚本 exit 1`, () => {
-    withTmp((dir) => {
+    withTmp((dir: string) => {
       const registry = JSON.parse(readFileSync(registryPath(pkg), "utf8"));
       const dropped = registry.legacy[0];
       registry.legacy = registry.legacy.slice(1);

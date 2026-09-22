@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck
 /** forbid-module-state-src.mjs 自测（#733 M2c 后续 N2a）：正反例 + 登记豁免 + 台账腐烂 + fail-closed。 */
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -13,7 +12,7 @@ const SCRIPT = join(ROOT, "scripts", "gate", "forbid-module-state-src.mjs");
 const PKG = "dsh-notifier";
 
 /** 构造最小 fixture 仓库（--root 注入）。pkgFiles: [{ rel, content }] */
-function fixture(pkgFiles) {
+function fixture(pkgFiles: { rel: string; content: string }[]) {
   const dir = mkdtempSync(join(tmpdir(), "forbid-module-state-"));
   mkdirSync(join(dir, "packages", PKG, "src"), { recursive: true });
   for (const { rel, content } of pkgFiles) {
@@ -24,7 +23,7 @@ function fixture(pkgFiles) {
   return dir;
 }
 
-function runWith(dir, extraArgs = []) {
+function runWith(dir: string, extraArgs: string[] = []) {
   try {
     return spawnSync(process.execPath, [SCRIPT, "--root", dir, ...extraArgs], { encoding: "utf8" });
   } finally {
@@ -32,7 +31,7 @@ function runWith(dir, extraArgs = []) {
   }
 }
 
-function run(dir) {
+function run(dir: string) {
   return runWith(dir);
 }
 
@@ -40,7 +39,7 @@ function run(dir) {
  * 构造豁免台账临时文件，返回其路径。
  * 刻意不放进 fixture 目录：台账是治理数据面，`--root` 只换扫描面，两者不该混在一起。
  */
-function exemptionsFile(entries) {
+function exemptionsFile(entries: unknown) {
   const dir = mkdtempSync(join(tmpdir(), "gate-exemptions-"));
   const p = join(dir, "gate-exemptions.json");
   writeFileSync(p, JSON.stringify({ version: 1, exemptions: entries }));
@@ -246,7 +245,9 @@ test("本仓真实快照：notifier/lan-proxy 零模块级可变状态，mcp 仅
   const registry = JSON.parse(
     readFileSync(join(ROOT, "scripts", "data", "gate-scope-registry.json"), "utf8"),
   );
-  const scope = registry.gates.find((g) => g.gate === "forbid-module-state-src");
+  const scope = registry.gates.find(
+    (g: { gate: string; packages: string[] }) => g.gate === "forbid-module-state-src",
+  );
   assert.match(
     r.stdout,
     new RegExp(`OK（扫描 \\d+ 文件，包 ${scope.packages.join(", ")}，登记豁免 1 处）`),
@@ -269,7 +270,7 @@ test("本仓真实快照：notifier/lan-proxy 零模块级可变状态，mcp 仅
 });
 
 /** 写一份范围注册表临时文件，返回其路径（--registry 注入）。 */
-function registryFile(gates) {
+function registryFile(gates: unknown) {
   const dir = mkdtempSync(join(tmpdir(), "gate-scope-registry-"));
   const p = join(dir, "gate-scope-registry.json");
   writeFileSync(p, JSON.stringify({ version: 1, gates }));

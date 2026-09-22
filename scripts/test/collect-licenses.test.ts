@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck
 "use strict";
 
 /**
@@ -33,7 +32,10 @@ function tempRepo() {
 }
 
 /** 造一个「已构建」的假插件包：lib/index.js 含 esbuild 内联注释 + 包级依赖。 */
-function fixturePackage(root, { name, indexSource, depLicense }) {
+function fixturePackage(
+  root: string,
+  { name, indexSource, depLicense }: { name: string; indexSource: string; depLicense?: string },
+) {
   const pkg = join(root, "packages", name);
   mkdirSync(join(pkg, "lib"), { recursive: true });
   writeFileSync(join(pkg, "lib", "index.js"), indexSource);
@@ -122,7 +124,7 @@ test("collectForPackage：无第三方内联 → 返回空且不写文件；缺 
 });
 
 /** 造 vendored 登记表（批 2b）：治理数据在 fixture 根的 scripts/data 下。 */
-function vendoredRegistry(root, entries) {
+function vendoredRegistry(root: string, entries: unknown) {
   mkdirSync(join(root, "scripts", "data"), { recursive: true });
   writeFileSync(
     join(root, "scripts", "data", "vendored-binaries.json"),

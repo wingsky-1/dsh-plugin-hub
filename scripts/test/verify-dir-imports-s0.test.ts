@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck
 "use strict";
 
 /**
@@ -58,7 +57,10 @@ function defaultTopology() {
 }
 
 /** 在隔离根下造任意相对路径文件，返回根路径（调用方负责清理）。 */
-function makeFixtureRoot(files, { omitTopology = false } = {}) {
+function makeFixtureRoot(
+  files: Record<string, string>,
+  { omitTopology = false }: { omitTopology?: boolean } = {},
+) {
   const root = mkdtempSync(join(tmpdir(), "verify-dir-imports-s0-"));
   const all = omitTopology ? files : { [TOPOLOGY_REL]: defaultTopology(), ...files };
   for (const [rel, content] of Object.entries(all)) {
@@ -77,7 +79,7 @@ function makeFixtureRoot(files, { omitTopology = false } = {}) {
  * implToOtherImpl 与 directImpl 会命中同一条边），故先按 id 去重——重复条目的台账会被
  * 校验判 exit 2，而不是被当成两条独立放宽。
  */
-function writeLedger(dir, paths) {
+function writeLedger(dir: string, paths: string[]) {
   const p = join(dir, "exemptions-fixture.json");
   writeFileSync(
     p,
@@ -94,12 +96,12 @@ function writeLedger(dir, paths) {
 }
 
 /** 从「写基线中止」输出里取出待登记的台账键（形态 `<包名>:<证据项>（<指标>）`）。 */
-function pendingLedgerKeys(out) {
+function pendingLedgerKeys(out: string) {
   return [...out.matchAll(/^\s+(\S+?)（/gm)].map((m) => m[1]);
 }
 
-function runOn(root, args = []) {
-  const env = { ...process.env, VERIFY_DIR_IMPORTS_ROOT: root };
+function runOn(root: string, args: string[] = []) {
+  const env: Record<string, string | undefined> = { ...process.env, VERIFY_DIR_IMPORTS_ROOT: root };
   // 外部若设了基线路径，会与 fixture 自己的基线串味（残留风险），显式清掉。
   delete env.VERIFY_DIR_IMPORTS_BASELINE;
   const r = spawnSync(process.execPath, [SCRIPT, "--package", PKG, ...args], {
@@ -116,7 +118,7 @@ function runOn(root, args = []) {
  * 未登记的新增质量证据会中止——有存量的改用 seedFixtureStock / registerFixtureStock，
  * 那些形态由各自的用例覆盖。
  */
-function seedBaseline(root) {
+function seedBaseline(root: string) {
   const written = runOn(root, ["--write-baseline"]);
   assert.equal(written.status, 0, `fixture 登记基线应成功：\n${written.out}`);
 }
@@ -125,7 +127,7 @@ function seedBaseline(root) {
  * `--write-baseline` 让它中止并点名待登记的存量证据，登记成 fixture 台账后再按同一通道写入。
  * 返回**成功那一次**的结果——调用方若要断言「首次登记」提示，必须是成功那次。
  */
-function seedFixtureStock(root) {
+function seedFixtureStock(root: string) {
   const probe = runOn(root, ["--write-baseline"]);
   if (probe.status === 0) return probe;
   const keys = pendingLedgerKeys(probe.out);
@@ -146,7 +148,7 @@ function seedFixtureStock(root) {
  * 该退化路径钉死——本 helper 是用例判据强度的**加固**，不是绕行。带故意违规 fixture 的
  * 用例（见 kind 语义用例）不适用本 helper，自己显式写基线。
  */
-function registerFixtureStock(root) {
+function registerFixtureStock(root: string) {
   seedFixtureStock(root);
   const quality = readFixtureBaseline(root).packages[PKG].quality;
   assert.deepEqual(
@@ -162,7 +164,7 @@ function registerFixtureStock(root) {
 }
 
 /** 三域链式依赖体（a → b → c），`prefix` 决定平铺还是移入分组层。 */
-function chainFixture(prefix) {
+function chainFixture(prefix: string) {
   const p = prefix === "" ? "" : `${prefix}/`;
   return {
     [`${SRC}/${p}a/interface.ts`]: `export { A } from "./impl.ts";\nexport { B } from "../b/interface.ts";\n`,
@@ -292,12 +294,12 @@ test("单调基线：写入基线后 PASS，人为把跨域引用计数调高即
 });
 
 /** 读 fixture 根下的基线 JSON（M0b 用例断言 --write-baseline 的实际落库内容）。 */
-function readFixtureBaseline(root) {
+function readFixtureBaseline(root: string) {
   return JSON.parse(readFileSync(join(root, "scripts/data/dir-imports-baseline.json"), "utf8"));
 }
 
 /** 制造「结构型 + 质量型同时上升」：c → a 新增跨模块引用（值边 +1，同时成环）。 */
-function addCyclicCrossReference(root) {
+function addCyclicCrossReference(root: string) {
   writeFileSync(
     join(root, `${SRC}/c/impl.ts`),
     'import { A } from "../a/interface.ts";\nexport const C = A;\n',
@@ -477,8 +479,8 @@ test("用法 fail-closed（#843 D15）：悬空 --package 与 --package=<name> �
  * 不带 `--package` 的裸跑：验证「写基线的缺省范围来自范围注册表」，而不是把
  * `packages/` 下所有带 src 的目录一股脑扫一遍（后者会为无调用点的包落死条目）。
  */
-function runRaw(root, args) {
-  const env = { ...process.env, VERIFY_DIR_IMPORTS_ROOT: root };
+function runRaw(root: string, args: string[]) {
+  const env: Record<string, string | undefined> = { ...process.env, VERIFY_DIR_IMPORTS_ROOT: root };
   delete env.VERIFY_DIR_IMPORTS_BASELINE;
   const r = spawnSync(process.execPath, [SCRIPT, ...args], { env, encoding: "utf8" });
   return { status: r.status, out: `${r.stdout ?? ""}${r.stderr ?? ""}` };
@@ -625,7 +627,10 @@ test("--write-baseline 只清理质量证据，新增证据不得被写入（#73
 
     // 子集口径：只分析别的包时，不得把本包条目判成失效（真实仓缺省白名单只跑 mcp-manager，
     // `--package X` 同理）。runOn 会固定注入 fixture 包名，故这里直接起一次只点名别的包的运行。
-    const subsetEnv = { ...process.env, VERIFY_DIR_IMPORTS_ROOT: root };
+    const subsetEnv: Record<string, string | undefined> = {
+      ...process.env,
+      VERIFY_DIR_IMPORTS_ROOT: root,
+    };
     delete subsetEnv.VERIFY_DIR_IMPORTS_BASELINE;
     const subset = spawnSync(
       process.execPath,
@@ -1384,7 +1389,7 @@ test("--write-baseline --package 不抹掉其他包条目（F9）", () => {
 });
 
 /** 覆盖断言所需的最小拓扑：mutate 覆盖 src/<域>/**，不含 excludes。 */
-function coverageTopology(domains) {
+function coverageTopology(domains: string[]) {
   return JSON.stringify(
     {
       sharedDefaults: {},
@@ -1586,7 +1591,7 @@ test("全覆盖断言：未覆盖清单之外的既有文件不会被误判（�
 });
 
 /** $noMutationPackages 登记所需的拓扑：packages 面为空，只登记「无变异面」理由。 */
-function noMutationTopology(members) {
+function noMutationTopology(members: unknown) {
   return JSON.stringify(
     {
       sharedDefaults: {},

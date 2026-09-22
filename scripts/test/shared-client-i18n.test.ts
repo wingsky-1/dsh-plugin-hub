@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck
 "use strict";
 
 /**
@@ -21,41 +20,43 @@ import assert from "node:assert/strict";
 import { t, bindLocale } from "../../shared/client/i18n.js";
 
 // 模拟调用方：经共享模块活绑定引用翻译函数（对齐各包 client 文件的 import 侧形态）
-function readT(key, params) {
+// params 可选：实现 JSDoc 声明可选，未装配回落与已装配 mock 均按 (key, params?) 调用；单参调用处显式传
+// undefined（运行时与省略完全等价），以满足推断出的双参签名。
+function readT(key: string, params?: Record<string, unknown>) {
   return t(key, params);
 }
 
 test("未装配时 t 回落 key 本体", () => {
   assert.equal(typeof t, "function");
-  assert.equal(readT("some.key"), "some.key");
+  assert.equal(readT("some.key", undefined), "some.key");
   assert.equal(readT("a.key", { name: "x" }), "a.key", "params 被忽略（未装配回落）");
 });
 
 test("bindLocale(mock) 后 t 命中 mock", () => {
-  const calls = [];
-  const bound = (key, params) => {
+  const calls: unknown[][] = [];
+  const bound = (key: string, params: unknown) => {
     calls.push([key, params]);
     return `TRANSLATED:${key}`;
   };
   bindLocale({ bind: () => bound }, "test-ns");
-  assert.equal(readT("hello"), "TRANSLATED:hello");
+  assert.equal(readT("hello", undefined), "TRANSLATED:hello");
   assert.deepEqual(calls[0], ["hello", undefined]);
 });
 
 test("重绑后调用方即时可见（活绑定语义）", () => {
-  bindLocale({ bind: () => (key) => `FIRST:${key}` }, "ns-a");
-  const first = readT("k");
-  bindLocale({ bind: () => (key) => `SECOND:${key}` }, "ns-b");
+  bindLocale({ bind: () => (key: string) => `FIRST:${key}` }, "ns-a");
+  const first = readT("k", undefined);
+  bindLocale({ bind: () => (key: string) => `SECOND:${key}` }, "ns-b");
   assert.equal(first, "FIRST:k", "首次绑定生效");
-  assert.equal(readT("k"), "SECOND:k", "重绑后同一函数引用即时指向新绑定（ESM 活绑定）");
+  assert.equal(readT("k", undefined), "SECOND:k", "重绑后同一函数引用即时指向新绑定（ESM 活绑定）");
 });
 
 test("bindLocale 传 undefined / 无 bind 方法时保持既有 t 不变", () => {
   bindLocale(undefined, "ns");
   assert.equal(typeof t, "function", "undefined locale 不破坏 t");
-  const before = readT("kept");
+  const before = readT("kept", undefined);
   bindLocale({}, "ns");
-  assert.equal(readT("kept"), before, "无 bind 方法时 t 不被覆写");
+  assert.equal(readT("kept", undefined), before, "无 bind 方法时 t 不被覆写");
 });
 
 test("bindLocale(locale 有 bind 但非函数) 保持既有 t", () => {

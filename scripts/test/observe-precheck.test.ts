@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck
 "use strict";
 
 /**
@@ -33,12 +32,24 @@ const NOW = "2026-09-16T00:00:00Z";
 const SHA = "1659f9ff7668e7f1f7b8e97daa28dbba97b98f53";
 
 /** gh api 的 run 形态（只保留判据消费的字段 + 判词用到的元数据）。 */
+/** 纯函数调用归一：实现（scripts/release/observe-precheck.mjs）仍带 @ts-nocheck，now 默认 new Date()
+ * 把推断收窄为 Date——实现本体 new Date(now) 同时接受 ISO 字符串；conclusion/updatedAt 取 null 是
+ * 在途 run 的故意输入形态。测试侧保留调用形态并整体断言。 */
+type RecencyArgs = Parameters<typeof evaluateObserveRecency>[0];
+const recency = (args: { runs: unknown; now: string; maxAgeHours?: number; override?: boolean }) =>
+  evaluateObserveRecency(args as unknown as RecencyArgs);
 function apiRun({
   number = 80,
   conclusion = "success",
   createdAt = "2026-09-15T22:39:37Z",
   updatedAt = "2026-09-15T23:06:39Z",
   event = "schedule",
+}: {
+  number?: number;
+  conclusion?: string | null;
+  createdAt?: string;
+  updatedAt?: string | null;
+  event?: string;
 } = {}) {
   return {
     run_number: number,
@@ -53,7 +64,7 @@ function apiRun({
 }
 
 /** CLI 调用：本文件全部用例都注入 --runs-file / --override / override env，故不会走到 gh。 */
-function runCli(args, env = {}) {
+function runCli(args: string[], env: Record<string, string> = {}) {
   return spawnSync(process.execPath, [SCRIPT, ...args], {
     cwd: ROOT,
     encoding: "utf8",
@@ -61,7 +72,7 @@ function runCli(args, env = {}) {
   });
 }
 
-function withTmpDir(fn) {
+function withTmpDir(fn: (dir: string) => void) {
   const dir = mkdtempSync(join(tmpdir(), "observe-precheck-"));
   try {
     return fn(dir);
@@ -77,21 +88,21 @@ test("默认口径：workflow=observe.yml、窗口=24 h（事实源在本脚本�
 
 test("放行：窗口内有 success；龄按收口时刻（updated_at）算，不看 created_at", () => {
   // created_at 已在窗口外、updated_at 在窗口内：误用 created_at 时这条会判 stale
-  const verdict = evaluateObserveRecency({
+  const verdict = recency({
     runs: [apiRun({ createdAt: "2026-09-14T23:00:00Z", updatedAt: "2026-09-15T01:00:00Z" })],
     now: NOW,
   });
   assert.equal(verdict.ok, true);
   assert.equal(verdict.status, "fresh");
   assert.equal(verdict.ageHours, 23);
-  assert.equal(verdict.run.number, 80);
+  assert.equal(verdict.run?.number, 80);
   const line = renderVerdictLine(verdict);
   assert.match(line, /放行/);
   assert.match(line, /2026-09-15T01:00:00\.000Z/);
 });
 
 test("判红：只有陈旧 success（窗口外）——判词点名龄与窗口", () => {
-  const verdict = evaluateObserveRecency({
+  const verdict = recency({
     runs: [
       apiRun({ number: 78, updatedAt: "2026-09-13T22:44:53Z", createdAt: "2026-09-13T22:02:06Z" }),
     ],
@@ -107,7 +118,7 @@ test("判红：只有陈旧 success（窗口外）——判词点名龄与窗口
 });
 
 test("判红：全是 failure / cancelled / 在途，以及一条 run 都没有", () => {
-  const failures = evaluateObserveRecency({
+  const failures = recency({
     runs: [
       apiRun({ number: 76, conclusion: "failure" }),
       apiRun({ number: 75, conclusion: "cancelled" }),
@@ -118,17 +129,17 @@ test("判红：全是 failure / cancelled / 在途，以及一条 run 都没有"
   assert.equal(failures.ok, false);
   assert.equal(failures.status, "no-success");
   assert.equal(failures.successCount, 0);
-  assert.equal(failures.run.number, 76, "判词要指向最近一次 run");
+  assert.equal(failures.run?.number, 76, "判词要指向最近一次 run");
   assert.match(renderVerdictLine(failures), /结论 failure/);
 
-  const none = evaluateObserveRecency({ runs: [], now: NOW });
+  const none = recency({ runs: [], now: NOW });
   assert.equal(none.ok, false);
   assert.equal(none.status, "no-runs");
   assert.match(renderVerdictLine(none), /fail-closed/);
 });
 
 test("口径覆盖：在途 run（conclusion=null）不是证据；手动 dispatch 的 success 计入", () => {
-  const inFlight = evaluateObserveRecency({
+  const inFlight = recency({
     runs: [
       apiRun({ number: 81, conclusion: null, updatedAt: null, createdAt: "2026-09-15T23:50:00Z" }),
     ],
@@ -138,13 +149,13 @@ test("口径覆盖：在途 run（conclusion=null）不是证据；手动 dispat
   assert.equal(inFlight.status, "no-success", "未收口的 run 不得当成「基线已刷新」");
 
   // dispatch 跑的是同一条全量管线、同样并集入档基线分支，故是等价证据（不按 event 过滤）
-  const dispatched = evaluateObserveRecency({
+  const dispatched = recency({
     runs: [apiRun({ number: 82, event: "workflow_dispatch", updatedAt: "2026-09-15T23:40:00Z" })],
     now: NOW,
   });
   assert.equal(dispatched.status, "fresh");
   // 但窗口外照样判红：口径是「最近一期」，不是「历史上成功过」
-  const oldDispatch = evaluateObserveRecency({
+  const oldDispatch = recency({
     runs: [apiRun({ number: 77, event: "workflow_dispatch", updatedAt: "2026-09-13T11:32:19Z" })],
     now: NOW,
   });
@@ -152,20 +163,20 @@ test("口径覆盖：在途 run（conclusion=null）不是证据；手动 dispat
 });
 
 test("边界：龄恰好 = 窗口 → 判陈旧（到达上界即拦）；窗口可注入且只改变边界", () => {
-  const exact = evaluateObserveRecency({
+  const exact = recency({
     runs: [apiRun({ updatedAt: "2026-09-15T00:00:00Z" })],
     now: NOW,
   });
   assert.equal(exact.ageHours, 24);
   assert.equal(exact.status, "stale", "恰好 24 h 视为陈旧：窗口是允许的最大龄");
 
-  const justInside = evaluateObserveRecency({
+  const justInside = recency({
     runs: [apiRun({ updatedAt: "2026-09-15T00:00:01Z" })],
     now: NOW,
   });
   assert.equal(justInside.status, "fresh");
 
-  const widened = evaluateObserveRecency({
+  const widened = recency({
     runs: [apiRun({ updatedAt: "2026-09-15T00:00:00Z" })],
     now: NOW,
     maxAgeHours: 48,
@@ -175,27 +186,24 @@ test("边界：龄恰好 = 窗口 → 判陈旧（到达上界即拦）；窗口
 
 test("fail-closed：输入损坏一律抛错，不把「看不懂」当成「没有坏消息」", () => {
   const opts = { now: NOW };
-  assert.throws(() => evaluateObserveRecency({ ...opts, runs: "nope" }), /不是数组/);
-  assert.throws(() => evaluateObserveRecency({ ...opts, runs: [null] }), /不是对象/);
-  assert.throws(() => evaluateObserveRecency({ ...opts, runs: ["x"] }), /不是对象/);
+  assert.throws(() => recency({ ...opts, runs: "nope" }), /不是数组/);
+  assert.throws(() => recency({ ...opts, runs: [null] }), /不是对象/);
+  assert.throws(() => recency({ ...opts, runs: ["x"] }), /不是对象/);
   assert.throws(
-    () => evaluateObserveRecency({ ...opts, runs: [apiRun({ updatedAt: null })] }),
+    () => recency({ ...opts, runs: [apiRun({ updatedAt: null })] }),
     /缺可解析的 updated_at/,
   );
   assert.throws(
-    () => evaluateObserveRecency({ ...opts, runs: [apiRun({ updatedAt: "not-a-date" })] }),
+    () => recency({ ...opts, runs: [apiRun({ updatedAt: "not-a-date" })] }),
     /不可解析/,
   );
-  assert.throws(() => evaluateObserveRecency({ runs: [], now: "nope" }), /now 不可解析/);
-  assert.throws(() => evaluateObserveRecency({ runs: [], now: NOW, maxAgeHours: 0 }), /正数/);
-  assert.throws(
-    () => evaluateObserveRecency({ runs: [], now: NOW, maxAgeHours: Number.NaN }),
-    /正数/,
-  );
+  assert.throws(() => recency({ runs: [], now: "nope" }), /now 不可解析/);
+  assert.throws(() => recency({ runs: [], now: NOW, maxAgeHours: 0 }), /正数/);
+  assert.throws(() => recency({ runs: [], now: NOW, maxAgeHours: Number.NaN }), /正数/);
 });
 
 test("override：不碰 run 数据即放行（取数与解析都坏掉时仍可用）", () => {
-  const verdict = evaluateObserveRecency({ runs: "损坏", now: "nope", override: true });
+  const verdict = recency({ runs: "损坏", now: "nope", override: true });
   assert.equal(verdict.ok, true);
   assert.equal(verdict.status, "overridden");
   assert.equal(verdict.overridden, true);

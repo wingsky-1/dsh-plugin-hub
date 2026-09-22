@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck
 /**
  * verify-docs 的链接面自测：agent 规则文档（#693）+ docs/ 正文（#842）。
  *
@@ -28,7 +27,13 @@ const GATE = join(ROOT, "scripts/gate/verify-docs.ts");
 /** 构造最小 fixture 仓库：packages/dsh-fake 一个包 + 可选 agent 规则文件。
  *  gitInit 为真时把 fixture 变成真实 git 仓并写入 gitignore——忽略面的判定由 git 给出，
  *  不建仓就测不到「被忽略即跳过」这条路径。 */
-function fixture({ agentFiles = {}, gitignore } = {}) {
+function fixture({
+  agentFiles = {},
+  gitignore,
+}: {
+  agentFiles?: Record<string, string>;
+  gitignore?: string;
+} = {}) {
   const dir = mkdtempSync(join(tmpdir(), "verify-docs-agent-"));
   mkdirSync(join(dir, "packages/dsh-fake"), { recursive: true });
   writeFileSync(join(dir, "packages/dsh-fake/README.md"), "# fake\n");
@@ -49,7 +54,7 @@ function fixture({ agentFiles = {}, gitignore } = {}) {
   return dir;
 }
 
-function run(root, extraArgs = []) {
+function run(root: string, extraArgs: string[] = []) {
   try {
     return spawnSync(process.execPath, [GATE, "--root", root, ...extraArgs], { encoding: "utf8" });
   } finally {

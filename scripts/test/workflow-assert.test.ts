@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck
 "use strict";
 
 /**
@@ -37,7 +36,7 @@ import { MUTATION_GATE_JOB_RE } from "../gate/baseline-archive.mjs";
 
 const ROOT = join(import.meta.dirname, "../..");
 // win32 checkout 常为 CRLF：断言子串按 LF 书写——读取层统一归一化 LF。
-const lf = (p) => readFileSync(p, "utf8").replace(/\r\n/g, "\n");
+const lf = (p: string) => readFileSync(p, "utf8").replace(/\r\n/g, "\n");
 const CI = lf(join(ROOT, ".github/workflows/ci.yml"));
 const OBSERVE = lf(join(ROOT, ".github/workflows/observe.yml"));
 // #718 S2.2 退役后不再读该文件（读会直接抛），只留路径给「不得回潮」断言。
@@ -58,7 +57,7 @@ const MUTATION_PACKAGES = Object.keys(GAUNTLET?.mutation?.packages ?? {});
 // 包级单段配置 <pkg>.json 与段式配置 <pkg>-<后缀>.json（后缀=功能段名或数字段名）
 // 统一归并为基础包名：对已知包集合（gauntlet mutation.packages）做最长前缀匹配。
 // 所有需要「conf 文件集 ↔ 包集」一致的断言共用本函数，避免三处漂移（评审 P1-2）。
-function basePkgOfConf(f) {
+function basePkgOfConf(f: string) {
   const name = f.replace(/\.json$/, "");
   const hit = MUTATION_PACKAGES.filter((p) => name === p || name.startsWith(`${p}-`)).sort(
     (a, b) => b.length - a.length,
@@ -66,7 +65,7 @@ function basePkgOfConf(f) {
   return hit[0];
 }
 // 段式配置的后缀（如 dsh-notifier-server.json → server；dsh-lan-proxy-config.json → config）
-function segSuffixOfConf(f) {
+function segSuffixOfConf(f: string) {
   const name = f.replace(/\.json$/, "");
   const base = basePkgOfConf(f);
   return base && name !== base ? name.slice(base.length + 1) : undefined;
@@ -600,20 +599,21 @@ test("#342: 每段 mutate 正向条目至少 glob 到 1 个现存文件（防空
   const confDir = join(ROOT, "stryker.conf.d");
   for (const f of readdirSync(confDir).filter((x) => x.endsWith(".json"))) {
     const conf = JSON.parse(readFileSync(join(confDir, f), "utf8"));
-    const positives = (conf.mutate ?? []).filter((m) => !m.startsWith("!"));
+    const positives = (conf.mutate ?? []).filter((m: string) => !m.startsWith("!"));
     assert.ok(
       positives.length > 0,
       `${f} 无 mutate 正向条目（防空段回归：provider-2 空段即 mutate 指向不存在的 adapters/*.ts，0 mutant）`,
     );
     assert.ok(
-      positives.some((m) => globSync(m, { cwd: ROOT }).length > 0),
+      positives.some((m: string) => globSync(m, { cwd: ROOT }).length > 0),
       `${f} mutate 正向条目全部 glob 不到现存文件（防空段回归：v4 §4.4）`,
     );
   }
 });
 
 test("gauntlet: mutation.packages 全部带 threshold 字段且 ≥60（阶段一基线）", () => {
-  const pkgs = GAUNTLET?.mutation?.packages ?? {};
+  // threshold 落盘形态（本用例即断言该形态）：pkgs 取该结构，合法性由本用例自身钉住。
+  const pkgs: Record<string, { threshold: number }> = GAUNTLET?.mutation?.packages ?? {};
   assert.ok(Object.keys(pkgs).length > 0, "mutation.packages 非空");
   for (const [pkg, cfg] of Object.entries(pkgs)) {
     assert.equal(typeof cfg.threshold, "number", `${pkg}.threshold 已落盘`);
@@ -1098,9 +1098,9 @@ test("#217+#187+#722+#843: repo-gate-assert 判定表全组合锁定（事件 ×
     // （以及缺省 = crashed 的 fail-closed）在下方单列，否则两者会互相掩盖。
     failureClass: "judged",
   };
-  const run = (over) => evaluateGate({ ...base, ...over });
+  const run = (over: Record<string, string | undefined>) => evaluateGate({ ...base, ...over });
   const RESULTS = ["success", "failure", "cancelled", "skipped"];
-  const allSkipped = (cov, mut, verd) =>
+  const allSkipped = (cov: string, mut: string, verd: string) =>
     cov === "skipped" && mut === "skipped" && verd === "skipped";
 
   // 手写期望表（独立于实现成文，防同义反复；0=绿 1=红）：
@@ -1112,9 +1112,15 @@ test("#217+#187+#722+#843: repo-gate-assert 判定表全组合锁定（事件 ×
   //     空切片时 job 根本不实例化，不再有「零实例动态矩阵回报 failure」那种形态）
   // #843 M1 红线维度（redline ∈ RESULTS）：PR 上必须 success（skipped = 该跑没跑），
   // 非 PR 上必须 skipped（它的 if 就是 pull_request）——两侧都是 fail-closed。
-  const expectNonPr = (full, cov, mut, verd, red) =>
+  const expectNonPr = (full: string, cov: string, mut: string, verd: string, red: string) =>
     full === "false" && allSkipped(cov, mut, verd) && red === "skipped" ? 0 : 1;
-  const expectPrWithMutations = (full, cov, mut, verd, red) => {
+  const expectPrWithMutations = (
+    full: string,
+    cov: string,
+    mut: string,
+    verd: string,
+    red: string,
+  ) => {
     const covOk = full === "true" ? cov === "success" : cov === "skipped";
     return covOk &&
       (mut === "success" || mut === "failure") &&
@@ -1123,9 +1129,17 @@ test("#217+#187+#722+#843: repo-gate-assert 判定表全组合锁定（事件 ×
       ? 0
       : 1;
   };
-  const expectPrEmptySlice = (cov, mut, verd, red) =>
+  const expectPrEmptySlice = (cov: string, mut: string, verd: string, red: string) =>
     allSkipped(cov, mut, verd) && red === "success" ? 0 : 1;
-  const expectOf = (event, full, hm, cov, mut, verd, red) => {
+  const expectOf = (
+    event: string,
+    full: string,
+    hm: string,
+    cov: string,
+    mut: string,
+    verd: string,
+    red: string,
+  ) => {
     if (event !== "pull_request") {
       return expectNonPr(full, cov, mut, verd, red);
     }
@@ -1380,7 +1394,7 @@ test("#217+#187+#722+#843: repo-gate-assert 判定表全组合锁定（事件 ×
   // 为什么单列一张表：needs.<job>.result 对 exit 1 与 exit 2 都只报 failure，分类只能靠
   // GATE_FAILURE_CLASS 显式传入。这里是「传入值 → 退出码」的唯一判据；缺省（未注入 / 空串）
   // 必须落 crashed = exit 2 —— fail-closed 的方向是「宁可把故障说成故障」，不是「宁可放行」。
-  const CRASHED_INPUTS = [
+  const CRASHED_INPUTS: Array<[string, Record<string, string>]> = [
     ["buildTest", { buildTest: "failure" }],
     ["coverage", { coverage: "failure" }],
     ["verdict", { verdict: "failure" }],
@@ -1507,7 +1521,21 @@ test("#217+#187+#722+#843: repo-gate-assert 判定表全组合锁定（事件 ×
 
 test("#217+#187: repo-gate-assert CLI 退出码转发（GitHub Actions 判红依据）", () => {
   const script = join(ROOT, "scripts/gate/repo-gate-assert.mjs");
-  const envOf = (over) => ({
+  /** CLI env 输入形态：各维度可选（缺省由调用方或门禁侧 fail-closed 语义承接）。 */
+  interface GateInputs {
+    event?: string;
+    changes?: string;
+    buildTest?: string;
+    coverage?: string;
+    mutation?: string;
+    verdict?: string;
+    redline?: string;
+    hasMutations?: string;
+    mutationPkgsJson?: string;
+    fullRequested?: string;
+    failureClass?: string | null;
+  }
+  const envOf = (over: GateInputs): Record<string, string> => ({
     GATE_EVENT: over.event ?? "",
     GATE_CHANGES: over.changes ?? "",
     GATE_BUILD_TEST: over.buildTest ?? "",
@@ -1642,7 +1670,7 @@ test("#217+#187: repo-gate-assert CLI 退出码转发（GitHub Actions 判红依
   // #843 P-2：CLI 侧的失败分类转发。三种取值必须走出三个不同退出码——
   // 判据判红 = 1（结论可信）、门禁故障 = 2（非判据结论）、未注入 = 2（fail-closed）。
   // 这条判据是「把 exit 2 读成判红」那次事故的直接回归锚：2 必须自带到 PR 页面可见的判词。
-  const cliCrashEnv = (failureClass) => {
+  const cliCrashEnv = (failureClass: string | null) => {
     const env = envOf({
       event: "pull_request",
       changes: "success",
@@ -1657,7 +1685,7 @@ test("#217+#187: repo-gate-assert CLI 退出码转发（GitHub Actions 判红依
       failureClass,
     });
     if (failureClass === null) delete env.GATE_FAILURE_CLASS;
-    return { encoding: "utf8", env: { ...process.env, ...env } };
+    return { encoding: "utf8" as const, env: { ...process.env, ...env } };
   };
   const cliJudged = spawnSync(process.execPath, [script], cliCrashEnv("judged"));
   assert.equal(cliJudged.status, 1, "redline=failure + judged 的 CLI 必须 exit 1");

@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck
 "use strict";
 
 /**
@@ -37,7 +36,12 @@ const PACK_CHECK = join(ROOT, "scripts", "gate", "pack-check.ts");
  * 铺一个「tarball 解包后」形态的最小包目录。
  * @param {{ exports: unknown, files?: string[] }} spec files = 相对包根的产物文件（自动含 package.json）
  */
-function fixture(spec) {
+/** fixture 规格（与上方 JSDoc 同义的类型化）。 */
+interface FixtureSpec {
+  exports: unknown;
+  files?: string[];
+}
+function fixture(spec: FixtureSpec) {
   const dir = mkdtempSync(join(tmpdir(), "exports-types-"));
   const pkg = { name: "@wingspace/fake", version: "0.0.0", exports: spec.exports };
   writeFileSync(join(dir, "package.json"), JSON.stringify(pkg, null, 2), "utf8");
@@ -49,7 +53,7 @@ function fixture(spec) {
   return dir;
 }
 
-function withFixture(spec, fn) {
+function withFixture(spec: FixtureSpec, fn: (dir: string) => void) {
   const dir = fixture(spec);
   try {
     return fn(dir);
@@ -69,7 +73,7 @@ test("合规：每个带 types 的子路径都指向真实存在的产物文件 
       },
       files: ["lib/index.d.ts", "lib/index.js", "lib/client/index.d.ts", "lib/client.js"],
     },
-    (dir) => assert.deepEqual(checkExportTypesResolvable(dir), []),
+    (dir: string) => assert.deepEqual(checkExportTypesResolvable(dir), []),
   );
 });
 
@@ -80,7 +84,7 @@ test("违规（本判据要防的核心方向）：types 指向不存在的文�
       // 实际产出是 lib/client/index.d.ts（目录形态），lib/client.d.ts 不存在
       files: ["lib/index.d.ts", "lib/client/index.d.ts"],
     },
-    (dir) => {
+    (dir: string) => {
       const problems = checkExportTypesResolvable(dir);
       assert.equal(problems.length, 1, problems.join("\n"));
       assert.match(
@@ -92,7 +96,7 @@ test("违规（本判据要防的核心方向）：types 指向不存在的文�
 });
 
 test("违规：types 不在 ./lib/ 下 → 判红且说明无法定位产物（不静默跳过）", () => {
-  withFixture({ exports: { ".": { types: "./types/index.d.ts" } }, files: [] }, (dir) => {
+  withFixture({ exports: { ".": { types: "./types/index.d.ts" } }, files: [] }, (dir: string) => {
     const problems = checkExportTypesResolvable(dir);
     assert.equal(problems.length, 1, problems.join("\n"));
     assert.match(problems[0], /不在 \.\/lib\/ 下（无法定位产物）/);
@@ -105,7 +109,7 @@ test("排除面：无 types 条件的子路径（./package.json 等）不参与�
       exports: { ".": { types: "./lib/index.d.ts" }, "./package.json": "./package.json" },
       files: ["lib/index.d.ts"],
     },
-    (dir) => {
+    (dir: string) => {
       const entries = listExportTypesEntries(dir);
       assert.deepEqual(
         entries.map((e) => e.subpath),
@@ -126,7 +130,7 @@ test("fail-closed：package.json 缺失 → 抛（不静默当作零子路径全
 });
 
 test("fail-closed：exports 为字符串形态（无法解析子路径）→ 抛", () => {
-  withFixture({ exports: "./lib/index.js" }, (dir) => {
+  withFixture({ exports: "./lib/index.js" }, (dir: string) => {
     assert.throws(() => checkExportTypesResolvable(dir), /exports 不是对象形态/);
   });
 });

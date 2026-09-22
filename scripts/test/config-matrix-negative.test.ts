@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck
 "use strict";
 
 /**
@@ -77,7 +76,7 @@ function fakeRepo() {
     // 不是矩阵的错。#774 收口前此处填的是 pending 节，该节已随机制删除。
     const manifestPath = join(root, "scripts/data/plugins-manifest.json");
     const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
-    manifest.configSurfaces = manifest.configSurfaces.map((s) =>
+    manifest.configSurfaces = manifest.configSurfaces.map((s: { package: string }) =>
       s.package === "dsh-notifier"
         ? s
         : {
@@ -101,22 +100,22 @@ function fakeRepo() {
 
 // win32 checkout 常为 CRLF：变异正则按 LF 书写——副本统一归一化 LF，
 // 保证变异在两个平台等价生效（gate 解析对行尾不敏感）。
-function copyLf(srcPath, destPath) {
+function copyLf(srcPath: string, destPath: string) {
   writeFileSync(destPath, readFileSync(srcPath, "utf8").replace(/\r\n/g, "\n"));
 }
 
-function edit(root, pkg, rel, fn) {
+function edit(root: string, pkg: string, rel: string, fn: (text: string) => string) {
   const f = join(root, "packages", pkg, "src", rel);
   writeFileSync(f, fn(readFileSync(f, "utf8").replace(/\r\n/g, "\n")));
 }
 
-function editManifest(root, fn) {
+function editManifest(root: string, fn: (text: string) => string) {
   const f = join(root, "scripts", "data", "plugins-manifest.json");
   writeFileSync(f, fn(readFileSync(f, "utf8").replace(/\r\n/g, "\n")));
 }
 
 /** 通用断言：注入后矩阵红 + problems 含 expectKey；若 expectKey 为数组则逐一断言。 */
-function assertRed(label, mutate, expectKeys) {
+function assertRed(label: string, mutate: (root: string) => void, expectKeys: string | string[]) {
   const root = fakeRepo();
   try {
     mutate(root);
@@ -272,7 +271,9 @@ test("notifier: 未登记配置面 → 红（manifest 自洽：active ∪ standa
     (root) => {
       editManifest(root, (s) => {
         const m = JSON.parse(s);
-        m.configSurfaces = m.configSurfaces.filter((x) => x.package !== "dsh-notifier");
+        m.configSurfaces = m.configSurfaces.filter(
+          (x: { package: string }) => x.package !== "dsh-notifier",
+        );
         return JSON.stringify(m, null, 2);
       });
     },
@@ -286,7 +287,7 @@ test("surface: none 缺 reason → 红（它与「漏登记」的区别就是这
     (root) => {
       editManifest(root, (s) => {
         const m = JSON.parse(s);
-        m.configSurfaces = m.configSurfaces.map((x) =>
+        m.configSurfaces = m.configSurfaces.map((x: { package: string }) =>
           x.package === "dsh-notifier" ? { package: "dsh-notifier", surface: "none" } : x,
         );
         return JSON.stringify(m, null, 2);
@@ -302,7 +303,7 @@ test("surface: none 与四面对齐全形态互斥 → 红（不许拿「无配�
     (root) => {
       editManifest(root, (s) => {
         const m = JSON.parse(s);
-        m.configSurfaces = m.configSurfaces.map((x) =>
+        m.configSurfaces = m.configSurfaces.map((x: { package: string }) =>
           x.package === "dsh-notifier"
             ? {
                 package: "dsh-notifier",
@@ -389,7 +390,7 @@ test("notifier: COUNT_LIMITS 上界低于 DEFAULT_CONFIG 默认值 → 红（默
 // ---- UI 豁免表（#733 3.2.2 数据化）：门禁读数据面，数据面坏掉必须 fail-closed ----
 
 /** 编辑副本里的数据文件（豁免表）。 */
-function editData(root, rel, fn) {
+function editData(root: string, rel: string, fn: (text: string) => string) {
   const f = join(root, "scripts", "data", rel);
   writeFileSync(f, fn(readFileSync(f, "utf8").replace(/\r\n/g, "\n")));
 }
@@ -541,8 +542,8 @@ test("UI 豁免表: 锚点写法变体（./ 前缀 / 区间）仍应通过——
   try {
     editData(root, "dsh-lan-proxy-ui-exempt.json", (s) => {
       const json = JSON.parse(s);
-      const host = json.exemptKeys.find((e) => e.key === "host");
-      const targetHost = json.exemptKeys.find((e) => e.key === "targetHost");
+      const host = json.exemptKeys.find((e: { key: string }) => e.key === "host");
+      const targetHost = json.exemptKeys.find((e: { key: string }) => e.key === "targetHost");
       const before = JSON.stringify([
         host.reason,
         host.rationale,

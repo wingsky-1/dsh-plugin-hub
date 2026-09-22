@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck
 /**
  * verify-coverage-scope 自测（#733 计划项 3.4）：单一事实源、条目结构、kind 形态一致性、面完整性、条目腐烂、产物交叉断言。
  *
@@ -42,8 +41,15 @@ const BASE_CONFIG = {
 /**
  * 构造最小 fixture 仓库：源文件 + 数据配置 + vitest.config.ts。
  * sourceFiles 默认给一个已分类的宿主端源码（落在 include 面内）。
+ * config 取 unknown：缺 reason、kind 越界等非法形态是故意的反例输入，合法性由门禁判定，fixture 只落盘。
  */
-function fixture(config = BASE_CONFIG, { sourceFiles, vitest = VITEST_OK } = {}) {
+function fixture(
+  config: unknown = BASE_CONFIG,
+  {
+    sourceFiles,
+    vitest = VITEST_OK,
+  }: { sourceFiles?: Array<{ rel: string; content: string }>; vitest?: string } = {},
+) {
   const root = mkdtempSync(join(tmpdir(), "cov-scope-"));
   const files = sourceFiles ?? [
     { rel: "packages/dsh-fake/src/a.ts", content: "export const a = 1\n" },
@@ -62,7 +68,7 @@ function fixture(config = BASE_CONFIG, { sourceFiles, vitest = VITEST_OK } = {})
   return root;
 }
 
-function run(root) {
+function run(root: string) {
   try {
     return spawnSync(process.execPath, [SCRIPT, "--root", root], { encoding: "utf8" });
   } finally {
@@ -419,7 +425,7 @@ test("fail-closed：include 为空数组 → exit 2（分母为空是配置错�
 });
 
 /** 固定时间戳，不依赖文件系统写入速度或 wall clock 的精度。 */
-function artifactFixture(keys, { fresh = true } = {}) {
+function artifactFixture(keys: string[], { fresh = true }: { fresh?: boolean } = {}) {
   const root = fixture();
   mkdirSync(join(root, "coverage"));
   const artifact = Object.fromEntries(keys.map((key) => [join(root, key), {}]));
@@ -440,7 +446,7 @@ for (const [name, source, expected] of [
   ["副作用", "console.log('side effect');", 1],
   ["动态导入", "import('./other.js');", 1],
   ["无效源码", "export const = ;", 1],
-]) {
+] as Array<[string, string, number]>) {
   test("产物缺失按语句判定而非文件名：" + name, () => {
     const root = artifactFixture(["packages/dsh-fake/src/a.ts", "shared/x.js"]);
     writeFileSync(join(root, "packages/dsh-fake/src/interface.ts"), source);

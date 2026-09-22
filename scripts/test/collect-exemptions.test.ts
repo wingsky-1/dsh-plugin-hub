@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck
 /** collect-exemptions.mjs 自测：收集面 / 指针定位 / 到期分档 / 恒 exit 0（它是报告不是门禁）。 */
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -12,7 +11,7 @@ const ROOT = join(import.meta.dirname, "../..");
 const SCRIPT = join(ROOT, "scripts", "gate", "collect-exemptions.mjs");
 
 /** fixture 数据目录；files: { 文件名: JSON 值 } */
-function fixture(files) {
+function fixture(files: Record<string, unknown>) {
   const dir = mkdtempSync(join(tmpdir(), "collect-exemptions-"));
   const dataDir = join(dir, "scripts", "data");
   mkdirSync(dataDir, { recursive: true });
@@ -22,7 +21,7 @@ function fixture(files) {
   return dir;
 }
 
-function run(dir, extraArgs = []) {
+function run(dir: string, extraArgs: string[] = []) {
   try {
     return spawnSync(process.execPath, [SCRIPT, "--root", dir, ...extraArgs], { encoding: "utf8" });
   } finally {

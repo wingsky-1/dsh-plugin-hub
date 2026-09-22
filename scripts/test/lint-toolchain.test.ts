@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck
 "use strict";
 
 /**
@@ -126,7 +125,8 @@ test("#764 A1：失效的 eslint-disable 注释判 error（flat 默认只到 war
   );
   assert.ok(
     result.messages.some(
-      (m) => m.severity === 2 && /Unused eslint-disable directive/.test(m.message),
+      (m: { severity: number; message: string }) =>
+        m.severity === 2 && /Unused eslint-disable directive/.test(m.message),
     ),
     `失效 disable 必须按 error 报，实际：${JSON.stringify(result.messages)}`,
   );
@@ -231,7 +231,10 @@ test("#764 A4：基线抑制机制已接线（Node API 只应用，创建/修剪
   // 存量一次性炸开」，所以在门禁里先钉一层。
   const file = join(ROOT, "eslint-suppressions.json");
   if (!existsSync(file)) return;
-  const data = JSON.parse(readFileSync(file, "utf8"));
+  // 基线结构（文件 → 规则 → { count }）：门禁自述口径，非法结构由下文断言钉住。
+  const data: Record<string, Record<string, { count: number }>> = JSON.parse(
+    readFileSync(file, "utf8"),
+  );
   assert.equal(typeof data, "object", "eslint-suppressions.json 必须是对象");
   for (const [filePath, rules] of Object.entries(data)) {
     assert.equal(typeof rules, "object", `${filePath} 下必须是「规则 → { count }」`);
@@ -250,7 +253,7 @@ test("#764 A5：sonarjs/deprecation 在类型感知面生效；非类型感知�
     cwd: ROOT,
     overrideConfigFile: join(ROOT, "tools", "lint", "eslint.config.js"),
   });
-  const level = (configured) => (Array.isArray(configured) ? configured[0] : configured);
+  const level = (configured: unknown) => (Array.isArray(configured) ? configured[0] : configured);
 
   const typedFace = await eslint.calculateConfigForFile(
     join(ROOT, "packages", "dsh-provider-usage", "src", "shared", "contracts.ts"),
@@ -286,7 +289,9 @@ test("#764 A5：基线条目必须指向现存文件，且规则在该文件上�
     cwd: ROOT,
     overrideConfigFile: join(ROOT, "tools", "lint", "eslint.config.js"),
   });
-  const data = JSON.parse(readFileSync(file, "utf8"));
+  const data: Record<string, Record<string, { count: number }>> = JSON.parse(
+    readFileSync(file, "utf8"),
+  );
   for (const [relPath, rules] of Object.entries(data)) {
     const abs = join(ROOT, relPath);
     assert.ok(existsSync(abs), `基线条目指向的文件必须存在：${relPath}`);
@@ -315,7 +320,7 @@ test("#764 A5：基线的只许收缩棘轮（官方只在 CLI 侧检查，Node 
   const probe = "tools/lint/fixtures/lint-probe-fixture.ts";
   const dir = mkdtempSync(join(tmpdir(), "lint-suppressions-"));
   try {
-    const run = (count) => {
+    const run = (count: number) => {
       const base = join(dir, `base-${count}.json`);
       writeFileSync(base, JSON.stringify({ [probe]: { [rule]: { count } } }), "utf8");
       return spawnSync(
@@ -380,19 +385,19 @@ test("#765 第 2 项：客户端 var 豁免面 == 实际含 var 的客户端文�
     cwd: ROOT,
     overrideConfigFile: join(ROOT, "tools", "lint", "eslint.config.js"),
   });
-  const level = (configured) => (Array.isArray(configured) ? configured[0] : configured);
-  const isOff = (configured) => level(configured) === 0 || level(configured) === "off";
+  const level = (configured: unknown) => (Array.isArray(configured) ? configured[0] : configured);
+  const isOff = (configured: unknown) => level(configured) === 0 || level(configured) === "off";
 
   // 为什么要这条不变量：豁免面原先是 `packages/*/src/client/**` 通配——判据面随目录增长而变宽，
   // 以后任何新客户端文件写 `var` 都会被静默豁免。收窄成显式文件清单之后，「清单 == 实际含 var
   // 的文件」这条等式就是收窄的**判据本身**：新增文件写 var（等式右侧变大）与清单条目腐烂
   // （左侧有条目、右侧没有）都会让它变红，逼出一次显式决定——补清单，或改代码。
-  const clientDir = (pkg) => join(ROOT, "packages", pkg, "src", "client");
+  const clientDir = (pkg: string) => join(ROOT, "packages", pkg, "src", "client");
   const clientFiles = [];
   for (const pkg of readdirSync(join(ROOT, "packages"))) {
     const dir = clientDir(pkg);
     if (!existsSync(dir)) continue;
-    for (const rel of readdirSync(dir, { recursive: true })) {
+    for (const rel of readdirSync(dir, { recursive: true, encoding: "utf8" })) {
       const abs = join(dir, rel);
       if (!/\.(ts|tsx|mts|cts)$/.test(abs) || !existsSync(abs)) continue;
       if (!readFileSync(abs, "utf8").includes("var")) continue; // 粗筛：不含 var 的文件无需起 lint
@@ -411,7 +416,9 @@ test("#765 第 2 项：客户端 var 豁免面 == 实际含 var 的客户端文�
       overrideConfig: { rules: { "no-var": "error" } },
     });
     const messages = await withNoVar.lintText(readFileSync(abs, "utf8"), { filePath: abs });
-    const hasVar = messages.some((m) => m.messages.some((x) => x.ruleId === "no-var"));
+    const hasVar = messages.some((m: { messages: Array<{ ruleId: string | null }> }) =>
+      m.messages.some((x: { ruleId: string | null }) => x.ruleId === "no-var"),
+    );
     const configured = (await eslint.calculateConfigForFile(abs)).rules?.["no-var"];
     assert.equal(
       isOff(configured),
@@ -432,7 +439,7 @@ test("#765 第 6 项：no-var 不在降级集里，且在常规规则面按 erro
     cwd: ROOT,
     overrideConfigFile: join(ROOT, "tools", "lint", "eslint.config.js"),
   });
-  const level = (configured) => (Array.isArray(configured) ? configured[0] : configured);
+  const level = (configured: unknown) => (Array.isArray(configured) ? configured[0] : configured);
 
   // 全仓命中数为 0 的规则留在 LEGACY_WARN 里 = 把一条不存在的债记成技术债，还让新写的 var 只拿 warn。
   for (const rel of ["scripts/gate/verify-docs.ts", "shared/sse-hub.js"]) {
@@ -447,7 +454,12 @@ test("#765 第 6 项：no-var 不在降级集里，且在常规规则面按 erro
     filePath: join(ROOT, "scripts", "gate", "probe-no-var.ts"),
   });
   assert.ok(
-    probe.some((r) => r.messages.some((m) => m.ruleId === "no-var" && m.severity === 2)),
+    probe.some((r: { messages: Array<{ ruleId: string | null; severity: number }> }) =>
+      r.messages.some(
+        (m: { ruleId: string | null; severity: number }) =>
+          m.ruleId === "no-var" && m.severity === 2,
+      ),
+    ),
     "新写的 var 必须直接判红（而不是降级成警告去吃预算）",
   );
 });

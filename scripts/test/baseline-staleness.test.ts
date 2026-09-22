@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck
 "use strict";
 
 /**
@@ -26,9 +25,15 @@ import {
 const ROOT = join(import.meta.dirname, "../..");
 const SCRIPT = join(ROOT, "scripts/release/baseline-staleness.mjs");
 const SHA = "a4277ac29417ff4a69c17edfb69592226bd0c329";
+/** 纯函数调用归一：实现（scripts/release/baseline-staleness.mjs）仍带 @ts-nocheck，now 默认 new Date()
+ * 把推断收窄为 Date——实现本体 new Date(now) 同时接受 ISO 字符串（无效串抛 TypeError 另有专条
+ * 用例钉住），测试侧保留字符串入参并整体断言。 */
+type StalenessArgs = Parameters<typeof evaluateBaselineStaleness>[0];
+const staleness = (args: { lastCommitDate: string; now: string; thresholdHours?: number }) =>
+  evaluateBaselineStaleness(args as unknown as StalenessArgs);
 
 /** CLI 注入式运行：不给 --commit-date 才会走 gh，故这里全程离线。 */
-function runCli(dir, args) {
+function runCli(dir: string, args: string[]) {
   return spawnSync(
     process.execPath,
     [
@@ -51,7 +56,7 @@ function runCli(dir, args) {
 
 test("阈值是 48 h，且默认生效（错过一夜约 30 h 不得告警）", () => {
   assert.equal(STALENESS_THRESHOLD_HOURS, 48);
-  const v = evaluateBaselineStaleness({
+  const v = staleness({
     lastCommitDate: "2026-09-13T18:17:00Z",
     now: "2026-09-15T00:17:00Z",
   });
@@ -61,7 +66,7 @@ test("阈值是 48 h，且默认生效（错过一夜约 30 h 不得告警）", 
 });
 
 test("正：龄 < 阈值 → 不告警，正文留痕为 fresh", () => {
-  const v = evaluateBaselineStaleness({
+  const v = staleness({
     lastCommitDate: "2026-09-14T00:00:00Z",
     now: "2026-09-14T06:00:00Z",
   });
@@ -74,7 +79,7 @@ test("正：龄 < 阈值 → 不告警，正文留痕为 fresh", () => {
 });
 
 test("反：龄 > 阈值 → 告警，正文与工单正文都点明龄与阈值", () => {
-  const v = evaluateBaselineStaleness({
+  const v = staleness({
     lastCommitDate: "2026-09-12T00:00:00Z",
     now: "2026-09-14T06:00:00Z",
   });
@@ -91,7 +96,7 @@ test("反：龄 > 阈值 → 告警，正文与工单正文都点明龄与阈值
 });
 
 test("边界：龄恰好 = 阈值 → 判陈旧（>= 语义，恰好到期不再多沉默一轮）", () => {
-  const v = evaluateBaselineStaleness({
+  const v = staleness({
     lastCommitDate: "2026-09-12T00:00:00Z",
     now: "2026-09-14T00:00:00Z",
   });
@@ -101,18 +106,18 @@ test("边界：龄恰好 = 阈值 → 判陈旧（>= 语义，恰好到期不再
 
 test("阈值可注入（供单测与实证），但仍必须是正数", () => {
   const base = { lastCommitDate: "2026-09-14T00:00:00Z", now: "2026-09-14T02:00:00Z" };
-  assert.equal(evaluateBaselineStaleness({ ...base, thresholdHours: 2 }).stale, true);
-  assert.equal(evaluateBaselineStaleness({ ...base, thresholdHours: 3 }).stale, false);
-  assert.throws(() => evaluateBaselineStaleness({ ...base, thresholdHours: 0 }), /正数/);
+  assert.equal(staleness({ ...base, thresholdHours: 2 }).stale, true);
+  assert.equal(staleness({ ...base, thresholdHours: 3 }).stale, false);
+  assert.throws(() => staleness({ ...base, thresholdHours: 0 }), /正数/);
 });
 
 test("不可解析的时间一律抛错（不得静默当成新鲜）", () => {
   assert.throws(
-    () => evaluateBaselineStaleness({ lastCommitDate: "not-a-date", now: "2026-09-14T00:00:00Z" }),
+    () => staleness({ lastCommitDate: "not-a-date", now: "2026-09-14T00:00:00Z" }),
     TypeError,
   );
   assert.throws(
-    () => evaluateBaselineStaleness({ lastCommitDate: "2026-09-14T00:00:00Z", now: "nope" }),
+    () => staleness({ lastCommitDate: "2026-09-14T00:00:00Z", now: "nope" }),
     TypeError,
   );
 });

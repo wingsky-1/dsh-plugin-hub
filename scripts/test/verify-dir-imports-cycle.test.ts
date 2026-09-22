@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck
 "use strict";
 
 /**
@@ -31,7 +30,7 @@ const SCRIPT = join(ROOT, "scripts", "gate", "verify-dir-imports.mjs");
  * （调用方负责清理）。门禁对拓扑缺失态已 fail-closed（#773 R3）：本文件的用例验证的是
  * 规则 5 本身，故 fixture 自带事实源，否则缺失告警会盖住被判定的环语义。
  */
-function makeFixtureRoot(files) {
+function makeFixtureRoot(files: Record<string, string>) {
   const root = mkdtempSync(join(tmpdir(), "verify-dir-imports-"));
   const src = join(root, "packages", "fixture-pkg", "src");
   for (const [rel, content] of Object.entries(files)) {
@@ -61,8 +60,8 @@ function makeFixtureRoot(files) {
 }
 
 /** 对 fixture 根跑脚本，返回 { status, out }。 */
-function runOn(root, args = []) {
-  const env = { ...process.env, VERIFY_DIR_IMPORTS_ROOT: root };
+function runOn(root: string, args: string[] = []) {
+  const env: Record<string, string | undefined> = { ...process.env, VERIFY_DIR_IMPORTS_ROOT: root };
   // 外部若设了基线路径，会与 fixture 自己的基线串味（残留风险），显式清掉。
   delete env.VERIFY_DIR_IMPORTS_BASELINE;
   const r = spawnSync(process.execPath, [SCRIPT, "--package", "fixture-pkg", ...args], {
@@ -73,7 +72,7 @@ function runOn(root, args = []) {
 }
 
 /** 登记 fixture 基线（#843 D15：基线无本包条目自身判红，判绿用例必须先落库）。 */
-function seedBaseline(root) {
+function seedBaseline(root: string) {
   const written = runOn(root, ["--write-baseline"]);
   assert.equal(written.status, 0, `fixture 登记基线应成功：\n${written.out}`);
 }
