@@ -5096,6 +5096,16 @@ describe("#633 分片 b2 D2：客户端源码契约断言", () => {
       "utf8",
     );
     clientContractObs.localesSource = readFileSync(join(pkgDir, "src/client/locales.ts"), "utf8");
+    clientContractObs.providersSource = readFileSync(
+      join(pkgDir, "src/client/settings/providers.tsx"),
+      "utf8",
+    );
+    clientContractObs.uiSource = readFileSync(join(pkgDir, "src/client/settings/ui.tsx"), "utf8");
+    clientContractObs.usageSource = readFileSync(
+      join(pkgDir, "src/client/settings/usage.tsx"),
+      "utf8",
+    );
+    clientContractObs.clientStyle = readFileSync(join(pkgDir, "src/client/style.css"), "utf8");
     clientContractObs.listDirsSource = readFileSync(
       join(pkgDir, "src/server/execute/list-dirs.ts"),
       "utf8",
@@ -5192,6 +5202,44 @@ describe("#633 分片 b2 D2：客户端源码契约断言", () => {
 
   it("locales 中英对称新增目录面 Top 标签", () => {
     expect(clientContractObs.localesSource.includes('trendCardTopDir: "Top 目录"')).toBeTruthy();
+  });
+
+  // #940 B2-2：适配器/悬浮窗两页呈现契约（副标题 + 顶层引导 + 路径密钥 hint + 动效注脚 + 材质预览 + R5）
+  it("B2-2 适配器页副标题与顶层引导按钮存在", () => {
+    expect(clientContractObs.providersSource.includes('t("provSub")')).toBeTruthy();
+    expect(clientContractObs.providersSource.includes("void onCopyGlobalGuide()")).toBeTruthy();
+  });
+
+  it("B2-2 添加表单路径密钥 hint 存在", () => {
+    expect(clientContractObs.providersSource.includes('t("pathKeyHint")')).toBeTruthy();
+    expect(clientContractObs.localesSource.includes('pathKeyHint: "仅接受本地 .mjs')).toBeTruthy();
+    expect(clientContractObs.localesSource.includes('pathKeyHint: "Local .mjs only')).toBeTruthy();
+  });
+
+  it("B2-2 悬浮窗页动效注脚与材质预览存在", () => {
+    expect(clientContractObs.uiSource.includes('t("flMotion")')).toBeTruthy();
+    expect(clientContractObs.uiSource.includes('t("floatPreview")')).toBeTruthy();
+    expect(clientContractObs.uiSource.includes("dou-reportGlass")).toBeTruthy();
+    // 换行归 Prettier（key 与字符串可不在同一行），只认字符串字面本身（中英各一）
+    expect(clientContractObs.localesSource.includes('"弹出/收回 cubic-bezier')).toBeTruthy();
+    expect(clientContractObs.localesSource.includes('"Pop/dismiss cubic-bezier')).toBeTruthy();
+  });
+
+  it("B2-2 R5 行组 gap 10px 口径", () => {
+    expect(clientContractObs.clientStyle.includes("gap: 10px;")).toBeTruthy();
+  });
+
+  it("B2-2 四窗格挂共用 dou-pane（禁止各写一套 padding）", () => {
+    for (const src of [
+      clientContractObs.providersSource,
+      clientContractObs.uiSource,
+      clientContractObs.usageSource,
+    ]) {
+      expect(src.includes('className="dou-pane"')).toBeTruthy();
+      expect(!src.includes("style={sectionStyle}")).toBeTruthy();
+    }
+    expect(clientContractObs.trendSource.includes("dou-pane")).toBeTruthy();
+    expect(clientContractObs.clientStyle.includes(".dou-pane {")).toBeTruthy();
   });
 
   it("B4 空候选时「全部目录」checkbox 禁用（空=全部语义不变）", () => {
