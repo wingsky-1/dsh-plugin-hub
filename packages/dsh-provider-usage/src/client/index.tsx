@@ -712,15 +712,17 @@ export function apply(ctx: any): void {
     if (locale && typeof locale.register === "function") {
       try {
         locale.register(NS, { zh: zh, en: en });
-        bindLocale(locale, NS);
-        if (typeof locale.subscribe === "function" && typeof locale.getSnapshot === "function") {
-          unsubLocale = locale.subscribe(function () {
-            bindLocale(locale, NS);
-            renderPill(); // 胶囊 title 立即按新语言重绘（面板随下次渲染生效）
-          });
-        }
       } catch (error) {
-        console.warn("[dsh-provider-usage] locale 注册失败：", error);
+        // HMR/重 apply 幂等：字典已在册会抛 already-has，吞掉走重绑（下）
+        console.warn("[dsh-provider-usage] locale 重注册跳过：", error);
+      }
+      // 绑定必须在 try 之外：注册抛错不得跳过绑定，否则 t 全回落 key（D1）
+      bindLocale(locale, NS);
+      if (typeof locale.subscribe === "function" && typeof locale.getSnapshot === "function") {
+        unsubLocale = locale.subscribe(function () {
+          bindLocale(locale, NS);
+          renderPill(); // 胶囊 title 立即按新语言重绘（面板随下次渲染生效）
+        });
       }
     }
 

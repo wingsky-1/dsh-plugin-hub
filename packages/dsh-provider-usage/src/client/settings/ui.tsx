@@ -143,9 +143,13 @@ export function UiSection(): React.ReactElement | null {
           {msg.text}
         </span>
       ) : null}
-      {/* 材质预览：静态示意（装饰性，aria-hidden），玻璃语汇复用报告页 dou-reportGlass，不另起一套 token */}
+      {/* 材质预览：实时回显当前锚点/偏移（读既有 cfg 状态，零新接线）+ 装饰 pill（aria-hidden）；玻璃语汇复用 dou-reportGlass */}
       <div className="dou-reportGlass" style={{ marginTop: 8, padding: "8px 10px" }}>
         <div className="dou-hint">{t("floatPreview")}</div>
+        <div style={{ fontSize: 11, marginBottom: 6 }}>
+          {t(PLACEMENT_OPTIONS.find((o) => o.value === cfg.placement)?.key ?? "posTopRight")}
+          {` · X${cfg.offsetX} Y${cfg.offsetY} · ${t("panelOffsetY")}${cfg.panelOffsetY}`}
+        </div>
         <div aria-hidden="true" style={{ display: "flex", justifyContent: "flex-end" }}>
           <span
             style={{

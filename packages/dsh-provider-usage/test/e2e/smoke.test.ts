@@ -5109,6 +5109,7 @@ describe("#633 分片 b2 D2：客户端源码契约断言", () => {
       join(pkgDir, "src/client/settings/index.tsx"),
       "utf8",
     );
+    clientContractObs.historySource = readFileSync(join(pkgDir, "src/client/history.tsx"), "utf8");
     clientContractObs.clientStyle = readFileSync(join(pkgDir, "src/client/style.css"), "utf8");
     clientContractObs.listDirsSource = readFileSync(
       join(pkgDir, "src/server/execute/list-dirs.ts"),
@@ -5224,9 +5225,16 @@ describe("#633 分片 b2 D2：客户端源码契约断言", () => {
     expect(clientContractObs.uiSource.includes('t("flMotion")')).toBeTruthy();
     expect(clientContractObs.uiSource.includes('t("floatPreview")')).toBeTruthy();
     expect(clientContractObs.uiSource.includes("dou-reportGlass")).toBeTruthy();
-    // 换行归 Prettier（key 与字符串可不在同一行），只认字符串字面本身（中英各一）
-    expect(clientContractObs.localesSource.includes('"弹出/收回 cubic-bezier')).toBeTruthy();
-    expect(clientContractObs.localesSource.includes('"Pop/dismiss cubic-bezier')).toBeTruthy();
+    // 文案禁代码 token（cubic-bezier/scale 不得进用户可见串；D3）
+    expect(clientContractObs.localesSource.includes('"弹出/收回带缩放淡入')).toBeTruthy();
+    expect(clientContractObs.localesSource.includes('"Pop/dismiss with scale-fade')).toBeTruthy();
+    expect(!clientContractObs.localesSource.includes("cubic-bezier")).toBeTruthy();
+  });
+
+  it("历史筛选空态与计数跟随筛选（D4）", () => {
+    expect(clientContractObs.historySource.includes('t("reportFilterEmpty")')).toBeTruthy();
+    expect(clientContractObs.historySource.includes("(filtered ?? list")).toBeTruthy();
+    expect(clientContractObs.localesSource.includes("reportFilterEmpty:")).toBeTruthy();
   });
 
   it("B2-2 R5 行组 gap 10px 口径", () => {
