@@ -82,6 +82,8 @@ export const zh = {
   save: "保存",
   uiSavedOk: "已保存——胶囊位置即时生效（所有设备）",
   uiSaveFail: "保存失败：{msg}",
+  floatPreview: "材质预览（静态示意）",
+  flMotion: "弹出/收回 cubic-bezier(0.16,1,0.3,1)＋缩放淡入，按下 scale(0.97) 压感。",
   // 设置页：用量可视化
   usageTitle: "用量可视化",
   noProviders: "暂无启用的 provider",
@@ -342,6 +344,8 @@ export const en: Record<ProviderUsageLocaleKey, string> = {
   save: "Save",
   uiSavedOk: "Saved — pill placement takes effect immediately (all devices)",
   uiSaveFail: "Save failed: {msg}",
+  floatPreview: "Material preview (static mock)",
+  flMotion: "Pop/dismiss cubic-bezier(0.16,1,0.3,1) with scale-fade; press scale(0.97) feedback.",
   usageTitle: "Usage visualization",
   noProviders: "No enabled provider",
   noData: "No data",

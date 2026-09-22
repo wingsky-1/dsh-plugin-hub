@@ -8,7 +8,7 @@ import { fetchUiConfig, saveUiConfig } from "../core.ts";
 import type { UiPlacementConfig } from "../core.ts";
 import { t } from "../../../../../shared/client/i18n.js";
 import type { ProviderUsageLocaleKey } from "../locales.ts";
-import { sectionStyle, titleStyle } from "./shared.ts";
+import { titleStyle } from "./shared.ts";
 
 /** 胶囊位置配置区：锚点 + 偏移输入，保存即热更新（宿主落盘 + SSE 广播）。
  *  label 存字典 key（i18n：渲染期经 t 求值，模块加载时 t 尚未装配）。 */
@@ -89,7 +89,7 @@ export function UiSection(): React.ReactElement | null {
   );
 
   return (
-    <div style={sectionStyle}>
+    <div className="dou-pane">
       <h4 style={titleStyle}>{t("uiTitle")}</h4>
       <div style={{ marginBottom: 8 }}>
         {t("uiAnchor")}
@@ -143,6 +143,25 @@ export function UiSection(): React.ReactElement | null {
           {msg.text}
         </span>
       ) : null}
+      {/* 材质预览：静态示意（装饰性，aria-hidden），玻璃语汇复用报告页 dou-reportGlass，不另起一套 token */}
+      <div className="dou-reportGlass" style={{ marginTop: 8, padding: "8px 10px" }}>
+        <div className="dou-hint">{t("floatPreview")}</div>
+        <div aria-hidden="true" style={{ display: "flex", justifyContent: "flex-end" }}>
+          <span
+            style={{
+              width: 46,
+              height: 22,
+              borderRadius: 99,
+              background: "var(--dsw-alias-bg-layer-1,#f8f9fb)",
+              border: "1px solid var(--dsw-alias-border-l1,#d7dae0)",
+              boxShadow: "0 8px 28px rgba(15,23,42,0.08)",
+            }}
+          />
+        </div>
+      </div>
+      <div className="dou-hint" style={{ marginTop: 6 }}>
+        {t("flMotion")}
+      </div>
     </div>
   );
 }
