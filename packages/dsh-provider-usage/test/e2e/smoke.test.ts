@@ -5242,6 +5242,33 @@ describe("#633 分片 b2 D2：客户端源码契约断言", () => {
     expect(clientContractObs.clientStyle.includes(".dou-pane {")).toBeTruthy();
   });
 
+  // #940 B2-1：用量/趋势呈现契约（复用 /trend 日面，零新增宿主路由）
+  it("B2-1 用量概览拉 /trend 日面", () => {
+    expect(clientContractObs.usageSource.includes("fetchTrendDay")).toBeTruthy();
+    expect(clientContractObs.usageSource.includes("granularity=day")).toBeTruthy();
+  });
+
+  it("B2-1 双环与热力渲染存在", () => {
+    expect(clientContractObs.usageSource.includes("donutSvg")).toBeTruthy();
+    expect(clientContractObs.usageSource.includes("dou-heatGrid")).toBeTruthy();
+    expect(clientContractObs.clientStyle.includes(".dou-heatGrid")).toBeTruthy();
+    expect(clientContractObs.clientStyle.includes(".dou-heatL4")).toBeTruthy();
+  });
+
+  it("B2-1 趋势侧跳转与双卡存在", () => {
+    expect(clientContractObs.trendSource.includes("onGotoHeat")).toBeTruthy();
+    expect(clientContractObs.trendSource.includes('t("gotoHeat")')).toBeTruthy();
+    expect(clientContractObs.trendSource.includes('t("trendCaliberNote")')).toBeTruthy();
+    expect(clientContractObs.trendSource.includes("composeShares")).toBeTruthy();
+  });
+
+  it("B2-1 locales 中英关键串", () => {
+    expect(clientContractObs.localesSource.includes("usageHeat:")).toBeTruthy();
+    expect(clientContractObs.localesSource.includes("gotoHeat:")).toBeTruthy();
+    expect(clientContractObs.localesSource.includes("Usage heatmap")).toBeTruthy();
+    expect(clientContractObs.localesSource.includes("View daily heatmap")).toBeTruthy();
+  });
+
   it("B4 空候选时「全部目录」checkbox 禁用（空=全部语义不变）", () => {
     expect(
       clientContractObs.reportSource.includes("disabled={dirOptions.length === 0}"),

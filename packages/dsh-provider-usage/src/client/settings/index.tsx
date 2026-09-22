@@ -260,7 +260,7 @@ export function SettingsPage(): React.ReactElement {
           ))}
         </div>
         <div className="dou-set-body">
-          {pane("trend", <TrendSection />)}
+          {pane("trend", <TrendSection onGotoHeat={() => setTab("usage")} />)}
           {pane("report", <ReportSection onGeneratedRow={onGeneratedRow} />)}
           {pane(
             "history",

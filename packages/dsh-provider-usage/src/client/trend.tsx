@@ -40,6 +40,8 @@ import {
   dirDisplayLabel,
   dirNeedsScopeNote,
   trendRequestParams,
+  composeShares,
+  isDirMode,
   shouldShowDirSelect,
   shouldShowByModel,
   type RenderBar,
@@ -213,7 +215,12 @@ const unitKeyOf = (gran: Gran): string =>
       : "trendRangeMonthUnit";
 
 /** 「使用趋势」区块（SettingsPage 顶部）。 */
-export function TrendSection(): React.ReactElement {
+export function TrendSection({
+  onGotoHeat,
+}: {
+  /** 趋势→用量热力图单向跳转（PM4；不提供则不渲染按钮，反向链接禁止）。 */
+  onGotoHeat?: () => void;
+} = {}): React.ReactElement {
   const [gran, setGran] = React.useState<Gran>("day");
   const [range, setRange] = React.useState<number | null>(null); // null=按粒度默认（trendDefaultRange）
   const [view, setView] = React.useState<"bar" | "area" | null>(null); // null=按粒度默认（月=面积）
@@ -275,12 +282,8 @@ export function TrendSection(): React.ReactElement {
   const hasData = data !== null && data.series.some((p) => p.total !== null);
   const summary = data?.summary ?? null;
 
-  // 目录维度生效判定——目录过滤请求（dirFilter 非空）、宿主
-  // 目录面回显（byDir=1 / dirs 图例非空）。请求三态互斥后 provider 面响应
-  // 不再携带 byDir/dirs，dirMode 仅在目录维度真实生效时为真（viewSeries 归一、
-  // 汇总卡/图例/tooltip 的目录分支据此分面）。
-  const dirMode =
-    data !== null && (data.byDir === true || dirFilter !== "" || (data.dirs?.length ?? 0) > 0);
+  // 目录维度生效判定（纯函数 isDirMode：viewSeries 归一/汇总卡/图例/tooltip 据此分面）。
+  const dirMode = isDirMode(data, dirFilter);
   // 目录面归一（客户端防御）：parts[].provider（承载目录键）统一经 dirStackId
   // ——非字符串/空值归未识别桶，后续 stackOrder/renderBars/tooltip/图例零特殊分支，
   // 异常值不进 id 集合（杜绝空标签与控制字符渲染）。
@@ -575,6 +578,7 @@ export function TrendSection(): React.ReactElement {
           <SummaryCard
             label={`${t("trendCardPeak")} · ${summary.peakKey === null ? "-" : fmtBucketHuman(summary.peakKey, gran)}`}
             value={peakVal === null ? "-" : fmtCompact(peakVal)}
+            hint={t("trendCaliberNote")}
           />
           {/* 目录面 Top 汇总卡用目录面标签（trendCardTopDir），与 dirDisplayLabel
               消费同面；adapter 面沿用「Top 适配器」不变 */}
@@ -740,7 +744,54 @@ export function TrendSection(): React.ReactElement {
           ? `${t("trendMountedHintDay", { day: data.firstDay })}；${t("trendRetained", { days: String(data.retentionDays) })}`
           : t("trendMountedHint")}
       </p>
+      <TrendExtras data={data} dirMode={dirMode} hasData={hasData} onGotoHeat={onGotoHeat} />
     </section>
+  );
+}
+
+/** P2 趋势→热力跳转 + 构成/桶位双卡（独立组件：TrendSection 复杂度预算已满；
+ * 目录面无 provider 分担，只出桶位卡；空态不渲染，聚焦行动邀请）。 */
+function TrendExtras({
+  data,
+  dirMode,
+  hasData,
+  onGotoHeat,
+}: {
+  data: TrendResponse | null;
+  dirMode: boolean;
+  hasData: boolean;
+  onGotoHeat?: () => void;
+}): React.ReactElement | null {
+  if (!hasData || data === null) return null;
+  const line = !dirMode ? composeShares(data.series) : "";
+  return (
+    <>
+      {onGotoHeat !== undefined ? (
+        <div style={{ marginBottom: 8 }}>
+          <button type="button" className="dou-btn" onClick={onGotoHeat}>
+            {t("gotoHeat")}
+          </button>
+        </div>
+      ) : null}
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 8 }}>
+        {line !== "" ? (
+          <div
+            className="dou-reportGlass"
+            style={{ flex: "1 1 200px", minWidth: 200, padding: "8px 10px" }}
+          >
+            <div className="dou-hint">{t("trendComposeTitle")}</div>
+            <div style={{ fontSize: 11 }}>{line}</div>
+          </div>
+        ) : null}
+        <div
+          className="dou-reportGlass"
+          style={{ flex: "1 1 200px", minWidth: 200, padding: "8px 10px" }}
+        >
+          <div className="dou-hint">{t("trendBucketsTitle")}</div>
+          <div style={{ fontSize: 11 }}>{t("trendBucketsNote")}</div>
+        </div>
+      </div>
+    </>
   );
 }
 
