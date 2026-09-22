@@ -2194,7 +2194,7 @@
           "export declare const inject: string[];"
         ],
         "apply": [
-          "export declare function apply(ctx: any): void;"
+          "export declare function apply(ctx: McpClientContext): void;"
         ],
         "en": [
           "export declare const en: Record<McpLocaleKey, string>;"
