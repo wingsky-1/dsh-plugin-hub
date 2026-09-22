@@ -764,16 +764,12 @@ function TrendExtras({
 }): React.ReactElement | null {
   if (!hasData || data === null) return null;
   const line = !dirMode ? composeShares(data.series) : "";
+  // 单排：构成卡 / 桶位卡 / 跳转按钮同行（按钮居中对齐；窄屏自动换行，不再孤儿独占一行）
   return (
     <>
-      {onGotoHeat !== undefined ? (
-        <div style={{ marginBottom: 8 }}>
-          <button type="button" className="dou-btn" onClick={onGotoHeat}>
-            {t("gotoHeat")}
-          </button>
-        </div>
-      ) : null}
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 8 }}>
+      <div
+        style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 8, alignItems: "center" }}
+      >
         {line !== "" ? (
           <div
             className="dou-reportGlass"
@@ -790,6 +786,11 @@ function TrendExtras({
           <div className="dou-hint">{t("trendBucketsTitle")}</div>
           <div style={{ fontSize: 11 }}>{t("trendBucketsNote")}</div>
         </div>
+        {onGotoHeat !== undefined ? (
+          <button type="button" className="dou-btn" style={{ flex: "none" }} onClick={onGotoHeat}>
+            {t("gotoHeat")}
+          </button>
+        ) : null}
       </div>
     </>
   );

@@ -1089,6 +1089,31 @@
   flex-wrap: wrap;
   margin-bottom: 6px;
 }
+/* 用量页指标小卡：与趋势页 SummaryCard 同语言（描边 + 小灰 label + 粗值） */
+.dou-miniCard {
+  flex: 1 1 120px;
+  min-width: 120px;
+  padding: 8px 10px;
+  border: 1px solid var(--dsw-alias-border-l2, #e8eaf0);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-base, #fdfdfd);
+}
+.dou-miniCardLabel {
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary, #9aa0ab);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dou-miniCardValue {
+  font-size: 16px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.dou-miniCardHint {
+  font-size: 10px;
+  color: var(--dsw-alias-label-tertiary, #9aa0ab);
+}
 .dou-reportGlass {
   background: var(--dsw-alias-bg-base, rgba(255, 255, 255, 0.8));
   backdrop-filter: blur(12px);

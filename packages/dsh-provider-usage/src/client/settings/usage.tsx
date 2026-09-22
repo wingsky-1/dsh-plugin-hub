@@ -86,6 +86,27 @@ function statusColor(status: string | undefined): string {
   return "var(--dsw-alias-state-error-primary,#d64545)";
 }
 
+/** 指标小卡（与趋势页 SummaryCard 同语言：描边 + 小灰 label + 粗值）。 */
+function MiniCard({
+  label,
+  value,
+  hint,
+}: {
+  label: string;
+  value: string;
+  hint?: string | null;
+}): React.ReactElement {
+  return (
+    <div className="dou-miniCard">
+      <div className="dou-miniCardLabel">{label}</div>
+      <div className="dou-miniCardValue">{value}</div>
+      {hint === null || hint === undefined || hint === "" ? null : (
+        <div className="dou-miniCardHint">{hint}</div>
+      )}
+    </div>
+  );
+}
+
 /** 环形卡（SVG 纯函数出图 + React 文本图例；数据为空时只画 track）。 */
 function DonutCard({
   title,
@@ -105,64 +126,83 @@ function DonutCard({
       <div className="dou-hint" style={{ marginBottom: 4 }}>
         {title}
       </div>
-      <div style={{ position: "relative", maxWidth: 150 }}>
-        <div dangerouslySetInnerHTML={{ __html: donutSvg(segs, 120) }} />
-        <div
-          style={{
-            position: "absolute",
-            inset: 0,
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            justifyContent: "center",
-            pointerEvents: "none",
-          }}
-        >
-          <div style={{ fontSize: 16, fontWeight: 700 }}>{centerTop}</div>
-          <div style={{ fontSize: 10, color: "var(--dsw-alias-label-tertiary,#9aa0ab)" }}>
-            {centerSub}
-          </div>
-        </div>
-      </div>
-      <div style={{ marginTop: 4, fontSize: 11 }}>
-        {legend.map((l) => (
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        {/* 环孔随 SVG 缩放，中心字必须小且可省略：14/9px + ellipsis（窄屏环缩字不缩即被环切） */}
+        <div style={{ position: "relative", flex: "none", width: 110 }}>
+          <div dangerouslySetInnerHTML={{ __html: donutSvg(segs, 120) }} />
           <div
-            key={l.label}
-            title={`${l.label} ${l.text}`}
-            style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}
+            style={{
+              position: "absolute",
+              inset: 0,
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              justifyContent: "center",
+              pointerEvents: "none",
+            }}
           >
-            <span
+            <div style={{ fontSize: 14, fontWeight: 700 }}>{centerTop}</div>
+            <div
+              title={centerSub}
               style={{
-                width: 8,
-                height: 8,
-                borderRadius: 2,
-                flex: "none",
-                background: l.color,
-              }}
-            />
-            <span
-              style={{
-                fontWeight: 600,
-                flex: "none",
-                maxWidth: "55%",
+                fontSize: 9,
+                color: "var(--dsw-alias-label-tertiary,#9aa0ab)",
+                maxWidth: "92%",
                 overflow: "hidden",
                 textOverflow: "ellipsis",
                 whiteSpace: "nowrap",
               }}
             >
-              {l.label}
-            </span>
-            <span
+              {centerSub}
+            </div>
+          </div>
+        </div>
+        <div style={{ fontSize: 11, flex: 1, minWidth: 0 }}>
+          {legend.map((l) => (
+            <div
+              key={l.label}
+              title={`${l.label} ${l.text}`}
               style={{
-                color: "var(--dsw-alias-label-tertiary,#9aa0ab)",
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
                 minWidth: 0,
-                overflowWrap: "anywhere",
+                flexWrap: "wrap",
+                rowGap: 0,
               }}
             >
-              {l.text}
-            </span>
-          </div>
-        ))}
+              <span
+                style={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: 2,
+                  flex: "none",
+                  background: l.color,
+                }}
+              />
+              <span
+                style={{
+                  fontWeight: 600,
+                  flex: "none",
+                  maxWidth: "55%",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {l.label}
+              </span>
+              <span
+                style={{
+                  color: "var(--dsw-alias-label-tertiary,#9aa0ab)",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {l.text}
+              </span>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -311,28 +351,19 @@ export function UsageSection({
                 color: seriesColor(s.provider),
               }))}
             />
-            <div className="dou-donutCard">
-              <div className="dou-hint" style={{ marginBottom: 4 }}>
-                {t("usageMetrics")}
-              </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12 }}>
-                <div>
-                  {t("trendCardTotal")}：
-                  {ov.summary.total === null ? "-" : fmtCompact(ov.summary.total)}
-                  {delta === null ? "" : ` ${delta.text}`}
-                </div>
-                <div>
-                  {t("trendCardCalls")}：{fmtCompact(ov.summary.calls)}
-                </div>
-                <div>
-                  {t("usageActiveDays", { a: String(activeDays), n: String(series.length) })}
-                </div>
-                <div>
-                  {t("trendCardPeak")}：
-                  {ov.summary.peakKey === null ? "-" : ov.summary.peakKey.slice(5)} ·{" "}
-                  {peakVal === null ? "-" : fmtCompact(peakVal)}
-                </div>
-              </div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, flex: "1 1 100%" }}>
+              {/* 指标小卡：与趋势页 SummaryCard 同语言（描边小卡），裸 div 列表显廉价 */}
+              <MiniCard
+                label={t("trendCardTotal")}
+                value={ov.summary.total === null ? "-" : fmtCompact(ov.summary.total)}
+                hint={delta === null ? null : delta.text}
+              />
+              <MiniCard label={t("trendCardCalls")} value={fmtCompact(ov.summary.calls)} />
+              <MiniCard label={t("usageActiveLabel")} value={`${activeDays}/${series.length}`} />
+              <MiniCard
+                label={`${t("trendCardPeak")} · ${ov.summary.peakKey === null ? "-" : ov.summary.peakKey.slice(5)}`}
+                value={peakVal === null ? "-" : fmtCompact(peakVal)}
+              />
             </div>
           </div>
           <div className="dou-hint" style={{ marginBottom: 4 }}>
@@ -362,11 +393,6 @@ export function UsageSection({
             ))}
           </div>
           <div className="dou-hint">{t("usageHeatNote")}</div>
-          {sums.length > 0 ? (
-            <div style={{ fontSize: 11, marginTop: 2 }}>
-              {sums.map((s) => `${s.provider} ${fmtCompact(s.value)}`).join(" · ")}
-            </div>
-          ) : null}
         </>
       )}
       {providers.length === 0 ? (
