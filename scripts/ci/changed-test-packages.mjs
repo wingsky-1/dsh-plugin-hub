@@ -147,20 +147,30 @@ export function testFileEntries(topology, rootDir, faceCache, pkg, file) {
  * 形状与 ci-matrix 的 resolveSegmentNames 同源：段名 = 文件基名剥掉 `${pkg}-` 前缀与
  * `.json` 后缀。包级 `<pkg>.json`（无段后缀）不是段配置，返回 null。
  * vitest 包级配置与 smoke-lib 等非 conf 路径同样返回 null。
- * 段级 vitest 配置（`<pkg>-<seg>.config.ts`）随首个显式窄化 PR 原子落地：
- * registry 条目 + filters 同步 + 本函数分支，见 P2 设计（悬空条目规则禁止提前登记）。
+ * 段级 vitest 配置（`vitest.stryker.d/<pkg>-<seg>.config.ts`，P2 首个显式窄化起存在，
+ * registry glob + filters 同步）同理拆段：改段清单只失效该段。
  */
 export function segmentEntryFor(file, face) {
-  const prefix = "stryker.conf.d/";
-  if (!file.startsWith(prefix)) return null;
-  const base = file.slice(prefix.length);
-  if (!base.endsWith(".json") || base.includes("/")) return null;
-  const name = base.slice(0, -5);
-  if (name === face) return null;
-  if (!name.startsWith(`${face}-`)) return null;
-  const seg = name.slice(face.length + 1);
-  if (seg === "" || seg.includes(":")) return null;
-  return `${face}:${seg}`;
+  const segOf = (base, faceName) => {
+    if (base === faceName) return null;
+    if (!base.startsWith(`${faceName}-`)) return null;
+    const seg = base.slice(faceName.length + 1);
+    if (seg === "" || seg.includes(":") || seg.includes("/")) return null;
+    return `${faceName}:${seg}`;
+  };
+  const strykerPrefix = "stryker.conf.d/";
+  if (file.startsWith(strykerPrefix)) {
+    const base = file.slice(strykerPrefix.length);
+    if (!base.endsWith(".json") || base.includes("/")) return null;
+    return segOf(base.slice(0, -5), face);
+  }
+  const vitestPrefix = "vitest.stryker.d/";
+  if (file.startsWith(vitestPrefix)) {
+    const base = file.slice(vitestPrefix.length);
+    if (!base.endsWith(".config.ts") || base.includes("/")) return null;
+    return segOf(base.slice(0, -10), face);
+  }
+  return null;
 }
 
 /** 一个非 test/ 路径命中的包面（声明为 global 的条目不参与失基线，见上文边界）。 */

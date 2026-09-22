@@ -171,6 +171,7 @@ jobs:
               - 'packages/dsh-mcp-manager/**'
               - 'stryker.conf.d/dsh-mcp-manager*.json'
               - 'vitest.stryker.d/dsh-mcp-manager.config.ts'
+              - 'vitest.stryker.d/dsh-mcp-manager-*.config.ts'
               # #767 B0：导出面基线与分类登记（scripts/data/dsh-mcp-manager-*.json）是本包
               # 资产，改动即改变本包导出面判据的输入（与 dsh-notifier 的同名条目同形）。
               - 'scripts/data/dsh-mcp-manager-*.json'

@@ -34,12 +34,12 @@
   "cleanTempDir": true,
   "vitest": {
     "related": false,
-    "configFile": "vitest.stryker.d/dsh-mcp-manager.config.ts"
+    "configFile": "vitest.stryker.d/dsh-mcp-manager-entry.config.ts"
   },
   "jsonReporter": {
     "fileName": "coverage/mutation/dsh-mcp-manager-entry.json"
   },
   "incremental": true,
   "incrementalFile": "coverage/mutation/incremental-mcp-manager-entry.json",
-  "_comment": "#767 B2b 重画：entry——组合根 src/index.ts + workspace（工作空间解析域）+ config（归一化/导入/schema）；B2b 后文件归各域段，本段只留这三处。W11b2a 删除 src/types 与 src/integration 后，原 types/integration 两条排除已是 0 命中死条目，随本刀删除；excludes 仅保留 client 一条（另一端）。测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
+  "_comment": "#767 B2b 重画：entry——组合根 src/index.ts + workspace（工作空间解析域）+ config（归一化/导入/schema）；B2b 后文件归各域段，本段只留这三处。W11b2a 删除 src/types 与 src/integration 后，原 types/integration 两条排除已是 0 命中死条目，随本刀删除；excludes 仅保留 client 一条（另一端）。测试按段 testFiles 清单跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
 }

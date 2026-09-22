@@ -32,12 +32,12 @@
   "cleanTempDir": true,
   "vitest": {
     "related": false,
-    "configFile": "vitest.stryker.d/dsh-mcp-manager.config.ts"
+    "configFile": "vitest.stryker.d/dsh-mcp-manager-servers.config.ts"
   },
   "jsonReporter": {
     "fileName": "coverage/mutation/dsh-mcp-manager-servers.json"
   },
   "incremental": true,
   "incrementalFile": "coverage/mutation/incremental-mcp-manager-servers.json",
-  "_comment": "新增（#767 S1-2b）：servers——面向官方引擎的服务器域族（装载生命周期 servers/lifecycle + 派发 servers/dispatch（#767 S1-3a 落地）；injection 不在本段，其实现在 src/server/catalog/impl/injection/）。为什么新建段而不是塞进旧段：源码全覆盖断言要求 src 下每个文件落在 ∪mutate ∪ ∪excludes 内，而 src/server/servers/** 不被既有任何段的 glob 覆盖；旧段的 comment 与文件归属也会因此失真。excludes 照同包其余段，仅保留 client 一条（另一端），不构成宿主侧变异面。测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
+  "_comment": "新增（#767 S1-2b）：servers——面向官方引擎的服务器域族（装载生命周期 servers/lifecycle + 派发 servers/dispatch（#767 S1-3a 落地）；injection 不在本段，其实现在 src/server/catalog/impl/injection/）。为什么新建段而不是塞进旧段：源码全覆盖断言要求 src 下每个文件落在 ∪mutate ∪ ∪excludes 内，而 src/server/servers/** 不被既有任何段的 glob 覆盖；旧段的 comment 与文件归属也会因此失真。excludes 照同包其余段，仅保留 client 一条（另一端），不构成宿主侧变异面。测试按段 testFiles 清单跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
 }

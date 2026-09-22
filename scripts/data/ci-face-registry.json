@@ -314,6 +314,16 @@
       "why": "同上。"
     },
     {
+      "path": "vitest.stryker.d/dsh-mcp-manager-*.config.ts",
+      "invalidatesBaseline": true,
+      "faces": ["dsh-mcp-manager"],
+      "consumerGap": {
+        "kind": "indirect",
+        "reason": "stryker 经段级 stryker.conf.d/dsh-mcp-manager-<seg>.json 的 vitest.configFile 读取（P2 显式段）；生成与 --check 比对在 scripts/gate/gen-stryker-conf.mjs，按派生路径拼名。"
+      },
+      "why": "P2 段级测试面配置：改段清单只失效该段（changed-test-packages 按同名算法拆包冒号段），包级配置仍整包失效。"
+    },
+    {
       "path": "vitest.stryker.d/dsh-provider-usage.config.ts",
       "invalidatesBaseline": true,
       "faces": ["dsh-provider-usage"],

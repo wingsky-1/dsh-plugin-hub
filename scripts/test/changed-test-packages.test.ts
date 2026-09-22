@@ -150,6 +150,16 @@ test("P1-D2: segmentEntryFor 只认段级 conf，非段路径一律回落整包�
     null,
     "前缀不匹配回整包",
   );
+  assert.equal(
+    segmentEntryFor("vitest.stryker.d/dsh-notifier-pipeline.config.ts", "dsh-notifier"),
+    "dsh-notifier:pipeline",
+    "段级 vitest 配置只失效该段",
+  );
+  assert.equal(
+    segmentEntryFor("vitest.stryker.d/dsh-notifier.config.ts", "dsh-notifier"),
+    null,
+    "包级 vitest 配置仍整包失效",
+  );
 });
 
 test("#742 1.7: 三点 diff 口径在真实 git 仓库里成立（含改名到 test/ 的形态）", () => {
