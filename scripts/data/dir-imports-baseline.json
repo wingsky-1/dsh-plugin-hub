@@ -9,7 +9,7 @@
       "interfaceFacades": 7,
       "leafValueEdges": 5,
       "fileValueEdges": 36,
-      "crossModuleRefs": 49,
+      "crossModuleRefs": 50,
       "quality": {
         "leafModuleCycles": [],
         "fileCycles": [],
@@ -34,7 +34,7 @@
       "interfaceFacades": 18,
       "leafValueEdges": 19,
       "fileValueEdges": 150,
-      "crossModuleRefs": 191,
+      "crossModuleRefs": 192,
       "quality": {
         "leafModuleCycles": [],
         "fileCycles": [],
@@ -64,7 +64,7 @@
       "interfaceFacades": 10,
       "leafValueEdges": 11,
       "fileValueEdges": 142,
-      "crossModuleRefs": 112,
+      "crossModuleRefs": 113,
       "quality": {
         "leafModuleCycles": [],
         "fileCycles": [],
@@ -106,7 +106,7 @@
       "interfaceFacades": 7,
       "leafValueEdges": 2,
       "fileValueEdges": 47,
-      "crossModuleRefs": 39,
+      "crossModuleRefs": 40,
       "quality": {
         "leafModuleCycles": [],
         "fileCycles": [],

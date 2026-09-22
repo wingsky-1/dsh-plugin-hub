@@ -3,6 +3,7 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { dshHome } from "../../../../../shared/dsh-home.js";
+import { pluginHome } from "../../../../../shared/paths.js";
 
 /** 本插件在 DSH home 下的私有目录（按 npm 包名分区，避免与其它插件争用根目录）。 */
 const PACKAGE_DIR = "@wingsky-1/dsh-notifier";
@@ -24,7 +25,7 @@ export const VERSION_FILE_NAME = "version";
 
 /** 只给目录不给完整路径：文件不存在与目录不存在是两件事，前者是各域的读语义（回落空值），后者由写入方按需创建。 */
 function notifierHome(): string {
-  return join(dshHome(), PACKAGE_DIR);
+  return pluginHome(dshHome(), PACKAGE_DIR);
 }
 
 /** 存储根下的一个文件路径。 */

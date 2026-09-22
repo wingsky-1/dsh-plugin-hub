@@ -8,6 +8,7 @@
  */
 import { basename, dirname, join } from "node:path";
 import { dshHome } from "../../../../../shared/dsh-home.js";
+import { pluginHome } from "../../../../../shared/paths.js";
 
 /** 本插件在 DSH home 下的私有目录：按 npm 包名分区，不与其它插件争用根目录。 */
 const PACKAGE_DIR = "@wingsky-1/dsh-mcp-manager";
@@ -44,7 +45,7 @@ export const LEGACY_LAYOUT = {
 
 /** 本插件私有目录。 */
 export function mcpManagerHome(): string {
-  return join(dshHome(), PACKAGE_DIR);
+  return pluginHome(dshHome(), PACKAGE_DIR);
 }
 
 /** 私有目录下的一个文件（只有本模块知道名字，故不对外暴露）。 */

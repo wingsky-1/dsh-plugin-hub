@@ -11,6 +11,7 @@
  */
 import { join } from "node:path";
 import { dshHome } from "../../../../../shared/dsh-home.js";
+import { pluginHome } from "../../../../../shared/paths.js";
 
 /** 本插件在 DSH home 下的私有目录（按 npm 包名分区）。 */
 const PACKAGE_DIR = "@wingsky-1/dsh-lan-proxy";
@@ -20,7 +21,7 @@ const LEGACY_DIR = "lan-proxy";
 
 /** 插件私有目录（自签证书缓存 + CA/叶子证书所在）。 */
 export function pluginDir(): string {
-  return join(dshHome(), PACKAGE_DIR);
+  return pluginHome(dshHome(), PACKAGE_DIR);
 }
 
 /**
