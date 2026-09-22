@@ -18,8 +18,11 @@ export type HostTranslate = (key: string, params?: Record<string, unknown>) => s
 let current: JevLocale = resolveLang();
 let bound: HostTranslate | null = null;
 
-/** 装配 / 重绑宿主翻译函数（apply 期与 locale 订阅回调调用）。 */
+/** 装配 / 重绑宿主翻译函数（apply 期与 locale 订阅回调调用）。
+ * 守住 bound 恒可调用：宿主异常实现可能返回非函数（命名空间未命中等），
+ * 此时忽略装配、t() 回落本地字典（此前本地路径永不抛错，回归面见评审）。 */
 export function bindTranslate(next: HostTranslate): void {
+  if (typeof next !== "function") return;
   bound = next;
 }
 

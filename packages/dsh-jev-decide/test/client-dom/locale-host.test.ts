@@ -36,6 +36,7 @@ function installHost(options?: {
   readonly withoutSnapshot?: boolean;
   readonly subscribeResult?: "fn" | "undefined";
   readonly registerThrows?: boolean;
+  readonly bindResult?: "fn" | "undefined" | "throws";
 }): { readonly effects: Array<() => void>; readonly host: HostHandle } {
   const effects: Array<() => void> = [];
   const calls = { register: [] as RegisterCall[], bindNs: [] as string[] };
@@ -67,6 +68,8 @@ function installHost(options?: {
     },
     bind: function (this: unknown, ns: string) {
       calls.bindNs.push(ns);
+      if (options?.bindResult === "throws") throw new Error("bind 炸");
+      if (options?.bindResult === "undefined") return undefined;
       return (key: string) => {
         const table =
           state.lang === "zh" ? (zh as Record<string, string>) : (en as Record<string, string>);
@@ -180,6 +183,23 @@ describe("宿主 locale 接线", () => {
   });
   it("subscribe 返回 undefined 不登记卸载（notifier 同款 undefined 形态）", () => {
     const { effects } = installHost({ subscribeResult: "undefined" });
+    expect(effects).toHaveLength(1);
+  });
+  it("bind 返回非函数：不抛、回落本地字典、不订阅", () => {
+    const { effects, host } = installHost({ bindResult: "undefined" });
+    setLang("zh");
+    // 初绑失败：t 走本地字典，且未登记订阅（与重构前语义一致）。
+    expect(t("save")).toBe("保存");
+    expect(effects).toHaveLength(1);
+    // 订阅未登记，无回调可触发；再调一次 apply 级 fire 也不崩（listener 为空）。
+    host.fire();
+    expect(t("save")).toBe("保存");
+    expect(host.calls.bindNs).toEqual(["jev-decide"]);
+  });
+  it("bind 抛错：不抛、回落本地字典、不订阅", () => {
+    const { effects } = installHost({ bindResult: "throws" });
+    setLang("en");
+    expect(t("save")).toBe("Save");
     expect(effects).toHaveLength(1);
   });
 });

@@ -94,4 +94,13 @@ describe("宿主绑定（bindTranslate / unbindTranslate）", () => {
     expect(capLabel(0)).toBe("HOST:capNone");
     expect(capLabel(2)).toBe("high");
   });
+  it("装配非函数被忽略：t 回落本地字典且永不抛", () => {
+    bindTranslate(undefined as never);
+    setLang("zh");
+    expect(t("save")).toBe("保存");
+    expect(t("countEntries", { n: 2 })).toBe("共 2 条");
+    bindTranslate(null as never);
+    setLang("en");
+    expect(t("save")).toBe("Save");
+  });
 });

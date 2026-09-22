@@ -29,7 +29,9 @@ interface SlotsView {
 interface LocaleServiceView {
   register: (ns: string, dict: { zh: unknown; en: unknown }) => void;
   bind: (ns: string) => unknown;
-  subscribe?: (listener: () => void) => () => void;
+  // subscribe 可返回 undefined（provider-usage/mcp-manager 同款形态）：调用方一律按
+  // undefined 守卫登记卸载，不预设返回非空——类型与守卫、测试三方对齐，防名实不符。
+  subscribe?: (listener: () => void) => (() => void) | undefined;
   getSnapshot?: () => unknown;
 }
 
@@ -59,19 +61,33 @@ export function apply(ctx: ClientContext): void {
       const localeService = locale;
       // bind/subscribe 必须带接收者调用：宿主实现依赖 this，detached 摘出即抛，失败被
       // catch 兜住后回落本地字典（notifier 同款注释，防后人“简化”成 detached 调用）。
+      // 重绑单点：初装与订阅回调共用——bind 抛错/返回非函数同样回落本地字典
+      // （bindTranslate 内二次守住）；初绑失败不订阅（与重构前语义一致）。
+      const rebind = (): boolean => {
+        let next: unknown;
+        try {
+          next = localeService.bind(NS);
+        } catch (e) {
+          console.warn("[dsh-jev-decide] locale 重绑失败：", e);
+          return false;
+        }
+        if (typeof next !== "function") {
+          console.warn("[dsh-jev-decide] locale bind 返回非函数，已回落本地字典");
+          return false;
+        }
+        bindTranslate(next as HostTranslate);
+        return true;
+      };
       try {
         localeService.register(NS, { zh: zh, en: en });
-        bindTranslate(localeService.bind(NS) as HostTranslate);
+        const boundOk = rebind();
         if (
+          boundOk &&
           typeof localeService.subscribe === "function" &&
           typeof localeService.getSnapshot === "function"
         ) {
           unsubLocale = localeService.subscribe(function () {
-            try {
-              bindTranslate(localeService.bind(NS) as HostTranslate);
-            } catch {
-              /* 忽略 */
-            }
+            rebind();
           });
         }
       } catch (e) {
