@@ -711,7 +711,8 @@ jobs:
   # #722 门禁分层：本 job 的步骤按**用途**分两组（组 B 的产物闸排在部分组 A 步骤之前）——
   #   组 A（廉价全仓闸，恒跑）：判定脚本、threshold-monotonic、aggregate:check、stryker:check、
   #     test:scripts、forbid-*、verify-dir-imports、export-surface-snapshot、verify-shared-fanin、
-  #     verify-scripts-index、verify-coverage-scope、verify-vendored-binaries、docs:check、lint、
+  #     verify-host-seams、verify-scripts-index、verify-coverage-scope、verify-vendored-binaries、
+  #     docs:check、lint、
   #     format:check。不依赖 lib 产物（test:scripts 的前置包清单见 script-test-prereqs.mjs）。
   #   组 B（产物闸，按 fullGate 切口径）：contract / pack:check / verify:npmlayout——默认 PR 只验
   #     命中包，gate:full 与夜间验全仓。事实源是步骤本身；端点双向比对见 gate-wiring.test.ts。
@@ -799,6 +800,8 @@ jobs:
         run: node scripts/gate/export-surface-snapshot.mjs --package dsh-jev-decide
       - name: Verify shared fan-in（shared 模块跨包扇入；#792）
         run: node scripts/gate/verify-shared-fanin.mjs
+      - name: Verify host seams（宿主接缝 R1-R4：事件装配点/路由镜像/slot/复刻分组）
+        run: node scripts/gate/verify-host-seams.mjs
       - name: Verify provider-usage shape（provider-usage 形态锁：构造键集/历史无环境直连/聚合注解）
         run: node scripts/gate/verify-provider-usage-shape.mjs
 
@@ -951,3 +954,33 @@ jobs:
         run: node scripts/gate/verify-prose-counts.mjs
       - name: Vendored binaries（批 2b：发布物面内裸二进制须登记 + 哈希一致 + 许可随包）
         run: node scripts/gate/verify-vendored-binaries.mjs
+
+  # 上游消解 warn-job（独立 job，只 warn 不阻塞）：A 侧 AST 派生对 B 侧 resolved
+  # 上游声明闭包，S1/S2/S3 与 R1/R2/R4-lite 只打印 warn 注记、通过或 FAIL 一律 exit 0。
+  # 本 job 不进 repo-gate 的 needs（进 needs 会让 warn 的环境失败连坐聚合闸，与 warn
+  # 语义相悖；R2-M-2 豁免登记见 scripts/test/workflow-assert.test.ts）。warn 步骤是单命令
+  # 直接执行（无 env/if/shell/working-directory/continue-on-error、无引号、无注释符）；
+  # 前序 Install 步骤与本 job 执行面已登记进 gate-wiring-exceptions.json 的
+  # priorRunSteps 与 jobFaces（与其它 job 同口径，由库函数求摘要）。
+  upstream-warn:
+    name: Upstream contract warn（上游消解只 warn 不阻塞）
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@a8198c4bff370c8506180b035930dea56dbd5288 # v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Upstream contract warn（只 warn 不阻塞）
+        run: node scripts/maintenance/upstream-contract-warn.mjs

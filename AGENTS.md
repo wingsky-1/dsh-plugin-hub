@@ -140,6 +140,7 @@ worktree 内。在仓库根直接跑出的读数是「某个落后提交」的�
 | 证明重构没改行为时 | [DEVELOPMENT.md §4.1 验证三件套](docs/DEVELOPMENT.md#user-content-equivalence-refactor) |
 | 查门禁口径细节时 | [docs/GATE.md](docs/GATE.md) |
 | 改/加/新建插件施工时 | [`.dsh/skills/dsh-plugin-hub-dev/SKILL.md`](.dsh/skills/dsh-plugin-hub-dev/SKILL.md) |
+| 新建插件选共享落点与登记契约面时 | 先读 [DEVELOPMENT §2.4](docs/DEVELOPMENT.md) 三档落点与 [docs/host-contract.md](docs/host-contract.md) 契约登记 |
 | 评审 PR 时 | [`.dsh/skills/dsh-plugin-hub-pr-review/SKILL.md`](.dsh/skills/dsh-plugin-hub-pr-review/SKILL.md) + [`.dsh/skills/dsh-plugin-hub-pr-review/references/pr-images.md`](.dsh/skills/dsh-plugin-hub-pr-review/references/pr-images.md) |
 | 深评整插件时 | [`.dsh/skills/dsh-plugin-review/SKILL.md`](.dsh/skills/dsh-plugin-review/SKILL.md) |
 | 重构宿主端按域时 | [`.dsh/skills/dsh-plugin-hub-refactor/SKILL.md`](.dsh/skills/dsh-plugin-hub-refactor/SKILL.md) |

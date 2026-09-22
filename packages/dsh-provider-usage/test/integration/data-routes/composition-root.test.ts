@@ -16,7 +16,8 @@
  *   （AdapterRoutesContext 保留内联函数类型，不 import type 本面）；
  *   deps.ts 纯类型面运行时零出口；家目录禁令三文件零直调。
  * - D10四 路由单点 + 客户端契约：创建面路径即 ROUTES 单点（实现内无硬编码
- *   /api/ 字面量）；src/client/core.ts 六键回指同源（缺键即客户端与宿主分叉）。
+ *   /api/ 字面量）；src/client/shared/contract.ts 六键回指同源（host-seams R2 收敛后
+ *   字面量只留契约一份，缺键即客户端与宿主分叉）。
  *
  * 每条附判据句（把 X 改坏必须红）；文本哨兵仅锚真实 ABI 与装配关系，不做风格断言。
  */
@@ -67,7 +68,8 @@ const dataFaceSrc = readText(join(srcDir, "server", "data-routes", "interface.ts
 const dataDepsSrc = readText(join(srcDir, "server", "data-routes", "deps.ts"));
 const statsSrc = readText(join(srcDir, "server", "data-routes", "stats.ts"));
 const adaptersSrc = readText(join(srcDir, "server", "data-routes", "adapters.ts"));
-const clientCoreSrc = readText(join(srcDir, "client", "core.ts"));
+// host-seams R2 收敛后客户端字面量只留 client/shared/contract.ts 一份（core.ts 改经具名表 import）。
+const clientContractSrc = readText(join(srcDir, "client", "shared", "contract.ts"));
 const topologySrc = readText(join(repoRoot, "scripts", "data", "mutation-topology.json"));
 const strykerRoutesSrc = readText(
   join(repoRoot, "stryker.conf.d", "dsh-provider-usage-routes.json"),
@@ -425,8 +427,8 @@ describe("D10四 路由单点 + 客户端契约", () => {
     "/api/dsh-provider-usage/adapters/select",
     "/api/dsh-provider-usage/adapters/inspect",
     "/api/dsh-provider-usage/adapters/add",
-  ])("客户端 core.ts 回指 %s（缺键即宿主与客户端分叉）", (literal) => {
-    expect(clientCoreSrc.includes(literal)).toBe(true);
+  ])("客户端契约回指 %s（缺键即宿主与客户端分叉）", (literal) => {
+    expect(clientContractSrc.includes(literal)).toBe(true);
   });
 });
 

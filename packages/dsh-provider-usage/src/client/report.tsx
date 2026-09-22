@@ -17,14 +17,14 @@ import { fetchTimeout, REPORT_GENERATE_STATUS_URL } from "./core.ts";
 import { dirDisplayLabel, dirNeedsScopeNote, dirStackId } from "./trend-math.js";
 import { t } from "../../../../shared/client/i18n.js";
 
-/** 宿主端 ROUTES（构建期经 __DSH_ROUTES__ 注入；报告五路由进入路由表）。 */
-declare const __DSH_ROUTES__: Record<string, string> | undefined;
-const REPORT_CONFIG_URL = __DSH_ROUTES__?.reportConfig ?? "/api/dsh-provider-usage/report-config";
-const REPORT_MODELS_URL = __DSH_ROUTES__?.reportModels ?? "/api/dsh-provider-usage/report-models";
-const REPORTS_URL = __DSH_ROUTES__?.reports ?? "/api/dsh-provider-usage/reports";
-const REPORT_DETAIL_URL = __DSH_ROUTES__?.reportDetail ?? "/api/dsh-provider-usage/reports/detail";
-const REPORT_GENERATE_URL =
-  __DSH_ROUTES__?.reportGenerate ?? "/api/dsh-provider-usage/reports/generate";
+/** 报告五路由经 ./shared/contract.ts 具名表（host-seams R2 收敛，字面量只留契约一份）。 */
+import {
+  REPORT_CONFIG_URL,
+  REPORT_DETAIL_URL,
+  REPORT_GENERATE_URL,
+  REPORT_MODELS_URL,
+  REPORTS_URL,
+} from "./shared/contract.ts";
 
 /** 轮询退避：1s → 2s → 4s 封顶 5s；上限约 2 分钟。 */
 const POLL_INITIAL_DELAY_MS = 1_000;

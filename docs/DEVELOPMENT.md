@@ -478,8 +478,19 @@ export const inject: string[] = []; // 声明 apply 用到的 ctx 服务（如 [
   见 `packages/dsh-notifier/src/shared/interface.ts`）。放进这个目录的意义不是分类而是
   **可审**：`scripts/test/shared-leaf-imports.test.ts` 按「客户端是否经门面消费」推导扫描面，
   对门面转出链上的每个叶子模块机械判红（值引 `node:*` 会构建失败、值引 bare 包会**静默内联**
-  进浏览器产物）。该目录的最终形态（包内 `src/shared/` 还是独立 shard 目录）由 #792 的三档
-  共享规范裁定。
+  进浏览器产物）。该目录的最终形态以 §2.4 三档共享规范为准。
+
+### 2.4 共享三档（端内 / 跨端 / 跨包放哪）
+
+本仓共享分三档，按“消费者集合”判定归属，禁止按“感觉像公共代码”放。判定顺序自下而上：先问能不能留在端内，再问够不够跨端，最后才问配不配跨包。
+
+档 A——端内共享（packages/<pkg>/src/server/shared/ 与 src/client/shared/）：归属判据为消费者同属一端（同为宿主端或同为客户端）且同属一包。如 lan-proxy 的 src/client/shared/contract.ts、defaults.ts、interface.ts、view.ts 与 src/server/shared/defaults.ts、deflate.ts、interface.ts、net.ts、paths.ts（两端各一面，两面互不引用）。lan-proxy 的 client/shared 是端内档，不是跨端档——双端同时需要的常量不得放进任一端内面。约束：端内面允许值 import 同包宿主模块；但 client/shared 内禁止值引 node:*（构建硬失败）与 bare 第三方包（静默内联进浏览器产物，最危险）；类型一律 import type。门禁：verify-dir-imports（interface.ts 门面唯一入口，调用点 --package 含本包，登记见 gate-scope-registry.json）；跨模块直引 impl 即红。
+
+档 B——跨端共享（packages/<pkg>/src/shared/）：归属判据三者全满足才进：①两端真实消费同一模块；②模块零 import 或只做同目录 .ts 相对 import；③不含任一端专属依赖（node:fs/schemastery/React 运行时值引用有一即出局）。样板：notifier src/shared/11 文件（capabilities/channels/disposers/interface/kinds/quiet/reason-codes/refusal/sounds/tones/webhooks），两端经 src/shared/interface.ts 一处门面引用。反例：provider-usage src/shared/config.ts、ui-config.ts 含 schemastery/node:fs，故其客户端刻意不走门面（见其 interface.ts 注），该包不得整体套用本档门面口径——宿主专属模块留档 A 宿主侧，客户端直引实现文件并接受 verify-dir-imports 对 src/client/ 的豁免。约束：本目录每个文件不得出现值形态 import/export-from（import type 亦归一成值形态判红，见 shared-leaf-imports.test.ts normalizeTypeImports 口径）；跨目录相对引用即红；export * 整转出禁用（逐个命名导出实际被消费符号）。门禁：shared-leaf-imports.test.ts（扫描面为空即 fail-closed 红）+ 客户端构建 browser 平台校验为第二道硬门。
+
+档 C——跨包共享（仓库根 shared/）：归属判据沿用 shared/README.md 准入 1-7（≥2 稳定消费者、无包级常量依赖、跨 apply 状态语义明确、无泄漏、登记行为契约、独立测试、退役一次做完），由 verify-shared-fanin.mjs 按生产 src 口径机械判定。消费方不在文档登记，由判据实时派生，人肉快照禁止回潮。约束：消费方相对路径 import（构建期 esbuild 内联，发布物不得残留包外运行时引用，pack:check 双向断言）；官方类型层在 packages/*/src 下仅 import type。登记机制化：新增跨包模块同 PR 内“代码+声明+测试+扇入≥下限”四齐；退役同 PR 内一次做完；豁免唯一通道 gate-exemptions.json，禁止 --accept 私有通道。
+
+三档互斥与迁移：同名语义只许存在于一档；notifier 式跨端常量不得再在端内复制第二份；lan-proxy 若新增双端共享常量，进档 B 新建 src/shared/（复用门面 + leaf 判据），不得塞进任一端内面；跨包候选由档 B/A 沉淀后经评审升档 C，不空降。
 
 ### 2.3 客户端其它要点
 
