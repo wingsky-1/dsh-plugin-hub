@@ -1833,7 +1833,7 @@ describe("客户端契约", () => {
     expect(clientContractObs.toggleFloatOrderOk).toBeTruthy();
   });
 
-  it("设置页 tab 键集合精确一致（六键，history 紧随 report）", () => {
+  it("设置页 tab 键集合精确一致（六键，usage 今日置首，history 紧随 report）", () => {
     // 锚：settings/index.tsx TABS 字面量与 SettingsTabKey，第二事实源（增删改键必须红）。
     // 行级精确：纯 type 漂移（加成员/改名/改顺序）亦红——子串 includes 会漏检后缀追加。
     const typeLine = clientContractObs.settingsIndex
@@ -1841,13 +1841,13 @@ describe("客户端契约", () => {
       .map((l: string) => l.trim())
       .find((l: string) => l.startsWith("export type SettingsTabKey"));
     expect(typeLine).toBe(
-      'export type SettingsTabKey = "trend" | "report" | "history" | "usage" | "providers" | "float";',
+      'export type SettingsTabKey = "usage" | "trend" | "report" | "history" | "providers" | "float";',
     );
     const tabsStart = clientContractObs.settingsIndex.indexOf("const TABS");
     const tabsEnd = clientContractObs.settingsIndex.indexOf("];", tabsStart);
     const tabsBlock = clientContractObs.settingsIndex.slice(tabsStart, tabsEnd + 2);
     const keys = [...tabsBlock.matchAll(/key:\s*"([^"]+)"/g)].map((m) => m[1]);
-    expect(keys).toEqual(["trend", "report", "history", "usage", "providers", "float"]);
+    expect(keys).toEqual(["usage", "trend", "report", "history", "providers", "float"]);
   });
 
   it("设置页窗格 keep-mounted（hidden 属性显隐，不卸载组件实例）（TSX 形态）", () => {
@@ -5105,6 +5105,10 @@ describe("#633 分片 b2 D2：客户端源码契约断言", () => {
       join(pkgDir, "src/client/settings/usage.tsx"),
       "utf8",
     );
+    clientContractObs.settingsIndex = readFileSync(
+      join(pkgDir, "src/client/settings/index.tsx"),
+      "utf8",
+    );
     clientContractObs.clientStyle = readFileSync(join(pkgDir, "src/client/style.css"), "utf8");
     clientContractObs.listDirsSource = readFileSync(
       join(pkgDir, "src/server/execute/list-dirs.ts"),
@@ -5267,6 +5271,12 @@ describe("#633 分片 b2 D2：客户端源码契约断言", () => {
     expect(clientContractObs.localesSource.includes("gotoHeat:")).toBeTruthy();
     expect(clientContractObs.localesSource.includes("Usage heatmap")).toBeTruthy();
     expect(clientContractObs.localesSource.includes("View daily heatmap")).toBeTruthy();
+  });
+
+  it("tab 默认落用量页（顺序由六键精确一致用例锁定）", () => {
+    expect(
+      clientContractObs.settingsIndex.includes('useState<SettingsTabKey>("usage")'),
+    ).toBeTruthy();
   });
 
   it("B4 空候选时「全部目录」checkbox 禁用（空=全部语义不变）", () => {

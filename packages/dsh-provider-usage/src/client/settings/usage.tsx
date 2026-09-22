@@ -126,7 +126,11 @@ function DonutCard({
       </div>
       <div style={{ marginTop: 4, fontSize: 11 }}>
         {legend.map((l) => (
-          <div key={l.label} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <div
+            key={l.label}
+            title={`${l.label} ${l.text}`}
+            style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}
+          >
             <span
               style={{
                 width: 8,
@@ -136,8 +140,27 @@ function DonutCard({
                 background: l.color,
               }}
             />
-            <span style={{ fontWeight: 600 }}>{l.label}</span>
-            <span style={{ color: "var(--dsw-alias-label-tertiary,#9aa0ab)" }}>{l.text}</span>
+            <span
+              style={{
+                fontWeight: 600,
+                flex: "none",
+                maxWidth: "55%",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {l.label}
+            </span>
+            <span
+              style={{
+                color: "var(--dsw-alias-label-tertiary,#9aa0ab)",
+                minWidth: 0,
+                overflowWrap: "anywhere",
+              }}
+            >
+              {l.text}
+            </span>
           </div>
         ))}
       </div>
