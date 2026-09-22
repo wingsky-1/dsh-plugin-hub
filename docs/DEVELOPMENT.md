@@ -352,14 +352,32 @@ SessionHeader.origin / Agent.session），并同步根 README「版本适配」�
   一条包根级整包通配能在条数不变、⑤ 全绿的前提下把整包变异面清空，而 Stryker 对 0 mutant 不报错
   （判分与门禁都静默）。此外段级 `excludes` 的**条目形状**（非空字符串 + `!` 前缀，缺 `!` 会极性
   反转）与包登记（空 `segments` 指向 `$noMutationPackages`）在派生前先判；
-- 新增测试文件后的固定动作：放进对应层目录 → `node scripts/gate/gen-stryker-conf.mjs --sync-test-min`
-  → `pnpm stryker:gen` → 提交。单元层与集成层**零手工登记**；`testMutationExemptions`（按层分组）只用于
+- 新增测试文件后的固定动作：放进对应层目录 → 在所属包认领它的段的 `testFiles` 里登记（见下段归属） → `node scripts/gate/gen-stryker-conf.mjs --sync-test-min`
+  → `pnpm stryker:gen` → 提交。层归属**零手工登记**（目录即分类）；段归属必须显式登记；`testMutationExemptions`（按层分组）只用于
   「刻意不进变异面」的逐条裁决，必须写明理由，模型样例两条：
   mcp 的 `unit/unit-shared.test.ts`（测的是 shared 层，不在本包 mutate 面内）、
   notifier 的 `integration/real-context.test.ts`（Stryker 沙箱内 dry run 失败，属 #712 记录的沙箱语义族）；
 - 变异面扩缩**在 PR 门禁里看不出来**（`incremental: true` 复用基线状态）。真信号来自 observe.yml
   班次全量重建；PR 内的自证方式是「派生测试面 ↔ 基线的集合对比 + 单段真跑 stryker 报告的
   mutant 状态分布与基线一致」。
+
+#### 变异段测试归属（P2 段级 `testFiles`）
+
+每个段认领哪些测试文件由拓扑 `packages.<pkg>.segments.<seg>.testFiles` 显式登记
+（SSOT，仓库根相对路径；缺字段即判红，`" *"` 为显式回落）：
+
+- **落哪几段**：看它杀谁的 mutant——被测 `src` 归属哪个段的 `mutate` 面就进哪个段；
+  跨段杀灭（组合根、ports、broad 单测）就进多个段。**重叠合法**：多进只多跑（安全方向），
+  漏进才危险。拿不准就多放，`--check` 只拦漏不拦多。
+- **三条硬约束**（`gen --check` 自动判）：① 并集恒等——变异层的新测试必须进 ≥1 段，
+  否则并集缺口判红（删文件请删磁盘文件本身）；② 层成员资格——条目必须已在包级变异面内，
+  `test/e2e/**`、`test/client/**`、support 文件写进去即红（e2e/client 的新测试不落段）；
+  ③ 段非空——清单不得为空数组。
+- **固定动作**：改拓扑对应段清单 → `pnpm stryker:gen`（派生段级 vitest 配置并切换 conf 指针）
+  → `gen --check` 绿。段级 vitest 配置变更只失效该段增量基线（registry＋`changed-test-packages`
+  已接好，无需手工处理）；包级配置变更仍整包失效。
+- **改坏试验**（沿用测试 skill 写法）：把某段核心实现改坏，该段清单内的测试必须红；
+  若红的是别的段，说明归属登记错位，回拓扑修正。
 
 ### 落盘路径必须感知 DSH_HOME（#510）
 
