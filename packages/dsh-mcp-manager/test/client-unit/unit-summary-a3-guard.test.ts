@@ -48,7 +48,26 @@ describe("#770-L2 迁移丢秘密大声失败", () => {
     );
   }
 
-  function makeStdioState(editingName: string | undefined, editing: unknown): any {
+  /** makeStdioState 最小内联 fake 面（刻意保留的 fake 缝：调用处 3× as never 不动，见 PR 正文 G7-4）。 */
+  interface StdioStateFake {
+    formName: { value: string };
+    formScope: { value: string };
+    formTransport: { value: string; dispatchEvent: () => void };
+    formCommand: { value: string };
+    formArgs: { value: string };
+    formEnv: { value: string };
+    formCwd: { value: string };
+    formUrl: { value: string };
+    formHeaders: { value: string };
+    formEnabled: { checked: boolean };
+    editingName: string | undefined;
+    editing: unknown;
+    API: { servers: string };
+    projectRoot: string;
+    currentCwd: string;
+  }
+
+  function makeStdioState(editingName: string | undefined, editing: unknown): StdioStateFake {
     return {
       formName: { value: editingName === "old-name" ? "new-name" : "new-name" },
       formScope: { value: "global" },

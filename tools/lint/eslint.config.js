@@ -8,14 +8,15 @@
  *   2. files 模式相对 basePath 解析，而 basePath 由入口的 cwd 决定——入口固定以仓库根为 cwd，
  *      故此处模式一律写成仓库根相对形式。
  *
- * 规则分四段，越靠后越具体：
+ * 规则分三段，越靠后越具体：
  *   1. typescript-eslint 的 recommended —— **非 type-checked**：不建 program，全仓秒级完成；
  *      类型感知的规则集（strictTypeChecked）要 program、慢一个量级，留待单独评估；
  *   2. 复杂度阈值（唯一事实源是 scripts/data/gauntlet.config.json 的 complexity 段）；
- *   3. 分面降级：**未重写的老客户端**把两条规则降为 warn（它用的是 any 兜底风格的 React
- *      代码，且不在重写范围内）；宿主端 `src/server/**` 不降级；
- *   4. eslint-config-prettier 收尾：关掉与 Prettier 重叠的格式规则。格式只由 Prettier 定，
+ *   3. eslint-config-prettier 收尾：关掉与 Prettier 重叠的格式规则。格式只由 Prettier 定，
  *      两处都能改格式的代价不是多改一次，而是「lint 说对、编辑器保存后又变回去」。
+ *
+ * 历史：曾有分面降级把两条规则降为 warn；P3-b/B7 起 8 处清零后两条已回 error，
+ * R1 零命中，降级机制已摘除（见 git 历史）。
  */
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -71,10 +72,6 @@ const complexityRules = {
 // #765 批次摘除五条已清零的规则（prefer-const / no-unused-vars / no-wrapper-object-types /
 // no-this-alias / no-require-imports）：命中为 0 的规则留在降级集里等于把不存在的债记成技术债，
 // 还让新写的违规只拿 warn（与 no-var 同理由）。它们回到常规规则面按 error 生效。
-const LEGACY_WARN = {
-  "@typescript-eslint/ban-ts-comment": "warn",
-  "@typescript-eslint/no-explicit-any": "warn",
-};
 
 /**
  * `_` 前缀是社区约定的「显式声明本意就是不使用」：编译期契约断言（如
@@ -163,15 +160,7 @@ export default [
       "sonarjs/deprecation": "error",
     },
   },
-  {
-    // 未重写的老客户端：any 兜底与 ts-comment 是它既有的写法，降为 warn——不阻塞 CI，但仍然
-    // 可见。客户端重写时这两条要一并收掉（本文件不负责跟踪，见包级 issue）。
-    files: ["packages/*/src/client/**"],
-    rules: {
-      "@typescript-eslint/no-explicit-any": "warn",
-      "@typescript-eslint/ban-ts-comment": "warn",
-    },
-  },
+
   {
     // dsh-worktree-sidebar 客户端的块间隔离（#819 S1b-3）：四个块文件彼此零互引、也不反向
     // 依赖装配根；跨块只走 index.ts 的装配面与 shared/ports.ts 的类型面（它只许 import type）。
@@ -203,13 +192,7 @@ export default [
       ],
     },
   },
-  {
-    // 存量面：本次重写面之外一律降级。重写面（packages/dsh-notifier/src/server/**）不降级——
-    // 新代码从落地那一刻起就按完整规则集要求。
-    files: [...TS_SOURCES, ...JS_SOURCES],
-    ignores: ["packages/dsh-notifier/src/server/**"],
-    rules: LEGACY_WARN,
-  },
+
   {
     // CommonJS 文件里 `require` 是唯一可用的加载方式（.cjs 不能写 ESM import），该规则在此
     // 属误报而非债——它拦的是 ESM 文件里的 require，不是「这个文件本该用 import」。

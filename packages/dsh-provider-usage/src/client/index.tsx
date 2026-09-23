@@ -693,7 +693,19 @@ function mountFloat(): () => void {
 
 // ------------------------------------------------------------------ 插件入口
 
-export function apply(ctx: any): void {
+/** 客户端 ctx 最小面（三键可选 sessions/remote/locale；slots/effect 为装配必需）。 */
+interface ProviderUsageClientCtx {
+  sessions?: SessionsServiceLike;
+  remote?: RemoteLike;
+  locale?: Parameters<typeof bindLocale>[0];
+  slots: {
+    inject(name: string, setup: () => unknown): unknown;
+    register(item: Record<string, unknown>, render: () => unknown): unknown;
+  };
+  effect(fn: () => () => void, label?: string): void;
+}
+
+export function apply(ctx: ProviderUsageClientCtx): void {
   try {
     ensureStyle({ id: STYLE_ID, cssText: STYLE });
     if (document.body === null) return;
@@ -708,7 +720,7 @@ export function apply(ctx: any): void {
     // i18n：注册本插件字典；t 经共享 i18n.ts 活绑定（多文件 client 共用），
     // 语言切换 subscribe 重绑（胶囊/面板/设置 tab 下次渲染即生效）。
     let unsubLocale: (() => void) | undefined;
-    const locale: any = ctx.locale;
+    const locale: Parameters<typeof bindLocale>[0] = ctx.locale;
     if (locale && typeof locale.register === "function") {
       try {
         locale.register(NS, { zh: zh, en: en });
