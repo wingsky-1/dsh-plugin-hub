@@ -6,7 +6,15 @@
  * apply 接线（路由注册 + health caConfigured）。不碰真实端口与真实 DSH_HOME。
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import type { IncomingMessage, ServerResponse } from "node:http";
@@ -30,6 +38,7 @@ import {
 } from "../../src/server/tls/impl/index.ts";
 import { MIGRATED_BAK_NAME } from "../../src/server/migrate/impl/file/index.ts";
 import { resolvePluginDir } from "../../src/server/migrate/impl/layout/index.ts";
+import { MANAGED_CERT_FILES, legacyPluginDir } from "../../src/server/shared/paths.ts";
 
 let prevHome: string | undefined;
 let home: string;
@@ -107,6 +116,11 @@ describe("TLS 首证书提取", () => {
     const der = extractFirstCertificateDer(mat.cert);
     const pem = encodeCertificatePem(der);
     expect(pem.startsWith("-----BEGIN CERTIFICATE-----\n")).toBe(true);
+    expect(pem.endsWith("\n-----END CERTIFICATE-----\n")).toBe(true);
+    // 64 列换行无空行（步长/边界变异即多出空行或超长行）。
+    const bodyLines = pem.split("\n").slice(1, -2);
+    expect(bodyLines.length).toBeGreaterThan(1);
+    expect(bodyLines.every((line) => line.length > 0 && line.length <= 64)).toBe(true);
     expect(extractFirstCertificateDer(pem).equals(der)).toBe(true);
   });
   it("含链 PEM 只取首个", () => {
@@ -169,6 +183,78 @@ describe("旧目录迁出 resolvePluginDir", () => {
     expect(out.moved).toEqual([]);
     expect(out.fallback).toBe(false);
   });
+  it("托管四件套随旧目录迁出（MANAGED_CERT_FILES 清单行为锚：置空即迁不出）", () => {
+    mkdirSync(join(home, "lan-proxy"), { recursive: true });
+    writeFileSync(join(home, "lan-proxy", "ca-cert.pem"), "CA");
+    const out = resolvePluginDir({ files: [...MANAGED_CERT_FILES] });
+    expect(out.moved).toEqual(["ca-cert.pem"]);
+    expect(out.fallback).toBe(false);
+    expect(existsSync(join(home, "@wingsky-1", "dsh-lan-proxy", "ca-cert.pem"))).toBe(true);
+    expect(existsSync(join(home, "lan-proxy", "ca-cert.pem"))).toBe(false);
+  });
+  it('".." 逐字拒绝（家目录不得被改名归档）', () => {
+    const out = resolvePluginDir({ files: [".."] });
+    expect(out.moved).toEqual([]);
+    expect(out.fallback).toBe(false);
+    expect(existsSync(home)).toBe(true);
+    rmSync(home + ".migrated.bak", { recursive: true, force: true });
+  });
+  it("非法名在旧目录存在时仍零触碰（守卫行为锚：合法 keep 照迁）", () => {
+    mkdirSync(join(home, "lan-proxy"), { recursive: true });
+    writeFileSync(join(home, "lan-proxy", "keep.pem"), "KEEP");
+    mkdirSync(join(home, "lan-proxy", "sub"), { recursive: true });
+    writeFileSync(join(home, "lan-proxy", "sub", "keep.pem"), "SUB");
+    const out = resolvePluginDir({
+      files: ["", ".", "..", "../evil", "a/b", "sub/keep.pem", "keep.pem"],
+    });
+    expect(out.moved).toEqual(["keep.pem"]);
+    expect(out.fallback).toBe(false);
+    expect(existsSync(join(home, "@wingsky-1", "dsh-lan-proxy", "keep.pem"))).toBe(true);
+    expect(existsSync(join(home, "lan-proxy", "sub", "keep.pem"))).toBe(true);
+    expect(existsSync(home)).toBe(true);
+    rmSync(home + ".migrated.bak", { recursive: true, force: true });
+  });
+  it("搬运失败回落旧目录（只读新目录 + 日志；回滚循环见分类说明）", () => {
+    mkdirSync(join(home, "lan-proxy"), { recursive: true });
+    writeFileSync(join(home, "lan-proxy", "a.pem"), "A");
+    const fresh = join(home, "@wingsky-1", "dsh-lan-proxy");
+    mkdirSync(join(home, "@wingsky-1"), { recursive: true });
+    mkdirSync(fresh);
+    chmodSync(fresh, 0o555);
+    const warns: string[] = [];
+    try {
+      const out = resolvePluginDir({
+        files: ["a.pem"],
+        logger: { warn: (...a: unknown[]) => warns.push(a.map(String).join(" ")) },
+      });
+      expect(out.dir).toBe(legacyPluginDir());
+      expect(out.moved).toEqual([]);
+      expect(out.fallback).toBe(true);
+      expect(readFileSync(join(home, "lan-proxy", "a.pem"), "utf8")).toBe("A");
+      expect(warns.some((w) => w.includes("回滚并回落旧目录"))).toBe(true);
+      // logger 缺席 warn 方法 → 静默跳过不抛（可选链双保险）。
+      const out2 = resolvePluginDir({ files: ["a.pem"], logger: {} });
+      expect(out2.fallback).toBe(true);
+    } finally {
+      chmodSync(fresh, 0o755);
+    }
+  });
+  it("归档失败记日志并保留原位（.bak 被目录占住）", () => {
+    mkdirSync(join(home, "lan-proxy"), { recursive: true });
+    writeFileSync(join(home, "lan-proxy", "f.pem"), "OLD");
+    mkdirSync(join(home, "@wingsky-1", "dsh-lan-proxy"), { recursive: true });
+    writeFileSync(join(home, "@wingsky-1", "dsh-lan-proxy", "f.pem"), "NEW");
+    mkdirSync(join(home, "lan-proxy", "f.pem.migrated.bak"), { recursive: true });
+    const warns: string[] = [];
+    const out = resolvePluginDir({
+      files: ["f.pem"],
+      logger: { warn: (...a: unknown[]) => warns.push(a.map(String).join(" ")) },
+    });
+    expect(out.moved).toEqual([]);
+    expect(out.fallback).toBe(false);
+    expect(readFileSync(join(home, "lan-proxy", "f.pem"), "utf8")).toBe("OLD");
+    expect(warns.some((w) => w.includes("归档失败") && !w.includes("undefined"))).toBe(true);
+  });
   it("pluginDir 末段为包名分区", () => {
     expect(pluginDir()).toBe(join(home, "@wingsky-1", "dsh-lan-proxy"));
     expect(basename(pluginDir())).toBe("dsh-lan-proxy");
@@ -194,6 +280,7 @@ describe("下发路由三态与围栏", () => {
     expect(r.path).toBe(ROUTES.caCert);
     expect(r.status).toBe(404);
     const body = JSON.parse(r.body.toString("utf8"));
+    expect(body.ok).toBe(false);
     expect(body.error.code).toBe("ca-unconfigured");
     expect(body.error.details).toContain("一键生成");
   });
@@ -230,7 +317,33 @@ describe("下发路由三态与围栏", () => {
     ensureSelfSignedTls({ dir });
     const r = callCaCert({ selfSignedDir: dir }, { url: "http://[::1" });
     expect(r.status).toBe(400);
-    expect(JSON.parse(r.body.toString("utf8")).error.code).toBe("bad-format");
+    const malformed = JSON.parse(r.body.toString("utf8"));
+    expect(malformed.ok).toBe(false);
+    expect(malformed.error.code).toBe("bad-format");
+  });
+  it('req.url 缺席 → format 缺省 der（?? "/" 分支：继续走装配态而非 400）', () => {
+    const route = buildCaCertRoutes({
+      loadCertificate: (format: "der" | "pem") =>
+        loadDownloadableCertificate({ selfSignedDir: home }, format),
+    })[0];
+    let status = 0;
+    const chunks: Buffer[] = [];
+    const res = {
+      writeHead: (c: number) => {
+        status = c;
+      },
+      end: (c?: unknown) => {
+        if (c !== undefined) chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(String(c)));
+      },
+    } as unknown as ServerResponse;
+    const req = {
+      method: "GET",
+      socket: { remoteAddress: "127.0.0.1" },
+      headers: { host: "127.0.0.1:3080" },
+    } as unknown as IncomingMessage;
+    route.handler(req, res);
+    expect(status).toBe(404);
+    expect(JSON.parse(Buffer.concat(chunks).toString("utf8")).error.code).toBe("ca-unconfigured");
   });
   it("未知 format 值 400（fail-closed，不静默回落）", () => {
     const dir = mkdtempSync(join(home, "self-"));
@@ -348,52 +461,56 @@ describe("CA 键校验与清除", () => {
   });
 });
 
+/**
+ * apply 接线 helpers（模块级：供本文件多个 describe 共用；fake ctx 收口到宿主
+ * Context 类型（单点适配；行为不断言 ctx 形态）。
+ */
+function runApply(entry: Record<string, unknown>) {
+  const routes: WebRoute[] = [];
+  const ctx = {
+    logger: { info: () => {}, warn: () => {}, error: () => {} },
+    webServer: {
+      port: 3801,
+      register(r: WebRoute) {
+        routes.push(r);
+        return () => {};
+      },
+      tapIndex() {
+        return () => {};
+      },
+      on() {
+        return () => {};
+      },
+    },
+    inject() {},
+    effect(fn: () => unknown) {
+      return fn();
+    },
+  };
+  apply(ctx as unknown as Context, { enabled: false, httpsEnabled: false, ...entry });
+  return routes;
+}
+function callHealth(routes: WebRoute[]) {
+  const route = routes.find((r: WebRoute) => r.path === ROUTES.health);
+  if (route === undefined) throw new Error("health route missing");
+  let text = "";
+  const req = {
+    method: "GET",
+    socket: { remoteAddress: "127.0.0.1" },
+    headers: { host: "127.0.0.1:3801" },
+    url: ROUTES.health,
+  } as unknown as IncomingMessage;
+  const res = {
+    writeHead() {},
+    end(c?: unknown) {
+      text = String(c);
+    },
+  } as unknown as ServerResponse;
+  route.handler(req, res);
+  return JSON.parse(text) as Record<string, unknown>;
+}
+
 describe("apply 接线", () => {
-  function runApply(entry: Record<string, unknown>) {
-    const routes: WebRoute[] = [];
-    const ctx = {
-      logger: { info: () => {}, warn: () => {}, error: () => {} },
-      webServer: {
-        port: 3801,
-        register(r: WebRoute) {
-          routes.push(r);
-          return () => {};
-        },
-        tapIndex() {
-          return () => {};
-        },
-        on() {
-          return () => {};
-        },
-      },
-      inject() {},
-      effect(fn: () => unknown) {
-        return fn();
-      },
-    };
-    // fake ctx 收口到宿主 Context 类型（单点适配；行为不断言 ctx 形态）。
-    apply(ctx as unknown as Context, { enabled: false, httpsEnabled: false, ...entry });
-    return routes;
-  }
-  function callHealth(routes: WebRoute[]) {
-    const route = routes.find((r: WebRoute) => r.path === ROUTES.health);
-    if (route === undefined) throw new Error("health route missing");
-    let text = "";
-    const req = {
-      method: "GET",
-      socket: { remoteAddress: "127.0.0.1" },
-      headers: { host: "127.0.0.1:3801" },
-      url: ROUTES.health,
-    } as unknown as IncomingMessage;
-    const res = {
-      writeHead() {},
-      end(c?: unknown) {
-        text = String(c);
-      },
-    } as unknown as ServerResponse;
-    route.handler(req, res);
-    return JSON.parse(text) as Record<string, unknown>;
-  }
   it("注册下发路由且命名空间目录建出", () => {
     const routes = runApply({});
     expect(routes.map((r) => r.path)).toContain(ROUTES.caCert);
@@ -411,5 +528,250 @@ describe("apply 接线", () => {
     const r = callCaCert({ selfSignedDir: dir });
     expect(r.status).toBe(404);
     expect(JSON.parse(r.body.toString("utf8")).error.code).toBe("ca-unconfigured");
+  });
+});
+
+describe("apply 装配层默认与守卫（entry 段补强）", () => {
+  it("空 entry health 默认值快照（resolve 单一来源）", () => {
+    const health = callHealth(runApply({}));
+    expect(health.httpPort).toBe(3081);
+    // runApply 为免真实监听强制 httpsEnabled: false（harness 口径，非产品默认）。
+    expect(health.httpsEnabled).toBe(false);
+    expect(health.httpsPort).toBe(3443);
+    expect(health.listening).toBe(false);
+    expect(health.ownsHostCompat).toBe(false);
+    expect(health.wsBridgeEnabled).toBe(true);
+    expect(health.wsCompressEnabled).toBe(true);
+    expect(health.wsCompressPaths).toEqual(["/api/remote.mux"]);
+    expect(health.connStats).toBe(null);
+  });
+
+  it("空串 CA 路径 health caConfigured 为 false（非空判定双条件）", () => {
+    expect(callHealth(runApply({ tlsCaCertFile: "" })).caConfigured).toBe(false);
+  });
+
+  it("空 entry GET /config effective 默认值（host/目标/压缩/令牌开关）", () => {
+    const route = runApply({}).find((r) => r.path === ROUTES.config);
+    if (route === undefined) throw new Error("config route missing");
+    let text = "";
+    const req = {
+      method: "GET",
+      socket: { remoteAddress: "127.0.0.1" },
+      headers: { host: "127.0.0.1:3801" },
+      url: ROUTES.config,
+    } as unknown as IncomingMessage;
+    const res = {
+      writeHead() {},
+      end(c?: unknown) {
+        text = String(c);
+      },
+    } as unknown as ServerResponse;
+    route.handler(req, res);
+    const body = JSON.parse(text) as {
+      effective: Record<string, unknown>;
+      compress: Record<string, unknown>;
+    };
+    expect(body.effective.host).toBe("0.0.0.0");
+    expect(body.effective.targetHost).toBe("127.0.0.1");
+    expect(body.effective.printBanner).toBe(true);
+    expect(body.effective.wsDeflatePolicy).toEqual({
+      browser: true,
+      uaDeny: ["iPhone", "iPad", "iPod"],
+    });
+    expect(body.effective.httpCompressEnabled).toBe(true);
+    expect(body.effective.httpCompressLevel).toBe(1);
+    expect(body.effective.injectToken).toBe(true);
+    expect(body.compress.httpCompressMounted).toBe(false);
+  });
+
+  it("health 非 GET 405（方法白名单）", () => {
+    const route = runApply({}).find((r: WebRoute) => r.path === ROUTES.health);
+    if (route === undefined) throw new Error("health route missing");
+    let status = 0;
+    const req = {
+      method: "POST",
+      socket: { remoteAddress: "127.0.0.1" },
+      headers: { host: "127.0.0.1:3801" },
+      url: ROUTES.health,
+    } as unknown as IncomingMessage;
+    const res = {
+      writeHead: (c: number) => {
+        status = c;
+      },
+      end() {},
+    } as unknown as ServerResponse;
+    route.handler(req, res);
+    expect(status).toBe(405);
+  });
+
+  it("health 非回环 403（先于 405）", () => {
+    const route = runApply({}).find((r: WebRoute) => r.path === ROUTES.health);
+    if (route === undefined) throw new Error("health route missing");
+    let status = 0;
+    const req = {
+      method: "GET",
+      socket: { remoteAddress: "192.168.31.99" },
+      headers: { host: "192.168.31.99:3801" },
+      url: ROUTES.health,
+    } as unknown as IncomingMessage;
+    const res = {
+      writeHead: (c: number) => {
+        status = c;
+      },
+      end() {},
+    } as unknown as ServerResponse;
+    route.handler(req, res);
+    expect(status).toBe(403);
+  });
+
+  it("装配经 apply 的下发路由可服务托管 CA（闭包接线非直连）", () => {
+    const dir = mkdtempSync(join(home, "wired-"));
+    const mat = ensureSelfSignedTls({ dir });
+    const caFile = join(dir, "ca.pem");
+    writeFileSync(caFile, mat.cert);
+    const route = runApply({ tlsCaCertFile: caFile }).find((r) => r.path === ROUTES.caCert);
+    if (route === undefined) throw new Error("ca-cert route missing");
+    let status = 0;
+    const chunks: Buffer[] = [];
+    const req = {
+      method: "GET",
+      socket: { remoteAddress: "127.0.0.1" },
+      headers: { host: "127.0.0.1:3801" },
+      url: ROUTES.caCert,
+    } as unknown as IncomingMessage;
+    const res = {
+      writeHead: (c: number) => {
+        status = c;
+      },
+      end: (c?: unknown) => {
+        if (c !== undefined) chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(String(c)));
+      },
+    } as unknown as ServerResponse;
+    route.handler(req, res);
+    expect(status).toBe(200);
+    expect(Buffer.concat(chunks)[0]).toBe(0x30);
+  });
+
+  it("旧目录托管 CA 随 apply 迁出（装配清单含 MANAGED 四件套）", () => {
+    mkdirSync(join(home, "lan-proxy"), { recursive: true });
+    writeFileSync(join(home, "lan-proxy", "ca-cert.pem"), "CA");
+    runApply({});
+    expect(existsSync(join(home, "@wingsky-1", "dsh-lan-proxy", "ca-cert.pem"))).toBe(true);
+    expect(existsSync(join(home, "lan-proxy", "ca-cert.pem"))).toBe(false);
+  });
+
+  it("路由 disposer 全部执行（卸载不残留注册）", () => {
+    const routes: WebRoute[] = [];
+    const disposed: string[] = [];
+    const effects: Array<() => void> = [];
+    const ctx = {
+      logger: { info: () => {}, warn: () => {}, error: () => {} },
+      webServer: {
+        port: 3801,
+        register(route: WebRoute) {
+          routes.push(route);
+          const path = route.path;
+          return () => {
+            disposed.push(path);
+          };
+        },
+        tapIndex() {
+          return () => {};
+        },
+        on() {
+          return () => {};
+        },
+      },
+      inject() {},
+      effect(fn: () => unknown) {
+        const d = fn();
+        if (typeof d === "function") effects.push(d as () => void);
+        return d;
+      },
+    };
+    apply(ctx as unknown as Context, { enabled: false, httpsEnabled: false });
+    expect(routes.length).toBeGreaterThan(0);
+    for (const dispose of [...effects].reverse()) dispose();
+    expect(disposed).toContain(ROUTES.health);
+    expect(disposed).toContain(ROUTES.config);
+    expect(disposed).toContain(ROUTES.caCert);
+    expect(disposed).toContain(ROUTES.caGenerate);
+  });
+
+  it("health disposer 抛错不阻断卸载（生命周期 try/catch）", () => {
+    const effects: Array<() => void> = [];
+    const ctx = {
+      logger: { info: () => {}, warn: () => {}, error: () => {} },
+      webServer: {
+        port: 3801,
+        register(route: WebRoute) {
+          return () => {
+            if (route.path === ROUTES.health) throw new Error("staged dispose failure");
+          };
+        },
+        tapIndex() {
+          return () => {};
+        },
+        on() {
+          return () => {};
+        },
+      },
+      inject() {},
+      effect(fn: () => unknown) {
+        const d = fn();
+        if (typeof d === "function") effects.push(d as () => void);
+        return d;
+      },
+    };
+    apply(ctx as unknown as Context, { enabled: false, httpsEnabled: false });
+    // 生命周期 effect 最后注册：仅调用它（路由级 disposer 本就向调用方抛错，
+    // 被保护的只是生命周期内的 healthDisposer 调用）。
+    const lifecycle = effects[effects.length - 1];
+    expect(() => lifecycle()).not.toThrow();
+  });
+
+  it("webServer 无绑定端口 + enabled → 不建转发器（listening false，不抛）", () => {
+    const routes: WebRoute[] = [];
+    const ctx = {
+      logger: { info: () => {}, warn: () => {}, error: () => {} },
+      webServer: {
+        register(route: WebRoute) {
+          routes.push(route);
+          return () => {};
+        },
+        tapIndex() {
+          return () => {};
+        },
+        on() {
+          return () => {};
+        },
+      },
+      inject() {},
+      effect(fn: () => unknown) {
+        return fn();
+      },
+    };
+    let listening: unknown;
+    expect(() => {
+      apply(ctx as unknown as Context, { enabled: true, port: 0, httpsEnabled: false });
+      const route = routes.find((r) => r.path === ROUTES.health);
+      if (route === undefined) throw new Error("health route missing");
+      let text = "";
+      const req = {
+        method: "GET",
+        socket: { remoteAddress: "127.0.0.1" },
+        headers: { host: "127.0.0.1:3801" },
+        url: ROUTES.health,
+      } as unknown as IncomingMessage;
+      const res = {
+        writeHead() {},
+        end(c?: unknown) {
+          text = String(c);
+        },
+      } as unknown as ServerResponse;
+      route.handler(req, res);
+      listening = (JSON.parse(text) as Record<string, unknown>).listening;
+    }).not.toThrow();
+    expect(listening).toBe(false);
   });
 });

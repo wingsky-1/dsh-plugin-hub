@@ -26,7 +26,9 @@ import { createServer } from "node:http";
 import { inject, name } from "../../src/index.ts";
 import { apply, pluginDir, DEFAULT_WSS_COMPRESS_PATHS } from "../../src/server/apply.ts";
 import {
+  BOOLEAN_KEYS,
   Config,
+  normalizeConfig,
   sanitizeSettings,
   validateSettings,
   normalizeLegacyWsCompressPaths,
@@ -1533,11 +1535,23 @@ describe("变异加固块（round=3 CI 回归：迁移重放/路由面/校验分
             resumed: false,
           },
         },
+        {
+          name: "scalar",
+          raw: "5",
+          expected: {
+            performed: true,
+            migrated: false,
+            rolledBack: false,
+            skippedCorrupt: true,
+            resumed: false,
+          },
+        },
       ];
       const records: Array<{
         out: Awaited<ReturnType<typeof migrateFileConfig>>;
         bakExists: boolean;
         updates: unknown[];
+        warns: string[];
       }> = [];
 
       beforeAll(async () => {
@@ -1545,12 +1559,16 @@ describe("变异加固块（round=3 CI 回归：迁移重放/路由面/校验分
           const dir = mkdtempSync(join(tmpdir(), `dsh-lan-proxy-mut-${name}-`));
           writeFileSync(join(dir, "config.json"), raw);
           const scope = okScope();
-          const out = await migrateFileConfig(dir, scope);
+          const warns: string[] = [];
+          const out = await migrateFileConfig(dir, scope, {
+            warn: (...a: unknown[]) => warns.push(a.map(String).join(" ")),
+          });
           // bak 标记必须在 rmSync 之前观测（目录随即被回收）
           records.push({
             out,
             bakExists: existsSync(join(dir, MIGRATED_BAK_NAME)),
             updates: scope.updates,
+            warns,
           });
           rmSync(dir, { recursive: true, force: true });
         }
@@ -1570,6 +1588,37 @@ describe("变异加固块（round=3 CI 回归：迁移重放/路由面/校验分
         expect(records[0].updates).toEqual([{ port: 4082 }]);
       });
 
+      it("损坏 JSON warn 指明仅标记不写入", () => {
+        expect(records[1].warns.some((w) => w.includes("不是合法 JSON"))).toBe(true);
+      });
+
+      it("非对象 JSON warn 指明不是配置对象", () => {
+        expect(records[5].warns.some((w) => w.includes("不是配置对象"))).toBe(true);
+      });
+
+      it("非法值 warn 指明含非法配置值", () => {
+        expect(records[3].warns.some((w) => w.includes("含非法配置值"))).toBe(true);
+      });
+
+      it("旧默认压缩白名单迁移归一化到新默认（端到端行为锚）", async () => {
+        const dir = mkdtempSync(join(tmpdir(), "dsh-lan-proxy-mut-wslegacy-"));
+        try {
+          writeFileSync(
+            join(dir, "config.json"),
+            JSON.stringify({
+              port: 4082,
+              wsCompressPaths: ["/api/events.mux", "/api/events.host"],
+            }),
+          );
+          const scope = okScope();
+          const out = await migrateFileConfig(dir, scope);
+          expect(out.migrated).toBe(true);
+          expect(scope.updates).toEqual([{ port: 4082, wsCompressPaths: ["/api/remote.mux"] }]);
+        } finally {
+          rmSync(dir, { recursive: true, force: true });
+        }
+      });
+
       const titledNoWrite = cases
         .slice(1)
         .map((c) => ({ title: `case=${c.name} 不写入`, i: cases.indexOf(c) }));
@@ -1582,15 +1631,20 @@ describe("变异加固块（round=3 CI 回归：迁移重放/路由面/校验分
     describe("C3: 写入失败回滚", () => {
       let out!: Awaited<ReturnType<typeof migrateFileConfig>>;
       let configRestored = false;
+      const warns: string[] = [];
 
       beforeAll(async () => {
         const dir = mkdtempSync(join(tmpdir(), "dsh-lan-proxy-mut-rollback-"));
         writeFileSync(join(dir, "config.json"), JSON.stringify({ port: 4083 }));
-        out = await migrateFileConfig(dir, {
-          async update() {
-            throw new Error("io");
+        out = await migrateFileConfig(
+          dir,
+          {
+            async update() {
+              throw new Error("io");
+            },
           },
-        });
+          { warn: (...a: unknown[]) => warns.push(a.map(String).join(" ")) },
+        );
         configRestored = existsSync(join(dir, "config.json"));
         rmSync(dir, { recursive: true, force: true });
       });
@@ -1608,6 +1662,10 @@ describe("变异加固块（round=3 CI 回归：迁移重放/路由面/校验分
       it("回滚后 config.json 还原", () => {
         expect(configRestored).toBe(true);
       });
+
+      it("写入失败 warn 指明已回滚下次重试", () => {
+        expect(warns.some((w) => w.includes("已回滚"))).toBe(true);
+      });
     });
 
     // C4: 中断重放四分支（成功/损坏 bak/无效 bak/update 失败），resumed=true。
@@ -1619,7 +1677,10 @@ describe("变异加固块（round=3 CI 回归：迁移重放/路由面/校验分
       ];
       let good!: Awaited<ReturnType<typeof migrateFileConfig>>;
       let goodUpdates: unknown[] = [];
-      const badRecords: Array<{ out: Awaited<ReturnType<typeof migrateFileConfig>> }> = [];
+      const badRecords: Array<{
+        out: Awaited<ReturnType<typeof migrateFileConfig>>;
+        warns: string[];
+      }> = [];
       let failOut!: Awaited<ReturnType<typeof migrateFileConfig>>;
       let failBakKept = false;
 
@@ -1634,8 +1695,11 @@ describe("变异加固块（round=3 CI 回归：迁移重放/路由面/校验分
         for (const { raw } of badBakCases) {
           const dir = mkdtempSync(join(tmpdir(), "dsh-lan-proxy-mut-resume-bad-"));
           writeFileSync(join(dir, MIGRATED_BAK_NAME), raw);
-          const out = await migrateFileConfig(dir, okScope());
-          badRecords.push({ out });
+          const warns: string[] = [];
+          const out = await migrateFileConfig(dir, okScope(), {
+            warn: (...a: unknown[]) => warns.push(a.map(String).join(" ")),
+          });
+          badRecords.push({ out, warns });
           rmSync(dir, { recursive: true, force: true });
         }
 
@@ -1664,20 +1728,26 @@ describe("变异加固块（round=3 CI 回归：迁移重放/路由面/校验分
         expect(goodUpdates).toEqual([{ printBanner: false }]);
       });
 
-      const titledResumed = badBakCases.map((c, i) => ({
-        title: `resume bad (${c.raw}) resumed`,
+      const titledBad = badBakCases.map((c, i) => ({
+        title: `resume bad (${c.raw}) 全量 outcome`,
         i,
       }));
-      it.each(titledResumed)("$title", ({ i }) => {
-        expect(badRecords[i].out.resumed).toBe(true);
+      it.each(titledBad)("$title", ({ i }) => {
+        expect(badRecords[i].out).toEqual({
+          performed: false,
+          migrated: false,
+          rolledBack: false,
+          skippedCorrupt: true,
+          resumed: true,
+        });
       });
 
-      const titledMigrated = badBakCases.map((c, i) => ({
-        title: `resume bad (${c.raw}) migrated`,
-        i,
-      }));
-      it.each(titledMigrated)("$title", ({ i }) => {
-        expect(badRecords[i].out.migrated).toBe(badBakCases[i].expectMigrated);
+      it("resume 损坏 bak 警告含手动恢复路径", () => {
+        expect(badRecords[0].warns.some((w) => w.includes("无法自动恢复"))).toBe(true);
+      });
+
+      it("resume 无有效键警告含手动删除指引", () => {
+        expect(badRecords[1].warns.some((w) => w.includes("手动删除"))).toBe(true);
       });
 
       it("重放失败不回滚（bak 保留）", () => {
@@ -2070,8 +2140,8 @@ describe("变异加固块（round=3 CI 回归：迁移重放/路由面/校验分
     // E3: PUT 合法 → 200 + user 层回传；非法 → 400 error.details；坏 JSON → 400 invalid-json。
     describe("E3: PUT 三态", () => {
       let okPut!: { ok: unknown };
-      let badPut!: { error: { details: string } };
-      let badJson!: { error: { code: string } };
+      let badPut!: { ok: unknown; error: { details: string } };
+      let badJson!: { ok: unknown; error: { code: string } };
 
       beforeAll(async () => {
         okPut = JSON.parse(
@@ -2089,14 +2159,29 @@ describe("变异加固块（round=3 CI 回归：迁移重放/路由面/校验分
         expect(badPut.error.details.includes("port")).toBeTruthy();
       });
 
+      it("400 ok=false（错误包络旗标）", () => {
+        expect(badPut.ok).toBe(false);
+      });
+
       it("坏 JSON 400 invalid-json", () => {
         expect(badJson.error.code).toBe("invalid-json");
+      });
+
+      it("坏 JSON ok=false（错误包络旗标）", () => {
+        expect(badJson.ok).toBe(false);
+      });
+
+      it("超限体 → 连接已断零写入（catch 后静默 return，不补 400）", async () => {
+        const r = await callRoute("PUT", { destroy() {} }, "x".repeat(70 * 1024));
+        expect(r.status).toBe(0);
+        expect(r.body).toBe("");
       });
     });
 
     // E4: writable=false → PUT 503（GET 仍可读）。
     describe("E4: 只读态 PUT 503", () => {
       let status = 0;
+      let body = "";
 
       beforeAll(async () => {
         const roDeps = { ...deps, writable: () => false };
@@ -2134,10 +2219,15 @@ describe("变异加固块（round=3 CI 回归：迁移重放/路由面/校验分
         );
         await done;
         status = s;
+        body = chunks.join("");
       });
 
       it("只读态 PUT 503", () => {
         expect(status).toBe(503);
+      });
+
+      it("只读态 ok=false（错误包络旗标）", () => {
+        expect(JSON.parse(body).ok).toBe(false);
       });
     });
   });
@@ -2199,6 +2289,128 @@ describe("Config schema 直测：schemastery 默认值与上界（#147 变异加
 
   it("压缩档位超 3 抛错", () => {
     expect(() => Config({ httpCompressLevel: 4 })).toThrow();
+  });
+
+  it("targetPort 超上界抛错", () => {
+    expect(() => Config({ targetPort: 65536 })).toThrow();
+  });
+
+  it("wsBridgeEnabled 默认 true（保活基座默认开）", () => {
+    expect(defaults.wsBridgeEnabled).toBe(true);
+  });
+
+  it("wsDeflatePolicy 默认浏览器可协商 + iOS 三件套拒绝", () => {
+    expect(defaults.wsDeflatePolicy).toEqual({ browser: true, uaDeny: ["iPhone", "iPad", "iPod"] });
+  });
+});
+
+// ===== 变异加固批 2（config 校验器边界补强：单侧缺席/非对象策略/显式 undefined）=====
+describe("变异加固批 2：config 校验器边界补强", () => {
+  it("单侧键缺席（tlsKeyFile 未提交）→ tls-pair 拒绝（首行键存在性门控）", async () => {
+    const r = await applyConfigPatch(basePatchDeps(), { patch: { tlsCertFile: "/only.pem" } });
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.code).toBe("tls-pair");
+      expect(r.status).toBe(400);
+    }
+  });
+
+  it("单侧空串缺席（tlsKeyFile 未提交）→ tls-pair 拒绝", async () => {
+    const r = await applyConfigPatch(basePatchDeps(), { patch: { tlsCertFile: "" } });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.code).toBe("tls-pair");
+  });
+
+  it("wsDeflatePolicy 非对象 → validate 定位该键", () => {
+    expect(validateSettings({ wsDeflatePolicy: 42 })?.key).toBe("wsDeflatePolicy");
+  });
+
+  it("wsDeflatePolicy 非对象 → sanitize 整体拒绝", () => {
+    expect(sanitizeSettings({ wsDeflatePolicy: 42 })).toBe(null);
+  });
+
+  it("uaDeny 混入非字符串 → validate 定位该键", () => {
+    expect(validateSettings({ wsDeflatePolicy: { uaDeny: ["a", 42] } })?.key).toBe(
+      "wsDeflatePolicy",
+    );
+  });
+
+  it("uaDeny 混入非字符串 → sanitize 整体拒绝", () => {
+    expect(sanitizeSettings({ wsDeflatePolicy: { uaDeny: ["a", 42] } })).toBe(null);
+  });
+
+  it("显式 undefined 值等同缺席（跳过不拒绝）", () => {
+    expect(sanitizeSettings({ port: undefined, httpsEnabled: true })).toEqual({
+      httpsEnabled: true,
+    });
+  });
+
+  it("非压缩键取迁移档位值不改写（port: 5 原样保留）", () => {
+    expect(sanitizeSettings({ port: 5 })).toEqual({ port: 5 });
+  });
+
+  it("wsBridgeEnabled 非布尔 → validate 定位该键", () => {
+    expect(validateSettings({ wsBridgeEnabled: "yes" })?.key).toBe("wsBridgeEnabled");
+  });
+
+  it("injectToken 非布尔 → sanitize 整体拒绝", () => {
+    expect(sanitizeSettings({ injectToken: 1 })).toBe(null);
+  });
+
+  it("叶对清除保留用户层 CA 键（clearingCa 分支不误删）", async () => {
+    let section: Record<string, unknown> = {};
+    const d = basePatchDeps({
+      readUser: () => ({
+        user: {
+          tlsCertFile: "/c.pem",
+          tlsKeyFile: "/k.pem",
+          tlsCaCertFile: "/ca.pem",
+          port: 3000,
+        },
+        revision: 3,
+      }),
+      replace: async (s: unknown) => {
+        section = s as Record<string, unknown>;
+      },
+    });
+    const r = await applyConfigPatch(d, { patch: { tlsCertFile: "", tlsKeyFile: "" } });
+    expect(r.ok).toBe(true);
+    expect(section.tlsCaCertFile).toBe("/ca.pem");
+    expect("tlsCertFile" in section).toBe(false);
+    expect("tlsKeyFile" in section).toBe(false);
+  });
+
+  it("写入抛非 Error 值 → 仍 500 定码（不崩溃）", async () => {
+    const d = basePatchDeps({
+      update: async () => {
+        const failure: unknown = null;
+        throw failure;
+      },
+    });
+    const r = await applyConfigPatch(d, { patch: { port: 3104 } });
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.status).toBe(500);
+      expect(r.code).toBe("error");
+    }
+  });
+
+  it("BOOLEAN_KEYS 导出契约（改键集同步改客户端开关渲染）", () => {
+    expect(BOOLEAN_KEYS).toEqual([
+      "enabled",
+      "httpsEnabled",
+      "printBanner",
+      "wsBridgeEnabled",
+      "wsCompressEnabled",
+      "httpCompressEnabled",
+      "injectToken",
+      "ownsHostCompat",
+    ]);
+  });
+
+  it("normalizeConfig 入口点烟测试（空输入补默认 + 显式值透传）", () => {
+    expect(normalizeConfig({ port: 1 }).port).toBe(1);
+    expect(normalizeConfig({ port: 1 }).enabled).toBe(true);
   });
 });
 // ===== apply 内 readUser 真实闭包（CRAP 56/7 未覆盖 → 覆盖后 7） =====

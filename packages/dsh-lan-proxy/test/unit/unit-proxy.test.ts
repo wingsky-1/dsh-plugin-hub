@@ -139,6 +139,8 @@ describe("纯函数边界用例", () => {
     it("DNS 名拒绝", () => expect(isLoopbackTarget("evil.com")).toBe(false));
     it("空串拒绝", () => expect(isLoopbackTarget("")).toBe(false));
     it("非 .1 回环段仍按字面匹配语义拒绝", () => expect(isLoopbackTarget("127.0.0.2")).toBe(false));
+    it('单侧括号不剥离（"[127.0.0.1x" 仍拒绝：&& 缺一即不 slice）', () =>
+      expect(isLoopbackTarget("[127.0.0.1x")).toBe(false));
   });
 
   describe("formatAuthority", () => {
@@ -853,6 +855,7 @@ describe("#268 P0-1 探活断言 2b：浏览器段 pong 缺失 → terminate 浏
 // ===== createLanProxy 转发错误处理（proxy error → 502） =====
 describe("createLanProxy 转发错误处理（proxy error → 502）", () => {
   let res: { status: number; body: string } = { status: 0, body: "" };
+  let proxyErrors = 0;
 
   beforeAll(async () => {
     const proxy = createLanProxy({
@@ -880,11 +883,16 @@ describe("createLanProxy 转发错误处理（proxy error → 502）", () => {
       req.on("error", (e) => resolve({ status: 0, body: e.message }));
       req.end();
     });
+    proxyErrors = proxy.connStats().httpProxyErrors;
     await proxy.close();
   }, 30000);
 
   it("不可达上游应 502", () => {
     expect(res.status).toBe(502);
+  });
+
+  it("代理错误计数（诊断口径）", () => {
+    expect(proxyErrors >= 1).toBeTruthy();
   });
 });
 
@@ -1086,5 +1094,389 @@ describe("wsBridgeEnabled 三态路径选择（issue #552 解耦）", () => {
     it("缺省 wsBridge：未命中白名单走透传", () => {
       expect(cs.wsPassthroughDestroyed >= 1).toBeTruthy();
     });
+  });
+});
+
+// ===== 转发围栏与压缩协商的端到端行为（proxy 段补强） =====
+// 以下用例经真实 createLanProxy 收口此前只在纯函数层断言的行为：
+// 非 IP Host 不得进转发、PNA 预检放行、升级围栏、本地响应的压缩计数豁免、
+// 桥接压缩协商（桌面协商 / iOS 明文）、慢响应断连传播、失效 cookie 自愈。
+/** 经代理发 HTTP 请求并收完整响应（Host 头显式可控）。 */
+async function proxyHttp(
+  httpPort: number,
+  options: { method?: string; path?: string; host?: string; headers?: Record<string, string> },
+): Promise<{
+  status: number;
+  headers: Record<string, string | string[] | undefined>;
+  body: string;
+}> {
+  return new Promise((resolve) => {
+    const req = httpRequest(
+      {
+        hostname: "127.0.0.1",
+        port: httpPort,
+        path: options.path ?? "/",
+        method: options.method ?? "GET",
+        headers: { host: `127.0.0.1:${httpPort}`, ...(options.headers ?? {}) },
+      },
+      (res2) => {
+        let body = "";
+        res2.on("data", (c) => (body += c));
+        res2.on("end", () =>
+          resolve({
+            status: res2.statusCode ?? 0,
+            headers: res2.headers as Record<string, string | string[] | undefined>,
+            body,
+          }),
+        );
+      },
+    );
+    if (options.host !== undefined) req.setHeader("host", options.host);
+    req.on("error", (e) => resolve({ status: 0, headers: {}, body: e.message }));
+    req.end();
+  });
+}
+
+describe("HTTP 围栏端到端：非 IP Host 不进转发", () => {
+  let status = 0;
+  let body = "";
+  let upstreamHit = 0;
+
+  beforeAll(async () => {
+    const upServer = createServer((req, res) => {
+      upstreamHit += 1;
+      res.end("UPSTREAM");
+    });
+    await new Promise<void>((r) => upServer.listen(0, "127.0.0.1", () => r()));
+    const upPort = (upServer.address() as AddressInfo).port;
+    const proxy = createLanProxy({
+      host: "127.0.0.1",
+      port: 0,
+      targetHost: "127.0.0.1",
+      targetPort: upPort,
+    });
+    const { httpPort } = await proxy.listen();
+    const r = await proxyHttp(httpPort, { host: "evil.com" });
+    status = r.status;
+    body = r.body;
+    await proxy.close();
+    upServer.close();
+  }, 30000);
+
+  it("非 IP Host 403", () => {
+    expect(status).toBe(403);
+  });
+
+  it("403 指明只接受 IP/回环", () => {
+    expect(body).toContain("forbidden");
+  });
+
+  it("上游未被触及", () => {
+    expect(upstreamHit).toBe(0);
+  });
+});
+
+describe("PNA 预检端到端：私网预检直接放行", () => {
+  let status = 0;
+  let headers: Record<string, string | string[] | undefined> = {};
+
+  beforeAll(async () => {
+    const upServer = createServer((req, res) => res.end("UPSTREAM"));
+    await new Promise<void>((r) => upServer.listen(0, "127.0.0.1", () => r()));
+    const upPort = (upServer.address() as AddressInfo).port;
+    const proxy = createLanProxy({
+      host: "127.0.0.1",
+      port: 0,
+      targetHost: "127.0.0.1",
+      targetPort: upPort,
+    });
+    const { httpPort } = await proxy.listen();
+    const r = await proxyHttp(httpPort, {
+      method: "OPTIONS",
+      headers: {
+        origin: "http://192.168.1.50:3081",
+        "access-control-request-private-network": "true",
+      },
+    });
+    status = r.status;
+    headers = r.headers;
+    await proxy.close();
+    upServer.close();
+  }, 30000);
+
+  it("预检 204", () => {
+    expect(status).toBe(204);
+  });
+
+  it("回放行私网头", () => {
+    expect(headers["access-control-allow-private-network"]).toBe("true");
+  });
+});
+
+describe("升级围栏端到端：非 IP Host 的升级直接断开", () => {
+  let firstChunk = "";
+  let closed = false;
+
+  beforeAll(async () => {
+    const upServer = createServer();
+    await new Promise<void>((r) => upServer.listen(0, "127.0.0.1", () => r()));
+    const upPort = (upServer.address() as AddressInfo).port;
+    const proxy = createLanProxy({
+      host: "127.0.0.1",
+      port: 0,
+      targetHost: "127.0.0.1",
+      targetPort: upPort,
+    });
+    const { httpPort } = await proxy.listen();
+    const { connect } = await import("node:net");
+    const socket = connect(httpPort, "127.0.0.1");
+    const data = new Promise<string>((resolve) => {
+      socket.on("data", (c) => resolve(c.toString()));
+      socket.on("close", () => {
+        closed = true;
+      });
+    });
+    socket.write(
+      "GET /ws HTTP/1.1\r\n" +
+        "Host: evil.example\r\n" +
+        "Connection: Upgrade\r\n" +
+        "Upgrade: websocket\r\n" +
+        "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n" +
+        "Sec-WebSocket-Version: 13\r\n\r\n",
+    );
+    firstChunk = await data;
+    await waitFor(() => closed, 5000);
+    socket.destroy();
+    await proxy.close();
+    upServer.close();
+  }, 30000);
+
+  it("升级被回 403", () => {
+    expect(firstChunk.startsWith("HTTP/1.1 403")).toBe(true);
+  });
+
+  it("升级 socket 随后关闭", () => {
+    expect(closed).toBe(true);
+  });
+});
+
+describe("升级错误路径：到不可达上游的升级直接断开（非 502）", () => {
+  let failedInTime = false;
+  let readyState = 0;
+
+  beforeAll(async () => {
+    const proxy = createLanProxy({
+      host: "127.0.0.1",
+      port: 0,
+      targetHost: "127.0.0.1",
+      targetPort: 1,
+    });
+    const { httpPort } = await proxy.listen();
+    const ws = new WsClient(`ws://127.0.0.1:${httpPort}/ws`);
+    const events: string[] = [];
+    ws.on("open", () => events.push("open"));
+    ws.on("error", () => events.push("error"));
+    ws.on("close", () => events.push("close"));
+    failedInTime = await waitFor(() => events.some((e) => e === "error" || e === "close"), 5000);
+    readyState = ws.readyState;
+    ws.close();
+    await proxy.close();
+  }, 30000);
+
+  it("升级失败限时内 error/close（非 open）", () => {
+    expect(failedInTime).toBe(true);
+  });
+
+  it("失败后不保持 OPEN", () => {
+    expect(readyState).not.toBe(WsClient.OPEN);
+  });
+});
+
+describe("本地响应不计入压缩协商（围栏 403 不污染诊断计数）", () => {
+  let stats = { compressed: 0, passthrough: 0 };
+
+  beforeAll(async () => {
+    const payload = JSON.stringify({ items: Array.from({ length: 200 }, (_, i) => `v-${i}`) });
+    const upServer = createServer((req, res) => {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(payload);
+    });
+    await new Promise<void>((r) => upServer.listen(0, "127.0.0.1", () => r()));
+    const upPort = (upServer.address() as AddressInfo).port;
+    const proxy = createLanProxy({
+      host: "127.0.0.1",
+      port: 0,
+      targetHost: "127.0.0.1",
+      targetPort: upPort,
+      httpCompress: { enabled: true, level: 1 },
+    });
+    const { httpPort } = await proxy.listen();
+    await proxyHttp(httpPort, { host: "evil.com" });
+    const ok = await proxyHttp(httpPort, {
+      headers: { "accept-encoding": "gzip", host: `127.0.0.1:${httpPort}` },
+    });
+    expect(ok.status).toBe(200);
+    stats = proxy.httpCompressStats();
+    await proxy.close();
+    upServer.close();
+  }, 30000);
+
+  it("403 本地响应不计入压缩协商", () => {
+    expect(stats).toEqual({ compressed: 1, passthrough: 0 });
+  });
+});
+
+describe("桥接压缩协商端到端：桌面协商 / iOS 明文", () => {
+  let desktopExtensions = "";
+  let iosExtensions = "";
+  let iosEchoed = "";
+
+  beforeAll(async () => {
+    const u = await mkUpstream();
+    const proxy = createLanProxy({
+      host: "127.0.0.1",
+      port: 0,
+      targetHost: "127.0.0.1",
+      targetPort: u.upPort,
+      wsCompress: { enabled: true, paths: ["/api/remote.mux"], probeIntervalMs: 0 },
+    });
+    const { httpPort } = await proxy.listen();
+    const desktop = new WsClient(`ws://127.0.0.1:${httpPort}/api/remote.mux`, {
+      perMessageDeflate: { threshold: 0 },
+      headers: { "user-agent": "Mozilla/5.0 (X11; Linux x86_64) Chrome/120.0 Safari/537.36" },
+    });
+    await new Promise((r, j) => {
+      desktop.on("open", r);
+      desktop.on("error", j);
+    });
+    desktopExtensions = desktop.extensions;
+    desktop.close();
+    const ios = new WsClient(`ws://127.0.0.1:${httpPort}/api/remote.mux`, {
+      perMessageDeflate: { threshold: 0 },
+      headers: { "user-agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)" },
+    });
+    const received: string[] = [];
+    ios.on("message", (d) => received.push(d.toString()));
+    await new Promise((r, j) => {
+      ios.on("open", r);
+      ios.on("error", j);
+    });
+    iosExtensions = ios.extensions;
+    // 上游段 open 竞态：桥接的浏览器段 message 监听在 upstreamWs open 后才挂载，
+    // 过早帧会被丢——与 openAndEcho 同口径重试至回显（见该 helper 注释）。
+    for (let i = 0; i < 6 && received.length === 0; i += 1) {
+      ios.send(`ios-plain-probe-${i}`);
+      await sleep(150);
+    }
+    iosEchoed = received[0] ?? "";
+    ios.close();
+    await proxy.close();
+    u.wss.close();
+    u.upServer.close();
+  }, 30000);
+
+  it("桌面端协商出 permessage-deflate", () => {
+    expect(desktopExtensions).toContain("permessage-deflate");
+  });
+
+  it("iOS 端不明文协商压缩（deny 策略）", () => {
+    expect(iosExtensions).not.toContain("permessage-deflate");
+  });
+
+  it("iOS 端明文桥接仍双向可达", () => {
+    expect(iosEchoed).toMatch(/^ios-plain-probe-\d$/);
+  });
+});
+
+describe("issue #528（unit）：客户端断开慢响应 → 上游被销毁", () => {
+  let destroyedCount = 0;
+  let upstreamSawClose = false;
+
+  beforeAll(async () => {
+    const upServer = createServer((req, res) => {
+      res.writeHead(200, { "content-type": "text/event-stream" });
+      res.write(": ping\n\n");
+      req.socket.on("close", () => {
+        upstreamSawClose = true;
+      });
+    });
+    await new Promise<void>((r) => upServer.listen(0, "127.0.0.1", () => r()));
+    const upPort = (upServer.address() as AddressInfo).port;
+    const proxy = createLanProxy({
+      host: "127.0.0.1",
+      port: 0,
+      targetHost: "127.0.0.1",
+      targetPort: upPort,
+    });
+    const { httpPort } = await proxy.listen();
+    await new Promise<void>((resolve) => {
+      const req = httpRequest(
+        { hostname: "127.0.0.1", port: httpPort, path: "/sse", method: "GET" },
+        (res2) => {
+          res2.once("data", () => req.destroy());
+          res2.on("close", () => resolve());
+        },
+      );
+      req.on("error", () => resolve());
+      req.end();
+    });
+    // 断连传播是下游 close 事件驱动（落后客户端一拍）：等到计数增长再取快照。
+    await waitFor(() => proxy.connStats().httpUpstreamDestroyed >= 1, 5000);
+    destroyedCount = proxy.connStats().httpUpstreamDestroyed;
+    await waitFor(() => upstreamSawClose, 5000);
+    await proxy.close();
+    upServer.close();
+  }, 30000);
+
+  it("代理销毁上游响应（下游断开传播）", () => {
+    expect(destroyedCount >= 1).toBeTruthy();
+  });
+
+  it("上游感知到断开", () => {
+    expect(upstreamSawClose).toBe(true);
+  });
+});
+
+describe("issue #380（unit）：失效 cookie 上游 401 → 带 token 重放自愈", () => {
+  let status = 0;
+  let body = "";
+
+  beforeAll(async () => {
+    const upServer = createServer((req, res) => {
+      const target = new URL(req.url ?? "/", "http://lan-proxy.local");
+      if (target.searchParams.get("token") === "live-token") {
+        res.writeHead(200, { "content-type": "text/plain" });
+        res.end("HEALED");
+        return;
+      }
+      res.writeHead(401, { "content-type": "text/plain" });
+      res.end("need-auth");
+    });
+    await new Promise<void>((r) => upServer.listen(0, "127.0.0.1", () => r()));
+    const upPort = (upServer.address() as AddressInfo).port;
+    const proxy = createLanProxy({
+      host: "127.0.0.1",
+      port: 0,
+      targetHost: "127.0.0.1",
+      targetPort: upPort,
+      injectToken: { getToken: () => "live-token" },
+    });
+    const { httpPort } = await proxy.listen();
+    const r = await proxyHttp(httpPort, {
+      path: "/",
+      headers: { cookie: "dsh-auth-stale=dead" },
+    });
+    status = r.status;
+    body = r.body;
+    await proxy.close();
+    upServer.close();
+  }, 30000);
+
+  it("重放后 200", () => {
+    expect(status).toBe(200);
+  });
+
+  it("拿到自愈响应体", () => {
+    expect(body).toBe("HEALED");
   });
 });
