@@ -247,7 +247,7 @@ function installConfigSettings(
   };
   installSettingsNamespace(ctx, "dsh-mcp-manager", Config, config ?? {}, {
     setSource: (source) => {
-      manager.uiConfigSource = source as () => any;
+      manager.uiConfigSource = source as () => unknown;
     },
     onChange: () => {
       broadcastUiConfigChanged();
