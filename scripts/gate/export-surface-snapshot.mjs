@@ -180,13 +180,18 @@ function emitDeclarations() {
   return { perFile };
 }
 
-/** 块列表 → `{ 声明名: [块…] }`（同名多块保留全部——多重集语义）。 */
+/** 块列表 → `{ 声明名: [块…] }`（同名多块保留全部——多重集语义）。
+ * 键按字典序冻结：快照 JSON 的键序即对象写入序，未冻结时同一份语义会随块
+ * encounter 顺序产生幽灵 diff（重 build 零 diff 要求）；判据侧 filterBlocksByName
+ * 本就输出排序后的块多重集，键序冻结零行为变更（#768 工具链最小化）。 */
 function groupBlocks(blocks) {
-  const out = {};
+  const acc = {};
   for (const block of blocks) {
     const name = declBlockName(block);
-    (out[name ?? UNNAMED_BLOCK_KEY] ??= []).push(block);
+    (acc[name ?? UNNAMED_BLOCK_KEY] ??= []).push(block);
   }
+  const out = {};
+  for (const key of Object.keys(acc).sort()) out[key] = acc[key];
   return out;
 }
 

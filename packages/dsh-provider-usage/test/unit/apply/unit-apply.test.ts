@@ -2,7 +2,8 @@
  * dsh-provider-usage — unit：apply 宿主注入路径覆盖。
  *
  * 覆盖：installSettingsNamespace inject 回调分支、
- * HotReloadableAdapter onReload 回调分支、warmup/prune 定时器清理（假时钟句柄计数）。
+ * HotReloadableAdapter onReload 回调分支、warmup/prune 定时器清理（假时钟句柄计数，
+ * 8)）与 warmup 调度行为（getStats spy：即时预热 + tick 复调 + disposer 停火，8b)）。
  *
  * P1 恒真（`flag=true` 无条件置位）用例已删：5a/5b isUnloading、7) dispose、
  * 8) warmup 旧版；清理事实由 8) 句柄计数真断言与 schedule D3 toFake 面钉住。
@@ -29,6 +30,8 @@ import { ADAPTER_CONTRACT_VERSION } from "../../../src/shared/interface.ts";
 // 白盒直连深路径（#768 B波）：用户适配器路径纯面经注册表域门面，不走组合根转发。
 import { userAdaptersFile, adapterStateFile } from "../../../src/server/registry/interface.ts";
 import { fetchWithTimeout } from "../../../src/server/pipeline/interface.ts";
+// 白盒直连深路径（#768 B波）：预热行为断言经管道域门面 spy 真实现类，不走组合根转发。
+import { StatsServiceCtor, type V2PipelineResult } from "../../../src/server/pipeline/interface.ts";
 
 // ---------------------------------------------------------------- 工具：fakeReqs
 
@@ -517,6 +520,85 @@ describe("8) disposer 清理 warmup/prune 定时器（假时钟句柄计数）",
       // 真断言：不清 clearInterval 即泄漏，此行红
       expect(vi.getTimerCount()).toBe(base);
     } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+// ---------------------------------------------------------------- 8b) warmup 调度行为（getStats spy，真行为断言）
+
+// 8) 只钉住句柄计数（清不清定时器），不断言定时器触发后真干了什么。
+// 本块补行为面：warmupFn 是否按启用 provider 集调用 getStats、tick 是否复调、
+// disposer 后是否停火。实现零变更，仅测试。
+
+describe("8b) warmup 调度行为（getStats spy：即时 + tick + 停火）", () => {
+  it("启动即时预热三内置 → tick 复调 → disposer 后停火", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    // 原型级 spy（apply 内 new StatsService 共享原型）：mock 立即 resolve，
+    // 只观测调度行为（目标集 + 时机），不进入管道内部（fetch/落盘均不跑）。
+    const getStatsSpy = vi
+      .spyOn(StatsServiceCtor.prototype, "getStats")
+      .mockImplementation(async (provider: string): Promise<V2PipelineResult> => ({
+        ok: true,
+        configured: true,
+        reason: null,
+        error: null,
+        fetchedAt: Date.now(),
+        provider,
+        adapterName: "spy",
+        status: "fresh",
+      }));
+    try {
+      const disposers: Array<() => void> = [];
+      const routes: Array<Record<string, unknown>> = [];
+      const ctx = {
+        logger: { warn: () => {} },
+        webServer: {
+          register(route: Record<string, unknown>) {
+            routes.push(route);
+            return () => {};
+          },
+        },
+        on: onStub,
+        llm: {
+          listProviders() {
+            return [];
+          },
+        },
+        fiber: { state: "active" },
+        inject: (deps: unknown, cb: (s: unknown) => void) => {
+          cb({ settings: {} });
+        },
+        effect: (fn: () => unknown) => {
+          const d = fn();
+          if (typeof d === "function") disposers.push(d as () => void);
+          return typeof d === "function" ? d : () => {};
+        },
+      };
+      // 隔离（#768 P1）：historyDir 指临时目录，否则回落真实 ~/.dsh。
+      const dir = mkdtempSync(join(tmpdir(), "dou-apply-warmup-spy-"));
+      await apply(ctx as unknown as Parameters<typeof apply>[0], {
+        warmupIntervalMs: 60000,
+        apiKey: "sk-test",
+        apiEndpoint: "http://127.0.0.1:9",
+        historyDir: join(dir, "hist"),
+      });
+      // 行为 1：启动即时预热——三内置默认启用（注册即启用），逐 provider 取数一次。
+      // 排序后比对：不依赖 enabledProviders 内部 Map 顺序，只钉住目标集合。
+      const called = getStatsSpy.mock.calls.map((c) => c[0]).sort();
+      expect(called).toEqual(["deepseek-official", "opencode-go", "zai-coding-cn"]);
+      // 行为 2：推进一个预热周期 → 同集合再取数一次（tick 复调）。
+      await vi.advanceTimersByTimeAsync(60000);
+      expect(getStatsSpy).toHaveBeenCalledTimes(6);
+      // 行为 3：disposer 清理后推进 → 停火（文本断言清零后行为亦零）。
+      for (const d of disposers) {
+        if (typeof d === "function") await d();
+      }
+      getStatsSpy.mockClear();
+      await vi.advanceTimersByTimeAsync(60000);
+      expect(getStatsSpy).not.toHaveBeenCalled();
+    } finally {
+      getStatsSpy.mockRestore();
       vi.useRealTimers();
     }
   });
