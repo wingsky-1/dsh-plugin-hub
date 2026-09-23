@@ -7,7 +7,8 @@
  * 内核 coarse 时钟下同一 tick 的两次写入因此撞进同一模块缓存，同一断言序列时而拿到新版本、
  * 时而拿到缓存版本（#722 实证）。版本戳现已改为 `?mtime=<mtimeMs>&size=<size>`
  * （见 src/server/registry/hotreload.ts），vitest 内亦可直接驱动，子进程保留为原生语义护栏。
- * stdout 只输出一行 JSON 观测量供上层逐条断言。
+ * stdout 只输出一行 JSON 观测量供上层逐条断言；诊断一律走 stderr（console.error），
+ * stdout 行数恒为 1（上层断言 raw 行数==1 锁定，零协议改动：JSON 键集合不变）。
  */
 import { mkdtempSync, writeFileSync, utimesSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
@@ -55,6 +56,13 @@ const badReload = await hr.pollOnce();
 unlinkSync(good);
 const delPoll = await hr.pollOnce();
 const currentAfterDelete = hr.current !== null;
+
+// 诊断走 stderr：stdout 只留下面一行 JSON（上层 raw 行数==1 断言锁定）。
+console.error(
+  `[hotreload-probe] startedMissingOk=${started.ok} startedOk=${startedOk.ok} ` +
+    `polledOk=${polled.ok} badReloadOk=${badReload.ok} delPollOk=${delPoll.ok} ` +
+    `events=${events.length} currentAfterDelete=${currentAfterDelete}`,
+);
 
 console.log(
   JSON.stringify({
