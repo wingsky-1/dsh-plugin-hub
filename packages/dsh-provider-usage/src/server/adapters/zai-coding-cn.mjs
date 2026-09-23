@@ -477,10 +477,10 @@ const WINDOW_NAME = { "5h": "5h 滚动", week: "每周" };
 function windowName(key) {
   return WINDOW_NAME[key] ?? key;
 }
+const WINDOW_COLOR = { "5h": "var(--dsw-alias-state-business-primary,#3b82f6)" };
+const WINDOW_COLOR_FALLBACK = "var(--dsw-alias-state-warn-primary,#c9820b)";
 function windowColor(key) {
-  return key === "5h"
-    ? "var(--dsw-alias-state-business-primary,#3b82f6)"
-    : "var(--dsw-alias-state-warn-primary,#c9820b)";
+  return WINDOW_COLOR[key] ?? WINDOW_COLOR_FALLBACK;
 }
 function windowPercentOf(data, key) {
   const arr = Array.isArray(data.windows) ? data.windows : [];

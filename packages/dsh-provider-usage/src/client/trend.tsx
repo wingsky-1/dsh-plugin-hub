@@ -572,6 +572,103 @@ interface TrendScInput {
   hidden: ReadonlySet<string>;
   renderBars: RenderBar[];
 }
+function selRange(
+  data: TrendResponse | null,
+  range: number | null,
+  view: string | null,
+  gran: Gran,
+) {
+  const retentionDays = data !== null ? data.retentionDays : 180;
+  const effectiveRange = range !== null ? range : trendDefaultRange(gran, retentionDays);
+  const effectiveView = view !== null ? view : gran === "month" ? "area" : "bar";
+  return {
+    retentionDays: retentionDays,
+    effectiveRange: effectiveRange,
+    effectiveView: effectiveView,
+  };
+}
+function selSource(data: TrendResponse | null) {
+  const summary = data !== null ? data.summary : null;
+  const providers = data !== null ? data.providers : [];
+  const dirs = data !== null && data.dirs !== undefined ? data.dirs : [];
+  return { summary: summary, providers: providers, dirs: dirs };
+}
+function selFlags(
+  data: TrendResponse | null,
+  summary: TrendResponse["summary"] | null,
+  dirFilter: string,
+  hidden: ReadonlySet<string>,
+) {
+  const hasData =
+    data !== null &&
+    data.series.some(function (p) {
+      return p.total !== null;
+    });
+  const dirMode = isDirMode(data, dirFilter);
+  const hiddenCount = hidden.size;
+  const showSummary = hasData && summary !== null;
+  return { hasData: hasData, dirMode: dirMode, hiddenCount: hiddenCount, showSummary: showSummary };
+}
+function selDelta(summary: TrendResponse["summary"] | null) {
+  const delta = trendDelta(
+    summary !== null ? summary.total : null,
+    summary !== null ? summary.prevTotal : null,
+    summary !== null ? summary.prevComplete : true,
+  );
+  const deltaText = delta !== null ? delta.text : null;
+  const deltaUp = delta !== null ? delta.up : false;
+  return { deltaText: deltaText, deltaUp: deltaUp };
+}
+function selHint(renderBars: RenderBar[], summary: TrendResponse["summary"] | null) {
+  const hasPartial = renderBars.some(function (b) {
+    return b.mark !== null;
+  });
+  const hintA = hasPartial ? t("trendPartialOngoing") : "";
+  const hintB = summary !== null && summary.prevComplete ? "" : t("trendPrevIncomplete");
+  const summaryHint = [hintA, hintB].filter(Boolean).join(" · ") || null;
+  return { summaryHint: summaryHint };
+}
+function selTotals(data: TrendResponse | null, summary: TrendResponse["summary"] | null) {
+  const activeBuckets =
+    data !== null
+      ? data.series.filter(function (p) {
+          return p.total !== null;
+        }).length
+      : 0;
+  const total = summary !== null ? summary.total : null;
+  const calls = summary !== null ? summary.calls : 0;
+  const avg =
+    summary !== null && summary.total !== null && activeBuckets > 0
+      ? summary.total / activeBuckets
+      : null;
+  const peakVal =
+    summary !== null && summary.peakKey !== null && data !== null
+      ? findPeak(data.series, summary.peakKey)
+      : null;
+  return { activeBuckets: activeBuckets, total: total, calls: calls, avg: avg, peakVal: peakVal };
+}
+function selTop(
+  summary: TrendResponse["summary"] | null,
+  dirMode: boolean,
+  gran: Gran,
+  peakVal: number | null,
+) {
+  const peakLabel =
+    summary !== null
+      ? t("trendCardPeak") +
+        "  ·  " +
+        (summary.peakKey === null ? "-" : fmtBucketHuman(summary.peakKey, gran))
+      : "";
+  const peakValue = peakVal === null ? "-" : fmtCompact(peakVal);
+  const topLabel = dirMode ? t("trendCardTopDir") : t("trendCardTop");
+  const topValue =
+    summary !== null && summary.top !== null
+      ? dirMode
+        ? dirDisplayLabel(summary.top.provider)
+        : summary.top.provider
+      : "-";
+  return { peakLabel: peakLabel, peakValue: peakValue, topLabel: topLabel, topValue: topValue };
+}
 function getTrendSc(v: TrendScInput): {
   retentionDays: number;
   effectiveRange: number;
@@ -595,68 +692,23 @@ function getTrendSc(v: TrendScInput): {
   avg: number | null;
   peakVal: number | null;
 } {
-  const retentionDays = v.data !== null ? v.data.retentionDays : 180;
-  const effectiveRange = v.range !== null ? v.range : trendDefaultRange(v.gran, retentionDays);
-  const effectiveView = v.view !== null ? v.view : v.gran === "month" ? "area" : "bar";
-  const hasData =
-    v.data !== null &&
-    v.data.series.some(function (p) {
-      return p.total !== null;
-    });
-  const summary = v.data !== null ? v.data.summary : null;
-  const providers = v.data !== null ? v.data.providers : [];
-  const dirs = v.data !== null && v.data.dirs !== undefined ? v.data.dirs : [];
-  const dirMode = isDirMode(v.data, v.dirFilter);
-  const hiddenCount = v.hidden.size;
-  const showSummary = hasData && summary !== null;
-  const delta = trendDelta(
-    summary !== null ? summary.total : null,
-    summary !== null ? summary.prevTotal : null,
-    summary !== null ? summary.prevComplete : true,
+  const { retentionDays, effectiveRange, effectiveView } = selRange(
+    v.data,
+    v.range,
+    v.view,
+    v.gran,
   );
-  const deltaText = delta !== null ? delta.text : null;
-  const deltaUp = delta !== null ? delta.up : false;
-  const hasPartial = v.renderBars.some(function (b) {
-    return b.mark !== null;
-  });
-  const hintA = hasPartial ? t("trendPartialOngoing") : "";
-  const hintB = summary !== null && summary.prevComplete ? "" : t("trendPrevIncomplete");
-  const summaryHint =
-    hintA !== "" || hintB !== ""
-      ? hintA !== "" && hintB !== ""
-        ? hintA + "  ·  " + hintB
-        : hintA + hintB
-      : null;
-  const activeBuckets =
-    v.data !== null
-      ? v.data.series.filter(function (p) {
-          return p.total !== null;
-        }).length
-      : 0;
-  const total = summary !== null ? summary.total : null;
-  const calls = summary !== null ? summary.calls : 0;
-  const avg =
-    summary !== null && summary.total !== null && activeBuckets > 0
-      ? summary.total / activeBuckets
-      : null;
-  const peakVal =
-    summary !== null && summary.peakKey !== null && v.data !== null
-      ? findPeak(v.data.series, summary.peakKey)
-      : null;
-  const peakLabel =
-    summary !== null
-      ? t("trendCardPeak") +
-        "  ·  " +
-        (summary.peakKey === null ? "-" : fmtBucketHuman(summary.peakKey, v.gran))
-      : "";
-  const peakValue = peakVal === null ? "-" : fmtCompact(peakVal);
-  const topLabel = dirMode ? t("trendCardTopDir") : t("trendCardTop");
-  const topValue =
-    summary !== null && summary.top !== null
-      ? dirMode
-        ? dirDisplayLabel(summary.top.provider)
-        : summary.top.provider
-      : "-";
+  const { summary, providers, dirs } = selSource(v.data);
+  const { hasData, dirMode, hiddenCount, showSummary } = selFlags(
+    v.data,
+    summary,
+    v.dirFilter,
+    v.hidden,
+  );
+  const { deltaText, deltaUp } = selDelta(summary);
+  const { summaryHint } = selHint(v.renderBars, summary);
+  const { activeBuckets, total, calls, avg, peakVal } = selTotals(v.data, summary);
+  const { peakLabel, peakValue, topLabel, topValue } = selTop(summary, dirMode, v.gran, peakVal);
   return {
     retentionDays: retentionDays,
     effectiveRange: effectiveRange,
@@ -703,6 +755,72 @@ interface TrendChInput {
   dirMode: boolean;
   chartRef: React.MutableRefObject<HTMLDivElement | null>;
 }
+function chartTip(
+  tip: { idx: number; offsetX: number } | null,
+  renderBars: RenderBar[],
+  viewSeries: TrendResponse["series"],
+) {
+  const tipIdx = tip !== null && renderBars[tip.idx] !== undefined ? tip.idx : null;
+  const tipBar = tipIdx !== null ? renderBars[tipIdx] : null;
+  const tipPoint = viewSeries.length > 0 && tipIdx !== null ? viewSeries[tipIdx] : null;
+  const showTip = tipBar !== null && tipPoint !== null && tip !== null;
+  return { tipIdx: tipIdx, tipBar: tipBar, tipPoint: tipPoint, showTip: showTip };
+}
+function chartTipNode(
+  tipSel: {
+    showTip: boolean;
+    tipBar: RenderBar | null;
+    tipPoint: TrendResponse["series"][number] | null;
+  },
+  gran: Gran,
+  data: TrendResponse | null,
+  hidden: ReadonlySet<string>,
+  dirMode: boolean,
+) {
+  const tipNode =
+    tipSel.showTip && tipSel.tipBar !== null && tipSel.tipPoint !== null
+      ? renderTip(
+          tipSel.tipBar,
+          tipSel.tipPoint,
+          gran,
+          data !== null && data.byModel === true ? true : false,
+          hidden,
+          dirMode,
+        )
+      : null;
+  return { tipNode: tipNode };
+}
+function chartSvg(
+  effectiveView: string,
+  renderBars: RenderBar[],
+  gran: Gran,
+  ticks: number[],
+  stackOrder: string[],
+) {
+  const svgHtml =
+    effectiveView === "area"
+      ? stackedAreasSvg({
+          bars: renderBars,
+          gran: gran,
+          ticks: ticks,
+          stackOrder: stackOrder,
+        })
+      : stackedBarsSvg({ bars: renderBars, gran: gran, ticks: ticks });
+  return { svgHtml: svgHtml };
+}
+function chartChrome(
+  hasData: boolean,
+  data: TrendResponse | null,
+  stackOrder: string[],
+  chartRef: React.MutableRefObject<HTMLDivElement | null>,
+) {
+  const showLegend = hasData && data !== null && stackOrder.length > 0;
+  const tipWidth =
+    chartRef.current !== null && chartRef.current.clientWidth !== undefined
+      ? chartRef.current.clientWidth
+      : 0;
+  return { showLegend: showLegend, tipWidth: tipWidth };
+}
 function getTrendChart(v: TrendChInput): {
   showLegend: boolean;
   tipBar: RenderBar | null;
@@ -710,35 +828,13 @@ function getTrendChart(v: TrendChInput): {
   svgHtml: string;
   tipWidth: number;
 } {
-  const showLegend = v.hasData && v.data !== null && v.stackOrder.length > 0;
-  const tipIdx = v.tip !== null && v.renderBars[v.tip.idx] !== undefined ? v.tip.idx : null;
-  const tipBar = tipIdx !== null ? v.renderBars[tipIdx] : null;
-  const tipPoint = v.viewSeries.length > 0 && tipIdx !== null ? v.viewSeries[tipIdx] : null;
-  const showTip = tipBar !== null && tipPoint !== null && v.tip !== null;
-  const tipNode =
-    showTip && tipBar !== null && tipPoint !== null
-      ? renderTip(
-          tipBar,
-          tipPoint,
-          v.gran,
-          v.data !== null && v.data.byModel === true ? true : false,
-          v.hidden,
-          v.dirMode,
-        )
-      : null;
-  const svgHtml =
-    v.effectiveView === "area"
-      ? stackedAreasSvg({
-          bars: v.renderBars,
-          gran: v.gran,
-          ticks: v.ticks,
-          stackOrder: v.stackOrder,
-        })
-      : stackedBarsSvg({ bars: v.renderBars, gran: v.gran, ticks: v.ticks });
-  const tipWidth =
-    v.chartRef.current !== null && v.chartRef.current.clientWidth !== undefined
-      ? v.chartRef.current.clientWidth
-      : 0;
+  const tipSel = chartTip(v.tip, v.renderBars, v.viewSeries);
+  const tipNode = chartTipNode(tipSel, v.gran, v.data, v.hidden, v.dirMode).tipNode;
+  const svgHtml = chartSvg(v.effectiveView, v.renderBars, v.gran, v.ticks, v.stackOrder).svgHtml;
+  const chrome = chartChrome(v.hasData, v.data, v.stackOrder, v.chartRef);
+  const showLegend = chrome.showLegend;
+  const tipWidth = chrome.tipWidth;
+  const tipBar = tipSel.tipBar;
   return {
     showLegend: showLegend,
     tipBar: tipBar,
