@@ -1605,7 +1605,7 @@ export function formatPanel() { return "<p>x</p>"; }
 // ---------------------------------------------------------------- 客户端契约
 
 /** 客户端契约断言使用的文件/派生观测（beforeAll 一次性读取，it 只做断言） */
-const clientContractObs: Record<string, any> = {};
+const clientContractObs: Record<string, unknown> = {};
 
 describe("客户端契约", () => {
   beforeAll(() => {
@@ -1702,11 +1702,11 @@ describe("客户端契约", () => {
   });
 
   it("客户端源码契约（assertClientSourceContract）", () => {
-    assertClientSourceContract(clientContractObs.pkgDir);
+    assertClientSourceContract(clientContractObs.pkgDir as string);
   });
 
   it("客户端产物契约（assertClientProductContract）", () => {
-    assertClientProductContract(clientContractObs.pkgDir);
+    assertClientProductContract(clientContractObs.pkgDir as string);
   });
 
   it("插件导出 inject 数组", () => {
@@ -1722,11 +1722,13 @@ describe("客户端契约", () => {
   });
 
   it("lib 产物 inject 声明含 sessions", () => {
-    expect(clientContractObs.hostCode).toMatch(/var inject = \[[^\]]*"sessions"[^\]]*\]/);
+    expect(clientContractObs.hostCode as string).toMatch(/var inject = \[[^\]]*"sessions"[^\]]*\]/);
   });
 
   it("客户端产物路由字面量必须与 ROUTES 全集严格完全一致（无缺失、无多余）", () => {
-    expect(clientContractObs.extractedRouteLiterals.sort()).toEqual(Object.values(ROUTES).sort());
+    expect((clientContractObs.extractedRouteLiterals as string[]).sort()).toEqual(
+      Object.values(ROUTES).sort(),
+    );
   });
 
   it("i18n 命名空间 NS 进产物", () => {
@@ -1767,23 +1769,23 @@ describe("客户端契约", () => {
     ["locale", "ctx.locale"],
     ["slots", "ctx.slots"],
   ])("客户端 apply 经直接属性 %s 访问 %s 服务", (prop, service) => {
-    expect(clientContractObs.clientSource.includes(service)).toBeTruthy();
+    expect((clientContractObs.clientSource as string).includes(service)).toBeTruthy();
   });
 
   it("inject 数组必须声明 sessions（否则服务不可用，#383）", () => {
-    expect(clientContractObs.injectLine.includes('"sessions"')).toBeTruthy();
+    expect((clientContractObs.injectLine as string).includes('"sessions"')).toBeTruthy();
   });
 
   it("inject 数组必须声明 remote（否则服务不可用，#383）", () => {
-    expect(clientContractObs.injectLine.includes('"remote"')).toBeTruthy();
+    expect((clientContractObs.injectLine as string).includes('"remote"')).toBeTruthy();
   });
 
   it("inject 数组必须声明 remote.session（modelCatalog 兜底，#383）", () => {
-    expect(clientContractObs.injectLine.includes('"remote.session"')).toBeTruthy();
+    expect((clientContractObs.injectLine as string).includes('"remote.session"')).toBeTruthy();
   });
 
   it("inject 数组必须声明 slots（否则 ctx.slots 访问抛 without inject，#383）", () => {
-    expect(clientContractObs.injectLine.includes('"slots"')).toBeTruthy();
+    expect((clientContractObs.injectLine as string).includes('"slots"')).toBeTruthy();
   });
 
   it("core.ts providerFromProjection 存在投影读取行", () => {
@@ -1792,8 +1794,10 @@ describe("客户端契约", () => {
 
   it("投影读取必须 next 优先", () => {
     expect(
-      /ms\?\.next \?\? ms\?\.lastUsed/.test(clientContractObs.projectionReadLine ?? ""),
-      `当前行：${(clientContractObs.projectionReadLine ?? "").trim()}`,
+      /ms\?\.next \?\? ms\?\.lastUsed/.test(
+        (clientContractObs.projectionReadLine as string | undefined) ?? "",
+      ),
+      `当前行：${((clientContractObs.projectionReadLine as string | undefined) ?? "").trim()}`,
     ).toBeTruthy();
   });
 
@@ -1836,16 +1840,16 @@ describe("客户端契约", () => {
   it("设置页 tab 键集合精确一致（六键，usage 今日置首，history 紧随 report）", () => {
     // 锚：settings/index.tsx TABS 字面量与 SettingsTabKey，第二事实源（增删改键必须红）。
     // 行级精确：纯 type 漂移（加成员/改名/改顺序）亦红——子串 includes 会漏检后缀追加。
-    const typeLine = clientContractObs.settingsIndex
+    const typeLine = (clientContractObs.settingsIndex as string)
       .split("\n")
       .map((l: string) => l.trim())
       .find((l: string) => l.startsWith("export type SettingsTabKey"));
     expect(typeLine).toBe(
       'export type SettingsTabKey = "usage" | "trend" | "report" | "history" | "providers" | "float";',
     );
-    const tabsStart = clientContractObs.settingsIndex.indexOf("const TABS");
-    const tabsEnd = clientContractObs.settingsIndex.indexOf("];", tabsStart);
-    const tabsBlock = clientContractObs.settingsIndex.slice(tabsStart, tabsEnd + 2);
+    const tabsStart = (clientContractObs.settingsIndex as string).indexOf("const TABS");
+    const tabsEnd = (clientContractObs.settingsIndex as string).indexOf("];", tabsStart);
+    const tabsBlock = (clientContractObs.settingsIndex as string).slice(tabsStart, tabsEnd + 2);
     const keys = [...tabsBlock.matchAll(/key:\s*"([^"]+)"/g)].map((m) => m[1]);
     expect(keys).toEqual(["usage", "trend", "report", "history", "providers", "float"]);
   });
@@ -3987,7 +3991,7 @@ describe("#503 M2：/trend 路由集成断言", () => {
 // ---------------------------------------------------------------- #503 M3：用量报告接线（调度/落盘/路由/净化/不入统计）
 
 describe("#503 M3：用量报告接线", () => {
-  const obs: Record<string, any> = {};
+  const obs: Record<string, unknown> = {};
 
   beforeAll(async () => {
     // 独立 historyDir：报告产物与趋势分片全部隔离在临时目录（零污染纪律）
@@ -4594,49 +4598,55 @@ describe("#503 M3：用量报告接线", () => {
   });
 
   it("generate ok（日报）", () => {
-    expect(obs.genObs[0].genOk, `实际 ${obs.genObs[0].genRaw}`).toBe(true);
+    expect(
+      (obs.genObs as Array<Record<string, unknown>>)[0].genOk,
+      `实际 ${(obs.genObs as Array<Record<string, unknown>>)[0].genRaw}`,
+    ).toBe(true);
   });
 
   it("202 返回 taskId（日报）", () => {
-    expect(obs.genObs[0].hasTaskId).toBeTruthy();
+    expect((obs.genObs as Array<Record<string, unknown>>)[0].hasTaskId).toBeTruthy();
   });
 
   it("生成任务轮询完成（日报）", () => {
-    expect(obs.genObs[0].doneDefined).toBeTruthy();
+    expect((obs.genObs as Array<Record<string, unknown>>)[0].doneDefined).toBeTruthy();
   });
 
   it("任务成功（日报）", () => {
     expect(
-      obs.genObs[0].doneStatus,
-      `实际 ${obs.genObs[0].doneStatus}${obs.genObs[0].doneError}`,
+      (obs.genObs as Array<Record<string, unknown>>)[0].doneStatus,
+      `实际 ${(obs.genObs as Array<Record<string, unknown>>)[0].doneStatus}${(obs.genObs as Array<Record<string, unknown>>)[0].doneError}`,
     ).toBe("done");
   });
 
   it("done 携带 meta（日报）", () => {
-    expect(obs.genObs[0].doneHasMeta).toBeTruthy();
+    expect((obs.genObs as Array<Record<string, unknown>>)[0].doneHasMeta).toBeTruthy();
   });
 
   it("generate ok（force）", () => {
-    expect(obs.genObs[1].genOk, `实际 ${obs.genObs[1].genRaw}`).toBe(true);
+    expect(
+      (obs.genObs as Array<Record<string, unknown>>)[1].genOk,
+      `实际 ${(obs.genObs as Array<Record<string, unknown>>)[1].genRaw}`,
+    ).toBe(true);
   });
 
   it("202 返回 taskId（force）", () => {
-    expect(obs.genObs[1].hasTaskId).toBeTruthy();
+    expect((obs.genObs as Array<Record<string, unknown>>)[1].hasTaskId).toBeTruthy();
   });
 
   it("生成任务轮询完成（force）", () => {
-    expect(obs.genObs[1].doneDefined).toBeTruthy();
+    expect((obs.genObs as Array<Record<string, unknown>>)[1].doneDefined).toBeTruthy();
   });
 
   it("任务成功（force）", () => {
     expect(
-      obs.genObs[1].doneStatus,
-      `实际 ${obs.genObs[1].doneStatus}${obs.genObs[1].doneError}`,
+      (obs.genObs as Array<Record<string, unknown>>)[1].doneStatus,
+      `实际 ${(obs.genObs as Array<Record<string, unknown>>)[1].doneStatus}${(obs.genObs as Array<Record<string, unknown>>)[1].doneError}`,
     ).toBe("done");
   });
 
   it("done 携带 meta（force）", () => {
-    expect(obs.genObs[1].doneHasMeta).toBeTruthy();
+    expect((obs.genObs as Array<Record<string, unknown>>)[1].doneHasMeta).toBeTruthy();
   });
 
   it("生成 meta.ok=true", () => {
@@ -4792,7 +4802,7 @@ describe("#503 M3：用量报告接线", () => {
   });
 
   it("force 真正重新生成（index 新增一行，防假绿）", () => {
-    expect(obs.forceLineCount).toBe(obs.countBeforeForce + 1);
+    expect(obs.forceLineCount).toBe((obs.countBeforeForce as number) + 1);
   });
 
   it("读侧投影：#626 同窗口多版本 → 列表一行/窗口", () => {
@@ -4864,7 +4874,7 @@ describe("#503 M3：用量报告接线", () => {
 // ---------------------------------------------------------------- #633 分片 b2 D2：双目录全链路（cwd 接入 → 聚合/过滤/图例/目录范围候选）
 
 describe("#633 分片 b2 D2：双目录全链路", () => {
-  const obs: Record<string, any> = {};
+  const obs: Record<string, unknown> = {};
 
   beforeAll(async () => {
     // 独立 historyDir：磁盘分片全隔离（前序块零混入）
@@ -5119,79 +5129,93 @@ describe("#633 分片 b2 D2：客户端源码契约断言", () => {
 
   // B1：趋势面板目录筛选控件存在（select + dirs 数据源 + 全部目录/byDir 请求面）
   it("趋势面板存在目录筛选下拉（aria-label 哨兵）", () => {
-    expect(clientContractObs.trendSource.includes('aria-label={t("trendDirLabel")}')).toBeTruthy();
+    expect(
+      (clientContractObs.trendSource as string).includes('aria-label={t("trendDirLabel")}'),
+    ).toBeTruthy();
   });
 
   it("目录下拉首项「全部目录」", () => {
-    expect(clientContractObs.trendSource.includes("trendDirAll")).toBeTruthy();
+    expect((clientContractObs.trendSource as string).includes("trendDirAll")).toBeTruthy();
   });
 
   it("目录段 id 经 dirStackId 防御归一（异常值不进渲染面）", () => {
-    expect(clientContractObs.trendSource.includes("dirStackId")).toBeTruthy();
+    expect((clientContractObs.trendSource as string).includes("dirStackId")).toBeTruthy();
   });
 
   // #633 复核闸 P0：请求参数三态互斥封装为 trend-math.trendRequestParams（断言锚随实现下沉）
   it("/trend 请求参数构造为纯函数（P0 交叉面杜绝）", () => {
     expect(
-      clientContractObs.mathSource.includes("export function trendRequestParams"),
+      (clientContractObs.mathSource as string).includes("export function trendRequestParams"),
     ).toBeTruthy();
   });
 
   it("选定目录 → 请求带 dir 参数", () => {
-    expect(clientContractObs.mathSource.includes('params.set("dir", dirFilter)')).toBeTruthy();
+    expect(
+      (clientContractObs.mathSource as string).includes('params.set("dir", dirFilter)'),
+    ).toBeTruthy();
   });
 
   it("全部目录 → byDir=1（三态互斥：adapter 过滤面零目录参数）", () => {
     expect(
-      clientContractObs.mathSource.includes('else if (provider === "") params.set("byDir", "1")'),
+      (clientContractObs.mathSource as string).includes(
+        'else if (provider === "") params.set("byDir", "1")',
+      ),
     ).toBeTruthy();
   });
 
   // P0①目录下拉可达性：渲染条件改状态真值（shouldShowDirSelect，未选适配器恒可见）；
   // 旧条件 dirMode 恒真致下拉仅加载瞬间闪现——负向断言防回归
   it("目录下拉可见性 = shouldShowDirSelect（未选适配器恒可见）", () => {
-    expect(clientContractObs.trendSource.includes("shouldShowDirSelect(provider)")).toBeTruthy();
+    expect(
+      (clientContractObs.trendSource as string).includes("shouldShowDirSelect(provider)"),
+    ).toBeTruthy();
   });
 
   it("byModel checkbox 可见性 = shouldShowByModel（adapter 过滤且未选目录）", () => {
     expect(
-      clientContractObs.trendSource.includes("shouldShowByModel(provider, dirFilter)"),
+      (clientContractObs.trendSource as string).includes("shouldShowByModel(provider, dirFilter)"),
     ).toBeTruthy();
   });
 
   it("旧 dirMode 恒真渲染条件已移除（P0 回归护栏）", () => {
-    expect(!clientContractObs.trendSource.includes("dirMode ? null")).toBeTruthy();
+    expect(!(clientContractObs.trendSource as string).includes("dirMode ? null")).toBeTruthy();
   });
 
   it("选适配器联动清目录（两维互斥：数据面切换）", () => {
-    expect(clientContractObs.trendSource.includes('setDirFilter("")')).toBeTruthy();
+    expect((clientContractObs.trendSource as string).includes('setDirFilter("")')).toBeTruthy();
   });
 
   it("选目录联动清适配器（两维互斥：数据面切换）", () => {
-    expect(clientContractObs.trendSource.includes('setProvider("")')).toBeTruthy();
+    expect((clientContractObs.trendSource as string).includes('setProvider("")')).toBeTruthy();
   });
 
   it("宿主 /trend 支持 byDir=1（客户端数据源契约）", () => {
     expect(
-      clientContractObs.routesSource.includes('url.searchParams.get("byDir") === "1"'),
+      (clientContractObs.routesSource as string).includes('url.searchParams.get("byDir") === "1"'),
     ).toBeTruthy();
   });
 
   // B2：未识别桶恒出现 + 口径注明
   it("未识别桶图例/tooltip 注明口径", () => {
-    expect(clientContractObs.trendSource.includes("trendDirUnidentifiedNote")).toBeTruthy();
+    expect(
+      (clientContractObs.trendSource as string).includes("trendDirUnidentifiedNote"),
+    ).toBeTruthy();
   });
 
   it("客户端未识别桶键与宿主 TREND_UNIDENTIFIED 字面一致", () => {
     expect(
-      clientContractObs.mathSource.includes('export const DIR_UNIDENTIFIED = "(unidentified)"'),
+      (clientContractObs.mathSource as string).includes(
+        'export const DIR_UNIDENTIFIED = "(unidentified)"',
+      ),
     ).toBeTruthy();
   });
 
   // #633 复核闸 P2：目录面文案/title/出口净化（顺带批锚点）
   it("Top 汇总卡目录面用目录面标签（trendCardTopDir）", () => {
     expect(
-      clientContractObs.trendSource.includes('dirMode ? t("trendCardTopDir") : t("trendCardTop")'),
+      (clientContractObs.trendSource as string).includes(
+        'dirMode ? t("trendCardTopDir") : t("trendCardTop")',
+      ),
     ).toBeTruthy();
   });
 
@@ -5206,141 +5230,167 @@ describe("#633 分片 b2 D2：客户端源码契约断言", () => {
   });
 
   it("locales 中英对称新增目录面 Top 标签", () => {
-    expect(clientContractObs.localesSource.includes('trendCardTopDir: "Top 目录"')).toBeTruthy();
+    expect(
+      (clientContractObs.localesSource as string).includes('trendCardTopDir: "Top 目录"'),
+    ).toBeTruthy();
   });
 
   // #940 B2-2：适配器/悬浮窗两页呈现契约（副标题 + 顶层引导 + 路径密钥 hint + 动效注脚 + 材质预览 + R5）
   it("B2-2 适配器页副标题与顶层引导按钮存在", () => {
-    expect(clientContractObs.providersSource.includes('t("provSub")')).toBeTruthy();
-    expect(clientContractObs.providersSource.includes("void onCopyGlobalGuide()")).toBeTruthy();
+    expect((clientContractObs.providersSource as string).includes('t("provSub")')).toBeTruthy();
+    expect(
+      (clientContractObs.providersSource as string).includes("void onCopyGlobalGuide()"),
+    ).toBeTruthy();
   });
 
   it("B2-2 添加表单路径密钥 hint 存在", () => {
-    expect(clientContractObs.providersSource.includes('t("pathKeyHint")')).toBeTruthy();
-    expect(clientContractObs.localesSource.includes('pathKeyHint: "仅接受本地 .mjs')).toBeTruthy();
-    expect(clientContractObs.localesSource.includes('pathKeyHint: "Local .mjs only')).toBeTruthy();
+    expect((clientContractObs.providersSource as string).includes('t("pathKeyHint")')).toBeTruthy();
+    expect(
+      (clientContractObs.localesSource as string).includes('pathKeyHint: "仅接受本地 .mjs'),
+    ).toBeTruthy();
+    expect(
+      (clientContractObs.localesSource as string).includes('pathKeyHint: "Local .mjs only'),
+    ).toBeTruthy();
   });
 
   it("悬浮窗页无预览块（仅表单）", () => {
-    expect(clientContractObs.uiSource.includes('t("floatPreview")')).toBeFalsy();
-    expect(clientContractObs.uiSource.includes('t("flMotion")')).toBeFalsy();
-    expect(clientContractObs.uiSource.includes("dou-reportGlass")).toBeFalsy();
+    expect((clientContractObs.uiSource as string).includes('t("floatPreview")')).toBeFalsy();
+    expect((clientContractObs.uiSource as string).includes('t("flMotion")')).toBeFalsy();
+    expect((clientContractObs.uiSource as string).includes("dou-reportGlass")).toBeFalsy();
     // 文案禁代码 token（cubic-bezier/scale 不得进用户可见串；D3）
-    expect(clientContractObs.localesSource.includes('"弹出/收回带缩放淡入')).toBeFalsy();
-    expect(clientContractObs.localesSource.includes('"Pop/dismiss with scale-fade')).toBeFalsy();
-    expect(!clientContractObs.localesSource.includes("cubic-bezier")).toBeTruthy();
+    expect(
+      (clientContractObs.localesSource as string).includes('"弹出/收回带缩放淡入'),
+    ).toBeFalsy();
+    expect(
+      (clientContractObs.localesSource as string).includes('"Pop/dismiss with scale-fade'),
+    ).toBeFalsy();
+    expect(!(clientContractObs.localesSource as string).includes("cubic-bezier")).toBeTruthy();
   });
 
   it("历史筛选空态与计数跟随筛选（D4）", () => {
-    expect(clientContractObs.historySource.includes('t("reportFilterEmpty")')).toBeTruthy();
-    expect(clientContractObs.historySource.includes("(filtered ?? list")).toBeTruthy();
-    expect(clientContractObs.localesSource.includes("reportFilterEmpty:")).toBeTruthy();
+    expect(
+      (clientContractObs.historySource as string).includes('t("reportFilterEmpty")'),
+    ).toBeTruthy();
+    expect((clientContractObs.historySource as string).includes("(filtered ?? list")).toBeTruthy();
+    expect((clientContractObs.localesSource as string).includes("reportFilterEmpty:")).toBeTruthy();
   });
 
   it("B2-2 R5 行组 gap 10px 口径", () => {
-    expect(clientContractObs.clientStyle.includes("gap: 10px;")).toBeTruthy();
+    expect((clientContractObs.clientStyle as string).includes("gap: 10px;")).toBeTruthy();
   });
 
   it("B2-2 四窗格挂共用 dou-pane（禁止各写一套 padding）", () => {
     for (const src of [
-      clientContractObs.providersSource,
-      clientContractObs.uiSource,
-      clientContractObs.usageSource,
+      clientContractObs.providersSource as string,
+      clientContractObs.uiSource as string,
+      clientContractObs.usageSource as string,
     ]) {
       expect(src.includes('className="dou-pane"')).toBeTruthy();
       expect(!src.includes("style={sectionStyle}")).toBeTruthy();
     }
-    expect(clientContractObs.trendSource.includes("dou-pane")).toBeTruthy();
-    expect(clientContractObs.clientStyle.includes(".dou-pane {")).toBeTruthy();
+    expect((clientContractObs.trendSource as string).includes("dou-pane")).toBeTruthy();
+    expect((clientContractObs.clientStyle as string).includes(".dou-pane {")).toBeTruthy();
   });
 
   // #940 B2-1：用量/趋势呈现契约（复用 /trend 日面，零新增宿主路由）
   it("B2-1 用量概览拉 /trend 日面", () => {
-    expect(clientContractObs.usageSource.includes("fetchTrendDay")).toBeTruthy();
-    expect(clientContractObs.usageSource.includes("granularity=day")).toBeTruthy();
+    expect((clientContractObs.usageSource as string).includes("fetchTrendDay")).toBeTruthy();
+    expect((clientContractObs.usageSource as string).includes("granularity=day")).toBeTruthy();
   });
 
   it("B2-1 双环与热力渲染存在", () => {
-    expect(clientContractObs.usageSource.includes("donutSvg")).toBeTruthy();
-    expect(clientContractObs.usageSource.includes("dou-heatGrid")).toBeTruthy();
-    expect(clientContractObs.clientStyle.includes(".dou-heatGrid")).toBeTruthy();
-    expect(clientContractObs.clientStyle.includes(".dou-heatL4")).toBeTruthy();
+    expect((clientContractObs.usageSource as string).includes("donutSvg")).toBeTruthy();
+    expect((clientContractObs.usageSource as string).includes("dou-heatGrid")).toBeTruthy();
+    expect((clientContractObs.clientStyle as string).includes(".dou-heatGrid")).toBeTruthy();
+    expect((clientContractObs.clientStyle as string).includes(".dou-heatL4")).toBeTruthy();
   });
 
   it("用量页一图一栏与独立指标行", () => {
-    expect(clientContractObs.usageSource.includes("dou-miniRow")).toBeTruthy();
-    expect(clientContractObs.usageSource.includes("dou-donutBody")).toBeTruthy();
-    expect(clientContractObs.clientStyle.includes(".dou-donutBody")).toBeTruthy();
-    expect(clientContractObs.usageSource.includes("dou-legendItem")).toBeTruthy();
-    expect(clientContractObs.usageSource.includes('flex: "1 1 100%"')).toBeFalsy();
-    expect(clientContractObs.settingsIndex.includes("maxWidth")).toBeFalsy();
-    expect(clientContractObs.clientStyle.includes(".dou-donutCard")).toBeTruthy();
-    expect(clientContractObs.clientStyle.includes(".dou-miniRow")).toBeTruthy();
-    expect(clientContractObs.clientStyle.includes("grid-auto-columns")).toBeTruthy();
-    expect(clientContractObs.clientStyle.includes("@media (max-width: 520px)")).toBeTruthy();
-    expect(clientContractObs.clientStyle.includes(".dou-donutCenterTop")).toBeTruthy();
-    expect(clientContractObs.usageSource.includes("dou-donutCenterTop")).toBeTruthy();
+    expect((clientContractObs.usageSource as string).includes("dou-miniRow")).toBeTruthy();
+    expect((clientContractObs.usageSource as string).includes("dou-donutBody")).toBeTruthy();
+    expect((clientContractObs.clientStyle as string).includes(".dou-donutBody")).toBeTruthy();
+    expect((clientContractObs.usageSource as string).includes("dou-legendItem")).toBeTruthy();
+    expect((clientContractObs.usageSource as string).includes('flex: "1 1 100%"')).toBeFalsy();
+    expect((clientContractObs.settingsIndex as string).includes("maxWidth")).toBeFalsy();
+    expect((clientContractObs.clientStyle as string).includes(".dou-donutCard")).toBeTruthy();
+    expect((clientContractObs.clientStyle as string).includes(".dou-miniRow")).toBeTruthy();
+    expect((clientContractObs.clientStyle as string).includes("grid-auto-columns")).toBeTruthy();
+    expect(
+      (clientContractObs.clientStyle as string).includes("@media (max-width: 520px)"),
+    ).toBeTruthy();
+    expect((clientContractObs.clientStyle as string).includes(".dou-donutCenterTop")).toBeTruthy();
+    expect((clientContractObs.usageSource as string).includes("dou-donutCenterTop")).toBeTruthy();
   });
 
   it("报告生成区与配置区同间距", () => {
     expect(
-      clientContractObs.clientStyle.includes(".dou-reportSections + .dou-reportSection"),
+      (clientContractObs.clientStyle as string).includes(
+        ".dou-reportSections + .dou-reportSection",
+      ),
     ).toBeTruthy();
   });
 
   it("趋势页底部已删除（无跳转无双卡无口径行）", () => {
-    expect(clientContractObs.trendSource.includes("onGotoHeat")).toBeFalsy();
-    expect(clientContractObs.trendSource.includes("TrendExtras")).toBeFalsy();
-    expect(clientContractObs.trendSource.includes('t("gotoHeat")')).toBeFalsy();
-    expect(clientContractObs.trendSource.includes('t("trendComposeTitle")')).toBeFalsy();
-    expect(clientContractObs.trendSource.includes('t("trendMountedHint")')).toBeFalsy();
-    expect(clientContractObs.trendSource.includes('t("trendCaliberNote")')).toBeTruthy();
-    expect(clientContractObs.trendSource.includes("composeShares")).toBeFalsy();
+    expect((clientContractObs.trendSource as string).includes("onGotoHeat")).toBeFalsy();
+    expect((clientContractObs.trendSource as string).includes("TrendExtras")).toBeFalsy();
+    expect((clientContractObs.trendSource as string).includes('t("gotoHeat")')).toBeFalsy();
+    expect(
+      (clientContractObs.trendSource as string).includes('t("trendComposeTitle")'),
+    ).toBeFalsy();
+    expect((clientContractObs.trendSource as string).includes('t("trendMountedHint")')).toBeFalsy();
+    expect(
+      (clientContractObs.trendSource as string).includes('t("trendCaliberNote")'),
+    ).toBeTruthy();
+    expect((clientContractObs.trendSource as string).includes("composeShares")).toBeFalsy();
   });
 
   it("locales 已删趋势跳转与底部文案", () => {
-    expect(clientContractObs.localesSource.includes("usageHeat:")).toBeTruthy();
-    expect(clientContractObs.localesSource.includes("gotoHeat:")).toBeFalsy();
-    expect(clientContractObs.localesSource.includes("trendComposeTitle:")).toBeFalsy();
-    expect(clientContractObs.localesSource.includes("floatPreview:")).toBeFalsy();
-    expect(clientContractObs.localesSource.includes("Usage heatmap")).toBeTruthy();
-    expect(clientContractObs.localesSource.includes("View daily heatmap")).toBeFalsy();
+    expect((clientContractObs.localesSource as string).includes("usageHeat:")).toBeTruthy();
+    expect((clientContractObs.localesSource as string).includes("gotoHeat:")).toBeFalsy();
+    expect((clientContractObs.localesSource as string).includes("trendComposeTitle:")).toBeFalsy();
+    expect((clientContractObs.localesSource as string).includes("floatPreview:")).toBeFalsy();
+    expect((clientContractObs.localesSource as string).includes("Usage heatmap")).toBeTruthy();
+    expect((clientContractObs.localesSource as string).includes("View daily heatmap")).toBeFalsy();
   });
 
   it("tab 默认落用量页（顺序由六键精确一致用例锁定）", () => {
     expect(
-      clientContractObs.settingsIndex.includes('useState<SettingsTabKey>("usage")'),
+      (clientContractObs.settingsIndex as string).includes('useState<SettingsTabKey>("usage")'),
     ).toBeTruthy();
   });
 
   it("B4 空候选时「全部目录」checkbox 禁用（空=全部语义不变）", () => {
     expect(
-      clientContractObs.reportSource.includes("disabled={dirOptions.length === 0}"),
+      (clientContractObs.reportSource as string).includes("disabled={dirOptions.length === 0}"),
     ).toBeTruthy();
   });
 
   // D8：listDirs 出口净化从 apply 闭包移入 list-dirs.ts 工厂（装配层零隐藏可变状态）
   it("listDirs 出口过 sanitizeDirName（旁路污染分片行防御收口，D8 移入工厂）", () => {
     expect(
-      clientContractObs.listDirsSource.includes("sanitizeDirName(r.dir) ?? TREND_UNIDENTIFIED"),
+      (clientContractObs.listDirsSource as string).includes(
+        "sanitizeDirName(r.dir) ?? TREND_UNIDENTIFIED",
+      ),
     ).toBeTruthy();
   });
 
   // B4：设置页报告目录范围多选（GET dirs 回填 + directories draft + 保存 round-trip 消费点）
   it("报告配置卡存在目录范围多选（i18n 哨兵）", () => {
-    expect(clientContractObs.reportSource.includes("reportDirectories")).toBeTruthy();
+    expect((clientContractObs.reportSource as string).includes("reportDirectories")).toBeTruthy();
   });
 
   it("目录候选经 GET dirs 回填", () => {
-    expect(clientContractObs.reportSource.includes("setDirOptions")).toBeTruthy();
+    expect((clientContractObs.reportSource as string).includes("setDirOptions")).toBeTruthy();
   });
 
   it("多选结果写进 draft.directories（POST 保存体）", () => {
-    expect(clientContractObs.reportSource.includes("directories:")).toBeTruthy();
+    expect((clientContractObs.reportSource as string).includes("directories:")).toBeTruthy();
   });
 
   it("保存后影响报告口径的提示文案存在", () => {
-    expect(clientContractObs.reportSource.includes("reportDirectoriesHintScoped")).toBeTruthy();
+    expect(
+      (clientContractObs.reportSource as string).includes("reportDirectoriesHintScoped"),
+    ).toBeTruthy();
   });
 });
 

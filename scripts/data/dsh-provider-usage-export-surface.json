@@ -375,7 +375,7 @@
     "export declare function addDetailTo(agg: TrendAggRow | TrendDirRow | TrendHourRow, row: TrendDetailRow): void;",
     "export declare function alignLastRun(lastRun: Partial<Record<ReportPeriod, string>>, records: LastRunRecord[]): Partial<Record<ReportPeriod, string>>;",
     "export declare function apply(ctx: Context, rawConfig?: Record<string, unknown>): Promise<void>;",
-    "export declare function apply(ctx: any): void;",
+    "export declare function apply(ctx: ProviderUsageClientCtx): void;",
     "export declare function applyPromptTemplate(template: string, statsJson: string): string;",
     "export declare function axisLabelWidthPx(spanMs: number, fontSizePx: number, dateOnly: boolean): number;",
     "export declare function bottomAnchorEdge(containerBottom: number, seatTop: number | null | undefined, docked: boolean): number;",
@@ -1709,7 +1709,7 @@
           "export declare const inject: string[];"
         ],
         "apply": [
-          "export declare function apply(ctx: any): void;"
+          "export declare function apply(ctx: ProviderUsageClientCtx): void;"
         ],
         "en": [
           "export declare const en: Record<ProviderUsageLocaleKey, string>;"
