@@ -238,6 +238,199 @@ export function validateCustomPresets(
   return { ok: true, list };
 }
 
+interface PutIntField {
+  readonly key: string;
+  readonly min: number;
+  readonly max: number;
+  readonly message: string;
+}
+const PUT_INT_FIELDS: readonly PutIntField[] = [
+  { key: "timeoutMs", min: 1000, max: 120000, message: "timeoutMs must be int 1000..120000" },
+  { key: "maxConcurrency", min: 1, max: 16, message: "maxConcurrency must be int 1..16" },
+  { key: "truncBudget", min: 1000, max: 200000, message: "truncBudget must be int 1000..200000" },
+];
+const HISTORY_INT_FIELDS: readonly PutIntField[] = [
+  { key: "perSession", min: 10, max: 1000, message: "perSession must be int 10..1000" },
+  { key: "totalSessions", min: 1, max: 200, message: "totalSessions must be int 1..200" },
+];
+function putRangedInt(
+  source: Record<string, unknown>,
+  field: PutIntField,
+):
+  | { readonly ok: true; readonly value: number | undefined }
+  | { readonly ok: false; readonly failure: PutFailure } {
+  const raw = source[field.key];
+  if (raw === undefined) return { ok: true, value: undefined };
+  const value = checkInt(raw, field.min, field.max);
+  if (value === undefined)
+    return {
+      ok: false,
+      failure: { errorCode: "INVALID_RANGE", category: "bad-request", message: field.message },
+    };
+  return { ok: true, value };
+}
+function checkApiKeyRef(
+  ref: unknown,
+):
+  | { readonly ok: true; readonly value: string | null | undefined }
+  | { readonly ok: false; readonly failure: PutFailure } {
+  if (ref === undefined) return { ok: true, value: undefined };
+  if (ref === null) return { ok: true, value: null };
+  if (typeof ref !== "string" || !API_KEY_REF_RE.test(ref)) {
+    return {
+      ok: false,
+      failure: {
+        errorCode: "INVALID_REF",
+        category: "shape",
+        message: "apiKeyRef must match ^[A-Z][A-Z0-9_]{1,63}$",
+      },
+    };
+  }
+  return { ok: true, value: ref };
+}
+function checkApiKeyPlaintext(
+  plain: unknown,
+):
+  | { readonly ok: true; readonly value: string | undefined }
+  | { readonly ok: false; readonly failure: PutFailure } {
+  if (plain === undefined) return { ok: true, value: undefined };
+  if (typeof plain !== "string") {
+    return {
+      ok: false,
+      failure: {
+        errorCode: "INVALID_KEY_SHAPE",
+        category: "charset",
+        message: "apiKeyPlaintext must be a string",
+      },
+    };
+  }
+  const shape: KeyShapeCategory | null = keyShapeCategory(plain);
+  if (shape !== null) {
+    return {
+      ok: false,
+      failure: { errorCode: "INVALID_KEY_SHAPE", category: shape, message: "key shape rejected" },
+    };
+  }
+  return { ok: true, value: plain };
+}
+function checkPresetsField(value: unknown):
+  | {
+      readonly ok: true;
+      readonly list:
+        | {
+            readonly id: string;
+            readonly enabled: boolean;
+            readonly automationCap: AutomationCap;
+          }[]
+        | undefined;
+    }
+  | { readonly ok: false; readonly failure: PutFailure } {
+  if (value === undefined) {
+    return { ok: true, list: undefined };
+  }
+  if (!Array.isArray(value)) {
+    return {
+      ok: false,
+      failure: {
+        errorCode: "INVALID_PRESETS",
+        category: "bad-request",
+        message: "presets must be an array",
+      },
+    };
+  }
+  const list: {
+    readonly id: string;
+    readonly enabled: boolean;
+    readonly automationCap: AutomationCap;
+  }[] = [];
+  for (const item of value as unknown[]) {
+    if (!isRecord(item) || typeof item["id"] !== "string") {
+      return {
+        ok: false,
+        failure: {
+          errorCode: "INVALID_PRESETS",
+          category: "bad-request",
+          message: "preset entry needs id",
+        },
+      };
+    }
+    const frozen = FROZEN_PRESETS.find((preset) => preset.id === (item["id"] as string));
+    if (frozen === undefined) {
+      return {
+        ok: false,
+        failure: {
+          errorCode: "UNKNOWN_PRESET",
+          category: "bad-request",
+          message: "unknown preset",
+        },
+      };
+    }
+    if (typeof item["enabled"] !== "boolean") {
+      return {
+        ok: false,
+        failure: {
+          errorCode: "INVALID_PRESETS",
+          category: "bad-request",
+          message: "preset entry needs boolean enabled",
+        },
+      };
+    }
+    const cap = item["automationCap"];
+    if (cap !== 0 && cap !== 1 && cap !== 2) {
+      return {
+        ok: false,
+        failure: {
+          errorCode: "INVALID_PRESETS",
+          category: "bad-request",
+          message: "automationCap must be 0|1|2",
+        },
+      };
+    }
+    list.push({
+      id: item["id"] as string,
+      enabled: item["enabled"] as boolean,
+      automationCap: cap as AutomationCap,
+    });
+  }
+  return { ok: true, list };
+}
+function checkHistoryField(value: unknown):
+  | {
+      readonly ok: true;
+      readonly history:
+        { readonly perSession?: number; readonly totalSessions?: number } | undefined;
+    }
+  | { readonly ok: false; readonly failure: PutFailure } {
+  if (value === undefined) {
+    return { ok: true, history: undefined };
+  }
+  if (!isRecord(value)) {
+    return {
+      ok: false,
+      failure: {
+        errorCode: "INVALID_HISTORY",
+        category: "bad-request",
+        message: "history must be an object",
+      },
+    };
+  }
+  const hist = value as Record<string, unknown>;
+  const histVals: Record<string, number | undefined> = {};
+  for (const field of HISTORY_INT_FIELDS) {
+    const checked = putRangedInt(hist, field);
+    if (!checked.ok) return checked;
+    if (checked.value !== undefined) histVals[field.key] = checked.value;
+  }
+  const perSession = histVals["perSession"];
+  const totalSessions = histVals["totalSessions"];
+  return {
+    ok: true,
+    history: {
+      ...(perSession !== undefined ? { perSession } : {}),
+      ...(totalSessions !== undefined ? { totalSessions } : {}),
+    },
+  };
+}
 export function validatePutBody(
   body: unknown,
 ):
@@ -278,44 +471,12 @@ export function validatePutBody(
   const ref = body["apiKeyRef"];
   const plain = body["apiKeyPlaintext"];
   // confirm 字段保留在白名单仅作向后兼容（老客户端仍发 confirm:true），此处不再读取。
-  let apiKeyRef: string | null | undefined;
-  if (ref !== undefined) {
-    if (ref === null) {
-      apiKeyRef = null;
-    } else if (typeof ref !== "string" || !API_KEY_REF_RE.test(ref)) {
-      return {
-        ok: false,
-        failure: {
-          errorCode: "INVALID_REF",
-          category: "shape",
-          message: "apiKeyRef must match ^[A-Z][A-Z0-9_]{1,63}$",
-        },
-      };
-    } else {
-      apiKeyRef = ref;
-    }
-  }
-  let apiKeyPlaintext: string | undefined;
-  if (plain !== undefined) {
-    if (typeof plain !== "string") {
-      return {
-        ok: false,
-        failure: {
-          errorCode: "INVALID_KEY_SHAPE",
-          category: "charset",
-          message: "apiKeyPlaintext must be a string",
-        },
-      };
-    }
-    const shape: KeyShapeCategory | null = keyShapeCategory(plain);
-    if (shape !== null) {
-      return {
-        ok: false,
-        failure: { errorCode: "INVALID_KEY_SHAPE", category: shape, message: "key shape rejected" },
-      };
-    }
-    apiKeyPlaintext = plain;
-  }
+  const refChecked = checkApiKeyRef(ref);
+  if (!refChecked.ok) return refChecked;
+  const apiKeyRef = refChecked.value;
+  const plainChecked = checkApiKeyPlaintext(plain);
+  if (!plainChecked.ok) return plainChecked;
+  const apiKeyPlaintext = plainChecked.value;
   if (apiKeyRef !== undefined && apiKeyRef !== null && apiKeyPlaintext !== undefined) {
     return {
       ok: false,
@@ -326,152 +487,25 @@ export function validatePutBody(
       },
     };
   }
-  const timeoutMs =
-    body["timeoutMs"] === undefined ? undefined : checkInt(body["timeoutMs"], 1000, 120000);
-  if (body["timeoutMs"] !== undefined && timeoutMs === undefined) {
-    return {
-      ok: false,
-      failure: {
-        errorCode: "INVALID_RANGE",
-        category: "bad-request",
-        message: "timeoutMs must be int 1000..120000",
-      },
-    };
+  const intVals: Record<string, number | undefined> = {};
+  for (const field of PUT_INT_FIELDS) {
+    const checked = putRangedInt(body, field);
+    if (!checked.ok) return checked;
+    if (checked.value !== undefined) intVals[field.key] = checked.value;
   }
-  const maxConcurrency =
-    body["maxConcurrency"] === undefined ? undefined : checkInt(body["maxConcurrency"], 1, 16);
-  if (body["maxConcurrency"] !== undefined && maxConcurrency === undefined) {
-    return {
-      ok: false,
-      failure: {
-        errorCode: "INVALID_RANGE",
-        category: "bad-request",
-        message: "maxConcurrency must be int 1..16",
-      },
-    };
+  const timeoutMs = intVals["timeoutMs"];
+  const maxConcurrency = intVals["maxConcurrency"];
+  const truncBudget = intVals["truncBudget"];
+  const checkedPresets = checkPresetsField(body["presets"]);
+  if (!checkedPresets.ok) {
+    return checkedPresets;
   }
-  const truncBudget =
-    body["truncBudget"] === undefined ? undefined : checkInt(body["truncBudget"], 1000, 200000);
-  if (body["truncBudget"] !== undefined && truncBudget === undefined) {
-    return {
-      ok: false,
-      failure: {
-        errorCode: "INVALID_RANGE",
-        category: "bad-request",
-        message: "truncBudget must be int 1000..200000",
-      },
-    };
+  const presets = checkedPresets.list;
+  const checkedHistory = checkHistoryField(body["history"]);
+  if (!checkedHistory.ok) {
+    return checkedHistory;
   }
-  let presets: ConfigPutPatch["presets"];
-  if (body["presets"] !== undefined) {
-    if (!Array.isArray(body["presets"])) {
-      return {
-        ok: false,
-        failure: {
-          errorCode: "INVALID_PRESETS",
-          category: "bad-request",
-          message: "presets must be an array",
-        },
-      };
-    }
-    const list: {
-      readonly id: string;
-      readonly enabled: boolean;
-      readonly automationCap: AutomationCap;
-    }[] = [];
-    for (const item of body["presets"] as unknown[]) {
-      if (!isRecord(item) || typeof item["id"] !== "string") {
-        return {
-          ok: false,
-          failure: {
-            errorCode: "INVALID_PRESETS",
-            category: "bad-request",
-            message: "preset entry needs id",
-          },
-        };
-      }
-      const frozen = FROZEN_PRESETS.find((preset) => preset.id === (item["id"] as string));
-      if (frozen === undefined) {
-        return {
-          ok: false,
-          failure: {
-            errorCode: "UNKNOWN_PRESET",
-            category: "bad-request",
-            message: "unknown preset",
-          },
-        };
-      }
-      if (typeof item["enabled"] !== "boolean") {
-        return {
-          ok: false,
-          failure: {
-            errorCode: "INVALID_PRESETS",
-            category: "bad-request",
-            message: "preset entry needs boolean enabled",
-          },
-        };
-      }
-      const cap = item["automationCap"];
-      if (cap !== 0 && cap !== 1 && cap !== 2) {
-        return {
-          ok: false,
-          failure: {
-            errorCode: "INVALID_PRESETS",
-            category: "bad-request",
-            message: "automationCap must be 0|1|2",
-          },
-        };
-      }
-      list.push({
-        id: item["id"] as string,
-        enabled: item["enabled"] as boolean,
-        automationCap: cap as AutomationCap,
-      });
-    }
-    presets = list;
-  }
-  let history: ConfigPutPatch["history"];
-  if (body["history"] !== undefined) {
-    if (!isRecord(body["history"])) {
-      return {
-        ok: false,
-        failure: {
-          errorCode: "INVALID_HISTORY",
-          category: "bad-request",
-          message: "history must be an object",
-        },
-      };
-    }
-    const hist = body["history"] as Record<string, unknown>;
-    const perSession =
-      hist["perSession"] === undefined ? undefined : checkInt(hist["perSession"], 10, 1000);
-    if (hist["perSession"] !== undefined && perSession === undefined) {
-      return {
-        ok: false,
-        failure: {
-          errorCode: "INVALID_RANGE",
-          category: "bad-request",
-          message: "perSession must be int 10..1000",
-        },
-      };
-    }
-    const totalSessions =
-      hist["totalSessions"] === undefined ? undefined : checkInt(hist["totalSessions"], 1, 200);
-    if (hist["totalSessions"] !== undefined && totalSessions === undefined) {
-      return {
-        ok: false,
-        failure: {
-          errorCode: "INVALID_RANGE",
-          category: "bad-request",
-          message: "totalSessions must be int 1..200",
-        },
-      };
-    }
-    history = {
-      ...(perSession !== undefined ? { perSession } : {}),
-      ...(totalSessions !== undefined ? { totalSessions } : {}),
-    };
-  }
+  const history = checkedHistory.history;
   let customPresets: ConfigPutPatch["customPresets"];
   if (body["customPresets"] !== undefined) {
     const checked = validateCustomPresets(body["customPresets"]);

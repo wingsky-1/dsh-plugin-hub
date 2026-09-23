@@ -205,6 +205,50 @@ function parseQuestions(raw: unknown): JevHistoryEntry["questions"] {
 }
 
 /** 防御式解析 GET /history（裸数组或 {entries}/{items}/{history}/{data} 包装均接受）。 */
+function toHistoryEntry(item: unknown): JevHistoryEntry | null {
+  if (!isRecord(item)) return null;
+  if (typeof item["ts"] !== "number" || typeof item["sessionId"] !== "string") return null;
+  const tierRaw = item["tier"];
+  const tier: JevTier = tierRaw === "high" || tierRaw === "low" ? tierRaw : "none";
+  const langRaw = item["lang"];
+  const lang: JevLang = langRaw === "en" || langRaw === "zh" ? langRaw : "unknown";
+  const score = item["score"];
+  const choice = item["choice"];
+  const errorCode = item["errorCode"];
+  const title =
+    typeof item["presetTitle"] === "string" ? (item["presetTitle"] as string) : undefined;
+  const sessionTitle =
+    typeof item["sessionTitle"] === "string" && (item["sessionTitle"] as string).length > 0
+      ? (item["sessionTitle"] as string)
+      : undefined;
+  const questions = parseQuestions(item["questions"]);
+  return {
+    ts: item["ts"] as number,
+    rootHash: typeof item["rootHash"] === "string" ? (item["rootHash"] as string) : "",
+    rootDisplay: typeof item["rootDisplay"] === "string" ? (item["rootDisplay"] as string) : "",
+    sessionId: item["sessionId"] as string,
+    presetId: typeof item["presetId"] === "string" ? (item["presetId"] as string) : "",
+    templateVersion: asNumber(item["templateVersion"], 1),
+    stateHash: typeof item["stateHash"] === "string" ? (item["stateHash"] as string) : "",
+    snippetRedacted:
+      typeof item["snippetRedacted"] === "string" ? (item["snippetRedacted"] as string) : "",
+    lang,
+    truncated: item["truncated"] === true,
+    originalLength: asNumber(item["originalLength"], 0),
+    resultKind: typeof item["resultKind"] === "string" ? (item["resultKind"] as string) : "",
+    choice: typeof choice === "string" ? choice : undefined,
+    score: typeof score === "number" && Number.isFinite(score) ? score : undefined,
+    confidence: asNumber(item["confidence"], 0),
+    tier,
+    automation: normalizeAutomation(item["automation"]),
+    provider: "official",
+    latencyMs: asNumber(item["latencyMs"], 0),
+    errorCode: typeof errorCode === "string" ? errorCode : undefined,
+    ...(title !== undefined ? { presetTitle: title } : {}),
+    ...(sessionTitle !== undefined ? { sessionTitle } : {}),
+    ...(questions !== undefined ? { questions } : {}),
+  };
+}
 export function parseHistoryPayload(payload: unknown): JevHistoryEntry[] {
   let list: unknown = [];
   if (Array.isArray(payload)) list = payload;
@@ -219,48 +263,10 @@ export function parseHistoryPayload(payload: unknown): JevHistoryEntry[] {
   }
   const out: JevHistoryEntry[] = [];
   for (const item of list as unknown[]) {
-    if (!isRecord(item)) continue;
-    if (typeof item["ts"] !== "number" || typeof item["sessionId"] !== "string") continue;
-    const tierRaw = item["tier"];
-    const tier: JevTier = tierRaw === "high" || tierRaw === "low" ? tierRaw : "none";
-    const langRaw = item["lang"];
-    const lang: JevLang = langRaw === "en" || langRaw === "zh" ? langRaw : "unknown";
-    const score = item["score"];
-    const choice = item["choice"];
-    const errorCode = item["errorCode"];
-    const title =
-      typeof item["presetTitle"] === "string" ? (item["presetTitle"] as string) : undefined;
-    const sessionTitle =
-      typeof item["sessionTitle"] === "string" && (item["sessionTitle"] as string).length > 0
-        ? (item["sessionTitle"] as string)
-        : undefined;
-    const questions = parseQuestions(item["questions"]);
-    out.push({
-      ts: item["ts"] as number,
-      rootHash: typeof item["rootHash"] === "string" ? (item["rootHash"] as string) : "",
-      rootDisplay: typeof item["rootDisplay"] === "string" ? (item["rootDisplay"] as string) : "",
-      sessionId: item["sessionId"] as string,
-      presetId: typeof item["presetId"] === "string" ? (item["presetId"] as string) : "",
-      templateVersion: asNumber(item["templateVersion"], 1),
-      stateHash: typeof item["stateHash"] === "string" ? (item["stateHash"] as string) : "",
-      snippetRedacted:
-        typeof item["snippetRedacted"] === "string" ? (item["snippetRedacted"] as string) : "",
-      lang,
-      truncated: item["truncated"] === true,
-      originalLength: asNumber(item["originalLength"], 0),
-      resultKind: typeof item["resultKind"] === "string" ? (item["resultKind"] as string) : "",
-      choice: typeof choice === "string" ? choice : undefined,
-      score: typeof score === "number" && Number.isFinite(score) ? score : undefined,
-      confidence: asNumber(item["confidence"], 0),
-      tier,
-      automation: normalizeAutomation(item["automation"]),
-      provider: "official",
-      latencyMs: asNumber(item["latencyMs"], 0),
-      errorCode: typeof errorCode === "string" ? errorCode : undefined,
-      ...(title !== undefined ? { presetTitle: title } : {}),
-      ...(sessionTitle !== undefined ? { sessionTitle } : {}),
-      ...(questions !== undefined ? { questions } : {}),
-    });
+    const entry = toHistoryEntry(item);
+    if (entry !== null) {
+      out.push(entry);
+    }
   }
   return out;
 }
