@@ -775,12 +775,13 @@ export function compareRegistry({
   };
 }
 
-function validateGuardShape(guard, problems) {
+function validateGuardShape(guard) {
+  const out = [];
   const id =
     typeof guard.id === "string" && guard.id !== "" ? guard.id : JSON.stringify(guard).slice(0, 80);
-  if (typeof guard.id !== "string" || guard.id === "") problems.push("guard 缺 id：" + id);
+  if (typeof guard.id !== "string" || guard.id === "") out.push("guard 缺 id：" + id);
   if (!IMPLEMENTED_KINDS.includes(guard.kind)) {
-    problems.push(
+    out.push(
       id +
         "：kind " +
         JSON.stringify(guard.kind) +
@@ -790,36 +791,35 @@ function validateGuardShape(guard, problems) {
     );
   }
   for (const field of ["why", "hint"]) {
-    if (typeof guard[field] !== "string" || guard[field] === "")
-      problems.push(id + "：缺 " + field);
+    if (typeof guard[field] !== "string" || guard[field] === "") out.push(id + "：缺 " + field);
   }
-  if (!Array.isArray(guard.sources) || guard.sources.length === 0)
-    problems.push(id + "：缺 sources");
-  if (!Array.isArray(guard.paths) || guard.paths.length === 0) problems.push(id + "：缺 paths");
+  if (!Array.isArray(guard.sources) || guard.sources.length === 0) out.push(id + "：缺 sources");
+  if (!Array.isArray(guard.paths) || guard.paths.length === 0) out.push(id + "：缺 paths");
   if (guard.kind === "value" && guard.weaken !== "decrease" && guard.weaken !== "increase") {
-    problems.push(id + "：kind=value 必须声明 weaken（decrease / increase）");
+    out.push(id + "：kind=value 必须声明 weaken（decrease / increase）");
   }
   if (guard.kind === "boolean" && typeof guard.weakenValue !== "boolean") {
-    problems.push(id + "：kind=boolean 必须声明 weakenValue（等于该值即放宽）");
+    out.push(id + "：kind=boolean 必须声明 weakenValue（等于该值即放宽）");
   }
   if (
     guard.kind === "baseline" &&
     (!Array.isArray(guard.anchorFields) || guard.anchorFields.length === 0)
   ) {
-    problems.push(id + "：kind=baseline 必须声明 anchorFields（回退链顺序）");
+    out.push(id + "：kind=baseline 必须声明 anchorFields（回退链顺序）");
   }
   if (guard.kind === "existence" && !isObject(guard.universe)) {
-    problems.push(id + "：kind=existence 必须声明 universe（枚举口径）");
+    out.push(id + "：kind=existence 必须声明 universe（枚举口径）");
   }
   if (guard.kind !== "existence" && guard.onRemoval !== "fail" && guard.onRemoval !== "ignore") {
-    problems.push(id + "：必须声明 onRemoval（fail / ignore）——删键语义不能靠默认值");
+    out.push(id + "：必须声明 onRemoval（fail / ignore）——删键语义不能靠默认值");
   }
   // 两个绝对边界写错类型会被静默忽略（字符串不与数字比较），于是「加了上限」变成一句没有判据的声明。
   for (const field of ["minAllowed", "maxAllowed"]) {
     if (guard[field] !== undefined && typeof guard[field] !== "number") {
-      problems.push(id + "：" + field + " 必须是数字（当前 " + JSON.stringify(guard[field]) + "）");
+      out.push(id + "：" + field + " 必须是数字（当前 " + JSON.stringify(guard[field]) + "）");
     }
   }
+  return out;
 }
 
 /**
@@ -839,79 +839,92 @@ export function isEnumeratedDataFile(name) {
  * 基准侧尚无本表（本表首次引入的 PR）时，声明表比对与命中源比对都无从进行，该形态在这里
  * 以「列过名字但谁都没读到」的判词 fail-closed 走 exit 2；本表入库后同一攻击走 exit 1。
  */
-function checkGuardEntries(registry, repoRoot, problems) {
+function checkGuardEntries(registry, repoRoot) {
+  const out = [];
   const ids = new Set();
   for (const guard of registry.guards) {
-    if (ids.has(guard.id)) problems.push("guard id 重复：" + guard.id);
+    if (ids.has(guard.id)) out.push("guard id 重复：" + guard.id);
     ids.add(guard.id);
-    validateGuardShape(guard, problems);
+    out.push(...validateGuardShape(guard));
     if (typeof repoRoot === "string" && Array.isArray(guard.sources)) {
       const existing = guard.sources.filter((source) => existsSync(join(repoRoot, source)));
       if (existing.length === 0)
-        problems.push(guard.id + "：sources 一个都不存在（" + guard.sources.join(" / ") + "）");
+        out.push(guard.id + "：sources 一个都不存在（" + guard.sources.join(" / ") + "）");
     }
   }
+  return out;
 }
-function checkRetiredEntries(registry, problems) {
+function retiredDetailProblems(entry, guardIds) {
+  const out = [];
+  if (typeof entry.trackingIssue !== "string" || !/^#\d+$/.test(entry.trackingIssue)) {
+    out.push("retired " + entry.id + "：缺 trackingIssue（形如 #123）—— 退役必须可审计");
+  }
+  if (typeof entry.reason !== "string" || entry.reason === "") {
+    out.push("retired " + entry.id + "：缺 reason");
+  }
+  if (guardIds.has(entry.id)) {
+    out.push("retired " + entry.id + "：该 id 仍在 guards 里（退役登记与事实不符）");
+  }
+  return out;
+}
+function checkRetiredEntries(registry) {
+  const out = [];
   const guardIds = new Set((registry.guards ?? []).map((guard) => guard.id));
   const retiredIds = new Set();
   for (const entry of registry.retired ?? []) {
     if (!isObject(entry) || typeof entry.id !== "string" || entry.id === "") {
-      problems.push("retired 条目缺 id");
+      out.push("retired 条目缺 id");
       continue;
     }
-    if (retiredIds.has(entry.id)) problems.push("retired id 重复：" + entry.id);
+    if (retiredIds.has(entry.id)) out.push("retired id 重复：" + entry.id);
     retiredIds.add(entry.id);
-    if (typeof entry.trackingIssue !== "string" || !/^#\d+$/.test(entry.trackingIssue)) {
-      problems.push("retired " + entry.id + "：缺 trackingIssue（形如 #123）—— 退役必须可审计");
-    }
-    if (typeof entry.reason !== "string" || entry.reason === "") {
-      problems.push("retired " + entry.id + "：缺 reason");
-    }
-    if (guardIds.has(entry.id)) {
-      problems.push("retired " + entry.id + "：该 id 仍在 guards 里（退役登记与事实不符）");
-    }
+    out.push(...retiredDetailProblems(entry, guardIds));
   }
+  return out;
 }
-function checkApprovalEntries(registry, problems) {
+function approvalDetailProblems(entry, label) {
+  const out = [];
+  if (typeof entry.field !== "string" || entry.field === "") {
+    out.push("contractApprovals 条目缺 field：" + label);
+  }
+  if (typeof entry.trackingIssue !== "string" || !/^#\d+$/.test(entry.trackingIssue)) {
+    out.push("contractApprovals " + label + "：缺 trackingIssue（形如 #123）");
+  }
+  if (typeof entry.reason !== "string" || entry.reason === "") {
+    out.push("contractApprovals " + label + "：缺 reason");
+  }
+  return out;
+}
+function checkApprovalEntries(registry) {
+  const out = [];
   for (const entry of registry.contractApprovals ?? []) {
     if (!isObject(entry)) {
-      problems.push("contractApprovals 含非对象项");
+      out.push("contractApprovals 含非对象项");
       continue;
     }
     const label = String(entry.id) + " / " + String(entry.field);
-    if (typeof entry.id !== "string" || entry.id === "")
-      problems.push("contractApprovals 条目缺 id");
-    if (typeof entry.field !== "string" || entry.field === "") {
-      problems.push("contractApprovals 条目缺 field：" + label);
-    }
-    if (typeof entry.trackingIssue !== "string" || !/^#\d+$/.test(entry.trackingIssue)) {
-      problems.push("contractApprovals " + label + "：缺 trackingIssue（形如 #123）");
-    }
-    if (typeof entry.reason !== "string" || entry.reason === "") {
-      problems.push("contractApprovals " + label + "：缺 reason");
-    }
+    if (typeof entry.id !== "string" || entry.id === "") out.push("contractApprovals 条目缺 id");
+    out.push(...approvalDetailProblems(entry, label));
   }
+  return out;
 }
-function checkNotAGateEntries(registry, repoRoot, declared, problems) {
+function checkNotAGateEntries(registry, repoRoot, declared) {
+  const out = [];
   for (const item of registry.notAGate) {
     if (!isObject(item) || typeof item.source !== "string" || item.source === "") {
-      problems.push("notAGate 条目缺 source：" + JSON.stringify(item).slice(0, 80));
+      out.push("notAGate 条目缺 source：" + JSON.stringify(item).slice(0, 80));
       continue;
     }
     if (typeof item.why !== "string" || item.why === "")
-      problems.push("notAGate " + item.source + "：缺 why（不守护也要说明为什么）");
+      out.push("notAGate " + item.source + "：缺 why（不守护也要说明为什么）");
     if (typeof repoRoot === "string" && !existsSync(join(repoRoot, item.source))) {
-      problems.push("notAGate " + item.source + "：声明的文件不存在（幽灵声明，删除时须同步本表）");
+      out.push("notAGate " + item.source + "：声明的文件不存在（幽灵声明，删除时须同步本表）");
     }
     declared.add(item.source);
   }
+  return out;
 }
-export function validateDeclarations(registry, { repoRoot, dataDir = DATA_DIR, consumed } = {}) {
-  const problems = [];
-  checkGuardEntries(registry, repoRoot, problems);
-  checkRetiredEntries(registry, problems);
-  checkApprovalEntries(registry, problems);
+function collectDeclared(registry, consumed) {
   const declared = new Set(consumed ?? []);
   // 「出现在某条 guard 的 sources 里」与「确实被读到」是两件事：前者只是意向声明。
   // 影子源攻击正是靠前者洗白（把新文件挂进 sources），所以判词要能区分这两种状态。
@@ -927,7 +940,10 @@ export function validateDeclarations(registry, { repoRoot, dataDir = DATA_DIR, c
       declared.add(guard.exemptFrom.source);
     }
   }
-  checkNotAGateEntries(registry, repoRoot, declared, problems);
+  return { declared: declared, declaredAsSource: declaredAsSource };
+}
+function checkUndeclaredFiles(repoRoot, dataDir, declared, declaredAsSource) {
+  const out = [];
   if (typeof repoRoot === "string") {
     const dir = join(repoRoot, dataDir);
     if (existsSync(dir)) {
@@ -939,7 +955,7 @@ export function validateDeclarations(registry, { repoRoot, dataDir = DATA_DIR, c
           // 只在 sources 里列名、却没有任何 guard 真读到它：真实源被更靠前的源接管（影子源），
           // 或该源已脱管。基准侧有本表时这条会先落在 exit 1 的判据放宽通道；基准侧还没有本表
           // （本表首次引入）时无从比对，只能按未登记 fail-closed 走 exit 2——判词要点名这一形态。
-          problems.push(
+          out.push(
             rel +
               (declaredAsSource.has(rel)
                 ? " 未在声明表登记：有 guard 在 sources 里列过它，但工作区里没有任何 guard 实际读到它（更靠前的源接管了该守卫，即影子源；或该源已脱管）"
@@ -949,6 +965,16 @@ export function validateDeclarations(registry, { repoRoot, dataDir = DATA_DIR, c
       }
     }
   }
+  return out;
+}
+export function validateDeclarations(registry, { repoRoot, dataDir = DATA_DIR, consumed } = {}) {
+  const problems = [];
+  problems.push(...checkGuardEntries(registry, repoRoot));
+  problems.push(...checkRetiredEntries(registry));
+  problems.push(...checkApprovalEntries(registry));
+  const { declared, declaredAsSource } = collectDeclared(registry, consumed);
+  problems.push(...checkNotAGateEntries(registry, repoRoot, declared));
+  problems.push(...checkUndeclaredFiles(repoRoot, dataDir, declared, declaredAsSource));
   return problems;
 }
 

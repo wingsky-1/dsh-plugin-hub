@@ -1151,14 +1151,17 @@ async function scanAFile(root, file) {
   };
 }
 
+function assertARoot(root) {
+  if (!existsSync(root) || !statSync(root).isDirectory())
+    throw new Error(`--root 不是目录：${root}`);
+}
 function establishScope(argv) {
   const rootIdx = argv.indexOf("--root");
   const root = rootIdx >= 0 && argv[rootIdx + 1] !== undefined ? argv[rootIdx + 1] : DEFAULT_ROOT;
   let files = null;
   let scopeWhy = null;
   try {
-    if (!existsSync(root) || !statSync(root).isDirectory())
-      throw new Error(`--root 不是目录：${root}`);
+    assertARoot(root);
     files = discoverASources(root);
     if (files === null || files.length === 0) throw new Error("未发现 A 侧扫描目标");
     readCatalog(root);
@@ -1171,45 +1174,65 @@ function establishScope(argv) {
   }
   return { root: root, files: files };
 }
-async function scanAllA(root, files, A) {
-  const pipelineFailures = [];
+function extractAFile(s) {
+  const out = {};
+  for (const k of [
+    "services",
+    "provides",
+    "events",
+    "calls",
+    "svcCalls",
+    "svcRefs",
+    "dynamics",
+    "forwarding",
+    "blessed",
+    "cascades",
+    "injectArrays",
+  ]) {
+    out[k] = [...s[k]];
+  }
+  out.blessedValues = [...s.blessedValues];
+  out.repoModules = s.repoModules.map((m) => ({ rel: s.rel, ...m }));
+  return out;
+}
+async function scanOneAFile(root, file) {
+  const s = await scanAFile(root, file);
+  return extractAFile(s);
+}
+function emptyAPart() {
+  return {
+    services: [],
+    provides: [],
+    events: [],
+    calls: [],
+    svcCalls: [],
+    svcRefs: [],
+    dynamics: [],
+    forwarding: [],
+    blessed: [],
+    cascades: [],
+    injectArrays: [],
+    blessedValues: [],
+    repoModules: [],
+  };
+}
+async function scanFilePart(root, file) {
   try {
-    for (const file of files) {
-      try {
-        const s = await scanAFile(root, file);
-        for (const k of [
-          "services",
-          "provides",
-          "events",
-          "calls",
-          "svcCalls",
-          "svcRefs",
-          "dynamics",
-          "forwarding",
-          "blessed",
-          "cascades",
-          "injectArrays",
-        ]) {
-          A[k].push(...s[k]);
-        }
-        for (const v of s.blessedValues) A.blessedValues.add(v);
-        for (const m of s.repoModules) A.repoModules.push({ rel: s.rel, ...m });
-      } catch (e) {
-        pipelineFailures.push(`${relPosix(root, file)}: ${String(e?.message ?? e).slice(0, 140)}`);
-      }
-    }
-    if (pipelineFailures.length > 0) throw new Error("pipe");
+    const part = await scanOneAFile(root, file);
+    return { part: part, failure: null };
   } catch (e) {
-    if (pipelineFailures.length === 0) pipelineFailures.push(String(e?.message ?? e).slice(0, 200));
-    failClosed(
-      `upstream-contract-warn: A 侧管线失败（fail-closed）：${pipelineFailures.slice(0, 8).join("；").slice(0, 600)}`,
-    );
+    return {
+      part: emptyAPart(),
+      failure: `${relPosix(root, file)}: ${String(e?.message ?? e).slice(0, 140)}`,
+    };
   }
 }
-async function main(argv) {
-  const scope = establishScope(argv);
-  const root = scope.root;
-  const files = scope.files;
+function failAClosed(pipelineFailures) {
+  failClosed(
+    `upstream-contract-warn: A 侧管线失败（fail-closed）：${pipelineFailures.slice(0, 8).join("；").slice(0, 600)}`,
+  );
+}
+async function scanAllA(root, files) {
   const A = {
     services: [],
     provides: [],
@@ -1225,7 +1248,40 @@ async function main(argv) {
     blessedValues: new Set(),
     repoModules: [],
   };
-  await scanAllA(root, files, A);
+  const pipelineFailures = [];
+  try {
+    for (const file of files) {
+      const r = await scanFilePart(root, file);
+      if (r.failure !== null) pipelineFailures.push(r.failure);
+      for (const k of [
+        "services",
+        "provides",
+        "events",
+        "calls",
+        "svcCalls",
+        "svcRefs",
+        "dynamics",
+        "forwarding",
+        "blessed",
+        "cascades",
+        "injectArrays",
+      ])
+        A[k].push(...r.part[k]);
+      for (const v of r.part.blessedValues) A.blessedValues.add(v);
+      A.repoModules.push(...r.part.repoModules);
+    }
+    if (pipelineFailures.length > 0) throw new Error("pipe");
+  } catch (e) {
+    if (pipelineFailures.length === 0) pipelineFailures.push(String(e?.message ?? e).slice(0, 200));
+    failAClosed(pipelineFailures);
+  }
+  return A;
+}
+async function main(argv) {
+  const scope = establishScope(argv);
+  const root = scope.root;
+  const files = scope.files;
+  const A = await scanAllA(root, files);
   let B = null;
   try {
     B = buildB(root);
