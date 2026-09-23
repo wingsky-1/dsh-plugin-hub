@@ -253,6 +253,12 @@ function BasicFields(props: {
     </React.Fragment>
   );
 }
+const CA_MODE_KEY: Record<string, string> = {
+  "self-signed": "caModeSelfSigned",
+  managed: "caModeManaged",
+  custom: "caModeCustom",
+  error: "caConfigError",
+};
 function CaFields(props: {
   caState: string | undefined;
   caSaving: boolean;
@@ -850,11 +856,7 @@ export function SettingsCard(props: SettingsCardProps) {
     hostFacts?.certInfo !== null && typeof hostFacts?.certInfo === "object"
       ? (hostFacts.certInfo as CertInfoView)
       : null;
-  let caModeKey: string | null = null;
-  if (caState === "self-signed") caModeKey = "caModeSelfSigned";
-  else if (caState === "managed") caModeKey = "caModeManaged";
-  else if (caState === "custom") caModeKey = "caModeCustom";
-  else if (caState === "error") caModeKey = "caConfigError";
+  const caModeKey: string | null = caState !== undefined ? (CA_MODE_KEY[caState] ?? null) : null;
   const caWarnings = certInfo !== null ? evaluateCaWarnings(certInfo, Date.now()) : null;
   const showCaWarnings =
     caWarnings !== null && caState === "managed" && settingsValue.httpsEnabled !== false;
