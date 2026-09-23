@@ -28,7 +28,8 @@
  *   本域不自建第二条链、不直引 schedule 门面值边（#768 B1，值边清零）；
  *   反向纯解析（parseReportIndexLines）C 波起改由组合根经 schedule 域
  *   ScheduleIndexParser 端口注入，本域门面仅为装配提供实现（execute→schedule
- *   值边清零，模块／文件两级值环归零）；
+ *   值边清零，模块／文件两级值环归零；门面环为设计期监视项（D13注记，无门禁条目；
+ *   任一方向第二值边即重估单向注入）；
  * - server/aggregate 的 metricValue/TrendTracker 与 server/collect 的
  *   sumToken/TrendCell/TREND_UNIDENTIFIED/sanitizeDirName 经各自
  *   interface.ts 以 pure + type 复用（零 node 依赖的纯函数与类型，

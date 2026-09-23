@@ -2,7 +2,10 @@
  * dsh-provider-usage — unit：适配器热更新语义（`HotReloadableAdapter`，确定性驱动、零墙钟）。
  *
  * 覆盖：start 装载首版与文件缺失失败、pollOnce 检出变化后原子切换、契约非法的重写保留旧版、
- * 文件删除保留旧版；以及「mtime 未变、size 已变」必须重载的回归用例。
+ * 文件删除保留旧版；以及「mtime 未变、size 已变」必须重载的回归用例；另补 stampEqual 早返、
+ * onReload 成功计数、stop 幂等文档化断言；「同 mtime 等长重写不切换」文档化断言（size 仅覆盖
+ * 变长重写，等长同 mtime 重写无法感知，需内容 hash，见 checkChecksum N/A）；checkChecksum 为死码
+ * （hotreload.ts 声明但 reload 未消费，本次不实现最小 hash、不删参、不另开 issue，矩阵标 N/A）。
  *
  * 最后一条锁住版本戳形态（#722 实证）：`?t=<13 位毫秒>` 会被 vite 系模块运行器当时间戳
  * 剥离（`/\bt=\d{13}&?\b/`），只剩亚毫秒小数位参与模块标识；内核 coarse 时钟下同一 tick
@@ -65,9 +68,9 @@ describe("HotReloadableAdapter：start 与 pollOnce 确定性驱动", () => {
     await hr.start();
     expect(hr.current?.label).toBe("v1");
 
-    // 同 mtime 下的重写（mtime 用 utimes 还原到毫秒），只有 size 变化 → stamp 必须不同
+    // 同 mtime 下的重写（mtime 用 atimeMs/mtimeMs 秒数精确还原亚毫秒小数位，Date 形态会截断纳秒），只有 size 变化 → stamp 必须不同
     writeFileSync(f, adapterBody("v2-with-longer-content"), "utf8");
-    utimesSync(f, stamp.atime, stamp.mtime);
+    utimesSync(f, stamp.atimeMs / 1000, stamp.mtimeMs / 1000);
 
     const polled = await hr.pollOnce();
     expect(polled.ok).toBe(true);
@@ -138,5 +141,95 @@ describe("HotReloadableAdapter：start 与 pollOnce 确定性驱动", () => {
     expect(polled.ok).toBe(true);
     expect(hr.current?.label).toBe("v1");
     hr.stop();
+  });
+
+  it("无变化 pollOnce 早返：stampEqual 命中时不调 onReload、current 不动（hotreload.ts:124）", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "dou-hr-unit-"));
+    const f = join(dir, "a.mjs");
+    writeFileSync(f, adapterBody("v1"), "utf8");
+    const events: { ok: boolean; error?: string }[] = [];
+    const hr = new HotReloadableAdapter(f, 60000, (i) => events.push(i));
+    await hr.start();
+    expect(events.length).toBe(1);
+    const labelBefore = hr.current?.label;
+    const polled = await hr.pollOnce();
+    expect(polled.ok).toBe(true);
+    expect(hr.current?.label).toBe(labelBefore);
+    // 早返路径直接 return，不经过 reload/onReload：stampEqual 恒假会多一次 onReload 而红。
+    expect(events.length).toBe(1);
+    hr.stop();
+  });
+
+  it("onReload 成功计数：start 与成功 poll 各一次 ok:true", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "dou-hr-unit-"));
+    const f = join(dir, "a.mjs");
+    writeFileSync(f, adapterBody("v1"), "utf8");
+    const events: { ok: boolean; error?: string }[] = [];
+    const hr = new HotReloadableAdapter(f, 60000, (i) => events.push(i));
+    await hr.start();
+    expect(events.filter((e) => e.ok).length).toBe(1);
+    // 变长重写（size 必变，mtime 是否同 tick 不影响 stamp 判定）。
+    writeFileSync(f, adapterBody("v2-with-longer-content"), "utf8");
+    const polled = await hr.pollOnce();
+    expect(polled.ok).toBe(true);
+    expect(hr.current?.label).toBe("v2-with-longer-content");
+    expect(events.length).toBe(2);
+    expect(events.filter((e) => e.ok).length).toBe(2);
+    hr.stop();
+  });
+
+  it("stop 幂等：重复调用不抛且不影响 current", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "dou-hr-unit-"));
+    const f = join(dir, "a.mjs");
+    writeFileSync(f, adapterBody("v1"), "utf8");
+    const hr = new HotReloadableAdapter(f, 60000);
+    await hr.start();
+    expect(hr.current?.label).toBe("v1");
+    expect(() => {
+      hr.stop();
+      hr.stop();
+    }).not.toThrow();
+    expect(hr.current?.label).toBe("v1");
+  });
+
+  it("同 mtime 等长重写不切换（size 仅覆盖变长重写，文档化）", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "dou-hr-unit-"));
+    const f = join(dir, "a.mjs");
+    writeFileSync(f, adapterBody("v1"), "utf8");
+    const stamp = statSync(f);
+    const events: { ok: boolean; error?: string }[] = [];
+    const hr = new HotReloadableAdapter(f, 60000, (i) => events.push(i));
+    await hr.start();
+    expect(hr.current?.label).toBe("v1");
+    // 等长重写："v1"→"v2" 同宽，mtime 还原后 stamp 全等 → 早返不切换。
+    // 前提锁定：重写前后 size 必须相等，否则走到的是变长路径。
+    // 精度注记：utimes 必须用 atimeMs/mtimeMs 秒数还原亚毫秒小数位；Date 形态会截断纳秒
+    // （实测差约 0.2ms），导致 stamp 恒不等而误入变长路径。
+    writeFileSync(f, adapterBody("v2"), "utf8");
+    utimesSync(f, stamp.atimeMs / 1000, stamp.mtimeMs / 1000);
+    expect(statSync(f).size).toBe(stamp.size);
+    const polled = await hr.pollOnce();
+    expect(polled.ok).toBe(true);
+    // 未切换：等长同 mtime 重写无法感知（需内容 hash，见下一条 checkChecksum N/A）。
+    expect(hr.current?.label).toBe("v1");
+    expect(events.length).toBe(1);
+    hr.stop();
+  });
+
+  it("checkChecksum 矩阵 N/A：开启与关闭行为一致（死码，本次不实现最小 hash、不删参）", async () => {
+    // HotReloadableAdapter 构造参 checkChecksum 在 hotreload.ts:75/81 声明但 reload 未消费；
+    // 用户已裁决本次不实现最小 hash、不删参、不另开 issue，此处仅锁定开关无行为差防静默分叉。
+    const dir = mkdtempSync(join(tmpdir(), "dou-hr-unit-"));
+    const f = join(dir, "a.mjs");
+    writeFileSync(f, adapterBody("v1"), "utf8");
+    const hrOff = new HotReloadableAdapter(f, 60000, undefined, false);
+    const hrOn = new HotReloadableAdapter(f, 60000, undefined, true);
+    const offStart = await hrOff.start();
+    const onStart = await hrOn.start();
+    expect(offStart.ok).toBe(true);
+    expect(onStart.ok).toBe(true);
+    expect(hrOff.current?.label).toBe(hrOn.current?.label);
+    hrOff.stop();
+    hrOn.stop();
   });
 });
