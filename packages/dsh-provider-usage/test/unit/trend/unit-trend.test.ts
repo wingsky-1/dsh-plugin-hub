@@ -1156,6 +1156,33 @@ describe("aggregator：日序列（空日 null、provider 过滤、total 指标�
   it("total = 非空 token 之和", () => {
     expect(totalValue).toBe(6);
   });
+
+  it("output 直取", () => {
+    expect(
+      metricValue(
+        { input: 1, output: 2, cacheRead: 3, cacheWrite: null, calls: 9, turns: 0, toolCalls: 0 },
+        "output",
+      ),
+    ).toBe(2);
+  });
+
+  it("cacheRead 直取", () => {
+    expect(
+      metricValue(
+        { input: 1, output: 2, cacheRead: 3, cacheWrite: null, calls: 9, turns: 0, toolCalls: 0 },
+        "cacheRead",
+      ),
+    ).toBe(3);
+  });
+
+  it("cacheWrite null 透出", () => {
+    expect(
+      metricValue(
+        { input: 1, output: 2, cacheRead: 3, cacheWrite: null, calls: 9, turns: 0, toolCalls: 0 },
+        "cacheWrite",
+      ),
+    ).toBe(null);
+  });
 });
 
 describe("aggregator：周序列（周一锚点）", () => {
@@ -5410,6 +5437,8 @@ describe("#662(f)：store 白名单与 isValidShardRow 校验（hour 行）", ()
   let invalidHour24: boolean;
   let invalidHourNegative: boolean;
   let invalidHourFractional: boolean;
+  let invalidUnknownKind: boolean;
+  let invalidNonStringKind: boolean;
   let prunedShardLength: number;
   let keptShardLength: number;
 
@@ -5454,6 +5483,8 @@ describe("#662(f)：store 白名单与 isValidShardRow 校验（hour 行）", ()
     invalidHour24 = isValidShardRow({ ...hourRow, hour: 24 });
     invalidHourNegative = isValidShardRow({ ...hourRow, hour: -1 });
     invalidHourFractional = isValidShardRow({ ...hourRow, hour: 9.5 });
+    invalidUnknownKind = isValidShardRow({ ...hourRow, kind: "bogus" });
+    invalidNonStringKind = isValidShardRow({ ...hourRow, kind: 42 });
     // prune 语义：删除 cutoff 日（不含）之前的分片——day1(<DAY0) 整日删除、DAY0 保留
     const day1 = "2026-09-03";
     await store.writeAggDay(day1, [aggRow, hourRow]);
@@ -5488,6 +5519,14 @@ describe("#662(f)：store 白名单与 isValidShardRow 校验（hour 行）", ()
 
   it("hour 非整数拒绝", () => {
     expect(invalidHourFractional).toBe(false);
+  });
+
+  it("未知 kind 拒绝", () => {
+    expect(invalidUnknownKind).toBe(false);
+  });
+
+  it("非字符串 kind 拒绝", () => {
+    expect(invalidNonStringKind).toBe(false);
   });
 
   it("prune 后 cutoff 前聚合分片（含 hour 行）删除", () => {

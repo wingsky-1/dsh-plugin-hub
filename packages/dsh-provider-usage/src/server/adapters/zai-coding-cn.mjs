@@ -393,11 +393,8 @@ export const zaiCodingCnAdapter = {
     // 窗口迷你图卡（5h / 周 各一）
     for (const w of windows) {
       const key = w.key;
-      const name = key === "5h" ? "5h 滚动" : key === "week" ? "每周" : key;
-      const color =
-        key === "5h"
-          ? "var(--dsw-alias-state-business-primary,#3b82f6)"
-          : "var(--dsw-alias-state-warn-primary,#c9820b)";
+      const name = windowName(key);
+      const color = windowColor(key);
       const pct = typeof w.percent === "number" ? w.percent : null;
       const resetText =
         w.nextResetTime !== undefined && w.nextResetTime !== null
@@ -405,10 +402,8 @@ export const zaiCodingCnAdapter = {
           : "";
 
       // 采样序列（v2 数据形态：entries[].data.windows[].percent）
-      const pcts = input.entries.map((en) => {
-        const arr = Array.isArray(en.data.windows) ? en.data.windows : [];
-        const v = arr.find((x) => x && x.key === key);
-        return v && typeof v.percent === "number" && Number.isFinite(v.percent) ? v.percent : null;
+      const pcts = input.entries.map(function (en) {
+        return windowPercentOf(en.data, key);
       });
       const hasPoint = pcts.some((v) => typeof v === "number");
 
@@ -423,10 +418,9 @@ export const zaiCodingCnAdapter = {
 
       const points = [];
       for (const en of input.entries) {
-        const arr = Array.isArray(en.data.windows) ? en.data.windows : [];
-        const v = arr.find((x) => x && x.key === key);
-        if (v && typeof v.percent === "number" && Number.isFinite(v.percent)) {
-          points.push({ x: en.time, y: v.percent });
+        const pv = windowPercentOf(en.data, key);
+        if (pv !== null) {
+          points.push({ x: en.time, y: pv });
         }
       }
       let bodyHtml;
@@ -479,6 +473,22 @@ export const zaiCodingCnAdapter = {
   },
 };
 
+const WINDOW_NAME = { "5h": "5h 滚动", week: "每周" };
+function windowName(key) {
+  return WINDOW_NAME[key] ?? key;
+}
+function windowColor(key) {
+  return key === "5h"
+    ? "var(--dsw-alias-state-business-primary,#3b82f6)"
+    : "var(--dsw-alias-state-warn-primary,#c9820b)";
+}
+function windowPercentOf(data, key) {
+  const arr = Array.isArray(data.windows) ? data.windows : [];
+  const v = arr.find(function (x) {
+    return x && x.key === key;
+  });
+  return v && typeof v.percent === "number" && Number.isFinite(v.percent) ? v.percent : null;
+}
 /** 重置时间格式化（epochMs → 本地中文短格式）。 */
 function fmtReset(ts) {
   const d = new Date(ts);

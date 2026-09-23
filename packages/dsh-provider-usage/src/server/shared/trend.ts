@@ -273,91 +273,92 @@ function isStrOrNull(v: unknown): boolean {
 
 /** 判定明细/计数/聚合/目录汇总/小时汇总行是否完整可收（载入重建的防御校验；坏行跳过）。
  *  detail/counter 的 dir 为加性可选键——旧格式行（无 dir）不因缺键拒绝。 */
+type ShardChecker = (r: Record<string, unknown>) => boolean;
+function checkShardDay(r: Record<string, unknown>): boolean {
+  return typeof r.day === "string" && TREND_DAY_RE.test(r.day);
+}
+function checkShardTokens(r: Record<string, unknown>): boolean {
+  return (
+    isNumOrNull(r.input) &&
+    isNumOrNull(r.output) &&
+    isNumOrNull(r.cacheRead) &&
+    isNumOrNull(r.cacheWrite)
+  );
+}
+function checkShardModel(r: Record<string, unknown>): boolean {
+  return isStrOrNull(r.model);
+}
+function checkShardCounts(r: Record<string, unknown>): boolean {
+  return (
+    typeof r.calls === "number" && typeof r.turns === "number" && typeof r.toolCalls === "number"
+  );
+}
+function checkShardDirOpt(r: Record<string, unknown>): boolean {
+  return r.dir === undefined || isValidDirKey(r.dir);
+}
+function checkDetailBase(r: Record<string, unknown>): boolean {
+  return (
+    typeof r.time === "number" && typeof r.session === "string" && typeof r.provider === "string"
+  );
+}
+function checkDetailNums(r: Record<string, unknown>): boolean {
+  return typeof r.turn === "number" && typeof r.step === "number" && typeof r.retry === "number";
+}
+function checkDetailCalls(r: Record<string, unknown>): boolean {
+  return r.calls === 1;
+}
+function checkCounterBase(r: Record<string, unknown>): boolean {
+  return (
+    typeof r.time === "number" && typeof r.session === "string" && typeof r.provider === "string"
+  );
+}
+function checkCounterFlags(r: Record<string, unknown>): boolean {
+  return (r.turns === 0 || r.turns === 1) && (r.toolCalls === 0 || r.toolCalls === 1);
+}
+function checkAggBase(r: Record<string, unknown>): boolean {
+  return typeof r.provider === "string";
+}
+function checkDirKey(r: Record<string, unknown>): boolean {
+  return isValidDirKey(r.dir);
+}
+function checkHourType(r: Record<string, unknown>): boolean {
+  return typeof r.hour === "number" && Number.isInteger(r.hour);
+}
+function checkHourRange(r: Record<string, unknown>): boolean {
+  return (r.hour as number) >= 0 && (r.hour as number) <= 23;
+}
+const SHARD_CHECKS: Record<string, ShardChecker[]> = {
+  detail: [
+    checkShardDay,
+    checkDetailBase,
+    checkDetailNums,
+    checkDetailCalls,
+    checkShardTokens,
+    checkShardModel,
+    checkShardDirOpt,
+  ],
+  counter: [checkShardDay, checkCounterBase, checkShardModel, checkCounterFlags, checkShardDirOpt],
+  agg: [checkShardDay, checkAggBase, checkShardModel, checkShardTokens, checkShardCounts],
+  dir: [checkShardDay, checkDirKey, checkShardTokens, checkShardCounts],
+  hour: [checkShardDay, checkHourType, checkHourRange, checkShardTokens, checkShardCounts],
+};
 export function isValidShardRow(
   row: unknown,
 ): row is TrendDetailRow | TrendCounterRow | TrendAggRow | TrendDirRow | TrendHourRow {
-  if (typeof row !== "object" || row === null) return false;
+  if (typeof row !== "object" || row === null) {
+    return false;
+  }
   const r = row as Record<string, unknown>;
-  if (r.v !== TREND_ROW_VERSION) return false;
-  if (r.kind === "detail") {
-    return (
-      typeof r.time === "number" &&
-      typeof r.day === "string" &&
-      TREND_DAY_RE.test(r.day) &&
-      typeof r.session === "string" &&
-      typeof r.turn === "number" &&
-      typeof r.step === "number" &&
-      typeof r.retry === "number" &&
-      typeof r.provider === "string" &&
-      r.calls === 1 &&
-      isNumOrNull(r.input) &&
-      isNumOrNull(r.output) &&
-      isNumOrNull(r.cacheRead) &&
-      isNumOrNull(r.cacheWrite) &&
-      isStrOrNull(r.model) &&
-      (r.dir === undefined || isValidDirKey(r.dir))
-    );
+  if (r.v !== TREND_ROW_VERSION) {
+    return false;
   }
-  if (r.kind === "counter") {
-    return (
-      typeof r.time === "number" &&
-      typeof r.day === "string" &&
-      TREND_DAY_RE.test(r.day) &&
-      typeof r.session === "string" &&
-      typeof r.provider === "string" &&
-      isStrOrNull(r.model) &&
-      (r.turns === 0 || r.turns === 1) &&
-      (r.toolCalls === 0 || r.toolCalls === 1) &&
-      (r.dir === undefined || isValidDirKey(r.dir))
-    );
+  const checks = typeof r.kind === "string" ? SHARD_CHECKS[r.kind] : undefined;
+  if (checks === undefined) {
+    return false;
   }
-  if (r.kind === "agg") {
-    return (
-      typeof r.day === "string" &&
-      TREND_DAY_RE.test(r.day) &&
-      typeof r.provider === "string" &&
-      isStrOrNull(r.model) &&
-      isNumOrNull(r.input) &&
-      isNumOrNull(r.output) &&
-      isNumOrNull(r.cacheRead) &&
-      isNumOrNull(r.cacheWrite) &&
-      typeof r.calls === "number" &&
-      typeof r.turns === "number" &&
-      typeof r.toolCalls === "number"
-    );
-  }
-  if (r.kind === "dir") {
-    return (
-      typeof r.day === "string" &&
-      TREND_DAY_RE.test(r.day) &&
-      isValidDirKey(r.dir) &&
-      isNumOrNull(r.input) &&
-      isNumOrNull(r.output) &&
-      isNumOrNull(r.cacheRead) &&
-      isNumOrNull(r.cacheWrite) &&
-      typeof r.calls === "number" &&
-      typeof r.turns === "number" &&
-      typeof r.toolCalls === "number"
-    );
-  }
-  if (r.kind === "hour") {
-    return (
-      typeof r.day === "string" &&
-      TREND_DAY_RE.test(r.day) &&
-      typeof r.hour === "number" &&
-      Number.isInteger(r.hour) &&
-      r.hour >= 0 &&
-      r.hour <= 23 &&
-      isNumOrNull(r.input) &&
-      isNumOrNull(r.output) &&
-      isNumOrNull(r.cacheRead) &&
-      isNumOrNull(r.cacheWrite) &&
-      typeof r.calls === "number" &&
-      typeof r.turns === "number" &&
-      typeof r.toolCalls === "number"
-    );
-  }
-  return false;
+  return checks.every(function (fn) {
+    return fn(r);
+  });
 }
 /** 聚合指标（序列查询的取值维度；total = 四项 token 之和）。 */
 export type TrendMetric = "total" | "input" | "output" | "cacheRead" | "cacheWrite" | "calls";

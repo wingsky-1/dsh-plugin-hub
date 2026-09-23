@@ -146,6 +146,43 @@ interface DecodedView {
  * - 具名实体：大小写不敏感、有无分号均解（qa 判据同款宽松语义）；
  * - 非法/未知形态按字面保留，不影响后续位置的独立解析。
  */
+function tryNamedEntity(
+  html: string,
+  j: number,
+  n: number,
+  push: (cu: string, s: number, e: number) => void,
+  i: number,
+): number | null {
+  if (!isAlpha(html[j])) return null;
+  let k = j + 1;
+  while (k < n && isAlnum(html[k])) k++;
+  const mapped = NAMED_ENTITIES[html.slice(j, k).toLowerCase()];
+  if (mapped === undefined) return null;
+  let end = k;
+  if (html[end] === ";") end++;
+  push(mapped, i, end);
+  return end;
+}
+function tryNumericEntity(
+  html: string,
+  j: number,
+  n: number,
+  push: (cu: string, s: number, e: number) => void,
+  i: number,
+): number | null {
+  if (html[j] !== "#") return null;
+  const hex = html[j + 1] === "x" || html[j + 1] === "X";
+  let k = j + (hex ? 2 : 1);
+  const dStart = k;
+  while (k < n && (hex ? isHexDigit(html[k]) : isDigit(html[k]))) k++;
+  if (k <= dStart) return null;
+  const cp = parseInt(html.slice(dStart, k), hex ? 16 : 10);
+  const safe = cp > 0 && cp <= 0x10ffff && !(cp >= 0xd800 && cp <= 0xdfff) ? cp : 0xfffd;
+  let end = k;
+  if (html[end] === ";") end++;
+  for (const cu of String.fromCodePoint(safe)) push(cu, i, end);
+  return end;
+}
 function decodeEntitiesOnce(html: string): DecodedView {
   const chars: string[] = [];
   const starts: number[] = [];
@@ -165,37 +202,21 @@ function decodeEntitiesOnce(html: string): DecodedView {
     }
     const j = i + 1;
     // 数字实体 &#123; / &#x1F; / &#X1F;（分号可选）
+    const numEnd = tryNumericEntity(html, j, n, pushCu, i);
+    if (numEnd !== null) {
+      i = numEnd;
+      continue;
+    }
     if (html[j] === "#") {
-      const hex = html[j + 1] === "x" || html[j + 1] === "X";
-      let k = j + (hex ? 2 : 1);
-      const dStart = k;
-      while (k < n && (hex ? isHexDigit(html[k]) : isDigit(html[k]))) k++;
-      if (k > dStart) {
-        const cp = parseInt(html.slice(dStart, k), hex ? 16 : 10);
-        // HTML5 数值语义：0 / 代理区 / 超界映射 U+FFFD
-        const safe = cp > 0 && cp <= 0x10ffff && !(cp >= 0xd800 && cp <= 0xdfff) ? cp : 0xfffd;
-        let end = k;
-        if (html[end] === ";") end++;
-        for (const cu of String.fromCodePoint(safe)) pushCu(cu, i, end);
-        i = end;
-        continue;
-      }
       pushCu("&", i, i + 1);
       i++;
       continue;
     }
     // 具名实体 &[a-zA-Z][a-zA-Z0-9]*（分号可选、大小写不敏感）
-    if (isAlpha(html[j])) {
-      let k = j + 1;
-      while (k < n && isAlnum(html[k])) k++;
-      const mapped = NAMED_ENTITIES[html.slice(j, k).toLowerCase()];
-      if (mapped !== undefined) {
-        let end = k;
-        if (html[end] === ";") end++;
-        pushCu(mapped, i, end);
-        i = end;
-        continue;
-      }
+    const namedEnd = tryNamedEntity(html, j, n, pushCu, i);
+    if (namedEnd !== null) {
+      i = namedEnd;
+      continue;
     }
     pushCu("&", i, i + 1);
     i++;

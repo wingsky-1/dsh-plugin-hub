@@ -317,6 +317,132 @@ export async function generateReport(opts: GenerateReportOptions): Promise<Repor
  * （剥控制字符 + 截断 80——byDirectory 出口 basename 化，无路径分隔符），
  * 不含会话明细与完整路径——sanitizePaths 配置约束未来注入面扩展。
  */
+function aggregateBucketWindow(
+  buckets: Array<{
+    day: string;
+    providers: Array<{ provider: string; model: string | null; cell: TrendCell }>;
+  }>,
+  startDay: string,
+  endDay: string,
+): {
+  totals: {
+    calls: number;
+    turns: number;
+    toolCalls: number;
+    input: number | null;
+    output: number | null;
+    cacheRead: number | null;
+    cacheWrite: number | null;
+    total: number | null;
+  };
+  byDay: Array<{ day: string; total: number | null }>;
+  byProvider: Array<{
+    provider: string;
+    model: string | null;
+    calls: number;
+    total: number | null;
+  }>;
+} {
+  const totals = {
+    calls: 0,
+    turns: 0,
+    toolCalls: 0,
+    input: null as number | null,
+    output: null as number | null,
+    cacheRead: null as number | null,
+    cacheWrite: null as number | null,
+    total: null as number | null,
+  };
+  const byDay: Array<{ day: string; total: number | null }> = [];
+  const byKey = new Map<
+    string,
+    { provider: string; model: string | null; calls: number; total: number | null }
+  >();
+  for (const item of buckets) {
+    if (item.day < startDay || item.day > endDay) {
+      continue;
+    }
+    let dayTotal: number | null = null;
+    for (const cell of item.providers) {
+      const total = metricValue(cell.cell, "total");
+      totals.calls += cell.cell.calls;
+      totals.turns += cell.cell.turns;
+      totals.toolCalls += cell.cell.toolCalls;
+      totals.input = sumToken(totals.input, cell.cell.input);
+      totals.output = sumToken(totals.output, cell.cell.output);
+      totals.cacheRead = sumToken(totals.cacheRead, cell.cell.cacheRead);
+      totals.cacheWrite = sumToken(totals.cacheWrite, cell.cell.cacheWrite);
+      dayTotal = sumToken(dayTotal, total);
+      totals.total = sumToken(totals.total, total);
+      const key = cell.provider + "\u0000" + (cell.model ?? "");
+      const cur = byKey.get(key);
+      if (cur === undefined) {
+        byKey.set(key, {
+          provider: cell.provider,
+          model: cell.model,
+          calls: cell.cell.calls,
+          total: total,
+        });
+      } else {
+        cur.calls += cell.cell.calls;
+        cur.total = sumToken(cur.total, total);
+      }
+    }
+    if (dayTotal !== null) {
+      byDay.push({ day: item.day, total: dayTotal });
+    }
+  }
+  const byProvider = Array.from(byKey.values()).sort(function (a, b) {
+    return b.calls - a.calls;
+  });
+  return { totals: totals, byDay: byDay, byProvider: byProvider };
+}
+function aggregateDirWindow(
+  rows: TrendDirRow[] | undefined,
+  startDay: string,
+  endDay: string,
+): Map<string, { dir: string; calls: number; total: number | null }> {
+  const byDir = new Map<string, { dir: string; calls: number; total: number | null }>();
+  for (const row of rows ?? []) {
+    if (row.day < startDay || row.day > endDay) {
+      continue;
+    }
+    const total = metricValue(row, "total");
+    const cur = byDir.get(row.dir);
+    if (cur === undefined) {
+      byDir.set(row.dir, { dir: row.dir, calls: row.calls, total: total });
+    } else {
+      cur.calls += row.calls;
+      cur.total = sumToken(cur.total, total);
+    }
+  }
+  return byDir;
+}
+function aggregateHourWindow(
+  rows: TrendHourRow[] | undefined,
+  startDay: string,
+  endDay: string,
+): { cells: Map<number, { calls: number; total: number | null }>; covered: Set<string> } {
+  const cells = new Map<number, { calls: number; total: number | null }>();
+  const covered = new Set<string>();
+  for (const row of rows ?? []) {
+    if (row.day < startDay || row.day > endDay) {
+      continue;
+    }
+    if (row.calls > 0 || row.turns > 0 || row.toolCalls > 0) {
+      covered.add(row.day);
+    }
+    const cur = cells.get(row.hour);
+    const total = metricValue(row, "total");
+    if (cur === undefined) {
+      cells.set(row.hour, { calls: row.calls, total: total });
+    } else {
+      cur.calls += row.calls;
+      cur.total = sumToken(cur.total, total);
+    }
+  }
+  return { cells: cells, covered: covered };
+}
 export function buildStatsSnapshot(input: {
   period: ReportPeriod;
   startDay: string;
@@ -339,60 +465,15 @@ export function buildStatsSnapshot(input: {
   /** 上一同等长度窗口的指标总量（环比基准；接线层经 windowSummary 取得）。 */
   prevTotal: number | null;
 }): ReportStatsSnapshot {
-  const totals = {
-    calls: 0,
-    turns: 0,
-    toolCalls: 0,
-    input: null as number | null,
-    output: null as number | null,
-    cacheRead: null as number | null,
-    cacheWrite: null as number | null,
-    total: null as number | null,
-  };
-  const byDay: Array<{ day: string; total: number | null }> = [];
-  const byKey = new Map<
-    string,
-    { provider: string; model: string | null; calls: number; total: number | null }
-  >();
-  for (const { day, providers } of input.buckets) {
-    if (day < input.startDay || day > input.endDay) continue;
-    let dayTotal: number | null = null;
-    for (const { provider, model, cell } of providers) {
-      const total = metricValue(cell, "total");
-      totals.calls += cell.calls;
-      totals.turns += cell.turns;
-      totals.toolCalls += cell.toolCalls;
-      totals.input = sumToken(totals.input, cell.input);
-      totals.output = sumToken(totals.output, cell.output);
-      totals.cacheRead = sumToken(totals.cacheRead, cell.cacheRead);
-      totals.cacheWrite = sumToken(totals.cacheWrite, cell.cacheWrite);
-      dayTotal = sumToken(dayTotal, total);
-      totals.total = sumToken(totals.total, total);
-      const key = `${provider}\u0000${model ?? ""}`;
-      const cur = byKey.get(key);
-      if (cur === undefined) byKey.set(key, { provider, model, calls: cell.calls, total });
-      else {
-        cur.calls += cell.calls;
-        cur.total = sumToken(cur.total, total);
-      }
-    }
-    if (dayTotal !== null) byDay.push({ day, total: dayTotal });
-  }
-  const byProvider = [...byKey.values()].sort((a, b) => b.calls - a.calls);
+  const { totals, byDay, byProvider } = aggregateBucketWindow(
+    input.buckets,
+    input.startDay,
+    input.endDay,
+  );
 
   // ---- 目录维度聚合（dir 行 → byDirectory，口径与 byProvider 一致）----
   // 同 dir 键跨日 null-aware 累加；窗口过滤与 buckets 同口径（day 字典序闭区间）。
-  const byDir = new Map<string, { dir: string; calls: number; total: number | null }>();
-  for (const row of input.dirRows ?? []) {
-    if (row.day < input.startDay || row.day > input.endDay) continue;
-    const total = metricValue(row, "total");
-    const cur = byDir.get(row.dir);
-    if (cur === undefined) byDir.set(row.dir, { dir: row.dir, calls: row.calls, total });
-    else {
-      cur.calls += row.calls;
-      cur.total = sumToken(cur.total, total);
-    }
-  }
+  const byDir = aggregateDirWindow(input.dirRows, input.startDay, input.endDay);
   const byDirectory = [...byDir.values()].sort((a, b) => b.calls - a.calls);
 
   // ---- 年报派生维度（快照内单遍 O(n)，全部聚合数值，注入面收敛不变） ----
@@ -458,19 +539,9 @@ export function buildStatsSnapshot(input: {
   // 事实（calls/turns/toolCalls 任一 > 0）的天数；coveredDays < windowDays（升级期
   // 部分天缺 hour 行）→ 三个时段字段整体置 null（提示词整段降级，杜绝「局部天代表
   // 全窗口」的误导叙事）。
-  const hourCells = new Map<number, { calls: number; total: number | null }>();
-  const covered = new Set<string>();
-  for (const row of input.hourRows ?? []) {
-    if (row.day < input.startDay || row.day > input.endDay) continue;
-    if (row.calls > 0 || row.turns > 0 || row.toolCalls > 0) covered.add(row.day);
-    const cur = hourCells.get(row.hour);
-    const total = metricValue(row, "total");
-    if (cur === undefined) hourCells.set(row.hour, { calls: row.calls, total });
-    else {
-      cur.calls += row.calls;
-      cur.total = sumToken(cur.total, total);
-    }
-  }
+  const hourAgg = aggregateHourWindow(input.hourRows, input.startDay, input.endDay);
+  const hourCells = hourAgg.cells;
+  const covered = hourAgg.covered;
   const coveredDays = covered.size;
   const hourCovered = (input.hourRows ?? []).length > 0 && coveredDays >= windowDays;
   let byHour: ReportStatsSnapshot["byHour"] = null;

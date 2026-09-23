@@ -405,6 +405,56 @@ export function legacySampleToData(
  * - 幂等：`.bak` 文件不再扫描；失败保留原文件下次重试。
  * @returns 迁移的采样点数（诊断用）。
  */
+async function readLegacyEntries(
+  pdir: string,
+  file: string,
+): Promise<{ adapterId: string; entries: HistoryEntry[] } | null> {
+  const adapterId = file.slice(0, -5);
+  let raw: string;
+  try {
+    raw = await readFile(join(pdir, file), "utf8");
+  } catch {
+    return null;
+  }
+  let bucket: LegacyV3Bucket;
+  try {
+    bucket = JSON.parse(raw) as LegacyV3Bucket;
+  } catch {
+    return null;
+  }
+  if (!Array.isArray(bucket.samples) || bucket.samples.length === 0) return null;
+  const cols = bucket.columns;
+  const entries: HistoryEntry[] = [];
+  for (const sample of bucket.samples) {
+    if (!Array.isArray(sample) || sample.length < 2) continue;
+    const ts = Number(sample[0]);
+    if (!Number.isFinite(ts)) continue;
+    entries.push({ time: ts, data: legacySampleToData(cols, sample) });
+  }
+  return { adapterId, entries };
+}
+async function writeDayGroups(
+  store: HistoryStore,
+  provider: string,
+  adapterId: string,
+  entries: HistoryEntry[],
+): Promise<boolean> {
+  const byDay = new Map<number, HistoryEntry[]>();
+  for (const entry of entries) {
+    const day = startOfDay(entry.time);
+    const list = byDay.get(day);
+    if (list === undefined) byDay.set(day, [entry]);
+    else list.push(entry);
+  }
+  for (const pair of byDay) {
+    try {
+      await store.writeDirect(provider, adapterId, pair[0], pair[1]);
+    } catch {
+      return false;
+    }
+  }
+  return true;
+}
 export async function migrateLegacyV3(root: string, store: HistoryStore): Promise<number> {
   const historyDir = join(root, "history");
   let providers: string[];
@@ -424,45 +474,11 @@ export async function migrateLegacyV3(root: string, store: HistoryStore): Promis
     }
     for (const file of files) {
       if (!file.endsWith(".json")) continue; // .bak 与其它格式跳过
-      const adapterId = file.slice(0, -5);
-      let raw: string;
-      try {
-        raw = await readFile(join(pdir, file), "utf8");
-      } catch {
-        continue;
-      }
-      let bucket: LegacyV3Bucket;
-      try {
-        bucket = JSON.parse(raw) as LegacyV3Bucket;
-      } catch {
-        continue;
-      }
-      if (!Array.isArray(bucket.samples) || bucket.samples.length === 0) continue;
-      const cols = bucket.columns;
-      const entries: HistoryEntry[] = [];
-      for (const sample of bucket.samples) {
-        if (!Array.isArray(sample) || sample.length < 2) continue;
-        const ts = Number(sample[0]);
-        if (!Number.isFinite(ts)) continue;
-        entries.push({ time: ts, data: legacySampleToData(cols, sample) });
-      }
-      // 按天分组写入（writeDirect 原子写；同一天多条合并一次写入）
-      const byDay = new Map<number, HistoryEntry[]>();
-      for (const entry of entries) {
-        const day = startOfDay(entry.time);
-        const list = byDay.get(day);
-        if (list === undefined) byDay.set(day, [entry]);
-        else list.push(entry);
-      }
-      let ok = true;
-      for (const [day, list] of byDay) {
-        try {
-          await store.writeDirect(provider, adapterId, day, list);
-        } catch {
-          ok = false;
-          break;
-        }
-      }
+      const loaded = await readLegacyEntries(pdir, file);
+      if (loaded === null) continue;
+      const adapterId = loaded.adapterId;
+      const entries = loaded.entries;
+      const ok = await writeDayGroups(store, provider, adapterId, entries);
       if (ok) {
         // 成功 → 旧文件重命名 .bak（幂等：不扫描 .bak；覆盖同名保留时间戳）
         try {
