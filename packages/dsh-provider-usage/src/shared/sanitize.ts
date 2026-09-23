@@ -163,6 +163,14 @@ function tryNamedEntity(
   push(mapped, i, end);
   return end;
 }
+function scanEntityDigits(html: string, k: number, n: number, hex: boolean): number {
+  while (k < n && (hex ? isHexDigit(html[k]) : isDigit(html[k]))) k++;
+  return k;
+}
+function safeCodePoint(cp: number): number {
+  if (cp <= 0 || cp > 0x10ffff || (cp >= 0xd800 && cp <= 0xdfff)) return 0xfffd;
+  return cp;
+}
 function tryNumericEntity(
   html: string,
   j: number,
@@ -172,17 +180,24 @@ function tryNumericEntity(
 ): number | null {
   if (html[j] !== "#") return null;
   const hex = html[j + 1] === "x" || html[j + 1] === "X";
-  let k = j + (hex ? 2 : 1);
-  const dStart = k;
-  while (k < n && (hex ? isHexDigit(html[k]) : isDigit(html[k]))) k++;
+  const dStart = j + (hex ? 2 : 1);
+  const k = scanEntityDigits(html, dStart, n, hex);
   if (k <= dStart) return null;
   const cp = parseInt(html.slice(dStart, k), hex ? 16 : 10);
-  const safe = cp > 0 && cp <= 0x10ffff && !(cp >= 0xd800 && cp <= 0xdfff) ? cp : 0xfffd;
+  const safe = safeCodePoint(cp);
   let end = k;
   if (html[end] === ";") end++;
   for (const cu of String.fromCodePoint(safe)) push(cu, i, end);
   return end;
 }
+type EntityParser = (
+  html: string,
+  j: number,
+  n: number,
+  push: (cu: string, s: number, e: number) => void,
+  i: number,
+) => number | null;
+const ENTITY_PARSERS: EntityParser[] = [tryNumericEntity, tryNamedEntity];
 function decodeEntitiesOnce(html: string): DecodedView {
   const chars: string[] = [];
   const starts: number[] = [];
@@ -201,21 +216,14 @@ function decodeEntitiesOnce(html: string): DecodedView {
       continue;
     }
     const j = i + 1;
-    // 数字实体 &#123; / &#x1F; / &#X1F;（分号可选）
-    const numEnd = tryNumericEntity(html, j, n, pushCu, i);
-    if (numEnd !== null) {
-      i = numEnd;
-      continue;
+    // 实体分发（策略表：数字/具名依次试探，命中即跳；# 复判已删——# 非法时具名必 null，同落默认分支）
+    let end: number | null = null;
+    for (const parse of ENTITY_PARSERS) {
+      end = parse(html, j, n, pushCu, i);
+      if (end !== null) break;
     }
-    if (html[j] === "#") {
-      pushCu("&", i, i + 1);
-      i++;
-      continue;
-    }
-    // 具名实体 &[a-zA-Z][a-zA-Z0-9]*（分号可选、大小写不敏感）
-    const namedEnd = tryNamedEntity(html, j, n, pushCu, i);
-    if (namedEnd !== null) {
-      i = namedEnd;
+    if (end !== null) {
+      i = end;
       continue;
     }
     pushCu("&", i, i + 1);
