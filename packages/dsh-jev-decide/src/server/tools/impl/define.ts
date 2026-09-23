@@ -67,29 +67,76 @@ export function buildToolDefinitions(assembly: ToolAssembly): ToolDefinition[] {
   const decideTool = {
     name: "ws_jev_decide",
     description:
-      "Run a frozen JEV preset decision (SystemOne). Local secret-shape hits never leave the device and route to human.",
+      "Ask the JEV SystemOne model for a calibrated judgment over text you supply, and get back a structured verdict your code can branch on. " +
+      "USE when you must decide rather than generate text: pick one option (general), rate a plan 1-5 (plan-review), gate a risky change as safe or risky (risk-check), check text for leaked secrets (secret-leak), or ask any custom question set (custom). " +
+      "DO NOT use for open-ended reasoning, writing, or performing actions: this tool only judges and returns a verdict, acting on it is always your decision. " +
+      "You MUST supply questions_override on every call (1-20 questions; templates store no questions): choice questions need 2-10 options, score questions must not carry options but may carry levels (2-10 rubric strings, default 1-5), question and preset ids must be lowercase ASCII letters, digits or hyphens. " +
+      "Texts matching secret shapes (API keys, tokens, private-key blocks, password assignments) never leave the device and return choice human for a person to review. " +
+      "A disabled preset fails with PRESET_DISABLED: check availability first with ws_jev_list_presets. " +
+      "Success returns choice or score plus confidence 0-1, tier (none/low/high) and automation (manual/assisted/auto/suggest-only, advisory only: truncated inputs force suggest-only, except local-precheck routing which stays manual). " +
+      "Failures carry errorCode and category (for example NO_KEY, UPSTREAM, RATE_LIMITED, TIMEOUT). " +
+      "Without a configured key every call fails NO_KEY: ask the user to configure one in settings.",
     parameters: {
       type: "object",
       properties: {
         preset_id: {
           type: "string",
-          description: "Frozen preset id (general|secret-leak|plan-review|risk-check|custom)",
+          enum: ["general", "secret-leak", "plan-review", "risk-check", "custom"],
+          description:
+            "Which frozen decision template to apply. general: choose one of your options; plan-review: rate with score questions (no options); risk-check: proceed-or-not choice (options like safe/risky); secret-leak: leaked-or-clean check (often disabled; secret-shaped text never leaves the device); custom: any 1-20 questions you supply. User-created custom preset ids (custom:true entries in ws_jev_list_presets) are also accepted.",
         },
         state: {
           type: "object",
+          description: "The content under review.",
           properties: {
             text: {
               type: "string",
-              description: "Text to judge (non-empty; truncated at truncBudget)",
+              description:
+                "The text to judge; must be non-blank. Over-long text is truncated (see truncated/originalLength in the verdict).",
             },
-            lang: { type: "string", description: "en|zh|unknown (required, no default)" },
+            lang: {
+              type: "string",
+              enum: ["en", "zh", "unknown"],
+              description: "Language of text (required, no default).",
+            },
           },
           required: ["text", "lang"],
         },
         questions_override: {
           type: "array",
           description:
-            "Caller-supplied full question set, required (1-20). Templates hold no questions.",
+            "Full question set for this call, 1-20 questions (required; templates store no questions). ids must be unique.",
+          items: {
+            type: "object",
+            properties: {
+              id: {
+                type: "string",
+                description: "Question id: ASCII lowercase letters, digits or hyphens, 1-64 chars.",
+              },
+              text: {
+                type: "string",
+                description: "Question text: 1-255 chars, must be non-blank.",
+              },
+              kind: {
+                type: "string",
+                enum: ["choice", "score"],
+                description: "choice picks one option; score rates 1-5.",
+              },
+              options: {
+                type: "array",
+                items: { type: "string" },
+                description:
+                  "Choice only: 2-10 non-empty options (each 64 chars max). Forbidden on score questions.",
+              },
+              levels: {
+                type: "array",
+                items: { type: "string" },
+                description:
+                  "Score only: 2-10 rubric level descriptions (default 1-5 when omitted). Forbidden on choice questions.",
+              },
+            },
+            required: ["id", "text", "kind"],
+          },
         },
       },
       required: ["preset_id", "state", "questions_override"],
@@ -106,7 +153,10 @@ export function buildToolDefinitions(assembly: ToolAssembly): ToolDefinition[] {
   };
   const listTool = {
     name: "ws_jev_list_presets",
-    description: "List frozen JEV presets with enabled state (read-only).",
+    description:
+      "List the frozen JEV preset catalogue with live enabled state (read-only: no network, no history). " +
+      "Each entry carries its English asking guide (how to shape questions_override for it), templateVersion (always 1) and automationCap (0 manual-only, 1 low, 2 high). " +
+      "Call this before ws_jev_decide to check a preset is enabled and to copy its asking conventions.",
     parameters: { type: "object", properties: {} },
     output: {
       schema: { type: "object" },

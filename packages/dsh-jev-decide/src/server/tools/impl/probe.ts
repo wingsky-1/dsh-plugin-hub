@@ -4,7 +4,8 @@
  * 从组合根沉入本域（内聚收窄）：探针的远端调用本就是 tools 能力，组合根只做密钥解析与装配。
  */
 import type { FetchImpl } from "../deps.ts";
-import { callWithRetry, defaultFetchImpl } from "./client.ts";
+import { callWithRetry, defaultFetchImpl, toWireQuestions } from "./client.ts";
+import { JEV_MODEL } from "../../../shared/interface.ts";
 
 /** 探针结果。 */
 export type ProbeResult =
@@ -31,10 +32,11 @@ export async function probeConnection(input: ProbeInput): Promise<ProbeResult> {
   const started = Date.now();
   const outcome = await callWithRetry(
     {
-      preset: "general",
-      templateVersion: 1,
-      state: { text: "connection probe", lang: "unknown" },
-      questions: [{ id: "probe", text: "Reply ok.", kind: "choice", options: ["ok", "fail"] }],
+      model: JEV_MODEL,
+      state: "connection probe",
+      questions: toWireQuestions([
+        { id: "probe", text: "Reply ok.", kind: "choice", options: ["ok", "fail"] },
+      ]),
     },
     input.key,
     input.timeoutMs,

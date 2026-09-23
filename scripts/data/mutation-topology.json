@@ -93,7 +93,8 @@
             "packages/dsh-jev-decide/test/unit/decide-contract.test.ts",
             "packages/dsh-jev-decide/test/unit/precheck-noegress.test.ts",
             "packages/dsh-jev-decide/test/unit/tools.test.ts",
-            "packages/dsh-jev-decide/test/unit/verdict-tiers.test.ts"
+            "packages/dsh-jev-decide/test/unit/verdict-tiers.test.ts",
+            "packages/dsh-jev-decide/test/unit/tool-description.test.ts"
           ],
           "comment": "按域分段（#943 对账后，单段 _single 按 server 目录名拆分）：tools 域全量在面内（含 interface 门面与 deps 类型面）；面文件集与单段时代一致，仅执行分片变化；测试按段 testFiles 清单跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
         },
@@ -135,6 +136,7 @@
           "excludes": [],
           "testFiles": [
             "packages/dsh-jev-decide/test/client-dom/custom-presets-ui.test.ts",
+            "packages/dsh-jev-decide/test/client-dom/fold-hidden.test.ts",
             "packages/dsh-jev-decide/test/client-dom/locale-host.test.ts",
             "packages/dsh-jev-decide/test/client-dom/panes-probability.test.ts",
             "packages/dsh-jev-decide/test/client-dom/tabs-mask-history.test.ts",

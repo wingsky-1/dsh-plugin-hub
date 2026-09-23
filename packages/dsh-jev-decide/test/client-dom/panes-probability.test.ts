@@ -283,7 +283,7 @@ describe("connection 保存守卫", () => {
       (b) => b.textContent === "保存",
     );
   }
-  it("二选一：同填只提交选中侧（ENV 模式忽略明文值）", async () => {
+  it("二选一：只提交选中侧（ENV 模式无明文轨）", async () => {
     const handle = installStub((url, method) => {
       if (url.includes(APP_ROUTES.config) && method === "PUT") return jsonResponse(BARE_CONFIG);
       return baseStub(url);
@@ -292,11 +292,9 @@ describe("connection 保存守卫", () => {
     const { pane, unmount } = mountPane(React.createElement(ConnectionPane));
     unmounts.push(unmount);
     await pollUntil(() => (pane.textContent ?? "").includes("已加载配置"), "连接已加载");
+    expect(pane.querySelector('input[aria-label="明文密钥"]')).toBe(null);
     fireEvent.change(pane.querySelector<HTMLInputElement>('input[aria-label="ENV 变量名"]')!, {
       target: { value: "JEV_X" },
-    });
-    fireEvent.change(pane.querySelector<HTMLInputElement>('input[aria-label="明文密钥"]')!, {
-      target: { value: "x".repeat(20) },
     });
     fireEvent.click(saveButton(pane)!);
     await pollUntil(
@@ -307,27 +305,95 @@ describe("connection 保存守卫", () => {
     expect(put?.body).toContain("JEV_X");
     expect(put?.body).not.toContain("apiKeyPlaintext");
   });
-  it("二选一互斥置灰：切明文即禁用 ENV，反之亦然", async () => {
+  it("二选一单轨隐藏：未选中轨不挂载，切换即显隐", async () => {
     restore = installStub(baseStub).restore;
     const { pane, unmount } = mountPane(React.createElement(ConnectionPane));
     unmounts.push(unmount);
     await pollUntil(() => (pane.textContent ?? "").includes("已加载配置"), "连接已加载");
-    const envInput = pane.querySelector<HTMLInputElement>('input[aria-label="ENV 变量名"]')!;
-    const plainInput = pane.querySelector<HTMLInputElement>('input[aria-label="明文密钥"]')!;
-    expect(envInput.disabled).toBe(false);
-    expect(plainInput.disabled).toBe(true);
+    expect(pane.querySelector('input[aria-label="ENV 变量名"]')).not.toBe(null);
+    expect(pane.querySelector('input[aria-label="明文密钥"]')).toBe(null);
     const plainRadio = pane.querySelector<HTMLInputElement>(
       'input[name="dj-keymode"][value="plain"]',
     )!;
     fireEvent.click(plainRadio);
-    expect(envInput.disabled).toBe(true);
-    expect(plainInput.disabled).toBe(false);
+    expect(pane.querySelector('input[aria-label="ENV 变量名"]')).toBe(null);
+    expect(pane.querySelector('input[aria-label="明文密钥"]')).not.toBe(null);
   });
-  it("明文无二次确认即阻断；非法 ENV 名即阻断", async () => {
-    restore = installStub(baseStub).restore;
+  it("载入按键模式同步快照：有 ENV 名即 env，有明文即 plain", async () => {
+    const refStub = (url: string): Response => {
+      if (url.includes(APP_ROUTES.config))
+        return jsonResponse({
+          ...BARE_CONFIG,
+          connection: { ...BARE_CONFIG.connection, apiKeyRef: "JEV_SYNC" },
+        });
+      return baseStub(url);
+    };
+    restore = installStub(refStub).restore;
+    const mounted = mountPane(React.createElement(ConnectionPane));
+    unmounts.push(mounted.unmount);
+    await pollUntil(() => (mounted.pane.textContent ?? "").includes("已加载配置"), "连接已加载");
+    expect(
+      mounted.pane.querySelector<HTMLInputElement>('input[name="dj-keymode"][value="env"]')
+        ?.checked,
+    ).toBe(true);
+    const plainStub = (url: string): Response => {
+      if (url.includes(APP_ROUTES.config))
+        return jsonResponse({
+          ...BARE_CONFIG,
+          connection: { ...BARE_CONFIG.connection, hasPlaintextKey: true },
+        });
+      return baseStub(url);
+    };
+    restore();
+    restore = installStub(plainStub).restore;
+    const mounted2 = mountPane(React.createElement(ConnectionPane));
+    unmounts.push(mounted2.unmount);
+    await pollUntil(() => (mounted2.pane.textContent ?? "").includes("已加载配置"), "连接已加载2");
+    expect(
+      mounted2.pane.querySelector<HTMLInputElement>('input[name="dj-keymode"][value="plain"]')
+        ?.checked,
+    ).toBe(true);
+  });
+  it("切轨保存明文附 apiKeyRef:null（否则服务端互斥 400）", async () => {
+    const handle = installStub((url: string, method: string) => {
+      if (url.includes(APP_ROUTES.config))
+        return jsonResponse({
+          ...BARE_CONFIG,
+          connection: { ...BARE_CONFIG.connection, apiKeyRef: "JEV_OLD" },
+        });
+      void method;
+      return baseStub(url);
+    });
+    restore = handle.restore;
     const { pane, unmount } = mountPane(React.createElement(ConnectionPane));
     unmounts.push(unmount);
     await pollUntil(() => (pane.textContent ?? "").includes("已加载配置"), "连接已加载");
+    fireEvent.click(
+      pane.querySelector<HTMLInputElement>('input[name="dj-keymode"][value="plain"]')!,
+    );
+    fireEvent.change(pane.querySelector<HTMLInputElement>('input[aria-label="明文密钥"]')!, {
+      target: { value: "z".repeat(20) },
+    });
+    fireEvent.click(saveButton(pane)!);
+    await pollUntil(
+      () => handle.calls.some((c) => c.method === "PUT" && c.url.includes(APP_ROUTES.config)),
+      "PUT 已发",
+    );
+    const put = handle.calls.find((c) => c.method === "PUT" && c.url.includes(APP_ROUTES.config));
+    expect(put?.body).toContain("apiKeyPlaintext");
+    expect(put?.body).toContain('"apiKeyRef":null');
+  });
+  it("明文免二次确认直接发 PUT；非法 ENV 名仍阻断", async () => {
+    const handle = installStub(baseStub);
+    restore = handle.restore;
+    const { pane, unmount } = mountPane(React.createElement(ConnectionPane));
+    unmounts.push(unmount);
+    await pollUntil(() => (pane.textContent ?? "").includes("已加载配置"), "连接已加载");
+    fireEvent.change(pane.querySelector<HTMLInputElement>('input[aria-label="ENV 变量名"]')!, {
+      target: { value: "lower" },
+    });
+    fireEvent.click(saveButton(pane)!);
+    await pollUntil(() => (pane.textContent ?? "").includes("ENV 名非法"), "ENV 错");
     const plainRadio = pane.querySelector<HTMLInputElement>(
       'input[name="dj-keymode"][value="plain"]',
     )!;
@@ -336,14 +402,14 @@ describe("connection 保存守卫", () => {
       target: { value: "y".repeat(20) },
     });
     fireEvent.click(saveButton(pane)!);
-    await pollUntil(() => (pane.textContent ?? "").includes("二次确认"), "确认错");
-    const envRadio = pane.querySelector<HTMLInputElement>('input[name="dj-keymode"][value="env"]')!;
-    fireEvent.click(envRadio);
-    fireEvent.change(pane.querySelector<HTMLInputElement>('input[aria-label="ENV 变量名"]')!, {
-      target: { value: "lower" },
-    });
-    fireEvent.click(saveButton(pane)!);
-    await pollUntil(() => (pane.textContent ?? "").includes("ENV 名非法"), "ENV 错");
+    await pollUntil(
+      () => handle.calls.some((c) => c.method === "PUT" && c.url.includes(APP_ROUTES.config)),
+      "PUT 已发",
+    );
+    const put = handle.calls.find((c) => c.method === "PUT" && c.url.includes(APP_ROUTES.config));
+    expect(put?.body).toContain("apiKeyPlaintext");
+    expect(put?.body).not.toContain("confirm");
+    expect(pane.textContent).not.toContain("二次确认");
   });
   it("ENV 保存成功：PUT 体含引用且重载掩码", async () => {
     const handle = installStub((url, method) => {
@@ -485,7 +551,7 @@ describe("connection 保存成功路径", () => {
       (b) => b.textContent === "保存",
     );
   }
-  it("明文+确认保存成功：PUT 体含明文不明文引用，明文框清空", async () => {
+  it("明文保存成功：PUT 体含明文不明文引用，成功后明文轨卸载无残留", async () => {
     const handle = installStub((url, method) => {
       if (url.includes(APP_ROUTES.config) && method === "PUT") return jsonResponse(BARE_CONFIG);
       return baseStub(url);
@@ -500,11 +566,7 @@ describe("connection 保存成功路径", () => {
     fireEvent.click(plainRadio);
     const plain = pane.querySelector<HTMLInputElement>('input[aria-label="明文密钥"]');
     fireEvent.change(plain!, { target: { value: "z".repeat(20) } });
-    const confirm = plain!
-      .closest(".dj-field")
-      ?.parentElement?.querySelector<HTMLInputElement>('input[type="checkbox"]');
-    expect(confirm).not.toBe(null);
-    fireEvent.click(confirm!);
+    expect(pane.querySelector('input[type="checkbox"]')).toBe(null);
     fireEvent.click(saveButton(pane)!);
     await pollUntil(
       () => handle.calls.some((c) => c.method === "PUT" && c.url.includes(APP_ROUTES.config)),
@@ -513,7 +575,11 @@ describe("connection 保存成功路径", () => {
     const put = handle.calls.find((c) => c.method === "PUT" && c.url.includes(APP_ROUTES.config));
     expect(put?.body).toContain("apiKeyPlaintext");
     expect(put?.body).not.toContain("apiKeyRef");
-    await pollUntil(() => plain?.value === "", "明文框清空");
+    await pollUntil(
+      () => pane.querySelector('input[aria-label="明文密钥"]') === null,
+      "明文轨卸载",
+    );
+    expect(pane.textContent).not.toContain("z".repeat(20));
   });
   it("保存 400 即失败文案带类别", async () => {
     const stub = (url: string, method: string): Response => {

@@ -1,10 +1,10 @@
-/** Noul/Score 分段与失败包络：tier 置空、1-5 整形、失败无概率字段（全离线 fetch 注入）。
+/** Noul/Score 分段与失败包络：tier 置空、confidence 派生分层、score 浮点取整、失败无概率字段（全离线 fetch 注入）。
  *
- * 守的是 service.tierOf/automationOf + client.parseVerdict 的 score 段：把 Noul 置空删掉、
- * score 上限改成 10、失败包络带上 confidence，本文件必红。
+ * 守的是 service.tierOf/automationOf + client 置信派生与 score 映射：把 Noul 置空删掉、
+ * 阈值改动、取整改成截断、失败包络带上 confidence，本文件必红。
  */
 import { describe, expect, it } from "vitest";
-import { parseVerdict } from "../../src/server/tools/impl/client.ts";
+import { mapFirstAnswer, toWireQuestions } from "../../src/server/tools/impl/client.ts";
 import { decide } from "../../src/server/tools/impl/service.ts";
 import type { DecideDeps } from "../../src/server/tools/deps.ts";
 import { truncateCodePoints } from "../../src/shared/contract.ts";
@@ -33,6 +33,28 @@ function okFetch(body: unknown): DecideDeps["fetchImpl"] {
   return async () => ({ status: 200, text: JSON.stringify(body) });
 }
 
+/** 官方答案体（题 id 与调用一致；choice 置信直给，score 浮点）。 */
+function sdkAnswer(id: string, answer: unknown): unknown {
+  return {
+    model: "jev-1.13.0",
+    answers: { [id]: answer },
+    usage: { input_tokens: 10, output_tokens: 5 },
+  };
+}
+
+function sdkChoice(id: string, choice: string, confidence: number): unknown {
+  return sdkAnswer(id, {
+    type: "choice",
+    choice,
+    confidence,
+    probabilities: { [choice]: confidence },
+  });
+}
+
+function sdkScore(id: string, score: unknown, confidence = 0.5): unknown {
+  return sdkAnswer(id, { type: "score", score, confidence });
+}
+
 describe("Noul 置空 tier", () => {
   it("choice Noul 即 tier none + automation manual（上游 tier 高也置空）", async () => {
     const out = await decide(
@@ -42,13 +64,7 @@ describe("Noul 置空 tier", () => {
         questions_override: [{ id: "q1", text: "Pick one.", kind: "choice", options: ["A", "B"] }],
       },
       baseDeps({
-        fetchImpl: okFetch({
-          resultKind: "choice",
-          choice: "Noul",
-          confidence: 0.9,
-          tier: 2,
-          automation: 2,
-        }),
+        fetchImpl: okFetch(sdkChoice("q1", "Noul", 0.9)),
       }),
     );
     expect(out).toMatchObject({ ok: true, tier: "none", automation: "manual" });
@@ -57,7 +73,7 @@ describe("Noul 置空 tier", () => {
       expect(out.provider).toBe("official");
     }
   });
-  it("非 Noul 按序号映射：2 high/auto、1 low/assisted、0 none/manual", async () => {
+  it("非 Noul 按置信派生：0.9 high/auto、0.7 low/assisted、0.3 none/manual", async () => {
     const high = await decide(
       {
         preset_id: "general",
@@ -65,13 +81,7 @@ describe("Noul 置空 tier", () => {
         questions_override: [{ id: "q1", text: "Pick one.", kind: "choice", options: ["A", "B"] }],
       },
       baseDeps({
-        fetchImpl: okFetch({
-          resultKind: "choice",
-          choice: "A",
-          confidence: 0.7,
-          tier: 2,
-          automation: 2,
-        }),
+        fetchImpl: okFetch(sdkChoice("q1", "A", 0.9)),
       }),
     );
     expect(high).toMatchObject({ ok: true, tier: "high", automation: "auto" });
@@ -82,13 +92,7 @@ describe("Noul 置空 tier", () => {
         questions_override: [{ id: "q1", text: "Pick one.", kind: "choice", options: ["A", "B"] }],
       },
       baseDeps({
-        fetchImpl: okFetch({
-          resultKind: "choice",
-          choice: "A",
-          confidence: 0.7,
-          tier: 1,
-          automation: 1,
-        }),
+        fetchImpl: okFetch(sdkChoice("q1", "A", 0.7)),
       }),
     );
     expect(low).toMatchObject({ ok: true, tier: "low", automation: "assisted" });
@@ -99,13 +103,7 @@ describe("Noul 置空 tier", () => {
         questions_override: [{ id: "q1", text: "Pick one.", kind: "choice", options: ["A", "B"] }],
       },
       baseDeps({
-        fetchImpl: okFetch({
-          resultKind: "choice",
-          choice: "A",
-          confidence: 0.7,
-          tier: 0,
-          automation: 0,
-        }),
+        fetchImpl: okFetch(sdkChoice("q1", "A", 0.3)),
       }),
     );
     expect(none).toMatchObject({ ok: true, tier: "none", automation: "manual" });
@@ -119,13 +117,7 @@ describe("Noul 置空 tier", () => {
       },
       baseDeps({
         capOf: () => 0,
-        fetchImpl: okFetch({
-          resultKind: "choice",
-          choice: "A",
-          confidence: 0.8,
-          tier: 2,
-          automation: 2,
-        }),
+        fetchImpl: okFetch(sdkChoice("q1", "A", 0.9)),
       }),
     );
     expect(out).toMatchObject({ ok: true, tier: "none", automation: "manual" });
@@ -139,21 +131,49 @@ describe("Noul 置空 tier", () => {
       },
       baseDeps({
         capOf: () => 1,
-        fetchImpl: okFetch({
-          resultKind: "choice",
-          choice: "A",
-          confidence: 0.8,
-          tier: 2,
-          automation: 2,
-        }),
+        fetchImpl: okFetch(sdkChoice("q1", "A", 0.9)),
       }),
     );
     expect(out).toMatchObject({ ok: true, tier: "low", automation: "assisted" });
   });
 });
 
-describe("Score 1-5 分段", () => {
-  it.each([1, 2, 3, 4, 5])("score %i 合法通过", async (score) => {
+describe("Score 浮点取整映射（SDK 0-based legend，按档数重缩放到 1..5）", () => {
+  it("自带两档：SDK 0.5 即旧口径 3（除数 n-1=1）", async () => {
+    const out = await decide(
+      {
+        preset_id: "custom",
+        state: { text: "hello", lang: "en" },
+        questions_override: [{ id: "q1", text: "Rate it.", kind: "score", levels: ["低", "高"] }],
+      },
+      baseDeps({
+        fetchImpl: okFetch(sdkScore("q1", 0.5, 0.6)),
+      }),
+    );
+    expect(out.ok).toBe(true);
+    if (out.ok) expect(out.score).toBe(3);
+  });
+  it("自带三档：SDK 1.5 即旧口径 4", async () => {
+    const out = await decide(
+      {
+        preset_id: "custom",
+        state: { text: "hello", lang: "en" },
+        questions_override: [
+          { id: "q1", text: "Rate it.", kind: "score", levels: ["差", "良", "优"] },
+        ],
+      },
+      baseDeps({
+        fetchImpl: okFetch(sdkScore("q1", 1.5, 0.6)),
+      }),
+    );
+    expect(out.ok).toBe(true);
+    if (out.ok) expect(out.score).toBe(4);
+  });
+  it.each([
+    [0.2, 1],
+    [1.7, 3],
+    [3.8, 5],
+  ])("SDK score %f 即旧口径 %i", async (raw, mapped) => {
     const out = await decide(
       {
         preset_id: "plan-review",
@@ -161,45 +181,53 @@ describe("Score 1-5 分段", () => {
         questions_override: [{ id: "q1", text: "Rate it.", kind: "score" }],
       },
       baseDeps({
-        fetchImpl: okFetch({ resultKind: "score", score, confidence: 0.5, tier: 1, automation: 1 }),
+        fetchImpl: okFetch(sdkScore("q1", raw, 0.6)),
       }),
     );
     expect(out.ok).toBe(true);
     if (out.ok) {
-      expect(out.score).toBe(score);
+      expect(out.score).toBe(mapped);
       expect(out.resultKind).toBe("score");
     }
   });
-  it.each([0, 6, 9])("score %i 越界即 UPSTREAM 失败", async (score) => {
-    const out = await decide(
-      {
-        preset_id: "plan-review",
-        state: { text: "hello", lang: "en" },
-        questions_override: [{ id: "q1", text: "Rate it.", kind: "score" }],
-      },
-      baseDeps({ fetchImpl: okFetch({ resultKind: "score", score }) }),
-    );
-    expect(out.ok).toBe(false);
-    if (!out.ok) expect(out.error.errorCode).toBe("UPSTREAM");
+  it("score 缺席/字符串即 UPSTREAM 失败", async () => {
+    for (const bad of [sdkScore("q1", undefined), sdkScore("q1", "high")]) {
+      const out = await decide(
+        {
+          preset_id: "plan-review",
+          state: { text: "hello", lang: "en" },
+          questions_override: [{ id: "q1", text: "Rate it.", kind: "score" }],
+        },
+        baseDeps({ fetchImpl: okFetch(bad) }),
+      );
+      expect(out.ok).toBe(false);
+      if (!out.ok) expect(out.error.errorCode).toBe("UPSTREAM");
+    }
   });
-  it("score 非整（2.5）即失败", () => {
-    expect(parseVerdict(200, JSON.stringify({ resultKind: "score", score: 2.5 })).ok).toBe(false);
-  });
-  it("score 缺席/字符串即失败", () => {
-    expect(parseVerdict(200, JSON.stringify({ resultKind: "score" })).ok).toBe(false);
-    expect(parseVerdict(200, JSON.stringify({ resultKind: "score", score: "5" })).ok).toBe(false);
+  it("首题缺席即 bad-payload（多题取首题驱动）", () => {
+    const body = {
+      model: "jev-latest",
+      state: "t",
+      questions: toWireQuestions([{ id: "q1", text: "Q?", kind: "choice", options: ["A", "B"] }]),
+    };
+    const r = mapFirstAnswer(body, {
+      model: "jev-1.13.0",
+      answers: {},
+      usage: { input_tokens: 1, output_tokens: 1 },
+    });
+    expect(r.ok).toBe(false);
   });
 });
 
 describe("失败包络无概率 + errorCode + category", () => {
-  it("score 越界失败：无 choice/score/confidence/tier，有 errorCode+category", async () => {
+  it("score 缺失失败：无 choice/score/confidence/tier，有 errorCode+category", async () => {
     const bad = await decide(
       {
         preset_id: "plan-review",
         state: { text: "hello", lang: "en" },
         questions_override: [{ id: "q1", text: "Rate it.", kind: "score" }],
       },
-      baseDeps({ fetchImpl: okFetch({ resultKind: "score", score: 9 }) }),
+      baseDeps({ fetchImpl: okFetch(sdkScore("q1", undefined)) }),
     );
     expect(bad.ok).toBe(false);
     if (!bad.ok) {
@@ -237,14 +265,7 @@ describe("失败包络无概率 + errorCode + category", () => {
         questions_override: [{ id: "q1", text: "Pick one.", kind: "choice", options: ["A", "B"] }],
       },
       baseDeps({
-        fetchImpl: okFetch({
-          resultKind: "choice",
-          choice: "A",
-          confidence: 0.7,
-          tier: 2,
-          automation: 2,
-          codepoints: 42,
-        }),
+        fetchImpl: okFetch(sdkChoice("q1", "A", 0.9)),
       }),
     );
     expect(out).toMatchObject({
@@ -255,7 +276,7 @@ describe("失败包络无概率 + errorCode + category", () => {
       originalLength: 5,
       tier: "high",
       automation: "auto",
-      codepoints: 42,
+      codepoints: 5,
       retries: 0,
     });
     if (out.ok) {
@@ -270,7 +291,7 @@ describe("失败包络无概率 + errorCode + category", () => {
         state: { text: "abcde", lang: "en" },
         questions_override: [{ id: "q1", text: "Pick one.", kind: "choice", options: ["A", "B"] }],
       },
-      baseDeps({ fetchImpl: okFetch({ resultKind: "choice", choice: "A" }) }),
+      baseDeps({ fetchImpl: okFetch(sdkChoice("q1", "A", 0.6)) }),
     );
     expect(out).toMatchObject({ ok: true, codepoints: 5 });
   });
@@ -288,9 +309,9 @@ describe("失败包络无概率 + errorCode + category", () => {
       baseDeps({
         connection: { timeoutMs: 8000, maxConcurrency: 4, truncBudget: 2, hasPlaintextKey: false },
         fetchImpl: async (_url, init) => {
-          const body = JSON.parse(init.body) as { state: { text: string } };
-          wired = body.state.text;
-          return { status: 200, text: JSON.stringify({ resultKind: "choice", choice: "A" }) };
+          const body = JSON.parse(init.body) as { state: string };
+          wired = body.state;
+          return { status: 200, text: JSON.stringify(sdkChoice("q1", "A", 0.6)) };
         },
       }),
     );
@@ -307,13 +328,7 @@ describe("失败包络无概率 + errorCode + category", () => {
       },
       baseDeps({
         connection: { timeoutMs: 8000, maxConcurrency: 4, truncBudget: 4, hasPlaintextKey: false },
-        fetchImpl: okFetch({
-          resultKind: "choice",
-          choice: "A",
-          confidence: 0.8,
-          tier: 2,
-          automation: 2,
-        }),
+        fetchImpl: okFetch(sdkChoice("q1", "A", 0.85)),
       }),
     );
     expect(out).toMatchObject({

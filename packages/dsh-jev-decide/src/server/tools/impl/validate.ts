@@ -73,13 +73,37 @@ function checkQuestion(
         return fail("BAD_OPTIONS", "option must be non-empty string <=64 codepoints");
       }
     }
+    if (item["levels"] !== undefined) {
+      return fail("BAD_LEVELS", "choice question must not carry levels");
+    }
     const opts = (options as unknown[]).map((opt) => opt as string);
     return { ok: true, question: { id, text, kind, options: opts } };
   }
   if (options !== undefined) {
     return fail("BAD_OPTIONS", "score question must not carry options");
   }
-  return { ok: true, question: { id, text, kind } };
+  const levels: unknown = item["levels"];
+  if (levels === undefined) return { ok: true, question: { id, text, kind } };
+  if (!Array.isArray(levels) || levels.length < 2 || levels.length > 10) {
+    return fail(
+      "BAD_LEVELS",
+      "score levels must be 2..10 rubric strings (or omit for default 1-5)",
+    );
+  }
+  for (const lv of levels as unknown[]) {
+    if (
+      typeof lv !== "string" ||
+      lv.length === 0 ||
+      Array.from(lv).length > 64 ||
+      (lv as string).trim().length === 0
+    ) {
+      return fail("BAD_LEVELS", "level must be non-empty string <=64 codepoints");
+    }
+  }
+  return {
+    ok: true,
+    question: { id, text, kind, levels: (levels as unknown[]).map((lv) => lv as string) },
+  };
 }
 
 /** override 数组校验（非空 + 题数上限 + id 唯一）。 */

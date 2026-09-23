@@ -4,7 +4,7 @@
  * PUT 校验规则（与任务契约一一对应）：
  * - apiKeyRef 须匹配 ^[A-Z][A-Z0-9_]{1,63}$，否则 400；
  * - apiKeyRef 与 apiKeyPlaintext 互斥（同传即 400）；
- * - 明文须二次确认（confirm===true），否则 400；形状拒收 400 仅回类别；
+ * - 明文免二次确认（confirm 字段若出现则忽略，保持向后兼容）；形状拒收 400 仅回类别；
  * - 退役键（baseUrl 等，见 RETIRED_KEYS）显式 400；其余未知键 400；
  * - 嵌套包络（D1）：{version, connection:{...}, presets, history, apiKeyPlaintext} 归一化为扁平键
  *   后再校验；未知键（包络内外）仍 400；hasPlaintextKey 为只读派生，回显即忽略。
@@ -277,7 +277,7 @@ export function validatePutBody(
   }
   const ref = body["apiKeyRef"];
   const plain = body["apiKeyPlaintext"];
-  const confirm = body["confirm"];
+  // confirm 字段保留在白名单仅作向后兼容（老客户端仍发 confirm:true），此处不再读取。
   let apiKeyRef: string | null | undefined;
   if (ref !== undefined) {
     if (ref === null) {
@@ -312,16 +312,6 @@ export function validatePutBody(
       return {
         ok: false,
         failure: { errorCode: "INVALID_KEY_SHAPE", category: shape, message: "key shape rejected" },
-      };
-    }
-    if (confirm !== true) {
-      return {
-        ok: false,
-        failure: {
-          errorCode: "NEED_CONFIRM",
-          category: "confirm-required",
-          message: "plaintext requires confirm:true",
-        },
       };
     }
     apiKeyPlaintext = plain;

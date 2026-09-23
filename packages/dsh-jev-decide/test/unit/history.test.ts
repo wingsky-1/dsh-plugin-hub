@@ -94,7 +94,10 @@ describe("脱敏截断", () => {
         truncated: false,
         originalLength: 17,
         resultKind: "choice",
-        questions: [{ id: "q1", text: "Pick one.", kind: "choice", options: ["A", "B"] }],
+        questions: [
+          { id: "q1", text: "Pick one.", kind: "choice", options: ["A", "B"] },
+          { id: "q2", text: "Rate it.", kind: "score", levels: ["差", "良", "优"] },
+        ],
         choice: "A",
         confidence: 1,
         tier: "high",
@@ -106,6 +109,7 @@ describe("脱敏截断", () => {
     );
     expect(JSON.stringify(e)).not.toContain("sk-Abcdef12345678");
     expect(e).toMatchObject({ provider: "official", templateVersion: 1, sessionId: "s-1", ts: 7 });
+    expect(e.questions?.[1]?.levels).toEqual(["差", "良", "优"]);
   });
 });
 

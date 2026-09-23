@@ -15,6 +15,7 @@ export interface EntryQuestion {
   readonly text: string;
   readonly kind: "choice" | "score";
   readonly options?: readonly string[];
+  readonly levels?: readonly string[];
 }
 
 /** 事件面（tools 域 DecideEvent 的结构子集，避免跨域值引用）。precheckHit 命中即 snippet 强制全掩码（S1-A：长 PEM/残缺头不断字节上限，命中文本不存任何原文）。questions 为调用题目快照（文本/选项同 snippet 脱敏后存）。 */
@@ -75,5 +76,6 @@ function snapshotQuestions(event: EntryEvent): HistoryQuestion[] {
     text: redactSnippet(q.text),
     kind: q.kind,
     ...(q.options !== undefined ? { options: q.options.map((opt) => redactSnippet(opt)) } : {}),
+    ...(q.levels !== undefined ? { levels: q.levels.map((lv) => redactSnippet(lv)) } : {}),
   }));
 }

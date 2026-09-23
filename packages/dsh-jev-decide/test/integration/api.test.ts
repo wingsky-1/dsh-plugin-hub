@@ -190,7 +190,7 @@ describe("端点往返", () => {
       call(routes, "/api/dsh-jev-decide/config", { method: "PUT", body: JSON.stringify(body) });
     expect((await put({ baseUrl: "https://x" })).status).toBe(400);
     expect((await put({ apiKeyRef: "lower" })).status).toBe(400);
-    expect((await put({ apiKeyPlaintext: "Abcdefgh12345678" })).status).toBe(400);
+    expect((await put({ apiKeyPlaintext: "Abcdefgh12345678" })).status).toBe(200);
     expect(
       (await put({ apiKeyRef: "JEV_IT_KEY", apiKeyPlaintext: "Abcdefgh12345678", confirm: true }))
         .status,
@@ -203,6 +203,19 @@ describe("端点往返", () => {
     });
     const secret = await put({ apiKeyPlaintext: "Abcdefgh12345678", confirm: true });
     expect(secret.status).toBe(400);
+  });
+  it("切轨一次写透：明文+apiKeyRef:null→200 且掩码去引用", async () => {
+    const { routes } = setup();
+    const put = (body: unknown) =>
+      call(routes, "/api/dsh-jev-decide/config", { method: "PUT", body: JSON.stringify(body) });
+    expect((await put({ apiKeyRef: "JEV_IT_TRACK" })).status).toBe(200);
+    const switched = await put({ apiKeyPlaintext: "Abcdefgh12345678", apiKeyRef: null });
+    expect(switched.status).toBe(200);
+    expect(switched.json).toMatchObject({
+      connection: { hasPlaintextKey: true },
+    });
+    expect(JSON.stringify(switched.json)).not.toContain("JEV_IT_TRACK");
+    expect(JSON.stringify(switched.json)).not.toContain("Abcdefgh12345678");
   });
   it("明文确认后掩码回显", async () => {
     const { routes } = setup();
@@ -231,12 +244,11 @@ describe("端点往返", () => {
     const { routes, tools } = setup(async () => ({
       status: 200,
       text: JSON.stringify({
-        resultKind: "choice",
-        choice: "A",
-        confidence: 0.8,
-        tier: 2,
-        automation: 2,
-        codepoints: 9,
+        model: "jev-1.13.0",
+        answers: {
+          q1: { type: "choice", choice: "A", confidence: 0.8, probabilities: { A: 0.8, B: 0.2 } },
+        },
+        usage: { input_tokens: 9, output_tokens: 3 },
       }),
     }));
     const keyPut = await call(routes, "/api/dsh-jev-decide/config", {
@@ -281,7 +293,18 @@ describe("端点往返", () => {
   it("test-connection 空体：无 key 401，有 key+mock 200", async () => {
     const { routes } = setup(async () => ({
       status: 200,
-      text: JSON.stringify({ resultKind: "choice", choice: "A" }),
+      text: JSON.stringify({
+        model: "jev-1.13.0",
+        answers: {
+          probe: {
+            type: "choice",
+            choice: "ok",
+            confidence: 0.9,
+            probabilities: { ok: 0.9, fail: 0.1 },
+          },
+        },
+        usage: { input_tokens: 9, output_tokens: 3 },
+      }),
     }));
     const noKey = await call(routes, "/api/dsh-jev-decide/test-connection", {
       method: "POST",

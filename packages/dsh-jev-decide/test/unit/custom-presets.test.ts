@@ -180,11 +180,16 @@ describe("决议接自定义 id", () => {
         fetchImpl: async () => ({
           status: 200,
           text: JSON.stringify({
-            resultKind: "choice",
-            choice: "A",
-            confidence: 0.8,
-            tier: 2,
-            automation: 2,
+            model: "jev-1.13.0",
+            answers: {
+              q1: {
+                type: "choice",
+                choice: "A",
+                confidence: 0.9,
+                probabilities: { A: 0.9, B: 0.1 },
+              },
+            },
+            usage: { input_tokens: 9, output_tokens: 3 },
           }),
         }),
       }),
@@ -206,7 +211,18 @@ describe("决议接自定义 id", () => {
         },
         fetchImpl: async () => ({
           status: 200,
-          text: JSON.stringify({ resultKind: "choice", choice: "A" }),
+          text: JSON.stringify({
+            model: "jev-1.13.0",
+            answers: {
+              q1: {
+                type: "choice",
+                choice: "A",
+                confidence: 0.9,
+                probabilities: { A: 0.9, B: 0.1 },
+              },
+            },
+            usage: { input_tokens: 9, output_tokens: 3 },
+          }),
         }),
       }),
     );

@@ -11,6 +11,7 @@
  */
 import {
   FROZEN_PRESETS,
+  JEV_MODEL,
   SESSION_ID_RE,
   TEMPLATE_VERSION,
   truncateCodePoints,
@@ -131,14 +132,13 @@ export async function decide(
       latencyMs: 0,
       errorCode: "NO_KEY",
     });
-    return envelope("NO_KEY", "no-key", "no api key (set apiKeyRef or confirmed plaintext)");
+    return envelope("NO_KEY", "no-key", "no api key (set apiKeyRef or plaintext)");
   }
   const fetchImpl = deps.fetchImpl ?? defaultFetchImpl();
   const limit = deps.limit ?? (<T>(task: () => Promise<T>): Promise<T> => task());
   const body = {
-    preset: valid.presetId,
-    templateVersion: TEMPLATE_VERSION as 1,
-    state: { text: trunc.text, lang: valid.lang },
+    model: JEV_MODEL,
+    state: trunc.text,
     questions: toWireQuestions(valid.questions),
   };
   const outcome = await limit(() =>

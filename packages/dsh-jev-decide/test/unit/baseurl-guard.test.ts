@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 import { normalizeLoadedConfig, validatePutBody } from "../../src/server/config/impl/model.ts";
 import { decide } from "../../src/server/tools/impl/service.ts";
 import type { DecideDeps } from "../../src/server/tools/deps.ts";
-import { JEV_BASE_URL } from "../../src/shared/contract.ts";
+import { JEV_BASE_URL, JEV_MODEL } from "../../src/shared/contract.ts";
 
 const EXPECTED_BASE = "https://api.typesafe.ai/v1/systemone";
 const CONNECTION = {
@@ -20,6 +20,9 @@ const CONNECTION = {
 describe("BaseURL 写死", () => {
   it("常量即官方基址字面量（第二事实源手写）", () => {
     expect(JEV_BASE_URL).toBe(EXPECTED_BASE);
+  });
+  it("模型即冻结别名 jev-latest（与基址同等 pin 待遇）", () => {
+    expect(JEV_MODEL).toBe("jev-latest");
   });
   // 注：退役键表成员由下条 PUT 逐键拒收断言覆盖（删表项即 UNKNOWN_KEY 而非 RETIRED_KEY），不另立表断言（去装饰）。
   it("PUT 遇退役键一律 RETIRED_KEY（顶层/connection/history 均拒）", () => {
@@ -53,7 +56,21 @@ describe("BaseURL 写死", () => {
       sessionId: "sess-1",
       fetchImpl: async (url) => {
         seenUrl = url;
-        return { status: 200, text: JSON.stringify({ resultKind: "choice", choice: "A" }) };
+        return {
+          status: 200,
+          text: JSON.stringify({
+            model: "jev-1.13.0",
+            answers: {
+              q1: {
+                type: "choice",
+                choice: "A",
+                confidence: 0.9,
+                probabilities: { A: 0.9, B: 0.1 },
+              },
+            },
+            usage: { input_tokens: 9, output_tokens: 3 },
+          }),
+        };
       },
     };
     const out = await decide(

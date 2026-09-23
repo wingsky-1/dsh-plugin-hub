@@ -272,12 +272,11 @@ describe("存量互斥与脱敏端到端", () => {
     const { routes, tools } = setup(async () => ({
       status: 200,
       text: JSON.stringify({
-        resultKind: "choice",
-        choice: "A",
-        confidence: 0.8,
-        tier: 2,
-        automation: 2,
-        codepoints: 9,
+        model: "jev-1.13.0",
+        answers: {
+          q1: { type: "choice", choice: "A", confidence: 0.8, probabilities: { A: 0.8, B: 0.2 } },
+        },
+        usage: { input_tokens: 9, output_tokens: 3 },
       }),
     }));
     expect(
