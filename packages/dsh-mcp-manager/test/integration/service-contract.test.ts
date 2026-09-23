@@ -235,43 +235,50 @@ function extractProvidedServiceMethods(): {
   }
 
   // 括号配对扫描：找到 provide 对象的完整区间（跳过字符串字面量与注释）。
+  function skipQuoted(s: string, i: number): number {
+    const c = s[i];
+    const quote = c;
+    i += 1;
+    while (i < s.length) {
+      if (s[i] === "\\") {
+        i += 2;
+        continue;
+      }
+      if (s[i] === quote) return i + 1;
+      i += 1;
+    }
+    return i;
+  }
+  function skipTemplate(s: string, i: number): number {
+    i += 1;
+    while (i < s.length) {
+      if (s[i] === "\\") {
+        i += 2;
+        continue;
+      }
+      if (s[i] === "`") return i + 1;
+      if (s[i] === "$" && s[i + 1] === "{") {
+        // 模板插值内可能含括号——保守跳过到配对的 }（简单计数，测试源无嵌套插值）
+        let depth = 1;
+        i += 2;
+        while (i < s.length && depth > 0) {
+          if (s[i] === "{") depth += 1;
+          else if (s[i] === "}") depth -= 1;
+          i += 1;
+        }
+        continue;
+      }
+      i += 1;
+    }
+    return i;
+  }
   const skip = (s: string, i: number): number => {
     const c = s[i];
     if (c === '"' || c === "'") {
-      const quote = c;
-      i += 1;
-      while (i < s.length) {
-        if (s[i] === "\\") {
-          i += 2;
-          continue;
-        }
-        if (s[i] === quote) return i + 1;
-        i += 1;
-      }
-      return i;
+      return skipQuoted(s, i);
     }
     if (c === "`") {
-      i += 1;
-      while (i < s.length) {
-        if (s[i] === "\\") {
-          i += 2;
-          continue;
-        }
-        if (s[i] === "`") return i + 1;
-        if (s[i] === "$" && s[i + 1] === "{") {
-          // 模板插值内可能含括号——保守跳过到配对的 }（简单计数，测试源无嵌套插值）
-          let depth = 1;
-          i += 2;
-          while (i < s.length && depth > 0) {
-            if (s[i] === "{") depth += 1;
-            else if (s[i] === "}") depth -= 1;
-            i += 1;
-          }
-          continue;
-        }
-        i += 1;
-      }
-      return i;
+      return skipTemplate(s, i);
     }
     if (c === "/" && s[i + 1] === "/") {
       const nl = s.indexOf("\n", i);
