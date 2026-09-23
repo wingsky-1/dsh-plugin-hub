@@ -1,9 +1,9 @@
 /**
  * dsh-jev-decide — 连接 tab（React，settings.section 独立页）。
  *
- * 要素：密钥二选一卡（radio 互斥，未选中侧置灰禁用，保存只读选中侧）/
+ * 要素：密钥二选一卡（radio 互斥，未选中轨整体隐藏；切轨保存自动清对方）/
  * 离线自检 / 高级折叠 / 保存。Key 永不回显原文；placeholder 禁真密钥示例。
- * 保存语义与 vanilla 一致：互斥阻断、ENV 形状校验、明文须二次确认并附 confirm:true、
+ * 保存语义与 vanilla 一致：互斥阻断、ENV 形状校验、明文免二次确认、
  * 未知键永不发送、保存后清空明文框并重载掩码态。
  */
 import * as React from "react";
@@ -24,7 +24,6 @@ export function ConnectionPane(): React.ReactElement {
   const [keyMode, setKeyMode] = React.useState<"env" | "plain">("env");
   const [env, setEnv] = React.useState("");
   const [plain, setPlain] = React.useState("");
-  const [confirm, setConfirm] = React.useState(false);
   const [timeoutMs, setTimeoutMs] = React.useState("8000");
   const [maxConcurrency, setMaxConcurrency] = React.useState("4");
   const [truncBudget, setTruncBudget] = React.useState("32000");
@@ -65,7 +64,10 @@ export function ConnectionPane(): React.ReactElement {
         setSnapshot(cfg);
         setEnv(cfg.connection.apiKeyRef ?? "");
         setPlain("");
-        setConfirm(false);
+        // 按存量同步轨道（ENV 优先，无绑定回落 ENV）：首屏不再永远停在 ENV。
+        setKeyMode(
+          cfg.connection.apiKeyRef ? "env" : cfg.connection.hasPlaintextKey ? "plain" : "env",
+        );
         setTimeoutMs(String(cfg.connection.timeoutMs));
         setMaxConcurrency(String(cfg.connection.maxConcurrency));
         setTruncBudget(String(cfg.connection.truncBudget));
@@ -102,10 +104,6 @@ export function ConnectionPane(): React.ReactElement {
       setMsg({ kind: "error", text: t("envBad") });
       return;
     }
-    if (plainValue !== "" && !confirm) {
-      setMsg({ kind: "error", text: t("confirmNeeded") });
-      return;
-    }
     const nums = [timeoutMs, maxConcurrency, truncBudget, perSession, totalSessions].map(Number);
     if (!nums.every((n) => Number.isFinite(n))) {
       setMsg({ kind: "error", text: t("nanError") });
@@ -125,7 +123,9 @@ export function ConnectionPane(): React.ReactElement {
         automationCap: p.automationCap,
       })),
       history: { perSession: nums[3], totalSessions: nums[4] },
-      ...(plainValue !== "" ? { apiKeyPlaintext: plainValue, confirm: true } : {}),
+      ...(plainValue !== "" ? { apiKeyPlaintext: plainValue } : {}),
+      // 切 ENV→明文：附 apiKeyRef:null 清掉已存引用，否则服务端互斥 400。
+      ...(plainValue !== "" && snapshot.connection.apiKeyRef ? { apiKeyRef: null } : {}),
     };
     setSaving(true);
     setMsg({ kind: "info", text: t("saving") });
@@ -159,7 +159,6 @@ export function ConnectionPane(): React.ReactElement {
           throw new Error(cat);
         }
         setPlain("");
-        setConfirm(false);
         setMsg({ kind: "ok", text: t("savedReload") });
         load();
       })
@@ -215,6 +214,11 @@ export function ConnectionPane(): React.ReactElement {
     <div className="dj-pane" data-tab="connection">
       <div className="dj-tools">
         <span className={conn?.hasPlaintextKey ? "dj-badge dj-badgeOn" : "dj-badge"}>{mask}</span>
+        {conn?.hasPlaintextKey === true && (
+          <span className="dj-note" aria-label={t("maskDotsAria")}>
+            {"••••••••"}
+          </span>
+        )}
         {conn?.apiKeyRef !== undefined && conn.apiKeyRef !== "" && (
           <span className="dj-badge">
             {t("maskEnv")}
@@ -253,50 +257,42 @@ export function ConnectionPane(): React.ReactElement {
         </div>
         <span className="dj-note">{useEnv ? t("modeEnvNote") : t("modePlainNote")}</span>
       </div>
-      <div className="dj-field">
-        <label>{t("envLabel")}</label>
-        <input
-          className="dj-input"
-          aria-label={t("envAria")}
-          inputMode="text"
-          autoComplete="off"
-          value={env}
-          disabled={!useEnv}
-          placeholder={t("envPlaceholder")}
-          onChange={(e) => setEnv(e.target.value)}
-        />
-        <span className="dj-note">{t("envRule")}</span>
-      </div>
-      <div className="dj-fold">
-        <button type="button" className="dj-foldHead" onClick={() => setPlainOpen((v) => !v)}>
-          <span>{t("plainFoldTitle")}</span>
-          <span>{plainOpen ? "▾" : "▸"}</span>
-        </button>
-        <div className="dj-foldBody" hidden={!plainOpen}>
-          <div className="dj-field">
-            <input
-              className="dj-input"
-              type="password"
-              aria-label={t("plainAria")}
-              autoComplete="off"
-              value={plain}
-              disabled={useEnv}
-              placeholder={t("plainPlaceholder")}
-              onChange={(e) => setPlain(e.target.value)}
-            />
-            <label className="dj-checkRow">
+      {useEnv ? (
+        <div className="dj-field">
+          <label>{t("envLabel")}</label>
+          <input
+            className="dj-input"
+            aria-label={t("envAria")}
+            inputMode="text"
+            autoComplete="off"
+            value={env}
+            placeholder={t("envPlaceholder")}
+            onChange={(e) => setEnv(e.target.value)}
+          />
+          <span className="dj-note">{t("envRule")}</span>
+        </div>
+      ) : (
+        <div className="dj-fold">
+          <button type="button" className="dj-foldHead" onClick={() => setPlainOpen((v) => !v)}>
+            <span>{t("plainFoldTitle")}</span>
+            <span>{plainOpen ? "▾" : "▸"}</span>
+          </button>
+          <div className="dj-foldBody" hidden={!plainOpen}>
+            <div className="dj-field">
               <input
-                type="checkbox"
-                checked={confirm}
-                disabled={useEnv}
-                onChange={(e) => setConfirm(e.target.checked)}
+                className="dj-input"
+                type="password"
+                aria-label={t("plainAria")}
+                autoComplete="off"
+                value={plain}
+                placeholder={t("plainPlaceholder")}
+                onChange={(e) => setPlain(e.target.value)}
               />
-              {t("confirmText")}
-            </label>
-            <span className="dj-note">{t("plainNote")}</span>
+              <span className="dj-note">{t("plainNote")}</span>
+            </div>
           </div>
         </div>
-      </div>
+      )}
       <div className="dj-tools">
         <button type="button" className="dj-btn dj-btnSmall" disabled={testing} onClick={selfCheck}>
           {t("testOffline")}

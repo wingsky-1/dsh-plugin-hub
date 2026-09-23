@@ -74,12 +74,13 @@ export interface DecideDeps {
   readonly now?: () => number;
 }
 
-/** 校验后问题（文本已做 255 长度校验，id 已做 ASCII 校验）。 */
+/** 校验后问题（文本已做 255 长度校验，id 已做 ASCII 校验；score 可带 2-10 levels，缺省即默认五档）。 */
 export interface ValidQuestion {
   readonly id: string;
   readonly text: string;
   readonly kind: "choice" | "score";
   readonly options?: readonly string[];
+  readonly levels?: readonly string[];
 }
 
 /** 校验后决议输入。 */

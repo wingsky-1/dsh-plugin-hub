@@ -116,7 +116,7 @@ flowchart TB
 
 ### 2.3 客户端三 tab
 
-`src/client/index.ts` 干净模块（只 `apply`＋`inject`，`slots`）：设置卡三 tab——连接（ENV 名输入＋明文折叠二次确认＋离线自检按钮＋高级折叠）/ 模板库（5 预设开关＋automationCap 三档＋导出 JSON，无导入）/ 历史（工作目录下拉＋会话下拉过滤，条目倒序，概率条＋tier＋截断徽标＋错误行，会话级清空仅 DELETE 单会话）。纯 DOM 文本节点渲染（无 innerHTML），零 bare import，样式独立 `style.css` 经 ensureStyle 注入，卸载进 `ctx.effect` disposer。
+`src/client/index.ts` 干净模块（只 `apply`＋`inject`，`slots`）：设置卡三 tab——连接（ENV 名输入＋明文折叠免二次确认＋离线自检按钮＋高级折叠）/ 模板库（5 预设开关＋automationCap 三档＋导出 JSON，无导入）/ 历史（工作目录下拉＋会话下拉过滤，条目倒序，概率条＋tier＋截断徽标＋错误行，会话级清空仅 DELETE 单会话）。纯 DOM 文本节点渲染（无 innerHTML），零 bare import，样式独立 `style.css` 经 ensureStyle 注入，卸载进 `ctx.effect` disposer。
 
 ### 2.4 HTTP 面
 
@@ -165,7 +165,7 @@ flowchart LR
 | --- | --- | --- |
 | config.json | v1 全量（`src/shared/contract.ts#ConfigV1`，`version` 唯一合法值 1）；缺省由 `buildDefaultConfig` 供给（8000/4/32000 与 200/50） | 运行期写只走 `savePatch`；读经 `loadState` 每次现读，无缓存 |
 | presets.json | 开关覆盖层（`{presets}`，与 config 内 presets 同源快照） | 仅 presets 变更时写；ENV 轨切换不碰 |
-| secrets.json | 明文唯一落盘处 | 明文写入须二次确认；切 ENV 轨即折叠清空；GET/PUT 永不回显 |
+| secrets.json | 明文唯一落盘处 | 明文写入免二次确认；切 ENV 轨即折叠清空；GET/PUT 永不回显 |
 | VERSION | 单行存储刻度（目标 `STORAGE_TARGET`，基线 `BASELINE_VERSION`） | 缺席播种三文件＋刻度，已锚定空转，未来版本拒绝启动（fail-closed） |
 | history jsonl | `history/<rootHash>/<sessionId>.jsonl`，一行一条目（`src/shared/contract.ts#HistoryEntry`） | 追加后超 `perSession`（200）只留末尾 N 行；会话文件超 `totalSessions`（50）按 mtime 淘汰最旧整文件 |
 
@@ -173,7 +173,7 @@ flowchart LR
 
 ### 3.2 配置一致性与掩码面
 
-`loadState` 归一：退役键（`baseUrl` 等，`src/shared/contract.ts#RETIRED_KEYS`）剥离并告警，缺口补默认；PUT 显式带退役键直接 400（`src/server/config/impl/model.ts#normalizeLoadedConfig` / `#validatePutBody`）。`apiKeyRef` 须匹配大写 ENV 名形状（`src/shared/contract.ts#API_KEY_REF_RE`），与 `apiKeyPlaintext` 互斥（同时出现即 400；明文须 `confirm:true`，服务端同样校验）；明文形状拒收 400 仅回类别，全大写长串（≥20 位字母数字混合，或 AKIA/ASIA 前缀）判 charset（`src/shared/contract.ts#keyShapeCategory`）。GET /config 与 PUT 成功响应均为裸 v1 掩码体（两端同时兼容裸体与 `{config}`/`{data}` 包装）。
+`loadState` 归一：退役键（`baseUrl` 等，`src/shared/contract.ts#RETIRED_KEYS`）剥离并告警，缺口补默认；PUT 显式带退役键直接 400（`src/server/config/impl/model.ts#normalizeLoadedConfig` / `#validatePutBody`）。`apiKeyRef` 须匹配大写 ENV 名形状（`src/shared/contract.ts#API_KEY_REF_RE`），与 `apiKeyPlaintext` 互斥（同时出现即 400；明文免二次确认，服务端仍校验互斥）；明文形状拒收 400 仅回类别，全大写长串（≥20 位字母数字混合，或 AKIA/ASIA 前缀）判 charset（`src/shared/contract.ts#keyShapeCategory`）。GET /config 与 PUT 成功响应均为裸 v1 掩码体（两端同时兼容裸体与 `{config}`/`{data}` 包装）。
 
 ### 3.3 历史轮转、查询与删除
 
@@ -219,7 +219,7 @@ build 为 clean-lib→tsc→scripts/build/bundle-host.ts；esbuild 内联第三�
 
 唯一出境点是 `callWithRetry` 向写死基址 `src/shared/contract.ts#JEV_BASE_URL`（加载断言防篡改，PUT 拒收 baseUrl 类键）的 POST：Bearer 认证，超时是**整次调用的总预算**（非逐次；默认 8000ms），可重试失败（超时/网络）最多 2 次重试，`retries` 如实回传供计费面；同进程并发上限 `maxConcurrency`（默认 4，信号量排队公平 FIFO）。离境正文是截断后文本＋题目（`truncated`/`originalLength` 如实回传；截断输出 automation 强制 suggest-only）。
 
-密钥双轨：ENV 引用轨优先（`apiKeyRef` 只存 ENV 名，值永不落盘）；明文轨写入须客户端 `confirm:true` 二次确认且服务端同样校验互斥，切轨即清空对方（见 §3.1）。掩码面只出名与有无（`hasPlaintextKey`），密钥原文不回显、不入库、不进日志。
+密钥双轨：ENV 引用轨优先（`apiKeyRef` 只存 ENV 名，值永不落盘）；明文轨写入免二次确认、服务端仍校验互斥，切轨即清空对方（见 §3.1）。掩码面只出名与有无（`hasPlaintextKey`），密钥原文不回显、不入库、不进日志。
 
 ### 4.3 平台与兼容边界
 

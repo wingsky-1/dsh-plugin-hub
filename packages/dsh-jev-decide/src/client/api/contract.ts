@@ -179,6 +179,7 @@ function parseQuestions(raw: unknown): JevHistoryEntry["questions"] {
     readonly text: string;
     readonly kind: "choice" | "score";
     readonly options?: readonly string[];
+    readonly levels?: readonly string[];
   }[] = [];
   for (const item of raw as unknown[]) {
     if (item === null || typeof item !== "object" || Array.isArray(item)) return undefined;
@@ -187,12 +188,16 @@ function parseQuestions(raw: unknown): JevHistoryEntry["questions"] {
     const kind = rec["kind"];
     if (kind !== "choice" && kind !== "score") return undefined;
     const options = rec["options"];
+    const levels = rec["levels"];
     out.push({
       id: rec["id"] as string,
       text: rec["text"] as string,
       kind,
       ...(Array.isArray(options) && options.every((o) => typeof o === "string")
         ? { options: (options as string[]).slice() }
+        : {}),
+      ...(Array.isArray(levels) && levels.every((o) => typeof o === "string")
+        ? { levels: (levels as string[]).slice() }
         : {}),
     });
   }

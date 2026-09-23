@@ -48,6 +48,9 @@ catalogs:
     '@deepseek-ai/dsh-user-questions':
       specifier: 0.1.5-rc.1
       version: 0.1.5-rc.1
+    '@typesafe-ai/sdk':
+      specifier: 0.6.0
+      version: 0.6.0
 
 importers:
 
@@ -134,6 +137,9 @@ importers:
       '@deepseek-ai/dsh-tools':
         specifier: 'catalog:'
         version: 0.1.5-rc.1(6a2f57c8c1710b9a682bbcc128a57495)
+      '@typesafe-ai/sdk':
+        specifier: 'catalog:'
+        version: 0.6.0
 
   packages/dsh-lan-proxy:
     devDependencies:
@@ -1445,6 +1451,10 @@ packages:
 
   '@types/ws@8.18.1':
     resolution: {integrity: sha512-ThVF6DCVhA8kUGy+aazFQ4kXQ7E1Ty7A3ypFOe0IcJV8O/M511G99AW24irKrW56Wt44yG9+ij8FaqoBGkuBXg==}
+
+  '@typesafe-ai/sdk@0.6.0':
+    resolution: {integrity: sha512-IddX+Q0XM+VagOUZFeP7wZjaO4SHMdvnh2zEBdrZZnXedWI3BNK1lKhMx3ayrkFWvVLbVcUHJy6AVZlY+e6Jaw==}
+    engines: {node: '>=20'}
 
   '@typescript-eslint/eslint-plugin@8.70.0':
     resolution: {integrity: sha512-/v8HZt6RlyIZxB3ntehELOcUcfxKPVGWXnQdJuHRmzrqgF8nQypcC/oxGW+Ot4VGKDq81XugPKxx0n5PBtf9PA==}
@@ -4089,6 +4099,8 @@ snapshots:
   '@types/ws@8.18.1':
     dependencies:
       '@types/node': 26.4.0
+
+  '@typesafe-ai/sdk@0.6.0': {}
 
   '@typescript-eslint/eslint-plugin@8.70.0(@typescript-eslint/parser@8.70.0(eslint@10.10.0(jiti@2.6.1)(supports-color@7.2.0))(supports-color@7.2.0)(typescript@6.0.3))(eslint@10.10.0(jiti@2.6.1)(supports-color@7.2.0))(supports-color@7.2.0)(typescript@6.0.3)':
     dependencies:

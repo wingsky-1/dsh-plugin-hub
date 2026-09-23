@@ -128,7 +128,21 @@ describe("custom 单 present 合法 + appliedSource", () => {
       baseDeps({
         fetchImpl: async () => {
           calls += 1;
-          return { status: 200, text: JSON.stringify({ resultKind: "choice", choice: "A" }) };
+          return {
+            status: 200,
+            text: JSON.stringify({
+              model: "jev-1.13.0",
+              answers: {
+                choice: {
+                  type: "choice",
+                  choice: "A",
+                  confidence: 0.9,
+                  probabilities: { A: 0.9, B: 0.1 },
+                },
+              },
+              usage: { input_tokens: 9, output_tokens: 3 },
+            }),
+          };
         },
       }),
     );

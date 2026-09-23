@@ -29,12 +29,12 @@ JEV 决策网关：frozen 出题规范（5 条英文 description，templateVersi
 ## 改动前必守（本包特有红线）
 
 1. **改 `src/` 必须 build 才生效**：dsh 经 profile 直读 `lib/` 产物，不自动编译。
-2. **双轨密钥**：ENV 引用优先，明文写入须二次确认且服务端同样校验互斥；
+2. **双轨密钥**：ENV 引用优先，明文免二次确认（用户已明确批准移除；`confirm` 字段仅向后兼容忽略），服务端仍校验互斥；
    密钥形状拒收 400 仅回类别；GET/PUT 成功响应一律掩码，密钥原文永不回显、不入库、不进日志。
 3. **frozen 预设**：5 预设出题规范（英文 `description`）frozen 在 `FROZEN_PRESETS`，templateVersion 恒为 1，
    模板零考题；`secret-leak` 默认关闭；全员 `questions_override` 必填（1-20 题，调用方自带）。
    自建经 `custom-presets.json`（`PUT customPresets` 全量替换，保留字拒收）；自建 id 可决议；落史题目快照脱敏；标题读取时 enrich。
-4. **官方地址写死**：`JEV_BASE_URL` 为加载断言常量，不接受任何配置覆盖；
+4. **官方地址与模型双写死**：`JEV_BASE_URL` / `JEV_MODEL` 为加载断言常量，不接受任何配置覆盖；
    PUT 遇 `baseUrl` 类退役键直接 400。新增上游一律先报主代理裁决，不私自加基址。
 5. **loopback 围栏**：全部路由非回环 403 先于方法 405；smoke 必须含 403/405 围栏用例。
 6. **安全语义变更同步包 README 的「安全模型」节与测试**（仓库硬性要求）。

@@ -1,6 +1,6 @@
 # dsh-jev-decide
 
-JEV 决策网关：frozen 出题规范（英文） + 双轨密钥 + 本地密形预检 + SystemOne 官方调用。
+JEV 决策网关：frozen 出题规范（英文） + 双轨密钥 + 本地密形预检 + SystemOne 官方调用（经官方 `@typesafe-ai/sdk` 构建期内联传输，基址与模型双冻结，零运行时依赖）。
 
 一键安装（安装后重启 `dsh web` 生效）：
 
@@ -16,7 +16,7 @@ dsh plugin --profile web add @wingsky-1/dsh-jev-decide
 ## 最短上手
 
 1. 安装并重启 `dsh web`（见顶部命令）；设置页出现 dsh-jev-decide 卡片，连接 tab 显示服务可用即宿主端已挂载。
-2. 配密钥（二选一）：把已导出的 ENV 名填入 `apiKeyRef`（推荐，值永不落盘）；或展开明文折叠，输入密钥并二次确认（`confirm:true`）。
+2. 配密钥（二选一）：把已导出的 ENV 名填入 `apiKeyRef`（推荐，值永不落盘）；或展开明文折叠，直接输入密钥保存（免二次确认）。
 3. 点测试连接（`POST /test-connection`，空体合法）：回 `ok` + `latencyMs` 即端到端可用；报 `NO_KEY` 先检查 ENV 是否导出或明文是否保存。
 
 ## 配置
@@ -26,16 +26,16 @@ dsh plugin --profile web add @wingsky-1/dsh-jev-decide
 - `config.json`：`{version:1, connection:{apiKeyRef?,hasPlaintextKey,timeoutMs:8000,maxConcurrency:4,truncBudget:32000}, presets:[5 个 id+enabled+automationCap(0|1|2)], history:{perSession:200,totalSessions:50}}`；
 - `presets.json`：开关覆盖层；`secrets.json`：明文密钥唯一落盘处；`VERSION`：存储版本刻度。
 
-PUT `/config`：`apiKeyRef` 须匹配 `^[A-Z][A-Z0-9_]{1,63}$`；与 `apiKeyPlaintext` 互斥；明文须 `confirm:true` 二次确认；形状拒收 400 仅回类别；`baseUrl` 等退役键 400。
+PUT `/config`：`apiKeyRef` 须匹配 `^[A-Z][A-Z0-9_]{1,63}$`；与 `apiKeyPlaintext` 互斥；明文免二次确认（`confirm` 字段若出现则忽略）；形状拒收 400 仅回类别；`baseUrl` 等退役键 400。
 
 ## 安全模型
 
 - **离境数据**：仅当本地密形预检未命中且密钥可用时，才向官方基址发送截断后正文 + 题目；命中密形（如 `sk-…`、`AKIA…`、`ghp_…`、私钥块、`password=`）即不离境、直转人工（`appliedSource: local-precheck`）。
-- **双轨密钥**：ENV 引用（`apiKeyRef`）优先于明文；切到 ENV 轨即折叠清空 `secrets.json`；明文写入须二次确认，服务端同样校验互斥。
+- **双轨密钥**：ENV 引用（`apiKeyRef`）优先于明文；切到 ENV 轨即折叠清空 `secrets.json`；明文写入免二次确认，服务端仍校验互斥。
 - **0600/0700**：命名空间目录 0700，三文件 0600，经临时文件 + rename 原子写入。
 - **掩码面**：GET `/config` 只回 `apiKeyRef` 名与 `hasPlaintextKey`，密钥原文永不回显；形状拒收 400 仅回 `empty|too-short|charset` 类别。
 - **secret 预设警告**：`secret-leak` 默认关闭（启用后仍先过本地预检）；历史 `snippetRedacted` 先脱敏后截断 ≤200 字，原始密钥永不入库。
-- **BaseURL 写死**：`https://api.typesafe.ai/v1/systemone` 为加载断言常量，不接受任何配置覆盖；PUT 遇 `baseUrl` 类键直接 400。
+- **BaseURL 写死**：`https://api.typesafe.ai/v1/systemone` 为加载断言常量，不接受任何配置覆盖；PUT 遇 `baseUrl` 类键直接 400。模型冻结为 `jev-latest`（同等 pin 待遇）；score 回浮点按发送档数重缩放回 1..5（默认五档即 round+1，均钳制；自带 levels 用 `levels` 字段 2-10 档），tier 按置信度 0.8/0.5 派生。
 
 ## 历史
 
@@ -50,5 +50,5 @@ PUT `/config`：`apiKeyRef` 须匹配 `^[A-Z][A-Z0-9_]{1,63}$`；与 `apiKeyPlai
 
 ## 后续项（deferred，非本版实现）
 
-- **启动自检迁移**：装配期升级链现只做版本锚定（缺席播种/已锚定空转/未来版本拒绝启动）；配置形态自检与旧盘迁移留待加步骤时再写。客户端二次确认（明文写入 `confirm:true`）保留，服务端同样强制。
+- **启动自检迁移**：装配期升级链现只做版本锚定（缺席播种/已锚定空转/未来版本拒绝启动）；配置形态自检与旧盘迁移留待加步骤时再写。明文写入免二次确认（用户已明确批准移除该 friction）。
 - **三文件非组写**：config/presets/secrets 三次独立原子写，非事务组写；进程在写盘间隙崩溃可能留下新旧混搭（读侧以“缺口补默认”收敛），该崩溃窗口被容忍，不做预写日志。

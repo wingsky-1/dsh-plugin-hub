@@ -229,6 +229,10 @@
   flex-direction: column;
   gap: 12px;
 }
+/* hidden 折叠：display:flex 会覆盖 UA 的 [hidden] display:none，必须显式补回（明文/高级/历史过滤三处同治）。 */
+.dj-foldBody[hidden] {
+  display: none;
+}
 .dj-badge {
   display: inline-block;
   font-size: 11px;

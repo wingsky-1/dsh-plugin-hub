@@ -13,6 +13,7 @@ export default defineConfig({
       'packages/dsh-jev-decide/test/unit/baseurl-guard.test.ts',
       'packages/dsh-jev-decide/test/unit/decide-contract.test.ts',
       'packages/dsh-jev-decide/test/unit/precheck-noegress.test.ts',
+      'packages/dsh-jev-decide/test/unit/tool-description.test.ts',
       'packages/dsh-jev-decide/test/unit/tools.test.ts',
       'packages/dsh-jev-decide/test/unit/verdict-tiers.test.ts',
     ],

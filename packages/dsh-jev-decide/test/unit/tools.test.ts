@@ -1,7 +1,14 @@
 /** tools 域单测（fetch 全注入 mock，全程离线；落盘仅内存记录器）。 */
 import { describe, expect, it } from "vitest";
 import type { DecideDeps, FetchImpl } from "../../src/server/tools/deps.ts";
-import { callWithRetry, parseVerdict } from "../../src/server/tools/impl/client.ts";
+import {
+  callWithRetry,
+  confidenceTier,
+  mapFirstAnswer,
+  sdkErrorToFailure,
+  toWireQuestions,
+} from "../../src/server/tools/impl/client.ts";
+import type { JevRequestBody } from "../../src/server/tools/impl/client.ts";
 import { createSemaphore } from "../../src/server/tools/impl/semaphore.ts";
 import { localPrecheckHit } from "../../src/server/tools/impl/precheck.ts";
 import { decide } from "../../src/server/tools/impl/service.ts";
@@ -31,6 +38,26 @@ function jsonFetch(status: number, body: unknown, seen?: { count: number }): Fet
   return async () => {
     if (seen !== undefined) seen.count += 1;
     return { status, text: JSON.stringify(body) };
+  };
+}
+
+/** 官方答案体：单题 choice（题 id 须与调用一致）。 */
+function sdkChoice(id: string, choice: string, confidence: number): unknown {
+  return {
+    model: "jev-1.13.0",
+    answers: {
+      [id]: { type: "choice", choice, confidence, probabilities: { [choice]: confidence } },
+    },
+    usage: { input_tokens: 10, output_tokens: 5 },
+  };
+}
+
+/** 官方答案体：单题 score（SDK 浮点，legend 0-based）。 */
+function sdkScore(id: string, score: unknown, confidence = 0.5): unknown {
+  return {
+    model: "jev-1.13.0",
+    answers: { [id]: { type: "score", score, confidence } },
+    usage: { input_tokens: 10, output_tokens: 5 },
   };
 }
 
@@ -115,6 +142,42 @@ describe("参数校验 400", () => {
     });
     expect(long.ok).toBe(false);
   });
+  it("levels：score 可带 2-10 分档，choice 带即拒收", () => {
+    const okLevels = validateDecideArgs({
+      preset_id: "custom",
+      state: { text: "x", lang: "en" },
+      questions_override: [{ id: "q", text: "a", kind: "score", levels: ["差", "良", "优"] }],
+    });
+    expect(okLevels.ok).toBe(true);
+    if (okLevels.ok) expect(okLevels.valid.questions[0]?.levels).toEqual(["差", "良", "优"]);
+    for (const bad of [
+      { id: "q", text: "a", kind: "score", levels: ["单档"] },
+      { id: "q", text: "a", kind: "score", levels: ["", "良"] },
+      {
+        id: "q",
+        text: "a",
+        kind: "score",
+        levels: ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k"],
+      },
+      { id: "q", text: "a", kind: "choice", options: ["A", "B"], levels: ["x", "y"] },
+    ]) {
+      const r = validateDecideArgs({
+        preset_id: "custom",
+        state: { text: "x", lang: "en" },
+        questions_override: [bad],
+      });
+      expect(r.ok).toBe(false);
+    }
+    const choiceLevels = validateDecideArgs({
+      preset_id: "custom",
+      state: { text: "x", lang: "en" },
+      questions_override: [
+        { id: "q", text: "a", kind: "choice", options: ["A", "B"], levels: ["x", "y"] },
+      ],
+    });
+    expect(choiceLevels.ok).toBe(false);
+    if (!choiceLevels.ok) expect(choiceLevels.failure.errorCode).toBe("BAD_LEVELS");
+  });
 });
 
 describe("本地预检不离境", () => {
@@ -156,14 +219,7 @@ describe("远端编排", () => {
         questions_override: [{ id: "q1", text: "Pick one.", kind: "choice", options: ["A", "B"] }],
       },
       baseDeps({
-        fetchImpl: jsonFetch(200, {
-          resultKind: "choice",
-          choice: "A",
-          confidence: 0.7,
-          tier: 2,
-          automation: 2,
-          codepoints: 42,
-        }),
+        fetchImpl: jsonFetch(200, sdkChoice("q1", "A", 0.9)),
         recordEvent: (e) => {
           events.push(e);
         },
@@ -177,12 +233,12 @@ describe("远端编排", () => {
       originalLength: 5,
       tier: "high",
       automation: "auto",
-      codepoints: 42,
+      codepoints: 5,
       retries: 0,
     });
     expect(events).toHaveLength(1);
   });
-  it("Noul 置空 tier；score 越界失败无概率字段", async () => {
+  it("Noul 置空 tier；score 非数失败无概率字段", async () => {
     const noul = await decide(
       {
         preset_id: "general",
@@ -190,13 +246,7 @@ describe("远端编排", () => {
         questions_override: [{ id: "q1", text: "Pick one.", kind: "choice", options: ["A", "B"] }],
       },
       baseDeps({
-        fetchImpl: jsonFetch(200, {
-          resultKind: "choice",
-          choice: "Noul",
-          confidence: 0.9,
-          tier: 2,
-          automation: 2,
-        }),
+        fetchImpl: jsonFetch(200, sdkChoice("q1", "Noul", 0.9)),
       }),
     );
     expect(noul).toMatchObject({ ok: true, tier: "none" });
@@ -206,7 +256,7 @@ describe("远端编排", () => {
         state: { text: "hello", lang: "en" },
         questions_override: [{ id: "q1", text: "Rate it.", kind: "score" }],
       },
-      baseDeps({ fetchImpl: jsonFetch(200, { resultKind: "score", score: 9 }) }),
+      baseDeps({ fetchImpl: jsonFetch(200, sdkScore("q1", "high")) }),
     );
     expect(bad.ok).toBe(false);
     if (!bad.ok) {
@@ -245,7 +295,7 @@ describe("远端编排", () => {
       },
       baseDeps({
         connection: { ...CONNECTION, truncBudget: 4 },
-        fetchImpl: jsonFetch(200, { resultKind: "choice", choice: "A" }),
+        fetchImpl: jsonFetch(200, sdkChoice("q1", "A", 0.6)),
       }),
     );
     expect(out).toMatchObject({ ok: true, truncated: true, originalLength: 10 });
@@ -255,7 +305,7 @@ describe("远端编排", () => {
     const flaky: FetchImpl = async () => {
       n += 1;
       if (n === 1) return { status: 500, text: "err" };
-      return { status: 200, text: JSON.stringify({ resultKind: "choice", choice: "A" }) };
+      return { status: 200, text: JSON.stringify(sdkChoice("q1", "A", 0.9)) };
     };
     const out = await decide(
       {
@@ -282,10 +332,69 @@ describe("远端编排", () => {
 });
 
 describe("客户端件", () => {
-  it("parseVerdict 401 不可重试；score 非整拒收", () => {
-    expect(parseVerdict(401, "{}").ok).toBe(false);
-    const r = parseVerdict(200, JSON.stringify({ resultKind: "score", score: 2.5 }));
-    expect(r.ok).toBe(false);
+  it("错误映射：401 不可重试；score 浮点合法取整", async () => {
+    const unauth = await decide(
+      {
+        preset_id: "general",
+        state: { text: "hi", lang: "en" },
+        questions_override: [{ id: "q1", text: "Pick one.", kind: "choice", options: ["A", "B"] }],
+      },
+      baseDeps({ fetchImpl: jsonFetch(401, {}) }),
+    );
+    expect(unauth.ok).toBe(false);
+    if (!unauth.ok) {
+      expect(unauth.error.errorCode).toBe("UNAUTHORIZED");
+      expect(unauth.error.category).toBe("unauthorized");
+    }
+    const scored = await decide(
+      {
+        preset_id: "plan-review",
+        state: { text: "hi", lang: "en" },
+        questions_override: [{ id: "q1", text: "Rate it.", kind: "score" }],
+      },
+      baseDeps({ fetchImpl: jsonFetch(200, sdkScore("q1", 2.3, 0.6)) }),
+    );
+    expect(scored.ok).toBe(true);
+    if (scored.ok) expect(scored.score).toBe(3);
+  });
+  it("映射纯函数：confidence 分层 + 首题驱动 + 错误分类", () => {
+    expect(confidenceTier(0.9)).toBe(2);
+    expect(confidenceTier(0.7)).toBe(1);
+    expect(confidenceTier(0.2)).toBe(0);
+    const body = {
+      model: "jev-latest",
+      state: "t",
+      questions: toWireQuestions([{ id: "q1", text: "Q?", kind: "choice", options: ["A", "B"] }]),
+    } satisfies JevRequestBody;
+    const mapped = mapFirstAnswer(body, {
+      model: "jev-1.13.0",
+      answers: {
+        q1: { type: "choice", choice: "B", confidence: 0.6, probabilities: { A: 0.4, B: 0.6 } },
+      },
+      usage: { input_tokens: 1, output_tokens: 1 },
+    });
+    expect(mapped.ok).toBe(true);
+    if (mapped.ok) {
+      expect(mapped.verdict.choice).toBe("B");
+      expect(mapped.verdict.tier).toBe(1);
+    }
+    const missing = mapFirstAnswer(body, {
+      model: "jev-1.13.0",
+      answers: {},
+      usage: { input_tokens: 1, output_tokens: 1 },
+    });
+    expect(missing.ok).toBe(false);
+    const noAnswers = mapFirstAnswer(body, {
+      model: "jev-1.13.0",
+      usage: { input_tokens: 1, output_tokens: 1 },
+    } as unknown as Parameters<typeof mapFirstAnswer>[1]);
+    expect(noAnswers.ok).toBe(false);
+    if (!noAnswers.ok) {
+      expect(noAnswers.failure.category).toBe("bad-payload");
+      expect(noAnswers.failure.retryable).toBe(false);
+    }
+    const down = sdkErrorToFailure(new Error("down"));
+    expect(down).toMatchObject({ code: "NETWORK", retryable: true });
   });
   it("信号量串行（max=1 时并发不超 1）", async () => {
     const gate = createSemaphore(1);
@@ -304,7 +413,11 @@ describe("客户端件", () => {
   it("callWithRetry 网络抛错可重试并计数", async () => {
     let n = 0;
     const r = await callWithRetry(
-      { preset: "general", templateVersion: 1, state: { text: "t", lang: "en" }, questions: [] },
+      {
+        model: "jev-latest",
+        state: "t",
+        questions: toWireQuestions([{ id: "q", text: "Q?", kind: "choice", options: ["A", "B"] }]),
+      },
       "k",
       1000,
       async () => {

@@ -9,6 +9,7 @@ export default defineConfig({
   test: {
     include: [
       'packages/dsh-jev-decide/test/client-dom/custom-presets-ui.test.ts',
+      'packages/dsh-jev-decide/test/client-dom/fold-hidden.test.ts',
       'packages/dsh-jev-decide/test/client-dom/locale-host.test.ts',
       'packages/dsh-jev-decide/test/client-dom/panes-probability.test.ts',
       'packages/dsh-jev-decide/test/client-dom/tabs-mask-history.test.ts',
@@ -26,6 +27,7 @@ export default defineConfig({
       'packages/dsh-jev-decide/test/unit/keys-hardening.test.ts',
       'packages/dsh-jev-decide/test/unit/precheck-noegress.test.ts',
       'packages/dsh-jev-decide/test/unit/put-envelope.test.ts',
+      'packages/dsh-jev-decide/test/unit/tool-description.test.ts',
       'packages/dsh-jev-decide/test/unit/tools.test.ts',
       'packages/dsh-jev-decide/test/unit/verdict-tiers.test.ts',
     ],

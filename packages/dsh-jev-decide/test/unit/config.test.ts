@@ -72,10 +72,8 @@ describe("PUT 校验", () => {
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.failure.errorCode).toBe("MUTUALLY_EXCLUSIVE");
   });
-  it("明文须二次确认", () => {
-    const r = validatePutBody({ apiKeyPlaintext: "Abcdefgh12345678" });
-    expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.failure.errorCode).toBe("NEED_CONFIRM");
+  it("明文免二次确认", () => {
+    expect(validatePutBody({ apiKeyPlaintext: "Abcdefgh12345678" }).ok).toBe(true);
   });
   it("密钥形状拒收仅回类别", () => {
     const short = validatePutBody({ apiKeyPlaintext: "abc", confirm: true });

@@ -96,16 +96,19 @@ describe("明文形状与全大写缺口", () => {
       expect(JSON.stringify(short.failure)).not.toContain("abc");
     }
   });
-  it("明文须二次确认：缺 confirm 即 NEED_CONFIRM", () => {
+  it("短密钥无 confirm 仍 400 形状错（形状先于确认）", () => {
+    const short = validatePutBody({ apiKeyPlaintext: "abc" });
+    expect(short.ok).toBe(false);
+    if (!short.ok) expect(short.failure.category).toBe("too-short");
+  });
+  it("明文免二次确认：缺 confirm 即成功", () => {
     const r = validatePutBody({ apiKeyPlaintext: PLAINTEXT });
-    expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.failure.errorCode).toBe("NEED_CONFIRM");
+    expect(r.ok).toBe(true);
     expect(validatePutBody({ apiKeyPlaintext: PLAINTEXT, confirm: true }).ok).toBe(true);
   });
-  it("confirm 显式 false 同样 NEED_CONFIRM；孤 confirm 无害空补丁", () => {
-    const denied = validatePutBody({ apiKeyPlaintext: PLAINTEXT, confirm: false });
-    expect(denied.ok).toBe(false);
-    if (!denied.ok) expect(denied.failure.errorCode).toBe("NEED_CONFIRM");
+  it("confirm 显式 false 同样忽略；孤 confirm 无害空补丁", () => {
+    const allowed = validatePutBody({ apiKeyPlaintext: PLAINTEXT, confirm: false });
+    expect(allowed.ok).toBe(true);
     const lone = validatePutBody({ confirm: true });
     expect(lone.ok).toBe(true);
     if (lone.ok) expect(lone.patch).toEqual({});

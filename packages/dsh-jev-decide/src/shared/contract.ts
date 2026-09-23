@@ -22,6 +22,12 @@ if (JEV_BASE_URL !== "https://api.typesafe.ai/v1/systemone") {
   throw new Error("dsh-jev-decide: JEV_BASE_URL 被篡改，拒绝加载");
 }
 
+/** 官方 SystemOne 默认模型（冻结别名；与 JEV_BASE_URL 同等 pin 待遇，不接受配置覆盖）。 */
+export const JEV_MODEL = "jev-latest";
+if (JEV_MODEL !== "jev-latest") {
+  throw new Error("dsh-jev-decide: JEV_MODEL 被篡改，拒绝加载");
+}
+
 /** 存储文件名（命名空间目录下独立四文件 + 版本刻度；custom-presets.json 缺席即空列表）。 */
 export const CONFIG_FILE_NAME = "config.json";
 export const PRESETS_FILE_NAME = "presets.json";
@@ -199,12 +205,13 @@ export interface ConfigV1 {
   };
 }
 
-/** 历史条目快照的问题（调用方传入原样存档；文本/选项经同 snippet 的脱敏后存）。 */
+/** 历史条目快照的问题（调用方传入原样存档；文本/选项/分档经同 snippet 的脱敏后存）。 */
 export interface HistoryQuestion {
   readonly id: string;
   readonly text: string;
   readonly kind: "choice" | "score";
   readonly options?: readonly string[];
+  readonly levels?: readonly string[];
 }
 
 /** 历史条目（任务契约；原始密钥永不入库，snippetRedacted≤200；questions 为调用题目快照）。 */

@@ -47,10 +47,6 @@ export function JevCard(): React.ReactElement {
   return (
     <section className="dj-card" data-plugin="dsh-jev-decide">
       <div className="dj-head">
-        <div className="dj-headText">
-          <div className="dj-name">{t("cardName")}</div>
-          <div className="dj-desc">{t("cardDesc")}</div>
-        </div>
         <span className={healthCls}>{healthText}</span>
       </div>
       <div className="dj-tabs" role="group" aria-label={t("tabsAria")}>

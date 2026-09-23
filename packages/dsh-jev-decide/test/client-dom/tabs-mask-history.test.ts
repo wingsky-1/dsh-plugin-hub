@@ -80,7 +80,7 @@ describe("三 tab 切换", () => {
 });
 
 describe("连接掩码已配置显示", () => {
-  it("hasPlaintextKey 即“已配置”，ENV 名回显，明文框恒空且无原文（D4）", async () => {
+  it("hasPlaintextKey 即“已配置”+定长八点，ENV 名回显且无原文（D4）", async () => {
     const SECRET = "DomSecretValue123456";
     const masked = {
       ...BARE_CONFIG,
@@ -95,6 +95,17 @@ describe("连接掩码已配置显示", () => {
     await pollUntil(() => (card.textContent ?? "").includes("密钥：已配置"), "掩码已配置徽标");
     expect(card.textContent).toContain("JEV_DOM_KEY");
     expect(card.textContent).not.toContain(SECRET);
+    const dots = card.querySelector(
+      '[aria-label="已配置明文密钥掩码（定长八点，与原文长度无关）"]',
+    );
+    expect(dots).not.toBe(null);
+    expect(dots?.textContent).toBe("••••••••");
+    expect(card.textContent).not.toContain(SECRET);
+    // ENV 轨激活时明文轨不挂载：切 plain 后明文框恒空。
+    expect(card.querySelector('input[aria-label="明文密钥"]')).toBe(null);
+    fireEvent.click(
+      card.querySelector<HTMLInputElement>('input[name="dj-keymode"][value="plain"]')!,
+    );
     const plain = card.querySelector<HTMLInputElement>('input[aria-label="明文密钥"]');
     expect(plain).not.toBe(null);
     expect(plain?.value).toBe("");
