@@ -775,10 +775,11 @@ export function compareRegistry({
   };
 }
 
-function validateGuardShape(guard) {
-  const out = [];
-  const id =
-    typeof guard.id === "string" && guard.id !== "" ? guard.id : JSON.stringify(guard).slice(0, 80);
+function guardDisplayId(guard) {
+  if (typeof guard.id === "string" && guard.id !== "") return guard.id;
+  return JSON.stringify(guard).slice(0, 80);
+}
+function checkGuardIdentity(guard, id, out) {
   if (typeof guard.id !== "string" || guard.id === "") out.push("guard 缺 id：" + id);
   if (!IMPLEMENTED_KINDS.includes(guard.kind)) {
     out.push(
@@ -790,11 +791,15 @@ function validateGuardShape(guard) {
         "）",
     );
   }
+}
+function checkGuardDocs(guard, id, out) {
   for (const field of ["why", "hint"]) {
     if (typeof guard[field] !== "string" || guard[field] === "") out.push(id + "：缺 " + field);
   }
   if (!Array.isArray(guard.sources) || guard.sources.length === 0) out.push(id + "：缺 sources");
   if (!Array.isArray(guard.paths) || guard.paths.length === 0) out.push(id + "：缺 paths");
+}
+function checkGuardKindFields(guard, id, out) {
   if (guard.kind === "value" && guard.weaken !== "decrease" && guard.weaken !== "increase") {
     out.push(id + "：kind=value 必须声明 weaken（decrease / increase）");
   }
@@ -813,12 +818,22 @@ function validateGuardShape(guard) {
   if (guard.kind !== "existence" && guard.onRemoval !== "fail" && guard.onRemoval !== "ignore") {
     out.push(id + "：必须声明 onRemoval（fail / ignore）——删键语义不能靠默认值");
   }
+}
+function checkGuardBounds(guard, id, out) {
   // 两个绝对边界写错类型会被静默忽略（字符串不与数字比较），于是「加了上限」变成一句没有判据的声明。
   for (const field of ["minAllowed", "maxAllowed"]) {
     if (guard[field] !== undefined && typeof guard[field] !== "number") {
       out.push(id + "：" + field + " 必须是数字（当前 " + JSON.stringify(guard[field]) + "）");
     }
   }
+}
+function validateGuardShape(guard) {
+  const out = [];
+  const id = guardDisplayId(guard);
+  checkGuardIdentity(guard, id, out);
+  checkGuardDocs(guard, id, out);
+  checkGuardKindFields(guard, id, out);
+  checkGuardBounds(guard, id, out);
   return out;
 }
 
