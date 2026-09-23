@@ -391,7 +391,17 @@ export const zaiCodingCnAdapter = {
 
     const cards = [];
     // 窗口迷你图卡（5h / 周 各一）
-    for (const w of windows) {
+    function collectWindowPoints(entries, key) {
+      const points = [];
+      for (const en of entries) {
+        const pv = windowPercentOf(en.data, key);
+        if (pv !== null) {
+          points.push({ x: en.time, y: pv });
+        }
+      }
+      return points;
+    }
+    function renderWindowCard(w) {
       const key = w.key;
       const name = windowName(key);
       const color = windowColor(key);
@@ -400,13 +410,11 @@ export const zaiCodingCnAdapter = {
         w.nextResetTime !== undefined && w.nextResetTime !== null
           ? `重置 ${fmtReset(w.nextResetTime)}`
           : "";
-
       // 采样序列（v2 数据形态：entries[].data.windows[].percent）
       const pcts = input.entries.map(function (en) {
         return windowPercentOf(en.data, key);
       });
       const hasPoint = pcts.some((v) => typeof v === "number");
-
       const head = `<div class="dou-cardHead">
         <div class="dou-cardMeta">
           <span class="dou-legendDot" style="background:${color}"></span>
@@ -415,14 +423,7 @@ export const zaiCodingCnAdapter = {
         </div>
         <p class="dou-cardLimit">${e(String(w.unit ?? ""))}${resetText !== "" ? ` · ${e(resetText)}` : ""}</p>
       </div>`;
-
-      const points = [];
-      for (const en of input.entries) {
-        const pv = windowPercentOf(en.data, key);
-        if (pv !== null) {
-          points.push({ x: en.time, y: pv });
-        }
-      }
+      const points = collectWindowPoints(input.entries, key);
       let bodyHtml;
       if (points.length >= 2 && hasPoint) {
         const lo = Math.max(0, Math.min(...points.map((p) => p.y)) - 10);
@@ -441,21 +442,25 @@ export const zaiCodingCnAdapter = {
       } else {
         bodyHtml = `<p class="dou-chartEmpty">数据采集中：每次刷新记录一个采样点（约每 5 分钟一次），≥2 个点后显示趋势。</p>`;
       }
-      cards.push(`<div class="dou-card">${head}${bodyHtml}</div>`);
+      return `<div class="dou-card">${head}${bodyHtml}</div>`;
+    }
+    for (const w of windows) {
+      cards.push(renderWindowCard(w));
     }
 
     // 工具（TIME_LIMIT）卡条件渲染
-    if (latest.tools && typeof latest.tools.percent === "number") {
-      const t = latest.tools;
-      const used = t.currentValue;
-      const total = t.total;
-      const pct = Math.round(t.percent);
-      let bar = "";
-      if (used !== null && total !== null && total > 0) {
-        const bw = Math.min(100, Math.max(0, (used / total) * 100));
-        bar = `<div style="margin-top:6px;height:8px;background:var(--dsw-alias-border-l2,#e8eaf0);border-radius:4px;overflow:hidden"><div style="width:${bw.toFixed(1)}%;height:100%;background:var(--dsw-alias-state-warn-primary,#c9820b)"></div></div>`;
-      }
-      const toolsCard = `<div class="dou-card">
+    function renderToolsCard(latest) {
+      if (latest.tools && typeof latest.tools.percent === "number") {
+        const t = latest.tools;
+        const used = t.currentValue;
+        const total = t.total;
+        const pct = Math.round(t.percent);
+        let bar = "";
+        if (used !== null && total !== null && total > 0) {
+          const bw = Math.min(100, Math.max(0, (used / total) * 100));
+          bar = `<div style="margin-top:6px;height:8px;background:var(--dsw-alias-border-l2,#e8eaf0);border-radius:4px;overflow:hidden"><div style="width:${bw.toFixed(1)}%;height:100%;background:var(--dsw-alias-state-warn-primary,#c9820b)"></div></div>`;
+        }
+        const toolsCard = `<div class="dou-card">
         <div class="dou-cardHead">
           <div class="dou-cardMeta">
             <span class="dou-legendDot" style="background:var(--dsw-alias-state-warn-primary,#c9820b)"></span>
@@ -466,9 +471,12 @@ export const zaiCodingCnAdapter = {
         <p class="dou-cardLimit">${used !== null && total !== null ? `已用 ${used} / ${total}` : ""}</p>
         ${bar}
       </div>`;
-      cards.push(toolsCard);
+        return toolsCard;
+      }
+      return "";
     }
 
+    cards.push(renderToolsCard(latest));
     return cards.join("");
   },
 };

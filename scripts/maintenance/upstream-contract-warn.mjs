@@ -1277,12 +1277,9 @@ async function scanAllA(root, files) {
   }
   return A;
 }
-async function main(argv) {
-  const scope = establishScope(argv);
-  const root = scope.root;
-  const files = scope.files;
-  const A = await scanAllA(root, files);
+function loadBOrExit(root) {
   let B = null;
+
   try {
     B = buildB(root);
   } catch (e) {
@@ -1290,15 +1287,38 @@ async function main(argv) {
       `upstream-contract-warn: B 侧基线不可建立（fail-closed）：${String(e?.message ?? e).slice(0, 300)}`,
     );
   }
+  return B;
+}
+function findCordisServices(A) {
+  const found = [];
+  const events = [];
   for (const m of A.repoModules) {
     if (m.name !== "@deepseek-ai/cordis") continue;
     const ctx = m.parsed.ifaces.get("Context");
     if (!ctx) continue;
     for (const name of ctx.members) {
-      if (!name.includes("/")) B.services.add(name);
-      else B.events.add(name);
+      if (!name.includes("/")) found.push(name);
+      else events.push(name);
     }
   }
+  return { services: found, events: events };
+}
+function printReportLines(lines, fails) {
+  for (const line of lines) {
+    if (fails.some((f) => line.includes(f)) && line.includes("FAIL"))
+      console.warn(`::warning::${line}`);
+    else console.log(line);
+  }
+}
+async function main(argv) {
+  const scope = establishScope(argv);
+  const root = scope.root;
+  const files = scope.files;
+  const A = await scanAllA(root, files);
+  const B = loadBOrExit(root);
+  const cordisFound = findCordisServices(A);
+  B.services = new Set([...B.services, ...cordisFound.services]);
+  B.events = new Set([...B.events, ...cordisFound.events]);
   const R = evaluate({ ...A, blessedValues: A.blessedValues }, B);
   const lines = formatReport(A, B, R);
   const fails = [
@@ -1308,11 +1328,7 @@ async function main(argv) {
     R.r2fail && "R2",
     R.r4fail && "R4-lite",
   ].filter(Boolean);
-  for (const line of lines) {
-    if (fails.some((f) => line.includes(f)) && line.includes("FAIL"))
-      console.warn(`::warning::${line}`);
-    else console.log(line);
-  }
+  printReportLines(lines, fails);
   const onSites = A.events
     .filter((e) => e.verb === "on")
     .map((e) => `${e.rel}:${e.line} ${e.name}`)
