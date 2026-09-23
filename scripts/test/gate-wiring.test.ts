@@ -1292,19 +1292,20 @@ test("A6c：含判据的 job 的 job 级 if 必须逐字登记（扫描面 = 全
   assert.deepEqual(bad, [], "job 级 if 是未登记的静默开关：整个 job 的判据可被一处改动关掉");
 });
 
-test("A6d：判据步骤的有效 env 键与环境面步骤（前序 run / uses 面）必须逐条登记", () => {
-  // 为什么连键名都登记：`env:` 只改执行环境——不改执行点、不改两侧身份，却能整类关掉判据。三层 env
-  // 都算进这一步的有效键，故在 job / workflow 上挂一行 env 会让该 job 下每条判据一起失配。
-  // 另一条不看登记的硬红：能改变执行环境的变量名（BASH_ENV / SHELLOPTS / NODE_OPTIONS / PATH /
-  // LD_PRELOAD / …，A6b 已查）。同 job 前序步骤改写执行环境这件事**按字样匹配是挡不住的**，故改成
-  // 按位置登记整个环境面（priorRunSteps / jobFaces，判定与理由见 lib 里几个函数的注释）。
-  const declared = new Map(STEP_ENVS.map((e) => [e.step, [...e.keys].sort().join(",")]));
-  const priorDeclared = new Map(PRIOR_RUN_STEPS.map((e) => [e.step, e]));
-  const facesDeclared = new Map(JOB_FACES.map((e) => [e.job, e]));
+function collectA6dActuals(
+  declared: Map<string, string>,
+  priorDeclared: Map<string, unknown>,
+  facesDeclared: Map<string, unknown>,
+): {
+  priorActual: Map<string, { digest: string; envKeys: string[] }>;
+  facesActual: Map<string, string>;
+  seen: Set<string>;
+  bad: string[];
+} {
   const priorActual = new Map<string, { digest: string; envKeys: string[] }>();
   const facesActual = new Map<string, string>();
-  const bad: string[] = [];
   const seen = new Set<string>();
+  const bad: string[] = [];
   for (const [file, yaml] of WORKFLOW_TEXTS) {
     for (const job of extractJobs(yaml)) {
       const steps = stepsOf(yaml, file, job, SCRIPTS);
@@ -1327,6 +1328,13 @@ test("A6d：判据步骤的有效 env 键与环境面步骤（前序 run / uses 
       if (face !== null) facesActual.set(`${file}|${job}`, face);
     }
   }
+  return { priorActual, facesActual, seen, bad };
+}
+function checkA6dPrior(
+  priorActual: Map<string, { digest: string; envKeys: string[] }>,
+  priorDeclared: Map<string, { digest: string; envKeys?: string[] }>,
+  bad: string[],
+): void {
   for (const [key, actual] of priorActual) {
     const entry = priorDeclared.get(key);
     if (entry === undefined) {
@@ -1349,6 +1357,14 @@ test("A6d：判据步骤的有效 env 键与环境面步骤（前序 run / uses 
       bad.push(`${key} 登记为前序步骤，但现场找不到它（已改名 / 已被挪到判据之后 / 已删除）`);
     }
   }
+}
+function checkA6dFaces(
+  facesActual: Map<string, string>,
+  facesDeclared: Map<string, { digest: string }>,
+  declared: Map<string, string>,
+  seen: Set<string>,
+  bad: string[],
+): void {
   for (const [key, actual] of facesActual) {
     const entry = facesDeclared.get(key);
     if (entry === undefined) {
@@ -1369,6 +1385,23 @@ test("A6d：判据步骤的有效 env 键与环境面步骤（前序 run / uses 
   for (const key of declared.keys()) {
     if (!seen.has(key)) bad.push(`${key} 登记了 env 键，但现场没有这条判据步骤、或它已无 env`);
   }
+}
+test("A6d：判据步骤的有效 env 键与环境面步骤（前序 run / uses 面）必须逐条登记", () => {
+  // 为什么连键名都登记：`env:` 只改执行环境——不改执行点、不改两侧身份，却能整类关掉判据。三层 env
+  // 都算进这一步的有效键，故在 job / workflow 上挂一行 env 会让该 job 下每条判据一起失配。
+  // 另一条不看登记的硬红：能改变执行环境的变量名（BASH_ENV / SHELLOPTS / NODE_OPTIONS / PATH /
+  // LD_PRELOAD / …，A6b 已查）。同 job 前序步骤改写执行环境这件事**按字样匹配是挡不住的**，故改成
+  // 按位置登记整个环境面（priorRunSteps / jobFaces，判定与理由见 lib 里几个函数的注释）。
+  const declared = new Map(STEP_ENVS.map((e) => [e.step, [...e.keys].sort().join(",")]));
+  const priorDeclared = new Map(PRIOR_RUN_STEPS.map((e) => [e.step, e]));
+  const facesDeclared = new Map(JOB_FACES.map((e) => [e.job, e]));
+  const { priorActual, facesActual, seen, bad } = collectA6dActuals(
+    declared,
+    priorDeclared,
+    facesDeclared,
+  );
+  checkA6dPrior(priorActual, priorDeclared, bad);
+  checkA6dFaces(facesActual, facesDeclared, declared, seen, bad);
   assert.deepEqual(
     bad,
     [],
