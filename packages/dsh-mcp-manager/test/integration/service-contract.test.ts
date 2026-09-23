@@ -207,6 +207,139 @@ const CONTRACT_METHODS: ReadonlyArray<{ name: string; paramCount: number; option
 
 const pkgDir = fileURLToPath(new URL("../../", import.meta.url));
 
+// ── 顶层扫描 helpers（原 extractProvidedServiceMethods 内联体提升，零语义改动；每 helper 均 ≤10/15） ──
+function skipQuoted(s: string, i: number): number {
+  const c = s[i];
+  const quote = c;
+  i += 1;
+  while (i < s.length) {
+    if (s[i] === "\\") {
+      i += 2;
+      continue;
+    }
+    if (s[i] === quote) return i + 1;
+    i += 1;
+  }
+  return i;
+}
+
+function skipTemplateInterpolation(s: string, i: number): number {
+  let depth = 1;
+  i += 2;
+  while (i < s.length && depth > 0) {
+    if (s[i] === "{") depth += 1;
+    else if (s[i] === "}") depth -= 1;
+    i += 1;
+  }
+  return i;
+}
+
+function skipTemplate(s: string, i: number): number {
+  i += 1;
+  while (i < s.length) {
+    if (s[i] === "\\") {
+      i += 2;
+      continue;
+    }
+    if (s[i] === "`") return i + 1;
+    if (s[i] === "$" && s[i + 1] === "{") {
+      i = skipTemplateInterpolation(s, i);
+      continue;
+    }
+    i += 1;
+  }
+  return i;
+}
+
+function skipLineComment(s: string, i: number): number {
+  const nl = s.indexOf("\n", i);
+  return nl < 0 ? s.length : nl + 1;
+}
+
+function skipBlockComment(s: string, i: number): number {
+  const end = s.indexOf("*/", i + 2);
+  return end < 0 ? s.length : end + 2;
+}
+
+function skipAtom(s: string, i: number): number {
+  const c = s[i];
+  if (c === '"' || c === "'") return skipQuoted(s, i);
+  if (c === "`") return skipTemplate(s, i);
+  if (c === "/" && s[i + 1] === "/") return skipLineComment(s, i);
+  if (c === "/" && s[i + 1] === "*") return skipBlockComment(s, i);
+  return i;
+}
+
+function scanBracedRange(src: string, openIndex: number): { bodyStart: number; bodyEnd: number } {
+  let depth = 0;
+  let bodyStart = -1;
+  let bodyEnd = -1;
+  let i = openIndex;
+  while (i < src.length) {
+    if (src[i] === "{" || src[i] === "}") {
+      depth += src[i] === "{" ? 1 : -1;
+      if (bodyStart < 0) bodyStart = i + 1;
+      if (depth === 0) {
+        bodyEnd = i;
+        break;
+      }
+      i += 1;
+      continue;
+    }
+    const next = skipAtom(src, i);
+    i = next > i ? next : i + 1;
+  }
+  return { bodyStart, bodyEnd };
+}
+
+function findProvideBody(src: string): {
+  markerIndex: number;
+  bodyStart: number;
+  bodyEnd: number;
+} {
+  const marker = 'provide("mcpManager", {';
+  const markerIndex = src.indexOf(marker);
+  if (markerIndex < 0) return { markerIndex, bodyStart: -1, bodyEnd: -1 };
+  const openIndex = markerIndex + marker.length - 1;
+  const { bodyStart, bodyEnd } = scanBracedRange(src, openIndex);
+  return { markerIndex, bodyStart, bodyEnd };
+}
+
+function bracketDelta(ch: string): number {
+  if (ch === "<" || ch === "[" || ch === "{") return 1;
+  if (ch === ">" || ch === "]" || ch === "}") return -1;
+  return 0;
+}
+
+function countMethodParams(raw: string): { paramCount: number; optionalCount: number } {
+  const params = raw.trim();
+  const optionalCount = (params.match(/\?/g) ?? []).length;
+  let paramCount = 0;
+  let depth = 0;
+  for (const ch of params) {
+    const delta = bracketDelta(ch);
+    if (delta !== 0) depth += delta;
+    else if (ch === "," && depth === 0) paramCount += 1;
+  }
+  if (params !== "") paramCount += 1;
+  return { paramCount, optionalCount };
+}
+
+function parseBodyMethods(body: string): Array<{
+  name: string;
+  paramCount: number;
+  optionalCount: number;
+}> {
+  const methods: Array<{ name: string; paramCount: number; optionalCount: number }> = [];
+  const keyRe = /^\s*([A-Za-z_$][\w$]*)\s*:\s*\(([^)]*)\)\s*=>/gm;
+  let m: RegExpExecArray | null;
+  while ((m = keyRe.exec(body)) !== null) {
+    const { paramCount, optionalCount } = countMethodParams(m[2]);
+    methods.push({ name: m[1], paramCount, optionalCount });
+  }
+  return methods;
+}
+
 /**
  * 从 src/index.ts 源文本提取 provide("mcpManager", {...}) 对象的方法面。
  * 说明：provide 对象字面量未导出、且 src/index.ts 导入链重（不 import 运行时），
@@ -224,115 +357,13 @@ function extractProvidedServiceMethods(): {
   methods: Array<{ name: string; paramCount: number; optionalCount: number }>;
 } {
   const src = readFileSync(join(pkgDir, "src", "index.ts"), "utf8");
-  // 锚定首个 `provide("mcpManager", {` marker（非 AST——测试刻意不做解析级双真源，
-  // 方法名存在性 + 参数个数即可抓「删方法/改参数量」）。当前 src/index.ts 全文件仅此
-  // 一处该形态调用，indexOf 首个命中即目标；若未来 src/index.ts 出现多处 provide
-  // 调用或形态变化导致本提取失配，测试会红并提示人工更新（fail-loud，不静默）。
-  const marker = 'provide("mcpManager", {';
-  const markerIndex = src.indexOf(marker);
-  if (markerIndex < 0) {
-    return { markerIndex, bodyStart: -1, bodyEnd: -1, methods: [] };
-  }
-
-  // 括号配对扫描：找到 provide 对象的完整区间（跳过字符串字面量与注释）。
-  function skipQuoted(s: string, i: number): number {
-    const c = s[i];
-    const quote = c;
-    i += 1;
-    while (i < s.length) {
-      if (s[i] === "\\") {
-        i += 2;
-        continue;
-      }
-      if (s[i] === quote) return i + 1;
-      i += 1;
-    }
-    return i;
-  }
-  function skipTemplate(s: string, i: number): number {
-    i += 1;
-    while (i < s.length) {
-      if (s[i] === "\\") {
-        i += 2;
-        continue;
-      }
-      if (s[i] === "`") return i + 1;
-      if (s[i] === "$" && s[i + 1] === "{") {
-        // 模板插值内可能含括号——保守跳过到配对的 }（简单计数，测试源无嵌套插值）
-        let depth = 1;
-        i += 2;
-        while (i < s.length && depth > 0) {
-          if (s[i] === "{") depth += 1;
-          else if (s[i] === "}") depth -= 1;
-          i += 1;
-        }
-        continue;
-      }
-      i += 1;
-    }
-    return i;
-  }
-  const skip = (s: string, i: number): number => {
-    const c = s[i];
-    if (c === '"' || c === "'") {
-      return skipQuoted(s, i);
-    }
-    if (c === "`") {
-      return skipTemplate(s, i);
-    }
-    if (c === "/" && s[i + 1] === "/") {
-      const nl = s.indexOf("\n", i);
-      return nl < 0 ? s.length : nl + 1;
-    }
-    if (c === "/" && s[i + 1] === "*") {
-      const end = s.indexOf("*/", i + 2);
-      return end < 0 ? s.length : end + 2;
-    }
-    return i;
-  };
-
-  let depth = 0;
-  let bodyStart = -1;
-  let bodyEnd = -1;
-  let i = markerIndex + marker.length - 1; // 指向 '{'
-  while (i < src.length) {
-    if (src[i] === "{" || src[i] === "}") {
-      depth += src[i] === "{" ? 1 : -1;
-      if (bodyStart < 0) bodyStart = i + 1;
-      if (depth === 0) {
-        bodyEnd = i;
-        break;
-      }
-      i += 1;
-      continue;
-    }
-    const next = skip(src, i);
-    i = next > i ? next : i + 1;
-  }
-  if (!(bodyStart >= 0 && bodyEnd > bodyStart)) {
+  // 薄组装：边界定位与方法解析分别委托顶层 helper（零语义改动，原内联体已删）。
+  const { markerIndex, bodyStart, bodyEnd } = findProvideBody(src);
+  if (markerIndex < 0 || !(bodyStart >= 0 && bodyEnd > bodyStart)) {
     return { markerIndex, bodyStart, bodyEnd, methods: [] };
   }
   const body = src.slice(bodyStart, bodyEnd);
-
-  const methods: Array<{ name: string; paramCount: number; optionalCount: number }> = [];
-  // 顶层方法键行：`<key>: (<params>) => ...`（注释行以 / 开头天然不命中）。
-  const keyRe = /^\s*([A-Za-z_$][\w$]*)\s*:\s*\(([^)]*)\)\s*=>/gm;
-  let m: RegExpExecArray | null;
-  while ((m = keyRe.exec(body)) !== null) {
-    const params = m[2].trim();
-    const optionalCount = (params.match(/\?/g) ?? []).length;
-    // 参数按「顶层逗号」分割：类型标注里的泛型/对象字面量逗号（如
-    // `Record<string, unknown>`）不计入参数个数。
-    let paramCount = 0;
-    let depth = 0;
-    for (const ch of params) {
-      if (ch === "<" || ch === "[" || ch === "{") depth += 1;
-      else if (ch === ">" || ch === "]" || ch === "}") depth -= 1;
-      else if (ch === "," && depth === 0) paramCount += 1;
-    }
-    if (params !== "") paramCount += 1;
-    methods.push({ name: m[1], paramCount, optionalCount });
-  }
+  const methods = parseBodyMethods(body);
   return { markerIndex, bodyStart, bodyEnd, methods };
 }
 
@@ -372,4 +403,100 @@ describe("service-contract：src/index.ts provide 方法面与契约清单一致
       expect(actual?.optionalCount).toBe(optionalCount);
     },
   );
+});
+
+describe("service-contract 拆分目标：findProvideBody 定位 provide 块边界", () => {
+  it("真实 src 应与原函数同边界（等价）", () => {
+    const src = readFileSync(join(pkgDir, "src", "index.ts"), "utf8");
+    const top = findProvideBody(src);
+    const orig = extractProvidedServiceMethods();
+    expect(top.markerIndex).toBe(orig.markerIndex);
+    expect(top.bodyStart).toBe(orig.bodyStart);
+    expect(top.bodyEnd).toBe(orig.bodyEnd);
+    expect(top.markerIndex >= 0).toBe(true);
+    expect(top.bodyStart >= 0 && top.bodyEnd > top.bodyStart).toBe(true);
+  });
+
+  it("缺失 marker 应返回 -1（fail-loud 同语义）", () => {
+    const top = findProvideBody("const x = 1; // no provide");
+    expect(top.markerIndex).toBe(-1);
+    expect(top.bodyStart).toBe(-1);
+    expect(top.bodyEnd).toBe(-1);
+  });
+
+  it("字符串内大括号不应干扰对象边界", () => {
+    const src =
+      'provide("mcpManager", {\n' +
+      '  a: (x: string) => "{ not a brace }",\n' +
+      "  b: () => 1,\n" +
+      "});";
+    const top = findProvideBody(src);
+    expect(top.markerIndex >= 0).toBe(true);
+    const body = src.slice(top.bodyStart, top.bodyEnd);
+    expect(body).toContain("not a brace");
+    expect(top.bodyEnd).toBe(src.lastIndexOf("}"));
+  });
+
+  it("行注释与块注释内大括号不应干扰边界", () => {
+    const src =
+      'provide("mcpManager", {\n' +
+      "  // comment { \n" +
+      "  /* block } { */\n" +
+      "  a: () => 1,\n" +
+      "});";
+    const top = findProvideBody(src);
+    expect(top.bodyStart >= 0 && top.bodyEnd > top.bodyStart).toBe(true);
+    expect(src.slice(top.bodyStart, top.bodyEnd)).toContain("a: () => 1");
+  });
+
+  it("模板插值内大括号应被跳过", () => {
+    const src =
+      'provide("mcpManager", {\n' +
+      "  a: (x: string) => `hi ${ { v: 1 } }`,\n" +
+      "  b: () => 1,\n" +
+      "});";
+    const top = findProvideBody(src);
+    expect(top.bodyStart >= 0 && top.bodyEnd > top.bodyStart).toBe(true);
+    expect(top.bodyEnd).toBe(src.lastIndexOf("}"));
+  });
+});
+
+describe("service-contract 拆分目标：parseBodyMethods 块内方法条目解析", () => {
+  it("真实 body 应与原函数同方法面（等价，含现有用例行为）", () => {
+    const src = readFileSync(join(pkgDir, "src", "index.ts"), "utf8");
+    const { bodyStart, bodyEnd } = findProvideBody(src);
+    const body = src.slice(bodyStart, bodyEnd);
+    const top = parseBodyMethods(body);
+    const orig = extractProvidedServiceMethods();
+    expect(top).toEqual(orig.methods);
+    expect([...top.map((x) => x.name)].sort()).toEqual(
+      [...CONTRACT_METHODS.map((x) => x.name)].sort(),
+    );
+  });
+
+  it("泛型逗号不应计入参数个数（Record<string, unknown>）", () => {
+    const top = parseBodyMethods("  registerServer: (server: Record<string, unknown>) => 1,");
+    expect(top).toEqual([{ name: "registerServer", paramCount: 1, optionalCount: 0 }]);
+  });
+
+  it("可选参数 ? 应计数且参数个数正确", () => {
+    const top = parseBodyMethods("  connect: (name: string, scope?: string) => 1,");
+    expect(top).toEqual([{ name: "connect", paramCount: 2, optionalCount: 1 }]);
+  });
+
+  it("空参 list 应为 0/0", () => {
+    const top = parseBodyMethods("  list: () => 1,");
+    expect(top).toEqual([{ name: "list", paramCount: 0, optionalCount: 0 }]);
+  });
+
+  it("注释行不应命中、空 body 应为空数组", () => {
+    const top = parseBodyMethods("  // connect: (x) => 1\n  list: () => 1,");
+    expect(top.map((x) => x.name)).toEqual(["list"]);
+    expect(parseBodyMethods("")).toEqual([]);
+  });
+
+  it("countMethodParams 顶层逗号语义：对象字面量逗号不计", () => {
+    expect(countMethodParams("a: { x: 1, y: 2 }, b: string").paramCount).toBe(2);
+    expect(countMethodParams("").paramCount).toBe(0);
+  });
 });
