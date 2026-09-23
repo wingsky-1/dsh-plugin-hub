@@ -22,6 +22,7 @@ export { SETTINGS_NS, installLanProxySettings, warnLog } from "./impl/namespace.
 export type {
   LanProxySettingsHooks,
   OwnerScopeLike,
+  SettingsDescriptorLike,
   SettingsServiceLike,
 } from "./impl/namespace.ts";
 export { ROUTES, applyConfigPatch, buildCaCertRoutes, buildConfigRoutes } from "./impl/routes.ts";

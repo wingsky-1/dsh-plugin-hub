@@ -182,6 +182,14 @@ export const Config: z<LanProxyConfig> = z.object({
 });
 
 /**
+ * dsh 0.1.7-rc.1 配置域永久声明：整节标记 volatile（免 remount 热更新）。
+ * 直接置 meta（禁链式 `.volatile()`——当前锁版 schemastery@3.18.0 无该方法，
+ * 链式会在 rc.1 基线 tsc 失败）；tsc 侧经 cast（Meta 面无 volatile 字段）。
+ * 业务域禁版本分支：此处无条件声明，rc.5 运行时忽略未知 meta（实测无副作用）。
+ */
+(Config as unknown as { meta: { volatile?: boolean } }).meta.volatile = true;
+
+/**
  * 默认配置（键集 = schema 中带 `.default()` 的字段）。从 schema 归一化**空输入**派生，
  * 不再手写第二份默认值——默认值只写在上面 schema 的 `.default(...)` 里，改一处即改两处。
  *

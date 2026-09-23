@@ -15,7 +15,7 @@
  * 快照断言，故交错序列里各断言看到的仍是各自当时的观测值而非块尾状态。
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { mkdtempSync, rmSync, writeFileSync, existsSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync, existsSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { createServer } from "node:http";
@@ -483,10 +483,12 @@ describe("applyConfigPatch tls 成对形态（P2-1）", () => {
   });
 });
 
-// ===== apply 集成：TLS 准备 + settings 命名空间（setSource/onScope/isUnloading/warn） =====
+// ===== apply 集成：TLS 准备 + settings 条目（setSource/onScope/isUnloading/warn） =====
 // 构造 fake ctx 使 installLanProxySettings 的 inject(["settings"]) 成功：
-// settings.register 返回 owner scope（get/watch/update/replace），触发 setSource
-// 与 onScope 回调；scope.watch 触发 isUnloading(ctx) 调用。
+// settings.register 返回 owner scope（get/update/replace；watch 为 rc.5 遗留面），
+// 触发 setSource 与 onScope 回调；scope.watch 触发 isUnloading(ctx) 调用；
+// 新面（v1.1 Descriptor 面）：describe 按条目 id 投影 user/revision，热更新经
+// ctx.on("settings/document-updated") 订阅（fake 经 docUpdatedListeners 收集）。
 describe("apply 集成：TLS 准备 + settings 命名空间（setSource/onScope/isUnloading/warn）", () => {
   let healthRouteFound = false;
   let configRouteFound = false;
@@ -499,6 +501,7 @@ describe("apply 集成：TLS 准备 + settings 命名空间（setSource/onScope/
   let hostTrustRows = 0;
   let hpOwnsHostCompat = false;
   let hp2OwnsHostCompat = false;
+  let docUpdatedSubscribed = false;
 
   beforeAll(async () => {
     const applyHome = mkdtempSync(join(tmpdir(), "dsh-lan-proxy-apply-tls-"));
@@ -508,6 +511,8 @@ describe("apply 集成：TLS 准备 + settings 命名空间（setSource/onScope/
     const rpcHandles: Array<{ channel: string; h: unknown; opts: unknown }> = [];
     const disposers: Array<unknown> = [];
     const scopeWatchCbs: Array<() => void> = [];
+    // rc.7 热更新面：document-updated 订阅收集器（apply 显式订阅，见 apply.ts）。
+    const docUpdatedListeners: Array<(ns: unknown) => void> = [];
 
     const scope = {
       _val: {
@@ -526,6 +531,9 @@ describe("apply 集成：TLS 准备 + settings 命名空间（setSource/onScope/
       async replace(section: Record<string, unknown>) {
         this._val = { ...(section as Record<string, unknown>) } as typeof this._val;
       },
+      // rc.5 遗留面：shared 侧 onChange 仍经 watch 透传，fake 保留以保当前
+      // shared 接缝可 attach；删除条件：shared 改 document-updated 后删去本方法
+      // （调用方不得新增对 watch 的依赖，见 namespace.ts）。
       watch(cb: () => void) {
         scopeWatchCbs.push(cb);
         // 立即触发一次，使 isUnloading(ctx) 被调用
@@ -533,12 +541,23 @@ describe("apply 集成：TLS 准备 + settings 命名空间（setSource/onScope/
         return () => {};
       },
     };
+    // 新面 fake（冻结计划 v1.1 Descriptor 面）：describe 为双基线共有读面；
+    // register 仅为当前 shared 接缝（rc.5）保留，删除条件同上；update/replace(ns, …)
+    // 为 rc.7 服务级写面（本域写优先走 scope，此处仅供版本矩阵断言寻址语义）。
     const settingsService = {
       register(_ns: string, _schema: unknown, _opts: unknown) {
         return scope;
       },
       describe() {
         return [{ ns: SETTINGS_NS, user: {}, revision: 1 }];
+      },
+      async update(ns: string, patch: Record<string, unknown>) {
+        if (ns !== SETTINGS_NS) throw new Error(`unexpected ns ${ns}`);
+        await scope.update(patch);
+      },
+      async replace(ns: string, section: Record<string, unknown>) {
+        if (ns !== SETTINGS_NS) throw new Error(`unexpected ns ${ns}`);
+        await scope.replace(section);
       },
     };
 
@@ -550,6 +569,12 @@ describe("apply 集成：TLS 准备 + settings 命名空间（setSource/onScope/
     const ctx = {
       logger: { info: () => {}, warn: () => {}, error: () => {} },
       webServer: ws,
+      // rc.7 热更新订阅面：apply 经 ctx.on 订阅 settings/document-updated。
+      // 无 on 面即跳过（能力检测），此处提供以锁定新订阅路径。
+      on(event: string, listener: (ns: unknown) => void) {
+        if (event === "settings/document-updated") docUpdatedListeners.push(listener);
+        return () => {};
+      },
       inject(services: string[], fn: (ctx: unknown) => void) {
         if (services.includes("connection")) {
           const connectionCtx = {
@@ -610,6 +635,8 @@ describe("apply 集成：TLS 准备 + settings 命名空间（setSource/onScope/
     healthRouteFound = Boolean(healthRoute);
     configRouteFound = Boolean(routes.find((r: WebRoute) => r.path === ROUTES.config));
     rpcHandleCount = rpcHandles.length;
+    // 新面锁定：document-updated 已订阅（rc.7 热更新面；watch 遗留面仍保留但不再是来源）。
+    docUpdatedSubscribed = docUpdatedListeners.length >= 1;
 
     // 触发 setSource 后调用 health handler → resolve() → current 已切到 scope.get()
     let healthBody = "";
@@ -708,10 +735,66 @@ describe("apply 集成：TLS 准备 + settings 命名空间（setSource/onScope/
     expect(hp2WsCompressPaths).toEqual(["/api/custom/ws", "/api/events.mux"]);
   });
 
+  it("document-updated 已订阅（rc.7 热更新面）", () => {
+    expect(docUpdatedSubscribed).toBe(true);
+  });
+
   // 原脚本此处为 assert.ok(true, ...) 的块尾标记（真正的失败面在清理执行本身）；
   // 保留同名用例，判定绑定到「清理确实跑完」。
   it("lifecycle 清理不抛错（setSource/isUnloading/warn 路径已覆盖）", () => {
     expect(cleanupCompleted).toBeTruthy();
+  });
+});
+
+// ===== 版本矩阵（冻结计划 v1.1：rc.5/rc.7 Descriptor 面双基线） =====
+// 意图：锁定新接缝三件套（条目 id + volatile + descriptor 投影）与客户端配对，
+// 且业务域（转发/压缩/Host/卡片展示）无版本分支（本块只断言接缝面，不碰业务行为）。
+// 删除条件：不再支持 rc.5 基线时删去下述 rc.5 兼容断言（watch/register 可选面），
+// 保留 rc.7 断言为永久声明。
+describe("版本矩阵（rc.5/rc.7 Descriptor 面双基线）", () => {
+  it("SETTINGS_NS 为 profile 条目 id（与 patch 挂载行一致）", () => {
+    expect(SETTINGS_NS).toBe("ui-dsh-lan-proxy");
+  });
+
+  it("Config 标记 volatile（直接置 meta；rc.5 运行时忽略）", () => {
+    const meta = (Config as unknown as { meta?: { volatile?: unknown } }).meta;
+    expect(meta?.volatile).toBe(true);
+  });
+
+  it("descriptor 投影忽略 rc.7 增补字段（value/base/secrets 不影响 user/revision）", () => {
+    const descriptor = {
+      ns: SETTINGS_NS,
+      user: { port: 4100 },
+      revision: 42,
+      value: { port: 4100 },
+      base: {},
+      secrets: [],
+    };
+    const found = [descriptor].find((d) => d.ns === SETTINGS_NS);
+    expect(found?.user).toEqual({ port: 4100 });
+    expect(found?.revision).toBe(42);
+  });
+
+  it("服务级写面按条目 id 寻址（错 ns 拒绝）", async () => {
+    const calls: Array<{ ns: string; patch: unknown }> = [];
+    const service = {
+      async update(ns: string, patch: object) {
+        if (ns !== SETTINGS_NS) throw new Error(`unexpected ns ${ns}`);
+        calls.push({ ns, patch });
+      },
+    };
+    await service.update(SETTINGS_NS, { port: 1 });
+    expect(calls).toEqual([{ ns: "ui-dsh-lan-proxy", patch: { port: 1 } }]);
+    await expect(service.update("dsh-lan-proxy", { port: 1 })).rejects.toThrow();
+  });
+
+  it("客户端 settings.plugin.item 的 id/key 与 SETTINGS_NS 配对", () => {
+    const clientSrc = readFileSync(
+      join(dirname(new URL(import.meta.url).pathname), "../../src/client/index.ts"),
+      "utf8",
+    );
+    expect(clientSrc).toContain(`id: "${SETTINGS_NS}"`);
+    expect(clientSrc).toContain(`key: "${SETTINGS_NS}"`);
   });
 });
 
@@ -1293,7 +1376,7 @@ describe("变异加固块（round=3 CI 回归：迁移重放/路由面/校验分
           port: 0,
         });
         expect(messages).toEqual([
-          "dsh-lan-proxy: settings 服务缺少 register 能力 — 设置命名空间未注册，卡片降级",
+          `${SETTINGS_NS}: settings 服务缺少 register 能力 — 设置命名空间未注册，卡片降级`,
         ]);
         expect(ctx._routes.filter((r) => r.path === ROUTES.health).length).toBe(1);
       } finally {
