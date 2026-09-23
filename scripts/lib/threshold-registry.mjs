@@ -725,7 +725,17 @@ const COMPARATORS = {
   existence: compareExistenceGuard,
 };
 
-/** 逐条求值声明表；返回 { failures, warnings, envErrors, skips }。 */
+/**
+ * 逐条求值声明表；返回 { failures, warnings, envErrors, skips }。
+ *
+ * @param {object} args
+ * @param {{ guards: Array<{ id: string } & Record<string, unknown>> }} args.registry 声明表（比较器真实形状：guard 具 id）
+ * @param {(rel: string) => string | null} args.readBase 基准读取
+ * @param {(rel: string) => string | null} args.readWorkspace 工作区读取
+ * @param {Record<string, unknown>} [args.textReaders] 文本读取器
+ * @param {Array<{ name: string, dirs: string[] }>} [args.packages] 工作区包清单
+ * @param {Map<string, unknown>} [args.exemptions] 豁免台账（只读）
+ */
 export function compareRegistry({
   registry,
   readBase,

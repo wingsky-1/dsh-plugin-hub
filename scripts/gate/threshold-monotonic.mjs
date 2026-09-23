@@ -479,6 +479,17 @@ function buildRenameWarning(pairs, oldPkg, newPkg, requireDir) {
  * 全量扫描之后试认包改名。返回 { failures, warnings, envErrors, renamed }：
  * renamed=true 时 failures 已去掉被配对的删叶、warnings 追加一条 rename-pair 警告；
  * 否则原样返回（调用方照旧按 failures/envErrors 分流）。
+ *
+ * @param {object} args
+ * @param {{ guards: Array<{ id: string } & Record<string, unknown>> }} args.registry 声明表
+ * @param {(rel: string) => string | null} args.readBase 基准读取
+ * @param {(rel: string) => string | null} args.readWorkspace 工作区读取
+ * @param {Record<string, unknown>} [args.textReaders] 文本读取器
+ * @param {Array<{ name: string, dirs: string[] }>} [args.packages] 工作区包清单
+ * @param {Array<{ name: string, dirs: string[] }>} [args.basePackages] 基准包清单
+ * @param {{ failures: string[], warnings: string[], envErrors: string[] }} args.result 全量扫描结果
+ * @param {Map<string, unknown>} [args.exemptions] 豁免台账（只读）
+ * @param {(() => { ok: boolean, detail?: string }) | null} [args.faceCheck] 面并集证据
  */
 export function applyRenameRecognition({
   registry,

@@ -15,7 +15,7 @@ import { applyRenameRecognition } from "../gate/threshold-monotonic.mjs";
 const GAUNTLET = "scripts/data/gauntlet.config.json";
 const TOPOLOGY = "scripts/data/mutation-topology.json";
 
-const guard = (fields) => ({
+const guard = <T extends { id: string } & Record<string, unknown>>(fields: T) => ({
   why: "fixture 判据说明",
   hint: "fixture 修法提示",
   ...fields,
@@ -72,25 +72,34 @@ const COVERAGE_CONFIG = "scripts/data/coverage.config.json";
 
 const GUARDS = [THRESHOLD_GUARD, TIMEOUT_GUARD, ANCHOR_GUARD, EXISTENCE_GUARD];
 
-const memRead = (files) => (rel) => (Object.hasOwn(files, rel) ? files[rel] : null);
+const memRead =
+  (files: Record<string, string>) =>
+  (rel: string): string | null =>
+    Object.hasOwn(files, rel) ? files[rel] : null;
 
-const topologyDoc = (packages, shared = 60000) =>
+const topologyDoc = (packages: Record<string, unknown>, shared: number = 60000) =>
   JSON.stringify({ sharedDefaults: { timeoutMS: shared }, packages });
 
 const OLD = "dsh-old";
 const NEW = "dsh-new";
-const oldEntry = (overrides = {}) => ({
+const oldEntry = (overrides: Record<string, unknown> = {}) => ({
   threshold: 60,
   fixedCovered: 70,
   ...overrides,
 });
-const newEntry = (overrides = {}) => ({
+const newEntry = (overrides: Record<string, unknown> = {}) => ({
   threshold: 60,
   fixedCovered: 70,
   ...overrides,
 });
-const oldTopoEntry = (overrides = {}) => ({ timeoutMS: 60000, ...overrides });
-const newTopoEntry = (overrides = {}) => ({ timeoutMS: 60000, ...overrides });
+const oldTopoEntry = (overrides: Record<string, unknown> = {}) => ({
+  timeoutMS: 60000,
+  ...overrides,
+});
+const newTopoEntry = (overrides: Record<string, unknown> = {}) => ({
+  timeoutMS: 60000,
+  ...overrides,
+});
 
 /**
  * 跑一次「全量扫描＋改名识别」；exitCode 口径与 runThresholdMonotonic 的尾部分流一致
@@ -108,9 +117,22 @@ function runRenameCase({
   faceOk = true,
   extraBaseFiles = {},
   extraWsFiles = {},
+}: {
+  baseGauntlet: unknown;
+  wsGauntlet: unknown;
+  baseTopology: unknown;
+  wsTopology: unknown;
+  packages: Array<{ name: string; dirs: string[] }>;
+  basePackages: Array<{ name: string; dirs: string[] }>;
+  guards?: Array<{ id: string } & Record<string, unknown>>;
+  exemptions?: Map<string, unknown>;
+  faceOk?: boolean;
+  extraBaseFiles?: Record<string, string>;
+  extraWsFiles?: Record<string, string>;
 }) {
   // 用例可传对象或已 stringify 的文本（topologyDoc 返回文本），一律归一化为文本。
-  const asText = (value) => (typeof value === "string" ? value : JSON.stringify(value));
+  const asText = (value: unknown): string =>
+    typeof value === "string" ? value : JSON.stringify(value);
   const baseFiles = {
     [GAUNTLET]: asText(baseGauntlet),
     [TOPOLOGY]: asText(baseTopology),
@@ -147,14 +169,16 @@ function runRenameCase({
   return { result, adjusted, exitCode };
 }
 
-const baseGauntletOld = (overrides = {}) => ({
+const baseGauntletOld = (overrides: Record<string, unknown> = {}) => ({
   mutation: { strict: true, packages: { [OLD]: oldEntry(overrides) } },
 });
-const wsGauntletNew = (overrides = {}) => ({
+const wsGauntletNew = (overrides: Record<string, unknown> = {}) => ({
   mutation: { strict: true, packages: { [NEW]: newEntry(overrides) } },
 });
-const baseTopologyOld = (overrides = {}) => topologyDoc({ [OLD]: oldTopoEntry(overrides) });
-const wsTopologyNew = (overrides = {}) => topologyDoc({ [NEW]: newTopoEntry(overrides) });
+const baseTopologyOld = (overrides: Record<string, unknown> = {}) =>
+  topologyDoc({ [OLD]: oldTopoEntry(overrides) });
+const wsTopologyNew = (overrides: Record<string, unknown> = {}) =>
+  topologyDoc({ [NEW]: newTopoEntry(overrides) });
 const pkgsNew = () => [{ name: NEW, dirs: ["src"] }];
 const pkgsOld = () => [{ name: OLD, dirs: ["src"] }];
 
