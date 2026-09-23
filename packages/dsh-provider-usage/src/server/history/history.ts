@@ -455,6 +455,37 @@ async function writeDayGroups(
   }
   return true;
 }
+async function migrateProvider(
+  pdir: string,
+  provider: string,
+  store: HistoryStore,
+): Promise<number> {
+  let migrated = 0;
+  let files: string[];
+  try {
+    files = await readdir(pdir);
+  } catch {
+    return migrated;
+  }
+  for (const file of files) {
+    if (!file.endsWith(".json")) continue; // .bak 与其它格式跳过
+    const loaded = await readLegacyEntries(pdir, file);
+    if (loaded === null) continue;
+    const adapterId = loaded.adapterId;
+    const entries = loaded.entries;
+    const ok = await writeDayGroups(store, provider, adapterId, entries);
+    if (ok) {
+      // 成功 → 旧文件重命名 .bak（幂等：不扫描 .bak；覆盖同名保留时间戳）
+      try {
+        await rename(join(pdir, file), join(pdir, `${file}.v3.bak`));
+      } catch {
+        /* 重命名失败保留原文件，下次重试 */
+      }
+      migrated += entries.length;
+    }
+  }
+  return migrated;
+}
 export async function migrateLegacyV3(root: string, store: HistoryStore): Promise<number> {
   const historyDir = join(root, "history");
   let providers: string[];
@@ -466,29 +497,7 @@ export async function migrateLegacyV3(root: string, store: HistoryStore): Promis
   let migrated = 0;
   for (const provider of providers) {
     const pdir = join(historyDir, provider);
-    let files: string[];
-    try {
-      files = await readdir(pdir);
-    } catch {
-      continue;
-    }
-    for (const file of files) {
-      if (!file.endsWith(".json")) continue; // .bak 与其它格式跳过
-      const loaded = await readLegacyEntries(pdir, file);
-      if (loaded === null) continue;
-      const adapterId = loaded.adapterId;
-      const entries = loaded.entries;
-      const ok = await writeDayGroups(store, provider, adapterId, entries);
-      if (ok) {
-        // 成功 → 旧文件重命名 .bak（幂等：不扫描 .bak；覆盖同名保留时间戳）
-        try {
-          await rename(join(pdir, file), join(pdir, `${file}.v3.bak`));
-        } catch {
-          /* 重命名失败保留原文件，下次重试 */
-        }
-        migrated += entries.length;
-      }
-    }
+    migrated += await migrateProvider(pdir, provider, store);
   }
   return migrated;
 }

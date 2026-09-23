@@ -313,6 +313,9 @@ function checkApiKeyPlaintext(
   }
   return { ok: true, value: plain };
 }
+function isValidCap(cap: unknown): boolean {
+  return cap === 0 || cap === 1 || cap === 2;
+}
 function checkPresetsField(value: unknown):
   | {
       readonly ok: true;
@@ -376,7 +379,7 @@ function checkPresetsField(value: unknown):
       };
     }
     const cap = item["automationCap"];
-    if (cap !== 0 && cap !== 1 && cap !== 2) {
+    if (!isValidCap(cap)) {
       return {
         ok: false,
         failure: {
@@ -431,11 +434,7 @@ function checkHistoryField(value: unknown):
     },
   };
 }
-export function validatePutBody(
-  body: unknown,
-):
-  | { readonly ok: true; readonly patch: ConfigPutPatch }
-  | { readonly ok: false; readonly failure: PutFailure } {
+function checkPutKeys(body: unknown): { ok: false; failure: PutFailure } | null {
   if (!isRecord(body)) {
     return {
       ok: false,
@@ -468,6 +467,22 @@ export function validatePutBody(
       };
     }
   }
+  return null;
+}
+function checkPutApiKey(
+  body: unknown,
+):
+  | { ok: true; apiKeyRef: string | null | undefined; apiKeyPlaintext: string | undefined }
+  | { ok: false; failure: PutFailure } {
+  if (!isRecord(body))
+    return {
+      ok: false,
+      failure: {
+        errorCode: "INVALID_BODY",
+        category: "bad-request",
+        message: "body must be an object",
+      },
+    };
   const ref = body["apiKeyRef"];
   const plain = body["apiKeyPlaintext"];
   // confirm 字段保留在白名单仅作向后兼容（老客户端仍发 confirm:true），此处不再读取。
@@ -487,42 +502,112 @@ export function validatePutBody(
       },
     };
   }
+  return { ok: true, apiKeyRef: apiKeyRef, apiKeyPlaintext: apiKeyPlaintext };
+}
+function checkPutInts(
+  body: unknown,
+): { ok: true; intVals: Record<string, number | undefined> } | { ok: false; failure: PutFailure } {
+  if (!isRecord(body))
+    return {
+      ok: false,
+      failure: {
+        errorCode: "INVALID_BODY",
+        category: "bad-request",
+        message: "body must be an object",
+      },
+    };
   const intVals: Record<string, number | undefined> = {};
   for (const field of PUT_INT_FIELDS) {
     const checked = putRangedInt(body, field);
     if (!checked.ok) return checked;
     if (checked.value !== undefined) intVals[field.key] = checked.value;
   }
-  const timeoutMs = intVals["timeoutMs"];
-  const maxConcurrency = intVals["maxConcurrency"];
-  const truncBudget = intVals["truncBudget"];
-  const checkedPresets = checkPresetsField(body["presets"]);
-  if (!checkedPresets.ok) {
-    return checkedPresets;
-  }
-  const presets = checkedPresets.list;
-  const checkedHistory = checkHistoryField(body["history"]);
-  if (!checkedHistory.ok) {
-    return checkedHistory;
-  }
-  const history = checkedHistory.history;
+  return { ok: true, intVals: intVals };
+}
+function checkPutCustom(
+  body: unknown,
+):
+  | { ok: true; customPresets: ConfigPutPatch["customPresets"] }
+  | { ok: false; failure: PutFailure } {
+  if (!isRecord(body))
+    return {
+      ok: false,
+      failure: {
+        errorCode: "INVALID_BODY",
+        category: "bad-request",
+        message: "body must be an object",
+      },
+    };
   let customPresets: ConfigPutPatch["customPresets"];
   if (body["customPresets"] !== undefined) {
     const checked = validateCustomPresets(body["customPresets"]);
     if (!checked.ok) return checked;
     customPresets = checked.list;
   }
+  return { ok: true, customPresets: customPresets };
+}
+function buildPutPatch(
+  apiKeyRef: ConfigPutPatch["apiKeyRef"],
+  apiKeyPlaintext: ConfigPutPatch["apiKeyPlaintext"],
+  timeoutMs: ConfigPutPatch["timeoutMs"],
+  maxConcurrency: ConfigPutPatch["maxConcurrency"],
+  truncBudget: ConfigPutPatch["truncBudget"],
+  presets: ConfigPutPatch["presets"],
+  history: ConfigPutPatch["history"],
+  customPresets: ConfigPutPatch["customPresets"],
+): ConfigPutPatch {
+  return {
+    ...(apiKeyRef !== undefined ? { apiKeyRef } : {}),
+    ...(apiKeyPlaintext !== undefined ? { apiKeyPlaintext } : {}),
+    ...(timeoutMs !== undefined ? { timeoutMs } : {}),
+    ...(maxConcurrency !== undefined ? { maxConcurrency } : {}),
+    ...(truncBudget !== undefined ? { truncBudget } : {}),
+    ...(presets !== undefined ? { presets } : {}),
+    ...(history !== undefined ? { history } : {}),
+    ...(customPresets !== undefined ? { customPresets } : {}),
+  };
+}
+export function validatePutBody(
+  body: unknown,
+):
+  | { readonly ok: true; readonly patch: ConfigPutPatch }
+  | { readonly ok: false; readonly failure: PutFailure } {
+  const keysFailed = checkPutKeys(body);
+  if (keysFailed !== null) return keysFailed;
+  const apiR = checkPutApiKey(body);
+  if (!apiR.ok) return apiR;
+  const apiKeyRef = apiR.apiKeyRef;
+  const apiKeyPlaintext = apiR.apiKeyPlaintext;
+  const intsR = checkPutInts(body);
+  if (!intsR.ok) return intsR;
+  const intVals = intsR.intVals;
+  const timeoutMs = intVals["timeoutMs"];
+  const maxConcurrency = intVals["maxConcurrency"];
+  const truncBudget = intVals["truncBudget"];
+  const checkedPresets = checkPresetsField((body as Record<string, unknown>)["presets"]);
+  if (!checkedPresets.ok) {
+    return checkedPresets;
+  }
+  const presets = checkedPresets.list;
+  const checkedHistory = checkHistoryField((body as Record<string, unknown>)["history"]);
+  if (!checkedHistory.ok) {
+    return checkedHistory;
+  }
+  const history = checkedHistory.history;
+  const customR = checkPutCustom(body);
+  if (!customR.ok) return customR;
+  const customPresets = customR.customPresets;
   return {
     ok: true,
-    patch: {
-      ...(apiKeyRef !== undefined ? { apiKeyRef } : {}),
-      ...(apiKeyPlaintext !== undefined ? { apiKeyPlaintext } : {}),
-      ...(timeoutMs !== undefined ? { timeoutMs } : {}),
-      ...(maxConcurrency !== undefined ? { maxConcurrency } : {}),
-      ...(truncBudget !== undefined ? { truncBudget } : {}),
-      ...(presets !== undefined ? { presets } : {}),
-      ...(history !== undefined ? { history } : {}),
-      ...(customPresets !== undefined ? { customPresets } : {}),
-    },
+    patch: buildPutPatch(
+      apiKeyRef,
+      apiKeyPlaintext,
+      timeoutMs,
+      maxConcurrency,
+      truncBudget,
+      presets,
+      history,
+      customPresets,
+    ),
   };
 }
