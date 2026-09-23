@@ -24,12 +24,6 @@ coverage/
 # codegraph 本地索引（每 worktree 独立，不入库；任务结束随目录清理）
 .codegraph/
 
-# CRG 试用图谱产物（外部参谋工具，不入库；防误提交用，不做干净证据）
-.code-review-graph/
-.ua/                      # 本次未取证 UA 上游，先占位；启用 UA 前复核
-graphify-out/
-graph.json                # Graphify 便携产物可能落仓根，一并兜住
-
 # 测试运行时污染兜底（#218）：DSH_HOME 未正确注入时产生的 undefined 路径与历史数据
 packages/*/undefined/
 **/*.jsonl
