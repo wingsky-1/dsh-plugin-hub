@@ -205,6 +205,44 @@ function parseQuestions(raw: unknown): DecisionHistoryEntry["questions"] {
 }
 
 /** 防御式解析 GET /history（裸数组或 {entries}/{items}/{history}/{data} 包装均接受）。 */
+const str = (v: unknown, fb = ""): string => (typeof v === "string" ? v : fb);
+const optStr = (v: unknown): string | undefined => (typeof v === "string" ? v : undefined);
+const num = (v: unknown, fb: number): number => asNumber(v, fb);
+const enumOf = <T extends string>(v: unknown, xs: readonly T[], fb: T): T =>
+  (xs as readonly unknown[]).includes(v) ? (v as T) : fb;
+const optScore = (v: unknown): number | undefined =>
+  typeof v === "number" && Number.isFinite(v) ? v : undefined;
+const F: Array<[string, (v: unknown) => unknown]> = [
+  ["rootHash", str],
+  ["rootDisplay", str],
+  ["presetId", str],
+  ["templateVersion", (v) => num(v, 1)],
+  ["stateHash", str],
+  ["snippetRedacted", str],
+  ["resultKind", str],
+  ["tier", (v) => enumOf(v, ["high", "low"] as const, "none")],
+  ["lang", (v) => enumOf(v, ["en", "zh"] as const, "unknown")],
+  ["automation", (v) => normalizeAutomation(v)],
+  ["truncated", (v) => v === true],
+  ["originalLength", (v) => num(v, 0)],
+  ["confidence", (v) => num(v, 0)],
+  ["latencyMs", (v) => num(v, 0)],
+  ["choice", optStr],
+  ["score", optScore],
+  ["errorCode", optStr],
+];
+export function toHistoryEntry(it: unknown): DecisionHistoryEntry | null {
+  if (!isRecord(it)) return null;
+  if (typeof it.ts !== "number" || typeof it.sessionId !== "string") return null;
+  const o: Record<string, unknown> = { ts: it.ts, sessionId: it.sessionId, provider: "official" };
+  for (const [k, f] of F) o[k] = f(it[k]);
+  o.presetTitle = optStr(it.presetTitle);
+  if (typeof it.sessionTitle === "string" && it.sessionTitle.length > 0)
+    o.sessionTitle = it.sessionTitle;
+  const q = parseQuestions(it.questions);
+  if (q !== undefined) o.questions = q;
+  return o as unknown as DecisionHistoryEntry;
+}
 export function parseHistoryPayload(payload: unknown): DecisionHistoryEntry[] {
   let list: unknown = [];
   if (Array.isArray(payload)) list = payload;
@@ -219,48 +257,8 @@ export function parseHistoryPayload(payload: unknown): DecisionHistoryEntry[] {
   }
   const out: DecisionHistoryEntry[] = [];
   for (const item of list as unknown[]) {
-    if (!isRecord(item)) continue;
-    if (typeof item["ts"] !== "number" || typeof item["sessionId"] !== "string") continue;
-    const tierRaw = item["tier"];
-    const tier: DecisionTier = tierRaw === "high" || tierRaw === "low" ? tierRaw : "none";
-    const langRaw = item["lang"];
-    const lang: DecisionLang = langRaw === "en" || langRaw === "zh" ? langRaw : "unknown";
-    const score = item["score"];
-    const choice = item["choice"];
-    const errorCode = item["errorCode"];
-    const title =
-      typeof item["presetTitle"] === "string" ? (item["presetTitle"] as string) : undefined;
-    const sessionTitle =
-      typeof item["sessionTitle"] === "string" && (item["sessionTitle"] as string).length > 0
-        ? (item["sessionTitle"] as string)
-        : undefined;
-    const questions = parseQuestions(item["questions"]);
-    out.push({
-      ts: item["ts"] as number,
-      rootHash: typeof item["rootHash"] === "string" ? (item["rootHash"] as string) : "",
-      rootDisplay: typeof item["rootDisplay"] === "string" ? (item["rootDisplay"] as string) : "",
-      sessionId: item["sessionId"] as string,
-      presetId: typeof item["presetId"] === "string" ? (item["presetId"] as string) : "",
-      templateVersion: asNumber(item["templateVersion"], 1),
-      stateHash: typeof item["stateHash"] === "string" ? (item["stateHash"] as string) : "",
-      snippetRedacted:
-        typeof item["snippetRedacted"] === "string" ? (item["snippetRedacted"] as string) : "",
-      lang,
-      truncated: item["truncated"] === true,
-      originalLength: asNumber(item["originalLength"], 0),
-      resultKind: typeof item["resultKind"] === "string" ? (item["resultKind"] as string) : "",
-      choice: typeof choice === "string" ? choice : undefined,
-      score: typeof score === "number" && Number.isFinite(score) ? score : undefined,
-      confidence: asNumber(item["confidence"], 0),
-      tier,
-      automation: normalizeAutomation(item["automation"]),
-      provider: "official",
-      latencyMs: asNumber(item["latencyMs"], 0),
-      errorCode: typeof errorCode === "string" ? errorCode : undefined,
-      ...(title !== undefined ? { presetTitle: title } : {}),
-      ...(sessionTitle !== undefined ? { sessionTitle } : {}),
-      ...(questions !== undefined ? { questions } : {}),
-    });
+    const entry = toHistoryEntry(item);
+    if (entry !== null) out.push(entry);
   }
   return out;
 }
