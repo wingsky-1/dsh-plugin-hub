@@ -95,8 +95,11 @@ export function makeSourceLoader({ read, textReaders = {}, label, onHit }) {
   };
 }
 
-/** kind=value 的叶子：有 keys 时逐键取数字，否则直接取数字；非数字一律视为「不存在」。 */
-function numericLeaves(guard, value) {
+/** kind=value 的叶子：有 keys 时逐键取数字，否则直接取数字；非数字一律视为「不存在」。
+ *
+ * 导出给调用方层（threshold-monotonic 的改名识别）复用：纯值函数，不含任何路径启发式，
+ * 模板对齐（`*` 段比较）一律留在调用方，lib 只做「模板→叶子」的通用求值。 */
+export function numericLeaves(guard, value) {
   const leaves = new Map();
   if (value === undefined || value === null) return leaves;
   for (const dotted of guard.paths) {
@@ -325,7 +328,8 @@ function compareBooleanGuard(ctx) {
   }
 }
 
-function effectiveAnchor(entry, fields) {
+/** 回退链生效锚（anchorFields 顺序第一个命中的数字字段）；调用方层的锚同治复用，同上纯值。 */
+export function effectiveAnchor(entry, fields) {
   if (!isObject(entry)) return null;
   for (const field of fields) {
     if (typeof entry[field] === "number") return { field, value: entry[field] };
