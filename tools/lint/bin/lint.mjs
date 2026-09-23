@@ -93,6 +93,11 @@ const eslint = new ESLint({
   cwd: REPO_ROOT,
   overrideConfigFile: join(LINT_PKG, "eslint.config.js"),
   fix,
+  // 钩子误报修复（预算 0）：lint-staged 把被忽略的 css.d.ts 显式传入时，ESLint 默认按 warning 报
+  // "File ignored ..." 并计入预算，导致 staged 仅含 d.ts 即超预算。恒等 --no-warn-ignored（官方开关），
+  // 被忽略文件静默跳过（0 结果），不计预算、不触发 stale 棘轮。三选一中改动最小者：无需改 lint-staged
+  // glob（extglob 难全覆盖 *.d.ts/*.d.mts/*.d.cts）与 lefthook 接线，单点生效全路径（含直接调用）。
+  warnIgnored: false,
   // #764 落地项 A4：应用官方 Bulk Suppressions 基线（存量挂账）。
   // 两个硬约束决定了它只能这么接：① 只有 **error** 级规则会被抑制（降为 warn 的规则挂不上账）；
   // ② 创建/修剪只能走 ESLint CLI（--suppress-all / --prune-suppressions），Node API 只负责应用。
