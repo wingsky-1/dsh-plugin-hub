@@ -473,14 +473,17 @@ function fmtSite(s) {
   return `${s.rel}:${s.line}`;
 }
 
-function establishScope(argv) {
+function assertScanRoot(root) {
+  if (!existsSync(root) || !statSync(root).isDirectory())
+    throw new Error(`--root 不是目录：${root}`);
+}
+function resolveScanRoot(argv) {
   const rootIdx = argv.indexOf("--root");
   const root = rootIdx >= 0 && argv[rootIdx + 1] !== undefined ? argv[rootIdx + 1] : DEFAULT_ROOT;
   let files = null;
   let scopeWhy = null;
   try {
-    if (!existsSync(root) || !statSync(root).isDirectory())
-      throw new Error(`--root 不是目录：${root}`);
+    assertScanRoot(root);
     files = discoverTargets(root);
     if (files === null || files.length === 0)
       throw new Error("未发现任何扫描目标（packages/*/src 空）");
@@ -488,6 +491,13 @@ function establishScope(argv) {
     files = null;
     scopeWhy = String(e?.message ?? e).slice(0, 160);
   }
+  return { root: root, files: files, scopeWhy: scopeWhy };
+}
+function establishScope(argv) {
+  const resolved = resolveScanRoot(argv);
+  const root = resolved.root;
+  const files = resolved.files;
+  const scopeWhy = resolved.scopeWhy;
   // 出口一（结构）：CLI/范围错误。--package 按包切分会让跨包镜像对恒绿，故禁。
   const structuralWhy = argv.includes("--package") ? "禁 --package（须全仓扫描）" : scopeWhy;
   if (structuralWhy !== null) {
@@ -517,7 +527,7 @@ async function scanAll(root, files) {
   }
   return scanned;
 }
-function buildViolationGroups(allDefs, violations) {
+function buildViolationGroups(allDefs) {
   const groups = groupByPkgValue(allDefs);
   const rows = [...groups.values()]
     .map((g) => ({
@@ -526,14 +536,60 @@ function buildViolationGroups(allDefs, violations) {
       disposition: decideGroup({ ...g, holders: new Set(g.holders) }),
     }))
     .sort((a, b) => (a.pkg < b.pkg ? -1 : a.pkg > b.pkg ? 1 : a.value < b.value ? -1 : 1));
+  const groupViolations = [];
   for (const r of rows) {
     if (r.disposition === "multi-red" || r.disposition === "mirror-noclient-red") {
-      violations.push(
+      groupViolations.push(
         `R4 分组越位 (${r.pkg}, ${r.value}) 持有人 ${r.holders.length}：${r.holders.join("，")}`,
       );
     }
   }
-  return rows;
+  return { rows: rows, groupViolations: groupViolations };
+}
+function r1Violations(s) {
+  const out = [];
+  for (const h of s.r1static) {
+    if (isR1Allowed(s.rel)) continue;
+    if (isSrcRootShared(s.rel))
+      out.push(
+        `R1 根共享越位 ${fmtSite(h)} 事件 ${JSON.stringify(h.name)}（src 根 shared 不得直连宿主事件）`,
+      );
+    else if (s.rel.includes("/src/client/"))
+      out.push(`R1 客户端越位 ${fmtSite(h)} 事件 ${JSON.stringify(h.name)}（事件只许装配点）`);
+    else
+      out.push(
+        `R1 位置越位 ${fmtSite(h)} 事件 ${JSON.stringify(h.name)}（只许 src\/index.ts｜src\/apply\/**｜src\/server\/**）`,
+      );
+  }
+  return out;
+}
+function r2Violations(s) {
+  const out = [];
+  if (!isR2Allowed(s.rel)) {
+    for (const h of s.r2l) {
+      if (isR2LDeduped(h, s.r2b)) continue;
+      out.push(
+        `R2-L 定义越位 ${fmtSite(h)} 值 ${JSON.stringify(h.value)}（路由字面量只许共享\/契约\/装配文件）`,
+      );
+    }
+    for (const h of s.r2b)
+      out.push(`R2-B 拼接越位 ${fmtSite(h)} 形态 ${h.kind}（允许集外不得拼接路由）`);
+  }
+  for (const h of s.r2c)
+    out.push(
+      `R2-C 直调越位 ${fmtSite(h)} 值 ${JSON.stringify(h.value)}（调用实参须经具名表 import）`,
+    );
+  return out;
+}
+function r3Violations(s) {
+  const out = [];
+  for (const h of s.r3) {
+    if (!isR3Allowed(s.rel))
+      out.push(
+        `R3 装配越位 ${fmtSite(h)} slot ${JSON.stringify(h.name)}（仅许 client\/index.{ts,tsx}）`,
+      );
+  }
+  return out;
 }
 function collectViolations(scanned) {
   const violations = [];
@@ -542,41 +598,9 @@ function collectViolations(scanned) {
   const exportByPkgName = new Map();
   for (const s of scanned) {
     dynamicOn += s.r1dynamic;
-    for (const h of s.r1static) {
-      if (isR1Allowed(s.rel)) continue;
-      if (isSrcRootShared(s.rel))
-        violations.push(
-          `R1 根共享越位 ${fmtSite(h)} 事件 ${JSON.stringify(h.name)}（src 根 shared 不得直连宿主事件）`,
-        );
-      else if (s.rel.includes("/src/client/"))
-        violations.push(
-          `R1 客户端越位 ${fmtSite(h)} 事件 ${JSON.stringify(h.name)}（事件只许装配点）`,
-        );
-      else
-        violations.push(
-          `R1 位置越位 ${fmtSite(h)} 事件 ${JSON.stringify(h.name)}（只许 src\/index.ts｜src\/apply\/**｜src\/server\/**）`,
-        );
-    }
-    if (!isR2Allowed(s.rel)) {
-      for (const h of s.r2l) {
-        if (isR2LDeduped(h, s.r2b)) continue;
-        violations.push(
-          `R2-L 定义越位 ${fmtSite(h)} 值 ${JSON.stringify(h.value)}（路由字面量只许共享\/契约\/装配文件）`,
-        );
-      }
-      for (const h of s.r2b)
-        violations.push(`R2-B 拼接越位 ${fmtSite(h)} 形态 ${h.kind}（允许集外不得拼接路由）`);
-    }
-    for (const h of s.r2c)
-      violations.push(
-        `R2-C 直调越位 ${fmtSite(h)} 值 ${JSON.stringify(h.value)}（调用实参须经具名表 import）`,
-      );
-    for (const h of s.r3) {
-      if (!isR3Allowed(s.rel))
-        violations.push(
-          `R3 装配越位 ${fmtSite(h)} slot ${JSON.stringify(h.name)}（仅许 client\/index.{ts,tsx}）`,
-        );
-    }
+    violations.push(...r1Violations(s));
+    violations.push(...r2Violations(s));
+    violations.push(...r3Violations(s));
     for (const d of s.r4defs) allDefs.push(d);
     for (const e of s.exportNames) {
       const key = `${e.pkg}||${e.name}`;
@@ -590,15 +614,17 @@ function collectViolations(scanned) {
         `R4 同名多出 ${key}（${holders.size} 文件导出同名：${[...holders].sort().join("，")}）`,
       );
   }
-  const rows = buildViolationGroups(allDefs, violations);
+  const grouped = buildViolationGroups(allDefs);
+  const rows = grouped.rows;
+  for (const v of grouped.groupViolations) violations.push(v);
   return { violations: violations, rows: rows, dynamicOn: dynamicOn, allDefs: allDefs };
 }
-function reportVerify(ctx) {
-  if (ctx.observe) {
+function reportVerify(observe, scope, result) {
+  if (observe) {
     console.log(
-      `verify-host-seams: 分组表（${ctx.files.length} 文件，${ctx.allDefs.length} 定义，动态 on 首参 ${ctx.dynamicOn} 处）`,
+      `verify-host-seams: 分组表（${scope.files.length} 文件，${result.allDefs.length} 定义，动态 on 首参 ${result.dynamicOn} 处）`,
     );
-    for (const r of ctx.rows) {
+    for (const r of result.rows) {
       const fb = r.fallback > 0 ? ` fallback${r.fallback}\/${r.holders.length}` : "";
       console.log(`  [${r.disposition}] (${r.pkg}, ${r.value})${fb}`);
       for (const h of r.holders) console.log(`    - ${h}`);
@@ -606,15 +632,15 @@ function reportVerify(ctx) {
     console.log(`verify-host-seams: OBSERVE OK（观察模式不判红）`);
     return 0;
   }
-  if (ctx.violations.length > 0) {
-    for (const v of ctx.violations) console.error(`verify-host-seams: ${v}`);
+  if (result.violations.length > 0) {
+    for (const v of result.violations) console.error(`verify-host-seams: ${v}`);
     console.error(
-      `verify-host-seams: FAIL（${ctx.violations.length} 项，扫描 ${ctx.files.length} 文件）`,
+      `verify-host-seams: FAIL（${result.violations.length} 项，扫描 ${scope.files.length} 文件）`,
     );
     return 1;
   }
   console.log(
-    `verify-host-seams: OK（扫描 ${ctx.files.length} 文件，${ctx.rows.length} 组，动态 on 首参 ${ctx.dynamicOn} 处只观察）`,
+    `verify-host-seams: OK（扫描 ${scope.files.length} 文件，${result.rows.length} 组，动态 on 首参 ${result.dynamicOn} 处只观察）`,
   );
   return 0;
 }
@@ -625,18 +651,7 @@ async function main(argv) {
   const observe = argv.includes("--observe");
   const scanned = await scanAll(root, files);
   const result = collectViolations(scanned);
-  const violations = result.violations;
-  const rows = result.rows;
-  const dynamicOn = result.dynamicOn;
-  const allDefs = result.allDefs;
-  return reportVerify({
-    observe: observe,
-    violations: violations,
-    rows: rows,
-    dynamicOn: dynamicOn,
-    files: files,
-    allDefs: allDefs,
-  });
+  return reportVerify(observe, scope, result);
 }
 
 function isDirectExecution() {
