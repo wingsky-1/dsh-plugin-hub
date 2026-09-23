@@ -300,21 +300,28 @@ function collectSupportConsumers(rootDir, pkg, file, faceSet) {
   }
   return { mutationConsumers, exemptConsumers, fallback: false };
 }
+function supportFaceOf(packageFace, faceCache, pkg) {
+  if (Array.isArray(packageFace)) return packageFace;
+  return faceCache.get(pkg) ?? [];
+}
+function resolveSupportTail(collected, topology, rootDir, faceCache, pkg, segKeys) {
+  if (collected.fallback) return [pkg];
+  if (collected.mutationConsumers.size === 0) {
+    if (collected.exemptConsumers.size > 0) return [];
+    return [pkg];
+  }
+  return resolveSegSet(topology, rootDir, faceCache, pkg, collected.mutationConsumers, segKeys, [
+    pkg,
+  ]);
+}
 export function supportFileEntries(topology, rootDir, faceCache, pkg, file, packageFace) {
   try {
     const segKeys = supportSegKeys(topology, pkg);
     if (segKeys === null) return [pkg];
-    const face = Array.isArray(packageFace) ? packageFace : (faceCache.get(pkg) ?? []);
+    const face = supportFaceOf(packageFace, faceCache, pkg);
     if (face.includes(file)) return testFileEntries(topology, rootDir, faceCache, pkg, file);
     const collected = collectSupportConsumers(rootDir, pkg, file, new Set(face));
-    if (collected.fallback) return [pkg];
-    if (collected.mutationConsumers.size === 0) {
-      if (collected.exemptConsumers.size > 0) return [];
-      return [pkg];
-    }
-    return resolveSegSet(topology, rootDir, faceCache, pkg, collected.mutationConsumers, segKeys, [
-      pkg,
-    ]);
+    return resolveSupportTail(collected, topology, rootDir, faceCache, pkg, segKeys);
   } catch {
     return [pkg];
   }
