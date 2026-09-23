@@ -13,10 +13,10 @@
 
 | 视图 | 回答的问题 | 章节 | 图件 |
 | --- | --- | --- | --- |
-| BA | 决策定位、能力与非目标 | [§1](#ba) | [SVG](diagrams/jev-ba.svg) · [HTML](diagrams/jev-ba.html) |
-| AA | 六域装配、双工具链路与三 tab | [§2](#aa) | [SVG](diagrams/jev-aa.svg) · [HTML](diagrams/jev-aa.html) |
-| DA | 三文件、VERSION、历史 jsonl 与轮转 | [§3](#da) | [SVG](diagrams/jev-da.svg) · [HTML](diagrams/jev-da.html) |
-| TA | 挂载、构建、出站安全与双轨密钥 | [§4](#ta) | [SVG](diagrams/jev-ta.svg) · [HTML](diagrams/jev-ta.html) |
+| BA | 决策定位、能力与非目标 | [§1](#ba) | [SVG](diagrams/decision-gateway-ba.svg) · [HTML](diagrams/decision-gateway-ba.html) |
+| AA | 六域装配、双工具链路与三 tab | [§2](#aa) | [SVG](diagrams/decision-gateway-aa.svg) · [HTML](diagrams/decision-gateway-aa.html) |
+| DA | 三文件、VERSION、历史 jsonl 与轮转 | [§3](#da) | [SVG](diagrams/decision-gateway-da.svg) · [HTML](diagrams/decision-gateway-da.html) |
+| TA | 挂载、构建、出站安全与双轨密钥 | [§4](#ta) | [SVG](diagrams/decision-gateway-ta.svg) · [HTML](diagrams/decision-gateway-ta.html) |
 
 四图沿用 worktree sidebar 点阵底纹、纸白/深灰、橙色主线和蓝色机制标注；节点只用功能模块词汇（宿主六域＋客户端三件＋SystemOne 远端＋落盘文件），边标注调用方向与数据；HTML 内联 SVG 自包含，独立 SVG 按仓库导出契约生成。
 
@@ -24,7 +24,7 @@
 
 ## 1. 业务架构（BA）
 
-![BA：决策定位与非目标](diagrams/jev-ba.svg)
+![BA：决策定位与非目标](diagrams/decision-gateway-ba.svg)
 
 ```mermaid
 flowchart LR
@@ -69,7 +69,7 @@ flowchart LR
 
 ## 2. 应用架构（AA）
 
-![AA：六域装配与双工具链路](diagrams/jev-aa.svg)
+![AA：六域装配与双工具链路](diagrams/decision-gateway-aa.svg)
 
 ```mermaid
 flowchart TB
@@ -136,7 +136,7 @@ flowchart TB
 
 ## 3. 数据架构（DA）
 
-![DA：三文件、VERSION 与历史轮转](diagrams/jev-da.svg)
+![DA：三文件、VERSION 与历史轮转](diagrams/decision-gateway-da.svg)
 
 ```mermaid
 flowchart LR
@@ -189,7 +189,7 @@ upgrade（`src/server/upgrade/interface.ts#installUpgrade`）：装配期同步�
 
 ## 4. 技术架构（TA）
 
-![TA：挂载、构建与出站安全](diagrams/jev-ta.svg)
+![TA：挂载、构建与出站安全](diagrams/decision-gateway-ta.svg)
 
 ```mermaid
 flowchart LR
@@ -233,7 +233,7 @@ build 为 clean-lib→tsc→scripts/build/bundle-host.ts；esbuild 内联第三�
 
 ## 5. 图源与维护
 
-- [BA HTML](diagrams/jev-ba.html)、[AA HTML](diagrams/jev-aa.html)、[DA HTML](diagrams/jev-da.html)、[TA HTML](diagrams/jev-ta.html) 是独立图源（diagram-design 编辑风手写 SVG，节点只用功能模块词汇，边标调用方向与数据）。
+- [BA HTML](diagrams/decision-gateway-ba.html)、[AA HTML](diagrams/decision-gateway-aa.html)、[DA HTML](diagrams/decision-gateway-da.html)、[TA HTML](diagrams/decision-gateway-ta.html) 是独立图源（diagram-design 编辑风手写 SVG，节点只用功能模块词汇，边标调用方向与数据）。
 - 方法论：[ARCHITECTURE-METHOD.md](../ARCHITECTURE-METHOD.md)；构建验证：[DEVELOPMENT.md](../DEVELOPMENT.md)。
 
-导出命令：`python3 scripts/lib/export-diagram-svg.py docs/architecture/diagrams/jev-ba.html`，其它视图替换 ba 为 aa/da/ta。实际命令结果在交付说明单列，不由文中复现命令推定。
+导出命令：`python3 scripts/lib/export-diagram-svg.py docs/architecture/diagrams/decision-gateway-ba.html`，其它视图替换 ba 为 aa/da/ta。实际命令结果在交付说明单列，不由文中复现命令推定。

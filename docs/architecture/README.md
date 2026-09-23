@@ -105,10 +105,10 @@ flowchart LR
 | [dsh-notifier.md](dsh-notifier.md) | DA 数据架构 | [图源 HTML](diagrams/notifier-da.html) |
 | [dsh-notifier.md](dsh-notifier.md) | TA 技术架构 | [图源 HTML](diagrams/notifier-ta.html) |
 | [dsh-notifier.md](dsh-notifier.md) | 按域架构与通知管线图（历史图源） | `diagrams/notifier-architecture.html` |
-| [dsh-decision-gateway.md](dsh-decision-gateway.md) | BA 业务架构 | [图源 HTML](diagrams/jev-ba.html) |
-| [dsh-decision-gateway.md](dsh-decision-gateway.md) | AA 应用架构 | [图源 HTML](diagrams/jev-aa.html) |
-| [dsh-decision-gateway.md](dsh-decision-gateway.md) | DA 数据架构 | [图源 HTML](diagrams/jev-da.html) |
-| [dsh-decision-gateway.md](dsh-decision-gateway.md) | TA 技术架构 | [图源 HTML](diagrams/jev-ta.html) |
+| [dsh-decision-gateway.md](dsh-decision-gateway.md) | BA 业务架构 | [图源 HTML](diagrams/decision-gateway-ba.html) |
+| [dsh-decision-gateway.md](dsh-decision-gateway.md) | AA 应用架构 | [图源 HTML](diagrams/decision-gateway-aa.html) |
+| [dsh-decision-gateway.md](dsh-decision-gateway.md) | DA 数据架构 | [图源 HTML](diagrams/decision-gateway-da.html) |
+| [dsh-decision-gateway.md](dsh-decision-gateway.md) | TA 技术架构 | [图源 HTML](diagrams/decision-gateway-ta.html) |
 | [dsh-provider-usage.md](dsh-provider-usage.md) | 宿主端渲染架构图 | `diagrams/provider-usage-architecture.html` |
 | [dsh-worktree-sidebar.md](dsh-worktree-sidebar.md) | BA 业务架构（能力面 → 工具 → 可见产物） | `diagrams/worktree-sidebar-ba.html` |
 | [dsh-worktree-sidebar.md](dsh-worktree-sidebar.md) | AA 应用架构（组合根 + 五域 + 适配层 + 浏览器端接管） | `diagrams/worktree-sidebar-aa.html` |
