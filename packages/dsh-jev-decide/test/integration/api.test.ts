@@ -4,7 +4,15 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { apply } from "../../src/index.ts";
+import { apply, inject } from "../../src/index.ts";
+
+const SDK_OK = (id: string, choice: string, confidence: number): unknown => ({
+  model: "jev-1.13.0",
+  answers: {
+    [id]: { type: "choice", choice, confidence, probabilities: { [choice]: confidence } },
+  },
+  usage: { input_tokens: 9, output_tokens: 3 },
+});
 
 interface CapturedRoute {
   readonly path: string;
@@ -26,6 +34,12 @@ function setup(
       readonly signal: AbortSignal;
     },
   ) => Promise<{ readonly status: number; readonly text: string }>,
+  sessions?: {
+    readonly get: (id: string) => { readonly header: { readonly cwd?: string } } | undefined;
+  },
+  sessionTitle?: {
+    readonly get: (session: unknown) => { readonly title: string } | undefined;
+  },
 ): { readonly routes: Map<string, CapturedRoute>; readonly tools: Map<string, CapturedTool> } {
   const routes = new Map<string, CapturedRoute>();
   const tools = new Map<string, CapturedTool>();
@@ -48,6 +62,8 @@ function setup(
       },
     },
     effect: (fn: () => () => void) => fn(),
+    ...(sessions !== undefined ? { sessions } : {}),
+    ...(sessionTitle !== undefined ? { sessionTitle } : {}),
   };
   apply(ctx as never, {
     home: mkdtempSync(join(tmpdir(), "jev-api-")),
@@ -169,6 +185,172 @@ describe("围栏", () => {
   });
 });
 
+describe("工作目录解析", () => {
+  it("inject 声明 sessions（缺声明宿主直访即抛，目录维度静默全失）", () => {
+    expect(inject).toContain("sessions");
+  });
+  it("inject 声明 sessionTitle（缺声明标题 enrich 无源，回落短 id）", () => {
+    expect(inject).toContain("sessionTitle");
+  });
+  it("sessions store 优先于 exec cwd；抛错回落 exec cwd", async () => {
+    const fetchOk = async (): Promise<{ readonly status: number; readonly text: string }> => ({
+      status: 200,
+      text: JSON.stringify(SDK_OK("q1", "A", 0.9)),
+    });
+    const store = {
+      get: (id: string) => (id === "s-work" ? { header: { cwd: "/work/from-store" } } : undefined),
+    };
+    const env = setup(fetchOk, store);
+    expect(
+      (
+        await call(env.routes, "/api/dsh-jev-decide/config", {
+          method: "PUT",
+          body: JSON.stringify({ apiKeyPlaintext: "ItcaseSecret123456" }),
+        })
+      ).status,
+    ).toBe(200);
+    const decide = env.tools.get("ws_request_verdict");
+    const out = (await decide?.execute(
+      {
+        preset_id: "general",
+        state: { text: "cwd case", lang: "en" },
+        questions_override: [{ id: "q1", text: "Pick one.", kind: "choice", options: ["A", "B"] }],
+      },
+      { sessionId: "s-work", cwd: "/work/exec-cwd" },
+    )) as { ok: boolean };
+    expect(out.ok).toBe(true);
+    const got = await call(env.routes, "/api/dsh-jev-decide/history", {
+      url: "/api/dsh-jev-decide/history?root=/work/from-store&sessionId=s-work",
+    });
+    expect((got.json as { entries: unknown[] }).entries).toHaveLength(1);
+    const throwing = setup(fetchOk, {
+      get: () => {
+        throw new Error("store down");
+      },
+    });
+    expect(
+      (
+        await call(throwing.routes, "/api/dsh-jev-decide/config", {
+          method: "PUT",
+          body: JSON.stringify({ apiKeyPlaintext: "ItcaseSecret123456" }),
+        })
+      ).status,
+    ).toBe(200);
+    const decide2 = throwing.tools.get("ws_request_verdict");
+    const out2 = (await decide2?.execute(
+      {
+        preset_id: "general",
+        state: { text: "cwd case", lang: "en" },
+        questions_override: [{ id: "q1", text: "Pick one.", kind: "choice", options: ["A", "B"] }],
+      },
+      { sessionId: "s-work", cwd: "/work/exec-cwd" },
+    )) as { ok: boolean };
+    expect(out2.ok).toBe(true);
+    const got2 = await call(throwing.routes, "/api/dsh-jev-decide/history", {
+      url: "/api/dsh-jev-decide/history?root=/work/exec-cwd&sessionId=s-work",
+    });
+    expect((got2.json as { entries: unknown[] }).entries).toHaveLength(1);
+  });
+});
+
+describe("会话标题 enrich", () => {
+  const fetchOk = async (): Promise<{ readonly status: number; readonly text: string }> => ({
+    status: 200,
+    text: JSON.stringify(SDK_OK("q1", "A", 0.9)),
+  });
+  const putKey = async (routes: Map<string, CapturedRoute>): Promise<void> => {
+    expect(
+      (
+        await call(routes, "/api/dsh-jev-decide/config", {
+          method: "PUT",
+          body: JSON.stringify({ apiKeyPlaintext: "ItcaseSecret123456" }),
+        })
+      ).status,
+    ).toBe(200);
+  };
+  const decideOnce = async (
+    tools: Map<string, CapturedTool>,
+    sessionId: string,
+    cwd: string,
+  ): Promise<void> => {
+    const decide = tools.get("ws_request_verdict");
+    const out = (await decide?.execute(
+      {
+        preset_id: "general",
+        state: { text: "title case", lang: "en" },
+        questions_override: [{ id: "q1", text: "Pick one.", kind: "choice", options: ["A", "B"] }],
+      },
+      { sessionId, cwd },
+    )) as { ok: boolean };
+    expect(out.ok).toBe(true);
+  };
+  it("有标题：readHistory enrich sessionTitle，落盘无该字段", async () => {
+    const sessions = {
+      get: (id: string) => (id === "s-title" ? { header: { cwd: "/work/title" } } : undefined),
+    };
+    const sessionTitle = {
+      get: (session: unknown) =>
+        session !== undefined && session !== null ? { title: "标题T" } : undefined,
+    };
+    const env = setup(fetchOk, sessions, sessionTitle);
+    await putKey(env.routes);
+    await decideOnce(env.tools, "s-title", "/work/exec-title");
+    const got = await call(env.routes, "/api/dsh-jev-decide/history", {
+      url: "/api/dsh-jev-decide/history?root=/work/title&sessionId=s-title",
+    });
+    const entries = (got.json as { entries: Array<{ sessionTitle?: string }> }).entries;
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.sessionTitle).toBe("标题T");
+  });
+  it("服务缺席/抛错：回落短 id，状态 200 不 500", async () => {
+    const sessions = {
+      get: (id: string) => (id === "s-notitle" ? { header: { cwd: "/work/notitle" } } : undefined),
+    };
+    const env = setup(fetchOk, sessions);
+    await putKey(env.routes);
+    await decideOnce(env.tools, "s-notitle", "/work/notitle");
+    const got = await call(env.routes, "/api/dsh-jev-decide/history", {
+      url: "/api/dsh-jev-decide/history?root=/work/notitle&sessionId=s-notitle",
+    });
+    const entries = (got.json as { entries: Array<{ sessionTitle?: string }> }).entries;
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.sessionTitle).toBeUndefined();
+    const throwing = setup(fetchOk, sessions, {
+      get: () => {
+        throw new Error("title down");
+      },
+    });
+    await putKey(throwing.routes);
+    await decideOnce(throwing.tools, "s-notitle", "/work/notitle");
+    const got2 = await call(throwing.routes, "/api/dsh-jev-decide/history", {
+      url: "/api/dsh-jev-decide/history?root=/work/notitle&sessionId=s-notitle",
+    });
+    expect(got2.status).toBe(200);
+    expect((got2.json as { entries: unknown[] }).entries).toHaveLength(1);
+  });
+  it("无标题/已死会话：get undefined 即回落短 id", async () => {
+    const sessions = {
+      get: (id: string) => (id === "s-live" ? { header: { cwd: "/work/live" } } : undefined),
+    };
+    const sessionTitle = {
+      get: () => undefined,
+    };
+    const env = setup(fetchOk, sessions, sessionTitle);
+    await putKey(env.routes);
+    await decideOnce(env.tools, "s-live", "/work/live");
+    const got = await call(env.routes, "/api/dsh-jev-decide/history", {
+      url: "/api/dsh-jev-decide/history?root=/work/live&sessionId=s-live",
+    });
+    expect(
+      (got.json as { entries: Array<{ sessionTitle?: string }> }).entries[0]?.sessionTitle,
+    ).toBeUndefined();
+    const dead = await call(env.routes, "/api/dsh-jev-decide/history", {
+      url: "/api/dsh-jev-decide/history?root=/work/live&sessionId=s-dead",
+    });
+    expect((dead.json as { entries: unknown[] }).entries).toHaveLength(0);
+  });
+});
+
 describe("端点往返", () => {
   it("health/config/presets", async () => {
     const { routes } = setup();
@@ -256,7 +438,7 @@ describe("端点往返", () => {
       body: JSON.stringify({ apiKeyPlaintext: "ItcaseSecret123456", confirm: true }),
     });
     expect(keyPut.status).toBe(200);
-    const decide = tools.get("ws_jev_decide");
+    const decide = tools.get("ws_request_verdict");
     expect(decide).toBeDefined();
     const out = (await decide?.execute(
       {
@@ -267,7 +449,7 @@ describe("端点往返", () => {
       { sessionId: "it-s1", cwd: "/work/it" },
     )) as { ok: boolean };
     expect(out.ok).toBe(true);
-    const list = tools.get("ws_jev_list_presets");
+    const list = tools.get("ws_list_verdict_guides");
     const presets = (await list?.execute({}, {})) as { id: string }[];
     expect(presets).toHaveLength(5);
     const got = await call(routes, "/api/dsh-jev-decide/history", {

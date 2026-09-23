@@ -230,6 +230,10 @@ export function parseHistoryPayload(payload: unknown): JevHistoryEntry[] {
     const errorCode = item["errorCode"];
     const title =
       typeof item["presetTitle"] === "string" ? (item["presetTitle"] as string) : undefined;
+    const sessionTitle =
+      typeof item["sessionTitle"] === "string" && (item["sessionTitle"] as string).length > 0
+        ? (item["sessionTitle"] as string)
+        : undefined;
     const questions = parseQuestions(item["questions"]);
     out.push({
       ts: item["ts"] as number,
@@ -254,6 +258,7 @@ export function parseHistoryPayload(payload: unknown): JevHistoryEntry[] {
       latencyMs: asNumber(item["latencyMs"], 0),
       errorCode: typeof errorCode === "string" ? errorCode : undefined,
       ...(title !== undefined ? { presetTitle: title } : {}),
+      ...(sessionTitle !== undefined ? { sessionTitle } : {}),
       ...(questions !== undefined ? { questions } : {}),
     });
   }

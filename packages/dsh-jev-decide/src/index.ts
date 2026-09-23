@@ -28,8 +28,8 @@ export { ROUTES };
 /** 稳定的 cordis 插件名。 */
 export const name = "jev-decide";
 
-/** 依赖的宿主服务（路由 + 模型工具注册）。 */
-export const inject = ["webServer", "tools"];
+/** 依赖的宿主服务（路由 + 模型工具注册 + 会话目录/标题解析）。sessions/sessionTitle 缺席即降级（用法见 provider-usage 同款接线）。 */
+export const inject = ["webServer", "tools", "sessions", "sessionTitle"];
 
 /** 组合层入口配置（挂载点传入；用户配置住自有三文件，不在此展开）。 */
 export interface JevDecideApplyConfig {
@@ -43,11 +43,19 @@ export interface JevDecideApplyConfig {
   env?: Record<string, string | undefined>;
 }
 
-/** 组合根用到的宿主面：域拿到的是能力，不是上下文。 */
+/** 组合根用到的宿主面：域拿到的是能力，不是上下文。sessions/sessionTitle 为可选（旧运行时/单测 fake ctx 缺席即降级，绝不抛）。 */
 interface HostPort {
   readonly logger: { readonly warn: (message: string) => void };
   readonly register: (route: WebRoute) => () => void;
   readonly registerTool: (tool: ToolDefinition) => () => void;
+  readonly sessions?: {
+    readonly get: (
+      id: string,
+    ) => ({ readonly header: { readonly cwd?: string } } & Record<string, unknown>) | undefined;
+  };
+  readonly sessionTitle?: {
+    readonly get: (session: unknown) => { readonly title: string } | undefined;
+  };
 }
 
 /** 收窄宿主上下文（本文件唯一触 ctx 处）。 */
@@ -56,6 +64,9 @@ function bindHost(ctx: Context): HostPort {
     logger: ctx.logger,
     register: (route) => ctx.webServer.register(route),
     registerTool: (tool) => ctx.tools.register(tool),
+    sessions: (ctx as unknown as { readonly sessions?: HostPort["sessions"] }).sessions,
+    sessionTitle: (ctx as unknown as { readonly sessionTitle?: HostPort["sessionTitle"] })
+      .sessionTitle,
   };
 }
 
@@ -119,16 +130,39 @@ function assemble(host: HostPort, options: JevDecideApplyConfig): (() => void)[]
     state.config.presets.find((entry) => entry.id === presetId) !== undefined
       ? (frozenPresetOf(presetId)?.label ?? presetId)
       : (customOf(state, presetId)?.label ?? presetId);
+  /** 会话标题读取时 enrich（只读活会话快照，永不落盘；缺席/抛错/无标题即回落短 id）。 */
+  const sessionTitleOf = (sessionId: string): { readonly sessionTitle?: string } => {
+    try {
+      const session = host.sessions?.get(sessionId);
+      if (session === undefined) return {};
+      const snapshot = host.sessionTitle?.get(session);
+      const title = snapshot?.title;
+      if (typeof title !== "string" || title.length === 0) return {};
+      return { sessionTitle: title };
+    } catch {
+      return {};
+    }
+  };
   let gate = toolsApi.createSemaphore(live().config.connection.maxConcurrency);
   const gateFor = (maxConcurrency: number): (<T>(task: () => Promise<T>) => Promise<T>) => {
     gate = toolsApi.createSemaphore(maxConcurrency);
     return gate.run;
   };
   let lastConcurrency = live().config.connection.maxConcurrency;
+  /** 工作目录解析（sessions store 优先，exec 字段次之，进程 cwd 兜底；store 缺席/抛错即降级）。 */
+  const resolveRoot = (exec: unknown, sessionId: string): string => {
+    try {
+      const cwd = host.sessions?.get(sessionId)?.header.cwd;
+      if (typeof cwd === "string" && cwd.length > 0) return cwd;
+    } catch {
+      /* 降级到 exec 派生，见下 */
+    }
+    return toolsApi.rootOf(exec);
+  };
   const depsFor = (exec: unknown): DecideDeps => {
     const state = live();
-    const root = toolsApi.rootOf(exec);
     const sessionId = toolsApi.sessionOf(exec);
+    const root = resolveRoot(exec, sessionId);
     if (state.config.connection.maxConcurrency !== lastConcurrency) {
       lastConcurrency = state.config.connection.maxConcurrency;
       gateFor(lastConcurrency);
@@ -211,9 +245,11 @@ function assemble(host: HostPort, options: JevDecideApplyConfig): (() => void)[]
     },
     readHistory: (query) => {
       const state = live();
-      return historyApi
-        .queryEntries(home, query, historyDeps)
-        .map((entry) => ({ ...entry, presetTitle: titleOf(state, entry.presetId) }));
+      return historyApi.queryEntries(home, query, historyDeps).map((entry) => ({
+        ...entry,
+        presetTitle: titleOf(state, entry.presetId),
+        ...sessionTitleOf(entry.sessionId),
+      }));
     },
     removeHistory: (query) => historyApi.deleteSession(home, query, historyDeps),
     probeConnection: async () => {

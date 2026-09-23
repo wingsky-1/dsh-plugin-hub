@@ -8,7 +8,7 @@ One-click install (restart `dsh web` afterwards to activate):
 dsh plugin --profile web add @wingsky-1/dsh-jev-decide
 ```
 
-- Model tools: `ws_jev_decide` (decide), `ws_jev_list_presets` (read-only).
+- Model tools: `ws_request_verdict` (decide), `ws_list_verdict_guides` (read-only).
 - Loopback routes: `/api/dsh-jev-decide/health|config|presets|history|test-connection`.
 - 5 frozen asking guides (templateVersion always 1, English prose, zero preset questions): general / secret-leak (disabled by default) / plan-review / risk-check / custom. Callers bring the full question set per call via `questions_override` (1-20 questions, required).
 - Custom presets (`custom-presets.json`, absent means empty): incremental `PUT /config` key `customPresets` (full replace; ids must not collide with frozen, cap 0|1|2); custom ids are directly decidable (same switch/cap semantics); history stores a redacted snapshot of the called questions, and `GET /history` enriches display titles (only ids are stored).
@@ -39,7 +39,7 @@ PUT `/config`: `apiKeyRef` must match `^[A-Z][A-Z0-9_]{1,63}$`; mutually exclusi
 
 ## History
 
-One jsonl file per (workdir rootHash, sessionId): 200 entries per session rotation, 50 sessions total (count semantics only; no pinning on mtime ties). Query `root` accepts a full path, a `rootHash`, or a bare basename (matched against `rootDisplay`); deletion is single-session only (`root` + `sessionId` both required, ambiguous basenames are 400).
+One jsonl file per (workdir rootHash, sessionId) (workdir comes from the session store, falling back to the caller directory): 200 entries per session rotation, 50 sessions total (count semantics only; no pinning on mtime ties). Query `root` accepts a full path, a `rootHash`, or a bare basename (matched against `rootDisplay`); deletion is single-session only (`root` + `sessionId` both required, ambiguous basenames are 400). Session titles enrich at read time for live sessions only (`sessionTitle`, falling back to the short id, never persisted).
 
 ## Verification and troubleshooting
 

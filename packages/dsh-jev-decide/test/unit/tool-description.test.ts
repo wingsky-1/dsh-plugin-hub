@@ -35,22 +35,23 @@ function paramsOf(name: string): Record<string, unknown> {
 
 describe("decide 描述覆盖契约", () => {
   it("讲清何时用、何时不用、必带题目与失败语义", () => {
-    const tool = definitions().find((d) => d.name === "ws_jev_decide");
+    const tool = definitions().find((d) => d.name === "ws_request_verdict");
     expect(tool).toBeDefined();
     const text = (tool as unknown as { description: string }).description;
     for (const noun of [
       "questions_override",
       "PRESET_DISABLED",
-      "ws_jev_list_presets",
+      "ws_list_verdict_guides",
       "suggest-only",
       "NO_KEY",
+      "English",
       "DO NOT use",
     ]) {
       expect(text).toContain(noun);
     }
   });
   it("描述非一句话：长度下限锁详细度", () => {
-    const tool = definitions().find((d) => d.name === "ws_jev_decide");
+    const tool = definitions().find((d) => d.name === "ws_request_verdict");
     const text = (tool as unknown as { description: string }).description;
     expect(text.length).toBeGreaterThanOrEqual(500);
   });
@@ -58,7 +59,7 @@ describe("decide 描述覆盖契约", () => {
 
 describe("decide 参数面自描述", () => {
   it("三件必填 + preset 五值枚举", () => {
-    const params = paramsOf("ws_jev_decide");
+    const params = paramsOf("ws_request_verdict");
     expect(params["required"]).toEqual(["preset_id", "state", "questions_override"]);
     const preset = (params["properties"] as Record<string, Record<string, unknown>>)["preset_id"];
     expect(preset["enum"]).toEqual([
@@ -70,7 +71,7 @@ describe("decide 参数面自描述", () => {
     ]);
   });
   it("state 与题目 items 的约束落在 schema 里", () => {
-    const params = paramsOf("ws_jev_decide");
+    const params = paramsOf("ws_request_verdict");
     const props = params["properties"] as Record<string, Record<string, unknown>>;
     const state = props["state"];
     expect(state["required"]).toEqual(["text", "lang"]);
@@ -83,7 +84,7 @@ describe("decide 参数面自描述", () => {
     expect(kind["enum"]).toEqual(["choice", "score"]);
   });
   it("每级属性都有非空说明（顶层 + state + 题目 items）", () => {
-    const params = paramsOf("ws_jev_decide");
+    const params = paramsOf("ws_request_verdict");
     const top = params["properties"] as Record<string, Record<string, unknown>>;
     for (const key of ["preset_id", "state", "questions_override"]) {
       expect(typeof top[key]["description"]).toBe("string");
@@ -104,11 +105,11 @@ describe("decide 参数面自描述", () => {
 
 describe("list 描述指回 decide", () => {
   it("只读语义 + 前置调用指引", () => {
-    const tool = definitions().find((d) => d.name === "ws_jev_list_presets");
+    const tool = definitions().find((d) => d.name === "ws_list_verdict_guides");
     expect(tool).toBeDefined();
     const text = (tool as unknown as { description: string }).description;
     expect(text).toContain("read-only");
-    expect(text).toContain("ws_jev_decide");
+    expect(text).toContain("ws_request_verdict");
     expect(text).toContain("automationCap");
   });
 });

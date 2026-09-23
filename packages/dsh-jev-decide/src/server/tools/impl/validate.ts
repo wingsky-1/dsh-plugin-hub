@@ -1,5 +1,5 @@
 /**
- * tools 域实现：ws_jev_decide 参数校验（纯函数）。
+ * tools 域实现：ws_request_verdict 参数校验（纯函数）。
  *
  * 规则（任务契约；模板零考题）：
  * - 双缺省/空串/空数组 400：preset_id 缺省、state.text 缺省或空串、全员缺 override、override 空数组；
@@ -130,7 +130,7 @@ function checkOverrideList(
   return { ok: true, questions };
 }
 
-/** ws_jev_decide 参数校验（成功即 ValidDecide，失败即 400 类错误；custom 自建 id 经第二参传入）。 */
+/** ws_request_verdict 参数校验（成功即 ValidDecide，失败即 400 类错误；custom 自建 id 经第二参传入）。 */
 export function validateDecideArgs(
   args: unknown,
   custom?: ReadonlyMap<string, CustomPreset>,
