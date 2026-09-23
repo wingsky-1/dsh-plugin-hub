@@ -36,13 +36,13 @@
         "scope": "src 级十段（#733 按域重写 + client 段）：api HTTP 端点 / channels 出口 / client 客户端半区 / config 配置 / events 宿主事件 / pipeline 管线 / sdk 服务面+组合根 / shared 包内共享 / stores 存储 / upgrade 存量迁移；基线为 2026-09-13 夜间全量班（run 34752395124）实测 covered 92.27%（killed 2586 / survived 217 / noCov 37），九段墙钟合计 10m13s；client 段实测 covered 87.38%（4m03s，见拓扑 client 段注）",
         "threshold": 60
       },
-      "dsh-jev-decide": {
-        "config": "stryker.conf.d/dsh-jev-decide-{api,config,history,store,tools,upgrade,entry,client}.json",
+      "dsh-decision-gateway": {
+        "config": "stryker.conf.d/dsh-decision-gateway-{api,config,history,store,tools,upgrade,entry,client}.json",
         "threshold": 60,
         "fixedScore": 59.82,
         "fixedCovered": 64.84,
         "fixedDate": "2026-09-21",
-        "note": "本地实测锚（worktree feat/jev-decide 非增量冷跑全量 8m12s：killed 1844 / timeout 2 / survived 1001 / noCov 239 / total 3086，covered 口径 64.84%；八段拆分仅改变执行分片、面文件集与单段实测一致；待 observe 夜间全量班按八段重测校准后回填正式锚",
+        "note": "本地实测锚（worktree feat/decision-gateway 非增量冷跑全量 8m12s：killed 1844 / timeout 2 / survived 1001 / noCov 239 / total 3086，covered 口径 64.84%；八段拆分仅改变执行分片、面文件集与单段实测一致；待 observe 夜间全量班按八段重测校准后回填正式锚",
         "scope": "src 级八段（按域：api / config / history / store / tools / upgrade 六 server 域 + entry 宿主入口与双端共享 + client 客户端；client 段排除 components/atoms.ts 纯样式原子，其余全量在面内）"
       },
       "dsh-worktree-sidebar": {

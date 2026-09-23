@@ -126,7 +126,7 @@ importers:
         specifier: ^2.9.0
         version: 2.9.0
 
-  packages/dsh-jev-decide:
+  packages/dsh-decision-gateway:
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: 'catalog:'
@@ -242,9 +242,9 @@ importers:
 
   packages/dsh-plugins-all:
     dependencies:
-      '@wingsky-1/dsh-jev-decide':
+      '@wingsky-1/dsh-decision-gateway':
         specifier: workspace:*
-        version: link:../dsh-jev-decide
+        version: link:../dsh-decision-gateway
       '@wingsky-1/dsh-lan-proxy':
         specifier: workspace:*
         version: link:../dsh-lan-proxy

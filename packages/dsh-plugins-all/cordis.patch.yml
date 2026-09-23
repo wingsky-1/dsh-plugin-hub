@@ -2,8 +2,8 @@
 # 聚合行 = 各独立包 cordis.patch.yml 的 insert 行原样拼接（id + name，无 config，
 # 配置走 schema 默认值）。改独立包 patch 后运行 `node scripts/gate/aggregate.ts` 重新生成。
 - insert:
-    - id: ui-dsh-jev-decide
-      name: '@wingsky-1/dsh-jev-decide'
+    - id: ui-dsh-decision-gateway
+      name: '@wingsky-1/dsh-decision-gateway'
     - id: ui-dsh-lan-proxy
       name: '@wingsky-1/dsh-lan-proxy'
     - id: ui-dsh-mcp-manager

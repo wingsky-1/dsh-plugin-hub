@@ -86,7 +86,7 @@ const UNWIRED_TEST_FACES: Record<string, string> = {
  * 都不进任何 tsc program，要求它们登记才是假红。
  */
 const EXPECT_FILES: Record<string, string[]> = {
-  "dsh-jev-decide": [
+  "dsh-decision-gateway": [
     "client-dom/custom-presets-ui.test.ts",
     "client-dom/fold-hidden.test.ts",
     "client-dom/locale-host.test.ts",
