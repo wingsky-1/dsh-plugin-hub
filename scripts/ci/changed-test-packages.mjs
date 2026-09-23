@@ -265,6 +265,16 @@ function classifySupportConsumer(d, pkg, faceSet) {
   if (!d.startsWith(`packages/${pkg}/test/`)) return "outside";
   return "transit";
 }
+function visitSupportDirect(d, pkg, faceSet, visited, mutationConsumers, exemptConsumers, queue) {
+  if (visited.has(d)) return false;
+  visited.add(d);
+  const kind = classifySupportConsumer(d, pkg, faceSet);
+  if (kind === "exempt") exemptConsumers.add(d);
+  else if (kind === "mutation") mutationConsumers.add(d);
+  else if (kind === "outside") return true;
+  else queue.push(d);
+  return false;
+}
 function collectSupportConsumers(rootDir, pkg, file, faceSet) {
   const visited = new Set([file]);
   const queue = [file];
@@ -283,13 +293,9 @@ function collectSupportConsumers(rootDir, pkg, file, faceSet) {
       continue;
     }
     for (const d of directs) {
-      if (visited.has(d)) continue;
-      visited.add(d);
-      const kind = classifySupportConsumer(d, pkg, faceSet);
-      if (kind === "exempt") exemptConsumers.add(d);
-      else if (kind === "mutation") mutationConsumers.add(d);
-      else if (kind === "outside") return { mutationConsumers, exemptConsumers, fallback: true };
-      else queue.push(d);
+      if (visitSupportDirect(d, pkg, faceSet, visited, mutationConsumers, exemptConsumers, queue)) {
+        return { mutationConsumers, exemptConsumers, fallback: true };
+      }
     }
   }
   return { mutationConsumers, exemptConsumers, fallback: false };
