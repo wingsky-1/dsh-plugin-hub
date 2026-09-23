@@ -1,0 +1,46 @@
+{
+  "$schema": "../node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "mutate": [
+    "packages/dsh-provider-usage/src/server/history/history.ts",
+    "!packages/dsh-provider-usage/src/client/**",
+    "!packages/dsh-provider-usage/src/**/interface.ts",
+    "!packages/dsh-provider-usage/src/server/*/deps.ts",
+    "!packages/dsh-provider-usage/src/**/*.d.mts",
+    "!packages/dsh-provider-usage/src/server/adapters/deepseek-official.mjs",
+    "!packages/dsh-provider-usage/src/server/adapters/opencode-go.mjs",
+    "!packages/dsh-provider-usage/src/server/adapters/zai-coding-cn.mjs"
+  ],
+  "testRunner": "vitest",
+  "mutator": {
+    "excludedMutations": [
+      "StringLiteral",
+      "ArrayLiteral",
+      "ObjectLiteral",
+      "TemplateLiteral"
+    ]
+  },
+  "plugins": [
+    "@stryker-mutator/vitest-runner"
+  ],
+  "concurrency": 16,
+  "timeoutMS": 60000,
+  "dryRunTimeoutMinutes": 5,
+  "reporters": [
+    "progress",
+    "clear-text",
+    "json"
+  ],
+  "coverageAnalysis": "perTest",
+  "tempDirName": ".stryker-tmp",
+  "cleanTempDir": true,
+  "vitest": {
+    "related": false,
+    "configFile": "vitest.stryker.d/dsh-provider-usage-pipeline-history.config.ts"
+  },
+  "jsonReporter": {
+    "fileName": "coverage/mutation/dsh-provider-usage-pipeline-history.json"
+  },
+  "incremental": true,
+  "incrementalFile": "coverage/mutation/incremental-provider-usage-pipeline-history.json",
+  "_comment": "#962 A 拆大段（三向之一：历史面）——原 pipeline 段的 history.ts 单列（#768 D5 随域迁 server/history，writeDirect 原子写硬化）；testFiles 原样继承原段 22 个：A 阶段无 per-mutant 杀灭证据，任何摘除都是杀灭力赌博，收窄是 B 阶段的事；测试按段 testFiles 清单跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
+}

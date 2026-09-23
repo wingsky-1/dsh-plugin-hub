@@ -837,17 +837,42 @@
           ],
           "comment": "#342 v4：src 级文件组分段（1）——index+user-adapters+ui-config+config（配置/入口面）；#768 D7 注册表文件随域迁 server/registry（路径同步，行为零改 + 双启用判据）；#768 D13 包根入口 src/index.ts 落地（apply/index.ts 显式具名薄转发，导出面零漂移）并入本段；测试按段 testFiles 清单跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
         },
-        "pipeline": {
+        "pipeline-history": {
+          "mutate": ["packages/dsh-provider-usage/src/server/history/history.ts"],
+          "excludes": ["!packages/dsh-provider-usage/src/client/**"],
+          "testFiles": [
+            "packages/dsh-provider-usage/test/integration/aggregate/composition-root.test.ts",
+            "packages/dsh-provider-usage/test/integration/collect/composition-root.test.ts",
+            "packages/dsh-provider-usage/test/integration/history/composition-root.test.ts",
+            "packages/dsh-provider-usage/test/integration/pipeline/composition-root.test.ts",
+            "packages/dsh-provider-usage/test/integration/registry/composition-root.test.ts",
+            "packages/dsh-provider-usage/test/integration/report-routes/composition-root.test.ts",
+            "packages/dsh-provider-usage/test/integration/schedule/composition-root.test.ts",
+            "packages/dsh-provider-usage/test/integration/ui-routes/composition-root.test.ts",
+            "packages/dsh-provider-usage/test/integration/upgrade/upgrade-chain.test.ts",
+            "packages/dsh-provider-usage/test/unit/adapters/unit-deepseek-official.test.ts",
+            "packages/dsh-provider-usage/test/unit/apply/unit-apply.test.ts",
+            "packages/dsh-provider-usage/test/unit/common/unit-errsurf.test.ts",
+            "packages/dsh-provider-usage/test/unit/history/unit-history.test.ts",
+            "packages/dsh-provider-usage/test/unit/pipeline/unit-signal-lock.test.ts",
+            "packages/dsh-provider-usage/test/unit/pipeline/unit-stats-service.test.ts",
+            "packages/dsh-provider-usage/test/unit/registry/unit-hotreload.test.ts",
+            "packages/dsh-provider-usage/test/unit/report/unit-report.test.ts",
+            "packages/dsh-provider-usage/test/unit/server-shared/unit-s2-contracts.test.ts",
+            "packages/dsh-provider-usage/test/unit/shared/unit-chart.test.ts",
+            "packages/dsh-provider-usage/test/unit/shared/unit-config.test.ts",
+            "packages/dsh-provider-usage/test/unit/shared/unit-contract.test.ts",
+            "packages/dsh-provider-usage/test/unit/trend/unit-trend.test.ts"
+          ],
+          "comment": "#962 A 拆大段（三向之一：历史面）——原 pipeline 段的 history.ts 单列（#768 D5 随域迁 server/history，writeDirect 原子写硬化）；testFiles 原样继承原段 22 个：A 阶段无 per-mutant 杀灭证据，任何摘除都是杀灭力赌博，收窄是 B 阶段的事；测试按段 testFiles 清单跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
+        },
+        "pipeline-core": {
           "mutate": [
-            "packages/dsh-provider-usage/src/server/history/history.ts",
             "packages/dsh-provider-usage/src/server/pipeline/v2.ts",
+            "packages/dsh-provider-usage/src/server/pipeline/stats-service.ts",
             "packages/dsh-provider-usage/src/server/registry/hotreload.ts",
             "packages/dsh-provider-usage/src/server/registry/path-resolve.ts",
-            "packages/dsh-provider-usage/src/shared/placement-math.ts",
-            "packages/dsh-provider-usage/src/shared/client-logic.ts",
-            "packages/dsh-provider-usage/src/server/registry/provider-config.ts",
-            "packages/dsh-provider-usage/src/shared/charts.ts",
-            "packages/dsh-provider-usage/src/server/pipeline/stats-service.ts"
+            "packages/dsh-provider-usage/src/server/registry/provider-config.ts"
           ],
           "excludes": ["!packages/dsh-provider-usage/src/client/**"],
           "testFiles": [
@@ -874,7 +899,40 @@
             "packages/dsh-provider-usage/test/unit/shared/unit-contract.test.ts",
             "packages/dsh-provider-usage/test/unit/trend/unit-trend.test.ts"
           ],
-          "comment": "#342 v4：src 级文件组分段（5）——history/v2/hotreload/placement-math/path-resolve/client-logic/provider-config/charts/stats-service（历史/管线/热更/图表/C3 服务面；charts 纳入修复变异盲区；阶段零补 stats-service 盲区）；#768 D5 历史文件随域迁 server/history（路径同步，行为零改 + writeDirect 原子写硬化）；#768 D6 管线三文件随域迁 server/pipeline（路径同步，行为零改 + 净化缺席判据）；#768 D7 注册表三文件随域迁 server/registry（路径同步，行为零改 + 双启用判据）；测试按段 testFiles 清单跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
+          "comment": "#962 A 拆大段（三向之一：管线-注册表服务面）——原 pipeline 段的 v2/stats-service（#768 D6 随域迁 server/pipeline，净化缺席判据；阶段零补 stats-service 盲区）+ hotreload/path-resolve/provider-config（#768 D7 随域迁 server/registry，双启用判据）；testFiles 原样继承原段 22 个（零收窄，理由同 pipeline-history）；测试按段 testFiles 清单跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
+        },
+        "pipeline-view": {
+          "mutate": [
+            "packages/dsh-provider-usage/src/shared/placement-math.ts",
+            "packages/dsh-provider-usage/src/shared/client-logic.ts",
+            "packages/dsh-provider-usage/src/shared/charts.ts"
+          ],
+          "excludes": ["!packages/dsh-provider-usage/src/client/**"],
+          "testFiles": [
+            "packages/dsh-provider-usage/test/integration/aggregate/composition-root.test.ts",
+            "packages/dsh-provider-usage/test/integration/collect/composition-root.test.ts",
+            "packages/dsh-provider-usage/test/integration/history/composition-root.test.ts",
+            "packages/dsh-provider-usage/test/integration/pipeline/composition-root.test.ts",
+            "packages/dsh-provider-usage/test/integration/registry/composition-root.test.ts",
+            "packages/dsh-provider-usage/test/integration/report-routes/composition-root.test.ts",
+            "packages/dsh-provider-usage/test/integration/schedule/composition-root.test.ts",
+            "packages/dsh-provider-usage/test/integration/ui-routes/composition-root.test.ts",
+            "packages/dsh-provider-usage/test/integration/upgrade/upgrade-chain.test.ts",
+            "packages/dsh-provider-usage/test/unit/adapters/unit-deepseek-official.test.ts",
+            "packages/dsh-provider-usage/test/unit/apply/unit-apply.test.ts",
+            "packages/dsh-provider-usage/test/unit/common/unit-errsurf.test.ts",
+            "packages/dsh-provider-usage/test/unit/history/unit-history.test.ts",
+            "packages/dsh-provider-usage/test/unit/pipeline/unit-signal-lock.test.ts",
+            "packages/dsh-provider-usage/test/unit/pipeline/unit-stats-service.test.ts",
+            "packages/dsh-provider-usage/test/unit/registry/unit-hotreload.test.ts",
+            "packages/dsh-provider-usage/test/unit/report/unit-report.test.ts",
+            "packages/dsh-provider-usage/test/unit/server-shared/unit-s2-contracts.test.ts",
+            "packages/dsh-provider-usage/test/unit/shared/unit-chart.test.ts",
+            "packages/dsh-provider-usage/test/unit/shared/unit-config.test.ts",
+            "packages/dsh-provider-usage/test/unit/shared/unit-contract.test.ts",
+            "packages/dsh-provider-usage/test/unit/trend/unit-trend.test.ts"
+          ],
+          "comment": "#962 A 拆大段（三向之一：展示纯逻辑面）——原 pipeline 段的 placement-math/client-logic/charts 三纯逻辑文件（charts 纳入修复变异盲区）；testFiles 原样继承原段 22 个（零收窄，理由同 pipeline-history）；测试按段 testFiles 清单跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
         },
         "registry": {
           "mutate": [

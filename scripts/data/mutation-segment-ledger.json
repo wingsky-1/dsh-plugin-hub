@@ -1387,6 +1387,9 @@
     "dsh-mcp-manager-servers": "#767 S1-2b 新建段（servers/lifecycle 域骨架，尚未接线）：段面无历史测量值，wallSeconds 只能由 mutation-ledger 的生成模式从 Actions run 日志解析，不手工编造；待该段在 CI 变异切片上首次实跑后入库。",
     "dsh-mcp-manager-client-panel": "#947 新增的客户端段（packages/dsh-mcp-manager/src/client/float/panel.ts + core/state.ts，首个直连判据 test/client-dom/panel-aria-modal.test.ts）。历史上无同名段，尚无 Actions run 日志墙钟；待首次 CI 变异切片跑或夜间全量班由 mutation-ledger --record 入档。本地实测值按台账口径不计入——本文件的值只能从 Actions run 日志解析，禁止手工编造数值。",
     "dsh-provider-usage-upgrade": "#768 S3 新建段（server/upgrade 迁移链）历史上无同名段，尚无 Actions run 日志墙钟；待首次 CI 变异切片跑或夜间全量班由 mutation-ledger --record 入档。本地不手工编造数值。",
+    "dsh-provider-usage-pipeline-history": "#962 A 拆大段（三向之一：历史面）——原 dsh-provider-usage-pipeline 段的 history.ts 单列；尚无拆分后的 CI 切片/夜间实测值，超时走默认 30 分钟；待首次 CI 变异切片跑或夜间全量班由 mutation-ledger --record 入档。旧段面见 superseded dsh-provider-usage-pipeline。",
+    "dsh-provider-usage-pipeline-core": "#962 A 拆大段（三向之一：管线-注册表服务面）——原 dsh-provider-usage-pipeline 段的 v2/stats-service/hotreload/path-resolve/provider-config 五文件；尚无拆分后的 CI 切片/夜间实测值，超时走默认 30 分钟；待首次 CI 变异切片跑或夜间全量班由 mutation-ledger --record 入档。旧段面见 superseded dsh-provider-usage-pipeline。",
+    "dsh-provider-usage-pipeline-view": "#962 A 拆大段（三向之一：展示纯逻辑面）——原 dsh-provider-usage-pipeline 段的 placement-math/client-logic/charts 三纯逻辑文件；尚无拆分后的 CI 切片/夜间实测值，超时走默认 30 分钟；待首次 CI 变异切片跑或夜间全量班由 mutation-ledger --record 入档。旧段面见 superseded dsh-provider-usage-pipeline。",
     "dsh-jev-decide-api": "按域分段（#943 对账后，单段 _single 按 server 目录名拆分为八段）：api 段尚无拆分后的 CI 切片/夜间实测值；待首次 CI 变异切片跑或夜间全量班由 mutation-ledger --record 入档。旧单段面见 superseded dsh-jev-decide。",
     "dsh-jev-decide-config": "按域分段（#943 对账后，单段 _single 按 server 目录名拆分为八段）：config 段尚无拆分后的 CI 切片/夜间实测值；待首次 CI 变异切片跑或夜间全量班由 mutation-ledger --record 入档。旧单段面见 superseded dsh-jev-decide。",
     "dsh-jev-decide-history": "按域分段（#943 对账后，单段 _single 按 server 目录名拆分为八段）：history 段尚无拆分后的 CI 切片/夜间实测值；待首次 CI 变异切片跑或夜间全量班由 mutation-ledger --record 入档。旧单段面见 superseded dsh-jev-decide。",
@@ -1476,6 +1479,14 @@
         "dsh-jev-decide-client"
       ],
       "reason": "按域分段（#943 对账后）：旧单段 _single 面（packages/dsh-jev-decide/src/**/*.ts 全覆盖，仅排除 client/components/atoms.ts）按 server 目录名拆为 api/config/history/store/tools/upgrade 六域，另立 entry（宿主入口与双端共享）与 client（客户端）两段；拆分仅改变执行分片，面文件集不变。单段时代无 CI run 日志墙钟（仅一次本地冷跑全量，不计入），故不留 measurements；各段 wallSeconds 待首次 CI 切片跑或夜间全量班入库。"
+    },
+    "dsh-provider-usage-pipeline": {
+      "replacedBy": [
+        "dsh-provider-usage-pipeline-history",
+        "dsh-provider-usage-pipeline-core",
+        "dsh-provider-usage-pipeline-view"
+      ],
+      "reason": "#962 A 拆大段：原 pipeline 段九文件（history/v2/hotreload/placement-math/path-resolve/client-logic/provider-config/charts/stats-service）按域拆为 pipeline-history（历史面，history.ts）/pipeline-core（管线-注册表服务面，v2/stats-service/hotreload/path-resolve/provider-config）/pipeline-view（展示纯逻辑面，placement-math/client-logic/charts）三段；testFiles 原样继承 22 个（零收窄），拆分仅改变执行分片，包级变异面并集不变。历史 wallSeconds 描述的是旧合并面，不得用于新面的超时定标；新段超时走默认 30 分钟，待夜间全量班补实测。"
     }
   }
 }
