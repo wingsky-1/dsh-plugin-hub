@@ -280,6 +280,7 @@ describe("下发路由三态与围栏", () => {
     expect(r.path).toBe(ROUTES.caCert);
     expect(r.status).toBe(404);
     const body = JSON.parse(r.body.toString("utf8"));
+    expect(body.ok).toBe(false);
     expect(body.error.code).toBe("ca-unconfigured");
     expect(body.error.details).toContain("一键生成");
   });
