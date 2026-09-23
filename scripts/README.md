@@ -110,7 +110,7 @@
 
 ## scripts/ 根
 
-- `tsconfig.json` — `scripts/` 的 typecheck 面（**全树** `.ts/.mts/.cts` 入面，含 `test/**`；`allowJs` 让被 import 的 `.mjs` 进程序集**供类型推断**——`.mjs` 本体的类型检查（`checkJs`）仍是未决项，见 `scripts/tsconfig.json` 顶部注释）。在面与否由 `test/verify-docs-typecheck.test.ts` 的两条判据守：面外集合必须为空（任何 `.ts/.mts/.cts` 被 exclude 即红）、磁盘枚举非空（防枚举失效让面外判据恒真）。
+- `tsconfig.json` — `scripts/` 的 typecheck 面（**全树** `.ts/.mts/.cts` 入面，含 `test/**`；`allowJs` 让被 import 的 `.mjs` 进程序集**供类型推断**——`.mjs` 本体的类型检查（`checkJs`）已裁决：全量checkJs不做（38个.mjs系运行时垫片，649条多为缺JSDoc非真实缺陷，大爆炸修复违反增量纪律），替代落点为冻结守卫（`test/mjs-freeze-guard.test.ts`）+触达即转，见 `scripts/tsconfig.json` 顶部注释）。在面与否由 `test/verify-docs-typecheck.test.ts` 的两条判据守：面外集合必须为空（任何 `.ts/.mts/.cts` 被 exclude 即红）、磁盘枚举非空（防枚举失效让面外判据恒真）。
 
 ## test/（脚本自测，`pnpm test:scripts`）
 
