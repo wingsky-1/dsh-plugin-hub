@@ -369,7 +369,10 @@ describe("端点往返", () => {
   it("PUT config 校验面", async () => {
     const { routes } = setup();
     const put = (body: unknown) =>
-      call(routes, "/api/dsh-decision-gateway/config", { method: "PUT", body: JSON.stringify(body) });
+      call(routes, "/api/dsh-decision-gateway/config", {
+        method: "PUT",
+        body: JSON.stringify(body),
+      });
     expect((await put({ baseUrl: "https://x" })).status).toBe(400);
     expect((await put({ apiKeyRef: "lower" })).status).toBe(400);
     expect((await put({ apiKeyPlaintext: "Abcdefgh12345678" })).status).toBe(200);
@@ -389,7 +392,10 @@ describe("端点往返", () => {
   it("切轨一次写透：明文+apiKeyRef:null→200 且掩码去引用", async () => {
     const { routes } = setup();
     const put = (body: unknown) =>
-      call(routes, "/api/dsh-decision-gateway/config", { method: "PUT", body: JSON.stringify(body) });
+      call(routes, "/api/dsh-decision-gateway/config", {
+        method: "PUT",
+        body: JSON.stringify(body),
+      });
     expect((await put({ apiKeyRef: "JEV_IT_TRACK" })).status).toBe(200);
     const switched = await put({ apiKeyPlaintext: "Abcdefgh12345678", apiKeyRef: null });
     expect(switched.status).toBe(200);

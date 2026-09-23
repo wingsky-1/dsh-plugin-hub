@@ -186,7 +186,11 @@ test("#764 A2：被忽略文件静默跳过（钩子 staged d.ts 不超预算，
       cwd: ROOT,
       encoding: "utf8",
     });
-    assert.equal(r.status, 0, `被忽略文件须静默通过 exit 0（实际 ${r.status}）：${r.stdout}${r.stderr}`);
+    assert.equal(
+      r.status,
+      0,
+      `被忽略文件须静默通过 exit 0（实际 ${r.status}）：${r.stdout}${r.stderr}`,
+    );
     assert.match(r.stdout, /检查 0 个文件/, "被忽略文件须 0 结果");
     assert.doesNotMatch(r.stderr, /超出预算/, "被忽略文件不得触发预算");
   }

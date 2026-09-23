@@ -90,7 +90,9 @@ export function loadCustomPresets(home: string | undefined, deps: ConfigDeps): C
   }
   const list = (value as Record<string, unknown>)["customPresets"];
   if (!Array.isArray(list)) {
-    deps.logger.warn("dsh-decision-gateway: custom-presets.json 缺 customPresets 数组，已按空列表读");
+    deps.logger.warn(
+      "dsh-decision-gateway: custom-presets.json 缺 customPresets 数组，已按空列表读",
+    );
     return [];
   }
   const checked = validateCustomPresets(list);
@@ -140,7 +142,8 @@ export function loadState(home: string | undefined, deps: ConfigDeps): LoadedSta
     if (typeof rec["apiKeyPlaintext"] === "string") plaintext = rec["apiKeyPlaintext"] as string;
   }
   const retired = [...normalized.retired];
-  if (retired.length > 0) deps.logger.warn("dsh-decision-gateway: 退役键已剥离 —— " + retired.join(", "));
+  if (retired.length > 0)
+    deps.logger.warn("dsh-decision-gateway: 退役键已剥离 —— " + retired.join(", "));
   const synced: ConfigV1 = {
     ...config,
     connection: {

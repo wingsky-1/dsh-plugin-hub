@@ -160,7 +160,10 @@ describe("PUT 双轨互斥 + GET 掩码 + 日志无原文", () => {
     expect(JSON.stringify(masked)).not.toContain(PLAINTEXT);
     expect(masked.connection.hasPlaintextKey).toBe(true);
     expect(masked.connection.apiKeyRef).toBe(undefined);
-    const diskConfig = readFileSync(join(home, "@wingsky-1/dsh-decision-gateway", "config.json"), "utf8");
+    const diskConfig = readFileSync(
+      join(home, "@wingsky-1/dsh-decision-gateway", "config.json"),
+      "utf8",
+    );
     expect(diskConfig).not.toContain(PLAINTEXT);
     const reloaded = toMaskedConfig(loadState(home, plainDeps()));
     expect(JSON.stringify(reloaded)).not.toContain(PLAINTEXT);
