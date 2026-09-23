@@ -24,6 +24,12 @@ import {
   migrateLegacyV3,
   type HistoryEntry,
 } from "../../../src/server/history/interface.ts";
+// 白盒直连深路径（#950 DST 锁定）：日界/小时/调度纯面经接缝，不走组合根转发；
+// 只锁纯函数，不碰 query/retention IO，不动 history.ts:92 循环。
+import { dayKey, lastNDayKeys } from "../../../src/shared/interface.ts";
+import { hourOfDay } from "../../../src/server/shared/interface.ts";
+import { previousClosedWindow } from "../../../src/server/schedule/interface.ts";
+import { normalizeReportConfig } from "../../../src/server/config/interface.ts";
 /** 无名列防御覆盖：旧 v3 列声明可缺 name（实现仅读 key），窄类型经 unknown 断言。 */
 type LegacyColumns = Parameters<typeof legacySampleToData>[0];
 const namelessCols = (...keys: string[]): LegacyColumns =>
@@ -944,5 +950,139 @@ describe("D5三 故障注入（坏行/目录占位/写失败/prune 容错）", (
 
   it("pruneAll 文件根静默返回", () => {
     expect(pruneThrew).toBe(false);
+  });
+});
+
+// ================================================================ #950 DST 纯函数锁定：秋季 25h 日 + 春季 23h 日
+//
+// 样板复用 packages/dsh-notifier/test/unit/pipeline/judge.test.ts:4-11（任意 TZ 一致三规则）：
+//  1. 不调 vi.useFakeTimers / vi.setSystemTime：被测纯函数均显式传参（startOfDay/dayKey/
+//     lastNDayKeys/hourOfDay/previousClosedWindow 均不读 Date.now），无需钉“现在”，故不引入假时钟；
+//  2. 日期一律本地构造 new Date(y, m, d, h, mi)：getHours/getDate/dayKey 同源本地口径，
+//     任意 TZ、任意 pool（forks/threads）下结果一致；禁用 "…Z" 字符串与 TZ= pinning；
+//  3. 锚点相对本地构造，不钉墙钟：只断言长度/单调/首尾含今日/23h 与 25h 键数差等不变量，
+//     不 assert 具体毫秒差 23h/25h（非 DST 时区下同日仍为 24h）。
+// 范围：只锁纯函数，不碰 query/retention IO；不动 src/server/history/history.ts:92 循环
+// （DST 若打红也不扩范围，另立 issue；本次不需要开新 issue）。
+// addDays 注记：due.ts addDays 为私有未导出（路径走接缝纪律，不直引实现文件），其 DST 安全语义
+// （本地逐日 setDate，禁毫秒减法）经可观测包装 previousClosedWindow("daily") 锁定
+// （== lastNDayKeys(2, now)[0]），与 lastNDayKeys 同源互证。
+describe("DST 纯函数锁定：秋季 25h 日（2026-11-01）+ 春季 23h 日（2026-03-08）", () => {
+  // 本地正午构造：中午避开 DST 跳变临界 00:00–03:00，任意 TZ 下 dayKey 稳定为预期串。
+  const FALL_NOON = new Date(2026, 10, 1, 12, 0, 0, 0).getTime(); // 2026-11-01 12:00 本地（美国 DST 结束日，25h）
+  const SPRING_NOON = new Date(2026, 2, 8, 12, 0, 0, 0).getTime(); // 2026-03-08 12:00 本地（美国 DST 开始日，23h）
+  const FALL_NEXT_NOON = new Date(2026, 10, 2, 12, 0, 0, 0).getTime();
+  const SPRING_NEXT_NOON = new Date(2026, 2, 9, 12, 0, 0, 0).getTime();
+  const CFG = normalizeReportConfig({
+    daily: { enabled: true, time: "22:00" },
+    weekly: { enabled: true, time: "09:00", weekStartsOn: 1 },
+    monthly: { enabled: true, time: "09:00", dayOfMonth: 1 },
+  });
+
+  let fallDay: string;
+  let springDay: string;
+  let fallStart: number;
+  let springStart: number;
+  let fallNextStart: number;
+  let springNextStart: number;
+  let fallKeys7: string[];
+  let springKeys7: string[];
+  let fallKeys2: string[];
+  let springKeys2: string[];
+  let fallHour: number;
+  let springHour: number;
+  let fallMidnightHour: number;
+  let springMidnightHour: number;
+  let fallYesterday: string;
+  let springYesterday: string;
+
+  beforeAll(() => {
+    fallDay = dayKey(FALL_NOON);
+    springDay = dayKey(SPRING_NOON);
+    fallStart = startOfDay(FALL_NOON);
+    springStart = startOfDay(SPRING_NOON);
+    fallNextStart = startOfDay(FALL_NEXT_NOON);
+    springNextStart = startOfDay(SPRING_NEXT_NOON);
+    fallKeys7 = lastNDayKeys(7, FALL_NOON);
+    springKeys7 = lastNDayKeys(7, SPRING_NOON);
+    fallKeys2 = lastNDayKeys(2, FALL_NOON);
+    springKeys2 = lastNDayKeys(2, SPRING_NOON);
+    fallHour = hourOfDay(FALL_NOON);
+    springHour = hourOfDay(SPRING_NOON);
+    fallMidnightHour = hourOfDay(fallStart);
+    springMidnightHour = hourOfDay(springStart);
+    fallYesterday = previousClosedWindow("daily", CFG, FALL_NOON).key;
+    springYesterday = previousClosedWindow("daily", CFG, SPRING_NOON).key;
+  });
+
+  it("秋季日 dayKey 为 2026-11-01（本地构造，任意 TZ 一致）", () => {
+    expect(fallDay).toBe("2026-11-01");
+  });
+
+  it("春季日 dayKey 为 2026-03-08（本地构造，任意 TZ 一致）", () => {
+    expect(springDay).toBe("2026-03-08");
+  });
+
+  it("startOfDay 与 dayKey 同源：秋季零点仍属当日", () => {
+    expect(dayKey(fallStart)).toBe(fallDay);
+    expect(new Date(fallStart).getHours()).toBe(0);
+  });
+
+  it("startOfDay 与 dayKey 同源：春季零点仍属当日", () => {
+    expect(dayKey(springStart)).toBe(springDay);
+    expect(new Date(springStart).getHours()).toBe(0);
+  });
+
+  it("startOfDay 单调：次日零点严格递增（秋/春同断言，不钉毫秒差）", () => {
+    expect(fallNextStart > fallStart).toBe(true);
+    expect(springNextStart > springStart).toBe(true);
+  });
+
+  it("lastNDayKeys 长度恒为 n（秋/春各 7，不因 23h/25h 丢键）", () => {
+    expect(fallKeys7.length).toBe(7);
+    expect(springKeys7.length).toBe(7);
+  });
+
+  it("lastNDayKeys 首尾含今日：末键恒为当日（秋/春）", () => {
+    expect(fallKeys7.at(-1)).toBe(fallDay);
+    expect(springKeys7.at(-1)).toBe(springDay);
+  });
+
+  it("lastNDayKeys 单调 distinct 且字典序升序（秋/春）", () => {
+    for (const keys of [fallKeys7, springKeys7]) {
+      expect(new Set(keys).size).toBe(keys.length);
+      expect([...keys].sort()).toEqual(keys);
+    }
+  });
+
+  it("hourOfDay 正午为 12 且值域 0–23（秋/春，本地同源）", () => {
+    expect(fallHour).toBe(12);
+    expect(springHour).toBe(12);
+    expect(fallMidnightHour).toBe(0);
+    expect(springMidnightHour).toBe(0);
+  });
+
+  it("hour/day 同源：零点 hour 恒 0 且 dayKey 一致（秋/春）", () => {
+    expect(dayKey(fallStart)).toBe(fallDay);
+    expect(dayKey(springStart)).toBe(springDay);
+  });
+
+  it("addDays 一致性：previousClosedWindow 昨日 == lastNDayKeys(2)[0]（秋/春）", () => {
+    // due.ts addDays 私有，经 daily 窗口可观测：恒为昨日全天。
+    expect(fallYesterday).toBe(fallKeys2[0]);
+    expect(springYesterday).toBe(springKeys2[0]);
+  });
+
+  it("绝对锚点：昨日键为 2026-10-31 / 2026-03-07（双口径同值，防同错同对）", () => {
+    // 绝对日历断言：正午本地构造在任意时区下 dayKey 稳定，故昨日键恒为该两串；
+    // 双口径（previousClosedWindow 与 lastNDayKeys）同值互证，任一实现独错即红。
+    expect(fallYesterday).toBe("2026-10-31");
+    expect(springYesterday).toBe("2026-03-07");
+    expect(fallKeys2[0]).toBe("2026-10-31");
+    expect(springKeys2[0]).toBe("2026-03-07");
+  });
+
+  it("23h 与 25h 键数差为 0：两日各 7 键（逐日 setDate 步进，非毫秒减法）", () => {
+    expect(fallKeys7.length - springKeys7.length).toBe(0);
   });
 });
