@@ -473,7 +473,7 @@ function fmtSite(s) {
   return `${s.rel}:${s.line}`;
 }
 
-async function main(argv) {
+function establishScope(argv) {
   const rootIdx = argv.indexOf("--root");
   const root = rootIdx >= 0 && argv[rootIdx + 1] !== undefined ? argv[rootIdx + 1] : DEFAULT_ROOT;
   let files = null;
@@ -493,7 +493,9 @@ async function main(argv) {
   if (structuralWhy !== null) {
     failClosed(`verify-host-seams: ${structuralWhy}（fail-closed）`);
   }
-  const observe = argv.includes("--observe");
+  return { root: root, files: files };
+}
+async function scanAll(root, files) {
   const scanned = [];
   const pipelineFailures = [];
   try {
@@ -513,6 +515,27 @@ async function main(argv) {
       `verify-host-seams: AST 管线失败 ${pipelineFailures.length} 文件（fail-closed）：\n  - ${pipelineFailures.slice(0, 12).join("\n  - ")}`,
     );
   }
+  return scanned;
+}
+function buildViolationGroups(allDefs, violations) {
+  const groups = groupByPkgValue(allDefs);
+  const rows = [...groups.values()]
+    .map((g) => ({
+      ...g,
+      holders: [...g.holders].sort(),
+      disposition: decideGroup({ ...g, holders: new Set(g.holders) }),
+    }))
+    .sort((a, b) => (a.pkg < b.pkg ? -1 : a.pkg > b.pkg ? 1 : a.value < b.value ? -1 : 1));
+  for (const r of rows) {
+    if (r.disposition === "multi-red" || r.disposition === "mirror-noclient-red") {
+      violations.push(
+        `R4 分组越位 (${r.pkg}, ${r.value}) 持有人 ${r.holders.length}：${r.holders.join("，")}`,
+      );
+    }
+  }
+  return rows;
+}
+function collectViolations(scanned) {
   const violations = [];
   let dynamicOn = 0;
   const allDefs = [];
@@ -567,26 +590,15 @@ async function main(argv) {
         `R4 同名多出 ${key}（${holders.size} 文件导出同名：${[...holders].sort().join("，")}）`,
       );
   }
-  const groups = groupByPkgValue(allDefs);
-  const rows = [...groups.values()]
-    .map((g) => ({
-      ...g,
-      holders: [...g.holders].sort(),
-      disposition: decideGroup({ ...g, holders: new Set(g.holders) }),
-    }))
-    .sort((a, b) => (a.pkg < b.pkg ? -1 : a.pkg > b.pkg ? 1 : a.value < b.value ? -1 : 1));
-  for (const r of rows) {
-    if (r.disposition === "multi-red" || r.disposition === "mirror-noclient-red") {
-      violations.push(
-        `R4 分组越位 (${r.pkg}, ${r.value}) 持有人 ${r.holders.length}：${r.holders.join("，")}`,
-      );
-    }
-  }
-  if (observe) {
+  const rows = buildViolationGroups(allDefs, violations);
+  return { violations: violations, rows: rows, dynamicOn: dynamicOn, allDefs: allDefs };
+}
+function reportVerify(ctx) {
+  if (ctx.observe) {
     console.log(
-      `verify-host-seams: 分组表（${files.length} 文件，${allDefs.length} 定义，动态 on 首参 ${dynamicOn} 处）`,
+      `verify-host-seams: 分组表（${ctx.files.length} 文件，${ctx.allDefs.length} 定义，动态 on 首参 ${ctx.dynamicOn} 处）`,
     );
-    for (const r of rows) {
+    for (const r of ctx.rows) {
       const fb = r.fallback > 0 ? ` fallback${r.fallback}\/${r.holders.length}` : "";
       console.log(`  [${r.disposition}] (${r.pkg}, ${r.value})${fb}`);
       for (const h of r.holders) console.log(`    - ${h}`);
@@ -594,15 +606,37 @@ async function main(argv) {
     console.log(`verify-host-seams: OBSERVE OK（观察模式不判红）`);
     return 0;
   }
-  if (violations.length > 0) {
-    for (const v of violations) console.error(`verify-host-seams: ${v}`);
-    console.error(`verify-host-seams: FAIL（${violations.length} 项，扫描 ${files.length} 文件）`);
+  if (ctx.violations.length > 0) {
+    for (const v of ctx.violations) console.error(`verify-host-seams: ${v}`);
+    console.error(
+      `verify-host-seams: FAIL（${ctx.violations.length} 项，扫描 ${ctx.files.length} 文件）`,
+    );
     return 1;
   }
   console.log(
-    `verify-host-seams: OK（扫描 ${files.length} 文件，${rows.length} 组，动态 on 首参 ${dynamicOn} 处只观察）`,
+    `verify-host-seams: OK（扫描 ${ctx.files.length} 文件，${ctx.rows.length} 组，动态 on 首参 ${ctx.dynamicOn} 处只观察）`,
   );
   return 0;
+}
+async function main(argv) {
+  const scope = establishScope(argv);
+  const root = scope.root;
+  const files = scope.files;
+  const observe = argv.includes("--observe");
+  const scanned = await scanAll(root, files);
+  const result = collectViolations(scanned);
+  const violations = result.violations;
+  const rows = result.rows;
+  const dynamicOn = result.dynamicOn;
+  const allDefs = result.allDefs;
+  return reportVerify({
+    observe: observe,
+    violations: violations,
+    rows: rows,
+    dynamicOn: dynamicOn,
+    files: files,
+    allDefs: allDefs,
+  });
 }
 
 function isDirectExecution() {

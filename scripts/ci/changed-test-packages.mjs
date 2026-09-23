@@ -238,6 +238,20 @@ export function findDirectConsumers(rootDir, pkg, supportFile) {
   directs.sort();
   return directs;
 }
+function resolveSegSet(topology, rootDir, faceCache, pkg, mutationConsumers, segKeys) {
+  const segSet = new Set();
+  for (const consumer of mutationConsumers) {
+    const entries = testFileEntries(topology, rootDir, faceCache, pkg, consumer);
+    if (entries.length === 1 && entries[0] === pkg) return null;
+    for (const e of entries) {
+      if (typeof e !== "string" || !e.startsWith(`${pkg}:`)) return null;
+      segSet.add(e);
+    }
+  }
+  if (segSet.size === 0) return null;
+  if (segKeys.every((k) => segSet.has(`${pkg}:${k}`))) return null;
+  return [...segSet].sort();
+}
 export function supportFileEntries(topology, rootDir, faceCache, pkg, file, packageFace) {
   try {
     const pkgDef = topology?.packages?.[pkg];
@@ -281,18 +295,9 @@ export function supportFileEntries(topology, rootDir, faceCache, pkg, file, pack
       if (exemptConsumers.size > 0) return [];
       return [pkg];
     }
-    const segSet = new Set();
-    for (const consumer of mutationConsumers) {
-      const entries = testFileEntries(topology, rootDir, faceCache, pkg, consumer);
-      if (entries.length === 1 && entries[0] === pkg) return [pkg];
-      for (const e of entries) {
-        if (typeof e !== "string" || !e.startsWith(`${pkg}:`)) return [pkg];
-        segSet.add(e);
-      }
-    }
-    if (segSet.size === 0) return [pkg];
-    if (segKeys.every((k) => segSet.has(`${pkg}:${k}`))) return [pkg];
-    return [...segSet].sort();
+    const resolved = resolveSegSet(topology, rootDir, faceCache, pkg, mutationConsumers, segKeys);
+    if (resolved === null) return [pkg];
+    return resolved;
   } catch {
     return [pkg];
   }

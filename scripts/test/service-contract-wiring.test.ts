@@ -263,6 +263,7 @@ const EXPECT_FILES: Record<string, string[]> = {
     "unit/upgrade/version.test.ts",
   ],
   "dsh-provider-usage": [
+    "client-dom/trend-section.test.ts",
     "client/client-routes.test.ts",
     "client/unit-detect.test.ts",
     "client/unit-fetch-timeout.test.ts",

@@ -530,6 +530,158 @@ test("接线：未分类端点（unknown / alias）必须显式登记，不得�
   );
 });
 
+function checkLedgerCeilings(): void {
+  const STEP_CEILING = 12;
+  const STEP_IF_CEILING = 8;
+  const STEP_ENV_CEILING = 20;
+  const PRIOR_RUN_STEP_CEILING = 36;
+  const JOB_FACE_CEILING = 24;
+  const CONDITION_INPUT_CEILING = 6;
+  const JOB_IF_CEILING = 10;
+  const ALIAS_CEILING = 30;
+  assert.ok(
+    typeof LEDGER.maxStructuredSteps === "number" && LEDGER.maxStructuredSteps <= STEP_CEILING,
+    "maxStructuredSteps 必须存在且不超过测试内硬顶 " + STEP_CEILING,
+  );
+  assert.ok(
+    typeof LEDGER.maxJobIfs === "number" && LEDGER.maxJobIfs <= JOB_IF_CEILING,
+    "maxJobIfs 必须存在且不超过测试内硬顶 " + JOB_IF_CEILING,
+  );
+  assert.ok(
+    STRUCTURED_STEPS.length <= LEDGER.maxStructuredSteps,
+    "结构化步骤条数超过上限：形态例外在膨胀，说明它在被当成消红工具",
+  );
+  assert.ok(JOB_IFS.length <= LEDGER.maxJobIfs, "job 级 if 登记条数超过上限");
+  assert.ok(
+    typeof LEDGER.maxStepIfs === "number" && LEDGER.maxStepIfs <= STEP_IF_CEILING,
+    "maxStepIfs 必须存在且不超过测试内硬顶 " + STEP_IF_CEILING,
+  );
+  assert.ok(STEP_IFS.length <= LEDGER.maxStepIfs, "步骤级 if 登记条数超过上限");
+  assert.ok(
+    typeof LEDGER.maxStepEnvs === "number" && LEDGER.maxStepEnvs <= STEP_ENV_CEILING,
+    "maxStepEnvs 必须存在且不超过测试内硬顶 " + STEP_ENV_CEILING,
+  );
+  assert.ok(STEP_ENVS.length <= LEDGER.maxStepEnvs, "判据步骤 env 键登记条数超过上限");
+  assert.ok(
+    typeof LEDGER.maxPriorRunSteps === "number" &&
+      LEDGER.maxPriorRunSteps <= PRIOR_RUN_STEP_CEILING,
+    "maxPriorRunSteps 必须存在且不超过测试内硬顶 " + PRIOR_RUN_STEP_CEILING,
+  );
+  assert.ok(PRIOR_RUN_STEPS.length <= LEDGER.maxPriorRunSteps, "前序步骤登记条数超过上限");
+  assert.ok(
+    typeof LEDGER.maxJobFaces === "number" && LEDGER.maxJobFaces <= JOB_FACE_CEILING,
+    "maxJobFaces 必须存在且不超过测试内硬顶 " + JOB_FACE_CEILING,
+  );
+  assert.ok(JOB_FACES.length <= LEDGER.maxJobFaces, "job 执行面登记条数超过上限");
+  assert.ok(
+    typeof LEDGER.maxConditionInputs === "number" &&
+      LEDGER.maxConditionInputs <= CONDITION_INPUT_CEILING,
+    "maxConditionInputs 必须存在且不超过测试内硬顶 " + CONDITION_INPUT_CEILING,
+  );
+  assert.ok(CONDITION_INPUTS.length <= LEDGER.maxConditionInputs, "条件输入登记条数超过上限");
+  assert.ok(
+    typeof LEDGER.maxJudgmentAliases === "number" && LEDGER.maxJudgmentAliases <= ALIAS_CEILING,
+    "maxJudgmentAliases 必须存在且不超过测试内硬顶 " + ALIAS_CEILING,
+  );
+  assert.ok(
+    JUDGMENT_ALIASES.length <= LEDGER.maxJudgmentAliases,
+    "判据别名登记条数超过上限：指向表在膨胀",
+  );
+}
+function checkStepEntry(
+  entry: { step: string; reason: unknown; digest: unknown },
+  actual: Map<string, { cmds: string[]; rawLines: string[] }>,
+): string[] {
+  const bad: string[] = [];
+  const cmds = actual.get(entry.step)?.cmds;
+  if (cmds === undefined) {
+    bad.push(entry.step + " 悬空：没有任何 workflow 的判据步骤与这个键相符");
+  } else if (cmds.length < 2) {
+    // 登记表的用途是「给设计如此的复杂形态开口子」。若被登记的步骤本来就是闭合单命令，
+    // 这条登记等于提前把口子开好——之后往该步骤里加一行（exit 0 / set +e）不再有任何阻力。
+    bad.push(entry.step + " 登记为形态例外，但它已是闭合单命令：预先登记等于给将来的放宽留后门");
+  }
+  if (typeof entry.reason !== "string" || entry.reason.length < 10)
+    bad.push(entry.step + " 缺理由（下一个读者无法判断它是否仍然成立）");
+  // 摘要钉死：步骤键只锁住「这一步有哪些判据」，脚手架行不进键——一行 `break` / `continue`
+  // 就能把循环里剩下的判据悄悄跳过而键、执行点、两侧身份全不变（对抗复核实测全绿）。
+  // 登记多命令步骤的意义本就是「把这段文本钉住」，故摘要缺失或对不上都判红；报错里带上
+  // 现场值，改动者复制过去即完成一次显式更新。
+  const digest = cmds === undefined ? null : stepDigest(actual.get(entry.step)?.rawLines ?? []);
+  if (digest !== null && entry.digest !== digest) {
+    bad.push(`${entry.step} 的步骤文本与登记摘要不符（现场 ${digest}）：登记即钉住这段文本`);
+  }
+  if (typeof entry.digest !== "string" || !/^[0-9a-f]{16}$/.test(entry.digest)) {
+    bad.push(entry.step + " 缺 digest（16 位十六进制）");
+  }
+  return bad;
+}
+function checkStructuredSteps(): string[] {
+  const bad: string[] = [];
+  const actual = judgmentSteps();
+  for (const entry of STRUCTURED_STEPS) {
+    bad.push(...checkStepEntry(entry, actual));
+  }
+  if (new Set(STRUCTURED_STEPS.map((s) => s.step)).size !== STRUCTURED_STEPS.length)
+    bad.push("structuredSteps 有重复登记");
+  if (new Set(STEP_IFS.map((s) => s.step)).size !== STEP_IFS.length) bad.push("stepIfs 有重复登记");
+  if (new Set(JOB_IFS.map((j) => j.job)).size !== JOB_IFS.length) bad.push("jobIfs 有重复登记");
+  if (new Set(STEP_ENVS.map((e) => e.step)).size !== STEP_ENVS.length)
+    bad.push("stepEnvs 有重复登记");
+  if (new Set(PRIOR_RUN_STEPS.map((e) => e.step)).size !== PRIOR_RUN_STEPS.length) {
+    bad.push("priorRunSteps 有重复登记");
+  }
+  if (new Set(JOB_FACES.map((e) => e.job)).size !== JOB_FACES.length) {
+    bad.push("jobFaces 有重复登记");
+  }
+  if (new Set(CONDITION_INPUTS.map((e) => e.step)).size !== CONDITION_INPUTS.length) {
+    bad.push("conditionInputs 有重复登记");
+  }
+  for (const entry of PRIOR_RUN_STEPS) {
+    if (!/^[^|]+\|[^|]+\|.+$/.test(entry.step)) {
+      bad.push(entry.step + " 不是 `<文件>|<作业>|<步骤名>` 形态");
+    }
+    if (typeof entry.digest !== "string" || !/^[0-9a-f]{16}$/.test(entry.digest)) {
+      bad.push(entry.step + " 缺 digest（16 位十六进制）");
+    }
+  }
+  for (const entry of JOB_FACES) {
+    if (!/^[^|]+\|[^|]+$/.test(entry.job)) {
+      bad.push(entry.job + " 不是 `<文件>|<作业>` 形态");
+    }
+    if (typeof entry.digest !== "string" || !/^[0-9a-f]{16}$/.test(entry.digest)) {
+      bad.push(entry.job + " 缺 digest（16 位十六进制）");
+    }
+  }
+  for (const entry of CONDITION_INPUTS) {
+    if (!/^[^|]+\|[^|]+\|[^|]+$/.test(entry.step)) {
+      bad.push(entry.step + " 不是 `<文件>|<作业>|<步骤 id>` 形态");
+    }
+    if (typeof entry.digest !== "string" || !/^[0-9a-f]{16}$/.test(entry.digest)) {
+      bad.push(entry.step + " 缺 digest（16 位十六进制）");
+    }
+  }
+  for (const entry of STEP_ENVS) {
+    if (!Array.isArray(entry.keys) || entry.keys.length === 0)
+      bad.push(entry.step + " 的 keys 为空");
+    if (new Set(entry.keys).size !== entry.keys.length) bad.push(entry.step + " 的 keys 有重复");
+  }
+  for (const entry of STEP_IFS) {
+    if (typeof entry.condition !== "string" || entry.condition.trim() === "")
+      bad.push(entry.step + " 标了步骤级 if 却没写 condition");
+    if (typeof entry.reason !== "string" || entry.reason.length < 10)
+      bad.push(entry.step + " 缺理由");
+  }
+  for (const entry of JOB_IFS) {
+    const [file, job] = [entry.job.split("|")[0], entry.job.split("|").slice(1).join("|")];
+    if (!WORKFLOW_TEXTS.has(file) || !extractJobs(WORKFLOW_TEXTS.get(file) ?? "").includes(job)) {
+      bad.push(entry.job + " 不是 `<workflow>|<job>` 形态，或该 job 不存在");
+    }
+    if (typeof entry.reason !== "string" || entry.reason.length < 10)
+      bad.push(entry.job + " 缺理由");
+  }
+  return bad;
+}
 test("例外台账：无悬空条目，且 class 合法", () => {
   const classes = new Set(["infra", "ci-only", "tier-only", "indirect", "nightly-only"]);
   // seen 用**全部**端点（含 alias / unknown）：例外本身可以登记未归一的形态（如 alias:install），
@@ -639,145 +791,8 @@ test("台账：形态例外（structuredSteps / jobIfs）与现场相符、理�
   // 两张表都是登记制：登记制唯一的价值来源是登记项本身也被守着——悬空（描述的事实已不存在）
   // 会把它变成噪音，噪音的下一步就是被删掉；上限则防止它被当成消红工具而膨胀。
   // 硬顶：数据可以在硬顶以内只改一处放宽容，超过就必须同时改断言（两处 diff）。
-  const STEP_CEILING = 12;
-  const STEP_IF_CEILING = 8;
-  const STEP_ENV_CEILING = 20;
-  const PRIOR_RUN_STEP_CEILING = 36;
-  const JOB_FACE_CEILING = 24;
-  const CONDITION_INPUT_CEILING = 6;
-  const JOB_IF_CEILING = 10;
-  const ALIAS_CEILING = 30;
-  assert.ok(
-    typeof LEDGER.maxStructuredSteps === "number" && LEDGER.maxStructuredSteps <= STEP_CEILING,
-    "maxStructuredSteps 必须存在且不超过测试内硬顶 " + STEP_CEILING,
-  );
-  assert.ok(
-    typeof LEDGER.maxJobIfs === "number" && LEDGER.maxJobIfs <= JOB_IF_CEILING,
-    "maxJobIfs 必须存在且不超过测试内硬顶 " + JOB_IF_CEILING,
-  );
-  assert.ok(
-    STRUCTURED_STEPS.length <= LEDGER.maxStructuredSteps,
-    "结构化步骤条数超过上限：形态例外在膨胀，说明它在被当成消红工具",
-  );
-  assert.ok(JOB_IFS.length <= LEDGER.maxJobIfs, "job 级 if 登记条数超过上限");
-  assert.ok(
-    typeof LEDGER.maxStepIfs === "number" && LEDGER.maxStepIfs <= STEP_IF_CEILING,
-    "maxStepIfs 必须存在且不超过测试内硬顶 " + STEP_IF_CEILING,
-  );
-  assert.ok(STEP_IFS.length <= LEDGER.maxStepIfs, "步骤级 if 登记条数超过上限");
-  assert.ok(
-    typeof LEDGER.maxStepEnvs === "number" && LEDGER.maxStepEnvs <= STEP_ENV_CEILING,
-    "maxStepEnvs 必须存在且不超过测试内硬顶 " + STEP_ENV_CEILING,
-  );
-  assert.ok(STEP_ENVS.length <= LEDGER.maxStepEnvs, "判据步骤 env 键登记条数超过上限");
-  assert.ok(
-    typeof LEDGER.maxPriorRunSteps === "number" &&
-      LEDGER.maxPriorRunSteps <= PRIOR_RUN_STEP_CEILING,
-    "maxPriorRunSteps 必须存在且不超过测试内硬顶 " + PRIOR_RUN_STEP_CEILING,
-  );
-  assert.ok(PRIOR_RUN_STEPS.length <= LEDGER.maxPriorRunSteps, "前序步骤登记条数超过上限");
-  assert.ok(
-    typeof LEDGER.maxJobFaces === "number" && LEDGER.maxJobFaces <= JOB_FACE_CEILING,
-    "maxJobFaces 必须存在且不超过测试内硬顶 " + JOB_FACE_CEILING,
-  );
-  assert.ok(JOB_FACES.length <= LEDGER.maxJobFaces, "job 执行面登记条数超过上限");
-  assert.ok(
-    typeof LEDGER.maxConditionInputs === "number" &&
-      LEDGER.maxConditionInputs <= CONDITION_INPUT_CEILING,
-    "maxConditionInputs 必须存在且不超过测试内硬顶 " + CONDITION_INPUT_CEILING,
-  );
-  assert.ok(CONDITION_INPUTS.length <= LEDGER.maxConditionInputs, "条件输入登记条数超过上限");
-  assert.ok(
-    typeof LEDGER.maxJudgmentAliases === "number" && LEDGER.maxJudgmentAliases <= ALIAS_CEILING,
-    "maxJudgmentAliases 必须存在且不超过测试内硬顶 " + ALIAS_CEILING,
-  );
-  assert.ok(
-    JUDGMENT_ALIASES.length <= LEDGER.maxJudgmentAliases,
-    "判据别名登记条数超过上限：指向表在膨胀",
-  );
-  const bad: string[] = [];
-  const actual = judgmentSteps();
-  for (const entry of STRUCTURED_STEPS) {
-    const cmds = actual.get(entry.step)?.cmds;
-    if (cmds === undefined) {
-      bad.push(entry.step + " 悬空：没有任何 workflow 的判据步骤与这个键相符");
-    } else if (cmds.length < 2) {
-      // 登记表的用途是「给设计如此的复杂形态开口子」。若被登记的步骤本来就是闭合单命令，
-      // 这条登记等于提前把口子开好——之后往该步骤里加一行（exit 0 / set +e）不再有任何阻力。
-      bad.push(entry.step + " 登记为形态例外，但它已是闭合单命令：预先登记等于给将来的放宽留后门");
-    }
-    if (typeof entry.reason !== "string" || entry.reason.length < 10)
-      bad.push(entry.step + " 缺理由（下一个读者无法判断它是否仍然成立）");
-    // 摘要钉死：步骤键只锁住「这一步有哪些判据」，脚手架行不进键——一行 `break` / `continue`
-    // 就能把循环里剩下的判据悄悄跳过而键、执行点、两侧身份全不变（对抗复核实测全绿）。
-    // 登记多命令步骤的意义本就是「把这段文本钉住」，故摘要缺失或对不上都判红；报错里带上
-    // 现场值，改动者复制过去即完成一次显式更新。
-    const digest = cmds === undefined ? null : stepDigest(actual.get(entry.step)?.rawLines ?? []);
-    if (digest !== null && entry.digest !== digest) {
-      bad.push(`${entry.step} 的步骤文本与登记摘要不符（现场 ${digest}）：登记即钉住这段文本`);
-    }
-    if (typeof entry.digest !== "string" || !/^[0-9a-f]{16}$/.test(entry.digest)) {
-      bad.push(entry.step + " 缺 digest（16 位十六进制）");
-    }
-  }
-  if (new Set(STRUCTURED_STEPS.map((s) => s.step)).size !== STRUCTURED_STEPS.length)
-    bad.push("structuredSteps 有重复登记");
-  if (new Set(STEP_IFS.map((s) => s.step)).size !== STEP_IFS.length) bad.push("stepIfs 有重复登记");
-  if (new Set(JOB_IFS.map((j) => j.job)).size !== JOB_IFS.length) bad.push("jobIfs 有重复登记");
-  if (new Set(STEP_ENVS.map((e) => e.step)).size !== STEP_ENVS.length)
-    bad.push("stepEnvs 有重复登记");
-  if (new Set(PRIOR_RUN_STEPS.map((e) => e.step)).size !== PRIOR_RUN_STEPS.length) {
-    bad.push("priorRunSteps 有重复登记");
-  }
-  if (new Set(JOB_FACES.map((e) => e.job)).size !== JOB_FACES.length) {
-    bad.push("jobFaces 有重复登记");
-  }
-  if (new Set(CONDITION_INPUTS.map((e) => e.step)).size !== CONDITION_INPUTS.length) {
-    bad.push("conditionInputs 有重复登记");
-  }
-  for (const entry of PRIOR_RUN_STEPS) {
-    if (!/^[^|]+\|[^|]+\|.+$/.test(entry.step)) {
-      bad.push(entry.step + " 不是 `<文件>|<作业>|<步骤名>` 形态");
-    }
-    if (typeof entry.digest !== "string" || !/^[0-9a-f]{16}$/.test(entry.digest)) {
-      bad.push(entry.step + " 缺 digest（16 位十六进制）");
-    }
-  }
-  for (const entry of JOB_FACES) {
-    if (!/^[^|]+\|[^|]+$/.test(entry.job)) {
-      bad.push(entry.job + " 不是 `<文件>|<作业>` 形态");
-    }
-    if (typeof entry.digest !== "string" || !/^[0-9a-f]{16}$/.test(entry.digest)) {
-      bad.push(entry.job + " 缺 digest（16 位十六进制）");
-    }
-  }
-  for (const entry of CONDITION_INPUTS) {
-    if (!/^[^|]+\|[^|]+\|[^|]+$/.test(entry.step)) {
-      bad.push(entry.step + " 不是 `<文件>|<作业>|<步骤 id>` 形态");
-    }
-    if (typeof entry.digest !== "string" || !/^[0-9a-f]{16}$/.test(entry.digest)) {
-      bad.push(entry.step + " 缺 digest（16 位十六进制）");
-    }
-  }
-  for (const entry of STEP_ENVS) {
-    if (!Array.isArray(entry.keys) || entry.keys.length === 0)
-      bad.push(entry.step + " 的 keys 为空");
-    if (new Set(entry.keys).size !== entry.keys.length) bad.push(entry.step + " 的 keys 有重复");
-  }
-  for (const entry of STEP_IFS) {
-    if (typeof entry.condition !== "string" || entry.condition.trim() === "")
-      bad.push(entry.step + " 标了步骤级 if 却没写 condition");
-    if (typeof entry.reason !== "string" || entry.reason.length < 10)
-      bad.push(entry.step + " 缺理由");
-  }
-  for (const entry of JOB_IFS) {
-    const [file, job] = [entry.job.split("|")[0], entry.job.split("|").slice(1).join("|")];
-    if (!WORKFLOW_TEXTS.has(file) || !extractJobs(WORKFLOW_TEXTS.get(file) ?? "").includes(job)) {
-      bad.push(entry.job + " 不是 `<workflow>|<job>` 形态，或该 job 不存在");
-    }
-    if (typeof entry.reason !== "string" || entry.reason.length < 10)
-      bad.push(entry.job + " 缺理由");
-  }
+  checkLedgerCeilings();
+  const bad = checkStructuredSteps();
   assert.deepEqual(bad, [], "形态例外登记与现场不符");
 });
 
@@ -796,6 +811,181 @@ test("A5：所有 script 端点指向的脚本必须存在（登记指向不存�
 });
 
 /** 登记条件的**操作数来源**及其输入面（产出步骤 / 同 job 的 uses 面 / artifact 产出端）与现场的一致性。 */
+function checkOneInputRef(
+  id: string,
+  file: string,
+  job: string,
+  yaml: string,
+  inputs: Map<string, { digest: string; inputsDigest?: string; producersDigest?: string }>,
+  seenInputs: Set<string>,
+): string[] {
+  const bad: string[] = [];
+  const inputKey = `${file}|${job}|${id}`;
+  const face = conditionInputFaceOf(yaml, file, job, SCRIPTS, id, WORKFLOW_TEXTS);
+  if (face === null) {
+    bad.push(`${inputKey}：已登记的条件引用了这个步骤 output，但现场没有 id=${id} 的步骤`);
+    return bad;
+  }
+  const entry = inputs.get(inputKey);
+  if (entry === undefined) {
+    bad.push(`${inputKey} 是已登记条件的操作数来源，但它的文本未登记`);
+    return bad;
+  }
+  seenInputs.add(inputKey);
+  if (entry.digest !== face.digest) {
+    bad.push(
+      `${inputKey} 的产出步骤文本与登记摘要不符（现场 ${face.digest}）：条件成立与否由它决定`,
+    );
+  }
+  // 输入面：同 job 的 uses 步骤整步（把 download 的 `pattern:` 改一行）与跨 job 的 artifact 产出端
+  // （把 upload 的 `name:` / `if:` 改一行）。消费端文本一字未动也能让 output 变 0，故三处一起钉。
+  if (entry.inputsDigest !== face.inputsDigest) {
+    bad.push(`${inputKey} 的输入步骤（uses 整步面）与登记不符（现场 ${face.inputsDigest}）`);
+  }
+  if (face.producers !== null) {
+    if (face.producers.length === 0) {
+      bad.push(
+        `${inputKey}：download 的 pattern 匹配不到任何 upload-artifact（artifact 产出端缺失）`,
+      );
+    } else {
+      const producersDigest = stepDigest(face.producers);
+      if (entry.producersDigest !== producersDigest) {
+        bad.push(`${inputKey} 的 artifact 产出端与登记不符（现场 ${producersDigest}）`);
+      }
+    }
+  }
+  return bad;
+}
+function checkJudgmentStepShape(
+  key: string,
+  step: ReturnType<typeof judgmentSteps> extends Map<unknown, infer V> ? V : never,
+  registered: Set<string>,
+): string[] {
+  const bad: string[] = [];
+  const { cmds } = step;
+  const where = key.split("|").slice(0, 2).join(" / ");
+  // 未建模的键：解析层看不见的开关等于不存在（`shell: bash +e {0}` 就是关掉 errexit 的一种写法）。
+  for (const unknown of step.unknownKeys) {
+    bad.push(`${where}：步骤里有解析层未建模的键「${unknown}」——它可能是个静默开关`);
+  }
+  // continue-on-error 与 shell 同理：**不设登记出口**。它不改变执行点、不改变两侧身份，只是让
+  // 这一步失败也不再使 workflow 失败——「在跑但永不判红」正是本族要拦的东西。原先只在 ci.yml 的
+  // repo-gate 上检查，给 observe.yml 的判据步骤加一行即全绿（对抗复核实测）。
+  if (step.continueOnError) {
+    bad.push(`${where}：判据步骤带 continue-on-error——判据失败不再使 workflow 失败`);
+  }
+  // shell 覆盖按**模板**判，不设登记出口：
+  //   - 判据步骤没有任何理由削弱自己的退出码语义，所以「不在白名单」就是硬红；
+  //   - 留登记出口反而会与「登记项必须是非闭合形态」的守卫互相打死（单命令步骤永远登记不了，
+  //     于是合法写法无路可走）——独立复核把这个死锁实测出来了。
+  // workflow / job 级 `defaults.run.shell` 同样算数：一行 defaults 能让所有 run 步骤生效，
+  // 只看步骤级覆盖会整条漏掉。
+  const declaredShell = step.shell ?? shellDefaultOf(key.split("|")[0], key.split("|")[1]);
+  if (declaredShell !== null && !isSafeShellOverride(declaredShell)) {
+    bad.push(`${where}：判据步骤的 shell 被覆盖成 ${declaredShell}——退出码是否到达步骤不再保证`);
+  }
+  // `working-directory` 同样不设登记出口：它是「这条命令在哪个目录里跑」的一部分——相对路径的脚本会
+  // 变成另一条命令，而步骤键、两侧身份、执行点全都不动（对抗复核实测：给判据步骤加
+  // `working-directory: /tmp` 时 73/73 全绿）。要换目录就在命令里 `cd`，那至少留在文本里。
+  // job 级 `defaults.run.working-directory` 走的不是这里，而是含判据 job 的执行面摘要（jobFaces）。
+  if (step.workingDirectory !== null && step.workingDirectory !== "") {
+    bad.push(
+      `${where}：判据步骤声明了 working-directory=${step.workingDirectory}——换个目录就是换一条命令`,
+    );
+  }
+  // 未登记的判据步骤里不许出现 `#`：`#` 是不是注释起点取决于「词首」，而词首取决于 bash 的元字符集
+  // 与转义规则——自研扫描器与 bash 之间总有分歧（`" #"` / `{#` / `\ #` / `$' #'` 都实测过），
+  // 一旦判错就会把 `|| true` 整段切掉。故对**原始 run 文本** fail-closed：整行注释之外的 `#` 即红；
+  // 已登记的步骤吃文本摘要，不需要这条（它们本来就有带 `#` 的 echo 与 `${VAR#pat}` 展开）。
+  if (!registered.has(key)) {
+    for (const text of step.rawLines) {
+      if (text.includes("#")) {
+        bad.push(`${where}：判据命令含 #（注释起点与 bash 的判定不可能完全对齐）：${text}`);
+      }
+    }
+  }
+  // 引号必须配对：未配对时「注释从哪开始」「反斜杠续行是否成立」都不可静态判定，而这两种判定
+  // 正是把 `|| true` 藏起来的入口（`pnpm lint --packages "" " #" || true` 实测全绿）。fail-closed。
+  for (const cmd of cmds) {
+    if (hasUnbalancedQuotes(cmd)) {
+      bad.push(`${where}：命令含未配对引号（注释与续行的切分不再可靠）：${cmd}`);
+    }
+  }
+  // 能改变 shell 行为的 env：`BASH_ENV=<仓内 exit 0 的文件>` 让整步在跑到判据之前就返回 0。
+  // 键名来自步骤级 env 与行首赋值两种写法（值随事件变化，故只核键名）。
+  const envKeys = [...step.envKeys, ...cmds.flatMap((c) => leadingAssignmentNames(c))];
+  for (const name of dangerousStepEnv(envKeys)) {
+    bad.push(`${where}：判据步骤注入了 ${name}——它改变 shell 行为，可让整步在本判据之前结束`);
+  }
+  // allKeys：把恒假分支的壳剥掉后仍能认出的判据（=「文本上写着会跑」）
+  // liveKeys：真的会被执行到的判据。两者之差就是被静默关掉的那些。
+  const allKeys = judgmentKeysIn(SCRIPTS, cmds, true);
+  const live = stripDeadBranchCommands(cmds);
+  const liveKeys = judgmentKeysIn(SCRIPTS, live, false);
+  const dead = allKeys.filter((k) => !liveKeys.includes(k));
+  if (dead.length > 0) {
+    bad.push(`${where}：${dead.join(", ")} 位于恒假分支（文本上还在，实际永不执行）`);
+  }
+  if (disablesErrexit(cmds)) {
+    bad.push(`${where}：关掉了 errexit（set +e），判据失败不再使步骤失败`);
+  }
+  // 控制操作符：判据**命令本身**一行都不许有（`node X || true` / `node X | sed` / `node X; true`）。
+  // 未登记的步骤另按闭合形态要求（只有一条命令），于是这一条对它自动覆盖到「整步」。
+  // 登记过的步骤里，脚手架行的 `&&` / `||` 是合法写法（release 的 `[ -z "$pkg" ] && continue`、
+  // mutation-verdict 的 `… || { echo; exit 1; }`），故不把整步扫一遍——那些行由 swallowsExitCode
+  // 单独兜住（`fi || true` 这类改写退出码的形态会被它抓住）。
+  for (const cmd of cmds) {
+    // `cd X && 判据` 是合法载体：被执行者与退出码都由内层命令决定，先剥一层再判控制操作符。
+    const bare = stripCdCarrier(cmd) ?? cmd;
+    const ep = endpointOf(cmd, SCRIPTS);
+    const isJudgmentCmd = ep !== null && isJudgment(`${ep.kind}:${ep.id}`);
+    if ((isJudgmentCmd || !registered.has(key)) && hasShellControlOperator(bare)) {
+      bad.push(`${where}：出现 shell 控制操作符：${cmd}`);
+    }
+  }
+  for (const cmd of live) {
+    if (swallowsExitCode(stripCdCarrier(cmd) ?? cmd)) bad.push(`${where}：吞掉退出码：${cmd}`);
+  }
+  if (registered.has(key)) return bad;
+  if (cmds.length !== 1) {
+    bad.push(
+      `${key} 的步骤含 ${cmds.length} 条命令：判据步骤只允许一条命令——` +
+        "多一层 shell 包装（前置 exit 0 / 恒假 if / set +e）就能把判据静默关掉，" +
+        "设计如此的形态必须登记到台账的 structuredSteps",
+    );
+    return bad;
+  }
+  const only = endpointOf(cmds[0], SCRIPTS);
+  if (only === null || !isJudgment(`${only.kind}:${only.id}`)) {
+    bad.push(`${key} 不是一条直接的判据命令：${cmds[0]}`);
+  }
+  return bad;
+}
+function checkStepEnv(
+  steps: Array<{ cmds: string[]; envKeys: string[]; key: string }>,
+  declared: Map<string, string>,
+  priorDeclared: Map<string, unknown>,
+  facesDeclared: Map<string, unknown>,
+  priorActual: Map<string, { digest: string; envKeys: string[] }>,
+  facesActual: Map<string, string>,
+  seen: Set<string>,
+): string[] {
+  const bad: string[] = [];
+  for (const step of steps) {
+    if (judgmentKeysIn(SCRIPTS, step.cmds, true).length === 0) continue;
+    const actual = [...step.envKeys].sort().join(",");
+    if (!declared.has(step.key)) {
+      // 没有 env 的判据步骤不必登记；有键而没登记即红（三层任一层的键都算）。
+      if (actual !== "") bad.push(`${step.key} 的有效 env 键未登记：${actual}`);
+      continue;
+    }
+    seen.add(step.key);
+    if (declared.get(step.key) !== actual) {
+      bad.push(`${step.key} 的有效 env 键与登记不符：${actual} != ${declared.get(step.key)}`);
+    }
+  }
+  return bad;
+}
 function conditionInputViolations(): string[] {
   const bad: string[] = [];
   const inputs = new Map(CONDITION_INPUTS.map((e) => [e.step, e]));
@@ -815,40 +1005,7 @@ function conditionInputViolations(): string[] {
         ),
       );
       for (const id of refs) {
-        const inputKey = `${file}|${job}|${id}`;
-        const face = conditionInputFaceOf(yaml, file, job, SCRIPTS, id, WORKFLOW_TEXTS);
-        if (face === null) {
-          bad.push(`${inputKey}：已登记的条件引用了这个步骤 output，但现场没有 id=${id} 的步骤`);
-          continue;
-        }
-        const entry = inputs.get(inputKey);
-        if (entry === undefined) {
-          bad.push(`${inputKey} 是已登记条件的操作数来源，但它的文本未登记`);
-          continue;
-        }
-        seenInputs.add(inputKey);
-        if (entry.digest !== face.digest) {
-          bad.push(
-            `${inputKey} 的产出步骤文本与登记摘要不符（现场 ${face.digest}）：条件成立与否由它决定`,
-          );
-        }
-        // 输入面：同 job 的 uses 步骤整步（把 download 的 `pattern:` 改一行）与跨 job 的 artifact 产出端
-        // （把 upload 的 `name:` / `if:` 改一行）。消费端文本一字未动也能让 output 变 0，故三处一起钉。
-        if (entry.inputsDigest !== face.inputsDigest) {
-          bad.push(`${inputKey} 的输入步骤（uses 整步面）与登记不符（现场 ${face.inputsDigest}）`);
-        }
-        if (face.producers !== null) {
-          if (face.producers.length === 0) {
-            bad.push(
-              `${inputKey}：download 的 pattern 匹配不到任何 upload-artifact（artifact 产出端缺失）`,
-            );
-          } else {
-            const producersDigest = stepDigest(face.producers);
-            if (entry.producersDigest !== producersDigest) {
-              bad.push(`${inputKey} 的 artifact 产出端与登记不符（现场 ${producersDigest}）`);
-            }
-          }
-        }
+        bad.push(...checkOneInputRef(id, file, job, yaml, inputs, seenInputs));
       }
     }
   }
@@ -939,103 +1096,7 @@ test("A6b：全部 workflow 的判据步骤必须是闭合形态，或在台账�
   const registered = new Set(STRUCTURED_STEPS.map((s) => s.step));
   const bad: string[] = [];
   for (const [key, step] of judgmentSteps()) {
-    const { cmds } = step;
-    const where = key.split("|").slice(0, 2).join(" / ");
-    // 未建模的键：解析层看不见的开关等于不存在（`shell: bash +e {0}` 就是关掉 errexit 的一种写法）。
-    for (const unknown of step.unknownKeys) {
-      bad.push(`${where}：步骤里有解析层未建模的键「${unknown}」——它可能是个静默开关`);
-    }
-    // continue-on-error 与 shell 同理：**不设登记出口**。它不改变执行点、不改变两侧身份，只是让
-    // 这一步失败也不再使 workflow 失败——「在跑但永不判红」正是本族要拦的东西。原先只在 ci.yml 的
-    // repo-gate 上检查，给 observe.yml 的判据步骤加一行即全绿（对抗复核实测）。
-    if (step.continueOnError) {
-      bad.push(`${where}：判据步骤带 continue-on-error——判据失败不再使 workflow 失败`);
-    }
-    // shell 覆盖按**模板**判，不设登记出口：
-    //   - 判据步骤没有任何理由削弱自己的退出码语义，所以「不在白名单」就是硬红；
-    //   - 留登记出口反而会与「登记项必须是非闭合形态」的守卫互相打死（单命令步骤永远登记不了，
-    //     于是合法写法无路可走）——独立复核把这个死锁实测出来了。
-    // workflow / job 级 `defaults.run.shell` 同样算数：一行 defaults 能让所有 run 步骤生效，
-    // 只看步骤级覆盖会整条漏掉。
-    const declaredShell = step.shell ?? shellDefaultOf(key.split("|")[0], key.split("|")[1]);
-    if (declaredShell !== null && !isSafeShellOverride(declaredShell)) {
-      bad.push(`${where}：判据步骤的 shell 被覆盖成 ${declaredShell}——退出码是否到达步骤不再保证`);
-    }
-    // `working-directory` 同样不设登记出口：它是「这条命令在哪个目录里跑」的一部分——相对路径的脚本会
-    // 变成另一条命令，而步骤键、两侧身份、执行点全都不动（对抗复核实测：给判据步骤加
-    // `working-directory: /tmp` 时 73/73 全绿）。要换目录就在命令里 `cd`，那至少留在文本里。
-    // job 级 `defaults.run.working-directory` 走的不是这里，而是含判据 job 的执行面摘要（jobFaces）。
-    if (step.workingDirectory !== null && step.workingDirectory !== "") {
-      bad.push(
-        `${where}：判据步骤声明了 working-directory=${step.workingDirectory}——换个目录就是换一条命令`,
-      );
-    }
-    // 未登记的判据步骤里不许出现 `#`：`#` 是不是注释起点取决于「词首」，而词首取决于 bash 的元字符集
-    // 与转义规则——自研扫描器与 bash 之间总有分歧（`" #"` / `{#` / `\ #` / `$' #'` 都实测过），
-    // 一旦判错就会把 `|| true` 整段切掉。故对**原始 run 文本** fail-closed：整行注释之外的 `#` 即红；
-    // 已登记的步骤吃文本摘要，不需要这条（它们本来就有带 `#` 的 echo 与 `${VAR#pat}` 展开）。
-    if (!registered.has(key)) {
-      for (const text of step.rawLines) {
-        if (text.includes("#")) {
-          bad.push(`${where}：判据命令含 #（注释起点与 bash 的判定不可能完全对齐）：${text}`);
-        }
-      }
-    }
-    // 引号必须配对：未配对时「注释从哪开始」「反斜杠续行是否成立」都不可静态判定，而这两种判定
-    // 正是把 `|| true` 藏起来的入口（`pnpm lint --packages "" " #" || true` 实测全绿）。fail-closed。
-    for (const cmd of cmds) {
-      if (hasUnbalancedQuotes(cmd)) {
-        bad.push(`${where}：命令含未配对引号（注释与续行的切分不再可靠）：${cmd}`);
-      }
-    }
-    // 能改变 shell 行为的 env：`BASH_ENV=<仓内 exit 0 的文件>` 让整步在跑到判据之前就返回 0。
-    // 键名来自步骤级 env 与行首赋值两种写法（值随事件变化，故只核键名）。
-    const envKeys = [...step.envKeys, ...cmds.flatMap((c) => leadingAssignmentNames(c))];
-    for (const name of dangerousStepEnv(envKeys)) {
-      bad.push(`${where}：判据步骤注入了 ${name}——它改变 shell 行为，可让整步在本判据之前结束`);
-    }
-    // allKeys：把恒假分支的壳剥掉后仍能认出的判据（=「文本上写着会跑」）
-    // liveKeys：真的会被执行到的判据。两者之差就是被静默关掉的那些。
-    const allKeys = judgmentKeysIn(SCRIPTS, cmds, true);
-    const live = stripDeadBranchCommands(cmds);
-    const liveKeys = judgmentKeysIn(SCRIPTS, live, false);
-    const dead = allKeys.filter((k) => !liveKeys.includes(k));
-    if (dead.length > 0) {
-      bad.push(`${where}：${dead.join(", ")} 位于恒假分支（文本上还在，实际永不执行）`);
-    }
-    if (disablesErrexit(cmds)) {
-      bad.push(`${where}：关掉了 errexit（set +e），判据失败不再使步骤失败`);
-    }
-    // 控制操作符：判据**命令本身**一行都不许有（`node X || true` / `node X | sed` / `node X; true`）。
-    // 未登记的步骤另按闭合形态要求（只有一条命令），于是这一条对它自动覆盖到「整步」。
-    // 登记过的步骤里，脚手架行的 `&&` / `||` 是合法写法（release 的 `[ -z "$pkg" ] && continue`、
-    // mutation-verdict 的 `… || { echo; exit 1; }`），故不把整步扫一遍——那些行由 swallowsExitCode
-    // 单独兜住（`fi || true` 这类改写退出码的形态会被它抓住）。
-    for (const cmd of cmds) {
-      // `cd X && 判据` 是合法载体：被执行者与退出码都由内层命令决定，先剥一层再判控制操作符。
-      const bare = stripCdCarrier(cmd) ?? cmd;
-      const ep = endpointOf(cmd, SCRIPTS);
-      const isJudgmentCmd = ep !== null && isJudgment(`${ep.kind}:${ep.id}`);
-      if ((isJudgmentCmd || !registered.has(key)) && hasShellControlOperator(bare)) {
-        bad.push(`${where}：出现 shell 控制操作符：${cmd}`);
-      }
-    }
-    for (const cmd of live) {
-      if (swallowsExitCode(stripCdCarrier(cmd) ?? cmd)) bad.push(`${where}：吞掉退出码：${cmd}`);
-    }
-    if (registered.has(key)) continue;
-    if (cmds.length !== 1) {
-      bad.push(
-        `${key} 的步骤含 ${cmds.length} 条命令：判据步骤只允许一条命令——` +
-          "多一层 shell 包装（前置 exit 0 / 恒假 if / set +e）就能把判据静默关掉，" +
-          "设计如此的形态必须登记到台账的 structuredSteps",
-      );
-      continue;
-    }
-    const only = endpointOf(cmds[0], SCRIPTS);
-    if (only === null || !isJudgment(`${only.kind}:${only.id}`)) {
-      bad.push(`${key} 不是一条直接的判据命令：${cmds[0]}`);
-    }
+    bad.push(...checkJudgmentStepShape(key, step, registered));
   }
   // 步骤键必须两两不同：键相同的两条步骤会被同一条 structuredSteps 登记一起豁免
   // （「登记一处、放行一片」）。键里带完整判据身份就是为了这一条。
@@ -1099,19 +1160,17 @@ test("A6d：判据步骤的有效 env 键与环境面步骤（前序 run / uses 
   for (const [file, yaml] of WORKFLOW_TEXTS) {
     for (const job of extractJobs(yaml)) {
       const steps = stepsOf(yaml, file, job, SCRIPTS);
-      for (const step of steps) {
-        if (judgmentKeysIn(SCRIPTS, step.cmds, true).length === 0) continue;
-        const actual = [...step.envKeys].sort().join(",");
-        if (!declared.has(step.key)) {
-          // 没有 env 的判据步骤不必登记；有键而没登记即红（三层任一层的键都算）。
-          if (actual !== "") bad.push(`${step.key} 的有效 env 键未登记：${actual}`);
-          continue;
-        }
-        seen.add(step.key);
-        if (declared.get(step.key) !== actual) {
-          bad.push(`${step.key} 的有效 env 键与登记不符：${actual} != ${declared.get(step.key)}`);
-        }
-      }
+      bad.push(
+        ...checkStepEnv(
+          steps,
+          declared,
+          priorDeclared,
+          facesDeclared,
+          priorActual,
+          facesActual,
+          seen,
+        ),
+      );
       for (const step of priorRunStepsOf(yaml, file, job, SCRIPTS)) {
         if (priorActual.has(step.key)) bad.push(`${step.key} 的登记键在同一 job 内不唯一`);
         priorActual.set(step.key, step);

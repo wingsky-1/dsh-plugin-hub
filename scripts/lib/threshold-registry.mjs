@@ -825,8 +825,7 @@ export function isEnumeratedDataFile(name) {
  * 基准侧尚无本表（本表首次引入的 PR）时，声明表比对与命中源比对都无从进行，该形态在这里
  * 以「列过名字但谁都没读到」的判词 fail-closed 走 exit 2；本表入库后同一攻击走 exit 1。
  */
-export function validateDeclarations(registry, { repoRoot, dataDir = DATA_DIR, consumed } = {}) {
-  const problems = [];
+function checkGuardEntries(registry, repoRoot, problems) {
   const ids = new Set();
   for (const guard of registry.guards) {
     if (ids.has(guard.id)) problems.push("guard id 重复：" + guard.id);
@@ -838,6 +837,8 @@ export function validateDeclarations(registry, { repoRoot, dataDir = DATA_DIR, c
         problems.push(guard.id + "：sources 一个都不存在（" + guard.sources.join(" / ") + "）");
     }
   }
+}
+function checkRetiredEntries(registry, problems) {
   const guardIds = new Set((registry.guards ?? []).map((guard) => guard.id));
   const retiredIds = new Set();
   for (const entry of registry.retired ?? []) {
@@ -857,6 +858,8 @@ export function validateDeclarations(registry, { repoRoot, dataDir = DATA_DIR, c
       problems.push("retired " + entry.id + "：该 id 仍在 guards 里（退役登记与事实不符）");
     }
   }
+}
+function checkApprovalEntries(registry, problems) {
   for (const entry of registry.contractApprovals ?? []) {
     if (!isObject(entry)) {
       problems.push("contractApprovals 含非对象项");
@@ -875,6 +878,26 @@ export function validateDeclarations(registry, { repoRoot, dataDir = DATA_DIR, c
       problems.push("contractApprovals " + label + "：缺 reason");
     }
   }
+}
+function checkNotAGateEntries(registry, repoRoot, declared, problems) {
+  for (const item of registry.notAGate) {
+    if (!isObject(item) || typeof item.source !== "string" || item.source === "") {
+      problems.push("notAGate 条目缺 source：" + JSON.stringify(item).slice(0, 80));
+      continue;
+    }
+    if (typeof item.why !== "string" || item.why === "")
+      problems.push("notAGate " + item.source + "：缺 why（不守护也要说明为什么）");
+    if (typeof repoRoot === "string" && !existsSync(join(repoRoot, item.source))) {
+      problems.push("notAGate " + item.source + "：声明的文件不存在（幽灵声明，删除时须同步本表）");
+    }
+    declared.add(item.source);
+  }
+}
+export function validateDeclarations(registry, { repoRoot, dataDir = DATA_DIR, consumed } = {}) {
+  const problems = [];
+  checkGuardEntries(registry, repoRoot, problems);
+  checkRetiredEntries(registry, problems);
+  checkApprovalEntries(registry, problems);
   const declared = new Set(consumed ?? []);
   // 「出现在某条 guard 的 sources 里」与「确实被读到」是两件事：前者只是意向声明。
   // 影子源攻击正是靠前者洗白（把新文件挂进 sources），所以判词要能区分这两种状态。
@@ -890,18 +913,7 @@ export function validateDeclarations(registry, { repoRoot, dataDir = DATA_DIR, c
       declared.add(guard.exemptFrom.source);
     }
   }
-  for (const item of registry.notAGate) {
-    if (!isObject(item) || typeof item.source !== "string" || item.source === "") {
-      problems.push("notAGate 条目缺 source：" + JSON.stringify(item).slice(0, 80));
-      continue;
-    }
-    if (typeof item.why !== "string" || item.why === "")
-      problems.push("notAGate " + item.source + "：缺 why（不守护也要说明为什么）");
-    if (typeof repoRoot === "string" && !existsSync(join(repoRoot, item.source))) {
-      problems.push("notAGate " + item.source + "：声明的文件不存在（幽灵声明，删除时须同步本表）");
-    }
-    declared.add(item.source);
-  }
+  checkNotAGateEntries(registry, repoRoot, declared, problems);
   if (typeof repoRoot === "string") {
     const dir = join(repoRoot, dataDir);
     if (existsSync(dir)) {

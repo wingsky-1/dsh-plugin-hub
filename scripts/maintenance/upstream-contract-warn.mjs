@@ -1151,7 +1151,7 @@ async function scanAFile(root, file) {
   };
 }
 
-async function main(argv) {
+function establishScope(argv) {
   const rootIdx = argv.indexOf("--root");
   const root = rootIdx >= 0 && argv[rootIdx + 1] !== undefined ? argv[rootIdx + 1] : DEFAULT_ROOT;
   let files = null;
@@ -1169,21 +1169,9 @@ async function main(argv) {
   if (scopeWhy !== null) {
     failClosed(`upstream-contract-warn: 范围或基线不可建立（fail-closed）：${scopeWhy}`);
   }
-  const A = {
-    services: [],
-    provides: [],
-    events: [],
-    calls: [],
-    svcCalls: [],
-    svcRefs: [],
-    dynamics: [],
-    forwarding: [],
-    blessed: [],
-    cascades: [],
-    injectArrays: [],
-    blessedValues: new Set(),
-    repoModules: [],
-  };
+  return { root: root, files: files };
+}
+async function scanAllA(root, files, A) {
   const pipelineFailures = [];
   try {
     for (const file of files) {
@@ -1217,6 +1205,27 @@ async function main(argv) {
       `upstream-contract-warn: A 侧管线失败（fail-closed）：${pipelineFailures.slice(0, 8).join("；").slice(0, 600)}`,
     );
   }
+}
+async function main(argv) {
+  const scope = establishScope(argv);
+  const root = scope.root;
+  const files = scope.files;
+  const A = {
+    services: [],
+    provides: [],
+    events: [],
+    calls: [],
+    svcCalls: [],
+    svcRefs: [],
+    dynamics: [],
+    forwarding: [],
+    blessed: [],
+    cascades: [],
+    injectArrays: [],
+    blessedValues: new Set(),
+    repoModules: [],
+  };
+  await scanAllA(root, files, A);
   let B = null;
   try {
     B = buildB(root);
