@@ -26,7 +26,9 @@ import { createServer } from "node:http";
 import { inject, name } from "../../src/index.ts";
 import { apply, pluginDir, DEFAULT_WSS_COMPRESS_PATHS } from "../../src/server/apply.ts";
 import {
+  BOOLEAN_KEYS,
   Config,
+  normalizeConfig,
   sanitizeSettings,
   validateSettings,
   normalizeLegacyWsCompressPaths,
@@ -2138,8 +2140,8 @@ describe("变异加固块（round=3 CI 回归：迁移重放/路由面/校验分
     // E3: PUT 合法 → 200 + user 层回传；非法 → 400 error.details；坏 JSON → 400 invalid-json。
     describe("E3: PUT 三态", () => {
       let okPut!: { ok: unknown };
-      let badPut!: { error: { details: string } };
-      let badJson!: { error: { code: string } };
+      let badPut!: { ok: unknown; error: { details: string } };
+      let badJson!: { ok: unknown; error: { code: string } };
 
       beforeAll(async () => {
         okPut = JSON.parse(
@@ -2157,8 +2159,16 @@ describe("变异加固块（round=3 CI 回归：迁移重放/路由面/校验分
         expect(badPut.error.details.includes("port")).toBeTruthy();
       });
 
+      it("400 ok=false（错误包络旗标）", () => {
+        expect(badPut.ok).toBe(false);
+      });
+
       it("坏 JSON 400 invalid-json", () => {
         expect(badJson.error.code).toBe("invalid-json");
+      });
+
+      it("坏 JSON ok=false（错误包络旗标）", () => {
+        expect(badJson.ok).toBe(false);
       });
 
       it("超限体 → 连接已断零写入（catch 后静默 return，不补 400）", async () => {
@@ -2171,6 +2181,7 @@ describe("变异加固块（round=3 CI 回归：迁移重放/路由面/校验分
     // E4: writable=false → PUT 503（GET 仍可读）。
     describe("E4: 只读态 PUT 503", () => {
       let status = 0;
+      let body = "";
 
       beforeAll(async () => {
         const roDeps = { ...deps, writable: () => false };
@@ -2208,10 +2219,15 @@ describe("变异加固块（round=3 CI 回归：迁移重放/路由面/校验分
         );
         await done;
         status = s;
+        body = chunks.join("");
       });
 
       it("只读态 PUT 503", () => {
         expect(status).toBe(503);
+      });
+
+      it("只读态 ok=false（错误包络旗标）", () => {
+        expect(JSON.parse(body).ok).toBe(false);
       });
     });
   });
@@ -2273,6 +2289,128 @@ describe("Config schema 直测：schemastery 默认值与上界（#147 变异加
 
   it("压缩档位超 3 抛错", () => {
     expect(() => Config({ httpCompressLevel: 4 })).toThrow();
+  });
+
+  it("targetPort 超上界抛错", () => {
+    expect(() => Config({ targetPort: 65536 })).toThrow();
+  });
+
+  it("wsBridgeEnabled 默认 true（保活基座默认开）", () => {
+    expect(defaults.wsBridgeEnabled).toBe(true);
+  });
+
+  it("wsDeflatePolicy 默认浏览器可协商 + iOS 三件套拒绝", () => {
+    expect(defaults.wsDeflatePolicy).toEqual({ browser: true, uaDeny: ["iPhone", "iPad", "iPod"] });
+  });
+});
+
+// ===== 变异加固批 2（config 校验器边界补强：单侧缺席/非对象策略/显式 undefined）=====
+describe("变异加固批 2：config 校验器边界补强", () => {
+  it("单侧键缺席（tlsKeyFile 未提交）→ tls-pair 拒绝（首行键存在性门控）", async () => {
+    const r = await applyConfigPatch(basePatchDeps(), { patch: { tlsCertFile: "/only.pem" } });
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.code).toBe("tls-pair");
+      expect(r.status).toBe(400);
+    }
+  });
+
+  it("单侧空串缺席（tlsKeyFile 未提交）→ tls-pair 拒绝", async () => {
+    const r = await applyConfigPatch(basePatchDeps(), { patch: { tlsCertFile: "" } });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.code).toBe("tls-pair");
+  });
+
+  it("wsDeflatePolicy 非对象 → validate 定位该键", () => {
+    expect(validateSettings({ wsDeflatePolicy: 42 })?.key).toBe("wsDeflatePolicy");
+  });
+
+  it("wsDeflatePolicy 非对象 → sanitize 整体拒绝", () => {
+    expect(sanitizeSettings({ wsDeflatePolicy: 42 })).toBe(null);
+  });
+
+  it("uaDeny 混入非字符串 → validate 定位该键", () => {
+    expect(validateSettings({ wsDeflatePolicy: { uaDeny: ["a", 42] } })?.key).toBe(
+      "wsDeflatePolicy",
+    );
+  });
+
+  it("uaDeny 混入非字符串 → sanitize 整体拒绝", () => {
+    expect(sanitizeSettings({ wsDeflatePolicy: { uaDeny: ["a", 42] } })).toBe(null);
+  });
+
+  it("显式 undefined 值等同缺席（跳过不拒绝）", () => {
+    expect(sanitizeSettings({ port: undefined, httpsEnabled: true })).toEqual({
+      httpsEnabled: true,
+    });
+  });
+
+  it("非压缩键取迁移档位值不改写（port: 5 原样保留）", () => {
+    expect(sanitizeSettings({ port: 5 })).toEqual({ port: 5 });
+  });
+
+  it("wsBridgeEnabled 非布尔 → validate 定位该键", () => {
+    expect(validateSettings({ wsBridgeEnabled: "yes" })?.key).toBe("wsBridgeEnabled");
+  });
+
+  it("injectToken 非布尔 → sanitize 整体拒绝", () => {
+    expect(sanitizeSettings({ injectToken: 1 })).toBe(null);
+  });
+
+  it("叶对清除保留用户层 CA 键（clearingCa 分支不误删）", async () => {
+    let section: Record<string, unknown> = {};
+    const d = basePatchDeps({
+      readUser: () => ({
+        user: {
+          tlsCertFile: "/c.pem",
+          tlsKeyFile: "/k.pem",
+          tlsCaCertFile: "/ca.pem",
+          port: 3000,
+        },
+        revision: 3,
+      }),
+      replace: async (s: unknown) => {
+        section = s as Record<string, unknown>;
+      },
+    });
+    const r = await applyConfigPatch(d, { patch: { tlsCertFile: "", tlsKeyFile: "" } });
+    expect(r.ok).toBe(true);
+    expect(section.tlsCaCertFile).toBe("/ca.pem");
+    expect("tlsCertFile" in section).toBe(false);
+    expect("tlsKeyFile" in section).toBe(false);
+  });
+
+  it("写入抛非 Error 值 → 仍 500 定码（不崩溃）", async () => {
+    const d = basePatchDeps({
+      update: async () => {
+        const failure: unknown = null;
+        throw failure;
+      },
+    });
+    const r = await applyConfigPatch(d, { patch: { port: 3104 } });
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.status).toBe(500);
+      expect(r.code).toBe("error");
+    }
+  });
+
+  it("BOOLEAN_KEYS 导出契约（改键集同步改客户端开关渲染）", () => {
+    expect(BOOLEAN_KEYS).toEqual([
+      "enabled",
+      "httpsEnabled",
+      "printBanner",
+      "wsBridgeEnabled",
+      "wsCompressEnabled",
+      "httpCompressEnabled",
+      "injectToken",
+      "ownsHostCompat",
+    ]);
+  });
+
+  it("normalizeConfig 入口点烟测试（空输入补默认 + 显式值透传）", () => {
+    expect(normalizeConfig({ port: 1 }).port).toBe(1);
+    expect(normalizeConfig({ port: 1 }).enabled).toBe(true);
   });
 });
 // ===== apply 内 readUser 真实闭包（CRAP 56/7 未覆盖 → 覆盖后 7） =====

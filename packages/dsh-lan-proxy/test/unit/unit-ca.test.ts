@@ -22,7 +22,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { Context } from "@deepseek-ai/cordis";
 import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
@@ -281,6 +281,17 @@ describe("F7 三态真值表", () => {
       "self-signed",
     );
   });
+  it("三键两界内一界外 → custom（任一界外即用户资产）", () => {
+    const triple = managedTriple();
+    writeTriple(triple);
+    expect(
+      classifyCaState({
+        tlsCaCertFile: triple.ca,
+        tlsCertFile: triple.cert,
+        tlsKeyFile: "/x/k.pem",
+      }),
+    ).toBe("custom");
+  });
 });
 
 describe("F17 isManagedPath 口径", () => {
@@ -354,6 +365,7 @@ describe("F16 围栏与 F19 码表", () => {
     const { deps } = makeDeps({ crypto: noCrypto });
     const r = await callAction(deps, { raw: "{broken" });
     expect(r.status).toBe(400);
+    expect((r.body as { ok: unknown }).ok).toBe(false);
     expect((r.body as { error: { code: string } }).error.code).toBe("invalid-json");
   });
   it("settings 不可用 503", async () => {
@@ -381,7 +393,38 @@ describe("F16 围栏与 F19 码表", () => {
       body: { confirmed: true, expectedRevision: 1.5 },
     });
     expect(r.status).toBe(409);
+    expect((r.body as { ok: unknown }).ok).toBe(false);
     expect((r.body as { error: { code: string } }).error.code).toBe("ca-revision-stale");
+  });
+  it("空体 POST → 409 stale（非 json 体不进动作分支，fail-closed）", async () => {
+    const { deps } = makeDeps({ crypto: noCrypto });
+    const r = await callAction(deps, {});
+    expect(r.status).toBe(409);
+    expect((r.body as { error: { code: string } }).error.code).toBe("ca-revision-stale");
+  });
+  it("同一装配连续动作：首建 200 后叶轮换仍 200（gate 释放，否则第二击 429）", async () => {
+    const { deps } = makeDeps();
+    const route = buildCaActionRoutes(deps)[0];
+    const first = await invokeAction(route, { body: { expectedRevision: 1 } });
+    expect(first.status).toBe(200);
+    const second = await invokeAction(route, { body: { confirmed: true, expectedRevision: 1 } });
+    expect(second.status).toBe(200);
+    expect(second.body).toEqual({ ok: true, mode: "leaf-rotated" });
+  });
+  it("scope 抛非 Error 值 → 仍 500 定码（不崩溃）", async () => {
+    const scope = makeScope({});
+    const failing = {
+      ...scope.deps,
+      update: async () => {
+        const failure: unknown = null;
+        throw failure;
+      },
+    };
+    const { deps, warnings } = makeDeps({ config: failing });
+    const r = await callAction(deps, { body: { expectedRevision: 1 } });
+    expect(r.status).toBe(500);
+    expect((r.body as { error: { code: string } }).error.code).toBe("ca-generate-failed");
+    expect(warnings.some((w) => w.includes("一键 CA 动作失败"))).toBe(true);
   });
   it("custom 即使带 confirmed 仍 409（服务端门控，curl 不可绕过）", async () => {
     const { deps } = makeDeps({
@@ -423,6 +466,7 @@ describe("首建与轮换编排", () => {
     const { deps } = makeDeps();
     const denied = await callAction(deps, { body: { expectedRevision: 1 } });
     expect(denied.status).toBe(409);
+    expect((denied.body as { ok: unknown }).ok).toBe(false);
     expect((denied.body as { error: { code: string } }).error.code).toBe("needs-confirm");
     const r = await callAction(deps, { body: { confirmed: true, expectedRevision: 1 } });
     expect(r.status).toBe(200);
@@ -487,6 +531,9 @@ describe("首建与轮换编排", () => {
       scopeUser = next.scope.user();
     }
     expect(readdirSync(certsDir()).filter((n) => n.startsWith("leaf-cert.pem.")).length).toBe(1);
+    // 存活的是最新时间戳备份（旧备份必须被清掉，而非反向保留最旧）。
+    expect(existsSync(join(certsDir(), "leaf-cert.pem.1.bak"))).toBe(false);
+    expect(existsSync(join(certsDir(), "leaf-cert.pem.2.bak"))).toBe(false);
   });
   it("第二目标 rename 失败 → 已提交回退 + 500（P1-1 跨目标补偿）", async () => {
     const triple = managedTriple();
@@ -495,22 +542,53 @@ describe("首建与轮换编排", () => {
     const flakyFs = {
       renameSync: (from: string, to: string) => {
         calls += 1;
-        // 第 4 次即第二目标 temp 上位：前三次（t1 搬 bak、上位；t2 搬 bak）已成功。
+        // 第 4 次即第三目标备份搬移失败：前三次（t1 搬 bak、上位；t2 无 bak 直接上位）
+        // 已成功，done=[t1, t2]，回滚逆序先删 t2 新文件、再搬回 t1。
         if (calls === 4) throw new Error("staged rename failure");
         renameSync(from, to);
       },
       readdirSync,
       unlinkSync,
     };
-    const { deps } = makeDeps({ fs: flakyFs });
+    const { deps, warnings } = makeDeps({ fs: flakyFs });
     const r = await callAction(deps, { body: { confirmed: true, expectedRevision: 1 } });
     expect(r.status).toBe(500);
     expect((r.body as { error: { code: string } }).error.code).toBe("ca-generate-failed");
-    // 两目标各自 .bak 均已搬回：内容仍是 STALE，无残留 .bak/.tmp。
+    // 两目标各自 .bak 均已搬回：内容仍是 STALE，无残留 .bak/.tmp；无 bak 的 t2
+    // 新文件被删（非搬回）；干净回滚不记日志。
     expect(readFileSync(triple.ca, "utf8")).toBe("STALE");
     expect(readFileSync(triple.key, "utf8")).toBe("STALE");
+    expect(existsSync(join(certsDir(), "ca-key.pem"))).toBe(false);
     expect(readdirSync(certsDir()).filter((n) => n.endsWith(".bak")).length).toBe(0);
     expect(readdirSync(certsDir()).filter((n) => n.endsWith(".tmp")).length).toBe(0);
+    // 干净回滚本身不记日志（动作失败那条是 handler 层的，不在此断言）。
+    expect(warnings.some((w) => w.includes("回滚失败"))).toBe(false);
+  });
+  it("跨目标补偿按逆序搬回（t2 删新在前、t1 搬回在后）", async () => {
+    const triple = managedTriple();
+    writeTriple(triple, "STALE");
+    const ops: string[] = [];
+    let calls = 0;
+    const flakyFs = {
+      renameSync: (from: string, to: string) => {
+        calls += 1;
+        ops.push("rename:" + basename(from) + "->" + basename(to));
+        if (calls === 4) throw new Error("staged rename failure");
+        renameSync(from, to);
+      },
+      readdirSync,
+      unlinkSync: (path: string) => {
+        ops.push("unlink:" + basename(path));
+        unlinkSync(path);
+      },
+    };
+    const { deps } = makeDeps({ fs: flakyFs });
+    const r = await callAction(deps, { body: { confirmed: true, expectedRevision: 1 } });
+    expect(r.status).toBe(500);
+    const tail = ops.slice(-2);
+    expect(tail[0]).toBe("unlink:ca-key.pem");
+    expect(tail[1].startsWith("rename:ca-cert.pem.")).toBe(true);
+    expect(tail[1].endsWith("->ca-cert.pem")).toBe(true);
   });
   it("补偿删新文件：无 .bak 目标失败即删上位（R1 首建 partial，ca-key 缺席）", async () => {
     const dir = certsDir();
@@ -631,13 +709,14 @@ describe("首建与轮换编排", () => {
   });
   it("生成失败 500 定码 + 响应无路径无私钥", async () => {
     const scope = makeScope({}, { code: "EIO" });
-    const { deps } = makeDeps({ config: scope.deps });
+    const { deps, warnings } = makeDeps({ config: scope.deps });
     const r = await callAction(deps, { body: { expectedRevision: 1 } });
     expect(r.status).toBe(500);
     const text = JSON.stringify(r.body);
     expect((r.body as { error: { code: string } }).error.code).toBe("ca-generate-failed");
     expect(text).not.toContain(home);
     expect(text).not.toContain("PRIVATE KEY");
+    expect(warnings.some((w) => w.includes("一键 CA 动作失败"))).toBe(true);
   });
   it("CA 私钥误指下发源 → 404 且私钥不出网（固定文件名锁定）", async () => {
     const { deps } = makeDeps();

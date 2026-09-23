@@ -5,7 +5,7 @@
  * 导入面倒置——产物层该证明的是「bundle 之后这些导出仍然可用」，同域纯函数应直连
  * src 白盒。e2e 侧对应断言保留（产物契约不受影响），本文件补源码层这一份。
  */
-import { mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -20,6 +20,7 @@ import {
   generateCaAndLeaf,
   generateLeafSignedByCa,
   loadDownloadableCertificate,
+  loadTlsFromFiles,
   readLeafCertInfo,
   toSanEntry,
 } from "../../src/server/tls/impl/index.ts";
@@ -157,11 +158,39 @@ describe("unit: ensureSelfSignedTls 缓存复用", () => {
     const dir = mkdtempSync(join(tmpdir(), "dsh-lan-proxy-tls-"));
     try {
       const first = ensureSelfSignedTls({ dir });
+      // 先放宽私钥权限：复用分支的 chmod 收敛可观测（删掉即残留 0644）。
+      chmodSync(join(dir, SELF_SIGNED_KEY), 0o644);
       const second = ensureSelfSignedTls({ dir });
       expect(String(second.cert)).toBe(String(first.cert));
       expect(String(second.key)).toBe(String(first.key));
       expect(statSync(join(dir, SELF_SIGNED_KEY)).mode & 0o777).toBe(0o600);
     } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+  it("extraSans 落进自签 SAN（缺省仅回环三件套）", () => {
+    const dir = mkdtempSync(join(tmpdir(), "dsh-lan-proxy-tls-"));
+    try {
+      const mat = ensureSelfSignedTls({ dir, extraSans: ["192.168.99.9"] });
+      const cert = new X509Certificate(mat.cert);
+      expect(cert.subjectAltName).toContain("IP Address:192.168.99.9");
+      expect(cert.subjectAltName).toContain("IP Address:127.0.0.1");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+  it("部分缓存（仅 cert）→ 重签补齐（不因缺 key 抛错）", () => {
+    const seed = mkdtempSync(join(tmpdir(), "dsh-lan-proxy-tls-seed-"));
+    const dir = mkdtempSync(join(tmpdir(), "dsh-lan-proxy-tls-"));
+    try {
+      const mat = ensureSelfSignedTls({ dir: seed });
+      writeFileSync(join(dir, SELF_SIGNED_CERT), String(mat.cert));
+      const second = ensureSelfSignedTls({ dir });
+      expect(existsSync(join(dir, SELF_SIGNED_KEY))).toBe(true);
+      expect(String(second.cert).startsWith("-----BEGIN CERTIFICATE-----")).toBe(true);
+      expect(String(second.key)).toContain("PRIVATE KEY");
+    } finally {
+      rmSync(seed, { recursive: true, force: true });
       rmSync(dir, { recursive: true, force: true });
     }
   });
@@ -207,6 +236,89 @@ describe("unit: readLeafCertInfo 摘要（#930 F8）", () => {
       const bad = join(dir, "bad.pem");
       writeFileSync(bad, "not a certificate");
       expect(readLeafCertInfo(bad)).toEqual({ ok: false });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("无 SAN 证书 → sans 空数组（subjectAltName 缺席分支）", () => {
+    const dir = mkdtempSync(join(tmpdir(), "dsh-lan-proxy-tls-"));
+    try {
+      const keys = forge.pki.rsa.generateKeyPair({ bits: 512 });
+      const cert = forge.pki.createCertificate();
+      cert.publicKey = keys.publicKey;
+      cert.serialNumber = "01";
+      cert.validity.notBefore = new Date("2024-01-01T00:00:00Z");
+      cert.validity.notAfter = new Date("2034-01-01T00:00:00Z");
+      cert.setSubject([{ name: "commonName", value: "no-san" }]);
+      cert.setIssuer([{ name: "commonName", value: "no-san" }]);
+      cert.sign(keys.privateKey, forge.md.sha256.create());
+      const path = join(dir, "nosan.pem");
+      writeFileSync(path, forge.pki.certificateToPem(cert));
+      const summary = readLeafCertInfo(path);
+      expect(summary.ok).toBe(true);
+      if (summary.ok) expect(summary.sans).toEqual([]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("过期证书 → certStillValid 为 false（减法方向锚）", () => {
+    const dir = mkdtempSync(join(tmpdir(), "dsh-lan-proxy-tls-"));
+    try {
+      const keys = forge.pki.rsa.generateKeyPair({ bits: 512 });
+      const cert = forge.pki.createCertificate();
+      cert.publicKey = keys.publicKey;
+      cert.serialNumber = "02";
+      cert.validity.notBefore = new Date("2020-01-01T00:00:00Z");
+      cert.validity.notAfter = new Date("2021-01-01T00:00:00Z");
+      cert.setSubject([{ name: "commonName", value: "expired" }]);
+      cert.setIssuer([{ name: "commonName", value: "expired" }]);
+      cert.sign(keys.privateKey, forge.md.sha256.create());
+      const path = join(dir, "expired.pem");
+      writeFileSync(path, forge.pki.certificateToPem(cert));
+      expect(certStillValid(path)).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("unit: loadTlsFromFiles 直读（prepareTls 用户证书分支）", () => {
+  it("cert 缺失先抛错（顺序门控，信息指明缺失方）", () => {
+    const dir = mkdtempSync(join(tmpdir(), "dsh-lan-proxy-tls-"));
+    try {
+      expect(() => loadTlsFromFiles(join(dir, "no-cert.pem"), join(dir, "no-key.pem"))).toThrow(
+        /TLS cert file not found/,
+      );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("key 缺失抛错", () => {
+    const dir = mkdtempSync(join(tmpdir(), "dsh-lan-proxy-tls-"));
+    try {
+      const cert = join(dir, "c.pem");
+      writeFileSync(cert, "CERT");
+      expect(() => loadTlsFromFiles(cert, join(dir, "no-key.pem"))).toThrow(
+        /TLS key file not found/,
+      );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("成对存在 → 原样返回文件字节", () => {
+    const dir = mkdtempSync(join(tmpdir(), "dsh-lan-proxy-tls-"));
+    try {
+      const cert = join(dir, "c.pem");
+      const key = join(dir, "k.pem");
+      writeFileSync(cert, "CERT-BYTES");
+      writeFileSync(key, "KEY-BYTES");
+      const mat = loadTlsFromFiles(cert, key);
+      expect(String(mat.cert)).toBe("CERT-BYTES");
+      expect(String(mat.key)).toBe("KEY-BYTES");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

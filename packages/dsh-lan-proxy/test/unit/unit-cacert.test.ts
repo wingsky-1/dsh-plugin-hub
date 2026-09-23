@@ -116,6 +116,11 @@ describe("TLS 首证书提取", () => {
     const der = extractFirstCertificateDer(mat.cert);
     const pem = encodeCertificatePem(der);
     expect(pem.startsWith("-----BEGIN CERTIFICATE-----\n")).toBe(true);
+    expect(pem.endsWith("\n-----END CERTIFICATE-----\n")).toBe(true);
+    // 64 列换行无空行（步长/边界变异即多出空行或超长行）。
+    const bodyLines = pem.split("\n").slice(1, -2);
+    expect(bodyLines.length).toBeGreaterThan(1);
+    expect(bodyLines.every((line) => line.length > 0 && line.length <= 64)).toBe(true);
     expect(extractFirstCertificateDer(pem).equals(der)).toBe(true);
   });
   it("含链 PEM 只取首个", () => {
@@ -311,7 +316,9 @@ describe("下发路由三态与围栏", () => {
     ensureSelfSignedTls({ dir });
     const r = callCaCert({ selfSignedDir: dir }, { url: "http://[::1" });
     expect(r.status).toBe(400);
-    expect(JSON.parse(r.body.toString("utf8")).error.code).toBe("bad-format");
+    const malformed = JSON.parse(r.body.toString("utf8"));
+    expect(malformed.ok).toBe(false);
+    expect(malformed.error.code).toBe("bad-format");
   });
   it('req.url 缺席 → format 缺省 der（?? "/" 分支：继续走装配态而非 400）', () => {
     const route = buildCaCertRoutes({
