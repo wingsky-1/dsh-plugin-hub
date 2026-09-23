@@ -358,13 +358,7 @@ function isExemptedSide(guard, newPkg, loadWorkspace) {
   }
   return exempted;
 }
-function isRenameScopeSkipped(guard, newPkg, packages) {
-  if (guard.kind !== "existence") return true;
-  if (!Array.isArray(guard.paths) || guard.paths.length === 0) return true;
-  const universe = guard.universe;
-  if (universe === null || typeof universe !== "object" || Array.isArray(universe)) return true;
-  const prefix = typeof universe.prefix === "string" ? universe.prefix : "";
-  if (!newPkg.startsWith(prefix)) return true;
+function isRenameGovernanceSkipped(universe, newPkg, packages) {
   const dirNeed = typeof universe.requireDir === "string" ? universe.requireDir : undefined;
   const wsEntry = packages.find((pkg) => pkg.name === newPkg);
   const governed =
@@ -373,6 +367,15 @@ function isRenameScopeSkipped(guard, newPkg, packages) {
       dirNeed === "" ||
       (Array.isArray(wsEntry.dirs) && wsEntry.dirs.includes(dirNeed)));
   return !governed;
+}
+function isRenameScopeSkipped(guard, newPkg, packages) {
+  if (guard.kind !== "existence") return true;
+  if (!Array.isArray(guard.paths) || guard.paths.length === 0) return true;
+  const universe = guard.universe;
+  if (universe === null || typeof universe !== "object" || Array.isArray(universe)) return true;
+  const prefix = typeof universe.prefix === "string" ? universe.prefix : "";
+  if (!newPkg.startsWith(prefix)) return true;
+  return isRenameGovernanceSkipped(universe, newPkg, packages);
 }
 function renameExemptState(guard, newPkg, exemptions, loadWorkspace) {
   if (exemptions.has(guard.paths[0] + "." + newPkg + "#membership")) return "skip";
