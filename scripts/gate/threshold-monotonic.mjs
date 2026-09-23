@@ -342,6 +342,22 @@ function resolveRenamePackagePair(pairs) {
  * 口径与 lib 的 compareExistenceGuard 同形。拆出降主函数复杂度，行为不变。
  * 函数计数按 9 口径：改名识别共 8 helpers + 主函数 = 9（本函数为其一，不再拆单守卫子函数）。
  */
+function isExemptedSide(guard, newPkg, loadWorkspace) {
+  let exempted = false;
+  const exemptFrom = guard.exemptFrom;
+  if (
+    isRecord(exemptFrom) &&
+    typeof exemptFrom.source === "string" &&
+    typeof exemptFrom.path === "string"
+  ) {
+    const exemptSide = loadWorkspace({ sources: [exemptFrom.source] });
+    if (exemptSide !== null) {
+      const exemptNode = resolveSingle(exemptSide.value, exemptFrom.path);
+      if (isRecord(exemptNode) && Object.hasOwn(exemptNode, newPkg)) exempted = true;
+    }
+  }
+  return exempted;
+}
 function checkRenameExistence(registry, newPkg, packages, exemptions, loadWorkspace) {
   for (const guard of registry.guards ?? []) {
     if (guard.kind !== "existence") continue;
@@ -360,19 +376,7 @@ function checkRenameExistence(registry, newPkg, packages, exemptions, loadWorksp
     if (!governed) continue;
     if (exemptions.has(guard.paths[0] + "." + newPkg + "#membership")) continue;
     const anchorLedgerExempt = exemptions.has(guard.paths[0] + "." + newPkg + "#anchor");
-    let exempted = false;
-    const exemptFrom = guard.exemptFrom;
-    if (
-      isRecord(exemptFrom) &&
-      typeof exemptFrom.source === "string" &&
-      typeof exemptFrom.path === "string"
-    ) {
-      const exemptSide = loadWorkspace({ sources: [exemptFrom.source] });
-      if (exemptSide !== null) {
-        const exemptNode = resolveSingle(exemptSide.value, exemptFrom.path);
-        if (isRecord(exemptNode) && Object.hasOwn(exemptNode, newPkg)) exempted = true;
-      }
-    }
+    const exempted = isExemptedSide(guard, newPkg, loadWorkspace);
     if (exempted) continue;
     const wsTable = resolveSingle(loadWorkspace(guard)?.value, guard.paths[0]);
     const newEntry = isRecord(wsTable) ? wsTable[newPkg] : undefined;
