@@ -799,13 +799,15 @@ function checkGuardDocs(guard, id, out) {
   if (!Array.isArray(guard.sources) || guard.sources.length === 0) out.push(id + "：缺 sources");
   if (!Array.isArray(guard.paths) || guard.paths.length === 0) out.push(id + "：缺 paths");
 }
-function checkGuardKindFields(guard, id, out) {
+function checkGuardSimpleKinds(guard, id, out) {
   if (guard.kind === "value" && guard.weaken !== "decrease" && guard.weaken !== "increase") {
     out.push(id + "：kind=value 必须声明 weaken（decrease / increase）");
   }
   if (guard.kind === "boolean" && typeof guard.weakenValue !== "boolean") {
     out.push(id + "：kind=boolean 必须声明 weakenValue（等于该值即放宽）");
   }
+}
+function checkGuardAnchoredKinds(guard, id, out) {
   if (
     guard.kind === "baseline" &&
     (!Array.isArray(guard.anchorFields) || guard.anchorFields.length === 0)
@@ -818,6 +820,10 @@ function checkGuardKindFields(guard, id, out) {
   if (guard.kind !== "existence" && guard.onRemoval !== "fail" && guard.onRemoval !== "ignore") {
     out.push(id + "：必须声明 onRemoval（fail / ignore）——删键语义不能靠默认值");
   }
+}
+function checkGuardKindFields(guard, id, out) {
+  checkGuardSimpleKinds(guard, id, out);
+  checkGuardAnchoredKinds(guard, id, out);
 }
 function checkGuardBounds(guard, id, out) {
   // 两个绝对边界写错类型会被静默忽略（字符串不与数字比较），于是「加了上限」变成一句没有判据的声明。
