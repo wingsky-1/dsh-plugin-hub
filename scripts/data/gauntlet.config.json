@@ -8,8 +8,8 @@
   },
   "complexity": {
     "note": "#722 阶段五：ESLint 复杂度门禁阈值（唯一事实源，由 tools/lint/eslint.config.js 消费）。起步值 = 全域实测最大值——锚定当前最坏函数，保证零存量命中、只拦新增劣化（量化表见 #732）；收紧路线与最终目标见 #732，target 仅记录目标值，门禁不读取。",
-    "cyclomatic": 78,
-    "cognitive": 84,
+    "cyclomatic": 40,
+    "cognitive": 40,
     "target": {
       "cyclomatic": 10,
       "cognitive": 15
