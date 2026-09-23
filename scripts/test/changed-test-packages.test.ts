@@ -395,12 +395,10 @@ test("D: helpers 反向断言 + 命中窄化/全段回落 + 未命中复用", ()
       "dsh-provider-usage:contracts",
       "dsh-provider-usage:entry",
       "dsh-provider-usage:pipeline-core",
-      "dsh-provider-usage:pipeline-history",
-      "dsh-provider-usage:pipeline-view",
       "dsh-provider-usage:registry",
       "dsh-provider-usage:sanitize",
     ],
-    "仅闭包命中段失效",
+    "仅闭包命中段失效", // #962 B：history/view 收窄后不再含 unit-contract.test.ts
   );
   const pure = "packages/dsh-provider-usage/test/smoke-pure.ts";
   assert.deepEqual(findDirectConsumers(ROOT, pkg, pure), [
@@ -414,12 +412,10 @@ test("D: helpers 反向断言 + 命中窄化/全段回落 + 未命中复用", ()
       "dsh-provider-usage:contracts",
       "dsh-provider-usage:entry",
       "dsh-provider-usage:pipeline-core",
-      "dsh-provider-usage:pipeline-history",
-      "dsh-provider-usage:pipeline-view",
       "dsh-provider-usage:registry",
       "dsh-provider-usage:sanitize",
     ],
-    "worker 叠加不扩散",
+    "worker 叠加不扩散", // #962 B：同上，history/view 不再含 unit-contract.test.ts
   );
 });
 
