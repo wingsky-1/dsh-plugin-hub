@@ -206,14 +206,546 @@ function SegGroup(props: {
     </div>
   );
 }
-const unitKeyOf = (gran: Gran): string =>
-  gran === "day"
-    ? "trendRangeDayUnit"
-    : gran === "week"
-      ? "trendRangeWeekUnit"
-      : "trendRangeMonthUnit";
+/** 粒度→范围单位文案键（查表替代三元链；未知粒度回落按月口径）。 */
+const UNIT_KEY_BY_GRAN: Record<Gran, string> = {
+  day: "trendRangeDayUnit",
+  week: "trendRangeWeekUnit",
+  month: "trendRangeMonthUnit",
+};
+const unitKeyOf = (gran: Gran): string => UNIT_KEY_BY_GRAN[gran] ?? "trendRangeMonthUnit";
+
+/** 粒度选项表（查表替代 JSX 内联三元）。 */
+const GRAN_ITEMS: Array<[string, string]> = [
+  ["day", "trendGranDay"],
+  ["week", "trendGranWeek"],
+  ["month", "trendGranMonth"],
+];
+/** 形态选项表。 */
+const VIEW_ITEMS: Array<[string, string]> = [
+  ["bar", "trendViewBar"],
+  ["area", "trendViewArea"],
+];
+/** 指标选项表（值→文案键）。 */
+const METRIC_ITEMS: Array<[string, string]> = [
+  ["total", "trendMetricTotal"],
+  ["input", "trendMetricInput"],
+  ["output", "trendMetricOutput"],
+  ["cacheRead", "trendMetricCacheRead"],
+  ["cacheWrite", "trendMetricCacheWrite"],
+  ["calls", "trendMetricCalls"],
+];
+/** 粒度→人话文案键（查表替代 granLabel 三元链）。 */
+interface TrendControlsProps {
+  gran: Gran;
+  retentionDays: number;
+  effectiveRange: number;
+  metric: string;
+  provider: string;
+  byModel: boolean;
+  dirFilter: string;
+  effectiveView: string;
+  providers: Array<{ provider: string; model: string | null }>;
+  dirs: Array<{ dir?: string | null }>;
+  onGran: (v: Gran) => void;
+  onRange: (v: number) => void;
+  onMetric: (v: string) => void;
+  onProvider: (v: string) => void;
+  onDir: (v: string) => void;
+  onByModel: (v: boolean) => void;
+  onView: (v: string) => void;
+}
+function TrendControls(p: TrendControlsProps): React.ReactElement {
+  const showDir = shouldShowDirSelect(p.provider);
+  const showByModel = shouldShowByModel(p.provider, p.dirFilter);
+  return (
+    <div
+      style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", marginBottom: 10 }}
+    >
+      <SegGroup
+        label={t("trendGranularity")}
+        items={GRAN_ITEMS.map(function (it) {
+          return [it[0], t(it[1])];
+        })}
+        value={p.gran}
+        onPick={function (v) {
+          p.onGran(v as Gran);
+        }}
+      />
+      <SegGroup
+        label={t("trendRangeLabel")}
+        items={trendRangeOptions(p.gran, p.retentionDays).map(function (n) {
+          return [String(n), t(unitKeyOf(p.gran), { n: String(n) })];
+        })}
+        value={String(p.effectiveRange)}
+        mini={true}
+        onPick={function (v) {
+          p.onRange(Number(v));
+        }}
+      />
+      <select
+        style={selectStyle}
+        value={p.metric}
+        aria-label={t("trendMetricLabel")}
+        onChange={function (e) {
+          p.onMetric((e as { target: { value: string } }).target.value);
+        }}
+      >
+        {METRIC_ITEMS.map(function (it) {
+          return (
+            <option key={it[0]} value={it[0]}>
+              {t(it[1])}
+            </option>
+          );
+        })}
+      </select>
+      <select
+        style={selectStyle}
+        value={p.provider}
+        aria-label={t("trendAdapterLabel")}
+        onChange={function (e) {
+          p.onProvider((e as { target: { value: string } }).target.value);
+        }}
+      >
+        <option value="">{t("trendAdapterAll")}</option>
+        {p.providers.map(function (pr) {
+          return (
+            <option key={pr.provider + "/" + (pr.model ?? "")} value={pr.provider}>
+              {pr.provider}
+            </option>
+          );
+        })}
+      </select>
+      {showDir ? (
+        <select
+          style={selectStyle}
+          value={p.dirFilter}
+          aria-label={t("trendDirLabel")}
+          onChange={function (e) {
+            p.onDir((e as { target: { value: string } }).target.value);
+          }}
+        >
+          <option value="">{t("trendDirAll")}</option>
+          {p.dirs.map(function (d) {
+            const key = dirStackId(d.dir);
+            return (
+              <option key={key} value={key}>
+                {dirDisplayLabel(key)}
+              </option>
+            );
+          })}
+        </select>
+      ) : null}
+      {showByModel ? (
+        <label style={{ fontSize: 12, display: "inline-flex", alignItems: "center", gap: 4 }}>
+          <input
+            type="checkbox"
+            checked={p.byModel}
+            onChange={function (e) {
+              p.onByModel((e as { target: { checked: boolean } }).target.checked);
+            }}
+          />
+          {t("trendByModel")}
+        </label>
+      ) : null}
+      <SegGroup
+        label={t("trendViewLabel")}
+        items={VIEW_ITEMS.map(function (it) {
+          return [it[0], t(it[1])];
+        })}
+        value={p.effectiveView}
+        mini={true}
+        onPick={function (v) {
+          p.onView(v);
+        }}
+      />
+      <span
+        style={{
+          fontSize: 11,
+          color: "var(--dsw-alias-label-tertiary,#9aa0ab)",
+          marginLeft: "auto",
+        }}
+      >
+        {t(unitKeyOf(p.gran), { n: String(p.effectiveRange) })}
+      </span>
+    </div>
+  );
+}
+interface TrendChartProps {
+  failed: boolean;
+  empty: boolean;
+  loading: boolean;
+  view: string;
+  bars: RenderBar[];
+  gran: Gran;
+  ticks: number[];
+  order: string[];
+  tip: { idx: number; offsetX: number } | null;
+  tipBar: RenderBar | null;
+  tipNode: React.ReactElement | null;
+  tipWidth: number;
+  chartRef: React.MutableRefObject<HTMLDivElement | null>;
+  onDown: (e: {
+    target: EventTarget | null;
+    currentTarget: HTMLDivElement;
+    clientX: number;
+    pointerType: string;
+    type: string;
+  }) => void;
+  onMove: (e: { pointerType: string }) => void;
+  onLeave: () => void;
+  svgHtml: string;
+}
+function TrendChart(p: TrendChartProps): React.ReactElement {
+  if (p.failed) {
+    return (
+      <div
+        style={{
+          fontSize: 12,
+          color: "var(--dsw-alias-state-error-primary,#d64545)",
+          padding: "12px 0",
+        }}
+      >
+        {t("trendFetchFail")}
+      </div>
+    );
+  }
+  if (p.empty) {
+    return (
+      <div
+        style={{
+          padding: "22px 14px",
+          textAlign: "center",
+          border: "1px dashed var(--dsw-alias-border-l2,#e8eaf0)",
+          borderRadius: 8,
+          fontSize: 12,
+          color: "var(--dsw-alias-label-tertiary,#9aa0ab)",
+        }}
+      >
+        <div style={{ marginBottom: 4 }}>{t("trendEmptyTitle")}</div>
+        <div>{t("trendEmptyHint")}</div>
+      </div>
+    );
+  }
+  return (
+    <div
+      ref={p.chartRef}
+      className="dou-trend-chart"
+      style={{
+        position: "relative",
+        opacity: p.loading ? 0.45 : 1,
+        transition: "opacity .15s ease",
+        pointerEvents: p.loading ? "none" : "auto",
+      }}
+      aria-busy={p.loading}
+      onPointerDown={p.onDown}
+      onPointerMove={p.onMove}
+      onPointerLeave={p.onLeave}
+    >
+      <div className="dou-trend-svg" dangerouslySetInnerHTML={{ __html: p.svgHtml }} />
+      {p.tip !== null && p.tipBar !== null ? (
+        <div className="dou-trend-tip" style={tipStyle(p.tip.offsetX, p.tipWidth)}>
+          {p.tipNode}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+interface TrendLegendProps {
+  order: string[];
+  hidden: ReadonlySet<string>;
+  dirMode: boolean;
+  hiddenCount: number;
+  onToggle: (id: string) => void;
+}
+function TrendLegend(p: TrendLegendProps): React.ReactElement {
+  return (
+    <div
+      className="dou-trend-legend"
+      style={{
+        display: "flex",
+        flexWrap: "wrap",
+        gap: "4px 12px",
+        fontSize: 11,
+        color: "var(--dsw-alias-label-tertiary,#9aa0ab)",
+        marginBottom: 8,
+      }}
+    >
+      {p.order.map(function (id) {
+        const off = p.hidden.has(id);
+        const label = p.dirMode ? dirDisplayLabel(id) : id;
+        const title = p.dirMode
+          ? dirNeedsScopeNote(id)
+            ? t("trendDirUnidentifiedNote")
+            : dirDisplayLabel(id)
+          : undefined;
+        return (
+          <span
+            key={id}
+            role="switch"
+            aria-checked={!off}
+            title={title}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 4,
+              cursor: "pointer",
+              borderRadius: 4,
+              padding: "1px 4px",
+              opacity: off ? 0.38 : 1,
+              textDecoration: off ? "line-through" : "none",
+            }}
+            onClick={function () {
+              p.onToggle(id);
+            }}
+          >
+            <span
+              className="dou-trend-legendDot"
+              style={{
+                width: 8,
+                height: 8,
+                borderRadius: "50%",
+                flex: "none",
+                background: seriesColor(id),
+              }}
+            />
+            {label}
+          </span>
+        );
+      })}
+      <span style={{ fontSize: 10, opacity: 0.8 }}>
+        {p.hiddenCount > 0
+          ? t("trendHiddenParts", { k: String(p.hiddenCount) })
+          : t("trendLegendToggleHint")}
+      </span>
+    </div>
+  );
+}
+interface TrendSummaryProps {
+  total: number | null;
+  calls: number;
+  avg: number | null;
+  buckets: number;
+  gran: Gran;
+  deltaText: string | null;
+  deltaUp: boolean;
+  hint: string | null;
+  hiddenCount: number;
+  peakLabel: string;
+  peakValue: string;
+  topLabel: string;
+  topValue: string;
+}
+function TrendSummary(p: TrendSummaryProps): React.ReactElement {
+  const callsHint = p.hiddenCount > 0 ? t("trendHiddenParts", { k: String(p.hiddenCount) }) : null;
+  return (
+    <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
+      <SummaryCard
+        label={t("trendCardTotal")}
+        value={p.total === null ? "-" : fmtCompact(p.total)}
+        delta={p.deltaText}
+        up={p.deltaUp}
+        hint={p.hint}
+      />
+      <SummaryCard
+        label={t("trendCardAvg")}
+        value={p.avg === null ? "-" : fmtCompact(p.avg)}
+        hint={p.buckets + " " + granLabel(p.gran)}
+      />
+      <SummaryCard label={t("trendCardCalls")} value={fmtCompact(p.calls)} hint={callsHint} />
+      <SummaryCard label={p.peakLabel} value={p.peakValue} hint={t("trendCaliberNote")} />
+      <SummaryCard label={p.topLabel} value={p.topValue} />
+    </div>
+  );
+}
+const GRAN_LABEL_KEY_BY_GRAN: Record<Gran, string> = {
+  day: "trendGranDay",
+  week: "trendGranWeek",
+  month: "trendGranMonth",
+};
+interface TrendScInput {
+  data: TrendResponse | null;
+  gran: Gran;
+  range: number | null;
+  view: string | null;
+  dirFilter: string;
+  hidden: ReadonlySet<string>;
+  renderBars: RenderBar[];
+}
+function getTrendSc(v: TrendScInput): {
+  retentionDays: number;
+  effectiveRange: number;
+  effectiveView: string;
+  hasData: boolean;
+  providers: Array<{ provider: string; model: string | null }>;
+  dirs: Array<{ dir?: string | null }>;
+  dirMode: boolean;
+  hiddenCount: number;
+  showSummary: boolean;
+  deltaText: string | null;
+  deltaUp: boolean;
+  summaryHint: string | null;
+  peakLabel: string;
+  peakValue: string;
+  topLabel: string;
+  topValue: string;
+  total: number | null;
+  calls: number;
+  activeBuckets: number;
+  avg: number | null;
+  peakVal: number | null;
+} {
+  const retentionDays = v.data !== null ? v.data.retentionDays : 180;
+  const effectiveRange = v.range !== null ? v.range : trendDefaultRange(v.gran, retentionDays);
+  const effectiveView = v.view !== null ? v.view : v.gran === "month" ? "area" : "bar";
+  const hasData =
+    v.data !== null &&
+    v.data.series.some(function (p) {
+      return p.total !== null;
+    });
+  const summary = v.data !== null ? v.data.summary : null;
+  const providers = v.data !== null ? v.data.providers : [];
+  const dirs = v.data !== null && v.data.dirs !== undefined ? v.data.dirs : [];
+  const dirMode = isDirMode(v.data, v.dirFilter);
+  const hiddenCount = v.hidden.size;
+  const showSummary = hasData && summary !== null;
+  const delta = trendDelta(
+    summary !== null ? summary.total : null,
+    summary !== null ? summary.prevTotal : null,
+    summary !== null ? summary.prevComplete : true,
+  );
+  const deltaText = delta !== null ? delta.text : null;
+  const deltaUp = delta !== null ? delta.up : false;
+  const hasPartial = v.renderBars.some(function (b) {
+    return b.mark !== null;
+  });
+  const hintA = hasPartial ? t("trendPartialOngoing") : "";
+  const hintB = summary !== null && summary.prevComplete ? "" : t("trendPrevIncomplete");
+  const summaryHint =
+    hintA !== "" || hintB !== ""
+      ? hintA !== "" && hintB !== ""
+        ? hintA + "  ·  " + hintB
+        : hintA + hintB
+      : null;
+  const activeBuckets =
+    v.data !== null
+      ? v.data.series.filter(function (p) {
+          return p.total !== null;
+        }).length
+      : 0;
+  const total = summary !== null ? summary.total : null;
+  const calls = summary !== null ? summary.calls : 0;
+  const avg =
+    summary !== null && summary.total !== null && activeBuckets > 0
+      ? summary.total / activeBuckets
+      : null;
+  const peakVal =
+    summary !== null && summary.peakKey !== null && v.data !== null
+      ? findPeak(v.data.series, summary.peakKey)
+      : null;
+  const peakLabel =
+    summary !== null
+      ? t("trendCardPeak") +
+        "  ·  " +
+        (summary.peakKey === null ? "-" : fmtBucketHuman(summary.peakKey, v.gran))
+      : "";
+  const peakValue = peakVal === null ? "-" : fmtCompact(peakVal);
+  const topLabel = dirMode ? t("trendCardTopDir") : t("trendCardTop");
+  const topValue =
+    summary !== null && summary.top !== null
+      ? dirMode
+        ? dirDisplayLabel(summary.top.provider)
+        : summary.top.provider
+      : "-";
+  return {
+    retentionDays: retentionDays,
+    effectiveRange: effectiveRange,
+    effectiveView: effectiveView,
+    hasData: hasData,
+    providers: providers,
+    dirs: dirs,
+    dirMode: dirMode,
+    hiddenCount: hiddenCount,
+    showSummary: showSummary,
+    deltaText: deltaText,
+    deltaUp: deltaUp,
+    summaryHint: summaryHint,
+    peakLabel: peakLabel,
+    peakValue: peakValue,
+    topLabel: topLabel,
+    topValue: topValue,
+    total: total,
+    calls: calls,
+    activeBuckets: activeBuckets,
+    avg: avg,
+    peakVal: peakVal,
+  };
+}
+function findPeak(series: TrendResponse["series"], key: string): number | null {
+  const hit = series.find(function (p) {
+    return p.key === key;
+  });
+  return hit !== undefined && hit.total !== null ? hit.total : null;
+}
 
 /** 「使用趋势」区块（SettingsPage 顶部；底部附加内容已按用户反馈删除，界面保持整洁）。 */
+interface TrendChInput {
+  hasData: boolean;
+  data: TrendResponse | null;
+  viewSeries: TrendResponse["series"];
+  renderBars: RenderBar[];
+  ticks: number[];
+  stackOrder: string[];
+  hidden: ReadonlySet<string>;
+  tip: { idx: number; offsetX: number } | null;
+  gran: Gran;
+  effectiveView: string;
+  dirMode: boolean;
+  chartRef: React.MutableRefObject<HTMLDivElement | null>;
+}
+function getTrendChart(v: TrendChInput): {
+  showLegend: boolean;
+  tipBar: RenderBar | null;
+  tipNode: React.ReactElement | null;
+  svgHtml: string;
+  tipWidth: number;
+} {
+  const showLegend = v.hasData && v.data !== null && v.stackOrder.length > 0;
+  const tipIdx = v.tip !== null && v.renderBars[v.tip.idx] !== undefined ? v.tip.idx : null;
+  const tipBar = tipIdx !== null ? v.renderBars[tipIdx] : null;
+  const tipPoint = v.viewSeries.length > 0 && tipIdx !== null ? v.viewSeries[tipIdx] : null;
+  const showTip = tipBar !== null && tipPoint !== null && v.tip !== null;
+  const tipNode =
+    showTip && tipBar !== null && tipPoint !== null
+      ? renderTip(
+          tipBar,
+          tipPoint,
+          v.gran,
+          v.data !== null && v.data.byModel === true ? true : false,
+          v.hidden,
+          v.dirMode,
+        )
+      : null;
+  const svgHtml =
+    v.effectiveView === "area"
+      ? stackedAreasSvg({
+          bars: v.renderBars,
+          gran: v.gran,
+          ticks: v.ticks,
+          stackOrder: v.stackOrder,
+        })
+      : stackedBarsSvg({ bars: v.renderBars, gran: v.gran, ticks: v.ticks });
+  const tipWidth =
+    v.chartRef.current !== null && v.chartRef.current.clientWidth !== undefined
+      ? v.chartRef.current.clientWidth
+      : 0;
+  return {
+    showLegend: showLegend,
+    tipBar: tipBar,
+    tipNode: tipNode,
+    svgHtml: svgHtml,
+    tipWidth: tipWidth,
+  };
+}
 export function TrendSection(): React.ReactElement {
   const [gran, setGran] = React.useState<Gran>("day");
   const [range, setRange] = React.useState<number | null>(null); // null=按粒度默认（trendDefaultRange）
@@ -233,7 +765,6 @@ export function TrendSection(): React.ReactElement {
 
   const retentionDays = data?.retentionDays ?? 180;
   const effectiveRange = range ?? trendDefaultRange(gran, retentionDays);
-  const effectiveView: "bar" | "area" = view ?? (gran === "month" ? "area" : "bar");
 
   React.useEffect(() => {
     let alive = true;
@@ -272,9 +803,6 @@ export function TrendSection(): React.ReactElement {
       alive = false;
     };
   }, [gran, metric, provider, byModel, dirFilter, effectiveRange]);
-
-  const hasData = data !== null && data.series.some((p) => p.total !== null);
-  const summary = data?.summary ?? null;
 
   // 目录维度生效判定（纯函数 isDirMode：viewSeries 归一/汇总卡/图例/tooltip 据此分面）。
   const dirMode = isDirMode(data, dirFilter);
@@ -363,379 +891,162 @@ export function TrendSection(): React.ReactElement {
     setTip({ idx, offsetX: e.clientX - rect.left });
   };
 
-  const tipIdx = tip !== null && renderBars[tip.idx] !== undefined ? tip.idx : null;
-  const tipBar = tipIdx !== null ? renderBars[tipIdx] : null;
-  const tipPoint = viewSeries.length > 0 && tipIdx !== null ? viewSeries[tipIdx] : null;
-  const hiddenCount = hidden.size;
-
-  // 汇总卡值（窗口摘要）
-  const delta = trendDelta(
-    summary?.total ?? null,
-    summary?.prevTotal ?? null,
-    summary?.prevComplete ?? true,
-  );
-  const hasPartial = renderBars.some((b) => b.mark !== null);
-  const activeBuckets = data?.series.filter((p) => p.total !== null).length ?? 0;
-  const avg =
-    summary !== null && summary.total !== null && activeBuckets > 0
-      ? summary.total / activeBuckets
-      : null;
-  const peakVal =
-    summary?.peakKey != null && data !== null
-      ? (data.series.find((p) => p.key === summary.peakKey)?.total ?? null)
-      : null;
-
+  const sc = getTrendSc({
+    data: data,
+    gran: gran,
+    range: range,
+    view: view,
+    dirFilter: dirFilter,
+    hidden: hidden,
+    renderBars: renderBars,
+  });
+  const ch = getTrendChart({
+    hasData: sc.hasData,
+    data: data,
+    viewSeries: viewSeries,
+    renderBars: renderBars,
+    ticks: ticks,
+    stackOrder: stackOrder,
+    hidden: hidden,
+    tip: tip,
+    gran: gran,
+    effectiveView: sc.effectiveView,
+    dirMode: dirMode,
+    chartRef: chartRef,
+  });
+  const onGran = function (v: Gran): void {
+    setGran(v);
+    setRange(null);
+    setView(null);
+    setHidden(new Set());
+    setTip(null);
+  };
+  const onRange = function (v: number): void {
+    setRange(v);
+    setTip(null);
+  };
+  const onMetric = function (v: string): void {
+    setMetric(v);
+    setTip(null);
+  };
+  const onProvider = function (v: string): void {
+    setProvider(v);
+    setDirFilter("");
+    if (v === "") {
+      setByModel(false);
+    }
+    setHidden(new Set());
+    setTip(null);
+  };
+  const onDir = function (v: string): void {
+    setDirFilter(v);
+    setProvider("");
+    setHidden(new Set());
+    setTip(null);
+  };
+  const onByModel = function (v: boolean): void {
+    setByModel(v);
+    setHidden(new Set());
+    setTip(null);
+  };
+  const onView = function (v: string): void {
+    setView(v as "bar" | "area");
+    setTip(null);
+  };
+  const onToggleHidden = function (id: string): void {
+    setHidden(function (prev) {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+    setTip(null);
+  };
+  const onTipClear = function (): void {
+    setTip(null);
+  };
+  const onPointerMove = function (e: { pointerType: string }): void {
+    if (e.pointerType === "mouse") {
+      onChartPointer(e as Parameters<typeof onChartPointer>[0]);
+    }
+  };
   return (
     <section className="dou-trend dou-pane" style={{ marginBottom: 16 }}>
-      {/* 标题行 */}
       <h2 style={{ fontSize: 13, fontWeight: 600, margin: "0 0 8px" }}>{t("trendTitle")}</h2>
-      {/* 控件行：粒度 × 范围 × 指标 × 适配器 × byModel × 形态 */}
-      <div
-        style={{
-          display: "flex",
-          flexWrap: "wrap",
-          gap: 8,
-          alignItems: "center",
-          marginBottom: 10,
-        }}
-      >
-        <SegGroup
-          label={t("trendGranularity")}
-          items={
-            [
-              ["day", t("trendGranDay")],
-              ["week", t("trendGranWeek")],
-              ["month", t("trendGranMonth")],
-            ] as Array<[string, string]>
-          }
-          value={gran}
-          onPick={(v: string) => {
-            setGran(v as Gran);
-            setRange(null); // 切粒度重置为该粒度默认（方案 §3.2）
-            setView(null);
-            setHidden(new Set());
-            setTip(null);
-          }}
+      <TrendControls
+        gran={gran}
+        retentionDays={sc.retentionDays}
+        effectiveRange={sc.effectiveRange}
+        metric={metric}
+        provider={provider}
+        byModel={byModel}
+        dirFilter={dirFilter}
+        effectiveView={sc.effectiveView}
+        providers={sc.providers}
+        dirs={sc.dirs}
+        onGran={onGran}
+        onRange={onRange}
+        onMetric={onMetric}
+        onProvider={onProvider}
+        onDir={onDir}
+        onByModel={onByModel}
+        onView={onView}
+      />
+      {sc.showSummary ? (
+        <TrendSummary
+          total={sc.total}
+          calls={sc.calls}
+          avg={sc.avg}
+          buckets={sc.activeBuckets}
+          gran={gran}
+          deltaText={sc.deltaText}
+          deltaUp={sc.deltaUp}
+          hint={sc.summaryHint}
+          hiddenCount={sc.hiddenCount}
+          peakLabel={sc.peakLabel}
+          peakValue={sc.peakValue}
+          topLabel={sc.topLabel}
+          topValue={sc.topValue}
         />
-        <SegGroup
-          label={t("trendRangeLabel")}
-          items={trendRangeOptions(gran, retentionDays).map(
-            (n) => [String(n), t(unitKeyOf(gran), { n: String(n) })] as [string, string],
-          )}
-          value={String(effectiveRange)}
-          mini={true}
-          onPick={(v: string) => {
-            setRange(Number(v));
-            setTip(null);
-          }}
-        />
-        <select
-          style={selectStyle}
-          value={metric}
-          aria-label={t("trendMetricLabel")}
-          onChange={(e: unknown) => {
-            setMetric((e as { target: { value: string } }).target.value);
-            setTip(null);
-          }}
-        >
-          {(
-            [
-              ["total", t("trendMetricTotal")],
-              ["input", t("trendMetricInput")],
-              ["output", t("trendMetricOutput")],
-              ["cacheRead", t("trendMetricCacheRead")],
-              ["cacheWrite", t("trendMetricCacheWrite")],
-              ["calls", t("trendMetricCalls")],
-            ] as Array<[string, string]>
-          ).map(([v, label]) => (
-            <option key={v} value={v}>
-              {label}
-            </option>
-          ))}
-        </select>
-        <select
-          style={selectStyle}
-          value={provider}
-          aria-label={t("trendAdapterLabel")}
-          onChange={(e: unknown) => {
-            const value = (e as { target: { value: string } }).target.value;
-            setProvider(value);
-            setDirFilter(""); // 两维互斥联动：选适配器即退出目录面
-            if (value === "") setByModel(false);
-            setHidden(new Set());
-            setTip(null);
-          }}
-        >
-          <option value="">{t("trendAdapterAll")}</option>
-          {(data?.providers ?? []).map((p) => (
-            // option children 是文本节点：React 自动转义，provider 名无需手工 escHtml
-            <option key={p.provider + "/" + (p.model ?? "")} value={p.provider}>
-              {p.provider}
-            </option>
-          ))}
-        </select>
-        {/* 目录筛选下拉——「全部目录」（byDir 全目录拆段面）+
-            各目录 + 未识别桶（dirs 数据源；与既有 metric/adapter 控件同级同风格 select）。
-            可见性 = shouldShowDirSelect（未选适配器恒可见；旧渲染条件 dirMode
-            恒真致下拉仅加载瞬间闪现不可达）。选目录即清适配器（两维互斥联动），
-            交叉面在请求参数层已被 trendRequestParams 杜绝。 */}
-        {shouldShowDirSelect(provider) ? (
-          <select
-            style={selectStyle}
-            value={dirFilter}
-            aria-label={t("trendDirLabel")}
-            onChange={(e: unknown) => {
-              setDirFilter((e as { target: { value: string } }).target.value);
-              setProvider(""); // 两维互斥联动：选目录即退回「全部适配器」
-              setHidden(new Set());
-              setTip(null);
-            }}
-          >
-            <option value="">{t("trendDirAll")}</option>
-            {(data?.dirs ?? []).map((d) => {
-              const key = dirStackId(d.dir);
-              // 未识别桶恒为「未识别」有标签条目；异常空值归未识别不渲染空标签
-              return (
-                <option key={key} value={key}>
-                  {dirDisplayLabel(key)}
-                </option>
-              );
-            })}
-          </select>
-        ) : null}
-        {shouldShowByModel(provider, dirFilter) ? (
-          <label style={{ fontSize: 12, display: "inline-flex", alignItems: "center", gap: 4 }}>
-            <input
-              type="checkbox"
-              checked={byModel}
-              onChange={(e: unknown) => {
-                setByModel((e as { target: { checked: boolean } }).target.checked);
-                setHidden(new Set());
-                setTip(null);
-              }}
-            />
-            {t("trendByModel")}
-          </label>
-        ) : null}
-        <SegGroup
-          label={t("trendViewLabel")}
-          items={
-            [
-              ["bar", t("trendViewBar")],
-              ["area", t("trendViewArea")],
-            ] as Array<[string, string]>
-          }
-          value={effectiveView}
-          mini={true}
-          onPick={(v: string) => {
-            setView(v as "bar" | "area");
-            setTip(null);
-          }}
-        />
-        <span
-          style={{
-            fontSize: 11,
-            color: "var(--dsw-alias-label-tertiary,#9aa0ab)",
-            marginLeft: "auto",
-          }}
-        >
-          {t(unitKeyOf(gran), { n: String(effectiveRange) })}
-        </span>
-      </div>
-      {/* 汇总卡（有数据才显；空态聚焦行动邀请） */}
-      {hasData && summary !== null && data !== null ? (
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
-          <SummaryCard
-            label={t("trendCardTotal")}
-            value={summary.total === null ? "-" : fmtCompact(summary.total)}
-            delta={delta?.text ?? null}
-            up={delta?.up ?? false}
-            hint={
-              [
-                hasPartial ? t("trendPartialOngoing") : "",
-                summary.prevComplete ? "" : t("trendPrevIncomplete"),
-              ]
-                .filter(Boolean)
-                .join(" · ") || null
-            }
-          />
-          <SummaryCard
-            label={t("trendCardAvg")}
-            value={avg === null ? "-" : fmtCompact(avg)}
-            hint={`${activeBuckets} ${granLabel(gran)}`}
-          />
-          <SummaryCard
-            label={t("trendCardCalls")}
-            value={fmtCompact(summary.calls)}
-            hint={hiddenCount > 0 ? t("trendHiddenParts", { k: String(hiddenCount) }) : null}
-          />
-          <SummaryCard
-            label={`${t("trendCardPeak")} · ${summary.peakKey === null ? "-" : fmtBucketHuman(summary.peakKey, gran)}`}
-            value={peakVal === null ? "-" : fmtCompact(peakVal)}
-            hint={t("trendCaliberNote")}
-          />
-          {/* 目录面 Top 汇总卡用目录面标签（trendCardTopDir），与 dirDisplayLabel
-              消费同面；adapter 面沿用「Top 适配器」不变 */}
-          <SummaryCard
-            label={dirMode ? t("trendCardTopDir") : t("trendCardTop")}
-            value={
-              summary.top === null
-                ? "-"
-                : dirMode
-                  ? dirDisplayLabel(summary.top.provider)
-                  : summary.top.provider
-            }
-          />
-        </div>
       ) : null}
-      {/* 图例（窗口总量降序；点选显隐）。目录面图例条目经
-          dirDisplayLabel——未识别桶恒为「未识别」并 title 注明口径，异常值
-          不渲染空标签；具名目录 title 同源净化标签（原键含控制字符
-          残留可能，可见文本与 title 统一走 dirDisplayLabel）。 */}
-      {hasData && data !== null && stackOrder.length > 0 ? (
-        <div
-          className="dou-trend-legend"
-          style={{
-            display: "flex",
-            flexWrap: "wrap",
-            gap: "4px 12px",
-            fontSize: 11,
-            color: "var(--dsw-alias-label-tertiary,#9aa0ab)",
-            marginBottom: 8,
-          }}
-        >
-          {stackOrder.map((id) => {
-            const off = hidden.has(id);
-            // 目录面段 id = 目录键本身（dirStackId 归一后）；provider 面 id 原样展示
-            const label = dirMode ? dirDisplayLabel(id) : id;
-            // 目录面 title 与可见文本同源净化（未识别=口径注释；具名=净化标签）
-            const title = dirMode
-              ? dirNeedsScopeNote(id)
-                ? t("trendDirUnidentifiedNote")
-                : dirDisplayLabel(id)
-              : undefined;
-            return (
-              <span
-                key={id}
-                role="switch"
-                aria-checked={!off}
-                title={title}
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 4,
-                  cursor: "pointer",
-                  borderRadius: 4,
-                  padding: "1px 4px",
-                  opacity: off ? 0.38 : 1,
-                  textDecoration: off ? "line-through" : "none",
-                }}
-                onClick={() => {
-                  setHidden((prev) => {
-                    const next = new Set(prev);
-                    if (next.has(id)) next.delete(id);
-                    else next.add(id);
-                    return next;
-                  });
-                  setTip(null);
-                }}
-              >
-                <span
-                  className="dou-trend-legendDot"
-                  style={{
-                    width: 8,
-                    height: 8,
-                    borderRadius: "50%",
-                    flex: "none",
-                    background: seriesColor(id),
-                  }}
-                />
-                {label}
-              </span>
-            );
-          })}
-          <span style={{ fontSize: 10, opacity: 0.8 }}>
-            {hiddenCount > 0
-              ? t("trendHiddenParts", { k: String(hiddenCount) })
-              : t("trendLegendToggleHint")}
-          </span>
-        </div>
+      {ch.showLegend ? (
+        <TrendLegend
+          order={stackOrder}
+          hidden={hidden}
+          dirMode={dirMode}
+          hiddenCount={sc.hiddenCount}
+          onToggle={onToggleHidden}
+        />
       ) : null}
-      {/* 图表 / 空态 / 错误 */}
-      {failed ? (
-        <div
-          style={{
-            fontSize: 12,
-            color: "var(--dsw-alias-state-error-primary,#d64545)",
-            padding: "12px 0",
-          }}
-        >
-          {t("trendFetchFail")}
-        </div>
-      ) : hasData && data !== null ? (
-        <div
-          ref={chartRef}
-          className="dou-trend-chart"
-          style={{
-            position: "relative",
-            opacity: loading ? 0.45 : 1,
-            transition: "opacity .15s ease",
-            pointerEvents: loading ? "none" : "auto",
-          }}
-          aria-busy={loading}
-          // 数据源为本插件宿主端聚合 JSON；SVG 字符串内 provider 名/键均经 escHtml 转义，
-          // tooltip 走 React 文本节点（自动转义），provider 名不进 dangerouslySetInnerHTML
-          onPointerDown={onChartPointer}
-          onPointerMove={(e: { pointerType: string }) => {
-            if (e.pointerType === "mouse")
-              onChartPointer(e as Parameters<typeof onChartPointer>[0]);
-          }}
-          onPointerLeave={() => setTip(null)}
-        >
-          <div
-            className="dou-trend-svg"
-            dangerouslySetInnerHTML={{
-              __html:
-                effectiveView === "area"
-                  ? stackedAreasSvg({ bars: renderBars, gran, ticks, stackOrder })
-                  : stackedBarsSvg({ bars: renderBars, gran, ticks }),
-            }}
-          />
-          {tipBar !== null && tipPoint !== null && tip !== null ? (
-            <div
-              className="dou-trend-tip"
-              style={tipStyle(tip.offsetX, chartRef.current?.clientWidth ?? 0)}
-            >
-              {renderTip(tipBar, tipPoint, gran, data.byModel, hidden, dirMode)}
-            </div>
-          ) : null}
-        </div>
-      ) : (
-        <div
-          style={{
-            padding: "22px 14px",
-            textAlign: "center",
-            border: "1px dashed var(--dsw-alias-border-l2,#e8eaf0)",
-            borderRadius: 8,
-            fontSize: 12,
-            color: "var(--dsw-alias-label-tertiary,#9aa0ab)",
-          }}
-        >
-          <div style={{ marginBottom: 4 }}>{t("trendEmptyTitle")}</div>
-          <div>{t("trendEmptyHint")}</div>
-        </div>
-      )}
+      <TrendChart
+        failed={failed}
+        empty={!sc.hasData}
+        loading={loading}
+        view={sc.effectiveView}
+        bars={renderBars}
+        gran={gran}
+        ticks={ticks}
+        order={stackOrder}
+        tip={tip}
+        tipBar={ch.tipBar}
+        tipNode={ch.tipNode}
+        tipWidth={ch.tipWidth}
+        chartRef={chartRef}
+        onDown={onChartPointer}
+        onMove={onPointerMove}
+        onLeave={onTipClear}
+        svgHtml={ch.svgHtml}
+      />
     </section>
   );
 }
 
 /** 粒度人话（汇总卡「日均」hint 单位）。 */
 function granLabel(gran: Gran): string {
-  return gran === "day"
-    ? t("trendGranDay")
-    : gran === "week"
-      ? t("trendGranWeek")
-      : t("trendGranMonth");
+  return t(GRAN_LABEL_KEY_BY_GRAN[gran] ?? "trendGranMonth");
 }
 
 /** 本地日 key（客户端侧边缘桶判定用；与宿主 dayKey 同语义——本地时区逐字段取）。 */

@@ -292,6 +292,52 @@ function PromptEditor(props: {
 
 /** 「用量报告」区块（SettingsPage 子区块；历史归独立页）。
  * onGeneratedRow：生成成功后由壳切历史页并展开对应行（Q4）。 */
+function getReportDirty(
+  draft: ReportConfigView | null,
+  baseline: ReportConfigView | null,
+): { schedule: boolean; routing: boolean; prompts: boolean; any: boolean } {
+  const schedule = draft !== null && baseline !== null && isScheduleDirty(draft, baseline);
+  const routing =
+    draft !== null &&
+    baseline !== null &&
+    isRoutingDirty(
+      {
+        provider: draft.provider,
+        model: draft.model,
+        directories: draft.directories,
+        push: draft.push,
+      },
+      {
+        provider: baseline.provider,
+        model: baseline.model,
+        directories: baseline.directories,
+        push: baseline.push,
+      },
+    );
+  const prompts =
+    draft !== null && baseline !== null && isPromptsDirty(draft.prompts, baseline.prompts);
+  return {
+    schedule: schedule,
+    routing: routing,
+    prompts: prompts,
+    any: schedule || routing || prompts,
+  };
+}
+function ReportFetchFail(p: { failed: boolean }): React.ReactElement | null {
+  if (!p.failed) {
+    return null;
+  }
+  return <div className="dou-reportFetchFail">{t("reportFetchFail")}</div>;
+}
+function ReportSaveHint(p: { state: string }): React.ReactElement | null {
+  if (p.state === "saved") {
+    return <span className="dou-reportSaved">{t("reportSaved")}</span>;
+  }
+  if (p.state === "fail") {
+    return <span className="dou-reportSaveFail">{t("reportSaveFail", { msg: "HTTP error" })}</span>;
+  }
+  return null;
+}
 export function ReportSection(props: {
   onGeneratedRow: (m: ReportMetaView) => void;
 }): React.ReactElement {
@@ -593,27 +639,7 @@ export function ReportSection(props: {
   const failed = configFailed;
 
   // ---- P0 折叠摘要与脏状态（基线 null = 尚未载入已保存配置，不标脏） ----
-  const scheduleDirty = draft !== null && baseline !== null && isScheduleDirty(draft, baseline);
-  const routingDirty =
-    draft !== null &&
-    baseline !== null &&
-    isRoutingDirty(
-      {
-        provider: draft.provider,
-        model: draft.model,
-        directories: draft.directories,
-        push: draft.push,
-      },
-      {
-        provider: baseline.provider,
-        model: baseline.model,
-        directories: baseline.directories,
-        push: baseline.push,
-      },
-    );
-  const promptsDirty =
-    draft !== null && baseline !== null && isPromptsDirty(draft.prompts, baseline.prompts);
-  const anyDirty = scheduleDirty || routingDirty || promptsDirty;
+  const dirty = getReportDirty(draft, baseline);
   const scheduleSummary =
     draft === null
       ? ""
@@ -653,7 +679,7 @@ export function ReportSection(props: {
     <section className="dou-report dou-reportGlass" style={{ marginBottom: 16 }}>
       <div className="dou-reportHead">
         <h2 style={{ fontSize: 13, fontWeight: 600, margin: 0 }}>{t("reportTitle")}</h2>
-        {anyDirty ? <span className="dou-reportDirty">{t("reportUnsaved")}</span> : null}
+        {dirty.any ? <span className="dou-reportDirty">{t("reportUnsaved")}</span> : null}
         <span className="dou-reportHeadSpacer" />
         <button
           type="button"
@@ -679,13 +705,9 @@ export function ReportSection(props: {
             {t("reportSave")}
           </button>
         ) : null}
-        {saveState === "saved" ? (
-          <span className="dou-reportSaved">{t("reportSaved")}</span>
-        ) : saveState === "fail" ? (
-          <span className="dou-reportSaveFail">{t("reportSaveFail", { msg: "HTTP error" })}</span>
-        ) : null}
+        {<ReportSaveHint state={saveState} />}
       </div>
-      {failed ? <div className="dou-reportFetchFail">{t("reportFetchFail")}</div> : null}
+      {<ReportFetchFail failed={failed} />}
       {/* ---- 配置四区（各自独立展开收起；历史为独立页） ---- */}
       {draft !== null ? (
         <div className="dou-reportSections">
@@ -693,7 +715,7 @@ export function ReportSection(props: {
             id="schedule"
             title={t("reportSectionSchedule")}
             summary={scheduleSummary}
-            dirty={scheduleDirty}
+            dirty={dirty.schedule}
             open={openSections.schedule}
             onToggle={toggleSection}
           >
@@ -771,7 +793,7 @@ export function ReportSection(props: {
             id="routing"
             title={t("reportSectionRouting")}
             summary={routingSummary}
-            dirty={routingDirty}
+            dirty={dirty.routing}
             open={openSections.routing}
             onToggle={toggleSection}
           >
@@ -955,7 +977,7 @@ export function ReportSection(props: {
             id="prompts"
             title={t("reportSectionPrompts")}
             summary={promptSummary}
-            dirty={promptsDirty}
+            dirty={dirty.prompts}
             open={openSections.prompts}
             onToggle={toggleSection}
           >
