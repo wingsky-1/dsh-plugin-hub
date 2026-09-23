@@ -17,6 +17,7 @@ import {
   renameSync,
   rmSync,
   statSync,
+  symlinkSync,
   unlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -294,6 +295,42 @@ describe("F17 isManagedPath 口径", () => {
   it("界外路径 → false", () => {
     expect(isManagedPath("/tmp/dsh-930-outside.pem")).toBe(false);
   });
+  it("符号链接逃逸界外 → false（realpath 收敛，非字符串前缀）", () => {
+    const triple = managedTriple();
+    writeTriple(triple);
+    const outside = join(home, "outside.pem");
+    writeFileSync(outside, "OUT");
+    rmSync(triple.ca);
+    symlinkSync(outside, triple.ca);
+    expect(isManagedPath(triple.ca)).toBe(false);
+    expect(
+      classifyCaState({
+        tlsCaCertFile: triple.ca,
+        tlsCertFile: triple.cert,
+        tlsKeyFile: triple.key,
+      }),
+    ).toBe("error");
+  });
+  it("前缀兄弟目录（<certs>-evil）→ custom（sep 边界，非纯前缀）", () => {
+    const evilDir = certsDir() + "-evil";
+    mkdirSync(evilDir, { recursive: true });
+    const triple = {
+      ca: join(evilDir, "ca-cert.pem"),
+      cert: join(evilDir, "leaf-cert.pem"),
+      key: join(evilDir, "leaf-key.pem"),
+    };
+    writeFileSync(triple.ca, "PEM");
+    writeFileSync(triple.cert, "PEM");
+    writeFileSync(triple.key, "PEM");
+    expect(isManagedPath(triple.ca)).toBe(false);
+    expect(
+      classifyCaState({
+        tlsCaCertFile: triple.ca,
+        tlsCertFile: triple.cert,
+        tlsKeyFile: triple.key,
+      }),
+    ).toBe("custom");
+  });
 });
 
 describe("F16 围栏与 F19 码表", () => {
@@ -337,6 +374,14 @@ describe("F16 围栏与 F19 码表", () => {
       expect((r.body as { error: { code: string } }).error.code).toBe("ca-revision-stale");
       expect((r.body as { error: { details: string } }).error.details).toContain("请刷新后重试");
     }
+  });
+  it("非整数 revision（1.5）同样 409 stale（Number.isInteger 门控）", async () => {
+    const { deps } = makeDeps();
+    const r = await callAction(deps, {
+      body: { confirmed: true, expectedRevision: 1.5 },
+    });
+    expect(r.status).toBe(409);
+    expect((r.body as { error: { code: string } }).error.code).toBe("ca-revision-stale");
   });
   it("custom 即使带 confirmed 仍 409（服务端门控，curl 不可绕过）", async () => {
     const { deps } = makeDeps({
@@ -419,6 +464,18 @@ describe("首建与轮换编排", () => {
     expect(r.body).toEqual({ ok: true, mode: "ca-rotated" });
     expect(readFileSync(managedTriple().ca, "utf8")).not.toBe(beforeCa);
   });
+  it("托管 + rotateCa 非 true（字符串）→ 仍 leaf-rotated（只认 === true）", async () => {
+    const first = makeDeps();
+    await callAction(first.deps, { body: { expectedRevision: 1 } });
+    const beforeCa = readFileSync(managedTriple().ca, "utf8");
+    const second = makeDeps({ scopeUser: first.scope.user() });
+    const r = await callAction(second.deps, {
+      body: { confirmed: true, rotateCa: "yes", expectedRevision: 1 },
+    });
+    expect(r.status).toBe(200);
+    expect(r.body).toEqual({ ok: true, mode: "leaf-rotated" });
+    expect(readFileSync(managedTriple().ca, "utf8")).toBe(beforeCa);
+  });
   it(".bak 只留最近 1 个（连续轮换不堆积）", async () => {
     const first = makeDeps();
     await callAction(first.deps, { body: { expectedRevision: 1 } });
@@ -477,6 +534,36 @@ describe("首建与轮换编排", () => {
     expect(readFileSync(join(dir, "ca-cert.pem"), "utf8")).toBe("STALE");
     expect(existsSync(join(dir, "ca-key.pem"))).toBe(false);
     expect(readdirSync(dir).filter((n) => n.endsWith(".bak")).length).toBe(0);
+  });
+  it("回滚搬回亦失败 → 仍 500 + 回滚失败日志（内层 best-effort 不掩盖原错）", async () => {
+    const triple = managedTriple();
+    writeTriple(triple, "STALE");
+    let renameCalls = 0;
+    let unlinkFailedOnce = false;
+    const flakyFs = {
+      renameSync: (from: string, to: string) => {
+        renameCalls += 1;
+        // 第 4 次即第三目标备份搬移失败（done=[t1,t2]，回滚逆序先 t2 后 t1）。
+        if (renameCalls === 4) throw new Error("staged rename failure");
+        renameSync(from, to);
+      },
+      readdirSync,
+      unlinkSync: (path: string) => {
+        // t2（无 .bak 的新文件）回滚删除失败 → 记日志继续搬回 t1。
+        if (!unlinkFailedOnce && path.endsWith("ca-key.pem")) {
+          unlinkFailedOnce = true;
+          throw new Error("staged unlink failure");
+        }
+        unlinkSync(path);
+      },
+    };
+    const { deps, warnings } = makeDeps({ fs: flakyFs });
+    const r = await callAction(deps, { body: { confirmed: true, expectedRevision: 1 } });
+    expect(r.status).toBe(500);
+    expect((r.body as { error: { code: string } }).error.code).toBe("ca-generate-failed");
+    expect(warnings.some((w) => w.includes("回滚失败"))).toBe(true);
+    expect(readFileSync(triple.ca, "utf8")).toBe("STALE");
+    expect(existsSync(join(certsDir(), "ca-key.pem"))).toBe(true);
   });
   it("既存宽松 certs/ 目录动作后收敛 0700（P1-2）", async () => {
     mkdirSync(certsDir(), { recursive: true, mode: 0o755 });

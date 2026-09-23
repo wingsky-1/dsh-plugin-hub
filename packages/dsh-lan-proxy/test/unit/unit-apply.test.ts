@@ -1533,11 +1533,23 @@ describe("变异加固块（round=3 CI 回归：迁移重放/路由面/校验分
             resumed: false,
           },
         },
+        {
+          name: "scalar",
+          raw: "5",
+          expected: {
+            performed: true,
+            migrated: false,
+            rolledBack: false,
+            skippedCorrupt: true,
+            resumed: false,
+          },
+        },
       ];
       const records: Array<{
         out: Awaited<ReturnType<typeof migrateFileConfig>>;
         bakExists: boolean;
         updates: unknown[];
+        warns: string[];
       }> = [];
 
       beforeAll(async () => {
@@ -1545,12 +1557,16 @@ describe("变异加固块（round=3 CI 回归：迁移重放/路由面/校验分
           const dir = mkdtempSync(join(tmpdir(), `dsh-lan-proxy-mut-${name}-`));
           writeFileSync(join(dir, "config.json"), raw);
           const scope = okScope();
-          const out = await migrateFileConfig(dir, scope);
+          const warns: string[] = [];
+          const out = await migrateFileConfig(dir, scope, {
+            warn: (...a: unknown[]) => warns.push(a.map(String).join(" ")),
+          });
           // bak 标记必须在 rmSync 之前观测（目录随即被回收）
           records.push({
             out,
             bakExists: existsSync(join(dir, MIGRATED_BAK_NAME)),
             updates: scope.updates,
+            warns,
           });
           rmSync(dir, { recursive: true, force: true });
         }
@@ -1570,6 +1586,37 @@ describe("变异加固块（round=3 CI 回归：迁移重放/路由面/校验分
         expect(records[0].updates).toEqual([{ port: 4082 }]);
       });
 
+      it("损坏 JSON warn 指明仅标记不写入", () => {
+        expect(records[1].warns.some((w) => w.includes("不是合法 JSON"))).toBe(true);
+      });
+
+      it("非对象 JSON warn 指明不是配置对象", () => {
+        expect(records[5].warns.some((w) => w.includes("不是配置对象"))).toBe(true);
+      });
+
+      it("非法值 warn 指明含非法配置值", () => {
+        expect(records[3].warns.some((w) => w.includes("含非法配置值"))).toBe(true);
+      });
+
+      it("旧默认压缩白名单迁移归一化到新默认（端到端行为锚）", async () => {
+        const dir = mkdtempSync(join(tmpdir(), "dsh-lan-proxy-mut-wslegacy-"));
+        try {
+          writeFileSync(
+            join(dir, "config.json"),
+            JSON.stringify({
+              port: 4082,
+              wsCompressPaths: ["/api/events.mux", "/api/events.host"],
+            }),
+          );
+          const scope = okScope();
+          const out = await migrateFileConfig(dir, scope);
+          expect(out.migrated).toBe(true);
+          expect(scope.updates).toEqual([{ port: 4082, wsCompressPaths: ["/api/remote.mux"] }]);
+        } finally {
+          rmSync(dir, { recursive: true, force: true });
+        }
+      });
+
       const titledNoWrite = cases
         .slice(1)
         .map((c) => ({ title: `case=${c.name} 不写入`, i: cases.indexOf(c) }));
@@ -1582,15 +1629,20 @@ describe("变异加固块（round=3 CI 回归：迁移重放/路由面/校验分
     describe("C3: 写入失败回滚", () => {
       let out!: Awaited<ReturnType<typeof migrateFileConfig>>;
       let configRestored = false;
+      const warns: string[] = [];
 
       beforeAll(async () => {
         const dir = mkdtempSync(join(tmpdir(), "dsh-lan-proxy-mut-rollback-"));
         writeFileSync(join(dir, "config.json"), JSON.stringify({ port: 4083 }));
-        out = await migrateFileConfig(dir, {
-          async update() {
-            throw new Error("io");
+        out = await migrateFileConfig(
+          dir,
+          {
+            async update() {
+              throw new Error("io");
+            },
           },
-        });
+          { warn: (...a: unknown[]) => warns.push(a.map(String).join(" ")) },
+        );
         configRestored = existsSync(join(dir, "config.json"));
         rmSync(dir, { recursive: true, force: true });
       });
@@ -1608,6 +1660,10 @@ describe("变异加固块（round=3 CI 回归：迁移重放/路由面/校验分
       it("回滚后 config.json 还原", () => {
         expect(configRestored).toBe(true);
       });
+
+      it("写入失败 warn 指明已回滚下次重试", () => {
+        expect(warns.some((w) => w.includes("已回滚"))).toBe(true);
+      });
     });
 
     // C4: 中断重放四分支（成功/损坏 bak/无效 bak/update 失败），resumed=true。
@@ -1619,7 +1675,10 @@ describe("变异加固块（round=3 CI 回归：迁移重放/路由面/校验分
       ];
       let good!: Awaited<ReturnType<typeof migrateFileConfig>>;
       let goodUpdates: unknown[] = [];
-      const badRecords: Array<{ out: Awaited<ReturnType<typeof migrateFileConfig>> }> = [];
+      const badRecords: Array<{
+        out: Awaited<ReturnType<typeof migrateFileConfig>>;
+        warns: string[];
+      }> = [];
       let failOut!: Awaited<ReturnType<typeof migrateFileConfig>>;
       let failBakKept = false;
 
@@ -1634,8 +1693,11 @@ describe("变异加固块（round=3 CI 回归：迁移重放/路由面/校验分
         for (const { raw } of badBakCases) {
           const dir = mkdtempSync(join(tmpdir(), "dsh-lan-proxy-mut-resume-bad-"));
           writeFileSync(join(dir, MIGRATED_BAK_NAME), raw);
-          const out = await migrateFileConfig(dir, okScope());
-          badRecords.push({ out });
+          const warns: string[] = [];
+          const out = await migrateFileConfig(dir, okScope(), {
+            warn: (...a: unknown[]) => warns.push(a.map(String).join(" ")),
+          });
+          badRecords.push({ out, warns });
           rmSync(dir, { recursive: true, force: true });
         }
 
@@ -1664,20 +1726,26 @@ describe("变异加固块（round=3 CI 回归：迁移重放/路由面/校验分
         expect(goodUpdates).toEqual([{ printBanner: false }]);
       });
 
-      const titledResumed = badBakCases.map((c, i) => ({
-        title: `resume bad (${c.raw}) resumed`,
+      const titledBad = badBakCases.map((c, i) => ({
+        title: `resume bad (${c.raw}) 全量 outcome`,
         i,
       }));
-      it.each(titledResumed)("$title", ({ i }) => {
-        expect(badRecords[i].out.resumed).toBe(true);
+      it.each(titledBad)("$title", ({ i }) => {
+        expect(badRecords[i].out).toEqual({
+          performed: false,
+          migrated: false,
+          rolledBack: false,
+          skippedCorrupt: true,
+          resumed: true,
+        });
       });
 
-      const titledMigrated = badBakCases.map((c, i) => ({
-        title: `resume bad (${c.raw}) migrated`,
-        i,
-      }));
-      it.each(titledMigrated)("$title", ({ i }) => {
-        expect(badRecords[i].out.migrated).toBe(badBakCases[i].expectMigrated);
+      it("resume 损坏 bak 警告含手动恢复路径", () => {
+        expect(badRecords[0].warns.some((w) => w.includes("无法自动恢复"))).toBe(true);
+      });
+
+      it("resume 无有效键警告含手动删除指引", () => {
+        expect(badRecords[1].warns.some((w) => w.includes("手动删除"))).toBe(true);
       });
 
       it("重放失败不回滚（bak 保留）", () => {
@@ -2091,6 +2159,12 @@ describe("变异加固块（round=3 CI 回归：迁移重放/路由面/校验分
 
       it("坏 JSON 400 invalid-json", () => {
         expect(badJson.error.code).toBe("invalid-json");
+      });
+
+      it("超限体 → 连接已断零写入（catch 后静默 return，不补 400）", async () => {
+        const r = await callRoute("PUT", { destroy() {} }, "x".repeat(70 * 1024));
+        expect(r.status).toBe(0);
+        expect(r.body).toBe("");
       });
     });
 

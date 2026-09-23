@@ -6,7 +6,15 @@
  * apply 接线（路由注册 + health caConfigured）。不碰真实端口与真实 DSH_HOME。
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import type { IncomingMessage, ServerResponse } from "node:http";
@@ -30,6 +38,7 @@ import {
 } from "../../src/server/tls/impl/index.ts";
 import { MIGRATED_BAK_NAME } from "../../src/server/migrate/impl/file/index.ts";
 import { resolvePluginDir } from "../../src/server/migrate/impl/layout/index.ts";
+import { MANAGED_CERT_FILES, legacyPluginDir } from "../../src/server/shared/paths.ts";
 
 let prevHome: string | undefined;
 let home: string;
@@ -169,6 +178,78 @@ describe("旧目录迁出 resolvePluginDir", () => {
     expect(out.moved).toEqual([]);
     expect(out.fallback).toBe(false);
   });
+  it("托管四件套随旧目录迁出（MANAGED_CERT_FILES 清单行为锚：置空即迁不出）", () => {
+    mkdirSync(join(home, "lan-proxy"), { recursive: true });
+    writeFileSync(join(home, "lan-proxy", "ca-cert.pem"), "CA");
+    const out = resolvePluginDir({ files: [...MANAGED_CERT_FILES] });
+    expect(out.moved).toEqual(["ca-cert.pem"]);
+    expect(out.fallback).toBe(false);
+    expect(existsSync(join(home, "@wingsky-1", "dsh-lan-proxy", "ca-cert.pem"))).toBe(true);
+    expect(existsSync(join(home, "lan-proxy", "ca-cert.pem"))).toBe(false);
+  });
+  it('".." 逐字拒绝（家目录不得被改名归档）', () => {
+    const out = resolvePluginDir({ files: [".."] });
+    expect(out.moved).toEqual([]);
+    expect(out.fallback).toBe(false);
+    expect(existsSync(home)).toBe(true);
+    rmSync(home + ".migrated.bak", { recursive: true, force: true });
+  });
+  it("非法名在旧目录存在时仍零触碰（守卫行为锚：合法 keep 照迁）", () => {
+    mkdirSync(join(home, "lan-proxy"), { recursive: true });
+    writeFileSync(join(home, "lan-proxy", "keep.pem"), "KEEP");
+    mkdirSync(join(home, "lan-proxy", "sub"), { recursive: true });
+    writeFileSync(join(home, "lan-proxy", "sub", "keep.pem"), "SUB");
+    const out = resolvePluginDir({
+      files: ["", ".", "..", "../evil", "a/b", "sub/keep.pem", "keep.pem"],
+    });
+    expect(out.moved).toEqual(["keep.pem"]);
+    expect(out.fallback).toBe(false);
+    expect(existsSync(join(home, "@wingsky-1", "dsh-lan-proxy", "keep.pem"))).toBe(true);
+    expect(existsSync(join(home, "lan-proxy", "sub", "keep.pem"))).toBe(true);
+    expect(existsSync(home)).toBe(true);
+    rmSync(home + ".migrated.bak", { recursive: true, force: true });
+  });
+  it("搬运失败回落旧目录（只读新目录 + 日志；回滚循环见分类说明）", () => {
+    mkdirSync(join(home, "lan-proxy"), { recursive: true });
+    writeFileSync(join(home, "lan-proxy", "a.pem"), "A");
+    const fresh = join(home, "@wingsky-1", "dsh-lan-proxy");
+    mkdirSync(join(home, "@wingsky-1"), { recursive: true });
+    mkdirSync(fresh);
+    chmodSync(fresh, 0o555);
+    const warns: string[] = [];
+    try {
+      const out = resolvePluginDir({
+        files: ["a.pem"],
+        logger: { warn: (...a: unknown[]) => warns.push(a.map(String).join(" ")) },
+      });
+      expect(out.dir).toBe(legacyPluginDir());
+      expect(out.moved).toEqual([]);
+      expect(out.fallback).toBe(true);
+      expect(readFileSync(join(home, "lan-proxy", "a.pem"), "utf8")).toBe("A");
+      expect(warns.some((w) => w.includes("回滚并回落旧目录"))).toBe(true);
+      // logger 缺席 warn 方法 → 静默跳过不抛（可选链双保险）。
+      const out2 = resolvePluginDir({ files: ["a.pem"], logger: {} });
+      expect(out2.fallback).toBe(true);
+    } finally {
+      chmodSync(fresh, 0o755);
+    }
+  });
+  it("归档失败记日志并保留原位（.bak 被目录占住）", () => {
+    mkdirSync(join(home, "lan-proxy"), { recursive: true });
+    writeFileSync(join(home, "lan-proxy", "f.pem"), "OLD");
+    mkdirSync(join(home, "@wingsky-1", "dsh-lan-proxy"), { recursive: true });
+    writeFileSync(join(home, "@wingsky-1", "dsh-lan-proxy", "f.pem"), "NEW");
+    mkdirSync(join(home, "lan-proxy", "f.pem.migrated.bak"), { recursive: true });
+    const warns: string[] = [];
+    const out = resolvePluginDir({
+      files: ["f.pem"],
+      logger: { warn: (...a: unknown[]) => warns.push(a.map(String).join(" ")) },
+    });
+    expect(out.moved).toEqual([]);
+    expect(out.fallback).toBe(false);
+    expect(readFileSync(join(home, "lan-proxy", "f.pem"), "utf8")).toBe("OLD");
+    expect(warns.some((w) => w.includes("归档失败") && !w.includes("undefined"))).toBe(true);
+  });
   it("pluginDir 末段为包名分区", () => {
     expect(pluginDir()).toBe(join(home, "@wingsky-1", "dsh-lan-proxy"));
     expect(basename(pluginDir())).toBe("dsh-lan-proxy");
@@ -231,6 +312,30 @@ describe("下发路由三态与围栏", () => {
     const r = callCaCert({ selfSignedDir: dir }, { url: "http://[::1" });
     expect(r.status).toBe(400);
     expect(JSON.parse(r.body.toString("utf8")).error.code).toBe("bad-format");
+  });
+  it('req.url 缺席 → format 缺省 der（?? "/" 分支：继续走装配态而非 400）', () => {
+    const route = buildCaCertRoutes({
+      loadCertificate: (format: "der" | "pem") =>
+        loadDownloadableCertificate({ selfSignedDir: home }, format),
+    })[0];
+    let status = 0;
+    const chunks: Buffer[] = [];
+    const res = {
+      writeHead: (c: number) => {
+        status = c;
+      },
+      end: (c?: unknown) => {
+        if (c !== undefined) chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(String(c)));
+      },
+    } as unknown as ServerResponse;
+    const req = {
+      method: "GET",
+      socket: { remoteAddress: "127.0.0.1" },
+      headers: { host: "127.0.0.1:3080" },
+    } as unknown as IncomingMessage;
+    route.handler(req, res);
+    expect(status).toBe(404);
+    expect(JSON.parse(Buffer.concat(chunks).toString("utf8")).error.code).toBe("ca-unconfigured");
   });
   it("未知 format 值 400（fail-closed，不静默回落）", () => {
     const dir = mkdtempSync(join(home, "self-"));

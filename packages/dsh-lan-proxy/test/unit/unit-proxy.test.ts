@@ -139,6 +139,8 @@ describe("纯函数边界用例", () => {
     it("DNS 名拒绝", () => expect(isLoopbackTarget("evil.com")).toBe(false));
     it("空串拒绝", () => expect(isLoopbackTarget("")).toBe(false));
     it("非 .1 回环段仍按字面匹配语义拒绝", () => expect(isLoopbackTarget("127.0.0.2")).toBe(false));
+    it('单侧括号不剥离（"[127.0.0.1x" 仍拒绝：&& 缺一即不 slice）', () =>
+      expect(isLoopbackTarget("[127.0.0.1x")).toBe(false));
   });
 
   describe("formatAuthority", () => {

@@ -5,7 +5,7 @@
  * 导入面倒置——产物层该证明的是「bundle 之后这些导出仍然可用」，同域纯函数应直连
  * src 白盒。e2e 侧对应断言保留（产物契约不受影响），本文件补源码层这一份。
  */
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -13,9 +13,13 @@ import { describe, expect, it } from "vitest";
 import { X509Certificate } from "node:crypto";
 import * as forge from "node-forge";
 import {
+  SELF_SIGNED_CERT,
+  SELF_SIGNED_KEY,
   certStillValid,
+  ensureSelfSignedTls,
   generateCaAndLeaf,
   generateLeafSignedByCa,
+  loadDownloadableCertificate,
   readLeafCertInfo,
   toSanEntry,
 } from "../../src/server/tls/impl/index.ts";
@@ -39,6 +43,15 @@ describe("unit: certStillValid 的边界", () => {
     expect(certStillValid("/nonexistent/cert-826.pem")).toBe(false);
   });
 
+  it("新鲜证书 → true（剩余有效期判据真分支）", () => {
+    const dir = mkdtempSync(join(tmpdir(), "dsh-lan-proxy-tls-"));
+    try {
+      ensureSelfSignedTls({ dir });
+      expect(certStillValid(join(dir, SELF_SIGNED_CERT))).toBe(true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
   it("内容不可解析 → false（不得抛出）", () => {
     const dir = mkdtempSync(join(tmpdir(), "dsh-lan-proxy-tls-"));
     try {
@@ -139,6 +152,35 @@ describe("unit: generateLeafSignedByCa 仅换叶子（#930 F10）", () => {
   });
 });
 
+describe("unit: ensureSelfSignedTls 缓存复用", () => {
+  it("二次调用同目录 → 同字节复用 + 私钥 0600（删复用分支即重签）", () => {
+    const dir = mkdtempSync(join(tmpdir(), "dsh-lan-proxy-tls-"));
+    try {
+      const first = ensureSelfSignedTls({ dir });
+      const second = ensureSelfSignedTls({ dir });
+      expect(String(second.cert)).toBe(String(first.cert));
+      expect(String(second.key)).toBe(String(first.key));
+      expect(statSync(join(dir, SELF_SIGNED_KEY)).mode & 0o777).toBe(0o600);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+describe("unit: loadDownloadableCertificate 空串 CA 视为未配置", () => {
+  it("tlsCaCertFile 空串 + 叶子键 → ca-unconfigured（hasCertPath 空串分支）", () => {
+    expect(
+      loadDownloadableCertificate(
+        {
+          tlsCaCertFile: "",
+          tlsCertFile: "/x.pem",
+          tlsKeyFile: "/y.pem",
+          selfSignedDir: "/none",
+        },
+        "der",
+      ),
+    ).toEqual({ ok: false, code: "ca-unconfigured" });
+  });
+});
 describe("unit: readLeafCertInfo 摘要（#930 F8）", () => {
   it("可读叶子 → validTo ISO + SAN 原串", async () => {
     const dir = mkdtempSync(join(tmpdir(), "dsh-lan-proxy-tls-"));
