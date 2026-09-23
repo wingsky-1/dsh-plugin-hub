@@ -358,33 +358,46 @@ function isExemptedSide(guard, newPkg, loadWorkspace) {
   }
   return exempted;
 }
-function checkRenameExistence(registry, newPkg, packages, exemptions, loadWorkspace) {
+function isRenameScopeSkipped(guard, newPkg, packages) {
+  if (guard.kind !== "existence") return true;
+  if (!Array.isArray(guard.paths) || guard.paths.length === 0) return true;
+  const universe = guard.universe;
+  if (universe === null || typeof universe !== "object" || Array.isArray(universe)) return true;
+  const prefix = typeof universe.prefix === "string" ? universe.prefix : "";
+  if (!newPkg.startsWith(prefix)) return true;
+  const dirNeed = typeof universe.requireDir === "string" ? universe.requireDir : undefined;
+  const wsEntry = packages.find((pkg) => pkg.name === newPkg);
+  const governed =
+    wsEntry !== undefined &&
+    (dirNeed === undefined ||
+      dirNeed === "" ||
+      (Array.isArray(wsEntry.dirs) && wsEntry.dirs.includes(dirNeed)));
+  return !governed;
+}
+function renameExemptState(guard, newPkg, exemptions, loadWorkspace) {
+  if (exemptions.has(guard.paths[0] + "." + newPkg + "#membership")) return "skip";
+  if (isExemptedSide(guard, newPkg, loadWorkspace)) return "skip";
+  if (exemptions.has(guard.paths[0] + "." + newPkg + "#anchor")) return "anchor";
+  return "none";
+}
+function isRenameEntryFail(guard, newPkg, loadWorkspace, anchorExempt) {
+  const wsTable = resolveSingle(loadWorkspace(guard)?.value, guard.paths[0]);
+  const newEntry = isRecord(wsTable) ? wsTable[newPkg] : undefined;
+  if (!isRecord(newEntry)) return true;
+  if (anchorExempt) return false;
+  const requireFields = Array.isArray(guard.requireFields) ? guard.requireFields : [];
+  const newAnchor = effectiveAnchor(newEntry, requireFields);
+  return requireFields.length > 0 && (newAnchor === null || newAnchor.value <= 0);
+}
+function checkSingleRenameGuard(guard, newPkg, packages, exemptions, loadWorkspace) {
+  if (isRenameScopeSkipped(guard, newPkg, packages)) return true;
+  const exempt = renameExemptState(guard, newPkg, exemptions, loadWorkspace);
+  if (exempt === "skip") return true;
+  return !isRenameEntryFail(guard, newPkg, loadWorkspace, exempt === "anchor");
+}
+export function checkRenameExistence(registry, newPkg, packages, exemptions, loadWorkspace) {
   for (const guard of registry.guards ?? []) {
-    if (guard.kind !== "existence") continue;
-    if (!Array.isArray(guard.paths) || guard.paths.length === 0) continue;
-    const universe = guard.universe;
-    if (universe === null || typeof universe !== "object" || Array.isArray(universe)) continue;
-    const prefix = typeof universe.prefix === "string" ? universe.prefix : "";
-    if (!newPkg.startsWith(prefix)) continue;
-    const dirNeed = typeof universe.requireDir === "string" ? universe.requireDir : undefined;
-    const wsEntry = packages.find((pkg) => pkg.name === newPkg);
-    const governed =
-      wsEntry !== undefined &&
-      (dirNeed === undefined ||
-        dirNeed === "" ||
-        (Array.isArray(wsEntry.dirs) && wsEntry.dirs.includes(dirNeed)));
-    if (!governed) continue;
-    if (exemptions.has(guard.paths[0] + "." + newPkg + "#membership")) continue;
-    const anchorLedgerExempt = exemptions.has(guard.paths[0] + "." + newPkg + "#anchor");
-    const exempted = isExemptedSide(guard, newPkg, loadWorkspace);
-    if (exempted) continue;
-    const wsTable = resolveSingle(loadWorkspace(guard)?.value, guard.paths[0]);
-    const newEntry = isRecord(wsTable) ? wsTable[newPkg] : undefined;
-    if (!isRecord(newEntry)) return false;
-    if (anchorLedgerExempt) continue;
-    const requireFields = Array.isArray(guard.requireFields) ? guard.requireFields : [];
-    const newAnchor = effectiveAnchor(newEntry, requireFields);
-    if (requireFields.length > 0 && (newAnchor === null || newAnchor.value <= 0)) return false;
+    if (!checkSingleRenameGuard(guard, newPkg, packages, exemptions, loadWorkspace)) return false;
   }
   return true;
 }

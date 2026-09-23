@@ -10,7 +10,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { compareRegistry } from "../lib/threshold-registry.mjs";
-import { applyRenameRecognition } from "../gate/threshold-monotonic.mjs";
+import { applyRenameRecognition, checkRenameExistence } from "../gate/threshold-monotonic.mjs";
 
 const GAUNTLET = "scripts/data/gauntlet.config.json";
 const TOPOLOGY = "scripts/data/mutation-topology.json";
@@ -527,4 +527,126 @@ test("改名 v3 R1b：无锚新包、无豁免仍红（显式断言与隐含覆�
   });
   assert.equal(r.exitCode, 1, "新包无锚且无豁免：existence 判红，改名不认");
   assert.equal(r.adjusted.renamed, false);
+});
+
+test("P3c-③ checkRenameExistence 独立行为锁定（括号边界）", () => {
+  const baseGuard = {
+    kind: "existence",
+    paths: ["mutation.packages"],
+    universe: { prefix: "dsh-", requireDir: "src" },
+    requireFields: ["fixedCovered"],
+  };
+  const pkgs = [{ name: "dsh-new", dirs: ["src"] }];
+  const wsValue = { mutation: { packages: { "dsh-new": { threshold: 60, fixedCovered: 70 } } } };
+  const loader = () => ({ value: wsValue });
+  // 非 existence / 空 paths / 非法 universe / 前缀失配 / 未治理一律跳过为 true
+  assert.equal(
+    checkRenameExistence(
+      { guards: [{ ...baseGuard, kind: "value" }] },
+      "dsh-new",
+      pkgs,
+      new Map(),
+      loader,
+    ),
+    true,
+    "非 existence 跳过",
+  );
+  assert.equal(
+    checkRenameExistence(
+      { guards: [{ ...baseGuard, paths: [] }] },
+      "dsh-new",
+      pkgs,
+      new Map(),
+      loader,
+    ),
+    true,
+    "空 paths 跳过",
+  );
+  assert.equal(
+    checkRenameExistence(
+      { guards: [{ ...baseGuard, universe: null }] },
+      "dsh-new",
+      pkgs,
+      new Map(),
+      loader,
+    ),
+    true,
+    "非法 universe 跳过",
+  );
+  assert.equal(
+    checkRenameExistence(
+      { guards: [{ ...baseGuard, universe: { prefix: "xxx-", requireDir: "src" } }] },
+      "dsh-new",
+      pkgs,
+      new Map(),
+      loader,
+    ),
+    true,
+    "前缀失配跳过",
+  );
+  assert.equal(
+    checkRenameExistence(
+      { guards: [baseGuard] },
+      "dsh-new",
+      [{ name: "dsh-new", dirs: [] }],
+      new Map(),
+      loader,
+    ),
+    true,
+    "缺目录未治理跳过",
+  );
+  // 豁免通道：membership / exemptFrom / anchor 台账
+  assert.equal(
+    checkRenameExistence(
+      { guards: [baseGuard] },
+      "dsh-new",
+      pkgs,
+      new Map([["mutation.packages.dsh-new#membership", {}]]),
+      loader,
+    ),
+    true,
+    "membership 豁免",
+  );
+  const exemptGuard = { ...baseGuard, exemptFrom: { source: "topo", path: "exempt" } };
+  const exemptLoader = (arg) => {
+    if (arg && typeof arg === "object" && "sources" in arg)
+      return { value: { exempt: { "dsh-new": {} } } };
+    return { value: wsValue };
+  };
+  assert.equal(
+    checkRenameExistence({ guards: [exemptGuard] }, "dsh-new", pkgs, new Map(), exemptLoader),
+    true,
+    "exemptFrom 命中跳过",
+  );
+  const noAnchorValue = { mutation: { packages: { "dsh-new": { threshold: 60 } } } };
+  assert.equal(
+    checkRenameExistence({ guards: [baseGuard] }, "dsh-new", pkgs, new Map(), () => ({
+      value: noAnchorValue,
+    })),
+    false,
+    "缺锚判 false",
+  );
+  assert.equal(
+    checkRenameExistence(
+      { guards: [baseGuard] },
+      "dsh-new",
+      pkgs,
+      new Map([["mutation.packages.dsh-new#anchor", {}]]),
+      () => ({ value: noAnchorValue }),
+    ),
+    true,
+    "anchor 台账放行缺锚",
+  );
+  assert.equal(
+    checkRenameExistence({ guards: [baseGuard] }, "dsh-new", pkgs, new Map(), () => ({
+      value: { mutation: { packages: {} } },
+    })),
+    false,
+    "新条目缺失判 false",
+  );
+  assert.equal(
+    checkRenameExistence({ guards: [baseGuard] }, "dsh-new", pkgs, new Map(), loader),
+    true,
+    "正常新包为 true",
+  );
 });
