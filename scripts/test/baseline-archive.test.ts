@@ -158,7 +158,7 @@ test("期望集合与真实仓库一致：stryker.conf.d/*.json 一条不落（5
   // #856 新增 dsh-lan-proxy host-trust 域 35 → 36；#826 新增 dsh-lan-proxy client 段 36 → 37；
   // #767 S1-2b 新增 servers 段 37 → 38；#768 S3 新增 dsh-provider-usage upgrade 段 38 → 39；
   // #930 新增 dsh-lan-proxy ca 域 39 → 40；#947 新增 dsh-mcp-manager client-panel 段 40 → 41；
-  // 首登 dsh-jev-decide 单段 41 → 42；#943 对账后 jev 按域拆八段 42 → 49；
+  // 首登 dsh-decision-gateway 单段 41 → 42；#943 对账后 jev 按域拆八段 42 → 49；
   // #962 A 拆 dsh-provider-usage pipeline 大段为 pipeline-history/core/view 三段 49 → 51），
   // 否则新增段静默漏进归档期望集合也无人察觉。
   assert.equal(expected.length, 51, `段数应为 51，实际 ${expected.length}`);

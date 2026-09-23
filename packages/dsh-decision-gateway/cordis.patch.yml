@@ -1,0 +1,7 @@
+# dsh-decision-gateway bundle patch：向 web profile 名册插入通用辅助决策网关（JEV 为首个 provider）。
+# 主机端（exports "."）在宿主进程运行：注册 ws_request_verdict / ws_list_verdict_guides
+# 两个 agent 工具，并提供 /api/dsh-decision-gateway/* 回环路由；
+# 浏览器端（exports "./client"）为占位干净模块（本包能力在宿主端，见 README 安全模型）。
+- insert:
+    - id: ui-dsh-decision-gateway
+      name: "@wingsky-1/dsh-decision-gateway"

@@ -1,7 +1,7 @@
 # dsh-plugin-hub 插件架构文档
 
 > 本目录用**图解为主**的方式，讲清每个插件的**功能、原理、使用方式**。
-> lan-proxy、notifier、worktree-sidebar、mcp-manager 与 jev-decide 按 BA 业务 / AA 应用 / DA 数据 / TA 技术四视图组织（mcp-manager 与 lan-proxy、notifier 的 TOGAF 四视图同模板，基线 d5cfdf08）；
+> lan-proxy、notifier、worktree-sidebar、mcp-manager 与 decision-gateway 按 BA 业务 / AA 应用 / DA 数据 / TA 技术四视图组织（mcp-manager 与 lan-proxy、notifier 的 TOGAF 四视图同模板，基线 d5cfdf08）；
 > 其余文档按功能概览 → 总体架构图 → 核心机制 / 时序 → 使用方式 → 安全模型与边界组织，
 > 与各插件包 README（安装 / 配置 / 验证的快速上手）互补。
 >
@@ -21,7 +21,7 @@
 | `@wingsky-1/dsh-lan-proxy` | 局域网访问 dsh web：HTTP/HTTPS/WS 转发 + TLS + 响应压缩 | [dsh-lan-proxy.md](dsh-lan-proxy.md) |
 | `@wingsky-1/dsh-mcp-manager` | MCP 服务器管理：配置面与模型可见面管理（单池 + `ws_mcp_call` 统一寻址） | [dsh-mcp-manager.md](dsh-mcp-manager.md) |
 | `@wingsky-1/dsh-notifier` | 审批/完成/错误事件通知：浏览器 Notification + 系统 toast + Bark | [dsh-notifier.md](dsh-notifier.md) |
-| `@wingsky-1/dsh-jev-decide` | JEV 决策网关：frozen 预设裁决 + 本地密形预检 + 双轨密钥 | [dsh-jev-decide.md](dsh-jev-decide.md) |
+| `@wingsky-1/dsh-decision-gateway` | 通用辅助决策网关（JEV 为首个 provider）：frozen 预设裁决 + 本地密形预检 + 双轨密钥 | [dsh-decision-gateway.md](dsh-decision-gateway.md) |
 | `@wingsky-1/dsh-provider-usage` | 多 provider 用量统计：v2 适配器契约 + 宿主端渲染 + 历史落盘 | [dsh-provider-usage.md](dsh-provider-usage.md) |
 | `@wingsky-1/dsh-verify-isolated` | 插件开发隔离浏览器验证 skill（临时 DSH_HOME + 独立 profile） | [dsh-verify-isolated.md](dsh-verify-isolated.md) |
 | `@wingsky-1/dsh-worktree-sidebar` | 把某个 git worktree 登记给当前会话：官方右侧栏文件树换根、会话 cwd 不变 | [dsh-worktree-sidebar.md](dsh-worktree-sidebar.md) |
@@ -105,10 +105,10 @@ flowchart LR
 | [dsh-notifier.md](dsh-notifier.md) | DA 数据架构 | [图源 HTML](diagrams/notifier-da.html) |
 | [dsh-notifier.md](dsh-notifier.md) | TA 技术架构 | [图源 HTML](diagrams/notifier-ta.html) |
 | [dsh-notifier.md](dsh-notifier.md) | 按域架构与通知管线图（历史图源） | `diagrams/notifier-architecture.html` |
-| [dsh-jev-decide.md](dsh-jev-decide.md) | BA 业务架构 | [图源 HTML](diagrams/jev-ba.html) |
-| [dsh-jev-decide.md](dsh-jev-decide.md) | AA 应用架构 | [图源 HTML](diagrams/jev-aa.html) |
-| [dsh-jev-decide.md](dsh-jev-decide.md) | DA 数据架构 | [图源 HTML](diagrams/jev-da.html) |
-| [dsh-jev-decide.md](dsh-jev-decide.md) | TA 技术架构 | [图源 HTML](diagrams/jev-ta.html) |
+| [dsh-decision-gateway.md](dsh-decision-gateway.md) | BA 业务架构 | [图源 HTML](diagrams/decision-gateway-ba.html) |
+| [dsh-decision-gateway.md](dsh-decision-gateway.md) | AA 应用架构 | [图源 HTML](diagrams/decision-gateway-aa.html) |
+| [dsh-decision-gateway.md](dsh-decision-gateway.md) | DA 数据架构 | [图源 HTML](diagrams/decision-gateway-da.html) |
+| [dsh-decision-gateway.md](dsh-decision-gateway.md) | TA 技术架构 | [图源 HTML](diagrams/decision-gateway-ta.html) |
 | [dsh-provider-usage.md](dsh-provider-usage.md) | 宿主端渲染架构图 | `diagrams/provider-usage-architecture.html` |
 | [dsh-worktree-sidebar.md](dsh-worktree-sidebar.md) | BA 业务架构（能力面 → 工具 → 可见产物） | `diagrams/worktree-sidebar-ba.html` |
 | [dsh-worktree-sidebar.md](dsh-worktree-sidebar.md) | AA 应用架构（组合根 + 五域 + 适配层 + 浏览器端接管） | `diagrams/worktree-sidebar-aa.html` |

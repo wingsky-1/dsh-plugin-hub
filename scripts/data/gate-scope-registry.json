@@ -53,9 +53,9 @@
         "dsh-worktree-sidebar",
         "dsh-mcp-manager",
         "dsh-provider-usage",
-        "dsh-jev-decide"
+        "dsh-decision-gateway"
       ],
-      "why": "包导出面快照（符号集 + 导出符号定义块与入库基线零 diff）。必须显式 --package（缺参直接 exit 2），调用点在 ci.yml 的 repo-gate、observe.yml 的 quality 班次、release.yml 的发版链路与 gate/gate-steps.mjs（本地档位）。#826 给 dsh-lan-proxy 产出基线并接入：该 PR 的核心声明是「目录重排零行为变更」，此前只能靠人工一次性比对，接入后成为可重复判据（覆盖主入口 . 与客户端入口 ./client）。#847 为已入库但未执行的 dsh-worktree-sidebar 基线补齐四入口，每包独立命令（脚本只消费第一个 --package）；#767 B0 起覆盖 dsh-mcp-manager（基线由重构前那棵树生成并入库，删除到位的那一笔才重冻结，执行点与其他包同形）；#768 S1 起覆盖 dsh-provider-usage（主入口经 scripts/data/export-entry-alias.json 别名读 apply 产物，D13 删别名并重冻结）；#946 起覆盖 dsh-jev-decide；其余包扩面要先产出基线。"
+      "why": "包导出面快照（符号集 + 导出符号定义块与入库基线零 diff）。必须显式 --package（缺参直接 exit 2），调用点在 ci.yml 的 repo-gate、observe.yml 的 quality 班次、release.yml 的发版链路与 gate/gate-steps.mjs（本地档位）。#826 给 dsh-lan-proxy 产出基线并接入：该 PR 的核心声明是「目录重排零行为变更」，此前只能靠人工一次性比对，接入后成为可重复判据（覆盖主入口 . 与客户端入口 ./client）。#847 为已入库但未执行的 dsh-worktree-sidebar 基线补齐四入口，每包独立命令（脚本只消费第一个 --package）；#767 B0 起覆盖 dsh-mcp-manager（基线由重构前那棵树生成并入库，删除到位的那一笔才重冻结，执行点与其他包同形）；#768 S1 起覆盖 dsh-provider-usage（主入口经 scripts/data/export-entry-alias.json 别名读 apply 产物，D13 删别名并重冻结）；#946 起覆盖 dsh-decision-gateway；其余包扩面要先产出基线。"
     },
     {
       "gate": "verify-vendored-binaries",

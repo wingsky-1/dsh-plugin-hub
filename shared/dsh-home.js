@@ -10,7 +10,7 @@
 // 不需要），保证默认形态路径逐字节不变。
 //
 // 消费方：dsh-notifier / dsh-lan-proxy / dsh-mcp-manager / dsh-provider-usage /
-// dsh-jev-decide / dsh-worktree-sidebar（provider-usage 的 path-resolve.ts pluginHome
+// dsh-decision-gateway / dsh-worktree-sidebar（provider-usage 的 path-resolve.ts pluginHome
 // 为渐进退役 facade，内部改调本模块，公开签名不变）。
 
 import { homedir } from "node:os";

@@ -1,0 +1,100 @@
+{
+  "name": "@wingsky-1/dsh-decision-gateway",
+  "version": "0.1.0",
+  "description": "Decision gateway for DSH agents: calibrated Choice/Score/Noul verdicts via ws_request_verdict + local secret precheck + dual-track keys. 通用辅助决策网关（JEV 为首个 provider）：frozen 预设模板 + 密钥双轨（ENV 引用优先）+ 本地密形预检 + SystemOne 官方调用，工具 ws_request_verdict / ws_list_verdict_guides",
+  "type": "module",
+  "main": "lib/index.js",
+  "scripts": {
+    "build": "node ../../scripts/build/clean-lib.ts && tsc -p tsconfig.json && node ../../scripts/build/bundle-host.ts .",
+    "test": "node ../../scripts/test/run-vitest.mjs --min 22",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "prepublishOnly": "pnpm run typecheck && pnpm run build && pnpm test"
+  },
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./client": {
+      "types": "./lib/client/index.d.ts",
+      "default": "./lib/client.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml",
+      "bannerJs": "import { createRequire as __decisionGatewayRequire } from \"node:module\";\nconst require = __decisionGatewayRequire(import.meta.url);"
+    },
+    "catalog": {
+      "category": "tool",
+      "summary": {
+        "en": "Calibrated assistant decisions (Choice/Score/Noul) for DSH agents with local secret precheck; JEV is the first provider.",
+        "zh": "给 DSH agent 的校准辅助决策（Choice/Score/Noul），本地密形预检，双轨密钥；JEV 为首个提供方。"
+      },
+      "capabilities": [
+        "connection",
+        "decide"
+      ]
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-connection"
+      ],
+      "platform": "web"
+    }
+  },
+  "files": [
+    "lib",
+    "shared/**/*.d.ts",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "devDependencies": {
+    "@deepseek-ai/cordis": "catalog:",
+    "@deepseek-ai/dsh-host-webserver": "catalog:",
+    "@deepseek-ai/dsh-tools": "catalog:",
+    "@typesafe-ai/sdk": "catalog:"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "catalog:",
+    "@deepseek-ai/dsh-host-webserver": "catalog:",
+    "@deepseek-ai/dsh-tools": "catalog:"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/cordis": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-host-webserver": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-tools": {
+      "optional": true
+    }
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/wingsky-1/dsh-plugin-hub.git",
+    "directory": "packages/dsh-decision-gateway"
+  },
+  "bugs": {
+    "url": "https://github.com/wingsky-1/dsh-plugin-hub/issues"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "plugin",
+    "decision",
+    "gateway"
+  ],
+  "author": "wingsky-1",
+  "publishConfig": {
+    "access": "public"
+  }
+}

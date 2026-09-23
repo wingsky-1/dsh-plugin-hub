@@ -176,10 +176,10 @@ test("P2c: 其余包段条目映射", () => {
     packagesToInvalidate(["vitest.stryker.d/dsh-lan-proxy-tls.config.ts"], reg, topo),
     ["dsh-lan-proxy:tls"],
   );
-  const jevClient = "packages/dsh-jev-decide/test/client-unit/format.test.ts";
+  const jevClient = "packages/dsh-decision-gateway/test/client-unit/format.test.ts";
   const got = packagesToInvalidate([jevClient], reg, topo);
-  assert.ok(got.includes("dsh-jev-decide:client"), "client 测试须命中 client 段");
-  assert.ok(!got.includes("dsh-jev-decide"), "不得连坐整包");
+  assert.ok(got.includes("dsh-decision-gateway:client"), "client 测试须命中 client 段");
+  assert.ok(!got.includes("dsh-decision-gateway"), "不得连坐整包");
   assert.deepEqual(
     packagesToInvalidate(["packages/dsh-worktree-sidebar/test/unit/tools.test.ts"], reg, topo),
     ["dsh-worktree-sidebar"],

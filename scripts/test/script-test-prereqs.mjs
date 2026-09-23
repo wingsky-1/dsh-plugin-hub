@@ -19,7 +19,7 @@
  * 多建几个包是这里刻意接受的成本。
  */
 export const PREREQ_PACKAGES = [
-  "dsh-jev-decide",
+  "dsh-decision-gateway",
   "dsh-lan-proxy",
   "dsh-mcp-manager",
   "dsh-notifier",

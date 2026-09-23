@@ -158,26 +158,61 @@ test("#764 A2：警告预算的事实源与消费点", () => {
   );
 });
 
-test("#764 A2：超出预算时 lint 入口判红（实跑退出码）", () => {
-  // 用 .d.mts 制造一条**结构性**警告：它命中 eslint.config.js 的忽略面，ESLint 必报
-  // "File ignored because of a matching ignore pattern"。该警告只取决于扩展名是否在忽略清单里，
-  // 与文件内容无关，故这条判据不会随业务代码改动而漂移。
-  const probe = join(
-    ROOT,
-    "packages",
-    "dsh-provider-usage",
-    "src",
-    "server",
-    "adapters",
-    "deepseek-official.d.mts",
-  );
-  assert.ok(existsSync(probe), `${probe} 必须存在（本判据的结构性警告来源）`);
+test("#764 A2：超出预算时 lint 入口判红（非忽略警告探针实跑）", () => {
+  // 非忽略警告探针：budget-warning-probe.js 行内 no-var:warn，0 error + 1 warning，
+  // --max-warnings=0 即 problems>budget，exit 1 且报超出预算。恢复预算分支实跑；
+  // 上一测的 grep 静态锁保留作第二道（结构不断即红，行为不漂即绿）。
+  const probe = join(ROOT, "tools", "lint", "fixtures", "budget-warning-probe.js");
+  assert.ok(existsSync(probe), `${probe} 必须存在（预算分支的非忽略警告来源）`);
   const r = spawnSync(process.execPath, ["tools/lint/bin/lint.mjs", "--max-warnings=0", probe], {
     cwd: ROOT,
     encoding: "utf8",
   });
   assert.equal(r.status, 1, `问题数超出预算必须 exit 1（实际 ${r.status}）`);
   assert.match(r.stderr, /超出预算/, "报错须点明超出预算");
+});
+
+test("#764 A2：被忽略文件静默跳过（钩子 staged d.ts 不超预算，预算仍 0）", () => {
+  // 钩子误报修复：lint-staged 把被忽略的 css.d.ts/d.mts 显式传入时，入口恒等 --no-warn-ignored
+  //（warnIgnored:false），被忽略文件 0 结果、不计预算。预算值本身不动（仍 0），超预算判红逻辑由
+  // 上一测静态锁定（problems > budget）。本测锁钩子路径：staged 仅含 d.ts 即通过。
+  for (const rel of [
+    "packages/dsh-decision-gateway/src/client/css.d.ts",
+    "packages/dsh-provider-usage/src/server/adapters/deepseek-official.d.mts",
+  ]) {
+    const probe = join(ROOT, rel);
+    assert.ok(existsSync(probe), `${probe} 必须存在（钩子误报的结构性复现来源）`);
+    const r = spawnSync(process.execPath, ["tools/lint/bin/lint.mjs", "--max-warnings=0", probe], {
+      cwd: ROOT,
+      encoding: "utf8",
+    });
+    assert.equal(
+      r.status,
+      0,
+      `被忽略文件须静默通过 exit 0（实际 ${r.status}）：${r.stdout}${r.stderr}`,
+    );
+    assert.match(r.stdout, /检查 0 个文件/, "被忽略文件须 0 结果");
+    assert.doesNotMatch(r.stderr, /超出预算/, "被忽略文件不得触发预算");
+  }
+  // 真实问题仍判红（非忽略文件）：固件 2 处 error 配空基线，exit 1（防静默放行一切；
+  // 落盘仅空基线 JSON 进 mkdtemp，lint 对象为仓内既有固件，无仓库产物）。
+  const dir = mkdtempSync(join(tmpdir(), "lint-hook-"));
+  try {
+    const empty = join(dir, "empty.json");
+    writeFileSync(empty, "{}", "utf8");
+    const r = spawnSync(
+      process.execPath,
+      [
+        "tools/lint/bin/lint.mjs",
+        `--suppressions=${empty}`,
+        "tools/lint/fixtures/lint-probe-fixture.ts",
+      ],
+      { cwd: ROOT, encoding: "utf8" },
+    );
+    assert.equal(r.status, 1, `真实 error 仍须判红 exit 1（实际 ${r.status}）`);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("#764 A3：三条类型感知规则在 src 面按 error 生效（分阶段第一步）", async () => {

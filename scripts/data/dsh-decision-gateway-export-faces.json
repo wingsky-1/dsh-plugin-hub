@@ -1,0 +1,12 @@
+{
+  "$comment": "包导出面分类登记：主入口值导出 4 个归安装面（name/apply/inject 干净模块契约，ROUTES 由 bundle-host 注入客户端构建）；类型导出 ConfigV1 归契约面（双端共享契约）；legacy 为空（新包无存量白名单）。",
+  "package": "dsh-decision-gateway",
+  "faces": {
+    "ROUTES": "安装面",
+    "apply": "安装面",
+    "inject": "安装面",
+    "name": "安装面",
+    "ConfigV1": "契约面"
+  },
+  "legacy": []
+}

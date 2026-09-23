@@ -1,6 +1,6 @@
 {
   "active": [
-    "dsh-jev-decide",
+    "dsh-decision-gateway",
     "dsh-lan-proxy",
     "dsh-mcp-manager",
     "dsh-notifier",
@@ -97,7 +97,7 @@
       "reason": "本插件没有用户配置面：唯一的 enabled 是挂载点总开关（由 cordis.patch.yml 传入，不落盘、不进设置层），宿主侧没有配置文件形态的可配置项。"
     },
     {
-      "package": "dsh-jev-decide",
+      "package": "dsh-decision-gateway",
       "surface": "none",
       "reason": "矩阵口径无配置面：用户配置经 HTTP PUT /config（buildDefaultConfig/normalizeLoadedConfig/validatePutBody），非 DEFAULT_CONFIG/normalizeConfig/BOOLEAN_KEYS/COUNT_LIMITS 矩阵形态，矩阵门禁不适用（HTTP 校验由包内单测覆盖）。"
     }
