@@ -8,14 +8,15 @@
  *   2. files 模式相对 basePath 解析，而 basePath 由入口的 cwd 决定——入口固定以仓库根为 cwd，
  *      故此处模式一律写成仓库根相对形式。
  *
- * 规则分四段，越靠后越具体：
+ * 规则分三段，越靠后越具体：
  *   1. typescript-eslint 的 recommended —— **非 type-checked**：不建 program，全仓秒级完成；
  *      类型感知的规则集（strictTypeChecked）要 program、慢一个量级，留待单独评估；
  *   2. 复杂度阈值（唯一事实源是 scripts/data/gauntlet.config.json 的 complexity 段）；
- *   3. 分面降级：**未重写的老客户端**把两条规则降为 warn（它用的是 any 兜底风格的 React
- *      代码，且不在重写范围内）；宿主端 `src/server/**` 不降级；
- *   4. eslint-config-prettier 收尾：关掉与 Prettier 重叠的格式规则。格式只由 Prettier 定，
+ *   3. eslint-config-prettier 收尾：关掉与 Prettier 重叠的格式规则。格式只由 Prettier 定，
  *      两处都能改格式的代价不是多改一次，而是「lint 说对、编辑器保存后又变回去」。
+ *
+ * 历史：曾有分面降级把两条规则降为 warn；P3-b/B7 起 8 处清零后两条已回 error，
+ * R1 零命中，降级机制已摘除（见 git 历史）。
  */
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
