@@ -4,12 +4,13 @@
  * 接管只做一件事：以**官方 id** 为 key、**更低的 priority** 再登记一条正文，组件 / store /
  * locale 全部复用官方那条（inject 面由 `inject.ts` 包一层）。官方 ui-slots 的每个 cell 取
  * 「优先级最低的那条存活项」——它的注册表原话是 register at a different priority to shadow it
- * (lowest renders)（`@deepseek-ai/dsh-client-ui-slots` 的 `lib/index.js:77`；排序 `:130`；取当值项 `:187-200`）。
+ * (lowest renders)（`@deepseek-ai/dsh-client-ui-slots` 的遮蔽语义：同 key 不同 priority 方可并存、
+ * 按 priority 升序、当值取每 cell 首条存活项）。
  *
  * **那个包不在 dsh 安装树里**：它在构建期被内联进 `dsh-web-frontend/dist/assets/index-*.js`，
  * 所以要照注释去读原文时，可读副本在同仓 catalog 锁版处
- * （`node_modules/.pnpm/@deepseek-ai+dsh-client-ui-slots@0.1.5-rc.1_...` 下的
- * `node_modules/@deepseek-ai/dsh-client-ui-slots/lib/index.js`）。
+ * （`node_modules/.pnpm/@deepseek-ai+dsh-client-ui-slots@<catalog 锁版>_...` 下的
+ * `node_modules/@deepseek-ai/dsh-client-ui-slots/lib/index.js`，版本号见 `pnpm-workspace.yaml`，不硬编码）。
  * 树内可读的两处是类型面与运行时入口：`dsh-client-ui-renderer/lib/types/client/registry.d.ts:46/84/154/164`
  * （`class SlotRegistry`、`register`、`entries`、`entriesOfSlot`）与同一包 `lib/client.js:953/1191-1198/1388`。
  *

@@ -38,17 +38,21 @@ export interface StoredEntryLike {
 }
 
 /**
- * tab 类型定义，逐字对齐官方 SidebarRightTabDefinition。
+ * tab 类型定义，语义对齐官方 SidebarRightTabDefinition（只读，不改写类型表）。
  *
- * 这里**必须**把所有字段都列全（尤其 `guide`）：类型表用的是官方定义的那一份（本插件只遮蔽
+ * 这里**必须**把在册定义的判据字段列全（尤其 `guide`）：类型表用的是官方定义的那一份（本插件只遮蔽
  * 正文，从不改写类型表），官方注册表 refresh 后会用**在册定义**重算 guide 条目。丢掉 `guide` 的后果不是少一块文案，
  * 而是 guide 归零、所有会话（含从未登记的）默认页签从 Files 变成空的 Guide、文件树打不开。
+ * `multiple`/`keepMounted` 仅作读面声明（本包不写类型表）：可选即双基线可编译；
+ * 隐藏页签无 abort 时仍在册，binding 刷新仍需 reseed（见 inject keepMounted 用例）。
  */
 export interface TabDefinitionLike {
   readonly id: string;
   readonly kind: string;
   readonly patterns?: readonly string[];
-  readonly priority?: string;
+  readonly priority?: "extension" | "builtin" | "fallback";
+  readonly multiple?: boolean;
+  readonly keepMounted?: boolean;
   readonly canOpen?: (address: string) => boolean;
   readonly title: (address: string) => string;
   readonly guide?: readonly unknown[];
