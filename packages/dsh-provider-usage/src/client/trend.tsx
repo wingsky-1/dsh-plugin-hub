@@ -255,8 +255,9 @@ interface TrendControlsProps {
   onView: (v: string) => void;
 }
 function TrendControls(p: TrendControlsProps): React.ReactElement {
-  const showDir = shouldShowDirSelect(p.provider);
-  const showByModel = shouldShowByModel(p.provider, p.dirFilter);
+  const { provider, dirFilter } = p;
+  const showDir = shouldShowDirSelect(provider);
+  const showByModel = shouldShowByModel(provider, dirFilter);
   return (
     <div
       style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", marginBottom: 10 }}
