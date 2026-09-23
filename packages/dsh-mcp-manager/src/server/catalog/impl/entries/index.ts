@@ -237,8 +237,7 @@ export function renderMcpCatalogMessage(entries: CatalogEntry[]): CatalogMessage
     role: "user",
     content: [{ type: "text", text: lines }],
     source: {
-      kind: "plugin",
-      plugin: CATALOG_SOURCE_PLUGIN,
+      kind: "mcp-catalog",
       form: "snapshot",
       sections: [{ name: CATALOG_SECTION_NAME, text: lines }],
     },
@@ -273,10 +272,13 @@ export function findCatalogMessage(messages: CatalogMessage[]): CatalogMessage |
 /**
  * 取回一条目录消息所发布的条目。
  *
- * 新旧两代形态（#723）：
+ * 三代形态（#723 + v4）：
  * - 旧形态 `{ kind: "mcp-catalog", form: "catalog", entries }`：逐条还原条目，
  *   digest 与升级前完全一致；
- * - 新形态 `{ kind: "plugin", form: "snapshot", sections: [{ name, text }] }`：
+ * - 新形态（v3）`{ kind: "plugin", form: "snapshot", sections: [{ name, text }] }`：
+ * - v4 producer-owned 形态 `{ kind: "mcp-catalog", form: "snapshot", sections }`（与
+ *   v3 的 `plugin/snapshot` 同构，只是 kind 换成 v4 接受的 producer-owned 值——v4
+ *   禁止 `kind: "plugin"`，见 harness `assertV4MessageSources`）；
  *   从快照正文的 `<available_mcp_servers>` 块还原条目（格式化是单射的），使
  *   digest 与 `composeCatalogEntries` 的条目 digest 同口径——否则每次启动都会
  *   误判"目录已变"而注入一条修正帧。
@@ -288,18 +290,18 @@ export function resolveCatalogEntries(
   source: CatalogSourceLike | undefined,
 ): CatalogEntry[] | undefined {
   if (!isCatalogSource(source)) return undefined;
-  if (source?.kind === "plugin") {
+  if (source?.kind === "plugin" || source?.kind === "mcp-catalog") {
     const sections = source.sections;
-    if (!Array.isArray(sections)) return undefined;
-    const section = sections.find(
-      (candidate) =>
-        typeof candidate === "object" &&
-        candidate !== null &&
-        (candidate as { name?: unknown }).name === CATALOG_SECTION_NAME &&
-        typeof (candidate as { text?: unknown }).text === "string",
-    ) as { text: string } | undefined;
-    if (section === undefined) return undefined;
-    return parseCatalogBody(section.text);
+    if (Array.isArray(sections)) {
+      const section = sections.find(
+        (candidate) =>
+          typeof candidate === "object" &&
+          candidate !== null &&
+          (candidate as { name?: unknown }).name === CATALOG_SECTION_NAME &&
+          typeof (candidate as { text?: unknown }).text === "string",
+      ) as { text: string } | undefined;
+      if (section !== undefined) return parseCatalogBody(section.text);
+    }
   }
   const entries = source?.entries;
   if (!Array.isArray(entries)) return undefined;

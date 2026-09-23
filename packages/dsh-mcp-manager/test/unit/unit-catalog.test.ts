@@ -323,10 +323,9 @@ describe("renderMcpCatalogMessage / findCatalogMessage / readCatalogEntries", ()
     expect(makeMessage().id).toBeTruthy();
   });
 
-  it("#723 message.source 为宿主词表内的 plugin/snapshot 形态（自造 kind 会被迁移白名单拒绝）", () => {
+  it("#723+v4 message.source 为 producer-owned kind（v4 禁止 kind 为 plugin）", () => {
     const source = makeMessage().source!;
-    expect(source.kind).toBe("plugin");
-    expect(source.plugin).toBe("@wingsky-1/dsh-mcp-manager");
+    expect(source.kind).toBe("mcp-catalog");
     expect(source.form).toBe("snapshot");
     expect(isCatalogSource(source)).toBe(true);
   });

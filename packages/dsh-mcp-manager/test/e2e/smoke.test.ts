@@ -3202,9 +3202,9 @@ it("renderMcpCatalogMessage 结构与声明", () => {
   // 含 project 条目 → 引导经 ws_mcp_search/ws_mcp_call（#228 双轨迁移）
   const msg = renderMcpCatalogMessage([{ name: "code-graph", text: "代码图谱", scope: "project" }]);
   expect(msg.role).toBe("user");
-  // #723：source 改为宿主词表内的通用形态（自造 kind 会被 dsh v2→v3 迁移的封闭白名单拒绝）
-  expect(msg.source!.kind).toBe("plugin");
-  expect(msg.source!.plugin).toBe("@wingsky-1/dsh-mcp-manager");
+  // #723 + v4：source 用 producer-owned kind（v4 禁止 `kind: "plugin"`，见 harness
+  // `assertV4MessageSources`），保留 snapshot/sections 形态，读取侧兼容旧三代。
+  expect(msg.source!.kind).toBe("mcp-catalog");
   expect(msg.source!.form).toBe("snapshot");
   expect(isCatalogSource(msg.source)).toBe(true);
   expect(msg.content![0]!.type).toBe("text");
@@ -3510,8 +3510,9 @@ it("双缺省服务器目录消息可 append 为 user/message 且去重（#192 A
   const appended = catalogEvents[0]!.data as unknown as {
     source: { kind: unknown; form: unknown; sections: { text: string }[] };
   };
-  // #723：新形态 source 只含 plugin/snapshot sections，条目正文全在段文本里
-  expect(appended.source.kind).toBe("plugin");
+  // #723+v4：新形态 source 用 producer-owned kind（mcp-catalog）+ snapshot sections，
+  // 条目正文全在段文本里（v4 禁止 kind=plugin）
+  expect(appended.source.kind).toBe("mcp-catalog");
   expect(appended.source.form).toBe("snapshot");
   expect(
     appended.source.sections[0].text.includes("- `bare-only`"),
