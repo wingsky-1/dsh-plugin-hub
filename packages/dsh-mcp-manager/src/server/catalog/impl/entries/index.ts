@@ -9,10 +9,29 @@
 import { randomUUID } from "node:crypto";
 import type { SupervisorLite } from "../../../connection/interface.ts";
 import type { CatalogMessage } from "../injection/index.ts";
+import type { ContextFormed } from "@deepseek-ai/dsh-llm";
 import {
   DEFAULT_ANNOUNCE_CATALOG,
   DEFAULT_CATALOG_MAX_ENTRIES,
 } from "../../../shared/interface.ts";
+
+/**
+ * dsh 0.1.7-rc.1 前向垫片（#1011，临时）：宿主 `dsh-llm` 移除了共享 `plugin` 种，
+ * `MessageSourceMap` 仅剩 user/model/tool/system-prompt（merge-extensible，各生产者
+ * 在自有模块声明自有种）。本包写入仍是 `kind:"plugin"` + 身份 + `form:"snapshot"` +
+ * `sections`（线格式零字节改），故在此以 rc.1 形状
+ * `plugin: { kind:"plugin"; plugin:string } & ContextFormed` 合并补回该种，
+ * 使双基线（0.1.5 原生含种 / 0.1.7 靠垫片补种）均可编译。键名/模块名禁改，
+ * 禁宽化为 `{ kind:string }`（会吞掉宿主的判别）。
+ *
+ * 退出条件：`dsh-session-format-v2-to-v3` 的 `SOURCE_KINDS` 接纳自有种，
+ * 或宿主恢复 `plugin` 基座时删除本垫片。
+ */
+declare module "@deepseek-ai/dsh-llm" {
+  interface MessageSourceMap {
+    plugin: { kind: "plugin"; plugin: string } & ContextFormed;
+  }
+}
 
 /** 目录条目。 */
 export interface CatalogEntry {
@@ -45,7 +64,13 @@ export { DEFAULT_ANNOUNCE_CATALOG, DEFAULT_CATALOG_MAX_ENTRIES };
  * 形态，这里与之一致：形态由宿主校验，身份由本包判定。
  */
 export const CATALOG_SOURCE_PLUGIN = "@wingsky-1/dsh-mcp-manager";
-/** 目录快照的段名（snapshot 形态下承载渲染后的目录正文）。 */
+/**
+ * 目录快照的段名（snapshot 形态下承载渲染后的目录正文）。
+ *
+ * kind 与段名分属两轴（#1011）：`source.kind` 是宿主词表（`SOURCE_KINDS` 白名单），
+ * 禁自造 `kind:"mcp-catalog"`（会重演 #723 永久拒载）；段名 `"mcp-catalog"` 是本包在
+ * `sections` 内的自有命名空间，自由使用。
+ */
 export const CATALOG_SECTION_NAME = "mcp-catalog";
 
 /** 目录摘要总长上限（字符，含前缀与省略号）：目录注入 ≤6 条目，防远端工具描述
@@ -202,6 +227,11 @@ export function composeCatalogEntries(
 
 /** 渲染能力目录消息（source 标记供定位替换）。
  *
+ * kind/段名区分（#1011）：`source.kind:"plugin"` 走宿主词表，段名 `"mcp-catalog"`
+ * 走自有命名空间（`sections: [{ name:"mcp-catalog", ... }]`），禁把段名回写成
+ * `kind:"mcp-catalog"`。线格式零字节改：写入恒为 kind:plugin + plugin +
+ * form:snapshot + sections。
+ *
  * 按条目 scope 只区分「是否附项目级更严格的那条引导」（#228 双轨迁移；#767 S1-5b 收敛为
  * id 口径）：#767 笔 2 起 `mcp__*` 已不在模型可见面（笔 1b 的可见面收敛），**全部**服务器
  * ——项目级、全局级、封装定义条目（toolDefinitions）——一律经中间层工具访问。原来按 `mode`
@@ -255,7 +285,14 @@ export function escapeCatalogText(value: unknown): string {
     .replace(/[\r\n]/gu, " ");
 }
 
-/** 是否为本插件注入的能力目录消息（新旧两代 source 形态都认，#723 跨版本兼容）。 */
+/**
+ * 是否为本插件注入的能力目录消息（三代通认，#723 跨版本兼容，#1011 前向兼容）。
+ *
+ * 三代：`kind:"mcp-catalog"`（0.2.x 落盘）+ `kind:"plugin"`（0.3+ 写入，0.1.5 原生含种 /
+ * 0.1.7 靠本域垫片补种，线格式同一形状）。旧形态的落盘改写引用现修复脚本
+ * `scripts/maintenance/repair-mcp-catalog-sessions.mjs`（幂等、默认 dry-run），
+ * 此处不重造改写逻辑，只做读取侧兼容。
+ */
 export function isCatalogSource(source: { kind?: unknown; plugin?: unknown } | undefined): boolean {
   if (source === undefined) return false;
   if (source.kind === "mcp-catalog") return true;
