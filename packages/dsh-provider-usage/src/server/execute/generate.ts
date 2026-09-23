@@ -317,6 +317,44 @@ export async function generateReport(opts: GenerateReportOptions): Promise<Repor
  * （剥控制字符 + 截断 80——byDirectory 出口 basename 化，无路径分隔符），
  * 不含会话明细与完整路径——sanitizePaths 配置约束未来注入面扩展。
  */
+function cleanName(name: string): string {
+  const stripped = name.replace(/[\u0000-\u001f\u007f-\u009f]/g, "");
+  return stripped.length > 80 ? stripped.slice(0, 80) : stripped;
+}
+function cleanDir(dir: string): string {
+  const stripped = dir.replace(/[\u0000-\u001f\u007f-\u009f]/g, "");
+  const cut = Math.max(stripped.lastIndexOf("/"), stripped.lastIndexOf("\\"));
+  const base = cut >= 0 ? stripped.slice(cut + 1) : stripped;
+  return base.length === 0 ? TREND_UNIDENTIFIED : cleanName(base);
+}
+function sanitizeSnapshotNames(
+  byProvider: Array<{
+    provider: string;
+    model: string | null;
+    calls: number;
+    total: number | null;
+  }>,
+  byDirectory: Array<{ dir: string; calls: number; total: number | null }>,
+): {
+  providers: Array<{ provider: string; model: string | null; calls: number; total: number | null }>;
+  directories: Array<{ dir: string; calls: number; total: number | null }>;
+} {
+  const providers = byProvider.map((row) => ({
+    provider: cleanName(row.provider),
+    model: row.model !== null ? cleanName(row.model) : null,
+    calls: row.calls,
+    total: row.total,
+  }));
+  const directories = byDirectory.map((row) => ({
+    dir: cleanDir(row.dir),
+    calls: row.calls,
+    total: row.total,
+  }));
+  return { providers: providers, directories: directories };
+}
+function inWindow(day: string, startDay: string, endDay: string): boolean {
+  return day >= startDay && day <= endDay;
+}
 function aggregateBucketWindow(
   buckets: Array<{
     day: string;
@@ -359,7 +397,7 @@ function aggregateBucketWindow(
     { provider: string; model: string | null; calls: number; total: number | null }
   >();
   for (const item of buckets) {
-    if (item.day < startDay || item.day > endDay) {
+    if (!inWindow(item.day, startDay, endDay)) {
       continue;
     }
     let dayTotal: number | null = null;
@@ -404,7 +442,7 @@ function aggregateDirWindow(
 ): Map<string, { dir: string; calls: number; total: number | null }> {
   const byDir = new Map<string, { dir: string; calls: number; total: number | null }>();
   for (const row of rows ?? []) {
-    if (row.day < startDay || row.day > endDay) {
+    if (!inWindow(row.day, startDay, endDay)) {
       continue;
     }
     const total = metricValue(row, "total");
@@ -426,7 +464,7 @@ function aggregateHourWindow(
   const cells = new Map<number, { calls: number; total: number | null }>();
   const covered = new Set<string>();
   for (const row of rows ?? []) {
-    if (row.day < startDay || row.day > endDay) {
+    if (!inWindow(row.day, startDay, endDay)) {
       continue;
     }
     if (row.calls > 0 || row.turns > 0 || row.toolCalls > 0) {
@@ -442,6 +480,111 @@ function aggregateHourWindow(
     }
   }
   return { cells: cells, covered: covered };
+}
+function avgForActive(total: number | null, activeDays: number): number | null {
+  if (activeDays <= 0 || total === null) return null;
+  return total / activeDays;
+}
+function statsPeak(
+  byDay: Array<{ day: string; total: number | null }>,
+  totals: { total: number | null },
+  startDay: string,
+  endDay: string,
+) {
+  let peakDay: { day: string; total: number | null } | null = null;
+  for (const d of byDay) {
+    if (peakDay === null || (d.total ?? 0) > (peakDay.total ?? 0)) peakDay = d;
+  }
+  // 活跃天数 / 窗口天数 / 活跃日均
+  const activeDays = byDay.length;
+  const windowDays = windowDayCount(startDay, endDay);
+  const avgPerActiveDay = avgForActive(totals.total, activeDays);
+  // 最长连续活跃天数：day 排序后以日历日差 = 1 判定连续（bucket day 为 UTC day key，
+  // 经 Date UTC 解析求差，跨月/跨年安全——与窗口天数计算同源口径）
+  let longestStreak = 0;
+  let streak = 0;
+  let prevDay: number | null = null;
+  for (const d of byDay) {
+    const ts = Date.parse(d.day);
+    const isNextCalendarDay = prevDay !== null && Math.round((ts - prevDay) / 86400000) === 1;
+    streak = isNextCalendarDay ? streak + 1 : 1;
+    if (streak > longestStreak) longestStreak = streak;
+    prevDay = ts;
+  }
+  // 环比：prevTotal 缺失或 <= 0 → null（不做对比；防 Infinity）
+  return {
+    peakDay: peakDay,
+    activeDays: activeDays,
+    windowDays: windowDays,
+    avgPerActiveDay: avgPerActiveDay,
+    longestStreak: longestStreak,
+  };
+}
+function statsRatio(
+  byDay: Array<{ day: string; total: number | null }>,
+  totals: { total: number | null },
+  prevTotal: number | null,
+) {
+  const wowRatio =
+    prevTotal !== null && prevTotal > 0 && totals.total !== null ? totals.total / prevTotal : null;
+  // 星期分布：周一..周日（bucket day 为 UTC key，星期口径与 day 生成处一致用 UTC 星期，
+  // 避免「按本地构造 day key 却按本地星期统计」的口径漂移——快照内自洽即可）
+  const byWeekday: [number, number, number, number, number, number, number] = [0, 0, 0, 0, 0, 0, 0];
+  for (const d of byDay) {
+    const dow = new Date(`${d.day}T00:00:00Z`).getUTCDay(); // 0=周日
+    byWeekday[dow === 0 ? 6 : dow - 1] += d.total ?? 0;
+  }
+
+  // ---- 时段维度（hourRows → byHour[24]/byPeriod[4]/peakHour + coveredDays 守卫）----
+  // 窗口过滤与 buckets 同口径（day 字典序闭区间）；同钟点跨日 null-aware 累加（计数
+  // 独立，token 记 null——零 usage 语义）。覆盖度守卫：coveredDays = 窗口内有 hour
+  // 事实（calls/turns/toolCalls 任一 > 0）的天数；coveredDays < windowDays（升级期
+  // 部分天缺 hour 行）→ 三个时段字段整体置 null（提示词整段降级，杜绝「局部天代表
+  // 全窗口」的误导叙事）。
+  return { wowRatio: wowRatio, byWeekday: byWeekday };
+}
+function deriveHourStats(
+  hourCells: Map<number, { calls: number; total: number | null }>,
+  covered: Set<string>,
+  windowDays: number,
+  hourRows: TrendHourRow[] | undefined,
+) {
+  const coveredDays = covered.size;
+  const hourCovered = (hourRows ?? []).length > 0 && coveredDays >= windowDays;
+  let byHour: ReportStatsSnapshot["byHour"] = null;
+  let byPeriod: ReportStatsSnapshot["byPeriod"] = null;
+  let peakHour: ReportStatsSnapshot["peakHour"] = null;
+  if (hourCovered) {
+    // 分支内 list 明确非 null（byHour 24 项全量：无数据钟点 calls=0/total=null）
+    const list: Array<{ hour: number; calls: number; total: number | null }> = Array.from(
+      { length: 24 },
+      (_, hour) => {
+        const c = hourCells.get(hour);
+        return { hour, calls: c?.calls ?? 0, total: c?.total ?? null };
+      },
+    );
+    byHour = list;
+    byPeriod = PERIOD_BUCKETS.map((p) => {
+      let calls = 0;
+      let total: number | null = null;
+      for (let h = p.from; h <= p.to; h += 1) {
+        const c = hourCells.get(h);
+        if (c === undefined) continue;
+        calls += c.calls;
+        total = sumToken(total, c.total);
+      }
+      return { period: p.name, calls, total };
+    });
+    // peakHour：total 判峰、并列取最早（保持 byHour 升序遍历序）；全 null → null
+    let peak: { hour: number; calls: number; total: number | null } | null = null;
+    for (const item of list) {
+      if (item.total === null) continue;
+      if (peak === null || peak.total === null || item.total > peak.total) peak = item;
+    }
+    peakHour = peak;
+  }
+
+  return { byHour: byHour, byPeriod: byPeriod, peakHour: peakHour, coveredDays: coveredDays };
 }
 export function buildStatsSnapshot(input: {
   period: ReportPeriod;
@@ -479,112 +622,29 @@ export function buildStatsSnapshot(input: {
   // ---- 年报派生维度（快照内单遍 O(n)，全部聚合数值，注入面收敛不变） ----
   // 注入文本防御：provider/model 名为 adapter/上游可影响文本，进快照前截断 80 字符
   // 并剥离控制字符（prompt 注入面收紧；快照数值维度不受影响）。
-  const safeName = (name: string): string => (name.length > 80 ? name.slice(0, 80) : name);
-  for (const row of byProvider) {
-    // 剥 C0 + DEL + C1（0x80–0x9F），与数据层 sanitizeDirName（collect/types.ts 权威定义）同口径
-    row.provider = safeName(row.provider.replace(/[\u0000-\u001f\u007f-\u009f]/g, ""));
-    if (row.model !== null)
-      row.model = safeName(row.model.replace(/[\u0000-\u001f\u007f-\u009f]/g, ""));
-  }
-  // 目录名出口统一 basename 化 + 剥控制字符 + 截断 80（沿用
-  // provider/model 的 safeName 防御模式；collector.dirOf 落盘前已 sanitizeDirName，
-  // 但伪造分片行的 dir 键不受信（isValidDirKey 只查长度）——出口处 basename 化
-  // 锁死「无路径分隔符」承诺，与逐出口断言对齐）。剥/切后为空串的伪键
-  // 归并进未识别桶键（防模板渲染空标签）。
-  for (const row of byDirectory) {
-    // 剥 C0 + DEL + C1，与数据层 sanitizeDirName 同口径
-    const c = row.dir.replace(/[\u0000-\u001f\u007f-\u009f]/g, "");
-    const cut = Math.max(c.lastIndexOf("/"), c.lastIndexOf("\\"));
-    const base = cut >= 0 ? c.slice(cut + 1) : c;
-    row.dir = base.length === 0 ? TREND_UNIDENTIFIED : safeName(base);
-  }
-  // 峰值日：byDay（升序）内 total 最大；并列取最早一天
-  let peakDay: { day: string; total: number | null } | null = null;
-  for (const d of byDay) {
-    if (peakDay === null || (d.total ?? 0) > (peakDay.total ?? 0)) peakDay = d;
-  }
-  // 活跃天数 / 窗口天数 / 活跃日均
-  const activeDays = byDay.length;
-  const windowDays = windowDayCount(input.startDay, input.endDay);
-  const totalForAvg = totals.total;
-  const avgPerActiveDay = activeDays > 0 && totalForAvg !== null ? totalForAvg / activeDays : null;
-  // 最长连续活跃天数：day 排序后以日历日差 = 1 判定连续（bucket day 为 UTC day key，
-  // 经 Date UTC 解析求差，跨月/跨年安全——与窗口天数计算同源口径）
-  let longestStreak = 0;
-  let streak = 0;
-  let prevDay: number | null = null;
-  for (const d of byDay) {
-    const ts = Date.parse(d.day);
-    const isNextCalendarDay = prevDay !== null && Math.round((ts - prevDay) / 86400000) === 1;
-    streak = isNextCalendarDay ? streak + 1 : 1;
-    if (streak > longestStreak) longestStreak = streak;
-    prevDay = ts;
-  }
-  // 环比：prevTotal 缺失或 <= 0 → null（不做对比；防 Infinity）
-  const wowRatio =
-    input.prevTotal !== null && input.prevTotal > 0 && totals.total !== null
-      ? totals.total / input.prevTotal
-      : null;
-  // 星期分布：周一..周日（bucket day 为 UTC key，星期口径与 day 生成处一致用 UTC 星期，
-  // 避免「按本地构造 day key 却按本地星期统计」的口径漂移——快照内自洽即可）
-  const byWeekday: [number, number, number, number, number, number, number] = [0, 0, 0, 0, 0, 0, 0];
-  for (const d of byDay) {
-    const dow = new Date(`${d.day}T00:00:00Z`).getUTCDay(); // 0=周日
-    byWeekday[dow === 0 ? 6 : dow - 1] += d.total ?? 0;
-  }
-
-  // ---- 时段维度（hourRows → byHour[24]/byPeriod[4]/peakHour + coveredDays 守卫）----
-  // 窗口过滤与 buckets 同口径（day 字典序闭区间）；同钟点跨日 null-aware 累加（计数
-  // 独立，token 记 null——零 usage 语义）。覆盖度守卫：coveredDays = 窗口内有 hour
-  // 事实（calls/turns/toolCalls 任一 > 0）的天数；coveredDays < windowDays（升级期
-  // 部分天缺 hour 行）→ 三个时段字段整体置 null（提示词整段降级，杜绝「局部天代表
-  // 全窗口」的误导叙事）。
+  const clean = sanitizeSnapshotNames(byProvider, byDirectory);
+  const { peakDay, activeDays, windowDays, avgPerActiveDay, longestStreak } = statsPeak(
+    byDay,
+    totals,
+    input.startDay,
+    input.endDay,
+  );
+  const { wowRatio, byWeekday } = statsRatio(byDay, totals, input.prevTotal);
   const hourAgg = aggregateHourWindow(input.hourRows, input.startDay, input.endDay);
-  const hourCells = hourAgg.cells;
-  const covered = hourAgg.covered;
-  const coveredDays = covered.size;
-  const hourCovered = (input.hourRows ?? []).length > 0 && coveredDays >= windowDays;
-  let byHour: ReportStatsSnapshot["byHour"] = null;
-  let byPeriod: ReportStatsSnapshot["byPeriod"] = null;
-  let peakHour: ReportStatsSnapshot["peakHour"] = null;
-  if (hourCovered) {
-    // 分支内 list 明确非 null（byHour 24 项全量：无数据钟点 calls=0/total=null）
-    const list: Array<{ hour: number; calls: number; total: number | null }> = Array.from(
-      { length: 24 },
-      (_, hour) => {
-        const c = hourCells.get(hour);
-        return { hour, calls: c?.calls ?? 0, total: c?.total ?? null };
-      },
-    );
-    byHour = list;
-    byPeriod = PERIOD_BUCKETS.map((p) => {
-      let calls = 0;
-      let total: number | null = null;
-      for (let h = p.from; h <= p.to; h += 1) {
-        const c = hourCells.get(h);
-        if (c === undefined) continue;
-        calls += c.calls;
-        total = sumToken(total, c.total);
-      }
-      return { period: p.name, calls, total };
-    });
-    // peakHour：total 判峰、并列取最早（保持 byHour 升序遍历序）；全 null → null
-    let peak: { hour: number; calls: number; total: number | null } | null = null;
-    for (const item of list) {
-      if (item.total === null) continue;
-      if (peak === null || peak.total === null || item.total > peak.total) peak = item;
-    }
-    peakHour = peak;
-  }
-
+  const { byHour, byPeriod, peakHour, coveredDays } = deriveHourStats(
+    hourAgg.cells,
+    hourAgg.covered,
+    windowDays,
+    input.hourRows,
+  );
   return {
     period: input.period,
     startDay: input.startDay,
     endDay: input.endDay,
     totals,
     byDay,
-    byProvider,
-    byDirectory,
+    byProvider: clean.providers,
+    byDirectory: clean.directories,
     prevTotal: input.prevTotal,
     peakDay,
     activeDays,
