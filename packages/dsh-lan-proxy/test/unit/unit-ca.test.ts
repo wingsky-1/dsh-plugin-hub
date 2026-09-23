@@ -808,4 +808,31 @@ describe("apply 接线（health 三态 + 路由注册）", () => {
     // 占位 PEM 不可解析 → certInfo null（不提醒），口径诚实不断言日期。
     expect(health.certInfo).toBe(null);
   });
+  it("托管真叶子 health：certInfo 日期/SAN/当期 IP（F8 数据源）", async () => {
+    const mat = await generateCaAndLeaf(["192.168.99.9"]);
+    const triple = managedTriple();
+    mkdirSync(certsDir(), { recursive: true });
+    writeFileSync(triple.ca, mat.caCert);
+    writeFileSync(triple.cert, mat.leafCert);
+    writeFileSync(triple.key, mat.leafKey);
+    const health = callHealth(
+      runApply({
+        enabled: false,
+        httpsEnabled: false,
+        tlsCaCertFile: triple.ca,
+        tlsCertFile: triple.cert,
+        tlsKeyFile: triple.key,
+      }),
+    );
+    expect(health.caState).toBe("managed");
+    const certInfo = health.certInfo as {
+      leafValidTo: string;
+      leafSans: string[];
+      currentIps: string[];
+    } | null;
+    if (certInfo === null) throw new Error("托管真叶子 certInfo 不应为 null");
+    expect(certInfo.leafSans).toContain("IP Address:192.168.99.9");
+    expect(Number.isNaN(Date.parse(certInfo.leafValidTo))).toBe(false);
+    expect(Array.isArray(certInfo.currentIps)).toBe(true);
+  });
 });

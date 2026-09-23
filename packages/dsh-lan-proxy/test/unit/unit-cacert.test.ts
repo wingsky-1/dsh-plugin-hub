@@ -460,52 +460,56 @@ describe("CA 键校验与清除", () => {
   });
 });
 
+/**
+ * apply 接线 helpers（模块级：供本文件多个 describe 共用；fake ctx 收口到宿主
+ * Context 类型（单点适配；行为不断言 ctx 形态）。
+ */
+function runApply(entry: Record<string, unknown>) {
+  const routes: WebRoute[] = [];
+  const ctx = {
+    logger: { info: () => {}, warn: () => {}, error: () => {} },
+    webServer: {
+      port: 3801,
+      register(r: WebRoute) {
+        routes.push(r);
+        return () => {};
+      },
+      tapIndex() {
+        return () => {};
+      },
+      on() {
+        return () => {};
+      },
+    },
+    inject() {},
+    effect(fn: () => unknown) {
+      return fn();
+    },
+  };
+  apply(ctx as unknown as Context, { enabled: false, httpsEnabled: false, ...entry });
+  return routes;
+}
+function callHealth(routes: WebRoute[]) {
+  const route = routes.find((r: WebRoute) => r.path === ROUTES.health);
+  if (route === undefined) throw new Error("health route missing");
+  let text = "";
+  const req = {
+    method: "GET",
+    socket: { remoteAddress: "127.0.0.1" },
+    headers: { host: "127.0.0.1:3801" },
+    url: ROUTES.health,
+  } as unknown as IncomingMessage;
+  const res = {
+    writeHead() {},
+    end(c?: unknown) {
+      text = String(c);
+    },
+  } as unknown as ServerResponse;
+  route.handler(req, res);
+  return JSON.parse(text) as Record<string, unknown>;
+}
+
 describe("apply 接线", () => {
-  function runApply(entry: Record<string, unknown>) {
-    const routes: WebRoute[] = [];
-    const ctx = {
-      logger: { info: () => {}, warn: () => {}, error: () => {} },
-      webServer: {
-        port: 3801,
-        register(r: WebRoute) {
-          routes.push(r);
-          return () => {};
-        },
-        tapIndex() {
-          return () => {};
-        },
-        on() {
-          return () => {};
-        },
-      },
-      inject() {},
-      effect(fn: () => unknown) {
-        return fn();
-      },
-    };
-    // fake ctx 收口到宿主 Context 类型（单点适配；行为不断言 ctx 形态）。
-    apply(ctx as unknown as Context, { enabled: false, httpsEnabled: false, ...entry });
-    return routes;
-  }
-  function callHealth(routes: WebRoute[]) {
-    const route = routes.find((r: WebRoute) => r.path === ROUTES.health);
-    if (route === undefined) throw new Error("health route missing");
-    let text = "";
-    const req = {
-      method: "GET",
-      socket: { remoteAddress: "127.0.0.1" },
-      headers: { host: "127.0.0.1:3801" },
-      url: ROUTES.health,
-    } as unknown as IncomingMessage;
-    const res = {
-      writeHead() {},
-      end(c?: unknown) {
-        text = String(c);
-      },
-    } as unknown as ServerResponse;
-    route.handler(req, res);
-    return JSON.parse(text) as Record<string, unknown>;
-  }
   it("注册下发路由且命名空间目录建出", () => {
     const routes = runApply({});
     expect(routes.map((r) => r.path)).toContain(ROUTES.caCert);
@@ -523,5 +527,250 @@ describe("apply 接线", () => {
     const r = callCaCert({ selfSignedDir: dir });
     expect(r.status).toBe(404);
     expect(JSON.parse(r.body.toString("utf8")).error.code).toBe("ca-unconfigured");
+  });
+});
+
+describe("apply 装配层默认与守卫（entry 段补强）", () => {
+  it("空 entry health 默认值快照（resolve 单一来源）", () => {
+    const health = callHealth(runApply({}));
+    expect(health.httpPort).toBe(3081);
+    // runApply 为免真实监听强制 httpsEnabled: false（harness 口径，非产品默认）。
+    expect(health.httpsEnabled).toBe(false);
+    expect(health.httpsPort).toBe(3443);
+    expect(health.listening).toBe(false);
+    expect(health.ownsHostCompat).toBe(false);
+    expect(health.wsBridgeEnabled).toBe(true);
+    expect(health.wsCompressEnabled).toBe(true);
+    expect(health.wsCompressPaths).toEqual(["/api/remote.mux"]);
+    expect(health.connStats).toBe(null);
+  });
+
+  it("空串 CA 路径 health caConfigured 为 false（非空判定双条件）", () => {
+    expect(callHealth(runApply({ tlsCaCertFile: "" })).caConfigured).toBe(false);
+  });
+
+  it("空 entry GET /config effective 默认值（host/目标/压缩/令牌开关）", () => {
+    const route = runApply({}).find((r) => r.path === ROUTES.config);
+    if (route === undefined) throw new Error("config route missing");
+    let text = "";
+    const req = {
+      method: "GET",
+      socket: { remoteAddress: "127.0.0.1" },
+      headers: { host: "127.0.0.1:3801" },
+      url: ROUTES.config,
+    } as unknown as IncomingMessage;
+    const res = {
+      writeHead() {},
+      end(c?: unknown) {
+        text = String(c);
+      },
+    } as unknown as ServerResponse;
+    route.handler(req, res);
+    const body = JSON.parse(text) as {
+      effective: Record<string, unknown>;
+      compress: Record<string, unknown>;
+    };
+    expect(body.effective.host).toBe("0.0.0.0");
+    expect(body.effective.targetHost).toBe("127.0.0.1");
+    expect(body.effective.printBanner).toBe(true);
+    expect(body.effective.wsDeflatePolicy).toEqual({
+      browser: true,
+      uaDeny: ["iPhone", "iPad", "iPod"],
+    });
+    expect(body.effective.httpCompressEnabled).toBe(true);
+    expect(body.effective.httpCompressLevel).toBe(1);
+    expect(body.effective.injectToken).toBe(true);
+    expect(body.compress.httpCompressMounted).toBe(false);
+  });
+
+  it("health 非 GET 405（方法白名单）", () => {
+    const route = runApply({}).find((r: WebRoute) => r.path === ROUTES.health);
+    if (route === undefined) throw new Error("health route missing");
+    let status = 0;
+    const req = {
+      method: "POST",
+      socket: { remoteAddress: "127.0.0.1" },
+      headers: { host: "127.0.0.1:3801" },
+      url: ROUTES.health,
+    } as unknown as IncomingMessage;
+    const res = {
+      writeHead: (c: number) => {
+        status = c;
+      },
+      end() {},
+    } as unknown as ServerResponse;
+    route.handler(req, res);
+    expect(status).toBe(405);
+  });
+
+  it("health 非回环 403（先于 405）", () => {
+    const route = runApply({}).find((r: WebRoute) => r.path === ROUTES.health);
+    if (route === undefined) throw new Error("health route missing");
+    let status = 0;
+    const req = {
+      method: "GET",
+      socket: { remoteAddress: "192.168.31.99" },
+      headers: { host: "192.168.31.99:3801" },
+      url: ROUTES.health,
+    } as unknown as IncomingMessage;
+    const res = {
+      writeHead: (c: number) => {
+        status = c;
+      },
+      end() {},
+    } as unknown as ServerResponse;
+    route.handler(req, res);
+    expect(status).toBe(403);
+  });
+
+  it("装配经 apply 的下发路由可服务托管 CA（闭包接线非直连）", () => {
+    const dir = mkdtempSync(join(home, "wired-"));
+    const mat = ensureSelfSignedTls({ dir });
+    const caFile = join(dir, "ca.pem");
+    writeFileSync(caFile, mat.cert);
+    const route = runApply({ tlsCaCertFile: caFile }).find((r) => r.path === ROUTES.caCert);
+    if (route === undefined) throw new Error("ca-cert route missing");
+    let status = 0;
+    const chunks: Buffer[] = [];
+    const req = {
+      method: "GET",
+      socket: { remoteAddress: "127.0.0.1" },
+      headers: { host: "127.0.0.1:3801" },
+      url: ROUTES.caCert,
+    } as unknown as IncomingMessage;
+    const res = {
+      writeHead: (c: number) => {
+        status = c;
+      },
+      end: (c?: unknown) => {
+        if (c !== undefined) chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(String(c)));
+      },
+    } as unknown as ServerResponse;
+    route.handler(req, res);
+    expect(status).toBe(200);
+    expect(Buffer.concat(chunks)[0]).toBe(0x30);
+  });
+
+  it("旧目录托管 CA 随 apply 迁出（装配清单含 MANAGED 四件套）", () => {
+    mkdirSync(join(home, "lan-proxy"), { recursive: true });
+    writeFileSync(join(home, "lan-proxy", "ca-cert.pem"), "CA");
+    runApply({});
+    expect(existsSync(join(home, "@wingsky-1", "dsh-lan-proxy", "ca-cert.pem"))).toBe(true);
+    expect(existsSync(join(home, "lan-proxy", "ca-cert.pem"))).toBe(false);
+  });
+
+  it("路由 disposer 全部执行（卸载不残留注册）", () => {
+    const routes: WebRoute[] = [];
+    const disposed: string[] = [];
+    const effects: Array<() => void> = [];
+    const ctx = {
+      logger: { info: () => {}, warn: () => {}, error: () => {} },
+      webServer: {
+        port: 3801,
+        register(route: WebRoute) {
+          routes.push(route);
+          const path = route.path;
+          return () => {
+            disposed.push(path);
+          };
+        },
+        tapIndex() {
+          return () => {};
+        },
+        on() {
+          return () => {};
+        },
+      },
+      inject() {},
+      effect(fn: () => unknown) {
+        const d = fn();
+        if (typeof d === "function") effects.push(d as () => void);
+        return d;
+      },
+    };
+    apply(ctx as unknown as Context, { enabled: false, httpsEnabled: false });
+    expect(routes.length).toBeGreaterThan(0);
+    for (const dispose of [...effects].reverse()) dispose();
+    expect(disposed).toContain(ROUTES.health);
+    expect(disposed).toContain(ROUTES.config);
+    expect(disposed).toContain(ROUTES.caCert);
+    expect(disposed).toContain(ROUTES.caGenerate);
+  });
+
+  it("health disposer 抛错不阻断卸载（生命周期 try/catch）", () => {
+    const effects: Array<() => void> = [];
+    const ctx = {
+      logger: { info: () => {}, warn: () => {}, error: () => {} },
+      webServer: {
+        port: 3801,
+        register(route: WebRoute) {
+          return () => {
+            if (route.path === ROUTES.health) throw new Error("staged dispose failure");
+          };
+        },
+        tapIndex() {
+          return () => {};
+        },
+        on() {
+          return () => {};
+        },
+      },
+      inject() {},
+      effect(fn: () => unknown) {
+        const d = fn();
+        if (typeof d === "function") effects.push(d as () => void);
+        return d;
+      },
+    };
+    apply(ctx as unknown as Context, { enabled: false, httpsEnabled: false });
+    // 生命周期 effect 最后注册：仅调用它（路由级 disposer 本就向调用方抛错，
+    // 被保护的只是生命周期内的 healthDisposer 调用）。
+    const lifecycle = effects[effects.length - 1];
+    expect(() => lifecycle()).not.toThrow();
+  });
+
+  it("webServer 无绑定端口 + enabled → 不建转发器（listening false，不抛）", () => {
+    const routes: WebRoute[] = [];
+    const ctx = {
+      logger: { info: () => {}, warn: () => {}, error: () => {} },
+      webServer: {
+        register(route: WebRoute) {
+          routes.push(route);
+          return () => {};
+        },
+        tapIndex() {
+          return () => {};
+        },
+        on() {
+          return () => {};
+        },
+      },
+      inject() {},
+      effect(fn: () => unknown) {
+        return fn();
+      },
+    };
+    let listening: unknown;
+    expect(() => {
+      apply(ctx as unknown as Context, { enabled: true, port: 0, httpsEnabled: false });
+      const route = routes.find((r) => r.path === ROUTES.health);
+      if (route === undefined) throw new Error("health route missing");
+      let text = "";
+      const req = {
+        method: "GET",
+        socket: { remoteAddress: "127.0.0.1" },
+        headers: { host: "127.0.0.1:3801" },
+        url: ROUTES.health,
+      } as unknown as IncomingMessage;
+      const res = {
+        writeHead() {},
+        end(c?: unknown) {
+          text = String(c);
+        },
+      } as unknown as ServerResponse;
+      route.handler(req, res);
+      listening = (JSON.parse(text) as Record<string, unknown>).listening;
+    }).not.toThrow();
+    expect(listening).toBe(false);
   });
 });

@@ -271,3 +271,29 @@ describe("apply 接线：host trust tap 的生命周期纪律", () => {
     }
   });
 });
+
+describe("apply 接线：randomUUID polyfill tap（entry 段补强）", () => {
+  it("head 内幂等注入且含 randomUUID 回退实现", () => {
+    const home = mkdtempSync(join(tmpdir(), "dsh-lan-proxy-polyfill-"));
+    const prevHome = process.env.DSH_HOME;
+    process.env.DSH_HOME = home;
+    try {
+      const h = makeHostTrustCtx();
+      apply(h.ctx as unknown as Context, {
+        enabled: false,
+        httpsEnabled: false,
+        printBanner: false,
+      });
+      const taps = h.taps.filter((entry) => entry.label === "lan-proxy: randomUUID polyfill");
+      expect(taps.length).toBe(1);
+      const once = taps[0].run(RAW_INDEX);
+      expect(once).toContain("__dshRandomUuidPolyfill__");
+      expect(once).toContain("crypto.randomUUID");
+      expect(once.indexOf("__dshRandomUuidPolyfill__")).toBeLessThan(once.indexOf("</head>"));
+      expect(taps[0].run(once)).toBe(once);
+    } finally {
+      process.env.DSH_HOME = prevHome;
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+});
