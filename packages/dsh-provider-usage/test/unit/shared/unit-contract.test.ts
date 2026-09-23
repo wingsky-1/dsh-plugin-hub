@@ -1377,10 +1377,13 @@ describe("hotreload：start 文件缺失失败回调；pollOnce 文件删除保�
   let badReloadError: string;
   let delPollOk: { ok: boolean };
   let currentAfterDelete: boolean;
+  let rawStdoutLineCount: number;
 
   beforeAll(() => {
     const probe = fileURLToPath(new URL("../../hotreload-probe.mjs", import.meta.url));
     const raw = execFileSync(process.execPath, [probe], { encoding: "utf8" });
+    // stdout 单行锁定：探针诊断走 stderr，stdout 仅一行 JSON（零协议改动，键集合不变）。
+    rawStdoutLineCount = raw.trimEnd().split("\n").length;
     const line = raw
       .trimEnd()
       .split("\n")
@@ -1442,6 +1445,10 @@ describe("hotreload：start 文件缺失失败回调；pollOnce 文件删除保�
 
   it("删除后 current 保留旧版", () => {
     expect(currentAfterDelete).toBe(true);
+  });
+
+  it("探针 stdout 仅一行 JSON（诊断走 stderr，零协议改动）", () => {
+    expect(rawStdoutLineCount).toBe(1);
   });
 });
 

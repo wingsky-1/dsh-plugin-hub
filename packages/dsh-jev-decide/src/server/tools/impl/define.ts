@@ -1,10 +1,10 @@
 /**
- * tools 域实现：模型工具定义（ws_jev_decide / ws_jev_list_presets）。
+ * tools 域实现：模型工具定义（ws_request_verdict / ws_list_verdict_guides）。
  *
  * - 注册面只经组合根的 ctx.tools.register 进入宿主；本模块只产出定义；
  * - exec 上下文防御式读取（sessionId/cwd 缺席即回落 unknown/process.cwd()）；
  * - output 附 JSON 渲染（文本块），失败包络同样可读（无概率字段）；
- * - ws_jev_list_presets 只读（不记录历史、不触网络）。
+ * - ws_list_verdict_guides 只读（不记录历史、不触网络）。
  */
 import type { ToolDefinition } from "@deepseek-ai/dsh-tools";
 import type { CustomPreset } from "../../../shared/interface.ts";
@@ -65,14 +65,15 @@ function renderJson(
 /** 产出两工具定义。 */
 export function buildToolDefinitions(assembly: ToolAssembly): ToolDefinition[] {
   const decideTool = {
-    name: "ws_jev_decide",
+    name: "ws_request_verdict",
     description:
       "Ask the JEV SystemOne model for a calibrated judgment over text you supply, and get back a structured verdict your code can branch on. " +
+      "Ask in English when you can: state, instructions and options calibrate best in English; Chinese is fully supported (lang zh) but may return slightly lower confidence. " +
       "USE when you must decide rather than generate text: pick one option (general), rate a plan 1-5 (plan-review), gate a risky change as safe or risky (risk-check), check text for leaked secrets (secret-leak), or ask any custom question set (custom). " +
       "DO NOT use for open-ended reasoning, writing, or performing actions: this tool only judges and returns a verdict, acting on it is always your decision. " +
       "You MUST supply questions_override on every call (1-20 questions; templates store no questions): choice questions need 2-10 options, score questions must not carry options but may carry levels (2-10 rubric strings, default 1-5), question and preset ids must be lowercase ASCII letters, digits or hyphens. " +
       "Texts matching secret shapes (API keys, tokens, private-key blocks, password assignments) never leave the device and return choice human for a person to review. " +
-      "A disabled preset fails with PRESET_DISABLED: check availability first with ws_jev_list_presets. " +
+      "A disabled preset fails with PRESET_DISABLED: check availability first with ws_list_verdict_guides. " +
       "Success returns choice or score plus confidence 0-1, tier (none/low/high) and automation (manual/assisted/auto/suggest-only, advisory only: truncated inputs force suggest-only, except local-precheck routing which stays manual). " +
       "Failures carry errorCode and category (for example NO_KEY, UPSTREAM, RATE_LIMITED, TIMEOUT). " +
       "Without a configured key every call fails NO_KEY: ask the user to configure one in settings.",
@@ -83,7 +84,7 @@ export function buildToolDefinitions(assembly: ToolAssembly): ToolDefinition[] {
           type: "string",
           enum: ["general", "secret-leak", "plan-review", "risk-check", "custom"],
           description:
-            "Which frozen decision template to apply. general: choose one of your options; plan-review: rate with score questions (no options); risk-check: proceed-or-not choice (options like safe/risky); secret-leak: leaked-or-clean check (often disabled; secret-shaped text never leaves the device); custom: any 1-20 questions you supply. User-created custom preset ids (custom:true entries in ws_jev_list_presets) are also accepted.",
+            "Which frozen decision template to apply. general: choose one of your options; plan-review: rate with score questions (no options); risk-check: proceed-or-not choice (options like safe/risky); secret-leak: leaked-or-clean check (often disabled; secret-shaped text never leaves the device); custom: any 1-20 questions you supply. User-created custom preset ids (custom:true entries in ws_list_verdict_guides) are also accepted.",
         },
         state: {
           type: "object",
@@ -148,18 +149,18 @@ export function buildToolDefinitions(assembly: ToolAssembly): ToolDefinition[] {
     isConcurrencySafe: () => true,
     execute: (args: unknown, exec: unknown) => {
       const base = assembly.depsFor(exec);
-      return decide(args, { ...base, root: rootOf(exec), sessionId: sessionOf(exec) });
+      return decide(args, base);
     },
   };
   const listTool = {
-    name: "ws_jev_list_presets",
+    name: "ws_list_verdict_guides",
     description:
       "List the frozen JEV preset catalogue with live enabled state (read-only: no network, no history). " +
       "Each entry carries its English asking guide (how to shape questions_override for it), templateVersion (always 1) and automationCap (0 manual-only, 1 low, 2 high). " +
-      "Call this before ws_jev_decide to check a preset is enabled and to copy its asking conventions.",
+      "Call this before ws_request_verdict to check a preset is enabled and to copy its asking conventions.",
     parameters: { type: "object", properties: {} },
     output: {
-      schema: { type: "object" },
+      schema: { type: "array" },
       render: renderJson,
     },
     isConcurrencySafe: () => true,

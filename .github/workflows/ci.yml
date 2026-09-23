@@ -923,6 +923,9 @@ jobs:
       - name: Scripts self-test（维护脚本自测，含 workflow 结构静态断言）
         run: pnpm test:scripts
 
+      - name: Typecheck scripts（scripts 面类型检查）
+        run: pnpm typecheck:scripts
+
       - name: Lint（ESLint 复杂度门禁；阈值唯一事实源 gauntlet.config.json 的 complexity 段）
         run: pnpm lint
 

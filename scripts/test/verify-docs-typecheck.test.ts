@@ -22,10 +22,10 @@
  * 2. 磁盘枚举非空：拦住「磁盘枚举失效」这类让判据 1 恒真的退化（空程序集由上面的
  *    program.size 断言拦住，不再靠差值非空间接判定）。
  *
- * 口径边界（#776 批 4）：scripts/tsconfig.json 开了 allowJs（让被 import 的 .mjs 进入程序集
+ * 口径边界（#776 批 4；已裁决：全量checkJs不做——38个.mjs系运行时垫片，649条多为缺JSDoc非真实缺陷，大爆炸修复违反增量纪律；替代落点为冻结守卫+触达即转）：scripts/tsconfig.json 开了 allowJs（让被 import 的 .mjs 进入程序集
  * 以提供**推断**类型），程序集里因此也会出现 .mjs；但 isTypeScript 只认 .ts/.mts/.cts，
  * 本文件的两条判据**只覆盖 TS 后缀**——「.mjs 本体是否已被类型检查」不是本守卫的判据
- * （checkJs 未开，那是 #776 的未决独立项）。
+ * （checkJs 未开，已裁决不做；冻结守卫见 scripts/test/mjs-freeze-guard.test.ts，触达即转）。
  *
  * 只 spawn 一次 tsc（--noEmit 与 --listFiles 同时给出），exit code 即 tsc 的真实退出码；
  * 编译结果与程序集一次取全，不做第二次全量编译。

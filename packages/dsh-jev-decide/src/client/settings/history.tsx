@@ -32,7 +32,11 @@ function EntryItem({ entry }: { readonly entry: JevHistoryEntry }): React.ReactE
       <div className="dj-histHead">
         <span className="dj-histTime">{fmtTime(entry.ts)}</span>
         {entry.rootDisplay !== "" && <span className="dj-badge">{entry.rootDisplay}</span>}
-        <span className="dj-badge">{shortId(entry.sessionId)}</span>
+        <span className="dj-badge" title={entry.sessionId}>
+          {entry.sessionTitle !== undefined && entry.sessionTitle !== ""
+            ? entry.sessionTitle
+            : shortId(entry.sessionId)}
+        </span>
         {entry.presetId !== "" && (
           <span className="dj-badge" title={entry.presetId}>
             {(entry.presetTitle ?? entry.presetId) +

@@ -299,6 +299,10 @@
       "endpoint": "script:scripts/gate/forbid-src-tests.mjs"
     },
     {
+      "alias": "typecheck:scripts",
+      "endpoint": "tool:tsc|--noEmit,-p,scripts/tsconfig.json"
+    },
+    {
       "alias": "verify:coverage-scope",
       "endpoint": "script:scripts/gate/verify-coverage-scope.mjs"
     },

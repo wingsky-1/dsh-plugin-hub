@@ -254,7 +254,7 @@ export class McpManager {
   projectStores: Map<string, McpStore>;
   catalogCache: CatalogCache;
   catalogCachePath: string;
-  uiConfigSource: () => any;
+  uiConfigSource: () => unknown;
   /** 设置命名空间写入 sink（apply 时经 ctx.inject(["settings"]) 注入；注入不到则写不可用）。 */
   uiUpdate?: (patch: Record<string, unknown>) => Promise<unknown>;
   /**

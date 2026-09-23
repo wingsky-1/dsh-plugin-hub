@@ -166,10 +166,10 @@ describe("五路由注册与一致性", () => {
     expect(ROUTES.history).toBe("/api/dsh-jev-decide/history");
     expect(ROUTES.testConnection).toBe("/api/dsh-jev-decide/test-connection");
   });
-  it("工具双注册 ws_jev_decide/ws_jev_list_presets", () => {
+  it("工具双注册 ws_request_verdict/ws_list_verdict_guides", () => {
     const { tools } = setup();
-    expect(tools.has("ws_jev_decide")).toBe(true);
-    expect(tools.has("ws_jev_list_presets")).toBe(true);
+    expect(tools.has("ws_request_verdict")).toBe(true);
+    expect(tools.has("ws_list_verdict_guides")).toBe(true);
   });
 });
 
@@ -287,7 +287,7 @@ describe("存量互斥与脱敏端到端", () => {
         })
       ).status,
     ).toBe(200);
-    const decide = tools.get("ws_jev_decide");
+    const decide = tools.get("ws_request_verdict");
     expect(decide).toBeDefined();
     const out = (await decide?.execute(
       {

@@ -8,7 +8,7 @@
 ## 定位
 
 JEV 决策网关：frozen 出题规范（5 条英文 description，templateVersion 恒为 1，零考题）+ SystemOne 官方调用
-（基址写死）+ 双轨密钥 + 本地密形预检。模型工具 `ws_jev_decide` / `ws_jev_list_presets`，
+（基址写死）+ 双轨密钥 + 本地密形预检。模型工具 `ws_request_verdict` / `ws_list_verdict_guides`，
 回环路由 `/api/dsh-jev-decide/*` 五条。配置自持于 `<DSH_HOME>/@wingsky-1/dsh-jev-decide/`
 三文件（config.json / presets.json / secrets.json）+ VERSION 存储刻度。
 

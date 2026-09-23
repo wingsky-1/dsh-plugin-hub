@@ -26,6 +26,7 @@
     "verify:vendored-binaries": "node scripts/gate/verify-vendored-binaries.mjs",
     "docs:check": "node scripts/gate/verify-docs.ts --strict-en",
     "typecheck": "pnpm -r --if-present run typecheck",
+    "typecheck:scripts": "tsc -p scripts/tsconfig.json --noEmit",
     "gate:changed": "node scripts/gate/local-gate.mjs --tier changed",
     "gate:pr": "node scripts/gate/local-gate.mjs --tier pr",
     "gate:full": "node scripts/gate/local-gate.mjs --tier full",

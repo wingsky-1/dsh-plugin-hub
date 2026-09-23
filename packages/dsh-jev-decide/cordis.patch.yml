@@ -1,5 +1,5 @@
 # dsh-jev-decide bundle patch：向 web profile 名册插入 JEV 决策网关。
-# 主机端（exports "."）在宿主进程运行：注册 ws_jev_decide / ws_jev_list_presets
+# 主机端（exports "."）在宿主进程运行：注册 ws_request_verdict / ws_list_verdict_guides
 # 两个 agent 工具，并提供 /api/dsh-jev-decide/* 回环路由；
 # 浏览器端（exports "./client"）为占位干净模块（本包能力在宿主端，见 README 安全模型）。
 - insert:

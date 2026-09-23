@@ -240,6 +240,8 @@ export interface HistoryEntry {
   readonly questions?: readonly HistoryQuestion[];
   /** 读取时 enrich 的展示标题（只存 id，缺失回退短 id）；永不落盘。 */
   readonly presetTitle?: string;
+  /** 读取时 enrich 的会话标题（只读活会话快照，无标题/服务缺席回落短 id）；永不落盘。 */
+  readonly sessionTitle?: string;
 }
 
 /** 成功输出必带字段（provider/appliedSource/truncated/originalLength/tier/automation/计费 codepoints/重试次数）。 */
