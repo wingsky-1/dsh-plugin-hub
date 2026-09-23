@@ -246,6 +246,16 @@ async function resolveRoute(
  * 失败（路由不可解析/流异常/取消）→ ok:false 元数据（不抛，正文空串）；
  * 成功 → ok:true + 正文 + tokens（首个 usage chunk 为准）。
  */
+function accumulateChunk(
+  chunk: StreamChunk,
+  body: string,
+  tokens: ReportTokenUsage | null,
+): { body: string; tokens: ReportTokenUsage | null } {
+  if (chunk.type === "text-delta") return { body: body + chunk.text, tokens };
+  if (chunk.type === "usage" && tokens === null)
+    return { body, tokens: parseTokenUsage(chunk.usage) };
+  return { body, tokens };
+}
 export async function generateReport(opts: GenerateReportOptions): Promise<ReportResult> {
   const now = opts.now ?? Date.now;
   const started = now();
@@ -290,8 +300,9 @@ export async function generateReport(opts: GenerateReportOptions): Promise<Repor
   let tokens: ReportTokenUsage | null = null;
   try {
     for await (const chunk of opts.llm.stream(genOpts)) {
-      if (chunk.type === "text-delta") body += chunk.text;
-      else if (chunk.type === "usage" && tokens === null) tokens = parseTokenUsage(chunk.usage);
+      const acc = accumulateChunk(chunk, body, tokens);
+      body = acc.body;
+      tokens = acc.tokens;
     }
   } catch (e: unknown) {
     // 流异常/取消 → 失败元数据；调度层据 ok 决定是否推进 lastRun（接线层约定）
