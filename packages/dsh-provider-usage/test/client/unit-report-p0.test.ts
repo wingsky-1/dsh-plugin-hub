@@ -11,6 +11,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { build as esbuildBuild } from "esbuild";
 import { describe, expect, it } from "vitest";
+import { zh, en } from "../../src/client/locales.ts";
 
 const pkgDir = fileURLToPath(new URL("../../", import.meta.url));
 
@@ -342,5 +343,32 @@ describe("locatePendingRow：D1 跳转判定点（新窗口重拉后定位）", 
       { period: "daily", key: "2026-03-13", ok: true },
     ] as typeof HIST_ROWS;
     expect(locatePendingRow(fresh, "daily:2026-03-13")?.key).toBe("2026-03-13");
+  });
+});
+
+// ---------------------------------------------------------------- B2-3：locales 中英（单元层禁引 src/client，I8①，故落 client 层）
+describe("B2-3 locales：T4 footnote/重试指引/hero 峰值钟点中英齐备", () => {
+  it("zh 弱模型 footnote 非空", () => {
+    expect(zh.reportWeakModelNote.length > 0).toBe(true);
+  });
+
+  it("en 弱模型 footnote 非空", () => {
+    expect(en.reportWeakModelNote.length > 0).toBe(true);
+  });
+
+  it("zh/en 重试指引非空", () => {
+    expect(zh.reportRetryHint.length > 0).toBe(true);
+    expect(en.reportRetryHint.length > 0).toBe(true);
+  });
+
+  it("zh/en key 集合一致（编译锁的运行时复核：无缺键）", () => {
+    expect(Object.keys(en).sort()).toEqual(Object.keys(zh).sort());
+  });
+
+  it("hero 峰值钟点文案中英齐备", () => {
+    expect(zh.reportHeroPeakHour.length > 0).toBe(true);
+    expect(en.reportHeroPeakHour.length > 0).toBe(true);
+    expect(zh.reportPeakHourValue.includes("{n}")).toBe(true);
+    expect(en.reportPeakHourValue.includes("{n}")).toBe(true);
   });
 });

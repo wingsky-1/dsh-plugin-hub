@@ -27,6 +27,7 @@ import {
   isScheduleDirty,
   parsePrompt,
   promptSectionStats,
+  PROMPT_RANGE_VAR,
   PROMPT_STATS_VAR,
 } from "./report-helpers.ts";
 import type { ReportMetaView } from "./history.tsx";
@@ -183,6 +184,9 @@ function PromptEditor(props: {
         <span className="dou-reportPromptChip" title={t("reportStatsVarNote")}>
           {PROMPT_STATS_VAR}
         </span>
+        <span className="dou-reportPromptChip" title={t("reportRangeVarNote")}>
+          {PROMPT_RANGE_VAR}
+        </span>
         <span className="dou-reportPromptBudget">
           {t("reportBudgetLabel")} {budgetText}
         </span>
@@ -216,6 +220,7 @@ function PromptEditor(props: {
             <span className="dou-reportLabel">{t("reportStatsLabel")}</span>
             <div className="dou-reportPromptStatsRow">
               <span className="dou-reportPromptChip">{PROMPT_STATS_VAR}</span>
+              <span className="dou-reportPromptChip">{PROMPT_RANGE_VAR}</span>
               <span className="dou-reportHint">{t("reportStatsVarNote")}</span>
             </div>
             {parsed.sections.stats.trim() !== PROMPT_STATS_VAR ? (
@@ -983,6 +988,9 @@ export function ReportSection(props: {
                     patchTop({ prompts: { ...draft.prompts, [promptTab]: nextText } })
                   }
                 />
+                {promptTab === "monthly" ? (
+                  <span className="dou-reportHint">{t("reportWeakModelNote")}</span>
+                ) : null}
               </div>
             </div>
           </ReportCollapsibleSection>
@@ -1031,6 +1039,9 @@ export function ReportSection(props: {
             {t("reportForceRegen")}
           </label>
           {genError !== null ? <span className="dou-reportGenError">{genError}</span> : null}
+          {genError !== null ? (
+            <span className="dou-reportHint">{t("reportRetryHint")}</span>
+          ) : null}
           {genNotice !== null ? <span className="dou-reportGenNotice">{genNotice}</span> : null}
         </div>
         <span className="dou-reportHint">{t("reportGenIdempotentHint")}</span>

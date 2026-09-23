@@ -28,6 +28,7 @@ export default defineConfig({
       'packages/dsh-provider-usage/test/unit/pipeline/unit-signal-lock.test.ts',
       'packages/dsh-provider-usage/test/unit/pipeline/unit-stats-service.test.ts',
       'packages/dsh-provider-usage/test/unit/registry/unit-hotreload.test.ts',
+      'packages/dsh-provider-usage/test/unit/report/unit-report-b2-3.test.ts',
       'packages/dsh-provider-usage/test/unit/report/unit-report-executor.test.ts',
       'packages/dsh-provider-usage/test/unit/report/unit-report.test.ts',
       'packages/dsh-provider-usage/test/unit/routes/unit-routes.test.ts',

@@ -100,6 +100,7 @@ export function summaryOf(snapshot: ReportStatsSnapshot): ReportMetaSummary {
     longestStreak: snapshot.longestStreak,
     wowRatio: snapshot.wowRatio,
     peakDay: snapshot.peakDay,
+    peakHour: snapshot.peakHour,
   };
 }
 
@@ -259,6 +260,7 @@ export async function runDueReport(params: {
     startDay: due.startDay,
     endDay: due.endDay,
     statsJson: JSON.stringify(snapshot, null, 2),
+    rangeText: `${due.startDay} ~ ${due.endDay}`,
     promptTemplate,
     provider: reportCfg.provider,
     model: reportCfg.model,

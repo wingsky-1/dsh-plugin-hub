@@ -12,6 +12,7 @@ export default defineConfig({
       'packages/dsh-provider-usage/test/integration/report-routes/composition-root.test.ts',
       'packages/dsh-provider-usage/test/integration/schedule/composition-root.test.ts',
       'packages/dsh-provider-usage/test/unit/apply/unit-apply.test.ts',
+      'packages/dsh-provider-usage/test/unit/report/unit-report-b2-3.test.ts',
       'packages/dsh-provider-usage/test/unit/report/unit-report-executor.test.ts',
       'packages/dsh-provider-usage/test/unit/report/unit-report.test.ts',
     ],

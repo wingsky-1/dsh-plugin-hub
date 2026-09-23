@@ -13,6 +13,8 @@ export const PROMPT_STRUCTURE_HEADER = "【撰写结构】";
 export const PROMPT_STRUCTURE_HEADER_DAILY = "【撰写结构（按顺序）】";
 export const PROMPT_CONSTRAINTS_HEADER = "【硬性约束（违背将视为严重错误）】";
 export const PROMPT_STATS_VAR = "{stats}";
+/** 窗口范围第二变量（B2-3：与 {stats} 同注入，旧模板无此变量原样保留） */
+export const PROMPT_RANGE_VAR = "{range}";
 
 /** 结构化提示词四块（stats 块恒含 {stats} 注入点）。 */
 export interface PromptSections {
@@ -82,11 +84,12 @@ export function composePrompt(
   ].join("\n");
 }
 
-/** 单周期提示词统计：字数预算（首个「N–M字」）、约束条数（约束块内「- 」行）、变量 chip。 */
+/** 单周期提示词统计：字数预算（首个「N–M字」）、约束条数（约束块内「- 」行）、变量 chip（双变量）。 */
 export function promptSectionStats(text: string): {
   budget: string | null;
   constraintCount: number;
   hasStatsVar: boolean;
+  hasRangeVar: boolean;
 } {
   const budgetMatch = text.match(/(\d+)\s*[–—-]\s*(\d+)\s*字/);
   const parsed = parsePrompt(text);
@@ -96,6 +99,7 @@ export function promptSectionStats(text: string): {
     budget: budgetMatch !== null ? `${budgetMatch[1]}–${budgetMatch[2]}` : null,
     constraintCount,
     hasStatsVar: text.includes(PROMPT_STATS_VAR),
+    hasRangeVar: text.includes(PROMPT_RANGE_VAR),
   };
 }
 

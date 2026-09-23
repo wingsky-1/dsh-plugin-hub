@@ -66,6 +66,8 @@ export interface ReportMetaView {
     longestStreak: number;
     wowRatio: number | null;
     peakDay: { day: string; total: number | null } | null;
+    /** 最活跃钟点（B2-3 新增落盘；旧报告缺字段，判空渲染） */
+    peakHour?: { hour: number; calls: number; total: number | null } | null;
   };
 }
 
@@ -81,17 +83,30 @@ function ratioBadge(ratio: number | null): React.ReactElement {
   );
 }
 
-/** 详情页年报 hero 区（海报式渐变不随主题反转，文字恒浅色；第二批前 hero 逻辑冻结）。 */
-function reportHero(s: NonNullable<ReportMetaView["summary"]>): React.ReactElement {
+/**
+ * 详情页年报 hero 区（海报式渐变不随主题反转，文字恒浅色）。
+ * PM1 三周期差异化：日报单日窗口连续天数无意义，改show高峰钟点
+ * （有值才渲染该行，覆盖不足/旧报告缺字段即跳过）；周/月报保留连续天数行。
+ */
+function reportHero(
+  s: NonNullable<ReportMetaView["summary"]>,
+  period: HistoryPeriod,
+): React.ReactElement {
   const stats: Array<[string, string]> = [
     [t("reportHeroCalls"), "" + s.calls.toLocaleString("en-US")],
     [t("reportHeroActive"), s.activeDays + " / " + s.windowDays],
-    [t("reportHeroStreak"), "" + s.longestStreak],
-    [
-      t("reportHeroPeak"),
-      s.peakDay !== null ? "" + (s.peakDay.total ?? 0).toLocaleString("en-US") : "—",
-    ],
   ];
+  if (period === "daily") {
+    const peakHour = s.peakHour ?? null;
+    if (peakHour !== null)
+      stats.push([t("reportHeroPeakHour"), t("reportPeakHourValue", { n: peakHour.hour })]);
+  } else {
+    stats.push([t("reportHeroStreak"), "" + s.longestStreak]);
+  }
+  stats.push([
+    t("reportHeroPeak"),
+    s.peakDay !== null ? "" + (s.peakDay.total ?? 0).toLocaleString("en-US") : "—",
+  ]);
   return (
     <div className="dou-hero">
       <div className="dou-heroBig">
@@ -365,7 +380,7 @@ export function HistorySection(props: {
                               }
                               const summary = detail.meta.summary;
                               if (summary !== null && summary !== undefined) {
-                                parts.push(reportHero(summary));
+                                parts.push(reportHero(summary, detail.meta.period));
                               }
                               if (detail.meta.noData === true) {
                                 parts.push(
@@ -382,9 +397,12 @@ export function HistorySection(props: {
                                       dangerouslySetInnerHTML={{ __html: detail.html }}
                                     />
                                   ) : (
-                                    <div className="dou-reportFetchFail" key="empty">
-                                      {detail.meta.error ?? t("reportFetchFail")}
-                                    </div>
+                                    <React.Fragment key="empty">
+                                      <div className="dou-reportFetchFail">
+                                        {detail.meta.error ?? t("reportFetchFail")}
+                                      </div>
+                                      <div className="dou-reportHint">{t("reportRetryHint")}</div>
+                                    </React.Fragment>
                                   ),
                                 );
                               }

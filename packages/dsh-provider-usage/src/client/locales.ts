@@ -276,6 +276,13 @@ export const zh = {
   reportForceShort: "强制覆盖",
   reportNoForceShort: "不强制覆盖",
   reportGenIdempotentHint: "窗口已有成功报告时默认幂等复用；勾选强制才会覆盖重跑。",
+  reportRangeVarNote: "{range} 为窗口范围注入点（只读，不可改名）",
+  // T4 月报弱模型策略：模板不加降级正文，配置页 footnote + 重试指引
+  reportWeakModelNote: "月报篇幅长，弱模型可能降级或失败；失败可重试，或更换模型后重新生成。",
+  reportRetryHint: "生成失败可重试；如需覆盖已有报告请勾选「重新生成」。",
+  // PM1 hero 日报高峰钟点行
+  reportHeroPeakHour: "高峰钟点",
+  reportPeakHourValue: "{n} 点",
   // D1 未见目标行的用户可见反馈（禁止静默吞键）
   reportGeneratedNotVisible: "报告已生成，但列表中暂未见到，可重新加载后查看。",
   reportReloadList: "重新加载",
@@ -545,6 +552,12 @@ export const en: Record<ProviderUsageLocaleKey, string> = {
   reportNoForceShort: "No force",
   reportGenIdempotentHint:
     "Reuses the existing successful report for the window by default; check Force to overwrite.",
+  reportRangeVarNote: "{range} is the window-range injection point (read-only, do not rename)",
+  reportWeakModelNote:
+    "Monthly reports are long; weaker models may degrade or fail — retry, or switch models and regenerate.",
+  reportRetryHint: "Generation failed — retry; check “Regenerate” to overwrite an existing report.",
+  reportHeroPeakHour: "peak hour",
+  reportPeakHourValue: "{n}:00",
   reportGeneratedNotVisible: "Report generated but not in the list yet — reload to check.",
   reportReloadList: "Reload",
 };

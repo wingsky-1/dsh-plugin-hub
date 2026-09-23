@@ -60,6 +60,8 @@ export interface ReportMetaSummary {
   longestStreak: number;
   wowRatio: number | null;
   peakDay: { day: string; total: number | null } | null;
+  /** 最活跃钟点（快照 peakHour 透传；覆盖不足/全 null 时 null，旧报告缺字段照读） */
+  peakHour: { hour: number; calls: number; total: number | null } | null;
 }
 
 /** 报告元数据（落盘与索引 JSONL 由接线层负责，本模块只产出数据）。 */
@@ -102,7 +104,9 @@ export interface GenerateReportOptions {
   endDay: string;
   /** 当期聚合统计 JSON 字符串（buildStatsSnapshot 产出；注入 {stats} 占位）。 */
   statsJson: string;
-  /** 提示词模板（{stats} 占位；normalizeReportConfig 已保证非空）。 */
+  /** 窗口范围文本（注入 {range} 占位；缺省 = startDay ~ endDay）。 */
+  rangeText?: string;
+  /** 提示词模板（{stats}/{range} 双占位；normalizeReportConfig 已保证非空）。 */
   promptTemplate: string;
   /** 配置的 provider/model；空串 = 跟随默认（解析为注册序首个）。 */
   provider: string;
@@ -203,11 +207,18 @@ function parseTokenUsage(u: unknown): ReportTokenUsage {
 }
 
 /**
- * {stats} 占位替换（模板其余文本原样保留；占位多次出现全部替换）。
+ * {stats}/{range} 双占位替换（模板其余文本原样保留；占位多次出现全部替换）。
  * split+join 而非 replace 正则：避免模板内容被按正则语义误解析。
+ * 旧模板无 {range} 时原样保留（向后兼容）；rangeText 缺省时 {range} 原样保留。
  */
-export function applyPromptTemplate(template: string, statsJson: string): string {
-  return template.split("{stats}").join(statsJson);
+export function applyPromptTemplate(
+  template: string,
+  statsJson: string,
+  rangeText?: string,
+): string {
+  const withStats = template.split("{stats}").join(statsJson);
+  if (rangeText === undefined) return withStats;
+  return withStats.split("{range}").join(rangeText);
 }
 
 /** 空串跟随默认：注册序首个 provider/model（无可选项返回 null）。 */
@@ -258,7 +269,8 @@ export async function generateReport(opts: GenerateReportOptions): Promise<Repor
   });
   const route = await resolveRoute(opts.llm, opts.provider, opts.model);
   if (route === null) return fail("无可用的已注册 provider/model（须先在 dsh 注册适配器路由）");
-  const prompt = applyPromptTemplate(opts.promptTemplate, opts.statsJson);
+  const rangeText = opts.rangeText ?? `${opts.startDay} ~ ${opts.endDay}`;
+  const prompt = applyPromptTemplate(opts.promptTemplate, opts.statsJson, rangeText);
   // 自拼 user 消息（与官方 createUserMessage 产物同形：randomUUID 稳定 id +
   // 单 text 块 content + user source；仅作只读传参，无需 freeze）
   const message: Message = {
