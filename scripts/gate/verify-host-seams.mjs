@@ -216,40 +216,60 @@ function visitR2Args(node, acc) {
   }
 }
 
-function visitR2Splice(node, acc) {
+function checkJoinConcat(node) {
+  const out = [];
   if (node.type === "CallExpression") {
     const callee = node.callee;
-    if (callee.type !== "MemberExpression") return;
+    if (callee.type !== "MemberExpression") return out;
     const prop = staticProp(callee);
-    if (prop !== "join" && prop !== "concat") return;
+    if (prop !== "join" && prop !== "concat") return out;
     const parts = [callee.object, ...node.arguments].map(staticString);
     if (parts.some((s) => s !== null && s.includes(API_PREFIX)))
-      acc.r2b.push({ ...at(node), kind: "join-concat" });
-    return;
+      out.push({ ...at(node), kind: "join-concat" });
+    return out;
   }
+  return out;
+}
+function checkPlusConcat(node) {
+  const out = [];
   if (node.type === "BinaryExpression" && node.operator === "+") {
     const l = staticString(node.left);
     const r = staticString(node.right);
     if ((l !== null && l.includes(API_PREFIX)) || (r !== null && r.includes(API_PREFIX))) {
-      acc.r2b.push({ ...at(node), kind: "plus" });
+      out.push({ ...at(node), kind: "plus" });
     }
-    return;
+    return out;
   }
+  return out;
+}
+function checkTemplateApi(node) {
+  const out = [];
   if (node.type === "TemplateLiteral" && node.expressions.length > 0) {
     const cooked = node.quasis.map((q) => q.value.cooked ?? "").join("");
-    if (cooked.includes(API_PREFIX)) acc.r2b.push({ ...at(node), kind: "template-expr" });
-    return;
+    if (cooked.includes(API_PREFIX)) out.push({ ...at(node), kind: "template-expr" });
+    return out;
   }
+  return out;
+}
+function checkLogicalApi(node) {
+  const out = [];
   if (node.type === "LogicalExpression" && (node.operator === "??" || node.operator === "||")) {
     const r = staticString(node.right);
     if (r !== null && r.includes(API_PREFIX) && node.right.type !== "Identifier") {
-      acc.r2b.push({
+      out.push({
         ...at(node),
         kind: node.operator === "??" ? "nullish-right" : "or-right",
         value: r,
       });
     }
   }
+  return out;
+}
+function visitR2Splice(node, acc) {
+  acc.r2b.push(...checkJoinConcat(node));
+  acc.r2b.push(...checkPlusConcat(node));
+  acc.r2b.push(...checkTemplateApi(node));
+  acc.r2b.push(...checkLogicalApi(node));
 }
 
 function isLogicRightOf(node, parent) {
