@@ -452,3 +452,90 @@ test("D: 解析失败回整包 + 混合 diff 工人不扩散", () => {
   const lanOnly = packagesToInvalidate([lanUnit], reg, topo);
   assert.deepEqual(packagesToInvalidate([w1, lanUnit], reg, topo), lanOnly, "跨包不扩散");
 });
+
+test("P3c-① supportFileEntries 三路返回/face边界/null哨兵行为锁定", () => {
+  const topo = JSON.parse(readFileSync(join(ROOT, "scripts/data/mutation-topology.json"), "utf8"));
+  const pkg = "dsh-provider-usage";
+  const surf = projectTestSurface(ROOT, topo, pkg);
+  const face = surf.testFiles;
+  const withFace = () => new Map([[pkg, face]]);
+  // null 哨兵：topology 缺席/segments 异常一律回落整包
+  assert.deepEqual(supportFileEntries(null, ROOT, new Map(), pkg, "x", []), [pkg], "null topology");
+  assert.deepEqual(
+    supportFileEntries({ packages: { [pkg]: { segments: null } } }, ROOT, new Map(), pkg, "x", []),
+    [pkg],
+    "segments null",
+  );
+  assert.deepEqual(
+    supportFileEntries({ packages: { [pkg]: { segments: [] } } }, ROOT, new Map(), pkg, "x", []),
+    [pkg],
+    "segments array",
+  );
+  assert.deepEqual(
+    supportFileEntries({ packages: { [pkg]: { segments: {} } } }, ROOT, new Map(), pkg, "x", []),
+    [pkg],
+    "segments empty",
+  );
+  // face 边界：在面内直接委托 testFileEntries，结果一致
+  const inFace = face[0];
+  assert.deepEqual(
+    supportFileEntries(topo, ROOT, withFace(), pkg, inFace, face),
+    testFileEntries(topo, ROOT, withFace(), pkg, inFace),
+    "face 命中委托",
+  );
+  // 三路返回：段窄化 / 豁免独占空 / 整包回落
+  assert.deepEqual(
+    supportFileEntries(
+      topo,
+      ROOT,
+      withFace(),
+      pkg,
+      "packages/dsh-provider-usage/test/hotreload-probe.mjs",
+      face,
+    ),
+    [
+      "dsh-provider-usage:contracts",
+      "dsh-provider-usage:entry",
+      "dsh-provider-usage:pipeline-core",
+      "dsh-provider-usage:registry",
+      "dsh-provider-usage:sanitize",
+    ],
+    "闭包命中段窄化",
+  );
+  assert.deepEqual(
+    supportFileEntries(
+      topo,
+      ROOT,
+      withFace(),
+      pkg,
+      "packages/dsh-provider-usage/test/client-fetch-timeout.worker.mjs",
+      face,
+    ),
+    [],
+    "豁免独占返回空",
+  );
+  assert.deepEqual(
+    supportFileEntries(
+      topo,
+      ROOT,
+      withFace(),
+      pkg,
+      "packages/dsh-provider-usage/test/__orphan__.mjs",
+      face,
+    ),
+    [pkg],
+    "孤儿回落整包",
+  );
+  assert.deepEqual(
+    supportFileEntries(
+      topo,
+      ROOT,
+      withFace(),
+      pkg,
+      "packages/dsh-provider-usage/test/helpers.ts",
+      face,
+    ),
+    [pkg],
+    "全段覆盖回落整包",
+  );
+});

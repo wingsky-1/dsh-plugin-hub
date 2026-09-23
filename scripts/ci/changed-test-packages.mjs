@@ -252,50 +252,63 @@ function resolveSegSet(topology, rootDir, faceCache, pkg, mutationConsumers, seg
   if (segKeys.every((k) => segSet.has(`${pkg}:${k}`))) return fallback;
   return [...segSet].sort();
 }
+function supportSegKeys(topology, pkg) {
+  const segDefs = topology?.packages?.[pkg]?.segments;
+  if (segDefs === null || typeof segDefs !== "object" || Array.isArray(segDefs)) return null;
+  const keys = Object.keys(segDefs);
+  if (keys.length === 0) return null;
+  return keys;
+}
+function classifySupportConsumer(d, pkg, faceSet) {
+  if (isExemptTestFile(d, pkg)) return "exempt";
+  if (faceSet.has(d)) return "mutation";
+  if (!d.startsWith(`packages/${pkg}/test/`)) return "outside";
+  return "transit";
+}
+function collectSupportConsumers(rootDir, pkg, file, faceSet) {
+  const visited = new Set([file]);
+  const queue = [file];
+  const mutationConsumers = new Set();
+  const exemptConsumers = new Set();
+  while (queue.length > 0) {
+    const cur = queue.shift();
+    let directs;
+    try {
+      directs = findDirectConsumers(rootDir, pkg, cur);
+    } catch {
+      return { mutationConsumers, exemptConsumers, fallback: true };
+    }
+    if (directs.length === 0) {
+      if (cur === file) return { mutationConsumers, exemptConsumers, fallback: true };
+      continue;
+    }
+    for (const d of directs) {
+      if (visited.has(d)) continue;
+      visited.add(d);
+      const kind = classifySupportConsumer(d, pkg, faceSet);
+      if (kind === "exempt") exemptConsumers.add(d);
+      else if (kind === "mutation") mutationConsumers.add(d);
+      else if (kind === "outside") return { mutationConsumers, exemptConsumers, fallback: true };
+      else queue.push(d);
+    }
+  }
+  return { mutationConsumers, exemptConsumers, fallback: false };
+}
 export function supportFileEntries(topology, rootDir, faceCache, pkg, file, packageFace) {
   try {
-    const pkgDef = topology?.packages?.[pkg];
-    const segDefs = pkgDef?.segments;
-    if (segDefs === null || typeof segDefs !== "object" || Array.isArray(segDefs)) return [pkg];
-    const segKeys = Object.keys(segDefs);
-    if (segKeys.length === 0) return [pkg];
+    const segKeys = supportSegKeys(topology, pkg);
+    if (segKeys === null) return [pkg];
     const face = Array.isArray(packageFace) ? packageFace : (faceCache.get(pkg) ?? []);
     if (face.includes(file)) return testFileEntries(topology, rootDir, faceCache, pkg, file);
-    const faceSet = new Set(face);
-    const visited = new Set([file]);
-    const queue = [file];
-    const mutationConsumers = new Set();
-    const exemptConsumers = new Set();
-    while (queue.length > 0) {
-      const cur = queue.shift();
-      let directs;
-      try {
-        directs = findDirectConsumers(rootDir, pkg, cur);
-      } catch {
-        return [pkg];
-      }
-      if (directs.length === 0) {
-        if (cur === file) return [pkg];
-        continue;
-      }
-      for (const d of directs) {
-        if (visited.has(d)) continue;
-        visited.add(d);
-        if (isExemptTestFile(d, pkg)) {
-          exemptConsumers.add(d);
-        } else if (faceSet.has(d)) {
-          mutationConsumers.add(d);
-        } else {
-          if (!d.startsWith(`packages/${pkg}/test/`)) return [pkg];
-          queue.push(d);
-        }
-      }
-    }
-    if (mutationConsumers.size === 0) {
-      if (exemptConsumers.size > 0) return [];
+    const collected = collectSupportConsumers(rootDir, pkg, file, new Set(face));
+    if (collected.fallback) return [pkg];
+    if (collected.mutationConsumers.size === 0) {
+      if (collected.exemptConsumers.size > 0) return [];
       return [pkg];
     }
-    return resolveSegSet(topology, rootDir, faceCache, pkg, mutationConsumers, segKeys, [pkg]);
+    return resolveSegSet(topology, rootDir, faceCache, pkg, collected.mutationConsumers, segKeys, [
+      pkg,
+    ]);
   } catch {
     return [pkg];
   }
