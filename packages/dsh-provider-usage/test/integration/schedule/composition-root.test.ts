@@ -613,8 +613,16 @@ describe("D3三-轮询否定 toFake 面（#768 计划表 rev2 D3 验收）", () 
         warn: quietWarn,
       });
       try {
+        // 首达确定性（#962 flake 实证 run 35803984163：50 轮纯假时钟推进后
+        // 直接断言，tick() 的 readLastRun/onDue 在飞 promise 未落定即判 seen>=1，
+        // 慢盘下 `expected 0 to be >= 1` 干跑失败）。启动补跑 tick 走真实 promise
+        // 链（不依赖假时钟），interval tick 的异步体同样需真实事件循环落定——
+        // 每轮推进后用真实 pollUntil（Date/setTimeout 保持真实，见本段头注释）
+        // 排空在飞 tick，可观测量收敛才断言；不用裸 sleep 假设静默。
         for (let i = 0; i < 50 && seen.length < 1; i += 1) {
-          await vi.advanceTimersByTimeAsync(30);
+          if (i > 0) await vi.advanceTimersByTimeAsync(30);
+          const arrived = await pollUntil(() => seen.length >= 1, 300, 10);
+          if (arrived) break;
         }
         expect(seen.length).toBeGreaterThanOrEqual(1);
         expect(vi.getTimerCount()).toBe(1); // 假时钟下有且仅有一个轮询句柄（空转即测失明）
