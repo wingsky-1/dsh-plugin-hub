@@ -67,24 +67,25 @@ export function buildToolDefinitions(assembly: ToolAssembly): ToolDefinition[] {
   const decideTool = {
     name: "ws_request_verdict",
     description:
-      "Ask the JEV SystemOne model for a calibrated judgment over text you supply, and get back a structured verdict your code can branch on. " +
+      "WHEN you must decide rather than generate text, call this after ws_list_verdict_guides: the list tells you which preset is enabled and how to shape questions_override, this tool returns the verdict your code branches on. " +
+      "Ask the JEV SystemOne model for a calibrated judgment over text you supply. " +
       "Ask in English when you can: state, instructions and options calibrate best in English; Chinese is fully supported (lang zh) but may return slightly lower confidence. " +
-      "USE when you must decide rather than generate text: pick one option (general), rate a plan 1-5 (plan-review), gate a risky change as safe or risky (risk-check), check text for leaked secrets (secret-leak), or ask any custom question set (custom). " +
+      "USE for three kinds: pick one option from 2-10 candidates (general for a frozen choice, custom for your own choice), rate a plan 1-5 (plan-review for a frozen score, custom for your own score with 2-10 levels), or gate a risky change as safe or risky (risk-check), check text for leaked secrets (secret-leak), or ask any custom question set (custom). " +
       "DO NOT use for open-ended reasoning, writing, or performing actions: this tool only judges and returns a verdict, acting on it is always your decision. " +
-      "You MUST supply questions_override on every call (1-20 questions; templates store no questions): choice questions need 2-10 options, score questions must not carry options but may carry levels (2-10 rubric strings, default 1-5), question and preset ids must be lowercase ASCII letters, digits or hyphens. " +
-      "Texts matching secret shapes (API keys, tokens, private-key blocks, password assignments) never leave the device and return choice human for a person to review. " +
+      "You MUST supply questions_override on every call (1-20 questions; templates store no questions): choice questions need 2-10 options, score questions must not carry options but may carry levels (2-10 rubric strings, default 1-5, e.g. five levels 1-5 or two levels low-high rescaled to 1-5), question ids and preset_id must be lowercase ASCII letters, digits or hyphens; preset_id is one of the 5 frozen ids or a custom id from ws_list_verdict_guides; lang is en, zh, or unknown and defaults to unknown. " +
+      "Texts matching secret shapes (API keys, tokens, private-key blocks, password assignments) never leave the device and return choice human for a person to review; choice Noul likewise means abstention and forces tier none for a person to review. " +
       "A disabled preset fails with PRESET_DISABLED: check availability first with ws_list_verdict_guides. " +
-      "Success returns choice or score plus confidence 0-1, tier (none/low/high) and automation (manual/assisted/auto/suggest-only, advisory only: truncated inputs force suggest-only, except local-precheck routing which stays manual). " +
+      "Success returns choice or score plus confidence 0-1, tier (none/low/high, derived as confidence \u22650.8 high, \u22650.5 low, else none) and automation (manual/assisted/auto/suggest-only, advisory only: truncated inputs force suggest-only, except local-precheck routing which stays manual). " +
       "Failures carry errorCode and category (for example NO_KEY, UPSTREAM, RATE_LIMITED, TIMEOUT). " +
-      "Without a configured key every call fails NO_KEY: ask the user to configure one in settings.",
+      "Without a configured key every call fails NO_KEY: ask the user to configure one in settings. " +
+      "Enable secret-leak only when you must check untrusted text for real secrets; it stays disabled by default and still runs local precheck first.",
     parameters: {
       type: "object",
       properties: {
         preset_id: {
           type: "string",
-          enum: ["general", "secret-leak", "plan-review", "risk-check", "custom"],
           description:
-            "Which frozen decision template to apply. general: choose one of your options; plan-review: rate with score questions (no options); risk-check: proceed-or-not choice (options like safe/risky); secret-leak: leaked-or-clean check (often disabled; secret-shaped text never leaves the device); custom: any 1-20 questions you supply. User-created custom preset ids (custom:true entries in ws_list_verdict_guides) are also accepted.",
+            "Which decision template to apply: one of the 5 frozen ids (general, secret-leak, plan-review, risk-check, custom) or a user-created custom preset id. Frozen ids are fixed; custom ids are the custom:true entries returned by ws_list_verdict_guides. general takes a 2-10-candidate choice; plan-review takes score questions with no options; risk-check takes a proceed-or-not choice (options like safe/risky); secret-leak takes a leaked-or-clean check and is disabled by default; custom takes any 1-20 questions you supply, with the first question driving the verdict.",
         },
         state: {
           type: "object",
@@ -98,10 +99,11 @@ export function buildToolDefinitions(assembly: ToolAssembly): ToolDefinition[] {
             lang: {
               type: "string",
               enum: ["en", "zh", "unknown"],
-              description: "Language of text (required, no default).",
+              default: "unknown",
+              description: "Language of text (optional, defaults to unknown; en or zh when known).",
             },
           },
-          required: ["text", "lang"],
+          required: ["text"],
         },
         questions_override: {
           type: "array",
@@ -155,9 +157,10 @@ export function buildToolDefinitions(assembly: ToolAssembly): ToolDefinition[] {
   const listTool = {
     name: "ws_list_verdict_guides",
     description:
+      "WHEN you need to know which preset to use or how to shape questions_override, call this first; WHEN NOT to call it is when you already know the enabled preset and its asking conventions. " +
       "List the frozen JEV preset catalogue with live enabled state (read-only: no network, no history). " +
       "Each entry carries its English asking guide (how to shape questions_override for it), templateVersion (always 1) and automationCap (0 manual-only, 1 low, 2 high). " +
-      "Call this before ws_request_verdict to check a preset is enabled and to copy its asking conventions.",
+      "Call this before ws_request_verdict to check a preset is enabled and to copy its asking conventions; custom:true entries are user-created presets you can also use as preset_id.",
     parameters: { type: "object", properties: {} },
     output: {
       schema: { type: "array" },

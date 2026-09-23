@@ -15,7 +15,7 @@ import {
   parseConfigPayload,
   parsePresetsPayload,
 } from "../api/interface.ts";
-import type { AutomationCap, JevConfigV1, JevPresetInfo } from "../api/interface.ts";
+import type { AutomationCap, DecisionConfigV1, DecisionPresetInfo } from "../api/interface.ts";
 import { t } from "../locale.ts";
 
 interface CustomDraft {
@@ -39,7 +39,7 @@ interface Row {
 type Msg = { readonly kind: "info" | "error" | "ok"; readonly text: string };
 
 export function PresetsPane(): React.ReactElement {
-  const [snapshot, setSnapshot] = React.useState<JevConfigV1 | null>(null);
+  const [snapshot, setSnapshot] = React.useState<DecisionConfigV1 | null>(null);
   const [rows, setRows] = React.useState<Row[]>([]);
   const [openDetail, setOpenDetail] = React.useState<string | null>(null);
   const [msg, setMsg] = React.useState<Msg | null>(null);
@@ -78,7 +78,7 @@ export function PresetsPane(): React.ReactElement {
         },
       ),
     ])
-      .then(([infos, cfg]: [JevPresetInfo[], JevConfigV1]) => {
+      .then(([infos, cfg]: [DecisionPresetInfo[], DecisionConfigV1]) => {
         if (!alive.current) return;
         setSnapshot(cfg);
         const byCfg = new Map(cfg.presets.map((p) => [p.id, p]));

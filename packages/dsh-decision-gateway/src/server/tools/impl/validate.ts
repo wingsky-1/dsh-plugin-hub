@@ -154,7 +154,9 @@ export function validateDecideArgs(
   if (typeof text !== "string" || text.length === 0 || (text as string).trim().length === 0) {
     return fail("EMPTY_TEXT", "state.text must be a non-blank string");
   }
-  const lang: unknown = state["lang"];
+  const langRaw: unknown = state["lang"];
+  const lang: "en" | "zh" | "unknown" =
+    langRaw === undefined ? "unknown" : (langRaw as "en" | "zh" | "unknown");
   if (lang !== "en" && lang !== "zh" && lang !== "unknown") {
     return fail("BAD_LANG", "state.lang must be en|zh|unknown");
   }

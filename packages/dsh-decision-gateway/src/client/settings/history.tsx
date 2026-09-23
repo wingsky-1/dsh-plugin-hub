@@ -12,14 +12,14 @@ import {
   fetchTimeout,
   parseHistoryPayload,
 } from "../api/interface.ts";
-import type { JevHistoryEntry } from "../api/interface.ts";
+import type { DecisionHistoryEntry } from "../api/interface.ts";
 import { t } from "../locale.ts";
 import { fmtTime, shortId } from "./format.ts";
 import { ProbBar, tierBadge } from "./prob.tsx";
 
 const PAGE_LIMIT = 200;
 
-function EntryItem({ entry }: { readonly entry: JevHistoryEntry }): React.ReactElement {
+function EntryItem({ entry }: { readonly entry: DecisionHistoryEntry }): React.ReactElement {
   const meta: string[] = [];
   if (entry.resultKind !== "") meta.push(entry.resultKind);
   if (entry.choice !== undefined && entry.choice !== "") meta.push("choice=" + entry.choice);
@@ -77,7 +77,7 @@ function EntryItem({ entry }: { readonly entry: JevHistoryEntry }): React.ReactE
 type Msg = { readonly kind: "info" | "error"; readonly text: string };
 
 export function HistoryPane(): React.ReactElement {
-  const [entries, setEntries] = React.useState<JevHistoryEntry[]>([]);
+  const [entries, setEntries] = React.useState<DecisionHistoryEntry[]>([]);
   const [root, setRoot] = React.useState("");
   const [sessionId, setSessionId] = React.useState("");
   const [msg, setMsg] = React.useState<Msg | null>(null);

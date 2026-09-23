@@ -57,10 +57,10 @@
     "export declare const inject: string[];",
     "export declare const inject: string[];",
     "export declare const name = \"decision-gateway\";",
-    "export declare const zh: { readonly tabLabel: \"JEV 决策\"; readonly cardName: \"JEV 决策（dsh-decision-gateway）\"; readonly cardDesc: \"连接 / 模板库 / 历史：密钥掩码显示，原文永不回显。\"; readonly tabsAria: \"JEV 决策设置\"; readonly tabConnection: \"连接\"; readonly tabPresets: \"模板库\"; readonly tabHistory: \"历史\"; readonly healthChecking: \"自检中…\"; readonly healthOk: \"服务可用\"; readonly healthBad: \"服务异常 \"; readonly healthUnreachable: \"服务不可达\"; readonly notLoaded: \"未加载\"; readonly loading: \"加载中…\"; readonly save: \"保存\"; readonly retry: \"重试\"; readonly exportJson: \"导出 JSON\"; readonly detail: \"详情\"; readonly copyCustom: \"复制为自定义\"; readonly copyCustomNote: \"复制为自定义走新增接口（P1），当前仅展示规范。\"; readonly refresh: \"刷新\"; readonly clearSession: \"清空本会话\"; readonly testOffline: \"离线自检\"; readonly testing: \"自检中…\"; readonly testOk: \"自检通过\"; readonly testFail: \"自检失败：\"; readonly enabledOn: \"已启用\"; readonly enabledOff: \"已关闭\"; readonly enablePresetAria: \"启用预设 \"; readonly emptyPresets: \"暂无预设。\"; readonly emptyHistory: \"暂无历史。\"; readonly emptySpec: \"暂无规范。\"; readonly truncBadge: \"截断\"; readonly errPrefix: \"错误：\"; readonly noProb: \"无概率\"; readonly highLine: \"high 线 80%\"; readonly capNone: \"none（仅人工）\"; readonly capLabel: \"自动化上限\"; readonly tplVersion: \"模板版本 v\"; readonly frozenNote: \"（frozen，恒为 1）\"; readonly countEntries: \"共 {n} 条\"; readonly keyMode: \"密钥方式（二选一，互斥）\"; readonly keyEnv: \"ENV 引用\"; readonly keyPlain: \"明文密钥\"; readonly modeEnvNote: \"当前 ENV 引用：明文侧已置灰禁用。\"; readonly modePlainNote: \"当前明文密钥：ENV 侧已置灰禁用。提交明文前请先清空 ENV 输入框。\"; readonly envLabel: \"ENV 变量名（apiKeyRef）\"; readonly envAria: \"ENV 变量名\"; readonly envPlaceholder: \"大写字母开头，如 JEV_API_KEY（留空不改）\"; readonly envRule: \"规则：^[A-Z][A-Z0-9_]{1,63}$；与明文密钥互斥，只提交其一。\"; readonly envBad: \"ENV 名非法：须满足 ^[A-Z][A-Z0-9_]{1,63}$（如 JEV_API_KEY）。\"; readonly plainAria: \"明文密钥\"; readonly plainPlaceholder: \"输入新的明文密钥以替换（留空不改）\"; readonly plainFoldTitle: \"输入明文密钥…\"; readonly confirmText: \"我确认提交本次明文（仅本次请求，不回显、不入库原文）\"; readonly confirmNeeded: \"提交明文前需先勾选二次确认。\"; readonly plainNote: \"密钥原文永不回显；已配置仅显示“已配置”。占位符不含任何真密钥示例。\"; readonly maskOn: \"密钥：已配置\"; readonly maskOff: \"密钥：未配置\"; readonly maskEnv: \"ENV：\"; readonly loadedNote: \"已加载配置 v1。明文框恒空：已配置仅显示“已配置”。\"; readonly loadFail: \"加载失败：\"; readonly loadFailShort: \"加载失败\"; readonly mutualError: \"明文与 ENV 引用互斥：请先清空 ENV 输入框（留空）再提交明文。\"; readonly nanError: \"高级参数须为数字。\"; readonly saving: \"保存中…（明文仅本次提交，不回显）\"; readonly savedReload: \"已保存。重新加载掩码态…\"; readonly saveFail: \"保存失败：\"; readonly advTitle: \"高级…\"; readonly advTimeout: \"请求超时 timeoutMs\"; readonly advTimeoutHint: \"默认 8000（毫秒，上限 120000）\"; readonly advConcurrency: \"最大并发 maxConcurrency\"; readonly advConcurrencyHint: \"默认 4\"; readonly advTrunc: \"截断预算 truncBudget\"; readonly advTruncHint: \"默认 32000（字符）\"; readonly advPerSession: \"单会话历史 perSession\"; readonly advPerSessionHint: \"默认 200（上限 1000）\"; readonly advTotalSessions: \"总会话数 totalSessions\"; readonly advTotalSessionsHint: \"默认 50（上限 200）\"; readonly filterTitle: \"过滤…\"; readonly wsLabel: \"工作目录\"; readonly wsFilterAria: \"工作目录过滤\"; readonly sessLabel: \"会话\"; readonly sessFilterAria: \"会话过滤\"; readonly allWs: \"全部工作目录\"; readonly allSess: \"全部会话\"; readonly historyOrderNote: \"倒序排列（含概率条 + tier + 截断徽标 + 错误行）。\"; readonly clearing: \"清空中…（仅单会话）\"; readonly clearOk: \"已清空本会话。重新加载…\"; readonly clearFail: \"清空失败：\"; readonly confirmClear: \"确认清空本会话？\"; readonly confirmClearAgain: \"再次点击确认清空当前会话历史（仅单会话 DELETE）。\"; readonly clearScopeNote: \"仅清空当前选中会话（DELETE 单会话），无批量清空\"; readonly presetsMergedNote: \"目录与开关位已合并。阈值微调即 automationCap 三档（0=none/1=low/2=high）。\"; readonly presetsCount: \"预设 {n} 个\"; readonly presetsExported: \"已导出 {n} 个预设（JSON 下载）。\"; readonly presetsSaved: \"已保存 {n} 个预设开关与阈值。\"; readonly noImportNote: \"无导入按钮：模板库只出不进。secret-leak 默认关闭（frozen 模板）。\"; readonly customBadge: \"自建\"; readonly addCustom: \"新建自建预设\"; readonly deleteCustom: \"删除\"; readonly confirmDelete: \"确认删除？\"; readonly confirmDeleteCustom: \"再次点击确认删除该自建预设（仅删本条）。\"; readonly customIdLabel: \"自建 id（小写字母/数字/连字符，不可与 frozen 重名）\"; readonly customLabelLabel: \"展示名（英文）\"; readonly customDescLabel: \"出题规范（英文自由文本，可抄模板写法）\"; readonly customDraftNote: \"保存后默认关闭，需手动启用；题目永随调用传入，不存模板。\"; readonly cancelCustom: \"取消\"; readonly createCustom: \"创建\"; readonly customSaved: \"自建预设已保存。\"; readonly customFormInvalid: \"id/展示名/规范均不能为空。\"; };",
+    "export declare const zh: { readonly tabLabel: \"JEV 决策\"; readonly cardName: \"JEV 决策（dsh-decision-gateway）\"; readonly cardDesc: \"连接 / 模板库 / 历史：密钥掩码显示，原文永不回显。\"; readonly tabsAria: \"JEV 决策设置\"; readonly tabConnection: \"连接\"; readonly tabPresets: \"模板库\"; readonly tabHistory: \"历史\"; readonly healthChecking: \"自检中…\"; readonly healthOk: \"服务可用\"; readonly healthBad: \"服务异常 \"; readonly healthUnreachable: \"服务不可达\"; readonly notLoaded: \"未加载\"; readonly loading: \"加载中…\"; readonly save: \"保存\"; readonly retry: \"重试\"; readonly exportJson: \"导出 JSON\"; readonly detail: \"详情\"; readonly copyCustom: \"复制为自定义\"; readonly copyCustomNote: \"复制为自定义走新增接口（P1），当前仅展示规范。\"; readonly refresh: \"刷新\"; readonly clearSession: \"清空本会话\"; readonly testOffline: \"离线自检\"; readonly testing: \"自检中…\"; readonly testOk: \"自检通过\"; readonly testFail: \"自检失败：\"; readonly enabledOn: \"已启用\"; readonly enabledOff: \"已关闭\"; readonly enablePresetAria: \"启用预设 \"; readonly emptyPresets: \"暂无预设。\"; readonly emptyHistory: \"暂无历史。\"; readonly emptySpec: \"暂无规范。\"; readonly truncBadge: \"截断\"; readonly errPrefix: \"错误：\"; readonly noProb: \"无概率\"; readonly highLine: \"high 线 80%\"; readonly capNone: \"none（仅人工）\"; readonly capLabel: \"自动化上限\"; readonly tplVersion: \"模板版本 v\"; readonly frozenNote: \"（frozen，恒为 1）\"; readonly countEntries: \"共 {n} 条\"; readonly keyMode: \"密钥方式（二选一，互斥）\"; readonly keyEnv: \"ENV 引用\"; readonly keyPlain: \"明文密钥\"; readonly modeEnvNote: \"当前 ENV 引用：明文侧已隐藏。\"; readonly modePlainNote: \"当前明文密钥：ENV 侧已隐藏。保存明文将清除已存的 ENV 引用（切轨）；切回 ENV 即清空明文。\"; readonly maskDotsAria: \"已配置明文密钥掩码（定长八点，与原文长度无关）\"; readonly envLabel: \"ENV 变量名（apiKeyRef）\"; readonly envAria: \"ENV 变量名\"; readonly envPlaceholder: \"大写字母开头，如 JEV_API_KEY（留空不改）\"; readonly envRule: \"规则：^[A-Z][A-Z0-9_]{1,63}$；与明文密钥互斥，只提交其一。\"; readonly envBad: \"ENV 名非法：须满足 ^[A-Z][A-Z0-9_]{1,63}$（如 JEV_API_KEY）。\"; readonly plainAria: \"明文密钥\"; readonly plainPlaceholder: \"输入新的明文密钥以替换（留空不改）\"; readonly plainFoldTitle: \"输入明文密钥…\"; readonly plainNote: \"密钥原文永不回显；已配置仅显示“已配置”。占位符不含任何真密钥示例。\"; readonly maskOn: \"密钥：已配置\"; readonly maskOff: \"密钥：未配置\"; readonly maskEnv: \"ENV：\"; readonly loadedNote: \"已加载配置 v1。明文框恒空：已配置仅显示“已配置”。\"; readonly loadFail: \"加载失败：\"; readonly loadFailShort: \"加载失败\"; readonly mutualError: \"明文与 ENV 引用互斥：请先清空 ENV 输入框（留空）再提交明文。\"; readonly nanError: \"高级参数须为数字。\"; readonly saving: \"保存中…（明文仅本次提交，不回显）\"; readonly savedReload: \"已保存。重新加载掩码态…\"; readonly saveFail: \"保存失败：\"; readonly advTitle: \"高级…\"; readonly advTimeout: \"请求超时 timeoutMs\"; readonly advTimeoutHint: \"默认 8000（毫秒，上限 120000）\"; readonly advConcurrency: \"最大并发 maxConcurrency\"; readonly advConcurrencyHint: \"默认 4\"; readonly advTrunc: \"截断预算 truncBudget\"; readonly advTruncHint: \"默认 32000（字符）\"; readonly advPerSession: \"单会话历史 perSession\"; readonly advPerSessionHint: \"默认 200（上限 1000）\"; readonly advTotalSessions: \"总会话数 totalSessions\"; readonly advTotalSessionsHint: \"默认 50（上限 200）\"; readonly filterTitle: \"过滤…\"; readonly wsLabel: \"工作目录\"; readonly wsFilterAria: \"工作目录过滤\"; readonly sessLabel: \"会话\"; readonly sessFilterAria: \"会话过滤\"; readonly allWs: \"全部工作目录\"; readonly allSess: \"全部会话\"; readonly historyOrderNote: \"倒序排列（含概率条 + tier + 截断徽标 + 错误行）。\"; readonly clearing: \"清空中…（仅单会话）\"; readonly clearOk: \"已清空本会话。重新加载…\"; readonly clearFail: \"清空失败：\"; readonly confirmClear: \"确认清空本会话？\"; readonly confirmClearAgain: \"再次点击确认清空当前会话历史（仅单会话 DELETE）。\"; readonly clearScopeNote: \"仅清空当前选中会话（DELETE 单会话），无批量清空\"; readonly presetsMergedNote: \"目录与开关位已合并。阈值微调即 automationCap 三档（0=none/1=low/2=high）。\"; readonly presetsCount: \"预设 {n} 个\"; readonly presetsExported: \"已导出 {n} 个预设（JSON 下载）。\"; readonly presetsSaved: \"已保存 {n} 个预设开关与阈值。\"; readonly noImportNote: \"无导入按钮：模板库只出不进。secret-leak 默认关闭（frozen 模板）。\"; readonly customBadge: \"自建\"; readonly addCustom: \"新建自建预设\"; readonly deleteCustom: \"删除\"; readonly confirmDelete: \"确认删除？\"; readonly confirmDeleteCustom: \"再次点击确认删除该自建预设（仅删本条）。\"; readonly customIdLabel: \"自建 id（小写字母/数字/连字符，不可与 frozen 重名）\"; readonly customLabelLabel: \"展示名（英文）\"; readonly customDescLabel: \"出题规范（英文自由文本，可抄模板写法）\"; readonly customDraftNote: \"保存后默认关闭，需手动启用；题目永随调用传入，不存模板。\"; readonly cancelCustom: \"取消\"; readonly createCustom: \"创建\"; readonly customSaved: \"自建预设已保存。\"; readonly customFormInvalid: \"id/展示名/规范均不能为空。\"; };",
     "export declare function ConnectionPane(): React.ReactElement;",
+    "export declare function DecisionCard(): React.ReactElement;",
     "export declare function HistoryPane(): React.ReactElement;",
-    "export declare function JevCard(): React.ReactElement;",
     "export declare function PresetsPane(): React.ReactElement;",
     "export declare function ProbBar({ entry }",
     "export declare function appendEntry(home: string | undefined, entry: HistoryEntry, limits: { readonly perSession: number; readonly totalSessions: number; }",
@@ -73,7 +73,7 @@
     "export declare function buildDefaultConfig(): ConfigV1;",
     "export declare function buildEndpoints(ports: ApiDeps): Endpoint[];",
     "export declare function buildToolDefinitions(assembly: ToolAssembly): ToolDefinition[];",
-    "export declare function callWithRetry(body: JevRequestBody, key: string, timeoutMs: number, fetchImpl: FetchImpl): Promise<{ readonly verdict?: RemoteVerdict; readonly failure?: JevFailure; readonly retries: number; }",
+    "export declare function callWithRetry(body: DecisionRequestBody, key: string, timeoutMs: number, fetchImpl: FetchImpl): Promise<{ readonly verdict?: RemoteVerdict; readonly failure?: DecisionFailure; readonly retries: number; }",
     "export declare function capLabel(cap: AutomationCap): string;",
     "export declare function clamp01(v: unknown): number;",
     "export declare function compareVersions(left: string, right: string): number;",
@@ -83,6 +83,7 @@
     "export declare function createSemaphore(max: number): { readonly run: <T>(task: () => Promise<T>) => Promise<T>; };",
     "export declare function customPresetsFile(home?: string): string;",
     "export declare function decide(args: unknown, deps: DecideDeps): Promise<DecideOutput | ErrorEnvelope>;",
+    "export declare function decisionGatewayHome(home?: string): string;",
     "export declare function defaultFetchImpl(): FetchImpl;",
     "export declare function deleteSession(home: string | undefined, query: { readonly root?: string; readonly sessionId?: string; }",
     "export declare function ensureDir0700(dir: string): void;",
@@ -96,26 +97,25 @@
     "export declare function installApi(deps: ApiDeps): (() => void)[];",
     "export declare function installUpgrade(deps: UpgradeDeps): MigrateReport;",
     "export declare function isRecord(value: unknown): value is Record<string, unknown>;",
-    "export declare function jevHome(home?: string): string;",
     "export declare function keyShapeCategory(key: string): KeyShapeCategory | null;",
-    "export declare function lang(): JevLocale;",
+    "export declare function lang(): DecisionLocale;",
     "export declare function listFilesSync(dir: string): string[];",
     "export declare function listPresets(deps: { readonly isEnabled: (presetId: string) => boolean; readonly capOf: (presetId: string) => number; readonly customs?: readonly CustomPreset[]; }",
     "export declare function loadCustomPresets(home: string | undefined, deps: ConfigDeps): CustomPreset[];",
     "export declare function loadState(home: string | undefined, deps: ConfigDeps): LoadedState;",
     "export declare function localPrecheckHit(text: string): boolean;",
-    "export declare function mapFirstAnswer(body: JevRequestBody, result: SystemOneResult<Questions>): { readonly ok: true; readonly verdict: RemoteVerdict; }",
+    "export declare function mapFirstAnswer(body: DecisionRequestBody, result: SystemOneResult<Questions>): { readonly ok: true; readonly verdict: RemoteVerdict; }",
     "export declare function migrate(deps: UpgradeDeps): MigrateReport;",
     "export declare function mtimeMs(file: string): number;",
     "export declare function normalizeCap(v: unknown): AutomationCap;",
     "export declare function normalizeLoadedConfig(raw: unknown): { readonly config: ConfigV1; readonly retired: string[]; };",
     "export declare function normalizePutEnvelope(body: unknown): { readonly ok: true; readonly flat: Record<string, unknown>; }",
-    "export declare function parseConfigPayload(payload: unknown): JevConfigV1 | null;",
-    "export declare function parseHistoryPayload(payload: unknown): JevHistoryEntry[];",
-    "export declare function parsePresetsPayload(payload: unknown): JevPresetInfo[];",
+    "export declare function parseConfigPayload(payload: unknown): DecisionConfigV1 | null;",
+    "export declare function parseHistoryPayload(payload: unknown): DecisionHistoryEntry[];",
+    "export declare function parsePresetsPayload(payload: unknown): DecisionPresetInfo[];",
     "export declare function pluginVersion(): string;",
     "export declare function presetsFile(home?: string): string;",
-    "export declare function probPercent(entry: JevHistoryEntry): number;",
+    "export declare function probPercent(entry: DecisionHistoryEntry): number;",
     "export declare function probeConnection(input: ProbeInput): Promise<ProbeResult>;",
     "export declare function queryEntries(home: string | undefined, query: { readonly root?: string; readonly sessionId?: string; readonly limit?: number; }",
     "export declare function readJsonSync(file: string): { readonly ok: true; readonly value: unknown; }",
@@ -125,22 +125,22 @@
     "export declare function registerEndpoints(register: RegisterRoute, endpoints: Endpoint[], logger: LoggerPort): (() => void)[];",
     "export declare function removeFileSync(file: string): void;",
     "export declare function resolveApiKey(state: LoadedState, env: Record<string, string | undefined>, deps: ConfigDeps): { readonly key: string | undefined; readonly source: \"env\" | \"plaintext\" | \"none\"; };",
-    "export declare function resolveLang(): JevLocale;",
+    "export declare function resolveLang(): DecisionLocale;",
     "export declare function resolveRootHash(root: string): string;",
     "export declare function rootDisplayOf(root: string): string;",
     "export declare function rootHashOf(root: string): string;",
     "export declare function rootOf(exec: unknown): string;",
     "export declare function savePatch(home: string | undefined, patch: ConfigPutPatch, deps: ConfigDeps): LoadedState;",
-    "export declare function sdkErrorToFailure(cause: unknown): JevFailure;",
+    "export declare function sdkErrorToFailure(cause: unknown): DecisionFailure;",
     "export declare function secretsFile(home?: string): string;",
     "export declare function sendFailure(res: ServerResponse, status: number, errorCode: string, category: string, message: string): void;",
     "export declare function sendJson(res: ServerResponse, status: number, body: unknown): void;",
     "export declare function sessionOf(exec: unknown): string;",
-    "export declare function setLang(next: JevLocale): void;",
+    "export declare function setLang(next: DecisionLocale): void;",
     "export declare function shortId(id: string, len?: number): string;",
     "export declare function stateHashOf(text: string): string;",
-    "export declare function t(key: JevTextKey, params?: { readonly n?: number; }",
-    "export declare function tierBadge(tier: JevHistoryEntry[\"tier\"]): React.ReactElement;",
+    "export declare function t(key: DecisionTextKey, params?: { readonly n?: number; }",
+    "export declare function tierBadge(tier: DecisionHistoryEntry[\"tier\"]): React.ReactElement;",
     "export declare function toMaskedConfig(state: LoadedState): ConfigV1;",
     "export declare function toWireQuestions(questions: readonly ValidQuestion[]): Questions;",
     "export declare function truncateCodePoints(text: string, budget: number): { readonly text: string; readonly truncated: boolean; readonly originalLength: number; };",
@@ -229,8 +229,8 @@
         "customPresetsFile": [
           "export declare function customPresetsFile(home?: string): string;"
         ],
-        "jevHome": [
-          "export declare function jevHome(home?: string): string;"
+        "decisionGatewayHome": [
+          "export declare function decisionGatewayHome(home?: string): string;"
         ],
         "presetsFile": [
           "export declare function presetsFile(home?: string): string;"
@@ -329,7 +329,7 @@
           "export declare function removeFileSync(file: string): void;"
         ],
         "callWithRetry": [
-          "export declare function callWithRetry(body: JevRequestBody, key: string, timeoutMs: number, fetchImpl: FetchImpl): Promise<{ readonly verdict?: RemoteVerdict; readonly failure?: JevFailure; readonly retries: number; }"
+          "export declare function callWithRetry(body: DecisionRequestBody, key: string, timeoutMs: number, fetchImpl: FetchImpl): Promise<{ readonly verdict?: RemoteVerdict; readonly failure?: DecisionFailure; readonly retries: number; }"
         ],
         "confidenceTier": [
           "export declare function confidenceTier(confidence: number): number;"
@@ -338,10 +338,10 @@
           "export declare function defaultFetchImpl(): FetchImpl;"
         ],
         "mapFirstAnswer": [
-          "export declare function mapFirstAnswer(body: JevRequestBody, result: SystemOneResult<Questions>): { readonly ok: true; readonly verdict: RemoteVerdict; }"
+          "export declare function mapFirstAnswer(body: DecisionRequestBody, result: SystemOneResult<Questions>): { readonly ok: true; readonly verdict: RemoteVerdict; }"
         ],
         "sdkErrorToFailure": [
-          "export declare function sdkErrorToFailure(cause: unknown): JevFailure;"
+          "export declare function sdkErrorToFailure(cause: unknown): DecisionFailure;"
         ],
         "toWireQuestions": [
           "export declare function toWireQuestions(questions: readonly ValidQuestion[]): Questions;"
@@ -497,13 +497,13 @@
           "export declare function normalizeCap(v: unknown): AutomationCap;"
         ],
         "parseConfigPayload": [
-          "export declare function parseConfigPayload(payload: unknown): JevConfigV1 | null;"
+          "export declare function parseConfigPayload(payload: unknown): DecisionConfigV1 | null;"
         ],
         "parseHistoryPayload": [
-          "export declare function parseHistoryPayload(payload: unknown): JevHistoryEntry[];"
+          "export declare function parseHistoryPayload(payload: unknown): DecisionHistoryEntry[];"
         ],
         "parsePresetsPayload": [
-          "export declare function parsePresetsPayload(payload: unknown): JevPresetInfo[];"
+          "export declare function parsePresetsPayload(payload: unknown): DecisionPresetInfo[];"
         ],
         "validApiKeyRef": [
           "export declare function validApiKeyRef(name: string): boolean;"
@@ -527,16 +527,16 @@
           "export declare function bindTranslate(next: HostTranslate): void;"
         ],
         "lang": [
-          "export declare function lang(): JevLocale;"
+          "export declare function lang(): DecisionLocale;"
         ],
         "resolveLang": [
-          "export declare function resolveLang(): JevLocale;"
+          "export declare function resolveLang(): DecisionLocale;"
         ],
         "setLang": [
-          "export declare function setLang(next: JevLocale): void;"
+          "export declare function setLang(next: DecisionLocale): void;"
         ],
         "t": [
-          "export declare function t(key: JevTextKey, params?: { readonly n?: number; }"
+          "export declare function t(key: DecisionTextKey, params?: { readonly n?: number; }"
         ],
         "unbindTranslate": [
           "export declare function unbindTranslate(): void;"
@@ -545,10 +545,10 @@
           "export declare const en: Record<keyof typeof zh, string>;"
         ],
         "zh": [
-          "export declare const zh: { readonly tabLabel: \"JEV 决策\"; readonly cardName: \"JEV 决策（dsh-decision-gateway）\"; readonly cardDesc: \"连接 / 模板库 / 历史：密钥掩码显示，原文永不回显。\"; readonly tabsAria: \"JEV 决策设置\"; readonly tabConnection: \"连接\"; readonly tabPresets: \"模板库\"; readonly tabHistory: \"历史\"; readonly healthChecking: \"自检中…\"; readonly healthOk: \"服务可用\"; readonly healthBad: \"服务异常 \"; readonly healthUnreachable: \"服务不可达\"; readonly notLoaded: \"未加载\"; readonly loading: \"加载中…\"; readonly save: \"保存\"; readonly retry: \"重试\"; readonly exportJson: \"导出 JSON\"; readonly detail: \"详情\"; readonly copyCustom: \"复制为自定义\"; readonly copyCustomNote: \"复制为自定义走新增接口（P1），当前仅展示规范。\"; readonly refresh: \"刷新\"; readonly clearSession: \"清空本会话\"; readonly testOffline: \"离线自检\"; readonly testing: \"自检中…\"; readonly testOk: \"自检通过\"; readonly testFail: \"自检失败：\"; readonly enabledOn: \"已启用\"; readonly enabledOff: \"已关闭\"; readonly enablePresetAria: \"启用预设 \"; readonly emptyPresets: \"暂无预设。\"; readonly emptyHistory: \"暂无历史。\"; readonly emptySpec: \"暂无规范。\"; readonly truncBadge: \"截断\"; readonly errPrefix: \"错误：\"; readonly noProb: \"无概率\"; readonly highLine: \"high 线 80%\"; readonly capNone: \"none（仅人工）\"; readonly capLabel: \"自动化上限\"; readonly tplVersion: \"模板版本 v\"; readonly frozenNote: \"（frozen，恒为 1）\"; readonly countEntries: \"共 {n} 条\"; readonly keyMode: \"密钥方式（二选一，互斥）\"; readonly keyEnv: \"ENV 引用\"; readonly keyPlain: \"明文密钥\"; readonly modeEnvNote: \"当前 ENV 引用：明文侧已置灰禁用。\"; readonly modePlainNote: \"当前明文密钥：ENV 侧已置灰禁用。提交明文前请先清空 ENV 输入框。\"; readonly envLabel: \"ENV 变量名（apiKeyRef）\"; readonly envAria: \"ENV 变量名\"; readonly envPlaceholder: \"大写字母开头，如 JEV_API_KEY（留空不改）\"; readonly envRule: \"规则：^[A-Z][A-Z0-9_]{1,63}$；与明文密钥互斥，只提交其一。\"; readonly envBad: \"ENV 名非法：须满足 ^[A-Z][A-Z0-9_]{1,63}$（如 JEV_API_KEY）。\"; readonly plainAria: \"明文密钥\"; readonly plainPlaceholder: \"输入新的明文密钥以替换（留空不改）\"; readonly plainFoldTitle: \"输入明文密钥…\"; readonly confirmText: \"我确认提交本次明文（仅本次请求，不回显、不入库原文）\"; readonly confirmNeeded: \"提交明文前需先勾选二次确认。\"; readonly plainNote: \"密钥原文永不回显；已配置仅显示“已配置”。占位符不含任何真密钥示例。\"; readonly maskOn: \"密钥：已配置\"; readonly maskOff: \"密钥：未配置\"; readonly maskEnv: \"ENV：\"; readonly loadedNote: \"已加载配置 v1。明文框恒空：已配置仅显示“已配置”。\"; readonly loadFail: \"加载失败：\"; readonly loadFailShort: \"加载失败\"; readonly mutualError: \"明文与 ENV 引用互斥：请先清空 ENV 输入框（留空）再提交明文。\"; readonly nanError: \"高级参数须为数字。\"; readonly saving: \"保存中…（明文仅本次提交，不回显）\"; readonly savedReload: \"已保存。重新加载掩码态…\"; readonly saveFail: \"保存失败：\"; readonly advTitle: \"高级…\"; readonly advTimeout: \"请求超时 timeoutMs\"; readonly advTimeoutHint: \"默认 8000（毫秒，上限 120000）\"; readonly advConcurrency: \"最大并发 maxConcurrency\"; readonly advConcurrencyHint: \"默认 4\"; readonly advTrunc: \"截断预算 truncBudget\"; readonly advTruncHint: \"默认 32000（字符）\"; readonly advPerSession: \"单会话历史 perSession\"; readonly advPerSessionHint: \"默认 200（上限 1000）\"; readonly advTotalSessions: \"总会话数 totalSessions\"; readonly advTotalSessionsHint: \"默认 50（上限 200）\"; readonly filterTitle: \"过滤…\"; readonly wsLabel: \"工作目录\"; readonly wsFilterAria: \"工作目录过滤\"; readonly sessLabel: \"会话\"; readonly sessFilterAria: \"会话过滤\"; readonly allWs: \"全部工作目录\"; readonly allSess: \"全部会话\"; readonly historyOrderNote: \"倒序排列（含概率条 + tier + 截断徽标 + 错误行）。\"; readonly clearing: \"清空中…（仅单会话）\"; readonly clearOk: \"已清空本会话。重新加载…\"; readonly clearFail: \"清空失败：\"; readonly confirmClear: \"确认清空本会话？\"; readonly confirmClearAgain: \"再次点击确认清空当前会话历史（仅单会话 DELETE）。\"; readonly clearScopeNote: \"仅清空当前选中会话（DELETE 单会话），无批量清空\"; readonly presetsMergedNote: \"目录与开关位已合并。阈值微调即 automationCap 三档（0=none/1=low/2=high）。\"; readonly presetsCount: \"预设 {n} 个\"; readonly presetsExported: \"已导出 {n} 个预设（JSON 下载）。\"; readonly presetsSaved: \"已保存 {n} 个预设开关与阈值。\"; readonly noImportNote: \"无导入按钮：模板库只出不进。secret-leak 默认关闭（frozen 模板）。\"; readonly customBadge: \"自建\"; readonly addCustom: \"新建自建预设\"; readonly deleteCustom: \"删除\"; readonly confirmDelete: \"确认删除？\"; readonly confirmDeleteCustom: \"再次点击确认删除该自建预设（仅删本条）。\"; readonly customIdLabel: \"自建 id（小写字母/数字/连字符，不可与 frozen 重名）\"; readonly customLabelLabel: \"展示名（英文）\"; readonly customDescLabel: \"出题规范（英文自由文本，可抄模板写法）\"; readonly customDraftNote: \"保存后默认关闭，需手动启用；题目永随调用传入，不存模板。\"; readonly cancelCustom: \"取消\"; readonly createCustom: \"创建\"; readonly customSaved: \"自建预设已保存。\"; readonly customFormInvalid: \"id/展示名/规范均不能为空。\"; };"
+          "export declare const zh: { readonly tabLabel: \"JEV 决策\"; readonly cardName: \"JEV 决策（dsh-decision-gateway）\"; readonly cardDesc: \"连接 / 模板库 / 历史：密钥掩码显示，原文永不回显。\"; readonly tabsAria: \"JEV 决策设置\"; readonly tabConnection: \"连接\"; readonly tabPresets: \"模板库\"; readonly tabHistory: \"历史\"; readonly healthChecking: \"自检中…\"; readonly healthOk: \"服务可用\"; readonly healthBad: \"服务异常 \"; readonly healthUnreachable: \"服务不可达\"; readonly notLoaded: \"未加载\"; readonly loading: \"加载中…\"; readonly save: \"保存\"; readonly retry: \"重试\"; readonly exportJson: \"导出 JSON\"; readonly detail: \"详情\"; readonly copyCustom: \"复制为自定义\"; readonly copyCustomNote: \"复制为自定义走新增接口（P1），当前仅展示规范。\"; readonly refresh: \"刷新\"; readonly clearSession: \"清空本会话\"; readonly testOffline: \"离线自检\"; readonly testing: \"自检中…\"; readonly testOk: \"自检通过\"; readonly testFail: \"自检失败：\"; readonly enabledOn: \"已启用\"; readonly enabledOff: \"已关闭\"; readonly enablePresetAria: \"启用预设 \"; readonly emptyPresets: \"暂无预设。\"; readonly emptyHistory: \"暂无历史。\"; readonly emptySpec: \"暂无规范。\"; readonly truncBadge: \"截断\"; readonly errPrefix: \"错误：\"; readonly noProb: \"无概率\"; readonly highLine: \"high 线 80%\"; readonly capNone: \"none（仅人工）\"; readonly capLabel: \"自动化上限\"; readonly tplVersion: \"模板版本 v\"; readonly frozenNote: \"（frozen，恒为 1）\"; readonly countEntries: \"共 {n} 条\"; readonly keyMode: \"密钥方式（二选一，互斥）\"; readonly keyEnv: \"ENV 引用\"; readonly keyPlain: \"明文密钥\"; readonly modeEnvNote: \"当前 ENV 引用：明文侧已隐藏。\"; readonly modePlainNote: \"当前明文密钥：ENV 侧已隐藏。保存明文将清除已存的 ENV 引用（切轨）；切回 ENV 即清空明文。\"; readonly maskDotsAria: \"已配置明文密钥掩码（定长八点，与原文长度无关）\"; readonly envLabel: \"ENV 变量名（apiKeyRef）\"; readonly envAria: \"ENV 变量名\"; readonly envPlaceholder: \"大写字母开头，如 JEV_API_KEY（留空不改）\"; readonly envRule: \"规则：^[A-Z][A-Z0-9_]{1,63}$；与明文密钥互斥，只提交其一。\"; readonly envBad: \"ENV 名非法：须满足 ^[A-Z][A-Z0-9_]{1,63}$（如 JEV_API_KEY）。\"; readonly plainAria: \"明文密钥\"; readonly plainPlaceholder: \"输入新的明文密钥以替换（留空不改）\"; readonly plainFoldTitle: \"输入明文密钥…\"; readonly plainNote: \"密钥原文永不回显；已配置仅显示“已配置”。占位符不含任何真密钥示例。\"; readonly maskOn: \"密钥：已配置\"; readonly maskOff: \"密钥：未配置\"; readonly maskEnv: \"ENV：\"; readonly loadedNote: \"已加载配置 v1。明文框恒空：已配置仅显示“已配置”。\"; readonly loadFail: \"加载失败：\"; readonly loadFailShort: \"加载失败\"; readonly mutualError: \"明文与 ENV 引用互斥：请先清空 ENV 输入框（留空）再提交明文。\"; readonly nanError: \"高级参数须为数字。\"; readonly saving: \"保存中…（明文仅本次提交，不回显）\"; readonly savedReload: \"已保存。重新加载掩码态…\"; readonly saveFail: \"保存失败：\"; readonly advTitle: \"高级…\"; readonly advTimeout: \"请求超时 timeoutMs\"; readonly advTimeoutHint: \"默认 8000（毫秒，上限 120000）\"; readonly advConcurrency: \"最大并发 maxConcurrency\"; readonly advConcurrencyHint: \"默认 4\"; readonly advTrunc: \"截断预算 truncBudget\"; readonly advTruncHint: \"默认 32000（字符）\"; readonly advPerSession: \"单会话历史 perSession\"; readonly advPerSessionHint: \"默认 200（上限 1000）\"; readonly advTotalSessions: \"总会话数 totalSessions\"; readonly advTotalSessionsHint: \"默认 50（上限 200）\"; readonly filterTitle: \"过滤…\"; readonly wsLabel: \"工作目录\"; readonly wsFilterAria: \"工作目录过滤\"; readonly sessLabel: \"会话\"; readonly sessFilterAria: \"会话过滤\"; readonly allWs: \"全部工作目录\"; readonly allSess: \"全部会话\"; readonly historyOrderNote: \"倒序排列（含概率条 + tier + 截断徽标 + 错误行）。\"; readonly clearing: \"清空中…（仅单会话）\"; readonly clearOk: \"已清空本会话。重新加载…\"; readonly clearFail: \"清空失败：\"; readonly confirmClear: \"确认清空本会话？\"; readonly confirmClearAgain: \"再次点击确认清空当前会话历史（仅单会话 DELETE）。\"; readonly clearScopeNote: \"仅清空当前选中会话（DELETE 单会话），无批量清空\"; readonly presetsMergedNote: \"目录与开关位已合并。阈值微调即 automationCap 三档（0=none/1=low/2=high）。\"; readonly presetsCount: \"预设 {n} 个\"; readonly presetsExported: \"已导出 {n} 个预设（JSON 下载）。\"; readonly presetsSaved: \"已保存 {n} 个预设开关与阈值。\"; readonly noImportNote: \"无导入按钮：模板库只出不进。secret-leak 默认关闭（frozen 模板）。\"; readonly customBadge: \"自建\"; readonly addCustom: \"新建自建预设\"; readonly deleteCustom: \"删除\"; readonly confirmDelete: \"确认删除？\"; readonly confirmDeleteCustom: \"再次点击确认删除该自建预设（仅删本条）。\"; readonly customIdLabel: \"自建 id（小写字母/数字/连字符，不可与 frozen 重名）\"; readonly customLabelLabel: \"展示名（英文）\"; readonly customDescLabel: \"出题规范（英文自由文本，可抄模板写法）\"; readonly customDraftNote: \"保存后默认关闭，需手动启用；题目永随调用传入，不存模板。\"; readonly cancelCustom: \"取消\"; readonly createCustom: \"创建\"; readonly customSaved: \"自建预设已保存。\"; readonly customFormInvalid: \"id/展示名/规范均不能为空。\"; };"
         ],
-        "JevCard": [
-          "export declare function JevCard(): React.ReactElement;"
+        "DecisionCard": [
+          "export declare function DecisionCard(): React.ReactElement;"
         ],
         "ConnectionPane": [
           "export declare function ConnectionPane(): React.ReactElement;"
@@ -572,10 +572,10 @@
           "export declare function ProbBar({ entry }"
         ],
         "probPercent": [
-          "export declare function probPercent(entry: JevHistoryEntry): number;"
+          "export declare function probPercent(entry: DecisionHistoryEntry): number;"
         ],
         "tierBadge": [
-          "export declare function tierBadge(tier: JevHistoryEntry[\"tier\"]): React.ReactElement;"
+          "export declare function tierBadge(tier: DecisionHistoryEntry[\"tier\"]): React.ReactElement;"
         ]
       }
     }

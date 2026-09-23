@@ -28,7 +28,7 @@ import type { FetchImpl } from "../deps.ts";
 import type { ValidQuestion } from "../deps.ts";
 
 /** 上游失败（可重试性由本模块判定，调用方只读 code/category）。 */
-export interface JevFailure {
+export interface DecisionFailure {
   readonly code: string;
   readonly category: string;
   readonly message: string;
@@ -51,7 +51,8 @@ export interface RemoteVerdict {
 export function defaultFetchImpl(): FetchImpl {
   return async (url, init) => {
     const impl = (globalThis as unknown as { fetch?: unknown }).fetch;
-    if (typeof impl !== "function") throw new Error("jev[500]: global fetch unavailable");
+    if (typeof impl !== "function")
+      throw new Error("decision-gateway[500]: global fetch unavailable");
     const res = await (impl as typeof fetch)(url, {
       method: init.method,
       headers: init.headers,
@@ -73,7 +74,7 @@ const JEV_API_ROOT = JEV_BASE_URL.slice(0, -SDK_PATH.length);
 const SCORE_LEVELS = ["1", "2", "3", "4", "5"] as const;
 
 /** 请求体（官方 SystemOne 形状：model + 字符串 state + 字典 questions）。 */
-export interface JevRequestBody {
+export interface DecisionRequestBody {
   readonly model: string;
   readonly state: string;
   readonly questions: Questions;
@@ -133,12 +134,12 @@ function toSdkFetch(
 
 /** 首题答案转 verdict（多题时首题驱动输出；noul/未知形状即 bad-payload 不重试）。 */
 export function mapFirstAnswer(
-  body: JevRequestBody,
+  body: DecisionRequestBody,
   result: SystemOneResult<Questions>,
 ):
   | { readonly ok: true; readonly verdict: RemoteVerdict }
-  | { readonly ok: false; readonly failure: JevFailure } {
-  const bad = (message: string): { readonly ok: false; readonly failure: JevFailure } => ({
+  | { readonly ok: false; readonly failure: DecisionFailure } {
+  const bad = (message: string): { readonly ok: false; readonly failure: DecisionFailure } => ({
     ok: false,
     failure: { code: "UPSTREAM", category: "bad-payload", message, retryable: false },
   });
@@ -202,7 +203,7 @@ export function mapFirstAnswer(
 }
 
 /** SDK 错误转失败面（状态码沿旧映射；客户端校验错不重试；裸抛错归网络可重试）。 */
-export function sdkErrorToFailure(cause: unknown): JevFailure {
+export function sdkErrorToFailure(cause: unknown): DecisionFailure {
   if (cause instanceof APITimeoutError) {
     return { code: "TIMEOUT", category: "timeout", message: "request timed out", retryable: true };
   }
@@ -275,13 +276,13 @@ export function sdkErrorToFailure(cause: unknown): JevFailure {
 
 /** 调用远端（1 次尝试：SDK 单次直试；抛错经 sdkErrorToFailure 归类）。 */
 async function attemptOnce(
-  body: JevRequestBody,
+  body: DecisionRequestBody,
   key: string,
   timeoutMs: number,
   fetchImpl: FetchImpl,
 ): Promise<
   | { readonly ok: true; readonly verdict: RemoteVerdict }
-  | { readonly ok: false; readonly failure: JevFailure }
+  | { readonly ok: false; readonly failure: DecisionFailure }
 > {
   if (!(timeoutMs > 0)) {
     return {
@@ -320,13 +321,13 @@ async function attemptOnce(
  * 用 timeoutMs=1000 + 2s 轮询钉死该语义：逐次预算下 3 次尝试必超窗）。
  */
 export async function callWithRetry(
-  body: JevRequestBody,
+  body: DecisionRequestBody,
   key: string,
   timeoutMs: number,
   fetchImpl: FetchImpl,
 ): Promise<{
   readonly verdict?: RemoteVerdict;
-  readonly failure?: JevFailure;
+  readonly failure?: DecisionFailure;
   readonly retries: number;
 }> {
   const deadline = Date.now() + Math.max(0, timeoutMs);

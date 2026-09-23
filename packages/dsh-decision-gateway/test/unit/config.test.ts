@@ -10,7 +10,7 @@ import {
 } from "../../src/server/config/impl/model.ts";
 import {
   configFile,
-  jevHome,
+  decisionGatewayHome,
   presetsFile,
   secretsFile,
   versionFile,
@@ -109,7 +109,7 @@ describe("落盘与版本", () => {
   });
   it("三文件独立命名空间目录", () => {
     const home = tempHome();
-    expect(jevHome(home)).toContain("@wingsky-1/dsh-decision-gateway");
+    expect(decisionGatewayHome(home)).toContain("@wingsky-1/dsh-decision-gateway");
     expect(configFile(home)).not.toBe(secretsFile(home));
     expect(secretsFile(home)).not.toBe(presetsFile(home));
   });

@@ -1,7 +1,7 @@
 /**
  * dsh-decision-gateway — 客户端契约消费层（api/ 域内模块，经 interface.ts 门面引用）。
  *
- * 类型直接复用共享 ConfigV1/HistoryEntry/JevLang/JevTier/AutomationCap/AutomationLevel；
+ * 类型直接复用共享 ConfigV1/HistoryEntry/DecisionLang/DecisionTier/AutomationCap/AutomationLevel；
  * 解析/归一/校验为纯函数（可单测直连）。主代理裁决：automationCap 三档 0|1|2；
  * GET /config 裸 v1 掩码体并兼容 {config}/{data} 包装；失败体含 errorCode + category。
  * 零 bare import。
@@ -11,21 +11,21 @@ import type {
   AutomationLevel,
   ConfigV1 as SharedConfigV1,
   HistoryEntry as SharedHistoryEntry,
-  JevLang,
-  JevTier,
+  DecisionLang,
+  DecisionTier,
 } from "../../shared/interface.ts";
 import { t } from "../locale.ts";
 
 /** 共享类型复出（子模块经 api/interface.ts 消费）。 */
-export type { AutomationCap, AutomationLevel, JevLang, JevTier };
-export type JevConfigV1 = SharedConfigV1;
-export type JevHistoryEntry = SharedHistoryEntry;
+export type { AutomationCap, AutomationLevel, DecisionLang, DecisionTier };
+export type DecisionConfigV1 = SharedConfigV1;
+export type DecisionHistoryEntry = SharedHistoryEntry;
 
 /** 预设开关项（配置 v1.presets 元素形态）。 */
-export type JevPresetConfigEntry = SharedConfigV1["presets"][number];
+export type DecisionPresetConfigEntry = SharedConfigV1["presets"][number];
 
 /** 模板库目录项（GET /presets 元素形态；服务端字段缺失时容错）。 */
-export interface JevPresetInfo {
+export interface DecisionPresetInfo {
   readonly id: string;
   readonly templateVersion?: number;
   readonly label?: string;
@@ -92,7 +92,7 @@ export function capLabel(cap: AutomationCap): string {
 }
 
 /** 防御式解析 GET /config（裸 v1 或 {config}/{data} 包装均接受）。 */
-export function parseConfigPayload(payload: unknown): JevConfigV1 | null {
+export function parseConfigPayload(payload: unknown): DecisionConfigV1 | null {
   const raw: unknown =
     isRecord(payload) && "config" in payload
       ? (payload as Record<string, unknown>)["config"]
@@ -139,7 +139,7 @@ export function parseConfigPayload(payload: unknown): JevConfigV1 | null {
 }
 
 /** 防御式解析 GET /presets（裸数组或 {presets} 包装均接受）。 */
-export function parsePresetsPayload(payload: unknown): JevPresetInfo[] {
+export function parsePresetsPayload(payload: unknown): DecisionPresetInfo[] {
   const list: unknown =
     isRecord(payload) && Array.isArray(payload["presets"])
       ? payload["presets"]
@@ -148,7 +148,7 @@ export function parsePresetsPayload(payload: unknown): JevPresetInfo[] {
         : isRecord(payload) && Array.isArray(payload["data"])
           ? payload["data"]
           : [];
-  const out: JevPresetInfo[] = [];
+  const out: DecisionPresetInfo[] = [];
   for (const item of list as unknown[]) {
     if (!isRecord(item) || typeof item["id"] !== "string") continue;
     const tv = item["templateVersion"];
@@ -172,7 +172,7 @@ function normalizeAutomation(v: unknown): AutomationLevel {
 }
 
 /** 防御式解析题目快照（形状不对即丢整列，不阻断条目）。 */
-function parseQuestions(raw: unknown): JevHistoryEntry["questions"] {
+function parseQuestions(raw: unknown): DecisionHistoryEntry["questions"] {
   if (!Array.isArray(raw)) return undefined;
   const out: {
     readonly id: string;
@@ -205,7 +205,7 @@ function parseQuestions(raw: unknown): JevHistoryEntry["questions"] {
 }
 
 /** 防御式解析 GET /history（裸数组或 {entries}/{items}/{history}/{data} 包装均接受）。 */
-export function parseHistoryPayload(payload: unknown): JevHistoryEntry[] {
+export function parseHistoryPayload(payload: unknown): DecisionHistoryEntry[] {
   let list: unknown = [];
   if (Array.isArray(payload)) list = payload;
   else if (isRecord(payload)) {
@@ -217,14 +217,14 @@ export function parseHistoryPayload(payload: unknown): JevHistoryEntry[] {
       }
     }
   }
-  const out: JevHistoryEntry[] = [];
+  const out: DecisionHistoryEntry[] = [];
   for (const item of list as unknown[]) {
     if (!isRecord(item)) continue;
     if (typeof item["ts"] !== "number" || typeof item["sessionId"] !== "string") continue;
     const tierRaw = item["tier"];
-    const tier: JevTier = tierRaw === "high" || tierRaw === "low" ? tierRaw : "none";
+    const tier: DecisionTier = tierRaw === "high" || tierRaw === "low" ? tierRaw : "none";
     const langRaw = item["lang"];
-    const lang: JevLang = langRaw === "en" || langRaw === "zh" ? langRaw : "unknown";
+    const lang: DecisionLang = langRaw === "en" || langRaw === "zh" ? langRaw : "unknown";
     const score = item["score"];
     const choice = item["choice"];
     const errorCode = item["errorCode"];

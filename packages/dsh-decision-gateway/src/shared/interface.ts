@@ -43,8 +43,8 @@ export type {
   ErrorEnvelope,
   HistoryEntry,
   HistoryQuestion,
-  JevLang,
-  JevTier,
+  DecisionLang,
+  DecisionTier,
   KeyShapeCategory,
   PresetTemplate,
 } from "./contract.ts";

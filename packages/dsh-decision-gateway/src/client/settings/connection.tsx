@@ -14,13 +14,13 @@ import {
   parseConfigPayload,
   validApiKeyRef,
 } from "../api/interface.ts";
-import type { JevConfigV1 } from "../api/interface.ts";
+import type { DecisionConfigV1 } from "../api/interface.ts";
 import { t } from "../locale.ts";
 
 type Msg = { readonly kind: "info" | "error" | "ok"; readonly text: string };
 
 export function ConnectionPane(): React.ReactElement {
-  const [snapshot, setSnapshot] = React.useState<JevConfigV1 | null>(null);
+  const [snapshot, setSnapshot] = React.useState<DecisionConfigV1 | null>(null);
   const [keyMode, setKeyMode] = React.useState<"env" | "plain">("env");
   const [env, setEnv] = React.useState("");
   const [plain, setPlain] = React.useState("");

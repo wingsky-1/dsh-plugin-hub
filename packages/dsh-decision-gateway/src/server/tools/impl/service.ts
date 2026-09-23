@@ -21,7 +21,7 @@ import type {
   CustomPreset,
   DecideOutput,
   ErrorEnvelope,
-  JevTier,
+  DecisionTier,
 } from "../../../shared/interface.ts";
 import type { DecideDeps, DecideEvent } from "../deps.ts";
 import { callWithRetry, defaultFetchImpl, toWireQuestions } from "./client.ts";
@@ -34,12 +34,12 @@ function envelope(errorCode: string, category: string, message: string): ErrorEn
 }
 
 /** 等级序号转分层（越界回落 none）。 */
-function tierOf(index: number): JevTier {
+function tierOf(index: number): DecisionTier {
   return index === 2 ? "high" : index === 1 ? "low" : "none";
 }
 
 /** 自动化等级（tier none 一律 manual；其余按封顶后序号）。 */
-function automationOf(tier: JevTier, index: number): AutomationLevel {
+function automationOf(tier: DecisionTier, index: number): AutomationLevel {
   if (tier === "none") return "manual";
   return index >= 2 ? "auto" : index === 1 ? "assisted" : "manual";
 }
@@ -58,7 +58,8 @@ function safeRecord(
     deps.recordEvent?.({ ...event, sessionId: safeSessionId(event.sessionId) });
   } catch (cause) {
     deps.logger.warn(
-      "dsh-decision-gateway: 历史记录失败 —— " + (cause instanceof Error ? cause.message : String(cause)),
+      "dsh-decision-gateway: 历史记录失败 —— " +
+        (cause instanceof Error ? cause.message : String(cause)),
     );
   }
 }

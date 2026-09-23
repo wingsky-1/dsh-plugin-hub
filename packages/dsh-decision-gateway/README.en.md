@@ -12,7 +12,7 @@ dsh plugin --profile web add @wingsky-1/dsh-decision-gateway
 
 - Model tools: `ws_request_verdict` (decide), `ws_list_verdict_guides` (read-only).
 - Loopback routes: `/api/dsh-decision-gateway/health|config|presets|history|test-connection`.
-- 5 frozen asking guides (templateVersion always 1, English prose, zero preset questions): general / secret-leak (disabled by default) / plan-review / risk-check / custom. Callers bring the full question set per call via `questions_override` (1-20 questions, required).
+- 5 frozen asking guides (templateVersion always 1, English prose, zero preset questions): general / secret-leak (disabled by default) / plan-review / risk-check / custom. Callers bring the full question set per call via `questions_override` (1-20 questions, required; the first question drives the verdict, extra questions travel as context). Wording note: general changed from binary/two to a 2-10-candidate choice, custom changed from three to first-question-driven; templateVersion stays 1; stored history templateVersion remains observably 1. Tool params: `preset_id` is one of the 5 frozen ids or a custom id (custom:true entries from `ws_list_verdict_guides`); `state.lang` is en/zh/unknown and defaults to unknown when omitted; score questions carry no options but may carry 2-10 levels (default 1-5 when omitted, e.g. five levels 1-5 or two levels low-high rescaled to 1-5).
 - Custom presets (`custom-presets.json`, absent means empty): incremental `PUT /config` key `customPresets` (full replace; ids must not collide with frozen, cap 0|1|2); custom ids are directly decidable (same switch/cap semantics); history stores a redacted snapshot of the called questions, and `GET /history` enriches display titles (only ids are stored).
 
 ## Quick start
@@ -32,16 +32,16 @@ PUT `/config`: `apiKeyRef` must match `^[A-Z][A-Z0-9_]{1,63}$`; mutually exclusi
 
 ## Security model
 
-- **Off-device data**: truncated text + questions leave the device only when the local secret-shape precheck misses and a key is available; on hit (e.g. `sk-…`, `AKIA…`, `ghp_…`, private-key blocks, `password=`) nothing leaves and the decision routes to human (`appliedSource: local-precheck`).
+- **Off-device data**: truncated text + questions leave the device only when the local secret-shape precheck misses and a key is available; on hit (e.g. `sk-…`, `AKIA…`, `ghp_…`, private-key blocks, `password=`) nothing leaves and the decision routes to human (`appliedSource: local-precheck`, `choice: human`); a first-answer Noul (abstention) likewise forces tier none and routes to human.
 - **Dual-track keys**: ENV reference (`apiKeyRef`) wins over plaintext; switching to ENV folds (clears) `secrets.json`; plaintext writes need no confirmation; mutual exclusion is still enforced server-side.
 - **0600/0700**: namespace dir 0700, files 0600, temp-file + rename atomic writes.
 - **Masked surface**: GET `/config` returns only the `apiKeyRef` name and `hasPlaintextKey`; key material is never echoed; shape rejections return only an `empty|too-short|charset` category.
-- **secret preset warning**: `secret-leak` is disabled by default (local precheck still runs first when enabled); history `snippetRedacted` is redacted-then-truncated to ≤200 chars; raw keys are never stored.
-- **Pinned BaseURL**: `https://api.typesafe.ai/v1/systemone` is a load-asserted constant, never configurable; PUT with `baseUrl`-like keys is 400. The model is pinned to `jev-latest` under the same treatment; score floats rescale to 1..5 by sent level count (default five levels behave as round+1, all clamped; custom 2-10 levels travel in `levels`), tiers derive from confidence at 0.8/0.5.
+- **secret preset warning**: `secret-leak` is disabled by default, enable it only when you must check untrusted text for real secrets (local precheck still runs first when enabled); history `snippetRedacted` is redacted-then-truncated to ≤200 chars; raw keys are never stored.
+- **Pinned BaseURL**: `https://api.typesafe.ai/v1/systemone` is a load-asserted constant, never configurable; PUT with `baseUrl`-like keys is 400. The model is pinned to `jev-latest` under the same treatment; score floats rescale to 1..5 by sent level count (default five levels behave as round+1, all clamped; custom 2-10 levels travel in `levels`, e.g. five levels 1-5 or two levels low-high), tiers derive from confidence at ≥0.8 high/≥0.5 low (else none).
 
 ## History
 
-One jsonl file per (workdir rootHash, sessionId) (workdir comes from the session store, falling back to the caller directory): 200 entries per session rotation, 50 sessions total (count semantics only; no pinning on mtime ties). Query `root` accepts a full path, a `rootHash`, or a bare basename (matched against `rootDisplay`); deletion is single-session only (`root` + `sessionId` both required, ambiguous basenames are 400). Session titles enrich at read time for live sessions only (`sessionTitle`, falling back to the short id, never persisted).
+One jsonl file per (workdir rootHash, sessionId) (workdir comes from the session store, falling back to the caller directory): 200 entries per session rotation, 50 sessions total (count semantics only; no pinning on mtime ties). Stored entries carry templateVersion (always 1, observable; wording revisions do not bump the version). Query `root` accepts a full path, a `rootHash`, or a bare basename (matched against `rootDisplay`); deletion is single-session only (`root` + `sessionId` both required, ambiguous basenames are 400). Session titles enrich at read time for live sessions only (`sessionTitle`, falling back to the short id, never persisted).
 
 ## Verification and troubleshooting
 

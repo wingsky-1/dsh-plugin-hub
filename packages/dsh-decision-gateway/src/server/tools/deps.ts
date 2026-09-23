@@ -4,8 +4,8 @@ import type {
   AutomationLevel,
   ConfigV1,
   CustomPreset,
-  JevLang,
-  JevTier,
+  DecisionLang,
+  DecisionTier,
 } from "../../shared/interface.ts";
 
 /** 最小日志面。 */
@@ -25,7 +25,7 @@ export interface DecideEvent {
   readonly precheckHit: boolean;
   readonly presetId: string;
   readonly text: string;
-  readonly lang: JevLang;
+  readonly lang: DecisionLang;
   readonly truncated: boolean;
   readonly originalLength: number;
   readonly resultKind: string;
@@ -33,7 +33,7 @@ export interface DecideEvent {
   readonly choice?: string;
   readonly score?: number;
   readonly confidence: number;
-  readonly tier: JevTier;
+  readonly tier: DecisionTier;
   readonly automation: AutomationLevel;
   readonly latencyMs: number;
   readonly errorCode?: string;
@@ -87,7 +87,7 @@ export interface ValidQuestion {
 export interface ValidDecide {
   readonly presetId: string;
   readonly text: string;
-  readonly lang: JevLang;
+  readonly lang: DecisionLang;
   readonly questions: readonly ValidQuestion[];
   readonly appliedSource: "override" | "custom";
 }

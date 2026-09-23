@@ -283,9 +283,19 @@ describe("互斥/255/长度/中文 400 结构化", () => {
     expect(badKind.ok).toBe(false);
     if (!badKind.ok) expect(badKind.failure.errorCode).toBe("BAD_QUESTION_KIND");
   });
-  it("lang 无缺省：缺省/fr 400；en/zh/unknown 通过", () => {
-    expect(validateDecideArgs({ preset_id: "general", state: { text: "x" } }).ok).toBe(false);
-    const fr = validateDecideArgs({ preset_id: "general", state: { text: "x", lang: "fr" } });
+  it("lang 缺席补 unknown：缺席即 unknown 通过；非法值 fr 即 BAD_LANG", () => {
+    const missing = validateDecideArgs({
+      preset_id: "general",
+      state: { text: "x" },
+      questions_override: [{ id: "q1", text: "Q?", kind: "score" }],
+    });
+    expect(missing.ok).toBe(true);
+    if (missing.ok) expect(missing.valid.lang).toBe("unknown");
+    const fr = validateDecideArgs({
+      preset_id: "general",
+      state: { text: "x", lang: "fr" },
+      questions_override: [{ id: "q1", text: "Q?", kind: "score" }],
+    });
     expect(fr.ok).toBe(false);
     if (!fr.ok) expect(fr.failure.errorCode).toBe("BAD_LANG");
     for (const lang of ["en", "zh", "unknown"]) {

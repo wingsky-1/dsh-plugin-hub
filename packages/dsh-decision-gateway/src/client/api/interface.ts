@@ -18,10 +18,10 @@ export {
 export type {
   AutomationCap,
   AutomationLevel,
-  JevConfigV1,
-  JevHistoryEntry,
-  JevLang,
-  JevPresetConfigEntry,
-  JevPresetInfo,
-  JevTier,
+  DecisionConfigV1,
+  DecisionHistoryEntry,
+  DecisionLang,
+  DecisionPresetConfigEntry,
+  DecisionPresetInfo,
+  DecisionTier,
 } from "./contract.ts";

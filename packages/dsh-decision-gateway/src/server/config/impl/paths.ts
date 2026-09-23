@@ -16,31 +16,31 @@ import {
 } from "../../../shared/interface.ts";
 
 /** 本插件在 DSH home 下的独立命名空间目录。 */
-export function jevHome(home?: string): string {
+export function decisionGatewayHome(home?: string): string {
   return pluginHome(home ?? dshHome(), PACKAGE_DIR);
 }
 
 /** config.json 完整路径。 */
 export function configFile(home?: string): string {
-  return join(jevHome(home), CONFIG_FILE_NAME);
+  return join(decisionGatewayHome(home), CONFIG_FILE_NAME);
 }
 
 /** presets.json 完整路径（开关覆盖层）。 */
 export function presetsFile(home?: string): string {
-  return join(jevHome(home), PRESETS_FILE_NAME);
+  return join(decisionGatewayHome(home), PRESETS_FILE_NAME);
 }
 
 /** custom-presets.json 完整路径（自建存储；缺席即空列表）。 */
 export function customPresetsFile(home?: string): string {
-  return join(jevHome(home), CUSTOM_PRESETS_FILE_NAME);
+  return join(decisionGatewayHome(home), CUSTOM_PRESETS_FILE_NAME);
 }
 
 /** secrets.json 完整路径（明文密钥唯一落盘处，0600）。 */
 export function secretsFile(home?: string): string {
-  return join(jevHome(home), SECRETS_FILE_NAME);
+  return join(decisionGatewayHome(home), SECRETS_FILE_NAME);
 }
 
 /** VERSION 完整路径（存储版本刻度）。 */
 export function versionFile(home?: string): string {
-  return join(jevHome(home), VERSION_FILE_NAME);
+  return join(decisionGatewayHome(home), VERSION_FILE_NAME);
 }

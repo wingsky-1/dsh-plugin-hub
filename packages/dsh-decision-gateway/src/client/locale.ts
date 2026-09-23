@@ -9,13 +9,13 @@
  */
 import { en, zh } from "./locales.ts";
 
-export type JevLocale = "zh" | "en";
-export type JevTextKey = keyof typeof zh;
+export type DecisionLocale = "zh" | "en";
+export type DecisionTextKey = keyof typeof zh;
 
 /** 宿主装配的翻译函数（官方 ctx.locale.bind(ns) 产物；key 即本包字典键）。 */
 export type HostTranslate = (key: string, params?: Record<string, unknown>) => string;
 
-let current: JevLocale = resolveLang();
+let current: DecisionLocale = resolveLang();
 let bound: HostTranslate | null = null;
 
 /** 装配 / 重绑宿主翻译函数（apply 期与 locale 订阅回调调用）。
@@ -32,7 +32,7 @@ export function unbindTranslate(): void {
 }
 
 /** 解析当前语言（浏览器 zh 开头即 zh，否则 en）。 */
-export function resolveLang(): JevLocale {
+export function resolveLang(): DecisionLocale {
   try {
     const nav = (globalThis as unknown as { navigator?: { language?: unknown } }).navigator;
     const lang = nav?.language;
@@ -44,18 +44,18 @@ export function resolveLang(): JevLocale {
 }
 
 /** 锁定语言（单测用；正常渲染走模块加载期解析）。 */
-export function setLang(next: JevLocale): void {
+export function setLang(next: DecisionLocale): void {
   current = next;
 }
 
 /** 当前语言。 */
-export function lang(): JevLocale {
+export function lang(): DecisionLocale {
   return current;
 }
 
 /** 取文案（key 即 zh 源；缺 key 永不发生——en 由 Record<keyof typeof zh> 锁死）。
  * 支持 {n} 数字插值（中英语序不同，禁止空串 key 占位）。 */
-export function t(key: JevTextKey, params?: { readonly n?: number }): string {
+export function t(key: DecisionTextKey, params?: { readonly n?: number }): string {
   if (bound !== null) return bound(key, params === undefined ? undefined : { n: params.n });
   const raw = current === "zh" ? zh[key] : en[key];
   if (params?.n === undefined) return raw;

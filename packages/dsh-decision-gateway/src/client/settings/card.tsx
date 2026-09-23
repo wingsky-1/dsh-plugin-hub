@@ -21,7 +21,7 @@ const TABS: ReadonlyArray<{
   { key: "history", textKey: "tabHistory" },
 ];
 
-export function JevCard(): React.ReactElement {
+export function DecisionCard(): React.ReactElement {
   const [active, setActive] = React.useState<TabKey>("connection");
   const [healthText, setHealthText] = React.useState(t("healthChecking"));
   const [healthCls, setHealthCls] = React.useState("dj-badge");

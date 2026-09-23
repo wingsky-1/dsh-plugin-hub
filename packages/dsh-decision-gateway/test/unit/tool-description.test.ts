@@ -58,25 +58,32 @@ describe("decide 描述覆盖契约", () => {
 });
 
 describe("decide 参数面自描述", () => {
-  it("三件必填 + preset 五值枚举", () => {
+  it("三件必填 + preset 纯 string（去 enum，描述诚实）", () => {
     const params = paramsOf("ws_request_verdict");
     expect(params["required"]).toEqual(["preset_id", "state", "questions_override"]);
     const preset = (params["properties"] as Record<string, Record<string, unknown>>)["preset_id"];
-    expect(preset["enum"]).toEqual([
+    expect(preset["type"]).toBe("string");
+    expect(preset["enum"]).toBeUndefined();
+    const desc = preset["description"] as string;
+    for (const noun of [
       "general",
       "secret-leak",
       "plan-review",
       "risk-check",
       "custom",
-    ]);
+      "ws_list_verdict_guides",
+    ]) {
+      expect(desc).toContain(noun);
+    }
   });
   it("state 与题目 items 的约束落在 schema 里", () => {
     const params = paramsOf("ws_request_verdict");
     const props = params["properties"] as Record<string, Record<string, unknown>>;
     const state = props["state"];
-    expect(state["required"]).toEqual(["text", "lang"]);
+    expect(state["required"]).toEqual(["text"]);
     const lang = (state["properties"] as Record<string, Record<string, unknown>>)["lang"];
     expect(lang["enum"]).toEqual(["en", "zh", "unknown"]);
+    expect(lang["default"]).toBe("unknown");
     const override = props["questions_override"];
     const items = override["items"] as Record<string, unknown>;
     expect(items["required"]).toEqual(["id", "text", "kind"]);

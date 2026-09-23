@@ -12,7 +12,7 @@ import { ensureStyle } from "../../../../shared/client/ensure-style.js";
 import * as React from "react";
 import { bindTranslate, t, unbindTranslate, type HostTranslate } from "./locale.ts";
 import { en, zh } from "./locales.ts";
-import { JevCard } from "./settings/card.tsx";
+import { DecisionCard } from "./settings/card.tsx";
 
 const STYLE_ID = "dsh-decision-gateway-style";
 const CSS_VERSION = "1";
@@ -108,7 +108,7 @@ export function apply(ctx: ClientContext): void {
             label: () => t("tabLabel"),
           },
           function () {
-            return <JevCard />;
+            return <DecisionCard />;
           },
         );
       });

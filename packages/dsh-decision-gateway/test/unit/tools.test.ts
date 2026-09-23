@@ -8,7 +8,7 @@ import {
   sdkErrorToFailure,
   toWireQuestions,
 } from "../../src/server/tools/impl/client.ts";
-import type { JevRequestBody } from "../../src/server/tools/impl/client.ts";
+import type { DecisionRequestBody } from "../../src/server/tools/impl/client.ts";
 import { createSemaphore } from "../../src/server/tools/impl/semaphore.ts";
 import { localPrecheckHit } from "../../src/server/tools/impl/precheck.ts";
 import { decide } from "../../src/server/tools/impl/service.ts";
@@ -365,7 +365,7 @@ describe("客户端件", () => {
       model: "jev-latest",
       state: "t",
       questions: toWireQuestions([{ id: "q1", text: "Q?", kind: "choice", options: ["A", "B"] }]),
-    } satisfies JevRequestBody;
+    } satisfies DecisionRequestBody;
     const mapped = mapFirstAnswer(body, {
       model: "jev-1.13.0",
       answers: {

@@ -16,13 +16,13 @@ export const CONFIG_VERSION = 1;
 /** 预设模板版本（5 预设 frozen，templateVersion 恒为 1）。 */
 export const TEMPLATE_VERSION = 1;
 
-/** 官方 SystemOne 基址（写死常量；加载断言防篡改，PUT 拒收 baseUrl 类键；JEV 为首个 provider，网关本质通用辅助决策）。 */
+/** 官方 SystemOne 基址（写死常量；加载断言防篡改，PUT 拒收 baseUrl 类键；JEV_ 前缀专属首个提供方 JEV，网关通用概念已去 JEV 化，此标识符与值双写死保留）。 */
 export const JEV_BASE_URL = "https://api.typesafe.ai/v1/systemone";
 if (JEV_BASE_URL !== "https://api.typesafe.ai/v1/systemone") {
   throw new Error("dsh-decision-gateway: JEV_BASE_URL 被篡改，拒绝加载");
 }
 
-/** 官方 SystemOne 默认模型（冻结别名；与 JEV_BASE_URL 同等 pin 待遇，不接受配置覆盖；首个 provider 的模型 pin 位）。 */
+/** 官方 SystemOne 默认模型（冻结别名；与 JEV_BASE_URL 同等 pin 待遇，不接受配置覆盖；JEV_ 前缀专属首个提供方 JEV 的模型 pin 位，此标识符与值双写死保留）。 */
 export const JEV_MODEL = "jev-latest";
 if (JEV_MODEL !== "jev-latest") {
   throw new Error("dsh-decision-gateway: JEV_MODEL 被篡改，拒绝加载");
@@ -65,10 +65,10 @@ export const MAX_QUESTIONS = 20;
 /** 历史 snippet 上限（字；超限截断）。 */
 export const SNIPPET_MAX = 200;
 
-/** 状态语言（state.lang 全集；缺省即 400，不设默认）。 */
-export type JevLang = "en" | "zh" | "unknown";
+/** 状态语言（state.lang 全集；缺席默认为 unknown，仅非法值 400）。 */
+export type DecisionLang = "en" | "zh" | "unknown";
 /** 置信分层。 */
-export type JevTier = "none" | "high" | "low";
+export type DecisionTier = "none" | "high" | "low";
 /** 自动化上限/分级：0=none（只人工），1=low，2=high。 */
 export type AutomationCap = 0 | 1 | 2;
 /** 自动化实际等级（suggest-only：输入被截断时的强制降级，仅建议不执行；local-precheck 的 manual 不受影响）。 */
@@ -90,13 +90,13 @@ export const FROZEN_PRESETS: readonly PresetTemplate[] = [
     id: "general",
     label: "general",
     description:
-      "Goal: teach callers how to ask a binary choice question over two comparable options. " +
+      "Goal: teach callers how to ask a 2-10-candidate choice question over comparable options. " +
       "Dimensions: option completeness, comparability, single conclusion. " +
-      "Mutual exclusion: the verdict must be one of the caller-supplied candidates, never a third option and never an abstention. " +
-      "Good asking: background in state.text plus two reachable, comparable candidates via questions_override (unique ids, 2-10 options per choice question). " +
+      "Mutual exclusion: the verdict must be one of the caller-supplied candidates, never an outside candidate and never an abstention. " +
+      "Good asking: background in state.text plus reachable, comparable candidates via questions_override (unique ids, 2-10 options per choice question). " +
       "Bad asking: listing phenomena with no candidates, which forces a restating non-answer. " +
-      "Prohibitions: no preset questions; no third-option verdicts; no restating without deciding. " +
-      "How to call: state.text carries background, questions_override carries the two candidates.",
+      "Prohibitions: no preset questions; no outside-candidate verdicts; no restating without deciding. " +
+      "How to call: state.text carries background, questions_override carries the candidates.",
     defaultEnabled: true,
     automationCap: 2,
   },
@@ -148,7 +148,7 @@ export const FROZEN_PRESETS: readonly PresetTemplate[] = [
     description:
       "Goal: the caller brings the full question set (1-20 questions); the template presets nothing. " +
       "Mutual exclusion: questions_override is required and must be non-empty. " +
-      "Good calling: three mutually exclusive binary questions execute normally. " +
+      "Good calling: the first question drives the verdict; extra questions travel as context. " +
       "Bad calling: empty questions are rejected outright. " +
       "Prohibitions: no execution without questions; never rewrite caller questions. " +
       "How to call: preset_id custom plus a full questions_override (unique ids, choice carries options, score carries none).",
@@ -225,14 +225,14 @@ export interface HistoryEntry {
   readonly templateVersion: number;
   readonly stateHash: string;
   readonly snippetRedacted: string;
-  readonly lang: JevLang;
+  readonly lang: DecisionLang;
   readonly truncated: boolean;
   readonly originalLength: number;
   readonly resultKind: string;
   readonly choice?: string;
   readonly score?: number;
   readonly confidence: number;
-  readonly tier: JevTier;
+  readonly tier: DecisionTier;
   readonly automation: AutomationLevel;
   readonly provider: "official";
   readonly latencyMs: number;
@@ -251,7 +251,7 @@ export interface DecideOutput {
   readonly appliedSource: "override" | "custom" | "local-precheck";
   readonly truncated: boolean;
   readonly originalLength: number;
-  readonly tier: JevTier;
+  readonly tier: DecisionTier;
   readonly automation: AutomationLevel;
   readonly codepoints: number;
   readonly retries: number;

@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as React from "react";
 import { fireEvent } from "@testing-library/react";
 import { APP_ROUTES } from "../../src/client/api/routes.ts";
-import type { JevHistoryEntry } from "../../src/client/api/interface.ts";
+import type { DecisionHistoryEntry } from "../../src/client/api/interface.ts";
 import { ProbBar, tierBadge } from "../../src/client/settings/prob.tsx";
 import { ConnectionPane } from "../../src/client/settings/connection.tsx";
 import { HistoryPane } from "../../src/client/settings/history.tsx";
@@ -23,7 +23,7 @@ import {
 } from "../client-helpers.ts";
 import { setLang } from "../../src/client/locale.ts";
 
-function entry(over: Partial<JevHistoryEntry> = {}): JevHistoryEntry {
+function entry(over: Partial<DecisionHistoryEntry> = {}): DecisionHistoryEntry {
   return {
     ts: 1700000000000,
     rootHash: "abc123",
@@ -81,7 +81,7 @@ afterEach(() => {
 });
 
 describe("ProbBar 边界", () => {
-  function barOf(over: Partial<JevHistoryEntry> = {}): HTMLElement {
+  function barOf(over: Partial<DecisionHistoryEntry> = {}): HTMLElement {
     const { pane, unmount } = mountPane(React.createElement(ProbBar, { entry: entry(over) }));
     unmounts.push(unmount);
     return pane;

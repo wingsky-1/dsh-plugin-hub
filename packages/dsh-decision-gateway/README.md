@@ -12,7 +12,7 @@ dsh plugin --profile web add @wingsky-1/dsh-decision-gateway
 
 - 模型工具：`ws_request_verdict`（决议）、`ws_list_verdict_guides`（只读清单）。
 - 回环路由：`/api/dsh-decision-gateway/health|config|presets|history|test-connection`。
-- 5 预设 frozen 出题规范（templateVersion 恒为 1，英文描述，零考题）：general / secret-leak（默认关闭）/ plan-review / risk-check / custom。调用方每次经 `questions_override` 自带全量题目（1-20 题，必填）。
+- 5 预设 frozen 出题规范（templateVersion 恒为 1，英文描述，零考题）：general / secret-leak（默认关闭）/ plan-review / risk-check / custom。调用方每次经 `questions_override` 自带全量题目（1-20 题，必填；首题驱动输出，多题仅首题决议）。措辞注：general 已由 binary/two 改为 2-10-candidate choice，custom 由 three 改为首题驱动，templateVersion 仍为 1；落史 templateVersion 可观测仍为 1。工具参数：`preset_id` 为 5 frozen id 或自建 id（`ws_list_verdict_guides` 的 custom:true 项）；`state.lang` 为 en/zh/unknown，缺席默认为 unknown；score 题禁 options、可带 2-10 levels（缺席默认 1-5，如五档 1-5 或两档 low-high 重缩放到 1-5）。
 - 自建预设（`custom-presets.json`，缺席即空）：`PUT /config` 增量键 `customPresets` 全量替换（id 不可与 frozen 重名，cap 0|1|2）；自建 id 可直接决议（开关/cap 同 frozen 语义）；落史存调用题目快照（脱敏），`GET /history` enrich 展示标题（只存 id）。
 
 ## 最短上手
@@ -32,16 +32,16 @@ PUT `/config`：`apiKeyRef` 须匹配 `^[A-Z][A-Z0-9_]{1,63}$`；与 `apiKeyPlai
 
 ## 安全模型
 
-- **离境数据**：仅当本地密形预检未命中且密钥可用时，才向官方基址发送截断后正文 + 题目；命中密形（如 `sk-…`、`AKIA…`、`ghp_…`、私钥块、`password=`）即不离境、直转人工（`appliedSource: local-precheck`）。
+- **离境数据**：仅当本地密形预检未命中且密钥可用时，才向官方基址发送截断后正文 + 题目；命中密形（如 `sk-…`、`AKIA…`、`ghp_…`、私钥块、`password=`）即不离境、直转人工（`appliedSource: local-precheck`，`choice: human`）；首题答案为 Noul（弃权）同样不分级、直转人工（tier none）。
 - **双轨密钥**：ENV 引用（`apiKeyRef`）优先于明文；切到 ENV 轨即折叠清空 `secrets.json`；明文写入免二次确认，服务端仍校验互斥。
 - **0600/0700**：命名空间目录 0700，三文件 0600，经临时文件 + rename 原子写入。
 - **掩码面**：GET `/config` 只回 `apiKeyRef` 名与 `hasPlaintextKey`，密钥原文永不回显；形状拒收 400 仅回 `empty|too-short|charset` 类别。
-- **secret 预设警告**：`secret-leak` 默认关闭（启用后仍先过本地预检）；历史 `snippetRedacted` 先脱敏后截断 ≤200 字，原始密钥永不入库。
-- **BaseURL 写死**：`https://api.typesafe.ai/v1/systemone` 为加载断言常量，不接受任何配置覆盖；PUT 遇 `baseUrl` 类键直接 400。模型冻结为 `jev-latest`（同等 pin 待遇）；score 回浮点按发送档数重缩放回 1..5（默认五档即 round+1，均钳制；自带 levels 用 `levels` 字段 2-10 档），tier 按置信度 0.8/0.5 派生。
+- **secret 预设警告**：`secret-leak` 默认关闭，仅在需检查不可信文本是否含真密钥时启用（启用后仍先过本地预检）；历史 `snippetRedacted` 先脱敏后截断 ≤200 字，原始密钥永不入库。
+- **BaseURL 写死**：`https://api.typesafe.ai/v1/systemone` 为加载断言常量，不接受任何配置覆盖；PUT 遇 `baseUrl` 类键直接 400。模型冻结为 `jev-latest`（同等 pin 待遇）；score 回浮点按发送档数重缩放回 1..5（默认五档即 round+1，均钳制；自带 levels 用 `levels` 字段 2-10 档，如五档 1-5 或两档 low-high），tier 按置信度 ≥0.8 high/≥0.5 low 派生（其余 none）。
 
 ## 历史
 
-按（工作目录指纹 rootHash，sessionId）分文件 jsonl（工作目录取自会话 store，取不到回落调用方目录）：每会话 200 条轮转，总会话 50（只保数量语义，mtime 并列时不钉删谁）。查询 `root` 可传完整路径、`rootHash`，或仅传 basename（按 `rootDisplay` 匹配）；删除仅支持单会话（`root` 与 `sessionId` 双必填，basename 多命中即 400）。会话标题仅活会话在读取时 enrich 显示（`sessionTitle`，无标题回落短 id，永不落盘）。
+按（工作目录指纹 rootHash，sessionId）分文件 jsonl（工作目录取自会话 store，取不到回落调用方目录）：每会话 200 条轮转，总会话 50（只保数量语义，mtime 并列时不钉删谁）。落史条目含 templateVersion（恒为 1，可观测；措辞修订不 bump 版本）。查询 `root` 可传完整路径、`rootHash`，或仅传 basename（按 `rootDisplay` 匹配）；删除仅支持单会话（`root` 与 `sessionId` 双必填，basename 多命中即 400）。会话标题仅活会话在读取时 enrich 显示（`sessionTitle`，无标题回落短 id，永不落盘）。
 
 ## 验证与排障
 
