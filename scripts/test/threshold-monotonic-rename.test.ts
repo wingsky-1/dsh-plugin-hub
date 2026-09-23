@@ -608,7 +608,7 @@ test("P3c-③ checkRenameExistence 独立行为锁定（括号边界）", () => 
     "membership 豁免",
   );
   const exemptGuard = { ...baseGuard, exemptFrom: { source: "topo", path: "exempt" } };
-  const exemptLoader = (arg) => {
+  const exemptLoader = (arg: unknown) => {
     if (arg && typeof arg === "object" && "sources" in arg)
       return { value: { exempt: { "dsh-new": {} } } };
     return { value: wsValue };
