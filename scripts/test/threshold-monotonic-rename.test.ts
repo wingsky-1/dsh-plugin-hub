@@ -72,11 +72,8 @@ const COVERAGE_CONFIG = "scripts/data/coverage.config.json";
 
 const GUARDS = [THRESHOLD_GUARD, TIMEOUT_GUARD, ANCHOR_GUARD, EXISTENCE_GUARD];
 
-const memRead = (files) => (rel) =>
-  Object.hasOwn(files, rel) ? files[rel] : null;
+const memRead = (files) => (rel) => (Object.hasOwn(files, rel) ? files[rel] : null);
 
-const gauntletDoc = (packages) =>
-  JSON.stringify({ mutation: { strict: true, packages } });
 const topologyDoc = (packages, shared = 60000) =>
   JSON.stringify({ sharedDefaults: { timeoutMS: shared }, packages });
 
@@ -146,8 +143,7 @@ function runRenameCase({
     exemptions,
     faceCheck: () => ({ ok: faceOk }),
   });
-  const exitCode =
-    adjusted.envErrors.length > 0 ? 2 : adjusted.failures.length > 0 ? 1 : 0;
+  const exitCode = adjusted.envErrors.length > 0 ? 2 : adjusted.failures.length > 0 ? 1 : 0;
   return { result, adjusted, exitCode };
 }
 
@@ -157,10 +153,8 @@ const baseGauntletOld = (overrides = {}) => ({
 const wsGauntletNew = (overrides = {}) => ({
   mutation: { strict: true, packages: { [NEW]: newEntry(overrides) } },
 });
-const baseTopologyOld = (overrides = {}) =>
-  topologyDoc({ [OLD]: oldTopoEntry(overrides) });
-const wsTopologyNew = (overrides = {}) =>
-  topologyDoc({ [NEW]: newTopoEntry(overrides) });
+const baseTopologyOld = (overrides = {}) => topologyDoc({ [OLD]: oldTopoEntry(overrides) });
+const wsTopologyNew = (overrides = {}) => topologyDoc({ [NEW]: newTopoEntry(overrides) });
 const pkgsNew = () => [{ name: NEW, dirs: ["src"] }];
 const pkgsOld = () => [{ name: OLD, dirs: ["src"] }];
 
@@ -284,7 +278,7 @@ test("改名 v3 M3b：配对形但新 timeoutMS 60001 超上限红", () => {
   assert.equal(r.adjusted.renamed, false);
 });
 
-test("改名 v3 M3c：新阈值是字符串 \"60\" 红（非数字不进 numericLeaves）", () => {
+test('改名 v3 M3c：新阈值是字符串 "60" 红（非数字不进 numericLeaves）', () => {
   const r = runRenameCase({
     baseGauntlet: baseGauntletOld(),
     wsGauntlet: wsGauntletNew({ threshold: "60" }),
@@ -293,7 +287,7 @@ test("改名 v3 M3c：新阈值是字符串 \"60\" 红（非数字不进 numeric
     packages: pkgsNew(),
     basePackages: pkgsOld(),
   });
-  assert.equal(r.exitCode, 1, "字符串 \"60\" 与数字 60 不 strict===");
+  assert.equal(r.exitCode, 1, '字符串 "60" 与数字 60 不 strict===');
   assert.equal(r.adjusted.renamed, false);
 });
 
@@ -450,8 +444,7 @@ test("改名 v3：面并集不绿则改红（faceCheck false 即使搬迁干净�
   });
   assert.equal(adjusted.renamed, false, "existence 与面并集须双绿");
   assert.equal(adjusted.warnings.length, 0);
-  const exitCode =
-    adjusted.envErrors.length > 0 ? 2 : adjusted.failures.length > 0 ? 1 : 0;
+  const exitCode = adjusted.envErrors.length > 0 ? 2 : adjusted.failures.length > 0 ? 1 : 0;
   assert.equal(exitCode, 1, "原删叶失败照旧判红");
 });
 

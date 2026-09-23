@@ -293,6 +293,189 @@ function isRecord(value) {
 }
 
 /**
+ * 规则 2＋4＋5：逐 guard 收集恰好一删一增的改名候选。
+ * 返回 pairs 数组；任一 guard 出现多删多增／模板不对齐／后置不等即返回 null（调用方直回 passthrough）。
+ * 由 applyRenameRecognition 拆出，仅降复杂度，行为不变。
+ */
+function collectRenamePairs(registry, loadBase, loadWorkspace) {
+  const pairs = [];
+  for (const guard of registry.guards ?? []) {
+    if (guard.kind !== "value" || guard.onRemoval !== "fail") continue;
+    const before = numericLeaves(guard, loadBase(guard)?.value);
+    if (before.size === 0) continue;
+    const after = numericLeaves(guard, loadWorkspace(guard)?.value);
+    const deletions = [...before.keys()].filter((key) => !after.has(key));
+    const additions = [...after.keys()].filter((key) => !before.has(key));
+    if (deletions.length === 0 && additions.length === 0) continue;
+    if (deletions.length !== 1 || additions.length !== 1) return null;
+    const aligned = alignRenameTemplate(guard, deletions[0], additions[0]);
+    if (aligned === null) return null;
+    const oldValue = before.get(deletions[0]);
+    if (oldValue !== after.get(additions[0])) return null;
+    pairs.push({
+      guard,
+      oldLeaf: deletions[0],
+      newLeaf: additions[0],
+      oldSeg: aligned.oldSeg,
+      newSeg: aligned.newSeg,
+      value: oldValue,
+    });
+  }
+  return pairs;
+}
+
+/**
+ * 规则 2（全局）：pairs 必须非空且跨 guard 指向同一对新旧包；大小写-only 差异不是改名。
+ * 通过返回 { oldPkg, newPkg }，否则返回 null。拆出降复杂度，行为不变。
+ */
+function resolveRenamePackagePair(pairs) {
+  if (pairs.length === 0) return null;
+  const [first, ...rest] = pairs;
+  if (rest.some((pair) => pair.oldSeg !== first.oldSeg || pair.newSeg !== first.newSeg)) {
+    return null;
+  }
+  if (first.oldSeg.toLowerCase() === first.newSeg.toLowerCase()) return null;
+  return { oldPkg: first.oldSeg, newPkg: first.newSeg };
+}
+
+/** R1：全部 existence 守卫的新包语义必须通过；任一失败即 false。
+ * 口径与 lib 的 compareExistenceGuard 同形。拆出降主函数复杂度，行为不变。
+ * 函数计数按 9 口径：改名识别共 8 helpers + 主函数 = 9（本函数为其一，不再拆单守卫子函数）。
+ */
+function checkRenameExistence(registry, newPkg, packages, exemptions, loadWorkspace) {
+  for (const guard of registry.guards ?? []) {
+    if (guard.kind !== "existence") continue;
+    if (!Array.isArray(guard.paths) || guard.paths.length === 0) continue;
+    const universe = guard.universe;
+    if (universe === null || typeof universe !== "object" || Array.isArray(universe)) continue;
+    const prefix = typeof universe.prefix === "string" ? universe.prefix : "";
+    if (!newPkg.startsWith(prefix)) continue;
+    const dirNeed = typeof universe.requireDir === "string" ? universe.requireDir : undefined;
+    const wsEntry = packages.find((pkg) => pkg.name === newPkg);
+    const governed =
+      wsEntry !== undefined &&
+      (dirNeed === undefined ||
+        dirNeed === "" ||
+        (Array.isArray(wsEntry.dirs) && wsEntry.dirs.includes(dirNeed)));
+    if (!governed) continue;
+    if (exemptions.has(guard.paths[0] + "." + newPkg + "#membership")) continue;
+    const anchorLedgerExempt = exemptions.has(guard.paths[0] + "." + newPkg + "#anchor");
+    let exempted = false;
+    const exemptFrom = guard.exemptFrom;
+    if (
+      isRecord(exemptFrom) &&
+      typeof exemptFrom.source === "string" &&
+      typeof exemptFrom.path === "string"
+    ) {
+      const exemptSide = loadWorkspace({ sources: [exemptFrom.source] });
+      if (exemptSide !== null) {
+        const exemptNode = resolveSingle(exemptSide.value, exemptFrom.path);
+        if (isRecord(exemptNode) && Object.hasOwn(exemptNode, newPkg)) exempted = true;
+      }
+    }
+    if (exempted) continue;
+    const wsTable = resolveSingle(loadWorkspace(guard)?.value, guard.paths[0]);
+    const newEntry = isRecord(wsTable) ? wsTable[newPkg] : undefined;
+    if (!isRecord(newEntry)) return false;
+    if (anchorLedgerExempt) continue;
+    const requireFields = Array.isArray(guard.requireFields) ? guard.requireFields : [];
+    const newAnchor = effectiveAnchor(newEntry, requireFields);
+    if (requireFields.length > 0 && (newAnchor === null || newAnchor.value <= 0)) return false;
+  }
+  return true;
+}
+
+/** 规则 3（目录）：旧目录消失、新目录出现、基准侧旧目录存在过。拆出降复杂度，行为不变。 */
+function checkRenameDirectories(packages, basePackages, oldPkg, newPkg, requireDir) {
+  const hasDir = (list, name, withSrc) =>
+    list.some(
+      (pkg) =>
+        pkg.name === name &&
+        (!withSrc || (Array.isArray(pkg.dirs) && pkg.dirs.includes(requireDir))),
+    );
+  if (hasDir(packages, oldPkg, false)) return false;
+  if (!hasDir(packages, newPkg, true)) return false;
+  if (!hasDir(basePackages, oldPkg, true)) return false;
+  return true;
+}
+
+/** 规则 7（锚同治）：新包生效锚不得低于旧包。拆出降复杂度，行为不变。 */
+function checkRenameAnchors(registry, loadBase, loadWorkspace, oldPkg, newPkg) {
+  for (const guard of registry.guards ?? []) {
+    if (guard.kind !== "baseline") continue;
+    if (!Array.isArray(guard.anchorFields) || guard.anchorFields.length === 0) continue;
+    if (!Array.isArray(guard.paths) || guard.paths.length === 0) continue;
+    for (const dotted of guard.paths) {
+      const baseTable = resolveSingle(loadBase(guard)?.value, dotted);
+      if (!isRecord(baseTable) || !Object.hasOwn(baseTable, oldPkg)) continue;
+      const beforeAnchor = effectiveAnchor(baseTable[oldPkg], guard.anchorFields);
+      if (beforeAnchor === null) continue;
+      const wsTable = resolveSingle(loadWorkspace(guard)?.value, dotted);
+      const afterAnchor =
+        isRecord(wsTable) && Object.hasOwn(wsTable, newPkg)
+          ? effectiveAnchor(wsTable[newPkg], guard.anchorFields)
+          : null;
+      if (afterAnchor === null || afterAnchor.value < beforeAnchor.value) return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * 规则 1＋3：全部 failures 必须恰好是被配对的删叶 onRemoval。返回 suppressedSet，失配返回 null。
+ * 拆出降复杂度，行为不变。
+ */
+function partitionRenameFailures(pairs, failures) {
+  const suppressed = [];
+  for (const pair of pairs) {
+    const prefix = pair.guard.id + "：" + pair.oldLeaf + " 被移除（基准 " + pair.value + "）";
+    suppressed.push(...failures.filter((failure) => failure.startsWith(prefix)));
+  }
+  const suppressedSet = new Set(suppressed);
+  if (failures.some((failure) => !suppressedSet.has(failure))) return null;
+  return suppressedSet;
+}
+
+/** 规则 6（面并集）：无证据／异常一律 false。拆出降复杂度，行为不变。 */
+function isRenameFacesOk(faceCheck) {
+  try {
+    return typeof faceCheck === "function" && faceCheck()?.ok === true;
+  } catch {
+    return false;
+  }
+}
+
+/** 规则 6（警告）：全包改名只发一条具名警告。拆出降复杂度，行为不变。 */
+function buildRenameWarning(pairs, oldPkg, newPkg, requireDir) {
+  const legs = pairs
+    .map(
+      (pair) =>
+        pair.guard.id +
+        "：" +
+        pair.oldLeaf +
+        "=" +
+        pair.value +
+        " → " +
+        pair.newLeaf +
+        "=" +
+        pair.value,
+    )
+    .join("；");
+  return (
+    "rename-pair " +
+    oldPkg +
+    " → " +
+    newPkg +
+    "：" +
+    legs +
+    " —— gauntlet／topology 新旧键同值＋旧目录消失新目录出现（含 " +
+    requireDir +
+    "）＋除配对删叶外零失败（含 existence 新包语义显式断言）＋变异面并集（gen-stryker-conf --check／aggregate:check）双绿，删叶抑制为警告；" +
+    "本警告不消费任何 #removal 豁免，旧键／旧目录残留仍按原判据腐烂判红"
+  );
+}
+
+/**
  * 全量扫描之后试认包改名。返回 { failures, warnings, envErrors, renamed }：
  * renamed=true 时 failures 已去掉被配对的删叶、warnings 追加一条 rename-pair 警告；
  * 否则原样返回（调用方照旧按 failures/envErrors 分流）。
@@ -317,157 +500,30 @@ export function applyRenameRecognition({
   const loadBase = makeSourceLoader({ read: readBase, textReaders, label: "基准" });
   const loadWorkspace = makeSourceLoader({ read: readWorkspace, textReaders, label: "工作区" });
 
-  // 规则 2＋4＋5：逐 guard 恰好一删一增、同一模板单个 * 段差异、后置 strict===。
-  const pairs = [];
-  for (const guard of registry.guards ?? []) {
-    if (guard.kind !== "value" || guard.onRemoval !== "fail") continue;
-    const before = numericLeaves(guard, loadBase(guard)?.value);
-    if (before.size === 0) continue; // 基准无事实＝首次引入：无删叶可配对
-    const after = numericLeaves(guard, loadWorkspace(guard)?.value);
-    const deletions = [...before.keys()].filter((key) => !after.has(key));
-    const additions = [...after.keys()].filter((key) => !before.has(key));
-    if (deletions.length === 0 && additions.length === 0) continue;
-    if (deletions.length !== 1 || additions.length !== 1) return passthrough; // 多删多增
-    const aligned = alignRenameTemplate(guard, deletions[0], additions[0]);
-    if (aligned === null) return passthrough; // 无包段／串模板
-    const oldValue = before.get(deletions[0]);
-    if (oldValue !== after.get(additions[0])) return passthrough; // 后置严格相等
-    pairs.push({
-      guard,
-      oldLeaf: deletions[0],
-      newLeaf: additions[0],
-      oldSeg: aligned.oldSeg,
-      newSeg: aligned.newSeg,
-      value: oldValue,
-    });
-  }
-  if (pairs.length === 0) return passthrough;
-  // 规则 2（全局）：跨 guard 必须指向同一对新旧包；大小写-only 差异不是改名。
-  const [first, ...rest] = pairs;
-  if (rest.some((pair) => pair.oldSeg !== first.oldSeg || pair.newSeg !== first.newSeg)) {
+  const pairs = collectRenamePairs(registry, loadBase, loadWorkspace);
+  if (pairs === null) return passthrough;
+  const resolved = resolveRenamePackagePair(pairs);
+  if (resolved === null) return passthrough;
+  const oldPkg = resolved.oldPkg;
+  const newPkg = resolved.newPkg;
+
+  if (!checkRenameExistence(registry, newPkg, packages, exemptions, loadWorkspace)) {
     return passthrough;
   }
-  if (first.oldSeg.toLowerCase() === first.newSeg.toLowerCase()) return passthrough;
-  const oldPkg = first.oldSeg;
-  const newPkg = first.newSeg;
 
-  // R1：配对前显式断言新包 existence 语义通过（替代“其余零差异”的隐含覆盖）。
-  // 口径与 lib 的 compareExistenceGuard 同形：新包若在某 existence 守卫的 universe 内，
-  // 必须在工作区表里有条目且回落锚点有效（>0），除非按该守卫的 exemptFrom 被豁免、
-  // 或台账里有同键的 #membership／#anchor 豁免（只读不消费：usedExemptions 早由全量
-  // 扫描登记，这里镜像同一语义，否则显式断言会比 lib 更严而误杀合法豁免）。
-  for (const guard of registry.guards ?? []) {
-    if (guard.kind !== "existence") continue;
-    if (!Array.isArray(guard.paths) || guard.paths.length === 0) continue;
-    const universe = guard.universe;
-    if (universe === null || typeof universe !== "object" || Array.isArray(universe)) continue;
-    const prefix = typeof universe.prefix === "string" ? universe.prefix : "";
-    if (!newPkg.startsWith(prefix)) continue;
-    const dirNeed = typeof universe.requireDir === "string" ? universe.requireDir : undefined;
-    const wsEntry = packages.find((pkg) => pkg.name === newPkg);
-    const governed =
-      wsEntry !== undefined &&
-      (dirNeed === undefined ||
-        dirNeed === "" ||
-        (Array.isArray(wsEntry.dirs) && wsEntry.dirs.includes(dirNeed)));
-    if (!governed) continue;
-    // 台账豁免与 lib 同形：#membership 豁免整包存在性，#anchor 只豁免锚点（只读）。
-    if (exemptions.has(guard.paths[0] + "." + newPkg + "#membership")) continue;
-    const anchorLedgerExempt = exemptions.has(guard.paths[0] + "." + newPkg + "#anchor");
-    let exempted = false;
-    const exemptFrom = guard.exemptFrom;
-    if (
-      isRecord(exemptFrom) &&
-      typeof exemptFrom.source === "string" &&
-      typeof exemptFrom.path === "string"
-    ) {
-      const exemptSide = loadWorkspace({ sources: [exemptFrom.source] });
-      if (exemptSide !== null) {
-        const exemptNode = resolveSingle(exemptSide.value, exemptFrom.path);
-        if (isRecord(exemptNode) && Object.hasOwn(exemptNode, newPkg)) exempted = true;
-      }
-    }
-    if (exempted) continue;
-    const wsTable = resolveSingle(loadWorkspace(guard)?.value, guard.paths[0]);
-    const newEntry = isRecord(wsTable) ? wsTable[newPkg] : undefined;
-    if (!isRecord(newEntry)) return passthrough;
-    if (anchorLedgerExempt) continue;
-    const requireFields = Array.isArray(guard.requireFields) ? guard.requireFields : [];
-    const newAnchor = effectiveAnchor(newEntry, requireFields);
-    if (requireFields.length > 0 && (newAnchor === null || newAnchor.value <= 0)) {
-      return passthrough;
-    }
-  }
-
-  // 规则 3（目录）：旧目录消失、新目录出现（含 requireDir）、基准侧旧目录存在过。
   const requireDir = resolveRenameRequireDir(registry, newPkg);
-  const hasDir = (list, name, withSrc) =>
-    list.some(
-      (pkg) =>
-        pkg.name === name &&
-        (!withSrc || (Array.isArray(pkg.dirs) && pkg.dirs.includes(requireDir))),
-    );
-  if (hasDir(packages, oldPkg, false)) return passthrough; // 旧目录未消失
-  if (!hasDir(packages, newPkg, true)) return passthrough; // 新目录未出现（含 src）
-  if (!hasDir(basePackages, oldPkg, true)) return passthrough; // 基准侧无旧目录（幽灵键搬迁）
-
-  // 规则 7（锚同治）：基准表里有旧包的 baseline 守卫，新包生效锚不得低于旧包。
-  // R2：对 guard.paths 全量取最严——任一条 path 出现降低即不认（当前单 path 守卫下
-  // 与只看 paths[0] 同效，多 path 守卫出现时自动收紧，无需另加判据）。
-  for (const guard of registry.guards ?? []) {
-    if (guard.kind !== "baseline") continue;
-    if (!Array.isArray(guard.anchorFields) || guard.anchorFields.length === 0) continue;
-    if (!Array.isArray(guard.paths) || guard.paths.length === 0) continue;
-    for (const dotted of guard.paths) {
-      const baseTable = resolveSingle(loadBase(guard)?.value, dotted);
-      if (!isRecord(baseTable) || !Object.hasOwn(baseTable, oldPkg)) continue;
-      const beforeAnchor = effectiveAnchor(baseTable[oldPkg], guard.anchorFields);
-      if (beforeAnchor === null) continue;
-      const wsTable = resolveSingle(loadWorkspace(guard)?.value, dotted);
-      const afterAnchor =
-        isRecord(wsTable) && Object.hasOwn(wsTable, newPkg)
-          ? effectiveAnchor(wsTable[newPkg], guard.anchorFields)
-          : null;
-      if (afterAnchor === null || afterAnchor.value < beforeAnchor.value) return passthrough;
-    }
+  if (!checkRenameDirectories(packages, basePackages, oldPkg, newPkg, requireDir)) {
+    return passthrough;
   }
 
-  // 规则 1＋3（existence 在内）：全部 failures 必须恰好是被配对的删叶 onRemoval。
-  // 判词前缀与 lib 的 compareValueGuard 删键判词同形；对不上即原样返回（fail-closed，
-  // lib 改判词只会导致改名不认，不会导致误放行）。豁免已消费的删叶此处无失败可抑，
-  // 识别照常进行——警告不消费任何 #removal。
-  const suppressed = [];
-  for (const pair of pairs) {
-    const prefix = pair.guard.id + "：" + pair.oldLeaf + " 被移除（基准 " + pair.value + "）";
-    suppressed.push(...failures.filter((failure) => failure.startsWith(prefix)));
+  if (!checkRenameAnchors(registry, loadBase, loadWorkspace, oldPkg, newPkg)) {
+    return passthrough;
   }
-  const suppressedSet = new Set(suppressed);
-  if (failures.some((failure) => !suppressedSet.has(failure))) return passthrough;
 
-  // 规则 6（面并集）：最贵放最后；无证据／异常一律不认。
-  let facesOk = false;
-  try {
-    facesOk = typeof faceCheck === "function" && faceCheck()?.ok === true;
-  } catch {
-    facesOk = false;
-  }
-  if (!facesOk) return passthrough;
-
-  // 规则 6（警告）：全包改名只发一条具名警告（新旧全路径＋值）。
-  const legs = pairs
-    .map((pair) => pair.guard.id + "：" + pair.oldLeaf + "=" + pair.value + " → " + pair.newLeaf + "=" + pair.value)
-    .join("；");
-  const warning =
-    "rename-pair " +
-    oldPkg +
-    " → " +
-    newPkg +
-    "：" +
-    legs +
-    " —— gauntlet／topology 新旧键同值＋旧目录消失新目录出现（含 " +
-    requireDir +
-    "）＋除配对删叶外零失败（含 existence 新包语义显式断言）＋变异面并集（gen-stryker-conf --check／aggregate:check）双绿，删叶抑制为警告；" +
-    "本警告不消费任何 #removal 豁免，旧键／旧目录残留仍按原判据腐烂判红";
+  const suppressedSet = partitionRenameFailures(pairs, failures);
+  if (suppressedSet === null) return passthrough;
+  if (!isRenameFacesOk(faceCheck)) return passthrough;
+  const warning = buildRenameWarning(pairs, oldPkg, newPkg, requireDir);
   return {
     failures: failures.filter((failure) => !suppressedSet.has(failure)),
     warnings: [...warnings, warning],
@@ -501,7 +557,9 @@ function listBasePackages(baseRef, repoRoot, requireDirs = ["src"]) {
   }
   return names.map((name) => ({
     name,
-    dirs: requireDirs.filter((dir) => existsInGit(baseRef, "packages/" + name + "/" + dir, repoRoot)),
+    dirs: requireDirs.filter((dir) =>
+      existsInGit(baseRef, "packages/" + name + "/" + dir, repoRoot),
+    ),
   }));
 }
 
@@ -541,7 +599,6 @@ function checkRenameFaces(repoRoot, baseRef) {
   }
   return { ok: true };
 }
-
 
 /**
  * 主校验。返回 { exitCode, failures }；日志走 stdout/stderr。
