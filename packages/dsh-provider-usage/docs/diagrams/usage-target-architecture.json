@@ -3,15 +3,15 @@
   "diagram_type": "architecture",
   "meta": {
     "title": "dsh-provider-usage 目标架构（含外部边界）",
-    "quality_profile": "showcase",
+    "quality_profile": "standard",
     "output": "usage-target-architecture.html",
     "viewBox": [
-      2240,
-      1040
+      1803,
+      837
     ],
     "repository": {
       "url": "https://github.com/wingsky-1/dsh-plugin-hub",
-      "revision": "9ed7e5f44473ac61df811f650f1963c7ee4d7b6b"
+      "revision": "4c02150de169867c7807a725c7a11f5fbaa4ebd4"
     }
   },
   "components": [
@@ -19,19 +19,19 @@
       "id": "client",
       "type": "frontend",
       "label": "浏览器客户端",
-      "sublabel": "跨进程 · 胶囊/设置/趋势/报告",
+      "sublabel": "胶囊/设置/趋势/报告",
       "pos": [
-        1860,
-        40
+        1498,
+        32
       ],
       "size": [
-        270,
-        84
+        217,
+        68
       ],
       "sources": [
         {
           "path": "packages/dsh-provider-usage/src/client/index.tsx",
-          "line": 616
+          "line": 708
         }
       ]
     },
@@ -41,26 +41,26 @@
       "label": "dsh 宿主运行时",
       "sublabel": "ctx: webServer · llm · sessions",
       "pos": [
-        200,
-        40
+        161,
+        32
       ],
       "size": [
-        300,
-        72
+        242,
+        58
       ]
     },
     {
       "id": "ua",
       "type": "external",
       "label": "用户自定义适配器 .mjs",
-      "sublabel": "fetchData/formatCapsule/formatPanel",
+      "sublabel": "fetchData 等三函数",
       "pos": [
-        30,
-        590
+        24,
+        475
       ],
       "size": [
-        220,
-        84
+        178,
+        68
       ],
       "sources": [
         {
@@ -75,31 +75,31 @@
       "label": "远端用量 API",
       "sublabel": "HTTPS · provider 官方接口",
       "pos": [
-        30,
-        860
+        24,
+        693
       ],
       "size": [
-        220,
-        84
+        178,
+        68
       ]
     },
     {
       "id": "c1",
       "type": "backend",
       "label": "C1 契约/工具层",
-      "sublabel": "shared/ · v2契约 · esc/图表/配置/净化",
+      "sublabel": "shared · 契约图表配置",
       "pos": [
-        280,
-        260
+        225,
+        210
       ],
       "size": [
-        220,
-        66
+        178,
+        53
       ],
       "sources": [
         {
-          "path": "packages/dsh-provider-usage/src/contracts.ts",
-          "line": 98
+          "path": "packages/dsh-provider-usage/src/shared/contracts.ts",
+          "line": 128
         }
       ]
     },
@@ -109,17 +109,17 @@
       "label": "C2 注册/加载层",
       "sublabel": "registry · 热更 · 密钥链",
       "pos": [
-        280,
-        420
+        225,
+        339
       ],
       "size": [
-        220,
-        66
+        178,
+        53
       ],
       "sources": [
         {
-          "path": "packages/dsh-provider-usage/src/registry.ts",
-          "line": 63
+          "path": "packages/dsh-provider-usage/src/server/registry/registry.ts",
+          "line": 77
         }
       ]
     },
@@ -129,17 +129,17 @@
       "label": "C4 历史存储层",
       "sublabel": "按天 JSONL · 0600",
       "pos": [
-        280,
-        700
+        225,
+        564
       ],
       "size": [
-        220,
-        66
+        178,
+        53
       ],
       "sources": [
         {
-          "path": "packages/dsh-provider-usage/src/core/history.ts",
-          "line": 30
+          "path": "packages/dsh-provider-usage/src/server/history/history.ts",
+          "line": 23
         }
       ]
     },
@@ -149,17 +149,17 @@
       "label": "C6 路由层（宿主）",
       "sublabel": "/stats /history /adapters*",
       "pos": [
-        600,
-        260
+        483,
+        210
       ],
       "size": [
-        250,
-        66
+        202,
+        53
       ],
       "sources": [
         {
-          "path": "packages/dsh-provider-usage/src/routes/stats.ts",
-          "line": 15
+          "path": "packages/dsh-provider-usage/src/server/data-routes/stats.ts",
+          "line": 14
         }
       ]
     },
@@ -167,19 +167,19 @@
       "id": "c3",
       "type": "backend",
       "label": "C3 执行管道层",
-      "sublabel": "stats-service · pipeline · guards",
+      "sublabel": "stats-service · v2 · guards",
       "pos": [
-        600,
-        490
+        483,
+        395
       ],
       "size": [
-        250,
-        66
+        202,
+        53
       ],
       "sources": [
         {
-          "path": "packages/dsh-provider-usage/src/stats-service.ts",
-          "line": 139
+          "path": "packages/dsh-provider-usage/src/server/pipeline/stats-service.ts",
+          "line": 35
         }
       ]
     },
@@ -189,17 +189,17 @@
       "label": "C5 内置适配器 ×3",
       "sublabel": "DeepSeek · OpenCode Go · 智谱",
       "pos": [
-        600,
-        720
+        483,
+        580
       ],
       "size": [
-        250,
-        66
+        202,
+        53
       ],
       "sources": [
         {
-          "path": "packages/dsh-provider-usage/src/adapters/deepseek-official.mjs",
-          "line": 760
+          "path": "packages/dsh-provider-usage/src/server/adapters/deepseek-official.mjs",
+          "line": 947
         }
       ]
     },
@@ -207,19 +207,19 @@
       "id": "e1",
       "type": "backend",
       "label": "E1 事件采集层",
-      "sublabel": "trend/collector 折叠状态机",
+      "sublabel": "collect · 事件折叠状态机",
       "pos": [
-        1330,
-        260
+        1071,
+        210
       ],
       "size": [
-        250,
-        66
+        202,
+        53
       ],
       "sources": [
         {
-          "path": "packages/dsh-provider-usage/src/trend/collector.ts",
-          "line": 227
+          "path": "packages/dsh-provider-usage/src/server/collect/collector.ts",
+          "line": 243
         }
       ]
     },
@@ -229,17 +229,17 @@
       "label": "E2 聚合/压实层",
       "sublabel": "aggregator · store",
       "pos": [
-        1330,
-        490
+        1071,
+        395
       ],
       "size": [
-        250,
-        66
+        202,
+        53
       ],
       "sources": [
         {
-          "path": "packages/dsh-provider-usage/src/trend/aggregator.ts",
-          "line": 1
+          "path": "packages/dsh-provider-usage/src/server/aggregate/aggregator.ts",
+          "line": 85
         }
       ]
     },
@@ -249,17 +249,17 @@
       "label": "E4 报告执行/产出层",
       "sublabel": "runner · generate · format",
       "pos": [
-        1330,
-        720
+        1071,
+        580
       ],
       "size": [
-        250,
-        66
+        202,
+        53
       ],
       "sources": [
         {
-          "path": "packages/dsh-provider-usage/src/report/runner.ts",
-          "line": 165
+          "path": "packages/dsh-provider-usage/src/server/execute/runner.ts",
+          "line": 25
         }
       ]
     },
@@ -269,17 +269,17 @@
       "label": "E5 路由层（宿主）",
       "sublabel": "/trend /report-* /health",
       "pos": [
-        1760,
-        260
+        1417,
+        210
       ],
       "size": [
-        250,
-        66
+        202,
+        53
       ],
       "sources": [
         {
-          "path": "packages/dsh-provider-usage/src/routes/ui.ts",
-          "line": 62
+          "path": "packages/dsh-provider-usage/src/server/ui-routes/trend.ts",
+          "line": 33
         }
       ]
     },
@@ -287,19 +287,19 @@
       "id": "e3",
       "type": "backend",
       "label": "E3 报告调度层",
-      "sublabel": "config · schedule · tasks",
+      "sublabel": "schedule · 窗口/队列/tasks",
       "pos": [
-        1760,
-        720
+        1417,
+        580
       ],
       "size": [
-        250,
-        66
+        202,
+        53
       ],
       "sources": [
         {
-          "path": "packages/dsh-provider-usage/src/report/config.ts",
-          "line": 382
+          "path": "packages/dsh-provider-usage/src/server/schedule/due.ts",
+          "line": 77
         }
       ]
     },
@@ -309,17 +309,17 @@
       "label": "装配层 apply.ts",
       "sublabel": "组合两域 · 路由注册 · 生命周期",
       "pos": [
-        950,
-        940
+        764,
+        737
       ],
       "size": [
-        280,
-        80
+        225,
+        64
       ],
       "sources": [
         {
-          "path": "packages/dsh-provider-usage/src/apply.ts",
-          "line": 208
+          "path": "packages/dsh-provider-usage/src/apply/apply.ts",
+          "line": 255
         }
       ]
     }
@@ -384,7 +384,7 @@
       "label": "契约校验",
       "fromSide": "bottom",
       "toSide": "top",
-      "labelDy": 30
+      "labelDy": 24
     },
     {
       "id": "c2-c3",
@@ -403,7 +403,7 @@
       "variant": "emphasis",
       "fromSide": "bottom",
       "toSide": "right",
-      "labelDy": 30
+      "labelDy": 24
     },
     {
       "id": "c3-c5",
@@ -413,8 +413,8 @@
       "fromSide": "bottom",
       "toSide": "top",
       "labelAt": [
-        768,
-        640
+        618,
+        515
       ]
     },
     {
@@ -425,7 +425,7 @@
       "variant": "emphasis",
       "fromSide": "bottom",
       "toSide": "top",
-      "labelDy": 30
+      "labelDy": 24
     },
     {
       "id": "c3-ua",
@@ -452,7 +452,7 @@
       "variant": "dashed",
       "fromSide": "bottom",
       "toSide": "top",
-      "labelDy": 46
+      "labelDy": 37
     },
     {
       "id": "e1-e2",
@@ -462,7 +462,7 @@
       "variant": "emphasis",
       "fromSide": "bottom",
       "toSide": "top",
-      "labelDy": 30
+      "labelDy": 24
     },
     {
       "id": "e2-e4",
@@ -472,7 +472,7 @@
       "variant": "emphasis",
       "fromSide": "bottom",
       "toSide": "top",
-      "labelDy": 30
+      "labelDy": 24
     },
     {
       "id": "e5-e2",
@@ -506,7 +506,7 @@
       "label": "lastRun",
       "fromSide": "right",
       "toSide": "left",
-      "labelDy": 20
+      "labelDy": 16
     },
     {
       "id": "asm-e3",
@@ -548,7 +548,7 @@
       "title": "宿主进程边界",
       "items": [
         "域1 + 域2 + 装配层，两域业务面零直接依赖",
-        "共享底座 charts/config/sanitize 被两域消费",
+        "共享底座 shared/charts·config·sanitize 被两域消费",
         "16 路由 loopback 围栏（403/405）"
       ]
     },

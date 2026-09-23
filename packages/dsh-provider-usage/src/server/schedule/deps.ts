@@ -24,7 +24,9 @@
  * - server/execute 的 parseReportIndexLines 经本文件 ScheduleIndexParser
  *   端口注入（C 波：store.ts 不再直引 execute 门面；纯函数实现由组合根
  *   装配期传入；#768 B1 起 execute→schedule 的 updateLastRun 值边亦清零
- *   （执行器经 DueExecutorDeps.advanceLastRun 注入能力），跨域值边归零）；
+ *   （执行器经 DueExecutorDeps.advanceLastRun 注入能力），跨域值边归零；
+ *   dir-imports-baseline 质量证据全空（15 modules/15 facades，leaf/file/direct/crossDomain全空））；
+ *   门面环为设计期监视项（D13注记，无门禁条目；任一方向第二值边即重估单向注入）；
  * - shared 的 dayKey 经 shared/interface.ts 直揕引用（共享设施不入
  *   注入面，由实现块直接引，与 refactor skill §3 同形）。
  *
