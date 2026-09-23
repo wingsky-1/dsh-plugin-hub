@@ -13,7 +13,7 @@
  * - 失败语义：流式异常 → ok:false 元数据（错误短句可读），不抛——
  *   幂等重试由调度层决定（onDue 抛错才不推进 lastRun，见接线层约定）；
  * - 官方类型层仅 import type（仓库契约门禁「@deepseek-ai/* 仅类型导入」）：
- *   prompt 消息自拼 Message 字面量（与官方 createUserMessage 产物同形——
+ *   prompt 消息自拼 UserMessage 字面量（与官方 createUserMessage 产物同形——
  *   id = crypto.randomUUID()，官方 createMessage 同源 randomUUID 生成稳定 id；
  *   仅作只读传参，无需 freeze）。
  */
@@ -21,9 +21,9 @@ import type {
   GenerateOptions,
   LlmModelInfo,
   LlmProviderInfo,
-  Message,
   MessageId,
   StreamChunk,
+  UserMessage,
 } from "@deepseek-ai/dsh-llm";
 import { metricValue } from "../shared/interface.ts";
 import {
@@ -281,9 +281,10 @@ export async function generateReport(opts: GenerateReportOptions): Promise<Repor
   if (route === null) return fail("无可用的已注册 provider/model（须先在 dsh 注册适配器路由）");
   const rangeText = opts.rangeText ?? `${opts.startDay} ~ ${opts.endDay}`;
   const prompt = applyPromptTemplate(opts.promptTemplate, opts.statsJson, rangeText);
-  // 自拼 user 消息（与官方 createUserMessage 产物同形：randomUUID 稳定 id +
-  // 单 text 块 content + user source；仅作只读传参，无需 freeze）
-  const message: Message = {
+  // 自拼 UserMessage（与官方 createUserMessage 产物同形：randomUUID 稳定 id +
+  // 单 text 块 content + user source；role 由 UserMessage 类型钉死为 user；
+  // 仅作只读传参，无需 freeze）
+  const message: UserMessage = {
     id: crypto.randomUUID() as MessageId,
     role: "user",
     content: [{ type: "text", text: prompt }],

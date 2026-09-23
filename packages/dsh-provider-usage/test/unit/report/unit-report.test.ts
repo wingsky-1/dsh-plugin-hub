@@ -517,6 +517,10 @@ describe("generate：成功路径（正文拼接 / token 元数据 / 空串跟�
     expect(seen.options!.messages[0].source.kind).toBe("user");
   });
 
+  it("role=user（UserMessage 字面量，类型层同步钉死）", () => {
+    expect(seen.options!.messages[0].role).toBe("user");
+  });
+
   it("{stats} 注入统计 JSON", () => {
     expect(textOf(seen.options!.messages[0].content[0]).includes('{"calls":1}')).toBeTruthy();
   });
