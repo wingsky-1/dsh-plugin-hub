@@ -27,8 +27,8 @@ install them all at once as a single bundle, or pick individual plugins as neede
 
 This plugin set only adapts to **rc (release-candidate) releases of DeepSeek Harness — alpha versions are not supported**.
 
-- All plugins are currently pinned to `dsh 0.1.5-rc.1` (the official type-layer catalog and
-  every package's peerDependencies are locked in lockstep)
+- All plugins are currently pinned to `dsh 0.1.7-rc.1` (the official type-layer catalog and
+  every package's peerDependencies are locked in lockstep); **dsh CLI >= 0.1.7-rc.1 is required, older versions are unsupported**
 - npm/pnpm will surface a peer mismatch if your dsh version does not match — upgrade the
   dsh CLI to the corresponding rc release first
 - Per-release adaptation baselines, breaking changes and upgrade guides live in
@@ -36,7 +36,7 @@ This plugin set only adapts to **rc (release-candidate) releases of DeepSeek Har
 - The plugin set follows official rc releases; **alpha versions are unsupported** — do not
   install on an alpha dsh (or accept the compatibility risk yourself)
 
-### Individual install vs. bundle: pick ONE (since 0.1.5)
+### Individual install vs. bundle: pick ONE
 
 Each individual package and the bundle share the same patch `id` (`ui-*`). **Install only one way**
 — installing both `dsh-plugins-all` and any individual package such as `@wingsky-1/dsh-lan-proxy`
