@@ -3,11 +3,11 @@
  *
  * 旧 Provider（有 register）/ 新 Forms（无 register、有 describe/update/replace/
  * mutate＋document-updated）下覆盖：注册、读写、热更新、迁移幂等。
- * 运行：node --test shared/settings-namespace.test.js（零依赖，仅 Node 内置）。
+ * 运行：node --test scripts/test/shared-settings-namespace.test.js（或 pnpm test:scripts；零依赖，仅 Node 内置）。
  */
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { installSettingsNamespace } from "./settings-namespace.js";
+import { installSettingsNamespace } from "../../shared/settings-namespace.js";
 // ---- 通用假件 ----
 function makeWarnCapture() {
   const messages = [];
