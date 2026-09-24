@@ -5,7 +5,10 @@
  * - collector：usage 定稿主信号 / text-delta 热路径不计 / 重复 usage 校正不重记 /
  *   retry 逐次计（新 header 边界）/ message 补记与校正 / interrupted /
  *   归属缺失入未识别桶 / message.source 副源 / turn-end 定稿记忆保留（防乱序双算）/
- *   turn 计数 / tool 计数 / 分级 TTL / 会话销毁清理
+ *   turn 计数 / tool 计数 / 分级 TTL / 会话销毁清理 /
+ *   非结算事件 default 忽略（developer/message·end-seed 等）/
+ *   fork 仅计 live 新增（seed 边界不产出·子会话独立起算·无 seq 过滤分支）/
+ *   用量二选一回归（顶层 ?? stream 末条·末条胜出·非裸形态不认）
  * - 评审修复：P2-1 counter 记账 time 取 event.time / P2-2 message 补记定稿后
  *   headerSeen 对称重置（迟到 usage 不双算）/ P2-3 done 记忆 Map 化（retry 记忆 +
  *   TREND_DONE_MAX 淘汰）/ P2-6 归属不一致 onAnomaly 告警（不覆盖主源）
@@ -6417,6 +6420,350 @@ describe("#633 修复：真实升级场景端到端（旧 agg-only 分片重启�
 
   it("历史柱目录图例 = 未识别桶（无目录信息）", () => {
     expect(stackedDirs).toEqual([{ dir: TREND_UNIDENTIFIED }]);
+  });
+});
+
+// ---------------------------------------------------------------- collector：非结算事件走 default 忽略
+// fork 口径前置（dsh 0.1.7-rc.1 跟进，用户裁决：仅计 live 新增）：记账结算面仅
+// assistant/*（+ turn/end、tool/call 计数器）；其余事件类型无论类型层是否识别，
+// 一律经 switch default 忽略、零产出。未知类型以 developer/message 为代表
+// （0.1.7 新增 surface 类型前瞻；经 unknown 断言构造，双基线可编译）；
+// forked closer = session/end-seed { inherited: true }（fork 子会话在其继承前缀
+// 切分处拥有的标记）；合成 closer = 无 tag 的 end-seed（构造 seed 向日志的投影）。
+describe("collector：非结算事件走 default 忽略", () => {
+  let lens: number[];
+
+  beforeAll(() => {
+    const { emitted, send } = makeCollector();
+    const s = { id: "s-default" };
+    const snap: number[] = [];
+    const step = (type: string, data: Record<string, unknown>) => {
+      send(s, ev(type, data, T0 + snap.length, snap.length + 2));
+      snap.push(emitted.length);
+    };
+    step("request/header", HEADER());
+    step("developer/message", { turn: 1, step: 1 });
+    step("session/end-seed", { inherited: true });
+    step("session/end-seed", {});
+    step("user/message", { turn: 1, step: 1 });
+    step("system/message", { turn: 1, step: 1 });
+    step("tool/result", { turn: 1, step: 1 });
+    step("request/context", { provider: "deepseek", model: "deepseek-chat" });
+    step("turn/start", { turn: 1 });
+    step("step/start", { turn: 1, step: 1 });
+    step("step/end", { turn: 1, step: 1 });
+    lens = snapshot(snap);
+  });
+
+  it("request/header 只折叠归属（零产出）", () => {
+    expect(lens[0]).toBe(0);
+  });
+
+  it("developer/message（0.1.7 新类型前瞻）走 default 忽略", () => {
+    expect(lens[1]).toBe(0);
+  });
+
+  it("forked closer（end-seed inherited:true）走 default 忽略", () => {
+    expect(lens[2]).toBe(0);
+  });
+
+  it("合成 closer（end-seed 无 tag）走 default 忽略", () => {
+    expect(lens[3]).toBe(0);
+  });
+
+  it("user/message 非结算（零产出）", () => {
+    expect(lens[4]).toBe(0);
+  });
+
+  it("system/message 非结算（零产出）", () => {
+    expect(lens[5]).toBe(0);
+  });
+
+  it("tool/result 非结算（零产出）", () => {
+    expect(lens[6]).toBe(0);
+  });
+
+  it("request/context 非结算（零产出）", () => {
+    expect(lens[7]).toBe(0);
+  });
+
+  it("turn/start 非结算（零产出）", () => {
+    expect(lens[8]).toBe(0);
+  });
+
+  it("step/start 非结算（零产出）", () => {
+    expect(lens[9]).toBe(0);
+  });
+
+  it("step/end 非结算（零产出）", () => {
+    expect(lens[10]).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------- collector：fork 口径——仅计 live 新增
+// 实证结论（0.1.5-rc.1 官方类型层，Session.firstLiveSeq 文档）：构造 seed
+// （replay/fork/resume，seq < firstLiveSeq）永不经 session/event firehose 发布
+// （"constructor seeds do not emit"）；本插件只订阅 live firehose
+// （apply.ts ctx.on("session/event") → tracker.handleEvent → collector），
+// 故 seed 天然不可达。已定实现 = 不设 seq 过滤分支（去重在 firehose 契约层，
+// 不在记账层；handleEvent 签名亦无 firstLiveSeq 输入面——只消费不变签名）。
+// 若未来实测 firehose 携带 seed，本块「契约钉」用例会指引过滤分支的落点。
+describe("collector：fork 口径——仅计 live 新增", () => {
+  let parentCalls: TrendCallRecord[];
+  let replayCalls: TrendCallRecord[];
+  let childCalls: TrendCallRecord[];
+  let markerDelta: number;
+  let afterMarkerCalls: TrendCallRecord[];
+
+  const usage = (input: number, output: number) => ({
+    inputTokens: input,
+    outputTokens: output,
+    cacheReadTokens: 0,
+    cacheWriteTokens: 0,
+  });
+  const settled = (turn: number, step: number, u: Record<string, unknown>) => ({
+    turn,
+    step,
+    message: {
+      role: "assistant",
+      source: { kind: "model", provider: "deepseek", model: "deepseek-chat" },
+    },
+    usage: u,
+    stream: [],
+  });
+
+  beforeAll(() => {
+    const { emitted, send } = makeCollector();
+    // 父会话 live 结算（turn=1 step=1）：计入
+    const p = { id: "s-fork-parent" };
+    send(p, ev("request/header", HEADER(), T0, 1));
+    send(p, ev("assistant/message", settled(1, 1, usage(100, 50)), T0 + 1, 2));
+    parentCalls = snapshot(callsOf(emitted));
+    // 同一 (turn,step) 再次到达（重放形态：仅当 firehose 契约被违反时可见）——
+    // 仍按重试计入：collector 不读 seq，无过滤分支（契约钉，见块注释）
+    send(p, ev("assistant/message", settled(1, 1, usage(100, 50)), T0 + 2, 2));
+    replayCalls = snapshot(callsOf(emitted));
+    // fork 子会话（新 session id）live 新增：同 (turn,step) 独立起算 retry=1，
+    // 不继承父会话重试链（per-session done 记忆隔离 = fork 边界）
+    const c = { id: "s-fork-child" };
+    send(c, ev("request/header", HEADER(), T0 + 3, 1));
+    send(c, ev("assistant/message", settled(1, 1, usage(7, 3)), T0 + 4, 2));
+    childCalls = snapshot(callsOf(emitted).filter((r) => r.session === "s-fork-child"));
+    // seed 边界标记后首个 live 结算：标记零产出，结算照常计 retry=1
+    const r = { id: "s-fork-resume" };
+    const markerBefore = emitted.length;
+    send(r, ev("session/end-seed", { inherited: true }, T0 + 5, 1));
+    markerDelta = emitted.length - markerBefore;
+    send(r, ev("request/header", HEADER(), T0 + 6, 2));
+    send(r, ev("assistant/message", settled(1, 1, usage(9, 9)), T0 + 7, 3));
+    afterMarkerCalls = snapshot(callsOf(emitted).filter((x) => x.session === "s-fork-resume"));
+  });
+
+  it("父会话 live 结算计入一次", () => {
+    expect(parentCalls.length).toBe(1);
+  });
+
+  it("父会话首结 retry=1", () => {
+    expect(parentCalls[0].retry).toBe(1);
+  });
+
+  it("重放形态到达仍按重试计（契约钉：去重在 firehose 层）", () => {
+    expect(replayCalls.length).toBe(2);
+  });
+
+  it("重放按序 retry=2（非去重非丢弃）", () => {
+    expect(replayCalls[1].retry).toBe(2);
+  });
+
+  it("fork 子会话 live 新增独立计入", () => {
+    expect(childCalls.length).toBe(1);
+  });
+
+  it("子会话同键独立起算 retry=1（不继承父链）", () => {
+    expect(childCalls[0].retry).toBe(1);
+  });
+
+  it("seed 边界标记零产出", () => {
+    expect(markerDelta).toBe(0);
+  });
+
+  it("标记后首个 live 结算照常计", () => {
+    expect(afterMarkerCalls.length).toBe(1);
+  });
+
+  it("标记后首结 retry=1（标记不占序数）", () => {
+    expect(afterMarkerCalls[0].retry).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------- collector：用量二选一回归
+// 记账口径：token 取值 = 顶层 usage ?? stream 内最后一条裸 usage chunk，二选一
+// 绝不相加（真实会话两处恒等）。下述用例以**不同值**互斥四种错误实现
+// （优先级颠倒 / 相加 / 取首条 / 误认非裸形态）。
+describe("collector：用量二选一回归——顶层 usage ?? stream 末条", () => {
+  let topCalls: TrendCallRecord[];
+  let lastCalls: TrendCallRecord[];
+  let topOnlyCalls: TrendCallRecord[];
+  let streamOnlyCalls: TrendCallRecord[];
+  let packedCalls: TrendCallRecord[];
+
+  const usage = (input: number, output: number) => ({
+    inputTokens: input,
+    outputTokens: output,
+    cacheReadTokens: 0,
+    cacheWriteTokens: 0,
+  });
+  const usageChunk = (u: Record<string, unknown>, time: number) => ({
+    type: "chunk",
+    time,
+    chunk: { type: "usage", usage: u },
+  });
+  const msgSource = () => ({
+    role: "assistant",
+    source: { kind: "model", provider: "deepseek", model: "deepseek-chat" },
+  });
+
+  beforeAll(() => {
+    const { emitted, send } = makeCollector();
+    // (a) 两处不同值 → 取顶层（优先级钉）
+    const a = { id: "s-either-top" };
+    send(a, ev("request/header", HEADER(), T0, 1));
+    send(
+      a,
+      ev(
+        "assistant/message",
+        {
+          turn: 1,
+          step: 1,
+          message: msgSource(),
+          usage: usage(1000, 2000),
+          stream: [usageChunk(usage(1, 2), T0)],
+        },
+        T0,
+        2,
+      ),
+    );
+    topCalls = snapshot(callsOf(emitted).filter((r) => r.session === "s-either-top"));
+    // (b) stream 多条 usage → 取末条
+    const b = { id: "s-either-last" };
+    send(b, ev("request/header", HEADER(), T0, 1));
+    send(
+      b,
+      ev(
+        "assistant/message",
+        {
+          turn: 1,
+          step: 1,
+          message: msgSource(),
+          stream: [
+            usageChunk(usage(10, 1), T0),
+            { type: "chunk", time: T0, chunk: { type: "text-delta", index: 0, text: "hi" } },
+            usageChunk(usage(70, 30), T0 + 1),
+          ],
+        },
+        T0,
+        2,
+      ),
+    );
+    lastCalls = snapshot(callsOf(emitted).filter((r) => r.session === "s-either-last"));
+    // (c) 仅顶层（无 stream 键）→ 取顶层
+    const c = { id: "s-either-toponly" };
+    send(c, ev("request/header", HEADER(), T0, 1));
+    send(
+      c,
+      ev(
+        "assistant/message",
+        { turn: 1, step: 1, message: msgSource(), usage: usage(5, 6) },
+        T0,
+        2,
+      ),
+    );
+    topOnlyCalls = snapshot(callsOf(emitted).filter((r) => r.session === "s-either-toponly"));
+    // (d) 仅 stream（无顶层键，message 形态；attempt 形态已有 Q1 覆盖）→ 取末条
+    const d = { id: "s-either-streamonly" };
+    send(d, ev("request/header", HEADER(), T0, 1));
+    send(
+      d,
+      ev(
+        "assistant/message",
+        { turn: 1, step: 1, message: msgSource(), stream: [usageChunk(usage(12, 3), T0)] },
+        T0,
+        2,
+      ),
+    );
+    streamOnlyCalls = snapshot(callsOf(emitted).filter((r) => r.session === "s-either-streamonly"));
+    // (e) 非裸形态（packed text-chunks 内夹带 usage 状 chunk）不认——调用照计、token null
+    const e = { id: "s-either-packed" };
+    send(e, ev("request/header", HEADER(), T0, 1));
+    send(
+      e,
+      ev(
+        "assistant/message",
+        {
+          turn: 1,
+          step: 1,
+          message: msgSource(),
+          stream: [
+            {
+              type: "text-chunks",
+              time0: T0,
+              index: 0,
+              dt: [],
+              texts: ["hi"],
+              chunk: { type: "usage", usage: usage(999, 999) },
+            },
+          ],
+        },
+        T0,
+        2,
+      ),
+    );
+    packedCalls = snapshot(callsOf(emitted).filter((r) => r.session === "s-either-packed"));
+  });
+
+  it("两处同时在场只记一次调用（不相加）", () => {
+    expect(topCalls.length).toBe(1);
+  });
+
+  it("两处不同值取顶层（?? 优先级）", () => {
+    expect(topCalls[0].tokens).toEqual({ input: 1000, output: 2000, cacheRead: 0, cacheWrite: 0 });
+  });
+
+  it("stream 多条 usage 只记一次调用", () => {
+    expect(lastCalls.length).toBe(1);
+  });
+
+  it("stream 多条 usage 取末条", () => {
+    expect(lastCalls[0].tokens).toEqual({ input: 70, output: 30, cacheRead: 0, cacheWrite: 0 });
+  });
+
+  it("仅顶层（无 stream）计入一次", () => {
+    expect(topOnlyCalls.length).toBe(1);
+  });
+
+  it("仅顶层取顶层值", () => {
+    expect(topOnlyCalls[0].tokens).toEqual({ input: 5, output: 6, cacheRead: 0, cacheWrite: 0 });
+  });
+
+  it("仅 stream（message 形态）计入一次", () => {
+    expect(streamOnlyCalls.length).toBe(1);
+  });
+
+  it("仅 stream 取末条值", () => {
+    expect(streamOnlyCalls[0].tokens).toEqual({
+      input: 12,
+      output: 3,
+      cacheRead: 0,
+      cacheWrite: 0,
+    });
+  });
+
+  it("非裸形态 usage 不认但调用照计", () => {
+    expect(packedCalls.length).toBe(1);
+  });
+
+  it("非裸形态 token 记 null（零 usage 语义）", () => {
+    expect(packedCalls[0].tokens).toBeNull();
   });
 });
 
