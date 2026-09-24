@@ -5,8 +5,8 @@
  * - prepareTls：apply(httpsEnabled: true) → sync() → prepareTls
  * - setSource / onScope：installLanProxySettings 的 hooks 回调
  * - migrateFileConfig / applyConfigPatch：迁移与保存通道边界
- * - isUnloading（包内复刻）：scope.watch 回调内调用
- * - warnLog：settings 服务缺少 register 时调用
+ * - isUnloading（包内复刻）：订阅回调内调用
+ * - warnLog：settings 服务缺席时调用
  *
  * 迁移说明（#722 阶段 1）：脚本式断言迁为 vitest 结构化用例——原每个主题块一个
  * describe、原每条 assert 一个 it，断言表达式与判定口径逐条保留（循环体经 it.each
@@ -485,10 +485,9 @@ describe("applyConfigPatch tls 成对形态（P2-1）", () => {
 
 // ===== apply 集成：TLS 准备 + settings 条目（setSource/onScope/isUnloading/warn） =====
 // 构造 fake ctx 使 installLanProxySettings 的 inject(["settings"]) 成功：
-// settings.register 返回 owner scope（get/update/replace；watch 为 rc.5 遗留面），
-// 触发 setSource 与 onScope 回调；scope.watch 触发 isUnloading(ctx) 调用；
-// 新面（v1.1 Descriptor 面）：describe 按条目 id 投影 user/revision，热更新经
-// ctx.on("settings/document-updated") 订阅（fake 经 docUpdatedListeners 收集）。
+// describe 按 ns 投影 value，触发 setSource 与 onScope 回调；热更新经
+// ctx.on("settings/document-updated") 订阅（fake 经 docUpdatedListeners 收集），
+// 订阅回调触发 isUnloading(ctx) 调用。
 describe("apply 集成：TLS 准备 + settings 命名空间（setSource/onScope/isUnloading/warn）", () => {
   let healthRouteFound = false;
   let configRouteFound = false;
@@ -510,8 +509,7 @@ describe("apply 集成：TLS 准备 + settings 命名空间（setSource/onScope/
     const routes: WebRoute[] = [];
     const rpcHandles: Array<{ channel: string; h: unknown; opts: unknown }> = [];
     const disposers: Array<unknown> = [];
-    const scopeWatchCbs: Array<() => void> = [];
-    // rc.7 热更新面：document-updated 订阅收集器（apply 显式订阅，见 apply.ts）。
+    // rc.7 热更新面：document-updated 订阅收集器（接缝经 ctx.on 兜底订阅）。
     const docUpdatedListeners: Array<(ns: unknown) => void> = [];
 
     const scope = {
@@ -531,23 +529,11 @@ describe("apply 集成：TLS 准备 + settings 命名空间（setSource/onScope/
       async replace(section: Record<string, unknown>) {
         this._val = { ...(section as Record<string, unknown>) } as typeof this._val;
       },
-      // rc.5 遗留面：shared 侧 onChange 仍经 watch 透传，fake 保留以保当前
-      // shared 接缝可 attach；删除条件：shared 改 document-updated 后删去本方法
-      // （调用方不得新增对 watch 的依赖，见 namespace.ts）。
-      watch(cb: () => void) {
-        scopeWatchCbs.push(cb);
-        // 立即触发一次，使 isUnloading(ctx) 被调用
-        cb();
-        return () => {};
-      },
     };
     // 服务级 fake：describe 读面 + update/replace(ns, …) 写面（寻址语义断言用）。
     const settingsService = {
-      register(_ns: string, _schema: unknown, _opts: unknown) {
-        return scope;
-      },
       describe() {
-        return [{ ns: SETTINGS_NS, user: {}, revision: 1 }];
+        return [{ ns: SETTINGS_NS, value: scope._val, user: {}, revision: 1 }];
       },
       async update(ns: string, patch: Record<string, unknown>) {
         if (ns !== SETTINGS_NS) throw new Error(`unexpected ns ${ns}`);
@@ -633,7 +619,7 @@ describe("apply 集成：TLS 准备 + settings 命名空间（setSource/onScope/
     healthRouteFound = Boolean(healthRoute);
     configRouteFound = Boolean(routes.find((r: WebRoute) => r.path === ROUTES.config));
     rpcHandleCount = rpcHandles.length;
-    // 新面锁定：document-updated 已订阅（rc.7 热更新面；watch 遗留面仍保留但不再是来源）。
+    // 新面锁定：document-updated 已订阅（热更新唯一驱动）。
     docUpdatedSubscribed = docUpdatedListeners.length >= 1;
 
     // 触发 setSource 后调用 health handler → resolve() → current 已切到 scope.get()
@@ -681,7 +667,7 @@ describe("apply 集成：TLS 准备 + settings 命名空间（setSource/onScope/
     hp2WsCompressPaths = hp2.wsCompressPaths;
     hp2OwnsHostCompat = hp2.ownsHostCompat;
 
-    // 执行 lifecycle 清理：触发 scope.watch 的 disposer 与 isUnloading
+    // 执行 lifecycle 清理：触发订阅退订与 isUnloading
     for (const d of [...disposers].reverse()) {
       try {
         (d as unknown as () => void)();
@@ -793,8 +779,8 @@ describe("接缝面锁定", () => {
   });
 });
 
-// ===== apply：settings 服务缺少 register → warn 路径 =====
-describe("apply：settings 服务缺少 register → warn 路径", () => {
+// ===== apply：settings 服务缺席 → warn 路径 =====
+describe("apply：settings 服务缺席 → warn 路径", () => {
   let warnPathCompleted = false;
 
   beforeAll(async () => {
@@ -807,7 +793,7 @@ describe("apply：settings 服务缺少 register → warn 路径", () => {
       webServer: makeFakeWebServer(),
       inject(services: string[], fn: (ctx: unknown) => void) {
         if (services.includes("settings")) {
-          // settings 存在但缺少 register → warn 被调用
+          // settings 存在但无 describe（服务缺席）→ warn 被调用
           fn({
             settings: { noRegister: true },
             effect(fn2: () => unknown) {
@@ -1349,7 +1335,7 @@ describe("变异加固块（round=3 CI 回归：迁移重放/路由面/校验分
       expect(logger.messages).toEqual(["settings unavailable"]);
     });
 
-    it("settings 缺少 register 时告警且仍注册 health 路由", () => {
+    it("settings 服务缺席时告警且仍注册 health 路由", () => {
       const messages: string[] = [];
       const ctx = makeCtx({
         logger: {
@@ -1371,7 +1357,7 @@ describe("变异加固块（round=3 CI 回归：迁移重放/路由面/校验分
           port: 0,
         });
         expect(messages).toEqual([
-          `${SETTINGS_NS}: settings 服务缺少 register 能力 — 设置命名空间未注册，卡片降级`,
+          `${SETTINGS_NS}: settings 服务缺席 — 设置命名空间未注册，卡片降级`,
         ]);
         expect(ctx._routes.filter((r) => r.path === ROUTES.health).length).toBe(1);
       } finally {
@@ -1380,7 +1366,7 @@ describe("变异加固块（round=3 CI 回归：迁移重放/路由面/校验分
     });
   });
 
-  // ---- B. installLanProxySettings 全分支（inject 缺失/服务缺 register/register 抛错/detach 回落/watch 触发/isUnloading 门控）----
+  // ---- B. installLanProxySettings 全分支（inject 缺失/服务缺席/旧 register 面忽略/detach 回落/订阅触发/isUnloading 门控）----
   describe("B. installLanProxySettings 全分支", () => {
     // B1: ctx.inject 缺失 → 降级不抛（原脚本此分支无断言，保留其执行）。
     beforeAll(() => {
@@ -1391,16 +1377,16 @@ describe("变异加固块（round=3 CI 回归：迁移重放/路由面/校验分
       });
     }, 30000);
 
-    // B2: settings 服务存在但无 register → 降级；register 抛错 → 降级。
+    // B2: settings 服务缺席（缺失/无 describe/仅旧 register 面）→ 降级。
     describe("B2: settings 服务异常态", () => {
       const services = [
         { label: "missing", service: undefined },
-        { label: "no-register", service: {} },
+        { label: "no-describe", service: {} },
         {
-          label: "throws",
+          label: "legacy-register-only",
           service: {
             register() {
-              throw new Error("dup");
+              return { get: () => ({}) };
             },
           },
         },
@@ -1439,36 +1425,13 @@ describe("变异加固块（round=3 CI 回归：迁移重放/路由面/校验分
       });
     });
 
-    // B3: attach → watch 挂接 → 非 unloading 态触发 cb 不抛；unloading 态执行 disposers 门控跳过。
-    describe("B3: attach → watch 挂接 → isUnloading 门控", () => {
-      const makeScope = () => {
-        const st: { watchCbs: Array<() => void>; disposed: boolean } = {
-          watchCbs: [],
-          disposed: false,
-        };
-        return {
-          st,
-          scope: {
-            get() {
-              return { port: 4321 };
-            },
-            watch(cb: () => void) {
-              st.watchCbs.push(cb);
-              return () => {
-                st.disposed = true;
-              };
-            },
-            async update() {},
-            async replace() {},
-          },
-        };
-      };
-      let nsSeen: unknown;
-      let watchCbsLen = 0;
+    // B3: attach → document-updated 订阅挂接 → 非 unloading 态触发不抛；unloading 态执行 disposers 门控跳过。
+    describe("B3: attach → 订阅挂接 → isUnloading 门控", () => {
+      const listeners: Array<(ns: unknown, revision: unknown) => void> = [];
+      let subscribedCount = 0;
       let gateCompleted = false;
 
       beforeAll(() => {
-        const s = makeScope();
         const fiberStates: string[] = [];
         const ctx = makeCtx({
           get fiber() {
@@ -1478,14 +1441,17 @@ describe("变异加固块（round=3 CI 回归：迁移重放/路由面/校验分
             if (services.includes("settings")) {
               fn({
                 settings: {
-                  register(ns: string) {
-                    nsSeen = ns;
-                    return s.scope;
+                  describe() {
+                    return [{ ns: SETTINGS_NS, value: { port: 4321 }, revision: 0 }];
                   },
                 },
                 effect(fn2: () => unknown) {
                   const d = fn2();
                   return d;
+                },
+                on(event: string, cb: (ns: unknown, revision: unknown) => void) {
+                  if (event === "settings/document-updated") listeners.push(cb);
+                  return () => {};
                 },
               });
             }
@@ -1497,21 +1463,18 @@ describe("变异加固块（round=3 CI 回归：迁移重放/路由面/校验分
           httpsEnabled: false,
           printBanner: false,
         });
-        watchCbsLen = s.st.watchCbs.length;
+        subscribedCount = listeners.length;
         fiberStates.push("attached");
-        s.st.watchCbs[0]();
+        // 同值重放：快照比对等价，直接返回（不断言次数，只走门控路径）。
+        for (const cb of [...listeners]) cb("other-ns", 99);
         fiberStates.push("unloading");
         (ctx as unknown as Record<symbol, () => void>)[Symbol.for("dispose")]();
         fiberStates.pop();
         gateCompleted = true;
       }, 30000);
 
-      it("命名空间名", () => {
-        expect(nsSeen).toBe(SETTINGS_NS);
-      });
-
-      it("scope.watch 已挂接", () => {
-        expect(watchCbsLen >= 1).toBe(true);
+      it("document-updated 已订阅", () => {
+        expect(subscribedCount >= 1).toBe(true);
       });
 
       it("isUnloading 门控路径执行不抛错", () => {
@@ -2505,32 +2468,7 @@ describe("apply 内 readUser 真实闭包（CRAP 覆盖）", () => {
     process.env.DSH_HOME = home;
     const routes: WebRoute[] = [];
     const disposers: Array<unknown> = [];
-    const scope = {
-      _val: {
-        port: 0,
-        httpsPort: 0,
-        httpsEnabled: false,
-        wsCompressEnabled: false,
-        httpCompressEnabled: false,
-      },
-      get() {
-        return this._val;
-      },
-      async update(patch: Record<string, unknown>) {
-        Object.assign(this._val, patch);
-      },
-      async replace(section: Record<string, unknown>) {
-        this._val = { ...(section as Record<string, unknown>) } as typeof this._val;
-      },
-      watch(cb: () => void) {
-        cb();
-        return () => {};
-      },
-    };
     const settingsService = {
-      register() {
-        return scope;
-      },
       describe() {
         return [{ ns: SETTINGS_NS, user: { port: 4100 }, revision: 42 }];
       },

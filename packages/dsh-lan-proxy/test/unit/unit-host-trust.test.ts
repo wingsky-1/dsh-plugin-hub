@@ -21,6 +21,7 @@ import type { Context } from "@deepseek-ai/cordis";
 import { renderIndexInjections } from "@deepseek-ai/dsh-host-webserver";
 
 import { apply } from "../../src/server/apply.ts";
+import { SETTINGS_NS } from "../../src/server/config/impl/namespace.ts";
 import {
   applyHostTrustInjection,
   HOST_TRUST_ELEMENT_ID,
@@ -155,22 +156,14 @@ describe("applyHostTrustInjection：自条件注入（node:vm 真执行）", () 
 /** fake ctx：捕获 effect（含 label）、tapIndex 变换与 index-inject 订阅。 */
 function makeHostTrustCtx() {
   const state: Record<string, unknown> = { enabled: false, ownsHostCompat: false };
-  const watchers: Array<() => void> = [];
+  // document-updated 监听器（接缝内部订阅；触发时带 ns+revision，与官方事件同形）。
+  const watchers: Array<(ns?: unknown, revision?: unknown) => void> = [];
   // tap 带注册时的 effect label：只有这样才能在开关为关时仍识别出 host trust tap。
   const taps: Array<{ label: string; run: (html: string) => string }> = [];
   const effects: Array<{ label: string; dispose: () => void }> = [];
   const injectListeners: Array<(table: unknown[]) => void> = [];
   const routes: Array<{ path: string }> = [];
   let activeLabel = "";
-  const scope = {
-    get: () => ({ ...state }),
-    watch(cb: () => void) {
-      watchers.push(cb);
-      return () => {};
-    },
-    update: async () => {},
-    replace: async () => {},
-  };
   const ctx = {
     logger: { info() {}, warn() {}, error() {} },
     webServer: {
@@ -194,8 +187,14 @@ function makeHostTrustCtx() {
     inject(services: string[], fn: (c: unknown) => void) {
       if (services.includes("settings")) {
         fn({
-          settings: { register: () => scope, describe: () => [] },
+          settings: {
+            describe: () => [{ ns: SETTINGS_NS, value: { ...state }, revision: 0 }],
+          },
           effect: (f: () => unknown) => f(),
+          on: (event: string, cb: (ns?: unknown, revision?: unknown) => void) => {
+            if (event === "settings/document-updated") watchers.push(cb);
+            return () => {};
+          },
         });
       }
     },
@@ -238,10 +237,13 @@ describe("apply 接线：host trust tap 的生命周期纪律", () => {
       const tap = hostTrustTaps()[0].run;
       expect(tap(RAW_INDEX)).toBe(RAW_INDEX);
 
-      // 两次 sync 触发（scope.watch → 3s 防抖）：tap 数与 effect 数都不得增长
-      for (const cb of h.watchers) cb();
+      // 两次 sync 触发（document-updated → 3s 防抖）：tap 数与 effect 数都不得增长。
+      // 每次触发前改值，快照比对才判定为变化（同值重放等价忽略）。
+      h.state.tick = 1;
+      for (const cb of h.watchers) cb(SETTINGS_NS, 1);
       vi.advanceTimersByTime(3000);
-      for (const cb of h.watchers) cb();
+      h.state.tick = 2;
+      for (const cb of h.watchers) cb(SETTINGS_NS, 2);
       vi.advanceTimersByTime(3000);
       expect(hostTrustTaps().length).toBe(1);
       expect(hostTrustEffects().length).toBe(1);

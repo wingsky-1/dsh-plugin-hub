@@ -225,16 +225,16 @@ describe("通过 apply 间接覆盖 installSettingsNamespace 降级分支", () =
     ).resolves.toBeUndefined();
   });
 
-  it("settings.register 抛错时降级（不抛）", async () => {
-    // settings 服务存在但 register 抛错
+  it("settings.describe 抛错时降级（不抛）", async () => {
+    // settings 服务存在但 describe 抛错 → 回落 entry
     const failSettingsCtx = {
       logger: { warn: () => {} },
       inject: (keys: unknown, cb: (services: unknown) => void) => {
         if (Array.isArray(keys) && keys.includes("settings")) {
           cb({
             settings: {
-              register: () => {
-                throw new Error("register failed");
+              describe: () => {
+                throw new Error("describe failed");
               },
             },
             effect: () => () => {},

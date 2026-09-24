@@ -138,18 +138,18 @@ class FakeRes extends EventEmitter {
   }
 }
 
-/** fake settings 存储的 watch 回调（next/prev 均为 base 层与 user 层合并快照）。 */
-type FakeSettingsWatcher = (next?: Record<string, unknown>, prev?: Record<string, unknown>) => void;
+/** fake settings 存储的 document-updated 监听器（ns/revision，与官方事件同形）。 */
+type FakeSettingsWatcher = (ns?: unknown, revision?: unknown) => void;
 /** fake settings 存储的内存态（官方 settings 存储文档的内存形态）。 */
 interface FakeSettingsState {
   user: Record<string, unknown>;
   base: Record<string, unknown>;
   revision: number;
-  registeredNs: string | null;
+  describeCalls: number;
   updates: Array<{ patch: Record<string, unknown>; expectedRevision?: number }>;
   replaces: Array<{ section: Record<string, unknown>; expectedRevision?: number }>;
-  watchers: FakeSettingsWatcher[];
-  watchDisposed: number;
+  listeners: FakeSettingsWatcher[];
+  unsubscribed: number;
 }
 /** applyConfigPatch 成功分支（ok:true 携带 value）。 */
 type PatchSuccess = Extract<PatchResult, { ok: true }>;
@@ -160,59 +160,63 @@ type PutRecord =
   | { kind: "update"; patch: unknown; rev: number | undefined }
   | { kind: "replace"; section: unknown; rev: number | undefined };
 
-/** 构造 fake owner scope + settings service（官方 settings 存储文档的内存形态）。 */
-function makeSettings(initialUser: Record<string, unknown> = {}) {
+/** 构造 fake settings service（官方 SettingsForms 服务的内存形态）。
+ *
+ * base 即组合层 entry 的投影：真实宿主的 describe 返回 resolved value
+ *（defaults → base → user），fake 以 base+user 合并模拟该语义。
+ */
+function makeSettings(
+  initialUser: Record<string, unknown> = {},
+  initialBase: Record<string, unknown> = {},
+) {
   const state: FakeSettingsState = {
     user: { ...initialUser },
-    base: {},
+    base: { ...initialBase },
     revision: 1,
-    registeredNs: null,
+    describeCalls: 0,
     updates: [],
     replaces: [],
-    watchers: [],
-    watchDisposed: 0,
+    listeners: [],
+    unsubscribed: 0,
   };
-  const scope = {
-    get: () => ({ ...state.base, ...state.user }),
-    watch: (cb: FakeSettingsWatcher) => {
-      state.watchers.push(cb);
-      return () => {
-        state.watchDisposed += 1;
-      };
-    },
-    update: async (patch: Record<string, unknown>, expectedRevision?: number) => {
-      state.updates.push({ patch, expectedRevision });
-      Object.assign(state.user, patch);
-      state.revision += 1;
-      const next = { ...state.base, ...state.user };
-      for (const cb of [...state.watchers]) cb(next, {});
-    },
-    replace: async (section: Record<string, unknown>, expectedRevision?: number) => {
-      state.replaces.push({ section, expectedRevision });
-      state.user = { ...section };
-      state.revision += 1;
-      const next = { ...state.base, ...state.user };
-      for (const cb of [...state.watchers]) cb(next, {});
-    },
+  const emit = (ns: unknown) => {
+    for (const cb of [...state.listeners]) cb(ns, state.revision);
   };
   const service = {
-    register(ns: string, _schema: unknown, opts?: { base?: Record<string, unknown> }) {
-      if (state.registeredNs !== null) throw new Error("duplicate register");
-      state.registeredNs = ns;
-      state.base = { ...(opts?.base ?? {}) };
-      return scope;
-    },
     describe(_opts?: unknown) {
+      state.describeCalls += 1;
       return [
         {
-          ns: state.registeredNs,
+          ns: SETTINGS_NS,
+          value: { ...state.base, ...state.user },
           user: JSON.parse(JSON.stringify(state.user)),
           revision: state.revision,
         },
       ];
     },
+    update: async (ns: string, patch: Record<string, unknown>, expectedRevision?: number) => {
+      if (ns !== SETTINGS_NS) throw new Error(`unexpected ns ${ns}`);
+      state.updates.push({ patch, expectedRevision });
+      Object.assign(state.user, patch);
+      state.revision += 1;
+      emit(ns);
+    },
+    replace: async (ns: string, section: Record<string, unknown>, expectedRevision?: number) => {
+      if (ns !== SETTINGS_NS) throw new Error(`unexpected ns ${ns}`);
+      state.replaces.push({ section, expectedRevision });
+      state.user = { ...section };
+      state.revision += 1;
+      emit(ns);
+    },
+    // 接缝经 sctx.on 订阅 document-updated（fake 经 listeners 收集）。
+    on: (event: string, cb: FakeSettingsWatcher) => {
+      if (event === "settings/document-updated") state.listeners.push(cb);
+      return () => {
+        state.unsubscribed += 1;
+      };
+    },
   };
-  return { state, scope, service };
+  return { state, service };
 }
 
 /** fake webServer：prefixes/exact Map + register/registerFallback + port（转发器目标端口）。 */
@@ -2343,7 +2347,11 @@ describe("apply: 注册、围栏与 settings 命名空间接线", () => {
     // 预置存量 config.json → apply 后应自动迁移进 fake 官方存储。
     mkdirSync(join(applyHome, "lan-proxy"), { recursive: true });
     writeFileSync(join(applyHome, "lan-proxy", "config.json"), JSON.stringify({ port: 19997 }));
-    const { state: settingsState, service } = makeSettings();
+    // base 即组合层 entry 投影（真实宿主 describe 返回 resolved value）：host 来自 entry，port 待迁移覆盖。
+    const { state: settingsState, service } = makeSettings(
+      {},
+      { host: "127.0.0.1", port: 0, httpsEnabled: false },
+    );
     const routes: WebRoute[] = [];
     const rpcHandles: Array<{ channel: string; h: unknown; opts: unknown }> = [];
     const disposers: Array<unknown> = [];
@@ -2383,6 +2391,7 @@ describe("apply: 注册、围栏与 settings 命名空间接线", () => {
               if (typeof d === "function") disposers.push(d);
               return d;
             },
+            on: service.on,
           });
         }
       },
@@ -2418,7 +2427,7 @@ describe("apply: 注册、围栏与 settings 命名空间接线", () => {
     // 必须复制：后续 PUT 会继续往同一个 updates 数组里 push，存引用会让断言看到块尾状态
     settingsUpdates = settingsState.updates.map((u) => ({ ...u }));
     settingsUserPort = settingsState.user.port;
-    settingsRegisteredNs = settingsState.registeredNs;
+    settingsRegisteredNs = settingsState.describeCalls;
 
     // GET /config 快照（经真实路由 handler）：effective + compress + user + revision。
     const callRoute = async (
@@ -2461,17 +2470,17 @@ describe("apply: 注册、围栏与 settings 命名空间接线", () => {
     snapshotPayload = JSON.parse(snapshot.body);
     cfg403 = await callRoute("GET", { socket: { remoteAddress: "192.168.100.9" } });
     cfg405 = await callRoute("DELETE");
-    // PUT 写入：经路由 → deps.update（fake scope）→ watch 触发。
+    // PUT 写入：经路由 → deps.update（fake service）→ document-updated 触发订阅。
     put = await callRoute(
       "PUT",
       {},
       { patch: { printBanner: false }, expectedRevision: settingsState.revision },
     );
     putPayload = JSON.parse(put.body);
-    // 原断言读取的存储侧观测值在此点取快照（后续 cleanup 会释放 watch）
+    // 原断言读取的存储侧观测值在此点取快照（后续 cleanup 会退订）
     settingsUserPrintBanner = settingsState.user.printBanner;
-    settingsWatchersLength = settingsState.watchers.length;
-    settingsWatchDisposed = settingsState.watchDisposed;
+    settingsWatchersLength = settingsState.listeners.length;
+    settingsWatchDisposed = settingsState.unsubscribed;
 
     const fakeReq = (overrides: Record<string, unknown> = {}): IncomingMessage =>
       Object.assign(
@@ -2651,8 +2660,8 @@ describe("apply: 注册、围栏与 settings 命名空间接线", () => {
       expect(settingsUserPort).toBe(19997);
     });
 
-    it("settings 命名空间已注册", () => {
-      expect(settingsRegisteredNs).toBe(SETTINGS_NS);
+    it("settings 命名空间已接线（describe 被调）", () => {
+      expect((settingsRegisteredNs as number) >= 1).toBe(true);
     });
   });
 
@@ -2716,7 +2725,7 @@ describe("apply: 注册、围栏与 settings 命名空间接线", () => {
     });
   });
 
-  describe("PUT 经路由写入官方存储并触发 watch 回调", () => {
+  describe("PUT 经路由写入官方存储并触发订阅回调", () => {
     it("status 200", () => {
       expect(put.status).toBe(200);
     });
@@ -2729,7 +2738,7 @@ describe("apply: 注册、围栏与 settings 命名空间接线", () => {
       expect(settingsUserPrintBanner).toBe(false);
     });
 
-    it("watch 已挂接未释放", () => {
+    it("订阅已挂接未释放", () => {
       expect(settingsWatchersLength >= 1 && settingsWatchDisposed).toBe(0);
     });
   });
@@ -3136,6 +3145,7 @@ describe("apply: 运行中热关闭（PUT /config → scope.watch → 压缩卸�
               if (typeof d === "function") disposers.push(d);
               return d;
             },
+            on: service.on,
           });
         }
       },
@@ -3320,6 +3330,7 @@ describe("apply: enabled=false 启动态", () => {
             effect(fn2: () => unknown) {
               return fn2();
             },
+            on: offService.on,
           });
         }
       },

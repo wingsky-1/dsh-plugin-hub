@@ -220,9 +220,9 @@ describe("路由 handlers：connect / disconnect / reconnect", () => {
 describe("apply 完整 settings 生命周期（isUnloading 覆盖）", () => {
   async function applyWithSettingsLifecycle() {
     const dir = makeTempDir("dsh-mcp-manager-bundled-");
-    const refs: { disposer: null | (() => void); watchCb: null | (() => void) } = {
+    const refs: { disposer: null | (() => void); emit: null | ((ns: string) => void) } = {
       disposer: null,
-      watchCb: null,
+      emit: null,
     };
 
     const ctx = {
@@ -235,20 +235,26 @@ describe("apply 完整 settings 生命周期（isUnloading 覆盖）", () => {
         if (Array.isArray(keys) && keys.includes("settings")) {
           cb({
             settings: {
-              register: (_ns: unknown, _schema: unknown, _opts: unknown) => {
-                return {
-                  get: () => ({
+              describe: () => [
+                {
+                  ns: "dsh-mcp-manager",
+                  value: {
                     ui: { position: "top-right", offset: { x: 8, y: 8, blankY: 40 } },
-                  }),
-                  watch: (cb: () => void) => {
-                    refs.watchCb = cb;
                   },
-                };
-              },
+                  revision: 0,
+                },
+              ],
             },
             effect: (fn: () => () => void) => {
               refs.disposer = fn();
               return () => {};
+            },
+            on: (event: string, cb2: (ns: string, revision: number) => void) => {
+              if (event !== "settings/document-updated") throw new Error("unexpected event");
+              refs.emit = (ns: string) => cb2(ns, 1);
+              return () => {
+                refs.emit = null;
+              };
             },
           });
         }
@@ -272,21 +278,22 @@ describe("apply 完整 settings 生命周期（isUnloading 覆盖）", () => {
     expect(refs.disposer).not.toBeNull();
   });
 
-  it("scope.watch 已注册（settings 装配面）", async () => {
+  it("内部订阅已接线（settings 装配面）", async () => {
     const { refs } = await applyWithSettingsLifecycle();
-    expect(refs.watchCb).not.toBeNull();
+    expect(refs.emit).not.toBeNull();
   });
 
   // 哑断言清理（#664 阶段 8）：isUnloading 短路（unloading/disposed 态
-  // watch/disposer 不触发 onChange）由 shared/settings-namespace.js 自身
+  // 订阅/disposer 不触发 onChange）由 shared/settings-namespace.js 自身
   // 单测覆盖——此处保留卸载路径执行冒烟（不抛）。
-  it("卸载态 disposer/watch 执行不抛", async () => {
+  it("卸载态 disposer/订阅执行不抛", async () => {
     const { ctx, refs } = await applyWithSettingsLifecycle();
+    const emit = refs.emit!;
     expect(() => {
       ctx.fiber.state = "unloading";
       refs.disposer!();
       ctx.fiber.state = "disposed";
-      refs.watchCb!();
+      emit("dsh-mcp-manager");
     }).not.toThrow();
   });
 });
@@ -305,7 +312,7 @@ describe("apply 的 agent/pre-step 在 announceCatalog=true 时注册", () => {
         if (Array.isArray(keys) && keys.includes("settings")) {
           cb({
             settings: {
-              register: () => ({ get: () => ({}), watch: () => {} }),
+              describe: () => [],
             },
             effect: () => () => {},
           });
@@ -403,9 +410,9 @@ describe("apply 的 SSE broadcast 与 route disposer", () => {
 });
 
 describe("apply 的 settings 注入（uiUpdate 写入路径）", () => {
-  it("settings 命名空间注册（inject settings 装配面）", async () => {
+  it("settings 命名空间接线（inject settings 装配面）", async () => {
     const dir = makeTempDir("dsh-mcp-manager-ui2-");
-    let registerCalled = false;
+    let describeCalled = false;
     const ctx = {
       fiber: { state: "active" },
       logger: { warn: () => {}, info: () => {}, error: () => {} },
@@ -419,9 +426,9 @@ describe("apply 的 settings 注入（uiUpdate 写入路径）", () => {
               update: function (_ns: unknown, _patch: unknown) {
                 return Promise.resolve();
               },
-              register: () => {
-                registerCalled = true;
-                return { get: () => ({}), watch: () => {} };
+              describe: () => {
+                describeCalled = true;
+                return [];
               },
             },
             effect: () => () => {},
@@ -440,7 +447,7 @@ describe("apply 的 settings 注入（uiUpdate 写入路径）", () => {
 
     await apply(ctx as unknown as Context, { enabled: true, storePath: join(dir, "mcp.json") });
     // 哑断言清理（#664 阶段 8）：假 ok 输出改真实断言——settings 命名空间
-    // 注册（installSettingsNamespace 经 inject(["settings"]) 调 register）。
-    expect(registerCalled).toBeTruthy();
+    // 接线（installSettingsNamespace 经 inject(["settings"]) 调 describe）。
+    expect(describeCalled).toBeTruthy();
   });
 });

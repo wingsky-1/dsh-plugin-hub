@@ -179,8 +179,8 @@ describe("apply 的 settings 注入（uiUpdate 写入路径）", () => {
       updateCalled: boolean;
       updateNs: unknown;
       updatePatch: unknown;
-      registerCalled: boolean;
-    } = { updateCalled: false, updateNs: null, updatePatch: null, registerCalled: false };
+      describeCalled: boolean;
+    } = { updateCalled: false, updateNs: null, updatePatch: null, describeCalled: false };
 
     const ctx = baseCtx({
       inject: (keys: unknown, cb: (services: unknown) => void) => {
@@ -193,14 +193,17 @@ describe("apply 的 settings 注入（uiUpdate 写入路径）", () => {
                 refs.updatePatch = patch;
                 return Promise.resolve();
               },
-              register: () => {
-                refs.registerCalled = true;
-                return {
-                  get: () => ({
-                    ui: { position: "top-right", offset: { x: 8, y: 8, blankY: 40 } },
-                  }),
-                  watch: () => {},
-                };
+              describe: () => {
+                refs.describeCalled = true;
+                return [
+                  {
+                    ns: "dsh-mcp-manager",
+                    value: {
+                      ui: { position: "top-right", offset: { x: 8, y: 8, blankY: 40 } },
+                    },
+                    revision: 0,
+                  },
+                ];
               },
             },
             effect: () => () => {},
@@ -214,12 +217,12 @@ describe("apply 的 settings 注入（uiUpdate 写入路径）", () => {
     return refs;
   }
 
-  // 哑断言清理（#664 阶段 8）：补真实装配断言——settings 命名空间已注册
-  // （installSettingsNamespace 经 inject(["settings"]) 调 register）；
+  // 哑断言清理（#664 阶段 8）：补真实装配断言——settings 命名空间已接线
+  // （installSettingsNamespace 经 inject(["settings"]) 调 describe）；
   // uiUpdate 是懒写入（路由调了才触发），此处不期望 update 被调。
-  it("settings 命名空间注册（inject settings 装配面）", async () => {
+  it("settings 命名空间接线（inject settings 装配面）", async () => {
     const refs = await applyWithSettings();
-    expect(refs.registerCalled).toBeTruthy();
+    expect(refs.describeCalled).toBeTruthy();
   });
 
   it("uiUpdate 懒写入：apply 时不触发", async () => {

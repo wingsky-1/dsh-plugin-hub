@@ -182,23 +182,21 @@ describe("1) inject 回调：settings 正常注册", () => {
       },
       fiber: { state: "active" },
       inject: (deps: unknown, cb: (s: unknown) => void) => {
-        const scope = {
-          get: () => ({}),
-          watch: (_fn: () => void) => {
-            settingsEvents.push("watch-registered");
-          },
-        };
         const sctx = {
           settings: {
-            register: (_ns: unknown, _schema: unknown, _opts: unknown) => {
-              settingsEvents.push("register-called");
-              return scope;
+            describe: () => {
+              settingsEvents.push("describe-called");
+              return [{ ns: "dsh-provider-usage", value: {}, revision: 0 }];
             },
           },
           effect: (fn: () => unknown) => {
             const disposer = fn();
             settingsEvents.push("effect-registered");
             return typeof disposer === "function" ? disposer : () => {};
+          },
+          on: (event: string, _cb: (...args: unknown[]) => void) => {
+            if (event === "settings/document-updated") settingsEvents.push("subscribed");
+            return () => {};
           },
         };
         cb(sctx);
@@ -218,22 +216,22 @@ describe("1) inject 回调：settings 正常注册", () => {
     });
   });
 
-  it("settings.register 被调用", () => {
+  it("settings.describe 被调用", () => {
     // 实现真值（shared/settings-namespace.js installSettingsNamespace）：
-    // register → sctx.effect → scope.watch 按序各推一事件，一次 inject 回调恰好三项。
-    expect(settingsEvents).toEqual(["register-called", "effect-registered", "watch-registered"]);
+    // sctx.effect → describe（快照基线）→ document-updated 订阅按序各推一事件。
+    expect(settingsEvents).toEqual(["effect-registered", "describe-called", "subscribed"]);
   });
 
   it("sctx.effect 被注册", () => {
     expect(settingsEvents.includes("effect-registered")).toBeTruthy();
   });
 
-  it("scope.watch 被注册", () => {
-    expect(settingsEvents.includes("watch-registered")).toBeTruthy();
+  it("document-updated 订阅已接线", () => {
+    expect(settingsEvents.includes("subscribed")).toBeTruthy();
   });
 });
 
-// ---------------------------------------------------------------- 2) inject 回调：settings.register 抛错
+// ---------------------------------------------------------------- 2) inject 回调：settings.describe 抛错
 
 describe("2) inject 回调：settings.register 抛错", () => {
   let warns: string[];
@@ -263,8 +261,8 @@ describe("2) inject 回调：settings.register 抛错", () => {
       inject: (deps: unknown, cb: (s: unknown) => void) => {
         cb({
           settings: {
-            register: () => {
-              throw new Error("duplicate");
+            describe: () => {
+              throw new Error("store broken");
             },
           },
           effect: (fn: () => unknown) => {
@@ -287,12 +285,12 @@ describe("2) inject 回调：settings.register 抛错", () => {
     });
   });
 
-  it("settings.register 抛错应 warn", () => {
-    expect(warns.some((m) => m.includes("duplicate"))).toBeTruthy();
+  it("settings.describe 抛错回落 entry 不中断（无缺席 warn）", () => {
+    expect(warns.some((m) => m.includes("服务缺席"))).toBeFalsy();
   });
 });
 
-// ---------------------------------------------------------------- 3) inject 回调：settings 服务缺 register
+// ---------------------------------------------------------------- 3) inject 回调：settings 服务缺席
 
 describe("3) inject 回调：settings 服务缺 register", () => {
   let warns: string[];
@@ -336,8 +334,8 @@ describe("3) inject 回调：settings 服务缺 register", () => {
     });
   });
 
-  it("settings 缺 register 应 warn", () => {
-    expect(warns.some((m) => m.includes("register"))).toBeTruthy();
+  it("settings 服务缺席应 warn", () => {
+    expect(warns.some((m) => m.includes("服务缺席"))).toBeTruthy();
   });
 });
 

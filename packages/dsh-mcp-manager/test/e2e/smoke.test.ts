@@ -2975,8 +2975,9 @@ it("config POST 经 apply 注入 settings：update 保留 this 不再 400（回�
   // 若调用链解构丢 this，this 为 undefined → this.write 抛 TypeError → 路由 400。
   let scopeValue = { ui: { position: "top-right", offset: { x: 8, y: 8, blankY: 40 } } };
   const settingsStub = {
-    register(_ns: string, _schema: unknown, _opts?: unknown) {
-      return { get: () => ({ ...scopeValue }), watch: () => {} };
+    // 接缝经 describe 活读（闭包读当前 scopeValue，写后读回新值）。
+    describe() {
+      return [{ ns: "dsh-mcp-manager", value: { ...scopeValue }, revision: 0 }];
     },
     async write(ns: string, patch: unknown) {
       scopeValue = { ...(scopeValue ?? {}), ...((patch ?? {}) as Record<string, unknown>) };
