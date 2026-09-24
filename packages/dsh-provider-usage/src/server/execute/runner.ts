@@ -264,6 +264,7 @@ export async function runDueReport(params: {
     promptTemplate,
     provider: reportCfg.provider,
     model: reportCfg.model,
+    reasoningEffort: reportCfg.reasoningEffort,
   });
   if (!result.meta.ok) throw new Error(result.meta.error ?? "报告生成失败");
   const meta: ReportMeta = { ...result.meta, summary: summaryOf(snapshot) };

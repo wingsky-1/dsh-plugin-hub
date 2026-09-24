@@ -7,7 +7,7 @@
  * - ReportConfigService：内存权威 + 串行写链（并发 update 不交错）、onUpdate 回调
  *   在写盘后触发、磁盘文件 roundtrip
  */
-import { mkdtempSync, writeFileSync, mkdirSync } from "node:fs";
+import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { beforeEach, describe, expect, it } from "vitest";
@@ -20,11 +20,18 @@ import {
 import {
   readLastRun,
   updateLastRun,
+  type ReportTaskInput,
   type ReportTaskResult,
 } from "../../../src/server/schedule/interface.ts";
 import type { TrendTracker } from "../../../src/server/aggregate/interface.ts";
 import type { Context } from "@deepseek-ai/cordis";
-import { makeDueReportExecutor } from "../../../src/server/execute/interface.ts";
+import type {
+  GenerateOptions,
+  LlmResolvedModelInfo,
+  ReasoningEffortId,
+  StreamChunk,
+} from "@deepseek-ai/dsh-llm";
+import { makeDueReportExecutor, runDueReport } from "../../../src/server/execute/interface.ts";
 import { makeListDirs } from "../../../src/server/execute/list-dirs.ts";
 
 describe("ReportConfigService：串行写链 / 内存权威 / 回调顺序 / 磁盘 roundtrip", () => {
@@ -177,6 +184,102 @@ describe("makeListDirs：目录候选查询面（净化出口 + 未识别桶归�
 
   it("total 透传", () => {
     expect(list[0].total).toBe(10);
+  });
+});
+
+describe("runner：reportCfg.reasoningEffort 透传到生成边界", () => {
+  it("先按 exact model 校验，再把 branded ID 传入唯一 stream 调用", async () => {
+    const root = mkdtempSync(join(tmpdir(), "u-runner-reasoning-effort-"));
+    const streamCalls: GenerateOptions[] = [];
+    const resolveCalls: Array<{ provider: string; model: string }> = [];
+    const effort = "vendor::deep" as ReasoningEffortId;
+    const capability: LlmResolvedModelInfo = {
+      provider: "generic-provider",
+      id: "generic-model",
+      name: "Generic Model",
+      reasoning: {
+        efforts: [{ id: effort, name: "Deep" }],
+        defaultEffort: effort,
+      },
+    };
+    const chunks: StreamChunk[] = [
+      { type: "text-delta", index: 0, text: "runner report" },
+      { type: "finish", reason: { kind: "stop" } },
+    ];
+    const ctx = {
+      llm: {
+        stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
+          streamCalls.push({ ...options, messages: [...options.messages] });
+          return (async function* (): AsyncGenerator<StreamChunk> {
+            yield* chunks;
+          })();
+        },
+        listProviders: () => [{ id: "generic-provider", name: "Generic" }],
+        listModels: async () => [
+          { provider: "generic-provider", id: "generic-model", name: "Generic Model" },
+        ],
+        resolveModelInfo: async (provider: string, model: string) => {
+          resolveCalls.push({ provider, model });
+          return capability;
+        },
+      },
+    } as unknown as Context;
+    const trend = {
+      buckets: () => [
+        {
+          day: "2026-09-05",
+          providers: [
+            {
+              provider: "generic-provider",
+              model: "generic-model",
+              cell: {
+                input: 2,
+                output: 3,
+                cacheRead: null,
+                cacheWrite: null,
+                calls: 1,
+                turns: 1,
+                toolCalls: 0,
+              },
+            },
+          ],
+        },
+      ],
+      dirRows: () => [],
+      hourRows: () => [],
+    } as unknown as TrendTracker;
+    const due: ReportTaskInput = {
+      period: "daily",
+      key: "2026-09-05",
+      startDay: "2026-09-05",
+      endDay: "2026-09-05",
+      force: false,
+    };
+    const reportCfg = normalizeCfg({
+      provider: "generic-provider",
+      model: "generic-model",
+      reasoningEffort: "vendor::deep",
+      push: { enabled: false },
+    });
+
+    try {
+      const result = await runDueReport({
+        due,
+        trend,
+        ctx,
+        reportCfg,
+        promptTemplate: "prompt",
+        historyRoot: root,
+        sanitizeDiagnostic: (value) => value,
+      });
+
+      expect(result.ok).toBe(true);
+      expect(resolveCalls).toEqual([{ provider: "generic-provider", model: "generic-model" }]);
+      expect(streamCalls).toHaveLength(1);
+      expect(streamCalls[0]!.reasoningEffort).toBe("vendor::deep");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });
 

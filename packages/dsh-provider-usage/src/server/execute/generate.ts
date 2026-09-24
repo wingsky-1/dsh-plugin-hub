@@ -22,6 +22,8 @@ import type {
   GenerateOptions,
   LlmModelInfo,
   LlmProviderInfo,
+  LlmReasoningEffortInfo,
+  LlmResolvedModelInfo,
   MessageId,
   StreamChunk,
   UserMessage,
@@ -112,6 +114,8 @@ export interface GenerateReportOptions {
   /** 配置的 provider/model；空串 = 跟随默认（解析为注册序首个）。 */
   provider: string;
   model: string;
+  /** 配置的 opaque reasoning effort ID；仅在 exact-model capability 精确命中后传入。 */
+  reasoningEffort?: string;
   /** 取消信号（透传 GenerateOptions.signal）。 */
   signal?: AbortSignal;
   /** 注入时钟（测试；默认 Date.now）。 */
@@ -242,6 +246,47 @@ async function resolveRoute(
   return { provider: p, model: m };
 }
 
+type OptionalModelCapabilityResolver = {
+  resolveModelInfo(
+    provider: string,
+    model: string,
+    signal?: AbortSignal,
+  ): Promise<LlmResolvedModelInfo>;
+};
+
+/** 能力探测是内部可选能力；公开 ReportLlmService 三方法形状保持不变。 */
+function hasModelCapabilityResolver(
+  llm: ReportLlmService,
+): llm is ReportLlmService & OptionalModelCapabilityResolver {
+  return "resolveModelInfo" in llm && typeof llm.resolveModelInfo === "function";
+}
+
+async function resolveConfiguredReasoningEffort(
+  llm: ReportLlmService,
+  provider: string,
+  model: string,
+  configured: string,
+  signal?: AbortSignal,
+): Promise<{ ok: true; id: LlmReasoningEffortInfo["id"] } | { ok: false; error: string }> {
+  if (!hasModelCapabilityResolver(llm)) {
+    return { ok: false, error: "模型能力信息不可用" };
+  }
+  try {
+    const info = await llm.resolveModelInfo(provider, model, signal);
+    const efforts = info.reasoning?.efforts;
+    if (!Array.isArray(efforts)) {
+      return { ok: false, error: "配置指定的思考等级不受当前模型支持" };
+    }
+    const exact = efforts.find((effort) => effort.id === configured);
+    if (exact === undefined) {
+      return { ok: false, error: "配置指定的思考等级不受当前模型支持" };
+    }
+    return { ok: true, id: exact.id };
+  } catch {
+    return { ok: false, error: "模型能力解析失败" };
+  }
+}
+
 type StreamTerminal =
   { kind: "none" } | { kind: "normal" } | { kind: "unknown" } | { kind: "error"; error: string };
 
@@ -316,6 +361,17 @@ export async function generateReport(opts: GenerateReportOptions): Promise<Repor
   });
   const route = await resolveRoute(opts.llm, opts.provider, opts.model);
   if (route === null) return fail("无可用的已注册 provider/model（须先在 dsh 注册适配器路由）");
+  const reasoning =
+    opts.reasoningEffort === undefined
+      ? undefined
+      : await resolveConfiguredReasoningEffort(
+          opts.llm,
+          route.provider,
+          route.model,
+          opts.reasoningEffort,
+          opts.signal,
+        );
+  if (reasoning !== undefined && !reasoning.ok) return fail(reasoning.error);
   const rangeText = opts.rangeText ?? `${opts.startDay} ~ ${opts.endDay}`;
   const prompt = applyPromptTemplate(opts.promptTemplate, opts.statsJson, rangeText);
   // 自拼 UserMessage（与官方 createUserMessage 产物同形：randomUUID 稳定 id +
@@ -333,6 +389,7 @@ export async function generateReport(opts: GenerateReportOptions): Promise<Repor
     messages: [message],
     // tools 不传 = 无工具面（方案 §八5，类型层保证）
   };
+  if (reasoning?.ok === true) genOpts.reasoningEffort = reasoning.id;
   if (opts.signal !== undefined) genOpts.signal = opts.signal;
   let state: StreamState = {
     body: "",

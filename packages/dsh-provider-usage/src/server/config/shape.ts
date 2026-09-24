@@ -36,6 +36,8 @@ export interface ReportConfig {
   /** 报告生成所用模型路由；空串 = 跟随 dsh 默认 provider（GenerateOptions 须为已注册路由）。 */
   provider: string;
   model: string;
+  /** 宿主为当前 exact model 暴露的 opaque reasoning effort ID；缺省沿用 DSH 默认。 */
+  reasoningEffort?: string;
   /** 提示词模板（{stats} 占位注入当期聚合统计 JSON）。 */
   promptTemplate: string;
   /** 统计 JSON 脱敏开关（默认 true：项目路径脱敏为 ~ 形态）。 */

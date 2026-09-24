@@ -97,7 +97,13 @@ import {
   handleReportStatus,
   type ReportRoutesContext,
 } from "../../../src/server/report-routes/interface.ts";
-import type { FinishReason, GenerateOptions, StreamChunk } from "@deepseek-ai/dsh-llm";
+import type {
+  FinishReason,
+  GenerateOptions,
+  LlmResolvedModelInfo,
+  ReasoningEffortId,
+  StreamChunk,
+} from "@deepseek-ai/dsh-llm";
 import type {
   ReportLlmService,
   ReportMeta,
@@ -105,9 +111,10 @@ import type {
 } from "../../../src/server/execute/interface.ts";
 /** 首个 content 块的文本（生成侧恒为 user 文本块；类型面为块联合体）。 */
 const textOf = (block: unknown): string => (block as { text: string }).text;
-/** fakeLlm 观测快照：逐次保存 stream 入参，供调用次数与透传断言使用。 */
+/** fakeLlm 观测快照：逐次保存 stream 入参，并记录 exact-model capability 查询。 */
 interface LlmSeen {
   calls: GenerateOptions[];
+  resolveCalls: Array<{ provider: string; model: string; signal?: AbortSignal }>;
 }
 import type { ReportConfig, ReportPeriod } from "../../../src/server/config/interface.ts";
 // 白盒直连深路径（#768 B波）：词表纯数据经 server/config 门面，不走组合根转发。
@@ -159,15 +166,23 @@ const CHUNKS: StreamChunk[] = [
   { type: "finish", reason: { kind: "stop" } },
 ];
 
-/** fake llm：罐头 chunk 流；seen 逐次记录 GenerateOptions 快照。 */
+interface FakeLlmOptions {
+  throwInStream?: string;
+  noProviders?: boolean;
+  noModels?: boolean;
+  capability?: LlmResolvedModelInfo;
+  capabilityError?: string;
+}
+
+/** fake llm：罐头 chunk 流；seen 记录 stream 与可选 exact-model capability 查询。 */
 function fakeLlm(
   chunks: StreamChunk[] = CHUNKS,
-  opts: { throwInStream?: string; noProviders?: boolean; noModels?: boolean } = {},
+  opts: FakeLlmOptions = {},
 ): {
   llm: ReportLlmService;
   seen: LlmSeen;
 } {
-  const seen: LlmSeen = { calls: [] };
+  const seen: LlmSeen = { calls: [], resolveCalls: [] };
   const llm: ReportLlmService = {
     stream(o: GenerateOptions): AsyncIterable<StreamChunk> {
       seen.calls.push({ ...o, messages: [...o.messages] });
@@ -187,6 +202,17 @@ function fakeLlm(
     listModels: async () =>
       opts.noModels ? [] : [{ provider: "prov-a", id: "model-a", name: "A" }],
   };
+  const capability = opts.capability;
+  if (capability !== undefined || opts.capabilityError !== undefined) {
+    Object.assign(llm, {
+      async resolveModelInfo(provider: string, model: string, signal?: AbortSignal) {
+        seen.resolveCalls.push({ provider, model, signal });
+        if (opts.capabilityError !== undefined) throw new Error(opts.capabilityError);
+        if (capability === undefined) throw new Error("capability fixture missing");
+        return capability;
+      },
+    });
+  }
   return { llm, seen };
 }
 
@@ -550,6 +576,134 @@ describe("generate：显式路由透传", () => {
     expect(seen.calls).toHaveLength(1);
     expect(seen.calls[0]!.provider).toBe("prov-b");
     expect(seen.calls[0]!.model).toBe("model-b");
+  });
+});
+
+const effortId = (value: string): ReasoningEffortId => value as ReasoningEffortId;
+
+const GENERIC_CAPABILITY: LlmResolvedModelInfo = {
+  provider: "generic-provider",
+  id: "generic-model",
+  name: "Generic Model",
+  reasoning: {
+    efforts: [
+      { id: effortId("vendor::balanced"), name: "Balanced", description: "通用平衡档" },
+      { id: effortId("vendor::deep"), name: "Deep" },
+    ],
+    defaultEffort: effortId("vendor::balanced"),
+  },
+};
+
+const GENERIC_WITHOUT_REASONING: LlmResolvedModelInfo = {
+  provider: "generic-provider",
+  id: "generic-model",
+  name: "Generic Model",
+};
+
+describe("generate：reasoningEffort exact-model capability", () => {
+  it("未设置时不查询 capability，GenerateOptions 不创建属性且 stream=1", async () => {
+    const f = fakeLlm(CHUNKS, { capability: GENERIC_CAPABILITY });
+
+    const result = await generateReport(
+      GEN({ llm: f.llm, provider: "generic-provider", model: "generic-model" }),
+    );
+
+    expect(result.meta.ok).toBe(true);
+    expect(f.seen.resolveCalls).toHaveLength(0);
+    expect(f.seen.calls).toHaveLength(1);
+    expect(Object.hasOwn(f.seen.calls[0]!, "reasoningEffort")).toBe(false);
+  });
+
+  it("合法 opaque ID 精确命中后以 capability branded ID 传入且 stream=1", async () => {
+    const f = fakeLlm(CHUNKS, { capability: GENERIC_CAPABILITY });
+
+    const result = await generateReport(
+      GEN({
+        llm: f.llm,
+        provider: "generic-provider",
+        model: "generic-model",
+        reasoningEffort: "vendor::deep",
+      }),
+    );
+
+    expect(result.meta.ok).toBe(true);
+    expect(f.seen.resolveCalls).toEqual([
+      { provider: "generic-provider", model: "generic-model", signal: undefined },
+    ]);
+    expect(f.seen.calls).toHaveLength(1);
+    expect(f.seen.calls[0]!.reasoningEffort).toBe("vendor::deep");
+  });
+
+  it("stale/unknown ID 不精确命中时 fail closed 且 stream=0", async () => {
+    const f = fakeLlm(CHUNKS, { capability: GENERIC_CAPABILITY });
+
+    const result = await generateReport(
+      GEN({
+        llm: f.llm,
+        provider: "generic-provider",
+        model: "generic-model",
+        reasoningEffort: "vendor::retired",
+      }),
+    );
+
+    expect(result.meta.ok).toBe(false);
+    expect(result.meta.error).toBe("配置指定的思考等级不受当前模型支持");
+    expect(f.seen.resolveCalls).toHaveLength(1);
+    expect(f.seen.calls).toHaveLength(0);
+  });
+
+  it("exact model 无 reasoning capability 时 fail closed 且 stream=0", async () => {
+    const f = fakeLlm(CHUNKS, { capability: GENERIC_WITHOUT_REASONING });
+
+    const result = await generateReport(
+      GEN({
+        llm: f.llm,
+        provider: "generic-provider",
+        model: "generic-model",
+        reasoningEffort: "vendor::deep",
+      }),
+    );
+
+    expect(result.meta.ok).toBe(false);
+    expect(result.meta.error).toBe("配置指定的思考等级不受当前模型支持");
+    expect(f.seen.resolveCalls).toHaveLength(1);
+    expect(f.seen.calls).toHaveLength(0);
+  });
+
+  it("resolver 缺失时 fail closed 且 stream=0", async () => {
+    const f = fakeLlm();
+
+    const result = await generateReport(
+      GEN({
+        llm: f.llm,
+        provider: "generic-provider",
+        model: "generic-model",
+        reasoningEffort: "vendor::deep",
+      }),
+    );
+
+    expect(result.meta.ok).toBe(false);
+    expect(result.meta.error).toBe("模型能力信息不可用");
+    expect(f.seen.resolveCalls).toHaveLength(0);
+    expect(f.seen.calls).toHaveLength(0);
+  });
+
+  it("resolver 抛错时 fail closed 且 stream=0", async () => {
+    const f = fakeLlm(CHUNKS, { capabilityError: "capability boom" });
+
+    const result = await generateReport(
+      GEN({
+        llm: f.llm,
+        provider: "generic-provider",
+        model: "generic-model",
+        reasoningEffort: "vendor::deep",
+      }),
+    );
+
+    expect(result.meta.ok).toBe(false);
+    expect(result.meta.error).toBe("模型能力解析失败");
+    expect(f.seen.resolveCalls).toHaveLength(1);
+    expect(f.seen.calls).toHaveLength(0);
   });
 });
 

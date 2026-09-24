@@ -31,6 +31,7 @@
  */
 import { existsSync, readFileSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
+import type { LlmResolvedModelInfo, ReasoningEffortId } from "@deepseek-ai/dsh-llm";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
@@ -222,21 +223,36 @@ function stubQueuePort(): ReportRoutesQueuePort {
   };
 }
 
+type RouteModelStub = { id: string; name?: string };
+type RouteLlmSeen = { resolveCalls: Array<{ provider: string; model: string }> };
+
 function stubReportCtx(
   historyRoot: string,
-  opts: { throwingDirs?: boolean } = {},
+  opts: {
+    throwingDirs?: boolean;
+    models?: RouteModelStub[];
+    capability?: LlmResolvedModelInfo;
+    capabilityError?: string;
+  } = {},
 ): {
   ctx: ReportRoutesContext;
   cfg: ReportRoutesConfigPort & { _current(): unknown };
+  llmSeen: RouteLlmSeen;
 } {
   const cfg = stubConfigPort();
+  const llmSeen: RouteLlmSeen = { resolveCalls: [] };
+  const llm = {
+    listProviders: () => [{ id: "stub-p" }],
+    listModels: async () => opts.models ?? [{ id: "m1" }],
+    resolveModelInfo: async (provider: string, model: string) => {
+      llmSeen.resolveCalls.push({ provider, model });
+      if (opts.capabilityError !== undefined) throw new Error(opts.capabilityError);
+      if (opts.capability === undefined) throw new Error("capability fixture missing");
+      return opts.capability;
+    },
+  };
   const ctx: ReportRoutesContext = {
-    ctx: {
-      llm: {
-        listProviders: () => [{ id: "stub-p" }],
-        listModels: async () => [{ id: "m1" }],
-      },
-    } as unknown as ReportRoutesContext["ctx"],
+    ctx: { llm } as unknown as ReportRoutesContext["ctx"],
     historyRoot,
     reportQueue: stubQueuePort(),
     reportCfgService: cfg,
@@ -255,8 +271,22 @@ function stubReportCtx(
         }
       : () => [{ dir: "d", calls: 1, total: null }],
   };
-  return { ctx, cfg };
+  return { ctx, cfg, llmSeen };
 }
+
+const routeEffortId = (value: string): ReasoningEffortId => value as ReasoningEffortId;
+const routeCapability: LlmResolvedModelInfo = {
+  provider: "stub-p",
+  id: "m1",
+  name: "M1 capability",
+  reasoning: {
+    efforts: [
+      { id: routeEffortId("vendor::deep"), name: "Deep", description: "深度思考" },
+      { id: routeEffortId("vendor::balanced"), name: "Balanced" },
+    ],
+    defaultEffort: routeEffortId("vendor::balanced"),
+  },
+};
 
 type AnyHandler = (req: IncomingMessage, res: ServerResponse, ctx: object) => unknown;
 
@@ -389,6 +419,25 @@ describe("D11二 配置服务窄面消费 + 任务队列 + 执行器", () => {
     expect((cfg._current() as { daily: { time: string } }).daily.time).toBe("08:00");
   });
 
+  it.each([
+    { label: "非 string", value: 7 },
+    { label: "空串", value: "" },
+  ])("POST reasoningEffort 为$label时显式 400 且不改配置", async ({ value }) => {
+    const root = isolatedDir("dou-reportroutes-reasoning-effort-");
+    const { ctx, cfg } = stubReportCtx(root);
+    const before = cfg._current();
+
+    const posted = await callStatus(
+      handleReportConfig as AnyHandler,
+      fakeReq({ method: "POST", body: JSON.stringify({ reasoningEffort: value }) }),
+      ctx,
+    );
+
+    expect(posted.code).toBe(400);
+    expect((posted.body as { error?: string }).error).toBe("invalid-reasoning-effort");
+    expect(cfg._current()).toBe(before);
+  });
+
   it("首次启用翻转落盘lastRun（changed接线，断线即红）", async () => {
     // #768 B1b：changed=true→updateLastRun 接线覆盖（翻转 daily 关闭→启用，lastRun 落盘非空）。
     const root = isolatedDir("dou-reportroutesD11-flip-");
@@ -432,6 +481,92 @@ describe("D11二 配置服务窄面消费 + 任务队列 + 执行器", () => {
       ctx,
     );
     expect((unknown.body as { reason?: string }).reason).toBe("unknown-provider");
+  });
+
+  describe("report-models：exact model capability wire", () => {
+    it("无 model 参数保持 models[] 且不调用 resolver", async () => {
+      const root = isolatedDir("dou-reportroutes-model-capability-");
+      const { ctx, llmSeen } = stubReportCtx(root);
+
+      const response = await callStatus(
+        handleReportModels as AnyHandler,
+        fakeReq({ method: "GET", url: "/?provider=stub-p" }),
+        ctx,
+      );
+
+      expect(response.code).toBe(200);
+      expect(response.body).toEqual({ ok: true, models: [{ id: "m1" }] });
+      expect(llmSeen.resolveCalls).toEqual([]);
+    });
+
+    it("命中 exact model 只查一次并透传 efforts 顺序、name、description、default", async () => {
+      const root = isolatedDir("dou-reportroutes-model-capability-");
+      const { ctx, llmSeen } = stubReportCtx(root, {
+        models: [{ id: "m1", name: "Catalog M1" }],
+        capability: routeCapability,
+      });
+
+      const response = await callStatus(
+        handleReportModels as AnyHandler,
+        fakeReq({ method: "GET", url: "/?provider=stub-p&model=m1" }),
+        ctx,
+      );
+
+      expect(response.code).toBe(200);
+      expect(response.body).toEqual({
+        ok: true,
+        models: [{ id: "m1", name: "Catalog M1" }],
+        selectedModel: {
+          id: "m1",
+          name: "M1 capability",
+          reasoning: {
+            efforts: [
+              { id: "vendor::deep", name: "Deep", description: "深度思考" },
+              { id: "vendor::balanced", name: "Balanced" },
+            ],
+            defaultEffort: "vendor::balanced",
+          },
+        },
+      });
+      expect(llmSeen.resolveCalls).toEqual([{ provider: "stub-p", model: "m1" }]);
+    });
+
+    it("exact model 不在列表时返回 unknown-model 且不调用 resolver", async () => {
+      const root = isolatedDir("dou-reportroutes-model-capability-");
+      const { ctx, llmSeen } = stubReportCtx(root);
+
+      const response = await callStatus(
+        handleReportModels as AnyHandler,
+        fakeReq({ method: "GET", url: "/?provider=stub-p&model=missing" }),
+        ctx,
+      );
+
+      expect(response.code).toBe(200);
+      expect(response.body).toEqual({ ok: false, reason: "unknown-model" });
+      expect(llmSeen.resolveCalls).toEqual([]);
+    });
+
+    it("命中模型但 capability resolver 失败时保留 models[] 并标记 capabilityError", async () => {
+      const root = isolatedDir("dou-reportroutes-model-capability-");
+      const { ctx, llmSeen } = stubReportCtx(root, {
+        models: [{ id: "m1", name: "Catalog M1" }],
+        capabilityError: "capability unavailable",
+      });
+
+      const response = await callStatus(
+        handleReportModels as AnyHandler,
+        fakeReq({ method: "GET", url: "/?provider=stub-p&model=m1" }),
+        ctx,
+      );
+
+      expect(response.code).toBe(200);
+      expect(response.body).toEqual({
+        ok: true,
+        models: [{ id: "m1", name: "Catalog M1" }],
+        selectedModel: { id: "m1", capabilityError: true },
+      });
+      expect(llmSeen.resolveCalls).toEqual([{ provider: "stub-p", model: "m1" }]);
+    });
   });
 
   it("窄面桩跑通历史索引与详情围栏（空索引 200，键非法 400，缺件 404）", async () => {

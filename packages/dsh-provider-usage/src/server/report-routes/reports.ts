@@ -152,6 +152,16 @@ export async function handleReportConfig(
   // 于是畸形或超限的请求会把用户已存的报告配置静默重置（写盘 + 热更都照做）。
   const outcome = await readJsonBodyOutcome(req);
   if (outcome.kind !== "json") return writeJson(res, 400, { error: "bad-json" });
+  if (
+    typeof outcome.value === "object" &&
+    outcome.value !== null &&
+    Object.hasOwn(outcome.value, "reasoningEffort")
+  ) {
+    const effort = (outcome.value as Record<string, unknown>).reasoningEffort;
+    if (typeof effort !== "string" || effort.length === 0) {
+      return writeJson(res, 400, { error: "invalid-reasoning-effort" });
+    }
+  }
 
   const normalized = context.normalizeReportConfig(outcome.value);
   const currentCfg = context.reportCfgService.get();
@@ -187,6 +197,7 @@ export async function handleReportModels(
   const { ctx } = context;
   const url = new URL(req.url ?? "/", "http://localhost");
   const provider = url.searchParams.get("provider") ?? "";
+  const requestedModel = url.searchParams.get("model");
   const known = (() => {
     try {
       return ctx.llm.listProviders().some((i) => (i as { id?: unknown })?.id === provider);
@@ -217,7 +228,54 @@ export async function handleReportModels(
             ...(typeof m.name === "string" && m.name.length > 0 ? { name: m.name as string } : {}),
           }))
       : [];
-    writeJson(res, 200, { ok: true, models: list });
+
+    if (requestedModel === null) {
+      writeJson(res, 200, { ok: true, models: list });
+      return;
+    }
+    const selected = list.find((model) => model.id === requestedModel);
+    if (selected === undefined) {
+      writeJson(res, 200, { ok: false, reason: "unknown-model" });
+      return;
+    }
+
+    try {
+      const pendingCapability = ctx.llm.resolveModelInfo(provider, selected.id);
+      pendingCapability.catch(() => {});
+      const info = await Promise.race([pendingCapability, timeout]);
+      const selectedModel: {
+        id: string;
+        name?: string;
+        reasoning?: {
+          efforts: Array<{ id: string; name: string; description?: string }>;
+          defaultEffort?: string;
+        };
+      } = { id: selected.id };
+      if (typeof info.name === "string" && info.name.length > 0) {
+        selectedModel.name = info.name;
+      } else if (selected.name !== undefined) {
+        selectedModel.name = selected.name;
+      }
+      if (info.reasoning !== undefined) {
+        selectedModel.reasoning = {
+          efforts: info.reasoning.efforts.map((effort) => ({
+            id: effort.id,
+            name: effort.name,
+            ...(typeof effort.description === "string" ? { description: effort.description } : {}),
+          })),
+          ...(info.reasoning.defaultEffort !== undefined
+            ? { defaultEffort: info.reasoning.defaultEffort }
+            : {}),
+        };
+      }
+      writeJson(res, 200, { ok: true, models: list, selectedModel });
+    } catch {
+      writeJson(res, 200, {
+        ok: true,
+        models: list,
+        selectedModel: { id: selected.id, capabilityError: true },
+      });
+    }
   } catch (e: unknown) {
     writeJson(res, 200, { ok: false, reason: e instanceof Error ? e.message : "discover-failed" });
   } finally {
