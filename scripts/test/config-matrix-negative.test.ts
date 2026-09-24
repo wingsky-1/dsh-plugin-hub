@@ -508,13 +508,13 @@ test("量级: README 配置表缺键 → warn 不红（pass 仍 true）", () => 
 
 test("UI 豁免表: 锚点指向错误的行 → 红并点名键（#826 新增判据的负向 fixture）", () => {
   assertRed(
-    "把 host 的锚点指到 Config 注释行（108）而不是定义行（109）",
+    "把 host 的锚点指到 Config 注释行（101）而不是定义行（102）",
     (root) => {
       editData(root, "dsh-lan-proxy-ui-exempt.json", (s) => {
         const after = s
-          .split("server/config/impl/model.ts:109")
-          .join("server/config/impl/model.ts:108");
-        assert.notEqual(after, s, "fixture 应含 model.ts:109");
+          .split("server/config/impl/model.ts:102")
+          .join("server/config/impl/model.ts:101");
+        assert.notEqual(after, s, "fixture 应含 model.ts:102");
         return after;
       });
     },
@@ -528,8 +528,8 @@ test("UI 豁免表: 锚点指向别的文件 → 红（不能靠换路径躲开�
     (root) => {
       editData(root, "dsh-lan-proxy-ui-exempt.json", (s) => {
         // 两处都要换：只换一处时另一处仍是合法锚点，判据本就不该报「未指向」。
-        const after = s.split("model.ts:109").join("defaults.ts:102");
-        assert.notEqual(after, s, "fixture 应含 model.ts:109");
+        const after = s.split("model.ts:102").join("defaults.ts:102");
+        assert.notEqual(after, s, "fixture 应含 model.ts:102");
         return after;
       });
     },
@@ -554,20 +554,20 @@ test("UI 豁免表: 锚点写法变体（./ 前缀 / 区间）仍应通过——
       // 路径锚点，这条用例对 `./` 归一子句就是空钉（实测：删掉归一的副本下本用例仍绿）。
       // 区间把上方注释一起括进来，也是人写锚点的自然形态。
       host.reason = host.reason.replace(
-        "packages/dsh-lan-proxy/src/server/config/impl/model.ts:109",
-        "./packages/dsh-lan-proxy/src/server/config/impl/model.ts:105-112",
+        "packages/dsh-lan-proxy/src/server/config/impl/model.ts:102",
+        "./packages/dsh-lan-proxy/src/server/config/impl/model.ts:99-105",
       );
       host.rationale = host.rationale.replace(
-        "server/config/impl/model.ts:109",
-        "./server/config/impl/model.ts:105-112",
+        "server/config/impl/model.ts:102",
+        "./server/config/impl/model.ts:99-105",
       );
       targetHost.reason = targetHost.reason.replace(
-        "packages/dsh-lan-proxy/src/server/config/impl/model.ts:131",
-        "./packages/dsh-lan-proxy/src/server/config/impl/model.ts:131",
+        "packages/dsh-lan-proxy/src/server/config/impl/model.ts:124",
+        "./packages/dsh-lan-proxy/src/server/config/impl/model.ts:124",
       );
       targetHost.rationale = targetHost.rationale.replace(
-        "server/config/impl/model.ts:131",
-        "./server/config/impl/model.ts:131",
+        "server/config/impl/model.ts:124",
+        "./server/config/impl/model.ts:124",
       );
       assert.notEqual(
         JSON.stringify([host.reason, host.rationale, targetHost.reason, targetHost.rationale]),
