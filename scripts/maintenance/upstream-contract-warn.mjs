@@ -27,8 +27,8 @@
  * 跟踪以注释指针为唯一载体，不开 issue。
  * DYN_BASE 为 1，UNTRACKED_BASE 为 7（首轮实测校准：v2 估计为 1，实测 7 名逐项核过
  * peers 无类型声明，见 KNOWN_TRACKING；超 7 或出新名即 FAIL），KNOWN 为 7 名。
- * C1：ctx.on 字面量实得 20（19 + lan-proxy apply.ts:443 document-updated 显式订阅，
- * #1011 热更新面），v2 称 18 系行扫描漏计 provider 多行调用的 internal/service。
+ * C1：ctx.on 字面量实得 19，v2 称 18，差 1 为 provider 多行调用的
+ * internal/service（行扫描漏计）；#1011 的 LAN 显式订阅已由 shared seam 统一，不再重复计数。
  * 出口：通过或 FAIL 一律 exit 0；范围、管线、基线三处结构与环境异常经 gate-exit failClosed。
  */
 import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from "node:fs";
@@ -1338,11 +1338,11 @@ async function main(argv) {
     .map((e) => `${e.rel}:${e.line} ${e.name}`)
     .sort();
   console.log(
-    `upstream-contract-warn: C1 ctx.on 字面量 ${onSites.length} 处（v2 称 18，差 2 为多行调用 + lan-proxy document-updated 显式订阅，见下）`,
+    `upstream-contract-warn: C1 ctx.on 字面量 ${onSites.length} 处（v2 称 18，差 1 为 provider 多行调用的 internal/service，见下）`,
   );
   for (const s of onSites) console.log(`upstream-contract-warn:   - ${s}`);
   console.log(
-    "upstream-contract-warn: C1 差数交代：行扫描逐行匹配 ctx.on( 加同行字面量会漏计 provider apply.ts:455 起多行书写的 internal/service 注册；AST 按调用收齐得 19，另 lan-proxy apply.ts:443 document-updated 显式订阅（#1011 热更新面）计 1，共 20。",
+    "upstream-contract-warn: C1 差数交代：行扫描逐行匹配 ctx.on( 加同行字面量会漏计 provider apply.ts:455 起多行书写的 internal/service 注册；AST 按调用收齐得 19，LAN 热更新订阅已由 shared seam 统一，不再重复计数。",
   );
   console.log(
     `upstream-contract-warn: 结束（只 warn 不阻塞，exit 0；FAIL 项：${fails.join("、") || "无"}）`,
