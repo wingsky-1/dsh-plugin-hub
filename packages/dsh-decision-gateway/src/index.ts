@@ -8,7 +8,7 @@
  */
 import type { Context } from "@deepseek-ai/cordis";
 import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
-import type { ToolDefinition } from "@deepseek-ai/dsh-tools";
+import type { ToolDefinition, ToolRunContext } from "@deepseek-ai/dsh-tools";
 import { ROUTES, frozenPresetOf } from "./shared/interface.ts";
 import type { AutomationCap, CustomPreset } from "./shared/interface.ts";
 import * as apiApi from "./server/api/interface.ts";
@@ -150,7 +150,7 @@ function assemble(host: HostPort, options: DecisionGatewayApplyConfig): (() => v
   };
   let lastConcurrency = live().config.connection.maxConcurrency;
   /** 工作目录解析（sessions store 优先，exec 字段次之，进程 cwd 兜底；store 缺席/抛错即降级）。 */
-  const resolveRoot = (exec: unknown, sessionId: string): string => {
+  const resolveRoot = (exec: ToolRunContext, sessionId: string): string => {
     try {
       const cwd = host.sessions?.get(sessionId)?.header.cwd;
       if (typeof cwd === "string" && cwd.length > 0) return cwd;
@@ -159,7 +159,7 @@ function assemble(host: HostPort, options: DecisionGatewayApplyConfig): (() => v
     }
     return toolsApi.rootOf(exec);
   };
-  const depsFor = (exec: unknown): DecideDeps => {
+  const depsFor = (exec: ToolRunContext): DecideDeps => {
     const state = live();
     const sessionId = toolsApi.sessionOf(exec);
     const root = resolveRoot(exec, sessionId);
@@ -169,7 +169,7 @@ function assemble(host: HostPort, options: DecisionGatewayApplyConfig): (() => v
     }
     return {
       logger: host.logger,
-      signal: toolsApi.signalOf(exec),
+      signal: exec.signal,
       connection: state.config.connection,
       isEnabled: (presetId) => enabledOf(state, presetId),
       capOf: (presetId) => capOfState(state, presetId),

@@ -3,5 +3,5 @@ export type { DecideDeps, FetchImpl } from "./deps.ts";
 export { callWithRetry, defaultFetchImpl } from "./impl/client.ts";
 export { createSemaphore } from "./impl/semaphore.ts";
 export { decide, listPresets } from "./impl/service.ts";
-export { buildToolDefinitions, rootOf, sessionOf, signalOf } from "./impl/define.ts";
+export { buildToolDefinitions, rootOf, sessionOf } from "./impl/define.ts";
 export { probeConnection } from "./impl/probe.ts";

@@ -8,6 +8,7 @@ import { mkdtempSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { ToolRunContext } from "@deepseek-ai/dsh-tools";
 import { describe, expect, it } from "vitest";
 import { apply } from "../../src/index.ts";
 import { ROUTES } from "../../src/shared/contract.ts";
@@ -18,7 +19,10 @@ interface CapturedRoute {
 }
 interface CapturedTool {
   readonly name: string;
-  readonly execute: (args: unknown, exec: unknown) => Promise<unknown>;
+  readonly execute: (
+    args: unknown,
+    exec: Pick<ToolRunContext, "signal"> & Record<string, unknown>,
+  ) => Promise<unknown>;
 }
 
 function setup(
@@ -295,7 +299,7 @@ describe("存量互斥与脱敏端到端", () => {
         state: { text: "fence-case", lang: "en" },
         questions_override: [{ id: "q1", text: "Pick one.", kind: "choice", options: ["A", "B"] }],
       },
-      { sessionId: "fence-s1", cwd: "/work/fence" },
+      { sessionId: "fence-s1", cwd: "/work/fence", signal: new AbortController().signal },
     )) as { ok: boolean };
     expect(out.ok).toBe(true);
     const got = await call(routes, ROUTES.history, {

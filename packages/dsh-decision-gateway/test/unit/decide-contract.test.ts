@@ -24,6 +24,7 @@ function baseDeps(over: Partial<DecideDeps> = {}): DecideDeps {
     resolveKey: () => ({ key: "Abcdefgh12345678", source: "env" as const }),
     root: "/tmp/proj",
     sessionId: "sess-1",
+    signal: new AbortController().signal,
     ...over,
   };
 }

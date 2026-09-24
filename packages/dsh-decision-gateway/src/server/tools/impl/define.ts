@@ -6,14 +6,14 @@
  * - output 附 JSON 渲染（文本块），失败包络同样可读（无概率字段）；
  * - ws_list_verdict_guides 只读（不记录历史、不触网络）。
  */
-import type { ToolDefinition } from "@deepseek-ai/dsh-tools";
+import type { ToolDefinition, ToolRunContext } from "@deepseek-ai/dsh-tools";
 import type { CustomPreset } from "../../../shared/interface.ts";
 import type { DecideDeps } from "../deps.ts";
 import { decide, listPresets } from "./service.ts";
 
 /** 工具装配（组合根绑定：exec→deps 映射 + 快照取数）。 */
 export interface ToolAssembly {
-  readonly depsFor: (exec: unknown) => DecideDeps;
+  readonly depsFor: (exec: ToolRunContext) => DecideDeps;
   readonly snapshot: () => {
     readonly isEnabled: (presetId: string) => boolean;
     readonly capOf: (presetId: string) => number;
@@ -40,23 +40,6 @@ export function sessionOf(exec: unknown): string {
     }
   }
   return "unknown";
-}
-
-/** exec 取调用方取消信号（unknown 防御收窄，非信号即 undefined）。 */
-export function signalOf(exec: unknown): AbortSignal | undefined {
-  if (exec !== null && typeof exec === "object") {
-    const candidate = (exec as Record<string, unknown>)["signal"];
-    if (candidate instanceof AbortSignal) return candidate;
-    if (
-      candidate !== null &&
-      typeof candidate === "object" &&
-      typeof (candidate as { readonly aborted?: unknown }).aborted === "boolean" &&
-      typeof (candidate as { readonly addEventListener?: unknown }).addEventListener === "function"
-    ) {
-      return candidate as AbortSignal;
-    }
-  }
-  return undefined;
 }
 
 /** exec 取工作目录（缺席回落进程 cwd；与 sessionOf 同源收敛，见上）。 */
@@ -166,7 +149,7 @@ export function buildToolDefinitions(assembly: ToolAssembly): ToolDefinition[] {
       render: renderJson,
     },
     isConcurrencySafe: () => true,
-    execute: (args: unknown, exec: unknown) => {
+    execute: (args: unknown, exec: ToolRunContext) => {
       const base = assembly.depsFor(exec);
       return decide(args, base);
     },

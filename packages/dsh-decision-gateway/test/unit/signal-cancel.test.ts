@@ -1,21 +1,21 @@
-/** 调用方取消透传（ToolRunContext.signal）：caller abort 即停、超时仍生效、无 signal 旧行为不变。
+/** 调用方取消透传（ToolRunContext.signal）：caller abort 即停、超时仍生效。
  *
  * 守的是 execute→depsFor→DecideDeps.signal→callWithRetry 融合链：
  * caller abort（模型 socket 关闭即宿主 abort 该 signal）必须取消外调且不重试；
- * 内部总预算超时仍按旧重试链生效；无 signal 时与旧语义逐字一致。
+ * 内部总预算超时仍按既有重试链生效。
  * fetch 全注入 mock，全程离线；落盘仅 execute 端到端用 mkdtempSync。
  */
 import { mkdtempSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { ToolRunContext } from "@deepseek-ai/dsh-tools";
 import { describe, expect, it } from "vitest";
 import { apply } from "../../src/index.ts";
 import type { DecideDeps, FetchImpl } from "../../src/server/tools/deps.ts";
 import { callWithRetry, combineSignals } from "../../src/server/tools/impl/client.ts";
 import { toWireQuestions } from "../../src/server/tools/impl/client.ts";
 import type { DecisionRequestBody } from "../../src/server/tools/impl/client.ts";
-import { signalOf } from "../../src/server/tools/impl/define.ts";
 import { createSemaphore } from "../../src/server/tools/impl/semaphore.ts";
 import { decide } from "../../src/server/tools/impl/service.ts";
 
@@ -35,6 +35,7 @@ function baseDeps(over: Partial<DecideDeps> = {}): DecideDeps {
     resolveKey: () => ({ key: "Abcdefgh12345678", source: "env" as const }),
     root: "/tmp/proj",
     sessionId: "sess-1",
+    signal: new AbortController().signal,
     ...over,
   };
 }
@@ -120,19 +121,6 @@ function hangingFetch(seen: Seen): FetchImpl {
     });
   };
 }
-
-describe("signalOf 未知防御收窄", () => {
-  it("非信号一律 undefined；真信号原样回传", () => {
-    expect(signalOf(undefined)).toBeUndefined();
-    expect(signalOf(null)).toBeUndefined();
-    expect(signalOf({})).toBeUndefined();
-    expect(signalOf({ signal: "x" })).toBeUndefined();
-    expect(signalOf({ signal: { aborted: "yes" } })).toBeUndefined();
-    const sig = new AbortController().signal;
-    expect(signalOf({ signal: sig })).toBe(sig);
-    expect(signalOf({ sessionId: "s-1" })).toBeUndefined();
-  });
-});
 
 describe("combineSignals 融合", () => {
   it("调用方缺席即回内部信号原样（旧行为）", () => {
@@ -555,66 +543,8 @@ describe("超时仍生效（含 signal 在场）", () => {
   });
 });
 
-describe("无 signal 旧行为不变", () => {
-  it("永挂上游 + 短总预算：TIMEOUT（总预算语义与 signal 在场一致）", async () => {
-    const seen: Seen = { count: 0 };
-    const out = await decide(
-      decideArgs(),
-      baseDeps({ connection: { ...CONNECTION, timeoutMs: 60 }, fetchImpl: hangingFetch(seen) }),
-    );
-    expect(seen.count).toBe(1);
-    expect(seen.lastSignal?.aborted).toBe(true);
-    expect(out.ok).toBe(false);
-    if (!out.ok) {
-      expect(out.error.errorCode).toBe("TIMEOUT");
-      expect(out.error.category).toBe("timeout");
-    }
-  });
-  it("local-precheck 不被远端槽位阻塞（旧无 signal 路径）", async () => {
-    const gate = createSemaphore(1);
-    const firstEntered = deferred<undefined>();
-    const releaseFirst = deferred<{ readonly status: number; readonly text: string }>();
-    let fetchCalls = 0;
-    const fetchImpl: FetchImpl = async () => {
-      fetchCalls += 1;
-      if (fetchCalls === 1) {
-        firstEntered.resolve(undefined);
-        return releaseFirst.promise;
-      }
-      return { status: 200, text: JSON.stringify(sdkChoice("q1", "A", 0.9)) };
-    };
-    const first = decide(
-      decideArgs(),
-      baseDeps({ sessionId: "first", limit: gate.run, fetchImpl }),
-    );
-    await firstEntered.promise;
-    let precheckSettled = false;
-    const precheck = decide(
-      secretShapedArgs(),
-      baseDeps({ sessionId: "precheck", limit: gate.run, fetchImpl }),
-    ).then((out) => {
-      precheckSettled = true;
-      return out;
-    });
-
-    await flushAbortSettlement();
-    const settledBeforeRelease = precheckSettled;
-    releaseFirst.resolve({ status: 200, text: JSON.stringify(sdkChoice("q1", "A", 0.9)) });
-    const [firstOut, precheckOut] = await Promise.all([first, precheck]);
-
-    expect(settledBeforeRelease).toBe(true);
-    expect(firstOut.ok).toBe(true);
-    expect(precheckOut).toMatchObject({ ok: true, appliedSource: "local-precheck" });
-    expect(fetchCalls).toBe(1);
-  });
-  it("成功路径：单次调用即 high/auto", async () => {
-    const seen: Seen = { count: 0 };
-    const out = await decide(decideArgs(), baseDeps({ fetchImpl: successFetch(seen) }));
-    expect(seen.count).toBe(1);
-    expect(out).toMatchObject({ ok: true, tier: "high", automation: "auto" });
-    if (out.ok) expect(out.retries).toBe(0);
-  });
-  it("活信号成功路径与无信号一致", async () => {
+describe("limit 缺席", () => {
+  it("仍直行且把活跃 signal 传给 client", async () => {
     const seen: Seen = { count: 0 };
     const caller = new AbortController();
     const out = await decide(
@@ -624,6 +554,7 @@ describe("无 signal 旧行为不变", () => {
     expect(seen.count).toBe(1);
     expect(seen.lastSignal?.aborted).toBe(false);
     expect(out).toMatchObject({ ok: true, tier: "high", automation: "auto" });
+    if (out.ok) expect(out.retries).toBe(0);
   });
 });
 
@@ -634,7 +565,10 @@ describe("execute 路径透传（经真实组合根）", () => {
   }
   interface CapturedTool {
     readonly name: string;
-    readonly execute: (args: unknown, exec: unknown) => Promise<unknown>;
+    readonly execute: (
+      args: unknown,
+      exec: Pick<ToolRunContext, "signal"> & Record<string, unknown>,
+    ) => Promise<unknown>;
   }
   function setup(seen: Seen): {
     readonly tools: Map<string, CapturedTool>;
@@ -719,16 +653,5 @@ describe("execute 路径透传（经真实组合根）", () => {
     expect(out.ok).toBe(false);
     expect(out.error?.errorCode).toBe("ABORTED");
     expect(seen.count).toBe(0);
-  });
-  it("exec 无 signal：旧行为成功", async () => {
-    const seen: Seen = { count: 0 };
-    const { tools, putKey } = setup(seen);
-    expect(await putKey()).toBe(200);
-    const tool = tools.get("ws_request_verdict");
-    const out = (await tool?.execute(decideArgs(), { sessionId: "s-1" })) as {
-      readonly ok: boolean;
-    };
-    expect(out.ok).toBe(true);
-    expect(seen.count).toBe(1);
   });
 });

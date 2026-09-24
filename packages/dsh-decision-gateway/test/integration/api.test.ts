@@ -3,6 +3,7 @@ import { mkdtempSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { ToolRunContext } from "@deepseek-ai/dsh-tools";
 import { describe, expect, it } from "vitest";
 import { apply, inject } from "../../src/index.ts";
 
@@ -21,7 +22,10 @@ interface CapturedRoute {
 
 interface CapturedTool {
   readonly name: string;
-  readonly execute: (args: unknown, exec: unknown) => Promise<unknown>;
+  readonly execute: (
+    args: unknown,
+    exec: Pick<ToolRunContext, "signal"> & Record<string, unknown>,
+  ) => Promise<unknown>;
 }
 
 function setup(
@@ -216,7 +220,7 @@ describe("工作目录解析", () => {
         state: { text: "cwd case", lang: "en" },
         questions_override: [{ id: "q1", text: "Pick one.", kind: "choice", options: ["A", "B"] }],
       },
-      { sessionId: "s-work", cwd: "/work/exec-cwd" },
+      { sessionId: "s-work", cwd: "/work/exec-cwd", signal: new AbortController().signal },
     )) as { ok: boolean };
     expect(out.ok).toBe(true);
     const got = await call(env.routes, "/api/dsh-decision-gateway/history", {
@@ -243,7 +247,7 @@ describe("工作目录解析", () => {
         state: { text: "cwd case", lang: "en" },
         questions_override: [{ id: "q1", text: "Pick one.", kind: "choice", options: ["A", "B"] }],
       },
-      { sessionId: "s-work", cwd: "/work/exec-cwd" },
+      { sessionId: "s-work", cwd: "/work/exec-cwd", signal: new AbortController().signal },
     )) as { ok: boolean };
     expect(out2.ok).toBe(true);
     const got2 = await call(throwing.routes, "/api/dsh-decision-gateway/history", {
@@ -280,7 +284,7 @@ describe("会话标题 enrich", () => {
         state: { text: "title case", lang: "en" },
         questions_override: [{ id: "q1", text: "Pick one.", kind: "choice", options: ["A", "B"] }],
       },
-      { sessionId, cwd },
+      { sessionId, cwd, signal: new AbortController().signal },
     )) as { ok: boolean };
     expect(out.ok).toBe(true);
   };
@@ -452,11 +456,13 @@ describe("端点往返", () => {
         state: { text: "it-case", lang: "en" },
         questions_override: [{ id: "q1", text: "Pick one.", kind: "choice", options: ["A", "B"] }],
       },
-      { sessionId: "it-s1", cwd: "/work/it" },
+      { sessionId: "it-s1", cwd: "/work/it", signal: new AbortController().signal },
     )) as { ok: boolean };
     expect(out.ok).toBe(true);
     const list = tools.get("ws_list_verdict_guides");
-    const presets = (await list?.execute({}, {})) as { id: string }[];
+    const presets = (await list?.execute({}, { signal: new AbortController().signal })) as {
+      id: string;
+    }[];
     expect(presets).toHaveLength(5);
     const got = await call(routes, "/api/dsh-decision-gateway/history", {
       url: "/api/dsh-decision-gateway/history?root=/work/it&sessionId=it-s1",

@@ -72,8 +72,8 @@ export interface DecideDeps {
   readonly root: string;
   readonly sessionId: string;
   readonly now?: () => number;
-  /** 调用方取消信号（ToolRunContext.signal 经 depsFor 透传；缺席即旧行为）。 */
-  readonly signal?: AbortSignal;
+  /** 调用方取消信号（ToolRunContext.signal 经 depsFor 透传）。 */
+  readonly signal: AbortSignal;
 }
 
 /** 校验后问题（文本已做 255 长度校验，id 已做 ASCII 校验；score 可带 2-10 levels，缺省即默认五档）。 */

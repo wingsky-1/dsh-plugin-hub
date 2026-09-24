@@ -87,7 +87,7 @@ export async function decide(
   if (!deps.isEnabled(valid.presetId)) {
     return envelope("PRESET_DISABLED", "preset-disabled", "preset disabled");
   }
-  if (deps.signal?.aborted === true) {
+  if (deps.signal.aborted) {
     return envelope("ABORTED", "aborted", "caller aborted");
   }
 
@@ -238,7 +238,6 @@ export async function decide(
     };
   };
 
-  if (deps.signal === undefined) return execute((task) => limit(task));
   try {
     return await limit(() => execute(direct), deps.signal);
   } catch (cause) {
