@@ -103,6 +103,7 @@ import type {
   LlmResolvedModelInfo,
   ReasoningEffortId,
   StreamChunk,
+  ToolCallId,
 } from "@deepseek-ai/dsh-llm";
 import type {
   ReportLlmService,
@@ -168,6 +169,8 @@ const CHUNKS: StreamChunk[] = [
 
 interface FakeLlmOptions {
   throwInStream?: string;
+  throwInListProviders?: string;
+  throwInListModels?: string;
   noProviders?: boolean;
   noModels?: boolean;
   capability?: LlmResolvedModelInfo;
@@ -193,15 +196,19 @@ function fakeLlm(
         yield* chunks;
       })();
     },
-    listProviders: () =>
-      opts.noProviders
+    listProviders: () => {
+      if (opts.throwInListProviders !== undefined) throw new Error(opts.throwInListProviders);
+      return opts.noProviders
         ? []
         : [
             { id: "prov-a", name: "A" },
             { id: "prov-b", name: "B" },
-          ],
-    listModels: async () =>
-      opts.noModels ? [] : [{ provider: "prov-a", id: "model-a", name: "A" }],
+          ];
+    },
+    listModels: async () => {
+      if (opts.throwInListModels !== undefined) throw new Error(opts.throwInListModels);
+      return opts.noModels ? [] : [{ provider: "prov-a", id: "model-a", name: "A" }];
+    },
   };
   const capability = opts.capability;
   if (
@@ -563,6 +570,122 @@ describe("generate：成功路径（正文拼接 / token 元数据 / 空串跟�
   it("时长记录", () => {
     expect(r.meta.durationMs >= 0).toBeTruthy();
   });
+});
+
+// ---------------------------------------------------------------- generate：官方完整 block 流
+
+const PRIVATE_REASONING = "不得保存的推理原文";
+const TOOL_ARGUMENTS =
+  '{"key":"sk-test-not-a-real-key","path":"/home/private/report.json","control":"\u0000"}';
+const REPORT_TOOL_CALL_ID = "report-tool-call" as ToolCallId;
+const UNSUPPORTED_TOOL_ERROR = "模型返回了报告不支持的工具调用";
+
+const UNSUPPORTED_TOOL_STREAMS: Array<{ name: string; chunks: StreamChunk[] }> = [
+  {
+    name: "tool-call-delta",
+    chunks: [
+      {
+        type: "tool-call-delta",
+        index: 0,
+        id: REPORT_TOOL_CALL_ID,
+        name: "read_private_file",
+        argumentsDelta: TOOL_ARGUMENTS,
+      },
+      { type: "finish", reason: { kind: "stop" } },
+    ],
+  },
+  {
+    name: "tool-call block-end",
+    chunks: [
+      {
+        type: "block-end",
+        index: 0,
+        block: {
+          type: "tool-call",
+          id: REPORT_TOOL_CALL_ID,
+          name: "read_private_file",
+          arguments: TOOL_ARGUMENTS,
+        },
+      },
+      { type: "finish", reason: { kind: "stop" } },
+    ],
+  },
+  {
+    name: "tool-calls finish",
+    chunks: [
+      { type: "text-delta", index: 0, text: "不应成功保存的正文" },
+      { type: "finish", reason: { kind: "tool-calls" } },
+    ],
+  },
+];
+
+describe("generate：官方完整 block 流", () => {
+  it("block-start + text-delta + block-end + stop 成功且正文只拼接 delta 一次", async () => {
+    const f = fakeLlm([
+      { type: "block-start", index: 0, blockType: "text" },
+      { type: "text-delta", index: 0, text: "完整正文" },
+      { type: "block-end", index: 0, block: { type: "text", text: "完整正文" } },
+      { type: "finish", reason: { kind: "stop" } },
+    ]);
+
+    const result = await generateReport(
+      GEN({ llm: f.llm, provider: "generic-provider", model: "generic-model" }),
+    );
+
+    expect(result.meta.ok).toBe(true);
+    expect(result.body).toBe("完整正文");
+    expect(f.seen.calls).toHaveLength(1);
+  });
+
+  it("无 text-delta 时以 text block-end 作为正文 fallback", async () => {
+    const f = fakeLlm([
+      { type: "block-start", index: 0, blockType: "text" },
+      { type: "block-end", index: 0, block: { type: "text", text: "仅块正文" } },
+      { type: "finish", reason: { kind: "stop" } },
+    ]);
+
+    const result = await generateReport(
+      GEN({ llm: f.llm, provider: "generic-provider", model: "generic-model" }),
+    );
+
+    expect(result.meta.ok).toBe(true);
+    expect(result.body).toBe("仅块正文");
+  });
+
+  it("reasoning block-end-only 精确归类为 reasoning-only 且不保存原文", async () => {
+    const f = fakeLlm([
+      { type: "block-start", index: 0, blockType: "reasoning" },
+      { type: "block-end", index: 0, block: { type: "reasoning", text: PRIVATE_REASONING } },
+      { type: "finish", reason: { kind: "stop" } },
+    ]);
+
+    const result = await generateReport(
+      GEN({ llm: f.llm, provider: "generic-provider", model: "generic-model" }),
+    );
+
+    expect(result.meta).toMatchObject({
+      ok: false,
+      error: "模型仅返回推理过程未产出正文",
+    });
+    expect(result.body).toBe("");
+    expect(JSON.stringify(result)).not.toContain(PRIVATE_REASONING);
+  });
+
+  it.each(UNSUPPORTED_TOOL_STREAMS)(
+    "$name 以固定安全错误 fail closed 且不泄露工具原文",
+    async ({ chunks }) => {
+      const f = fakeLlm(chunks);
+
+      const result = await generateReport(
+        GEN({ llm: f.llm, provider: "generic-provider", model: "generic-model" }),
+      );
+
+      expect(result.meta).toMatchObject({ ok: false, error: UNSUPPORTED_TOOL_ERROR });
+      expect(result.body).toBe("");
+      expect(JSON.stringify(result)).not.toContain(TOOL_ARGUMENTS);
+      expect(f.seen.calls).toHaveLength(1);
+    },
+  );
 });
 
 // ---------------------------------------------------------------- generate：usage 冲突
@@ -972,18 +1095,41 @@ describe("generate：失败路径（流异常 / 取消 / 空正文 / 路由不�
 
   it("无注册 provider 时不调用模型流", () => {
     expect(seen4.calls).toHaveLength(0);
-    expect(r4.meta.ok).toBe(false);
+    expect(r4.meta).toMatchObject({
+      ok: false,
+      error: "无可用的已注册 provider/model（须先在 dsh 注册适配器路由）",
+    });
   });
 
   it("provider 无可用 model 时不调用模型流", () => {
     expect(seen5.calls).toHaveLength(0);
-    expect(r5.meta.ok).toBe(false);
+    expect(r5.meta).toMatchObject({
+      ok: false,
+      error: "无可用的已注册 provider/model（须先在 dsh 注册适配器路由）",
+    });
+  });
+});
+
+describe("generate：路由解析异常稳定脱敏", () => {
+  it.each([
+    { name: "listProviders", options: { throwInListProviders: RAW_PROVIDER_FAILURE } },
+    { name: "listModels", options: { throwInListModels: RAW_PROVIDER_FAILURE } },
+  ])("$name 抛错返回固定安全错误且不启动 stream", async ({ options }) => {
+    const f = fakeLlm(CHUNKS, options);
+
+    const result = await generateReport(GEN({ llm: f.llm }));
+
+    expect(result.meta).toMatchObject({ ok: false, error: "模型路由解析失败" });
+    expect(result.body).toBe("");
+    expect(result.meta.error).not.toContain("sk-test-not-a-real-key");
+    expect(result.meta.error).not.toContain("/home/private/report.json");
+    expect(result.meta.error).not.toMatch(/[\u0000-\u001f\u007f-\u009f]/);
+    expect(f.seen.calls).toHaveLength(0);
   });
 });
 
 const NORMAL_FINISH_REASONS: Array<{ name: string; reason: FinishReason }> = [
   { name: "stop", reason: { kind: "stop" } },
-  { name: "tool-calls", reason: { kind: "tool-calls" } },
   { name: "max-tokens", reason: { kind: "max-tokens" } },
 ];
 

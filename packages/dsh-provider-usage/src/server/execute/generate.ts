@@ -18,6 +18,7 @@
  *   仅作只读传参，无需 freeze）。
  */
 import type {
+  ContentBlock,
   FinishReason,
   GenerateOptions,
   LlmModelInfo,
@@ -337,7 +338,9 @@ type StreamTerminal =
 
 interface StreamState {
   body: string;
+  textDeltaIndexes: ReadonlySet<number>;
   hasNonWhitespaceReasoning: boolean;
+  hasUnsupportedTool: boolean;
   hasUnknownChunk: boolean;
   tokens: ReportTokenUsage | null;
   terminal: StreamTerminal;
@@ -365,19 +368,56 @@ function mergeTerminal(current: StreamTerminal, next: StreamTerminal): StreamTer
   return next;
 }
 
+const REPORT_STREAM_ERROR = {
+  unsupportedTool: "模型返回了报告不支持的工具调用",
+} as const;
+
+function hasNonWhitespaceText(
+  block: Extract<ContentBlock, { type: "text" | "reasoning" }>,
+): boolean {
+  return block.text.trim().length > 0;
+}
+
 /**
  * 生成报告：流式收集正文、reasoning 可见性、token 与终态。
- * reasoning 原文不保留；未知内容块与未知/缺失终态均 fail closed。
+ * reasoning 原文不保留；工具语义、未知内容块与未知/缺失终态均 fail closed。
  */
 function accumulateChunk(chunk: StreamChunk, state: StreamState): StreamState {
-  if (chunk.type === "text-delta") return { ...state, body: state.body + chunk.text };
+  if (chunk.type === "block-start") {
+    return chunk.blockType === "tool-call" ? { ...state, hasUnsupportedTool: true } : state;
+  }
+  if (chunk.type === "text-delta") {
+    const textDeltaIndexes = new Set(state.textDeltaIndexes);
+    textDeltaIndexes.add(chunk.index);
+    return {
+      ...state,
+      body: state.body + chunk.text,
+      textDeltaIndexes,
+    };
+  }
   if (chunk.type === "reasoning-delta")
     return chunk.text.trim().length > 0 ? { ...state, hasNonWhitespaceReasoning: true } : state;
+  if (chunk.type === "tool-call-delta") return { ...state, hasUnsupportedTool: true };
+  if (chunk.type === "block-end") {
+    if (chunk.block.type === "text") {
+      return state.textDeltaIndexes.has(chunk.index)
+        ? state
+        : { ...state, body: state.body + chunk.block.text };
+    }
+    if (chunk.block.type === "reasoning") {
+      return hasNonWhitespaceText(chunk.block)
+        ? { ...state, hasNonWhitespaceReasoning: true }
+        : state;
+    }
+    if (chunk.block.type === "tool-call") return { ...state, hasUnsupportedTool: true };
+    return { ...state, hasUnknownChunk: true };
+  }
   if (chunk.type === "usage")
     return state.tokens === null ? { ...state, tokens: parseTokenUsage(chunk.usage) } : state;
   if (chunk.type === "finish")
     return {
       ...state,
+      hasUnsupportedTool: state.hasUnsupportedTool || chunk.reason.kind === "tool-calls",
       terminal: mergeTerminal(state.terminal, classifyFinishReason(chunk.reason)),
     };
   return { ...state, hasUnknownChunk: true };
@@ -403,7 +443,13 @@ export async function generateReport(opts: GenerateReportOptions): Promise<Repor
       error,
     },
   });
-  const route = await resolveRoute(opts.llm, opts.provider, opts.model);
+  let route: { provider: string; model: string } | null;
+  try {
+    route = await resolveRoute(opts.llm, opts.provider, opts.model);
+  } catch {
+    // 路由枚举异常可能携带凭据或本地路径；只返回稳定安全文案。
+    return fail("模型路由解析失败");
+  }
   if (route === null) return fail("无可用的已注册 provider/model（须先在 dsh 注册适配器路由）");
   const reasoning =
     opts.reasoningEffort === undefined
@@ -437,7 +483,9 @@ export async function generateReport(opts: GenerateReportOptions): Promise<Repor
   if (opts.signal !== undefined) genOpts.signal = opts.signal;
   let state: StreamState = {
     body: "",
+    textDeltaIndexes: new Set(),
     hasNonWhitespaceReasoning: false,
+    hasUnsupportedTool: false,
     hasUnknownChunk: false,
     tokens: null,
     terminal: { kind: "none" },
@@ -451,6 +499,7 @@ export async function generateReport(opts: GenerateReportOptions): Promise<Repor
     return fail("模型请求失败");
   }
   if (state.terminal.kind === "error") return fail(state.terminal.error);
+  if (state.hasUnsupportedTool) return fail(REPORT_STREAM_ERROR.unsupportedTool);
   if (state.hasUnknownChunk) return fail("模型返回了未知流事件");
   if (state.terminal.kind === "unknown") return fail("模型流返回未知终态");
   if (state.terminal.kind === "none") return fail("模型流未返回可识别终态");
