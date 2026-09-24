@@ -79,6 +79,8 @@ import {
 } from "../../../src/server/execute/interface.ts";
 import {
   ReportTaskQueue,
+  createReportStateCoordinator,
+  createRetryLedger,
   presetLastRunForNewlyEnabled,
   previousClosedWindow,
   readLastRun,
@@ -705,6 +707,143 @@ describe("D11二 配置服务窄面消费 + 任务队列 + 执行器", () => {
       ctx,
     );
     expect(illegal.code).toBe(404);
+  });
+
+  it("非 force 遇 waiting/terminal ledger 时明确 deferred/terminal 且不入队", async () => {
+    const root = isolatedDir("dou-reportroutes-retry-state-");
+    const { ctx } = stubReportCtx(root);
+    const ledger = createRetryLedger(root, {
+      createCycleId: (() => {
+        let n = 0;
+        return () => `route-cycle-${(n += 1)}`;
+      })(),
+    });
+    const state = createReportStateCoordinator({ root, ledger });
+    const due = previousClosedWindow("daily", ctx.reportCfgService.get(), Date.now());
+    const claim = await state.beginAttempt({
+      ...due,
+      route: { provider: "stub-p", model: "m1" },
+    });
+    if (claim === null) throw new Error("expected claim");
+    await state.recordFailure(claim, { code: "transient", kind: "transient" });
+    const waiting = await callStatus(
+      handleReportGenerate as AnyHandler,
+      fakeReq({ method: "POST", body: JSON.stringify({ period: "daily" }) }),
+      { ...ctx, retryState: state },
+    );
+    expect(waiting.code).toBe(409);
+    expect((waiting.body as { status?: string }).status).toBe("deferred");
+    await state.beginForce({
+      ...due,
+      route: { provider: "stub-p", model: "m1" },
+    });
+    const terminalEntry = await state.get(due.period, due.key);
+    if (terminalEntry === undefined) throw new Error("expected terminal ledger");
+    const terminalClaim = await state.beginAttempt({
+      ...due,
+      cycleId: terminalEntry.cycleId,
+      route: terminalEntry.route,
+    });
+    if (terminalClaim === null) throw new Error("expected terminal claim");
+    await state.recordFailure(terminalClaim, { code: "permanent", kind: "permanent" });
+    const terminal = await callStatus(
+      handleReportGenerate as AnyHandler,
+      fakeReq({ method: "POST", body: JSON.stringify({ period: "daily" }) }),
+      { ...ctx, retryState: state },
+    );
+    expect(terminal.code).toBe(409);
+    expect((terminal.body as { status?: string }).status).toBe("terminal");
+  });
+
+  it("force 走 submitForce；status 透出稳定 retry 状态", async () => {
+    const root = isolatedDir("dou-reportroutes-force-");
+    const { ctx } = stubReportCtx(root);
+    const taskId = "44444444-4444-4444-8444-444444444444";
+    let submitted = 0;
+    const queue: ReportRoutesQueuePort & {
+      submitForce?: (input: {
+        period: "daily";
+        key: string;
+        startDay: string;
+        endDay: string;
+        force: true;
+      }) => Promise<{ taskId: string; existing: boolean }>;
+    } = {
+      submit: () => ({ taskId: DONE_TASK_ID, existing: false }),
+      submitForce: async () => {
+        submitted += 1;
+        return { taskId, existing: false };
+      },
+      get: (id: string) =>
+        id === taskId
+          ? {
+              id,
+              period: "daily",
+              key: "2026-09-18",
+              startDay: "2026-09-18",
+              endDay: "2026-09-18",
+              force: true,
+              status: "failed",
+              createdAt: 1,
+              updatedAt: 2,
+              error: "storage",
+            }
+          : undefined,
+    };
+    const retryState = {
+      get: async () => ({
+        period: "daily" as const,
+        key: "2026-09-18",
+        startDay: "2026-09-18",
+        endDay: "2026-09-18",
+        route: { provider: "stub-p", model: "m1" },
+        attempts: 2,
+        maxAttempts: 5 as const,
+        nextRetryAt: 1234,
+        terminal: false,
+        reason: null,
+        cycleId: "c1",
+        phase: "waiting" as const,
+      }),
+    } as unknown as ReportRoutesContext["retryState"];
+    const withState = { ...ctx, reportQueue: queue, retryState };
+    const response = await callStatus(
+      handleReportGenerate as AnyHandler,
+      fakeReq({ method: "POST", body: JSON.stringify({ period: "daily", force: true }) }),
+      withState,
+    );
+    expect(response.code).toBe(202);
+    expect(submitted).toBe(1);
+    const status = await callStatus(
+      handleReportStatus as AnyHandler,
+      fakeReq({ method: "GET", url: `/?taskId=${taskId}` }),
+      withState,
+    );
+    expect(status.code).toBe(200);
+    expect((status.body as { error?: string; retry?: unknown }).error).toBe("storage");
+    expect((status.body as { retry?: { attempts?: number } }).retry?.attempts).toBe(2);
+  });
+
+  it("force prepare/提交失败返回稳定 code，不泄露原始错误", async () => {
+    const root = isolatedDir("dou-reportroutes-force-error-");
+    const { ctx } = stubReportCtx(root);
+    const queue: ReportRoutesQueuePort & {
+      submitForce?: () => Promise<{ taskId: string; existing: boolean }>;
+    } = {
+      submit: () => ({ taskId: DONE_TASK_ID, existing: false }),
+      submitForce: async () => {
+        throw new Error("secret path=/private/report.json key=sk-live");
+      },
+      get: () => undefined,
+    };
+    const response = await callStatus(
+      handleReportGenerate as AnyHandler,
+      fakeReq({ method: "POST", body: JSON.stringify({ period: "daily", force: true }) }),
+      { ...ctx, reportQueue: queue },
+    );
+    expect(response.code).toBe(503);
+    expect(JSON.stringify(response.body)).not.toContain("secret path");
+    expect(JSON.stringify(response.body)).not.toContain("sk-live");
   });
 
   it("执行器工厂不直引（实现内无执行器符号，越界即红）", () => {

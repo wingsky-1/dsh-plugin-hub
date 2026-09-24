@@ -38,6 +38,7 @@ import {
   pendingReports,
   beginAttempt as ImplBeginAttempt,
   createRetryLedger,
+  createReportStateCoordinator,
   type RetryLedgerOptions,
   type RetryLedgerPort,
 } from "../../../src/server/schedule/interface.ts";
@@ -71,6 +72,7 @@ import { DEFAULT_CONFIG } from "../../../src/shared/config.ts";
 const here = dirname(fileURLToPath(import.meta.url));
 const srcDir = join(here, "..", "..", "..", "src");
 const applySrc = readFileSync(join(srcDir, "apply", "apply.ts"), "utf8");
+const applySrcFlat = applySrc.replace(/\s+/g, " ").replace(/,\s*}/g, " }");
 const indexSrc = readFileSync(join(srcDir, "index.ts"), "utf8");
 const applyIndexSrc = readFileSync(join(srcDir, "apply", "index.ts"), "utf8");
 const retryPolicySrc = readFileSync(join(srcDir, "server", "schedule", "retry-policy.ts"), "utf8");
@@ -130,7 +132,9 @@ const FORBIDDEN_FACES = [
 describe("D2一 经 server/schedule 域门面装配", () => {
   it("调度器经同一门面进入（分头 import 即红）", () => {
     expect(
-      applySrc.includes('import { ReportScheduler } from "../server/schedule/interface.ts";'),
+      applySrcFlat.includes(
+        'import { ReportScheduler, createReportStateCoordinator, createRetryLedger } from "../server/schedule/interface.ts";',
+      ),
     ).toBe(true);
   });
 
@@ -574,11 +578,11 @@ describe("D2三-轮询 60s tick + 5min 预热汇入 getStats（改坏默认/断�
 
   it("组合根装配期注入真实现（换源／漏接线即红）", () => {
     expect(
-      applySrc.includes(
-        'import { optionalNotifier, parseReportIndexLines } from "../server/execute/interface.ts";',
+      applySrcFlat.includes(
+        'import { optionalNotifier, parseReportIndexLines, resolveGenerateRoute } from "../server/execute/interface.ts";',
       ),
     ).toBe(true);
-    expect(applySrc.includes("parseIndex: parseReportIndexLines")).toBe(true);
+    expect(applySrcFlat.includes("parseIndex: parseReportIndexLines")).toBe(true);
   });
 });
 
@@ -693,5 +697,229 @@ describe("D3三-轮询否定 toFake 面（#768 计划表 rev2 D3 验收）", () 
     const marker = ["new Promise((r) => set", "Timeout"].join("");
     const selfSrc = readFileSync(join(here, "composition-root.test.ts"), "utf8");
     expect(selfSrc.includes(marker)).toBe(false);
+  });
+});
+
+describe("#1010 B2b coordinator/scheduler/queue 纵向切片", () => {
+  it("commitSuccess 在同一 root 锁内单调推进 lastRun 并清理 claim", async () => {
+    const root = mkdtempSync(join(tmpdir(), "b2b-coordinator-"));
+    try {
+      const now = 1_000;
+      const ledger = createRetryLedger(root, {
+        now: () => now,
+        createCycleId: () => "cycle-b2b",
+      });
+      const coordinator = createReportStateCoordinator({ root, ledger, now: () => now });
+      const claim = await coordinator.beginAttempt(
+        {
+          period: "daily",
+          key: "2026-09-23",
+          startDay: "2026-09-23",
+          endDay: "2026-09-23",
+          route: { provider: "generic-provider", model: "generic-model" },
+        },
+        now,
+      );
+      if (claim === null) throw new Error("expected claim");
+      await writeLastRun(root, { daily: "2026-09-24" });
+      expect(
+        await coordinator.commitSuccess({
+          claim,
+          result: { meta: { period: "daily", key: "2026-09-23" } },
+        }),
+      ).toBe(true);
+      expect((await readLastRun(root)).daily).toBe("2026-09-24");
+      expect(await ledger.list()).toEqual([]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("reconcile 在锁内基于最新 lastRun 合并，旧快照不能回退较新窗口", async () => {
+    const root = mkdtempSync(join(tmpdir(), "b2b-reconcile-monotonic-"));
+    try {
+      const now = 1_000;
+      const ledger = createRetryLedger(root, {
+        now: () => now,
+        createCycleId: () => "cycle-reconcile",
+      });
+      const seed = {
+        period: "daily" as const,
+        key: "2026-09-23",
+        startDay: "2026-09-23",
+        endDay: "2026-09-23",
+        route: { provider: "generic-provider", model: "generic-model" },
+      };
+      const claim = await ledger.beginAttempt(seed, now);
+      if (claim === null) throw new Error("expected claim");
+      let current: Partial<Record<"daily" | "weekly" | "monthly", string>> = {
+        daily: "2026-09-24",
+      };
+      const coordinator = createReportStateCoordinator({
+        root,
+        ledger,
+        readLastRun: async () => current,
+        updateLastRun: async (_root, patch) => {
+          current = await patch(current);
+        },
+        now: () => now,
+      });
+      await coordinator.reconcile({ daily: "2026-09-22" }, [
+        { period: "daily", key: "2026-09-23" },
+      ]);
+      expect(current.daily).toBe("2026-09-24");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("reconciliation 清掉 indexed key 后不重复提交当前候选", async () => {
+    const root = mkdtempSync(join(tmpdir(), "b2b-indexed-stale-"));
+    try {
+      const now = Date.UTC(2026, 8, 24, 0, 0, 0);
+      const ledger = createRetryLedger(root, {
+        now: () => now,
+        createCycleId: () => "cycle-indexed",
+      });
+      const seed = {
+        period: "daily" as const,
+        key: "2026-09-23",
+        startDay: "2026-09-23",
+        endDay: "2026-09-23",
+        route: { provider: "generic-provider", model: "generic-model" },
+      };
+      const claim = await ledger.beginAttempt(seed, now);
+      if (claim === null) throw new Error("expected claim");
+      const waiting = await ledger.recordFailure(
+        claim,
+        { code: "transient", kind: "transient" },
+        now,
+      );
+      if (waiting === null) throw new Error("expected waiting");
+      const coordinator = createReportStateCoordinator({ root, ledger, now: () => now });
+      const seen: Array<{ key: string }> = [];
+      const scheduler = ReportScheduler.start({
+        root,
+        config: normalizeReportConfig({
+          daily: { enabled: true, time: "00:00" },
+          weekly: { enabled: false },
+          monthly: { enabled: false },
+        }),
+        coordinator,
+        listIndexed: async () => [{ period: "daily", key: "2026-09-23" }],
+        now: () => now + 60_000,
+        onDue: async (due) => {
+          seen.push({ key: due.key });
+        },
+        tickMs: 60_000,
+        warn: quietWarn,
+      });
+      try {
+        await scheduler.ready;
+        expect(seen).toEqual([]);
+        await scheduler.tick();
+        expect(seen).toEqual([]);
+      } finally {
+        scheduler.dispose();
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("recovery 完成前 tick 不提交；ready 后跨日 waiting ledger 与当前候选合并", async () => {
+    const root = mkdtempSync(join(tmpdir(), "b2b-scheduler-ready-"));
+    try {
+      const now = Date.UTC(2026, 8, 24, 0, 0, 0);
+      let cycle = 0;
+      const ledger = createRetryLedger(root, {
+        now: () => now,
+        createCycleId: () => `cycle-${(cycle += 1)}`,
+      });
+      const seed = {
+        period: "daily" as const,
+        key: "2026-09-22",
+        startDay: "2026-09-22",
+        endDay: "2026-09-22",
+        route: { provider: "generic-provider", model: "generic-model" },
+      };
+      const first = await ledger.beginAttempt(seed, now);
+      if (first === null) throw new Error("expected first claim");
+      const failed = await ledger.recordFailure(
+        first,
+        { code: "transient", kind: "transient" },
+        now,
+      );
+      if (failed === null) throw new Error("expected waiting");
+      const coordinator = createReportStateCoordinator({ root, ledger, now: () => now });
+      const seen: Array<{ key: string }> = [];
+      const scheduler = ReportScheduler.start({
+        root,
+        config: normalizeReportConfig({
+          daily: { enabled: true, time: "00:00" },
+          weekly: { enabled: false },
+          monthly: { enabled: false },
+        }),
+        coordinator,
+        listIndexed: async () => [],
+        now: () => now + 60_000,
+        onDue: async (due) => {
+          seen.push({ key: due.key });
+        },
+        tickMs: 60_000,
+        warn: quietWarn,
+      });
+      try {
+        await scheduler.tick();
+        expect(seen).toEqual([]);
+        await scheduler.ready;
+        await pollUntil(() => seen.length >= 1, 3000);
+        expect(seen.map((item) => item.key)).toEqual(["2026-09-23", "2026-09-22"]);
+      } finally {
+        scheduler.dispose();
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("running 任务收到 force 时先 durable prepare，再排后续 cycle", async () => {
+    const order: string[] = [];
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const queue = new ReportTaskQueue({
+      executor: async (input) => {
+        order.push(`start:${input.key}:${input.force === true ? "force" : "normal"}`);
+        if (order.length === 1) await gate;
+        order.push(`end:${input.key}:${input.force === true ? "force" : "normal"}`);
+        return {};
+      },
+      prepareForce: async (input) => {
+        order.push(`prepare:${input.key}`);
+      },
+      warn: quietWarn,
+    });
+    const first = queue.submit({ period: "daily", key: "K1", startDay: "K1", endDay: "K1" });
+    await pollUntil(() => order.includes("start:K1:normal"), 3000);
+    const forced = await queue.submitForce({
+      period: "daily",
+      key: "K1",
+      startDay: "K1",
+      endDay: "K1",
+      force: true,
+    });
+    expect(forced.taskId).not.toBe(first.taskId);
+    expect(order).toEqual(["start:K1:normal", "prepare:K1"]);
+    release();
+    await pollUntil(() => order.includes("end:K1:force"), 3000);
+    expect(order).toEqual([
+      "start:K1:normal",
+      "prepare:K1",
+      "end:K1:normal",
+      "start:K1:force",
+      "end:K1:force",
+    ]);
   });
 });

@@ -31,6 +31,7 @@ import {
   beginAttempt,
   beginForce,
   createInitialEntry,
+  createReportStateCoordinator,
   createRetryLedger,
   readLastRun,
   recordFailure,
@@ -59,6 +60,7 @@ import {
   resolveGenerateRoute,
   runDueReport,
   runDueReportOutcome,
+  type DueExecutorRetryOptions,
   type RetrySuccessCommitInput,
   type RetrySuccessCommitPort,
 } from "../../../src/server/execute/interface.ts";
@@ -426,6 +428,7 @@ function retryExecutor(input: {
   ctx: Context;
   ledger: RetryLedgerPort;
   commit: RetrySuccessCommitPort;
+  reconcileIndex?: DueExecutorRetryOptions["reconcileIndex"];
 }) {
   return makeDueReportExecutor({
     trend: input.trend,
@@ -440,6 +443,7 @@ function retryExecutor(input: {
       resolveRoute: resolveGenerateRoute,
       commitSuccess: input.commit,
       now: () => RETRY_NOW,
+      ...(input.reconcileIndex === undefined ? {} : { reconcileIndex: input.reconcileIndex }),
     },
   });
 }
@@ -567,6 +571,51 @@ describe("runner/executor：#1010 B2a retry ledger 执行事务", () => {
 
       await expect(executor(retryDue())).rejects.toThrow("报告重试状态不允许执行");
       expect(calls).toHaveLength(1);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("index-reuse 命中 ledger 时由 coordinator 推进并清账", async () => {
+    const root = mkdtempSync(join(tmpdir(), "u-exec-index-reconcile-"));
+    const reports = join(root, "reports");
+    mkdirSync(reports, { recursive: true });
+    const meta = {
+      period: "daily",
+      key: RETRY_DAY,
+      startDay: RETRY_DAY,
+      endDay: RETRY_DAY,
+      generatedAt: RETRY_NOW,
+      ok: true,
+    };
+    writeFileSync(join(reports, "index.jsonl"), JSON.stringify(meta) + "\n");
+    const ledger = retryLedger(root, () => "cycle-index-reuse");
+    const coordinator = createReportStateCoordinator({ root, ledger });
+    const claim = await coordinator.beginAttempt(
+      {
+        ...retryDue(),
+        route: { provider: "generic-provider", model: "generic-model" },
+      },
+      RETRY_NOW,
+    );
+    if (claim === null) throw new Error("expected index claim");
+    await updateLastRun(root, () => ({ daily: "2026-09-22" }));
+    const commit = commitCurrentThenClear(root, ledger);
+    const { ctx, calls } = retryContext(SUCCESS_CHUNKS);
+    const executor = retryExecutor({
+      root,
+      trend: retryTrend(1),
+      ctx,
+      ledger,
+      commit,
+      reconcileIndex: coordinator.reconcileIndex,
+    });
+    try {
+      const result = await executor(retryDue());
+      expect(result).toMatchObject({ reused: true, meta });
+      expect(calls).toEqual([]);
+      expect((await readLastRun(root)).daily).toBe(RETRY_DAY);
+      expect(await ledger.list()).toEqual([]);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

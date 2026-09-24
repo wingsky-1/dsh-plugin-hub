@@ -14,10 +14,9 @@
  * - 迁移域（upgrade/last-run-morph.ts）经本门面只复用纯函数
  *   （LAST_RUN_SCHEMA / deriveLastRun / alignLastRun，零 node 依赖），
  *   不调业务实例（read/write/update/ensure 均不导入）；
- * - lastRun 仍由 store.ts 的既有 per-root 链消费；#1010 B1 的 retry-ledger
- *   factory 先行提供包内 ledger 文件序列化/CAS，但尚未装配进 scheduler/executor，
- *   下一切片必须把 report/index → monotonic lastRun → ledger clear 收到同一
- *   coordinator 后再启用；本 facade 不把两条现有链描述为已组成事务；
+ * - lastRun 仍由 store.ts 的既有 per-root 链消费；#1010 B2b 的 retry-ledger
+ *   与 report/index → monotonic lastRun → ledger clear 事务由 scheduler.ts
+ *   内的 historyRoot-scoped coordinator 统一编排；
  * - 本域无聚合安装器：调度器/队列由组合根直接构造
  *   （参见 deps.ts 注记），本门面只做收口。
  */
@@ -74,6 +73,16 @@ export type {
   RetryLedgerOptions,
   RetryLedgerPort,
 } from "./retry-ledger.ts";
+
+// ------------------------------------------------------------------ 报告状态事务协调器（scheduler.ts）
+
+export { createReportStateCoordinator } from "./scheduler.ts";
+export type {
+  ReportStateCommitInput,
+  ReportStateCoordinator,
+  ReportStateCoordinatorOptions,
+  ReportStateIndexReconcileInput,
+} from "./scheduler.ts";
 
 // ------------------------------------------------------------------ 调度器（scheduler.ts）
 

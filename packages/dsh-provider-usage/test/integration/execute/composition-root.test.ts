@@ -79,6 +79,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const srcDir = join(here, "..", "..", "..", "src");
 const ownSrc = readFileSync(join(here, "composition-root.test.ts"), "utf8");
 const applySrc = readFileSync(join(srcDir, "apply", "apply.ts"), "utf8");
+const applySrcFlat = applySrc.replace(/\s+/g, " ").replace(/,\s*}/g, " }");
 const applyFaceSrc = readFileSync(join(srcDir, "apply", "index.ts"), "utf8");
 const executeFaceSrc = readFileSync(join(srcDir, "server", "execute", "interface.ts"), "utf8");
 const reportIndexSrc = readFileSync(join(srcDir, "server", "execute", "report-index.ts"), "utf8");
@@ -118,8 +119,8 @@ describe("D3一 经 server/execute 域门面装配", () => {
 
   it("组合根经同一门面取 optionalNotifier + 纯解析注入（换源／分头即红）", () => {
     expect(
-      applySrc.includes(
-        'import { optionalNotifier, parseReportIndexLines } from "../server/execute/interface.ts";',
+      applySrcFlat.includes(
+        'import { optionalNotifier, parseReportIndexLines, resolveGenerateRoute } from "../server/execute/interface.ts";',
       ),
     ).toBe(true);
     expect(applySrc.includes("parseIndex: parseReportIndexLines")).toBe(true);

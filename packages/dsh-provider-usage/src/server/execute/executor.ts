@@ -49,6 +49,12 @@ export interface DueExecutorRetryOptions {
     reasoningEffort?: string;
   }) => Promise<GenerateRouteOutcome>;
   commitSuccess: RetrySuccessCommitPort;
+  /** 内部 coordinator seam：index-reuse 只在 ledger 命中时补写并清理。 */
+  reconcileIndex?: (input: {
+    period: ReportPeriod;
+    key: string;
+    indexed: boolean;
+  }) => Promise<boolean>;
   now?: () => number;
 }
 
@@ -73,6 +79,18 @@ export interface DueExecutorDeps {
   ) => Promise<void>;
   /** B2a 包内事务端口；B2b 组合根负责注入真实 ledger 与单锁 coordinator。 */
   retry?: DueExecutorRetryOptions;
+}
+
+function stableCode(error: unknown, fallback: string): string {
+  if (typeof error === "object" && error !== null) {
+    const code = (error as { code?: unknown }).code;
+    if (typeof code === "string" && /^[a-z0-9][a-z0-9._:-]{0,63}$/.test(code)) return code;
+  }
+  return fallback;
+}
+
+function taggedError(code: string, message: string): Error & { code: string } {
+  return Object.assign(new Error(message), { code });
 }
 
 function outcomeError(outcome: Extract<RunDueReportOutcome, { status: "failure" }>): string {
@@ -164,10 +182,10 @@ async function runWithRetry(
   });
   if (outcome.status === "failure") {
     await retry.ledger.recordFailure(claim, outcome.failure, retry.now?.() ?? Date.now());
-    throw new Error(outcomeError(outcome));
+    throw taggedError(outcome.failure.code, outcomeError(outcome));
   }
   if (!(await retry.commitSuccess.commitSuccess({ claim, result: outcome.result }))) {
-    throw new Error("报告重试周期已变化");
+    throw taggedError("retry-cycle-conflict", "报告重试周期已变化");
   }
   return { meta: outcome.result.meta };
 }
@@ -182,14 +200,25 @@ export function makeDueReportExecutor(
         const existing = (await readReportIndex(deps.historyRoot)).find(
           (m) => m.period === input.period && m.key === input.key && m.ok === true,
         );
-        if (existing !== undefined) return { meta: existing, reused: true };
+        if (existing !== undefined) {
+          if (deps.retry?.reconcileIndex !== undefined) {
+            await deps.retry.reconcileIndex({
+              period: input.period,
+              key: input.key,
+              indexed: true,
+            });
+          }
+          return { meta: existing, reused: true };
+        }
       }
       const reportCfg = deps.getReportCfg();
       return deps.retry === undefined
         ? await runWithoutRetry(deps, input, reportCfg)
         : await runWithRetry(deps, deps.retry, input, reportCfg);
     } catch (e: unknown) {
-      throw new Error(deps.sanitizeDiagnostic(e instanceof Error ? e.message : String(e)));
+      const message = deps.sanitizeDiagnostic(e instanceof Error ? e.message : String(e));
+      const code = stableCode(e, "generation-failed");
+      throw taggedError(code, message);
     }
   };
 }

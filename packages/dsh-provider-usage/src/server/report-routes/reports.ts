@@ -26,15 +26,34 @@ import {
 } from "../../../../../shared/host-utils.js";
 import type { ReportConfig, ReportPeriod } from "../config/interface.ts";
 import type { ReportMeta } from "../execute/interface.ts";
-import type { DueReport } from "../schedule/interface.ts";
+import type {
+  DueReport,
+  ReportStateCoordinator,
+  RetryEntry,
+  ReportTaskInput,
+} from "../schedule/interface.ts";
 import type { ReportRoutesConfigPort, ReportRoutesQueuePort } from "./deps.ts";
+
+type ReportRouteQueue = ReportRoutesQueuePort & {
+  submitForce?(input: ReportTaskInput): Promise<{ taskId: string; existing: boolean }>;
+};
+
+type ReportRetryView = {
+  attempts: number;
+  maxAttempts: number;
+  nextRetryAt: number | null;
+  terminal: boolean;
+  terminalReason: { code: string; kind: string } | null;
+};
 import { sanitizeHtml } from "../../shared/interface.ts";
 
 export interface ReportRoutesContext {
   ctx: Context;
   historyRoot: string;
   /** 任务队列窄口（submit 入队去重；get 状态轮询；执行器由队列内嵌）。 */
-  reportQueue: ReportRoutesQueuePort;
+  reportQueue: ReportRouteQueue;
+  /** B2b retry state coordinator；缺省时保留旧 route fixture 契约。 */
+  retryState?: ReportStateCoordinator;
   /** reportCfg 双源收口窄口（get 读内存权威；update 串行写盘+内存+scheduler 热更）。 */
   reportCfgService: ReportRoutesConfigPort;
   /**
@@ -101,6 +120,46 @@ export function isReportKeyValid(period: string, key: string): boolean {
 /** 生成任务 taskId 合法性（uuid v4 白名单；抽离供路由与单测共用）。 */
 export function isTaskIdValid(taskId: string): boolean {
   return TASK_ID_RE.test(taskId);
+}
+
+function retryView(entry: RetryEntry): ReportRetryView {
+  return {
+    attempts: entry.attempts,
+    maxAttempts: entry.maxAttempts,
+    nextRetryAt: entry.nextRetryAt,
+    terminal: entry.terminal,
+    terminalReason:
+      entry.reason === null ? null : { code: entry.reason.code, kind: entry.reason.kind },
+  };
+}
+
+function stableFailureCode(error: unknown, fallback: string): string {
+  if (typeof error === "object" && error !== null) {
+    const code = (error as { code?: unknown }).code;
+    if (typeof code === "string" && /^[a-z0-9][a-z0-9._:-]{0,63}$/.test(code)) return code;
+  }
+  return fallback;
+}
+
+async function readStateLastRun(
+  context: ReportRoutesContext,
+): Promise<Partial<Record<ReportPeriod, string>>> {
+  return context.retryState === undefined
+    ? context.readLastRun(context.historyRoot)
+    : context.retryState.readLastRun();
+}
+
+async function updateStateLastRun(
+  context: ReportRoutesContext,
+  patch: (
+    previous: Partial<Record<ReportPeriod, string>>,
+  ) => Partial<Record<ReportPeriod, string>> | Promise<Partial<Record<ReportPeriod, string>>>,
+): Promise<void> {
+  if (context.retryState !== undefined) {
+    await context.retryState.updateLastRun(patch);
+    return;
+  }
+  await context.updateLastRun(context.historyRoot, patch);
 }
 
 export async function handleReportConfig(
@@ -172,11 +231,11 @@ export async function handleReportConfig(
     currentCfg,
     normalized,
     Date.now(),
-    await context.readLastRun(historyRoot),
+    await readStateLastRun(context),
   );
   if (preset.changed)
-    await context.updateLastRun(
-      historyRoot,
+    await updateStateLastRun(
+      context,
       (cur) =>
         context.presetLastRunForNewlyEnabled(currentCfg, normalized, Date.now(), cur).lastRun,
     );
@@ -380,7 +439,54 @@ export async function handleReportGenerate(
       (m) => m.period === due.period && m.key === due.key && m.ok === true,
     );
     if (existing !== undefined) {
+      if (context.retryState !== undefined) {
+        try {
+          await context.retryState.reconcileIndex({
+            period: due.period,
+            key: due.key,
+            indexed: true,
+          });
+        } catch {
+          return writeJson(res, 503, { ok: false, error: "retry-state-unavailable" });
+        }
+      }
       return writeJson(res, 200, { ok: true, meta: existing, reused: true });
+    }
+    if (context.retryState !== undefined) {
+      let entry: RetryEntry | undefined;
+      try {
+        entry = await context.retryState.get(due.period, due.key);
+      } catch {
+        return writeJson(res, 503, { ok: false, error: "retry-state-unavailable" });
+      }
+      if (entry !== undefined) {
+        if (entry.terminal) {
+          return writeJson(res, 409, {
+            ok: false,
+            status: "terminal",
+            reason: entry.reason?.code ?? "terminal",
+            retry: retryView(entry),
+          });
+        }
+        return writeJson(res, 409, {
+          ok: false,
+          status: entry.phase === "in-flight" ? "busy" : "deferred",
+          reason: "retry-in-progress",
+          retry: retryView(entry),
+        });
+      }
+    }
+  }
+
+  if (force && reportQueue.submitForce !== undefined) {
+    try {
+      const submitted = await reportQueue.submitForce({ ...due, force: true });
+      return writeJson(res, 202, { ok: true, taskId: submitted.taskId });
+    } catch (error: unknown) {
+      return writeJson(res, 503, {
+        ok: false,
+        error: stableFailureCode(error, "force-unavailable"),
+      });
     }
   }
 
@@ -400,13 +506,22 @@ export async function handleReportStatus(
   if (!isTaskIdValid(taskId)) return writeJson(res, 404, { error: "task-not-found" });
   const task = reportQueue.get(taskId);
   if (task === undefined) return writeJson(res, 404, { error: "task-not-found" });
+  let retry: ReportRetryView | undefined;
+  if (context.retryState !== undefined) {
+    try {
+      const entry = await context.retryState.get(task.period, task.key);
+      if (entry !== undefined) retry = retryView(entry);
+    } catch {
+      return writeJson(res, 503, { ok: false, error: "retry-state-unavailable" });
+    }
+  }
   writeJson(res, 200, {
     ok: true,
     status: task.status,
     ...(task.status === "done" && task.meta !== undefined ? { meta: task.meta } : {}),
-    // executor 侧幂等短路复用时透出 reused，客户端轮询路径与 200 直接复用路径提示对称
     ...(task.status === "done" && task.reused === true ? { reused: true } : {}),
     ...(task.status === "failed" ? { error: task.error ?? "生成失败" } : {}),
+    ...(retry !== undefined ? { retry } : {}),
   });
 }
 
