@@ -14,8 +14,8 @@ export interface SettingsNamespaceHooks {
   /** 来源切换或命名空间值变化时触发，插件据此刷新/落盘。 */
   onChange(): void;
   /**
-   * 可选；scope 就绪后立即回调（先于 setSource）。
-   * 供存量配置迁移 / 写路径装配使用；settings 服务缺失时不触发。
+   * 可选；owning fiber ACTIVE 且 canonical namespace 被 settings 服务描述后回调一次。
+   * 供存量配置迁移 / 写路径装配使用；fiber / 服务 / namespace 未就绪时不触发。
    */
   onScope?(scope: unknown, service: unknown): void;
 }

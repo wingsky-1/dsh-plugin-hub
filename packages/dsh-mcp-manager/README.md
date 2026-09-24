@@ -104,9 +104,9 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-mcp-manager
 
 ## 配置（浮窗位置）
 
-浮窗按钮（MCP 胶囊）的位置与偏移在 **Plugin Manager → dsh-mcp-manager → 行详情**
-配置（`position` / `offset`），canonical row id 与 settings 条目 id 均为 `ui-dsh-mcp-manager`，
-保存后即时生效。
+配置页入口：**Plugin Manager → dsh-mcp-manager → Configure**。浮窗按钮（MCP 胶囊）的位置与偏移（`position` / `offset`）在此保存，canonical row id 与 settings 条目 id 均为 `ui-dsh-mcp-manager`，保存后即时生效。
+
+> 非回环 LAN 地址（例如 `192.168.*:3081`）默认不提供持久化设置面，Configure 按钮按 DSH 安全策略隐藏；请从 `127.0.0.1:3080` / `127.0.0.1:3081` 或 SSH 回环隧道管理。只有在可信 LAN、明确接受共享控制面风险时，才通过 dsh-lan-proxy 的 `ownsHostCompat` 恢复远程设置入口。
 
 | 键 | 值域 | 默认 |
 | --- | --- | --- |
@@ -115,6 +115,19 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-mcp-manager
 | `offset.y` | 非负整数（垂直偏移，单位 px） | `8` |
 | `offset.blankY` | 非负整数（空白会话垂直偏移，单位 px） | `40` |
 | `zIndexBase` | 整数，clamp 到 1–9000（浮窗层级基准；**胶囊与点击后弹出的主面板同取该配置值**，模态管理面板不受影响） | `10` |
+
+#### RC7 旧 settings section 迁移
+
+DSH 0.1.7-rc.1 会把旧的 `~/.dsh/settings.yaml` 改名为 `settings.yaml.imported`。
+该文件是已消费旧文档的**审计副本**，不是当前配置源；不要复制整个 imported 文件。
+迁移只消费旧 `dsh-mcp-manager` section 中当前设置页支持的 `ui` 子树，字段按
+`settings.yaml.imported < settings.yaml < 当前 canonical user` 合并。其它顶层键，
+包括已废弃的 `middleware`、`middlewarePolicy`，以及非 volatile 字段，明确丢弃，
+不会写入 canonical patch。完成 marker 为插件私有目录中的 `settings.migrated`
+（版本 `1`）。canonical 写入前先创建 `settings.migrated.pending` receipt，成功后
+promote 为完成 marker；未知失败恢复只完成 marker、不重放旧值，避免 DSH `unset`
+后把用户已清除的值写回；只有明确的 revision 冲突才清理 receipt 并重试。可编辑字段最终位于 active profile 的
+`~/.dsh/profiles/<profile>/cordis.patch.yml`，canonical id 为 `ui-dsh-mcp-manager`。
 
 当 `position = bottom-right` 或 `bottom-left` 时，下拉面板会**在胶囊上方展开**（底部
 锚点向上弹出），不溢出视口、内容完整可见可点击；顶部锚点向下展开（历史行为，默认不变）。

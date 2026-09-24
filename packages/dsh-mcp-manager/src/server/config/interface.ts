@@ -23,3 +23,16 @@ export {
 } from "./config-schema.ts";
 export type { ServerConfig } from "./impl/model/type.ts";
 export type { UiPlacementConfig } from "./impl/ui/type.ts";
+export {
+  LEGACY_SETTINGS_NS,
+  SETTINGS_MIGRATION_MARKER_NAME,
+  SETTINGS_MIGRATION_MARKER_VERSION,
+  migrateLegacySettingsFromSettings,
+  readLegacySettings,
+} from "./legacy-settings.ts";
+export type {
+  McpLegacySettingsMigrationOptions,
+  McpLegacySettingsReadOptions,
+  McpSettingsScope,
+  McpSettingsService,
+} from "./legacy-settings.ts";

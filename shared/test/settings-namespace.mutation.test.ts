@@ -24,9 +24,12 @@ type WriteCall = {
 };
 
 interface FixtureOptions {
-  readonly fiberState?: string;
+  readonly fiberState?: string | number;
   readonly initialValue?: unknown;
   readonly entries?: unknown;
+  readonly initiallyServed?: boolean;
+  readonly deferOwnerReady?: boolean;
+  readonly emitOnFirstServe?: boolean;
   readonly describeErrorAfterInstall?: boolean;
   readonly includeEffect?: boolean;
   readonly includeOn?: boolean;
@@ -36,7 +39,7 @@ interface FixtureOptions {
 
 interface Fixture {
   readonly context: {
-    fiber: { state: string };
+    fiber: { state: string | number; await(): Promise<void> };
     logger: { warn(message: unknown): void };
     on?: (event: string, listener: Listener) => unknown;
     inject(keys: string[], setup: Setup): () => void;
@@ -48,6 +51,8 @@ interface Fixture {
   }): void;
   dispose(): void;
   setDescriptor(next: Record<string, unknown>): void;
+  setServed(next: boolean, emitEvent?: boolean): void;
+  resolveOwnerReady(): void;
   readonly listeners: Map<number, Listener>;
   readonly order: string[];
   readonly warnings: string[];
@@ -65,6 +70,15 @@ function makeFixture(options: FixtureOptions = {}): Fixture {
   const writes: WriteCall[] = [];
   const receivers: unknown[] = [];
   const order: string[] = [];
+  let resolveOwnerReadyPromise: () => void = () => {};
+  const ownerReady = new Promise<void>((resolve) => {
+    resolveOwnerReadyPromise = resolve;
+  });
+  const ownerFiber = {
+    state: options.deferOwnerReady === true ? "loading" : (options.fiberState ?? "active"),
+    await: () => ownerReady,
+  };
+  if (options.deferOwnerReady !== true) resolveOwnerReadyPromise();
   let nextListenerId = 0;
   let installed = false;
   let scopeRef: Scope | undefined;
@@ -72,6 +86,8 @@ function makeFixture(options: FixtureOptions = {}): Fixture {
   let sourceRef: (() => unknown) | undefined;
   let effectDisposer: (() => void) | undefined;
   let changeCount = 0;
+  let served = options.initiallyServed ?? true;
+  let serveAnnounced = false;
   let descriptor: Record<string, unknown> = {
     ns: NAMESPACE,
     value: options.initialValue ?? { position: "top-right" },
@@ -85,6 +101,11 @@ function makeFixture(options: FixtureOptions = {}): Fixture {
   const settings = {
     describe() {
       if (installed && options.describeErrorAfterInstall) throw new Error("describe unavailable");
+      if (!served) return [];
+      if (options.emitOnFirstServe === true && !serveAnnounced) {
+        serveAnnounced = true;
+        emit(NAMESPACE, descriptor.revision);
+      }
       if (options.entries !== undefined) return options.entries;
       return [descriptor];
     },
@@ -164,7 +185,7 @@ function makeFixture(options: FixtureOptions = {}): Fixture {
         }),
   };
   const context = {
-    fiber: { state: options.fiberState ?? "active" },
+    fiber: ownerFiber,
     logger: { warn: (message: unknown) => warnings.push(String(message)) },
     ...(options.contextOn === undefined ? {} : { on: options.contextOn }),
     inject(keys: string[], setup: Setup) {
@@ -207,6 +228,15 @@ function makeFixture(options: FixtureOptions = {}): Fixture {
     },
     setDescriptor(next) {
       descriptor = next;
+    },
+    setServed(next, emitEvent = true) {
+      if (served === next) return;
+      served = next;
+      if (served && emitEvent) emit(NAMESPACE, Number(descriptor.revision) + 1);
+    },
+    resolveOwnerReady() {
+      ownerFiber.state = "active";
+      resolveOwnerReadyPromise();
     },
     listeners,
     order,
@@ -278,6 +308,34 @@ describe("shared/settings-namespace mutation contract", () => {
     expect(fixture.service).toBeDefined();
     expect(fixture.order).toEqual(["onScope", "setSource"]);
     expect(fixture.changes).toBe(1);
+  });
+
+  it("delivers scope after the owning fiber is active and the namespace is served", async () => {
+    const fixture = makeFixture({
+      initiallyServed: false,
+      deferOwnerReady: true,
+      emitOnFirstServe: true,
+    });
+    let scopeCalls = 0;
+
+    fixture.install({ onScope: () => (scopeCalls += 1) });
+    expect(scopeCalls).toBe(0);
+    expect(fixture.order).toEqual(["setSource"]);
+    expect(fixture.source()).toEqual({ position: "top-left" });
+
+    fixture.setServed(true, false);
+    expect(scopeCalls).toBe(0);
+    fixture.resolveOwnerReady();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(scopeCalls).toBe(1);
+    expect(fixture.order).toEqual(["setSource", "onScope"]);
+    expect(fixture.scope.get()).toEqual({ position: "top-right" });
+
+    fixture.setDescriptor({ ns: NAMESPACE, value: { position: "bottom-left" }, revision: 3 });
+    fixture.emit(NAMESPACE, 3);
+    expect(scopeCalls).toBe(1);
   });
 
   it.each([
@@ -468,7 +526,7 @@ describe("shared/settings-namespace mutation contract", () => {
     expect(fixture.source()).toEqual({ position: "top-left" });
   });
 
-  it.each(["unloading", "unloaded", "disposed"])(
+  it.each(["unloading", "unloaded", "disposed", 5, 4])(
     "does not publish fallback changes while fiber is %s",
     (fiberState) => {
       const fixture = makeFixture({ fiberState, initialValue: { v: 1 } });

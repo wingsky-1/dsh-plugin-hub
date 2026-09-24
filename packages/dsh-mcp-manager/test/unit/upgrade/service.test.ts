@@ -14,6 +14,7 @@ import {
   LEGACY_LAYOUT,
   configFile,
   legacyFile,
+  mcpManagerHome,
   versionFile,
 } from "../../../src/server/shared/interface.ts";
 import type { UpgradeDeps } from "../../../src/server/upgrade/deps.ts";
@@ -22,6 +23,13 @@ import type { UpgradeStep } from "../../../src/server/upgrade/impl/chain/type.ts
 import { STEPS } from "../../../src/server/upgrade/impl/steps/index.ts";
 import { compareVersions, pluginVersion } from "../../../src/server/upgrade/impl/version/index.ts";
 import { installUpgrade, releaseUpgrade } from "../../../src/server/upgrade/interface.ts";
+import {
+  LEGACY_SETTINGS_NS,
+  SETTINGS_MIGRATION_MARKER_NAME,
+  SETTINGS_MIGRATION_MARKER_VERSION,
+  migrateLegacySettingsFromSettings,
+} from "../../../src/server/config/interface.ts";
+import { MCP_MANAGER_IDENTITY } from "../../../src/shared/interface.ts";
 import { makeLogger, tempDshHome } from "../../helpers.ts";
 
 let disposeHome: () => void;
@@ -208,6 +216,253 @@ describe("待办步：按目标版本升序，刻度停在起点才算待办", (
     expect(pendingSteps(table, "0.2.5").map((entry) => entry.targetVersion)).toEqual(["0.3.0"]);
     expect(pendingSteps(table, "0.3.0")).toEqual([]);
     expect(pendingSteps(table, "0.0.0")).toHaveLength(2);
+  });
+});
+
+function legacyHome(): string {
+  const home = process.env.DSH_HOME;
+  if (home === undefined || home === "") throw new Error("test DSH_HOME is not isolated");
+  return home;
+}
+
+function writeLegacySection(name: string, section: Record<string, unknown>): void {
+  writeFileSync(
+    join(legacyHome(), name),
+    JSON.stringify({ [LEGACY_SETTINGS_NS]: section }),
+    "utf8",
+  );
+}
+
+function makeMigrationService(user: unknown, revision = 1) {
+  return {
+    describe: () => [
+      {
+        ns: MCP_MANAGER_IDENTITY.settingsNamespace,
+        user,
+        value: { ui: {} },
+        revision,
+      },
+    ],
+  };
+}
+
+function makeMigrationScope(initial: Record<string, unknown> = {}) {
+  const updates: Record<string, unknown>[] = [];
+  const revisions: Array<number | undefined> = [];
+  return {
+    updates,
+    revisions,
+    async update(patch: object, expectedRevision?: number): Promise<void> {
+      updates.push(JSON.parse(JSON.stringify(patch)) as Record<string, unknown>);
+      revisions.push(expectedRevision);
+    },
+    initial,
+  };
+}
+
+describe("旧 settings section 迁移边界", () => {
+  it("只迁移 ui，middleware 与其它非 volatile 顶层键不进入 canonical patch", async () => {
+    writeLegacySection("settings.yaml", {
+      enabled: false,
+      middleware: "all",
+      middlewarePolicy: { denyTools: { old: true } },
+      ui: {
+        position: "bottom-left",
+        offset: { x: 4, y: 5, blankY: 6 },
+        zIndexBase: 7,
+        unknownUiKey: "discard",
+      },
+    });
+    const scope = makeMigrationScope();
+
+    const result = await migrateLegacySettingsFromSettings({
+      home: legacyHome(),
+      scope,
+      service: makeMigrationService({}, 7),
+    });
+
+    expect(result.status).toBe("migrated");
+    expect(scope.updates).toEqual([
+      {
+        ui: {
+          position: "bottom-left",
+          offset: { x: 4, y: 5, blankY: 6 },
+          zIndexBase: 7,
+        },
+      },
+    ]);
+    expect(scope.revisions).toEqual([7]);
+    expect(readFileSync(join(mcpManagerHome(), SETTINGS_MIGRATION_MARKER_NAME), "utf8")).toBe(
+      `${SETTINGS_MIGRATION_MARKER_VERSION}\n`,
+    );
+  });
+
+  it("兼容旧隐藏 namespace 的扁平 UI 字段", async () => {
+    writeLegacySection("settings.yaml", {
+      middleware: "off",
+      position: "bottom-left",
+      offsetX: 4,
+      offsetY: 5,
+      blankY: 6,
+      zIndexBase: 7,
+    });
+    const scope = makeMigrationScope();
+
+    const result = await migrateLegacySettingsFromSettings({
+      home: legacyHome(),
+      scope,
+      service: makeMigrationService({}),
+    });
+
+    expect(result.status).toBe("migrated");
+    expect(scope.updates).toEqual([
+      {
+        ui: {
+          position: "bottom-left",
+          offset: { x: 4, y: 5, blankY: 6 },
+          zIndexBase: 7,
+        },
+      },
+    ]);
+  });
+
+  it("按 imported < settings.yaml 合并，live 文档覆盖冲突字段", async () => {
+    writeLegacySection("settings.yaml.imported", {
+      middlewarePolicy: { old: true },
+      ui: { position: "top-left", offset: { x: 1, y: 2, blankY: 3 } },
+    });
+    writeLegacySection("settings.yaml", {
+      middleware: "project",
+      ui: { position: "bottom-right", offset: { x: 10 }, zIndexBase: 20 },
+    });
+    const scope = makeMigrationScope();
+
+    const result = await migrateLegacySettingsFromSettings({
+      home: legacyHome(),
+      scope,
+      service: makeMigrationService({}),
+    });
+
+    expect(result.status).toBe("migrated");
+    expect(scope.updates).toEqual([
+      {
+        ui: {
+          position: "bottom-right",
+          offset: { x: 10, y: 2, blankY: 3 },
+          zIndexBase: 20,
+        },
+      },
+    ]);
+  });
+
+  it("canonical current user 优先，旧源只补缺失路径", async () => {
+    writeLegacySection("settings.yaml", {
+      middleware: "all",
+      ui: {
+        position: "bottom-left",
+        offset: { x: 1, y: 2, blankY: 3 },
+        zIndexBase: 4,
+      },
+    });
+    const scope = makeMigrationScope();
+
+    const result = await migrateLegacySettingsFromSettings({
+      home: legacyHome(),
+      scope,
+      service: makeMigrationService({ ui: { position: "top-right", offset: { x: 99 } } }),
+    });
+
+    expect(result.status).toBe("migrated");
+    expect(scope.updates).toEqual([{ ui: { offset: { y: 2, blankY: 3 }, zIndexBase: 4 } }]);
+  });
+
+  it("未知 canonical 写入失败保留 pending receipt，不重放旧 section", async () => {
+    writeLegacySection("settings.yaml", { ui: { position: "bottom-left" } });
+    const marker = join(mcpManagerHome(), SETTINGS_MIGRATION_MARKER_NAME);
+    const pending = `${marker}.pending`;
+    let attempts = 0;
+    const scope = {
+      async update(): Promise<void> {
+        attempts += 1;
+        throw new Error("ambiguous settings failure");
+      },
+    };
+    const result = await migrateLegacySettingsFromSettings({
+      home: legacyHome(),
+      scope,
+      service: makeMigrationService({}),
+    });
+
+    expect(result.status).toBe("failed");
+    expect(result.completed).toBe(false);
+    expect(existsSync(marker)).toBe(false);
+    expect(existsSync(pending)).toBe(true);
+
+    const second = await migrateLegacySettingsFromSettings({
+      home: legacyHome(),
+      scope,
+      service: makeMigrationService({}),
+    });
+    expect(second.status).toBe("already-complete");
+    expect(attempts).toBe(1);
+    expect(existsSync(marker)).toBe(true);
+    expect(existsSync(pending)).toBe(false);
+  });
+
+  it("明确 revision 冲突清理 pending receipt 后允许重试", async () => {
+    writeLegacySection("settings.yaml", { ui: { position: "bottom-left" } });
+    const marker = join(mcpManagerHome(), SETTINGS_MIGRATION_MARKER_NAME);
+    const pending = `${marker}.pending`;
+    let attempts = 0;
+    const scope = {
+      updates: [] as Record<string, unknown>[],
+      async update(patch: object): Promise<void> {
+        attempts += 1;
+        if (attempts === 1) {
+          throw Object.assign(new Error("settings changed"), { code: "SETTINGS_CONFLICT" });
+        }
+        this.updates.push(patch as Record<string, unknown>);
+      },
+    };
+
+    const first = await migrateLegacySettingsFromSettings({
+      home: legacyHome(),
+      scope,
+      service: makeMigrationService({}),
+    });
+    expect(first.status).toBe("failed");
+    expect(existsSync(pending)).toBe(false);
+
+    const second = await migrateLegacySettingsFromSettings({
+      home: legacyHome(),
+      scope,
+      service: makeMigrationService({}),
+    });
+    expect(second.status).toBe("migrated");
+    expect(attempts).toBe(2);
+    expect(scope.updates).toEqual([{ ui: { position: "bottom-left" } }]);
+  });
+
+  it("marker 命中后旧源不会复活已清除的 UI 值", async () => {
+    writeLegacySection("settings.yaml", { ui: { position: "bottom-left", zIndexBase: 4 } });
+    const firstScope = makeMigrationScope();
+    const first = await migrateLegacySettingsFromSettings({
+      home: legacyHome(),
+      scope: firstScope,
+      service: makeMigrationService({}),
+    });
+    expect(first.status).toBe("migrated");
+
+    writeLegacySection("settings.yaml", { ui: { position: "top-right", zIndexBase: 99 } });
+    const secondScope = makeMigrationScope();
+    const second = await migrateLegacySettingsFromSettings({
+      home: legacyHome(),
+      scope: secondScope,
+      service: makeMigrationService({ ui: { position: "bottom-right" } }),
+    });
+
+    expect(second.status).toBe("already-complete");
+    expect(secondScope.updates).toEqual([]);
   });
 });
 

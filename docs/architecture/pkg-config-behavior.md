@@ -29,21 +29,26 @@ notifier 与 lan-proxy 曾各复刻的 `warnLog` 已经统一到这个导出（�
 
 接线语义（等值复刻官方 `installSettingsSection`，零包依赖，走服务面注入）：
 
-- 以组合层 `entry` 为 `base` 向 settings 服务注册命名空间 `ns`，
-  返回 owner scope，随 fiber 卸载自动注销，重复注册只记日志不中断插件主体；
-- 注册成功后先调 `hooks.onScope(scope, settings)`（供存量迁移与写路径装配），
-  再调 `hooks.setSource(() => scope.get())`，最后调一次 `hooks.onChange()`；
-- `scope.watch` 变化时触发 `onChange`；仅在 settings 服务消失且插件自身未卸载时
-  回落到 `entry`（插件自身卸载时不回落，随 fiber 注销）；
-- settings 服务缺失或 `ctx.inject` 不可用时静默降级（设置卡片不渲染，
-  插件主体功能不受影响）。
+- 以组合层 `entry` 为回落值；只有 `settings.describe()` 已服务 canonical
+  namespace `ns` 时，才把读写交给 owner scope。动态 `ctx.inject(["settings"])`
+  只证明 settings 服务到场，不证明插件条目已经 active；
+- 先订阅 `settings/document-updated`；owning fiber 经 `await()` 确认 ACTIVE 后，
+  再由 `settings.describe()` 确认 `ns` 已被服务并一次性调用
+  `hooks.onScope(scope, settings)`（供存量迁移与写路径装配）。启动时已经 ACTIVE+已服务
+  则仍先于 `setSource`；事件只兜底后续重载/替换，并受同步重入与 disposed 门控；
+- 随后调用 `hooks.setSource(() => scope.get())` 与一次 `hooks.onChange()`；
+  同 namespace 值变化时继续触发 `onChange`；
+- 仅在 settings 服务消失且插件自身未卸载时回落到 `entry`（插件自身卸载时不回落，
+  随 fiber 注销）；
+- settings 服务缺失、`ctx.inject` 不可用或 namespace 始终未服务时静默降级
+  （设置卡片不渲染，插件主体功能不受影响）。
 
 当前已接线的包：
 
-- lan-proxy 经 `src/server/config` 的命名空间薄包装转发，命名空间为
-  `dsh-lan-proxy`；
-- dsh-mcp-manager 在 `src/bootstrap/apply-config.ts` 注册，命名空间为
-  `dsh-mcp-manager`；
+- lan-proxy 经 `src/server/config` 的命名空间薄包装转发，canonical 命名空间为
+  `ui-dsh-lan-proxy`；
+- dsh-mcp-manager 在 `src/index.ts` 接线，canonical 命名空间为
+  `ui-dsh-mcp-manager`；
 - dsh-provider-usage 在 `src/apply/apply.ts` 注册，命名空间为
   `dsh-provider-usage`，`base` 为组合层原始配置；
 - dsh-notifier 不调用该函数：自持 `config.json`（见

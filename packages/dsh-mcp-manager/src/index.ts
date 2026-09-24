@@ -248,40 +248,25 @@ function installConfigSettings(
     setSource: (source) => {
       manager.uiConfigSource = source as () => unknown;
     },
+    onScope: (scope, service) => {
+      const uiScope = scope as {
+        update(patch: Record<string, unknown>): Promise<unknown>;
+      };
+      manager.uiUpdate = (patch) => uiScope.update(patch);
+      void configModelApi
+        .migrateLegacySettingsFromSettings({
+          scope,
+          service,
+          logger: ctx.logger,
+        })
+        .catch((error: unknown) => {
+          ctx.logger.warn(`dsh-mcp-manager: 旧 settings 迁移异常 — ${String(error)}`);
+        });
+    },
     onChange: () => {
       broadcastUiConfigChanged();
       syncFromSettings();
     },
-  });
-}
-
-/**
- * 写入 sink：POST /api/dsh-mcp/config 经 settings 服务的 canonical namespace update
- * 落盘并触发 onChange → SSE 广播。settings 服务
- * 未挂载时 uiUpdate 保持 undefined → 写路由返回「不可写」（卡片/设置页本就不渲染）。
- */
-function injectSettingsSink(ctx: Context, manager: McpManager): void {
-  if (typeof ctx.inject !== "function") return;
-  ctx.inject(["settings"], (sctx) => {
-    // sctx 注入 settings 服务（cordis 类型面未声明该服务，经 unknown 中转取最小面）。
-    const settings = (
-      sctx as unknown as
-        | {
-            settings?: {
-              update?: (ns: string, patch: Record<string, unknown>) => Promise<unknown>;
-            };
-          }
-        | undefined
-    )?.settings;
-    if (settings && typeof settings.update === "function") {
-      // settings.update 是 cordis 服务方法，不绑 this（内部访问 this.write）——直接
-      // 解构后调用会丢 this → this.write undefined（回归 #125 保存 400）。这里保留
-      // 本地引用并以 call(settings) 把服务对象本身作为 this 传入；同时规避 TS 对
-      // 可选属性 settings.update 的收窄在闭包内丢失（2722）。
-      const update = settings.update;
-      manager.uiUpdate = (patch) =>
-        update.call(settings, MCP_MANAGER_IDENTITY.settingsNamespace, patch);
-    }
   });
 }
 
@@ -645,7 +630,6 @@ export async function apply(
     });
   };
   installConfigSettings(ctx, manager, config, syncFromSettings);
-  injectSettingsSink(ctx, manager);
 
   // 初始化 stats 配置
   manager.stats.configure({

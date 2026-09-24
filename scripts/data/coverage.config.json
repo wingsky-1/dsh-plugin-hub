@@ -144,6 +144,12 @@
       "since": "#1012"
     },
     {
+      "pattern": "shared/test/legacy-settings-migration.test.ts",
+      "kind": "not-source",
+      "reason": "root-shared node:test 迁移协议测试不进入 Vitest 覆盖率分母；shared/legacy-settings-migration.js 通过 LAN/MCP 包测试间接覆盖",
+      "since": "#1017"
+    },
+    {
       "pattern": "shared/test/settings-namespace.mutation.test.ts",
       "kind": "not-source",
       "reason": "root-shared mutation 测试只验证 shared/settings-namespace.js，不进入运行时代码覆盖率分母；源文件仍由独立 mutation surface 计量",

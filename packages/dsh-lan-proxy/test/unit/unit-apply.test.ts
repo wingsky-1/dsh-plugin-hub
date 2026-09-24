@@ -2925,7 +2925,7 @@ describe("apply 接入 legacy settings migration", () => {
     expect(existsSync(settingsMarker())).toBe(false);
   });
 
-  it("settings 写入失败时 warn、保留 file migration 且下次 apply 可重试", async () => {
+  it("settings revision 冲突时 warn、保留 file migration 且清理 receipt 后可重试", async () => {
     const home = tempHome();
     writeFileSync(
       join(home, "settings.yaml"),
@@ -2941,14 +2941,20 @@ describe("apply 接入 legacy settings migration", () => {
       update: async (_ns, patch) => {
         if ("enabled" in patch) {
           settingsAttempts += 1;
-          if (settingsAttempts === 1) throw new Error("temporary settings failure");
+          if (settingsAttempts === 1) {
+            throw Object.assign(new Error("settings changed"), { code: "SETTINGS_CONFLICT" });
+          }
         }
       },
     });
 
     await waitFor(
       () =>
-        first.warnings.some((message) => message.includes("旧 settings 写入 canonical scope 失败")),
+        first.warnings.some(
+          (message) =>
+            message.includes("旧 settings 写入 canonical scope 失败") ||
+            message.includes("旧 settings 写入发生 revision 冲突"),
+        ),
       "settings migration 失败未记录 warn",
     );
     await waitFor(

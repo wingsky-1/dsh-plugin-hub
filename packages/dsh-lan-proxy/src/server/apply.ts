@@ -451,11 +451,14 @@ export function apply(ctx: Context, config: LanProxyConfig = {}): void {
         // describe 必须在 file scope.update 完成后重新执行；raw user 中的 file 值
         // 代表当前 canonical 决定，legacy migration 只补它没有的路径。
         let currentUser: unknown;
+        let currentRevision: number | undefined;
         try {
           const descriptor = service
             .describe({ redactSecrets: true })
             .find((entry) => entry.ns === SETTINGS_NS);
           currentUser = descriptor?.user;
+          currentRevision =
+            typeof descriptor?.revision === "number" ? descriptor.revision : undefined;
         } catch (err) {
           warnLog(
             ctx,
@@ -468,6 +471,7 @@ export function apply(ctx: Context, config: LanProxyConfig = {}): void {
           await migrateLegacySettings({
             configDir,
             currentUser,
+            expectedRevision: currentRevision,
             scope,
             logger: ctx.logger,
           });
@@ -475,33 +479,6 @@ export function apply(ctx: Context, config: LanProxyConfig = {}): void {
           warnLog(ctx, `lan-proxy: 旧 settings 迁移异常 — ${errorMessage(err)}`);
         }
       })();
-      // 热更新显式订阅 settings/document-updated；无 on 面即跳过（shared onChange 兜底），
-      // 双触发经 scheduleSync 防抖收敛。
-      try {
-        const ctxOn = (
-          ctx as unknown as {
-            on?: (event: string, listener: (ns: unknown) => void) => () => void;
-          }
-        ).on;
-        if (typeof ctxOn === "function") {
-          const off = (
-            ctx as unknown as {
-              on: (event: string, listener: (ns: unknown) => void) => () => void;
-            }
-          ).on("settings/document-updated", (ns: unknown) => {
-            if (String(ns) !== SETTINGS_NS) return;
-            const fiber = (ctx as unknown as { fiber?: { state?: unknown } }).fiber;
-            const state =
-              fiber !== undefined && typeof fiber === "object" ? fiber.state : undefined;
-            if (state === "unloading" || state === "unloaded" || state === "disposed") return;
-            scheduleSync();
-          });
-          if (typeof off === "function")
-            ctx.effect(() => off, "lan-proxy: settings document-updated");
-        }
-      } catch {
-        // 订阅失败不阻断迁移与路由（onChange 仍兜底热更新）。
-      }
     },
   });
 

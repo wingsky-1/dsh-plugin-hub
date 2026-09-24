@@ -247,19 +247,32 @@ describe("legacy settings migration", () => {
     expect(existsSync(marker(home))).toBe(false);
   });
 
-  it("完成 marker 写入失败时返回失败且保留可重试状态", async () => {
+  it("完成 marker 写入失败后保留 pending receipt，恢复时不重放已提交旧值", async () => {
     const home = tempRoot();
-    const configDir = join(home, "plugin-file");
-    writeFileSync(configDir, "not a directory", "utf8");
+    const configDir = join(home, "plugin");
     writeDocument(home, "settings.yaml", { port: 4800 });
-    const scope = makeScope();
+    const markerPath = marker(home);
+    const pendingPath = `${markerPath}.pending`;
+    let attempts = 0;
+    const scope = {
+      async update(patch: object): Promise<void> {
+        attempts += 1;
+        expect(patch).toEqual({ port: 4800 });
+        mkdirSync(markerPath);
+      },
+    };
 
-    const result = await migrateLegacySettings({ home, configDir, currentUser: {}, scope });
+    const first = await migrateLegacySettings({ home, configDir, currentUser: {}, scope });
+    expect(first.status).toBe("failed");
+    expect(attempts).toBe(1);
+    expect(existsSync(pendingPath)).toBe(true);
 
-    expect(result.status).toBe("failed");
-    expect(result.completed).toBe(false);
-    expect(scope.updates).toEqual([{ port: 4800 }]);
-    expect(existsSync(configDir)).toBe(true);
+    rmSync(markerPath, { recursive: true, force: true });
+    const second = await migrateLegacySettings({ home, configDir, currentUser: {}, scope });
+    expect(second.status).toBe("already-complete");
+    expect(attempts).toBe(1);
+    expect(readFileSync(markerPath, "utf8")).toBe("1\n");
+    expect(existsSync(pendingPath)).toBe(false);
   });
 
   it("当前 canonical user 的值和数组整体优先，旧源只补缺失字段", async () => {
@@ -334,29 +347,71 @@ describe("legacy settings migration", () => {
     expect(existsSync(marker(home))).toBe(false);
   });
 
-  it("写入失败不写 marker，下一次重试可成功完成", async () => {
+  it("未知写入失败保留 pending receipt，不重放旧 section", async () => {
     const home = tempRoot();
     const configDir = join(home, "plugin");
     mkdirSync(configDir);
     writeDocument(home, "settings.yaml", { port: 4400 });
+    const markerPath = marker(home);
     let attempts = 0;
     const scope = {
       updates: [] as Record<string, unknown>[],
-      async update(patch: object): Promise<void> {
+      async update(): Promise<void> {
         attempts += 1;
-        if (attempts === 1) throw new Error("temporary settings failure");
-        this.updates.push(patch as Record<string, unknown>);
+        throw new Error("ambiguous settings failure");
       },
     };
 
     const first = await migrateLegacySettings({ home, configDir, currentUser: {}, scope });
     expect(first.status).toBe("failed");
-    expect(existsSync(marker(home))).toBe(false);
+    expect(existsSync(markerPath)).toBe(false);
+    expect(existsSync(`${markerPath}.pending`)).toBe(true);
 
     const second = await migrateLegacySettings({ home, configDir, currentUser: {}, scope });
+    expect(second.status).toBe("already-complete");
+    expect(attempts).toBe(1);
+    expect(scope.updates).toEqual([]);
+    expect(existsSync(markerPath)).toBe(true);
+  });
+
+  it("明确 revision 冲突清理 receipt 后允许重试", async () => {
+    const home = tempRoot();
+    const configDir = join(home, "plugin");
+    mkdirSync(configDir);
+    writeDocument(home, "settings.yaml", { port: 4400 });
+    const markerPath = marker(home);
+    let attempts = 0;
+    const scope = {
+      updates: [] as Record<string, unknown>[],
+      async update(patch: object): Promise<void> {
+        attempts += 1;
+        if (attempts === 1) {
+          throw Object.assign(new Error("settings changed"), { code: "SETTINGS_CONFLICT" });
+        }
+        this.updates.push(patch as Record<string, unknown>);
+      },
+    };
+
+    const first = await migrateLegacySettings({
+      home,
+      configDir,
+      currentUser: {},
+      expectedRevision: 1,
+      scope,
+    });
+    expect(first.status).toBe("failed");
+    expect(existsSync(`${markerPath}.pending`)).toBe(false);
+
+    const second = await migrateLegacySettings({
+      home,
+      configDir,
+      currentUser: {},
+      expectedRevision: 1,
+      scope,
+    });
     expect(second.status).toBe("migrated");
+    expect(attempts).toBe(2);
     expect(scope.updates).toEqual([{ port: 4400 }]);
-    expect(existsSync(marker(home))).toBe(true);
   });
 
   it("完成后用户改值并重启，旧源不会复活已清除的字段", async () => {

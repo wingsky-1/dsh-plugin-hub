@@ -110,7 +110,7 @@ session cookie), letting LAN devices enter without manual steps. Trade-offs and 
     (localhost / [::1] / 127/8), writing neither transport nor marker. A loopback page
     receiving the script element and a loopback page being altered are two different things;
     the latter never happens.
-  - **How to turn it off**: Settings → Plugins → dsh-lan-proxy, disable "Declare ownsHost to
+  - **How to turn it off**: Plugin Manager → dsh-lan-proxy → Configure, disable "Declare ownsHost to
     non-loopback pages (compat)" (composition-level config: `ownsHostCompat: false`), then
     reload the page.
   - **Zero-forgery alternative**: `ssh -L 3080:127.0.0.1:3080 <host>` and browse
@@ -195,15 +195,37 @@ curl -s http://127.0.0.1:3081/api/dsh-lan-proxy/health
 | `injectToken` | `true` | Token-free LAN access; on by default. See Security Model. |
 | `ownsHostCompat` | `false` | Forge the page-side host fact; off by default. See Security Model. |
 
-GUI settings entry: Settings → Plugins → "LAN Access" card (saved changes apply hot).
+Configuration page: **Plugin Manager → dsh-lan-proxy → Configure** (saved changes apply hot).
+
+> Non-loopback LAN origins intentionally do not expose a persistent settings surface, so the Configure control is hidden by DSH's security policy. Manage settings from `127.0.0.1:3080` / `127.0.0.1:3081` or an SSH loopback tunnel. Enable `ownsHostCompat` only on a trusted LAN and only when you accept the shared control-plane risk.
 
 ### Configuration storage (single channel)
 
 - All configuration lives in the dsh official settings store (the
-  `dsh-lan-proxy` namespace registered via `settings.register`, persisted in the
-  host-managed settings document); composition-layer `cordis.patch.yml` config
-  acts as the base layer. Hot reload is driven by the official `scope.watch` —
-  no restart needed.
+  `ui-dsh-lan-proxy` canonical namespace); the host owns persistence. The
+  composition-layer `cordis.patch.yml` config acts as the base layer. Hot reload is
+  driven by the official `scope.watch` — no restart needed.
+
+#### RC7 legacy settings-section migration
+
+DSH 0.1.7-rc.1 renames the old `~/.dsh/settings.yaml` to
+`settings.yaml.imported`. That file is an audit copy of the consumed legacy
+document, not the active configuration source; do not copy the whole imported
+file into a profile. Editable plugin fields are migrated into the active profile's
+`~/.dsh/profiles/<profile>/cordis.patch.yml` under the canonical
+`ui-dsh-lan-proxy` id.
+
+The automatic migration consumes only fields accepted by the current Config schema
+from the old `dsh-lan-proxy` section, with
+`settings.yaml.imported < settings.yaml < current canonical user`. The retired
+self-managed `config.json`, unknown top-level keys, and other deprecated fields
+are not written to the canonical patch. Completion is recorded by
+`settings.migrated` version `1` in the plugin-private directory. A
+`settings.migrated.pending` receipt is created before the canonical write and
+promoted after success; unknown failures finalize the marker without replaying
+old values, so a later DSH `unset` cannot be undone; only an explicit revision
+conflict clears the receipt for retry.
+
 <details>
 <summary>Legacy config.json migration</summary>
 

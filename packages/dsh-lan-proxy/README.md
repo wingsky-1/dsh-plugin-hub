@@ -86,11 +86,11 @@ dsh web 的浏览器会话认证（launch token
 「打开配置文件」动作。它伪造的是页面侧拓扑事实，不是服务端授权变化：`/api` 围栏、
 launch token 与会话 cookie 认证保持不变；兼容开启后，LAN 页面与回环页面在界面上不再可区分。
 
-- **配置入口**：Plugin Manager → dsh-lan-proxy → 行详情。canonical row id 为
+- **配置入口**：Plugin Manager → dsh-lan-proxy → Configure。canonical row id 为
   `ui-dsh-lan-proxy`，keyed row 为 `@wingsky-1/dsh-lan-proxy#ui-dsh-lan-proxy`，
   官方 settings 条目也使用 `ui-dsh-lan-proxy`。
 - **挂载边界**：配置页由 `plugins.row.config` 渲染，仅在 Host 服务 canonical settings 条目时
-  注册。`compat-off` 或上游契约漂移时，非回环页面可能无法进入行详情。
+  注册。`compat-off` 或上游契约漂移时，非回环页面可能无法进入配置行。
 - **可见性**：启动横幅与 `/api/dsh-lan-proxy/health` 显示宿主侧开关；页面加载时若兼容未生效
   或契约漂移，浏览器控制台给出独立告警，不依赖配置页。
 - **恢复旁路（仅在行详情不可达时）**：可直接编辑 DSH 当前设置文档中的
@@ -147,13 +147,30 @@ curl -s http://127.0.0.1:3081/api/dsh-lan-proxy/health
 | `injectToken` | `true` | LAN 免 token 直入，默认开；见安全模型。 |
 | `ownsHostCompat` | `false` | 伪造页面侧宿主事实位，默认关；见安全模型。 |
 
-GUI 设置入口：Plugin Manager → dsh-lan-proxy → 行详情（保存即热更新）。
+配置页入口：**Plugin Manager → dsh-lan-proxy → Configure**（保存即热更新）。
+
+> 非回环 LAN 地址默认不提供持久化设置面，Configure 按钮按 DSH 安全策略隐藏；请从 `127.0.0.1:3080` / `127.0.0.1:3081` 或 SSH 回环隧道管理。只有在可信 LAN、明确接受共享控制面风险时，才开启 `ownsHostCompat` 恢复远程设置入口。
 
 ### 配置存储（单一通道）
 
 - 全部配置存于 dsh 官方 settings 存储；canonical 条目 id 为 `ui-dsh-lan-proxy`，
   落盘位置由宿主统一管理。组合层 `cordis.patch.yml` 的 config 作为 base 层生效；
   热更新由官方 `scope.watch` 驱动，无需重启。
+
+#### RC7 旧 settings section 迁移
+
+DSH 0.1.7-rc.1 会把旧的 `~/.dsh/settings.yaml` 改名为 `settings.yaml.imported`。
+这个文件是已消费旧文档的**审计副本**，只保留证据，不是当前配置源；不要把整个
+`settings.yaml.imported` 再复制到 profile。插件可编辑字段会由迁移写入 active profile 的
+`~/.dsh/profiles/<profile>/cordis.patch.yml`，canonical id 为 `ui-dsh-lan-proxy`。
+
+自动迁移只消费旧 `dsh-lan-proxy` section 中当前 Config schema 认可的字段，按
+`settings.yaml.imported < settings.yaml < 当前 canonical user` 合并；旧自建
+`config.json`、未知顶层键和其它已废弃字段不会写入 canonical patch。迁移完成 marker 是
+插件私有目录中的 `settings.migrated`（版本 `1`）。canonical 写入前先创建 `settings.migrated.pending`
+receipt，成功后 promote 为完成 marker；未知失败恢复只完成 marker、不重放旧值，
+避免 DSH `unset` 后把用户已清除的值写回；只有明确的 revision 冲突才清理 receipt 并重试。
+
 <details>
 <summary>旧 config.json 迁移</summary>
 
