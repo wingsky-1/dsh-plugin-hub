@@ -2,8 +2,9 @@
  * dsh-lan-proxy — 存量 config.json 一次性迁移。
  *
  * rename-first marker，幂等：先把 config.json 原子改名为 config.json.migrated.bak
- * （存在即「已处理过」），再 sanitize 过滤后经 owner scope.update 增量写入官方
- * settings 存储；中断态（.bak 存在且 config.json 不存在）从 bak 重放。
+ * （存在即「已处理过」），再 sanitize 过滤后经 owner scope.update（Descriptor 面
+ * 新 update：scope.update(patch, expectedRevision?)；条目 id 见 SETTINGS_NS）增量
+ * 写入官方 settings 存储；中断态（.bak 存在且 config.json 不存在）从 bak 重放。
  * 本域只拥有「旧文件长什么样」这份知识，净化规则与写面都取自配置域。
  */
 import { existsSync, readFileSync, renameSync, unlinkSync } from "node:fs";
@@ -230,9 +231,9 @@ function rollbackMigratedRename(
  *    用户手动恢复内容取代可接受）；改名成功即视为「已处理」，无论后续成败；
  * 3. 解析 bak：损坏/非对象/无有效键 → 到此为止（只标记不写入，避免把 schema
  *    默认值固化进用户层、压制后续默认值演进）；
- * 4. sanitizeSettings 过滤后经 owner scope.update 增量写入（只写文件里显式
- *    存在的键，schema 默认保持动态兜底——spike 结论优先 update，replace 仅当
- *    需要整节割接时使用）；
+ * 4. sanitizeSettings 过滤后经新 update 写面增量写入（owner scope.update：只写文件里
+ *    显式存在的键，schema 默认保持动态兜底——spike 结论优先 update，replace 仅当
+ *    需要整节割接时使用；dsh 0.1.7-rc.1 下同语义由条目 id 寻址，签名见 OwnerScopeLike）；
  * 5. 写入失败 → 回滚改名（bak 还原为 config.json）并 warn，下次启动重试。
  *
  * 必须在 settings 服务 attach 后调用（installLanProxySettings 的 onScope 内），

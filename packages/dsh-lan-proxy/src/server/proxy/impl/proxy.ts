@@ -824,6 +824,8 @@ export function createLanProxy(options: LanProxyOptions, logger: LanLogger = con
       // 失效 cookie（签名 secret 重置等）：上游验签失败回 401。排干 401 响应体
       // （keep-alive 槽位可复用），以注入 token 的等价请求重放一次——上游 token
       // 分支优先于 cookie 校验，直接重铸 cookie，303 + Set-Cookie 透传回浏览器。
+      // 303 的 Location 不改写（上游回环 authority 与浏览器经转发器看到的一致，
+      // 重写反而破坏铸造跳转；复核结论：透传原样，行为不变）。
       // 重放请求 URL 已带 token 参数，不再满足候选条件，天然封顶一次。
       proxyRes.resume();
       const nextUrl = withLaunchToken(replay.originalUrl, replay.token);

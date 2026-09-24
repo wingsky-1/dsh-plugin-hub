@@ -6,14 +6,15 @@
  *
  * 端口不是固定的：默认 3081，可通过两层途径修改（都实时生效）——
  *   1. GUI 设置卡片（设置 → 插件 → dsh-lan-proxy）：经 loopback HTTP 配置路由
- *      写入官方 settings 命名空间（scope.update/replace），scope.watch 触发热更新；
+ *      写入官方 settings 条目（scope.update/replace），settings/document-updated
+ *      订阅触发热更新（冻结计划 v1.1；scope.watch 为 rc.5 遗留面，不再使用）；
  *      settings 服务不可解析时自动降级并打 warn 日志。
  *   2. 组合层配置（profile 的 cordis.patch.yml 覆盖 lan-proxy 行的 config，
  *      或启动时 --patch overlay）——作为 settings 命名空间的 base 层生效。
  *
  * 配置单一通道（issue #110）：不再维护自建 `~/.dsh/lan-proxy/config.json` 与
- * RPC state/config 端点；配置一律存官方 settings 存储（settings.register 注册的
- * `dsh-lan-proxy` 命名空间，owner scope get/watch/update/replace）。存量
+ * RPC state/config 端点；配置一律存官方 settings 存储（条目 id 见 SETTINGS_NS
+ * `ui-dsh-lan-proxy`，owner scope get/update/replace + describe 投影）。存量
  * config.json 在 settings 服务 attach 后做一次性 marker 迁移（原子改名
  * `config.json.migrated.bak` 幂等标记 → 校验过滤 → scope.update 增量写入，
  * 失败回滚改名）；此后手改 config.json 不再生效。
@@ -55,7 +56,11 @@ export type {
   SettingInvalid,
 } from "./server/config/interface.ts";
 export { SETTINGS_NS, installLanProxySettings } from "./server/config/interface.ts";
-export type { LanProxySettingsHooks, OwnerScopeLike } from "./server/config/interface.ts";
+export type {
+  LanProxySettingsHooks,
+  OwnerScopeLike,
+  SettingsDescriptorLike,
+} from "./server/config/interface.ts";
 export {
   ROUTES,
   applyConfigPatch,
