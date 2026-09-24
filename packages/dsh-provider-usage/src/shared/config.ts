@@ -64,6 +64,20 @@ export interface NormalizedConfig {
   trendRetentionDays: number;
 }
 
+/**
+ * 插件配置 schema（schemastery 对象；宿主设置面经 shared 接缝以 unknown 消费）。
+ *
+ * 显式 `z<平面接口>` 声明保持原样，RHS 末尾单重 as 收口（lan-proxy model.ts 同款，
+ * dsh 0.1.7-rc.1 跟进）：bump 后本包编译程序内同时存在 schemastery@3.18.0（直引，
+ * `z` 值的实际解析）与 @deepseek-ai/schemastery@3.18.4（经 dsh-settings 0.1.7 类型层
+ * 传入）的 `declare global namespace Schemastery`；合并后 `.default()` 的输出侧携带
+ * Volatile 包装（SchemaOutput），直接赋值判红（TS2322）；裸推断引用未导入的 fork
+ * 模块名，声明发射不可移植（TS2883）；`z<any>` 退路被提交钩子终结
+ *（@typescript-eslint/no-explicit-any，长久性错误）。as 是纯类型擦除：值面从未调用
+ * .volatile()，运行时无此物；对外类型面与 rc.1 基线完全一致，零行为变化。双基线可编译：
+ * 0.1.5 单命名空间下原本直接可赋值，as 同样成立（无版本分支）。平面形状另由
+ * NormalizedConfig 契约化，键集一致性由 unit-config 回归断言与 config-matrix 门禁锁定。
+ */
 export const Config: z<{
   adapter: string;
   staticPath: string;
@@ -122,7 +136,21 @@ export const Config: z<{
     .default(DEFAULT_CONFIG.trendRetentionDays)
     .description("会话用量趋势聚合保留天数")
     .disabled(true),
-});
+  // 末尾 as 收口（lan-proxy model.ts 同款，见文件头注释）：合并后的 Mode 条件类型
+  // 使直接赋值判红，as 保持对外类型面恒为 z<平面接口>，值面无任何变化。
+}) as z<{
+  adapter: string;
+  staticPath: string;
+  provider: string;
+  apiEndpoint: string;
+  warmupIntervalMs: number;
+  cacheDurationMs: number;
+  fetchTimeoutMs: number;
+  autoReload: boolean;
+  maxAgeDays: number;
+  maxSizeMB: number;
+  trendRetentionDays: number;
+}>;
 
 export function normalizeConfig(input: unknown): NormalizedConfig {
   const base = { ...DEFAULT_CONFIG };

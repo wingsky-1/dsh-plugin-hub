@@ -16,6 +16,7 @@ const TITLE_LIMIT = 40;
 /** 会话标题：日志里最后一个 `session/title`，trim 后截断 40 字符。 */
 export function sessionTitleOf(agent: Agent): SessionTitle {
   try {
+    // eslint-disable-next-line sonarjs/deprecation -- 0.1.7-rc.1 起 snapshotEvents 标 @deprecated（本仓规则名见 tools/lint/eslint.config.js，上游同位置 oxlint-disable）：同步快照读法在迁移前保留，测试 5 处不动（P2）。
     const events = agent.session.snapshotEvents();
     for (let i = events.length - 1; i >= 0; i -= 1) {
       const event = events[i];
@@ -46,6 +47,7 @@ export function turnEndEvidenceOf(event: SessionEvent): TurnEndRead {
 /** 日志里最新一条 `turn/end`；倒序扫，因为 `turn/end` 之后可能尾随别的追加。 */
 export function lastTurnEndOf(agent: Agent): TurnEndRead {
   try {
+    // eslint-disable-next-line sonarjs/deprecation -- 0.1.7-rc.1 起 snapshotEvents 标 @deprecated（本仓规则名见 tools/lint/eslint.config.js，上游同位置 oxlint-disable）：同步快照读法在迁移前保留，测试 5 处不动（P2）。
     const events = agent.session.snapshotEvents();
     for (let i = events.length - 1; i >= 0; i -= 1) {
       const read = turnEndEvidenceOf(events[i]);

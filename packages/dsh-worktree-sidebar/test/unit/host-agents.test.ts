@@ -161,4 +161,31 @@ describe("agent 注册面", () => {
       { id: "c1", cwd: "/repo/sub" },
     ]);
   });
+
+  it("serial 兼容：payload 多余字段被忽略且 on 回调回 undefined", () => {
+    const a1 = makeAgent("a1", "/repo");
+    let captured: ((payload: { agent: HostAgentLike }) => undefined) | undefined;
+    const port: AgentHostPort = {
+      on: (event, handler) => {
+        expect(event).toBe("agent/created");
+        captured = handler;
+        return () => undefined;
+      },
+      all: () => [a1.agent],
+    };
+    const agents = bindAgents(port);
+    const seen: AgentFace[] = [];
+    agents.subscribe((face) => {
+      seen.push(face);
+    });
+    if (captured === undefined) throw new Error("on 回调未被登记");
+    // rc.7 serial 多出 source/signal：适配器只取 agent，行为不变；回 undefined 兼容 serial。
+    const ret = captured({
+      agent: a1.agent,
+      source: "startup",
+      signal: undefined,
+    } as unknown as { agent: HostAgentLike });
+    expect(ret).toBeUndefined();
+    expect(seen).toEqual([{ id: "a1", cwd: "/repo" }]);
+  });
 });

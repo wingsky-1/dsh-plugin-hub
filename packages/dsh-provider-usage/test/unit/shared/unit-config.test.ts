@@ -10,13 +10,16 @@
  * #150 二阶段增补：normalizeConfig 全字段非法类型丢弃 + clamp 双边界矩阵、
  * parseUserAdapters 字段级异型值分支（length>0 非目标类型）、readAdapterState
  * 全分支、resolveAddAdapterFile 路径校验矩阵、normalizeUiConfig/面板锚点纯函数矩阵。
+ *
+ * 0.1.7 跟进增补：Config schema 回归（空输入 11 键全量默认 + 显式透传；标注退为
+ * `z<any>` 后平面形状改由本块运行时锁定）。
  */
 import { mkdtempSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 console.error("EVAL-ORDER-TAG: CONFIG");
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { normalizeConfig, DEFAULT_CONFIG } from "../../../src/shared/interface.ts";
+import { normalizeConfig, DEFAULT_CONFIG, Config } from "../../../src/shared/interface.ts";
 // 白盒直连深路径（#768 B波）：注册表/UI配置纯面经域门面，不走组合根转发。
 import {
   expandHomePath,
@@ -955,5 +958,88 @@ describe("UI 配置与面板锚点纯函数矩阵（#150 二阶段）", () => {
   // uiConfigFile 拼装规则
   it("ui.json 拼装", () => {
     expect(uiConfigFile("/root")).toBe(join("/root", "ui.json"));
+  });
+});
+
+// ================================================================ Config schema 回归（0.1.7 全局合并）
+// 标注退为 `z<any>` 后平面形状不再由类型层约束——本块以运行时行为锁定键集与默认值
+// （schemastery 空输入解析填充全部 `.default()`；显式值透传）。删键/改默认即红。
+
+describe("Config schema 回归（空输入全量默认 + 显式透传）", () => {
+  const resolved = Config({}) as Record<string, unknown>;
+  const over = Config({ adapter: "x.mjs", trendRetentionDays: 7 }) as Record<string, unknown>;
+
+  it("空输入解析出 11 键（键集锁定）", () => {
+    expect(Object.keys(resolved).sort()).toEqual(
+      [
+        "adapter",
+        "apiEndpoint",
+        "autoReload",
+        "cacheDurationMs",
+        "fetchTimeoutMs",
+        "maxAgeDays",
+        "maxSizeMB",
+        "provider",
+        "staticPath",
+        "trendRetentionDays",
+        "warmupIntervalMs",
+      ].sort(),
+    );
+  });
+
+  it("adapter 默认空串", () => {
+    expect(resolved.adapter).toBe("");
+  });
+
+  it("staticPath 默认空串", () => {
+    expect(resolved.staticPath).toBe("");
+  });
+
+  it("provider 默认跟随内置", () => {
+    expect(resolved.provider).toBe(DEFAULT_CONFIG.provider);
+  });
+
+  it("apiEndpoint 默认空串", () => {
+    expect(resolved.apiEndpoint).toBe("");
+  });
+
+  it("warmupIntervalMs 默认 300000", () => {
+    expect(resolved.warmupIntervalMs).toBe(300000);
+  });
+
+  it("cacheDurationMs 默认 30000", () => {
+    expect(resolved.cacheDurationMs).toBe(30000);
+  });
+
+  it("fetchTimeoutMs 默认 5000（固定）", () => {
+    expect(resolved.fetchTimeoutMs).toBe(5000);
+  });
+
+  it("autoReload 默认开启", () => {
+    expect(resolved.autoReload).toBe(true);
+  });
+
+  it("maxAgeDays 默认 30", () => {
+    expect(resolved.maxAgeDays).toBe(30);
+  });
+
+  it("maxSizeMB 默认 20", () => {
+    expect(resolved.maxSizeMB).toBe(20);
+  });
+
+  it("trendRetentionDays 默认 180", () => {
+    expect(resolved.trendRetentionDays).toBe(180);
+  });
+
+  it("显式 adapter 透传", () => {
+    expect(over.adapter).toBe("x.mjs");
+  });
+
+  it("显式 trendRetentionDays 透传", () => {
+    expect(over.trendRetentionDays).toBe(7);
+  });
+
+  it("显式值不污染其余默认", () => {
+    expect(over.autoReload).toBe(true);
   });
 });

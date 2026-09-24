@@ -24,8 +24,13 @@ export interface HostAgentLike {
 
 /** 宿主事件面与 agent 枚举面：只开本适配器要的两样。 */
 export interface AgentHostPort {
-  /** 订阅 agent 发布。返回退订函数。 */
-  on(event: "agent/created", handler: (payload: { agent: HostAgentLike }) => void): () => void;
+  /**
+   * 订阅 agent 发布。返回退订函数。
+   *
+   * 回 undefined 兼容 rc.7 serial（`undefined | Promise<undefined>`），旧 emit 的 void 亦兼容
+   * undefined；payload 多余字段（`source`/`signal`）由调用方解构忽略，双基线可编译。
+   */
+  on(event: "agent/created", handler: (payload: { agent: HostAgentLike }) => undefined): () => void;
   /** 当前**所有存活** agent 快照（含子 agent）。 */
   all(): readonly HostAgentLike[];
 }
@@ -44,7 +49,9 @@ export function bindAgents(host: AgentHostPort): AgentPort {
         // 该判断被**有意推翻**（不是删除时漏掉守卫）：子会话同样会点开侧边栏、同样需要把 worktree
         // 登记给自己那条会话，而工具装进各 agent 自己的 effect、随该 agent 一起释放，
         // 并不会改动调用方的工具面。子会话的展示语义见 README。
+        // payload 多余字段（rc.7 的 source/signal）经解构忽略；回 undefined 兼容 serial。
         handler(faceOf(agent));
+        return undefined;
       }),
     list: () => host.all().map(faceOf),
     publish: (face, definitions) => {

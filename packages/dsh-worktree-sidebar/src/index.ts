@@ -9,6 +9,7 @@ import type { Context } from "@deepseek-ai/cordis";
 import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
 import type {} from "@deepseek-ai/dsh-typert-protocol";
 import { ROUTES } from "./shared/interface.ts";
+import type { HostAgentLike } from "./server/host/agents.ts";
 import { bindAgents } from "./server/host/agents.ts";
 import type { StoredSessionsFace } from "./server/host/sessions.ts";
 import { bindSessions } from "./server/host/sessions.ts";
@@ -60,7 +61,13 @@ export async function apply(ctx: Context, config: WorktreeSidebarConfig = {}): P
     logger: ctx.logger,
     register: (route) => ctx.webServer.register(route),
     agents: bindAgents({
-      on: (event, handler) => ctx.on(event, handler),
+      // rc.7 serial 透传：payload 多余字段（source/signal）只取 agent 忽略，回 undefined
+      // 兼容 serial（旧 emit 的 void 亦兼容 undefined）；无版本分支，双基线可编译。
+      on: (event, handler) =>
+        ctx.on(event, (payload) => {
+          handler({ agent: payload.agent as HostAgentLike });
+          return undefined;
+        }),
       all: () => ctx.agents.list(),
     }),
     typert: bindTypert(ctx.typert.lookups),
