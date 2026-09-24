@@ -14,6 +14,11 @@ import {
 
 const NAMESPACE = "ui-dsh-mcp-manager";
 
+type MigrationScope = {
+  readonly current?: LegacySettingsRecord;
+  update(patch: object, expectedRevision?: number): Promise<void>;
+};
+
 interface Descriptor {
   readonly ns: string;
   readonly value: { readonly position: string };
@@ -114,7 +119,7 @@ function makeScope(current: LegacySettingsRecord = {}) {
 
 function options(
   home: string,
-  scope: ReturnType<typeof makeScope>,
+  scope: MigrationScope,
   overrides: Partial<LegacySettingsMigrationOptions> = {},
 ): LegacySettingsMigrationOptions {
   return {
