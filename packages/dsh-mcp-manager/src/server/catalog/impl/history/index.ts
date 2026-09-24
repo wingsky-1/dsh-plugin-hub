@@ -45,7 +45,7 @@ function matchCatalogEvent(
  * 同构）：
  * - decision.messages 只含本轮新消息，历史目录消息不在其中——用它定位会导致每轮重复注入；
  * - 可见性（surface.nodes）过滤：compaction/resume 后旧目录不可见 → visibleDigest 为空 → 重新注入；
- * - 新旧两代 source 形态共存（#723 升级前的会话仍是 mcp-catalog + entries）。
+ * - 只认 snapshot 形态的目录消息（旧 kind:mcp-catalog 落盘走修复脚本迁移）。
  */
 export function catalogHistory(agent: CatalogAgent | undefined): CatalogHistoryResult {
   const visible = new Set(agent?.session?.surface?.nodes ?? []);

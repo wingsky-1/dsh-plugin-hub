@@ -280,16 +280,13 @@ export function escapeCatalogText(value: unknown): string {
 }
 
 /**
- * 是否为本插件注入的能力目录消息（三代通认，#723 跨版本兼容，#1011 前向兼容）。
- *
- * 三代：`kind:"mcp-catalog"`（0.2.x 落盘）+ `kind:"plugin"`（0.3+ 写入，0.1.5 原生含种 /
- * 0.1.7 靠本域垫片补种，线格式同一形状）。旧形态的落盘改写引用现修复脚本
+ * 是否为本插件注入的能力目录消息：只认 `kind:"plugin"` + 本插件身份 +
+ * snapshot 形态（写入侧恒定形状）。旧 `kind:"mcp-catalog"` 落盘的改写走修复脚本
  * `scripts/maintenance/repair-mcp-catalog-sessions.mjs`（幂等、默认 dry-run），
- * 此处不重造改写逻辑，只做读取侧兼容。
+ * 此处不做读取侧兼容。
  */
 export function isCatalogSource(source: { kind?: unknown; plugin?: unknown } | undefined): boolean {
   if (source === undefined) return false;
-  if (source.kind === "mcp-catalog") return true;
   return source.kind === "plugin" && source.plugin === CATALOG_SOURCE_PLUGIN;
 }
 
@@ -302,15 +299,9 @@ export function findCatalogMessage(messages: CatalogMessage[]): CatalogMessage |
 }
 
 /**
- * 取回一条目录消息所发布的条目。
- *
- * 新旧两代形态（#723）：
- * - 旧形态 `{ kind: "mcp-catalog", form: "catalog", entries }`：逐条还原条目，
- *   digest 与升级前完全一致；
- * - 新形态 `{ kind: "plugin", form: "snapshot", sections: [{ name, text }] }`：
- *   从快照正文的 `<available_mcp_servers>` 块还原条目（格式化是单射的），使
- *   digest 与 `composeCatalogEntries` 的条目 digest 同口径——否则每次启动都会
- *   误判"目录已变"而注入一条修正帧。
+ * 取回一条目录消息所发布的条目：从快照正文的 `<available_mcp_servers>` 块还原
+ * 条目（格式化是单射的），使 digest 与 `composeCatalogEntries` 的条目 digest
+ * 同口径——否则每次启动都会误判"目录已变"而注入一条修正帧。
  *
  * 坏数据返回 undefined（按"不是本插件的目录"处理）：本函数在 step 监听器里被调用，
  * 抛错会让该会话每一轮都失败。
@@ -319,29 +310,17 @@ export function resolveCatalogEntries(
   source: CatalogSourceLike | undefined,
 ): CatalogEntry[] | undefined {
   if (!isCatalogSource(source)) return undefined;
-  if (source?.kind === "plugin") {
-    const sections = source.sections;
-    if (!Array.isArray(sections)) return undefined;
-    const section = sections.find(
-      (candidate) =>
-        typeof candidate === "object" &&
-        candidate !== null &&
-        (candidate as { name?: unknown }).name === CATALOG_SECTION_NAME &&
-        typeof (candidate as { text?: unknown }).text === "string",
-    ) as { text: string } | undefined;
-    if (section === undefined) return undefined;
-    return parseCatalogBody(section.text);
-  }
-  const entries = source?.entries;
-  if (!Array.isArray(entries)) return undefined;
-  const readable: CatalogEntry[] = [];
-  for (const entry of entries) {
-    if (typeof entry !== "object" || entry === null) return undefined;
-    const { name, text } = entry as { name?: unknown; text?: unknown };
-    if (typeof name !== "string" || name === "") return undefined;
-    readable.push({ name, text: typeof text === "string" ? text : undefined });
-  }
-  return readable;
+  const sections = source?.sections;
+  if (!Array.isArray(sections)) return undefined;
+  const section = sections.find(
+    (candidate) =>
+      typeof candidate === "object" &&
+      candidate !== null &&
+      (candidate as { name?: unknown }).name === CATALOG_SECTION_NAME &&
+      typeof (candidate as { text?: unknown }).text === "string",
+  ) as { text: string } | undefined;
+  if (section === undefined) return undefined;
+  return parseCatalogBody(section.text);
 }
 
 /** 还原渲染时的反转义（escapeCatalogText 的逆；`&amp;` 最后解，避免二次解码）。 */
@@ -376,8 +355,8 @@ function parseCatalogBody(body: string): CatalogEntry[] | undefined {
 /**
  * 防御性读取目录 source 里的条目（坏数据返回 undefined）。
  *
- * 保留旧签名与旧语义（只读已发布形态的 `entries`）：它是包导出面与既有单测的契约，
- * 新形态的读取走 {@link resolveCatalogEntries}。
+ * 旧会话尽力读：只读 `entries` 形态（旧落盘），它是包导出面与既有单测的契约；
+ * 当前形态的读取走 {@link resolveCatalogEntries}。
  */
 export function readCatalogEntries(
   source: { entries?: unknown } | undefined,
@@ -394,7 +373,7 @@ export function readCatalogEntries(
   return readable;
 }
 
-/** 目录 source 最小面（新旧两代形态；判定见 {@link isCatalogSource}）。 */
+/** 目录 source 最小面（snapshot 形态；`entries` 字段仅旧会话尽力读保留；判定见 {@link isCatalogSource}）。 */
 export interface CatalogSourceLike {
   kind?: unknown;
   plugin?: unknown;

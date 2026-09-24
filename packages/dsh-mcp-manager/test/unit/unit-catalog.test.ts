@@ -425,10 +425,13 @@ describe("renderMcpCatalogUpdate", () => {
 
 describe("catalogHistory", () => {
   const entry = [{ name: "h1", text: "t" }];
+  // snapshot 新形夹具：经渲染函数组装 source，保证与线上写入同一形状。
+  const snapSource = (entries: Array<{ name: string; text?: string }>) =>
+    renderMcpCatalogMessage(entries).source!;
   const event = (seq: number, _visible?: unknown) => ({
     type: "user/message",
     seq,
-    data: { source: { kind: "mcp-catalog", entries: entry } },
+    data: { source: snapSource(entry) },
   });
 
   it("无 agent → {published:false}", () => {
@@ -454,7 +457,7 @@ describe("catalogHistory", () => {
           {
             type: "user/message",
             seq: 5,
-            data: { source: { kind: "mcp-catalog", entries: entry } },
+            data: { source: snapSource(entry) },
           },
           event(7),
           { type: "user/message", seq: 8, data: { source: { kind: "other" } } },
@@ -477,7 +480,7 @@ describe("catalogHistory", () => {
 
   it("跳过坏数据命中更早的可见消息", () => {
     const digest = digestCatalogEntries(entry);
-    // 坏 entries 的目录消息跳过继续向前找。
+    // 坏快照正文（无 available_mcp_servers 块）的目录消息跳过继续向前找。
     const agentBadThenGood = {
       session: {
         surface: { nodes: [1] },
@@ -486,7 +489,14 @@ describe("catalogHistory", () => {
           {
             type: "user/message",
             seq: 2,
-            data: { source: { kind: "mcp-catalog", entries: "bad" } },
+            data: {
+              source: {
+                kind: "plugin",
+                plugin: "@wingsky-1/dsh-mcp-manager",
+                form: "snapshot",
+                sections: [{ name: "mcp-catalog", text: "garbage" }],
+              },
+            },
           },
         ],
       },
@@ -522,7 +532,7 @@ describe("resolveCatalogInjection：六条路径", () => {
             {
               type: "user/message",
               seq: 1,
-              data: { source: { kind: "mcp-catalog", entries: entry } },
+              data: { source: renderMcpCatalogMessage(entry).source! },
             },
           ],
         },
@@ -538,7 +548,7 @@ describe("resolveCatalogInjection：六条路径", () => {
           {
             type: "user/message",
             seq: 1,
-            data: { source: { kind: "mcp-catalog", entries: [{ name: "old" }] } },
+            data: { source: renderMcpCatalogMessage([{ name: "old" }]).source! },
           },
         ],
       },
@@ -730,15 +740,15 @@ describe("resolveCatalogInjection：六条路径", () => {
   });
 });
 
-// #723：目录 source 新旧两代双识别 —— 写入侧已改宿主通用形态，读取侧必须同时认旧形态
-// （升级前的会话），否则 digest 恒不等、每轮误判"目录已变"而重复注入修正帧。
-describe("#723 目录 source 双形态识别", () => {
+// #723：目录 source 快照识别 —— 读取侧只认 snapshot 形态（旧 kind:mcp-catalog 落盘
+// 走修复脚本迁移）；readCatalogEntries 保留作旧会话尽力读。
+describe("#723 目录 source 快照识别", () => {
   it("resolveCatalogEntries 从快照正文单射还原条目（含反转义）", () => {
     const message = renderMcpCatalogMessage([{ name: "m1", text: "t<1" }]);
     expect(resolveCatalogEntries(message.source)).toEqual([{ name: "m1", text: "t<1" }]);
   });
 
-  it("readCatalogEntries 仍读旧形态（跨版本兼容）", () => {
+  it("readCatalogEntries 仍读旧形态（旧会话尽力读）", () => {
     // 旧形态 source 带 kind/form：类型面只认 { entries }，此处故意传入完整旧形状探兼容。
     expect(
       readCatalogEntries({
@@ -779,7 +789,7 @@ describe("#723 目录 source 双形态识别", () => {
   });
 });
 
-describe("#723 catalogHistory 双形态识别", () => {
+describe("#723 catalogHistory 快照识别", () => {
   const entries = [{ name: "s", text: "d" }];
   const digest = digestCatalogEntries(entries);
   const body = [
@@ -815,7 +825,7 @@ describe("#723 catalogHistory 双形态识别", () => {
     expect(catalogHistory(agentOf([], newSource))).toEqual({ published: true });
   });
 
-  it("旧形态仍被识别（同一 digest 口径）", () => {
+  it("旧形态不再识别（落盘迁移走修复脚本，不在读取侧兼容）", () => {
     expect(
       catalogHistory(
         agentOf([1], {
@@ -824,7 +834,7 @@ describe("#723 catalogHistory 双形态识别", () => {
           entries,
         } as unknown as CatalogSourceLike),
       ),
-    ).toEqual({ visibleDigest: digest, published: true });
+    ).toEqual({ published: false });
   });
 
   it("他插件的 plugin 消息不得被误认", () => {
@@ -841,11 +851,10 @@ describe("#723 catalogHistory 双形态识别", () => {
   });
 });
 
-// #1011：双形态 kind（0.1.5 原生种 / 0.1.7 垫片补种，线格式同一形状）——
-// kind 走宿主词表（禁 kind:mcp-catalog），段名走自有命名空间（mcp-catalog 自由）。
-describe("#1011 双形态 kind", () => {
-  it("isCatalogSource 通认旧形态 kind:mcp-catalog", () => {
-    expect(isCatalogSource({ kind: "mcp-catalog" })).toBe(true);
+// #1011：kind 走宿主词表（禁 kind:mcp-catalog），段名走自有命名空间（mcp-catalog 自由）。
+describe("#1011 kind 识别", () => {
+  it("isCatalogSource 不再认旧形态 kind:mcp-catalog", () => {
+    expect(isCatalogSource({ kind: "mcp-catalog" })).toBe(false);
   });
 
   it("isCatalogSource 通认新形态 kind:plugin + 本插件身份", () => {
