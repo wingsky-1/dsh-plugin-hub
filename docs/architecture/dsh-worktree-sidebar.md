@@ -442,9 +442,12 @@ flowchart TD
   `src/server/host/agents.ts:7`），各域只在 `deps.ts` 与工具实现里引官方**工具 / 路由类型**
   （`src/server/tools/deps.ts:2`、`src/server/tools/impl/service/index.ts:11`、
   `src/server/tools/impl/protocol/index.ts:10`、`src/server/api/deps.ts:2`）。
-- 六个官方 peer 全走 `catalog:`（`package.json:52-59`），唯一目标 runtime 锁定
+- 六个官方 peer 的版本由 `pnpm-workspace.yaml` catalog 单一事实源生成到
+  `package.json`（`package.json:52-59`），精确锁定唯一目标 runtime
   `0.1.7-rc.1`（`pnpm-workspace.yaml:16-29`）；其它 runtime 不作兼容承诺。六个 peer 全标
-  `optional: true`（`package.json:60-79`），实际提供方是宿主。
+  `optional: true`（`package.json:60-79`），实际提供方是宿主。升级后须运行
+  `pnpm catalog:sync-peers`，避免 DSH 直接读取 raw link 清单时把 pnpm 的 `catalog:`
+  当作无效 SemVer。
 - `@deepseek-ai/dsh-session` 只在 devDependencies（纯类型需求，`package.json:48`）。
 - 客户端第三方库走构建期内联，发布物自包含、运行时零 npm 依赖
   （`docs/architecture/README.md` 的「通用机制」表「发布物自包含」行）。

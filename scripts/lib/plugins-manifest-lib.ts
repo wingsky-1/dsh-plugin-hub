@@ -4,7 +4,8 @@
 /**
  * plugins-manifest-lib — 插件清单单一事实源（issue #36）的纯函数库。
  *
- * `scripts/data/plugins-manifest.json` 是「某插件是否参与聚合/发布校验」的唯一声明处：
+ * `scripts/data/plugins-manifest.json` 是「某插件是否参与聚合/发布校验」以及
+ * 「该包必须声明哪些 DSH 官方 peer」的唯一声明处：
  *   - aggregate.ts / pack-check.ts / contract-check.ts / verify-npm-layout.ts 共读；
  *   - 断言逻辑只有本文件一份，入口脚本只喂数据（对齐 client-contract-lib 的
  *     「stub/实现同源」纪律，防两处内嵌实现漂移）。
@@ -138,6 +139,7 @@ interface RawManifest {
   retired: unknown[];
   standalone?: unknown;
   configSurfaces?: unknown;
+  dshPeerContracts?: unknown;
 }
 function readManifestJson(root: string): RawManifest & Record<string, unknown> {
   let raw: string;
@@ -270,11 +272,44 @@ function checkSurfaceEntry(item: unknown, knownPackages: string[], declared: Set
   else checkSurfaceFaces(entry);
 }
 
+/**
+ * DSH 官方 peer 成员契约：键必须是 active ∪ standalone 包目录，值为该包必须声明的官方 peer 名称。
+ * 这里只登记成员，不登记版本；版本唯一事实源仍是 pnpm-workspace.yaml catalog。
+ */
+function collectPeerContracts(
+  value: unknown,
+  knownPackages: Set<string>,
+): Record<string, string[]> {
+  if (value === undefined) return {};
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    fail("dshPeerContracts 必须是对象");
+  }
+  const result: Record<string, string[]> = {};
+  for (const [pkg, rawNames] of Object.entries(value as Record<string, unknown>)) {
+    checkName(pkg, "dshPeerContracts");
+    if (!knownPackages.has(pkg)) {
+      fail(`dshPeerContracts 含不在 active ∪ standalone 的包：${pkg}`);
+    }
+    if (!Array.isArray(rawNames)) fail(`dshPeerContracts.${pkg} 必须是数组`);
+    const seen = new Set<string>();
+    for (const name of rawNames) {
+      if (typeof name !== "string" || !name.startsWith("@deepseek-ai/")) {
+        fail(`dshPeerContracts.${pkg} 含非法官方 peer：${JSON.stringify(name)}`);
+      }
+      if (seen.has(name)) fail(`dshPeerContracts.${pkg} peer 重复：${name}`);
+      seen.add(name);
+    }
+    result[pkg] = [...rawNames];
+  }
+  return result;
+}
+
 interface LoadedManifest {
   active: string[];
   standalone: string[];
   retired: RetiredEntry[];
   configSurfaces: Record<string, unknown>[];
+  dshPeerContracts: Record<string, string[]>;
 }
 export function loadManifest(root: string): LoadedManifest {
   const json = readManifestJson(root);
@@ -288,6 +323,7 @@ export function loadManifest(root: string): LoadedManifest {
   // （新包不登记就红）。#774 收口后「尚未接管」的 pending 节已删除：那批包全部转为正式声明，
   // 登记不再有中途态，也就没有第二个入口需要校验。
   const knownPackages = [...seenActive, ...seenStandalone];
+  const dshPeerContracts = collectPeerContracts(json.dshPeerContracts, new Set(knownPackages));
   const surfaces = Array.isArray(json.configSurfaces) ? (json.configSurfaces as unknown[]) : [];
   const declared = new Set<string>();
   for (const item of surfaces) checkSurfaceEntry(item, knownPackages, declared);
@@ -303,6 +339,7 @@ export function loadManifest(root: string): LoadedManifest {
     standalone: [...seenStandalone],
     retired: (json.retired as RetiredEntry[]).map((r: RetiredEntry) => ({ ...r })),
     configSurfaces: surfaces.map((s: unknown) => ({ ...(s as Record<string, unknown>) })),
+    dshPeerContracts,
   };
 }
 

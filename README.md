@@ -26,8 +26,8 @@ DSH（DeepSeek Harness）Web GUI 插件集，npm 分发：一键装全家桶，�
 
 本插件集当前只适配 DeepSeek Harness `0.1.7-rc.1`。
 
-- 官方类型层 catalog 与各包 peerDependencies 一致锁定 `dsh 0.1.7-rc.1`；其他 DSH 版本不在本轮支持范围
-- 安装/更新时若 DSH 版本不匹配，npm/pnpm 会给出 peer 提示——请先将 DSH 本体切换到该版本
+- `pnpm-workspace.yaml` 的官方类型层 catalog 是权威版本事实源；各包 peerDependencies 是维护流程生成的精确版本投影，锁定 `dsh 0.1.7-rc.1`；其他 DSH 版本不在本轮支持范围
+- 安装/更新时若 DSH 版本不匹配，npm/pnpm 会给出 peer 提示——先发布/安装与目标 DSH 精确匹配的插件版本，再切换 DSH 本体；不要用 `allow-version` 绕过不兼容
 - 每版的具体适配基线、破坏性变更与升级指南见 [Release Notes](docs/release-notes/)
 - catalog 更新前，不对 alpha、旧 runtime 或其他版本作兼容承诺
 

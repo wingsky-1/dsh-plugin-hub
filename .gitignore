@@ -20,6 +20,8 @@ Thumbs.db
 coverage/
 .stryker-tmp/
 .maintenance-drafts/
+.catalog-peers.lock
+packages/*/package.json.catalog-sync-*.tmp
 
 # codegraph 本地索引（每 worktree 独立，不入库；任务结束随目录清理）
 .codegraph/

@@ -44,8 +44,14 @@ import {
   listSharedDts,
 } from "../lib/shared-dts-lib.ts";
 import { checkCordisMergeReachability } from "../lib/dts-cordis-merge-lib.ts";
+import {
+  checkAggregatePeerBoundary,
+  checkMaterializedCatalogPeers,
+  parseCatalog,
+} from "../lib/catalog-peers-lib.ts";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
+const CATALOG = parseCatalog(readFileSync(join(ROOT, "pnpm-workspace.yaml"), "utf8"));
 
 // W1.2 发布证据链落盘面：--log-file <path> 把本脚本的 stdout 逐字节镜像到文件
 // （逐包 PASS/FAIL 行 + 汇总行，供 release.yml 上传发布证据）。调用方传 RUNNER_TEMP 下的
@@ -235,7 +241,10 @@ const SHARED_DTS_EXPECTED = listSharedDts(ROOT);
 let failed = 0;
 for (const p of targets) {
   const tmp = mkdtempSync(join(tmpdir(), "dsh-pack-"));
-  const name = JSON.parse(readFileSync(join(ROOT, "packages", p, "package.json"), "utf8")).name;
+  const sourceManifest = JSON.parse(
+    readFileSync(join(ROOT, "packages", p, "package.json"), "utf8"),
+  );
+  const name = sourceManifest.name;
   try {
     // pnpm pack 到临时目录
     execFileSync("pnpm", ["--filter", name, "pack", "--pack-destination", tmp], {
@@ -247,6 +256,21 @@ for (const p of targets) {
     const pkgRoot = join(tmp, "package");
 
     const problems = [];
+    const packedManifest = JSON.parse(readFileSync(join(pkgRoot, "package.json"), "utf8"));
+    const expectedPeers = manifest.dshPeerContracts[p];
+    if (expectedPeers === undefined) {
+      problems.push(`plugins-manifest: dshPeerContracts 缺 ${p}`);
+    } else {
+      problems.push(
+        ...checkMaterializedCatalogPeers(
+          sourceManifest,
+          packedManifest,
+          CATALOG,
+          name,
+          expectedPeers,
+        ),
+      );
+    }
     if (!existsSync(join(pkgRoot, "lib", "index.js"))) problems.push("缺 lib/index.js");
     if (!readdirSync(join(pkgRoot, "lib")).some((f) => f.endsWith(".d.ts")))
       problems.push("缺 lib/*.d.ts");
@@ -460,7 +484,14 @@ for (const p of targets) {
       const tgz = readdirSync(tmp).find((f: string) => f.endsWith(".tgz"));
       execFileSync("tar", tarArgs(["-xzf", join(tmp, tgz!), "-C", tmp]));
       const pkgRoot = join(tmp, "package");
-      const problems: string[] = [];
+      const sourceManifest = JSON.parse(
+        readFileSync(join(ROOT, "packages", AGG, "package.json"), "utf8"),
+      );
+      const packedManifest = JSON.parse(readFileSync(join(pkgRoot, "package.json"), "utf8"));
+      const problems: string[] = [
+        ...checkAggregatePeerBoundary(sourceManifest),
+        ...checkMaterializedCatalogPeers(sourceManifest, packedManifest, CATALOG, aggName, []),
+      ];
       if (!existsSync(join(pkgRoot, "lib", "index.js"))) problems.push("缺 lib/index.js");
       const patch = existsSync(join(pkgRoot, "cordis.patch.yml"))
         ? readFileSync(join(pkgRoot, "cordis.patch.yml"), "utf8")

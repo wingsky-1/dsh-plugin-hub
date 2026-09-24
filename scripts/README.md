@@ -69,8 +69,9 @@
 
 - `derive/host-contract.mjs` — 宿主契约派生：ctx.on 事件名、settings slot、路由表、MCP_SECTION_ORDER、SESSION_FORMAT 锚、DOM 锚、catalog 锁版的字面量派生 + 五类形态缺口清单；仅 stdout 输出 JSON，不接任何门禁。
 
-## maintenance/（一次性维护脚本，按需手工执行）
+## maintenance/（升级/修复维护脚本，按需显式执行）
 
+- `maintenance/sync-catalog-peers.ts` — 从 `pnpm-workspace.yaml` catalog 生成各包 `peerDependencies` 的精确版本投影；仅显式运行，不被普通门禁自动写回。
 - `maintenance/repair-mcp-catalog-sessions.mjs` — #723 一次性修复：把 dsh-mcp-manager 0.2.x 及更早写入的旧目录 source（`kind: "mcp-catalog"`）改写成宿主词表内的通用形态，救回升级 dsh 后无法加载的历史会话（默认 dry-run，`--apply` 落盘并留 `.bak-<时间戳>` 备份）。根脚本别名：`pnpm repair:mcp-catalog`。
 - `maintenance/scan-actions-concurrency.mjs` — Actions 并发峰值扫描（#718 S0.3）：从 run 日志的 job 起止时间算并发峰值，供「夜间变异段并发上限」这类决策取实测依据（不读工作区、需 gh 与网络，故不进 CI；已过滤被取消 run 的作业——其排队窗口也带起止时间，会叠加成虚高峰值）。
 - `maintenance/upstream-contract-warn.mjs` — 上游消解 warn-job：A 侧 AST 派生（ctx.get/inject/provide 服务名与单跳、ctx.on 系事件、ctx.svc.method 调用，逐条带 site）对 B 侧 resolved 上游声明闭包（版本锁 catalog，同名多版与 cordis 缺失 exit 2；export 星展开、循环截断、计算键不透明）；S1 动态超 DYN_BASE、S2 无类型有名清单超 UNTRACKED_BASE 或出新名、S3 级联非零、R1/R2-cordis/R4-lite 未命中只打 warn 注记，通过或 FAIL 一律 exit 0（只 warn 不阻塞），环境异常 exit 2。执行点是 ci.yml 的独立 upstream-warn job（repo-gate 不聚合，R2-M-2 豁免登记）。

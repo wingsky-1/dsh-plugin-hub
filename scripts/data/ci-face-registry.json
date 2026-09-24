@@ -41,7 +41,7 @@
       "path": "pnpm-workspace.yaml",
       "faces": ["global"],
       "consumers": ["scripts/lib/catalog-peers-lib.ts"],
-      "why": "catalog 版本适配基线的唯一事实源（peer 与其锁步）。"
+      "why": "catalog 版本适配基线的唯一事实源；peer 精确投影由显式维护命令生成并由契约门防漂移。"
     },
     {
       "path": "tsconfig.base.json",

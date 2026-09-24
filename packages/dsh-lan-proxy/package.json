@@ -48,8 +48,8 @@
   },
   "peerDependencies": {
     "react": "^18.2.0",
-    "@deepseek-ai/cordis": "catalog:",
-    "@deepseek-ai/dsh-host-webserver": "catalog:"
+    "@deepseek-ai/cordis": "4.0.4",
+    "@deepseek-ai/dsh-host-webserver": "0.1.7-rc.1"
   },
   "peerDependenciesMeta": {
     "react": {

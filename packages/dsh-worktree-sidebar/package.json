@@ -60,12 +60,12 @@
     "@deepseek-ai/dsh-typert-protocol": "catalog:"
   },
   "peerDependencies": {
-    "@deepseek-ai/cordis": "catalog:",
-    "@deepseek-ai/dsh-agent": "catalog:",
-    "@deepseek-ai/dsh-api-workspace-files": "catalog:",
-    "@deepseek-ai/dsh-host-webserver": "catalog:",
-    "@deepseek-ai/dsh-tools": "catalog:",
-    "@deepseek-ai/dsh-typert-protocol": "catalog:"
+    "@deepseek-ai/cordis": "4.0.4",
+    "@deepseek-ai/dsh-agent": "0.1.7-rc.1",
+    "@deepseek-ai/dsh-api-workspace-files": "0.1.7-rc.1",
+    "@deepseek-ai/dsh-host-webserver": "0.1.7-rc.1",
+    "@deepseek-ai/dsh-tools": "0.1.7-rc.1",
+    "@deepseek-ai/dsh-typert-protocol": "0.1.7-rc.1"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/cordis": {

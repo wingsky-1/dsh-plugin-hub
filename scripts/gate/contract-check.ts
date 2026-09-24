@@ -209,8 +209,9 @@ console.log(failed === 0 ? "客户端契约：全部通过" : `客户端契约�
     matrixFailed ? `config-matrix | ${matrix.problems.length} 个失败` : "config-matrix | PASS",
   );
 }
-// #695：catalog ↔ peer/devDeps 一致性——官方类型层版本事实源收敛到 catalog 一处后，
-// 本段防「peer 写回字面量 / catalog: 引用无条目 / 供应链豁免清单漂移」。
+// #695：catalog ↔ peer/devDeps 一致性——catalog 是唯一版本事实源；
+// peer 是由 pnpm catalog:sync-peers 生成的 DSH-facing 精确版本投影。
+// 本段同时防止源 peer 漂移、catalog 引用缺条目与供应链豁免清单漂移。
 {
   const peers = checkCatalogPeers(ROOT);
   console.log("\ncatalog-peers:");
@@ -218,7 +219,7 @@ console.log(failed === 0 ? "客户端契约：全部通过" : `客户端契约�
   for (const problem of peers.problems) console.log(`FAIL catalog-peers | ${problem}`);
   if (peers.problems.length > 0) {
     console.log(
-      "hint catalog-peers | 官方依赖请只改 pnpm-workspace.yaml catalog（并同步 minimumReleaseAgeExclude），package.json 一律写 catalog:；补齐后重跑 pnpm contract",
+      "hint catalog-peers | 版本请只改 pnpm-workspace.yaml catalog（并同步 minimumReleaseAgeExclude），再运行 pnpm catalog:sync-peers 生成 peer 精确版本投影；devDependencies/dependencies 继续写 catalog:；补齐后重跑 pnpm contract",
     );
     failed++;
   }

@@ -184,6 +184,14 @@ const ARTIFACT_GATES = [
   "scripts/gate/verify-npm-layout.ts",
 ];
 
+test("产物门禁显式接入 catalog peer 成员与产物校验", () => {
+  for (const file of ["scripts/gate/pack-check.ts", "scripts/gate/verify-npm-layout.ts"]) {
+    const text = readFileSync(join(ROOT, file), "utf8");
+    assert.match(text, /checkMaterializedCatalogPeers/);
+    assert.match(text, /manifest\.dshPeerContracts\[p\]/);
+  }
+});
+
 /** 本地某一档实际会执行的命令行（原样，未经归一）。 */
 function planCommands(tier: string): string[] {
   const { allPackages } = computeCiMatrix({ env: {} });

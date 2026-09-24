@@ -274,8 +274,16 @@ shared**；X1 保证**已准入的模块随每个消费包完整发布**（机�
 contract-check 禁止运行时值导入）。原自建类型层 `types/dsh.d.ts` 已删除（issue #48）。
 
 **版本适配策略（唯一目标 runtime）**：官方类型层 catalog 当前锁定 dsh
-`0.1.7-rc.1`，peer 与 catalog 锁步；其它 runtime 均不在支持范围。升级 catalog 须先由
-维护者确定新的唯一目标，再跑全量门禁并核验受影响的结构
+`0.1.7-rc.1`，其它 runtime 均不在支持范围。catalog 是唯一版本事实源；各 active/standalone
+包的 DSH 官方 peer **成员集合**登记在 `scripts/data/plugins-manifest.json` 的
+`dshPeerContracts`，而成员版本来自 catalog。各包 `peerDependencies` 是 DSH 读取 link
+清单时必须看到的**精确 SemVer 投影**，升级 catalog 后运行 `pnpm catalog:sync-peers` 生成；
+生成器只更新合同成员的值，拒绝 range、成员增删、并发覆盖和非原子回滚，`pnpm contract`
+拒绝手工漂移，`pnpm pack:check` / `pnpm verify:npmlayout` 验证源清单与发布 tarball
+仍物化为同一精确版本。聚合包不得声明 DSH 官方 peer。`devDependencies` /
+`dependencies` 继续使用 `catalog:` 交给 pnpm 解析。升级 catalog 须先由维护者确定新的
+唯一目标、发布与目标 runtime 匹配的插件，再按本文的升级顺序切换 DSH；不要先把 DSH
+升到新 rc、再期待旧 exact-peer 插件继续兼容。随后跑全量门禁并核验受影响的结构
 （如 SessionHeader.origin / Agent.session），同步根 README「版本适配」与 release notes
 锚定声明。
 
@@ -710,6 +718,10 @@ entries }`——兼容字段 `exports` = **主入口**的导出面、`declBlocks
     自动枚举会退回「目录即事实源」的 fail-open 老路；
   - schema 加载/校验逻辑只有一份：`scripts/lib/plugins-manifest-lib.ts`（纯函数，
     入口脚本只喂数据），测试见 `scripts/test/plugins-manifest.test.ts`。
+  - `dshPeerContracts` 记录每个 active/standalone 包必须声明的官方 peer 成员（不记录版本）；
+    peer 成员删除/新增会在 catalog 门禁失败，聚合包不进入该合同。
+  - 聚合包没有顶层 DSH peer，安装前 preflight 不会替子包做兼容判断；聚合安装后的 web 启动
+    逐 row preflight/health 才是最终验证，不能只看 `dsh plugin add` 返回码。
 - **复杂度门禁（#722 阶段五）**：`pnpm lint` = ESLint `complexity` + `sonarjs/cognitive-complexity`，
   跑在 `packages/*/src`、`packages/*/test`、`shared`、`scripts` 的手写源码上（秒级）。
   - **工具链隔离**：lint 工具链装在 `tools/lint`（刻意不在 `packages/` 下）——typescript-eslint

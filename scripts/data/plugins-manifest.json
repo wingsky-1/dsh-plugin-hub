@@ -9,6 +9,46 @@
     "dsh-worktree-sidebar"
   ],
   "standalone": [],
+  "dshPeerContracts": {
+    "dsh-decision-gateway": [
+      "@deepseek-ai/cordis",
+      "@deepseek-ai/dsh-host-webserver",
+      "@deepseek-ai/dsh-tools"
+    ],
+    "dsh-lan-proxy": ["@deepseek-ai/cordis", "@deepseek-ai/dsh-host-webserver"],
+    "dsh-mcp-manager": [
+      "@deepseek-ai/cordis",
+      "@deepseek-ai/dsh-host-webserver",
+      "@deepseek-ai/dsh-agent",
+      "@deepseek-ai/dsh-tools",
+      "@deepseek-ai/dsh-system-prompt"
+    ],
+    "dsh-notifier": [
+      "@deepseek-ai/cordis",
+      "@deepseek-ai/dsh-agent",
+      "@deepseek-ai/dsh-host-webserver",
+      "@deepseek-ai/dsh-session",
+      "@deepseek-ai/dsh-session-title",
+      "@deepseek-ai/dsh-settings",
+      "@deepseek-ai/dsh-user-approval",
+      "@deepseek-ai/dsh-user-questions"
+    ],
+    "dsh-provider-usage": [
+      "@deepseek-ai/cordis",
+      "@deepseek-ai/dsh-host-webserver",
+      "@deepseek-ai/dsh-llm",
+      "@deepseek-ai/dsh-session"
+    ],
+    "dsh-verify-isolated": ["@deepseek-ai/dsh-skill-filesystem"],
+    "dsh-worktree-sidebar": [
+      "@deepseek-ai/cordis",
+      "@deepseek-ai/dsh-agent",
+      "@deepseek-ai/dsh-api-workspace-files",
+      "@deepseek-ai/dsh-host-webserver",
+      "@deepseek-ai/dsh-tools",
+      "@deepseek-ai/dsh-typert-protocol"
+    ]
+  },
   "configSurfaces": [
     {
       "package": "dsh-lan-proxy",

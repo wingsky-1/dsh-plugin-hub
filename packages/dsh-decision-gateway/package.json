@@ -58,9 +58,9 @@
     "@typesafe-ai/sdk": "catalog:"
   },
   "peerDependencies": {
-    "@deepseek-ai/cordis": "catalog:",
-    "@deepseek-ai/dsh-host-webserver": "catalog:",
-    "@deepseek-ai/dsh-tools": "catalog:"
+    "@deepseek-ai/cordis": "4.0.4",
+    "@deepseek-ai/dsh-host-webserver": "0.1.7-rc.1",
+    "@deepseek-ai/dsh-tools": "0.1.7-rc.1"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/cordis": {

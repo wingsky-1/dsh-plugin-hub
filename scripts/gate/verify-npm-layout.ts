@@ -34,8 +34,14 @@ import {
   loadManifest,
 } from "../lib/plugins-manifest-lib.ts";
 import { resolvePackageScopeOrExit } from "../lib/package-scope.ts";
+import {
+  checkAggregatePeerBoundary,
+  checkMaterializedCatalogPeers,
+  parseCatalog,
+} from "../lib/catalog-peers-lib.ts";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
+const CATALOG = parseCatalog(readFileSync(join(ROOT, "pnpm-workspace.yaml"), "utf8"));
 
 // W1.2 发布证据链落盘面：--log-file <path> 把本脚本的 stdout 逐字节镜像到文件
 // （逐包 PASS/FAIL 行 + 汇总行，供 release.yml 上传发布证据）。调用方传 RUNNER_TEMP 下的
@@ -159,6 +165,13 @@ for (const p of allPackages) {
   const bad = Object.keys(pkgJson.scripts ?? {}).filter((s) =>
     FORBIDDEN_INSTALL_SCRIPTS.includes(s),
   );
+  if (p === AGGREGATE_NAME) {
+    const peerProblems = checkAggregatePeerBoundary(pkgJson);
+    if (peerProblems.length > 0) {
+      failed++;
+      console.log(`FAIL ${pkgJson.name} | ${peerProblems.join("; ")}`);
+    }
+  }
   if (bad.length > 0) {
     failed++;
     console.log(
@@ -180,7 +193,10 @@ if (scoped !== null) {
 
 for (const p of layoutTargets) {
   const tmp = mkdtempSync(join(tmpdir(), "dsh-npmlayout-"));
-  const name = JSON.parse(readFileSync(join(ROOT, "packages", p, "package.json"), "utf8")).name;
+  const sourceManifest = JSON.parse(
+    readFileSync(join(ROOT, "packages", p, "package.json"), "utf8"),
+  );
+  const name = sourceManifest.name;
   try {
     execFileSync("pnpm", ["--filter", name, "pack", "--pack-destination", tmp], {
       cwd: ROOT,
@@ -190,6 +206,21 @@ for (const p of layoutTargets) {
     execFileSync("tar", ["-xzf", join(tmp, tgz!), "-C", tmp]);
     const pkgRoot = join(tmp, "package");
     const problems: string[] = [];
+    const packedManifest = JSON.parse(readFileSync(join(pkgRoot, "package.json"), "utf8"));
+    const expectedPeers = manifest.dshPeerContracts[p];
+    if (expectedPeers === undefined) {
+      problems.push(`plugins-manifest: dshPeerContracts 缺 ${p}`);
+    } else {
+      problems.push(
+        ...checkMaterializedCatalogPeers(
+          sourceManifest,
+          packedManifest,
+          CATALOG,
+          name,
+          expectedPeers,
+        ),
+      );
+    }
 
     // 1. 宿主导出面（模拟 npm 安装后 require/import 该包）
     const idxPath = join(pkgRoot, "lib", "index.js");

@@ -260,6 +260,35 @@ test("#8b standalone 校验：重名互斥 / 数组重复项 → 报错；缺省
   }
 });
 
+test("dshPeerContracts schema：缺键/非 active/重复/非官方成员均 fail-closed", () => {
+  const cases: Array<{ value: unknown; pattern: RegExp }> = [
+    {
+      value: { "dsh-a": ["@deepseek-ai/dsh-tools", "@deepseek-ai/dsh-tools"] },
+      pattern: /peer 重复/,
+    },
+    { value: { "dsh-a": ["react"] }, pattern: /非法官方 peer/ },
+    { value: { "dsh-b": [] }, pattern: /含不在 active ∪ standalone 的包/ },
+  ];
+  for (const { value, pattern } of cases) {
+    const { dir, cleanup } = tempRepo();
+    try {
+      writeFileSync(
+        join(dir, "scripts", "data", "plugins-manifest.json"),
+        JSON.stringify({
+          active: ["dsh-a"],
+          standalone: [],
+          retired: [],
+          dshPeerContracts: value,
+          configSurfaces: [{ package: "dsh-a", surface: "none", reason: "测试用" }],
+        }),
+      );
+      assert.throws(() => loadManifest(dir), pattern);
+    } finally {
+      cleanup();
+    }
+  }
+});
+
 test("#9 正向全绿：真实仓库 manifest + 真实目录 + 真实聚合 deps/patch", async () => {
   // 直接 import 根 package.json 同级的真实数据（node --test 直跑 TS，无构建步骤）
   const { readFileSync } = await import("node:fs");

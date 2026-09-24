@@ -131,7 +131,7 @@ function writeVersionLog(
     delegationDepth: 0,
     cwd: "/tmp",
   };
-  if (version > 0) header.isSeeded = false;
+  if (version > 1) header.isSeeded = false;
   const rows: Row[] = [
     header,
     { type: "turn/start", seq: 0, time: 1, data: { turn: 1 } },
