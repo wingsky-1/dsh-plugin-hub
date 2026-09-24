@@ -602,10 +602,10 @@ describe("generate：冲突 usage 采用首个 chunk", () => {
     expect(f.seen.calls).toHaveLength(1);
   });
 
-  it("首 usage 缺字段形成的 null 不会被冲突后块补写", async () => {
+  it("首 usage 缺失可选字段形成的 null 不会被冲突后块补写", async () => {
     const f = fakeLlm([
       { type: "text-delta", index: 0, text: "可见正文" },
-      { type: "usage", usage: {} },
+      { type: "usage", usage: { inputTokens: 0, outputTokens: 0 } },
       {
         type: "usage",
         usage: {
@@ -626,8 +626,8 @@ describe("generate：冲突 usage 采用首个 chunk", () => {
     expect(result.meta.ok).toBe(true);
     expect(result.body).toBe("可见正文");
     expect(result.meta.tokens).toEqual({
-      inputTokens: null,
-      outputTokens: null,
+      inputTokens: 0,
+      outputTokens: 0,
       totalTokens: null,
       cacheReadTokens: null,
       cacheWriteTokens: null,
