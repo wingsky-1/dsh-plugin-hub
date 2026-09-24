@@ -67,6 +67,6 @@ minimumReleaseAgeExclude:
   - "@deepseek-ai/dsh-client-connection@0.1.7-rc.1"
   - "@deepseek-ai/dsh-settings@0.1.7-rc.1"
   - "@deepseek-ai/dsh-skill-filesystem@0.1.7-rc.1"
-  - '@deepseek-ai/dsh-atomic-write@0.1.7-rc.1'
-  - '@deepseek-ai/dsh-config-editor@0.1.7-rc.1'
-  - '@deepseek-ai/dsh-deque@0.1.7-rc.1'
+  - "@deepseek-ai/dsh-atomic-write@0.1.7-rc.1"
+  - "@deepseek-ai/dsh-config-editor@0.1.7-rc.1"
+  - "@deepseek-ai/dsh-deque@0.1.7-rc.1"
