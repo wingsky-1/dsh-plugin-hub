@@ -293,6 +293,7 @@ type StreamTerminal =
 interface StreamState {
   body: string;
   hasNonWhitespaceReasoning: boolean;
+  hasUnknownChunk: boolean;
   tokens: ReportTokenUsage | null;
   terminal: StreamTerminal;
 }
@@ -304,11 +305,9 @@ function classifyFinishReason(reason: FinishReason): StreamTerminal {
     case "max-tokens":
       return { kind: "normal" };
     case "error":
-    case "aborted": {
-      const label = reason.kind === "aborted" ? "模型生成已中止" : "模型生成失败";
-      const detail = reason.failure.message.trim();
-      return { kind: "error", error: detail.length === 0 ? label : `${label}：${detail}` };
-    }
+      return { kind: "error", error: "模型请求失败" };
+    case "aborted":
+      return { kind: "error", error: "模型请求已取消" };
     default:
       return { kind: "unknown" };
   }
@@ -323,20 +322,20 @@ function mergeTerminal(current: StreamTerminal, next: StreamTerminal): StreamTer
 
 /**
  * 生成报告：流式收集正文、reasoning 可见性、token 与终态。
- * reasoning 原文不保留；未知内容块忽略，未知/缺失终态 fail closed。
+ * reasoning 原文不保留；未知内容块与未知/缺失终态均 fail closed。
  */
 function accumulateChunk(chunk: StreamChunk, state: StreamState): StreamState {
   if (chunk.type === "text-delta") return { ...state, body: state.body + chunk.text };
-  if (chunk.type === "reasoning-delta" && chunk.text.trim().length > 0)
-    return { ...state, hasNonWhitespaceReasoning: true };
-  if (chunk.type === "usage" && state.tokens === null)
-    return { ...state, tokens: parseTokenUsage(chunk.usage) };
+  if (chunk.type === "reasoning-delta")
+    return chunk.text.trim().length > 0 ? { ...state, hasNonWhitespaceReasoning: true } : state;
+  if (chunk.type === "usage")
+    return state.tokens === null ? { ...state, tokens: parseTokenUsage(chunk.usage) } : state;
   if (chunk.type === "finish")
     return {
       ...state,
       terminal: mergeTerminal(state.terminal, classifyFinishReason(chunk.reason)),
     };
-  return state;
+  return { ...state, hasUnknownChunk: true };
 }
 export async function generateReport(opts: GenerateReportOptions): Promise<ReportResult> {
   const now = opts.now ?? Date.now;
@@ -394,6 +393,7 @@ export async function generateReport(opts: GenerateReportOptions): Promise<Repor
   let state: StreamState = {
     body: "",
     hasNonWhitespaceReasoning: false,
+    hasUnknownChunk: false,
     tokens: null,
     terminal: { kind: "none" },
   };
@@ -401,11 +401,12 @@ export async function generateReport(opts: GenerateReportOptions): Promise<Repor
     for await (const chunk of opts.llm.stream(genOpts)) {
       state = accumulateChunk(chunk, state);
     }
-  } catch (e: unknown) {
-    // 流异常/取消 → 失败元数据；调度层据 ok 决定是否推进 lastRun（接线层约定）
-    return fail(e instanceof Error ? e.message : String(e));
+  } catch {
+    // provider 异常可能携带 prompt、路径或凭据；只返回稳定安全文案。
+    return fail("模型请求失败");
   }
   if (state.terminal.kind === "error") return fail(state.terminal.error);
+  if (state.hasUnknownChunk) return fail("模型返回了未知流事件");
   if (state.terminal.kind === "unknown") return fail("模型流返回未知终态");
   if (state.terminal.kind === "none") return fail("模型流未返回可识别终态");
   if (state.body.trim().length === 0 && state.hasNonWhitespaceReasoning)
