@@ -13,6 +13,7 @@ export default defineConfig({
       'packages/dsh-decision-gateway/test/unit/baseurl-guard.test.ts',
       'packages/dsh-decision-gateway/test/unit/decide-contract.test.ts',
       'packages/dsh-decision-gateway/test/unit/precheck-noegress.test.ts',
+      'packages/dsh-decision-gateway/test/unit/signal-cancel.test.ts',
       'packages/dsh-decision-gateway/test/unit/tool-description.test.ts',
       'packages/dsh-decision-gateway/test/unit/tools.test.ts',
       'packages/dsh-decision-gateway/test/unit/verdict-tiers.test.ts',

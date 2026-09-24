@@ -97,6 +97,22 @@
       "trackingIssue": "#847",
       "reviewBy": "2027-03-31",
       "exitCriteria": "对应单测迁出 test/unit 或不再直引客户端实现面后删本条"
+    },
+    {
+      "gate": "verify-dir-imports",
+      "path": "dsh-worktree-sidebar:test/unit/inject-keep-mounted.test.ts|src/client/inject.ts",
+      "reason": "#1011 新增 keepMounted 语义单测沿用同包既有模式（与 inject-attach.test.ts 逐字相同的深引）：sidebar 客户端单测直接 import src/client/** 实现面，属单元层取了另一端的面。修法同上（迁出 test/unit 或改直连白盒允许面），属 sidebar 包自己的测试面调整；本次升级域不动测试面结构以控范围。按证据级逐条登记。",
+      "trackingIssue": "#1011",
+      "reviewBy": "2027-03-31",
+      "exitCriteria": "对应单测迁出 test/unit 或不再直引客户端实现面后删本条"
+    },
+    {
+      "gate": "verify-dir-imports",
+      "path": "dsh-worktree-sidebar:test/unit/inject-keep-mounted.test.ts|src/client/shared/ports.ts",
+      "reason": "#1011 新增 keepMounted 语义单测沿用同包既有模式（与 inject-attach.test.ts 逐字相同的深引）：sidebar 客户端单测直接 import src/client/** 实现面，属单元层取了另一端的面。修法同上（迁出 test/unit 或改直连白盒允许面），属 sidebar 包自己的测试面调整；本次升级域不动测试面结构以控范围。按证据级逐条登记。",
+      "trackingIssue": "#1011",
+      "reviewBy": "2027-03-31",
+      "exitCriteria": "对应单测迁出 test/unit 或不再直引客户端实现面后删本条"
     }
   ]
 }
