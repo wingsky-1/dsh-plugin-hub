@@ -365,7 +365,7 @@ test("真实仓库锚：S1 为 F1 一处、S2 具名、C1 为 19", () => {
   const r = spawnSync(process.execPath, [SCRIPT], { cwd: ROOT, encoding: "utf8" });
   assert.equal(r.status, 0);
   const out = String(r.stdout) + String(r.stderr);
-  assert.ok(out.includes("S1 动态 1") && out.includes("src/index.ts:63"));
+  assert.ok(out.includes("S1 动态 1") && out.includes("src/index.ts:67")); // #1011 serial 透传包装致转发放行点 63→67，仍为同一 S1 动态 site
   assert.ok(out.includes("loader"));
   assert.ok(out.includes("字面量 19 处"));
   assert.ok(out.includes("internal/service"));
