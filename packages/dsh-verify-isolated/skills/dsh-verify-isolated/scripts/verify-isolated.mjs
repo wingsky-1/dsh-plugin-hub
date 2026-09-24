@@ -49,8 +49,10 @@
  *                      真实 home**（插件写真实 ~/.dsh 的数据面不在判定面内）。
  *   --no-skip-onboarding
  *                      不预置首启弹窗跳过（默认预置 settings.yaml 的
- *                      ui-onboarding.welcomeNoticeVersion，使「内测声明」默认
- *                      不弹）。要验证 onboarding 弹窗本身时用它保留原生首启态。
+ *                      <namespace>.welcomeNoticeVersion，使「内测声明」默认
+ *                      不弹；命名空间与版本均从 dsh 客户端产物现取，rc.7 为
+ *                      ui-settings-general，取不到回退 ui-onboarding）。
+ *                      要验证 onboarding 弹窗本身时用它保留原生首启态。
  *   --json             stdout 只出最终 verdict JSON（人类文案全部走 stderr）。
  *   --                 之后为要挂载的本地插件路径（相对路径基于当前 cwd 解析；
  *                      npm 包名 / git URL 原样透传，见 lib/verify-core.mjs
@@ -106,8 +108,11 @@
  * 首启弹窗默认跳过（--no-skip-onboarding 关闭）：全新 DSH_HOME 的首屏是两个
  * **阻断式**弹窗（「内测声明」→「添加 API Key」），二者都把 #root 置为 inert，
  * 页面上的一切点击静默失效。内测声明由 settings.yaml 的
- * ui-onboarding.welcomeNoticeVersion 与客户端常量精确相等决定，故启动前预置该
- * 值即默认不弹——常量按 dsh 版本现取（lib/onboarding.mjs），取不到就只警告并
+ * <namespace>.welcomeNoticeVersion 与客户端常量精确相等决定，故启动前预置该
+ * 值即默认不弹——命名空间与版本均按 dsh 版本现取（lib/onboarding.mjs：
+ * WELCOME_NOTICE_SETTINGS_NAMESPACE / WELCOME_NOTICE_VERSION，rc.7 命名空间为
+ * ui-settings-general，取不到回退 ui-onboarding——rc.7 导入映射
+ * ui-onboarding→ui-settings-general 自动迁移），取不到就只警告并
  * 交给 browser-driver 导航后兜底，绝不用硬编码值伪造「已跳过」。「添加 API Key」
  * 无法预置消除（其「稍后配置」只在当前页面生命周期内有效），由 browser-driver
  * 在导航后自动点击跳过。弹窗成因、复现与对照见 SKILL.md 的硬前提（§3.2）。
@@ -164,7 +169,7 @@ const USAGE = `用法: node verify-isolated.mjs [--dsh <path>] [--port <port>] [
   --audit              隔离审计：对比隔离 DSH_HOME 写面与预置白名单，白名单外变化报「可疑」，不阻断退出
   --audit-extra-dirs <dir>
                       额外审计目录（可重复；相对路径基于 cwd 绝对化；局限：不扫真实 home）
-  --no-skip-onboarding 不预置首启弹窗跳过（默认预置 settings.yaml 的内测声明版本，使其默认不弹）
+  --no-skip-onboarding 不预置首启弹窗跳过（默认预置 settings.yaml 的内测声明版本与命名空间，使其默认不弹；命名空间与版本均从 dsh 客户端产物现取）
   --json               stdout 只出最终 verdict JSON（人类文案走 stderr）
   --                   之后为要挂载的本地插件路径（相对路径基于 cwd 绝对化；npm 包名 / git URL 原样透传）
   --help               显示本帮助
@@ -224,25 +229,104 @@ class CliError extends Error {
 }
 
 // --- CLI 解析（对齐 bash 版参数契约；--help 为新增） ---
-function parseCli(argv) {
-  // jsonMode 只在 `--` 前段探测（`--` 之后为插件参数原样透传，不参与选项解析）；
-  // `--json=false` 显式关闭；`--json --bogus` 等错误路径在循环内解析到 --json
-  // 即置位，随后抛错时顶层 catch 仍按 JSON 输出（P1：修复 --dsh /x -- --json
-  // 误开全局 jsonMode 的边界外扫描）。
-  let jsonDetected = false;
-  for (let i = 0; i < argv.length; i++) {
-    const a = argv[i];
+// 复杂度门禁（40）要求下 parseCli 只保留主循环骨架，分支下沉到小函数
+// （行为与报错文案逐字一致，见 smoke 6/9c/10g 子进程断言）。
+// jsonMode 只在 `--` 前段探测（`--` 之后为插件参数原样透传，不参与选项解析）；
+// `--json=false` 显式关闭；`--json --bogus` 等错误路径在循环内解析到 --json
+// 即置位，随后抛错时顶层 catch 仍按 JSON 输出（P1：修复 --dsh /x -- --json
+// 误开全局 jsonMode 的边界外扫描）。
+function detectJsonMode(argv) {
+  for (const a of argv) {
     if (a === "--") break;
-    if (a === "--json") {
-      jsonDetected = true;
-      break;
-    }
-    if (a.startsWith("--json=")) {
-      jsonDetected = a.slice("--json=".length) === "true";
-      break;
-    }
+    if (a === "--json") return true;
+    if (a.startsWith("--json=")) return a.slice("--json=".length) === "true";
   }
-  jsonMode = jsonDetected;
+  return false;
+}
+
+/** 参数错误统一出口（top catch 统一收口 → 尽力清理 → 输出 → 退出）。 */
+function failUsage(msg) {
+  throw new CliError(msg, EXIT.USAGE);
+}
+
+function requireOptValue(argv, i, opt) {
+  const v = argv[i + 1];
+  if (v === undefined || v.startsWith("--")) failUsage(`错误: ${opt} 需要一个参数`);
+  return v;
+}
+
+function parsePortNumber(raw) {
+  // 严格十进制（拒绝 0x10 / 1e3 / 空串等 Number() 宽容形态）
+  if (!/^\d+$/.test(raw)) failUsage(`错误: --port 需要 0-65535 的十进制整数: ${raw}`);
+  const p = Number(raw);
+  if (p > 65535) failUsage(`错误: --port 需要 0-65535 的十进制整数: ${raw}`);
+  return p;
+}
+
+function parseJsonInline(inline) {
+  // --json=<v> 显式布尔（true/false），非法值参数错误
+  if (inline !== "true" && inline !== "false")
+    failUsage(`错误: --json 只接受 true/false: ${inline}`);
+  return inline === "true";
+}
+
+/** 无值开关选项；命中返回 true，未命中返回 false（调用方继续走带值选项）。 */
+function applyFlagOption(f, key) {
+  switch (key) {
+    case "browser":
+      f.browser = true;
+      return true;
+    case "keep":
+      f.keep = true;
+      return true;
+    case "no-build":
+      f.noBuild = true;
+      return true;
+    case "audit":
+      f.audit = true;
+      return true;
+    case "no-skip-onboarding":
+      f.skipOnboarding = false;
+      return true;
+    case "help":
+      f.help = true;
+      return true;
+    default:
+      return false;
+  }
+}
+
+/**
+ * 带值选项；返回消费的后续参数个数（0 或 1）。未知选项按原 token 报错
+ * （`--bogus=x` 报全 token，与原 default 分支一致）。
+ */
+function applyValuedOption(f, key, inline, argv, i, token) {
+  switch (key) {
+    case "dsh":
+      f.dsh = inline ?? requireOptValue(argv, i, "--dsh");
+      return inline === null ? 1 : 0;
+    case "port": {
+      const raw = inline ?? requireOptValue(argv, i, "--port");
+      f.port = parsePortNumber(raw);
+      return inline === null ? 1 : 0;
+    }
+    case "evidence-dir":
+      f.evidenceDir = inline ?? requireOptValue(argv, i, "--evidence-dir");
+      return inline === null ? 1 : 0;
+    case "audit-extra-dirs":
+      f.auditExtraDirs.push(inline ?? requireOptValue(argv, i, "--audit-extra-dirs"));
+      return inline === null ? 1 : 0;
+    case "json":
+      f.json = inline !== null ? parseJsonInline(inline) : true;
+      return 0;
+    default:
+      failUsage(`未知选项: ${token}`);
+      return 0; // 不可达（failUsage 恒抛），仅满足 consistent-return
+  }
+}
+
+function parseCli(argv) {
+  jsonMode = detectJsonMode(argv);
   const f = {
     dsh: null,
     port: DEFAULT_PORT,
@@ -257,14 +341,6 @@ function parseCli(argv) {
     help: false,
   };
   const pkgs = [];
-  const bad = (msg) => {
-    throw new CliError(msg, EXIT.USAGE);
-  };
-  const val = (i, opt) => {
-    const v = argv[i + 1];
-    if (v === undefined || v.startsWith("--")) bad(`错误: ${opt} 需要一个参数`);
-    return v;
-  };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--") {
@@ -275,63 +351,10 @@ function parseCli(argv) {
       const eq = a.indexOf("=");
       const key = eq === -1 ? a.slice(2) : a.slice(2, eq);
       const inline = eq === -1 ? null : a.slice(eq + 1);
-      switch (key) {
-        case "dsh":
-          f.dsh = inline ?? val(i, "--dsh");
-          if (inline === null) i++;
-          break;
-        case "port": {
-          const raw = inline ?? val(i, "--port");
-          if (inline === null) i++;
-          // 严格十进制（拒绝 0x10 / 1e3 / 空串等 Number() 宽容形态）
-          if (!/^\d+$/.test(raw)) bad(`错误: --port 需要 0-65535 的十进制整数: ${raw}`);
-          const p = Number(raw);
-          if (p > 65535) bad(`错误: --port 需要 0-65535 的十进制整数: ${raw}`);
-          f.port = p;
-          break;
-        }
-        case "browser":
-          f.browser = true;
-          break;
-        case "keep":
-          f.keep = true;
-          break;
-        case "no-build":
-          f.noBuild = true;
-          break;
-        case "evidence-dir":
-          f.evidenceDir = inline ?? val(i, "--evidence-dir");
-          if (inline === null) i++;
-          break;
-        case "audit":
-          f.audit = true;
-          break;
-        case "audit-extra-dirs":
-          f.auditExtraDirs.push(inline ?? val(i, "--audit-extra-dirs"));
-          if (inline === null) i++;
-          break;
-        case "no-skip-onboarding":
-          f.skipOnboarding = false;
-          break;
-        case "json": {
-          // --json=<v> 显式布尔（true/false），非法值参数错误
-          if (inline !== null) {
-            if (inline !== "true" && inline !== "false")
-              bad(`错误: --json 只接受 true/false: ${inline}`);
-            f.json = inline === "true";
-          } else {
-            f.json = true;
-          }
-          break;
-        }
-        case "help":
-          f.help = true;
-          break;
-        default:
-          bad(`未知选项: ${a}`);
-      }
+      if (applyFlagOption(f, key)) continue;
+      i += applyValuedOption(f, key, inline, argv, i, a);
     } else if (a.startsWith("-") && a !== "-") {
-      bad(`未知选项: ${a}`);
+      failUsage(`未知选项: ${a}`);
     } else {
       pkgs.push(a);
     }
@@ -572,7 +595,9 @@ function setupPlugins(pkgs) {
   }
 }
 
-// --- 首启弹窗默认跳过：预置 settings.yaml 的内测声明版本（见头部注释） ---
+// --- 首启弹窗默认跳过：预置 settings.yaml 的内测声明版本与命名空间（见头部注释） ---
+// 命名空间与版本均从官方产物单源读取（lib/onboarding.mjs），禁硬编码第二份；
+// 命名空间取不到回退 ui-onboarding（回退依据：rc.7 导入映射 ui-onboarding→ui-settings-general 自动迁移）。
 // 预置失败不阻断启动：跳过失效只意味着首屏多一个弹窗（browser-driver 导航后仍会
 // 兜底），而把「dsh 改了客户端常量形态」升级成启动失败，会让验证在无关变更上停摆。
 function presetWelcomeNotice() {
@@ -580,17 +605,31 @@ function presetWelcomeNotice() {
   const found = findWelcomeNoticeVersion(dshAbs);
   if (!found) {
     outWarn(
-      "警告: 未能从 dsh 产物提取内测声明版本（布局或客户端常量变化？）——首启「内测声明」弹窗保留，由 browser-driver 导航后兜底跳过",
+      "警告: 未能从 dsh 产物提取内测声明版本与命名空间（布局或客户端常量变化？）——首启「内测声明」弹窗保留，由 browser-driver 导航后兜底跳过",
     );
-    return { skip: true, source: "unavailable", version: null, settingsFile: settingsPath };
+    return {
+      skip: true,
+      source: "unavailable",
+      version: null,
+      namespace: null,
+      settingsFile: settingsPath,
+    };
   }
   if (existsSync(settingsPath)) {
     outWarn(`警告: ${settingsPath} 已存在，跳过预置（不覆盖既有设置文档）`);
-    return { skip: true, source: "existing", version: found.version, settingsFile: settingsPath };
+    return {
+      skip: true,
+      source: "existing",
+      version: found.version,
+      namespace: found.namespace,
+      settingsFile: settingsPath,
+    };
   }
   try {
     // 0o600：设置文档含用户偏好，与 verdict/browser.state/dsh.log 同级保护
-    writeFileSync(settingsPath, welcomeSettingsDocument(found.version), { mode: 0o600 });
+    writeFileSync(settingsPath, welcomeSettingsDocument(found.version, found.namespace), {
+      mode: 0o600,
+    });
   } catch (e) {
     outWarn(
       `警告: 首启弹窗预置写入失败（${e.message}）——首启「内测声明」弹窗保留，由 browser-driver 兜底跳过`,
@@ -599,17 +638,19 @@ function presetWelcomeNotice() {
       skip: true,
       source: "write-failed",
       version: found.version,
+      namespace: found.namespace,
       settingsFile: settingsPath,
       error: e.message,
     };
   }
   out(
-    `首启弹窗预置: 内测声明版本 ${found.version} → ${settingsPath}（--no-skip-onboarding 可关闭）`,
+    `首启弹窗预置: 内测声明 ${found.namespace}.welcomeNoticeVersion=${found.version} → ${settingsPath}（--no-skip-onboarding 可关闭）`,
   );
   return {
     skip: true,
     source: "preset",
     version: found.version,
+    namespace: found.namespace,
     clientFile: found.file,
     settingsFile: settingsPath,
   };
@@ -642,157 +683,176 @@ function requestExit(code, signal) {
   void settle();
 }
 
+async function stopDshChild() {
+  // 1. kill dsh：与 bash trap 对齐，先 SIGTERM 优雅终止（5s 窗口），SIGKILL
+  //    仅作二次兜底（避免活体 dsh 被直接 SIGKILL 跳过清理钩子）
+  if (!dshChild) return;
+  await waitPidExit(dshChild.pid, 5000);
+  if (pidAlive(dshChild.pid)) killDsh(dshChild, "SIGTERM");
+  await waitPidExit(dshChild.pid, 3000);
+  if (pidAlive(dshChild.pid)) killDsh(dshChild, "SIGKILL");
+}
+
+function quitBrowserInstance() {
+  // 2. browser quit（如有实例，CDP 优雅关闭 + kill 兜底，行为同 bash trap）
+  if (!(flags?.browser && browserState && existsSync(browserState))) return;
+  out("清理浏览器实例（browser-driver quit）...");
+  try {
+    spawnSync(process.execPath, [DRIVER, "quit", "--state", browserState, "--json"], {
+      stdio: "ignore",
+      timeout: 20000,
+    });
+  } catch {}
+}
+
+function collectAuditSuspicious() {
+  const all = [];
+  for (const b of auditBaseline) {
+    const t1 = scanSnapshot(b.root, { skipDeep: SKIP_DEEP });
+    const r = runAudit({ t0: b.snapshot, t1, isolatedRoot: b.root });
+    all.push(...r.suspicious);
+  }
+  // 去重 + 稳定排序（extra dir 与 DSH_HOME 已校验不重叠，防御性去重）
+  const seen = new Set();
+  return all
+    .filter((s) => (seen.has(s.path) ? false : (seen.add(s.path), true)))
+    .sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+}
+
+function reportAuditResult(suspicious) {
+  const count = suspicious.length;
+  auditResult = {
+    enabled: true,
+    whitelistV: WHITELIST_V,
+    extraDirs: auditExtraDirsAbs, // 记绝对化后的目录（与 t0 扫描根一致）
+    suspicious,
+    count,
+    conclusion: count === 0 ? "pass" : "suspicious",
+    runAt: new Date().toISOString(),
+  };
+  if (count === 0) {
+    out("审计:通过");
+    return;
+  }
+  out(`审计:可疑项 ${count}:`);
+  for (const s of suspicious) {
+    out(`可疑: ${s.path}（${s.type}${s.detail ? `: ${s.detail}` : ""}）`);
+  }
+  out(`审计: ${count}项可疑`);
+}
+
+function persistAuditReport() {
+  // --keep 落 $ISOLATED_HOME/audit/audit.json（t1 扫描之后写，先扫后写
+  // 排除自身；audit/** 白名单双保险在位）
+  if (!(flags.keep && isolatedHome)) return;
+  const auditPath = join(isolatedHome, "audit", "audit.json");
+  mkdirSync(dirname(auditPath), { recursive: true });
+  writeFileSync(auditPath, JSON.stringify(auditResult, null, 2));
+  out(`审计报告: ${auditPath}`);
+}
+
+function runSettleAudit() {
+  // 3. 隔离审计（B4，--audit）：t1 终态扫描 → 白名单 diff + symlink 防逃逸 →
+  //    输出结论。审计是补充非门禁：任何异常仅警告（auditResult 带 error），
+  //    不阻断退出、不影响退出码契约。
+  if (!(flags?.audit && auditBaseline)) return;
+  try {
+    reportAuditResult(collectAuditSuspicious());
+    persistAuditReport();
+  } catch (e) {
+    outWarn(`审计异常（不影响退出码）: ${e.message}`);
+    auditResult = {
+      enabled: true,
+      whitelistV: WHITELIST_V,
+      extraDirs: auditExtraDirsAbs,
+      suspicious: [],
+      count: -1,
+      conclusion: "error",
+      error: e.message,
+      runAt: new Date().toISOString(),
+    };
+  }
+}
+
+function finalizeVerdictAndHome() {
+  // 4. verdict 终态 cleanup（done/kept；audit 字段已并入 makeVerdict）
+  writeVerdictTerminal();
+  // 5. 不 --keep 时清理 ISOLATED_HOME
+  if (!isolatedHome) return;
+  if (flags?.keep) {
+    out(`（--keep）临时 DSH_HOME 保留于: ${isolatedHome}`);
+    out(`（--keep）如需删除: rm -rf '${isolatedHome}'`);
+    return;
+  }
+  rmSync(isolatedHome, { recursive: true, force: true });
+}
+
+function emitSettleOutput() {
+  // --json：stdout 只出一份 JSON——错误路径已输出错误对象则不再重复，否则出
+  // 最终 verdict（ok/cleanup 终态与 verdict.json 文件一致）。B4：error 对象
+  // 恒置 audit 字段（auditResult ?? null）与 verdict 对齐——t0 之前错误（如
+  // extra-dir 不存在）时 audit 为 null 而非缺失，字段契约一致（M6）。
+  if (jsonMode) {
+    if (errorPayload) {
+      errorPayload.audit = auditResult ?? null;
+      jsonOut(errorPayload);
+    } else {
+      jsonOut(
+        makeVerdict({
+          ok: readyOk && (exiting?.code ?? EXIT.FAIL) === 0,
+          cleanup: flags?.keep ? "kept" : "done",
+        }),
+      );
+    }
+  }
+  process.exit(exiting?.code ?? EXIT.FAIL);
+}
+
 async function settle() {
   if (settling) return;
   settling = true;
   try {
-    // 1. kill dsh：与 bash trap 对齐，先 SIGTERM 优雅终止（5s 窗口），SIGKILL
-    //    仅作二次兜底（避免活体 dsh 被直接 SIGKILL 跳过清理钩子）
-    if (dshChild) {
-      await waitPidExit(dshChild.pid, 5000);
-      if (pidAlive(dshChild.pid)) killDsh(dshChild, "SIGTERM");
-      await waitPidExit(dshChild.pid, 3000);
-      if (pidAlive(dshChild.pid)) killDsh(dshChild, "SIGKILL");
-    }
-    // 2. browser quit（如有实例，CDP 优雅关闭 + kill 兜底，行为同 bash trap）
-    if (flags?.browser && browserState && existsSync(browserState)) {
-      out("清理浏览器实例（browser-driver quit）...");
-      try {
-        spawnSync(process.execPath, [DRIVER, "quit", "--state", browserState, "--json"], {
-          stdio: "ignore",
-          timeout: 20000,
-        });
-      } catch {}
-    }
-    // 3. 隔离审计（B4，--audit）：t1 终态扫描 → 白名单 diff + symlink 防逃逸 →
-    //    输出结论。审计是补充非门禁：任何异常仅警告（auditResult 带 error），
-    //    不阻断退出、不影响退出码契约。
-    if (flags?.audit && auditBaseline) {
-      try {
-        const all = [];
-        for (const b of auditBaseline) {
-          const t1 = scanSnapshot(b.root, { skipDeep: SKIP_DEEP });
-          const r = runAudit({ t0: b.snapshot, t1, isolatedRoot: b.root });
-          all.push(...r.suspicious);
-        }
-        // 去重 + 稳定排序（extra dir 与 DSH_HOME 已校验不重叠，防御性去重）
-        const seen = new Set();
-        const suspicious = all
-          .filter((s) => (seen.has(s.path) ? false : (seen.add(s.path), true)))
-          .sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
-        const count = suspicious.length;
-        auditResult = {
-          enabled: true,
-          whitelistV: WHITELIST_V,
-          extraDirs: auditExtraDirsAbs, // 记绝对化后的目录（与 t0 扫描根一致）
-          suspicious,
-          count,
-          conclusion: count === 0 ? "pass" : "suspicious",
-          runAt: new Date().toISOString(),
-        };
-        if (count === 0) {
-          out("审计:通过");
-        } else {
-          out(`审计:可疑项 ${count}:`);
-          for (const s of suspicious) {
-            out(`可疑: ${s.path}（${s.type}${s.detail ? `: ${s.detail}` : ""}）`);
-          }
-          out(`审计: ${count}项可疑`);
-        }
-        // --keep 落 $ISOLATED_HOME/audit/audit.json（t1 扫描之后写，先扫后写
-        // 排除自身；audit/** 白名单双保险在位）
-        if (flags.keep && isolatedHome) {
-          const auditPath = join(isolatedHome, "audit", "audit.json");
-          mkdirSync(dirname(auditPath), { recursive: true });
-          writeFileSync(auditPath, JSON.stringify(auditResult, null, 2));
-          out(`审计报告: ${auditPath}`);
-        }
-      } catch (e) {
-        outWarn(`审计异常（不影响退出码）: ${e.message}`);
-        auditResult = {
-          enabled: true,
-          whitelistV: WHITELIST_V,
-          extraDirs: auditExtraDirsAbs,
-          suspicious: [],
-          count: -1,
-          conclusion: "error",
-          error: e.message,
-          runAt: new Date().toISOString(),
-        };
-      }
-    }
-    // 4. verdict 终态 cleanup（done/kept；audit 字段已并入 makeVerdict）
-    writeVerdictTerminal();
-    // 5. 不 --keep 时清理 ISOLATED_HOME
-    if (isolatedHome) {
-      if (flags?.keep) {
-        out(`（--keep）临时 DSH_HOME 保留于: ${isolatedHome}`);
-        out(`（--keep）如需删除: rm -rf '${isolatedHome}'`);
-      } else {
-        rmSync(isolatedHome, { recursive: true, force: true });
-      }
-    }
+    await stopDshChild();
+    quitBrowserInstance();
+    runSettleAudit();
+    finalizeVerdictAndHome();
   } catch (e) {
     outWarn(`清理异常（继续退出）: ${e.message}`);
   } finally {
-    // --json：stdout 只出一份 JSON——错误路径已输出错误对象则不再重复，否则出
-    // 最终 verdict（ok/cleanup 终态与 verdict.json 文件一致）。B4：error 对象
-    // 恒置 audit 字段（auditResult ?? null）与 verdict 对齐——t0 之前错误（如
-    // extra-dir 不存在）时 audit 为 null 而非缺失，字段契约一致（M6）。
-    if (jsonMode) {
-      if (errorPayload) {
-        errorPayload.audit = auditResult ?? null;
-        jsonOut(errorPayload);
-      } else {
-        jsonOut(
-          makeVerdict({
-            ok: readyOk && (exiting?.code ?? EXIT.FAIL) === 0,
-            cleanup: flags?.keep ? "kept" : "done",
-          }),
-        );
-      }
-    }
-    process.exit(exiting?.code ?? EXIT.FAIL);
+    emitSettleOutput();
   }
 }
 
 process.on("SIGINT", () => requestExit(EXIT.SIGINT, "SIGINT"));
 process.on("SIGTERM", () => requestExit(EXIT.SIGTERM, "SIGTERM"));
 
-// --- 主流程 ---
-async function main() {
-  const { flags: f, pkgs } = parseCli(process.argv.slice(2));
-  flags = f;
-  jsonMode = f.json;
-  // --json 时 USAGE 走 stderr（stdout 只出 JSON 的约束对 --help 同样生效）
-  if (f.help) {
-    (jsonMode ? process.stderr : process.stdout).write(USAGE + "\n");
-    process.exit(EXIT.OK);
-  }
-
+// --- 主流程分阶段 helpers（复杂度门禁 40：main 只保留线性编排） ---
+function resolveAuditExtraDirs(f) {
   // 0a. B4 --audit-extra-dirs 参数校验（纯参数级 fail fast：存在性 + 必须是
   // 目录 + 基于 cwd 绝对化；与 DSH_HOME 重叠校验延后到 mkdtemp 之后）。
   // 未开 --audit 时忽略（警告提示，审计需 --audit 显式开启——extra dirs 单独无效）。
-  let extraDirsAbs = [];
-  if (f.audit) {
-    extraDirsAbs = f.auditExtraDirs.map((raw) => {
-      const abs = resolve(raw);
-      if (!existsSync(abs)) {
-        throw new CliError(
-          `错误: --audit-extra-dirs 目录不存在: ${raw}（相对路径基于 cwd 解析）`,
-          EXIT.USAGE,
-        );
-      }
-      if (!statSync(abs).isDirectory()) {
-        throw new CliError(`错误: --audit-extra-dirs 必须是目录: ${raw}`, EXIT.USAGE);
-      }
-      return abs;
-    });
-  } else if (f.auditExtraDirs.length > 0) {
-    outWarn("警告: --audit-extra-dirs 未开启 --audit，忽略（审计需 --audit 显式开启）");
+  if (!f.audit) {
+    if (f.auditExtraDirs.length > 0) {
+      outWarn("警告: --audit-extra-dirs 未开启 --audit，忽略（审计需 --audit 显式开启）");
+    }
+    return [];
   }
-  auditExtraDirsAbs = extraDirsAbs;
+  return f.auditExtraDirs.map((raw) => {
+    const abs = resolve(raw);
+    if (!existsSync(abs)) {
+      throw new CliError(
+        `错误: --audit-extra-dirs 目录不存在: ${raw}（相对路径基于 cwd 解析）`,
+        EXIT.USAGE,
+      );
+    }
+    if (!statSync(abs).isDirectory()) {
+      throw new CliError(`错误: --audit-extra-dirs 必须是目录: ${raw}`, EXIT.USAGE);
+    }
+    return abs;
+  });
+}
 
+function resolveDshEntry(f) {
   // 0. dsh 入口校验与版本锚定展示（fail fast，不在建完环境后才失败）
   const rawDsh = f.dsh ?? "dsh";
   dshAbs = resolveDsh(rawDsh);
@@ -801,7 +861,9 @@ async function main() {
   }
   dshVersion = readDshVersion(dshAbs);
   out(`dsh 入口: ${dshAbs} (${dshVersion})`);
+}
 
+function setupIsolatedHome(f, extraDirsAbs) {
   // 1. 第一层隔离：全新临时 DSH_HOME（隔离凭据/会话/home 级 patch）
   isolatedHome = mkdtempSync(join(tmpdir(), "dsh-verify-"));
   profile = `verify_${randomBytes(4).toString("hex")}`;
@@ -826,8 +888,10 @@ async function main() {
     : join(isolatedHome, "evidence");
   mkdirSync(evidenceDir, { recursive: true });
   out(`证据目录: ${evidenceDir}`);
+}
 
-  // 1b. 首启弹窗默认跳过：预置内测声明版本，否则首屏是一张 inert 的阻断弹窗，
+function presetOnboardingStep(f) {
+  // 1b. 首启弹窗默认跳过：预置内测声明版本与命名空间，否则首屏是一张 inert 的阻断弹窗，
   //     验证开始前必须先手工点掉（且刷新后重现）。--no-skip-onboarding 保留原生态。
   onboardingPreset = f.skipOnboarding
     ? presetWelcomeNotice()
@@ -835,9 +899,12 @@ async function main() {
         skip: false,
         source: "disabled",
         version: null,
+        namespace: null,
         settingsFile: join(isolatedHome, "settings.yaml"),
       };
+}
 
+function initProfileAndBundles() {
   // 2. 初始化独立 profile（显式 plugin list；失败 fail loudly 给可操作错误）
   const init = runDsh(["plugin", "--profile", profile, "list"], true);
   if (init.status !== 0) {
@@ -846,7 +913,6 @@ async function main() {
       EXIT.FAIL,
     );
   }
-
   // 3. 注入内置 web-app bundle（按名从 dsh 安装目录解析，不走 npm）
   const profilePkg = join(isolatedHome, "profiles", profile, "package.json");
   const pj = JSON.parse(readFileSync(profilePkg, "utf8"));
@@ -856,65 +922,65 @@ async function main() {
     bundles.splice(bundles.indexOf("@deepseek-ai/dsh-base") + 1, 0, "@deepseek-ai/dsh-web-app");
   }
   writeFileSync(profilePkg, JSON.stringify(pj, null, 2));
+}
 
-  // 4. 挂载本地插件（参数归一化 + 构建 / --no-build 校验 + add）
-  setupPlugins(pkgs);
-
+function launchBrowserIfNeeded(f) {
   // 5. 启动独立浏览器实例（--browser）：实例信息写入 browser.state。
   //    刻意不传 DSH_HOME：browser-driver 属宿主环境工具（探测系统 Chrome 内核、
   //    操作 /tmp 级 user-data-dir），不随隔离 home（同 pnpm build 方向注释）。
-  if (f.browser) {
-    const launch = spawnSync(
-      process.execPath,
-      [
-        DRIVER,
-        "launch",
-        "--state",
-        browserState,
-        "--user-data-dir",
-        join(isolatedHome, "browser-profile"),
-        "--json",
-      ],
-      { stdio: ["ignore", "pipe", "inherit"], timeout: 60000 },
+  if (!f.browser) return;
+  const launch = spawnSync(
+    process.execPath,
+    [
+      DRIVER,
+      "launch",
+      "--state",
+      browserState,
+      "--user-data-dir",
+      join(isolatedHome, "browser-profile"),
+      "--json",
+    ],
+    { stdio: ["ignore", "pipe", "inherit"], timeout: 60000 },
+  );
+  if (launch.status !== 0) {
+    const detail = (launch.stdout || "").toString().trim();
+    throw new CliError(
+      `错误: 浏览器实例启动失败（browser-driver launch, 退出码 ${launch.status}）${detail ? `\n${detail}` : ""}`,
+      EXIT.FAIL,
     );
-    if (launch.status !== 0) {
-      const detail = (launch.stdout || "").toString().trim();
-      throw new CliError(
-        `错误: 浏览器实例启动失败（browser-driver launch, 退出码 ${launch.status}）${detail ? `\n${detail}` : ""}`,
-        EXIT.FAIL,
-      );
-    }
-    // 非 --json：透传 launch 的 JSON 输出（bash 版行为）；--json 时 stdout 归零
-    if (!jsonMode && launch.stdout) process.stdout.write(String(launch.stdout));
-    try {
-      browserPort = JSON.parse(readFileSync(browserState, "utf8")).port ?? null;
-    } catch {
-      browserPort = null;
-    }
-    out(`浏览器实例就绪: state=${browserState}（操作命令见 browser-driver.mjs --help）`);
   }
+  // 非 --json：透传 launch 的 JSON 输出（bash 版行为）；--json 时 stdout 归零
+  if (!jsonMode && launch.stdout) process.stdout.write(String(launch.stdout));
+  try {
+    browserPort = JSON.parse(readFileSync(browserState, "utf8")).port ?? null;
+  } catch {
+    browserPort = null;
+  }
+  out(`浏览器实例就绪: state=${browserState}（操作命令见 browser-driver.mjs --help）`);
+}
 
+async function resolveWebPort(f) {
   // 6. 修复 --port 0：贴近 dsh 启动探测真实空闲端口再传给 dsh
   dshWebPort = f.port;
   if (f.port === 0) {
     dshWebPort = await findFreePort();
     out(`（--port 0）已探测空闲端口: ${dshWebPort}`);
   }
+}
 
+function syncBrowserPort(f) {
   // 7. 把 dsh web 实际端口并入 browser.state（供并行任务核对；bash 同款）
-  if (f.browser && existsSync(browserState)) {
-    try {
-      const st = JSON.parse(readFileSync(browserState, "utf8"));
-      st.dshWebPort = dshWebPort;
-      writeFileSync(browserState, JSON.stringify(st, null, 2));
-    } catch {
-      /* state 解析失败不阻断启动 */
-    }
+  if (!(f.browser && existsSync(browserState))) return;
+  try {
+    const st = JSON.parse(readFileSync(browserState, "utf8"));
+    st.dshWebPort = dshWebPort;
+    writeFileSync(browserState, JSON.stringify(st, null, 2));
+  } catch {
+    /* state 解析失败不阻断启动 */
   }
+}
 
-  out(`隔离环境就绪: DSH_HOME=${isolatedHome}  profile=${profile}`);
-  out(`启动 dsh web 于 http://127.0.0.1:${dshWebPort} （Ctrl+C 退出并自动清理）`);
-
+function spawnDshChild() {
   // 8. 启动（后台子进程 + 显式回环 + 遥测禁用）。spawn env 显式带 DSH_HOME 与
   //    DSH_TELEMETRY_DISABLED（等价 bash 启动行前缀）；dsh stdout/stderr 收集到
   //    $ISOLATED_HOME/dsh.log（限长缓冲防背压 + B6 parsed 端口解析源）。
@@ -927,12 +993,14 @@ async function main() {
       DSH_TELEMETRY_DISABLED: "1",
     },
   );
+}
 
+function createDshLogCollector() {
   let logTail = ""; // 4096 限长滚动缓冲（防背压先例）
   // dsh.log 文件侧无限增长说明：dsh web 输出量极小（实测启动仅一行 URL），
   // 且 dsh.log 位于一次性临时 ISOLATED_HOME（退出即删），单次运行量级有限、
   // 不设文件侧滚动；内存侧 logTail 4096 限长防背压是唯一防膨胀约束。
-  const onDshData = (chunk) => {
+  const onData = (chunk) => {
     const s = String(chunk);
     try {
       appendFileSync(dshLogPath, s);
@@ -951,9 +1019,10 @@ async function main() {
       }
     }
   };
-  dshChild.stdout.on("data", onDshData);
-  dshChild.stderr.on("data", onDshData);
+  return { onData, tail: () => logTail };
+}
 
+function attachChildExitHandler() {
   // child 退出：**就绪前退出不透传退出码**——dsh 启动即崩（端口被占
   // EADDRINUSE / 插件加载失败 / 就绪前净退出）时若直接 requestExit 透传，
   // settle 会在微任务内抢先 process.exit，使下方 waitReady 的 dead 检测与
@@ -973,35 +1042,32 @@ async function main() {
       signal === "SIGINT" ? EXIT.SIGINT : signal === "SIGTERM" ? EXIT.SIGTERM : (code ?? EXIT.FAIL);
     requestExit(mapped, null);
   });
+}
 
-  // 9. 就绪断言（轮询 HTTP + 进程存活核对，15s 超时可操作错误）。
-  //    dead/timeout 诊断内联 logTail 尾部（内存滚动缓冲，非 --keep 时 dsh.log
-  //    随 ISOLATED_HOME 删除——引用文件路径用户按提示查看时已不存在）。
-  const verdictPort = dshWebPort;
-  const ready = await waitReady(verdictPort, dshChild.pid);
-  if (ready === "dead") {
-    const detail = childExitBeforeReady
-      ? `（dsh 就绪前退出 code=${childExitBeforeReady.code ?? "null"} signal=${childExitBeforeReady.signal ?? "null"}）`
-      : "";
-    const tail = logTail.slice(-LOG_TAIL_LIMIT).trim();
-    throw new CliError(
-      `错误: dsh web 进程在就绪前退出${detail}（可能端口被占/EADDRINUSE/插件加载失败）\n` +
-        `--- dsh 输出尾部（内存缓冲；完整 dsh.log 仅 --keep 保留: ${dshLogPath}）---\n` +
-        `${tail || "（无输出）"}`,
-      EXIT.FAIL,
-    );
-  }
-  if (ready === "timeout") {
-    const tail = logTail.slice(-LOG_TAIL_LIMIT).trim();
-    throw new CliError(
-      `错误: dsh web 15s 内未就绪（端口 ${verdictPort}）\n` +
-        `--- dsh 输出尾部（内存缓冲；完整 dsh.log 仅 --keep 保留: ${dshLogPath}）---\n` +
-        `${tail || "（无输出）"}`,
-      EXIT.FAIL,
-    );
-  }
-  readyOk = true;
-  readyIso = new Date().toISOString();
+function throwIfDshExitedEarly(collector) {
+  const detail = childExitBeforeReady
+    ? `（dsh 就绪前退出 code=${childExitBeforeReady.code ?? "null"} signal=${childExitBeforeReady.signal ?? "null"}）`
+    : "";
+  const tail = collector.tail().slice(-LOG_TAIL_LIMIT).trim();
+  throw new CliError(
+    `错误: dsh web 进程在就绪前退出${detail}（可能端口被占/EADDRINUSE/插件加载失败）\n` +
+      `--- dsh 输出尾部（内存缓冲；完整 dsh.log 仅 --keep 保留: ${dshLogPath}）---\n` +
+      `${tail || "（无输出）"}`,
+    EXIT.FAIL,
+  );
+}
+
+function throwReadinessTimeout(collector, verdictPort) {
+  const tail = collector.tail().slice(-LOG_TAIL_LIMIT).trim();
+  throw new CliError(
+    `错误: dsh web 15s 内未就绪（端口 ${verdictPort}）\n` +
+      `--- dsh 输出尾部（内存缓冲；完整 dsh.log 仅 --keep 保留: ${dshLogPath}）---\n` +
+      `${tail || "（无输出）"}`,
+    EXIT.FAIL,
+  );
+}
+
+function resolveReadyPort(verdictPort) {
   // 端口实际绑定三通道收口：parsed → asserted（就绪断言端口）→ probed。
   // **无条件**以 dsh.log 全文重解析 parsed（chunk 截断可能已 latch 错误
   // 端口——readDshPort 行完整性校验已防截断，此处双保险覆盖任何早到解析；
@@ -1018,7 +1084,21 @@ async function main() {
     portSource = flags.port === 0 ? "probed" : "asserted";
   }
   out(`就绪断言通过: http://127.0.0.1:${actualPort} 已可达（pid=${dshChild.pid}）`);
+}
 
+async function awaitDshReady(collector, verdictPort) {
+  // 9. 就绪断言（轮询 HTTP + 进程存活核对，15s 超时可操作错误）。
+  //    dead/timeout 诊断内联 logTail 尾部（内存滚动缓冲，非 --keep 时 dsh.log
+  //    随 ISOLATED_HOME 删除——引用文件路径用户按提示查看时已不存在）。
+  const ready = await waitReady(verdictPort, dshChild.pid);
+  if (ready === "dead") throwIfDshExitedEarly(collector);
+  if (ready === "timeout") throwReadinessTimeout(collector, verdictPort);
+  readyOk = true;
+  readyIso = new Date().toISOString();
+  resolveReadyPort(verdictPort);
+}
+
+async function resolveAccessUrl(f) {
   // 9b. 访问 URL 与令牌：GUI 带鉴权，浏览器命令必须用带令牌的 URL（裸端口只得到
   //     401 文本页）。令牌只从 dsh 打印行取真值，只落 0o600 的 browser.state 与
   //     dsh.log，verdict 记去令牌形态——verdict 会经 --json 进 CI 日志。
@@ -1050,7 +1130,9 @@ async function main() {
       /* state 解析失败不阻断启动 */
     }
   }
+}
 
+function snapshotAuditBaseline(f, extraDirsAbs) {
   // B4：t0 基线快照（--audit）——位置在**就绪断言成功之后**、verdict 中间态
   // 写入之前。语义为「**就绪后运行期写面审计**」：dsh web **首启**才自建的
   // profiles/node_modules/** 官方 bundle link（指向真实 dsh 安装目录、越界但
@@ -1060,22 +1142,65 @@ async function main() {
   // 写入，先扫后写 + 白名单（verdict.json）双保险。就绪前退出/超时路径
   // auditBaseline 保持 null → settle 守卫跳过审计（不报），与「未进入运行期
   // 审计」语义一致。
-  if (f.audit) {
-    auditBaseline = [
-      { root: isolatedHome, snapshot: scanSnapshot(isolatedHome, { skipDeep: SKIP_DEEP }) },
-    ];
-    for (const dir of extraDirsAbs) {
-      auditBaseline.push({ root: dir, snapshot: scanSnapshot(dir, { skipDeep: SKIP_DEEP }) });
-    }
+  if (!f.audit) return;
+  auditBaseline = [
+    { root: isolatedHome, snapshot: scanSnapshot(isolatedHome, { skipDeep: SKIP_DEEP }) },
+  ];
+  for (const dir of extraDirsAbs) {
+    auditBaseline.push({ root: dir, snapshot: scanSnapshot(dir, { skipDeep: SKIP_DEEP }) });
   }
+}
 
+async function waitForDshExit() {
   // B6：就绪后写 verdict 中间态（cleanup:"running"，退出时更新终态）
   writeVerdictRunning();
-
   // 10. 前台等待：dsh 退出（含 Ctrl+C）后 settle 统一清理
   await new Promise((r) => dshChild.once("exit", r));
   if (!exiting) requestExit(EXIT.OK, null);
   await settle();
+}
+
+// --- 主流程 ---
+async function main() {
+  const { flags: f, pkgs } = parseCli(process.argv.slice(2));
+  flags = f;
+  jsonMode = f.json;
+  // --json 时 USAGE 走 stderr（stdout 只出 JSON 的约束对 --help 同样生效）
+  if (f.help) {
+    (jsonMode ? process.stderr : process.stdout).write(USAGE + "\n");
+    process.exit(EXIT.OK);
+  }
+
+  // 0a + 0（分阶段 helpers，顺序不变：先参数校验，再 dsh 入口锚定）
+  const extraDirsAbs = resolveAuditExtraDirs(f);
+  auditExtraDirsAbs = extraDirsAbs;
+  resolveDshEntry(f);
+
+  // 1 + 1b + 2 + 3 + 4（分阶段 helpers，顺序不变）
+  setupIsolatedHome(f, extraDirsAbs);
+  presetOnboardingStep(f);
+  initProfileAndBundles();
+  setupPlugins(pkgs);
+
+  // 5 + 6 + 7（分阶段 helpers，顺序不变）
+  launchBrowserIfNeeded(f);
+  await resolveWebPort(f);
+  syncBrowserPort(f);
+
+  out(`隔离环境就绪: DSH_HOME=${isolatedHome}  profile=${profile}`);
+  out(`启动 dsh web 于 http://127.0.0.1:${dshWebPort} （Ctrl+C 退出并自动清理）`);
+
+  // 8 + 9 + 9b + B4 + B6 + 10（分阶段 helpers，顺序不变）
+  spawnDshChild();
+  const collector = createDshLogCollector();
+  dshChild.stdout.on("data", collector.onData);
+  dshChild.stderr.on("data", collector.onData);
+  attachChildExitHandler();
+  const verdictPort = dshWebPort;
+  await awaitDshReady(collector, verdictPort);
+  await resolveAccessUrl(f);
+  snapshotAuditBaseline(f, extraDirsAbs);
+  await waitForDshExit();
 }
 
 main().catch(async (e) => {

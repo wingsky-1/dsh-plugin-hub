@@ -30,13 +30,18 @@ node -e '
 # 4. 挂载本地插件（被测插件目录，link 进 profile）
 dsh plugin --profile "$PROFILE" add /path/to/your-plugin-package
 
-# 5. 预置首启弹窗跳过（等价于脚本默认行为；要验证弹窗本身时跳过本步）：版本号取自
-#    dsh 客户端产物的 WELCOME_NOTICE_VERSION（精确相等才算已确认），故用脚本同源的
-#    探测函数现取——凭记忆写会在 dsh 升级后让弹窗重新出现，且不报任何错
+# 5. 预置首启弹窗跳过（等价于脚本默认行为；要验证弹窗本身时跳过本步）：版本号与命名空间取自
+#    dsh 客户端产物的 WELCOME_NOTICE_VERSION / WELCOME_NOTICE_SETTINGS_NAMESPACE
+#   （精确相等才算已确认），故用脚本同源的探测函数现取——凭记忆写会在 dsh 升级后让弹窗
+#    重新出现，且不报任何错；命名空间取不到回退 ui-onboarding（rc.7 导入映射
+#    ui-onboarding→ui-settings-general 自动迁移，长期只从官方产物单源读取）
 WELCOME_V=$(node -e 'import(process.argv[1]).then((m) => console.log(m.findWelcomeNoticeVersion(process.argv[2])?.version ?? ""))' \
   "$SKILL_BASE/scripts/lib/onboarding.mjs" "$(command -v dsh)")
+WELCOME_NS=$(node -e 'import(process.argv[1]).then((m) => console.log(m.findWelcomeNoticeVersion(process.argv[2])?.namespace ?? "ui-onboarding"))' \
+  "$SKILL_BASE/scripts/lib/onboarding.mjs" "$(command -v dsh)")
 test -n "$WELCOME_V" || echo "警告: 未取到版本号——内测声明弹窗由 browser-driver 兜底跳过"
-printf 'ui-onboarding:\n  welcomeNoticeVersion: %s\n' "$WELCOME_V" > "$DSH_HOME/settings.yaml"
+test -n "$WELCOME_NS" || WELCOME_NS="ui-onboarding"
+printf '%s:\n  welcomeNoticeVersion: %s\n' "$WELCOME_NS" "$WELCOME_V" > "$DSH_HOME/settings.yaml"
 
 # 6. 启动隔离 dsh web（指定不冲突端口；--port 0 让系统随机；显式回环 + 遥测禁用）
 DSH_TELEMETRY_DISABLED=1 dsh --profile "$PROFILE" --host 127.0.0.1 --port 3456 --no-open

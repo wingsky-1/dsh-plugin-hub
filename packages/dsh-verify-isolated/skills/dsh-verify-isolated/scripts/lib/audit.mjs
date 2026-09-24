@@ -35,8 +35,8 @@
 import { lstatSync, readdirSync, readlinkSync } from "node:fs";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 
-/** 白名单版本（预置模式数组版本化；smoke 断言存在与格式）。 */
-export const WHITELIST_V = "v3";
+/** 白名单版本（预置模式数组版本化；smoke 断言存在与格式）。v4 起含 settings.yaml.imported。 */
+export const WHITELIST_V = "v4";
 
 /**
  * 预置白名单模式数组（判定面）：命中模式 = 预期写面，变化忽略；未命中 =
@@ -50,9 +50,10 @@ export const WHITELIST_V = "v3";
  *   - **静态白名单**覆盖 dsh 固定写面：`.credentials.yaml`（首启凭据文件，
  *     就绪后初始化竞态窗口内落盘）、`settings.yaml`（官方设置文档：首启弹窗
  *     跳过会预置它，此后验证期间改动任何设置也由 dsh 自己重写——两种写入都是
- *     预期写面，与 `.credentials.yaml` 同类）与 `storages/**`（官方存储：
- *     workspace/settings 等，退出清理时也写）——无论何时写都是预期写面，不随
- *     dsh 版本漂移的顶层形态进白名单；
+ *     预期写面，与 `.credentials.yaml` 同类）、`settings.yaml.imported`
+ *    （rc.7 导入映射将旧 settings.yaml 重命名后的残留，待真机确认实际落盘形态）
+ *     与 `storages/**`（官方存储：workspace/settings 等，退出清理时也写）——
+ *     无论何时写都是预期写面，不随 dsh 版本漂移的顶层形态进白名单；
  *   - **t0 动态基线**覆盖随 dsh 版本漂移的面：profiles/node_modules/** 官方
  *     bundle link（指向真实 dsh 安装目录、越界但 t0 已存在未变 → 合法挂载点
  *     不报），由 verify-isolated.mjs 在就绪断言后扫描进基线（见该文件 B4
@@ -65,6 +66,7 @@ export const WHITELIST = Object.freeze([
   "*.log",
   ".credentials.yaml",
   "settings.yaml",
+  "settings.yaml.imported",
   "browser.state",
   "browser-profile/**",
   "evidence/**",

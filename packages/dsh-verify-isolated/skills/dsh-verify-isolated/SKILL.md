@@ -115,14 +115,13 @@ node "$SKILL_BASE/scripts/browser-driver.mjs" snapshot --state "$DSH_HOME/browse
 
 | 顺序 | 弹窗 | 出现条件 | 默认处置 |
 |------|------|----------|----------|
-| 1 | 内测声明（`Continue` / `继续`） | `$DSH_HOME/settings.yaml` 的 `ui-onboarding.welcomeNoticeVersion` 与 dsh 客户端常量 `WELCOME_NOTICE_VERSION` **精确相等**才算已确认；全新 DSH_HOME 必然未确认 | 启动前预置该值（`--no-skip-onboarding` 关闭） |
+| 1 | 内测声明（`Continue` / `继续`） | `$DSH_HOME/settings.yaml` 的 `<namespace>.welcomeNoticeVersion` 与 dsh 客户端常量 `WELCOME_NOTICE_VERSION` **精确相等**才算已确认（命名空间 `WELCOME_NOTICE_SETTINGS_NAMESPACE` 与版本均从产物现取；rc.7 为 `ui-settings-general`，取不到回退 `ui-onboarding`——rc.7 导入映射 `ui-onboarding→ui-settings-general` 自动迁移）；全新 DSH_HOME 必然未确认 | 启动前预置该值（`--no-skip-onboarding` 关闭） |
 | 2 | 添加 API Key（`Configure later` / `稍后配置`） | 隔离环境无任何可用 provider；且「稍后配置」**只在当前页面生命周期内有效**，刷新/新标签必重弹 | browser-driver 导航后自动点击跳过 |
 
 跳过是**双保险**：预置消掉弹窗 1，浏览器侧兜底消掉弹窗 2（顺带兜住 dsh 升级导致的
 版本漂移与 locale 文案变化）。要点：
 
-- **版本号现取，不硬编码**：脚本从 dsh 产物读常量（`scripts/lib/onboarding.mjs`）；
-  取不到只警告、不改判定，交给浏览器侧兜底——写死会在 dsh 升级后静默失效。
+- **版本号与命名空间现取，不硬编码**：脚本从 dsh 产物读同名常量（`scripts/lib/onboarding.mjs` 单源读取 `WELCOME_NOTICE_VERSION` / `WELCOME_NOTICE_SETTINGS_NAMESPACE`）；取不到只警告、不改判定，交给浏览器侧兜底——写死会在 dsh 升级后静默失效；命名空间取不到回退 `ui-onboarding`（rc.7 导入映射自动迁移）。
 - **识别不到跳过按钮时不猜**：弹窗里可能并列「保存并继续」这类有副作用的按钮，此时
   只输出 `onboardingBlocked` 并在 stderr 警告，由人决定怎么处置。
 - **预置只写隔离环境**：目标是 `$DSH_HOME/settings.yaml`，不触碰真实 `~/.dsh`；脚本也

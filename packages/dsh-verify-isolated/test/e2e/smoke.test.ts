@@ -1083,9 +1083,14 @@ describe("9a. 白名单版本化 + 模式全集存在", () => {
 
   // 预置模式数组，版本化 WHITELIST_V；v2 起含 dsh 自身写面
   // .credentials.yaml / storages/**；v3 起含 settings.yaml——首启弹窗跳过会预置它，
-  // 页面改设置也由 dsh 重写。
+  // 页面改设置也由 dsh 重写；v4 起含 settings.yaml.imported（rc.7 导入映射重命名残留，
+  // 待真机确认实际落盘形态）。
   it("WHITELIST_V 版本化格式", () => {
     expect(whitelistV).toMatch(/^v\d+$/);
+  });
+
+  it("WHITELIST_V 已跟进到 v4（settings.yaml.imported 入白名单即 bump）", () => {
+    expect(whitelistV).toBe("v4");
   });
 
   const whitelistPatterns = [
@@ -1095,6 +1100,7 @@ describe("9a. 白名单版本化 + 模式全集存在", () => {
     "*.log",
     ".credentials.yaml",
     "settings.yaml",
+    "settings.yaml.imported",
     "browser.state",
     "browser-profile/**",
     "evidence/**",
@@ -1708,9 +1714,10 @@ describe("9d. mkdtemp fixture 正反例", () => {
 });
 
 // ---------------------------------------------------------------- 10. 首启弹窗跳过与访问令牌
-// 10a. 须知版本提取：命中真实产物形态 / 未命中返回 null。降级而非抛错是契约——
-// dsh 改了常量形态时应当「不预置 + 浏览器兜底」，而不是伪造版本来假装跳过
-describe("10a. 须知版本提取", () => {
+// 10a. 须知版本与命名空间提取：命中真实产物形态 / 未命中返回 null。降级而非抛错是契约——
+// dsh 改了常量形态时应当「不预置 + 浏览器兜底」，而不是伪造版本来假装跳过；
+// 命名空间与版本均只从官方产物单源读取（禁硬编码第二份），正则必须锚定官方同名常量
+describe("10a. 须知版本与命名空间提取", () => {
   let onboardingExists;
   let ob;
 
@@ -1737,10 +1744,53 @@ describe("10a. 须知版本提取", () => {
   it("null 输入返回 null", () => {
     expect(ob.extractWelcomeNoticeVersion(null)).toBe(null);
   });
+
+  it("从客户端产物提取须知命名空间（rc.7 形态）", () => {
+    expect(
+      ob.extractWelcomeNoticeNamespace(
+        'const WELCOME_NOTICE_SETTINGS_NAMESPACE = "ui-settings-general";',
+      ),
+    ).toBe("ui-settings-general");
+  });
+
+  it("旧产物命名空间形态仍可提取（ui-onboarding）", () => {
+    expect(
+      ob.extractWelcomeNoticeNamespace(
+        'const WELCOME_NOTICE_SETTINGS_NAMESPACE = "ui-onboarding";',
+      ),
+    ).toBe("ui-onboarding");
+  });
+
+  it("无命名空间常量返回 null（调用方回退，不抛）", () => {
+    expect(ob.extractWelcomeNoticeNamespace("nothing here")).toBe(null);
+  });
+
+  it("命名空间 null 输入返回 null", () => {
+    expect(ob.extractWelcomeNoticeNamespace(null)).toBe(null);
+  });
+
+  it("版本正则锚定官方同名常量（改名即打红，防静默失效）", () => {
+    expect(String(ob.WELCOME_NOTICE_VERSION_RE)).toContain("WELCOME_NOTICE_VERSION");
+  });
+
+  it("命名空间正则锚定官方同名常量（改名即打红，防静默失效）", () => {
+    expect(String(ob.WELCOME_NOTICE_SETTINGS_NAMESPACE_RE)).toContain(
+      "WELCOME_NOTICE_SETTINGS_NAMESPACE",
+    );
+  });
+
+  it("命名空间回退值为 ui-onboarding（rc.7 导入映射自动迁移）", () => {
+    expect(ob.WELCOME_SETTINGS_FALLBACK_NAMESPACE).toBe("ui-onboarding");
+  });
+
+  it("历史别名与回退值一致（兼容）", () => {
+    expect(ob.WELCOME_SETTINGS_NAMESPACE).toBe(ob.WELCOME_SETTINGS_FALLBACK_NAMESPACE);
+  });
 });
 
 // 10b. settings 文档形状 + 注入防护：settings.yaml 是 dsh 要解析的结构化文档，
-// 意外字符会改写命名空间结构而不只是一个字段值
+// 意外字符会改写命名空间结构而不只是一个字段值；命名空间参数化覆盖新旧双值
+// （rc.7 ui-settings-general + 回退 ui-onboarding），长期只从官方产物单源读取
 describe("10b. settings 文档形状 + 注入防护", () => {
   let ob;
 
@@ -1748,7 +1798,13 @@ describe("10b. settings 文档形状 + 注入防护", () => {
     ob = await import(pathToFileURL(join(SCRIPTS_DIR, "lib", "onboarding.mjs")).href);
   });
 
-  it("settings 文档形状", () => {
+  it.each(["ui-onboarding", "ui-settings-general"])("settings 文档形状（命名空间 %s）", (ns) => {
+    expect(ob.welcomeSettingsDocument("2026-08-13.1", ns)).toBe(
+      `${ns}:\n  welcomeNoticeVersion: 2026-08-13.1\n`,
+    );
+  });
+
+  it("默认命名空间回退 ui-onboarding（rc.7 导入映射自动迁移）", () => {
     expect(ob.welcomeSettingsDocument("2026-08-13.1")).toBe(
       "ui-onboarding:\n  welcomeNoticeVersion: 2026-08-13.1\n",
     );
@@ -1757,18 +1813,26 @@ describe("10b. settings 文档形状 + 注入防护", () => {
   it("版本含换行被拒绝", () => {
     expect(() => ob.welcomeSettingsDocument("bad\nvalue")).toThrow(/意外字符/);
   });
+
+  it("命名空间含换行被拒绝", () => {
+    expect(() => ob.welcomeSettingsDocument("2026-08-13.1", "bad\nns")).toThrow(/意外字符/);
+  });
 });
 
 // 10c. dsh 安装根与产物定位（mkdtemp fixture 建模 npm 提升布局）
 describe("10c. dsh 安装根与产物定位（mkdtemp fixture 建模 npm 提升布局）", () => {
   let fix;
   let fixBare;
+  let fixLegacy;
   let dshRoot;
   let bin;
   let rootBare;
+  let rootLegacy;
   let dshRootResolved;
   let welcomeClientFile;
   let e2eVersion;
+  let e2eNamespace;
+  let legacyNamespace;
   let bareClientFile;
   let bareVersion;
 
@@ -1796,12 +1860,38 @@ describe("10c. dsh 安装根与产物定位（mkdtemp fixture 建模 npm 提升�
     );
     writeFileSync(
       join(clientDir, "lib", "client.js"),
-      'const WELCOME_NOTICE_VERSION = "2099-01-01.1";',
+      'const WELCOME_NOTICE_SETTINGS_NAMESPACE = "ui-settings-general";\nconst WELCOME_NOTICE_VERSION = "2099-01-01.1";',
     );
     bin = join(dshRoot, "lib", "bin.js");
     dshRootResolved = ob.dshRootOf(bin);
     welcomeClientFile = ob.welcomeClientFileOf(dshRoot);
     e2eVersion = ob.findWelcomeNoticeVersion(bin)?.version;
+    e2eNamespace = ob.findWelcomeNoticeVersion(bin)?.namespace;
+    // 旧产物形态（无命名空间常量）：find 应回退 ui-onboarding 而不是失败
+    fixLegacy = mkdtempSync(join(tmpdir(), "dsh-verify-onboarding-legacy-"));
+    rootLegacy = join(fixLegacy, "node_modules", "@deepseek-ai", "dsh");
+    const legacyClientDir = join(
+      rootLegacy,
+      "node_modules",
+      "@deepseek-ai",
+      "dsh-client-ui-settings-models",
+    );
+    mkdirSync(join(rootLegacy, "lib"), { recursive: true });
+    mkdirSync(join(legacyClientDir, "lib"), { recursive: true });
+    writeFileSync(
+      join(rootLegacy, "package.json"),
+      JSON.stringify({ name: "@deepseek-ai/dsh", version: "0.0.0" }),
+    );
+    writeFileSync(join(rootLegacy, "lib", "bin.js"), "");
+    writeFileSync(
+      join(legacyClientDir, "package.json"),
+      JSON.stringify({ name: "@deepseek-ai/dsh-client-ui-settings-models" }),
+    );
+    writeFileSync(
+      join(legacyClientDir, "lib", "client.js"),
+      'const WELCOME_NOTICE_VERSION = "2099-01-01.1";',
+    );
+    legacyNamespace = ob.findWelcomeNoticeVersion(join(rootLegacy, "lib", "bin.js"))?.namespace;
 
     // 负例用独立 fixture（依赖从一开始就不存在）：删除文件会被 require.resolve
     // 的路径缓存挡住，测不出真实的「依赖缺失」路径
@@ -1819,6 +1909,8 @@ describe("10c. dsh 安装根与产物定位（mkdtemp fixture 建模 npm 提升�
   afterAll(() => {
     rmSync(fix, { recursive: true, force: true }); // 零污染纪律
     rmSync(fixBare, { recursive: true, force: true });
+    if (typeof fixLegacy !== "undefined" && fixLegacy)
+      rmSync(fixLegacy, { recursive: true, force: true });
   });
 
   it("dshRootOf 从入口向上解析安装根", () => {
@@ -1840,6 +1932,20 @@ describe("10c. dsh 安装根与产物定位（mkdtemp fixture 建模 npm 提升�
 
   it("端到端解析版本", () => {
     expect(e2eVersion).toBe("2099-01-01.1");
+  });
+
+  it("端到端解析命名空间（rc.7 形态）", () => {
+    expect(e2eNamespace).toBe("ui-settings-general");
+  });
+
+  it("版本与命名空间同源一致（单源读取，防下次 bump 静默失效）", () => {
+    expect(`${e2eNamespace}:\n  welcomeNoticeVersion: ${e2eVersion}\n`).toBe(
+      "ui-settings-general:\n  welcomeNoticeVersion: 2099-01-01.1\n",
+    );
+  });
+
+  it("旧产物无命名空间常量时回退 ui-onboarding（rc.7 导入映射自动迁移）", () => {
+    expect(legacyNamespace).toBe("ui-onboarding");
   });
 
   it("依赖解析失败返回 null（降级不抛）", () => {
@@ -2078,5 +2184,46 @@ describe("10i. 文档同步（跳过与令牌指导锚点）", () => {
   const readmeEnAnchors = ["--no-skip-onboarding", "--url state", "token=***", "onboarding.mjs"];
   it.each(readmeEnAnchors)("README.en.md 含 %s", (anchor) => {
     expect(readmeEn.includes(anchor)).toBeTruthy();
+  });
+});
+
+// 10j. 版本号/命名空间单源一致性 + skill 加载存在性回归：
+// 下次 dsh bump 改了常量形态或改名时必须打红，而不是静默回退；skill 缺失必须打红
+describe("10j. 单源一致性 + skill 加载回归（防 bump 静默失效）", () => {
+  let ob;
+  let skillRaw;
+  let onboardingSrc;
+
+  beforeAll(async () => {
+    ob = await import(pathToFileURL(join(SCRIPTS_DIR, "lib", "onboarding.mjs")).href);
+    skillRaw = readFileSync(SKILL_FILE, "utf8");
+    onboardingSrc = readFileSync(join(SCRIPTS_DIR, "lib", "onboarding.mjs"), "utf8");
+  });
+
+  it("skill 主文件存在（加载回归）", () => {
+    expect(existsSync(SKILL_FILE)).toBeTruthy();
+  });
+
+  it("skill 主文件提及命名空间现取（文档与实现同源）", () => {
+    expect(skillRaw.includes("WELCOME_NOTICE_SETTINGS_NAMESPACE")).toBeTruthy();
+  });
+
+  it("实现内除回退常量外无第二份硬编码命名空间", () => {
+    const hardcoded = (onboardingSrc.match(/"ui-(onboarding|settings-general)"/g) ?? []).length;
+    // 唯一允许的一处：WELCOME_SETTINGS_FALLBACK_NAMESPACE = "ui-onboarding"
+    expect(hardcoded).toBe(1);
+  });
+
+  it("实现内除测试夹具外无第二份硬编码版本号", () => {
+    // 生产正则只含常量名，不含具体版本字面量；具体版本只活在产物与测试输入里
+    expect(onboardingSrc.includes("2026-08-13.1")).toBe(false);
+  });
+
+  it("双命名空间文档形状同源（参数化即契约）", () => {
+    for (const ns of ["ui-onboarding", "ui-settings-general"]) {
+      expect(ob.welcomeSettingsDocument("2099-01-01.1", ns)).toBe(
+        `${ns}:\n  welcomeNoticeVersion: 2099-01-01.1\n`,
+      );
+    }
   });
 });

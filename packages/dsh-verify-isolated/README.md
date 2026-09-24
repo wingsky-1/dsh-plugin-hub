@@ -58,15 +58,17 @@ dsh plugin --profile web add @wingsky-1/dsh-verify-isolated
   （版本化 `WHITELIST_V`，`scripts/lib/audit.mjs` 纯函数），白名单外新增/删除/修改
   与越界 symlink 报「可疑」、**不阻断退出**（`--audit-extra-dirs <dir>` 可加额外
   审计目录，必须是目录；局限：不扫真实 home；白名单含 dsh 自身写面
-  `.credentials.yaml`/`settings.yaml`/`storages/**`，随版本漂移的官方 bundle link
+  `.credentials.yaml`/`settings.yaml`/`settings.yaml.imported`（待真机确认）/`storages/**`，随版本漂移的官方 bundle link
   由就绪后 t0 基线覆盖——审计面 = 就绪后运行期增量写面；`--keep` 落
   `$DSH_HOME/audit/audit.json`，否则随 `--json` 终态 verdict 输出 `audit` 字段）；
   `--json` 时 stdout 只出最终 verdict JSON。退出码
   契约：0 正常 / 1 启动或就绪失败 / 2 参数错误 / 130 SIGINT / 143 SIGTERM。
 - **首启弹窗默认跳过**：全新 DSH_HOME 的首屏是两个**阻断式**弹窗（「内测声明」→
   「添加 API Key」），两者都把 `#root` 置为 `inert`，页面上一切点击静默失效。脚本
-  启动前预置 `settings.yaml` 的 `ui-onboarding.welcomeNoticeVersion`（值从 dsh
-  客户端产物 `WELCOME_NOTICE_VERSION` 现取，不硬编码——dsh 升级后旧值会让弹窗
+  启动前预置 `settings.yaml` 的 `<namespace>.welcomeNoticeVersion`（命名空间与值均从 dsh
+  客户端产物 `WELCOME_NOTICE_SETTINGS_NAMESPACE` / `WELCOME_NOTICE_VERSION` 现取，不硬编码——
+  rc.7 命名空间为 `ui-settings-general`，取不到回退 `ui-onboarding`（rc.7 导入映射
+  `ui-onboarding→ui-settings-general` 自动迁移）；dsh 升级后旧值会让弹窗
   重新出现且不报错）消掉第一个；「添加 API Key」无法预置消除（其「稍后配置」只在
   当前页面生命周期内有效，刷新必重弹），由 browser-driver 在导航后自动点击跳过。
   识别不到跳过按钮时**不猜**（弹窗内可能并列「保存并继续」这类有副作用的按钮），
@@ -93,7 +95,7 @@ skills/dsh-verify-isolated/
   scripts/lib/verify-core.mjs     # 共享基础工具（退出码常量/poll/findFreePort/端口与带令牌 URL 解析/C11 归一化）
   scripts/lib/audit.mjs           # B4 隔离审计纯函数（scanSnapshot/diffAgainstWhitelist/checkSymlinkEscape/runAudit + 版本化白名单 WHITELIST_V）
   scripts/lib/emulation.mjs       # 设备模拟参数纯函数（parseEmulationFlags / buildDeviceMetrics；CDP 会话语义依据）
-  scripts/lib/onboarding.mjs      # 首启弹窗跳过纯函数（版本常量探测 / settings 文档 / 弹窗探针表达式 / 令牌脱敏）
+  scripts/lib/onboarding.mjs      # 首启弹窗跳过纯函数（版本与命名空间常量探测 / settings 文档 / 弹窗探针表达式 / 令牌脱敏）
   scripts/browser-driver.mjs      # 自带独立浏览器驱动（raw CDP 零依赖，--json 原子操作 CLI）
 cordis.patch.yml                  # 复用官方 dsh-skill-filesystem + bundledSkillDir
 lib/index.js                      # 宿主门禁出口（name + 空 apply）

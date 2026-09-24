@@ -1,12 +1,13 @@
 /**
  * onboarding.mjs — 隔离环境 dsh web 首启弹窗的默认跳过支持（纯函数 + 只读探测）。
  *
- * 两个阻断弹窗的成因（实测 dsh 0.1.5-rc.1，复现与对照见 SKILL.md
- * 「首启弹窗默认跳过」）：
+ * 两个阻断弹窗的成因（实测 dsh 0.1.5-rc.1，命名空间跟进 dsh 0.1.7-rc.1，
+ * 复现与对照见 SKILL.md「首启弹窗默认跳过」）：
  *   - 「内测声明」是否出现，取决于 settings.yaml 的
- *     `ui-onboarding.welcomeNoticeVersion` 与客户端常量 WELCOME_NOTICE_VERSION
- *     是否**精确相等**：预置该值即默认不弹。常量随 dsh 版本漂移（它按版本重新
- *     告知），只能从 dsh 产物现取——硬编码会让跳过在 dsh 升级后静默失效。
+ *     `<namespace>.welcomeNoticeVersion` 与客户端常量 WELCOME_NOTICE_VERSION
+ *     是否**精确相等**：预置该值即默认不弹。命名空间与版本均随 dsh 版本漂移
+ *    （0.1.7-rc.1 起命名空间为 ui-settings-general），只能从 dsh 产物现取——
+ *     硬编码会让跳过在 dsh 升级后静默失效。
  *   - 「添加 API Key」由 provider 可用性决定，其「稍后配置」只在当前页面生命周期
  *     内有效（刷新/新标签必重弹），预置消除不掉，只能导航后兜底点击。
  * 两者都把应用根置为 inert（`#root.inert = true`），页面上一切点击静默失效——这
@@ -25,8 +26,24 @@ export const SKIP_BUTTON_TEXTS = Object.freeze(["Continue", "Configure later", "
 /** 客户端产物里的须知版本常量；版本一变就会重新弹窗，故按 dsh 安装现取。 */
 export const WELCOME_NOTICE_VERSION_RE = /WELCOME_NOTICE_VERSION\s*=\s*"([^"]+)"/;
 
-/** 设置文档命名空间与字段（与客户端 onboarding-copy 常量对齐）。 */
-export const WELCOME_SETTINGS_NAMESPACE = "ui-onboarding";
+/**
+ * 客户端产物里的须知命名空间常量（与客户端 onboarding-copy 同名常量对齐，
+ * dsh 0.1.7-rc.1 起为 ui-settings-general）；正则现取，单源。
+ */
+export const WELCOME_NOTICE_SETTINGS_NAMESPACE_RE =
+  /WELCOME_NOTICE_SETTINGS_NAMESPACE\s*=\s*"([^"]+)"/;
+
+/**
+ * 设置文档命名空间回退值（仅当官方产物取不到时用）。
+ * 回退依据：@deepseek-ai/dsh-settings@0.1.7-rc.1 README 导入映射
+ * `ui-onboarding → ui-settings-general`——旧命名空间写面会被新版本一次性导入，
+ * 文件重命名为 settings.yaml.imported，故回退写旧值仍能被新版迁移，不会静默失效。
+ * 长期要求：版本号/命名空间只从官方产物单源读取，禁硬编码第二份——本常量是唯一的
+ * 降级例外，不得再新增第二份硬编码期望值。
+ */
+export const WELCOME_SETTINGS_FALLBACK_NAMESPACE = "ui-onboarding";
+/** 历史导出别名（等于回退值）；新代码用 FALLBACK + 现取命名空间。 */
+export const WELCOME_SETTINGS_NAMESPACE = WELCOME_SETTINGS_FALLBACK_NAMESPACE;
 export const WELCOME_SETTINGS_FIELD = "welcomeNoticeVersion";
 
 /** 缺访问令牌时 GUI 的鉴权拒绝文案（页面命令据此给出可操作诊断而非空页假绿）。 */
@@ -46,17 +63,32 @@ export function extractWelcomeNoticeVersion(source) {
 }
 
 /**
+ * 从客户端产物源码提取须知命名空间（与 WELCOME_NOTICE_SETTINGS_NAMESPACE 同名常量对齐）。
+ * @param source - dsh-client-ui-settings-models 的 client.js 源码。
+ * @returns 命名空间字符串；未匹配返回 null，调用方回退 WELCOME_SETTINGS_FALLBACK_NAMESPACE。
+ */
+export function extractWelcomeNoticeNamespace(source) {
+  const m = WELCOME_NOTICE_SETTINGS_NAMESPACE_RE.exec(String(source ?? ""));
+  return m ? m[1] : null;
+}
+
+/**
  * 构造预置的 settings.yaml 文档。
  * @param version - 已确认的须知版本（原样落盘，加引号会改变解析结果，故不加）。
+ * @param namespace - 设置命名空间（默认回退值；调用方应传产物现取的命名空间，
+ *   取不到才用回退——长期只从官方产物单源读取）。
  * @returns 设置文档文本。
  */
-export function welcomeSettingsDocument(version) {
-  // 值来自 dsh 产物的字符串字面量，仍按白名单校验：settings.yaml 是要被 dsh 解析的
-  // 结构化文档，任何意外字符都可能改写命名空间结构而不是一个字段值。
+export function welcomeSettingsDocument(version, namespace = WELCOME_SETTINGS_FALLBACK_NAMESPACE) {
+  // 值与命名空间来自 dsh 产物的字符串字面量，仍按白名单校验：settings.yaml 是要被
+  // dsh 解析的结构化文档，任何意外字符都可能改写命名空间结构而不是一个字段值。
   if (!/^[A-Za-z0-9._-]+$/.test(String(version))) {
     throw new Error(`内测声明版本含意外字符，拒绝写入 settings.yaml: ${version}`);
   }
-  return `${WELCOME_SETTINGS_NAMESPACE}:\n  ${WELCOME_SETTINGS_FIELD}: ${version}\n`;
+  if (!/^[A-Za-z0-9._-]+$/.test(String(namespace))) {
+    throw new Error(`设置命名空间含意外字符，拒绝写入 settings.yaml: ${namespace}`);
+  }
+  return `${namespace}:\n  ${WELCOME_SETTINGS_FIELD}: ${version}\n`;
 }
 
 /**
@@ -103,17 +135,24 @@ export function welcomeClientFileOf(dshRoot) {
 }
 
 /**
- * 端到端解析须知版本（dsh 入口 → 安装根 → 客户端产物 → 常量）。
+ * 端到端解析须知版本与命名空间（dsh 入口 → 安装根 → 客户端产物 → 常量）。
+ * 版本号与命名空间均只从官方产物单源读取；命名空间取不到时回退
+ * WELCOME_SETTINGS_FALLBACK_NAMESPACE（回退依据见该常量注释：rc.7 导入映射
+ * ui-onboarding→ui-settings-general 自动迁移）。
  * @param dshBinPath - dsh 可执行入口。
- * @returns `{ version, file }`；任一步失败返回 null。
+ * @returns `{ version, namespace, file }`；版本任一步失败返回 null
+ *  （命名空间缺失不判失败，只回退——旧产物无该常量时仍能预置旧命名空间）。
  */
 export function findWelcomeNoticeVersion(dshBinPath) {
   const root = dshRootOf(dshBinPath);
   if (!root) return null;
   const file = welcomeClientFileOf(root);
   if (!file || !existsSync(file)) return null;
-  const version = extractWelcomeNoticeVersion(readFileSync(file, "utf8"));
-  return version ? { version, file } : null;
+  const source = readFileSync(file, "utf8");
+  const version = extractWelcomeNoticeVersion(source);
+  if (!version) return null;
+  const namespace = extractWelcomeNoticeNamespace(source) ?? WELCOME_SETTINGS_FALLBACK_NAMESPACE;
+  return { version, namespace, file };
 }
 
 /**
