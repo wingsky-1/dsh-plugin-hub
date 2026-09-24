@@ -162,15 +162,48 @@ export function isScheduleDirty(
 
 /** 路由与范围区脏检查（目录按集合比对，顺序漂移不算脏）。 */
 export function isRoutingDirty(
-  a: { provider: string; model: string; directories: string[]; push: { enabled: boolean } },
-  b: { provider: string; model: string; directories: string[]; push: { enabled: boolean } },
+  a: {
+    provider: string;
+    model: string;
+    reasoningEffort?: string;
+    directories: string[];
+    push: { enabled: boolean };
+  },
+  b: {
+    provider: string;
+    model: string;
+    reasoningEffort?: string;
+    directories: string[];
+    push: { enabled: boolean };
+  },
 ): boolean {
   return (
     a.provider !== b.provider ||
     a.model !== b.model ||
+    a.reasoningEffort !== b.reasoningEffort ||
     !sameStringSet(a.directories, b.directories) ||
     a.push.enabled !== b.push.enabled
   );
+}
+
+/** effort 选择写入；空选择删除属性，保持 unset 的 wire 语义。 */
+export function withReasoningEffort<T extends { reasoningEffort?: string }>(
+  config: T,
+  effort: string,
+): T {
+  const next = { ...config };
+  if (effort === "") delete next.reasoningEffort;
+  else next.reasoningEffort = effort;
+  return next;
+}
+
+/** 保存完整配置；unset/空 effort 在 JSON 中省略，不改写其他字段。 */
+export function reportConfigPayload(config: { reasoningEffort?: string }): string {
+  const payload = { ...config };
+  if (payload.reasoningEffort === undefined || payload.reasoningEffort === "") {
+    delete payload.reasoningEffort;
+  }
+  return JSON.stringify(payload);
 }
 
 /** 提示词区脏检查（三周期任一文本漂移即脏）。 */

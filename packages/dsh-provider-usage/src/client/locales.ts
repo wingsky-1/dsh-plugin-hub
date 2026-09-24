@@ -206,6 +206,13 @@ export const zh = {
   reportModelDefault: "跟随默认（首个已注册模型）",
   reportModelKept: "{v}（当前配置值，不在列表中）",
   reportModelFallback: "模型列表拉取失败或为空，已降级为手动填写。",
+  reportReasoningEffort: "思考等级",
+  reportReasoningUnset: "未配置（跟随 DSH 默认）",
+  reportReasoningDefault: "DSH 默认",
+  reportReasoningStaleOption: "{v}（已保存，当前模型未声明）",
+  reportReasoningUnavailable: "当前模型未提供 reasoning effort 能力。",
+  reportReasoningCapabilityError: "当前模型的 reasoning effort 能力暂不可用；现有配置已保留。",
+  reportReasoningStale: "已保存的思考等级不在当前模型能力中；生成时会安全失败。",
   // 报告目录范围多选
   reportDirectories: "目录范围",
   reportDirectoriesAll: "全部目录",
@@ -482,6 +489,15 @@ export const en: Record<ProviderUsageLocaleKey, string> = {
   reportModelDefault: "Follow default (first registered model)",
   reportModelKept: "{v} (current value, not in list)",
   reportModelFallback: "Model list unavailable or empty — falling back to manual input.",
+  reportReasoningEffort: "Reasoning effort",
+  reportReasoningUnset: "Not configured (follow DSH default)",
+  reportReasoningDefault: "DSH default",
+  reportReasoningStaleOption: "{v} (saved; not advertised by this model)",
+  reportReasoningUnavailable: "This model does not advertise reasoning-effort capabilities.",
+  reportReasoningCapabilityError:
+    "Reasoning-effort capabilities are temporarily unavailable; the saved setting is preserved.",
+  reportReasoningStale:
+    "The saved reasoning effort is not advertised by this model; generation will fail closed.",
   // report directory scope multi-select
   reportDirectories: "Directory scope",
   reportDirectoriesAll: "All directories",

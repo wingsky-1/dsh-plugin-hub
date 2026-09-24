@@ -32,6 +32,8 @@ const {
   defaultStructureHeader,
   isScheduleDirty,
   isRoutingDirty,
+  withReasoningEffort,
+  reportConfigPayload,
   isPromptsDirty,
   groupReportsByPeriod,
   filterReportsByStatus,
@@ -215,11 +217,18 @@ describe("isScheduleDirty", () => {
   });
 });
 
-const routeOf = (provider: string, model: string, directories: string[], push: boolean) => ({
+const routeOf = (
+  provider: string,
+  model: string,
+  directories: string[],
+  push: boolean,
+  reasoningEffort?: string,
+) => ({
   provider,
   model,
   directories,
   push: { enabled: push },
+  ...(reasoningEffort === undefined ? {} : { reasoningEffort }),
 });
 
 describe("isRoutingDirty", () => {
@@ -243,8 +252,48 @@ describe("isRoutingDirty", () => {
     expect(isRoutingDirty(routeOf("a", "m", [], false), routeOf("b", "m", [], false))).toBe(true);
   });
 
+  it("model 漂移即脏", () => {
+    expect(isRoutingDirty(routeOf("a", "m", [], false), routeOf("a", "m2", [], false))).toBe(true);
+  });
+
   it("推送开关漂移即脏", () => {
     expect(isRoutingDirty(routeOf("a", "m", [], false), routeOf("a", "m", [], true))).toBe(true);
+  });
+
+  it("reasoning effort 从 unset 变为 opaque ID 即脏", () => {
+    expect(
+      isRoutingDirty(routeOf("a", "m", [], false), routeOf("a", "m", [], false, "vendor::deep")),
+    ).toBe(true);
+  });
+});
+
+describe("reasoningEffort：清除与保存载荷", () => {
+  it("用户清除时删除属性，不写空串", () => {
+    const cleared = withReasoningEffort(
+      { provider: "a", model: "m", reasoningEffort: "vendor::deep" },
+      "",
+    );
+    expect(Object.hasOwn(cleared, "reasoningEffort")).toBe(false);
+    expect(JSON.parse(reportConfigPayload(cleared))).toEqual({ provider: "a", model: "m" });
+  });
+
+  it("未设置 effort 时保存整份配置且 JSON 不出现该字段", () => {
+    const config = {
+      provider: "vendor",
+      model: "vendor::model",
+      directories: ["work"],
+      push: { enabled: true },
+    };
+    const body = JSON.parse(reportConfigPayload(config));
+    expect(body).toEqual(config);
+    expect(Object.hasOwn(body, "reasoningEffort")).toBe(false);
+  });
+
+  it("已设置 effort 时保存 opaque ID 原值", () => {
+    const body = JSON.parse(
+      reportConfigPayload(withReasoningEffort({ provider: "vendor", model: "m" }, "vendor::deep")),
+    );
+    expect(body.reasoningEffort).toBe("vendor::deep");
   });
 });
 
