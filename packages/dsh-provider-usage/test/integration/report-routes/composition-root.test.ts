@@ -34,7 +34,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import type { LlmResolvedModelInfo, ReasoningEffortId } from "@deepseek-ai/dsh-llm";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanupIsolatedDirs, containsAny, hasExportStar, makeIsolatedDir } from "../../helpers.ts";
 import {
   handleReportConfig,
@@ -224,15 +224,19 @@ function stubQueuePort(): ReportRoutesQueuePort {
 }
 
 type RouteModelStub = { id: string; name?: string };
-type RouteLlmSeen = { resolveCalls: Array<{ provider: string; model: string }> };
+type RouteLlmSeen = {
+  resolveCalls: Array<{ provider: string; model: string; signal?: AbortSignal }>;
+};
 
 function stubReportCtx(
   historyRoot: string,
   opts: {
     throwingDirs?: boolean;
     models?: RouteModelStub[];
+    modelsError?: string;
     capability?: LlmResolvedModelInfo;
     capabilityError?: string;
+    capabilityNever?: boolean;
   } = {},
 ): {
   ctx: ReportRoutesContext;
@@ -243,9 +247,15 @@ function stubReportCtx(
   const llmSeen: RouteLlmSeen = { resolveCalls: [] };
   const llm = {
     listProviders: () => [{ id: "stub-p" }],
-    listModels: async () => opts.models ?? [{ id: "m1" }],
-    resolveModelInfo: async (provider: string, model: string) => {
-      llmSeen.resolveCalls.push({ provider, model });
+    listModels: async () => {
+      if (opts.modelsError !== undefined) throw new Error(opts.modelsError);
+      return opts.models ?? [{ id: "m1" }];
+    },
+    resolveModelInfo: async (provider: string, model: string, signal?: AbortSignal) => {
+      llmSeen.resolveCalls.push({ provider, model, signal });
+      if (opts.capabilityNever === true) {
+        return new Promise<LlmResolvedModelInfo>(() => {});
+      }
       if (opts.capabilityError !== undefined) throw new Error(opts.capabilityError);
       if (opts.capability === undefined) throw new Error("capability fixture missing");
       return opts.capability;
@@ -277,8 +287,8 @@ function stubReportCtx(
 const routeEffortId = (value: string): ReasoningEffortId => value as ReasoningEffortId;
 const routeCapability: LlmResolvedModelInfo = {
   provider: "stub-p",
-  id: "m1",
-  name: "M1 capability",
+  id: "m2",
+  name: "M2 capability",
   reasoning: {
     efforts: [
       { id: routeEffortId("vendor::deep"), name: "Deep", description: "深度思考" },
@@ -499,26 +509,34 @@ describe("D11二 配置服务窄面消费 + 任务队列 + 执行器", () => {
       expect(llmSeen.resolveCalls).toEqual([]);
     });
 
-    it("命中 exact model 只查一次并透传 efforts 顺序、name、description、default", async () => {
+    it("多模型目录只查 exact model 一次并透传 efforts 顺序、name、description、default", async () => {
       const root = isolatedDir("dou-reportroutes-model-capability-");
       const { ctx, llmSeen } = stubReportCtx(root, {
-        models: [{ id: "m1", name: "Catalog M1" }],
+        models: [
+          { id: "m1", name: "Catalog M1" },
+          { id: "m2", name: "Catalog M2" },
+          { id: "m3", name: "Catalog M3" },
+        ],
         capability: routeCapability,
       });
 
       const response = await callStatus(
         handleReportModels as AnyHandler,
-        fakeReq({ method: "GET", url: "/?provider=stub-p&model=m1" }),
+        fakeReq({ method: "GET", url: "/?provider=stub-p&model=m2" }),
         ctx,
       );
 
       expect(response.code).toBe(200);
       expect(response.body).toEqual({
         ok: true,
-        models: [{ id: "m1", name: "Catalog M1" }],
+        models: [
+          { id: "m1", name: "Catalog M1" },
+          { id: "m2", name: "Catalog M2" },
+          { id: "m3", name: "Catalog M3" },
+        ],
         selectedModel: {
-          id: "m1",
-          name: "M1 capability",
+          id: "m2",
+          name: "M2 capability",
           reasoning: {
             efforts: [
               { id: "vendor::deep", name: "Deep", description: "深度思考" },
@@ -528,7 +546,9 @@ describe("D11二 配置服务窄面消费 + 任务队列 + 执行器", () => {
           },
         },
       });
-      expect(llmSeen.resolveCalls).toEqual([{ provider: "stub-p", model: "m1" }]);
+      expect(llmSeen.resolveCalls).toEqual([
+        { provider: "stub-p", model: "m2", signal: expect.any(AbortSignal) },
+      ]);
     });
 
     it("exact model 不在列表时返回 unknown-model 且不调用 resolver", async () => {
@@ -565,7 +585,56 @@ describe("D11二 配置服务窄面消费 + 任务队列 + 执行器", () => {
         models: [{ id: "m1", name: "Catalog M1" }],
         selectedModel: { id: "m1", capabilityError: true },
       });
-      expect(llmSeen.resolveCalls).toEqual([{ provider: "stub-p", model: "m1" }]);
+      expect(llmSeen.resolveCalls).toEqual([
+        { provider: "stub-p", model: "m1", signal: expect.any(AbortSignal) },
+      ]);
+    });
+
+    it("never-settling resolver 超时返回 capabilityError 并尽力 abort 底层", async () => {
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+      try {
+        const root = isolatedDir("dou-reportroutes-model-capability-timeout-");
+        const { ctx, llmSeen } = stubReportCtx(root, {
+          models: [{ id: "m1" }, { id: "m2" }],
+          capabilityNever: true,
+        });
+        const pending = callStatus(
+          handleReportModels as AnyHandler,
+          fakeReq({ method: "GET", url: "/?provider=stub-p&model=m2" }),
+          ctx,
+        );
+
+        await vi.advanceTimersByTimeAsync(5000);
+        const response = await pending;
+
+        expect(response.code).toBe(200);
+        expect(response.body).toEqual({
+          ok: true,
+          models: [{ id: "m1" }, { id: "m2" }],
+          selectedModel: { id: "m2", capabilityError: true },
+        });
+        expect(llmSeen.resolveCalls).toHaveLength(1);
+        expect(llmSeen.resolveCalls[0]!.signal?.aborted).toBe(true);
+        expect(vi.getTimerCount()).toBe(0);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("模型列表异常只返回稳定 code，不泄露 resolver 原始文案", async () => {
+      const root = isolatedDir("dou-reportroutes-model-discover-safe-error-");
+      const raw = "key=sk-private path=/private/report.json";
+      const { ctx } = stubReportCtx(root, { modelsError: raw });
+
+      const response = await callStatus(
+        handleReportModels as AnyHandler,
+        fakeReq({ method: "GET", url: "/?provider=stub-p" }),
+        ctx,
+      );
+
+      expect(response.code).toBe(200);
+      expect(response.body).toEqual({ ok: false, reason: "discover-failed" });
+      expect(JSON.stringify(response.body)).not.toContain(raw);
     });
   });
 

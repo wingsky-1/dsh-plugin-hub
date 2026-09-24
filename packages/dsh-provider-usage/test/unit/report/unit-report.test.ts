@@ -37,7 +37,7 @@ import { tmpdir } from "node:os";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { Context } from "@deepseek-ai/cordis";
 import type { SessionEvent } from "@deepseek-ai/dsh-session/types";
-import { beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { pollUntil, callHandler } from "../../helpers.ts";
 // 白盒直连深路径（#768 B波）：日界纯面经 shared 门面，不走组合根转发。
 import { dayKey } from "../../../src/shared/interface.ts";
@@ -172,6 +172,7 @@ interface FakeLlmOptions {
   noModels?: boolean;
   capability?: LlmResolvedModelInfo;
   capabilityError?: string;
+  capabilityNever?: boolean;
 }
 
 /** fake llm：罐头 chunk 流；seen 记录 stream 与可选 exact-model capability 查询。 */
@@ -203,10 +204,17 @@ function fakeLlm(
       opts.noModels ? [] : [{ provider: "prov-a", id: "model-a", name: "A" }],
   };
   const capability = opts.capability;
-  if (capability !== undefined || opts.capabilityError !== undefined) {
+  if (
+    capability !== undefined ||
+    opts.capabilityError !== undefined ||
+    opts.capabilityNever === true
+  ) {
     Object.assign(llm, {
       async resolveModelInfo(provider: string, model: string, signal?: AbortSignal) {
         seen.resolveCalls.push({ provider, model, signal });
+        if (opts.capabilityNever === true) {
+          return new Promise<LlmResolvedModelInfo>(() => {});
+        }
         if (opts.capabilityError !== undefined) throw new Error(opts.capabilityError);
         if (capability === undefined) throw new Error("capability fixture missing");
         return capability;
@@ -707,8 +715,13 @@ describe("generate：reasoningEffort exact-model capability", () => {
 
     expect(result.meta.ok).toBe(true);
     expect(f.seen.resolveCalls).toEqual([
-      { provider: "generic-provider", model: "generic-model", signal: undefined },
+      {
+        provider: "generic-provider",
+        model: "generic-model",
+        signal: expect.any(AbortSignal),
+      },
     ]);
+    expect(f.seen.resolveCalls[0]!.signal?.aborted).toBe(false);
     expect(f.seen.calls).toHaveLength(1);
     expect(f.seen.calls[0]!.reasoningEffort).toBe("vendor::deep");
   });
@@ -783,6 +796,109 @@ describe("generate：reasoningEffort exact-model capability", () => {
     expect(result.meta.error).toBe("模型能力解析失败");
     expect(f.seen.resolveCalls).toHaveLength(1);
     expect(f.seen.calls).toHaveLength(0);
+  });
+
+  describe("5s deadline 与调用方取消", () => {
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("never-settling resolver 恰在 5s fail closed、取消底层 signal 且 stream=0", async () => {
+      const f = fakeLlm(CHUNKS, { capabilityNever: true });
+      const pending = generateReport(
+        GEN({
+          llm: f.llm,
+          provider: "generic-provider",
+          model: "generic-model",
+          reasoningEffort: "vendor::deep",
+        }),
+      );
+      let settled = false;
+      void pending.then(
+        () => {
+          settled = true;
+        },
+        () => {
+          settled = true;
+        },
+      );
+
+      await vi.advanceTimersByTimeAsync(4999);
+      expect(f.seen.resolveCalls).toHaveLength(1);
+      expect(f.seen.resolveCalls[0]!.signal?.aborted).toBe(false);
+
+      await vi.advanceTimersByTimeAsync(1);
+      await Promise.resolve();
+      expect(settled).toBe(true);
+      const result = await pending;
+      expect(result.meta).toMatchObject({ ok: false, error: "模型能力解析超时" });
+      expect(result.body).toBe("");
+      expect(f.seen.resolveCalls[0]!.signal?.aborted).toBe(true);
+      expect(f.seen.calls).toHaveLength(0);
+      expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it("调用方 signal 已取消时不启动 resolver 且 stream=0", async () => {
+      const controller = new AbortController();
+      controller.abort();
+      const f = fakeLlm(CHUNKS, { capability: GENERIC_CAPABILITY });
+
+      const result = await generateReport(
+        GEN({
+          llm: f.llm,
+          provider: "generic-provider",
+          model: "generic-model",
+          reasoningEffort: "vendor::deep",
+          signal: controller.signal,
+        }),
+      );
+
+      expect(result.meta).toMatchObject({ ok: false, error: "模型能力解析已取消" });
+      expect(result.body).toBe("");
+      expect(f.seen.resolveCalls).toHaveLength(0);
+      expect(f.seen.calls).toHaveLength(0);
+      expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it("resolver 忽略 signal 时调用方 abort 仍立即 fail closed 并清 timer", async () => {
+      const controller = new AbortController();
+      const f = fakeLlm(CHUNKS, { capabilityNever: true });
+      const pending = generateReport(
+        GEN({
+          llm: f.llm,
+          provider: "generic-provider",
+          model: "generic-model",
+          reasoningEffort: "vendor::deep",
+          signal: controller.signal,
+        }),
+      );
+      let settled = false;
+      void pending.then(
+        () => {
+          settled = true;
+        },
+        () => {
+          settled = true;
+        },
+      );
+
+      await vi.advanceTimersByTimeAsync(0);
+      expect(f.seen.resolveCalls).toHaveLength(1);
+      expect(f.seen.resolveCalls[0]!.signal?.aborted).toBe(false);
+      controller.abort();
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(settled).toBe(true);
+      const result = await pending;
+      expect(result.meta).toMatchObject({ ok: false, error: "模型能力解析已取消" });
+      expect(f.seen.resolveCalls[0]!.signal?.aborted).toBe(true);
+      expect(f.seen.calls).toHaveLength(0);
+      expect(vi.getTimerCount()).toBe(0);
+    });
   });
 });
 

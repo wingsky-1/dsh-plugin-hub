@@ -104,17 +104,46 @@ describe("D1③ 构造只递 root+initial+onUpdate", () => {
 });
 
 describe("reasoningEffort：旧配置缺省 + opaque ID 原样持久化", () => {
-  it("旧磁盘配置缺字段时读回仍 unset", async () => {
-    const root = mkdtempSync(join(tmpdir(), "d1-reasoning-effort-old-"));
+  it("真实旧磁盘配置读回 provider 且 reasoningEffort 缺省为 unset", async () => {
+    const legacyRoot = mkdtempSync(join(tmpdir(), "d1-reasoning-effort-old-"));
+    const missingRoot = mkdtempSync(join(tmpdir(), "d1-reasoning-effort-missing-"));
     try {
-      mkdirSync(join(root, "reports"), { recursive: true });
-      writeFileSync(join(root, "reports", "config.json"), JSON.stringify({ provider: "generic" }));
+      mkdirSync(join(legacyRoot, "reports"), { recursive: true });
+      writeFileSync(
+        join(legacyRoot, "reports", "config.json"),
+        JSON.stringify({ provider: "generic" }),
+      );
 
-      const loaded = await readReportConfig(root);
+      const loaded = await readReportConfig(legacyRoot);
+      const missing = await readReportConfig(missingRoot);
 
+      expect(loaded.provider).toBe("generic");
       expect(Object.hasOwn(loaded, "reasoningEffort")).toBe(false);
+      expect(missing.provider).toBe("");
     } finally {
-      rmSync(root, { recursive: true, force: true });
+      rmSync(legacyRoot, { recursive: true, force: true });
+      rmSync(missingRoot, { recursive: true, force: true });
+    }
+  });
+
+  it.each([
+    { label: "缺失", raw: {}, expected: undefined },
+    { label: "空串", raw: { reasoningEffort: "" }, expected: undefined },
+    { label: "非 string", raw: { reasoningEffort: 7 }, expected: undefined },
+    {
+      label: "unknown opaque",
+      raw: { reasoningEffort: "vendor::unknown" },
+      expected: "vendor::unknown",
+    },
+  ])("normalize 对$label reasoningEffort 的结果符合 wire 语义", ({ raw, expected }) => {
+    const normalized = normalizeReportConfig(raw);
+
+    // HTTP wire：缺字段=unset；显式空串/非 string 在路由层 400。
+    // normalize 仍防御性丢弃非法磁盘值；opaque 值不在配置层猜语义，交 exact-model preflight。
+    if (expected === undefined) {
+      expect(Object.hasOwn(normalized, "reasoningEffort")).toBe(false);
+    } else {
+      expect(normalized.reasoningEffort).toBe(expected);
     }
   });
 

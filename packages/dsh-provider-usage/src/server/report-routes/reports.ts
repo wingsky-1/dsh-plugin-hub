@@ -150,6 +150,7 @@ export async function handleReportConfig(
 
   // 读不出来的 body 不能当「没给配置」：normalizeReportConfig(undefined) 会回落**整套默认值**，
   // 于是畸形或超限的请求会把用户已存的报告配置静默重置（写盘 + 热更都照做）。
+  // reasoningEffort wire：缺字段表示 unset；显式空串或非 string 在归一化前稳定返回 400。
   const outcome = await readJsonBodyOutcome(req);
   if (outcome.kind !== "json") return writeJson(res, 400, { error: "bad-json" });
   if (
@@ -188,6 +189,28 @@ export async function handleReportConfig(
   writeJson(res, 200, { ok: true, config: normalized });
 }
 
+const REPORT_MODELS_DISCOVERY_TIMEOUT_MS = 5_000;
+const REPORT_MODELS_DISCOVERY_TIMEOUT = Symbol("report-models-discovery-timeout");
+
+/** 每个发现步骤独立计时；resolver 忽略取消时，race 仍在 5s 后稳定收敛。 */
+async function withReportModelsDeadline<T>(start: (signal: AbortSignal) => Promise<T>): Promise<T> {
+  const controller = new AbortController();
+  const pending = start(controller.signal);
+  void pending.catch(() => {});
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      controller.abort();
+      reject(REPORT_MODELS_DISCOVERY_TIMEOUT);
+    }, REPORT_MODELS_DISCOVERY_TIMEOUT_MS);
+  });
+  try {
+    return await Promise.race([pending, deadline]);
+  } finally {
+    if (timer !== null) clearTimeout(timer);
+  }
+}
+
 export async function handleReportModels(
   req: IncomingMessage,
   res: ServerResponse,
@@ -209,14 +232,8 @@ export async function handleReportModels(
     return writeJson(res, 200, { ok: false, reason: "unknown-provider" });
   }
 
-  let timer: ReturnType<typeof setTimeout> | null = null;
   try {
-    const pending = ctx.llm.listModels(provider);
-    pending.catch(() => {});
-    const timeout = new Promise<never>((_, reject) => {
-      timer = setTimeout(() => reject(new Error("discover-timeout")), 5000);
-    });
-    const models = await Promise.race([pending, timeout]);
+    const models = await withReportModelsDeadline(() => ctx.llm.listModels(provider));
     const list = Array.isArray(models)
       ? (models as Array<{ id?: unknown; name?: unknown } | null>)
           .filter(
@@ -240,9 +257,9 @@ export async function handleReportModels(
     }
 
     try {
-      const pendingCapability = ctx.llm.resolveModelInfo(provider, selected.id);
-      pendingCapability.catch(() => {});
-      const info = await Promise.race([pendingCapability, timeout]);
+      const info = await withReportModelsDeadline((signal) =>
+        ctx.llm.resolveModelInfo(provider, selected.id, signal),
+      );
       const selectedModel: {
         id: string;
         name?: string;
@@ -276,10 +293,11 @@ export async function handleReportModels(
         selectedModel: { id: selected.id, capabilityError: true },
       });
     }
-  } catch (e: unknown) {
-    writeJson(res, 200, { ok: false, reason: e instanceof Error ? e.message : "discover-failed" });
-  } finally {
-    if (timer !== null) clearTimeout(timer);
+  } catch (error: unknown) {
+    writeJson(res, 200, {
+      ok: false,
+      reason: error === REPORT_MODELS_DISCOVERY_TIMEOUT ? "discover-timeout" : "discover-failed",
+    });
   }
 }
 

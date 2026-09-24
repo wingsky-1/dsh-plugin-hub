@@ -246,6 +246,16 @@ async function resolveRoute(
   return { provider: p, model: m };
 }
 
+const CAPABILITY_RESOLVE_TIMEOUT_MS = 5_000;
+
+const CAPABILITY_ERROR = {
+  unavailable: "模型能力信息不可用",
+  cancelled: "模型能力解析已取消",
+  timeout: "模型能力解析超时",
+  unsupported: "配置指定的思考等级不受当前模型支持",
+  failed: "模型能力解析失败",
+} as const;
+
 type OptionalModelCapabilityResolver = {
   resolveModelInfo(
     provider: string,
@@ -268,22 +278,57 @@ async function resolveConfiguredReasoningEffort(
   configured: string,
   signal?: AbortSignal,
 ): Promise<{ ok: true; id: LlmReasoningEffortInfo["id"] } | { ok: false; error: string }> {
+  if (signal?.aborted) return { ok: false, error: CAPABILITY_ERROR.cancelled };
   if (!hasModelCapabilityResolver(llm)) {
-    return { ok: false, error: "模型能力信息不可用" };
+    return { ok: false, error: CAPABILITY_ERROR.unavailable };
   }
+
+  const controller = new AbortController();
+  let timedOut = false;
+  let callerCancelled = false;
+  let rejectDeadline: (() => void) | undefined;
+  let rejectCancellation: (() => void) | undefined;
+  const deadline = new Promise<never>((_, reject) => {
+    rejectDeadline = () => reject();
+  });
+  const cancellation = new Promise<never>((_, reject) => {
+    rejectCancellation = () => reject();
+  });
+  const onCallerAbort = (): void => {
+    callerCancelled = true;
+    rejectCancellation?.();
+    controller.abort();
+  };
+  signal?.addEventListener("abort", onCallerAbort, { once: true });
+  let timer: ReturnType<typeof setTimeout> | null = null;
+
   try {
-    const info = await llm.resolveModelInfo(provider, model, signal);
+    const pending = llm.resolveModelInfo(provider, model, controller.signal);
+    void pending.catch(() => {});
+    timer = setTimeout(() => {
+      timedOut = true;
+      rejectDeadline?.();
+      controller.abort();
+    }, CAPABILITY_RESOLVE_TIMEOUT_MS);
+    const info = await Promise.race([pending, deadline, cancellation]);
     const efforts = info.reasoning?.efforts;
     if (!Array.isArray(efforts)) {
-      return { ok: false, error: "配置指定的思考等级不受当前模型支持" };
+      return { ok: false, error: CAPABILITY_ERROR.unsupported };
     }
     const exact = efforts.find((effort) => effort.id === configured);
     if (exact === undefined) {
-      return { ok: false, error: "配置指定的思考等级不受当前模型支持" };
+      return { ok: false, error: CAPABILITY_ERROR.unsupported };
     }
     return { ok: true, id: exact.id };
   } catch {
-    return { ok: false, error: "模型能力解析失败" };
+    if (timedOut) return { ok: false, error: CAPABILITY_ERROR.timeout };
+    if (callerCancelled || signal?.aborted) {
+      return { ok: false, error: CAPABILITY_ERROR.cancelled };
+    }
+    return { ok: false, error: CAPABILITY_ERROR.failed };
+  } finally {
+    if (timer !== null) clearTimeout(timer);
+    signal?.removeEventListener("abort", onCallerAbort);
   }
 }
 
