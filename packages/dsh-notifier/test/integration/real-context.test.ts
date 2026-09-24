@@ -221,8 +221,8 @@ function scopeRejecting<K extends keyof Events>(): ScopedThis<K> {
  */
 function fakeSettings(
   user: Record<string, unknown> | undefined,
-  documentPath?: string,
-): { describe: () => unknown[]; documentPath: string | undefined } {
+  documentPath: string = "",
+): { describe: () => unknown[]; documentPath: string } {
   return {
     describe: () => (user === undefined ? [] : [{ ns: "dsh-notifier", user }]),
     documentPath,

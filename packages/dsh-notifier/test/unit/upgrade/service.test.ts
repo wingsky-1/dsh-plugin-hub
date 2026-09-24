@@ -79,8 +79,8 @@ function makeLegacy(entries: readonly LegacyEntry[] = []) {
       reads += 1;
       return entries as unknown as ReturnType<UpgradeDeps["legacySettings"]["describe"]>;
     },
-    // provider 没有文件（未自报路径）：本用例的存量只走服务面那条路，文档读取自然落空。
-    documentPath: undefined,
+    // 不存在的文件：本用例的存量只走服务面那条路，文档读取自然落空。
+    documentPath: join(home.dir, "missing-settings.yaml"),
   };
   return { face, reads: () => reads };
 }

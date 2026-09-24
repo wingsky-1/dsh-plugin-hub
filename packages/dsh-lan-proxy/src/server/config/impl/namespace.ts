@@ -33,10 +33,7 @@ export interface SettingsDescriptorLike {
   revision: number;
 }
 
-/**
- * owner scope 最小类型面（Descriptor 面：以 describe 投影读、以 update/replace 写）。
- * watch 为遗留订阅面（新代码走 document-updated，见 apply；待清理，见 #1011）。
- */
+/** owner scope 最小类型面（以 describe 投影读、以 update/replace 写）。 */
 export interface OwnerScopeLike {
   /** 当前解析值（schema defaults → base → user 层）。 */
   get(): LanProxyConfig;
@@ -44,17 +41,10 @@ export interface OwnerScopeLike {
   update(patch: object, expectedRevision?: number): Promise<void>;
   /** 整节替换 user 层，缺省键回落 base/schema 默认。 */
   replace(section: object, expectedRevision?: number): Promise<void>;
-  /** 提交后异步串行回调，返回 disposer（遗留订阅面，新代码不用；待清理，见 #1011）。 */
-  watch?(cb: (next: LanProxyConfig, prev: LanProxyConfig) => void): () => void;
 }
 
-/**
- * settings 服务最小类型面（Descriptor 面）。
- * 可选成员为能力探测保留（运行时按存在性分支，无版本字符串分支）。
- */
+/** settings 服务最小类型面。 */
 export interface SettingsServiceLike {
-  /** 注册面（遗留；待清理，见 #1011）。 */
-  register?(ns: string, schema: unknown, options?: { base?: unknown }): OwnerScopeLike;
   /** 条目描述（wire 面必传 redactSecrets）。 */
   describe(options?: { redactSecrets?: boolean }): Array<SettingsDescriptorLike>;
   /** 服务级增量写。 */

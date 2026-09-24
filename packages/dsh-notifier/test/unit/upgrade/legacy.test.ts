@@ -37,11 +37,12 @@ afterEach(() => {
   home.dispose();
 });
 
-/** 假 settings 读面：`describe` 给固定条目（或按需抛错），`documentPath` 指向宿主文档（缺省 = provider 没有文件）。 */
+/** 假 settings 读面：`describe` 给固定条目（或按需抛错），`documentPath` 指向宿主文档
+ *（缺省 = 不存在的文件：文档环落空，存量只走服务面/V0 环）。 */
 function makeSettings(
   entries: readonly FakeDescriptor[],
   throws = false,
-  documentPath?: string,
+  documentPath: string = join(home.dir, "missing-settings.yaml"),
 ): LegacySettingsFace {
   return {
     describe: () => {
@@ -94,7 +95,8 @@ describe("读取优先级：V1 优先，V0 兜底", () => {
           LegacySettingsFace["describe"]
         >;
       },
-      documentPath: undefined,
+      // 不存在的文件：文档环落空，本用例只走服务面（脱敏开关的断点在服务面出口）。
+      documentPath: join(home.dir, "missing-settings.yaml"),
     };
 
     expect(readLegacySettings(settings)).toEqual({ notifyAsk: false });
@@ -138,21 +140,18 @@ describe("宿主文档文件：未注册命名空间的存量也读得到", () =
     expect(readLegacySettings(makeSettings([], false, doc))).toEqual({ notifyTaskDone: false });
   });
 
-  it("provider 没自报路径时按 DSH home 下的 settings.yaml 兜底", () => {
-    // 路径由夹具自己拼（不走实现的任何 helper）：兜底名与兜底位置都得被独立钉住。
-    writeDocument("dsh-notifier:\n  customKey: 42\n", "settings.yaml");
-    expect(readLegacySettings(makeSettings([]))).toEqual({ customKey: 42 });
-  });
-
   it("文档是 JSON 时同样能读（官方 provider 支持 .json 扩展名）", () => {
-    writeDocument(`{"${NS}":{"notifyAsk":true}}`, "settings.json");
-    expect(readLegacySettings(makeSettings([]))).toEqual({ notifyAsk: true });
+    const doc = writeDocument(`{"${NS}":{"notifyAsk":true}}`, "settings.json");
+    expect(readLegacySettings(makeSettings([], false, doc))).toEqual({ notifyAsk: true });
   });
 
   it("`.json` 判定按扩展名而不是「碰巧 YAML 也读得动」", () => {
     // 重复键：YAML 解析器直接抛错，`JSON.parse` 取后者——只有真的走了 JSON 那条分支才读得出来。
-    writeDocument(`{"${NS}":{"notifyAsk":true},"${NS}":{"notifyAsk":false}}`, "settings.json");
-    expect(readLegacySettings(makeSettings([]))).toEqual({ notifyAsk: false });
+    const doc = writeDocument(
+      `{"${NS}":{"notifyAsk":true},"${NS}":{"notifyAsk":false}}`,
+      "settings.json",
+    );
+    expect(readLegacySettings(makeSettings([], false, doc))).toEqual({ notifyAsk: false });
   });
 
   it("provider 取文档路径就抛错时按没有文件处理（与服务面同形的失败处理）", () => {
@@ -161,7 +160,7 @@ describe("宿主文档文件：未注册命名空间的存量也读得到", () =
         [{ ns: NS, user: { notifyAsk: true } }] as unknown as ReturnType<
           LegacySettingsFace["describe"]
         >,
-      get documentPath(): string | undefined {
+      get documentPath(): string {
         throw new Error("provider 取文档路径失败");
       },
     };
@@ -203,7 +202,8 @@ describe("宿主文档文件：未注册命名空间的存量也读得到", () =
   it("两个候选文件同时存在时 `.yaml` 优先（官方缺省名在前）", () => {
     writeDocument("dsh-notifier:\n  notifyAsk: false\n", "settings.yaml");
     writeDocument(`{"${NS}":{"notifyAsk":true}}`, "settings.json");
-    expect(readLegacySettings(makeSettings([]))).toEqual({ notifyAsk: false });
+    // 空白路径走 DSH home 缺省候选（[yaml, json]，yaml 在前）。
+    expect(readLegacySettings(makeSettings([], false, ""))).toEqual({ notifyAsk: false });
   });
 
   it("documentPath 是空白串时按「没给出路径」处理，回到 DSH home 兜底", () => {
