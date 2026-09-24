@@ -7,7 +7,7 @@
 ## 脚本自动完成的链路
 
 建临时 `DSH_HOME` → 校验 dsh 入口并打印版本（`--dsh` 锚定）→ **预置首启弹窗跳过**
-（写隔离 `$DSH_HOME/settings.yaml` 的内测声明版本，见 SKILL.md「首启弹窗默认跳过」；
+（写隔离 `$DSH_HOME/settings.yaml` 的内测声明版本与命名空间，见 SKILL.md「首启弹窗默认跳过」；
 `--no-skip-onboarding` 关闭）→ 建 `verify_<8位随机>` profile
 （`dsh plugin --profile <p> list` 显式初始化，失败即报可操作错误）→ 注入内置
 `@deepseek-ai/dsh-web-app` bundle → 构建并把本地插件 link 进 profile（`--no-build`
@@ -48,7 +48,8 @@
 
 白名单覆盖 dsh 自身写面：`profiles/**`、`*.json`、`*.jsonl`、`*.log`、
 `.credentials.yaml`、`settings.yaml`（官方设置文档：首启弹窗跳过会预置它，此后页面里
-改任何设置也由 dsh 重写）、`browser.state`、`browser-profile/**`（整树 + 跳过深扫）、
+改任何设置也由 dsh 重写）、`settings.yaml.imported`（rc.7 导入映射重命名残留，待真机确认）、
+`browser.state`、`browser-profile/**`（整树 + 跳过深扫）、
 `evidence/**`、`audit/**`、`storages/**`、`dsh.log`、`verdict.json`。
 随 dsh 版本漂移的面（如 `profiles/node_modules/**` 的官方 bundle link）由 **t0 动态
 基线**覆盖。

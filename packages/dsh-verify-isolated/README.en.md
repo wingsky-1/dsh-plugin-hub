@@ -78,7 +78,8 @@ built-in skill and becomes available to all sessions in the profile (check with
   **do not block exit** (`--audit-extra-dirs <dir>` adds extra audited dirs,
   must be a directory; limitation: real home is never scanned; the whitelist
   covers dsh's own write surface (`.credentials.yaml` / `settings.yaml` /
-  `storages/**`) while version-drifted surfaces such as the official
+  `settings.yaml.imported` (pending real-device confirmation) / `storages/**`)
+  while version-drifted surfaces such as the official
   `profiles/node_modules/**` bundle links are captured by the post-readiness t0
   baseline — the audit surface is the incremental write surface of the runtime;
   `--keep` writes `$DSH_HOME/audit/audit.json`, otherwise the result is carried
@@ -89,10 +90,12 @@ built-in skill and becomes available to all sessions in the profile (check with
 - **First-run popups are skipped by default**: a brand-new DSH_HOME opens on two
   **blocking** dialogs ("Internal Testing Notice" → "Add an API key to get
   started"); both set `#root` to `inert`, so every click on the page silently
-  fails. Before startup the script presets `ui-onboarding.welcomeNoticeVersion`
-  in `settings.yaml` (the value is read from the dsh client artifact's
-  `WELCOME_NOTICE_VERSION` at run time rather than hardcoded — a stale value
-  after a dsh upgrade silently brings the dialog back) to remove the first one;
+  fails. Before startup the script presets `<namespace>.welcomeNoticeVersion`
+  in `settings.yaml` (both the namespace and the value are read from the dsh client artifact's
+  `WELCOME_NOTICE_SETTINGS_NAMESPACE` / `WELCOME_NOTICE_VERSION` at run time rather than hardcoded —
+  rc.7 uses `ui-settings-general`, falling back to `ui-onboarding` when unavailable
+  (the rc.7 import mapping `ui-onboarding→ui-settings-general` migrates it automatically);
+  a stale value after a dsh upgrade silently brings the dialog back) to remove the first one;
   the API-key dialog cannot be preset away (its "Configure later" only holds for
   the current page lifetime and reappears on every reload), so browser-driver
   clicks through it after navigation. When no skip button is recognized it does
@@ -124,7 +127,7 @@ skills/dsh-verify-isolated/
   scripts/lib/verify-core.mjs     # shared base utilities (exit-code constants/poll/findFreePort/port and token-URL parsing/C11 normalization)
   scripts/lib/audit.mjs           # B4 isolated-audit pure functions (scanSnapshot/diffAgainstWhitelist/checkSymlinkEscape/runAudit + versioned whitelist WHITELIST_V)
   scripts/lib/emulation.mjs       # device-emulation pure functions (parseEmulationFlags / buildDeviceMetrics; CDP session semantics)
-  scripts/lib/onboarding.mjs      # first-run popup skip pure functions (version constant lookup / settings doc / overlay probe expression / token redaction)
+  scripts/lib/onboarding.mjs      # first-run popup skip pure functions (version and namespace constant lookup / settings doc / overlay probe expression / token redaction)
   scripts/browser-driver.mjs      # self-contained browser driver (raw CDP, zero deps, --json atomic CLI)
 cordis.patch.yml                  # reuses official dsh-skill-filesystem + bundledSkillDir
 lib/index.js                      # host gate export (name + empty apply)
