@@ -657,6 +657,63 @@ function StatusFoot(props: {
     </React.Fragment>
   );
 }
+/** 快照字段安全读取（L718拆分：(v && v.field)||{} 等三处回落的纯函数收口；v null/非对象一律undefined）。 */
+function snapshotField(snapshot: unknown, field: string): unknown {
+  if (snapshot === null || typeof snapshot !== "object") return undefined;
+  return (snapshot as Record<string, unknown>)[field];
+}
+
+/** effective叠加（L718拆分：仅null/undefined跳过，其余按原逐键覆盖）。 */
+function applyEffectiveDraft(
+  merged: Record<string, unknown>,
+  defaults: Record<string, unknown>,
+  effective: unknown,
+): void {
+  if (effective === null || typeof effective !== "object") return;
+  const eff = effective as Record<string, unknown>;
+  for (const ek in defaults) {
+    const ev = eff[ek];
+    if (ev !== undefined && ev !== null) merged[ek] = ev;
+  }
+}
+
+/** user叠加（L718拆分：原for pk in user原样搬移）。 */
+function applyUserDraft(merged: Record<string, unknown>, user: unknown): void {
+  if (user === null || typeof user !== "object") return;
+  const u = user as Record<string, unknown>;
+  for (const pk in u) merged[pk] = u[pk];
+}
+
+/**
+ * 展示草稿合并（L718拆分：DEFAULTS兜底→effective→user，与原三段循环等价）。
+ * 纯函数：不读ref/state/i18n，调用方负责setSettings/基线确认。
+ */
+function mergeConfigDraftFromSnapshot(
+  defaults: Record<string, unknown>,
+  snapshot: unknown,
+): LanProxySettingsView {
+  const merged: Record<string, unknown> = {};
+  for (const key in defaults) merged[key] = defaults[key];
+  applyEffectiveDraft(merged, defaults, snapshotField(snapshot, "effective"));
+  applyUserDraft(merged, snapshotField(snapshot, "user"));
+  return merged as LanProxySettingsView;
+}
+
+/** revision解析（L718拆分：非整数一律null，与原typeof+isInteger等价）。 */
+function resolveConfigRevision(snapshot: unknown): number | null {
+  const rev = snapshotField(snapshot, "revision");
+  if (typeof rev !== "number") return null;
+  if (!Number.isInteger(rev)) return null;
+  return rev;
+}
+
+/** compress解析（L718拆分：(v && v.compress)||null等价，缺席/假值一律null）。 */
+function resolveCompressSnapshot(snapshot: unknown): CompressSnapshotView | null {
+  const c = snapshotField(snapshot, "compress");
+  if (!c) return null;
+  return c as CompressSnapshotView;
+}
+
 export function SettingsCard(props: SettingsCardProps) {
   const DEFAULTS = props.defaults || CLIENT_DEFAULTS;
   const useState = React.useState;
@@ -717,23 +774,16 @@ export function SettingsCard(props: SettingsCardProps) {
       .then((r: Response) => r.json())
       .then((v: ConfigSnapshotView) => {
         if (!alive.value) return;
-        const merged: LanProxySettingsView = {};
-        // 展示校准（issue #33 子项 2）：DEFAULTS 兜底 → 宿主生效值（组合层
-        // base 设值的键显示实际生效值）→ 用户层（上次在本卡片保存的内容，
-        // 作为编辑基线；descriptor.user 的键存在即用户设过值）。
-        for (const key in DEFAULTS) merged[key] = DEFAULTS[key];
-        const effective: Record<string, unknown> = (v && v.effective) || {};
-        for (const ek in DEFAULTS) {
-          if (effective[ek] !== undefined && effective[ek] !== null) merged[ek] = effective[ek];
-        }
-        const user: Record<string, unknown> = (v && v.user) || {};
-        for (const pk in user) merged[pk] = user[pk];
+        // 展示校准（issue #33 子项 2）：DEFAULTS 兜底 → 宿主生效值 → 用户层（纯函数合并，行为与原三段循环等价）。
+        const merged = mergeConfigDraftFromSnapshot(
+          DEFAULTS as unknown as Record<string, unknown>,
+          v as unknown,
+        );
         committed.current = {
           baseline: { ...merged },
-          revision:
-            typeof v?.revision === "number" && Number.isInteger(v.revision) ? v.revision : null,
+          revision: resolveConfigRevision(v as unknown),
         };
-        setCompress((v && v.compress) || null);
+        setCompress(resolveCompressSnapshot(v as unknown));
         setSettings(merged);
       })
       .catch((e: unknown) => {

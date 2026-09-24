@@ -489,3 +489,44 @@ describe("SettingsCard 一键 CA 动作提交", () => {
     expect(view.getByText("caGenerateFail")).toBeTruthy();
   });
 });
+
+describe("SettingsCard L718载荷容错（T3-B缺口先锁）", () => {
+  // 缺口枚举（源码枚举为准；仅L718 Config合并箭头相关才补，不硬凑6条）：
+  // a) v null → DEFAULTS兜底+revision null：适用（fetch json null分支，原( v && v.effective )||{} 等三处回落均未锁）。
+  // b) effective显式null不覆盖DEFAULTS：适用（原 effective[ek]!==undefined&&!==null 的null半支未锁；既有仅锁缺键undefined）。
+  // c) revision字符串→null：适用（原typeof+isInteger的非number半支未锁）。
+  // d) revision小数→null：适用（原isInteger false半支未锁；与c同函数不同分支，it.each合批）。
+  // e) health独立失败不影响主体：不适用（属L749第二fetch箭头，已≤10/15，不在本scope；既有“加载失败”仅锁config catch）。
+  // f) CA_STATUS_VIEW全表：不适用（原任务书全量reducer设计，已被口径裁决收敛为L718单点，本PR不做）。
+  it("a) config null回落DEFAULTS且revision空", async () => {
+    initial = null;
+    const view = await mountCard();
+    expect((view.getByLabelText("lanPort") as HTMLInputElement).value).toBe("3081");
+    expect((view.getByLabelText("httpsPort") as HTMLInputElement).value).toBe("3443");
+    port(view, "4100");
+    save(view);
+    expect(writes).toEqual([{ patch: { port: 4100 }, expectedRevision: null }]);
+    await act(async () => {});
+  });
+  it("b) effective显式null不覆盖DEFAULTS", async () => {
+    initial = { effective: { port: null, httpsPort: null }, user: {}, revision: 0 };
+    const view = await mountCard();
+    expect((view.getByLabelText("lanPort") as HTMLInputElement).value).toBe("3081");
+    expect((view.getByLabelText("httpsPort") as HTMLInputElement).value).toBe("3443");
+    save(view);
+    expect(writes).toEqual([]);
+    await act(async () => {});
+  });
+  it.each(["1", 1.5] as const)(
+    "c-d) 非整数revision %s 归空，后续保存带null版本",
+    async (badRevision) => {
+      initial = { effective: { port: 4000 }, user: {}, revision: badRevision };
+      const view = await mountCard();
+      expect((view.getByLabelText("lanPort") as HTMLInputElement).value).toBe("4000");
+      port(view, "4100");
+      save(view);
+      expect(writes).toEqual([{ patch: { port: 4100 }, expectedRevision: null }]);
+      await act(async () => {});
+    },
+  );
+});
