@@ -19,6 +19,7 @@ import {
   APIConnectionError,
   APIError,
   APITimeoutError,
+  APIUserAbortError,
   TypeSafeClient,
   TypeSafeError,
 } from "@typesafe-ai/sdk";
@@ -113,17 +114,62 @@ export function toWireQuestions(questions: readonly ValidQuestion[]): Questions 
   return out;
 }
 
-/** FetchImpl 窄面转 SDK 可用的真实 Response（init 取方法/头/体/信号，其余丢弃）。 */
+/** 调用方取消失败（不可重试：socket 关闭/caller abort 即停，不进重试链）。 */
+function callerAbortedFailure(): DecisionFailure {
+  return {
+    code: "ABORTED",
+    category: "aborted",
+    message: "caller aborted",
+    retryable: false,
+  };
+}
+
+/** 调用方信号是否已取消（缺席即否）。 */
+function isCallerAborted(callerSignal?: AbortSignal): boolean {
+  return callerSignal?.aborted === true;
+}
+
+/**
+ * 融合调用方信号与内部信号（SDK 超时信号）：任一 abort 即取消外调。
+ *
+ * AbortSignal.any 优先（原子融合），缺席回落手动级联（已 abort 即取已取消侧，
+ * 否则建中继控制器双向转发，移除监听防泄漏）。调用方缺席即回内部信号原样。
+ */
+export function combineSignals(
+  callerSignal: AbortSignal | undefined,
+  innerSignal: AbortSignal,
+): AbortSignal {
+  if (callerSignal === undefined) return innerSignal;
+  if (callerSignal.aborted) return callerSignal;
+  if (innerSignal.aborted) return innerSignal;
+  const anyFn = (
+    AbortSignal as unknown as { readonly any?: (signals: readonly AbortSignal[]) => AbortSignal }
+  ).any;
+  if (typeof anyFn === "function") return anyFn([callerSignal, innerSignal]);
+  const relay = new AbortController();
+  const onAbort = (): void => {
+    callerSignal.removeEventListener("abort", onAbort);
+    innerSignal.removeEventListener("abort", onAbort);
+    relay.abort();
+  };
+  callerSignal.addEventListener("abort", onAbort, { once: true });
+  innerSignal.addEventListener("abort", onAbort, { once: true });
+  return relay.signal;
+}
+
+/** FetchImpl 窄面转 SDK 可用的真实 Response（init 取方法/头/体/信号，其余丢弃；调用方信号与 SDK 超时信号融合）。 */
 function toSdkFetch(
   fetchImpl: FetchImpl,
+  callerSignal?: AbortSignal,
 ): (input: string, init?: RequestInit) => Promise<Response> {
   return async (input, init) => {
     const headers = Object.fromEntries(new Headers(init?.headers ?? {}).entries());
+    const inner = init?.signal ?? new AbortController().signal;
     const res = await fetchImpl(input, {
       method: init?.method ?? "POST",
       headers,
       body: typeof init?.body === "string" ? init.body : "",
-      signal: init?.signal ?? new AbortController().signal,
+      signal: combineSignals(callerSignal, inner),
     });
     return new Response(res.text, {
       status: res.status,
@@ -202,8 +248,11 @@ export function mapFirstAnswer(
   return bad("answer type must be choice|score");
 }
 
-/** SDK 错误转失败面（状态码沿旧映射；客户端校验错不重试；裸抛错归网络可重试）。 */
+/** SDK 错误转失败面（状态码沿旧映射；客户端校验错不重试；裸抛错归网络可重试；调用方取消单列 ABORTED 不重试）。 */
 export function sdkErrorToFailure(cause: unknown): DecisionFailure {
+  if (cause instanceof APIUserAbortError) {
+    return callerAbortedFailure();
+  }
   if (cause instanceof APITimeoutError) {
     return { code: "TIMEOUT", category: "timeout", message: "request timed out", retryable: true };
   }
@@ -274,16 +323,20 @@ export function sdkErrorToFailure(cause: unknown): DecisionFailure {
   return { code: "UPSTREAM", category: "upstream", message: "unknown", retryable: false };
 }
 
-/** 调用远端（1 次尝试：SDK 单次直试；抛错经 sdkErrorToFailure 归类）。 */
+/** 调用远端（1 次尝试：SDK 单次直试；抛错经 sdkErrorToFailure 归类；调用方已取消即短路 ABORTED）。 */
 async function attemptOnce(
   body: DecisionRequestBody,
   key: string,
   timeoutMs: number,
   fetchImpl: FetchImpl,
+  callerSignal?: AbortSignal,
 ): Promise<
   | { readonly ok: true; readonly verdict: RemoteVerdict }
   | { readonly ok: false; readonly failure: DecisionFailure }
 > {
+  if (isCallerAborted(callerSignal)) {
+    return { ok: false, failure: callerAbortedFailure() };
+  }
   if (!(timeoutMs > 0)) {
     return {
       ok: false,
@@ -298,17 +351,22 @@ async function attemptOnce(
   const client = new TypeSafeClient({
     apiKey: key,
     baseURL: JEV_API_ROOT,
-    fetch: toSdkFetch(fetchImpl),
+    fetch: toSdkFetch(fetchImpl, callerSignal),
     logLevel: "warn",
     retry: { maxRetries: 0 },
   });
   try {
     const result = await client.systemOne(
       { model: body.model, state: body.state, questions: body.questions },
-      { timeout: timeoutMs },
+      callerSignal === undefined
+        ? { timeout: timeoutMs }
+        : { timeout: timeoutMs, signal: callerSignal },
     );
     return mapFirstAnswer(body, result);
   } catch (cause) {
+    if (isCallerAborted(callerSignal)) {
+      return { ok: false, failure: callerAbortedFailure() };
+    }
     return { ok: false, failure: sdkErrorToFailure(cause) };
   }
 }
@@ -325,6 +383,7 @@ export async function callWithRetry(
   key: string,
   timeoutMs: number,
   fetchImpl: FetchImpl,
+  callerSignal?: AbortSignal,
 ): Promise<{
   readonly verdict?: RemoteVerdict;
   readonly failure?: DecisionFailure;
@@ -332,13 +391,15 @@ export async function callWithRetry(
 }> {
   const deadline = Date.now() + Math.max(0, timeoutMs);
   const budgetLeft = (): number => Math.max(0, deadline - Date.now());
-  const first = await attemptOnce(body, key, budgetLeft(), fetchImpl);
+  const first = await attemptOnce(body, key, budgetLeft(), fetchImpl, callerSignal);
   if (first.ok) return { verdict: first.verdict, retries: 0 };
   if (!first.failure.retryable) return { failure: first.failure, retries: 0 };
-  const second = await attemptOnce(body, key, budgetLeft(), fetchImpl);
+  if (isCallerAborted(callerSignal)) return { failure: callerAbortedFailure(), retries: 0 };
+  const second = await attemptOnce(body, key, budgetLeft(), fetchImpl, callerSignal);
   if (second.ok) return { verdict: second.verdict, retries: 1 };
   if (!second.failure.retryable) return { failure: second.failure, retries: 1 };
-  const third = await attemptOnce(body, key, budgetLeft(), fetchImpl);
+  if (isCallerAborted(callerSignal)) return { failure: callerAbortedFailure(), retries: 1 };
+  const third = await attemptOnce(body, key, budgetLeft(), fetchImpl, callerSignal);
   if (third.ok) return { verdict: third.verdict, retries: 2 };
   return { failure: third.failure, retries: 2 };
 }
