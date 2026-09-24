@@ -7,7 +7,8 @@
     "resolvePluginDir": "配置面",
     "LEGACY_BAK_SUFFIX": "配置面",
     "LayoutMigrateOptions": "配置面",
-    "LayoutMigrateOutcome": "配置面"
+    "LayoutMigrateOutcome": "配置面",
+    "SettingsDescriptorLike": "配置面"
   },
   "legacy": [
     "Config",
