@@ -233,7 +233,6 @@
   "declBlocks": [
     "export declare const APP_ROUTES: { readonly config: string; readonly health: string; readonly caCert: string; readonly caGenerate: string; };",
     "export declare const BOOLEAN_KEYS: readonly string[];",
-    "export declare const CANONICAL_SETTINGS_NS: \"ui-dsh-lan-proxy\";",
     "export declare const CA_CERT_FILE = \"ca-cert.pem\";",
     "export declare const CA_KEY_FILE = \"ca-key.pem\";",
     "export declare const CERTS_DIR_NAME = \"certs\";",
@@ -559,9 +558,6 @@
       "blocks": {
         "BOOLEAN_KEYS": [
           "export declare const BOOLEAN_KEYS: readonly string[];"
-        ],
-        "CANONICAL_SETTINGS_NS": [
-          "export declare const CANONICAL_SETTINGS_NS: \"ui-dsh-lan-proxy\";"
         ],
         "CA_CERT_FILE": [
           "export declare const CA_CERT_FILE = \"ca-cert.pem\";"

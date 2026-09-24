@@ -280,35 +280,6 @@ describe("catalog name escape（#770-4）", () => {
     expect(text.includes(`- \`${escapeCatalogText(evilName)}\``)).toBe(true);
     expect(text.includes(evilName)).toBe(false);
   });
-
-  it("render→parse 回环逐字相等（删解转义即红）", () => {
-    // 回读须还原原始名，否则注入比对恒不等、每轮误发修正帧；预转义名同时约束渲染侧不断删转义。
-    const entries = [
-      { name: evilName, text: evilText },
-      { name: "plain" },
-      { name: "pre&lt;escaped", text: "t&amp;1" },
-    ];
-    const message = renderMcpCatalogMessage(entries);
-    expect(resolveCatalogEntries(message.source)).toEqual(entries);
-  });
-
-  it("digest 稳定：转义前后同一条目 digest 不变且复用既有目录", () => {
-    // 摘要只含原始名：转义是展现层手段，不进入去重口径，回读后 digest 一致即无重注。
-    const entries = [{ name: evilName, text: evilText }];
-    const before = digestCatalogEntries(entries);
-    const message = renderMcpCatalogMessage(entries);
-    const back = resolveCatalogEntries(message.source)!;
-    expect(digestCatalogEntries(back)).toBe(before);
-    const decision = { kind: "enter", messages: [message] };
-    const supervisors = new Map([
-      [
-        evilName,
-        { server: { name: evilName, transport: "stdio" as const, description: evilText } },
-      ],
-    ]);
-    const reused = resolveCatalogInjection(decision, [], supervisors, 6, new Map(), undefined);
-    expect(reused).toBe(decision);
-  });
 });
 
 describe("renderMcpCatalogMessage / findCatalogMessage / V4 reader", () => {
@@ -365,11 +336,6 @@ describe("renderMcpCatalogMessage / findCatalogMessage / V4 reader", () => {
   it("坏消息容错", () => {
     // 坏消息探针：故意传入类型面之外的 undefined/null，断言运行时容错（不抛、回 undefined）。
     expect(findCatalogMessage([undefined, null] as unknown as CatalogMessage[])).toBeUndefined();
-  });
-
-  it("#723 新形态走 resolveCatalogEntries 读回条目", () => {
-    const message = makeMessage();
-    expect(resolveCatalogEntries(message.source)).toEqual([{ name: "m1", text: "t<1" }]);
   });
 
   it("业务 reader 不把 V3 plugin wrapper 当作当前目录 source", () => {

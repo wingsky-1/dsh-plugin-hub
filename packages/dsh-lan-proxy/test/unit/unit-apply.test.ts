@@ -510,7 +510,7 @@ describe("apply 集成：TLS 准备 + settings 命名空间（setSource/onScope/
     const routes: WebRoute[] = [];
     const rpcHandles: Array<{ channel: string; h: unknown; opts: unknown }> = [];
     const disposers: Array<unknown> = [];
-    // rc.7 热更新面：document-updated 订阅收集器（接缝经 ctx.on 兜底订阅）。
+    // 0.1.7-rc.1 热更新面：document-updated 订阅收集器（接缝经 ctx.on 兜底订阅）。
     const docUpdatedListeners: Array<(ns: unknown) => void> = [];
 
     const scope = {
@@ -554,7 +554,7 @@ describe("apply 集成：TLS 准备 + settings 命名空间（setSource/onScope/
     const ctx = {
       logger: { info: () => {}, warn: () => {}, error: () => {} },
       webServer: ws,
-      // rc.7 热更新订阅面：apply 经 ctx.on 订阅 settings/document-updated。
+      // 0.1.7-rc.1 热更新订阅面：apply 经 ctx.on 订阅 settings/document-updated。
       // 无 on 面即跳过（能力检测），此处提供以锁定新订阅路径。
       on(event: string, listener: (ns: unknown) => void) {
         if (event === "settings/document-updated") docUpdatedListeners.push(listener);
@@ -1395,7 +1395,7 @@ describe("变异加固块（round=3 CI 回归：迁移重放/路由面/校验分
     });
   });
 
-  // ---- B. installLanProxySettings 全分支（inject 缺失/服务缺席/旧 register 面忽略/detach 回落/订阅触发/isUnloading 门控）----
+  // ---- B. installLanProxySettings 全分支（inject 缺失/服务缺席/detach 回落/订阅触发/isUnloading 门控）----
   describe("B. installLanProxySettings 全分支", () => {
     // B1: ctx.inject 缺失 → 降级不抛（原脚本此分支无断言，保留其执行）。
     beforeAll(() => {
@@ -1406,19 +1406,11 @@ describe("变异加固块（round=3 CI 回归：迁移重放/路由面/校验分
       });
     }, 30000);
 
-    // B2: settings 服务缺席（缺失/无 describe/仅旧 register 面）→ 降级。
+    // B2: settings 服务缺席（缺失/无 describe）→ 降级。
     describe("B2: settings 服务异常态", () => {
       const services = [
         { label: "missing", service: undefined },
         { label: "no-describe", service: {} },
-        {
-          label: "legacy-register-only",
-          service: {
-            register() {
-              return { get: () => ({}) };
-            },
-          },
-        },
       ];
       const results: boolean[] = [];
 

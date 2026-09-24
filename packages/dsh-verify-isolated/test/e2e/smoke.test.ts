@@ -1104,7 +1104,7 @@ describe("9a. 白名单版本化 + 模式全集存在", () => {
 
   // 预置模式数组，版本化 WHITELIST_V；v2 起含 dsh 自身写面
   // .credentials.yaml / storages/**；v3 起含 settings.yaml——首启弹窗跳过会预置它，
-  // 页面改设置也由 dsh 重写；v4 起含 settings.yaml.imported（rc.7 导入映射重命名残留，
+  // 页面改设置也由 dsh 重写；v4 起含 settings.yaml.imported（0.1.7-rc.1 导入映射重命名残留，
   // 待真机确认实际落盘形态）。
   it("WHITELIST_V 版本化格式", () => {
     expect(whitelistV).toMatch(/^v\d+$/);
@@ -1766,7 +1766,7 @@ describe("10a. 须知版本与命名空间提取", () => {
     expect(ob.extractWelcomeNoticeVersion(null)).toBe(null);
   });
 
-  it("从客户端产物提取须知命名空间（rc.7 形态）", () => {
+  it("从客户端产物提取须知命名空间（0.1.7-rc.1 形态）", () => {
     expect(
       ob.extractWelcomeNoticeNamespace(
         'const WELCOME_NOTICE_SETTINGS_NAMESPACE = "ui-settings-general";',
@@ -1950,7 +1950,7 @@ describe("10c. dsh 安装根与产物定位（mkdtemp fixture 建模 npm 提升�
     expect(e2eVersion).toBe("2099-01-01.1");
   });
 
-  it("端到端解析命名空间（rc.7 形态）", () => {
+  it("端到端解析命名空间（0.1.7-rc.1 形态）", () => {
     expect(e2eNamespace).toBe("ui-settings-general");
   });
 

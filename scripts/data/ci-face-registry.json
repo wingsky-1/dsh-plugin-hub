@@ -226,6 +226,24 @@
       "consumers": ["scripts/lib/config-matrix-gate.ts"]
     },
     {
+      "path": "stryker.conf.d/shared-settings-namespace.json",
+      "faces": [],
+      "consumerGap": {
+        "kind": "indirect",
+        "reason": "stryker 经 stryker.conf.d/shared-settings-namespace.json 的 vitest.configFile 读取；该段由 scripts/gate/gen-stryker-conf.mjs 从 mutation-topology.json 的 $rootShared.segments.settings-namespace 间接派生，不含逐文件字面量。"
+      },
+      "why": "$rootShared 段的生成配置：不属于包级增量切片，由常驻 stryker:check 校验其与拓扑一致。"
+    },
+    {
+      "path": "vitest.stryker.d/shared-settings-namespace.config.ts",
+      "faces": [],
+      "consumerGap": {
+        "kind": "indirect",
+        "reason": "stryker 经 stryker.conf.d/shared-settings-namespace.json 的 vitest.configFile 读取；该文件由 scripts/gate/gen-stryker-conf.mjs 从 $rootShared 段的 testFiles 间接派生，不含逐文件字面量。"
+      },
+      "why": "$rootShared 段的生成测试面配置：不属于包级增量切片，由常驻 stryker:check 校验其与拓扑一致。"
+    },
+    {
       "path": "stryker.conf.d/dsh-notifier*.json",
       "invalidatesBaseline": true,
       "faces": ["dsh-notifier"],
@@ -258,15 +276,6 @@
       "faces": ["dsh-lan-proxy"],
       "consumers": ["scripts/test/mutation-ledger.test.ts"],
       "why": "同上。"
-    },
-    {
-      "path": "stryker.conf.d/shared-settings-namespace.json",
-      "faces": [],
-      "consumerGap": {
-        "kind": "indirect",
-        "reason": "stryker 经 stryker.conf.d/shared-settings-namespace.json 的 vitest.configFile 读取；该段由 scripts/gate/gen-stryker-conf.mjs 从 mutation-topology.json 的 $rootShared.segments.settings-namespace 间接派生，不含逐文件字面量。"
-      },
-      "why": "$rootShared 段的生成配置：不属于包级增量切片，由常驻 stryker:check 校验其与拓扑一致。"
     },
     {
       "path": "stryker.conf.d/dsh-worktree-sidebar*.json",
@@ -401,15 +410,6 @@
         "reason": "stryker 经段级 stryker.conf.d/dsh-lan-proxy-<seg>.json 的 vitest.configFile 读取（P2 显式段）；生成与 --check 比对在 scripts/gate/gen-stryker-conf.mjs，按派生路径拼名。"
       },
       "why": "P2 段级测试面配置：改段清单只失效该段，包级配置仍整包失效。"
-    },
-    {
-      "path": "vitest.stryker.d/shared-settings-namespace.config.ts",
-      "faces": [],
-      "consumerGap": {
-        "kind": "indirect",
-        "reason": "根 shared 独立变异段的测试配置由 stryker.conf.d/shared-settings-namespace.json 指向，生成与 --check 比对在 scripts/gate/gen-stryker-conf.mjs；它不对应任何 package slice。"
-      },
-      "why": "根 shared 变异面的测试配置：登记以避免 CI 归属 fail-open；PR 侧由常驻 stryker:check 校验，实际 shared 变异由 nightly 段承接。"
     },
     {
       "path": "test/smoke-lib.ts",

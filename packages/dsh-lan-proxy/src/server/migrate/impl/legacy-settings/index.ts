@@ -1,7 +1,7 @@
 /**
  * dsh-lan-proxy — 旧官方 settings section 到 canonical settings 的窄迁移。
  *
- * 旧版本把插件配置写在 settings 文档的 `dsh-lan-proxy` section；rc.1 importer
+ * 旧版本把插件配置写在 settings 文档的 `dsh-lan-proxy` section；0.1.7-rc.1 importer
  * 不会把这个别名自动映射到 `ui-dsh-lan-proxy`。本文件只在 upgrade 边界读取
  * `$DSH_HOME/settings.yaml` 与 `settings.yaml.imported`，不读 config.json，也
  * 不替业务层提供旧格式兼容。
@@ -27,13 +27,9 @@ import { errorMessage } from "../../../../../../../shared/host-utils.js";
 import { sanitizeSettings } from "../../../config/interface.ts";
 import type { OwnerScopeLike } from "../../../config/interface.ts";
 import { pluginDir } from "../../../shared/interface.ts";
-import { LAN_PROXY_IDENTITY } from "../../../../shared/interface.ts";
 
 /** 旧官方 settings namespace（只在本迁移子域出现）。 */
 export const LEGACY_SETTINGS_NS = "dsh-lan-proxy";
-
-/** 当前 canonical namespace；与客户端 row identity 共用包内唯一事实源。 */
-export const CANONICAL_SETTINGS_NS = LAN_PROXY_IDENTITY.settingsNamespace;
 
 /** settings 迁移自己的完成 marker；刻意不叫 config.json.migrated.bak。 */
 export const SETTINGS_MIGRATION_MARKER_NAME = "settings.migrated";

@@ -275,10 +275,9 @@ describe("组合根：宿主上下文只到组合根", () => {
     expect(seen).toEqual(["itest-agent"]);
   });
 
-  it("events.onAgentCreated 转发返回 undefined（rc.7 serial 双基线，行为不变）", () => {
-    // 类型背景：rc.7 `agent/created` 转 serial，要求监听返回 `undefined | Promise<undefined>`
-    // （旧基线 emit 为 void）。转发 handler 本身仍同步 void，此处显式返回 undefined 使双边兼容；
-    // async 会反向污染旧基线故不用。本用例钉住运行时行为：handler 被同步调用且监听返回 undefined。
+  it("events.onAgentCreated 转发同步返回 undefined", () => {
+    // 0.1.7-rc.1 serial 要求监听返回 `undefined | Promise<undefined>`；转发 handler
+    // 保持同步，并显式返回 undefined。本用例钉住 handler 同步调用及监听返回值。
     let captured:
       ((payload: { agent: { id: string; ctx: { tools: unknown } } }) => unknown) | undefined;
     const fakeCtx = {

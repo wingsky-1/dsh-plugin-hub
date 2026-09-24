@@ -74,8 +74,7 @@ export interface NormalizedConfig {
  * Volatile 包装（SchemaOutput），直接赋值判红（TS2322）；裸推断引用未导入的 fork
  * 模块名，声明发射不可移植（TS2883）；`z<any>` 退路被提交钩子终结
  *（@typescript-eslint/no-explicit-any，长久性错误）。as 是纯类型擦除：值面从未调用
- * .volatile()，运行时无此物；对外类型面与 rc.1 基线完全一致，零行为变化。双基线可编译：
- * 0.1.5 单命名空间下原本直接可赋值，as 同样成立（无版本分支）。平面形状另由
+ * .volatile()，运行时无此物；对外类型面与 0.1.7-rc.1 目标契约一致，零行为变化。平面形状另由
  * NormalizedConfig 契约化，键集一致性由 unit-config 回归断言与 config-matrix 门禁锁定。
  */
 export const Config: z<{

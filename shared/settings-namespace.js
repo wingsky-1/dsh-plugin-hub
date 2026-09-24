@@ -1,15 +1,15 @@
 // dsh 插件家族共享层 — 宿主端「设置命名空间」注册（单一事实源）。
 //
 // 背景：
-// DSH rc.7 起，设置 → 插件 的 `settings.plugin.item` 槽由 `list(id)` 改为
+// DSH 0.1.7-rc.1 起，设置 → 插件 的 `settings.plugin.item` 槽由 `list(id)` 改为
 // `keyed(key)`，且只在「宿主 serve 的 settings 命名空间 ∩ 卡片声明的 key」交集
-// 非空时才渲染。想让插件的设置卡片在 rc.7 显示，宿主端必须把该插件的命名空间
+// 非空时才渲染。想让插件的设置卡片在 0.1.7-rc.1 显示，宿主端必须把该插件的命名空间
 // 注册进 settings 服务（`settings.describe()` 才能返回它）。
 //
 // 为什么不用官方 `@deepseek-ai/dsh-settings`：
 // 该包由宿主 dsh 运行时提供，不在插件仓库依赖中；插件运行时沿自身 lib/ 路径
 // 向上解析不到（MODULE_NOT_FOUND），动态 import 会静默失败、命名空间从未注册，
-// 导致 rc.7 下设置卡片空白。因此这里改用「服务面注入」：`ctx.inject(["settings"],…)`
+// 导致 0.1.7-rc.1 下设置卡片空白。因此这里改用「服务面注入」：`ctx.inject(["settings"],…)`
 // 由宿主 cordis 上下文按名注入 settings 服务，零包依赖、与官方语义等值。
 //
 // 语义：读经 `settings.describe()` 按 `ns` 定位后取 `value`，写经

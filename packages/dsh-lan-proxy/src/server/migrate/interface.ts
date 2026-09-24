@@ -8,7 +8,6 @@ export type { MigrationOutcome } from "./impl/file/index.ts";
 export { LEGACY_BAK_SUFFIX, resolvePluginDir } from "./impl/layout/index.ts";
 export type { LayoutMigrateOptions, LayoutMigrateOutcome } from "./impl/layout/index.ts";
 export {
-  CANONICAL_SETTINGS_NS,
   LEGACY_SETTINGS_NS,
   SETTINGS_MIGRATION_MARKER_NAME,
   SETTINGS_MIGRATION_MARKER_VERSION,
