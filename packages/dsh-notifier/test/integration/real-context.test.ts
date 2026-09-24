@@ -215,17 +215,13 @@ function scopeRejecting<K extends keyof Events>(): ScopedThis<K> {
 }
 
 /**
- * 假 settings 服务：本插件读存量有**两条路**——provider 自报的宿主文档路径（`documentPath`）与已注册命名空间的服务面
- * （`describe`）。`describe()` 在真实宿主里只列**已注册**的命名空间，所以这里的 `user` 用三种取值对应三种真实形态：
+ * 假 settings 服务只提供 describe 低优先级兜底；正式历史来源由 upgrade 域直接读取 DSH_HOME 双文件。
+ * `describe()` 在真实宿主里只列**已注册**的命名空间，所以这里的 `user` 用三种取值对应三种真实形态：
  * `undefined` = 没注册这条命名空间（新架构的常态，服务面读不到）；`{}` = 注册了但 user 层为空；有键 = 注册且用户设过。
  */
-function fakeSettings(
-  user: Record<string, unknown> | undefined,
-  documentPath: string = "",
-): { describe: () => unknown[]; documentPath: string } {
+function fakeSettings(user: Record<string, unknown> | undefined): { describe: () => unknown[] } {
   return {
     describe: () => (user === undefined ? [] : [{ ns: "dsh-notifier", user }]),
-    documentPath,
   };
 }
 
@@ -302,12 +298,10 @@ let live: Fiber | null = null;
 async function mount(options: {
   config?: { enabled?: boolean };
   settings?: Record<string, unknown>;
-  /** 宿主文档路径：给了它就意味着 provider 是文件型，存量从该文件读（`settings` 缺省时服务面为空）。 */
-  settingsDocument?: string;
   services?: Record<string, unknown>;
 }): Promise<Mounted> {
   const root = new Context();
-  root.provide("settings", fakeSettings(options.settings, options.settingsDocument));
+  root.provide("settings", fakeSettings(options.settings));
   for (const [name, value] of Object.entries(options.services ?? {})) root.provide(name, value);
   const warns = captureWarnings(root);
   const host = fakeWebServer(() => ({
@@ -364,10 +358,9 @@ beforeEach(() => {
   // 单例的落盘路径跨用例不变，能重置的只有文件：不重置的话上一个用例的配置/历史就是本用例的起点。
   rmSync(historyFile, { force: true });
   rmSync(configFile, { force: true });
-  // 宿主 settings 文档也落在这个共享的临时 DSH_HOME 里，而割接的兜底读路径正是这两个名字：上一个用例留下的
-  // 文档会被下一个用例当存量读走，它的服务面判据就此空转（实测：留下文档后，下一个用例读到的是文档）。
+  // 正式历史来源也落在这个共享的临时 DSH_HOME 里；清掉双文件，避免上个用例的存量进入下个用例。
+  rmSync(join(home.dir, "settings.yaml.imported"), { force: true });
   rmSync(join(home.dir, "settings.yaml"), { force: true });
-  rmSync(join(home.dir, "settings.json"), { force: true });
   seedSeqAnchor();
   seed(BASE_SETTINGS);
 });
@@ -849,17 +842,16 @@ describe("宿主 settings 服务：装配期同步割接存量配置", () => {
     await unmount();
   });
 
-  it("命名空间未注册时也能割接：存量只在宿主文档里（服务面为空），直接读文件把它读出来", async () => {
+  it("命名空间未注册时也能割接：存量只在 DSH_HOME 正式 settings.yaml 里", async () => {
     rmSync(versionFile, { force: true });
     rmSync(configFile, { force: true });
-    const document = join(home.dir, "settings.yaml");
     writeFileSync(
-      document,
+      join(home.dir, "settings.yaml"),
       "dsh-notifier:\n  notifyTaskDone: false\n  notifySound: false\n",
       "utf8",
     );
-    // `settings` 缺省 = 服务面里没有这条命名空间（新架构不注册它）：只有文档那条路读得到存量。
-    const { unmount } = await mount({ settingsDocument: document });
+    // `settings` 缺省 = 服务面里没有这条命名空间（新架构不注册它）：正式文件仍直接提供存量。
+    const { unmount } = await mount({});
 
     const stored = JSON.parse(readFileSync(configFile, "utf8")) as Record<string, unknown>;
     expect(stored.notifyTaskDone).toBe(false);

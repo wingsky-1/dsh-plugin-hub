@@ -116,8 +116,8 @@ interface HostPort {
   /** 宿主 agent 注册表：子代理归属判定要它。 */
   readonly agents: AgentRegistryPort;
   /**
-   * 宿主 settings 服务：0.2.3 把配置存在那里，新架构搬走后仍需读它一次。
-   * 只声明本域要用的 `documentPath` 与 `describe`——窄面让「本域不认识 settings 的其余能力」成为类型事实。
+   * 宿主 settings 服务：0.2.3 把配置存在那里，新架构搬走后仍需用它作低优先级兜底。
+   * 只声明本域要用的 `describe`——正式历史来源由 upgrade 域直接读取 DSH_HOME 双文件。
    */
   readonly legacySettings: LegacySettingsFace;
   /** 宿主出口：把服务面挂上上下文。服务名是 sdk 域的 ABI，组合根不参与命名。 */

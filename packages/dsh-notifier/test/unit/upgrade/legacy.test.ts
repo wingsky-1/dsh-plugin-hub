@@ -32,18 +32,13 @@ afterEach(() => {
   home.dispose();
 });
 
-/** 假 settings 读面；documentPath 特意保留，用来证明 reader 不把它当前文档当历史 map。 */
-function makeSettings(
-  entries: readonly FakeDescriptor[],
-  throws = false,
-  documentPath: string = join(home.dir, "missing-settings.yaml"),
-): LegacySettingsFace {
+/** 假 settings 读面只提供 describe；正式文件由 DSH_HOME 下的真实路径读取。 */
+function makeSettings(entries: readonly FakeDescriptor[], throws = false): LegacySettingsFace {
   return {
     describe: () => {
       if (throws) throw new Error("settings 服务拒绝了这次调用");
       return entries as unknown as ReturnType<LegacySettingsFace["describe"]>;
     },
-    documentPath,
   };
 }
 
@@ -113,15 +108,6 @@ describe("正式 legacy settings 来源", () => {
     const settings = makeSettings([{ ns: NS, user: { notifyAsk: true, customKey: "describe" } }]);
 
     expect(readLegacySettings(settings)).toEqual({ notifyAsk: false, customKey: "official" });
-  });
-
-  it("documentPath 指向当前 profile 且含 notifier 分节时不把该分节当 legacy map", () => {
-    const profilePath = writeSettingsDocument(
-      "dsh-notifier:\n  notifyAsk: false\n",
-      "cordis.patch.yml",
-    );
-
-    expect(readLegacySettings(makeSettings([], false, profilePath))).toEqual({});
   });
 
   it.each(["settings.yaml", "settings.yaml.imported"])("%s 存在但 YAML 损坏时明确失败", (name) => {
@@ -214,7 +200,6 @@ describe("低优先级兜底：describe → V0 JSON", () => {
           LegacySettingsFace["describe"]
         >;
       },
-      documentPath: join(home.dir, "missing-settings.yaml"),
     };
 
     expect(readLegacySettings(settings)).toEqual({ notifyAsk: false });
@@ -227,8 +212,8 @@ describe("低优先级兜底：describe → V0 JSON", () => {
     expect(readLegacySettings(makeSettings([], true))).toEqual({ notifyAsk: true });
   });
 
-  it("不读取 documentPath getter，非文件 provider 仍可由 describe 兜底", () => {
-    const settings: LegacySettingsFace = {
+  it("运行时额外 documentPath getter 被读取就抛，reader 不回退旧路径", () => {
+    const settings = {
       describe: () =>
         [{ ns: NS, user: { notifyAsk: false } }] as unknown as ReturnType<
           LegacySettingsFace["describe"]

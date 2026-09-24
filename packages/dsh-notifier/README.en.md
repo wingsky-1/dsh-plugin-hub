@@ -403,17 +403,18 @@ read side is tolerant as well, so a hand-edited file cannot make the UI show `un
 Configuration is owned by the plugin itself and lives in `config.json` inside its **package-private
 storage directory** (`<DSH_HOME>/@wingsky-1/dsh-notifier/config.json`, `~/.dsh` by default), read and
 written through the plugin card under Settings → Plugins → dsh-notifier or via
-`GET/PUT /api/dsh-notifier/config`. On upgrade the **legacy locations are read once during
-assembly, and the shape is migrated along the way**: the 0.2.3 official settings namespace
-`dsh-notifier` takes precedence, read **straight from the host settings document file** (the
-`documentPath` the provider reports, falling back to `<DSH_HOME>/settings.yaml` and
-`settings.json`; `.yaml`/`.yml` are parsed as YAML) because `describe()` only lists **registered**
-namespaces and the plugin stops registering this one in 0.2.4; falling back to
-the older self-maintained `dsh-notifier.json` (DSH_HOME root, including the `.migrated.bak` left
-by an earlier migration); what is read is merged into the current `config.json` (legacy values
-override the file, the same precedence the old write path used), and the 8 top-level channel keys
-are then moved into the two built-in entries of `channels` and **deleted** (see "Per-channel three
-switches"). After that `config.json` is the only read/write path.
+`GET/PUT /api/dsh-notifier/config`. During upgrade, **legacy locations are read once at assembly time
+and migrated into the current shape**. The only formal historical sources are the `dsh-notifier`
+sections of `<DSH_HOME>/settings.yaml.imported` and `<DSH_HOME>/settings.yaml`: the imported file is
+merged first, then the current file overrides it. If either formal file exists but cannot be read,
+parsed, validated, or serialized, the upgrade fails immediately instead of falling through to a
+guessed location. Only when the formal sources yield no data does migration fall back, in order, to
+the registered section returned by settings `describe()` and then to the older self-maintained
+`dsh-notifier.json` (including the `.migrated.bak` left by an earlier migration). What is read is
+merged into the current `config.json` (legacy values override the file, the same precedence the old
+write path used), and the 8 top-level channel keys are then moved into the two built-in entries of
+`channels` and **deleted** (see "Per-channel three switches"). After that `config.json` is the only
+read/write path.
 
 **Unknown-key semantics (forward compatibility, issue #470)**: dsh-notifier applies a
 **"pass-through and preserve"** policy to configuration keys it does **not recognize** —

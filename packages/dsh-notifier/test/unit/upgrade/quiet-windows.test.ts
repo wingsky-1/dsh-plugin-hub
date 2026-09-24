@@ -130,8 +130,6 @@ describe("链级：刻度停在 0.2.5 的装机跑完这一步", () => {
       describe: () => {
         return [] as unknown as ReturnType<UpgradeDeps["legacySettings"]["describe"]>;
       },
-      // 不存在的文件：本用例的存量只走配置文件那条路，文档读取自然落空。
-      documentPath: `${home.dir}/missing-settings.yaml`,
     };
     const deps: UpgradeDeps = { logger: makeLogger(), legacySettings: face };
 

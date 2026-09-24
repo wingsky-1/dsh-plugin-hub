@@ -6,8 +6,8 @@ import type { LegacySettingsFace } from "./impl/legacy/type.ts";
 export interface UpgradeDeps {
   /** 升级链的诊断出口（失败与版本落差都在这里出声）。 */
   logger: LoggerPort;
-  /** 旧配置的读取面：正式来源固定为 `$DSH_HOME/settings.yaml` 与 `.imported`；不读取 `documentPath`。
-   * 读取、解析或序列化失败时由 upgrade 边界 fail-closed，不在此处降级为空配置。 */
+  /** 旧配置的读取面：正式来源固定为 `$DSH_HOME/settings.yaml.imported` 与 `settings.yaml`；
+   * 正式文件失败时由 upgrade 边界闭锁，只有它们无数据时才依次使用 describe 与 V0 JSON。 */
   legacySettings: LegacySettingsFace;
 }
 

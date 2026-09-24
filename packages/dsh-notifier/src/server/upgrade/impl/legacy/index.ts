@@ -1,7 +1,6 @@
 /**
  * upgrade 域存量设置的读取。正式历史来源固定为 `$DSH_HOME/settings.yaml` 与
  * `$DSH_HOME/settings.yaml.imported`：官方 0.1.7-rc.1 importer 会把前者导入当前 profile，再把原文改名为后者。
- * `documentPath` 属于 provider 当前文档（通常是 profile 的 `cordis.patch.yml`），不能反向充当旧 map。
  *
  * 优先级是正式双文件（settings.yaml 高于 imported）→ describe → V0 JSON。正式文件存在但读、解析、
  * 分节校验或序列化失败时直接抛错，不能折成 absent 让升级静默成功。
@@ -134,7 +133,7 @@ function mergeSettings(
   return merged;
 }
 
-/** describe 只给非文件 provider 或旧注册实例保留低优先级兜底，不读取 documentPath。 */
+/** describe 只给非文件 provider 或旧注册实例保留低优先级兜底。 */
 function readFromSettings(settings: LegacySettingsFace): LegacyStoredSettings {
   let entries: ReturnType<LegacySettingsFace["describe"]>;
   try {
