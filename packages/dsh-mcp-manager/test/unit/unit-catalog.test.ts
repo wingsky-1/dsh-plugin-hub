@@ -843,6 +843,42 @@ describe("#723 catalogHistory 双形态识别", () => {
   });
 });
 
+// #1011：双形态 kind（0.1.5 原生种 / 0.1.7 垫片补种，线格式同一形状）——
+// kind 走宿主词表（禁 kind:mcp-catalog），段名走自有命名空间（mcp-catalog 自由）。
+describe("#1011 双形态 kind", () => {
+  it("isCatalogSource 通认旧形态 kind:mcp-catalog", () => {
+    expect(isCatalogSource({ kind: "mcp-catalog" })).toBe(true);
+  });
+
+  it("isCatalogSource 通认新形态 kind:plugin + 本插件身份", () => {
+    expect(isCatalogSource({ kind: "plugin", plugin: "@wingsky-1/dsh-mcp-manager" })).toBe(true);
+  });
+
+  it("他插件的 kind:plugin 不得误认", () => {
+    expect(isCatalogSource({ kind: "plugin", plugin: "other" })).toBe(false);
+  });
+
+  it("未知 kind 不得误认", () => {
+    expect(isCatalogSource({ kind: "user" })).toBe(false);
+    expect(isCatalogSource(undefined)).toBe(false);
+  });
+
+  it("写入恒为 kind:plugin + plugin + form:snapshot + sections（零字节改）", () => {
+    const source = renderMcpCatalogMessage([{ name: "k1", text: "t" }]).source!;
+    expect(source.kind).toBe("plugin");
+    expect(source.plugin).toBe("@wingsky-1/dsh-mcp-manager");
+    expect(source.form).toBe("snapshot");
+    const sections = source.sections as Array<{ name?: unknown; text?: unknown }>;
+    expect(sections[0]?.name).toBe("mcp-catalog");
+    expect(typeof sections[0]?.text).toBe("string");
+  });
+
+  it("写入 kind 禁为 mcp-catalog（段名自由不在此限）", () => {
+    const source = renderMcpCatalogMessage([{ name: "k1" }]).source!;
+    expect(source.kind).not.toBe("mcp-catalog");
+  });
+});
+
 describe("removeRootEntry 写回失败清理（#903 crash）", () => {
   it("写回失败只 warn 且无 tmp 残留", async () => {
     const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-catrm-"));
