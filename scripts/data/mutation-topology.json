@@ -94,7 +94,8 @@
             "packages/dsh-decision-gateway/test/unit/precheck-noegress.test.ts",
             "packages/dsh-decision-gateway/test/unit/tools.test.ts",
             "packages/dsh-decision-gateway/test/unit/verdict-tiers.test.ts",
-            "packages/dsh-decision-gateway/test/unit/tool-description.test.ts"
+            "packages/dsh-decision-gateway/test/unit/tool-description.test.ts",
+            "packages/dsh-decision-gateway/test/unit/signal-cancel.test.ts"
           ],
           "comment": "按域分段（#943 对账后，单段 _single 按 server 目录名拆分）：tools 域全量在面内（含 interface 门面与 deps 类型面）；面文件集与单段时代一致，仅执行分片变化；测试按段 testFiles 清单跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
         },
@@ -1106,6 +1107,7 @@
             "packages/dsh-worktree-sidebar/test/unit/inject-attach.test.ts",
             "packages/dsh-worktree-sidebar/test/unit/scope.test.ts",
             "packages/dsh-worktree-sidebar/test/unit/tools.test.ts",
+            "packages/dsh-worktree-sidebar/test/unit/inject-keep-mounted.test.ts",
             "packages/dsh-worktree-sidebar/test/integration/file-io-concurrency.test.ts"
           ],
           "comment": "#847：src/**/*.ts 单段覆盖宿主与客户端，无文件排除；通过 enableMutations 撤销共享默认的四类字面量排除，本包有效算子排除集合为空。incremental 基线随 observe 夜间全量班重建。"
