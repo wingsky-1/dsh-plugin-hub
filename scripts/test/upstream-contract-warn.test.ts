@@ -10,7 +10,7 @@
  *   C3 闭包形状（export 星展开、循环截断、.ts 归一）与双版本 exit2；
  *   F4 注释样例（trend.ts:16 形）零派生，证 AST（grep 会误报）；
  *   C1 多行 ctx.on 收齐机制；S1 双动态与 S3 级联反向；R2、R4-lite 缺失反向。
- * 真实仓库锚：脚本 exit 0（只 warn 不阻塞）、S1 为 F1 一处、S2 具名、C1 为 20。
+ * 真实仓库锚：脚本 exit 0（只 warn 不阻塞）、S1 为 F1 一处、S2 具名、C1 为 19，R2 允许 OK 或已知 system-prompt warning。
  * fixture 零落盘：内存片段为主，文件级夹具一律 mkdtempSync 隔离并清场。
  */
 import test from "node:test";
@@ -369,8 +369,10 @@ test("真实仓库锚：S1 为 F1 一处、S2 具名、C1 为 19，R2 已知 war
   assert.ok(out.includes("loader"));
   assert.ok(out.includes("字面量 19 处"));
   assert.ok(out.includes("internal/service"));
-  assert.ok(out.includes("R2-cordis 事件 FAIL"));
-  assert.ok(out.includes("未命中 1：system-prompt/assemble"));
+  const r2Known =
+    out.includes("R2-cordis 事件 OK") ||
+    (out.includes("R2-cordis 事件 FAIL") && out.includes("未命中 1：system-prompt/assemble"));
+  assert.ok(r2Known, out);
   assert.ok(out.includes("R4-lite 方法 OK"));
 });
 
@@ -390,8 +392,13 @@ test("真实仓库锚：S2 校准后 7 名全绿（L1 裁决）", () => {
   ]) {
     assert.ok(out.includes(name) && out.includes("跟踪："), name);
   }
-  // system-prompt/assemble 当前被 AST/source-map 扫描漏掉；脚本必须显式保留该非阻塞 warning。
-  assert.ok(out.includes("::warning::upstream-contract-warn: R2-cordis 事件 FAIL"));
+  // 干净构建可能得到 R2 OK；增量构建可能只产生已知的 system-prompt/assemble warning。
+  // 两种都接受，但过滤该唯一 warning 后不得再有其它非阻塞 warning。
+  const withoutKnownR2 = out
+    .split("\n")
+    .filter((line) => !line.includes("R2-cordis 事件 FAIL"))
+    .join("\n");
+  assert.ok(!withoutKnownR2.includes("::warning::"));
   assert.ok(out.includes("S2 无类型服务 7") && out.includes("）OK"));
   assert.ok(out.includes("R1 服务 OK"));
 });
