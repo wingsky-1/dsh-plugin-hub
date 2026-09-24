@@ -97,7 +97,7 @@ import {
   handleReportStatus,
   type ReportRoutesContext,
 } from "../../../src/server/report-routes/interface.ts";
-import type { GenerateOptions, StreamChunk } from "@deepseek-ai/dsh-llm";
+import type { FinishReason, GenerateOptions, StreamChunk } from "@deepseek-ai/dsh-llm";
 import type {
   ReportLlmService,
   ReportMeta,
@@ -105,10 +105,9 @@ import type {
 } from "../../../src/server/execute/interface.ts";
 /** 首个 content 块的文本（生成侧恒为 user 文本块；类型面为块联合体）。 */
 const textOf = (block: unknown): string => (block as { text: string }).text;
-/** fakeLlm 观测快照（与 fakeLlm 返回的 seen 同形）。 */
+/** fakeLlm 观测快照：逐次保存 stream 入参，供调用次数与透传断言使用。 */
 interface LlmSeen {
-  options: GenerateOptions | null;
-  streamCalled: boolean;
+  calls: GenerateOptions[];
 }
 import type { ReportConfig, ReportPeriod } from "../../../src/server/config/interface.ts";
 // 白盒直连深路径（#768 B波）：词表纯数据经 server/config 门面，不走组合根转发。
@@ -156,27 +155,22 @@ const CHUNKS: StreamChunk[] = [
   { type: "text-delta", index: 0, text: "第一段。" },
   { type: "text-delta", index: 0, text: "第二段。" },
   { type: "usage", usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 } },
-  // finish 原因走官方对象形态（实现仅消费 text-delta/usage，finish 内容恒忽略——与旧字符串形态同行为）。
+  // finish 原因走官方对象形态；未知终态必须 fail closed。
   { type: "finish", reason: { kind: "stop" } },
 ];
 
-/** fake llm：罐头 chunk 流；seen 记录收到的 GenerateOptions（断言路由/信号透传）。
- * options 恒由 stream 在断言前置位（null 初始仅过构造面）。 */
+/** fake llm：罐头 chunk 流；seen 逐次记录 GenerateOptions 快照。 */
 function fakeLlm(
   chunks: StreamChunk[] = CHUNKS,
   opts: { throwInStream?: string; noProviders?: boolean; noModels?: boolean } = {},
 ): {
   llm: ReportLlmService;
-  seen: { options: GenerateOptions | null; streamCalled: boolean };
+  seen: LlmSeen;
 } {
-  const seen: { options: GenerateOptions | null; streamCalled: boolean } = {
-    options: null,
-    streamCalled: false,
-  };
+  const seen: LlmSeen = { calls: [] };
   const llm: ReportLlmService = {
     stream(o: GenerateOptions): AsyncIterable<StreamChunk> {
-      seen.streamCalled = true;
-      seen.options = o;
+      seen.calls.push({ ...o, messages: [...o.messages] });
       return (async function* (): AsyncGenerator<StreamChunk> {
         if (opts.throwInStream) throw new Error(opts.throwInStream);
         if (o.signal?.aborted) throw new Error("aborted before start");
@@ -505,30 +499,31 @@ describe("generate：成功路径（正文拼接 / token 元数据 / 空串跟�
     expect(r.meta.model).toBe("model-a");
   });
 
-  it("GenerateOptions 透传解析后路由", () => {
-    expect(seen.options!.provider).toBe("prov-a");
+  it("模型流仅调用一次并透传解析后路由", () => {
+    expect(seen.calls).toHaveLength(1);
+    expect(seen.calls[0]!.provider).toBe("prov-a");
   });
 
   it("单条 user 消息", () => {
-    expect(seen.options!.messages.length).toBe(1);
+    expect(seen.calls[0]!.messages.length).toBe(1);
   });
 
   it("user source", () => {
     // 0.1.7 起 messages 元素为 RequestMessage（source 可选，hand-built one-shot
     // 允许无 source）；?. 收窄后断言强度不变（缺 source 即 undefined ≠ "user" 照红）。
-    expect(seen.options!.messages[0]?.source?.kind).toBe("user");
+    expect(seen.calls[0]!.messages[0]?.source?.kind).toBe("user");
   });
 
   it("role=user（UserMessage 字面量，类型层同步钉死）", () => {
-    expect(seen.options!.messages[0].role).toBe("user");
+    expect(seen.calls[0]!.messages[0].role).toBe("user");
   });
 
   it("{stats} 注入统计 JSON", () => {
-    expect(textOf(seen.options!.messages[0].content[0]).includes('{"calls":1}')).toBeTruthy();
+    expect(textOf(seen.calls[0]!.messages[0].content[0]).includes('{"calls":1}')).toBeTruthy();
   });
 
   it("tools 不传 = 无工具面", () => {
-    expect(seen.options!.tools === undefined).toBeTruthy();
+    expect(seen.calls[0]!.tools === undefined).toBeTruthy();
   });
 
   it("时长记录", () => {
@@ -551,8 +546,10 @@ describe("generate：显式路由透传", () => {
     expect(r.meta.provider).toBe("prov-b");
   });
 
-  it("显式 model 透传", () => {
-    expect(seen.options!.model).toBe("model-b");
+  it("显式路由仅调用一次且完整透传", () => {
+    expect(seen.calls).toHaveLength(1);
+    expect(seen.calls[0]!.provider).toBe("prov-b");
+    expect(seen.calls[0]!.model).toBe("model-b");
   });
 });
 
@@ -564,54 +561,260 @@ describe("generate：失败路径（流异常 / 取消 / 空正文 / 路由不�
   let r3: ReportResult;
   let r4: ReportResult;
   let r5: ReportResult;
+  let seen1: LlmSeen;
+  let seen2: LlmSeen;
+  let seen3: LlmSeen;
+  let seen4: LlmSeen;
+  let seen5: LlmSeen;
+  let abortedSignal: AbortSignal;
 
   beforeAll(async () => {
     // 流异常 → 失败元数据（不抛；正文空）
     const boom = fakeLlm(CHUNKS, { throwInStream: "stream boom" });
     r1 = await generateReport(GEN({ llm: boom.llm }));
+    seen1 = boom.seen;
     // 取消 → 失败
     const ac = new AbortController();
     ac.abort();
-    r2 = await generateReport(GEN({ llm: fakeLlm().llm, signal: ac.signal }));
+    abortedSignal = ac.signal;
+    const canceled = fakeLlm();
+    r2 = await generateReport(GEN({ llm: canceled.llm, signal: abortedSignal }));
+    seen2 = canceled.seen;
     // 空正文 → 失败
-    r3 = await generateReport(
-      GEN({ llm: fakeLlm([{ type: "usage", usage: { inputTokens: 1, outputTokens: 1 } }]).llm }),
-    );
+    const empty = fakeLlm([
+      { type: "usage", usage: { inputTokens: 1, outputTokens: 1 } },
+      { type: "finish", reason: { kind: "stop" } },
+    ]);
+    r3 = await generateReport(GEN({ llm: empty.llm }));
+    seen3 = empty.seen;
     // 路由不可解析 → 失败
-    r4 = await generateReport(GEN({ llm: fakeLlm(CHUNKS, { noProviders: true }).llm }));
-    r5 = await generateReport(GEN({ llm: fakeLlm(CHUNKS, { noModels: true }).llm }));
+    const noProviders = fakeLlm(CHUNKS, { noProviders: true });
+    r4 = await generateReport(GEN({ llm: noProviders.llm }));
+    seen4 = noProviders.seen;
+    const noModels = fakeLlm(CHUNKS, { noModels: true });
+    r5 = await generateReport(GEN({ llm: noModels.llm }));
+    seen5 = noModels.seen;
   });
 
-  it("流异常 → ok:false", () => {
+  it("流异常仅调用一次并沿用原错误", () => {
+    expect(seen1.calls).toHaveLength(1);
     expect(r1.meta.ok).toBe(false);
-  });
-
-  it("失败正文为空", () => {
     expect(r1.body).toBe("");
+    expect(r1.meta.error).toBe("stream boom");
   });
 
-  it("错误短句保留", () => {
-    expect(r1.meta.error!.includes("stream boom")).toBeTruthy();
-  });
-
-  it("已取消信号 → ok:false", () => {
+  it("已取消信号仅调用一次并沿用同一 signal", () => {
+    expect(seen2.calls).toHaveLength(1);
+    expect(seen2.calls[0]!.signal).toBe(abortedSignal);
     expect(r2.meta.ok).toBe(false);
+    expect(r2.body).toBe("");
+    expect(r2.meta.error).toBe("aborted before start");
   });
 
-  it("无正文 → ok:false", () => {
+  it("正常终态空正文仅调用一次并返回旧错", () => {
+    expect(seen3.calls).toHaveLength(1);
     expect(r3.meta.ok).toBe(false);
+    expect(r3.body).toBe("");
+    expect(r3.meta.error).toBe("模型未产出任何正文");
   });
 
-  it("空正文错误说明", () => {
-    expect(r3.meta.error!.includes("正文")).toBeTruthy();
-  });
-
-  it("无注册 provider → ok:false", () => {
+  it("无注册 provider 时不调用模型流", () => {
+    expect(seen4.calls).toHaveLength(0);
     expect(r4.meta.ok).toBe(false);
   });
 
-  it("provider 无可用 model → ok:false", () => {
+  it("provider 无可用 model 时不调用模型流", () => {
+    expect(seen5.calls).toHaveLength(0);
     expect(r5.meta.ok).toBe(false);
+  });
+});
+
+const NORMAL_FINISH_REASONS: Array<{ name: string; reason: FinishReason }> = [
+  { name: "stop", reason: { kind: "stop" } },
+  { name: "tool-calls", reason: { kind: "tool-calls" } },
+  { name: "max-tokens", reason: { kind: "max-tokens" } },
+];
+
+describe("generate：已知正常终态分类正文与 reasoning", () => {
+  it.each(NORMAL_FINISH_REASONS)(
+    "$name 终态下正文成功且 reasoning 不进入正文",
+    async ({ reason }) => {
+      const f = fakeLlm([
+        { type: "reasoning-delta", index: 0, text: "不应进入正文的推理" },
+        { type: "text-delta", index: 0, text: "可见正文" },
+        { type: "finish", reason },
+      ]);
+
+      const result = await generateReport(
+        GEN({ llm: f.llm, provider: "generic-provider", model: "generic-model" }),
+      );
+
+      expect(result.meta.ok).toBe(true);
+      expect(result.body).toBe("可见正文");
+      expect(result.meta.error).toBeUndefined();
+      expect(f.seen.calls).toHaveLength(1);
+    },
+  );
+
+  it("reasoning 仅含空白时返回旧空正文错误", async () => {
+    const f = fakeLlm([
+      { type: "reasoning-delta", index: 0, text: " \n\t " },
+      { type: "finish", reason: { kind: "stop" } },
+    ]);
+
+    const result = await generateReport(
+      GEN({ llm: f.llm, provider: "generic-provider", model: "generic-model" }),
+    );
+
+    expect(result.meta.ok).toBe(false);
+    expect(result.body).toBe("");
+    expect(result.meta.error).toBe("模型未产出任何正文");
+    expect(f.seen.calls).toHaveLength(1);
+  });
+});
+
+describe("generate：通用 provider 仅返回推理时给出可分诊错误", () => {
+  it("正常终止但只有 reasoning 时不产出正文并精确报错", async () => {
+    const f = fakeLlm([
+      { type: "reasoning-delta", index: 0, text: "先分析数据，再决定结论。" },
+      { type: "finish", reason: { kind: "stop" } },
+    ]);
+
+    const result = await generateReport(
+      GEN({ llm: f.llm, provider: "generic-provider", model: "generic-model" }),
+    );
+
+    expect(result.meta.ok).toBe(false);
+    expect(result.body).toBe("");
+    expect(result.meta.error).toBe("模型仅返回推理过程未产出正文");
+    expect(f.seen.calls).toHaveLength(1);
+  });
+});
+
+const TERMINAL_FAILURES: Array<{
+  name: string;
+  reason: FinishReason;
+  expectedError: string;
+}> = [
+  {
+    name: "error",
+    reason: { kind: "error", failure: { message: "upstream failed", code: "upstream_error" } },
+    expectedError: "模型生成失败：upstream failed",
+  },
+  {
+    name: "aborted",
+    reason: { kind: "aborted", failure: { message: "request aborted", code: "request_aborted" } },
+    expectedError: "模型生成已中止：request aborted",
+  },
+];
+
+describe("generate：终止失败优先于已有正文", () => {
+  it.each(TERMINAL_FAILURES)(
+    "$name 终态返回失败且不保留正文",
+    async ({ reason, expectedError }) => {
+      const f = fakeLlm([
+        { type: "text-delta", index: 0, text: "不应保存的正文" },
+        { type: "finish", reason },
+      ]);
+
+      const result = await generateReport(
+        GEN({ llm: f.llm, provider: "generic-provider", model: "generic-model" }),
+      );
+
+      expect(result.meta.ok).toBe(false);
+      expect(result.body).toBe("");
+      expect(result.meta.error).toBe(expectedError);
+      expect(f.seen.calls).toHaveLength(1);
+    },
+  );
+});
+
+function futureFinishChunk(): StreamChunk {
+  const chunk: StreamChunk = { type: "finish", reason: { kind: "stop" } };
+  Object.defineProperty(chunk.reason, "kind", { value: "future-stop" });
+  return chunk;
+}
+
+function futureContentChunk(): StreamChunk {
+  const chunk: StreamChunk = {
+    type: "reasoning-delta",
+    index: 0,
+    text: "未来扩展内容",
+  };
+  Object.defineProperty(chunk, "type", { value: "future-delta" });
+  return chunk;
+}
+
+describe("generate：未知流内容与终态 fail closed", () => {
+  it("正文存在但流未返回终态时拒绝成功", async () => {
+    const f = fakeLlm([{ type: "text-delta", index: 0, text: "未确认终态的正文" }]);
+
+    const result = await generateReport(
+      GEN({ llm: f.llm, provider: "generic-provider", model: "generic-model" }),
+    );
+
+    expect(result.meta.ok).toBe(false);
+    expect(result.body).toBe("");
+    expect(result.meta.error).toBe("模型流未返回可识别终态");
+    expect(f.seen.calls).toHaveLength(1);
+  });
+
+  it("缺失终态优先于 reasoning-only 分类", async () => {
+    const f = fakeLlm([{ type: "reasoning-delta", index: 0, text: "不能暴露的推理原文" }]);
+
+    const result = await generateReport(
+      GEN({ llm: f.llm, provider: "generic-provider", model: "generic-model" }),
+    );
+
+    expect(result.meta.ok).toBe(false);
+    expect(result.body).toBe("");
+    expect(result.meta.error).toBe("模型流未返回可识别终态");
+    expect(f.seen.calls).toHaveLength(1);
+  });
+
+  it("未知 finish 优先于空输出分类并拒绝成功", async () => {
+    const f = fakeLlm([
+      { type: "reasoning-delta", index: 0, text: "不能暴露的推理原文" },
+      futureFinishChunk(),
+    ]);
+
+    const result = await generateReport(
+      GEN({ llm: f.llm, provider: "generic-provider", model: "generic-model" }),
+    );
+
+    expect(result.meta.ok).toBe(false);
+    expect(result.body).toBe("");
+    expect(result.meta.error).toBe("模型流返回未知终态");
+    expect(f.seen.calls).toHaveLength(1);
+  });
+
+  it("未知内容块不进入正文", async () => {
+    const f = fakeLlm([
+      futureContentChunk(),
+      { type: "text-delta", index: 0, text: "可见正文" },
+      { type: "finish", reason: { kind: "stop" } },
+    ]);
+
+    const result = await generateReport(
+      GEN({ llm: f.llm, provider: "generic-provider", model: "generic-model" }),
+    );
+
+    expect(result.meta.ok).toBe(true);
+    expect(result.body).toBe("可见正文");
+    expect(f.seen.calls).toHaveLength(1);
+  });
+
+  it("未知内容块不伪装成 reasoning-only", async () => {
+    const f = fakeLlm([futureContentChunk(), { type: "finish", reason: { kind: "stop" } }]);
+
+    const result = await generateReport(
+      GEN({ llm: f.llm, provider: "generic-provider", model: "generic-model" }),
+    );
+
+    expect(result.meta.ok).toBe(false);
+    expect(result.body).toBe("");
+    expect(result.meta.error).toBe("模型未产出任何正文");
+    expect(f.seen.calls).toHaveLength(1);
   });
 });
 
@@ -1450,7 +1653,7 @@ describe("生成不入统计前提（方案 §2.3）", () => {
     // session 事件→不入统计」）。
     const { llm, seen } = fakeLlm();
     await generateReport(GEN({ llm }));
-    expect(seen.streamCalled).toBeTruthy();
+    expect(seen.calls).toHaveLength(1);
   });
 });
 
@@ -2455,7 +2658,7 @@ describe("#633 分片 a D1：旧格式（无 cwd/dir 键）报告生成链路回
       }),
     );
     rMetaOk = r.meta.ok;
-    injectedHasDirBucket = textOf(seen.options!.messages[0].content[0]).includes(
+    injectedHasDirBucket = textOf(seen.calls[0]!.messages[0].content[0]).includes(
       JSON.stringify(s.byDirectory[0]),
     );
     await tracker.dispose();
@@ -2610,7 +2813,7 @@ describe("#633 分片 b C2：脱敏出口逐条断言（basename 化 + 三出口
     ]);
     const r = await generateReport(GEN({ llm, statsJson: JSON.stringify(snap) }));
     rMetaOk = r.meta.ok;
-    promptText = textOf(seen.options!.messages[0].content[0]);
+    promptText = textOf(seen.calls[0]!.messages[0].content[0]);
     // 产物正文出口：persistReport 的 HTML 文档与 meta.json 落盘形态（临时目录隔离）
     const rootDir = mkdtempSync(join(tmpdir(), "dou-report-c2-"));
     await persistReport(rootDir, r.meta, r.body);
@@ -2878,7 +3081,7 @@ describe("#633 分片 b C1：三周期模板硬规则断言（fake llm 抓 promp
           }),
         );
         rMetaOk = r.meta.ok;
-        text = textOf(seen.options!.messages[0].content[0]);
+        text = textOf(seen.calls[0]!.messages[0].content[0]);
       });
 
       it(`${period} 生成成功`, () => {

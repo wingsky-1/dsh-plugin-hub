@@ -18,6 +18,7 @@
  *   仅作只读传参，无需 freeze）。
  */
 import type {
+  FinishReason,
   GenerateOptions,
   LlmModelInfo,
   LlmProviderInfo,
@@ -241,20 +242,56 @@ async function resolveRoute(
   return { provider: p, model: m };
 }
 
+type StreamTerminal =
+  { kind: "none" } | { kind: "normal" } | { kind: "unknown" } | { kind: "error"; error: string };
+
+interface StreamState {
+  body: string;
+  hasNonWhitespaceReasoning: boolean;
+  tokens: ReportTokenUsage | null;
+  terminal: StreamTerminal;
+}
+
+function classifyFinishReason(reason: FinishReason): StreamTerminal {
+  switch (reason.kind) {
+    case "stop":
+    case "tool-calls":
+    case "max-tokens":
+      return { kind: "normal" };
+    case "error":
+    case "aborted": {
+      const label = reason.kind === "aborted" ? "模型生成已中止" : "模型生成失败";
+      const detail = reason.failure.message.trim();
+      return { kind: "error", error: detail.length === 0 ? label : `${label}：${detail}` };
+    }
+    default:
+      return { kind: "unknown" };
+  }
+}
+
+function mergeTerminal(current: StreamTerminal, next: StreamTerminal): StreamTerminal {
+  if (current.kind === "error" || next.kind === "none") return current;
+  if (next.kind === "error" || current.kind === "none") return next;
+  if (current.kind === "unknown" || next.kind === "unknown") return { kind: "unknown" };
+  return next;
+}
+
 /**
- * 生成报告：流式收集正文与 token 元数据。
- * 失败（路由不可解析/流异常/取消）→ ok:false 元数据（不抛，正文空串）；
- * 成功 → ok:true + 正文 + tokens（首个 usage chunk 为准）。
+ * 生成报告：流式收集正文、reasoning 可见性、token 与终态。
+ * reasoning 原文不保留；未知内容块忽略，未知/缺失终态 fail closed。
  */
-function accumulateChunk(
-  chunk: StreamChunk,
-  body: string,
-  tokens: ReportTokenUsage | null,
-): { body: string; tokens: ReportTokenUsage | null } {
-  if (chunk.type === "text-delta") return { body: body + chunk.text, tokens };
-  if (chunk.type === "usage" && tokens === null)
-    return { body, tokens: parseTokenUsage(chunk.usage) };
-  return { body, tokens };
+function accumulateChunk(chunk: StreamChunk, state: StreamState): StreamState {
+  if (chunk.type === "text-delta") return { ...state, body: state.body + chunk.text };
+  if (chunk.type === "reasoning-delta" && chunk.text.trim().length > 0)
+    return { ...state, hasNonWhitespaceReasoning: true };
+  if (chunk.type === "usage" && state.tokens === null)
+    return { ...state, tokens: parseTokenUsage(chunk.usage) };
+  if (chunk.type === "finish")
+    return {
+      ...state,
+      terminal: mergeTerminal(state.terminal, classifyFinishReason(chunk.reason)),
+    };
+  return state;
 }
 export async function generateReport(opts: GenerateReportOptions): Promise<ReportResult> {
   const now = opts.now ?? Date.now;
@@ -297,28 +334,35 @@ export async function generateReport(opts: GenerateReportOptions): Promise<Repor
     // tools 不传 = 无工具面（方案 §八5，类型层保证）
   };
   if (opts.signal !== undefined) genOpts.signal = opts.signal;
-  let body = "";
-  let tokens: ReportTokenUsage | null = null;
+  let state: StreamState = {
+    body: "",
+    hasNonWhitespaceReasoning: false,
+    tokens: null,
+    terminal: { kind: "none" },
+  };
   try {
     for await (const chunk of opts.llm.stream(genOpts)) {
-      const acc = accumulateChunk(chunk, body, tokens);
-      body = acc.body;
-      tokens = acc.tokens;
+      state = accumulateChunk(chunk, state);
     }
   } catch (e: unknown) {
     // 流异常/取消 → 失败元数据；调度层据 ok 决定是否推进 lastRun（接线层约定）
     return fail(e instanceof Error ? e.message : String(e));
   }
-  if (body.trim().length === 0) return fail("模型未产出任何正文");
+  if (state.terminal.kind === "error") return fail(state.terminal.error);
+  if (state.terminal.kind === "unknown") return fail("模型流返回未知终态");
+  if (state.terminal.kind === "none") return fail("模型流未返回可识别终态");
+  if (state.body.trim().length === 0 && state.hasNonWhitespaceReasoning)
+    return fail("模型仅返回推理过程未产出正文");
+  if (state.body.trim().length === 0) return fail("模型未产出任何正文");
   return {
-    body,
+    body: state.body,
     meta: {
       ...metaBase,
       provider: route.provider,
       model: route.model,
       durationMs: now() - started,
       ok: true,
-      ...(tokens !== null ? { tokens } : {}),
+      ...(state.tokens !== null ? { tokens: state.tokens } : {}),
     },
   };
 }
