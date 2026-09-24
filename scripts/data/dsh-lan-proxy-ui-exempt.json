@@ -4,23 +4,23 @@
   "exemptKeys": [
     {
       "key": "host",
-      "reason": "packages/dsh-lan-proxy/src/server/config/impl/model.ts:102（Config.host）组合层装配键（绑定地址），GUI 卡片不编辑",
-      "rationale": "绑定地址的缺省取 DEFAULT_OPTIONS.host（见 server/config/impl/model.ts:102 的 Config.host）；GUI 卡片不渲染绑定地址，README 的安全模型章节另有说明。"
+      "reason": "packages/dsh-lan-proxy/src/server/config/impl/model.ts:109（Config.host）组合层装配键（绑定地址），GUI 卡片不编辑",
+      "rationale": "绑定地址的缺省取 DEFAULT_OPTIONS.host（见 server/config/impl/model.ts:109 的 Config.host）；GUI 卡片不渲染绑定地址，README 的安全模型章节另有说明。"
     },
     {
       "key": "targetHost",
-      "reason": "packages/dsh-lan-proxy/src/server/config/impl/model.ts:124（Config.targetHost）组合层装配键（回环上游），GUI 卡片不编辑",
-      "rationale": "回环上游主机（见 server/config/impl/model.ts:124 的 Config.targetHost）。转发安全红线只允许回环，故不开放给 GUI 编辑。"
+      "reason": "packages/dsh-lan-proxy/src/server/config/impl/model.ts:131（Config.targetHost）组合层装配键（回环上游），GUI 卡片不编辑",
+      "rationale": "回环上游主机（见 server/config/impl/model.ts:131 的 Config.targetHost）。转发安全红线只允许回环，故不开放给 GUI 编辑。"
     },
     {
       "key": "targetPort",
-      "reason": "packages/dsh-lan-proxy/src/server/config/impl/model.ts:130（Config.targetPort）组合层装配键（上游端口随 web 端口），GUI 卡片不编辑",
-      "rationale": "上游端口缺省随 web 端口（见 server/config/impl/model.ts:130 的 Config.targetPort 及其上方注释），由组合层装配，GUI 无独立控件。"
+      "reason": "packages/dsh-lan-proxy/src/server/config/impl/model.ts:137（Config.targetPort）组合层装配键（上游端口随 web 端口），GUI 卡片不编辑",
+      "rationale": "上游端口缺省随 web 端口（见 server/config/impl/model.ts:137 的 Config.targetPort 及其上方注释），由组合层装配，GUI 无独立控件。"
     },
     {
       "key": "wsDeflatePolicy",
-      "reason": "packages/dsh-lan-proxy/src/server/config/impl/model.ts:155（Config.wsDeflatePolicy）服务端策略键（协商子结构），GUI 无控件",
-      "rationale": "服务端 WS 压缩协商策略（browser/uaDeny 子结构，见 server/config/impl/model.ts:155 的 Config.wsDeflatePolicy）；GUI 无对应控件（wsCompressPaths 白名单已可编辑，覆盖了实际使用面）。"
+      "reason": "packages/dsh-lan-proxy/src/server/config/impl/model.ts:162（Config.wsDeflatePolicy）服务端策略键（协商子结构），GUI 无控件",
+      "rationale": "服务端 WS 压缩协商策略（browser/uaDeny 子结构，见 server/config/impl/model.ts:162 的 Config.wsDeflatePolicy）；GUI 无对应控件（wsCompressPaths 白名单已可编辑，覆盖了实际使用面）。"
     }
   ]
 }
