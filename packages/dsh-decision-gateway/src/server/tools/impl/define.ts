@@ -42,7 +42,7 @@ export function sessionOf(exec: unknown): string {
   return "unknown";
 }
 
-/** exec 取调用方取消信号（ToolRunContext.signal；unknown 防御收窄，非信号即 undefined，双基线可编译）。 */
+/** exec 取调用方取消信号（unknown 防御收窄，非信号即 undefined）。 */
 export function signalOf(exec: unknown): AbortSignal | undefined {
   if (exec !== null && typeof exec === "object") {
     const candidate = (exec as Record<string, unknown>)["signal"];

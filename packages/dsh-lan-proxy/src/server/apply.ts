@@ -412,15 +412,11 @@ export function apply(ctx: Context, config: LanProxyConfig = {}): void {
   // indexTaps 随每次配置热更新无界增长）；开关在 tap 内按请求读取（见 host-trust 域）。
   registerHostTrustInjection(ctx, () => resolve().ownsHostCompat === true);
 
-  // GUI 设置卡片数据面 + 存量迁移（issue #110；dsh 0.1.7-rc.1 接缝 v1.1）：
-  // 条目 id 即 profile 条目 id（SETTINGS_NS = ui-dsh-lan-proxy），attach 后——
-  //   1. onScope 内先做存量 config.json rename-first 迁移（前置于一切 enabled
-  //      判定，禁用用户升级同样迁移）；
-  //   2. setSource 把读取来源切到 scope.get()（schema defaults → base(entry) →
-  //      user 层的官方解析顺序，无双轨合并）；
-  //   3. 热更新统一由 settings/document-updated 订阅驱动 scheduleSync
-  //      （rc.5 的 scope.watch 遗留面不再作为热更新来源；shared 侧 onChange 仍透传，
-  //      本域另行显式订阅事件，双触发经 scheduleSync 3s 防抖收敛）。
+  // GUI 设置卡片数据面 + 存量迁移（issue #110）：attach 后——
+  //   1. onScope 内先做存量 config.json rename-first 迁移；
+  //   2. setSource 把读取来源切到 scope.get()；
+  //   3. 热更新由 settings/document-updated 订阅驱动 scheduleSync
+  //      （shared 侧 onChange 仍透传，双触发经 scheduleSync 3s 防抖收敛）。
   //   routes.ts 保持不动：读写路由只消费下述 configDeps 面，不感知 settings 接缝。
   installLanProxySettings(ctx, config ?? {}, {
     setSource: (source) => {
@@ -434,10 +430,8 @@ export function apply(ctx: Context, config: LanProxyConfig = {}): void {
     onScope: (scope, service) => {
       attachedService = service;
       attachedScope = scope;
-      // 热更新：显式订阅 settings/document-updated（rc.5/rc.7 双基线共有事件；
-      // rc.7 唯一热更新面）。能力检测（非版本分支）：无 on 面即跳过，由 shared
-      // onChange 兜底；双触发经 scheduleSync 防抖收敛。
-      // 删除条件：不再支持 rc.5 后删去 shared watch 路径，本订阅成为唯一来源。
+      // 热更新显式订阅 settings/document-updated；无 on 面即跳过（shared onChange 兜底），
+      // 双触发经 scheduleSync 防抖收敛。
       try {
         const ctxOn = (
           ctx as unknown as {
@@ -471,9 +465,7 @@ export function apply(ctx: Context, config: LanProxyConfig = {}): void {
 
   // 配置路由依赖装配：user 层读 describe({redactSecrets:true}) 的 descriptor 投影
   // （raw user section 存在即「用户设过值」，revision 供乐观并发；ns 按条目 id 匹配）；
-  // 写优先走 owner scope.update/replace（双基线共有；validate + per-ns 序列化写队列
-  // 由官方服务承担），scope 缺失时回落服务级 update/replace(ns, …)（rc.7 面；
-  // 能力检测，非版本分支）。
+  // 写优先走 owner scope.update/replace，scope 缺失时回落服务级 update/replace(ns, …)。
   const configDeps: ConfigRouteDeps = {
     resolve,
     readUser: () => {

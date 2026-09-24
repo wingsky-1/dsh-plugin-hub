@@ -93,15 +93,8 @@ export interface HttpCompressSnapshot {
 }
 
 /** 插件配置，由同名 schemastery schema 校验，也用于 GUI 设置面板渲染。
- * 显式注解：官方类型层与本包 devDep schemastery 各带同名全局命名空间合并后，
- * Config 的推断类型声明发射不再可移植（TS2883），按 TS 建议显式标注。
- * 集成树（dsh 0.1.7-rc.1）下 @deepseek-ai/schemastery@3.18.4 的类型经
- * routes.ts → dsh-host-webserver 类型层进入同一编译，其全局 Schemastery 命名空间
- * 与本包 schemastery@3.18.0（z 值的实际解析）合并：Schema/SchemaOutput/SetRequired
- * 的 Mode 条件类型在 meta.default 比较中带入 Volatile<>（值面从未调用 .volatile()，
- * 运行时无此物——纯类型层致幻）。故声明侧用 as 收口为 z<LanProxyConfig>（对外类型面
- * 与 rc.1 基线完全一致，零行为变化）；直接赋值在该合并下判红（TS2322）。
- * 双基线可编译：rc.1 树内无 Volatile 声明，原本直接可赋值，as 同样成立。 */
+ * 显式注解（TS2883：全局命名空间合并致推断类型声明发射不可移植）+ 末尾 as 收口
+ * （合并后的 Mode 条件类型使直接赋值判红 TS2322；as 保持类型面，值面无变化）。 */
 export const Config: z<LanProxyConfig> = z.object({
   /** 总开关。 */
   enabled: z.boolean().default(true),
@@ -190,12 +183,7 @@ export const Config: z<LanProxyConfig> = z.object({
   // as 保持对外类型面恒为 z<LanProxyConfig>，值面无任何变化。
 }) as z<LanProxyConfig>;
 
-/**
- * dsh 0.1.7-rc.1 配置域永久声明：整节标记 volatile（免 remount 热更新）。
- * 直接置 meta（禁链式 `.volatile()`——当前锁版 schemastery@3.18.0 无该方法，
- * 链式会在 rc.1 基线 tsc 失败）；tsc 侧经 cast（Meta 面无 volatile 字段）。
- * 业务域禁版本分支：此处无条件声明，rc.5 运行时忽略未知 meta（实测无副作用）。
- */
+/** 整节标记 volatile： hot 更新免 remount。直接置 meta（链式写法在锁版 schemastery 无此方法）。 */
 (Config as unknown as { meta: { volatile?: boolean } }).meta.volatile = true;
 
 /**

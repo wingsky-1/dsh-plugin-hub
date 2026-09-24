@@ -7,11 +7,8 @@
  * 为什么不用官方 @deepseek-ai/dsh-settings 包：插件运行时沿自身 lib/ 向上解析不到
  * 该包（MODULE_NOT_FOUND），动态 import 会静默失败。
  *
- * dsh 0.1.7-rc.1 接缝（冻结计划 v1.1）：命名空间即 profile 条目 id（见下
- * SETTINGS_NS），读面以 describe 的 descriptor 为准（user/revision），写面走
- * owner scope.update/replace，热更新订阅 settings/document-updated（见 apply）。
- * 本文件只做薄包装对齐：类型面重定义为 Descriptor 面，签名与转发目标保持不变
- * （shared 接缝由另一 agent 重写，本包消费其不变签名）。
+ * 读面以 describe 的 descriptor 为准（user/revision），写面走 owner scope.update/replace，
+ * 热更新订阅 settings/document-updated（见 apply）。
  */
 import type { Context } from "@deepseek-ai/cordis";
 import { installSettingsNamespace } from "../../../../../../shared/settings-namespace.js";
@@ -21,16 +18,14 @@ import type { LanProxyConfig } from "./model.ts";
 export { warnLog } from "../../../../../../shared/settings-namespace.js";
 
 /**
- * 本插件在官方 settings 服务中的条目 id。
- * dsh 0.1.7-rc.1 起命名空间即 profile 条目 id，与 cordis.patch.yml 挂载行 id
- * 一致（ui-dsh-lan-proxy）；客户端 settings.plugin.item 的 key 与本常量配对
- * （见 src/client/index.ts，双写锁定，单测锁定）。
+ * 本插件在官方 settings 服务中的条目 id，与 cordis.patch.yml 挂载行 id 一致；
+ * 客户端 settings.plugin.item 的 key 与本常量配对（见 src/client/index.ts，单测锁定）。
  */
 export const SETTINGS_NS = "ui-dsh-lan-proxy";
 
-/** describe 返回的条目 descriptor 最小面（rc.5/rc.7 双基线共有子集）。 */
+/** describe 返回的条目 descriptor 最小面。 */
 export interface SettingsDescriptorLike {
-  /** 条目 id（rc.7 即 profile 条目 id；rc.5 即命名空间名）。 */
+  /** 条目 id。 */
   ns: string;
   /** 原始 user 节（存在即用户设过值）。 */
   user?: unknown;
@@ -40,9 +35,7 @@ export interface SettingsDescriptorLike {
 
 /**
  * owner scope 最小类型面（Descriptor 面：以 describe 投影读、以 update/replace 写）。
- * get/update/replace 为双基线共有；watch 仅 rc.5 存在（rc.7 改 document-updated
- * 事件），保留为可选以保双基线可编译——删除条件：不再支持 rc.5 基线时删去本字段
- * （调用方不得新增对 watch 的依赖，热更新一律走 document-updated）。
+ * watch 为遗留订阅面（新代码走 document-updated，见 apply；待清理，见 #1011）。
  */
 export interface OwnerScopeLike {
   /** 当前解析值（schema defaults → base → user 层）。 */
@@ -51,28 +44,22 @@ export interface OwnerScopeLike {
   update(patch: object, expectedRevision?: number): Promise<void>;
   /** 整节替换 user 层，缺省键回落 base/schema 默认。 */
   replace(section: object, expectedRevision?: number): Promise<void>;
-  /**
-   * 提交后异步串行回调，返回 disposer（rc.5 遗留面）。
-   * rc.7 无此方法（改 document-updated 订阅）；可选仅为双基线 tsc 兼容。
-   */
+  /** 提交后异步串行回调，返回 disposer（遗留订阅面，新代码不用；待清理，见 #1011）。 */
   watch?(cb: (next: LanProxyConfig, prev: LanProxyConfig) => void): () => void;
 }
 
 /**
  * settings 服务最小类型面（Descriptor 面）。
- * describe 为双基线共有读面；register 仅 rc.5（rc.7 由 profile 条目隐式注册），
- * update/replace(ns, …) 为 rc.7 服务级写面（rc.5 写走 scope）。
- * 三者皆可选——运行时以能力检测分支（非版本字符串分支，业务域无版本分支）；
- * 删除条件：不再支持 rc.5 基线时将 update/replace 改为必填并删去 register。
+ * 可选成员为能力探测保留（运行时按存在性分支，无版本字符串分支）。
  */
 export interface SettingsServiceLike {
-  /** rc.5 注册面（rc.7 不存在）。 */
+  /** 注册面（遗留；待清理，见 #1011）。 */
   register?(ns: string, schema: unknown, options?: { base?: unknown }): OwnerScopeLike;
-  /** 条目描述（双基线共有；wire 面必传 redactSecrets）。 */
+  /** 条目描述（wire 面必传 redactSecrets）。 */
   describe(options?: { redactSecrets?: boolean }): Array<SettingsDescriptorLike>;
-  /** rc.7 服务级增量写（rc.5 不存在，写走 scope）。 */
+  /** 服务级增量写。 */
   update?(ns: string, patch: object, expectedRevision?: number): Promise<void>;
-  /** rc.7 服务级整节替换（rc.5 不存在，写走 scope）。 */
+  /** 服务级整节替换。 */
   replace?(ns: string, section: object, expectedRevision?: number): Promise<void>;
 }
 

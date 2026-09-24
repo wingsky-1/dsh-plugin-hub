@@ -126,15 +126,8 @@ export function apply(ctx: ClientContext): void {
       }
     }
 
-    // 设置面板插件项。
-    // ⚠️ rc.7 起 settings.plugin.item 由 list(id) 改为 keyed(key)：
-    //   - 旧版（<=rc.6）只看 `id`；
-    //   - rc.7 只看 `key`，且要求与宿主端 serve 的条目 id 一致（ui-dsh-lan-proxy，
-    //     见宿主 SETTINGS_NS；冻结计划 v1.1 起命名空间即 profile 条目 id）。
-    // 社区一致范式（见 ysr666/dsh-vision-router#165/#162）：**id 与 key 双写**，
-    // 让新旧两代 slot 运行时都接受（多余字段被忽略）。key 必须等于宿主端
-    // 注册进 settings 服务的条目 id，才会被 configurable 面板派发。
-    // 业务域禁版本分支：此处无条件双写同一新 id，不做版本判断。
+    // 设置面板插件项：id 与 key 双写同一条目 id（见宿主 SETTINGS_NS），
+    // key 必须等于宿主端注册的条目 id 才会被面板派发；多余字段会被忽略。
     slots.inject("settings.plugin.item", function () {
       return slots.register(
         {

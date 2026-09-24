@@ -541,9 +541,7 @@ describe("apply 集成：TLS 准备 + settings 命名空间（setSource/onScope/
         return () => {};
       },
     };
-    // 新面 fake（冻结计划 v1.1 Descriptor 面）：describe 为双基线共有读面；
-    // register 仅为当前 shared 接缝（rc.5）保留，删除条件同上；update/replace(ns, …)
-    // 为 rc.7 服务级写面（本域写优先走 scope，此处仅供版本矩阵断言寻址语义）。
+    // 服务级 fake：describe 读面 + update/replace(ns, …) 写面（寻址语义断言用）。
     const settingsService = {
       register(_ns: string, _schema: unknown, _opts: unknown) {
         return scope;
@@ -735,7 +733,7 @@ describe("apply 集成：TLS 准备 + settings 命名空间（setSource/onScope/
     expect(hp2WsCompressPaths).toEqual(["/api/custom/ws", "/api/events.mux"]);
   });
 
-  it("document-updated 已订阅（rc.7 热更新面）", () => {
+  it("document-updated 已订阅（热更新面）", () => {
     expect(docUpdatedSubscribed).toBe(true);
   });
 
@@ -746,22 +744,19 @@ describe("apply 集成：TLS 准备 + settings 命名空间（setSource/onScope/
   });
 });
 
-// ===== 版本矩阵（冻结计划 v1.1：rc.5/rc.7 Descriptor 面双基线） =====
-// 意图：锁定新接缝三件套（条目 id + volatile + descriptor 投影）与客户端配对，
-// 且业务域（转发/压缩/Host/卡片展示）无版本分支（本块只断言接缝面，不碰业务行为）。
-// 删除条件：不再支持 rc.5 基线时删去下述 rc.5 兼容断言（watch/register 可选面），
-// 保留 rc.7 断言为永久声明。
-describe("版本矩阵（rc.5/rc.7 Descriptor 面双基线）", () => {
+// ===== 接缝面锁定：条目 id + volatile + descriptor 投影与客户端配对 =====
+// 本块只断言接缝面，不碰业务行为（转发/压缩/Host/卡片展示）。
+describe("接缝面锁定", () => {
   it("SETTINGS_NS 为 profile 条目 id（与 patch 挂载行一致）", () => {
     expect(SETTINGS_NS).toBe("ui-dsh-lan-proxy");
   });
 
-  it("Config 标记 volatile（直接置 meta；rc.5 运行时忽略）", () => {
+  it("Config 标记 volatile（直接置 meta）", () => {
     const meta = (Config as unknown as { meta?: { volatile?: unknown } }).meta;
     expect(meta?.volatile).toBe(true);
   });
 
-  it("descriptor 投影忽略 rc.7 增补字段（value/base/secrets 不影响 user/revision）", () => {
+  it("descriptor 投影忽略增补字段（value/base/secrets 不影响 user/revision）", () => {
     const descriptor = {
       ns: SETTINGS_NS,
       user: { port: 4100 },
