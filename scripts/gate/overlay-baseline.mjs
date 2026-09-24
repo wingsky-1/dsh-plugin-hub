@@ -19,6 +19,7 @@ import {
   classifyRemoteProbe,
   expectedBaselineFiles,
   mergeArtifactPage,
+  nightlyOnlyBaselineFiles,
   mutationArtifacts,
   reconcileArchive,
 } from "./baseline-archive.mjs";
@@ -448,13 +449,23 @@ function pushOverlayArchive({ baselineDir, overlaid, carriedForward, remoteManif
   // 6.5 对账（#714 后续修复）：期望集合 = stryker.conf.d 派生的段文件；缺口 = 既没被本次覆盖
   //     也不在旧基线里 —— 该段在归档分支上没有可用基线，后续每次 PR 门禁都会降级为全量重跑。
   //     不拒绝推送（拒绝会让归档停在更旧的树），但必须判红点名，暴露上游问题。
-  const expected = expectedBaselineFiles(readdirSync(join(process.cwd(), "stryker.conf.d")));
-  const reconciled = reconcileArchive({ expected, overlaid, carriedForward });
+  const confFileNames = readdirSync(join(process.cwd(), "stryker.conf.d"));
+  const expected = expectedBaselineFiles(confFileNames);
+  const faceRegistry = JSON.parse(
+    readFileSync(join(process.cwd(), "scripts", "data", "ci-face-registry.json"), "utf8"),
+  );
+  const optionalMissing = nightlyOnlyBaselineFiles({ confFileNames, faceRegistry });
+  const reconciled = reconcileArchive({ expected, overlaid, carriedForward, optionalMissing });
   console.log(
     `[overlay-baseline] 对账：期望 ${expected.length} 段，本次覆盖 ${reconciled.overlaidCount} 段，` +
       `沿用旧基线 ${reconciled.carriedCount} 段`,
   );
   let archiveGap = false;
+  if (reconciled.deferred.length > 0) {
+    console.log(
+      `[overlay-baseline] nightly-only 段无 PR artifact，按声明延期：${reconciled.deferred.join(", ")}`,
+    );
+  }
   if (reconciled.missing.length > 0) {
     archiveGap = true;
     console.error(

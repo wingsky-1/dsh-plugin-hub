@@ -228,6 +228,7 @@
     {
       "path": "stryker.conf.d/shared-settings-namespace.json",
       "faces": [],
+      "artifactPolicy": "nightly-only",
       "consumerGap": {
         "kind": "indirect",
         "reason": "stryker 经 stryker.conf.d/shared-settings-namespace.json 的 vitest.configFile 读取；该段由 scripts/gate/gen-stryker-conf.mjs 从 mutation-topology.json 的 $rootShared.segments.settings-namespace 间接派生，不含逐文件字面量。"

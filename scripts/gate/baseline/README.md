@@ -64,6 +64,7 @@
 - artifact 列表查询失败改为 **fail-loud**（原来 `exit 0` 静默跳过，等于把「查不到」当成「没有」）；
 - 纯函数（分页合并 / 期望集合派生 / 对账）在 `scripts/gate/baseline-archive.mjs`，由
   `scripts/test/baseline-archive.test.ts` 覆盖（含「旧实现只看到 14 段」的回归用例）。
+- `ci-face-registry.json` 的 `artifactPolicy: "nightly-only"` 是唯一允许 PR 缺 artifact 的声明；Overlay 只对显式声明的段延期，registry 缺项、非法策略或普通段缺 artifact 仍 fail-closed。
 - **本地调试**：
   - 本地若需要远端基线辅助增量测试，可执行：
     `node scripts/gate/orphan-baseline.mjs restore`

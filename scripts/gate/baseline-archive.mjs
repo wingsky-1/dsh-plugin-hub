@@ -148,6 +148,30 @@ export function expectedBaselineFiles(confFileNames) {
 /** 归档分支上参与对账的 manifest 文件名（记录每份基线文件的 size/mtime/sha256）。 */
 export const BASELINE_MANIFEST_FILE = "manifest.json";
 
+/**
+ * 从 CI face registry 派生 PR 不要求上传 artifact 的段。
+ * 只有显式 artifactPolicy=nightly-only 的 stryker 配置进入该集合；普通段缺产物仍 fail-closed。
+ */
+export function nightlyOnlyBaselineFiles({ confFileNames, faceRegistry }) {
+  if (
+    typeof faceRegistry !== "object" ||
+    faceRegistry === null ||
+    !Array.isArray(faceRegistry.entries)
+  ) {
+    throw new Error("ci-face-registry.json 缺少 entries，无法判定 nightly-only artifact");
+  }
+  const byPath = new Map(faceRegistry.entries.map((entry) => [entry?.path, entry]));
+  const configPathByExpected = new Map(
+    (confFileNames ?? [])
+      .filter((name) => typeof name === "string" && name.endsWith(".json"))
+      .map((name) => [expectedBaselineFiles([name])[0], `stryker.conf.d/${name}`]),
+  );
+  return expectedBaselineFiles(confFileNames).filter((file) => {
+    const entry = byPath.get(configPathByExpected.get(file));
+    return entry?.artifactPolicy === "nightly-only";
+  });
+}
+
 /** 回滚快照 tag 前缀。刻意不以 `v` 开头——release.yml 由 `push: tags: v*` 触发。 */
 export const ARCHIVE_SNAPSHOT_TAG_PREFIX = "baseline-snap-";
 
@@ -213,11 +237,19 @@ export function pruneSnapshotPlan(refNames, keep = ARCHIVE_SNAPSHOT_KEEP) {
  *   · 修法不是拒绝推送（那会让归档停在更旧的整棵树），而是**判红 + 点名**，
  *     让维护者知道要查上游（产物上传失败 / 分页截断 / 段配置漂移）。
  */
-export function reconcileArchive({ expected, overlaid, carriedForward }) {
+export function reconcileArchive({
+  expected,
+  overlaid,
+  carriedForward,
+  optionalMissing = /** @type {string[]} */ ([]),
+}) {
   const have = new Set([...(overlaid ?? []), ...(carriedForward ?? [])]);
-  const missing = (expected ?? []).filter((f) => !have.has(f));
+  const optional = new Set(optionalMissing ?? []);
+  const missing = (expected ?? []).filter((f) => !have.has(f) && !optional.has(f));
+  const deferred = (expected ?? []).filter((f) => !have.has(f) && optional.has(f));
   return {
     missing,
+    deferred,
     carriedCount: (carriedForward ?? []).length,
     overlaidCount: (overlaid ?? []).length,
   };

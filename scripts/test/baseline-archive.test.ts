@@ -29,6 +29,7 @@ import {
   expectedBaselineFiles,
   mergeArtifactPage,
   mutationArtifacts,
+  nightlyOnlyBaselineFiles,
   planArchive,
   pruneSnapshotPlan,
   reconcileArchive,
@@ -166,6 +167,34 @@ test("期望集合与真实仓库一致：stryker.conf.d/*.json 一条不落（5
   // 否则新增段静默漏进归档期望集合也无人察觉。
   assert.equal(expected.length, 52, `段数应为 52，实际 ${expected.length}`);
   for (const f of expected) assert.match(f, BASELINE_FILE_RE, `文件名应匹配归档形态：${f}`);
+});
+
+test("nightly-only artifact policy: only declared registry entries defer missing baseline", () => {
+  const confFileNames = ["shared-settings-namespace.json", "dsh-example.json"];
+  const faceRegistry = {
+    entries: [
+      { path: "stryker.conf.d/shared-settings-namespace.json", artifactPolicy: "nightly-only" },
+      { path: "stryker.conf.d/dsh-example.json" },
+    ],
+  };
+  assert.deepEqual(nightlyOnlyBaselineFiles({ confFileNames, faceRegistry }), [
+    "incremental-shared-settings-namespace.json",
+  ]);
+  const expected = ["incremental-example.json", "incremental-shared-settings-namespace.json"];
+  const reconciled = reconcileArchive({
+    expected,
+    overlaid: ["incremental-example.json"],
+    carriedForward: [],
+    optionalMissing: ["incremental-shared-settings-namespace.json"],
+  });
+  assert.deepEqual(reconciled.missing, []);
+  assert.deepEqual(reconciled.deferred, ["incremental-shared-settings-namespace.json"]);
+  const unguarded = reconcileArchive({
+    expected,
+    overlaid: ["incremental-example.json"],
+    carriedForward: [],
+  });
+  assert.deepEqual(unguarded.missing, ["incremental-shared-settings-namespace.json"]);
 });
 
 test("对账：既未覆盖也不在旧基线 → 报缺口（复现原缺陷的两段）", () => {

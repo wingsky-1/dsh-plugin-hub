@@ -406,6 +406,13 @@ function initBaselineRepo(confNames: string[]): string {
     writeFileSync(join(confDir, `dsh-${name}.json`), JSON.stringify({ mutate: ["src/**/*.ts"] }));
   }
   mkdirSync(join(tmp, "coverage", "mutation"), { recursive: true });
+  mkdirSync(join(tmp, "scripts", "data"), { recursive: true });
+  writeFileSync(
+    join(tmp, "scripts", "data", "ci-face-registry.json"),
+    JSON.stringify({
+      entries: confNames.map((name) => ({ path: `stryker.conf.d/dsh-${name}.json` })),
+    }),
+  );
   return tmp;
 }
 
