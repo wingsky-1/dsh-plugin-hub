@@ -342,13 +342,14 @@ curl -s http://127.0.0.1:3080/api/dsh-notifier/diagnostics
 配置由本插件自持，落在**包私有存储目录**的 `config.json`
 （`<DSH_HOME>/@wingsky-1/dsh-notifier/config.json`，默认 `~/.dsh`），经
 「设置 → 插件 → dsh-notifier」卡片或 `GET/PUT /api/dsh-notifier/config` 读写。
-升级时**装配期读一次旧位置，并顺手割接成新形态**：0.2.3 的官方 settings 命名空间
-`dsh-notifier` 优先——它**直接从宿主 settings 文档文件读**（provider 自报的 `documentPath`，
-取不到则按 `<DSH_HOME>/settings.yaml`、`settings.json` 兜底；`.yaml` / `.yml` 按 YAML 解析），
-因为 `describe()` 只列**已注册**的命名空间、而 0.2.4 起本插件不再注册它；更早的自建
-`dsh-notifier.json`（DSH_HOME 根目录，含此前迁移留下的 `.migrated.bak`）回退；读到的存量与
-当前 `config.json` 合并（存量覆盖文件，与旧写面同序），再把 8 个顶层渠道键搬进 `channels`
-的两条内置条目并**删除旧键**（见「每通道三个开关」）。此后只有 `config.json` 一个读写面。
+升级时**装配期读一次旧位置，并顺手割接成新形态**。正式历史来源只认
+`<DSH_HOME>/settings.yaml.imported` 与 `<DSH_HOME>/settings.yaml` 的 `dsh-notifier`
+分节：先合并 imported，再由当前 `settings.yaml` 覆盖；任一正式文件存在但读取、解析、
+分节校验或序列化失败，升级立即失败，不降级到其它猜路径。正式来源均无数据时，才依次使用
+settings `describe()` 的已注册分节与更早的自建 `dsh-notifier.json`（含
+`.migrated.bak`）。读到的存量与当前 `config.json` 合并（存量覆盖文件），再把 8 个顶层
+渠道键搬进 `channels` 的两条内置条目并**删除旧键**（见「每通道三个开关」）。此后只有
+`config.json` 一个读写面。
 
 **未知键语义（前向兼容，issue #470）**：dsh-notifier 对配置中**无法识别的键**
 采取「透传保留」策略——读取与写入口径一致，未知键不会被丢弃，也不会被校验
@@ -389,8 +390,9 @@ curl -s http://127.0.0.1:3080/api/dsh-notifier/diagnostics
 
 > **存储布局（#733 收敛）**：配置、通知历史、频道状态、SSE 序号与存储版本号统一放在
 > `DSH_HOME/@wingsky-1/dsh-notifier/` 下——`config.json` / `history.jsonl` /
-> `status.json` / `seq.json` / `version`（`version` 是升级链的刻度）。旧位置**只在启动
-> 迁移时读一次**：DSH_HOME 根目录的 `dsh-notifier-history.jsonl` /
+> `status.json` / `seq.json` / `version`（`version` 是升级链的刻度）。待升级步骤全部成功
+> 后才一次性写入最终版本；任一步失败都保留原版本，下次启动重跑，启动不会带着半完成迁移
+> 继续。旧位置**只在启动迁移时读一次**：DSH_HOME 根目录的 `dsh-notifier-history.jsonl` /
 > `dsh-notifier-status.json` / `notifier-seq.json` 搬完改名 `.migrated.bak`；配置的两代
 > 旧形态（0.2.3 的 settings 命名空间、更早的 `dsh-notifier.json`）只读不改名。
 > 路径全部感知 `DSH_HOME`（#510）：未设置时为 `~/.dsh`，设置后随隔离 home 走

@@ -17,6 +17,19 @@
     "$comment": "磁盘上有测试文件、但刻意不登记变异面的包（逐个写明理由）。登记在此的包仍受 `--check` 判据 ③（--min == runner glob 实际文件数）约束——「不登记变异面」不等于「不受门禁」；漏登且未在此声明的包一律判红。",
     "dsh-verify-isolated": "仅 test/e2e/smoke.test.ts（真实端口 + spawn 子进程的隔离环境冒烟），不进变异面；且 CI 的 ci-matrix 按「无变异配置」把该包排除出变异切片。源码覆盖断言（verify-dir-imports）尚未覆盖该包，属 #690 S6/S8 范围。"
   },
+  "$rootShared": {
+    "testRoot": "shared",
+    "testPattern": "test/**/*.mutation.test.ts",
+    "threshold": 60,
+    "segments": {
+      "settings-namespace": {
+        "mutate": ["shared/settings-namespace.js"],
+        "excludes": [],
+        "testFiles": ["shared/test/settings-namespace.mutation.test.ts"],
+        "comment": "Phase 5 P2：lan/mcp 共同运行时接缝；descriptor/source/onChange 与写入委托由独立 Vitest 行为判据直接覆盖。"
+      }
+    }
+  },
   "sharedDefaults": {
     "testRunner": "vitest",
     "concurrency": 16,
@@ -209,7 +222,8 @@
         "migrate": {
           "mutate": [
             "packages/dsh-lan-proxy/src/server/migrate/impl/file/index.ts",
-            "packages/dsh-lan-proxy/src/server/migrate/impl/layout/index.ts"
+            "packages/dsh-lan-proxy/src/server/migrate/impl/layout/index.ts",
+            "packages/dsh-lan-proxy/src/server/migrate/impl/legacy-settings/index.ts"
           ],
           "excludes": ["!packages/dsh-lan-proxy/src/client/**"],
           "testFiles": [
@@ -217,7 +231,8 @@
             "packages/dsh-lan-proxy/test/unit/unit-apply.test.ts",
             "packages/dsh-lan-proxy/test/unit/unit-ca.test.ts",
             "packages/dsh-lan-proxy/test/unit/unit-cacert.test.ts",
-            "packages/dsh-lan-proxy/test/unit/unit-host-trust.test.ts"
+            "packages/dsh-lan-proxy/test/unit/unit-host-trust.test.ts",
+            "packages/dsh-lan-proxy/test/unit/legacy-settings.test.ts"
           ],
           "comment": "#826 域归位：migrate 域（原根 migrate.ts，一次性 config.json 收编）；门面按 facade 口径进 coverageExcludes；测试按段 testFiles 清单跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
         },
@@ -270,6 +285,7 @@
           "testFiles": [
             "packages/dsh-lan-proxy/test/client-dom/settings-card.test.ts",
             "packages/dsh-lan-proxy/test/client-unit/ca-status.test.ts",
+            "packages/dsh-lan-proxy/test/client-unit/client-entry.test.ts",
             "packages/dsh-lan-proxy/test/client-unit/host-trust-alert.test.ts",
             "packages/dsh-lan-proxy/test/client-unit/host-trust-status.test.ts"
           ],
@@ -1107,7 +1123,7 @@
             "packages/dsh-worktree-sidebar/test/unit/inject-attach.test.ts",
             "packages/dsh-worktree-sidebar/test/unit/scope.test.ts",
             "packages/dsh-worktree-sidebar/test/unit/tools.test.ts",
-            "packages/dsh-worktree-sidebar/test/unit/inject-keep-mounted.test.ts",
+            "packages/dsh-worktree-sidebar/test/client-unit/inject-keep-mounted.test.ts",
             "packages/dsh-worktree-sidebar/test/integration/file-io-concurrency.test.ts"
           ],
           "comment": "#847：src/**/*.ts 单段覆盖宿主与客户端，无文件排除；通过 enableMutations 撤销共享默认的四类字面量排除，本包有效算子排除集合为空。incremental 基线随 observe 夜间全量班重建。"

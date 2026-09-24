@@ -4,7 +4,7 @@
  * 仅含装配逻辑，不含业务实现。业务实现在 constants/dom/servers/quick-add/
  * panel/float/session/settings-card 各模块中。
  *
- * 挂载浏览器端：注入样式 + 右上角浮窗（会话跟随）+ 管理面板 + 设置页插件卡。
+ * 挂载浏览器端：注入样式 + 右上角浮窗（会话跟随）+ 管理面板 + 插件行配置页。
  * 失败策略：只 warn 不抛，绝不让 GUI 启动失败。
  *
  * 客户端干净模块：只导出 apply/inject，契约外壳（IIFE/load/Symbol.toStringTag 装配）
@@ -12,7 +12,7 @@
  * 样式：独立 style.css（见同目录），build-client 的 .css text-loader 构建期内联为字符串。
  *
  * React 由 dsh web 的 factory require("react") 注入（build-client externals 路径）；
- * 设置页 `settings.plugin.item` 卡由宿主 React 渲染，故客户端必须提供 React 组件。
+ * 插件行配置页由宿主 React 渲染，故客户端必须提供 React 组件。
  */
 
 import STYLE from "./style.css";
@@ -34,9 +34,9 @@ import { refresh, switchTab, close, showPanel, disposePanel } from "./float/pane
 import { resetForm, beginEdit } from "./float/quick-add.ts";
 import { toggleFloat, mountFloat, renderFloatPanel } from "./float/float.ts";
 import { bindSession, rebindSession } from "./core/session.ts";
-import { SettingsCard } from "./settings/settings-card.tsx";
+import { SettingsCard, type SettingsCardProps } from "./settings/settings-card.tsx";
 import { bindLocale } from "../../../../shared/client/i18n.js";
-import { SSE_FRAMES } from "../shared/interface.ts";
+import { MCP_MANAGER_IDENTITY, SSE_FRAMES } from "../shared/interface.ts";
 import { zh, en, type McpLocaleKey } from "./locales.ts";
 // 显式类型导入，先把 @deepseek-ai/dsh-client-ui-slots 拉进模块解析图：上游发布物
 // lib/types/*.d.ts 相对导入保留 .ts 后缀，declare module 增强的模块名解析会判
@@ -44,6 +44,7 @@ import { zh, en, type McpLocaleKey } from "./locales.ts";
 
 // i18n（issue #348）：字典命名空间 + LocaleNamespaceMap 声明合并（官方 ui-jobs 同款）。
 const NS = "mcpManager";
+const ROW_CONFIG_SLOT = "plugins.row.config";
 
 import type { LocaleNamespaceMap as _LocaleNamespaceMap } from "@deepseek-ai/dsh-client-ui-slots";
 
@@ -92,22 +93,26 @@ export function apply(ctx: McpClientContext): void {
 
     const disposers: (() => void)[] = [];
 
-    // 设置页插件卡（settings.plugin.item）：rc.7 起由 list(id) 改为 keyed(key)，
-    // 需 id 与 key 双写且 key = 宿主端 installSettingsNamespace 注册的命名空间
-    //（dsh-mcp-manager），才会被 configurable 面板派发（对照 dsh-lan-proxy）。
-    const slots = ctx.get("slots");
-    if (slots && typeof slots.inject === "function") {
-      slots.inject("settings.plugin.item", () =>
-        slots.register!(
-          {
-            name: "settings.plugin.item",
-            id: "dsh-mcp-manager",
-            key: "dsh-mcp-manager",
-            order: 60,
-            locale: NS,
-          },
-          () => React.createElement(SettingsCard, null),
-        ),
+    // 页面只在 Host 服务 canonical settings namespace 时注册；namespace 撤下时，
+    // whileServed 会调用 register 回调返回的 disposer，移除 keyed slot 注册。
+    const slots = ctx.get("slots") as unknown as RowConfigSlotsService | undefined;
+    const configForms = ctx.get("configForms") as ConfigFormsService | undefined;
+    if (slots !== undefined && configForms !== undefined) {
+      ctx.effect(
+        () =>
+          configForms.whileServed([MCP_MANAGER_IDENTITY.settingsNamespace], () =>
+            slots.inject(ROW_CONFIG_SLOT, () =>
+              slots.register(
+                {
+                  name: ROW_CONFIG_SLOT,
+                  key: MCP_MANAGER_IDENTITY.rowConfigKey,
+                  locale: NS,
+                },
+                (props) => React.createElement(SettingsCard, props),
+              ),
+            ),
+          ),
+        "dsh-mcp-manager: row config page",
       );
     }
 
@@ -374,7 +379,21 @@ export function apply(ctx: McpClientContext): void {
   }
 }
 
+interface RowConfigSlotsService {
+  inject: (name: string, setup: () => () => void) => () => void;
+  register: (
+    item: Record<string, unknown>,
+    render: (props: SettingsCardProps) => unknown,
+  ) => () => void;
+}
+
+interface ConfigFormsService {
+  whileServed: (
+    namespaces: readonly string[],
+    register: (served: ReadonlySet<string>) => () => void,
+  ) => () => void;
+}
+
 // ---- 客户端契约：apply/inject 由 build-client 经 factory 装配（干净模块）----
-// 注入 sessions 服务以跟随当前会话（cwd 切换项目级 MCP）；slots 服务用于
-// 注册设置页插件卡（settings.plugin.item）；locale 服务用于字典注册与 t 装配。
-export const inject: string[] = ["sessions", "slots", "locale"];
+// sessions 跟随当前会话；slots/configForms 装配插件行配置页；locale 注册字典与 t。
+export const inject: string[] = ["sessions", "slots", "configForms", "locale"];

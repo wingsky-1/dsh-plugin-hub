@@ -228,8 +228,10 @@ test("覆盖对账：段名派生自 conf 文件名（与 ci-matrix / mutation-g
       "dsh-notifier-config-rest.json",
       "README.md",
       "dsh-lan-proxy-1.json",
+      "shared-settings-namespace.json",
+      "other-shared.json",
     ]),
-    ["dsh-lan-proxy-1", "dsh-notifier-config-rest"],
+    ["dsh-lan-proxy-1", "dsh-notifier-config-rest", "shared-settings-namespace"],
   );
 });
 

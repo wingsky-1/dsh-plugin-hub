@@ -11,11 +11,15 @@
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { IncomingMessage } from "node:http";
 import { afterEach, describe, expect, it } from "vitest";
 import type { Context } from "@deepseek-ai/cordis";
+import { callHandler, fakeRes } from "../helpers.ts";
 
 // S6-B2：apply 是组合根装配体（src/index.ts 内就地定义），留包根；纯符号改道域门面。
 const { apply } = await import("../../src/index.ts");
+const { ROUTES } = await import("../../src/server/api/interface.ts");
+const { MCP_MANAGER_IDENTITY } = await import("../../src/shared/interface.ts");
 const { saveDisabledTools } = await import("../../src/server/store/interface.ts");
 const { mountLedger, mountServer, releaseLifecycle } =
   await import("../../src/server/servers/lifecycle/interface.ts");
@@ -173,8 +177,32 @@ describe("apply 的 SSE broadcast 与 route disposer", () => {
 });
 
 describe("apply 的 settings 注入（uiUpdate 写入路径）", () => {
+  type CapturedRoute = {
+    path: string;
+    handler: (req: IncomingMessage, res: ReturnType<typeof fakeRes>) => unknown;
+  };
+
+  const configRequest = (method: string, body?: unknown): IncomingMessage =>
+    ({
+      method,
+      url: ROUTES.config,
+      socket: { remoteAddress: "127.0.0.1" },
+      headers: {
+        host: "localhost:3080",
+        origin: "http://localhost:3080",
+        "sec-fetch-site": "same-origin",
+      },
+      async *[Symbol.asyncIterator]() {
+        if (body !== undefined) {
+          yield Buffer.from(typeof body === "string" ? body : JSON.stringify(body));
+        }
+      },
+      on: () => {},
+    }) as unknown as IncomingMessage;
+
   async function applyWithSettings() {
     const dir = makeTempDir("dsh-mcp-manager-ui-");
+    const routes: CapturedRoute[] = [];
     const refs: {
       updateCalled: boolean;
       updateNs: unknown;
@@ -183,6 +211,12 @@ describe("apply 的 settings 注入（uiUpdate 写入路径）", () => {
     } = { updateCalled: false, updateNs: null, updatePatch: null, describeCalled: false };
 
     const ctx = baseCtx({
+      webServer: {
+        register: (route: CapturedRoute) => {
+          routes.push(route);
+          return () => {};
+        },
+      },
       inject: (keys: unknown, cb: (services: unknown) => void) => {
         if (Array.isArray(keys) && keys.includes("settings")) {
           cb({
@@ -199,7 +233,22 @@ describe("apply 的 settings 注入（uiUpdate 写入路径）", () => {
                   {
                     ns: "dsh-mcp-manager",
                     value: {
-                      ui: { position: "top-right", offset: { x: 8, y: 8, blankY: 40 } },
+                      ui: {
+                        position: "bottom-right",
+                        offset: { x: 91, y: 92, blankY: 93 },
+                        zIndexBase: 901,
+                      },
+                    },
+                    revision: 0,
+                  },
+                  {
+                    ns: "ui-dsh-mcp-manager",
+                    value: {
+                      ui: {
+                        position: "top-left",
+                        offset: { x: 12, y: 13, blankY: 14 },
+                        zIndexBase: 2345,
+                      },
                     },
                     revision: 0,
                   },
@@ -214,19 +263,44 @@ describe("apply 的 settings 注入（uiUpdate 写入路径）", () => {
     });
 
     await apply(ctx as unknown as Context, { enabled: true, storePath: join(dir, "mcp.json") });
-    return refs;
+    const configRoute = routes.find((route) => route.path === ROUTES.config);
+    if (configRoute === undefined) throw new Error("config route was not registered");
+    return { refs, configRoute };
   }
 
-  // 哑断言清理（#664 阶段 8）：补真实装配断言——settings 命名空间已接线
-  // （installSettingsNamespace 经 inject(["settings"]) 调 describe）；
-  // uiUpdate 是懒写入（路由调了才触发），此处不期望 update 被调。
-  it("settings 命名空间接线（inject settings 装配面）", async () => {
-    const refs = await applyWithSettings();
-    expect(refs.describeCalled).toBeTruthy();
+  it("从 host 的 canonical settings namespace 读取 UI 配置", async () => {
+    const { configRoute, refs } = await applyWithSettings();
+    expect(refs.describeCalled).toBe(true);
+    const response = await callHandler(configRoute, configRequest("GET"));
+    expect(response.payload).toEqual({
+      position: "top-left",
+      offsetX: 12,
+      offsetY: 13,
+      blankY: 14,
+      zIndexBase: 2345,
+    });
+  });
+
+  it("POST /config 只向 canonical settings namespace 写入", async () => {
+    const { configRoute, refs } = await applyWithSettings();
+    const response = await callHandler(
+      configRoute,
+      configRequest("POST", { position: "bottom-left", offsetX: 4 }),
+    );
+    expect(response.status).toBe(200);
+    expect(refs.updateCalled).toBe(true);
+    expect(refs.updateNs).toBe(MCP_MANAGER_IDENTITY.settingsNamespace);
+    expect(refs.updatePatch).toEqual({
+      ui: {
+        position: "bottom-left",
+        offset: { x: 4, y: 8, blankY: 40 },
+        zIndexBase: 10,
+      },
+    });
   });
 
   it("uiUpdate 懒写入：apply 时不触发", async () => {
-    const refs = await applyWithSettings();
+    const { refs } = await applyWithSettings();
     expect(refs.updateCalled).toBe(false);
   });
 });

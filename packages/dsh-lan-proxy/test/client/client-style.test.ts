@@ -24,6 +24,7 @@ interface StyleTestNode {
 /** vm 沙箱 factory 形态：require 按 spec 解析；模块 apply 接收未知上下文。 */
 type StyleTestFactory = (require: (spec: string) => unknown) => {
   apply: (ctx: unknown) => unknown;
+  inject: string[];
 };
 
 describe("客户端样式注入行为哨兵（issue #477 验收 3/8）", () => {
@@ -37,6 +38,8 @@ describe("客户端样式注入行为哨兵（issue #477 验收 3/8）", () => {
   let nodesAfterDispose = 0;
   let nodesAfterReapply = 0;
   let createdAfterReapply = 0;
+  let productInject: string[] = [];
+  let packageClientInject: string[] = [];
 
   beforeAll(() => {
     const clientCode = readFileSync(new URL("../../lib/client.js", import.meta.url), "utf8");
@@ -115,17 +118,25 @@ describe("客户端样式注入行为哨兵（issue #477 验收 3/8）", () => {
     vm.createContext(sandbox);
     vm.runInContext(clientCode, sandbox);
     factoryRegistered = loadedFactory !== null;
+    const packageJson = JSON.parse(
+      readFileSync(new URL("../../package.json", import.meta.url), "utf8"),
+    ) as { dsh: { client: { inject: string[] } } };
+    packageClientInject = [...packageJson.dsh.client.inject];
     const mod = (loadedFactory as StyleTestFactory)((spec: string) => {
-      if (spec === "react") return { createElement: () => ({}) };
+      if (spec === "react") {
+        return { createElement: (_type: unknown, props: unknown) => ({ props }) };
+      }
       throw new Error(`unexpected require: ${spec}`);
     });
     applyIsFunction = typeof mod.apply;
+    productInject = [...mod.inject];
 
     const disposers: Array<() => void> = [];
     const ctx = {
       // slots 必须在（缺失则 apply 提前 return）：inject 只注册不执行回调
       get(name: string): unknown {
         if (name === "slots") return { inject() {}, register() {} };
+        if (name === "configForms") return { whileServed: () => () => {} };
         if (name === "locale") return { register() {}, bind: () => () => "" };
         return undefined;
       },
@@ -191,5 +202,17 @@ describe("客户端样式注入行为哨兵（issue #477 验收 3/8）", () => {
 
   it("#477：重注入走新建节点", () => {
     expect(createdAfterReapply).toBe(2);
+  });
+
+  it("rc.7：产物 inject 精确声明当前服务依赖", () => {
+    expect(productInject).toEqual(["slots", "configForms", "locale", "remote"]);
+  });
+
+  it("rc.7：package client inject 精确声明当前 providers", () => {
+    expect(packageClientInject).toEqual([
+      "@deepseek-ai/dsh-client-connection",
+      "@deepseek-ai/dsh-client-ui-settings",
+      "@deepseek-ai/dsh-client-ui-slots",
+    ]);
   });
 });

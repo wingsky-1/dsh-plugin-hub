@@ -70,6 +70,7 @@ const {
   panelTopForAnchor,
   SERVER_NAME_PATTERN,
   DEFAULT_UI_CONFIG,
+  Config,
 } = await import("../../src/server/config/interface.ts");
 const {
   panelAnchorForPosition,
@@ -405,6 +406,33 @@ describe("normalizeServer", () => {
       toolCallTimeoutMs: bad,
     });
     expect(Number.isFinite(s.toolCallTimeoutMs)).toBe(true);
+  });
+});
+
+describe("Config schema 的可编辑边界", () => {
+  const internalRootKeys = [
+    "enabled",
+    "announceToAgent",
+    "storePath",
+    "announceCatalog",
+    "catalogMaxEntries",
+    "debug",
+  ] as const;
+
+  it("仅 ui child 标记 volatile 且未 disabled", () => {
+    const fields = Config.dict;
+    if (fields === undefined) throw new Error("object Config must expose schema fields via dict");
+    const volatileKeys = Object.entries(fields)
+      .filter(([, schema]) => schema.meta.volatile === true)
+      .map(([key]) => key);
+    expect(volatileKeys).toEqual(["ui"]);
+    expect(fields.ui?.meta.disabled).not.toBe(true);
+  });
+
+  it.each(internalRootKeys)("根级 %s 保持 disabled", (key) => {
+    const fields = Config.dict;
+    if (fields === undefined) throw new Error("object Config must expose schema fields via dict");
+    expect(fields[key]?.meta.disabled).toBe(true);
   });
 });
 

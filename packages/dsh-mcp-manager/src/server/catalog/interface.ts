@@ -53,6 +53,7 @@ export {
   isCatalogSource,
   resolveCatalogEntries,
   CATALOG_SOURCE_PLUGIN,
+  CATALOG_SOURCE_KIND,
   CATALOG_SECTION_NAME,
 } from "./impl/entries/index.ts";
 export type {

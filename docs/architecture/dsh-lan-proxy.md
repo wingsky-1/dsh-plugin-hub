@@ -259,11 +259,14 @@ marker（`:39`、`:52-53`）。已有 transport 不覆盖——为什么不用�
 `loopback-page`（回环页，或无 marker 但 `isLoopback` 为 true 的宿主独占页——那是正常态，
 `:86-89`）/ `compat-active` / `contract-drift` / `compat-off`。`contract-drift` 是 marker 在
 而宿主事实非 true（**含未知**，fail-closed，`:91-92`）。告警经独立出口 `hostTrustAlert`
-（`:109-124`）：设置卡片挂在 `settings.plugin.item` 座位上，而上游把非回环页设置面降级为
-memory scope 时官方插件列表为空、卡片根本不挂载（`:98-104` 注释：同一枚 isLoopback 信号既
-决定卡片是否挂载、又决定判定结果，越需要判定的时刻承载面越不在场）——devtools 控制台是
-故障态下唯一可见面，客户端 apply 最前面告警一次（`client/index.ts:71`），宿主横幅同时报告
-配置开关（`apply.ts:295-303`，OFF 文案含 ssh -L 替代建议），不能只靠卡片呈现故障。
+（`:109-124`）：在目标 dsh `0.1.7-rc.1` 上，设置卡片由
+`configForms.whileServed(["ui-dsh-lan-proxy"])` 门控并注册到 keyed
+`plugins.row.config`；canonical row id / settings namespace 是 `ui-dsh-lan-proxy`，row key
+是 `@wingsky-1/dsh-lan-proxy#ui-dsh-lan-proxy`。上游把非回环页设置面降级为 memory scope
+时，namespace 不存在，行与卡片根本不挂载（`:98-104` 注释：同一枚 isLoopback 信号既决定
+卡片是否挂载、又决定判定结果，越需要判定的时刻承载面越不在场）——devtools 控制台是故障态
+下唯一可见面，客户端 apply 最前面告警一次（`client/index.ts:71`），宿主横幅同时报告配置
+开关（`apply.ts:295-303`，OFF 文案含 ssh -L 替代建议），不能只靠卡片呈现故障。
 
 证据：`host-trust/impl/injection.ts:36-56`（脚本正文）、`client/host-trust-status.ts:84-93`
 （判定）、`:109-124`（告警文案）、`client/index.ts:71`。

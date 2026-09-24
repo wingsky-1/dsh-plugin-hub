@@ -19,6 +19,20 @@
 // runner 面（test/**/*.test.ts，与 vitest include 同口径）：`--min` 与登记完整性判据 ③ 的唯一口径。
 export const RUN_TESTS_PATTERN = "test/**/*.test.ts";
 
+/** 根 shared 变异面是独立 surface，不伪装成 packages/shared。 */
+export const ROOT_SHARED_SURFACE = "$rootShared";
+export const ROOT_SHARED_TEST_ROOT = "shared";
+export const ROOT_SHARED_TEST_PATTERN = "test/**/*.mutation.test.ts";
+
+/** packages 登记 + 可选 root-shared surface；共享给形状、算子与文件面判据。 */
+function mutationSurfaces(topology) {
+  const surfaces = Object.entries(topology?.packages ?? {});
+  if (topology?.[ROOT_SHARED_SURFACE] !== undefined) {
+    surfaces.push([ROOT_SHARED_SURFACE, topology[ROOT_SHARED_SURFACE]]);
+  }
+  return surfaces;
+}
+
 /**
  * 覆盖排除面（包级 `testLayers.coverageExcludes`）的形状与取值域。
  *
@@ -99,9 +113,9 @@ function mutationNameProblems(values, label) {
 export function mutationPolicyProblems(topology) {
   const defaults = topology?.sharedDefaults?.excludedMutations;
   const problems = mutationNameProblems(defaults, "sharedDefaults.excludedMutations");
-  for (const [pkgName, pkgDef] of Object.entries(topology?.packages ?? {})) {
-    if (pkgDef === null || typeof pkgDef !== "object") continue;
-    problems.push(...packageMutationPolicyProblems(pkgName, pkgDef, defaults));
+  for (const [surfaceName, surfaceDef] of mutationSurfaces(topology)) {
+    if (surfaceDef === null || typeof surfaceDef !== "object") continue;
+    problems.push(...packageMutationPolicyProblems(surfaceName, surfaceDef, defaults));
   }
   return problems;
 }
@@ -135,17 +149,20 @@ export function mutationPolicyRatchetProblems(baseTopology, headTopology) {
   const shape = [...mutationPolicyProblems(baseTopology), ...mutationPolicyProblems(headTopology)];
   if (shape.length > 0) return shape.map((p) => "算子排除棘轮形状错误：" + p);
   const problems = [];
-  for (const [pkgName, pkgDef] of Object.entries(baseTopology.packages ?? {})) {
-    const headPkg = headTopology.packages?.[pkgName];
-    if (headPkg === undefined) continue; // 整包退出由文件面棘轮负责。
-    const base = new Set(effectiveExcludedMutations(baseTopology.sharedDefaults, pkgDef));
-    const added = effectiveExcludedMutations(headTopology.sharedDefaults, headPkg).filter(
+  for (const [surfaceName, baseDef] of mutationSurfaces(baseTopology)) {
+    const headDef =
+      surfaceName === ROOT_SHARED_SURFACE
+        ? headTopology?.[ROOT_SHARED_SURFACE]
+        : headTopology?.packages?.[surfaceName];
+    if (headDef === undefined) continue; // 整 surface 退出由文件面棘轮负责。
+    const base = new Set(effectiveExcludedMutations(baseTopology.sharedDefaults, baseDef));
+    const added = effectiveExcludedMutations(headTopology.sharedDefaults, headDef).filter(
       (name) => !base.has(name),
     );
     if (added.length > 0)
       problems.push(
         "[" +
-          pkgName +
+          surfaceName +
           "] 有效算子排除集合相对基准增加：" +
           added.join(", ") +
           "（E_head 必须是 E_base 的子集）",
@@ -329,6 +346,52 @@ export function packageRegistrationProblems(topology) {
   return problems;
 }
 
+/** root-shared 形状：固定测试根/模式与 0–100 阈值，段形状沿用 package 的严格口径。 */
+export function rootSharedEntryProblems(rootShared) {
+  if (rootShared === null || typeof rootShared !== "object" || Array.isArray(rootShared)) {
+    return [
+      `${ROOT_SHARED_SURFACE} 必须是对象（当前 ${JSON.stringify(rootShared)}）——形状不对时没有可判定的 root-shared 变异面，fail-closed`,
+    ];
+  }
+  const problems = [];
+  if (rootShared.testRoot !== ROOT_SHARED_TEST_ROOT) {
+    problems.push(
+      `${ROOT_SHARED_SURFACE}.testRoot 必须是 "${ROOT_SHARED_TEST_ROOT}"（当前 ${JSON.stringify(rootShared.testRoot)}）`,
+    );
+  }
+  if (rootShared.testPattern !== ROOT_SHARED_TEST_PATTERN) {
+    problems.push(
+      `${ROOT_SHARED_SURFACE}.testPattern 必须是 "${ROOT_SHARED_TEST_PATTERN}"（当前 ${JSON.stringify(rootShared.testPattern)}）——` +
+        "node:test 标准入口不得混入 Vitest 变异面",
+    );
+  }
+  if (
+    typeof rootShared.threshold !== "number" ||
+    !Number.isFinite(rootShared.threshold) ||
+    rootShared.threshold < 0 ||
+    rootShared.threshold > 100
+  ) {
+    problems.push(
+      `${ROOT_SHARED_SURFACE}.threshold 必须是 0–100 的有限数字（当前 ${JSON.stringify(rootShared.threshold)}）`,
+    );
+  }
+  if (rootShared.testLayers?.coverageExcludes !== undefined) {
+    problems.push(`${ROOT_SHARED_SURFACE} 不支持 coverageExcludes；只允许段级 excludes 精确登记`);
+  }
+  for (const problem of packageEntryProblems(rootShared)) {
+    problems.push(problem.replaceAll("包登记", `${ROOT_SHARED_SURFACE} 登记`));
+  }
+  return problems;
+}
+
+/** 可选 root-shared surface 的全拓扑形状判词。 */
+export function rootSharedRegistrationProblems(topology) {
+  if (topology?.[ROOT_SHARED_SURFACE] === undefined) return [];
+  return rootSharedEntryProblems(topology[ROOT_SHARED_SURFACE]).map(
+    (problem) => `[${ROOT_SHARED_SURFACE}] ${problem}`,
+  );
+}
+
 /**
  * 取一个包在**变异面登记**上的三态（#773 批 B / #710 §2-2）：
  *
@@ -453,32 +516,32 @@ export function mutationFaceRatchetProblems({
   const problems = [];
   const used = new Set();
   const headFaces = new Map();
-  for (const [pkgName, pkgDef] of Object.entries(headTopology?.packages ?? {})) {
-    headFaces.set(pkgName, faceAndCandidates(pkgDef, expand).face);
+  for (const [surfaceName, surfaceDef] of mutationSurfaces(headTopology)) {
+    headFaces.set(surfaceName, faceAndCandidates(surfaceDef, expand).face);
   }
   let packagesCompared = 0;
   let filesCompared = 0;
-  for (const [pkgName, pkgDef] of Object.entries(baseTopology?.packages ?? {})) {
-    const base = faceAndCandidates(pkgDef, expand);
+  for (const [surfaceName, surfaceDef] of mutationSurfaces(baseTopology)) {
+    const base = faceAndCandidates(surfaceDef, expand);
     packagesCompared += 1;
     filesCompared += base.candidates.size;
-    const headFace = headFaces.get(pkgName) ?? new Set();
-    const wholePackageKey = `${pkgName}:*`;
+    const headFace = headFaces.get(surfaceName) ?? new Set();
+    const wholeSurfaceKey = `${surfaceName}:*`;
     for (const file of [...base.face].sort()) {
       if (headFace.has(file)) continue;
-      if (exemptions.has(wholePackageKey)) {
-        used.add(wholePackageKey);
+      if (exemptions.has(wholeSurfaceKey)) {
+        used.add(wholeSurfaceKey);
         continue;
       }
-      const key = `${pkgName}:${file}`;
+      const key = `${surfaceName}:${file}`;
       if (exemptions.has(key)) {
         used.add(key);
         continue;
       }
       problems.push(
-        `[${pkgName}] 变异面并集相对基准收缩：${file} 在基准的变异面内，本分支却不在了` +
-          "——段之间挪动合法，挪进任何段的 excludes / 包级 coverageExcludes 非法；" +
-          "文件在本分支已真正删除才算正当收缩（判据⑦ 包级并集棘轮）",
+        `[${surfaceName}] 变异面并集相对基准收缩：${file} 在基准的变异面内，本分支却不在了` +
+          "——段之间挪动合法，挪进任何段的 excludes / coverageExcludes 非法；" +
+          "文件在本分支已真正删除才算正当收缩（判据⑦ surface 并集棘轮）",
       );
     }
   }

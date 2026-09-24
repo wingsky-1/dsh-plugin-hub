@@ -1,8 +1,9 @@
 /**
  * dsh-lan-proxy — 设置页插件卡（SettingsCard）。
  *
- * 行为：在「设置 → 插件」面板渲染 dsh-lan-proxy 配置卡片（settings.plugin.item
- * 插槽，idle 插件同款风格）：
+ * 行为：在插件管理页的 dsh-lan-proxy 行详情中渲染配置卡片：
+ * - summary 只返回内联摘要，不加载 config/health；
+ * - page 在非-li wrapper 中直接返回完整配置体。
  * - 启用开关 / LAN 端口 / HTTPS 开关与端口 / 证书与私钥文件 / CA 公钥文件与下载直链 / 启动横幅开关；
  * - 点「保存」经 loopback HTTP 配置路由提交增量 patch，宿主端转写官方 settings
  *   命名空间（scope.update/replace），scope.watch 触发转发器热更新（保存即热
@@ -136,11 +137,14 @@ function compressStatusLine(c: unknown): string | null {
 }
 
 /**
- * settings.plugin.item 插槽的 props。形参本身不可写成可选（`props?`）：可选参数会让
- * 组件 props 泛型带上 undefined，React.createElement 的类型校验随之失配（TS2769），
- * 只能靠宽化断言消音。
+ * row entry 的 owner props 与卡片入参。view 决定摘要/页面分支；form 由 0.1.7-rc.1
+ * Plugin Manager 传入，当前实现按任务边界保留既有 HTTP 配置写面。
  */
 export interface SettingsCardProps {
+  /** Plugin Manager 请求的 row entry 视图。 */
+  readonly view: "summary" | "page";
+  /** Plugin Manager 提供的官方配置表单面；当前 HTTP 写面暂不消费。 */
+  readonly form?: unknown;
   /** 调用方注入的宿主端默认值快照。 */
   defaults?: LanProxySettingsView;
   /** host trust 信号读取器（issue #856）；缺省时只读页面侧信号（无 ctx.remote）。 */
@@ -148,7 +152,7 @@ export interface SettingsCardProps {
 }
 
 /**
- * 设置面板插件项：启用 / LAN 端口 / HTTPS / 证书文件 / 启动横幅。
+ * 插件行配置页：启用 / LAN 端口 / HTTPS / 证书文件 / 启动横幅。
  * 改动只在点「保存」后生效：经 loopback HTTP 路由写入官方 settings 存储，
  * 宿主 scope.watch 立即重建转发器。
  */
@@ -657,7 +661,7 @@ function StatusFoot(props: {
     </React.Fragment>
   );
 }
-export function SettingsCard(props: SettingsCardProps) {
+function SettingsCardPage(props: SettingsCardProps) {
   const DEFAULTS = props.defaults || CLIENT_DEFAULTS;
   const useState = React.useState;
   const useEffect = React.useEffect;
@@ -677,9 +681,6 @@ export function SettingsCard(props: SettingsCardProps) {
     clearFeedbackTimer();
     savedDraft[1](msg ? { msg: msg, err: err === true } : null);
   };
-  const openState = useState(false);
-  const open = openState[0];
-  const setOpen = openState[1];
   // HTTP 压缩运行快照（issue #33 子项 3）：GET 快照附带，底部轻量状态行展示。
   const compressDraft = useState(null as CompressSnapshotView | null);
   const compress = compressDraft[0];
@@ -764,7 +765,11 @@ export function SettingsCard(props: SettingsCardProps) {
   }, []);
 
   if (!settings) {
-    return <li className="lp-set-card">{t("settingsLoading")}</li>;
+    return (
+      <div className="lp-set-card" data-lan-page>
+        {t("settingsLoading")}
+      </div>
+    );
   }
 
   // 收窄后的别名：save/patch 是函数声明（提升到作用域顶部），tsc 不会把上面的 null
@@ -951,47 +956,32 @@ export function SettingsCard(props: SettingsCardProps) {
     caDispatch(setCaConfirm, runCaAction, clearTripleToSelfSigned, action);
   };
   return (
-    <li className={"lp-set-card" + (open ? " lp-set-cardOpen" : "")}>
-      <button
-        type="button"
-        className="lp-set-head"
-        aria-expanded={open}
-        onClick={() => setOpen(!open)}
-      >
-        <span className="lp-set-headText">
-          <span className="lp-set-name">{t("settingsName")}</span>
-          <span className="lp-set-description">{t("settingsDescription")}</span>
-        </span>
-        <svg
-          className={"lp-set-chevron" + (open ? " lp-set-chevronOpen" : "")}
-          width={14}
-          height={14}
-          viewBox="0 0 14 14"
-          fill="none"
-          xmlns="http://www.w3.org/2000/svg"
-          aria-hidden="true"
-        >
-          <path
-            d="M11.8486 5.5L11.4238 5.92383L8.69727 8.65137C8.44157 8.90706 8.21562 9.13382 8.01172 9.29785C7.79912 9.46883 7.55595 9.61756 7.25 9.66602C7.08435 9.69222 6.91565 9.69222 6.75 9.66602C6.44405 9.61756 6.20088 9.46883 5.98828 9.29785C5.78438 9.13382 5.55843 8.90706 5.30273 8.65137L2.57617 5.92383L2.15137 5.5L3 4.65137L3.42383 5.07617L6.15137 7.80273C6.42595 8.07732 6.59876 8.24849 6.74023 8.3623C6.87291 8.46904 6.92272 8.47813 6.9375 8.48047C6.97895 8.48703 7.02105 8.48703 7.0625 8.48047C7.07728 8.47813 7.12709 8.46904 7.25977 8.3623C7.40124 8.24849 7.57405 8.07732 7.84863 7.80273L10.5762 5.07617L11 4.65137L11.8486 5.5Z"
-            fill="currentColor"
-          />
-        </svg>
-      </button>
-      {open ? (
-        <div className="lp-set-body">
-          <BasicFields settings={settingsValue} patch={patch} />
-          <CaFields view={caView} onAction={onCaAction} />
-          <ExtraFields settings={settingsValue} patch={patch} />
-          <StatusFoot
-            compressLine={compressLine}
-            hostTrustStatus={hostTrustStatus}
-            hostFacts={hostFacts}
-            saved={saved}
-            saving={saving}
-            save={save}
-          />
-        </div>
-      ) : null}
-    </li>
+    <div className="lp-set-card" data-lan-page>
+      <div className="lp-set-body">
+        <BasicFields settings={settingsValue} patch={patch} />
+        <CaFields view={caView} onAction={onCaAction} />
+        <ExtraFields settings={settingsValue} patch={patch} />
+        <StatusFoot
+          compressLine={compressLine}
+          hostTrustStatus={hostTrustStatus}
+          hostFacts={hostFacts}
+          saved={saved}
+          saving={saving}
+          save={save}
+        />
+      </div>
+    </div>
   );
+}
+
+/** 0.1.7-rc.1 row entry：summary 不挂载有副作用的页面表单，page 才加载完整配置。 */
+export function SettingsCard(props: SettingsCardProps): React.ReactElement {
+  if (props.view === "summary") {
+    return (
+      <span className="lp-set-summary" data-lan-summary>
+        {t("settingsDescription")}
+      </span>
+    );
+  }
+  return <SettingsCardPage {...props} />;
 }

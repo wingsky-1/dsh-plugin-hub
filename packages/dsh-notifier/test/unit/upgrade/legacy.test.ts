@@ -1,30 +1,25 @@
 /**
- * dsh-notifier upgrade 域 legacy 块 —— 存量设置的读取（V1：宿主 settings 文档 / 服务面，V0：自建 JSON 文件）。
- *
- * 判据面：这一块决定升级后用户看到的是**哪一份设置**。取错顺序（V0 盖 V1）或漏做语义转换的表现都是
- * 「升级后设置回到了更早的样子」，而磁盘上一切正常、没有任何报错。故这里逐条锁优先级与转换规则。
- *
- * 一条专门的判据面：**未注册命名空间也要读得到**（`describe()` 只列已注册的，而本插件不再注册它）。
+ * dsh-notifier upgrade 域 legacy reader：正式历史来源是 DSH home 的 settings.yaml 与
+ * settings.yaml.imported；describe 与 V0 JSON 只作低优先级兜底。
  */
-import { existsSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { legacyFile } from "../../../src/server/shared/interface.ts";
+import {
+  CONFIG_FILE_NAME,
+  legacyFile,
+  notifierFile,
+} from "../../../src/server/shared/interface.ts";
 import { readLegacySettings } from "../../../src/server/upgrade/impl/legacy/index.ts";
+import { migrateConfigShape } from "../../../src/server/upgrade/impl/steps/config-shape.ts";
 import type { LegacySettingsFace } from "../../../src/server/upgrade/impl/legacy/type.ts";
-import { tempDshHome, wire } from "../../helpers.ts";
+import { tempDshHome } from "../../helpers.ts";
 
-/** 本插件 0.2.3 在官方 settings 服务里用的命名空间。 */
+/** 本插件 0.2.3 在旧官方 settings 文档里的命名空间。 */
 const NS = "dsh-notifier";
 
-/**
- * 假描述符：本域只读 `ns` 与 `user` 两项，官方描述符的其余字段（schema / revision / applies）
- * 与判据无关，也就没必要在这里拼出来——拼一份假的反倒成了第二个事实源。
- */
 type FakeDescriptor = { ns: string; user?: unknown };
-
-/** settings 的描述选项：只关心脱敏开关，其余键不参与判据。 */
 type FakeDescribeOptions = { redactSecrets?: boolean };
 
 let home: { readonly dir: string; dispose: () => void };
@@ -37,8 +32,7 @@ afterEach(() => {
   home.dispose();
 });
 
-/** 假 settings 读面：`describe` 给固定条目（或按需抛错），`documentPath` 指向宿主文档
- *（缺省 = 不存在的文件：文档环落空，存量只走服务面/V0 环）。 */
+/** 假 settings 读面；documentPath 特意保留，用来证明 reader 不把它当前文档当历史 map。 */
 function makeSettings(
   entries: readonly FakeDescriptor[],
   throws = false,
@@ -53,40 +47,165 @@ function makeSettings(
   };
 }
 
-/** 写一份宿主 settings 文档（默认 YAML 形态，与官方文件型 provider 一致）。 */
-function writeDocument(text: string, name = "settings.yaml"): string {
+function writeSettingsDocument(text: string, name = "settings.yaml"): string {
   const path = join(home.dir, name);
   writeFileSync(path, text, "utf8");
   return path;
 }
 
-/** 写一份 V0 配置文件（旧的自建 JSON）。 */
 function writeLegacyFile(name: string, body: unknown): void {
   writeFileSync(legacyFile(name), typeof body === "string" ? body : JSON.stringify(body), "utf8");
 }
 
-describe("读取优先级：V1 优先，V0 兜底", () => {
-  it("settings 里有本插件命名空间时无视 V0 文件（反过来取会让设置回到更早的样子）", () => {
-    writeLegacyFile("dsh-notifier.json", { notifyAsk: true });
+describe("正式 legacy settings 来源", () => {
+  it("只有 settings.yaml.imported 时也能读到旧 notifier 分节", () => {
+    writeSettingsDocument(
+      "dsh-notifier:\n  notifyAsk: false\n  notifyTaskDone: true\n",
+      "settings.yaml.imported",
+    );
+
+    expect(readLegacySettings(makeSettings([]))).toEqual({
+      notifyAsk: false,
+      notifyTaskDone: true,
+    });
+  });
+
+  it("settings.yaml 高于 imported；普通对象递归合并，数组与标量整体替换", () => {
+    writeSettingsDocument(
+      `dsh-notifier:
+  notifyTaskDone: true
+  nested:
+    importedOnly: 7
+    shared: imported
+    items:
+      - imported
+  scalarConflict: imported
+`,
+      "settings.yaml.imported",
+    );
+    writeSettingsDocument(
+      `dsh-notifier:
+  notifyTaskDone: false
+  nested:
+    currentOnly: 8
+    shared: current
+    items:
+      - current
+  scalarConflict: current
+`,
+    );
+
+    expect(readLegacySettings(makeSettings([]))).toEqual({
+      notifyTaskDone: false,
+      nested: {
+        currentOnly: 8,
+        importedOnly: 7,
+        shared: "current",
+        items: ["current"],
+      },
+      scalarConflict: "current",
+    });
+  });
+
+  it("正式双文件整体高于 describe 与 V0 JSON", () => {
+    writeSettingsDocument("dsh-notifier:\n  notifyAsk: false\n  customKey: official\n");
+    writeLegacyFile("dsh-notifier.json", { notifyAsk: true, customKey: "v0" });
+    const settings = makeSettings([{ ns: NS, user: { notifyAsk: true, customKey: "describe" } }]);
+
+    expect(readLegacySettings(settings)).toEqual({ notifyAsk: false, customKey: "official" });
+  });
+
+  it("documentPath 指向当前 profile 且含 notifier 分节时不把该分节当 legacy map", () => {
+    const profilePath = writeSettingsDocument(
+      "dsh-notifier:\n  notifyAsk: false\n",
+      "cordis.patch.yml",
+    );
+
+    expect(readLegacySettings(makeSettings([], false, profilePath))).toEqual({});
+  });
+
+  it.each(["settings.yaml", "settings.yaml.imported"])("%s 存在但 YAML 损坏时明确失败", (name) => {
+    writeSettingsDocument("dsh-notifier:\n\tnotifyAsk: false\n", name);
+
+    expect(() => readLegacySettings(makeSettings([]))).toThrow(
+      new RegExp(name.replace(".", "\\.")),
+    );
+  });
+
+  it.each(["settings.yaml", "settings.yaml.imported"])("%s 存在但不可读时明确失败", (name) => {
+    mkdirSync(join(home.dir, name));
+
+    expect(() => readLegacySettings(makeSettings([]))).toThrow(
+      new RegExp(name.replace(".", "\\.")),
+    );
+  });
+
+  it.each([
+    ["just a scalar\n", /顶层不是普通对象/],
+    ["dsh-notifier: scalar\n", /分节不是普通对象/],
+    ["dsh-notifier: &self\n  notifyAsk: false\n  self: *self\n", /分节无法序列化/],
+  ])("正式来源内容无效时明确失败：%s", (text, error) => {
+    writeSettingsDocument(text);
+
+    expect(() => readLegacySettings(makeSettings([]))).toThrow(error);
+  });
+
+  it("重复读取正式来源不改写源文件", () => {
+    const path = writeSettingsDocument(
+      "dsh-notifier:\n  notifyAsk: false\n",
+      "settings.yaml.imported",
+    );
+    const before = readFileSync(path, "utf8");
+
+    const first = readLegacySettings(makeSettings([]));
+    const second = readLegacySettings(makeSettings([]));
+
+    expect(first).toEqual({ notifyAsk: false });
+    expect(second).toEqual(first);
+    expect(readFileSync(path, "utf8")).toBe(before);
+  });
+
+  it("重复运行配置形态割接得到逐字相同的结果", () => {
+    writeSettingsDocument(
+      "dsh-notifier:\n  notifyAsk: true\n  notifyTaskDone: false\n",
+      "settings.yaml.imported",
+    );
+    writeSettingsDocument("dsh-notifier:\n  notifyAsk: false\n");
+    const configFile = notifierFile(CONFIG_FILE_NAME);
+
+    migrateConfigShape(makeSettings([]));
+    const first = readFileSync(configFile, "utf8");
+    migrateConfigShape(makeSettings([]));
+    const second = readFileSync(configFile, "utf8");
+
+    expect(JSON.parse(first)).toMatchObject({ notifyAsk: false, notifyTaskDone: false });
+    expect(second).toBe(first);
+  });
+});
+
+describe("低优先级兜底：describe → V0 JSON", () => {
+  it("正式来源没有 notifier 分节时使用 describe", () => {
+    writeSettingsDocument("other-plugin:\n  value: 1\n");
     const settings = makeSettings([{ ns: NS, user: { notifyAsk: false } }]);
+
     expect(readLegacySettings(settings)).toEqual({ notifyAsk: false });
   });
 
-  it("settings 里没有本插件命名空间时回退 V0 文件", () => {
+  it("describe 高于 V0 JSON", () => {
     writeLegacyFile("dsh-notifier.json", { notifyAsk: true });
-    const settings = makeSettings([{ ns: "other-plugin", user: { notifyAsk: false } }]);
-    expect(readLegacySettings(settings)).toEqual({ notifyAsk: true });
+    const settings = makeSettings([{ ns: NS, user: { notifyAsk: false } }]);
+
+    expect(readLegacySettings(settings)).toEqual({ notifyAsk: false });
   });
 
-  it("V1 条目存在但 user 不是对象时同样回退 V0 文件（脏条目不能把存量配置吃掉）", () => {
+  it("describe 条目存在但 user 不是普通对象时回退 V0 JSON", () => {
     writeLegacyFile("dsh-notifier.json", { notifyAsk: true });
-    // 数组只是脏的一种：标量（typeof 不是 object）与 null（typeof 是 object 但取键会抛）都要挡住。
-    for (const user of [["notifyAsk"], "notifyAsk", 42, wire<FakeDescriptor["user"]>(null)]) {
+    for (const user of [["notifyAsk"], "notifyAsk", 42, null]) {
       expect(readLegacySettings(makeSettings([{ ns: NS, user }]))).toEqual({ notifyAsk: true });
     }
   });
 
-  it("读服务面时要求脱敏（脱敏开关只管服务面出口；文档那条路拿到的本来就是原文）", () => {
+  it("读 describe 时要求脱敏", () => {
     const calls: Array<FakeDescribeOptions | undefined> = [];
     const settings: LegacySettingsFace = {
       describe: (options) => {
@@ -95,7 +214,6 @@ describe("读取优先级：V1 优先，V0 兜底", () => {
           LegacySettingsFace["describe"]
         >;
       },
-      // 不存在的文件：文档环落空，本用例只走服务面（脱敏开关的断点在服务面出口）。
       documentPath: join(home.dir, "missing-settings.yaml"),
     };
 
@@ -103,193 +221,91 @@ describe("读取优先级：V1 优先，V0 兜底", () => {
     expect(calls).toEqual([{ redactSecrets: true }]);
   });
 
-  it("settings 调用抛错时回退 V0 文件（服务在但拒绝这次调用，不该拦住插件启动）", () => {
+  it("describe 调用抛错时回退 V0 JSON", () => {
     writeLegacyFile("dsh-notifier.json", { notifyAsk: true });
+
     expect(readLegacySettings(makeSettings([], true))).toEqual({ notifyAsk: true });
   });
 
-  it("V0 的第二个候选名在 json 缺失时生效（0.2.3 迁移把 json 改名成 .migrated.bak，内容逐字相同）", () => {
+  it("不读取 documentPath getter，非文件 provider 仍可由 describe 兜底", () => {
+    const settings: LegacySettingsFace = {
+      describe: () =>
+        [{ ns: NS, user: { notifyAsk: false } }] as unknown as ReturnType<
+          LegacySettingsFace["describe"]
+        >,
+      get documentPath(): string {
+        throw new Error("documentPath 不得被读取");
+      },
+    };
+
+    expect(readLegacySettings(settings)).toEqual({ notifyAsk: false });
+  });
+
+  it("V0 的第二个候选名在 json 缺失时生效", () => {
     writeLegacyFile("dsh-notifier.json.migrated.bak", { notifyAsk: false });
+
     expect(readLegacySettings(makeSettings([]))).toEqual({ notifyAsk: false });
   });
 
-  it("V0 文件损坏时给空对象并原地保留文件（用户可能还想手工看看里面是什么）", () => {
+  it("V0 JSON 损坏时明确失败并保留原文件", () => {
     writeLegacyFile("dsh-notifier.json", "{ 这不是 JSON");
-    expect(readLegacySettings(makeSettings([]))).toEqual({});
+
+    expect(() => readLegacySettings(makeSettings([]))).toThrow(/JSON 解析失败/);
     expect(existsSync(legacyFile("dsh-notifier.json"))).toBe(true);
   });
 
-  // 合法 JSON 但不是对象：数组/标量都能被 Object.keys 读出一堆下标键，认下来就等于往配置里
-  // 灌进用户从没设过的键——所以两个候选名都要按「解释不了」处理。
-  it("V0 文件是合法 JSON 但不是对象时两个候选都不认（数组/标量会读出一堆假键）", () => {
+  it("V0 JSON 顶层不是普通对象时明确失败", () => {
     writeLegacyFile("dsh-notifier.json", [1, 2]);
-    writeLegacyFile("dsh-notifier.json.migrated.bak", '"这不是对象"');
 
-    expect(readLegacySettings(makeSettings([]))).toEqual({});
+    expect(() => readLegacySettings(makeSettings([]))).toThrow(/顶层不是普通对象/);
   });
 
-  it("两份来源都没有时给空对象（它就是「没有可迁的东西」的答案）", () => {
+  it("所有来源都不存在时返回空对象", () => {
     expect(readLegacySettings(makeSettings([]))).toEqual({});
   });
 });
 
-describe("宿主文档文件：未注册命名空间的存量也读得到", () => {
-  it("describe 里没有本插件命名空间（新架构不注册它）时，文档里的分节照样读出来", () => {
-    const doc = writeDocument("dsh-notifier:\n  notifyTaskDone: false\n");
-    // 这正是本块存在的理由：服务面只列已注册的命名空间，文档那条路必须自己把存量读出来。
-    expect(readLegacySettings(makeSettings([], false, doc))).toEqual({ notifyTaskDone: false });
-  });
-
-  it("文档是 JSON 时同样能读（官方 provider 支持 .json 扩展名）", () => {
-    const doc = writeDocument(`{"${NS}":{"notifyAsk":true}}`, "settings.json");
-    expect(readLegacySettings(makeSettings([], false, doc))).toEqual({ notifyAsk: true });
-  });
-
-  it("`.json` 判定按扩展名而不是「碰巧 YAML 也读得动」", () => {
-    // 重复键：YAML 解析器直接抛错，`JSON.parse` 取后者——只有真的走了 JSON 那条分支才读得出来。
-    const doc = writeDocument(
-      `{"${NS}":{"notifyAsk":true},"${NS}":{"notifyAsk":false}}`,
-      "settings.json",
-    );
-    expect(readLegacySettings(makeSettings([], false, doc))).toEqual({ notifyAsk: false });
-  });
-
-  it("provider 取文档路径就抛错时按没有文件处理（与服务面同形的失败处理）", () => {
-    const settings: LegacySettingsFace = {
-      describe: () =>
-        [{ ns: NS, user: { notifyAsk: true } }] as unknown as ReturnType<
-          LegacySettingsFace["describe"]
-        >,
-      get documentPath(): string {
-        throw new Error("provider 取文档路径失败");
-      },
-    };
-    expect(readLegacySettings(settings)).toEqual({ notifyAsk: true });
-  });
-
-  it("循环引用的分节按读不动处理（割接要把它序列化进 config.json）", () => {
-    // YAML 别名可以自指：这样的分节落盘时会让 `JSON.stringify` 抛错，读的时候就得当它读不动、回退下一环。
-    const doc = writeDocument("dsh-notifier: &self\n  notifyTaskDone: false\n  self: *self\n");
-    expect(
-      readLegacySettings(makeSettings([{ ns: NS, user: { notifyAsk: true } }], false, doc)),
-    ).toEqual({ notifyAsk: true });
-    expect(readLegacySettings(makeSettings([], false, doc))).toEqual({});
-  });
-
-  it("文档与服务面都有时以文档为准（它是用户提交的原始层，服务面给的是解析值）", () => {
-    const doc = writeDocument("dsh-notifier:\n  notifyAsk: false\n");
-    const settings = makeSettings([{ ns: NS, user: { notifyAsk: true } }], false, doc);
-    expect(readLegacySettings(settings)).toEqual({ notifyAsk: false });
-  });
-
-  it("文档解释不了时回退服务面，服务面也读不到时回退 V0（坏文件、缺分节、分节不是对象都不能把存量吃掉）", () => {
-    writeLegacyFile("dsh-notifier.json", { notifyAsk: false });
-    const broken = [
-      "dsh-notifier:\n\tnotifyAsk: false\n",
-      "other-plugin:\n  notifyAsk: false\n",
-      'dsh-notifier: "不是对象"\n',
-    ];
-    for (const [index, text] of broken.entries()) {
-      const doc = writeDocument(text, `broken-${index}.yaml`);
-      expect(
-        readLegacySettings(makeSettings([{ ns: NS, user: { notifyAsk: true } }], false, doc)),
-      ).toEqual({ notifyAsk: true });
-      // 服务面也给不出东西时，这一环同样不能把 V0 吃掉。
-      expect(readLegacySettings(makeSettings([], false, doc))).toEqual({ notifyAsk: false });
-    }
-  });
-
-  it("两个候选文件同时存在时 `.yaml` 优先（官方缺省名在前）", () => {
-    writeDocument("dsh-notifier:\n  notifyAsk: false\n", "settings.yaml");
-    writeDocument(`{"${NS}":{"notifyAsk":true}}`, "settings.json");
-    // 空白路径走 DSH home 缺省候选（[yaml, json]，yaml 在前）。
-    expect(readLegacySettings(makeSettings([], false, ""))).toEqual({ notifyAsk: false });
-  });
-
-  it("documentPath 是空白串时按「没给出路径」处理，回到 DSH home 兜底", () => {
-    writeDocument("dsh-notifier:\n  notifyAsk: false\n", "settings.yaml");
-    for (const blank of ["", "   ", "\t"]) {
-      expect(readLegacySettings(makeSettings([], false, blank))).toEqual({ notifyAsk: false });
-    }
-  });
-
-  it("自报的路径指向不存在的文件时只回退服务面，不拿缺省名去猜（用户配过自定义路径）", () => {
-    writeDocument("dsh-notifier:\n  notifyAsk: false\n", "settings.yaml");
-    const missing = join(home.dir, "custom", "settings.yaml");
-    expect(readLegacySettings(makeSettings([], false, missing))).toEqual({});
-    expect(
-      readLegacySettings(makeSettings([{ ns: NS, user: { notifyAsk: true } }], false, missing)),
-    ).toEqual({ notifyAsk: true });
-  });
-
-  it("`.yml` 扩展名的文档按 YAML 解析（provider 支持它，只是缺省名是 yaml）", () => {
-    const doc = writeDocument("dsh-notifier:\n  notifyAsk: false\n", "settings.yml");
-    expect(readLegacySettings(makeSettings([], false, doc))).toEqual({ notifyAsk: false });
-  });
-
-  it("原型链上的危险键名不搬运（与 config 域写面同一份口径）", () => {
-    const doc = writeDocument(
-      `{"${NS}":{"notifyAsk":true,"__proto__":{"polluted":true},"constructor":"x","prototype":"y"}}`,
-      "settings.json",
-    );
-    const out = readLegacySettings(makeSettings([], false, doc));
-    expect(out).toEqual({ notifyAsk: true });
-    expect(Object.getPrototypeOf(out)).toBe(Object.prototype);
-  });
-
-  it("文档来源同样做语义转换：装配键剔除、旧全局音效键摊到两个出口", () => {
-    const doc = writeDocument(
+describe("旧键语义转换与安全边界", () => {
+  it("正式来源剔除装配键并把旧全局音效键摊到两个出口", () => {
+    writeSettingsDocument(
       "dsh-notifier:\n  enabled: true\n  configFile: /legacy/config.json\n  notifySound: false\n  notifyTaskDone: false\n",
     );
-    expect(readLegacySettings(makeSettings([], false, doc))).toEqual({
+
+    expect(readLegacySettings(makeSettings([]))).toEqual({
       notifySound: false,
       notifyTaskDone: false,
       browserSound: false,
       systemSound: false,
     });
   });
-});
 
-describe("语义转换：旧键 → 当前键", () => {
-  it("剔掉装配键（新架构下它们是启动参数，留在配置里会被读成用户显式设置过的值）", () => {
-    const legacy = readLegacySettings(
-      makeSettings([
-        {
-          ns: NS,
-          user: {
-            enabled: true,
-            configFile: "/tmp/config.json",
-            historyFile: "/tmp/history.jsonl",
-            statusFile: "/tmp/status.json",
-            toastScript: "/tmp/toast.ps1",
-            notifyAsk: false,
-          },
-        },
-      ]),
+  it("出口键已有值时不被旧全局声音键覆盖", () => {
+    writeSettingsDocument(
+      "dsh-notifier:\n  notifySound: true\n  browserSound: false\n",
+      "settings.yaml.imported",
     );
-    expect(Object.keys(legacy)).toEqual(["notifyAsk"]);
-    expect(legacy.notifyAsk).toBe(false);
-  });
+    writeSettingsDocument("dsh-notifier:\n  browserSound: false\n");
 
-  it("旧的全局声音开关摊到两个出口键上（用户原来的选择不作废）", () => {
-    const legacy = readLegacySettings(makeSettings([{ ns: NS, user: { notifySound: false } }]));
-    expect(legacy.browserSound).toBe(false);
-    expect(legacy.systemSound).toBe(false);
-  });
-
-  it("出口键已有值时不被旧键覆盖（新架构下用户已经分别选过）", () => {
-    const legacy = readLegacySettings(
-      makeSettings([{ ns: NS, user: { notifySound: true, browserSound: false } }]),
-    );
+    const legacy = readLegacySettings(makeSettings([]));
     expect(legacy.browserSound).toBe(false);
     expect(legacy.systemSound).toBe(true);
   });
 
-  it("契约不认识的键原样保留（可能是用户手写的或更高版本留下的，迁移没资格替他们决定丢哪些）", () => {
-    const legacy = readLegacySettings(
-      makeSettings([{ ns: NS, user: { customKey: 42, notifyAsk: true } }]),
-    );
+  it("契约不认识的键原样保留", () => {
+    writeSettingsDocument("dsh-notifier:\n  customKey: 42\n  notifyAsk: true\n");
+
+    const legacy = readLegacySettings(makeSettings([]));
     expect(legacy.customKey).toBe(42);
     expect(legacy.notifyAsk).toBe(true);
+  });
+
+  it("原型链上的危险键名不搬运", () => {
+    writeSettingsDocument(
+      `{"dsh-notifier":{"notifyAsk":true,"__proto__":{"polluted":true},"constructor":"x","prototype":"y"}}`,
+    );
+
+    const out = readLegacySettings(makeSettings([]));
+    expect(out).toEqual({ notifyAsk: true });
+    expect(Object.getPrototypeOf(out)).toBe(Object.prototype);
   });
 });

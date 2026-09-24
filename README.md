@@ -24,12 +24,12 @@ DSH（DeepSeek Harness）Web GUI 插件集，npm 分发：一键装全家桶，�
 
 ### 版本适配（只适配 rc）
 
-本插件集**只适配 DeepSeek Harness 的 rc（候选发布）版本，不对 alpha 版本适配**。
+本插件集当前只适配 DeepSeek Harness `0.1.7-rc.1`。
 
-- 当前全部插件锚定 `dsh 0.1.7-rc.1`（官方类型层 catalog 与各包 peerDependencies 一致锁定）；**要求 dsh 本体 ≥0.1.7-rc.1，旧版本运行不在支持范围**
-- 安装/更新时若 dsh 版本不匹配，npm/pnpm 会给出 peer 提示——请先将 dsh 本体升级到对应 rc 版本
+- 官方类型层 catalog 与各包 peerDependencies 一致锁定 `dsh 0.1.7-rc.1`；其他 DSH 版本不在本轮支持范围
+- 安装/更新时若 DSH 版本不匹配，npm/pnpm 会给出 peer 提示——请先将 DSH 本体切换到该版本
 - 每版的具体适配基线、破坏性变更与升级指南见 [Release Notes](docs/release-notes/)
-- 官方发布新版 rc 后本插件集跟随升级；**alpha 版本不受支持**，请勿在 alpha 环境安装（或自行评估兼容风险）
+- catalog 更新前，不对 alpha、旧 runtime 或其他版本作兼容承诺
 
 ### 独立安装与全家桶：二选一
 
@@ -116,55 +116,26 @@ dsh plugin --profile web update
 
 安装后未出现插件时先重启 `dsh web`；出现 duplicate entry 时，检查是否同时安装聚合包与独立包。
 
-> **从 0.1.5 之前的 dsh 升级上来，出现历史会话打不开？**
-> 报 `cannot safely transform unclassified message source` 的会话，是 `dsh-mcp-manager` 早期版本
-> 注入的能力目录消息触发的宿主迁移闸门拒载（产物完好，只是读不出）。**一条命令可救回**：
+> **升级后历史会话打不开？**
+> 当前版本只写 producer-owned V4 source。旧插件留下的历史产物不属于业务兼容范围，需先用维护脚本修复 source 元数据：
 >
 > ```sh
 > # 落盘前先停 dsh web；正在写入的日志不保证可安全重写
-> node scripts/maintenance/repair-mcp-catalog-sessions.mjs          # 预演，列受影响会话
-> node scripts/maintenance/repair-mcp-catalog-sessions.mjs --apply  # 落盘（自动备份），随后重启 dsh web
+> node scripts/maintenance/repair-mcp-catalog-sessions.mjs          # 预演
+> node scripts/maintenance/repair-mcp-catalog-sessions.mjs --apply  # 落盘并自动备份，随后重启 dsh web
 > ```
 >
-> 详见 [修复方案](#mcp-catalog-修复与升级须知) · [issue #723](https://github.com/wingsky-1/dsh-plugin-hub/issues/723)
+> 详见 [升级与历史会话边界](#mcp-catalog-修复与升级须知) · [issue #723](https://github.com/wingsky-1/dsh-plugin-hub/issues/723)
 
 <a id="mcp-catalog-修复与升级须知"></a>
-## 升级须知与修复：历史会话打不开（mcp-catalog）
+## 升级与历史会话边界（mcp-catalog）
 
-**症状**：从 0.1.5 之前的 dsh 升级上来后，某些历史会话在 GUI 里报
+当前 `dsh-mcp-manager` 只生成 producer-owned V4 source：
+`kind: "plugin:@wingsky-1/dsh-mcp-manager"`。业务代码不提供旧 V0/V2/V3 parser，也不承诺旧格式兼容。
 
-```
-历史加载失败：failed to observe session "session-…":
-cannot safely transform unclassified message source;
-source v0 artifact remains unchanged (raw log: …/session.jsonl.zstd)（gateway/internal）
-```
+历史 `mcp-catalog` source 属于一次性维护边界。脚本只把旧 source 元数据修为 V3 wrapper，保留消息正文与事件序列；它不写 V4，也不实现 v3→v4 迁移。修复后由 `dsh 0.1.7-rc.1` 的官方迁移链依次恢复并转为 V4，当前 V4 产物不动。执行前先停止 `dsh web`，先用默认预演模式核对，再加 `--apply` 落盘。
 
-且该会话目录下始终不出现 `session.v3.jsonl.zstd`，每次打开都同样失败。
-
-**原因（不是会话损坏）**：`dsh-mcp-manager` 0.2.x 及更早把能力目录注入消息写成
-`source.kind = "mcp-catalog"`，而 dsh 0.1.5 的 session format v2→v3 迁移对 surface 消息的
-`source.kind` 有一份**封闭白名单**，自造值不在其中 → 迁移被拒；产物按宿主设计**原样保留**
-（未损坏）。v3 读取路径本身不校验该字段，所以只有"升级前的旧会话 + 装过本插件并触发过目录
-注入"的用户会命中，升级后的新会话不受影响。
-
-**修复**：本插件新版已改用宿主词表内的通用 source 形态（今后不再产生此类消息）；
-**已落盘的旧产物**用一次性脚本就地修复（只改 source 元数据，正文与事件序列不动）：
-
-```sh
-# 先停掉 dsh web（正在写入的日志不保证可安全重写）
-node scripts/maintenance/repair-mcp-catalog-sessions.mjs          # 预演：只列受影响会话与处数
-node scripts/maintenance/repair-mcp-catalog-sessions.mjs --apply  # 落盘：先留 .bak-<时间戳>，写入原子
-# 重启 dsh web，打开原会话
-```
-
-- 默认只读 `<DSH_HOME>`（`--home <dir>` / `DSH_HOME` 可覆盖）；`--session <id>` 只处理单个会话
-- 幂等；写后自检（帧结构 + 逐行 JSON + 零遗留旧 kind）；回滚 = 用 `.bak-<时间戳>` 覆盖回去
-- **v3 会话默认一起修**：v3 里同样可能两种 kind 并存（升级前创建、升级后继续写入），
-  宿主将来给 v3→v4 迁移加同类闸门时会重演这次的永久拒载；改写只换 source 元数据，
-  v3 语义零变化。`--legacy-only` 可退回只修 v0/v1/v2
-- 不产出 v3 产物：v0/v1/v2 修复后仍由 dsh 自己完成迁移
-- 细节与验证证据见 [dsh-mcp-manager README](packages/dsh-mcp-manager/README.md#723-修复方案) 与
-  [issue #723](https://github.com/wingsky-1/dsh-plugin-hub/issues/723)
+详见 [dsh-mcp-manager README](packages/dsh-mcp-manager/README.md#升级与历史会话边界)。
 
 <a id="详细参考"></a><a id="user-content-详细参考"></a>
 ## 详细参考

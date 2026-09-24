@@ -13,6 +13,7 @@ let writes: unknown[];
 let reply: () => Promise<Response>;
 let initial: unknown;
 let health: unknown;
+let requests: string[];
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status });
 }
@@ -30,6 +31,7 @@ beforeEach(() => {
   caWrites = [];
   initial = { effective: { port: 4000 }, user: {}, revision: 0 };
   health = {};
+  requests = [];
   reply = async () => json({ ok: true, revision: 1 });
   caReply = async () => json({ ok: true, mode: "generated" });
   globalThis.fetch = async (input, init) => {
@@ -41,6 +43,7 @@ beforeEach(() => {
       caWrites.push(JSON.parse(String(init.body)));
       return caReply();
     }
+    if (init?.method === undefined) requests.push(String(input));
     return json(String(input).endsWith("/config") ? initial : health);
   };
 });
@@ -49,15 +52,24 @@ afterEach(() => {
   globalThis.fetch = originalFetch;
   vi.useRealTimers();
 });
-const card = () =>
+const card = (view: "summary" | "page" = "page") =>
   React.createElement(SettingsCard, {
+    view,
     hostTrustSignals: () => ({ hostname: "localhost" }),
   });
-async function mountCard() {
-  const view = render(card());
+async function mountRowEntry(view: "summary" | "page") {
+  const ownerKey = "@wingsky-1/dsh-lan-proxy#ui-dsh-lan-proxy";
+  const host =
+    view === "summary"
+      ? React.createElement("p", { "data-plugin-row-detail": ownerKey }, card(view))
+      : React.createElement("div", { "data-plugin-config": true }, card(view));
+  const rendered = render(host);
   await act(async () => {});
-  fireEvent.click(view.getByRole("button", { name: /settingsName/ }));
-  return view;
+  return rendered;
+}
+
+async function mountCard(view: "summary" | "page" = "page") {
+  return mountRowEntry(view);
 }
 type View = Awaited<ReturnType<typeof mountCard>>;
 function save(view: View) {
@@ -66,6 +78,34 @@ function save(view: View) {
 function port(view: View, value: string) {
   fireEvent.change(view.getByLabelText("lanPort"), { target: { value } });
 }
+
+describe("SettingsCard row view 契约", () => {
+  it("summary 在官方描述容器内只返回非-li 摘要，不请求 config/health", async () => {
+    const view = await mountRowEntry("summary");
+    const summary = view.container.querySelector("[data-lan-summary]");
+    expect(requests).toEqual([]);
+    expect(view.container.querySelector("li")).toBe(null);
+    expect(summary?.tagName).toBe("SPAN");
+    expect(summary?.parentElement?.tagName).toBe("P");
+    expect(summary?.textContent).toBe("settingsDescription");
+  });
+
+  it("page 直接使用非-li wrapper 显示字段和保存控件，各加载一次 config/health", async () => {
+    const view = await mountRowEntry("page");
+    const page = view.container.querySelector("[data-lan-page]");
+    expect(page?.tagName).toBe("DIV");
+    expect(view.container.querySelector("li")).toBe(null);
+    expect(view.container.querySelector(".lp-set-body")).toBeTruthy();
+    expect(view.container.querySelector(".lp-set-head")).toBe(null);
+    expect(view.queryByText("settingsName")).toBe(null);
+    expect(view.queryByText("settingsDescription")).toBe(null);
+    const portInput = view.getByLabelText("lanPort") as HTMLInputElement;
+    const saveButton = view.getByRole("button", { name: "save" }) as HTMLButtonElement;
+    expect(portInput.disabled).toBe(false);
+    expect(saveButton.disabled).toBe(false);
+    expect(requests).toEqual(["/api/dsh-lan-proxy/config", "/api/dsh-lan-proxy/health"]);
+  });
+});
 
 describe("SettingsCard 输入与显示契约", () => {
   it.each([
@@ -299,7 +339,6 @@ describe("SettingsCard 保存基线", () => {
     await act(async () => {
       gets[0].resolve(json({ effective: { port: 4000 }, revision: 1 }));
     });
-    fireEvent.click(view.getByRole("button", { name: /settingsName/ }));
     expect((view.getByLabelText("lanPort") as HTMLInputElement).value).toBe("4300");
     port(view, "4400");
     save(view);

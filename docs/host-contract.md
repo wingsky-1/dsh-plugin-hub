@@ -73,7 +73,7 @@ rc 升级流程引用：升级 dsh rc 时按本清单逐条核对上游变更（
 | dsh-mcp-manager | agent/created | packages/dsh-mcp-manager/src/server/shared/compose.ts（能力面转发） |
 | dsh-mcp-manager | agent/disposed | packages/dsh-mcp-manager/src/server/shared/compose.ts（能力面转发） |
 | dsh-mcp-manager | tools/change | packages/dsh-mcp-manager/src/server/shared/compose.ts（能力面转发） |
-| dsh-provider-usage | session/event | packages/dsh-provider-usage/src/apply/apply.ts（0.1.5-rc.1 起结算唯一事实源） |
+| dsh-provider-usage | session/event | packages/dsh-provider-usage/src/apply/apply.ts（唯一目标 runtime `0.1.7-rc.1` 的结算事实源） |
 | dsh-provider-usage | session/flush | packages/dsh-provider-usage/src/apply/apply.ts |
 | dsh-provider-usage | session/disposed | packages/dsh-provider-usage/src/apply/apply.ts |
 | dsh-provider-usage | internal/service | packages/dsh-provider-usage/src/apply/apply.ts |
@@ -96,9 +96,9 @@ peer 含 cordis 框架底座与仅经 `ctx.on` 事件消费的包（如 notifier
 | dsh-decision-gateway | 宿主 | webServer， tools | cordis， dsh-host-webserver， dsh-tools | | packages/dsh-decision-gateway/src/index.ts:32 |
 | dsh-decision-gateway | 客户端 | slots | （同上） | | packages/dsh-decision-gateway/src/client/index.ts:210 |
 | dsh-lan-proxy | 宿主 | webServer | cordis， dsh-host-webserver | | packages/dsh-lan-proxy/src/index.ts:38 |
-| dsh-lan-proxy | 客户端 | slots， locale， remote | （同上） | | packages/dsh-lan-proxy/src/client/index.ts:171 |
-| dsh-mcp-manager | 宿主 | tools， webServer， systemPrompt | cordis， dsh-host-webserver， dsh-agent， dsh-tools， dsh-system-prompt | | packages/dsh-mcp-manager/src/index.ts:145 |
-| dsh-mcp-manager | 客户端 | sessions， slots， locale | （同上） | | packages/dsh-mcp-manager/src/client/index.ts:373 |
+| dsh-lan-proxy | 客户端 | slots， configForms， locale， remote | （同上） | | packages/dsh-lan-proxy/src/client/index.ts |
+| dsh-mcp-manager | 宿主 | tools， webServer， systemPrompt | cordis， dsh-host-webserver， dsh-agent， dsh-tools， dsh-system-prompt | | packages/dsh-mcp-manager/src/index.ts |
+| dsh-mcp-manager | 客户端 | sessions， slots， configForms， locale | （同上） | | packages/dsh-mcp-manager/src/client/index.ts |
 | dsh-notifier | 宿主 | webServer， settings（经 `SETTINGS_SERVICE` 常量，`src/index.ts:35`） | cordis， dsh-agent， dsh-host-webserver， dsh-session， dsh-session-title， dsh-settings， dsh-user-approval， dsh-user-questions | | packages/dsh-notifier/src/index.ts:44 |
 | dsh-notifier | 客户端 | slots， locale | （同上） | | packages/dsh-notifier/src/client/index.tsx:1849 |
 | dsh-provider-usage | 宿主 | webServer， llm， sessions（`src/apply/index.ts:115`） | cordis， dsh-host-webserver， dsh-llm， dsh-session | | packages/dsh-provider-usage/src/apply/index.ts:115 |
@@ -113,15 +113,16 @@ peer 含 cordis 框架底座与仅经 `ctx.on` 事件消费的包（如 notifier
 <a id="hc-t4"></a>
 ## 表 4 slot key 与形态
 
-形态为 slot（`settings.plugin.item` 为 keyed 形态，`settings.section` 为 order 形态）。
-出来自派生输出 `result.slots`（`slot` / `id` / `key` / `order` 均为字面量派生）。
+形态为 slot。目标 runtime 的插件设置行统一注册 `plugins.row.config`：canonical row id
+同时是 settings namespace，key 由 bundle package 与 row id 组成；独立设置页使用
+`settings.section` 的 id / order。
 
-| 包 | slot | id | key | order | 出处 |
+| 包 | slot | id（插件行取 canonical row id） | key | order | 出处 |
 | --- | --- | --- | --- | --- | --- |
-| dsh-lan-proxy | settings.plugin.item | dsh-lan-proxy | dsh-lan-proxy | 50 | packages/dsh-lan-proxy/src/client/index.ts |
-| dsh-mcp-manager | settings.plugin.item | dsh-mcp-manager | dsh-mcp-manager | 60 | packages/dsh-mcp-manager/src/client/index.ts |
-| dsh-notifier | settings.section | dsh-notifier | （无 key，section 形态） | 70 | packages/dsh-notifier/src/client/index.tsx |
-| dsh-provider-usage | settings.section | dsh-provider-usage | （无 key，section 形态） | 90 | packages/dsh-provider-usage/src/client/index.tsx |
+| dsh-lan-proxy | plugins.row.config | ui-dsh-lan-proxy | `@wingsky-1/dsh-lan-proxy#ui-dsh-lan-proxy` | — | packages/dsh-lan-proxy/src/client/index.ts |
+| dsh-mcp-manager | plugins.row.config | ui-dsh-mcp-manager | `@wingsky-1/dsh-mcp-manager#ui-dsh-mcp-manager` | — | packages/dsh-mcp-manager/src/client/index.ts；packages/dsh-mcp-manager/src/shared/constants.ts |
+| dsh-notifier | settings.section | dsh-notifier | — | 70 | packages/dsh-notifier/src/client/index.tsx |
+| dsh-provider-usage | settings.section | dsh-provider-usage | — | 90 | packages/dsh-provider-usage/src/client/index.tsx |
 | dsh-decision-gateway | （派生未覆盖，观察值：客户端未注册 settings slot） | — | — | — | `slotFiles` 未登记 |
 | dsh-worktree-sidebar | （派生未覆盖，观察值：客户端消费 slots 与 sidebarRightTabs，未注册 settings slot） | — | — | — | `slotFiles` 未登记 |
 | dsh-verify-isolated | （无客户端面） | — | — | — | `slotFiles` 未登记 |
@@ -195,8 +196,8 @@ provider-usage 经 `ctx.webServer.register`（`src/apply/apply.ts`）；notifier
 | 常量 / 锚 | 值 | 形态 | 出处与断言 |
 | --- | --- | --- | --- |
 | MCP_SECTION_ORDER | 160 | 常量 | `packages/dsh-mcp-manager/src/index.ts:562`；语义“紧随部署 persona 之后、计划策略之前（0 小于 160 小于 500）”，`sectionCall=true`（843 行经 `ctx.systemPrompt` 调用），`orderRangeOk=true`；区间由 smoke 锁定 |
-| SESSION 结算口径 | 0.1.5-rc.1 起唯一事实源为 `ctx.on("session/event")`；`assistant/chunk` 已删，`assistant/message`（内嵌 stream）+ `assistant/attempt` 为结算信号 | 版本锚 | 派生自注释口径；`SESSION_FORMAT_VERSION` 无代码符号锚（仅存档文档提及 0→3），`collectorMentionsChunkRemoval=false` |
-| catalog 锁版 | `dsh-*` 17 个均为 0.1.5-rc.1，`@deepseek-ai/cordis` 独立为 4.0.2 | 版本锚 | [pnpm-workspace.yaml](../pnpm-workspace.yaml) 字面量派生（派生输出 `result.catalog`，18 项）；锁版只是期望版本，宿主实际版本漂移无运行时派生 |
+| SESSION 结算口径 | 唯一目标 runtime `0.1.7-rc.1` 的事实源为 `ctx.on("session/event")`；`assistant/chunk` 已删，`assistant/message`（内嵌 stream）+ `assistant/attempt` 为结算信号 | 版本锚 | 派生自注释口径；`SESSION_FORMAT_VERSION` 无代码符号锚（仅存档文档提及 0→3），`collectorMentionsChunkRemoval=false` |
+| catalog 锁版 | `dsh-*` 17 个均为 `0.1.7-rc.1`，`@deepseek-ai/cordis` 独立为 `4.0.4` | 版本锚 | [pnpm-workspace.yaml](../pnpm-workspace.yaml) 字面量派生（派生输出 `result.catalog`，18 项）；唯一目标 runtime 之外的版本不在支持范围 |
 | 官方地址复刻 | （无现存复刻：全包 `dsh-resource://` / `fileAddressFor` 0 命中，已随 dsh-web-file-preview 退役消除） | 常量 | 全仓 grep 观察值 |
 | DOM 锚（11 条） | `details.dm-float-tools`；`[data-conversation-scroll]`；`[data-pane="conversation"]`；`.pI_x6G_centerCol`；`[data-shell-overlay]`；`[data-composer-seat]`；`.${PILL_PREFIX}label`；`.${PILL_PREFIX}dot` | 版本锚（宿主 DOM 私有约定，无版本锚） | 派生输出 `result.domAnchors`：前 6 条出自 `packages/dsh-mcp-manager/src/client/float/float.ts`，后 5 条出自 `packages/dsh-provider-usage/src/client/index.tsx`（`[data-composer-seat]` 等 3 条两端共用）；宿主改壳即静默漂移 |
 
@@ -207,14 +208,14 @@ provider-usage 经 `ctx.webServer.register`（`src/apply/apply.ts`）；notifier
 | --- | --- | --- |
 | 1 | 派生脚本 | `scripts/derive/host-contract.mjs`（零依赖，仅 `node:fs` / `node:path`；只读打印，默认输出完整派生 JSON，`--sample` 只输出 sample 节） |
 | 2 | 派生输出 | 派生脚本默认 stdout 的完整派生 JSON（`--sample` 只输出 sample 节）；不落盘，不接门禁 |
-| 3 | 扫描文件清单 | 见派生脚本内扫描常量：`eventFiles` 4 包 8 文件；`slotFiles` 4 文件；`routeFiles` 6 文件；`domFiles` 2 文件；`catalogFile=pnpm-workspace.yaml`；`sessionDoc=docs/archive/dsh-0.1.5-适配计划.md` |
+| 3 | 扫描文件清单 | 见派生脚本内扫描常量：`eventFiles` 4 包 8 文件；`slotFiles` 4 文件；`routeFiles` 6 文件；`domFiles` 2 文件；`catalogFile=pnpm-workspace.yaml`；SESSION 口径以当前实现为准 |
 | 4 | 派生观察 | `node scripts/derive/host-contract.mjs` 与 `--sample` 均为只读打印（不写文件、不接门禁） |
 | 5 | 文档门禁 | `pnpm docs:check` → exit 0（本 PR 内实跑） |
 | 6 | 缺口 G1（方法语义） | MCP_SECTION_ORDER=160 为字面量（`orderRangeOk=true`，`sectionCall=true`）；官方 SECTION_ORDERS 在本仓无符号级锚，宿主重排只能靠 smoke 区间断言事后发现 |
 | 7 | 缺口 G2（载荷版本） | SESSION_FORMAT_VERSION 无代码符号锚；`assistant/message` 内嵌 stream / attempt 的字段级载荷版本无类型快照可派生 |
-| 8 | 缺口 G3（slot 协议） | keyed-vs-list 形态与 section label thunk 语义只存在于注释；旧运行时静默不挂载的降级分支不可派生 |
+| 8 | 缺口 G3（slot 协议） | `plugins.row.config` 的 canonical row id / bundle key 与 `settings.section` 的 label thunk 语义由当前实现和客户端产物断言；其它 runtime 不在本清单支持范围 |
 | 9 | 缺口 G4（DOM 锚） | 11 条选择器均为宿主 DOM 私有约定，无版本锚；派生只能列出当前在用 |
 | 10 | 缺口 G5（类型版本锚） | 锁版只是期望版本；`Session.fromRestore` 第 5 参与 `EpochHeader.system` 删除等破坏点只活在存档文档里 |
-| 11 | 未验证项 | `pnpm gate:pr` 全仓门禁未跑（本 PR 为文档 PR，`gate:pr` 由 CI 覆盖）；浏览器隔离实测未做（无 UI 改动）；`dsh-decision-gateway` 与 `dsh-worktree-sidebar` 的路由 / 事件派生覆盖待后续派生扩展（非本 PR 范围） |
+| 11 | 未验证项 | 最新工作树 `pnpm test:scripts` 为 1214 pass / 1 skip，`pnpm gate:changed`、`pnpm gate:pr`、`pnpm gate:full` 均 exit 0；但本机 dsh 仍为 0.1.5-rc.1，精确 0.1.7-rc.1 的 V0/V1/V2→V3→V4 reopen 与真实 row.config 浏览器打开/保存/重载尚未执行，门禁和 mutation 报告不能替代目标 runtime 行为证据 |
 
 共享分档的规范正文见 [DEVELOPMENT §2.4](./DEVELOPMENT.md)；跨包共享准入见 [shared/README.md](../shared/README.md)。

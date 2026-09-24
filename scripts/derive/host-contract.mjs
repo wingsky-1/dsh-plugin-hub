@@ -48,6 +48,43 @@ function scanDomSelectors(src) {
   return out;
 }
 
+function stringConstants(src) {
+  const out = {};
+  if (src == null) return out;
+  for (const m of src.matchAll(/\bconst\s+([A-Za-z_$][\w$]*)\s*=\s*["'`]([^"'`]+)["'`]/g)) {
+    out[m[1]] = m[2];
+  }
+  return out;
+}
+
+function identifierProperty(src, property) {
+  if (src == null) return null;
+  const m = new RegExp("\\b" + property + ":\\s*([A-Za-z_$][\\w$]*)").exec(src);
+  return m?.[1] ?? null;
+}
+
+function templateProperty(src, property, constants) {
+  if (src == null) return null;
+  const m = new RegExp("\\b" + property + ":\\s*`([^`]*)`").exec(src);
+  if (m == null) return null;
+  let complete = true;
+  const value = m[1].replace(/\$\{([A-Za-z_$][\w$]*)\}/g, (_expr, name) => {
+    const replacement = constants[name];
+    if (replacement == null) {
+      complete = false;
+      return "";
+    }
+    return replacement;
+  });
+  return complete ? value : null;
+}
+
+function patchRow(src) {
+  if (src == null) return null;
+  const m = /^\s*-\s+id:\s*["']?([^"'#\s]+)["']?\s*\r?\n\s+name:\s*["']([^"']+)["']/m.exec(src);
+  return m == null ? null : { id: m[1], name: m[2] };
+}
+
 function registerOptionBlocks(src) {
   if (src == null) return [];
   const blocks = [];
@@ -106,15 +143,72 @@ for (const [pkg, files] of Object.entries(EVENT_FILES)) {
   events[pkg] = { events: found, sites };
 }
 
-// ---- 2) settings slot key（settings.plugin.item / settings.section + id/key/order） ----
-const SLOT_FILES = [
-  "packages/dsh-lan-proxy/src/client/index.ts",
-  "packages/dsh-mcp-manager/src/client/index.ts",
+// ---- 2) 目标 runtime 的客户端设置注册（row config + 独立 section） ----
+const ROW_CONFIG_SOURCES = [
+  {
+    file: "packages/dsh-lan-proxy/src/client/index.ts",
+    identityFile: "packages/dsh-lan-proxy/src/shared/interface.ts",
+    patchFile: "packages/dsh-lan-proxy/cordis.patch.yml",
+    identity: "LAN_PROXY_IDENTITY",
+    slotConstant: "ROW_CONFIG_SLOT",
+  },
+  {
+    file: "packages/dsh-mcp-manager/src/client/index.ts",
+    identityFile: "packages/dsh-mcp-manager/src/shared/constants.ts",
+    patchFile: "packages/dsh-mcp-manager/cordis.patch.yml",
+    identity: "MCP_MANAGER_IDENTITY",
+    slotConstant: "ROW_CONFIG_SLOT",
+  },
+];
+const SECTION_SLOT_FILES = [
   "packages/dsh-notifier/src/client/index.tsx",
   "packages/dsh-provider-usage/src/client/index.tsx",
 ];
 const slots = [];
-for (const f of SLOT_FILES) {
+for (const source of ROW_CONFIG_SOURCES) {
+  const client = read(source.file);
+  const identity = read(source.identityFile);
+  if (client == null || identity == null) continue;
+  const clientConstants = stringConstants(client);
+  const identityConstants = stringConstants(identity);
+  const slot = clientConstants[source.slotConstant] ?? null;
+  const bundlePackageName = identifierProperty(identity, "bundlePackage");
+  const rowIdName = identifierProperty(identity, "rowId");
+  const settingsNamespaceName = identifierProperty(identity, "settingsNamespace");
+  const bundlePackage =
+    bundlePackageName == null ? null : (identityConstants[bundlePackageName] ?? null);
+  const rowId = rowIdName == null ? null : (identityConstants[rowIdName] ?? null);
+  const settingsNamespace =
+    settingsNamespaceName == null ? null : (identityConstants[settingsNamespaceName] ?? null);
+  const key = templateProperty(identity, "rowConfigKey", identityConstants);
+  const registered =
+    slot != null &&
+    client.includes("slots.inject(" + source.slotConstant) &&
+    client.includes("slots.register(") &&
+    client.includes("configForms.whileServed(") &&
+    client.includes(source.identity + ".rowConfigKey");
+  if (
+    !registered ||
+    slot == null ||
+    bundlePackage == null ||
+    rowId == null ||
+    settingsNamespace == null ||
+    key == null
+  ) {
+    continue;
+  }
+  const patch = patchRow(read(source.patchFile));
+  slots.push({
+    file: source.file,
+    slot,
+    bundlePackage,
+    rowId,
+    settingsNamespace,
+    key,
+    patch: patch == null ? null : { file: source.patchFile, ...patch },
+  });
+}
+for (const f of SECTION_SLOT_FILES) {
   const src = read(f);
   if (src == null) continue;
   const regBlocks = registerOptionBlocks(src);
@@ -164,16 +258,48 @@ const sectionOrder = {
   })(),
 };
 
-// ---- 5) SESSION_FORMAT 版本锚 ----
-const collectTypes = read("packages/dsh-provider-usage/src/domain2/collect/types.ts") ?? "";
-const adaptDoc = read("docs/archive/dsh-0.1.5-适配计划.md");
+// ---- 5) 唯一目标 runtime 与 SESSION_FORMAT 锚 ----
+const workspace = read("pnpm-workspace.yaml") ?? "";
+const catalog = {};
+for (const m of workspace.matchAll(/"(@deepseek-ai\/[^"]+)"\s*:\s*([^\s#]+)/g)) {
+  catalog[m[1]] = m[2];
+}
+const targetVersions = [
+  ...new Set(
+    Object.entries(catalog)
+      .filter(([name]) => name.startsWith("@deepseek-ai/dsh-"))
+      .map(([, version]) => version),
+  ),
+];
+const targetRuntime = targetVersions.length === 1 ? targetVersions[0] : null;
+const providerApply = read("packages/dsh-provider-usage/src/apply/apply.ts") ?? "";
+const sessionTypes = read("packages/dsh-provider-usage/src/server/collect/types.ts") ?? "";
+const sessionCollector = read("packages/dsh-provider-usage/src/server/collect/collector.ts") ?? "";
+const sessionEvent = scanAll(providerApply, /ctx\.on\(\s*["'](session\/event)["']/)[0] ?? null;
+const settlementTypes = scanAll(
+  sessionCollector,
+  /case\s+["'](assistant\/(?:message|attempt))["']\s*:/,
+);
+const streamUsageInMessage =
+  settlementTypes.includes("assistant/message") && /stream\?:\s*unknown/.test(sessionCollector);
+const settlementLabels = settlementTypes.map((type) =>
+  type === "assistant/message" && streamUsageInMessage ? type + "（内嵌 stream）" : type,
+);
+const chunkEventRegistered = /case\s+["']assistant\/chunk["']\s*:/.test(sessionCollector);
 const sessionFormat = {
-  // 仓库内无 SESSION_FORMAT_VERSION 符号（grep 仅命中适配计划文档）；事实源是注释口径：
+  targetRuntime,
+  event: sessionEvent,
+  settlementTypes,
+  chunkEventRegistered,
+  collectorMentionsChunkRemoval: sessionTypes.includes("assistant/chunk"),
   anchor:
-    '0.1.5-rc.1 起唯一事实源 = ctx.on("session/event")；assistant/chunk 已删，assistant/message(+内嵌 stream)+assistant/attempt 为结算信号',
-  versionBumpDoc: "SESSION_FORMAT_VERSION 0→3（docs/archive/dsh-0.1.5-适配计划.md）",
-  docPresent: adaptDoc !== null,
-  collectorMentionsChunkRemoval: collectTypes.includes("assistant/chunk"),
+    "唯一目标 runtime " +
+    (targetRuntime ?? "未唯一锁定") +
+    ' 的事实源为 ctx.on("' +
+    (sessionEvent ?? "未派生") +
+    '\")；结算类型为 ' +
+    (settlementLabels.length === 0 ? "未派生" : settlementLabels.join("与 ")) +
+    (chunkEventRegistered ? "；注册 assistant/chunk" : "；无 assistant/chunk"),
 };
 
 // ---- 6) 客户端 DOM 锚 ----
@@ -190,14 +316,9 @@ for (const f of DOM_FILES) {
   }
 }
 
-// ---- 7) 类型版本锚（catalog 锁版） ----
-const workspace = read("pnpm-workspace.yaml") ?? "";
-const catalog = {};
-for (const m of workspace.matchAll(/"(@deepseek-ai\/[^"]+)"\s*:\s*([^\s#]+)/g)) {
-  catalog[m[1]] = m[2];
-}
-
-// ---- 五类形态缺口清单（派生能给什么、缺什么；不断言，只列 gap） ----
+// ---- 五类形态缺口清单（只描述唯一目标 runtime 的当前 API） ----
+const rowConfigSlots = slots.filter((slot) => slot.slot === "plugins.row.config");
+const sectionSlots = slots.filter((slot) => slot.slot === "settings.section");
 const gaps = [
   {
     类: "方法语义",
@@ -206,20 +327,27 @@ const gaps = [
       sectionOrder.orderRangeOk +
       "）；systemPrompt.section 调用点存在=" +
       sectionOrder.sectionCall,
-    缺口: "官方 SECTION_ORDERS（DEPLOYMENT_PERSONA_PREFIX/PLAN_POLICY）在本仓无符号级锚，只有注释复述；宿主重排（如 0.1.5 的 -900/-800→10000/10100 类事件）只能靠 smoke 区间断言事后发现，无派生预警",
+    缺口: "唯一目标 runtime 的官方 SECTION_ORDERS（DEPLOYMENT_PERSONA_PREFIX/PLAN_POLICY）在本仓无符号级锚；当前区间由 smoke 锁定，宿主重排只能事后发现",
   },
   {
     类: "载荷版本",
-    现状: "session/event 结算口径派生自注释（message+stream/attempt），事件名派生自 ctx.on 字面量",
-    缺口: "SESSION_FORMAT_VERSION 无代码符号锚（仅存档文档提及 0→3）；assistant/message 内嵌 stream / attempt 的字段级载荷版本无类型快照可派生，官方加字段只能靠人工跟进",
+    现状:
+      "session/event 事件名与 assistant/message、assistant/attempt 结算分支派生自 " +
+      targetRuntime +
+      " 目标 catalog 与当前 collector",
+    缺口: "assistant/message 内嵌 stream / attempt 的字段级载荷版本无独立类型快照可派生，上游加字段只能靠人工跟进",
   },
   {
     类: "slot 协议",
     现状:
       "slot 名派生 " +
       slots.length +
-      " 条（含 settings.plugin.item keyed(key)+id 双写、settings.section order/label-thunk）",
-    缺口: "宿主 slots.inject/register 的 keyed-vs-list 形态、settings.section label thunk 语义只存在于注释与对照表述（'参照用量统计 tab'），无宿主侧协议版本锚；旧运行时静默不挂载的降级分支不可派生",
+      " 条（plugins.row.config " +
+      rowConfigSlots.length +
+      " 条 canonical row；settings.section " +
+      sectionSlots.length +
+      " 条 id/order）",
+    缺口: "只记录唯一目标 runtime 的当前注册 API；不从本仓源码推断其它 runtime 的挂载或兼容行为",
   },
   {
     类: "DOM 锚",
@@ -228,19 +356,19 @@ const gaps = [
       domAnchors.length +
       " 条：" +
       [...new Set(domAnchors.map((d) => d.selector))].join(" / "),
-    缺口: "data-* 锚与哈希类名（.pI_x6G_centerCol）均为宿主 DOM 私有约定，无版本锚；宿主改壳即静默漂移，派生只能列出'当前在用'，给不出'是否仍有效'",
+    缺口: "data-* 锚与哈希类名（.pI_x6G_centerCol）均为宿主 DOM 私有约定，无版本锚；派生只能列出目标 runtime 当前在用的选择器",
   },
   {
     类: "类型版本锚",
     现状:
       "catalog 派生 " +
       Object.keys(catalog).length +
-      " 个 @deepseek-ai/* 锁版（dsh-* 均为 " +
-      (catalog["@deepseek-ai/dsh-session"] ?? "未知") +
+      " 个 @deepseek-ai/* 锁版（dsh-* 唯一目标 " +
+      (targetRuntime ?? "未唯一锁定") +
       "，cordis 独立 " +
       (catalog["@deepseek-ai/cordis"] ?? "未知") +
       "）",
-    缺口: "锁版只是'期望版本'，宿主实际版本（本机 dsh 可能更高）与 SessionHeader/Agent.session 结构漂移无运行时派生；Session.fromRestore 第 5 参、EpochHeader.system 删除等破坏性点只活在存档文档里",
+    缺口: "catalog 只锁目标类型版本；本派生不把本机其它 DSH 版本当作受支持目标，也不承诺兼容",
   },
 ];
 
@@ -258,8 +386,19 @@ const result = {
   sample: {
     notifierEvents: events["dsh-notifier"]?.events ?? [],
     mcpSectionOrder: sectionOrder.value,
+    targetRuntime: sessionFormat.targetRuntime,
     sessionAnchor: sessionFormat.anchor,
     slotCount: slots.length,
+    rowConfigSlots: rowConfigSlots.map(
+      ({ file, slot, bundlePackage, rowId, settingsNamespace, key }) => ({
+        file,
+        slot,
+        bundlePackage,
+        rowId,
+        settingsNamespace,
+        key,
+      }),
+    ),
     routeCount: routes.length,
     domCount: domAnchors.length,
   },

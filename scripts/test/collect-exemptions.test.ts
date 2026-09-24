@@ -146,21 +146,20 @@ test("非 JSON 文件不参与扫描（只看 scripts/data 下的 .json）", () 
   }
 });
 
-test("本仓真实快照：29 条在册（数字变即提示同步台账与 #765）", () => {
+test("本仓真实快照：27 条在册（数字变即提示同步台账与 #765）", () => {
   // 7 = coverage.config.json 4（#769 把一条 **/client/** 拆成 per-package 的 pending-project
   //     条目：notifier 的 .tsx 渲染面 + 另外 3 个包的整个 client 面 + shared/client/**；
   //     #840 退役 dsh-web-file-preview 时删掉它那一条，7 → 6；
   //     #883 给 lan-proxy 客户端补直连判据后删掉它那一条，6 → 5 当中的覆盖率部分 5 → 4；
   //     #947 把 mcp-manager 的一条整个 client 面按文件拆成 11 条（panel.ts 与 state.ts 计入分母），覆盖率部分 4 → 14）
   //     + gauntlet.config.json 1（crap.strict 观察期，仅解除条件、无到期日）
-  //     + gate-exemptions.json 14（#767 B0：#770 mcp panel 单飞句柄 + #767 lan-proxy unit-apply
-  //       + #847 sidebar 客户端单测 10 条，同批 unit-proxy/wfp 两条已随主干演进消除而不登记；
-  //       + #1011 sidebar keep-mounted 单测 2 条（沿用 inject-attach 深引模式）；
+  //     + gate-exemptions.json 12（#767 B0：#770 mcp panel 单飞句柄 + #767 lan-proxy unit-apply
+  //       + #847 sidebar 客户端单测 10 条；#1011 keep-mounted 两条随测试迁出 unit 面而删除；
   //       reviewBy + exitCriteria 双全；首登 dsh-decision-gateway 两条（#membership+#anchor）随本地实测锚
   //       落定全部删除：#membership 随条目进表先删，#anchor 随 fixedCovered=64.84 本地锚后删）。
   const r = spawnSync(process.execPath, [SCRIPT], { cwd: ROOT, encoding: "utf8" });
   assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stdout, /合计 29 条：已过期 0 /);
+  assert.match(r.stdout, /合计 27 条：已过期 0 /);
   assert.match(r.stdout, /仅解除条件（无到期日）1/);
   // crap.strict 的解除条件必须在台账里（只写日期会逼出「到期了再讨论一次」）
   assert.match(r.stdout, /\$\.crap {2}threshold=16/);
@@ -222,16 +221,7 @@ test("本仓真实快照：29 条在册（数字变即提示同步台账与 #765
     r.stdout,
     /\$\.exemptions\[11\] {2}gate=verify-dir-imports {2}path=dsh-worktree-sidebar:test\/unit\/inject-attach\.test\.ts\|src\/client\/shared\/ports\.ts/,
   );
-  // #1011 新增 keep-mounted 两条逐条钉住证据键（#1011 跟踪）：索引 [12..13] 与台账顺序一致。
-  assert.match(r.stdout, /trackingIssue #1011/);
-  assert.match(
-    r.stdout,
-    /\$\.exemptions\[12\] {2}gate=verify-dir-imports {2}path=dsh-worktree-sidebar:test\/unit\/inject-keep-mounted\.test\.ts\|src\/client\/inject\.ts/,
-  );
-  assert.match(
-    r.stdout,
-    /\$\.exemptions\[13\] {2}gate=verify-dir-imports {2}path=dsh-worktree-sidebar:test\/unit\/inject-keep-mounted\.test\.ts\|src\/client\/shared\/ports\.ts/,
-  );
+  // keep-mounted 两条已随测试迁出 unit 面，证据与 exemption 一并删除。
   // 覆盖率面的临时排除项也必须在台账里（它是「到期复核」的输入，不该只活在配置里）
   // 索引 5 = 前五条是 type-only / not-source 的永久事实（d.ts / d.mts / ps1 / md / css），
   // 第六条起才是带 reviewBy 的临时排除项。

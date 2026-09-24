@@ -36,13 +36,20 @@ import {
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const SCRIPT = join(ROOT, "scripts", "gate", "mutation-plan.mjs");
 
-test("段清单：只认 dsh-*.json 且去后缀，与 ci-matrix / mutation-gate 同源口径", () => {
+test("段清单：认 dsh-* / shared-* 配置并去后缀，拒绝其它前缀", () => {
   const dir = mkdtempSync(join(tmpdir(), "mutation-plan-"));
   try {
-    for (const f of ["dsh-b-z.json", "dsh-a.json", "README.md", "not-dsh-c.json"]) {
+    for (const f of [
+      "dsh-b-z.json",
+      "dsh-a.json",
+      "shared-settings-namespace.json",
+      "README.md",
+      "not-dsh-c.json",
+      "other-shared.json",
+    ]) {
       writeFileSync(join(dir, f), "{}");
     }
-    assert.deepEqual(listSegments(dir), ["dsh-a", "dsh-b-z"]);
+    assert.deepEqual(listSegments(dir), ["dsh-a", "dsh-b-z", "shared-settings-namespace"]);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

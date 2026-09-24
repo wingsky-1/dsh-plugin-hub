@@ -33,9 +33,13 @@ export { SSE_FRAMES } from "./frames.ts";
 export type { SseFrame, SseFramePayload } from "./frames.ts";
 export { ROUTES, ROUTE_FENCE } from "./routes.ts";
 export type { RouteName, RouteFence } from "./routes.ts";
-// 跨端契约常量：客户端以字面量重复实现了 scope 与全局 root 前缀，物理定义收到这里后
-// 它是唯一落点（客户端改引属 #769，本轮只收宿主侧）。
-export { MIDDLEWARE_GLOBAL_ROOT, SCOPE_GLOBAL, SCOPE_PROJECT } from "./constants.ts";
+// 跨端契约常量：scope / 全局 root 与插件行 identity 的唯一跨端门面。
+export {
+  MIDDLEWARE_GLOBAL_ROOT,
+  MCP_MANAGER_IDENTITY,
+  SCOPE_GLOBAL,
+  SCOPE_PROJECT,
+} from "./constants.ts";
 
 // 跨端 DTO 与服务类型（物理定义在 dto.ts / service.ts，两端一律经本门面引用）。
 export type { McpServerSummary, McpServerListEntry, ClientUiConfig } from "./dto.ts";

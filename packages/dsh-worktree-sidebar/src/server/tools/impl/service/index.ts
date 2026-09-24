@@ -25,7 +25,7 @@ class ToolsService {
   private unsubscribe: (() => void) | undefined;
   // 判定要走一次 git，是异步的；不串行化的话两个同时发布的 agent 会各自看到「尚未注册」，
   // 于是同一个 agent 被装两遍。
-  private chain: Promise<unknown> = Promise.resolve();
+  private chain: Promise<void> = Promise.resolve();
   /**
    * 装配代数。在飞的异步判定跨过一次 release 就作废——否则它会把上一代的 deps 装进新一代，
    * 而那种串味的症状是「工具装了但绑的是上一个装配体的表」。
@@ -38,9 +38,10 @@ class ToolsService {
     this.installed = true;
     this.deps = deps;
     const generation = this.generation;
-    const consider = (agent: AgentFace): void => this.consider(generation, agent);
+    const consider = (agent: AgentFace): Promise<void> => this.consider(generation, agent);
     this.unsubscribe = deps.agents.subscribe(consider);
-    for (const agent of deps.agents.list()) consider(agent);
+    // 初始 list 仍是装配期 fire-and-forget：只有 agent/created serial 需要把 listener Promise 交还宿主。
+    for (const agent of deps.agents.list()) void consider(agent);
   }
 
   /**
@@ -72,8 +73,8 @@ class ToolsService {
   }
 
   /** 判定一个 agent 是否该装工具，该装就装。同一个 agent 只处理一次。 */
-  private consider(generation: number, agent: AgentFace): void {
-    this.chain = this.chain
+  private consider(generation: number, agent: AgentFace): Promise<void> {
+    const chain = this.chain
       .then(async () => {
         const deps = this.deps;
         if (deps === undefined) return;
@@ -95,6 +96,8 @@ class ToolsService {
         const reason = cause instanceof Error ? cause.message : String(cause);
         deps.logger.warn("dsh-worktree-sidebar: 工具注册失败 — " + reason);
       });
+    this.chain = chain;
+    return chain;
   }
 }
 

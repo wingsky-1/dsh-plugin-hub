@@ -2,23 +2,30 @@
 "use strict";
 
 /**
- * repair-mcp-catalog-sessions（#723）：历史会话 source 形态一次性修复的自测。
+ * repair-mcp-catalog-sessions（#723）：历史会话 source 形态与官方 reopen fixture。
  *
- * 全部在 mkdtemp 隔离目录内造合成会话产物（产物零污染纪律 #218），不触碰真实
- * `~/.dsh`。回归底线：修复后的产物必须能被**宿主自己的** v0→v1→v2→v3 迁移链跑通
- * ——这正是修复前会抛 `cannot safely transform unclassified message source` 的那条链。
- * 宿主包不可达时（无网络 / 未装 dsh）端到端用例自动跳过，其余用例仍硬断言。
+ * 全部产物都在 mkdtemp 隔离目录内。V0/V1/V2 的静态判据证明 repair 只写 V3 wrapper；
+ * 官方 0.1.7-rc.1 迁移链只有在精确版本和依赖都存在时才运行，否则带原因 skipped。
  */
+
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
-import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
+
 import {
-  CATALOG_SECTION_NAME,
-  CATALOG_SOURCE_PLUGIN,
   applyRepair,
   decodeLines,
   encodeFrames,
@@ -32,192 +39,306 @@ import {
   verifyRepaired,
 } from "../maintenance/repair-mcp-catalog-sessions.mjs";
 
+const TARGET_DSH_VERSION = "0.1.7-rc.1";
+const CATALOG_SOURCE_PLUGIN = "@wingsky-1/dsh-mcp-manager";
+const CATALOG_SECTION_NAME = "mcp-catalog";
+const V3_SOURCE_KIND = "plugin";
+const V4_SOURCE_KIND = "plugin:@wingsky-1/dsh-mcp-manager";
+const CATALOG_TEXT = [
+  "<system-reminder>",
+  "<available_mcp_servers>",
+  "- `playwright`: browser automation",
+  "- `files`: read &amp; write",
+  "</available_mcp_servers>",
+  "</system-reminder>",
+].join("\n");
+const FALLBACK_SOURCE = {
+  kind: "mcp-catalog",
+  form: "catalog",
+  entries: [{ name: "alpha", text: "a < b" }, { name: "beta" }],
+};
+const FALLBACK_CATALOG_TEXT = [
+  "<system-reminder>",
+  "<available_mcp_servers>",
+  "- `alpha`: a &lt; b",
+  "- `beta`",
+  "</available_mcp_servers>",
+  "</system-reminder>",
+].join("\n");
 const LEGACY_SOURCE = {
   kind: "mcp-catalog",
   form: "catalog",
-  entries: [{ name: "playwright", text: "browser automation" }],
+  entries: [
+    { name: "playwright", text: "browser automation" },
+    { name: "files", text: "read & write" },
+  ],
 };
-const NEW_SOURCE = {
-  kind: "plugin",
+const V3_SOURCE = {
+  kind: V3_SOURCE_KIND,
   plugin: CATALOG_SOURCE_PLUGIN,
   form: "snapshot",
-  sections: [{ name: CATALOG_SECTION_NAME, text: "catalog" }],
+  sections: [{ name: CATALOG_SECTION_NAME, text: CATALOG_TEXT }],
 };
-const CATALOG_TEXT =
-  "<system-reminder>\n<available_mcp_servers>\n- `playwright`: browser automation\n</available_mcp_servers>\n</system-reminder>";
+const V4_SOURCE = {
+  kind: V4_SOURCE_KIND,
+  form: "snapshot",
+  sections: [{ name: CATALOG_SECTION_NAME, text: CATALOG_TEXT }],
+};
+const SCRIPT_PATH = fileURLToPath(
+  new URL("../maintenance/repair-mcp-catalog-sessions.mjs", import.meta.url),
+);
 
-/** 造一份 v0 会话产物：header 一帧 + 事件一帧（与宿主写盘布局一致）。 */
-function writeV0Log(
+type Row = Record<string, unknown>;
+type BodyMode = "present" | "empty" | "missing";
+
+type RestoreReader = {
+  decodeRow: (row: unknown) => void;
+  finish: () => { header: { version: number }; events: unknown[] };
+};
+type RestoreFactory = (children: unknown[]) => {
+  createRestore: (header: unknown, options: unknown) => RestoreReader;
+};
+type TargetChain = {
+  createSessionFormatCatalogWithChildren: RestoreFactory;
+  versions: Record<string, string>;
+};
+
+function asRecord(value: unknown): Row {
+  assert.ok(value !== null && typeof value === "object" && !Array.isArray(value));
+  return value as Row;
+}
+
+function makeMessage(id: string, source: Row, body: BodyMode): Row {
+  const content =
+    body === "missing" ? [] : [{ type: "text", text: body === "empty" ? "" : CATALOG_TEXT }];
+  return { id, role: "user", content, source };
+}
+
+function writeVersionLog(
   dir: string,
+  version: 0 | 1 | 2 | 3 | 4,
   {
-    spliced = false,
     source = LEGACY_SOURCE,
-  }: { spliced?: boolean; source?: typeof LEGACY_SOURCE } = {},
-) {
-  const header = {
+    body = "present",
+    includeSpliced = true,
+  }: { source?: Row; body?: BodyMode; includeSpliced?: boolean } = {},
+): { path: string; rows: Row[] } {
+  const header: Row = {
     type: "session",
-    version: 0,
-    id: "session-test",
+    version,
+    id: "session-v" + version,
     createdAt: 1789101518091,
     delegationDepth: 0,
     cwd: "/tmp",
   };
-  const message = {
-    id: "msg-1",
-    role: "user",
-    content: [{ type: "text", text: CATALOG_TEXT }],
-    source,
-  };
-  const rows = [
+  if (version > 0) header.isSeeded = false;
+  const rows: Row[] = [
     header,
+    { type: "turn/start", seq: 0, time: 1, data: { turn: 1 } },
+    { type: "step/start", seq: 1, time: 2, data: { turn: 1, step: 1 } },
+    {
+      type: "user/message",
+      seq: 2,
+      time: 3,
+      data: makeMessage("msg-user", source, body),
+      surfaceOp: "append",
+    },
     {
       type: "request/header",
-      seq: 0,
-      time: 1,
+      seq: 3,
+      time: 4,
       data: {
-        header: { config: { provider: "deepseek", model: "deepseek-chat" } },
+        header: { config: { provider: "mock", model: "mock" } },
         reason: "initial",
       },
     },
-    { type: "step/start", seq: 1, time: 2, data: { turn: 1, step: 1 } },
-    spliced
-      ? {
-          type: "agent/inbox/spliced",
-          seq: 2,
-          time: 3,
-          data: { target: "next-turn", start: 0, inserted: [message] },
-        }
-      : { type: "user/message", seq: 2, time: 3, data: message, surfaceOp: "append" },
-  ];
-  const path = join(dir, "session.jsonl.zstd");
-  writeFileSync(path, encodeFrames(rows.map((row) => JSON.stringify(row))));
-  return path;
-}
-
-/** 造一份 v3 产物（header version=3；用于 --include-v3 与 v3 不动断言）。 */
-function writeV3Log(dir: string) {
-  const header = {
-    type: "session",
-    version: 3,
-    id: "session-test",
-    createdAt: 1789101518091,
-    delegationDepth: 0,
-    cwd: "/tmp",
-  };
-  const message = {
-    id: "msg-1",
-    role: "user",
-    content: [{ type: "text", text: CATALOG_TEXT }],
-    source: LEGACY_SOURCE,
-  };
-  const rows = [
-    header,
+    { type: "step/end", seq: 4, time: 5, data: { turn: 1, step: 1 } },
     {
-      type: "agent/inbox/spliced",
-      seq: 0,
-      time: 3,
-      data: { target: "next-turn", start: 0, inserted: [message] },
+      type: "turn/end",
+      seq: 5,
+      time: 6,
+      data: { turn: 1, reason: { kind: "completed" } },
     },
   ];
-  const path = join(dir, "session.v3.jsonl.zstd");
+  if (includeSpliced) {
+    rows.push({
+      type: "agent/inbox/spliced",
+      seq: 6,
+      time: 7,
+      data: {
+        target: "next-turn",
+        start: 0,
+        inserted: [makeMessage("msg-spliced", source, body)],
+      },
+    });
+  }
+  const fileName = version === 0 ? "session.jsonl.zstd" : "session.v" + version + ".jsonl.zstd";
+  const path = join(dir, fileName);
   writeFileSync(path, encodeFrames(rows.map((row) => JSON.stringify(row))));
-  return path;
+  return { path, rows };
 }
 
-/** 隔离的 DSH_HOME + 单个会话目录。 */
-function withSession(run: (ctx: { root: string; sessionDir: string }) => void) {
+function readRows(path: string): Row[] {
+  return decodeLines(readFileSync(path)).map((line) => asRecord(JSON.parse(line)));
+}
+
+function rowSource(row: Row): Row {
+  return asRecord(asRecord(row.data).source);
+}
+
+function splicedSource(row: Row): Row {
+  const inserted = asRecord(row.data).inserted;
+  assert.ok(Array.isArray(inserted));
+  return asRecord(asRecord(inserted[0]).source);
+}
+
+function assertV3Source(source: Row, text = CATALOG_TEXT): void {
+  assert.deepEqual(source, {
+    kind: "plugin",
+    plugin: CATALOG_SOURCE_PLUGIN,
+    form: "snapshot",
+    sections: [{ name: CATALOG_SECTION_NAME, text }],
+  });
+  assert.equal(Object.hasOwn(source, "entries"), false);
+  assert.notEqual(source.kind, V4_SOURCE_KIND);
+}
+
+function assertV4Source(source: Row, text = CATALOG_TEXT): void {
+  assert.deepEqual(source, {
+    kind: V4_SOURCE_KIND,
+    form: "snapshot",
+    sections: [{ name: CATALOG_SECTION_NAME, text }],
+  });
+  assert.equal(Object.hasOwn(source, "plugin"), false);
+}
+
+function withSession(run: (ctx: { root: string; sessionDir: string }) => void): void {
   const root = mkdtempSync(join(tmpdir(), "repair-mcp-catalog-"));
   try {
     const sessionDir = join(root, "sessions", "--tmp-proj--", "session-test");
     mkdirSync(sessionDir, { recursive: true });
-    return run({ root, sessionDir });
+    run({ root, sessionDir });
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
 }
 
-/** 装载宿主迁移链所需的包；宿主不可达时返回 undefined（端到端用例跳过）。
- * 包在跑 dsh 的 node 前缀里（`<prefix>/lib/node_modules`），仓库 node_modules 里没有。 */
-async function loadHostChain() {
+function packageInfo(candidate: string, name: string): { version: string; scope: string } {
+  const require = createRequire(join(candidate, "anchor.js"));
+  const roots = [candidate];
+  try {
+    const dshPackage = require.resolve("@deepseek-ai/dsh/package.json");
+    roots.push(join(dirname(dshPackage), "node_modules"));
+  } catch {
+    // dsh may be absent when a test points directly at a runtime package tree.
+  }
+  const paths = [
+    ...roots.map((root) => join(root, "@deepseek-ai", name, "package.json")),
+    ...roots.map((root) => join(root, name, "package.json")),
+  ];
+  let packagePath: string | undefined;
+  try {
+    packagePath = require.resolve(name + "/package.json");
+  } catch {
+    packagePath = paths.find((candidatePath) => existsSync(candidatePath));
+  }
+  if (packagePath === undefined) throw new Error(name + " is not installed");
+  const manifest = JSON.parse(readFileSync(packagePath, "utf8")) as { version?: unknown };
+  if (typeof manifest.version !== "string") throw new Error(name + " has no version");
+  return { version: manifest.version, scope: dirname(dirname(packagePath)) };
+}
+
+async function loadTargetHostChain(): Promise<{ chain?: TargetChain; reason: string }> {
+  const names = [
+    "dsh-session-format",
+    "dsh-session-format-v0-to-v1",
+    "dsh-session-format-v1-to-v2",
+    "dsh-session-format-v2-to-v3",
+    "dsh-session-format-v3-to-v4",
+    "dsh-session-format-catalog",
+  ];
   const candidates = [
     process.env.DSH_HOST_NODE_MODULES,
     join(dirname(dirname(process.execPath)), "lib", "node_modules"),
     join(process.cwd(), "node_modules"),
   ].filter((value): value is string => typeof value === "string" && value.length > 0);
-  let base: string | undefined;
+  const failures: string[] = [];
   for (const candidate of candidates) {
     try {
-      const require = createRequire(join(candidate, "anchor.js"));
-      base = join(
-        dirname(require.resolve("@deepseek-ai/dsh/package.json")),
-        "node_modules",
-        "@deepseek-ai",
-      );
-      break;
-    } catch {
-      continue;
+      const infos = new Map<string, { version: string; scope: string }>();
+      for (const name of names) infos.set(name, packageInfo(candidate, name));
+      const mismatched = names.filter((name) => infos.get(name)!.version !== TARGET_DSH_VERSION);
+      if (mismatched.length > 0) {
+        failures.push(
+          candidate +
+            ": " +
+            mismatched.map((name) => name + "=" + infos.get(name)!.version).join(", "),
+        );
+        continue;
+      }
+      const scope = infos.get(names[0])!.scope;
+      const load = (name: string) =>
+        import(pathToFileURL(join(scope, name, "lib", "index.js")).href);
+      await Promise.all(names.map(load));
+      const catalogModule = (await load("dsh-session-format-catalog")) as {
+        createSessionFormatCatalogWithChildren?: RestoreFactory;
+      };
+      if (typeof catalogModule.createSessionFormatCatalogWithChildren !== "function") {
+        throw new Error("official catalog has no createSessionFormatCatalogWithChildren export");
+      }
+      return {
+        chain: {
+          createSessionFormatCatalogWithChildren:
+            catalogModule.createSessionFormatCatalogWithChildren,
+          versions: Object.fromEntries(names.map((name) => [name, infos.get(name)!.version])),
+        },
+        reason: "",
+      };
+    } catch (error) {
+      failures.push(candidate + ": " + (error instanceof Error ? error.message : String(error)));
     }
   }
-  if (base === undefined) return undefined;
-  const load = (name: string) => import(pathToFileURL(join(base, name, "lib", "index.js")).href);
-  try {
-    const [format, v0, v1, v2] = await Promise.all([
-      load("dsh-session-format"),
-      load("dsh-session-format-v0-to-v1"),
-      load("dsh-session-format-v1-to-v2"),
-      load("dsh-session-format-v2-to-v3"),
-    ]);
-    return { format, v0, v1, v2 };
-  } catch {
-    return undefined;
-  }
+  return {
+    reason:
+      "目标 dsh " +
+      TARGET_DSH_VERSION +
+      " 官方 session migration 依赖不可达；未运行动态 reopen。" +
+      (failures.length === 0 ? "" : " " + failures.join(" | ")),
+  };
 }
 
-/** 用宿主真实迁移链把 v0 行回放到 v3；失败时抛出宿主原始错误。 */
-async function runHostMigration(
-  chain: NonNullable<Awaited<ReturnType<typeof loadHostChain>>>,
-  lines: string[],
-) {
-  const [headerRow, ...eventRows] = lines.map((line) => JSON.parse(line));
-  const decoded = new chain.format.SessionFormatEventCollector();
-  const ctx = {
-    emitEvent: (event: unknown) => decoded.emitEvent(event),
-    emitRun: (run: unknown) => decoded.emitRun(run),
-  };
-  const decoder = chain.v0.releasedV0SessionFormatCodec.createDecoder(headerRow, "strict");
-  for (const row of eventRows) decoder.decodeRow(row, ctx);
-  const cut = decoder.finish(ctx);
-  let header = {
-    version: 0,
-    id: headerRow.id,
-    createdAt: headerRow.createdAt,
-    cwd: headerRow.cwd,
-    isSeeded: false,
-    delegationDepth: 0,
-  };
-  let events = decoded.values;
-  for (const migration of [
-    chain.v0.sessionFormatV0ToV1,
-    chain.v1.sessionFormatV1ToV2,
-    chain.v2.sessionFormatV2ToV3,
-  ]) {
-    const out = new chain.format.SessionFormatEventCollector();
-    const outCtx = {
-      emitEvent: (event: unknown) => out.emitEvent(event),
-      emitRun: (run: unknown) => out.emitRun(run),
-    };
-    const stage = migration.createStage({
-      sourceHeader: header,
-      targetHeader: migration.migrateHeader(header),
-      sourceInheritedEventCount: cut,
-      sourceKind: "decoded",
-    });
-    for (const event of events) stage.transformEvent(event, outCtx);
-    stage.finish(outCtx);
-    header = migration.migrateHeader(header);
-    events = out.values;
+function reopenWithOfficialCatalog(
+  chain: TargetChain,
+  rows: Row[],
+): {
+  header: { version: number };
+  events: unknown[];
+} {
+  const [header, ...events] = rows;
+  const restore = chain
+    .createSessionFormatCatalogWithChildren([])
+    .createRestore(header, { recovery: "strict", validation: "current" });
+  for (const event of events) restore.decodeRow(event);
+  return restore.finish();
+}
+
+function collectSources(value: unknown, found: Row[] = []): Row[] {
+  if (Array.isArray(value)) {
+    for (const item of value) collectSources(item, found);
+    return found;
   }
-  return events;
+  if (value === null || typeof value !== "object") return found;
+  const object = value as Row;
+  if (object.source !== null && typeof object.source === "object") {
+    found.push(asRecord(object.source));
+  }
+  for (const child of Object.values(object)) collectSources(child, found);
+  return found;
+}
+
+function runCli(args: string[]): { status: number | null; stdout: string; stderr: string } {
+  const result = spawnSync(process.execPath, [SCRIPT_PATH, ...args], { encoding: "utf8" });
+  return { status: result.status, stdout: result.stdout, stderr: result.stderr };
 }
 
 test("scanFrames/encodeFrames：多帧容器往返，损坏输入判红", () => {
@@ -227,21 +348,22 @@ test("scanFrames/encodeFrames：多帧容器往返，损坏输入判红", () => 
   assert.throws(() => scanFrames(Buffer.from([1, 2, 3, 4, 5])), /invalid frame magic/);
 });
 
-test("rewriteRow：user/message 路径改写，正文照抄原消息正文", () => {
+test("rewriteRow：user/message 路径改写为 V3 wrapper，正文照抄原消息正文", () => {
   const { row, changed } = rewriteRow({
     type: "user/message",
-    data: { source: LEGACY_SOURCE, content: [{ type: "text", text: CATALOG_TEXT }] },
+    data: {
+      source: LEGACY_SOURCE,
+      content: [
+        { type: "text", text: "" },
+        { type: "text", text: CATALOG_TEXT },
+      ],
+    },
   });
   assert.equal(changed, true);
-  assert.deepEqual(row.data.source, {
-    kind: "plugin",
-    plugin: CATALOG_SOURCE_PLUGIN,
-    form: "snapshot",
-    sections: [{ name: CATALOG_SECTION_NAME, text: CATALOG_TEXT }],
-  });
+  assertV3Source(rowSource(asRecord(row)), CATALOG_TEXT);
 });
 
-test("rewriteRow：agent/inbox/spliced 路径改写", () => {
+test("rewriteRow：agent/inbox/spliced 的 inserted source 改写为 V3 wrapper", () => {
   const { row, changed } = rewriteRow({
     type: "agent/inbox/spliced",
     data: {
@@ -253,21 +375,48 @@ test("rewriteRow：agent/inbox/spliced 路径改写", () => {
     },
   });
   assert.equal(changed, true);
-  assert.equal(row.data.inserted[0].source.kind, "plugin");
-  assert.equal(row.data.inserted[0].source.sections[0].text, CATALOG_TEXT);
+  const result = asRecord(row);
+  assertV3Source(splicedSource(result), CATALOG_TEXT);
 });
 
-test("rewriteRow：非目录消息与已改写形态零改动（幂等）", () => {
+test("正文缺失：按 snapshot 语法合成，旧 entries 全部保留", () => {
+  for (const row of [
+    {
+      type: "user/message",
+      data: { source: FALLBACK_SOURCE, content: [] },
+    },
+    {
+      type: "agent/inbox/spliced",
+      data: {
+        target: "next-turn",
+        start: 0,
+        inserted: [{ id: "m", content: [], source: FALLBACK_SOURCE }],
+      },
+    },
+  ]) {
+    const result = rewriteRow(row);
+    assert.equal(result.changed, true);
+    const source =
+      result.row.type === "user/message"
+        ? rowSource(asRecord(result.row))
+        : splicedSource(asRecord(result.row));
+    assertV3Source(source, FALLBACK_CATALOG_TEXT);
+  }
+});
+
+test("非目录与 V3/V4 source 零改动，V4 不被 maintenance 误写", () => {
   assert.equal(
     rewriteRow({ type: "user/message", data: { source: { kind: "user" } } }).changed,
     false,
   );
-  assert.equal(rewriteRow({ type: "user/message", data: { source: NEW_SOURCE } }).changed, false);
-  assert.equal(isLegacyCatalogSource(NEW_SOURCE), false);
+  assert.equal(rewriteRow({ type: "user/message", data: { source: V3_SOURCE } }).changed, false);
+  assert.equal(rewriteRow({ type: "user/message", data: { source: V4_SOURCE } }).changed, false);
+  assert.equal(isLegacyCatalogSource(V3_SOURCE), false);
+  assert.equal(isLegacyCatalogSource(V4_SOURCE), false);
   assert.equal(isLegacyCatalogSource(LEGACY_SOURCE), true);
 });
 
-test("migrationCandidate：取版本最高且 < 3 的日志", () => {
+test("migrationCandidate：V0/V1/V2 取最高历史代，V3/V4 不进入 repair", () => {
   assert.deepEqual(
     migrationCandidate(["session.jsonl.zstd", "session.v2.jsonl.zstd", "session.lock"]),
     { file: "session.v2.jsonl.zstd", version: 2 },
@@ -276,65 +425,146 @@ test("migrationCandidate：取版本最高且 < 3 的日志", () => {
     file: "session.v0.jsonl.zstd",
     version: 0,
   });
-  assert.equal(migrationCandidate(["session.v3.jsonl.zstd", "session.lock"]), undefined);
+  assert.deepEqual(migrationCandidate(["session.v1.jsonl.zstd"]), {
+    file: "session.v1.jsonl.zstd",
+    version: 1,
+  });
+  assert.equal(migrationCandidate(["session.v3.jsonl.zstd"]), undefined);
+  assert.equal(migrationCandidate(["session.v4.jsonl.zstd"]), undefined);
 });
 
-test("planSession/applyRepair：干跑不动盘、落盘带备份、再跑幂等", () => {
+test("V0/V1/V2 repair fixture：两类落点均输出 V3 wrapper，绝不直接写 V4", () => {
+  for (const version of [0, 1, 2] as const) {
+    withSession(({ sessionDir }) => {
+      const { path } = writeVersionLog(sessionDir, version, { source: LEGACY_SOURCE });
+      const before = readFileSync(path);
+      const plan = planSession(sessionDir);
+      assert.equal(plan.status, "needs-repair");
+      assert.equal(plan.sources, 2);
+      assert.equal(
+        plan.file,
+        version === 0 ? "session.jsonl.zstd" : "session.v" + version + ".jsonl.zstd",
+      );
+      const plannedRows = plan.rows as Row[];
+      const user = plannedRows.find((row) => row.type === "user/message");
+      const spliced = plannedRows.find((row) => row.type === "agent/inbox/spliced");
+      assert.ok(user !== undefined);
+      assert.ok(spliced !== undefined);
+      assertV3Source(rowSource(user));
+      assertV3Source(splicedSource(spliced));
+      assert.deepEqual(readFileSync(path), before, "规划阶段不得动盘");
+      applyRepair(sessionDir, plan.file!, plannedRows);
+      const after = readFileSync(path);
+      assert.notDeepEqual(after, before);
+      const appliedRows = readRows(path);
+      const appliedUser = appliedRows.find((row) => row.type === "user/message");
+      const appliedSpliced = appliedRows.find((row) => row.type === "agent/inbox/spliced");
+      assert.ok(appliedUser !== undefined);
+      assert.ok(appliedSpliced !== undefined);
+      assertV3Source(rowSource(appliedUser));
+      assertV3Source(splicedSource(appliedSpliced));
+      assert.equal(
+        decodeLines(after).filter((line) => line.includes('"kind":"mcp-catalog"')).length,
+        0,
+      );
+      assert.equal(planSession(sessionDir).status, "clean");
+      assert.deepEqual(readFileSync(path), after, "重复规划不得再改写");
+    });
+  }
+});
+
+test("V3 wrapper 与 V4 native fixture：maintenance 只读不写", () => {
   withSession(({ sessionDir }) => {
-    const path = writeV0Log(sessionDir);
-    const before = readFileSync(path);
-    const plan = planSession(sessionDir);
-    assert.equal(plan.status, "needs-repair");
-    assert.equal(plan.sources, 1);
-    assert.deepEqual(readFileSync(path), before, "干跑不得改动产物");
-
-    applyRepair(sessionDir, plan.file, plan.rows);
-    const after = readFileSync(path);
-    assert.notDeepEqual(after, before, "apply 后产物应更新");
-    assert.equal(
-      decodeLines(after).filter((line) => line.includes('"kind":"mcp-catalog"')).length,
-      0,
-    );
-
-    const backups = readdirSync(sessionDir).filter((name) =>
-      name.startsWith("session.jsonl.zstd.bak-"),
-    );
-    assert.equal(backups.length, 1);
-    assert.deepEqual(
-      readFileSync(join(sessionDir, backups[0])),
-      before,
-      "备份必须与修复前逐字节一致",
-    );
-
-    assert.equal(planSession(sessionDir).status, "clean", "已修复的产物不得再次命中");
+    const v3 = writeVersionLog(sessionDir, 3, { source: V3_SOURCE });
+    const v3Before = readFileSync(v3.path);
+    const v3Plan = planSession(sessionDir);
+    assert.equal(v3Plan.status, "clean");
+    assert.equal(v3Plan.sources, 0);
+    assert.deepEqual(readFileSync(v3.path), v3Before);
+    const v3Rows = readRows(v3.path);
+    const v3User = v3Rows.find((row) => row.type === "user/message");
+    const v3Spliced = v3Rows.find((row) => row.type === "agent/inbox/spliced");
+    assert.ok(v3User !== undefined);
+    assert.ok(v3Spliced !== undefined);
+    assertV3Source(rowSource(v3User));
+    assertV3Source(splicedSource(v3Spliced));
+  });
+  withSession(({ sessionDir }) => {
+    const v4 = writeVersionLog(sessionDir, 4, { source: V4_SOURCE });
+    const v4Before = readFileSync(v4.path);
+    const v4Plan = planSession(sessionDir);
+    assert.equal(v4Plan.status, "already-v4");
+    assert.equal(v4Plan.sources, 0);
+    assert.deepEqual(readFileSync(v4.path), v4Before);
+    const v4Rows = readRows(v4.path);
+    const v4User = v4Rows.find((row) => row.type === "user/message");
+    const v4Spliced = v4Rows.find((row) => row.type === "agent/inbox/spliced");
+    assert.ok(v4User !== undefined);
+    assert.ok(v4Spliced !== undefined);
+    assertV4Source(rowSource(v4User));
+    assertV4Source(splicedSource(v4Spliced));
   });
 });
 
-test("planSession：v3 默认也修（未来 v3→v4 同款闸门前置），--legacy-only 才不动 v3", () => {
+test("v3 旧 kind 默认修为 wrapper；--legacy-only 不碰 v3", () => {
   withSession(({ sessionDir }) => {
-    const path = writeV3Log(sessionDir);
+    const { path } = writeVersionLog(sessionDir, 3, { source: LEGACY_SOURCE });
     const before = readFileSync(path);
-    // --legacy-only：v3 不在目标面 → already-v3，零改动
     const legacyPlan = planSession(sessionDir, { legacyOnly: true });
     assert.equal(legacyPlan.status, "already-v3");
     assert.equal(legacyPlan.sources, 0);
     assert.deepEqual(readFileSync(path), before);
-    // 默认：v3 里残留的旧 source 命中（v3 里两种 kind 并存正是 v3→v4 的隐患）
-    const planV3 = planSession(sessionDir);
-    assert.equal(planV3.status, "needs-repair");
-    assert.equal(planV3.sources, 1);
-    assert.equal(planV3.file, "session.v3.jsonl.zstd");
-    // needs-repair 分支恒带 rows（与 file 同一返回对象）：实现仍带 @ts-nocheck，联合推断把 rows 收成
-    // unknown，测试侧按已断言的分支形态收窄（只读不断言新语义）。
-    assert.equal((planV3.rows as Array<{ version: number }>)[0].version, 3, "header 原样保留");
-    assert.deepEqual(readFileSync(path), before, "规划阶段不动盘");
-    // 落盘后：新形态、仍是 v3、可被宿主严格恢复、再跑幂等
-    applyRepair(sessionDir, planV3.file, planV3.rows);
-    const after = decodeLines(readFileSync(path));
-    assert.equal(after[0].includes('"version":3'), true);
-    assert.equal(after.filter((line) => line.includes('"kind":"mcp-catalog"')).length, 0);
-    assert.equal(after.filter((line) => line.includes(CATALOG_SOURCE_PLUGIN)).length, 1);
+    const plan = planSession(sessionDir);
+    assert.equal(plan.status, "needs-repair");
+    assert.equal(plan.sources, 2);
+    const plannedRows = plan.rows as Row[];
+    const plannedUser = plannedRows.find((row) => row.type === "user/message");
+    const plannedSpliced = plannedRows.find((row) => row.type === "agent/inbox/spliced");
+    assert.ok(plannedUser !== undefined);
+    assert.ok(plannedSpliced !== undefined);
+    assertV3Source(rowSource(plannedUser));
+    assertV3Source(splicedSource(plannedSpliced));
+    assert.deepEqual(readFileSync(path), before, "规划阶段不得动盘");
+
+    applyRepair(sessionDir, plan.file!, plannedRows);
+    const repairedRows = readRows(path);
+    const repairedUser = repairedRows.find((row) => row.type === "user/message");
+    const repairedSpliced = repairedRows.find((row) => row.type === "agent/inbox/spliced");
+    assert.equal(repairedRows[0]?.version, 3, "修复不得把 V3 写成 V4");
+    assert.ok(repairedUser !== undefined);
+    assert.ok(repairedSpliced !== undefined);
+    assertV3Source(rowSource(repairedUser));
+    assertV3Source(splicedSource(repairedSpliced));
     assert.equal(planSession(sessionDir).status, "clean");
+  });
+});
+
+test("CLI dry-run/apply/重复 apply：干跑不动盘，落盘留备份，重复运行幂等", () => {
+  withSession(({ root, sessionDir }) => {
+    const { path } = writeVersionLog(sessionDir, 0, { source: LEGACY_SOURCE });
+    const before = readFileSync(path);
+    const dry = runCli(["--home", root]);
+    assert.equal(dry.status, 0, dry.stderr);
+    assert.match(dry.stdout, /dry-run/);
+    assert.deepEqual(readFileSync(path), before);
+
+    const applied = runCli(["--home", root, "--apply"]);
+    assert.equal(applied.status, 0, applied.stderr);
+    const after = readFileSync(path);
+    assert.notDeepEqual(after, before);
+    const backups = readdirSync(sessionDir).filter((name) =>
+      name.startsWith("session.jsonl.zstd.bak-"),
+    );
+    assert.equal(backups.length, 1);
+    assert.deepEqual(readFileSync(join(sessionDir, backups[0])), before);
+
+    const repeated = runCli(["--home", root, "--apply"]);
+    assert.equal(repeated.status, 0, repeated.stderr);
+    assert.deepEqual(readFileSync(path), after);
+    assert.equal(
+      readdirSync(sessionDir).filter((name) => name.startsWith("session.jsonl.zstd.bak-")).length,
+      1,
+    );
   });
 });
 
@@ -342,80 +572,137 @@ test("torn frame：末尾不完整帧按宿主恢复语义前缀解码，不抛�
   const whole = encodeFrames(['{"type":"session"}', '{"seq":1,"source":{"kind":"mcp-catalog"}}']);
   const scanned = scanContainer(whole);
   assert.equal(scanned.tornStart, undefined);
-  // 截掉最后一帧的校验和尾部 → 模拟写入中崩溃
   const torn = whole.subarray(0, whole.length - 3);
   const decoded = decodeLines(torn);
-  assert.equal(decoded[0], '{"type":"session"}', "完整帧照常解出");
+  assert.equal(decoded[0], '{"type":"session"}');
   assert.equal(decoded.length, 2, "torn 帧解出已落盘前缀（末行被截断则丢弃）");
-  assert.throws(() => scanFrames(torn), /incomplete final frame/, "严格扫描仍拒绝 torn 容器");
+  assert.throws(() => scanFrames(torn), /incomplete final frame/);
 });
 
-test("verifyRepaired：遗留旧 kind 判红", () => {
+test("verifyRepaired：拒绝畸形 target，完整 V3 wrapper 通过", () => {
   assert.throws(
     () => verifyRepaired(encodeFrames(['{"type":"session"}', '{"source":{"kind":"mcp-catalog"}}'])),
     /still carries 1 legacy catalog source/,
   );
+
+  const malformed: Array<{ field: string; source: Row }> = [
+    { field: "source.kind", source: { ...V3_SOURCE, kind: "catalog" } },
+    { field: "source.plugin", source: { kind: "plugin" } },
+    { field: "source.plugin", source: { ...V3_SOURCE, plugin: "@example/other-plugin" } },
+    { field: "source.form", source: { ...V3_SOURCE, form: "catalog" } },
+    { field: "source.sections", source: { ...V3_SOURCE, sections: {} } },
+    {
+      field: "source.sections[].name",
+      source: { ...V3_SOURCE, sections: [{ name: "other", text: CATALOG_TEXT }] },
+    },
+    {
+      field: "source.sections[mcp-catalog].text",
+      source: {
+        ...V3_SOURCE,
+        sections: [{ name: CATALOG_SECTION_NAME, text: "not a catalog snapshot" }],
+      },
+    },
+  ];
+  for (const candidate of malformed) {
+    let error: unknown;
+    try {
+      verifyRepaired(
+        encodeFrames([
+          '{"type":"session"}',
+          JSON.stringify({ type: "user/message", data: { source: candidate.source } }),
+        ]),
+      );
+    } catch (caught) {
+      error = caught;
+    }
+    assert.ok(error instanceof Error, `expected ${candidate.field} to be rejected`);
+    assert.match(error.message, /\/1\/data\/source/);
+    assert.ok(error.message.includes(candidate.field), error.message);
+  }
+
+  const withExtraSection = {
+    ...V3_SOURCE,
+    sections: [{ name: "other", text: "other snapshot" }, ...V3_SOURCE.sections],
+  };
   assert.equal(
-    verifyRepaired(encodeFrames(['{"type":"session"}', '{"source":{"kind":"plugin"}}'])).rows,
+    verifyRepaired(
+      encodeFrames([
+        '{"type":"session"}',
+        JSON.stringify({ type: "user/message", data: { source: withExtraSection } }),
+      ]),
+    ).rows,
     2,
+  );
+
+  const otherPlugin = {
+    kind: "plugin",
+    plugin: "@example/other-plugin",
+    form: "snapshot",
+    sections: [{ name: "other", text: "other snapshot" }],
+  };
+  assert.equal(
+    verifyRepaired(
+      encodeFrames([
+        '{"type":"session"}',
+        JSON.stringify({ type: "user/message", data: { source: V3_SOURCE } }),
+        JSON.stringify({ type: "user/message", data: { source: otherPlugin } }),
+      ]),
+      ["/1/data/source"],
+    ).rows,
+    3,
   );
 });
 
-test("parseArgs：默认 dry-run，支持 --apply/--session/--home", () => {
+test("parseArgs：默认 dry-run，支持 --apply/--legacy-only/--session/--home", () => {
   assert.equal(parseArgs([]).apply, false);
   assert.equal(parseArgs(["--apply"]).apply, true);
+  assert.equal(parseArgs(["--legacy-only"]).legacyOnly, true);
   assert.equal(parseArgs(["--session", "session-x"]).session, "session-x");
   assert.equal(parseArgs(["--home=/tmp/h"]).home, "/tmp/h");
   assert.throws(() => parseArgs(["--nope"]), /unknown argument/);
 });
 
-test("端到端：修复前宿主迁移被拒，修复后同一条链跑通（user/message）", async (t) => {
-  const chain = await loadHostChain();
-  if (chain === undefined) return t.skip("宿主 @deepseek-ai/dsh 不可达");
-  const root = mkdtempSync(join(tmpdir(), "repair-e2e-"));
-  {
+test("官方 0.1.7 reopen：V0/V1/V2 修成 V3 wrapper 后迁移，V3 wrapper 转 V4，V4 原生 reopen", async (t) => {
+  const loaded = await loadTargetHostChain();
+  if (loaded.chain === undefined) {
+    return t.skip(loaded.reason);
+  }
+  const chain = loaded.chain;
+  t.diagnostic("official target versions: " + JSON.stringify(chain.versions));
+  for (const version of [0, 1, 2, 3, 4] as const) {
+    const root = mkdtempSync(join(tmpdir(), "repair-target-reopen-"));
     try {
-      const path = writeV0Log(root);
-      const before = decodeLines(readFileSync(path));
-      await assert.rejects(() => runHostMigration(chain, before), /unclassified message source/);
-
-      const stats = { sources: 0 };
-      const repaired = before.map((line) =>
-        JSON.stringify(rewriteRow(JSON.parse(line), stats).row),
+      const source = version === 3 ? V3_SOURCE : version === 4 ? V4_SOURCE : LEGACY_SOURCE;
+      const sessionDir = join(root, "sessions", "--tmp-proj--", "session-test");
+      mkdirSync(sessionDir, { recursive: true });
+      const { path } = writeVersionLog(sessionDir, version, {
+        source,
+        includeSpliced: false,
+      });
+      if (version < 3) {
+        const before = readRows(path);
+        assert.throws(
+          () => reopenWithOfficialCatalog(chain, before),
+          /unclassified message source/,
+        );
+        const plan = planSession(sessionDir);
+        assert.equal(plan.status, "needs-repair");
+        applyRepair(sessionDir, plan.file!, plan.rows as Row[]);
+      }
+      const rows = readRows(path);
+      const beforeReopen = readFileSync(path);
+      const artifact = reopenWithOfficialCatalog(chain, rows);
+      assert.equal(artifact.header.version, 4);
+      const sources = collectSources(artifact.events).filter(
+        (candidate) => candidate.kind === V4_SOURCE_KIND,
       );
-      assert.equal(stats.sources, 1);
-
-      const events = await runHostMigration(chain, repaired);
-      assert.ok(events.length >= 3, "修复后迁移应产出 v3 事件");
-      const catalogEvent = events.find((event: { type: string }) => event.type === "user/message");
-      assert.equal(catalogEvent.data.source.kind, "plugin");
-      assert.equal(catalogEvent.data.source.plugin, CATALOG_SOURCE_PLUGIN);
-      assert.equal(catalogEvent.data.source.form, "snapshot");
-      assert.equal(catalogEvent.data.source.sections[0].text, CATALOG_TEXT);
+      assert.ok(sources.length > 0, "V0/V1/V2/V3 必须经官方链得到 V4 source");
+      for (const candidate of sources) {
+        assertV4Source(candidate, CATALOG_TEXT);
+      }
+      assert.deepEqual(readFileSync(path), beforeReopen, "reopen 不得改写源文件");
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
-  }
-});
-
-test("端到端：修复前宿主迁移被拒，修复后同一条链跑通（agent/inbox/spliced）", async (t) => {
-  const chain = await loadHostChain();
-  if (chain === undefined) return t.skip("宿主 @deepseek-ai/dsh 不可达");
-  const root = mkdtempSync(join(tmpdir(), "repair-e2e-spliced-"));
-  try {
-    const path = writeV0Log(root, { spliced: true });
-    const before = decodeLines(readFileSync(path));
-    await assert.rejects(() => runHostMigration(chain, before), /unclassified message source/);
-
-    const stats = { sources: 0 };
-    const repaired = before.map((line) => JSON.stringify(rewriteRow(JSON.parse(line), stats).row));
-    assert.equal(stats.sources, 1);
-
-    const events = await runHostMigration(chain, repaired);
-    const spliced = events.find((event: { type: string }) => event.type === "agent/inbox/spliced");
-    assert.equal(spliced.data.inserted[0].source.kind, "plugin");
-    assert.equal(spliced.data.inserted[0].source.sections[0].text, CATALOG_TEXT);
-  } finally {
-    rmSync(root, { recursive: true, force: true });
   }
 });

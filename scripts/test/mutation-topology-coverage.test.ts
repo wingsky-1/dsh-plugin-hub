@@ -29,9 +29,12 @@ import {
   collectMutationSpecs,
   coverageExcludeProblems,
   mutationFaceRatchetProblems,
+  mutationPolicyProblems,
+  mutationPolicyRatchetProblems,
   packageEntryProblems,
   packageMutationFace,
   packageRegistrationProblems,
+  rootSharedEntryProblems,
   segmentTestShapeProblems,
   segmentTestUnionProblems,
 } from "../gate/mutation-topology.mjs";
@@ -47,6 +50,74 @@ const ROOT = join(import.meta.dirname, "..", "..");
 const GENERATOR = join(ROOT, "scripts", "gate", "gen-stryker-conf.mjs");
 const VERIFY_DIR_IMPORTS = join(ROOT, "scripts", "gate", "verify-dir-imports.mjs");
 const TOPOLOGY_PATH = join(ROOT, "scripts", "data", "mutation-topology.json");
+
+test("P2 root-shared：真实拓扑精确登记 settings namespace 变异段", () => {
+  const topology = JSON.parse(readFileSync(TOPOLOGY_PATH, "utf8"));
+  assert.deepEqual(topology.$rootShared, {
+    testRoot: "shared",
+    testPattern: "test/**/*.mutation.test.ts",
+    threshold: 60,
+    segments: {
+      "settings-namespace": {
+        mutate: ["shared/settings-namespace.js"],
+        excludes: [],
+        testFiles: ["shared/test/settings-namespace.mutation.test.ts"],
+        comment:
+          "Phase 5 P2：lan/mcp 共同运行时接缝；descriptor/source/onChange 与写入委托由独立 Vitest 行为判据直接覆盖。",
+      },
+    },
+  });
+});
+
+test("P2 root-shared：独立 surface 纳入形状、算子与文件面棘轮", () => {
+  const valid = {
+    testRoot: "shared",
+    testPattern: "test/**/*.mutation.test.ts",
+    threshold: 60,
+    segments: {
+      "settings-namespace": {
+        mutate: ["shared/settings-namespace.js"],
+        excludes: [],
+        testFiles: ["shared/test/settings-namespace.mutation.test.ts"],
+      },
+    },
+  };
+  assert.deepEqual(rootSharedEntryProblems(valid), []);
+  assert.match(
+    rootSharedEntryProblems({ ...valid, testPattern: "test/**/*.test.ts" }).join(),
+    /node:test 标准入口不得混入/,
+  );
+  assert.match(
+    mutationPolicyProblems({
+      sharedDefaults: { excludedMutations: [] },
+      packages: {},
+      $rootShared: { ...valid, excludedMutations: [] },
+    }).join(),
+    /\[\$rootShared\].*不允许包级排除 override/,
+  );
+
+  const expand = (pattern: string) =>
+    pattern === "shared/settings-namespace.js" ? ["shared/settings-namespace.js"] : [];
+  const sharedDefaults = { excludedMutations: ["StringLiteral"] };
+  const ratchet = mutationFaceRatchetProblems({
+    baseTopology: { sharedDefaults, packages: {}, $rootShared: valid },
+    headTopology: { sharedDefaults, packages: {} },
+    expand,
+  });
+  assert.deepEqual([ratchet.packagesCompared, ratchet.filesCompared], [1, 1]);
+  assert.match(ratchet.problems.join(), /\[\$rootShared\].*shared\/settings-namespace\.js/);
+  assert.match(
+    mutationPolicyRatchetProblems(
+      {
+        sharedDefaults,
+        packages: {},
+        $rootShared: { ...valid, enableMutations: ["StringLiteral"] },
+      },
+      { sharedDefaults, packages: {}, $rootShared: valid },
+    ).join(),
+    /\[\$rootShared\].*StringLiteral/,
+  );
+});
 
 test("#836：段缺 excludes 时判红且不给可判定的面，段声明了则只收显式值（无默认面）", () => {
   const topology = {
@@ -564,7 +635,10 @@ test("#773 R4 反证：projectTestSurface 遇坏包登记给判词，不得抛�
  * `_single` 段派生 `<pkg>.json`，其余段派生 `<pkg>-<seg>.json`。
  */
 function confOwnerOf(
-  topology: { packages?: Record<string, { segments?: Record<string, unknown> }> },
+  topology: {
+    packages?: Record<string, { segments?: Record<string, unknown> }>;
+    $rootShared?: { segments?: Record<string, unknown> };
+  },
   fileName: string,
 ) {
   for (const [pkgName, pkgDef] of Object.entries(topology.packages ?? {})) {
@@ -572,6 +646,10 @@ function confOwnerOf(
       const name = segKey === "_single" ? `${pkgName}.json` : `${pkgName}-${segKey}.json`;
       if (name === fileName) return pkgName;
     }
+  }
+  for (const segKey of Object.keys(topology.$rootShared?.segments ?? {})) {
+    const name = segKey === "_single" ? "shared.json" : `shared-${segKey}.json`;
+    if (name === fileName) return "shared";
   }
   return undefined;
 }

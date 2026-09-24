@@ -16,6 +16,7 @@ import { callWithRetry, combineSignals } from "../../src/server/tools/impl/clien
 import { toWireQuestions } from "../../src/server/tools/impl/client.ts";
 import type { DecisionRequestBody } from "../../src/server/tools/impl/client.ts";
 import { signalOf } from "../../src/server/tools/impl/define.ts";
+import { createSemaphore } from "../../src/server/tools/impl/semaphore.ts";
 import { decide } from "../../src/server/tools/impl/service.ts";
 
 const CONNECTION = {
@@ -46,6 +47,14 @@ function decideArgs(): unknown {
   };
 }
 
+function secretShapedArgs(): unknown {
+  return {
+    preset_id: "general",
+    state: { text: "key sk-Abcdef12345678 here", lang: "en" },
+    questions_override: [{ id: "q1", text: "Pick one.", kind: "choice", options: ["A", "B"] }],
+  };
+}
+
 function sdkChoice(id: string, choice: string, confidence: number): unknown {
   return {
     model: "jev-1.13.0",
@@ -71,6 +80,25 @@ interface Seen {
 
 function abortError(): unknown {
   return new DOMException("This operation was aborted", "AbortError");
+}
+
+interface Deferred<T> {
+  readonly promise: Promise<T>;
+  readonly resolve: (value: T) => void;
+}
+
+function deferred<T>(): Deferred<T> {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
+/** 让 abort 的同步 reject 穿过 service 的 await/catch；不使用真实时间。 */
+async function flushAbortSettlement(): Promise<void> {
+  await Promise.resolve();
+  await Promise.resolve();
 }
 
 /** 成功 fetch（记录所见 signal）。 */
@@ -138,6 +166,96 @@ describe("combineSignals 融合", () => {
   });
 });
 
+describe("semaphore 取消队列", () => {
+  it("预取消不入队、不启动 task，并以 AbortError settle", async () => {
+    const gate = createSemaphore(1);
+    const caller = new AbortController();
+    caller.abort();
+    let taskCalls = 0;
+
+    const result = gate.run(async () => {
+      taskCalls += 1;
+    }, caller.signal);
+
+    await expect(result).rejects.toMatchObject({ name: "AbortError" });
+    expect(taskCalls).toBe(0);
+  });
+
+  it("max=1：第二项 abort 在首项释放前摘除，第三项仍按 FIFO 执行", async () => {
+    const gate = createSemaphore(1);
+    const releaseFirst = deferred<undefined>();
+    const order: string[] = [];
+    let secondCalls = 0;
+    let thirdCalls = 0;
+
+    const first = gate.run(async () => {
+      order.push("first:start");
+      await releaseFirst.promise;
+      order.push("first:end");
+    });
+    const caller = new AbortController();
+    const second = gate.run(async () => {
+      secondCalls += 1;
+      order.push("second");
+    }, caller.signal);
+    const third = gate.run(async () => {
+      thirdCalls += 1;
+      order.push("third");
+    });
+    let secondSettled = false;
+    void second.then(
+      () => {
+        secondSettled = true;
+      },
+      () => {
+        secondSettled = true;
+      },
+    );
+
+    caller.abort();
+    await flushAbortSettlement();
+    const settledBeforeRelease = secondSettled;
+    releaseFirst.resolve(undefined);
+    const [firstOutcome, secondOutcome, thirdOutcome] = await Promise.allSettled([
+      first,
+      second,
+      third,
+    ]);
+
+    expect(settledBeforeRelease).toBe(true);
+    expect(firstOutcome?.status).toBe("fulfilled");
+    expect(secondOutcome?.status).toBe("rejected");
+    if (secondOutcome?.status === "rejected") {
+      expect(secondOutcome.reason).toMatchObject({ name: "AbortError" });
+    }
+    expect(thirdOutcome?.status).toBe("fulfilled");
+    expect(secondCalls).toBe(0);
+    expect(thirdCalls).toBe(1);
+    expect(order).toEqual(["first:start", "first:end", "third"]);
+  });
+
+  it("max<=0 仍按 1 串行", async () => {
+    const gate = createSemaphore(0);
+    const releaseFirst = deferred<undefined>();
+    const order: string[] = [];
+    const first = gate.run(async () => {
+      order.push("first:start");
+      await releaseFirst.promise;
+      order.push("first:end");
+    });
+    let secondStarted = false;
+    const second = gate.run(async () => {
+      secondStarted = true;
+      order.push("second");
+    });
+
+    expect(secondStarted).toBe(false);
+    releaseFirst.resolve(undefined);
+    await Promise.all([first, second]);
+    expect(order).toEqual(["first:start", "first:end", "second"]);
+  });
+});
+
 describe("caller abort 取消外调", () => {
   it("预取消：零外调即 ABORTED", async () => {
     const seen: Seen = { count: 0 };
@@ -154,8 +272,73 @@ describe("caller abort 取消外调", () => {
       expect(out.error.category).toBe("aborted");
     }
   });
-  it("飞行中取消（socket 关闭同形）：外调见 abort 且不重试", async () => {
+  it("密形文本预取消：在 precheck/key/history 前短路为 ABORTED", async () => {
+    const caller = new AbortController();
+    caller.abort();
+    let fetchCalls = 0;
+    let resolveKeyCalls = 0;
+    let historyCalls = 0;
+
+    const out = await decide(
+      secretShapedArgs(),
+      baseDeps({
+        signal: caller.signal,
+        fetchImpl: async () => {
+          fetchCalls += 1;
+          return { status: 200, text: "{}" };
+        },
+        resolveKey: () => {
+          resolveKeyCalls += 1;
+          return { key: "Abcdefgh12345678", source: "env" as const };
+        },
+        recordEvent: () => {
+          historyCalls += 1;
+        },
+      }),
+    );
+
+    expect(out).toEqual({
+      ok: false,
+      error: { errorCode: "ABORTED", category: "aborted", message: "caller aborted" },
+    });
+    expect(fetchCalls).toBe(0);
+    expect(resolveKeyCalls).toBe(0);
+    expect(historyCalls).toBe(0);
+  });
+  it("disabled + 预取消仍优先返回 PRESET_DISABLED", async () => {
+    const caller = new AbortController();
+    caller.abort();
+    let resolveKeyCalls = 0;
+    let historyCalls = 0;
+    const out = await decide(
+      secretShapedArgs(),
+      baseDeps({
+        signal: caller.signal,
+        isEnabled: () => false,
+        resolveKey: () => {
+          resolveKeyCalls += 1;
+          return { key: "Abcdefgh12345678", source: "env" as const };
+        },
+        recordEvent: () => {
+          historyCalls += 1;
+        },
+      }),
+    );
+
+    expect(out).toEqual({
+      ok: false,
+      error: {
+        errorCode: "PRESET_DISABLED",
+        category: "preset-disabled",
+        message: "preset disabled",
+      },
+    });
+    expect(resolveKeyCalls).toBe(0);
+    expect(historyCalls).toBe(0);
+  });
+  it("飞行中取消（socket 关闭同形）：外调见 abort、不重试且保留 history", async () => {
     const seen: Seen = { count: 0 };
+    const events: { readonly resultKind: string; readonly errorCode?: string }[] = [];
     const caller = new AbortController();
     const racing: FetchImpl = async (_url, init) => {
       seen.count += 1;
@@ -166,7 +349,16 @@ describe("caller abort 取消外调", () => {
       });
       throw new Error("unreachable");
     };
-    const out = await decide(decideArgs(), baseDeps({ fetchImpl: racing, signal: caller.signal }));
+    const out = await decide(
+      decideArgs(),
+      baseDeps({
+        fetchImpl: racing,
+        signal: caller.signal,
+        recordEvent: (event) => {
+          events.push({ resultKind: event.resultKind, errorCode: event.errorCode });
+        },
+      }),
+    );
     expect(seen.count).toBe(1);
     expect(seen.lastSignal?.aborted).toBe(true);
     expect(out.ok).toBe(false);
@@ -174,6 +366,7 @@ describe("caller abort 取消外调", () => {
       expect(out.error.errorCode).toBe("ABORTED");
       expect(out.error.category).toBe("aborted");
     }
+    expect(events).toEqual([{ resultKind: "upstream-error", errorCode: "ABORTED" }]);
   });
   it("callWithRetry 直调：预取消不触 fetch", async () => {
     const caller = new AbortController();
@@ -193,6 +386,136 @@ describe("caller abort 取消外调", () => {
     expect(r.retries).toBe(0);
     expect(r.failure?.code).toBe("ABORTED");
     expect(r.failure?.retryable).toBe(false);
+  });
+});
+
+describe("service 排队取消", () => {
+  it("abort 在首项释放前返回 ABORTED，且第二项零 history", async () => {
+    const gate = createSemaphore(1);
+    const firstEntered = deferred<undefined>();
+    const releaseFirst = deferred<{ readonly status: number; readonly text: string }>();
+    const historySessions: string[] = [];
+    let fetchCalls = 0;
+    let resolveKeyCalls = 0;
+    const resolveKey = (): { readonly key: string; readonly source: "env" } => {
+      resolveKeyCalls += 1;
+      return { key: "Abcdefgh12345678", source: "env" };
+    };
+    const fetchImpl: FetchImpl = async () => {
+      fetchCalls += 1;
+      if (fetchCalls === 1) {
+        firstEntered.resolve(undefined);
+        return releaseFirst.promise;
+      }
+      return { status: 200, text: JSON.stringify(sdkChoice("q1", "A", 0.9)) };
+    };
+    const recordEvent = (event: { readonly sessionId: string }): void => {
+      historySessions.push(event.sessionId);
+    };
+
+    const first = decide(
+      decideArgs(),
+      baseDeps({ sessionId: "first", limit: gate.run, fetchImpl, recordEvent, resolveKey }),
+    );
+    await firstEntered.promise;
+    const caller = new AbortController();
+    let secondSettled = false;
+    const second = decide(
+      decideArgs(),
+      baseDeps({
+        sessionId: "second",
+        limit: gate.run,
+        fetchImpl,
+        recordEvent,
+        resolveKey,
+        signal: caller.signal,
+      }),
+    ).then(
+      (out) => {
+        secondSettled = true;
+        return out;
+      },
+      (cause: unknown) => {
+        secondSettled = true;
+        throw cause;
+      },
+    );
+
+    caller.abort();
+    await flushAbortSettlement();
+    const settledBeforeRelease = secondSettled;
+    releaseFirst.resolve({ status: 200, text: JSON.stringify(sdkChoice("q1", "A", 0.9)) });
+    const [firstOut, secondOut] = await Promise.all([first, second]);
+
+    expect(settledBeforeRelease).toBe(true);
+    expect(firstOut.ok).toBe(true);
+    expect(secondOut).toEqual({
+      ok: false,
+      error: { errorCode: "ABORTED", category: "aborted", message: "caller aborted" },
+    });
+    expect(fetchCalls).toBe(1);
+    expect(resolveKeyCalls).toBe(1);
+    expect(historySessions).toEqual(["first"]);
+  });
+
+  it("密形排队项 abort：未启动 task 前不走 local-precheck", async () => {
+    const gate = createSemaphore(1);
+    const firstEntered = deferred<undefined>();
+    const releaseFirst = deferred<{ readonly status: number; readonly text: string }>();
+    const historySessions: string[] = [];
+    let fetchCalls = 0;
+    let resolveKeyCalls = 0;
+    const fetchImpl: FetchImpl = async () => {
+      fetchCalls += 1;
+      if (fetchCalls === 1) {
+        firstEntered.resolve(undefined);
+        return releaseFirst.promise;
+      }
+      return { status: 200, text: JSON.stringify(sdkChoice("q1", "A", 0.9)) };
+    };
+    const first = decide(
+      decideArgs(),
+      baseDeps({
+        sessionId: "first",
+        limit: gate.run,
+        fetchImpl,
+        recordEvent: (event) => {
+          historySessions.push(event.sessionId);
+        },
+      }),
+    );
+    await firstEntered.promise;
+    const caller = new AbortController();
+    const second = decide(
+      secretShapedArgs(),
+      baseDeps({
+        sessionId: "second",
+        limit: gate.run,
+        fetchImpl,
+        recordEvent: (event) => {
+          historySessions.push(event.sessionId);
+        },
+        resolveKey: () => {
+          resolveKeyCalls += 1;
+          return { key: "Abcdefgh12345678", source: "env" as const };
+        },
+        signal: caller.signal,
+      }),
+    );
+
+    caller.abort();
+    await flushAbortSettlement();
+    releaseFirst.resolve({ status: 200, text: JSON.stringify(sdkChoice("q1", "A", 0.9)) });
+    const [firstOut, secondOut] = await Promise.all([first, second]);
+
+    expect(firstOut.ok).toBe(true);
+    expect(secondOut).toEqual({
+      ok: false,
+      error: { errorCode: "ABORTED", category: "aborted", message: "caller aborted" },
+    });
+    expect(fetchCalls).toBe(1);
+    expect(resolveKeyCalls).toBe(0);
+    expect(historySessions).toEqual(["first"]);
   });
 });
 
@@ -246,6 +569,43 @@ describe("无 signal 旧行为不变", () => {
       expect(out.error.errorCode).toBe("TIMEOUT");
       expect(out.error.category).toBe("timeout");
     }
+  });
+  it("local-precheck 不被远端槽位阻塞（旧无 signal 路径）", async () => {
+    const gate = createSemaphore(1);
+    const firstEntered = deferred<undefined>();
+    const releaseFirst = deferred<{ readonly status: number; readonly text: string }>();
+    let fetchCalls = 0;
+    const fetchImpl: FetchImpl = async () => {
+      fetchCalls += 1;
+      if (fetchCalls === 1) {
+        firstEntered.resolve(undefined);
+        return releaseFirst.promise;
+      }
+      return { status: 200, text: JSON.stringify(sdkChoice("q1", "A", 0.9)) };
+    };
+    const first = decide(
+      decideArgs(),
+      baseDeps({ sessionId: "first", limit: gate.run, fetchImpl }),
+    );
+    await firstEntered.promise;
+    let precheckSettled = false;
+    const precheck = decide(
+      secretShapedArgs(),
+      baseDeps({ sessionId: "precheck", limit: gate.run, fetchImpl }),
+    ).then((out) => {
+      precheckSettled = true;
+      return out;
+    });
+
+    await flushAbortSettlement();
+    const settledBeforeRelease = precheckSettled;
+    releaseFirst.resolve({ status: 200, text: JSON.stringify(sdkChoice("q1", "A", 0.9)) });
+    const [firstOut, precheckOut] = await Promise.all([first, precheck]);
+
+    expect(settledBeforeRelease).toBe(true);
+    expect(firstOut.ok).toBe(true);
+    expect(precheckOut).toMatchObject({ ok: true, appliedSource: "local-precheck" });
+    expect(fetchCalls).toBe(1);
   });
   it("成功路径：单次调用即 high/auto", async () => {
     const seen: Seen = { count: 0 };

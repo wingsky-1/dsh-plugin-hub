@@ -3,7 +3,7 @@
  * repair-mcp-catalog-sessions —— 一次性修复：升级 dsh 后含 mcp-catalog 的历史会话无法加载（#723）。
  *
  * 背景：dsh-mcp-manager 0.2.x 及更早版本把能力目录注入消息写成
- * `source: { kind: "mcp-catalog", form: "catalog", entries }`。dsh 0.1.5 的
+ * `source: { kind: "mcp-catalog", form: "catalog", entries }`。历史 dsh 0.1.5 的
  * session format v2→v3 迁移对 surface 消息的 `source.kind` 有一份封闭白名单
  * （`@deepseek-ai/dsh-session-format-v2-to-v3` 的 `SOURCE_KINDS`），自造值不在其中，
  * 于是 format v0/v1/v2 的会话迁移被拒：
@@ -11,27 +11,26 @@
  *   cannot safely transform unclassified message source;
  *   source v0 artifact remains unchanged
  *
- * 产物本身完好（宿主拒绝时按设计原样保留），只是读不出来。本脚本把已落盘产物里
- * 那几处 source 就地改写成宿主认可的形态（与插件 0.3+ 写入的形态一致）：
+ * 产物本身完好（宿主拒绝时按设计原样保留），只是读不出来。对 v0/v1/v2，本脚本只把
+ * 已落盘产物里的旧 source 修成官方 v3→v4 链所接收的 **V3 plugin wrapper**：
  *
  *   旧：{ kind: "mcp-catalog", form: "catalog", entries }
  *   新：{ kind: "plugin", plugin: "@wingsky-1/dsh-mcp-manager",
  *         form: "snapshot", sections: [{ name: "mcp-catalog", text: <原消息正文> }] }
  *
- * 只改 source 的元数据，正文与事件序列一律不动：v0/v1/v2 修完仍由 dsh 自己完成迁移
- * （本脚本**不产出** v3 产物）；v3 改完原地仍可被宿主读取路径完整恢复。
+ * 历史责任止于 V3 wrapper：产物仍保持 v0/v1/v2，由 dsh 0.1.7-rc.1 的官方迁移链依次
+ * 恢复到 v3、再转成 producer-owned V4。脚本不实现、也不伪造 v3→v4 migration，更不会把
+ * v0/v1/v2 直接写成 V4。V3 wrapper 本身原样保留，交给官方迁移；V4 是当前格式，完全不动。
  *
- * v3 产物**默认也修**：v3 里同样可能残留旧 source（升级前创建、升级后又被增量写入的
- * 会话，本机实测 224/272 个 v3 会话含旧 kind），而宿主**将来**给 v3→v4 迁移加同类闸门
- * 时会重演这次的永久拒载。v3 读取路径不校验 message.source，所以这次改写**零语义变化**
- * （只换 source 元数据，正文与事件序列不动）。`--legacy-only` 可退回只修 v0/v1/v2。
+ * v3 产物中若仍残留自造的旧 kind，默认也修成同一 V3 wrapper；`--legacy-only` 可只修
+ * v0/v1/v2。只换 source 元数据，消息正文与事件序列保持不变。
  *
  * 安全约束（红线）：
  *   - 默认 dry-run，`--apply` 才落盘；
  *   - 落盘前先复制 `.bak-<时间戳>`，写入走「同目录临时文件 + fsync + 原子 rename」；
  *   - 幂等：已改写过的 source 不再匹配，重复运行零改动；
  *   - 只读 `~/.dsh/sessions/**`（可用 `--home` / `DSH_HOME` 覆盖）；
- *   - 写后自检：帧结构严格扫描 + 每帧解码 + 全行 JSON 解析 + 零遗留旧 kind。
+ *   - 写后自检：帧结构严格扫描 + 每帧解码 + 全行 JSON 解析 + 目标 source 完整 V3 wrapper。
  *
  * 用法：
  *   node scripts/maintenance/repair-mcp-catalog-sessions.mjs                 # 预演（默认：v0/v1/v2 + v3）
@@ -56,9 +55,9 @@ import {
   writeFileSync,
 } from "node:fs";
 import { constants as zlibConstants, zstdCompressSync, zstdDecompressSync } from "node:zlib";
-import { homedir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { dshHome } from "../../shared/dsh-home.js";
 
 /** 插件身份：与 src/server/catalog/impl/entries/index.ts 的 CATALOG_SOURCE_PLUGIN 同源（发布物内联，无法 import）。 */
 export const CATALOG_SOURCE_PLUGIN = "@wingsky-1/dsh-mcp-manager";
@@ -72,6 +71,9 @@ const ZSTD_MAGIC = 4247762216;
 const CHECKSUM_OPTIONS = { params: { [zlibConstants.ZSTD_c_checksumFlag]: 1 } };
 /** 会话日志文件名：`session.jsonl.zstd`(v0) / `session.v<N>.jsonl.zstd`。 */
 const LOG_FILENAME = /^session(?:\.v(\d+))?\.jsonl\.zstd$/u;
+/** 目录 snapshot 正文的最小结构；只校验 maintenance 自己的输出，不承担业务 reader admission。 */
+const CATALOG_SNAPSHOT_PATTERN =
+  /<system-reminder>\s*<available_mcp_servers>[\s\S]*<\/available_mcp_servers>\s*<\/system-reminder>/u;
 
 /** 单行 JSON（与宿主写盘一致：无缩进、无多余空白）。 */
 function stringifyRow(value) {
@@ -221,7 +223,7 @@ export function rewriteCatalogSource(source, messageText) {
   };
 }
 
-/** 消息正文（user/message 为 content 数组里的 text 块）。 */
+/** 消息正文（user/message 与 inbox/spliced inserted message 共用）。 */
 function messageTextOf(message) {
   const content = message?.content;
   if (!Array.isArray(content)) return undefined;
@@ -230,24 +232,41 @@ function messageTextOf(message) {
       typeof block === "object" &&
       block !== null &&
       block.type === "text" &&
-      typeof block.text === "string"
+      typeof block.text === "string" &&
+      block.text.length > 0
     )
       return block.text;
   }
   return undefined;
 }
 
-/** 旧 source 的目录正文兜底：逐条渲染（仅在消息本身取不到正文时使用）。 */
+/** 与当前目录正文相同的最小 HTML 转义；仅供正文缺失时合成 V3 snapshot。 */
+function escapeCatalogText(value) {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replace(/[\r\n]/gu, " ");
+}
+
+/**
+ * 旧 source 的目录正文兜底：按当前 snapshot 的单射语法逐条渲染。
+ * 正文缺失时也必须保留每个合法 entry，且官方迁移后业务 reader 仍能还原它。
+ */
 function legacySourceText(source) {
   const entries = Array.isArray(source.entries) ? source.entries : [];
-  const lines = entries.map((entry) => {
-    if (typeof entry !== "object" || entry === null) return "";
-    const name = entry.name;
-    const text = entry.text;
-    if (typeof name !== "string") return "";
-    return typeof text === "string" ? `${name}: ${text}` : name;
-  });
-  return lines.filter((line) => line.length > 0).join("\n");
+  const lines = ["<system-reminder>", "<available_mcp_servers>"];
+  for (const entry of entries) {
+    if (typeof entry !== "object" || entry === null || typeof entry.name !== "string") continue;
+    const name = escapeCatalogText(entry.name);
+    lines.push(
+      typeof entry.text === "string"
+        ? `- \`${name}\`: ${escapeCatalogText(entry.text)}`
+        : `- \`${name}\``,
+    );
+  }
+  lines.push("</available_mcp_servers>", "</system-reminder>");
+  return lines.join("\n");
 }
 
 /** 是否命中旧形态目录 source。 */
@@ -317,13 +336,11 @@ export function migrationCandidate(files) {
  * 处理一个会话目录。
  *
  * 目标选择（#723 后续）：
- * 1. 有 v0/v1/v2 产物 → 修它（不修就打不开，宿主会自己迁移）；
- * 2. 否则看 v3 产物 → **默认也修**：v3 里同样可能残留旧 source（升级前就已存在、
- *    又被增量写入的会话），而宿主**将来**给 v3→v4 迁移加同类闸门时会重演这次的
- *    永久拒载；v3 修复本身零语义变化（只换 source 元数据，v3 读取路径不校验它）。
- *    传 `legacyOnly` 可退回"只修 v0/v1/v2"。
+ * 1. 有 v0/v1/v2 产物 → 修成 V3 wrapper（不修就会被官方历史迁移闸门拒绝）；
+ * 2. 否则看 v3 产物 → 默认也修其中残留的旧 kind；V3 wrapper 本身原样保留，
+ *    交给官方 v3→v4 链。传 `legacyOnly` 可只修 v0/v1/v2。
  * @param {string} sessionDir 会话目录。
- * @param {{legacyOnly?: boolean}} [options] 只处理待迁移产物（不动 v3）。
+ * @param {{legacyOnly?: boolean}} [options] true 时只处理 v0/v1/v2，不处理 v3。
  * @returns {{status: string, sources: number, file?: string, rows?: unknown[]}}
  */
 export function planSession(sessionDir, { legacyOnly = false } = {}) {
@@ -332,9 +349,11 @@ export function planSession(sessionDir, { legacyOnly = false } = {}) {
   const v3 = files
     .filter((file) => /^session\.v3\.jsonl\.zstd$/u.test(file))
     .map((file) => ({ file, version: 3 }))[0];
+  const hasV4 = files.some((file) => /^session\.v4\.jsonl\.zstd$/u.test(file));
   const target = candidate ?? (legacyOnly ? undefined : v3);
   if (target === undefined) {
-    return { status: v3 === undefined ? "no-log" : "already-v3", sources: 0 };
+    const status = v3 !== undefined ? "already-v3" : hasV4 ? "already-v4" : "no-log";
+    return { status, sources: 0 };
   }
   const lines = decodeLines(readFileSync(join(sessionDir, target.file)));
   const stats = { sources: 0 };
@@ -351,11 +370,100 @@ export function planSession(sessionDir, { legacyOnly = false } = {}) {
   };
 }
 
+function jsonPointerSegment(value) {
+  return String(value).replaceAll("~", "~0").replaceAll("/", "~1");
+}
+
+/** 收集所有 source 对象及其 JSON Pointer；输出与原日志据此保持同一事件位置。 */
+function collectSourceLocations(value, path = "", found = []) {
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => {
+      collectSourceLocations(item, `${path}/${index}`, found);
+    });
+    return found;
+  }
+  if (value === null || typeof value !== "object") return found;
+  for (const [key, child] of Object.entries(value)) {
+    const childPath = `${path}/${jsonPointerSegment(key)}`;
+    if (key === "source" && child !== null && typeof child === "object" && !Array.isArray(child)) {
+      found.push({ path: childPath, source: child });
+    }
+    collectSourceLocations(child, childPath, found);
+  }
+  return found;
+}
+
+function legacySourceLocations(rows) {
+  return collectSourceLocations(rows)
+    .filter(({ source }) => isLegacyCatalogSource(source))
+    .map(({ path }) => path);
+}
+
+function describeValue(value) {
+  if (value === undefined) return "<missing>";
+  const encoded = JSON.stringify(value);
+  return encoded === undefined ? String(value) : encoded;
+}
+
+function invalidRepairSource(path, field, expected, value) {
+  throw new Error(
+    `repaired log ${path} has invalid ${field}: expected ${expected}, got ${describeValue(value)}`,
+  );
+}
+
+/** maintenance 只核对 repair target；不解释其它 plugin source，也不承担 V4 admission。 */
+function assertRepairedCatalogSource({ path, source }) {
+  if (source.kind !== "plugin") {
+    invalidRepairSource(path, "source.kind", JSON.stringify("plugin"), source.kind);
+  }
+  if (source.plugin !== CATALOG_SOURCE_PLUGIN) {
+    invalidRepairSource(
+      path,
+      "source.plugin",
+      JSON.stringify(CATALOG_SOURCE_PLUGIN),
+      source.plugin,
+    );
+  }
+  if (source.form !== "snapshot") {
+    invalidRepairSource(path, "source.form", JSON.stringify("snapshot"), source.form);
+  }
+  if (!Array.isArray(source.sections)) {
+    invalidRepairSource(path, "source.sections", "an array", source.sections);
+  }
+  const catalogSections = source.sections.filter(
+    (section) =>
+      section !== null &&
+      typeof section === "object" &&
+      !Array.isArray(section) &&
+      section.name === CATALOG_SECTION_NAME,
+  );
+  if (catalogSections.length === 0) {
+    invalidRepairSource(
+      path,
+      "source.sections[].name",
+      `at least one ${JSON.stringify(CATALOG_SECTION_NAME)} section`,
+      source.sections,
+    );
+  }
+  for (const section of catalogSections) {
+    if (!CATALOG_SNAPSHOT_PATTERN.test(section.text)) {
+      invalidRepairSource(
+        path,
+        `source.sections[${CATALOG_SECTION_NAME}].text`,
+        "a catalog snapshot",
+        section.text,
+      );
+    }
+  }
+}
+
 /** 落盘：备份 + 临时文件 + fsync + 原子 rename，随后自检。 */
 export function applyRepair(sessionDir, file, rows) {
   const target = join(sessionDir, file);
+  const originalRows = decodeLines(readFileSync(target)).map((line) => JSON.parse(line));
+  const repairSourceLocations = legacySourceLocations(originalRows);
   const encoded = encodeFrames(rows.map(stringifyRow));
-  verifyRepaired(encoded);
+  verifyRepaired(encoded, repairSourceLocations);
   const backup = `${target}.bak-${new Date().toISOString().replaceAll(/[:.]/gu, "-")}`;
   copyFileSync(target, backup);
   const temp = join(sessionDir, `.${basename(target)}.repair-${process.pid}`);
@@ -375,14 +483,30 @@ export function applyRepair(sessionDir, file, rows) {
   return backup;
 }
 
-/** 写后自检：帧结构完整、逐帧可解码、每行 JSON、零遗留旧 kind。 */
-export function verifyRepaired(buffer) {
+/**
+ * 写后自检：帧结构完整、逐帧可解码、每行 JSON、零遗留旧 kind，且每个指定 repair
+ * source 都是完整目录 V3 wrapper。省略路径时，纯内存调用会把所有 source 当 target。
+ */
+export function verifyRepaired(buffer, repairSourceLocations) {
   const lines = decodeLines(buffer);
   if (lines.length === 0) throw new Error("repaired log has no rows");
-  for (const line of lines) JSON.parse(line);
-  const leftover = lines.filter((line) => line.includes(`"kind":"${LEGACY_CATALOG_KIND}"`)).length;
+  const rows = lines.map((line) => JSON.parse(line));
+  const sources = collectSourceLocations(rows);
+  const leftover = sources.filter(({ source }) => isLegacyCatalogSource(source)).length;
   if (leftover > 0)
     throw new Error(`repaired log still carries ${leftover} legacy catalog source(s)`);
+
+  const targets =
+    repairSourceLocations === undefined
+      ? sources
+      : repairSourceLocations.map((path) => {
+          const target = sources.find((candidate) => candidate.path === path);
+          if (target === undefined) {
+            throw new Error(`repaired log is missing repair source ${path}`);
+          }
+          return target;
+        });
+  for (const target of targets) assertRepairedCatalogSource(target);
   return { rows: lines.length };
 }
 
@@ -408,7 +532,7 @@ export function parseArgs(argv) {
     apply: false,
     legacyOnly: false,
     session: undefined,
-    home: process.env.DSH_HOME ?? join(homedir(), ".dsh"),
+    home: dshHome(),
   };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];

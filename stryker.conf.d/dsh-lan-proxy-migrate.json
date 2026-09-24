@@ -3,6 +3,7 @@
   "mutate": [
     "packages/dsh-lan-proxy/src/server/migrate/impl/file/index.ts",
     "packages/dsh-lan-proxy/src/server/migrate/impl/layout/index.ts",
+    "packages/dsh-lan-proxy/src/server/migrate/impl/legacy-settings/index.ts",
     "!packages/dsh-lan-proxy/src/client/**",
     "!packages/dsh-lan-proxy/src/**/interface.ts",
     "!packages/dsh-lan-proxy/src/**/deps.ts"

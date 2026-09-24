@@ -1,8 +1,8 @@
 /**
  * dsh-lan-proxy — 浏览器端（自包含）。
  *
- * 行为：在「设置 → 插件」面板渲染 dsh-lan-proxy 配置卡片（settings.plugin.item
- * 插槽，idle 插件同款风格）：
+ * 行为：在插件管理页的 dsh-lan-proxy 行详情中渲染配置卡片
+ * （plugins.row.config 插槽，idle 插件同款风格）：
  * - 启用开关 / LAN 端口 / HTTPS 开关与端口 / 证书与私钥文件 / 启动横幅开关；
  * - 点「保存」经 loopback HTTP 配置路由提交增量 patch，宿主端转写官方 settings
  *   命名空间（scope.update/replace），scope.watch 触发转发器热更新（保存即热
@@ -28,6 +28,7 @@ import { zh, en, type LanProxyLocaleKey } from "./locales.ts";
 import { bindLocale } from "../../../../shared/client/i18n.js";
 import { SettingsCard } from "./settings-card.tsx";
 import { DEFAULTS } from "./shared/interface.ts";
+import { LAN_PROXY_IDENTITY } from "../shared/interface.ts";
 import {
   evaluateHostTrust,
   hostTrustAlert,
@@ -49,6 +50,7 @@ declare module "@deepseek-ai/dsh-client-ui-slots" {
 
 /** 本插件字典命名空间（宿主 locale 服务注册用）。 */
 const NS = "settings.lanProxy";
+const ROW_CONFIG_SLOT = "plugins.row.config";
 
 const STYLE_ID = "dsh-lan-proxy-style";
 const CSS_VERSION = "4";
@@ -57,8 +59,8 @@ const CSS_VERSION = "4";
 
 /**
  * 浏览器端上下文的窄面（本包实际使用的面：remote/get/effect），与 inject 声明的
- * ["slots", "locale", "remote"] 对齐；slots 的读形态见 SlotsView，locale 的读形态
- * 见 apply 内的内联声明。写成结构类型之后，多用一个服务却忘了声明会在类型层先露出来。
+ * ["slots", "configForms", "locale", "remote"] 对齐；slots 与 configForms 的读形态
+ * 见下方窄接口。多用一个服务却忘了声明会在类型层先露出来。
  */
 interface ClientContext {
   readonly remote?: unknown;
@@ -66,10 +68,27 @@ interface ClientContext {
   effect: (execute: () => () => void, label?: string) => unknown;
 }
 
-/** 宿主插槽读形态（本包只用 settings.plugin.item 的 inject/register；缺失即卡片不挂载）。 */
+/** 0.1.7-rc.1 row entry 的 owner props；form 由宿主提供，当前卡片仍保留既有 HTTP 写面。 */
+interface RowConfigEntryProps {
+  readonly view: "summary" | "page";
+  readonly form?: unknown;
+}
+
+/** 宿主插槽读形态；缺失即页面不挂载。 */
 interface SlotsView {
-  inject: (name: string, setup: () => unknown) => void;
-  register: (item: Record<string, unknown>, render: () => unknown) => unknown;
+  inject: (name: string, setup: () => () => void) => () => void;
+  register: (
+    item: Record<string, unknown>,
+    render: (owner: RowConfigEntryProps) => unknown,
+  ) => () => void;
+}
+
+/** 0.1.7-rc.1 settings 配置服务的目标签名；页面注册只在 Host 服务 watched namespace 时存活。 */
+interface ConfigFormsView {
+  whileServed: (
+    namespaces: readonly string[],
+    register: (served: ReadonlySet<string>) => () => void,
+  ) => () => void;
 }
 
 export function apply(ctx: ClientContext): void {
@@ -78,11 +97,10 @@ export function apply(ctx: ClientContext): void {
     // 缓存判定结果会让「兼容开关刚被保存但页面未重载」这类中间态显示错。
     const hostTrustSignals = () => readHostTrustSignals(ctx.remote as RemoteLike | undefined);
 
-    // 故障态告警（P1-1）：判定结果原先只挂在设置卡片上，而卡片所在的插件列表在非回环
-    // authority（settings scope = memory）下根本不渲染——compat-off / contract-drift 两个
-    // 故障态在页面上不可达。故在 apply 最前面独立告警一次（每页一次，不在渲染期重复，
-    // 不刷屏），且刻意排在 slots / 设置面读取之前：告警不依赖任何设置面。整段防御式读取，
-    // 异常绝不外抛（观测失败不得打断页面启动）。
+    // 故障态告警（P1-1）：配置页受 Host authority 与 settings namespace 投影约束，
+    // compat-off / contract-drift 下可能不可达。故在 apply 最前面独立告警一次（每页一次，
+    // 不在渲染期重复、不刷屏），且刻意排在 slots / configForms 读取之前：告警不依赖配置面。
+    // 整段防御式读取，异常绝不外抛（观测失败不得打断页面启动）。
     try {
       const alert = hostTrustAlert(evaluateHostTrust(hostTrustSignals()));
       if (alert !== null) console.warn(`[dsh-lan-proxy] ${alert}`);
@@ -91,8 +109,9 @@ export function apply(ctx: ClientContext): void {
     }
 
     const slots = ctx.get("slots") as SlotsView | null | undefined;
-    if (!slots) {
-      console.warn("[dsh-lan-proxy] 缺少 slots 服务，设置面板未挂载");
+    const configForms = ctx.get("configForms") as ConfigFormsView | null | undefined;
+    if (!slots || !configForms) {
+      console.warn("[dsh-lan-proxy] 缺少 slots/configForms 服务，插件配置页未挂载");
       return;
     }
 
@@ -126,25 +145,30 @@ export function apply(ctx: ClientContext): void {
       }
     }
 
-    // 设置面板插件项：id 与 key 双写同一条目 id（见宿主 SETTINGS_NS），
-    // key 必须等于宿主端注册的条目 id 才会被面板派发；多余字段会被忽略。
-    slots.inject("settings.plugin.item", function () {
-      return slots.register(
-        {
-          name: "settings.plugin.item",
-          id: "ui-dsh-lan-proxy",
-          key: "ui-dsh-lan-proxy",
-          order: 50,
-          locale: NS,
-        },
-        function () {
-          return React.createElement(SettingsCard, {
-            defaults: DEFAULTS,
-            hostTrustSignals: hostTrustSignals,
-          });
-        },
-      );
-    });
+    // 页面只在 Host 服务 canonical settings namespace 时注册；namespace 撤下时，
+    // whileServed 会调用这个返回值，移除 slot 注入及其注册 disposer。
+    ctx.effect(
+      () =>
+        configForms.whileServed([LAN_PROXY_IDENTITY.rowId], () =>
+          slots.inject(ROW_CONFIG_SLOT, () =>
+            slots.register(
+              {
+                name: ROW_CONFIG_SLOT,
+                key: LAN_PROXY_IDENTITY.rowConfigKey,
+                locale: NS,
+              },
+              (owner) =>
+                React.createElement(SettingsCard, {
+                  view: owner.view,
+                  form: owner.form,
+                  defaults: DEFAULTS,
+                  hostTrustSignals,
+                }),
+            ),
+          ),
+        ),
+      "dsh-lan-proxy: row config page",
+    );
 
     // ⚠️ 清理必须写在 ctx.effect 返回的 disposer 里。
     ctx.effect(function () {
@@ -160,7 +184,7 @@ export function apply(ctx: ClientContext): void {
 }
 
 // ---- 客户端契约：apply/inject 由 build-client 经 factory 装配（干净模块，React externals）----
-// 设置卡片是 React 组件（settings.plugin.item 插槽由宿主 React 渲染）。
+// 设置卡片是 React 组件（plugins.row.config 插槽由宿主 React 渲染）。
 // "remote" 用于读取公开事实 ctx.remote.$host.isLoopback（host trust 观测的第三段
 // 信号）；官方 dsh-client-ui-chat / model-selection 同款直接属性访问。
-export const inject: string[] = ["slots", "locale", "remote"];
+export const inject: string[] = ["slots", "configForms", "locale", "remote"];

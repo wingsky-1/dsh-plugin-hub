@@ -19,12 +19,12 @@
  * profile-boot 消费的官方开关）。
  *
  * 用法：
- *   node verify-isolated.mjs [--dsh <path>] [--port <port>] [--browser] [--keep]
+ *   node verify-isolated.mjs --dsh <path> [--port <port>] [--browser] [--keep]
  *                            [--no-build] [--evidence-dir <dir>] [--audit]
  *                            [--audit-extra-dirs <dir>] [--no-skip-onboarding]
  *                            [--json] [-- <pkg-path>...]
- *   --dsh <path>       指定 dsh 入口（默认 PATH 中的 dsh）。隔离实测必须锚定目标
- *                      dsh 版本——PATH 里碰巧存在的版本会让验证结果不可复现。
+ *   --dsh <path>       必填：显式指定 dsh 0.1.7-rc.1 入口。其它版本或读取失败一律
+ *                      fail-closed，避免产出不属于目标 runtime 的 preset/验证证据。
  *   --port <port>      默认 3456；--port 0 自动探测真实空闲端口并打印（修复打印 0）。
  *                      探测块贴近 dsh 启动，防 EADDRINUSE 窗口。
  *   --browser          额外启动独立浏览器实例（browser-driver.mjs）：独立
@@ -50,8 +50,8 @@
  *   --no-skip-onboarding
  *                      不预置首启弹窗跳过（默认预置 settings.yaml 的
  *                      <namespace>.welcomeNoticeVersion，使「内测声明」默认
- *                      不弹；命名空间与版本均从 dsh 客户端产物现取，rc.7 为
- *                      ui-settings-general，取不到回退 ui-onboarding）。
+ *                      不弹；命名空间与版本均从同一份 dsh 客户端产物现取，任一
+ *                      缺失就不预置并交给 browser-driver 导航后兜底。
  *                      要验证 onboarding 弹窗本身时用它保留原生首启态。
  *   --json             stdout 只出最终 verdict JSON（人类文案全部走 stderr）。
  *   --                 之后为要挂载的本地插件路径（相对路径基于当前 cwd 解析；
@@ -110,10 +110,8 @@
  * 页面上的一切点击静默失效。内测声明由 settings.yaml 的
  * <namespace>.welcomeNoticeVersion 与客户端常量精确相等决定，故启动前预置该
  * 值即默认不弹——命名空间与版本均按 dsh 版本现取（lib/onboarding.mjs：
- * WELCOME_NOTICE_SETTINGS_NAMESPACE / WELCOME_NOTICE_VERSION，rc.7 命名空间为
- * ui-settings-general，取不到回退 ui-onboarding——rc.7 导入映射
- * ui-onboarding→ui-settings-general 自动迁移），取不到就只警告并
- * 交给 browser-driver 导航后兜底，绝不用硬编码值伪造「已跳过」。「添加 API Key」
+ * WELCOME_NOTICE_SETTINGS_NAMESPACE / WELCOME_NOTICE_VERSION）；任一缺失就只
+ * 警告并交给 browser-driver 导航后兜底，绝不用硬编码值伪造「已跳过」。「添加 API Key」
  * 无法预置消除（其「稍后配置」只在当前页面生命周期内有效），由 browser-driver
  * 在导航后自动点击跳过。弹窗成因、复现与对照见 SKILL.md 的硬前提（§3.2）。
  *
@@ -153,14 +151,15 @@ import { isInside, runAudit, scanSnapshot, SKIP_DEEP, WHITELIST_V } from "./lib/
 const SCRIPT_DIR = import.meta.dirname; // Node >= 22 全程可用
 const DRIVER = join(SCRIPT_DIR, "browser-driver.mjs");
 const DEFAULT_PORT = 3456;
+const TARGET_DSH_VERSION = "0.1.7-rc.1";
 const READY_TIMEOUT_MS = 15000;
 const URL_WAIT_MS = 5000; // 访问 URL 行晚于 HTTP 就绪的等待上限（见 9b 注释）
 const LOG_TAIL_LIMIT = 4096; // 防背压：收集缓冲限长（browser-driver stderrBuf 先例）
 
-const USAGE = `用法: node verify-isolated.mjs [--dsh <path>] [--port <port>] [--browser] [--keep] [--no-build] [--evidence-dir <dir>] [--audit] [--audit-extra-dirs <dir>] [--no-skip-onboarding] [--json] [-- <pkg-path>...]
+const USAGE = `用法: node verify-isolated.mjs --dsh <path> [--port <port>] [--browser] [--keep] [--no-build] [--evidence-dir <dir>] [--audit] [--audit-extra-dirs <dir>] [--no-skip-onboarding] [--json] [-- <pkg-path>...]
 
 选项：
-  --dsh <path>         指定 dsh 入口（默认 PATH 中的 dsh；隔离实测必须锚定版本，防 PATH 漂移）
+  --dsh <path>         必须显式传入 --dsh <path> 指向 dsh 0.1.7-rc.1 入口；缺失、不可用、版本读取失败或其它版本均拒绝
   --port <port>        端口（默认 3456；--port 0 自动探测真实空闲端口并打印）
   --browser            额外启动独立浏览器实例（browser-driver.mjs，raw CDP 零依赖）
   --keep               结束后保留临时 DSH_HOME（默认自动删除）
@@ -408,9 +407,9 @@ function readDshVersion(abs) {
       timeout: 10000,
       ...(isWinScript(abs) ? { shell: true } : {}),
     });
-    return (raw.split("\n")[0] || "").trim();
+    return (raw.split("\n")[0] || "").trim() || null;
   } catch {
-    return "unknown";
+    return null;
   }
 }
 
@@ -597,7 +596,7 @@ function setupPlugins(pkgs) {
 
 // --- 首启弹窗默认跳过：预置 settings.yaml 的内测声明版本与命名空间（见头部注释） ---
 // 命名空间与版本均从官方产物单源读取（lib/onboarding.mjs），禁硬编码第二份；
-// 命名空间取不到回退 ui-onboarding（回退依据：rc.7 导入映射 ui-onboarding→ui-settings-general 自动迁移）。
+// 任一事实缺失都不预置，交给 browser-driver 导航后兜底。
 // 预置失败不阻断启动：跳过失效只意味着首屏多一个弹窗（browser-driver 导航后仍会
 // 兜底），而把「dsh 改了客户端常量形态」升级成启动失败，会让验证在无关变更上停摆。
 function presetWelcomeNotice() {
@@ -687,9 +686,8 @@ async function stopDshChild() {
   // 1. kill dsh：与 bash trap 对齐，先 SIGTERM 优雅终止（5s 窗口），SIGKILL
   //    仅作二次兜底（避免活体 dsh 被直接 SIGKILL 跳过清理钩子）
   if (!dshChild) return;
-  await waitPidExit(dshChild.pid, 5000);
   if (pidAlive(dshChild.pid)) killDsh(dshChild, "SIGTERM");
-  await waitPidExit(dshChild.pid, 3000);
+  await waitPidExit(dshChild.pid, 5000);
   if (pidAlive(dshChild.pid)) killDsh(dshChild, "SIGKILL");
 }
 
@@ -853,13 +851,34 @@ function resolveAuditExtraDirs(f) {
 }
 
 function resolveDshEntry(f) {
-  // 0. dsh 入口校验与版本锚定展示（fail fast，不在建完环境后才失败）
-  const rawDsh = f.dsh ?? "dsh";
+  // 0. 显式入口 + 唯一目标版本校验；必须在创建隔离目录与写 preset 之前 fail-closed。
+  if (!f.dsh) {
+    throw new CliError(
+      `错误: 必须显式传入 --dsh <path>（实际版本: 未检查；期望版本: ${TARGET_DSH_VERSION}）`,
+      EXIT.USAGE,
+    );
+  }
+  const rawDsh = f.dsh;
   dshAbs = resolveDsh(rawDsh);
   if (!dshAbs) {
-    throw new CliError(`错误: 找不到 dsh 入口: ${rawDsh}（--dsh 需指向可执行的 dsh）`, EXIT.USAGE);
+    throw new CliError(
+      `错误: 找不到 dsh 入口: ${rawDsh}（实际版本: 不可用；期望版本: ${TARGET_DSH_VERSION}）`,
+      EXIT.USAGE,
+    );
   }
   dshVersion = readDshVersion(dshAbs);
+  if (!dshVersion) {
+    throw new CliError(
+      `错误: 无法读取 dsh 版本: ${dshAbs}（实际版本: 读取失败；期望版本: ${TARGET_DSH_VERSION}）`,
+      EXIT.USAGE,
+    );
+  }
+  if (dshVersion !== TARGET_DSH_VERSION) {
+    throw new CliError(
+      `错误: dsh 版本不匹配: ${dshAbs}（实际版本: ${dshVersion}；期望版本: ${TARGET_DSH_VERSION}）`,
+      EXIT.USAGE,
+    );
+  }
   out(`dsh 入口: ${dshAbs} (${dshVersion})`);
 }
 

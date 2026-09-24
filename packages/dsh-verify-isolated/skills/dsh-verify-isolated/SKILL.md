@@ -46,15 +46,17 @@ description: >
 # 工作目录：被测插件所在的仓库（插件参数的相对路径按当前 cwd 绝对化）
 # SKILL_BASE 取注入的「Base directory for this skill:」后面的绝对路径：
 SKILL_BASE="<Base directory for this skill 一行的绝对路径，见 skill_resources>"
+DSH_ENTRY="/path/to/dsh-0.1.7-rc.1/bin/dsh"
 # 最小可用：起隔离实例（--port 0 自动探测空闲端口）
-node "$SKILL_BASE/scripts/verify-isolated.mjs" --port 0 <插件包路径>
+node "$SKILL_BASE/scripts/verify-isolated.mjs" --dsh "$DSH_ENTRY" --port 0 <插件包路径>
 # 要跑浏览器验证：加 --browser（自带独立浏览器实例，见 §4 并行约束）
-node "$SKILL_BASE/scripts/verify-isolated.mjs" --port 0 --browser <插件包路径>
-# 验证特定 dsh 版本生态：--dsh 锚定入口（PATH 里碰巧是什么版本就验什么，结果不可复现）
-node "$SKILL_BASE/scripts/verify-isolated.mjs" --dsh /opt/dsh-0.1.2-rc.1/bin/dsh --port 0 <插件包路径>
+node "$SKILL_BASE/scripts/verify-isolated.mjs" --dsh "$DSH_ENTRY" --port 0 --browser <插件包路径>
 # 排查用：--keep 保留临时 DSH_HOME；--no-build 跳过挂载前的 pnpm build
-node "$SKILL_BASE/scripts/verify-isolated.mjs" --port 0 --keep --no-build <插件包路径>
+node "$SKILL_BASE/scripts/verify-isolated.mjs" --dsh "$DSH_ENTRY" --port 0 --keep --no-build <插件包路径>
 ```
+
+本 skill 只支持 dsh `0.1.7-rc.1`，不兼容其它 runtime。`--dsh` 必填且必须指向
+该版本入口；缺失、不可用、版本读取失败或版本不匹配都立即失败。
 
 `--help` 是选项契约的唯一事实源（完整选项、退出码、verdict 字段、隔离审计细节都在
 那里）；脚本内部行为的解读见 [`references/script-contracts.md`](references/script-contracts.md)。
@@ -68,7 +70,7 @@ node "$SKILL_BASE/scripts/verify-isolated.mjs" --port 0 --keep --no-build <插�
   如 `@deepseek-ai/dsh-web-app` 按 [`references/manual-setup.md`](references/manual-setup.md)
   手动注入，不走 add）。
 
-脚本自动完成：建临时 `DSH_HOME` → 校验 dsh 入口 → 预置首启弹窗跳过 → 建
+脚本自动完成：建临时 `DSH_HOME` → 校验 `--dsh` 入口为 `0.1.7-rc.1` → 预置首启弹窗跳过 → 建
 `verify_<随机>` profile → 注入内置 web-app bundle → 构建并把插件 link 进 profile →
 （`--browser`）启动独立浏览器实例 → 启动隔离 `dsh web`（显式回环 + 遥测禁用）→
 就绪断言 → 打印带令牌 URL → 前台等待，`Ctrl+C` 退出时统一清理。dsh 直读插件的构建
@@ -115,13 +117,13 @@ node "$SKILL_BASE/scripts/browser-driver.mjs" snapshot --state "$DSH_HOME/browse
 
 | 顺序 | 弹窗 | 出现条件 | 默认处置 |
 |------|------|----------|----------|
-| 1 | 内测声明（`Continue` / `继续`） | `$DSH_HOME/settings.yaml` 的 `<namespace>.welcomeNoticeVersion` 与 dsh 客户端常量 `WELCOME_NOTICE_VERSION` **精确相等**才算已确认（命名空间 `WELCOME_NOTICE_SETTINGS_NAMESPACE` 与版本均从产物现取；rc.7 为 `ui-settings-general`，取不到回退 `ui-onboarding`——rc.7 导入映射 `ui-onboarding→ui-settings-general` 自动迁移）；全新 DSH_HOME 必然未确认 | 启动前预置该值（`--no-skip-onboarding` 关闭） |
+| 1 | 内测声明（`Continue` / `继续`） | `$DSH_HOME/settings.yaml` 的 `<namespace>.welcomeNoticeVersion` 与 dsh 客户端常量 `WELCOME_NOTICE_VERSION` **精确相等**才算已确认（命名空间 `WELCOME_NOTICE_SETTINGS_NAMESPACE` 与版本均从目标产物现取；任一事实缺失就不预置）；全新 DSH_HOME 必然未确认 | 仅在两项事实齐全时启动前预置（`--no-skip-onboarding` 关闭），否则交给 browser-driver overlay 探针 |
 | 2 | 添加 API Key（`Configure later` / `稍后配置`） | 隔离环境无任何可用 provider；且「稍后配置」**只在当前页面生命周期内有效**，刷新/新标签必重弹 | browser-driver 导航后自动点击跳过 |
 
-跳过是**双保险**：预置消掉弹窗 1，浏览器侧兜底消掉弹窗 2（顺带兜住 dsh 升级导致的
-版本漂移与 locale 文案变化）。要点：
+跳过是**双保险**：目标产物事实齐全时预置消掉弹窗 1，事实缺失时由浏览器 overlay 探针兜底；
+弹窗 2 始终由浏览器侧处理。要点：
 
-- **版本号与命名空间现取，不硬编码**：脚本从 dsh 产物读同名常量（`scripts/lib/onboarding.mjs` 单源读取 `WELCOME_NOTICE_VERSION` / `WELCOME_NOTICE_SETTINGS_NAMESPACE`）；取不到只警告、不改判定，交给浏览器侧兜底——写死会在 dsh 升级后静默失效；命名空间取不到回退 `ui-onboarding`（rc.7 导入映射自动迁移）。
+- **版本号与命名空间现取，不硬编码**：脚本从 dsh `0.1.7-rc.1` 目标产物读同名常量（`scripts/lib/onboarding.mjs` 单源读取 `WELCOME_NOTICE_VERSION` / `WELCOME_NOTICE_SETTINGS_NAMESPACE`）；任一事实取不到就不预置，交给浏览器侧兜底。
 - **识别不到跳过按钮时不猜**：弹窗里可能并列「保存并继续」这类有副作用的按钮，此时
   只输出 `onboardingBlocked` 并在 stderr 警告，由人决定怎么处置。
 - **预置只写隔离环境**：目标是 `$DSH_HOME/settings.yaml`，不触碰真实 `~/.dsh`；脚本也
@@ -139,7 +141,7 @@ node "$SKILL_BASE/scripts/browser-driver.mjs" snapshot --state "$DSH_HOME/browse
 | 4 | 浏览器实例 | `browser.state` 的 `port`/`pid`/`userDataDir` 为本任务独有；并行任务各自的 state 路径不同（各在各自 DSH_HOME 下） |
 | 5 | 插件持久化隔离感知 | 验证涉及**读写插件自己的持久化文件**（通知记录、用量数据等）时，先确认插件落盘路径 DSH_HOME 感知（查源码里是否有 `process.env.DSH_HOME ?? homedir()/.dsh` 这类契约）。**不感知时的处置**：在验证记录中标注「该插件隔离盲区」→ 验证中避免触发会写持久化文件的操作（清理/发送测试类按钮）→ 在验证结论中提报。读面串同样算盲区，截图含真实数据时须说明 |
 
-并行验证：每个任务**单独运行一个 `verify-isolated.mjs --port 0 --browser` 进程**
+并行验证：每个任务**单独运行一个 `verify-isolated.mjs --dsh <0.1.7-rc.1 入口> --port 0 --browser` 进程**
 （各自独立的临时 DSH_HOME / profile / 端口 / 浏览器实例）；同一隔离环境内手拉多个
 浏览器会让并行隔离失效。浏览器一律用本 skill 自带的 `--browser` 实例：工作区共享的
 浏览器 MCP 只有一份「当前活动页」，多会话并行时 tab 会互相漂移、甚至漂到其他实例的

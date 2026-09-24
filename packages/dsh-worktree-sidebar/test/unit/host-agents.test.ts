@@ -44,7 +44,8 @@ function makeAgent(id: string, cwd: string | undefined) {
 /** 宿主面假件：agent 枚举由用例给定，事件经 `emit` 手工派发，`remove` 模拟退场。 */
 function fakeHost(initial: readonly HostAgentLike[]) {
   const events: string[] = [];
-  const handlers: Array<(payload: { agent: HostAgentLike }) => void> = [];
+  const handlers: Array<(payload: { agent: HostAgentLike }) => undefined | PromiseLike<undefined>> =
+    [];
   const agents = [...initial];
   const port: AgentHostPort = {
     on: (event, handler) => {
@@ -57,14 +58,32 @@ function fakeHost(initial: readonly HostAgentLike[]) {
   return {
     port,
     events,
-    emit: (agent: HostAgentLike) => {
-      for (const handler of handlers) handler({ agent });
-    },
+    emit: (agent: HostAgentLike): Promise<void> =>
+      Promise.all(handlers.map((handler) => handler({ agent }))).then(() => undefined),
     remove: (agent: HostAgentLike) => {
       const index = agents.indexOf(agent);
       if (index >= 0) agents.splice(index, 1);
     },
   };
+}
+
+/** 可观察是否被 await 的 deferred thenable；不用计时器判定 serial 是否真的等它。 */
+function deferredThenable(onFulfilled: () => void) {
+  let observed = false;
+  let finish!: () => void;
+  const promise = new Promise<void>((resolve) => {
+    finish = () => {
+      onFulfilled();
+      resolve();
+    };
+  });
+  const thenable: PromiseLike<void> = {
+    then(onfulfilled, onrejected) {
+      observed = true;
+      return promise.then(onfulfilled, onrejected);
+    },
+  };
+  return { thenable, finish, wasObserved: () => observed };
 }
 
 /** 两个占位工具定义：适配器只把它们转手给 `ctx.tools.register`，不读任何字段。 */
@@ -88,7 +107,7 @@ describe("agent 注册面", () => {
     expect(a1.disposed).toEqual([...DEFINITIONS]);
   });
 
-  it("subscribe 收到 agent 后同样能 publish", () => {
+  it("subscribe 收到 agent 后同样能 publish", async () => {
     // 事件到达时这个 agent 已在枚举里——真机上 agent/created 就是它入册的那一刻。
     const a2 = makeAgent("a2", "/repo");
     const host = fakeHost([a2.agent]);
@@ -98,7 +117,7 @@ describe("agent 注册面", () => {
       seen.push(face);
     });
 
-    host.emit(a2.agent);
+    await host.emit(a2.agent);
     expect(host.events).toEqual(["agent/created"]);
     expect(seen).toEqual([{ id: "a2", cwd: "/repo" }]);
 
@@ -115,7 +134,7 @@ describe("agent 注册面", () => {
     );
   });
 
-  it("子代理同样被回调并装得上：判定不再按顶层枚举过滤", () => {
+  it("子代理同样被回调并装得上：判定不再按顶层枚举过滤", async () => {
     const parent = makeAgent("p1", "/repo");
     const child = makeAgent("c1", "/repo");
     const host = fakeHost([parent.agent, child.agent]);
@@ -125,8 +144,8 @@ describe("agent 注册面", () => {
       seen.push(face);
     });
 
-    host.emit(child.agent);
-    host.emit(parent.agent);
+    await host.emit(child.agent);
+    await host.emit(parent.agent);
     expect(seen).toEqual([
       { id: "c1", cwd: "/repo" },
       { id: "p1", cwd: "/repo" },
@@ -162,30 +181,30 @@ describe("agent 注册面", () => {
     ]);
   });
 
-  it("serial 兼容：payload 多余字段被忽略且 on 回调回 undefined", () => {
+  it("agent/created 等订阅 callback 的 thenable 完成后才让 serial 返回", async () => {
     const a1 = makeAgent("a1", "/repo");
-    let captured: ((payload: { agent: HostAgentLike }) => undefined) | undefined;
-    const port: AgentHostPort = {
-      on: (event, handler) => {
-        expect(event).toBe("agent/created");
-        captured = handler;
-        return () => undefined;
-      },
-      all: () => [a1.agent],
-    };
-    const agents = bindAgents(port);
+    const host = fakeHost([a1.agent]);
+    const agents = bindAgents(host.port);
     const seen: AgentFace[] = [];
+    const deferred = deferredThenable(() => {
+      if (seen[0] === undefined) throw new Error("订阅 callback 尚未收到 agent");
+      agents.publish(seen[0], DEFINITIONS);
+    });
     agents.subscribe((face) => {
       seen.push(face);
+      return deferred.thenable;
     });
-    if (captured === undefined) throw new Error("on 回调未被登记");
-    // rc.7 serial 多出 source/signal：适配器只取 agent，行为不变；回 undefined 兼容 serial。
-    const ret = captured({
-      agent: a1.agent,
-      source: "startup",
-      signal: undefined,
-    } as unknown as { agent: HostAgentLike });
-    expect(ret).toBeUndefined();
+
+    const serial = host.emit(a1.agent);
+    // thenable assimilation 本身走一个微任务；显式排空这一层，不用计时器猜 serial 是否已返回。
+    await Promise.resolve();
+    // 适配器若把 callback Promise 吞成 undefined，then 根本不会被调用。
+    expect(deferred.wasObserved()).toBe(true);
     expect(seen).toEqual([{ id: "a1", cwd: "/repo" }]);
+    expect(a1.registered).toEqual([]);
+
+    deferred.finish();
+    await serial;
+    expect(a1.registered).toEqual([...DEFINITIONS]);
   });
 });

@@ -128,19 +128,18 @@ session cookie), letting LAN devices enter without manual steps. Trade-offs and 
     `GET /api/dsh-lan-proxy/health`. (2) and (3) only report the host-side switch — they cannot
     answer whether upstream has drifted. The settings card also shows a persistent four-state
     verdict line, but only while the card is mounted (see the next item).
-  - **Known limitation (both fault states are unreachable on the page)**: the card is registered
-    on the `settings.plugin.item` slot, and that plugin list only has entries while the settings
-    scope is available — when upstream downgrades a non-loopback page's settings surface to
-    memory scope the plugin list is empty and the card is not mounted
-    (dsh-client-ui-settings-plugins only calls renderSlot when namespaces is non-empty). The crux
-    is that **the same `isLoopback` signal decides both whether the card mounts and what the
-    four-state verdict is**, so `contract-drift` (upstream removed/renamed/reordered the
-    `ownsHost` predicate and the injection is dead) and `compat-off` (switch off) — precisely
-    the two states that most need to be seen — have no carrier on the page. Measured on a
-    non-loopback authority with the switch off, the plugin list is empty and the card is not
-    mounted, so the verdict line at the bottom of the card never appears either. Those two states
-    are therefore visible only through (1) the devtools warning (page-side drift) plus (2)/(3)
-    the banner and health field (host-side switch). Changing the switch happens host-side only:
+  - **Known limitation (both fault states are unreachable on the page)**: on the target dsh
+    `0.1.7-rc.1`, the card is registered through `configForms.whileServed(["ui-dsh-lan-proxy"])`
+    and the keyed `plugins.row.config` slot. Its canonical row id / settings namespace is
+    `ui-dsh-lan-proxy`, and its row key is `@wingsky-1/dsh-lan-proxy#ui-dsh-lan-proxy`.
+    The row exists only while the Host serves that namespace; when a non-loopback page's settings
+    surface is reduced to memory scope, the namespace is absent, so the row and card are not
+    mounted. The crux is that **the same `isLoopback` signal decides both whether the card mounts
+    and what the four-state verdict is**, so `contract-drift` (upstream removed/renamed/reordered
+    the `ownsHost` predicate and the injection is dead) and `compat-off` (switch off) — precisely
+    the two states that most need to be seen — have no carrier on the page. Those two states are
+    therefore visible only through (1) the devtools warning (page-side drift) plus (2)/(3) the
+    banner and health field (host-side switch). Changing the switch happens host-side only:
     `dsh-lan-proxy.ownsHostCompat` in `settings.yaml`, the `cordis.patch.yml` base layer in a
     profile, or a loopback browser on the settings page.
 

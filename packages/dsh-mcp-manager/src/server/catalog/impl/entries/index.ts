@@ -16,20 +16,17 @@ import {
 } from "../../../shared/interface.ts";
 
 /**
- * dsh 0.1.7-rc.1 前向垫片（#1011，临时）：宿主 `dsh-llm` 移除了共享 `plugin` 种，
- * `MessageSourceMap` 仅剩 user/model/tool/system-prompt（merge-extensible，各生产者
- * 在自有模块声明自有种）。本包写入仍是 `kind:"plugin"` + 身份 + `form:"snapshot"` +
- * `sections`（线格式零字节改），故在此以 rc.1 形状
- * `plugin: { kind:"plugin"; plugin:string } & ContextFormed` 合并补回该种，
- * 使双基线（0.1.5 原生含种 / 0.1.7 靠垫片补种）均可编译。键名/模块名禁改，
- * 禁宽化为 `{ kind:string }`（会吞掉宿主的判别）。
+ * dsh 0.1.7-rc.1 producer-owned source kind。
  *
- * 退出条件：`dsh-session-format-v2-to-v3` 的 `SOURCE_KINDS` 接纳自有种，
- * 或宿主恢复 `plugin` 基座时删除本垫片。
+ * V4 将生产者身份编码进 kind；本包不再声明或依赖共享 `plugin` 基座，
+ * 也不把身份拆到 `plugin` 字段。snapshot 的 form/sections 由官方
+ * ContextFormed 约束。
  */
 declare module "@deepseek-ai/dsh-llm" {
   interface MessageSourceMap {
-    plugin: { kind: "plugin"; plugin: string } & ContextFormed;
+    "plugin:@wingsky-1/dsh-mcp-manager": {
+      kind: "plugin:@wingsky-1/dsh-mcp-manager";
+    } & ContextFormed;
   }
 }
 
@@ -53,24 +50,10 @@ export type CatalogCache = Map<string, { summary: string }>;
 // 消费它们，端口注入到时尚未装配；此处只保留转出，维持 catalog 门面与入口的导出面不变。
 export { DEFAULT_ANNOUNCE_CATALOG, DEFAULT_CATALOG_MAX_ENTRIES };
 
-/**
- * 能力目录消息的来源身份（#723）：`source.kind` 只能是宿主已登记的通用值
- * `plugin`，本插件的身份由 `source.plugin` 承载。
- *
- * 为什么不再自造 `kind`：宿主 v2→v3 迁移对 surface 消息的 `source.kind` 有一份
- * 封闭白名单（`dsh-session-format-v2-to-v3` 的 `SOURCE_KINDS`），自造值会让升级前
- * 落盘的会话永久无法迁移（原件保留、每次加载同样失败）。官方上下文包
- * （`dsh-time-context` / `dsh-tmux-context`）走的就是 `plugin` + 身份 + snapshot
- * 形态，这里与之一致：形态由宿主校验，身份由本包判定。
- */
+/** 本包 V4 producer-owned source kind；身份编码在 kind，不另设 plugin 字段。 */
 export const CATALOG_SOURCE_PLUGIN = "@wingsky-1/dsh-mcp-manager";
-/**
- * 目录快照的段名（snapshot 形态下承载渲染后的目录正文）。
- *
- * kind 与段名分属两轴（#1011）：`source.kind` 是宿主词表（`SOURCE_KINDS` 白名单），
- * 禁自造 `kind:"mcp-catalog"`（会重演 #723 永久拒载）；段名 `"mcp-catalog"` 是本包在
- * `sections` 内的自有命名空间，自由使用。
- */
+export const CATALOG_SOURCE_KIND = `plugin:${CATALOG_SOURCE_PLUGIN}`;
+/** 目录快照的段名（snapshot 形态下承载渲染后的目录正文）。 */
 export const CATALOG_SECTION_NAME = "mcp-catalog";
 
 /** 目录摘要总长上限（字符，含前缀与省略号）：目录注入 ≤6 条目，防远端工具描述
@@ -227,13 +210,8 @@ export function composeCatalogEntries(
 
 /** 渲染能力目录消息（source 标记供定位替换）。
  *
- * kind/段名区分（#1011）：`source.kind:"plugin"` 走宿主词表，段名 `"mcp-catalog"`
- * 走自有命名空间（`sections: [{ name:"mcp-catalog", ... }]`），禁把段名回写成
- * `kind:"mcp-catalog"`。线格式零字节改：写入恒为 kind:plugin + plugin +
- * form:snapshot + sections。
- *
- * 引导统一单条（用户反馈精简）：项目级/全局级均走同一句话（全名寻址+裸名+detail 先验）；
- * scope 字段保留仅供条目归属记录，不再分支引导文本。
+ * 当前 source 精确为 V4 producer-owned snapshot：
+ * `{ kind: "plugin:@wingsky-1/dsh-mcp-manager", form: "snapshot", sections: [...] }`。
  */
 export function renderMcpCatalogMessage(entries: CatalogEntry[]): CatalogMessage {
   // 介绍文本（用户反馈精简）：只留调用必需（全名寻址/裸工具名/detail 先验/search 顺序）；
@@ -261,8 +239,7 @@ export function renderMcpCatalogMessage(entries: CatalogEntry[]): CatalogMessage
     role: "user",
     content: [{ type: "text", text: lines }],
     source: {
-      kind: "plugin",
-      plugin: CATALOG_SOURCE_PLUGIN,
+      kind: CATALOG_SOURCE_KIND,
       form: "snapshot",
       sections: [{ name: CATALOG_SECTION_NAME, text: lines }],
     },
@@ -279,18 +256,12 @@ export function escapeCatalogText(value: unknown): string {
     .replace(/[\r\n]/gu, " ");
 }
 
-/**
- * 是否为本插件注入的能力目录消息：只认 `kind:"plugin"` + 本插件身份 +
- * snapshot 形态（写入侧恒定形状）。旧 `kind:"mcp-catalog"` 落盘的改写走修复脚本
- * `scripts/maintenance/repair-mcp-catalog-sessions.mjs`（幂等、默认 dry-run），
- * 此处不做读取侧兼容。
- */
-export function isCatalogSource(source: { kind?: unknown; plugin?: unknown } | undefined): boolean {
-  if (source === undefined) return false;
-  return source.kind === "plugin" && source.plugin === CATALOG_SOURCE_PLUGIN;
+/** 是否为本插件当前 V4 注入的能力目录消息。旧 V0/V2/V3 source 不在业务域兼容。 */
+export function isCatalogSource(source: { kind?: unknown } | undefined): boolean {
+  return source?.kind === CATALOG_SOURCE_KIND;
 }
 
-/** 从消息列表里定位既有的能力目录消息（新旧两代 source 形态都认）。 */
+/** 从消息列表里定位既有的当前 V4 能力目录消息。 */
 export function findCatalogMessage(messages: CatalogMessage[]): CatalogMessage | undefined {
   for (const message of messages) {
     if (isCatalogSource(message?.source)) return message;
@@ -353,31 +324,19 @@ function parseCatalogBody(body: string): CatalogEntry[] | undefined {
 }
 
 /**
- * 防御性读取目录 source 里的条目（坏数据返回 undefined）。
- *
- * 旧会话尽力读：只读 `entries` 形态（旧落盘），它是包导出面与既有单测的契约；
- * 当前形态的读取走 {@link resolveCatalogEntries}。
+ * 防御性读取当前 V4 source 的条目；旧 `entries` 形态由 maintenance 处理，
+ * 不在业务 reader 中兼容。
  */
 export function readCatalogEntries(
-  source: { entries?: unknown } | undefined,
+  source: CatalogSourceLike | undefined,
 ): CatalogEntry[] | undefined {
-  const entries = source?.entries;
-  if (!Array.isArray(entries)) return undefined;
-  const readable: CatalogEntry[] = [];
-  for (const entry of entries) {
-    if (typeof entry !== "object" || entry === null) return undefined;
-    const { name, text } = entry;
-    if (typeof name !== "string" || name === "") return undefined;
-    readable.push({ name, text: typeof text === "string" ? text : undefined });
-  }
-  return readable;
+  return resolveCatalogEntries(source);
 }
 
-/** 目录 source 最小面（snapshot 形态；`entries` 字段仅旧会话尽力读保留；判定见 {@link isCatalogSource}）。 */
+/** 当前 V4 source 最小面。 */
 export interface CatalogSourceLike {
   kind?: unknown;
-  plugin?: unknown;
-  entries?: unknown;
+  form?: unknown;
   sections?: unknown;
 }
 
@@ -392,5 +351,13 @@ export function renderMcpCatalogUpdate(entries: CatalogEntry[]): CatalogMessage 
     inner,
     "</system-reminder>",
   ].join("\n");
-  return { ...body, content: [{ type: "text", text }] };
+  return {
+    ...body,
+    content: [{ type: "text", text }],
+    source: {
+      kind: CATALOG_SOURCE_KIND,
+      form: "snapshot",
+      sections: [{ name: CATALOG_SECTION_NAME, text }],
+    },
+  };
 }

@@ -63,10 +63,10 @@ export const SETUP_OVERHEAD_MINUTES = 4;
 /** 实测值的放大系数：runner 抖动 + 主干代码增长。 */
 export const SAFETY_FACTOR = 1.5;
 
-/** 段清单：`stryker.conf.d/dsh-*.json` 的文件名去 `.json`（与 ci-matrix / mutation-gate 同源口径）。 */
+/** 段清单：`stryker.conf.d/{dsh-*,shared-*}.json` 去后缀；shared-* 是根共享 surface 的真实夜间段。 */
 export function listSegments(confDir = CONF_DIR) {
   return readdirSync(confDir)
-    .filter((f) => f.startsWith("dsh-") && f.endsWith(".json"))
+    .filter((f) => (f.startsWith("dsh-") || f.startsWith("shared-")) && f.endsWith(".json"))
     .map((f) => f.slice(0, -".json".length))
     .sort();
 }
@@ -157,7 +157,9 @@ export function buildShardMatrix(segs, peaks) {
 export function main({ confDir = CONF_DIR, ledgerPath = LEDGER_PATH } = {}) {
   const segs = listSegments(confDir);
   if (segs.length === 0) {
-    failClosed(`[mutation-plan] ${confDir} 下无 dsh-*.json —— 段集合为空（fail-closed）`);
+    failClosed(
+      `[mutation-plan] ${confDir} 下无 dsh-*.json / shared-*.json —— 段集合为空（fail-closed）`,
+    );
   }
   let ledger = null;
   if (existsSync(ledgerPath)) {

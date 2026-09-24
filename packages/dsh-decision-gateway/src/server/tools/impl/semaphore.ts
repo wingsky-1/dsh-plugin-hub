@@ -1,35 +1,58 @@
-/**
- * tools 域实现：并发信号量（自研内联；状态收进闭包，无模块级可变状态）。
- *
- * 从 client.ts 拆出（内聚收窄）：并发控制与线协议分属不同职责。
- */
-
 /** 并发信号量（闭包状态；max≤0 即视同 1）。 */
 export function createSemaphore(max: number): {
-  readonly run: <T>(task: () => Promise<T>) => Promise<T>;
+  readonly run: <T>(task: () => Promise<T>, signal?: AbortSignal) => Promise<T>;
 } {
   const limit = Number.isInteger(max) && max > 0 ? max : 1;
   let active = 0;
-  const queue: (() => void)[] = [];
+  const queue: { readonly start: () => void }[] = [];
   const pump = (): void => {
     while (active < limit && queue.length > 0) {
       const next = queue.shift();
       if (next === undefined) return;
-      active += 1;
-      next();
+      next.start();
     }
   };
-  const run = <T>(task: () => Promise<T>): Promise<T> =>
-    new Promise<T>((resolve, reject) => {
-      queue.push(() => {
-        task()
-          .then(resolve, reject)
-          .finally(() => {
+  const abortError = (): Error => {
+    const error = new Error("operation aborted");
+    error.name = "AbortError";
+    return error;
+  };
+  const run = <T>(task: () => Promise<T>, signal?: AbortSignal): Promise<T> => {
+    if (signal?.aborted === true) return Promise.reject(abortError());
+    return new Promise<T>((resolve, reject) => {
+      let settled = false;
+      const waiter = {
+        start: (): void => {
+          if (settled) return;
+          settled = true;
+          signal?.removeEventListener("abort", onAbort);
+          active += 1;
+          try {
+            void task()
+              .then(resolve, reject)
+              .finally(() => {
+                active -= 1;
+                pump();
+              });
+          } catch (cause) {
             active -= 1;
             pump();
-          });
-      });
+            reject(cause);
+          }
+        },
+      };
+      const onAbort = (): void => {
+        if (settled) return;
+        const index = queue.indexOf(waiter);
+        if (index >= 0) queue.splice(index, 1);
+        settled = true;
+        signal?.removeEventListener("abort", onAbort);
+        reject(abortError());
+      };
+      signal?.addEventListener("abort", onAbort, { once: true });
+      queue.push(waiter);
       pump();
     });
+  };
   return { run };
 }

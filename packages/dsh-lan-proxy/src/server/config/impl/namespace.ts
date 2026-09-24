@@ -12,16 +12,14 @@
  */
 import type { Context } from "@deepseek-ai/cordis";
 import { installSettingsNamespace } from "../../../../../../shared/settings-namespace.js";
+import { LAN_PROXY_IDENTITY } from "../../../shared/interface.ts";
 import { Config } from "./model.ts";
 import type { LanProxyConfig } from "./model.ts";
 
 export { warnLog } from "../../../../../../shared/settings-namespace.js";
 
-/**
- * 本插件在官方 settings 服务中的条目 id，与 cordis.patch.yml 挂载行 id 一致；
- * 客户端 settings.plugin.item 的 key 与本常量配对（见 src/client/index.ts，单测锁定）。
- */
-export const SETTINGS_NS = "ui-dsh-lan-proxy";
+/** 本插件在官方 settings 服务中的 canonical 条目 id。 */
+export const SETTINGS_NS = LAN_PROXY_IDENTITY.settingsNamespace;
 
 /** describe 返回的条目 descriptor 最小面。 */
 export interface SettingsDescriptorLike {

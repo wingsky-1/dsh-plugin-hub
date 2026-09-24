@@ -245,10 +245,10 @@ function checkReused(entry) {
   return [];
 }
 
-/** 由 `stryker.conf.d/` 的文件名派生期望段集合（与 ci-matrix / mutation-gate 同源口径）。 */
+/** 由 `stryker.conf.d/` 的 dsh-* / shared-* 文件名派生期望段集合。 */
 export function expectedSegsFromConfFiles(confFileNames) {
   return confFileNames
-    .filter((f) => f.startsWith("dsh-") && f.endsWith(".json"))
+    .filter((f) => (f.startsWith("dsh-") || f.startsWith("shared-")) && f.endsWith(".json"))
     .map((f) => f.slice(0, -".json".length))
     .sort();
 }

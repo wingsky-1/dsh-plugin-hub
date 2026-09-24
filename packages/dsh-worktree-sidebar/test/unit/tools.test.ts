@@ -698,9 +698,11 @@ describe("绑定来源读不出来时的收口（复核 P3-5）", () => {
 
 /** 假的 agent 注册面：只记原始事实（订了几个、装给谁、退订了吗），不替被测代码做判断。 */
 function fakeAgents(initial: readonly AgentFace[]) {
-  const handlers: Array<(agent: AgentFace) => void> = [];
+  const handlers: Array<(agent: AgentFace) => void | PromiseLike<void>> = [];
   const published: string[] = [];
+  const publishedTools: string[][] = [];
   const released: string[] = [];
+  const publishWaiters: Array<{ count: number; resolve: () => void }> = [];
   let unsubscribed = false;
   const port: AgentPort = {
     subscribe: (handler) => {
@@ -710,8 +712,15 @@ function fakeAgents(initial: readonly AgentFace[]) {
       };
     },
     list: () => initial,
-    publish: (agent) => {
+    publish: (agent, definitions) => {
       published.push(agent.id);
+      publishedTools.push(definitions.map((definition) => definition.name));
+      for (const waiter of [...publishWaiters]) {
+        if (published.length >= waiter.count) {
+          publishWaiters.splice(publishWaiters.indexOf(waiter), 1);
+          waiter.resolve();
+        }
+      }
       return () => {
         released.push(agent.id);
       };
@@ -720,16 +729,17 @@ function fakeAgents(initial: readonly AgentFace[]) {
   return {
     port,
     published,
+    publishedTools,
     released,
     isUnsubscribed: () => unsubscribed,
-    emit: (agent: AgentFace) => {
-      for (const handler of handlers) handler(agent);
+    emit: (agent: AgentFace): Promise<void> =>
+      Promise.all(handlers.map((handler) => handler(agent))).then(() => undefined),
+    waitForPublished(count: number): Promise<void> {
+      if (published.length >= count) return Promise.resolve();
+      return new Promise((resolve) => publishWaiters.push({ count, resolve }));
     },
   };
 }
-
-/** 排空一轮队列：工具域的判定链要走完一次 git 调用才会 publish。 */
-const settle = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
 
 describe("tools 域的装配与释放", () => {
   afterEach(() => releaseTools());
@@ -738,7 +748,7 @@ describe("tools 域的装配与释放", () => {
     const agents = fakeAgents([{ id: "a1", cwd: repo }]);
     const { deps } = fakeDeps({ agents: agents.port });
     installTools(deps);
-    await settle();
+    await agents.waitForPublished(1);
     expect(agents.published).toEqual(["a1"]);
 
     releaseTools();
@@ -753,7 +763,7 @@ describe("tools 域的装配与释放", () => {
     ]);
     const { deps } = fakeDeps({ agents: agents.port });
     installTools(deps);
-    await settle();
+    await agents.waitForPublished(2);
     expect(agents.published).toEqual(["parent", "child"]);
 
     releaseTools();
@@ -761,25 +771,52 @@ describe("tools 域的装配与释放", () => {
     expect(agents.released).toEqual(["child", "parent"]);
   });
 
-  it("装配之后新发布的 agent 也会被装上（订阅入口）", async () => {
+  it("订阅 emit 等待异步判定，三项工具注册完成后才返回", async () => {
     const agents = fakeAgents([]);
     const { deps } = fakeDeps({ agents: agents.port });
-    installTools(deps);
-    agents.emit({ id: "a2", cwd: repo });
-    await settle();
+    let finishRepoLookup!: () => void;
+    const repoLookup = new Promise<string | undefined>((resolve) => {
+      finishRepoLookup = () => resolve(join(root, ".git"));
+    });
+    const blocked: ToolsDeps = {
+      ...deps,
+      git: { ...deps.git, commonDir: () => repoLookup },
+    };
+    installTools(blocked);
+
+    let settled = false;
+    const serial = agents.emit({ id: "a2", cwd: repo }).then(() => {
+      settled = true;
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // consider 若不返回 chain，emit 会在 repoOf 的闸门未放行时提前完成。
+    expect(settled).toBe(false);
+    expect(agents.published).toEqual([]);
+
+    finishRepoLookup();
+    await serial;
+
     expect(agents.published).toEqual(["a2"]);
+    expect(agents.publishedTools).toEqual([
+      ["ws_worktree_register", "ws_worktree_create", "ws_worktree_remove"],
+    ]);
   });
 
   it("不在 git 仓库里的 agent 一个工具都不装", async () => {
-    const agents = fakeAgents([{ id: "a3", cwd: "/outside-root" }]);
+    const agents = fakeAgents([]);
     const { deps } = fakeDeps({ agents: agents.port });
     installTools(deps);
-    await settle();
+
+    await agents.emit({ id: "a3", cwd: "/outside-root" });
+
     expect(agents.published).toEqual([]);
   });
 
-  it("判定期间出错时出声，不静默丢掉这个 agent", async () => {
-    const agents = fakeAgents([{ id: "a5", cwd: repo }]);
+  it("判定失败会 warn，订阅 Promise 仍正常完成", async () => {
+    const agents = fakeAgents([]);
     const { deps, warns } = fakeDeps({ agents: agents.port });
     const exploding: ToolsDeps = {
       ...deps,
@@ -791,16 +828,20 @@ describe("tools 域的装配与释放", () => {
       },
     };
     installTools(exploding);
-    await settle();
+
+    await expect(agents.emit({ id: "a5", cwd: repo })).resolves.toBeUndefined();
+
     expect(agents.published).toEqual([]);
     expect(warns.some((w) => w.includes("工具注册失败") && w.includes("git exploded"))).toBe(true);
   });
 
   it("没有 cwd 的 agent 不装（猜一个会给出错的工具）", async () => {
-    const agents = fakeAgents([{ id: "a4", cwd: undefined }]);
+    const agents = fakeAgents([]);
     const { deps } = fakeDeps({ agents: agents.port });
     installTools(deps);
-    await settle();
+
+    await agents.emit({ id: "a4", cwd: undefined });
+
     expect(agents.published).toEqual([]);
   });
 
@@ -808,12 +849,12 @@ describe("tools 域的装配与释放", () => {
     const agents = fakeAgents([{ id: "a1", cwd: repo }]);
     const { deps } = fakeDeps({ agents: agents.port });
     installTools(deps);
-    await settle();
+    await agents.waitForPublished(1);
     expect(agents.published).toEqual(["a1"]);
 
     releaseTools();
     installTools(deps);
-    await settle();
+    await agents.waitForPublished(2);
     // perAgent 不复位的话这里会是 ["a1"]：工具永远装不上，而第二次装配一声不响。
     expect(agents.published).toEqual(["a1", "a1"]);
   });

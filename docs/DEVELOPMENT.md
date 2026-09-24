@@ -273,10 +273,10 @@ shared**；X1 保证**已准入的模块随每个消费包完整发布**（机�
 `@deepseek-ai/dsh-tools` 的 `ToolDefinition`/ctx.tools 增强等；仅 import type，
 contract-check 禁止运行时值导入）。原自建类型层 `types/dsh.d.ts` 已删除（issue #48）。
 
-**版本适配策略（只适配 rc）**：官方类型层 catalog 升级以 **dsh rc 版本**为锚定
-基线（当前 `0.1.5-rc.1`），peer 与 catalog 锁步；**不对 alpha 版本适配**，除非
-维护者明确决策。升级 catalog 须跑全量门禁并核验受影响的结构（如
-SessionHeader.origin / Agent.session），并同步根 README「版本适配」与 release notes
+**版本适配策略（唯一目标 runtime）**：官方类型层 catalog 当前锁定 dsh
+`0.1.7-rc.1`，peer 与 catalog 锁步；其它 runtime 均不在支持范围。升级 catalog 须先由
+维护者确定新的唯一目标，再跑全量门禁并核验受影响的结构
+（如 SessionHeader.origin / Agent.session），同步根 README「版本适配」与 release notes
 锚定声明。
 
 <a id="1-宿主端srcindexts规范"></a><a id="user-content-1-宿主端srcindexts规范"></a>
@@ -512,8 +512,13 @@ export const inject: string[] = []; // 声明 apply 用到的 ctx 服务（如 [
 
 ### 2.3 客户端其它要点
 
-- `inject` 语义：声明 `apply` 运行时用到的 ctx 服务；不需要则 `[]`。**这是运行时的
+- **`inject` 语义：声明 `apply` 运行时用到的 ctx 服务；不需要则 `[]`。**这是运行时的
   服务注入声明**，与宿主的 cordis `inject`（插槽）是两码事，别混。
+- **插件设置行**：目标 runtime 使用 `plugins.row.config`。canonical row id 固定为
+  `ui-dsh-<包名>`，同时作为 settings namespace；keyed row 的 key 为
+  `<bundle package>#<canonical row id>`。注册由 `configForms.whileServed` 约束到该
+  namespace，页面通过 `slots.inject` / `slots.register` 注入；独立设置页才用
+  `settings.section`。
 - 生命周期：所有卸载清理写进 `ctx.effect(() => () => {})` 的 disposer。
 - 样式：带插件前缀隔离 + `CSS_VERSION`/`dataset.version` 失效（热更新重建 `<style>`）；
   颜色用 `--dsw-alias-*` / `--dsw-hljs-*` 主题变量 + 浅色回退，明暗自适应。

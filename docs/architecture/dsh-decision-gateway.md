@@ -223,7 +223,7 @@ build 为 clean-lib→tsc→scripts/build/bundle-host.ts；esbuild 内联第三�
 
 ### 4.3 平台与兼容边界
 
-`JEV_BASE_URL`、`ROUTES` 回环表、`TEMPLATE_VERSION`＝1、失败包络 errorCode＋category 是升级时需复核的耦合点；新增上游一律先报主代理裁决，不私自加基址（包 AGENTS.md 红线）。浏览器端只依赖 slots 的 settings.plugin.item 注入位与回环路由取数；缺 slots 即告警不挂载，不抛错打挂宿主。
+`JEV_BASE_URL`、`ROUTES` 回环表、`TEMPLATE_VERSION`＝1、失败包络 errorCode＋category 是升级时需复核的耦合点；新增上游一律先报主代理裁决，不私自加基址（包 AGENTS.md 红线）。浏览器端只依赖 slots 的 `settings.section` 注入位（id `dsh-decision-gateway`、order 80）与回环路由取数；缺 slots 即告警不挂载，不抛错打挂宿主。
 
 ### 4.4 门禁、证据与待核项
 

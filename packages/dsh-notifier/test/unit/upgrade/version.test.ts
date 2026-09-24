@@ -5,7 +5,7 @@
  * 与「版本没变」一模一样。版本比较必须**逐段按数值**：字符串比较会把 0.10.0 判成小于 0.9.0，
  * 于是新版本永远升不上去。
  */
-import { readFileSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
@@ -31,6 +31,11 @@ afterEach(() => {
 function isolatedHome(): void {
   const home = tempDshHome();
   cleanups.push(home.dispose);
+}
+
+/** 构造 Node 文件错误，测试错误码分支而不依赖运行用户的权限位语义。 */
+function fileError(code: string): NodeJS.ErrnoException {
+  return Object.assign(new Error(`${code}: injected failure`), { code });
 }
 
 describe("compareVersions", () => {
@@ -61,9 +66,39 @@ describe("刻度读写", () => {
     expect(readStoredVersion()).toBe("0.0.0");
   });
 
-  it("空白刻度文件也算从未升级过（空串不能被当成一个版本号去比较）", () => {
+  it.each(["0.2.3\n", "1.4.2\n"])("支持的三段式刻度 %j 保持原值", (text) => {
+    isolatedHome();
+    writeTextAtomicSync(notifierFile(VERSION_FILE_NAME), text);
+    expect(readStoredVersion()).toBe(text.trim());
+  });
+
+  it.each(["EACCES", "EIO"])("版本文件读取失败（%s）必须抛出，不能伪装成从未升级", (code) => {
+    isolatedHome();
+    expect(() =>
+      readStoredVersion(() => {
+        throw fileError(code);
+      }),
+    ).toThrow(new RegExp(`存储版本文件读取失败.*${code}`));
+  });
+
+  it("版本路径是目录时必须点名 EISDIR，不能从零跑整条链", () => {
+    isolatedHome();
+    mkdirSync(notifierFile(VERSION_FILE_NAME), { recursive: true });
+    expect(() => readStoredVersion()).toThrow(/存储版本文件读取失败.*EISDIR/);
+  });
+
+  it("空白刻度文件必须明确报空，不能伪装成从未升级", () => {
     isolatedHome();
     writeTextAtomicSync(notifierFile(VERSION_FILE_NAME), "  \n");
-    expect(readStoredVersion()).toBe("0.0.0");
+    expect(() => readStoredVersion()).toThrow(/存储版本文件为空/);
   });
+
+  it.each(["not-a-version\n", "0.2.3junk\n", "0.02.3\n", "0.2\n", "2.0.0\n"])(
+    "非法或不支持的刻度 %j 必须明确报错",
+    (text) => {
+      isolatedHome();
+      writeTextAtomicSync(notifierFile(VERSION_FILE_NAME), text);
+      expect(() => readStoredVersion()).toThrow(/存储版本文件包含非法或不支持的版本号/);
+    },
+  );
 });

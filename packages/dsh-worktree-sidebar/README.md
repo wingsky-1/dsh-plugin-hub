@@ -32,7 +32,7 @@ dsh 的右侧栏文件树根固定取 `session.header.cwd`，且该字段创建�
 
 子 agent 的会话与**用户 fork 出来的会话**都继承父会话的登记：自己没有登记时，右侧栏的 Files 页签指向父链上**第一个持有登记**的那个会话所绑定的 worktree（父链到顶、那条登记被摘除即回退到自己的 cwd）。判据同在会话 header 的 `parentSession`，本插件刻意不区分这两种形态——fork 的 header 同样拷了父的 cwd，视图根跟着一起继承才与「文件根是会话 cwd 的改写」自洽。
 
-工具对 **git 仓库内的所有 agent（含子 agent）**暴露：每个 agent 注册时按其会话目录判断，不在 git 仓库里就不注册。执行期还有一次兜底校验，环境在两次之间变了也不会按错误前提动作。
+工具对 **git 仓库内的所有 agent（含子 agent）**暴露：每个 agent 注册时按其会话目录判断，不在 git 仓库里就不注册。插件装载前已存在的 agent 会在装载时补注册；后续 `agent/created` 事件会等待本插件返回的 Promise，确保工具注册完成后事件才继续。执行期还有一次兜底校验，环境在两次之间变了也不会按错误前提动作。
 
 三个工具同时带一个可见的返回文本，写明当前指向哪个 worktree、分支是什么 —— 让模型不必额外调一次工具就能确认状态。
 
@@ -152,7 +152,7 @@ pnpm gate:pr                 # 开 PR 前；新增包与 catalog 条目另需 pn
 
 ## 兼容性（只读耦合点）
 
-插件不改官方源码，但**读取**以下官方契约（基线 `@deepseek-ai/dsh 0.1.5-rc.1`）；官方改版时这些点是唯一的失效面：
+插件不改官方源码，但**读取**以下官方契约（基线 `@deepseek-ai/dsh 0.1.7-rc.1`）；官方改版时这些点是唯一的失效面：
 
 - 宿主 `typert` 的 `workspaceFileScope` 查表：本插件用 `lookups.configure` 注册自己的解析器，并在 miss 时委托**配置前捕获到的官方 resolve**；
 - 客户端 `sidebarRightTabs` 类型注册表与键控座位 `sidebar.right.pane.tab`（含 `StoredEntry` 的 `component/inject/store/locale` 形状）；

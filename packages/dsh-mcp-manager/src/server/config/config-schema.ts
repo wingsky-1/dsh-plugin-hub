@@ -42,27 +42,31 @@ const UI_POSITIONS: UiPlacementConfig["position"][] = [
   "bottom-left",
 ];
 
-const UiConfigSchema = z.object({
-  position: z
-    .union([
-      z.const("top-right"),
-      z.const("top-left"),
-      z.const("bottom-right"),
-      z.const("bottom-left"),
-    ])
-    .default("top-right"),
-  offset: z
-    .object({
-      x: z.number().default(8),
-      y: z.number().default(8),
-      blankY: z.number().default(40),
-    })
-    .default({ x: 8, y: 8, blankY: 40 }),
-  zIndexBase: z
-    .number()
-    .default(DEFAULT_UI_CONFIG.zIndexBase)
-    .description("浮窗层级基准（1-9000），胶囊与点击后弹出的主面板同取该配置值"),
-});
+// 官方 ConfigForm 以 meta.volatile 识别稳定可编辑子树；extra 写入同一 metadata，
+// 同时保持本包对外 callable schema 的平面输入/输出类型。
+const UiConfigSchema = z
+  .object({
+    position: z
+      .union([
+        z.const("top-right"),
+        z.const("top-left"),
+        z.const("bottom-right"),
+        z.const("bottom-left"),
+      ])
+      .default("top-right"),
+    offset: z
+      .object({
+        x: z.number().default(8),
+        y: z.number().default(8),
+        blankY: z.number().default(40),
+      })
+      .default({ x: 8, y: 8, blankY: 40 }),
+    zIndexBase: z
+      .number()
+      .default(DEFAULT_UI_CONFIG.zIndexBase)
+      .description("浮窗层级基准（1-9000），胶囊与点击后弹出的主面板同取该配置值"),
+  })
+  .extra("volatile", true);
 
 /**
  * 归一化浮窗 UI 配置（纯函数，可单测）。
@@ -111,7 +115,7 @@ export { panelTopForAnchor } from "../../shared/interface.ts";
 
 /**
  * 插件 Config schema（标准 cordis 配置注入入口；含 `ui` 子对象）。
- * 迁移后 position/offset 走插件自身 Config 而非隐藏命名空间，设置页插件卡可编辑。
+ * 官方 ConfigForm 只开放 ui child；根级运行时字段全部 disabled。
  */
 export const Config: z<{
   enabled: boolean;
@@ -125,11 +129,12 @@ export const Config: z<{
   };
   ui: UiPlacementConfig;
 }> = z.object({
-  enabled: z.boolean().default(true).description("是否启用本插件"),
+  enabled: z.boolean().default(true).description("是否启用本插件").disabled(true),
   announceToAgent: z
     .boolean()
     .default(true)
-    .description("是否向 Agent 宣告插件（能力清单由 <available_mcp_servers> 承担）"),
+    .description("是否向 Agent 宣告插件（能力清单由 <available_mcp_servers> 承担）")
+    .disabled(true),
   storePath: z
     .string()
     .description("全局服务器配置路径，留空用默认 <DSH_HOME>/@wingsky-1/dsh-mcp-manager/mcp.json")
@@ -137,7 +142,8 @@ export const Config: z<{
   announceCatalog: z
     .boolean()
     .default(DEFAULT_ANNOUNCE_CATALOG)
-    .description("是否注入 MCP 能力目录（<available_mcp_servers>）"),
+    .description("是否注入 MCP 能力目录（<available_mcp_servers>）")
+    .disabled(true),
   catalogMaxEntries: z
     .number()
     .default(DEFAULT_CATALOG_MAX_ENTRIES)

@@ -25,8 +25,8 @@
  * 上的事件存在性断言，非仅 cordis 单包。
  * 基线更新规则：改数须先更新 KNOWN_TRACKING 源码注释指针并连续三轮 runs 顺延稳定才可上调；
  * 跟踪以注释指针为唯一载体，不开 issue。
- * DYN_BASE 为 1，UNTRACKED_BASE 为 6（首轮实测校准：v2 估计为 1，实测 6 名逐项核过
- * peers 无类型声明，见 KNOWN_TRACKING；超 6 或出新名即 FAIL），KNOWN 为 6 名。
+ * DYN_BASE 为 1，UNTRACKED_BASE 为 7（首轮实测校准：v2 估计为 1，实测 7 名逐项核过
+ * peers 无类型声明，见 KNOWN_TRACKING；超 7 或出新名即 FAIL），KNOWN 为 7 名。
  * C1：ctx.on 字面量实得 20（19 + lan-proxy apply.ts:443 document-updated 显式订阅，
  * #1011 热更新面），v2 称 18 系行扫描漏计 provider 多行调用的 internal/service。
  * 出口：通过或 FAIL 一律 exit 0；范围、管线、基线三处结构与环境异常经 gate-exit failClosed。
@@ -41,21 +41,24 @@ import { failClosed } from "../lib/gate-exit.mjs";
 
 const DEFAULT_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const DYN_BASE = 1;
-const UNTRACKED_BASE = 6;
+const UNTRACKED_BASE = 7;
 const KNOWN_UNTRACKED = [
   "attachments",
+  "configForms",
   "connection",
   "loader",
   "locale",
   "sessionPersistence",
   "slots",
 ];
-const TRACKING_ANCHOR = "首轮实测校准（6 名逐名跟踪见 KNOWN_TRACKING；超 6 或出新名即 FAIL）";
+const TRACKING_ANCHOR = "首轮实测校准（7 名逐名跟踪见 KNOWN_TRACKING；超 7 或出新名即 FAIL）";
 const KNOWN_TRACKING = {
   loader:
     "packages/dsh-mcp-manager/src/server/shared/compose.ts 注释：loader 类型不进 catalog，只认运行时 import 方法",
   attachments:
     "packages/dsh-mcp-manager/src/server/shared/host-faces.ts 注释：附件库晚读，服务可能缺席，peers 无类型声明",
+  configForms:
+    "packages/dsh-lan-proxy/src/client/index.ts、packages/dsh-mcp-manager/src/client/index.ts：客户端 settings configForms 可选注入面，peers 无类型声明",
   connection:
     "packages/dsh-lan-proxy/src/server/apply.ts 注释：官方 connection 服务，对等包未安装，typeof 守卫可选注入",
   locale: "客户端可选服务（宿主核心提供，if 守卫，peers 无类型声明）：3 处客户端消费点",

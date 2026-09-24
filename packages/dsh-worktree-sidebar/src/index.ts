@@ -61,11 +61,10 @@ export async function apply(ctx: Context, config: WorktreeSidebarConfig = {}): P
     logger: ctx.logger,
     register: (route) => ctx.webServer.register(route),
     agents: bindAgents({
-      // rc.7 serial 透传：payload 多余字段（source/signal）只取 agent 忽略，回 undefined
-      // 兼容 serial（旧 emit 的 void 亦兼容 undefined）；无版本分支，双基线可编译。
+      // rc.7 serial 会等待 listener：完整等待 tools 域的注册链，再让 agent 创建继续。
       on: (event, handler) =>
-        ctx.on(event, (payload) => {
-          handler({ agent: payload.agent as HostAgentLike });
+        ctx.on(event, async (payload) => {
+          await handler({ agent: payload.agent as HostAgentLike });
           return undefined;
         }),
       all: () => ctx.agents.list(),

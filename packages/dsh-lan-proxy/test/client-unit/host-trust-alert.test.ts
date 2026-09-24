@@ -5,13 +5,11 @@
  * 1. **纯函数表驱动**：`hostTrustAlert` 对四态给出正确取舍（哪两态告警、文案区分）；
  * 2. **装配接线**：`apply` 真的会调用告警——只测纯函数证明不了「告警被接上了」，
  *    这正是 P1-1 的病灶（判定有、可见面没有）。这里用假 ctx 驱动真实 apply，
- *    断言 console.warn 实际被调用，且**在设置面缺席时照样调用**（slots 服务缺失的
- *    用例即「卡片不可能挂载」的极端形态）。
+ *    断言 console.warn 实际被调用，且**在配置面缺席时照样调用**。
  *
- * 为什么告警要在 apply 最前面（本文件锁的就是这件事）：设置卡片的承载面
- * `settings.plugin.item` 在非回环 authority（settings scope = memory）下根本不渲染，
- * compat-off / contract-drift 两个故障态因此在页面上不可达；告警必须独立于 slots
- * 与设置面。异常防御同理：观测失败不得打断页面启动。
+ * 为什么告警要在 apply 最前面（本文件锁的就是件事）：插件行配置页受 Host authority 与
+ * settings namespace 投影约束，compat-off / contract-drift 下可能不可用；告警必须独立于
+ * slots、configForms 与配置页。异常防御同理：观测失败不得打断页面启动。
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -24,32 +22,40 @@ const MARKER_GLOBAL = "__DSH_LAN_PROXY_HOST_TRUST__";
 /** 告警前缀：与 apply 里其它 warn 共用，用来把本告警从别的 warn 里挑出来。 */
 const PREFIX = "[dsh-lan-proxy]";
 
-/** 最小假 ctx：只提供 apply 真正读到的面（slots / locale / remote / effect）。 */
+type RowConfigRegister = (_served: ReadonlySet<string>) => () => void;
+
+/** 最小假 ctx：只提供 apply 真正读到的面（slots / configForms / locale / remote / effect）。 */
 interface FakeCtx {
   remote?: unknown;
   get: (name: string) => unknown;
-  effect: () => undefined;
+  effect: (execute: () => () => void) => unknown;
 }
 
 /** 一次假装配的可观测面。 */
 interface FakeBoot {
   readonly ctx: FakeCtx;
-  /** 被登记进 settings.plugin.item 的工厂；本文件一律不调用它 = 卡片未挂载。 */
-  readonly slotFactories: Array<() => unknown>;
+  /** whileServed 捕获的页面注册回调；本文件一律不调用它 = namespace 未服务、页面未注册。 */
+  readonly pageRegistrars: RowConfigRegister[];
 }
 
 /**
- * 最小假 ctx：只提供 apply 真正读到的面（slots / locale / remote / effect）。
+ * 最小假 ctx：只提供 apply 真正读到的面（slots / configForms / locale / remote / effect）。
  *
- * @param options.withSlots false 时 slots 服务缺失——设置面完全不存在。
+ * @param options.withSlots false 时 slots 服务缺失——配置页完全不存在。
  */
 function makeCtx(options: { withSlots?: boolean; remote?: unknown } = {}): FakeBoot {
-  const slotFactories: Array<() => unknown> = [];
+  const pageRegistrars: RowConfigRegister[] = [];
   const slots = {
-    inject(_name: string, factory: () => unknown) {
-      slotFactories.push(factory);
+    inject() {
+      return () => {};
     },
     register() {
+      return () => {};
+    },
+  };
+  const configForms = {
+    whileServed(_namespaces: readonly string[], register: RowConfigRegister) {
+      pageRegistrars.push(register);
       return () => {};
     },
   };
@@ -57,13 +63,14 @@ function makeCtx(options: { withSlots?: boolean; remote?: unknown } = {}): FakeB
     remote: "remote" in options ? options.remote : { $host: { isLoopback: false } },
     get(name: string) {
       if (name === "slots") return options.withSlots === false ? undefined : slots;
+      if (name === "configForms") return configForms;
       return undefined;
     },
-    effect() {
-      return undefined;
+    effect(execute) {
+      return execute();
     },
   };
-  return { ctx, slotFactories };
+  return { ctx, pageRegistrars };
 }
 
 /** 捕获的 console.warn 文案（本告警只认带前缀的那些）。 */
@@ -113,14 +120,25 @@ describe("hostTrustAlert：四态 → 是否告警与文案", () => {
   });
 });
 
-describe("apply 接线：故障态告警不依赖设置面（设置卡片不挂载时也要发）", () => {
+describe("compat-off 客户端文案契约", () => {
+  it("指向 Plugin Manager 的 lan row detail，不引用旧 Settings 入口", () => {
+    const message = hostTrustAlert("compat-off") ?? "";
+    expect(message).toContain("插件管理器");
+    expect(message).toContain("dsh-lan-proxy");
+    expect(message).toContain("行详情");
+    expect(message).toContain("settings.yaml");
+    expect(message).not.toContain("设置 → 插件");
+  });
+});
+
+describe("apply 接线：故障态告警不依赖配置页（页面不挂载时也要发）", () => {
   it("非回环 + marker 在 + isLoopback=false（契约漂移）：发出一次告警", () => {
     (globalThis as Record<string, unknown>).location = { hostname: "192.168.1.50" };
     (globalThis as Record<string, unknown>)[MARKER_GLOBAL] = true;
     const boot = makeCtx({ remote: { $host: { isLoopback: false } } });
     apply(boot.ctx);
-    // 卡片工厂只被登记、从未被调用——即「设置面在非回环页面下不渲染」这一事实。
-    expect(boot.slotFactories.length).toBe(1);
+    // whileServed 只捕获回调、不执行它，等价于 namespace 尚未服务、页面尚未注册。
+    expect(boot.pageRegistrars.length).toBe(1);
     const alerts = hostTrustWarns();
     expect(alerts.length).toBe(1);
     expect(alerts[0]).toBe(`${PREFIX} ${hostTrustAlert("contract-drift")}`);
@@ -135,12 +153,12 @@ describe("apply 接线：故障态告警不依赖设置面（设置卡片不挂�
     expect(alerts[0]).toBe(`${PREFIX} ${hostTrustAlert("compat-off")}`);
   });
 
-  it("slots 服务缺失（设置面根本不存在）：告警照样发出", () => {
+  it("slots 服务缺失（配置页根本不存在）：告警照样发出", () => {
     (globalThis as Record<string, unknown>).location = { hostname: "192.168.1.50" };
     (globalThis as Record<string, unknown>)[MARKER_GLOBAL] = true;
     const boot = makeCtx({ withSlots: false, remote: { $host: { isLoopback: false } } });
     apply(boot.ctx);
-    expect(boot.slotFactories.length).toBe(0);
+    expect(boot.pageRegistrars.length).toBe(0);
     expect(hostTrustWarns().length).toBe(1);
   });
 

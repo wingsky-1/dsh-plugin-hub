@@ -52,9 +52,8 @@ built-in skill and becomes available to all sessions in the profile (check with
   `@deepseek-ai/dsh-web-app` (built-in bundles are resolved by name from the dsh install
   directory, not via npm);
 - **One-shot script** `skills/dsh-verify-isolated/scripts/verify-isolated.mjs`
-  (Node implementation, requires Node ≥22; the historical bash `.sh` was removed
-  with no shim left behind): validate the dsh entry and print its version (`--dsh` pins
-  the target dsh version) → create temp DSH_HOME → **preset the first-run popup
+  (Node implementation, requires Node ≥22): validate the dsh entry and require version
+  `0.1.7-rc.1` (`--dsh` is mandatory) → create temp DSH_HOME → **preset the first-run popup
   skip** (writes the internal-testing notice version into the isolated
   `settings.yaml`, see below) → create profile (explicit
   `plugin list` init) → inject web-app bundle → normalize plugin args (relative
@@ -79,8 +78,7 @@ built-in skill and becomes available to all sessions in the profile (check with
   must be a directory; limitation: real home is never scanned; the whitelist
   covers dsh's own write surface (`.credentials.yaml` / `settings.yaml` /
   `settings.yaml.imported` (pending real-device confirmation) / `storages/**`)
-  while version-drifted surfaces such as the official
-  `profiles/node_modules/**` bundle links are captured by the post-readiness t0
+  while the official `profiles/node_modules/**` bundle links are captured by the post-readiness t0
   baseline — the audit surface is the incremental write surface of the runtime;
   `--keep` writes `$DSH_HOME/audit/audit.json`, otherwise the result is carried
   in the final verdict's `audit` field, and error-path JSON always carries an
@@ -90,12 +88,10 @@ built-in skill and becomes available to all sessions in the profile (check with
 - **First-run popups are skipped by default**: a brand-new DSH_HOME opens on two
   **blocking** dialogs ("Internal Testing Notice" → "Add an API key to get
   started"); both set `#root` to `inert`, so every click on the page silently
-  fails. Before startup the script presets `<namespace>.welcomeNoticeVersion`
-  in `settings.yaml` (both the namespace and the value are read from the dsh client artifact's
-  `WELCOME_NOTICE_SETTINGS_NAMESPACE` / `WELCOME_NOTICE_VERSION` at run time rather than hardcoded —
-  rc.7 uses `ui-settings-general`, falling back to `ui-onboarding` when unavailable
-  (the rc.7 import mapping `ui-onboarding→ui-settings-general` migrates it automatically);
-  a stale value after a dsh upgrade silently brings the dialog back) to remove the first one;
+  fails. Before startup the script reads both the namespace and the value from the
+  target dsh client artifact at run time. It presets `<namespace>.welcomeNoticeVersion`
+  in `settings.yaml` only when both facts are present; a missing fact means no preset and
+  the browser-driver overlay probe handles the dialog after navigation to remove the first one;
   the API-key dialog cannot be preset away (its "Configure later" only holds for
   the current page lifetime and reappears on every reload), so browser-driver
   clicks through it after navigation. When no skip button is recognized it does
@@ -123,7 +119,7 @@ skills/dsh-verify-isolated/
   references/manual-setup.md      # branch: manual isolated-environment setup (the script's steps, expanded)
   references/browser-kernel.md    # branch: Chromium kernel detection chain, per-platform self-check and install
   references/viewport-geometry.md # branch: per-viewport device emulation and geometry-assertion methodology
-  scripts/verify-isolated.mjs     # one-shot isolated verification script (Node, --dsh / --browser / --port 0 / --keep / --no-build / --evidence-dir / --audit / --audit-extra-dirs / --no-skip-onboarding / --json)
+  scripts/verify-isolated.mjs     # one-shot isolated verification script (Node, --dsh is mandatory and accepts only 0.1.7-rc.1 / --browser / --port 0 / --keep / --no-build / --evidence-dir / --audit / --audit-extra-dirs / --no-skip-onboarding / --json)
   scripts/lib/verify-core.mjs     # shared base utilities (exit-code constants/poll/findFreePort/port and token-URL parsing/C11 normalization)
   scripts/lib/audit.mjs           # B4 isolated-audit pure functions (scanSnapshot/diffAgainstWhitelist/checkSymlinkEscape/runAudit + versioned whitelist WHITELIST_V)
   scripts/lib/emulation.mjs       # device-emulation pure functions (parseEmulationFlags / buildDeviceMetrics; CDP session semantics)
@@ -138,28 +134,28 @@ lib/index.js                      # host gate export (name + empty apply)
 Once the skill is loaded, follow its checklist; you can also call the package's one-shot
 script directly. The script's resource base directory relative to the skill (the
 `Base directory for this skill:` absolute path injected when the skill loads) is always
-`scripts/verify-isolated.mjs` (Node implementation, requires Node ≥22; upgrade path from
-the old bash version: `bash .../verify-isolated.sh ...` → `node .../verify-isolated.mjs ...`),
-adaptive to the install shape (npm copy / `link:` dev mode / in-repo browsing all work);
-see SKILL.md §2:
+`scripts/verify-isolated.mjs` (Node implementation, requires Node ≥22). It adapts to the
+install shape (npm copy / `link:` dev mode / in-repo browsing); see SKILL.md §2.
+
+This package targets only dsh `0.1.7-rc.1` and is incompatible with every other runtime.
+Every invocation must pass that release through `--dsh`; a missing, unusable, unreadable,
+or mismatched runtime fails closed.
 
 ```bash
 # SKILL_BASE = the "Base directory for this skill:" absolute path injected when the skill loads
-node "$SKILL_BASE/scripts/verify-isolated.mjs" --port 3456 <plugin-package-path>
+DSH_ENTRY="/path/to/dsh-0.1.7-rc.1/bin/dsh"
+node "$SKILL_BASE/scripts/verify-isolated.mjs" --dsh "$DSH_ENTRY" --port 3456 <plugin-package-path>
 # parallel sessions / browser verification: --port 0 auto-detects the port,
 # --browser launches a dedicated browser instance
-node "$SKILL_BASE/scripts/verify-isolated.mjs" --port 0 --browser <plugin-package-path>
-# pin the dsh version (required when verifying a specific dsh release's ecosystem,
-# prevents PATH drift)
-node "$SKILL_BASE/scripts/verify-isolated.mjs" --dsh /opt/dsh-0.1.2-alpha.2/bin/dsh --port 0 <plugin-package-path>
+node "$SKILL_BASE/scripts/verify-isolated.mjs" --dsh "$DSH_ENTRY" --port 0 --browser <plugin-package-path>
 # externalize the evidence dir + emit only the final verdict JSON on stdout (human text on stderr)
-node "$SKILL_BASE/scripts/verify-isolated.mjs" --port 0 --evidence-dir /tmp/my-evidence --json <plugin-package-path>
+node "$SKILL_BASE/scripts/verify-isolated.mjs" --dsh "$DSH_ENTRY" --port 0 --evidence-dir /tmp/my-evidence --json <plugin-package-path>
 # isolated audit (B4): changes outside the whitelist are reported as suspicious and do not block exit;
 # --keep writes $DSH_HOME/audit/audit.json
-node "$SKILL_BASE/scripts/verify-isolated.mjs" --port 0 --audit --keep <plugin-package-path>
+node "$SKILL_BASE/scripts/verify-isolated.mjs" --dsh "$DSH_ENTRY" --port 0 --audit --keep <plugin-package-path>
 # keep the native first-run state (to verify the onboarding popups themselves;
 # the skip is preset by default, see SKILL.md §4.1)
-node "$SKILL_BASE/scripts/verify-isolated.mjs" --port 0 --no-skip-onboarding <plugin-package-path>
+node "$SKILL_BASE/scripts/verify-isolated.mjs" --dsh "$DSH_ENTRY" --port 0 --no-skip-onboarding <plugin-package-path>
 ```
 
 Plugin arguments accept either **local plugin paths** (relative paths are resolved to

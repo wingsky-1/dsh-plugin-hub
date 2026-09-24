@@ -138,6 +138,18 @@
       "reviewBy": "2027-03-31"
     },
     {
+      "pattern": "shared/test/config-shape.test.ts",
+      "kind": "not-source",
+      "reason": "shared 下的配置契约测试不是运行时代码，不进入覆盖率分母；其断言由 node:test 面执行",
+      "since": "#1012"
+    },
+    {
+      "pattern": "shared/test/settings-namespace.mutation.test.ts",
+      "kind": "not-source",
+      "reason": "root-shared mutation 测试只验证 shared/settings-namespace.js，不进入运行时代码覆盖率分母；源文件仍由独立 mutation surface 计量",
+      "since": "#1012"
+    },
+    {
       "pattern": "shared/client/**",
       "kind": "pending-project",
       "reason": "跨包共享的客户端设施（ensure-style.js / i18n.js）：它们的测试在 scripts/test 下（node:test 面），不属于任何 vitest project，故 pnpm cov 跑不到这两个文件。",

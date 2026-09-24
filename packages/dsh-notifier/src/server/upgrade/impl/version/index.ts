@@ -4,7 +4,6 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  readTextFileSync,
   writeTextAtomicSync,
   VERSION_FILE_NAME,
   notifierFile,
@@ -17,13 +16,37 @@ const BASELINE_VERSION = "0.0.0";
 /** 取不到插件版本时的兜底。读到包清单失败不该阻断启动——升级链空转一轮而已。 */
 const UNKNOWN_VERSION = "0.0.0";
 
-/** 读存储版本。没有版本文件 = 从未升级过 = 从零跑整条链：每一步都会自己判断有没有它的活要干，全新安装下全部空转，
- * 而从更早版本升上来的安装正好借这一轮把该做的做掉。 */
-export function readStoredVersion(): string {
-  const read = readTextFileSync(notifierFile(VERSION_FILE_NAME));
-  if (!read.ok) return BASELINE_VERSION;
-  const text = read.text.trim();
-  return text === "" ? BASELINE_VERSION : text;
+/** 存储刻度只接受 v0/v1 的规范三段式；预发布、缺段、前后缀与前导零都不属于本升级链。 */
+const SUPPORTED_STORED_VERSION = /^(?:0|1)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)$/u;
+
+/** 读取器接缝只为稳定覆盖 Node 文件错误码；生产默认直接同步读取。 */
+type ReadVersionFile = (file: string) => string;
+
+/** 读存储版本。仅目标文件精确不存在时从零起跑；读错、空值或坏内容都必须让启动中止，不能把坏源伪装成全新安装。 */
+export function readStoredVersion(
+  read: ReadVersionFile = (file) => readFileSync(file, "utf8"),
+): string {
+  let raw: string;
+  try {
+    raw = read(notifierFile(VERSION_FILE_NAME));
+  } catch (cause) {
+    const code = errorCode(cause);
+    if (code === "ENOENT") return BASELINE_VERSION;
+    const reason = cause instanceof Error ? cause.message : String(cause);
+    throw new Error(
+      `dsh-notifier: 存储版本文件读取失败${code === undefined ? "" : `（${code}）`} — ${reason}`,
+      { cause },
+    );
+  }
+
+  const version = raw.trim();
+  if (version === "") throw new Error("dsh-notifier: 存储版本文件为空");
+  if (!SUPPORTED_STORED_VERSION.test(version)) {
+    throw new Error(
+      `dsh-notifier: 存储版本文件包含非法或不支持的版本号：${JSON.stringify(version)}`,
+    );
+  }
+  return version;
 }
 
 /** 写存储版本：一步升级完成即推进一档；写不进去就停在原处，下次重跑该步。 */
@@ -44,8 +67,8 @@ export function pluginVersion(): string {
   }
 }
 
-/** 版本号比较：逐段数值比较。段数不同按缺位补零（`0.3` 等价 `0.3.0`）；预发布后缀（`-rc.1`）不参与比较——本包的
- * 版本序列只用到 `主.次.修订`，为一个不会出现的输入引一套 semver 语义，换来的是又一处需要跟着上游走的依赖。 */
+/** 版本号比较：逐段数值比较。段数不同按缺位补零（`0.3` 等价 `0.3.0`）；预发布后缀（`-rc.1`）不是本升级链支持的版本格式，
+ * 会明确抛错，而不是悄悄截断前缀。 */
 export function compareVersions(left: string, right: string): number {
   const a = parseVersion(left);
   const b = parseVersion(right);
@@ -58,5 +81,15 @@ export function compareVersions(left: string, right: string): number {
 }
 
 function parseVersion(text: string): number[] {
-  return text.split(".").map((part) => Number.parseInt(part, 10) || 0);
+  const parts = text.split(".");
+  if (parts.length > 3 || parts.some((part) => !/^(?:0|[1-9]\d*)$/u.test(part))) {
+    throw new Error(`dsh-notifier: 不支持的版本号：${JSON.stringify(text)}`);
+  }
+  return parts.map((part) => Number(part));
+}
+
+/** Node 文件错误会带稳定 code；没有 code 的异常仍按读取失败处理。 */
+function errorCode(cause: unknown): string | undefined {
+  if (typeof cause !== "object" || cause === null || !("code" in cause)) return undefined;
+  return typeof cause.code === "string" ? cause.code : undefined;
 }

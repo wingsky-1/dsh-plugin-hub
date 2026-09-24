@@ -41,6 +41,8 @@ interface FakeHost {
   }): void;
   /** 走 cordis 的卸载路径：把每个 effect 的 disposer 逐个 await 掉。 */
   disposeAll(): Promise<void>;
+  /** 按 rc.7 serial 语义派发 agent/created：逐个等待 listener 返回。 */
+  emitAgentCreated(agent: FakeAgent): Promise<void>;
   /** 装配中途的失败：恢复路由注册口（用来验证「失败后同一进程还能重新装」）。 */
   allowRegister(): void;
 }
@@ -75,18 +77,13 @@ interface FakeAgent {
     effect(execute: () => () => void): () => unknown;
   };
   readonly definitions: ToolDefinition[];
-}
-
-/** 等一个条件成立；超时即返回，由断言去判红（不让等待本身变成失败原因）。 */
-async function waitFor(predicate: () => boolean, timeoutMs = 10_000): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  while (!predicate() && Date.now() < deadline) {
-    await new Promise((resolve) => setTimeout(resolve, 10));
-  }
+  /** 等到实际发生指定次数的注册；初始 list 仍 fire-and-forget，但测试不靠时间猜完成。 */
+  waitForDefinitions(count: number): Promise<void>;
 }
 
 function fakeAgent(id: string, cwd: string): FakeAgent {
   const definitions: ToolDefinition[] = [];
+  const definitionWaiters: Array<{ count: number; resolve: () => void }> = [];
   return {
     id,
     session: { header: { cwd, createdAt: BIRTH } },
@@ -94,6 +91,12 @@ function fakeAgent(id: string, cwd: string): FakeAgent {
       tools: {
         register: (definition) => {
           definitions.push(definition);
+          for (const waiter of [...definitionWaiters]) {
+            if (definitions.length >= waiter.count) {
+              definitionWaiters.splice(definitionWaiters.indexOf(waiter), 1);
+              waiter.resolve();
+            }
+          }
           return () => {
             const index = definitions.indexOf(definition);
             if (index >= 0) definitions.splice(index, 1);
@@ -106,6 +109,10 @@ function fakeAgent(id: string, cwd: string): FakeAgent {
       },
     },
     definitions,
+    waitForDefinitions(count: number): Promise<void> {
+      if (definitions.length >= count) return Promise.resolve();
+      return new Promise((resolve) => definitionWaiters.push({ count, resolve }));
+    },
   };
 }
 
@@ -113,13 +120,23 @@ function fakeHost(options: FakeHostOptions = {}): FakeHost {
   const routes: WebRoute[] = [];
   const serviceGets: string[] = [];
   const disposers: Array<() => unknown> = [];
+  const liveAgents = [...(options.agents ?? [])];
+  const agentCreatedHandlers: Array<
+    (payload: { agent: FakeAgent }) => undefined | PromiseLike<undefined>
+  > = [];
   let persistence: unknown = undefined;
   let registerThrows = options.registerThrows === true;
   const ctx = {
     logger: { warn: () => undefined },
-    on: () => () => undefined,
+    on: (
+      event: string,
+      handler: (payload: { agent: FakeAgent }) => undefined | PromiseLike<undefined>,
+    ) => {
+      if (event === "agent/created") agentCreatedHandlers.push(handler);
+      return () => true;
+    },
     agents: {
-      list: () => options.agents ?? [],
+      list: () => liveAgents,
       // 组合根只允许用 list()：roots() 看不到子 agent，用它就等于子会话拿不到工具。
       // 这里留一个会抛的同名方法，把这条约束变成有意判据（否则只靠「假件恰好没实现 roots」的偶然 TypeError）。
       roots: () => {
@@ -179,6 +196,10 @@ function fakeHost(options: FakeHostOptions = {}): FakeHost {
     },
     async disposeAll() {
       for (const dispose of disposers.splice(0).reverse()) await dispose();
+    },
+    async emitAgentCreated(agent: FakeAgent) {
+      if (!liveAgents.includes(agent)) liveAgents.push(agent);
+      for (const handler of agentCreatedHandlers) await handler({ agent });
     },
     allowRegister() {
       registerThrows = false;
@@ -342,6 +363,25 @@ describe("组合根的生命周期", () => {
     await restarted.disposeAll();
   });
 
+  it("ctx.on 的 agent/created listener 返回前已注册 create/register/remove", async () => {
+    const agent = fakeAgent("created", process.cwd());
+    const host = fakeHost();
+    await apply(host.ctx);
+    expect(agent.definitions).toHaveLength(0);
+
+    const serial = host.emitAgentCreated(agent);
+    expect(agent.definitions).toHaveLength(0);
+
+    await serial;
+
+    expect(agent.definitions.map((definition) => definition.name).sort()).toEqual([
+      "ws_worktree_create",
+      "ws_worktree_register",
+      "ws_worktree_remove",
+    ]);
+    await host.disposeAll();
+  });
+
   it("组合根的 now 闭包被真执行一遍：登记时间戳由它产出（顺带覆盖 tools 注册链）", async () => {
     const dir = process.cwd();
     const agent = fakeAgent("s1", dir);
@@ -350,9 +390,8 @@ describe("组合根的生命周期", () => {
       agents: [agent],
     });
     await apply(host.ctx);
-    // tools 域的判定链要**真起一次 git 子进程**才把工具装进 agent：一轮微任务不够，
-    // 而这里又不能用假 git（本文件的组合根递的就是真 exec 面），所以按条件有限轮询。
-    await waitFor(() => agent.definitions.length > 0);
+    // 初始 list 路径刻意保持 fire-and-forget；这里等实际注册事实，不轮询时间。
+    await agent.waitForDefinitions(1);
 
     const definition = agent.definitions.find((entry) => entry.name === "ws_worktree_register");
     if (definition === undefined) throw new Error("工具没有装进 agent");

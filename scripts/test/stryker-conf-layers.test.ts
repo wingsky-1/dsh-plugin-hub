@@ -16,7 +16,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -902,6 +902,61 @@ test("CLI 三态：判据⑦ 判红仍 exit 1 且无故障注解", () => {
     assert.equal(res.status, 1, `攻击态必须判红：\n${res.out}`);
     assert.doesNotMatch(res.out, /::error::门禁故障/);
     assert.match(res.out, /变异面并集相对基准收缩/);
+  } finally {
+    removeFixtureRoot(root);
+  }
+});
+
+test("P2 root-shared：精确生成 settings-namespace 段且不把 node:test 收入 Vitest 面", () => {
+  const topology = structuredClone(TOPOLOGY);
+  topology.$rootShared = {
+    testRoot: "shared",
+    testPattern: "test/**/*.mutation.test.ts",
+    threshold: 60,
+    segments: {
+      "settings-namespace": {
+        mutate: ["shared/settings-namespace.js"],
+        excludes: [],
+        testFiles: ["shared/test/settings-namespace.mutation.test.ts"],
+      },
+    },
+  };
+  const root = makeFixtureRoot(
+    {
+      "shared/settings-namespace.js": "export const covered = true\n",
+      "shared/test/settings-namespace.mutation.test.ts": "// Vitest mutation face\n",
+      "shared/test/config-shape.test.ts": "// node:test standard entry\n",
+    },
+    topology,
+  );
+  try {
+    assert.equal(runGenerator(root).status, 0, "生成应成功");
+    const sharedConfPath = join(root, "stryker.conf.d", "shared-settings-namespace.json");
+    assert.equal(
+      existsSync(sharedConfPath),
+      true,
+      "旧生成器忽略 $rootShared，必须以缺少 shared-settings-namespace.json 判红",
+    );
+    const sharedConf = JSON.parse(readFileSync(sharedConfPath, "utf8"));
+    assert.deepEqual(sharedConf.mutate, ["shared/settings-namespace.js"]);
+    assert.deepEqual(sharedConf.thresholds, { high: 60, low: 60, break: 60 });
+    assert.deepEqual(sharedConf.mutator.excludedMutations, []);
+    assert.equal(
+      sharedConf.vitest.configFile,
+      "vitest.stryker.d/shared-settings-namespace.config.ts",
+    );
+
+    const sharedVitestPath = join(root, "vitest.stryker.d", "shared-settings-namespace.config.ts");
+    const sharedVitest = readFileSync(sharedVitestPath, "utf8");
+    assert.match(sharedVitest, /shared\/test\/settings-namespace\.mutation\.test\.ts/);
+    assert.doesNotMatch(sharedVitest, /shared\/test\/config-shape\.test\.ts/);
+
+    assert.equal(
+      existsSync(join(root, "stryker.conf.d", `${PKG}-only.json`)),
+      true,
+      "root-shared 适配不得改变 packages/* 的段派生",
+    );
+    assert.equal(runGenerator(root, ["--check"]).status, 0, "生成后 topology 与派生物应一致");
   } finally {
     removeFixtureRoot(root);
   }

@@ -26,20 +26,26 @@ const liveSeedings = new Set<() => void>();
 
 /** 整体释放：装配根在卸载路径上调用。重复调用无害（释放函数自己会把自己摘掉）。 */
 export function releaseAllSeedings(): void {
-  for (const release of [...liveSeedings]) release();
+  for (const release of [...liveSeedings].reverse()) release();
 }
 
 /** 官方 files face 里被我们覆盖的两个方法（其余成员原样透传）。 */
 type FaceStart = (tabId: string, root: string, signal?: AbortSignal) => void;
 type FaceLoad = (tabId: string, path: string, signal?: AbortSignal) => void;
 
-/** 一个已挂载页签：最近播种的根、回退根，以及它的存活信号。 */
+/** abort 监听与其 signal 成对保存，removeEventListener 才能命中同一身份。 */
+interface AbortBinding {
+  readonly signal: AbortSignal;
+  readonly listener: () => void;
+}
+
+/** 一个已挂载页签：最近播种的根、回退根，以及它的 abort 监听身份。 */
 interface WatchedTab {
   /** 最近一次播种进去的根；`load` 靠它认出「刷新按钮的根那一跳」。 */
   seeded: string;
   /** 官方正文递进来的 cwd：绑定不可用时回退到它。 */
   readonly fallback: string;
-  readonly signal: AbortSignal | undefined;
+  readonly abort: AbortBinding | undefined;
 }
 
 /** 造一个改写器：外包官方工厂、保留它产出的一切，只改 hooks 与那两个播种方法。 */
@@ -92,36 +98,31 @@ function seeding(view: SessionView, face: Record<string, unknown>): Record<strin
   const reseed = (): void => {
     const next = view.root.getSnapshot();
     for (const [tabId, tab] of [...watched]) {
-      if (tab.signal?.aborted === true) continue;
+      if (tab.abort?.signal.aborted === true) continue;
       const root = next ?? tab.fallback;
       // 根没变就不重播：官方每次 `start` 都往同一个 signal 上再加一个 abort 监听并重列目录，
       // 而「绑定没变」恰恰是最常见的那次通知（订阅只在实际变化时触发，但 fallback 与绑定同值时也走这里）。
       if (root === tab.seeded) continue;
       tab.seeded = root;
-      officialStart(tabId, root, tab.signal);
+      officialStart(tabId, root, tab.abort?.signal);
     }
   };
 
+  const detachAbort = (tab: WatchedTab | undefined): void => {
+    if (tab?.abort === undefined) return;
+    tab.abort.signal.removeEventListener("abort", tab.abort.listener);
+  };
+
   const release = (): void => {
+    // 与 attach 顺序相反：后注册的页签 listener 先拆，再拆共享订阅与 face 自身。
+    for (const [, tab] of [...watched].reverse()) detachAbort(tab);
+    detachVisible?.();
+    detachVisible = undefined;
+    unsubscribe?.();
+    unsubscribe = undefined;
     // 迟到的绑定响应也走 watched 查找；清空后不得再给已卸载页签播种。
     watched.clear();
     liveSeedings.delete(release);
-    unsubscribe?.();
-    unsubscribe = undefined;
-    detachVisible?.();
-    detachVisible = undefined;
-  };
-
-  /** 页签 abort 时的清理：摘掉本页签，空表时释放订阅（attach 的 abort 分支外提以降复杂度）。 */
-  const watchAbort = (tabId: string, signal: AbortSignal | undefined): void => {
-    signal?.addEventListener(
-      "abort",
-      () => {
-        watched.delete(tabId);
-        if (watched.size === 0) release();
-      },
-      { once: true },
-    );
   };
 
   const attach = (
@@ -129,27 +130,39 @@ function seeding(view: SessionView, face: Record<string, unknown>): Record<strin
     fallback: string,
     seeded: string,
     signal: AbortSignal | undefined,
-  ): void => {
+  ): WatchedTab => {
     liveSeedings.add(release);
-    watched.set(tabId, { seeded, fallback, signal });
+    detachAbort(watched.get(tabId));
+    const onAbort = (): void => {
+      const current = watched.get(tabId);
+      if (current === undefined || current.abort !== abort) return;
+      detachAbort(current);
+      watched.delete(tabId);
+      if (watched.size === 0) release();
+    };
+    const abort = signal === undefined ? undefined : { signal, listener: onAbort };
+    const tab: WatchedTab = { seeded, fallback, abort };
+    watched.set(tabId, tab);
     unsubscribe ??= view.root.subscribe(reseed);
     detachVisible ??= refreshWhenVisible(refresh);
-    watchAbort(tabId, signal);
+    if (abort !== undefined) abort.signal.addEventListener("abort", abort.listener, { once: true });
+    return tab;
   };
 
   const start: FaceStart = (tabId, root, signal) => {
+    // once listener 不会补发已发生的 abort；已取消页签必须在建立 record 前退出。
+    if (signal?.aborted === true) return;
     // 先按**官方 root 同步播种**，再用绑定纠正。反过来（等绑定读回来再播种）会把官方树的首帧
     // 挂在一次没有超时的 fetch 上：宿主端点一慢，官方正文的 `state` 就停在 undefined 而返回 null，
     // 于是**所有会话（含从未登记的）**的 Files 树一直空白，直到那次请求回来为止。
-    attach(tabId, root, root, signal);
+    const tab = attach(tabId, root, root, signal);
     officialStart(tabId, root, signal);
     void view.root.refresh().then(() => {
-      if (signal?.aborted === true) return;
+      if (watched.get(tabId) !== tab || tab.abort?.signal.aborted === true) return;
       const seeded = view.root.getSnapshot() ?? root;
-      const tab = watched.get(tabId);
-      if (tab === undefined || tab.seeded === seeded) return;
+      if (tab.seeded === seeded) return;
       tab.seeded = seeded;
-      officialStart(tabId, seeded, tab.signal);
+      officialStart(tabId, seeded, tab.abort?.signal);
     });
   };
 

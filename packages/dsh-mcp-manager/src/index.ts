@@ -80,7 +80,7 @@ import * as upgradeApi from "./server/upgrade/interface.ts";
 import { bindHost, type HostFaces } from "./server/shared/interface.ts";
 import { startAgentVisibility } from "./server/visibility/interface.ts";
 import { startSdkErasure } from "./server/erasure/interface.ts";
-import { SSE_FRAMES } from "./shared/interface.ts";
+import { MCP_MANAGER_IDENTITY, SSE_FRAMES } from "./shared/interface.ts";
 import type { McpServerSummary, SseFramePayload } from "./shared/interface.ts";
 import { makeResolveRoot, makeServerIdTable } from "./server/workspace/interface.ts";
 import * as workspaceApi from "./server/workspace/interface.ts";
@@ -231,9 +231,8 @@ function resolveApplyOptions(
 }
 
 /**
- * 插件自身 Config schema（标准 cordis 配置注入路径）：position/offset 不再藏于
- * 隐藏命名空间，设置页插件卡可编辑；配置变更经既有 SSE events 通道广播一帧，
- * 客户端收到后重新 GET /api/dsh-mcp/config 就地更新浮窗位置（无需重启/轮询）。
+ * 插件行配置的宿主读面：Config schema 只开放 ui child，官方 ConfigForm 变更经既有
+ * SSE events 通道广播一帧，客户端收到后重新 GET /api/dsh-mcp/config 就地更新浮窗位置。
  */
 function installConfigSettings(
   ctx: Context,
@@ -245,7 +244,7 @@ function installConfigSettings(
     // #515：广播收口到共享 hub（未创建 = 尚无 events 订阅，跳过）。
     manager.sseHub?.broadcast(uiConfigChangedFrame());
   };
-  installSettingsNamespace(ctx, "dsh-mcp-manager", Config, config ?? {}, {
+  installSettingsNamespace(ctx, MCP_MANAGER_IDENTITY.settingsNamespace, Config, config ?? {}, {
     setSource: (source) => {
       manager.uiConfigSource = source as () => unknown;
     },
@@ -257,8 +256,8 @@ function installConfigSettings(
 }
 
 /**
- * 写入 sink：设置页卡片经 POST /api/dsh-mcp/config 写配置时，通过 settings 服务
- * 的 namespace update 落盘并触发 scope.watch → onChange → SSE 广播。settings 服务
+ * 写入 sink：POST /api/dsh-mcp/config 经 settings 服务的 canonical namespace update
+ * 落盘并触发 onChange → SSE 广播。settings 服务
  * 未挂载时 uiUpdate 保持 undefined → 写路由返回「不可写」（卡片/设置页本就不渲染）。
  */
 function injectSettingsSink(ctx: Context, manager: McpManager): void {
@@ -280,7 +279,8 @@ function injectSettingsSink(ctx: Context, manager: McpManager): void {
       // 本地引用并以 call(settings) 把服务对象本身作为 this 传入；同时规避 TS 对
       // 可选属性 settings.update 的收窄在闭包内丢失（2722）。
       const update = settings.update;
-      manager.uiUpdate = (patch) => update.call(settings, "dsh-mcp-manager", patch);
+      manager.uiUpdate = (patch) =>
+        update.call(settings, MCP_MANAGER_IDENTITY.settingsNamespace, patch);
     }
   });
 }

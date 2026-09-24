@@ -11,7 +11,13 @@
 import { existsSync, globSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, relative, sep } from "node:path";
 
-import { packageEntryProblems } from "./mutation-topology.mjs";
+import {
+  ROOT_SHARED_SURFACE,
+  ROOT_SHARED_TEST_PATTERN,
+  ROOT_SHARED_TEST_ROOT,
+  packageEntryProblems,
+  rootSharedEntryProblems,
+} from "./mutation-topology.mjs";
 import { globFiles, sourceUniverse } from "../lib/glob-files.mjs";
 
 /**
@@ -225,6 +231,49 @@ export function projectTestSurface(root, topologyDoc, pkgName) {
   collectUnattributedErrors(runFiles, explained, errors);
 
   return { testFiles, runFiles, layerFiles, excludedFiles: [...excluded].sort(), errors };
+}
+
+/**
+ * 根 shared 的独立 mutation 测试面。node:test 标准入口继续留在 shared/test，
+ * 只有 `*.mutation.test.ts` 会被 Vitest/Stryker 收集；不经过 packages 层投影或 --min。
+ */
+export function projectRootSharedTestSurface(root, topologyDoc) {
+  const def = topologyDoc?.[ROOT_SHARED_SURFACE];
+  const empty = { testFiles: [], runFiles: [], layerFiles: {}, excludedFiles: [], errors: [] };
+  if (def === undefined) {
+    const discovered = expandGlob(join(root, ROOT_SHARED_TEST_ROOT), ROOT_SHARED_TEST_PATTERN);
+    return {
+      ...empty,
+      errors:
+        discovered.length === 0
+          ? []
+          : [
+              `磁盘上有 root-shared mutation 测试但未在 mutation-topology.json 登记：${discovered
+                .map((p) => relPosix(root, p))
+                .join(", ")}`,
+            ],
+    };
+  }
+  const shapeProblems = rootSharedEntryProblems(def);
+  if (shapeProblems.length > 0) return { ...empty, errors: shapeProblems };
+  const testFiles = expandGlob(join(root, ROOT_SHARED_TEST_ROOT), ROOT_SHARED_TEST_PATTERN)
+    .map((p) => relPosix(root, p))
+    .sort();
+  if (testFiles.length === 0) {
+    return {
+      ...empty,
+      errors: [
+        `root-shared mutation 测试面零命中：${ROOT_SHARED_TEST_ROOT}/${ROOT_SHARED_TEST_PATTERN}`,
+      ],
+    };
+  }
+  return {
+    testFiles,
+    runFiles: [...testFiles],
+    layerFiles: { "root-shared-mutation": [...testFiles] },
+    excludedFiles: [],
+    errors: [],
+  };
 }
 
 /** 层名清单：缺声明的层退化为空表，调用方据此走原有的 fail-closed 判据。 */

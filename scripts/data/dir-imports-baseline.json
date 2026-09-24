@@ -3,13 +3,13 @@
   "version": 2,
   "packages": {
     "dsh-lan-proxy": {
-      "modules": 7,
-      "scannedSrcFiles": 24,
-      "allSrcTsFiles": 34,
-      "interfaceFacades": 7,
-      "leafValueEdges": 5,
-      "fileValueEdges": 36,
-      "crossModuleRefs": 50,
+      "modules": 8,
+      "scannedSrcFiles": 26,
+      "allSrcTsFiles": 36,
+      "interfaceFacades": 8,
+      "leafValueEdges": 7,
+      "fileValueEdges": 41,
+      "crossModuleRefs": 57,
       "quality": {
         "leafModuleCycles": [],
         "fileCycles": [],
@@ -127,9 +127,7 @@
           "test/unit/client-takeover.test.ts|src/client/shared/ports.ts",
           "test/unit/client-takeover.test.ts|src/client/takeover.ts",
           "test/unit/inject-attach.test.ts|src/client/inject.ts",
-          "test/unit/inject-attach.test.ts|src/client/shared/ports.ts",
-          "test/unit/inject-keep-mounted.test.ts|src/client/inject.ts",
-          "test/unit/inject-keep-mounted.test.ts|src/client/shared/ports.ts"
+          "test/unit/inject-attach.test.ts|src/client/shared/ports.ts"
         ]
       }
     }

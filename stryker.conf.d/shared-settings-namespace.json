@@ -1,0 +1,44 @@
+{
+  "$schema": "../node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "mutate": [
+    "shared/settings-namespace.js"
+  ],
+  "testRunner": "vitest",
+  "mutator": {
+    "excludedMutations": [
+      "StringLiteral",
+      "ArrayLiteral",
+      "ObjectLiteral",
+      "TemplateLiteral"
+    ]
+  },
+  "plugins": [
+    "@stryker-mutator/vitest-runner"
+  ],
+  "concurrency": 16,
+  "timeoutMS": 60000,
+  "dryRunTimeoutMinutes": 5,
+  "reporters": [
+    "progress",
+    "clear-text",
+    "json"
+  ],
+  "coverageAnalysis": "perTest",
+  "tempDirName": ".stryker-tmp",
+  "cleanTempDir": true,
+  "vitest": {
+    "related": false,
+    "configFile": "vitest.stryker.d/shared-settings-namespace.config.ts"
+  },
+  "jsonReporter": {
+    "fileName": "coverage/mutation/shared-settings-namespace.json"
+  },
+  "incremental": true,
+  "incrementalFile": "coverage/mutation/incremental-shared-settings-namespace.json",
+  "thresholds": {
+    "high": 60,
+    "low": 60,
+    "break": 60
+  },
+  "_comment": "Phase 5 P2：lan/mcp 共同运行时接缝；descriptor/source/onChange 与写入委托由独立 Vitest 行为判据直接覆盖。"
+}

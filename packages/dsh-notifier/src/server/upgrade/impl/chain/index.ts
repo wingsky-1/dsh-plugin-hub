@@ -1,5 +1,5 @@
 /**
- * upgrade 域升级链驱动：读刻度 → 取刻度仍停在起点的步骤 → 逐步执行并回写刻度 → 与插件版本对账。**任何一步失败即抛出，
+ * upgrade 域升级链驱动：读刻度 → 取刻度仍停在起点的步骤 → 执行并在整条链成功后回写最终刻度 → 与插件版本对账。**任何一步失败即抛出，
  * 启动随之中止**（存储没升完就被按错误形态解释，比不启动糟得多）；步骤按**目标版本**排序执行，不按声明顺序。
  */
 import type { LoggerPort } from "../../../shared/interface.ts";
@@ -19,8 +19,22 @@ import type { UpgradeStep } from "./type.ts";
  */
 export function runUpgradeChain(deps: UpgradeDeps): void {
   const recorded = readStoredVersion();
-  for (const step of pendingSteps(recorded)) applyStep(step, deps);
+  runUpgradeSteps(pendingSteps(recorded), deps);
   reportGap(readStoredVersion(), pluginVersion(), deps.logger);
+}
+
+/**
+ * 执行一批待升级步骤，全部成功后才提交最终刻度。
+ * 失败时不写中间版本，避免半完成迁移被下一次启动误判为已完成。
+ */
+export function runUpgradeSteps(steps: readonly UpgradeStep[], deps: UpgradeDeps): void {
+  if (steps.length === 0) return;
+  for (const step of steps) runUpgradeStep(step, deps);
+  const finalVersion = steps[steps.length - 1].targetVersion;
+  const written = writeStoredVersion(finalVersion);
+  if (!written.ok) {
+    throw new Error(`dsh-notifier: 存储版本号回写失败（${finalVersion}）— ${written.reason}`);
+  }
 }
 
 /** 刻度还停在这一步起点或更早的步骤，按目标版本升序。 */
@@ -30,11 +44,8 @@ function pendingSteps(recorded: string): UpgradeStep[] {
     .filter((step) => compareVersions(step.fromVersion, recorded) >= 0);
 }
 
-/**
- * 执行一步，成功后回写刻度。回写在 `run` 之后而不是之前：刻度是「这一步做完了」的凭证，先写刻度等于把凭证
- * 发给一件还没做完的事。失败时抛出的错误带上目标版本，是为了让「哪一步」出现在启动失败的现场。
- */
-function applyStep(step: UpgradeStep, deps: UpgradeDeps): void {
+/** 执行一步；版本提交由整条链统一完成。 */
+function runUpgradeStep(step: UpgradeStep, deps: UpgradeDeps): void {
   try {
     step.run(deps);
   } catch (cause) {
@@ -42,10 +53,6 @@ function applyStep(step: UpgradeStep, deps: UpgradeDeps): void {
       `dsh-notifier: 存储升级到 ${step.targetVersion} 失败 — ${cause instanceof Error ? cause.message : "未知原因"}`,
       { cause },
     );
-  }
-  const written = writeStoredVersion(step.targetVersion);
-  if (!written.ok) {
-    throw new Error(`dsh-notifier: 存储版本号回写失败（${step.targetVersion}）— ${written.reason}`);
   }
 }
 

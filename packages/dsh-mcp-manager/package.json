@@ -39,7 +39,8 @@
     },
     "client": {
       "inject": [
-        "@deepseek-ai/dsh-client-connection"
+        "@deepseek-ai/dsh-client-connection",
+        "@deepseek-ai/dsh-client-ui-settings"
       ],
       "platform": "web"
     }

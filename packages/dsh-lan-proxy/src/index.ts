@@ -5,7 +5,7 @@
  * 信任围栏接受这些请求。
  *
  * 端口不是固定的：默认 3081，可通过两层途径修改（都实时生效）——
- *   1. GUI 设置卡片（设置 → 插件 → dsh-lan-proxy）：经 loopback HTTP 配置路由
+ *   1. GUI 设置卡片（插件管理器 → dsh-lan-proxy → 行详情）：经 loopback HTTP 配置路由
  *      写入官方 settings 条目（scope.update/replace），settings/document-updated
  *      订阅触发热更新（冻结计划 v1.1；scope.watch 为 rc.5 遗留面，不再使用）；
  *      settings 服务不可解析时自动降级并打 warn 日志。

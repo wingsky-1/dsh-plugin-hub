@@ -67,7 +67,7 @@ export interface DecideDeps {
   readonly resolveKey: KeyResolver;
   readonly recordEvent?: EventRecorder;
   /** 并发门（组合根按 maxConcurrency 创建信号量后传入；缺席即直行）。 */
-  readonly limit?: <T>(task: () => Promise<T>) => Promise<T>;
+  readonly limit?: <T>(task: () => Promise<T>, signal?: AbortSignal) => Promise<T>;
   readonly fetchImpl?: FetchImpl;
   readonly root: string;
   readonly sessionId: string;

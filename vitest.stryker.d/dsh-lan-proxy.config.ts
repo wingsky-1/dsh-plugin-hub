@@ -10,10 +10,12 @@ export default defineConfig({
     include: [
       'packages/dsh-lan-proxy/test/client-dom/settings-card.test.ts',
       'packages/dsh-lan-proxy/test/client-unit/ca-status.test.ts',
+      'packages/dsh-lan-proxy/test/client-unit/client-entry.test.ts',
       'packages/dsh-lan-proxy/test/client-unit/client-routes.test.ts',
       'packages/dsh-lan-proxy/test/client-unit/host-trust-alert.test.ts',
       'packages/dsh-lan-proxy/test/client-unit/host-trust-status.test.ts',
       'packages/dsh-lan-proxy/test/integration/apply-token-provider.test.ts',
+      'packages/dsh-lan-proxy/test/unit/legacy-settings.test.ts',
       'packages/dsh-lan-proxy/test/unit/unit-apply.test.ts',
       'packages/dsh-lan-proxy/test/unit/unit-ca.test.ts',
       'packages/dsh-lan-proxy/test/unit/unit-cacert.test.ts',

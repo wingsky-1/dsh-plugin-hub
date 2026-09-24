@@ -8,10 +8,13 @@
  *
  * 离线，无落盘。直连 src/client（client-unit 层，自动落 testLayers；已认领进 client-panel 段——所测 state.ts 归属该段，session/float 暂无归属段故同落，k 约 0；变异无信号声明见 PR 正文）。
  */
+import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { apply, inject as clientInject } from "../../src/client/index.ts";
 import { bindSession } from "../../src/client/core/session.ts";
 import { floatTopOffset } from "../../src/client/float/float.ts";
 import { createState } from "../../src/client/core/state.ts";
+import { MCP_MANAGER_IDENTITY } from "../../src/shared/interface.ts";
 import type { McpClientContext } from "../../src/client/core/state.ts";
 
 const SESSION_PATH = "/api/dsh-mcp/session";
@@ -254,5 +257,229 @@ describe("McpClientContext.effect 配对（对齐 apply 语义）", () => {
     expect(typeof dispose).toBe("function");
     dispose();
     expect(cleaned).toBe(true);
+  });
+});
+
+type RowView = "summary" | "page";
+
+type RowRegister = (served: ReadonlySet<string>) => () => void;
+
+interface RowRegistration {
+  item: Record<string, unknown>;
+  render: (props: { view: RowView; form: unknown }) => unknown;
+}
+
+interface RowLifecycleHarness {
+  watchedNamespaces: readonly string[];
+  injectedSlots: readonly string[];
+  ledger: readonly RowRegistration[];
+  offCalls: () => number;
+  watchStops: () => number;
+  serve: (servedNamespaces: ReadonlySet<string>) => void;
+  unserved: () => void;
+  teardown: () => void;
+}
+
+/**
+ * 用真实 apply 建立 row 生命周期；空 head 让样式 no-op，随后浮窗挂载在 DOM 面停止。
+ * row effect 已在这两步之间建立，故夹具只观察装配与清理契约。
+ */
+function bootRowLifecycle(): RowLifecycleHarness {
+  const watchedNamespaces: string[] = [];
+  const injectedSlots: string[] = [];
+  const ledger: RowRegistration[] = [];
+  const effectDisposers: (() => void)[] = [];
+  let registerRow: RowRegister | undefined;
+  let activeOff: (() => void) | undefined;
+  let offCalls = 0;
+  let watchStops = 0;
+
+  const slots = {
+    inject(name: string, setup: () => unknown): () => void {
+      injectedSlots.push(name);
+      const registered = setup();
+      let live = true;
+      return () => {
+        if (!live) return;
+        live = false;
+        offCalls += 1;
+        if (typeof registered === "function") registered();
+      };
+    },
+    register(item: Record<string, unknown>, render: RowRegistration["render"]): () => void {
+      const registration: RowRegistration = { item: { ...item }, render };
+      ledger.push(registration);
+      return () => {
+        const index = ledger.indexOf(registration);
+        if (index !== -1) ledger.splice(index, 1);
+      };
+    },
+  };
+  const unserved = (): void => {
+    const off = activeOff;
+    activeOff = undefined;
+    off?.();
+  };
+  const configForms = {
+    whileServed(namespaces: readonly string[], register: RowRegister): () => void {
+      watchedNamespaces.push(...namespaces);
+      registerRow = register;
+      return () => {
+        watchStops += 1;
+        unserved();
+      };
+    },
+  };
+  const ctx = {
+    get(name: string): unknown {
+      if (name === "slots") return slots;
+      if (name === "configForms") return configForms;
+      return undefined;
+    },
+    effect(fn: () => () => void): () => void {
+      const dispose = fn();
+      effectDisposers.push(dispose);
+      return dispose;
+    },
+    sessions: {},
+  } as unknown as McpClientContext;
+
+  const previousDocument = Object.getOwnPropertyDescriptor(globalThis, "document");
+  const previousWarn = console.warn;
+  Object.defineProperty(globalThis, "document", {
+    configurable: true,
+    value: { head: null },
+  });
+  console.warn = () => {};
+  try {
+    apply(ctx);
+  } finally {
+    console.warn = previousWarn;
+    if (previousDocument === undefined) delete (globalThis as { document?: unknown }).document;
+    else Object.defineProperty(globalThis, "document", previousDocument);
+  }
+
+  return {
+    watchedNamespaces,
+    injectedSlots,
+    ledger,
+    offCalls: () => offCalls,
+    watchStops: () => watchStops,
+    serve: (servedNamespaces) => {
+      if (registerRow === undefined) throw new Error("configForms did not capture row register");
+      unserved();
+      const intersects = [...servedNamespaces].some((namespace) =>
+        watchedNamespaces.includes(namespace),
+      );
+      if (intersects) activeOff = registerRow(new Set(servedNamespaces));
+    },
+    unserved,
+    teardown: () => {
+      const dispose = effectDisposers[0];
+      if (dispose === undefined) throw new Error("row registration was not held by ctx.effect");
+      dispose();
+    },
+  };
+}
+
+describe("rc.1 plugins.row.config 装配", () => {
+  it("apply 只监听 canonical settings namespace，服务前 slot ledger 为空", () => {
+    const harness = bootRowLifecycle();
+    expect(harness.watchedNamespaces).toEqual([MCP_MANAGER_IDENTITY.settingsNamespace]);
+    expect(harness.injectedSlots).toEqual([]);
+    expect(harness.ledger).toEqual([]);
+  });
+
+  it("服务后注册精确 keyed row，并把 summary/page view 与 form 交给组件", () => {
+    const harness = bootRowLifecycle();
+    harness.serve(new Set(["ui-dsh-mcp-manager"]));
+    expect(harness.injectedSlots).toEqual(["plugins.row.config"]);
+    expect(harness.ledger).toHaveLength(1);
+    expect(harness.ledger[0]?.item).toEqual({
+      name: "plugins.row.config",
+      key: MCP_MANAGER_IDENTITY.rowConfigKey,
+      locale: "mcpManager",
+    });
+    const form = { id: "config-form" };
+    const summary = harness.ledger[0]?.render({ view: "summary", form }) as {
+      props?: { view?: string; form?: unknown };
+    } | null;
+    const page = harness.ledger[0]?.render({ view: "page", form }) as {
+      props?: { view?: string; form?: unknown };
+    } | null;
+    expect(summary?.props).toEqual({ view: "summary", form });
+    expect(page?.props).toEqual({ view: "page", form });
+  });
+
+  it.each([
+    ["legacy host namespace", ["dsh-mcp-manager"]],
+    ["empty host facts", []],
+  ] as const)("%s 不注册 row", (_label, servedNamespaces) => {
+    const harness = bootRowLifecycle();
+    harness.serve(new Set(servedNamespaces));
+    expect(harness.injectedSlots).toEqual([]);
+    expect(harness.ledger).toEqual([]);
+  });
+
+  it("namespace 撤下调用 register 返回的 off 并清空 slot ledger", () => {
+    const harness = bootRowLifecycle();
+    harness.serve(new Set(["ui-dsh-mcp-manager"]));
+    harness.unserved();
+    expect(harness.ledger).toEqual([]);
+    expect(harness.offCalls()).toBe(1);
+  });
+
+  it("外层 effect teardown 停止 watch、调用当前 off 并清空 slot ledger", () => {
+    const harness = bootRowLifecycle();
+    harness.serve(new Set(["ui-dsh-mcp-manager"]));
+    harness.teardown();
+    expect(harness.ledger).toEqual([]);
+    expect(harness.offCalls()).toBe(1);
+    expect(harness.watchStops()).toBe(1);
+  });
+
+  it("canonical identity 的 package/row/settings/key 关系可追溯", () => {
+    const metadata = JSON.parse(
+      readFileSync(new URL("../../package.json", import.meta.url), "utf8"),
+    ) as { name: string };
+    expect(metadata.name).toBe(MCP_MANAGER_IDENTITY.bundlePackage);
+    const hostSource = readFileSync(new URL("../../src/index.ts", import.meta.url), "utf8");
+    const clientSource = readFileSync(
+      new URL("../../src/client/index.ts", import.meta.url),
+      "utf8",
+    );
+    expect(hostSource).toContain("MCP_MANAGER_IDENTITY.settingsNamespace");
+    expect(hostSource).toContain("shared/interface.ts");
+    expect(clientSource).toContain("MCP_MANAGER_IDENTITY.settingsNamespace");
+    expect(clientSource).toContain("MCP_MANAGER_IDENTITY.rowConfigKey");
+    expect(clientSource).toContain("shared/interface.ts");
+    expect(MCP_MANAGER_IDENTITY).toEqual({
+      bundlePackage: "@wingsky-1/dsh-mcp-manager",
+      rowId: "ui-dsh-mcp-manager",
+      settingsNamespace: "ui-dsh-mcp-manager",
+      rowConfigKey: "@wingsky-1/dsh-mcp-manager#ui-dsh-mcp-manager",
+    });
+  });
+
+  it("source inject 精确声明 configForms", () => {
+    expect(clientInject).toEqual(["sessions", "slots", "configForms", "locale"]);
+  });
+
+  it("package client metadata 注入官方 settings provider", () => {
+    const metadata = JSON.parse(
+      readFileSync(new URL("../../package.json", import.meta.url), "utf8"),
+    ) as { dsh: { client: { inject: string[] } } };
+    expect(metadata.dsh.client.inject).toContain("@deepseek-ai/dsh-client-ui-settings");
+  });
+
+  it("client 装配源码拒绝两个 legacy settings slot", () => {
+    const source = ["index.ts", "settings/settings-card.tsx"]
+      .map((path) => readFileSync(new URL("../../src/client/" + path, import.meta.url), "utf8"))
+      .join("\n");
+    const legacySlots = [
+      ["settings", "plugin", "item"].join("."),
+      ["settings", "plugins", "tab"].join("."),
+    ];
+    expect(legacySlots.filter((slot) => source.includes(slot))).toEqual([]);
   });
 });

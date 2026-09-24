@@ -10,20 +10,22 @@
  * 场景；判据落在「旧文件被搬走了」，因为步骤幂等，只看新布局是否被覆盖的话恒跑也绿）与**落后/超前
  * 对账**（三种落差分属三处要改的地方，合成一条等于三处都只剩「有出声」这一个判据）。
  */
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
   CONFIG_FILE_NAME,
   HISTORY_FILE_NAME,
+  SEQ_FILE_NAME,
+  STATUS_FILE_NAME,
   VERSION_FILE_NAME,
   legacyFile,
   notifierFile,
   writeTextAtomicSync,
 } from "../../../src/server/shared/interface.ts";
 import type { UpgradeDeps } from "../../../src/server/upgrade/deps.ts";
-import { reportGap } from "../../../src/server/upgrade/impl/chain/index.ts";
+import { reportGap, runUpgradeSteps } from "../../../src/server/upgrade/impl/chain/index.ts";
 import { STEPS } from "../../../src/server/upgrade/impl/steps/index.ts";
 import { compareVersions } from "../../../src/server/upgrade/impl/version/index.ts";
 import { installUpgrade, releaseUpgrade } from "../../../src/server/upgrade/interface.ts";
@@ -63,6 +65,16 @@ function configOnDisk(): Record<string, unknown> {
     string,
     unknown
   >;
+}
+
+/** 磁盘上的存储版本；失败路径必须能直接证明它没有被写动。 */
+function storedVersionOnDisk(): string {
+  return readFileSync(notifierFile(VERSION_FILE_NAME), "utf8").trim();
+}
+
+/** 把链固定在首个真实升级边界，失败前后就能比较同一份刻度。 */
+function seedStoredVersion(version: string): void {
+  writeTextAtomicSync(notifierFile(VERSION_FILE_NAME), `${version}\n`);
 }
 
 /** 存量命名空间记录：本域只读 `ns` 与 `user` 两项，官方描述符的其余字段与判据无关。 */
@@ -175,13 +187,72 @@ describe("配置形态割接", () => {
     expect(configOnDisk().channels).toEqual(EMPTY_BUILTINS);
   });
 
-  it("配置文件不是合法 JSON：按「没有配置」处理，有存量时以存量重写", () => {
-    writeTextAtomicSync(notifierFile(CONFIG_FILE_NAME), "{ 坏掉的\n");
+  it("配置文件存在但 JSON 损坏：升级失败且刻度不动；修好后重试提交到目标", () => {
+    seedStoredVersion("0.2.3");
+    const file = notifierFile(CONFIG_FILE_NAME);
+    writeTextAtomicSync(file, "{ 坏掉的\n");
 
-    assemble({ legacy: makeLegacy([{ ns: "dsh-notifier", user: { notifyAsk: false } }]) });
+    expect(() =>
+      assemble({ legacy: makeLegacy([{ ns: "dsh-notifier", user: { notifyAsk: false } }]) }),
+    ).toThrow(/配置形态割接解析失败/);
+    expect(storedVersionOnDisk()).toBe("0.2.3");
 
-    expect(configOnDisk().notifyAsk).toBe(false);
-    expect(configOnDisk().channels).toEqual(EMPTY_BUILTINS);
+    writeTextAtomicSync(file, "{}\n");
+    expect(() => assemble()).not.toThrow();
+    expect(storedVersionOnDisk()).toBe(newestTarget());
+  });
+
+  it("配置文件存在但不可读：升级失败且刻度不动；移除阻塞后重试成功", () => {
+    seedStoredVersion("0.2.3");
+    const file = notifierFile(CONFIG_FILE_NAME);
+    mkdirSync(join(file, "占位"), { recursive: true });
+
+    expect(() => assemble()).toThrow(/配置形态割接读取失败/);
+    expect(storedVersionOnDisk()).toBe("0.2.3");
+
+    rmSync(file, { recursive: true, force: true });
+    expect(() => assemble()).not.toThrow();
+    expect(storedVersionOnDisk()).toBe(newestTarget());
+  });
+
+  it.each([
+    ["读取", () => mkdirSync(join(home.dir, "settings.yaml")), /legacy settings 来源 读取失败/],
+    [
+      "解析",
+      () => writeFileSync(join(home.dir, "settings.yaml"), "dsh-notifier:\n\tnotifyAsk: false\n"),
+      /YAML 解析失败/,
+    ],
+    [
+      "序列化",
+      () =>
+        writeFileSync(
+          join(home.dir, "settings.yaml"),
+          "dsh-notifier: &self\n  notifyAsk: false\n  self: *self\n",
+        ),
+      /分节无法序列化/,
+    ],
+  ])(
+    "正式 legacy 来源%s失败：链失败、刻度不动，清障重试后到目标",
+    (_failure, breakSource, error) => {
+      seedStoredVersion("0.2.3");
+      breakSource();
+
+      expect(() => assemble()).toThrow(error);
+      expect(storedVersionOnDisk()).toBe("0.2.3");
+
+      rmSync(join(home.dir, "settings.yaml"), { recursive: true, force: true });
+      expect(() => assemble()).not.toThrow();
+      expect(storedVersionOnDisk()).toBe(newestTarget());
+    },
+  );
+
+  it("正式 legacy 分节为空仍按成功空迁移：刻度到目标且不创建 config", () => {
+    seedStoredVersion("0.2.3");
+    writeFileSync(join(home.dir, "settings.yaml"), "dsh-notifier: {}\n");
+
+    expect(() => assemble()).not.toThrow();
+    expect(storedVersionOnDisk()).toBe(newestTarget());
+    expect(existsSync(notifierFile(CONFIG_FILE_NAME))).toBe(false);
   });
 
   // 幂等出口：没有存量、两条内置条目也都在场时一个字都不该写——每次启动重写文件会把用户后来
@@ -216,6 +287,33 @@ describe("装配期跑链", () => {
 
     expect(readFileSync(notifierFile(VERSION_FILE_NAME), "utf8").trim()).toBe(newestTarget());
     expect(existsSync(notifierFile(HISTORY_FILE_NAME))).toBe(true);
+  });
+
+  it("版本路径是目录时链在读取边界失败，迁移步骤与最终刻度回写都不发生", () => {
+    const versionFile = notifierFile(VERSION_FILE_NAME);
+    const sentinel = join(versionFile, "占位");
+    mkdirSync(versionFile, { recursive: true });
+    writeFileSync(sentinel, "保持原样", "utf8");
+    const legacy = makeLegacy([{ ns: "dsh-notifier", user: { notifyAsk: false } }]);
+
+    expect(() => assemble({ legacy })).toThrow(/存储版本文件读取失败.*EISDIR/);
+    expect(legacy.reads()).toBe(0);
+    expect(existsSync(notifierFile(HISTORY_FILE_NAME))).toBe(false);
+    expect(readFileSync(sentinel, "utf8")).toBe("保持原样");
+  });
+
+  it.each([
+    ["空", "  \n", /存储版本文件为空/],
+    ["非法", "not-a-version\n", /存储版本文件包含非法或不支持的版本号/],
+  ])("版本文件为%s时链在读取边界失败，原内容与最终 marker 都不动", (_name, text, error) => {
+    const versionFile = notifierFile(VERSION_FILE_NAME);
+    writeTextAtomicSync(versionFile, text);
+    const legacy = makeLegacy([{ ns: "dsh-notifier", user: { notifyAsk: false } }]);
+
+    expect(() => assemble({ legacy })).toThrow(error);
+    expect(legacy.reads()).toBe(0);
+    expect(existsSync(notifierFile(HISTORY_FILE_NAME))).toBe(false);
+    expect(readFileSync(versionFile, "utf8")).toBe(text);
   });
 
   it("刻度已到目标版本的存储不再重跑步骤（否则每次启动都会拿旧文件盖回用户改过的新数据）", () => {
@@ -269,54 +367,48 @@ describe("装配期跑链", () => {
   });
 
   // 刻度是「这一步做完了」的凭证：回写不进去却继续跑，下次启动会从一个不存在的刻度重来。
-  it("步骤跑完但刻度回写失败即中止启动", () => {
-    // version 的位置被同名目录占住：临时文件写得进去，rename 覆盖不了它——回写必然失败。
-    mkdirSync(notifierFile(VERSION_FILE_NAME), { recursive: true });
-    writeFileSync(join(notifierFile(VERSION_FILE_NAME), "占位"), "", "utf8");
+  it("步骤跑完但最终刻度回写失败即中止", () => {
+    const versionFile = notifierFile(VERSION_FILE_NAME);
+    const sentinel = join(versionFile, "占位");
+    const targetVersion = "0.2.4";
+    const deps: UpgradeDeps = { logger: makeLogger(), legacySettings: makeLegacy().face };
 
-    let caught: unknown;
-    try {
-      assemble();
-    } catch (cause) {
-      caught = cause;
-    }
-
-    expect(caught).toBeInstanceOf(Error);
-    // 无刻度文件时链从最早一步开始：回写先红在 0.2.4 这一步，点的名也必须是它。
-    expect((caught as Error).message).toContain(`存储版本号回写失败（${oldestTarget()}）`);
+    expect(() =>
+      runUpgradeSteps(
+        [
+          {
+            fromVersion: "0.2.3",
+            targetVersion,
+            run() {
+              rmSync(versionFile, { force: true });
+              mkdirSync(versionFile, { recursive: true });
+              writeFileSync(sentinel, "保持原样", "utf8");
+            },
+          },
+        ],
+        deps,
+      ),
+    ).toThrow(`存储版本号回写失败（${targetVersion}）`);
+    expect(readFileSync(sentinel, "utf8")).toBe("保持原样");
   });
 
   it("链失败即中止启动，并说清失败在哪一步；此时不读存量（带着半完成迁移继续跑更危险）", () => {
-    // 包私有目录的位置被一个同名文件占住：写目标文件必然失败。
-    mkdirSync(join(home.dir, "@wingsky-1"), { recursive: true });
-    writeFileSync(join(home.dir, "@wingsky-1", "dsh-notifier"), "", "utf8");
+    seedStoredVersion("0.2.3");
+    writeTextAtomicSync(notifierFile(CONFIG_FILE_NAME), "{ 坏掉的\n");
     const legacy = makeLegacy([{ ns: "dsh-notifier", user: { notifyAsk: false } }]);
 
-    let caught: unknown;
-    try {
-      assemble({ legacy });
-    } catch (cause) {
-      caught = cause;
-    }
-
-    expect(caught).toBeInstanceOf(Error);
-    // 同上：包目录被占住时先红的是最早一步（0.2.4 的存储落盘），而不是最后一步。
-    expect((caught as Error).message).toContain(`存储升级到 ${oldestTarget()} 失败`);
-    // 存储那半先失败：配置那半一步都不该走（读面被碰过就说明割接已经开始了）。
+    expect(() => assemble({ legacy })).toThrow(`存储升级到 ${oldestTarget()} 失败`);
     expect(legacy.reads()).toBe(0);
+    expect(storedVersionOnDisk()).toBe("0.2.3");
   });
 
   it("链失败后重试装配会真正重跑链（失败不该占住「已装配」，否则启动失败一次就再也装不上）", () => {
-    // 包私有目录的位置被一个同名文件占住：第一次装配必然在写盘那一步失败。
-    mkdirSync(join(home.dir, "@wingsky-1"), { recursive: true });
-    const blocker = join(home.dir, "@wingsky-1", "dsh-notifier");
-    writeFileSync(blocker, "", "utf8");
+    seedStoredVersion("0.2.3");
+    const configFile = notifierFile(CONFIG_FILE_NAME);
+    writeTextAtomicSync(configFile, "{ 坏掉的\n");
     expect(() => assemble()).toThrow(/存储升级到 .* 失败/u);
 
-    rmSync(blocker, { force: true });
-
-    // 障碍已清：刻度文件此刻还不存在，只有第二次装配真的从头跑完链，它才会落到目标版本，
-    // 存量也才会被割接进配置文件。
+    writeTextAtomicSync(configFile, "{}\n");
     const legacy = makeLegacy([{ ns: "dsh-notifier", user: { notifyAsk: false } }]);
     expect(() => assemble({ legacy })).not.toThrow();
     expect(readFileSync(notifierFile(VERSION_FILE_NAME), "utf8").trim()).toBe(newestTarget());
@@ -410,20 +502,37 @@ describe("存量设置的割接：装配期同步读，直接读写配置文件"
     expect(stored.historyMaxAgeDays).toBe(32);
   });
 
-  it("落盘失败即抛并点名这一步（割接在装配路径上，半完成的迁移不该被当成启动成功）", () => {
-    // 配置文件的位置被同名目录占住：临时文件写得进去，rename 覆盖不了它——落盘必然失败。
-    const file = notifierFile(CONFIG_FILE_NAME);
-    mkdirSync(join(file, "占位"), { recursive: true });
+  it("后续步骤失败即抛且整条链的刻度仍停在链起点；恢复写权限后重试一次提交到目标", () => {
+    seedStoredVersion("0.2.3");
+    const configFile = notifierFile(CONFIG_FILE_NAME);
+    const storageDir = dirname(configFile);
+    mkdirSync(storageDir, { recursive: true });
+    writeFileSync(configFile, '{"notifyAsk":true}\n', "utf8");
+    // 存储布局先落定，确保只读故障精确发生在 config 原子写，而不是更早的 storage-layout。
+    writeFileSync(notifierFile(HISTORY_FILE_NAME), "", "utf8");
+    writeFileSync(notifierFile(STATUS_FILE_NAME), "{}\n", "utf8");
+    writeFileSync(notifierFile(SEQ_FILE_NAME), "0\n", "utf8");
 
+    chmodSync(storageDir, 0o555);
     let caught: unknown;
     try {
       assemble({ legacy: makeLegacy([{ ns: "dsh-notifier", user: { notifyAsk: false } }]) });
     } catch (cause) {
       caught = cause;
+    } finally {
+      chmodSync(storageDir, 0o755);
     }
 
     expect(caught).toBeInstanceOf(Error);
     expect((caught as Error).message).toContain("配置形态割接落盘失败");
+    expect(storedVersionOnDisk()).toBe("0.2.3");
+    expect(configOnDisk().notifyAsk).toBe(true);
+
+    expect(() =>
+      assemble({ legacy: makeLegacy([{ ns: "dsh-notifier", user: { notifyAsk: false } }]) }),
+    ).not.toThrow();
+    expect(storedVersionOnDisk()).toBe(newestTarget());
+    expect(configOnDisk().notifyAsk).toBe(false);
   });
 });
 

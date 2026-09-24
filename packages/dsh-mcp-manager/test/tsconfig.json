@@ -5,7 +5,7 @@
     "types": ["node"],
     "allowImportingTsExtensions": true
   },
-  "include": ["./**/*.ts"],
+  "include": ["./**/*.ts", "../src/**/*.d.ts"],
   // e2e 面（test/e2e/**）整体不参与本编译面，两条独立理由：
   //   - smoke.test.ts 是文件级 @ts-nocheck 的产物契约测试，本就不产生类型诊断；
   //   - cross-end-lock.test.ts 没有 pragma，但它同样静态 import 本包构建产物 lib/index.js ——

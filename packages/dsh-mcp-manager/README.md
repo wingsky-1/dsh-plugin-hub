@@ -16,8 +16,8 @@ root `@global`。宿主仍按 `mcp__<id>__<tool>` 注册工具（`id` 是本次�
 （`middleware` / `middlewarePolicy` 两个配置键已在 #767 笔 2 废除——旧配置里写了不生效、
 也不会被本插件改写。）
 
-> **升级 dsh 到 0.1.5+ 后历史会话打不开（`unclassified message source`）？**
-> 见 [故障修复：升级后历史会话打不开（#723）](#723-修复方案)，一条命令即可救回。
+> **升级后历史会话打不开？**
+> 当前版本只生成 producer-owned V4 source；旧 source 仅通过一次性维护脚本处理，详见[升级与历史会话边界](#升级与历史会话边界)。
 
 ## 一键安装
 
@@ -104,8 +104,9 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-mcp-manager
 
 ## 配置（浮窗位置）
 
-浮窗按钮（MCP 胶囊）的位置与偏移在 dsh **设置 → 插件 → MCP 管理器** 的插件卡中配置
-（`position` / `offset`），走插件自身 `Config` 标准 cordis 配置注入，无需手改任何配置文件。
+浮窗按钮（MCP 胶囊）的位置与偏移在 **Plugin Manager → dsh-mcp-manager → 行详情**
+配置（`position` / `offset`），canonical row id 与 settings 条目 id 均为 `ui-dsh-mcp-manager`，
+保存后即时生效。
 
 | 键 | 值域 | 默认 |
 | --- | --- | --- |
@@ -270,54 +271,26 @@ await ctx.mcpManager.registerServer({
   路径无凭据部分保留可读（可诊断性，B8 口径）；percent-encoding 的 raw 形态与
   decoded 形态双注册，防编码绕过；supervisor/manager 错误日志与 HTTP body 同口径
   脱敏
-- **调用统计与 Debug 模式（Metadata-Only）**：默认关闭；若在 `~/.dsh/settings.yaml` 中配置 `dsh-mcp-manager.debug.callStats: true`，将把 MCP 调用指标（次数、成功/失败、平均与最大耗时）及渐进式披露漏斗（`ws_mcp_search` 搜索词频次、`ws_mcp_list` 与 `ws_mcp_detail` 查询分布）防抖原子持久化至 `<DSH_HOME>/@wingsky-1/dsh-mcp-manager/stats.json`，且控制台输出单行 debug 跟踪；严格不持久化用户 arguments 与返回 content，杜绝代码与隐私泄漏
-- 能力目录注入含来源标注与"不代表当前连接状态"说明
-- **能力目录注入的消息来源形态**：`source` 用宿主已登记的通用形态
-  `{ kind: "plugin", plugin: "@wingsky-1/dsh-mcp-manager", form: "snapshot",
-  sections: [{ name: "mcp-catalog", text }] }`。自造 `source.kind` 会被 dsh
-  的 session format v2→v3 迁移闸门拒绝（白名单校验），导致升级前落盘的会话
-  永久无法加载——见下节
+- **调用统计与 Debug 模式（Metadata-Only）**：默认关闭；启用后把 MCP 调用指标与渐进式披露漏斗防抖原子持久化至 `<DSH_HOME>/@wingsky-1/dsh-mcp-manager/stats.json`，且控制台输出单行跟踪；严格不持久化用户 arguments 与返回 content
+- 能力目录注入含来源标注与“不代表当前连接状态”说明
+- **能力目录 source**：`ui-dsh-mcp-manager` 是 canonical row/settings 条目 id；目录消息的当前业务格式是 producer-owned V4：`{ kind: "plugin:@wingsky-1/dsh-mcp-manager", form: "snapshot", sections: [{ name: "mcp-catalog", text }] }`
 
-<a id="723-修复方案"></a>
-## 故障修复：升级后历史会话打不开（#723）
+<a id="升级与历史会话边界"></a>
+## 升级与历史会话边界
 
-**症状**：升级 dsh 到 0.1.5 及以后，某个历史会话在 GUI 里报
+当前写入与业务读取只认 producer-owned V4；本包不提供旧 V0/V2/V3 parser，也不把旧格式写成业务兼容。
 
-```
-历史加载失败：failed to observe session "session-…":
-cannot safely transform unclassified message source;
-source v0 artifact remains unchanged (raw log: …/session.jsonl.zstd)（gateway/internal）
-```
-
-且该会话目录下始终不出现 `session.v3.jsonl.zstd`。原因是 0.2.x 及更早版本把能力目录
-注入消息写成 `source.kind = "mcp-catalog"`，而 dsh 的 v2→v3 迁移对 surface 消息的
-`source.kind` 有一份封闭白名单，自造值不在其中，迁移被拒（产物按设计原样保留）。
-本版本起写入侧已改为宿主词表内的通用形态，**但升级前已落盘的旧产物需要一次性修复**。
-
-**修复（一次性，可重复执行）**：仓库内脚本把已落盘产物里的旧 source 就地改写成新形态；
-只动 source 元数据，正文与事件序列不变，改完仍由 dsh 自己完成迁移。
+旧 `mcp-catalog` source 属于一次性维护责任。`scripts/maintenance/repair-mcp-catalog-sessions.mjs` 只把旧 source 元数据修为 V3 wrapper，保留消息正文与事件序列；它不写 V4，也不实现或伪造 v3→v4 迁移。修复后由 `dsh 0.1.7-rc.1` 的官方迁移链依次恢复旧产物并转为 V4，当前 V4 产物不动。
 
 ```sh
-# 1) 预演：只列出受影响会话与处数，不改任何文件
+# 先停止 dsh web；默认预演，只列出受影响会话
 node scripts/maintenance/repair-mcp-catalog-sessions.mjs
 
-# 2) 确认无误后落盘（会自动生成 session.jsonl.zstd.bak-<时间戳> 备份）
+# 核对后落盘；自动备份，随后重启 dsh web
 node scripts/maintenance/repair-mcp-catalog-sessions.mjs --apply
-
-# 3) 重启 dsh web，打开原会话
 ```
 
-- 执行前**先停掉 dsh web**：正在写入的会话日志不保证可安全重写
-- 默认只读 `<DSH_HOME>`（可用 `--home <dir>` 或 `DSH_HOME` 覆盖）；`--session <id>`
-  可只处理一个会话
-- 幂等：已修复的产物不会再次命中；写后自检（帧结构 + 逐行 JSON + 零遗留旧 kind）
-- 回滚：用同名 `.bak-<时间戳>` 覆盖回 `session.jsonl.zstd` 即可
-- **v3 产物默认一起修**：v3 读取路径不校验 `message.source`，所以含旧 kind 的 v3 会话
-  现在照常加载；但升级前创建、升级后又被增量写入的 v3 会话里会**两种 kind 并存**，
-  宿主将来给 v3→v4 迁移加同类闸门时会重演这次的永久拒载。修复只换 source 元数据，
-  v3 自身零语义变化（实测严格恢复 + `Session.fromRestore` 通过）
-- `--legacy-only` 可退回只修 v0/v1/v2；**不产出** v3 文件（v0/v1/v2 修完仍由 dsh 自己迁移）
-- 末尾 torn frame（写入中崩溃）按宿主恢复语义前缀解码；末行被截断则丢弃
+默认处理 v0/v1/v2 与 v3 中残留的旧 source；`--legacy-only` 只处理 v0/v1/v2。脚本幂等，可用 `--home` 或 `DSH_HOME` 指定目录、用 `--session <id>` 限定单个会话。
 
 ## 验证
 

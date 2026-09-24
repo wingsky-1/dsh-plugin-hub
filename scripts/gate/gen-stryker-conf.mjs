@@ -66,12 +66,14 @@ import {
   mutationPolicyRatchetProblems,
   effectiveExcludedMutations,
   packageRegistrationProblems,
+  rootSharedRegistrationProblems,
   segmentTestShapeProblems,
   segmentTestUnionProblems,
 } from "./mutation-topology.mjs";
 import {
   discoverTestPackages,
   mutationEntryProblems,
+  projectRootSharedTestSurface,
   projectTestSurface,
   readTestMin,
   resolveSegmentTestFiles,
@@ -154,7 +156,7 @@ ${include}
  * P2：segVitestFile = 该段的 vitest 测试面配置路径（fallback 段指向包级 config，
  * explicit 段指向段级 config）。conf 里永不出现 Stryker `testFiles`（#6144）。
  */
-function deriveConfig(sharedDefaults, pkgName, segKey, segDef, pkgDef, segVitestFile) {
+function deriveConfig(sharedDefaults, pkgName, segKey, segDef, pkgDef, segVitestFile, threshold) {
   const isSingle = segKey === "_single";
   const confFileName = isSingle ? `${pkgName}.json` : `${pkgName}-${segKey}.json`;
   const reportName = isSingle ? pkgName : `${pkgName}-${segKey}`;
@@ -204,6 +206,10 @@ function deriveConfig(sharedDefaults, pkgName, segKey, segDef, pkgDef, segVitest
     incrementalFile: `coverage/mutation/${incrementalName}`,
   };
 
+  if (typeof threshold === "number") {
+    config.thresholds = { high: threshold, low: threshold, break: threshold };
+  }
+
   if (segDef.comment) {
     config._comment = segDef.comment;
   }
@@ -220,7 +226,11 @@ function deriveConfig(sharedDefaults, pkgName, segKey, segDef, pkgDef, segVitest
  * "形状不对"只有一条判红通道——包登记为 null 时若先去读 `pkgDef.segments` 就是抛栈崩掉。
  */
 function topologyShapeProblems(topology) {
-  const problems = [...packageRegistrationProblems(topology), ...mutationPolicyProblems(topology)];
+  const problems = [
+    ...packageRegistrationProblems(topology),
+    ...rootSharedRegistrationProblems(topology),
+    ...mutationPolicyProblems(topology),
+  ];
   for (const [pkgName, pkgDef] of Object.entries(topology.packages ?? {})) {
     for (const problem of coverageExcludeProblems(pkgDef)) {
       problems.push(`[${pkgName}] ${problem}`);
@@ -229,6 +239,10 @@ function topologyShapeProblems(topology) {
     for (const [segKey, segDef] of Object.entries(pkgDef?.segments ?? {})) {
       problems.push(...segmentTestShapeProblems(pkgName, segKey, segDef));
     }
+  }
+  const rootShared = topology.$rootShared;
+  for (const [segKey, segDef] of Object.entries(rootShared?.segments ?? {})) {
+    problems.push(...segmentTestShapeProblems("$rootShared", segKey, segDef));
   }
   return problems;
 }
@@ -276,6 +290,9 @@ function reconcileRegistrations(topology, packages, noMutationPackages) {
       errors.push(`[${pkgName}] 已在拓扑登记但磁盘上没有 test/ 下的 *.test.ts —— 登记条目指向空集`);
     }
   }
+  const rootProjection = projectRootSharedTestSurface(repoRoot, topology);
+  errors.push(...rootProjection.errors.map((error) => `[$rootShared] ${error}`));
+  if (topology.$rootShared !== undefined) projections.set("$rootShared", rootProjection);
   return { discovered, errors, projections };
 }
 
@@ -284,7 +301,7 @@ function reconcileRegistrations(topology, packages, noMutationPackages) {
  * `?? {}` 是纵深防御：形状判据（topologyShapeProblems）已在 main 入口拦下缺 segments 的登记，
  * 但派生函数被单独调用时不该再裸解引用。
  */
-function deriveAllConfigs(packages, sharedDefaults, projections) {
+function deriveAllConfigs(packages, rootShared, sharedDefaults, projections) {
   const derivedConfigs = new Map();
   const derivedVitestConfigs = new Map();
   // P2：段级测试面。fallback 段沿用包级面（行为零变），explicit 段派生段级 config。
@@ -350,6 +367,64 @@ function deriveAllConfigs(packages, sharedDefaults, projections) {
     segmentTests.set(pkgName, resolved);
     if (packageFace.length > 0) {
       derivedVitestConfigs.set(vitestConfigPath(pkgName), deriveVitestConfig(pkgName, packageFace));
+    }
+  }
+  if (rootShared !== undefined) {
+    const surfaceName = "shared";
+    const packageFace = projections.get("$rootShared")?.testFiles ?? [];
+    const resolved = {};
+    let needsSurfaceConfig = false;
+    for (const [segKey, segDef] of Object.entries(rootShared.segments ?? {})) {
+      const r = resolveSegmentTestFiles({
+        root: repoRoot,
+        segDef,
+        segLabel: `[$rootShared:${segKey}]`,
+        packageFace,
+      });
+      resolved[segKey] = r;
+      let segVitestFile = vitestConfigPath(surfaceName);
+      if (r.mode === "explicit") {
+        segVitestFile = vitestSegConfigPath(surfaceName, segKey);
+        derivedVitestConfigs.set(
+          segVitestFile,
+          deriveVitestConfig(`$rootShared:${segKey}`, r.files),
+        );
+        const prev = vitestOwners.get(segVitestFile);
+        if (prev !== undefined && prev !== surfaceName) {
+          vitestCollisions.push(
+            `${segVitestFile} 同时由 ${prev} 与 ${surfaceName} 派生 —— surface 名与段名拼出的文件名相撞`,
+          );
+        }
+        vitestOwners.set(segVitestFile, surfaceName);
+      } else if (r.mode === "fallback") {
+        fallbackSegments++;
+        needsSurfaceConfig = true;
+      }
+      const { confFileName, content } = deriveConfig(
+        sharedDefaults,
+        surfaceName,
+        segKey,
+        segDef,
+        rootShared,
+        segVitestFile,
+        rootShared.threshold,
+      );
+      const previousOwner = confOwners.get(confFileName);
+      if (previousOwner !== undefined && previousOwner !== surfaceName) {
+        confCollisions.push(
+          `${confFileName} 同时由 ${previousOwner} 与 ${surfaceName} 派生（段名 ${segKey}）—— ` +
+            "surface 名与段名拼出的文件名相撞，前者的配置会被静默覆盖",
+        );
+      }
+      derivedConfigs.set(confFileName, content);
+      confOwners.set(confFileName, surfaceName);
+    }
+    segmentTests.set("$rootShared", resolved);
+    if (needsSurfaceConfig && packageFace.length > 0) {
+      derivedVitestConfigs.set(
+        vitestConfigPath(surfaceName),
+        deriveVitestConfig("$rootShared", packageFace),
+      );
     }
   }
   return {
@@ -720,7 +795,7 @@ function main() {
     segmentTests,
     fallbackSegments,
     vitestCollisions,
-  } = deriveAllConfigs(packages, sharedDefaults, projections);
+  } = deriveAllConfigs(packages, topology.$rootShared, sharedDefaults, projections);
   if (confCollisions.length > 0) {
     console.error("[gen-stryker-conf] 派生的 conf 名碰撞（配置名只由包名 + 段名决定）：");
     for (const collision of confCollisions) console.error(`  ${collision}`);

@@ -394,11 +394,14 @@ export async function callWithRetry(
   const first = await attemptOnce(body, key, budgetLeft(), fetchImpl, callerSignal);
   if (first.ok) return { verdict: first.verdict, retries: 0 };
   if (!first.failure.retryable) return { failure: first.failure, retries: 0 };
+  if (first.failure.code === "TIMEOUT") return { failure: first.failure, retries: 0 };
   if (isCallerAborted(callerSignal)) return { failure: callerAbortedFailure(), retries: 0 };
+  if (budgetLeft() <= 0) return { failure: first.failure, retries: 0 };
   const second = await attemptOnce(body, key, budgetLeft(), fetchImpl, callerSignal);
   if (second.ok) return { verdict: second.verdict, retries: 1 };
   if (!second.failure.retryable) return { failure: second.failure, retries: 1 };
   if (isCallerAborted(callerSignal)) return { failure: callerAbortedFailure(), retries: 1 };
+  if (budgetLeft() <= 0) return { failure: second.failure, retries: 1 };
   const third = await attemptOnce(body, key, budgetLeft(), fetchImpl, callerSignal);
   if (third.ok) return { verdict: third.verdict, retries: 2 };
   return { failure: third.failure, retries: 2 };

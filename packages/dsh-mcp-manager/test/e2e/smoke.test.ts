@@ -1156,14 +1156,14 @@ it("#362 P1：disabledTools 持久化（合并式写盘 + 重启保留）", asyn
     rmSync(dir, { recursive: true, force: true });
   }
 });
-it("client 注册 settings.plugin.item 卡（id/key = 宿主命名空间 dsh-mcp-manager）", () => {
+it("client 产物包含 rc.1 plugins.row.config canonical identity 契约", () => {
   const clientSrc = readFileSync(new URL("../../lib/client.js", import.meta.url), "utf8");
-  expect(clientSrc.includes("settings.plugin.item"), "settings.plugin.item 卡已注册").toBeTruthy();
-  expect(
-    clientSrc.includes("dsh-mcp-manager"),
-    "卡片 key/id 引用宿主命名空间 dsh-mcp-manager",
-  ).toBeTruthy();
+  expect(clientSrc, "客户端产物注册 plugins.row.config").toContain("plugins.row.config");
+  expect(clientSrc, "canonical bundle package 已入产物").toContain("@wingsky-1/dsh-mcp-manager");
+  expect(clientSrc, "canonical row id 已入产物").toContain("ui-dsh-mcp-manager");
+  expect(clientSrc, "客户端产物声明 configForms 注入面").toContain("configForms");
 });
+
 it("#362 客户端：工具级禁用 checkbox + scope 分组 + 全局组工具开关（#767 笔 2：模式下拉已删）", () => {
   const clientSrc = readFileSync(new URL("../../lib/client.js", import.meta.url), "utf8");
   // 工具 checkbox 经 tool-disable API 持久化。
@@ -1431,17 +1431,6 @@ it("设置卡片样式对齐官方风格（#219：12px 圆角 / bg-layer-3 底 /
     /\.dm-set-description\{display:block;font-size:13px;line-height:1\.5/,
   );
   expect(css, "描述用 tertiary 层级（与官方同款）").toMatch(/--dsw-alias-label-tertiary,#8a919c/);
-});
-
-it("设置卡片展开箭头为官方 SVG chevron（#167：非文本 ▾ 字符）", () => {
-  const clientSrc = readFileSync(new URL("../../lib/client.js", import.meta.url), "utf8");
-  expect(clientSrc.includes("dm-set-chevron"), "chevron class 在客户端产物中").toBeTruthy();
-  expect(
-    !/dm-set-chevron[^"]*"[^>]*>▾/.test(clientSrc),
-    "不再使用文本 ▾ 字符作为箭头",
-  ).toBeTruthy();
-  expect(clientSrc.includes("M11.8486 5.5L11.4238"), "使用官方 chevron-down SVG path").toBeTruthy();
-  expect(clientSrc, "SVG 尺寸 14x14（官方同款）").toMatch(/width:\s*14,\s*height:\s*14/);
 });
 
 it("F1（qa 实测 #128）：浮窗面板内容更新后重定位 + toggleFloat 先渲染后定位", () => {
@@ -2974,12 +2963,14 @@ it("config POST 经 apply 注入 settings：update 保留 this 不再 400（回�
   // 模拟 dsh-settings 服务：update 是方法（不绑 this），内部访问 this.write。
   // 若调用链解构丢 this，this 为 undefined → this.write 抛 TypeError → 路由 400。
   let scopeValue = { ui: { position: "top-right", offset: { x: 8, y: 8, blankY: 40 } } };
+  const writeNamespaces: string[] = [];
   const settingsStub = {
     // 接缝经 describe 活读（闭包读当前 scopeValue，写后读回新值）。
     describe() {
-      return [{ ns: "dsh-mcp-manager", value: { ...scopeValue }, revision: 0 }];
+      return [{ ns: "ui-dsh-mcp-manager", value: { ...scopeValue }, revision: 0 }];
     },
     async write(ns: string, patch: unknown) {
+      writeNamespaces.push(ns);
       scopeValue = { ...(scopeValue ?? {}), ...((patch ?? {}) as Record<string, unknown>) };
     },
     update(
@@ -3037,6 +3028,9 @@ it("config POST 经 apply 注入 settings：update 保留 this 不再 400（回�
     expect(write.state.status, "settings.update 以正确 this 调用 → 写路由 200（不再 400）").toBe(
       200,
     );
+    expect(writeNamespaces, "只向 canonical settings namespace 写入").toEqual([
+      "ui-dsh-mcp-manager",
+    ]);
     const written = JSON.parse(write.state.body);
     expect(written.position).toBe("bottom-right");
     expect(written.offsetX).toBe(12);
@@ -3203,10 +3197,12 @@ it("renderMcpCatalogMessage 结构与声明", () => {
   // 含 project 条目 → 引导经 ws_mcp_search/ws_mcp_call（#228 双轨迁移）
   const msg = renderMcpCatalogMessage([{ name: "code-graph", text: "代码图谱", scope: "project" }]);
   expect(msg.role).toBe("user");
-  // #723：source 改为宿主词表内的通用形态（自造 kind 会被 dsh v2→v3 迁移的封闭白名单拒绝）
-  expect(msg.source!.kind).toBe("plugin");
-  expect(msg.source!.plugin).toBe("@wingsky-1/dsh-mcp-manager");
-  expect(msg.source!.form).toBe("snapshot");
+  expect(msg.source).toEqual({
+    kind: "plugin:@wingsky-1/dsh-mcp-manager",
+    form: "snapshot",
+    sections: [{ name: "mcp-catalog", text: msg.content![0]!.text }],
+  });
+  expect(Object.hasOwn(msg.source!, "plugin"), "V4 source 不携带旧 plugin 字段").toBe(false);
   expect(isCatalogSource(msg.source)).toBe(true);
   expect(msg.content![0]!.type).toBe("text");
   expect(msg.content![0]!.text).toMatch(/available_mcp_servers/);
@@ -3511,9 +3507,9 @@ it("双缺省服务器目录消息可 append 为 user/message 且去重（#192 A
   const appended = catalogEvents[0]!.data as unknown as {
     source: { kind: unknown; form: unknown; sections: { text: string }[] };
   };
-  // #723：新形态 source 只含 plugin/snapshot sections，条目正文全在段文本里
-  expect(appended.source.kind).toBe("plugin");
+  expect(appended.source.kind).toBe("plugin:@wingsky-1/dsh-mcp-manager");
   expect(appended.source.form).toBe("snapshot");
+  expect(Object.hasOwn(appended.source, "plugin"), "V4 source 不携带旧 plugin 字段").toBe(false);
   expect(
     appended.source.sections[0].text.includes("- `bare-only`"),
     "正文含双缺省服务器名",

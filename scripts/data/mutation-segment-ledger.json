@@ -1397,7 +1397,8 @@
     "dsh-decision-gateway-tools": "按域分段（#943 对账后，单段 _single 按 server 目录名拆分为八段）：tools 段尚无拆分后的 CI 切片/夜间实测值；待首次 CI 变异切片跑或夜间全量班由 mutation-ledger --record 入档。旧单段面见 superseded dsh-decision-gateway。",
     "dsh-decision-gateway-upgrade": "按域分段（#943 对账后，单段 _single 按 server 目录名拆分为八段）：upgrade 段尚无拆分后的 CI 切片/夜间实测值；待首次 CI 变异切片跑或夜间全量班由 mutation-ledger --record 入档。旧单段面见 superseded dsh-decision-gateway。",
     "dsh-decision-gateway-entry": "按域分段（#943 对账后，单段 _single 按 server 目录名拆分为八段）：entry 段（宿主唯一入口 src/index.ts + 双端共享 src/shared/**）尚无拆分后的 CI 切片/夜间实测值；待首次 CI 变异切片跑或夜间全量班由 mutation-ledger --record 入档。旧单段面见 superseded dsh-decision-gateway。",
-    "dsh-decision-gateway-client": "按域分段（#943 对账后，单段 _single 按 server 目录名拆分为八段）：client 段（客户端全区，仍排除 components/atoms.ts 纯样式原子）尚无拆分后的 CI 切片/夜间实测值；待首次 CI 变异切片跑或夜间全量班由 mutation-ledger --record 入档。旧单段面见 superseded dsh-decision-gateway。"
+    "dsh-decision-gateway-client": "按域分段（#943 对账后，单段 _single 按 server 目录名拆分为八段）：client 段（客户端全区，仍排除 components/atoms.ts 纯样式原子）尚无拆分后的 CI 切片/夜间实测值；待首次 CI 变异切片跑或夜间全量班由 mutation-ledger --record 入档。旧单段面见 superseded dsh-decision-gateway。",
+    "shared-settings-namespace": "#1012 Phase 5 P2 新增根 shared 运行时接缝变异段；历史上无同名段，尚无 Actions run 日志墙钟；待首次夜间全量班由 mutation-ledger --record 入档。本地 --force 实测按台账口径不计入，禁止手工编造 wallSeconds 或测量值。"
   },
   "superseded": {
     "dsh-lan-proxy-1": {

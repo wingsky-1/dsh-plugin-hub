@@ -44,6 +44,16 @@ function automationOf(tier: DecisionTier, index: number): AutomationLevel {
   return index >= 2 ? "auto" : index === 1 ? "assisted" : "manual";
 }
 
+/** 内部 AbortError 判定（排队取消在 task 启动前由并发门拒绝）。 */
+function isAbortError(cause: unknown): boolean {
+  return (
+    typeof cause === "object" &&
+    cause !== null &&
+    "name" in cause &&
+    (cause as { readonly name?: unknown }).name === "AbortError"
+  );
+}
+
 /** 落史前 sessionId 校验（非法回落 unknown，保证文件名安全）。 */
 function safeSessionId(sessionId: string): string {
   return SESSION_ID_RE.test(sessionId) ? sessionId : "unknown";
@@ -77,141 +87,166 @@ export async function decide(
   if (!deps.isEnabled(valid.presetId)) {
     return envelope("PRESET_DISABLED", "preset-disabled", "preset disabled");
   }
-  const trunc = truncateCodePoints(valid.text, deps.connection.truncBudget);
-  const now = deps.now ?? Date.now;
-  const cap = deps.capOf(valid.presetId);
-  const started = now();
-  const hit = localPrecheckHit(valid.text);
-  if (hit) {
+  if (deps.signal?.aborted === true) {
+    return envelope("ABORTED", "aborted", "caller aborted");
+  }
+
+  const direct = <T>(task: () => Promise<T>): Promise<T> => task();
+  const limit = deps.limit ?? direct;
+  const execute = async (runRemote: typeof direct): Promise<DecideOutput | ErrorEnvelope> => {
+    const trunc = truncateCodePoints(valid.text, deps.connection.truncBudget);
+    const now = deps.now ?? Date.now;
+    const cap = deps.capOf(valid.presetId);
+    const started = now();
+    const hit = localPrecheckHit(valid.text);
+    if (hit) {
+      safeRecord(deps, {
+        sessionId: deps.sessionId,
+        precheckHit: true,
+        presetId: valid.presetId,
+        text: valid.text,
+        lang: valid.lang,
+        truncated: trunc.truncated,
+        originalLength: trunc.originalLength,
+        resultKind: "local-precheck",
+        questions: valid.questions,
+        choice: "human",
+        confidence: 1,
+        tier: "none",
+        automation: "manual",
+        latencyMs: 0,
+      });
+      return {
+        ok: true,
+        provider: "official",
+        appliedSource: "local-precheck",
+        truncated: trunc.truncated,
+        originalLength: trunc.originalLength,
+        tier: "none",
+        automation: "manual",
+        codepoints: 0,
+        retries: 0,
+        latencyMs: 0,
+        resultKind: "local-precheck",
+        choice: "human",
+        confidence: 1,
+      };
+    }
+    const resolved = deps.resolveKey();
+    if (resolved.key === undefined) {
+      safeRecord(deps, {
+        sessionId: deps.sessionId,
+        presetId: valid.presetId,
+        text: valid.text,
+        lang: valid.lang,
+        truncated: trunc.truncated,
+        originalLength: trunc.originalLength,
+        resultKind: "not-executed",
+        questions: valid.questions,
+        precheckHit: hit,
+        confidence: 0,
+        tier: "none",
+        automation: "manual",
+        latencyMs: 0,
+        errorCode: "NO_KEY",
+      });
+      return envelope("NO_KEY", "no-key", "no api key (set apiKeyRef or plaintext)");
+    }
+    const fetchImpl = deps.fetchImpl ?? defaultFetchImpl();
+    const body = {
+      model: JEV_MODEL,
+      state: trunc.text,
+      questions: toWireQuestions(valid.questions),
+    };
+    const outcome = await runRemote(() =>
+      callWithRetry(
+        body,
+        resolved.key as string,
+        deps.connection.timeoutMs,
+        fetchImpl,
+        deps.signal,
+      ),
+    );
+    const latencyMs = now() - started;
+    if (outcome.failure !== undefined || outcome.verdict === undefined) {
+      const failure = outcome.failure ?? {
+        code: "UPSTREAM",
+        category: "upstream",
+        message: "unknown",
+      };
+      safeRecord(deps, {
+        sessionId: deps.sessionId,
+        presetId: valid.presetId,
+        text: valid.text,
+        lang: valid.lang,
+        truncated: trunc.truncated,
+        originalLength: trunc.originalLength,
+        resultKind: "upstream-error",
+        questions: valid.questions,
+        precheckHit: hit,
+        confidence: 0,
+        tier: "none",
+        automation: "manual",
+        latencyMs,
+        errorCode: failure.code,
+      });
+      return envelope(failure.code, failure.category, failure.message);
+    }
+    const verdict = outcome.verdict;
+    const tierIndex =
+      verdict.resultKind === "choice" && verdict.choice === "Noul"
+        ? 0
+        : Math.min(verdict.tier, cap);
+    const autoIndex = Math.min(verdict.automation, cap);
+    const tier = tierOf(tierIndex);
+    const automation: AutomationLevel = trunc.truncated
+      ? "suggest-only"
+      : automationOf(tier, autoIndex);
+    const codepoints = verdict.codepoints > 0 ? verdict.codepoints : trunc.originalLength;
     safeRecord(deps, {
       sessionId: deps.sessionId,
-      precheckHit: true,
       presetId: valid.presetId,
       text: valid.text,
       lang: valid.lang,
       truncated: trunc.truncated,
       originalLength: trunc.originalLength,
-      resultKind: "local-precheck",
+      resultKind: verdict.resultKind,
       questions: valid.questions,
-      choice: "human",
-      confidence: 1,
-      tier: "none",
-      automation: "manual",
-      latencyMs: 0,
+      precheckHit: hit,
+      ...(verdict.choice !== undefined ? { choice: verdict.choice } : {}),
+      ...(verdict.score !== undefined ? { score: verdict.score } : {}),
+      confidence: verdict.confidence,
+      tier,
+      automation,
+      latencyMs,
     });
     return {
       ok: true,
       provider: "official",
-      appliedSource: "local-precheck",
+      appliedSource: valid.appliedSource,
       truncated: trunc.truncated,
       originalLength: trunc.originalLength,
-      tier: "none",
-      automation: "manual",
-      codepoints: 0,
-      retries: 0,
-      latencyMs: 0,
-      resultKind: "local-precheck",
-      choice: "human",
-      confidence: 1,
-    };
-  }
-  const resolved = deps.resolveKey();
-  if (resolved.key === undefined) {
-    safeRecord(deps, {
-      sessionId: deps.sessionId,
-      presetId: valid.presetId,
-      text: valid.text,
-      lang: valid.lang,
-      truncated: trunc.truncated,
-      originalLength: trunc.originalLength,
-      resultKind: "not-executed",
-      questions: valid.questions,
-      precheckHit: hit,
-      confidence: 0,
-      tier: "none",
-      automation: "manual",
-      latencyMs: 0,
-      errorCode: "NO_KEY",
-    });
-    return envelope("NO_KEY", "no-key", "no api key (set apiKeyRef or plaintext)");
-  }
-  const fetchImpl = deps.fetchImpl ?? defaultFetchImpl();
-  const limit = deps.limit ?? (<T>(task: () => Promise<T>): Promise<T> => task());
-  const body = {
-    model: JEV_MODEL,
-    state: trunc.text,
-    questions: toWireQuestions(valid.questions),
-  };
-  const outcome = await limit(() =>
-    callWithRetry(body, resolved.key as string, deps.connection.timeoutMs, fetchImpl, deps.signal),
-  );
-  const latencyMs = now() - started;
-  if (outcome.failure !== undefined || outcome.verdict === undefined) {
-    const failure = outcome.failure ?? {
-      code: "UPSTREAM",
-      category: "upstream",
-      message: "unknown",
-    };
-    safeRecord(deps, {
-      sessionId: deps.sessionId,
-      presetId: valid.presetId,
-      text: valid.text,
-      lang: valid.lang,
-      truncated: trunc.truncated,
-      originalLength: trunc.originalLength,
-      resultKind: "upstream-error",
-      questions: valid.questions,
-      precheckHit: hit,
-      confidence: 0,
-      tier: "none",
-      automation: "manual",
+      tier,
+      automation,
+      codepoints,
+      retries: outcome.retries,
       latencyMs,
-      errorCode: failure.code,
-    });
-    return envelope(failure.code, failure.category, failure.message);
-  }
-  const verdict = outcome.verdict;
-  const tierIndex =
-    verdict.resultKind === "choice" && verdict.choice === "Noul" ? 0 : Math.min(verdict.tier, cap);
-  const autoIndex = Math.min(verdict.automation, cap);
-  const tier = tierOf(tierIndex);
-  const automation: AutomationLevel = trunc.truncated
-    ? "suggest-only"
-    : automationOf(tier, autoIndex);
-  const codepoints = verdict.codepoints > 0 ? verdict.codepoints : trunc.originalLength;
-  safeRecord(deps, {
-    sessionId: deps.sessionId,
-    presetId: valid.presetId,
-    text: valid.text,
-    lang: valid.lang,
-    truncated: trunc.truncated,
-    originalLength: trunc.originalLength,
-    resultKind: verdict.resultKind,
-    questions: valid.questions,
-    precheckHit: hit,
-    ...(verdict.choice !== undefined ? { choice: verdict.choice } : {}),
-    ...(verdict.score !== undefined ? { score: verdict.score } : {}),
-    confidence: verdict.confidence,
-    tier,
-    automation,
-    latencyMs,
-  });
-  return {
-    ok: true,
-    provider: "official",
-    appliedSource: valid.appliedSource,
-    truncated: trunc.truncated,
-    originalLength: trunc.originalLength,
-    tier,
-    automation,
-    codepoints,
-    retries: outcome.retries,
-    latencyMs,
-    resultKind: verdict.resultKind,
-    ...(verdict.choice !== undefined ? { choice: verdict.choice } : {}),
-    ...(verdict.score !== undefined ? { score: verdict.score } : {}),
-    confidence: verdict.confidence,
+      resultKind: verdict.resultKind,
+      ...(verdict.choice !== undefined ? { choice: verdict.choice } : {}),
+      ...(verdict.score !== undefined ? { score: verdict.score } : {}),
+      confidence: verdict.confidence,
+    };
   };
+
+  if (deps.signal === undefined) return execute((task) => limit(task));
+  try {
+    return await limit(() => execute(direct), deps.signal);
+  } catch (cause) {
+    if (isAbortError(cause)) {
+      return envelope("ABORTED", "aborted", "caller aborted");
+    }
+    throw cause;
+  }
 }
 
 /** 预设清单（只读；frozen 规范 + 自建 customs，开关/上限取配置快照）。 */

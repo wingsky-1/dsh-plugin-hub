@@ -48,8 +48,8 @@ export interface AgentFace {
  * 谁订事件、从哪枚举、怎么把工具装进某个 agent 的作用域，都是组合根的知识。
  */
 export interface AgentPort {
-  /** 订阅「新 agent 发布」。返回退订函数。 */
-  subscribe(handler: (agent: AgentFace) => void): () => void;
+  /** 订阅「新 agent 发布」。返回退订函数；listener 的 thenable 属于宿主 serial 等待链。 */
+  subscribe(handler: (agent: AgentFace) => void | PromiseLike<void>): () => void;
   /** 当前存活的所有 agent 快照（含子 agent；插件加载前就存在的那些都在里面）。 */
   list(): readonly AgentFace[];
   /** 把工具装进该 agent 的作用域，返回释放函数。 */

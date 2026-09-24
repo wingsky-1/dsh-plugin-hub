@@ -7,12 +7,8 @@
  *
  * 幂等：条目已在场且没有存量要合并时直接返回，重跑与首次跑的结果逐字相同。
  */
-import {
-  readTextFileSync,
-  writeTextAtomicSync,
-  CONFIG_FILE_NAME,
-  notifierFile,
-} from "../../../shared/interface.ts";
+import { readFileSync } from "node:fs";
+import { writeTextAtomicSync, CONFIG_FILE_NAME, notifierFile } from "../../../shared/interface.ts";
 import type { LegacySettingsFace, RawSettingValue } from "../../deps.ts";
 import { readLegacySettings } from "../legacy/index.ts";
 
@@ -50,8 +46,7 @@ type BuiltinType = (typeof BUILTIN_TYPES)[number];
  */
 export function migrateConfigShape(settings: LegacySettingsFace): void {
   const file = notifierFile(CONFIG_FILE_NAME);
-  const read = readTextFileSync(file);
-  const stored = read.ok ? parseObject(read.text) : {};
+  const stored = readStoredObject(file);
   const legacy = readLegacySettings(settings);
   const hasLegacy = Object.keys(legacy).length > 0;
   // 既没有文件内容也没有存量 = 全新安装：默认表就是它的形态，凭空建一份文件反而会让设置页把默认值
@@ -117,14 +112,40 @@ function firstDefined(outlet: RawSettingValue, legacy: RawSettingValue): RawSett
   return outlet === undefined ? legacy : outlet;
 }
 
-/** 文件内容 → 对象；坏 JSON 与非对象都当「没有配置」——一份读不动的文件不该让启动失败。 */
-function parseObject(text: string): Record<string, RawSettingValue> {
+/**
+ * 配置文件 → 对象。只有文件不存在是合法空配置；存在却读不动、解析不了或顶层不是普通对象，都代表
+ * 迁移基线已经不可信，必须让链失败并把刻度留在原处。
+ */
+function readStoredObject(file: string): Record<string, RawSettingValue> {
+  let text: string;
   try {
-    const parsed: RawSettingValue = JSON.parse(text);
-    return isRecord(parsed) ? parsed : {};
-  } catch {
-    return {};
+    text = readFileSync(file, "utf8");
+  } catch (cause) {
+    if (isMissingFile(cause)) return {};
+    const detail = cause instanceof Error ? `：${cause.message}` : "";
+    throw new Error(`dsh-notifier: 配置形态割接读取失败 — ${file}${detail}`, { cause });
   }
+
+  let parsed: RawSettingValue;
+  try {
+    parsed = JSON.parse(text);
+  } catch (cause) {
+    const detail = cause instanceof Error ? `：${cause.message}` : "";
+    throw new Error(`dsh-notifier: 配置形态割接解析失败 — ${file}${detail}`, { cause });
+  }
+  if (!isRecord(parsed)) {
+    throw new Error(`dsh-notifier: 配置形态割接解析失败 — ${file}：顶层不是普通对象`);
+  }
+  return parsed;
+}
+
+function isMissingFile(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as { code?: unknown }).code === "ENOENT"
+  );
 }
 
 function isRecord(raw: RawSettingValue): raw is Record<string, RawSettingValue> {

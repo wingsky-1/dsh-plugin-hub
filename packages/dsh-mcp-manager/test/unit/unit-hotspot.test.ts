@@ -12,6 +12,7 @@ import type { Context } from "@deepseek-ai/cordis";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { RoutesManager } from "../../src/server/connection/interface.ts";
 import { fakeManagerCtx } from "../helpers.ts";
+import { MCP_MANAGER_IDENTITY } from "../../src/shared/interface.ts";
 
 // S6-B2：apply/路由装配/管理器构造是装配依赖，留包根；纯符号改道域门面。
 const { apply, makeRoutes, McpManager } = await import("../../src/index.ts");
@@ -237,7 +238,7 @@ describe("apply 完整 settings 生命周期（isUnloading 覆盖）", () => {
             settings: {
               describe: () => [
                 {
-                  ns: "dsh-mcp-manager",
+                  ns: MCP_MANAGER_IDENTITY.settingsNamespace,
                   value: {
                     ui: { position: "top-right", offset: { x: 8, y: 8, blankY: 40 } },
                   },
@@ -293,7 +294,7 @@ describe("apply 完整 settings 生命周期（isUnloading 覆盖）", () => {
       ctx.fiber.state = "unloading";
       refs.disposer!();
       ctx.fiber.state = "disposed";
-      emit("dsh-mcp-manager");
+      emit(MCP_MANAGER_IDENTITY.settingsNamespace);
     }).not.toThrow();
   });
 });

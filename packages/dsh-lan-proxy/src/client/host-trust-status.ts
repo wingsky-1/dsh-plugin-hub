@@ -95,12 +95,10 @@ export function evaluateHostTrust(signals: HostTrustSignals): HostTrustStatus {
 /**
  * 四态判定 → 控制台告警文案（`null` = 该状态不告警）。
  *
- * 为什么需要这条独立出口：唯一原来的渲染面（设置卡片 `settings.plugin.item`）在非回环
- * authority 下根本不挂载——上游按 `isLoopback` 把设置面降级为 memory scope 时，官方设置
- * 插件列表为空（dsh-client-ui-settings-plugins 仅在 namespaces.length > 0 时 renderSlot），
- * 本插件卡片随之缺席。也就是说 `compat-off` 与 `contract-drift` 两个故障态在页面上不可达：
- * **同一枚 isLoopback 信号既决定卡片是否挂载、又决定判定结果**，越是需要这条判定的时候，
- * 承载它的卡片越不在场。devtools 控制台是故障态下唯一不依赖设置面、又随手可得的可见面
+ * 为什么需要这条独立出口：唯一详细渲染面是插件行配置页，而它受 Host authority 与
+ * settings namespace 投影约束；`compat-off` 与 `contract-drift` 下页面可能不可用。
+ * 同一枚 isLoopback 信号既影响配置持久化、又决定判定结果，越是需要解释故障时越不能依赖
+ * 配置页本身。devtools 控制台是不依赖配置面、又随手可得的可见面
  * （issue #856 的原始排查方式）。文案与判定分离，函数保持纯函数形态以便表驱动单测。
  *
  * @param status - `evaluateHostTrust` 的判定结果。
@@ -116,8 +114,8 @@ export function hostTrustAlert(status: HostTrustStatus): string | null {
   if (status === "compat-off") {
     return (
       "host trust 兼容未生效：本页为非回环 authority 且未落注入 marker，上游把设置面降级为 " +
-      "memory scope（设置不可持久化）。最常见原因是 ownsHostCompat 为默认关；需要时在宿主侧" +
-      "开启（设置 → 插件 → dsh-lan-proxy 或 settings.yaml），或改用 ssh -L 走回环"
+      "memory scope（设置不可持久化）。最常见原因是 ownsHostCompat 为默认关；需要时在" +
+      "插件管理器的 dsh-lan-proxy 行详情中开启，或直接编辑 settings.yaml，或改用 ssh -L 走回环"
     );
   }
   return null;

@@ -148,7 +148,9 @@ Four **UI semantics** cannot be covered by any automated gate (there is no brows
 
 ## Compatibility (read-only coupling)
 
-The plugin does not modify official sources, but it **reads** these contracts (baseline `@deepseek-ai/dsh 0.1.5-rc.1`):
+The plugin does not modify official sources, but it **reads** these contracts from the sole
+supported target runtime, dsh `0.1.7-rc.1`. No compatibility promise is made for any other
+runtime version:
 
 - the host's `typert` `workspaceFileScope` lookup: the plugin registers its resolver via `lookups.configure` and delegates to the **official resolve captured before configuring** on a miss;
 - the client `sidebarRightTabs` type registry and the keyed seat `sidebar.right.pane.tab` (including the `StoredEntry` shape: `component/inject/store/locale`);
