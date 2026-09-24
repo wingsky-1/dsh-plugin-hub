@@ -3209,7 +3209,7 @@ it("renderMcpCatalogMessage 结构与声明", () => {
   expect(isCatalogSource(msg.source)).toBe(true);
   expect(msg.content![0]!.type).toBe("text");
   expect(msg.content![0]!.text).toMatch(/available_mcp_servers/);
-  expect(msg.content![0]!.text).toMatch(/does not reflect active connection status/);
+  expect(msg.content![0]!.text).toMatch(/Available MCP servers \(capability snapshot\):/);
   expect(msg.content![0]!.text, "#228 目录文案引导经中间层调用").toMatch(/ws_mcp_search/);
   expect(msg.content![0]!.text).toMatch(/`code-graph`: 代码图谱/);
   expect(typeof msg.id === "string" && msg.id.length > 0).toBeTruthy();

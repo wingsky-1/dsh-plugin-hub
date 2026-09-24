@@ -232,22 +232,17 @@ export function composeCatalogEntries(
  * `kind:"mcp-catalog"`。线格式零字节改：写入恒为 kind:plugin + plugin +
  * form:snapshot + sections。
  *
- * 按条目 scope 只区分「是否附项目级更严格的那条引导」（#228 双轨迁移；#767 S1-5b 收敛为
- * id 口径）：#767 笔 2 起 `mcp__*` 已不在模型可见面（笔 1b 的可见面收敛），**全部**服务器
- * ——项目级、全局级、封装定义条目（toolDefinitions）——一律经中间层工具访问。原来按 `mode`
- * 分出的「全局一律直呼 `mcp__<id>__<tool>`」分支是笔 1b 之后已假的事实，随 `mode` 一并删除；
- * 兜底引导同理（写成直呼会让模型在无 `mcp__` 可见面时无路可走）。
+ * 引导统一单条（用户反馈精简）：项目级/全局级均走同一句话（全名寻址+裸名+detail 先验）；
+ * scope 字段保留仅供条目归属记录，不再分支引导文本。
  */
 export function renderMcpCatalogMessage(entries: CatalogEntry[]): CatalogMessage {
-  const hasProject = entries.some((entry) => entry.scope === "project");
-  const projectGuidance =
-    "Project-level servers MUST be accessed via middleware tools: search with `ws_mcp_search`, verify schema with `ws_mcp_detail` if uncertain, then invoke with `ws_mcp_call` (use `ws_mcp_list` for full inventory audits). **Do NOT invoke project-level servers using mcp__ prefixed tools directly**.";
-  const globalGuidance =
-    "Global servers are also accessed via middleware: search with `ws_mcp_search`, then invoke with `ws_mcp_call` using the same `ws_mcp_*` suite (address them by full name `@global/<server>`).";
-  const guidance = hasProject ? `${projectGuidance} ${globalGuidance}` : globalGuidance;
+  // 介绍文本（用户反馈精简）：只留调用必需（全名寻址/裸工具名/detail 先验/search 顺序）；
+  // 状态声明、弹窗指引、审计括号、重试句已删；mcp__ 禁令按要求不强调（裸名规则正写保留）。
+  const guidance =
+    'Call via `ws_mcp_call` with server `"@<root>/<server>"` (`"@global/<server>"` for global ones) and the bare tool name; find tools with `ws_mcp_search`, check schema with `ws_mcp_detail` first when unsure.';
   const lines = [
     "<system-reminder>",
-    'Configured MCP servers in this session (**capability descriptions only, does not reflect active connection status**; tools register once connected via GUI "MCP" popup):',
+    "Available MCP servers (capability snapshot):",
     "",
     "<available_mcp_servers>",
     // 服务器名与描述同为远端可控输入：同口径转义后才可拼入目录正文，避免标签逃逸改写注入语义；摘要仍以原始名计算，转义不改变去重口径。
@@ -259,7 +254,6 @@ export function renderMcpCatalogMessage(entries: CatalogEntry[]): CatalogMessage
     "</available_mcp_servers>",
     "",
     guidance,
-    'If a server was available but is now disconnected, do not retry the same tool more than twice. Switch to an alternative method or ask the user to check the "MCP" popup.',
     "</system-reminder>",
   ].join("\n");
   return {
@@ -414,7 +408,7 @@ export function renderMcpCatalogUpdate(entries: CatalogEntry[]): CatalogMessage 
   const inner = body.content![0].text!.split("\n").slice(3).join("\n");
   const text = [
     "<system-reminder>",
-    "MCP server configuration has changed. **This catalog replaces all previous available_mcp_servers lists**:",
+    "MCP catalog updated; this replaces all previous available_mcp_servers lists:",
     "",
     inner,
     "</system-reminder>",

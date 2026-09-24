@@ -339,9 +339,9 @@ describe("renderMcpCatalogMessage / findCatalogMessage / readCatalogEntries", ()
     expect(makeMessage().content![0]!.text!.includes("- `m1`: t&lt;1")).toBeTruthy();
   });
 
-  it("文本含 does not reflect active connection status", () => {
+  it("文本含 capability snapshot 首部", () => {
     expect(
-      makeMessage().content![0]!.text!.includes("does not reflect active connection status"),
+      makeMessage().content![0]!.text!.includes("Available MCP servers (capability snapshot):"),
     ).toBeTruthy();
   });
 
@@ -410,7 +410,7 @@ describe("renderMcpCatalogUpdate", () => {
 
   it("替换声明", () => {
     expect(
-      makeText().includes("This catalog replaces all previous available_mcp_servers"),
+      makeText().includes("this replaces all previous available_mcp_servers lists:"),
     ).toBeTruthy();
   });
 
@@ -657,7 +657,9 @@ describe("resolveCatalogInjection：六条路径", () => {
       undefined,
     );
     expect(
-      injected.messages[0]!.content![0]!.text!.includes("Configured MCP servers in this session"),
+      injected.messages[0]!.content![0]!.text!.includes(
+        "Available MCP servers (capability snapshot):",
+      ),
     ).toBeTruthy();
   });
 
@@ -671,9 +673,7 @@ describe("resolveCatalogInjection：六条路径", () => {
       new Map(),
       otherDigestAgent(),
     );
-    expect(
-      updated.messages[0]!.content![0]!.text!.includes("MCP server configuration has changed"),
-    ).toBeTruthy();
+    expect(updated.messages[0]!.content![0]!.text!.includes("MCP catalog updated")).toBeTruthy();
   });
 
   it("本轮已有旧目录且 digest 变化 → 替换不追加", () => {
@@ -713,9 +713,7 @@ describe("resolveCatalogInjection：六条路径", () => {
       new Map(),
       otherDigestAgent(),
     );
-    expect(
-      replaced.messages[1]!.content![0]!.text!.includes("MCP server configuration has changed"),
-    ).toBeTruthy();
+    expect(replaced.messages[1]!.content![0]!.text!.includes("MCP catalog updated")).toBeTruthy();
   });
 
   it("替换后 id 与旧目录不同", () => {
