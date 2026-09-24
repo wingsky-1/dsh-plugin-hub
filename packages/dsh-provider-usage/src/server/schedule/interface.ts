@@ -14,9 +14,10 @@
  * - 迁移域（upgrade/last-run-morph.ts）经本门面只复用纯函数
  *   （LAST_RUN_SCHEMA / deriveLastRun / alignLastRun，零 node 依赖），
  *   不调业务实例（read/write/update/ensure 均不导入）；
- * - per-root 临界区链（updateLastRun）本域所有（METHOD §3 Q1 有主即止）：
- *   execute 的推进、routes 的 preset 均经本门面消费同一条链，
- *   本域不自建第二条链，不新建 file-io 叶；
+ * - lastRun 仍由 store.ts 的既有 per-root 链消费；#1010 B1 的 retry-ledger
+ *   factory 先行提供包内 ledger 文件序列化/CAS，但尚未装配进 scheduler/executor，
+ *   下一切片必须把 report/index → monotonic lastRun → ledger clear 收到同一
+ *   coordinator 后再启用；本 facade 不把两条现有链描述为已组成事务；
  * - 本域无聚合安装器：调度器/队列由组合根直接构造
  *   （参见 deps.ts 注记），本门面只做收口。
  */
@@ -34,6 +35,45 @@ export {
   LAST_RUN_SCHEMA,
 } from "./due.ts";
 export type { DueReport, LastRunRecord } from "./due.ts";
+
+// ------------------------------------------------------------------ 重试纯状态机（retry-policy.ts）
+
+export {
+  RETRY_BACKOFF_MS,
+  RETRY_MAX_ATTEMPTS,
+  beginAttempt,
+  beginForce,
+  createInitialEntry,
+  recordFailure,
+  recover,
+  shouldReconcileRetry,
+} from "./retry-policy.ts";
+export type {
+  RetryClaim,
+  RetryEntry,
+  RetryFailure,
+  RetryFailureKind,
+  RetryIndexKey,
+  RetryPhase,
+  RetryRouteSnapshot,
+  RetrySeed,
+  RetryTerminalReason,
+} from "./retry-policy.ts";
+
+// ------------------------------------------------------------------ 重试状态账本（retry-ledger.ts）
+
+export {
+  RETRY_LEDGER_SCHEMA,
+  RetryLedgerError,
+  createRetryLedger,
+  retryLedgerFile,
+} from "./retry-ledger.ts";
+export type {
+  RetryAttemptInput,
+  RetryLedgerErrorCode,
+  RetryLedgerOptions,
+  RetryLedgerPort,
+} from "./retry-ledger.ts";
 
 // ------------------------------------------------------------------ 调度器（scheduler.ts）
 

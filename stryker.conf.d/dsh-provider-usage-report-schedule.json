@@ -5,6 +5,8 @@
     "packages/dsh-provider-usage/src/server/schedule/scheduler.ts",
     "packages/dsh-provider-usage/src/server/schedule/tasks.ts",
     "packages/dsh-provider-usage/src/server/schedule/store.ts",
+    "packages/dsh-provider-usage/src/server/schedule/retry-policy.ts",
+    "packages/dsh-provider-usage/src/server/schedule/retry-ledger.ts",
     "packages/dsh-provider-usage/src/server/config/shape.ts",
     "packages/dsh-provider-usage/src/server/config/prompts.ts",
     "packages/dsh-provider-usage/src/server/config/normalize.ts",
@@ -53,5 +55,5 @@
   },
   "incremental": true,
   "incrementalFile": "coverage/mutation/incremental-provider-usage-report-schedule.json",
-  "_comment": "阶段零新段（D17 分层变异）：E3 报告调度面——schedule+scheduler+tasks；阶段二（D8）并入 last-run.ts（公共原语）；#768 D1 起配置面归 server/config 域（shape/prompts/normalize/store/service）；#768 D2 起调度面整域归 server/schedule（due/scheduler/tasks/store，domain2/schedule 与 common/last-run 旧址删除，interface.ts/deps.ts 以 facade/type-only 口径排除）；testFiles 含 unit-report/unit-report-executor + test/integration/schedule/composition-root（串行锁与门面装配判据）。"
+  "_comment": "阶段零新段（D17 分层变异）：E3 报告调度面——schedule+scheduler+tasks；阶段二（D8）并入 last-run.ts（公共原语）；#768 D1 起配置面归 server/config 域（shape/prompts/normalize/store/service）；#768 D2 起调度面整域归 server/schedule（due/scheduler/tasks/store，domain2/schedule 与 common/last-run 旧址删除，interface.ts/deps.ts 以 facade/type-only 口径排除）；#1010 B1 纳入 retry-policy/retry-ledger（纯状态机 + durable JSON/CAS/recover）；testFiles 含 unit-report/unit-report-executor + test/integration/schedule/composition-root（状态/持久化、串行锁与门面装配判据）。"
 }

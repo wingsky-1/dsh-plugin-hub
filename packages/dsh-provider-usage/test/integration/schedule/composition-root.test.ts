@@ -36,6 +36,10 @@ import {
   ensureLastRunMigrated,
   candidateWindow,
   pendingReports,
+  beginAttempt as ImplBeginAttempt,
+  createRetryLedger,
+  type RetryLedgerOptions,
+  type RetryLedgerPort,
 } from "../../../src/server/schedule/interface.ts";
 import { LAST_RUN_SCHEMA } from "../../../src/server/shared/interface.ts";
 import { ReportScheduler as ImplScheduler } from "../../../src/server/schedule/scheduler.ts";
@@ -49,6 +53,8 @@ import {
   candidateWindow as ImplCandidate,
   pendingReports as ImplPending,
 } from "../../../src/server/schedule/due.ts";
+import { beginAttempt as RetryPolicyBeginAttempt } from "../../../src/server/schedule/retry-policy.ts";
+import { createRetryLedger as ImplCreateRetryLedger } from "../../../src/server/schedule/retry-ledger.ts";
 import { LAST_RUN_SCHEMA as ImplSchema } from "../../../src/server/shared/last-run.ts";
 import * as scheduleDepsNs from "../../../src/server/schedule/deps.ts";
 import type {
@@ -65,6 +71,10 @@ import { DEFAULT_CONFIG } from "../../../src/shared/config.ts";
 const here = dirname(fileURLToPath(import.meta.url));
 const srcDir = join(here, "..", "..", "..", "src");
 const applySrc = readFileSync(join(srcDir, "apply", "apply.ts"), "utf8");
+const indexSrc = readFileSync(join(srcDir, "index.ts"), "utf8");
+const applyIndexSrc = readFileSync(join(srcDir, "apply", "index.ts"), "utf8");
+const retryPolicySrc = readFileSync(join(srcDir, "server", "schedule", "retry-policy.ts"), "utf8");
+const retryLedgerSrc = readFileSync(join(srcDir, "server", "schedule", "retry-ledger.ts"), "utf8");
 // #768 D13：空锚点 src/apply/interface.ts 已删，扫描面只剩 apply.ts（本文件不再读该路径）。
 const schedulerSrc = readFileSync(join(srcDir, "server", "schedule", "scheduler.ts"), "utf8");
 const storeSrc = readFileSync(join(srcDir, "server", "schedule", "store.ts"), "utf8");
@@ -220,6 +230,30 @@ describe("D2 门面收口：interface 与实现同一引用（包装即红）", 
   it("LAST_RUN_SCHEMA 同值（当期版本 2）", () => {
     expect(LAST_RUN_SCHEMA).toBe(ImplSchema);
     expect(LAST_RUN_SCHEMA).toBe(2);
+  });
+
+  it("retry policy 同一引用且零 Node 依赖", () => {
+    expect(ImplBeginAttempt).toBe(RetryPolicyBeginAttempt);
+    expect(retryPolicySrc.includes("node:")).toBe(false);
+  });
+
+  it("retry ledger factory 同一引用且可赋给包内 port", () => {
+    const factory: (root: string, options?: RetryLedgerOptions) => RetryLedgerPort =
+      createRetryLedger;
+    const port = factory(join(tmpdir(), "d2-retry-ledger-not-created"));
+
+    expect(factory).toBe(ImplCreateRetryLedger);
+    expect(typeof port.beginAttempt).toBe("function");
+    expect(typeof port.recordFailure).toBe("function");
+    expect(typeof port.reconcile).toBe("function");
+  });
+
+  it("schedule ledger 不值引 registry，根入口不导出 retry ledger", () => {
+    expect(retryLedgerSrc.includes("server/registry")).toBe(false);
+    expect(indexSrc.includes("retry-ledger")).toBe(false);
+    expect(indexSrc.includes("RetryLedger")).toBe(false);
+    expect(applyIndexSrc.includes("retry-ledger")).toBe(false);
+    expect(applyIndexSrc.includes("RetryLedger")).toBe(false);
   });
 
   it("deps.ts 纯类型面：运行时零出口", () => {

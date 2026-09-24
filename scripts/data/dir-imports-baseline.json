@@ -80,12 +80,12 @@
     },
     "dsh-provider-usage": {
       "modules": 15,
-      "scannedSrcFiles": 92,
-      "allSrcTsFiles": 110,
+      "scannedSrcFiles": 94,
+      "allSrcTsFiles": 112,
       "interfaceFacades": 15,
       "leafValueEdges": 17,
-      "fileValueEdges": 148,
-      "crossModuleRefs": 156,
+      "fileValueEdges": 151,
+      "crossModuleRefs": 158,
       "quality": {
         "leafModuleCycles": [],
         "fileCycles": [],
