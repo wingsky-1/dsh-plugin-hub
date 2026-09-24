@@ -962,12 +962,16 @@ describe("UI 配置与面板锚点纯函数矩阵（#150 二阶段）", () => {
 });
 
 // ================================================================ Config schema 回归（0.1.7 全局合并）
-// 标注退为 `z<any>` 后平面形状不再由类型层约束——本块以运行时行为锁定键集与默认值
-// （schemastery 空输入解析填充全部 `.default()`；显式值透传）。删键/改默认即红。
+// Config 声明为 as 收口的 z<平面>后，调用签名输入侧要求全量平面（运行时仍接受缺键并
+// 填默认）；默认语义经无参调用锁定（data 可选），透传经全量输入锁定。删键/改默认即红。
 
 describe("Config schema 回归（空输入全量默认 + 显式透传）", () => {
-  const resolved = Config({}) as Record<string, unknown>;
-  const over = Config({ adapter: "x.mjs", trendRetentionDays: 7 }) as Record<string, unknown>;
+  const resolved = Config() as Record<string, unknown>;
+  const over = Config({
+    ...DEFAULT_CONFIG,
+    adapter: "x.mjs",
+    trendRetentionDays: 7,
+  }) as Record<string, unknown>;
 
   it("空输入解析出 11 键（键集锁定）", () => {
     expect(Object.keys(resolved).sort()).toEqual(

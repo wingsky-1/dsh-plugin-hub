@@ -514,7 +514,9 @@ describe("generate：成功路径（正文拼接 / token 元数据 / 空串跟�
   });
 
   it("user source", () => {
-    expect(seen.options!.messages[0].source.kind).toBe("user");
+    // 0.1.7 起 messages 元素为 RequestMessage（source 可选，hand-built one-shot
+    // 允许无 source）；?. 收窄后断言强度不变（缺 source 即 undefined ≠ "user" 照红）。
+    expect(seen.options!.messages[0]?.source?.kind).toBe("user");
   });
 
   it("role=user（UserMessage 字面量，类型层同步钉死）", () => {
