@@ -143,7 +143,7 @@ export async function decide(
     questions: toWireQuestions(valid.questions),
   };
   const outcome = await limit(() =>
-    callWithRetry(body, resolved.key as string, deps.connection.timeoutMs, fetchImpl),
+    callWithRetry(body, resolved.key as string, deps.connection.timeoutMs, fetchImpl, deps.signal),
   );
   const latencyMs = now() - started;
   if (outcome.failure !== undefined || outcome.verdict === undefined) {

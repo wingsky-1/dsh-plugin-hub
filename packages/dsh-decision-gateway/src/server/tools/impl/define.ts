@@ -42,6 +42,23 @@ export function sessionOf(exec: unknown): string {
   return "unknown";
 }
 
+/** exec 取调用方取消信号（ToolRunContext.signal；unknown 防御收窄，非信号即 undefined，双基线可编译）。 */
+export function signalOf(exec: unknown): AbortSignal | undefined {
+  if (exec !== null && typeof exec === "object") {
+    const candidate = (exec as Record<string, unknown>)["signal"];
+    if (candidate instanceof AbortSignal) return candidate;
+    if (
+      candidate !== null &&
+      typeof candidate === "object" &&
+      typeof (candidate as { readonly aborted?: unknown }).aborted === "boolean" &&
+      typeof (candidate as { readonly addEventListener?: unknown }).addEventListener === "function"
+    ) {
+      return candidate as AbortSignal;
+    }
+  }
+  return undefined;
+}
+
 /** exec 取工作目录（缺席回落进程 cwd；与 sessionOf 同源收敛，见上）。 */
 export function rootOf(exec: unknown): string {
   if (exec !== null && typeof exec === "object") {

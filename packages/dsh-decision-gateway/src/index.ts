@@ -169,6 +169,7 @@ function assemble(host: HostPort, options: DecisionGatewayApplyConfig): (() => v
     }
     return {
       logger: host.logger,
+      signal: toolsApi.signalOf(exec),
       connection: state.config.connection,
       isEnabled: (presetId) => enabledOf(state, presetId),
       capOf: (presetId) => capOfState(state, presetId),
