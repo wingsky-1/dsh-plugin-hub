@@ -127,7 +127,9 @@
           "test/unit/client-takeover.test.ts|src/client/shared/ports.ts",
           "test/unit/client-takeover.test.ts|src/client/takeover.ts",
           "test/unit/inject-attach.test.ts|src/client/inject.ts",
-          "test/unit/inject-attach.test.ts|src/client/shared/ports.ts"
+          "test/unit/inject-attach.test.ts|src/client/shared/ports.ts",
+          "test/unit/inject-keep-mounted.test.ts|src/client/inject.ts",
+          "test/unit/inject-keep-mounted.test.ts|src/client/shared/ports.ts"
         ]
       }
     }
