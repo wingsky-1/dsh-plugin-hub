@@ -84,6 +84,7 @@ import {
   applyPromptTemplate,
   buildStatsSnapshot,
   generateReport,
+  generateReportOutcome,
   parseReportIndexLines,
   persistReport,
   readReportIndex,
@@ -688,6 +689,39 @@ describe("generate：官方完整 block 流", () => {
   );
 });
 
+describe("generate：结构化 retry outcome", () => {
+  it("reasoning-only 标记 empty-output/reasoning-only 且不保留推理原文", async () => {
+    const privateReasoning = "provider reasoning secret must not escape";
+    const f = fakeLlm([
+      { type: "reasoning-delta", index: 0, text: privateReasoning },
+      { type: "finish", reason: { kind: "stop" } },
+    ]);
+
+    const outcome = await generateReportOutcome(GEN({ llm: f.llm }));
+
+    expect(outcome).toMatchObject({
+      status: "failure",
+      failure: { kind: "empty-output", code: "reasoning-only" },
+      result: { body: "", meta: { ok: false, error: "模型仅返回推理过程未产出正文" } },
+    });
+    expect(JSON.stringify(outcome)).not.toContain(privateReasoning);
+  });
+
+  it("流异常只暴露 transient/provider-stream-failed，不携带 provider 原文", async () => {
+    const rawProviderError = "key=private path=/private/report response=private";
+    const f = fakeLlm(CHUNKS, { throwInStream: rawProviderError });
+
+    const outcome = await generateReportOutcome(GEN({ llm: f.llm }));
+
+    expect(outcome).toMatchObject({
+      status: "failure",
+      failure: { kind: "transient", code: "provider-stream-failed" },
+      result: { body: "", meta: { ok: false, error: "模型请求失败" } },
+    });
+    expect(JSON.stringify(outcome)).not.toContain(rawProviderError);
+  });
+});
+
 // ---------------------------------------------------------------- generate：usage 冲突
 
 describe("generate：冲突 usage 采用首个 chunk", () => {
@@ -1125,6 +1159,171 @@ describe("generate：路由解析异常稳定脱敏", () => {
     expect(result.meta.error).not.toContain("/home/private/report.json");
     expect(result.meta.error).not.toMatch(/[\u0000-\u001f\u007f-\u009f]/);
     expect(f.seen.calls).toHaveLength(0);
+  });
+});
+
+const STRUCTURED_FAILURE_CASES = [
+  {
+    name: "空正文",
+    expected: { kind: "empty-output", code: "empty-output" },
+    run: () =>
+      generateReportOutcome(
+        GEN({ llm: fakeLlm([{ type: "finish", reason: { kind: "stop" } }]).llm }),
+      ),
+  },
+  {
+    name: "未知内容事件",
+    expected: { kind: "unknown", code: "unknown-stream-event" },
+    run: () =>
+      generateReportOutcome(
+        GEN({
+          llm: fakeLlm([futureContentChunk(), { type: "finish", reason: { kind: "stop" } }]).llm,
+        }),
+      ),
+  },
+  {
+    name: "未知终态",
+    expected: { kind: "unknown", code: "unknown-finish" },
+    run: () =>
+      generateReportOutcome(
+        GEN({
+          llm: fakeLlm([{ type: "text-delta", index: 0, text: "不能保存" }, futureFinishChunk()])
+            .llm,
+        }),
+      ),
+  },
+  {
+    name: "缺失终态",
+    expected: { kind: "unknown", code: "missing-finish" },
+    run: () =>
+      generateReportOutcome(
+        GEN({ llm: fakeLlm([{ type: "text-delta", index: 0, text: "不能保存" }]).llm }),
+      ),
+  },
+  {
+    name: "不支持工具",
+    expected: { kind: "permanent", code: "unsupported-tool" },
+    run: () =>
+      generateReportOutcome(GEN({ llm: fakeLlm(UNSUPPORTED_TOOL_STREAMS[0]!.chunks).llm })),
+  },
+  {
+    name: "路由不可用",
+    expected: { kind: "permanent", code: "route-unavailable" },
+    run: () => generateReportOutcome(GEN({ llm: fakeLlm(CHUNKS, { noProviders: true }).llm })),
+  },
+  {
+    name: "路由解析异常",
+    expected: { kind: "transient", code: "route-resolution-failed" },
+    run: () =>
+      generateReportOutcome(
+        GEN({
+          llm: fakeLlm(CHUNKS, {
+            throwInListProviders: "raw provider route credential must not escape",
+          }).llm,
+        }),
+      ),
+  },
+  {
+    name: "capability 缺失",
+    expected: { kind: "permanent", code: "capability-unavailable" },
+    run: () =>
+      generateReportOutcome(GEN({ llm: fakeLlm(CHUNKS).llm, reasoningEffort: "vendor::deep" })),
+  },
+  {
+    name: "capability 不支持 effort",
+    expected: { kind: "permanent", code: "capability-unsupported" },
+    run: () =>
+      generateReportOutcome(
+        GEN({
+          llm: fakeLlm(CHUNKS, { capability: GENERIC_WITHOUT_REASONING }).llm,
+          reasoningEffort: "vendor::deep",
+        }),
+      ),
+  },
+  {
+    name: "capability 解析异常",
+    expected: { kind: "permanent", code: "capability-failed" },
+    run: () =>
+      generateReportOutcome(
+        GEN({
+          llm: fakeLlm(CHUNKS, { capabilityError: "raw capability response" }).llm,
+          reasoningEffort: "vendor::deep",
+        }),
+      ),
+  },
+  {
+    name: "finish error",
+    expected: { kind: "permanent", code: "provider-finish-failed" },
+    run: () =>
+      generateReportOutcome(
+        GEN({
+          llm: fakeLlm([
+            {
+              type: "finish",
+              reason: { kind: "error", failure: { message: "raw finish secret", code: "raw" } },
+            },
+          ]).llm,
+        }),
+      ),
+  },
+  {
+    name: "finish aborted",
+    expected: { kind: "aborted", code: "request-aborted" },
+    run: () =>
+      generateReportOutcome(
+        GEN({
+          llm: fakeLlm([
+            {
+              type: "finish",
+              reason: { kind: "aborted", failure: { message: "raw abort secret", code: "raw" } },
+            },
+          ]).llm,
+        }),
+      ),
+  },
+  {
+    name: "调用前 signal abort",
+    expected: { kind: "aborted", code: "request-aborted" },
+    run: () => {
+      const controller = new AbortController();
+      controller.abort();
+      return generateReportOutcome(GEN({ llm: fakeLlm(CHUNKS).llm, signal: controller.signal }));
+    },
+  },
+] as const;
+
+describe("generate：结构化失败分类矩阵", () => {
+  it.each(STRUCTURED_FAILURE_CASES)(
+    "$name 保留稳定 kind/code 且不携带 raw 文本",
+    async ({ expected, run }) => {
+      const outcome = await run();
+
+      expect(outcome.status).toBe("failure");
+      if (outcome.status === "failure") expect(outcome.failure).toEqual(expected);
+      expect(JSON.stringify(outcome)).not.toMatch(/raw|credential|secret/);
+    },
+  );
+
+  it("capability timeout 标记 transient/capability-timeout 并清理 timer", async () => {
+    vi.useFakeTimers();
+    try {
+      const pending = generateReportOutcome(
+        GEN({
+          llm: fakeLlm(CHUNKS, { capabilityNever: true }).llm,
+          reasoningEffort: "vendor::deep",
+        }),
+      );
+      await vi.advanceTimersByTimeAsync(5_000);
+      const outcome = await pending;
+
+      expect(outcome).toMatchObject({
+        status: "failure",
+        failure: { kind: "transient", code: "capability-timeout" },
+      });
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

@@ -14,12 +14,15 @@ import type { ReportConfig, ReportPeriod } from "../config/interface.ts";
 import { reportBodyToHtml } from "./format.ts";
 import {
   buildStatsSnapshot,
-  generateReport,
+  generateReportOutcome,
+  type GenerateRouteOutcome,
   type ReportMeta,
   type ReportMetaSummary,
+  type ReportResult,
   type ReportStatsSnapshot,
 } from "./generate.ts";
-import type { DueReport } from "../schedule/interface.ts";
+import type { DueReport, RetryFailure, RetryRouteSnapshot } from "../schedule/interface.ts";
+export type { RetryFailure, RetryRouteSnapshot };
 import { parseReportIndexLines } from "./report-index.ts";
 
 export function reportsDir(root: string): string {
@@ -201,7 +204,7 @@ export async function persistReport(
   await appendFile(indexFile, `${JSON.stringify(meta)}\n`, { mode: 0o600 });
 }
 
-export async function runDueReport(params: {
+export interface RunDueReportParams {
   due: DueReport;
   trend: TrendTracker;
   ctx: Context;
@@ -209,7 +212,21 @@ export async function runDueReport(params: {
   promptTemplate: string;
   historyRoot: string;
   sanitizeDiagnostic: (s: string) => string;
-}): Promise<ReportMeta> {
+  route?: GenerateRouteOutcome;
+}
+
+export type RunDueReportOutcome =
+  | { status: "success"; result: ReportResult }
+  | { status: "failure"; failure: RetryFailure; result?: ReportResult };
+
+const REPORT_STORAGE_FAILURE = {
+  kind: "storage",
+  code: "report-persist-failed",
+} as const satisfies RetryFailure;
+
+export async function runDueReportOutcome(
+  params: RunDueReportParams,
+): Promise<RunDueReportOutcome> {
   const { due, trend, ctx, reportCfg, promptTemplate, historyRoot, sanitizeDiagnostic } = params;
   const buckets = trend.buckets();
   // 目录维度日汇总行进快照（trend.dirRows 含今日桶，口径见
@@ -241,19 +258,26 @@ export async function runDueReport(params: {
   });
   if (snapshot.totals.calls === 0) {
     return {
-      period: due.period,
-      key: due.key,
-      startDay: due.startDay,
-      endDay: due.endDay,
-      provider: reportCfg.provider,
-      model: reportCfg.model,
-      generatedAt: Date.now(),
-      durationMs: 0,
-      ok: true,
-      noData: true,
+      status: "success",
+      result: {
+        body: "",
+        meta: {
+          period: due.period,
+          key: due.key,
+          startDay: due.startDay,
+          endDay: due.endDay,
+          provider: reportCfg.provider,
+          model: reportCfg.model,
+          generatedAt: Date.now(),
+          durationMs: 0,
+          ok: true,
+          noData: true,
+        },
+      },
     };
   }
-  const result = await generateReport({
+  const route = params.route;
+  const generated = await generateReportOutcome({
     llm: ctx.llm,
     period: due.period,
     key: due.key,
@@ -264,13 +288,28 @@ export async function runDueReport(params: {
     promptTemplate,
     provider: reportCfg.provider,
     model: reportCfg.model,
-    reasoningEffort: reportCfg.reasoningEffort,
+    reasoningEffort: route === undefined ? reportCfg.reasoningEffort : route.route.reasoningEffort,
+    ...(route === undefined ? {} : { route }),
   });
-  if (!result.meta.ok) throw new Error(result.meta.error ?? "报告生成失败");
-  const meta: ReportMeta = { ...result.meta, summary: summaryOf(snapshot) };
-  await persistReport(historyRoot, meta, result.body);
-  notifyReport(ctx, reportCfg, meta, snapshot, sanitizeDiagnostic);
-  return meta;
+  if (generated.status === "failure") return generated;
+  const result: ReportResult = {
+    ...generated.result,
+    meta: { ...generated.result.meta, summary: summaryOf(snapshot) },
+  };
+  try {
+    await persistReport(historyRoot, result.meta, result.body);
+  } catch {
+    return { status: "failure", failure: REPORT_STORAGE_FAILURE };
+  }
+  notifyReport(ctx, reportCfg, result.meta, snapshot, sanitizeDiagnostic);
+  return { status: "success", result };
+}
+
+/** 兼容 wrapper：保留旧 ReportMeta 返回/抛错语义，结构化标签由 executor 消费。 */
+export async function runDueReport(params: RunDueReportParams): Promise<ReportMeta> {
+  const outcome = await runDueReportOutcome(params);
+  if (outcome.status === "success") return outcome.result.meta;
+  throw new Error(outcome.result?.meta.error ?? "报告持久化失败");
 }
 
 /**

@@ -54,7 +54,14 @@ import type {
   ReasoningEffortId,
   StreamChunk,
 } from "@deepseek-ai/dsh-llm";
-import { makeDueReportExecutor, runDueReport } from "../../../src/server/execute/interface.ts";
+import {
+  makeDueReportExecutor,
+  resolveGenerateRoute,
+  runDueReport,
+  runDueReportOutcome,
+  type RetrySuccessCommitInput,
+  type RetrySuccessCommitPort,
+} from "../../../src/server/execute/interface.ts";
 import { makeListDirs } from "../../../src/server/execute/list-dirs.ts";
 
 describe("ReportConfigService：串行写链 / 内存权威 / 回调顺序 / 磁盘 roundtrip", () => {
@@ -300,6 +307,411 @@ describe("runner：reportCfg.reasoningEffort 透传到生成边界", () => {
       expect(resolveCalls).toEqual([{ provider: "generic-provider", model: "generic-model" }]);
       expect(streamCalls).toHaveLength(1);
       expect(streamCalls[0]!.reasoningEffort).toBe("vendor::deep");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+const RETRY_DAY = "2026-09-23";
+const RETRY_NOW = Date.UTC(2026, 8, 24, 0, 0, 0);
+
+function retryDue(overrides: Partial<ReportTaskInput> = {}): ReportTaskInput {
+  return {
+    period: "daily",
+    key: RETRY_DAY,
+    startDay: RETRY_DAY,
+    endDay: RETRY_DAY,
+    ...overrides,
+  };
+}
+
+function retryConfig() {
+  return normalizeCfg({
+    provider: "generic-provider",
+    model: "generic-model",
+    push: { enabled: false },
+  });
+}
+
+function retryTrend(calls: number): TrendTracker {
+  return {
+    buckets: () =>
+      calls === 0
+        ? []
+        : [
+            {
+              day: RETRY_DAY,
+              providers: [
+                {
+                  provider: "generic-provider",
+                  model: "generic-model",
+                  cell: {
+                    input: 2,
+                    output: 3,
+                    cacheRead: null,
+                    cacheWrite: null,
+                    calls: 1,
+                    turns: 1,
+                    toolCalls: 0,
+                  },
+                },
+              ],
+            },
+          ],
+    dirRows: () => [],
+    hourRows: () => [],
+  } as unknown as TrendTracker;
+}
+
+function retryContext(
+  chunks: StreamChunk[],
+  onStream?: () => Promise<void>,
+): { ctx: Context; calls: GenerateOptions[] } {
+  const calls: GenerateOptions[] = [];
+  const llm = {
+    stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
+      calls.push({ ...options, messages: [...options.messages] });
+      return (async function* (): AsyncGenerator<StreamChunk> {
+        if (onStream !== undefined) await onStream();
+        yield* chunks;
+      })();
+    },
+    listProviders: () => [{ id: "generic-provider", name: "Generic" }],
+    listModels: async () => [
+      { provider: "generic-provider", id: "generic-model", name: "Generic Model" },
+    ],
+  };
+  return { ctx: { llm } as unknown as Context, calls };
+}
+
+function retryLedger(root: string, createCycleId: () => string): RetryLedgerPort {
+  return createRetryLedger(root, { now: () => RETRY_NOW, createCycleId });
+}
+
+class RecordingCommitPort implements RetrySuccessCommitPort {
+  readonly calls: RetrySuccessCommitInput[] = [];
+
+  constructor(private readonly handler: (input: RetrySuccessCommitInput) => Promise<boolean>) {}
+
+  async commitSuccess(input: RetrySuccessCommitInput): Promise<boolean> {
+    this.calls.push({
+      claim: {
+        cycleId: input.claim.cycleId,
+        entry: { ...input.claim.entry, route: { ...input.claim.entry.route } },
+      },
+      result: { ...input.result, meta: { ...input.result.meta } },
+    });
+    return this.handler(input);
+  }
+}
+
+function commitCurrentThenClear(root: string, ledger: RetryLedgerPort): RecordingCommitPort {
+  return new RecordingCommitPort(async ({ claim, result }) => {
+    const current = await ledger.get(result.meta.period, result.meta.key);
+    if (current?.cycleId !== claim.cycleId || current.phase !== "in-flight") return false;
+    await updateLastRun(root, (previous) => {
+      const previousKey = previous[result.meta.period];
+      return previousKey !== undefined && previousKey >= result.meta.key
+        ? previous
+        : { ...previous, [result.meta.period]: result.meta.key };
+    });
+    return ledger.clear(claim);
+  });
+}
+
+function retryExecutor(input: {
+  root: string;
+  trend: TrendTracker;
+  ctx: Context;
+  ledger: RetryLedgerPort;
+  commit: RetrySuccessCommitPort;
+}) {
+  return makeDueReportExecutor({
+    trend: input.trend,
+    ctx: input.ctx,
+    getReportCfg: retryConfig,
+    getPromptTemplate: () => "prompt {stats}",
+    historyRoot: input.root,
+    sanitizeDiagnostic: (value) => value,
+    advanceLastRun: updateLastRun,
+    retry: {
+      ledger: input.ledger,
+      resolveRoute: resolveGenerateRoute,
+      commitSuccess: input.commit,
+      now: () => RETRY_NOW,
+    },
+  });
+}
+
+const SUCCESS_CHUNKS: StreamChunk[] = [
+  { type: "text-delta", index: 0, text: "报告正文" },
+  { type: "finish", reason: { kind: "stop" } },
+];
+
+describe("runner/executor：#1010 B2a retry ledger 执行事务", () => {
+  it("runner 生成失败返回 tagged outcome，不压成普通 Error", async () => {
+    const root = mkdtempSync(join(tmpdir(), "u-runner-outcome-"));
+    const { ctx, calls } = retryContext([{ type: "finish", reason: { kind: "stop" } }]);
+
+    try {
+      const outcome = await runDueReportOutcome({
+        due: retryDue(),
+        trend: retryTrend(1),
+        ctx,
+        reportCfg: retryConfig(),
+        promptTemplate: "prompt",
+        historyRoot: root,
+        sanitizeDiagnostic: (value) => value,
+      });
+
+      expect(outcome).toMatchObject({
+        status: "failure",
+        failure: { kind: "empty-output", code: "empty-output" },
+        result: { body: "", meta: { ok: false, error: "模型未产出任何正文" } },
+      });
+      expect(calls).toHaveLength(1);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("noData 仍返回成功 ReportResult，提交 lastRun 并清 claim，模型调用为 0", async () => {
+    const root = mkdtempSync(join(tmpdir(), "u-exec-nodata-"));
+    const ledger = retryLedger(root, () => "cycle-nodata");
+    const commit = commitCurrentThenClear(root, ledger);
+    const { ctx, calls } = retryContext(SUCCESS_CHUNKS);
+    const executor = retryExecutor({ root, trend: retryTrend(0), ctx, ledger, commit });
+
+    try {
+      const result = await executor(retryDue());
+
+      expect(result.meta).toMatchObject({ ok: true, noData: true, key: RETRY_DAY });
+      expect(calls).toHaveLength(0);
+      expect((await readLastRun(root)).daily).toBe(RETRY_DAY);
+      expect(await ledger.list()).toEqual([]);
+      expect(commit.calls).toHaveLength(1);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("成功只提交一次，lastRun 前进且 ledger clear", async () => {
+    const root = mkdtempSync(join(tmpdir(), "u-exec-success-"));
+    const ledger = retryLedger(root, () => "cycle-success");
+    const commit = commitCurrentThenClear(root, ledger);
+    const { ctx, calls } = retryContext(SUCCESS_CHUNKS);
+    const executor = retryExecutor({ root, trend: retryTrend(1), ctx, ledger, commit });
+
+    try {
+      const result = await executor(retryDue());
+
+      expect(result.meta).toMatchObject({ ok: true, key: RETRY_DAY });
+      expect(calls).toHaveLength(1);
+      expect((await readLastRun(root)).daily).toBe(RETRY_DAY);
+      expect(await ledger.list()).toEqual([]);
+      expect(commit.calls[0]?.claim.cycleId).toBe("cycle-success");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("空输出按 empty-output 记 failure，attempts 消耗但不推进 lastRun", async () => {
+    const root = mkdtempSync(join(tmpdir(), "u-exec-empty-"));
+    const ledger = retryLedger(root, () => "cycle-empty");
+    const commit = commitCurrentThenClear(root, ledger);
+    const { ctx, calls } = retryContext([{ type: "finish", reason: { kind: "stop" } }]);
+    const executor = retryExecutor({ root, trend: retryTrend(1), ctx, ledger, commit });
+
+    try {
+      await expect(executor(retryDue())).rejects.toThrow("模型未产出任何正文");
+
+      expect(calls).toHaveLength(1);
+      expect(await readLastRun(root)).toEqual({});
+      expect(await ledger.list()).toEqual([
+        expect.objectContaining({
+          cycleId: "cycle-empty",
+          attempts: 1,
+          phase: "waiting",
+          terminal: false,
+        }),
+      ]);
+      expect(commit.calls).toEqual([]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("persist 失败记 storage terminal；同 key 再执行不再调用模型", async () => {
+    const root = mkdtempSync(join(tmpdir(), "u-exec-storage-"));
+    mkdirSync(join(root, "reports", "index.jsonl"), { recursive: true });
+    const ledger = retryLedger(root, () => "cycle-storage");
+    const commit = commitCurrentThenClear(root, ledger);
+    const { ctx, calls } = retryContext(SUCCESS_CHUNKS);
+    const executor = retryExecutor({ root, trend: retryTrend(1), ctx, ledger, commit });
+
+    try {
+      await expect(executor(retryDue())).rejects.toThrow("报告持久化失败");
+
+      expect(calls).toHaveLength(1);
+      expect(await readLastRun(root)).toEqual({});
+      expect(await ledger.list()).toEqual([
+        expect.objectContaining({
+          attempts: 0,
+          phase: "terminal",
+          terminal: true,
+          reason: { kind: "storage", code: "report-persist-failed" },
+        }),
+      ]);
+      expect(commit.calls).toEqual([]);
+
+      await expect(executor(retryDue())).rejects.toThrow("报告重试状态不允许执行");
+      expect(calls).toHaveLength(1);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("旧 key 成功不回退 lastRun，commit 后 claim 仍清除", async () => {
+    const root = mkdtempSync(join(tmpdir(), "u-exec-monotonic-"));
+    await updateLastRun(root, () => ({ daily: "2026-09-24" }));
+    const ledger = retryLedger(root, () => "cycle-old");
+    const commit = commitCurrentThenClear(root, ledger);
+    const { ctx } = retryContext(SUCCESS_CHUNKS);
+    const executor = retryExecutor({ root, trend: retryTrend(1), ctx, ledger, commit });
+
+    try {
+      await executor(retryDue());
+
+      expect((await readLastRun(root)).daily).toBe("2026-09-24");
+      expect(await ledger.list()).toEqual([]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("未装配 retry port 的旧 key 成功也不回退 lastRun", async () => {
+    const root = mkdtempSync(join(tmpdir(), "u-exec-legacy-monotonic-"));
+    await updateLastRun(root, () => ({ daily: "2026-09-24" }));
+    const { ctx, calls } = retryContext(SUCCESS_CHUNKS);
+    const executor = makeDueReportExecutor({
+      trend: retryTrend(1),
+      ctx,
+      getReportCfg: retryConfig,
+      getPromptTemplate: () => "prompt {stats}",
+      historyRoot: root,
+      sanitizeDiagnostic: (value) => value,
+      advanceLastRun: updateLastRun,
+    });
+
+    try {
+      await executor(retryDue({ force: true }));
+
+      expect(calls).toHaveLength(1);
+      expect((await readLastRun(root)).daily).toBe("2026-09-24");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("旧 cycle 成功回调 CAS 丢弃，不清新 cycle、不推进 lastRun", async () => {
+    const root = mkdtempSync(join(tmpdir(), "u-exec-cas-success-"));
+    const ledger = retryLedger(
+      root,
+      (() => {
+        let sequence = 0;
+        return () => `cycle-${(sequence += 1)}`;
+      })(),
+    );
+    const commit = commitCurrentThenClear(root, ledger);
+    let release = (): void => undefined;
+    let entered = (): void => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const streamEntered = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const { ctx } = retryContext(SUCCESS_CHUNKS, async () => {
+      entered();
+      await gate;
+    });
+    const executor = retryExecutor({ root, trend: retryTrend(1), ctx, ledger, commit });
+
+    try {
+      const pending = executor(retryDue());
+      await streamEntered;
+      const inFlight = await ledger.get("daily", RETRY_DAY);
+      if (inFlight === undefined) throw new Error("expected in-flight entry");
+      await ledger.beginForce(
+        {
+          period: "daily",
+          key: RETRY_DAY,
+          startDay: RETRY_DAY,
+          endDay: RETRY_DAY,
+          route: inFlight.route,
+        },
+        RETRY_NOW + 1,
+      );
+      release();
+
+      await expect(pending).rejects.toThrow("报告重试周期已变化");
+      expect(await readLastRun(root)).toEqual({});
+      expect(await ledger.list()).toEqual([
+        expect.objectContaining({ cycleId: "cycle-2", phase: "waiting", attempts: 0 }),
+      ]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("旧 cycle 失败回调 CAS 丢弃，不污染新 cycle", async () => {
+    const root = mkdtempSync(join(tmpdir(), "u-exec-cas-failure-"));
+    const ledger = retryLedger(
+      root,
+      (() => {
+        let sequence = 0;
+        return () => `cycle-${(sequence += 1)}`;
+      })(),
+    );
+    const commit = commitCurrentThenClear(root, ledger);
+    let release = (): void => undefined;
+    let entered = (): void => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const streamEntered = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const { ctx } = retryContext(SUCCESS_CHUNKS, async () => {
+      entered();
+      await gate;
+      throw new Error("raw provider failure must stay hidden");
+    });
+    const executor = retryExecutor({ root, trend: retryTrend(1), ctx, ledger, commit });
+
+    try {
+      const pending = executor(retryDue());
+      await streamEntered;
+      const inFlight = await ledger.get("daily", RETRY_DAY);
+      if (inFlight === undefined) throw new Error("expected in-flight entry");
+      await ledger.beginForce(
+        {
+          period: "daily",
+          key: RETRY_DAY,
+          startDay: RETRY_DAY,
+          endDay: RETRY_DAY,
+          route: inFlight.route,
+        },
+        RETRY_NOW + 1,
+      );
+      release();
+
+      await expect(pending).rejects.toThrow("模型请求失败");
+      expect(commit.calls).toEqual([]);
+      expect(await ledger.list()).toEqual([
+        expect.objectContaining({ cycleId: "cycle-2", phase: "waiting", attempts: 0 }),
+      ]);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

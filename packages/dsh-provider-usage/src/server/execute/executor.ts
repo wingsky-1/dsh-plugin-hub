@@ -15,9 +15,42 @@
  */
 import type { Context } from "@deepseek-ai/cordis";
 import type { ReportConfig, ReportPeriod } from "../config/interface.ts";
-import { readReportIndex, runDueReport } from "./runner.ts";
-import type { ReportTaskInput, ReportTaskResult } from "../schedule/interface.ts";
+import { readReportIndex, runDueReportOutcome, type RunDueReportOutcome } from "./runner.ts";
+import type {
+  GenerateRouteOutcome,
+  ReportLlmService,
+  ReportMeta,
+  ReportResult,
+} from "./generate.ts";
+import type {
+  ReportTaskInput,
+  ReportTaskResult,
+  RetryClaim,
+  RetryLedgerPort,
+} from "../schedule/interface.ts";
 import type { TrendTracker } from "../aggregate/interface.ts";
+
+export interface RetrySuccessCommitInput {
+  claim: RetryClaim;
+  result: ReportResult;
+}
+
+/** B2b 装配的 per-root coordinator：单调推进 lastRun 后 CAS clear 当前 claim。 */
+export interface RetrySuccessCommitPort {
+  commitSuccess(input: RetrySuccessCommitInput): Promise<boolean>;
+}
+
+export interface DueExecutorRetryOptions {
+  ledger: RetryLedgerPort;
+  resolveRoute: (input: {
+    llm: ReportLlmService;
+    provider: string;
+    model: string;
+    reasoningEffort?: string;
+  }) => Promise<GenerateRouteOutcome>;
+  commitSuccess: RetrySuccessCommitPort;
+  now?: () => number;
+}
 
 export interface DueExecutorDeps {
   trend: TrendTracker;
@@ -38,9 +71,108 @@ export interface DueExecutorDeps {
       prev: Partial<Record<ReportPeriod, string>>,
     ) => Partial<Record<ReportPeriod, string>> | Promise<Partial<Record<ReportPeriod, string>>>,
   ) => Promise<void>;
+  /** B2a 包内事务端口；B2b 组合根负责注入真实 ledger 与单锁 coordinator。 */
+  retry?: DueExecutorRetryOptions;
 }
 
-/** 构造串行执行器（幂等/推进/脱敏行为在此固化）。 */
+function outcomeError(outcome: Extract<RunDueReportOutcome, { status: "failure" }>): string {
+  return outcome.result?.meta.error ?? "报告持久化失败";
+}
+
+function advanceLastRun(deps: DueExecutorDeps, meta: ReportMeta): Promise<void> {
+  return deps.advanceLastRun(deps.historyRoot, (current) => {
+    const previous = current[meta.period];
+    return previous === undefined || meta.key > previous
+      ? { ...current, [meta.period]: meta.key }
+      : current;
+  });
+}
+
+async function runWithoutRetry(
+  deps: DueExecutorDeps,
+  input: ReportTaskInput,
+  reportCfg: ReportConfig,
+): Promise<ReportTaskResult> {
+  const outcome = await runDueReportOutcome({
+    due: input,
+    trend: deps.trend,
+    ctx: deps.ctx,
+    reportCfg,
+    promptTemplate: deps.getPromptTemplate(input.period),
+    historyRoot: deps.historyRoot,
+    sanitizeDiagnostic: deps.sanitizeDiagnostic,
+  });
+  if (outcome.status === "failure") throw new Error(outcomeError(outcome));
+  await advanceLastRun(deps, outcome.result.meta);
+  return { meta: outcome.result.meta };
+}
+
+async function claimRoute(
+  deps: DueExecutorDeps,
+  retry: DueExecutorRetryOptions,
+  input: ReportTaskInput,
+  reportCfg: ReportConfig,
+): Promise<{ claim: RetryClaim; route: GenerateRouteOutcome }> {
+  const existing = await retry.ledger.get(input.period, input.key);
+  const resolved: GenerateRouteOutcome =
+    existing === undefined
+      ? await retry.resolveRoute({
+          llm: deps.ctx.llm,
+          provider: reportCfg.provider,
+          model: reportCfg.model,
+          reasoningEffort: reportCfg.reasoningEffort,
+        })
+      : { status: "success", route: existing.route };
+  const now = retry.now?.() ?? Date.now();
+  const claim = await retry.ledger.beginAttempt(
+    {
+      period: input.period,
+      key: input.key,
+      startDay: input.startDay,
+      endDay: input.endDay,
+      route: resolved.route,
+      ...(existing === undefined ? {} : { cycleId: existing.cycleId }),
+    },
+    now,
+  );
+  if (claim === null) throw new Error("报告重试状态不允许执行");
+  return {
+    claim,
+    route:
+      resolved.status === "failure"
+        ? { status: "failure", route: claim.entry.route, failure: resolved.failure }
+        : { status: "success", route: claim.entry.route },
+  };
+}
+
+async function runWithRetry(
+  deps: DueExecutorDeps,
+  retry: DueExecutorRetryOptions,
+  input: ReportTaskInput,
+  reportCfg: ReportConfig,
+): Promise<ReportTaskResult> {
+  const { claim, route } = await claimRoute(deps, retry, input, reportCfg);
+  const outcome = await runDueReportOutcome({
+    due: input,
+    trend: deps.trend,
+    ctx: deps.ctx,
+    reportCfg,
+    promptTemplate: deps.getPromptTemplate(input.period),
+    historyRoot: deps.historyRoot,
+    sanitizeDiagnostic: deps.sanitizeDiagnostic,
+    route,
+  });
+  if (outcome.status === "failure") {
+    await retry.ledger.recordFailure(claim, outcome.failure, retry.now?.() ?? Date.now());
+    throw new Error(outcomeError(outcome));
+  }
+  if (!(await retry.commitSuccess.commitSuccess({ claim, result: outcome.result }))) {
+    throw new Error("报告重试周期已变化");
+  }
+  return { meta: outcome.result.meta };
+}
+
+/** 构造串行执行器（幂等/claim/生成/提交/脱敏行为在此固化）。 */
 export function makeDueReportExecutor(
   deps: DueExecutorDeps,
 ): (input: ReportTaskInput) => Promise<ReportTaskResult> {
@@ -53,18 +185,9 @@ export function makeDueReportExecutor(
         if (existing !== undefined) return { meta: existing, reused: true };
       }
       const reportCfg = deps.getReportCfg();
-      const meta = await runDueReport({
-        due: input,
-        trend: deps.trend,
-        ctx: deps.ctx,
-        reportCfg,
-        promptTemplate: deps.getPromptTemplate(input.period),
-        historyRoot: deps.historyRoot,
-        sanitizeDiagnostic: deps.sanitizeDiagnostic,
-      });
-      // lastRun 推进走单一临界区（写前重读，经注入能力，不与保存配置路径互踩字段）
-      await deps.advanceLastRun(deps.historyRoot, (cur) => ({ ...cur, [meta.period]: meta.key }));
-      return { meta };
+      return deps.retry === undefined
+        ? await runWithoutRetry(deps, input, reportCfg)
+        : await runWithRetry(deps, deps.retry, input, reportCfg);
     } catch (e: unknown) {
       throw new Error(deps.sanitizeDiagnostic(e instanceof Error ? e.message : String(e)));
     }
