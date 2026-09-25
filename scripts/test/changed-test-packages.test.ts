@@ -339,7 +339,10 @@ test("D: 双 worker allowlist 锚 + 各 1 消费者全在豁免层 + 不失效",
   );
   assert.deepEqual(
     (surf.layerFiles as Record<string, unknown>)["client-dom"],
-    ["packages/dsh-provider-usage/test/client-dom/trend-section.test.ts"],
+    [
+      "packages/dsh-provider-usage/test/client-dom/report-section.test.ts",
+      "packages/dsh-provider-usage/test/client-dom/trend-section.test.ts",
+    ],
     "本包 client-dom 仅 #732-A 趋势直测（client 不进变异面，不影响 worker 豁免）",
   );
   assert.deepEqual(packagesToInvalidate([w1], reg, topo), [], "豁免层独占消费者：不失效");
