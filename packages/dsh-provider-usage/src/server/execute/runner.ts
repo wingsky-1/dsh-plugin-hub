@@ -308,7 +308,7 @@ function withCumulativeUsage(result: ReportResult, usage: RetryUsageTotals): Rep
     ...result,
     meta: {
       ...result.meta,
-      durationMs: usage.durationMs ?? result.meta.durationMs,
+      durationMs: usage.durationMs,
       tokens: {
         inputTokens: usage.inputTokens,
         outputTokens: usage.outputTokens,
@@ -452,7 +452,12 @@ export async function prepareDueReportOutcome(
     };
     return preparedSuccess(
       params,
-      priorUsage === null ? noDataResult : withCumulativeUsage(noDataResult, priorUsage),
+      priorUsage === null
+        ? noDataResult
+        : withCumulativeUsage(noDataResult, {
+            ...priorUsage,
+            durationMs: priorUsage.durationMs ?? 0,
+          }),
       snapshot,
     );
   }

@@ -4507,6 +4507,28 @@ describe("#503 M3：用量报告接线", () => {
       obs.generateInvalidPeriodError = badGen.error;
     }
 
+    // reasoningEffort wire：保存与 GET 回读均必须保留 opaque ID（放在所有生成观测之后，
+    // 避免改变既有报告生成的 fake model 能力路径）。
+    {
+      const effortCfg = await callHandler<ReportConfigPayload>(
+        cfgRoute!,
+        fakeReq({
+          method: "POST",
+          body: JSON.stringify({
+            daily: { enabled: true, time: "22:00" },
+            push: { enabled: false },
+            reasoningEffort: "high",
+          }),
+        }),
+      );
+      const effortRead = await callHandler<ReportConfigPayload>(
+        cfgRoute!,
+        fakeReq({ url: ROUTES.reportConfig }),
+      );
+      obs.savedReasoningEffort = effortCfg.config.reasoningEffort;
+      obs.rereadReasoningEffort = effortRead.config.reasoningEffort;
+    }
+
     await (effects.at(-1) as () => Promise<void>)(); // 卸载（async disposer：trend 刷盘 + scheduler 停 tick）
   });
 
@@ -4552,6 +4574,13 @@ describe("#503 M3：用量报告接线", () => {
 
   it("触发时刻回显", () => {
     expect(obs.savedDailyTime).toBe("22:00");
+  });
+
+  it("reasoningEffort 保存并 GET 回读一致", () => {
+    expect({
+      saved: obs.savedReasoningEffort,
+      reread: obs.rereadReasoningEffort,
+    }).toEqual({ saved: "high", reread: "high" });
   });
 
   it("POST 后 GET 回读一致", () => {

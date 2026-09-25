@@ -21,7 +21,7 @@
  * “对照：朴素实现丢更新（链断即丢）”——同一 detector 在脏夹具上必须报出
  * 违规，detector 失明则探针先红。
  */
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -63,11 +63,48 @@ import type {
   ScheduleIndexParser,
   ScheduleWarn,
 } from "../../../src/server/schedule/deps.ts";
-import { parseReportIndexLines } from "../../../src/server/execute/interface.ts";
+import {
+  parseReportIndexLines,
+  readReportIndex,
+  __clearReportIndexCacheForTests,
+} from "../../../src/server/execute/interface.ts";
+import { apply } from "../../../src/apply/index.ts";
 import { normalizeReportConfig } from "../../../src/server/config/interface.ts";
 import type { ReportPeriod } from "../../../src/server/config/interface.ts";
 import type { ReportTaskInput } from "../../../src/server/schedule/interface.ts";
 import { DEFAULT_CONFIG } from "../../../src/shared/config.ts";
+
+interface ApplyTestContext {
+  ctx: Parameters<typeof apply>[0];
+  disposers: Array<() => void | Promise<void>>;
+}
+
+/** 真实 apply 组合根的最小宿主面；仅收集 effect disposer，不替调度器做判定。 */
+function makeApplyTestContext(): ApplyTestContext {
+  const disposers: Array<() => void | Promise<void>> = [];
+  const ctx = {
+    logger: { warn: () => {} },
+    webServer: {
+      register: (_route: Record<string, unknown>) => () => {},
+    },
+    on: () => () => {},
+    llm: {
+      listProviders: () => [],
+    },
+    fiber: { state: "active" },
+    inject: (_deps: unknown, callback: (service: unknown) => void) => {
+      callback({ settings: {} });
+    },
+    effect: (fn: () => unknown) => {
+      const disposer = fn();
+      if (typeof disposer === "function") {
+        disposers.push(disposer as () => void | Promise<void>);
+      }
+      return typeof disposer === "function" ? disposer : () => {};
+    },
+  };
+  return { ctx: ctx as unknown as Parameters<typeof apply>[0], disposers };
+}
 
 const here = dirname(fileURLToPath(import.meta.url));
 const srcDir = join(here, "..", "..", "..", "src");
@@ -859,6 +896,160 @@ describe("#1010 B2b coordinator/scheduler/queue 纵向切片", () => {
         { period: "daily", key: "2026-09-23" },
       ]);
       expect(current.daily).toBe("2026-09-24");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it.each([
+    {
+      label: "同 cycle",
+      indexCycleId: "cycle-apply-current",
+      ledgerCycleId: "cycle-apply-current",
+      cleared: true,
+    },
+    {
+      label: "异 cycle",
+      indexCycleId: "cycle-apply-old",
+      ledgerCycleId: "cycle-apply-current",
+      cleared: false,
+    },
+    {
+      label: "无 cycleId 的旧 index",
+      indexCycleId: undefined,
+      ledgerCycleId: "cycle-apply-legacy",
+      cleared: false,
+    },
+  ])(
+    "真实 apply 组合根恢复 $label：lastRun 推进且只清同 cycle",
+    async ({ indexCycleId, ledgerCycleId, cleared }) => {
+      const root = mkdtempSync(join(tmpdir(), "b2b-apply-index-cycle-"));
+      let disposers: Array<() => void | Promise<void>> = [];
+      try {
+        const now = Date.UTC(2026, 8, 24, 0, 0, 0);
+        const ledger = createRetryLedger(root, {
+          now: () => now,
+          createCycleId: () => ledgerCycleId,
+        });
+        const seed = {
+          period: "daily" as const,
+          key: "2026-09-23",
+          startDay: "2026-09-23",
+          endDay: "2026-09-23",
+          route: { provider: "generic-provider", model: "generic-model" },
+        };
+        const claim = await ledger.beginAttempt(seed, now);
+        if (claim === null) throw new Error("expected in-flight claim");
+        expect(claim.entry.phase).toBe("in-flight");
+
+        mkdirSync(join(root, "reports"), { recursive: true });
+        // 已完成存储升级，避免 upgrade 链先行按历史 index 校准 last-run；
+        // 本用例只钉 ReportScheduler recovery → coordinator.reconcile 的 cycle 门。
+        writeFileSync(join(root, ".upgrade-version"), "0.2.5\n");
+        writeFileSync(
+          join(root, "reports", "last-run.json"),
+          JSON.stringify({ schema: LAST_RUN_SCHEMA }),
+        );
+        writeFileSync(
+          join(root, "reports", "index.jsonl"),
+          `${JSON.stringify({
+            period: seed.period,
+            key: seed.key,
+            startDay: seed.startDay,
+            endDay: seed.endDay,
+            provider: seed.route.provider,
+            model: seed.route.model,
+            generatedAt: now + 1,
+            durationMs: 0,
+            ok: true,
+            cycleId: indexCycleId,
+          })}\n`,
+        );
+        __clearReportIndexCacheForTests();
+        expect((await readReportIndex(root))[0]?.cycleId).toBe(indexCycleId);
+
+        const context = makeApplyTestContext();
+        disposers = context.disposers;
+        await apply(context.ctx, {
+          autoReload: false,
+          apiKey: "sk-test",
+          apiEndpoint: "http://127.0.0.1:9",
+          historyDir: root,
+        });
+
+        const entries = await ledger.list();
+        if (cleared) {
+          expect(await readLastRun(root)).toEqual({ daily: seed.key });
+          expect(entries).toEqual([]);
+        } else {
+          expect(await readLastRun(root)).toEqual({});
+          expect(entries).toHaveLength(1);
+          expect(entries[0]?.cycleId).toBe(ledgerCycleId);
+          expect(entries[0]?.phase).toBe("waiting");
+          expect(entries[0]?.terminal).toBe(false);
+        }
+      } finally {
+        for (const dispose of [...disposers].reverse()) {
+          try {
+            await dispose();
+          } catch {
+            // 组合根清理不应掩盖恢复断言
+          }
+        }
+        __clearReportIndexCacheForTests();
+        rmSync(root, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it("legacy index 无 cycleId 且无 live ledger 时只推进一次 lastRun", async () => {
+    const root = mkdtempSync(join(tmpdir(), "b2b-legacy-index-only-"));
+    const now = Date.UTC(2026, 8, 24, 0, 0, 0);
+    const key = "2026-09-23";
+    try {
+      mkdirSync(join(root, "reports"), { recursive: true });
+      writeFileSync(
+        join(root, "reports", "index.jsonl"),
+        `${JSON.stringify({
+          period: "daily",
+          key,
+          startDay: key,
+          endDay: key,
+          provider: "generic-provider",
+          model: "generic-model",
+          generatedAt: now,
+          durationMs: 0,
+          ok: true,
+        })}\n`,
+      );
+      const ledger = createRetryLedger(root, { now: () => now });
+      const coordinator = createReportStateCoordinator({ root, ledger, now: () => now });
+      const seen: string[] = [];
+      const scheduler = ReportScheduler.start({
+        root,
+        config: normalizeReportConfig({
+          daily: { enabled: true, time: "00:00" },
+          weekly: { enabled: false },
+          monthly: { enabled: false },
+        }),
+        coordinator,
+        listIndexed: async () => [{ period: "daily", key }],
+        now: () => now,
+        onDue: async (due) => {
+          seen.push(due.key);
+        },
+        tickMs: 60_000,
+        warn: quietWarn,
+      });
+      try {
+        await scheduler.ready;
+        await scheduler.tick();
+        expect(seen).toEqual([]);
+        expect(await readLastRun(root)).toEqual({ daily: key });
+        expect(await ledger.list()).toEqual([]);
+      } finally {
+        scheduler.dispose();
+      }
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

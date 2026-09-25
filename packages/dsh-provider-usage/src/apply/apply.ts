@@ -484,7 +484,11 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
     listIndexed: async () =>
       (await readReportIndex(historyRoot))
         .filter((meta) => meta.ok)
-        .map((meta) => ({ period: meta.period, key: meta.key })),
+        .map((meta) => ({
+          period: meta.period,
+          key: meta.key,
+          ...(meta.cycleId === undefined ? {} : { cycleId: meta.cycleId }),
+        })),
     // tick 只提交任务（非阻塞，队列去重吸收同窗口堆积），不再等待生成
     onDue: (due) => {
       reportQueue.submit(due);

@@ -574,9 +574,12 @@ describe("runner/executor：#1010 B2a retry ledger 执行事务", () => {
       createCycleId: () => "cycle-route-unresolved",
     });
     const commit = commitCurrentThenClear(root, ledger);
+    const messages: string[] = [];
     const { ctx, calls } = retryContext(SUCCESS_CHUNKS, undefined, async () => {
       listModelsCalls += 1;
-      if (listModelsCalls === 1) throw new Error("raw listModels failure must stay hidden");
+      if (listModelsCalls === 1) {
+        throw { code: "TIMEOUT", message: "raw listModels failure must stay hidden" };
+      }
       return [{ provider: "generic-provider", id: "generic-model", name: "Generic Model" }];
     });
     const executor = retryExecutor({
@@ -587,6 +590,7 @@ describe("runner/executor：#1010 B2a retry ledger 执行事务", () => {
       commit,
       config: () => normalizeCfg({ provider: "", model: "", push: { enabled: false } }),
       now: () => now,
+      warn: (message) => messages.push(message),
     });
 
     try {
@@ -597,6 +601,11 @@ describe("runner/executor：#1010 B2a retry ledger 执行事务", () => {
       expect(waiting).toMatchObject({ phase: "waiting", attempts: 1, terminal: false });
       expect(waiting?.route.provider).not.toBe("");
       expect(waiting?.route.model).not.toBe("");
+      expect(JSON.parse(messages[0]!)).toMatchObject({
+        event: "report_attempt",
+        code: "route-resolution-failed",
+        result: "failure",
+      });
 
       now = RETRY_NOW + 60_000;
       const result = await executor(retryDue());
@@ -666,7 +675,7 @@ describe("runner/executor：#1010 B2a retry ledger 执行事务", () => {
     try {
       const result = await executor(retryDue());
 
-      expect(result.meta).toMatchObject({ ok: true, noData: true, key: RETRY_DAY });
+      expect(result.meta).toMatchObject({ ok: true, noData: true, key: RETRY_DAY, durationMs: 0 });
       expect(calls).toHaveLength(0);
       expect((await readLastRun(root)).daily).toBe(RETRY_DAY);
       expect(await ledger.list()).toEqual([]);
@@ -722,6 +731,68 @@ describe("runner/executor：#1010 B2a retry ledger 执行事务", () => {
       });
       expect(commit.calls[0]?.result.meta.tokens).toEqual(result.meta.tokens);
     } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("cycle 任一 attempt 缺失 duration 时累计与最终报告保持 null", async () => {
+    const root = mkdtempSync(join(tmpdir(), "u-exec-duration-null-"));
+    const ledger = retryLedger(root, () => "cycle-duration-null");
+    const route = { provider: "generic-provider", model: "generic-model" };
+    const seed = { ...retryDue(), route };
+    const firstClaim = await ledger.beginAttempt(seed, RETRY_NOW);
+    if (firstClaim === null) throw new Error("expected first claim");
+    const firstObserved = await ledger.recordAttempt(
+      firstClaim,
+      {
+        attempt: 1,
+        result: "failure",
+        code: "empty-output",
+        status: "retry",
+        durationMs: null,
+        tokens: {
+          inputTokens: null,
+          outputTokens: null,
+          reasoningTokens: null,
+          totalTokens: null,
+          cacheReadTokens: null,
+          cacheWriteTokens: null,
+        },
+      },
+      RETRY_NOW,
+    );
+    if (firstObserved === null) throw new Error("expected first observation");
+    const waiting = await ledger.recordFailure(
+      firstObserved,
+      { code: "empty-output", kind: "empty-output" },
+      RETRY_NOW,
+    );
+    if (waiting === null) throw new Error("expected waiting entry");
+    const commit = new RecordingCommitPort(async () => true);
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(RETRY_NOW);
+    const { ctx } = retryContext(SUCCESS_CHUNKS, async () => {
+      vi.setSystemTime(RETRY_NOW + 125);
+    });
+    const executor = retryExecutor({
+      root,
+      trend: retryTrend(1),
+      ctx,
+      ledger,
+      commit,
+      now: () => RETRY_NOW + 60_000,
+    });
+
+    try {
+      const result = await executor(retryDue());
+      expect(result.meta?.durationMs).toBeNull();
+      expect(commit.calls[0]?.result.meta.durationMs).toBeNull();
+
+      const current = await ledger.get(seed.period, seed.key);
+      expect(current?.usage.durationMs).toBeNull();
+      expect(current?.attemptObservations.map(({ durationMs }) => durationMs)).toEqual([null, 125]);
+    } finally {
+      vi.useRealTimers();
       rmSync(root, { recursive: true, force: true });
     }
   });
@@ -2490,80 +2561,137 @@ describe("executor/retry-ledger：#1010 残余 F noData 与 terminal key 语义"
     }
   });
 
-  it("terminal 条目被裁剪后该 key 不自动恢复；manual force 仍可开新 cycle", async () => {
-    const root = mkdtempSync(join(tmpdir(), "u-f7-terminal-prune-"));
+  it("40 个 daily terminal key 全量留墓碑；最老 key 跨重启不执行，manual force 仍可开新 cycle", async () => {
+    const root = mkdtempSync(join(tmpdir(), "u-f7-terminal-tombstones-"));
     let now = Date.UTC(2026, 8, 24, 0, 0, 0);
     let sequence = 0;
+    const route = { provider: "generic-provider", model: "generic-model" };
+    const terminalKeys = Array.from({ length: 40 }, (_, offset) =>
+      new Date(Date.UTC(2026, 6, 1 + offset)).toISOString().slice(0, 10),
+    );
+    const oldestKey = terminalKeys[0]!;
+    const newestKey = terminalKeys.at(-1)!;
     const newLedger = (): RetryLedgerPort =>
       createRetryLedger(root, {
         now: () => now,
         createCycleId: () => `cycle-${(sequence += 1)}`,
       });
     const ledger = newLedger();
-    const makeTerminal = async (key: string): Promise<void> => {
-      const claim = await ledger.beginAttempt(
-        {
-          period: "daily",
-          key,
-          startDay: key,
-          endDay: key,
-          route: { provider: "generic-provider", model: "generic-model" },
-        },
-        now,
-      );
-      if (claim === null) throw new Error("expected terminal seed claim");
-      const done = await ledger.recordFailure(
-        claim,
-        { code: "auth-failed", kind: "permanent" },
-        now,
-      );
-      if (done === null) throw new Error("expected terminal transition");
-      now += 60_000;
-    };
+    const seedFor = (key: string): RetryAttemptInput => ({
+      period: "daily",
+      key,
+      startDay: key,
+      endDay: key,
+      route,
+    });
+    let oldestCycleId = "";
 
     try {
-      await makeTerminal("2026-09-21");
-      await makeTerminal("2026-09-22");
-      await makeTerminal("2026-09-23");
+      for (const key of terminalKeys) {
+        const claim = await ledger.beginAttempt(seedFor(key), now);
+        if (claim === null) throw new Error(`expected terminal seed claim for ${key}`);
+        const done = await ledger.recordFailure(
+          claim,
+          { code: "auth-failed", kind: "permanent" },
+          now,
+        );
+        if (done === null) throw new Error(`expected terminal transition for ${key}`);
+        if (key === oldestKey) oldestCycleId = done.cycleId;
+        now += 60_000;
+      }
 
-      expect((await ledger.list()).map((entry) => entry.key)).toEqual(["2026-09-23"]);
+      const persisted = JSON.parse(readFileSync(retryLedgerFile(root), "utf8")) as {
+        records: { daily: Record<string, unknown> };
+        terminalKeys?: { daily?: Record<string, string> };
+      };
+      expect(Object.keys(persisted.records.daily)).toEqual([newestKey]);
+      expect(persisted.terminalKeys?.daily).toEqual(
+        Object.fromEntries(terminalKeys.slice(0, -1).map((key) => [key, "auth-failed"])),
+      );
+      expect(
+        [
+          ...Object.keys(persisted.terminalKeys?.daily ?? {}),
+          ...Object.keys(persisted.records.daily),
+        ].sort(),
+      ).toEqual(terminalKeys);
+      expect(
+        (await ledger.list()).map(({ key, phase, terminal }) => ({ key, phase, terminal })),
+      ).toEqual([{ key: newestKey, phase: "terminal", terminal: true }]);
+
+      const persistedBeforeBlockedAttempts = readFileSync(retryLedgerFile(root), "utf8");
+      for (const key of terminalKeys) {
+        expect(await ledger.beginAttempt(seedFor(key), now)).toBeNull();
+      }
+      expect(readFileSync(retryLedgerFile(root), "utf8")).toBe(persistedBeforeBlockedAttempts);
+      expect(await ledger.get("daily", oldestKey)).toBeUndefined();
 
       const reopened = newLedger();
-      const prunedKey = { period: "daily" as const, key: "2026-09-21" };
-      expect(
-        await reopened.beginAttempt(
-          {
-            ...prunedKey,
-            startDay: "2026-09-21",
-            endDay: "2026-09-21",
-            route: { provider: "generic-provider", model: "generic-model" },
-          },
-          now,
-        ),
-      ).toBeNull();
+      const coordinator = createReportStateCoordinator({ root, ledger: reopened, now: () => now });
+      expect(await reopened.beginAttempt(seedFor(oldestKey), now)).toBeNull();
+      expect(await coordinator.beginAttempt(seedFor(oldestKey), now)).toBeNull();
+      expect(await reopened.get("daily", oldestKey)).toBeUndefined();
 
-      const forced = await reopened.beginForce(
-        {
-          ...prunedKey,
-          startDay: "2026-09-21",
-          endDay: "2026-09-21",
-          route: { provider: "generic-provider", model: "generic-model" },
-        },
-        now,
-      );
-      expect(forced).toMatchObject({ phase: "waiting", terminal: false, attempts: 0 });
-      expect(
-        await reopened.beginAttempt(
+      const { ctx, calls } = retryContext(SUCCESS_CHUNKS);
+      const oldestTrend = {
+        buckets: () => [
           {
-            ...prunedKey,
-            startDay: "2026-09-21",
-            endDay: "2026-09-21",
-            route: forced.route,
-            cycleId: forced.cycleId,
+            day: oldestKey,
+            providers: [
+              {
+                provider: route.provider,
+                model: route.model,
+                cell: {
+                  input: 2,
+                  output: 3,
+                  cacheRead: null,
+                  cacheWrite: null,
+                  calls: 1,
+                  turns: 1,
+                  toolCalls: 0,
+                },
+              },
+            ],
           },
-          now,
-        ),
-      ).not.toBeNull();
+        ],
+        dirRows: () => [],
+        hourRows: () => [],
+      } as unknown as TrendTracker;
+      const executor = retryExecutor({
+        root,
+        trend: oldestTrend,
+        ctx,
+        ledger: reopened,
+        commit: commitCurrentThenClear(root, reopened),
+        now: () => now,
+      });
+
+      await expect(
+        executor({
+          period: "daily",
+          key: oldestKey,
+          startDay: oldestKey,
+          endDay: oldestKey,
+        }),
+      ).rejects.toThrow("报告重试状态不允许执行");
+      expect(calls).toEqual([]);
+      expect(await reopened.get("daily", oldestKey)).toBeUndefined();
+
+      const forced = await reopened.beginForce(seedFor(oldestKey), now);
+      expect(forced).toMatchObject({
+        period: "daily",
+        key: oldestKey,
+        route,
+        phase: "waiting",
+        terminal: false,
+        attempts: 0,
+      });
+      expect(forced.cycleId).not.toBe(oldestCycleId);
+      expect(
+        await reopened.beginAttempt({ ...seedFor(oldestKey), cycleId: forced.cycleId }, now),
+      ).toMatchObject({
+        cycleId: forced.cycleId,
+        entry: { phase: "in-flight", terminal: false, attempts: 0 },
+      });
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

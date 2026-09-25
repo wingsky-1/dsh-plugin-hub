@@ -131,7 +131,7 @@ export class ReportScheduler {
 
     try {
       await this.coordinator.recover(this.now());
-      // B2b reconciliation is ledger-scoped: index-only historical rows must not advance lastRun.
+      // Legacy index rows without cycleId are trusted only when no live ledger entry exists; current cycles still require exact cycleId fencing.
       const lastRun = await this.coordinator.readLastRun();
       const indexed = this.listIndexed === undefined ? [] : await this.listIndexed();
       await this.coordinator.reconcile(lastRun, indexed);
@@ -390,9 +390,9 @@ function sameClaim(left: RetryClaim, right: RetryEntry | undefined): boolean {
 function isCurrentIndexFact(
   current: RetryEntry | undefined,
   indexed: Pick<RetryIndexKey, "cycleId">,
-): current is RetryEntry {
+): boolean {
+  if (current === undefined) return indexed.cycleId === undefined;
   return (
-    current !== undefined &&
     indexed.cycleId !== undefined &&
     current.cycleId === indexed.cycleId &&
     !current.terminal &&
@@ -632,6 +632,7 @@ export function createReportStateCoordinator(
             throw new ReportStateStorageError();
           }
         }
+        if (current === undefined) return true;
         return ledger.clear({ cycleId: current.cycleId, entry: current });
       }),
     migrateLastRun: async (warn, parseIndex) => {

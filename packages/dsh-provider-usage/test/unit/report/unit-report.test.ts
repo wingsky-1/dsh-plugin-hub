@@ -589,7 +589,8 @@ describe("generate：成功路径（正文拼接 / token 元数据 / 空串跟�
   });
 
   it("时长记录", () => {
-    expect(r.meta.durationMs >= 0).toBeTruthy();
+    expect(typeof r.meta.durationMs).toBe("number");
+    expect(r.meta.durationMs).toBeGreaterThanOrEqual(0);
   });
 });
 
@@ -911,6 +912,65 @@ describe("generate：结构化 retry outcome", () => {
       result: { body: "", meta: { ok: false, error: "模型仅返回推理过程未产出正文" } },
     });
     expect(JSON.stringify(outcome)).not.toContain(privateReasoning);
+  });
+
+  it("finish 后 provider 再抛错按 protocol-after-terminal 收口", async () => {
+    const f = fakeLlm();
+    const llm: ReportLlmService = {
+      ...f.llm,
+      stream: () =>
+        (async function* (): AsyncGenerator<StreamChunk> {
+          yield { type: "finish", reason: { kind: "stop" } };
+          throw { code: "SERVER", message: RAW_PROVIDER_FAILURE };
+        })(),
+    };
+    const outcome = await generateReportOutcome(GEN({ llm }));
+
+    expect(outcome).toMatchObject({
+      status: "failure",
+      failure: { kind: "unknown", code: "protocol-after-terminal" },
+      result: { body: "", meta: { ok: false, error: "模型在结束后仍返回内容" } },
+    });
+    expect(JSON.stringify(outcome)).not.toContain(RAW_PROVIDER_FAILURE);
+  });
+
+  it("流异常前已收到的 usage 仍进入失败 attempt 观测", async () => {
+    const f = fakeLlm();
+    const llm: ReportLlmService = {
+      ...f.llm,
+      stream: () =>
+        (async function* (): AsyncGenerator<StreamChunk> {
+          yield {
+            type: "usage",
+            usage: {
+              inputTokens: 7,
+              outputTokens: 3,
+              reasoningTokens: 1,
+              totalTokens: 10,
+              cacheReadTokens: 2,
+              cacheWriteTokens: 1,
+            },
+          };
+          throw { code: "SERVER", message: RAW_PROVIDER_FAILURE };
+        })(),
+    };
+    const outcome = await generateReportOutcome(GEN({ llm }));
+
+    expect(outcome).toMatchObject({
+      status: "failure",
+      failure: { kind: "transient", code: "provider-stream-failed" },
+      attempt: {
+        tokens: {
+          inputTokens: 7,
+          outputTokens: 3,
+          reasoningTokens: 1,
+          totalTokens: 10,
+          cacheReadTokens: 2,
+          cacheWriteTokens: 1,
+        },
+      },
+    });
+    expect(JSON.stringify(outcome)).not.toContain(RAW_PROVIDER_FAILURE);
   });
 
   it("普通流异常只暴露 unknown/provider-stream-failed，不携带 provider 原文", async () => {
@@ -1324,8 +1384,18 @@ const STREAM_CASES = [
     expected: SAFE_STREAM_PERMANENT,
   },
   {
+    name: "MISSING_CREDENTIAL",
+    error: { code: "MISSING_CREDENTIAL", message: RAW_PROVIDER_FAILURE },
+    expected: SAFE_STREAM_PERMANENT,
+  },
+  {
     name: "QUOTA",
     error: { code: "QUOTA", message: RAW_PROVIDER_FAILURE },
+    expected: SAFE_STREAM_PERMANENT,
+  },
+  {
+    name: "ACCOUNT_QUOTA",
+    error: { code: "ACCOUNT_QUOTA", message: RAW_PROVIDER_FAILURE },
     expected: SAFE_STREAM_PERMANENT,
   },
   {
@@ -1339,8 +1409,18 @@ const STREAM_CASES = [
     expected: SAFE_STREAM_PERMANENT,
   },
   {
+    name: "CONTEXT_WINDOW_EXCEEDED",
+    error: { code: "CONTEXT_WINDOW_EXCEEDED", message: RAW_PROVIDER_FAILURE },
+    expected: SAFE_STREAM_PERMANENT,
+  },
+  {
     name: "CONTENT_FILTER",
     error: { code: "CONTENT_FILTER", message: RAW_PROVIDER_FAILURE },
+    expected: SAFE_STREAM_PERMANENT,
+  },
+  {
+    name: "NO_ADAPTER",
+    error: { code: "NO_ADAPTER", message: RAW_PROVIDER_FAILURE },
     expected: SAFE_STREAM_PERMANENT,
   },
   {
@@ -1354,9 +1434,19 @@ const STREAM_CASES = [
     expected: SAFE_STREAM_PERMANENT,
   },
   {
-    name: "HTTP 429",
+    name: "HTTP 429 无结构化 code",
     error: { statusCode: 429, message: RAW_PROVIDER_FAILURE },
+    expected: SAFE_STREAM_UNKNOWN,
+  },
+  {
+    name: "HTTP 429 + RATE_LIMIT",
+    error: { statusCode: 429, code: "RATE_LIMIT", message: RAW_PROVIDER_FAILURE },
     expected: SAFE_STREAM_FAILURE,
+  },
+  {
+    name: "HTTP 429 + QUOTA",
+    error: { statusCode: 429, code: "QUOTA", message: RAW_PROVIDER_FAILURE },
+    expected: SAFE_STREAM_PERMANENT,
   },
   {
     name: "嵌套 LlmFailure",
@@ -1450,9 +1540,15 @@ describe("generate：失败路径（流异常 / 取消 / 空正文 / 路由不�
 });
 
 describe("generate：路由解析异常稳定脱敏", () => {
-  it("listModels transient 返回 unresolved outcome，保留非空 ledger marker 且不 stream", async () => {
-    const f = fakeLlm(CHUNKS, { throwInListModels: RAW_PROVIDER_FAILURE });
-    const route = await resolveGenerateRoute({ llm: f.llm, provider: "", model: "" });
+  it("listModels 结构化 transient 返回 unresolved outcome，保留非空 ledger marker 且不 stream", async () => {
+    const f = fakeLlm(CHUNKS);
+    const llm: ReportLlmService = {
+      ...f.llm,
+      listModels: async () => {
+        throw { code: "TIMEOUT", message: RAW_PROVIDER_FAILURE };
+      },
+    };
+    const route = await resolveGenerateRoute({ llm, provider: "", model: "" });
 
     expect(route).toMatchObject({
       status: "failure",
@@ -1461,6 +1557,19 @@ describe("generate：路由解析异常稳定脱敏", () => {
     });
     expect(route.route.provider).not.toBe("");
     expect(route.route.model).not.toBe("");
+    expect(JSON.stringify(route)).not.toContain(RAW_PROVIDER_FAILURE);
+    expect(f.seen.calls).toHaveLength(0);
+  });
+
+  it("listModels 未知异常 fail closed，不标记为 transient", async () => {
+    const f = fakeLlm(CHUNKS, { throwInListModels: RAW_PROVIDER_FAILURE });
+    const route = await resolveGenerateRoute({ llm: f.llm, provider: "", model: "" });
+
+    expect(route).toMatchObject({
+      status: "failure",
+      unresolved: false,
+      failure: { kind: "unknown", code: "route-resolution-failed" },
+    });
     expect(JSON.stringify(route)).not.toContain(RAW_PROVIDER_FAILURE);
     expect(f.seen.calls).toHaveLength(0);
   });
@@ -1570,7 +1679,7 @@ const STRUCTURED_FAILURE_CASES = [
   },
   {
     name: "路由解析异常",
-    expected: { kind: "transient", code: "route-resolution-failed" },
+    expected: { kind: "unknown", code: "route-resolution-failed" },
     run: () =>
       generateReportOutcome(
         GEN({
@@ -1689,6 +1798,11 @@ describe("generate：结构化失败分类矩阵", () => {
       expect(outcome.status).toBe("failure");
       if (outcome.status === "failure") expect(outcome.failure).toEqual(expected);
       expect(JSON.stringify(outcome)).not.toMatch(/raw|credential|secret/);
+      expect(JSON.stringify(outcome.result.meta)).not.toContain(
+        "raw finish secret must not escape",
+      );
+      expect(JSON.stringify(outcome.result.meta)).not.toContain("sk-test-not-a-real-key");
+      expect(JSON.stringify(outcome.result.meta)).not.toContain("/home/private/report.json");
     },
   );
 
@@ -4903,13 +5017,18 @@ describe("generate：#1010 残余 C 默认路由发现 5s 有界收敛", () => {
         new Promise<Array<{ provider: string; id: string; name: string }>>(() => {}),
     });
 
-    const pending = generateReport(GEN({ llm: f.llm }));
+    const pending = generateReportOutcome(GEN({ llm: f.llm }));
     await vi.advanceTimersByTimeAsync(5000);
-    expect(await settleProbe(pending)).toMatchObject({
+    const settled = await settleProbe(pending);
+    expect(settled).toMatchObject({
       status: "settled",
-      value: { meta: { ok: false, error: "模型路由解析失败" } },
+      value: {
+        status: "failure",
+        failure: { kind: "transient", code: "route-resolution-failed" },
+        result: { meta: { ok: false, error: "模型路由解析失败" } },
+      },
     });
-    expect(JSON.stringify(await settleProbe(pending))).not.toContain(RAW_PROVIDER_FAILURE);
+    expect(JSON.stringify(settled)).not.toContain(RAW_PROVIDER_FAILURE);
     expect(vi.getTimerCount()).toBe(0);
   });
 });

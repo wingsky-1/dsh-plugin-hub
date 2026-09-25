@@ -83,7 +83,7 @@ export interface ReportMeta {
   model: string;
   /** 生成发起时间（epoch ms）。 */
   generatedAt: number;
-  durationMs: number;
+  durationMs: number | null;
   ok: boolean;
   /** 失败原因（ok=false 时的可读短句）。 */
   error?: string;
@@ -524,14 +524,19 @@ function mergeTerminal(current: StreamTerminal, next: StreamTerminal): StreamTer
 }
 
 const STREAM_ERROR_POLICY = {
+  // 保留既有 thrown EMPTY_RESPONSE 的 transient 兼容语义；finish 终态错误不自动重试。
   transient: new Set(["EMPTY_RESPONSE", "RATE_LIMIT", "SERVER", "TIMEOUT", "TRANSPORT"]),
   permanent: new Set([
     "AUTH",
     "INVALID_CREDENTIAL",
+    "MISSING_CREDENTIAL",
     "QUOTA",
+    "ACCOUNT_QUOTA",
     "INVALID_REQUEST",
     "CONTEXT_WINDOW",
+    "CONTEXT_WINDOW_EXCEEDED",
     "CONTENT_FILTER",
+    "NO_ADAPTER",
   ]),
 } as const satisfies {
   transient: ReadonlySet<string>;
@@ -597,7 +602,8 @@ function classifyStreamFailure(error: unknown): RetryFailure {
   const rawStatus = current?.status ?? current?.statusCode;
   const statusCode = typeof rawStatus === "string" ? Number(rawStatus) : rawStatus;
   if (statusCode === 401) return { kind: "permanent", code: "provider-stream-failed" };
-  if (statusCode === 429) return { kind: "transient", code: "provider-stream-failed" };
+  // 429 也可能是额度耗尽；没有结构化 code 时无法安全自动重试，fail closed。
+  if (statusCode === 429) return { kind: "unknown", code: "provider-stream-failed" };
   return { kind: "unknown", code: "provider-stream-failed" };
 }
 
@@ -724,12 +730,15 @@ async function collectStream(
   const onAbort = (): void => resolveAbort?.();
   signal?.addEventListener("abort", onAbort, { once: true });
   let completed = false;
+  let state = initialState;
 
   try {
-    let state = initialState;
     while (true) {
       const next = await Promise.race([iterator.next(), abort]);
-      if (next === STREAM_ABORTED || signal?.aborted) return { kind: "aborted" };
+      if (next === STREAM_ABORTED || signal?.aborted) {
+        Object.assign(initialState, state);
+        return { kind: "aborted" };
+      }
       if (next.done) {
         completed = true;
         return { kind: "completed", state };
@@ -737,6 +746,8 @@ async function collectStream(
       state = accumulateChunk(next.value, state);
     }
   } catch (error) {
+    Object.assign(initialState, state);
+    if (state.closed) return { kind: "completed", state: { ...state, afterTerminal: true } };
     if (signal?.aborted) return { kind: "aborted" };
     throw error;
   } finally {
@@ -777,12 +788,14 @@ export async function resolveGenerateRoute(
       status: "success",
       route: routeSnapshot(route.provider, route.model, opts.reasoningEffort),
     };
-  } catch {
+  } catch (error) {
+    const failureKind: RetryFailure["kind"] =
+      error === ROUTE_DISCOVERY_TIMEOUT ? "transient" : classifyStreamFailure(error).kind;
     return {
       status: "failure",
       route: unresolvedRouteSnapshot(),
-      failure: GENERATE_FAILURE.routeResolution,
-      unresolved: true,
+      failure: { kind: failureKind, code: GENERATE_FAILURE.routeResolution.code },
+      unresolved: failureKind === "transient",
     };
   }
 }
@@ -905,7 +918,7 @@ export async function generateReportOutcome(
   } catch (error) {
     // provider 异常可能携带 prompt、路径或凭据；只返回稳定安全文案。
     if (opts.signal?.aborted) return failAborted(route);
-    return fail("模型请求失败", classifyStreamFailure(error), route);
+    return fail("模型请求失败", classifyStreamFailure(error), route, state.tokens);
   }
   if (state.terminal.kind === "error")
     return fail(state.terminal.error, state.terminal.failure, route, state.tokens);

@@ -6,7 +6,7 @@ Status: implemented
 
 推理型模型可能只返回 reasoning 而没有正文；旧执行边界把该情况与普通空输出混在一起，调度器又会在每分钟重新提交同一窗口，形成无界失败、延迟和费用放大。只记录最终成功报告的 token 还会隐藏失败 attempt 的真实成本，使用户无法判断额度消耗、退避进度或终止原因。
 
-本篇记录 #1010 已批准并已在 B3a/B3b 链路的边界：exact-model reasoning effort、报告级 retry ledger、逐 attempt 成本、状态 UI、双语文档与最终事务集成约束。B3b 只闭环客户端与文档；后文列出的 current-cycle 预落盘 fence 和完整 unsupported block policy 是最终 integration 的不可回退裁决，不冒充本分支已验证完成。
+本篇记录 #1010 已批准方案在 B3a/B3b 与最终 integration 的已落地边界：exact-model reasoning effort、报告级 retry ledger、逐 attempt 成本、状态 UI、双语文档、current-cycle fence、force reservation、index cycle 投影与 unsupported block policy 均已纳入本分支，并由对应测试覆盖。
 
 ## Decision
 
@@ -19,7 +19,7 @@ Status: implemented
 ### 报告级 retry ledger
 
 - 初次报告调用之外最多自动 retry 5 次，wire `attempts=0..5`、`maxAttempts=5`；第 1 至第 5 次 retry 前退避严格为 1/2/4/8/16 分钟。逻辑身份是 `period + report key`，初次配置在 cycle 开始时快照，cycle 内不随全局配置漂移。
-- ledger 读取时先在内存中按 `period → key → RetryEntry` 规范化：所有非终态 entry 保留在 `records`，每个 period 只保留按 key 排序后的最后一条 terminal entry；写盘序列化时再次裁剪，并把被裁剪的 terminal key 写入有界 `terminalKeys`（`period → key → terminal code`，正常生成时按 key 排序每 period 最多 32 个）。墓碑只保存终态 code，不保存 attempts、observations 或 usage，因此不是所有历史 terminal key 的完整存档。`flatten` 以及 `list`/`listDue`/`get` 只投影 `records`，不会把墓碑展开成完整 entry。
+- ledger 读取时先在内存中按 `period → key → RetryEntry` 规范化：所有非终态 entry 保留在 `records`，每个 period 只保留按 key 排序后的最后一条 terminal entry；写盘序列化时再次裁剪，并把被裁剪的 terminal key 写入全量 `terminalKeys`（`period → key → terminal code`，按 key 排序且不按数量淘汰）。墓碑只保存终态 code，不保存 attempts、observations 或 usage，所有已知 terminal key 都保留墓碑，避免历史 key 被自动重开。`flatten` 以及 `list`/`listDue`/`get` 只投影 `records`，不会把墓碑展开成完整 entry。
 - 没有 entry 且没有墓碑的 key，自动 `beginAttempt` 才会创建 initial entry；已有 entry 时必须带匹配的 `cycleId`，waiting 还必须已到 `nextRetryAt`，in-flight 或 terminal 返回 `null`；若 `records` 没有该 key 但 `terminalKeys` 有墓碑，也返回 `null`。对这个只剩墓碑的 key，手动 `beginForce` 才会清除墓碑并创建新 cycle、重置 attempts/terminal/nextRetryAt，读取当前配置并 durable prepare；force 失败不推进 lastRun。
 - 例如 `daily` 的 `2026-09-21` 与 `2026-09-23` 都 terminal 时，`records.daily` 只保留 `2026-09-23` 的完整 entry，`terminalKeys.daily` 记录 `2026-09-21: "auth-failed"`；对被裁剪的 `2026-09-21` 调用 `beginAttempt` 返回 `null`，只有 `beginForce` 才会移除墓碑并开始新 cycle。
 - ledger 是 retry 状态与成本的事实源，使用 0600 临时文件、完整写入、文件 fsync、原子 rename 与支持平台上的目录 fsync。损坏文件先 no-clobber 隔离取证并 fail closed，不能当空状态重置预算。启动 recovery 在 timer/首轮 tick 前完成；in-flight 恢复为当前可重试状态，terminal 不自动复活。
@@ -68,6 +68,6 @@ Status: implemented
 ## Verification
 
 - TDD 红灯：retry helper 缺失时 client unit 新增 4 条用例红、既有用例绿；retry UI 缺失时 client DOM 新增 2 条状态用例红、7 条既有/兼容用例绿。
-- 绿灯：`pnpm exec vitest run packages/dsh-provider-usage/test/client/unit-report-p0.test.ts --project contract` 为 54/54；`pnpm exec vitest run packages/dsh-provider-usage/test/client-dom/report-section.test.ts --project client-dom` 为 9/9。
+- 绿灯：`pnpm exec vitest run packages/dsh-provider-usage/test/client/unit-report-p0.test.ts --project contract` 为 54/54；`pnpm exec vitest run packages/dsh-provider-usage/test/client-dom/report-section.test.ts --project client-dom` 为 11/11。
 - 类型：`pnpm --filter @wingsky-1/dsh-provider-usage typecheck` 通过。
 - 完整 package build/test、scripts、stryker 登记、gate:changed 与 gate:pr 的最终 exit code 由交付记录给出；本地门禁通过不替代 CI。

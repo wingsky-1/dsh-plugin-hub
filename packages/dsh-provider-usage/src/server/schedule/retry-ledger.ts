@@ -70,15 +70,13 @@ interface RetryLedgerDocument {
   schema: typeof RETRY_LEDGER_SCHEMA;
   records: RetryRecords;
   /**
-   * 已被裁剪的 terminal key 墓碑（period → key → 终态 code）。
-   * 裁剪只为控制文件体积，不得让「曾终态失败」的 key 静默重开新 cycle：
+   * 已从可见 records 裁剪的 terminal key 墓碑（period → key → 终态 code）。
+   * 墓碑必须全量保留，不得让「曾终态失败」的 key 静默重开新 cycle：
    * beginAttempt 命中墓碑即拒绝，只有 beginForce（手动强制）才开新 cycle。
    * 空表不落盘字段，兼容既有 schema:1 文档。
    */
   terminalKeys?: Partial<Record<ReportPeriod, Record<string, string>>>;
 }
-
-const TERMINAL_KEY_LIMIT = 32;
 
 export interface RetryAttemptInput extends RetrySeed {
   cycleId?: string;
@@ -571,7 +569,7 @@ function cloneDocument(document: RetryLedgerDocument): RetryLedgerDocument {
   };
 }
 
-/** 记录 terminal 墓碑并按 key 升序裁剪到上限（保留最新，终态语义不丢）。 */
+/** 记录 terminal 墓碑并按 key 升序全量保留，确保序列化稳定且终态 key 不复活。 */
 function rememberTerminalKey(
   document: RetryLedgerDocument,
   period: ReportPeriod,
@@ -581,13 +579,11 @@ function rememberTerminalKey(
   const terminalKeys = document.terminalKeys ?? {};
   const bucket = { ...(terminalKeys[period] ?? {}) };
   bucket[key] = reason?.code ?? "terminal";
-  const trimmed = Object.fromEntries(
+  terminalKeys[period] = Object.fromEntries(
     Object.keys(bucket)
       .sort()
-      .slice(-TERMINAL_KEY_LIMIT)
       .map((entryKey) => [entryKey, bucket[entryKey]!] as const),
   );
-  terminalKeys[period] = trimmed;
   document.terminalKeys = terminalKeys;
 }
 

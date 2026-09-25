@@ -434,6 +434,11 @@ async function runWithRetry(
       now,
     );
     if (observed === "error") {
+      logAttempt(retry, input, activeClaim, {
+        status: "failure",
+        failure: { kind: "storage", code: "retry-observation-storage" },
+        attempt: { durationMs: 0, tokens: null },
+      });
       await retry.ledger.recordFailure(
         activeClaim,
         { kind: "storage", code: "retry-observation-storage" },
@@ -443,6 +448,11 @@ async function runWithRetry(
     }
     if (observed !== null) activeClaim = observed;
     await retry.ledger.recordFailure(activeClaim, route.failure, now);
+    logAttempt(retry, input, activeClaim, {
+      status: "failure",
+      failure: route.failure,
+      attempt: { durationMs: 0, tokens: null },
+    });
     throw taggedError(route.failure.code, routeFailureMessage(route.failure));
   }
   let outcome: PreparedDueReportOutcome;
@@ -488,7 +498,14 @@ async function runWithRetry(
       result: outcome.result,
       persist: () => outcome.persist(activeClaim.cycleId),
     });
-    if (!committed) throw taggedError("retry-cycle-conflict", "报告重试周期已变化");
+    if (!committed) {
+      logAttempt(retry, input, activeClaim, {
+        status: "failure",
+        failure: { kind: "unknown", code: "retry-cycle-conflict" },
+        attempt: outcome.attempt,
+      });
+      throw taggedError("retry-cycle-conflict", "报告重试周期已变化");
+    }
     logAttempt(retry, input, activeClaim, outcome);
   } catch (error: unknown) {
     // provider attempt 已成功记录；storage failure 只把同一 cycle 标记为 terminal，
