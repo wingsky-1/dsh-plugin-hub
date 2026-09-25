@@ -106,10 +106,39 @@ export type GenerateReportOutcome =
   | { status: "success"; result: ReportResult }
   | { status: "failure"; failure: RetryFailure; result: ReportResult };
 
-/** executor claim 使用的已解析路由；reasoning effort 仍需 exact-model capability 校验。 */
+/** executor claim 使用的路由解析结果；unresolved 不得进入 stream。 */
+export interface UnresolvedRouteOutcome {
+  status: "failure";
+  route: RetryRouteSnapshot;
+  failure: RetryFailure;
+  /** true 仅表示路由暂不可解析；失败类别仍由 failure.kind 决定。 */
+  unresolved: true;
+}
+
 export type GenerateRouteOutcome =
   | { status: "success"; route: RetryRouteSnapshot }
-  | { status: "failure"; route: RetryRouteSnapshot; failure: RetryFailure };
+  | UnresolvedRouteOutcome
+  | { status: "failure"; route: RetryRouteSnapshot; failure: RetryFailure; unresolved?: false };
+
+const UNRESOLVED_ROUTE_ID = "__dsh_provider_usage_unresolved__";
+
+/** 仅为 ledger 保留的非空占位路由；它绝不是可 stream 的已解析路由。 */
+export function unresolvedRouteSnapshot(): RetryRouteSnapshot {
+  return { provider: UNRESOLVED_ROUTE_ID, model: UNRESOLVED_ROUTE_ID };
+}
+
+export function isUnresolvedRoute(route: RetryRouteSnapshot): boolean {
+  return (
+    route.provider === UNRESOLVED_ROUTE_ID ||
+    route.model === UNRESOLVED_ROUTE_ID ||
+    route.provider.length === 0 ||
+    route.model.length === 0
+  );
+}
+
+export function isResolvedRouteSnapshot(route: RetryRouteSnapshot): boolean {
+  return !isUnresolvedRoute(route);
+}
 
 export interface GenerateReportOptions {
   /** 宿主 llm 服务面（apply 层传 ctx.llm）。 */
@@ -668,17 +697,16 @@ function routeSnapshot(
   return reasoningEffort === undefined ? { provider, model } : { provider, model, reasoningEffort };
 }
 
-/** claim 前解析 provider/model；失败也返回安全标签与可持久化的配置路由。 */
+/** claim 前解析 provider/model；transient 解析失败明确标为 unresolved。 */
 export async function resolveGenerateRoute(
   opts: Pick<GenerateReportOptions, "llm" | "provider" | "model" | "reasoningEffort">,
 ): Promise<GenerateRouteOutcome> {
-  const configuredRoute = routeSnapshot(opts.provider, opts.model, opts.reasoningEffort);
   try {
     const route = await resolveRoute(opts.llm, opts.provider, opts.model);
     if (route === null) {
       return {
         status: "failure",
-        route: configuredRoute,
+        route: unresolvedRouteSnapshot(),
         failure: GENERATE_FAILURE.routeUnavailable,
       };
     }
@@ -689,8 +717,9 @@ export async function resolveGenerateRoute(
   } catch {
     return {
       status: "failure",
-      route: configuredRoute,
+      route: unresolvedRouteSnapshot(),
       failure: GENERATE_FAILURE.routeResolution,
+      unresolved: true,
     };
   }
 }
@@ -744,12 +773,13 @@ export async function generateReportOutcome(
 
   const routeOutcome = opts.route ?? (await resolveGenerateRoute(opts));
   if (opts.signal?.aborted) return failAborted(routeOutcome.route);
-  if (routeOutcome.status === "failure") {
-    return fail(
-      routeFailureMessage(routeOutcome.failure),
-      routeOutcome.failure,
-      routeOutcome.route,
-    );
+  if (routeOutcome.status !== "success" || !isResolvedRouteSnapshot(routeOutcome.route)) {
+    const failure =
+      routeOutcome.status === "success" ? GENERATE_FAILURE.routeUnavailable : routeOutcome.failure;
+    return fail(routeFailureMessage(failure), failure, {
+      provider: opts.provider,
+      model: opts.model,
+    });
   }
   const route = routeOutcome.route;
   const reasoning =

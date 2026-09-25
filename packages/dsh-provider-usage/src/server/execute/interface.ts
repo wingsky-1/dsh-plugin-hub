@@ -65,6 +65,7 @@ export type {
   GenerateReportOutcome,
   GenerateReportOutcomeOptions,
   GenerateRouteOutcome,
+  UnresolvedRouteOutcome,
   ReportMeta,
   ReportResult,
   ReportStatsSnapshot,

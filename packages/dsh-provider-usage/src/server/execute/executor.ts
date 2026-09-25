@@ -31,9 +31,30 @@ import type {
   ReportTaskInput,
   ReportTaskResult,
   RetryClaim,
+  RetryFailure,
   RetryLedgerPort,
+  RetryRouteSnapshot,
 } from "../schedule/interface.ts";
 import type { TrendTracker } from "../aggregate/interface.ts";
+
+const UNRESOLVED_ROUTE_ID = "__dsh_provider_usage_unresolved__";
+
+function unresolvedRouteSnapshot(): RetryRouteSnapshot {
+  return { provider: UNRESOLVED_ROUTE_ID, model: UNRESOLVED_ROUTE_ID };
+}
+
+function isUnresolvedRoute(route: RetryRouteSnapshot): boolean {
+  return (
+    route.provider === UNRESOLVED_ROUTE_ID ||
+    route.model === UNRESOLVED_ROUTE_ID ||
+    route.provider.length === 0 ||
+    route.model.length === 0
+  );
+}
+
+function isResolvedRouteSnapshot(route: RetryRouteSnapshot): boolean {
+  return !isUnresolvedRoute(route);
+}
 
 export interface RetrySuccessCommitInput {
   claim: RetryClaim;
@@ -105,6 +126,34 @@ function outcomeError(outcome: Extract<RunDueReportOutcome, { status: "failure" 
   return outcome.result?.meta.error ?? "报告持久化失败";
 }
 
+const ROUTE_RESOLUTION_FAILURE = {
+  kind: "transient",
+  code: "route-resolution-failed",
+} as const;
+
+function routeFailureMessage(failure: RetryFailure): string {
+  return failure.code === "route-resolution-failed"
+    ? "模型路由解析失败"
+    : "无可用的已注册 provider/model（须先在 dsh 注册适配器路由）";
+}
+
+function normalizeRouteOutcome(outcome: GenerateRouteOutcome): GenerateRouteOutcome {
+  if (outcome.status === "success" && isResolvedRouteSnapshot(outcome.route)) return outcome;
+  if (outcome.status === "success") {
+    return {
+      status: "failure",
+      route: unresolvedRouteSnapshot(),
+      failure: ROUTE_RESOLUTION_FAILURE,
+      unresolved: true,
+    };
+  }
+  return {
+    status: outcome.status,
+    route: unresolvedRouteSnapshot(),
+    failure: outcome.failure,
+  };
+}
+
 function advanceLastRun(deps: DueExecutorDeps, meta: ReportMeta): Promise<void> {
   return deps.advanceLastRun(deps.historyRoot, (current) => {
     const previous = current[meta.period];
@@ -140,15 +189,27 @@ async function claimRoute(
   reportCfg: ReportConfig,
 ): Promise<{ claim: RetryClaim; route: GenerateRouteOutcome }> {
   const existing = await retry.ledger.get(input.period, input.key);
+  const resolve = async (): Promise<GenerateRouteOutcome> =>
+    normalizeRouteOutcome(
+      await retry.resolveRoute({
+        llm: deps.ctx.llm,
+        provider: reportCfg.provider,
+        model: reportCfg.model,
+        reasoningEffort: reportCfg.reasoningEffort,
+      }),
+    );
   const resolved: GenerateRouteOutcome =
     existing === undefined
-      ? await retry.resolveRoute({
-          llm: deps.ctx.llm,
-          provider: reportCfg.provider,
-          model: reportCfg.model,
-          reasoningEffort: reportCfg.reasoningEffort,
-        })
-      : { status: "success", route: existing.route };
+      ? await resolve()
+      : existing.terminal
+        ? {
+            status: "failure",
+            route: existing.route,
+            failure: { kind: "permanent", code: "retry-terminal" },
+          }
+        : isUnresolvedRoute(existing.route)
+          ? await resolve()
+          : { status: "success", route: existing.route };
   const now = retry.now?.() ?? Date.now();
   const claim = await retry.ledger.beginAttempt(
     {
@@ -162,13 +223,7 @@ async function claimRoute(
     now,
   );
   if (claim === null) throw new Error("报告重试状态不允许执行");
-  return {
-    claim,
-    route:
-      resolved.status === "failure"
-        ? { status: "failure", route: claim.entry.route, failure: resolved.failure }
-        : { status: "success", route: claim.entry.route },
-  };
+  return { claim, route: resolved };
 }
 
 async function runWithRetry(
@@ -178,6 +233,10 @@ async function runWithRetry(
   reportCfg: ReportConfig,
 ): Promise<ReportTaskResult> {
   const { claim, route } = await claimRoute(deps, retry, input, reportCfg);
+  if (route.status !== "success") {
+    await retry.ledger.recordFailure(claim, route.failure, retry.now?.() ?? Date.now());
+    throw taggedError(route.failure.code, routeFailureMessage(route.failure));
+  }
   const outcome = await prepareDueReportOutcome({
     due: input,
     trend: deps.trend,

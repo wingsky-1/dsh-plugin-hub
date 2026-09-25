@@ -372,6 +372,7 @@ function retryTrend(calls: number): TrendTracker {
 function retryContext(
   chunks: StreamChunk[],
   onStream?: () => Promise<void>,
+  listModels?: () => Promise<Array<{ provider: string; id: string; name: string }>>,
 ): { ctx: Context; calls: GenerateOptions[] } {
   const calls: GenerateOptions[] = [];
   const llm = {
@@ -383,9 +384,9 @@ function retryContext(
       })();
     },
     listProviders: () => [{ id: "generic-provider", name: "Generic" }],
-    listModels: async () => [
-      { provider: "generic-provider", id: "generic-model", name: "Generic Model" },
-    ],
+    listModels:
+      listModels ??
+      (async () => [{ provider: "generic-provider", id: "generic-model", name: "Generic Model" }]),
   };
   return { ctx: { llm } as unknown as Context, calls };
 }
@@ -434,20 +435,23 @@ function retryExecutor(input: {
   ledger: RetryLedgerPort;
   commit: RetrySuccessCommitPort;
   reconcileIndex?: DueExecutorRetryOptions["reconcileIndex"];
+  resolveRoute?: DueExecutorRetryOptions["resolveRoute"];
+  config?: () => ReturnType<typeof retryConfig>;
+  now?: () => number;
 }) {
   return makeDueReportExecutor({
     trend: input.trend,
     ctx: input.ctx,
-    getReportCfg: retryConfig,
+    getReportCfg: input.config ?? retryConfig,
     getPromptTemplate: () => "prompt {stats}",
     historyRoot: input.root,
     sanitizeDiagnostic: (value) => value,
     advanceLastRun: updateLastRun,
     retry: {
       ledger: input.ledger,
-      resolveRoute: resolveGenerateRoute,
+      resolveRoute: input.resolveRoute ?? resolveGenerateRoute,
       commitSuccess: input.commit,
-      now: () => RETRY_NOW,
+      now: input.now ?? (() => RETRY_NOW),
       ...(input.reconcileIndex === undefined ? {} : { reconcileIndex: input.reconcileIndex }),
     },
   });
@@ -480,6 +484,89 @@ describe("runner/executor：#1010 B2a retry ledger 执行事务", () => {
         result: { body: "", meta: { ok: false, error: "模型未产出任何正文" } },
       });
       expect(calls).toHaveLength(1);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("unresolved transient route 首次进入 waiting；到期重新 listModels，resolved 后才 stream", async () => {
+    const root = mkdtempSync(join(tmpdir(), "u-exec-route-unresolved-"));
+    let now = RETRY_NOW;
+    let listModelsCalls = 0;
+    const ledger = createRetryLedger(root, {
+      now: () => now,
+      createCycleId: () => "cycle-route-unresolved",
+    });
+    const commit = commitCurrentThenClear(root, ledger);
+    const { ctx, calls } = retryContext(SUCCESS_CHUNKS, undefined, async () => {
+      listModelsCalls += 1;
+      if (listModelsCalls === 1) throw new Error("raw listModels failure must stay hidden");
+      return [{ provider: "generic-provider", id: "generic-model", name: "Generic Model" }];
+    });
+    const executor = retryExecutor({
+      root,
+      trend: retryTrend(1),
+      ctx,
+      ledger,
+      commit,
+      config: () => normalizeCfg({ provider: "", model: "", push: { enabled: false } }),
+      now: () => now,
+    });
+
+    try {
+      await expect(executor(retryDue())).rejects.toThrow("模型路由解析失败");
+      expect(listModelsCalls).toBe(1);
+      expect(calls).toHaveLength(0);
+      const waiting = await ledger.get("daily", RETRY_DAY);
+      expect(waiting).toMatchObject({ phase: "waiting", attempts: 1, terminal: false });
+      expect(waiting?.route.provider).not.toBe("");
+      expect(waiting?.route.model).not.toBe("");
+
+      now = RETRY_NOW + 60_000;
+      const result = await executor(retryDue());
+
+      expect(result.meta).toMatchObject({
+        ok: true,
+        provider: "generic-provider",
+        model: "generic-model",
+      });
+      expect(listModelsCalls).toBe(2);
+      expect(calls).toHaveLength(1);
+      expect(calls[0]).toMatchObject({ provider: "generic-provider", model: "generic-model" });
+      expect(await ledger.list()).toEqual([]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it.each([
+    { name: "permanent", failure: { kind: "permanent" as const, code: "route-unavailable" } },
+    { name: "unknown", failure: { kind: "unknown" as const, code: "route-unknown" } },
+  ])("$name route failure 直接 terminal，stream=0", async ({ failure }) => {
+    const root = mkdtempSync(join(tmpdir(), "u-exec-route-terminal-"));
+    const ledger = retryLedger(root, () => "cycle-route-terminal");
+    const commit = commitCurrentThenClear(root, ledger);
+    const { ctx, calls } = retryContext(SUCCESS_CHUNKS);
+    const executor = retryExecutor({
+      root,
+      trend: retryTrend(1),
+      ctx,
+      ledger,
+      commit,
+      resolveRoute: async () => ({
+        status: "failure",
+        route: { provider: "", model: "" },
+        failure,
+      }),
+    });
+
+    try {
+      await expect(executor(retryDue())).rejects.toThrow();
+      expect(calls).toHaveLength(0);
+      expect(await ledger.list()).toMatchObject([
+        { terminal: true, reason: failure, phase: "terminal" },
+      ]);
+      expect(commit.calls).toHaveLength(0);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

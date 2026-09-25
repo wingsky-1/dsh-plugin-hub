@@ -85,6 +85,7 @@ import {
   buildStatsSnapshot,
   generateReport,
   generateReportOutcome,
+  resolveGenerateRoute,
   parseReportIndexLines,
   persistReport,
   readReportIndex,
@@ -252,7 +253,7 @@ function fakeLlm(
 
 // GEN 的 llm 调用方恒覆写（全调用点均传 llm；null 默认永不被观测）：
 // 以必填收敛，调用缺 llm 即红。
-type GenOpts = Parameters<typeof generateReport>[0];
+type GenOpts = Parameters<typeof generateReportOutcome>[0];
 const GEN = (over: Partial<GenOpts> & { llm: ReportLlmService }): GenOpts => ({
   period: "daily",
   key: "2026-09-04",
@@ -1446,6 +1447,41 @@ describe("generate：失败路径（流异常 / 取消 / 空正文 / 路由不�
 });
 
 describe("generate：路由解析异常稳定脱敏", () => {
+  it("listModels transient 返回 unresolved outcome，保留非空 ledger marker 且不 stream", async () => {
+    const f = fakeLlm(CHUNKS, { throwInListModels: RAW_PROVIDER_FAILURE });
+    const route = await resolveGenerateRoute({ llm: f.llm, provider: "", model: "" });
+
+    expect(route).toMatchObject({
+      status: "failure",
+      unresolved: true,
+      failure: { kind: "transient", code: "route-resolution-failed" },
+    });
+    expect(route.route.provider).not.toBe("");
+    expect(route.route.model).not.toBe("");
+    expect(JSON.stringify(route)).not.toContain(RAW_PROVIDER_FAILURE);
+    expect(f.seen.calls).toHaveLength(0);
+  });
+
+  it("空 route 永不 stream", async () => {
+    const f = fakeLlm(CHUNKS);
+    const result = await generateReportOutcome(
+      GEN({
+        llm: f.llm,
+        route: { status: "success", route: { provider: "", model: "" } },
+      }),
+    );
+
+    expect(result).toMatchObject({
+      status: "failure",
+      failure: { kind: "permanent", code: "route-unavailable" },
+      result: {
+        body: "",
+        meta: { ok: false, error: "无可用的已注册 provider/model（须先在 dsh 注册适配器路由）" },
+      },
+    });
+    expect(f.seen.calls).toHaveLength(0);
+  });
+
   it.each([
     { name: "listProviders", options: { throwInListProviders: RAW_PROVIDER_FAILURE } },
     { name: "listModels", options: { throwInListModels: RAW_PROVIDER_FAILURE } },
@@ -1517,6 +1553,17 @@ const STRUCTURED_FAILURE_CASES = [
     name: "路由不可用",
     expected: { kind: "permanent", code: "route-unavailable" },
     run: () => generateReportOutcome(GEN({ llm: fakeLlm(CHUNKS, { noProviders: true }).llm })),
+  },
+  {
+    name: "空 route 不进入 stream",
+    expected: { kind: "permanent", code: "route-unavailable" },
+    run: () =>
+      generateReportOutcome(
+        GEN({
+          llm: fakeLlm(CHUNKS).llm,
+          route: { status: "success", route: { provider: "", model: "" } },
+        }),
+      ),
   },
   {
     name: "路由解析异常",
