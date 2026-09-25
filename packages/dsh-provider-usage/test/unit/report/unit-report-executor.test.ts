@@ -624,6 +624,78 @@ describe("runner/executor：#1010 B2a retry ledger 执行事务", () => {
     }
   });
 
+  it("unresolved cycle 固定 reasoningEffort 快照，配置变更不漂移", async () => {
+    const root = mkdtempSync(join(tmpdir(), "u-exec-effort-snapshot-"));
+    let now = RETRY_NOW;
+    let configuredEffort = "vendor::A";
+    let resolveCalls = 0;
+    const effortCalls: Array<string | undefined> = [];
+    const ledger = retryLedger(root, () => "cycle-effort-snapshot");
+    const commit = commitCurrentThenClear(root, ledger);
+    const { ctx, calls } = retryContext(SUCCESS_CHUNKS);
+    Object.assign(ctx.llm, {
+      resolveModelInfo: async (): Promise<LlmResolvedModelInfo> => ({
+        provider: "generic-provider",
+        id: "generic-model",
+        name: "Generic Model",
+        reasoning: {
+          efforts: [
+            { id: "vendor::A" as ReasoningEffortId, name: "A" },
+            { id: "vendor::B" as ReasoningEffortId, name: "B" },
+          ],
+          defaultEffort: "vendor::A" as ReasoningEffortId,
+        },
+      }),
+    });
+    const executor = retryExecutor({
+      root,
+      trend: retryTrend(1),
+      ctx,
+      ledger,
+      commit,
+      config: () => normalizeCfg({ reasoningEffort: configuredEffort }),
+      resolveRoute: async (input) => {
+        effortCalls.push(input.reasoningEffort);
+        resolveCalls += 1;
+        if (resolveCalls === 1) {
+          return {
+            status: "failure",
+            route: { provider: "", model: "" },
+            failure: { kind: "transient", code: "route-resolution-failed" },
+            unresolved: true,
+          };
+        }
+        return {
+          status: "success",
+          route: {
+            provider: "generic-provider",
+            model: "generic-model",
+            ...(input.reasoningEffort === undefined
+              ? {}
+              : { reasoningEffort: input.reasoningEffort }),
+          },
+        };
+      },
+      now: () => now,
+    });
+
+    try {
+      await expect(executor(retryDue())).rejects.toThrow("模型路由解析失败");
+      expect(effortCalls).toEqual(["vendor::A"]);
+      expect((await ledger.get("daily", RETRY_DAY))?.route.reasoningEffort).toBe("vendor::A");
+
+      configuredEffort = "vendor::B";
+      now = RETRY_NOW + 60_000;
+      const result = await executor(retryDue());
+      expect(result.meta?.provider).toBe("generic-provider");
+      expect(effortCalls).toEqual(["vendor::A", "vendor::A"]);
+      expect(calls[0]?.reasoningEffort).toBe("vendor::A");
+      expect(await ledger.list()).toEqual([]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it.each([
     { name: "permanent", failure: { kind: "permanent" as const, code: "route-unavailable" } },
     { name: "unknown", failure: { kind: "unknown" as const, code: "route-unknown" } },

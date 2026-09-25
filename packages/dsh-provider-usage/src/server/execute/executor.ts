@@ -44,8 +44,12 @@ import type { TrendTracker } from "../aggregate/interface.ts";
 
 const UNRESOLVED_ROUTE_ID = "__dsh_provider_usage_unresolved__";
 
-function unresolvedRouteSnapshot(): RetryRouteSnapshot {
-  return { provider: UNRESOLVED_ROUTE_ID, model: UNRESOLVED_ROUTE_ID };
+function unresolvedRouteSnapshot(reasoningEffort?: string): RetryRouteSnapshot {
+  return {
+    provider: UNRESOLVED_ROUTE_ID,
+    model: UNRESOLVED_ROUTE_ID,
+    ...(reasoningEffort === undefined ? {} : { reasoningEffort }),
+  };
 }
 
 function isUnresolvedRoute(route: RetryRouteSnapshot): boolean {
@@ -222,6 +226,7 @@ function normalizeRouteOutcome(outcome: GenerateRouteOutcome): GenerateRouteOutc
     status: outcome.status,
     route: unresolvedRouteSnapshot(),
     failure: outcome.failure,
+    ...(outcome.unresolved === true ? { unresolved: true } : {}),
   };
 }
 
@@ -358,13 +363,14 @@ async function claimRoute(
   reportCfg: ReportConfig,
 ): Promise<{ claim: RetryClaim; route: GenerateRouteOutcome; needsRoute: boolean }> {
   const existing = await retry.ledger.get(input.period, input.key);
+  const cycleReasoningEffort = existing?.route.reasoningEffort ?? reportCfg.reasoningEffort;
   const resolve = async (): Promise<GenerateRouteOutcome> =>
     normalizeRouteOutcome(
       await retry.resolveRoute({
         llm: deps.ctx.llm,
         provider: reportCfg.provider,
         model: reportCfg.model,
-        reasoningEffort: reportCfg.reasoningEffort,
+        reasoningEffort: cycleReasoningEffort,
       }),
     );
   // 空窗口不调模型：路由解析失败不该把 noData 报告打成 waiting（否则永不推进 lastRun）。
@@ -380,7 +386,7 @@ async function claimRoute(
         // 空窗口不需要模型路由：用 fail-closed 哨兵占位。若窗口在快照阶段又出现
         // 用量，生成边界也会先于 stream 拒绝（空 route 永不 stream）。
         status: "failure",
-        route: existing?.route ?? unresolvedRouteSnapshot(),
+        route: existing?.route ?? unresolvedRouteSnapshot(cycleReasoningEffort),
         failure: GENERATE_ROUTE_UNAVAILABLE,
       }
     : existing === undefined
@@ -394,6 +400,10 @@ async function claimRoute(
         : isUnresolvedRoute(existing.route)
           ? await resolve()
           : { status: "success", route: existing.route };
+  const resolvedForClaim =
+    resolved.status === "failure" && resolved.unresolved && cycleReasoningEffort !== undefined
+      ? { ...resolved, route: { ...resolved.route, reasoningEffort: cycleReasoningEffort } }
+      : resolved;
   const current = await retry.ledger.get(input.period, input.key);
   if (
     (existing === undefined && current !== undefined) ||
@@ -408,13 +418,13 @@ async function claimRoute(
       key: input.key,
       startDay: input.startDay,
       endDay: input.endDay,
-      route: resolved.route,
+      route: resolvedForClaim.route,
       ...(existing === undefined ? {} : { cycleId: existing.cycleId }),
     },
     now,
   );
   if (claim === null) throw taggedError("retry-state-conflict", "报告重试状态不允许执行");
-  return { claim, route: resolved, needsRoute };
+  return { claim, route: resolvedForClaim, needsRoute };
 }
 
 async function runWithRetry(
