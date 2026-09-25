@@ -28,7 +28,6 @@ import type {
   ReportResult,
   ReportTokenUsage,
 } from "./generate.ts";
-import { RETRY_MAX_ATTEMPTS } from "../schedule/interface.ts";
 import type {
   ReportTaskInput,
   ReportTaskResult,
@@ -165,11 +164,14 @@ function normalizeRouteOutcome(outcome: GenerateRouteOutcome): GenerateRouteOutc
 
 function attemptStatus(
   failure: { kind: string } | null,
-  attempts: number,
+  claim: RetryClaim,
 ): RetryAttemptObservation["status"] {
   if (failure === null) return "success";
   if (failure.kind === "aborted") return "aborted";
-  if ((failure.kind === "transient" || failure.kind === "empty-output") && attempts < 5) {
+  if (
+    (failure.kind === "transient" || failure.kind === "empty-output") &&
+    claim.entry.attempts < claim.entry.maxAttempts
+  ) {
     return "retry";
   }
   return "terminal";
@@ -211,7 +213,7 @@ function logAttempt(
     attempt: claim.entry.attempts + 1,
     result: outcome.status,
     code: failure?.code ?? null,
-    status: attemptStatus(failure, claim.entry.attempts),
+    status: attemptStatus(failure, claim),
     durationMs: attempt.durationMs,
     tokens,
     effort: claim.entry.route.reasoningEffort ?? null,
@@ -225,13 +227,14 @@ function logAttempt(
 
 function routeFailureObservation(
   failure: RetryFailure,
-  attemptNumber: number,
+  claim: RetryClaim,
 ): RetryAttemptObservation {
+  const attemptNumber = claim.entry.attempts + 1;
   const status: RetryAttemptObservation["status"] =
     failure.kind === "aborted"
       ? "aborted"
       : (failure.kind === "transient" || failure.kind === "empty-output") &&
-          attemptNumber <= RETRY_MAX_ATTEMPTS
+          attemptNumber <= claim.entry.maxAttempts
         ? "retry"
         : "terminal";
   return {
@@ -251,11 +254,7 @@ async function recordRouteFailureObservation(
   now: number,
 ): Promise<RetryClaim | null | "error"> {
   try {
-    return await ledger.recordAttempt(
-      claim,
-      routeFailureObservation(failure, claim.entry.attempts + 1),
-      now,
-    );
+    return await ledger.recordAttempt(claim, routeFailureObservation(failure, claim), now);
   } catch {
     return "error";
   }

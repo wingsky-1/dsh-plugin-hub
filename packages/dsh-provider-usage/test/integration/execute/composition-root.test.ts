@@ -157,6 +157,8 @@ describe("D3一 经 server/execute 域门面装配", () => {
     expect(executorSrc.includes('"../schedule/interface.ts"')).toBe(true);
     expect(executorSrc.includes("advanceLastRun")).toBe(true);
     expect(executorSrc.includes("import { updateLastRun }")).toBe(false);
+    expect(executorSrc.includes("RETRY_MAX_ATTEMPTS")).toBe(false);
+    expect(executorSrc.includes("claim.entry.maxAttempts")).toBe(true);
     expect(executorSrc.includes('"../config/interface.ts"')).toBe(true);
     expect(executorSrc.includes("server/schedule/scheduler")).toBe(false);
     expect(executorSrc.includes("server/schedule/tasks")).toBe(false);
