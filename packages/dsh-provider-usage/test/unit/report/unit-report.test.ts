@@ -2913,6 +2913,73 @@ describe("ReportTaskQueue：串行单飞 + 入队去重（#625/#626）", () => {
   it("failed 任务后可重新提交（新 taskId）", () => {
     expect(fourthId).not.toBe(firstId);
   });
+
+  it("force prepare pending 时普通 submit 复用 reservation，不提前执行", async () => {
+    let markBlockStarted = (): void => {};
+    const blockStarted = new Promise<void>((resolve) => {
+      markBlockStarted = resolve;
+    });
+    let releaseBlock = (): void => {};
+    const blockGate = new Promise<void>((resolve) => {
+      releaseBlock = resolve;
+    });
+    let markPrepareStarted = (): void => {};
+    const prepareStarted = new Promise<void>((resolve) => {
+      markPrepareStarted = resolve;
+    });
+    let releasePrepare = (): void => {};
+    const prepareGate = new Promise<void>((resolve) => {
+      releasePrepare = resolve;
+    });
+    let markForceFinished = (): void => {};
+    const forceFinished = new Promise<void>((resolve) => {
+      markForceFinished = resolve;
+    });
+    const executions: Array<{ key: string; force: boolean }> = [];
+    const queue = new ReportTaskQueue({
+      executor: async (input) => {
+        executions.push({ key: input.key, force: input.force === true });
+        if (input.key === "block") {
+          markBlockStarted();
+          await blockGate;
+        }
+        if (input.key === "target" && input.force === true) markForceFinished();
+        return {};
+      },
+      prepareForce: async () => {
+        markPrepareStarted();
+        await prepareGate;
+      },
+      warn: () => {},
+    });
+    const target: ReportTaskInput = {
+      period: "daily",
+      key: "target",
+      startDay: "target",
+      endDay: "target",
+    };
+
+    queue.submit({ ...target, key: "block" });
+    await blockStarted;
+    const normal = queue.submit(target);
+    const forcePromise = queue.submitForce({ ...target, force: true });
+    await prepareStarted;
+
+    const duringPrepare = queue.submit(target);
+    expect(duringPrepare).toEqual({ taskId: normal.taskId, existing: true });
+    expect(queue.get(normal.taskId)?.status).toBe("queued");
+    expect(executions.filter((item) => item.key === "target")).toEqual([]);
+
+    releasePrepare();
+    const forced = await forcePromise;
+    releaseBlock();
+    await forceFinished;
+
+    expect(forced).toEqual({ taskId: normal.taskId, existing: true });
+    expect(executions.filter((item) => item.key === "target")).toEqual([
+      { key: "target", force: true },
+    ]);
+  });
 });
 
 // ---------------------------------------------------------------- tick→队列：失败不推进 lastRun + 下轮重试同窗

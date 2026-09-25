@@ -974,6 +974,103 @@ describe("#1010 B2b coordinator/scheduler/queue 纵向切片", () => {
     }
   });
 
+  it("无 cycleId 的旧 task 不能消费 force cycle；force task 以真实 cycle 唯一单飞", async () => {
+    const root = mkdtempSync(join(tmpdir(), "b2b-force-cycle-race-"));
+    try {
+      const now = 1_000;
+      const seed = {
+        period: "daily" as const,
+        key: "2026-09-23",
+        startDay: "2026-09-23",
+        endDay: "2026-09-23",
+        route: { provider: "generic-provider", model: "generic-model" },
+      };
+      const ledger = createRetryLedger(root, {
+        now: () => now,
+        createCycleId: () => "cycle-force",
+      });
+      const coordinator = createReportStateCoordinator({ root, ledger, now: () => now });
+
+      const oldTaskExisting = await coordinator.get(seed.period, seed.key);
+      expect(oldTaskExisting).toBeUndefined();
+      const forced = await coordinator.beginForce(seed, now);
+      expect(forced).toMatchObject({ cycleId: "cycle-force", phase: "waiting" });
+
+      const resolved = {
+        status: "success" as const,
+        route: { provider: "resolved-provider", model: "resolved-model" },
+      };
+      expect(
+        await coordinator.beginAttempt(
+          {
+            period: seed.period,
+            key: seed.key,
+            startDay: seed.startDay,
+            endDay: seed.endDay,
+            route: resolved.route,
+          },
+          now + 1,
+        ),
+      ).toBeNull();
+      expect(await coordinator.get(seed.period, seed.key)).toEqual(forced);
+
+      const forceTaskExisting = await coordinator.get(seed.period, seed.key);
+      if (forceTaskExisting === undefined) throw new Error("expected forced cycle");
+      const forceClaim = await coordinator.beginAttempt(
+        {
+          period: seed.period,
+          key: seed.key,
+          startDay: seed.startDay,
+          endDay: seed.endDay,
+          route: forceTaskExisting.route,
+          cycleId: forceTaskExisting.cycleId,
+        },
+        now + 1,
+      );
+      if (forceClaim === null) throw new Error("expected forced claim");
+      expect(forceClaim.cycleId).toBe(forced.cycleId);
+      expect(forceClaim.entry.phase).toBe("in-flight");
+      expect(await coordinator.get(seed.period, seed.key)).toEqual(forceClaim.entry);
+      expect((await coordinator.list()).filter((entry) => entry.phase === "in-flight")).toEqual([
+        forceClaim.entry,
+      ]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("force 覆盖后旧 task 携带旧 cycle token 仍被真实 CAS 拒绝", async () => {
+    const root = mkdtempSync(join(tmpdir(), "b2b-old-cycle-cas-"));
+    try {
+      const now = 1_000;
+      let sequence = 0;
+      const ledger = createRetryLedger(root, {
+        now: () => now,
+        createCycleId: () => `cycle-${(sequence += 1)}`,
+      });
+      const coordinator = createReportStateCoordinator({ root, ledger, now: () => now });
+      const seed = {
+        period: "daily" as const,
+        key: "2026-09-23",
+        startDay: "2026-09-23",
+        endDay: "2026-09-23",
+        route: { provider: "generic-provider", model: "generic-model" },
+      };
+      const oldClaim = await coordinator.beginAttempt(seed, now);
+      if (oldClaim === null) throw new Error("expected old claim");
+      const forced = await coordinator.beginForce(seed, now + 1);
+      expect(oldClaim.cycleId).toBe("cycle-1");
+      expect(forced.cycleId).toBe("cycle-2");
+
+      expect(
+        await coordinator.beginAttempt({ ...seed, cycleId: oldClaim.cycleId }, now + 1),
+      ).toBeNull();
+      expect(await coordinator.get(seed.period, seed.key)).toEqual(forced);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("running 任务收到 force 时先 durable prepare，再排后续 cycle", async () => {
     const order: string[] = [];
     let release: () => void = () => undefined;
@@ -1012,5 +1109,266 @@ describe("#1010 B2b coordinator/scheduler/queue 纵向切片", () => {
       "start:K1:force",
       "end:K1:force",
     ]);
+  });
+
+  it("prepare gate 内同 key normal 不会 claim force cycle；其它 key 仍可运行", async () => {
+    const root = mkdtempSync(join(tmpdir(), "b2b-force-pending-reservation-"));
+    try {
+      const now = 2_000;
+      const claimNow = now + 2;
+      const route = { provider: "generic-provider", model: "generic-model" };
+      const dateKeys = {
+        K0: "2026-09-01",
+        K1: "2026-09-02",
+        K2: "2026-09-03",
+      } as const;
+      const inputFor = (label: keyof typeof dateKeys): ReportTaskInput => {
+        const key = dateKeys[label];
+        return {
+          period: "daily",
+          key,
+          startDay: key,
+          endDay: key,
+        };
+      };
+      const seed = {
+        ...inputFor("K1"),
+        route,
+      };
+      const ledger = createRetryLedger(root, { now: () => now });
+
+      let markK0Started: () => void = () => undefined;
+      const k0Started = new Promise<void>((resolve) => {
+        markK0Started = resolve;
+      });
+      let releaseK0: () => void = () => undefined;
+      const k0Gate = new Promise<void>((resolve) => {
+        releaseK0 = resolve;
+      });
+      let markK0Done: () => void = () => undefined;
+      const k0Done = new Promise<void>((resolve) => {
+        markK0Done = resolve;
+      });
+      let markK2Done: () => void = () => undefined;
+      const k2Done = new Promise<void>((resolve) => {
+        markK2Done = resolve;
+      });
+      let markPrepareStarted: () => void = () => undefined;
+      const prepareStarted = new Promise<void>((resolve) => {
+        markPrepareStarted = resolve;
+      });
+      let releaseBeginForce: () => void = () => undefined;
+      const beginForceGate = new Promise<void>((resolve) => {
+        releaseBeginForce = resolve;
+      });
+      let markForceEntryCreated: () => void = () => undefined;
+      const forceEntryCreated = new Promise<void>((resolve) => {
+        markForceEntryCreated = resolve;
+      });
+      let releaseFinishForce: () => void = () => undefined;
+      const finishForceGate = new Promise<void>((resolve) => {
+        releaseFinishForce = resolve;
+      });
+      let markForceDone: () => void = () => undefined;
+      const forceDone = new Promise<void>((resolve) => {
+        markForceDone = resolve;
+      });
+      const executorCalls: Array<{ key: string; force: boolean; cycleId?: string }> = [];
+      let forceCycleId: string | undefined;
+
+      const queue = new ReportTaskQueue({
+        executor: async (input) => {
+          if (input.key === dateKeys.K0 && input.force !== true) {
+            markK0Started();
+            await k0Gate;
+          }
+          const existing = await ledger.get(input.period, input.key);
+          const claim = await ledger.beginAttempt(
+            {
+              period: input.period,
+              key: input.key,
+              startDay: input.startDay,
+              endDay: input.endDay,
+              route: existing?.route ?? route,
+              ...(existing === undefined ? {} : { cycleId: existing.cycleId }),
+            },
+            claimNow,
+          );
+          executorCalls.push({
+            key: input.key,
+            force: input.force === true,
+            cycleId: claim?.cycleId,
+          });
+          if (claim === null) throw new Error("expected ledger claim");
+          if (input.key === dateKeys.K0) markK0Done();
+          if (input.key === dateKeys.K2) markK2Done();
+          if (input.key === dateKeys.K1 && input.force === true) markForceDone();
+          return {};
+        },
+        prepareForce: async () => {
+          markPrepareStarted();
+          await beginForceGate;
+          const forced = await ledger.beginForce(seed, now);
+          forceCycleId = forced.cycleId;
+          markForceEntryCreated();
+          await finishForceGate;
+        },
+        warn: quietWarn,
+      });
+
+      queue.submit(inputFor("K0"));
+      await k0Started;
+      const queuedNormal = queue.submit(inputFor("K1"));
+      const forcePromise = queue.submitForce({ ...inputFor("K1"), force: true });
+      await prepareStarted;
+
+      const normalDuringPrepare = queue.submit(inputFor("K1"));
+      expect(normalDuringPrepare.taskId).toBe(queuedNormal.taskId);
+      expect(normalDuringPrepare.existing).toBe(true);
+      expect(queue.get(normalDuringPrepare.taskId)?.status).toBe("queued");
+      const other = queue.submit(inputFor("K2"));
+      expect(other.existing).toBe(false);
+
+      // The ledger force entry exists before prepare resolves. A queued normal
+      // task must not get a chance to read and consume that cycle.
+      releaseBeginForce();
+      await forceEntryCreated;
+      expect(forceCycleId).toBeDefined();
+      releaseK0();
+      await k0Done;
+      await k2Done;
+      expect(executorCalls).toHaveLength(2);
+      expect(executorCalls[0]).toMatchObject({ key: dateKeys.K0, force: false });
+      expect(executorCalls[1]).toMatchObject({ key: dateKeys.K2, force: false });
+      expect(executorCalls.some((call) => call.key === dateKeys.K1)).toBe(false);
+      expect(executorCalls[0]?.cycleId).not.toBe(forceCycleId);
+
+      releaseFinishForce();
+      const forced = await forcePromise;
+      expect(forced).toEqual({ taskId: queuedNormal.taskId, existing: true });
+      await forceDone;
+      await pollUntil(() => queue.get(queuedNormal.taskId)?.status === "done", 3000);
+      expect(executorCalls).toHaveLength(3);
+      expect(executorCalls[2]).toEqual({ key: dateKeys.K1, force: true, cycleId: forceCycleId });
+      expect((await ledger.get("daily", dateKeys.K1))?.cycleId).toBe(forceCycleId);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("不同 key 的 force prepare 仍按 forceTail 串行", async () => {
+    const order: string[] = [];
+    let releaseFirst: () => void = () => undefined;
+    const firstGate = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    let markFirstStarted: () => void = () => undefined;
+    const firstStarted = new Promise<void>((resolve) => {
+      markFirstStarted = resolve;
+    });
+    const queue = new ReportTaskQueue({
+      executor: async (input) => {
+        order.push(`execute:${input.key}`);
+        return {};
+      },
+      prepareForce: async (input) => {
+        order.push(`prepare-start:${input.key}`);
+        if (input.key === "A") {
+          markFirstStarted();
+          await firstGate;
+        }
+        order.push(`prepare-end:${input.key}`);
+      },
+      warn: quietWarn,
+    });
+    const input = (key: string): ReportTaskInput => ({
+      period: "daily",
+      key,
+      startDay: key,
+      endDay: key,
+      force: true,
+    });
+
+    const first = queue.submitForce(input("A"));
+    await firstStarted;
+    const second = queue.submitForce(input("B"));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(order.filter((item) => item.startsWith("prepare-"))).toEqual(["prepare-start:A"]);
+
+    releaseFirst();
+    await Promise.all([first, second]);
+    expect(order.filter((item) => item.startsWith("prepare-"))).toEqual([
+      "prepare-start:A",
+      "prepare-end:A",
+      "prepare-start:B",
+      "prepare-end:B",
+    ]);
+    await pollUntil(() => order.filter((item) => item.startsWith("execute:")).length === 2, 3000);
+    expect(order.filter((item) => item.startsWith("execute:"))).toEqual(["execute:A", "execute:B"]);
+  });
+
+  it("force prepare rejection 后 normal fallback 解锁且 placeholder 不残留", async () => {
+    const calls: Array<{ force: boolean }> = [];
+    let releasePrepare: () => void = () => undefined;
+    const prepareGate = new Promise<void>((resolve) => {
+      releasePrepare = resolve;
+    });
+    let markPrepareStarted: () => void = () => undefined;
+    const prepareStarted = new Promise<void>((resolve) => {
+      markPrepareStarted = resolve;
+    });
+    let markNormalDone: () => void = () => undefined;
+    const normalDone = new Promise<void>((resolve) => {
+      markNormalDone = resolve;
+    });
+    const queue = new ReportTaskQueue({
+      executor: async (input) => {
+        calls.push({ force: input.force === true });
+        markNormalDone();
+        return {};
+      },
+      prepareForce: async () => {
+        markPrepareStarted();
+        await prepareGate;
+        throw new Error("prepare rejected");
+      },
+      warn: quietWarn,
+    });
+    const input: ReportTaskInput = {
+      period: "daily",
+      key: "fallback",
+      startDay: "fallback",
+      endDay: "fallback",
+    };
+
+    const forcePromise = queue.submitForce({ ...input, force: true });
+    const outcome = forcePromise.then(
+      (value) => ({ ok: true as const, value }),
+      (error: unknown) => ({ ok: false as const, error }),
+    );
+    await prepareStarted;
+    const normal = queue.submit(input);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(normal.existing).toBe(true);
+    expect(queue.get(normal.taskId)?.status).toBe("queued");
+    expect(calls).toEqual([]);
+
+    releasePrepare();
+    const result = await outcome;
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("expected force preparation rejection");
+    expect(result.error).toMatchObject({ message: "prepare rejected" });
+    await normalDone;
+    await pollUntil(() => queue.get(normal.taskId)?.status === "done", 3000);
+    expect(queue.get(normal.taskId)?.force).toBe(false);
+    expect(calls).toEqual([{ force: false }]);
+
+    const retry = queue.submit(input);
+    expect(retry.taskId).not.toBe(normal.taskId);
+    expect(retry.existing).toBe(false);
+    await pollUntil(() => queue.get(retry.taskId)?.status === "done", 3000);
+    expect(calls).toEqual([{ force: false }, { force: false }]);
   });
 });

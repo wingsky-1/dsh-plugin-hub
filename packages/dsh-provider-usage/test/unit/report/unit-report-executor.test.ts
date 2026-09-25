@@ -965,6 +965,68 @@ describe("runner/executor：#1010 B2a retry ledger 执行事务", () => {
     }
   });
 
+  it("claim 前 force 插入新 cycle：旧普通 task 被拒，新 cycle 仍可被 force claim", async () => {
+    const root = mkdtempSync(join(tmpdir(), "u-exec-claim-cas-"));
+    let sequence = 0;
+    const ledger = retryLedger(root, () => `cycle-${(sequence += 1)}`);
+    const coordinator = createReportStateCoordinator({ root, ledger, now: () => RETRY_NOW });
+    const commit = commitCurrentThenClear(root, ledger);
+    let releaseResolve: () => void = () => undefined;
+    let markResolveEntered: () => void = () => undefined;
+    const resolveGate = new Promise<void>((resolve) => {
+      releaseResolve = resolve;
+    });
+    const resolveEntered = new Promise<void>((resolve) => {
+      markResolveEntered = resolve;
+    });
+    const resolveRoute = async () => {
+      markResolveEntered();
+      await resolveGate;
+      return {
+        status: "success" as const,
+        route: { provider: "generic-provider", model: "generic-model" },
+      };
+    };
+    const { ctx, calls } = retryContext(SUCCESS_CHUNKS);
+    const executor = retryExecutor({
+      root,
+      trend: retryTrend(1),
+      ctx,
+      ledger,
+      commit,
+      resolveRoute,
+    });
+
+    try {
+      const pending = executor(retryDue());
+      await resolveEntered;
+      const forced = await coordinator.beginForce(
+        {
+          ...retryDue(),
+          route: { provider: "generic-provider", model: "generic-model" },
+        },
+        RETRY_NOW,
+      );
+      releaseResolve();
+
+      await expect(pending).rejects.toMatchObject({ code: "retry-cycle-conflict" });
+      expect(await ledger.get("daily", RETRY_DAY)).toMatchObject({
+        cycleId: forced.cycleId,
+        phase: "waiting",
+        attempts: 0,
+      });
+
+      const forcedResult = await executor(retryDue({ force: true }));
+      expect(forcedResult.meta).toMatchObject({ ok: true, key: RETRY_DAY });
+      expect(calls).toHaveLength(1);
+      expect(await ledger.list()).toEqual([]);
+      expect(await readLastRun(root)).toEqual({ daily: RETRY_DAY });
+    } finally {
+      releaseResolve();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("旧 cycle 成功回调 CAS 丢弃，不清新 cycle、不推进 lastRun", async () => {
     const root = mkdtempSync(join(tmpdir(), "u-exec-cas-success-"));
     const ledger = retryLedger(

@@ -60,6 +60,31 @@ export interface ReportTaskSubmission {
   existing: boolean;
 }
 
+interface TaskRuntime {
+  scheduled: boolean;
+  running: boolean;
+}
+
+type ResolveSubmission = (value: ReportTaskSubmission) => void;
+type RejectSubmission = (reason?: unknown) => void;
+
+interface PendingForce {
+  readonly key: string;
+  readonly task: ReportTask;
+  readonly input: ReportTaskInput;
+  readonly submissionExisting: boolean;
+  normalRequested: boolean;
+  prepared: boolean;
+  settled: boolean;
+  readonly operation: Promise<ReportTaskSubmission>;
+  readonly resolve: ResolveSubmission;
+  readonly reject: RejectSubmission;
+}
+
+function taskKey(input: Pick<ReportTaskInput, "period" | "key">): string {
+  return `${input.period}\u0000${input.key}`;
+}
+
 function stableErrorCode(error: unknown, fallback: string): string {
   if (typeof error === "object" && error !== null) {
     const value = (error as { code?: unknown; message?: unknown }).code;
@@ -70,7 +95,11 @@ function stableErrorCode(error: unknown, fallback: string): string {
 
 export class ReportTaskQueue {
   private readonly tasks = new Map<string, ReportTask>();
+  private readonly runtimes = new Map<string, TaskRuntime>();
+  private readonly pendingForces = new Map<string, PendingForce>();
+  private readonly preparedForceTasks = new Set<string>();
   private tail: Promise<unknown> = Promise.resolve();
+  /** 保留 force prepare+activate 的全局串行语义；reservation 只屏蔽普通 submit。 */
   private forceTail: Promise<unknown> = Promise.resolve();
   private readonly executor: (input: ReportTaskInput) => Promise<ReportTaskResult>;
   private readonly now: () => number;
@@ -98,20 +127,51 @@ export class ReportTaskQueue {
     return this.enqueue(input, input.force === true);
   }
 
-  /** force 入口：prepare 成功后才把任务交给队列。 */
+  /** force 入口：同步登记 reservation，durable prepare 成功后才激活 task。 */
   submitForce(input: ReportTaskInput): Promise<ReportTaskSubmission> {
+    const key = taskKey(input);
+    const pending = this.pendingForces.get(key);
+    if (pending !== undefined) return pending.operation;
+
+    const queued = this.findQueued(input);
+    if (queued !== undefined && queued.force && this.preparedForceTasks.has(queued.id)) {
+      return Promise.resolve({ taskId: queued.id, existing: true });
+    }
+
+    const wasNormal = queued !== undefined && !queued.force;
+    const task = queued ?? this.createTask(input, true);
+    task.force = true;
+    const reservation = this.createPendingForce(input, task, queued !== undefined, wasNormal);
+    this.pendingForces.set(key, reservation);
+    this.prune();
+
+    if (this.prepareForce === undefined) {
+      this.activateForce(reservation);
+      return reservation.operation;
+    }
+
     const operation = this.forceTail.then(async () => {
-      if (this.prepareForce !== undefined) await this.prepareForce(input);
-      return this.enqueue(input, true);
+      try {
+        await this.prepareForce?.(input);
+        this.activateForce(reservation);
+      } catch (error: unknown) {
+        this.rejectForce(reservation, error);
+      }
     });
     this.forceTail = operation.then(
       () => undefined,
       () => undefined,
     );
-    return operation;
+    return reservation.operation;
   }
 
   private enqueue(input: ReportTaskInput, force: boolean): ReportTaskSubmission {
+    const pending = this.pendingForces.get(taskKey(input));
+    if (pending !== undefined) {
+      if (!force) pending.normalRequested = true;
+      return { taskId: pending.task.id, existing: true };
+    }
+
     for (const task of this.tasks.values()) {
       if (task.period !== input.period || task.key !== input.key) continue;
       if (task.status === "queued") {
@@ -124,6 +184,22 @@ export class ReportTaskQueue {
       // running + force intentionally falls through to a later cycle.
     }
 
+    const task = this.createTask(input, force);
+    this.schedule(task);
+    this.prune();
+    return { taskId: task.id, existing: false };
+  }
+
+  private findQueued(input: ReportTaskInput): ReportTask | undefined {
+    for (const task of this.tasks.values()) {
+      if (task.period === input.period && task.key === input.key && task.status === "queued") {
+        return task;
+      }
+    }
+    return undefined;
+  }
+
+  private createTask(input: ReportTaskInput, force: boolean): ReportTask {
     const now = this.now();
     const task: ReportTask = {
       id: randomUUID(),
@@ -137,13 +213,106 @@ export class ReportTaskQueue {
       updatedAt: now,
     };
     this.tasks.set(task.id, task);
-    this.tail = this.tail.then(() => this.run(task)).catch(() => undefined);
-    this.prune();
-    return { taskId: task.id, existing: false };
+    this.runtimes.set(task.id, { scheduled: false, running: false });
+    return task;
+  }
+
+  private createPendingForce(
+    input: ReportTaskInput,
+    task: ReportTask,
+    submissionExisting: boolean,
+    normalRequested: boolean,
+  ): PendingForce {
+    let resolveOperation!: ResolveSubmission;
+    let rejectOperation!: RejectSubmission;
+    const operation = new Promise<ReportTaskSubmission>((resolve, reject) => {
+      resolveOperation = resolve;
+      rejectOperation = reject;
+    });
+    return {
+      key: taskKey(input),
+      task,
+      input,
+      submissionExisting,
+      normalRequested,
+      prepared: false,
+      settled: false,
+      operation,
+      resolve: resolveOperation,
+      reject: rejectOperation,
+    };
+  }
+
+  private activateForce(reservation: PendingForce): void {
+    if (reservation.settled) return;
+    if (this.pendingForces.get(reservation.key) !== reservation) return;
+    reservation.prepared = true;
+    this.pendingForces.delete(reservation.key);
+    this.preparedForceTasks.add(reservation.task.id);
+    if (reservation.task.status === "queued") this.schedule(reservation.task);
+    reservation.settled = true;
+    reservation.resolve({
+      taskId: reservation.task.id,
+      existing: reservation.submissionExisting,
+    });
+  }
+
+  private rejectForce(reservation: PendingForce, error: unknown): void {
+    if (reservation.settled) return;
+    if (this.pendingForces.get(reservation.key) !== reservation) return;
+    this.pendingForces.delete(reservation.key);
+    this.preparedForceTasks.delete(reservation.task.id);
+    reservation.settled = true;
+
+    if (reservation.normalRequested) {
+      // A normal submit was already accepted (or is single-flighting on this
+      // reservation): run it without force so a failed prepare cannot strand it.
+      reservation.task.force = false;
+      if (reservation.task.status === "queued") this.schedule(reservation.task);
+    } else {
+      // No ordinary request depends on this placeholder. Keep the public task
+      // terminal for status compatibility, but never leave a queued gate behind.
+      reservation.task.status = "failed";
+      reservation.task.error = this.sanitizeErrors
+        ? stableErrorCode(error, "force-prepare-failed")
+        : error instanceof Error
+          ? error.message
+          : String(error);
+      reservation.task.updatedAt = this.now();
+      this.prune();
+    }
+    reservation.reject(error);
   }
 
   get(taskId: string): ReportTask | undefined {
     return this.tasks.get(taskId);
+  }
+
+  private schedule(task: ReportTask): void {
+    const runtime = this.runtimes.get(task.id);
+    if (runtime === undefined || runtime.scheduled || runtime.running) return;
+    runtime.scheduled = true;
+    this.tail = this.tail.then(() => this.runScheduled(task)).catch(() => undefined);
+  }
+
+  private async runScheduled(task: ReportTask): Promise<void> {
+    const runtime = this.runtimes.get(task.id);
+    if (runtime === undefined) return;
+    runtime.scheduled = false;
+    if (task.status !== "queued") return;
+
+    const pending = this.pendingForces.get(taskKey(task));
+    if (pending?.task.id === task.id && !pending.prepared) {
+      // Do not hold the global tail while this key waits for durable prepare.
+      return;
+    }
+
+    runtime.running = true;
+    try {
+      await this.run(task);
+    } finally {
+      runtime.running = false;
+    }
   }
 
   private async run(task: ReportTask): Promise<void> {
@@ -181,8 +350,11 @@ export class ReportTaskQueue {
     for (const [id, task] of this.tasks) {
       if ((task.status === "done" || task.status === "failed") && task.updatedAt < cutoff) {
         this.tasks.delete(id);
+        this.runtimes.delete(id);
+        this.preparedForceTasks.delete(id);
       }
     }
+
     while (this.tasks.size > this.maxTasks) {
       let oldest: string | null = null;
       let oldestAt = Number.POSITIVE_INFINITY;
@@ -195,6 +367,8 @@ export class ReportTaskQueue {
       }
       if (oldest === null) break;
       this.tasks.delete(oldest);
+      this.runtimes.delete(oldest);
+      this.preparedForceTasks.delete(oldest);
     }
   }
 }

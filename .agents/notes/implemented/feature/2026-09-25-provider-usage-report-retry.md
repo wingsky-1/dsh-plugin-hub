@@ -18,8 +18,10 @@ Status: implemented
 
 ### 报告级 retry ledger
 
-- 初次报告调用之外最多自动 retry 5 次，wire `attempts=0..5`、`maxAttempts=5`；第 1 至第 5 次 retry 前退避严格为 1/2/4/8/16 分钟。每个 `period + report key` 独立记 ledger，初次配置在 cycle 开始时快照，cycle 内不随全局配置漂移。
-- force 是唯一创建新 cycle 的入口：重置 attempts/terminal/nextRetryAt，读取当前配置并 durable prepare；force 失败不推进 lastRun。非 force 遇到 waiting/in-flight 或 terminal 不重置预算、不重复 dispatch。
+- 初次报告调用之外最多自动 retry 5 次，wire `attempts=0..5`、`maxAttempts=5`；第 1 至第 5 次 retry 前退避严格为 1/2/4/8/16 分钟。逻辑身份是 `period + report key`，初次配置在 cycle 开始时快照，cycle 内不随全局配置漂移。
+- ledger 读取时先在内存中按 `period → key → RetryEntry` 规范化：所有非终态 entry 保留在 `records`，每个 period 只保留按 key 排序后的最后一条 terminal entry；写盘序列化时再次裁剪，并把被裁剪的 terminal key 写入有界 `terminalKeys`（`period → key → terminal code`，正常生成时按 key 排序每 period 最多 32 个）。墓碑只保存终态 code，不保存 attempts、observations 或 usage，因此不是所有历史 terminal key 的完整存档。`flatten` 以及 `list`/`listDue`/`get` 只投影 `records`，不会把墓碑展开成完整 entry。
+- 没有 entry 且没有墓碑的 key，自动 `beginAttempt` 才会创建 initial entry；已有 entry 时必须带匹配的 `cycleId`，waiting 还必须已到 `nextRetryAt`，in-flight 或 terminal 返回 `null`；若 `records` 没有该 key 但 `terminalKeys` 有墓碑，也返回 `null`。对这个只剩墓碑的 key，手动 `beginForce` 才会清除墓碑并创建新 cycle、重置 attempts/terminal/nextRetryAt，读取当前配置并 durable prepare；force 失败不推进 lastRun。
+- 例如 `daily` 的 `2026-09-21` 与 `2026-09-23` 都 terminal 时，`records.daily` 只保留 `2026-09-23` 的完整 entry，`terminalKeys.daily` 记录 `2026-09-21: "auth-failed"`；对被裁剪的 `2026-09-21` 调用 `beginAttempt` 返回 `null`，只有 `beginForce` 才会移除墓碑并开始新 cycle。
 - ledger 是 retry 状态与成本的事实源，使用 0600 临时文件、完整写入、文件 fsync、原子 rename 与支持平台上的目录 fsync。损坏文件先 no-clobber 隔离取证并 fail closed，不能当空状态重置预算。启动 recovery 在 timer/首轮 tick 前完成；in-flight 恢复为当前可重试状态，terminal 不自动复活。
 - storage failure 是 terminal 类别，不映射为 transient，不重新调用模型。terminal marker 必须 durable 写成功才可返回；写失败保留可识别 storage fail-closed 状态。现有 report/index/lastRun 写链尚未全链 fsync，因此只声明 ledger 自身耐久与进程崩溃/重启恢复，不声明掉电下全链原子性。
 

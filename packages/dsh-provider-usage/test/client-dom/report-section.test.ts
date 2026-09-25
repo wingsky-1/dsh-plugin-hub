@@ -2,7 +2,8 @@
 /**
  * dsh-provider-usage — 报告 reasoning effort 垂直切片（#1010）。
  *
- * 时间纪律：普通用例只用 act 排空 Promise 链；poll 用例显式伪造 setTimeout/clearTimeout，绝不真实 sleep。
+ * 时间纪律：普通用例只用 act 排空 Promise 链；poll 用例显式伪造 setTimeout/clearTimeout/Date
+ * （Date 覆盖 src/client/report.tsx 的 new Date(nextRetryAt) 投影，避免真时钟混进断言），绝不真实 sleep。
  * 离线纪律：fetch 与 Response 均为手写窄假件；不实现服务端 capability 判定。
  * locale 回落为 key 本体，断言只观察用户可见标签、wire URL 与保存 JSON。
  */
@@ -229,10 +230,18 @@ async function selectExactModel(): Promise<ReturnType<typeof render>> {
   return view;
 }
 
-function lastPostBody(): Record<string, unknown> {
-  const posts = calls.filter((call) => call.method === "POST");
-  expect(posts.length).toBeGreaterThan(0);
-  return JSON.parse(posts[posts.length - 1]!.body ?? "{}") as Record<string, unknown>;
+/** 全部 POST 请求体（按发生顺序）：调用点自行钉死条数与内容，不在此处做存在性兜底。 */
+function postBodies(): Record<string, unknown>[] {
+  return calls
+    .filter((call) => call.method === "POST")
+    .map((call) => JSON.parse(call.body ?? "{}") as Record<string, unknown>);
+}
+
+/** 未保存标记的宿主 class 名列表：空数组即「无脏」，非空即逐个点名是头还是段。 */
+function dirtyScopes(view: ReturnType<typeof render>): string[] {
+  return Array.from(view.container.querySelectorAll(".dou-reportDirty")).map(
+    (node) => node.parentElement?.className ?? "",
+  );
 }
 
 async function openGenerateSection(view: ReturnType<typeof render>): Promise<void> {
@@ -310,13 +319,16 @@ describe("ReportSection：provider → exact model → reasoning effort", () => 
     const options = Array.from(effort.options);
     expect(effort.disabled).toBe(false);
     expect(effort.value).toBe("");
-    expect(options.map((option) => option.value)).toEqual(["", "vendor::balanced", "vendor::deep"]);
-    expect(options[1]!.textContent).toContain("Balanced");
-    expect(options[1]!.getAttribute("title")).toBe("Balanced description from DSH");
-    expect(options[1]!.textContent).not.toContain("reportReasoningDefault");
-    expect(options[2]!.textContent).toContain("Deep");
-    expect(options[2]!.getAttribute("title")).toBe("Deep description from DSH");
-    expect(options[2]!.textContent).toContain("reportReasoningDefault");
+    // 展示顺序与文案整体比对：DSH 顺序保持、默认档位标记只落在 defaultEffort 上。
+    expect(
+      options.map((option) => [option.value, option.textContent, option.getAttribute("title")]),
+    ).toEqual([
+      ["", "reportReasoningUnset", null],
+      ["vendor::balanced", "Balanced (vendor::balanced)", "Balanced description from DSH"],
+      ["vendor::deep", "Deep (vendor::deep) · reportReasoningDefault", "Deep description from DSH"],
+    ]);
+    // 选中模型名进 title：档位描述取自 DSH 而非客户端自造。
+    expect(effort.getAttribute("title")).toBe("Vendor B Model");
   });
 
   it("选择后进入 dirty/save，清除后保存整份配置但省略 reasoningEffort", async () => {
@@ -333,27 +345,34 @@ describe("ReportSection：provider → exact model → reasoning effort", () => 
     fireEvent.change(view.getByLabelText("reportReasoningEffort"), {
       target: { value: "vendor::deep" },
     });
-    expect(view.getAllByText("reportUnsaved").length).toBeGreaterThan(0);
+    // 脏标记恰好两处：全局头 + routing 段头（探针实测），不多不少。
+    expect(dirtyScopes(view)).toEqual(["dou-reportHead", "dou-reportSectionHead"]);
     fireEvent.click(view.getByRole("button", { name: "reportSave" }));
     await settle();
-    expect(lastPostBody()).toEqual({
-      ...BASE_CONFIG,
-      provider: "vendor-b",
-      model: "vendor-b::model",
-      reasoningEffort: "vendor::deep",
-    });
+    expect(dirtyScopes(view)).toEqual([]);
+    expect(postBodies()).toEqual([
+      {
+        ...BASE_CONFIG,
+        provider: "vendor-b",
+        model: "vendor-b::model",
+        reasoningEffort: "vendor::deep",
+      },
+    ]);
 
     fireEvent.change(view.getByLabelText("reportReasoningEffort"), { target: { value: "" } });
-    expect(view.getAllByText("reportUnsaved").length).toBeGreaterThan(0);
+    expect(dirtyScopes(view)).toEqual(["dou-reportHead", "dou-reportSectionHead"]);
     fireEvent.click(view.getByRole("button", { name: "reportSave" }));
     await settle();
-    const cleared = lastPostBody();
-    expect(cleared).toEqual({
+    expect(dirtyScopes(view)).toEqual([]);
+    // 两次保存各发一次 POST；第二条整体比对即覆盖「省略 reasoningEffort」。
+    const saved = postBodies();
+    expect(saved).toHaveLength(2);
+    expect(saved[1]).toEqual({
       ...BASE_CONFIG,
       provider: "vendor-b",
       model: "vendor-b::model",
     });
-    expect(Object.hasOwn(cleared, "reasoningEffort")).toBe(false);
+    expect(Object.hasOwn(saved[1]!, "reasoningEffort")).toBe(false);
   });
 
   it("保留 stale effort 且提示，用户清除后不静默丢失其他配置", async () => {
@@ -383,15 +402,21 @@ describe("ReportSection：provider → exact model → reasoning effort", () => 
       "vendor::retired",
       "vendor::current",
     ]);
-    expect(view.getByText("reportReasoningStale")).toBeTruthy();
+    // 提示是独立 hint，且「不可用 / 能力错误」两条提示互斥（report.tsx:504-509 各自条件渲染）。
+    expect(view.getAllByText("reportReasoningStale")).toHaveLength(1);
+    expect(view.getByText("reportReasoningStale").className).toBe("dou-reportHint");
+    expect(view.queryAllByText("reportReasoningUnavailable")).toHaveLength(0);
+    expect(view.queryAllByText("reportReasoningCapabilityError")).toHaveLength(0);
 
     fireEvent.change(effort, { target: { value: "" } });
+    expect((view.getByLabelText("reportReasoningEffort") as HTMLSelectElement).value).toBe("");
+    expect(view.queryAllByText("reportReasoningStale")).toHaveLength(0);
     fireEvent.click(view.getByRole("button", { name: "reportSave" }));
     await settle();
-    const body = lastPostBody();
-    expect(body.provider).toBe("vendor-a");
-    expect(body.model).toBe("vendor-a::model");
-    expect(Object.hasOwn(body, "reasoningEffort")).toBe(false);
+    const saved = postBodies();
+    expect(saved).toHaveLength(1);
+    expect(saved[0]).toEqual({ ...configWith({ model: "vendor-a::model" }) });
+    expect(Object.hasOwn(saved[0]!, "reasoningEffort")).toBe(false);
   });
 
   it.each([
@@ -399,13 +424,15 @@ describe("ReportSection：provider → exact model → reasoning effort", () => 
       label: "reasoning 缺失",
       selectedModel: { id: "vendor-a::model" },
       hint: "reportReasoningUnavailable",
+      otherHint: "reportReasoningCapabilityError",
     },
     {
       label: "capabilityError",
       selectedModel: { id: "vendor-a::model", capabilityError: true },
       hint: "reportReasoningCapabilityError",
+      otherHint: "reportReasoningUnavailable",
     },
-  ] as const)("$label 显示独立安全提示且不伪造档位", async ({ selectedModel, hint }) => {
+  ] as const)("$label 显示独立安全提示且不伪造档位", async ({ selectedModel, hint, otherHint }) => {
     installFetch({
       config: configWith({ model: "vendor-a::model" }),
       modelsByProvider: {
@@ -417,9 +444,15 @@ describe("ReportSection：provider → exact model → reasoning effort", () => 
     await settle();
 
     const effort = view.getByLabelText("reportReasoningEffort") as HTMLSelectElement;
-    expect(view.getByText(hint)).toBeTruthy();
+    expect(view.getAllByText(hint)).toHaveLength(1);
+    expect(view.getByText(hint).className).toBe("dou-reportHint");
+    expect(view.queryAllByText(otherHint)).toHaveLength(0);
+    expect(view.queryAllByText("reportReasoningStale")).toHaveLength(0);
     expect(effort.disabled).toBe(true);
-    expect(Array.from(effort.options).map((option) => option.value)).toEqual([""]);
+    // 只剩「未设置」一项：不伪造档位，也不把未知值回显成可选项。
+    expect(Array.from(effort.options).map((option) => [option.value, option.textContent])).toEqual([
+      ["", "reportReasoningUnset"],
+    ]);
   });
 });
 
@@ -436,108 +469,136 @@ describe("ReportSection：#1010 A8 retry 状态与累计成本", () => {
         ],
       },
     });
-    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    // toFake 只列真实用到的那几个：poll 退避 sleep 用 setTimeout（report.tsx:48），
+    // Date 供 nextRetryAt 的 new Date(...).toISOString() 投影（report.tsx:832）。
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
     const view = renderReport();
     await settle();
     await openGenerateSection(view);
 
     fireEvent.click(view.getByRole("button", { name: "reportGenerate" }));
     await settle();
-    expect(view.getByRole("button", { name: "reportGenerating" })).toBeTruthy();
+    // busy 期：按钮换文案且 disabled，force 勾选框同时禁用。
+    const busy = view.getByRole("button", { name: "reportGenerating" }) as HTMLButtonElement;
+    expect(busy.disabled).toBe(true);
+    expect(view.queryAllByRole("button", { name: "reportGenerate" })).toHaveLength(0);
+    expect((view.getByLabelText("reportForceRegen") as HTMLInputElement).disabled).toBe(true);
 
     await runPoll(1_000);
+    // 逐个子节点比对：条数、顺序、文本同时锁死（探针实测为 8 个 span）。
     const status = view.getByRole("status");
-    expect(status.textContent).toContain("reportRetryRunning");
-    expect(status.textContent).toContain("reportRetryAttempt:attempt=3,maxAttempts=5");
-    expect(status.textContent).toContain("reportRetryInputTokens:value=120");
-    expect(status.textContent).toContain("reportRetryOutputTokens:value=30");
-    expect(status.textContent).toContain("reportRetryReasoningTokens:value=18");
-    expect(status.textContent).toContain("reportRetryTotalTokens:value=168");
-    expect(status.textContent).toContain("reportRetryCacheTokens:read=40,write=7");
-    expect(status.textContent).toContain("reportRetryDuration:value=2750");
-    expect(status.textContent).not.toContain("reportRetryNextAt");
-    expect(status.textContent).not.toContain("reportRetryTerminal");
+    expect(status.getAttribute("aria-live")).toBe("polite");
+    expect(Array.from(status.children, (node) => node.textContent)).toEqual([
+      "reportRetryRunning",
+      "reportRetryAttempt:attempt=3,maxAttempts=5",
+      "reportRetryInputTokens:value=120",
+      "reportRetryOutputTokens:value=30",
+      "reportRetryReasoningTokens:value=18",
+      "reportRetryTotalTokens:value=168",
+      "reportRetryCacheTokens:read=40,write=7",
+      "reportRetryDuration:value=2750",
+    ]);
+    // running 态不渲染 nextRetryAt / terminal 两行（否则会被上面数组的长度挡住）。
+    expect(status.querySelectorAll(".dou-reportGenNotice")).toHaveLength(1);
 
     await runPoll(2_000);
     expect(view.queryByRole("status")).toBeNull();
+    // done 后回到可再次触发的空闲态。
+    const idle = view.getByRole("button", { name: "reportGenerate" }) as HTMLButtonElement;
+    expect(idle.disabled).toBe(false);
   });
 
-  it("null 成本显示未知，busy / deferred / terminal 状态可理解", async () => {
-    const cases = [
-      {
-        label: "busy",
-        response: {
-          body: {
-            ok: false,
-            status: "busy",
-            reason: "retry-in-progress",
-            retry: { ...COMPLETE_RETRY, nextRetryAt: null },
-          },
-          status: 409,
+  it.each([
+    {
+      label: "busy",
+      response: {
+        body: {
+          ok: false,
+          status: "busy",
+          reason: "retry-in-progress",
+          retry: { ...COMPLETE_RETRY, nextRetryAt: null },
         },
-        expected: ["reportRetryBusy", "reportRetryInputTokens:value=120"],
-        absent: ["reportRetryNextAt", "reportRetryTerminal"],
+        status: 409,
       },
-      {
-        label: "deferred",
-        response: {
-          body: {
-            ok: false,
-            status: "deferred",
-            reason: "retry-in-progress",
-            retry: { ...COMPLETE_RETRY, nextRetryAt: 1_800_000_000_000 },
-          },
-          status: 409,
+      rows: [
+        "reportRetryBusy",
+        "reportRetryAttempt:attempt=3,maxAttempts=5",
+        "reportRetryInputTokens:value=120",
+        "reportRetryOutputTokens:value=30",
+        "reportRetryReasoningTokens:value=18",
+        "reportRetryTotalTokens:value=168",
+        "reportRetryCacheTokens:read=40,write=7",
+        "reportRetryDuration:value=2750",
+      ],
+    },
+    {
+      label: "deferred",
+      response: {
+        body: {
+          ok: false,
+          status: "deferred",
+          reason: "retry-in-progress",
+          retry: { ...COMPLETE_RETRY, nextRetryAt: 1_800_000_000_000 },
         },
-        expected: ["reportRetryDeferred", "reportRetryNextAt:at=2027-01-15T08:00:00.000Z"],
-        absent: ["reportRetryBusy", "reportRetryTerminal"],
+        status: 409,
       },
-      {
-        label: "terminal",
-        response: {
-          body: {
-            ok: false,
-            status: "terminal",
-            reason: "empty-output",
-            retry: {
-              ...NULL_RETRY,
-              attempts: 5,
-              terminal: true,
-              terminalReason: { code: "empty-output", kind: "empty-output" },
-            },
+      // nextRetryAt 非空时多渲染一行（report.tsx:831-834），故此处 9 行。
+      rows: [
+        "reportRetryDeferred",
+        "reportRetryAttempt:attempt=3,maxAttempts=5",
+        "reportRetryNextAt:at=2027-01-15T08:00:00.000Z",
+        "reportRetryInputTokens:value=120",
+        "reportRetryOutputTokens:value=30",
+        "reportRetryReasoningTokens:value=18",
+        "reportRetryTotalTokens:value=168",
+        "reportRetryCacheTokens:read=40,write=7",
+        "reportRetryDuration:value=2750",
+      ],
+    },
+    {
+      label: "terminal",
+      response: {
+        body: {
+          ok: false,
+          status: "terminal",
+          reason: "empty-output",
+          retry: {
+            ...NULL_RETRY,
+            attempts: 5,
+            terminal: true,
+            terminalReason: { code: "empty-output", kind: "empty-output" },
           },
-          status: 409,
         },
-        expected: [
-          "reportRetryTerminal:code=empty-output,kind=empty-output",
-          "reportRetryInputTokens:value=reportRetryUnknown",
-          "reportRetryOutputTokens:value=reportRetryUnknown",
-          "reportRetryReasoningTokens:value=reportRetryUnknown",
-          "reportRetryTotalTokens:value=reportRetryUnknown",
-          "reportRetryCacheTokens:read=reportRetryUnknown,write=reportRetryUnknown",
-          "reportRetryDuration:value=reportRetryUnknown",
-        ],
-        absent: ["reportRetryNextAt", "reportRetryBusy", "reportRetryDeferred"],
+        status: 409,
       },
-    ] as const;
+      // 成本全 null → 每项显示「未知」，且 terminal 不再渲染 nextRetryAt。
+      rows: [
+        "reportRetryTerminal:code=empty-output,kind=empty-output",
+        "reportRetryAttempt:attempt=6,maxAttempts=5",
+        "reportRetryInputTokens:value=reportRetryUnknown",
+        "reportRetryOutputTokens:value=reportRetryUnknown",
+        "reportRetryReasoningTokens:value=reportRetryUnknown",
+        "reportRetryTotalTokens:value=reportRetryUnknown",
+        "reportRetryCacheTokens:read=reportRetryUnknown,write=reportRetryUnknown",
+        "reportRetryDuration:value=reportRetryUnknown",
+      ],
+    },
+  ] as const)("$label 状态可理解且 null 成本显示未知", async ({ response, rows }) => {
+    installFetch({
+      config: BASE_CONFIG,
+      modelsByProvider: {},
+      generate: { post: response, statuses: [] },
+    });
+    const view = renderReport();
+    await settle();
+    await openGenerateSection(view);
+    fireEvent.click(view.getByRole("button", { name: "reportGenerate" }));
+    await settle();
 
-    for (const testCase of cases) {
-      installFetch({
-        config: BASE_CONFIG,
-        modelsByProvider: {},
-        generate: { post: testCase.response, statuses: [] },
-      });
-      const view = renderReport();
-      await settle();
-      await openGenerateSection(view);
-      fireEvent.click(view.getByRole("button", { name: "reportGenerate" }));
-      await settle();
-
-      const status = view.getByRole("status");
-      for (const text of testCase.expected) expect(status.textContent).toContain(text);
-      for (const text of testCase.absent) expect(status.textContent).not.toContain(text);
-      cleanup();
-    }
+    // 409 重试占用也要发一次 generate POST：请求语义不因状态分支而变。
+    expect(postBodies()).toEqual([{ period: "daily", force: false }]);
+    const status = view.getByRole("status");
+    expect(Array.from(status.children, (node) => node.textContent)).toEqual(rows);
   });
 
   it("旧 poll body 无 retry 时保持旧 UI，并继续完成或失败", async () => {
@@ -553,7 +614,8 @@ describe("ReportSection：#1010 A8 retry 状态与累计成本", () => {
         ],
       },
     });
-    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    // 同上：只伪造 poll 退避与日期投影真正用到的三个 API。
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
     const view = renderReport((meta) => generated.push(meta));
     await settle();
     await openGenerateSection(view);
@@ -561,10 +623,16 @@ describe("ReportSection：#1010 A8 retry 状态与累计成本", () => {
     await settle();
 
     await runPoll(1_000);
+    // 无 retry 字段 → 不出 status 区，但仍在轮询（按钮保持 busy）。
     expect(view.queryByRole("status")).toBeNull();
-    expect(view.getByRole("button", { name: "reportGenerating" })).toBeTruthy();
+    const busy = view.getByRole("button", { name: "reportGenerating" }) as HTMLButtonElement;
+    expect(busy.disabled).toBe(true);
     await runPoll(2_000);
     expect(generated).toEqual([COMPLETE_META]);
+    expect(view.queryByRole("status")).toBeNull();
+    expect(
+      (view.getByRole("button", { name: "reportGenerate" }) as HTMLButtonElement).disabled,
+    ).toBe(false);
 
     cleanup();
     installFetch({
@@ -581,8 +649,14 @@ describe("ReportSection：#1010 A8 retry 状态与累计成本", () => {
     fireEvent.click(failedView.getByRole("button", { name: "reportGenerate" }));
     await settle();
     await runPoll(1_000);
-    expect(failedView.getByText("reportGenerateFail:msg=legacy failure")).toBeTruthy();
+    // 失败文案落在 error 槽，且不与 retry status 区混用同一个节点类型。
+    const failure = failedView.getByText("reportGenerateFail:msg=legacy failure");
+    expect(failure.className).toBe("dou-reportGenError");
+    expect(failedView.queryAllByText("reportGenerateFail:msg=legacy failure")).toHaveLength(1);
     expect(failedView.queryByRole("status")).toBeNull();
+    expect(
+      (failedView.getByRole("button", { name: "reportGenerate" }) as HTMLButtonElement).disabled,
+    ).toBe(false);
   });
 
   it("manual force、reused 与 HTTP error 维持既有文案和请求语义", async () => {
@@ -601,8 +675,11 @@ describe("ReportSection：#1010 A8 retry 状态与累计成本", () => {
     fireEvent.click(reusedView.getByLabelText("reportForceRegen"));
     fireEvent.click(reusedView.getByRole("button", { name: "reportGenerate" }));
     await settle();
-    expect(lastPostBody()).toEqual({ period: "daily", force: true });
-    expect(reusedView.getByText("reportReused")).toBeTruthy();
+    expect(postBodies()).toEqual([{ period: "daily", force: true }]);
+    // 命中缓存：出 notice，且不新增报告行（onGeneratedRow 不被调用）。
+    expect(reusedView.getAllByText("reportReused")).toHaveLength(1);
+    expect(reusedView.getByText("reportReused").className).toBe("dou-reportGenNotice");
+    expect(reusedView.queryByRole("status")).toBeNull();
     expect(generated).toEqual([]);
 
     cleanup();
@@ -619,7 +696,13 @@ describe("ReportSection：#1010 A8 retry 状态与累计成本", () => {
     await openGenerateSection(errorView);
     fireEvent.click(errorView.getByRole("button", { name: "reportGenerate" }));
     await settle();
-    expect(errorView.getByText("reportGenerateFail:msg=legacy unavailable")).toBeTruthy();
+    // 503 直接带出 HTTP error 文案，并伴随「可重试」提示（report.tsx:934-936）。
+    const failure = errorView.getByText("reportGenerateFail:msg=legacy unavailable");
+    expect(failure.className).toBe("dou-reportGenError");
+    expect(errorView.getAllByText("reportRetryHint")).toHaveLength(1);
     expect(errorView.queryByRole("status")).toBeNull();
+    expect(
+      (errorView.getByRole("button", { name: "reportGenerate" }) as HTMLButtonElement).disabled,
+    ).toBe(false);
   });
 });

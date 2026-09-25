@@ -394,6 +394,13 @@ async function claimRoute(
         : isUnresolvedRoute(existing.route)
           ? await resolve()
           : { status: "success", route: existing.route };
+  const current = await retry.ledger.get(input.period, input.key);
+  if (
+    (existing === undefined && current !== undefined) ||
+    (existing !== undefined && current?.cycleId !== existing.cycleId)
+  ) {
+    throw taggedError("retry-cycle-conflict", "报告重试周期已变化");
+  }
   const now = retry.now?.() ?? Date.now();
   const claim = await retry.ledger.beginAttempt(
     {
