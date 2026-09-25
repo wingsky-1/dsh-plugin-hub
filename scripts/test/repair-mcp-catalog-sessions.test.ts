@@ -5,7 +5,7 @@
  * repair-mcp-catalog-sessions（#723）：历史会话 source 形态与官方 reopen fixture。
  *
  * 全部产物都在 mkdtemp 隔离目录内。V0/V1/V2 的静态判据证明 repair 只写 V3 wrapper；
- * 官方 0.1.7-rc.1 迁移链只有在精确版本和依赖都存在时才运行，否则带原因 skipped。
+ * 官方 0.1.7-rc.2 迁移链只有在精确版本和依赖都存在时才运行，否则带原因 skipped。
  */
 
 import { test } from "node:test";
@@ -39,7 +39,7 @@ import {
   verifyRepaired,
 } from "../maintenance/repair-mcp-catalog-sessions.mjs";
 
-const TARGET_DSH_VERSION = "0.1.7-rc.1";
+const TARGET_DSH_VERSION = "0.1.7-rc.2";
 const CATALOG_SOURCE_PLUGIN = "@wingsky-1/dsh-mcp-manager";
 const CATALOG_SECTION_NAME = "mcp-catalog";
 const V3_SOURCE_KIND = "plugin";

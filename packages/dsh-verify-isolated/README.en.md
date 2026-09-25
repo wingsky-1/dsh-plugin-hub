@@ -53,7 +53,7 @@ built-in skill and becomes available to all sessions in the profile (check with
   directory, not via npm);
 - **One-shot script** `skills/dsh-verify-isolated/scripts/verify-isolated.mjs`
   (Node implementation, requires Node ≥22): validate the dsh entry and require version
-  `0.1.7-rc.1` (`--dsh` is mandatory) → create temp DSH_HOME → **preset the first-run popup
+  `0.1.7-rc.2` (`--dsh` is mandatory) → create temp DSH_HOME → **preset the first-run popup
   skip** (writes the internal-testing notice version into the isolated
   `settings.yaml`, see below) → create profile (explicit
   `plugin list` init) → inject web-app bundle → normalize plugin args (relative
@@ -119,7 +119,7 @@ skills/dsh-verify-isolated/
   references/manual-setup.md      # branch: manual isolated-environment setup (the script's steps, expanded)
   references/browser-kernel.md    # branch: Chromium kernel detection chain, per-platform self-check and install
   references/viewport-geometry.md # branch: per-viewport device emulation and geometry-assertion methodology
-  scripts/verify-isolated.mjs     # one-shot isolated verification script (Node, --dsh is mandatory and accepts only 0.1.7-rc.1 / --browser / --port 0 / --keep / --no-build / --evidence-dir / --audit / --audit-extra-dirs / --no-skip-onboarding / --json)
+  scripts/verify-isolated.mjs     # one-shot isolated verification script (Node, --dsh is mandatory and accepts only 0.1.7-rc.2 / --browser / --port 0 / --keep / --no-build / --evidence-dir / --audit / --audit-extra-dirs / --no-skip-onboarding / --json)
   scripts/lib/verify-core.mjs     # shared base utilities (exit-code constants/poll/findFreePort/port and token-URL parsing/C11 normalization)
   scripts/lib/audit.mjs           # B4 isolated-audit pure functions (scanSnapshot/diffAgainstWhitelist/checkSymlinkEscape/runAudit + versioned whitelist WHITELIST_V)
   scripts/lib/emulation.mjs       # device-emulation pure functions (parseEmulationFlags / buildDeviceMetrics; CDP session semantics)
@@ -137,13 +137,13 @@ script directly. The script's resource base directory relative to the skill (the
 `scripts/verify-isolated.mjs` (Node implementation, requires Node ≥22). It adapts to the
 install shape (npm copy / `link:` dev mode / in-repo browsing); see SKILL.md §2.
 
-This package targets only dsh `0.1.7-rc.1` and is incompatible with every other runtime.
+This package targets only dsh `0.1.7-rc.2` and is incompatible with every other runtime.
 Every invocation must pass that release through `--dsh`; a missing, unusable, unreadable,
 or mismatched runtime fails closed.
 
 ```bash
 # SKILL_BASE = the "Base directory for this skill:" absolute path injected when the skill loads
-DSH_ENTRY="/path/to/dsh-0.1.7-rc.1/bin/dsh"
+DSH_ENTRY="/path/to/dsh-0.1.7-rc.2/bin/dsh"
 node "$SKILL_BASE/scripts/verify-isolated.mjs" --dsh "$DSH_ENTRY" --port 3456 <plugin-package-path>
 # parallel sessions / browser verification: --port 0 auto-detects the port,
 # --browser launches a dedicated browser instance

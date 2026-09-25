@@ -783,7 +783,7 @@ describe("6c. 子进程退出码实测（不启动 dsh / 浏览器，走 --dsh �
   });
 
   it("--help 显式锁定唯一目标 dsh 版本", () => {
-    expect(h.out).toContain("0.1.7-rc.1");
+    expect(h.out).toContain("0.1.7-rc.2");
     expect(h.out).toContain("必须显式传入 --dsh");
   });
 
@@ -845,7 +845,7 @@ describe("6d. 回归：dsh 就绪前退出 → 契约码 1 + 可操作诊断", (
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 const args = process.argv.slice(2);
-if (args.includes("--version")) { console.log("0.1.7-rc.1"); process.exit(0); }
+if (args.includes("--version")) { console.log("0.1.7-rc.2"); process.exit(0); }
 if (args[0] === "plugin" && args.includes("list")) {
   const i = args.indexOf("--profile");
   const dir = join(process.env.DSH_HOME, "profiles", args[i + 1]);
@@ -1104,7 +1104,7 @@ describe("9a. 白名单版本化 + 模式全集存在", () => {
 
   // 预置模式数组，版本化 WHITELIST_V；v2 起含 dsh 自身写面
   // .credentials.yaml / storages/**；v3 起含 settings.yaml——首启弹窗跳过会预置它，
-  // 页面改设置也由 dsh 重写；v4 起含 settings.yaml.imported（0.1.7-rc.1 导入映射重命名残留，
+  // 页面改设置也由 dsh 重写；v4 起含 settings.yaml.imported（0.1.7-rc.2 导入映射重命名残留，
   // 待真机确认实际落盘形态）。
   it("WHITELIST_V 版本化格式", () => {
     expect(whitelistV).toMatch(/^v\d+$/);
@@ -1284,7 +1284,7 @@ import { mkdirSync, writeFileSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
 import http from "node:http";
 const args = process.argv.slice(2);
-if (args.includes("--version")) { console.log("0.1.7-rc.1"); process.exit(0); }
+if (args.includes("--version")) { console.log("0.1.7-rc.2"); process.exit(0); }
 if (args[0] === "plugin" && args.includes("list")) {
   const i = args.indexOf("--profile");
   const dir = join(process.env.DSH_HOME, "profiles", args[i + 1]);
@@ -1766,7 +1766,7 @@ describe("10a. 须知版本与命名空间提取", () => {
     expect(ob.extractWelcomeNoticeVersion(null)).toBe(null);
   });
 
-  it("从客户端产物提取须知命名空间（0.1.7-rc.1 形态）", () => {
+  it("从客户端产物提取须知命名空间（0.1.7-rc.2 形态）", () => {
     expect(
       ob.extractWelcomeNoticeNamespace(
         'const WELCOME_NOTICE_SETTINGS_NAMESPACE = "ui-settings-general";',
@@ -1950,7 +1950,7 @@ describe("10c. dsh 安装根与产物定位（mkdtemp fixture 建模 npm 提升�
     expect(e2eVersion).toBe("2099-01-01.1");
   });
 
-  it("端到端解析命名空间（0.1.7-rc.1 形态）", () => {
+  it("端到端解析命名空间（0.1.7-rc.2 形态）", () => {
     expect(e2eNamespace).toBe("ui-settings-general");
   });
 
@@ -1991,7 +1991,7 @@ describe("10c-2. presetWelcomeNotice 严格事实与预置报告", () => {
   const makeDshInstall = (
     name: string,
     clientSource: string,
-    versionOutput: string | null = "0.1.7-rc.1",
+    versionOutput: string | null = "0.1.7-rc.2",
     versionExitCode = 0,
   ) => {
     const fixture = mkdtempSync(join(tmp, name));
@@ -2154,26 +2154,26 @@ process.exit(0);
   it("未传 --dsh 时 fail-closed，不使用 PATH 中碰巧存在的目标入口", () => {
     expect(omittedDshCase.status).toBe(2);
     expect(omittedDshCase.report).toContain("必须显式传入 --dsh");
-    expect(omittedDshCase.report).toContain("0.1.7-rc.1");
+    expect(omittedDshCase.report).toContain("0.1.7-rc.2");
   });
 
   it("旧版本 0.1.5-rc.1 被拒绝，错误点名实际与期望版本", () => {
     expect(oldVersionCase.status).toBe(2);
     expect(oldVersionCase.report).toContain("实际版本: 0.1.5-rc.1");
-    expect(oldVersionCase.report).toContain("期望版本: 0.1.7-rc.1");
+    expect(oldVersionCase.report).toContain("期望版本: 0.1.7-rc.2");
   });
 
   it("--version 读取失败被拒绝，不降级为 unknown 后继续", () => {
     expect(versionReadFailureCase.status).toBe(2);
     expect(versionReadFailureCase.report).toContain("实际版本: 读取失败");
-    expect(versionReadFailureCase.report).toContain("期望版本: 0.1.7-rc.1");
+    expect(versionReadFailureCase.report).toContain("期望版本: 0.1.7-rc.2");
     expect(versionReadFailureCase.report).not.toContain("(unknown)");
   });
 
   it("不存在的 --dsh 入口被拒绝，错误点名不可用与期望版本", () => {
     expect(wrongEntryCase.status).toBe(2);
     expect(wrongEntryCase.report).toContain("实际版本: 不可用");
-    expect(wrongEntryCase.report).toContain("期望版本: 0.1.7-rc.1");
+    expect(wrongEntryCase.report).toContain("期望版本: 0.1.7-rc.2");
   });
 
   it.each([

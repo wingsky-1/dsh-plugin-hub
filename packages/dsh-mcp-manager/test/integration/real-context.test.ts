@@ -276,7 +276,7 @@ describe("组合根：宿主上下文只到组合根", () => {
   });
 
   it("events.onAgentCreated 转发同步返回 undefined", () => {
-    // 0.1.7-rc.1 serial 要求监听返回 `undefined | Promise<undefined>`；转发 handler
+    // 0.1.7-rc.2 serial 要求监听返回 `undefined | Promise<undefined>`；转发 handler
     // 保持同步，并显式返回 undefined。本用例钉住 handler 同步调用及监听返回值。
     let captured:
       ((payload: { agent: { id: string; ctx: { tools: unknown } } }) => unknown) | undefined;

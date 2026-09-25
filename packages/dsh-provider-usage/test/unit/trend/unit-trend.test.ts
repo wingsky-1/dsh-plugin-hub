@@ -6424,7 +6424,7 @@ describe("#633 修复：真实升级场景端到端（旧 agg-only 分片重启�
 });
 
 // ---------------------------------------------------------------- collector：非结算事件走 default 忽略
-// fork 口径前置（dsh 0.1.7-rc.1 跟进，用户裁决：仅计 live 新增）：记账结算面仅
+// fork 口径前置（dsh 0.1.7-rc.2 跟进，用户裁决：仅计 live 新增）：记账结算面仅
 // assistant/*（+ turn/end、tool/call 计数器）；其余事件类型无论类型层是否识别，
 // 一律经 switch default 忽略、零产出。未知类型以 developer/message 为代表
 // （0.1.7 新增 surface 类型前瞻；经 unknown 断言构造，双基线可编译）；

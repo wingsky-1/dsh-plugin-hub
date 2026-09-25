@@ -382,7 +382,7 @@ function bootRowLifecycle(): RowLifecycleHarness {
   };
 }
 
-describe("0.1.7-rc.1 plugins.row.config 装配", () => {
+describe("0.1.7-rc.2 plugins.row.config 装配", () => {
   it("apply 只监听 canonical settings namespace，服务前 slot ledger 为空", () => {
     const harness = bootRowLifecycle();
     expect(harness.watchedNamespaces).toEqual([MCP_MANAGER_IDENTITY.settingsNamespace]);

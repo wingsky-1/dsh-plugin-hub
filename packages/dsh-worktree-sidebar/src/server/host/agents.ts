@@ -27,7 +27,7 @@ export interface AgentHostPort {
   /**
    * 订阅 agent 发布。返回退订函数。
    *
-   * 0.1.7-rc.1 用 serial 派发并等待 listener；因此适配器把 tools 域的 thenable 留在返回链上，
+   * 0.1.7-rc.2 用 serial 派发并等待 listener；因此适配器把 tools 域的 thenable 留在返回链上，
    * 不能在取出 `agent` 后把它截成 `undefined`。
    */
   on(
@@ -52,7 +52,7 @@ export function bindAgents(host: AgentHostPort): AgentPort {
         // 该判断被**有意推翻**（不是删除时漏掉守卫）：子会话同样会点开侧边栏、同样需要把 worktree
         // 登记给自己那条会话，而工具装进各 agent 自己的 effect、随该 agent 一起释放，
         // 并不会改动调用方的工具面。子会话的展示语义见 README。
-        // payload 多余字段（0.1.7-rc.1 的 source/signal）经解构忽略；串行派发必须等 tools 域完成注册。
+        // payload 多余字段（0.1.7-rc.2 的 source/signal）经解构忽略；串行派发必须等 tools 域完成注册。
         await handler(faceOf(agent));
         return undefined;
       }),

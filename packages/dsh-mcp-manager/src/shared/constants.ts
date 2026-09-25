@@ -21,7 +21,7 @@ export const MIDDLEWARE_GLOBAL_ROOT = "@global";
 const MCP_MANAGER_BUNDLE_PACKAGE = "@wingsky-1/dsh-mcp-manager";
 const MCP_MANAGER_ROW_ID = "ui-dsh-mcp-manager";
 
-/** dsh 0.1.7-rc.1 插件行配置的 canonical identity；宿主与客户端只消费此对象。 */
+/** dsh 0.1.7-rc.2 插件行配置的 canonical identity；宿主与客户端只消费此对象。 */
 export const MCP_MANAGER_IDENTITY = Object.freeze({
   bundlePackage: MCP_MANAGER_BUNDLE_PACKAGE,
   rowId: MCP_MANAGER_ROW_ID,

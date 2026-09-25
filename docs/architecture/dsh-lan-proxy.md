@@ -70,7 +70,7 @@
 
 | 域 | 职责与依赖 | 主要证据 |
 |---|---|---|
-| config | schema、读写路由、官方 settings 接线；消费 shared 默认值 | `config/impl/model.ts:225`（`FILE_CONFIG_VALIDATORS`）、`config/impl/namespace.ts:18`（`SETTINGS_NS`）、`:28`（watch） |
+| config | schema、读写路由、官方 settings 接线；消费 shared 默认值 | `config/impl/model.ts:225`（`FILE_CONFIG_VALIDATORS`）、`config/impl/namespace.ts:18`（`SETTINGS_NS`）、`:28`（document-updated） |
 | migrate | 旧格式迁移；消费 config 的净化与写端口 | `migrate/impl/file/index.ts:16`（`MIGRATED_BAK_NAME`） |
 | tls | 加载成对证书或生成自签名材料，交给装配层 | `tls/impl/index.ts:50`（loadTlsFromFiles）、`:79`（ensureSelfSignedTls） |
 | proxy | 独立 HTTP/HTTPS 监听、转发、压缩、WS 桥接 | `proxy/impl/proxy.ts:671`（createLanProxy） |
@@ -101,7 +101,7 @@ flowchart TD
     L --> M["installLanProxySettings<br/>官方 settings 命名空间接线<br/>+ 存量 config.json 一次性迁移"]
     M --> N["注册 2 条 loopback 路由:<br/>GET/PUT /api/dsh-lan-proxy/config<br/>GET /api/dsh-lan-proxy/health"]
     N --> O["ctx.effect 生命周期 disposer"]
-    M -.->|"watch：防抖 3s 后重建"| F
+    M -.->|"document-updated：防抖 3s 后重建"| F
     O -->|"卸载"| CLEAN["清定时器、撤路由与 tap、关闭转发器"]
 ```
 
@@ -109,7 +109,7 @@ flowchart TD
 
 - **配置三通道**：官方 settings 命名空间 `dsh-lan-proxy`（`config/impl/namespace.ts:18`，user 层）
   ＝权威持久层 → 组合层 cordis config（base 层）→ schema 默认值兜底；解析顺序
-  `defaults → base → user`。`scope.watch` 驱动 `scheduleSync`（`apply.ts:333-340`，**3000ms**
+  `defaults → base → user`。`settings/document-updated` 驱动 `scheduleSync`（`apply.ts:333-340`，**3000ms**
   防抖，`:339`），无需重启。防抖是刻意取舍：重建会 dispose 当前转发器、掐断经 lan-proxy
   正访问设置页的连接，先让保存回执发出再重建（`apply.ts:328-331` 注释明言「过早重建会丢失
   HTTP 响应（保存误报失败）」）；
@@ -259,7 +259,7 @@ marker（`:39`、`:52-53`）。已有 transport 不覆盖——为什么不用�
 `loopback-page`（回环页，或无 marker 但 `isLoopback` 为 true 的宿主独占页——那是正常态，
 `:86-89`）/ `compat-active` / `contract-drift` / `compat-off`。`contract-drift` 是 marker 在
 而宿主事实非 true（**含未知**，fail-closed，`:91-92`）。告警经独立出口 `hostTrustAlert`
-（`:109-124`）：在目标 dsh `0.1.7-rc.1` 上，设置卡片由
+（`:109-124`）：在目标 dsh `0.1.7-rc.2` 上，设置卡片由
 `configForms.whileServed(["ui-dsh-lan-proxy"])` 门控并注册到 keyed
 `plugins.row.config`；canonical row id / settings namespace 是 `ui-dsh-lan-proxy`，row key
 是 `@wingsky-1/dsh-lan-proxy#ui-dsh-lan-proxy`。上游把非回环页设置面降级为 memory scope
@@ -280,7 +280,7 @@ marker（`:39`、`:52-53`）。已有 transport 不覆盖——为什么不用�
 
 | 数据 | 权威来源 / 生命周期 | 消费方 |
 |---|---|---|
-| 用户配置 | 官方 settings 的 `dsh-lan-proxy` 命名空间（`namespace.ts:18`） | `scope.get/watch`、配置路由、装配层 |
+| 用户配置 | 官方 settings 的 `dsh-lan-proxy` 命名空间（`namespace.ts:18`） | `scope.get` + `settings/document-updated`、配置路由、装配层 |
 | 旧 `config.json` / bak | 迁移输入；bak 可能再次重放，不是日常配置权威源 | `migrateFileConfig`（`migrate/impl/file/index.ts:115`） |
 | TLS 材料 | 用户文件或 `<DSH_HOME>/lan-proxy/` 的 `dsh-lan-proxy-{key,cert}.pem`（`tls/impl/index.ts:21-22`） | TLS 域、HTTPS 监听器 |
 | launch token / cookie | 宿主认证服务 / 浏览器；插件只持 WeakMap 单次重放上下文 | 转发器限定入口注入或透传 |
@@ -317,7 +317,7 @@ flowchart TD
     BASE["schema defaults + cordis base"] -->|"官方合并"| RES["scope.get 生效配置"]
     USER -->|"覆盖 base"| RES
     UI["PUT patch + expectedRevision"] -->|"校验；update / replace"| USER
-    RES -->|"watch：3s 防抖"| SYNC["关闭旧实例、建立新实例"]
+    RES -->|"document-updated：3s 防抖"| SYNC["关闭旧实例、建立新实例"]
     SYNC -->|"新实例计数"| STATS["内存统计"]
     STATS -->|"快照展示"| HEALTH["GET config / health"]
 ```

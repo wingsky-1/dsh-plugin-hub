@@ -155,11 +155,11 @@ curl -s http://127.0.0.1:3081/api/dsh-lan-proxy/health
 
 - 全部配置存于 dsh 官方 settings 存储；canonical 条目 id 为 `ui-dsh-lan-proxy`，
   落盘位置由宿主统一管理。组合层 `cordis.patch.yml` 的 config 作为 base 层生效；
-  热更新由官方 `scope.watch` 驱动，无需重启。
+  热更新由官方 `settings/document-updated` 事件驱动，无需重启。
 
 #### RC7 旧 settings section 迁移
 
-DSH 0.1.7-rc.1 会把旧的 `~/.dsh/settings.yaml` 改名为 `settings.yaml.imported`。
+DSH 0.1.7-rc.2 会把旧的 `~/.dsh/settings.yaml` 改名为 `settings.yaml.imported`。
 这个文件是已消费旧文档的**审计副本**，只保留证据，不是当前配置源；不要把整个
 `settings.yaml.imported` 再复制到 profile。插件可编辑字段会由迁移写入 active profile 的
 `~/.dsh/profiles/<profile>/cordis.patch.yml`，canonical id 为 `ui-dsh-lan-proxy`。

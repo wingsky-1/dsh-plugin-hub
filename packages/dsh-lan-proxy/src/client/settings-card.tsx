@@ -137,7 +137,7 @@ function compressStatusLine(c: unknown): string | null {
 }
 
 /**
- * row entry 的 owner props 与卡片入参。view 决定摘要/页面分支；form 由 0.1.7-rc.1
+ * row entry 的 owner props 与卡片入参。view 决定摘要/页面分支；form 由 0.1.7-rc.2
  * Plugin Manager 传入，当前实现按任务边界保留既有 HTTP 配置写面。
  */
 export interface SettingsCardProps {
@@ -974,7 +974,7 @@ function SettingsCardPage(props: SettingsCardProps) {
   );
 }
 
-/** 0.1.7-rc.1 row entry：summary 不挂载有副作用的页面表单，page 才加载完整配置。 */
+/** 0.1.7-rc.2 row entry：summary 不挂载有副作用的页面表单，page 才加载完整配置。 */
 export function SettingsCard(props: SettingsCardProps): React.ReactElement {
   if (props.view === "summary") {
     return (

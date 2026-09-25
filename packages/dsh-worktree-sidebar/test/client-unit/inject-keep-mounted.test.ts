@@ -1,5 +1,5 @@
 /**
- * keepMounted 与同 tabId 重挂载生命周期（P1/P2 跟进 dsh 0.1.7-rc.1）。
+ * keepMounted 与同 tabId 重挂载生命周期（P1/P2 跟进 dsh 0.1.7-rc.2）。
  *
  * 官方 Tab 定义新增 `keepMounted` 后，隐藏页签不再 unmount、不走 abort：
  * 它仍在册，binding 刷新必须仍 reseed；同 tabId 以新 signal 重挂载时，旧 listener
@@ -9,7 +9,7 @@
  * `test/client-dom/inject-visibility.test.ts`，本文件不重复、不删除它们。
  *
  * 未验证（P0 封版待补包）：`sessions.list` / `sidebar-files` / `stat`
- * 在真机 0.1.7-rc.1 上的形态未实测；本文件只用假 view/root 驱动内存语义。
+ * 在真机 0.1.7-rc.2 上的形态未实测；本文件只用假 view/root 驱动内存语义。
  * 业务域无版本分支：无 `if (version)`，双基线可编译（新字段全可选）。
  */
 import { getEventListeners } from "node:events";

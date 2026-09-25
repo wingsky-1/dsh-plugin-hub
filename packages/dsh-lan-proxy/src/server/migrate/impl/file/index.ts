@@ -233,7 +233,7 @@ function rollbackMigratedRename(
  *    默认值固化进用户层、压制后续默认值演进）；
  * 4. sanitizeSettings 过滤后经新 update 写面增量写入（owner scope.update：只写文件里
  *    显式存在的键，schema 默认保持动态兜底——spike 结论优先 update，replace 仅当
- *    需要整节割接时使用；dsh 0.1.7-rc.1 下同语义由条目 id 寻址，签名见 OwnerScopeLike）；
+ *    需要整节割接时使用；dsh 0.1.7-rc.1 引入、rc.2 沿用的同语义由条目 id 寻址，签名见 OwnerScopeLike）；
  * 5. 写入失败 → 回滚改名（bak 还原为 config.json）并 warn，下次启动重试。
  *
  * 必须在 settings 服务 attach 后调用（installLanProxySettings 的 onScope 内），

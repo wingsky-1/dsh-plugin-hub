@@ -204,11 +204,11 @@ describe("客户端样式注入行为哨兵（issue #477 验收 3/8）", () => {
     expect(createdAfterReapply).toBe(2);
   });
 
-  it("0.1.7-rc.1：产物 inject 精确声明当前服务依赖", () => {
+  it("0.1.7-rc.2：产物 inject 精确声明当前服务依赖", () => {
     expect(productInject).toEqual(["slots", "configForms", "locale", "remote"]);
   });
 
-  it("0.1.7-rc.1：package client inject 精确声明当前 providers", () => {
+  it("0.1.7-rc.2：package client inject 精确声明当前 providers", () => {
     expect(packageClientInject).toEqual([
       "@deepseek-ai/dsh-client-connection",
       "@deepseek-ai/dsh-client-ui-settings",

@@ -149,7 +149,7 @@ Four **UI semantics** cannot be covered by any automated gate (there is no brows
 ## Compatibility (read-only coupling)
 
 The plugin does not modify official sources, but it **reads** these contracts from the sole
-supported target runtime, dsh `0.1.7-rc.1`. No compatibility promise is made for any other
+supported target runtime, dsh `0.1.7-rc.2`. No compatibility promise is made for any other
 runtime version:
 
 - the host's `typert` `workspaceFileScope` lookup: the plugin registers its resolver via `lookups.configure` and delegates to the **official resolve captured before configuring** on a miss;

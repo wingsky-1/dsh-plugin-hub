@@ -6,18 +6,18 @@
 
 ## 支持的版本（Supported Versions）
 
-本插件集当前只适配 DeepSeek Harness `0.1.7-rc.1`。适配基线的权威版本事实源是
+本插件集当前只适配 DeepSeek Harness `0.1.7-rc.2`。适配基线的权威版本事实源是
 `pnpm-workspace.yaml` 的 catalog；各包 peerDependencies 是由维护流程生成的精确版本投影；
 catalog 更新前，不承诺 alpha、旧 runtime 或其他 DSH 版本的兼容与安全修复。
 
-- 当前基线：`dsh 0.1.7-rc.1`。
+- 当前基线：`dsh 0.1.7-rc.2`。
 - 受理：在 catalog 锁定的当前基线上可复现的安全问题。
 - 不受理：alpha、旧 runtime 或其他未锁定版本环境下复现的问题；已在 README 声明退役、
   不再维护的包的问题（此类问题请先卸载对应包，仍有疑问走普通 issue 讨论）。
 
 | 版本线 | 是否受理 |
 | --- | --- |
-| 当前基线（`dsh 0.1.7-rc.1`）上的最新发布包 | 受理 |
+| 当前基线（`dsh 0.1.7-rc.2`）上的最新发布包 | 受理 |
 | 旧版本包（已有新版修复） | 请先升级到最新版再验证，不单独修旧版 |
 | dsh alpha、旧 runtime 或其他未锁定版本 | 不受理 |
 | 已退役、不再维护的包 | 不受理 |

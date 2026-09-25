@@ -16,7 +16,7 @@ import {
 } from "../../../shared/interface.ts";
 
 /**
- * dsh 0.1.7-rc.1 producer-owned source kind。
+ * dsh 0.1.7-rc.2 producer-owned source kind。
  *
  * V4 将生产者身份编码进 kind；本包不再声明或依赖共享 `plugin` 基座，
  * 也不把身份拆到 `plugin` 字段。snapshot 的 form/sections 由官方

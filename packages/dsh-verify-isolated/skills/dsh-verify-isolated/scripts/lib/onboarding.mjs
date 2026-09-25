@@ -1,7 +1,7 @@
 /**
  * onboarding.mjs — 隔离环境 dsh web 首启弹窗的默认跳过支持（纯函数 + 只读探测）。
  *
- * 两个阻断弹窗的成因（目标 dsh 0.1.7-rc.1，复现与对照见 SKILL.md
+ * 两个阻断弹窗的成因（目标 dsh 0.1.7-rc.2，复现与对照见 SKILL.md
  * 「首启弹窗默认跳过」）：
  *   - 「内测声明」是否出现，取决于 settings.yaml 的
  *     `<namespace>.welcomeNoticeVersion` 与客户端常量 WELCOME_NOTICE_VERSION

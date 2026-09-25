@@ -129,7 +129,7 @@ session cookie), letting LAN devices enter without manual steps. Trade-offs and 
     answer whether upstream has drifted. The settings card also shows a persistent four-state
     verdict line, but only while the card is mounted (see the next item).
   - **Known limitation (both fault states are unreachable on the page)**: on the target dsh
-    `0.1.7-rc.1`, the card is registered through `configForms.whileServed(["ui-dsh-lan-proxy"])`
+    `0.1.7-rc.2`, the card is registered through `configForms.whileServed(["ui-dsh-lan-proxy"])`
     and the keyed `plugins.row.config` slot. Its canonical row id / settings namespace is
     `ui-dsh-lan-proxy`, and its row key is `@wingsky-1/dsh-lan-proxy#ui-dsh-lan-proxy`.
     The row exists only while the Host serves that namespace; when a non-loopback page's settings
@@ -204,11 +204,11 @@ Configuration page: **Plugin Manager → dsh-lan-proxy → Configure** (saved ch
 - All configuration lives in the dsh official settings store (the
   `ui-dsh-lan-proxy` canonical namespace); the host owns persistence. The
   composition-layer `cordis.patch.yml` config acts as the base layer. Hot reload is
-  driven by the official `scope.watch` — no restart needed.
+  driven by the official `settings/document-updated` event — no restart needed.
 
 #### RC7 legacy settings-section migration
 
-DSH 0.1.7-rc.1 renames the old `~/.dsh/settings.yaml` to
+DSH 0.1.7-rc.2 renames the old `~/.dsh/settings.yaml` to
 `settings.yaml.imported`. That file is an audit copy of the consumed legacy
 document, not the active configuration source; do not copy the whole imported
 file into a profile. Editable plugin fields are migrated into the active profile's

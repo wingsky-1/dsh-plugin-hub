@@ -48,7 +48,7 @@
 
 白名单覆盖 dsh 自身写面：`profiles/**`、`*.json`、`*.jsonl`、`*.log`、
 `.credentials.yaml`、`settings.yaml`（官方设置文档：首启弹窗跳过会预置它，此后页面里
-改任何设置也由 dsh 重写）、`settings.yaml.imported`（0.1.7-rc.1 导入映射重命名残留，待真机确认）、
+改任何设置也由 dsh 重写）、`settings.yaml.imported`（0.1.7-rc.2 导入映射重命名残留，待真机确认）、
 `browser.state`、`browser-profile/**`（整树 + 跳过深扫）、
 `evidence/**`、`audit/**`、`storages/**`、`dsh.log`、`verdict.json`。
 随 dsh 版本漂移的面（如 `profiles/node_modules/**` 的官方 bundle link）由 **t0 动态

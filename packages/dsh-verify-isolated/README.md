@@ -42,7 +42,7 @@ dsh plugin --profile web add @wingsky-1/dsh-verify-isolated
 - **最小启动依赖**：profile bundles 含 `@deepseek-ai/dsh-base` +
   `@deepseek-ai/dsh-web-app`（内置 bundle 按名从 dsh 安装目录解析，不走 npm）；
 - **一键脚本** `skills/dsh-verify-isolated/scripts/verify-isolated.mjs`（Node 实现，
-  需 Node ≥22）：校验 dsh 入口并确认版本精确为 `0.1.7-rc.1`（`--dsh` 必填）→ 建临时 DSH_HOME → **预置首启弹窗
+  需 Node ≥22）：校验 dsh 入口并确认版本精确为 `0.1.7-rc.2`（`--dsh` 必填）→ 建临时 DSH_HOME → **预置首启弹窗
   跳过**（写隔离 `settings.yaml` 的内测声明版本，见下）→ 建 profile
   （`plugin list` 显式初始化）→ 注入 web-app bundle → 构建并 link 本地插件
   （`--no-build` 时校验产物存在 + 陈旧警告）→ （可选 `--browser`）启动独立浏览器
@@ -65,7 +65,7 @@ dsh plugin --profile web add @wingsky-1/dsh-verify-isolated
 - **首启弹窗默认跳过**：全新 DSH_HOME 的首屏是两个**阻断式**弹窗（「内测声明」→
   「添加 API Key」），两者都把 `#root` 置为 `inert`，页面上一切点击静默失效。脚本
   启动前预置 `settings.yaml` 的 `<namespace>.welcomeNoticeVersion`（命名空间与值仅从目标
-  dsh 0.1.7-rc.1 的同一份官方客户端产物读取，不预置任何硬编码兼容值）；任一值取不到则不写入，
+  dsh 0.1.7-rc.2 的同一份官方客户端产物读取，不预置任何硬编码兼容值）；任一值取不到则不写入，
   由 browser-driver 在导航后以 overlay 探针兜底。「添加 API Key」无法预置消除（其「稍后配置」只在
   当前页面生命周期内有效，刷新必重弹），同样由该探针安全点击跳过。
   识别不到跳过按钮时**不猜**（弹窗内可能并列「保存并继续」这类有副作用的按钮），
@@ -88,7 +88,7 @@ skills/dsh-verify-isolated/
   references/manual-setup.md      # 支线：手动搭建隔离环境（脚本的等价展开）
   references/browser-kernel.md    # 支线：Chromium 内核探测链、三平台自查与安装
   references/viewport-geometry.md # 支线：设备视口逐档核验与几何断言方法论
-  scripts/verify-isolated.mjs     # 一键隔离验证脚本（Node，--dsh 必填且仅接受 0.1.7-rc.1 / --browser / --port 0 / --keep / --no-build / --evidence-dir / --audit / --audit-extra-dirs / --no-skip-onboarding / --json）
+  scripts/verify-isolated.mjs     # 一键隔离验证脚本（Node，--dsh 必填且仅接受 0.1.7-rc.2 / --browser / --port 0 / --keep / --no-build / --evidence-dir / --audit / --audit-extra-dirs / --no-skip-onboarding / --json）
   scripts/lib/verify-core.mjs     # 共享基础工具（退出码常量/poll/findFreePort/端口与带令牌 URL 解析/C11 归一化）
   scripts/lib/audit.mjs           # B4 隔离审计纯函数（scanSnapshot/diffAgainstWhitelist/checkSymlinkEscape/runAudit + 版本化白名单 WHITELIST_V）
   scripts/lib/emulation.mjs       # 设备模拟参数纯函数（parseEmulationFlags / buildDeviceMetrics；CDP 会话语义依据）
@@ -105,12 +105,12 @@ skill 加载后按清单执行；也可直接调包内一键脚本。脚本相�
 `scripts/verify-isolated.mjs`（Node 实现，需 Node ≥22），安装形态自适应
 （npm 副本 / `link:` 开发态 / 仓库内浏览均可用），详见 SKILL.md §2。
 
-本包唯一支持 dsh `0.1.7-rc.1`，不兼容其它 runtime。每次调用都必须通过 `--dsh`
+本包唯一支持 dsh `0.1.7-rc.2`，不兼容其它 runtime。每次调用都必须通过 `--dsh`
 指向该版本入口；缺失、不可用、版本读取失败或版本不匹配均 fail-closed。
 
 ```bash
 # SKILL_BASE = 加载 skill 时注入的「Base directory for this skill:」绝对路径
-DSH_ENTRY="/path/to/dsh-0.1.7-rc.1/bin/dsh"
+DSH_ENTRY="/path/to/dsh-0.1.7-rc.2/bin/dsh"
 node "$SKILL_BASE/scripts/verify-isolated.mjs" --dsh "$DSH_ENTRY" --port 3456 <插件包路径>
 # 多会话并行/浏览器验证：--port 0 自动探测端口，--browser 拉起独立浏览器实例
 node "$SKILL_BASE/scripts/verify-isolated.mjs" --dsh "$DSH_ENTRY" --port 0 --browser <插件包路径>

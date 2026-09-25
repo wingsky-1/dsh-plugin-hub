@@ -41,7 +41,7 @@ interface FakeHost {
   }): void;
   /** 走 cordis 的卸载路径：把每个 effect 的 disposer 逐个 await 掉。 */
   disposeAll(): Promise<void>;
-  /** 按 0.1.7-rc.1 serial 语义派发 agent/created：逐个等待 listener 返回。 */
+  /** 按 0.1.7-rc.2 serial 语义派发 agent/created：逐个等待 listener 返回。 */
   emitAgentCreated(agent: FakeAgent): Promise<void>;
   /** 装配中途的失败：恢复路由注册口（用来验证「失败后同一进程还能重新装」）。 */
   allowRegister(): void;

@@ -81,7 +81,7 @@ flowchart LR
 | 机制 | 说明 | 实现位置 |
 |---|---|---|
 | **loopback 围栏** | 所有 `/api` 路由强制回环来源（remoteAddress + Host + 非跨站 + Origin 同源），非法 403 / 方法错 405——DNS 重绑定与跨站防御 | `shared/loopback.js`（`isLoopbackRequest`） |
-| **官方 settings 存储** | 使用此机制的插件（如 lan-proxy）将配置存官方 `settings.register` 命名空间，cordis config 作 base 层，热更新由 `scope.watch` 驱动；notifier 当前自持 `config.json`，官方 settings 仅作迁移来源，见其 DA 视图 | `shared/settings-namespace.js`（`installSettingsNamespace`） |
+| **官方 settings 存储** | 使用此机制的插件（如 lan-proxy）将配置存官方 `settings.register` 命名空间，cordis config 作 base 层，热更新由 `settings/document-updated` 驱动；notifier 当前自持 `config.json`，官方 settings 仅作迁移来源，见其 DA 视图 | `shared/settings-namespace.js`（`installSettingsNamespace`） |
 | **客户端干净模块** | 只 `export function apply(ctx)` + `export const inject`；样式独立 `src/client/style.css`；构建期内联（`scripts/build/build-client.ts`） | 各包 `src/client/index.ts` |
 | **发布物自包含** | 第三方依赖构建期内联进 `lib/`，运行时零 npm 依赖；license 自动归集 `lib/THIRD-PARTY-LICENSES` | `scripts/build/` |
 | **loopback 服务端/客户端契约** | 宿主端在 index.ts 透出纯函数/常量，smoke 从 `lib/index.js` 导入断言（路由围栏 + 客户端契约） | `test/*.test.ts` |

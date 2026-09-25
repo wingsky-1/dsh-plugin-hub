@@ -1,20 +1,20 @@
 // dsh 插件家族共享层 — 宿主端「设置命名空间」注册（单一事实源）。
 //
 // 背景：
-// DSH 0.1.7-rc.1 起，设置 → 插件 的 `settings.plugin.item` 槽由 `list(id)` 改为
+// 自 DSH 0.1.7-rc.1 起（0.1.7-rc.2 沿用），设置 → 插件 的 `settings.plugin.item` 槽由 `list(id)` 改为
 // `keyed(key)`，且只在「宿主 serve 的 settings 命名空间 ∩ 卡片声明的 key」交集
-// 非空时才渲染。想让插件的设置卡片在 0.1.7-rc.1 显示，宿主端必须把该插件的命名空间
+// 非空时才渲染。想让插件的设置卡片在该目标契约中显示（0.1.7-rc.2 沿用），宿主端必须把该插件的命名空间
 // 注册进 settings 服务（`settings.describe()` 才能返回它）。
 //
 // 为什么不用官方 `@deepseek-ai/dsh-settings`：
 // 该包由宿主 dsh 运行时提供，不在插件仓库依赖中；插件运行时沿自身 lib/ 路径
 // 向上解析不到（MODULE_NOT_FOUND），动态 import 会静默失败、命名空间从未注册，
-// 导致 0.1.7-rc.1 下设置卡片空白。因此这里改用「服务面注入」：`ctx.inject(["settings"],…)`
+// 导致该目标契约下设置卡片空白。因此这里改用「服务面注入」：`ctx.inject(["settings"],…)`
 // 由宿主 cordis 上下文按名注入 settings 服务，零包依赖、与官方语义等值。
 //
-// 语义：读经 `settings.describe()` 按 `ns` 定位后取 `value`，写经
-// `settings.update/replace/mutate(ns, …)`，热更新经 `settings/document-updated`
-// 按 ns 过滤＋快照比对后触发 `onChange`。schema 由宿主侧持有，不经本函数注册
+// 语义：读经 `settings.describe()` 按 `ns` 定位后合成 `base + user`（无层字段时兼容取 `value`），
+// 写经 `settings.update/replace/mutate(ns, …)`，热更新经 `settings/document-updated`
+// 触发快照比对后的 `onChange`。schema 由宿主侧持有，不经本函数注册
 // （签名保留 schema 参数供调用方零改，本函数不使用）。
 //
 // #436 收敛：`onScope`（可选）只在 owning fiber ACTIVE 且 canonical namespace
@@ -141,7 +141,36 @@ function findFormsDescriptor(settings, ns) {
 }
 
 /**
- * 经 describe() 按 ns 定位本命名空间并取 value；缺席/异常时回落到组合层 entry。
+ * @param {unknown} value - 待判断的表单层值。
+ * @returns {boolean} 是否为可合并的普通对象。
+ */
+function isFormRecord(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+/**
+ * 合并 settings 的 base 与 user 层。DSH rc2 的运行时 value 可能仍是 reload 前的
+ * base，而 user 已反映最新 profile patch；嵌套字典递归合并，数组按用户层整体替换。
+ * @param {unknown} base - 基础层。
+ * @param {unknown} user - 用户覆盖层。
+ * @returns {unknown} 合并后的表单值。
+ */
+function mergeFormLayers(base, user) {
+  if (!isFormRecord(base)) return snapshotFormsValue(user);
+  if (!isFormRecord(user)) return snapshotFormsValue(base);
+  const merged = { ...base };
+  for (const [key, value] of Object.entries(user)) {
+    merged[key] =
+      isFormRecord(value) && isFormRecord(merged[key])
+        ? mergeFormLayers(merged[key], value)
+        : snapshotFormsValue(value);
+  }
+  return merged;
+}
+
+/**
+ * 经 describe() 按 ns 定位本命名空间并合成 base + user；缺席/异常时回落到组合层 entry。
+ * 兼容没有 base/user 字段的最小宿主与旧测试夹具，继续读取 value。
  * @param {unknown} settings - settings 服务。
  * @param {string} ns - 插件自有命名空间。
  * @param {unknown} entry - 组合层配置（回落值）。
@@ -149,7 +178,13 @@ function findFormsDescriptor(settings, ns) {
  */
 function readFormsValue(settings, ns, entry) {
   const record = findFormsDescriptor(settings, ns);
-  return record !== undefined && "value" in record ? record.value : entry;
+  if (record === undefined) return entry;
+  if (isFormRecord(record.base) || isFormRecord(record.user)) {
+    const base = isFormRecord(record.base) ? record.base : record.value;
+    const user = isFormRecord(record.user) ? record.user : {};
+    return mergeFormLayers(base, user);
+  }
+  return "value" in record ? record.value : entry;
 }
 
 /**
@@ -162,9 +197,8 @@ function isFormsNamespaceServed(settings, ns) {
   return findFormsDescriptor(settings, ns) !== undefined;
 }
 /**
- * 订阅 `settings/document-updated` 并按 ns 过滤。事件面经 sctx.on 优先、ctx.on
- * 兜底探测（均为 cordis 标准面，无版本分支）；事件名固定为官方声明的
- * `settings/document-updated`（@deepseek-ai/dsh-settings types 面）。
+ * 订阅 `settings/document-updated` 并按 ns 过滤。优先使用注入后的 scoped context，
+ * 以 global 选项接收 ownerContext 事件；仅在 scoped 面不可用时回退宿主 context。
  * @param {unknown} ctx - 插件上下文（兜底订阅面）。
  * @param {unknown} sctx - 注入后的 scoped 上下文（优先订阅面）。
  * @param {string} ns - 插件自有命名空间。
@@ -172,7 +206,6 @@ function isFormsNamespaceServed(settings, ns) {
  * @returns {() => void} 退订函数。
  */
 function subscribeFormsDocumentUpdated(ctx, sctx, ns, listener) {
-  const candidates = [];
   const sctxOn =
     sctx && typeof sctx === "object" && "on" in sctx
       ? /** @type {unknown} */ (/** @type {any} */ (sctx).on)
@@ -181,21 +214,27 @@ function subscribeFormsDocumentUpdated(ctx, sctx, ns, listener) {
     ctx && typeof ctx === "object" && "on" in ctx
       ? /** @type {unknown} */ (/** @type {any} */ (ctx).on)
       : undefined;
-  if (typeof sctxOn === "function") candidates.push(sctxOn);
-  if (typeof ctxOn === "function" && ctxOn !== sctxOn) candidates.push(ctxOn);
-  for (const on of candidates) {
+  const candidates = [{ on: sctxOn, target: sctx }];
+  if (typeof ctxOn === "function" && ctxOn !== sctxOn) candidates.push({ on: ctxOn, target: ctx });
+  for (const candidate of candidates) {
+    if (typeof candidate.on !== "function") continue;
     try {
-      const disposer = /** @type {(event: string, cb: (...args: any[]) => void) => unknown} */ (
-        on
-      ).call(sctxOn === on ? sctx : ctx, "settings/document-updated", (...args) => {
-        const evNs = args.length > 0 ? args[0] : undefined;
-        if (String(evNs) !== String(ns)) return;
-        listener(evNs, args.length > 1 ? args[1] : undefined);
-      });
-      if (typeof disposer === "function") return /** @type {() => void} */ (disposer);
-      return () => {};
+      const disposer =
+        /** @type {(event: string, cb: (...args: any[]) => void, options?: { global?: boolean }) => unknown} */ (
+          candidate.on
+        ).call(
+          candidate.target,
+          "settings/document-updated",
+          (...args) => {
+            const evNs = args.length > 0 ? args[0] : undefined;
+            if (String(evNs) !== String(ns)) return;
+            listener(evNs, args.length > 1 ? args[1] : undefined);
+          },
+          { global: true },
+        );
+      return typeof disposer === "function" ? disposer : () => {};
     } catch {
-      continue;
+      // scoped context 不可用时继续尝试宿主 context。
     }
   }
   return () => {};

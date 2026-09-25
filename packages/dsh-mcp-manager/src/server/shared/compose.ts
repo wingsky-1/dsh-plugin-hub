@@ -93,7 +93,7 @@ export function bindHost(ctx: HostContextPort): HostFaces {
       onPreStep: (handler) => ctx.on("agent/pre-step", handler),
       // agent 作用域边：restrict 只在**作用域**上下文上可用（全局调用被宿主当场拒），故这里把
       // agent 自己的 tools 面连同 id 一起交出去——域拿不到 Context，也就没有第二处作用域入口。
-      // 0.1.7-rc.1 serial：`agent/created` 监听须返回 `undefined | Promise<undefined>`。
+      // 0.1.7-rc.1 引入、rc.2 沿用的 serial：`agent/created` 监听须返回 `undefined | Promise<undefined>`。
       // 转发 handler 保持同步，并显式 `return undefined` 满足监听返回契约。
       onAgentCreated: (handler) =>
         ctx.on("agent/created", ({ agent }) => {

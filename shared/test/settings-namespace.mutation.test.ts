@@ -12,7 +12,7 @@ type Listener = (eventNamespace: unknown, revision: unknown) => void;
 type Scope = SettingsFormsScope;
 type Setup = (value: {
   settings: unknown;
-  on?: (event: string, listener: Listener) => unknown;
+  on?: (event: string, listener: Listener, options?: { global?: boolean }) => unknown;
   effect?: (setup: () => () => void) => unknown;
 }) => void;
 
@@ -33,15 +33,23 @@ interface FixtureOptions {
   readonly describeErrorAfterInstall?: boolean;
   readonly includeEffect?: boolean;
   readonly includeOn?: boolean;
-  readonly scopedOn?: (event: string, listener: Listener) => unknown;
-  readonly contextOn?: (event: string, listener: Listener) => unknown;
+  readonly scopedOn?: (
+    event: string,
+    listener: Listener,
+    options?: { global?: boolean },
+  ) => unknown;
+  readonly contextOn?: (
+    event: string,
+    listener: Listener,
+    options?: { global?: boolean },
+  ) => unknown;
 }
 
 interface Fixture {
   readonly context: {
     fiber: { state: string | number; await(): Promise<void> };
     logger: { warn(message: unknown): void };
-    on?: (event: string, listener: Listener) => unknown;
+    on?: (event: string, listener: Listener, options?: { global?: boolean }) => unknown;
     inject(keys: string[], setup: Setup): () => void;
   };
   emit(eventNamespace: unknown, revision: unknown): void;
@@ -166,7 +174,11 @@ function makeFixture(options: FixtureOptions = {}): Fixture {
     },
   };
 
-  const defaultOn = (event: string, listener: Listener): (() => void) => {
+  const defaultOn = (
+    event: string,
+    listener: Listener,
+    _options?: { global?: boolean },
+  ): (() => void) => {
     expect(event).toBe("settings/document-updated");
     const id = nextListenerId++;
     listeners.set(id, listener);
@@ -475,6 +487,54 @@ describe("shared/settings-namespace mutation contract", () => {
     const shared = makeFixture({ scopedOn: sharedOn, contextOn: sharedOn });
     shared.install();
     expect(sharedCalls).toBe(1);
+  });
+
+  it("requests global delivery for cross-context settings events", () => {
+    let options: { global?: boolean } | undefined;
+    const fixture = makeFixture({
+      scopedOn: (_event, _listener, receivedOptions) => {
+        options = receivedOptions;
+        return () => undefined;
+      },
+    });
+    fixture.install();
+    expect(options).toEqual({ global: true });
+  });
+
+  it("falls back to the host context when the scoped context has no event surface", () => {
+    const contextListeners: Listener[] = [];
+    const fixture = makeFixture({
+      includeOn: false,
+      contextOn: (_event, listener) => {
+        contextListeners.push(listener);
+        return () => undefined;
+      },
+    });
+    fixture.install();
+    fixture.setDescriptor({ ns: NAMESPACE, value: { v: 2 }, revision: 2 });
+    contextListeners[0]?.(NAMESPACE, 2);
+    expect(fixture.changes).toBe(2);
+  });
+
+  it("merges base and user layers when the runtime value lags a profile edit", () => {
+    const fixture = makeFixture({
+      initialValue: { port: 3081, nested: { enabled: false, keep: 1 }, list: [1] },
+    });
+    fixture.install();
+    fixture.setDescriptor({
+      ns: NAMESPACE,
+      value: { port: 3081, nested: { enabled: false, keep: 1 }, list: [1] },
+      base: { port: 3081, nested: { enabled: false, keep: 1 }, list: [1] },
+      user: { port: 39181, nested: { enabled: true }, list: [2] },
+      revision: 2,
+    });
+    fixture.emit(NAMESPACE, 2);
+    expect(fixture.source()).toEqual({
+      port: 39181,
+      nested: { enabled: true, keep: 1 },
+      list: [2],
+    });
+    expect(fixture.changes).toBe(2);
   });
 
   it("notifies only for same-namespace semantic changes and keeps source live", () => {

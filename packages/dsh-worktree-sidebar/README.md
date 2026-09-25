@@ -152,7 +152,7 @@ pnpm gate:pr                 # 开 PR 前；新增包与 catalog 条目另需 pn
 
 ## 兼容性（只读耦合点）
 
-插件不改官方源码，但**读取**以下官方契约（基线 `@deepseek-ai/dsh 0.1.7-rc.1`）；官方改版时这些点是唯一的失效面：
+插件不改官方源码，但**读取**以下官方契约（基线 `@deepseek-ai/dsh 0.1.7-rc.2`）；官方改版时这些点是唯一的失效面：
 
 - 宿主 `typert` 的 `workspaceFileScope` 查表：本插件用 `lookups.configure` 注册自己的解析器，并在 miss 时委托**配置前捕获到的官方 resolve**；
 - 客户端 `sidebarRightTabs` 类型注册表与键控座位 `sidebar.right.pane.tab`（含 `StoredEntry` 的 `component/inject/store/locale` 形状）；

@@ -510,7 +510,7 @@ describe("apply 集成：TLS 准备 + settings 命名空间（setSource/onScope/
     const routes: WebRoute[] = [];
     const rpcHandles: Array<{ channel: string; h: unknown; opts: unknown }> = [];
     const disposers: Array<unknown> = [];
-    // 0.1.7-rc.1 热更新面：document-updated 订阅收集器（接缝经 ctx.on 兜底订阅）。
+    // 0.1.7-rc.2 热更新面：document-updated 订阅收集器（接缝经 ctx.on 兜底订阅）。
     const docUpdatedListeners: Array<(ns: unknown) => void> = [];
 
     const scope = {
@@ -554,7 +554,7 @@ describe("apply 集成：TLS 准备 + settings 命名空间（setSource/onScope/
     const ctx = {
       logger: { info: () => {}, warn: () => {}, error: () => {} },
       webServer: ws,
-      // 0.1.7-rc.1 热更新订阅面：apply 经 ctx.on 订阅 settings/document-updated。
+      // 0.1.7-rc.2 热更新订阅面：apply 经 ctx.on 订阅 settings/document-updated。
       // 无 on 面即跳过（能力检测），此处提供以锁定新订阅路径。
       on(event: string, listener: (ns: unknown) => void) {
         if (event === "settings/document-updated") docUpdatedListeners.push(listener);

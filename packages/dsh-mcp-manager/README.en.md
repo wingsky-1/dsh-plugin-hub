@@ -140,7 +140,7 @@ own `Config`; no config-file editing is needed.
 
 #### RC7 legacy settings-section migration
 
-DSH 0.1.7-rc.1 renames the old `~/.dsh/settings.yaml` to
+DSH 0.1.7-rc.2 renames the old `~/.dsh/settings.yaml` to
 `settings.yaml.imported`. It is an audit copy of the consumed legacy document, not
 the active configuration source; do not copy the whole imported file. Migration
 consumes only the `ui` subtree supported by the current settings page from the old

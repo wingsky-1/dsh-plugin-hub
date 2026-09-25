@@ -18,7 +18,7 @@
  *   新：{ kind: "plugin", plugin: "@wingsky-1/dsh-mcp-manager",
  *         form: "snapshot", sections: [{ name: "mcp-catalog", text: <原消息正文> }] }
  *
- * 历史责任止于 V3 wrapper：产物仍保持 v0/v1/v2，由 dsh 0.1.7-rc.1 的官方迁移链依次
+ * 历史责任止于 V3 wrapper：产物仍保持 v0/v1/v2，由 dsh 0.1.7-rc.2 的官方迁移链依次
  * 恢复到 v3、再转成 producer-owned V4。脚本不实现、也不伪造 v3→v4 migration，更不会把
  * v0/v1/v2 直接写成 V4。V3 wrapper 本身原样保留，交给官方迁移；V4 是当前格式，完全不动。
  *

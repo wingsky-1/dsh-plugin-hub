@@ -1,7 +1,7 @@
 /**
  * dsh-mcp-manager — 旧官方 settings section 到 canonical settings 的窄迁移。
  *
- * DSH 0.1.7-rc.1 会把旧 settings.yaml 改名为 settings.yaml.imported，但不会把插件别名
+ * DSH 0.1.7-rc.1 引入的 importer（rc.2 沿用）会把旧 settings.yaml 改名为 settings.yaml.imported，但不会把插件别名
  * dsh-mcp-manager 自动映射到 canonical ui-dsh-mcp-manager。本域只在 settings scope 已
  * attach 后读取两份旧文档；当前设置卡片只支持 ui 子树，因此 middleware、middlewarePolicy
  * 及其它非 volatile 顶层键明确丢弃，不写入 canonical patch。

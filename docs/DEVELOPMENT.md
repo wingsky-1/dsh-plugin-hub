@@ -274,7 +274,7 @@ shared**；X1 保证**已准入的模块随每个消费包完整发布**（机�
 contract-check 禁止运行时值导入）。原自建类型层 `types/dsh.d.ts` 已删除（issue #48）。
 
 **版本适配策略（唯一目标 runtime）**：官方类型层 catalog 当前锁定 dsh
-`0.1.7-rc.1`，其它 runtime 均不在支持范围。catalog 是唯一版本事实源；各 active/standalone
+`0.1.7-rc.2`，其它 runtime 均不在支持范围。catalog 是唯一版本事实源；各 active/standalone
 包的 DSH 官方 peer **成员集合**登记在 `scripts/data/plugins-manifest.json` 的
 `dshPeerContracts`，而成员版本来自 catalog。各包 `peerDependencies` 是 DSH 读取 link
 清单时必须看到的**精确 SemVer 投影**，升级 catalog 后运行 `pnpm catalog:sync-peers` 生成；

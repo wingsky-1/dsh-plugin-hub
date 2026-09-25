@@ -24,9 +24,9 @@ DSH（DeepSeek Harness）Web GUI 插件集，npm 分发：一键装全家桶，�
 
 ### 版本适配（只适配 rc）
 
-本插件集当前只适配 DeepSeek Harness `0.1.7-rc.1`。
+本插件集当前只适配 DeepSeek Harness `0.1.7-rc.2`。
 
-- `pnpm-workspace.yaml` 的官方类型层 catalog 是权威版本事实源；各包 peerDependencies 是维护流程生成的精确版本投影，锁定 `dsh 0.1.7-rc.1`；其他 DSH 版本不在本轮支持范围
+- `pnpm-workspace.yaml` 的官方类型层 catalog 是权威版本事实源；各包 peerDependencies 是维护流程生成的精确版本投影，锁定 `dsh 0.1.7-rc.2`；其他 DSH 版本不在本轮支持范围
 - 安装/更新时若 DSH 版本不匹配，npm/pnpm 会给出 peer 提示——先发布/安装与目标 DSH 精确匹配的插件版本，再切换 DSH 本体；不要用 `allow-version` 绕过不兼容
 - 每版的具体适配基线、破坏性变更与升级指南见 [Release Notes](docs/release-notes/)
 - catalog 更新前，不对 alpha、旧 runtime 或其他版本作兼容承诺
@@ -133,7 +133,7 @@ dsh plugin --profile web update
 当前 `dsh-mcp-manager` 只生成 producer-owned V4 source：
 `kind: "plugin:@wingsky-1/dsh-mcp-manager"`。业务代码不提供旧 V0/V2/V3 parser，也不承诺旧格式兼容。
 
-历史 `mcp-catalog` source 属于一次性维护边界。脚本只把旧 source 元数据修为 V3 wrapper，保留消息正文与事件序列；它不写 V4，也不实现 v3→v4 迁移。修复后由 `dsh 0.1.7-rc.1` 的官方迁移链依次恢复并转为 V4，当前 V4 产物不动。执行前先停止 `dsh web`，先用默认预演模式核对，再加 `--apply` 落盘。
+历史 `mcp-catalog` source 属于一次性维护边界。脚本只把旧 source 元数据修为 V3 wrapper，保留消息正文与事件序列；它不写 V4，也不实现 v3→v4 迁移。修复后由 `dsh 0.1.7-rc.2` 的官方迁移链依次恢复并转为 V4，当前 V4 产物不动。执行前先停止 `dsh web`，先用默认预演模式核对，再加 `--apply` 落盘。
 
 详见 [dsh-mcp-manager README](packages/dsh-mcp-manager/README.md#升级与历史会话边界)。
 

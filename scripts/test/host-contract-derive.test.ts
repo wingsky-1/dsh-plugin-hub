@@ -2,7 +2,7 @@
 "use strict";
 
 /**
- * host-contract 派生回归：真实 CLI 必须只汇报唯一目标 rc.1 的当前注册事实。
+ * host-contract 派生回归：真实 CLI 必须只汇报唯一目标 rc.2 的当前注册事实。
  * 任何旧 runtime / settings.plugin.item 叙事回流都会打红。
  */
 import test from "node:test";
@@ -44,7 +44,7 @@ const EXPECTED_ROW_CONFIG_SLOTS = [
   },
 ];
 
-test("--sample 只输出唯一目标 rc.1 与当前四个 slot 注册事实", () => {
+test("--sample 只输出唯一目标 rc.2 与当前四个 slot 注册事实", () => {
   const result = runDerive(["--sample"]);
   assert.equal(result.status, 0, result.stderr);
   assert.deepEqual(JSON.parse(result.stdout), {
@@ -58,9 +58,9 @@ test("--sample 只输出唯一目标 rc.1 与当前四个 slot 注册事实", ()
       "agent/error",
     ],
     mcpSectionOrder: "160",
-    targetRuntime: "0.1.7-rc.1",
+    targetRuntime: "0.1.7-rc.2",
     sessionAnchor:
-      '唯一目标 runtime 0.1.7-rc.1 的事实源为 ctx.on("session/event")；结算类型为 assistant/message（内嵌 stream）与 assistant/attempt；无 assistant/chunk',
+      '唯一目标 runtime 0.1.7-rc.2 的事实源为 ctx.on("session/event")；结算类型为 assistant/message（内嵌 stream）与 assistant/attempt；无 assistant/chunk',
     slotCount: 4,
     rowConfigSlots: EXPECTED_ROW_CONFIG_SLOTS,
     routeCount: 39,
@@ -76,7 +76,7 @@ test("完整派生保留 canonical row facts，且不含旧 runtime 兼容叙事
     sessionFormat: { targetRuntime: string; collectorMentionsChunkRemoval: boolean };
   };
 
-  assert.equal(derived.sessionFormat.targetRuntime, "0.1.7-rc.1");
+  assert.equal(derived.sessionFormat.targetRuntime, "0.1.7-rc.2");
   assert.equal(derived.sessionFormat.collectorMentionsChunkRemoval, false);
   assert.deepEqual(
     derived.slots.filter(({ slot }) => slot === "plugins.row.config"),

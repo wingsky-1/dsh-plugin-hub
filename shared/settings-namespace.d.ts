@@ -2,8 +2,8 @@
  * 宿主端「设置命名空间」注册（单一事实源）。
  *
  * 背景与语义见 settings-namespace.js 顶部注释。要点：宿主 settings 服务按 `ns`
- * 定位描述项并取 `value`；写经 update/replace/mutate；热更新经
- * document-updated 订阅（内部直连，不对外暴露 watch 面）。
+ * 定位描述项并合成 `base + user`（无层字段时兼容取 `value`）；写经
+ * update/replace/mutate；热更新经 document-updated 订阅（内部直连，不对外暴露 watch 面）。
  * 本文件只收窄能力面（全 unknown 结构面，无官方包导入）。
  */
 
@@ -20,13 +20,15 @@ export interface SettingsNamespaceHooks {
   onScope?(scope: unknown, service: unknown): void;
 }
 
-/** 描述项窄面（按 ns 定位，取 value）。 */
+/** 描述项窄面（按 ns 定位，合成 base + user，兼容 value 回退）。 */
 export interface SettingsFormsDescriptor {
   /** 命名空间键。 */
   ns?: unknown;
-  /** 已解析值。 */
+  /** 运行时解析值（缺少分层字段时的兼容回退）。 */
   value?: unknown;
-  /** 原始 user 层。 */
+  /** 基础配置层。 */
+  base?: unknown;
+  /** 原始 user 覆盖层。 */
   user?: unknown;
   /** 乐观并发修订号。 */
   revision?: unknown;
@@ -34,7 +36,7 @@ export interface SettingsFormsDescriptor {
 
 /** owner scope 窄面（describe 定位读＋写委托；订阅由接缝内部直连）。 */
 export interface SettingsFormsScope {
-  /** 当前解析值（describe value，缺席回落 entry）。 */
+  /** 当前有效值（describe base + user，缺席回落 entry）。 */
   get(): unknown;
   /** 委托 settings.update(ns, …)。 */
   update(patch: object, expectedRevision?: number): Promise<unknown>;

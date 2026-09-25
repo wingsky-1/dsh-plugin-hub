@@ -68,7 +68,7 @@ interface ClientContext {
   effect: (execute: () => () => void, label?: string) => unknown;
 }
 
-/** 0.1.7-rc.1 row entry 的 owner props；form 由宿主提供，当前卡片仍保留既有 HTTP 写面。 */
+/** 0.1.7-rc.2 目标的 row entry owner props；form 由宿主提供，当前卡片仍保留既有 HTTP 写面。 */
 interface RowConfigEntryProps {
   readonly view: "summary" | "page";
   readonly form?: unknown;
@@ -83,7 +83,7 @@ interface SlotsView {
   ) => () => void;
 }
 
-/** 0.1.7-rc.1 settings 配置服务的目标签名；页面注册只在 Host 服务 watched namespace 时存活。 */
+/** 0.1.7-rc.2 settings 配置服务的目标签名；页面注册只在 Host 服务 watched namespace 时存活。 */
 interface ConfigFormsView {
   whileServed: (
     namespaces: readonly string[],

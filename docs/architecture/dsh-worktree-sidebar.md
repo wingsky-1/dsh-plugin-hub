@@ -159,7 +159,7 @@ api **刻意不读绑定表原文**而读 scope 算出的生效值（`api/deps.t
 
 1. **priority = 官方那条 − 1**：`shadowPriorityOf` 取 `(official.options.priority ?? 0) - 1`
    （`takeover.ts:41-43`）。官方座位注册表按 priority 升序排序、**最低者渲染**
-   （`node_modules/.pnpm/@deepseek-ai+dsh-client-ui-slots@0.1.7-rc.1_.../lib/index.js:76-77`、`:130`，
+   （`node_modules/.pnpm/@deepseek-ai+dsh-client-ui-slots@0.1.7-rc.2_.../lib/index.js:76-77`、`:130`，
    由 `pnpm-workspace.yaml:19` 的 catalog 锁版）。
 2. **复用官方一切，只包 `inject`**：组件 / store / locale 原样递回，`inject` 换成包装后的工厂
    （`takeover.ts:137-147`）；类型表从不改写，因此标题与 `guide` 保持官方原样
@@ -444,7 +444,7 @@ flowchart TD
   `src/server/tools/impl/protocol/index.ts:10`、`src/server/api/deps.ts:2`）。
 - 六个官方 peer 的版本由 `pnpm-workspace.yaml` catalog 单一事实源生成到
   `package.json`（`package.json:52-59`），精确锁定唯一目标 runtime
-  `0.1.7-rc.1`（`pnpm-workspace.yaml:16-29`）；其它 runtime 不作兼容承诺。六个 peer 全标
+  `0.1.7-rc.2`（`pnpm-workspace.yaml:16-29`）；其它 runtime 不作兼容承诺。六个 peer 全标
   `optional: true`（`package.json:60-79`），实际提供方是宿主。升级后须运行
   `pnpm catalog:sync-peers`，避免 DSH 直接读取 raw link 清单时把 pnpm 的 `catalog:`
   当作无效 SemVer。
@@ -561,7 +561,7 @@ flowchart LR
     SRC -.->|"ROUTES 单一来源"| BUNDLE
     BUNDLE -.->|"读宿主产物 mod.ROUTES"| CLIDEF["esbuild define：__DSH_ROUTES__"]
 
-    CATALOG["pnpm-workspace.yaml catalog<br/>@deepseek-ai/* 0.1.7-rc.1<br/>唯一 target runtime"] -.->|"peer + 仅 import type"| SRC
+    CATALOG["pnpm-workspace.yaml catalog<br/>@deepseek-ai/* 0.1.7-rc.2<br/>唯一 target runtime"] -.->|"peer + 仅 import type"| SRC
 
     PATCH["cordis.patch.yml<br/>insert id=ui-dsh-worktree-sidebar"] --> PROFILE["dsh web profile 插件名册"]
     PROFILE --> CORDIS["cordis 组合：宿主端与浏览器端各跑一半"]
@@ -594,7 +594,7 @@ grep -rn 'from "@deepseek-ai' packages/dsh-worktree-sidebar/src | grep -v "impor
 
 # 2. 确认官方座位注册表的 priority 语义（最低者渲染、默认 0）
 grep -n "lowest renders" \
-  node_modules/.pnpm/@deepseek-ai+dsh-client-ui-slots@0.1.7-rc.1_*/node_modules/@deepseek-ai/dsh-client-ui-slots/lib/index.js
+  node_modules/.pnpm/@deepseek-ai+dsh-client-ui-slots@0.1.7-rc.2_*/node_modules/@deepseek-ai/dsh-client-ui-slots/lib/index.js
 
 # 3. 确认测试文件数（应等于 package.json 的 --min 17）
 ls packages/dsh-worktree-sidebar/test/unit/*.ts packages/dsh-worktree-sidebar/test/integration/*.ts | wc -l

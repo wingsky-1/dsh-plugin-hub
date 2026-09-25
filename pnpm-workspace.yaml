@@ -12,23 +12,23 @@ autoInstallPeers: false
 # 仅限 import type（编译期擦除），禁止任何运行时值导入（contract-check 有门禁）。
 catalog:
   "@deepseek-ai/cordis": 4.0.4
-  "@deepseek-ai/dsh-agent": 0.1.7-rc.1
-  "@deepseek-ai/dsh-api-workspace-files": 0.1.7-rc.1
-  "@deepseek-ai/dsh-client-connection": 0.1.7-rc.1
-  "@deepseek-ai/dsh-client-store": 0.1.7-rc.1
-  "@deepseek-ai/dsh-client-ui-slots": 0.1.7-rc.1
-  "@deepseek-ai/dsh-host-webserver": 0.1.7-rc.1
-  "@deepseek-ai/dsh-llm": 0.1.7-rc.1
-  "@deepseek-ai/dsh-session": 0.1.7-rc.1
-  "@deepseek-ai/dsh-session-title": 0.1.7-rc.1
-  "@deepseek-ai/dsh-settings": 0.1.7-rc.1
-  "@deepseek-ai/dsh-skill": 0.1.7-rc.1
-  "@deepseek-ai/dsh-skill-filesystem": 0.1.7-rc.1
-  "@deepseek-ai/dsh-system-prompt": 0.1.7-rc.1
-  "@deepseek-ai/dsh-tools": 0.1.7-rc.1
-  "@deepseek-ai/dsh-typert-protocol": 0.1.7-rc.1
-  "@deepseek-ai/dsh-user-approval": 0.1.7-rc.1
-  "@deepseek-ai/dsh-user-questions": 0.1.7-rc.1
+  "@deepseek-ai/dsh-agent": 0.1.7-rc.2
+  "@deepseek-ai/dsh-api-workspace-files": 0.1.7-rc.2
+  "@deepseek-ai/dsh-client-connection": 0.1.7-rc.2
+  "@deepseek-ai/dsh-client-store": 0.1.7-rc.2
+  "@deepseek-ai/dsh-client-ui-slots": 0.1.7-rc.2
+  "@deepseek-ai/dsh-host-webserver": 0.1.7-rc.2
+  "@deepseek-ai/dsh-llm": 0.1.7-rc.2
+  "@deepseek-ai/dsh-session": 0.1.7-rc.2
+  "@deepseek-ai/dsh-session-title": 0.1.7-rc.2
+  "@deepseek-ai/dsh-settings": 0.1.7-rc.2
+  "@deepseek-ai/dsh-skill": 0.1.7-rc.2
+  "@deepseek-ai/dsh-skill-filesystem": 0.1.7-rc.2
+  "@deepseek-ai/dsh-system-prompt": 0.1.7-rc.2
+  "@deepseek-ai/dsh-tools": 0.1.7-rc.2
+  "@deepseek-ai/dsh-typert-protocol": 0.1.7-rc.2
+  "@deepseek-ai/dsh-user-approval": 0.1.7-rc.2
+  "@deepseek-ai/dsh-user-questions": 0.1.7-rc.2
   "@typesafe-ai/sdk": 0.6.0
 
 allowBuilds:
@@ -42,31 +42,31 @@ allowBuilds:
 # 一旦启用（rc 包发布时间新、会超龄拦截），按此清单豁免官方 rc 包。
 # 升级锁版版本号时同步更新此处。
 minimumReleaseAgeExclude:
-  - "@deepseek-ai/dsh-agent@0.1.7-rc.1"
-  - "@deepseek-ai/dsh-api-workspace-files@0.1.7-rc.1"
-  - "@deepseek-ai/dsh-host-webserver@0.1.7-rc.1"
-  - "@deepseek-ai/dsh-llm@0.1.7-rc.1"
-  - "@deepseek-ai/dsh-session-title@0.1.7-rc.1"
-  - "@deepseek-ai/dsh-session@0.1.7-rc.1"
-  - "@deepseek-ai/dsh-skill@0.1.7-rc.1"
-  - "@deepseek-ai/dsh-system-prompt@0.1.7-rc.1"
-  - "@deepseek-ai/dsh-tools@0.1.7-rc.1"
+  - "@deepseek-ai/dsh-agent@0.1.7-rc.2"
+  - "@deepseek-ai/dsh-api-workspace-files@0.1.7-rc.2"
+  - "@deepseek-ai/dsh-host-webserver@0.1.7-rc.2"
+  - "@deepseek-ai/dsh-llm@0.1.7-rc.2"
+  - "@deepseek-ai/dsh-session-title@0.1.7-rc.2"
+  - "@deepseek-ai/dsh-session@0.1.7-rc.2"
+  - "@deepseek-ai/dsh-skill@0.1.7-rc.2"
+  - "@deepseek-ai/dsh-system-prompt@0.1.7-rc.2"
+  - "@deepseek-ai/dsh-tools@0.1.7-rc.2"
   - "@typesafe-ai/sdk@0.6.0"
-  - "@deepseek-ai/dsh-user-approval@0.1.7-rc.1"
-  - "@deepseek-ai/dsh-user-questions@0.1.7-rc.1"
+  - "@deepseek-ai/dsh-user-approval@0.1.7-rc.2"
+  - "@deepseek-ai/dsh-user-questions@0.1.7-rc.2"
   - "@deepseek-ai/cordis@4.0.4"
   - "@deepseek-ai/cosmokit@1.8.5"
-  - "@deepseek-ai/dsh-brand@0.1.7-rc.1"
-  - "@deepseek-ai/dsh-timeout@0.1.7-rc.1"
-  - "@deepseek-ai/dsh-typert-protocol@0.1.7-rc.1"
-  - "@deepseek-ai/dsh-util-crypto@0.1.7-rc.1"
-  - "@deepseek-ai/dsh-util-values@0.1.7-rc.1"
+  - "@deepseek-ai/dsh-brand@0.1.7-rc.2"
+  - "@deepseek-ai/dsh-timeout@0.1.7-rc.2"
+  - "@deepseek-ai/dsh-typert-protocol@0.1.7-rc.2"
+  - "@deepseek-ai/dsh-util-crypto@0.1.7-rc.2"
+  - "@deepseek-ai/dsh-util-values@0.1.7-rc.2"
   - "@deepseek-ai/schemastery@3.18.4"
-  - "@deepseek-ai/dsh-client-ui-slots@0.1.7-rc.1"
-  - "@deepseek-ai/dsh-client-store@0.1.7-rc.1"
-  - "@deepseek-ai/dsh-client-connection@0.1.7-rc.1"
-  - "@deepseek-ai/dsh-settings@0.1.7-rc.1"
-  - "@deepseek-ai/dsh-skill-filesystem@0.1.7-rc.1"
-  - "@deepseek-ai/dsh-atomic-write@0.1.7-rc.1"
-  - "@deepseek-ai/dsh-config-editor@0.1.7-rc.1"
-  - "@deepseek-ai/dsh-deque@0.1.7-rc.1"
+  - "@deepseek-ai/dsh-client-ui-slots@0.1.7-rc.2"
+  - "@deepseek-ai/dsh-client-store@0.1.7-rc.2"
+  - "@deepseek-ai/dsh-client-connection@0.1.7-rc.2"
+  - "@deepseek-ai/dsh-settings@0.1.7-rc.2"
+  - "@deepseek-ai/dsh-skill-filesystem@0.1.7-rc.2"
+  - "@deepseek-ai/dsh-atomic-write@0.1.7-rc.2"
+  - "@deepseek-ai/dsh-config-editor@0.1.7-rc.2"
+  - "@deepseek-ai/dsh-deque@0.1.7-rc.2"
