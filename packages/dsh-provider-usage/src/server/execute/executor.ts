@@ -15,7 +15,12 @@
  */
 import type { Context } from "@deepseek-ai/cordis";
 import type { ReportConfig, ReportPeriod } from "../config/interface.ts";
-import { readReportIndex, runDueReportOutcome, type RunDueReportOutcome } from "./runner.ts";
+import {
+  prepareDueReportOutcome,
+  readReportIndex,
+  runDueReportOutcome,
+  type RunDueReportOutcome,
+} from "./runner.ts";
 import type {
   GenerateRouteOutcome,
   ReportLlmService,
@@ -33,9 +38,11 @@ import type { TrendTracker } from "../aggregate/interface.ts";
 export interface RetrySuccessCommitInput {
   claim: RetryClaim;
   result: ReportResult;
+  /** 仅在 coordinator 确认 current claim 后、持 per-root 锁执行。 */
+  persist: () => Promise<void>;
 }
 
-/** B2b 装配的 per-root coordinator：单调推进 lastRun 后 CAS clear 当前 claim。 */
+/** B2b 装配的 per-root coordinator：落盘、单调推进 lastRun、CAS clear 当前 claim。 */
 export interface RetrySuccessCommitPort {
   commitSuccess(input: RetrySuccessCommitInput): Promise<boolean>;
 }
@@ -54,6 +61,7 @@ export interface DueExecutorRetryOptions {
     period: ReportPeriod;
     key: string;
     indexed: boolean;
+    cycleId?: string;
   }) => Promise<boolean>;
   now?: () => number;
 }
@@ -170,7 +178,7 @@ async function runWithRetry(
   reportCfg: ReportConfig,
 ): Promise<ReportTaskResult> {
   const { claim, route } = await claimRoute(deps, retry, input, reportCfg);
-  const outcome = await runDueReportOutcome({
+  const outcome = await prepareDueReportOutcome({
     due: input,
     trend: deps.trend,
     ctx: deps.ctx,
@@ -184,8 +192,24 @@ async function runWithRetry(
     await retry.ledger.recordFailure(claim, outcome.failure, retry.now?.() ?? Date.now());
     throw taggedError(outcome.failure.code, outcomeError(outcome));
   }
-  if (!(await retry.commitSuccess.commitSuccess({ claim, result: outcome.result }))) {
-    throw taggedError("retry-cycle-conflict", "报告重试周期已变化");
+  try {
+    const committed = await retry.commitSuccess.commitSuccess({
+      claim,
+      result: outcome.result,
+      persist: () => outcome.persist(claim.cycleId),
+    });
+    if (!committed) throw taggedError("retry-cycle-conflict", "报告重试周期已变化");
+  } catch (error: unknown) {
+    // 真实 coordinator 已在根锁内 terminalize；此 CAS 兜底只服务窄 commit port，
+    // 且旧 claim 不得清除后来 force 创建的新 cycle。
+    if (stableCode(error, "") === "report-persist-failed") {
+      await retry.ledger.recordFailure(
+        claim,
+        { kind: "storage", code: "report-persist-failed" },
+        retry.now?.() ?? Date.now(),
+      );
+    }
+    throw error;
   }
   return { meta: outcome.result.meta };
 }
@@ -206,6 +230,7 @@ export function makeDueReportExecutor(
               period: input.period,
               key: input.key,
               indexed: true,
+              cycleId: existing.cycleId,
             });
           }
           return { meta: existing, reused: true };

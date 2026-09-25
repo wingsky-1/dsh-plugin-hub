@@ -726,10 +726,101 @@ describe("#1010 B2b coordinator/scheduler/queue 纵向切片", () => {
         await coordinator.commitSuccess({
           claim,
           result: { meta: { period: "daily", key: "2026-09-23" } },
+          persist: async () => undefined,
         }),
       ).toBe(true);
       expect((await readLastRun(root)).daily).toBe("2026-09-24");
       expect(await ledger.list()).toEqual([]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("reconcileIndex 只让同 cycle 成功事实清 waiting；异 cycle token 丢弃", async () => {
+    const root = mkdtempSync(join(tmpdir(), "b2b-index-cycle-"));
+    try {
+      const now = 1_000;
+      const ledger = createRetryLedger(root, {
+        now: () => now,
+        createCycleId: () => "cycle-index-success",
+      });
+      const coordinator = createReportStateCoordinator({ root, ledger, now: () => now });
+      const seed = {
+        period: "daily" as const,
+        key: "2026-09-23",
+        startDay: "2026-09-23",
+        endDay: "2026-09-23",
+        route: { provider: "generic-provider", model: "generic-model" },
+      };
+      const claim = await coordinator.beginAttempt(seed, now);
+      if (claim === null) throw new Error("expected claim");
+      const waiting = await coordinator.recordFailure(
+        claim,
+        { code: "transient", kind: "transient" },
+        now,
+      );
+      if (waiting === null) throw new Error("expected waiting claim");
+
+      expect(
+        await coordinator.reconcileIndex({
+          period: seed.period,
+          key: seed.key,
+          indexed: true,
+          cycleId: "cycle-other",
+        }),
+      ).toBe(false);
+      expect(await coordinator.get(seed.period, seed.key)).toEqual(waiting);
+      expect(await readLastRun(root)).toEqual({});
+
+      expect(
+        await coordinator.reconcileIndex({
+          period: seed.period,
+          key: seed.key,
+          indexed: true,
+          cycleId: waiting.cycleId,
+        }),
+      ).toBe(true);
+      expect((await readLastRun(root)).daily).toBe(seed.key);
+      expect(await coordinator.list()).toEqual([]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("周期 reconcile 的旧 index token 不能清新 force；同 cycle token 才能清", async () => {
+    const root = mkdtempSync(join(tmpdir(), "b2b-reconcile-cycle-"));
+    try {
+      const now = 1_000;
+      let sequence = 0;
+      const ledger = createRetryLedger(root, {
+        now: () => now,
+        createCycleId: () => `cycle-${(sequence += 1)}`,
+      });
+      const coordinator = createReportStateCoordinator({ root, ledger, now: () => now });
+      const seed = {
+        period: "daily" as const,
+        key: "2026-09-23",
+        startDay: "2026-09-23",
+        endDay: "2026-09-23",
+        route: { provider: "generic-provider", model: "generic-model" },
+      };
+      const oldClaim = await coordinator.beginAttempt(seed, now);
+      if (oldClaim === null) throw new Error("expected old claim");
+      const forced = await coordinator.beginForce(seed, now + 1);
+      const before = { daily: "2026-09-22" };
+      await updateLastRun(root, () => before);
+
+      await coordinator.reconcile(before, [
+        { period: seed.period, key: seed.key, cycleId: oldClaim.cycleId },
+      ]);
+      expect(await coordinator.get(seed.period, seed.key)).toEqual(forced);
+      expect(await readLastRun(root)).toEqual(before);
+
+      await coordinator.reconcile(before, [
+        { period: seed.period, key: seed.key, cycleId: forced.cycleId },
+      ]);
+      expect(await coordinator.list()).toEqual([]);
+      expect((await readLastRun(root)).daily).toBe(seed.key);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -806,7 +897,7 @@ describe("#1010 B2b coordinator/scheduler/queue 纵向切片", () => {
           monthly: { enabled: false },
         }),
         coordinator,
-        listIndexed: async () => [{ period: "daily", key: "2026-09-23" }],
+        listIndexed: async () => [{ period: "daily", key: "2026-09-23", cycleId: "cycle-indexed" }],
         now: () => now + 60_000,
         onDue: async (due) => {
           seen.push({ key: due.key });

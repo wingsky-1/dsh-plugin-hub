@@ -33,10 +33,15 @@ export function reportIndexFile(root: string): string {
   return join(root, "reports", "index.jsonl");
 }
 
+/** index 中可带事务 cycle token；旧记录没有该字段，仍只可复用，不可证明同 cycle。 */
+export interface ReportCycleMeta extends ReportMeta {
+  cycleId?: string;
+}
+
 // 解析记忆化缓存（readReportIndex 专用；键=historyRoot，值=stat 失效键+投影）。
 interface IndexCacheEntry {
   stamp: string;
-  value: ReportMeta[];
+  value: ReportCycleMeta[];
 }
 const indexCache = new Map<string, IndexCacheEntry>();
 // 命中/未命中计数（测试可观测：确定性证明「重复读不再重解析」，不依赖时钟度量）
@@ -158,19 +163,24 @@ export function notifyReport(
   const body = `${meta.period} ${meta.key}（${meta.startDay} ~ ${meta.endDay}）：token 总量 ${
     total === null ? "无数据" : total.toLocaleString("en-US")
   }，调用 ${snapshot.totals.calls} 次。详情见 dsh 设置页用量报告。`;
-  notifier
-    .send({
-      source: "@wingsky-1/dsh-provider-usage",
-      kind: "provider-usage:report",
-      severity: "info",
-      title: "用量报告",
-      body,
-    })
-    .catch((e: unknown) =>
-      console.warn(
-        `[dsh-provider-usage] report: 推送失败（不影响主流程）：${sanitizeDiagnostic(errorMessage(e))}`,
-      ),
+  const warnPushFailure = (e: unknown): void => {
+    console.warn(
+      `[dsh-provider-usage] report: 推送失败（不影响主流程）：${sanitizeDiagnostic(errorMessage(e))}`,
     );
+  };
+  try {
+    notifier
+      .send({
+        source: "@wingsky-1/dsh-provider-usage",
+        kind: "provider-usage:report",
+        severity: "info",
+        title: "用量报告",
+        body,
+      })
+      .catch(warnPushFailure);
+  } catch (e: unknown) {
+    warnPushFailure(e);
+  }
 }
 
 function reportHtmlDocument(meta: ReportMeta, bodyText: string): string {
@@ -186,6 +196,7 @@ export async function persistReport(
   historyRoot: string,
   meta: ReportMeta,
   bodyText: string,
+  cycleId?: string,
 ): Promise<void> {
   const dir = reportsDir(historyRoot);
   const htmlFile = reportHtmlFile(historyRoot, meta.period, meta.key);
@@ -201,7 +212,8 @@ export async function persistReport(
   await writeFile(tmpMeta, JSON.stringify(meta, null, 2), { mode: 0o600 });
   await rename(tmpMeta, metaFile);
 
-  await appendFile(indexFile, `${JSON.stringify(meta)}\n`, { mode: 0o600 });
+  const indexedMeta: ReportCycleMeta = cycleId === undefined ? meta : { ...meta, cycleId };
+  await appendFile(indexFile, `${JSON.stringify(indexedMeta)}\n`, { mode: 0o600 });
 }
 
 export interface RunDueReportParams {
@@ -224,10 +236,44 @@ const REPORT_STORAGE_FAILURE = {
   code: "report-persist-failed",
 } as const satisfies RetryFailure;
 
-export async function runDueReportOutcome(
+export type PreparedDueReportOutcome =
+  | {
+      status: "success";
+      result: ReportResult;
+      /** coordinator 校验 current claim 后，在根锁内调用；cycleId 仅写 index token。 */
+      persist: (cycleId?: string) => Promise<void>;
+    }
+  | { status: "failure"; failure: RetryFailure; result?: ReportResult };
+
+type PreparedReportSuccess = Extract<PreparedDueReportOutcome, { status: "success" }>;
+
+function reportPersistenceError(): Error & { code: string } {
+  return Object.assign(new Error("报告持久化失败"), { code: REPORT_STORAGE_FAILURE.code });
+}
+
+function preparedSuccess(
   params: RunDueReportParams,
-): Promise<RunDueReportOutcome> {
-  const { due, trend, ctx, reportCfg, promptTemplate, historyRoot, sanitizeDiagnostic } = params;
+  result: ReportResult,
+  snapshot: ReportStatsSnapshot,
+): PreparedReportSuccess {
+  return {
+    status: "success",
+    result,
+    persist: async (cycleId) => {
+      try {
+        await persistReport(params.historyRoot, result.meta, result.body, cycleId);
+      } catch {
+        throw reportPersistenceError();
+      }
+      notifyReport(params.ctx, params.reportCfg, result.meta, snapshot, params.sanitizeDiagnostic);
+    },
+  };
+}
+
+export async function prepareDueReportOutcome(
+  params: RunDueReportParams,
+): Promise<PreparedDueReportOutcome> {
+  const { due, trend, ctx, reportCfg, promptTemplate } = params;
   const buckets = trend.buckets();
   // 目录维度日汇总行进快照（trend.dirRows 含今日桶，口径见
   // aggregator.dirRows）。残差投影后旧数据（无 dir 行的分片）不再得到
@@ -257,9 +303,9 @@ export async function runDueReportOutcome(
     prevTotal: prevWindowTotal(buckets, due.startDay, due.endDay),
   });
   if (snapshot.totals.calls === 0) {
-    return {
-      status: "success",
-      result: {
+    return preparedSuccess(
+      params,
+      {
         body: "",
         meta: {
           period: due.period,
@@ -274,7 +320,8 @@ export async function runDueReportOutcome(
           noData: true,
         },
       },
-    };
+      snapshot,
+    );
   }
   const route = params.route;
   const generated = await generateReportOutcome({
@@ -296,13 +343,20 @@ export async function runDueReportOutcome(
     ...generated.result,
     meta: { ...generated.result.meta, summary: summaryOf(snapshot) },
   };
+  return preparedSuccess(params, result, snapshot);
+}
+
+export async function runDueReportOutcome(
+  params: RunDueReportParams,
+): Promise<RunDueReportOutcome> {
+  const outcome = await prepareDueReportOutcome(params);
+  if (outcome.status === "failure") return outcome;
   try {
-    await persistReport(historyRoot, result.meta, result.body);
+    await outcome.persist();
   } catch {
     return { status: "failure", failure: REPORT_STORAGE_FAILURE };
   }
-  notifyReport(ctx, reportCfg, result.meta, snapshot, sanitizeDiagnostic);
-  return { status: "success", result };
+  return { status: "success", result: outcome.result };
 }
 
 /** 兼容 wrapper：保留旧 ReportMeta 返回/抛错语义，结构化标签由 executor 消费。 */
@@ -327,7 +381,7 @@ export async function runDueReport(params: RunDueReportParams): Promise<ReportMe
  * - stat 失败（竞态删除/权限）→ 回落全量读+解析（降级路径，语义与原实现一致）；
  * - 单进程内存态缓存，无跨进程共享面（多实例经 DSH_HOME/profile 天然隔离）。
  */
-export async function readReportIndex(historyRoot: string): Promise<ReportMeta[]> {
+export async function readReportIndex(historyRoot: string): Promise<ReportCycleMeta[]> {
   const file = reportIndexFile(historyRoot);
   let raw: string;
   let stamp: string;
@@ -351,7 +405,7 @@ export async function readReportIndex(historyRoot: string): Promise<ReportMeta[]
   }
   indexCacheMisses += 1;
   const records = parseReportIndexLines(raw);
-  const newest = new Map<string, ReportMeta>();
+  const newest = new Map<string, ReportCycleMeta>();
   for (const r of records) {
     const id = `${r.period}:${r.key}`;
     const cur = newest.get(id);

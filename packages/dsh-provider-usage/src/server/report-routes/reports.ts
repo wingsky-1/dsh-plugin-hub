@@ -25,7 +25,7 @@ import {
   writeJson,
 } from "../../../../../shared/host-utils.js";
 import type { ReportConfig, ReportPeriod } from "../config/interface.ts";
-import type { ReportMeta } from "../execute/interface.ts";
+import type { ReportCycleMeta } from "../execute/interface.ts";
 import type {
   DueReport,
   ReportStateCoordinator,
@@ -86,7 +86,7 @@ export interface ReportRoutesContext {
   /**
    * 执行读面注入（#768 B2：不直引 execute 门面值边；只读查询闭包，实例不直引）。
    */
-  readReportIndex: (root: string) => Promise<ReportMeta[]>;
+  readReportIndex: (root: string) => Promise<ReportCycleMeta[]>;
   reportHtmlFile: (root: string, period: ReportPeriod, key: string) => string;
   reportMetaFile: (root: string, period: ReportPeriod, key: string) => string;
   /**
@@ -445,6 +445,7 @@ export async function handleReportGenerate(
             period: due.period,
             key: due.key,
             indexed: true,
+            cycleId: existing.cycleId,
           });
         } catch {
           return writeJson(res, 503, { ok: false, error: "retry-state-unavailable" });

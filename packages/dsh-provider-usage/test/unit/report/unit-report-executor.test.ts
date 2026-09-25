@@ -57,6 +57,9 @@ import type {
 } from "@deepseek-ai/dsh-llm";
 import {
   makeDueReportExecutor,
+  persistReport,
+  reportHtmlFile,
+  reportMetaFile,
   resolveGenerateRoute,
   runDueReport,
   runDueReportOutcome,
@@ -403,15 +406,17 @@ class RecordingCommitPort implements RetrySuccessCommitPort {
         entry: { ...input.claim.entry, route: { ...input.claim.entry.route } },
       },
       result: { ...input.result, meta: { ...input.result.meta } },
+      persist: input.persist,
     });
     return this.handler(input);
   }
 }
 
 function commitCurrentThenClear(root: string, ledger: RetryLedgerPort): RecordingCommitPort {
-  return new RecordingCommitPort(async ({ claim, result }) => {
+  return new RecordingCommitPort(async ({ claim, result, persist }) => {
     const current = await ledger.get(result.meta.period, result.meta.key);
     if (current?.cycleId !== claim.cycleId || current.phase !== "in-flight") return false;
+    await persist();
     await updateLastRun(root, (previous) => {
       const previousKey = previous[result.meta.period];
       return previousKey !== undefined && previousKey >= result.meta.key
@@ -567,7 +572,7 @@ describe("runner/executor：#1010 B2a retry ledger 执行事务", () => {
           reason: { kind: "storage", code: "report-persist-failed" },
         }),
       ]);
-      expect(commit.calls).toEqual([]);
+      expect(commit.calls).toHaveLength(1);
 
       await expect(executor(retryDue())).rejects.toThrow("报告重试状态不允许执行");
       expect(calls).toHaveLength(1);
@@ -587,6 +592,7 @@ describe("runner/executor：#1010 B2a retry ledger 执行事务", () => {
       endDay: RETRY_DAY,
       generatedAt: RETRY_NOW,
       ok: true,
+      cycleId: "cycle-index-reuse",
     };
     writeFileSync(join(reports, "index.jsonl"), JSON.stringify(meta) + "\n");
     const ledger = retryLedger(root, () => "cycle-index-reuse");
@@ -710,6 +716,114 @@ describe("runner/executor：#1010 B2a retry ledger 执行事务", () => {
         expect.objectContaining({ cycleId: "cycle-2", phase: "waiting", attempts: 0 }),
       ]);
     } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("force 插入 generate 与 persist 之间时旧产物落盘被 fence，最终 cycle 仅含新 body", async () => {
+    const root = mkdtempSync(join(tmpdir(), "u-exec-persist-fence-"));
+    const ledger = retryLedger(
+      root,
+      (() => {
+        let sequence = 0;
+        return () => `cycle-${(sequence += 1)}`;
+      })(),
+    );
+    const coordinator = createReportStateCoordinator({ root, ledger, now: () => RETRY_NOW });
+    let releaseCommit = (): void => undefined;
+    let markCommitEntered = (): void => undefined;
+    const commitGate = new Promise<void>((resolve) => {
+      releaseCommit = resolve;
+    });
+    const commitEntered = new Promise<void>((resolve) => {
+      markCommitEntered = resolve;
+    });
+    const commit: RetrySuccessCommitPort = {
+      async commitSuccess(input) {
+        markCommitEntered();
+        await commitGate;
+        return coordinator.commitSuccess(input);
+      },
+    };
+    const { ctx } = retryContext(SUCCESS_CHUNKS);
+    const executor = retryExecutor({ root, trend: retryTrend(1), ctx, ledger, commit });
+    const htmlFile = reportHtmlFile(root, "daily", RETRY_DAY);
+    const metaFile = reportMetaFile(root, "daily", RETRY_DAY);
+    const indexFile = join(root, "reports", "index.jsonl");
+
+    try {
+      const oldCycle = executor(retryDue());
+      await commitEntered;
+      const inFlight = await coordinator.get("daily", RETRY_DAY);
+      if (inFlight === undefined) throw new Error("expected in-flight cycle");
+      await coordinator.beginForce(
+        {
+          period: "daily",
+          key: RETRY_DAY,
+          startDay: RETRY_DAY,
+          endDay: RETRY_DAY,
+          route: inFlight.route,
+        },
+        RETRY_NOW + 1,
+      );
+      releaseCommit();
+
+      await expect(oldCycle).rejects.toThrow("报告重试周期已变化");
+      expect(await readLastRun(root)).toEqual({});
+      expect(await coordinator.get("daily", RETRY_DAY)).toMatchObject({
+        cycleId: "cycle-2",
+        phase: "waiting",
+      });
+      expect(existsSync(htmlFile)).toBe(false);
+      expect(existsSync(metaFile)).toBe(false);
+      expect(existsSync(indexFile)).toBe(false);
+
+      const forced = await coordinator.get("daily", RETRY_DAY);
+      if (forced === undefined) throw new Error("expected forced cycle");
+      const newClaim = await coordinator.beginAttempt(
+        {
+          ...retryDue(),
+          cycleId: forced.cycleId,
+          route: forced.route,
+        },
+        RETRY_NOW + 2,
+      );
+      if (newClaim === null) throw new Error("expected forced claim");
+      const newResult = {
+        body: "cycle-2 新正文",
+        meta: {
+          period: "daily" as const,
+          key: RETRY_DAY,
+          startDay: RETRY_DAY,
+          endDay: RETRY_DAY,
+          provider: "generic-provider",
+          model: "generic-model",
+          generatedAt: RETRY_NOW + 2,
+          durationMs: 1,
+          ok: true,
+        },
+      };
+      expect(
+        await coordinator.commitSuccess({
+          claim: newClaim,
+          result: newResult,
+          persist: () => persistReport(root, newResult.meta, newResult.body, newClaim.cycleId),
+        }),
+      ).toBe(true);
+
+      expect(readFileSync(htmlFile, "utf8")).toContain("cycle-2 新正文");
+      expect(readFileSync(htmlFile, "utf8")).not.toContain("报告正文");
+      expect(JSON.parse(readFileSync(metaFile, "utf8"))).toMatchObject({
+        generatedAt: RETRY_NOW + 2,
+      });
+      const indexText = readFileSync(indexFile, "utf8");
+      expect(indexText).toContain('"cycleId":"cycle-2"');
+      expect(indexText).not.toContain("报告正文");
+      expect(readFileSync(retryLedgerFile(root), "utf8")).not.toContain("报告正文");
+      expect(await readLastRun(root)).toEqual({ daily: RETRY_DAY });
+      expect(await coordinator.list()).toEqual([]);
+    } finally {
+      releaseCommit();
       rmSync(root, { recursive: true, force: true });
     }
   });

@@ -55,6 +55,8 @@ type RetryFailure = {
 type RetryIndexKey = {
   period: ReportPeriod;
   key: string;
+  /** 成功 index 的事务 cycle；legacy/异 cycle 记录不能证明当前 claim。 */
+  cycleId?: string;
 };
 
 interface RetryLedgerPort {
@@ -263,6 +265,8 @@ export interface ReportStateCommitInput {
       key: string;
     };
   };
+  /** executor 提供的 current-cycle 落盘/通知回调；校验 claim 后在根锁内执行。 */
+  persist: () => Promise<void>;
 }
 
 export interface ReportStateIndexReconcileInput {
@@ -270,6 +274,8 @@ export interface ReportStateIndexReconcileInput {
   key: string;
   /** true 仅当 report/index 已确认该窗口成功。 */
   indexed: boolean;
+  /** 新 index 记录的完成 cycle；旧 index 缺失或与当前 ledger 不同均不得清账。 */
+  cycleId?: string;
 }
 
 export interface ReportStateCoordinatorOptions {
@@ -335,6 +341,19 @@ function sameClaim(left: RetryClaim, right: RetryEntry | undefined): boolean {
   );
 }
 
+function isCurrentIndexFact(
+  current: RetryEntry | undefined,
+  indexed: Pick<RetryIndexKey, "cycleId">,
+): current is RetryEntry {
+  return (
+    current !== undefined &&
+    indexed.cycleId !== undefined &&
+    current.cycleId === indexed.cycleId &&
+    !current.terminal &&
+    (current.phase === "waiting" || current.phase === "in-flight")
+  );
+}
+
 function monotonic(
   previous: Partial<Record<ReportPeriod, string>>,
   period: ReportPeriod,
@@ -344,18 +363,28 @@ function monotonic(
   return old === undefined || key > old ? { ...previous, [period]: key } : previous;
 }
 
-class ReportStateStorageError extends Error {
-  readonly code = "report-state-storage";
+type ReportStateStorageCode = "report-state-storage" | "report-persist-failed";
 
-  constructor() {
-    super("report state storage operation failed");
+class ReportStateStorageError extends Error {
+  readonly code: ReportStateStorageCode;
+
+  constructor(code: ReportStateStorageCode = "report-state-storage") {
+    super(
+      code === "report-persist-failed" ? "报告持久化失败" : "report state storage operation failed",
+    );
+    this.code = code;
     this.name = "ReportStateStorageError";
   }
 }
 
-async function terminalize(ledger: RetryLedgerPort, claim: RetryClaim, now: number): Promise<void> {
+async function terminalize(
+  ledger: RetryLedgerPort,
+  claim: RetryClaim,
+  now: number,
+  code: ReportStateStorageCode = "report-state-storage",
+): Promise<void> {
   try {
-    await ledger.recordFailure(claim, { kind: "storage", code: "report-state-storage" }, now);
+    await ledger.recordFailure(claim, { kind: "storage", code }, now);
   } catch {
     // 原始存储错误不越过包边界；下一次 recovery 仍保持 fail-closed。
   }
@@ -388,8 +417,10 @@ export function createReportStateCoordinator(
     reconcile: (lastRun, indexed) =>
       locked(async () => {
         const entries = await ledger.list();
-        const keys = new Set(entries.map((entry) => `${entry.period}:${entry.key}`));
-        const successful = indexed.filter((item) => keys.has(`${item.period}:${item.key}`));
+        const byKey = new Map(entries.map((entry) => [`${entry.period}:${entry.key}`, entry]));
+        const successful = indexed.filter((item) =>
+          isCurrentIndexFact(byKey.get(`${item.period}:${item.key}`), item),
+        );
         const observed = await read(root);
         const advanced = successful.reduce(
           (state, item) => monotonic(state, item.period, item.key),
@@ -411,6 +442,12 @@ export function createReportStateCoordinator(
         const current = await ledger.get(input.claim.entry.period, input.claim.entry.key);
         if (!sameClaim(input.claim, current)) return false;
         try {
+          await input.persist();
+        } catch {
+          await terminalize(ledger, input.claim, now(), "report-persist-failed");
+          throw new ReportStateStorageError("report-persist-failed");
+        }
+        try {
           await write(root, (previous) =>
             monotonic(previous, input.result.meta.period, input.result.meta.key),
           );
@@ -428,7 +465,7 @@ export function createReportStateCoordinator(
     reconcileIndex: (input) =>
       locked(async () => {
         const current = await ledger.get(input.period, input.key);
-        if (current === undefined || !input.indexed) return false;
+        if (!input.indexed || !isCurrentIndexFact(current, input)) return false;
         const previous = await read(root);
         const previousKey = previous[input.period];
         if (previousKey === undefined || input.key > previousKey) {

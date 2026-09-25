@@ -44,7 +44,12 @@ export {
   __clearReportIndexCacheForTests,
   __reportIndexCacheStatsForTests,
 } from "./runner.ts";
-export type { RunDueReportOutcome, RunDueReportParams } from "./runner.ts";
+export type {
+  PreparedDueReportOutcome,
+  ReportCycleMeta,
+  RunDueReportOutcome,
+  RunDueReportParams,
+} from "./runner.ts";
 
 // ------------------------------------------------------------------ 报告生成（generate.ts）
 

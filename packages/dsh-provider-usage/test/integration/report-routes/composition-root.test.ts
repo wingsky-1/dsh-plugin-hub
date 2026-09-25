@@ -29,7 +29,7 @@
  *
  * 每条附判据句（把 X 改坏必须红）；文本哨兵仅锚真实 ABI 与装配关系，不做风格断言。
  */
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { LlmResolvedModelInfo, ReasoningEffortId } from "@deepseek-ai/dsh-llm";
 import { dirname, join } from "node:path";
@@ -754,6 +754,86 @@ describe("D11二 配置服务窄面消费 + 任务队列 + 执行器", () => {
     expect(terminal.code).toBe(409);
     expect((terminal.body as { status?: string }).status).toBe("terminal");
   });
+
+  it.each(["waiting", "in-flight"] as const)(
+    "旧 cycle index 遇到 force %s 时 non-force 仅复用，不清新 ledger/lastRun",
+    async (phase) => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      const now = Date.UTC(2026, 8, 24, 12, 0, 0);
+      vi.setSystemTime(now);
+      const root = isolatedDir(`dou-reportroutes-old-index-${phase}-`);
+      const { ctx } = stubReportCtx(root);
+      const due = previousClosedWindow("daily", ctx.reportCfgService.get(), now);
+      const ledger = createRetryLedger(root, {
+        createCycleId: (() => {
+          let sequence = 0;
+          return () => `route-cycle-${(sequence += 1)}`;
+        })(),
+      });
+      const state = createReportStateCoordinator({ root, ledger, now: () => now });
+      const oldClaim = await state.beginAttempt(
+        {
+          ...due,
+          route: { provider: "stub-p", model: "m1" },
+        },
+        now - 1,
+      );
+      if (oldClaim === null) throw new Error("expected old claim");
+      const oldMeta = {
+        period: due.period,
+        key: due.key,
+        startDay: due.startDay,
+        endDay: due.endDay,
+        provider: "stub-p",
+        model: "m1",
+        generatedAt: now - 1,
+        durationMs: 1,
+        ok: true,
+        cycleId: oldClaim.cycleId,
+      };
+      mkdirSync(join(root, "reports"), { recursive: true });
+      writeFileSync(join(root, "reports", "index.jsonl"), `${JSON.stringify(oldMeta)}\n`);
+      const forced = await state.beginForce(
+        {
+          ...due,
+          route: { provider: "stub-p", model: "m1" },
+        },
+        now,
+      );
+      if (phase === "in-flight") {
+        const claim = await state.beginAttempt(
+          {
+            ...due,
+            cycleId: forced.cycleId,
+            route: forced.route,
+          },
+          now,
+        );
+        if (claim === null) throw new Error("expected in-flight force claim");
+      }
+      const beforeLastRun = { daily: "2000-01-01" };
+      await updateLastRun(root, () => beforeLastRun);
+
+      try {
+        const response = await callStatus(
+          handleReportGenerate as AnyHandler,
+          fakeReq({ method: "POST", body: JSON.stringify({ period: "daily", force: false }) }),
+          { ...ctx, retryState: state },
+        );
+
+        expect(response.code).toBe(200);
+        expect(response.body).toMatchObject({ ok: true, reused: true, meta: oldMeta });
+        expect(await state.get(due.period, due.key)).toMatchObject({
+          cycleId: forced.cycleId,
+          phase,
+          terminal: false,
+        });
+        expect(await readLastRun(root)).toEqual(beforeLastRun);
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
 
   it("force 走 submitForce；status 透出稳定 retry 状态", async () => {
     const root = isolatedDir("dou-reportroutes-force-");
