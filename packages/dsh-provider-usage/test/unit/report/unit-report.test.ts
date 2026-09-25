@@ -99,6 +99,7 @@ import {
   type ReportRoutesContext,
 } from "../../../src/server/report-routes/interface.ts";
 import type {
+  ContentBlock,
   FinishReason,
   GenerateOptions,
   LlmResolvedModelInfo,
@@ -580,6 +581,70 @@ const TOOL_ARGUMENTS =
   '{"key":"sk-test-not-a-real-key","path":"/home/private/report.json","control":"\u0000"}';
 const REPORT_TOOL_CALL_ID = "report-tool-call" as ToolCallId;
 const UNSUPPORTED_TOOL_ERROR = "模型返回了报告不支持的工具调用";
+const UNSUPPORTED_CONTENT_ERROR = "模型返回了报告不支持的内容块";
+
+const PRIVATE_IMAGE_NAME = "private-image-name.png";
+const PRIVATE_FILE_NAME = "private-file-name.txt";
+const PRIVATE_TOOL_NAME = "private_dynamic_tool";
+
+// 官方 ContentBlock 的真实字段形状；附件 id 是品牌字符串，测试只在边界处做窄断言。
+const IMAGE_BLOCK = {
+  type: "image",
+  attachment: {
+    attachmentId: "image-fixture",
+    mediaType: "image/png",
+    bytes: 1,
+    width: 1,
+    height: 1,
+    name: PRIVATE_IMAGE_NAME,
+  },
+} as ContentBlock;
+const FILE_BLOCK = {
+  type: "file",
+  attachment: {
+    attachmentId: "file-fixture",
+    name: PRIVATE_FILE_NAME,
+    bytes: 1,
+  },
+} as ContentBlock;
+const TOOL_ADDITION_BLOCK: ContentBlock = {
+  type: "tool-addition",
+  toolName: PRIVATE_TOOL_NAME,
+};
+const TOOL_REMOVAL_BLOCK: ContentBlock = {
+  type: "tool-removal",
+  toolName: PRIVATE_TOOL_NAME,
+};
+
+const UNSUPPORTED_CONTENT_BLOCKS: Array<{ name: string; block: ContentBlock }> = [
+  { name: "image", block: IMAGE_BLOCK },
+  { name: "file", block: FILE_BLOCK },
+  { name: "tool-addition", block: TOOL_ADDITION_BLOCK },
+  { name: "tool-removal", block: TOOL_REMOVAL_BLOCK },
+];
+
+const UNSUPPORTED_CONTENT_STREAMS: Array<{ name: string; chunks: StreamChunk[] }> = [
+  ...UNSUPPORTED_CONTENT_BLOCKS.flatMap(
+    ({ name, block }): Array<{ name: string; chunks: StreamChunk[] }> => [
+      {
+        name: `${name} block-start`,
+        chunks: [
+          { type: "block-start", index: 0, blockType: block.type },
+          { type: "text-delta", index: 0, text: "不应保存的正文" },
+          { type: "finish", reason: { kind: "stop" } },
+        ],
+      },
+      {
+        name: `${name} block-end`,
+        chunks: [
+          { type: "block-end", index: 0, block },
+          { type: "text-delta", index: 0, text: "不应保存的正文" },
+          { type: "finish", reason: { kind: "stop" } },
+        ],
+      },
+    ],
+  ),
+];
 
 const UNSUPPORTED_TOOL_STREAMS: Array<{ name: string; chunks: StreamChunk[] }> = [
   {
@@ -684,6 +749,24 @@ describe("generate：官方完整 block 流", () => {
       expect(result.meta).toMatchObject({ ok: false, error: UNSUPPORTED_TOOL_ERROR });
       expect(result.body).toBe("");
       expect(JSON.stringify(result)).not.toContain(TOOL_ARGUMENTS);
+      expect(f.seen.calls).toHaveLength(1);
+    },
+  );
+
+  it.each(UNSUPPORTED_CONTENT_STREAMS)(
+    "$name 拒绝官方非文本 block，text-delta 不得绕过且不泄露 block 原文",
+    async ({ chunks }) => {
+      const f = fakeLlm(chunks);
+
+      const result = await generateReport(
+        GEN({ llm: f.llm, provider: "generic-provider", model: "generic-model" }),
+      );
+
+      expect(result.meta).toMatchObject({ ok: false, error: UNSUPPORTED_CONTENT_ERROR });
+      expect(result.body).toBe("");
+      expect(JSON.stringify(result)).not.toContain(PRIVATE_IMAGE_NAME);
+      expect(JSON.stringify(result)).not.toContain(PRIVATE_FILE_NAME);
+      expect(JSON.stringify(result)).not.toContain(PRIVATE_TOOL_NAME);
       expect(f.seen.calls).toHaveLength(1);
     },
   );
@@ -1205,6 +1288,12 @@ const STRUCTURED_FAILURE_CASES = [
     expected: { kind: "permanent", code: "unsupported-tool" },
     run: () =>
       generateReportOutcome(GEN({ llm: fakeLlm(UNSUPPORTED_TOOL_STREAMS[0]!.chunks).llm })),
+  },
+  {
+    name: "不支持非文本内容块",
+    expected: { kind: "permanent", code: "unsupported-content" },
+    run: () =>
+      generateReportOutcome(GEN({ llm: fakeLlm(UNSUPPORTED_CONTENT_STREAMS[0]!.chunks).llm })),
   },
   {
     name: "路由不可用",

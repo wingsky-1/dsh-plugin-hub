@@ -19,6 +19,7 @@
  */
 import type {
   ContentBlock,
+  ContentBlockType,
   FinishReason,
   GenerateOptions,
   LlmModelInfo,
@@ -285,6 +286,7 @@ const GENERATE_FAILURE = {
   providerFinishFailed: { kind: "permanent", code: "provider-finish-failed" },
   requestAborted: { kind: "aborted", code: "request-aborted" },
   unsupportedTool: { kind: "permanent", code: "unsupported-tool" },
+  unsupportedContent: { kind: "permanent", code: "unsupported-content" },
   unknownStreamEvent: { kind: "unknown", code: "unknown-stream-event" },
   unknownFinish: { kind: "unknown", code: "unknown-finish" },
   missingFinish: { kind: "unknown", code: "missing-finish" },
@@ -414,6 +416,7 @@ interface StreamState {
   textDeltaIndexes: ReadonlySet<number>;
   hasNonWhitespaceReasoning: boolean;
   hasUnsupportedTool: boolean;
+  hasUnsupportedContent: boolean;
   hasUnknownChunk: boolean;
   tokens: ReportTokenUsage | null;
   terminal: StreamTerminal;
@@ -451,7 +454,25 @@ function mergeTerminal(current: StreamTerminal, next: StreamTerminal): StreamTer
 
 const REPORT_STREAM_ERROR = {
   unsupportedTool: "模型返回了报告不支持的工具调用",
+  unsupportedContent: "模型返回了报告不支持的内容块",
 } as const;
+
+type ReportBlockSupport = "supported" | "unsupported";
+
+const REPORT_BLOCK_SUPPORT = {
+  text: "supported",
+  reasoning: "supported",
+  image: "unsupported",
+  file: "unsupported",
+  "tool-call": "unsupported",
+  "tool-addition": "unsupported",
+  "tool-removal": "unsupported",
+} as const satisfies Record<ContentBlockType, ReportBlockSupport>;
+
+function reportBlockSupport(type: string): ReportBlockSupport | "unknown" {
+  if (!Object.hasOwn(REPORT_BLOCK_SUPPORT, type)) return "unknown";
+  return REPORT_BLOCK_SUPPORT[type as ContentBlockType];
+}
 
 function hasNonWhitespaceText(
   block: Extract<ContentBlock, { type: "text" | "reasoning" }>,
@@ -465,7 +486,11 @@ function hasNonWhitespaceText(
  */
 function accumulateChunk(chunk: StreamChunk, state: StreamState): StreamState {
   if (chunk.type === "block-start") {
-    return chunk.blockType === "tool-call" ? { ...state, hasUnsupportedTool: true } : state;
+    if (chunk.blockType === "tool-call") return { ...state, hasUnsupportedTool: true };
+    const support = reportBlockSupport(chunk.blockType);
+    if (support === "unsupported") return { ...state, hasUnsupportedContent: true };
+    if (support === "unknown") return { ...state, hasUnknownChunk: true };
+    return state;
   }
   if (chunk.type === "text-delta") {
     const textDeltaIndexes = new Set(state.textDeltaIndexes);
@@ -491,6 +516,8 @@ function accumulateChunk(chunk: StreamChunk, state: StreamState): StreamState {
         : state;
     }
     if (chunk.block.type === "tool-call") return { ...state, hasUnsupportedTool: true };
+    const support = reportBlockSupport(chunk.block.type);
+    if (support === "unsupported") return { ...state, hasUnsupportedContent: true };
     return { ...state, hasUnknownChunk: true };
   }
   if (chunk.type === "usage")
@@ -622,6 +649,7 @@ export async function generateReportOutcome(
     textDeltaIndexes: new Set(),
     hasNonWhitespaceReasoning: false,
     hasUnsupportedTool: false,
+    hasUnsupportedContent: false,
     hasUnknownChunk: false,
     tokens: null,
     terminal: { kind: "none" },
@@ -641,6 +669,9 @@ export async function generateReportOutcome(
     return fail(state.terminal.error, state.terminal.failure, route);
   if (state.hasUnsupportedTool) {
     return fail(REPORT_STREAM_ERROR.unsupportedTool, GENERATE_FAILURE.unsupportedTool, route);
+  }
+  if (state.hasUnsupportedContent) {
+    return fail(REPORT_STREAM_ERROR.unsupportedContent, GENERATE_FAILURE.unsupportedContent, route);
   }
   if (state.hasUnknownChunk) {
     return fail("模型返回了未知流事件", GENERATE_FAILURE.unknownStreamEvent, route);
