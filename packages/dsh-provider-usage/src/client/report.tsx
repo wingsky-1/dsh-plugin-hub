@@ -28,7 +28,9 @@ import {
   parsePrompt,
   promptSectionStats,
   reportConfigPayload,
+  reportRetryView,
   withReasoningEffort,
+  type ReportRetryView,
   PROMPT_RANGE_VAR,
   PROMPT_STATS_VAR,
 } from "./report-helpers.ts";
@@ -116,6 +118,12 @@ export interface ReportSelectedModelView {
     defaultEffort?: string;
   };
   capabilityError?: true;
+}
+
+/** retry 状态与产生它的 task/POST 状态；二者共同决定用户提示。 */
+interface ReportRetryDisplay {
+  view: ReportRetryView;
+  status: string | null;
 }
 
 const PERIODS: ReportPeriodView[] = ["daily", "weekly", "monthly"];
@@ -791,6 +799,69 @@ function PromptsSection(props: {
     </React.Fragment>
   );
 }
+function retryMetric(value: number | null): string {
+  return value === null ? t("reportRetryUnknown") : value.toLocaleString("en-US");
+}
+
+function retryHeadline(retry: ReportRetryDisplay): string {
+  if (retry.view.terminal) {
+    return t("reportRetryTerminal", {
+      code: retry.view.terminalReason?.code ?? t("reportRetryUnknown"),
+      kind: retry.view.terminalReason?.kind ?? t("reportRetryUnknown"),
+    });
+  }
+  if (retry.view.nextRetryAt !== null) return t("reportRetryDeferred");
+  if (retry.status === "busy") return t("reportRetryBusy");
+  return t("reportRetryRunning");
+}
+
+function ReportRetryStatus(props: { retry: ReportRetryDisplay }): React.ReactElement {
+  const { retry } = props;
+  const { view } = retry;
+  return (
+    <div className="dou-reportCol" role="status" aria-live="polite" aria-atomic="true">
+      <span className="dou-reportGenNotice">{retryHeadline(retry)}</span>
+      <span className="dou-reportHint">
+        {t("reportRetryAttempt", {
+          attempt: String(view.currentAttempt),
+          maxAttempts: String(view.maxAttempts),
+        })}
+      </span>
+      {view.nextRetryAt !== null ? (
+        <span className="dou-reportHint">
+          {t("reportRetryNextAt", { at: new Date(view.nextRetryAt).toISOString() })}
+        </span>
+      ) : null}
+      <span className="dou-reportHint">
+        {t("reportRetryInputTokens", { value: retryMetric(view.usage.inputTokens) })}
+      </span>
+      <span className="dou-reportHint">
+        {t("reportRetryOutputTokens", { value: retryMetric(view.usage.outputTokens) })}
+      </span>
+      <span className="dou-reportHint">
+        {t("reportRetryReasoningTokens", { value: retryMetric(view.usage.reasoningTokens) })}
+      </span>
+      <span className="dou-reportHint">
+        {t("reportRetryTotalTokens", { value: retryMetric(view.usage.totalTokens) })}
+      </span>
+      <span className="dou-reportHint">
+        {t("reportRetryCacheTokens", {
+          read: retryMetric(view.usage.cacheReadTokens),
+          write: retryMetric(view.usage.cacheWriteTokens),
+        })}
+      </span>
+      <span className="dou-reportHint">
+        {t("reportRetryDuration", {
+          value:
+            view.usage.durationMs === null
+              ? t("reportRetryUnknown")
+              : String(view.usage.durationMs),
+        })}
+      </span>
+    </div>
+  );
+}
+
 function GenerateSection(props: {
   openSections: Record<ReportSectionId, boolean>;
   toggleSection: (id: ReportSectionId) => void;
@@ -802,6 +873,7 @@ function GenerateSection(props: {
   generating: boolean;
   genError: string | null;
   genNotice: string | null;
+  genRetry: ReportRetryDisplay | null;
   onGenerate: () => Promise<void>;
 }): React.ReactElement {
   const {
@@ -815,6 +887,7 @@ function GenerateSection(props: {
     generating,
     genError,
     genNotice,
+    genRetry,
     onGenerate,
   } = props;
   return (
@@ -868,6 +941,7 @@ function GenerateSection(props: {
           ) : null}
           {genNotice !== null ? <span className="dou-reportGenNotice">{genNotice}</span> : null}
         </div>
+        {genRetry !== null ? <ReportRetryStatus retry={genRetry} /> : null}
         <span className="dou-reportHint">{t("reportGenIdempotentHint")}</span>
       </ReportCollapsibleSection>
     </React.Fragment>
@@ -984,6 +1058,7 @@ export function ReportSection(props: {
   const [genPeriod, setGenPeriod] = React.useState<ReportPeriodView>("daily");
   const [generating, setGenerating] = React.useState(false);
   const [genError, setGenError] = React.useState<string | null>(null);
+  const [genRetry, setGenRetry] = React.useState<ReportRetryDisplay | null>(null);
   // 强制重新生成（默认幂等：窗口已有成功报告则复用，勾选后强制覆盖）
   const [genForce, setGenForce] = React.useState(false);
   // 轮询卸载保护：组件卸载后停止轮询，不再 setState
@@ -1227,7 +1302,12 @@ export function ReportSection(props: {
         meta?: ReportMetaView;
         reused?: boolean;
         error?: string;
+        retry?: unknown;
       };
+      const retry = reportRetryView(body.retry);
+      if (!disposedRef.current) {
+        setGenRetry(retry === null ? null : { view: retry, status: body.status ?? null });
+      }
       if (body.status === "done") {
         if (body.meta === undefined) throw new Error("bad-task-result");
         return { meta: body.meta, reused: body.reused === true };
@@ -1244,6 +1324,7 @@ export function ReportSection(props: {
     setGenerating(true);
     setGenError(null);
     setGenNotice(null);
+    setGenRetry(null);
     try {
       const res = await fetchTimeout(REPORT_GENERATE_URL, {
         method: "POST",
@@ -1256,7 +1337,19 @@ export function ReportSection(props: {
         reused?: boolean;
         taskId?: string;
         error?: string;
+        status?: string;
+        retry?: unknown;
       };
+      const retry = reportRetryView(body.retry);
+      if (!disposedRef.current)
+        setGenRetry(retry === null ? null : { view: retry, status: body.status ?? null });
+      if (
+        !res.ok &&
+        retry !== null &&
+        (body.status === "busy" || body.status === "deferred" || body.status === "terminal")
+      ) {
+        return;
+      }
       if (!res.ok || (body.meta === undefined && typeof body.taskId !== "string")) {
         throw new Error(body.error ?? `HTTP ${res.status}`);
       }
@@ -1387,6 +1480,7 @@ export function ReportSection(props: {
         generating={generating}
         genError={genError}
         genNotice={genNotice}
+        genRetry={genRetry}
         onGenerate={onGenerate}
       />
     </section>
