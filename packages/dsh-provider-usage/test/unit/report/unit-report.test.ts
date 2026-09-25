@@ -911,7 +911,7 @@ describe("generate：结构化 retry outcome", () => {
     expect(JSON.stringify(outcome)).not.toContain(privateReasoning);
   });
 
-  it("流异常只暴露 transient/provider-stream-failed，不携带 provider 原文", async () => {
+  it("普通流异常只暴露 unknown/provider-stream-failed，不携带 provider 原文", async () => {
     const rawProviderError = "key=private path=/private/report response=private";
     const f = fakeLlm(CHUNKS, { throwInStream: rawProviderError });
 
@@ -919,7 +919,7 @@ describe("generate：结构化 retry outcome", () => {
 
     expect(outcome).toMatchObject({
       status: "failure",
-      failure: { kind: "transient", code: "provider-stream-failed" },
+      failure: { kind: "unknown", code: "provider-stream-failed" },
       result: { body: "", meta: { ok: false, error: "模型请求失败" } },
     });
     expect(JSON.stringify(outcome)).not.toContain(rawProviderError);
@@ -1267,6 +1267,106 @@ describe("generate：reasoningEffort exact-model capability", () => {
 
 const RAW_PROVIDER_FAILURE =
   "key=sk-test-not-a-real-key path=/home/private/report.json control=\u0000";
+const SAFE_STREAM_FAILURE = {
+  kind: "transient",
+  code: "provider-stream-failed",
+} as const;
+const SAFE_STREAM_UNKNOWN = {
+  kind: "unknown",
+  code: "provider-stream-failed",
+} as const;
+const SAFE_STREAM_PERMANENT = {
+  kind: "permanent",
+  code: "provider-stream-failed",
+} as const;
+const SAFE_STREAM_ABORTED = {
+  kind: "aborted",
+  code: "request-aborted",
+} as const;
+const STREAM_CASES = [
+  {
+    name: "EMPTY_RESPONSE",
+    error: { code: "EMPTY_RESPONSE", message: RAW_PROVIDER_FAILURE },
+    expected: SAFE_STREAM_FAILURE,
+  },
+  {
+    name: "RATE_LIMIT",
+    error: { code: "RATE_LIMIT", message: RAW_PROVIDER_FAILURE },
+    expected: SAFE_STREAM_FAILURE,
+  },
+  {
+    name: "SERVER",
+    error: { code: "SERVER", message: RAW_PROVIDER_FAILURE },
+    expected: SAFE_STREAM_FAILURE,
+  },
+  {
+    name: "TIMEOUT",
+    error: { code: "TIMEOUT", message: RAW_PROVIDER_FAILURE },
+    expected: SAFE_STREAM_FAILURE,
+  },
+  {
+    name: "TRANSPORT",
+    error: { code: "TRANSPORT", message: RAW_PROVIDER_FAILURE },
+    expected: SAFE_STREAM_FAILURE,
+  },
+  {
+    name: "AUTH",
+    error: { code: "AUTH", message: RAW_PROVIDER_FAILURE },
+    expected: SAFE_STREAM_PERMANENT,
+  },
+  {
+    name: "INVALID_CREDENTIAL",
+    error: { code: "INVALID_CREDENTIAL", message: RAW_PROVIDER_FAILURE },
+    expected: SAFE_STREAM_PERMANENT,
+  },
+  {
+    name: "QUOTA",
+    error: { code: "QUOTA", message: RAW_PROVIDER_FAILURE },
+    expected: SAFE_STREAM_PERMANENT,
+  },
+  {
+    name: "INVALID_REQUEST",
+    error: { code: "INVALID_REQUEST", message: RAW_PROVIDER_FAILURE },
+    expected: SAFE_STREAM_PERMANENT,
+  },
+  {
+    name: "CONTEXT_WINDOW",
+    error: { code: "CONTEXT_WINDOW", message: RAW_PROVIDER_FAILURE },
+    expected: SAFE_STREAM_PERMANENT,
+  },
+  {
+    name: "CONTENT_FILTER",
+    error: { code: "CONTENT_FILTER", message: RAW_PROVIDER_FAILURE },
+    expected: SAFE_STREAM_PERMANENT,
+  },
+  {
+    name: "未知 code",
+    error: { code: "FUTURE_CODE", message: RAW_PROVIDER_FAILURE },
+    expected: SAFE_STREAM_UNKNOWN,
+  },
+  {
+    name: "HTTP 401",
+    error: { status: 401, message: RAW_PROVIDER_FAILURE },
+    expected: SAFE_STREAM_PERMANENT,
+  },
+  {
+    name: "HTTP 429",
+    error: { statusCode: 429, message: RAW_PROVIDER_FAILURE },
+    expected: SAFE_STREAM_FAILURE,
+  },
+  {
+    name: "嵌套 LlmFailure",
+    error: { failure: { code: "RATE_LIMIT", message: RAW_PROVIDER_FAILURE } },
+    expected: SAFE_STREAM_FAILURE,
+  },
+  {
+    name: "Error cause",
+    error: Object.assign(new Error(RAW_PROVIDER_FAILURE), {
+      cause: { code: "AUTH" },
+    }),
+    expected: SAFE_STREAM_PERMANENT,
+  },
+] as const;
 
 describe("generate：失败路径（流异常 / 取消 / 空正文 / 路由不可解析）", () => {
   let r1: ReportResult;
@@ -1429,6 +1529,37 @@ const STRUCTURED_FAILURE_CASES = [
           }).llm,
         }),
       ),
+  },
+  ...STREAM_CASES.map(({ name, error, expected }) => ({
+    name: `流异常 ${name}`,
+    error,
+    expected,
+    run: () => {
+      const llm: ReportLlmService = {
+        ...fakeLlm().llm,
+        stream: () =>
+          (async function* (): AsyncGenerator<StreamChunk> {
+            throw error;
+          })(),
+      };
+      return generateReportOutcome(GEN({ llm }));
+    },
+  })),
+  {
+    name: "流异常时调用方 signal 已 abort",
+    expected: SAFE_STREAM_ABORTED,
+    run: () => {
+      const llm: ReportLlmService = {
+        ...fakeLlm().llm,
+        stream: () =>
+          (async function* (): AsyncGenerator<StreamChunk> {
+            throw { code: "RATE_LIMIT", message: RAW_PROVIDER_FAILURE };
+          })(),
+      };
+      const controller = new AbortController();
+      controller.abort();
+      return generateReportOutcome(GEN({ llm, signal: controller.signal }));
+    },
   },
   {
     name: "capability 缺失",

@@ -282,7 +282,6 @@ const GENERATE_FAILURE = {
   capabilityTimeout: { kind: "transient", code: "capability-timeout" },
   capabilityUnsupported: { kind: "permanent", code: "capability-unsupported" },
   capabilityFailed: { kind: "permanent", code: "capability-failed" },
-  providerStreamFailed: { kind: "transient", code: "provider-stream-failed" },
   providerFinishFailed: { kind: "permanent", code: "provider-finish-failed" },
   requestAborted: { kind: "aborted", code: "request-aborted" },
   unsupportedTool: { kind: "permanent", code: "unsupported-tool" },
@@ -450,6 +449,84 @@ function mergeTerminal(current: StreamTerminal, next: StreamTerminal): StreamTer
   if (next.kind === "error" || current.kind === "none") return next;
   if (current.kind === "unknown" || next.kind === "unknown") return { kind: "unknown" };
   return next;
+}
+
+const STREAM_ERROR_POLICY = {
+  transient: new Set(["EMPTY_RESPONSE", "RATE_LIMIT", "SERVER", "TIMEOUT", "TRANSPORT"]),
+  permanent: new Set([
+    "AUTH",
+    "INVALID_CREDENTIAL",
+    "QUOTA",
+    "INVALID_REQUEST",
+    "CONTEXT_WINDOW",
+    "CONTENT_FILTER",
+  ]),
+} as const satisfies {
+  transient: ReadonlySet<string>;
+  permanent: ReadonlySet<string>;
+};
+
+type StreamErrorEnvelope = {
+  message?: unknown;
+  name?: unknown;
+  code?: unknown;
+  status?: unknown;
+  statusCode?: unknown;
+  failure?: unknown;
+  cause?: unknown;
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function readStreamError(error: unknown, depth = 0): StreamErrorEnvelope | null {
+  if (!isRecord(error) || depth > 2) return null;
+  return {
+    message: error.message,
+    name: error.name,
+    code: error.code,
+    status: error.status,
+    statusCode: error.statusCode,
+    failure: error.failure,
+    cause: error.cause,
+  };
+}
+
+/** DSH 结构化错误信封优先，宿主未携带 LlmError.code 时才用精确 HTTP status 兜底。 */
+function classifyStreamFailure(error: unknown): RetryFailure {
+  const current = readStreamError(error);
+  const nested = [current?.failure, current?.cause];
+  for (const candidate of nested) {
+    const failure = readStreamError(candidate, 1);
+    const code = typeof failure?.code === "string" ? failure.code.trim().toUpperCase() : "";
+    if (code) {
+      if (STREAM_ERROR_POLICY.transient.has(code)) {
+        return { kind: "transient", code: "provider-stream-failed" };
+      }
+      if (STREAM_ERROR_POLICY.permanent.has(code)) {
+        return { kind: "permanent", code: "provider-stream-failed" };
+      }
+      return { kind: "unknown", code: "provider-stream-failed" };
+    }
+  }
+
+  const code = typeof current?.code === "string" ? current.code.trim().toUpperCase() : "";
+  if (code) {
+    if (STREAM_ERROR_POLICY.transient.has(code)) {
+      return { kind: "transient", code: "provider-stream-failed" };
+    }
+    if (STREAM_ERROR_POLICY.permanent.has(code)) {
+      return { kind: "permanent", code: "provider-stream-failed" };
+    }
+    return { kind: "unknown", code: "provider-stream-failed" };
+  }
+
+  const rawStatus = current?.status ?? current?.statusCode;
+  const statusCode = typeof rawStatus === "string" ? Number(rawStatus) : rawStatus;
+  if (statusCode === 401) return { kind: "permanent", code: "provider-stream-failed" };
+  if (statusCode === 429) return { kind: "transient", code: "provider-stream-failed" };
+  return { kind: "unknown", code: "provider-stream-failed" };
 }
 
 const REPORT_STREAM_ERROR = {
@@ -722,10 +799,10 @@ export async function generateReportOutcome(
     const collection = await collectStream(opts.llm.stream(genOpts), state, opts.signal);
     if (collection.kind === "aborted" || opts.signal?.aborted) return failAborted(route);
     state = collection.state;
-  } catch {
+  } catch (error) {
     // provider 异常可能携带 prompt、路径或凭据；只返回稳定安全文案。
     if (opts.signal?.aborted) return failAborted(route);
-    return fail("模型请求失败", GENERATE_FAILURE.providerStreamFailed, route);
+    return fail("模型请求失败", classifyStreamFailure(error), route);
   }
   if (state.terminal.kind === "error")
     return fail(state.terminal.error, state.terminal.failure, route);
