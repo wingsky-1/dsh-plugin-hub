@@ -1,0 +1,2045 @@
+{
+  "files": {
+    "packages/dsh-provider-usage/src/server/shared/errsurf.ts": {
+      "language": "typescript",
+      "mutants": [
+        {
+          "id": "1",
+          "mutatorName": "StringLiteral",
+          "replacement": "\"\"",
+          "statusReason": "Ignored because of excluded mutation \"StringLiteral\"",
+          "status": "Ignored",
+          "static": false,
+          "location": {
+            "end": {
+              "column": 71,
+              "line": 65
+            },
+            "start": {
+              "column": 60,
+              "line": 65
+            }
+          }
+        },
+        {
+          "id": "2",
+          "mutatorName": "StringLiteral",
+          "replacement": "\"\"",
+          "statusReason": "Ignored because of excluded mutation \"StringLiteral\"",
+          "status": "Ignored",
+          "static": false,
+          "location": {
+            "end": {
+              "column": 83,
+              "line": 65
+            },
+            "start": {
+              "column": 73,
+              "line": 65
+            }
+          }
+        },
+        {
+          "id": "3",
+          "mutatorName": "StringLiteral",
+          "replacement": "\"\"",
+          "statusReason": "Ignored because of excluded mutation \"StringLiteral\"",
+          "status": "Ignored",
+          "static": false,
+          "location": {
+            "end": {
+              "column": 94,
+              "line": 65
+            },
+            "start": {
+              "column": 85,
+              "line": 65
+            }
+          }
+        },
+        {
+          "id": "9",
+          "mutatorName": "ObjectLiteral",
+          "replacement": "{}",
+          "statusReason": "Ignored because of excluded mutation \"ObjectLiteral\"",
+          "status": "Ignored",
+          "static": false,
+          "location": {
+            "end": {
+              "column": 69,
+              "line": 72
+            },
+            "start": {
+              "column": 45,
+              "line": 72
+            }
+          }
+        },
+        {
+          "id": "11",
+          "mutatorName": "ObjectLiteral",
+          "replacement": "{}",
+          "statusReason": "Ignored because of excluded mutation \"ObjectLiteral\"",
+          "status": "Ignored",
+          "static": false,
+          "location": {
+            "end": {
+              "column": 4,
+              "line": 94
+            },
+            "start": {
+              "column": 10,
+              "line": 75
+            }
+          }
+        },
+        {
+          "id": "17",
+          "mutatorName": "ObjectLiteral",
+          "replacement": "{}",
+          "statusReason": "Ignored because of excluded mutation \"ObjectLiteral\"",
+          "status": "Ignored",
+          "static": false,
+          "location": {
+            "end": {
+              "column": 61,
+              "line": 81
+            },
+            "start": {
+              "column": 39,
+              "line": 81
+            }
+          }
+        },
+        {
+          "id": "25",
+          "mutatorName": "ObjectLiteral",
+          "replacement": "{}",
+          "statusReason": "Ignored because of excluded mutation \"ObjectLiteral\"",
+          "status": "Ignored",
+          "static": false,
+          "location": {
+            "end": {
+              "column": 89,
+              "line": 90
+            },
+            "start": {
+              "column": 22,
+              "line": 90
+            }
+          }
+        },
+        {
+          "id": "27",
+          "mutatorName": "ObjectLiteral",
+          "replacement": "{}",
+          "statusReason": "Ignored because of excluded mutation \"ObjectLiteral\"",
+          "status": "Ignored",
+          "static": false,
+          "location": {
+            "end": {
+              "column": 85,
+              "line": 90
+            },
+            "start": {
+              "column": 77,
+              "line": 90
+            }
+          }
+        },
+        {
+          "id": "29",
+          "mutatorName": "ObjectLiteral",
+          "replacement": "{}",
+          "statusReason": "Ignored because of excluded mutation \"ObjectLiteral\"",
+          "status": "Ignored",
+          "static": false,
+          "location": {
+            "end": {
+              "column": 4,
+              "line": 108
+            },
+            "start": {
+              "column": 10,
+              "line": 99
+            }
+          }
+        },
+        {
+          "id": "31",
+          "mutatorName": "ObjectLiteral",
+          "replacement": "{}",
+          "statusReason": "Ignored because of excluded mutation \"ObjectLiteral\"",
+          "status": "Ignored",
+          "static": false,
+          "location": {
+            "end": {
+              "column": 8,
+              "line": 106
+            },
+            "start": {
+              "column": 14,
+              "line": 102
+            }
+          }
+        },
+        {
+          "id": "32",
+          "mutatorName": "ObjectLiteral",
+          "replacement": "{}",
+          "statusReason": "Ignored because of excluded mutation \"ObjectLiteral\"",
+          "status": "Ignored",
+          "static": false,
+          "location": {
+            "end": {
+              "column": 44,
+              "line": 103
+            },
+            "start": {
+              "column": 20,
+              "line": 103
+            }
+          }
+        },
+        {
+          "id": "34",
+          "mutatorName": "ObjectLiteral",
+          "replacement": "{}",
+          "statusReason": "Ignored because of excluded mutation \"ObjectLiteral\"",
+          "status": "Ignored",
+          "static": false,
+          "location": {
+            "end": {
+              "column": 43,
+              "line": 104
+            },
+            "start": {
+              "column": 19,
+              "line": 104
+            }
+          }
+        },
+        {
+          "id": "36",
+          "mutatorName": "ObjectLiteral",
+          "replacement": "{}",
+          "statusReason": "Ignored because of excluded mutation \"ObjectLiteral\"",
+          "status": "Ignored",
+          "static": false,
+          "location": {
+            "end": {
+              "column": 42,
+              "line": 105
+            },
+            "start": {
+              "column": 18,
+              "line": 105
+            }
+          }
+        },
+        {
+          "id": "7",
+          "mutatorName": "ArrowFunction",
+          "replacement": "() => undefined",
+          "statusReason": "Iterator value undefined is not an entry object",
+          "status": "Killed",
+          "static": true,
+          "testsCompleted": 9,
+          "killedBy": [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6",
+            "7",
+            "8"
+          ],
+          "coveredBy": [
+            "8",
+            "9",
+            "79",
+            "80",
+            "84",
+            "85",
+            "86",
+            "87",
+            "88",
+            "89",
+            "90",
+            "91",
+            "92",
+            "93",
+            "94",
+            "95",
+            "148",
+            "149",
+            "165",
+            "166"
+          ],
+          "location": {
+            "end": {
+              "column": 70,
+              "line": 72
+            },
+            "start": {
+              "column": 26,
+              "line": 72
+            }
+          }
+        },
+        {
+          "id": "5",
+          "mutatorName": "LogicalOperator",
+          "replacement": "opts.maxRecent && LAYER_ERROR_MAX_RECENT_DEFAULT",
+          "statusReason": "Invalid array length",
+          "status": "Killed",
+          "static": true,
+          "testsCompleted": 93,
+          "killedBy": [
+            "92"
+          ],
+          "coveredBy": [
+            "8",
+            "9",
+            "79",
+            "80",
+            "84",
+            "85",
+            "86",
+            "87",
+            "88",
+            "89",
+            "90",
+            "91",
+            "92",
+            "93",
+            "94",
+            "95",
+            "148",
+            "149",
+            "165",
+            "166"
+          ],
+          "location": {
+            "end": {
+              "column": 69,
+              "line": 69
+            },
+            "start": {
+              "column": 21,
+              "line": 69
+            }
+          }
+        },
+        {
+          "id": "12",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "statusReason": "expected +0 to be 1 // Object.is equality",
+          "status": "Killed",
+          "static": true,
+          "testsCompleted": 93,
+          "killedBy": [
+            "92"
+          ],
+          "coveredBy": [
+            "92",
+            "148",
+            "149",
+            "165",
+            "166"
+          ],
+          "location": {
+            "end": {
+              "column": 6,
+              "line": 86
+            },
+            "start": {
+              "column": 37,
+              "line": 76
+            }
+          }
+        },
+        {
+          "id": "14",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "statusReason": "Cannot read properties of undefined (reading 'count')",
+          "status": "Killed",
+          "static": true,
+          "testsCompleted": 178,
+          "killedBy": [
+            "102",
+            "103",
+            "104",
+            "105",
+            "106",
+            "107",
+            "108",
+            "109",
+            "110",
+            "111",
+            "112",
+            "113",
+            "114",
+            "115",
+            "116",
+            "117",
+            "118",
+            "119"
+          ],
+          "coveredBy": [
+            "92",
+            "148",
+            "149",
+            "165",
+            "166"
+          ],
+          "location": {
+            "end": {
+              "column": 30,
+              "line": 79
+            },
+            "start": {
+              "column": 11,
+              "line": 79
+            }
+          }
+        },
+        {
+          "id": "4",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "statusReason": "Cannot read properties of undefined (reading 'snapshot')",
+          "status": "Killed",
+          "static": true,
+          "testsCompleted": 93,
+          "killedBy": [
+            "10",
+            "11",
+            "12",
+            "13",
+            "14",
+            "15",
+            "16",
+            "17",
+            "18",
+            "19",
+            "20",
+            "21",
+            "22",
+            "23",
+            "24",
+            "25",
+            "26",
+            "27",
+            "28",
+            "29",
+            "30",
+            "31",
+            "32",
+            "33",
+            "34",
+            "35",
+            "92"
+          ],
+          "coveredBy": [
+            "8",
+            "9",
+            "79",
+            "80",
+            "84",
+            "85",
+            "86",
+            "87",
+            "88",
+            "89",
+            "90",
+            "91",
+            "92",
+            "93",
+            "94",
+            "95",
+            "148",
+            "149",
+            "165",
+            "166"
+          ],
+          "location": {
+            "end": {
+              "column": 2,
+              "line": 95
+            },
+            "start": {
+              "column": 95,
+              "line": 68
+            }
+          }
+        },
+        {
+          "id": "0",
+          "mutatorName": "ArrayDeclaration",
+          "replacement": "[]",
+          "statusReason": "expected undefined to be 1 // Object.is equality",
+          "status": "Killed",
+          "static": true,
+          "testsCompleted": 93,
+          "killedBy": [
+            "92"
+          ],
+          "coveredBy": [],
+          "location": {
+            "end": {
+              "column": 95,
+              "line": 65
+            },
+            "start": {
+              "column": 59,
+              "line": 65
+            }
+          }
+        },
+        {
+          "id": "8",
+          "mutatorName": "ArrayDeclaration",
+          "replacement": "[]",
+          "statusReason": "Cannot read properties of undefined (reading 'count')",
+          "status": "Killed",
+          "static": true,
+          "testsCompleted": 93,
+          "killedBy": [
+            "10",
+            "11",
+            "12",
+            "13",
+            "14",
+            "15",
+            "16",
+            "17",
+            "18",
+            "19",
+            "20",
+            "21",
+            "22",
+            "23",
+            "24",
+            "25",
+            "26",
+            "27",
+            "28",
+            "29",
+            "30",
+            "31",
+            "32",
+            "33",
+            "34",
+            "35",
+            "92"
+          ],
+          "coveredBy": [
+            "8",
+            "9",
+            "79",
+            "80",
+            "84",
+            "85",
+            "86",
+            "87",
+            "88",
+            "89",
+            "90",
+            "91",
+            "92",
+            "93",
+            "94",
+            "95",
+            "148",
+            "149",
+            "165",
+            "166"
+          ],
+          "location": {
+            "end": {
+              "column": 70,
+              "line": 72
+            },
+            "start": {
+              "column": 37,
+              "line": 72
+            }
+          }
+        },
+        {
+          "id": "15",
+          "mutatorName": "EqualityOperator",
+          "replacement": "state !== undefined",
+          "statusReason": "Cannot set properties of undefined (setting 'message')",
+          "status": "Killed",
+          "static": true,
+          "testsCompleted": 87,
+          "killedBy": [
+            "102",
+            "103",
+            "104",
+            "105",
+            "106",
+            "107",
+            "108",
+            "109",
+            "110",
+            "111",
+            "112",
+            "113",
+            "114",
+            "115",
+            "116",
+            "117",
+            "118",
+            "119",
+            "120"
+          ],
+          "coveredBy": [
+            "92",
+            "148",
+            "149",
+            "165",
+            "166"
+          ],
+          "location": {
+            "end": {
+              "column": 30,
+              "line": 79
+            },
+            "start": {
+              "column": 11,
+              "line": 79
+            }
+          }
+        },
+        {
+          "id": "6",
+          "mutatorName": "LogicalOperator",
+          "replacement": "opts.now && Date.now",
+          "statusReason": "now is not a function",
+          "status": "Killed",
+          "static": true,
+          "testsCompleted": 93,
+          "killedBy": [
+            "92"
+          ],
+          "coveredBy": [
+            "8",
+            "9",
+            "79",
+            "80",
+            "84",
+            "85",
+            "86",
+            "87",
+            "88",
+            "89",
+            "90",
+            "91",
+            "92",
+            "93",
+            "94",
+            "95",
+            "148",
+            "149",
+            "165",
+            "166"
+          ],
+          "location": {
+            "end": {
+              "column": 35,
+              "line": 70
+            },
+            "start": {
+              "column": 15,
+              "line": 70
+            }
+          }
+        },
+        {
+          "id": "13",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "statusReason": "expected +0 to be 1 // Object.is equality",
+          "status": "Killed",
+          "static": true,
+          "testsCompleted": 93,
+          "killedBy": [
+            "92"
+          ],
+          "coveredBy": [
+            "92",
+            "148",
+            "149",
+            "165",
+            "166"
+          ],
+          "location": {
+            "end": {
+              "column": 30,
+              "line": 79
+            },
+            "start": {
+              "column": 11,
+              "line": 79
+            }
+          }
+        },
+        {
+          "id": "24",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "statusReason": "Cannot read properties of undefined (reading 'count')",
+          "status": "Killed",
+          "static": true,
+          "testsCompleted": 19,
+          "killedBy": [
+            "102",
+            "103",
+            "104",
+            "105",
+            "106",
+            "107",
+            "108",
+            "109",
+            "110",
+            "111",
+            "112",
+            "113",
+            "114",
+            "115",
+            "116",
+            "117",
+            "118",
+            "119",
+            "120"
+          ],
+          "coveredBy": [
+            "92",
+            "119",
+            "148",
+            "149",
+            "165",
+            "166"
+          ],
+          "location": {
+            "end": {
+              "column": 8,
+              "line": 91
+            },
+            "start": {
+              "column": 44,
+              "line": 89
+            }
+          }
+        },
+        {
+          "id": "16",
+          "mutatorName": "AssignmentOperator",
+          "replacement": "state.count -= 1",
+          "statusReason": "expected -2 to be 2 // Object.is equality",
+          "status": "Killed",
+          "static": true,
+          "testsCompleted": 76,
+          "killedBy": [
+            "109"
+          ],
+          "coveredBy": [
+            "92",
+            "148",
+            "149",
+            "165",
+            "166"
+          ],
+          "location": {
+            "end": {
+              "column": 23,
+              "line": 80
+            },
+            "start": {
+              "column": 7,
+              "line": 80
+            }
+          }
+        },
+        {
+          "id": "23",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "statusReason": "Cannot read properties of undefined (reading 'execute')",
+          "status": "Killed",
+          "static": true,
+          "testsCompleted": 19,
+          "killedBy": [
+            "102",
+            "103",
+            "104",
+            "105",
+            "106",
+            "107",
+            "108",
+            "109",
+            "110",
+            "111",
+            "112",
+            "113",
+            "114",
+            "115",
+            "116",
+            "117",
+            "118",
+            "119",
+            "120"
+          ],
+          "coveredBy": [
+            "92",
+            "119",
+            "148",
+            "149",
+            "165",
+            "166"
+          ],
+          "location": {
+            "end": {
+              "column": 6,
+              "line": 93
+            },
+            "start": {
+              "column": 16,
+              "line": 87
+            }
+          }
+        },
+        {
+          "id": "35",
+          "mutatorName": "ArrayDeclaration",
+          "replacement": "[\"Stryker was here\"]",
+          "statusReason": "expected [ 'Stryker was here' ] to deeply equal []",
+          "status": "Killed",
+          "static": true,
+          "testsCompleted": 26,
+          "killedBy": [
+            "127"
+          ],
+          "coveredBy": [],
+          "location": {
+            "end": {
+              "column": 41,
+              "line": 104
+            },
+            "start": {
+              "column": 39,
+              "line": 104
+            }
+          }
+        },
+        {
+          "id": "10",
+          "mutatorName": "ArrayDeclaration",
+          "replacement": "[\"Stryker was here\"]",
+          "statusReason": "expected [ { '0': 'S', '1': 't', …(14) } ] to deeply equal []",
+          "status": "Killed",
+          "static": true,
+          "testsCompleted": 105,
+          "killedBy": [
+            "104"
+          ],
+          "coveredBy": [
+            "8",
+            "9",
+            "79",
+            "80",
+            "84",
+            "85",
+            "86",
+            "87",
+            "88",
+            "89",
+            "90",
+            "91",
+            "92",
+            "93",
+            "94",
+            "95",
+            "148",
+            "149",
+            "165",
+            "166"
+          ],
+          "location": {
+            "end": {
+              "column": 67,
+              "line": 72
+            },
+            "start": {
+              "column": 65,
+              "line": 72
+            }
+          }
+        },
+        {
+          "id": "20",
+          "mutatorName": "EqualityOperator",
+          "replacement": "context === undefined",
+          "statusReason": "expected undefined to be 'session-abc' // Object.is equality",
+          "status": "Killed",
+          "static": true,
+          "testsCompleted": 114,
+          "killedBy": [
+            "113"
+          ],
+          "coveredBy": [
+            "92",
+            "148",
+            "149",
+            "165",
+            "166"
+          ],
+          "location": {
+            "end": {
+              "column": 32,
+              "line": 82
+            },
+            "start": {
+              "column": 11,
+              "line": 82
+            }
+          }
+        },
+        {
+          "id": "19",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "statusReason": "expected undefined to be 'session-abc' // Object.is equality",
+          "status": "Killed",
+          "static": true,
+          "testsCompleted": 80,
+          "killedBy": [
+            "113"
+          ],
+          "coveredBy": [
+            "92",
+            "148",
+            "149",
+            "165",
+            "166"
+          ],
+          "location": {
+            "end": {
+              "column": 32,
+              "line": 82
+            },
+            "start": {
+              "column": 11,
+              "line": 82
+            }
+          }
+        },
+        {
+          "id": "18",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "statusReason": "expected true to be false // Object.is equality",
+          "status": "Killed",
+          "static": true,
+          "testsCompleted": 99,
+          "killedBy": [
+            "132"
+          ],
+          "coveredBy": [
+            "92",
+            "148",
+            "149",
+            "165",
+            "166"
+          ],
+          "location": {
+            "end": {
+              "column": 32,
+              "line": 82
+            },
+            "start": {
+              "column": 11,
+              "line": 82
+            }
+          }
+        },
+        {
+          "id": "21",
+          "mutatorName": "CallExpression",
+          "replacement": ";",
+          "statusReason": "Cannot set properties of undefined (setting 'message')",
+          "status": "Killed",
+          "static": true,
+          "testsCompleted": 122,
+          "killedBy": [
+            "102",
+            "103",
+            "104",
+            "105",
+            "106",
+            "107",
+            "108",
+            "109",
+            "110",
+            "111",
+            "112",
+            "113",
+            "114",
+            "115",
+            "116",
+            "117",
+            "118",
+            "119",
+            "121"
+          ],
+          "coveredBy": [
+            "92",
+            "148",
+            "149",
+            "165",
+            "166"
+          ],
+          "location": {
+            "end": {
+              "column": 35,
+              "line": 83
+            },
+            "start": {
+              "column": 7,
+              "line": 83
+            }
+          }
+        },
+        {
+          "id": "26",
+          "mutatorName": "ArrowFunction",
+          "replacement": "() => undefined",
+          "statusReason": "Cannot set properties of undefined (setting 'message')",
+          "status": "Killed",
+          "static": true,
+          "testsCompleted": 123,
+          "killedBy": [
+            "102",
+            "103",
+            "104",
+            "105",
+            "106",
+            "107",
+            "108",
+            "109",
+            "110",
+            "111",
+            "112",
+            "113",
+            "114",
+            "115",
+            "116",
+            "117",
+            "118",
+            "119",
+            "122"
+          ],
+          "coveredBy": [
+            "92",
+            "119",
+            "148",
+            "149",
+            "165",
+            "166"
+          ],
+          "location": {
+            "end": {
+              "column": 86,
+              "line": 90
+            },
+            "start": {
+              "column": 69,
+              "line": 90
+            }
+          }
+        },
+        {
+          "id": "22",
+          "mutatorName": "MethodExpression",
+          "replacement": "Math.max(state.recent.length, maxRecent)",
+          "statusReason": "expected 11 to be 2 // Object.is equality",
+          "status": "Killed",
+          "static": true,
+          "testsCompleted": 112,
+          "killedBy": [
+            "111"
+          ],
+          "coveredBy": [
+            "92",
+            "148",
+            "149",
+            "165",
+            "166"
+          ],
+          "location": {
+            "end": {
+              "column": 69,
+              "line": 85
+            },
+            "start": {
+              "column": 29,
+              "line": 85
+            }
+          }
+        },
+        {
+          "id": "33",
+          "mutatorName": "ArrayDeclaration",
+          "replacement": "[\"Stryker was here\"]",
+          "statusReason": "expected [ 'Stryker was here' ] to deeply equal []",
+          "status": "Killed",
+          "static": true,
+          "testsCompleted": 126,
+          "killedBy": [
+            "125"
+          ],
+          "coveredBy": [],
+          "location": {
+            "end": {
+              "column": 42,
+              "line": 103
+            },
+            "start": {
+              "column": 40,
+              "line": 103
+            }
+          }
+        },
+        {
+          "id": "37",
+          "mutatorName": "ArrayDeclaration",
+          "replacement": "[\"Stryker was here\"]",
+          "statusReason": "expected [ 'Stryker was here' ] to deeply equal []",
+          "status": "Killed",
+          "static": true,
+          "testsCompleted": 130,
+          "killedBy": [
+            "129"
+          ],
+          "coveredBy": [],
+          "location": {
+            "end": {
+              "column": 40,
+              "line": 105
+            },
+            "start": {
+              "column": 38,
+              "line": 105
+            }
+          }
+        },
+        {
+          "id": "28",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "statusReason": "Cannot read properties of undefined (reading 'record')",
+          "status": "Killed",
+          "static": true,
+          "testsCompleted": 178,
+          "killedBy": [
+            "124",
+            "125",
+            "126",
+            "127",
+            "128",
+            "129"
+          ],
+          "coveredBy": [],
+          "location": {
+            "end": {
+              "column": 2,
+              "line": 109
+            },
+            "start": {
+              "column": 64,
+              "line": 98
+            }
+          }
+        },
+        {
+          "id": "30",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "statusReason": "Cannot read properties of undefined (reading 'aggregate')",
+          "status": "Killed",
+          "static": true,
+          "testsCompleted": 125,
+          "killedBy": [
+            "124"
+          ],
+          "coveredBy": [],
+          "location": {
+            "end": {
+              "column": 6,
+              "line": 107
+            },
+            "start": {
+              "column": 16,
+              "line": 101
+            }
+          }
+        }
+      ],
+      "source": "/**\n * dsh-provider-usage — server/shared 错误面叶子（域2每层错误面的唯一物理定义）。\n *\n * S2 契约与共享层（#768 计划表 rev2 S2 行）：本文件是 errsurf 实现的 canonical 落点；\n * 旧过渡垫片 `src/domain2/common/errsurf.ts`（re-export）已于 #768 D13 随 common 目录消除。\n * 表达式与旧实现逐字一致（零行为变更，见 D13 基线对账）。\n *\n * 共享层准入论证（docs/ARCHITECTURE-METHOD.md §3 四级判据 + 本叶 Q5 尺子）：\n * - Q1（领域所有者）：无单一所有者——写入方分属 aggregate（压实/刷盘/归属异常）、\n *   schedule（tick 异常/提交失败）、execute（任务执行失败）三个域，读取方为\n *   ui-routes 的 /health per-layer 段。任一域独占它都会让另两域形成越权依赖，\n *   故不归任一域所有（METHOD §3 Q1 有主即止的反面：无主才共享）。\n * - Q2（消费合理）：三域各取所需最小面——写侧只调 record，读侧只调 snapshot；\n *   未把整表或诊断出口递给对方，无越权、无图方便、无绕过注入（共享设施按\n *   refactor skill §3 由实现块直接引用，不入注入面）。\n * - Q3（公共语言）：计数 + 最近 N 条环形缓冲 + 只读快照是稳定的层健康协议，\n *   不随任一域的业务模型漂移（与 registry.recordError 既有模式同构，补计数与环形语义）。\n * - Q4（零依赖 + ≥2 正当消费者）：本文件零 import；正当消费者 4 处——三域写\n *   （apply.ts 装配接线经各对象既有 warn 出口）+ 健康读（routes/ui.ts）。\n * - Q5（server/shared 叶子四性）：服务端内复用（apply 装配 + ui 健康读，客户端零引用，\n *   不进 src/shared 跨端面）；非跨端（宿主进程内存 Map，不打包进 client bundle）；\n *   进程期常驻（自进程挂载起累计计数，无落盘，重启即清零——与落盘态的 lastRun 对偶）；\n *   无单一所有者（见 Q1）。\n *\n * 接入策略不变：本模块不直接触碰业务代码；三层上报经装配层 apply.ts\n * 复用各对象既有 warn 诊断出口接线（组合根特权）：\n * - aggregate：TrendTracker 的 warn（压实失败/刷盘失败/归属异常汇聚于此）\n * - schedule：ReportScheduler 的 warn（tick 异常/提交失败）\n * - execute：ReportTaskQueue 的 warn（任务执行失败，消息已脱敏）\n * 若需在 aggregator 内部记账/rollup 出错点直连上报，可注入本模块\n * 同形 record（空参 no-op 实现同签名，见 makeNoopLayerErrorSurface）。\n */\nexport type LayerErrorKey = \"aggregate\" | \"schedule\" | \"execute\";\n\n/** 每层最近一条错误记录（时间戳/消息/上下文）。 */\nexport interface LayerErrorRecord {\n  at: number;\n  message: string;\n  /** 层内定位（如聚合日键 / 报告周期与窗口键），可空。 */\n  context?: string;\n}\n\n/** 单层错误面状态（health per-layer 段数据源）。 */\nexport interface LayerErrorState {\n  /** 累计计数（自进程挂载起）。 */\n  count: number;\n  /** 最近 N 条（新在前；N = maxRecent）。 */\n  recent: LayerErrorRecord[];\n}\n\n/** 域2每层错误面接口（record 为层代码可注入的上报入口）。 */\nexport interface LayerErrorSurface {\n  record(layer: LayerErrorKey, message: string, context?: string): void;\n  /** 只读快照（三键齐，未发生错误的层为 count 0 空队列）。 */\n  snapshot(): Record<LayerErrorKey, LayerErrorState>;\n}\n\nexport interface LayerErrorSurfaceOptions {\n  /** 每层最近保留条数（默认 10）。 */\n  maxRecent?: number;\n  /** 注入时钟（测试用；默认 Date.now）。 */\n  now?: () => number;\n}\n\nexport const LAYER_ERROR_KEYS: readonly LayerErrorKey[] = [\"aggregate\", \"schedule\", \"execute\"];\nexport const LAYER_ERROR_MAX_RECENT_DEFAULT = 10;\n\nexport function makeLayerErrorSurface(opts: LayerErrorSurfaceOptions = {}): LayerErrorSurface {\n  const maxRecent = opts.maxRecent ?? LAYER_ERROR_MAX_RECENT_DEFAULT;\n  const now = opts.now ?? Date.now;\n  const states = new Map<LayerErrorKey, LayerErrorState>(\n    LAYER_ERROR_KEYS.map((layer) => [layer, { count: 0, recent: [] }]),\n  );\n\n  return {\n    record(layer, message, context) {\n      const state = states.get(layer);\n      // 未知层忽略（防御：future 层枚举扩展时旧调用方不炸）\n      if (state === undefined) return;\n      state.count += 1;\n      const entry: LayerErrorRecord = { at: now(), message };\n      if (context !== undefined) entry.context = context;\n      state.recent.unshift(entry);\n      // 环形截断：Math.min 代替条件比较（语义 = 超限才裁，等价但无比较变异点）\n      state.recent.length = Math.min(state.recent.length, maxRecent);\n    },\n    snapshot() {\n      const out = {} as Record<LayerErrorKey, LayerErrorState>;\n      for (const [layer, state] of states) {\n        out[layer] = { count: state.count, recent: state.recent.map((r) => ({ ...r })) };\n      }\n      return out;\n    },\n  };\n}\n\n/** 空参数默认实现（供暂未接线/测试替身用；形态与真实 surface 一致）。 */\nexport function makeNoopLayerErrorSurface(): LayerErrorSurface {\n  return {\n    record() {},\n    snapshot() {\n      return {\n        aggregate: { count: 0, recent: [] },\n        schedule: { count: 0, recent: [] },\n        execute: { count: 0, recent: [] },\n      };\n    },\n  };\n}\n"
+    }
+  },
+  "schemaVersion": "1.0",
+  "thresholds": {
+    "high": 80,
+    "low": 60,
+    "break": null
+  },
+  "testFiles": {
+    "packages/dsh-provider-usage/test/unit/apply/unit-apply.test.ts": {
+      "tests": [
+        {
+          "id": "0",
+          "name": "1) inject 回调：settings 正常注册 settings.describe 被调用"
+        },
+        {
+          "id": "1",
+          "name": "1) inject 回调：settings 正常注册 sctx.effect 被注册"
+        },
+        {
+          "id": "2",
+          "name": "1) inject 回调：settings 正常注册 document-updated 订阅已接线"
+        },
+        {
+          "id": "3",
+          "name": "2) inject 回调：settings.register 抛错 settings.describe 抛错回落 entry 不中断（无缺席 warn）"
+        },
+        {
+          "id": "4",
+          "name": "3) inject 回调：settings 服务缺 register settings 服务缺席应 warn"
+        },
+        {
+          "id": "5",
+          "name": "6a) 合法用户适配器文件 → onReload ok:true HotReload ok:true 分支不抛错"
+        },
+        {
+          "id": "6",
+          "name": "6a) 合法用户适配器文件 → onReload ok:true 隔离自检：落盘收敛在本块 hist 内（删 historyDir 参数即红）"
+        },
+        {
+          "id": "7",
+          "name": "6b) 非法适配器文件 → onReload ok:false HotReload ok:false 分支不抛错"
+        },
+        {
+          "id": "8",
+          "name": "8) disposer 清理 warmup/prune 定时器（假时钟句柄计数） apply 注册定时器 → disposer 后句柄计数归零"
+        },
+        {
+          "id": "9",
+          "name": "8b) warmup 调度行为（getStats spy：即时 + tick + 停火） 启动即时预热三内置 → tick 复调 → disposer 后停火"
+        },
+        {
+          "id": "10",
+          "name": "#301：apply 内部恢复隔离坏状态且诊断单次可见 JSON 损坏 恰好输出一次 console.warn"
+        },
+        {
+          "id": "11",
+          "name": "#301：apply 内部恢复隔离坏状态且诊断单次可见 JSON 损坏 同时进入 health 诊断"
+        },
+        {
+          "id": "12",
+          "name": "#301：apply 内部恢复隔离坏状态且诊断单次可见 JSON 损坏 原文件已移出恢复路径"
+        },
+        {
+          "id": "13",
+          "name": "#301：apply 内部恢复隔离坏状态且诊断单次可见 JSON 损坏 原文完整保留在新取证备份"
+        },
+        {
+          "id": "14",
+          "name": "#301：apply 内部恢复隔离坏状态且诊断单次可见 顶层结构无效 恰好输出一次 console.warn"
+        },
+        {
+          "id": "15",
+          "name": "#301：apply 内部恢复隔离坏状态且诊断单次可见 顶层结构无效 同时进入 health 诊断"
+        },
+        {
+          "id": "16",
+          "name": "#301：apply 内部恢复隔离坏状态且诊断单次可见 顶层结构无效 原文件已移出恢复路径"
+        },
+        {
+          "id": "17",
+          "name": "#301：apply 内部恢复隔离坏状态且诊断单次可见 顶层结构无效 原文完整保留在新取证备份"
+        },
+        {
+          "id": "18",
+          "name": "#301：apply 内部恢复隔离坏状态且诊断单次可见 全部取证备份最终均保留（case 0）"
+        },
+        {
+          "id": "19",
+          "name": "#301：apply 内部恢复隔离坏状态且诊断单次可见 全部取证备份最终均保留（case 1）"
+        },
+        {
+          "id": "20",
+          "name": "#301：恢复缺失候选可见 + 写入失败可见且串行链可恢复 启动恢复 select(false) 进入 health 诊断，不再静默回退默认启用者"
+        },
+        {
+          "id": "21",
+          "name": "#301：恢复缺失候选可见 + 写入失败可见且串行链可恢复 启动恢复 select(false) 恰好输出一次 console.warn，避免重复诊断"
+        },
+        {
+          "id": "22",
+          "name": "#301：恢复缺失候选可见 + 写入失败可见且串行链可恢复 select 经串行链原子写入新的启用选择"
+        },
+        {
+          "id": "23",
+          "name": "#301：恢复缺失候选可见 + 写入失败可见且串行链可恢复 成功写入无 tmp 残留"
+        },
+        {
+          "id": "24",
+          "name": "#301：恢复缺失候选可见 + 写入失败可见且串行链可恢复 POSIX 状态文件权限为 0600"
+        },
+        {
+          "id": "25",
+          "name": "#301：恢复缺失候选可见 + 写入失败可见且串行链可恢复 运行期 select 内存切换仍成功响应"
+        },
+        {
+          "id": "26",
+          "name": "#301：恢复缺失候选可见 + 写入失败可见且串行链可恢复 异步写盘失败进入 health 诊断（同时由宿主 console.error 输出）"
+        },
+        {
+          "id": "27",
+          "name": "#301：恢复缺失候选可见 + 写入失败可见且串行链可恢复 每次失败写入恰好输出一次 console.error"
+        },
+        {
+          "id": "28",
+          "name": "#301：恢复缺失候选可见 + 写入失败可见且串行链可恢复 一次持久化失败不会毒化串行链，修复文件系统后后续选择可成功落盘"
+        },
+        {
+          "id": "29",
+          "name": "#301：rename 已提交后的目录 fsync 失败仅报耐久性告警 内存中的显式停用仍成功响应"
+        },
+        {
+          "id": "30",
+          "name": "#301：rename 已提交后的目录 fsync 失败仅报耐久性告警 故障注入精确命中 rename 后的父目录 fsync"
+        },
+        {
+          "id": "31",
+          "name": "#301：rename 已提交后的目录 fsync 失败仅报耐久性告警 目录 fsync 失败时原子 rename 的新状态仍已提交"
+        },
+        {
+          "id": "32",
+          "name": "#301：rename 已提交后的目录 fsync 失败仅报耐久性告警 post-commit 失败进入 health 的独立耐久性诊断"
+        },
+        {
+          "id": "33",
+          "name": "#301：rename 已提交后的目录 fsync 失败仅报耐久性告警 post-commit 失败恰好输出一次 console.warn"
+        },
+        {
+          "id": "34",
+          "name": "#301：rename 已提交后的目录 fsync 失败仅报耐久性告警 post-commit 失败不误报 console.error 写入失败"
+        },
+        {
+          "id": "35",
+          "name": "#301：rename 已提交后的目录 fsync 失败仅报耐久性告警 post-commit 失败不污染 health 为写入失败"
+        },
+        {
+          "id": "36",
+          "name": "history 数据面（围栏经 integration+smoke 覆盖） history 路由已注册"
+        },
+        {
+          "id": "37",
+          "name": "history 数据面（围栏经 integration+smoke 覆盖） 无候选 provider 报 no-adapter"
+        },
+        {
+          "id": "38",
+          "name": "history 数据面（围栏经 integration+smoke 覆盖） 无候选不带占位 HTML"
+        },
+        {
+          "id": "39",
+          "name": "history 数据面（围栏经 integration+smoke 覆盖） history 正常响应 plugin 字段"
+        },
+        {
+          "id": "40",
+          "name": "history 数据面（围栏经 integration+smoke 覆盖） 用户适配器注册后默认成为启用者"
+        },
+        {
+          "id": "41",
+          "name": "history 数据面（围栏经 integration+smoke 覆盖） range.start 数字"
+        },
+        {
+          "id": "42",
+          "name": "getStats：跨 provider 并行 / 锁内二次校验 / 未配置 两适配器探针成对出现"
+        },
+        {
+          "id": "43",
+          "name": "getStats：跨 provider 并行 / 锁内二次校验 / 未配置 跨 provider 并行取数（取数窗口重叠）"
+        },
+        {
+          "id": "44",
+          "name": "getStats：跨 provider 并行 / 锁内二次校验 / 未配置 并发同 provider 请求复用缓存"
+        },
+        {
+          "id": "45",
+          "name": "getStats：跨 provider 并行 / 锁内二次校验 / 未配置 capsuleHtml 显示 v=1——预热+2 并发客户端共 3 次请求仅触发 1 次真实取数（无 check-then-act 双取）"
+        },
+        {
+          "id": "46",
+          "name": "getStats：跨 provider 并行 / 锁内二次校验 / 未配置 #120 后 busy 短路语义废除，排队者拿真数据帧"
+        },
+        {
+          "id": "47",
+          "name": "getStats：跨 provider 并行 / 锁内二次校验 / 未配置 另一 provider 的并发请求同样命中二次校验"
+        },
+        {
+          "id": "48",
+          "name": "getStats：跨 provider 并行 / 锁内二次校验 / 未配置 fast 数据保真"
+        },
+        {
+          "id": "49",
+          "name": "getStats：跨 provider 并行 / 锁内二次校验 / 未配置 slow.fetchData 仅执行一次"
+        },
+        {
+          "id": "50",
+          "name": "getStats：跨 provider 并行 / 锁内二次校验 / 未配置 fresh 数据落盘历史 JSONL"
+        },
+        {
+          "id": "51",
+          "name": "getStats：跨 provider 并行 / 锁内二次校验 / 未配置 候选存在但清空启用报 no-enabled-adapter"
+        },
+        {
+          "id": "52",
+          "name": "getStats：跨 provider 并行 / 锁内二次校验 / 未配置 未配置语义 ok=false"
+        },
+        {
+          "id": "53",
+          "name": "getStats：跨 provider 并行 / 锁内二次校验 / 未配置 configured=false"
+        },
+        {
+          "id": "54",
+          "name": "fetchWithTimeout 边界（#150 二阶段） 快路径返回注入实现的响应"
+        },
+        {
+          "id": "55",
+          "name": "fetchWithTimeout 边界（#150 二阶段） 快路径到达注入 fetch 至少一次"
+        },
+        {
+          "id": "56",
+          "name": "fetchWithTimeout 边界（#150 二阶段） url 原样透传到 fetch"
+        },
+        {
+          "id": "57",
+          "name": "fetchWithTimeout 边界（#150 二阶段） 慢路径到达注入 fetch 至少一次"
+        },
+        {
+          "id": "58",
+          "name": "fetchWithTimeout 边界（#150 二阶段） 超过 timeoutMs 后 controller.abort 已触发"
+        },
+        {
+          "id": "59",
+          "name": "fetchWithTimeout 边界（#150 二阶段） 默认参数下仍走 fetch 至少一次"
+        },
+        {
+          "id": "60",
+          "name": "#534：通知类型注入（可选 notifier 探测 + 动态 kind 注册/补注册） 无 notifier 探测面时 apply 正常挂载"
+        },
+        {
+          "id": "61",
+          "name": "#534：通知类型注入（可选 notifier 探测 + 动态 kind 注册/补注册） 挂载直调注册一次"
+        },
+        {
+          "id": "62",
+          "name": "#534：通知类型注入（可选 notifier 探测 + 动态 kind 注册/补注册） 注册 kind id 正确"
+        },
+        {
+          "id": "63",
+          "name": "#534：通知类型注入（可选 notifier 探测 + 动态 kind 注册/补注册） 注册 kind label 正确"
+        },
+        {
+          "id": "64",
+          "name": "#534：通知类型注入（可选 notifier 探测 + 动态 kind 注册/补注册） 挂载直调已注册一次"
+        },
+        {
+          "id": "65",
+          "name": "#534：通知类型注入（可选 notifier 探测 + 动态 kind 注册/补注册） internal/service 监听已注册"
+        },
+        {
+          "id": "66",
+          "name": "#534：通知类型注入（可选 notifier 探测 + 动态 kind 注册/补注册） 事件触发补注册一次（幂等追加）"
+        },
+        {
+          "id": "67",
+          "name": "#534：通知类型注入（可选 notifier 探测 + 动态 kind 注册/补注册） 补注册 kind id 一致"
+        }
+      ],
+      "source": "/**\n * dsh-provider-usage — unit：apply 宿主注入路径覆盖。\n *\n * 覆盖：installSettingsNamespace inject 回调分支、\n * HotReloadableAdapter onReload 回调分支、warmup/prune 定时器清理（假时钟句柄计数，\n * 8)）与 warmup 调度行为（getStats spy：即时预热 + tick 复调 + disposer 停火，8b)）。\n *\n * P1 恒真（`flag=true` 无条件置位）用例已删：5a/5b isUnloading、7) dispose、\n * 8) warmup 旧版；清理事实由 8) 句柄计数真断言与 schedule D3 toFake 面钉住。\n *\n * 此文件不重复 smoke.test.ts 已覆盖的 boot/enabled/fence 断言，仅专注\n * 于 smoke 未到达的 apply 内部分支（#82 批次 3）。\n */\nimport { mkdtempSync, writeFileSync, mkdirSync } from \"node:fs\";\nconsole.error(\"EVAL-ORDER-TAG: APPLY\");\nimport { join } from \"node:path\";\nimport { tmpdir } from \"node:os\";\nimport { afterAll, beforeAll, describe, expect, it, vi } from \"vitest\";\nimport fs, { existsSync, readFileSync, readdirSync, rmSync, statSync } from \"node:fs\";\nimport { syncBuiltinESMExports } from \"node:module\";\nimport { injectGlobalFetch, pollUntil } from \"../../helpers.ts\";\nimport { apply, ROUTES } from \"../../../src/apply/index.ts\";\n// 白盒直连深路径（#768 B波）：OpenCode 双值经适配器域门面，不走组合根转发。\nimport {\n  OPENCODE_GO_PROVIDER,\n  OPENCODE_GO_ADAPTER_ID,\n} from \"../../../src/server/adapters/interface.ts\";\n// 白盒直连深路径（#768 B波）：契约版本经 shared 门面，不走组合根转发。\nimport { ADAPTER_CONTRACT_VERSION } from \"../../../src/shared/interface.ts\";\n// 白盒直连深路径（#768 B波）：用户适配器路径纯面经注册表域门面，不走组合根转发。\nimport { userAdaptersFile, adapterStateFile } from \"../../../src/server/registry/interface.ts\";\nimport { fetchWithTimeout } from \"../../../src/server/pipeline/interface.ts\";\n// 白盒直连深路径（#768 B波）：预热行为断言经管道域门面 spy 真实现类，不走组合根转发。\nimport { StatsServiceCtor, type V2PipelineResult } from \"../../../src/server/pipeline/interface.ts\";\n\n// ---------------------------------------------------------------- 工具：fakeReqs\n\n/** #503：session 事件监听桩（apply 现注册 session/event|flush|disposed 监听）。 */\nfunction onStub() {\n  return () => {};\n}\n\nfunction fakeReq(overrides: { body?: string } & Record<string, unknown> = {}) {\n  return {\n    socket: { remoteAddress: \"127.0.0.1\" },\n    headers: { host: \"127.0.0.1:3080\", \"sec-fetch-site\": \"same-origin\" },\n    method: \"GET\",\n    url: \"/\",\n    [Symbol.asyncIterator]: async function* () {\n      if (typeof overrides.body === \"string\" && overrides.body !== \"\") {\n        yield Buffer.from(overrides.body);\n      }\n    },\n    ...overrides,\n  };\n}\n\nfunction makeRes(): {\n  writeHead: (c: number) => void;\n  end: (chunk: unknown) => void;\n  write: (chunk: unknown) => void;\n  on: () => void;\n  _code: () => number;\n  _body: () => string;\n} {\n  const chunks: Array<unknown> = [];\n  let code = 200;\n  return {\n    writeHead: (c: number) => {\n      code = c;\n    },\n    end: (chunk: unknown) => {\n      chunks.push(chunk);\n    },\n    write: (chunk: unknown) => {\n      chunks.push(chunk);\n    },\n    on: () => {},\n    _code: () => code,\n    _body: () => chunks.map((c) => (typeof c === \"string\" ? c : String(c))).join(\"\"),\n  };\n}\n\n/** 构造标准 fake ctx：收集路由与 disposer。\n *  - over.get：可选注入的假 wingsky.notifier 服务（get 桩命中 \"wingsky.notifier\" 时返回）；\n *  - over.recordOn：为 true 时记录 ctx.on 监听器到 listeners（供 internal/service 补注册测试手动触发）。 */\nfunction makeCtx(\n  over: {\n    llm?: unknown;\n    get?: unknown;\n    recordOn?: boolean;\n  } = {},\n) {\n  const routes: Array<Record<string, unknown>> = [];\n  const disposers: Array<() => void> = [];\n  const listeners: Map<string, Array<(...args: unknown[]) => unknown>> = new Map();\n  const ctx = {\n    logger: { warn: () => {} },\n    webServer: {\n      register(route: Record<string, unknown>) {\n        routes.push(route);\n        return () => {};\n      },\n    },\n    on: over.recordOn\n      ? (name: string, cb: (...args: unknown[]) => unknown) => {\n          const list = listeners.get(name) ?? [];\n          list.push(cb);\n          listeners.set(name, list);\n          return () => {};\n        }\n      : onStub,\n    llm:\n      over.llm !== undefined\n        ? over.llm\n        : {\n            listProviders() {\n              return [];\n            },\n          },\n    fiber: { state: \"active\" },\n    inject: (deps: unknown, cb: (s: unknown) => void) => {\n      cb({ settings: {} });\n    },\n    effect(fn: () => unknown) {\n      const d = fn();\n      if (typeof d === \"function\") disposers.push(d as () => void);\n      return typeof d === \"function\" ? d : () => {};\n    },\n  };\n  if (over.get !== undefined) {\n    (ctx as Record<string, unknown>).get = (name: string) =>\n      name === \"wingsky.notifier\" ? over.get : undefined;\n  }\n  // apply 的 ctx 为宿主 cordis 全量服务面，窄 fake 经 unknown 断言装配（调用点同构）。\n  return { ctx: ctx as unknown as Parameters<typeof apply>[0], routes, disposers, listeners };\n}\n\n/** 合法用户适配器 mjs 文本。 */\nfunction adapterMjs(name: string, body = \"{ v: 1 }\"): string {\n  return `\nexport const version = ${ADAPTER_CONTRACT_VERSION};\nexport const name = ${JSON.stringify(name)};\nexport const label = ${JSON.stringify(name)};\nexport const providers = [\"${OPENCODE_GO_PROVIDER}\"];\nexport async function fetchData() { return ${body}; }\nexport function formatCapsule() { return \"<span>${name}</span>\"; }\nexport function formatPanel() { return \"<p>${name}</p>\"; }\n`;\n}\n\n// W5：删本地 pollUntil，统一引用 test/helpers.ts 共享版。逐行比对（本地原 142-150 vs 共享 100-112），语义不同处以共享版为准：\n// - 本地 cond 仅同步 boolean，共享 cond 可 async 且泛型返回真值（以共享为准，本文件调用仍为同步 boolean 面，true/false 语义一致）；\n// - 本地默认 2000ms/10ms，共享默认 5000ms/50ms（以共享为准，本文件 6 处调用均无显式参数，统一放宽到共享口径）；\n// - 本地 deadline 前 while+末次 cond()，共享 deadline 后返回末次 v（以共享为准，保证至少一次求值，超时返回末次假值）。\n\nconst routeOf = (routes: Array<Record<string, unknown>>, path: string) =>\n  routes.find((r) => r.path === path) as\n    { handler: (req: unknown, res: unknown) => Promise<void> | void } | undefined;\n\n// ---------------------------------------------------------------- 1) inject 回调：settings 正常注册\n\ndescribe(\"1) inject 回调：settings 正常注册\", () => {\n  let settingsEvents: string[];\n\n  beforeAll(async () => {\n    settingsEvents = [];\n    const routes: Array<Record<string, unknown>> = [];\n    const ctx = {\n      logger: { warn: () => {} },\n      webServer: {\n        register(route: Record<string, unknown>) {\n          routes.push(route);\n          return () => {};\n        },\n      },\n      on: onStub,\n      llm: {\n        listProviders() {\n          return [];\n        },\n      },\n      fiber: { state: \"active\" },\n      inject: (deps: unknown, cb: (s: unknown) => void) => {\n        const sctx = {\n          settings: {\n            describe: () => {\n              settingsEvents.push(\"describe-called\");\n              return [{ ns: \"dsh-provider-usage\", value: {}, revision: 0 }];\n            },\n          },\n          effect: (fn: () => unknown) => {\n            const disposer = fn();\n            settingsEvents.push(\"effect-registered\");\n            return typeof disposer === \"function\" ? disposer : () => {};\n          },\n          on: (event: string, _cb: (...args: unknown[]) => void) => {\n            if (event === \"settings/document-updated\") settingsEvents.push(\"subscribed\");\n            return () => {};\n          },\n        };\n        cb(sctx);\n      },\n      effect: (fn: () => unknown) => {\n        const d = fn();\n        return typeof d === \"function\" ? d : () => {};\n      },\n    };\n    // 隔离（#768 P1）：historyDir 指临时目录，否则 apply.ts:275 回落真实 ~/.dsh\n    // （installUpgrade 写 .upgrade-version、TrendTracker 建 trend 目录）。\n    const dir = mkdtempSync(join(tmpdir(), \"dou-apply-inject-ok-\"));\n    await apply(ctx as unknown as Parameters<typeof apply>[0], {\n      apiKey: \"sk-test\",\n      apiEndpoint: \"http://127.0.0.1:9\",\n      historyDir: join(dir, \"hist\"),\n    });\n  });\n\n  it(\"settings.describe 被调用\", () => {\n    // 实现真值（shared/settings-namespace.js installSettingsNamespace）：\n    // sctx.effect → describe（快照基线）→ document-updated 订阅按序各推一事件。\n    expect(settingsEvents).toEqual([\"effect-registered\", \"describe-called\", \"subscribed\"]);\n  });\n\n  it(\"sctx.effect 被注册\", () => {\n    expect(settingsEvents.includes(\"effect-registered\")).toBeTruthy();\n  });\n\n  it(\"document-updated 订阅已接线\", () => {\n    expect(settingsEvents.includes(\"subscribed\")).toBeTruthy();\n  });\n});\n\n// ---------------------------------------------------------------- 2) inject 回调：settings.describe 抛错\n\ndescribe(\"2) inject 回调：settings.register 抛错\", () => {\n  let warns: string[];\n\n  beforeAll(async () => {\n    warns = [];\n    const routes: Array<Record<string, unknown>> = [];\n    const ctx = {\n      logger: {\n        warn: (m: string) => {\n          warns.push(m);\n        },\n      },\n      webServer: {\n        register(route: Record<string, unknown>) {\n          routes.push(route);\n          return () => {};\n        },\n      },\n      on: onStub,\n      llm: {\n        listProviders() {\n          return [];\n        },\n      },\n      fiber: { state: \"active\" },\n      inject: (deps: unknown, cb: (s: unknown) => void) => {\n        cb({\n          settings: {\n            describe: () => {\n              throw new Error(\"store broken\");\n            },\n          },\n          effect: (fn: () => unknown) => {\n            const d = fn();\n            return typeof d === \"function\" ? d : () => {};\n          },\n        });\n      },\n      effect: (fn: () => unknown) => {\n        const d = fn();\n        return typeof d === \"function\" ? d : () => {};\n      },\n    };\n    // 隔离（#768 P1）：同 1)，无 historyDir 则回落真实 ~/.dsh 写版本与 trend 目录。\n    const dir = mkdtempSync(join(tmpdir(), \"dou-apply-inject-throw-\"));\n    await apply(ctx as unknown as Parameters<typeof apply>[0], {\n      apiKey: \"sk-test\",\n      apiEndpoint: \"http://127.0.0.1:9\",\n      historyDir: join(dir, \"hist\"),\n    });\n  });\n\n  it(\"settings.describe 抛错回落 entry 不中断（无缺席 warn）\", () => {\n    expect(warns.some((m) => m.includes(\"服务缺席\"))).toBeFalsy();\n  });\n});\n\n// ---------------------------------------------------------------- 3) inject 回调：settings 服务缺席\n\ndescribe(\"3) inject 回调：settings 服务缺 register\", () => {\n  let warns: string[];\n\n  beforeAll(async () => {\n    warns = [];\n    const routes: Array<Record<string, unknown>> = [];\n    const ctx = {\n      logger: {\n        warn: (m: string) => {\n          warns.push(m);\n        },\n      },\n      webServer: {\n        register(route: Record<string, unknown>) {\n          routes.push(route);\n          return () => {};\n        },\n      },\n      on: onStub,\n      llm: {\n        listProviders() {\n          return [];\n        },\n      },\n      fiber: { state: \"active\" },\n      inject: (deps: unknown, cb: (s: unknown) => void) => {\n        cb({ settings: {} });\n      },\n      effect: (fn: () => unknown) => {\n        const d = fn();\n        return typeof d === \"function\" ? d : () => {};\n      },\n    };\n    // 隔离（#768 P1）：同 1)，无 historyDir 则回落真实 ~/.dsh 写版本与 trend 目录。\n    const dir = mkdtempSync(join(tmpdir(), \"dou-apply-inject-noreg-\"));\n    await apply(ctx as unknown as Parameters<typeof apply>[0], {\n      apiKey: \"sk-test\",\n      apiEndpoint: \"http://127.0.0.1:9\",\n      historyDir: join(dir, \"hist\"),\n    });\n  });\n\n  it(\"settings 服务缺席应 warn\", () => {\n    expect(warns.some((m) => m.includes(\"服务缺席\"))).toBeTruthy();\n  });\n});\n\n// ---------------------------------------------------------------- 4) inject 回调：ctx.inject 不可用（已覆盖/无需重复）\n\n// smoke.test.ts 已有的 apply 用 fake ctx 无 inject → installSettingsNamespace 走\n// \"ctx.inject 不可用\" 分支。本文件不重复。\n\n// ---------------------------------------------------------------- 6) HotReloadableAdapter onReload 回调全分支\n\n// 6a) 合法用户适配器文件 → onReload ok:true → hr.current !== null → full branch\ndescribe(\"6a) 合法用户适配器文件 → onReload ok:true\", () => {\n  let applied: boolean;\n  let dir: string;\n\n  beforeAll(async () => {\n    dir = mkdtempSync(join(tmpdir(), \"dou-hr-\"));\n    const goodFile = join(dir, \"good.mjs\");\n    writeFileSync(\n      goodFile,\n      `\nexport const version = ${ADAPTER_CONTRACT_VERSION};\nexport const name = \"hr-test\";\nexport const label = \"HR Test\";\nexport const providers = [\"${OPENCODE_GO_PROVIDER}\"];\nexport async function fetchData() { return { v: 1 }; }\nexport function formatCapsule() { return \"<span>ok</span>\"; }\nexport function formatPanel() { return \"<p>p</p>\"; }\n`,\n      \"utf8\",\n    );\n\n    const routes: Array<Record<string, unknown>> = [];\n    const ctx = {\n      logger: { warn: () => {} },\n      webServer: {\n        register(route: Record<string, unknown>) {\n          routes.push(route);\n          return () => {};\n        },\n      },\n      on: onStub,\n      llm: {\n        listProviders() {\n          return [];\n        },\n      },\n      fiber: { state: \"active\" },\n      inject: (deps: unknown, cb: (s: unknown) => void) => {\n        cb({ settings: {} });\n      },\n      effect: (fn: () => unknown) => {\n        const d = fn();\n        return typeof d === \"function\" ? d : () => {};\n      },\n    };\n    await apply(ctx as unknown as Parameters<typeof apply>[0], {\n      adapter: goodFile,\n      autoReload: true,\n      apiKey: \"sk-test\",\n      apiEndpoint: \"http://127.0.0.1:9\",\n      // 隔离（#768 P1）：复用本块 mkdtemp 目录；不传则回落真实 ~/.dsh 写版本与 trend 目录。\n      historyDir: join(dir, \"hist\"),\n    });\n    applied = true;\n  });\n\n  it(\"HotReload ok:true 分支不抛错\", () => {\n    expect(applied).toBe(true);\n  });\n\n  it(\"隔离自检：落盘收敛在本块 hist 内（删 historyDir 参数即红）\", () => {\n    expect(existsSync(join(dir, \"hist\"))).toBe(true);\n  });\n});\n\n// 6b) 非法适配器文件 → onReload ok:false → !info.ok 分支\ndescribe(\"6b) 非法适配器文件 → onReload ok:false\", () => {\n  let applied: boolean;\n\n  beforeAll(async () => {\n    const dir = mkdtempSync(join(tmpdir(), \"dou-hr-bad-\"));\n    const badFile = join(dir, \"bad.mjs\");\n    writeFileSync(badFile, `export const version = 2; export const name = \"bad\";`, \"utf8\");\n\n    const routes: Array<Record<string, unknown>> = [];\n    const ctx = {\n      logger: { warn: () => {} },\n      webServer: {\n        register(route: Record<string, unknown>) {\n          routes.push(route);\n          return () => {};\n        },\n      },\n      on: onStub,\n      llm: {\n        listProviders() {\n          return [];\n        },\n      },\n      fiber: { state: \"active\" },\n      inject: (deps: unknown, cb: (s: unknown) => void) => {\n        cb({ settings: {} });\n      },\n      effect: (fn: () => unknown) => {\n        const d = fn();\n        return typeof d === \"function\" ? d : () => {};\n      },\n    };\n    await apply(ctx as unknown as Parameters<typeof apply>[0], {\n      adapter: badFile,\n      autoReload: true,\n      apiKey: \"sk-test\",\n      apiEndpoint: \"http://127.0.0.1:9\",\n      // 隔离（#768 P1）：复用本块 mkdtemp 目录；不传则回落真实 ~/.dsh 写版本与 trend 目录。\n      historyDir: join(dir, \"hist\"),\n    });\n    applied = true;\n  });\n\n  it(\"HotReload ok:false 分支不抛错\", () => {\n    expect(applied).toBe(true);\n  });\n});\n\n// ---------------------------------------------------------------- 8) warmup/prune 定时器清理（假时钟句柄计数，真断言）\n\n// 时间纪律（testing skill §4）：显式声明 toFake 面，只伪造 setInterval/clearInterval\n// （Date/setTimeout 保持真实）。P1 恒真版（`cleared=true` 无条件置位，不抛错即绿）已删，\n// 清理事实改由句柄计数钉住：不清 clearInterval 即泄漏，归零断言红。\n\ndescribe(\"8) disposer 清理 warmup/prune 定时器（假时钟句柄计数）\", () => {\n  it(\"apply 注册定时器 → disposer 后句柄计数归零\", async () => {\n    vi.useFakeTimers({ toFake: [\"setInterval\", \"clearInterval\"] });\n    try {\n      const base = vi.getTimerCount();\n      const disposers: Array<() => void> = [];\n      const routes: Array<Record<string, unknown>> = [];\n      const ctx = {\n        logger: { warn: () => {} },\n        webServer: {\n          register(route: Record<string, unknown>) {\n            routes.push(route);\n            return () => {};\n          },\n        },\n        on: onStub,\n        llm: {\n          listProviders() {\n            return [];\n          },\n        },\n        fiber: { state: \"active\" },\n        inject: (deps: unknown, cb: (s: unknown) => void) => {\n          cb({ settings: {} });\n        },\n        effect: (fn: () => unknown) => {\n          const d = fn();\n          if (typeof d === \"function\") disposers.push(d as () => void);\n          return typeof d === \"function\" ? d : () => {};\n        },\n      };\n      // 隔离（#768 P1）：historyDir 指临时目录，否则回落真实 ~/.dsh\n      // （installUpgrade 写 .upgrade-version、TrendTracker 建 trend 目录）。\n      const dir = mkdtempSync(join(tmpdir(), \"dou-apply-timers-\"));\n      await apply(ctx as unknown as Parameters<typeof apply>[0], {\n        warmupIntervalMs: 60000,\n        apiKey: \"sk-test\",\n        apiEndpoint: \"http://127.0.0.1:9\",\n        historyDir: join(dir, \"hist\"),\n      });\n      // 非盲 guard：定时器确已注册——恰 3 个句柄（warmup 预热 + prune 清理 + scheduler\n      // tick，见 scheduler.ts:54），多一个少一个都先红而非归零断言空过。\n      expect(vi.getTimerCount()).toBe(base + 3);\n      // 必须 await：disposer 是异步链（await trend.dispose() 后才 scheduler.dispose()），\n      // 同步调用会让 scheduler 句柄看起来泄漏（实测 +1 残留即此因）。\n      for (const d of disposers) {\n        if (typeof d === \"function\") await d();\n      }\n      // 真断言：不清 clearInterval 即泄漏，此行红\n      expect(vi.getTimerCount()).toBe(base);\n    } finally {\n      vi.useRealTimers();\n    }\n  });\n});\n\n// ---------------------------------------------------------------- 8b) warmup 调度行为（getStats spy，真行为断言）\n\n// 8) 只钉住句柄计数（清不清定时器），不断言定时器触发后真干了什么。\n// 本块补行为面：warmupFn 是否按启用 provider 集调用 getStats、tick 是否复调、\n// disposer 后是否停火。实现零变更，仅测试。\n\ndescribe(\"8b) warmup 调度行为（getStats spy：即时 + tick + 停火）\", () => {\n  it(\"启动即时预热三内置 → tick 复调 → disposer 后停火\", async () => {\n    vi.useFakeTimers({ toFake: [\"setInterval\", \"clearInterval\"] });\n    // 原型级 spy（apply 内 new StatsService 共享原型）：mock 立即 resolve，\n    // 只观测调度行为（目标集 + 时机），不进入管道内部（fetch/落盘均不跑）。\n    const getStatsSpy = vi\n      .spyOn(StatsServiceCtor.prototype, \"getStats\")\n      .mockImplementation(async (provider: string): Promise<V2PipelineResult> => ({\n        ok: true,\n        configured: true,\n        reason: null,\n        error: null,\n        fetchedAt: Date.now(),\n        provider,\n        adapterName: \"spy\",\n        status: \"fresh\",\n      }));\n    try {\n      const disposers: Array<() => void> = [];\n      const routes: Array<Record<string, unknown>> = [];\n      const ctx = {\n        logger: { warn: () => {} },\n        webServer: {\n          register(route: Record<string, unknown>) {\n            routes.push(route);\n            return () => {};\n          },\n        },\n        on: onStub,\n        llm: {\n          listProviders() {\n            return [];\n          },\n        },\n        fiber: { state: \"active\" },\n        inject: (deps: unknown, cb: (s: unknown) => void) => {\n          cb({ settings: {} });\n        },\n        effect: (fn: () => unknown) => {\n          const d = fn();\n          if (typeof d === \"function\") disposers.push(d as () => void);\n          return typeof d === \"function\" ? d : () => {};\n        },\n      };\n      // 隔离（#768 P1）：historyDir 指临时目录，否则回落真实 ~/.dsh。\n      const dir = mkdtempSync(join(tmpdir(), \"dou-apply-warmup-spy-\"));\n      await apply(ctx as unknown as Parameters<typeof apply>[0], {\n        warmupIntervalMs: 60000,\n        apiKey: \"sk-test\",\n        apiEndpoint: \"http://127.0.0.1:9\",\n        historyDir: join(dir, \"hist\"),\n      });\n      // 行为 1：启动即时预热——三内置默认启用（注册即启用），逐 provider 取数一次。\n      // 排序后比对：不依赖 enabledProviders 内部 Map 顺序，只钉住目标集合。\n      const called = getStatsSpy.mock.calls.map((c) => c[0]).sort();\n      expect(called).toEqual([\"deepseek-official\", \"opencode-go\", \"zai-coding-cn\"]);\n      // 行为 2：推进一个预热周期 → 同集合再取数一次（tick 复调）。\n      await vi.advanceTimersByTimeAsync(60000);\n      expect(getStatsSpy).toHaveBeenCalledTimes(6);\n      // 行为 3：disposer 清理后推进 → 停火（文本断言清零后行为亦零）。\n      for (const d of disposers) {\n        if (typeof d === \"function\") await d();\n      }\n      getStatsSpy.mockClear();\n      await vi.advanceTimersByTimeAsync(60000);\n      expect(getStatsSpy).not.toHaveBeenCalled();\n    } finally {\n      getStatsSpy.mockRestore();\n      vi.useRealTimers();\n    }\n  });\n});\n\n// ================================================================ #150 二阶段：apply 内部数据面与路由分支\n\n// ---------------------------------------------------------------- #301：apply 内部恢复隔离坏状态且诊断单次可见\n\ndescribe(\"#301：apply 内部恢复隔离坏状态且诊断单次可见\", () => {\n  const cases = [\n    { raw: \"{broken\", marker: \"JSON 损坏\" },\n    { raw: '[\"not\",\"a\",\"mapping\"]', marker: \"顶层结构无效\" },\n  ];\n  let backups: string[];\n  let warnCounts: number[];\n  let healthHit: boolean[];\n  let fileMoved: boolean[];\n  let backupFound: boolean[];\n  let backupRaw: boolean[];\n\n  beforeAll(async () => {\n    const dir = mkdtempSync(join(tmpdir(), \"dou-state-301-quarantine-apply-\"));\n    const historyDir = join(dir, \"history\");\n    mkdirSync(historyDir, { recursive: true });\n    const stateFile = adapterStateFile(historyDir);\n    backups = [];\n    warnCounts = [];\n    healthHit = [];\n    fileMoved = [];\n    backupFound = [];\n    backupRaw = [];\n\n    for (const entry of cases) {\n      writeFileSync(stateFile, entry.raw, \"utf8\");\n      const { ctx, routes, disposers } = makeCtx();\n      const warnings: string[] = [];\n      const originalWarn = console.warn;\n      console.warn = (...args: unknown[]) => {\n        warnings.push(args.map(String).join(\" \"));\n      };\n      try {\n        await apply(ctx, {\n          autoReload: false,\n          apiKey: \"sk-test\",\n          apiEndpoint: \"http://127.0.0.1:9\",\n          historyDir,\n        });\n      } finally {\n        console.warn = originalWarn;\n      }\n\n      const health = routes.find((route) => route.path === ROUTES.health) as {\n        handler: (req: unknown, res: unknown) => void;\n      };\n      const response = makeRes();\n      health.handler(fakeReq(), response);\n      const errors =\n        (JSON.parse(response._body()) as { errors?: Array<{ key: string; message: string }> })\n          .errors ?? [];\n      warnCounts.push(warnings.filter((line) => line.includes(entry.marker)).length);\n      healthHit.push(\n        errors.some(\n          (error) => error.key === \"adapter-state\" && error.message.includes(entry.marker),\n        ),\n      );\n      fileMoved.push(existsSync(stateFile));\n      const backup = readdirSync(historyDir)\n        .filter((name) => name.startsWith(\"adapter-state.json.bak-\"))\n        .find(\n          (name) =>\n            !backups.includes(name) && readFileSync(join(historyDir, name), \"utf8\") === entry.raw,\n        );\n      backupFound.push(backup !== undefined);\n      backups.push(backup ?? \"missing\");\n      for (const dispose of [...disposers].reverse()) {\n        try {\n          dispose();\n        } catch {}\n      }\n    }\n    for (const [index, backup] of backups.entries()) {\n      backupRaw.push(readFileSync(join(historyDir, backup), \"utf8\") === cases[index]?.raw);\n    }\n  });\n\n  for (const [index, entry] of cases.entries()) {\n    it(`${entry.marker} 恰好输出一次 console.warn`, () => {\n      expect(warnCounts[index]).toBe(1);\n    });\n\n    it(`${entry.marker} 同时进入 health 诊断`, () => {\n      expect(healthHit[index]).toBeTruthy();\n    });\n\n    it(`${entry.marker} 原文件已移出恢复路径`, () => {\n      expect(fileMoved[index]).toBe(false);\n    });\n\n    it(`${entry.marker} 原文完整保留在新取证备份`, () => {\n      expect(backupFound[index]).toBeTruthy();\n    });\n  }\n\n  for (const [index] of cases.entries()) {\n    it(`全部取证备份最终均保留（case ${index}）`, () => {\n      expect(backupRaw[index]).toBe(true);\n    });\n  }\n});\n\n// ---------------------------------------------------------------- #301：恢复缺失候选可见 + 写入失败可见且串行链可恢复\n\ndescribe(\"#301：恢复缺失候选可见 + 写入失败可见且串行链可恢复\", () => {\n  let healthDiagHit: boolean;\n  let warnOnce: number;\n  let persisted: boolean | undefined;\n  let tmpLeft: string[];\n  let posixMode: number | undefined;\n  let selectCode: number;\n  let surfaced: boolean | undefined;\n  let writeErrOnce: number;\n  let recovered: boolean | undefined;\n\n  beforeAll(async () => {\n    const dir = mkdtempSync(join(tmpdir(), \"dou-state-301-apply-\"));\n    const historyDir = join(dir, \"history\");\n    mkdirSync(historyDir, { recursive: true });\n    const stateFile = adapterStateFile(historyDir);\n    writeFileSync(stateFile, JSON.stringify({ \"ghost-provider\": \"missing-adapter\" }), \"utf8\");\n\n    const { ctx, routes, disposers } = makeCtx();\n    const restoreWarnings: string[] = [];\n    const originalWarn = console.warn;\n    console.warn = (...args: unknown[]) => {\n      restoreWarnings.push(args.map(String).join(\" \"));\n    };\n    try {\n      await apply(ctx, {\n        autoReload: false,\n        apiKey: \"sk-test\",\n        apiEndpoint: \"http://127.0.0.1:9\",\n        historyDir,\n      });\n    } finally {\n      console.warn = originalWarn;\n    }\n    const health = routes.find((route) => route.path === ROUTES.health) as {\n      handler: (req: unknown, res: unknown) => void;\n    };\n    const select = routes.find((route) => route.path === ROUTES.select) as {\n      handler: (req: unknown, res: unknown) => Promise<void>;\n    };\n    const healthErrors = (): Array<{ key: string; message: string }> => {\n      const response = makeRes();\n      health.handler(fakeReq(), response);\n      return (\n        (JSON.parse(response._body()) as { errors?: Array<{ key: string; message: string }> })\n          .errors ?? []\n      );\n    };\n\n    healthDiagHit = healthErrors().some(\n      (entry) =>\n        entry.key === \"adapter-state\" &&\n        entry.message.includes(\"missing-adapter\") &&\n        entry.message.includes(\"不在当前候选\"),\n    );\n    warnOnce = restoreWarnings.filter(\n      (line) => line.includes(\"missing-adapter\") && line.includes(\"不在当前候选\"),\n    ).length;\n\n    // 成功路径：发布物实际调度链写出合法 JSON、无 tmp 残留，POSIX 权限为 0600。\n    let response = makeRes();\n    await select.handler(\n      fakeReq({\n        method: \"POST\",\n        body: JSON.stringify({\n          provider: OPENCODE_GO_PROVIDER,\n          adapterName: OPENCODE_GO_ADAPTER_ID,\n        }),\n      }),\n      response,\n    );\n    persisted = await pollUntil(() => {\n      try {\n        return (\n          JSON.parse(readFileSync(stateFile, \"utf8\"))[OPENCODE_GO_PROVIDER] ===\n          OPENCODE_GO_ADAPTER_ID\n        );\n      } catch {\n        return false;\n      }\n    });\n    tmpLeft = readdirSync(historyDir).filter((name) => name.endsWith(\".tmp\"));\n    posixMode = process.platform !== \"win32\" ? statSync(stateFile).mode & 0o777 : undefined;\n\n    rmSync(stateFile, { force: true });\n    mkdirSync(stateFile); // 旧状态读取稳定报 EISDIR，构造 fail-closed 的持久化错误\n    response = makeRes();\n    const writeErrors: string[] = [];\n    const originalError = console.error;\n    console.error = (...args: unknown[]) => {\n      writeErrors.push(args.map(String).join(\" \"));\n    };\n    surfaced = false;\n    try {\n      await select.handler(\n        fakeReq({\n          method: \"POST\",\n          body: JSON.stringify({\n            provider: OPENCODE_GO_PROVIDER,\n            adapterName: OPENCODE_GO_ADAPTER_ID,\n          }),\n        }),\n        response,\n      );\n      selectCode = response._code();\n      surfaced = await pollUntil(() =>\n        healthErrors().some(\n          (entry) => entry.key === \"adapter-state\" && entry.message.includes(\"启用选择落盘失败\"),\n        ),\n      );\n    } finally {\n      console.error = originalError;\n    }\n    writeErrOnce = writeErrors.filter((line) => line.includes(\"启用选择落盘失败\")).length;\n\n    rmSync(stateFile, { recursive: true, force: true });\n    response = makeRes();\n    await select.handler(\n      fakeReq({\n        method: \"POST\",\n        body: JSON.stringify({\n          provider: OPENCODE_GO_PROVIDER,\n          adapterName: OPENCODE_GO_ADAPTER_ID,\n        }),\n      }),\n      response,\n    );\n    recovered = await pollUntil(() => {\n      try {\n        return (\n          JSON.parse(readFileSync(stateFile, \"utf8\"))[OPENCODE_GO_PROVIDER] ===\n          OPENCODE_GO_ADAPTER_ID\n        );\n      } catch {\n        return false;\n      }\n    });\n\n    for (const dispose of [...disposers].reverse()) {\n      try {\n        dispose();\n      } catch {}\n    }\n  });\n\n  it(\"启动恢复 select(false) 进入 health 诊断，不再静默回退默认启用者\", () => {\n    expect(healthDiagHit).toBeTruthy();\n  });\n\n  it(\"启动恢复 select(false) 恰好输出一次 console.warn，避免重复诊断\", () => {\n    expect(warnOnce).toBe(1);\n  });\n\n  it(\"select 经串行链原子写入新的启用选择\", () => {\n    expect(persisted).toBe(true);\n  });\n\n  it(\"成功写入无 tmp 残留\", () => {\n    expect(tmpLeft).toEqual([]);\n  });\n\n  it.skipIf(process.platform === \"win32\")(\"POSIX 状态文件权限为 0600\", () => {\n    expect(posixMode).toBe(0o600);\n  });\n\n  it(\"运行期 select 内存切换仍成功响应\", () => {\n    expect(selectCode).toBe(200);\n  });\n\n  it(\"异步写盘失败进入 health 诊断（同时由宿主 console.error 输出）\", () => {\n    expect(surfaced).toBe(true);\n  });\n\n  it(\"每次失败写入恰好输出一次 console.error\", () => {\n    expect(writeErrOnce).toBe(1);\n  });\n\n  it(\"一次持久化失败不会毒化串行链，修复文件系统后后续选择可成功落盘\", () => {\n    expect(recovered).toBe(true);\n  });\n});\n\n// ---------------------------------------------------------------- #301：rename 已提交后的目录 fsync 失败仅报耐久性告警\n\ndescribe.skipIf(process.platform === \"win32\")(\n  \"#301：rename 已提交后的目录 fsync 失败仅报耐久性告警\",\n  () => {\n    let selectCode: number;\n    let directorySyncAttempts: number;\n    let committed: boolean | undefined;\n    let surfaced: boolean | undefined;\n    let warnOnce: number;\n    let writeErrList: string[];\n    let healthPolluted: boolean;\n\n    beforeAll(async () => {\n      const dir = mkdtempSync(join(tmpdir(), \"dou-state-301-post-rename-\"));\n      const historyDir = join(dir, \"history\");\n      const stateFile = adapterStateFile(historyDir);\n      const { ctx, routes, disposers } = makeCtx();\n      await apply(ctx, {\n        autoReload: false,\n        apiKey: \"sk-test\",\n        apiEndpoint: \"http://127.0.0.1:9\",\n        historyDir,\n      });\n\n      const health = routes.find((route) => route.path === ROUTES.health) as {\n        handler: (req: unknown, res: unknown) => void;\n      };\n      const select = routes.find((route) => route.path === ROUTES.select) as {\n        handler: (req: unknown, res: unknown) => Promise<void>;\n      };\n      const healthErrors = (): Array<{ key: string; message: string }> => {\n        const response = makeRes();\n        health.handler(fakeReq(), response);\n        return (\n          (JSON.parse(response._body()) as { errors?: Array<{ key: string; message: string }> })\n            .errors ?? []\n        );\n      };\n\n      const originalOpen = fs.promises.open;\n      directorySyncAttempts = 0;\n      fs.promises.open = async (path, flags, ...rest) => {\n        if (String(path) === historyDir && flags === \"r\") {\n          directorySyncAttempts += 1;\n          const error = new Error(\n            \"simulated parent directory fsync failure\",\n          ) as NodeJS.ErrnoException;\n          error.code = \"EIO\";\n          throw error;\n        }\n        return originalOpen(path, flags, ...rest);\n      };\n      syncBuiltinESMExports();\n\n      const warnings: string[] = [];\n      const writeErrors: string[] = [];\n      const originalWarn = console.warn;\n      const originalError = console.error;\n      console.warn = (...args: unknown[]) => {\n        warnings.push(args.map(String).join(\" \"));\n      };\n      console.error = (...args: unknown[]) => {\n        writeErrors.push(args.map(String).join(\" \"));\n      };\n      const response = makeRes();\n      surfaced = false;\n      committed = false;\n      try {\n        await select.handler(\n          fakeReq({\n            method: \"POST\",\n            body: JSON.stringify({ provider: OPENCODE_GO_PROVIDER, adapterName: null }),\n          }),\n          response,\n        );\n        selectCode = response._code();\n        surfaced = await pollUntil(() =>\n          healthErrors().some(\n            (entry) => entry.key === \"adapter-state\" && entry.message.includes(\"耐久性未完全确认\"),\n          ),\n        );\n        committed = await pollUntil(() => {\n          try {\n            return JSON.parse(readFileSync(stateFile, \"utf8\"))[OPENCODE_GO_PROVIDER] === null;\n          } catch {\n            return false;\n          }\n        });\n      } finally {\n        console.warn = originalWarn;\n        console.error = originalError;\n        fs.promises.open = originalOpen;\n        syncBuiltinESMExports();\n      }\n\n      warnOnce = warnings.filter((line) => line.includes(\"耐久性未完全确认\")).length;\n      writeErrList = writeErrors.filter((line) => line.includes(\"启用选择落盘失败\"));\n      healthPolluted = healthErrors().some((entry) => entry.message.includes(\"启用选择落盘失败\"));\n\n      for (const dispose of [...disposers].reverse()) {\n        try {\n          dispose();\n        } catch {}\n      }\n    });\n\n    it(\"内存中的显式停用仍成功响应\", () => {\n      expect(selectCode).toBe(200);\n    });\n\n    it(\"故障注入精确命中 rename 后的父目录 fsync\", () => {\n      expect(directorySyncAttempts).toBe(1);\n    });\n\n    it(\"目录 fsync 失败时原子 rename 的新状态仍已提交\", () => {\n      expect(committed).toBe(true);\n    });\n\n    it(\"post-commit 失败进入 health 的独立耐久性诊断\", () => {\n      expect(surfaced).toBe(true);\n    });\n\n    it(\"post-commit 失败恰好输出一次 console.warn\", () => {\n      expect(warnOnce).toBe(1);\n    });\n\n    it(\"post-commit 失败不误报 console.error 写入失败\", () => {\n      expect(writeErrList).toEqual([]);\n    });\n\n    it(\"post-commit 失败不污染 health 为写入失败\", () => {\n      expect(healthPolluted).toBe(false);\n    });\n  },\n);\n\n// ---------------------------------------------------------------- history 数据面（围栏经 integration+smoke 覆盖）\n//\n// 围栏删测登记（M1）：删围栏四例——stats 路由已注册弱断言、stats 非 loopback 403、\n// stats POST 405、history 非 loopback 403。覆盖去向：src 门面层由\n// integration/data-routes D10二（403 先于 405 顺序敏感 + 文案逐字节锁定）保留；\n// lib 产物层由 smoke 围栏全矩阵（十六路由 403/405 + 文案）保留。保留 history\n// existence + 数据面五例（apply 装配经由，门面桩与产物矩阵未覆盖）。\n\ndescribe(\"history 数据面（围栏经 integration+smoke 覆盖）\", () => {\n  let historyR: ReturnType<typeof routeOf>;\n  let noAdpBody: { reason: unknown; panelHtml: unknown };\n  let okBody: { plugin: unknown; adapterName: unknown; range: { start: unknown } };\n\n  beforeAll(async () => {\n    const dir = mkdtempSync(join(tmpdir(), \"dou-stats-\"));\n    const goodFile = join(dir, \"good.mjs\");\n    writeFileSync(goodFile, adapterMjs(\"stats-adp\"), \"utf8\");\n    const { ctx, routes } = makeCtx();\n    await apply(ctx, {\n      adapter: goodFile,\n      autoReload: false,\n      apiKey: \"sk\",\n      apiEndpoint: \"http://127.0.0.1:9\",\n      historyDir: join(dir, \"hist\"),\n    });\n\n    // history 数据面：无候选 no-adapter / days clamp\n    historyR = routeOf(routes, ROUTES.history);\n\n    // 无启用适配器（清空选择后）→ 结构化 no-adapter\n    const hNoAdp = makeRes();\n    await historyR?.handler(fakeReq({ url: `${ROUTES.history}?provider=ghost` }), hNoAdp);\n    noAdpBody = JSON.parse(hNoAdp._body());\n\n    // days 参数：合法窗口取 min(days, maxAgeDays)\n    const hDays = makeRes();\n    await historyR?.handler(fakeReq({ url: `${ROUTES.history}?days=7` }), hDays);\n    okBody = JSON.parse(hDays._body());\n  });\n\n  it(\"history 路由已注册\", () => {\n    expect(historyR).toBeTruthy();\n  });\n\n  it(\"无候选 provider 报 no-adapter\", () => {\n    expect(noAdpBody.reason).toBe(\"no-adapter\");\n  });\n\n  it(\"无候选不带占位 HTML\", () => {\n    expect(noAdpBody.panelHtml).toBe(null);\n  });\n\n  it(\"history 正常响应 plugin 字段\", () => {\n    expect(okBody.plugin).toBe(\"dsh-provider-usage\");\n  });\n\n  it(\"用户适配器注册后默认成为启用者\", () => {\n    expect(okBody.adapterName).toBe(\"stats-adp\");\n  });\n\n  it(\"range.start 数字\", () => {\n    expect(typeof okBody.range.start).toBe(\"number\");\n  });\n});\n\n// ---------------------------------------------------------------- getStats：跨 provider 并行 / 锁内二次校验 / 未配置\n\ndescribe(\"getStats：跨 provider 并行 / 锁内二次校验 / 未配置\", () => {\n  let savedDshHome: string | undefined;\n  let probePairOk: boolean;\n  let windowOverlap: boolean;\n  let windowDetail: string;\n  let bSlow: Record<string, unknown>;\n  let bFast: Record<string, unknown>;\n  let slowSeqCount: number;\n  let landed: boolean | undefined;\n  let bNoEn: Record<string, unknown>;\n\n  beforeAll(async () => {\n    const dir = mkdtempSync(join(tmpdir(), \"dou-getstats-\"));\n    // 隔离 DSH_HOME：避免读到真实环境的 user-adapters.json / adapter-state.json\n    savedDshHome = process.env.DSH_HOME;\n    process.env.DSH_HOME = join(dir, \"dshhome\");\n    mkdirSync(process.env.DSH_HOME!, { recursive: true });\n\n    // 两个用户适配器（providers 互不相同）：\n    // - slow：80ms IO 延迟 + 调用计数（seq 经返回数据透出、formatCapsule 渲染）——\n    //   提供「全程仅一次真实取数」的证据载体；\n    // - fast：60ms 延迟 + 起止时间戳写 globalThis 探针——提供跨 provider 并行的窗口证据。\n    const slowFile = join(dir, \"slow.mjs\");\n    writeFileSync(\n      slowFile,\n      `\nexport const version = ${ADAPTER_CONTRACT_VERSION};\nexport const name = \"slow-adp\";\nexport const providers = [\"prov-slow\"];\nlet calls = 0;\nexport async function fetchData() {\n  calls += 1;\n  const probe = (globalThis.__pp120 ??= []);\n  probe.push({ n: \"A\", t: Date.now(), k: \"s\", seq: calls });\n  await new Promise((r) => setTimeout(r, 80)); // 有意延迟：slow 适配器 fixture（80ms 真实 IO 窗口，验证持锁）\n  probe.push({ n: \"A\", t: Date.now(), k: \"e\" });\n  return { v: calls };\n}\nexport function formatCapsule(input) { return \"<span>\" + input.data.v + \"</span>\"; }\nexport function formatPanel() { return \"<p>s</p>\"; }\n`,\n      \"utf8\",\n    );\n    const fastFile = join(dir, \"fast.mjs\");\n    writeFileSync(\n      fastFile,\n      `\nexport const version = ${ADAPTER_CONTRACT_VERSION};\nexport const name = \"fast-adp\";\nexport const providers = [\"prov-fast\"];\nexport async function fetchData() {\n  const probe = (globalThis.__pp120 ??= []);\n  probe.push({ n: \"B\", t: Date.now(), k: \"s\" });\n  await new Promise((r) => setTimeout(r, 60)); // 有意延迟：fast 适配器 fixture（60ms 真实 IO 窗口，验证跨 provider 并行）\n  probe.push({ n: \"B\", t: Date.now(), k: \"e\" });\n  return { v: 7 };\n}\nexport function formatCapsule(input) { return \"<span>\" + input.data.v + \"</span>\"; }\nexport function formatPanel() { return \"<p>f</p>\"; }\n`,\n      \"utf8\",\n    );\n    // 清单写入 historyRoot（本块显式传了 historyDir → user-adapters.json 从那里读取）\n    mkdirSync(join(dir, \"hist\"), { recursive: true });\n    writeFileSync(\n      userAdaptersFile(join(dir, \"hist\")),\n      JSON.stringify({\n        adapters: [\n          { id: \"slow-adp\", label: \"Slow\", providers: [\"prov-slow\"], file: slowFile },\n          { id: \"fast-adp\", label: \"Fast\", providers: [\"prov-fast\"], file: fastFile },\n        ],\n      }),\n      \"utf8\",\n    );\n    delete (globalThis as unknown as Record<string, unknown>).__pp120;\n\n    try {\n      const { ctx, routes, disposers } = makeCtx();\n      await apply(ctx, {\n        autoReload: false,\n        apiKey: \"sk\",\n        apiEndpoint: \"http://127.0.0.1:9\",\n        historyDir: join(dir, \"hist\"),\n      });\n      const stats = routeOf(routes, ROUTES.stats) as {\n        handler: (req: unknown, res: unknown) => Promise<void>;\n      };\n      const selectR = routeOf(routes, ROUTES.select) as {\n        handler: (req: unknown, res: unknown) => Promise<void>;\n      };\n      const askStats = async (provider: string): Promise<Record<string, unknown>> => {\n        const r = makeRes();\n        await stats.handler(fakeReq({ url: `${ROUTES.stats}?provider=${provider}` }), r);\n        return JSON.parse(r._body()) as Record<string, unknown>;\n      };\n\n      // 场景1 跨 provider 并行 + 场景2 锁内二次校验（#120）：启动预热对各启用 provider\n      // 并行 fire-and-forget（各持各的 per-provider 锁）；紧随其后发起的两个客户端请求\n      // 在各自 provider 锁上排队，首个取数完成写缓存后经锁内二次 cacheFresh 校验命中，\n      // 全程仅 1 次真实取数（旧全局锁下 fast 必须等 slow 80ms 完成才能开始，且并发者\n      // 只能拿 busy 占位帧）。\n      const pFast = askStats(\"prov-fast\");\n      const pSlow = askStats(\"prov-slow\");\n      const both = await Promise.all([pFast, pSlow]);\n      bFast = both[0];\n      bSlow = both[1];\n\n      // 场景1 断言：slow/fast 取数时间窗重叠 = 无全局队头阻塞\n      const probe = ((globalThis as unknown as Record<string, unknown>).__pp120 ?? []) as Array<{\n        n: string;\n        t: number;\n        k: string;\n        seq?: number;\n      }>;\n      const win = (n: string): { s: number; e: number } => ({\n        s: probe.find((e) => e.n === n && e.k === \"s\")?.t ?? Number.NaN,\n        e: probe.find((e) => e.n === n && e.k === \"e\")?.t ?? Number.NaN,\n      });\n      const wa = win(\"A\");\n      const wb = win(\"B\");\n      probePairOk = !Number.isNaN(wa.s) && !Number.isNaN(wb.s);\n      windowOverlap = Math.max(wa.s, wb.s) < Math.min(wa.e, wb.e);\n      windowDetail = `slow/fast 取数窗口重叠（A=${wa.s}-${wa.e} B=${wb.s}-${wb.e}）——跨 provider 并行取数`;\n      const seqs = probe.filter((e) => e.n === \"A\" && e.k === \"s\").map((e) => e.seq);\n      slowSeqCount = seqs.length;\n\n      // 场景3 fresh 产物落盘历史（fresh 语义经落盘侧验证）\n      const histDir = join(dir, \"hist\", \"prov-slow\", \"slow-adp\");\n      landed = await pollUntil(() => existsSync(histDir) && readdirSync(histDir).length > 0);\n\n      // 场景4 no-enabled-adapter：候选存在但被显式清空（select 清空路径，clearing 不预热）\n      await selectR.handler(\n        fakeReq({\n          method: \"POST\",\n          body: JSON.stringify({ provider: \"prov-slow\", adapterName: null }),\n        }),\n        makeRes(),\n      );\n      bNoEn = await askStats(\"prov-slow\");\n\n      for (const d of [...disposers].reverse()) {\n        try {\n          d();\n        } catch {}\n      }\n    } finally {\n      if (savedDshHome === undefined) delete process.env.DSH_HOME;\n      else process.env.DSH_HOME = savedDshHome;\n    }\n  });\n\n  it(\"两适配器探针成对出现\", () => {\n    expect(probePairOk).toBeTruthy();\n  });\n\n  it(\"跨 provider 并行取数（取数窗口重叠）\", () => {\n    expect(windowOverlap, windowDetail).toBeTruthy();\n  });\n\n  it(\"并发同 provider 请求复用缓存\", () => {\n    expect(bSlow.status, `并发同 provider 请求复用缓存（实际 ${bSlow.status}）`).toBe(\"cached\");\n  });\n\n  it(\"capsuleHtml 显示 v=1——预热+2 并发客户端共 3 次请求仅触发 1 次真实取数（无 check-then-act 双取）\", () => {\n    expect(bSlow.capsuleHtml).toBe(\"<span>1</span>\");\n  });\n\n  it(\"#120 后 busy 短路语义废除，排队者拿真数据帧\", () => {\n    expect(bSlow.reason).not.toBe(\"busy\");\n  });\n\n  it(\"另一 provider 的并发请求同样命中二次校验\", () => {\n    expect(bFast.status).toBe(\"cached\");\n  });\n\n  it(\"fast 数据保真\", () => {\n    expect(bFast.capsuleHtml).toBe(\"<span>7</span>\");\n  });\n\n  it(\"slow.fetchData 仅执行一次\", () => {\n    expect(slowSeqCount, `slow.fetchData 仅执行一次（实际 ${slowSeqCount} 次）`).toBe(1);\n  });\n\n  it(\"fresh 数据落盘历史 JSONL\", () => {\n    expect(landed).toBe(true);\n  });\n\n  it(\"候选存在但清空启用报 no-enabled-adapter\", () => {\n    expect(bNoEn.reason).toBe(\"no-enabled-adapter\");\n  });\n\n  it(\"未配置语义 ok=false\", () => {\n    expect(bNoEn.ok).toBe(false);\n  });\n\n  it(\"configured=false\", () => {\n    expect(bNoEn.configured).toBe(false);\n  });\n});\n\n// ---------------------------------------------------------------- fetchWithTimeout 边界（#150 二阶段）\n\n// 注入窗口纪律：fetchWithTimeout 硬编码读取全局 fetch。经 injectGlobalFetch\n// 串行通道（#120）与其他模块的注入窗口互斥，save/restore 恒配对——ESM TLA\n// 交错下不再可能把他人 mock 固化为「现场」（unit-chart 慢路径 × 本窗口交错驻留实证）。\ndescribe(\"fetchWithTimeout 边界（#150 二阶段）\", () => {\n  let okStatus: number;\n  let fastCallsAtLeast1: boolean;\n  let okUrl: string;\n  let slowCallsAtLeast1: boolean;\n  let slowAborted: boolean;\n  let defCallsAtLeast1: boolean;\n\n  beforeAll(async () => {\n    await injectGlobalFetch(async (set) => {\n      // 快路径：远小于超时的延迟 -> 正常拿到注入实现的返回值\n      let fastCalls = 0;\n      set(async (url: unknown, opts: { signal?: AbortSignal }) => {\n        fastCalls += 1;\n        await new Promise((r) => setTimeout(r, 5)); // 有意延迟：fetch mock 快路径（5ms）\n        return { status: 200, ok: true, url, aborted: opts?.signal?.aborted ?? null };\n      });\n      const okRes = await fetchWithTimeout(\"https://gw.test/fast\", 1000);\n      okStatus = (okRes as unknown as { status: number }).status;\n      // 计数只作下界断言：飞行中的外部异步可能泄漏进窗口调用全局 fetch（绝对计数实证 flake）\n      fastCallsAtLeast1 = fastCalls >= 1;\n      okUrl = (okRes as unknown as { url: string }).url;\n\n      // 慢路径：超过 timeoutMs 的延迟 -> 返回时已观察到 abort\n      // （delayMs 远大于 timeoutMs=20：防微任务风暴推迟 abort 定时器）\n      let slowCalls = 0;\n      set(async (_url: unknown, opts: { signal?: AbortSignal } | undefined) => {\n        slowCalls += 1;\n        await new Promise((r) => setTimeout(r, 500)); // 有意延迟：fetch mock 慢路径（500ms，验证 abort 触发）\n        return { status: 200, ok: true, aborted: opts?.signal?.aborted ?? null };\n      });\n      const slowRes = await fetchWithTimeout(\"https://gw.test/slow\", 20);\n      slowCallsAtLeast1 = slowCalls >= 1;\n      slowAborted = (slowRes as unknown as { aborted: boolean }).aborted;\n\n      // 默认参数形态：省略 timeoutMs 与 init 仍完成调用\n      // （与 fast/slow 同理用下界断言：飞行中的外部异步可能泄漏进窗口调用全局 fetch）\n      let defCalls = 0;\n      set(async () => {\n        defCalls += 1;\n        return { status: 204 };\n      });\n      await fetchWithTimeout(\"https://gw.test/def\");\n      defCallsAtLeast1 = defCalls >= 1;\n    });\n  });\n\n  it(\"快路径返回注入实现的响应\", () => {\n    expect(okStatus).toBe(200);\n  });\n\n  it(\"快路径到达注入 fetch 至少一次\", () => {\n    expect(fastCallsAtLeast1).toBeTruthy();\n  });\n\n  it(\"url 原样透传到 fetch\", () => {\n    expect(okUrl).toBe(\"https://gw.test/fast\");\n  });\n\n  it(\"慢路径到达注入 fetch 至少一次\", () => {\n    expect(slowCallsAtLeast1).toBeTruthy();\n  });\n\n  it(\"超过 timeoutMs 后 controller.abort 已触发\", () => {\n    expect(slowAborted).toBe(true);\n  });\n\n  it(\"默认参数下仍走 fetch 至少一次\", () => {\n    expect(defCallsAtLeast1).toBeTruthy();\n  });\n});\n\n// ---------------------------------------------------------------- #534：通知类型注入（可选 notifier 探测 + 动态 kind 注册/补注册）\n\ndescribe(\"#534：通知类型注入（可选 notifier 探测 + 动态 kind 注册/补注册）\", () => {\n  let savedDshHome: string | undefined;\n  let noNotifierMounted: boolean;\n  let mountedKinds: number;\n  let mountedKindsId: string | undefined;\n  let mountedKindsLabel: string | undefined;\n  let preEventKindCount: number;\n  let svcListenerCount: number;\n  let postEventKindCount: number;\n  let reRegisteredId: string | undefined;\n\n  /** 假 notifier 服务：send 恒可调，registerKind 记录调用（不真正落盘）。 */\n  function fakeNotifier(kinds: Array<{ id: string; label: string }>) {\n    return {\n      send: async () => ({ ok: true }),\n      registerKind(reg: { id: string; label: string }) {\n        kinds.push({ id: reg.id, label: reg.label });\n      },\n    };\n  }\n\n  beforeAll(async () => {\n    // 落盘隔离（#218 零污染纪律）：DSH_HOME 指向临时目录，不碰真实环境与仓库\n    const dir = mkdtempSync(join(tmpdir(), \"dou-kind-534-\"));\n    const historyDir = join(dir, \"history\");\n    savedDshHome = process.env.DSH_HOME;\n    process.env.DSH_HOME = join(dir, \"dshhome\");\n    mkdirSync(process.env.DSH_HOME!, { recursive: true });\n\n    const baseCfg = {\n      autoReload: false,\n      apiKey: \"sk-test\",\n      apiEndpoint: \"http://127.0.0.1:9\",\n      historyDir,\n    };\n\n    // 1) ctx 无 get（fake ctx 未提供探测面）：降级不注册、apply 正常挂载不抛\n    {\n      const { ctx, routes, disposers } = makeCtx();\n      await apply(ctx, baseCfg);\n      noNotifierMounted = routes.some((r) => r.path === ROUTES.health);\n      for (const dispose of [...disposers].reverse()) {\n        try {\n          dispose();\n        } catch {}\n      }\n    }\n\n    // 2) ctx.get 命中 wingsky.notifier（notifier 已加载）：挂载即注册 provider-usage:report\n    {\n      const kinds: Array<{ id: string; label: string }> = [];\n      const { ctx, disposers } = makeCtx({ get: fakeNotifier(kinds) });\n      await apply(ctx, baseCfg);\n      mountedKinds = kinds.length;\n      mountedKindsId = kinds[0]?.id;\n      mountedKindsLabel = kinds[0]?.label;\n      for (const dispose of [...disposers].reverse()) {\n        try {\n          dispose();\n        } catch {}\n      }\n    }\n\n    // 3) internal/service 事件补注册：notifier 后加载/HMR 重建后 kindRegistry 为空，\n    //    事件触发 → 重新注册（挂载 1 次 + 事件触发 1 次 = 2 次，幂等无害）\n    {\n      const kinds: Array<{ id: string; label: string }> = [];\n      const { ctx, disposers, listeners } = makeCtx({ get: fakeNotifier(kinds), recordOn: true });\n      await apply(ctx, baseCfg);\n      preEventKindCount = kinds.length;\n      const svcListeners = listeners.get(\"internal/service\") ?? [];\n      svcListenerCount = svcListeners.length;\n      // 手动触发 notifier 服务事件（模拟 notifier 提供/重载完成广播）\n      for (const cb of svcListeners) {\n        cb(\"wingsky.notifier\");\n      }\n      postEventKindCount = kinds.length;\n      reRegisteredId = kinds[1]?.id;\n      for (const dispose of [...disposers].reverse()) {\n        try {\n          dispose();\n        } catch {}\n      }\n    }\n  });\n\n  afterAll(() => {\n    if (savedDshHome === undefined) delete process.env.DSH_HOME;\n    else process.env.DSH_HOME = savedDshHome;\n  });\n\n  it(\"无 notifier 探测面时 apply 正常挂载\", () => {\n    expect(noNotifierMounted).toBeTruthy();\n  });\n\n  it(\"挂载直调注册一次\", () => {\n    expect(mountedKinds).toBe(1);\n  });\n\n  it(\"注册 kind id 正确\", () => {\n    expect(mountedKindsId).toBe(\"provider-usage:report\");\n  });\n\n  it(\"注册 kind label 正确\", () => {\n    expect(mountedKindsLabel).toBe(\"用量报告\");\n  });\n\n  it(\"挂载直调已注册一次\", () => {\n    expect(preEventKindCount).toBe(1);\n  });\n\n  it(\"internal/service 监听已注册\", () => {\n    expect(svcListenerCount >= 1).toBeTruthy();\n  });\n\n  it(\"事件触发补注册一次（幂等追加）\", () => {\n    expect(postEventKindCount).toBe(2);\n  });\n\n  it(\"补注册 kind id 一致\", () => {\n    expect(reRegisteredId).toBe(\"provider-usage:report\");\n  });\n});\n"
+    },
+    "packages/dsh-provider-usage/test/integration/ui-routes/composition-root.test.ts": {
+      "tests": [
+        {
+          "id": "68",
+          "name": "D12一 经 server/ui-routes 域门面装配 组合根与包入口只经新门面取 UI 路由（旧深径残留必须红）"
+        },
+        {
+          "id": "69",
+          "name": "D12一 经 server/ui-routes 域门面装配 实现块改址：同级短径复用三域门面（旧深路径残留必须红）"
+        },
+        {
+          "id": "70",
+          "name": "D12一 经 server/ui-routes 域门面装配 旧 domain2 面已删除（残留即装配分叉回退）"
+        },
+        {
+          "id": "71",
+          "name": "D12一 经 server/ui-routes 域门面装配 门面收口：interface 与实现同一引用（包装即红）"
+        },
+        {
+          "id": "72",
+          "name": "D12一 经 server/ui-routes 域门面装配 块最小导出（块外加出口即公共面膨胀）"
+        },
+        {
+          "id": "73",
+          "name": "D12一 经 server/ui-routes 域门面装配 门面禁整文件 re-export（加星导出即红）"
+        },
+        {
+          "id": "74",
+          "name": "D12一 经 server/ui-routes 域门面装配 门面值出口恰为 7 项（多一项即公共面膨胀）"
+        },
+        {
+          "id": "75",
+          "name": "D12一 经 server/ui-routes 域门面装配 包导出面零扩张：UI 创建面不进 apply/index.ts（误转即红）"
+        },
+        {
+          "id": "76",
+          "name": "D12一 经 server/ui-routes 域门面装配 变异面登记随域改址（旧路径残留即红）"
+        },
+        {
+          "id": "77",
+          "name": "D12二 广播窄面 + 实例经参数传递 deps.ts 纯类型面：运行时零出口"
+        },
+        {
+          "id": "78",
+          "name": "D12二 广播窄面 + 实例经参数传递 不设聚合 UiRoutesDeps（设了即无消费者导出）"
+        },
+        {
+          "id": "79",
+          "name": "D12二 广播窄面 + 实例经参数传递 窄面缝跑通 ui-config 读写（写盘 + 广播恰一次，确权即红）"
+        },
+        {
+          "id": "80",
+          "name": "D12二 广播窄面 + 实例经参数传递 ui-config 非法 body 400 且不广播（坏输入写盘即红）"
+        },
+        {
+          "id": "81",
+          "name": "D12二 广播窄面 + 实例经参数传递 TREND_DIR_MAX 经 collect 门面值复用（自立口径即分叉）"
+        },
+        {
+          "id": "82",
+          "name": "D12二 广播窄面 + 实例经参数传递 业务实例不自建（实现内 new/make 即装配倒灌）"
+        },
+        {
+          "id": "83",
+          "name": "D12二 广播窄面 + 实例经参数传递 家目录禁令：六文件无 homedir/HOME/untildify 直调（直调即红）"
+        },
+        {
+          "id": "84",
+          "name": "D12三 越围栏必须红（403 先于 405） health 非回环 + 错方法仍 403（顺序反了即 405 泄漏）"
+        },
+        {
+          "id": "85",
+          "name": "D12三 越围栏必须红（403 先于 405） trend 非回环 + 错方法仍 403（顺序反了即 405 泄漏）"
+        },
+        {
+          "id": "86",
+          "name": "D12三 越围栏必须红（403 先于 405） uiConfig 非回环 + 错方法仍 403（顺序反了即 405 泄漏）"
+        },
+        {
+          "id": "87",
+          "name": "D12三 越围栏必须红（403 先于 405） events 非回环 + 错方法仍 403（顺序反了即 405 泄漏）"
+        },
+        {
+          "id": "88",
+          "name": "D12三 越围栏必须红（403 先于 405） 'health' 回环 + 错 'POST' → 405 且文案逐字节锁定（文案漂移即红）"
+        },
+        {
+          "id": "89",
+          "name": "D12三 越围栏必须红（403 先于 405） 'trend' 回环 + 错 'POST' → 405 且文案逐字节锁定（文案漂移即红）"
+        },
+        {
+          "id": "90",
+          "name": "D12三 越围栏必须红（403 先于 405） 'uiConfig' 回环 + 错 'DELETE' → 405 且文案逐字节锁定（文案漂移即红）"
+        },
+        {
+          "id": "91",
+          "name": "D12三 越围栏必须红（403 先于 405） 'events' 回环 + 错 'POST' → 405 且文案逐字节锁定（文案漂移即红）"
+        },
+        {
+          "id": "92",
+          "name": "D12四 健康读 errsurf + SSE 非可靠 + 路由单点 + 释放 健康读 errsurf：记录→呈现链路（少读一层即红）"
+        },
+        {
+          "id": "93",
+          "name": "D12四 健康读 errsurf + SSE 非可靠 + 路由单点 + 释放 trend 正路：默认面 200（封顶/留存回显，改坏即红）"
+        },
+        {
+          "id": "94",
+          "name": "D12四 健康读 errsurf + SSE 非可靠 + 路由单点 + 释放 SSE 注册→断连移除→重连只收连通帧（补帧即红：断线帧丢失为预期）"
+        },
+        {
+          "id": "95",
+          "name": "D12四 健康读 errsurf + SSE 非可靠 + 路由单点 + 释放 创建面路径即 ROUTES 单点（自定字面量即红）"
+        },
+        {
+          "id": "96",
+          "name": "D12四 健康读 errsurf + SSE 非可靠 + 路由单点 + 释放 SSE 拆卸排空（不清即残留泄漏）"
+        },
+        {
+          "id": "97",
+          "name": "D12四 健康读 errsurf + SSE 非可靠 + 路由单点 + 释放 客户端回指 ui-config（缺键即宿主与客户端分叉）"
+        },
+        {
+          "id": "98",
+          "name": "探针：detector 失明则本段先红 旧门面 detector 对脏输入有效"
+        },
+        {
+          "id": "99",
+          "name": "探针：detector 失明则本段先红 export * detector 对脏输入有效"
+        },
+        {
+          "id": "100",
+          "name": "探针：detector 失明则本段先红 封顶纯函数对脏输入有效（非法回默认）"
+        },
+        {
+          "id": "101",
+          "name": "探针：detector 失明则本段先红 隔离目录可用（mkdtemp 探针）"
+        }
+      ],
+      "source": "/**\n * dsh-provider-usage — integration：UI 路由域组合根四维度（#768 计划表 rev2 D12 验收）。\n *\n * 白盒直连 src（经 server/ui-routes 门面活装配 + 实现直引同一性）；落盘一律进\n * mkdtemp 隔离目录（产物零污染；路径禁令：本文件无家目录调用，走 dshHome 接缝检查由\n * gate:homedir 门禁覆盖）。离线：桩服务/趋势/ctx 全内存，不起端口、不触 DSH_HOME、\n * 不读真实凭据。\n * 四维度：\n * - D12一 经 server/ui-routes 域门面装配：一域四块（health/trend/ui-config/events）\n *   + 跨块装配形状（context）只经 server/ui-routes/interface.ts，不走旧\n *   domain2/routes 入口；apply/apply.ts 的路由消费收口新门面；旧 domain2 面已删除\n *   （#768 D13 删空锚点：dir-imports 基线 + gate-exemptions 台账 +\n *   本文件 D12一存在性断言已同步更新）；门面禁整文件 re-export；\n *   创建面不进包导出面。\n * - D12二 广播窄面 + 实例经参数传递：context 广播字段为 deps.ts 窄口\n *   （UiRoutesBroadcast，块内联双生子）；只暴露窄口的缝跑通 ui-config 写盘\n *   （多一能力即 TypeError 先红）；statsService/trend/layerErrors 实例只由组合根\n *   构造、经参数传递（实现内无 new/make）；TREND_DIR_MAX 经 collect 门面值复用；\n *   deps.ts 纯类型面运行时零出口；不设聚合 UiRoutesDeps。\n * - D12三 围栏与正路：四端点非回环 + 错方法仍 403（顺序反了即 405 泄漏）；\n *   回环 + 错方法 405 且文案逐字节锁定。\n * - D12四 健康读 errsurf + SSE 非可靠 + 路由单点 + 释放：health 响应 layerErrors\n *   段读真错误面（记录→呈现链路）；SSE 连通帧 + 断连移除 + 重连无补帧（补帧出口\n *   不存在，断线帧丢失为预期）；创建面路径即 ROUTES 单点（实现内无硬编码 /api/\n *   字面量）；拆卸期 sseClients 排空（不清即残留）。\n *\n * 每条附判据句（把 X 改坏必须红）；文本哨兵仅锚真实 ABI 与装配关系，不做风格断言。\n */\nimport { existsSync, readFileSync } from \"node:fs\";\nimport type { IncomingMessage, ServerResponse } from \"node:http\";\nimport { dirname, join } from \"node:path\";\nimport { fileURLToPath } from \"node:url\";\nimport { afterEach, describe, expect, it } from \"vitest\";\nimport { cleanupIsolatedDirs, containsAny, hasExportStar, makeIsolatedDir } from \"../../helpers.ts\";\nimport {\n  UiRoutesContext,\n  createUiRoutes,\n  handleHealth,\n  clampTrendN,\n  handleTrend,\n  handleUiConfig,\n  handleEvents,\n} from \"../../../src/server/ui-routes/interface.ts\";\nimport type { UiRoutesContextOptions } from \"../../../src/server/ui-routes/interface.ts\";\nimport {\n  UiRoutesContext as ImplContext,\n  createUiRoutes as ImplCreate,\n} from \"../../../src/server/ui-routes/context.ts\";\nimport { handleHealth as ImplHealth } from \"../../../src/server/ui-routes/health.ts\";\nimport {\n  clampTrendN as ImplClamp,\n  handleTrend as ImplTrend,\n} from \"../../../src/server/ui-routes/trend.ts\";\nimport { handleUiConfig as ImplUiConfig } from \"../../../src/server/ui-routes/ui-config.ts\";\nimport * as uiRoutesDepsNs from \"../../../src/server/ui-routes/deps.ts\";\nimport type { UiRoutesBroadcast } from \"../../../src/server/ui-routes/deps.ts\";\nimport type { StatsService } from \"../../../src/server/pipeline/interface.ts\";\nimport type { TrendTracker } from \"../../../src/server/aggregate/interface.ts\";\nimport { makeLayerErrorSurface } from \"../../../src/server/shared/interface.ts\";\nimport type { LayerErrorSurface } from \"../../../src/server/shared/interface.ts\";\nimport { DEFAULT_UI_CONFIG } from \"../../../src/shared/interface.ts\";\nimport { ROUTES } from \"../../../src/apply/index.ts\";\n\nconst here = dirname(fileURLToPath(import.meta.url));\nconst srcDir = join(here, \"..\", \"..\", \"..\", \"src\");\nconst repoRoot = join(here, \"..\", \"..\", \"..\", \"..\", \"..\");\nconst readText = (p: string): string => readFileSync(p, \"utf8\");\nconst applySrc = readText(join(srcDir, \"apply\", \"apply.ts\"));\nconst applyFaceSrc = readText(join(srcDir, \"apply\", \"index.ts\"));\n// #768 D13：空锚点 src/domain2/routes/interface.ts 已删，本文件不再读旧面（旧面符号改由“目录已消除”断言锁定）。\nconst uiFaceSrc = readText(join(srcDir, \"server\", \"ui-routes\", \"interface.ts\"));\nconst uiDepsSrc = readText(join(srcDir, \"server\", \"ui-routes\", \"deps.ts\"));\nconst contextSrc = readText(join(srcDir, \"server\", \"ui-routes\", \"context.ts\"));\nconst healthSrc = readText(join(srcDir, \"server\", \"ui-routes\", \"health.ts\"));\nconst trendSrc = readText(join(srcDir, \"server\", \"ui-routes\", \"trend.ts\"));\nconst uiConfigSrc = readText(join(srcDir, \"server\", \"ui-routes\", \"ui-config.ts\"));\nconst eventsSrc = readText(join(srcDir, \"server\", \"ui-routes\", \"events.ts\"));\n// host-seams R2 收敛后客户端字面量只留 client/shared/contract.ts 一份（core.ts 改经具名表 import）。\nconst clientContractSrc = readText(join(srcDir, \"client\", \"shared\", \"contract.ts\"));\nconst topologySrc = readText(join(repoRoot, \"scripts\", \"data\", \"mutation-topology.json\"));\nconst strykerRoutesSrc = readText(\n  join(repoRoot, \"stryker.conf.d\", \"dsh-provider-usage-routes.json\"),\n);\n\n/**\n * 旧门面判据：旧 domain2 门面入口、旧深相对路径或已删装配面残留即红（针脚为域事实，命中循环见 helpers）。\n * collect 同级短径：trend.ts 经 ../collect/interface.ts 取 TREND_DIR_MAX\n * （与余下消费同形，#768 跨域路径统一后长形态 ../../server/ 已消除）——本判据认全部\n * ../../server/ 深径，collect 短形态由「实现块改址」逐字锁定 import 面（见探针 describe 双向用例）。\n */\nfunction usesOldFace(src: string): boolean {\n  return (\n    containsAny(src, [\"domain2/routes/interface\", \"../../apply/interface\"]) ||\n    src.includes(\"../../server/\")\n  );\n}\n\nconst tmpDirs: string[] = [];\nfunction isolatedDir(prefix: string): string {\n  return makeIsolatedDir(tmpDirs, prefix);\n}\nafterEach(() => {\n  cleanupIsolatedDirs(tmpDirs);\n});\n\n// ---------------------------------------------------------------- fake 请求/响应\n//\n// 与 report-routes 组合根同形：loopback = 127.0.0.1 socket + 回环 host；\n// readJsonBodyOutcome 经 for await 读 body，故带 async-iterator 桩。\nfunction fakeReq(overrides: Record<string, unknown> = {}): IncomingMessage {\n  const req = {\n    socket: { remoteAddress: \"127.0.0.1\" },\n    headers: { host: \"127.0.0.1:3080\" },\n    method: \"GET\",\n    url: \"/\",\n    [Symbol.asyncIterator]: async function* (this: unknown) {\n      const body = (overrides as { body?: unknown }).body;\n      if (typeof body === \"string\" && body !== \"\") {\n        yield Buffer.from(body);\n      }\n    },\n    ...overrides,\n  };\n  return req as unknown as IncomingMessage;\n}\n\n/** 非回环桩（smoke 实证：该 socket 即 403）。 */\nfunction nonLoopbackReq(overrides: Record<string, unknown> = {}): IncomingMessage {\n  return fakeReq({\n    socket: { remoteAddress: \"10.0.0.2\" },\n    headers: { host: \"evil.example\" },\n    ...overrides,\n  });\n}\n\nfunction makeRes(): ServerResponse & { _code(): number | undefined; _body(): string } {\n  const chunks: string[] = [];\n  let code: number | undefined;\n  const res = {\n    writeHead(c: number): void {\n      code = c;\n    },\n    end(chunk: unknown): void {\n      chunks.push(String(chunk));\n    },\n    _code(): number | undefined {\n      return code;\n    },\n    _body(): string {\n      return chunks.join(\"\");\n    },\n  };\n  return res as unknown as ServerResponse & { _code(): number | undefined; _body(): string };\n}\n\n/** SSE 连通帧文案（与实现同字，改坏即红）。 */\nconst CONNECT_FRAME = \": connected\\n\\n\";\n\n/** SSE 桩：连通帧捕获 + close 可发射（handleEvents 薄 handler 的可观测面）。 */\nfunction makeSseRes(): {\n  res: ServerResponse;\n  chunks: string[];\n  status: () => number;\n  emitClose: () => void;\n} {\n  const chunks: string[] = [];\n  const handlers = new Map<string, Array<() => void>>();\n  let status = 0;\n  const res = {\n    writeHead: (s: number) => {\n      status = s;\n    },\n    write: (c: string) => {\n      chunks.push(String(c));\n    },\n    on: (evt: string, fn: () => void) => {\n      const list = handlers.get(evt) ?? [];\n      list.push(fn);\n      handlers.set(evt, list);\n    },\n  } as unknown as ServerResponse;\n  return {\n    res,\n    chunks,\n    status: () => status,\n    emitClose: () => {\n      for (const fn of handlers.get(\"close\") ?? []) fn();\n    },\n  };\n}\n\n// ---------------------------------------------------------------- 装配桩\n//\n// statsService/trend 只暴露 handler 触达的面（多用一能力即 TypeError 先红）；\n// layerErrors 用真错误面（健康读 errsurf 的记录→呈现链路不断）；\n// broadcast 缝以 UiRoutesBroadcast 注解（名称链接由 tsc 编译面校验可赋值性）。\nfunction stubUiCtx(\n  historyRoot: string,\n  opts: { layerErrors?: LayerErrorSurface } = {},\n): { ctx: UiRoutesContext; broadcastSeen: string[] } {\n  const broadcastSeen: string[] = [];\n  const broadcastSeam: UiRoutesBroadcast = () => {\n    broadcastSeen.push(\"broadcast\");\n  };\n  const statsService = {\n    registry: {\n      snapshot: () => ({ infos: [], enabled: {}, errors: [] }),\n    },\n    config: { provider: \"stub-provider\", trendRetentionDays: 90 },\n    cacheSize: () => 0,\n    historyRoot,\n  } as unknown as StatsService;\n  const trend = {\n    stats: () => ({ days: 0, pendingRows: 0, unpersistedRows: 0 }),\n    seriesStacked: () => ({ series: [], providers: [] }),\n    dirStacked: () => ({ series: [], dirs: [] }),\n    windowSummary: () => ({ total: 0, calls: 0 }),\n    dirWindowSummary: () => ({ total: 0, calls: 0 }),\n    firstRecordedDay: () => null,\n  } as unknown as TrendTracker;\n  const options: UiRoutesContextOptions = {\n    statsService,\n    trend,\n    uiConfig: { ...DEFAULT_UI_CONFIG },\n    sseClients: new Set<ServerResponse>(),\n    broadcastUiConfigChanged: broadcastSeam,\n    layerErrors: opts.layerErrors ?? makeLayerErrorSurface(),\n  };\n  return { ctx: new UiRoutesContext(options), broadcastSeen };\n}\n\ntype AnyHandler = (req: IncomingMessage, res: ServerResponse, ctx: object) => unknown;\n\nasync function callStatus(\n  handler: AnyHandler,\n  req: IncomingMessage,\n  ctx: UiRoutesContext,\n): Promise<{ code: number | undefined; body: unknown }> {\n  const res = makeRes();\n  await handler(req, res, ctx);\n  return { code: res._code(), body: res._body() === \"\" ? undefined : JSON.parse(res._body()) };\n}\n\ndescribe(\"D12一 经 server/ui-routes 域门面装配\", () => {\n  it(\"组合根与包入口只经新门面取 UI 路由（旧深径残留必须红）\", () => {\n    for (const src of [\n      uiFaceSrc,\n      uiDepsSrc,\n      contextSrc,\n      healthSrc,\n      trendSrc,\n      uiConfigSrc,\n      eventsSrc,\n    ]) {\n      expect(usesOldFace(src)).toBe(false);\n    }\n    expect(applySrc.includes(\"server/ui-routes/interface\")).toBe(true);\n    expect(applyFaceSrc.includes(\"../domain2/routes/interface.ts\")).toBe(false);\n  });\n\n  it(\"实现块改址：同级短径复用三域门面（旧深路径残留必须红）\", () => {\n    expect(contextSrc.includes(\"../pipeline/interface\")).toBe(true);\n    expect(contextSrc.includes(\"../aggregate/interface\")).toBe(true);\n    expect(contextSrc.includes(\"../shared/interface\")).toBe(true);\n    // #768 A波3：TREND_DIR_MAX 已下沉 shared，trend 经 shared 门面\n    expect(trendSrc.includes(\"../collect/interface\")).toBe(false);\n    expect(trendSrc.includes(\"../shared/interface\")).toBe(true);\n    for (const src of [healthSrc, trendSrc, uiConfigSrc, eventsSrc]) {\n      expect(src.includes(\"./context\")).toBe(true);\n    }\n  });\n\n  it(\"旧 domain2 面已删除（残留即装配分叉回退）\", () => {\n    expect(existsSync(join(srcDir, \"domain2\", \"routes\", \"interface.ts\"))).toBe(false);\n    expect(existsSync(join(srcDir, \"domain2\", \"routes\"))).toBe(false);\n    expect(existsSync(join(srcDir, \"domain2\"))).toBe(false);\n  });\n\n  it(\"门面收口：interface 与实现同一引用（包装即红）\", async () => {\n    expect(UiRoutesContext).toBe(ImplContext);\n    expect(createUiRoutes).toBe(ImplCreate);\n    expect(handleHealth).toBe(ImplHealth);\n    expect(clampTrendN).toBe(ImplClamp);\n    expect(handleTrend).toBe(ImplTrend);\n    expect(handleUiConfig).toBe(ImplUiConfig);\n    const eventsNs = await import(\"../../../src/server/ui-routes/events.ts\");\n    expect(handleEvents).toBe(eventsNs.handleEvents);\n  });\n\n  it(\"块最小导出（块外加出口即公共面膨胀）\", async () => {\n    expect(Object.keys(await import(\"../../../src/server/ui-routes/context.ts\")).sort()).toEqual(\n      [\"UiRoutesContext\", \"createUiRoutes\"].sort(),\n    );\n    expect(Object.keys(await import(\"../../../src/server/ui-routes/health.ts\"))).toEqual([\n      \"handleHealth\",\n    ]);\n    expect(Object.keys(await import(\"../../../src/server/ui-routes/trend.ts\")).sort()).toEqual(\n      [\"clampTrendN\", \"handleTrend\"].sort(),\n    );\n    expect(Object.keys(await import(\"../../../src/server/ui-routes/ui-config.ts\"))).toEqual([\n      \"handleUiConfig\",\n    ]);\n    expect(Object.keys(await import(\"../../../src/server/ui-routes/events.ts\"))).toEqual([\n      \"handleEvents\",\n    ]);\n  });\n\n  it(\"门面禁整文件 re-export（加星导出即红）\", () => {\n    for (const src of [uiFaceSrc, uiDepsSrc]) {\n      const codeLines = src.split(String.fromCharCode(10)).filter((l) => !l.trim().startsWith(\"*\"));\n      expect(hasExportStar(codeLines)).toBe(false);\n    }\n  });\n\n  it(\"门面值出口恰为 7 项（多一项即公共面膨胀）\", async () => {\n    const faceNs = await import(\"../../../src/server/ui-routes/interface.ts\");\n    expect(Object.keys(faceNs).sort()).toEqual(\n      [\n        \"UiRoutesContext\",\n        \"createUiRoutes\",\n        \"handleHealth\",\n        \"clampTrendN\",\n        \"handleTrend\",\n        \"handleUiConfig\",\n        \"handleEvents\",\n      ].sort(),\n    );\n  });\n\n  it(\"包导出面零扩张：UI 创建面不进 apply/index.ts（误转即红）\", () => {\n    for (const sym of [\n      \"createUiRoutes\",\n      \"handleHealth\",\n      \"handleTrend\",\n      \"handleUiConfig\",\n      \"handleEvents\",\n      \"clampTrendN\",\n      \"UiRoutesContext\",\n    ]) {\n      expect(applyFaceSrc.includes(sym)).toBe(false);\n    }\n  });\n\n  it(\"变异面登记随域改址（旧路径残留即红）\", () => {\n    expect(topologySrc.includes(\"src/domain2/routes/ui.ts\")).toBe(false);\n    for (const p of [\n      \"src/server/ui-routes/context.ts\",\n      \"src/server/ui-routes/health.ts\",\n      \"src/server/ui-routes/trend.ts\",\n      \"src/server/ui-routes/ui-config.ts\",\n      \"src/server/ui-routes/events.ts\",\n    ]) {\n      expect(topologySrc.includes(p)).toBe(true);\n      expect(strykerRoutesSrc.includes(p)).toBe(true);\n    }\n    expect(strykerRoutesSrc.includes(\"src/domain2/routes/ui.ts\")).toBe(false);\n  });\n});\n\ndescribe(\"D12二 广播窄面 + 实例经参数传递\", () => {\n  it(\"deps.ts 纯类型面：运行时零出口\", () => {\n    expect(Object.keys(uiRoutesDepsNs)).toEqual([]);\n  });\n\n  it(\"不设聚合 UiRoutesDeps（设了即无消费者导出）\", () => {\n    expect(uiDepsSrc.includes(\"export interface UiRoutesDeps\")).toBe(false);\n    expect(uiDepsSrc.includes(\"export type UiRoutesDeps\")).toBe(false);\n  });\n\n  it(\"窄面缝跑通 ui-config 读写（写盘 + 广播恰一次，确权即红）\", async () => {\n    const root = isolatedDir(\"dou-uiroutesD12-\");\n    const { ctx, broadcastSeen } = stubUiCtx(root);\n    const got = await callStatus(handleUiConfig as AnyHandler, fakeReq({ method: \"GET\" }), ctx);\n    expect(got.code).toBe(200);\n    expect((got.body as { ok?: boolean }).ok).toBe(true);\n    const posted = await callStatus(\n      handleUiConfig as AnyHandler,\n      fakeReq({ method: \"POST\", body: JSON.stringify({ placement: \"bottom-left\" }) }),\n      ctx,\n    );\n    expect(posted.code).toBe(200);\n    expect(broadcastSeen).toEqual([\"broadcast\"]);\n    expect(existsSync(join(root, \"ui.json\"))).toBe(true);\n  });\n\n  it(\"ui-config 非法 body 400 且不广播（坏输入写盘即红）\", async () => {\n    const root = isolatedDir(\"dou-uiroutesD12-\");\n    const { ctx, broadcastSeen } = stubUiCtx(root);\n    const bad = await callStatus(\n      handleUiConfig as AnyHandler,\n      fakeReq({ method: \"POST\", body: \"{not-json\" }),\n      ctx,\n    );\n    expect(bad.code).toBe(400);\n    expect(broadcastSeen).toEqual([]);\n  });\n\n  it(\"TREND_DIR_MAX 经 collect 门面值复用（自立口径即分叉）\", () => {\n    expect(trendSrc.includes(\"const TREND_DIR_MAX\")).toBe(false);\n    expect(trendSrc.includes(\"TREND_DIR_MAX\")).toBe(true);\n  });\n\n  it(\"业务实例不自建（实现内 new/make 即装配倒灌）\", () => {\n    for (const src of [contextSrc, healthSrc, trendSrc, uiConfigSrc, eventsSrc]) {\n      expect(src.includes(\"new StatsService\")).toBe(false);\n      expect(src.includes(\"new TrendTracker\")).toBe(false);\n      expect(src.includes(\"makeLayerErrorSurface(\")).toBe(false);\n    }\n  });\n\n  it(\"家目录禁令：六文件无 homedir/HOME/untildify 直调（直调即红）\", () => {\n    for (const src of [\n      contextSrc,\n      healthSrc,\n      trendSrc,\n      uiConfigSrc,\n      eventsSrc,\n      uiFaceSrc,\n      uiDepsSrc,\n    ]) {\n      expect(src.includes(\"homedir(\")).toBe(false);\n      expect(src.includes(\"process.env.HOME\")).toBe(false);\n      expect(src.includes(\"untildify\")).toBe(false);\n    }\n  });\n});\n\ndescribe(\"D12三 越围栏必须红（403 先于 405）\", () => {\n  const fenceTable: { name: string; handler: AnyHandler; wrongMethod: string }[] = [\n    { name: \"health\", handler: handleHealth as AnyHandler, wrongMethod: \"POST\" },\n    { name: \"trend\", handler: handleTrend as AnyHandler, wrongMethod: \"POST\" },\n    { name: \"uiConfig\", handler: handleUiConfig as AnyHandler, wrongMethod: \"DELETE\" },\n    { name: \"events\", handler: handleEvents as AnyHandler, wrongMethod: \"POST\" },\n  ];\n\n  it.each(fenceTable.map((c) => c.name))(\n    \"%s 非回环 + 错方法仍 403（顺序反了即 405 泄漏）\",\n    async (name) => {\n      const found = fenceTable.find((c) => c.name === name);\n      if (found === undefined) throw new Error(\"fence 缺行：\" + name);\n      const root = isolatedDir(\"dou-uiroutesD12-\");\n      const { ctx } = stubUiCtx(root);\n      // 围栏先于一切：非回环即 403，handler 不触达 res.write/on（makeRes 薄桩即够）。\n      const res = makeRes();\n      await found.handler(nonLoopbackReq({ method: found.wrongMethod }), res, ctx);\n      expect(res._code()).toBe(403);\n    },\n  );\n\n  it.each(fenceTable.map((c) => ({ name: c.name, method: c.wrongMethod })))(\n    \"$name 回环 + 错 $method → 405 且文案逐字节锁定（文案漂移即红）\",\n    async ({ name, method }) => {\n      const found = fenceTable.find((c) => c.name === name);\n      if (found === undefined) throw new Error(\"fence 缺行：\" + name);\n      const root = isolatedDir(\"dou-uiroutesD12-\");\n      const { ctx } = stubUiCtx(root);\n      const { code, body } = await callStatus(found.handler, fakeReq({ method }), ctx);\n      expect(code).toBe(405);\n      expect((body as { error?: string }).error).toBe(\"method not allowed: \" + method);\n    },\n  );\n});\n\ndescribe(\"D12四 健康读 errsurf + SSE 非可靠 + 路由单点 + 释放\", () => {\n  it(\"健康读 errsurf：记录→呈现链路（少读一层即红）\", async () => {\n    const root = isolatedDir(\"dou-uiroutesD12-\");\n    const surface = makeLayerErrorSurface();\n    surface.record(\"aggregate\", \"probe-boom\");\n    const { ctx } = stubUiCtx(root, { layerErrors: surface });\n    const got = await callStatus(handleHealth as AnyHandler, fakeReq({ method: \"GET\" }), ctx);\n    expect(got.code).toBe(200);\n    const layerErrors = (got.body as { layerErrors?: Record<string, { count?: number }> })\n      .layerErrors;\n    expect(layerErrors?.aggregate?.count).toBe(1);\n  });\n\n  it(\"trend 正路：默认面 200（封顶/留存回显，改坏即红）\", async () => {\n    const root = isolatedDir(\"dou-uiroutesD12-\");\n    const { ctx } = stubUiCtx(root);\n    const got = await callStatus(\n      handleTrend as AnyHandler,\n      fakeReq({ method: \"GET\", url: \"/\" }),\n      ctx,\n    );\n    expect(got.code).toBe(200);\n    const body = got.body as {\n      ok?: boolean;\n      granularity?: string;\n      n?: number;\n      retentionDays?: number;\n    };\n    expect(body.ok).toBe(true);\n    expect(body.granularity).toBe(\"day\");\n    expect(body.n).toBe(30);\n    expect(body.retentionDays).toBe(90);\n  });\n\n  it(\"SSE 注册→断连移除→重连只收连通帧（补帧即红：断线帧丢失为预期）\", () => {\n    const root = isolatedDir(\"dou-uiroutesD12-\");\n    const { ctx } = stubUiCtx(root);\n    const first = makeSseRes();\n    handleEvents(fakeReq({ method: \"GET\" }), first.res, ctx);\n    expect(first.status()).toBe(200);\n    expect(first.chunks).toEqual([CONNECT_FRAME]);\n    expect(ctx.sseClients.size).toBe(1);\n    first.emitClose();\n    first.emitClose(); // P2：重复断连幂等（不抛错，不断言，只覆盖；抛错即本用例红）。\n    expect(ctx.sseClients.size).toBe(0);\n    const second = makeSseRes();\n    handleEvents(fakeReq({ method: \"GET\" }), second.res, ctx);\n    expect(second.chunks).toEqual([CONNECT_FRAME]);\n    expect(ctx.sseClients.size).toBe(1);\n  });\n\n  it(\"创建面路径即 ROUTES 单点（自定字面量即红）\", () => {\n    const root = isolatedDir(\"dou-uiroutesD12-\");\n    const { ctx } = stubUiCtx(root);\n    const routes = createUiRoutes(\n      {\n        health: ROUTES.health,\n        trend: ROUTES.trend,\n        uiConfig: ROUTES.uiConfig,\n        events: ROUTES.events,\n      },\n      ctx,\n    );\n    expect(routes.map((r) => r.path).sort()).toEqual(\n      [ROUTES.health, ROUTES.trend, ROUTES.uiConfig, ROUTES.events].sort(),\n    );\n    for (const src of [contextSrc, healthSrc, trendSrc, uiConfigSrc, eventsSrc]) {\n      expect(src.includes(\"/api/\")).toBe(false);\n    }\n  });\n\n  it(\"SSE 拆卸排空（不清即残留泄漏）\", () => {\n    expect(applySrc.includes(\"for (const res of sseClients)\")).toBe(true);\n    expect(applySrc.includes(\"sseClients.clear()\")).toBe(true);\n  });\n\n  it(\"客户端回指 ui-config（缺键即宿主与客户端分叉）\", () => {\n    expect(clientContractSrc.includes(\"/api/dsh-provider-usage/ui-config\")).toBe(true);\n  });\n});\n\ndescribe(\"探针：detector 失明则本段先红\", () => {\n  it(\"旧门面 detector 对脏输入有效\", () => {\n    expect(usesOldFace(\"import { x } from ../domain2/routes/interface.ts\")).toBe(true);\n    expect(usesOldFace(\"import { x } from ../../server/config/interface.ts\")).toBe(true);\n    expect(usesOldFace(\"import { x } from ../../apply/interface.ts\")).toBe(true);\n    expect(usesOldFace(\"import { x } from ../server/ui-routes/interface.ts\")).toBe(false);\n    expect(usesOldFace(\"import { x } from ../collect/interface.ts\")).toBe(false);\n    expect(usesOldFace(\"import { x } from ../../server/collect/interface.ts\")).toBe(true);\n  });\n\n  it(\"export * detector 对脏输入有效\", () => {\n    expect(hasExportStar([\"export * from ./health.ts\"])).toBe(true);\n    expect(hasExportStar([\"export { a } from ./health.ts\"])).toBe(false);\n  });\n\n  it(\"封顶纯函数对脏输入有效（非法回默认）\", () => {\n    expect(clampTrendN(\"abc\", \"day\", 30)).toBe(30);\n    expect(clampTrendN(\"50\", \"day\", 30)).toBe(30);\n  });\n\n  it(\"隔离目录可用（mkdtemp 探针）\", () => {\n    const dir = isolatedDir(\"dou-uiroutesD12-\");\n    expect(typeof dir).toBe(\"string\");\n  });\n});\n"
+    },
+    "packages/dsh-provider-usage/test/unit/common/unit-errsurf.test.ts": {
+      "tests": [
+        {
+          "id": "102",
+          "name": "1) errsurf 模块行为 snapshot 三键齐（aggregate/schedule/execute）"
+        },
+        {
+          "id": "103",
+          "name": "1) errsurf 模块行为 aggregate 初始 count=0"
+        },
+        {
+          "id": "104",
+          "name": "1) errsurf 模块行为 aggregate 初始 recent 为空"
+        },
+        {
+          "id": "105",
+          "name": "1) errsurf 模块行为 schedule 初始 count=0"
+        },
+        {
+          "id": "106",
+          "name": "1) errsurf 模块行为 schedule 初始 recent 为空"
+        },
+        {
+          "id": "107",
+          "name": "1) errsurf 模块行为 execute 初始 count=0"
+        },
+        {
+          "id": "108",
+          "name": "1) errsurf 模块行为 execute 初始 recent 为空"
+        },
+        {
+          "id": "109",
+          "name": "1) errsurf 模块行为 aggregate 累计计数=2"
+        },
+        {
+          "id": "110",
+          "name": "1) errsurf 模块行为 execute 累计计数=1"
+        },
+        {
+          "id": "111",
+          "name": "1) errsurf 模块行为 recent 保留全部 ≤N 记录"
+        },
+        {
+          "id": "112",
+          "name": "1) errsurf 模块行为 recent 新在前（后记的在前）"
+        },
+        {
+          "id": "113",
+          "name": "1) errsurf 模块行为 context 原样保留"
+        },
+        {
+          "id": "114",
+          "name": "1) errsurf 模块行为 时间戳取注入时钟"
+        },
+        {
+          "id": "115",
+          "name": "1) errsurf 模块行为 时间戳逐条取自注入时点"
+        },
+        {
+          "id": "116",
+          "name": "1) errsurf 模块行为 未发生错误的层保持 0"
+        },
+        {
+          "id": "117",
+          "name": "1) errsurf 模块行为 snapshot 修改不污染内部"
+        },
+        {
+          "id": "118",
+          "name": "1) errsurf 模块行为 snapshot 修改不污染内部（recent 条目）"
+        },
+        {
+          "id": "119",
+          "name": "1) errsurf 模块行为 未知层不新增键"
+        },
+        {
+          "id": "120",
+          "name": "1) errsurf 环形截断：maxRecent 自定义 截断不影响累计计数"
+        },
+        {
+          "id": "121",
+          "name": "1) errsurf 环形截断：maxRecent 自定义 recent 截断到 maxRecent=2"
+        },
+        {
+          "id": "122",
+          "name": "1) errsurf 环形截断：maxRecent 自定义 截断保留最新在前"
+        },
+        {
+          "id": "123",
+          "name": "1) errsurf 环形截断：maxRecent 自定义 最旧一条被淘汰"
+        },
+        {
+          "id": "124",
+          "name": "1) errsurf noop 实现：同形态、零副作用 noop aggregate.count=0（record 不记录）"
+        },
+        {
+          "id": "125",
+          "name": "1) errsurf noop 实现：同形态、零副作用 noop aggregate.recent 恒空"
+        },
+        {
+          "id": "126",
+          "name": "1) errsurf noop 实现：同形态、零副作用 noop schedule.count=0（record 不记录）"
+        },
+        {
+          "id": "127",
+          "name": "1) errsurf noop 实现：同形态、零副作用 noop schedule.recent 恒空"
+        },
+        {
+          "id": "128",
+          "name": "1) errsurf noop 实现：同形态、零副作用 noop execute.count=0（record 不记录）"
+        },
+        {
+          "id": "129",
+          "name": "1) errsurf noop 实现：同形态、零副作用 noop execute.recent 恒空"
+        },
+        {
+          "id": "130",
+          "name": "1) errsurf context 字段按注入存在与否精确呈现（双向覆盖 if 变异） 注入 context 时记录携带 context"
+        },
+        {
+          "id": "131",
+          "name": "1) errsurf context 字段按注入存在与否精确呈现（双向覆盖 if 变异） context 值原样"
+        },
+        {
+          "id": "132",
+          "name": "1) errsurf context 字段按注入存在与否精确呈现（双向覆盖 if 变异） 未注入 context 时记录不带 context 字段"
+        },
+        {
+          "id": "133",
+          "name": "2) handleHealth per-layer 段（记录→呈现链路） health 正常响应"
+        },
+        {
+          "id": "134",
+          "name": "2) handleHealth per-layer 段（记录→呈现链路） health 响应携带 layerErrors 段"
+        },
+        {
+          "id": "135",
+          "name": "2) handleHealth per-layer 段（记录→呈现链路） layerErrors 三键齐（aggregate/schedule/execute）"
+        },
+        {
+          "id": "136",
+          "name": "2) handleHealth per-layer 段（记录→呈现链路） 注入的 execute 故障被 health 反映"
+        },
+        {
+          "id": "137",
+          "name": "2) handleHealth per-layer 段（记录→呈现链路） 最近记录条数正确"
+        },
+        {
+          "id": "138",
+          "name": "2) handleHealth per-layer 段（记录→呈现链路） 最近记录消息与注入一致"
+        },
+        {
+          "id": "139",
+          "name": "2) handleHealth per-layer 段（记录→呈现链路） 最近记录带时间戳"
+        },
+        {
+          "id": "140",
+          "name": "2) handleHealth per-layer 段（记录→呈现链路） 最近记录带上下文"
+        },
+        {
+          "id": "141",
+          "name": "2) handleHealth per-layer 段（记录→呈现链路） 未注入层保持 0（加性段不误报）"
+        },
+        {
+          "id": "142",
+          "name": "2) handleHealth per-layer 段（记录→呈现链路） adapters 段保留"
+        },
+        {
+          "id": "143",
+          "name": "2) handleHealth per-layer 段（记录→呈现链路） errors 段保留"
+        },
+        {
+          "id": "144",
+          "name": "2) handleHealth per-layer 段（记录→呈现链路） trend 段保留"
+        },
+        {
+          "id": "145",
+          "name": "3) execute 层真实退出冒烟（ReportTaskQueue） 队列执行失败经 warn 出口进入 execute 层错误面"
+        },
+        {
+          "id": "146",
+          "name": "3) execute 层真实退出冒烟（ReportTaskQueue） 任务失败消息内容原样记录（含 task 定位）"
+        },
+        {
+          "id": "147",
+          "name": "3) execute 层真实退出冒烟（ReportTaskQueue） 单次失败计数=1"
+        },
+        {
+          "id": "148",
+          "name": "4) schedule 层真实退出冒烟（ReportScheduler onDue 失败） 调度提交失败经 warn 出口进入 schedule 层错误面"
+        },
+        {
+          "id": "149",
+          "name": "4) schedule 层真实退出冒烟（ReportScheduler onDue 失败） 调度失败消息内容原样记录"
+        },
+        {
+          "id": "150",
+          "name": "5) apply 集成：装配接线后 /health 携带 layerErrors apply 挂载 health 路由"
+        },
+        {
+          "id": "151",
+          "name": "5) apply 集成：装配接线后 /health 携带 layerErrors apply 接线后 /health 携带 layerErrors"
+        },
+        {
+          "id": "152",
+          "name": "5) apply 集成：装配接线后 /health 携带 layerErrors 三键齐"
+        },
+        {
+          "id": "153",
+          "name": "5) apply 集成：装配接线后 /health 携带 layerErrors 初始 aggregate.count=0（无故障时零污染）"
+        },
+        {
+          "id": "154",
+          "name": "5) apply 集成：装配接线后 /health 携带 layerErrors 初始 aggregate.recent 空"
+        },
+        {
+          "id": "155",
+          "name": "5) apply 集成：装配接线后 /health 携带 layerErrors 初始 schedule.count=0（无故障时零污染）"
+        },
+        {
+          "id": "156",
+          "name": "5) apply 集成：装配接线后 /health 携带 layerErrors 初始 schedule.recent 空"
+        },
+        {
+          "id": "157",
+          "name": "5) apply 集成：装配接线后 /health 携带 layerErrors 初始 execute.count=0（无故障时零污染）"
+        },
+        {
+          "id": "158",
+          "name": "5) apply 集成：装配接线后 /health 携带 layerErrors 初始 execute.recent 空"
+        }
+      ],
+      "source": "/**\n * dsh-provider-usage — unit：每层错误面（#670 阶段三 B；#768 D13 起 canonical 路径为\n * server/shared/errsurf.ts，domain2/common/ 已消除）+ /health per-layer 段\n * + 崩溃注入冒烟。\n *\n * 覆盖：\n * 1. errsurf 模块行为：累计计数 / 最近 N 条环形缓冲（新在前）/ snapshot 深拷贝 /\n *    时钟注入 / noop 实现 / 未知层忽略；\n * 2. handleHealth per-layer 段：注入错误记录后 /health 反映（记录→呈现链路）；\n * 3. execute 层真实退出冒烟：ReportTaskQueue 执行失败 → warn 出口 → 错误面记录；\n * 4. schedule 层真实退出冒烟：ReportScheduler onDue 失败 → warn 出口 → 错误面记录；\n * 5. apply 集成：装配接线后 /health 携带三键齐 layerErrors（初始零值）。\n *\n * aggregate 层的真实故障（压实/刷盘失败）触发依赖 store 故障注入，成本高，\n * 由 apply.ts 的 TrendTracker warn 接线覆盖（代码路径与 3/4 同构），此处以\n * 模块级记录 + health 断言验证链路。\n */\nimport { mkdtempSync, mkdirSync } from \"node:fs\";\nimport { join } from \"node:path\";\nimport { tmpdir } from \"node:os\";\nimport { afterAll, beforeAll, describe, expect, it } from \"vitest\";\nimport { pollUntil } from \"../../helpers.ts\";\nimport type { IncomingMessage, ServerResponse } from \"node:http\";\nimport {\n  makeLayerErrorSurface,\n  makeNoopLayerErrorSurface,\n  LAYER_ERROR_KEYS,\n  type LayerErrorKey,\n  type LayerErrorState,\n  type LayerErrorSurface,\n} from \"../../../src/server/shared/errsurf.ts\";\nimport type { UiRoutesContext } from \"../../../src/server/ui-routes/context.ts\";\nimport { handleHealth } from \"../../../src/server/ui-routes/health.ts\";\nimport { ReportTaskQueue } from \"../../../src/server/schedule/tasks.ts\";\nimport { ReportScheduler } from \"../../../src/server/schedule/scheduler.ts\";\nimport { normalizeReportConfig } from \"../../../src/server/config/normalize.ts\";\n\nfunction fakeReq(overrides: Record<string, unknown> = {}) {\n  return {\n    socket: { remoteAddress: \"127.0.0.1\" },\n    headers: { host: \"127.0.0.1:3080\", \"sec-fetch-site\": \"same-origin\" },\n    method: \"GET\",\n    url: \"/\",\n    ...overrides,\n  };\n}\n\n/** /health 响应 JSON 形状（断言面：ok + layerErrors + 既有段存活）。 */\ninterface HealthPayload {\n  ok: boolean;\n  layerErrors: Record<LayerErrorKey, LayerErrorState>;\n  adapters: unknown[];\n  errors: unknown[];\n  trend: unknown;\n}\nfunction callSyncHandler<T>(handler: (req: unknown, res: unknown) => unknown, req: unknown): T {\n  let payload: T = undefined as unknown as T;\n  handler(req, {\n    writeHead: () => {},\n    end: (chunk: unknown) => {\n      payload = JSON.parse(String(chunk)) as T;\n    },\n  });\n  return payload;\n}\n\n/** handleHealth 的 UiRoutesContext mock（仅 health 用到的面；类含 StatsService/TrendTracker\n * 全量成员，窄 fake 经 unknown 断言装配——handleHealth 实际只读此六字段）。 */\nfunction healthContext(layerErrors: LayerErrorSurface): UiRoutesContext {\n  return {\n    statsService: {\n      registry: { snapshot: () => ({ infos: [], enabled: {}, enabledProviders: [], errors: [] }) },\n      config: { provider: \"opencode-go\" },\n      cacheSize: () => 0,\n      historyRoot: \"/tmp/dou-fake-root\",\n    },\n    trend: { stats: () => ({ days: 0, pendingRows: 0, unpersistedRows: 0, lastFlushAt: null }) },\n    uiConfig: {},\n    sseClients: new Set(),\n    broadcastUiConfigChanged: () => {},\n    layerErrors,\n  } as unknown as UiRoutesContext;\n}\n\ndescribe(\"1) errsurf 模块行为\", () => {\n  // 累计计数 / 环形缓冲 / 深拷贝 / 时钟注入 / 未知层忽略共用同一现场：\n  // beforeAll 复现动作序列并快照每条断言当时读到的观测值。\n  let initial: Record<LayerErrorKey, LayerErrorState>;\n  let snap: Record<LayerErrorKey, LayerErrorState>;\n  let again: Record<LayerErrorKey, LayerErrorState>;\n  let surface: LayerErrorSurface;\n  let t: number;\n  let executeCountBeforeTamper: number;\n\n  beforeAll(() => {\n    t = 1_700_000_000_000;\n    surface = makeLayerErrorSurface({ now: () => t });\n    initial = surface.snapshot();\n\n    surface.record(\"aggregate\", \"压实失败（2026-01-14）：注入故障\"); // at = 1700000000000\n    t += 1000;\n    surface.record(\"aggregate\", \"归属异常：resolve 失败\", \"session-abc\"); // at = 1700000001000\n    surface.record(\"execute\", \"task daily 2026-01-14 执行失败：注入故障\");\n    snap = surface.snapshot();\n\n    // snapshot 深拷贝：改返回对象不影响内部状态（先快照被断言的值，再做污染写入）\n    executeCountBeforeTamper = snap.execute.count;\n    snap.execute.recent[0].message = \"被污染\";\n    snap.execute.count = 99;\n    again = surface.snapshot();\n\n    // 未知层忽略（防御）\n    // 未知层防御：record 类型面只收 LayerErrorKey，运行时非法键须被忽略（不断言放宽）。\n    surface.record(\"bogus\" as unknown as LayerErrorKey, \"不应记录\");\n  });\n\n  it(\"snapshot 三键齐（aggregate/schedule/execute）\", () => {\n    expect(Object.keys(initial).sort()).toEqual([...LAYER_ERROR_KEYS].sort());\n  });\n\n  for (const layer of LAYER_ERROR_KEYS) {\n    it(`${layer} 初始 count=0`, () => {\n      expect(initial[layer].count).toBe(0);\n    });\n\n    it(`${layer} 初始 recent 为空`, () => {\n      expect(initial[layer].recent).toEqual([]);\n    });\n  }\n\n  it(\"aggregate 累计计数=2\", () => {\n    expect(snap.aggregate.count).toBe(2);\n  });\n\n  it(\"execute 累计计数=1\", () => {\n    expect(executeCountBeforeTamper).toBe(1);\n  });\n\n  it(\"recent 保留全部 ≤N 记录\", () => {\n    expect(snap.aggregate.recent.length).toBe(2);\n  });\n\n  it(\"recent 新在前（后记的在前）\", () => {\n    expect(snap.aggregate.recent[0].message).toBe(\"归属异常：resolve 失败\");\n  });\n\n  it(\"context 原样保留\", () => {\n    expect(snap.aggregate.recent[0].context).toBe(\"session-abc\");\n  });\n\n  it(\"时间戳取注入时钟\", () => {\n    expect(snap.aggregate.recent[0].at).toBe(t);\n  });\n\n  it(\"时间戳逐条取自注入时点\", () => {\n    expect(snap.aggregate.recent[1].at).toBe(t - 1000);\n  });\n\n  it(\"未发生错误的层保持 0\", () => {\n    expect(snap.schedule.count).toBe(0);\n  });\n\n  it(\"snapshot 修改不污染内部\", () => {\n    expect(again.execute.count).toBe(1);\n  });\n\n  it(\"snapshot 修改不污染内部（recent 条目）\", () => {\n    expect(again.execute.recent[0].message).not.toBe(\"被污染\");\n  });\n\n  it(\"未知层不新增键\", () => {\n    expect(Object.keys(surface.snapshot()).sort()).toEqual([...LAYER_ERROR_KEYS].sort());\n  });\n});\n\ndescribe(\"1) errsurf 环形截断：maxRecent 自定义\", () => {\n  let snap: Record<LayerErrorKey, LayerErrorState>;\n\n  beforeAll(() => {\n    const surface = makeLayerErrorSurface({ maxRecent: 2 });\n    for (let i = 1; i <= 3; i++) surface.record(\"execute\", `故障 ${i}`);\n    snap = surface.snapshot();\n  });\n\n  it(\"截断不影响累计计数\", () => {\n    expect(snap.execute.count).toBe(3);\n  });\n\n  it(\"recent 截断到 maxRecent=2\", () => {\n    expect(snap.execute.recent.length).toBe(2);\n  });\n\n  it(\"截断保留最新在前\", () => {\n    expect(snap.execute.recent[0].message).toBe(\"故障 3\");\n  });\n\n  it(\"最旧一条被淘汰\", () => {\n    expect(snap.execute.recent[1].message).toBe(\"故障 2\");\n  });\n});\n\ndescribe(\"1) errsurf noop 实现：同形态、零副作用\", () => {\n  let snap: Record<LayerErrorKey, LayerErrorState>;\n\n  beforeAll(() => {\n    const noop = makeNoopLayerErrorSurface();\n    noop.record(\"aggregate\", \"应被忽略\");\n    snap = noop.snapshot();\n  });\n\n  for (const layer of LAYER_ERROR_KEYS) {\n    it(`noop ${layer}.count=0（record 不记录）`, () => {\n      expect(snap[layer].count).toBe(0);\n    });\n\n    it(`noop ${layer}.recent 恒空`, () => {\n      expect(snap[layer].recent).toEqual([]);\n    });\n  }\n});\n\ndescribe(\"1) errsurf context 字段按注入存在与否精确呈现（双向覆盖 if 变异）\", () => {\n  let snap: Record<LayerErrorKey, LayerErrorState>;\n\n  beforeAll(() => {\n    const surface = makeLayerErrorSurface();\n    surface.record(\"aggregate\", \"无上下文的错误\");\n    surface.record(\"aggregate\", \"带上下文的错误\", \"daily 2026-01-14\");\n    snap = surface.snapshot();\n  });\n\n  it(\"注入 context 时记录携带 context\", () => {\n    expect(\"context\" in snap.aggregate.recent[0]).toBe(true);\n  });\n\n  it(\"context 值原样\", () => {\n    expect(snap.aggregate.recent[0].context).toBe(\"daily 2026-01-14\");\n  });\n\n  it(\"未注入 context 时记录不带 context 字段\", () => {\n    expect(\"context\" in snap.aggregate.recent[1]).toBe(false);\n  });\n});\n\ndescribe(\"2) handleHealth per-layer 段（记录→呈现链路）\", () => {\n  let payload: HealthPayload;\n\n  beforeAll(() => {\n    const surface = makeLayerErrorSurface();\n    surface.record(\"execute\", \"注入故障：persist 失败（/reports/generate）\", \"daily 2026-01-14\");\n    payload = callSyncHandler<HealthPayload>(\n      (req, res) =>\n        handleHealth(req as IncomingMessage, res as ServerResponse, healthContext(surface)),\n      fakeReq(),\n    );\n  });\n\n  it(\"health 正常响应\", () => {\n    expect(payload.ok).toBe(true);\n  });\n\n  it(\"health 响应携带 layerErrors 段\", () => {\n    expect(payload.layerErrors !== undefined).toBeTruthy();\n  });\n\n  it(\"layerErrors 三键齐（aggregate/schedule/execute）\", () => {\n    expect(Object.keys(payload.layerErrors).sort()).toEqual([...LAYER_ERROR_KEYS].sort());\n  });\n\n  it(\"注入的 execute 故障被 health 反映\", () => {\n    expect(payload.layerErrors.execute.count).toBe(1);\n  });\n\n  it(\"最近记录条数正确\", () => {\n    expect(payload.layerErrors.execute.recent.length).toBe(1);\n  });\n\n  it(\"最近记录消息与注入一致\", () => {\n    expect(payload.layerErrors.execute.recent[0].message).toBe(\n      \"注入故障：persist 失败（/reports/generate）\",\n    );\n  });\n\n  it(\"最近记录带时间戳\", () => {\n    expect(typeof payload.layerErrors.execute.recent[0].at).toBe(\"number\");\n  });\n\n  it(\"最近记录带上下文\", () => {\n    expect(payload.layerErrors.execute.recent[0].context).toBe(\"daily 2026-01-14\");\n  });\n\n  it(\"未注入层保持 0（加性段不误报）\", () => {\n    expect(payload.layerErrors.aggregate.count).toBe(0);\n  });\n\n  it(\"未注入层保持 0（加性段不误报）\", () => {\n    expect(payload.layerErrors.schedule.count).toBe(0);\n  });\n\n  // 与既有段并存（回归护栏：加性字段不破坏原结构）\n  it(\"adapters 段保留\", () => {\n    expect(Array.isArray(payload.adapters)).toBeTruthy();\n  });\n\n  it(\"errors 段保留\", () => {\n    expect(Array.isArray(payload.errors)).toBeTruthy();\n  });\n\n  it(\"trend 段保留\", () => {\n    expect(payload.trend !== undefined).toBeTruthy();\n  });\n});\n\ndescribe(\"3) execute 层真实退出冒烟（ReportTaskQueue）\", () => {\n  let surfaced: boolean | undefined;\n  let snap: Record<LayerErrorKey, LayerErrorState>;\n\n  beforeAll(async () => {\n    const surface = makeLayerErrorSurface();\n    const queue = new ReportTaskQueue({\n      executor: async () => {\n        throw new Error(\"注入故障：生成器崩溃\");\n      },\n      warn: (m) => surface.record(\"execute\", m),\n    });\n    queue.submit({\n      period: \"daily\",\n      key: \"2026-01-14\",\n      startDay: \"2026-01-14\",\n      endDay: \"2026-01-14\",\n    });\n    surfaced = await pollUntil(() => surface.snapshot().execute.count >= 1);\n    snap = surface.snapshot();\n  });\n\n  it(\"队列执行失败经 warn 出口进入 execute 层错误面\", () => {\n    expect(surfaced).toBe(true);\n  });\n\n  it(\"任务失败消息内容原样记录（含 task 定位）\", () => {\n    expect(snap.execute.recent[0].message.includes(\"注入故障：生成器崩溃\")).toBeTruthy();\n  });\n\n  it(\"单次失败计数=1\", () => {\n    expect(snap.execute.count).toBe(1);\n  });\n});\n\ndescribe(\"4) schedule 层真实退出冒烟（ReportScheduler onDue 失败）\", () => {\n  const probeSchedulerFailure = async () => {\n    const dir = mkdtempSync(join(tmpdir(), \"dou-errsurf-schedule-\"));\n    const surface = makeLayerErrorSurface();\n    const scheduler = ReportScheduler.start({\n      root: dir,\n      config: normalizeReportConfig({ daily: { enabled: true, time: \"00:00\" } }),\n      now: () => new Date(2026, 0, 15, 12, 0).getTime(),\n      onDue: async () => {\n        throw new Error(\"注入故障：调度提交崩溃\");\n      },\n      warn: (m) => surface.record(\"schedule\", m),\n    });\n    try {\n      await scheduler.tick(); // start 内异步首 tick 之外，再显式走一轮（断言同步化）\n      const surfaced = await pollUntil(() => surface.snapshot().schedule.count >= 1);\n      return { surfaced, message: surface.snapshot().schedule.recent[0]?.message };\n    } finally {\n      scheduler.dispose();\n    }\n  };\n\n  it(\"调度提交失败经 warn 出口进入 schedule 层错误面\", async () => {\n    expect((await probeSchedulerFailure()).surfaced).toBe(true);\n  });\n\n  it(\"调度失败消息内容原样记录\", async () => {\n    expect(\n      (await probeSchedulerFailure()).message?.includes(\"注入故障：调度提交崩溃\"),\n    ).toBeTruthy();\n  });\n});\n\n/** apply 集成块的路由注册探针（path + handler 供 health 查找与调用）。 */\ninterface FakeRoute {\n  path: string;\n  handler: (req: unknown, res: unknown) => unknown;\n}\ndescribe(\"5) apply 集成：装配接线后 /health 携带 layerErrors\", () => {\n  let savedDshHome: string | undefined;\n  let health: FakeRoute | undefined;\n  let payload: HealthPayload | undefined;\n  const disposers: Array<() => void> = [];\n\n  beforeAll(async () => {\n    const dir = mkdtempSync(join(tmpdir(), \"dou-errsurf-apply-\"));\n    savedDshHome = process.env.DSH_HOME;\n    process.env.DSH_HOME = join(dir, \"dshhome\");\n    mkdirSync(process.env.DSH_HOME!, { recursive: true });\n    const historyDir = join(dir, \"history\");\n    mkdirSync(historyDir, { recursive: true });\n\n    const { apply, ROUTES } = await import(\"../../../src/apply/index.ts\");\n    const routes: FakeRoute[] = [];\n    // apply 的 ctx 为宿主 cordis 全量服务面，窄 fake 经 unknown 断言装配（仅本块用到的面为真）。\n    const ctx = {\n      logger: { warn: () => {} },\n      webServer: {\n        register(route: FakeRoute): () => void {\n          routes.push(route);\n          return () => {};\n        },\n      },\n      on: (): (() => void) => () => {},\n      llm: {\n        listProviders(): unknown[] {\n          return [];\n        },\n      },\n      fiber: { state: \"active\" },\n      inject: (deps: unknown, cb: (inner: { settings: Record<string, unknown> }) => void): void => {\n        cb({ settings: {} });\n      },\n      effect: (fn: () => unknown): (() => void) => {\n        const d = fn();\n        if (typeof d === \"function\") disposers.push(d as () => void);\n        return typeof d === \"function\" ? (d as () => void) : () => {};\n      },\n    } as unknown as Parameters<typeof apply>[0];\n    await apply(ctx, {\n      autoReload: false,\n      apiKey: \"sk-test\",\n      apiEndpoint: \"http://127.0.0.1:9\",\n      historyDir,\n    });\n    health = routes.find((r) => r.path === ROUTES.health);\n    payload =\n      health === undefined ? undefined : callSyncHandler<HealthPayload>(health.handler, fakeReq());\n  });\n\n  afterAll(() => {\n    for (const dispose of [...disposers].reverse()) {\n      try {\n        dispose();\n      } catch {}\n    }\n    if (savedDshHome === undefined) delete process.env.DSH_HOME;\n    else process.env.DSH_HOME = savedDshHome;\n  });\n\n  it(\"apply 挂载 health 路由\", () => {\n    expect(health !== undefined).toBeTruthy();\n  });\n\n  it(\"apply 接线后 /health 携带 layerErrors\", () => {\n    expect(payload?.layerErrors !== undefined).toBeTruthy();\n  });\n\n  it(\"三键齐\", () => {\n    expect(Object.keys(payload!.layerErrors).sort()).toEqual([...LAYER_ERROR_KEYS].sort());\n  });\n\n  for (const layer of LAYER_ERROR_KEYS) {\n    it(`初始 ${layer}.count=0（无故障时零污染）`, () => {\n      expect(payload!.layerErrors[layer].count).toBe(0);\n    });\n\n    it(`初始 ${layer}.recent 空`, () => {\n      expect(payload!.layerErrors[layer].recent).toEqual([]);\n    });\n  }\n});\n"
+    },
+    "packages/dsh-provider-usage/test/unit/server-shared/unit-s2-contracts.test.ts": {
+      "tests": [
+        {
+          "id": "159",
+          "name": "1) server/shared 新叶与旧垫片同构 门面透出的工厂与 canonical 同一引用"
+        },
+        {
+          "id": "160",
+          "name": "1) server/shared 新叶与旧垫片同构 门面透出的 noop 与 canonical 同一引用"
+        },
+        {
+          "id": "161",
+          "name": "1) server/shared 新叶与旧垫片同构 门面透出的键表与 canonical 同一引用"
+        },
+        {
+          "id": "162",
+          "name": "1) server/shared 新叶与旧垫片同构 门面透出的默认保留条数与 canonical 一致"
+        },
+        {
+          "id": "163",
+          "name": "1) server/shared 新叶与旧垫片同构 旧垫片已删除（common 目录消除；复活即回退）"
+        },
+        {
+          "id": "164",
+          "name": "1) server/shared 新叶与旧垫片同构 三域键齐（Q5 无单一所有者：写入方分属三域，非一域所有物）"
+        },
+        {
+          "id": "165",
+          "name": "1) server/shared 新叶与旧垫片同构 三域写 + 健康读形状：record 三层各记一条，snapshot 三键齐"
+        },
+        {
+          "id": "166",
+          "name": "1) server/shared 新叶与旧垫片同构 进程期常驻对偶：两份 surface 互不干扰（内存态，无落盘共享）"
+        },
+        {
+          "id": "167",
+          "name": "2) schedule 纯面经 interface 先行 LAST_RUN_SCHEMA 为当期版本"
+        },
+        {
+          "id": "168",
+          "name": "2) schedule 纯面经 interface 先行 deriveLastRun 空事实得空表（无 index 视作无事实）"
+        },
+        {
+          "id": "169",
+          "name": "2) schedule 纯面经 interface 先行 derive/align 纯函数：同输入同输出（确定性，无副作用）"
+        },
+        {
+          "id": "170",
+          "name": "2) schedule 纯面经 interface 先行 alignLastRun 保留首次启用预置键（index 无对应记录时不动）"
+        },
+        {
+          "id": "171",
+          "name": "3) config 归一化单答案 / LEGACY 映射表先行 旧单一默认模板统一升级为三份新默认（单答案）"
+        },
+        {
+          "id": "172",
+          "name": "3) config 归一化单答案 / LEGACY 映射表先行 LEGACY 三周期旧词非空（迁移判定基准文本）"
+        },
+        {
+          "id": "173",
+          "name": "3) config 归一化单答案 / LEGACY 映射表先行 旧三周期模板命中即回退当期默认（平滑升级，不丢形态）"
+        },
+        {
+          "id": "174",
+          "name": "4) UpgradeDeps 窄面冻结 + 禁 file-io 叶 deps.ts 纯类型面：运行时零出口"
+        },
+        {
+          "id": "175",
+          "name": "4) UpgradeDeps 窄面冻结 + 禁 file-io 叶 窄面三项可装配（logger + root 解析能力 + 旧文件显式读面）"
+        },
+        {
+          "id": "176",
+          "name": "4) UpgradeDeps 窄面冻结 + 禁 file-io 叶 禁新建 file-io 叶：src/server 下无 file-io.ts"
+        }
+      ],
+      "source": "/**\n * dsh-provider-usage — unit：S2 契约与共享层（#768 计划表 rev2 S2 行）。\n *\n * 白盒直连 src（不经包入口，不落盘——本文件零落盘，故无 mkdtemp）：\n * 1. server/shared 新叶 errsurf：canonical 实现 + 门面二方同构\n *    （三域写 + 健康读的数据形状；Q5 的机器可判部分；#768 D13 删旧垫片\n *    domain2/common/errsurf.ts，common 目录已消除）；\n * 2. schedule 纯面先行：LAST_RUN_SCHEMA / deriveLastRun / alignLastRun 经\n *    server/schedule/interface.ts 复用（type + pure：确定性、无副作用；D2 起物理定义在调度域）；\n * 3. config 归一化单答案 / LEGACY 锁表先行：经 server/config/interface.ts\n *    复用（D1 起物理定义在 config 域；旧默认模板统一升级为三份新默认 = 单答案）；\n * 4. UpgradeDeps 窄面冻结：server/upgrade/deps.ts 纯类型面（运行时零出口，\n *    窄面三项可装配）；per-root 链不在本域；禁新建 file-io 叶（结构断言）。\n */\nimport { existsSync } from \"node:fs\";\nimport { fileURLToPath } from \"node:url\";\nimport { describe, expect, it } from \"vitest\";\nimport {\n  makeLayerErrorSurface,\n  makeNoopLayerErrorSurface,\n  LAYER_ERROR_KEYS,\n  LAYER_ERROR_MAX_RECENT_DEFAULT,\n} from \"../../../src/server/shared/errsurf.ts\";\nimport * as sharedFacade from \"../../../src/server/shared/interface.ts\";\n// #768 D13：旧垫片 src/domain2/common/errsurf.ts 已删（common 目录消除），本文件不再导入旧路径。\nimport * as upgradeDepsNs from \"../../../src/server/upgrade/deps.ts\";\nimport type { UpgradeDeps } from \"../../../src/server/upgrade/deps.ts\";\nimport {\n  LAST_RUN_SCHEMA,\n  deriveLastRun,\n  alignLastRun,\n} from \"../../../src/server/shared/interface.ts\";\nimport { normalizeReportConfig } from \"../../../src/server/config/interface.ts\";\nimport {\n  DEFAULT_PROMPTS,\n  LEGACY_PROMPT_TEMPLATE,\n  LEGACY_DAILY_PROMPT_V1,\n  LEGACY_WEEKLY_PROMPT_V1,\n  LEGACY_MONTHLY_PROMPT_V1,\n} from \"../../../src/server/shared/interface.ts\";\n\nconst SERVER_DIR = fileURLToPath(new URL(\"../../../src/server/\", import.meta.url));\n\ndescribe(\"1) server/shared 新叶与旧垫片同构\", () => {\n  it(\"门面透出的工厂与 canonical 同一引用\", () => {\n    expect(sharedFacade.makeLayerErrorSurface).toBe(makeLayerErrorSurface);\n  });\n\n  it(\"门面透出的 noop 与 canonical 同一引用\", () => {\n    expect(sharedFacade.makeNoopLayerErrorSurface).toBe(makeNoopLayerErrorSurface);\n  });\n\n  it(\"门面透出的键表与 canonical 同一引用\", () => {\n    expect(sharedFacade.LAYER_ERROR_KEYS).toBe(LAYER_ERROR_KEYS);\n  });\n\n  it(\"门面透出的默认保留条数与 canonical 一致\", () => {\n    expect(sharedFacade.LAYER_ERROR_MAX_RECENT_DEFAULT).toBe(LAYER_ERROR_MAX_RECENT_DEFAULT);\n  });\n\n  it(\"旧垫片已删除（common 目录消除；复活即回退）\", () => {\n    expect(existsSync(SERVER_DIR + \"/../domain2/common/errsurf.ts\")).toBe(false);\n    expect(existsSync(SERVER_DIR + \"/../domain2/common/interface.ts\")).toBe(false);\n    expect(existsSync(SERVER_DIR + \"/../domain2/common\")).toBe(false);\n  });\n\n  it(\"三域键齐（Q5 无单一所有者：写入方分属三域，非一域所有物）\", () => {\n    expect([...LAYER_ERROR_KEYS].sort()).toEqual([\"aggregate\", \"execute\", \"schedule\"]);\n  });\n\n  it(\"三域写 + 健康读形状：record 三层各记一条，snapshot 三键齐\", () => {\n    const surface = makeLayerErrorSurface();\n    surface.record(\"aggregate\", \"压实失败\");\n    surface.record(\"schedule\", \"tick 异常\", \"daily 2026-01-14\");\n    surface.record(\"execute\", \"任务失败\");\n    const snap = surface.snapshot();\n    expect(snap.aggregate.count).toBe(1);\n    expect(snap.schedule.count).toBe(1);\n    expect(snap.schedule.recent[0]?.context).toBe(\"daily 2026-01-14\");\n    expect(snap.execute.count).toBe(1);\n  });\n\n  it(\"进程期常驻对偶：两份 surface 互不干扰（内存态，无落盘共享）\", () => {\n    const a = makeLayerErrorSurface();\n    const b = makeLayerErrorSurface();\n    a.record(\"aggregate\", \"只记在 A\");\n    expect(b.snapshot().aggregate.count).toBe(0);\n  });\n});\n\ndescribe(\"2) schedule 纯面经 interface 先行\", () => {\n  it(\"LAST_RUN_SCHEMA 为当期版本\", () => {\n    expect(LAST_RUN_SCHEMA).toBe(2);\n  });\n\n  it(\"deriveLastRun 空事实得空表（无 index 视作无事实）\", () => {\n    expect(deriveLastRun([])).toEqual({});\n  });\n\n  it(\"derive/align 纯函数：同输入同输出（确定性，无副作用）\", () => {\n    const records = [\n      {\n        period: \"daily\" as const,\n        key: \"2026-01-13\",\n        generatedAt: new Date(2026, 0, 14, 9, 0, 0).getTime(),\n        endDay: \"2026-01-13\",\n        ok: true,\n      },\n    ];\n    expect(deriveLastRun(records)).toEqual(deriveLastRun(records));\n    expect(alignLastRun({}, records)).toEqual(alignLastRun({}, records));\n  });\n\n  it(\"alignLastRun 保留首次启用预置键（index 无对应记录时不动）\", () => {\n    const preset = { daily: \"2026-01-13\" };\n    expect(alignLastRun(preset, [])).toEqual(preset);\n  });\n});\n\ndescribe(\"3) config 归一化单答案 / LEGACY 映射表先行\", () => {\n  it(\"旧单一默认模板统一升级为三份新默认（单答案）\", () => {\n    const next = normalizeReportConfig({ promptTemplate: LEGACY_PROMPT_TEMPLATE });\n    expect(next.prompts).toEqual(DEFAULT_PROMPTS);\n  });\n\n  it(\"LEGACY 三周期旧词非空（迁移判定基准文本）\", () => {\n    // 锚：prompts.ts 锁表字面量长度，第二事实源（改文本必须红）。\n    expect(LEGACY_DAILY_PROMPT_V1.length).toBe(623);\n    expect(LEGACY_WEEKLY_PROMPT_V1.length).toBe(705);\n    expect(LEGACY_MONTHLY_PROMPT_V1.length).toBe(823);\n    // 形状：三词均含 {stats} 注入位 + 主笔头 + 各自时间尺度（今天/这一周/这个月）。\n    for (const text of [\n      LEGACY_DAILY_PROMPT_V1,\n      LEGACY_WEEKLY_PROMPT_V1,\n      LEGACY_MONTHLY_PROMPT_V1,\n    ]) {\n      expect(text.includes(\"{stats}\")).toBe(true);\n      expect(text.startsWith(\"你是「AI 用量年报」主笔。\")).toBe(true);\n    }\n    expect(LEGACY_DAILY_PROMPT_V1.includes(\"时间尺度以「今天」为准\")).toBe(true);\n    expect(LEGACY_WEEKLY_PROMPT_V1.includes(\"时间尺度以「这一周」为准\")).toBe(true);\n    expect(LEGACY_MONTHLY_PROMPT_V1.includes(\"时间尺度以「这个月」为准\")).toBe(true);\n  });\n\n  it(\"旧三周期模板命中即回退当期默认（平滑升级，不丢形态）\", () => {\n    const next = normalizeReportConfig({\n      prompts: {\n        daily: LEGACY_DAILY_PROMPT_V1,\n        weekly: LEGACY_WEEKLY_PROMPT_V1,\n        monthly: LEGACY_MONTHLY_PROMPT_V1,\n      },\n    });\n    expect(next.prompts).toEqual(DEFAULT_PROMPTS);\n  });\n});\n\ndescribe(\"4) UpgradeDeps 窄面冻结 + 禁 file-io 叶\", () => {\n  it(\"deps.ts 纯类型面：运行时零出口\", () => {\n    expect(Object.keys(upgradeDepsNs)).toEqual([]);\n  });\n\n  it(\"窄面三项可装配（logger + root 解析能力 + 旧文件显式读面）\", async () => {\n    const calls: string[] = [];\n    const deps: UpgradeDeps = {\n      logger: { warn: (message: string) => void calls.push(message) },\n      resolveRoot: () => \"/tmp/dou-upgrade-root\",\n      readOldFile: async (file: string) => {\n        if (file.endsWith(\"missing.json\")) return { ok: false as const };\n        return { ok: true as const, text: \"{}\" };\n      },\n    };\n    expect(deps.resolveRoot()).toBe(\"/tmp/dou-upgrade-root\");\n    const hit = await deps.readOldFile(\"/x/config.json\");\n    expect(hit).toEqual({ ok: true, text: \"{}\" });\n    const miss = await deps.readOldFile(\"/x/missing.json\");\n    expect(miss).toEqual({ ok: false });\n    deps.logger.warn(\"版本落差\");\n    expect(calls).toEqual([\"版本落差\"]);\n  });\n\n  it(\"禁新建 file-io 叶：src/server 下无 file-io.ts\", () => {\n    expect(existsSync(SERVER_DIR + \"/shared/file-io.ts\")).toBe(false);\n    expect(existsSync(SERVER_DIR + \"/upgrade/file-io.ts\")).toBe(false);\n  });\n});\n"
+    }
+  },
+  "projectRoot": "/home/runner/work/dsh-plugin-hub/dsh-plugin-hub",
+  "config": {
+    "$schema": "../node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+    "mutate": [
+      "packages/dsh-provider-usage/src/server/shared/errsurf.ts",
+      "!packages/dsh-provider-usage/src/client/**",
+      "!packages/dsh-provider-usage/src/**/interface.ts",
+      "!packages/dsh-provider-usage/src/server/*/deps.ts",
+      "!packages/dsh-provider-usage/src/**/*.d.mts",
+      "!packages/dsh-provider-usage/src/server/adapters/deepseek-official.mjs",
+      "!packages/dsh-provider-usage/src/server/adapters/opencode-go.mjs",
+      "!packages/dsh-provider-usage/src/server/adapters/zai-coding-cn.mjs"
+    ],
+    "testRunner": "vitest",
+    "mutator": {
+      "excludedMutations": [
+        "StringLiteral",
+        "ArrayLiteral",
+        "ObjectLiteral",
+        "TemplateLiteral"
+      ],
+      "plugins": null
+    },
+    "plugins": [
+      "@stryker-mutator/vitest-runner"
+    ],
+    "concurrency": 16,
+    "timeoutMS": 60000,
+    "dryRunTimeoutMinutes": 5,
+    "reporters": [
+      "progress",
+      "clear-text",
+      "json"
+    ],
+    "coverageAnalysis": "perTest",
+    "tempDirName": ".stryker-tmp",
+    "cleanTempDir": true,
+    "vitest": {
+      "related": false,
+      "configFile": "vitest.stryker.d/dsh-provider-usage-errsurf.config.ts"
+    },
+    "jsonReporter": {
+      "fileName": "coverage/mutation/dsh-provider-usage-errsurf.json"
+    },
+    "incremental": true,
+    "incrementalFile": "coverage/mutation/incremental-provider-usage-errsurf.json",
+    "_comment": "#670 阶段三 B 新段：域2每层错误面——errsurf.ts（累计计数+最近 N 条环形缓冲+snapshot/noop）；testFiles 含 unit-errsurf（杀灭面）；apply 接线与 routes/ui health per-layer 段由既有 apply/routes 段覆盖（mutate 已含对应文件）。#768 S2：canonical 实现迁 server/shared/errsurf.ts（Q5 尺子见文件头），domain2/common/errsurf.ts 过渡垫片 D13 已删（common 目录消除，旧路径引用同步切 server/shared）；杀灭面含 unit-s2-contracts（新叶直连判据）。",
+    "configFile": "stryker.conf.d/dsh-provider-usage-errsurf.json",
+    "allowConsoleColors": true,
+    "checkers": [],
+    "checkerNodeArgs": [],
+    "commandRunner": {
+      "command": "npm test"
+    },
+    "clearTextReporter": {
+      "allowColor": true,
+      "allowEmojis": false,
+      "logTests": true,
+      "maxTestsToLog": 3,
+      "reportTests": true,
+      "reportMutants": true,
+      "reportScoreTable": true,
+      "skipFull": false
+    },
+    "dashboard": {
+      "baseUrl": "https://dashboard.stryker-mutator.io/api/reports",
+      "reportType": "full"
+    },
+    "dryRunOnly": false,
+    "eventReporter": {
+      "baseDir": "reports/mutation/events"
+    },
+    "ignorePatterns": [],
+    "ignoreStatic": false,
+    "force": false,
+    "fileLogLevel": "off",
+    "inPlace": false,
+    "logLevel": "info",
+    "maxConcurrentTestRunners": 9007199254740991,
+    "maxTestRunnerReuse": 0,
+    "appendPlugins": [],
+    "htmlReporter": {
+      "fileName": "reports/mutation/mutation.html"
+    },
+    "disableTypeChecks": true,
+    "symlinkNodeModules": true,
+    "testRunnerNodeArgs": [],
+    "thresholds": {
+      "high": 80,
+      "low": 60,
+      "break": null
+    },
+    "timeoutFactor": 1.5,
+    "tsconfigFile": "tsconfig.json",
+    "warnings": true,
+    "disableBail": false,
+    "allowEmpty": false,
+    "ignorers": [],
+    "testFiles": []
+  },
+  "framework": {
+    "name": "StrykerJS",
+    "version": "10.0.0",
+    "branding": {
+      "homepageUrl": "https://stryker-mutator.io",
+      "imageUrl": "data:image/svg+xml;utf8,%3Csvg viewBox='0 0 1458 1458' xmlns='http://www.w3.org/2000/svg' fill-rule='evenodd' clip-rule='evenodd' stroke-linejoin='round' stroke-miterlimit='2'%3E%3Cpath fill='none' d='M0 0h1458v1458H0z'/%3E%3CclipPath id='a'%3E%3Cpath d='M0 0h1458v1458H0z'/%3E%3C/clipPath%3E%3Cg clip-path='url(%23a)'%3E%3Cpath d='M1458 729c0 402.655-326.345 729-729 729S0 1131.655 0 729C0 326.445 326.345 0 729 0s729 326.345 729 729' fill='%23e74c3c' fill-rule='nonzero'/%3E%3Cpath d='M778.349 1456.15L576.6 1254.401l233-105 85-78.668v-64.332l-257-257-44-187-50-208 251.806-82.793L1076.6 389.401l380.14 379.15c-19.681 367.728-311.914 663.049-678.391 687.599z' fill-opacity='.3'/%3E%3Cpath d='M753.4 329.503c41.79 0 74.579 7.83 97.925 25.444 23.571 18.015 41.69 43.956 55.167 77.097l11.662 28.679 165.733-58.183-14.137-32.13c-26.688-60.655-64.896-108.61-114.191-144.011-49.329-35.423-117.458-54.302-204.859-54.302-50.78 0-95.646 7.376-134.767 21.542-40.093 14.671-74.09 34.79-102.239 60.259-28.84 26.207-50.646 57.06-65.496 92.701-14.718 35.052-22.101 72.538-22.101 112.401 0 72.536 20.667 133.294 61.165 182.704 38.624 47.255 98.346 88.037 179.861 121.291 42.257 17.475 78.715 33.125 109.227 46.994 27.193 12.361 49.294 26.124 66.157 41.751 15.309 14.186 26.497 30.584 33.63 49.258 7.721 20.214 11.16 45.69 11.16 76.402 0 28.021-4.251 51.787-13.591 71.219-8.832 18.374-20.171 33.178-34.523 44.219-14.787 11.374-31.193 19.591-49.393 24.466-19.68 5.359-39.14 7.993-58.69 7.993-29.359 0-54.387-3.407-75.182-10.747-20.112-7.013-37.144-16.144-51.259-27.486-13.618-11.009-24.971-23.766-33.744-38.279-9.64-15.8-17.272-31.924-23.032-48.408l-10.965-31.376-161.669 60.585 10.734 30.124c10.191 28.601 24.197 56.228 42.059 82.748 18.208 27.144 41.322 51.369 69.525 72.745 27.695 21.075 60.904 38.218 99.481 51.041 37.777 12.664 82.004 19.159 132.552 19.159 49.998 0 95.818-8.321 137.611-24.622 42.228-16.471 78.436-38.992 108.835-67.291 30.719-28.597 54.631-62.103 71.834-100.642 17.263-38.56 25.923-79.392 25.923-122.248 0-54.339-8.368-100.37-24.208-138.32-16.29-38.759-38.252-71.661-65.948-98.797-26.965-26.418-58.269-48.835-93.858-67.175-33.655-17.241-69.196-33.11-106.593-47.533-35.934-13.429-65.822-26.601-89.948-39.525-22.153-11.868-40.009-24.21-53.547-37.309-11.429-11.13-19.83-23.678-24.718-37.664-5.413-15.49-7.98-33.423-7.98-53.577 0-40.883 11.293-71.522 37.086-90.539 28.443-20.825 64.985-30.658 109.311-30.658z' fill='%23f1c40f' fill-rule='nonzero'/%3E%3Cpath d='M720 0h18v113h-18zM1458 738v-18h-113v18h113zM720 1345h18v113h-18zM113 738v-18H0v18h113z'/%3E%3C/g%3E%3C/svg%3E"
+    },
+    "dependencies": {
+      "typescript": "7.0.2"
+    }
+  }
+}
