@@ -453,6 +453,7 @@ function mergeTerminal(current: StreamTerminal, next: StreamTerminal): StreamTer
 }
 
 const REPORT_STREAM_ERROR = {
+  requestAborted: "模型请求已取消",
   unsupportedTool: "模型返回了报告不支持的工具调用",
   unsupportedContent: "模型返回了报告不支持的内容块",
 } as const;
@@ -530,6 +531,58 @@ function accumulateChunk(chunk: StreamChunk, state: StreamState): StreamState {
     };
   return { ...state, hasUnknownChunk: true };
 }
+
+type StreamCollection = { kind: "completed"; state: StreamState } | { kind: "aborted" };
+
+const STREAM_ABORTED = Symbol("stream-aborted");
+
+/**
+ * 手动推进 provider 流，使插件边界能观察 caller abort，而不依赖 provider 是否
+ * 响应 GenerateOptions.signal。取消时只发起 best-effort return，不等待一个同样
+ * 可能忽略取消的 provider；后台 next/return 的 rejection 由已挂接的处理器收口。
+ */
+async function collectStream(
+  stream: AsyncIterable<StreamChunk>,
+  initialState: StreamState,
+  signal?: AbortSignal,
+): Promise<StreamCollection> {
+  if (signal?.aborted) return { kind: "aborted" };
+  const iterator = stream[Symbol.asyncIterator]();
+  let resolveAbort: (() => void) | undefined;
+  const abort = new Promise<typeof STREAM_ABORTED>((resolve) => {
+    resolveAbort = () => resolve(STREAM_ABORTED);
+  });
+  const onAbort = (): void => resolveAbort?.();
+  signal?.addEventListener("abort", onAbort, { once: true });
+  let completed = false;
+
+  try {
+    let state = initialState;
+    while (true) {
+      const next = await Promise.race([iterator.next(), abort]);
+      if (next === STREAM_ABORTED || signal?.aborted) return { kind: "aborted" };
+      if (next.done) {
+        completed = true;
+        return { kind: "completed", state };
+      }
+      state = accumulateChunk(next.value, state);
+    }
+  } catch (error) {
+    if (signal?.aborted) return { kind: "aborted" };
+    throw error;
+  } finally {
+    signal?.removeEventListener("abort", onAbort);
+    if (!completed) {
+      try {
+        const closing = iterator.return?.();
+        if (closing !== undefined) void closing.catch(() => {});
+      } catch {
+        // 收口失败不得覆盖调用方已观察到的取消/ provider 失败。
+      }
+    }
+  }
+}
+
 function routeSnapshot(
   provider: string,
   model: string,
@@ -603,7 +656,17 @@ export async function generateReportOutcome(
       },
     },
   });
+  const failAborted = (
+    route: { provider: string; model: string } = opts.route?.route ?? {
+      provider: opts.provider,
+      model: opts.model,
+    },
+  ): GenerateReportOutcome =>
+    fail(REPORT_STREAM_ERROR.requestAborted, GENERATE_FAILURE.requestAborted, route);
+  if (opts.signal?.aborted) return failAborted();
+
   const routeOutcome = opts.route ?? (await resolveGenerateRoute(opts));
+  if (opts.signal?.aborted) return failAborted(routeOutcome.route);
   if (routeOutcome.status === "failure") {
     return fail(
       routeFailureMessage(routeOutcome.failure),
@@ -644,6 +707,7 @@ export async function generateReportOutcome(
   };
   if (reasoning?.ok === true) genOpts.reasoningEffort = reasoning.id;
   if (opts.signal !== undefined) genOpts.signal = opts.signal;
+  if (opts.signal?.aborted) return failAborted(route);
   let state: StreamState = {
     body: "",
     textDeltaIndexes: new Set(),
@@ -655,15 +719,13 @@ export async function generateReportOutcome(
     terminal: { kind: "none" },
   };
   try {
-    for await (const chunk of opts.llm.stream(genOpts)) {
-      state = accumulateChunk(chunk, state);
-    }
+    const collection = await collectStream(opts.llm.stream(genOpts), state, opts.signal);
+    if (collection.kind === "aborted" || opts.signal?.aborted) return failAborted(route);
+    state = collection.state;
   } catch {
     // provider 异常可能携带 prompt、路径或凭据；只返回稳定安全文案。
-    const failure = opts.signal?.aborted
-      ? GENERATE_FAILURE.requestAborted
-      : GENERATE_FAILURE.providerStreamFailed;
-    return fail("模型请求失败", failure, route);
+    if (opts.signal?.aborted) return failAborted(route);
+    return fail("模型请求失败", GENERATE_FAILURE.providerStreamFailed, route);
   }
   if (state.terminal.kind === "error")
     return fail(state.terminal.error, state.terminal.failure, route);

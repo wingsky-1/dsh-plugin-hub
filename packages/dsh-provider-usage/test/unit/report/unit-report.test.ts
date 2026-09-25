@@ -116,6 +116,8 @@ import type {
 const textOf = (block: unknown): string => (block as { text: string }).text;
 /** fakeLlm 观测快照：逐次保存 stream 入参，并记录 exact-model capability 查询。 */
 interface LlmSeen {
+  listProvidersCalls: number;
+  listModelsCalls: string[];
   calls: GenerateOptions[];
   resolveCalls: Array<{ provider: string; model: string; signal?: AbortSignal }>;
 }
@@ -178,9 +180,13 @@ interface FakeLlmOptions {
   capability?: LlmResolvedModelInfo;
   capabilityError?: string;
   capabilityNever?: boolean;
+  /** 边界测试用：明确模拟 provider 完全忽略 GenerateOptions.signal。 */
+  streamSignalMode?: "ignore";
+  onStreamStart?: () => void;
+  streamGate?: Promise<void>;
 }
 
-/** fake llm：罐头 chunk 流；seen 记录 stream 与可选 exact-model capability 查询。 */
+/** fake llm：罐头 chunk 流；seen 记录 route、stream 与可选 exact-model capability 查询。 */
 function fakeLlm(
   chunks: StreamChunk[] = CHUNKS,
   opts: FakeLlmOptions = {},
@@ -188,17 +194,27 @@ function fakeLlm(
   llm: ReportLlmService;
   seen: LlmSeen;
 } {
-  const seen: LlmSeen = { calls: [], resolveCalls: [] };
+  const seen: LlmSeen = {
+    listProvidersCalls: 0,
+    listModelsCalls: [],
+    calls: [],
+    resolveCalls: [],
+  };
   const llm: ReportLlmService = {
     stream(o: GenerateOptions): AsyncIterable<StreamChunk> {
       seen.calls.push({ ...o, messages: [...o.messages] });
       return (async function* (): AsyncGenerator<StreamChunk> {
         if (opts.throwInStream) throw new Error(opts.throwInStream);
-        if (o.signal?.aborted) throw new Error("aborted before start");
+        if (o.signal?.aborted && opts.streamSignalMode !== "ignore") {
+          throw new Error("aborted before start");
+        }
+        opts.onStreamStart?.();
+        if (opts.streamGate !== undefined) await opts.streamGate;
         yield* chunks;
       })();
     },
     listProviders: () => {
+      seen.listProvidersCalls += 1;
       if (opts.throwInListProviders !== undefined) throw new Error(opts.throwInListProviders);
       return opts.noProviders
         ? []
@@ -207,7 +223,8 @@ function fakeLlm(
             { id: "prov-b", name: "B" },
           ];
     },
-    listModels: async () => {
+    listModels: async (provider) => {
+      seen.listModelsCalls.push(provider);
       if (opts.throwInListModels !== undefined) throw new Error(opts.throwInListModels);
       return opts.noModels ? [] : [{ provider: "prov-a", id: "model-a", name: "A" }];
     },
@@ -773,6 +790,110 @@ describe("generate：官方完整 block 流", () => {
 });
 
 describe("generate：结构化 retry outcome", () => {
+  it("无 reasoningEffort 的 pre-abort 在 route/capability/stream 前稳定失败", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const f = fakeLlm(CHUNKS, {
+      capability: GENERIC_CAPABILITY,
+      streamSignalMode: "ignore",
+      throwInListProviders: RAW_PROVIDER_FAILURE,
+    });
+
+    const outcome = await generateReportOutcome(GEN({ llm: f.llm, signal: controller.signal }));
+
+    expect(outcome).toMatchObject({
+      status: "failure",
+      failure: { kind: "aborted", code: "request-aborted" },
+      result: {
+        body: "",
+        meta: { ok: false, error: "模型请求已取消", provider: "", model: "" },
+      },
+    });
+    expect(f.seen.listProvidersCalls).toBe(0);
+    expect(f.seen.listModelsCalls).toEqual([]);
+    expect(f.seen.resolveCalls).toHaveLength(0);
+    expect(f.seen.calls).toHaveLength(0);
+  });
+
+  it("流中 abort 不等待忽略 signal 的 provider 并稳定收口", async () => {
+    let releaseStream = (): void => {};
+    const streamGate = new Promise<void>((resolve) => {
+      releaseStream = resolve;
+    });
+    let notifyStreamStarted = (): void => {};
+    const streamStarted = new Promise<void>((resolve) => {
+      notifyStreamStarted = resolve;
+    });
+    const f = fakeLlm(CHUNKS, {
+      streamSignalMode: "ignore",
+      onStreamStart: notifyStreamStarted,
+      streamGate,
+    });
+    const controller = new AbortController();
+
+    const pending = generateReportOutcome(
+      GEN({
+        llm: f.llm,
+        provider: "generic-provider",
+        model: "generic-model",
+        signal: controller.signal,
+      }),
+    );
+    await streamStarted;
+    controller.abort();
+
+    const unsettled = Symbol("unsettled");
+    const observed = await Promise.race([
+      pending,
+      (async () => {
+        for (let turn = 0; turn < 10; turn += 1) await Promise.resolve();
+        return unsettled;
+      })(),
+    ]);
+    releaseStream();
+    const outcome = await pending;
+
+    expect(observed).not.toBe(unsettled);
+    expect(outcome).toMatchObject({
+      status: "failure",
+      failure: { kind: "aborted", code: "request-aborted" },
+      result: { body: "", meta: { ok: false, error: "模型请求已取消" } },
+    });
+    expect(f.seen.calls).toHaveLength(1);
+    expect(f.seen.calls[0]!.signal).toBe(controller.signal);
+  });
+
+  it("caller abort 后的 stream throw 仍归 aborted 且不泄漏 provider 原文", async () => {
+    const controller = new AbortController();
+    const f = fakeLlm();
+    let streamCalls = 0;
+    const llm: ReportLlmService = {
+      ...f.llm,
+      stream: () => {
+        streamCalls += 1;
+        controller.abort();
+        throw new Error(RAW_PROVIDER_FAILURE);
+      },
+    };
+
+    const outcome = await generateReportOutcome(
+      GEN({
+        llm,
+        provider: "generic-provider",
+        model: "generic-model",
+        signal: controller.signal,
+      }),
+    );
+
+    expect(outcome).toMatchObject({
+      status: "failure",
+      failure: { kind: "aborted", code: "request-aborted" },
+      result: { body: "", meta: { ok: false, error: "模型请求已取消" } },
+    });
+    expect(streamCalls).toBe(1);
+    expect(JSON.stringify(outcome)).not.toContain(RAW_PROVIDER_FAILURE);
+  });
+
   it("reasoning-only 标记 empty-output/reasoning-only 且不保留推理原文", async () => {
     const privateReasoning = "provider reasoning secret must not escape";
     const f = fakeLlm([
@@ -1082,7 +1203,7 @@ describe("generate：reasoningEffort exact-model capability", () => {
       expect(vi.getTimerCount()).toBe(0);
     });
 
-    it("调用方 signal 已取消时不启动 resolver 且 stream=0", async () => {
+    it("调用方 signal 已取消时入口直接取消且不启动 resolver/stream", async () => {
       const controller = new AbortController();
       controller.abort();
       const f = fakeLlm(CHUNKS, { capability: GENERIC_CAPABILITY });
@@ -1097,7 +1218,7 @@ describe("generate：reasoningEffort exact-model capability", () => {
         }),
       );
 
-      expect(result.meta).toMatchObject({ ok: false, error: "模型能力解析已取消" });
+      expect(result.meta).toMatchObject({ ok: false, error: "模型请求已取消" });
       expect(result.body).toBe("");
       expect(f.seen.resolveCalls).toHaveLength(0);
       expect(f.seen.calls).toHaveLength(0);
@@ -1158,7 +1279,6 @@ describe("generate：失败路径（流异常 / 取消 / 空正文 / 路由不�
   let seen3: LlmSeen;
   let seen4: LlmSeen;
   let seen5: LlmSeen;
-  let abortedSignal: AbortSignal;
 
   beforeAll(async () => {
     // 流异常 → 失败元数据（不抛；正文空）
@@ -1166,11 +1286,10 @@ describe("generate：失败路径（流异常 / 取消 / 空正文 / 路由不�
     r1 = await generateReport(GEN({ llm: boom.llm }));
     seen1 = boom.seen;
     // 取消 → 失败
-    const ac = new AbortController();
-    ac.abort();
-    abortedSignal = ac.signal;
+    const controller = new AbortController();
+    controller.abort();
     const canceled = fakeLlm();
-    r2 = await generateReport(GEN({ llm: canceled.llm, signal: abortedSignal }));
+    r2 = await generateReport(GEN({ llm: canceled.llm, signal: controller.signal }));
     seen2 = canceled.seen;
     // 空正文 → 失败
     const empty = fakeLlm([
@@ -1195,12 +1314,11 @@ describe("generate：失败路径（流异常 / 取消 / 空正文 / 路由不�
     expect(r1.meta.error).toBe("模型请求失败");
   });
 
-  it("已取消信号仅调用一次且流异常仍不暴露 provider 文案", () => {
-    expect(seen2.calls).toHaveLength(1);
-    expect(seen2.calls[0]!.signal).toBe(abortedSignal);
+  it("已取消信号在 stream 前收口且返回固定安全文案", () => {
+    expect(seen2.calls).toHaveLength(0);
     expect(r2.meta.ok).toBe(false);
     expect(r2.body).toBe("");
-    expect(r2.meta.error).toBe("模型请求失败");
+    expect(r2.meta.error).toBe("模型请求已取消");
   });
 
   it("正常终态空正文仅调用一次并返回旧错", () => {
