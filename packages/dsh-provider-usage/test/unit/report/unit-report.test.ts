@@ -3096,6 +3096,61 @@ describe("ReportTaskQueue：串行单飞 + 入队去重（#625/#626）", () => {
   });
 });
 
+it("force reservation 合并重复请求、拒绝后解锁且无 prepare 仍可运行", async () => {
+  const input: ReportTaskInput = {
+    period: "daily",
+    key: "reservation",
+    startDay: "2026-09-04",
+    endDay: "2026-09-04",
+  };
+  const noPrepareCalls: string[] = [];
+  const noPrepare = new ReportTaskQueue({
+    executor: async (task: ReportTaskInput) => {
+      noPrepareCalls.push(`${task.key}:${task.force === true}`);
+      return {};
+    },
+  });
+  const noPrepareResult = await noPrepare.submitForce({ ...input, force: true });
+  await pollUntil(() => noPrepare.get(noPrepareResult.taskId)?.status === "done", 3000);
+  expect(noPrepareCalls).toEqual(["reservation:true"]);
+
+  let releasePrepare: () => void = () => undefined;
+  let markPrepareStarted: () => void = () => undefined;
+  const prepareGate = new Promise<void>((resolve) => {
+    releasePrepare = resolve;
+  });
+  const prepareStarted = new Promise<void>((resolve) => {
+    markPrepareStarted = resolve;
+  });
+  const pending = new ReportTaskQueue({
+    executor: async () => ({}),
+    prepareForce: async () => {
+      markPrepareStarted();
+      await prepareGate;
+    },
+  });
+  const first = pending.submitForce({ ...input, force: true });
+  await prepareStarted;
+  const duplicate = pending.submitForce({ ...input, force: true });
+  expect(duplicate).toBe(first);
+  releasePrepare();
+  const firstResult = await first;
+  expect(await duplicate).toEqual(firstResult);
+
+  const failed = new ReportTaskQueue({
+    executor: async () => ({}),
+    prepareForce: async () => {
+      throw new Error("prepare failed");
+    },
+    sanitizeErrors: true,
+    warn: () => {},
+  });
+  await expect(failed.submitForce({ ...input, force: true })).rejects.toThrow("prepare failed");
+  const retry = failed.submit(input);
+  expect(retry.existing).toBe(false);
+  await pollUntil(() => failed.get(retry.taskId)?.status === "done", 3000);
+});
+
 // ---------------------------------------------------------------- tick→队列：失败不推进 lastRun + 下轮重试同窗
 
 describe("tick→队列：失败不推进 lastRun + 下轮重试同窗", () => {
