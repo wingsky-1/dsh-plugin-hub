@@ -15,13 +15,22 @@ import { reportBodyToHtml } from "./format.ts";
 import {
   buildStatsSnapshot,
   generateReportOutcome,
+  type GenerateReportAttempt,
   type GenerateRouteOutcome,
   type ReportMeta,
   type ReportMetaSummary,
   type ReportResult,
   type ReportStatsSnapshot,
+  type ReportTokenUsage,
 } from "./generate.ts";
-import type { DueReport, RetryFailure, RetryRouteSnapshot } from "../schedule/interface.ts";
+import type {
+  DueReport,
+  RetryAttemptObservation,
+  RetryAttemptTokens,
+  RetryFailure,
+  RetryRouteSnapshot,
+  RetryUsageTotals,
+} from "../schedule/interface.ts";
 export type { RetryFailure, RetryRouteSnapshot };
 import { parseReportIndexLines } from "./report-index.ts";
 
@@ -225,25 +234,124 @@ export interface RunDueReportParams {
   historyRoot: string;
   sanitizeDiagnostic: (s: string) => string;
   route?: GenerateRouteOutcome;
+  /** B3a internal seam: record the observation before report files are written. */
+  attemptNumber?: number;
+  /** 内部取消信号；仅透传到唯一模型生成边界。 */
+  signal?: AbortSignal;
+  onAttempt?: (observation: RetryAttemptObservation) => Promise<RetryUsageTotals | null>;
+  /** 读取当前 cycle 已持久化累计事实；noData 不产生新 attempt。 */
+  getUsage?: () => RetryUsageTotals | null;
 }
 
 export type RunDueReportOutcome =
-  | { status: "success"; result: ReportResult }
-  | { status: "failure"; failure: RetryFailure; result?: ReportResult };
+  | { status: "success"; result: ReportResult; attempt?: GenerateReportAttempt }
+  | {
+      status: "failure";
+      failure: RetryFailure;
+      result?: ReportResult;
+      attempt?: GenerateReportAttempt;
+    };
 
 const REPORT_STORAGE_FAILURE = {
   kind: "storage",
   code: "report-persist-failed",
 } as const satisfies RetryFailure;
 
+const REPORT_CYCLE_CONFLICT_FAILURE = {
+  kind: "unknown",
+  code: "retry-cycle-conflict",
+} as const satisfies RetryFailure;
+
+const REPORT_OBSERVATION_STORAGE_FAILURE = {
+  kind: "storage",
+  code: "retry-observation-storage",
+} as const satisfies RetryFailure;
+
+function retryTokens(value: ReportTokenUsage | null): RetryAttemptTokens {
+  return value === null
+    ? {
+        inputTokens: null,
+        outputTokens: null,
+        reasoningTokens: null,
+        totalTokens: null,
+        cacheReadTokens: null,
+        cacheWriteTokens: null,
+      }
+    : { ...value };
+}
+
+function observationFor(
+  attempt: GenerateReportAttempt,
+  attemptNumber: number,
+  failure: RetryFailure | null,
+): RetryAttemptObservation {
+  const status: RetryAttemptObservation["status"] =
+    failure === null
+      ? "success"
+      : failure.kind === "aborted"
+        ? "aborted"
+        : (failure.kind === "transient" || failure.kind === "empty-output") && attemptNumber <= 5
+          ? "retry"
+          : "terminal";
+  return {
+    attempt: attemptNumber,
+    result: failure === null ? "success" : "failure",
+    code: failure?.code ?? null,
+    status,
+    durationMs: attempt.durationMs,
+    tokens: retryTokens(attempt.tokens),
+  };
+}
+
+function withCumulativeUsage(result: ReportResult, usage: RetryUsageTotals): ReportResult {
+  return {
+    ...result,
+    meta: {
+      ...result.meta,
+      durationMs: usage.durationMs ?? result.meta.durationMs,
+      tokens: {
+        inputTokens: usage.inputTokens,
+        outputTokens: usage.outputTokens,
+        reasoningTokens: usage.reasoningTokens,
+        totalTokens: usage.totalTokens,
+        cacheReadTokens: usage.cacheReadTokens,
+        cacheWriteTokens: usage.cacheWriteTokens,
+      },
+    },
+  };
+}
+
+type AttemptObservationResult = RetryUsageTotals | null | "error";
+
+async function observeAttempt(
+  params: RunDueReportParams,
+  attempt: GenerateReportAttempt,
+  attemptNumber: number,
+  failure: RetryFailure | null,
+): Promise<AttemptObservationResult> {
+  if (params.onAttempt === undefined) return null;
+  try {
+    const usage = await params.onAttempt(observationFor(attempt, attemptNumber, failure));
+    return usage === undefined ? "error" : usage;
+  } catch {
+    return "error";
+  }
+}
+
 export type PreparedDueReportOutcome =
   | {
       status: "success";
       result: ReportResult;
+      attempt?: GenerateReportAttempt;
       /** coordinator 校验 current claim 后，在根锁内调用；cycleId 仅写 index token。 */
       persist: (cycleId?: string) => Promise<void>;
     }
-  | { status: "failure"; failure: RetryFailure; result?: ReportResult };
+  | {
+      status: "failure";
+      failure: RetryFailure;
+      result?: ReportResult;
+      attempt?: GenerateReportAttempt;
+    };
 
 type PreparedReportSuccess = Extract<PreparedDueReportOutcome, { status: "success" }>;
 
@@ -255,10 +363,12 @@ function preparedSuccess(
   params: RunDueReportParams,
   result: ReportResult,
   snapshot: ReportStatsSnapshot,
+  attempt?: GenerateReportAttempt,
 ): PreparedReportSuccess {
   return {
     status: "success",
     result,
+    ...(attempt === undefined ? {} : { attempt }),
     persist: async (cycleId) => {
       try {
         await persistReport(params.historyRoot, result.meta, result.body, cycleId);
@@ -303,23 +413,25 @@ export async function prepareDueReportOutcome(
     prevTotal: prevWindowTotal(buckets, due.startDay, due.endDay),
   });
   if (snapshot.totals.calls === 0) {
+    const priorUsage = params.getUsage?.() ?? null;
+    const noDataResult: ReportResult = {
+      body: "",
+      meta: {
+        period: due.period,
+        key: due.key,
+        startDay: due.startDay,
+        endDay: due.endDay,
+        provider: reportCfg.provider,
+        model: reportCfg.model,
+        generatedAt: Date.now(),
+        durationMs: priorUsage?.durationMs ?? 0,
+        ok: true,
+        noData: true,
+      },
+    };
     return preparedSuccess(
       params,
-      {
-        body: "",
-        meta: {
-          period: due.period,
-          key: due.key,
-          startDay: due.startDay,
-          endDay: due.endDay,
-          provider: reportCfg.provider,
-          model: reportCfg.model,
-          generatedAt: Date.now(),
-          durationMs: 0,
-          ok: true,
-          noData: true,
-        },
-      },
+      priorUsage === null ? noDataResult : withCumulativeUsage(noDataResult, priorUsage),
       snapshot,
     );
   }
@@ -337,13 +449,63 @@ export async function prepareDueReportOutcome(
     model: reportCfg.model,
     reasoningEffort: route === undefined ? reportCfg.reasoningEffort : route.route.reasoningEffort,
     ...(route === undefined ? {} : { route }),
+    ...(params.signal === undefined ? {} : { signal: params.signal }),
   });
-  if (generated.status === "failure") return generated;
-  const result: ReportResult = {
+  const attemptNumber = params.attemptNumber ?? 1;
+  if (generated.status === "failure") {
+    const observed = await observeAttempt(
+      params,
+      generated.attempt,
+      attemptNumber,
+      generated.failure,
+    );
+    if (observed === "error") {
+      return {
+        status: "failure",
+        failure: REPORT_OBSERVATION_STORAGE_FAILURE,
+        result: generated.result,
+        attempt: generated.attempt,
+      };
+    }
+    if (params.onAttempt !== undefined && observed === null) {
+      // 旧 cycle 的 observation CAS 失败只丢弃观测，不改写原 provider 失败；
+      // executor 随后的 recordFailure 也会按旧 claim CAS 静默丢弃。
+      return {
+        ...generated,
+        result: generated.result,
+        attempt: generated.attempt,
+      };
+    }
+    return {
+      ...generated,
+      result:
+        observed === null ? generated.result : withCumulativeUsage(generated.result, observed),
+      attempt: generated.attempt,
+    };
+  }
+  let result: ReportResult = {
     ...generated.result,
     meta: { ...generated.result.meta, summary: summaryOf(snapshot) },
   };
-  return preparedSuccess(params, result, snapshot);
+  const observed = await observeAttempt(params, generated.attempt, attemptNumber, null);
+  if (observed === "error") {
+    return {
+      status: "failure",
+      failure: REPORT_OBSERVATION_STORAGE_FAILURE,
+      result,
+      attempt: generated.attempt,
+    };
+  }
+  if (params.onAttempt !== undefined && observed === null) {
+    return {
+      status: "failure",
+      failure: REPORT_CYCLE_CONFLICT_FAILURE,
+      result,
+      attempt: generated.attempt,
+    };
+  }
+  if (observed !== null) result = withCumulativeUsage(result, observed);
+  return preparedSuccess(params, result, snapshot, generated.attempt);
 }
 
 export async function runDueReportOutcome(
@@ -354,9 +516,14 @@ export async function runDueReportOutcome(
   try {
     await outcome.persist();
   } catch {
-    return { status: "failure", failure: REPORT_STORAGE_FAILURE };
+    return {
+      status: "failure",
+      failure: REPORT_STORAGE_FAILURE,
+      result: outcome.result,
+      attempt: outcome.attempt,
+    };
   }
-  return { status: "success", result: outcome.result };
+  return { status: "success", result: outcome.result, attempt: outcome.attempt };
 }
 
 /** 兼容 wrapper：保留旧 ReportMeta 返回/抛错语义，结构化标签由 executor 消费。 */

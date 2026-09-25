@@ -66,6 +66,7 @@ import {
   type DueExecutorRetryOptions,
   type RetrySuccessCommitInput,
   type RetrySuccessCommitPort,
+  generateReportOutcome,
 } from "../../../src/server/execute/interface.ts";
 import { makeListDirs } from "../../../src/server/execute/list-dirs.ts";
 
@@ -437,6 +438,8 @@ function retryExecutor(input: {
   reconcileIndex?: DueExecutorRetryOptions["reconcileIndex"];
   resolveRoute?: DueExecutorRetryOptions["resolveRoute"];
   config?: () => ReturnType<typeof retryConfig>;
+  warn?: DueExecutorRetryOptions["warn"];
+  signal?: DueExecutorRetryOptions["signal"];
   now?: () => number;
 }) {
   return makeDueReportExecutor({
@@ -452,6 +455,8 @@ function retryExecutor(input: {
       resolveRoute: input.resolveRoute ?? resolveGenerateRoute,
       commitSuccess: input.commit,
       now: input.now ?? (() => RETRY_NOW),
+      ...(input.signal === undefined ? {} : { signal: input.signal }),
+      ...(input.warn === undefined ? {} : { warn: input.warn }),
       ...(input.reconcileIndex === undefined ? {} : { reconcileIndex: input.reconcileIndex }),
     },
   });
@@ -461,6 +466,74 @@ const SUCCESS_CHUNKS: StreamChunk[] = [
   { type: "text-delta", index: 0, text: "报告正文" },
   { type: "finish", reason: { kind: "stop" } },
 ];
+
+describe("B3a：报告 attempt token 观测红灯", () => {
+  it("保留 reasoningTokens、缺失 token 字段为 null，并记录 fake-clock durationMs", async () => {
+    const { ctx } = retryContext([
+      { type: "text-delta", index: 0, text: "报告正文" },
+      {
+        type: "usage",
+        usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, reasoningTokens: 7 },
+      },
+      { type: "finish", reason: { kind: "stop" } },
+    ]);
+    let tick = 1_000;
+    const result = await generateReportOutcome({
+      llm: ctx.llm,
+      period: "daily",
+      key: RETRY_DAY,
+      startDay: RETRY_DAY,
+      endDay: RETRY_DAY,
+      statsJson: "{}",
+      promptTemplate: "prompt",
+      provider: "generic-provider",
+      model: "generic-model",
+      now: () => {
+        const value = tick;
+        tick += 125;
+        return value;
+      },
+    });
+
+    expect(result.status).toBe("success");
+    if (result.status !== "success") throw new Error("expected successful generation");
+    expect(result.result.meta.tokens).toEqual({
+      inputTokens: 10,
+      outputTokens: 5,
+      reasoningTokens: 7,
+      totalTokens: 15,
+      cacheReadTokens: null,
+      cacheWriteTokens: null,
+    });
+    expect(result.result.meta.durationMs).toBe(125);
+  });
+
+  it("abort 记录稳定终态 code，不把取消异常原文写入观测", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const { ctx } = retryContext([], async () => {
+      throw new Error("raw abort secret must stay hidden");
+    });
+    const result = await generateReportOutcome({
+      llm: ctx.llm,
+      period: "daily",
+      key: RETRY_DAY,
+      startDay: RETRY_DAY,
+      endDay: RETRY_DAY,
+      statsJson: "{}",
+      promptTemplate: "prompt",
+      provider: "generic-provider",
+      model: "generic-model",
+      signal: controller.signal,
+    });
+
+    expect(result.status).toBe("failure");
+    if (result.status !== "failure") throw new Error("expected aborted generation");
+    expect(result.failure).toEqual({ kind: "aborted", code: "request-aborted" });
+    expect(result.attempt).toMatchObject({ durationMs: expect.any(Number), tokens: null });
+    expect(JSON.stringify(result)).not.toContain("raw");
+  });
+});
 
 describe("runner/executor：#1010 B2a retry ledger 执行事务", () => {
   it("runner 生成失败返回 tagged outcome，不压成普通 Error", async () => {
@@ -576,8 +649,16 @@ describe("runner/executor：#1010 B2a retry ledger 执行事务", () => {
     const root = mkdtempSync(join(tmpdir(), "u-exec-nodata-"));
     const ledger = retryLedger(root, () => "cycle-nodata");
     const commit = commitCurrentThenClear(root, ledger);
+    const messages: string[] = [];
     const { ctx, calls } = retryContext(SUCCESS_CHUNKS);
-    const executor = retryExecutor({ root, trend: retryTrend(0), ctx, ledger, commit });
+    const executor = retryExecutor({
+      root,
+      trend: retryTrend(0),
+      ctx,
+      ledger,
+      commit,
+      warn: (message) => messages.push(message),
+    });
 
     try {
       const result = await executor(retryDue());
@@ -587,6 +668,56 @@ describe("runner/executor：#1010 B2a retry ledger 执行事务", () => {
       expect((await readLastRun(root)).daily).toBe(RETRY_DAY);
       expect(await ledger.list()).toEqual([]);
       expect(commit.calls).toHaveLength(1);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("成功报告使用整个 cycle 的累计 usage，而非只取最后 attempt", async () => {
+    const root = mkdtempSync(join(tmpdir(), "u-exec-cumulative-"));
+    const ledger = retryLedger(root, () => "cycle-cumulative");
+    const commit = commitCurrentThenClear(root, ledger);
+    let current = RETRY_NOW;
+    const firstCtx = retryContext([
+      { type: "usage", usage: { inputTokens: 10, outputTokens: 2, totalTokens: 12 } },
+      { type: "finish", reason: { kind: "stop" } },
+    ]);
+    const executor = retryExecutor({
+      root,
+      trend: retryTrend(1),
+      ctx: firstCtx.ctx,
+      ledger,
+      commit,
+      now: () => current,
+    });
+
+    try {
+      await expect(executor(retryDue())).rejects.toThrow("模型未产出任何正文");
+      current += 60_000;
+      const second = retryContext([
+        { type: "text-delta", index: 0, text: "第二次正文" },
+        { type: "usage", usage: { inputTokens: 5, outputTokens: 3, totalTokens: 8 } },
+        { type: "finish", reason: { kind: "stop" } },
+      ]);
+      const secondExecutor = retryExecutor({
+        root,
+        trend: retryTrend(1),
+        ctx: second.ctx,
+        ledger,
+        commit,
+        now: () => current,
+      });
+      const result = await secondExecutor(retryDue());
+      if (result.meta === undefined) throw new Error("expected report meta");
+      expect(result.meta.tokens).toEqual({
+        inputTokens: 15,
+        outputTokens: 5,
+        reasoningTokens: null,
+        totalTokens: 20,
+        cacheReadTokens: null,
+        cacheWriteTokens: null,
+      });
+      expect(commit.calls[0]?.result.meta.tokens).toEqual(result.meta.tokens);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -638,17 +769,39 @@ describe("runner/executor：#1010 B2a retry ledger 执行事务", () => {
     }
   });
 
-  it("persist 失败记 storage terminal；同 key 再执行不再调用模型", async () => {
+  it("persist 失败保留 provider success observation，并将 cycle 标记 storage terminal", async () => {
     const root = mkdtempSync(join(tmpdir(), "u-exec-storage-"));
     mkdirSync(join(root, "reports", "index.jsonl"), { recursive: true });
     const ledger = retryLedger(root, () => "cycle-storage");
     const commit = commitCurrentThenClear(root, ledger);
     const { ctx, calls } = retryContext(SUCCESS_CHUNKS);
-    const executor = retryExecutor({ root, trend: retryTrend(1), ctx, ledger, commit });
+    const messages: string[] = [];
+    const executor = retryExecutor({
+      root,
+      trend: retryTrend(1),
+      ctx,
+      ledger,
+      commit,
+      warn: (message) => messages.push(message),
+    });
 
     try {
       await expect(executor(retryDue())).rejects.toThrow("报告持久化失败");
 
+      expect(messages).toHaveLength(1);
+      const event = JSON.parse(messages[0]!) as Record<string, unknown>;
+      expect(event).toMatchObject({
+        event: "report_attempt",
+        period: "daily",
+        key: RETRY_DAY,
+        attempt: 1,
+        result: "failure",
+        code: "report-persist-failed",
+        status: "terminal",
+      });
+      expect(messages[0]).not.toContain("raw");
+      expect(messages[0]).not.toContain("prompt");
+      expect(messages[0]).not.toContain("secret");
       expect(calls).toHaveLength(1);
       expect(await readLastRun(root)).toEqual({});
       expect(await ledger.list()).toEqual([
@@ -657,12 +810,65 @@ describe("runner/executor：#1010 B2a retry ledger 执行事务", () => {
           phase: "terminal",
           terminal: true,
           reason: { kind: "storage", code: "report-persist-failed" },
+          attemptObservations: [
+            expect.objectContaining({
+              attempt: 1,
+              result: "success",
+              code: null,
+              status: "success",
+            }),
+          ],
+          usage: expect.objectContaining({ durationMs: expect.any(Number) }),
         }),
       ]);
       expect(commit.calls).toHaveLength(1);
 
       await expect(executor(retryDue())).rejects.toThrow("报告重试状态不允许执行");
       expect(calls).toHaveLength(1);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("abort 在 retry executor 中落 terminal/aborted，不重试且不推进 lastRun", async () => {
+    const root = mkdtempSync(join(tmpdir(), "u-exec-abort-"));
+    const ledger = retryLedger(root, () => "cycle-abort");
+    const commit = commitCurrentThenClear(root, ledger);
+    const controller = new AbortController();
+    controller.abort();
+    const { ctx, calls } = retryContext([], async () => {
+      throw new Error("raw abort secret must stay hidden");
+    });
+    const executor = retryExecutor({
+      root,
+      trend: retryTrend(1),
+      ctx,
+      ledger,
+      commit,
+      signal: controller.signal,
+    });
+
+    try {
+      await expect(executor(retryDue())).rejects.toThrow("模型请求已取消");
+      expect(calls).toHaveLength(0);
+      expect(await readLastRun(root)).toEqual({});
+      expect(commit.calls).toEqual([]);
+      expect(await ledger.list()).toEqual([
+        expect.objectContaining({
+          attempts: 0,
+          phase: "terminal",
+          terminal: true,
+          reason: { kind: "aborted", code: "request-aborted" },
+          attemptObservations: [
+            expect.objectContaining({
+              attempt: 1,
+              result: "failure",
+              code: "request-aborted",
+              status: "aborted",
+            }),
+          ],
+        }),
+      ]);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -1008,6 +1214,16 @@ describe("retry-policy：纯状态机（0..5 / 固定退避 / cycle fencing / re
       reason: null,
       cycleId: "cycle-1",
       phase: "initial",
+      attemptObservations: [],
+      usage: {
+        inputTokens: null,
+        outputTokens: null,
+        reasoningTokens: null,
+        totalTokens: null,
+        cacheReadTokens: null,
+        cacheWriteTokens: null,
+        durationMs: null,
+      },
     });
     expect(claimed(entry, 1_000).entry.phase).toBe("in-flight");
   });
@@ -1135,6 +1351,16 @@ describe("retry-policy：纯状态机（0..5 / 固定退避 / cycle fencing / re
       reason: null,
       cycleId: "cycle-new",
       phase: "waiting",
+      attemptObservations: [],
+      usage: {
+        inputTokens: null,
+        outputTokens: null,
+        reasoningTokens: null,
+        totalTokens: null,
+        cacheReadTokens: null,
+        cacheWriteTokens: null,
+        durationMs: null,
+      },
     });
     expect(claimed(forced, 20, "cycle-new").entry.cycleId).toBe("cycle-new");
   });
@@ -1253,6 +1479,66 @@ describe("retry-ledger：durable JSON / CAS / recover / per-root 串行", () => 
     return terminal;
   }
 
+  it("两 attempt 按字段累计，缺失字段保持 null，重启读取观测事实", async () => {
+    const first = newLedger();
+    const firstClaim = await first.beginAttempt(seed, now);
+    if (firstClaim === null) throw new Error("expected first claim");
+    const firstEntry = await first.recordAttempt(firstClaim, {
+      attempt: 1,
+      result: "failure",
+      code: "empty-output",
+      status: "retry",
+      durationMs: 125,
+      tokens: {
+        inputTokens: 10,
+        outputTokens: 5,
+        reasoningTokens: null,
+        totalTokens: 15,
+        cacheReadTokens: 2,
+        cacheWriteTokens: null,
+      },
+    });
+    if (firstEntry === null) throw new Error("expected first observation");
+    const waiting = await first.recordFailure(
+      firstEntry,
+      { code: "empty-output", kind: "empty-output" },
+      now,
+    );
+    if (waiting === null) throw new Error("expected waiting entry");
+    const secondClaim = await first.beginAttempt(
+      { ...seed, cycleId: waiting.cycleId },
+      waiting.nextRetryAt!,
+    );
+    if (secondClaim === null) throw new Error("expected second claim");
+    const secondEntry = await first.recordAttempt(secondClaim, {
+      attempt: 2,
+      result: "success",
+      code: null,
+      status: "success",
+      durationMs: 75,
+      tokens: {
+        inputTokens: 4,
+        outputTokens: null,
+        reasoningTokens: 3,
+        totalTokens: null,
+        cacheReadTokens: null,
+        cacheWriteTokens: 1,
+      },
+    });
+    if (secondEntry === null) throw new Error("expected second observation");
+    const persisted = await newLedger().get(seed.period, seed.key);
+    expect(persisted?.attemptObservations).toHaveLength(2);
+    expect(persisted?.usage).toEqual({
+      inputTokens: 14,
+      outputTokens: null,
+      reasoningTokens: null,
+      totalTokens: null,
+      cacheReadTokens: null,
+      cacheWriteTokens: null,
+      durationMs: 200,
+    });
+  });
+
   it("缺文件为空；initial claim 写 schema=1 + records[period][key]，目录/文件私有", async () => {
     const ledger = newLedger();
     expect(await ledger.list()).toEqual([]);
@@ -1287,6 +1573,16 @@ describe("retry-ledger：durable JSON / CAS / recover / per-root 串行", () => 
             reason: null,
             cycleId: "cycle-1",
             phase: "in-flight",
+            attemptObservations: [],
+            usage: {
+              inputTokens: null,
+              outputTokens: null,
+              reasoningTokens: null,
+              totalTokens: null,
+              cacheReadTokens: null,
+              cacheWriteTokens: null,
+              durationMs: null,
+            },
           },
         },
       },

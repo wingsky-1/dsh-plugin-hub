@@ -884,6 +884,16 @@ describe("D11二 配置服务窄面消费 + 任务队列 + 执行器", () => {
         reason: null,
         cycleId: "c1",
         phase: "waiting" as const,
+        attemptObservations: [],
+        usage: {
+          inputTokens: 11,
+          outputTokens: null,
+          reasoningTokens: 3,
+          totalTokens: null,
+          cacheReadTokens: null,
+          cacheWriteTokens: null,
+          durationMs: 42,
+        },
       }),
     } as unknown as ReportRoutesContext["retryState"];
     const withState = { ...ctx, reportQueue: queue, retryState };
@@ -901,7 +911,18 @@ describe("D11二 配置服务窄面消费 + 任务队列 + 执行器", () => {
     );
     expect(status.code).toBe(200);
     expect((status.body as { error?: string; retry?: unknown }).error).toBe("storage");
-    expect((status.body as { retry?: { attempts?: number } }).retry?.attempts).toBe(2);
+    expect(
+      (status.body as { retry?: { attempts?: number; usage?: unknown } }).retry?.attempts,
+    ).toBe(2);
+    expect((status.body as { retry?: { usage?: unknown } }).retry?.usage).toEqual({
+      inputTokens: 11,
+      outputTokens: null,
+      reasoningTokens: 3,
+      totalTokens: null,
+      cacheReadTokens: null,
+      cacheWriteTokens: null,
+      durationMs: 42,
+    });
   });
 
   it("force prepare/提交失败返回稳定 code，不泄露原始错误", async () => {

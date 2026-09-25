@@ -43,11 +43,17 @@ export {
   beginAttempt,
   beginForce,
   createInitialEntry,
+  addRetryObservation,
+  usageAfterRetryObservation,
+  emptyRetryAttemptTokens,
+  emptyRetryUsage,
   recordFailure,
   recover,
   shouldReconcileRetry,
 } from "./retry-policy.ts";
 export type {
+  RetryAttemptObservation,
+  RetryAttemptTokens,
   RetryClaim,
   RetryEntry,
   RetryFailure,
@@ -57,6 +63,7 @@ export type {
   RetryRouteSnapshot,
   RetrySeed,
   RetryTerminalReason,
+  RetryUsageTotals,
 } from "./retry-policy.ts";
 
 // ------------------------------------------------------------------ 重试状态账本（retry-ledger.ts）

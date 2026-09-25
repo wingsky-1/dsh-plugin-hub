@@ -546,6 +546,7 @@ describe("generate：成功路径（正文拼接 / token 元数据 / 空串跟�
     expect(r.meta.tokens).toEqual({
       inputTokens: 10,
       outputTokens: 5,
+      reasoningTokens: null,
       totalTokens: 15,
       cacheReadTokens: null,
       cacheWriteTokens: null,
@@ -965,6 +966,7 @@ describe("generate：冲突 usage 采用首个 chunk", () => {
     expect(result.meta.tokens).toEqual({
       inputTokens: 10,
       outputTokens: 5,
+      reasoningTokens: null,
       totalTokens: 15,
       cacheReadTokens: 2,
       cacheWriteTokens: 1,
@@ -998,6 +1000,7 @@ describe("generate：冲突 usage 采用首个 chunk", () => {
     expect(result.meta.tokens).toEqual({
       inputTokens: 0,
       outputTokens: 0,
+      reasoningTokens: null,
       totalTokens: null,
       cacheReadTokens: null,
       cacheWriteTokens: null,

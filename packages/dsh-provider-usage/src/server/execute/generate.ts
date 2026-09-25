@@ -52,6 +52,7 @@ export interface ReportLlmService {
 export interface ReportTokenUsage {
   inputTokens: number | null;
   outputTokens: number | null;
+  reasoningTokens: number | null;
   totalTokens: number | null;
   cacheReadTokens: number | null;
   cacheWriteTokens: number | null;
@@ -101,10 +102,21 @@ export interface ReportResult {
   meta: ReportMeta;
 }
 
+/** 包内单次生成观测：只含安全数字，不携带 provider 原文。 */
+export interface GenerateReportAttempt {
+  durationMs: number | null;
+  tokens: ReportTokenUsage | null;
+}
+
 /** 包内结构化生成结果：失败标签只含稳定 code/kind，不携带 provider 原文。 */
 export type GenerateReportOutcome =
-  | { status: "success"; result: ReportResult }
-  | { status: "failure"; failure: RetryFailure; result: ReportResult };
+  | { status: "success"; result: ReportResult; attempt: GenerateReportAttempt }
+  | {
+      status: "failure";
+      failure: RetryFailure;
+      result: ReportResult;
+      attempt: GenerateReportAttempt;
+    };
 
 /** executor claim 使用的路由解析结果；unresolved 不得进入 stream。 */
 export interface UnresolvedRouteOutcome {
@@ -243,7 +255,7 @@ export interface ReportStatsSnapshot {
 
 /** 防御性有限数（usage chunk 字段跨宿主边界不受信）。 */
 function safeNum(v: unknown): number | null {
-  return typeof v === "number" && Number.isFinite(v) ? v : null;
+  return typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : null;
 }
 
 /** 从 TokenUsage 防御提取报告 token 元数据。 */
@@ -252,6 +264,7 @@ function parseTokenUsage(u: unknown): ReportTokenUsage {
   return {
     inputTokens: safeNum(src.inputTokens),
     outputTokens: safeNum(src.outputTokens),
+    reasoningTokens: safeNum(src.reasoningTokens),
     totalTokens: safeNum(src.totalTokens),
     cacheReadTokens: safeNum(src.cacheReadTokens),
     cacheWriteTokens: safeNum(src.cacheWriteTokens),
@@ -747,28 +760,35 @@ export async function generateReportOutcome(
     error: string,
     failure: RetryFailure,
     route: { provider: string; model: string },
-  ): GenerateReportOutcome => ({
-    status: "failure",
-    failure,
-    result: {
-      body: "",
-      meta: {
-        ...metaBase,
-        provider: route.provider,
-        model: route.model,
-        durationMs: now() - started,
-        ok: false,
-        error,
+    tokens: ReportTokenUsage | null = null,
+  ): GenerateReportOutcome => {
+    const durationMs = now() - started;
+    return {
+      status: "failure",
+      failure,
+      result: {
+        body: "",
+        meta: {
+          ...metaBase,
+          provider: route.provider,
+          model: route.model,
+          durationMs,
+          ok: false,
+          error,
+          ...(tokens === null ? {} : { tokens }),
+        },
       },
-    },
-  });
+      attempt: { durationMs, tokens },
+    };
+  };
   const failAborted = (
     route: { provider: string; model: string } = opts.route?.route ?? {
       provider: opts.provider,
       model: opts.model,
     },
+    tokens: ReportTokenUsage | null = null,
   ): GenerateReportOutcome =>
-    fail(REPORT_STREAM_ERROR.requestAborted, GENERATE_FAILURE.requestAborted, route);
+    fail(REPORT_STREAM_ERROR.requestAborted, GENERATE_FAILURE.requestAborted, route, tokens);
   if (opts.signal?.aborted) return failAborted();
 
   const routeOutcome = opts.route ?? (await resolveGenerateRoute(opts));
@@ -827,7 +847,8 @@ export async function generateReportOutcome(
   };
   try {
     const collection = await collectStream(opts.llm.stream(genOpts), state, opts.signal);
-    if (collection.kind === "aborted" || opts.signal?.aborted) return failAborted(route);
+    if (collection.kind === "aborted" || opts.signal?.aborted)
+      return failAborted(route, state.tokens);
     state = collection.state;
   } catch (error) {
     // provider 异常可能携带 prompt、路径或凭据；只返回稳定安全文案。
@@ -835,28 +856,44 @@ export async function generateReportOutcome(
     return fail("模型请求失败", classifyStreamFailure(error), route);
   }
   if (state.terminal.kind === "error")
-    return fail(state.terminal.error, state.terminal.failure, route);
+    return fail(state.terminal.error, state.terminal.failure, route, state.tokens);
   if (state.hasUnsupportedTool) {
-    return fail(REPORT_STREAM_ERROR.unsupportedTool, GENERATE_FAILURE.unsupportedTool, route);
+    return fail(
+      REPORT_STREAM_ERROR.unsupportedTool,
+      GENERATE_FAILURE.unsupportedTool,
+      route,
+      state.tokens,
+    );
   }
   if (state.hasUnsupportedContent) {
-    return fail(REPORT_STREAM_ERROR.unsupportedContent, GENERATE_FAILURE.unsupportedContent, route);
+    return fail(
+      REPORT_STREAM_ERROR.unsupportedContent,
+      GENERATE_FAILURE.unsupportedContent,
+      route,
+      state.tokens,
+    );
   }
   if (state.hasUnknownChunk) {
-    return fail("模型返回了未知流事件", GENERATE_FAILURE.unknownStreamEvent, route);
+    return fail("模型返回了未知流事件", GENERATE_FAILURE.unknownStreamEvent, route, state.tokens);
   }
   if (state.terminal.kind === "unknown") {
-    return fail("模型流返回未知终态", GENERATE_FAILURE.unknownFinish, route);
+    return fail("模型流返回未知终态", GENERATE_FAILURE.unknownFinish, route, state.tokens);
   }
   if (state.terminal.kind === "none") {
-    return fail("模型流未返回可识别终态", GENERATE_FAILURE.missingFinish, route);
+    return fail("模型流未返回可识别终态", GENERATE_FAILURE.missingFinish, route, state.tokens);
   }
   if (state.body.trim().length === 0 && state.hasNonWhitespaceReasoning) {
-    return fail("模型仅返回推理过程未产出正文", GENERATE_FAILURE.reasoningOnly, route);
+    return fail(
+      "模型仅返回推理过程未产出正文",
+      GENERATE_FAILURE.reasoningOnly,
+      route,
+      state.tokens,
+    );
   }
   if (state.body.trim().length === 0) {
-    return fail("模型未产出任何正文", GENERATE_FAILURE.emptyOutput, route);
+    return fail("模型未产出任何正文", GENERATE_FAILURE.emptyOutput, route, state.tokens);
   }
+  const durationMs = now() - started;
   return {
     status: "success",
     result: {
@@ -865,11 +902,12 @@ export async function generateReportOutcome(
         ...metaBase,
         provider: route.provider,
         model: route.model,
-        durationMs: now() - started,
+        durationMs,
         ok: true,
         ...(state.tokens !== null ? { tokens: state.tokens } : {}),
       },
     },
+    attempt: { durationMs, tokens: state.tokens },
   };
 }
 

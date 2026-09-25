@@ -11,53 +11,16 @@ import type { ReportConfig, ReportPeriod } from "../config/interface.ts";
 import { pendingReports, type DueReport } from "./due.ts";
 import { readLastRun, ensureLastRunMigrated, updateLastRun } from "./store.ts";
 import type { ScheduleIndexParser } from "./deps.ts";
-type RetryRouteSnapshot = {
-  provider: string;
-  model: string;
-  reasoningEffort?: string;
-};
-
-type RetryEntry = {
-  period: ReportPeriod;
-  key: string;
-  startDay: string;
-  endDay: string;
-  route: RetryRouteSnapshot;
-  attempts: number;
-  maxAttempts: 5;
-  nextRetryAt: number | null;
-  terminal: boolean;
-  reason: { code: string; kind: RetryFailure["kind"] } | null;
-  cycleId: string;
-  phase: "initial" | "waiting" | "in-flight" | "terminal";
-};
-
-type RetryClaim = {
-  cycleId: string;
-  entry: RetryEntry;
-};
-
-type RetrySeed = {
-  period: ReportPeriod;
-  key: string;
-  startDay: string;
-  endDay: string;
-  route: RetryRouteSnapshot;
-};
+import type {
+  RetryAttemptObservation,
+  RetryClaim,
+  RetryEntry,
+  RetryFailure,
+  RetryIndexKey,
+  RetrySeed,
+} from "./retry-policy.ts";
 
 type RetryAttemptInput = RetrySeed & { cycleId?: string };
-
-type RetryFailure = {
-  code: string;
-  kind: "transient" | "empty-output" | "permanent" | "aborted" | "unknown" | "storage";
-};
-
-type RetryIndexKey = {
-  period: ReportPeriod;
-  key: string;
-  /** 成功 index 的事务 cycle；legacy/异 cycle 记录不能证明当前 claim。 */
-  cycleId?: string;
-};
 
 interface RetryLedgerPort {
   list(): Promise<RetryEntry[]>;
@@ -65,6 +28,11 @@ interface RetryLedgerPort {
   get(period: ReportPeriod, key: string): Promise<RetryEntry | undefined>;
   beginAttempt(input: RetryAttemptInput, now?: number): Promise<RetryClaim | null>;
   beginForce(input: RetrySeed, now?: number): Promise<RetryEntry>;
+  recordAttempt(
+    claim: RetryClaim,
+    observation: RetryAttemptObservation,
+    now?: number,
+  ): Promise<RetryClaim | null>;
   recordFailure(claim: RetryClaim, failure: RetryFailure, now?: number): Promise<RetryEntry | null>;
   recover(now?: number): Promise<RetryEntry[]>;
   clear(claim: RetryClaim): Promise<boolean>;
@@ -337,7 +305,9 @@ function sameClaim(left: RetryClaim, right: RetryEntry | undefined): boolean {
     left.entry.phase === right.phase &&
     left.entry.attempts === right.attempts &&
     left.entry.terminal === right.terminal &&
-    left.entry.nextRetryAt === right.nextRetryAt
+    left.entry.nextRetryAt === right.nextRetryAt &&
+    JSON.stringify(left.entry.attemptObservations) === JSON.stringify(right.attemptObservations) &&
+    JSON.stringify(left.entry.usage) === JSON.stringify(right.usage)
   );
 }
 
@@ -410,6 +380,8 @@ export function createReportStateCoordinator(
       locked(() => ledger.beginAttempt(input, at ?? now())),
     beginForce: (input: RetrySeed, at?: number) =>
       locked(() => ledger.beginForce(input, at ?? now())),
+    recordAttempt: (claim: RetryClaim, observation: RetryAttemptObservation, at?: number) =>
+      locked(() => ledger.recordAttempt(claim, observation, at ?? now())),
     recordFailure: (claim: RetryClaim, failure: RetryFailure, at?: number) =>
       locked(() => ledger.recordFailure(claim, failure, at ?? now())),
     recover: (at?: number) => locked(() => ledger.recover(at ?? now())),

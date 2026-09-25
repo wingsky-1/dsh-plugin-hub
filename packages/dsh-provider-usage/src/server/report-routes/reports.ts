@@ -44,6 +44,15 @@ type ReportRetryView = {
   nextRetryAt: number | null;
   terminal: boolean;
   terminalReason: { code: string; kind: string } | null;
+  usage: {
+    inputTokens: number | null;
+    outputTokens: number | null;
+    reasoningTokens: number | null;
+    totalTokens: number | null;
+    cacheReadTokens: number | null;
+    cacheWriteTokens: number | null;
+    durationMs: number | null;
+  };
 };
 import { sanitizeHtml } from "../../shared/interface.ts";
 
@@ -130,6 +139,7 @@ function retryView(entry: RetryEntry): ReportRetryView {
     terminal: entry.terminal,
     terminalReason:
       entry.reason === null ? null : { code: entry.reason.code, kind: entry.reason.kind },
+    usage: { ...entry.usage },
   };
 }
 

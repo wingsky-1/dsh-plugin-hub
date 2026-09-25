@@ -415,6 +415,11 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
   // 任务队列 = 定时 tick 与手动「立即生成」的单一执行入口。
   // 执行器职责（幂等下沉/生成/lastRun 推进/失败不推进/脱敏）在工厂契约内固化，
   // 队列只负责串行单飞与去重（tasks.ts）。
+  const reportWarn = (message: string): void => {
+    const safe = sanitizeDiagnostic(message);
+    layerErrors.record("execute", safe);
+    console.warn(`[dsh-provider-usage] report: ${safe}`);
+  };
   const reportQueue = new ReportTaskQueue({
     executor: makeDueReportExecutor({
       trend,
@@ -431,6 +436,7 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
         resolveRoute: resolveReportRoute,
         commitSuccess: reportState,
         reconcileIndex: reportState.reconcileIndex,
+        warn: reportWarn,
         now: Date.now,
       },
     }),

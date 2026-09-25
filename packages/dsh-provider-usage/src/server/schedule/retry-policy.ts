@@ -40,6 +40,31 @@ export interface RetryTerminalReason {
   kind: RetryFailureKind;
 }
 
+/** 报告级 attempt 的安全 token 形状；不携带 provider 原文或推理文本。 */
+export interface RetryAttemptTokens {
+  inputTokens: number | null;
+  outputTokens: number | null;
+  reasoningTokens: number | null;
+  totalTokens: number | null;
+  cacheReadTokens: number | null;
+  cacheWriteTokens: number | null;
+}
+
+/** 单次报告 outer attempt 的安全观测；attempt 从 1 开始。 */
+export interface RetryAttemptObservation {
+  attempt: number;
+  result: "success" | "failure";
+  code: string | null;
+  status: "success" | "retry" | "terminal" | "aborted";
+  durationMs: number | null;
+  tokens: RetryAttemptTokens;
+}
+
+/** 周期累计事实；任一 attempt 缺失某字段时，该字段保持 null。 */
+export interface RetryUsageTotals extends RetryAttemptTokens {
+  durationMs: number | null;
+}
+
 export interface RetryEntry extends RetrySeed {
   attempts: number;
   maxAttempts: typeof RETRY_MAX_ATTEMPTS;
@@ -48,6 +73,8 @@ export interface RetryEntry extends RetrySeed {
   reason: RetryTerminalReason | null;
   cycleId: string;
   phase: RetryPhase;
+  attemptObservations: RetryAttemptObservation[];
+  usage: RetryUsageTotals;
 }
 
 export interface RetryClaim {
@@ -58,6 +85,8 @@ export interface RetryClaim {
 export interface RetryIndexKey {
   period: ReportPeriod;
   key: string;
+  /** 成功 index 的事务 cycle；legacy/异 cycle 记录不能证明当前 claim。 */
+  cycleId?: string;
 }
 
 function routeSnapshot(route: RetryRouteSnapshot): RetryRouteSnapshot {
@@ -93,6 +122,175 @@ function isRetryable(kind: RetryFailureKind): boolean {
   return kind === "transient" || kind === "empty-output";
 }
 
+const ATTEMPT_RESULTS = new Set<RetryAttemptObservation["result"]>(["success", "failure"]);
+const ATTEMPT_STATUSES = new Set<RetryAttemptObservation["status"]>([
+  "success",
+  "retry",
+  "terminal",
+  "aborted",
+]);
+
+export function emptyRetryAttemptTokens(): RetryAttemptTokens {
+  return {
+    inputTokens: null,
+    outputTokens: null,
+    reasoningTokens: null,
+    totalTokens: null,
+    cacheReadTokens: null,
+    cacheWriteTokens: null,
+  };
+}
+
+export function emptyRetryUsage(): RetryUsageTotals {
+  return { ...emptyRetryAttemptTokens(), durationMs: null };
+}
+
+function safeMetric(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
+}
+
+function validAttemptTokens(value: unknown): value is RetryAttemptTokens {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const record = value as Record<string, unknown>;
+  const keys = [
+    "inputTokens",
+    "outputTokens",
+    "reasoningTokens",
+    "totalTokens",
+    "cacheReadTokens",
+    "cacheWriteTokens",
+  ];
+  if (Object.keys(record).length !== keys.length) return false;
+  return keys.every((key) => record[key] === null || safeMetric(record[key]) !== null);
+}
+
+function requireObservation(observation: RetryAttemptObservation): void {
+  if (!Number.isInteger(observation.attempt) || observation.attempt < 1) {
+    throw new Error("retry observation attempt must be a positive integer");
+  }
+  if (!ATTEMPT_RESULTS.has(observation.result)) {
+    throw new Error("retry observation result is invalid");
+  }
+  if (!ATTEMPT_STATUSES.has(observation.status)) {
+    throw new Error("retry observation status is invalid");
+  }
+  if (observation.code !== null && !/^[a-z0-9][a-z0-9._:-]{0,63}$/.test(observation.code)) {
+    throw new Error("retry observation code must be stable");
+  }
+  if (observation.result === "success" && observation.code !== null) {
+    throw new Error("successful retry observation must not have a failure code");
+  }
+  if (observation.result === "failure" && observation.code === null) {
+    throw new Error("failed retry observation must have a failure code");
+  }
+  if (
+    (observation.result === "success" && observation.status !== "success") ||
+    (observation.result === "failure" && observation.status === "success")
+  ) {
+    throw new Error("retry observation result and status are inconsistent");
+  }
+  if (observation.status === "retry" && observation.attempt > RETRY_MAX_ATTEMPTS) {
+    throw new Error("retry observation status and attempt are inconsistent");
+  }
+  if (!validAttemptTokens(observation.tokens)) {
+    throw new Error("retry observation tokens are invalid");
+  }
+  if (
+    observation.durationMs !== null &&
+    (typeof observation.durationMs !== "number" ||
+      !Number.isFinite(observation.durationMs) ||
+      observation.durationMs < 0)
+  ) {
+    throw new Error("retry observation duration is invalid");
+  }
+}
+
+function addNullable(left: number | null, right: number | null): number | null {
+  return left === null || right === null ? null : left + right;
+}
+
+export function mergeRetryUsage(
+  previous: RetryUsageTotals | null,
+  tokens: RetryAttemptTokens,
+  durationMs: number | null,
+): RetryUsageTotals {
+  if (previous === null) {
+    return { ...tokens, durationMs };
+  }
+  return {
+    inputTokens: addNullable(previous.inputTokens, tokens.inputTokens),
+    outputTokens: addNullable(previous.outputTokens, tokens.outputTokens),
+    reasoningTokens: addNullable(previous.reasoningTokens, tokens.reasoningTokens),
+    totalTokens: addNullable(previous.totalTokens, tokens.totalTokens),
+    cacheReadTokens: addNullable(previous.cacheReadTokens, tokens.cacheReadTokens),
+    cacheWriteTokens: addNullable(previous.cacheWriteTokens, tokens.cacheWriteTokens),
+    durationMs: addNullable(previous.durationMs, durationMs),
+  };
+}
+
+export function usageFromRetryObservations(
+  observations: readonly RetryAttemptObservation[],
+): RetryUsageTotals {
+  return (
+    observations.reduce<RetryUsageTotals | null>(
+      (total, current) => mergeRetryUsage(total, current.tokens, current.durationMs),
+      null,
+    ) ?? emptyRetryUsage()
+  );
+}
+
+export function usageAfterRetryObservation(
+  entry: RetryEntry,
+  observation: RetryAttemptObservation,
+): RetryUsageTotals {
+  requireObservation(observation);
+  const index = entry.attemptObservations.findIndex(
+    (current) => current.attempt === observation.attempt,
+  );
+  const observations = [...entry.attemptObservations];
+  if (index >= 0) observations[index] = observation;
+  else observations.push(observation);
+  return usageFromRetryObservations(observations);
+}
+
+export function addRetryObservation(
+  claim: RetryClaim,
+  observation: RetryAttemptObservation,
+): RetryClaim {
+  requireObservation(observation);
+  if (claim.cycleId !== claim.entry.cycleId || claim.entry.phase !== "in-flight") {
+    throw new Error("retry observation claim is not in-flight");
+  }
+  const existingIndex = claim.entry.attemptObservations.findIndex(
+    (current) => current.attempt === observation.attempt,
+  );
+  if (existingIndex < 0 && observation.attempt !== claim.entry.attempts + 1) {
+    throw new Error("retry observation attempt does not match claim");
+  }
+  if (existingIndex >= 0 && existingIndex !== claim.entry.attemptObservations.length - 1) {
+    throw new Error("retry observation replacement is not the latest attempt");
+  }
+  if (
+    existingIndex >= 0 &&
+    (claim.entry.attemptObservations[existingIndex]?.result !== "success" ||
+      observation.result !== "failure")
+  ) {
+    throw new Error("retry observation replacement must change a success attempt to failure");
+  }
+  const attemptObservations = [...claim.entry.attemptObservations];
+  if (existingIndex >= 0) attemptObservations[existingIndex] = observation;
+  else attemptObservations.push(observation);
+  return {
+    cycleId: claim.cycleId,
+    entry: {
+      ...claim.entry,
+      route: routeSnapshot(claim.entry.route),
+      attemptObservations,
+      usage: usageFromRetryObservations(attemptObservations),
+    },
+  };
+}
+
 export function createInitialEntry(seed: RetrySeed, now: number, cycleId: string): RetryEntry {
   requireCycleId(cycleId);
   return {
@@ -108,6 +306,8 @@ export function createInitialEntry(seed: RetrySeed, now: number, cycleId: string
     reason: null,
     cycleId,
     phase: "initial",
+    attemptObservations: [],
+    usage: emptyRetryUsage(),
   };
 }
 
@@ -177,6 +377,8 @@ export function beginForce(seed: RetrySeed, now: number, cycleId: string): Retry
     reason: null,
     cycleId,
     phase: "waiting",
+    attemptObservations: [],
+    usage: emptyRetryUsage(),
   };
 }
 

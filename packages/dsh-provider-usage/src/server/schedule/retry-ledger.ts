@@ -29,7 +29,11 @@ import {
   recordFailure as policyRecordFailure,
   recover as policyRecover,
   shouldReconcileRetry,
+  addRetryObservation,
+  usageFromRetryObservations,
   RETRY_MAX_ATTEMPTS,
+  type RetryAttemptObservation,
+  type RetryAttemptTokens,
   type RetryClaim,
   type RetryEntry,
   type RetryFailure,
@@ -39,6 +43,9 @@ import {
   type RetryRouteSnapshot,
   type RetrySeed,
   type RetryTerminalReason,
+  type RetryUsageTotals,
+  emptyRetryAttemptTokens,
+  emptyRetryUsage,
 } from "./retry-policy.ts";
 
 export const RETRY_LEDGER_SCHEMA = 1 as const;
@@ -92,6 +99,11 @@ export interface RetryLedgerPort {
   get(period: ReportPeriod, key: string): Promise<RetryEntry | undefined>;
   beginAttempt(input: RetryAttemptInput, now?: number): Promise<RetryClaim | null>;
   beginForce(input: RetrySeed, now?: number): Promise<RetryEntry>;
+  recordAttempt(
+    claim: RetryClaim,
+    observation: RetryAttemptObservation,
+    now?: number,
+  ): Promise<RetryClaim | null>;
   recordFailure(claim: RetryClaim, failure: RetryFailure, now?: number): Promise<RetryEntry | null>;
   recover(now?: number): Promise<RetryEntry[]>;
   clear(claim: RetryClaim): Promise<boolean>;
@@ -201,26 +213,195 @@ function parseReason(value: unknown): RetryTerminalReason | null {
   return { code: value.code, kind: value.kind as RetryFailureKind };
 }
 
-function parseEntry(period: ReportPeriod, key: string, value: unknown): RetryEntry | null {
-  if (!isRecord(value)) return null;
+function parseMetric(value: unknown): number | null | undefined {
+  return value === null
+    ? null
+    : typeof value === "number" && Number.isFinite(value) && value >= 0
+      ? value
+      : undefined;
+}
+
+function parseAttemptTokens(value: unknown): RetryAttemptTokens | null {
   if (
+    !isRecord(value) ||
     !hasExactKeys(value, [
-      "period",
-      "key",
-      "startDay",
-      "endDay",
-      "route",
-      "attempts",
-      "maxAttempts",
-      "nextRetryAt",
-      "terminal",
-      "reason",
-      "cycleId",
-      "phase",
+      "inputTokens",
+      "outputTokens",
+      "reasoningTokens",
+      "totalTokens",
+      "cacheReadTokens",
+      "cacheWriteTokens",
     ])
   ) {
     return null;
   }
+  const parsed: RetryAttemptTokens = emptyRetryAttemptTokens();
+  for (const key of [
+    "inputTokens",
+    "outputTokens",
+    "reasoningTokens",
+    "totalTokens",
+    "cacheReadTokens",
+    "cacheWriteTokens",
+  ] as const) {
+    const metric = parseMetric(value[key]);
+    if (metric === undefined) return null;
+    parsed[key] = metric;
+  }
+  return parsed;
+}
+
+function parseUsage(value: unknown): RetryUsageTotals | null {
+  if (
+    !isRecord(value) ||
+    !hasExactKeys(value, [
+      "inputTokens",
+      "outputTokens",
+      "reasoningTokens",
+      "totalTokens",
+      "cacheReadTokens",
+      "cacheWriteTokens",
+      "durationMs",
+    ])
+  ) {
+    return null;
+  }
+  const tokens = parseAttemptTokens({
+    inputTokens: value.inputTokens,
+    outputTokens: value.outputTokens,
+    reasoningTokens: value.reasoningTokens,
+    totalTokens: value.totalTokens,
+    cacheReadTokens: value.cacheReadTokens,
+    cacheWriteTokens: value.cacheWriteTokens,
+  });
+  if (tokens === null) return null;
+  const durationMs = parseMetric(value.durationMs);
+  if (durationMs === undefined) return null;
+  return { ...tokens, durationMs };
+}
+
+function parseObservation(value: unknown): RetryAttemptObservation | null {
+  if (
+    !isRecord(value) ||
+    !hasExactKeys(value, ["attempt", "result", "code", "status", "durationMs", "tokens"])
+  ) {
+    return null;
+  }
+  const durationMs = parseMetric(value.durationMs);
+  if (durationMs === undefined) return null;
+  const tokens = parseAttemptTokens(value.tokens);
+  if (tokens === null) return null;
+  if (
+    !Number.isInteger(value.attempt) ||
+    (value.attempt as number) < 1 ||
+    (value.result !== "success" && value.result !== "failure") ||
+    (value.status !== "success" &&
+      value.status !== "retry" &&
+      value.status !== "terminal" &&
+      value.status !== "aborted") ||
+    (value.code !== null && !isStableCode(value.code)) ||
+    (value.result === "success" && value.code !== null) ||
+    (value.result === "failure" && value.code === null) ||
+    (value.result === "success" && value.status !== "success") ||
+    (value.result === "failure" && value.status === "success") ||
+    (value.status === "retry" && (value.attempt as number) > RETRY_MAX_ATTEMPTS)
+  ) {
+    return null;
+  }
+  return {
+    attempt: value.attempt as number,
+    result: value.result,
+    code: value.code as string | null,
+    status: value.status as RetryAttemptObservation["status"],
+    durationMs,
+    tokens,
+  };
+}
+
+function parseObservationCollection(
+  value: Record<string, unknown>,
+): { attemptObservations: RetryAttemptObservation[]; usage: RetryUsageTotals } | null {
+  if (!Array.isArray(value.attemptObservations)) return null;
+  const attemptObservations: RetryAttemptObservation[] = [];
+  for (const [index, rawObservation] of value.attemptObservations.entries()) {
+    const observation = parseObservation(rawObservation);
+    if (observation === null || observation.attempt !== index + 1) return null;
+    attemptObservations.push(observation);
+  }
+  if (attemptObservations.length > RETRY_MAX_ATTEMPTS + 1) return null;
+  const usage = parseUsage(value.usage);
+  if (usage === null) return null;
+  const expectedUsage = usageFromRetryObservations(attemptObservations);
+  if (
+    expectedUsage.inputTokens !== usage.inputTokens ||
+    expectedUsage.outputTokens !== usage.outputTokens ||
+    expectedUsage.reasoningTokens !== usage.reasoningTokens ||
+    expectedUsage.totalTokens !== usage.totalTokens ||
+    expectedUsage.cacheReadTokens !== usage.cacheReadTokens ||
+    expectedUsage.cacheWriteTokens !== usage.cacheWriteTokens ||
+    expectedUsage.durationMs !== usage.durationMs
+  ) {
+    return null;
+  }
+  return { attemptObservations, usage };
+}
+
+function observationCountMatchesState(
+  phase: RetryPhase,
+  attempts: number,
+  observationCount: number,
+): boolean {
+  // B2 兼容路径允许尚未调用 recordAttempt 就完成状态转移；一旦存在事实，
+  // 观测序列必须与自动重试计数严格对应。
+  if (observationCount === 0) return true;
+  if (phase === "initial") return false;
+  if (phase === "waiting") return observationCount === attempts;
+  if (phase === "in-flight") {
+    return observationCount === attempts || observationCount === attempts + 1;
+  }
+  return observationCount === attempts + 1;
+}
+
+function parseEntryState(
+  value: Record<string, unknown>,
+  reason: RetryTerminalReason | null,
+): boolean {
+  const phase = value.phase as RetryPhase;
+  const attempts = value.attempts as number;
+  if (phase === "terminal") {
+    return value.terminal === true && reason !== null && value.nextRetryAt === null;
+  }
+  if (value.terminal || reason !== null) return false;
+  if (phase === "in-flight" && value.nextRetryAt !== null) return false;
+  if ((phase === "initial" || phase === "waiting") && !isFiniteTimestamp(value.nextRetryAt)) {
+    return false;
+  }
+  return phase !== "initial" || attempts === 0;
+}
+
+function parseEntry(period: ReportPeriod, key: string, value: unknown): RetryEntry | null {
+  if (!isRecord(value)) return null;
+  const legacyKeys = [
+    "period",
+    "key",
+    "startDay",
+    "endDay",
+    "route",
+    "attempts",
+    "maxAttempts",
+    "nextRetryAt",
+    "terminal",
+    "reason",
+    "cycleId",
+    "phase",
+  ];
+  const hasObservations = Object.hasOwn(value, "attemptObservations");
+  const hasUsage = Object.hasOwn(value, "usage");
+  if (hasObservations !== hasUsage) return null;
+  const expectedKeys = hasObservations
+    ? [...legacyKeys, "attemptObservations", "usage"]
+    : legacyKeys;
+  if (!hasExactKeys(value, expectedKeys)) return null;
   if (value.period !== period || value.key !== key || !isValidWindow(period, value)) return null;
   const route = parseRoute(value.route);
   if (route === null) return null;
@@ -241,18 +422,19 @@ function parseEntry(period: ReportPeriod, key: string, value: unknown): RetryEnt
 
   const reason = parseReason(value.reason);
   if (reason === null && value.reason !== null) return null;
+  const observations = hasObservations ? parseObservationCollection(value) : null;
+  if (hasObservations && observations === null) return null;
+  const attemptObservations = observations?.attemptObservations ?? [];
+  const usage = observations?.usage ?? emptyRetryUsage();
   const phase = value.phase as RetryPhase;
   const attempts = value.attempts as number;
-  if (phase === "terminal") {
-    if (!value.terminal || reason === null || value.nextRetryAt !== null) return null;
-  } else {
-    if (value.terminal || reason !== null) return null;
-    if (phase === "in-flight" && value.nextRetryAt !== null) return null;
-    if ((phase === "initial" || phase === "waiting") && !isFiniteTimestamp(value.nextRetryAt)) {
-      return null;
-    }
-    if (phase === "initial" && attempts !== 0) return null;
+  if (
+    hasObservations &&
+    !observationCountMatchesState(phase, attempts, attemptObservations.length)
+  ) {
+    return null;
   }
+  if (!parseEntryState(value, reason)) return null;
 
   return {
     period,
@@ -267,6 +449,8 @@ function parseEntry(period: ReportPeriod, key: string, value: unknown): RetryEnt
     reason,
     cycleId: value.cycleId,
     phase,
+    attemptObservations,
+    usage,
   };
 }
 
@@ -311,6 +495,11 @@ function cloneEntry(entry: RetryEntry): RetryEntry {
         ? { provider: entry.route.provider, model: entry.route.model }
         : { ...entry.route },
     reason: entry.reason === null ? null : { ...entry.reason },
+    attemptObservations: entry.attemptObservations.map((observation) => ({
+      ...observation,
+      tokens: { ...observation.tokens },
+    })),
+    usage: { ...entry.usage },
   };
 }
 
@@ -383,6 +572,39 @@ function sameReason(left: RetryTerminalReason | null, right: RetryTerminalReason
   return left.code === right.code && left.kind === right.kind;
 }
 
+function sameTokens(left: RetryAttemptTokens, right: RetryAttemptTokens): boolean {
+  return (
+    left.inputTokens === right.inputTokens &&
+    left.outputTokens === right.outputTokens &&
+    left.reasoningTokens === right.reasoningTokens &&
+    left.totalTokens === right.totalTokens &&
+    left.cacheReadTokens === right.cacheReadTokens &&
+    left.cacheWriteTokens === right.cacheWriteTokens
+  );
+}
+
+function sameObservations(
+  left: readonly RetryAttemptObservation[],
+  right: readonly RetryAttemptObservation[],
+): boolean {
+  return (
+    left.length === right.length &&
+    left.every(
+      (observation, index) =>
+        observation.attempt === right[index]?.attempt &&
+        observation.result === right[index]?.result &&
+        observation.code === right[index]?.code &&
+        observation.status === right[index]?.status &&
+        observation.durationMs === right[index]?.durationMs &&
+        sameTokens(observation.tokens, right[index]?.tokens ?? emptyRetryAttemptTokens()),
+    )
+  );
+}
+
+function sameUsage(left: RetryUsageTotals, right: RetryUsageTotals): boolean {
+  return sameTokens(left, right) && left.durationMs === right.durationMs;
+}
+
 function claimMatchesCurrent(claim: RetryClaim, current: RetryEntry): boolean {
   const claimed = claim.entry;
   return (
@@ -396,7 +618,9 @@ function claimMatchesCurrent(claim: RetryClaim, current: RetryEntry): boolean {
     claimed.nextRetryAt === current.nextRetryAt &&
     claimed.terminal === current.terminal &&
     sameReason(claimed.reason, current.reason) &&
-    claimed.phase === current.phase
+    claimed.phase === current.phase &&
+    sameObservations(claimed.attemptObservations, current.attemptObservations) &&
+    sameUsage(claimed.usage, current.usage)
   );
 }
 
@@ -683,6 +907,18 @@ export function createRetryLedger(root: string, options: RetryLedgerOptions = {}
         setEntry(document, forced);
         await write(document);
         return cloneEntry(forced);
+      }),
+
+    recordAttempt: (claim, observation, explicitNow) =>
+      withRootLock(root, async () => {
+        operationNow(options, explicitNow);
+        const document = await read();
+        const current = entryAt(document, claim.entry.period, claim.entry.key);
+        if (current === undefined || !claimMatchesCurrent(claim, current)) return null;
+        const next = addRetryObservation(claim, observation);
+        setEntry(document, next.entry);
+        await write(document);
+        return { cycleId: next.cycleId, entry: cloneEntry(next.entry) };
       }),
 
     recordFailure: (claim, failure, explicitNow) =>

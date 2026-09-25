@@ -26,10 +26,14 @@ import type {
   ReportLlmService,
   ReportMeta,
   ReportResult,
+  ReportTokenUsage,
 } from "./generate.ts";
+import { RETRY_MAX_ATTEMPTS } from "../schedule/interface.ts";
 import type {
   ReportTaskInput,
   ReportTaskResult,
+  RetryAttemptObservation,
+  RetryAttemptTokens,
   RetryClaim,
   RetryFailure,
   RetryLedgerPort,
@@ -84,6 +88,10 @@ export interface DueExecutorRetryOptions {
     indexed: boolean;
     cycleId?: string;
   }) => Promise<boolean>;
+  /** B3a 结构化 attempt 诊断接缝；由组合根复用现有安全 warn。 */
+  warn?: (message: string) => void;
+  /** 内部取消信号；只透传到本次唯一模型生成边界。 */
+  signal?: AbortSignal;
   now?: () => number;
 }
 
@@ -123,6 +131,7 @@ function taggedError(code: string, message: string): Error & { code: string } {
 }
 
 function outcomeError(outcome: Extract<RunDueReportOutcome, { status: "failure" }>): string {
+  if (outcome.failure.code === "retry-cycle-conflict") return "报告重试周期已变化";
   return outcome.result?.meta.error ?? "报告持久化失败";
 }
 
@@ -152,6 +161,104 @@ function normalizeRouteOutcome(outcome: GenerateRouteOutcome): GenerateRouteOutc
     route: unresolvedRouteSnapshot(),
     failure: outcome.failure,
   };
+}
+
+function attemptStatus(
+  failure: { kind: string } | null,
+  attempts: number,
+): RetryAttemptObservation["status"] {
+  if (failure === null) return "success";
+  if (failure.kind === "aborted") return "aborted";
+  if ((failure.kind === "transient" || failure.kind === "empty-output") && attempts < 5) {
+    return "retry";
+  }
+  return "terminal";
+}
+
+function emptyAttemptTokens(): RetryAttemptTokens {
+  return {
+    inputTokens: null,
+    outputTokens: null,
+    reasoningTokens: null,
+    totalTokens: null,
+    cacheReadTokens: null,
+    cacheWriteTokens: null,
+  };
+}
+
+type LoggableAttemptOutcome =
+  | { status: "success"; attempt?: { durationMs: number | null; tokens: ReportTokenUsage | null } }
+  | {
+      status: "failure";
+      failure: RetryFailure;
+      attempt?: { durationMs: number | null; tokens: ReportTokenUsage | null };
+    };
+
+function logAttempt(
+  retry: DueExecutorRetryOptions,
+  input: ReportTaskInput,
+  claim: RetryClaim,
+  outcome: LoggableAttemptOutcome,
+): void {
+  if (retry.warn === undefined || outcome.attempt === undefined) return;
+  const attempt = outcome.attempt;
+  const tokens = attempt.tokens ?? emptyAttemptTokens();
+  const failure = outcome.status === "failure" ? outcome.failure : null;
+  const event = {
+    event: "report_attempt",
+    period: input.period,
+    key: input.key,
+    attempt: claim.entry.attempts + 1,
+    result: outcome.status,
+    code: failure?.code ?? null,
+    status: attemptStatus(failure, claim.entry.attempts),
+    durationMs: attempt.durationMs,
+    tokens,
+    effort: claim.entry.route.reasoningEffort ?? null,
+  };
+  try {
+    retry.warn(JSON.stringify(event));
+  } catch {
+    // 诊断接缝失败不得改变报告执行结果。
+  }
+}
+
+function routeFailureObservation(
+  failure: RetryFailure,
+  attemptNumber: number,
+): RetryAttemptObservation {
+  const status: RetryAttemptObservation["status"] =
+    failure.kind === "aborted"
+      ? "aborted"
+      : (failure.kind === "transient" || failure.kind === "empty-output") &&
+          attemptNumber <= RETRY_MAX_ATTEMPTS
+        ? "retry"
+        : "terminal";
+  return {
+    attempt: attemptNumber,
+    result: "failure",
+    code: failure.code,
+    status,
+    durationMs: 0,
+    tokens: emptyAttemptTokens(),
+  };
+}
+
+async function recordRouteFailureObservation(
+  ledger: RetryLedgerPort,
+  claim: RetryClaim,
+  failure: RetryFailure,
+  now: number,
+): Promise<RetryClaim | null | "error"> {
+  try {
+    return await ledger.recordAttempt(
+      claim,
+      routeFailureObservation(failure, claim.entry.attempts + 1),
+      now,
+    );
+  } catch {
+    return "error";
+  }
 }
 
 function advanceLastRun(deps: DueExecutorDeps, meta: ReportMeta): Promise<void> {
@@ -233,8 +340,25 @@ async function runWithRetry(
   reportCfg: ReportConfig,
 ): Promise<ReportTaskResult> {
   const { claim, route } = await claimRoute(deps, retry, input, reportCfg);
+  let activeClaim = claim;
   if (route.status !== "success") {
-    await retry.ledger.recordFailure(claim, route.failure, retry.now?.() ?? Date.now());
+    const now = retry.now?.() ?? Date.now();
+    const observed = await recordRouteFailureObservation(
+      retry.ledger,
+      activeClaim,
+      route.failure,
+      now,
+    );
+    if (observed === "error") {
+      await retry.ledger.recordFailure(
+        activeClaim,
+        { kind: "storage", code: "retry-observation-storage" },
+        now,
+      );
+      throw taggedError("retry-observation-storage", "报告重试观测写入失败");
+    }
+    if (observed !== null) activeClaim = observed;
+    await retry.ledger.recordFailure(activeClaim, route.failure, now);
     throw taggedError(route.failure.code, routeFailureMessage(route.failure));
   }
   const outcome = await prepareDueReportOutcome({
@@ -246,24 +370,46 @@ async function runWithRetry(
     historyRoot: deps.historyRoot,
     sanitizeDiagnostic: deps.sanitizeDiagnostic,
     route,
+    ...(retry.signal === undefined ? {} : { signal: retry.signal }),
+    attemptNumber: activeClaim.entry.attempts + 1,
+    getUsage: () => activeClaim.entry.usage,
+    onAttempt: async (observation) => {
+      const next = await retry.ledger.recordAttempt(
+        activeClaim,
+        observation,
+        retry.now?.() ?? Date.now(),
+      );
+      if (next === null) return null;
+      activeClaim = next;
+      return next.entry.usage;
+    },
   });
   if (outcome.status === "failure") {
-    await retry.ledger.recordFailure(claim, outcome.failure, retry.now?.() ?? Date.now());
+    logAttempt(retry, input, activeClaim, outcome);
+    if (outcome.failure.code !== "retry-cycle-conflict") {
+      await retry.ledger.recordFailure(activeClaim, outcome.failure, retry.now?.() ?? Date.now());
+    }
     throw taggedError(outcome.failure.code, outcomeError(outcome));
   }
   try {
     const committed = await retry.commitSuccess.commitSuccess({
-      claim,
+      claim: activeClaim,
       result: outcome.result,
-      persist: () => outcome.persist(claim.cycleId),
+      persist: () => outcome.persist(activeClaim.cycleId),
     });
     if (!committed) throw taggedError("retry-cycle-conflict", "报告重试周期已变化");
+    logAttempt(retry, input, activeClaim, outcome);
   } catch (error: unknown) {
-    // 真实 coordinator 已在根锁内 terminalize；此 CAS 兜底只服务窄 commit port，
-    // 且旧 claim 不得清除后来 force 创建的新 cycle。
+    // provider attempt 已成功记录；storage failure 只把同一 cycle 标记为 terminal，
+    // 不重复模型调用，也不把旧 cycle 的 observation 搬入新 cycle。
     if (stableCode(error, "") === "report-persist-failed") {
+      logAttempt(retry, input, activeClaim, {
+        status: "failure",
+        failure: { kind: "storage", code: "report-persist-failed" },
+        attempt: outcome.attempt,
+      });
       await retry.ledger.recordFailure(
-        claim,
+        activeClaim,
         { kind: "storage", code: "report-persist-failed" },
         retry.now?.() ?? Date.now(),
       );
