@@ -34,6 +34,7 @@ import {
   createReportStateCoordinator,
   createRetryLedger,
   readLastRun,
+  retryFenceFile,
   recordFailure,
   recover,
   retryLedgerFile,
@@ -441,6 +442,8 @@ function retryExecutor(input: {
   warn?: DueExecutorRetryOptions["warn"];
   signal?: DueExecutorRetryOptions["signal"];
   now?: () => number;
+  /** 测试用：覆盖 executor 工厂的脱敏接缝（默认恒等）。 */
+  sanitize?: (value: string) => string;
 }) {
   return makeDueReportExecutor({
     trend: input.trend,
@@ -448,7 +451,7 @@ function retryExecutor(input: {
     getReportCfg: input.config ?? retryConfig,
     getPromptTemplate: () => "prompt {stats}",
     historyRoot: input.root,
-    sanitizeDiagnostic: (value) => value,
+    sanitizeDiagnostic: input.sanitize ?? ((value) => value),
     advanceLastRun: updateLastRun,
     retry: {
       ledger: input.ledger,
@@ -1896,6 +1899,820 @@ describe("retry-ledger：durable JSON / CAS / recover / per-root 串行", () => 
     expect(text).toContain('"kind":"storage"');
     expect(text).not.toContain("secret path");
     expect(text).not.toContain("token");
+  });
+});
+
+// ---------------------------------------------------------------- #1010 残余 D：outcome closure
+
+const RAW_SECRET = "key=sk-test-not-a-real-key path=/home/private/report.json prompt=秘密提示词";
+
+/** trend 桩：指定方法抛错，模拟未结构化同步异常（含 key/path/prompt 原文）。 */
+function trendThrowing(method: "buckets" | "dirRows" | "hourRows"): TrendTracker {
+  const boom = (): never => {
+    throw new Error(RAW_SECRET);
+  };
+  const base = {
+    buckets: () => [
+      {
+        day: RETRY_DAY,
+        providers: [
+          {
+            provider: "generic-provider",
+            model: "generic-model",
+            cell: {
+              input: 2,
+              output: 3,
+              cacheRead: null,
+              cacheWrite: null,
+              calls: 1,
+              turns: 1,
+              toolCalls: 0,
+            },
+          },
+        ],
+      },
+    ],
+    dirRows: () => [],
+    hourRows: () => [],
+  };
+  return { ...base, [method]: boom } as unknown as TrendTracker;
+}
+
+/** commit 端口：进入后直接抛指定错误（模拟 coordinator 内部 reject）。 */
+function commitRejecting(error: () => Error): RetrySuccessCommitPort {
+  return {
+    async commitSuccess() {
+      throw error();
+    },
+  };
+}
+
+describe("runner/executor：#1010 残余 D outcome reject 必须有终态不留 in-flight", () => {
+  it.each(["buckets", "dirRows", "hourRows"] as const)(
+    "trend.%s() 抛错 → unknown failure 且 cycle 进入 terminal（不留 in-flight）",
+    async (method) => {
+      const root = mkdtempSync(join(tmpdir(), "u-closure-trend-"));
+      const ledger = retryLedger(root, () => "cycle-closure");
+      const commit = commitCurrentThenClear(root, ledger);
+      const { ctx, calls } = retryContext(SUCCESS_CHUNKS);
+      const messages: string[] = [];
+      const executor = retryExecutor({
+        root,
+        trend: trendThrowing(method),
+        ctx,
+        ledger,
+        commit,
+        warn: (message) => messages.push(message),
+      });
+
+      try {
+        await expect(executor(retryDue())).rejects.toThrow();
+
+        const entries = await ledger.list();
+        expect(entries).toEqual([
+          expect.objectContaining({
+            cycleId: "cycle-closure",
+            phase: "terminal",
+            terminal: true,
+            reason: { kind: "unknown", code: "report-outcome-failed" },
+          }),
+        ]);
+        expect(calls).toHaveLength(0);
+        expect(await readLastRun(root)).toEqual({});
+        for (const message of messages) expect(message).not.toContain("sk-test-not-a-real-key");
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it("commit reject（非 persist）同样收敛为 typed failure 并记录终态", async () => {
+    const root = mkdtempSync(join(tmpdir(), "u-closure-commit-"));
+    const ledger = retryLedger(root, () => "cycle-commit-reject");
+    const commit = commitRejecting(() => new Error(RAW_SECRET));
+    const { ctx, calls } = retryContext(SUCCESS_CHUNKS);
+    const executor = retryExecutor({ root, trend: retryTrend(1), ctx, ledger, commit });
+
+    try {
+      await expect(executor(retryDue())).rejects.toThrow();
+
+      expect(await ledger.list()).toEqual([
+        expect.objectContaining({
+          phase: "terminal",
+          terminal: true,
+          reason: { kind: "unknown", code: "report-outcome-failed" },
+        }),
+      ]);
+      expect(calls).toHaveLength(1);
+      expect(await readLastRun(root)).toEqual({});
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("restart 后 terminal cycle 不被 recover 转回 waiting（不自动重跑）", async () => {
+    const root = mkdtempSync(join(tmpdir(), "u-closure-restart-"));
+    let cycleSequence = 0;
+    const makeLedger = (): RetryLedgerPort =>
+      createRetryLedger(root, {
+        now: () => RETRY_NOW,
+        createCycleId: () => `cycle-${(cycleSequence += 1)}`,
+      });
+    const commit = commitCurrentThenClear(root, makeLedger());
+    const { ctx, calls } = retryContext(SUCCESS_CHUNKS);
+    const executor = retryExecutor({
+      root,
+      trend: trendThrowing("buckets"),
+      ctx,
+      ledger: makeLedger(),
+      commit,
+    });
+
+    try {
+      await expect(executor(retryDue())).rejects.toThrow();
+      expect(calls).toHaveLength(0);
+
+      // 模拟进程重启：新建 ledger 实例执行 recover。
+      const recovered = await makeLedger().recover(RETRY_NOW + 120_000);
+
+      expect(recovered).toEqual([expect.objectContaining({ phase: "terminal", terminal: true })]);
+      expect(calls).toHaveLength(0);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("coordinator storage code 的 reject 记为 storage 终态（不伪装 unknown）", async () => {
+    const root = mkdtempSync(join(tmpdir(), "u-closure-storage-code-"));
+    const ledger = retryLedger(root, () => "cycle-storage-code");
+    const commit = commitRejecting(() =>
+      Object.assign(new Error("report state storage operation failed"), {
+        code: "report-state-storage",
+      }),
+    );
+    const { ctx, calls } = retryContext(SUCCESS_CHUNKS);
+    const executor = retryExecutor({ root, trend: retryTrend(1), ctx, ledger, commit });
+
+    try {
+      await expect(executor(retryDue())).rejects.toThrow();
+
+      expect(await ledger.list()).toEqual([
+        expect.objectContaining({
+          phase: "terminal",
+          terminal: true,
+          reason: { kind: "storage", code: "report-state-storage" },
+        }),
+      ]);
+      expect(calls).toHaveLength(1);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("outcome reject 不重复调用模型（storage 侧不重调 provider）", async () => {
+    const root = mkdtempSync(join(tmpdir(), "u-closure-norecall-"));
+    const ledger = retryLedger(root, () => "cycle-norecall");
+    const commit = commitRejecting(() => new Error("报告持久化失败"));
+    const { ctx, calls } = retryContext(SUCCESS_CHUNKS);
+    const executor = retryExecutor({ root, trend: retryTrend(1), ctx, ledger, commit });
+
+    try {
+      await expect(executor(retryDue())).rejects.toThrow();
+      expect(calls).toHaveLength(1);
+
+      await expect(executor(retryDue())).rejects.toThrow("报告重试状态不允许执行");
+      expect(calls).toHaveLength(1);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+// ---------------------------------------------------------------- #1010 残余 E：storage 事务恢复
+
+/** 报告成功 meta + 正文（commit persist 用）。 */
+function commitFixtureResult() {
+  return {
+    body: "报告正文",
+    meta: {
+      period: "daily" as const,
+      key: RETRY_DAY,
+      startDay: RETRY_DAY,
+      endDay: RETRY_DAY,
+      provider: "generic-provider",
+      model: "generic-model",
+      generatedAt: RETRY_NOW,
+      durationMs: 1,
+      ok: true as const,
+    },
+  };
+}
+
+/** 一次性失败的端口包装（注入真实 I/O 失败，不改生产代码）。 */
+function failingPort(base: RetryLedgerPort, overrides: Partial<RetryLedgerPort>): RetryLedgerPort {
+  return { ...base, ...overrides };
+}
+
+/** 读围栏文件；未落盘即空围栏（无 marker 是合法状态）。 */
+function fenceEntries(root: string): {
+  commits: Array<{ period: string; key: string; cycleId: string }>;
+  storageTerminals: Array<{ period: string; key: string; cycleId: string }>;
+} {
+  const file = retryFenceFile(root);
+  if (!existsSync(file)) return { commits: [], storageTerminals: [] };
+  return JSON.parse(readFileSync(file, "utf8")) as {
+    commits: Array<{ period: string; key: string; cycleId: string }>;
+    storageTerminals: Array<{ period: string; key: string; cycleId: string }>;
+  };
+}
+
+describe("coordinator：#1010 残余 E 半提交与 storage 失败的可恢复协议", () => {
+  it("ledger.clear 失败：lastRun 已推进不回滚，落半提交 marker，重启后幂等补完", async () => {
+    const root = mkdtempSync(join(tmpdir(), "u-recover-clear-"));
+    let sequence = 0;
+    const newLedger = (): RetryLedgerPort =>
+      createRetryLedger(root, {
+        now: () => RETRY_NOW,
+        createCycleId: () => `cycle-${(sequence += 1)}`,
+      });
+    const seed = newLedger();
+    const claim = await seed.beginAttempt(
+      { ...retryDue(), route: { provider: "generic-provider", model: "generic-model" } },
+      RETRY_NOW,
+    );
+    if (claim === null) throw new Error("expected seed claim");
+    let clearCalls = 0;
+    const flaky = failingPort(seed, {
+      clear: async (target) => {
+        clearCalls += 1;
+        if (clearCalls === 1) throw new Error("EIO: simulated ledger clear failure");
+        return seed.clear(target);
+      },
+    });
+    const coordinator = createReportStateCoordinator({
+      root,
+      ledger: flaky,
+      now: () => RETRY_NOW,
+    });
+    const result = commitFixtureResult();
+
+    try {
+      await expect(
+        coordinator.commitSuccess({
+          claim,
+          result,
+          persist: () => persistReport(root, result.meta, result.body, claim.cycleId),
+        }),
+      ).rejects.toThrow();
+
+      expect(clearCalls).toBe(1);
+      expect(await readLastRun(root)).toEqual({ daily: RETRY_DAY });
+      expect(existsSync(reportHtmlFile(root, "daily", RETRY_DAY))).toBe(true);
+      expect(fenceEntries(root).commits).toEqual([
+        { period: "daily", key: RETRY_DAY, cycleId: claim.cycleId },
+      ]);
+      expect(await seed.get("daily", RETRY_DAY)).toMatchObject({ phase: "in-flight" });
+
+      // 重启：新 ledger + 新 coordinator 执行 recover。
+      const restarted = createReportStateCoordinator({
+        root,
+        ledger: newLedger(),
+        now: () => RETRY_NOW + 1_000,
+      });
+      await restarted.recover(RETRY_NOW + 1_000);
+
+      expect(await newLedger().get("daily", RETRY_DAY)).toBeUndefined();
+      expect(await readLastRun(root)).toEqual({ daily: RETRY_DAY });
+      expect(fenceEntries(root).commits).toEqual([]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("lastRun 写失败：半提交 marker 保留，重启后补写 lastRun 并清账", async () => {
+    const root = mkdtempSync(join(tmpdir(), "u-recover-lastrun-"));
+    let sequence = 0;
+    const newLedger = (): RetryLedgerPort =>
+      createRetryLedger(root, {
+        now: () => RETRY_NOW,
+        createCycleId: () => `cycle-${(sequence += 1)}`,
+      });
+    const seed = newLedger();
+    const claim = await seed.beginAttempt(
+      { ...retryDue(), route: { provider: "generic-provider", model: "generic-model" } },
+      RETRY_NOW,
+    );
+    if (claim === null) throw new Error("expected seed claim");
+    let writeCalls = 0;
+    const coordinator = createReportStateCoordinator({
+      root,
+      ledger: seed,
+      now: () => RETRY_NOW,
+      updateLastRun: async (_root, patch) => {
+        writeCalls += 1;
+        if (writeCalls === 1) throw new Error("EIO: simulated last-run write failure");
+        await updateLastRun(_root, patch);
+      },
+    });
+    const result = commitFixtureResult();
+
+    try {
+      await expect(
+        coordinator.commitSuccess({
+          claim,
+          result,
+          persist: () => persistReport(root, result.meta, result.body, claim.cycleId),
+        }),
+      ).rejects.toThrow();
+
+      expect(writeCalls).toBe(1);
+      expect(await readLastRun(root)).toEqual({});
+      expect(fenceEntries(root).commits).toEqual([
+        { period: "daily", key: RETRY_DAY, cycleId: claim.cycleId },
+      ]);
+
+      const restarted = createReportStateCoordinator({
+        root,
+        ledger: newLedger(),
+        now: () => RETRY_NOW + 1_000,
+      });
+      await restarted.recover(RETRY_NOW + 1_000);
+
+      expect(await newLedger().get("daily", RETRY_DAY)).toBeUndefined();
+      expect(await readLastRun(root)).toEqual({ daily: RETRY_DAY });
+      expect(fenceEntries(root).commits).toEqual([]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("persist 失败且 terminalize 写失败：落 storage-terminal marker，重启不转 waiting", async () => {
+    const root = mkdtempSync(join(tmpdir(), "u-recover-terminal-write-"));
+    mkdirSync(join(root, "reports", "index.jsonl"), { recursive: true });
+    let sequence = 0;
+    const newLedger = (): RetryLedgerPort =>
+      createRetryLedger(root, {
+        now: () => RETRY_NOW,
+        createCycleId: () => `cycle-${(sequence += 1)}`,
+      });
+    const seed = newLedger();
+    const claim = await seed.beginAttempt(
+      { ...retryDue(), route: { provider: "generic-provider", model: "generic-model" } },
+      RETRY_NOW,
+    );
+    if (claim === null) throw new Error("expected seed claim");
+    const flaky = failingPort(seed, {
+      recordFailure: async () => {
+        throw new Error("EIO: simulated terminal write failure");
+      },
+    });
+    const coordinator = createReportStateCoordinator({
+      root,
+      ledger: flaky,
+      now: () => RETRY_NOW,
+    });
+    const result = commitFixtureResult();
+
+    try {
+      await expect(
+        coordinator.commitSuccess({
+          claim,
+          result,
+          persist: () => persistReport(root, result.meta, result.body, claim.cycleId),
+        }),
+      ).rejects.toThrow();
+
+      expect(await seed.get("daily", RETRY_DAY)).toMatchObject({ phase: "in-flight" });
+      expect(fenceEntries(root).storageTerminals).toEqual([
+        { period: "daily", key: RETRY_DAY, cycleId: claim.cycleId },
+      ]);
+      expect(fenceEntries(root).commits).toEqual([]);
+
+      const restarted = newLedger();
+      const recovered = await createReportStateCoordinator({
+        root,
+        ledger: restarted,
+        now: () => RETRY_NOW + 1_000,
+      }).recover(RETRY_NOW + 1_000);
+
+      expect(recovered).toEqual([expect.objectContaining({ phase: "in-flight" })]);
+      expect(await restarted.listDue(RETRY_NOW + 1_000, {})).toEqual([]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("persist 失败且 terminalize 成功：entry 为 storage terminal 且无半提交 marker", async () => {
+    const root = mkdtempSync(join(tmpdir(), "u-recover-persist-fail-"));
+    mkdirSync(join(root, "reports", "index.jsonl"), { recursive: true });
+    const ledger = retryLedger(root, () => "cycle-persist-fail");
+    const claim = await ledger.beginAttempt(
+      { ...retryDue(), route: { provider: "generic-provider", model: "generic-model" } },
+      RETRY_NOW,
+    );
+    if (claim === null) throw new Error("expected seed claim");
+    const coordinator = createReportStateCoordinator({
+      root,
+      ledger,
+      now: () => RETRY_NOW,
+    });
+    const result = commitFixtureResult();
+
+    try {
+      await expect(
+        coordinator.commitSuccess({
+          claim,
+          result,
+          persist: () => persistReport(root, result.meta, result.body, claim.cycleId),
+        }),
+      ).rejects.toThrow("报告持久化失败");
+
+      expect(await ledger.get("daily", RETRY_DAY)).toMatchObject({
+        phase: "terminal",
+        terminal: true,
+        reason: { kind: "storage", code: "report-persist-failed" },
+      });
+      expect(await readLastRun(root)).toEqual({});
+      expect(fenceEntries(root)).toEqual({ commits: [], storageTerminals: [] });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("旧 cycle 的 index 不得清理或推进更新的 force cycle", async () => {
+    const root = mkdtempSync(join(tmpdir(), "u-recover-force-fence-"));
+    const ledger = retryLedger(
+      root,
+      (() => {
+        let sequence = 0;
+        return () => `cycle-${(sequence += 1)}`;
+      })(),
+    );
+    const coordinator = createReportStateCoordinator({
+      root,
+      ledger,
+      now: () => RETRY_NOW,
+    });
+
+    try {
+      const forced = await coordinator.beginForce(
+        {
+          ...retryDue(),
+          route: { provider: "generic-provider", model: "generic-model" },
+        },
+        RETRY_NOW,
+      );
+
+      expect(
+        await coordinator.reconcileIndex({
+          period: "daily",
+          key: RETRY_DAY,
+          indexed: true,
+          cycleId: "cycle-old",
+        }),
+      ).toBe(false);
+      expect(await readLastRun(root)).toEqual({});
+      expect(await ledger.get("daily", RETRY_DAY)).toMatchObject({
+        cycleId: forced.cycleId,
+        phase: "waiting",
+        terminal: false,
+      });
+
+      expect(
+        await coordinator.reconcile({}, [
+          { period: "daily", key: RETRY_DAY, cycleId: "cycle-old" },
+        ]),
+      ).toEqual([]);
+      expect(await readLastRun(root)).toEqual({});
+      expect(await ledger.get("daily", RETRY_DAY)).toMatchObject({
+        cycleId: forced.cycleId,
+        phase: "waiting",
+      });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+// ---------------------------------------------------------------- #1010 残余 F：noData 与 terminal ledger
+
+describe("executor/retry-ledger：#1010 残余 F noData 与 terminal key 语义", () => {
+  it("noData 窗口不因路由解析失败而卡住：仍推进 lastRun、清 claim、模型调用 0", async () => {
+    const root = mkdtempSync(join(tmpdir(), "u-f7-nodata-route-"));
+    const ledger = retryLedger(root, () => "cycle-nodata-route");
+    const commit = commitCurrentThenClear(root, ledger);
+    let listModelsCalls = 0;
+    const { ctx, calls } = retryContext(SUCCESS_CHUNKS, undefined, async () => {
+      listModelsCalls += 1;
+      throw new Error("raw listModels failure must stay hidden");
+    });
+    const executor = retryExecutor({
+      root,
+      trend: retryTrend(0),
+      ctx,
+      ledger,
+      commit,
+      config: () => normalizeCfg({ provider: "", model: "", push: { enabled: false } }),
+    });
+
+    try {
+      const result = await executor(retryDue());
+
+      expect(result.meta).toMatchObject({ ok: true, noData: true, key: RETRY_DAY });
+      expect(listModelsCalls).toBe(0);
+      expect(calls).toHaveLength(0);
+      expect((await readLastRun(root)).daily).toBe(RETRY_DAY);
+      expect(await ledger.list()).toEqual([]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("terminal 条目被裁剪后该 key 不自动恢复；manual force 仍可开新 cycle", async () => {
+    const root = mkdtempSync(join(tmpdir(), "u-f7-terminal-prune-"));
+    let now = Date.UTC(2026, 8, 24, 0, 0, 0);
+    let sequence = 0;
+    const newLedger = (): RetryLedgerPort =>
+      createRetryLedger(root, {
+        now: () => now,
+        createCycleId: () => `cycle-${(sequence += 1)}`,
+      });
+    const ledger = newLedger();
+    const makeTerminal = async (key: string): Promise<void> => {
+      const claim = await ledger.beginAttempt(
+        {
+          period: "daily",
+          key,
+          startDay: key,
+          endDay: key,
+          route: { provider: "generic-provider", model: "generic-model" },
+        },
+        now,
+      );
+      if (claim === null) throw new Error("expected terminal seed claim");
+      const done = await ledger.recordFailure(
+        claim,
+        { code: "auth-failed", kind: "permanent" },
+        now,
+      );
+      if (done === null) throw new Error("expected terminal transition");
+      now += 60_000;
+    };
+
+    try {
+      await makeTerminal("2026-09-21");
+      await makeTerminal("2026-09-22");
+      await makeTerminal("2026-09-23");
+
+      expect((await ledger.list()).map((entry) => entry.key)).toEqual(["2026-09-23"]);
+
+      const reopened = newLedger();
+      const prunedKey = { period: "daily" as const, key: "2026-09-21" };
+      expect(
+        await reopened.beginAttempt(
+          {
+            ...prunedKey,
+            startDay: "2026-09-21",
+            endDay: "2026-09-21",
+            route: { provider: "generic-provider", model: "generic-model" },
+          },
+          now,
+        ),
+      ).toBeNull();
+
+      const forced = await reopened.beginForce(
+        {
+          ...prunedKey,
+          startDay: "2026-09-21",
+          endDay: "2026-09-21",
+          route: { provider: "generic-provider", model: "generic-model" },
+        },
+        now,
+      );
+      expect(forced).toMatchObject({ phase: "waiting", terminal: false, attempts: 0 });
+      expect(
+        await reopened.beginAttempt(
+          {
+            ...prunedKey,
+            startDay: "2026-09-21",
+            endDay: "2026-09-21",
+            route: forced.route,
+            cycleId: forced.cycleId,
+          },
+          now,
+        ),
+      ).not.toBeNull();
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+// ---------------------------------------------------------------- #1010 残余 G：outer catch 不外泄原文
+
+const OUTER_RAW_SECRET =
+  "key=sk-test-not-a-real-key path=/home/private/report.json prompt=提示词原文";
+
+describe("executor：#1010 残余 G 外层 catch 只输出稳定安全文案", () => {
+  it("trend 抛错时 executor 抛出的 code/message 均不含 key/path/prompt 原文", async () => {
+    const root = mkdtempSync(join(tmpdir(), "u-outer-safe-"));
+    const ledger = retryLedger(root, () => "cycle-outer-safe");
+    const commit = commitCurrentThenClear(root, ledger);
+    const { ctx } = retryContext(SUCCESS_CHUNKS);
+    const executor = retryExecutor({
+      root,
+      trend: {
+        buckets: () => {
+          throw new Error(OUTER_RAW_SECRET);
+        },
+        dirRows: () => [],
+        hourRows: () => [],
+      } as unknown as TrendTracker,
+      ctx,
+      ledger,
+      commit,
+      // 组合根的脱敏接缝故意「什么都不改」，用于证明 executor 自身已结构化。
+      sanitize: (value) => value,
+    });
+
+    try {
+      let caught: unknown;
+      try {
+        await executor(retryDue());
+      } catch (error: unknown) {
+        caught = error;
+      }
+
+      expect(caught).toBeInstanceOf(Error);
+      const error = caught as Error & { code?: unknown };
+      expect(error.code).toBe("report-outcome-failed");
+      expect(error.message).not.toContain("sk-test-not-a-real-key");
+      expect(error.message).not.toContain("/home/private/report.json");
+      expect(error.message).not.toContain("提示词原文");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("带稳定 code 的第三方异常也不外泄原文（只保留 code + 安全文案）", async () => {
+    const root = mkdtempSync(join(tmpdir(), "u-outer-coded-"));
+    const { ctx } = retryContext(SUCCESS_CHUNKS);
+    const executor = makeDueReportExecutor({
+      trend: {
+        buckets: () => {
+          throw Object.assign(new Error(OUTER_RAW_SECRET), { code: "enoent" });
+        },
+        dirRows: () => [],
+        hourRows: () => [],
+      } as unknown as TrendTracker,
+      ctx,
+      getReportCfg: () => normalizeCfg({ provider: "", model: "", push: { enabled: false } }),
+      getPromptTemplate: () => "prompt",
+      historyRoot: root,
+      // 组合根脱敏接缝故意恒等：证明 executor 外层自身已结构化，而非依赖前缀替换。
+      sanitizeDiagnostic: (value) => value,
+      advanceLastRun: updateLastRun,
+    });
+
+    try {
+      let caught: unknown;
+      try {
+        await executor(retryDue());
+      } catch (error: unknown) {
+        caught = error;
+      }
+
+      const error = caught as Error & { code?: unknown };
+      expect(caught).toBeInstanceOf(Error);
+      expect(error.code).toBe("enoent");
+      expect(error.message).toBe("报告生成失败");
+      expect(error.message).not.toContain(OUTER_RAW_SECRET);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("通知失败（notifier.send reject）不外泄原文且不影响报告成功", async () => {
+    const root = mkdtempSync(join(tmpdir(), "u-outer-notify-"));
+    const ledger = retryLedger(root, () => "cycle-notify");
+    const commit = commitCurrentThenClear(root, ledger);
+    const { ctx: baseCtx, calls } = retryContext(SUCCESS_CHUNKS);
+    const ctx = {
+      ...baseCtx,
+      get: () => ({
+        send: async () => {
+          throw new Error(OUTER_RAW_SECRET);
+        },
+      }),
+    } as unknown as Context;
+    const executor = retryExecutor({
+      root,
+      trend: retryTrend(1),
+      ctx,
+      ledger,
+      commit,
+      config: () => normalizeCfg({ push: { enabled: true } }),
+    });
+
+    try {
+      const result = await executor(retryDue());
+
+      expect(result.meta?.ok).toBe(true);
+      expect(calls).toHaveLength(1);
+      expect(await ledger.list()).toEqual([]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+// ---------------------------------------------------------------- #1010 残余 H：交互面回归
+
+describe("残余 H：新收敛逻辑与既有不变量的交互", () => {
+  it("探测为 noData 但快照阶段出现数据：占位 route 永不 stream，fail closed", async () => {
+    const root = mkdtempSync(join(tmpdir(), "u-h-route-race-"));
+    const ledger = retryLedger(root, () => "cycle-route-race");
+    const commit = commitCurrentThenClear(root, ledger);
+    const { ctx, calls } = retryContext(SUCCESS_CHUNKS);
+    let bucketReads = 0;
+    const executor = retryExecutor({
+      root,
+      trend: {
+        buckets: () => {
+          bucketReads += 1;
+          return bucketReads === 1 ? [] : retryTrend(1).buckets();
+        },
+        dirRows: () => [],
+        hourRows: () => [],
+      } as unknown as TrendTracker,
+      ctx,
+      ledger,
+      commit,
+      config: () => normalizeCfg({ provider: "", model: "", push: { enabled: false } }),
+    });
+
+    try {
+      await expect(executor(retryDue())).rejects.toThrow();
+
+      expect(calls).toHaveLength(0);
+      expect(existsSync(reportHtmlFile(root, "daily", RETRY_DAY))).toBe(false);
+      expect(await readLastRun(root)).toEqual({});
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("storage-terminal 围栏不阻塞 force 打开的新 cycle（可再次自动执行）", async () => {
+    const root = mkdtempSync(join(tmpdir(), "u-h-fence-force-"));
+    mkdirSync(join(root, "reports", "index.jsonl"), { recursive: true });
+    let sequence = 0;
+    const newLedger = (): RetryLedgerPort =>
+      createRetryLedger(root, {
+        now: () => RETRY_NOW,
+        createCycleId: () => `cycle-${(sequence += 1)}`,
+      });
+    const seed = newLedger();
+    const claim = await seed.beginAttempt(
+      { ...retryDue(), route: { provider: "generic-provider", model: "generic-model" } },
+      RETRY_NOW,
+    );
+    if (claim === null) throw new Error("expected seed claim");
+    const flaky = failingPort(seed, {
+      recordFailure: async () => {
+        throw new Error("EIO: simulated terminal write failure");
+      },
+    });
+    const result = commitFixtureResult();
+
+    try {
+      await expect(
+        createReportStateCoordinator({ root, ledger: flaky, now: () => RETRY_NOW }).commitSuccess({
+          claim,
+          result,
+          persist: () => persistReport(root, result.meta, result.body, claim.cycleId),
+        }),
+      ).rejects.toThrow();
+      expect(fenceEntries(root).storageTerminals).toHaveLength(1);
+
+      const reopened = newLedger();
+      const forced = await reopened.beginForce(
+        { ...retryDue(), route: { provider: "generic-provider", model: "generic-model" } },
+        RETRY_NOW + 1,
+      );
+      const recovered = await createReportStateCoordinator({
+        root,
+        ledger: reopened,
+        now: () => RETRY_NOW + 2,
+      }).recover(RETRY_NOW + 2);
+
+      expect(recovered).toEqual([expect.objectContaining({ cycleId: forced.cycleId })]);
+      expect(fenceEntries(root).storageTerminals).toEqual([]);
+      expect(await reopened.listDue(RETRY_NOW + 2, {})).toEqual([
+        expect.objectContaining({ cycleId: forced.cycleId, phase: "waiting" }),
+      ]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });
 

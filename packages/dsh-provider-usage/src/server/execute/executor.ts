@@ -18,7 +18,9 @@ import type { ReportConfig, ReportPeriod } from "../config/interface.ts";
 import {
   prepareDueReportOutcome,
   readReportIndex,
+  reportWindowHasUsage,
   runDueReportOutcome,
+  type PreparedDueReportOutcome,
   type RunDueReportOutcome,
 } from "./runner.ts";
 import type {
@@ -117,6 +119,40 @@ export interface DueExecutorDeps {
   retry?: DueExecutorRetryOptions;
 }
 
+/**
+ * 外层兜底文案表：code → 固定安全短句。表中没有的 code（含第三方原始 code）
+ * 统一回落为通用文案，绝不把上游 message 拼进错误。
+ */
+const OUTER_FAILURE_MESSAGE: Readonly<Record<string, string>> = {
+  "generation-failed": "报告生成失败",
+  "route-resolution-failed": "模型路由解析失败",
+  "route-unavailable": "无可用的已注册 provider/model（须先在 dsh 注册适配器路由）",
+  "retry-terminal": "该报告窗口已终止自动重试（可手动强制重新生成）",
+  "retry-cycle-conflict": "报告重试周期已变化",
+  "retry-state-conflict": "报告重试状态不允许执行",
+  "retry-observation-storage": "报告重试观测写入失败",
+  "report-persist-failed": "报告持久化失败",
+  "report-state-storage": "报告状态写入失败",
+  "report-outcome-storage": "报告执行状态写入失败",
+  "report-outcome-failed": "报告生成未完成",
+  "request-aborted": "模型请求已取消",
+  "empty-output": "模型未产出任何正文",
+  "reasoning-only": "模型仅返回推理过程未产出正文",
+  "provider-stream-failed": "模型请求失败",
+  "provider-finish-failed": "模型请求失败",
+  "unsupported-tool": "模型返回了报告不支持的工具调用",
+  "unsupported-content": "模型返回了报告不支持的内容块",
+  "unknown-stream-event": "模型返回了未知流事件",
+  "protocol-after-terminal": "模型在结束后仍返回内容",
+  "unknown-finish": "模型流返回未知终态",
+  "missing-finish": "模型流未返回可识别终态",
+  "capability-unavailable": "模型能力信息不可用",
+  "capability-aborted": "模型能力解析已取消",
+  "capability-timeout": "模型能力解析超时",
+  "capability-unsupported": "配置指定的思考等级不受当前模型支持",
+  "capability-failed": "模型能力解析失败",
+};
+
 function stableCode(error: unknown, fallback: string): string {
   if (typeof error === "object" && error !== null) {
     const code = (error as { code?: unknown }).code;
@@ -138,6 +174,33 @@ const ROUTE_RESOLUTION_FAILURE = {
   kind: "transient",
   code: "route-resolution-failed",
 } as const;
+
+/**
+ * outcome/commit 阶段的未结构化 reject 归因：只有本域已知 storage code 归 storage，
+ * 其余（trend/快照/通知/第三方 Error）一律 unknown —— 不自动重试、不重调模型。
+ */
+const GENERATE_ROUTE_UNAVAILABLE = {
+  kind: "permanent",
+  code: "route-unavailable",
+} as const satisfies RetryFailure;
+
+const REPORT_OUTCOME_FAILURE = {
+  kind: "unknown",
+  code: "report-outcome-failed",
+} as const satisfies RetryFailure;
+
+const OUTCOME_STORAGE_CODES = new Set([
+  "report-persist-failed",
+  "report-state-storage",
+  "retry-observation-storage",
+  "retry-ledger-storage",
+  "retry-ledger-corrupt",
+]);
+
+function outcomeFailureFor(error: unknown): RetryFailure {
+  const code = stableCode(error, "");
+  return OUTCOME_STORAGE_CODES.has(code) ? { kind: "storage", code } : REPORT_OUTCOME_FAILURE;
+}
 
 function routeFailureMessage(failure: RetryFailure): string {
   return failure.code === "route-resolution-failed"
@@ -293,7 +356,7 @@ async function claimRoute(
   retry: DueExecutorRetryOptions,
   input: ReportTaskInput,
   reportCfg: ReportConfig,
-): Promise<{ claim: RetryClaim; route: GenerateRouteOutcome }> {
+): Promise<{ claim: RetryClaim; route: GenerateRouteOutcome; needsRoute: boolean }> {
   const existing = await retry.ledger.get(input.period, input.key);
   const resolve = async (): Promise<GenerateRouteOutcome> =>
     normalizeRouteOutcome(
@@ -304,8 +367,23 @@ async function claimRoute(
         reasoningEffort: reportCfg.reasoningEffort,
       }),
     );
-  const resolved: GenerateRouteOutcome =
-    existing === undefined
+  // 空窗口不调模型：路由解析失败不该把 noData 报告打成 waiting（否则永不推进 lastRun）。
+  // 探测本身抛错时保守视为「需要路由」，异常交由 outcome 阶段统一收敛为 typed failure。
+  let needsRoute = true;
+  try {
+    needsRoute = reportWindowHasUsage(deps.trend.buckets(), input.startDay, input.endDay);
+  } catch {
+    needsRoute = true;
+  }
+  const resolved: GenerateRouteOutcome = !needsRoute
+    ? {
+        // 空窗口不需要模型路由：用 fail-closed 哨兵占位。若窗口在快照阶段又出现
+        // 用量，生成边界也会先于 stream 拒绝（空 route 永不 stream）。
+        status: "failure",
+        route: existing?.route ?? unresolvedRouteSnapshot(),
+        failure: GENERATE_ROUTE_UNAVAILABLE,
+      }
+    : existing === undefined
       ? await resolve()
       : existing.terminal
         ? {
@@ -328,8 +406,8 @@ async function claimRoute(
     },
     now,
   );
-  if (claim === null) throw new Error("报告重试状态不允许执行");
-  return { claim, route: resolved };
+  if (claim === null) throw taggedError("retry-state-conflict", "报告重试状态不允许执行");
+  return { claim, route: resolved, needsRoute };
 }
 
 async function runWithRetry(
@@ -338,9 +416,9 @@ async function runWithRetry(
   input: ReportTaskInput,
   reportCfg: ReportConfig,
 ): Promise<ReportTaskResult> {
-  const { claim, route } = await claimRoute(deps, retry, input, reportCfg);
+  const { claim, route, needsRoute } = await claimRoute(deps, retry, input, reportCfg);
   let activeClaim = claim;
-  if (route.status !== "success") {
+  if (route.status !== "success" && needsRoute) {
     const now = retry.now?.() ?? Date.now();
     const observed = await recordRouteFailureObservation(
       retry.ledger,
@@ -360,29 +438,36 @@ async function runWithRetry(
     await retry.ledger.recordFailure(activeClaim, route.failure, now);
     throw taggedError(route.failure.code, routeFailureMessage(route.failure));
   }
-  const outcome = await prepareDueReportOutcome({
-    due: input,
-    trend: deps.trend,
-    ctx: deps.ctx,
-    reportCfg,
-    promptTemplate: deps.getPromptTemplate(input.period),
-    historyRoot: deps.historyRoot,
-    sanitizeDiagnostic: deps.sanitizeDiagnostic,
-    route,
-    ...(retry.signal === undefined ? {} : { signal: retry.signal }),
-    attemptNumber: activeClaim.entry.attempts + 1,
-    getUsage: () => activeClaim.entry.usage,
-    onAttempt: async (observation) => {
-      const next = await retry.ledger.recordAttempt(
-        activeClaim,
-        observation,
-        retry.now?.() ?? Date.now(),
-      );
-      if (next === null) return null;
-      activeClaim = next;
-      return next.entry.usage;
-    },
-  });
+  let outcome: PreparedDueReportOutcome;
+  try {
+    outcome = await prepareDueReportOutcome({
+      due: input,
+      trend: deps.trend,
+      ctx: deps.ctx,
+      reportCfg,
+      promptTemplate: deps.getPromptTemplate(input.period),
+      historyRoot: deps.historyRoot,
+      sanitizeDiagnostic: deps.sanitizeDiagnostic,
+      route,
+      ...(retry.signal === undefined ? {} : { signal: retry.signal }),
+      attemptNumber: activeClaim.entry.attempts + 1,
+      getUsage: () => activeClaim.entry.usage,
+      onAttempt: async (observation) => {
+        const next = await retry.ledger.recordAttempt(
+          activeClaim,
+          observation,
+          retry.now?.() ?? Date.now(),
+        );
+        if (next === null) return null;
+        activeClaim = next;
+        return next.entry.usage;
+      },
+    });
+  } catch (error: unknown) {
+    // trend/快照/通知等未结构化 reject：claim 已 in-flight，必须就地收敛为 typed
+    // failure 并落终态，否则该 key 只剩无限期 in-flight（listDue 排除、recover 才转）。
+    throw await closeRejectedClaim(retry, activeClaim, error);
+  }
   if (outcome.status === "failure") {
     logAttempt(retry, input, activeClaim, outcome);
     if (outcome.failure.code !== "retry-cycle-conflict") {
@@ -412,10 +497,31 @@ async function runWithRetry(
         { kind: "storage", code: "report-persist-failed" },
         retry.now?.() ?? Date.now(),
       );
+      throw error;
     }
-    throw error;
+    // commit 端口/coordinator 的其余 reject（如 lastRun 写失败）同样不得留下 in-flight。
+    if (stableCode(error, "") === "retry-cycle-conflict") throw error;
+    throw await closeRejectedClaim(retry, activeClaim, error);
   }
   return { meta: outcome.result.meta };
+}
+
+/**
+ * 把 outcome/commit 阶段的未结构化 reject 收敛为 typed failure 并落终态。
+ * record 自身失败（storage 不可写）时退化为 storage code 抛出，绝不吞掉。
+ */
+async function closeRejectedClaim(
+  retry: DueExecutorRetryOptions,
+  claim: RetryClaim,
+  error: unknown,
+): Promise<Error & { code: string }> {
+  const failure = outcomeFailureFor(error);
+  try {
+    await retry.ledger.recordFailure(claim, failure, retry.now?.() ?? Date.now());
+  } catch {
+    return taggedError("report-outcome-storage", "报告执行状态写入失败");
+  }
+  return taggedError(failure.code, "报告生成未完成");
 }
 
 /** 构造串行执行器（幂等/claim/生成/提交/脱敏行为在此固化）。 */
@@ -445,9 +551,14 @@ export function makeDueReportExecutor(
         ? await runWithoutRetry(deps, input, reportCfg)
         : await runWithRetry(deps, deps.retry, input, reportCfg);
     } catch (e: unknown) {
-      const message = deps.sanitizeDiagnostic(e instanceof Error ? e.message : String(e));
+      // 外层兜底：未结构化异常（trend/存储/通知/第三方）不得把 raw message 带到
+      // 任务状态、HTTP 响应或日志。只保留本域已固化的稳定 code，message 走固定
+      // 安全文案（生产队列另有 sanitizeErrors 覆盖，但边界自身必须 fail closed）。
       const code = stableCode(e, "generation-failed");
-      throw taggedError(code, message);
+      throw taggedError(
+        code,
+        OUTER_FAILURE_MESSAGE[code] ?? OUTER_FAILURE_MESSAGE["generation-failed"]!,
+      );
     }
   };
 }

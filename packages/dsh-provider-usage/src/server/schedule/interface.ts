@@ -83,12 +83,13 @@ export type {
 
 // ------------------------------------------------------------------ 报告状态事务协调器（scheduler.ts）
 
-export { createReportStateCoordinator } from "./scheduler.ts";
+export { createReportStateCoordinator, retryFenceFile } from "./scheduler.ts";
 export type {
   ReportStateCommitInput,
   ReportStateCoordinator,
   ReportStateCoordinatorOptions,
   ReportStateIndexReconcileInput,
+  RetryFenceMarker,
 } from "./scheduler.ts";
 
 // ------------------------------------------------------------------ 调度器（scheduler.ts）

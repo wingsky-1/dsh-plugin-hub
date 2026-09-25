@@ -380,6 +380,27 @@ function preparedSuccess(
   };
 }
 
+/**
+ * 窗口内是否有用量（口径与 buildStatsSnapshot 的 totals.calls 一致：窗口闭区间
+ * day 过滤后求和 calls）。空窗口报告不调模型，故不必解析 provider/model 路由。
+ */
+export function reportWindowHasUsage(
+  buckets: Array<{
+    day: string;
+    providers: Array<{ provider: string; model: string | null; cell: TrendCell }>;
+  }>,
+  startDay: string,
+  endDay: string,
+): boolean {
+  for (const item of buckets) {
+    if (item.day < startDay || item.day > endDay) continue;
+    for (const entry of item.providers) {
+      if (entry.cell.calls > 0) return true;
+    }
+  }
+  return false;
+}
+
 export async function prepareDueReportOutcome(
   params: RunDueReportParams,
 ): Promise<PreparedDueReportOutcome> {

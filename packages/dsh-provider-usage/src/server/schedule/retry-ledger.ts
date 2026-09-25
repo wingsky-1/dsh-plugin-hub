@@ -69,7 +69,16 @@ type RetryRecords = Partial<Record<ReportPeriod, Record<string, RetryEntry>>>;
 interface RetryLedgerDocument {
   schema: typeof RETRY_LEDGER_SCHEMA;
   records: RetryRecords;
+  /**
+   * 已被裁剪的 terminal key 墓碑（period → key → 终态 code）。
+   * 裁剪只为控制文件体积，不得让「曾终态失败」的 key 静默重开新 cycle：
+   * beginAttempt 命中墓碑即拒绝，只有 beginForce（手动强制）才开新 cycle。
+   * 空表不落盘字段，兼容既有 schema:1 文档。
+   */
+  terminalKeys?: Partial<Record<ReportPeriod, Record<string, string>>>;
 }
+
+const TERMINAL_KEY_LIMIT = 32;
 
 export interface RetryAttemptInput extends RetrySeed {
   cycleId?: string;
@@ -105,7 +114,8 @@ export interface RetryLedgerPort {
     now?: number,
   ): Promise<RetryClaim | null>;
   recordFailure(claim: RetryClaim, failure: RetryFailure, now?: number): Promise<RetryEntry | null>;
-  recover(now?: number): Promise<RetryEntry[]>;
+  /** keep 中的 cycle 保持原 phase（storage-terminal fail-closed），不回落 waiting。 */
+  recover(now?: number, keep?: readonly RetryIndexKey[]): Promise<RetryEntry[]>;
   clear(claim: RetryClaim): Promise<boolean>;
   reconcile(
     lastRun: Partial<Record<ReportPeriod, string>>,
@@ -454,13 +464,37 @@ function parseEntry(period: ReportPeriod, key: string, value: unknown): RetryEnt
   };
 }
 
+function parseTerminalKeys(value: unknown): RetryLedgerDocument["terminalKeys"] {
+  if (value === undefined) return undefined;
+  if (!isRecord(value)) throw new Error("invalid retry ledger terminal keys");
+  const parsed: Record<string, Record<string, string>> = {};
+  for (const [period, bucket] of Object.entries(value)) {
+    if (!PERIODS.includes(period as ReportPeriod) || !isRecord(bucket)) {
+      throw new Error("invalid retry ledger terminal key period");
+    }
+    for (const [key, code] of Object.entries(bucket)) {
+      if (!key || !isStableCode(code)) throw new Error("invalid retry ledger terminal key");
+      parsed[period] = { ...(parsed[period] ?? {}), [key]: code };
+    }
+  }
+  return parsed as RetryLedgerDocument["terminalKeys"];
+}
+
 function parseDocument(value: unknown): RetryLedgerDocument {
-  if (!isRecord(value) || !hasExactKeys(value, ["schema", "records"])) {
+  if (!isRecord(value)) {
+    throw new Error("invalid retry ledger document");
+  }
+  const hasTerminalKeys = Object.hasOwn(value, "terminalKeys");
+  const expectedKeys = hasTerminalKeys
+    ? ["schema", "records", "terminalKeys"]
+    : ["schema", "records"];
+  if (!hasExactKeys(value, expectedKeys)) {
     throw new Error("invalid retry ledger document");
   }
   if (value.schema !== RETRY_LEDGER_SCHEMA || !isRecord(value.records)) {
     throw new Error("invalid retry ledger schema");
   }
+  const terminalKeys = parseTerminalKeys(value.terminalKeys);
 
   const records: RetryRecords = {};
   for (const period of PERIODS) {
@@ -484,7 +518,11 @@ function parseDocument(value: unknown): RetryLedgerDocument {
       throw new Error("unknown retry ledger period");
     }
   }
-  return { schema: RETRY_LEDGER_SCHEMA, records };
+  return {
+    schema: RETRY_LEDGER_SCHEMA,
+    records,
+    ...(terminalKeys === undefined ? {} : { terminalKeys }),
+  };
 }
 
 function cloneEntry(entry: RetryEntry): RetryEntry {
@@ -503,6 +541,19 @@ function cloneEntry(entry: RetryEntry): RetryEntry {
   };
 }
 
+function cloneTerminalKeys(
+  terminalKeys: RetryLedgerDocument["terminalKeys"],
+): RetryLedgerDocument["terminalKeys"] {
+  if (terminalKeys === undefined) return undefined;
+  const clone: Record<string, Record<string, string>> = {};
+  for (const period of PERIODS) {
+    const bucket = terminalKeys[period];
+    if (bucket === undefined) continue;
+    clone[period] = { ...bucket };
+  }
+  return clone as RetryLedgerDocument["terminalKeys"];
+}
+
 function cloneDocument(document: RetryLedgerDocument): RetryLedgerDocument {
   const records: RetryRecords = {};
   for (const period of PERIODS) {
@@ -512,7 +563,54 @@ function cloneDocument(document: RetryLedgerDocument): RetryLedgerDocument {
       Object.entries(bucket).map(([key, entry]) => [key, cloneEntry(entry)]),
     );
   }
-  return { schema: RETRY_LEDGER_SCHEMA, records };
+  const terminalKeys = cloneTerminalKeys(document.terminalKeys);
+  return {
+    schema: RETRY_LEDGER_SCHEMA,
+    records,
+    ...(terminalKeys === undefined ? {} : { terminalKeys }),
+  };
+}
+
+/** 记录 terminal 墓碑并按 key 升序裁剪到上限（保留最新，终态语义不丢）。 */
+function rememberTerminalKey(
+  document: RetryLedgerDocument,
+  period: ReportPeriod,
+  key: string,
+  reason: RetryTerminalReason | null,
+): void {
+  const terminalKeys = document.terminalKeys ?? {};
+  const bucket = { ...(terminalKeys[period] ?? {}) };
+  bucket[key] = reason?.code ?? "terminal";
+  const trimmed = Object.fromEntries(
+    Object.keys(bucket)
+      .sort()
+      .slice(-TERMINAL_KEY_LIMIT)
+      .map((entryKey) => [entryKey, bucket[entryKey]!] as const),
+  );
+  terminalKeys[period] = trimmed;
+  document.terminalKeys = terminalKeys;
+}
+
+function isTerminalKey(document: RetryLedgerDocument, period: ReportPeriod, key: string): boolean {
+  return document.terminalKeys?.[period]?.[key] !== undefined;
+}
+
+/** reconcile/clear 命中即视为该 key 已闭环，墓碑随之失效。 */
+function forgetTerminalKey(document: RetryLedgerDocument, period: ReportPeriod, key: string): void {
+  const bucket = document.terminalKeys?.[period];
+  if (bucket === undefined || bucket[key] === undefined) return;
+  const next = { ...bucket };
+  delete next[key];
+  if (Object.keys(next).length === 0) {
+    const terminalKeys = { ...document.terminalKeys };
+    delete terminalKeys[period];
+    document.terminalKeys =
+      Object.keys(terminalKeys).length === 0
+        ? undefined
+        : (terminalKeys as RetryLedgerDocument["terminalKeys"]);
+    return;
+  }
+  document.terminalKeys = { ...document.terminalKeys, [period]: next };
 }
 
 function pruneTerminalEntries(document: RetryLedgerDocument): RetryLedgerDocument {
@@ -523,7 +621,11 @@ function pruneTerminalEntries(document: RetryLedgerDocument): RetryLedgerDocumen
     const terminalKeys = Object.keys(bucket)
       .filter((key) => bucket[key]!.terminal)
       .sort();
-    for (const key of terminalKeys.slice(0, -1)) delete bucket[key];
+    // 裁掉的 terminal 记录留墓碑：key 仍属「已终态」，不得自动重开 cycle。
+    for (const key of terminalKeys.slice(0, -1)) {
+      rememberTerminalKey(next, period, key, bucket[key]!.reason);
+      delete bucket[key];
+    }
   }
   return next;
 }
@@ -540,6 +642,16 @@ function flatten(document: RetryLedgerDocument): RetryEntry[] {
 
 function emptyDocument(): RetryLedgerDocument {
   return { schema: RETRY_LEDGER_SCHEMA, records: {} };
+}
+
+function serializeDocument(document: RetryLedgerDocument): string {
+  const pruned = pruneTerminalEntries(document);
+  const terminalKeys = cloneTerminalKeys(pruned.terminalKeys);
+  const payload: RetryLedgerDocument =
+    terminalKeys === undefined
+      ? { schema: RETRY_LEDGER_SCHEMA, records: pruned.records }
+      : { schema: RETRY_LEDGER_SCHEMA, records: pruned.records, terminalKeys };
+  return JSON.stringify(payload);
 }
 
 function entryAt(
@@ -804,7 +916,7 @@ async function writeDocumentUnlocked(
     const handle = await open(temporary, "wx", 0o600);
     temporaryExists = true;
     try {
-      await handle.writeFile(JSON.stringify(pruneTerminalEntries(document)), "utf8");
+      await handle.writeFile(serializeDocument(document), "utf8");
       await handle.sync();
     } finally {
       await handle.close();
@@ -879,6 +991,10 @@ export function createRetryLedger(root: string, options: RetryLedgerOptions = {}
         const now = operationNow(options, explicitNow);
         const document = await read();
         const current = entryAt(document, input.period, input.key);
+        if (current === undefined && isTerminalKey(document, input.period, input.key)) {
+          // 墓碑：该 key 曾终态失败，不得自动重开 cycle（只有 beginForce 可开新 cycle）。
+          return null;
+        }
         if (current !== undefined) {
           if (input.cycleId === undefined) return null;
           const claim = policyBeginAttempt(current, now, input.cycleId);
@@ -904,6 +1020,8 @@ export function createRetryLedger(root: string, options: RetryLedgerOptions = {}
         const cycleId = createCycleId();
         if (current?.cycleId === cycleId) throw new Error("retry ledger cycleId must be fresh");
         const forced = policyBeginForce(input, now, cycleId);
+        // manual force 显式开新 cycle：墓碑随之失效。
+        forgetTerminalKey(document, input.period, input.key);
         setEntry(document, forced);
         await write(document);
         return cloneEntry(forced);
@@ -934,15 +1052,22 @@ export function createRetryLedger(root: string, options: RetryLedgerOptions = {}
         return cloneEntry(next);
       }),
 
-    recover: (explicitNow) =>
+    recover: (explicitNow, keep) =>
       withRootLock(root, async () => {
         const now = operationNow(options, explicitNow);
         const document = await read();
+        const held = new Set(
+          (keep ?? [])
+            .filter((item) => item.cycleId !== undefined)
+            .map((item) => `${item.period}:${item.key}:${item.cycleId}`),
+        );
         let changed = false;
         for (const period of PERIODS) {
           const bucket = document.records[period];
           if (bucket === undefined) continue;
           for (const [key, entry] of Object.entries(bucket)) {
+            // storage-terminal 围栏内的 cycle 保持原 phase：不得回落 waiting 自动重跑。
+            if (held.has(`${period}:${key}:${entry.cycleId}`)) continue;
             const recovered = policyRecover(entry, now);
             if (recovered !== entry) {
               bucket[key] = recovered;
@@ -972,6 +1097,7 @@ export function createRetryLedger(root: string, options: RetryLedgerOptions = {}
           if (!shouldReconcileRetry(entry, lastRun, indexed)) continue;
           removed.push(entry);
           deleteEntry(document, entry.period, entry.key);
+          forgetTerminalKey(document, entry.period, entry.key);
         }
         if (removed.length > 0) await write(document);
         return removed;

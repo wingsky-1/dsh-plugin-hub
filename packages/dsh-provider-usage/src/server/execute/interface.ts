@@ -33,6 +33,7 @@ export { parseReportIndexLines } from "./report-index.ts";
 
 export {
   readReportIndex,
+  reportWindowHasUsage,
   prevWindowTotal,
   runDueReport,
   runDueReportOutcome,

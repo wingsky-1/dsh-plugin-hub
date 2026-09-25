@@ -6,7 +6,9 @@
  * ready 之前 tick 直接返回；recovery/storage 失败保持 fail-closed。
  */
 
-import { resolve } from "node:path";
+import { randomUUID } from "node:crypto";
+import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
+import { dirname, join, resolve } from "node:path";
 import type { ReportConfig, ReportPeriod } from "../config/interface.ts";
 import { pendingReports, type DueReport } from "./due.ts";
 import { readLastRun, ensureLastRunMigrated, updateLastRun } from "./store.ts";
@@ -34,7 +36,8 @@ interface RetryLedgerPort {
     now?: number,
   ): Promise<RetryClaim | null>;
   recordFailure(claim: RetryClaim, failure: RetryFailure, now?: number): Promise<RetryEntry | null>;
-  recover(now?: number): Promise<RetryEntry[]>;
+  /** keep 中的 cycle 保持原 phase（storage-terminal fail-closed），不回落 waiting。 */
+  recover(now?: number, keep?: readonly RetryIndexKey[]): Promise<RetryEntry[]>;
   clear(claim: RetryClaim): Promise<boolean>;
   reconcile(
     lastRun: Partial<Record<ReportPeriod, string>>,
@@ -267,6 +270,8 @@ export interface ReportStateCoordinator extends RetryLedgerPort {
     ) => Partial<Record<ReportPeriod, string>> | Promise<Partial<Record<ReportPeriod, string>>>,
   ): Promise<void>;
   commitSuccess(input: ReportStateCommitInput): Promise<boolean>;
+  /** 幂等补完半提交事务（不含 ledger recover 本身；启动由 recover 串联调用）。 */
+  recoverFence(): Promise<RetryFenceDocument>;
   reconcileIndex(input: ReportStateIndexReconcileInput): Promise<boolean>;
   migrateLastRun(
     warn?: (message: string) => void,
@@ -276,6 +281,77 @@ export interface ReportStateCoordinator extends RetryLedgerPort {
     before: Partial<Record<ReportPeriod, string>>;
     after: Partial<Record<ReportPeriod, string>>;
   }>;
+}
+
+/**
+ * 事务围栏（#1010 残余 E）：commit 顺序为 persist → 半提交 marker → lastRun →
+ * ledger.clear。marker 让「产物已落盘但 lastRun/clear 未完成」的半提交状态在崩溃
+ * 或 storage 失败后可被幂等识别并补完：既不回滚已推进的 lastRun，也不重跑模型。
+ *
+ * 形态为 reports/retry-fence.json（0600 原子写）：
+ * - commits[]：本 cycle 已完成 persist，恢复时补写 lastRun 并清账；
+ * - storageTerminals[]：storage 失败且 terminalize 写入失败，恢复时保持
+ *   in-flight（fail-closed），不得回落 waiting 自动重跑。
+ */
+export interface RetryFenceMarker {
+  period: ReportPeriod;
+  key: string;
+  cycleId: string;
+}
+
+interface RetryFenceDocument {
+  schema: 1;
+  commits: RetryFenceMarker[];
+  storageTerminals: RetryFenceMarker[];
+}
+
+export function retryFenceFile(root: string): string {
+  return join(root, "reports", "retry-fence.json");
+}
+
+function sameMarker(left: RetryFenceMarker, right: RetryFenceMarker): boolean {
+  return left.period === right.period && left.key === right.key && left.cycleId === right.cycleId;
+}
+
+function upsertMarker(list: RetryFenceMarker[], marker: RetryFenceMarker): void {
+  const index = list.findIndex((item) => sameMarker(item, marker));
+  if (index < 0) list.push(marker);
+  else list[index] = marker;
+}
+
+function emptyFence(): RetryFenceDocument {
+  return { schema: 1, commits: [], storageTerminals: [] };
+}
+
+function parseFence(raw: string): RetryFenceDocument {
+  const parsed: unknown = JSON.parse(raw);
+  if (typeof parsed !== "object" || parsed === null) throw new Error("invalid retry fence");
+  const record = parsed as Record<string, unknown>;
+  if (record.schema !== 1) throw new Error("invalid retry fence schema");
+  const readMarkers = (value: unknown): RetryFenceMarker[] => {
+    if (!Array.isArray(value)) throw new Error("invalid retry fence markers");
+    return value.map((item) => {
+      if (typeof item !== "object" || item === null) throw new Error("invalid retry fence marker");
+      const marker = item as Record<string, unknown>;
+      if (
+        typeof marker.period !== "string" ||
+        typeof marker.key !== "string" ||
+        typeof marker.cycleId !== "string"
+      ) {
+        throw new Error("invalid retry fence marker fields");
+      }
+      return {
+        period: marker.period as ReportPeriod,
+        key: marker.key,
+        cycleId: marker.cycleId,
+      };
+    });
+  };
+  return {
+    schema: 1,
+    commits: readMarkers(record.commits),
+    storageTerminals: readMarkers(record.storageTerminals),
+  };
 }
 
 const chains = new Map<string, Promise<void>>();
@@ -347,7 +423,42 @@ class ReportStateStorageError extends Error {
   }
 }
 
+/** 读围栏文档；缺失即空围栏；损坏 fail-closed（不静默当空）。 */
+async function readFence(root: string): Promise<RetryFenceDocument> {
+  let raw: string;
+  try {
+    raw = await readFile(retryFenceFile(root), "utf8");
+  } catch (error: unknown) {
+    if ((error as { code?: unknown }).code === "ENOENT") return emptyFence();
+    throw new ReportStateStorageError();
+  }
+  try {
+    return parseFence(raw);
+  } catch {
+    throw new ReportStateStorageError();
+  }
+}
+
+/** 原子写围栏文档（0600 临时文件 → rename）；写失败即 storage 失败。 */
+async function writeFence(root: string, document: RetryFenceDocument): Promise<void> {
+  const file = retryFenceFile(root);
+  const temporary = `${file}.${process.pid}.${randomUUID()}.tmp`;
+  try {
+    await mkdir(dirname(file), { recursive: true, mode: 0o700 });
+    await writeFile(temporary, JSON.stringify(document), { mode: 0o600 });
+    await rename(temporary, file);
+  } catch {
+    await unlink(temporary).catch(() => {});
+    throw new ReportStateStorageError();
+  }
+}
+
+/**
+ * storage 终态落盘：先写 ledger 的 terminal 记录；写失败则落 storage-terminal
+ * 围栏标记（durable），使 recover 不会把该 cycle 回落为 waiting 自动重跑。
+ */
 async function terminalize(
+  root: string,
   ledger: RetryLedgerPort,
   claim: RetryClaim,
   now: number,
@@ -355,9 +466,18 @@ async function terminalize(
 ): Promise<void> {
   try {
     await ledger.recordFailure(claim, { kind: "storage", code }, now);
+    return;
   } catch {
-    // 原始存储错误不越过包边界；下一次 recovery 仍保持 fail-closed。
+    // 原始存储错误不越过包边界；改以围栏标记保持 fail-closed。
   }
+  const marker: RetryFenceMarker = {
+    period: claim.entry.period,
+    key: claim.entry.key,
+    cycleId: claim.cycleId,
+  };
+  const fence = await readFence(root).catch(() => emptyFence());
+  upsertMarker(fence.storageTerminals, marker);
+  await writeFence(root, fence);
 }
 
 /** 创建一个 historyRoot-scoped 状态协调器。 */
@@ -372,6 +492,44 @@ export function createReportStateCoordinator(
   const now = options.now ?? Date.now;
   const locked = <T>(operation: () => Promise<T>): Promise<T> => withRootLock(root, operation);
 
+  /**
+   * 补完半提交事务：产物已落盘、lastRun/clear 未完成的 cycle 在恢复时幂等收尾
+   * （monotonic 推进 lastRun + CAS 清账）。旧 cycle 标记（force 已开新 cycle）与
+   * 已终结记录一律丢弃，绝不让旧产物清掉新 cycle 的账。
+   */
+  const finishHalfCommits = async (fence: RetryFenceDocument): Promise<RetryFenceDocument> => {
+    if (fence.commits.length === 0 && fence.storageTerminals.length === 0) return fence;
+    const live = await ledger.list();
+    let advanced = await read(root);
+    for (const marker of fence.commits) {
+      const entry = live.find(
+        (item) =>
+          item.period === marker.period &&
+          item.key === marker.key &&
+          item.cycleId === marker.cycleId,
+      );
+      if (entry === undefined || entry.terminal) continue;
+      advanced = monotonic(advanced, marker.period, marker.key);
+      await write(root, () => advanced);
+      await ledger.clear({ cycleId: marker.cycleId, entry });
+    }
+    // storage-terminal 标记：记录已不存在（clear 成功）即过期；仍在则保留 fail-closed。
+    const next: RetryFenceDocument = {
+      schema: 1,
+      commits: [],
+      storageTerminals: fence.storageTerminals.filter((marker) =>
+        live.some(
+          (item) =>
+            item.period === marker.period &&
+            item.key === marker.key &&
+            item.cycleId === marker.cycleId,
+        ),
+      ),
+    };
+    await writeFence(root, next);
+    return next;
+  };
+
   return {
     list: () => locked(() => ledger.list()),
     listDue: (at, lastRun) => locked(() => ledger.listDue(at, lastRun)),
@@ -384,7 +542,16 @@ export function createReportStateCoordinator(
       locked(() => ledger.recordAttempt(claim, observation, at ?? now())),
     recordFailure: (claim: RetryClaim, failure: RetryFailure, at?: number) =>
       locked(() => ledger.recordFailure(claim, failure, at ?? now())),
-    recover: (at?: number) => locked(() => ledger.recover(at ?? now())),
+    // recover 前先补完半提交事务；storage-terminal 围栏内的 cycle 保持 in-flight，
+    // 不回落 waiting 自动重跑（fail-closed：只有 manual force 才开新 cycle）。
+    recover: (at?: number) =>
+      locked(async () => {
+        const stamp = at ?? now();
+        const fence = await readFence(root);
+        await finishHalfCommits(fence);
+        return ledger.recover(stamp, fence.storageTerminals);
+      }),
+    recoverFence: () => locked(() => readFence(root).then(finishHalfCommits)),
     clear: (claim: RetryClaim) => locked(() => ledger.clear(claim)),
     reconcile: (lastRun, indexed) =>
       locked(async () => {
@@ -413,27 +580,43 @@ export function createReportStateCoordinator(
       locked(async () => {
         const current = await ledger.get(input.claim.entry.period, input.claim.entry.key);
         if (!sameClaim(input.claim, current)) return false;
+        const marker: RetryFenceMarker = {
+          period: input.result.meta.period,
+          key: input.result.meta.key,
+          cycleId: input.claim.cycleId,
+        };
         try {
           await input.persist();
         } catch {
-          await terminalize(ledger, input.claim, now(), "report-persist-failed");
+          await terminalize(root, ledger, input.claim, now(), "report-persist-failed");
           throw new ReportStateStorageError("report-persist-failed");
         }
+        // 半提交标记先于 lastRun 落盘：其后任一步失败都可被恢复流程幂等补完，
+        // 不会让「产物已写、lastRun/clear 未完成」被当作普通 storage 失败重跑。
+        const fence = await readFence(root);
+        upsertMarker(fence.commits, marker);
+        await writeFence(root, fence);
         try {
           await write(root, (previous) =>
             monotonic(previous, input.result.meta.period, input.result.meta.key),
           );
         } catch {
-          await terminalize(ledger, input.claim, now());
+          // 半提交已标记：交由恢复流程补完，不得写 storage terminal 覆盖已落盘产物。
           throw new ReportStateStorageError();
         }
         try {
-          return await ledger.clear(input.claim);
+          const cleared = await ledger.clear(input.claim);
+          await writeFence(root, {
+            ...fence,
+            commits: fence.commits.filter((item) => !sameMarker(item, marker)),
+          });
+          return cleared;
         } catch {
-          await terminalize(ledger, input.claim, now());
+          // 同上：clear 失败是可恢复的半提交，不是 storage 终态（不反向回滚 lastRun）。
           throw new ReportStateStorageError();
         }
       }),
+
     reconcileIndex: (input) =>
       locked(async () => {
         const current = await ledger.get(input.period, input.key);

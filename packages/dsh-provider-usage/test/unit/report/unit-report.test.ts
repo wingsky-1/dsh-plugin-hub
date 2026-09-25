@@ -4480,3 +4480,369 @@ describe("#633 分片 b B4：口径影响（reportCfg.directories 非空 → 快
     expect(scopedInput).toBe(100);
   });
 });
+
+// ---------------------------------------------------------------- #1010 残余 A：after-terminal fail closed
+
+const AFTER_TERMINAL_ERROR = "模型在结束后仍返回内容";
+
+describe("generate：#1010 残余 A finish 之后任何 chunk 一律 fail closed", () => {
+  const AFTER_FINISH_CASES: Array<{ name: string; tail: StreamChunk[] }> = [
+    { name: "text-delta", tail: [{ type: "text-delta", index: 0, text: "结束后追加的正文" }] },
+    {
+      name: "reasoning-delta",
+      tail: [{ type: "reasoning-delta", index: 0, text: "结束后追加的推理" }],
+    },
+    {
+      name: "usage",
+      tail: [{ type: "usage", usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 } }],
+    },
+    {
+      name: "tool-call-delta",
+      tail: [
+        {
+          type: "tool-call-delta",
+          index: 0,
+          id: REPORT_TOOL_CALL_ID,
+          name: "read_private_file",
+          argumentsDelta: TOOL_ARGUMENTS,
+        },
+      ],
+    },
+    { name: "unknown chunk", tail: [futureContentChunk()] },
+    { name: "第二个 finish", tail: [{ type: "finish", reason: { kind: "stop" } }] },
+  ];
+
+  it.each(AFTER_FINISH_CASES)(
+    "stop 之后的 $name 进入 protocol-after-terminal 且正文不落盘",
+    async ({ tail }) => {
+      const f = fakeLlm([
+        { type: "text-delta", index: 0, text: "结束前正文" },
+        { type: "finish", reason: { kind: "stop" } },
+        ...tail,
+      ]);
+
+      const result = await generateReport(
+        GEN({ llm: f.llm, provider: "generic-provider", model: "generic-model" }),
+      );
+
+      expect(result.meta.ok).toBe(false);
+      expect(result.body).toBe("");
+      expect(result.meta.error).toBe(AFTER_TERMINAL_ERROR);
+      expect(f.seen.calls).toHaveLength(1);
+    },
+  );
+
+  it("after-terminal 走 unknown kind（不进入自动重试）", async () => {
+    const f = fakeLlm([
+      { type: "text-delta", index: 0, text: "结束前正文" },
+      { type: "finish", reason: { kind: "stop" } },
+      { type: "text-delta", index: 0, text: "结束后追加的正文" },
+    ]);
+
+    const outcome = await generateReportOutcome(
+      GEN({ llm: f.llm, provider: "generic-provider", model: "generic-model" }),
+    );
+
+    expect(outcome).toMatchObject({
+      status: "failure",
+      failure: { kind: "unknown", code: "protocol-after-terminal" },
+    });
+  });
+
+  it("error 终态优先于 after-terminal（错误分类不回归）", async () => {
+    const f = fakeLlm([
+      { type: "text-delta", index: 0, text: "不应保存的正文" },
+      {
+        type: "finish",
+        reason: { kind: "error", failure: { message: RAW_PROVIDER_FAILURE, code: "raw" } },
+      },
+      { type: "text-delta", index: 0, text: "结束后追加的正文" },
+    ]);
+
+    const result = await generateReport(
+      GEN({ llm: f.llm, provider: "generic-provider", model: "generic-model" }),
+    );
+
+    expect(result.meta).toMatchObject({ ok: false, error: "模型请求失败" });
+    expect(result.body).toBe("");
+    expect(JSON.stringify(result)).not.toContain(RAW_PROVIDER_FAILURE);
+  });
+
+  it("unknown finish 终态优先于 after-terminal（终态合并不回归）", async () => {
+    const f = fakeLlm([
+      { type: "text-delta", index: 0, text: "不应保存的正文" },
+      futureFinishChunk(),
+      { type: "text-delta", index: 0, text: "结束后追加的正文" },
+    ]);
+
+    const result = await generateReport(
+      GEN({ llm: f.llm, provider: "generic-provider", model: "generic-model" }),
+    );
+
+    expect(result.meta).toMatchObject({ ok: false, error: "模型流返回未知终态" });
+    expect(result.body).toBe("");
+  });
+
+  it("after-terminal 之前的 usage 仍为首个 usage 事实（first usage 不回归）", async () => {
+    const f = fakeLlm([
+      { type: "text-delta", index: 0, text: "结束前正文" },
+      { type: "usage", usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 } },
+      { type: "finish", reason: { kind: "stop" } },
+      { type: "usage", usage: { inputTokens: 999, outputTokens: 999, totalTokens: 1998 } },
+    ]);
+
+    const result = await generateReport(
+      GEN({ llm: f.llm, provider: "generic-provider", model: "generic-model" }),
+    );
+
+    expect(result.meta).toMatchObject({ ok: false, error: AFTER_TERMINAL_ERROR });
+    expect(result.meta.tokens).toMatchObject({ inputTokens: 10, outputTokens: 5, totalTokens: 15 });
+  });
+
+  it("after-terminal 之前的不支持内容块仍按 unsupported-content 归类（block policy 不回归）", async () => {
+    const f = fakeLlm([
+      { type: "block-start", index: 0, blockType: "image" },
+      { type: "finish", reason: { kind: "stop" } },
+      { type: "text-delta", index: 0, text: "结束后追加的正文" },
+    ]);
+
+    const result = await generateReport(
+      GEN({ llm: f.llm, provider: "generic-provider", model: "generic-model" }),
+    );
+
+    expect(result.meta).toMatchObject({ ok: false, error: UNSUPPORTED_CONTENT_ERROR });
+    expect(result.body).toBe("");
+  });
+});
+
+// ---------------------------------------------------------------- #1010 残余 B：空白 text-delta 不屏蔽完整块
+
+describe("generate：#1010 残余 B 空白 text-delta 不屏蔽 block-end 正文", () => {
+  it.each([
+    { name: "空串", text: "" },
+    { name: "半角空格", text: " " },
+    { name: "全角空白", text: "\u3000" },
+    { name: "换行缩进", text: "\n   " },
+  ])("$name delta + 非空 block-end.text 成功且正文取自块", async ({ text }) => {
+    const f = fakeLlm([
+      { type: "block-start", index: 0, blockType: "text" },
+      { type: "text-delta", index: 0, text },
+      { type: "block-end", index: 0, block: { type: "text", text: "完整块正文" } },
+      { type: "finish", reason: { kind: "stop" } },
+    ]);
+
+    const result = await generateReport(
+      GEN({ llm: f.llm, provider: "generic-provider", model: "generic-model" }),
+    );
+
+    expect(result.meta.ok).toBe(true);
+    expect(result.body).toBe(text + "完整块正文");
+    expect(f.seen.calls).toHaveLength(1);
+  });
+
+  it("空白 delta + 非空 block-end 不再误报空输出（不进入重试）", async () => {
+    const f = fakeLlm([
+      { type: "text-delta", index: 0, text: "   " },
+      { type: "block-end", index: 0, block: { type: "text", text: "块正文" } },
+      { type: "finish", reason: { kind: "stop" } },
+    ]);
+
+    const outcome = await generateReportOutcome(
+      GEN({ llm: f.llm, provider: "generic-provider", model: "generic-model" }),
+    );
+
+    expect(outcome.status).toBe("success");
+    expect(outcome.result.body).toContain("块正文");
+  });
+
+  it("非空 delta + 同块 block-end 仍去重（正文只拼接一次）", async () => {
+    const f = fakeLlm([
+      { type: "block-start", index: 0, blockType: "text" },
+      { type: "text-delta", index: 0, text: "第一段" },
+      { type: "text-delta", index: 0, text: "空白" },
+      { type: "block-end", index: 0, block: { type: "text", text: "第一段空白" } },
+      { type: "finish", reason: { kind: "stop" } },
+    ]);
+
+    const result = await generateReport(
+      GEN({ llm: f.llm, provider: "generic-provider", model: "generic-model" }),
+    );
+
+    expect(result.meta.ok).toBe(true);
+    expect(result.body).toBe("第一段空白");
+  });
+
+  it("空白 delta 后的同 index 非空 delta 仍抑制 block-end 重复", async () => {
+    const f = fakeLlm([
+      { type: "text-delta", index: 0, text: "  " },
+      { type: "text-delta", index: 0, text: "真实正文" },
+      { type: "block-end", index: 0, block: { type: "text", text: "  真实正文" } },
+      { type: "finish", reason: { kind: "stop" } },
+    ]);
+
+    const result = await generateReport(
+      GEN({ llm: f.llm, provider: "generic-provider", model: "generic-model" }),
+    );
+
+    expect(result.body).toBe("  真实正文");
+  });
+
+  it("纯空白 delta + 纯空白 block-end 仍归空正文错误（不误判成功）", async () => {
+    const f = fakeLlm([
+      { type: "text-delta", index: 0, text: "  " },
+      { type: "block-end", index: 0, block: { type: "text", text: "   " } },
+      { type: "finish", reason: { kind: "stop" } },
+    ]);
+
+    const result = await generateReport(
+      GEN({ llm: f.llm, provider: "generic-provider", model: "generic-model" }),
+    );
+
+    expect(result.meta).toMatchObject({ ok: false, error: "模型未产出任何正文" });
+  });
+});
+
+// ---------------------------------------------------------------- #1010 残余 C：默认路由发现有界收敛
+
+/**
+ * 只排空微任务、不引入真实等待的收敛探针：用于在 fake clock 下判定 promise 是否已
+ * settle（未 settle 的无界 await 会挂死测试进程，故不直接 await）。
+ */
+async function settleProbe<T>(
+  pending: Promise<T>,
+  turns = 50,
+): Promise<{ status: "settled"; value: T } | { status: "pending" }> {
+  let outcome: { status: "settled"; value: T } | { status: "pending" } = { status: "pending" };
+  void pending.then(
+    (value) => {
+      outcome = { status: "settled", value };
+    },
+    () => {
+      outcome = { status: "pending" };
+    },
+  );
+  for (let turn = 0; turn < turns; turn += 1) await Promise.resolve();
+  return outcome;
+}
+
+describe("generate：#1010 残余 C 默认路由发现 5s 有界收敛", () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("never-settling listModels 恰在 5s 收敛为 route-resolution-failed 且 stream=0", async () => {
+    let listModelsCalls = 0;
+    const f = fakeLlm(CHUNKS);
+    Object.assign(f.llm, {
+      listModels: async (provider: string) => {
+        f.seen.listModelsCalls.push(provider);
+        listModelsCalls += 1;
+        return new Promise<Array<{ provider: string; id: string; name: string }>>(() => {});
+      },
+    });
+
+    const pending = resolveGenerateRoute({ llm: f.llm, provider: "", model: "" });
+
+    await vi.advanceTimersByTimeAsync(4999);
+    expect(await settleProbe(pending)).toEqual({ status: "pending" });
+    expect(listModelsCalls).toBe(1);
+
+    await vi.advanceTimersByTimeAsync(1);
+    const settled = await settleProbe(pending);
+
+    expect(settled).toMatchObject({
+      status: "settled",
+      value: {
+        status: "failure",
+        unresolved: true,
+        failure: { kind: "transient", code: "route-resolution-failed" },
+      },
+    });
+    expect(f.seen.calls).toHaveLength(0);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("never-settling listModels 时 generateReport 同样收敛且不发起 stream", async () => {
+    const f = fakeLlm(CHUNKS);
+    Object.assign(f.llm, {
+      listModels: () =>
+        new Promise<Array<{ provider: string; id: string; name: string }>>(() => {}),
+    });
+
+    const pending = generateReport(GEN({ llm: f.llm }));
+
+    await vi.advanceTimersByTimeAsync(4999);
+    expect(await settleProbe(pending)).toEqual({ status: "pending" });
+
+    await vi.advanceTimersByTimeAsync(1);
+    const settled = await settleProbe(pending);
+
+    expect(settled).toMatchObject({
+      status: "settled",
+      value: { meta: { ok: false, error: "模型路由解析失败" } },
+    });
+    expect(f.seen.calls).toHaveLength(0);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("底层晚到 rejection 被吸收（不产生未处理拒绝、不二次失败）", async () => {
+    const f = fakeLlm(CHUNKS);
+    let rejectLate: (error: Error) => void = () => {};
+    Object.assign(f.llm, {
+      listModels: () =>
+        new Promise<Array<{ provider: string; id: string; name: string }>>((_resolve, reject) => {
+          rejectLate = reject;
+        }),
+    });
+
+    const pending = resolveGenerateRoute({ llm: f.llm, provider: "", model: "" });
+    await vi.advanceTimersByTimeAsync(5000);
+    const settled = await settleProbe(pending);
+    expect(settled).toMatchObject({ status: "settled", value: { status: "failure" } });
+
+    rejectLate(new Error(RAW_PROVIDER_FAILURE));
+    await vi.advanceTimersByTimeAsync(0);
+    await settleProbe(Promise.resolve());
+
+    if (settled.status !== "settled") throw new Error("expected settled route outcome");
+    expect(settled.value).toMatchObject({
+      status: "failure",
+      failure: { kind: "transient", code: "route-resolution-failed" },
+    });
+    expect(JSON.stringify(settled.value)).not.toContain(RAW_PROVIDER_FAILURE);
+    expect(f.seen.calls).toHaveLength(0);
+  });
+
+  it("显式 provider+model 时不发 listModels（有界化不新增调用）", async () => {
+    const f = fakeLlm(CHUNKS);
+
+    const result = await generateReport(
+      GEN({ llm: f.llm, provider: "generic-provider", model: "generic-model" }),
+    );
+
+    expect(result.meta.ok).toBe(true);
+    expect(f.seen.listModelsCalls).toEqual([]);
+    expect(f.seen.calls).toHaveLength(1);
+  });
+
+  it("超时后不遗留 timer（进程可自然退出）", async () => {
+    const f = fakeLlm(CHUNKS);
+    Object.assign(f.llm, {
+      listModels: () =>
+        new Promise<Array<{ provider: string; id: string; name: string }>>(() => {}),
+    });
+
+    const pending = generateReport(GEN({ llm: f.llm }));
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(await settleProbe(pending)).toMatchObject({
+      status: "settled",
+      value: { meta: { ok: false, error: "模型路由解析失败" } },
+    });
+    expect(JSON.stringify(await settleProbe(pending))).not.toContain(RAW_PROVIDER_FAILURE);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+});

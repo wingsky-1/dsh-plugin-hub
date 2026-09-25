@@ -4468,7 +4468,7 @@ describe("#503 M3：用量报告接线", () => {
     // h. 路径隔离：reports 产物全部落在临时 historyRoot 下，无 undefined 段
     const produced = readdirSync(reportsDir);
     const PRODUCED_RE =
-      /^(daily|weekly|monthly)-\d{4}-\d{2}(-\d{2})?(\.html|\.meta\.json)$|^index\.jsonl$|^last-run\.json$|^retry-ledger\.json$|^config\.json$/;
+      /^(daily|weekly|monthly)-\d{4}-\d{2}(-\d{2})?(\.html|\.meta\.json)$|^index\.jsonl$|^last-run\.json$|^retry-ledger\.json$|^retry-fence\.json$|^config\.json$/;
     obs.producedCount = produced.length;
     obs.producedWithUndefined = produced.filter((f) => f.includes("undefined"));
     obs.producedNotWhitelisted = produced.filter((f) => !PRODUCED_RE.test(f));

@@ -286,6 +286,31 @@ export function applyPromptTemplate(
   return withStats.split("{range}").join(rangeText);
 }
 
+const ROUTE_DISCOVERY_TIMEOUT_MS = 5_000;
+
+const ROUTE_DISCOVERY_TIMEOUT = Symbol("route-discovery-timeout");
+
+/**
+ * 默认路由发现（listModels）与 report-models 端点同口径：5s 有界。
+ * 官方 listModels 不接受 signal，底层 promise 可能在超时后继续挂起；此处已挂接
+ * rejection 处理器吸收晚到错误，调用方在 deadline 处稳定收敛，绝不无限等待。
+ */
+async function discoverModels(llm: ReportLlmService, provider: string): Promise<LlmModelInfo[]> {
+  const pending = llm.listModels(provider);
+  void pending.catch(() => {});
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      reject(ROUTE_DISCOVERY_TIMEOUT);
+    }, ROUTE_DISCOVERY_TIMEOUT_MS);
+  });
+  try {
+    return await Promise.race([pending, deadline]);
+  } finally {
+    if (timer !== null) clearTimeout(timer);
+  }
+}
+
 /** 空串跟随默认：注册序首个 provider/model（无可选项返回 null）。 */
 async function resolveRoute(
   llm: ReportLlmService,
@@ -299,7 +324,7 @@ async function resolveRoute(
   }
   let m = model;
   if (m.length === 0) {
-    const models = await llm.listModels(p);
+    const models = await discoverModels(llm, p);
     m = models[0]?.id ?? "";
     if (m.length === 0) return null;
   }
@@ -329,6 +354,7 @@ const GENERATE_FAILURE = {
   unsupportedTool: { kind: "permanent", code: "unsupported-tool" },
   unsupportedContent: { kind: "permanent", code: "unsupported-content" },
   unknownStreamEvent: { kind: "unknown", code: "unknown-stream-event" },
+  protocolAfterTerminal: { kind: "unknown", code: "protocol-after-terminal" },
   unknownFinish: { kind: "unknown", code: "unknown-finish" },
   missingFinish: { kind: "unknown", code: "missing-finish" },
   reasoningOnly: { kind: "empty-output", code: "reasoning-only" },
@@ -459,6 +485,10 @@ interface StreamState {
   hasUnsupportedTool: boolean;
   hasUnsupportedContent: boolean;
   hasUnknownChunk: boolean;
+  /** 已见 finish（流已封闭）；此后的 chunk 不再改变任何已收集事实。 */
+  closed: boolean;
+  /** 封闭后仍收到 chunk（协议违规）；正文/token 一律不落盘。 */
+  afterTerminal: boolean;
   tokens: ReportTokenUsage | null;
   terminal: StreamTerminal;
 }
@@ -575,6 +605,7 @@ const REPORT_STREAM_ERROR = {
   requestAborted: "模型请求已取消",
   unsupportedTool: "模型返回了报告不支持的工具调用",
   unsupportedContent: "模型返回了报告不支持的内容块",
+  afterTerminal: "模型在结束后仍返回内容",
 } as const;
 
 type ReportBlockSupport = "supported" | "unsupported";
@@ -605,6 +636,19 @@ function hasNonWhitespaceText(
  * reasoning 原文不保留；工具语义、未知内容块与未知/缺失终态均 fail closed。
  */
 function accumulateChunk(chunk: StreamChunk, state: StreamState): StreamState {
+  // 终态之后仍有 chunk：协议违规，fail closed。正文/token/内容块事实一律不再累加，
+  // 只保留终态自身的合并（error/unknown 优先级不因该违规而降级）。
+  if (state.closed) {
+    if (chunk.type === "finish") {
+      return {
+        ...state,
+        afterTerminal: true,
+        hasUnsupportedTool: state.hasUnsupportedTool || chunk.reason.kind === "tool-calls",
+        terminal: mergeTerminal(state.terminal, classifyFinishReason(chunk.reason)),
+      };
+    }
+    return { ...state, afterTerminal: true };
+  }
   if (chunk.type === "block-start") {
     if (chunk.blockType === "tool-call") return { ...state, hasUnsupportedTool: true };
     const support = reportBlockSupport(chunk.blockType);
@@ -613,6 +657,11 @@ function accumulateChunk(chunk: StreamChunk, state: StreamState): StreamState {
     return state;
   }
   if (chunk.type === "text-delta") {
+    // 只有见到非空白正文才算「该 index 已由 delta 提供」，否则空/纯空白 delta 会屏蔽
+    // 随后的合法 block-end.text，导致整段正文被丢弃并误报空输出。
+    if (chunk.text.trim().length === 0) {
+      return { ...state, body: state.body + chunk.text };
+    }
     const textDeltaIndexes = new Set(state.textDeltaIndexes);
     textDeltaIndexes.add(chunk.index);
     return {
@@ -645,6 +694,7 @@ function accumulateChunk(chunk: StreamChunk, state: StreamState): StreamState {
   if (chunk.type === "finish")
     return {
       ...state,
+      closed: true,
       hasUnsupportedTool: state.hasUnsupportedTool || chunk.reason.kind === "tool-calls",
       terminal: mergeTerminal(state.terminal, classifyFinishReason(chunk.reason)),
     };
@@ -842,6 +892,8 @@ export async function generateReportOutcome(
     hasUnsupportedTool: false,
     hasUnsupportedContent: false,
     hasUnknownChunk: false,
+    closed: false,
+    afterTerminal: false,
     tokens: null,
     terminal: { kind: "none" },
   };
@@ -878,6 +930,16 @@ export async function generateReportOutcome(
   }
   if (state.terminal.kind === "unknown") {
     return fail("模型流返回未知终态", GENERATE_FAILURE.unknownFinish, route, state.tokens);
+  }
+  // 终态未知/失败/不支持内容块优先于 after-terminal 归因（分类优先级不回归）；
+  // after-terminal 本身排在终态缺失之前：封闭流不可能同时「未返回终态」。
+  if (state.afterTerminal) {
+    return fail(
+      REPORT_STREAM_ERROR.afterTerminal,
+      GENERATE_FAILURE.protocolAfterTerminal,
+      route,
+      state.tokens,
+    );
   }
   if (state.terminal.kind === "none") {
     return fail("模型流未返回可识别终态", GENERATE_FAILURE.missingFinish, route, state.tokens);
