@@ -14,6 +14,7 @@ export default defineConfig({
       'packages/dsh-mcp-manager/test/unit/unit-config-env-policy.test.ts',
       'packages/dsh-mcp-manager/test/unit/unit-hotspot.test.ts',
       'packages/dsh-mcp-manager/test/unit/unit-init-failure.test.ts',
+      'packages/dsh-mcp-manager/test/unit/unit-manager-pure.test.ts',
       'packages/dsh-mcp-manager/test/unit/unit-manager.test.ts',
       'packages/dsh-mcp-manager/test/unit/unit-manager2.test.ts',
       'packages/dsh-mcp-manager/test/unit/unit-redaction-a1.test.ts',
