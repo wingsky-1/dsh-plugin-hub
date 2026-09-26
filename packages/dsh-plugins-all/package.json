@@ -50,5 +50,8 @@
   },
   "publishConfig": {
     "access": "public"
+  },
+  "devDependencies": {
+    "@wingsky-1/dsh-shared": "workspace:*"
   }
 }

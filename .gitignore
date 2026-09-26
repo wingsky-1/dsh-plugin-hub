@@ -12,6 +12,16 @@ packages/*/types/
 packages/*/LICENSE
 packages/*/.index.bundle.js
 
+# 仓库根 shared/ 的构建产物（#1028 后续：shared 已 TS 化，声明由 tsc 产出、原地 emit，
+# 故 *.js / *.d.ts / *.map 与 *.ts 源码同目录。版本库里 shared/ 只允许有 .ts 源码，
+# 回归由 scripts/test/shared-ts-shape.test.ts 冻结守卫判红）
+shared/*.js
+shared/*.d.ts
+shared/*.js.map
+shared/client/*.js
+shared/client/*.d.ts
+shared/client/*.js.map
+
 # 系统与编辑器
 .DS_Store
 Thumbs.db

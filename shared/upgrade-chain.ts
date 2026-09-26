@@ -19,6 +19,10 @@
 // 已完成的步也不必因为后面某步失败而整体作废重跑——历史形态「全链末一次回写」把粒度对齐到
 // 整条链，等于要求每一步都幂等到能安全重跑。取舍：跨多步的一次性改写不适合这个骨架，那种
 // 改写应收进单一步骤内部、由该步自己保证重入。
+//
+// 类型面与实现同源：类型声明就在本文件（对外的 .d.ts 由 tsc 产出，不再手写一份）。deps 的形状
+// 各包不同（窄面宽度、路径面、日志端口都不一样），故一切吃 deps 的形状都带泛型 `D`：让消费方的
+// 窄面类型原样穿过步骤与执行器，而不是在共享层先擦成 unknown 再让每个消费方各自断言一次。
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
@@ -32,18 +36,84 @@ const UNKNOWN_VERSION = "0.0.0";
 const PACKAGE_ROOT_MAX_DEPTH = 8;
 
 /**
+ * 一步升级：把存储从 `fromVersion` 的形态推进到 `targetVersion`。两端都写出来而不是只写目标——
+ * 「这一步管的是哪一段」要靠与前后步骤比对才能推出来。
+ *
+ * 步骤是**刻度**而不是迁移动作的别名：没有数据要改的版本也给一步（`run` 空实现），否则存储刻度
+ * 永远停在旧值上。
+ */
+export interface UpgradeStep<D> {
+  /** 起点版本：这一步处理的存储形态对应的版本（升级**前**的那个版本）。 */
+  readonly fromVersion: string;
+  /** 目标版本：这一步完成后**回写**进刻度的值。由链驱动统一回写而不是步骤自己写——「数据改了一半、
+   * 刻度已经前进」的存储没有任何办法退回。 */
+  readonly targetVersion: string;
+  /**
+   * 迁移动作；入参是本域的外部依赖。失败即抛，链随之中止。
+   *
+   * 收窄为 `void | Promise<void>` 而不是 `Promise<void>`：统一异步链不等于强迫所有 step 异步
+   * （同步写的业务 step 传进来同样正确，执行器 await 立即 resolve）；但也**不收成 `void`**——那等于
+   * 要求消费方把真异步的迁移动作写成一个浮起的 Promise，串行性当场失效。
+   */
+  run(deps: D): void | Promise<void>;
+}
+
+/** 链跑完后的对账结论。`message` 已含调用方传入的包名前缀，可直接交给 logger。 */
+export interface GapDiagnosis {
+  /**
+   * 落差分类，只有三种可能：`behind` = 存储落后于插件版本（漏写升级步骤）；`ahead-of-steps` =
+   * 存储超前且步骤表本身也超前（步骤表与 package.json 不同步）；`downgrade` = 存储超前而步骤表
+   * 没超前（装的是更旧的包）。
+   *
+   * 「存储超前于插件目标」是 gap>0 的**总类**，不作为取值：判词要告诉人去改哪里，总类名什么也没说，
+   * 故按成因落成后两项。联合里不预留不产生的成员——那等于让消费方写出永远走不到、也没法测的分支。
+   */
+  readonly kind: "behind" | "ahead-of-steps" | "downgrade";
+  readonly message: string;
+}
+
+/** 链驱动要的一切端口。刻度落在哪个文件、fail-safe 还是 fail-closed、logger 是哪个端口，都由消费方决定。 */
+export interface UpgradePorts<D> {
+  /** 包名：错误与告警文案的前缀。 */
+  readonly label: string;
+  /** 步骤表；升序还是降序声明都行，执行顺序由本模块按目标版本排序决定。 */
+  readonly steps: readonly UpgradeStep<D>[];
+  /** 原样透传给每一步 `run` 的依赖面。 */
+  readonly deps: D;
+  /** 读存储刻度。读不到时给什么（0.0.0 起算还是抛）由消费方决定——两种取舍都成立，本模块不判断。 */
+  readScale(): string | Promise<string>;
+  /** 写存储刻度；一步 `run` 成功后立刻调用。抛错即中止这一次升级。 */
+  writeScale(version: string): void | Promise<void>;
+  /** 插件版本（对账的目标）。 */
+  readonly targetVersion: string;
+  /** 只要求 `warn`：对账落差走告警面、不影响启动成败，故本模块不要求消费方给出更宽的日志端口。 */
+  readonly logger: { warn(message: string): void };
+}
+
+/** 升级域装配器：安装期跑链，卸载时复位。 */
+export interface UpgradeRunner<D> {
+  /** 装配：先跑链，成功后才标记已装配。 */
+  install(deps: D): Promise<void>;
+  /** 复位标记（卸载 / 让重装能再走一遍完整的链）。 */
+  release(): void;
+}
+
+/**
  * 刻度还停在这一步起点或更早的待办步，按**目标版本升序**（声明顺序只是便于阅读，不是执行
  * 顺序——漏排序会让后一步读到前一步尚未改进的形态）。返回新数组：入参是各包模块级的 STEPS
  * 常量，就地排序等于让下一次运行的起点依赖上一次运行的痕迹。
  */
-export function selectPendingSteps(steps, recorded) {
+export function selectPendingSteps<D>(
+  steps: readonly UpgradeStep<D>[],
+  recorded: string,
+): UpgradeStep<D>[] {
   return [...steps]
     .sort((left, right) => compareVersions(left.targetVersion, right.targetVersion))
     .filter((step) => compareVersions(step.fromVersion, recorded) >= 0);
 }
 
 /** 步骤表里最高的目标版本；空表时给空串（空串是「没有步骤可谈」的哨兵，不参与版本比较）。 */
-export function newestTargetVersion(steps) {
+export function newestTargetVersion<D>(steps: readonly UpgradeStep<D>[]): string {
   let newest = "";
   for (const step of steps) {
     if (newest === "" || compareVersions(step.targetVersion, newest) > 0) {
@@ -61,8 +131,16 @@ export function newestTargetVersion(steps) {
  * 返回 `{ kind, message }` 而不是直接写 logger：判定与呈报是两件事，让调用方决定用什么口吻
  * 说（告警 / 报错 / 记指标），本模块才不必被绑死到某个 logger 端口上。三条判词里的包名由
  * `label` 注入——它逐字继承 mcp-manager 现有文案，故告警在多个包之间可直接比对。
+ *
+ * `label` 是第 4 参而不是从入参推导：三条判词都以包名开头，而步骤表里没有包名，调用方是唯一知道
+ * 自己叫什么的地方。放在末位是为了让前三个参数与「步骤 / 刻度 / 目标」的自然读序保持一致。
  */
-export function diagnoseGap(steps, recorded, target, label) {
+export function diagnoseGap<D>(
+  steps: readonly UpgradeStep<D>[],
+  recorded: string,
+  target: string,
+  label: string,
+): GapDiagnosis | null {
   const gap = compareVersions(recorded, target);
   if (gap === 0) return null;
 
@@ -89,10 +167,10 @@ export function diagnoseGap(steps, recorded, target, label) {
 /**
  * 版本号比较：逐段数值比较。段数不同按缺位补零（`0.3` 等价 `0.3.0`）；预发布后缀（`-rc.1`）
  * 不参与比较——本仓的版本序列只用到 `主.次.修订`，为一个不会出现的输入引一套 semver 语义，
- * 换来的是又一处需要跟着上游走的依赖。归一化到 -1 / 0 / 1：调用方只比符号，不需要知道
- * 「差多少」——按差值判断的代码在跨段比较时会漏掉一半情况。
+ * 换来的是又一处需要跟着上游走的依赖。段非纯数字归零（不抛，见 `parseVersion`）。归一化到
+ * -1 / 0 / 1：调用方只比符号，不需要知道「差多少」——按差值判断的代码在跨段比较时会漏掉一半情况。
  */
-export function compareVersions(left, right) {
+export function compareVersions(left: string, right: string): number {
   const a = parseVersion(left);
   const b = parseVersion(right);
   const length = Math.max(a.length, b.length);
@@ -103,7 +181,7 @@ export function compareVersions(left, right) {
   return 0;
 }
 
-function parseVersion(text) {
+function parseVersion(text: string): number[] {
   // 预发布后缀显式剥离；段非纯数字仍归零——未知输入按 0.0.0 起算跑整条链（各步幂等自查），
   // 不抛：启动期读盘数据不可信，抛即崩，归零方向恒为 fail-safe。
   const core = text.split("-")[0] ?? "";
@@ -111,9 +189,9 @@ function parseVersion(text) {
 }
 
 /**
- * 从 `fromDir` 向上找最近的含 `package.json` 的目录；走到层数上限仍没有则 `undefined`。
+ * 从 `fromDir` 向上找最近的含 `package.json` 的目录；走到层数上限（8 层）仍没有则 `undefined`。
  */
-export function packageRootFrom(fromDir) {
+export function packageRootFrom(fromDir: string): string | undefined {
   let current = fromDir;
   for (let depth = 0; depth < PACKAGE_ROOT_MAX_DEPTH; depth += 1) {
     if (existsSync(join(current, "package.json"))) return current;
@@ -138,12 +216,18 @@ export function packageRootFrom(fromDir) {
  * 是 shared 源文件或包内 src 深处——两者深度不同，且随构建形态变化。自己定位自己，在这两种
  * 形态里必有一种定位错地方；把起点交给调用方传，深度差异就不再是本模块的隐式知识。
  */
-export function pluginVersion(fromDir) {
+export function pluginVersion(fromDir: string): string {
   const root = packageRootFrom(fromDir);
   if (root === undefined) return UNKNOWN_VERSION;
   try {
-    const parsed = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
-    return typeof parsed.version === "string" ? parsed.version : UNKNOWN_VERSION;
+    // `JSON.parse` 的返回类型是 any，故立刻收进 unknown 再用守卫取字段：包清单是读盘数据，
+    // 不可信的部分（顶层不是对象、没有 version 字段、version 不是字符串）一律回落兜底值。
+    const parsed: unknown = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+    if (typeof parsed !== "object" || parsed === null || !("version" in parsed)) {
+      return UNKNOWN_VERSION;
+    }
+    const version: unknown = parsed.version;
+    return typeof version === "string" ? version : UNKNOWN_VERSION;
   } catch {
     return UNKNOWN_VERSION;
   }
@@ -151,12 +235,12 @@ export function pluginVersion(fromDir) {
 
 /**
  * 跑完一条升级链：读刻度 → 取待办步 → 逐步执行并回写刻度 → 与插件版本对账。
- * **任何一步失败即抛出，调用方随之中止**（存储没升完就被按错误形态解释，比不启动糟得多）。
+ * **任何一步失败即抛出，调用方随之中止**（`cause` 透传；存储没升完就被按错误形态解释，比不启动糟得多）。
  * 返回 `undefined`：链跑完没有产物可言，刻度才是产物。
  *
  * 对账只告警、不改变动作：三种落差都不是迁移动作失败，而静默地把刻度改成看起来对的值更糟。
  */
-export async function runUpgradeChain(ports) {
+export async function runUpgradeChain<D>(ports: UpgradePorts<D>): Promise<void> {
   const recorded = await ports.readScale();
   for (const step of selectPendingSteps(ports.steps, recorded)) {
     await applyStep(step, ports);
@@ -170,7 +254,7 @@ export async function runUpgradeChain(ports) {
  * 先写等于把凭证发给一件还没做完的事，而失败时那个刻度会让下次启动跳过它。失败与回写失败都带上
  * 目标版本，是为了让「哪一步」出现在启动失败的现场。
  */
-async function applyStep(step, ports) {
+async function applyStep<D>(step: UpgradeStep<D>, ports: UpgradePorts<D>): Promise<void> {
   try {
     await step.run(ports.deps);
   } catch (cause) {
@@ -189,7 +273,7 @@ async function applyStep(step, ports) {
 }
 
 /** 失败现场要的是消息，不是异常对象本身；非 Error 抛出物（字符串、undefined）也要落到文案里。 */
-function reasonOf(cause) {
+function reasonOf(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause);
 }
 
@@ -210,8 +294,16 @@ function reasonOf(cause) {
  *
  * 这也意味着**消费方组合根里的 `releaseUpgrade()` 不能当并发保护用**——它只复位 `installed`，
  * 对在途中的那一次毫无作用。
+ *
+ * 三重守卫，缺一不可：**重复装配**——`install` 跑成功后再标记，重复 `install` 抛「只能装配一次」
+ * （链抛错时这次装配等于没发生，宿主重试才有机会重跑链）；**并发装配**——另有在途标记，让第二次
+ * `install` 当场抛「正在装配中」而不是安静地与第一次并跑；**失败不卡死**——在途标记随链结束
+ * （含抛错）在 finally 里清零，失败不把 runner 永久锁住。
  */
-export function createUpgradeRunner(label, run) {
+export function createUpgradeRunner<D>(
+  label: string,
+  run: (deps: D) => void | Promise<void>,
+): UpgradeRunner<D> {
   let installed = false;
   let installing = false;
   return {

@@ -669,7 +669,10 @@ function faceRatchetCheck(topology) {
   } catch (err) {
     return { envError: `豁免台账不可读（${EXEMPTIONS_REL}）：${err.message}` };
   }
-  const universe = sourceUniverse(repoRoot);
+  // excludeBuildArtifacts：shared TS 化后 tsc 原地 emit，shared 下的 .js/.d.ts 是 gitignore
+  // 的构建产物；不排掉，判据⑦ 展开基准条目 shared/settings-namespace.js 时命中的会是产物，
+  // 于是「改名 .js 到 .ts」被误判成变异面收缩。
+  const universe = sourceUniverse(repoRoot, { excludeBuildArtifacts: true });
   const expand = (pattern) => globFiles(repoRoot, pattern).filter((f) => universe.has(f));
   return {
     ...mutationFaceRatchetProblems({

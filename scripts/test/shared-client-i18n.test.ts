@@ -20,11 +20,11 @@ import assert from "node:assert/strict";
 import { t, bindLocale } from "../../shared/client/i18n.js";
 
 /**
- * 测试侧单点收口（#1028 后续：shared/client/i18n.d.ts 的入参面改用官方 LocaleRuntime 派生）。
+ * 测试侧单点收口（#1028 后续：shared/client/i18n.ts 的入参面改用官方 LocaleRuntime 派生）。
  *
- * 生产面只认官方 LocaleRuntime 的四个成员（register / bind / subscribe / getSnapshot），
- * 上游改名即 tsc 判红——这正是本文件之外要保住的东西。而本文件要驱动的恰恰是
- * i18n.js 的**运行时防御分支**（无 bind、bind 非函数），这些入参按实现契约有意不合生产类型。
+ * 生产面只要求 bindLocale 真正消费的那一个成员（bind），上游改名即 tsc 判红——这正是
+ * 本文件之外要保住的东西。而本文件要驱动的恰恰是 i18n 的**运行时防御分支**
+ * （无 bind、bind 非函数），这些入参按实现契约有意不合生产类型。
  * 故在此单点收口，不放宽生产声明：把「不合类型」这件事显式写在测试里，而不是漏进公共面。
  */
 function localeStub(stub: object): Parameters<typeof bindLocale>[0] {

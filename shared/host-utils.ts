@@ -5,7 +5,9 @@
 // 消除隐式差异。
 
 import { Buffer } from "node:buffer";
+import type { IncomingMessage, ServerResponse } from "node:http";
 
+import type { LoopbackOptions } from "./loopback.js";
 import { isLoopbackRequest } from "./loopback.js";
 
 /**
@@ -15,20 +17,27 @@ import { isLoopbackRequest } from "./loopback.js";
  * （403 先于 405）。该顺序仅对**套本守卫的端点**成立——个别端点（如
  * mcp-manager /config）是端点级方法分流先于 loopback 的刻意例外，不适用。
  *
- * @param {import("node:http").IncomingMessage} req - Node http 请求对象。
- * @param {import("node:http").ServerResponse} res - 响应对象。
- * @param {string[]} methods - 允许的 HTTP 方法白名单。
- * @param {{ allowCrossSiteNoCors?: boolean }} [loopbackOptions] - 透传给
+ * @param req - Node http 请求对象。
+ * @param res - 响应对象。
+ * @param methods - 允许的 HTTP 方法白名单。
+ * @param loopbackOptions - 透传给
  *   isLoopbackRequest 的可选判定参数（#549：仅 serve 资源路由放行
  *   cross-site no-cors 子资源时使用；其余路由不得传）。
- * @returns {boolean} 是否放行（true 时调用方继续处理请求）。
+ * @returns 是否放行（true 时调用方继续处理请求）。
  */
-export function guardLoopbackMethod(req, res, methods, loopbackOptions) {
+export function guardLoopbackMethod(
+  req: IncomingMessage,
+  res: ServerResponse,
+  methods: string[],
+  loopbackOptions?: LoopbackOptions,
+): boolean {
   if (!isLoopbackRequest(req, loopbackOptions)) {
     writeJson(res, 403, { error: "forbidden: loopback-only" });
     return false;
   }
-  if (!methods.includes(req.method)) {
+  // `req.method` 在 @types/node 上是 `string | undefined`。断言不改变运行时取值：
+  // 缺 method 时 includes 仍为 false，照原样落 405，不存在被误放行的分支。
+  if (!methods.includes(req.method as string)) {
     writeJson(res, 405, { error: `method not allowed: ${req.method}` });
     return false;
   }
@@ -37,11 +46,11 @@ export function guardLoopbackMethod(req, res, methods, loopbackOptions) {
 
 /**
  * 写 JSON 响应（统一带 referrer-policy 头，防 referrer 泄露）。
- * @param {import("node:http").ServerResponse} res - 响应对象。
- * @param {number} status - HTTP 状态码。
- * @param {unknown} payload - 序列化为 JSON 的负载。
+ * @param res - 响应对象。
+ * @param status - HTTP 状态码。
+ * @param payload - 序列化为 JSON 的负载。
  */
-export function writeJson(res, status, payload) {
+export function writeJson(res: ServerResponse, status: number, payload: unknown): void {
   res.writeHead(status, {
     "content-type": "application/json; charset=utf-8",
     "referrer-policy": "no-referrer",
@@ -56,12 +65,21 @@ export function writeJson(res, status, payload) {
  * 换行的 payload 由 JSON 转义为字面 `\n`，不拆多行 data 帧。现状三处均无调用点
  * 传 undefined（payload 恒为对象字面量），该行为仅为对齐历史、不额外兜底，
  * 非承诺契约——若未来收紧（抛错/省略）不视为破坏兼容（需单开决策）。
- * @param {unknown} payload - 序列化为 JSON 的 SSE 帧负载。
- * @returns {string} SSE data 帧文本。
+ * @param payload - 序列化为 JSON 的 SSE 帧负载。
+ * @returns SSE data 帧文本。
  */
-export function sseData(payload) {
+export function sseData(payload: unknown): string {
   return `data: ${JSON.stringify(payload)}\n\n`;
 }
+
+/** 请求体读不出来的具体成因：供端点在失败文案里说清是哪一种。 */
+export type JsonBodyInvalidReason = "too-large" | "unreadable" | "malformed" | "not-object";
+
+/** `readJsonBodyOutcome` 的成因可辨结果：缺席（可选 body 未给）/ 合法对象 / 非法（带具体成因）。 */
+export type JsonBodyOutcome =
+  | { kind: "absent" }
+  | { kind: "json"; value: object }
+  | { kind: "invalid"; reason: JsonBodyInvalidReason };
 
 /**
  * 读请求 body（JSON）并**保留失败成因**。
@@ -70,12 +88,15 @@ export function sseData(payload) {
  * 收敛成同一个 undefined，调用方想区分「可选 body 缺席」与「给了但读不出来」只能靠猜。对**有副作用**
  * 的端点，这个歧义是有代价的：畸形请求会走到「按缺省处理」那条路，等于拿垃圾输入触发真实动作。
  * 需要 fail-closed 的端点用本函数；宽松端点继续用 `readJsonBody`（它是本函数的薄包装）。
- * @param {import("node:http").IncomingMessage} req - Node http 请求对象（或 async-iterator 桩）。
- * @param {number} [limit] - 字节上限（默认 2MB）。
- * @returns {Promise<{kind:"absent"}|{kind:"json",value:object}|{kind:"invalid",reason:string}>} 成因可辨的结果。
+ * @param req - Node http 请求对象（或 async-iterator 桩）。
+ * @param limit - 字节上限（默认 2MB）。
+ * @returns 成因可辨的结果。
  */
-export async function readJsonBodyOutcome(req, limit = 2 * 1024 * 1024) {
-  const chunks = [];
+export async function readJsonBodyOutcome(
+  req: IncomingMessage,
+  limit = 2 * 1024 * 1024,
+): Promise<JsonBodyOutcome> {
+  const chunks: Buffer[] = [];
   let size = 0;
   try {
     for await (const chunk of req) {
@@ -86,7 +107,7 @@ export async function readJsonBodyOutcome(req, limit = 2 * 1024 * 1024) {
   } catch {
     return { kind: "invalid", reason: "unreadable" };
   }
-  let text;
+  let text: string;
   try {
     text = Buffer.concat(chunks).toString("utf8");
   } catch {
@@ -96,7 +117,7 @@ export async function readJsonBodyOutcome(req, limit = 2 * 1024 * 1024) {
   }
   // 空 body（含纯空白）与「没写 body」是同一件事：可选参数缺席，不是错误。
   if (text.trim() === "") return { kind: "absent" };
-  let parsed;
+  let parsed: unknown;
   try {
     parsed = JSON.parse(text);
   } catch {
@@ -110,21 +131,24 @@ export async function readJsonBodyOutcome(req, limit = 2 * 1024 * 1024) {
 /**
  * 宽松读请求 body（JSON）：解析失败或超限返回 undefined（不抛错），由调用方决定响应。
  * 成因不可辨——要区分「缺席」与「非法」用 `readJsonBodyOutcome`。与 readBody 共用限长语义。
- * @param {import("node:http").IncomingMessage} req - Node http 请求对象（或 async-iterator 桩）。
- * @param {number} [limit] - 字节上限（默认 2MB）。
- * @returns {Promise<object|undefined>} 解析后的 JSON 对象；空/非法/超限返回 undefined。
+ * @param req - Node http 请求对象（或 async-iterator 桩）。
+ * @param limit - 字节上限（默认 2MB）。
+ * @returns 解析后的 JSON 对象；空/非法/超限返回 undefined。
  */
-export async function readJsonBody(req, limit = 2 * 1024 * 1024) {
+export async function readJsonBody(
+  req: IncomingMessage,
+  limit = 2 * 1024 * 1024,
+): Promise<object | undefined> {
   const outcome = await readJsonBodyOutcome(req, limit);
   return outcome.kind === "json" ? outcome.value : undefined;
 }
 
 /**
  * 把任意抛出的值转成可读错误消息。
- * @param {unknown} error - 任意抛出的值。
- * @returns {string} 可读错误消息。
+ * @param error - 任意抛出的值。
+ * @returns 可读错误消息。
  */
-export function errorMessage(error) {
+export function errorMessage(error: unknown): string {
   try {
     if (error instanceof Error) return error.message;
     return String(error);
@@ -136,15 +160,15 @@ export function errorMessage(error) {
 /**
  * 读请求 body（JSON，限长防滥用）。
  * 兼容两种请求形态：Node 事件流（data/end）与 async-iterator 桩（测试用）。
- * @param {import("node:http").IncomingMessage} req - Node http 请求对象（或 async-iterator 桩）。
- * @param {number} [limit] - 字节上限（显式传入，默认 256KB）。
- * @returns {Promise<object>} 解析后的 JSON 对象（空 body 返回 {}）。
+ * @param req - Node http 请求对象（或 async-iterator 桩）。
+ * @param limit - 字节上限（显式传入，默认 256KB）。
+ * @returns 解析后的 JSON 对象（空 body 返回 {}）。
  */
-export function readBody(req, limit = 256 * 1024) {
+export function readBody(req: IncomingMessage, limit = 256 * 1024): Promise<object> {
   // async-iterator 形态（部分测试桩）：逐块读取，限长检查。
   if (typeof req[Symbol.asyncIterator] === "function" && typeof req.on !== "function") {
     return (async () => {
-      const chunks = [];
+      const chunks: Buffer[] = [];
       let size = 0;
       for await (const chunk of req) {
         size += chunk.length;
@@ -156,10 +180,9 @@ export function readBody(req, limit = 256 * 1024) {
   }
   // Node 事件流形态。
   return new Promise((resolvePromise, reject) => {
-    /** @type {Buffer[]} */
-    const chunks = [];
+    const chunks: Buffer[] = [];
     let size = 0;
-    req.on("data", (chunk) => {
+    req.on("data", (chunk: Buffer) => {
       size += chunk.length;
       if (size > limit) {
         reject(new Error("body too large"));
@@ -174,7 +197,7 @@ export function readBody(req, limit = 256 * 1024) {
           chunks.length === 0 ? {} : JSON.parse(Buffer.concat(chunks).toString("utf8")),
         );
       } catch (error) {
-        const e = /** @type {Error} */ (error);
+        const e = error as Error;
         reject(new Error(`invalid JSON body: ${e.message}`));
       }
     });

@@ -4,7 +4,7 @@
 // notifier 有上限/淘汰/心跳/判死，mcp-manager 只有裸 Set + per-connection 心跳，
 // 无上限无淘汰；两包都缺「半开连接主动回收」（issue #515，源自 #330 已知取舍）。
 // 本模块收敛为单一实现：连接表 + 心跳 + stalled/maxAge 主动回收，
-// 两包共用，消除不对称与逐包漂移。类型声明见同目录 sse-hub.d.ts。
+// 两包共用，消除不对称与逐包漂移。
 //
 // 设计边界（#515 评审收敛）：
 // - 广播负载生成留各包：hub 只负责「向全部连接写一段现成 text 帧」并做判死收口；
@@ -30,6 +30,82 @@
 // 心跳为 hub 级单 interval（对齐 notifier，取代 mcp 的 per-connection interval）：
 // 一个 tick 顺带做 写心跳 / stalled 判死 / maxAge 轮换，串行无竞争。
 
+import type { ServerResponse } from "node:http";
+
+/**
+ * 连接表项状态（stalledAt 缺省 = 未 stalled）。
+ * failStreak：连续写抛错次数（≥3 ≈ 3 心跳周期判死，对齐 dsh-notifier 原版）。
+ */
+export interface SseConnState {
+  /** 连续写抛错次数。 */
+  failStreak: number;
+  /** 自上次成功写/心跳以来的「写被拒」起始时刻（ms epoch；缺省 = 未 stalled）。 */
+  stalledAt?: number;
+  /** 注册时刻（ms epoch；maxAge 轮换依据）。 */
+  registeredAt: number;
+  /** 最近一次成功写时刻（ms epoch；idle 判定依据）。 */
+  lastWriteAt: number;
+}
+
+/** 回收/淘汰原因（health 观测 + 调试）。`dispose` = 卸载时统一关连接那一次。 */
+export type SseEvictReason = "close" | "error" | "stalled" | "maxage" | "destroyed" | "dispose";
+
+/** evict 原因计数（health 观测：先量化残留构成再调参）。键集与 `SseEvictReason` 一一对应。 */
+export interface SseEvictStats {
+  close: number;
+  error: number;
+  stalled: number;
+  maxage: number;
+  destroyed: number;
+  dispose: number;
+}
+
+/**
+ * 连接健康观测：排障用明细，**故意不进 `/health`**——它随连接数增长，
+ *  而 `/health` 是常量大小的聚合面且经 lan-proxy 对局域网可见。真要暴露请单开路由。
+ */
+export interface SseConnHealth {
+  /** 连接已存活时长（ms）。 */
+  ageMs: number;
+  /** 距最近成功写已过去时长（ms；-1 = 从未写过）。 */
+  lastWriteAgoMs: number;
+  /** 当前 stalled 持续时长（ms；-1 = 未 stalled）。 */
+  stalledMs: number;
+}
+
+/** createSseHub 选项。 */
+export interface SseHubOptions {
+  /** 心跳间隔（默认 30s；测试注入短值）。 */
+  heartbeatMs?: number;
+  /** stalled 回收窗口：连续写被拒超过此时长即 evict（默认 90s）。 */
+  stalledTimeoutMs?: number;
+  /** maxAge 轮换上限（默认 120min；0 = 关闭轮换）。 */
+  maxAgeMs?: number;
+  /** maxAge 轮换的「空闲」门槛：距最近成功写超过此时长才算空闲（默认 15min）。 */
+  idleTimeoutMs?: number;
+}
+
+/**
+ * SSE 连接枢纽（共享核心，取代各包自建连接表）。
+ * 连接表 + 心跳 + stalled/maxAge 主动回收（#515）。
+ * 广播负载生成留调用方：hub 只向全部连接写现成 text 帧并判死收口；
+ * ?since 补拉（notifier 路由层行为）不进 hub。
+ */
+export interface SseHub {
+  /** 注册一条 SSE 连接：入表 + 挂 close/error 监听。 */
+  register(res: ServerResponse): void;
+  /** 向全部连接写一帧 text（调用方生成，通常经 sseData()）；判死收口在内部。 */
+  broadcast(text: string): void;
+  /** 当前连接数（语义 = 服务端未释放句柄数）。 */
+  size(): number;
+  /** evict 原因计数（health 观测）。 */
+  evictStats(): SseEvictStats;
+  /** 连接健康快照（按注册序；排障用明细，不进 `/health`，理由见 `SseConnHealth`）。 */
+  connHealth(now?: number): SseConnHealth[];
+  /** 停止心跳定时器。 */
+  dispose(): void;
+}
+
 /** 心跳间隔（默认 30s）。 */
 const DEFAULT_HEARTBEAT_MS = 30_000;
 /** stalled 回收窗口（默认 90s = 3 心跳周期）。 */
@@ -45,23 +121,19 @@ const PING_FRAME = 'data: {"type":"ping"}\n\n';
 
 /**
  * 创建 SSE 枢纽并启动心跳（unref：不阻止进程退出）。
- * @param {object} options
- * @param {number} [options.heartbeatMs] 心跳间隔（默认 30s；测试注入短值）。
- * @param {number} [options.stalledTimeoutMs] stalled 回收窗口（默认 90s；测试注入短值）。
- * @param {number} [options.maxAgeMs] maxAge 轮换上限（默认 120min；0 = 关闭轮换）。
- * @param {number} [options.idleTimeoutMs] maxAge 轮换的「空闲」门槛（默认 15min）。
- * @returns {import("./sse-hub.d.ts").SseHub}
+ * @param options 心跳 / 回收 / 轮换参数（各项缺省见下方常量）。
+ * @returns SSE 连接枢纽。
  */
-export function createSseHub(options) {
+export function createSseHub(options: SseHubOptions): SseHub {
   const heartbeatMs = options.heartbeatMs ?? DEFAULT_HEARTBEAT_MS;
   const stalledTimeoutMs = options.stalledTimeoutMs ?? DEFAULT_STALLED_TIMEOUT_MS;
   const maxAgeMs = options.maxAgeMs ?? DEFAULT_MAX_AGE_MS;
   const idleTimeoutMs = options.idleTimeoutMs ?? DEFAULT_IDLE_TIMEOUT_MS;
 
   /** 连接表：Map<响应, 状态>；Map 迭代序 = 插入序，广播与健康快照都按注册序。 */
-  const conns = new Map();
+  const conns = new Map<ServerResponse, SseConnState>();
   /** evict 原因计数（health 观测）。 */
-  const evictStats = {
+  const evictStats: SseEvictStats = {
     close: 0,
     error: 0,
     stalled: 0,
@@ -70,10 +142,10 @@ export function createSseHub(options) {
     dispose: 0,
   };
   /** 心跳定时器（unref：不阻止进程退出）。 */
-  let heartbeatTimer;
+  let heartbeatTimer: NodeJS.Timeout | undefined;
 
   /** 移除一条连接（幂等）：先出表再 destroy，destroy 触发的 close 回调再次 evict 无害。 */
-  function evict(res, reason) {
+  function evict(res: ServerResponse, reason: SseEvictReason): void {
     if (conns.delete(res)) {
       evictStats[reason] += 1;
       try {
@@ -85,7 +157,7 @@ export function createSseHub(options) {
   }
 
   /** 连接是否处于 stalled（写被拒超窗）。 */
-  function isStalled(state, t) {
+  function isStalled(state: SseConnState, t: number): boolean {
     return state.stalledAt !== undefined && t - state.stalledAt >= stalledTimeoutMs;
   }
 
@@ -98,7 +170,7 @@ export function createSseHub(options) {
    * 长命静默僵尸」的确定性兜底：age 超限且 idleTimeoutMs 内无业务帧 → 主动关闭，
    * 客户端 EventSource 自动重连 + ?since 补拉，用户无感。
    */
-  function isExpiredIdle(state, t) {
+  function isExpiredIdle(state: SseConnState, t: number): boolean {
     if (maxAgeMs <= 0) return false;
     if (t - state.registeredAt < maxAgeMs) return false;
     return t - state.lastWriteAt > idleTimeoutMs;
@@ -116,7 +188,7 @@ export function createSseHub(options) {
    * @param {boolean} [activity] 是否业务活动写（默认 true；心跳传 false）。
    * @returns {boolean} 是否成功写出。
    */
-  function writeFrame(res, text, activity = true) {
+  function writeFrame(res: ServerResponse, text: string, activity = true): boolean {
     const state = conns.get(res);
     if (state === undefined) return false;
     if (res.destroyed || res.writableEnded) {
@@ -143,7 +215,7 @@ export function createSseHub(options) {
   }
 
   /** 注册一条 SSE 连接：入表 + 挂 close/error 监听。 */
-  function register(res) {
+  function register(res: ServerResponse): void {
     const t = Date.now();
     conns.set(res, { registeredAt: t, lastWriteAt: t, stalledAt: undefined, failStreak: 0 });
     res.on("close", () => evict(res, "close"));
@@ -158,26 +230,26 @@ export function createSseHub(options) {
   }
 
   /** 向全部连接写一帧 text（调用方生成）；判死收口在 writeFrame。 */
-  function broadcast(text) {
+  function broadcast(text: string): void {
     for (const [res] of conns) {
       writeFrame(res, text);
     }
   }
 
   /** 当前连接数（语义 = 服务端未释放句柄数）。 */
-  function size() {
+  function size(): number {
     return conns.size;
   }
 
   /** evict 原因计数副本（health 观测）。 */
-  function evictStatsCopy() {
+  function evictStatsCopy(): SseEvictStats {
     return { ...evictStats };
   }
 
   /** 连接健康快照（按注册序；health per-conn 观测）。 */
-  function connHealth(nowMs) {
+  function connHealth(nowMs?: number): SseConnHealth[] {
     const t = nowMs ?? Date.now();
-    const out = [];
+    const out: SseConnHealth[] = [];
     for (const state of conns.values()) {
       out.push({
         ageMs: t - state.registeredAt,
@@ -190,7 +262,7 @@ export function createSseHub(options) {
 
   /** 停止心跳定时器 + destroy 全部连接（#515 注释承诺：dispose 统一停心跳 +
    * destroy——现状只停心跳，连接句柄残留 → B12 修复；close 回调再次 evict 幂等）。 */
-  function dispose() {
+  function dispose(): void {
     if (heartbeatTimer !== undefined) clearInterval(heartbeatTimer);
     heartbeatTimer = undefined;
     for (const [res] of [...conns]) evict(res, "dispose");
@@ -200,7 +272,7 @@ export function createSseHub(options) {
    * 心跳 tick：stalled 判死 → maxAge 轮换 → 写 ping（复用 writeFrame 判死收口）。
    * 串行无竞争，全部回收路径收口在 evict。
    */
-  function heartbeatTick() {
+  function heartbeatTick(): void {
     const t = Date.now();
     for (const [res, state] of conns) {
       if (res.destroyed || res.writableEnded) {

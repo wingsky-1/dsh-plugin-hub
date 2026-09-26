@@ -168,7 +168,18 @@ function resolveSpecifier(fromFile: string, spec: string): string | null {
   for (const ext of RESOLVABLE.slice(1)) {
     if (TRACKED_SET.has(posix.join(base, "index" + ext))) return posix.join(base, "index" + ext);
   }
-  return TRACKED_SET.has(base) ? base : null;
+  if (TRACKED_SET.has(base)) return base;
+  // 扩展名替换（#1028 后续重构）：shared TS 化后，包里的说明符仍是 ../../shared/**.js
+  // （构建链要求 emit 出的说明符指向真实 .js），而**源码**已变成同名 .ts。上面两轮都是
+  // 「往 base 后面追加扩展名」，不覆盖「把 .js 换成 .ts」——于是这批边会整体消失，
+  // 连带把下面那条载体自证打成假红。此处按 TS 的解析口径补上这一形态。
+  const stem = base.replace(/\.(js|jsx|mjs|cjs)$/, "");
+  if (stem !== base) {
+    for (const ext of [".ts", ".tsx", ".mts", ".cts"]) {
+      if (TRACKED_SET.has(stem + ext)) return stem + ext;
+    }
+  }
+  return null;
 }
 
 const CODE_EXT = /\.(ts|tsx|mts|cts|js|jsx|mjs|cjs)$/;

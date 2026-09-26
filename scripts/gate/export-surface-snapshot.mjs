@@ -97,6 +97,7 @@
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
+import { ensureSharedBuilt } from "../lib/ensure-shared-built.mjs";
 import { dirname, join, posix, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { checkExportFaces, loadExportFaces } from "../lib/export-faces-lib.ts";
@@ -155,6 +156,8 @@ function collectDts(dir, acc = []) {
  */
 function emitDeclarations() {
   const outDir = mkdtempSync(join(tmpdir(), "export-surface-"));
+  // shared 的声明是 tsc 产出的（不入库），裸 tsc -p 会因 references 报 TS6305——先建 shared。
+  ensureSharedBuilt(ROOT);
   const tsc = join(ROOT, "node_modules", "typescript", "bin", "tsc");
   const res = spawnSync(
     process.execPath,
