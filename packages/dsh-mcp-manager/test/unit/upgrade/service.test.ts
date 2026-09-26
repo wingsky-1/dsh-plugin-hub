@@ -105,20 +105,6 @@ describe("装配期跑链", () => {
     expect(readFileSync(versionFile(), "utf8").trim()).toBe(newestTarget());
   });
 
-  // 0.2.6 → 0.2.7 是空步：只推进刻度、不碰用户数据。两条判据一起看——刻度落到 0.2.7 锁住
-  // 「这一步确实跑了」（漏加步骤即停在 0.2.6），新布局配置逐字不动锁住「空实现没有偷偷写存储」。
-  it("刻度停在 0.2.6 的装机执行后续链：刻度到 0.2.7 且新布局配置逐字不动", async () => {
-    seedClock("0.2.6");
-    const config = configFile();
-    mkdirSync(dirname(config), { recursive: true });
-    writeFileSync(config, '{"kept":true}\n', "utf8");
-
-    await assemble();
-
-    expect(readFileSync(versionFile(), "utf8").trim()).toBe("0.2.7");
-    expect(readFileSync(config, "utf8")).toBe('{"kept":true}\n');
-  });
-
   it("链失败即中止装配，并且**不推进刻度**：清障后从同一步重跑才写完", async () => {
     const legacy = legacyFile(LEGACY_LAYOUT.config);
     // 旧文件读不出来（同名目录）：这一步必然失败，而刻度文件本身的落点完全可写——

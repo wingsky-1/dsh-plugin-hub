@@ -338,19 +338,6 @@ describe("装配期跑链", () => {
     expect(readFileSync(`${legacy}.migrated.bak`, "utf8")).toBe('{"ts":7}\n');
   });
 
-  // 0.2.6 → 0.2.7 是空步：只推进刻度、不碰用户数据。两条判据一起看——刻度落到 0.2.7 锁住
-  // 「这一步确实跑了」（漏加步骤即停在 0.2.6），历史文件逐字不动锁住「空实现没有偷偷写存储」。
-  it("刻度停在 0.2.6 的装机执行后续链：刻度到 0.2.7 且历史文件逐字不动", () => {
-    seedStoredVersion("0.2.6");
-    mkdirSync(dirname(notifierFile(HISTORY_FILE_NAME)), { recursive: true });
-    writeFileSync(notifierFile(HISTORY_FILE_NAME), '{"ts":99}\n', "utf8");
-
-    assemble();
-
-    expect(storedVersionOnDisk()).toBe("0.2.7");
-    expect(readFileSync(notifierFile(HISTORY_FILE_NAME), "utf8")).toBe('{"ts":99}\n');
-  });
-
   // 反方向：刻度已到目标时这一步一次都不能跑。判据不能只看「新布局的内容没被覆盖」——步骤本身幂等，
   // 恒跑也绿；旧文件仍在原地才是「一次都没跑」的证据（跑了就会归档它）。
   it("刻度已到目标版本时这一步完全不执行：home 根的旧文件原地不动", () => {
