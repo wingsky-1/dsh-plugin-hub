@@ -2,9 +2,13 @@
 /**
  * scripts/maintenance/equiv-check.ts —— 等价重构的「机制性等价性检查器」（#843 M10）。
  *
+ * **它是什么**：机制性抽取 + 登记表对账器。**它不是判据**——它不对「某条差异是否无害」作
+ * 任何判定（那是 §4.1 第 3 件「被改函数的差分对拍」的活），它做的是把两侧的记号多重集差集
+ * 抽出来，再拿登记表去对账：对得上 exit 0，对不上 exit 1。
+ *
  * 定位：docs/DEVELOPMENT.md §4.1「等价重构类改动的验证三件套」第 2 件。三件套里的探针
  * （第 1 件）是一次性动作，第 3 件是被改函数的差分对拍；只有第 2 件是**机制**——它需要一份
- * 每次都能重跑的判据。#839 把它写成了一次性草稿（只存在于当次的 .maintenance-drafts/，
+ * 每次都能重跑的抽取与对账。#839 把它写成了一次性草稿（只存在于当次的 .maintenance-drafts/，
  * 已 gitignore），任何人 clone 都拿不到，评审无法证伪，故在此入库。
  *
  * 覆盖面（本工具**不构成等价性证明**，边界常驻 --help 与每次输出）：
@@ -16,13 +20,21 @@
  * 外加 §4.1 点名要求的两个专项（各自独立成类，登记一张不能顺带豁免另一张）：
  *   ⑤ 数字字面量整段消失（防丢上界 / 阈值）
  *   ⑥ 新增函数零引用（防抽了不用）
- * 差异只允许两类：**空**，或抽函数必然产生的「结构回声」——后者逐条登记在对照表里并写明
- * 理由，**未登记差异一律报红**。
+ * 比对面只含源码文件：文档 / 数据等非源码面被跳过，不参与比对。
  *
- * **控制流等价性不在覆盖面内**：分支顺序对调、条件取反、状态少复位一次，只要没有增删上
- * 述记号，本工具一律报 0 差异（#732 的 stripComments 状态复位 bug、§4.1 记的「分支顺序
- * 变了」都属此类）。因此本工具**不能单独**作为「行为没变」的结论；§4.1 第 3 件（被改
- * 函数的差分对拍）才是控制流那一层的证据。把它当证明用，是本工具最可能的误用。
+ * §4.1 说「差异只允许两类：空，或抽函数必然产生的结构回声（计数 +N）」，而**本工具不
+ * 执行这条限制**：它只校验登记项**非空**、且与实测集合**互相吻合**（多一条算登记失效、
+ * 少一条算未登记，两者都 exit 1）。**理由是否真的落在那两类之内由人负责**——逐条填一句
+ * "TODO" 同样能过。登记表的正当性是**人的责任**，工具只保证「没人偷偷漏登 / 多登」。
+ *
+ * **看不见的三类改法**（均经实测，不是推演）：
+ *   a 控制流：分支顺序对调、条件取反、状态少复位一次——只要没有增删上述记号，一律报 0
+ *     差异（#732 的 stripComments 状态复位 bug、§4.1 记的「分支顺序变了」都属此类）；
+ *   b 语义对调：**记号原样保留、只在语义上被对调**（如 if(len>3) return "A"; return "B";
+ *     两条 return 的值互换）——多重集逐位相同，同样报 0 差异；
+ *   c 其余一切只改运行期状态、不改记号形态的改法。
+ * 因此本工具**不能单独**作为「行为没变」的结论；§4.1 第 3 件（被改函数的差分对拍）才是
+ * 那一层的证据。把它当证明用，是本工具最可能的误用。
  *
  * 定位：维护者 / 本地工具，需 git 与完整历史，**不进 CI**（进 CI 属 .github/ 红线段；
  * 「维护工具不进 CI」本身是 AGENTS.md 明写的设计）。
@@ -35,6 +47,8 @@
  *
  * 退出码：0 = 比对完成且无未登记差异；1 = 存在未登记差异（判红可信）；
  *         2 = 环境或输入错误（ref 不存在、文件读不到、解析失败、登记表本身坏了）。
+ *         **纯文档 diff（比对面没有源码文件）走 2 是预期行为**，既不是判红也不是门禁故障
+ *         ——本工具对这类 diff 无话可说，不要把它读成「门禁坏了」。
  */
 
 import { execFileSync } from "node:child_process";
@@ -45,8 +59,11 @@ import { parseTs, type AstNode, type AstProgram } from "../lib/config-matrix-lib
 /** 覆盖面边界（常驻 --help 与每次输出；--json 走 boundary 字段）。 */
 const BOUNDARY =
   "覆盖面边界：本工具只比对字面量 / 对象键 / 正则 / process.exit 的多重集差集与 §4.1 的两个专项" +
-  "（数字字面量整段消失、新增函数零引用），不构成等价性证明；控制流等价性不在覆盖面内，" +
-  "须由 DEVELOPMENT §4.1 第 3 件的差分对拍证明。";
+  "（数字字面量整段消失、新增函数零引用），不构成等价性证明——控制流等价性不在覆盖面内" +
+  "（分支顺序对调、条件取反、状态少复位，只要没有增删上述记号都照样报 0 差异），字面量在语义上" +
+  "被对调（如两个 return 的返回值互换）同样不可见，须由 DEVELOPMENT §4.1 第 3 件的差分对拍证明。" +
+  "它不校验理由的类别，只校验登记项非空且与实测集合互相吻合；理由是否落在 §4.1 允许的两类内由人" +
+  "负责——它不对「差异是否无害」作任何判定。比对面只含源码文件，非源码面被跳过。";
 
 type Facet = "literal" | "key" | "regex" | "exit" | "number-lost" | "function-orphan" | "file";
 
@@ -118,14 +135,22 @@ function bump(m: Map<string, number>, name: string): void {
   m.set(name, (m.get(name) ?? 0) + 1);
 }
 
-/** 字面量记号：带类型前缀，避免字符串 "1" 与数字 1 在登记表里撞键。 */
-function literalToken(n: AstNode): string | null {
-  const v = n.value;
+/**
+ * 值 → 记号（带类型前缀，避免字符串 "1" 与数字 1 在登记表里撞键）。字面量面与键面共用
+ * 这一处转换：两处各写一遍的话，改前缀时会漏改一处，而漏改的后果是同一个值在两个面上
+ * 撞键，差异集静默错位。
+ */
+function valueToken(v: unknown): string | null {
   if (typeof v === "string") return "str:" + JSON.stringify(v);
   if (typeof v === "number") return "num:" + String(v);
   if (typeof v === "boolean") return "bool:" + String(v);
   if (v === null) return "null:";
   return null;
+}
+
+/** 字面量记号。 */
+function literalToken(n: AstNode): string | null {
+  return valueToken(n.value);
 }
 
 /** 非计算属性键记号。计算键（obj[k]）不收——它的值运行期才决定，本就不可静态比对。 */
@@ -134,10 +159,7 @@ function keyToken(n: AstNode): string | null {
   if (key === null || key === undefined) return null;
   if (key.type === "Identifier") return "id:" + String(key.name);
   if (key.type !== "Literal") return null;
-  const v = key.value;
-  if (typeof v === "string") return "str:" + JSON.stringify(v);
-  if (typeof v === "number") return "num:" + String(v);
-  return null;
+  return valueToken(key.value);
 }
 
 /** 模板片段记号（多行文本按行拆成多个 quasis，逐条计数）。 */
@@ -291,13 +313,15 @@ function assertRef(ref: string): void {
   }
 }
 
+/**
+ * 该 ref 上是否存在这个路径。
+ * 为什么用 ls-tree 而不是 cat-file -e：后者在「路径不存在」与「git 侧任何异常」时都是同一个
+ * 非零退出码，catch 后一律 return false 就把 git 故障退化成了「整文件增删」差异项（判红而非
+ * exit 2），与本文件「读不到即输入错误 fail-closed」的自述矛盾。ls-tree 在路径不存在时输出空
+ * 且退出码为 0，只有 git 真出问题时才非零，于是异常经 git() 抛成 InputError → exit 2。
+ */
 function existsAtRef(ref: string, path: string): boolean {
-  try {
-    execFileSync("git", ["cat-file", "-e", ref + ":" + path], { stdio: "ignore" });
-    return true;
-  } catch {
-    return false;
-  }
+  return git(["ls-tree", "--name-only", ref, "--", path]).trim() !== "";
 }
 
 function readAtRef(ref: string, path: string): string {
@@ -349,7 +373,7 @@ function droppedNumbers(path: string, base: string[], head: string[]): Entry[] {
  * 专项⑥：**新增**函数在改动侧的引用数为 0（声明点之外再无出现）。
  * 为什么只查新增：存量里的孤儿函数是既有事实，不该由一次等价重构来背锅。
  * 口径边界：引用数是上界——同名标识符若恰好落在对象键 / 属性名位置会被一并计入，故本
- * 判据偏保守（可能漏报，不会误报）。
+ * 本项偏保守（可能漏报，不会误报）。
  */
 function orphanFunctions(path: string, base: Collected, head: Collected): Entry[] {
   const out: Entry[] = [];
@@ -460,7 +484,7 @@ function loadRegistry(file: string): RegistryEntry[] {
 
 /**
  * 差异 × 登记表求交。返回三分：已登记 / 未登记（判红）/ 登记失效（判红）。
- * 「登记失效」= 表里写了、这次却没测到——#843 的反向腐烂口径：不登记会漏判据，
+ * 「登记失效」= 表里写了、这次却没测到——#843 的反向腐烂口径：不登记会漏掉本该被看见的差异，
  * 登记了却没发生同样说明这张表已经和现实脱节，两者都要红。
  */
 function matchRegistry(
@@ -538,6 +562,12 @@ const USAGE = [
   "  0  比对完成，无未登记差异",
   "  1  存在未登记差异（或登记项已失效）——判红可信",
   "  2  环境或输入错误：ref 不存在 / 文件读不到 / 解析失败 / 登记表本身坏了",
+  "     纯文档 diff（比对面没有源码文件）也走 2，属预期：它既不是判红，也不是门禁故障",
+  "",
+  "它做什么 / 不做什么（请连同下面的边界声明一起读）：",
+  "  做——把两侧记号多重集的差集抽出来，再拿登记表逐条对账：对得上 exit 0，对不上 exit 1；",
+  "  不做——不校验理由的**类别**：理由是否落在 §4.1 允许的两类内由人负责，逐条填 TODO 也能过；",
+  "  不做——**不对「差异是否无害」作任何判定**，那是 §4.1 第 3 件差分对拍的活。",
   "",
   BOUNDARY,
   "",
@@ -601,7 +631,14 @@ function resolveScope(opts: Options): { paths: string[]; skipped: string[] } {
   for (const p of changedPaths(opts.base, opts.head)) {
     (loaderOf(p) === null ? skipped : paths).push(p);
   }
-  if (paths.length === 0) throw new InputError("比对面为空：base..head 之间没有可解析的源码文件");
+  if (paths.length === 0) {
+    // docs-only diff 是正常输入，不是判红也不是门禁故障：显式把 exit 2 说成预期，
+    // 免得它被按 AGENTS.md 的「exit 2 = 门禁故障不可信 ⇒ 禁止合并」读成熔断信号。
+    throw new InputError(
+      "比对面为空：base..head 之间没有可解析的源码文件（纯文档 / 数据 diff 属正常输入，" +
+        "本工具对此无话可说，exit 2 是预期结果，不是判红也不是门禁故障）",
+    );
+  }
   return { paths, skipped };
 }
 

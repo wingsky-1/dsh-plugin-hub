@@ -11,15 +11,16 @@ import { fileURLToPath, pathToFileURL } from "node:url";
  *
  * 为什么需要它：DEVELOPMENT §4.1 把「机制性等价性检查器」列为等价重构验收「缺一不可」的第 2 件，
  * 但 #839 把它写成一次性草稿（只在当次的 .maintenance-drafts/，已 gitignore），仓内没有任何
- * 可复跑的实现。本文件是该工具入库后的判据面，覆盖四件事：
+ * 可复跑的实现。本文件是该工具入库后的自测面，覆盖四件事。注意：**工具本身不是判据**，
  *
  *   ① 真实重构校准：对 #839（基线 8447025d = merge 的父，改动 df68b9b1 = merge 本身）跑出
  *      0 条未登记差异——注意 #839 并不是纯「只搬不改」，它真的新增了键名与字面量，所以这
  *      一条是**带登记表**的：281 条差异逐条枚举 + 按组写明理由，登记后归零。
  *   ② 未登记差异 exit 1（另含 exit 2 的输入错误面与「登记失效」的反向腐烂）。
- *   ③ **把一处控制流回归种回去时工具仍报 0 差异**——这条防的是误用不是回归：它证明工具
- *      诚实承认自己的覆盖面。用例同时把两版真跑一遍并断言输出确实不同，否则「0 差异」
- *      可能只是因为两版本就等价。
+ *   ③ **把回归种回去时工具仍报 0 差异**——这条防的是误用不是回归：它证明工具诚实承认自己
+ *      的覆盖面。两种形态各一条：控制流改写（两条 push 对调）、记号原样保留的**语义对调**
+ *      （两个 return 的值互换）。两条用例都把两个版本真跑一遍并断言输出确实不同，否则
+ *      「0 差异」可能只是因为两版本就等价。
  *   ④ 边界声明常驻（--help / 每次输出 / --json 三处都不许丢）。
  *
  * 纪律：全程离线、不联网、不读用户 HOME；一切落盘进 mkdtempSync 的隔离目录并在 finally
@@ -571,7 +572,7 @@ const PR839_REGISTRY: RegistryGroup[] = [
     path: "scripts/lib/mutation-report-lib.mjs",
     facet: "literal",
     reason:
-      "魔数与状态名收敛：四个变异状态名各 2→1，num:1 9→5、num:100 与 num:10000 各 1→0（提为常量后不再逐处出现），utf8 2→1；空模板片段新增 2 处。",
+      "魔数与状态名收敛：四个变异状态名各 2→1，num:1 9→5、num:100 与 num:10000 各 2→1（两处重复的 coveredScore 表达式收敛为一处；若真 1→0 则 number-lost 会命中，而它为 0），utf8 2→1；空模板片段新增 2 处。",
     items: [
       { value: 'str:"utf8"', delta: -1 },
       { value: "null:", delta: 2 },
@@ -754,7 +755,9 @@ test("①#839 两版：带登记表跑出 0 条未登记差异（exit 0）", () 
 });
 
 test("①b 同一对 ref 不带登记表必须 exit 1，且登记表恰好等于那份未登记集合", () => {
-  // 这条是①的反面：它证明「0 条未登记差异」是登记的结果，不是工具恒绿。
+  // 这条是①的反面：它证明「0 条未登记差异」来自**登记表与实测集合的对账**，而不是抽取侧恒返回空。
+  // 注意它证明的是「没人漏登 / 多登」，**不**证明登记的理由正当——理由是否落在 §4.1 允许的
+  // 两类内由人负责（见 BOUNDARY 常驻文本与文件头）。
   // 若提取口径被改坏（多算 / 少算一类记号），两侧集合不再相等，本条立刻红。
   const bare = runTool(["--base", PR839_BASE, "--head", PR839_HEAD, "--json"]);
   assert.equal(bare.code, 1, "无登记表时 281 条未登记差异必须判红");
@@ -829,10 +832,25 @@ const FIXTURE_REGRESSED = FIXTURE_BASE.replace(
   '    parts.push("B" + step);\n    parts.push("A" + step);\n',
 );
 
+/**
+ * 语义对调夹具：记号原样保留（"A" / "B" 各一次、数字 3 一次），只把两个 return 的值互换。
+ * 它既不是控制流改动，也不是 §4.1 的结构回声，是 BOUNDARY 里明写的第三类不可见改法。
+ */
+const FIXTURE_PICK_BASE =
+  FIXTURE_BASE + '\nexport function pick(n) {\n  if (n > 3) return "A";\n  return "B";\n}\n';
+
+/** 只把两个 return 的值互换：多重集逐位相同，行为已经变了。 */
+const FIXTURE_PICK_SWAPPED = FIXTURE_PICK_BASE.replace(
+  '  if (n > 3) return "A";\n  return "B";\n',
+  '  if (n > 3) return "B";\n  return "A";\n',
+);
+
 function setupFixtureRepo(): {
   dir: string;
   base: string;
   regressed: string;
+  pickBase: string;
+  swapped: string;
   drifted: string;
   dropped: string;
   orphaned: string;
@@ -851,12 +869,14 @@ function setupFixtureRepo(): {
   put(FIXTURE_BASE);
   const base = commit();
   const regressed = from(base, FIXTURE_REGRESSED);
+  const pickBase = from(base, FIXTURE_PICK_BASE);
+  const swapped = from(pickBase, FIXTURE_PICK_SWAPPED);
   const drifted = from(base, FIXTURE_REGRESSED.replace('"A"', '"Z"'));
   const dropped = from(base, FIXTURE_BASE.replace("= 10;", "= 20;"));
   const orphaned = from(base, FIXTURE_BASE + '\nfunction neverUsed() {\n  return "Z";\n}\n');
   const broken = from(base, "export function oops( {\n");
   const show = (ref: string): string => git(["show", ref + ":m.mjs"]);
-  return { dir, base, regressed, drifted, dropped, orphaned, broken, show };
+  return { dir, base, regressed, pickBase, swapped, drifted, dropped, orphaned, broken, show };
 }
 
 test("③控制流回归种回去时工具仍报 0 差异（防误用，不是防回归）", async () => {
@@ -887,6 +907,35 @@ test("③控制流回归种回去时工具仍报 0 差异（防误用，不是�
         h.render(["1"]),
         "两版行为确实不同，工具的 0 差异才是盲区而非事实",
       );
+    } finally {
+      rmSync(modDir, { recursive: true, force: true });
+    }
+  } finally {
+    rmSync(fx.dir, { recursive: true, force: true });
+  }
+});
+
+test("③b 记号原样保留、只在语义上被对调时工具仍报 0 差异（既非控制流也非结构回声）", async () => {
+  const fx = setupFixtureRepo();
+  try {
+    const r = runTool(["--base", fx.pickBase, "--head", fx.swapped, "--json"], fx.dir);
+    assert.equal(r.code, 0, "两个 return 的值互换不增删任何记号，工具必须如实报绿");
+    assert.equal(parseJson(r).counts.differences, 0, "记号逐位相同：A / B 各一次、数字 3 一次");
+
+    // 与 ③ 同理：不把两版真跑一遍，就无法区分「工具看不见」与「夹具本来就没变」。
+    const modDir = mkdtempSync(join(tmpdir(), "equiv-behav-"));
+    try {
+      writeFileSync(join(modDir, "base.mjs"), fx.show(fx.pickBase));
+      writeFileSync(join(modDir, "head.mjs"), fx.show(fx.swapped));
+      const b = (await import(pathToFileURL(join(modDir, "base.mjs")).href)) as {
+        pick: (n: number) => string;
+      };
+      const h = (await import(pathToFileURL(join(modDir, "head.mjs")).href)) as {
+        pick: (n: number) => string;
+      };
+      assert.equal(b.pick(5), "A", "基线版 pick(5)");
+      assert.equal(h.pick(5), "B", "改动版 pick(5) 的返回值已被对调");
+      assert.notEqual(b.pick(5), h.pick(5), "两版行为确实不同，0 差异是盲区而非事实");
     } finally {
       rmSync(modDir, { recursive: true, force: true });
     }
@@ -979,6 +1028,49 @@ test("④环境或输入错误一律 exit 2，且走 stderr（与判红可区分
   }
 });
 
+test("④c git 侧读失败必须走 exit 2，不得退化成「整文件增删」差异项", () => {
+  // 造一个**树项指向不存在的 blob**的提交。两种判存在性的方式在这里分道扬镳：
+  //   git ls-tree --name-only  只读树对象、照样列出路径，退出码 0；
+  //   git cat-file -e <ref>:<path>  要真去读 blob，遇到缺失对象退出码非零。
+  // 旧实现用后者判存在性且 catch 后一律 false，于是 head 侧被读成「文件不存在」，报成一条
+  // file/removed 差异 → exit 1 判红：把 git 自身的故障读成了判据结论。改回 cat-file -e，
+  // 本条立刻红。
+  const dir = mkdtempSync(join(tmpdir(), "equiv-missingblob-"));
+  try {
+    const git = (args: string[]): string =>
+      execFileSync("git", args, { cwd: dir, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+    git(["init", "-q"]);
+    git(["config", "user.email", "equiv@example.invalid"]);
+    git(["config", "user.name", "equiv"]);
+    writeFileSync(join(dir, "m.mjs"), 'export const A = "x";\n');
+    git(["add", "-A"]);
+    git(["commit", "-q", "-m", "c1"]);
+    const base = git(["rev-parse", "HEAD"]).trim();
+    const missing = "1111111111111111111111111111111111111111";
+    const tree = execFileSync("git", ["mktree", "--missing"], {
+      cwd: dir,
+      input: "100644 blob " + missing + "\tm.mjs\n",
+      encoding: "utf8",
+    }).trim();
+    const head = git(["commit-tree", tree, "-m", "c2"]).trim();
+    assert.equal(
+      git(["ls-tree", "--name-only", head, "--", "m.mjs"]).trim(),
+      "m.mjs",
+      "前提：ls-tree 仍列出路径",
+    );
+
+    const r = runTool(["--base", base, "--head", head, "--json"], dir);
+    assert.equal(r.code, 2, "读不到 blob 是输入错误，必须 exit 2 而不是 exit 1");
+    assert.equal(r.stdout, "", "exit 2 走 stderr，stdout 不应有 JSON 结果可供消费");
+    assert.ok(
+      r.stderr.includes("git show"),
+      "判词必须指名是 git 读失败，而不是含糊的「比对面为空」",
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("④b 登记表坏了走 exit 2；登记项没命中走 exit 1（反向腐烂）", () => {
   const fx = setupFixtureRepo();
   try {
@@ -1053,7 +1145,17 @@ test("④b 登记表坏了走 exit 2；登记项没命中走 exit 1（反向腐�
 test("⑤覆盖面边界声明在 --help / 文本输出 / --json / 文件头四处都在", () => {
   const help = runTool(["--help"]);
   assert.equal(help.code, 0);
-  for (const needle of ["不构成等价性证明", "控制流等价性不在覆盖面内", "0", "1", "2"]) {
+  for (const needle of [
+    "不构成等价性证明",
+    "控制流等价性不在覆盖面内",
+    "被对调", // 记号原样保留、只在语义上被对调同样不可见；BOUNDARY 不写，读者会以为之外都在面内
+    "不对「差异是否无害」作任何判定", // 它是抽取 + 对账器，不是判据
+    "不校验理由的类别", // 逐条填 TODO 也能过，正当性由人负责
+    "非源码面被跳过",
+    "0",
+    "1",
+    "2",
+  ]) {
     assert.ok(help.stdout.includes(needle), "--help 缺 " + needle);
   }
   const fx = setupFixtureRepo();
