@@ -523,9 +523,9 @@ export const inject: string[] = []; // 声明 apply 用到的 ctx 服务（如 [
 - **`inject` 语义：声明 `apply` 运行时用到的 ctx 服务；不需要则 `[]`。**这是运行时的
   服务注入声明**，与宿主的 cordis `inject`（插槽）是两码事，别混。
 - **插件设置行**：目标 runtime 使用 `plugins.row.config`。canonical row id 固定为
-  `ui-dsh-<包名>`，同时作为 settings namespace；keyed row 的 key 为
-  `<bundle package>#<canonical row id>`。注册由 `configForms.whileServed` 约束到该
-  namespace，页面通过 `slots.inject` / `slots.register` 注入；独立设置页才用
+  `ui-dsh-<包名>`；settings namespace 保持独立的稳定命名（当前为 `dsh-<包名>`），不因 row id 改名。keyed row 的 key 为
+  `<bundle package>#<canonical row id>`。注册由 `configForms.whileServed` 约束到 settings namespace，页面通过
+  `slots.inject` / `slots.register` 注入；独立设置页才用
   `settings.section`。
 - 生命周期：所有卸载清理写进 `ctx.effect(() => () => {})` 的 disposer。
 - 样式：带插件前缀隔离 + `CSS_VERSION`/`dataset.version` 失效（热更新重建 `<style>`）；

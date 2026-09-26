@@ -31,7 +31,7 @@ const EXPECTED_ROW_CONFIG_SLOTS = [
     slot: "plugins.row.config",
     bundlePackage: "@wingsky-1/dsh-lan-proxy",
     rowId: "ui-dsh-lan-proxy",
-    settingsNamespace: "ui-dsh-lan-proxy",
+    settingsNamespace: "dsh-lan-proxy",
     key: "@wingsky-1/dsh-lan-proxy#ui-dsh-lan-proxy",
   },
   {
@@ -39,7 +39,7 @@ const EXPECTED_ROW_CONFIG_SLOTS = [
     slot: "plugins.row.config",
     bundlePackage: "@wingsky-1/dsh-mcp-manager",
     rowId: "ui-dsh-mcp-manager",
-    settingsNamespace: "ui-dsh-mcp-manager",
+    settingsNamespace: "dsh-mcp-manager",
     key: "@wingsky-1/dsh-mcp-manager#ui-dsh-mcp-manager",
   },
 ];

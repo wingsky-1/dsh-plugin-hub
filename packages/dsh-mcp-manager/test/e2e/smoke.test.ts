@@ -2967,7 +2967,7 @@ it("config POST 经 apply 注入 settings：update 保留 this 不再 400（回�
   const settingsStub = {
     // 接缝经 describe 活读（闭包读当前 scopeValue，写后读回新值）。
     describe() {
-      return [{ ns: "ui-dsh-mcp-manager", value: { ...scopeValue }, revision: 0 }];
+      return [{ ns: "dsh-mcp-manager", value: { ...scopeValue }, revision: 0 }];
     },
     async write(ns: string, patch: unknown) {
       writeNamespaces.push(ns);
@@ -3028,9 +3028,7 @@ it("config POST 经 apply 注入 settings：update 保留 this 不再 400（回�
     expect(write.state.status, "settings.update 以正确 this 调用 → 写路由 200（不再 400）").toBe(
       200,
     );
-    expect(writeNamespaces, "只向 canonical settings namespace 写入").toEqual([
-      "ui-dsh-mcp-manager",
-    ]);
+    expect(writeNamespaces, "只向 canonical settings namespace 写入").toEqual(["dsh-mcp-manager"]);
     const written = JSON.parse(write.state.body);
     expect(written.position).toBe("bottom-right");
     expect(written.offsetX).toBe(12);

@@ -260,8 +260,8 @@ marker（`:39`、`:52-53`）。已有 transport 不覆盖——为什么不用�
 `:86-89`）/ `compat-active` / `contract-drift` / `compat-off`。`contract-drift` 是 marker 在
 而宿主事实非 true（**含未知**，fail-closed，`:91-92`）。告警经独立出口 `hostTrustAlert`
 （`:109-124`）：在目标 dsh `0.1.7-rc.2` 上，设置卡片由
-`configForms.whileServed(["ui-dsh-lan-proxy"])` 门控并注册到 keyed
-`plugins.row.config`；canonical row id / settings namespace 是 `ui-dsh-lan-proxy`，row key
+`configForms.whileServed(["dsh-lan-proxy"])` 门控并注册到 keyed
+`plugins.row.config`；canonical row id 是 `ui-dsh-lan-proxy`，settings namespace 是 `dsh-lan-proxy`，row key
 是 `@wingsky-1/dsh-lan-proxy#ui-dsh-lan-proxy`。上游把非回环页设置面降级为 memory scope
 时，namespace 不存在，行与卡片根本不挂载（`:98-104` 注释：同一枚 isLoopback 信号既决定
 卡片是否挂载、又决定判定结果，越需要判定的时刻承载面越不在场）——devtools 控制台是故障态

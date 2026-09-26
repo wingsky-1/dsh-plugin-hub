@@ -392,7 +392,7 @@ describe("0.1.7-rc.2 plugins.row.config 装配", () => {
 
   it("服务后注册精确 keyed row，并把 summary/page view 与 form 交给组件", () => {
     const harness = bootRowLifecycle();
-    harness.serve(new Set(["ui-dsh-mcp-manager"]));
+    harness.serve(new Set(["dsh-mcp-manager"]));
     expect(harness.injectedSlots).toEqual(["plugins.row.config"]);
     expect(harness.ledger).toHaveLength(1);
     expect(harness.ledger[0]?.item).toEqual({
@@ -412,7 +412,7 @@ describe("0.1.7-rc.2 plugins.row.config 装配", () => {
   });
 
   it.each([
-    ["legacy host namespace", ["dsh-mcp-manager"]],
+    ["legacy host namespace", ["ui-dsh-mcp-manager"]],
     ["empty host facts", []],
   ] as const)("%s 不注册 row", (_label, servedNamespaces) => {
     const harness = bootRowLifecycle();
@@ -423,7 +423,7 @@ describe("0.1.7-rc.2 plugins.row.config 装配", () => {
 
   it("namespace 撤下调用 register 返回的 off 并清空 slot ledger", () => {
     const harness = bootRowLifecycle();
-    harness.serve(new Set(["ui-dsh-mcp-manager"]));
+    harness.serve(new Set(["dsh-mcp-manager"]));
     harness.unserved();
     expect(harness.ledger).toEqual([]);
     expect(harness.offCalls()).toBe(1);
@@ -431,7 +431,7 @@ describe("0.1.7-rc.2 plugins.row.config 装配", () => {
 
   it("外层 effect teardown 停止 watch、调用当前 off 并清空 slot ledger", () => {
     const harness = bootRowLifecycle();
-    harness.serve(new Set(["ui-dsh-mcp-manager"]));
+    harness.serve(new Set(["dsh-mcp-manager"]));
     harness.teardown();
     expect(harness.ledger).toEqual([]);
     expect(harness.offCalls()).toBe(1);
@@ -456,7 +456,7 @@ describe("0.1.7-rc.2 plugins.row.config 装配", () => {
     expect(MCP_MANAGER_IDENTITY).toEqual({
       bundlePackage: "@wingsky-1/dsh-mcp-manager",
       rowId: "ui-dsh-mcp-manager",
-      settingsNamespace: "ui-dsh-mcp-manager",
+      settingsNamespace: "dsh-mcp-manager",
       rowConfigKey: "@wingsky-1/dsh-mcp-manager#ui-dsh-mcp-manager",
     });
   });

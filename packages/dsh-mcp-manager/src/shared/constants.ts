@@ -17,14 +17,15 @@ export const SCOPE_PROJECT = "project";
 /** 全局虚拟 root（全局服务器经中间层访问时的路由 key）。 */
 export const MIDDLEWARE_GLOBAL_ROOT = "@global";
 
-/** bundle package 与插件行 id 是 settings namespace / row config key 的唯一派生根。 */
+/** bundle package、row ID 与 settings namespace 各自保持稳定身份。 */
 const MCP_MANAGER_BUNDLE_PACKAGE = "@wingsky-1/dsh-mcp-manager";
 const MCP_MANAGER_ROW_ID = "ui-dsh-mcp-manager";
+const MCP_MANAGER_SETTINGS_NAMESPACE = "dsh-mcp-manager";
 
 /** dsh 0.1.7-rc.2 插件行配置的 canonical identity；宿主与客户端只消费此对象。 */
 export const MCP_MANAGER_IDENTITY = Object.freeze({
   bundlePackage: MCP_MANAGER_BUNDLE_PACKAGE,
   rowId: MCP_MANAGER_ROW_ID,
-  settingsNamespace: MCP_MANAGER_ROW_ID,
+  settingsNamespace: MCP_MANAGER_SETTINGS_NAMESPACE,
   rowConfigKey: `${MCP_MANAGER_BUNDLE_PACKAGE}#${MCP_MANAGER_ROW_ID}`,
 });

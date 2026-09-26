@@ -249,20 +249,17 @@
     "export declare const HOST_TRUST_RUNTIME_MARKER = \"__DSH_LAN_PROXY_HOST_TRUST__\";",
     "export declare const HOST_TRUST_RUNTIME_MARKER = \"__DSH_LAN_PROXY_HOST_TRUST__\";",
     "export declare const HOST_TRUST_STATUS_KEY: Record<HostTrustStatus, string>;",
-    "export declare const LAN_PROXY_IDENTITY: Readonly<{ bundlePackage: \"@wingsky-1/dsh-lan-proxy\"; rowId: \"ui-dsh-lan-proxy\"; settingsNamespace: \"ui-dsh-lan-proxy\"; rowConfigKey: \"@wingsky-1/dsh-lan-proxy#ui-dsh-lan-proxy\"; }",
+    "export declare const LAN_PROXY_IDENTITY: Readonly<{ bundlePackage: \"@wingsky-1/dsh-lan-proxy\"; rowId: \"ui-dsh-lan-proxy\"; settingsNamespace: \"dsh-lan-proxy\"; rowConfigKey: \"@wingsky-1/dsh-lan-proxy#ui-dsh-lan-proxy\"; }",
     "export declare const LEAF_CERT_FILE = \"leaf-cert.pem\";",
     "export declare const LEAF_EXPIRY_WARN_MS: number;",
     "export declare const LEAF_KEY_FILE = \"leaf-key.pem\";",
     "export declare const LEGACY_BAK_SUFFIX = \".migrated.bak\";",
-    "export declare const LEGACY_SETTINGS_NS = \"dsh-lan-proxy\";",
     "export declare const MANAGED_CERT_FILES: readonly string[];",
     "export declare const MIGRATED_BAK_NAME = \"config.json.migrated.bak\";",
     "export declare const ROUTES: { health: string; config: string; caCert: string; caGenerate: string; };",
     "export declare const SELF_SIGNED_CERT = \"dsh-lan-proxy-cert.pem\";",
     "export declare const SELF_SIGNED_KEY = \"dsh-lan-proxy-key.pem\";",
-    "export declare const SETTINGS_MIGRATION_MARKER_NAME = \"settings.migrated\";",
-    "export declare const SETTINGS_MIGRATION_MARKER_VERSION = \"1\";",
-    "export declare const SETTINGS_NS: \"ui-dsh-lan-proxy\";",
+    "export declare const SETTINGS_NS: \"dsh-lan-proxy\";",
     "export declare const en: Record<LanProxyLocaleKey, string>;",
     "export declare const inject: string[];",
     "export declare const inject: string[];",
@@ -305,13 +302,11 @@
     "export declare function loadDownloadableCertificate(source: DownloadCertSource, format: \"der\" | \"pem\", logWarn?: (message: string) => void): DownloadCertResult;",
     "export declare function loadTlsFromFiles(certFile: string, keyFile: string): TlsMaterials;",
     "export declare function migrateFileConfig(configDir: string, scope: Pick<OwnerScopeLike, \"update\">, logger?: { warn?: (...a: unknown[]) => void; }",
-    "export declare function migrateLegacySettings(options: LegacySettingsMigrationOptions): Promise<LegacySettingsMigrationOutcome>;",
     "export declare function normalizeConfig(input: unknown): LanProxyConfig;",
     "export declare function normalizeLegacyWsCompressPaths(paths: readonly string[] | undefined): readonly string[] | undefined;",
     "export declare function pluginDir(): string;",
     "export declare function readHostTrustSignals(remote: RemoteLike | undefined): HostTrustSignals;",
     "export declare function readLeafCertInfo(certPath: string): LeafCertSummary;",
-    "export declare function readLegacySettings(options?: { readonly home?: string; }",
     "export declare function registerHostTrustInjection(ctx: Context, isEnabled: () => boolean): void;",
     "export declare function resolveCompressionOptions(preset: unknown): CompressionOptions;",
     "export declare function resolvePluginDir(options: LayoutMigrateOptions): LayoutMigrateOutcome;",
@@ -596,7 +591,7 @@
           "export declare const HOST_TRUST_RUNTIME_MARKER = \"__DSH_LAN_PROXY_HOST_TRUST__\";"
         ],
         "LAN_PROXY_IDENTITY": [
-          "export declare const LAN_PROXY_IDENTITY: Readonly<{ bundlePackage: \"@wingsky-1/dsh-lan-proxy\"; rowId: \"ui-dsh-lan-proxy\"; settingsNamespace: \"ui-dsh-lan-proxy\"; rowConfigKey: \"@wingsky-1/dsh-lan-proxy#ui-dsh-lan-proxy\"; }"
+          "export declare const LAN_PROXY_IDENTITY: Readonly<{ bundlePackage: \"@wingsky-1/dsh-lan-proxy\"; rowId: \"ui-dsh-lan-proxy\"; settingsNamespace: \"dsh-lan-proxy\"; rowConfigKey: \"@wingsky-1/dsh-lan-proxy#ui-dsh-lan-proxy\"; }"
         ],
         "LEAF_CERT_FILE": [
           "export declare const LEAF_CERT_FILE = \"leaf-cert.pem\";"
@@ -606,9 +601,6 @@
         ],
         "LEGACY_BAK_SUFFIX": [
           "export declare const LEGACY_BAK_SUFFIX = \".migrated.bak\";"
-        ],
-        "LEGACY_SETTINGS_NS": [
-          "export declare const LEGACY_SETTINGS_NS = \"dsh-lan-proxy\";"
         ],
         "MANAGED_CERT_FILES": [
           "export declare const MANAGED_CERT_FILES: readonly string[];"
@@ -625,14 +617,8 @@
         "SELF_SIGNED_KEY": [
           "export declare const SELF_SIGNED_KEY = \"dsh-lan-proxy-key.pem\";"
         ],
-        "SETTINGS_MIGRATION_MARKER_NAME": [
-          "export declare const SETTINGS_MIGRATION_MARKER_NAME = \"settings.migrated\";"
-        ],
-        "SETTINGS_MIGRATION_MARKER_VERSION": [
-          "export declare const SETTINGS_MIGRATION_MARKER_VERSION = \"1\";"
-        ],
         "SETTINGS_NS": [
-          "export declare const SETTINGS_NS: \"ui-dsh-lan-proxy\";"
+          "export declare const SETTINGS_NS: \"dsh-lan-proxy\";"
         ],
         "apply": [
           "export declare function apply(ctx: Context, config?: LanProxyConfig): void;"
@@ -730,9 +716,6 @@
         "migrateFileConfig": [
           "export declare function migrateFileConfig(configDir: string, scope: Pick<OwnerScopeLike, \"update\">, logger?: { warn?: (...a: unknown[]) => void; }"
         ],
-        "migrateLegacySettings": [
-          "export declare function migrateLegacySettings(options: LegacySettingsMigrationOptions): Promise<LegacySettingsMigrationOutcome>;"
-        ],
         "name": [
           "export declare const name = \"lan-proxy\";"
         ],
@@ -747,9 +730,6 @@
         ],
         "readLeafCertInfo": [
           "export declare function readLeafCertInfo(certPath: string): LeafCertSummary;"
-        ],
-        "readLegacySettings": [
-          "export declare function readLegacySettings(options?: { readonly home?: string; }"
         ],
         "registerHostTrustInjection": [
           "export declare function registerHostTrustInjection(ctx: Context, isEnabled: () => boolean): void;"

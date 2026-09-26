@@ -9,7 +9,6 @@ export default defineConfig({
   test: {
     include: [
       'packages/dsh-lan-proxy/test/integration/apply-token-provider.test.ts',
-      'packages/dsh-lan-proxy/test/unit/legacy-settings.test.ts',
       'packages/dsh-lan-proxy/test/unit/unit-apply.test.ts',
       'packages/dsh-lan-proxy/test/unit/unit-ca.test.ts',
       'packages/dsh-lan-proxy/test/unit/unit-cacert.test.ts',

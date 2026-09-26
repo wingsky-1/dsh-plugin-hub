@@ -241,17 +241,6 @@ describe("apply 的 settings 注入（uiUpdate 写入路径）", () => {
                     },
                     revision: 0,
                   },
-                  {
-                    ns: "ui-dsh-mcp-manager",
-                    value: {
-                      ui: {
-                        position: "top-left",
-                        offset: { x: 12, y: 13, blankY: 14 },
-                        zIndexBase: 2345,
-                      },
-                    },
-                    revision: 0,
-                  },
                 ];
               },
             },
@@ -273,11 +262,11 @@ describe("apply 的 settings 注入（uiUpdate 写入路径）", () => {
     expect(refs.describeCalled).toBe(true);
     const response = await callHandler(configRoute, configRequest("GET"));
     expect(response.payload).toEqual({
-      position: "top-left",
-      offsetX: 12,
-      offsetY: 13,
-      blankY: 14,
-      zIndexBase: 2345,
+      position: "bottom-right",
+      offsetX: 91,
+      offsetY: 92,
+      blankY: 93,
+      zIndexBase: 901,
     });
   });
 

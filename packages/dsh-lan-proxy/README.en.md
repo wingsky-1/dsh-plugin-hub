@@ -206,25 +206,9 @@ Configuration page: **Plugin Manager → dsh-lan-proxy → Configure** (saved ch
   composition-layer `cordis.patch.yml` config acts as the base layer. Hot reload is
   driven by the official `settings/document-updated` event — no restart needed.
 
-#### RC7 legacy settings-section migration
+#### Settings namespace
 
-DSH 0.1.7-rc.2 renames the old `~/.dsh/settings.yaml` to
-`settings.yaml.imported`. That file is an audit copy of the consumed legacy
-document, not the active configuration source; do not copy the whole imported
-file into a profile. Editable plugin fields are migrated into the active profile's
-`~/.dsh/profiles/<profile>/cordis.patch.yml` under the canonical
-`ui-dsh-lan-proxy` id.
-
-The automatic migration consumes only fields accepted by the current Config schema
-from the old `dsh-lan-proxy` section, with
-`settings.yaml.imported < settings.yaml < current canonical user`. The retired
-self-managed `config.json`, unknown top-level keys, and other deprecated fields
-are not written to the canonical patch. Completion is recorded by
-`settings.migrated` version `1` in the plugin-private directory. A
-`settings.migrated.pending` receipt is created before the canonical write and
-promoted after success; unknown failures finalize the marker without replaying
-old values, so a later DSH `unset` cannot be undone; only an explicit revision
-conflict clears the receipt for retry.
+The DSH importer consumes the same-id `dsh-lan-proxy` section directly; this plugin does not run a second namespace migration. `settings.yaml.imported` is an audit copy of the consumed document and must not be copied wholesale.
 
 <details>
 <summary>Legacy config.json migration</summary>

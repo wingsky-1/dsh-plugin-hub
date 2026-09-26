@@ -248,20 +248,11 @@ function installConfigSettings(
     setSource: (source) => {
       manager.uiConfigSource = source as () => unknown;
     },
-    onScope: (scope, service) => {
+    onScope: (scope) => {
       const uiScope = scope as {
         update(patch: Record<string, unknown>): Promise<unknown>;
       };
       manager.uiUpdate = (patch) => uiScope.update(patch);
-      void configModelApi
-        .migrateLegacySettingsFromSettings({
-          scope,
-          service,
-          logger: ctx.logger,
-        })
-        .catch((error: unknown) => {
-          ctx.logger.warn(`dsh-mcp-manager: 旧 settings 迁移异常 — ${String(error)}`);
-        });
     },
     onChange: () => {
       broadcastUiConfigChanged();

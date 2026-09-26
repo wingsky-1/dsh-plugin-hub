@@ -33,12 +33,7 @@ import { normalizeLegacyWsCompressPaths, DEFAULT_WSS_COMPRESS_PATHS } from "./co
 import type { HttpCompressSnapshot, LanProxyConfig, ResolvedConfig } from "./config/interface.ts";
 import { SETTINGS_NS, installLanProxySettings, warnLog } from "./config/interface.ts";
 import type { OwnerScopeLike, SettingsServiceLike } from "./config/interface.ts";
-import {
-  MIGRATED_BAK_NAME,
-  migrateFileConfig,
-  migrateLegacySettings,
-  resolvePluginDir,
-} from "./migrate/interface.ts";
+import { MIGRATED_BAK_NAME, migrateFileConfig, resolvePluginDir } from "./migrate/interface.ts";
 import { ROUTES, buildCaCertRoutes, buildConfigRoutes } from "./config/interface.ts";
 import type { CaCertRouteDeps, ConfigRouteDeps } from "./config/interface.ts";
 // host trust 域（#856）：非回环页面的 ownsHost 自条件注入
@@ -439,46 +434,10 @@ export function apply(ctx: Context, config: LanProxyConfig = {}): void {
     onScope: (scope, service) => {
       attachedService = service;
       attachedScope = scope;
-      // 两个迁移 step 共享同一 owner scope，但不得并发 update：先让 file migration
-      // 完成（或明确失败并完成其独立降级），再刷新 raw user 后补跑 settings。
-      void (async () => {
-        try {
-          await migrateFileConfig(configDir, scope, ctx.logger);
-        } catch (err) {
-          warnLog(ctx, `lan-proxy: 存量 config.json 迁移异常 — ${errorMessage(err)}`);
-        }
-
-        // describe 必须在 file scope.update 完成后重新执行；raw user 中的 file 值
-        // 代表当前 canonical 决定，legacy migration 只补它没有的路径。
-        let currentUser: unknown;
-        let currentRevision: number | undefined;
-        try {
-          const descriptor = service
-            .describe({ redactSecrets: true })
-            .find((entry) => entry.ns === SETTINGS_NS);
-          currentUser = descriptor?.user;
-          currentRevision =
-            typeof descriptor?.revision === "number" ? descriptor.revision : undefined;
-        } catch (err) {
-          warnLog(
-            ctx,
-            `lan-proxy: 旧 settings 迁移读取 canonical user 失败 — ${errorMessage(err)}`,
-          );
-          return;
-        }
-
-        try {
-          await migrateLegacySettings({
-            configDir,
-            currentUser,
-            expectedRevision: currentRevision,
-            scope,
-            logger: ctx.logger,
-          });
-        } catch (err) {
-          warnLog(ctx, `lan-proxy: 旧 settings 迁移异常 — ${errorMessage(err)}`);
-        }
-      })();
+      // 存量 config.json 迁移独立于 settings namespace；失败只降级，不阻断配置路由。
+      void migrateFileConfig(configDir, scope, ctx.logger).catch((err) => {
+        warnLog(ctx, `lan-proxy: 存量 config.json 迁移异常 — ${errorMessage(err)}`);
+      });
     },
   });
 

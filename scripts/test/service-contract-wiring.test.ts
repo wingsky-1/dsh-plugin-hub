@@ -122,7 +122,6 @@ const EXPECT_FILES: Record<string, string[]> = {
     "client/client-style.test.ts",
     "e2e/smoke.test.ts",
     "integration/apply-token-provider.test.ts",
-    "unit/legacy-settings.test.ts",
     "unit/unit-apply.test.ts",
     "unit/unit-ca.test.ts",
     "unit/unit-cacert.test.ts",

@@ -138,23 +138,9 @@ own `Config`; no config-file editing is needed.
 | `offset.blankY` | Non-negative integer (blank-session vertical offset, px) | `40` |
 | `zIndexBase` | Integer, clamped to 1-9000 (floating window z-index base; **the pill and the main panel opened on click both use this same config value**; the modal manager panel is unaffected) | `10` |
 
-#### RC7 legacy settings-section migration
+#### Settings namespace
 
-DSH 0.1.7-rc.2 renames the old `~/.dsh/settings.yaml` to
-`settings.yaml.imported`. It is an audit copy of the consumed legacy document, not
-the active configuration source; do not copy the whole imported file. Migration
-consumes only the `ui` subtree supported by the current settings page from the old
-`dsh-mcp-manager` section, with
-`settings.yaml.imported < settings.yaml < current canonical user`. All other
-top-level keys, including retired `middleware` and `middlewarePolicy` and
-non-volatile fields, are explicitly discarded and never enter the canonical patch.
-Completion is recorded by `settings.migrated` version `1` in the plugin-private
-directory. A `settings.migrated.pending` receipt is created before the canonical
-write and promoted after success; unknown failures finalize the marker without
-replaying old values, so a later DSH `unset` cannot be undone; only an explicit
-revision conflict clears the receipt for retry. Editable fields
-belong in the active profile's `~/.dsh/profiles/<profile>/cordis.patch.yml` under
-canonical id `ui-dsh-mcp-manager`.
+The DSH importer consumes the same-id `dsh-mcp-manager` section directly; this plugin does not run a second namespace migration. `settings.yaml.imported` is an audit copy of the consumed document and must not be copied wholesale.
 
 When `position = bottom-right` or `bottom-left`, the dropdown panel expands **above the
 pill** (bottom anchor, popping upward), does not overflow the viewport, and content stays

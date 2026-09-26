@@ -593,7 +593,7 @@
     "export declare const MAX_TOOLS_PER_SERVER = 512;",
     "export declare const MAX_TOTAL_CATALOG_BYTES: number;",
     "export declare const MCP_GUIDANCE: string;",
-    "export declare const MCP_MANAGER_IDENTITY: Readonly<{ bundlePackage: \"@wingsky-1/dsh-mcp-manager\"; rowId: \"ui-dsh-mcp-manager\"; settingsNamespace: \"ui-dsh-mcp-manager\"; rowConfigKey: \"@wingsky-1/dsh-mcp-manager#ui-dsh-mcp-manager\"; }",
+    "export declare const MCP_MANAGER_IDENTITY: Readonly<{ bundlePackage: \"@wingsky-1/dsh-mcp-manager\"; rowId: \"ui-dsh-mcp-manager\"; settingsNamespace: \"dsh-mcp-manager\"; rowConfigKey: \"@wingsky-1/dsh-mcp-manager#ui-dsh-mcp-manager\"; }",
     "export declare const MCP_SECTION_ORDER = 160;",
     "export declare const MIDDLEWARE_GLOBAL_ROOT = \"@global\";",
     "export declare const OFFICIAL_MCP_CLIENT_LOG_NAME = \"mcp-client\";",
@@ -1490,7 +1490,7 @@
           "export declare const MCP_GUIDANCE: string;"
         ],
         "MCP_MANAGER_IDENTITY": [
-          "export declare const MCP_MANAGER_IDENTITY: Readonly<{ bundlePackage: \"@wingsky-1/dsh-mcp-manager\"; rowId: \"ui-dsh-mcp-manager\"; settingsNamespace: \"ui-dsh-mcp-manager\"; rowConfigKey: \"@wingsky-1/dsh-mcp-manager#ui-dsh-mcp-manager\"; }"
+          "export declare const MCP_MANAGER_IDENTITY: Readonly<{ bundlePackage: \"@wingsky-1/dsh-mcp-manager\"; rowId: \"ui-dsh-mcp-manager\"; settingsNamespace: \"dsh-mcp-manager\"; rowConfigKey: \"@wingsky-1/dsh-mcp-manager#ui-dsh-mcp-manager\"; }"
         ],
         "MCP_SECTION_ORDER": [
           "export declare const MCP_SECTION_ORDER = 160;"

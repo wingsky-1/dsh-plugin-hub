@@ -222,8 +222,7 @@
         "migrate": {
           "mutate": [
             "packages/dsh-lan-proxy/src/server/migrate/impl/file/index.ts",
-            "packages/dsh-lan-proxy/src/server/migrate/impl/layout/index.ts",
-            "packages/dsh-lan-proxy/src/server/migrate/impl/legacy-settings/index.ts"
+            "packages/dsh-lan-proxy/src/server/migrate/impl/layout/index.ts"
           ],
           "excludes": ["!packages/dsh-lan-proxy/src/client/**"],
           "testFiles": [
@@ -231,10 +230,9 @@
             "packages/dsh-lan-proxy/test/unit/unit-apply.test.ts",
             "packages/dsh-lan-proxy/test/unit/unit-ca.test.ts",
             "packages/dsh-lan-proxy/test/unit/unit-cacert.test.ts",
-            "packages/dsh-lan-proxy/test/unit/unit-host-trust.test.ts",
-            "packages/dsh-lan-proxy/test/unit/legacy-settings.test.ts"
+            "packages/dsh-lan-proxy/test/unit/unit-host-trust.test.ts"
           ],
-          "comment": "#826 域归位：migrate 域（原根 migrate.ts，一次性 config.json 收编）；门面按 facade 口径进 coverageExcludes；测试按段 testFiles 清单跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
+          "comment": "#826 域归位：migrate 域保留 config.json 收编与目录布局迁移；门面按 facade 口径进 coverageExcludes；测试按段 testFiles 清单跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
         },
         "proxy": {
           "mutate": ["packages/dsh-lan-proxy/src/server/proxy/impl/proxy.ts"],

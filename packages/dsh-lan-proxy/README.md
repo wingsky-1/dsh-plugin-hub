@@ -88,13 +88,13 @@ launch token 与会话 cookie 认证保持不变；兼容开启后，LAN 页面�
 
 - **配置入口**：Plugin Manager → dsh-lan-proxy → Configure。canonical row id 为
   `ui-dsh-lan-proxy`，keyed row 为 `@wingsky-1/dsh-lan-proxy#ui-dsh-lan-proxy`，
-  官方 settings 条目也使用 `ui-dsh-lan-proxy`。
+  官方 settings namespace 使用 `dsh-lan-proxy`。
 - **挂载边界**：配置页由 `plugins.row.config` 渲染，仅在 Host 服务 canonical settings 条目时
   注册。`compat-off` 或上游契约漂移时，非回环页面可能无法进入配置行。
 - **可见性**：启动横幅与 `/api/dsh-lan-proxy/health` 显示宿主侧开关；页面加载时若兼容未生效
   或契约漂移，浏览器控制台给出独立告警，不依赖配置页。
 - **恢复旁路（仅在行详情不可达时）**：可直接编辑 DSH 当前设置文档中的
-  `ui-dsh-lan-proxy.ownsHostCompat`（宿主使用 `settings.yaml` 时，以「打开配置文件」显示的
+  `dsh-lan-proxy.ownsHostCompat`（宿主使用 `settings.yaml` 时，以「打开配置文件」显示的
   路径为准），或执行 `ssh -L 3080:127.0.0.1:3080 <主机>` 后访问
   `http://127.0.0.1:3080/`。两者都是恢复旁路，不是常规配置路径。
 
@@ -153,23 +153,13 @@ curl -s http://127.0.0.1:3081/api/dsh-lan-proxy/health
 
 ### 配置存储（单一通道）
 
-- 全部配置存于 dsh 官方 settings 存储；canonical 条目 id 为 `ui-dsh-lan-proxy`，
+- 全部配置存于 dsh 官方 settings 存储；settings namespace 为 `dsh-lan-proxy`，
   落盘位置由宿主统一管理。组合层 `cordis.patch.yml` 的 config 作为 base 层生效；
   热更新由官方 `settings/document-updated` 事件驱动，无需重启。
 
-#### RC7 旧 settings section 迁移
+#### Settings namespace
 
-DSH 0.1.7-rc.2 会把旧的 `~/.dsh/settings.yaml` 改名为 `settings.yaml.imported`。
-这个文件是已消费旧文档的**审计副本**，只保留证据，不是当前配置源；不要把整个
-`settings.yaml.imported` 再复制到 profile。插件可编辑字段会由迁移写入 active profile 的
-`~/.dsh/profiles/<profile>/cordis.patch.yml`，canonical id 为 `ui-dsh-lan-proxy`。
-
-自动迁移只消费旧 `dsh-lan-proxy` section 中当前 Config schema 认可的字段，按
-`settings.yaml.imported < settings.yaml < 当前 canonical user` 合并；旧自建
-`config.json`、未知顶层键和其它已废弃字段不会写入 canonical patch。迁移完成 marker 是
-插件私有目录中的 `settings.migrated`（版本 `1`）。canonical 写入前先创建 `settings.migrated.pending`
-receipt，成功后 promote 为完成 marker；未知失败恢复只完成 marker、不重放旧值，
-避免 DSH `unset` 后把用户已清除的值写回；只有明确的 revision 冲突才清理 receipt 并重试。
+DSH 官方 importer 会按同名 section 直接导入 `dsh-lan-proxy`；本插件不再运行第二套 namespace migration。`settings.yaml.imported` 仅为已消费文档的审计副本，不应整体复制。
 
 <details>
 <summary>旧 config.json 迁移</summary>

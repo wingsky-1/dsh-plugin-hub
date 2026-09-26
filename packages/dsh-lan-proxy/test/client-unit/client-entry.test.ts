@@ -360,7 +360,7 @@ describe("canonical identity：源码与 standalone/all patch", () => {
     expect(LAN_PROXY_IDENTITY).toEqual({
       bundlePackage: "@wingsky-1/dsh-lan-proxy",
       rowId: "ui-dsh-lan-proxy",
-      settingsNamespace: "ui-dsh-lan-proxy",
+      settingsNamespace: "dsh-lan-proxy",
       rowConfigKey: "@wingsky-1/dsh-lan-proxy#ui-dsh-lan-proxy",
     });
   });
