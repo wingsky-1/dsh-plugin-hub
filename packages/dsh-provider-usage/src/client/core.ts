@@ -6,6 +6,17 @@
  */
 import { ADAPTER_CONTRACT_VERSION } from "../shared/contracts.ts";
 import { DEFAULT_Z_INDEX_BASE } from "../shared/placement-math.ts";
+// 官方类型面（仅类型，编译期擦除）：会话读面直接贴官方契约，不自建镜像——
+// rc.2 删掉快照 `current` 字段那次事故的根因就是镜像与官方类型漂移。
+import type {
+  ISessions,
+  SessionListState,
+  SessionSummary,
+} from "@deepseek-ai/dsh-api-session-controller/client";
+// 副作用式类型导入：把 `mainView` 经声明合并注入 SessionReferenceSourceMap，
+// 使 `row.retainedBy.mainView` 获得官方口径的类型。verbatimModuleSyntax 下完全擦除，
+// 不产生运行时导入（故不影响零依赖分发物）。
+import type {} from "@deepseek-ai/dsh-client-ui-session/client";
 
 /**
  * 宿主端 ROUTES 经 ./shared/contract.ts 具名表（host-seams R2 收敛：路由字面量只许
@@ -138,36 +149,48 @@ export interface RemoteLike {
   };
 }
 
-/** sessions.list 快照中的单行（0.1.2-alpha.2 SessionSummary 防御式形态）。 */
-export interface SessionListRowLike {
-  id?: string;
-  /** 子代理行标记（spawn/fork 两类子代理均由宿主 store 写入）。 */
-  origin?: string;
-  /**
-   * 父会话 id：客户端 store 归一字段（线上 wire 字段 parentSessionId 由
-   * dsh-client-runtime 归一为 parentId）；防御兼容两种命名。
-   */
-  parentId?: string;
-  parentSessionId?: string;
-  /** per-session 投影值 map（0.1.2 list 行 SessionSummary.projectionValues；键=投影键）。 */
-  projectionValues?: SessionRowProjectionValuesLike;
-}
+/**
+ * 会话行：**官方 `SessionSummary` 为基面**，只额外承认一个线上 wire 原名
+ * `parentSessionId`（客户端 store 把它归一为 `parentId`；此字段仅作防御兼容读，
+ * 不参与任何判定）。这是本文件**唯一**一处偏离官方类型的地方，故写在类型上，
+ * 而非散落到各个读点——`parentSessionIdOf` 之外的代码只见官方 `SessionSummary`。
+ *
+ * 为什么必须贴官方类型：rc.2 起 `SessionSummary` 的 `retainedBy` 就是「当前会话」
+ * 判据的事实源，自建镜像必然与它漂移（事故见 {@link currentSessionId} 的说明）。
+ */
+export type SessionRow = SessionSummary & {
+  /** wire 原名防御兼容读；官方 `SessionSummary` 只有归一后的 `parentId`。 */
+  readonly parentSessionId?: string;
+};
 
-/** sessions.list 快照形态（{current, ids, byId}，与宿主 client-runtime 一致）。 */
-export interface SessionListSnapshotLike {
-  current?: string;
-  ids?: string[];
-  byId?: Record<string, SessionListRowLike>;
-}
+/**
+ * 官方 list 快照的 `byId` 行表（键 = 官方品牌化的 `SessionId`）。
+ * 本包只在边界把 id 当 `string` 用（品牌在边界才有意义），故对键取 `string` 视图，
+ * 行本身仍是官方行。
+ */
+type SessionRowsById = Readonly<Record<string, SessionRow>>;
 
-export interface SessionsServiceLike {
-  list?: { getSnapshot?(): SessionListSnapshotLike; subscribe?(fn: () => void): () => void };
-}
-
-export function currentSessionId(sessions: SessionsServiceLike | undefined): string | undefined {
-  if (typeof sessions?.list?.getSnapshot === "function") {
-    const cur = sessions.list.getSnapshot()?.current;
-    if (typeof cur === "string" && cur.length > 0) return cur;
+/**
+ * 当前会话 id：**官方判据 = 行的 `retainedBy.mainView > 0`**。
+ *
+ * rc.2 删掉了快照上的 `current` 字段，且 `ISessions` 没有任何「当前会话」访问器——
+ * 官方自己判定当前会话的唯一口径就是 mainView 引用计数（写入方
+ * dsh-client-ui-workspace 的 `retain(target, {source:"mainView"})`，读取方
+ * dsh-client-ui-session 同款判据）。本函数此前读 `.current`，该字段已不存在，
+ * 于是恒返回 undefined → 检测半区整条链失配 → 胶囊恒回落 opencode-go。
+ *
+ * `mainView` 键不在基线类型里，由 `@deepseek-ai/dsh-client-ui-session/client` 的
+ * 声明合并注入 `SessionReferenceSourceMap`；文件顶部那行 `import type {}` 正是为此
+ * 存在（verbatimModuleSyntax 下完全擦除，不产生任何运行时导入）。
+ *
+ * 读面保持宽容：服务未注入 / list 缺失 / getSnapshot 非函数 / 行表缺失 / 无 mainView
+ * 引用者，一律返回 undefined，不抛（与既有「防御式读」纪律一致）。
+ */
+export function currentSessionId(sessions: ISessions | undefined): string | undefined {
+  const byId = snapshotById(sessions);
+  if (byId === undefined) return undefined;
+  for (const id of Object.keys(byId)) {
+    if ((byId[id]?.retainedBy.mainView ?? 0) > 0) return id;
   }
   return undefined;
 }
@@ -177,21 +200,32 @@ export function currentSessionId(sessions: SessionsServiceLike | undefined): str
 /** 上溯链深度封顶：链上最多探测的会话数（自身 + 至多 N-1 代祖先），防环与异常长链。 */
 export const MAX_ANCESTRY_DEPTH = 3;
 
-/** 行内父 id 读取：优先归一字段 parentId，防御兼容 wire 原名 parentSessionId。 */
-function parentSessionIdOf(row: SessionListRowLike | undefined): string | undefined {
+/** 行内父 id 读取：优先官方归一字段 parentId，防御兼容 wire 原名 parentSessionId。 */
+function parentSessionIdOf(row: SessionRow | undefined): string | undefined {
   const p = row?.parentId ?? row?.parentSessionId;
   return typeof p === "string" && p.length > 0 ? p : undefined;
 }
 
 /**
- * 防御式读 sessions.list 快照的 byId 映射（上溯链与投影读取两处共用）：
+ * 防御式读 sessions.list 快照的 byId 映射（当前会话判据 / 上溯链 / 投影读取三处共用）：
  * 服务未注入 / list 缺失 / getSnapshot 非函数 / 行表缺失均返回 undefined，
  * 调用方据此走「无快照」分支（不抛、不判空到下游）。
+ *
+ * 官方 `SessionListState.byId` 的键是品牌化的 `SessionId`、行是 `SessionSummary`；
+ * 本包在边界把两者收成 `string` 键 + `SessionRow` 行（见 `SessionRowsById` 的取舍说明），
+ * 属可核对的窄化而非 `unknown` 逃逸。
  */
-function snapshotById(
-  sessions: SessionsServiceLike | undefined,
-): Record<string, SessionListRowLike> | undefined {
-  return sessions?.list?.getSnapshot?.()?.byId;
+function snapshotById(sessions: ISessions | undefined): SessionRowsById | undefined {
+  return snapshotState(sessions)?.byId;
+}
+
+/**
+ * 防御式读官方 list 快照本身（服务未注入 / list 缺失 / getSnapshot 非函数 → undefined）。
+ * 官方 `ObservableSnapshot` 的 `getSnapshot` 是必选方法，这里的 `?.` 是纯运行时防御：
+ * 单测夹具与旧运行时都可能给出残缺服务，纪律是「读不到就当没有」，不是抛。
+ */
+function snapshotState(sessions: ISessions | undefined): SessionListState | undefined {
+  return sessions?.list?.getSnapshot?.();
 }
 
 /**
@@ -200,7 +234,7 @@ function snapshotById(
  * 设计原则：不做「是不是子代理」的正向分类——ordinary 会话无 parentId，链长即为 1。
  */
 export function sessionAncestryChain(
-  sessions: SessionsServiceLike | undefined,
+  sessions: ISessions | undefined,
   startId: string,
   maxDepth: number = MAX_ANCESTRY_DEPTH,
 ): string[] {
@@ -227,7 +261,7 @@ export function sessionAncestryChain(
  * lastUsed 仅作兜底（next 缺失时取上次实际使用）；均缺失返回 undefined。
  * 纯同步快照读取，不触发任何 RPC。
  */
-function providerFromProjection(row: SessionListRowLike | undefined): string | undefined {
+function providerFromProjection(row: SessionRow | undefined): string | undefined {
   const ms = row?.projectionValues?.modelSelection;
   const sel = ms?.next ?? ms?.lastUsed;
   return typeof sel?.provider === "string" && sel.provider.length > 0 ? sel.provider : undefined;
@@ -307,7 +341,7 @@ export function makeCatalogCache(ttlMs: number = CATALOG_CACHE_TTL_MS): {
  * （保持上次检测 / 回落默认）。
  */
 export async function resolveProviderFromSession(
-  sessions: SessionsServiceLike | undefined,
+  sessions: ISessions | undefined,
   remote: RemoteLike | undefined,
   catalogLoader: CatalogLoader = defaultCatalogLoader,
 ): Promise<string | undefined> {

@@ -71,7 +71,8 @@
     "@deepseek-ai/dsh-session-title": "0.1.7-rc.2",
     "@deepseek-ai/dsh-settings": "0.1.7-rc.2",
     "@deepseek-ai/dsh-user-approval": "0.1.7-rc.2",
-    "@deepseek-ai/dsh-user-questions": "0.1.7-rc.2"
+    "@deepseek-ai/dsh-user-questions": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-client-ui-slots": "0.1.7-rc.2"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/cordis": {
@@ -96,6 +97,9 @@
       "optional": true
     },
     "@deepseek-ai/dsh-user-questions": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-client-ui-slots": {
       "optional": true
     }
   },

@@ -61,6 +61,8 @@ const ALLOWLIST: Record<string, string> = {
     "模块级可变状态门禁（AST 扫顶层 let/var），以 .mjs 为判据 loader 入口",
   "scripts/gate/forbid-raw-exit2.mjs":
     "门禁故障码唯一出口判据（禁裸 exit 2），以 .mjs 为判据 loader 入口",
+  "scripts/gate/forbid-session-snapshot-src.mjs":
+    "会话快照面禁自建镜像 / 禁幻觉字段（#1028 防复发），以 .mjs 为判据 loader 入口",
   "scripts/gate/forbid-src-tests.mjs":
     "遗留 .src.test.ts 禁止门禁（防双份回潮），以 .mjs 被 CI 与本地复用的 loader",
   "scripts/gate/gate-steps.mjs":

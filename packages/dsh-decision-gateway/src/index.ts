@@ -9,6 +9,11 @@
 import type { Context } from "@deepseek-ai/cordis";
 import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
 import type { ToolDefinition, ToolRunContext } from "@deepseek-ai/dsh-tools";
+// 副作用式类型导入：把 `sessionTitle` 经声明合并注入 Context，使 `Context["sessionTitle"]`
+// 即官方 `SessionTitleService`（与 provider-usage 认 `retainedBy.mainView` 的那行同款机制）。
+// 实测：删掉这行则 `Context["sessionTitle"]` 报 TS2339。verbatimModuleSyntax 下完全擦除，
+// 不产生运行时导入，故不影响零依赖分发物。
+import type {} from "@deepseek-ai/dsh-session-title";
 import { ROUTES, frozenPresetOf } from "./shared/interface.ts";
 import type { AutomationCap, CustomPreset } from "./shared/interface.ts";
 import * as apiApi from "./server/api/interface.ts";
@@ -43,19 +48,50 @@ export interface DecisionGatewayApplyConfig {
   env?: Record<string, string | undefined>;
 }
 
+/**
+ * 官方 `ctx.sessions`（`SessionStore`）的只读窄面——**不手写镜像**。
+ *
+ * 类型直接取自官方 `Context`：`@deepseek-ai/dsh-tools` 的类型闭包已把
+ * `@deepseek-ai/dsh-session` 的声明合并带进本包编译单元，故 `Context["sessions"]`
+ * 就是官方 `SessionStore`。此前这里手写了一份 `{get(id: string) => {header:{cwd}}}` 镜像，
+ * 再用 `ctx as unknown as {...}` 双重断言把真实服务塞进去——镜像与官方签名一旦漂移，
+ * 编译器无从报警（provider-usage 的 `current` 事故就是这类镜像的代价）。
+ *
+ * 窄到 `Pick<…, "get">` 是刻意取舍：本插件只读会话目录（解析 cwd / 找活会话），
+ * 不写、不订阅、不开作用域，`SessionStore` 其余能力不该出现在域端口上。
+ * 品牌化的 `SessionId` 只在边界有意义，故用 `Parameters<>` 取回它做参数位桥接，域内仍是 string。
+ */
+type HostSessions = Pick<Context["sessions"], "get">;
+
+/**
+ * 官方品牌化的 `SessionId`（`string & BRAND`）——裸 string 经它桥接进官方签名。
+ * 与 provider-usage 宿主端 apply.ts:454 的 `Parameters<typeof ctx.sessions.get>[0]` 同款。
+ */
+type HostSessionId = Parameters<HostSessions["get"]>[0];
+
+/**
+ * 官方 `ctx.sessionTitle`（`SessionTitleService`）的只读窄面——与 `HostSessions` 同款官方派生。
+ *
+ * 类型同样取自官方 `Context`：`@deepseek-ai/dsh-session-title` 的声明合并把 `sessionTitle`
+ * 注入了 `Context`（本包已在 devDependencies/peerDependencies 声明该依赖，故类型可达），
+ * 于是 `Context["sessionTitle"]` 就是官方 `SessionTitleService`。
+ *
+ * 窄到 `Pick<…, "get">` 的取舍与上面同源：本插件只读标题快照（enrich 历史条目），
+ * 不改名、不刷新、不注册 provider——`SessionTitleService` 其余能力不该上域端口。
+ * 两个端口的「同一会话」由官方签名本身保证：`SessionTitleService.get` 的参数就是
+ * `SessionStore.get` 的返回类型，目录口与标题口在类型层天然对齐，不可能各自漂移。
+ */
+type HostSessionTitle = Pick<Context["sessionTitle"], "get">;
+
 /** 组合根用到的宿主面：域拿到的是能力，不是上下文。sessions/sessionTitle 为可选（旧运行时/单测 fake ctx 缺席即降级，绝不抛）。 */
 interface HostPort {
   readonly logger: { readonly warn: (message: string) => void };
   readonly register: (route: WebRoute) => () => void;
   readonly registerTool: (tool: ToolDefinition) => () => void;
-  readonly sessions?: {
-    readonly get: (
-      id: string,
-    ) => ({ readonly header: { readonly cwd?: string } } & Record<string, unknown>) | undefined;
-  };
-  readonly sessionTitle?: {
-    readonly get: (session: unknown) => { readonly title: string } | undefined;
-  };
+  /** 官方 `SessionStore` 的只读窄面（见 `HostSessions`）。 */
+  readonly sessions?: HostSessions;
+  /** 官方 `SessionTitleService` 的只读窄面（见 `HostSessionTitle`）。 */
+  readonly sessionTitle?: HostSessionTitle;
 }
 
 /** 收窄宿主上下文（本文件唯一触 ctx 处）。 */
@@ -64,9 +100,12 @@ function bindHost(ctx: Context): HostPort {
     logger: ctx.logger,
     register: (route) => ctx.webServer.register(route),
     registerTool: (tool) => ctx.tools.register(tool),
-    sessions: (ctx as unknown as { readonly sessions?: HostPort["sessions"] }).sessions,
-    sessionTitle: (ctx as unknown as { readonly sessionTitle?: HostPort["sessionTitle"] })
-      .sessionTitle,
+    // 官方类型直取，零断言：`ctx.sessions` / `ctx.sessionTitle` 已是官方 SessionStore 与
+    // SessionTitleService，窄化只发生在上面两个 Pick 的声明上。运行时缺席（单测 fake ctx /
+    // 旧运行时）由 HostPort 的可选属性 + 域侧 `?.` 承接，一律降级不抛——不需要在接线处
+    // 再为「可能不在」写断言。
+    sessions: ctx.sessions,
+    sessionTitle: ctx.sessionTitle,
   };
 }
 
@@ -133,7 +172,8 @@ function assemble(host: HostPort, options: DecisionGatewayApplyConfig): (() => v
   /** 会话标题读取时 enrich（只读活会话快照，永不落盘；缺席/抛错/无标题即回落短 id）。 */
   const sessionTitleOf = (sessionId: string): { readonly sessionTitle?: string } => {
     try {
-      const session = host.sessions?.get(sessionId);
+      // 裸 string → 官方品牌化 SessionId 的参数位桥接（品牌只在边界有意义）。
+      const session = host.sessions?.get(sessionId as HostSessionId);
       if (session === undefined) return {};
       const snapshot = host.sessionTitle?.get(session);
       const title = snapshot?.title;
@@ -152,7 +192,8 @@ function assemble(host: HostPort, options: DecisionGatewayApplyConfig): (() => v
   /** 工作目录解析（sessions store 优先，exec 字段次之，进程 cwd 兜底；store 缺席/抛错即降级）。 */
   const resolveRoot = (exec: ToolRunContext, sessionId: string): string => {
     try {
-      const cwd = host.sessions?.get(sessionId)?.header.cwd;
+      // 裸 string → 官方品牌化 SessionId 的参数位桥接（品牌只在边界有意义）。
+      const cwd = host.sessions?.get(sessionId as HostSessionId)?.header.cwd;
       if (typeof cwd === "string" && cwd.length > 0) return cwd;
     } catch {
       /* 降级到 exec 派生，见下 */

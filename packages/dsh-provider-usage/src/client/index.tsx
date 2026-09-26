@@ -21,13 +21,10 @@ import {
   DEFAULT_CLIENT_UI_CONFIG,
   FALLBACK_PROVIDER,
 } from "./core.ts";
-import type {
-  SessionsServiceLike,
-  RemoteLike,
-  StatsResponseV2,
-  HistoryResponseV2,
-  UiPlacementConfig,
-} from "./core.ts";
+// 官方 sessions 服务契约（仅类型，编译期擦除）：ctx 面直接用官方 ISessions，
+// 不再把 ctx.sessions 强转进自建镜像类型（镜像与官方类型漂移过一次，见 core.ts）。
+import type { ISessions } from "@deepseek-ai/dsh-api-session-controller/client";
+import type { RemoteLike, StatsResponseV2, HistoryResponseV2, UiPlacementConfig } from "./core.ts";
 import { SettingsPage } from "./settings/index.tsx";
 // 纯视图推导（数据 → 文案/判别）单点收口在 float-view.ts：index.tsx 只剩编排。
 import {
@@ -137,7 +134,7 @@ function el(
 
 // ------------------------------------------------------------------ 状态
 
-let sessions: SessionsServiceLike | undefined;
+let sessions: ISessions | undefined;
 let remote: RemoteLike | undefined;
 
 /** 当前生效 provider。 */
@@ -712,7 +709,7 @@ function mountFloat(): () => void {
 
 /** 客户端 ctx 最小面（三键可选 sessions/remote/locale；slots/effect 为装配必需）。 */
 interface ProviderUsageClientCtx {
-  sessions?: SessionsServiceLike;
+  sessions?: ISessions;
   remote?: RemoteLike;
   locale?: Parameters<typeof bindLocale>[0];
   slots: {
@@ -823,7 +820,9 @@ export function apply(ctx: ProviderUsageClientCtx): void {
     // "remote.session"/"slots"）且经 ctx 直接属性访问——官方 dsh-client-ui-chat /
     // model-selection 同款 ctx.sessions / ctx.remote。此前 inject 仅 locale 且误用
     // 宿主风格 ctx.get 取服务，sessions/remote 未注入导致检测恒空（胶囊不跟随会话）。
-    sessions = ctx.sessions as SessionsServiceLike | undefined;
+    // sessions 直接取官方 ISessions（ctx 面已按官方类型标注，无需强转）；
+    // remote 仍是本包自建窄面（仅声明实际消费的 modelCatalog），保留其断言。
+    sessions = ctx.sessions;
     remote = ctx.remote as RemoteLike | undefined;
 
     // i18n：注册本插件字典；t 经共享 i18n.ts 活绑定（多文件 client 共用），

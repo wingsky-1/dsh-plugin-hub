@@ -54,7 +54,10 @@
     "@deepseek-ai/cordis": "4.0.4",
     "@deepseek-ai/dsh-host-webserver": "0.1.7-rc.2",
     "@deepseek-ai/dsh-llm": "0.1.7-rc.2",
-    "@deepseek-ai/dsh-session": "0.1.7-rc.2"
+    "@deepseek-ai/dsh-session": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-client-ui-slots": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-api-session-controller": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-client-ui-session": "0.1.7-rc.2"
   },
   "peerDependenciesMeta": {
     "react": {
@@ -71,6 +74,15 @@
     },
     "@deepseek-ai/dsh-session": {
       "optional": true
+    },
+    "@deepseek-ai/dsh-client-ui-slots": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-api-session-controller": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-client-ui-session": {
+      "optional": true
     }
   },
   "engines": {
@@ -84,7 +96,9 @@
     "@deepseek-ai/dsh-llm": "catalog:",
     "@deepseek-ai/dsh-session": "catalog:",
     "async-mutex": "^0.5.0",
-    "schemastery": "^3.18.0"
+    "schemastery": "^3.18.0",
+    "@deepseek-ai/dsh-api-session-controller": "catalog:",
+    "@deepseek-ai/dsh-client-ui-session": "catalog:"
   },
   "repository": {
     "type": "git",

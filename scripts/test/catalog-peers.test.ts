@@ -17,11 +17,14 @@ import {
   checkMaterializedCatalogPeers,
   memberDriftProblem,
   officialDepProblems,
+  officialSourceRefs,
+  packageNameOf,
   parseCatalog,
   parseReleaseExclude,
   plannedPeerChanges,
   sideMemberProblems,
   sideValueProblems,
+  sourceImportProblems,
   syncCatalogPeers,
   isCanonicalExactVersion,
 } from "../lib/catalog-peers-lib.ts";
@@ -45,10 +48,16 @@ test("真实仓库：官方 peer 是 catalog 精确版本（raw link 可被 DSH 
       assert.equal(spec, catalog.get(name), `${dir}: ${name} 必须与 catalog 精确一致`);
     }
   }
+  // 期望值由 manifest 侧现算，而非写死数字：写死会让每加一个 peer 就红一次，
+  // 于是这条断言迟早被人改成下界，失去「两侧一致」的判据力。
+  const manifestTotal = Object.values(loadManifest(ROOT).dshPeerContracts).reduce(
+    (sum, names) => sum + names.length,
+    0,
+  );
   assert.equal(
     officialPeerCount,
-    29,
-    `官方 peer 合同应覆盖全部 active 插件，实际 ${officialPeerCount}`,
+    manifestTotal,
+    `package.json 侧官方 peer 数应与 manifest 合同一致，实际 ${officialPeerCount} vs ${manifestTotal}`,
   );
 });
 
@@ -56,10 +65,19 @@ test("真实仓库：catalog ↔ peer/devDeps 零违规", () => {
   const { problems, catalogSize, officialPeerCount } = checkCatalogPeers(ROOT);
   assert.deepEqual(problems, []);
   assert.ok(catalogSize >= 15, `catalog 应含补全后的官方包，实际 ${catalogSize}`);
+  let declared = 0;
+  for (const dir of [...loadManifest(ROOT).active, ...loadManifest(ROOT).standalone]) {
+    const manifest = JSON.parse(
+      readFileSync(join(ROOT, "packages", dir, "package.json"), "utf8"),
+    ) as { peerDependencies?: Record<string, string> };
+    for (const name of Object.keys(manifest.peerDependencies ?? {})) {
+      if (name.startsWith("@deepseek-ai/")) declared++;
+    }
+  }
   assert.equal(
     officialPeerCount,
-    29,
-    `官方 peer 合同应覆盖全部 active 插件，实际 ${officialPeerCount}`,
+    declared,
+    `manifest 合同应与各包 package.json 的官方 peer 逐一对齐，实际 ${officialPeerCount} vs ${declared}`,
   );
 });
 
@@ -607,4 +625,131 @@ test("sideMemberProblems / sideValueProblems：发布边界两侧各判一次", 
   assert.deepEqual(sideValueProblems("L", "tarball", null, "@deepseek-ai/dsh", "4.0.0"), [
     'L: tarball peerDependencies["@deepseek-ai/dsh"] 不是 catalog exact version',
   ]);
+});
+
+// ---------------------------------------------------------------- X1：源码引用反推 peer
+
+/** 往 fixture 包的 src 写文件（X1 判据的面 = packages/<pkg>/src）。 */
+function withSrc(dir: string, files: Record<string, string>): string {
+  for (const [rel, text] of Object.entries(files)) {
+    const path = join(dir, "packages", "dsh-probe", "src", rel);
+    mkdirSync(join(path, ".."), { recursive: true });
+    writeFileSync(path, text);
+  }
+  return dir;
+}
+
+/** fixture 包的 peer 反推判词。 */
+function srcProblems(dir: string): string[] {
+  const manifest = JSON.parse(
+    readFileSync(join(dir, "packages", "dsh-probe", "package.json"), "utf8"),
+  ) as Record<string, unknown>;
+  return sourceImportProblems(dir, "dsh-probe", manifest);
+}
+
+test("X1 载体自证：真实仓库里判据取到的是真实引用（防恒零命中的假绿）", () => {
+  // 为什么要有这条：本判据跑在「esbuild 擦除 import type / declare module + acorn AST」的
+  // 组合上，而本仓对官方包的引用几乎全是类型导入——若采集侧退化成「什么都没取到」，
+  // 上面那条「零违规」照样全绿。故正面钉住「取到了东西」这件事。
+  let total = 0;
+  for (const dir of Object.keys(loadManifest(ROOT).dshPeerContracts)) {
+    const found = officialSourceRefs(ROOT, dir);
+    assert.deepEqual(found.problems, [], `${dir}: 采集面自身不可判`);
+    total += found.referenced.size;
+  }
+  assert.ok(
+    total >= 20,
+    `X1 应取到真实官方引用（当前 ${total} 个包级引用），低于 20 说明采集面退化了`,
+  );
+});
+
+test("X1：import type / declare module / export…from 未登记为 peer 即判红", () => {
+  withRepo({}, (dir) => {
+    withSrc(dir, {
+      "a.ts": [
+        'import type { A } from "@deepseek-ai/dsh-llm";',
+        'declare module "@deepseek-ai/dsh-tools" { interface X { a: string } }',
+        'export type { B } from "@deepseek-ai/dsh-agent";',
+      ].join("\n"),
+    });
+    const problems = srcProblems(dir);
+    for (const name of [
+      "@deepseek-ai/dsh-llm",
+      "@deepseek-ai/dsh-tools",
+      "@deepseek-ai/dsh-agent",
+    ]) {
+      assert.ok(
+        problems.some((p) => p.includes(`"${name}"`)),
+        `${name} 应被判红，实际：${JSON.stringify(problems)}`,
+      );
+    }
+    assert.ok(problems.every((p) => p.includes("peerDependencies 未登记")));
+  });
+});
+
+test("X1 零误报：裸字符串字面量 / 注释 / 非官方包都不算引用", () => {
+  // 本仓的实证反例：packages/dsh-mcp-manager/src/server/shared/constants.ts 的
+  // OFFICIAL_MCP_CLIENT_SPECIFIER 是宿主 loader 的运行时字符串常量。文本扫描会把它当引用，
+  // 判据若如此，全仓每加一个 specifier 常量就假红一次。
+  withRepo({}, (dir) => {
+    withSrc(dir, {
+      "a.ts": [
+        'const OFFICIAL = "@deepseek-ai/dsh-mcp-client";',
+        '// import type { X } from "@deepseek-ai/dsh-llm";',
+        '/* declare module "@deepseek-ai/dsh-tools" {} */',
+        'const s = `import y from "@deepseek-ai/dsh-agent"`;',
+        'import type { L } from "@wingsky-1/dsh-notifier/client";',
+        "export const used = [OFFICIAL, s, L];",
+      ].join("\n"),
+    });
+    assert.deepEqual(srcProblems(dir), []);
+  });
+});
+
+test("X1：子路径说明符按包名匹配（dsh-session/types 由 peer dsh-session 覆盖）", () => {
+  withRepo({}, (dir) => {
+    withSrc(dir, { "a.ts": 'import type { S } from "@deepseek-ai/dsh-session/types";' });
+    assert.deepEqual(srcProblems(dir), [], "子路径应归到包名再比对");
+    assert.equal(packageNameOf("@deepseek-ai/dsh-session/types"), "@deepseek-ai/dsh-session");
+    assert.equal(packageNameOf("react"), "react");
+  });
+});
+
+test("X1：.tsx 里的类型导入照样取到（词法分段不得吞掉文件头）", () => {
+  withRepo({}, (dir) => {
+    withSrc(dir, {
+      "a.tsx": [
+        'import type { A } from "@deepseek-ai/dsh-llm";',
+        "export function View() {",
+        "  return (",
+        '    <div className="x">',
+        "      <span>{1 / 2}</span>",
+        "    </div>",
+        "  );",
+        "}",
+      ].join("\n"),
+    });
+    const problems = srcProblems(dir);
+    assert.equal(problems.length, 1, JSON.stringify(problems));
+    assert.ok(problems[0].includes("@deepseek-ai/dsh-llm"));
+  });
+});
+
+test("X1：已登记为 peer 的引用零判词（与 checkCatalogPeers 同源）", () => {
+  withRepo({}, (dir) => {
+    withSrc(dir, { "a.ts": 'import type { S } from "@deepseek-ai/dsh-session";' });
+    const manifest = JSON.parse(
+      readFileSync(join(dir, "packages", "dsh-probe", "package.json"), "utf8"),
+    ) as Record<string, unknown>;
+    manifest.peerDependencies = {
+      ...(manifest.peerDependencies as Record<string, string>),
+      "@deepseek-ai/dsh-session": "0.1.2-rc.1",
+    };
+    writeFileSync(
+      join(dir, "packages", "dsh-probe", "package.json"),
+      JSON.stringify(manifest, null, 2),
+    );
+    assert.deepEqual(sourceImportProblems(dir, "dsh-probe", manifest), []);
+    assert.deepEqual(checkCatalogPeers(dir).problems, []);
+  });
 });
