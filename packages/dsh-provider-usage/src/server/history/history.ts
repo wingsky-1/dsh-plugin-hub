@@ -144,50 +144,15 @@ export class HistoryStore {
   /** 留存清理：删过期日文件 + 总大小超限时从最旧文件逐个删。 */
   async maybePrune(provider: string, name: string): Promise<void> {
     const dir = this.dirOf(provider, name);
-    let files: string[];
-    try {
-      files = await readdir(dir);
-    } catch {
-      return;
-    }
+    const jsonlFiles = await listJsonlFiles(dir);
+    if (jsonlFiles === null) return;
     const cutoff = Date.now() - this.maxAgeMs;
-    const jsonlFiles = files.filter((f) => f.endsWith(".jsonl")).sort();
-    // 1. 删过期文件（按文件名日期）
-    for (const f of jsonlFiles) {
-      const dayMs = Date.parse(f.slice(0, 10));
-      if (Number.isFinite(dayMs) && dayMs < cutoff) {
-        try {
-          await rm(join(dir, f), { force: true });
-        } catch {
-          /* 忽略 */
-        }
-      }
-    }
-    // 2. 总大小超限：从最旧文件逐个删（保留最后 1 个文件，防清零）
-    const remaining = jsonlFiles.filter((f) => {
-      const dayMs = Date.parse(f.slice(0, 10));
-      return !(Number.isFinite(dayMs) && dayMs < cutoff);
-    });
-    let total = 0;
-    for (const f of remaining) {
-      try {
-        const stat = await import("node:fs/promises").then((m) => m.stat(join(dir, f)));
-        total += stat.size;
-      } catch {
-        /* 忽略 */
-      }
-    }
-    while (total > this.maxSizeBytes && remaining.length > 1) {
-      const oldest = remaining.shift();
-      if (oldest === undefined) break;
-      try {
-        const stat = await import("node:fs/promises").then((m) => m.stat(join(dir, oldest)));
-        total -= stat.size;
-        await rm(join(dir, oldest), { force: true });
-      } catch {
-        /* 忽略 */
-      }
-    }
+    await deleteExpiredDayFiles(dir, jsonlFiles, cutoff);
+    await enforceSizeCap(
+      dir,
+      jsonlFiles.filter((f) => !isExpiredDayFile(f, cutoff)),
+      this.maxSizeBytes,
+    );
   }
 
   /**
@@ -299,6 +264,79 @@ function dirSegment(s: string): string {
   return seg === "." || seg === ".." ? "unknown" : seg;
 }
 
+/** 目录下的日分片清单（升序）；读不到目录返回 null = 无可清理对象（不抛）。 */
+async function listJsonlFiles(dir: string): Promise<string[] | null> {
+  let files: string[];
+  try {
+    files = await readdir(dir);
+  } catch {
+    return null;
+  }
+  return files.filter((f) => f.endsWith(".jsonl")).sort();
+}
+
+/** 日分片是否过期（按文件名日期启发；日期不可解析即视为未过期，保守保留）。 */
+function isExpiredDayFile(file: string, cutoff: number): boolean {
+  const dayMs = Date.parse(file.slice(0, 10));
+  return Number.isFinite(dayMs) && dayMs < cutoff;
+}
+
+/** 单文件字节数（stat 失败按 0 计，不让竞态删除中断整轮清理）。 */
+async function sizeOfFile(file: string): Promise<number> {
+  try {
+    const stat = await import("node:fs/promises").then((m) => m.stat(file));
+    return stat.size;
+  } catch {
+    /* 忽略 */
+    return 0;
+  }
+}
+
+/** 1. 删过期日文件（按文件名日期）。 */
+async function deleteExpiredDayFiles(
+  dir: string,
+  files: readonly string[],
+  cutoff: number,
+): Promise<void> {
+  for (const f of files) {
+    if (!isExpiredDayFile(f, cutoff)) continue;
+    try {
+      await rm(join(dir, f), { force: true });
+    } catch {
+      /* 忽略 */
+    }
+  }
+}
+
+/**
+ * 2. 总大小超限：从最旧文件逐个删（保留最后 1 个文件，防清零）。
+ * remaining 逐个 shift —— 保留的正是「未过期」的那批，顺序即删除顺序。
+ */
+async function enforceSizeCap(
+  dir: string,
+  remaining: readonly string[],
+  maxSizeBytes: number,
+): Promise<void> {
+  const queue = [...remaining];
+  let total = 0;
+  for (const f of queue) {
+    total += await sizeOfFile(join(dir, f));
+  }
+  while (total > maxSizeBytes && queue.length > 1) {
+    const oldest = queue.shift();
+    if (oldest === undefined) break;
+    try {
+      // stat 与 rm 同处一个 try：stat 失败（竞态删除/权限）时本轮不减 total 也不删该
+      // 文件，与既有实现逐字一致（sizeOfFile 的 0 只用于上一步的总量累加口径）。
+      const stat = await import("node:fs/promises").then((m) => m.stat(join(dir, oldest)));
+      total -= stat.size;
+      await rm(join(dir, oldest), { force: true });
+    } catch {
+      /* 忽略 */
+    }
+  }
+}
+
 /** 解析 JSONL 文本为条目数组（跳过坏行）。 */
 export function parseJsonl(raw: string): HistoryEntry[] {
   const out: HistoryEntry[] = [];
@@ -379,21 +417,25 @@ export function legacySampleToData(
   const data: Record<string, unknown> = {};
   const width = sample.length - 1;
   for (let c = 0; c < width; c += 1) {
-    const col = columns?.[c];
-    const val = sample[c + 1];
-    if (col !== undefined && typeof col.key === "string") {
-      if (RAW_VALUE_COLUMNS.has(col.key)) {
-        // 余额型裸数值列：原始量纲直出
-        data[col.key] = typeof val === "number" ? val : null;
-      } else {
-        // 内置三窗口列：percent 语义
-        data[col.key] = { percent: typeof val === "number" ? val : null };
-      }
-    } else {
-      data[`col${c + 1}`] = val;
-    }
+    putLegacyColumn(data, c, columns?.[c], sample[c + 1]);
   }
   return data;
+}
+
+/** 单列落位（列声明有 key → 键名出口；无 key → 退 colNN 通用键）。 */
+function putLegacyColumn(
+  data: Record<string, unknown>,
+  index: number,
+  col: { key: string; name: string; limit?: number } | undefined,
+  val: number | null,
+): void {
+  if (col === undefined || typeof col.key !== "string") {
+    data[`col${index + 1}`] = val;
+    return;
+  }
+  const numeric = typeof val === "number" ? val : null;
+  // 余额型裸数值列原始量纲直出；内置三窗口列走 percent 语义。
+  data[col.key] = RAW_VALUE_COLUMNS.has(col.key) ? numeric : { percent: numeric };
 }
 
 /**
