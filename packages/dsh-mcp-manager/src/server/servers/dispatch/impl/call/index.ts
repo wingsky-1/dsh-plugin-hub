@@ -14,6 +14,7 @@ import type {
   ToolOutputDefinition,
   ToolExecutionInput,
 } from "@deepseek-ai/dsh-tools";
+import type { ServerState } from "../../../../../shared/interface.ts";
 import type { DispatchCallInput, ToolExecutionResultLike } from "../../deps.ts";
 import { redactMcpError } from "../redact/index.ts";
 
@@ -36,6 +37,113 @@ type CallEntry =
       : never
     : never;
 
+/** 远端子调用入参：合成 callId、透传可选字段，并**不带 agent**。 */
+export function remoteExecutionInput(
+  input: DispatchCallInput,
+  id: string,
+  tool: string,
+  args: unknown,
+): ToolExecutionInput {
+  return {
+    callId: subCallId(input.callId),
+    ...(input.rootCallId === undefined ? {} : { rootCallId: input.rootCallId }),
+    name: input.registeredNameFor(id, tool),
+    arguments: typeof args === "object" && args !== null ? args : {},
+    // #767 笔 1b F4 收口：远端转发**不带 agent**。带了就等于把子调用挂回该 agent 的作用域，
+    // 而本包已把 mcp__* 从每个 agent 的模型视野摘掉——自家转发会被自己那条 deny 一起打死。
+    // 不带 agent 走全局面（guard 靠 parent ∈ forwarding 放行）；代价是官方执行器那次图片
+    // 准入退化成文本，由本包自持的 image-admission 经 finalizeContent 补回来。
+    ...(input.parent === undefined ? {} : { parent: input.parent }),
+    // 宿主 executor 无条件读 signal.aborted（实测 §2.9-6：给 undefined 当场 TypeError），
+    // 而调用方不保证带 signal——没有就现造一个。
+    signal: input.signal ?? new AbortController().signal,
+  };
+}
+/** 派发前视为「未就绪」的六态子集（failed / reconnecting / stopped / disabled）；无条目同判。 */
+const NOT_DISPATCHABLE_STATES: ReadonlySet<ServerState | undefined> = new Set([
+  "failed",
+  "reconnecting",
+  "stopped",
+  "disabled",
+  undefined,
+]);
+
+/** 未就绪三归因（次序承重）：用户禁用 > 后台重连中 > 其余未就绪。 */
+export function notReadyError(
+  fullName: string,
+  status: ServerState | undefined,
+  userDisabled: boolean,
+): Error {
+  if (userDisabled) {
+    return new Error(
+      `ws_mcp_call: server ${JSON.stringify(fullName)} 已被用户禁用；可先在 GUI「MCP」浮窗中重新连接`,
+    );
+  }
+  if (status === "reconnecting") {
+    return new Error(
+      `ws_mcp_call: server ${JSON.stringify(fullName)} 连接失败、正在后台重连；请稍后重试或重新连接`,
+    );
+  }
+  return new Error(
+    `ws_mcp_call: server ${JSON.stringify(fullName)} 未连接或连接失败，请先 ws_mcp_search 或 ws_mcp_list 确认 server 已连接`,
+  );
+}
+
+/** 条目就绪裁决：可派发则带条目返回，否则带该情形的错误。 */
+type ReadinessVerdict = { ready: true; entry: CallEntry } | { ready: false; error: Error };
+
+/**
+ * 就绪裁决（B4 连带：六态补 reconnecting 后守卫须把「后台重连中」纳入未就绪——
+ * 否则退避窗口内会照常派发，而该代际的工具面已不可信）。
+ */
+export function judgeEntryReadiness(
+  fullName: string,
+  server: string,
+  userDisabled: boolean,
+  entry: CallEntry | undefined,
+): ReadinessVerdict {
+  const status = entry?.status;
+  if (NOT_DISPATCHABLE_STATES.has(status)) {
+    return { ready: false, error: notReadyError(fullName, status, userDisabled) };
+  }
+  if (status === "connecting") {
+    return {
+      ready: false,
+      error: new Error(
+        `ws_mcp_call: server ${JSON.stringify(fullName)} 连接仍在进行，请稍后重试；连接完成后再调用`,
+      ),
+    };
+  }
+  if (entry === undefined) {
+    return { ready: false, error: notReadyError(fullName, status, userDisabled) };
+  }
+  return { ready: true, entry };
+}
+/**
+ * 封装 execute 的最小 exec 面：契约要完整 ToolRunContext，中间层只能给最小面
+ * （agent 透传，session cwd 解析用）——经 unknown 中转（消费方封装定义只读 exec.agent）。
+ */
+export function wrappedExecContext(
+  input: DispatchCallInput,
+): Parameters<NonNullable<ToolDefinition["execute"]>>[1] {
+  return { agent: input.agent } as unknown as Parameters<NonNullable<ToolDefinition["execute"]>>[1];
+}
+
+/** 封装结果投影：有 output.render 走渲染，否则按字符串/JSON 文本兜底。 */
+export function wrappedContent(def: ToolDefinition, args: unknown, value: unknown) {
+  if (typeof def.output?.render === "function") {
+    return def.output.render(
+      args,
+      value as unknown as Parameters<NonNullable<ToolOutputDefinition["render"]>>[1],
+    );
+  }
+  return [
+    {
+      type: "text",
+      text: typeof value === "string" ? value : JSON.stringify(value ?? {}),
+    },
+  ];
+}
 /** 解析调用目标：回答「这通调用派得出去吗？」——全名格式 + 单元在册 + 条目就绪
  * （失败/重连中/停止/禁用/连接中各有去处，用户指引见各分支文案）；策略裁决与
  * 两条执行分支在外层（不同问题）。
@@ -56,38 +164,14 @@ function resolveCallTarget(input: DispatchCallInput): {
       `ws_mcp_call: 工作空间 ${JSON.stringify(parsed.root)} 未激活；请先 ws_mcp_search 或 ws_mcp_list`,
     );
   }
-  const entry = unit.connections.get(parsed.server);
-  const entryStatus = entry?.status;
-  // B4 连带：六态状态机补 reconnecting 后，调用守卫须把「后台重连中」纳入未就绪
-  // 范畴——否则退避窗口内会照常派发，而该代际的工具面已经不可信（官方在预算耗尽或
-  // dispose 时注销工具，重连期间前缀可能已消失）。
-  if (
-    entry === undefined ||
-    entryStatus === "failed" ||
-    entryStatus === "reconnecting" ||
-    entryStatus === "stopped" ||
-    entryStatus === "disabled"
-  ) {
-    if (unit.userDisabled.has(parsed.server)) {
-      throw new Error(
-        `ws_mcp_call: server ${JSON.stringify(input.fullName)} 已被用户禁用；可先在 GUI「MCP」浮窗中重新连接`,
-      );
-    }
-    if (entryStatus === "reconnecting") {
-      throw new Error(
-        `ws_mcp_call: server ${JSON.stringify(input.fullName)} 连接失败、正在后台重连；请稍后重试或重新连接`,
-      );
-    }
-    throw new Error(
-      `ws_mcp_call: server ${JSON.stringify(input.fullName)} 未连接或连接失败，请先 ws_mcp_search 或 ws_mcp_list 确认 server 已连接`,
-    );
-  }
-  if (entryStatus === "connecting") {
-    throw new Error(
-      `ws_mcp_call: server ${JSON.stringify(input.fullName)} 连接仍在进行，请稍后重试；连接完成后再调用`,
-    );
-  }
-  return { parsed, entry };
+  const verdict = judgeEntryReadiness(
+    input.fullName,
+    parsed.server,
+    unit.userDisabled.has(parsed.server),
+    unit.connections.get(parsed.server),
+  );
+  if (!verdict.ready) throw verdict.error;
+  return { parsed, entry: verdict.entry };
 }
 
 /** 执行封装直呼分支：回答「注入的封装定义怎么调？」——定义查找 + 超时兜底 +
@@ -110,32 +194,15 @@ async function executeWrappedCall(
     );
   }
   try {
-    // 封装定义契约：execute(args, exec) 的 exec 为完整 ToolRunContext，但
-    // 中间层只能提供最小面（agent 透传，session cwd 解析用）——经 unknown
-    // 中转（消费方封装定义只读 exec.agent）。
-    const execCtx = { agent: input.agent } as unknown as Parameters<
-      NonNullable<ToolDefinition["execute"]>
-    >[1];
     // #413 QA P2-2：封装 execute 补超时兜底（与远端分支同预算 callBudgetMs，
     // 封装实现挂起时不无限等待）。
     const value = await pipeline.withTimeout(
-      def.execute(typeof args === "object" && args !== null ? args : {}, execCtx),
+      def.execute(typeof args === "object" && args !== null ? args : {}, wrappedExecContext(input)),
       callBudgetMs + 2000,
       `ws_mcp_call: 封装调用超时（${callBudgetMs}ms），可重试；若反复超时请检查插件状态`,
       signal,
     );
-    const content =
-      typeof def.output?.render === "function"
-        ? def.output.render(
-            args,
-            value as unknown as Parameters<NonNullable<ToolOutputDefinition["render"]>>[1],
-          )
-        : [
-            {
-              type: "text",
-              text: typeof value === "string" ? value : JSON.stringify(value ?? {}),
-            },
-          ];
+    const content = wrappedContent(def, args, value);
     // #512 共性问题：structuredContent 条件展开——封装 execute 返回 undefined
     // 时不落键，防显式 undefined 值键触发宿主 lossless JSON 校验失败（#381 同源）。
     return {
@@ -180,20 +247,7 @@ async function executeRemoteCall(
   let result: ToolExecutionResultLike;
   try {
     result = await pipeline.withTimeout(
-      input.execute({
-        callId: subCallId(input.callId),
-        ...(input.rootCallId === undefined ? {} : { rootCallId: input.rootCallId }),
-        name: input.registeredNameFor(id, tool),
-        arguments: typeof args === "object" && args !== null ? args : {},
-        // #767 笔 1b F4 收口：远端转发**不带 agent**。带了就等于把子调用挂回该 agent 的作用域，
-        // 而本包已把 mcp__* 从每个 agent 的模型视野摘掉——自家转发会被自己那条 deny 一起打死。
-        // 不带 agent 走全局面（guard 靠 parent ∈ forwarding 放行）；代价是官方执行器那次图片
-        // 准入退化成文本，由本包自持的 image-admission 经 finalizeContent 补回来。
-        ...(input.parent === undefined ? {} : { parent: input.parent }),
-        // 宿主 executor 无条件读 signal.aborted（实测 §2.9-6：给 undefined 当场 TypeError），
-        // 而调用方不保证带 signal——没有就现造一个。
-        signal: signal ?? new AbortController().signal,
-      }),
+      input.execute(remoteExecutionInput(input, id, tool, args)),
       callBudgetMs + 2000,
       `ws_mcp_call: 调用超时（${callBudgetMs}ms），可重试；若反复超时请用 ws_mcp_detail 核对参数或检查服务器状态`,
       signal,

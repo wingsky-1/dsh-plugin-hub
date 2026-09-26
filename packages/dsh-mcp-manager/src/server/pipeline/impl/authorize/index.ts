@@ -58,16 +58,24 @@ export function isToolDenied(
     workspace: { parseFullServerName },
   } = pipelinePorts.get();
   const parsed = parseFullServerName(serverKey);
-  if (parsed !== undefined) {
-    const server = parsed.server;
-    const set = disabledTools?.get(parsed.root)?.get(server);
-    if (set !== undefined && set.size > 0 && set.has(tool)) return true;
-    if (parsed.root !== MIDDLEWARE_GLOBAL_ROOT) {
-      const globalSet = disabledTools?.get(MIDDLEWARE_GLOBAL_ROOT)?.get(server);
-      if (globalSet !== undefined && globalSet.size > 0 && globalSet.has(tool)) return true;
-    }
-  }
-  return false;
+  if (parsed === undefined) return false;
+  const server = parsed.server;
+  if (deniedInScope(disabledTools, parsed.root, server, tool)) return true;
+  return (
+    parsed.root !== MIDDLEWARE_GLOBAL_ROOT &&
+    deniedInScope(disabledTools, MIDDLEWARE_GLOBAL_ROOT, server, tool)
+  );
+}
+
+/** 某 root 段是否禁用该工具（集合存在、非空且命中；空集合不算禁用）。 */
+export function deniedInScope(
+  disabledTools: DisabledToolsMap | undefined,
+  root: string,
+  server: string,
+  tool: string,
+): boolean {
+  const set = disabledTools?.get(root)?.get(server);
+  return set !== undefined && set.size > 0 && set.has(tool);
 }
 
 /** 工具级禁用的拒绝原因文案（三入口统一；P0-2 语义声明）。 */

@@ -21,6 +21,8 @@ import { writeJson, readJsonBody, guardLoopbackMethod } from "../../../../../sha
 import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { RoutesManager } from "../connection/interface.ts";
+import type { ServerConfig } from "../config/interface.ts";
+import type { McpStore } from "../store/interface.ts";
 // 跨端契约常量取自共享层门面（物理定义在 shared/constants.ts），不再经 workspace 门面转出。
 import {
   MIDDLEWARE_GLOBAL_ROOT,
@@ -137,55 +139,76 @@ async function handleServersMutation(
   manager: RoutesManager,
   helpers: RouteHelpers,
 ): Promise<boolean> {
-  const { workspace } = apiPorts.get();
   if (method === "POST") {
+    await createServer(req, res, manager, helpers);
+    return true;
+  }
+  if (method !== "PATCH" && method !== "DELETE") return false;
+  const name = requireNameParam(url, res);
+  if (name === undefined) return true;
+  await changeServer(method, name, url, req, res, manager, helpers);
+  return true;
+}
+
+/** POST /servers：新增单台（201 + 投影 + 快照）。 */
+async function createServer(
+  req: Req,
+  res: Res,
+  manager: RoutesManager,
+  helpers: RouteHelpers,
+): Promise<void> {
+  const body = await readJsonBody(req);
+  if (body === undefined) {
+    writeJson(res, 400, { error: "invalid JSON body" });
+    return;
+  }
+  const { workspace } = apiPorts.get();
+  try {
+    const rec = body as Record<string, unknown>;
+    const scope = workspace.normalizeScope(rec.scope as string);
+    if (typeof rec.cwd === "string" && rec.cwd !== "") await manager.setSession(rec.cwd);
+    const created = await manager.add(rec, scope);
+    // #770-L3 只读投影：200 响应 server 字段不再明文回显写路径原文（与 A3 同一红线伞）。
+    // 缺省回落原文：外部 RoutesManager 实现未提供 summarize 时自身无秘密可泄（同 redactError 兼容口径）。
+    const server =
+      typeof manager.summarize === "function" ? manager.summarize(created, scope) : created;
+    writeJson(res, 201, { server, summary: manager.summary() });
+  } catch (error) {
+    helpers.handleError(res, error);
+  }
+}
+
+/** PATCH /servers（更新）/ DELETE /servers（移除）：先 maybeSession 切会话再按方法分流。 */
+async function changeServer(
+  method: string,
+  name: string,
+  url: URL,
+  req: Req,
+  res: Res,
+  manager: RoutesManager,
+  helpers: RouteHelpers,
+): Promise<void> {
+  try {
+    await helpers.maybeSession(url);
+    const scope = helpers.scopeParam(url);
+    if (method === "DELETE") {
+      await manager.remove(name, scope);
+      writeJson(res, 200, { ok: true, summary: manager.summary() });
+      return;
+    }
     const body = await readJsonBody(req);
     if (body === undefined) {
       writeJson(res, 400, { error: "invalid JSON body" });
-      return true;
+      return;
     }
-    try {
-      const rec = body as Record<string, unknown>;
-      const scope = workspace.normalizeScope(rec.scope as string);
-      if (typeof rec.cwd === "string" && rec.cwd !== "") await manager.setSession(rec.cwd);
-      const created = await manager.add(rec, scope);
-      // #770-L3 只读投影：200 响应 server 字段不再明文回显写路径原文（与 A3 同一红线伞）。
-      // 缺省回落原文：外部 RoutesManager 实现未提供 summarize 时自身无秘密可泄（同 redactError 兼容口径）。
-      const server =
-        typeof manager.summarize === "function" ? manager.summarize(created, scope) : created;
-      writeJson(res, 201, { server, summary: manager.summary() });
-    } catch (error) {
-      helpers.handleError(res, error);
-    }
-    return true;
+    const updated = await manager.update(name, body as Record<string, unknown>, scope);
+    // #770-L3 只读投影：同 POST 分支（与 A3 同一红线伞；缺省回落原文口径同上）。
+    const server =
+      typeof manager.summarize === "function" ? manager.summarize(updated, scope) : updated;
+    writeJson(res, 200, { server, summary: manager.summary() });
+  } catch (error) {
+    helpers.handleError(res, error);
   }
-  if (method === "PATCH" || method === "DELETE") {
-    const name = requireNameParam(url, res);
-    if (name === undefined) return true;
-    try {
-      await helpers.maybeSession(url);
-      const scope = helpers.scopeParam(url);
-      if (method === "DELETE") {
-        await manager.remove(name, scope);
-        writeJson(res, 200, { ok: true, summary: manager.summary() });
-      } else {
-        const body = await readJsonBody(req);
-        if (body === undefined) {
-          writeJson(res, 400, { error: "invalid JSON body" });
-          return true;
-        }
-        const updated = await manager.update(name, body as Record<string, unknown>, scope);
-        // #770-L3 只读投影：同 POST 分支（与 A3 同一红线伞；缺省回落原文口径同上）。
-        const server =
-          typeof manager.summarize === "function" ? manager.summarize(updated, scope) : updated;
-        writeJson(res, 200, { server, summary: manager.summary() });
-      }
-    } catch (error) {
-      helpers.handleError(res, error);
-    }
-    return true;
-  }
-  return false;
 }
 
 /** 服务器集合 CRUD：GET 快照（纯读）/ POST 添加 / PATCH 更新 / DELETE 删除。 */
@@ -320,6 +343,29 @@ export function buildReconnectRoute(manager: RoutesManager, helpers: RouteHelper
 
 // ------------------------------------------------------------ /import/json
 
+/** 单台服务器的导入落点：在册且未开 overwrite → 记 skipped；在册开 overwrite → update；否则 add。 */
+export async function importOneServer(
+  server: ServerConfig,
+  store: McpStore,
+  scope: string,
+  overwrite: boolean,
+  manager: RoutesManager,
+  imported: string[],
+  skipped: string[],
+): Promise<void> {
+  if (store.find(server.name) === undefined) {
+    await manager.add(server, scope);
+    imported.push(server.name);
+    return;
+  }
+  if (!overwrite) {
+    skipped.push(server.name);
+    return;
+  }
+  await manager.update(server.name, server, scope);
+  imported.push(server.name);
+}
+
 /** 导入 mcpServers JSON（同名 skip，overwrite=true 时更新）。 */
 export function buildImportJsonRoute(manager: RoutesManager, helpers: RouteHelpers): WebRoute {
   return {
@@ -342,17 +388,15 @@ export function buildImportJsonRoute(manager: RoutesManager, helpers: RouteHelpe
         const store = scope === SCOPE_PROJECT ? await manager.projectStoreOrThrow() : manager.store;
         const servers = configModel.parseClaudeJson(rec.json as string);
         for (const server of servers) {
-          if (store.find(server.name) !== undefined) {
-            if (rec.overwrite !== true) {
-              skipped.push(server.name);
-              continue;
-            }
-            await manager.update(server.name, server, scope);
-            imported.push(server.name);
-            continue;
-          }
-          await manager.add(server, scope);
-          imported.push(server.name);
+          await importOneServer(
+            server,
+            store,
+            scope,
+            rec.overwrite === true,
+            manager,
+            imported,
+            skipped,
+          );
         }
       } catch (error) {
         helpers.handleError(res, error);
@@ -385,6 +429,16 @@ function parseToolDisableBody(
   return { ok: true, server, tool, disabled };
 }
 
+/** 路由一致性校验：@global 或当前会话项目 root 才可写（防跨空间串台）。放行返回 null。 */
+export function workspaceMismatchError(
+  root: string,
+  sessionRoot: string | undefined,
+  server: string,
+): string | null {
+  if (root === MIDDLEWARE_GLOBAL_ROOT || root === sessionRoot) return null;
+  return `server ${JSON.stringify(server)} 不属于当前工作空间；路由一致性校验失败（防跨空间串台）`;
+}
+
 /** 工具级禁用开关（PATCH；root 路由一致性校验防跨空间串台）。 */
 export function buildToolDisableRoute(manager: RoutesManager, helpers: RouteHelpers): WebRoute {
   return {
@@ -410,12 +464,9 @@ export function buildToolDisableRoute(manager: RoutesManager, helpers: RouteHelp
       const root = parsed.root;
       const cwdParam = queryParam(url, "cwd");
       if (cwdParam !== undefined && cwdParam !== "") await manager.setSession(cwdParam);
-      const sessionRoot = manager.projectRoot;
-      const allowed = root === MIDDLEWARE_GLOBAL_ROOT || root === sessionRoot;
-      if (!allowed) {
-        writeJson(res, 400, {
-          error: `server ${JSON.stringify(server)} 不属于当前工作空间；路由一致性校验失败（防跨空间串台）`,
-        });
+      const mismatch = workspaceMismatchError(root, manager.projectRoot, server);
+      if (mismatch !== null) {
+        writeJson(res, 400, { error: mismatch });
         return;
       }
       if (typeof manager.setToolDisabled !== "function") {

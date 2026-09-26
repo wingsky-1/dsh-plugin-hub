@@ -19,9 +19,14 @@ import { dirname } from "node:path";
 import type { SseHub } from "../../../../../../shared/sse-hub.js";
 import type { Context, LoggerService } from "@deepseek-ai/cordis";
 import type { ServerConfig } from "../../config/interface.ts";
-import type { ClientUiConfig } from "../../../shared/interface.ts";
+import type { ClientUiConfig, ServerState } from "../../../shared/interface.ts";
 import type { ToolDefinition } from "@deepseek-ai/dsh-tools";
-import type { CatalogCache, CatalogViewResolver, SchemaView } from "../../catalog/interface.ts";
+import type {
+  CatalogCache,
+  CatalogServer,
+  CatalogViewResolver,
+  SchemaView,
+} from "../../catalog/interface.ts";
 import type { McpStore } from "../../store/interface.ts";
 import type { McpStatsCollector } from "../../stats/interface.ts";
 import type { McpMiddleware } from "../runtime/interface.ts";
@@ -37,6 +42,45 @@ import {
 import { orchestratorPorts } from "./impl/service/index.ts";
 import { fileMode, readTextFile, writeFileAtomic } from "../../shared/interface.ts";
 
+/** 期望连接集合的条目：(归属 root, 裸名) 键 → 配置 + scope。 */
+type DesiredServer = { name: string; server: ServerConfig; scope: string };
+/** 期望连接集合（键 = `${root}\u0000${name}`；见 buildDesiredServers）。 */
+type DesiredServers = Map<string, DesiredServer>;
+/** 目录数据源条目（裸名 → 配置 + scope；catalogServersFor 的输出面）。 */
+type CatalogServers = Map<string, { server: ServerConfig; scope: string }>;
+
+/** 纯对象表判定（env/headers 表；null 与数组都不算表）。类型谓词，收窄后免断言。 */
+export function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** 投影占位符判定（#770-A3）：含 "[REDACTED]" 或其 URL 编码形态。 */
+export function isProjectionPlaceholder(value: unknown): boolean {
+  return (
+    typeof value === "string" && (value.includes("[REDACTED]") || value.includes("%5BREDACTED%5D"))
+  );
+}
+
+/**
+ * 写路径 guard 的一格：这一（键, 值）是否携带投影占位符。
+ * 口径逐字照搬历史三段判定：args 只看数组元素、env/headers 只看一层值、
+ * 其余键只看字符串值本身——不递归（更深的嵌套历史不判，回写形状不变）。
+ */
+export function carriesProjectionPlaceholder(key: string, value: unknown): boolean {
+  if (key === "args" && Array.isArray(value)) return value.some(isProjectionPlaceholder);
+  if ((key === "env" || key === "headers") && isPlainRecord(value))
+    return Object.values(value).some(isProjectionPlaceholder);
+  return isProjectionPlaceholder(value);
+}
+
+/** add 的回写 guard：首个携带投影占位符的键名；无则 undefined（键序即判定序）。 */
+export function findProjectionPlaceholderKey(server: Record<string, unknown>): string | undefined {
+  for (const [key, value] of Object.entries(server)) {
+    if (carriesProjectionPlaceholder(key, value)) return key;
+  }
+  return undefined;
+}
+
 /**
  * 计算期望连接集合：回答「池里该有哪些 (root, 裸名)？」——全局 store + 项目级 store
  * （同名跨 root 各成一条）+ runtime 注入（同名优先）；释放与触达的执行在
@@ -49,8 +93,8 @@ function buildDesiredServers(
   projectStore: McpStore | undefined,
   runtimeRegistry: Map<string, ServerConfig>,
   poolRootFor: (scope: string) => string,
-): Map<string, { name: string; server: ServerConfig; scope: string }> {
-  const desired = new Map<string, { name: string; server: ServerConfig; scope: string }>();
+): DesiredServers {
+  const desired: DesiredServers = new Map();
   const keyFor = (scope: string, name: string): string => `${poolRootFor(scope)}\u0000${name}`;
   for (const server of store.data.servers) {
     desired.set(keyFor(SCOPE_GLOBAL, server.name), {
@@ -127,18 +171,27 @@ async function writeCatalogCacheFile(file: string, data: string): Promise<void> 
  * 模块函数而非私有方法：类成员会进入 .d.ts 声明块（导出面快照按块比对），
  * 纯内部分拆放模块级才能让导出面零 diff。 */
 function hasProjectionSecrets(server: ServerConfig): boolean {
-  if (server.env !== undefined && Object.keys(server.env).length > 0) return true;
-  if (server.headers !== undefined && Object.keys(server.headers).length > 0) return true;
-  if (typeof server.url === "string" && server.url !== "") {
-    try {
-      const parsed = new URL(server.url);
-      if (parsed.username !== "" || parsed.password !== "") return true;
-      for (const value of parsed.searchParams.values()) {
-        if (value !== "") return true;
-      }
-    } catch {
-      // 非法 URL 无可判秘密，按无秘密处理（normalizeServer 写时仍会拒绝非法 URL）。
+  if (hasSecretTable(server.env)) return true;
+  if (hasSecretTable(server.headers)) return true;
+  return urlCarriesSecrets(server.url);
+}
+
+/** 非空键值表判定（空表与缺省同义：投影里都算「无秘密」）。 */
+export function hasSecretTable(table: Record<string, string> | undefined): boolean {
+  return table !== undefined && Object.keys(table).length > 0;
+}
+
+/** URL 形态是否携带秘密（userinfo 非空 / 任一查询值非空；非字符串与非法 URL 判无）。 */
+export function urlCarriesSecrets(url: unknown): boolean {
+  if (typeof url !== "string" || url === "") return false;
+  try {
+    const parsed = new URL(url);
+    if (parsed.username !== "" || parsed.password !== "") return true;
+    for (const value of parsed.searchParams.values()) {
+      if (value !== "") return true;
     }
+  } catch {
+    // 非法 URL 无可判秘密，按无秘密处理（normalizeServer 写时仍会拒绝非法 URL）。
   }
   return false;
 }
@@ -182,7 +235,22 @@ function redactUrlForSummary(url: unknown): string | undefined {
  * env/headers 值省略、url 按 B8 脱敏、附 hasSecrets 布尔。
  *
  * 模块函数而非私有方法：理由同上（导出面零 diff）。 */
-function projectServerForSummary(server: ServerConfig): Record<string, unknown> {
+function projectServerForSummary(
+  server: ServerConfig,
+  maskSecretArgsForDisplay: (args: readonly string[]) => string[],
+): Record<string, unknown> {
+  const projected = projectBaseFieldsForSummary(server);
+  const transport =
+    server.transport === "stdio"
+      ? projectStdioFieldsForSummary(server, maskSecretArgsForDisplay)
+      : { fields: projectHttpFieldsForSummary(server), argsHadSecret: false };
+  Object.assign(projected, transport.fields);
+  projected.hasSecrets = hasProjectionSecrets(server) || transport.argsHadSecret;
+  return projected;
+}
+
+/** 投影基底：name/transport + 四个可选安全字段（缺省即省略；键序固定，勿调换）。 */
+export function projectBaseFieldsForSummary(server: ServerConfig): Record<string, unknown> {
   const projected: Record<string, unknown> = {
     name: server.name,
     transport: server.transport,
@@ -192,25 +260,38 @@ function projectServerForSummary(server: ServerConfig): Record<string, unknown> 
     projected.toolCallTimeoutMs = server.toolCallTimeoutMs;
   if (server.reconnect !== undefined) projected.reconnect = server.reconnect;
   if (server.description !== undefined) projected.description = server.description;
-  let argsHadSecret = false;
-  if (server.transport === "stdio") {
-    if (server.command !== undefined) projected.command = server.command;
-    if (server.args !== undefined) {
-      // #925：凭据形 flag 的参数值掩码（与 pipeline redact 同口径，端口取）；
-      // flag 名与非秘密元素保留可诊断，掩码值回写时由 stripProjectionPatch 丢弃。
-      const masked = orchestratorPorts.get().pipeline.maskSecretArgsForDisplay(server.args ?? []);
-      projected.args = masked;
-      argsHadSecret = masked.some((entry) => entry.includes("[REDACTED]"));
-    }
-    if (server.cwd !== undefined) projected.cwd = server.cwd;
-    // env 整体省略（见本块头注释）；有无秘密只经 hasSecrets 告知 GUI。
-  } else {
-    const redactedUrl = redactUrlForSummary(server.url);
-    if (redactedUrl !== undefined) projected.url = redactedUrl;
-    // headers 整体省略（同 env）。
-  }
-  projected.hasSecrets = hasProjectionSecrets(server) || argsHadSecret;
   return projected;
+}
+
+/**
+ * stdio 分支投影（ServerConfig[`transport`] 的 stdio 一侧）：command/args/cwd。
+ * env 整体省略（见本块头注释）；有无秘密只经 hasSecrets 告知 GUI。
+ * argsHadSecret：凭据形 flag 的参数值确被掩码过（#925，与 pipeline redact 同口径，
+ * 掩码口经参数递入以便直测）；flag 名与非秘密元素保留可诊断，掩码值回写时由
+ * stripProjectionPatch 丢弃。
+ */
+export function projectStdioFieldsForSummary(
+  server: ServerConfig,
+  maskSecretArgsForDisplay: (args: readonly string[]) => string[],
+): { fields: Record<string, unknown>; argsHadSecret: boolean } {
+  const fields: Record<string, unknown> = {};
+  if (server.command !== undefined) fields.command = server.command;
+  let argsHadSecret = false;
+  if (server.args !== undefined) {
+    const masked = maskSecretArgsForDisplay(server.args);
+    fields.args = masked;
+    argsHadSecret = masked.some((entry) => entry.includes("[REDACTED]"));
+  }
+  if (server.cwd !== undefined) fields.cwd = server.cwd;
+  return { fields, argsHadSecret };
+}
+
+/** streamable-http 分支投影（ServerConfig[`transport`] 的 http 一侧）：url 按 B8 脱敏。headers 整体省略（同 env）。 */
+export function projectHttpFieldsForSummary(server: ServerConfig): Record<string, unknown> {
+  const fields: Record<string, unknown> = {};
+  const redactedUrl = redactUrlForSummary(server.url);
+  if (redactedUrl !== undefined) fields.url = redactedUrl;
+  return fields;
 }
 
 /**
@@ -221,21 +302,240 @@ function projectServerForSummary(server: ServerConfig): Record<string, unknown> 
  * 模块函数而非私有方法：理由同上（导出面零 diff）。 */
 function stripProjectionPatch(patch: Record<string, unknown>): Record<string, unknown> {
   const next: Record<string, unknown> = { ...patch };
-  const isProjection = (value: unknown): boolean =>
-    typeof value === "string" && (value.includes("[REDACTED]") || value.includes("%5BREDACTED%5D"));
-  if (isProjection(next.url)) delete next.url;
-  if (Array.isArray(next.args) && next.args.some((entry) => isProjection(entry))) delete next.args;
-  for (const key of ["env", "headers"] as const) {
+  if (isProjectionPlaceholder(next.url)) delete next.url;
+  if (Array.isArray(next.args) && next.args.some(isProjectionPlaceholder)) delete next.args;
+  for (const key of PROJECTION_SECRET_TABLES) {
     const table = next[key];
-    if (typeof table === "object" && table !== null && !Array.isArray(table)) {
-      const kept = Object.entries(table as Record<string, unknown>).filter(
-        ([, value]) => !isProjection(value),
-      );
-      if (kept.length === 0) delete next[key];
-      else next[key] = Object.fromEntries(kept);
-    }
+    if (!isPlainRecord(table)) continue;
+    const kept = Object.entries(table).filter(([, value]) => !isProjectionPlaceholder(value));
+    if (kept.length === 0) delete next[key];
+    else next[key] = Object.fromEntries(kept);
   }
   return next;
+}
+
+/** 整表省略的两张凭据表（投影与回写 guard 共用同一组键）。 */
+const PROJECTION_SECRET_TABLES: readonly ("env" | "headers")[] = ["env", "headers"];
+
+/** 空 cwd 判定（类型谓词）：undefined / null / "" 三形态都判「无项目」，收窄后无需断言。 */
+export function isBlankCwd(cwd: string | null | undefined): cwd is null | undefined | "" {
+  return cwd === undefined || cwd === null || cwd === "";
+}
+
+/**
+ * 会话 cwd → 项目根（catalogServersFor 与 setSession 共用的同一口径）。
+ * 查表口经参数递入：模块级函数因此不依赖端口装配，可直测。
+ */
+export async function projectRootForCwd(
+  cwd: string | undefined,
+  findProjectRoot: (cwd: string | undefined) => Promise<string>,
+): Promise<string | undefined> {
+  if (isBlankCwd(cwd)) return undefined;
+  return findProjectRoot(cwd);
+}
+
+/** (键, 配置) 对适配：store 侧目录键即 server.name（runtimeRegistry 侧用注册表键，见 collectCatalogServers）。 */
+export function serverEntry(server: ServerConfig): readonly [string, ServerConfig] {
+  return [server.name, server];
+}
+
+/**
+ * enabled 的服务器并进目录数据源（同名后者覆盖前者——调用顺序即优先级：
+ * 全局 store → runtimeRegistry → 项目级 store，#770-11 项目优先）。
+ * 键取 entry 键而非 server.name：runtimeRegistry 的键是注册名，与条目内的 name 不必然同形。
+ */
+export function collectCatalogServers(
+  into: CatalogServers,
+  entries: Iterable<readonly [string, ServerConfig]>,
+  scope: string,
+): void {
+  for (const [name, server] of entries) {
+    if (server.enabled === false) continue;
+    into.set(name, { server, scope });
+  }
+}
+
+/** 重读配置且失败只 warn 不外抛（读路径不该被配置损坏打断）；返回是否变化。 */
+export async function reloadStoreQuietly(
+  store: McpStore,
+  onFail: (error: unknown) => void,
+): Promise<boolean> {
+  try {
+    return await store.reloadIfChanged();
+  } catch (error) {
+    onFail(error);
+    return false;
+  }
+}
+
+/**
+ * 触达单元（fire-and-forget，setSession 永不挂起）：成功即淘汰失效单元。
+ * 必须带拒绝处理（#903 M4），否则 projectUnitFor 翻错即 unhandled rejection。
+ */
+export function touchUnitInBackground(
+  middleware: McpMiddleware,
+  target: string,
+  onFail: (error: unknown) => void,
+): void {
+  void middleware.projectUnitFor(target).then(
+    (unit) => {
+      if (unit !== undefined) middleware.evictIfNeeded();
+    },
+    (error: unknown) => onFail(error),
+  );
+}
+
+/** 池内不再需要的连接（配置里已无 / 已禁用）释放；返回是否释放过。 */
+export function releaseUndesiredConnections(
+  middleware: McpMiddleware | undefined,
+  desired: DesiredServers,
+): boolean {
+  if (middleware === undefined) return false;
+  let released = false;
+  // 单池后「拆」只有这一个落点——旧直连账本的 stop 随账本一并退役。
+  for (const unit of [...middleware.units.values()]) {
+    for (const serverName of [...unit.connections.keys()]) {
+      const want = desired.get(`${unit.root}\u0000${serverName}`);
+      if (want !== undefined && want.server.enabled !== false) continue;
+      if (middleware.releaseConnection(unit.root, serverName)) released = true;
+    }
+  }
+  return released;
+}
+
+/**
+ * 该 (root, 裸名) 是否还不在池里（= 连接集合变化）。中间层缺失时**不算**变化：
+ * 实例缺失时什么都触达不了，记变化只会让状态广播空转。
+ */
+export function absentFromPool(
+  middleware: McpMiddleware | undefined,
+  root: string,
+  name: string,
+): boolean {
+  if (middleware === undefined) return false;
+  return !(middleware.units.get(root)?.connections.has(name) ?? false);
+}
+
+/** 触达落点：项目级取当前项目 root（无活动项目即无处触达），全局级落 @global。 */
+export function touchRootFor(scope: string, projectRoot: string | undefined): string | undefined {
+  return scope === SCOPE_PROJECT ? projectRoot : MIDDLEWARE_GLOBAL_ROOT;
+}
+
+/**
+ * 池同步本体（reconcileServers 的执行面，两个变化原因各自成步）：
+ * ① 释放池内不再需要的连接；② 触达配置里应有而池内尚缺的条目。返回集合是否变化。
+ */
+export function syncPool(
+  middleware: McpMiddleware | undefined,
+  desired: DesiredServers,
+  projectRoot: string | undefined,
+  start: (name: string, scope: string) => void,
+): boolean {
+  let changed = releaseUndesiredConnections(middleware, desired);
+  for (const want of desired.values()) {
+    if (want.server.enabled === false) continue;
+    const root = touchRootFor(want.scope, projectRoot);
+    if (root === undefined) continue;
+    if (absentFromPool(middleware, root, want.name)) changed = true;
+    // 全部服务器一律经中间层单元触达（单池）：项目级幂等触达当前项目单元，
+    // 全局级触达 @global 单元；两侧都由 start 内部下沉。
+    start(want.name, want.scope);
+  }
+  return changed;
+}
+
+/**
+ * connect 的配置来源定位：store 优先；global scope 未命中时回退 runtimeRegistry
+ * （F2 #382——runtime 注入条目不落 store）。回退即 warn（口径与旧实现同文案）。
+ */
+export function resolveConnectableServer(
+  store: McpStore,
+  runtimeRegistry: ReadonlyMap<string, ServerConfig>,
+  name: string,
+  scope: string,
+  warn: (message: string) => void,
+): ServerConfig | undefined {
+  const stored = store.find(name);
+  if (stored !== undefined) return stored;
+  if (scope !== SCOPE_GLOBAL) return undefined;
+  const runtime = runtimeRegistry.get(name);
+  if (runtime === undefined) return undefined;
+  warn(`dsh-mcp-manager: server "${name}" not in store; using runtime registry entry`);
+  return runtime;
+}
+
+/** 池内已连接条目的 summary 视图输入（由 manager 装配，投影函数不反查池）。 */
+interface PooledSummaryView {
+  /** 目录可用时的工具名（目录缺失 / 发现失败即空表）。 */
+  tools: readonly string[];
+  /** 本单元的工具禁用集与 @global 继承集（各自可缺省）。 */
+  disabled: ReadonlySet<string> | undefined;
+  inheritedDisabled: ReadonlySet<string> | undefined;
+  /** 读时刷新的六态投影（裁定 U；单元/条目缺失时为 undefined）。 */
+  status: ServerState | undefined;
+  /** 已脱敏的错误文案（连接错误优先、目录发现失败次之）。 */
+  error: string | undefined;
+}
+
+/** 目录可用时的工具名表（目录缺失或发现失败一律空表——解释「connected 却 0 工具」靠 error 而非此处）。 */
+export function catalogToolNames(catalog: CatalogServer | undefined): string[] {
+  if (catalog === undefined || catalog.unavailable !== undefined) return [];
+  return [...catalog.tools.keys()];
+}
+
+/** 池内条目的错误文案来源：entry.error 优先、目录发现失败次之（脱敏在显示侧做，见 redact 参数）。 */
+export function pooledErrorText(
+  entry: ConnectionEntry,
+  catalog: CatalogServer | undefined,
+  redact: (error: unknown) => string,
+): string | undefined {
+  const raw = entry.error !== undefined ? entry.error : catalog?.unavailable;
+  return raw === undefined ? undefined : redact(raw);
+}
+
+/** 工具禁用判定：本单元禁用集 ∪ @global 继承集（两者各自可缺省）。 */
+export function isToolDisabledIn(
+  tool: string,
+  disabled: ReadonlySet<string> | undefined,
+  inheritedDisabled: ReadonlySet<string> | undefined,
+): boolean {
+  return (disabled?.has(tool) ?? false) || (inheritedDisabled?.has(tool) ?? false);
+}
+
+/** 池内条目的 summary 投影（#770-A3 只读基底 + 池面：状态/工具/禁用/错因）。 */
+export function summarizePooled(
+  base: Record<string, unknown>,
+  scope: string,
+  view: PooledSummaryView,
+): Record<string, unknown> {
+  const disabledList = view.tools.filter((tool) =>
+    isToolDisabledIn(tool, view.disabled, view.inheritedDisabled),
+  );
+  return {
+    ...base,
+    scope,
+    status: view.status,
+    // 目录发现失败（unavailable）时透出原因：解释 connected 却 0 工具。
+    error: view.error,
+    tools: [...view.tools],
+    disabledTools: disabledList.length > 0 ? disabledList : undefined,
+  };
+}
+
+/** 未在池里的条目投影：禁用 → disabled，其余 → stopped，工具面为空（与旧直连账本兜底同口径）。 */
+export function summarizeAbsent(
+  base: Record<string, unknown>,
+  scope: string,
+  server: ServerConfig,
+): Record<string, unknown> {
+  return {
+    ...base,
+    scope,
+    status: server.enabled === false ? SERVER_STATES.disabled : SERVER_STATES.stopped,
+    error: undefined,
+    tools: [],
+    disabledTools: undefined,
+  };
 }
 
 /**
@@ -694,32 +994,18 @@ export class McpManager {
    *   但条目内容仍经 catalogViewFor/compose 进入注入文本。
    * - summary() 仍列全局 + 项目两条（GUI 两条 vs 模型取其一）属预期，不在此收敛。
    */
-  async catalogServersFor(
-    cwd: string | undefined,
-  ): Promise<Map<string, { server: ServerConfig; scope: string }>> {
-    const servers = new Map<string, { server: ServerConfig; scope: string }>();
-    for (const server of this.store.data.servers) {
-      if (server.enabled === false) continue;
-      servers.set(server.name, { server, scope: SCOPE_GLOBAL });
-    }
+  async catalogServersFor(cwd: string | undefined): Promise<CatalogServers> {
+    const servers: CatalogServers = new Map();
+    collectCatalogServers(servers, this.store.data.servers.map(serverEntry), SCOPE_GLOBAL);
     // 运行时注入（registerServer 内存态）：并入目录数据源，同名 runtime 优先。
-    for (const [name, server] of this.runtimeRegistry) {
-      if (server.enabled === false) continue;
-      servers.set(name, { server, scope: SCOPE_GLOBAL });
-    }
+    collectCatalogServers(servers, this.runtimeRegistry, SCOPE_GLOBAL);
     const { workspace } = orchestratorPorts.get();
-    const root =
-      cwd === undefined || cwd === null || cwd === ""
-        ? undefined
-        : await workspace.findProjectRoot(cwd);
-    const store = root === undefined ? undefined : await this.projectStoreFor(root);
-    if (store !== undefined) {
-      for (const server of store.data.servers) {
-        if (server.enabled === false) continue;
-        // 同名项目覆盖全局（#770-11 项目优先）：目录按裸名只取一条，取会话项目那条。
-        servers.set(server.name, { server, scope: SCOPE_PROJECT });
-      }
-    }
+    const root = await projectRootForCwd(cwd, workspace.findProjectRoot);
+    if (root === undefined) return servers;
+    const store = await this.projectStoreFor(root);
+    if (store === undefined) return servers;
+    // 同名项目覆盖全局（#770-11 项目优先）：目录按裸名只取一条，取会话项目那条。
+    collectCatalogServers(servers, store.data.servers.map(serverEntry), SCOPE_PROJECT);
     return servers;
   }
 
@@ -746,10 +1032,7 @@ export class McpManager {
    */
   async setSession(cwd: string | undefined): Promise<void> {
     const { workspace } = orchestratorPorts.get();
-    const root =
-      cwd === undefined || cwd === null || cwd === ""
-        ? undefined
-        : await workspace.findProjectRoot(cwd);
+    const root = await projectRootForCwd(cwd, workspace.findProjectRoot);
     if (root === this.projectRoot && this.projectStore !== undefined) return;
     // 本就没有活动项目且新会话同样无项目（空 cwd）：保持幂等，避免反复
     // emitStatus → SSE → 客户端 refresh 的广播循环。
@@ -761,27 +1044,20 @@ export class McpManager {
       this.projectStore = await this.projectStoreFor(root);
     }
     // 全局配置同样重读（外部手动编辑 <DSH_HOME>/@wingsky-1/dsh-mcp-manager/mcp.json）。
-    try {
-      await this.store.reloadIfChanged();
-    } catch (error) {
+    await reloadStoreQuietly(this.store, (error) => {
       this.logger.warn(`dsh-mcp-manager: reload global config failed: ${this.redactError(error)}`);
-    }
+    });
     if (this.middleware !== undefined) {
       // 仅触达单元（fire-and-forget 惰性连接在 projectUnitFor 内）。无项目 cwd 也回落
       // 全局虚拟 root @global——单池后 @global 恒可达（可达性三件套之二）。
       const target = root ?? MIDDLEWARE_GLOBAL_ROOT;
-      void this.middleware.projectUnitFor(target).then(
-        (unit) => {
-          if (unit !== undefined) this.middleware?.evictIfNeeded();
-        },
-        (error: unknown) => {
-          // #903 M4：fire-and-forget 必须带拒绝处理，否则 projectServersFor/
-          // ensureRootLoaded 翻错即 unhandled rejection（setSession 永不挂起，但错不能丢）。
-          this.logger.warn(
-            `dsh-mcp-manager: setSession touch unit(${target}) failed: ${this.redactError(error)}`,
-          );
-        },
-      );
+      touchUnitInBackground(this.middleware, target, (error) => {
+        // #903 M4：fire-and-forget 必须带拒绝处理，否则 projectServersFor/
+        // ensureRootLoaded 翻错即 unhandled rejection（setSession 永不挂起，但错不能丢）。
+        this.logger.warn(
+          `dsh-mcp-manager: setSession touch unit(${target}) failed: ${this.redactError(error)}`,
+        );
+      });
     }
     this.emitStatus();
   }
@@ -840,20 +1116,16 @@ export class McpManager {
    * 全局服务器 → 项目级单元被误拆」链路的放大器（根因见 start 内注释）。
    */
   async refreshFromDisk(): Promise<void> {
-    let configChanged = false;
-    try {
-      configChanged = (await this.store.reloadIfChanged()) || configChanged;
-    } catch (error) {
+    let configChanged = await reloadStoreQuietly(this.store, (error) => {
       this.logger.warn(`dsh-mcp-manager: reload global config failed: ${this.redactError(error)}`);
-    }
+    });
     if (this.projectStore !== undefined) {
-      try {
-        configChanged = (await this.projectStore.reloadIfChanged()) || configChanged;
-      } catch (error) {
-        this.logger.warn(
-          `dsh-mcp-manager: reload project config failed: ${this.redactError(error)}`,
-        );
-      }
+      configChanged =
+        (await reloadStoreQuietly(this.projectStore, (error) => {
+          this.logger.warn(
+            `dsh-mcp-manager: reload project config failed: ${this.redactError(error)}`,
+          );
+        })) || configChanged;
     }
     if (!configChanged) return;
     this.reconcileServers();
@@ -877,39 +1149,14 @@ export class McpManager {
     if (this.reconcileBusy) return false;
     this.reconcileBusy = true;
     try {
-      const desired = buildDesiredServers(
-        this.store,
-        this.projectStore,
-        this.runtimeRegistry,
-        (scope) => this.poolRootFor(scope),
+      return syncPool(
+        this.middleware,
+        buildDesiredServers(this.store, this.projectStore, this.runtimeRegistry, (scope) =>
+          this.poolRootFor(scope),
+        ),
+        this.projectRoot,
+        (name, scope) => this.start(name, scope),
       );
-      let changed = false;
-      const mw = this.middleware;
-      if (mw !== undefined) {
-        // 单池后「拆」只有这一个落点——旧直连账本的 stop 随账本一并退役。
-        for (const unit of [...mw.units.values()]) {
-          for (const serverName of [...unit.connections.keys()]) {
-            const want = desired.get(`${unit.root}\u0000${serverName}`);
-            if (want === undefined || want.server.enabled === false) {
-              if (mw.releaseConnection(unit.root, serverName)) changed = true;
-            }
-          }
-        }
-      }
-      for (const want of desired.values()) {
-        if (want.server.enabled === false) continue;
-        const root = want.scope === SCOPE_PROJECT ? this.projectRoot : MIDDLEWARE_GLOBAL_ROOT;
-        if (root === undefined) continue;
-        // 「集合变化」= 该 (root, 裸名) 还不在池里（单元未建 / 该条目未建）。实例缺失时
-        // 什么都触达不了，不计变化。
-        if (mw !== undefined && !(mw.units.get(root)?.connections.has(want.name) ?? false)) {
-          changed = true;
-        }
-        // 全部服务器一律经中间层单元触达（单池）：项目级幂等触达当前项目单元，
-        // 全局级触达 @global 单元；两侧都由 start 内部下沉。
-        this.start(want.name, want.scope);
-      }
-      return changed;
     } finally {
       this.reconcileBusy = false;
     }
@@ -1123,39 +1370,11 @@ export class McpManager {
 
   async add(server: Record<string, unknown>, scope: string = SCOPE_GLOBAL): Promise<ServerConfig> {
     // #770-A3 回写 guard：新建无既有值可保，投影占位符进写路径即抛错（调用方重填真值）。
-    for (const [key, value] of Object.entries(server)) {
-      if (
-        typeof value === "string" &&
-        (value.includes("[REDACTED]") || value.includes("%5BREDACTED%5D"))
-      ) {
-        throw new Error(
-          `server ${JSON.stringify(key)} must not contain projection placeholder "[REDACTED]" (re-enter the real value)`,
-        );
-      }
-      if (key === "args" && Array.isArray(value)) {
-        for (const sub of value) {
-          if (
-            typeof sub === "string" &&
-            (sub.includes("[REDACTED]") || sub.includes("%5BREDACTED%5D"))
-          ) {
-            throw new Error(
-              `server ${JSON.stringify(key)} must not contain projection placeholder "[REDACTED]" (re-enter the real value)`,
-            );
-          }
-        }
-      }
-      if ((key === "env" || key === "headers") && typeof value === "object" && value !== null) {
-        for (const sub of Object.values(value as Record<string, unknown>)) {
-          if (
-            typeof sub === "string" &&
-            (sub.includes("[REDACTED]") || sub.includes("%5BREDACTED%5D"))
-          ) {
-            throw new Error(
-              `server ${JSON.stringify(key)} must not contain projection placeholder "[REDACTED]" (re-enter the real value)`,
-            );
-          }
-        }
-      }
+    const placeholderKey = findProjectionPlaceholderKey(server);
+    if (placeholderKey !== undefined) {
+      throw new Error(
+        `server ${JSON.stringify(placeholderKey)} must not contain projection placeholder "[REDACTED]" (re-enter the real value)`,
+      );
     }
     const config = orchestratorPorts.get().configModel.normalizeServer(server);
     // #770-2 环境净化：写边界凭据策略门（与 update/import 同门；normalize 保持纯形状校验）。
@@ -1222,18 +1441,11 @@ export class McpManager {
    */
   async connect(name: string, scope: string = SCOPE_GLOBAL): Promise<void> {
     const store = scope === SCOPE_PROJECT ? await this.projectStoreOrThrow() : this.store;
-    let server = store.find(name);
     // F2（#382）：runtime 注入条目不落 store，global scope 查不到时回退
     // runtimeRegistry（与 summary/catalogServersFor 同口径）。
-    if (server === undefined && scope === SCOPE_GLOBAL) {
-      const runtime = this.runtimeRegistry.get(name);
-      if (runtime !== undefined) {
-        this.logger.warn(
-          `dsh-mcp-manager: server "${name}" not in store; using runtime registry entry`,
-        );
-        server = runtime;
-      }
-    }
+    const server = resolveConnectableServer(store, this.runtimeRegistry, name, scope, (message) =>
+      this.logger.warn(message),
+    );
     if (server === undefined) throw new Error(`server "${name}" not found in ${scope} scope`);
     const mw = this.middleware;
     if (mw === undefined) throw new Error("middleware is not initialized (apply first)");
@@ -1335,54 +1547,34 @@ export class McpManager {
   summarize(server: ServerConfig, scope: string): Record<string, unknown> {
     // 单池（#767 笔 1a）：状态与工具列表一律从连接池单元 + 目录投影取（旧实现的
     // 「直连账本兜底分支」随账本退役）。
-    // #770-A3 只读投影：两分支一律经 projectServerForSummary（env/headers 省略、
-    // url 按 B8 仅脱敏 userinfo/searchParams），永不明文下发凭据；写路径
-    // （add/update）永不消费此处产出（见 stripProjectionPatch）。
-    const { catalog: catalogPort } = orchestratorPorts.get();
+    // #770-A3 只读投影：两分支共用同一基底（env/headers 省略、url 按 B8 仅脱敏
+    // userinfo/searchParams），永不明文下发凭据；写路径（add/update）永不消费
+    // 此处产出（见 stripProjectionPatch）。
+    const { catalog: catalogPort, pipeline } = orchestratorPorts.get();
+    const base = projectServerForSummary(server, pipeline.maskSecretArgsForDisplay);
     const unit = this.middlewareUnitFor(server.name, scope);
     const entry = unit?.connections.get(server.name);
-    if (unit !== undefined && entry !== undefined) {
-      const catalog = catalogPort.catalogDirectory.entryFor(unit.root, server.name);
-      const disabledTools = this.disabledTools.get(unit.root)?.get(server.name);
-      const globalTools =
+    // 单元缺失 / 该服务器不在池里（未连接、userDisabled 断开、配置禁用）→ summarizeAbsent。
+    if (unit === undefined || entry === undefined) return summarizeAbsent(base, scope, server);
+    const catalog = catalogPort.catalogDirectory.entryFor(unit.root, server.name);
+    return summarizePooled(base, scope, {
+      tools: catalogToolNames(catalog),
+      disabled: this.disabledTools.get(unit.root)?.get(server.name),
+      inheritedDisabled:
         unit.root === MIDDLEWARE_GLOBAL_ROOT
           ? undefined
-          : this.disabledTools.get(MIDDLEWARE_GLOBAL_ROOT)?.get(server.name);
-      const tools =
-        catalog !== undefined && catalog.unavailable === undefined ? [...catalog.tools.keys()] : [];
-      const disabledList = tools.filter(
-        (tool) => (disabledTools?.has(tool) ?? false) || (globalTools?.has(tool) ?? false),
-      );
+          : this.disabledTools.get(MIDDLEWARE_GLOBAL_ROOT)?.get(server.name),
+      // 状态经读时刷新的投影取（裁定 U）：entry.status 只在装载窗口结算时写入，
+      // 「曾连上、工具前缀消失」这类事实只有重算才看得见。
+      status: this.middleware?.statusOf(unit.root, server.name),
       // #770-L4 显示侧脱敏（分诊结论）：settled outcome.error 可含凭据——① handle.ready
       // 拒因来自官方（官方手握展开后的明文 Config，其文案不透明，不能证伪不回显输入）；
       // ② failed 文案经 withOfficialLogs 接入官方日志收集链原文（同不透明）。且状态与错因
       // 分源（status 读时刷新、error 结算时冻结）：常驻重连成功后 connected 可携 stale
       // failed 文案，故 connected 分支亦须脱敏。脱敏只在显示侧（redaction 快照 +
       // redactError），lifecycle 域内原文不动；已脱敏源二次脱敏恒等无害。
-      const rawError = entry.error !== undefined ? entry.error : catalog?.unavailable;
-      const error = rawError !== undefined ? this.redactError(rawError) : undefined;
-      return {
-        ...projectServerForSummary(server),
-        scope,
-        // 状态经读时刷新的投影取（裁定 U）：entry.status 只在装载窗口结算时写入，
-        // 「曾连上、工具前缀消失」这类事实只有重算才看得见。
-        status: this.middleware?.statusOf(unit.root, server.name),
-        // 目录发现失败（unavailable）时透出原因：解释 connected 却 0 工具。
-        error,
-        tools,
-        disabledTools: disabledList.length > 0 ? disabledList : undefined,
-      };
-    }
-    // 单元缺失 / 该服务器不在池里（未连接、userDisabled 断开、配置禁用）：禁用 → disabled，
-    // 其余 → stopped，工具面为空（与旧直连账本的兜底分支同口径）。
-    return {
-      ...projectServerForSummary(server),
-      scope,
-      status: server.enabled === false ? SERVER_STATES.disabled : SERVER_STATES.stopped,
-      error: undefined,
-      tools: [],
-      disabledTools: undefined,
-    };
+      error: pooledErrorText(entry, catalog, (error) => this.redactError(error)),
+    });
   }
 
   async dispose(): Promise<void> {

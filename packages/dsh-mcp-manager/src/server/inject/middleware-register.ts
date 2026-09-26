@@ -16,7 +16,7 @@
 
 import type { Context } from "@deepseek-ai/cordis";
 import type { ToolDefinition, ToolExecution, PreToolDecision } from "@deepseek-ai/dsh-tools";
-import type { McpMiddleware } from "../connection/runtime/interface.ts";
+import type { McpMiddleware, ProjectUnit } from "../connection/runtime/interface.ts";
 import { LIST_DEFAULT_TOOLS_PER_SERVER } from "../shared/interface.ts";
 import type { ModelContentBlock } from "../shared/interface.ts";
 import { MIDDLEWARE_GLOBAL_ROOT } from "../../shared/interface.ts";
@@ -289,20 +289,12 @@ function parseCallParams(args: unknown): { server: string; tool: string; argumen
   return { server, tool, arguments: params.arguments };
 }
 
-async function executeCall(
+/** 调用前置校验：解析 server 全名、校验路由一致性、定位目标单元（任一环不可达即抛）。 */
+export async function assertCallableTarget(
   toolCtx: MiddlewareToolContext,
-  args: unknown,
-  /**
-   * 完整执行身份。为什么不是 `Pick<ToolRunContext, ...>`：图片准入的投影要以**本 exec 对象**
-   * 为键存进 WeakMap，而 `finalizeContent` 收到的是 `ToolExecution`——两处必须是同一个类型，
-   * 否则同一对象在两侧被读成不同形状（`ToolRunContext extends ToolExecution`，收窄无损）。
-   */
-  exec: ToolExecution,
-) {
-  const root = await toolCtx.resolveRoot(exec.agent);
-  if (root === undefined) throw new Error("ws_mcp_call: 无法确定工作空间，请先选择工作区");
-  const { server, tool, arguments: callArguments } = parseCallParams(args);
-  if (server === "" || tool === "") throw new Error("ws_mcp_call: server 与 tool 均为必填");
+  server: string,
+  root: string,
+): Promise<{ parsed: { root: string; server: string }; unit: ProjectUnit }> {
   const {
     workspace: { parseFullServerName },
   } = injectPorts.get();
@@ -318,7 +310,52 @@ async function executeCall(
   const unit = await toolCtx.mw.projectUnitFor(targetRoot);
   if (unit === undefined)
     throw new Error(`ws_mcp_call: 工作空间 ${JSON.stringify(targetRoot)} 无项目级 MCP 配置`);
-  await toolCtx.mw.ensureConnected(targetRoot, parsed.server);
+  return { parsed, unit };
+}
+
+/** 调用成功出口的统计记账（未启用统计即无操作）。 */
+export function recordCallOk(
+  toolCtx: MiddlewareToolContext,
+  server: string,
+  tool: string,
+  startTime: number,
+): void {
+  if (toolCtx.stats?.isEnabled() !== true) return;
+  toolCtx.stats.recordCall(server, tool, Date.now() - startTime, true);
+}
+
+/** 调用失败出口的统计记账（错因先脱敏，见 redactedStatsError）。 */
+export function recordCallFailed(
+  toolCtx: MiddlewareToolContext,
+  server: string,
+  tool: string,
+  startTime: number,
+  error: unknown,
+): void {
+  if (toolCtx.stats?.isEnabled() !== true) return;
+  const durationMs = Date.now() - startTime;
+  // #770-A4：先脱敏再传入（复用 C 快照 + 展开，见 redactedStatsError）；
+  // 收集器保持纯，不在内部引 pipeline。回落 undefined 时仍计 errors、不存原文。
+  const redacted = redactedStatsError(toolCtx.mw, error);
+  if (redacted === undefined) toolCtx.stats.recordCall(server, tool, durationMs, false);
+  else toolCtx.stats.recordCall(server, tool, durationMs, false, redacted);
+}
+async function executeCall(
+  toolCtx: MiddlewareToolContext,
+  args: unknown,
+  /**
+   * 完整执行身份。为什么不是 `Pick<ToolRunContext, ...>`：图片准入的投影要以**本 exec 对象**
+   * 为键存进 WeakMap，而 `finalizeContent` 收到的是 `ToolExecution`——两处必须是同一个类型，
+   * 否则同一对象在两侧被读成不同形状（`ToolRunContext extends ToolExecution`，收窄无损）。
+   */
+  exec: ToolExecution,
+) {
+  const root = await toolCtx.resolveRoot(exec.agent);
+  if (root === undefined) throw new Error("ws_mcp_call: 无法确定工作空间，请先选择工作区");
+  const { server, tool, arguments: callArguments } = parseCallParams(args);
+  if (server === "" || tool === "") throw new Error("ws_mcp_call: server 与 tool 均为必填");
+  const { parsed, unit } = await assertCallableTarget(toolCtx, server, root);
+  await toolCtx.mw.ensureConnected(unit.root, parsed.server);
   // #767 笔 1b 交付物 C（F4 收口）：这里的 agent 交给 dispatch 后**只服务封装直呼分支**
   // （它的 execute 依赖 agent.session.header.cwd 做 projectPath 补全）；远端转发分支不再携带
   // agent（去 agent 后官方那次图片准入退化成本包自持的 image-admission，见 executeCall 尾部）。
@@ -333,19 +370,9 @@ async function executeCall(
       // token 即本次调用的身份：子调用以它为 parent，guard 据此区分「模型直呼」与「我方转发」。
       ...(exec.token === undefined ? {} : { parent: exec.token }),
     });
-    const durationMs = Date.now() - startTime;
-    if (toolCtx.stats?.isEnabled()) {
-      toolCtx.stats.recordCall(parsed.server, tool, durationMs, true);
-    }
+    recordCallOk(toolCtx, parsed.server, tool, startTime);
   } catch (error) {
-    const durationMs = Date.now() - startTime;
-    if (toolCtx.stats?.isEnabled()) {
-      // #770-A4：先脱敏再传入（复用 C 快照 + 展开，见 redactedStatsError）；
-      // 收集器保持纯，不在内部引 pipeline。回落 undefined 时仍计 errors、不存原文。
-      const redacted = redactedStatsError(toolCtx.mw, error);
-      if (redacted === undefined) toolCtx.stats.recordCall(parsed.server, tool, durationMs, false);
-      else toolCtx.stats.recordCall(parsed.server, tool, durationMs, false, redacted);
-    }
+    recordCallFailed(toolCtx, parsed.server, tool, startTime, error);
     throw error;
   }
   // 交付物 B（A+ 自持图片准入）：远端原始图片块出现时才建模型面投影，按 exec 键控存进表；
@@ -744,6 +771,42 @@ function handleCallGuard(args: unknown, mw: McpMiddleware): PreToolDecision | un
  */
 type ServerIdResolver = (id: string) => { root: string; server: string } | undefined;
 
+/** 注册名 `mcp__<id>__<tool>` → (id 段, 工具裸名)；无 `__` 或空工具名 → undefined（不归本守卫管）。 */
+export function splitRegisteredName(name: string): { segment: string; tool: string } | undefined {
+  const rest = name.slice("mcp__".length);
+  const separator = rest.indexOf("__");
+  if (separator <= 0) return undefined;
+  const tool = rest.slice(separator + 2);
+  if (tool === "") return undefined;
+  return { segment: rest.slice(0, separator), tool };
+}
+
+/**
+ * id 反解（#767 S1-5b 裁定 AG③ / S1-4d 遗留缺口）：注册名中段是 (root, name) 分配的 id，
+ * 不是裸服务器名——不反解就把它当 server 名查禁用表，工具级禁用对直呼路径**恒 miss**。
+ * 反查不到时按裸名解释：未登记 id 的注册面（旧形态名、测试注入的假条目）口径不变。
+ */
+export async function resolveRegisteredTarget(
+  agent: unknown,
+  segment: string,
+  resolveRoot: (agent: unknown) => Promise<string | undefined>,
+  resolveServerId: ServerIdResolver | undefined,
+): Promise<{ server: string; root: string | undefined }> {
+  const resolved = resolveServerId?.(segment);
+  return {
+    server: resolved?.server ?? segment,
+    root: resolved?.root ?? (await resolveRoot(agent)),
+  };
+}
+
+/** @global 共享禁用记录命中判定（root 解析不出时的最宽可见面）。 */
+export function globalScopeToolDisabled(
+  disabledTools: DisabledToolsMap | undefined,
+  server: string,
+  tool: string,
+): boolean {
+  return disabledTools?.get(MIDDLEWARE_GLOBAL_ROOT)?.get(server)?.has(tool) === true;
+}
 async function handleDirectMcpGuard(
   name: string,
   agent: unknown,
@@ -755,12 +818,9 @@ async function handleDirectMcpGuard(
     workspace: { fullServerName },
     pipeline: { isToolDenied, toolDisabledReason },
   } = injectPorts.get();
-  const rest = name.slice("mcp__".length);
-  const separator = rest.indexOf("__");
-  if (separator <= 0) return undefined;
-  const segment = rest.slice(0, separator);
-  const tool = rest.slice(separator + 2);
-  if (tool === "") return undefined;
+  const split = splitRegisteredName(name);
+  if (split === undefined) return undefined;
+  const { segment, tool } = split;
   // B11（规格化不可逆；#903 B-M4 由 fail-open 改 fail-closed）：server/tool 名含连续
   // 双下划线时，第一个 `__` 分割无法唯一还原 (server, tool)（mcp__my__sv__t 既可能是
   // server="my"+tool="sv__t"，也可能是 server="my__sv"+tool="t"）——tool 段仍含 `__`
@@ -780,12 +840,15 @@ async function handleDirectMcpGuard(
   // id 反解（#767 S1-5b 裁定 AG③ / S1-4d 遗留缺口）：注册名中段是 (root, name) 分配的 id，
   // 不是裸服务器名——不反解就把它当 server 名查禁用表，工具级禁用对直呼路径**恒 miss**。
   // 反查不到时按裸名解释：未登记 id 的注册面（旧形态名、测试注入的假条目）口径不变。
-  const resolved = resolveServerId?.(segment);
-  const server = resolved?.server ?? segment;
-  const root = resolved?.root ?? (await resolveRoot(agent));
+  const { server, root } = await resolveRegisteredTarget(
+    agent,
+    segment,
+    resolveRoot,
+    resolveServerId,
+  );
   if (root === undefined) {
     // 无法解析会话 root：按最宽可见范围放行（仅 @global 共享记录生效）。
-    if (disabledTools?.get(MIDDLEWARE_GLOBAL_ROOT)?.get(server)?.has(tool) === true) {
+    if (globalScopeToolDisabled(disabledTools, server, tool)) {
       return {
         kind: "deny",
         reason: toolDisabledReason(`@${MIDDLEWARE_GLOBAL_ROOT}/${server}`, tool),

@@ -97,22 +97,31 @@ export function containsRemoteImage(content: readonly unknown[]): boolean {
 export function resolveRoute(agent: unknown): ImageRoute {
   const agentRecord = recordOf(agent);
   const session = recordOf(agentRecord?.session);
-  let routedConfig: Record<string, unknown> | undefined;
-  if (session !== undefined && typeof session.requestHeader === "function") {
-    try {
-      // 必须带 receiver 调用：requestHeader 读实例字段（this.headerFold），裸引用会丢 this。
-      const header = (session.requestHeader as () => unknown).call(session);
-      routedConfig = recordOf(recordOf(header)?.config);
-    } catch {
-      // 会话尚未产出 header 快照 / 假 agent：回落静态 options。
-      routedConfig = undefined;
-    }
-  }
+  const routedConfig = routedConfigOf(session);
   const options = recordOf(agentRecord?.options);
   return {
     provider: stringOf(routedConfig?.provider) ?? stringOf(options?.provider),
     model: stringOf(routedConfig?.model) ?? stringOf(options?.model),
   };
+}
+
+/** 可调用判定（类型谓词）：让 requestHeader 的窄化免断言。 */
+export function isCallable(value: unknown): value is () => unknown {
+  return typeof value === "function";
+}
+
+/** 会话最近一次 request/header 快照里的 config（无快照 / 假 agent → undefined）。 */
+export function routedConfigOf(
+  session: Record<string, unknown> | undefined,
+): Record<string, unknown> | undefined {
+  if (session === undefined || !isCallable(session.requestHeader)) return undefined;
+  try {
+    // 必须带 receiver 调用：requestHeader 读实例字段（this.headerFold），裸引用会丢 this。
+    return recordOf(recordOf(session.requestHeader.call(session))?.config);
+  } catch {
+    // 会话尚未产出 header 快照 / 假 agent：回落静态 options。
+    return undefined;
+  }
 }
 
 /** 稳定诊断文案（官方逐字）。 */
@@ -209,35 +218,23 @@ export async function projectImageAdmission(
   if (!containsRemoteImage(content)) return undefined;
 
   // 批量上限先行（#903 B-M1）：超限整批转诊断，一字节都不解。
-  let remoteCount = 0;
-  for (const block of content) if (isRemoteImageBlock(block)) remoteCount += 1;
+  const remoteCount = countRemoteImages(content);
   if (remoteCount > MAX_IMAGES_PER_RESULT) {
-    const reason = `too many images in one result (>${MAX_IMAGES_PER_RESULT})`;
-    return projectContent(content, formatBlock, (block) => ({
-      type: "text",
-      text: imageDiagnostic(block, reason),
-    }));
+    return diagnosticProjection(
+      content,
+      formatBlock,
+      `too many images in one result (>${MAX_IMAGES_PER_RESULT})`,
+    );
   }
 
-  const imageIndexes: number[] = [];
-  const decoded: SaveImageInput[] = [];
-  const validationErrors = new Map<number, string>();
-  for (const [index, block] of content.entries()) {
-    if (!isRemoteImageBlock(block)) continue;
-    imageIndexes.push(index);
-    try {
-      decoded.push(decodeImage(recordOf(block) as Record<string, unknown>));
-    } catch (error) {
-      validationErrors.set(index, error instanceof Error ? error.message : String(error));
-    }
-  }
+  const decoded = decodeRemoteImages(content);
   // 任一解码失败 → 整批转文本诊断（含「同批另一张非法」这条归因）。
-  if (validationErrors.size > 0) {
+  if (decoded.validationErrors.size > 0) {
     return projectContent(content, formatBlock, (block, index) => ({
       type: "text",
       text: imageDiagnostic(
         block,
-        validationErrors.get(index) ?? "another image in the same result was invalid",
+        decoded.validationErrors.get(index) ?? "another image in the same result was invalid",
       ),
     }));
   }
@@ -246,16 +243,61 @@ export async function projectImageAdmission(
   try {
     attachments = await resolveAdmission(faces, agent, signal);
   } catch (error) {
-    const reason = error instanceof Error ? error.message : String(error);
-    return projectContent(content, formatBlock, (block) => ({
-      type: "text",
-      text: imageDiagnostic(block, reason),
-    }));
+    return diagnosticProjection(content, formatBlock, errorText(error));
   }
+  return projectStoredImages(content, formatBlock, attachments, decoded);
+}
 
+/** content 里的远端原始图片块计数。 */
+export function countRemoteImages(content: readonly unknown[]): number {
+  let count = 0;
+  for (const block of content) if (isRemoteImageBlock(block)) count += 1;
+  return count;
+}
+
+/** 逐块解码远端图片：解码失败按「下标 → 文案」记账（不中断整批扫描）。 */
+export function decodeRemoteImages(content: readonly unknown[]): {
+  indexes: number[];
+  images: SaveImageInput[];
+  validationErrors: Map<number, string>;
+} {
+  const indexes: number[] = [];
+  const images: SaveImageInput[] = [];
+  const validationErrors = new Map<number, string>();
+  for (const [index, block] of content.entries()) {
+    if (!isRemoteImageBlock(block)) continue;
+    indexes.push(index);
+    try {
+      images.push(decodeImage(recordOf(block) as Record<string, unknown>));
+    } catch (error) {
+      validationErrors.set(index, errorText(error));
+    }
+  }
+  return { indexes, images, validationErrors };
+}
+
+/** 整批转诊断文本（超限 / 准入解析失败两条路径共用）。 */
+export function diagnosticProjection(
+  content: readonly unknown[],
+  formatBlock: (block: unknown) => string,
+  reason: string,
+): ModelContentBlock[] {
+  return projectContent(content, formatBlock, (block) => ({
+    type: "text",
+    text: imageDiagnostic(block, reason),
+  }));
+}
+
+/** 落库与最终投影：落库失败 / 返回值缺项都按「durable image storage rejected」处理。 */
+export async function projectStoredImages(
+  content: readonly unknown[],
+  formatBlock: (block: unknown) => string,
+  attachments: AttachmentsPort,
+  decoded: { indexes: number[]; images: SaveImageInput[] },
+): Promise<ModelContentBlock[]> {
   try {
-    const refs = await attachments.saveImages(decoded);
-    const byIndex = new Map(imageIndexes.map((index, offset) => [index, refs[offset]]));
+    const refs = await attachments.saveImages(decoded.images);
+    const byIndex = new Map(decoded.indexes.map((index, offset) => [index, refs[offset]]));
     return projectContent(content, formatBlock, (block, index) => {
       const ref = byIndex.get(index);
       // 落库返回值比入参短（实现违约）时按拒绝处理：模型面不允许出现 attachment 为空的图片块。
@@ -269,9 +311,11 @@ export async function projectImageAdmission(
   } catch {
     // 落库失败不抛（官方区分 ImageAdmissionError 与一般存储错误；本包不引 dsh-attachment，
     // 故统一用后者那条更保守的文案）。
-    return projectContent(content, formatBlock, (block) => ({
-      type: "text",
-      text: imageDiagnostic(block, "durable image storage rejected the result"),
-    }));
+    return diagnosticProjection(content, formatBlock, "durable image storage rejected the result");
   }
+}
+
+/** 错误文案归一（Error 取 message，其余按 String）。 */
+export function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
