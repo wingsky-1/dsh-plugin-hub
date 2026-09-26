@@ -46,7 +46,30 @@
  *   - 三步移进 `prebuild` 而 build 只剩 `echo`：合法重构，本判据判红。
  *   后两条要判绿只能显式改判据，不允许靠「判据看起来绿了」蒙混。
  *
- * 退出码（AGENTS.md 三态）：0 = 通过；1 = 判红可信（build 形态确实不达标）；**2 = 门禁故障
+ * 覆盖边界：manifest.retired（**有意不判 build 形态**，是取舍不是缺口）
+ *   scope 取 active ∪ standalone，不取 retired——按 manifest 的设计契约：retired 是「已退役、
+ *   **目录待清理**」的登记簿（plugins-manifest-lib.ts:90 的 T1/#397 注释、contract-check.ts:33、
+ *   pack-check.ts:198 均据此只告警不判红），退役包的目录本就该被删除，要求一个待删的包
+ *   「build 形态合规」是判错了对象。故本判据不判 retired 包的 build 形态。
+ *   但「不判形态」不能等于「静默不管」，否则「把在册包挪进 retired」就是一条无守卫的休眠
+ *   通道（复核实测：目录与 package.json 俱留、build 写成 `echo TODO`，判绿）。故本判据只断言
+ *   **这条豁免自身的前提**：retired 条目的 packages/<name>/package.json 仍在磁盘 → 判红。
+ *   切面很窄：只管「带 package.json」；retired 残留的**裸目录**（无 package.json，即 T1
+ *   文档化的已知清理债）不判红，仍由 checkDirSets 告警，不与聚合侧口径打架。
+ *   **已登记的既有缺口（全仓级，非本判据）**：现网没有任何判据会因「retired 条目但目录仍在
+ *   且带 package.json + src/」而红——checkDirSets / contract-check / pack-check /
+ *   verify-npm-layout 一律 console.warn。本文件的前置条件断言是**本判据豁免的前提闸**，不是
+ *   那个缺口的实现；缺口本体由聚合侧独立跟踪项跟进，届时本断言被其取代。
+ *   **豁免的退出条件**：retired 目录删除后本判据的 retired 面自然为空，豁免自动消失；在那
+ *   之前，前提一旦不成立（retired 条目又有 package.json）就由本断言报出来。
+ *
+ * 覆盖边界：BUILD_SHAPE_* 两个环境接缝
+ *   `BUILD_SHAPE_ROOT`（换审计根）与 `BUILD_SHAPE_AUDIT_ONLY`（切审计独立模式）都是决策开关：
+ *   被外部设上就能让本文件改判别处、或整份塌成一条用例还 EXIT=0（复核实测 14 条塌成 1 条）。
+ *   故本文件自带断言：可执行面（package.json scripts / lefthook.yml / .github/workflows /
+ *   各包 package.json / scripts 与 tools 源码）**不得出现 BUILD_SHAPE_**——把这条接缝从
+ *   「靠没人设」变成「被守卫」。本文件自身是定义点，已排除在该扫描面之外。
+ * * 退出码（AGENTS.md 三态）：0 = 通过；1 = 判红可信（build 形态确实不达标）；**2 = 门禁故障
  * 不可信**（manifest 或某个 package.json 读不出来/解析不了——输入坏了，此时任何「通过」或
  * 「不达标」都是假的），由 `scripts/lib/gate-exit.mjs` 的 `failClosed` 唯一出口结案。
  *
@@ -79,6 +102,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { failClosed } from "../lib/gate-exit.mjs";
+import { walkFiles } from "../lib/walk-files.ts";
 import { filterOutRetiredDirs, listPluginDirs, loadManifest } from "../lib/plugins-manifest-lib.ts";
 
 const REPO_ROOT = join(import.meta.dirname, "..", "..");
@@ -125,17 +149,27 @@ interface Audit {
   problems: string[];
 }
 
+interface Scope {
+  /** active ∪ standalone：必须满足三段 build 形态的包。 */
+  scoped: string[];
+  /** manifest.retired 的包名：有意不判形态（见文件头「覆盖边界：retired」）。 */
+  retired: string[];
+}
+
 /** 门禁故障（输入不可读）走 exit 2；判红结论绝不落到这里。 */
-function readManifestScope(root: string): string[] {
+function readManifestScope(root: string): Scope {
   try {
     const manifest = loadManifest(root);
-    return [...manifest.active, ...manifest.standalone].sort();
+    return {
+      scoped: [...manifest.active, ...manifest.standalone].sort(),
+      retired: manifest.retired.map((r) => r.name),
+    };
   } catch (e) {
     failClosed(
       `build-script-shape 读不出 ${root} 的 plugins-manifest.json：${(e as Error).message}`,
     );
     // failClosed 内部 process.exit(2)，不可达；保留返回仅为满足类型收敛。
-    return [];
+    return { scoped: [], retired: [] };
   }
 }
 
@@ -229,10 +263,28 @@ function unregisteredProblems(root: string, scoped: string[]): string[] {
     .map((d) => `packages/${d}: 磁盘存在但未登记 manifest（active/standalone），本判据覆盖不到它`);
 }
 
-/** 扫描一个根：在册包逐个判形态，反查脱管包，汇总判词。 */
+/**
+ * retired 豁免的**前提闸**：retired 条目的 package.json 仍在磁盘即判红。
+ *
+ * 这里不判 retired 包的 build 形态（按 manifest 契约，退役包的目录本就该删，判形态是判错
+ * 对象），只守「不判形态」这个豁免自己的前提——否则「把在册包挪进 retired」就是一条无守卫的
+ * 脱管休眠通道。切面只到「带 package.json」：retired 残留的裸目录（T1 已知清理债）不判红。
+ */
+function retiredLeftoverProblems(root: string, retired: string[]): string[] {
+  return retired
+    .filter((name) => existsSync(join(root, "packages", name, "package.json")))
+    .map(
+      (name) =>
+        `packages/${name}: manifest.retired 条目但 package.json 仍在磁盘 —— ` +
+        `退役包的目录应当被删除（manifest 设计契约）。本判据有意不判 retired 包的 build 形态，` +
+        `但这条豁免的前提一旦不成立就必须报出来；裸目录残留（T1 清理债）不归本断言`,
+    );
+}
+
+/** 扫描一个根：在册包逐个判形态，反查脱管包与 retired 前提，汇总判词。 */
 export function auditBuildChain(root: string): Audit {
-  const scoped = readManifestScope(root);
-  const problems: string[] = [];
+  const { scoped, retired } = readManifestScope(root);
+  const problems: string[] = retiredLeftoverProblems(root, retired);
   if (scoped.length === 0) {
     return {
       scoped,
@@ -255,6 +307,7 @@ export function auditBuildChain(root: string): Audit {
 /** 造 fixture 根：`<name>` 全部进 manifest.active，并写一份最小合法 manifest。 */
 function fixture(
   packages: Array<{ name: string; build?: string; src?: boolean; srcAsFile?: boolean }>,
+  retired: string[] = [],
 ): string {
   const dir = mkdtempSync(join(tmpdir(), "build-shape-"));
   for (const p of packages) {
@@ -272,7 +325,7 @@ function fixture(
     JSON.stringify(
       {
         active: packages.map((p) => p.name),
-        retired: [],
+        retired: retired.map((name) => ({ name, reason: "fixture：已退役待清理", successor: "" })),
         configSurfaces: packages.map((p) => ({
           package: p.name,
           surface: "none",
@@ -287,8 +340,12 @@ function fixture(
 }
 
 /** 在 fixture 根上跑审计并清理（仓库零污染纪律）。 */
-function withFixture<T>(packages: Parameters<typeof fixture>[0], body: (dir: string) => T): T {
-  const dir = fixture(packages);
+function withFixture<T>(
+  packages: Parameters<typeof fixture>[0],
+  retired: string[],
+  body: (dir: string) => T,
+): T {
+  const dir = fixture(packages, retired);
   try {
     return body(dir);
   } finally {
@@ -302,6 +359,7 @@ test("覆盖面来自 manifest：在册包逐个判定，未登记的磁盘包�
       { name: "dsh-probe-a", build: CHAIN_OK },
       { name: "dsh-probe-b", build: CHAIN_OK },
     ],
+    [],
     (dir) => {
       mkdirSync(join(dir, "packages", "dsh-probe-unregistered"), { recursive: true });
       writeFileSync(
@@ -319,6 +377,7 @@ test("覆盖面来自 manifest：在册包逐个判定，未登记的磁盘包�
 test("src/ 从过滤器降为被断言的事实：源码目录改名 → 判红（不再无声脱管）", () => {
   withFixture(
     [{ name: "dsh-probe-renamed", build: "echo TODO nothing at all", src: false }],
+    [],
     (dir) => {
       mkdirSync(join(dir, "packages", "dsh-probe-renamed", "sources"), { recursive: true });
       const { problems } = auditBuildChain(dir);
@@ -329,17 +388,72 @@ test("src/ 从过滤器降为被断言的事实：源码目录改名 → 判红�
 });
 
 test("src/ 必须是目录：名为 src 的文件不算源码面", () => {
-  withFixture([{ name: "dsh-probe-srcfile", build: CHAIN_OK, srcAsFile: true }], (dir) => {
+  withFixture([{ name: "dsh-probe-srcfile", build: CHAIN_OK, srcAsFile: true }], [], (dir) => {
     const { problems } = auditBuildChain(dir);
     assert.equal(problems.length, 1, `src 是文件时必须判红，实得：${JSON.stringify(problems)}`);
     assert.match(problems[0], /没有 src\/ \*\*目录\*\*/);
   });
 });
 
+test("retired 豁免的前提闸：retired 条目但 package.json 仍在磁盘 → 判红（堵休眠通道）", () => {
+  withFixture([{ name: "dsh-probe-live", build: CHAIN_OK }], ["dsh-probe-dead"], (dir) => {
+    // 造一个「已退役但目录与 package.json 俱在」的包：build 是垃圾，形态判据按契约不碰它
+    const abs = join(dir, "packages", "dsh-probe-dead");
+    mkdirSync(join(abs, "src"), { recursive: true });
+    writeFileSync(
+      join(abs, "package.json"),
+      '{"name":"@wingsky-1/dsh-probe-dead","scripts":{"build":"echo TODO nothing at all"}}',
+    );
+    const { problems } = auditBuildChain(dir);
+    assert.equal(problems.length, 1, `retired 残留必须报出，实得：${JSON.stringify(problems)}`);
+    assert.match(problems[0], /manifest\.retired 条目但 package\.json 仍在磁盘/);
+    assert.match(problems[0], /dsh-probe-dead/, "判词须点名包");
+  });
+});
+
+test("retired 残留的裸目录（T1 已知清理债）不判红：不与聚合侧告警口径打架", () => {
+  withFixture([{ name: "dsh-probe-live", build: CHAIN_OK }], ["dsh-probe-bare"], (dir) => {
+    mkdirSync(join(dir, "packages", "dsh-probe-bare"), { recursive: true });
+    const { problems } = auditBuildChain(dir);
+    assert.deepEqual(
+      problems,
+      [],
+      "无 package.json 的裸残留归 checkDirSets 告警，本判据不重复判红",
+    );
+  });
+});
+
+/** walkFiles 返回相对路径；这里要的是可直接读的绝对路径。 */
+function under(base: string, predicate: (name: string) => boolean): string[] {
+  return walkFiles(base, predicate).map((rel) => join(base, rel));
+}
+
+test("BUILD_SHAPE_* 不得出现在可执行面（把接缝从「靠没人设」变成「被守卫」）", () => {
+  // 用 REPO_ROOT 而非 ROOT：可执行面是**本仓库**的属性，与注入的审计根无关；
+  // 用 ROOT 会让注入实验扫到临时 fixture（面近空）而误触发下面那条 fail-closed 断言。
+  const groups: Array<[string, string[]]> = [
+    ["package.json", [join(REPO_ROOT, "package.json")]],
+    ["lefthook.yml", [join(REPO_ROOT, "lefthook.yml")]],
+    [".github/workflows/**", under(join(REPO_ROOT, ".github", "workflows"), () => true)],
+    ["packages/*/package.json", under(join(REPO_ROOT, "packages"), (n) => n === "package.json")],
+    ["scripts/**", under(join(REPO_ROOT, "scripts"), (n) => /\.(mjs|ts|cjs|js)$/.test(n))],
+    ["tools/**", under(join(REPO_ROOT, "tools"), (n) => /\.(mjs|ts|cjs|js)$/.test(n))],
+  ];
+  // 本文件是 BUILD_SHAPE_* 的定义点，不是设置点
+  const surface = groups.flatMap(([where, files]) =>
+    files.filter((f) => f !== import.meta.filename).map((f) => [where, f] as const),
+  );
+  assert.ok(surface.length > 0, "可执行面扫描为空即判红（枚举失效时不得静默放行）");
+  const hits = surface
+    .filter(([, file]) => readFileSync(file, "utf8").includes("BUILD_SHAPE_"))
+    .map(([where, file]) => `${where}: ${file}`);
+  assert.deepEqual(hits, [], `可执行面不得设置本判据的环境开关：${hits.join("、")}`);
+});
+
 test("顺序敏感性：clean-lib 与 bundle-host 对调 → 判红（includes 文本匹配判不出这一条）", () => {
   const swapped =
     "node ../../scripts/build/bundle-host.ts . && tsc -p tsconfig.json && node ../../scripts/build/clean-lib.ts";
-  withFixture([{ name: "dsh-probe-swap", build: swapped }], (dir) => {
+  withFixture([{ name: "dsh-probe-swap", build: swapped }], [], (dir) => {
     const { problems } = auditBuildChain(dir);
     assert.equal(problems.length, 1, `对调顺序必须判红，实得：${JSON.stringify(problems)}`);
     assert.match(problems[0], /顺序错/);
@@ -359,7 +473,7 @@ test("三段顺序：tsc 提到最前 / bundle 提到最前，各判红", () => 
     ],
   ];
   for (const [label, build] of bad) {
-    withFixture([{ name: "dsh-probe-order", build }], (dir) => {
+    withFixture([{ name: "dsh-probe-order", build }], [], (dir) => {
       const { problems } = auditBuildChain(dir);
       assert.equal(problems.length, 1, `${label} 必须判红，实得：${JSON.stringify(problems)}`);
       assert.match(problems[0], /顺序错/);
@@ -378,7 +492,7 @@ test("缺环节：删掉 clean-lib / tsc / bundle-host 各自判红且点名包"
     ["无 build 脚本", undefined],
   ];
   for (const [label, build] of bad) {
-    withFixture([{ name: "dsh-probe-missing", build }], (dir) => {
+    withFixture([{ name: "dsh-probe-missing", build }], [], (dir) => {
       const { problems } = auditBuildChain(dir);
       assert.equal(problems.length, 1, `${label} 必须判红，实得：${JSON.stringify(problems)}`);
       assert.match(problems[0], /dsh-probe-missing/, `${label} 的判词须点名包`);
@@ -407,7 +521,7 @@ test("锚点不吃字面量：echo 占位 / 变量赋值 / 只提 tsconfig.json�
     ],
   ];
   for (const [label, build] of bad) {
-    withFixture([{ name: "dsh-probe-literal", build }], (dir) => {
+    withFixture([{ name: "dsh-probe-literal", build }], [], (dir) => {
       const { problems } = auditBuildChain(dir);
       assert.equal(problems.length, 1, `${label} 必须判红，实得：${JSON.stringify(problems)}`);
       assert.match(problems[0], /缺少/);
@@ -418,7 +532,7 @@ test("锚点不吃字面量：echo 占位 / 变量赋值 / 只提 tsconfig.json�
 test("步骤不得降级为非致命：clean-lib || true（容忍 flaky clean 的最现实写法）→ 判红", () => {
   const build =
     "node ../../scripts/build/clean-lib.ts || true && tsc -p tsconfig.json && node ../../scripts/build/bundle-host.ts .";
-  withFixture([{ name: "dsh-probe-nofatal", build }], (dir) => {
+  withFixture([{ name: "dsh-probe-nofatal", build }], [], (dir) => {
     const { problems } = auditBuildChain(dir);
     assert.equal(problems.length, 1, `|| true 必须判红，实得：${JSON.stringify(problems)}`);
     assert.match(problems[0], /降级为非致命/);
@@ -429,14 +543,14 @@ test("步骤不得降级为非致命：clean-lib || true（容忍 flaky clean �
 test("tsc 段首允许 runner 前缀：pnpm exec tsc 判绿", () => {
   const build =
     "node ../../scripts/build/clean-lib.ts && pnpm exec tsc -p tsconfig.json && node ../../scripts/build/bundle-host.ts .";
-  withFixture([{ name: "dsh-probe-runner", build }], (dir) => {
+  withFixture([{ name: "dsh-probe-runner", build }], [], (dir) => {
     assert.deepEqual(auditBuildChain(dir).problems, [], "runner 包装的 tsc 仍是真跑 tsc");
   });
 });
 
 test("中间多一段不破坏顺序不变量：prepare-lib-entry 夹在 tsc 与 bundle 之间仍判绿", () => {
   const build = `${CHAIN_OK.split(" && ").slice(0, 2).join(" && ")} && node scripts/prepare-lib-entry.ts && node ../../scripts/build/bundle-host.ts .`;
-  withFixture([{ name: "dsh-probe-extra", build }], (dir) => {
+  withFixture([{ name: "dsh-probe-extra", build }], [], (dir) => {
     assert.deepEqual(auditBuildChain(dir).problems, [], "额外环节只要不破坏三段先后就应通过");
   });
 });
