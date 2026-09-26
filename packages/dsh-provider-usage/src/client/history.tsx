@@ -143,6 +143,157 @@ const filterLabel = (f: HistoryStatusFilter): string =>
         ? t("reportFailed")
         : t("reportFilterNoData");
 
+/** 状态筛选按钮 class：命中当前筛选时追加 active 后缀。 */
+const filterTabClass = (f: HistoryStatusFilter, active: HistoryStatusFilter): string =>
+  "dou-reportPromptTab" + (active === f ? " dou-reportPromptTabActive" : "");
+
+/** 顶部报告数徽标：行表未就绪（null，首拉之前）时不渲染。 */
+function historyCountBadge(rows: ReportMetaView[] | null): React.ReactNode {
+  if (rows === null) return null;
+  return (
+    <span className="dou-reportPromptBudget">{t("reportSummaryNReports", { n: rows.length })}</span>
+  );
+}
+
+/**
+ * 空态节点（只管「有没有行可渲染」这一件事）：
+ * 筛选后为空才出节点，并区分「筛选前本就空」（reportEmpty）与「筛选后空但原始有行」
+ * （reportFilterEmpty）；未就绪/非空返回 null，调用方回退正常列表。
+ */
+function historyEmptyNode(
+  filtered: ReportMetaView[] | null,
+  list: ReportMetaView[] | null,
+): React.ReactNode {
+  if (filtered === null || filtered.length > 0) return null;
+  return (
+    <div className="dou-reportEmpty">
+      {list !== null && list.length > 0 ? t("reportFilterEmpty") : t("reportEmpty")}
+    </div>
+  );
+}
+
+/** 展开态详情已加载的本地快照（行 id + 宿主净化 HTML + 该行元数据）。 */
+interface HistoryDetail {
+  id: string;
+  html: string;
+  meta: ReportMetaView;
+}
+
+/** 详情 token 行：tokens 缺失/未知/无总数任一成立即不渲染该行。 */
+function historyTokenNode(tokens: ReportMetaView["tokens"]): React.ReactNode {
+  if (!(tokens !== null && tokens !== undefined && tokens.totalTokens !== null)) return null;
+  return (
+    <div className="dou-reportDetailMeta" key="meta">
+      {t("reportDetailTokens", { n: tokens.totalTokens.toLocaleString("en-US") })}
+    </div>
+  );
+}
+
+/** 详情正文：noData 走提示行；空 HTML 走错误 + 重试提示；否则注入宿主净化 HTML。 */
+function historyBodyNode(detail: HistoryDetail): React.ReactNode {
+  if (detail.meta.noData === true) {
+    return (
+      <div className="dou-reportGenNotice" key="nodata">
+        {t("reportNoData")}
+      </div>
+    );
+  }
+  if (detail.html.length > 0) {
+    return (
+      <div
+        className="dou-reportDetailBody"
+        key="body"
+        dangerouslySetInnerHTML={{ __html: detail.html }}
+      />
+    );
+  }
+  return (
+    <React.Fragment key="empty">
+      <div className="dou-reportFetchFail">{detail.meta.error ?? t("reportFetchFail")}</div>
+      <div className="dou-reportHint">{t("reportRetryHint")}</div>
+    </React.Fragment>
+  );
+}
+
+/** 收起按钮（唯一的状态清空入口，行为与内联版逐字一致）。 */
+function historyCollapseNode(onCollapse: () => void): React.ReactNode {
+  return (
+    <button type="button" className="dou-reportCollapse" key="collapse" onClick={onCollapse}>
+      {t("reportCollapse")}
+    </button>
+  );
+}
+
+/**
+ * 展开态详情块序列（职责：详情内容装配；行壳在 HistoryRow）：
+ * 快照尚未命中该行（懒加载中）→ loading 占位；命中 → token 行 + hero + 正文 + 收起按钮。
+ */
+function historyDetailParts(
+  m: ReportMetaView,
+  detail: HistoryDetail | null,
+  onCollapse: () => void,
+): React.ReactNode[] {
+  if (detail === null || detail.id !== rowIdOf(m)) {
+    return [
+      <div className="dou-reportLoading" key="loading">
+        {t("loading")}
+      </div>,
+    ];
+  }
+  const parts: React.ReactNode[] = [];
+  const tokenNode = historyTokenNode(detail.meta.tokens);
+  if (tokenNode !== null) parts.push(tokenNode);
+  const summary = detail.meta.summary;
+  if (summary !== null && summary !== undefined)
+    parts.push(reportHero(summary, detail.meta.period));
+  parts.push(historyBodyNode(detail));
+  parts.push(historyCollapseNode(onCollapse));
+  return parts;
+}
+
+interface HistoryRowProps {
+  m: ReportMetaView;
+  openId: string | null;
+  detail: HistoryDetail | null;
+  onToggle: (m: ReportMetaView) => void;
+  onCollapse: () => void;
+}
+
+/** 历史列表单行（行头 + 展开详情容器）；行壳与详情装配分属两处职责，故分组件。 */
+function HistoryRow(props: HistoryRowProps): React.ReactElement {
+  const { m, openId, detail, onToggle, onCollapse } = props;
+  const id = rowIdOf(m);
+  const detailNode =
+    openId === id ? (
+      <div className="dou-reportDetail">{historyDetailParts(m, detail, onCollapse)}</div>
+    ) : null;
+  return (
+    <li className="dou-reportItem" key={id}>
+      <button
+        type="button"
+        className="dou-reportItemHead"
+        aria-expanded={openId === id}
+        aria-controls={id + "-detail"}
+        onClick={() => void onToggle(m)}
+      >
+        <span className="dou-reportItemPeriod">{periodLabel(m.period)}</span>
+        <span className="dou-reportItemKey">{m.key}</span>
+        <span
+          className={
+            m.ok ? "dou-reportBadge dou-reportBadgeOk" : "dou-reportBadge dou-reportBadgeFail"
+          }
+        >
+          {m.ok ? t("reportOk") : t("reportFailed")}
+        </span>
+        <span className="dou-reportItemTime">
+          {new Date(m.generatedAt).toLocaleString("zh-CN", { hour12: false })}
+        </span>
+      </button>
+      {detailNode !== null ? <div id={id + "-detail"}>{detailNode}</div> : null}
+    </li>
+  );
+}
+
 /** 历史报告独立页（壳第六 Tab 内容）。 */
 export function HistorySection(props: {
   pendingExpandId: string | null;
@@ -154,11 +305,7 @@ export function HistorySection(props: {
   const [list, setList] = React.useState<ReportMetaView[] | null>(null);
   const [listFailed, setListFailed] = React.useState(false);
   const [openId, setOpenId] = React.useState<string | null>(null);
-  const [detail, setDetail] = React.useState<{
-    id: string;
-    html: string;
-    meta: ReportMetaView;
-  } | null>(null);
+  const [detail, setDetail] = React.useState<HistoryDetail | null>(null);
   const [statusFilter, setStatusFilter] = React.useState<HistoryStatusFilter>("all");
   const [groupOpen, setGroupOpen] = React.useState<Record<HistoryPeriod, boolean>>({
     daily: true,
@@ -229,6 +376,11 @@ export function HistorySection(props: {
     }
   }, []);
 
+  const onCollapse = (): void => {
+    setOpenId(null);
+    setDetail(null);
+  };
+
   const toggleDetail = async (m: ReportMetaView): Promise<void> => {
     const id = rowIdOf(m);
     if (openId === id) {
@@ -288,11 +440,7 @@ export function HistorySection(props: {
     <section className="dou-report dou-reportGlass" style={{ marginBottom: 16 }}>
       <div className="dou-reportHead">
         <h2 style={{ fontSize: 13, fontWeight: 600, margin: 0 }}>{t("reportSectionHistory")}</h2>
-        {(filtered ?? list) !== null ? (
-          <span className="dou-reportPromptBudget">
-            {t("reportSummaryNReports", { n: (filtered ?? list ?? []).length })}
-          </span>
-        ) : null}
+        {historyCountBadge(filtered ?? list)}
       </div>
       <p className="dou-reportHint">{t("historySub")}</p>
       <div className="dou-reportPromptTabs" role="group" aria-label={t("reportFilterStatus")}>
@@ -301,9 +449,7 @@ export function HistorySection(props: {
           <button
             key={f}
             type="button"
-            className={
-              "dou-reportPromptTab" + (statusFilter === f ? " dou-reportPromptTabActive" : "")
-            }
+            className={filterTabClass(f, statusFilter)}
             aria-pressed={statusFilter === f}
             onClick={() => setStatusFilter(f)}
           >
@@ -327,164 +473,68 @@ export function HistorySection(props: {
           </button>
         </div>
       ) : null}
-      {groups === null ? null : filtered !== null && filtered.length === 0 ? (
-        <div className="dou-reportEmpty">
-          {list !== null && list.length > 0 ? t("reportFilterEmpty") : t("reportEmpty")}
-        </div>
-      ) : (
-        <div className="dou-reportSections">
-          {HISTORY_PERIODS.map((period) => {
-            const rows = groups[period];
-            const visible = rows.slice(0, visibleCount[period]);
-            const groupId = "dou-hist-" + period;
-            return (
-              <div className="dou-reportSection dou-reportGlass" key={period}>
-                <button
-                  type="button"
-                  className="dou-reportSectionHead"
-                  aria-expanded={groupOpen[period]}
-                  aria-controls={groupId + "-body"}
-                  onClick={() => setGroupOpen((g) => ({ ...g, [period]: !g[period] }))}
-                >
-                  <span className="dou-reportSectionArrow" aria-hidden="true">
-                    {groupOpen[period] ? "▾" : "▸"}
-                  </span>
-                  <span className="dou-reportSectionTitle">{periodLabel(period)}</span>
-                  <span className="dou-reportSectionSummary">
-                    {t("reportSummaryNReports", { n: rows.length })}
-                  </span>
-                </button>
-                {groupOpen[period] ? (
-                  <div className="dou-reportSectionBody" id={groupId + "-body"}>
-                    {rows.length === 0 ? null : (
-                      <ul className="dou-reportList">
-                        {visible.map((m) => {
-                          const id = rowIdOf(m);
-                          let detailNode: React.ReactNode = null;
-                          if (openId === id) {
-                            const parts: React.ReactNode[] = [];
-                            if (detail !== null && detail.id === id) {
-                              const tokens = detail.meta.tokens;
-                              if (
-                                tokens !== null &&
-                                tokens !== undefined &&
-                                tokens.totalTokens !== null
-                              ) {
-                                parts.push(
-                                  <div className="dou-reportDetailMeta" key="meta">
-                                    {t("reportDetailTokens", {
-                                      n: tokens.totalTokens.toLocaleString("en-US"),
-                                    })}
-                                  </div>,
-                                );
-                              }
-                              const summary = detail.meta.summary;
-                              if (summary !== null && summary !== undefined) {
-                                parts.push(reportHero(summary, detail.meta.period));
-                              }
-                              if (detail.meta.noData === true) {
-                                parts.push(
-                                  <div className="dou-reportGenNotice" key="nodata">
-                                    {t("reportNoData")}
-                                  </div>,
-                                );
-                              } else {
-                                parts.push(
-                                  detail.html.length > 0 ? (
-                                    <div
-                                      className="dou-reportDetailBody"
-                                      key="body"
-                                      dangerouslySetInnerHTML={{ __html: detail.html }}
-                                    />
-                                  ) : (
-                                    <React.Fragment key="empty">
-                                      <div className="dou-reportFetchFail">
-                                        {detail.meta.error ?? t("reportFetchFail")}
-                                      </div>
-                                      <div className="dou-reportHint">{t("reportRetryHint")}</div>
-                                    </React.Fragment>
-                                  ),
-                                );
-                              }
-                              parts.push(
-                                <button
-                                  type="button"
-                                  className="dou-reportCollapse"
-                                  key="collapse"
-                                  onClick={() => {
-                                    setOpenId(null);
-                                    setDetail(null);
-                                  }}
-                                >
-                                  {t("reportCollapse")}
-                                </button>,
-                              );
-                            } else {
-                              parts.push(
-                                <div className="dou-reportLoading" key="loading">
-                                  {t("loading")}
-                                </div>,
-                              );
+      {groups === null
+        ? null
+        : (historyEmptyNode(filtered, list) ?? (
+            <div className="dou-reportSections">
+              {HISTORY_PERIODS.map((period) => {
+                const rows = groups[period];
+                const visible = rows.slice(0, visibleCount[period]);
+                const groupId = "dou-hist-" + period;
+                return (
+                  <div className="dou-reportSection dou-reportGlass" key={period}>
+                    <button
+                      type="button"
+                      className="dou-reportSectionHead"
+                      aria-expanded={groupOpen[period]}
+                      aria-controls={groupId + "-body"}
+                      onClick={() => setGroupOpen((g) => ({ ...g, [period]: !g[period] }))}
+                    >
+                      <span className="dou-reportSectionArrow" aria-hidden="true">
+                        {groupOpen[period] ? "▾" : "▸"}
+                      </span>
+                      <span className="dou-reportSectionTitle">{periodLabel(period)}</span>
+                      <span className="dou-reportSectionSummary">
+                        {t("reportSummaryNReports", { n: rows.length })}
+                      </span>
+                    </button>
+                    {groupOpen[period] ? (
+                      <div className="dou-reportSectionBody" id={groupId + "-body"}>
+                        {rows.length === 0 ? null : (
+                          <ul className="dou-reportList">
+                            {visible.map((m) => (
+                              <HistoryRow
+                                key={rowIdOf(m)}
+                                m={m}
+                                openId={openId}
+                                detail={detail}
+                                onToggle={(row) => void toggleDetail(row)}
+                                onCollapse={onCollapse}
+                              />
+                            ))}
+                          </ul>
+                        )}
+                        {rows.length > visible.length ? (
+                          <button
+                            type="button"
+                            className="dou-reportPromptReset"
+                            onClick={() =>
+                              setVisibleCount((c) => ({
+                                ...c,
+                                [period]: c[period] + HISTORY_PAGE_SIZE,
+                              }))
                             }
-                            detailNode = <div className="dou-reportDetail">{parts}</div>;
-                          }
-                          return (
-                            <li className="dou-reportItem" key={id}>
-                              <button
-                                type="button"
-                                className="dou-reportItemHead"
-                                aria-expanded={openId === id}
-                                aria-controls={id + "-detail"}
-                                onClick={() => void toggleDetail(m)}
-                              >
-                                <span className="dou-reportItemPeriod">
-                                  {periodLabel(m.period)}
-                                </span>
-                                <span className="dou-reportItemKey">{m.key}</span>
-                                <span
-                                  className={
-                                    m.ok
-                                      ? "dou-reportBadge dou-reportBadgeOk"
-                                      : "dou-reportBadge dou-reportBadgeFail"
-                                  }
-                                >
-                                  {m.ok ? t("reportOk") : t("reportFailed")}
-                                </span>
-                                <span className="dou-reportItemTime">
-                                  {new Date(m.generatedAt).toLocaleString("zh-CN", {
-                                    hour12: false,
-                                  })}
-                                </span>
-                              </button>
-                              {detailNode !== null ? (
-                                <div id={id + "-detail"}>{detailNode}</div>
-                              ) : null}
-                            </li>
-                          );
-                        })}
-                      </ul>
-                    )}
-                    {rows.length > visible.length ? (
-                      <button
-                        type="button"
-                        className="dou-reportPromptReset"
-                        onClick={() =>
-                          setVisibleCount((c) => ({
-                            ...c,
-                            [period]: c[period] + HISTORY_PAGE_SIZE,
-                          }))
-                        }
-                      >
-                        {t("reportLoadMore")}
-                      </button>
+                          >
+                            {t("reportLoadMore")}
+                          </button>
+                        ) : null}
+                      </div>
                     ) : null}
                   </div>
-                ) : null}
-              </div>
-            );
-          })}
-        </div>
-      )}
+                );
+              })}
+            </div>
+          ))}
     </section>
   );
 }

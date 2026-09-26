@@ -184,6 +184,17 @@ function parentSessionIdOf(row: SessionListRowLike | undefined): string | undefi
 }
 
 /**
+ * 防御式读 sessions.list 快照的 byId 映射（上溯链与投影读取两处共用）：
+ * 服务未注入 / list 缺失 / getSnapshot 非函数 / 行表缺失均返回 undefined，
+ * 调用方据此走「无快照」分支（不抛、不判空到下游）。
+ */
+function snapshotById(
+  sessions: SessionsServiceLike | undefined,
+): Record<string, SessionListRowLike> | undefined {
+  return sessions?.list?.getSnapshot?.()?.byId;
+}
+
+/**
  * 从 startId 沿 sessions.list 快照 byId 行的 parentId 逐级上溯，产出待探测会话 id 链。
  * 封顶 MAX_ANCESTRY_DEPTH（可调），visited 集合防环；快照缺失/断链即停。
  * 设计原则：不做「是不是子代理」的正向分类——ordinary 会话无 parentId，链长即为 1。
@@ -196,7 +207,7 @@ export function sessionAncestryChain(
   if (!(maxDepth >= 1)) return [];
   const chain = [startId];
   const seen = new Set<string>([startId]);
-  const byId = sessions?.list?.getSnapshot?.()?.byId;
+  const byId = snapshotById(sessions);
   let cur = startId;
   while (chain.length < maxDepth) {
     const parent = byId === undefined ? undefined : parentSessionIdOf(byId[cur]);
@@ -302,7 +313,7 @@ export async function resolveProviderFromSession(
 ): Promise<string | undefined> {
   const sessionId = currentSessionId(sessions);
   if (sessionId === undefined) return undefined;
-  const byId = sessions?.list?.getSnapshot?.()?.byId;
+  const byId = snapshotById(sessions);
   for (const sid of sessionAncestryChain(sessions, sessionId)) {
     const provider = providerFromProjection(byId?.[sid]);
     if (provider !== undefined) return provider;

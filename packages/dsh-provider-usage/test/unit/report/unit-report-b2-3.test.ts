@@ -615,17 +615,20 @@ describe("F6：轮询续跑接线（瞬断退避续跑，不误报失败）", ()
 });
 
 describe("F7：复用不跳转接线（只提示，不切页）", () => {
+  // #732 客户端面拆解后，两条落地路径各归一个 settle* 局部函数（母体瘦到编排），
+  // 局部变量随之改名（body.reused → reused、polledReused → polled.reused）；
+  // 判据仍是「复用分支的 return 出现在 onGeneratedRow 之前」——只换锚点，不放宽。
   it("200 直接复用 early-return 在 onGeneratedRow 之前", () => {
-    const early = reportSource.indexOf("if (body.reused === true) return;");
-    const jump = reportSource.indexOf("onGeneratedRow(body.meta)");
+    const early = reportSource.indexOf("if (reused === true) return true;");
+    const jump = reportSource.indexOf("onGeneratedRow(meta)");
     expect(early).toBeGreaterThan(-1);
     expect(jump).toBeGreaterThan(-1);
     expect(early).toBeLessThan(jump);
   });
 
-  it("轮询复用只提示不跳转（polledReused 分支在 onGeneratedRow 之前 return）", () => {
-    const branch = reportSource.indexOf("if (polledReused) {");
-    const jump = reportSource.indexOf("onGeneratedRow(meta)");
+  it("轮询复用只提示不跳转（polled.reused 分支在 onGeneratedRow 之前 return）", () => {
+    const branch = reportSource.indexOf("if (polled.reused) {");
+    const jump = reportSource.indexOf("onGeneratedRow(polled.meta)");
     expect(branch).toBeGreaterThan(-1);
     expect(jump).toBeGreaterThan(-1);
     expect(branch).toBeLessThan(jump);

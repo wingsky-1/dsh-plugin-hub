@@ -252,17 +252,25 @@ describe("全链投影缺失：modelCatalog 兜底 + 保持上次检测 / 未识
 // ---------------------------------------------------------------- 2b) 客户端源码契约：未识别标注接线
 
 describe("客户端源码契约：title 标注接线真实存在（issue #348 i18n）", () => {
+  // title 文案推导在 #732 拆到纯视图层 float-view.ts（index.tsx 只剩编排），
+  // 故两条标注断言读 float-view.ts，接线断言读 index.tsx——两侧都锁，任一处断链即红。
   let src = "";
+  let view = "";
   beforeAll(() => {
     src = readFileSync(join(here, "..", "..", "src", "client", "index.tsx"), "utf8");
+    view = readFileSync(join(here, "..", "..", "src", "client", "float-view.ts"), "utf8");
   });
 
-  it("index.tsx 应经 i18n 字典标注未识别", () => {
-    expect(src.includes('t("providerUnknown")')).toBeTruthy();
+  it("float-view.ts 应经 i18n 字典标注未识别", () => {
+    expect(view.includes('t("providerUnknown")')).toBeTruthy();
   });
 
   it("胶囊 title 渲染应按 providerUnknown 追加标注", () => {
-    expect(src.includes("if (providerUnknown)")).toBeTruthy();
+    expect(view.includes("if (providerUnconfirmed)")).toBeTruthy();
+  });
+
+  it("index.tsx 应把 providerUnknown 态接入 title 推导", () => {
+    expect(src.includes("pillTitle(stats, currentProvider, providerUnknown)")).toBeTruthy();
   });
 
   it("detect() 应经纯函数决策兜底", () => {
