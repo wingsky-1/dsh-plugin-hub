@@ -356,14 +356,27 @@ async function runWithoutRetry(
   return { meta: outcome.result.meta };
 }
 
-async function claimRoute(
+/**
+ * 空窗口不调模型：路由解析失败不该把 noData 报告打成 waiting（否则永不推进 lastRun）。
+ * 探测本身抛错时保守视为「需要路由」，异常交由 outcome 阶段统一收敛为 typed failure。
+ */
+function needsRouteForWindow(deps: DueExecutorDeps, input: ReportTaskInput): boolean {
+  try {
+    return reportWindowHasUsage(deps.trend.buckets(), input.startDay, input.endDay);
+  } catch {
+    return true;
+  }
+}
+
+/** claim 前解析 provider/model；顺序即语义：空窗口 → 无 cycle → 终态 → 未解析 → 复用。 */
+async function resolveClaimRoute(
   deps: DueExecutorDeps,
   retry: DueExecutorRetryOptions,
-  input: ReportTaskInput,
+  existing: Awaited<ReturnType<RetryLedgerPort["get"]>>,
   reportCfg: ReportConfig,
-): Promise<{ claim: RetryClaim; route: GenerateRouteOutcome; needsRoute: boolean }> {
-  const existing = await retry.ledger.get(input.period, input.key);
-  const cycleReasoningEffort = existing?.route.reasoningEffort ?? reportCfg.reasoningEffort;
+  cycleReasoningEffort: string | undefined,
+  needsRoute: boolean,
+): Promise<GenerateRouteOutcome> {
   const resolve = async (): Promise<GenerateRouteOutcome> =>
     normalizeRouteOutcome(
       await retry.resolveRoute({
@@ -373,42 +386,61 @@ async function claimRoute(
         reasoningEffort: cycleReasoningEffort,
       }),
     );
-  // 空窗口不调模型：路由解析失败不该把 noData 报告打成 waiting（否则永不推进 lastRun）。
-  // 探测本身抛错时保守视为「需要路由」，异常交由 outcome 阶段统一收敛为 typed failure。
-  let needsRoute = true;
-  try {
-    needsRoute = reportWindowHasUsage(deps.trend.buckets(), input.startDay, input.endDay);
-  } catch {
-    needsRoute = true;
+  if (!needsRoute) {
+    // 空窗口不需要模型路由：用 fail-closed 哨兵占位。若窗口在快照阶段又出现
+    // 用量，生成边界也会先于 stream 拒绝（空 route 永不 stream）。
+    return {
+      status: "failure",
+      route: existing?.route ?? unresolvedRouteSnapshot(cycleReasoningEffort),
+      failure: GENERATE_ROUTE_UNAVAILABLE,
+    };
   }
-  const resolved: GenerateRouteOutcome = !needsRoute
-    ? {
-        // 空窗口不需要模型路由：用 fail-closed 哨兵占位。若窗口在快照阶段又出现
-        // 用量，生成边界也会先于 stream 拒绝（空 route 永不 stream）。
-        status: "failure",
-        route: existing?.route ?? unresolvedRouteSnapshot(cycleReasoningEffort),
-        failure: GENERATE_ROUTE_UNAVAILABLE,
-      }
-    : existing === undefined
-      ? await resolve()
-      : existing.terminal
-        ? {
-            status: "failure",
-            route: existing.route,
-            failure: { kind: "permanent", code: "retry-terminal" },
-          }
-        : isUnresolvedRoute(existing.route)
-          ? await resolve()
-          : { status: "success", route: existing.route };
-  const resolvedForClaim =
-    resolved.status === "failure" && resolved.unresolved && cycleReasoningEffort !== undefined
-      ? { ...resolved, route: { ...resolved.route, reasoningEffort: cycleReasoningEffort } }
-      : resolved;
+  if (existing === undefined) return resolve();
+  if (existing.terminal) {
+    return {
+      status: "failure",
+      route: existing.route,
+      failure: { kind: "permanent", code: "retry-terminal" },
+    };
+  }
+  if (isUnresolvedRoute(existing.route)) return resolve();
+  return { status: "success", route: existing.route };
+}
+
+/** 未解析路由的 claim 快照回填 effort（只对 unresolved 失败态有意义）。 */
+function withCycleEffort(
+  resolved: GenerateRouteOutcome,
+  cycleReasoningEffort: string | undefined,
+): GenerateRouteOutcome {
+  if (resolved.status !== "failure" || !resolved.unresolved) return resolved;
+  if (cycleReasoningEffort === undefined) return resolved;
+  return { ...resolved, route: { ...resolved.route, reasoningEffort: cycleReasoningEffort } };
+}
+
+/** claim 前后的 cycle 冲突判定（读-改-写窗口内的并发推进即冲突）。 */
+function cycleChanged(
+  existing: Awaited<ReturnType<RetryLedgerPort["get"]>>,
+  current: Awaited<ReturnType<RetryLedgerPort["get"]>>,
+): boolean {
+  if (existing === undefined) return current !== undefined;
+  return current?.cycleId !== existing.cycleId;
+}
+
+async function claimRoute(
+  deps: DueExecutorDeps,
+  retry: DueExecutorRetryOptions,
+  input: ReportTaskInput,
+  reportCfg: ReportConfig,
+): Promise<{ claim: RetryClaim; route: GenerateRouteOutcome; needsRoute: boolean }> {
+  const existing = await retry.ledger.get(input.period, input.key);
+  const cycleReasoningEffort = existing?.route.reasoningEffort ?? reportCfg.reasoningEffort;
+  const needsRoute = needsRouteForWindow(deps, input);
+  const resolvedForClaim = withCycleEffort(
+    await resolveClaimRoute(deps, retry, existing, reportCfg, cycleReasoningEffort, needsRoute),
+    cycleReasoningEffort,
+  );
   const current = await retry.ledger.get(input.period, input.key);
-  if (
-    (existing === undefined && current !== undefined) ||
-    (existing !== undefined && current?.cycleId !== existing.cycleId)
-  ) {
+  if (cycleChanged(existing, current)) {
     throw taggedError("retry-cycle-conflict", "报告重试周期已变化");
   }
   const now = retry.now?.() ?? Date.now();
@@ -427,47 +459,57 @@ async function claimRoute(
   return { claim, route: resolvedForClaim, needsRoute };
 }
 
-async function runWithRetry(
+/**
+ * 路由失败（进模型前）的终态收敛：先写 observation（存储失败则不覆盖原 provider
+ * 失败标签），再落终态并抛出带固定安全文案的 typed error。
+ */
+async function recordRouteFailureBeforeRun(
+  retry: DueExecutorRetryOptions,
+  input: ReportTaskInput,
+  claim: RetryClaim,
+  failure: RetryFailure,
+): Promise<never> {
+  const now = retry.now?.() ?? Date.now();
+  const observed = await recordRouteFailureObservation(retry.ledger, claim, failure, now);
+  if (observed === "error") {
+    logAttempt(retry, input, claim, {
+      status: "failure",
+      failure: { kind: "storage", code: "retry-observation-storage" },
+      attempt: { durationMs: 0, tokens: null },
+    });
+    await retry.ledger.recordFailure(
+      claim,
+      { kind: "storage", code: "retry-observation-storage" },
+      now,
+    );
+    throw taggedError("retry-observation-storage", "报告重试观测写入失败");
+  }
+  const activeClaim = observed !== null ? observed : claim;
+  await retry.ledger.recordFailure(activeClaim, failure, now);
+  logAttempt(retry, input, activeClaim, {
+    status: "failure",
+    failure,
+    attempt: { durationMs: 0, tokens: null },
+  });
+  throw taggedError(failure.code, routeFailureMessage(failure));
+}
+
+/**
+ * 跑生成并带回推进后的 claim（onAttempt 的 CAS 观测会推进 claim，调用方须用返回值
+ * 继续提交）。未结构化 reject（trend/快照/通知）就地收敛为 typed failure 并落终态，
+ * 否则该 key 只剩无限期 in-flight（listDue 排除、recover 才转）。
+ */
+async function prepareClaimedReport(
   deps: DueExecutorDeps,
   retry: DueExecutorRetryOptions,
   input: ReportTaskInput,
   reportCfg: ReportConfig,
-): Promise<ReportTaskResult> {
-  const { claim, route, needsRoute } = await claimRoute(deps, retry, input, reportCfg);
-  let activeClaim = claim;
-  if (route.status !== "success" && needsRoute) {
-    const now = retry.now?.() ?? Date.now();
-    const observed = await recordRouteFailureObservation(
-      retry.ledger,
-      activeClaim,
-      route.failure,
-      now,
-    );
-    if (observed === "error") {
-      logAttempt(retry, input, activeClaim, {
-        status: "failure",
-        failure: { kind: "storage", code: "retry-observation-storage" },
-        attempt: { durationMs: 0, tokens: null },
-      });
-      await retry.ledger.recordFailure(
-        activeClaim,
-        { kind: "storage", code: "retry-observation-storage" },
-        now,
-      );
-      throw taggedError("retry-observation-storage", "报告重试观测写入失败");
-    }
-    if (observed !== null) activeClaim = observed;
-    await retry.ledger.recordFailure(activeClaim, route.failure, now);
-    logAttempt(retry, input, activeClaim, {
-      status: "failure",
-      failure: route.failure,
-      attempt: { durationMs: 0, tokens: null },
-    });
-    throw taggedError(route.failure.code, routeFailureMessage(route.failure));
-  }
-  let outcome: PreparedDueReportOutcome;
+  route: GenerateRouteOutcome,
+  initialClaim: RetryClaim,
+): Promise<{ claim: RetryClaim; outcome: PreparedDueReportOutcome }> {
+  let activeClaim = initialClaim;
   try {
-    outcome = await prepareDueReportOutcome({
+    const outcome = await prepareDueReportOutcome({
       due: input,
       trend: deps.trend,
       ctx: deps.ctx,
@@ -490,54 +532,88 @@ async function runWithRetry(
         return next.entry.usage;
       },
     });
+    return { claim: activeClaim, outcome };
   } catch (error: unknown) {
-    // trend/快照/通知等未结构化 reject：claim 已 in-flight，必须就地收敛为 typed
-    // failure 并落终态，否则该 key 只剩无限期 in-flight（listDue 排除、recover 才转）。
     throw await closeRejectedClaim(retry, activeClaim, error);
   }
-  if (outcome.status === "failure") {
-    logAttempt(retry, input, activeClaim, outcome);
-    if (outcome.failure.code !== "retry-cycle-conflict") {
-      await retry.ledger.recordFailure(activeClaim, outcome.failure, retry.now?.() ?? Date.now());
-    }
-    throw taggedError(outcome.failure.code, outcomeError(outcome));
+}
+
+/** 生成失败的终态收敛（retry-cycle-conflict 不重复写——旧 claim 的 CAS 会静默丢弃）。 */
+async function failClaimedReport(
+  retry: DueExecutorRetryOptions,
+  input: ReportTaskInput,
+  claim: RetryClaim,
+  outcome: Extract<PreparedDueReportOutcome, { status: "failure" }>,
+): Promise<never> {
+  logAttempt(retry, input, claim, outcome);
+  if (outcome.failure.code !== "retry-cycle-conflict") {
+    await retry.ledger.recordFailure(claim, outcome.failure, retry.now?.() ?? Date.now());
   }
+  throw taggedError(outcome.failure.code, outcomeError(outcome));
+}
+
+/**
+ * 提交面：落盘 + coordinator CAS。provider attempt 已成功记录；storage failure 只把
+ * 同一 cycle 标记为 terminal，不重复模型调用，也不把旧 cycle 的 observation 搬入
+ * 新 cycle；commit 端口/coordinator 的其余 reject（如 lastRun 写失败）同样不得留下
+ * in-flight。
+ */
+async function commitClaimedReport(
+  retry: DueExecutorRetryOptions,
+  input: ReportTaskInput,
+  claim: RetryClaim,
+  outcome: PreparedDueReportOutcome & { status: "success" },
+): Promise<ReportTaskResult> {
   try {
     const committed = await retry.commitSuccess.commitSuccess({
-      claim: activeClaim,
+      claim,
       result: outcome.result,
-      persist: () => outcome.persist(activeClaim.cycleId),
+      persist: () => outcome.persist(claim.cycleId),
     });
     if (!committed) {
-      logAttempt(retry, input, activeClaim, {
+      logAttempt(retry, input, claim, {
         status: "failure",
         failure: { kind: "unknown", code: "retry-cycle-conflict" },
         attempt: outcome.attempt,
       });
       throw taggedError("retry-cycle-conflict", "报告重试周期已变化");
     }
-    logAttempt(retry, input, activeClaim, outcome);
+    logAttempt(retry, input, claim, outcome);
   } catch (error: unknown) {
-    // provider attempt 已成功记录；storage failure 只把同一 cycle 标记为 terminal，
-    // 不重复模型调用，也不把旧 cycle 的 observation 搬入新 cycle。
     if (stableCode(error, "") === "report-persist-failed") {
-      logAttempt(retry, input, activeClaim, {
+      logAttempt(retry, input, claim, {
         status: "failure",
         failure: { kind: "storage", code: "report-persist-failed" },
         attempt: outcome.attempt,
       });
       await retry.ledger.recordFailure(
-        activeClaim,
+        claim,
         { kind: "storage", code: "report-persist-failed" },
         retry.now?.() ?? Date.now(),
       );
       throw error;
     }
-    // commit 端口/coordinator 的其余 reject（如 lastRun 写失败）同样不得留下 in-flight。
     if (stableCode(error, "") === "retry-cycle-conflict") throw error;
-    throw await closeRejectedClaim(retry, activeClaim, error);
+    throw await closeRejectedClaim(retry, claim, error);
   }
   return { meta: outcome.result.meta };
+}
+
+async function runWithRetry(
+  deps: DueExecutorDeps,
+  retry: DueExecutorRetryOptions,
+  input: ReportTaskInput,
+  reportCfg: ReportConfig,
+): Promise<ReportTaskResult> {
+  const { claim, route, needsRoute } = await claimRoute(deps, retry, input, reportCfg);
+  if (route.status !== "success" && needsRoute) {
+    return recordRouteFailureBeforeRun(retry, input, claim, route.failure);
+  }
+  const prepared = await prepareClaimedReport(deps, retry, input, reportCfg, route, claim);
+  if (prepared.outcome.status === "failure") {
+    return failClaimedReport(retry, input, prepared.claim, prepared.outcome);
+  }
+  return commitClaimedReport(retry, input, prepared.claim, prepared.outcome);
 }
 
 /**
