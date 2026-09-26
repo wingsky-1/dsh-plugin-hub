@@ -528,3 +528,41 @@ describe("SettingsCard 一键 CA 动作提交", () => {
     expect(view.getByText("caGenerateFail")).toBeTruthy();
   });
 });
+
+describe("SettingsCard L718 载荷容错（#732 T3-B 缺口先锁）", () => {
+  // 缺口枚举（以源码分支为准，只补 L718 Config 合并箭头相关的，不硬凑）：
+  // a) v 为 null → 回落 DEFAULTS 且 revision 为空：fetch json 的 null 分支，原 (v && v.effective) || {} 等三处回落均未锁。
+  // b) effective 显式 null 不覆盖 DEFAULTS：原 effective[ek] !== null 的 null 半支未锁。
+  // c/d) revision 为字符串/小数 → 归 null：与「缺键 undefined」是同函数不同分支，it.each 合批。
+  it("a) config 为 null 时回落 DEFAULTS 且保存带 null 版本", async () => {
+    initial = null;
+    const view = await mountCard();
+    expect((view.getByLabelText("lanPort") as HTMLInputElement).value).toBe("3081");
+    expect((view.getByLabelText("httpsPort") as HTMLInputElement).value).toBe("3443");
+    port(view, "4100");
+    save(view);
+    expect(writes).toEqual([{ patch: { port: 4100 }, expectedRevision: null }]);
+    await act(async () => {});
+  });
+  it("b) effective 显式 null 不覆盖 DEFAULTS", async () => {
+    initial = { effective: { port: null, httpsPort: null }, user: {}, revision: 0 };
+    const view = await mountCard();
+    expect((view.getByLabelText("lanPort") as HTMLInputElement).value).toBe("3081");
+    expect((view.getByLabelText("httpsPort") as HTMLInputElement).value).toBe("3443");
+    save(view);
+    expect(writes).toEqual([]);
+    await act(async () => {});
+  });
+  it.each(["1", 1.5] as const)(
+    "c-d) 非整数 revision %s 归空，后续保存带 null 版本",
+    async (badRevision) => {
+      initial = { effective: { port: 4000 }, user: {}, revision: badRevision };
+      const view = await mountCard();
+      expect((view.getByLabelText("lanPort") as HTMLInputElement).value).toBe("4000");
+      port(view, "4100");
+      save(view);
+      expect(writes).toEqual([{ patch: { port: 4100 }, expectedRevision: null }]);
+      await act(async () => {});
+    },
+  );
+});
