@@ -13,6 +13,7 @@
 import { describe, expect, it } from "vitest";
 import { buildPutBody, putFailureCategory } from "../../src/client/settings/connection.tsx";
 import { mergeRows } from "../../src/client/settings/presets.tsx";
+import { entryMeta } from "../../src/client/settings/history.tsx";
 import type { DecisionConfigV1 } from "../../src/client/api/interface.ts";
 
 describe("putFailureCategory 保存路径口径（?? 链，非 failureCategory 口径）", () => {
@@ -156,5 +157,53 @@ describe("mergeRows 目录面 × 配置面", () => {
   it("templateVersion 只在目录面给出时透传", () => {
     const rows = mergeRows([{ id: "a", templateVersion: 1 }], cfg);
     expect(rows[0]?.templateVersion).toBe(1);
+  });
+});
+
+describe("entryMeta 历史条目摘要行", () => {
+  const base = {
+    ts: 0,
+    rootHash: "h",
+    rootDisplay: "d",
+    sessionId: "s",
+    presetId: "general",
+    templateVersion: 1,
+    stateHash: "sh",
+    snippetRedacted: "",
+    lang: "en" as const,
+    truncated: false,
+    originalLength: 12,
+    resultKind: "choice",
+    confidence: 0.5,
+    tier: "low" as const,
+    automation: "assisted" as const,
+    provider: "official" as const,
+    latencyMs: 30,
+  };
+
+  it("缺席信息不占位：resultKind 空串不出现在行首，choice 缺失整段略去", () => {
+    expect(entryMeta({ ...base, resultKind: "", choice: undefined })).toEqual([
+      "orig=12",
+      "assisted",
+      "official",
+      "30ms",
+    ]);
+  });
+  it("resultKind 非空即行首；choice 非空串即带 choice= 前缀", () => {
+    expect(entryMeta({ ...base, resultKind: "score", choice: "4" })).toEqual([
+      "score",
+      "choice=4",
+      "orig=12",
+      "assisted",
+      "official",
+      "30ms",
+    ]);
+  });
+  it("choice 空串等同缺席（不写 choice=）", () => {
+    expect(entryMeta({ ...base, choice: "" })[1]).toBe("orig=12");
+  });
+  it("固定尾段恒为 原文长度 / automation / provider / 时延，且顺序不变", () => {
+    const meta = entryMeta(base);
+    expect(meta.slice(-4)).toEqual(["orig=12", "assisted", "official", "30ms"]);
   });
 });
