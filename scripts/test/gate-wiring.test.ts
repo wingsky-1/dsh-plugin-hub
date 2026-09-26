@@ -1171,6 +1171,34 @@ function conditionInputViolations(): string[] {
   return bad;
 }
 
+/**
+ * 单条判据步骤的步骤级 if 登记核对：未登记 / 登记为常量 / 实际与登记不符 / 实际为常量，四种判词。
+ * 非判据步骤与无步骤级 if 的步骤不在判定面内，直接跳过。
+ */
+function checkStepIfRegistration(
+  step: StepShape,
+  declared: Map<string, string>,
+  seen: Set<string>,
+  bad: string[],
+): void {
+  if (judgmentKeysIn(SCRIPTS, step.cmds, true).length === 0) return;
+  if (step.ifCond === null) return;
+  if (!declared.has(step.key)) {
+    bad.push(`${step.key} 的步骤级 if 未登记：${step.ifCond}`);
+    return;
+  }
+  seen.add(step.key);
+  const expected = String(declared.get(step.key));
+  if (isConstantCondition(expected)) {
+    bad.push(`${step.key} 登记的 condition 是常量表达式：等于把判据关掉还宣称它跑`);
+  }
+  if (step.ifCond !== expected) {
+    bad.push(`${step.key} 的 if 与登记不符：${step.ifCond} != ${expected}`);
+  } else if (isConstantCondition(step.ifCond)) {
+    bad.push(`${step.key} 的实际 if 是常量表达式（恒真/恒假都不是闸的常态）：${step.ifCond}`);
+  }
+}
+
 test("A6：判据步骤的 `if:` 必须逐字登记在 stepIfs（扫描面 = 全部 workflow）", () => {
   // 为什么要登记制而不是「判条件真假」：`if: github.repository == 'never/match'` 这类条件提到了
   // 运行时上下文，静态判不出永不成立（等于停机问题），而它能让一条判据从此不跑——命令还在、
@@ -1184,22 +1212,7 @@ test("A6：判据步骤的 `if:` 必须逐字登记在 stepIfs（扫描面 = 全
   for (const [file, yaml] of WORKFLOW_TEXTS) {
     for (const job of extractJobs(yaml)) {
       for (const step of stepsOf(yaml, file, job, SCRIPTS)) {
-        if (judgmentKeysIn(SCRIPTS, step.cmds, true).length === 0) continue;
-        if (step.ifCond === null) continue;
-        if (!declared.has(step.key)) {
-          bad.push(`${step.key} 的步骤级 if 未登记：${step.ifCond}`);
-          continue;
-        }
-        seen.add(step.key);
-        const expected = String(declared.get(step.key));
-        if (isConstantCondition(expected)) {
-          bad.push(`${step.key} 登记的 condition 是常量表达式：等于把判据关掉还宣称它跑`);
-        }
-        if (step.ifCond !== expected) {
-          bad.push(`${step.key} 的 if 与登记不符：${step.ifCond} != ${expected}`);
-        } else if (isConstantCondition(step.ifCond)) {
-          bad.push(`${step.key} 的实际 if 是常量表达式（恒真/恒假都不是闸的常态）：${step.ifCond}`);
-        }
+        checkStepIfRegistration(step, declared, seen, bad);
       }
     }
   }
@@ -1263,6 +1276,41 @@ test("A6b：全部 workflow 的判据步骤必须是闭合形态，或在台账�
   assert.deepEqual(bad, [], "判据的退出码被吞掉、errexit 被关掉、形态不闭合：它在跑，但永不判红");
 });
 
+/** 该 job 的 run 步骤里是否至少有一条判据端点（决定 job 级 if 是否在判定面内）。 */
+function jobGuardsJudgment(yaml: string, job: string): boolean {
+  return extractRunSteps(yaml, job).some((s) => {
+    const e = endpointOf(s.cmd, SCRIPTS);
+    return e !== null && isJudgment(`${e.kind}:${e.id}`);
+  });
+}
+
+/**
+ * 单个 job 的 job 级 if 登记核对：不含判据或无 job 级 if 的 job 不在判定面内；
+ * 其余核对未登记 / 登记为常量 / 实际与登记不符 / 实际为常量四种判词。
+ */
+function checkJobIfRegistration(
+  file: string,
+  yaml: string,
+  job: string,
+  declared: Map<string, string>,
+  seen: Set<string>,
+  bad: string[],
+): void {
+  if (!jobGuardsJudgment(yaml, job)) return;
+  const key = `${file}|${job}`;
+  const cond = extractJobIf(yaml, job);
+  if (cond === null) return;
+  if (!declared.has(key)) {
+    bad.push(`${key} 的 job 级 if 未登记：${cond}`);
+    return;
+  }
+  seen.add(key);
+  const expected = String(declared.get(key));
+  if (isConstantCondition(expected)) bad.push(`${key} 登记的 job 级 if 是常量表达式：${expected}`);
+  if (cond !== expected) bad.push(`${key} 的 job 级 if 与登记不符：${cond} != ${expected}`);
+  else if (isConstantCondition(cond)) bad.push(`${key} 的 job 级 if 是常量表达式：${cond}`);
+}
+
 test("A6c：含判据的 job 的 job 级 if 必须逐字登记（扫描面 = 全部 workflow）", () => {
   // job 级 if 比步骤级更彻底：把 repo-gate 的 always() 换成 github.repository == 'never/match'，
   // 该 job 下 20 条判据一次消失，而所有只看步骤内容的断言原封不动（复核实测 24/24 全绿）。
@@ -1274,24 +1322,7 @@ test("A6c：含判据的 job 的 job 级 if 必须逐字登记（扫描面 = 全
   const seen = new Set<string>();
   for (const [file, yaml] of WORKFLOW_TEXTS) {
     for (const job of extractJobs(yaml)) {
-      const guarded = extractRunSteps(yaml, job).some((s) => {
-        const e = endpointOf(s.cmd, SCRIPTS);
-        return e !== null && isJudgment(`${e.kind}:${e.id}`);
-      });
-      if (!guarded) continue;
-      const key = `${file}|${job}`;
-      const cond = extractJobIf(yaml, job);
-      if (cond === null) continue;
-      if (!declared.has(key)) {
-        bad.push(`${key} 的 job 级 if 未登记：${cond}`);
-        continue;
-      }
-      seen.add(key);
-      const expected = String(declared.get(key));
-      if (isConstantCondition(expected))
-        bad.push(`${key} 登记的 job 级 if 是常量表达式：${expected}`);
-      if (cond !== expected) bad.push(`${key} 的 job 级 if 与登记不符：${cond} != ${expected}`);
-      else if (isConstantCondition(cond)) bad.push(`${key} 的 job 级 if 是常量表达式：${cond}`);
+      checkJobIfRegistration(file, yaml, job, declared, seen, bad);
     }
   }
   for (const key of declared.keys()) {
@@ -1416,6 +1447,24 @@ test("A6d：判据步骤的有效 env 键与环境面步骤（前序 run / uses 
     "判据步骤的环境变量与环境面步骤与登记不符：env 与前序步骤是能整类关掉判据的静默开关",
   );
 });
+/**
+ * 逐层展开别名链，返回每一层的原文（自身在前）。只看最后一层会漏掉「前缀组合别名」的脏。
+ * 环（chain 自带名字）与非字符串目标都终止展开。
+ */
+function aliasChainLayers(name: string, expansion: string): string[] {
+  const layers = [expansion];
+  const chain = [name];
+  for (;;) {
+    const next = /^pnpm\s+(?:exec\s+)?([^-\s][^\s]*)/.exec(layers[layers.length - 1]);
+    if (next === null || chain.includes(next[1])) break;
+    const deeper = SCRIPTS[next[1]];
+    if (typeof deeper !== "string") break;
+    chain.push(next[1]);
+    layers.push(deeper);
+  }
+  return layers;
+}
+
 test("A10：判据别名的展开结果不得含控制操作符或吞掉退出码（钥匙串自身也要上锁）", () => {
   // A7 锁的是「test:scripts 在两侧都有执行点」，不是「别名本身干净」：给 package.json 的
   // test:scripts 追加 " || true"，判据身份取自工具名之后的 token，追加部分不进身份——两侧仍
@@ -1429,17 +1478,7 @@ test("A10：判据别名的展开结果不得含控制操作符或吞掉退出�
     // 只看最后一层会漏掉「前缀组合别名」：`"X": "pnpm <干净别名> && node … || true"` 的脏在 X
     // 自己的展开里，而链式展开会立刻跳到更深一层，X 的原文从此没人看（独立复核实测：
     // `test:scripts = "pnpm lint && node --test scripts/test/*.test.ts || true"` 当时 A10 零命中）。
-    const layers = [expansion];
-    const chain = [name];
-    for (;;) {
-      const next = /^pnpm\s+(?:exec\s+)?([^-\s][^\s]*)/.exec(layers[layers.length - 1]);
-      if (next === null || chain.includes(next[1])) break;
-      const deeper = SCRIPTS[next[1]];
-      if (typeof deeper !== "string") break;
-      chain.push(next[1]);
-      layers.push(deeper);
-    }
-    for (const layer of layers) {
+    for (const layer of aliasChainLayers(name, expansion)) {
       if (hasShellControlOperator(layer)) bad.push(`${name} 的展开含 shell 控制操作符：${layer}`);
       if (swallowsExitCode(layer)) bad.push(`${name} 的展开吞掉退出码：${layer}`);
       if (disablesErrexit(layer.split("\n"))) bad.push(`${name} 的展开关掉了 errexit：${layer}`);
@@ -1835,6 +1874,33 @@ test("A8：覆盖性——判据面（JUDGMENT_DIRS）每个判据要么有执�
   );
 });
 
+/**
+ * via=package.json 的间接执行核对：先证「有别名指向该判据」，再证「有人真的引用这个别名」。
+ * 判词全部由调用方累积，命中即返回（本分支不落到下面的文件级 import / spawn 核对）。
+ */
+function checkPackageJsonVia(e: { endpoint: string }, target: string, bad: string[]): void {
+  const aliases = Object.entries(SCRIPTS)
+    .filter(([, cmd]) => endpointOf(cmd, SCRIPTS)?.id?.split("|")[0] === target)
+    .map(([name]) => name);
+  if (aliases.length === 0) {
+    bad.push(e.endpoint + " 声称由 package.json 的别名执行，但没有别名指向它");
+    return;
+  }
+  // 「有别名指向它」只证明**入口存在**，不证明有人走这个入口：把别名登记进 package.json
+  // 而仓库里没有任何 workflow / hook / 文档提到它，等于一条谁都不执行的假接线
+  // （对抗复核实测：这类 indirect 条目原先只查指向，删掉全部执行者仍然全绿）。
+  // 出处取「会真的跑它的地方」+「写明人类入口的文档」；台账自身与 package.json 不算出处，
+  // 否则条目里的理由文本会自证成立。
+  const cited = aliases.filter((a) => aliasCitations(a).length > 0);
+  if (cited.length === 0) {
+    bad.push(
+      e.endpoint +
+        ` 的别名（${aliases.join(", ")}）在仓库里没有任何出处：workflow / hook / 文档都没提到它` +
+        "——它是一条谁都不执行的假接线",
+    );
+  }
+}
+
 test("A8b：indirect 的 via 必须真的能到达该判据（台账可以说谎就等于没有断言）", () => {
   const bad: string[] = [];
   for (const e of EXCEPTIONS.filter((x) => x.class === "indirect")) {
@@ -1846,26 +1912,7 @@ test("A8b：indirect 的 via 必须真的能到达该判据（台账可以说谎
     if (!e.endpoint.startsWith("script:")) continue;
     const target = e.endpoint.slice("script:".length).split("|")[0];
     if (via === "package.json") {
-      const aliases = Object.entries(SCRIPTS)
-        .filter(([, cmd]) => endpointOf(cmd, SCRIPTS)?.id?.split("|")[0] === target)
-        .map(([name]) => name);
-      if (aliases.length === 0) {
-        bad.push(e.endpoint + " 声称由 package.json 的别名执行，但没有别名指向它");
-        continue;
-      }
-      // 「有别名指向它」只证明**入口存在**，不证明有人走这个入口：把别名登记进 package.json
-      // 而仓库里没有任何 workflow / hook / 文档提到它，等于一条谁都不执行的假接线
-      // （对抗复核实测：这类 indirect 条目原先只查指向，删掉全部执行者仍然全绿）。
-      // 出处取「会真的跑它的地方」+「写明人类入口的文档」；台账自身与 package.json 不算出处，
-      // 否则条目里的理由文本会自证成立。
-      const cited = aliases.filter((a) => aliasCitations(a).length > 0);
-      if (cited.length === 0) {
-        bad.push(
-          e.endpoint +
-            ` 的别名（${aliases.join(", ")}）在仓库里没有任何出处：workflow / hook / 文档都没提到它` +
-            "——它是一条谁都不执行的假接线",
-        );
-      }
+      checkPackageJsonVia(e, target, bad);
       continue;
     }
     if (!existsSync(join(ROOT, via))) {

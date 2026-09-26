@@ -75,6 +75,29 @@ function normalizeTypeImports(text: string) {
  * 单文件里的模块 specifier（静态 import / export-from / import= require / 动态 import），带源码行号。
  * 转译或解析失败时抛出（调用方按 fail-closed 判红）。
  */
+/**
+ * 承载模块 specifier 的节点形态 → 它字面量所在位置：静态 import / export-from / 动态 import /
+ * import=require。不是这些形态（或形态上缺 source）时给 null / undefined，由 push 的守卫丢弃。
+ */
+function specifierLiteralOf(n: WalkNode): WalkNode | null | undefined {
+  if (n.type === "ImportExpression") return n.source;
+  if (
+    n.type === "CallExpression" &&
+    n.callee?.type === "Identifier" &&
+    n.callee.name === "require"
+  ) {
+    return n.arguments?.[0];
+  }
+  if (
+    n.type === "ImportDeclaration" ||
+    n.type === "ExportNamedDeclaration" ||
+    n.type === "ExportAllDeclaration"
+  ) {
+    return n.source;
+  }
+  return null;
+}
+
 async function specifiersOf(file: string) {
   const normalized = normalizeTypeImports(readFileSync(file, "utf8"));
   const { code, map } = await transform(normalized, {
@@ -110,22 +133,9 @@ async function specifiersOf(file: string) {
       for (const item of node) walk(item);
       return;
     }
-    if (
-      (n.type === "ImportDeclaration" ||
-        n.type === "ExportNamedDeclaration" ||
-        n.type === "ExportAllDeclaration") &&
-      n.source
-    ) {
-      push(n.source);
-    } else if (n.type === "ImportExpression") {
-      push(n.source);
-    } else if (
-      n.type === "CallExpression" &&
-      n.callee?.type === "Identifier" &&
-      n.callee.name === "require"
-    ) {
-      push(n.arguments?.[0]);
-    }
+    // 非 specifier 载体节点得 null，载体但缺 source 的得 undefined；push 的守卫两者都原样丢弃，
+    // 故这里可以无条件投递，让「哪些节点类型算 import 语句」这条判据只留在 specifierLiteralOf 一处。
+    push(specifierLiteralOf(n));
     for (const key of Object.keys(n)) {
       if (key !== "loc") walk(n[key]);
     }
@@ -180,9 +190,8 @@ async function clientUsesFacade(pkgDir: string) {
   return false;
 }
 
-/** 扫描面与违规清单。扫描面为空 → 一条 empty-scan 违规（判据不得恒绿）。 */
-async function scanSharedLeafImports(root: string) {
-  const packagesDir = join(root, "packages");
+/** 扫描面：客户端走门面的包的整个 src/shared/**。 */
+async function collectScanSurface(packagesDir: string) {
   const packages = existsSync(packagesDir)
     ? readdirSync(packagesDir, { withFileTypes: true })
         .filter((entry) => entry.isDirectory())
@@ -202,6 +211,12 @@ async function scanSharedLeafImports(root: string) {
       });
     }
   }
+  return scanned;
+}
+
+/** 扫描面与违规清单。扫描面为空 → 一条 empty-scan 违规（判据不得恒绿）。 */
+async function scanSharedLeafImports(root: string) {
+  const scanned = await collectScanSurface(join(root, "packages"));
   const violations = [];
   if (scanned.length === 0) {
     violations.push({

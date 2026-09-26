@@ -2078,6 +2078,12 @@ process.exit(0);
     return found;
   };
 
+  /** settings.yaml 的可读面：路径缺席或文件不存在时两项都给「缺席」形态，不抛。 */
+  const settingsProbe = (settingsPath: string | null) => {
+    if (settingsPath === null || !existsSync(settingsPath)) return { exists: false, content: null };
+    return { exists: true, content: readFileSync(settingsPath, "utf8") };
+  };
+
   const runCase = (entry: string | null, extraEnv: NodeJS.ProcessEnv = {}) => {
     const runTmp = mkdtempSync(join(tmp, "runtime-"));
     const args = [scriptFile, "--json", "--keep", "--port", "0"];
@@ -2099,14 +2105,14 @@ process.exit(0);
     const verdict = JSON.parse(lines.at(-1) ?? "{}");
     const home = verdict.dshHome ?? null;
     const settingsPath = home ? join(home, "settings.yaml") : null;
+    const settings = settingsProbe(settingsPath);
     return {
       status: result.status,
       report: stdout + stderr,
       verdict,
-      settingsExists: settingsPath ? existsSync(settingsPath) : false,
+      settingsExists: settings.exists,
       settingsWrites: settingsFilesUnder(runTmp),
-      settings:
-        settingsPath && existsSync(settingsPath) ? readFileSync(settingsPath, "utf8") : null,
+      settings: settings.content,
     };
   };
 

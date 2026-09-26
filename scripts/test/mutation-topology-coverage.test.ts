@@ -137,9 +137,10 @@ test("#836：段缺 excludes 时判红且不给可判定的面，段声明了则
   assert.equal(specs?.noMutation, false, "登记在 packages 的包不是「无变异面」态");
   assert.deepEqual(specs?.mutate, [], "形状不合法时不给可判定的面（fail-closed）");
   assert.deepEqual(specs?.excludes, []);
+  const missingExcludesProblems = specs?.problems ?? [];
   assert.ok(
-    (specs?.problems ?? []).some((p) => p.includes('段 "noExcludes"') && p.includes("excludes")),
-    `缺 excludes 的段必须判红并点名段名：${(specs?.problems ?? []).join(" | ")}`,
+    missingExcludesProblems.some((p) => p.includes('段 "noExcludes"') && p.includes("excludes")),
+    `缺 excludes 的段必须判红并点名段名：${missingExcludesProblems.join(" | ")}`,
   );
 
   // 对照组：每段都显式声明 excludes → 零 problems，且口径内只有声明过的条目。
@@ -634,6 +635,10 @@ test("#773 R4 反证：projectTestSurface 遇坏包登记给判词，不得抛�
  * conf 文件名 → 所属包（判据 ⑤ 的锚定与 ⑥ 的有效面都要它）。与派生侧 confOwners 同一算法：
  * `_single` 段派生 `<pkg>.json`，其余段派生 `<pkg>-<seg>.json`。
  */
+function confFileName(base: string, segKey: string): string {
+  return segKey === "_single" ? `${base}.json` : `${base}-${segKey}.json`;
+}
+
 function confOwnerOf(
   topology: {
     packages?: Record<string, { segments?: Record<string, unknown> }>;
@@ -641,15 +646,17 @@ function confOwnerOf(
   },
   fileName: string,
 ) {
+  // 归属候选按「packages 声明序 → shared」的固定次序铺平：次序即优先级，
+  // 命中即返回，与派生侧 confOwners 的查找序一致。
+  const owners: [string, Record<string, unknown> | undefined][] = [];
   for (const [pkgName, pkgDef] of Object.entries(topology.packages ?? {})) {
-    for (const segKey of Object.keys(pkgDef.segments ?? {})) {
-      const name = segKey === "_single" ? `${pkgName}.json` : `${pkgName}-${segKey}.json`;
-      if (name === fileName) return pkgName;
-    }
+    owners.push([pkgName, pkgDef.segments]);
   }
-  for (const segKey of Object.keys(topology.$rootShared?.segments ?? {})) {
-    const name = segKey === "_single" ? "shared.json" : `shared-${segKey}.json`;
-    if (name === fileName) return "shared";
+  owners.push(["shared", topology.$rootShared?.segments]);
+  for (const [owner, segments] of owners) {
+    for (const segKey of Object.keys(segments ?? {})) {
+      if (confFileName(owner, segKey) === fileName) return owner;
+    }
   }
   return undefined;
 }

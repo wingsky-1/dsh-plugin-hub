@@ -116,26 +116,25 @@ function sourceFingerprints(source: string): string[] {
   return [...out];
 }
 
-/** 消费方声明的形态判据（#843 L5）：consumers 与 consumerGap 排他，且各自形态合法。 */
-function assertConsumerShape(e: FaceRegistryEntry): void {
-  const hasConsumers = Array.isArray(e.consumers) && e.consumers.length > 0;
-  const hasGap = e.consumerGap !== undefined && e.consumerGap !== null;
-  assert.notEqual(
-    hasConsumers,
-    hasGap,
-    `${e.path} 必须恰好其一：consumers（非空，仓内直接读取方）或 consumerGap（无直接读取方的缺口）`,
-  );
-  if (!hasGap) {
-    assert.ok(Array.isArray(e.consumers), `${e.path} 的 consumers 必须是数组`);
-    for (const rel of e.consumers ?? []) {
-      assert.ok(
-        typeof rel === "string" && rel.trim().length > 0,
-        `${e.path} 的 consumers 不得含空项：${JSON.stringify(rel)}`,
+/** 逐个消费方核对：路径在 git 内，且文件文本字面命中 source 的任一指纹；失败写进 failures。 */
+function checkConsumerRefs(e: FaceRegistryEntry, failures: string[]): void {
+  const fingerprints = sourceFingerprints(e.path);
+  for (const rel of e.consumers ?? []) {
+    if (!TRACKED_SET.has(rel)) {
+      failures.push(`${e.path} 的消费方 ${rel} 不在 git 跟踪的仓内文件里`);
+      continue;
+    }
+    const text = readFileSync(join(ROOT, rel), "utf8");
+    if (!fingerprints.some((fp) => text.includes(fp))) {
+      failures.push(
+        `${e.path} 的消费方 ${rel} 未字面命中 source 指纹 ${JSON.stringify(fingerprints)}——它不是该 source 的读取方`,
       );
     }
-    return;
   }
-  const gap = e.consumerGap as ConsumerGap;
+}
+
+/** consumerGap 分支的形态判据：kind 枚举、reason 非空、trackingIssue 形态。 */
+function assertConsumerGap(e: FaceRegistryEntry, gap: ConsumerGap): void {
   assert.ok(
     gap.kind === "none" || gap.kind === "external" || gap.kind === "indirect",
     `${e.path} 的 consumerGap.kind 只许 none | external | indirect，实得 ${JSON.stringify(gap.kind)}`,
@@ -157,6 +156,28 @@ function assertConsumerShape(e: FaceRegistryEntry): void {
       `${e.path} 的 consumerGap.trackingIssue 形态应为 #<编号>`,
     );
   }
+}
+
+/** 消费方声明的形态判据（#843 L5）：consumers 与 consumerGap 排他，且各自形态合法。 */
+function assertConsumerShape(e: FaceRegistryEntry): void {
+  const hasConsumers = Array.isArray(e.consumers) && e.consumers.length > 0;
+  const hasGap = e.consumerGap !== undefined && e.consumerGap !== null;
+  assert.notEqual(
+    hasConsumers,
+    hasGap,
+    `${e.path} 必须恰好其一：consumers（非空，仓内直接读取方）或 consumerGap（无直接读取方的缺口）`,
+  );
+  if (!hasGap) {
+    assert.ok(Array.isArray(e.consumers), `${e.path} 的 consumers 必须是数组`);
+    for (const rel of e.consumers ?? []) {
+      assert.ok(
+        typeof rel === "string" && rel.trim().length > 0,
+        `${e.path} 的 consumers 不得含空项：${JSON.stringify(rel)}`,
+      );
+    }
+    return;
+  }
+  assertConsumerGap(e, e.consumerGap as ConsumerGap);
 }
 
 test("#742 2.3: ci-face-registry 结构合法（faces 名必须是 ci.yml 的真实面）", () => {
@@ -323,19 +344,7 @@ test("#843 L5: consumers 是真实读取方——路径存在且字面命中 sou
   for (const e of REGISTRY.entries) {
     if (Array.isArray(e.consumers) && e.consumers.length > 0) {
       consumersChecked++;
-      const fingerprints = sourceFingerprints(e.path);
-      for (const rel of e.consumers) {
-        if (!TRACKED_SET.has(rel)) {
-          failures.push(`${e.path} 的消费方 ${rel} 不在 git 跟踪的仓内文件里`);
-          continue;
-        }
-        const text = readFileSync(join(ROOT, rel), "utf8");
-        if (!fingerprints.some((fp) => text.includes(fp))) {
-          failures.push(
-            `${e.path} 的消费方 ${rel} 未字面命中 source 指纹 ${JSON.stringify(fingerprints)}——它不是该 source 的读取方`,
-          );
-        }
-      }
+      checkConsumerRefs(e, failures);
     } else if (e.consumerGap !== undefined && e.consumerGap !== null) {
       gapsChecked++;
     }
