@@ -81,6 +81,18 @@ function makeRes(): {
   };
 }
 
+/**
+ * 尽力拆除：逆序跑完所有 disposer，单个抛错不连坐（一个挂了就漏掉后面的会假失败）。
+ * 本文件多处挂载-断言-拆除复用同一段，抄三遍只会让 teardown 漏改。
+ */
+function disposeAll(disposers: Array<() => void>): void {
+  for (const dispose of [...disposers].reverse()) {
+    try {
+      dispose();
+    } catch {}
+  }
+}
+
 /** 构造标准 fake ctx：收集路由与 disposer。
  *  - over.get：可选注入的假 wingsky.notifier 服务（get 桩命中 "wingsky.notifier" 时返回）；
  *  - over.recordOn：为 true 时记录 ctx.on 监听器到 listeners（供 internal/service 补注册测试手动触发）。 */
@@ -672,11 +684,7 @@ describe("#301：apply 内部恢复隔离坏状态且诊断单次可见", () => 
         );
       backupFound.push(backup !== undefined);
       backups.push(backup ?? "missing");
-      for (const dispose of [...disposers].reverse()) {
-        try {
-          dispose();
-        } catch {}
-      }
+      disposeAll(disposers);
     }
     for (const [index, backup] of backups.entries()) {
       backupRaw.push(readFileSync(join(historyDir, backup), "utf8") === cases[index]?.raw);
@@ -992,11 +1000,7 @@ describe.skipIf(process.platform === "win32")(
       writeErrList = writeErrors.filter((line) => line.includes("启用选择落盘失败"));
       healthPolluted = healthErrors().some((entry) => entry.message.includes("启用选择落盘失败"));
 
-      for (const dispose of [...disposers].reverse()) {
-        try {
-          dispose();
-        } catch {}
-      }
+      disposeAll(disposers);
     });
 
     it("内存中的显式停用仍成功响应", () => {
@@ -1416,11 +1420,7 @@ describe("#534：通知类型注入（可选 notifier 探测 + 动态 kind 注�
       const { ctx, routes, disposers } = makeCtx();
       await apply(ctx, baseCfg);
       noNotifierMounted = routes.some((r) => r.path === ROUTES.health);
-      for (const dispose of [...disposers].reverse()) {
-        try {
-          dispose();
-        } catch {}
-      }
+      disposeAll(disposers);
     }
 
     // 2) ctx.get 命中 wingsky.notifier（notifier 已加载）：挂载即注册 provider-usage:report
@@ -1431,11 +1431,7 @@ describe("#534：通知类型注入（可选 notifier 探测 + 动态 kind 注�
       mountedKinds = kinds.length;
       mountedKindsId = kinds[0]?.id;
       mountedKindsLabel = kinds[0]?.label;
-      for (const dispose of [...disposers].reverse()) {
-        try {
-          dispose();
-        } catch {}
-      }
+      disposeAll(disposers);
     }
 
     // 3) internal/service 事件补注册：notifier 后加载/HMR 重建后 kindRegistry 为空，
@@ -1453,11 +1449,7 @@ describe("#534：通知类型注入（可选 notifier 探测 + 动态 kind 注�
       }
       postEventKindCount = kinds.length;
       reRegisteredId = kinds[1]?.id;
-      for (const dispose of [...disposers].reverse()) {
-        try {
-          dispose();
-        } catch {}
-      }
+      disposeAll(disposers);
     }
   });
 

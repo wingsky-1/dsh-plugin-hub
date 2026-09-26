@@ -141,22 +141,44 @@ function configWith(
   return { ...BASE_CONFIG, ...patch };
 }
 
-function installFetch(options: {
+/** 路由处理的入参：URL 已解析、调用已记账，处理器只管造响应。 */
+interface RouteContext {
+  readonly options: FetchOptions;
+  readonly parsed: URL;
+  readonly body: string | null;
+  /** status 序列游标（按发生顺序取下一条；仅 status 路由会动它）。 */
+  takeStatus: () => HttpFixture | undefined;
+}
+
+type FetchOptions = {
   config: typeof BASE_CONFIG & { reasoningEffort?: string };
   modelsByProvider: Record<string, Array<{ id: string; name?: string }>>;
   selectedModels?: Record<string, SelectedModelFixture>;
   generate?: GenerateFixture;
-}): void {
-  let statusIndex = 0;
-  const fake = async (input: unknown, init?: RequestInit): Promise<Response> => {
-    const url = String(input);
-    const method = init?.method ?? "GET";
-    const body = typeof init?.body === "string" ? init.body : null;
-    calls.push({ url, method, body });
+};
 
-    const parsed = new URL(url, "http://localhost");
-    if (parsed.pathname.endsWith("/report-config") && method === "GET") {
-      return response({
+/** 未登记的请求：路由不认就是用例没铺到位，报出来而不是静默回 200。 */
+function unexpected(what: string): Response {
+  return response({ ok: false, error: `unexpected-${what}` }, 500);
+}
+
+/**
+ * 一条路由：命中条件是**二维**的（method + 路径后缀），`*` 表示不限方法。
+ * 写成条目数组而不是 `{ [`${method} ${suffix}`]: handler }`：后者的键是拼出来的字符串，
+ * 拼错一个空格编译器不吭声、命中静默落空（正是 D5 禁 Record<string, ...> 的原因）。
+ */
+interface RouteEntry {
+  readonly method: string;
+  readonly suffix: string;
+  readonly handle: (ctx: RouteContext) => Response;
+}
+
+const ROUTES: readonly RouteEntry[] = [
+  {
+    method: "GET",
+    suffix: "/report-config",
+    handle: ({ options }) =>
+      response({
         ok: true,
         config: options.config,
         providers: [
@@ -165,9 +187,13 @@ function installFetch(options: {
         ],
         dirs: [],
         promptDefaults: BASE_CONFIG.prompts,
-      });
-    }
-    if (parsed.pathname.endsWith("/report-models")) {
+      }),
+  },
+  {
+    method: "*",
+    suffix: "/report-models",
+    // 候选模型列表：带 model 参数时附带该模型的 reasoning 元数据（缺则不下发该键）。
+    handle: ({ options, parsed }) => {
       const provider = parsed.searchParams.get("provider") ?? "";
       const model = parsed.searchParams.get("model");
       const models = options.modelsByProvider[provider] ?? [];
@@ -178,23 +204,65 @@ function installFetch(options: {
         models,
         ...(selectedModel === undefined ? {} : { selectedModel }),
       });
-    }
-    if (parsed.pathname.endsWith("/report-config") && method === "POST") {
+    },
+  },
+  {
+    method: "POST",
+    suffix: "/report-config",
+    handle: ({ body }) => {
       const posted = JSON.parse(body ?? "{}") as Record<string, unknown>;
       return response({ ok: true, config: posted });
-    }
-    if (parsed.pathname.endsWith("/reports/generate") && method === "POST") {
+    },
+  },
+  {
+    method: "POST",
+    suffix: "/reports/generate",
+    handle: ({ options }) => {
       const fixture = options.generate?.post;
-      if (fixture === undefined) return response({ ok: false, error: "unexpected-generate" }, 500);
-      return response(fixture.body, fixture.status ?? 202);
-    }
-    if (parsed.pathname.endsWith("/reports/generate/status") && method === "GET") {
-      const fixture = options.generate?.statuses[statusIndex];
-      statusIndex += 1;
-      if (fixture === undefined) return response({ ok: false, error: "unexpected-status" }, 500);
-      return response(fixture.body, fixture.status ?? 200);
-    }
-    return response({ ok: false, error: "unexpected-request" }, 500);
+      return fixture === undefined
+        ? unexpected("generate")
+        : response(fixture.body, fixture.status ?? 202);
+    },
+  },
+  {
+    method: "GET",
+    suffix: "/reports/generate/status",
+    handle: ({ takeStatus }) => {
+      const fixture = takeStatus();
+      return fixture === undefined
+        ? unexpected("status")
+        : response(fixture.body, fixture.status ?? 200);
+    },
+  },
+];
+
+/**
+ * 命中路由：路径后缀与 method 两条同时成立才算命中（`*` 收录不限方法的路由）。
+ * 后缀互不为彼此后缀，故至多一条能满足后缀条件——find 命中哪条与表内顺序无关，
+ * 两条都中的那条也不会被别的条目提前截走。
+ */
+function matchRoute(method: string, pathname: string): RouteEntry | undefined {
+  return ROUTES.find(
+    (r) => pathname.endsWith(r.suffix) && (r.method === "*" || r.method === method),
+  );
+}
+
+function installFetch(options: FetchOptions): void {
+  let statusIndex = 0;
+  const takeStatus = (): HttpFixture | undefined => {
+    const fixture = options.generate?.statuses[statusIndex];
+    statusIndex += 1;
+    return fixture;
+  };
+  const fake = async (input: unknown, init?: RequestInit): Promise<Response> => {
+    const url = String(input);
+    const method = init?.method ?? "GET";
+    const body = typeof init?.body === "string" ? init.body : null;
+    calls.push({ url, method, body });
+    const parsed = new URL(url, "http://localhost");
+    const entry = matchRoute(method, parsed.pathname);
+    if (entry === undefined) return unexpected("request");
+    return entry.handle({ options, parsed, body, takeStatus });
   };
   globalThis.fetch = fake as unknown as typeof fetch;
 }
@@ -289,6 +357,34 @@ afterEach(() => {
     },
     "providerUsage",
   );
+});
+
+/**
+ * 假 fetch 路由表自身的契约（不是 ReportSection 的行为）。
+ *
+ * 这三条盯的是**匹配规则**本身：结尾匹配、method 收窄、未登记即报错。把 endsWith 换成
+ * includes、把 method 判定去掉、或漏登记一条路由，都各自打红其中一条。
+ */
+describe("假 fetch 路由表（#732 契约）", () => {
+  it("后缀按结尾匹配：同前缀不同结尾不误命中已登记路由", async () => {
+    installFetch({ config: BASE_CONFIG, modelsByProvider: {} });
+    const res = await globalThis.fetch("/report-config-extra");
+    expect(res.status).toBe(500);
+    expect(await res.json()).toEqual({ ok: false, error: "unexpected-request" });
+  });
+
+  it("method 不符不命中：同路径换 method 仍报未登记", async () => {
+    installFetch({ config: BASE_CONFIG, modelsByProvider: {} });
+    const res = await globalThis.fetch("/report-config", { method: "DELETE" });
+    expect(await res.json()).toEqual({ ok: false, error: "unexpected-request" });
+  });
+
+  it("已登记的 method 命中：GET /report-config 出配置回包", async () => {
+    installFetch({ config: BASE_CONFIG, modelsByProvider: {} });
+    const res = await globalThis.fetch("/report-config");
+    expect(res.ok).toBe(true);
+    expect(((await res.json()) as { ok: boolean }).ok).toBe(true);
+  });
 });
 
 describe("ReportSection：provider → exact model → reasoning effort", () => {

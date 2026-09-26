@@ -124,39 +124,70 @@ export function esc(s: unknown): string {
 
 // ------------------------------------------------------------------ 校验
 
+/** name 白名单：2-64 位字母数字下划线连字符（正则自身即长度约束，无需另判 length）。 */
+const ADAPTER_NAME_RE = /^[A-Za-z0-9_-]{2,64}$/;
+
+/** v2 契约的方法字段（fetchData / formatCapsule / formatPanel），按声明序。 */
+const ADAPTER_METHOD_KEYS = ["fetchData", "formatCapsule", "formatPanel"] as const;
+
+/** 非对象导出的描述文案（null 与非 null 分列，否则 typeof 会把两者并成 object）。 */
+function describeNonObject(v: unknown): string {
+  return `导出不是对象（${v === null ? "null" : typeof v}）`;
+}
+
+/** name 字段：字符串且过白名单（^ $ 锚点各有一条回归断言，去锚即放行）。 */
+function isAdapterName(v: unknown): v is string {
+  return typeof v === "string" && ADAPTER_NAME_RE.test(v);
+}
+
+/** providers 的基础形状：非空数组。describe 侧只收这一层（见下条注释）。 */
+function isNonEmptyList(v: unknown): v is unknown[] {
+  return Array.isArray(v) && v.length > 0;
+}
+
+/**
+ * providers 的完整形状：非空**字符串**数组。
+ *
+ * 只有 isUsageStatsAdapter 收这一层；describe 侧停在 isNonEmptyList，故 providers: [1]
+ * 判「不合格」但不报形状问题——两条判据刻意不等宽（文案是给人看的引导，不承担裁决），
+ * 合并成一张表会把这条差异抹平，故此处分开。
+ */
+function isProviderList(v: unknown): v is string[] {
+  return isNonEmptyList(v) && v.every((p) => typeof p === "string" && p.length > 0);
+}
+
+/** 三个方法字段齐备（缺失即不合格；every 短路语义与 && 链一致）。 */
+function hasAdapterMethods(a: Record<string, unknown>): boolean {
+  return ADAPTER_METHOD_KEYS.every((k) => typeof a[k] === "function");
+}
+
+/** 缺失的方法字段名（按 ADAPTER_METHOD_KEYS 声明序，形状文案逐名点名）。 */
+function missingMethodKeys(a: Record<string, unknown>): string[] {
+  return ADAPTER_METHOD_KEYS.filter((k) => typeof a[k] !== "function");
+}
+
 /** 校验 v2 适配器结构。 */
 export function isUsageStatsAdapter(v: unknown): v is UsageStatsAdapter {
   if (typeof v !== "object" || v === null) return false;
   const a = v as Record<string, unknown>;
   return (
     a.version === ADAPTER_CONTRACT_VERSION &&
-    typeof a.name === "string" &&
-    (a.name as string).length >= 2 &&
-    /^[A-Za-z0-9_-]{2,64}$/.test(a.name as string) &&
-    Array.isArray(a.providers) &&
-    a.providers.length > 0 &&
-    a.providers.every((p: unknown) => typeof p === "string" && p.length > 0) &&
-    typeof a.fetchData === "function" &&
-    typeof a.formatCapsule === "function" &&
-    typeof a.formatPanel === "function"
+    isAdapterName(a.name) &&
+    isProviderList(a.providers) &&
+    hasAdapterMethods(a)
   );
 }
 
 /** v2 适配器形状问题明细（通过校验返回 null）。 */
 export function describeUsageStatsAdapterShape(v: unknown): string | null {
-  if (typeof v !== "object" || v === null)
-    return `导出不是对象（${v === null ? "null" : typeof v}）`;
+  if (typeof v !== "object" || v === null) return describeNonObject(v);
   const a = v as Record<string, unknown>;
   const missing: string[] = [];
   if (a.version !== ADAPTER_CONTRACT_VERSION)
     missing.push(`version 必须 === ${ADAPTER_CONTRACT_VERSION}（实际 ${String(a.version)}）`);
-  if (typeof a.name !== "string" || !/^[A-Za-z0-9_-]{2,64}$/.test(a.name as string))
-    missing.push("name（2-64 位字母数字下划线连字符）");
-  if (!Array.isArray(a.providers) || a.providers.length === 0)
-    missing.push("providers（非空字符串数组）");
-  if (typeof a.fetchData !== "function") missing.push("fetchData（函数）");
-  if (typeof a.formatCapsule !== "function") missing.push("formatCapsule（函数）");
-  if (typeof a.formatPanel !== "function") missing.push("formatPanel（函数）");
+  if (!isAdapterName(a.name)) missing.push("name（2-64 位字母数字下划线连字符）");
+  if (!isNonEmptyList(a.providers)) missing.push("providers（非空字符串数组）");
+  for (const key of missingMethodKeys(a)) missing.push(`${key}（函数）`);
   return missing.length > 0 ? missing.join("、") : null;
 }
 

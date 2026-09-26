@@ -493,6 +493,23 @@ describe("describeUsageStatsAdapterShape 补充边界（#150 分片 2）", () =>
     });
     expect(d !== null && d.includes("providers（非空字符串数组）")).toBeTruthy();
   });
+
+  // 两条判据**刻意不等宽**：describe 只收「非空数组」这一层，元素类型由 is 侧裁决。
+  // 这条钉死该不对称——把两侧判据合并成同一个谓词（看着像顺手清理）时它即红。
+  it("providers 元素非字符串：is 判不合格，describe 不报形状问题", () => {
+    const a = validAdapter();
+    a.providers = [1];
+    expect(isUsageStatsAdapter(a)).toBe(false);
+    expect(describeUsageStatsAdapterShape(a)).toBe(null);
+  });
+
+  // 名字白名单去掉任一锚点，两侧都要变红（共用同一谓词，故一处变异两处可见）
+  it("providers 非数组：两侧一致判为不合格/报缺失", () => {
+    const a = validAdapter();
+    a.providers = "p1";
+    expect(isUsageStatsAdapter(a)).toBe(false);
+    expect(describeUsageStatsAdapterShape(a)).toBe("providers（非空字符串数组）");
+  });
 });
 
 // ================================================================ #150 二阶段：registry 全分支矩阵
