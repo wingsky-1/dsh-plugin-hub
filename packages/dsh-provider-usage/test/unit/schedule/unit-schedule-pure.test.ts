@@ -88,19 +88,56 @@ function entry(over: Partial<RetryEntry> = {}): RetryEntry {
 
 describe("store 校准纯面", () => {
   it("calibrateLastRun：schema 旧全量重算，changed 为 true", () => {
-    // generatedAt 所在本地日 > endDay → 该窗口已闭环，deriveLastRun 收下
+    // generatedAt 所在**本地日** > endDay → 该窗口已闭环，deriveLastRun 收下。
+    // dayKey 按本地时区构造（见 shared/charts.ts：禁用 toISOString 是为免东八区 00:00–08:00
+    // 划入前一天），故时间戳必须对**所有时区**都成立：取 2025-09-08T12:00:00Z，
+    // 任何时区（UTC-12..UTC+14）本地日都落在 09-07/09-08，均 > 09-06。
+    // 原取值 1757180000000（2025-09-06）在 UTC 下 dayKey 恰为 09-06 → 不闭环，
+    // 本地（UTC+8）绿而 CI（UTC）红——本条断言改为时区无关取值并加下方回归守卫。
     const records: LastRunRecord[] = [
       {
         period: "daily",
         key: "2025-09-06",
         endDay: "2025-09-06",
-        generatedAt: 1757180000000,
+        generatedAt: 1757332800000, // 2025-09-08T12:00:00Z
         ok: true,
       },
     ];
     const out = calibrateLastRun(LAST_RUN_SCHEMA - 1, {}, records);
     expect(out.changed).toBe(true);
     expect(out.after.daily).toBe("2025-09-06");
+  });
+
+  // 时区回归守卫（#732 CI 教训）：闭环判定走 dayKey（本地时区），取值必须对所有时区成立。
+  // 本条在本地即��把「只在 UTC+8 通过」的时间戳揪出来，不必等 CI。
+  it.each([
+    "UTC",
+    "Asia/Shanghai",
+    "America/Los_Angeles",
+    "America/New_York",
+    "Europe/London",
+    "Pacific/Auckland",
+    "Pacific/Honolulu",
+  ])("闭环判定在 TZ=%s 下与时区无关", (tz) => {
+    const previous = process.env.TZ;
+    process.env.TZ = tz;
+    try {
+      // dayKey 读 Date 构造时的本地时区，改 TZ 后需重置缓存
+      const out = calibrateLastRun(LAST_RUN_SCHEMA - 1, {}, [
+        {
+          period: "daily",
+          key: "2025-09-06",
+          endDay: "2025-09-06",
+          generatedAt: 1757332800000,
+          ok: true,
+        },
+      ]);
+      expect(out.changed).toBe(true);
+      expect(out.after.daily).toBe("2025-09-06");
+    } finally {
+      if (previous === undefined) delete process.env.TZ;
+      else process.env.TZ = previous;
+    }
   });
 
   it("calibrateLastRun：schema 新且对齐后无变化 → changed=false", () => {
