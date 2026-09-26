@@ -11,6 +11,7 @@ import type {
   AutomationLevel,
   ConfigV1 as SharedConfigV1,
   HistoryEntry as SharedHistoryEntry,
+  HistoryQuestion,
   DecisionLang,
   DecisionTier,
 } from "../../shared/interface.ts";
@@ -33,24 +34,28 @@ export interface DecisionPresetInfo {
   readonly custom?: boolean;
 }
 
-function pickCategory(body: unknown): string | null {
-  if (body === null || typeof body !== "object" || Array.isArray(body)) return null;
-  const rec = body as Record<string, unknown>;
-  const nested = rec["error"];
-  if (nested !== null && typeof nested === "object" && !Array.isArray(nested)) {
-    const nrec = nested as Record<string, unknown>;
-    for (const key of ["category", "errorCode", "code"]) {
-      const v = nrec[key];
-      if (typeof v === "string" && v.length > 0) return v;
-    }
+/** 嵌套 error 面里的类别键（按优先级取首个非空串）。 */
+const NESTED_CATEGORY_KEYS = ["category", "errorCode", "code"] as const;
+/** 顶层类别键（error 面未命中后按此优先级取；顶层 "error" 可能是串类别）。 */
+const TOP_CATEGORY_KEYS = ["category", "errorCode", "error", "code"] as const;
+/** 兜底键（类别与 code 都没有时取人类可读 message）。 */
+const MESSAGE_KEYS = ["message"] as const;
+
+/** 候选键里取第一个非空串（无命中回 null）。类别取值优先级就写在这三张键表里。 */
+function firstNonEmptyStr(rec: Record<string, unknown>, keys: readonly string[]): string | null {
+  for (const key of keys) {
+    const value = rec[key];
+    if (typeof value === "string" && value.length > 0) return value;
   }
-  for (const key of ["category", "errorCode", "error", "code"]) {
-    const v = rec[key];
-    if (typeof v === "string" && v.length > 0) return v;
-  }
-  const msg = rec["message"];
-  if (typeof msg === "string" && msg.length > 0) return msg;
   return null;
+}
+
+function pickCategory(body: unknown): string | null {
+  if (!isRecord(body)) return null;
+  const nested = body["error"];
+  const fromNested = isRecord(nested) ? firstNonEmptyStr(nested, NESTED_CATEGORY_KEYS) : null;
+  if (fromNested !== null) return fromNested;
+  return firstNonEmptyStr(body, TOP_CATEGORY_KEYS) ?? firstNonEmptyStr(body, MESSAGE_KEYS);
 }
 
 export function failureCategory(status: number, body: unknown): string {
@@ -71,17 +76,26 @@ function asNumber(v: unknown, fallback: number): number {
 }
 
 /** automationCap 归一到 0|1|2（非法回 0=none）。 */
+
+/** 串别名 → 档（high/2 → 2，low/1 → 1；未命中回 null，调用方回落 none）。 */
+function capFromString(v: string): AutomationCap | null {
+  if (v === "high" || v === "2") return 2;
+  if (v === "low" || v === "1") return 1;
+  return null;
+}
+
+/** 数值区间 → 档（≥2 封 high，≥1 封 low，其余 none；小数与负数都落 none）。 */
+function capFromNumber(v: number): AutomationCap {
+  if (v >= 2) return 2;
+  if (v >= 1) return 1;
+  return 0;
+}
+
 export function normalizeCap(v: unknown): AutomationCap {
   if (v === 1 || v === 2) return v;
   if (v === 0) return 0;
-  if (typeof v === "string") {
-    if (v === "high" || v === "2") return 2;
-    if (v === "low" || v === "1") return 1;
-  }
-  if (typeof v === "number" && Number.isFinite(v)) {
-    if (v >= 2) return 2;
-    if (v >= 1) return 1;
-  }
+  if (typeof v === "string") return capFromString(v) ?? 0;
+  if (typeof v === "number" && Number.isFinite(v)) return capFromNumber(v);
   return 0;
 }
 
@@ -91,34 +105,56 @@ export function capLabel(cap: AutomationCap): string {
   return t("capNone");
 }
 
+/** GET /config 的三种载体（裸 v1 / {config} / {data}）解包；都不匹配即原样回传交后续判。 */
+function unwrapConfig(payload: unknown): unknown {
+  if (!isRecord(payload)) return payload;
+  if ("config" in payload) return payload["config"];
+  if ("data" in payload && isRecord(payload["data"])) return payload["data"];
+  return payload;
+}
+
+/** config 三段（connection/history/presets）形状门；任一不对即整份拒收。 */
+function configSections(raw: Record<string, unknown>): {
+  readonly conn: Record<string, unknown>;
+  readonly hist: Record<string, unknown>;
+  readonly presets: readonly unknown[];
+} | null {
+  const conn = raw["connection"];
+  const hist = raw["history"];
+  const presets = raw["presets"];
+  if (!isRecord(conn) || !isRecord(hist) || !Array.isArray(presets)) return null;
+  return { conn, hist, presets };
+}
+
+/** 预设开关项归一（id 必须是串；缺 id 的整项丢弃，不猜默认）。 */
+function parsePresetItem(item: unknown): DecisionPresetConfigEntry | null {
+  if (!isRecord(item)) return null;
+  const id = item["id"];
+  if (typeof id !== "string") return null;
+  return {
+    id,
+    enabled: item["enabled"] === true,
+    automationCap: normalizeCap(item["automationCap"]),
+  };
+}
+
 /** 防御式解析 GET /config（裸 v1 或 {config}/{data} 包装均接受）。 */
 export function parseConfigPayload(payload: unknown): DecisionConfigV1 | null {
-  const raw: unknown =
-    isRecord(payload) && "config" in payload
-      ? (payload as Record<string, unknown>)["config"]
-      : isRecord(payload) &&
-          "data" in payload &&
-          isRecord((payload as Record<string, unknown>)["data"])
-        ? (payload as Record<string, unknown>)["data"]
-        : payload;
+  const raw = unwrapConfig(payload);
   if (!isRecord(raw)) return null;
   if (raw["version"] !== 1) return null;
-  const conn = isRecord(raw["connection"]) ? (raw["connection"] as Record<string, unknown>) : null;
-  const hist = isRecord(raw["history"]) ? (raw["history"] as Record<string, unknown>) : null;
-  const presetsRaw = Array.isArray(raw["presets"]) ? (raw["presets"] as unknown[]) : null;
-  if (conn === null || hist === null || presetsRaw === null) return null;
+  const sections = configSections(raw);
+  if (sections === null) return null;
+  const conn = sections.conn;
+  const hist = sections.hist;
   const presets: Array<{
     readonly id: string;
     readonly enabled: boolean;
     readonly automationCap: AutomationCap;
   }> = [];
-  for (const item of presetsRaw) {
-    if (!isRecord(item) || typeof item["id"] !== "string") continue;
-    presets.push({
-      id: item["id"] as string,
-      enabled: item["enabled"] === true,
-      automationCap: normalizeCap(item["automationCap"]),
-    });
+  for (const item of sections.presets) {
+    const parsed = parsePresetItem(item);
+    if (parsed !== null) presets.push(parsed);
   }
   const apiKeyRef = conn["apiKeyRef"];
   return {
@@ -140,30 +176,39 @@ export function parseConfigPayload(payload: unknown): DecisionConfigV1 | null {
 
 /** 防御式解析 GET /presets（裸数组或 {presets} 包装均接受）。 */
 export function parsePresetsPayload(payload: unknown): DecisionPresetInfo[] {
-  const list: unknown =
-    isRecord(payload) && Array.isArray(payload["presets"])
-      ? payload["presets"]
-      : Array.isArray(payload)
-        ? payload
-        : isRecord(payload) && Array.isArray(payload["data"])
-          ? payload["data"]
-          : [];
   const out: DecisionPresetInfo[] = [];
-  for (const item of list as unknown[]) {
-    if (!isRecord(item) || typeof item["id"] !== "string") continue;
-    const tv = item["templateVersion"];
-    const label = item["label"];
-    const desc = item["description"];
-    const custom = item["custom"];
-    out.push({
-      id: item["id"] as string,
-      templateVersion: typeof tv === "number" && Number.isFinite(tv) ? tv : undefined,
-      label: typeof label === "string" ? label : undefined,
-      description: typeof desc === "string" ? desc : undefined,
-      custom: custom === true ? true : undefined,
-    });
+  for (const item of unwrapPresets(payload)) {
+    const info = parsePresetInfo(item);
+    if (info !== null) out.push(info);
   }
   return out;
+}
+
+/** GET /presets 的三种载体（裸数组 / {presets} / {data}）解包；都不匹配即空列表。 */
+function unwrapPresets(payload: unknown): readonly unknown[] {
+  if (Array.isArray(payload)) return payload;
+  if (!isRecord(payload)) return [];
+  if (Array.isArray(payload["presets"])) return payload["presets"];
+  if (Array.isArray(payload["data"])) return payload["data"];
+  return [];
+}
+
+/** 模板库目录项归一（id 必须是串；缺 id 的整项丢弃。字段缺失时该键不存在）。 */
+function parsePresetInfo(item: unknown): DecisionPresetInfo | null {
+  if (!isRecord(item)) return null;
+  const id = item["id"];
+  if (typeof id !== "string") return null;
+  const tv = item["templateVersion"];
+  const label = item["label"];
+  const desc = item["description"];
+  const custom = item["custom"];
+  return {
+    id,
+    templateVersion: typeof tv === "number" && Number.isFinite(tv) ? tv : undefined,
+    label: typeof label === "string" ? label : undefined,
+    description: typeof desc === "string" ? desc : undefined,
+    custom: custom === true ? true : undefined,
+  };
 }
 
 function normalizeAutomation(v: unknown): AutomationLevel {
@@ -171,35 +216,44 @@ function normalizeAutomation(v: unknown): AutomationLevel {
   return "manual";
 }
 
+/** 串项谓词（供 every 用，命中即把数组收窄成 string[]，免去元素断言）。 */
+function isStringItem(v: unknown): v is string {
+  return typeof v === "string";
+}
+
+/** 选项/分档的串项条件展开（非数组或含非串项即不写该键）。 */
+function stringItems(raw: unknown): readonly string[] | undefined {
+  if (!Array.isArray(raw) || !raw.every(isStringItem)) return undefined;
+  return raw.slice();
+}
+
+/** 单题归一（id/text 必为串，kind 限 choice|score；任一不合即整列丢弃）。 */
+function parseQuestionItem(item: unknown): HistoryQuestion | null {
+  if (!isRecord(item)) return null;
+  const id = item["id"];
+  const text = item["text"];
+  if (typeof id !== "string" || typeof text !== "string") return null;
+  const kind = item["kind"];
+  if (kind !== "choice" && kind !== "score") return null;
+  const options = stringItems(item["options"]);
+  const levels = stringItems(item["levels"]);
+  return {
+    id,
+    text,
+    kind,
+    ...(options !== undefined ? { options } : {}),
+    ...(levels !== undefined ? { levels } : {}),
+  };
+}
+
 /** 防御式解析题目快照（形状不对即丢整列，不阻断条目）。 */
 function parseQuestions(raw: unknown): DecisionHistoryEntry["questions"] {
   if (!Array.isArray(raw)) return undefined;
-  const out: {
-    readonly id: string;
-    readonly text: string;
-    readonly kind: "choice" | "score";
-    readonly options?: readonly string[];
-    readonly levels?: readonly string[];
-  }[] = [];
-  for (const item of raw as unknown[]) {
-    if (item === null || typeof item !== "object" || Array.isArray(item)) return undefined;
-    const rec = item as Record<string, unknown>;
-    if (typeof rec["id"] !== "string" || typeof rec["text"] !== "string") return undefined;
-    const kind = rec["kind"];
-    if (kind !== "choice" && kind !== "score") return undefined;
-    const options = rec["options"];
-    const levels = rec["levels"];
-    out.push({
-      id: rec["id"] as string,
-      text: rec["text"] as string,
-      kind,
-      ...(Array.isArray(options) && options.every((o) => typeof o === "string")
-        ? { options: (options as string[]).slice() }
-        : {}),
-      ...(Array.isArray(levels) && levels.every((o) => typeof o === "string")
-        ? { levels: (levels as string[]).slice() }
-        : {}),
-    });
+  const out: HistoryQuestion[] = [];
+  for (const item of raw) {
+    const question = parseQuestionItem(item);
+    if (question === null) return undefined;
+    out.push(question);
   }
   return out;
 }

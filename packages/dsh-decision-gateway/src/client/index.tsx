@@ -41,6 +41,57 @@ interface ClientContext {
   effect: (execute: () => () => void, label?: string) => unknown;
 }
 
+/**
+ * 装配 i18n 绑定（独立于 slots 挂载：两者的失败面不同——slots 缺席是「tab 不挂载」，
+ * locale 缺席只是回落本地字典）。
+ *
+ * 返回取消函数供 disposer 调用；宿主未装配 locale 服务时回 undefined（不订阅）。
+ * 收窄后的别名：嵌套回调内 narrowing 会重置，别名本身即非空类型，回调内照常可用。
+ */
+function mountLocale(ctx: ClientContext): (() => void) | undefined {
+  const locale = ctx.get("locale") as LocaleServiceView | null | undefined;
+  if (locale === null || locale === undefined || typeof locale.register !== "function") {
+    return undefined;
+  }
+  const localeService = locale;
+  // bind/subscribe 必须带接收者调用：宿主实现依赖 this，detached 摘出即抛，失败被
+  // catch 兜住后回落本地字典（notifier 同款注释，防后人"简化"成 detached 调用）。
+  // 重绑单点：初装与订阅回调共用——bind 抛错/返回非函数同样回落本地字典
+  // （bindTranslate 内二次守住）；初绑失败不订阅（与重构前语义一致）。
+  const rebind = (): boolean => {
+    let next: unknown;
+    try {
+      next = localeService.bind(NS);
+    } catch (e) {
+      console.warn("[dsh-decision-gateway] locale 重绑失败：", e);
+      return false;
+    }
+    if (typeof next !== "function") {
+      console.warn("[dsh-decision-gateway] locale bind 返回非函数，已回落本地字典");
+      return false;
+    }
+    bindTranslate(next as HostTranslate);
+    return true;
+  };
+  let unsubLocale: (() => void) | undefined;
+  try {
+    localeService.register(NS, { zh: zh, en: en });
+    const boundOk = rebind();
+    if (
+      boundOk &&
+      typeof localeService.subscribe === "function" &&
+      typeof localeService.getSnapshot === "function"
+    ) {
+      unsubLocale = localeService.subscribe(function () {
+        rebind();
+      });
+    }
+  } catch (e) {
+    console.warn("[dsh-decision-gateway] locale 注册失败：", e);
+  }
+  return unsubLocale;
+}
+
 export function apply(ctx: ClientContext): void {
   try {
     const disposeStyle = ensureStyle({ id: STYLE_ID, cssText: STYLE, version: CSS_VERSION });
@@ -50,50 +101,7 @@ export function apply(ctx: ClientContext): void {
       console.warn("[dsh-decision-gateway] 缺少 slots 服务，设置 tab 未挂载");
       return;
     }
-    // i18n：注册本插件字典；t 绑定宿主 locale 服务（notifier 同款），订阅回调重绑，
-    // 切语言免刷新跟随；未装配（旧运行时）回落本地字典，界面照常渲染。
-    // 订阅取消函数供 disposer 卸载调用（守卫对齐 notifier 的 undefined 形态——不预设
-    // subscribe 返回 null，防其返回 null 时 null 初始化遮蔽导致守卫失效）。
-    let unsubLocale: (() => void) | undefined;
-    const locale = ctx.get("locale") as LocaleServiceView | null | undefined;
-    if (locale !== null && locale !== undefined && typeof locale.register === "function") {
-      // 收窄后的别名：嵌套回调内 narrowing 会重置，别名本身即非空类型，回调内照常可用。
-      const localeService = locale;
-      // bind/subscribe 必须带接收者调用：宿主实现依赖 this，detached 摘出即抛，失败被
-      // catch 兜住后回落本地字典（notifier 同款注释，防后人“简化”成 detached 调用）。
-      // 重绑单点：初装与订阅回调共用——bind 抛错/返回非函数同样回落本地字典
-      // （bindTranslate 内二次守住）；初绑失败不订阅（与重构前语义一致）。
-      const rebind = (): boolean => {
-        let next: unknown;
-        try {
-          next = localeService.bind(NS);
-        } catch (e) {
-          console.warn("[dsh-decision-gateway] locale 重绑失败：", e);
-          return false;
-        }
-        if (typeof next !== "function") {
-          console.warn("[dsh-decision-gateway] locale bind 返回非函数，已回落本地字典");
-          return false;
-        }
-        bindTranslate(next as HostTranslate);
-        return true;
-      };
-      try {
-        localeService.register(NS, { zh: zh, en: en });
-        const boundOk = rebind();
-        if (
-          boundOk &&
-          typeof localeService.subscribe === "function" &&
-          typeof localeService.getSnapshot === "function"
-        ) {
-          unsubLocale = localeService.subscribe(function () {
-            rebind();
-          });
-        }
-      } catch (e) {
-        console.warn("[dsh-decision-gateway] locale 注册失败：", e);
-      }
-    }
+    const unsubLocale = mountLocale(ctx);
     // 设置面板独立 tab（settings.section）：旧运行时无此插槽即回调不执行，
     // tab 不挂载——不做 plugin.item 双插槽重复展示。
     // label 传 thunk：宿主 nav 每次读取经 thunk 求值 + shell 订阅 locale 重渲染，

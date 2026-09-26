@@ -19,6 +19,219 @@ import { t } from "../locale.ts";
 
 type Msg = { readonly kind: "info" | "error" | "ok"; readonly text: string };
 
+/** 保存路径的类别键（嵌套面只看 category/errorCode；顶层面多认 error/code）。 */
+const NESTED_PUT_KEYS = ["category", "errorCode"] as const;
+const TOP_PUT_KEYS = ["category", "errorCode", "error", "code"] as const;
+
+/** 非空串或 null（命中非串/空串即 null）。 */
+function nonEmptyStr(v: unknown): string | null {
+  return typeof v === "string" && v.length > 0 ? v : null;
+}
+
+/** 键表里按 ?? 语义取第一个已定义值（null/undefined 跳过；非串命中即停，不继续下探）。 */
+function firstDefinedAt(rec: Record<string, unknown>, keys: readonly string[]): unknown {
+  for (const key of keys) {
+    const value = rec[key];
+    if (value !== undefined && value !== null) return value;
+  }
+  return undefined;
+}
+
+/**
+ * PUT 失败体的类别提取（保存路径专用口径，与 api/contract 的 failureCategory 刻意不同）。
+ *
+ * 本口径按 ?? 逐级取、命中非串即停，也不回落 message；failureCategory 取第一个非空串
+ * 并回落 message。保存路径历来是本口径（load 路径用的是 failureCategory），此处原样
+ * 搬出、不改客户端可见文案——两条口径要合并得单独裁决，不在复杂度整改里顺手改。
+ */
+export function putFailureCategory(status: number, body: unknown): string {
+  const fallback = "http-" + status;
+  if (body === null || typeof body !== "object") return fallback;
+  const rec = body as Record<string, unknown>;
+  const nested = rec["error"];
+  if (nested !== null && typeof nested === "object" && !Array.isArray(nested)) {
+    return (
+      nonEmptyStr(firstDefinedAt(nested as Record<string, unknown>, NESTED_PUT_KEYS)) ?? fallback
+    );
+  }
+  return nonEmptyStr(firstDefinedAt(rec, TOP_PUT_KEYS)) ?? fallback;
+}
+
+/**
+ * PUT 体组装（互斥与 ENV 形状已在前置门过；未知键永不发送）。
+ *
+ * nums 下标即契约：0..2 归 connection（timeoutMs/maxConcurrency/truncBudget），
+ * 3..4 归 history（perSession/totalSessions）。未知键一律不进 body。
+ */
+export function buildPutBody(
+  snapshot: DecisionConfigV1,
+  nums: readonly number[],
+  envName: string,
+  plainValue: string,
+): Record<string, unknown> {
+  const hasPlain = plainValue !== "";
+  return {
+    version: 1,
+    connection: {
+      timeoutMs: nums[0],
+      maxConcurrency: nums[1],
+      truncBudget: nums[2],
+      ...(!hasPlain && envName !== "" ? { apiKeyRef: envName } : {}),
+    },
+    presets: snapshot.presets.map((p) => ({
+      id: p.id,
+      enabled: p.enabled,
+      automationCap: p.automationCap,
+    })),
+    history: { perSession: nums[3], totalSessions: nums[4] },
+    ...(hasPlain ? { apiKeyPlaintext: plainValue } : {}),
+    // 切 ENV→明文：附 apiKeyRef:null 清掉已存引用，否则服务端互斥 400。
+    ...(hasPlain && snapshot.connection.apiKeyRef ? { apiKeyRef: null } : {}),
+  };
+}
+
+/** 掩码徽标行 + 提示行（掩码文案由母体算好传入，Key 永不回显原文）。 */
+function ConnectionStatus(props: {
+  readonly conn: DecisionConfigV1["connection"] | undefined;
+  readonly mask: string;
+  readonly msg: Msg | null;
+}): React.ReactElement {
+  const { conn, mask, msg } = props;
+  return (
+    <>
+      <div className="dj-tools">
+        <span className={conn?.hasPlaintextKey ? "dj-badge dj-badgeOn" : "dj-badge"}>{mask}</span>
+        {conn?.hasPlaintextKey === true && (
+          <span className="dj-note" aria-label={t("maskDotsAria")}>
+            {"••••••••"}
+          </span>
+        )}
+        {conn?.apiKeyRef !== undefined && conn.apiKeyRef !== "" && (
+          <span className="dj-badge">
+            {t("maskEnv")}
+            {conn.apiKeyRef}
+          </span>
+        )}
+      </div>
+      {msg !== null && (
+        <div className="dj-field">
+          <span className={msg.kind === "error" ? "dj-errLine" : "dj-note"}>{msg.text}</span>
+        </div>
+      )}
+    </>
+  );
+}
+
+/** 密钥轨道卡（radio 互斥；未选中轨整体隐藏；明文框折叠，明文永不回显）。 */
+function KeyModeSection(props: {
+  readonly useEnv: boolean;
+  readonly setKeyMode: (mode: "env" | "plain") => void;
+  readonly env: string;
+  readonly setEnv: (v: string) => void;
+  readonly plain: string;
+  readonly setPlain: (v: string) => void;
+  readonly plainOpen: boolean;
+  readonly setPlainOpen: (v: boolean) => void;
+}): React.ReactElement {
+  const { useEnv, setKeyMode, env, setEnv, plain, setPlain, plainOpen, setPlainOpen } = props;
+  return (
+    <div className="dj-field" role="radiogroup" aria-label={t("keyMode")}>
+      <label>{t("keyMode")}</label>
+      <div className="dj-tools">
+        <label>
+          <input
+            type="radio"
+            name="dj-keymode"
+            value="env"
+            checked={useEnv}
+            onChange={() => setKeyMode("env")}
+          />
+          {t("keyEnv")}
+        </label>
+        <label>
+          <input
+            type="radio"
+            name="dj-keymode"
+            value="plain"
+            checked={!useEnv}
+            onChange={() => setKeyMode("plain")}
+          />
+          {t("keyPlain")}
+        </label>
+      </div>
+      <span className="dj-note">{useEnv ? t("modeEnvNote") : t("modePlainNote")}</span>
+      {useEnv ? (
+        <div className="dj-field">
+          <label>{t("envLabel")}</label>
+          <input
+            className="dj-input"
+            aria-label={t("envAria")}
+            inputMode="text"
+            autoComplete="off"
+            value={env}
+            placeholder={t("envPlaceholder")}
+            onChange={(e) => setEnv(e.target.value)}
+          />
+          <span className="dj-note">{t("envRule")}</span>
+        </div>
+      ) : (
+        <div className="dj-fold">
+          <button type="button" className="dj-foldHead" onClick={() => setPlainOpen(!plainOpen)}>
+            <span>{t("plainFoldTitle")}</span>
+            <span>{plainOpen ? "▾" : "▸"}</span>
+          </button>
+          <div className="dj-foldBody" hidden={!plainOpen}>
+            <div className="dj-field">
+              <input
+                className="dj-input"
+                type="password"
+                aria-label={t("plainAria")}
+                autoComplete="off"
+                value={plain}
+                placeholder={t("plainPlaceholder")}
+                onChange={(e) => setPlain(e.target.value)}
+              />
+              <span className="dj-note">{t("plainNote")}</span>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** 高级折叠（连接三键 + 历史两键；字段表驱动，加字段只改表不改 JSX）。 */
+function AdvancedSection(props: {
+  readonly open: boolean;
+  readonly onToggle: (open: boolean) => void;
+  readonly fields: ReadonlyArray<readonly [string, string, (v: string) => void, string]>;
+}): React.ReactElement {
+  const { open, onToggle, fields } = props;
+  return (
+    <div className="dj-fold">
+      <button type="button" className="dj-foldHead" onClick={() => onToggle(!open)}>
+        <span>{t("advTitle")}</span>
+        <span>{open ? "▾" : "▸"}</span>
+      </button>
+      <div className="dj-foldBody" hidden={!open}>
+        {fields.map(([label, value, set, hint]) => (
+          <div className="dj-field" key={label}>
+            <label>{label}</label>
+            <input
+              className="dj-input"
+              inputMode="numeric"
+              autoComplete="off"
+              value={value}
+              onChange={(e) => set(e.target.value)}
+            />
+            <span className="dj-note">{hint}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function ConnectionPane(): React.ReactElement {
   const [snapshot, setSnapshot] = React.useState<DecisionConfigV1 | null>(null);
   const [keyMode, setKeyMode] = React.useState<"env" | "plain">("env");
@@ -109,24 +322,7 @@ export function ConnectionPane(): React.ReactElement {
       setMsg({ kind: "error", text: t("nanError") });
       return;
     }
-    const body: Record<string, unknown> = {
-      version: 1,
-      connection: {
-        timeoutMs: nums[0],
-        maxConcurrency: nums[1],
-        truncBudget: nums[2],
-        ...(plainValue !== "" ? {} : envName !== "" ? { apiKeyRef: envName } : {}),
-      },
-      presets: snapshot.presets.map((p) => ({
-        id: p.id,
-        enabled: p.enabled,
-        automationCap: p.automationCap,
-      })),
-      history: { perSession: nums[3], totalSessions: nums[4] },
-      ...(plainValue !== "" ? { apiKeyPlaintext: plainValue } : {}),
-      // 切 ENV→明文：附 apiKeyRef:null 清掉已存引用，否则服务端互斥 400。
-      ...(plainValue !== "" && snapshot.connection.apiKeyRef ? { apiKeyRef: null } : {}),
-    };
+    const body = buildPutBody(snapshot, nums, envName, plainValue);
     setSaving(true);
     setMsg({ kind: "info", text: t("saving") });
     void fetchTimeout(APP_ROUTES.config, {
@@ -137,26 +333,13 @@ export function ConnectionPane(): React.ReactElement {
       .then(async (res) => {
         if (!alive.current) return;
         if (!res.ok) {
-          let cat = "http-" + res.status;
+          let body: unknown = null;
           try {
-            const b: unknown = await res.json();
-            if (b !== null && typeof b === "object") {
-              const rec = b as Record<string, unknown>;
-              const nested = rec["error"];
-              if (nested !== null && typeof nested === "object" && !Array.isArray(nested)) {
-                const v =
-                  (nested as Record<string, unknown>)["category"] ??
-                  (nested as Record<string, unknown>)["errorCode"];
-                if (typeof v === "string" && v.length > 0) cat = v;
-              } else {
-                const v = rec["category"] ?? rec["errorCode"] ?? rec["error"] ?? rec["code"];
-                if (typeof v === "string" && v.length > 0) cat = v;
-              }
-            }
+            body = await res.json();
           } catch {
-            /* 忽略 */
+            /* 非 JSON 即按状态码归类 */
           }
-          throw new Error(cat);
+          throw new Error(putFailureCategory(res.status, body));
         }
         setPlain("");
         setMsg({ kind: "ok", text: t("savedReload") });
@@ -210,124 +393,33 @@ export function ConnectionPane(): React.ReactElement {
       });
   };
 
+  const numFields: ReadonlyArray<readonly [string, string, (v: string) => void, string]> = [
+    [t("advTimeout"), timeoutMs, setTimeoutMs, t("advTimeoutHint")],
+    [t("advConcurrency"), maxConcurrency, setMaxConcurrency, t("advConcurrencyHint")],
+    [t("advTrunc"), truncBudget, setTruncBudget, t("advTruncHint")],
+    [t("advPerSession"), perSession, setPerSession, t("advPerSessionHint")],
+    [t("advTotalSessions"), totalSessions, setTotalSessions, t("advTotalSessionsHint")],
+  ];
   return (
     <div className="dj-pane" data-tab="connection">
-      <div className="dj-tools">
-        <span className={conn?.hasPlaintextKey ? "dj-badge dj-badgeOn" : "dj-badge"}>{mask}</span>
-        {conn?.hasPlaintextKey === true && (
-          <span className="dj-note" aria-label={t("maskDotsAria")}>
-            {"••••••••"}
-          </span>
-        )}
-        {conn?.apiKeyRef !== undefined && conn.apiKeyRef !== "" && (
-          <span className="dj-badge">
-            {t("maskEnv")}
-            {conn.apiKeyRef}
-          </span>
-        )}
-      </div>
-      {msg !== null && (
-        <div className="dj-field">
-          <span className={msg.kind === "error" ? "dj-errLine" : "dj-note"}>{msg.text}</span>
-        </div>
-      )}
-      <div className="dj-field" role="radiogroup" aria-label={t("keyMode")}>
-        <label>{t("keyMode")}</label>
-        <div className="dj-tools">
-          <label>
-            <input
-              type="radio"
-              name="dj-keymode"
-              value="env"
-              checked={useEnv}
-              onChange={() => setKeyMode("env")}
-            />
-            {t("keyEnv")}
-          </label>
-          <label>
-            <input
-              type="radio"
-              name="dj-keymode"
-              value="plain"
-              checked={!useEnv}
-              onChange={() => setKeyMode("plain")}
-            />
-            {t("keyPlain")}
-          </label>
-        </div>
-        <span className="dj-note">{useEnv ? t("modeEnvNote") : t("modePlainNote")}</span>
-      </div>
-      {useEnv ? (
-        <div className="dj-field">
-          <label>{t("envLabel")}</label>
-          <input
-            className="dj-input"
-            aria-label={t("envAria")}
-            inputMode="text"
-            autoComplete="off"
-            value={env}
-            placeholder={t("envPlaceholder")}
-            onChange={(e) => setEnv(e.target.value)}
-          />
-          <span className="dj-note">{t("envRule")}</span>
-        </div>
-      ) : (
-        <div className="dj-fold">
-          <button type="button" className="dj-foldHead" onClick={() => setPlainOpen((v) => !v)}>
-            <span>{t("plainFoldTitle")}</span>
-            <span>{plainOpen ? "▾" : "▸"}</span>
-          </button>
-          <div className="dj-foldBody" hidden={!plainOpen}>
-            <div className="dj-field">
-              <input
-                className="dj-input"
-                type="password"
-                aria-label={t("plainAria")}
-                autoComplete="off"
-                value={plain}
-                placeholder={t("plainPlaceholder")}
-                onChange={(e) => setPlain(e.target.value)}
-              />
-              <span className="dj-note">{t("plainNote")}</span>
-            </div>
-          </div>
-        </div>
-      )}
+      <ConnectionStatus conn={conn} mask={mask} msg={msg} />
+      <KeyModeSection
+        useEnv={useEnv}
+        setKeyMode={setKeyMode}
+        env={env}
+        setEnv={setEnv}
+        plain={plain}
+        setPlain={setPlain}
+        plainOpen={plainOpen}
+        setPlainOpen={setPlainOpen}
+      />
       <div className="dj-tools">
         <button type="button" className="dj-btn dj-btnSmall" disabled={testing} onClick={selfCheck}>
           {t("testOffline")}
         </button>
         <span className="dj-note">{testOut}</span>
       </div>
-      <div className="dj-fold">
-        <button type="button" className="dj-foldHead" onClick={() => setAdvOpen((v) => !v)}>
-          <span>{t("advTitle")}</span>
-          <span>{advOpen ? "▾" : "▸"}</span>
-        </button>
-        <div className="dj-foldBody" hidden={!advOpen}>
-          {(
-            [
-              [t("advTimeout"), timeoutMs, setTimeoutMs, t("advTimeoutHint")],
-              [t("advConcurrency"), maxConcurrency, setMaxConcurrency, t("advConcurrencyHint")],
-              [t("advTrunc"), truncBudget, setTruncBudget, t("advTruncHint")],
-              [t("advPerSession"), perSession, setPerSession, t("advPerSessionHint")],
-              [t("advTotalSessions"), totalSessions, setTotalSessions, t("advTotalSessionsHint")],
-            ] as Array<[string, string, (v: string) => void, string]>
-          ).map(([label, value, set, hint]) => (
-            <div className="dj-field" key={label}>
-              <label>{label}</label>
-              <input
-                className="dj-input"
-                inputMode="numeric"
-                autoComplete="off"
-                value={value}
-                onChange={(e) => set(e.target.value)}
-              />
-              <span className="dj-note">{hint}</span>
-            </div>
-          ))}
-        </div>
-      </div>
+      <AdvancedSection open={advOpen} onToggle={setAdvOpen} fields={numFields} />
       <div className="dj-foot">
         {failed && (
           <button type="button" className="dj-btn dj-btnSmall" onClick={load}>

@@ -15,7 +15,12 @@ import {
   parseConfigPayload,
   parsePresetsPayload,
 } from "../api/interface.ts";
-import type { AutomationCap, DecisionConfigV1, DecisionPresetInfo } from "../api/interface.ts";
+import type {
+  AutomationCap,
+  DecisionConfigV1,
+  DecisionPresetConfigEntry,
+  DecisionPresetInfo,
+} from "../api/interface.ts";
 import { t } from "../locale.ts";
 
 interface CustomDraft {
@@ -37,6 +42,74 @@ interface Row {
 }
 
 type Msg = { readonly kind: "info" | "error" | "ok"; readonly text: string };
+
+/**
+ * 目录面与配置面合并成渲染行。
+ *
+ * 行序以目录面为准（infos 为空才回落配置面）——预设卡片按模板库顺序呈现，配置面
+ * 只提供开关与上限，不决定出现顺序。id 缺席处一律回落到可见占位（label 回落 id、
+ * enabled 回落 false），不因某一侧缺项而丢行。
+ */
+/**
+ * 目录侧视图（GET /presets 元素；整项缺席即全空，label 缺席回落可见 id）。
+ *
+ * 缺席判定显式写成 undefined 比较而不是 ?. —— 一屏预设卡片的可见性全靠这里的
+ * 占位回落，链式可选会在某一侧缺项时静默变成 undefined 字段而不是回落值。
+ */
+function infoView(
+  info: DecisionPresetInfo | undefined,
+  id: string,
+): {
+  readonly custom: boolean;
+  readonly label: string;
+  readonly templateVersion: number | undefined;
+  readonly desc: string | undefined;
+} {
+  if (info === undefined) {
+    return { custom: false, label: id, templateVersion: undefined, desc: undefined };
+  }
+  return {
+    custom: info.custom === true,
+    label: info.label ?? id,
+    templateVersion: info.templateVersion,
+    desc: info.description ?? info.label,
+  };
+}
+
+/** 配置侧视图（GET /config 的 presets 元素；缺席即关闭 + none 档）。 */
+function cfgView(row: DecisionPresetConfigEntry | undefined): {
+  readonly enabled: boolean;
+  readonly cap: AutomationCap;
+} {
+  if (row === undefined) return { enabled: false, cap: 0 };
+  return { enabled: row.enabled, cap: normalizeCap(row.automationCap) };
+}
+
+/** 单行合成（两侧视图合一张卡片行；任一侧缺项都不丢行）。 */
+function toRow(
+  id: string,
+  info: DecisionPresetInfo | undefined,
+  cfgRow: DecisionPresetConfigEntry | undefined,
+): Row {
+  const iv = infoView(info, id);
+  const cv = cfgView(cfgRow);
+  return {
+    id,
+    custom: iv.custom,
+    label: iv.label,
+    templateVersion: iv.templateVersion,
+    desc: iv.desc,
+    enabled: cv.enabled,
+    cap: cv.cap,
+  };
+}
+
+export function mergeRows(infos: readonly DecisionPresetInfo[], cfg: DecisionConfigV1): Row[] {
+  const byCfg = new Map(cfg.presets.map((p) => [p.id, p]));
+  const byInfo = new Map(infos.map((i) => [i.id, i]));
+  const ids = infos.length > 0 ? infos.map((i) => i.id) : cfg.presets.map((p) => p.id);
+  return ids.map((id) => toRow(id, byInfo.get(id), byCfg.get(id)));
+}
 
 export function PresetsPane(): React.ReactElement {
   const [snapshot, setSnapshot] = React.useState<DecisionConfigV1 | null>(null);
@@ -81,24 +154,7 @@ export function PresetsPane(): React.ReactElement {
       .then(([infos, cfg]: [DecisionPresetInfo[], DecisionConfigV1]) => {
         if (!alive.current) return;
         setSnapshot(cfg);
-        const byCfg = new Map(cfg.presets.map((p) => [p.id, p]));
-        const byInfo = new Map(infos.map((i) => [i.id, i]));
-        const ids = infos.length > 0 ? infos.map((i) => i.id) : cfg.presets.map((p) => p.id);
-        setRows(
-          ids.map((id) => {
-            const info = byInfo.get(id);
-            const cfgRow = byCfg.get(id);
-            return {
-              id,
-              custom: info?.custom === true,
-              label: info?.label ?? id,
-              templateVersion: info?.templateVersion,
-              desc: info?.description ?? info?.label,
-              enabled: cfgRow?.enabled ?? false,
-              cap: normalizeCap(cfgRow?.automationCap ?? 0),
-            };
-          }),
-        );
+        setRows(mergeRows(infos, cfg));
         setMsg({ kind: "info", text: t("presetsMergedNote") });
       })
       .catch((e: unknown) => {
