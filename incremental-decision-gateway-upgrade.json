@@ -1,0 +1,2480 @@
+{
+  "files": {
+    "packages/dsh-decision-gateway/src/server/upgrade/impl/service.ts": {
+      "language": "typescript",
+      "mutants": [
+        {
+          "id": "0",
+          "mutatorName": "StringLiteral",
+          "replacement": "\"\"",
+          "statusReason": "Ignored because of excluded mutation \"StringLiteral\"",
+          "status": "Ignored",
+          "static": false,
+          "location": {
+            "end": {
+              "column": 38,
+              "line": 20
+            },
+            "start": {
+              "column": 31,
+              "line": 20
+            }
+          }
+        },
+        {
+          "id": "1",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "statusReason": "Cannot read properties of undefined (reading 'io')",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "5",
+            "6",
+            "7",
+            "8",
+            "9",
+            "10",
+            "11",
+            "12",
+            "13",
+            "14",
+            "15",
+            "16",
+            "17",
+            "18",
+            "19",
+            "20",
+            "21",
+            "22",
+            "23",
+            "24",
+            "25",
+            "26",
+            "27",
+            "28",
+            "29",
+            "30",
+            "31",
+            "32",
+            "33",
+            "34",
+            "35",
+            "36",
+            "37",
+            "38",
+            "39",
+            "40",
+            "41"
+          ],
+          "location": {
+            "end": {
+              "column": 2,
+              "line": 32
+            },
+            "start": {
+              "column": 53,
+              "line": 30
+            }
+          }
+        },
+        {
+          "id": "2",
+          "mutatorName": "ObjectLiteral",
+          "replacement": "{}",
+          "statusReason": "Ignored because of excluded mutation \"ObjectLiteral\"",
+          "status": "Ignored",
+          "static": false,
+          "location": {
+            "end": {
+              "column": 46,
+              "line": 31
+            },
+            "start": {
+              "column": 10,
+              "line": 31
+            }
+          }
+        },
+        {
+          "id": "3",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "status": "Survived",
+          "testsCompleted": 40,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "5",
+            "6",
+            "7",
+            "8",
+            "9",
+            "10",
+            "11",
+            "12",
+            "13",
+            "14",
+            "15",
+            "16",
+            "17",
+            "18",
+            "19",
+            "20",
+            "21",
+            "22",
+            "23",
+            "24",
+            "25",
+            "26",
+            "27",
+            "28",
+            "29",
+            "30",
+            "31",
+            "32",
+            "33",
+            "34",
+            "35",
+            "36",
+            "37",
+            "38",
+            "39",
+            "40",
+            "41"
+          ],
+          "location": {
+            "end": {
+              "column": 2,
+              "line": 55
+            },
+            "start": {
+              "column": 59,
+              "line": 35
+            }
+          }
+        },
+        {
+          "id": "4",
+          "mutatorName": "LogicalOperator",
+          "replacement": "deps.targetOverride && STORAGE_TARGET",
+          "statusReason": "Cannot read properties of undefined (reading 'split')",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "5",
+            "6",
+            "7",
+            "8",
+            "9",
+            "10",
+            "11",
+            "12",
+            "13",
+            "14",
+            "15",
+            "16",
+            "17",
+            "18",
+            "19",
+            "20",
+            "21",
+            "22",
+            "23",
+            "24",
+            "25",
+            "26",
+            "27",
+            "28",
+            "29",
+            "30",
+            "31",
+            "32",
+            "33",
+            "34",
+            "35",
+            "36",
+            "37",
+            "38",
+            "39",
+            "40",
+            "41"
+          ],
+          "location": {
+            "end": {
+              "column": 55,
+              "line": 36
+            },
+            "start": {
+              "column": 18,
+              "line": 36
+            }
+          }
+        },
+        {
+          "id": "5",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "status": "Survived",
+          "testsCompleted": 40,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "5",
+            "6",
+            "7",
+            "8",
+            "9",
+            "10",
+            "11",
+            "12",
+            "13",
+            "14",
+            "15",
+            "16",
+            "17",
+            "18",
+            "19",
+            "20",
+            "21",
+            "22",
+            "23",
+            "24",
+            "25",
+            "26",
+            "27",
+            "28",
+            "29",
+            "30",
+            "31",
+            "32",
+            "33",
+            "34",
+            "35",
+            "36",
+            "37",
+            "38",
+            "39",
+            "40",
+            "41"
+          ],
+          "location": {
+            "end": {
+              "column": 42,
+              "line": 38
+            },
+            "start": {
+              "column": 18,
+              "line": 38
+            }
+          }
+        },
+        {
+          "id": "6",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "status": "Survived",
+          "testsCompleted": 40,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "5",
+            "6",
+            "7",
+            "8",
+            "9",
+            "10",
+            "11",
+            "12",
+            "13",
+            "14",
+            "15",
+            "16",
+            "17",
+            "18",
+            "19",
+            "20",
+            "21",
+            "22",
+            "23",
+            "24",
+            "25",
+            "26",
+            "27",
+            "28",
+            "29",
+            "30",
+            "31",
+            "32",
+            "33",
+            "34",
+            "35",
+            "36",
+            "37",
+            "38",
+            "39",
+            "40",
+            "41"
+          ],
+          "location": {
+            "end": {
+              "column": 42,
+              "line": 38
+            },
+            "start": {
+              "column": 18,
+              "line": 38
+            }
+          }
+        },
+        {
+          "id": "7",
+          "mutatorName": "EqualityOperator",
+          "replacement": "raw !== BASELINE_VERSION",
+          "status": "Survived",
+          "testsCompleted": 40,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "5",
+            "6",
+            "7",
+            "8",
+            "9",
+            "10",
+            "11",
+            "12",
+            "13",
+            "14",
+            "15",
+            "16",
+            "17",
+            "18",
+            "19",
+            "20",
+            "21",
+            "22",
+            "23",
+            "24",
+            "25",
+            "26",
+            "27",
+            "28",
+            "29",
+            "30",
+            "31",
+            "32",
+            "33",
+            "34",
+            "35",
+            "36",
+            "37",
+            "38",
+            "39",
+            "40",
+            "41"
+          ],
+          "location": {
+            "end": {
+              "column": 42,
+              "line": 38
+            },
+            "start": {
+              "column": 18,
+              "line": 38
+            }
+          }
+        },
+        {
+          "id": "8",
+          "mutatorName": "StringLiteral",
+          "replacement": "\"\"",
+          "statusReason": "Ignored because of excluded mutation \"StringLiteral\"",
+          "status": "Ignored",
+          "static": false,
+          "location": {
+            "end": {
+              "column": 48,
+              "line": 38
+            },
+            "start": {
+              "column": 45,
+              "line": 38
+            }
+          }
+        },
+        {
+          "id": "9",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "statusReason": "upgrade[500]: unknown future storage version 0 (target 0.2.6): refusing to start — 请升级插件后再试",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "5",
+            "6",
+            "7",
+            "8",
+            "9",
+            "10",
+            "11",
+            "12",
+            "13",
+            "14",
+            "15",
+            "16",
+            "17",
+            "18",
+            "19",
+            "20",
+            "21",
+            "22",
+            "23",
+            "24",
+            "25",
+            "26",
+            "27",
+            "28",
+            "29",
+            "30",
+            "31",
+            "32",
+            "33",
+            "34",
+            "35",
+            "36",
+            "37",
+            "38",
+            "39",
+            "40",
+            "41"
+          ],
+          "location": {
+            "end": {
+              "column": 16,
+              "line": 40
+            },
+            "start": {
+              "column": 7,
+              "line": 40
+            }
+          }
+        },
+        {
+          "id": "10",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "status": "Survived",
+          "testsCompleted": 40,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "5",
+            "6",
+            "7",
+            "8",
+            "9",
+            "10",
+            "11",
+            "12",
+            "13",
+            "14",
+            "15",
+            "16",
+            "17",
+            "18",
+            "19",
+            "20",
+            "21",
+            "22",
+            "23",
+            "24",
+            "25",
+            "26",
+            "27",
+            "28",
+            "29",
+            "30",
+            "31",
+            "32",
+            "33",
+            "34",
+            "35",
+            "36",
+            "37",
+            "38",
+            "39",
+            "40",
+            "41"
+          ],
+          "location": {
+            "end": {
+              "column": 16,
+              "line": 40
+            },
+            "start": {
+              "column": 7,
+              "line": 40
+            }
+          }
+        },
+        {
+          "id": "11",
+          "mutatorName": "EqualityOperator",
+          "replacement": "order >= 0",
+          "status": "Survived",
+          "testsCompleted": 40,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "5",
+            "6",
+            "7",
+            "8",
+            "9",
+            "10",
+            "11",
+            "12",
+            "13",
+            "14",
+            "15",
+            "16",
+            "17",
+            "18",
+            "19",
+            "20",
+            "21",
+            "22",
+            "23",
+            "24",
+            "25",
+            "26",
+            "27",
+            "28",
+            "29",
+            "30",
+            "31",
+            "32",
+            "33",
+            "34",
+            "35",
+            "36",
+            "37",
+            "38",
+            "39",
+            "40",
+            "41"
+          ],
+          "location": {
+            "end": {
+              "column": 16,
+              "line": 40
+            },
+            "start": {
+              "column": 7,
+              "line": 40
+            }
+          }
+        },
+        {
+          "id": "12",
+          "mutatorName": "EqualityOperator",
+          "replacement": "order <= 0",
+          "statusReason": "upgrade[500]: unknown future storage version 0 (target 0.2.6): refusing to start — 请升级插件后再试",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "16"
+          ],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "5",
+            "6",
+            "7",
+            "8",
+            "9",
+            "10",
+            "11",
+            "12",
+            "13",
+            "14",
+            "15",
+            "16",
+            "17",
+            "18",
+            "19",
+            "20",
+            "21",
+            "22",
+            "23",
+            "24",
+            "25",
+            "26",
+            "27",
+            "28",
+            "29",
+            "30",
+            "31",
+            "32",
+            "33",
+            "34",
+            "35",
+            "36",
+            "37",
+            "38",
+            "39",
+            "40",
+            "41"
+          ],
+          "location": {
+            "end": {
+              "column": 16,
+              "line": 40
+            },
+            "start": {
+              "column": 7,
+              "line": 40
+            }
+          }
+        },
+        {
+          "id": "13",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "status": "NoCoverage",
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [],
+          "location": {
+            "end": {
+              "column": 4,
+              "line": 48
+            },
+            "start": {
+              "column": 18,
+              "line": 40
+            }
+          }
+        },
+        {
+          "id": "14",
+          "mutatorName": "CallExpression",
+          "replacement": ";",
+          "status": "NoCoverage",
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [],
+          "location": {
+            "end": {
+              "column": 7,
+              "line": 47
+            },
+            "start": {
+              "column": 5,
+              "line": 41
+            }
+          }
+        },
+        {
+          "id": "15",
+          "mutatorName": "StringLiteral",
+          "replacement": "\"\"",
+          "statusReason": "Ignored because of excluded mutation \"StringLiteral\"",
+          "status": "Ignored",
+          "static": false,
+          "location": {
+            "end": {
+              "column": 54,
+              "line": 42
+            },
+            "start": {
+              "column": 7,
+              "line": 42
+            }
+          }
+        },
+        {
+          "id": "16",
+          "mutatorName": "StringLiteral",
+          "replacement": "\"\"",
+          "statusReason": "Ignored because of excluded mutation \"StringLiteral\"",
+          "status": "Ignored",
+          "static": false,
+          "location": {
+            "end": {
+              "column": 20,
+              "line": 44
+            },
+            "start": {
+              "column": 9,
+              "line": 44
+            }
+          }
+        },
+        {
+          "id": "17",
+          "mutatorName": "StringLiteral",
+          "replacement": "\"\"",
+          "statusReason": "Ignored because of excluded mutation \"StringLiteral\"",
+          "status": "Ignored",
+          "static": false,
+          "location": {
+            "end": {
+              "column": 42,
+              "line": 46
+            },
+            "start": {
+              "column": 9,
+              "line": 46
+            }
+          }
+        },
+        {
+          "id": "18",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "status": "Survived",
+          "testsCompleted": 40,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "5",
+            "6",
+            "7",
+            "8",
+            "9",
+            "10",
+            "11",
+            "12",
+            "13",
+            "14",
+            "15",
+            "16",
+            "17",
+            "18",
+            "19",
+            "20",
+            "21",
+            "22",
+            "23",
+            "24",
+            "25",
+            "26",
+            "27",
+            "28",
+            "29",
+            "30",
+            "31",
+            "32",
+            "33",
+            "34",
+            "35",
+            "36",
+            "37",
+            "38",
+            "39",
+            "40",
+            "41"
+          ],
+          "location": {
+            "end": {
+              "column": 18,
+              "line": 49
+            },
+            "start": {
+              "column": 7,
+              "line": 49
+            }
+          }
+        },
+        {
+          "id": "19",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "status": "Survived",
+          "testsCompleted": 40,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "5",
+            "6",
+            "7",
+            "8",
+            "9",
+            "10",
+            "11",
+            "12",
+            "13",
+            "14",
+            "15",
+            "16",
+            "17",
+            "18",
+            "19",
+            "20",
+            "21",
+            "22",
+            "23",
+            "24",
+            "25",
+            "26",
+            "27",
+            "28",
+            "29",
+            "30",
+            "31",
+            "32",
+            "33",
+            "34",
+            "35",
+            "36",
+            "37",
+            "38",
+            "39",
+            "40",
+            "41"
+          ],
+          "location": {
+            "end": {
+              "column": 18,
+              "line": 49
+            },
+            "start": {
+              "column": 7,
+              "line": 49
+            }
+          }
+        },
+        {
+          "id": "20",
+          "mutatorName": "EqualityOperator",
+          "replacement": "order !== 0",
+          "status": "Survived",
+          "testsCompleted": 40,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "5",
+            "6",
+            "7",
+            "8",
+            "9",
+            "10",
+            "11",
+            "12",
+            "13",
+            "14",
+            "15",
+            "16",
+            "17",
+            "18",
+            "19",
+            "20",
+            "21",
+            "22",
+            "23",
+            "24",
+            "25",
+            "26",
+            "27",
+            "28",
+            "29",
+            "30",
+            "31",
+            "32",
+            "33",
+            "34",
+            "35",
+            "36",
+            "37",
+            "38",
+            "39",
+            "40",
+            "41"
+          ],
+          "location": {
+            "end": {
+              "column": 18,
+              "line": 49
+            },
+            "start": {
+              "column": 7,
+              "line": 49
+            }
+          }
+        },
+        {
+          "id": "21",
+          "mutatorName": "ObjectLiteral",
+          "replacement": "{}",
+          "statusReason": "Ignored because of excluded mutation \"ObjectLiteral\"",
+          "status": "Ignored",
+          "static": false,
+          "location": {
+            "end": {
+              "column": 67,
+              "line": 49
+            },
+            "start": {
+              "column": 27,
+              "line": 49
+            }
+          }
+        },
+        {
+          "id": "22",
+          "mutatorName": "ArrayDeclaration",
+          "replacement": "[\"Stryker was here\"]",
+          "status": "NoCoverage",
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [],
+          "location": {
+            "end": {
+              "column": 65,
+              "line": 49
+            },
+            "start": {
+              "column": 63,
+              "line": 49
+            }
+          }
+        },
+        {
+          "id": "23",
+          "mutatorName": "CallExpression",
+          "replacement": ";",
+          "status": "Survived",
+          "testsCompleted": 40,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "5",
+            "6",
+            "7",
+            "8",
+            "9",
+            "10",
+            "11",
+            "12",
+            "13",
+            "14",
+            "15",
+            "16",
+            "17",
+            "18",
+            "19",
+            "20",
+            "21",
+            "22",
+            "23",
+            "24",
+            "25",
+            "26",
+            "27",
+            "28",
+            "29",
+            "30",
+            "31",
+            "32",
+            "33",
+            "34",
+            "35",
+            "36",
+            "37",
+            "38",
+            "39",
+            "40",
+            "41"
+          ],
+          "location": {
+            "end": {
+              "column": 60,
+              "line": 51
+            },
+            "start": {
+              "column": 3,
+              "line": 51
+            }
+          }
+        },
+        {
+          "id": "24",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "statusReason": "deps.logger.info is not a function",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "16"
+          ],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "5",
+            "6",
+            "7",
+            "8",
+            "9",
+            "10",
+            "11",
+            "12",
+            "13",
+            "14",
+            "15",
+            "16",
+            "17",
+            "18",
+            "19",
+            "20",
+            "21",
+            "22",
+            "23",
+            "24",
+            "25",
+            "26",
+            "27",
+            "28",
+            "29",
+            "30",
+            "31",
+            "32",
+            "33",
+            "34",
+            "35",
+            "36",
+            "37",
+            "38",
+            "39",
+            "40",
+            "41"
+          ],
+          "location": {
+            "end": {
+              "column": 37,
+              "line": 52
+            },
+            "start": {
+              "column": 7,
+              "line": 52
+            }
+          }
+        },
+        {
+          "id": "25",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "status": "Survived",
+          "testsCompleted": 40,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "5",
+            "6",
+            "7",
+            "8",
+            "9",
+            "10",
+            "11",
+            "12",
+            "13",
+            "14",
+            "15",
+            "16",
+            "17",
+            "18",
+            "19",
+            "20",
+            "21",
+            "22",
+            "23",
+            "24",
+            "25",
+            "26",
+            "27",
+            "28",
+            "29",
+            "30",
+            "31",
+            "32",
+            "33",
+            "34",
+            "35",
+            "36",
+            "37",
+            "38",
+            "39",
+            "40",
+            "41"
+          ],
+          "location": {
+            "end": {
+              "column": 37,
+              "line": 52
+            },
+            "start": {
+              "column": 7,
+              "line": 52
+            }
+          }
+        },
+        {
+          "id": "26",
+          "mutatorName": "EqualityOperator",
+          "replacement": "deps.logger.info === undefined",
+          "statusReason": "deps.logger.info is not a function",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "16"
+          ],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "5",
+            "6",
+            "7",
+            "8",
+            "9",
+            "10",
+            "11",
+            "12",
+            "13",
+            "14",
+            "15",
+            "16",
+            "17",
+            "18",
+            "19",
+            "20",
+            "21",
+            "22",
+            "23",
+            "24",
+            "25",
+            "26",
+            "27",
+            "28",
+            "29",
+            "30",
+            "31",
+            "32",
+            "33",
+            "34",
+            "35",
+            "36",
+            "37",
+            "38",
+            "39",
+            "40",
+            "41"
+          ],
+          "location": {
+            "end": {
+              "column": 37,
+              "line": 52
+            },
+            "start": {
+              "column": 7,
+              "line": 52
+            }
+          }
+        },
+        {
+          "id": "27",
+          "mutatorName": "CallExpression",
+          "replacement": ";",
+          "status": "NoCoverage",
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [],
+          "location": {
+            "end": {
+              "column": 80,
+              "line": 53
+            },
+            "start": {
+              "column": 5,
+              "line": 53
+            }
+          }
+        },
+        {
+          "id": "28",
+          "mutatorName": "StringLiteral",
+          "replacement": "\"\"",
+          "statusReason": "Ignored because of excluded mutation \"StringLiteral\"",
+          "status": "Ignored",
+          "static": false,
+          "location": {
+            "end": {
+              "column": 52,
+              "line": 53
+            },
+            "start": {
+              "column": 22,
+              "line": 53
+            }
+          }
+        },
+        {
+          "id": "29",
+          "mutatorName": "StringLiteral",
+          "replacement": "\"\"",
+          "statusReason": "Ignored because of excluded mutation \"StringLiteral\"",
+          "status": "Ignored",
+          "static": false,
+          "location": {
+            "end": {
+              "column": 69,
+              "line": 53
+            },
+            "start": {
+              "column": 64,
+              "line": 53
+            }
+          }
+        },
+        {
+          "id": "30",
+          "mutatorName": "ObjectLiteral",
+          "replacement": "{}",
+          "statusReason": "Ignored because of excluded mutation \"ObjectLiteral\"",
+          "status": "Ignored",
+          "static": false,
+          "location": {
+            "end": {
+              "column": 46,
+              "line": 54
+            },
+            "start": {
+              "column": 10,
+              "line": 54
+            }
+          }
+        },
+        {
+          "id": "31",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "status": "Survived",
+          "testsCompleted": 40,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "5",
+            "6",
+            "7",
+            "8",
+            "9",
+            "10",
+            "11",
+            "12",
+            "13",
+            "14",
+            "15",
+            "16",
+            "17",
+            "18",
+            "19",
+            "20",
+            "21",
+            "22",
+            "23",
+            "24",
+            "25",
+            "26",
+            "27",
+            "28",
+            "29",
+            "30",
+            "31",
+            "32",
+            "33",
+            "34",
+            "35",
+            "36",
+            "37",
+            "38",
+            "39",
+            "40",
+            "41"
+          ],
+          "location": {
+            "end": {
+              "column": 2,
+              "line": 60
+            },
+            "start": {
+              "column": 66,
+              "line": 58
+            }
+          }
+        }
+      ],
+      "source": "/**\n * upgrade 域实现：迁移编排（同步跑完；失败即抛，组合根装配随之失败）。\n *\n * 三态（可单测）：缺失→播种并锚定；已锚定→空转；未来版本→fail-closed 拒绝启动并提示。\n * writeStoredVersion 只经本域 migrate 调用（D7/T1 闭环；config 域仅提供读写原语）。\n * 路径与版本语义复用 config 域门面（单一事实源）：BASELINE 字面 \"0.0.0\" 与上报口径 \"0\"\n * 数值等价（compareVersions 缺位补零），报告 from 统一为 \"0\"。\n */\nimport {\n  BASELINE_VERSION,\n  compareVersions,\n  readStoredVersion,\n  writeStoredVersion,\n} from \"../../config/interface.ts\";\nimport type { ConfigDeps } from \"../../config/interface.ts\";\nimport type { UpgradeDeps } from \"../deps.ts\";\nimport { ensureSeeded } from \"./steps.ts\";\n\n/** 存储目标刻度（与包版本独立：它是磁盘形态刻度，不是发布版本）。 */\nexport const STORAGE_TARGET = \"0.2.6\";\n\n/** 迁移报告。 */\nexport interface MigrateReport {\n  readonly from: string;\n  readonly to: string;\n  readonly seeded: string[];\n}\n\n/** config 域版本原语的注入适配（upgrade 的 io 面是其超集，结构兼容直传）。 */\nfunction configPorts(deps: UpgradeDeps): ConfigDeps {\n  return { io: deps.io, logger: deps.logger };\n}\n\n/** 跑迁移链（同步；抛错即装配失败，不写刻度，下次启动重跑同一步）。 */\nexport function migrate(deps: UpgradeDeps): MigrateReport {\n  const target = deps.targetOverride ?? STORAGE_TARGET;\n  const raw = readStoredVersion(deps.home, configPorts(deps));\n  const stored = raw === BASELINE_VERSION ? \"0\" : raw;\n  const order = compareVersions(stored, target);\n  if (order > 0) {\n    throw new Error(\n      \"upgrade[500]: unknown future storage version \" +\n        stored +\n        \" (target \" +\n        target +\n        \"): refusing to start — 请升级插件后再试\",\n    );\n  }\n  if (order === 0) return { from: stored, to: target, seeded: [] };\n  const seeded = ensureSeeded(deps.home, deps.seedDefaults(), deps.io);\n  writeStoredVersion(deps.home, target, configPorts(deps));\n  if (deps.logger.info !== undefined)\n    deps.logger.info(\"dsh-decision-gateway: 存储已锚定 \" + stored + \" → \" + target);\n  return { from: stored, to: target, seeded };\n}\n\n/** 装配升级域（同步跑完迁移链；失败即抛，apply 随之失败）。门面只转出本函数。 */\nexport function installUpgrade(deps: UpgradeDeps): MigrateReport {\n  return migrate(deps);\n}\n"
+    },
+    "packages/dsh-decision-gateway/src/server/upgrade/impl/steps.ts": {
+      "language": "typescript",
+      "mutants": [
+        {
+          "id": "32",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "status": "Survived",
+          "testsCompleted": 40,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "5",
+            "6",
+            "7",
+            "8",
+            "9",
+            "10",
+            "11",
+            "12",
+            "13",
+            "14",
+            "15",
+            "16",
+            "17",
+            "18",
+            "19",
+            "20",
+            "21",
+            "22",
+            "23",
+            "24",
+            "25",
+            "26",
+            "27",
+            "28",
+            "29",
+            "30",
+            "31",
+            "32",
+            "33",
+            "34",
+            "35",
+            "36",
+            "37",
+            "38",
+            "39",
+            "40",
+            "41"
+          ],
+          "location": {
+            "end": {
+              "column": 2,
+              "line": 30
+            },
+            "start": {
+              "column": 13,
+              "line": 16
+            }
+          }
+        },
+        {
+          "id": "33",
+          "mutatorName": "ArrayDeclaration",
+          "replacement": "[\"Stryker was here\"]",
+          "status": "Survived",
+          "testsCompleted": 40,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "5",
+            "6",
+            "7",
+            "8",
+            "9",
+            "10",
+            "11",
+            "12",
+            "13",
+            "14",
+            "15",
+            "16",
+            "17",
+            "18",
+            "19",
+            "20",
+            "21",
+            "22",
+            "23",
+            "24",
+            "25",
+            "26",
+            "27",
+            "28",
+            "29",
+            "30",
+            "31",
+            "32",
+            "33",
+            "34",
+            "35",
+            "36",
+            "37",
+            "38",
+            "39",
+            "40",
+            "41"
+          ],
+          "location": {
+            "end": {
+              "column": 31,
+              "line": 17
+            },
+            "start": {
+              "column": 29,
+              "line": 17
+            }
+          }
+        },
+        {
+          "id": "34",
+          "mutatorName": "ArrayDeclaration",
+          "replacement": "[]",
+          "status": "Survived",
+          "testsCompleted": 40,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "5",
+            "6",
+            "7",
+            "8",
+            "9",
+            "10",
+            "11",
+            "12",
+            "13",
+            "14",
+            "15",
+            "16",
+            "17",
+            "18",
+            "19",
+            "20",
+            "21",
+            "22",
+            "23",
+            "24",
+            "25",
+            "26",
+            "27",
+            "28",
+            "29",
+            "30",
+            "31",
+            "32",
+            "33",
+            "34",
+            "35",
+            "36",
+            "37",
+            "38",
+            "39",
+            "40",
+            "41"
+          ],
+          "location": {
+            "end": {
+              "column": 4,
+              "line": 22
+            },
+            "start": {
+              "column": 53,
+              "line": 18
+            }
+          }
+        },
+        {
+          "id": "35",
+          "mutatorName": "ArrayDeclaration",
+          "replacement": "[]",
+          "statusReason": "The \"path\" argument must be of type string. Received undefined",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "16"
+          ],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "5",
+            "6",
+            "7",
+            "8",
+            "9",
+            "10",
+            "11",
+            "12",
+            "13",
+            "14",
+            "15",
+            "16",
+            "17",
+            "18",
+            "19",
+            "20",
+            "21",
+            "22",
+            "23",
+            "24",
+            "25",
+            "26",
+            "27",
+            "28",
+            "29",
+            "30",
+            "31",
+            "32",
+            "33",
+            "34",
+            "35",
+            "36",
+            "37",
+            "38",
+            "39",
+            "40",
+            "41"
+          ],
+          "location": {
+            "end": {
+              "column": 40,
+              "line": 19
+            },
+            "start": {
+              "column": 5,
+              "line": 19
+            }
+          }
+        },
+        {
+          "id": "36",
+          "mutatorName": "ArrayDeclaration",
+          "replacement": "[]",
+          "statusReason": "The \"path\" argument must be of type string. Received undefined",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "16"
+          ],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "5",
+            "6",
+            "7",
+            "8",
+            "9",
+            "10",
+            "11",
+            "12",
+            "13",
+            "14",
+            "15",
+            "16",
+            "17",
+            "18",
+            "19",
+            "20",
+            "21",
+            "22",
+            "23",
+            "24",
+            "25",
+            "26",
+            "27",
+            "28",
+            "29",
+            "30",
+            "31",
+            "32",
+            "33",
+            "34",
+            "35",
+            "36",
+            "37",
+            "38",
+            "39",
+            "40",
+            "41"
+          ],
+          "location": {
+            "end": {
+              "column": 42,
+              "line": 20
+            },
+            "start": {
+              "column": 5,
+              "line": 20
+            }
+          }
+        },
+        {
+          "id": "37",
+          "mutatorName": "ArrayDeclaration",
+          "replacement": "[]",
+          "statusReason": "The \"path\" argument must be of type string. Received undefined",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "16"
+          ],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "5",
+            "6",
+            "7",
+            "8",
+            "9",
+            "10",
+            "11",
+            "12",
+            "13",
+            "14",
+            "15",
+            "16",
+            "17",
+            "18",
+            "19",
+            "20",
+            "21",
+            "22",
+            "23",
+            "24",
+            "25",
+            "26",
+            "27",
+            "28",
+            "29",
+            "30",
+            "31",
+            "32",
+            "33",
+            "34",
+            "35",
+            "36",
+            "37",
+            "38",
+            "39",
+            "40",
+            "41"
+          ],
+          "location": {
+            "end": {
+              "column": 42,
+              "line": 21
+            },
+            "start": {
+              "column": 5,
+              "line": 21
+            }
+          }
+        },
+        {
+          "id": "38",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "status": "Survived",
+          "testsCompleted": 40,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "5",
+            "6",
+            "7",
+            "8",
+            "9",
+            "10",
+            "11",
+            "12",
+            "13",
+            "14",
+            "15",
+            "16",
+            "17",
+            "18",
+            "19",
+            "20",
+            "21",
+            "22",
+            "23",
+            "24",
+            "25",
+            "26",
+            "27",
+            "28",
+            "29",
+            "30",
+            "31",
+            "32",
+            "33",
+            "34",
+            "35",
+            "36",
+            "37",
+            "38",
+            "39",
+            "40",
+            "41"
+          ],
+          "location": {
+            "end": {
+              "column": 4,
+              "line": 28
+            },
+            "start": {
+              "column": 42,
+              "line": 23
+            }
+          }
+        },
+        {
+          "id": "39",
+          "mutatorName": "BooleanLiteral",
+          "replacement": "io.readTextSync(file).ok",
+          "status": "Survived",
+          "testsCompleted": 40,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "5",
+            "6",
+            "7",
+            "8",
+            "9",
+            "10",
+            "11",
+            "12",
+            "13",
+            "14",
+            "15",
+            "16",
+            "17",
+            "18",
+            "19",
+            "20",
+            "21",
+            "22",
+            "23",
+            "24",
+            "25",
+            "26",
+            "27",
+            "28",
+            "29",
+            "30",
+            "31",
+            "32",
+            "33",
+            "34",
+            "35",
+            "36",
+            "37",
+            "38",
+            "39",
+            "40",
+            "41"
+          ],
+          "location": {
+            "end": {
+              "column": 34,
+              "line": 24
+            },
+            "start": {
+              "column": 9,
+              "line": 24
+            }
+          }
+        },
+        {
+          "id": "40",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "status": "Survived",
+          "testsCompleted": 40,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "5",
+            "6",
+            "7",
+            "8",
+            "9",
+            "10",
+            "11",
+            "12",
+            "13",
+            "14",
+            "15",
+            "16",
+            "17",
+            "18",
+            "19",
+            "20",
+            "21",
+            "22",
+            "23",
+            "24",
+            "25",
+            "26",
+            "27",
+            "28",
+            "29",
+            "30",
+            "31",
+            "32",
+            "33",
+            "34",
+            "35",
+            "36",
+            "37",
+            "38",
+            "39",
+            "40",
+            "41"
+          ],
+          "location": {
+            "end": {
+              "column": 34,
+              "line": 24
+            },
+            "start": {
+              "column": 9,
+              "line": 24
+            }
+          }
+        },
+        {
+          "id": "41",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "status": "Survived",
+          "testsCompleted": 40,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "5",
+            "6",
+            "7",
+            "8",
+            "9",
+            "10",
+            "11",
+            "12",
+            "13",
+            "14",
+            "15",
+            "16",
+            "17",
+            "18",
+            "19",
+            "20",
+            "21",
+            "22",
+            "23",
+            "24",
+            "25",
+            "26",
+            "27",
+            "28",
+            "29",
+            "30",
+            "31",
+            "32",
+            "33",
+            "34",
+            "35",
+            "36",
+            "37",
+            "38",
+            "39",
+            "40",
+            "41"
+          ],
+          "location": {
+            "end": {
+              "column": 34,
+              "line": 24
+            },
+            "start": {
+              "column": 9,
+              "line": 24
+            }
+          }
+        },
+        {
+          "id": "42",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "status": "Survived",
+          "testsCompleted": 40,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "5",
+            "6",
+            "7",
+            "8",
+            "9",
+            "10",
+            "11",
+            "12",
+            "13",
+            "14",
+            "15",
+            "16",
+            "17",
+            "18",
+            "19",
+            "20",
+            "21",
+            "22",
+            "23",
+            "24",
+            "25",
+            "26",
+            "27",
+            "28",
+            "29",
+            "30",
+            "31",
+            "32",
+            "33",
+            "34",
+            "35",
+            "36",
+            "37",
+            "38",
+            "39",
+            "40",
+            "41"
+          ],
+          "location": {
+            "end": {
+              "column": 6,
+              "line": 27
+            },
+            "start": {
+              "column": 36,
+              "line": 24
+            }
+          }
+        },
+        {
+          "id": "43",
+          "mutatorName": "CallExpression",
+          "replacement": ";",
+          "status": "Survived",
+          "testsCompleted": 40,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "5",
+            "6",
+            "7",
+            "8",
+            "9",
+            "10",
+            "11",
+            "12",
+            "13",
+            "14",
+            "15",
+            "16",
+            "17",
+            "18",
+            "19",
+            "20",
+            "21",
+            "22",
+            "23",
+            "24",
+            "25",
+            "26",
+            "27",
+            "28",
+            "29",
+            "30",
+            "31",
+            "32",
+            "33",
+            "34",
+            "35",
+            "36",
+            "37",
+            "38",
+            "39",
+            "40",
+            "41"
+          ],
+          "location": {
+            "end": {
+              "column": 45,
+              "line": 25
+            },
+            "start": {
+              "column": 7,
+              "line": 25
+            }
+          }
+        },
+        {
+          "id": "44",
+          "mutatorName": "CallExpression",
+          "replacement": ";",
+          "status": "Survived",
+          "testsCompleted": 40,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "5",
+            "6",
+            "7",
+            "8",
+            "9",
+            "10",
+            "11",
+            "12",
+            "13",
+            "14",
+            "15",
+            "16",
+            "17",
+            "18",
+            "19",
+            "20",
+            "21",
+            "22",
+            "23",
+            "24",
+            "25",
+            "26",
+            "27",
+            "28",
+            "29",
+            "30",
+            "31",
+            "32",
+            "33",
+            "34",
+            "35",
+            "36",
+            "37",
+            "38",
+            "39",
+            "40",
+            "41"
+          ],
+          "location": {
+            "end": {
+              "column": 26,
+              "line": 26
+            },
+            "start": {
+              "column": 7,
+              "line": 26
+            }
+          }
+        }
+      ],
+      "source": "/**\n * upgrade 域实现：0→目标 的种子步骤（仅版本锚定，无数据变换）。\n *\n * 缺失文件以默认值落盘；已存在文件一律不动（退役键剥离、secrets 分离等真实迁移\n * 留给未来版本加步骤时再写，届时在本文件追加 step 函数并在 service 链中登记）。\n * 路径与版本语义复用 config 域（单一事实源），本域不自建第二份。\n */\nimport { configFile, presetsFile, secretsFile } from \"../../config/interface.ts\";\nimport type { SeedFiles, UpgradeIoPorts } from \"../deps.ts\";\n\n/** 缺失即种（返回新建文件名；已存在即跳过）。 */\nexport function ensureSeeded(\n  home: string | undefined,\n  seed: SeedFiles,\n  io: UpgradeIoPorts,\n): string[] {\n  const created: string[] = [];\n  const targets: Array<readonly [string, string]> = [\n    [configFile(home), seed.configJson],\n    [presetsFile(home), seed.presetsJson],\n    [secretsFile(home), seed.secretsJson],\n  ];\n  for (const [file, content] of targets) {\n    if (!io.readTextSync(file).ok) {\n      io.atomicWrite0600Sync(file, content);\n      created.push(file);\n    }\n  }\n  return created;\n}\n"
+    }
+  },
+  "schemaVersion": "1.0",
+  "thresholds": {
+    "high": 80,
+    "low": 60,
+    "break": null
+  },
+  "testFiles": {
+    "packages/dsh-decision-gateway/test/integration/api.test.ts": {
+      "tests": [
+        {
+          "id": "0",
+          "name": "围栏 403 先于 405：非回环+错方法仍 403"
+        },
+        {
+          "id": "1",
+          "name": "围栏 回环错方法 405 且带 Allow"
+        },
+        {
+          "id": "2",
+          "name": "围栏 Host 非回环即 403"
+        },
+        {
+          "id": "3",
+          "name": "工作目录解析 inject 声明 sessions（缺声明宿主直访即抛，目录维度静默全失）"
+        },
+        {
+          "id": "4",
+          "name": "工作目录解析 inject 声明 sessionTitle（缺声明标题 enrich 无源，回落短 id）"
+        },
+        {
+          "id": "5",
+          "name": "工作目录解析 sessions store 优先于 exec cwd；抛错回落 exec cwd"
+        },
+        {
+          "id": "6",
+          "name": "会话标题 enrich 有标题：readHistory enrich sessionTitle，落盘无该字段"
+        },
+        {
+          "id": "7",
+          "name": "会话标题 enrich 服务缺席/抛错：回落短 id，状态 200 不 500"
+        },
+        {
+          "id": "8",
+          "name": "会话标题 enrich 无标题/已死会话：get undefined 即回落短 id"
+        },
+        {
+          "id": "9",
+          "name": "端点往返 health/config/presets"
+        },
+        {
+          "id": "10",
+          "name": "端点往返 PUT config 校验面"
+        },
+        {
+          "id": "11",
+          "name": "端点往返 切轨一次写透：明文+apiKeyRef:null→200 且掩码去引用"
+        },
+        {
+          "id": "12",
+          "name": "端点往返 明文确认后掩码回显"
+        },
+        {
+          "id": "13",
+          "name": "端点往返 history 空查与单会话删除守卫"
+        },
+        {
+          "id": "14",
+          "name": "端点往返 工具决议落史可查可删"
+        },
+        {
+          "id": "15",
+          "name": "端点往返 test-connection 空体：无 key 401，有 key+mock 200"
+        }
+      ],
+      "source": "/** api 集成单测：经真实组合根 apply（fake ctx）装配路由与工具，全程离线（fetch mock，落盘 mkdtemp）。 */\nimport { mkdtempSync } from \"node:fs\";\nimport type { IncomingMessage, ServerResponse } from \"node:http\";\nimport { tmpdir } from \"node:os\";\nimport { join } from \"node:path\";\nimport type { ToolRunContext } from \"@deepseek-ai/dsh-tools\";\nimport { describe, expect, it } from \"vitest\";\nimport { apply, inject } from \"../../src/index.ts\";\n\nconst SDK_OK = (id: string, choice: string, confidence: number): unknown => ({\n  model: \"jev-1.13.0\",\n  answers: {\n    [id]: { type: \"choice\", choice, confidence, probabilities: { [choice]: confidence } },\n  },\n  usage: { input_tokens: 9, output_tokens: 3 },\n});\n\ninterface CapturedRoute {\n  readonly path: string;\n  readonly handler: (req: IncomingMessage, res: ServerResponse) => void;\n}\n\ninterface CapturedTool {\n  readonly name: string;\n  readonly execute: (\n    args: unknown,\n    exec: Pick<ToolRunContext, \"signal\"> & Record<string, unknown>,\n  ) => Promise<unknown>;\n}\n\nfunction setup(\n  fetchImpl?: (\n    url: string,\n    init: {\n      readonly method: string;\n      readonly headers: Record<string, string>;\n      readonly body: string;\n      readonly signal: AbortSignal;\n    },\n  ) => Promise<{ readonly status: number; readonly text: string }>,\n  sessions?: {\n    readonly get: (id: string) => { readonly header: { readonly cwd?: string } } | undefined;\n  },\n  sessionTitle?: {\n    readonly get: (session: unknown) => { readonly title: string } | undefined;\n  },\n): { readonly routes: Map<string, CapturedRoute>; readonly tools: Map<string, CapturedTool> } {\n  const routes = new Map<string, CapturedRoute>();\n  const tools = new Map<string, CapturedTool>();\n  const ctx = {\n    logger: { warn: () => {} },\n    webServer: {\n      register: (route: CapturedRoute) => {\n        routes.set(route.path, route);\n        return () => {\n          routes.delete(route.path);\n        };\n      },\n    },\n    tools: {\n      register: (tool: CapturedTool) => {\n        tools.set(tool.name, tool);\n        return () => {\n          tools.delete(tool.name);\n        };\n      },\n    },\n    effect: (fn: () => () => void) => fn(),\n    ...(sessions !== undefined ? { sessions } : {}),\n    ...(sessionTitle !== undefined ? { sessionTitle } : {}),\n  };\n  apply(ctx as never, {\n    home: mkdtempSync(join(tmpdir(), \"jev-api-\")),\n    ...(fetchImpl !== undefined ? { fetchImpl } : {}),\n  });\n  return { routes, tools };\n}\n\nfunction fakeReq(opts: {\n  readonly address: string;\n  readonly host: string;\n  readonly method: string;\n  readonly url: string;\n  readonly body?: string;\n}): IncomingMessage {\n  const listeners = new Map<string, ((...a: never[]) => void)[]>();\n  const req = {\n    socket: { remoteAddress: opts.address },\n    headers: { host: opts.host },\n    method: opts.method,\n    url: opts.url,\n    on: (event: string, cb: (...a: never[]) => void) => {\n      const list = listeners.get(event) ?? [];\n      list.push(cb);\n      listeners.set(event, list);\n      if (event === \"data\") queueMicrotask(() => cb(Buffer.from(opts.body ?? \"\", \"utf8\") as never));\n      if (event === \"end\") queueMicrotask(() => cb());\n      return req;\n    },\n  };\n  return req as unknown as IncomingMessage;\n}\n\nfunction fakeRes(): {\n  readonly res: ServerResponse;\n  readonly out: { status: number; headers: Record<string, unknown>; body: string };\n} {\n  const out = { status: 0, headers: {} as Record<string, unknown>, body: \"\" };\n  const res = {\n    headersSent: false,\n    writeHead: (status: number, headers: Record<string, unknown>) => {\n      out.status = status;\n      out.headers = headers;\n      (res as { headersSent: boolean }).headersSent = true;\n    },\n    end: (text?: unknown) => {\n      out.body = typeof text === \"string\" ? text : \"\";\n      (res as { headersSent: boolean }).headersSent = true;\n    },\n  };\n  return { res: res as unknown as ServerResponse, out };\n}\n\nasync function waitForResponse(out: { readonly status: number }, label: string): Promise<void> {\n  const deadline = Date.now() + 2000;\n  for (;;) {\n    if (out.status !== 0) return;\n    if (Date.now() > deadline) throw new Error(\"pollUntil: \" + label + \" timeout\");\n    await new Promise((r) => setTimeout(r, 5));\n  }\n}\n\nasync function call(\n  routes: Map<string, CapturedRoute>,\n  path: string,\n  opts: {\n    readonly address?: string;\n    readonly host?: string;\n    readonly method?: string;\n    readonly url?: string;\n    readonly body?: string;\n  } = {},\n): Promise<{\n  readonly status: number;\n  readonly headers: Record<string, unknown>;\n  readonly json: unknown;\n}> {\n  const route = routes.get(path);\n  expect(route).toBeDefined();\n  const { res, out } = fakeRes();\n  route?.handler(\n    fakeReq({\n      address: opts.address ?? \"127.0.0.1\",\n      host: opts.host ?? \"127.0.0.1\",\n      method: opts.method ?? \"GET\",\n      url: opts.url ?? path,\n      body: opts.body,\n    }),\n    res,\n  );\n  await waitForResponse(out, \"response finished\");\n  return {\n    status: out.status,\n    headers: out.headers,\n    json: out.body.length > 0 ? (JSON.parse(out.body) as unknown) : null,\n  };\n}\n\ndescribe(\"围栏\", () => {\n  it(\"403 先于 405：非回环+错方法仍 403\", async () => {\n    const { routes } = setup();\n    const r = await call(routes, \"/api/dsh-decision-gateway/presets\", {\n      address: \"10.0.0.2\",\n      host: \"10.0.0.2\",\n      method: \"PUT\",\n    });\n    expect(r.status).toBe(403);\n  });\n  it(\"回环错方法 405 且带 Allow\", async () => {\n    const { routes } = setup();\n    const r = await call(routes, \"/api/dsh-decision-gateway/presets\", { method: \"PUT\" });\n    expect(r.status).toBe(405);\n    expect(String(r.headers[\"allow\"] ?? \"\")).toContain(\"GET\");\n  });\n  it(\"Host 非回环即 403\", async () => {\n    const { routes } = setup();\n    const r = await call(routes, \"/api/dsh-decision-gateway/health\", { host: \"evil.example\" });\n    expect(r.status).toBe(403);\n  });\n});\n\ndescribe(\"工作目录解析\", () => {\n  it(\"inject 声明 sessions（缺声明宿主直访即抛，目录维度静默全失）\", () => {\n    expect(inject).toContain(\"sessions\");\n  });\n  it(\"inject 声明 sessionTitle（缺声明标题 enrich 无源，回落短 id）\", () => {\n    expect(inject).toContain(\"sessionTitle\");\n  });\n  it(\"sessions store 优先于 exec cwd；抛错回落 exec cwd\", async () => {\n    const fetchOk = async (): Promise<{ readonly status: number; readonly text: string }> => ({\n      status: 200,\n      text: JSON.stringify(SDK_OK(\"q1\", \"A\", 0.9)),\n    });\n    const store = {\n      get: (id: string) => (id === \"s-work\" ? { header: { cwd: \"/work/from-store\" } } : undefined),\n    };\n    const env = setup(fetchOk, store);\n    expect(\n      (\n        await call(env.routes, \"/api/dsh-decision-gateway/config\", {\n          method: \"PUT\",\n          body: JSON.stringify({ apiKeyPlaintext: \"ItcaseSecret123456\" }),\n        })\n      ).status,\n    ).toBe(200);\n    const decide = env.tools.get(\"ws_request_verdict\");\n    const out = (await decide?.execute(\n      {\n        preset_id: \"general\",\n        state: { text: \"cwd case\", lang: \"en\" },\n        questions_override: [{ id: \"q1\", text: \"Pick one.\", kind: \"choice\", options: [\"A\", \"B\"] }],\n      },\n      { sessionId: \"s-work\", cwd: \"/work/exec-cwd\", signal: new AbortController().signal },\n    )) as { ok: boolean };\n    expect(out.ok).toBe(true);\n    const got = await call(env.routes, \"/api/dsh-decision-gateway/history\", {\n      url: \"/api/dsh-decision-gateway/history?root=/work/from-store&sessionId=s-work\",\n    });\n    expect((got.json as { entries: unknown[] }).entries).toHaveLength(1);\n    const throwing = setup(fetchOk, {\n      get: () => {\n        throw new Error(\"store down\");\n      },\n    });\n    expect(\n      (\n        await call(throwing.routes, \"/api/dsh-decision-gateway/config\", {\n          method: \"PUT\",\n          body: JSON.stringify({ apiKeyPlaintext: \"ItcaseSecret123456\" }),\n        })\n      ).status,\n    ).toBe(200);\n    const decide2 = throwing.tools.get(\"ws_request_verdict\");\n    const out2 = (await decide2?.execute(\n      {\n        preset_id: \"general\",\n        state: { text: \"cwd case\", lang: \"en\" },\n        questions_override: [{ id: \"q1\", text: \"Pick one.\", kind: \"choice\", options: [\"A\", \"B\"] }],\n      },\n      { sessionId: \"s-work\", cwd: \"/work/exec-cwd\", signal: new AbortController().signal },\n    )) as { ok: boolean };\n    expect(out2.ok).toBe(true);\n    const got2 = await call(throwing.routes, \"/api/dsh-decision-gateway/history\", {\n      url: \"/api/dsh-decision-gateway/history?root=/work/exec-cwd&sessionId=s-work\",\n    });\n    expect((got2.json as { entries: unknown[] }).entries).toHaveLength(1);\n  });\n});\n\ndescribe(\"会话标题 enrich\", () => {\n  const fetchOk = async (): Promise<{ readonly status: number; readonly text: string }> => ({\n    status: 200,\n    text: JSON.stringify(SDK_OK(\"q1\", \"A\", 0.9)),\n  });\n  const putKey = async (routes: Map<string, CapturedRoute>): Promise<void> => {\n    expect(\n      (\n        await call(routes, \"/api/dsh-decision-gateway/config\", {\n          method: \"PUT\",\n          body: JSON.stringify({ apiKeyPlaintext: \"ItcaseSecret123456\" }),\n        })\n      ).status,\n    ).toBe(200);\n  };\n  const decideOnce = async (\n    tools: Map<string, CapturedTool>,\n    sessionId: string,\n    cwd: string,\n  ): Promise<void> => {\n    const decide = tools.get(\"ws_request_verdict\");\n    const out = (await decide?.execute(\n      {\n        preset_id: \"general\",\n        state: { text: \"title case\", lang: \"en\" },\n        questions_override: [{ id: \"q1\", text: \"Pick one.\", kind: \"choice\", options: [\"A\", \"B\"] }],\n      },\n      { sessionId, cwd, signal: new AbortController().signal },\n    )) as { ok: boolean };\n    expect(out.ok).toBe(true);\n  };\n  it(\"有标题：readHistory enrich sessionTitle，落盘无该字段\", async () => {\n    const sessions = {\n      get: (id: string) => (id === \"s-title\" ? { header: { cwd: \"/work/title\" } } : undefined),\n    };\n    const sessionTitle = {\n      get: (session: unknown) =>\n        session !== undefined && session !== null ? { title: \"标题T\" } : undefined,\n    };\n    const env = setup(fetchOk, sessions, sessionTitle);\n    await putKey(env.routes);\n    await decideOnce(env.tools, \"s-title\", \"/work/exec-title\");\n    const got = await call(env.routes, \"/api/dsh-decision-gateway/history\", {\n      url: \"/api/dsh-decision-gateway/history?root=/work/title&sessionId=s-title\",\n    });\n    const entries = (got.json as { entries: Array<{ sessionTitle?: string }> }).entries;\n    expect(entries).toHaveLength(1);\n    expect(entries[0]?.sessionTitle).toBe(\"标题T\");\n  });\n  it(\"服务缺席/抛错：回落短 id，状态 200 不 500\", async () => {\n    const sessions = {\n      get: (id: string) => (id === \"s-notitle\" ? { header: { cwd: \"/work/notitle\" } } : undefined),\n    };\n    const env = setup(fetchOk, sessions);\n    await putKey(env.routes);\n    await decideOnce(env.tools, \"s-notitle\", \"/work/notitle\");\n    const got = await call(env.routes, \"/api/dsh-decision-gateway/history\", {\n      url: \"/api/dsh-decision-gateway/history?root=/work/notitle&sessionId=s-notitle\",\n    });\n    const entries = (got.json as { entries: Array<{ sessionTitle?: string }> }).entries;\n    expect(entries).toHaveLength(1);\n    expect(entries[0]?.sessionTitle).toBeUndefined();\n    const throwing = setup(fetchOk, sessions, {\n      get: () => {\n        throw new Error(\"title down\");\n      },\n    });\n    await putKey(throwing.routes);\n    await decideOnce(throwing.tools, \"s-notitle\", \"/work/notitle\");\n    const got2 = await call(throwing.routes, \"/api/dsh-decision-gateway/history\", {\n      url: \"/api/dsh-decision-gateway/history?root=/work/notitle&sessionId=s-notitle\",\n    });\n    expect(got2.status).toBe(200);\n    expect((got2.json as { entries: unknown[] }).entries).toHaveLength(1);\n  });\n  it(\"无标题/已死会话：get undefined 即回落短 id\", async () => {\n    const sessions = {\n      get: (id: string) => (id === \"s-live\" ? { header: { cwd: \"/work/live\" } } : undefined),\n    };\n    const sessionTitle = {\n      get: () => undefined,\n    };\n    const env = setup(fetchOk, sessions, sessionTitle);\n    await putKey(env.routes);\n    await decideOnce(env.tools, \"s-live\", \"/work/live\");\n    const got = await call(env.routes, \"/api/dsh-decision-gateway/history\", {\n      url: \"/api/dsh-decision-gateway/history?root=/work/live&sessionId=s-live\",\n    });\n    expect(\n      (got.json as { entries: Array<{ sessionTitle?: string }> }).entries[0]?.sessionTitle,\n    ).toBeUndefined();\n    const dead = await call(env.routes, \"/api/dsh-decision-gateway/history\", {\n      url: \"/api/dsh-decision-gateway/history?root=/work/live&sessionId=s-dead\",\n    });\n    expect((dead.json as { entries: unknown[] }).entries).toHaveLength(0);\n  });\n});\n\ndescribe(\"端点往返\", () => {\n  it(\"health/config/presets\", async () => {\n    const { routes } = setup();\n    const health = await call(routes, \"/api/dsh-decision-gateway/health\");\n    expect(health.status).toBe(200);\n    expect(health.json).toMatchObject({ ok: true, templateVersion: 1 });\n    const config = await call(routes, \"/api/dsh-decision-gateway/config\");\n    expect(config.status).toBe(200);\n    expect(config.json).toMatchObject({ version: 1 });\n    const presets = await call(routes, \"/api/dsh-decision-gateway/presets\");\n    expect(presets.status).toBe(200);\n    const list = (presets.json as { presets: { id: string; enabled: boolean }[] }).presets;\n    expect(list).toHaveLength(5);\n    expect(list.find((p) => p.id === \"secret-leak\")?.enabled).toBe(false);\n  });\n  it(\"PUT config 校验面\", async () => {\n    const { routes } = setup();\n    const put = (body: unknown) =>\n      call(routes, \"/api/dsh-decision-gateway/config\", {\n        method: \"PUT\",\n        body: JSON.stringify(body),\n      });\n    expect((await put({ baseUrl: \"https://x\" })).status).toBe(400);\n    expect((await put({ apiKeyRef: \"lower\" })).status).toBe(400);\n    expect((await put({ apiKeyPlaintext: \"Abcdefgh12345678\" })).status).toBe(200);\n    expect(\n      (await put({ apiKeyRef: \"JEV_IT_KEY\", apiKeyPlaintext: \"Abcdefgh12345678\", confirm: true }))\n        .status,\n    ).toBe(400);\n    const ok = await put({ apiKeyRef: \"JEV_IT_KEY\" });\n    expect(ok.status).toBe(200);\n    const back = await call(routes, \"/api/dsh-decision-gateway/config\");\n    expect(back.json).toMatchObject({\n      connection: { apiKeyRef: \"JEV_IT_KEY\", hasPlaintextKey: false },\n    });\n    const secret = await put({ apiKeyPlaintext: \"Abcdefgh12345678\", confirm: true });\n    expect(secret.status).toBe(400);\n  });\n  it(\"切轨一次写透：明文+apiKeyRef:null→200 且掩码去引用\", async () => {\n    const { routes } = setup();\n    const put = (body: unknown) =>\n      call(routes, \"/api/dsh-decision-gateway/config\", {\n        method: \"PUT\",\n        body: JSON.stringify(body),\n      });\n    expect((await put({ apiKeyRef: \"JEV_IT_TRACK\" })).status).toBe(200);\n    const switched = await put({ apiKeyPlaintext: \"Abcdefgh12345678\", apiKeyRef: null });\n    expect(switched.status).toBe(200);\n    expect(switched.json).toMatchObject({\n      connection: { hasPlaintextKey: true },\n    });\n    expect(JSON.stringify(switched.json)).not.toContain(\"JEV_IT_TRACK\");\n    expect(JSON.stringify(switched.json)).not.toContain(\"Abcdefgh12345678\");\n  });\n  it(\"明文确认后掩码回显\", async () => {\n    const { routes } = setup();\n    const r = await call(routes, \"/api/dsh-decision-gateway/config\", {\n      method: \"PUT\",\n      body: JSON.stringify({ apiKeyPlaintext: \"Zbcdefgh12345678\", confirm: true }),\n    });\n    expect(r.status).toBe(200);\n    expect(JSON.stringify(r.json)).not.toContain(\"Zbcdefgh12345678\");\n    expect(r.json).toMatchObject({ connection: { hasPlaintextKey: true } });\n  });\n  it(\"history 空查与单会话删除守卫\", async () => {\n    const { routes } = setup();\n    const empty = await call(routes, \"/api/dsh-decision-gateway/history\", {\n      url: \"/api/dsh-decision-gateway/history?root=/work&sessionId=s1\",\n    });\n    expect(empty.status).toBe(200);\n    expect(empty.json).toMatchObject({ ok: true, entries: [] });\n    const bad = await call(routes, \"/api/dsh-decision-gateway/history\", {\n      method: \"DELETE\",\n      url: \"/api/dsh-decision-gateway/history?root=/work\",\n    });\n    expect(bad.status).toBe(400);\n  });\n  it(\"工具决议落史可查可删\", async () => {\n    const { routes, tools } = setup(async () => ({\n      status: 200,\n      text: JSON.stringify({\n        model: \"jev-1.13.0\",\n        answers: {\n          q1: { type: \"choice\", choice: \"A\", confidence: 0.8, probabilities: { A: 0.8, B: 0.2 } },\n        },\n        usage: { input_tokens: 9, output_tokens: 3 },\n      }),\n    }));\n    const keyPut = await call(routes, \"/api/dsh-decision-gateway/config\", {\n      method: \"PUT\",\n      body: JSON.stringify({ apiKeyPlaintext: \"ItcaseSecret123456\", confirm: true }),\n    });\n    expect(keyPut.status).toBe(200);\n    const decide = tools.get(\"ws_request_verdict\");\n    expect(decide).toBeDefined();\n    const out = (await decide?.execute(\n      {\n        preset_id: \"general\",\n        state: { text: \"it-case\", lang: \"en\" },\n        questions_override: [{ id: \"q1\", text: \"Pick one.\", kind: \"choice\", options: [\"A\", \"B\"] }],\n      },\n      { sessionId: \"it-s1\", cwd: \"/work/it\", signal: new AbortController().signal },\n    )) as { ok: boolean };\n    expect(out.ok).toBe(true);\n    const list = tools.get(\"ws_list_verdict_guides\");\n    const presets = (await list?.execute({}, { signal: new AbortController().signal })) as {\n      id: string;\n    }[];\n    expect(presets).toHaveLength(5);\n    const got = await call(routes, \"/api/dsh-decision-gateway/history\", {\n      url: \"/api/dsh-decision-gateway/history?root=/work/it&sessionId=it-s1\",\n    });\n    expect((got.json as { entries: unknown[] }).entries).toHaveLength(1);\n    const first = (\n      got.json as {\n        entries: Array<{\n          presetTitle?: string;\n          questions?: Array<{ id: string; options?: string[] }>;\n        }>;\n      }\n    ).entries[0];\n    expect(first?.presetTitle).toBe(\"general\");\n    expect(first?.questions?.[0]?.options).toEqual([\"A\", \"B\"]);\n    const del = await call(routes, \"/api/dsh-decision-gateway/history\", {\n      method: \"DELETE\",\n      url: \"/api/dsh-decision-gateway/history?root=/work/it&sessionId=it-s1\",\n    });\n    expect(del.json).toMatchObject({ ok: true, deleted: true });\n  });\n  it(\"test-connection 空体：无 key 401，有 key+mock 200\", async () => {\n    const { routes } = setup(async () => ({\n      status: 200,\n      text: JSON.stringify({\n        model: \"jev-1.13.0\",\n        answers: {\n          probe: {\n            type: \"choice\",\n            choice: \"ok\",\n            confidence: 0.9,\n            probabilities: { ok: 0.9, fail: 0.1 },\n          },\n        },\n        usage: { input_tokens: 9, output_tokens: 3 },\n      }),\n    }));\n    const noKey = await call(routes, \"/api/dsh-decision-gateway/test-connection\", {\n      method: \"POST\",\n      body: \"{}\",\n    });\n    expect(noKey.status).toBe(401);\n    process.env.JEV_IT_PROBE = \"ProbeSecretValue1234\";\n    try {\n      const put = await call(routes, \"/api/dsh-decision-gateway/config\", {\n        method: \"PUT\",\n        body: JSON.stringify({ apiKeyRef: \"JEV_IT_PROBE\" }),\n      });\n      expect(put.status).toBe(200);\n      const ok = await call(routes, \"/api/dsh-decision-gateway/test-connection\", {\n        method: \"POST\",\n        body: \"{}\",\n      });\n      expect(ok.status).toBe(200);\n      expect(ok.json).toMatchObject({ ok: true });\n    } finally {\n      delete process.env.JEV_IT_PROBE;\n    }\n  });\n});\n"
+    },
+    "packages/dsh-decision-gateway/test/integration/routes-fence.test.ts": {
+      "tests": [
+        {
+          "id": "16",
+          "name": "五路由注册与一致性 宿主注册五路由且路径即共享 ROUTES 字面量"
+        },
+        {
+          "id": "17",
+          "name": "五路由注册与一致性 工具双注册 ws_request_verdict/ws_list_verdict_guides"
+        },
+        {
+          "id": "18",
+          "name": "每路由 403 围栏 非回环 /api/dsh-decision-gateway/health 即 403"
+        },
+        {
+          "id": "19",
+          "name": "每路由 403 围栏 非回环 /api/dsh-decision-gateway/config 即 403"
+        },
+        {
+          "id": "20",
+          "name": "每路由 403 围栏 非回环 /api/dsh-decision-gateway/presets 即 403"
+        },
+        {
+          "id": "21",
+          "name": "每路由 403 围栏 非回环 /api/dsh-decision-gateway/history 即 403"
+        },
+        {
+          "id": "22",
+          "name": "每路由 403 围栏 非回环 /api/dsh-decision-gateway/test-connection 即 403"
+        },
+        {
+          "id": "23",
+          "name": "每路由 403 围栏 403 先于 405：非回环+错方法仍 403"
+        },
+        {
+          "id": "24",
+          "name": "每路由 403 围栏 Host 非回环即 403；cross-site 即 403"
+        },
+        {
+          "id": "25",
+          "name": "每路由 405 围栏 health 仅 GET：POST 405 且 Allow 含 GET"
+        },
+        {
+          "id": "26",
+          "name": "每路由 405 围栏 config 仅 GET+PUT：DELETE 405 且 Allow 含 GET,PUT"
+        },
+        {
+          "id": "27",
+          "name": "每路由 405 围栏 presets 仅 GET：PUT 405"
+        },
+        {
+          "id": "28",
+          "name": "每路由 405 围栏 history 仅 GET+DELETE：POST 405"
+        },
+        {
+          "id": "29",
+          "name": "每路由 405 围栏 test-connection 仅 POST：GET 405"
+        },
+        {
+          "id": "30",
+          "name": "每路由 405 围栏 OPTIONS /api/dsh-decision-gateway/health 即 405 且 Allow 含 GET（R2）"
+        },
+        {
+          "id": "31",
+          "name": "每路由 405 围栏 OPTIONS /api/dsh-decision-gateway/config 即 405 且 Allow 含 GET（R2）"
+        },
+        {
+          "id": "32",
+          "name": "每路由 405 围栏 OPTIONS /api/dsh-decision-gateway/presets 即 405 且 Allow 含 GET（R2）"
+        },
+        {
+          "id": "33",
+          "name": "每路由 405 围栏 OPTIONS /api/dsh-decision-gateway/history 即 405 且 Allow 含 GET（R2）"
+        },
+        {
+          "id": "34",
+          "name": "每路由 405 围栏 OPTIONS /api/dsh-decision-gateway/test-connection 即 405 且 Allow 含 POST（R2）"
+        },
+        {
+          "id": "35",
+          "name": "存量互斥与脱敏端到端 PUT 明文与存量 ref 互斥 400（先 ref 后明文）"
+        },
+        {
+          "id": "36",
+          "name": "存量互斥与脱敏端到端 工具决议落史可查：snippet 无密钥原文"
+        },
+        {
+          "id": "37",
+          "name": "存量互斥与脱敏端到端 DELETE 缺参即 400 结构化"
+        },
+        {
+          "id": "38",
+          "name": "探针映射 429/超时/NETWORK（R4） 429 初败可重试：3 次后 502 RATE_LIMITED"
+        },
+        {
+          "id": "39",
+          "name": "探针映射 429/超时/NETWORK（R4） NETWORK 初败可重试：抛错 3 次后 502 NETWORK"
+        },
+        {
+          "id": "40",
+          "name": "探针映射 429/超时/NETWORK（R4） 上游 401 即 401 UNAUTHORIZED（不重试）"
+        },
+        {
+          "id": "41",
+          "name": "探针映射 429/超时/NETWORK（R4） 超时即 504 TIMEOUT（abort 信号可重试）"
+        }
+      ],
+      "source": "/** 每路由 403/405 围栏 + 存量互斥 + 历史脱敏端到端（经真实组合根 apply，全离线）。\n *\n * 守的是 server/api/route.registerEndpoints 的 403 先于 405 顺序与各端点方法表：\n * 把某路由多加一个方法、围栏顺序调换、存量互斥删掉，本文件必红。\n * fetch 经注入，落盘走 mkdtempSync，真实网络零容忍。\n */\nimport { mkdtempSync } from \"node:fs\";\nimport type { IncomingMessage, ServerResponse } from \"node:http\";\nimport { tmpdir } from \"node:os\";\nimport { join } from \"node:path\";\nimport type { ToolRunContext } from \"@deepseek-ai/dsh-tools\";\nimport { describe, expect, it } from \"vitest\";\nimport { apply } from \"../../src/index.ts\";\nimport { ROUTES } from \"../../src/shared/contract.ts\";\n\ninterface CapturedRoute {\n  readonly path: string;\n  readonly handler: (req: IncomingMessage, res: ServerResponse) => void;\n}\ninterface CapturedTool {\n  readonly name: string;\n  readonly execute: (\n    args: unknown,\n    exec: Pick<ToolRunContext, \"signal\"> & Record<string, unknown>,\n  ) => Promise<unknown>;\n}\n\nfunction setup(\n  fetchImpl?: (\n    url: string,\n    init: {\n      readonly method: string;\n      readonly headers: Record<string, string>;\n      readonly body: string;\n      readonly signal: AbortSignal;\n    },\n  ) => Promise<{ readonly status: number; readonly text: string }>,\n): { readonly routes: Map<string, CapturedRoute>; readonly tools: Map<string, CapturedTool> } {\n  const routes = new Map<string, CapturedRoute>();\n  const tools = new Map<string, CapturedTool>();\n  const ctx = {\n    logger: { warn: () => {} },\n    webServer: {\n      register: (route: CapturedRoute) => {\n        routes.set(route.path, route);\n        return () => {\n          routes.delete(route.path);\n        };\n      },\n    },\n    tools: {\n      register: (tool: CapturedTool) => {\n        tools.set(tool.name, tool);\n        return () => {\n          tools.delete(tool.name);\n        };\n      },\n    },\n    effect: (fn: () => () => void) => fn(),\n  };\n  apply(ctx as never, {\n    home: mkdtempSync(join(tmpdir(), \"jev-fence-\")),\n    ...(fetchImpl !== undefined ? { fetchImpl } : {}),\n  });\n  return { routes, tools };\n}\n\nfunction fakeReq(opts: {\n  readonly address: string;\n  readonly host: string;\n  readonly method: string;\n  readonly url: string;\n  readonly body?: string;\n  readonly extraHeaders?: Record<string, string>;\n}): IncomingMessage {\n  const listeners = new Map<string, ((...a: never[]) => void)[]>();\n  const req = {\n    socket: { remoteAddress: opts.address },\n    headers: { host: opts.host, ...opts.extraHeaders },\n    method: opts.method,\n    url: opts.url,\n    on: (event: string, cb: (...a: never[]) => void) => {\n      const list = listeners.get(event) ?? [];\n      list.push(cb);\n      listeners.set(event, list);\n      if (event === \"data\") queueMicrotask(() => cb(Buffer.from(opts.body ?? \"\", \"utf8\") as never));\n      if (event === \"end\") queueMicrotask(() => cb());\n      return req;\n    },\n  };\n  return req as unknown as IncomingMessage;\n}\n\nfunction fakeRes(): {\n  readonly res: ServerResponse;\n  readonly out: { status: number; headers: Record<string, unknown>; body: string };\n} {\n  const out = { status: 0, headers: {} as Record<string, unknown>, body: \"\" };\n  const res = {\n    headersSent: false,\n    writeHead: (status: number, headers: Record<string, unknown>) => {\n      out.status = status;\n      out.headers = headers;\n      (res as { headersSent: boolean }).headersSent = true;\n    },\n    end: (text?: unknown) => {\n      out.body = typeof text === \"string\" ? text : \"\";\n      (res as { headersSent: boolean }).headersSent = true;\n    },\n  };\n  return { res: res as unknown as ServerResponse, out };\n}\n\nasync function waitForResponse(out: { readonly status: number }, label: string): Promise<void> {\n  const deadline = Date.now() + 2000;\n  for (;;) {\n    if (out.status !== 0) return;\n    if (Date.now() > deadline) throw new Error(\"pollUntil: \" + label + \" timeout\");\n    await new Promise((r) => setTimeout(r, 5));\n  }\n}\n\nasync function call(\n  routes: Map<string, CapturedRoute>,\n  path: string,\n  opts: {\n    readonly address?: string;\n    readonly host?: string;\n    readonly method?: string;\n    readonly url?: string;\n    readonly body?: string;\n    readonly extraHeaders?: Record<string, string>;\n  } = {},\n): Promise<{\n  readonly status: number;\n  readonly headers: Record<string, unknown>;\n  readonly json: unknown;\n}> {\n  const route = routes.get(path);\n  expect(route).toBeDefined();\n  const { res, out } = fakeRes();\n  route?.handler(\n    fakeReq({\n      address: opts.address ?? \"127.0.0.1\",\n      host: opts.host ?? \"127.0.0.1\",\n      method: opts.method ?? \"GET\",\n      url: opts.url ?? path,\n      body: opts.body,\n      extraHeaders: opts.extraHeaders,\n    }),\n    res,\n  );\n  await waitForResponse(out, \"response finished\");\n  return {\n    status: out.status,\n    headers: out.headers,\n    json: out.body.length > 0 ? (JSON.parse(out.body) as unknown) : null,\n  };\n}\n\ndescribe(\"五路由注册与一致性\", () => {\n  it(\"宿主注册五路由且路径即共享 ROUTES 字面量\", () => {\n    const { routes } = setup();\n    expect([...routes.keys()].sort()).toEqual(\n      [ROUTES.health, ROUTES.config, ROUTES.presets, ROUTES.history, ROUTES.testConnection].sort(),\n    );\n    expect(ROUTES.health).toBe(\"/api/dsh-decision-gateway/health\");\n    expect(ROUTES.config).toBe(\"/api/dsh-decision-gateway/config\");\n    expect(ROUTES.presets).toBe(\"/api/dsh-decision-gateway/presets\");\n    expect(ROUTES.history).toBe(\"/api/dsh-decision-gateway/history\");\n    expect(ROUTES.testConnection).toBe(\"/api/dsh-decision-gateway/test-connection\");\n  });\n  it(\"工具双注册 ws_request_verdict/ws_list_verdict_guides\", () => {\n    const { tools } = setup();\n    expect(tools.has(\"ws_request_verdict\")).toBe(true);\n    expect(tools.has(\"ws_list_verdict_guides\")).toBe(true);\n  });\n});\n\ndescribe(\"每路由 403 围栏\", () => {\n  it.each([ROUTES.health, ROUTES.config, ROUTES.presets, ROUTES.history, ROUTES.testConnection])(\n    \"非回环 %s 即 403\",\n    async (path) => {\n      const { routes } = setup();\n      const r = await call(routes, path, {\n        address: \"10.0.0.2\",\n        host: \"10.0.0.2\",\n        method: \"GET\",\n        url: path,\n      });\n      expect(r.status).toBe(403);\n    },\n  );\n  it(\"403 先于 405：非回环+错方法仍 403\", async () => {\n    const { routes } = setup();\n    const r = await call(routes, ROUTES.presets, {\n      address: \"10.0.0.2\",\n      host: \"10.0.0.2\",\n      method: \"PUT\",\n    });\n    expect(r.status).toBe(403);\n  });\n  it(\"Host 非回环即 403；cross-site 即 403\", async () => {\n    const { routes } = setup();\n    expect((await call(routes, ROUTES.health, { host: \"evil.example\" })).status).toBe(403);\n    expect(\n      (await call(routes, ROUTES.health, { extraHeaders: { \"sec-fetch-site\": \"cross-site\" } }))\n        .status,\n    ).toBe(403);\n  });\n});\n\ndescribe(\"每路由 405 围栏\", () => {\n  it(\"health 仅 GET：POST 405 且 Allow 含 GET\", async () => {\n    const { routes } = setup();\n    const r = await call(routes, ROUTES.health, { method: \"POST\" });\n    expect(r.status).toBe(405);\n    expect(String(r.headers[\"allow\"] ?? \"\")).toContain(\"GET\");\n  });\n  it(\"config 仅 GET+PUT：DELETE 405 且 Allow 含 GET,PUT\", async () => {\n    const { routes } = setup();\n    const r = await call(routes, ROUTES.config, { method: \"DELETE\" });\n    expect(r.status).toBe(405);\n    const allow = String(r.headers[\"allow\"] ?? \"\");\n    expect(allow).toContain(\"GET\");\n    expect(allow).toContain(\"PUT\");\n  });\n  it(\"presets 仅 GET：PUT 405\", async () => {\n    const { routes } = setup();\n    const r = await call(routes, ROUTES.presets, { method: \"PUT\" });\n    expect(r.status).toBe(405);\n    expect(String(r.headers[\"allow\"] ?? \"\")).toContain(\"GET\");\n  });\n  it(\"history 仅 GET+DELETE：POST 405\", async () => {\n    const { routes } = setup();\n    const r = await call(routes, ROUTES.history, { method: \"POST\" });\n    expect(r.status).toBe(405);\n    const allow = String(r.headers[\"allow\"] ?? \"\");\n    expect(allow).toContain(\"GET\");\n    expect(allow).toContain(\"DELETE\");\n  });\n  it(\"test-connection 仅 POST：GET 405\", async () => {\n    const { routes } = setup();\n    const r = await call(routes, ROUTES.testConnection, { method: \"GET\" });\n    expect(r.status).toBe(405);\n    expect(String(r.headers[\"allow\"] ?? \"\")).toContain(\"POST\");\n  });\n  it.each([\n    [ROUTES.health, \"GET\"],\n    [ROUTES.config, \"GET\"],\n    [ROUTES.presets, \"GET\"],\n    [ROUTES.history, \"GET\"],\n    [ROUTES.testConnection, \"POST\"],\n  ])(\"OPTIONS %s 即 405 且 Allow 含 %s（R2）\", async (path, method) => {\n    const { routes } = setup();\n    const r = await call(routes, path, { method: \"OPTIONS\" });\n    expect(r.status).toBe(405);\n    expect(String(r.headers[\"allow\"] ?? \"\")).toContain(method);\n  });\n});\n\ndescribe(\"存量互斥与脱敏端到端\", () => {\n  it(\"PUT 明文与存量 ref 互斥 400（先 ref 后明文）\", async () => {\n    const { routes } = setup();\n    const put = (body: unknown) =>\n      call(routes, ROUTES.config, { method: \"PUT\", body: JSON.stringify(body) });\n    expect((await put({ apiKeyRef: \"JEV_FENCE_KEY\" })).status).toBe(200);\n    const clash = await put({ apiKeyPlaintext: \"Abcdefgh12345678\", confirm: true });\n    expect(clash.status).toBe(400);\n    expect(JSON.stringify(clash.json)).toContain(\"MUTUALLY_EXCLUSIVE\");\n    // 清除引用后明文可写。\n    expect((await put({ apiKeyRef: null })).status).toBe(200);\n    expect((await put({ apiKeyPlaintext: \"Zbcdefgh12345678\", confirm: true })).status).toBe(200);\n  });\n  it(\"工具决议落史可查：snippet 无密钥原文\", async () => {\n    const { routes, tools } = setup(async () => ({\n      status: 200,\n      text: JSON.stringify({\n        model: \"jev-1.13.0\",\n        answers: {\n          q1: { type: \"choice\", choice: \"A\", confidence: 0.8, probabilities: { A: 0.8, B: 0.2 } },\n        },\n        usage: { input_tokens: 9, output_tokens: 3 },\n      }),\n    }));\n    expect(\n      (\n        await call(routes, ROUTES.config, {\n          method: \"PUT\",\n          body: JSON.stringify({ apiKeyPlaintext: \"ItcaseSecret123456\", confirm: true }),\n        })\n      ).status,\n    ).toBe(200);\n    const decide = tools.get(\"ws_request_verdict\");\n    expect(decide).toBeDefined();\n    const out = (await decide?.execute(\n      {\n        preset_id: \"general\",\n        state: { text: \"fence-case\", lang: \"en\" },\n        questions_override: [{ id: \"q1\", text: \"Pick one.\", kind: \"choice\", options: [\"A\", \"B\"] }],\n      },\n      { sessionId: \"fence-s1\", cwd: \"/work/fence\", signal: new AbortController().signal },\n    )) as { ok: boolean };\n    expect(out.ok).toBe(true);\n    const got = await call(routes, ROUTES.history, {\n      url: ROUTES.history + \"?root=/work/fence&sessionId=fence-s1\",\n    });\n    const entries = (got.json as { entries: unknown[] }).entries;\n    expect(entries).toHaveLength(1);\n    expect(JSON.stringify(entries)).not.toContain(\"ItcaseSecret123456\");\n    const del = await call(routes, ROUTES.history, {\n      method: \"DELETE\",\n      url: ROUTES.history + \"?root=/work/fence&sessionId=fence-s1\",\n    });\n    expect(del.json).toMatchObject({ ok: true, deleted: true });\n  });\n  it(\"DELETE 缺参即 400 结构化\", async () => {\n    const { routes } = setup();\n    const bad = await call(routes, ROUTES.history, {\n      method: \"DELETE\",\n      url: ROUTES.history + \"?root=/work\",\n    });\n    expect(bad.status).toBe(400);\n  });\n});\n\ndescribe(\"探针映射 429/超时/NETWORK（R4）\", () => {\n  async function probeWith(\n    fetchImpl: (\n      url: string,\n      init: {\n        readonly method: string;\n        readonly headers: Record<string, string>;\n        readonly body: string;\n        readonly signal: AbortSignal;\n      },\n    ) => Promise<{ readonly status: number; readonly text: string }>,\n  ): Promise<{ readonly status: number; readonly json: unknown; readonly calls: number }> {\n    let calls = 0;\n    const counting = async (\n      url: string,\n      init: {\n        readonly method: string;\n        readonly headers: Record<string, string>;\n        readonly body: string;\n        readonly signal: AbortSignal;\n      },\n    ): Promise<{ readonly status: number; readonly text: string }> => {\n      calls += 1;\n      return fetchImpl(url, init);\n    };\n    const { routes } = setup(counting);\n    expect(\n      (\n        await call(routes, ROUTES.config, {\n          method: \"PUT\",\n          body: JSON.stringify({ apiKeyPlaintext: \"ProbeSecretValue1234\", confirm: true }),\n        })\n      ).status,\n    ).toBe(200);\n    const r = await call(routes, ROUTES.testConnection, { method: \"POST\", body: \"{}\" });\n    return { status: r.status, json: r.json, calls };\n  }\n  it(\"429 初败可重试：3 次后 502 RATE_LIMITED\", async () => {\n    const r = await probeWith(async () => ({ status: 429, text: \"limited\" }));\n    expect(r.calls).toBe(3);\n    expect(r.status).toBe(502);\n    expect(JSON.stringify(r.json)).toContain(\"RATE_LIMITED\");\n  });\n  it(\"NETWORK 初败可重试：抛错 3 次后 502 NETWORK\", async () => {\n    const r = await probeWith(async () => {\n      throw new Error(\"down\");\n    });\n    expect(r.calls).toBe(3);\n    expect(r.status).toBe(502);\n    expect(JSON.stringify(r.json)).toContain(\"NETWORK\");\n  });\n  it(\"上游 401 即 401 UNAUTHORIZED（不重试）\", async () => {\n    const r = await probeWith(async () => ({ status: 401, text: \"{}\" }));\n    expect(r.calls).toBe(1);\n    expect(r.status).toBe(401);\n    expect(JSON.stringify(r.json)).toContain(\"UNAUTHORIZED\");\n  });\n  it(\"超时即 504 TIMEOUT（abort 信号可重试）\", async () => {\n    const { routes } = setup(async (_url, init) => {\n      await new Promise<void>((_resolve, reject) => {\n        init.signal.addEventListener(\"abort\", () =>\n          reject(new DOMException(\"aborted\", \"AbortError\")),\n        );\n      });\n      throw new Error(\"unreachable\");\n    });\n    expect(\n      (\n        await call(routes, ROUTES.config, {\n          method: \"PUT\",\n          body: JSON.stringify({ timeoutMs: 1000 }),\n        })\n      ).status,\n    ).toBe(200);\n    expect(\n      (\n        await call(routes, ROUTES.config, {\n          method: \"PUT\",\n          body: JSON.stringify({ apiKeyPlaintext: \"ProbeSecretValue1234\", confirm: true }),\n        })\n      ).status,\n    ).toBe(200);\n    const r = await call(routes, ROUTES.testConnection, { method: \"POST\", body: \"{}\" });\n    expect(r.status).toBe(504);\n    expect(JSON.stringify(r.json)).toContain(\"TIMEOUT\");\n  }, 15000);\n});\n"
+    }
+  },
+  "projectRoot": "/home/runner/work/dsh-plugin-hub/dsh-plugin-hub",
+  "config": {
+    "$schema": "../node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+    "mutate": [
+      "packages/dsh-decision-gateway/src/server/upgrade/**/*.ts"
+    ],
+    "testRunner": "vitest",
+    "mutator": {
+      "excludedMutations": [
+        "StringLiteral",
+        "ArrayLiteral",
+        "ObjectLiteral",
+        "TemplateLiteral"
+      ],
+      "plugins": null
+    },
+    "plugins": [
+      "@stryker-mutator/vitest-runner"
+    ],
+    "concurrency": 16,
+    "timeoutMS": 60000,
+    "dryRunTimeoutMinutes": 5,
+    "reporters": [
+      "progress",
+      "clear-text",
+      "json"
+    ],
+    "coverageAnalysis": "perTest",
+    "tempDirName": ".stryker-tmp",
+    "cleanTempDir": true,
+    "vitest": {
+      "related": false,
+      "configFile": "vitest.stryker.d/dsh-decision-gateway-upgrade.config.ts"
+    },
+    "jsonReporter": {
+      "fileName": "coverage/mutation/dsh-decision-gateway-upgrade.json"
+    },
+    "incremental": true,
+    "incrementalFile": "coverage/mutation/incremental-decision-gateway-upgrade.json",
+    "_comment": "按域分段（#943 对账后，单段 _single 按 server 目录名拆分）：upgrade 域全量在面内（含 interface 门面与 deps 类型面）；面文件集与单段时代一致，仅执行分片变化；测试按段 testFiles 清单跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。",
+    "configFile": "stryker.conf.d/dsh-decision-gateway-upgrade.json",
+    "allowConsoleColors": true,
+    "checkers": [],
+    "checkerNodeArgs": [],
+    "commandRunner": {
+      "command": "npm test"
+    },
+    "clearTextReporter": {
+      "allowColor": true,
+      "allowEmojis": false,
+      "logTests": true,
+      "maxTestsToLog": 3,
+      "reportTests": true,
+      "reportMutants": true,
+      "reportScoreTable": true,
+      "skipFull": false
+    },
+    "dashboard": {
+      "baseUrl": "https://dashboard.stryker-mutator.io/api/reports",
+      "reportType": "full"
+    },
+    "dryRunOnly": false,
+    "eventReporter": {
+      "baseDir": "reports/mutation/events"
+    },
+    "ignorePatterns": [],
+    "ignoreStatic": false,
+    "force": false,
+    "fileLogLevel": "off",
+    "inPlace": false,
+    "logLevel": "info",
+    "maxConcurrentTestRunners": 9007199254740991,
+    "maxTestRunnerReuse": 0,
+    "appendPlugins": [],
+    "htmlReporter": {
+      "fileName": "reports/mutation/mutation.html"
+    },
+    "disableTypeChecks": true,
+    "symlinkNodeModules": true,
+    "testRunnerNodeArgs": [],
+    "thresholds": {
+      "high": 80,
+      "low": 60,
+      "break": null
+    },
+    "timeoutFactor": 1.5,
+    "tsconfigFile": "tsconfig.json",
+    "warnings": true,
+    "disableBail": false,
+    "allowEmpty": false,
+    "ignorers": [],
+    "testFiles": []
+  },
+  "framework": {
+    "name": "StrykerJS",
+    "version": "10.0.0",
+    "branding": {
+      "homepageUrl": "https://stryker-mutator.io",
+      "imageUrl": "data:image/svg+xml;utf8,%3Csvg viewBox='0 0 1458 1458' xmlns='http://www.w3.org/2000/svg' fill-rule='evenodd' clip-rule='evenodd' stroke-linejoin='round' stroke-miterlimit='2'%3E%3Cpath fill='none' d='M0 0h1458v1458H0z'/%3E%3CclipPath id='a'%3E%3Cpath d='M0 0h1458v1458H0z'/%3E%3C/clipPath%3E%3Cg clip-path='url(%23a)'%3E%3Cpath d='M1458 729c0 402.655-326.345 729-729 729S0 1131.655 0 729C0 326.445 326.345 0 729 0s729 326.345 729 729' fill='%23e74c3c' fill-rule='nonzero'/%3E%3Cpath d='M778.349 1456.15L576.6 1254.401l233-105 85-78.668v-64.332l-257-257-44-187-50-208 251.806-82.793L1076.6 389.401l380.14 379.15c-19.681 367.728-311.914 663.049-678.391 687.599z' fill-opacity='.3'/%3E%3Cpath d='M753.4 329.503c41.79 0 74.579 7.83 97.925 25.444 23.571 18.015 41.69 43.956 55.167 77.097l11.662 28.679 165.733-58.183-14.137-32.13c-26.688-60.655-64.896-108.61-114.191-144.011-49.329-35.423-117.458-54.302-204.859-54.302-50.78 0-95.646 7.376-134.767 21.542-40.093 14.671-74.09 34.79-102.239 60.259-28.84 26.207-50.646 57.06-65.496 92.701-14.718 35.052-22.101 72.538-22.101 112.401 0 72.536 20.667 133.294 61.165 182.704 38.624 47.255 98.346 88.037 179.861 121.291 42.257 17.475 78.715 33.125 109.227 46.994 27.193 12.361 49.294 26.124 66.157 41.751 15.309 14.186 26.497 30.584 33.63 49.258 7.721 20.214 11.16 45.69 11.16 76.402 0 28.021-4.251 51.787-13.591 71.219-8.832 18.374-20.171 33.178-34.523 44.219-14.787 11.374-31.193 19.591-49.393 24.466-19.68 5.359-39.14 7.993-58.69 7.993-29.359 0-54.387-3.407-75.182-10.747-20.112-7.013-37.144-16.144-51.259-27.486-13.618-11.009-24.971-23.766-33.744-38.279-9.64-15.8-17.272-31.924-23.032-48.408l-10.965-31.376-161.669 60.585 10.734 30.124c10.191 28.601 24.197 56.228 42.059 82.748 18.208 27.144 41.322 51.369 69.525 72.745 27.695 21.075 60.904 38.218 99.481 51.041 37.777 12.664 82.004 19.159 132.552 19.159 49.998 0 95.818-8.321 137.611-24.622 42.228-16.471 78.436-38.992 108.835-67.291 30.719-28.597 54.631-62.103 71.834-100.642 17.263-38.56 25.923-79.392 25.923-122.248 0-54.339-8.368-100.37-24.208-138.32-16.29-38.759-38.252-71.661-65.948-98.797-26.965-26.418-58.269-48.835-93.858-67.175-33.655-17.241-69.196-33.11-106.593-47.533-35.934-13.429-65.822-26.601-89.948-39.525-22.153-11.868-40.009-24.21-53.547-37.309-11.429-11.13-19.83-23.678-24.718-37.664-5.413-15.49-7.98-33.423-7.98-53.577 0-40.883 11.293-71.522 37.086-90.539 28.443-20.825 64.985-30.658 109.311-30.658z' fill='%23f1c40f' fill-rule='nonzero'/%3E%3Cpath d='M720 0h18v113h-18zM1458 738v-18h-113v18h113zM720 1345h18v113h-18zM113 738v-18H0v18h113z'/%3E%3C/g%3E%3C/svg%3E"
+    },
+    "dependencies": {
+      "typescript": "7.0.2"
+    }
+  }
+}
