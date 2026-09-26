@@ -11,6 +11,7 @@ export default defineConfig({
       'packages/dsh-mcp-manager/test/client-dom/panel-aria-modal.test.ts',
       'packages/dsh-mcp-manager/test/client-dom/settings-card.test.ts',
       'packages/dsh-mcp-manager/test/client-unit/client-context-s2.test.ts',
+      'packages/dsh-mcp-manager/test/client-unit/client-float-pure.test.ts',
     ],
     environment: 'node',
     testTimeout: 60_000,

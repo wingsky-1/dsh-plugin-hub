@@ -14,6 +14,7 @@ export default defineConfig({
       'packages/dsh-mcp-manager/test/unit/unit-apply.test.ts',
       'packages/dsh-mcp-manager/test/unit/unit-call-stats.test.ts',
       'packages/dsh-mcp-manager/test/unit/unit-call-timeout.test.ts',
+      'packages/dsh-mcp-manager/test/unit/unit-catalog-pure.test.ts',
       'packages/dsh-mcp-manager/test/unit/unit-catalog.test.ts',
       'packages/dsh-mcp-manager/test/unit/unit-config-env-policy.test.ts',
       'packages/dsh-mcp-manager/test/unit/unit-dispatch.test.ts',
