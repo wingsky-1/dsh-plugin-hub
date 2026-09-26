@@ -409,7 +409,11 @@ pnpm --filter @wingsky-1/dsh-mcp-manager test
   the official `mainView`, the package treats the read as *unknown* and does **not** send
   `cwd:""` — unknown is not "no project", and a wrong clear leaves the panel with global
   entries only and makes project-scoped imports fail with
-  `no active project session`. One console warning is emitted while project MCP is unbound.
+  `no active project session`. Warning criterion: a first-frame unknown is the race
+  where the official snapshot is not ready yet (it happens on every cold start) and stays
+  quiet; one console warning is emitted only when a previously resolved session becomes
+  unreadable, or when the session stays unreadable across consecutive frames — so a normal
+  cold start and a real failure do not show the same yellow warning.
 - Requires Node ≥ 20
 
 ## Type dependencies

@@ -49,6 +49,7 @@ function makeState(
   currentCwd: string | undefined;
   sessionResolved: boolean;
   warnedUnknownSession: boolean;
+  unknownSessionFrames: number;
   updateFloatState: (() => void) | undefined;
   API: { session: string };
   updateCalls: number;
@@ -57,6 +58,7 @@ function makeState(
     currentCwd: cwd,
     sessionResolved: resolved,
     warnedUnknownSession: false,
+    unknownSessionFrames: 0,
     updateFloatState: undefined as (() => void) | undefined,
     API: { session: SESSION_PATH },
     updateCalls: 0,
@@ -262,7 +264,7 @@ describe("bindSession 分支", () => {
     expect(fetchBodies()[0]).toContain('"cwd":""');
   });
 
-  it("未知态打一次告警（可观测性：静默失效与「没这个 bug」不可区分，#1028）", async () => {
+  it("首帧未知保持安静，连续多帧仍未知才告警（#1028 隔离实测：冷启动竞态不是故障）", async () => {
     okFetch();
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     // 真正的未知：快照在，但没有 main-view 行（listWith 会补 mainView，故手写空行表）。
@@ -290,10 +292,55 @@ describe("bindSession 分支", () => {
     bindSession(ctx, state as never, actions as never);
     await new Promise((r) => setTimeout(r, 0));
     expect(state.sessionResolved).toBe(false);
-    expect(warn).toHaveBeenCalledTimes(1);
-    // 幂等闸：再触发一帧 unknown 不得刷屏（订阅回调被调用一次后再手工调一次）。
+    // 首帧是官方快照尚未被 mainView 持有的竞态：每次冷启动必现，必须安静。
+    expect(warn).not.toHaveBeenCalled();
+    // 第二帧仍读不到 = 真失联：开口。
     listener?.();
     expect(warn).toHaveBeenCalledTimes(1);
+    // 幂等闸：后续帧不得刷屏。
+    listener?.();
+    expect(warn).toHaveBeenCalledTimes(1);
+    warn.mockRestore();
+  });
+
+  it("已解析过又读不到立即告警（#1028 失效签名，隔离实测口径）", async () => {
+    okFetch();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    let known = true;
+    let listener: (() => void) | undefined;
+    const ready = { phase: "ready", projectionsBySession: {} };
+    const ctx = {
+      sessions: {
+        list: {
+          getSnapshot: () =>
+            known
+              ? {
+                  ids: ["s1"],
+                  byId: { s1: { id: "s1", cwd: "/a", retainedBy: { mainView: 1 } } },
+                  ...ready,
+                }
+              : { ids: ["s1"], byId: { s1: { id: "s1" } }, ...ready },
+          subscribe: (fn: () => void) => {
+            listener = fn;
+            return () => {
+              listener = undefined;
+            };
+          },
+        },
+      },
+    } as unknown as McpClientContext;
+    const state = makeState(undefined, false);
+    const actions = makeActions();
+    bindSession(ctx, state as never, actions as never);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(state.sessionResolved).toBe(true);
+    expect(warn).not.toHaveBeenCalled();
+    // 已解析过 → 掉回未知：不靠帧数掩盖回归，立刻告警；且仍不上报 cwd:""。
+    known = false;
+    listener?.();
+    expect(state.sessionResolved).toBe(false);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(fetchBodies().at(-1)).toContain('"/a"');
     warn.mockRestore();
   });
 

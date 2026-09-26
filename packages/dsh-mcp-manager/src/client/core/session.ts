@@ -62,15 +62,19 @@ export function bindSession(
       // 但**不上报**——保持宿主当前绑定，不把「读不到」变成「清空项目级」。
       state.currentCwd = undefined;
       state.sessionResolved = false;
+      state.unknownSessionFrames += 1;
       state.updateFloatState?.();
-      // 无条件告警（幂等闸在 warnUnknownOnce 内部）：#1028 的真实失效签名是
-      // 「已解析 → 读不到」的单帧，加 !prevResolved 反而把它挡掉；而冷启动首帧
-      // 本就是 unknown，那一次告警是预期噪声，不是误报。
-      warnUnknownOnce(state);
+      // 告警口径（#1028 隔离实测后收敛）：官方会话快照要等 mainView 持有才就绪，
+      // 因此**首帧未知是竞态、每次冷启动必现**。无条件告警会让正常态与异常态
+      // 显示同一条黄警，反而丢掉判别价值。只在两种真异常下开口：
+      //   ① 已解析过又读不到 —— 真回归（#1028 的失效签名就是这一种）；
+      //   ② 连续多帧仍读不到 —— 真失联（会话面始终不给出当前会话）。
+      if (prevResolved || state.unknownSessionFrames >= 2) warnUnknownOnce(state);
       return;
     }
     state.currentCwd = read.cwd;
     state.sessionResolved = true;
+    state.unknownSessionFrames = 0;
     state.warnedUnknownSession = false;
     state.updateFloatState?.();
     // cwd 未变且上一轮也是已知态 → 短路（宿主侧 setSession 同值亦幂等，这里省一次往返）。

@@ -66,6 +66,11 @@ export interface McpState {
   sessionResolved: boolean;
   /** 未知态的一次性告警闸（可观测性：未知态无 UI 表现，不告警等于静默失效）。 */
   warnedUnknownSession: boolean;
+  /**
+   * 连续未知帧计数（#1028 告警口径）。官方会话快照要等 mainView 持有才就绪，
+   * 故**首帧未知是竞态不是故障**（每次冷启动必现）；用它把噪声与真失联分开。
+   */
+  unknownSessionFrames: number;
   projectRoot: string | undefined;
   updateFloatState: (() => void) | undefined;
   mcpUiConfig: ClientUiConfig;
@@ -103,6 +108,7 @@ export function createState(): McpState {
     currentCwd: undefined,
     sessionResolved: false,
     warnedUnknownSession: false,
+    unknownSessionFrames: 0,
     projectRoot: undefined,
     updateFloatState: undefined,
     mcpUiConfig: {
