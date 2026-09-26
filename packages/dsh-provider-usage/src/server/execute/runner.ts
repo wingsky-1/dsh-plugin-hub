@@ -14,12 +14,24 @@ import type { ReportConfig, ReportPeriod } from "../config/interface.ts";
 import { reportBodyToHtml } from "./format.ts";
 import {
   buildStatsSnapshot,
-  generateReport,
+  generateReportOutcome,
+  type GenerateReportAttempt,
+  type GenerateRouteOutcome,
   type ReportMeta,
   type ReportMetaSummary,
+  type ReportResult,
   type ReportStatsSnapshot,
+  type ReportTokenUsage,
 } from "./generate.ts";
-import type { DueReport } from "../schedule/interface.ts";
+import type {
+  DueReport,
+  RetryAttemptObservation,
+  RetryAttemptTokens,
+  RetryFailure,
+  RetryRouteSnapshot,
+  RetryUsageTotals,
+} from "../schedule/interface.ts";
+export type { RetryFailure, RetryRouteSnapshot };
 import { parseReportIndexLines } from "./report-index.ts";
 
 export function reportsDir(root: string): string {
@@ -30,10 +42,15 @@ export function reportIndexFile(root: string): string {
   return join(root, "reports", "index.jsonl");
 }
 
+/** index 中可带事务 cycle token；旧记录没有该字段，仍只可复用，不可证明同 cycle。 */
+export interface ReportCycleMeta extends ReportMeta {
+  cycleId?: string;
+}
+
 // 解析记忆化缓存（readReportIndex 专用；键=historyRoot，值=stat 失效键+投影）。
 interface IndexCacheEntry {
   stamp: string;
-  value: ReportMeta[];
+  value: ReportCycleMeta[];
 }
 const indexCache = new Map<string, IndexCacheEntry>();
 // 命中/未命中计数（测试可观测：确定性证明「重复读不再重解析」，不依赖时钟度量）
@@ -155,19 +172,24 @@ export function notifyReport(
   const body = `${meta.period} ${meta.key}（${meta.startDay} ~ ${meta.endDay}）：token 总量 ${
     total === null ? "无数据" : total.toLocaleString("en-US")
   }，调用 ${snapshot.totals.calls} 次。详情见 dsh 设置页用量报告。`;
-  notifier
-    .send({
-      source: "@wingsky-1/dsh-provider-usage",
-      kind: "provider-usage:report",
-      severity: "info",
-      title: "用量报告",
-      body,
-    })
-    .catch((e: unknown) =>
-      console.warn(
-        `[dsh-provider-usage] report: 推送失败（不影响主流程）：${sanitizeDiagnostic(errorMessage(e))}`,
-      ),
+  const warnPushFailure = (e: unknown): void => {
+    console.warn(
+      `[dsh-provider-usage] report: 推送失败（不影响主流程）：${sanitizeDiagnostic(errorMessage(e))}`,
     );
+  };
+  try {
+    notifier
+      .send({
+        source: "@wingsky-1/dsh-provider-usage",
+        kind: "provider-usage:report",
+        severity: "info",
+        title: "用量报告",
+        body,
+      })
+      .catch(warnPushFailure);
+  } catch (e: unknown) {
+    warnPushFailure(e);
+  }
 }
 
 function reportHtmlDocument(meta: ReportMeta, bodyText: string): string {
@@ -183,6 +205,7 @@ export async function persistReport(
   historyRoot: string,
   meta: ReportMeta,
   bodyText: string,
+  cycleId?: string,
 ): Promise<void> {
   const dir = reportsDir(historyRoot);
   const htmlFile = reportHtmlFile(historyRoot, meta.period, meta.key);
@@ -198,10 +221,11 @@ export async function persistReport(
   await writeFile(tmpMeta, JSON.stringify(meta, null, 2), { mode: 0o600 });
   await rename(tmpMeta, metaFile);
 
-  await appendFile(indexFile, `${JSON.stringify(meta)}\n`, { mode: 0o600 });
+  const indexedMeta: ReportCycleMeta = cycleId === undefined ? meta : { ...meta, cycleId };
+  await appendFile(indexFile, `${JSON.stringify(indexedMeta)}\n`, { mode: 0o600 });
 }
 
-export async function runDueReport(params: {
+export interface RunDueReportParams {
   due: DueReport;
   trend: TrendTracker;
   ctx: Context;
@@ -209,8 +233,178 @@ export async function runDueReport(params: {
   promptTemplate: string;
   historyRoot: string;
   sanitizeDiagnostic: (s: string) => string;
-}): Promise<ReportMeta> {
-  const { due, trend, ctx, reportCfg, promptTemplate, historyRoot, sanitizeDiagnostic } = params;
+  route?: GenerateRouteOutcome;
+  /** B3a internal seam: record the observation before report files are written. */
+  attemptNumber?: number;
+  /** 内部取消信号；仅透传到唯一模型生成边界。 */
+  signal?: AbortSignal;
+  onAttempt?: (observation: RetryAttemptObservation) => Promise<RetryUsageTotals | null>;
+  /** 读取当前 cycle 已持久化累计事实；noData 不产生新 attempt。 */
+  getUsage?: () => RetryUsageTotals | null;
+}
+
+export type RunDueReportOutcome =
+  | { status: "success"; result: ReportResult; attempt?: GenerateReportAttempt }
+  | {
+      status: "failure";
+      failure: RetryFailure;
+      result?: ReportResult;
+      attempt?: GenerateReportAttempt;
+    };
+
+const REPORT_STORAGE_FAILURE = {
+  kind: "storage",
+  code: "report-persist-failed",
+} as const satisfies RetryFailure;
+
+const REPORT_CYCLE_CONFLICT_FAILURE = {
+  kind: "unknown",
+  code: "retry-cycle-conflict",
+} as const satisfies RetryFailure;
+
+const REPORT_OBSERVATION_STORAGE_FAILURE = {
+  kind: "storage",
+  code: "retry-observation-storage",
+} as const satisfies RetryFailure;
+
+function retryTokens(value: ReportTokenUsage | null): RetryAttemptTokens {
+  return value === null
+    ? {
+        inputTokens: null,
+        outputTokens: null,
+        reasoningTokens: null,
+        totalTokens: null,
+        cacheReadTokens: null,
+        cacheWriteTokens: null,
+      }
+    : { ...value };
+}
+
+function observationFor(
+  attempt: GenerateReportAttempt,
+  attemptNumber: number,
+  failure: RetryFailure | null,
+): RetryAttemptObservation {
+  const status: RetryAttemptObservation["status"] =
+    failure === null
+      ? "success"
+      : failure.kind === "aborted"
+        ? "aborted"
+        : (failure.kind === "transient" || failure.kind === "empty-output") && attemptNumber <= 5
+          ? "retry"
+          : "terminal";
+  return {
+    attempt: attemptNumber,
+    result: failure === null ? "success" : "failure",
+    code: failure?.code ?? null,
+    status,
+    durationMs: attempt.durationMs,
+    tokens: retryTokens(attempt.tokens),
+  };
+}
+
+function withCumulativeUsage(result: ReportResult, usage: RetryUsageTotals): ReportResult {
+  return {
+    ...result,
+    meta: {
+      ...result.meta,
+      durationMs: usage.durationMs,
+      tokens: {
+        inputTokens: usage.inputTokens,
+        outputTokens: usage.outputTokens,
+        reasoningTokens: usage.reasoningTokens,
+        totalTokens: usage.totalTokens,
+        cacheReadTokens: usage.cacheReadTokens,
+        cacheWriteTokens: usage.cacheWriteTokens,
+      },
+    },
+  };
+}
+
+type AttemptObservationResult = RetryUsageTotals | null | "error";
+
+async function observeAttempt(
+  params: RunDueReportParams,
+  attempt: GenerateReportAttempt,
+  attemptNumber: number,
+  failure: RetryFailure | null,
+): Promise<AttemptObservationResult> {
+  if (params.onAttempt === undefined) return null;
+  try {
+    const usage = await params.onAttempt(observationFor(attempt, attemptNumber, failure));
+    return usage === undefined ? "error" : usage;
+  } catch {
+    return "error";
+  }
+}
+
+export type PreparedDueReportOutcome =
+  | {
+      status: "success";
+      result: ReportResult;
+      attempt?: GenerateReportAttempt;
+      /** coordinator 校验 current claim 后，在根锁内调用；cycleId 仅写 index token。 */
+      persist: (cycleId?: string) => Promise<void>;
+    }
+  | {
+      status: "failure";
+      failure: RetryFailure;
+      result?: ReportResult;
+      attempt?: GenerateReportAttempt;
+    };
+
+type PreparedReportSuccess = Extract<PreparedDueReportOutcome, { status: "success" }>;
+
+function reportPersistenceError(): Error & { code: string } {
+  return Object.assign(new Error("报告持久化失败"), { code: REPORT_STORAGE_FAILURE.code });
+}
+
+function preparedSuccess(
+  params: RunDueReportParams,
+  result: ReportResult,
+  snapshot: ReportStatsSnapshot,
+  attempt?: GenerateReportAttempt,
+): PreparedReportSuccess {
+  return {
+    status: "success",
+    result,
+    ...(attempt === undefined ? {} : { attempt }),
+    persist: async (cycleId) => {
+      try {
+        await persistReport(params.historyRoot, result.meta, result.body, cycleId);
+      } catch {
+        throw reportPersistenceError();
+      }
+      notifyReport(params.ctx, params.reportCfg, result.meta, snapshot, params.sanitizeDiagnostic);
+    },
+  };
+}
+
+/**
+ * 窗口内是否有用量（口径与 buildStatsSnapshot 的 totals.calls 一致：窗口闭区间
+ * day 过滤后求和 calls）。空窗口报告不调模型，故不必解析 provider/model 路由。
+ */
+export function reportWindowHasUsage(
+  buckets: Array<{
+    day: string;
+    providers: Array<{ provider: string; model: string | null; cell: TrendCell }>;
+  }>,
+  startDay: string,
+  endDay: string,
+): boolean {
+  for (const item of buckets) {
+    if (item.day < startDay || item.day > endDay) continue;
+    for (const entry of item.providers) {
+      if (entry.cell.calls > 0) return true;
+    }
+  }
+  return false;
+}
+
+export async function prepareDueReportOutcome(
+  params: RunDueReportParams,
+): Promise<PreparedDueReportOutcome> {
+  const { due, trend, ctx, reportCfg, promptTemplate } = params;
   const buckets = trend.buckets();
   // 目录维度日汇总行进快照（trend.dirRows 含今日桶，口径见
   // aggregator.dirRows）。残差投影后旧数据（无 dir 行的分片）不再得到
@@ -240,20 +434,35 @@ export async function runDueReport(params: {
     prevTotal: prevWindowTotal(buckets, due.startDay, due.endDay),
   });
   if (snapshot.totals.calls === 0) {
-    return {
-      period: due.period,
-      key: due.key,
-      startDay: due.startDay,
-      endDay: due.endDay,
-      provider: reportCfg.provider,
-      model: reportCfg.model,
-      generatedAt: Date.now(),
-      durationMs: 0,
-      ok: true,
-      noData: true,
+    const priorUsage = params.getUsage?.() ?? null;
+    const noDataResult: ReportResult = {
+      body: "",
+      meta: {
+        period: due.period,
+        key: due.key,
+        startDay: due.startDay,
+        endDay: due.endDay,
+        provider: reportCfg.provider,
+        model: reportCfg.model,
+        generatedAt: Date.now(),
+        durationMs: priorUsage?.durationMs ?? 0,
+        ok: true,
+        noData: true,
+      },
     };
+    return preparedSuccess(
+      params,
+      priorUsage === null
+        ? noDataResult
+        : withCumulativeUsage(noDataResult, {
+            ...priorUsage,
+            durationMs: priorUsage.durationMs ?? 0,
+          }),
+      snapshot,
+    );
   }
-  const result = await generateReport({
+  const route = params.route;
+  const generated = await generateReportOutcome({
     llm: ctx.llm,
     period: due.period,
     key: due.key,
@@ -264,12 +473,90 @@ export async function runDueReport(params: {
     promptTemplate,
     provider: reportCfg.provider,
     model: reportCfg.model,
+    reasoningEffort: route === undefined ? reportCfg.reasoningEffort : route.route.reasoningEffort,
+    ...(route === undefined ? {} : { route }),
+    ...(params.signal === undefined ? {} : { signal: params.signal }),
   });
-  if (!result.meta.ok) throw new Error(result.meta.error ?? "报告生成失败");
-  const meta: ReportMeta = { ...result.meta, summary: summaryOf(snapshot) };
-  await persistReport(historyRoot, meta, result.body);
-  notifyReport(ctx, reportCfg, meta, snapshot, sanitizeDiagnostic);
-  return meta;
+  const attemptNumber = params.attemptNumber ?? 1;
+  if (generated.status === "failure") {
+    const observed = await observeAttempt(
+      params,
+      generated.attempt,
+      attemptNumber,
+      generated.failure,
+    );
+    if (observed === "error") {
+      return {
+        status: "failure",
+        failure: REPORT_OBSERVATION_STORAGE_FAILURE,
+        result: generated.result,
+        attempt: generated.attempt,
+      };
+    }
+    if (params.onAttempt !== undefined && observed === null) {
+      // 旧 cycle 的 observation CAS 失败只丢弃观测，不改写原 provider 失败；
+      // executor 随后的 recordFailure 也会按旧 claim CAS 静默丢弃。
+      return {
+        ...generated,
+        result: generated.result,
+        attempt: generated.attempt,
+      };
+    }
+    return {
+      ...generated,
+      result:
+        observed === null ? generated.result : withCumulativeUsage(generated.result, observed),
+      attempt: generated.attempt,
+    };
+  }
+  let result: ReportResult = {
+    ...generated.result,
+    meta: { ...generated.result.meta, summary: summaryOf(snapshot) },
+  };
+  const observed = await observeAttempt(params, generated.attempt, attemptNumber, null);
+  if (observed === "error") {
+    return {
+      status: "failure",
+      failure: REPORT_OBSERVATION_STORAGE_FAILURE,
+      result,
+      attempt: generated.attempt,
+    };
+  }
+  if (params.onAttempt !== undefined && observed === null) {
+    return {
+      status: "failure",
+      failure: REPORT_CYCLE_CONFLICT_FAILURE,
+      result,
+      attempt: generated.attempt,
+    };
+  }
+  if (observed !== null) result = withCumulativeUsage(result, observed);
+  return preparedSuccess(params, result, snapshot, generated.attempt);
+}
+
+export async function runDueReportOutcome(
+  params: RunDueReportParams,
+): Promise<RunDueReportOutcome> {
+  const outcome = await prepareDueReportOutcome(params);
+  if (outcome.status === "failure") return outcome;
+  try {
+    await outcome.persist();
+  } catch {
+    return {
+      status: "failure",
+      failure: REPORT_STORAGE_FAILURE,
+      result: outcome.result,
+      attempt: outcome.attempt,
+    };
+  }
+  return { status: "success", result: outcome.result, attempt: outcome.attempt };
+}
+
+/** 兼容 wrapper：保留旧 ReportMeta 返回/抛错语义，结构化标签由 executor 消费。 */
+export async function runDueReport(params: RunDueReportParams): Promise<ReportMeta> {
+  const outcome = await runDueReportOutcome(params);
+  if (outcome.status === "success") return outcome.result.meta;
+  throw new Error(outcome.result?.meta.error ?? "报告持久化失败");
 }
 
 /**
@@ -287,7 +574,7 @@ export async function runDueReport(params: {
  * - stat 失败（竞态删除/权限）→ 回落全量读+解析（降级路径，语义与原实现一致）；
  * - 单进程内存态缓存，无跨进程共享面（多实例经 DSH_HOME/profile 天然隔离）。
  */
-export async function readReportIndex(historyRoot: string): Promise<ReportMeta[]> {
+export async function readReportIndex(historyRoot: string): Promise<ReportCycleMeta[]> {
   const file = reportIndexFile(historyRoot);
   let raw: string;
   let stamp: string;
@@ -311,7 +598,7 @@ export async function readReportIndex(historyRoot: string): Promise<ReportMeta[]
   }
   indexCacheMisses += 1;
   const records = parseReportIndexLines(raw);
-  const newest = new Map<string, ReportMeta>();
+  const newest = new Map<string, ReportCycleMeta>();
   for (const r of records) {
     const id = `${r.period}:${r.key}`;
     const cur = newest.get(id);

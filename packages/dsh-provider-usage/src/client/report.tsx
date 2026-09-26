@@ -27,6 +27,10 @@ import {
   isScheduleDirty,
   parsePrompt,
   promptSectionStats,
+  reportConfigPayload,
+  reportRetryView,
+  withReasoningEffort,
+  type ReportRetryView,
   PROMPT_RANGE_VAR,
   PROMPT_STATS_VAR,
 } from "./report-helpers.ts";
@@ -75,6 +79,8 @@ export interface ReportConfigView {
   monthly: ReportPeriodConfigView & { dayOfMonth: number };
   provider: string;
   model: string;
+  /** 当前 exact model 的 opaque reasoning effort ID；缺省沿用 DSH 默认。 */
+  reasoningEffort?: string;
   promptTemplate: string;
   /** 三周期独立模板（旧配置经宿主 normalize 迁移后始终存在）。 */
   prompts: ReportPromptsView;
@@ -94,6 +100,30 @@ export interface ReportProviderOption {
 export interface ReportModelOption {
   id: string;
   name?: string;
+}
+
+/** DSH exact-model reasoning 档位投影；ID 不透明，顺序保持宿主响应。 */
+export interface ReportReasoningEffortView {
+  id: string;
+  name: string;
+  description?: string;
+}
+
+/** report-models?model=<exact id> 的 selectedModel 能力投影。 */
+export interface ReportSelectedModelView {
+  id: string;
+  name?: string;
+  reasoning?: {
+    efforts: ReportReasoningEffortView[];
+    defaultEffort?: string;
+  };
+  capabilityError?: true;
+}
+
+/** retry 状态与产生它的 task/POST 状态；二者共同决定用户提示。 */
+interface ReportRetryDisplay {
+  view: ReportRetryView;
+  status: string | null;
 }
 
 const PERIODS: ReportPeriodView[] = ["daily", "weekly", "monthly"];
@@ -304,12 +334,14 @@ function getReportDirty(
       {
         provider: draft.provider,
         model: draft.model,
+        reasoningEffort: draft.reasoningEffort,
         directories: draft.directories,
         push: draft.push,
       },
       {
         provider: baseline.provider,
         model: baseline.model,
+        reasoningEffort: baseline.reasoningEffort,
         directories: baseline.directories,
         push: baseline.push,
       },
@@ -427,16 +459,72 @@ function RoutingModelFallback(props: {
   if (models === null || haveModels) return null;
   return <div className="dou-reportHint">{t("reportModelFallback")}</div>;
 }
+function ReasoningEffortSelect(props: {
+  value: string | undefined;
+  selectedModel: ReportSelectedModelView | null | undefined;
+  modelSelected: boolean;
+  onChange: (effort: string) => void;
+}): React.ReactElement {
+  const { value, selectedModel, modelSelected, onChange } = props;
+  const efforts = selectedModel?.reasoning?.efforts ?? [];
+  const current = value ?? "";
+  const known = efforts.some((effort) => effort.id === current);
+  const stale = current !== "" && !known;
+  const capabilityMissing =
+    selectedModel !== undefined &&
+    selectedModel?.capabilityError !== true &&
+    selectedModel?.reasoning === undefined;
+  const capabilityFailed = selectedModel === null || selectedModel?.capabilityError === true;
+  const canClearUnknown = stale;
+  return (
+    <React.Fragment>
+      <label className="dou-reportInline">
+        {t("reportReasoningEffort")}
+        <select
+          className="dou-reportSelect"
+          value={current}
+          disabled={efforts.length === 0 && !canClearUnknown}
+          title={selectedModel?.name}
+          onChange={(e: unknown) => onChange((e as { target: { value: string } }).target.value)}
+        >
+          <option value="">{t("reportReasoningUnset")}</option>
+          {stale ? (
+            <option value={current}>{t("reportReasoningStaleOption", { v: current })}</option>
+          ) : null}
+          {efforts.map((effort) => (
+            <option key={effort.id} value={effort.id} title={effort.description}>
+              {effort.name} ({effort.id})
+              {effort.id === selectedModel?.reasoning?.defaultEffort
+                ? ` · ${t("reportReasoningDefault")}`
+                : ""}
+            </option>
+          ))}
+        </select>
+      </label>
+      {capabilityFailed ? (
+        <span className="dou-reportHint">{t("reportReasoningCapabilityError")}</span>
+      ) : null}
+      {capabilityMissing ? (
+        <span className="dou-reportHint">{t("reportReasoningUnavailable")}</span>
+      ) : null}
+      {stale && (!modelSelected || selectedModel !== undefined) ? (
+        <span className="dou-reportHint">{t("reportReasoningStale")}</span>
+      ) : null}
+    </React.Fragment>
+  );
+}
 function RoutingSection(props: {
   draft: ReportConfigView;
   openSections: Record<ReportSectionId, boolean>;
   toggleSection: (id: ReportSectionId) => void;
   patchTop: (patch: Partial<ReportConfigView>) => void;
+  setReasoningEffort: (effort: string) => void;
   routingSummary: string;
   dirty: ReturnType<typeof getReportDirty>;
   providers: ReportProviderOption[];
   models: ReportModelOption[] | null | undefined;
   haveModels: boolean;
+  selectedModel: ReportSelectedModelView | null | undefined;
   dirOptions: string[];
 }): React.ReactElement {
   const {
@@ -444,11 +532,13 @@ function RoutingSection(props: {
     openSections,
     toggleSection,
     patchTop,
+    setReasoningEffort,
     routingSummary,
     dirty,
     providers,
     models,
     haveModels,
+    selectedModel,
     dirOptions,
   } = props;
   return (
@@ -522,6 +612,12 @@ function RoutingSection(props: {
                 />
               )}
             </label>
+            <ReasoningEffortSelect
+              value={draft.reasoningEffort}
+              selectedModel={selectedModel}
+              modelSelected={draft.model !== ""}
+              onChange={setReasoningEffort}
+            />
           </div>
           {<RoutingModelFallback models={models} haveModels={haveModels} />}
           {/* 目录范围多选（默认全部；空数组 = 全部目录语义）。
@@ -703,6 +799,69 @@ function PromptsSection(props: {
     </React.Fragment>
   );
 }
+function retryMetric(value: number | null): string {
+  return value === null ? t("reportRetryUnknown") : value.toLocaleString("en-US");
+}
+
+function retryHeadline(retry: ReportRetryDisplay): string {
+  if (retry.view.terminal) {
+    return t("reportRetryTerminal", {
+      code: retry.view.terminalReason?.code ?? t("reportRetryUnknown"),
+      kind: retry.view.terminalReason?.kind ?? t("reportRetryUnknown"),
+    });
+  }
+  if (retry.view.nextRetryAt !== null) return t("reportRetryDeferred");
+  if (retry.status === "busy") return t("reportRetryBusy");
+  return t("reportRetryRunning");
+}
+
+function ReportRetryStatus(props: { retry: ReportRetryDisplay }): React.ReactElement {
+  const { retry } = props;
+  const { view } = retry;
+  return (
+    <div className="dou-reportCol" role="status" aria-live="polite" aria-atomic="true">
+      <span className="dou-reportGenNotice">{retryHeadline(retry)}</span>
+      <span className="dou-reportHint">
+        {t("reportRetryAttempt", {
+          attempt: String(view.currentAttempt),
+          maxAttempts: String(view.maxAttempts),
+        })}
+      </span>
+      {view.nextRetryAt !== null ? (
+        <span className="dou-reportHint">
+          {t("reportRetryNextAt", { at: new Date(view.nextRetryAt).toISOString() })}
+        </span>
+      ) : null}
+      <span className="dou-reportHint">
+        {t("reportRetryInputTokens", { value: retryMetric(view.usage.inputTokens) })}
+      </span>
+      <span className="dou-reportHint">
+        {t("reportRetryOutputTokens", { value: retryMetric(view.usage.outputTokens) })}
+      </span>
+      <span className="dou-reportHint">
+        {t("reportRetryReasoningTokens", { value: retryMetric(view.usage.reasoningTokens) })}
+      </span>
+      <span className="dou-reportHint">
+        {t("reportRetryTotalTokens", { value: retryMetric(view.usage.totalTokens) })}
+      </span>
+      <span className="dou-reportHint">
+        {t("reportRetryCacheTokens", {
+          read: retryMetric(view.usage.cacheReadTokens),
+          write: retryMetric(view.usage.cacheWriteTokens),
+        })}
+      </span>
+      <span className="dou-reportHint">
+        {t("reportRetryDuration", {
+          value:
+            view.usage.durationMs === null
+              ? t("reportRetryUnknown")
+              : String(view.usage.durationMs),
+        })}
+      </span>
+    </div>
+  );
+}
+
 function GenerateSection(props: {
   openSections: Record<ReportSectionId, boolean>;
   toggleSection: (id: ReportSectionId) => void;
@@ -714,6 +873,7 @@ function GenerateSection(props: {
   generating: boolean;
   genError: string | null;
   genNotice: string | null;
+  genRetry: ReportRetryDisplay | null;
   onGenerate: () => Promise<void>;
 }): React.ReactElement {
   const {
@@ -727,6 +887,7 @@ function GenerateSection(props: {
     generating,
     genError,
     genNotice,
+    genRetry,
     onGenerate,
   } = props;
   return (
@@ -780,6 +941,7 @@ function GenerateSection(props: {
           ) : null}
           {genNotice !== null ? <span className="dou-reportGenNotice">{genNotice}</span> : null}
         </div>
+        {genRetry !== null ? <ReportRetryStatus retry={genRetry} /> : null}
         <span className="dou-reportHint">{t("reportGenIdempotentHint")}</span>
       </ReportCollapsibleSection>
     </React.Fragment>
@@ -896,6 +1058,7 @@ export function ReportSection(props: {
   const [genPeriod, setGenPeriod] = React.useState<ReportPeriodView>("daily");
   const [generating, setGenerating] = React.useState(false);
   const [genError, setGenError] = React.useState<string | null>(null);
+  const [genRetry, setGenRetry] = React.useState<ReportRetryDisplay | null>(null);
   // 强制重新生成（默认幂等：窗口已有成功报告则复用，勾选后强制覆盖）
   const [genForce, setGenForce] = React.useState(false);
   // 轮询卸载保护：组件卸载后停止轮询，不再 setState
@@ -911,6 +1074,10 @@ export function ReportSection(props: {
   const [modelsCache, setModelsCache] = React.useState<Record<string, ReportModelOption[] | null>>(
     {},
   );
+  // exact-model 能力：按 provider + model 缓存；null = 已请求但失败/无 selectedModel。
+  const [selectedModelsCache, setSelectedModelsCache] = React.useState<
+    Record<string, ReportSelectedModelView | null>
+  >({});
   // 三周期提示词：当前编辑的周期 tab + 宿主默认模板（「恢复默认」数据源）
   const [promptTab, setPromptTab] = React.useState<ReportPeriodView>("daily");
   const [promptDefaults, setPromptDefaults] = React.useState<ReportPromptsView | null>(null);
@@ -981,6 +1148,11 @@ export function ReportSection(props: {
   const effectiveProvider = providerKey === "" ? (providers[0]?.id ?? "") : providerKey;
   const models = modelsCache[effectiveProvider];
   const haveModels = Array.isArray(models) && models.length > 0;
+  const selectedModelKey =
+    effectiveProvider !== "" && (draft?.model ?? "") !== ""
+      ? JSON.stringify([effectiveProvider, draft?.model])
+      : "";
+  const selectedModel = selectedModelKey === "" ? undefined : selectedModelsCache[selectedModelKey];
   React.useEffect(() => {
     if (effectiveProvider === "" || modelsCache[effectiveProvider] !== undefined) return;
     let live = true;
@@ -1004,6 +1176,39 @@ export function ReportSection(props: {
     };
   }, [effectiveProvider, modelsCache]);
 
+  // exact-model 能力只查询当前选中项；不遍历 models[]，避免 N+1。
+  React.useEffect(() => {
+    if (selectedModelKey === "" || selectedModelsCache[selectedModelKey] !== undefined) return;
+    let live = true;
+    const url =
+      REPORT_MODELS_URL +
+      "?provider=" +
+      encodeURIComponent(effectiveProvider) +
+      "&model=" +
+      encodeURIComponent(draft?.model ?? "");
+    fetchTimeout(url, {
+      headers: { Accept: "application/json" },
+      cache: "no-store",
+    })
+      .then(
+        (res) => res.json() as Promise<{ ok?: boolean; selectedModel?: ReportSelectedModelView }>,
+      )
+      .then((body) => {
+        if (!live) return;
+        setSelectedModelsCache((cache) => ({
+          ...cache,
+          [selectedModelKey]:
+            body?.ok === true && body.selectedModel !== undefined ? body.selectedModel : null,
+        }));
+      })
+      .catch(() => {
+        if (live) setSelectedModelsCache((cache) => ({ ...cache, [selectedModelKey]: null }));
+      });
+    return () => {
+      live = false;
+    };
+  }, [draft?.model, effectiveProvider, selectedModelKey, selectedModelsCache]);
+
   /** 单周期字段更新（draft 空时忽略——输入未就绪不可交互）。 */
   const patchPeriod = (
     period: ReportPeriodView,
@@ -1018,6 +1223,11 @@ export function ReportSection(props: {
     setSaveState("idle");
   };
 
+  const setReasoningEffort = (effort: string): void => {
+    setDraft((d) => (d === null ? d : withReasoningEffort(d, effort)));
+    setSaveState("idle");
+  };
+
   /** 保存：POST /report-config → 以宿主归一化结果回填（防本地编辑值与落盘值漂移）。 */
   const onSave = async (): Promise<void> => {
     if (draft === null || saving) return;
@@ -1027,7 +1237,7 @@ export function ReportSection(props: {
       const res = await fetchTimeout(REPORT_CONFIG_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json", Accept: "application/json" },
-        body: JSON.stringify(draft),
+        body: reportConfigPayload(draft),
       });
       const body = (await res.json().catch(() => ({}))) as {
         ok?: boolean;
@@ -1092,7 +1302,12 @@ export function ReportSection(props: {
         meta?: ReportMetaView;
         reused?: boolean;
         error?: string;
+        retry?: unknown;
       };
+      const retry = reportRetryView(body.retry);
+      if (!disposedRef.current) {
+        setGenRetry(retry === null ? null : { view: retry, status: body.status ?? null });
+      }
       if (body.status === "done") {
         if (body.meta === undefined) throw new Error("bad-task-result");
         return { meta: body.meta, reused: body.reused === true };
@@ -1109,6 +1324,7 @@ export function ReportSection(props: {
     setGenerating(true);
     setGenError(null);
     setGenNotice(null);
+    setGenRetry(null);
     try {
       const res = await fetchTimeout(REPORT_GENERATE_URL, {
         method: "POST",
@@ -1121,7 +1337,19 @@ export function ReportSection(props: {
         reused?: boolean;
         taskId?: string;
         error?: string;
+        status?: string;
+        retry?: unknown;
       };
+      const retry = reportRetryView(body.retry);
+      if (!disposedRef.current)
+        setGenRetry(retry === null ? null : { view: retry, status: body.status ?? null });
+      if (
+        !res.ok &&
+        retry !== null &&
+        (body.status === "busy" || body.status === "deferred" || body.status === "terminal")
+      ) {
+        return;
+      }
       if (!res.ok || (body.meta === undefined && typeof body.taskId !== "string")) {
         throw new Error(body.error ?? `HTTP ${res.status}`);
       }
@@ -1217,11 +1445,13 @@ export function ReportSection(props: {
             openSections={openSections}
             toggleSection={toggleSection}
             patchTop={patchTop}
+            setReasoningEffort={setReasoningEffort}
             routingSummary={routingSummary}
             dirty={dirty}
             providers={providers}
             models={models}
             haveModels={haveModels}
+            selectedModel={selectedModel}
             dirOptions={dirOptions}
           />
           <PromptsSection
@@ -1250,6 +1480,7 @@ export function ReportSection(props: {
         generating={generating}
         genError={genError}
         genNotice={genNotice}
+        genRetry={genRetry}
         onGenerate={onGenerate}
       />
     </section>

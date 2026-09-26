@@ -145,6 +145,10 @@ export function normalizeReportConfig(raw: unknown): ReportConfig {
           ]),
         }
       : migrateLegacyPrompt(legacyPromptOf(src) ?? LEGACY_PROMPT_TEMPLATE);
+  const reasoningEffort =
+    typeof src.reasoningEffort === "string" && src.reasoningEffort.length > 0
+      ? { reasoningEffort: src.reasoningEffort }
+      : {};
   return {
     daily: normalizePeriod(src.daily, d.daily),
     weekly: {
@@ -158,6 +162,8 @@ export function normalizeReportConfig(raw: unknown): ReportConfig {
     provider:
       typeof src.provider === "string" && src.provider.length <= 128 ? src.provider : d.provider,
     model: typeof src.model === "string" && src.model.length <= 256 ? src.model : d.model,
+    // opaque ID 原样保留；旧磁盘配置与非法值缺省时不输出该键。
+    ...reasoningEffort,
     // promptTemplate 保留 = 月报模板镜像（旧消费方/外部读者兼容；写侧同步回填）
     promptTemplate: prompts.monthly,
     // sanitizePaths 已移除：恒输出 true 兼容旧读取方；新字段不再接受配置

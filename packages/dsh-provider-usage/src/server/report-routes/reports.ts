@@ -25,16 +25,44 @@ import {
   writeJson,
 } from "../../../../../shared/host-utils.js";
 import type { ReportConfig, ReportPeriod } from "../config/interface.ts";
-import type { ReportMeta } from "../execute/interface.ts";
-import type { DueReport } from "../schedule/interface.ts";
+import type { ReportCycleMeta } from "../execute/interface.ts";
+import type {
+  DueReport,
+  ReportStateCoordinator,
+  RetryEntry,
+  ReportTaskInput,
+} from "../schedule/interface.ts";
 import type { ReportRoutesConfigPort, ReportRoutesQueuePort } from "./deps.ts";
+
+type ReportRouteQueue = ReportRoutesQueuePort & {
+  submitForce?(input: ReportTaskInput): Promise<{ taskId: string; existing: boolean }>;
+};
+
+type ReportRetryView = {
+  attempts: number;
+  maxAttempts: number;
+  nextRetryAt: number | null;
+  terminal: boolean;
+  terminalReason: { code: string; kind: string } | null;
+  usage: {
+    inputTokens: number | null;
+    outputTokens: number | null;
+    reasoningTokens: number | null;
+    totalTokens: number | null;
+    cacheReadTokens: number | null;
+    cacheWriteTokens: number | null;
+    durationMs: number | null;
+  };
+};
 import { sanitizeHtml } from "../../shared/interface.ts";
 
 export interface ReportRoutesContext {
   ctx: Context;
   historyRoot: string;
   /** 任务队列窄口（submit 入队去重；get 状态轮询；执行器由队列内嵌）。 */
-  reportQueue: ReportRoutesQueuePort;
+  reportQueue: ReportRouteQueue;
+  /** B2b retry state coordinator；缺省时保留旧 route fixture 契约。 */
+  retryState?: ReportStateCoordinator;
   /** reportCfg 双源收口窄口（get 读内存权威；update 串行写盘+内存+scheduler 热更）。 */
   reportCfgService: ReportRoutesConfigPort;
   /**
@@ -67,7 +95,7 @@ export interface ReportRoutesContext {
   /**
    * 执行读面注入（#768 B2：不直引 execute 门面值边；只读查询闭包，实例不直引）。
    */
-  readReportIndex: (root: string) => Promise<ReportMeta[]>;
+  readReportIndex: (root: string) => Promise<ReportCycleMeta[]>;
   reportHtmlFile: (root: string, period: ReportPeriod, key: string) => string;
   reportMetaFile: (root: string, period: ReportPeriod, key: string) => string;
   /**
@@ -101,6 +129,47 @@ export function isReportKeyValid(period: string, key: string): boolean {
 /** 生成任务 taskId 合法性（uuid v4 白名单；抽离供路由与单测共用）。 */
 export function isTaskIdValid(taskId: string): boolean {
   return TASK_ID_RE.test(taskId);
+}
+
+function retryView(entry: RetryEntry): ReportRetryView {
+  return {
+    attempts: entry.attempts,
+    maxAttempts: entry.maxAttempts,
+    nextRetryAt: entry.nextRetryAt,
+    terminal: entry.terminal,
+    terminalReason:
+      entry.reason === null ? null : { code: entry.reason.code, kind: entry.reason.kind },
+    usage: { ...entry.usage },
+  };
+}
+
+function stableFailureCode(error: unknown, fallback: string): string {
+  if (typeof error === "object" && error !== null) {
+    const code = (error as { code?: unknown }).code;
+    if (typeof code === "string" && /^[a-z0-9][a-z0-9._:-]{0,63}$/.test(code)) return code;
+  }
+  return fallback;
+}
+
+async function readStateLastRun(
+  context: ReportRoutesContext,
+): Promise<Partial<Record<ReportPeriod, string>>> {
+  return context.retryState === undefined
+    ? context.readLastRun(context.historyRoot)
+    : context.retryState.readLastRun();
+}
+
+async function updateStateLastRun(
+  context: ReportRoutesContext,
+  patch: (
+    previous: Partial<Record<ReportPeriod, string>>,
+  ) => Partial<Record<ReportPeriod, string>> | Promise<Partial<Record<ReportPeriod, string>>>,
+): Promise<void> {
+  if (context.retryState !== undefined) {
+    await context.retryState.updateLastRun(patch);
+    return;
+  }
+  await context.updateLastRun(context.historyRoot, patch);
 }
 
 export async function handleReportConfig(
@@ -150,8 +219,19 @@ export async function handleReportConfig(
 
   // 读不出来的 body 不能当「没给配置」：normalizeReportConfig(undefined) 会回落**整套默认值**，
   // 于是畸形或超限的请求会把用户已存的报告配置静默重置（写盘 + 热更都照做）。
+  // reasoningEffort wire：缺字段表示 unset；显式空串或非 string 在归一化前稳定返回 400。
   const outcome = await readJsonBodyOutcome(req);
   if (outcome.kind !== "json") return writeJson(res, 400, { error: "bad-json" });
+  if (
+    typeof outcome.value === "object" &&
+    outcome.value !== null &&
+    Object.hasOwn(outcome.value, "reasoningEffort")
+  ) {
+    const effort = (outcome.value as Record<string, unknown>).reasoningEffort;
+    if (typeof effort !== "string" || effort.length === 0) {
+      return writeJson(res, 400, { error: "invalid-reasoning-effort" });
+    }
+  }
 
   const normalized = context.normalizeReportConfig(outcome.value);
   const currentCfg = context.reportCfgService.get();
@@ -161,11 +241,11 @@ export async function handleReportConfig(
     currentCfg,
     normalized,
     Date.now(),
-    await context.readLastRun(historyRoot),
+    await readStateLastRun(context),
   );
   if (preset.changed)
-    await context.updateLastRun(
-      historyRoot,
+    await updateStateLastRun(
+      context,
       (cur) =>
         context.presetLastRunForNewlyEnabled(currentCfg, normalized, Date.now(), cur).lastRun,
     );
@@ -178,6 +258,28 @@ export async function handleReportConfig(
   writeJson(res, 200, { ok: true, config: normalized });
 }
 
+const REPORT_MODELS_DISCOVERY_TIMEOUT_MS = 5_000;
+const REPORT_MODELS_DISCOVERY_TIMEOUT = Symbol("report-models-discovery-timeout");
+
+/** 每个发现步骤独立计时；resolver 忽略取消时，race 仍在 5s 后稳定收敛。 */
+async function withReportModelsDeadline<T>(start: (signal: AbortSignal) => Promise<T>): Promise<T> {
+  const controller = new AbortController();
+  const pending = start(controller.signal);
+  void pending.catch(() => {});
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      controller.abort();
+      reject(REPORT_MODELS_DISCOVERY_TIMEOUT);
+    }, REPORT_MODELS_DISCOVERY_TIMEOUT_MS);
+  });
+  try {
+    return await Promise.race([pending, deadline]);
+  } finally {
+    if (timer !== null) clearTimeout(timer);
+  }
+}
+
 export async function handleReportModels(
   req: IncomingMessage,
   res: ServerResponse,
@@ -187,6 +289,7 @@ export async function handleReportModels(
   const { ctx } = context;
   const url = new URL(req.url ?? "/", "http://localhost");
   const provider = url.searchParams.get("provider") ?? "";
+  const requestedModel = url.searchParams.get("model");
   const known = (() => {
     try {
       return ctx.llm.listProviders().some((i) => (i as { id?: unknown })?.id === provider);
@@ -198,14 +301,8 @@ export async function handleReportModels(
     return writeJson(res, 200, { ok: false, reason: "unknown-provider" });
   }
 
-  let timer: ReturnType<typeof setTimeout> | null = null;
   try {
-    const pending = ctx.llm.listModels(provider);
-    pending.catch(() => {});
-    const timeout = new Promise<never>((_, reject) => {
-      timer = setTimeout(() => reject(new Error("discover-timeout")), 5000);
-    });
-    const models = await Promise.race([pending, timeout]);
+    const models = await withReportModelsDeadline(() => ctx.llm.listModels(provider));
     const list = Array.isArray(models)
       ? (models as Array<{ id?: unknown; name?: unknown } | null>)
           .filter(
@@ -217,11 +314,59 @@ export async function handleReportModels(
             ...(typeof m.name === "string" && m.name.length > 0 ? { name: m.name as string } : {}),
           }))
       : [];
-    writeJson(res, 200, { ok: true, models: list });
-  } catch (e: unknown) {
-    writeJson(res, 200, { ok: false, reason: e instanceof Error ? e.message : "discover-failed" });
-  } finally {
-    if (timer !== null) clearTimeout(timer);
+
+    if (requestedModel === null) {
+      writeJson(res, 200, { ok: true, models: list });
+      return;
+    }
+    const selected = list.find((model) => model.id === requestedModel);
+    if (selected === undefined) {
+      writeJson(res, 200, { ok: false, reason: "unknown-model" });
+      return;
+    }
+
+    try {
+      const info = await withReportModelsDeadline((signal) =>
+        ctx.llm.resolveModelInfo(provider, selected.id, signal),
+      );
+      const selectedModel: {
+        id: string;
+        name?: string;
+        reasoning?: {
+          efforts: Array<{ id: string; name: string; description?: string }>;
+          defaultEffort?: string;
+        };
+      } = { id: selected.id };
+      if (typeof info.name === "string" && info.name.length > 0) {
+        selectedModel.name = info.name;
+      } else if (selected.name !== undefined) {
+        selectedModel.name = selected.name;
+      }
+      if (info.reasoning !== undefined) {
+        selectedModel.reasoning = {
+          efforts: info.reasoning.efforts.map((effort) => ({
+            id: effort.id,
+            name: effort.name,
+            ...(typeof effort.description === "string" ? { description: effort.description } : {}),
+          })),
+          ...(info.reasoning.defaultEffort !== undefined
+            ? { defaultEffort: info.reasoning.defaultEffort }
+            : {}),
+        };
+      }
+      writeJson(res, 200, { ok: true, models: list, selectedModel });
+    } catch {
+      writeJson(res, 200, {
+        ok: true,
+        models: list,
+        selectedModel: { id: selected.id, capabilityError: true },
+      });
+    }
+  } catch (error: unknown) {
+    writeJson(res, 200, {
+      ok: false,
+      reason: error === REPORT_MODELS_DISCOVERY_TIMEOUT ? "discover-timeout" : "discover-failed",
+    });
   }
 }
 
@@ -304,7 +449,55 @@ export async function handleReportGenerate(
       (m) => m.period === due.period && m.key === due.key && m.ok === true,
     );
     if (existing !== undefined) {
+      if (context.retryState !== undefined) {
+        try {
+          await context.retryState.reconcileIndex({
+            period: due.period,
+            key: due.key,
+            indexed: true,
+            cycleId: existing.cycleId,
+          });
+        } catch {
+          return writeJson(res, 503, { ok: false, error: "retry-state-unavailable" });
+        }
+      }
       return writeJson(res, 200, { ok: true, meta: existing, reused: true });
+    }
+    if (context.retryState !== undefined) {
+      let entry: RetryEntry | undefined;
+      try {
+        entry = await context.retryState.get(due.period, due.key);
+      } catch {
+        return writeJson(res, 503, { ok: false, error: "retry-state-unavailable" });
+      }
+      if (entry !== undefined) {
+        if (entry.terminal) {
+          return writeJson(res, 409, {
+            ok: false,
+            status: "terminal",
+            reason: entry.reason?.code ?? "terminal",
+            retry: retryView(entry),
+          });
+        }
+        return writeJson(res, 409, {
+          ok: false,
+          status: entry.phase === "in-flight" ? "busy" : "deferred",
+          reason: "retry-in-progress",
+          retry: retryView(entry),
+        });
+      }
+    }
+  }
+
+  if (force && reportQueue.submitForce !== undefined) {
+    try {
+      const submitted = await reportQueue.submitForce({ ...due, force: true });
+      return writeJson(res, 202, { ok: true, taskId: submitted.taskId });
+    } catch (error: unknown) {
+      return writeJson(res, 503, {
+        ok: false,
+        error: stableFailureCode(error, "force-unavailable"),
+      });
     }
   }
 
@@ -324,13 +517,22 @@ export async function handleReportStatus(
   if (!isTaskIdValid(taskId)) return writeJson(res, 404, { error: "task-not-found" });
   const task = reportQueue.get(taskId);
   if (task === undefined) return writeJson(res, 404, { error: "task-not-found" });
+  let retry: ReportRetryView | undefined;
+  if (context.retryState !== undefined) {
+    try {
+      const entry = await context.retryState.get(task.period, task.key);
+      if (entry !== undefined) retry = retryView(entry);
+    } catch {
+      return writeJson(res, 503, { ok: false, error: "retry-state-unavailable" });
+    }
+  }
   writeJson(res, 200, {
     ok: true,
     status: task.status,
     ...(task.status === "done" && task.meta !== undefined ? { meta: task.meta } : {}),
-    // executor 侧幂等短路复用时透出 reused，客户端轮询路径与 200 直接复用路径提示对称
     ...(task.status === "done" && task.reused === true ? { reused: true } : {}),
     ...(task.status === "failed" ? { error: task.error ?? "生成失败" } : {}),
+    ...(retry !== undefined ? { retry } : {}),
   });
 }
 

@@ -117,9 +117,20 @@ npx @deepseek-ai/dsh plugin --profile web add @wingsky-1/dsh-provider-usage
 | --- | --- | --- |
 | `daily` / `weekly` / `monthly` | 全关 `08:00`/`09:00`/`09:00` | 三周期独立开关与触发时刻（weekly 另有 `weekStartsOn` 周一起点、monthly 另有 `dayOfMonth` 触发日） |
 | `provider` / `model` | `""`（跟随默认） | 报告生成所用模型路由（空串 = dsh 注册序首个） |
+| `reasoningEffort` | 未设置 | 当前 exact model 的 DSH reasoning effort **opaque ID**；未设置时请求省略该字段并沿用 DSH 默认。设置值必须存在于该模型的能力响应中，否则在发起模型请求前 fail closed；档位顺序、名称与默认值不复制、不按 `low/off` 或数组末档推断 |
 | `prompts` | 三周期年报模板 | 三周期独立提示词（{stats} 占位；#633 起默认模板含目录观察——目录名 basename、占比分母 totals.total、只报数字不解读目录内容；#662 起默认模板再含**时段观察**——钟点/时段档只可原样引用 byHour/byPeriod/peakHour 字段、禁行为脑补、禁与目录交叉关联；存量旧默认模板读时自动升级） |
 | `push.enabled` | `false` | 生成完成后经 dsh-notifier 推送摘要（摘要仅周期/窗口/总量/调用数数值，不含项目路径） |
 | `directories` | `[]`（全部） | #633 目录范围：非空数组（目录 basename 列表，`"all"` 显式全选语义，至多 32 项）= 报告统计只呈现所选目录的目录分布；空数组 = 全部目录。影响报告生成统计口径（byDirectory 维度按所选目录过滤） |
+
+### 报告生成、推理等级与有界重试
+
+- **reasoning effort**：客户端只展示并原样保存当前 exact model 的 DSH 能力响应；未选择时省略 `reasoningEffort`，显式 ID 在生成前按同一 exact model 校验。能力暂不可用时保留已有值并显示提示，不静默清空，也不回退到 `low/off`。
+- **预算与退避**：初次报告调用之外最多自动 retry 5 次，`attempts=0..5`；第 1 至第 5 次自动重试分别退避 1、2、4、8、16 分钟。只有可分类的 transient 与空输出（reasoning-only / 双空）进入该预算；认证、额度、非法请求、content-filter、abort、未知终态与 unsupported block 均 fail closed，不自动重试。
+- **attempt 口径**：初次调用 + 自动 retry 最多形成 6 个**报告级 outer attempt**，每个 outer attempt 至多 dispatch 一次报告 stream。插件直接消费 `ctx.llm.stream`，不经过 DSH agent request retry waterfall；因此这只是报告级预算，**不等于也不保证底层 HTTP 请求恰好 6 次**。
+- **状态与恢复**：逻辑身份是 `period + report key`。读取会在内存中按 period 规范化：所有非终态 entry 保留在 `records`，每个 period 只保留按 key 排序后的最后一条 terminal entry；写盘序列化时再次裁剪，并把被裁剪的 terminal key 写入全量 `terminalKeys`（`period → key → 终态 code`，按 key 排序且不按数量淘汰）。墓碑只保留终态 code，不携带 attempts、observations 或 usage；所有已知 terminal key 都保留墓碑，避免历史 key 被自动重开。`flatten` 以及 `list`/`listDue`/`get` 只投影 `records`，不会把墓碑展开成完整 entry。没有 entry 且没有墓碑的 key，自动 `beginAttempt` 才会创建 initial entry；已有 entry 时必须带匹配的 `cycleId`，waiting 还必须已到 `nextRetryAt`，in-flight 或 terminal 返回 `null`；若 `records` 没有该 key 但 `terminalKeys` 有墓碑，也返回 `null`。对这个只剩墓碑的 key，手动「重新生成」(force) 才会清除墓碑并创建新 cycle、重置计数、重新读取当前配置；force 失败仍不推进 lastRun。
+  例如 `daily` 中 `2026-09-21` 和 `2026-09-23` 都 terminal 时，`records.daily` 只保留 `2026-09-23` 的完整 entry，`terminalKeys.daily` 记录 `2026-09-21: "auth-failed"`；对被裁剪的 `2026-09-21` 调用 `beginAttempt` 返回 `null`，只有 `beginForce` 才会移除墓碑并开始新 cycle。
+- **累计成本**：每个实际报告 attempt 分别记录 input/output/reasoning/total/cache-read/cache-write token 与 duration；`ReportTokenUsage.reasoningTokens` 和 retry usage 均为 `number | null`。周期累计按字段独立聚合，任一 attempt 缺失某字段时该字段保持 `null`，不把未知伪装成 0。设置页状态区显示当前 outer attempt、累计成本、下次重试或 terminal 原因；旧状态响应没有 `retry` 时保持原 UI。
+- **耐久性边界**：retry ledger 自身使用 0600 临时文件、完整写入、文件 fsync、原子 rename 与支持的平台上的目录 fsync；损坏文件先 no-clobber 隔离取证，再 fail closed，不把损坏当空账本。现有 report/index/lastRun 全链尚未全部 fsync，因此这里只承诺 ledger 自身耐久与进程崩溃/重启恢复，不宣称掉电下全链原子 durability。
 
 ### 启用选择状态恢复
 
@@ -401,7 +412,10 @@ v1 旧契约已随破坏性变更 #932 删除，仅支持 v2 契约（`fetchData
   窗口与总量/调用数数值）；
    手动生成异步任务化（#625）：POST 立即返回 202+taskId，客户端轮询状态，与 LLM
    耗时解耦（不再受 10s fetch 超时影响）；默认幂等——窗口已有成功报告则复用（#626），
-   勾选「重新生成」强制覆盖；报告历史按窗口读侧投影去重（一行/窗口=最新版，index.jsonl
+   勾选「重新生成」强制覆盖。每个报告 attempt 的脱敏日志只含 attempt、结果/稳定 code、
+   opaque effort ID、input/output/reasoning/total/cache token 数字与 durationMs；绝不记录
+   prompt、reasoning 原文、API key/凭据或 path。reasoning 只作为数值 token 观测；
+   报告历史按窗口读侧投影去重（一行/窗口=最新版，index.jsonl
    保持 append-only）；lastRun 由 index 事实推导校准（schema v2，#624：旧语义「当天」
    窗口自动识别为未闭环并回退，周一 06:00 不再吞日报）
 - **fail-fast 加载**：适配器缺导出/类型错/name 不合白名单 → 拒绝加载并登记可排障错误
