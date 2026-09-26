@@ -249,28 +249,33 @@ function alignRenameTemplate(guard, oldLeaf, newLeaf) {
   for (const dotted of guard.paths ?? []) {
     const template = dotted.split(".");
     if (!template.includes("*")) continue; // 无包段 guard 禁配对
-    const oldSegs = oldLeaf.split(".");
-    const newSegs = newLeaf.split(".");
-    if (oldSegs.length !== template.length || newSegs.length !== template.length) continue;
-    let diffIndex = -1;
-    let aligned = true;
-    for (let i = 0; i < template.length; i += 1) {
-      if (template[i] === "*") {
-        if (oldSegs[i] === newSegs[i]) continue;
-        if (diffIndex !== -1) {
-          aligned = false; // 第二个差异 * 段：不是“单个 * 段差异”
-          break;
-        }
-        diffIndex = i;
-      } else if (oldSegs[i] !== template[i] || newSegs[i] !== template[i]) {
-        aligned = false; // 固定段大小写敏感全等
-        break;
-      }
-    }
-    if (!aligned || diffIndex === -1) continue;
-    return { oldSeg: oldSegs[diffIndex], newSeg: newSegs[diffIndex] };
+    const diffIndex = alignTemplateSegments(template, oldLeaf.split("."), newLeaf.split("."));
+    if (diffIndex === -1) continue;
+    return { oldSeg: oldLeaf.split(".")[diffIndex], newSeg: newLeaf.split(".")[diffIndex] };
   }
   return null;
+}
+
+/**
+ * 两条台路径相对于模板的对齐结果：唯一差异的 `*` 段下标，不对齐则 -1。
+ *
+ * 与「遍历声明的 paths」分开：前者是单个段的对齐规则（固定段大小写敏感全等、
+ * 只允许一个 `*` 段有差异），后者是选哪个声明路径可能配对。两者各自变化时不应该
+ * 同时变。
+ */
+function alignTemplateSegments(template, oldSegs, newSegs) {
+  if (oldSegs.length !== template.length || newSegs.length !== template.length) return -1;
+  let diffIndex = -1;
+  for (let i = 0; i < template.length; i += 1) {
+    if (template[i] !== "*") {
+      if (oldSegs[i] !== template[i] || newSegs[i] !== template[i]) return -1; // 固定段大小写敏感全等
+      continue;
+    }
+    if (oldSegs[i] === newSegs[i]) continue;
+    if (diffIndex !== -1) return -1; // 第二个差异 * 段：不是“单个 * 段差异”
+    diffIndex = i;
+  }
+  return diffIndex;
 }
 
 /** 新包所在 existence 守卫的 requireDir（目录“出现含 src”的 src 口径取自数据）。 */
@@ -278,7 +283,7 @@ function resolveRenameRequireDir(registry, pkgName) {
   for (const guard of registry.guards ?? []) {
     if (guard.kind !== "existence") continue;
     const universe = guard.universe;
-    if (universe === null || typeof universe !== "object" || Array.isArray(universe)) continue;
+    if (!isRecord(universe)) continue;
     const prefix = typeof universe.prefix === "string" ? universe.prefix : "";
     if (!pkgName.startsWith(prefix)) continue;
     if (typeof universe.requireDir === "string" && universe.requireDir !== "") {
@@ -303,25 +308,38 @@ function collectRenamePairs(registry, loadBase, loadWorkspace) {
     if (guard.kind !== "value" || guard.onRemoval !== "fail") continue;
     const before = numericLeaves(guard, loadBase(guard)?.value);
     if (before.size === 0) continue;
-    const after = numericLeaves(guard, loadWorkspace(guard)?.value);
-    const deletions = [...before.keys()].filter((key) => !after.has(key));
-    const additions = [...after.keys()].filter((key) => !before.has(key));
-    if (deletions.length === 0 && additions.length === 0) continue;
-    if (deletions.length !== 1 || additions.length !== 1) return null;
-    const aligned = alignRenameTemplate(guard, deletions[0], additions[0]);
-    if (aligned === null) return null;
-    const oldValue = before.get(deletions[0]);
-    if (oldValue !== after.get(additions[0])) return null;
-    pairs.push({
-      guard,
-      oldLeaf: deletions[0],
-      newLeaf: additions[0],
-      oldSeg: aligned.oldSeg,
-      newSeg: aligned.newSeg,
-      value: oldValue,
-    });
+    const pair = matchRenamePair(guard, before, numericLeaves(guard, loadWorkspace(guard)?.value));
+    if (pair === SKIP) continue;
+    if (pair === null) return null;
+    pairs.push(pair);
   }
   return pairs;
+}
+
+/** 本 guard 没有改名候选（与「候选不成立」分开：前者继续看下一条 guard，后者直接不认改名。 */
+const SKIP = Symbol("skip");
+
+/**
+ * 单条 value guard 的改名候选：恰好一删一增、模板只差一个 `*` 段、后置值相等。
+ * 与外层遍历分开：这里只判「这一条资格或不成立」，外层只负责把结果积成 pairs。
+ */
+function matchRenamePair(guard, before, after) {
+  const deletions = [...before.keys()].filter((key) => !after.has(key));
+  const additions = [...after.keys()].filter((key) => !before.has(key));
+  if (deletions.length === 0 && additions.length === 0) return SKIP;
+  if (deletions.length !== 1 || additions.length !== 1) return null;
+  const aligned = alignRenameTemplate(guard, deletions[0], additions[0]);
+  if (aligned === null) return null;
+  const value = before.get(deletions[0]);
+  if (value !== after.get(additions[0])) return null;
+  return {
+    guard,
+    oldLeaf: deletions[0],
+    newLeaf: additions[0],
+    oldSeg: aligned.oldSeg,
+    newSeg: aligned.newSeg,
+    value,
+  };
 }
 
 /**
@@ -426,19 +444,29 @@ function checkRenameAnchors(registry, loadBase, loadWorkspace, oldPkg, newPkg) {
     if (!Array.isArray(guard.anchorFields) || guard.anchorFields.length === 0) continue;
     if (!Array.isArray(guard.paths) || guard.paths.length === 0) continue;
     for (const dotted of guard.paths) {
-      const baseTable = resolveSingle(loadBase(guard)?.value, dotted);
-      if (!isRecord(baseTable) || !Object.hasOwn(baseTable, oldPkg)) continue;
-      const beforeAnchor = effectiveAnchor(baseTable[oldPkg], guard.anchorFields);
-      if (beforeAnchor === null) continue;
-      const wsTable = resolveSingle(loadWorkspace(guard)?.value, dotted);
-      const afterAnchor =
-        isRecord(wsTable) && Object.hasOwn(wsTable, newPkg)
-          ? effectiveAnchor(wsTable[newPkg], guard.anchorFields)
-          : null;
-      if (afterAnchor === null || afterAnchor.value < beforeAnchor.value) return false;
+      if (!anchorPathOk(guard, dotted, loadBase, loadWorkspace, oldPkg, newPkg)) return false;
     }
   }
   return true;
+}
+
+/**
+ * 单条路径上的锚同治：新包生效锚不得低于旧包。
+ * 基准侧没有旧包条目、或旧包没有生效锚时返回 true（没有可比的基准，不构成违反）。
+ *
+ * 与外层 guard 遍历分开：外层只筛掉不参与比较的 guard，这里只做一条路径的锚比较。
+ */
+function anchorPathOk(guard, dotted, loadBase, loadWorkspace, oldPkg, newPkg) {
+  const baseTable = resolveSingle(loadBase(guard)?.value, dotted);
+  if (!isRecord(baseTable) || !Object.hasOwn(baseTable, oldPkg)) return true;
+  const beforeAnchor = effectiveAnchor(baseTable[oldPkg], guard.anchorFields);
+  if (beforeAnchor === null) return true;
+  const wsTable = resolveSingle(loadWorkspace(guard)?.value, dotted);
+  const afterAnchor =
+    isRecord(wsTable) && Object.hasOwn(wsTable, newPkg)
+      ? effectiveAnchor(wsTable[newPkg], guard.anchorFields)
+      : null;
+  return afterAnchor !== null && afterAnchor.value >= beforeAnchor.value;
 }
 
 /**
@@ -522,38 +550,35 @@ export function applyRenameRecognition({
   exemptions = new Map(),
   faceCheck = null,
 }) {
-  const failures = result.failures ?? [];
-  const warnings = result.warnings ?? [];
-  const envErrors = result.envErrors ?? [];
-  const passthrough = { failures, warnings, envErrors, renamed: false };
+  const { failures, warnings, envErrors, passthrough } = renameOutcome(result);
   if (envErrors.length > 0) return passthrough; // missingIsError 等 fail-closed 通道不短路
   if (failures.length === 0) return passthrough; // 全绿无需识别
   const loadBase = makeSourceLoader({ read: readBase, textReaders, label: "基准" });
   const loadWorkspace = makeSourceLoader({ read: readWorkspace, textReaders, label: "工作区" });
 
-  const pairs = collectRenamePairs(registry, loadBase, loadWorkspace);
-  if (pairs === null) return passthrough;
-  const resolved = resolveRenamePackagePair(pairs);
-  if (resolved === null) return passthrough;
-  const oldPkg = resolved.oldPkg;
-  const newPkg = resolved.newPkg;
-
-  if (!checkRenameExistence(registry, newPkg, packages, exemptions, loadWorkspace)) {
-    return passthrough;
-  }
-
+  const target = detectRenameTarget(registry, loadBase, loadWorkspace);
+  if (target === null) return passthrough;
+  const { pairs, oldPkg, newPkg } = target;
   const requireDir = resolveRenameRequireDir(registry, newPkg);
-  if (!checkRenameDirectories(packages, basePackages, oldPkg, newPkg, requireDir)) {
-    return passthrough;
-  }
-
-  if (!checkRenameAnchors(registry, loadBase, loadWorkspace, oldPkg, newPkg)) {
-    return passthrough;
-  }
-
+  // partitionRenameFailures 是纯函数（不打印、不改状态），故可先于规则编排求值——
+  // 编排里只需要它的「是否为 null」这一位。
   const suppressedSet = partitionRenameFailures(pairs, failures);
-  if (suppressedSet === null) return passthrough;
-  if (!isRenameFacesOk(faceCheck)) return passthrough;
+  if (
+    !renameRulesHold({
+      registry,
+      loadBase,
+      loadWorkspace,
+      oldPkg,
+      newPkg,
+      requireDir,
+      packages,
+      basePackages,
+      exemptions,
+      suppressedSet,
+      faceCheck,
+    })
+  )
+    return passthrough;
   const warning = buildRenameWarning(pairs, oldPkg, newPkg, requireDir);
   return {
     failures: failures.filter((failure) => !suppressedSet.has(failure)),
@@ -561,6 +586,58 @@ export function applyRenameRecognition({
     envErrors,
     renamed: true,
   };
+}
+
+/** 结果三态的拆包：三个列表 + 「原样返回」的通用形状。 */
+function renameOutcome(result) {
+  const failures = result.failures ?? [];
+  const warnings = result.warnings ?? [];
+  const envErrors = result.envErrors ?? [];
+  return {
+    failures,
+    warnings,
+    envErrors,
+    passthrough: { failures, warnings, envErrors, renamed: false },
+  };
+}
+
+/**
+ * 规则 2＋4＋5：认出「恰好一删一增且模板对齐」的改名对与其新旧包名；认不出返回 null。
+ * 与后续规则编排分开：这里只回答「哪个包改了名」，不回答「该不该认」。
+ */
+function detectRenameTarget(registry, loadBase, loadWorkspace) {
+  const pairs = collectRenamePairs(registry, loadBase, loadWorkspace);
+  if (pairs === null) return null;
+  const resolved = resolveRenamePackagePair(pairs);
+  return resolved === null ? null : { pairs, oldPkg: resolved.oldPkg, newPkg: resolved.newPkg };
+}
+
+/**
+ * 规则 1–7 是否全部成立（任一条不过即 false，调用方直回 passthrough）。
+ *
+ * 七条规则各自是独立判据（不同的变化原因、各自的 helpers），这里只按序编排：
+ * 任一条不成立就不认改名，与原来的逐条提前返回等价。
+ */
+function renameRulesHold(ctx) {
+  return (
+    checkRenameExistence(
+      ctx.registry,
+      ctx.newPkg,
+      ctx.packages,
+      ctx.exemptions,
+      ctx.loadWorkspace,
+    ) &&
+    checkRenameDirectories(
+      ctx.packages,
+      ctx.basePackages,
+      ctx.oldPkg,
+      ctx.newPkg,
+      ctx.requireDir,
+    ) &&
+    checkRenameAnchors(ctx.registry, ctx.loadBase, ctx.loadWorkspace, ctx.oldPkg, ctx.newPkg) &&
+    ctx.suppressedSet !== null &&
+    isRenameFacesOk(ctx.faceCheck)
+  );
 }
 
 /**
@@ -634,33 +711,179 @@ function checkRenameFaces(repoRoot, baseRef) {
 /**
  * 主校验。返回 { exitCode, failures }；日志走 stdout/stderr。
  */
-export function runThresholdMonotonic(
-  argv = process.argv.slice(2),
-  { repoRoot = process.cwd() } = {},
-) {
-  const baseRef = argv[0] ?? "origin/main";
+/**
+ * 基准 ref 上的声明表（读不出来是配置故障 → failed）。
+ */
+function readBaseRegistry(baseRef, repoRoot) {
+  try {
+    return {
+      failed: false,
+      registry: readJsonText(readFromGit(baseRef, REGISTRY_PATH, repoRoot), baseRef),
+    };
+  } catch (err) {
+    console.error(
+      "threshold-monotonic: 读取 " +
+        baseRef +
+        ":" +
+        REGISTRY_PATH +
+        " 失败：" +
+        err.message +
+        " —— 环境故障按 fail-closed 处理",
+    );
+    return { failed: true, registry: undefined };
+  }
+}
 
+/**
+ * 影子源检查：工作区实际命中的源必须是基准为该 guard 声明过的事实源。
+ *
+ * 命中一个基准从未声明的文件，说明有更靠前的源接管了这条守卫（影子源），两侧比的不是同一份事实——这是**判据放宽**，
+ * 走 exit 1；报成 exit 2（配置/环境故障）会让读日志的人把攻击读成「工具坏了」，正是本轮踩过的坑；
+ * 而「未登记的新数据文件」这类声明表覆盖问题仍留在 exit 2，两者语义不同。
+ *
+ * 只查「工作区命中」这一侧：反过来要求基准声明的源都被命中，会把回落链的备用源
+ * （覆盖率迁移完成后不再被读的 vitest.config.ts）误判成攻击。返回 null = 通过。
+ */
+function checkShadowSources(baseRegistry, workspaceHits) {
+  const baseSourcesById = new Map(
+    (baseRegistry.guards ?? []).map((item) => [item.id, item.sources ?? []]),
+  );
+  const shadowed = workspaceHits.filter((hit) => {
+    const declared = baseSourcesById.get(hit.id);
+    return declared !== undefined && !declared.includes(hit.source);
+  });
+  if (shadowed.length === 0) return null;
+  for (const hit of shadowed) {
+    console.error(
+      "[FAIL] " +
+        hit.source +
+        " 不是基准对 " +
+        hit.id +
+        " 声明的事实源（" +
+        (baseSourcesById.get(hit.id) ?? []).join(" / ") +
+        "）—— 有更靠前的源接管了该守卫（影子源），两侧比的不是同一份事实，判据已放宽",
+    );
+  }
+  console.error("\nthreshold-monotonic: " + shadowed.length + " 处守卫被基准未声明的影子源接管");
+  return { exitCode: 1, failures: shadowed.length };
+}
+
+/** exit 2 的统一出口：环境/配置故障按 fail-closed 处理（判红数恒为 0——不是「判据放宽」）。 */
+const EXIT_FAIL_CLOSED = { exitCode: 2, failures: 0 };
+
+/**
+ * 跑一个可能因配置损坏抛错的阶段。
+ *
+ * 抽成 runStage 是因为这里有四个不同阶段的 try/catch 完全同形（抱住一个 fn，打印
+ * prefix + err.message + suffix 后返回 failed），且**判词逐字保留**：prefix / suffix 由调用方给全，
+ * 不在这里拼。拼一条 fail-closed 通道的两个字段会让三个判词共享同一句话。
+ */
+function runStage(verdict, fn) {
+  try {
+    return { failed: false, value: fn() };
+  } catch (err) {
+    console.error(verdict[0] + err.message + verdict[1]);
+    return { failed: true, value: undefined };
+  }
+}
+
+/** 声明表覆盖面问题（未登记 / 幽灵声明）的报告：逐条判词 + 总计，走 exit 2。 */
+function reportDeclarationProblems(problems) {
+  for (const problem of problems) console.error(`[FAIL] 声明表：${problem}`);
+  console.error(
+    `\nthreshold-monotonic: 声明表有 ${problems.length} 处问题 —— 阈值事实源须逐条声明（#843 D5），按 fail-closed 处理`,
+  );
+  return EXIT_FAIL_CLOSED;
+}
+
+/**
+ * 声明表自身相对基准只许补全收紧（P0-1）：删 guard / 翻方向 / 关删键语义都在这里拦下。
+ * 基准上无本表（首次引入）时跳过并记一句；有失配则返回 exit 1 结果，否则 null（继续）。
+ */
+function compareRegistrySelf(baseRegistry, registry, baseRef) {
+  if (baseRegistry === undefined) {
+    console.log(
+      "threshold-monotonic: " +
+        baseRef +
+        " 上无 " +
+        REGISTRY_PATH +
+        " —— 首次引入，跳过声明表自身的对比",
+    );
+    return null;
+  }
+  const tableFailures = compareDeclarationTable(baseRegistry, registry);
+  if (tableFailures.length === 0) return null;
+  for (const failure of tableFailures) console.error("[FAIL] " + failure);
+  console.error(
+    "\nthreshold-monotonic: 声明表自身被削弱（" +
+      tableFailures.length +
+      " 处）—— 判据形状只许补全收紧，退役或改动须在表里登记",
+  );
+  return { exitCode: 1, failures: tableFailures.length };
+}
+
+/**
+ * 包改名识别 v3：全量扫描之后、判红之前试认改名。只在有 failures 且无 envErrors
+ * 时运行；git（基准目录清单）与子进程（面并集双绿）只在这条路上发生，全绿路径与
+ * 其他判红路径的行为和开销与之前逐字一致。不认即原样返回，照旧判红。
+ */
+function recognizeRenameIfNeeded(result, args) {
+  if (result.failures.length === 0 || result.envErrors.length > 0) return result;
+  const recognized = applyRenameRecognition({
+    registry: args.registry,
+    readBase: args.readBase,
+    readWorkspace: args.readWorkspace,
+    textReaders: TEXT_READERS,
+    packages: listPackages(args.repoRoot),
+    basePackages: listBasePackages(args.baseRef, args.repoRoot, registryRequireDirs(args.registry)),
+    result,
+    exemptions: args.exemptions,
+    faceCheck: () => checkRenameFaces(args.repoRoot, args.baseRef),
+  });
+  if (!recognized.renamed) return result;
+  result.failures = recognized.failures;
+  result.warnings = recognized.warnings;
+  return result;
+}
+
+/** 最终报告：skips / warnings 逐条打印，再按 envErrors → failures → 全绿 分流退出码。 */
+function reportResult(result) {
+  for (const skip of result.skips) console.log(`threshold-monotonic: ${skip}`);
+  for (const warning of result.warnings) console.warn(`[WARN] ${warning}`);
+  if (result.envErrors.length > 0) {
+    for (const problem of result.envErrors) console.error(`[FAIL] ${problem}`);
+    return EXIT_FAIL_CLOSED;
+  }
+  if (result.failures.length > 0) {
+    for (const failure of result.failures) console.error(`[FAIL] ${failure}`);
+    console.error(
+      `\nthreshold-monotonic: ${result.failures.length} 处判据放宽/摘除 —— 阈值治理红线（AGENTS.md / #85 v3 F3）`,
+    );
+    return { exitCode: 1, failures: result.failures.length };
+  }
+  console.log("threshold-monotonic: 无阈值降线，校验通过");
+  return { exitCode: 0, failures: 0 };
+}
+
+/**
+ * 前置管线：基准 ref 可解析 → 声明表可读 → 幽灵判据 → 影子源 → 声明覆盖 → 豁免台账。
+ *
+ * 抽成管线是因为这五个阶段的失败口径**完全一致**（打印各自的判词后返回 exit 2），
+ * 而主函数需要的只是「哪个阶段失败了」这一位信息。五个不同变化原因的阶段串成一条
+ * 管线后，主函数里不再需要重读每个阶段的失败分支。
+ */
+function runPreStages({ baseRef, repoRoot, readBase, readWorkspace }) {
   if (!refExists(baseRef, repoRoot)) {
     console.error(
       `threshold-monotonic: 基准 ref ${baseRef} 不可解析（fetch 了吗？）—— 环境故障按 fail-closed 处理`,
     );
-    return { exitCode: 2, failures: 0 };
+    return { failed: true };
   }
+  const registry = runStage(["threshold-monotonic: ", " —— 环境故障按 fail-closed 处理"], () =>
+    loadRegistry(repoRoot),
+  );
+  if (registry.failed) return { failed: true };
 
-  const readBase = (rel) =>
-    existsInGit(baseRef, rel, repoRoot) ? readFromGit(baseRef, rel, repoRoot) : null;
-  const readWorkspace = (rel) => readWorkspaceText(repoRoot, rel);
-
-  let registry;
-  try {
-    registry = loadRegistry(repoRoot);
-  } catch (err) {
-    console.error(`threshold-monotonic: ${err.message} —— 环境故障按 fail-closed 处理`);
-    return { exitCode: 2, failures: 0 };
-  }
-
-  // 声明表自己也要被守：未登记的事实源（新数据文件）与幽灵声明（路径取不到值）都判红，
-  // 否则「声明表」会以另一种形态重演「新增事实源忘了加守卫」。
   // consumed 记录工作区侧**实际读到**的源：只在 sources 里列一个文件名不算登记，否则新 JSON
   // 挂进某条 guard 就洗白了「未登记即红」（影子源攻击正是这么进来的）。
   const consumed = new Set();
@@ -677,174 +900,82 @@ export function runThresholdMonotonic(
       },
     }),
   };
+  // 声明表自己也要被守：未登记的事实源（新数据文件）与幽灵声明（路径取不到值）都判红，
+  // 否则「声明表」会以另一种形态重演「新增事实源忘了加守卫」。
   // 先跑幽灵判据校验：它同时把工作区实际读到的源记进 consumed，供下面的影子源判定使用。
-  let problems;
-  try {
-    problems = validateGuardFacts(registry, loaders);
-  } catch (err) {
-    // 事实源损坏（如 gauntlet.config.json 写成坏 JSON）是配置错误，不是「判据放宽」——
-    // 落在同一个 exit 2 通道，按退出码分流的调用方不会把它读成放宽。
-    console.error(
-      "threshold-monotonic: 声明表/事实源校验失败：" +
-        err.message +
-        " —— 环境故障按 fail-closed 处理",
-    );
-    return { exitCode: 2, failures: 0 };
-  }
+  // 事实源损坏（如 gauntlet.config.json 写成坏 JSON）是配置错误，不是「判据放宽」——
+  // 落在同一个 exit 2 通道，按退出码分流的调用方不会把它读成放宽。
+  const VALIDATION_VERDICT = [
+    "threshold-monotonic: 声明表/事实源校验失败：",
+    " —— 环境故障按 fail-closed 处理",
+  ];
+  const facts = runStage(VALIDATION_VERDICT, () => validateGuardFacts(registry.value, loaders));
+  if (facts.failed) return { failed: true };
+  const problems = facts.value;
 
-  // 工作区实际命中的源必须是基准为该 guard 声明过的事实源。命中一个基准从未声明的文件，
-  // 说明有更靠前的源接管了这条守卫（影子源），两侧比的不是同一份事实——这是**判据放宽**，
-  // 走 exit 1；报成 exit 2（配置/环境故障）会让读日志的人把攻击读成「工具坏了」，正是本轮
-  // 踩过的坑；而「未登记的新数据文件」这类声明表覆盖问题仍留在 exit 2，两者语义不同。
-  // 前提是基准 ref 上已有本表：基准尚无本表时（本表首次引入的那个 PR）这里无从比对，整体跳过，
-  // 影子源态改由「未登记即红」以 exit 2 拦下，判词会点名「列过名字但没有任何 guard 读到」。
+  // 基准 ref 上已有本表时才能比影子源：基准尚无本表（本表首次引入的那个 PR）这里无从比较，
+  // 整体跳过，影子源态改由「未登记即红」以 exit 2 拦下，判词会点名「列过名字但没有任何 guard 读到」。
   let baseRegistry;
   if (existsInGit(baseRef, REGISTRY_PATH, repoRoot)) {
-    try {
-      baseRegistry = readJsonText(readFromGit(baseRef, REGISTRY_PATH, repoRoot), baseRef);
-    } catch (err) {
-      console.error(
-        "threshold-monotonic: 读取 " +
-          baseRef +
-          ":" +
-          REGISTRY_PATH +
-          " 失败：" +
-          err.message +
-          " —— 环境故障按 fail-closed 处理",
-      );
-      return { exitCode: 2, failures: 0 };
-    }
-    // 只查「工作区命中」这一侧：反过来要求基准声明的源都被命中，会把回落链的备用源
-    // （覆盖率迁移完成后不再被读的 vitest.config.ts）误判成攻击。
-    const baseSourcesById = new Map(
-      (baseRegistry.guards ?? []).map((item) => [item.id, item.sources ?? []]),
-    );
-    const shadowed = workspaceHits.filter((hit) => {
-      const declared = baseSourcesById.get(hit.id);
-      return declared !== undefined && !declared.includes(hit.source);
-    });
-    if (shadowed.length > 0) {
-      for (const hit of shadowed) {
-        console.error(
-          "[FAIL] " +
-            hit.source +
-            " 不是基准对 " +
-            hit.id +
-            " 声明的事实源（" +
-            (baseSourcesById.get(hit.id) ?? []).join(" / ") +
-            "）—— 有更靠前的源接管了该守卫（影子源），两侧比的不是同一份事实，判据已放宽",
-        );
-      }
-      console.error(
-        "\nthreshold-monotonic: " + shadowed.length + " 处守卫被基准未声明的影子源接管",
-      );
-      return { exitCode: 1, failures: shadowed.length };
-    }
+    const loaded = readBaseRegistry(baseRef, repoRoot);
+    if (loaded.failed) return { failed: true };
+    baseRegistry = loaded.registry;
+    const shadowed = checkShadowSources(baseRegistry, workspaceHits);
+    if (shadowed !== null) return { aborted: shadowed };
   }
 
-  try {
-    problems.push(...validateDeclarations(registry, { repoRoot, consumed }));
-  } catch (err) {
-    console.error(
-      "threshold-monotonic: 声明表/事实源校验失败：" +
-        err.message +
-        " —— 环境故障按 fail-closed 处理",
-    );
-    return { exitCode: 2, failures: 0 };
-  }
-  if (problems.length > 0) {
-    for (const problem of problems) console.error(`[FAIL] 声明表：${problem}`);
-    console.error(
-      `\nthreshold-monotonic: 声明表有 ${problems.length} 处问题 —— 阈值事实源须逐条声明（#843 D5），按 fail-closed 处理`,
-    );
-    return { exitCode: 2, failures: 0 };
-  }
+  const declared = runStage(VALIDATION_VERDICT, () =>
+    validateDeclarations(registry.value, { repoRoot, consumed }),
+  );
+  if (declared.failed) return { failed: true };
+  problems.push(...declared.value);
+  if (problems.length > 0) return { aborted: reportDeclarationProblems(problems) };
 
-  let exemptions;
-  try {
-    exemptions = loadExemptions(repoRoot);
-  } catch (err) {
-    console.error(
-      `threshold-monotonic: 豁免台账不可读（${EXEMPTIONS}）：${err.message} —— fail-closed`,
-    );
-    return { exitCode: 2, failures: 0 };
-  }
+  const ledger = runStage(
+    [`threshold-monotonic: 豁免台账不可读（${EXEMPTIONS}）：`, " —— fail-closed"],
+    () => loadExemptions(repoRoot),
+  );
+  if (ledger.failed) return { failed: true };
+  return { failed: false, registry: registry.value, baseRegistry, exemptions: ledger.value };
+}
 
+export function runThresholdMonotonic(
+  argv = process.argv.slice(2),
+  { repoRoot = process.cwd() } = {},
+) {
+  const baseRef = argv[0] ?? "origin/main";
+  const readBase = (rel) =>
+    existsInGit(baseRef, rel, repoRoot) ? readFromGit(baseRef, rel, repoRoot) : null;
+  const readWorkspace = (rel) => readWorkspaceText(repoRoot, rel);
+  const pre = runPreStages({ baseRef, repoRoot, readBase, readWorkspace });
+  if (pre.failed) return EXIT_FAIL_CLOSED;
+  if (pre.aborted !== undefined) return pre.aborted;
+  const { registry, baseRegistry, exemptions } = pre;
   // 声明表自身相对基准只许补全收紧（P0-1）：删 guard / 翻方向 / 关删键语义都在这里拦下。
-  if (baseRegistry !== undefined) {
-    const tableFailures = compareDeclarationTable(baseRegistry, registry);
-    if (tableFailures.length > 0) {
-      for (const failure of tableFailures) console.error("[FAIL] " + failure);
-      console.error(
-        "\nthreshold-monotonic: 声明表自身被削弱（" +
-          tableFailures.length +
-          " 处）—— 判据形状只许补全收紧，退役或改动须在表里登记",
-      );
-      return { exitCode: 1, failures: tableFailures.length };
-    }
-  } else {
-    console.log(
-      "threshold-monotonic: " +
-        baseRef +
-        " 上无 " +
-        REGISTRY_PATH +
-        " —— 首次引入，跳过声明表自身的对比",
-    );
-  }
-
-  let result;
-  try {
-    result = compareRegistry({
-      registry,
-      readBase,
-      readWorkspace,
-      textReaders: TEXT_READERS,
-      packages: listPackages(repoRoot),
-      exemptions,
-    });
-  } catch (err) {
-    console.error(
-      "threshold-monotonic: 事实源比较失败：" + err.message + " —— 环境故障按 fail-closed 处理",
-    );
-    return { exitCode: 2, failures: 0 };
-  }
-
-  // 包改名识别 v3：全量扫描之后、判红之前试认改名。只在有 failures 且无 envErrors
-  // 时运行；git（基准目录清单）与子进程（面并集双绿）只在这条路上发生，全绿路径与
-  // 其他判红路径的行为和开销与之前逐字一致。不认即原样返回，照旧判红。
-  if (result.failures.length > 0 && result.envErrors.length === 0) {
-    const recognized = applyRenameRecognition({
-      registry,
-      readBase,
-      readWorkspace,
-      textReaders: TEXT_READERS,
-      packages: listPackages(repoRoot),
-      basePackages: listBasePackages(baseRef, repoRoot, registryRequireDirs(registry)),
-      result,
-      exemptions,
-      faceCheck: () => checkRenameFaces(repoRoot, baseRef),
-    });
-    if (recognized.renamed) {
-      result.failures = recognized.failures;
-      result.warnings = recognized.warnings;
-    }
-  }
-
-  for (const skip of result.skips) console.log(`threshold-monotonic: ${skip}`);
-  for (const warning of result.warnings) console.warn(`[WARN] ${warning}`);
-  if (result.envErrors.length > 0) {
-    for (const problem of result.envErrors) console.error(`[FAIL] ${problem}`);
-    return { exitCode: 2, failures: 0 };
-  }
-  if (result.failures.length > 0) {
-    for (const failure of result.failures) console.error(`[FAIL] ${failure}`);
-    console.error(
-      `\nthreshold-monotonic: ${result.failures.length} 处判据放宽/摘除 —— 阈值治理红线（AGENTS.md / #85 v3 F3）`,
-    );
-    return { exitCode: 1, failures: result.failures.length };
-  }
-  console.log("threshold-monotonic: 无阈值降线，校验通过");
-  return { exitCode: 0, failures: 0 };
+  const table = compareRegistrySelf(baseRegistry, registry, baseRef);
+  if (table !== null) return table;
+  const compared = runStage(
+    ["threshold-monotonic: 事实源比较失败：", " —— 环境故障按 fail-closed 处理"],
+    () =>
+      compareRegistry({
+        registry,
+        readBase,
+        readWorkspace,
+        textReaders: TEXT_READERS,
+        packages: listPackages(repoRoot),
+        exemptions,
+      }),
+  );
+  if (compared.failed) return EXIT_FAIL_CLOSED;
+  const result = recognizeRenameIfNeeded(compared.value, {
+    registry,
+    readBase,
+    readWorkspace,
+    repoRoot,
+    baseRef,
+    exemptions,
+  });
+  return reportResult(result);
 }
 
 function isDirectExecution() {

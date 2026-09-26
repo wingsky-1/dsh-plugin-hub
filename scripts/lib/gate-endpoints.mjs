@@ -38,51 +38,60 @@ const SHELL_RE =
  */
 function scanQuotes(line) {
   const text = String(line ?? "");
-  let quote = null;
-  let ansi = false;
-  let wordStart = true; // 行首算词首；空白 / 元字符之后也是词首（空白被转义时不算）
+  const state = { quote: null, ansi: false, commentAt: -1 };
+  // 行首算词首；空白 / 元字符之后也是词首（空白被转义时不算）。
+  state.wordStart = true;
   for (let i = 0; i < text.length; i += 1) {
-    const ch = text[i];
-    if (quote === null) {
-      // 反斜杠转义下一个字符：转义出来的字符属于当前词，故此后不是词首。
-      if (ch === "\\") {
-        wordStart = false;
-        i += 1;
-        continue;
-      }
-      if (ch === "$" && text[i + 1] === "\'") {
-        quote = "\'";
-        ansi = true;
-        wordStart = false;
-        i += 1;
-        continue;
-      }
-      if (ch === '"' || ch === "\'" || ch === "`") {
-        quote = ch;
-        ansi = false;
-        wordStart = false;
-        continue;
-      }
-      if (ch === "#" && wordStart) return { commentAt: i, unbalanced: false };
-      // bash 的元字符是 `| & ; ( ) < >` 与空白 / 换行——`{` `}` **不在**其列（`echo a{#b` 输出 `a{#b`）。
-      wordStart = /[\s;&|()<>]/.test(ch);
-      continue;
-    }
-    if (ansi) {
-      if (ch === "\\") i += 1;
-      else if (ch === "\'") {
-        quote = null;
-        ansi = false;
-      }
-      continue;
-    }
-    if ((quote === '"' || quote === "`") && ch === "\\") {
-      i += 1;
-      continue;
-    }
-    if (ch === quote) quote = null;
+    i = state.quote !== null ? advanceQuotedScan(text, i, state) : advanceBareScan(text, i, state);
+    if (state.commentAt >= 0) return { commentAt: state.commentAt, unbalanced: false };
   }
-  return { commentAt: -1, unbalanced: quote !== null };
+  return { commentAt: -1, unbalanced: state.quote !== null };
+}
+
+/**
+ * 引号外的一步推进（返回下一个待处理下标，残留状态写入 state）。
+ * 残留状态写回 state 而不是返回对象：这是每行都跑的扫描器，且每个分支要做的事不同（跳过转义字符 / 开一层引号 / 收来引号 / 落词首）。
+ */
+function advanceBareScan(text, i, state) {
+  const ch = text[i];
+  // 反斜杠转义下一个字符：转义出来的字符属于当前词，故此后不是词首。
+  if (ch === "\\") {
+    state.wordStart = false;
+    return i + 1;
+  }
+  if (ch === "$" && text[i + 1] === "\'") {
+    state.quote = "\'";
+    state.ansi = true;
+    state.wordStart = false;
+    return i + 1;
+  }
+  if (ch === '"' || ch === "\'" || ch === "`") {
+    state.quote = ch;
+    state.ansi = false;
+    state.wordStart = false;
+    return i;
+  }
+  if (ch === "#" && state.wordStart) {
+    state.commentAt = i;
+    return i;
+  }
+  // bash 的元字符是 `| & ; ( ) < >` 与空白 / 换行——`{` `}` **不在**其列（`echo a{#b` 输出 `a{#b`）。
+  state.wordStart = /[\s;&|()<>]/.test(ch);
+  return i;
+}
+
+/**
+ * 引号内的一步推进：唯一能吃掉下一个字符的是反斜杠转义，且单引号里反斜杠是字面量——三种引号
+ * （ANSI-C / 双引号 / 反引号）的差别只在这一行，读判据时不必回看主循环。
+ */
+function advanceQuotedScan(text, i, state) {
+  const ch = text[i];
+  if (ch === "\\" && (state.ansi || state.quote === '"' || state.quote === "`")) return i + 1;
+  if (ch === state.quote) {
+    state.quote = null;
+    state.ansi = false;
+  }
+  return i;
 }
 
 /** 剥 YAML 行尾注释（引号感知：词中的 `#issue` 与引号内的 `#` 都不算注释）。 */
@@ -108,6 +117,31 @@ export function hasUnbalancedQuotes(line) {
  * 为什么带条件而不是只给命令：命令还在、但 `if:` 被改成永不成立（或加了 continue-on-error）时
  * 判据实际已经不跑，只比对命令文本的断言对此是假绿。
  */
+/**
+ * 已建模的键但**形态不对**的判词（静默失明通道）。
+ *
+ * 与「键名未建模」分开：前者是解析层认不出这个键，后者是认得出、却因类型错了而整块读不出来
+ * ——后者才是“不报也不红”的那一类。
+ */
+function stepShapeIssues(step, at) {
+  const issues = [];
+  // `run: 42` 这类非字符串：extractRunSteps 会**静默 return**，于是这一步在执行点全集里
+  // 彻底消失，而 A13 也报不出任何东西——此前它只是碰巧被别的断言连带判红（对抗复核实测：
+  // 单独看解析面时 `run: 42` 是一条静默失明通道）。
+  if ("run" in step && typeof step.run !== "string") {
+    issues.push(at + "run 不是字符串（整条步骤会被解析层静默跳过）");
+  }
+  // `env` 是「已建模的键」，但只有映射形态才读得出键名；列表 / 标量形态会让 env 整块失明
+  // （它正是能改变 shell 行为的那一类，见 dangerousShellEnv）。
+  if (
+    "env" in step &&
+    (step.env === null || typeof step.env !== "object" || Array.isArray(step.env))
+  ) {
+    issues.push(at + "env 不是映射（键名读不出来，无法核对是否注入 shell 行为变量）");
+  }
+  return issues;
+}
+
 /** 步骤块里**允许出现**的 GHA 键：出现第 12 个（或拼错一个）必须报出来，否则一个能让判据
  * 静默失明的键就跟着 workflow 一起进仓库。 */
 const STEP_KEYS = new Set([
@@ -201,15 +235,21 @@ function splitCommands(run) {
       acc = { raw: acc.raw.slice(0, -1), cmd: acc.cmd.slice(0, -1) };
       continue;
     }
-    rawLines.push(acc.raw);
-    if (acc.cmd.trim() !== "") cmds.push(acc.cmd.trim());
+    flushLogicalLine(acc, cmds, rawLines);
     acc = null;
   }
-  if (acc !== null) {
-    rawLines.push(acc.raw);
-    if (acc.cmd.trim() !== "") cmds.push(acc.cmd.trim());
-  }
+  if (acc !== null) flushLogicalLine(acc, cmds, rawLines);
   return { cmds, rawLines };
+}
+
+/**
+ * 收尾一条逻辑行：空行与纯注释只进 rawLines（文本摘要与 `#` 兜底靠它们），
+ * 只有剩下命令体的才进 cmds。末行未闭合时也走同一条路径——两处合并才不会
+ * 让「末行缺尾反斜杠」与「正常收尾」两个形态的判词分开。
+ */
+function flushLogicalLine(acc, cmds, rawLines) {
+  rawLines.push(acc.raw);
+  if (acc.cmd.trim() !== "") cmds.push(acc.cmd.trim());
 }
 
 /**
@@ -448,20 +488,7 @@ export function parseIssues(yamlText, jobName) {
     for (const k of Object.keys(step)) {
       if (!STEP_KEYS.has(k)) issues.push(at + "解析层未建模的键「" + k + "」");
     }
-    // `run: 42` 这类非字符串：extractRunSteps 会**静默 return**，于是这一步在执行点全集里
-    // 彻底消失，而 A13 也报不出任何东西——此前它只是碰巧被别的断言连带判红（对抗复核实测：
-    // 单独看解析面时 `run: 42` 是一条静默失明通道）。
-    if ("run" in step && typeof step.run !== "string") {
-      issues.push(at + "run 不是字符串（整条步骤会被解析层静默跳过）");
-    }
-    // `env` 是「已建模的键」，但只有映射形态才读得出键名；列表 / 标量形态会让 env 整块失明
-    // （它正是能改变 shell 行为的那一类，见 dangerousShellEnv）。
-    if (
-      "env" in step &&
-      (step.env === null || typeof step.env !== "object" || Array.isArray(step.env))
-    ) {
-      issues.push(at + "env 不是映射（键名读不出来，无法核对是否注入 shell 行为变量）");
-    }
+    issues.push(...stepShapeIssues(step, at));
   });
   void value;
   return issues;
@@ -664,17 +691,22 @@ function testEval(expr) {
     return inner === null ? null : !inner;
   }
   const unary = /^(-[nz])\s+(.+)$/.exec(e);
-  if (unary !== null) {
-    const operand = unary[2].trim();
-    if (operand.includes("$")) return null;
-    const empty = unquoteToken(operand) === "";
-    return unary[1] === "-n" ? !empty : empty;
-  }
+  if (unary !== null) return evalUnaryTest(unary[1], unary[2].trim());
   if (/^["'][\s\S]*["']$/.test(e) || /^[\w.:@/-]+$/.test(e)) {
     if (e.includes("$")) return null;
     return unquoteToken(e) !== "";
   }
   return null;
+}
+
+/**
+ * `-n <operand>` / `-z <operand>`：运行时才知的操作数（`null`）不能当恒定结论。
+ * 与「取反一层」分开：递归只负责一层否，而这里负责「操作数的空与非空」这个独立判定。
+ */
+function evalUnaryTest(flag, operand) {
+  if (operand.includes("$")) return null;
+  const empty = unquoteToken(operand) === "";
+  return flag === "-n" ? !empty : empty;
 }
 
 export function isConstantFalseCondition(condition) {
@@ -694,34 +726,76 @@ export function isConstantFalseCondition(condition) {
   const left = cmp[1].trim();
   const right = cmp[3].trim();
   if (!literal(left) || !literal(right)) return false;
-  const l = left.replace(/^["']|["']$/g, "");
-  const r = right.replace(/^["']|["']$/g, "");
-  const num = Number(l);
-  const numR = Number(r);
-  const numeric = !Number.isNaN(num) && !Number.isNaN(numR);
-  switch (cmp[2]) {
-    case "=":
-    case "==":
-    case "===":
-      return l !== r;
-    case "!=":
-    case "!==":
-      return l === r;
-    case "-eq":
-      return numeric ? num !== numR : true;
-    case "-ne":
-      return numeric ? num === numR : true;
-    case "-lt":
-      return numeric ? num >= numR : true;
-    case "-gt":
-      return numeric ? num <= numR : true;
-    case "-le":
-      return numeric ? num > numR : true;
-    case "-ge":
-      return numeric ? num < numR : true;
-    default:
-      return false;
+  return compareIsConstantFalse(cmp[2], left, right);
+}
+
+/** 字面量比较：返回该比较**是否恒假**（两边字面量相同时为假）。 */
+const STRING_COMPARATORS = {
+  "=": (l, r) => l !== r,
+  "==": (l, r) => l !== r,
+  "===": (l, r) => l !== r,
+  "!=": (l, r) => l === r,
+  "!==": (l, r) => l === r,
+};
+
+/**
+ * 数值比较（test 的 -eq / -lt 等）。
+ *
+ * 两侧不都是数字时一律判**恒假**（原分支的 `numeric ? … : true`）：
+ * 非数字的取值不能归一为假值，而且无法证明它恒真——按 fail-closed 走。
+ */
+const NUMERIC_COMPARATORS = {
+  "-eq": (a, b) => a !== b,
+  "-ne": (a, b) => a === b,
+  "-lt": (a, b) => a >= b,
+  "-gt": (a, b) => a <= b,
+  "-le": (a, b) => a > b,
+  "-ge": (a, b) => a < b,
+};
+
+function compareIsConstantFalse(op, left, right) {
+  const stringCmp = STRING_COMPARATORS[op];
+  if (stringCmp !== undefined) {
+    return stringCmp(left.replace(/^["']|["']$/g, ""), right.replace(/^["']|["']$/g, ""));
   }
+  const numericCmp = NUMERIC_COMPARATORS[op];
+  if (numericCmp === undefined) return false;
+  const a = Number(left);
+  const b = Number(right);
+  return Number.isNaN(a) || Number.isNaN(b) || numericCmp(a, b);
+}
+
+/**
+ * 整行形态：`<opener> <cond>; <opener> <body>; <closer>`——条件与命令体都在同一行。
+ */
+const SINGLE_LINE_FORMS = [
+  { re: /^if\s+(.+?);\s*then\s+(.+?);?\s*fi\s*$/, cond: 1, body: 2, hangs: false },
+  { re: /^while\s+(.+?);?\s*do\s+(.+?);?\s*done\s*$/, cond: 1, body: 2, hangs: false },
+];
+
+/**
+ * 跨行开启形态：条件行先出现，then / do 可能另起一行（此时 hangs = true，
+ * 条件先挂起等下一行补栈帧）。顺序即区分优先级：带 then / do 的先匹配。
+ */
+const OPENER_FORMS = [
+  { re: /^if\s+(.*?);\s*then\b/, cond: 1, hangs: false },
+  { re: /^while\s+(.*?);?\s*do\b/, cond: 1, hangs: false },
+  { re: /^if\s+(.+)$/, cond: 1, hangs: true },
+  { re: /^while\s+(.+)$/, cond: 1, hangs: true },
+];
+
+/** 按表里的顺序第一个命中的形态（命中时返回条件与命令体，未命中返回 null）。 */
+function matchForm(forms, cmd) {
+  for (const form of forms) {
+    const m = form.re.exec(cmd);
+    if (m === null) continue;
+    return {
+      cond: m[form.cond],
+      body: form.body === undefined ? null : m[form.body],
+      hangs: form.hangs,
+    };
+  }
+  return null;
 }
 
 /**
@@ -739,65 +813,74 @@ export function stripDeadBranchCommands(commands) {
   // 条件上。控制流跟踪会消费掉这一行，若不同时把它记进「会执行的命令」，这种载体形态的判据
   // 在 live 清单里会凭空消失，被误判成「位于恒假分支」（推广到全部 workflow 时实测命中
   // ci.yml 的 mutation-verdict）。
-  const live = () => !stack.includes(true);
-  const push = (cond) => stack.push(!live() || isConstantFalseCondition(cond));
-  const pushOpener = (cond, raw) => {
-    if (live() && !isConstantFalseCondition(cond)) out.push(raw);
-    push(cond);
-  };
   for (const raw of commands) {
     const cmd = String(raw).trim();
-    const single = /^if\s+(.+?);\s*then\s+(.+?);?\s*fi\s*$/.exec(cmd);
-    if (single !== null) {
-      if (!stack.includes(true) && !isConstantFalseCondition(single[1])) out.push(single[2]);
-      continue;
-    }
-    const singleLoop = /^while\s+(.+?);?\s*do\s+(.+?);?\s*done\s*$/.exec(cmd);
-    if (singleLoop !== null) {
-      if (!stack.includes(true) && !isConstantFalseCondition(singleLoop[1]))
-        out.push(singleLoop[2]);
-      continue;
-    }
-    if (pending !== null && /^(?:then|do)\b/.test(cmd)) {
-      // 条件行在上一行已按 pushOpener 记过一次，这里只补栈帧。
-      push(pending);
+    const form = matchControlForm(cmd, pending !== null);
+    if (form.kind === "body") {
+      // 条件行在上一行已按 openFrame 记过一次，这里只补栈帧。
+      pushFrame(stack, pending);
       pending = null;
-      continue;
+    } else if (form.kind === "single") {
+      if (isLive(stack) && !isConstantFalseCondition(form.cond)) out.push(form.body);
+    } else if (form.kind === "opener") {
+      openFrame(stack, out, form.cond, raw);
+      pending = form.cond;
+    } else if (form.kind === "closer") {
+      closeFrame(stack, out, raw, cmd);
+    } else if (isLive(stack)) {
+      out.push(raw);
     }
-    const opensIf = /^if\s+(.*?);\s*then\b/.exec(cmd);
-    if (opensIf !== null) {
-      pushOpener(opensIf[1], raw);
-      continue;
-    }
-    const opensLoop = /^while\s+(.*?);?\s*do\b/.exec(cmd);
-    if (opensLoop !== null) {
-      pushOpener(opensLoop[1], raw);
-      continue;
-    }
-    const bareIf = /^if\s+(.+)$/.exec(cmd);
-    if (bareIf !== null) {
-      pushOpener(bareIf[1], raw);
-      pending = bareIf[1];
-      continue;
-    }
-    const bareLoop = /^while\s+(.+)$/.exec(cmd);
-    if (bareLoop !== null) {
-      pushOpener(bareLoop[1], raw);
-      pending = bareLoop[1];
-      continue;
-    }
-    if (/^(?:fi|done)\b/.test(cmd)) {
-      stack.pop();
-      // 收尾关键字行本身也可能带执行位或改写退出码：`done < <(node scripts/x.mjs)` 的进程替换
-      // 在循环建立时就执行，`fi || true` 的吞码也发生在这里。整行丢掉会让这两种形态在
-      // 「真的会执行的命令」清单里彻底消失（复核实测：release 的 publish-if-missing 因此
-      // 完全看不见）。
-      if (cmd.replace(/^(?:fi|done)\b\s*;?\s*/, "").trim() !== "") out.push(raw);
-      continue;
-    }
-    if (!stack.includes(true)) out.push(raw);
   }
   return out;
+}
+
+/**
+ * 一行属于哪种控制流形态。顺序即优先级（整行形态最优先，其次开启形态再次之）。
+ *
+ * 分类与剧用分开：一行语义什么时（D1）与它对帧栈的影响、超跃不超跃什么时产生
+ * 两件事（D2）。形态表的顺序就是优先级，改一个形态不需要重读整条控制流语义。
+ */
+function matchControlForm(cmd, hasPending) {
+  const single = matchForm(SINGLE_LINE_FORMS, cmd);
+  if (single !== null) return { kind: "single", cond: single.cond, body: single.body };
+  if (hasPending && /^(?:then|do)\b/.test(cmd)) return { kind: "body" };
+  const opener = matchForm(OPENER_FORMS, cmd);
+  if (opener !== null) return { kind: "opener", cond: opener.cond };
+  if (/^(?:fi|done)\b/.test(cmd)) return { kind: "closer" };
+  return { kind: "plain" };
+}
+
+/** 正在执行：栈里没有任何一帧是恒假分支。 */
+function isLive(stack) {
+  return !stack.includes(true);
+}
+
+/** 开启一帧：已在恒假分支里的帧不再受条件约束（嵌在里面的东西照样不跑）。 */
+function pushFrame(stack, cond) {
+  stack.push(!isLive(stack) || isConstantFalseCondition(cond));
+}
+
+/**
+ * 开启一帧的同时把条件行自身记进活命令。
+ * 条件位本身也是**会执行的代码**：`if node scripts/gate/x.mjs "$pkg"; then …` 里判据就跑在
+ * 条件上。控制流跟踪会消费掉这一行，若不同时把它记进「会执行的命令」，这种载体形态的判据
+ * 在 live 清单里会凭空消失，被误判成「位于恒假分支」（推广到全部 workflow 时实测命中
+ * ci.yml 的 mutation-verdict）。
+ */
+function openFrame(stack, out, cond, raw) {
+  if (isLive(stack) && !isConstantFalseCondition(cond)) out.push(raw);
+  pushFrame(stack, cond);
+}
+
+/**
+ * 收尾关键字行（fi / done）：弹栈，并把收尾行自身带执行位的部分记成活命令。
+ * `done < <(node scripts/x.mjs)` 的进程替换在循环建立时就执行，`fi || true` 的吞码也发生在这里。
+ * 整行丢掉会让这两种形态在「真的会执行的命令」清单里彻底消失
+ * （复核实测：release 的 publish-if-missing 因此完全看不见）。
+ */
+function closeFrame(stack, out, raw, cmd) {
+  stack.pop();
+  if (cmd.replace(/^(?:fi|done)\b\s*;?\s*/, "").trim() !== "") out.push(raw);
 }
 
 /**
@@ -851,10 +934,10 @@ export function extractLefthookSteps(yamlText) {
   const { value } = loadDoc(yamlText);
   const out = [];
   for (const hook of Object.values(value ?? {})) {
-    if (hook === null || typeof hook !== "object" || Array.isArray(hook)) continue;
+    if (!isPlainObject(hook)) continue;
     const jobs = Array.isArray(hook.jobs) ? hook.jobs : [];
     for (const item of jobs) {
-      if (item === null || typeof item !== "object" || typeof item.run !== "string") continue;
+      if (!isPlainObject(item) || typeof item.run !== "string") continue;
       for (const cmd of splitCommands(item.run).cmds) {
         out.push({ cmd, ifCond: null, continueOnError: false, shell: null, unknownKeys: [] });
       }
@@ -898,6 +981,11 @@ export function dangerousStepEnv(keys) {
   );
 }
 
+/** 普通映射（非 null / 非数组的对象）。两处同形的守卫写成同一个谓词。 */
+function isPlainObject(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
 /** 命令行里的**行首赋值名**（`FOO=1 cmd` 形态；`--flag=value` 这类参数不算）。 */
 export function leadingAssignmentNames(command) {
   const out = [];
@@ -923,46 +1011,84 @@ function readShellWord(text, from) {
   let i = from;
   while (i < text.length && /\s/.test(text[i])) i += 1;
   const start = i;
-  let depth = 0;
-  let quote = null;
-  let ansi = false;
+  const state = { depth: 0, quote: null, ansi: false };
   for (; i < text.length; i += 1) {
-    const ch = text[i];
-    if (ansi) {
-      if (ch === "\\") i += 1;
-      else if (ch === "\'") {
-        ansi = false;
-        quote = null;
-      }
+    if (state.quote !== null) {
+      i = advanceQuotedWord(text, i, state);
       continue;
     }
-    if (quote !== null) {
-      if ((quote === '"' || quote === "`") && ch === "\\") {
-        i += 1;
-        continue;
-      }
-      if (quote === '"' && ch === "$" && text[i + 1] === "(") depth += 1;
-      else if (quote === '"' && ch === ")" && depth > 0) depth -= 1;
-      else if (ch === quote) quote = null;
-      continue;
-    }
-    if (depth === 0 && (/(?:)/.test(""), /\s|[;&|]/.test(ch))) break;
-    if (ch === "$" && text[i + 1] === "\'") {
-      quote = "\'";
-      ansi = true;
-      i += 1;
-      continue;
-    }
-    if (ch === '"' || ch === "\'" || ch === "`") {
-      quote = ch;
-      continue;
-    }
-    if (ch === "$" && text[i + 1] === "(") {
-      depth += 1;
-      i += 1;
-    } else if (ch === ")" && depth > 0) depth -= 1;
+    const next = advanceBareWord(text, i, state);
+    if (next < 0) break;
+    i = next;
   }
   return [text.slice(start, i), i];
+}
+
+/**
+ * 引号外的一步推进：返回下一个待处理下标，或 **-1 = 词到头了**（顶层空白或控制操作符）。
+ *
+ * 返回 -1 而不是就地 break：这样「引号外」这套规则能单独对着构造输入钉，也不会让主循环同时负责「走多少个字符」与「何时结束」。
+ */
+function advanceBareWord(text, i, state) {
+  const ch = text[i];
+  if (state.depth === 0 && /\s|[;&|]/.test(ch)) return -1;
+  const opened = openQuoteAt(text, i, state);
+  if (opened !== null) return opened;
+  if (ch === "$" && text[i + 1] === "(") {
+    state.depth += 1;
+    return i + 1;
+  }
+  if (ch === ")" && state.depth > 0) state.depth -= 1;
+  return i;
+}
+
+/**
+ * 引号外的引号**开启**：返回开启后的下标，本字符不是开启说词则返回 null。
+ * ANSI-C（$\'…\'）与普通引号分开返回，因为它的开启两个字符（$ 与 '）都要吃掉。
+ */
+function openQuoteAt(text, i, state) {
+  const ch = text[i];
+  if (ch === "$" && text[i + 1] === "\'") {
+    state.quote = "\'";
+    state.ansi = true;
+    return i + 1;
+  }
+  if (ch === '"' || ch === "\'" || ch === "`") {
+    state.quote = ch;
+    return i;
+  }
+  return null;
+}
+
+/**
+ * 引号内的一步推进：返回**下一个待处理下标**（跨过被转义的字符）。
+ *
+ * 三种引号的差别全在这一个函数里：ANSI-C（$\'…\'）与双引号、反引号里反斜杠转义下一个字符，
+ * 单引号里反斜杠是字面量；只有双引号里的 $( … ) 会影响深度（它可以内嵌另一层括号）。
+ */
+function advanceQuotedWord(text, i, state) {
+  const ch = text[i];
+  if (ch === "\\" && (state.ansi || state.quote === '"' || state.quote === "`")) return i + 1;
+  if (state.quote === '"' && trackDoubleQuotedNesting(text, i, state)) return i;
+  if (ch === state.quote) {
+    state.quote = null;
+    state.ansi = false;
+  }
+  return i;
+}
+
+/** 双引号里的 $( … ) 可以内嵌另一层括号，故只有双引号里记深度；返回本字符是否已被当作括号边界消费。 */
+function trackDoubleQuotedNesting(text, i, state) {
+  const ch = text[i];
+  if (ch === "$" && text[i + 1] === "(") {
+    state.depth += 1;
+    return true;
+  }
+  if (ch === ")" && state.depth > 0) {
+    state.depth -= 1;
+    return true;
+  }
+  return false;
 }
 
 /**
@@ -1054,20 +1180,19 @@ export function endpointOf(command, scripts = {}) {
   const cmd = stripExecPrefixes(stripLeadingAssignments(head));
   if (cmd === "") return { kind: "shell", id: "shell:statement" };
   const pnpmAlias = /^pnpm\s+(?:exec\s+)?([^-\s][^\s]*)\s*(.*)$/.exec(cmd);
-  if (pnpmAlias !== null) {
-    const alias = pnpmAlias[1];
-    // `pnpm $VAR …`：别名由 shell 变量在运行时决定，静态解析不出身份，归脚手架。
-    if (alias.startsWith("$")) return { kind: "shell", id: "pnpm:variable" };
-    const extra = (pnpmAlias[2] ?? "").trim();
-    const expansion = scripts[alias];
-    if (typeof expansion === "string" && expansion.trim() !== cmd) {
-      // 调用方附加的参数必须带进展开结果：pnpm 会把它们透传给脚本。`pnpm lint tools` 只检查
-      // 2 个文件、裸 `pnpm lint` 检查 492 个——丢掉附加参数等于把判据面整个换掉却不改身份
-      // （复核实测：一行改动、无需台账、无需新文件即可让 24 条全绿）。
-      return endpointOf(extra === "" ? expansion : expansion + " " + extra, scripts);
-    }
-    return { kind: "alias", id: alias };
-  }
+  if (pnpmAlias !== null) return resolvePnpmAlias(cmd, pnpmAlias, scripts);
+  const direct = directEndpointOf(cmd);
+  if (direct !== null) return direct;
+  // 控制关键字 / cd 之后的执行位：只在内层**确实是执行点**时才采用内层身份。
+  const carried = unwrapCarrierEndpoint(cmd, scripts);
+  return carried ?? fallbackEndpointOf(cmd);
+}
+
+/**
+ * 命令本身就写明了自己是什么的那几种形态（不需要剥任何载体）。
+ * 与 endpointOf 里的「别名展开」与「载体剥壳」分开：这些形态不会引发递归，改它们不需要拿到整条归一链里去看。
+ */
+function directEndpointOf(cmd) {
   if (/^pnpm\s+-/.test(cmd)) return { kind: "pkg-filter", id: "pnpm:flags" };
   if (/^node\s+--test\b/.test(cmd)) return { kind: "tool", id: toolId("node:test", cmd) };
   const exec = EXEC_PATH_RE.exec(cmd);
@@ -1086,30 +1211,58 @@ export function endpointOf(command, scripts = {}) {
   if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(cmd) || cmd.startsWith("[")) {
     return { kind: "shell", id: "shell:statement" };
   }
-  // 控制关键字之后的执行位：只在内层**确实是执行点**时才采用内层身份。`for dir in …` 剥掉
-  // 首词后是 unknown、`if [ -d x ]` 剥掉后是 shell 语句——它们不是执行点，必须仍按脚手架归类，
-  // 否则脚手架会被误升成执行点，凭空多出一批需要人工分类的端点。
-  const cdInner = stripCdCarrier(cmd);
-  if (cdInner !== null) {
-    const inner = endpointOf(cdInner, scripts);
-    if (inner !== null && ["script", "tool", "alias", "pkg-filter"].includes(inner.kind)) {
-      return inner;
-    }
-  }
-  const carrier = CARRIER_RE.exec(cmd);
-  if (carrier !== null) {
-    // 剥掉尾部的 shell 终止符（`; then` / `; do` / `;` / `&`）：它们是载体语法的一部分，
-    // 带进内层会把 `"$pkg"; then` 这种噪音算进判据面摘要。
-    const innerCmd = carrier[1]
-      .replace(/;\s*(?:then|do)\s*$/, "")
-      .replace(/[;&]\s*$/, "")
-      .trim();
-    const inner = endpointOf(innerCmd, scripts);
-    if (inner !== null && ["script", "tool", "alias", "pkg-filter"].includes(inner.kind))
-      return inner;
-  }
+  return null;
+}
+
+/**
+ * 剥封之后仍然认不出身份的命令：先当脚手架（SHELL_RE），再当未知形态。
+ * 未知不是错误——它是「无法归一的脚本身份」的另一类，必须显式分类才能被断言面看见。
+ */
+function fallbackEndpointOf(cmd) {
   if (SHELL_RE.test(cmd)) return { kind: "shell", id: cmd.split(/\s+/)[0] };
   return { kind: "unknown", id: cmd };
+}
+
+/** pnpm 别名的归一：展开成真正被执行的命令后再归一（展开与归一是两件事，不同的变化原因）。 */
+function resolvePnpmAlias(cmd, pnpmAlias, scripts) {
+  const alias = pnpmAlias[1];
+  // `pnpm $VAR …`：别名由 shell 变量在运行时决定，静态解析不出身份，归脚手架。
+  if (alias.startsWith("$")) return { kind: "shell", id: "pnpm:variable" };
+  const extra = (pnpmAlias[2] ?? "").trim();
+  const expansion = scripts[alias];
+  if (typeof expansion === "string" && expansion.trim() !== cmd) {
+    // 调用方附加的参数必须带进展开结果：pnpm 会把它们透传给脚本。`pnpm lint tools` 只检查
+    // 2 个文件、裸 `pnpm lint` 检查 492 个——丢掉附加参数等于把判据面整个换掉却不改身份
+    // （复核实测：一行改动、无需台账、无需新文件即可让 24 条全绿）。
+    return endpointOf(extra === "" ? expansion : expansion + " " + extra, scripts);
+  }
+  return { kind: "alias", id: alias };
+}
+
+/** 能算「执行点」的端点类别：载体剥开后只有落在这几类里才采用内层身份。 */
+const EXECUTABLE_KINDS = new Set(["script", "tool", "alias", "pkg-filter"]);
+
+/**
+ * 控制关键字 / cd 之后的执行位：只在内层**确实是执行点**时才采用内层身份。
+ * `for dir in …` 剥掉首词后是 unknown、`if [ -d x ]` 剥掉后是 shell 语句——它们不是执行点，必须仍按脚手架归类，
+ * 否则脚手架会被误升成执行点，凭空多出一批需要人工分类的端点。
+ */
+function unwrapCarrierEndpoint(cmd, scripts) {
+  const cdInner = stripCdCarrier(cmd);
+  if (cdInner !== null) {
+    const viaCd = endpointOf(cdInner, scripts);
+    if (viaCd !== null && EXECUTABLE_KINDS.has(viaCd.kind)) return viaCd;
+  }
+  const carrier = CARRIER_RE.exec(cmd);
+  if (carrier === null) return null;
+  // 剥掉尾部的 shell 终止符（`; then` / `; do` / `;` / `&`）：它们是载体语法的一部分，
+  // 带进内层会把 `"$pkg"; then` 这种噪音算进判据面摘要。
+  const innerCmd = carrier[1]
+    .replace(/;\s*(?:then|do)\s*$/, "")
+    .replace(/[;&]\s*$/, "")
+    .trim();
+  const inner = endpointOf(innerCmd, scripts);
+  return inner !== null && EXECUTABLE_KINDS.has(inner.kind) ? inner : null;
 }
 
 /** 一批命令 → 端点身份（丢掉 shell 脚手架）：键为 `kind:id`。 */
