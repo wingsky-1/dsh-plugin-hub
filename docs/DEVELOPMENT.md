@@ -749,8 +749,10 @@ entries }`——兼容字段 `exports` = **主入口**的导出面、`declBlocks
     `return` / `throw` / `break` / `continue` 之后的语句；**不覆盖跨函数数据流不可达**（核心规则没有
     program，答不出「这个分支永不成立，因为上游恒返回某值」）。另两条实测细节：① **未配 options，
     `checkLoops` 取默认 `allExceptWhileTrue`**——`while (true)` / `for (;;)` 仍合法（`while (0)`、
-    `do...while (false)` 照报）；该豁免在本仓承重（provider-usage 的流式消费循环与轮询夹具都这么写），
-    配成 `"all"` 会立刻红一片。② `no-unreachable` **不把常量条件的分支体本身**判成不可达（归
+    `do...while (false)` 照报）；默认面上真正靠这条豁免兜住的只有 provider-usage 的流式消费循环
+    （`src/server/execute/generate.ts:840`）一处。`test/helpers.ts:105` 的 `for (;;)` **没有 test
+    表达式、规则对它直接跳过**，属规则层免疫，配成 `"all"` 也不报——故配 `"all"` 的真实爆炸半径是
+    新增 1 个 error，不是「红一片」。② `no-unreachable` **不把常量条件的分支体本身**判成不可达（归
     `no-constant-condition`），但分支体**内部**由 `return`/`throw`/`break`/`continue` 造成的不可达
     照报。判据见 `scripts/test/lint-toolchain.test.ts` 的对应一测（门禁面与产品面各一组）。
   - **警告预算是硬判据**：阈值在 `gauntlet.config.json` 的 `lint.maxWarnings`（只许降，上调由

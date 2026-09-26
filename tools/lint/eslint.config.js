@@ -83,10 +83,13 @@ const complexityRules = {
  *
  * 两条实测细节，都别读反：
  *   1. **循环条件默认被豁免**：未配 options，`checkLoops` 取默认 `allExceptWhileTrue`——
- *      `while (true)` 与 `for (;;)` 仍合法（`while (0)`、`do...while (false)` 照报）。这条豁免在
- *      本仓**承重**：provider-usage 的流式消费循环（src/server/execute/generate.ts）与轮询夹具
- *      （test/helpers.ts）都写着 `while (true)` / `for (;;)`。谁把 `checkLoops` 配成 `"all"`，
- *      `pnpm lint` 会立刻红一片——那时该看到的是「有人改了豁免」，不是「仓库突然多了死代码」。
+ *      `while (true)` 与 `for (;;)` 仍合法（`while (0)`、`do...while (false)` 照报）。默认面上真正
+ *      **被这条豁免兜住的只有一处**：provider-usage 的流式消费循环
+ *      （src/server/execute/generate.ts:840 的 `while (true)`）。别把 test/helpers.ts:105 的
+ *      `for (;;)` 也算进来——它没有 test 表达式，`no-constant-condition` 对它直接跳过，属**规则层
+ *      免疫**，配任何 options 都不报。故把 `checkLoops` 配成 `"all"` 的真实爆炸半径是**新增 1 个
+ *      error**（generate.ts:840 那处；预算 0，故 exit 由 0 变 1），不是「红一片」——那时该看到的信号
+ *      是「有人改了豁免」，不是「仓库突然多了死代码」。
  *   2. **常量条件的分支体归 `no-constant-condition`**：`no-unreachable` 走 code path 分析，
  *      不把 `if (false) { ... }` 的分支体**本身**判成不可达；但分支体**内部**由
  *      `return`/`throw`/`break`/`continue` 造成的不可达照报——`if (false) { return 2; return 3; }`
