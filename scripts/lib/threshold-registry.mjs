@@ -22,7 +22,8 @@
  *     判据字段」成为**一行数据改动且 CI 全绿**——表本身是数据，改它不需要碰任何代码。
  *     维护者裁决「取消全部豁免入口」，故两条通道整体删除，且由 `selfAuthChannelProblems`
  *     反向守卫住「不可重建」：这两个键重新出现在声明表里即判红。改 guard 的唯一合法路径
- *     是改判据代码（本文件或 gate/threshold-monotonic.mjs），代码改动走红线评审。
+ *     是改判据代码（本文件或 gate/threshold-monotonic.mjs）：该路径走 PR 评审 + 本仓自测把关，
+ *     `scripts/gate/**` 与 `scripts/lib/**` 均不在 `approved` 派生面内，故不需要 `approved` 标签。
  *
  * 三态：failures（放宽/摘除，exit 1）/ envErrors（配置或环境故障，exit 2，fail-closed）/
  * warnings（非单调旋钮的收紧方向，只报警不判红）。
@@ -652,7 +653,8 @@ export function selfAuthChannelProblems(registry) {
  * 声明表自身的对比（#843 对抗评审 P0-1；#875 H11 取消自授权通道）：guard **只许新增**，
  * 同 id 的判据形状字段只许「补全 / 收紧」（`sources` 是尾部追加，不是任意改写），
  * **数据面没有任何通道能放行一次削弱**。于是「退役一条 guard / 翻一个方向 / 把 onRemoval
- * 改成 ignore」不再是一次登记动作，而是必须改判据代码的显式动作——代码改动走红线评审。
+ * 改成 ignore」不再是一次登记动作，而是必须改判据代码的显式动作。该路径走 PR 评审 + 本仓
+ * 自测把关；`scripts/gate/**` 与 `scripts/lib/**` 均不在 `approved` 派生面内，故不需要 `approved` 标签。
  */
 export function compareDeclarationTable(baseRegistry, workspaceRegistry) {
   const failures = selfAuthChannelProblems(workspaceRegistry);
