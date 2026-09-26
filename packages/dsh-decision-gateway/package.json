@@ -1,6 +1,6 @@
 {
   "name": "@wingsky-1/dsh-decision-gateway",
-  "version": "0.1.0",
+  "version": "0.2.6",
   "description": "Decision gateway for DSH agents: calibrated Choice/Score/Noul verdicts via ws_request_verdict + local secret precheck + dual-track keys. 通用辅助决策网关（JEV 为首个 provider）：frozen 预设模板 + 密钥双轨（ENV 引用优先）+ 本地密形预检 + SystemOne 官方调用，工具 ws_request_verdict / ws_list_verdict_guides",
   "type": "module",
   "main": "lib/index.js",

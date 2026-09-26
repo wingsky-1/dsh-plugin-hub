@@ -162,7 +162,7 @@ describe("幂等三条（S3 验收，各有集成用例）", () => {
     rmSync(legacy, { recursive: true, force: true });
     writeFileSync(legacy, '{"legacy":true}\n', "utf8");
     await runUpgradeChain(deps());
-    expect(await readStoredVersion(root)).toBe("0.2.5");
+    expect(await readStoredVersion(root)).toBe("0.2.6");
   });
 
   it("2/3 已存在不覆盖：刻度已到目标的存储不再重跑（判据：恒跑也绿，旧文件仍在原地才是未跑证据，改坏必须红）", async () => {
@@ -361,9 +361,14 @@ describe("链驱动：排序/边界/对账/吞错", () => {
   });
 
   it("刻度停在 fromVersion 即待办（含边界），之后即跳过（判据：边界写成>即整步跳过，改坏必须红）", () => {
-    expect(pendingSteps(STEPS, "0.0.0")).toHaveLength(3);
-    expect(pendingSteps(STEPS, "0.2.3").map((s) => s.targetVersion)).toEqual(["0.2.4", "0.2.5"]);
-    expect(pendingSteps(STEPS, "0.2.5")).toEqual([]);
+    expect(pendingSteps(STEPS, "0.0.0")).toHaveLength(4);
+    expect(pendingSteps(STEPS, "0.2.3").map((s) => s.targetVersion)).toEqual([
+      "0.2.4",
+      "0.2.5",
+      "0.2.6",
+    ]);
+    expect(pendingSteps(STEPS, "0.2.5").map((s) => s.targetVersion)).toEqual(["0.2.6"]);
+    expect(pendingSteps(STEPS, "0.2.6")).toEqual([]);
   });
 
   it("任一步失败即抛且带目标版本（判据：吞错静默绿，改坏必须红）", async () => {
@@ -414,7 +419,7 @@ describe("链驱动：排序/边界/对账/吞错", () => {
 
   it("装配前 await 跑完：await 后刻度落到最后一步且初始形态已落定（判据：不等待即各域读旧形态，改序必须红）", async () => {
     await installUpgrade(deps());
-    expect(await readStoredVersion(root)).toBe("0.2.5");
+    expect(await readStoredVersion(root)).toBe("0.2.6");
     expect(existsSync(targetConfigFile(root))).toBe(true);
     expect(basename(root).length).toBeGreaterThan(0);
   });

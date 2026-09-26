@@ -6,6 +6,7 @@ import { migrateConfigShape } from "./config-shape.ts";
 import { migrateQuietWindows } from "./quiet-windows.ts";
 import { migrateReasonShape } from "./reason-shape.ts";
 import { migrateStorageLayout } from "./storage-layout.ts";
+import { tickUpgradeVersionSync } from "../../../../../../../shared/upgrade-tick.js";
 
 /** 0.2.3 → 0.2.4：存储布局归位 + 配置形态割接 + 投递理由形态割接——同一次版本迁移的三半，合成一步。 */
 function migrateToNewLayout(deps: UpgradeDeps): void {
@@ -13,11 +14,6 @@ function migrateToNewLayout(deps: UpgradeDeps): void {
   migrateStorageLayout();
   migrateConfigShape(deps.legacySettings);
   migrateReasonShape();
-}
-
-/** 0.2.4 → 0.2.5：客户端半区分层重构（#769，#834）——纯客户端拆分，无存储/配置形态变化，空步推进刻度。 */
-function migrateToV025(): void {
-  // 本版无存储/配置形态变化：空实现，仅让链把刻度从 0.2.4 推到 0.2.5。
 }
 
 /** 0.2.5 → 0.2.6：免打扰多时间窗（#936）——旧的 start/end 搬进 windows[0] 并删除旧键。 */
@@ -28,6 +24,7 @@ function migrateToV026(): void {
 /** 按目标版本升序维护；执行顺序由链驱动排序决定，此处顺序只为便于阅读。 */
 export const STEPS: readonly UpgradeStep[] = [
   { fromVersion: "0.2.3", targetVersion: "0.2.4", run: migrateToNewLayout },
-  { fromVersion: "0.2.4", targetVersion: "0.2.5", run: migrateToV025 },
+  // 0.2.4 → 0.2.5 为空步（客户端半区分层重构，无形态变化）：run 指共享空函数，不再为新版本加空函数。
+  { fromVersion: "0.2.4", targetVersion: "0.2.5", run: tickUpgradeVersionSync },
   { fromVersion: "0.2.5", targetVersion: "0.2.6", run: migrateToV026 },
 ];

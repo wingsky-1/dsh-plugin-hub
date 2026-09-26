@@ -1,7 +1,7 @@
 {
   "name": "@wingsky-1/dsh-plugins-all",
-  "version": "0.2.5",
-  "description": "Meta-package installing all dsh-plugin-hub plugins at once: notifier, provider-usage, mcp-manager, lan-proxy, verify-isolated, worktree-sidebar and decision-gateway. DSH 插件全家桶聚合包：一键安装全部功能插件（notifier / provider-usage / mcp-manager / lan-proxy / verify-isolated / worktree-sidebar / decision-gateway）。装它 = 子包 dependencies 拉齐 + 聚合 cordis patch 激活。dsh-gzip / dsh-web-file-preview 等已退役包不再随全家桶分发。",
+  "version": "0.2.6",
+  "description": "Meta-package installing all dsh-plugin-hub plugins at once: notifier, provider-usage, mcp-manager, lan-proxy, verify-isolated and worktree-sidebar. DSH 插件全家桶聚合包：一键安装全部功能插件（notifier / provider-usage / mcp-manager / lan-proxy / verify-isolated / worktree-sidebar）。装它 = 子包 dependencies 拉齐 + 聚合 cordis patch 激活。dsh-gzip / dsh-web-file-preview 等已退役包不再随全家桶分发。",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
@@ -15,7 +15,7 @@
     "catalog": {
       "category": "other",
       "summary": {
-        "en": "Meta-package installing all dsh-plugin-hub plugins at once: notifier, provider-usage, mcp-manager, lan-proxy, verify-isolated, worktree-sidebar and decision-gateway.",
+        "en": "Meta-package installing all dsh-plugin-hub plugins at once: notifier, provider-usage, mcp-manager, lan-proxy, verify-isolated and worktree-sidebar.",
         "zh": "插件全家桶聚合包：一键装齐全部功能插件，子包 dependencies 拉齐加聚合 patch 激活"
       },
       "capabilities": []
@@ -46,8 +46,7 @@
     "@wingsky-1/dsh-mcp-manager": "workspace:*",
     "@wingsky-1/dsh-lan-proxy": "workspace:*",
     "@wingsky-1/dsh-verify-isolated": "workspace:*",
-    "@wingsky-1/dsh-worktree-sidebar": "workspace:*",
-    "@wingsky-1/dsh-decision-gateway": "workspace:*"
+    "@wingsky-1/dsh-worktree-sidebar": "workspace:*"
   },
   "publishConfig": {
     "access": "public"

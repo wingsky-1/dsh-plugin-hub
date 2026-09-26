@@ -20,6 +20,7 @@ DSH 插件家族共用的模块（构建期 esbuild 内联进各插件包，不�
 | `settings-namespace.js` | 宿主 | `installSettingsNamespace`（settings 服务面注入） |
 | `dsh-home.js` | 宿主 | `dshHome`（DSH home 解析单一事实源，#517：`DSH_HOME` 非空白原样采用、未设置或空白回落 `~/.dsh`——空白视同未设置对齐官方 `dsh-home-paths#resolveDshHome`；不 resolve/不展开 `~`，默认形态路径逐字节不变。豁免口径（非 dsh 生态凭据不跟随）与落盘纪律条款见 DEVELOPMENT.md §1，由 PR #523 承载）+ `userHome`（用户 home 接缝，#722：`HOME`（Windows 为 `USERPROFILE`）非空白原样采用、否则回落 `os.homedir()`；取值次序与 libuv 一致故默认形态逐字节不变，显式读 env 是为了在 worker_threads（Stryker 的 vitest-runner 强制 `pool: 'threads'`）下仍可被测试的 `process.env` 隔离） |
 | `paths.js` | 宿主 | `pluginHome`（包主目录拼装单一事实源：`join(base, ...segments)`，默认形态路径逐字节不变；只收敛包主目录直拼，legacy 旧根/settings 文档/resolve 对比/用户输入解析/credentials-userHome/展示脱敏/包内反推 7 类排除，provider 旧 `pluginHome` 保留包内 facade） |
+| `upgrade-tick.js` | 宿主 | `tickUpgradeVersion` 升级链空步单一事实源（立即完成、不碰存储；各包只登记版本号，不再为新版本加空函数） |
 | `sse-hub.js` | 宿主 | `createSseHub` SSE 长连接枢纽单一事实源（#515：连接表 + 心跳 + stalled/maxAge 主动回收，取代各包自建连接表；#769 移除了连接上限机制：半开/僵尸连接此后只靠 stalled 收住，maxAge 只回收「长命且业务空闲」的正常连接）。行为契约：广播帧由调用方生成、hub 不感知业务语义；stalled 判据是「write 返回 false 连续超窗」而非 writableLength（背压不等价于僵尸）；心跳是 hub 级单 interval；健康明细**不进** `/health`（大小随连接数增长，而 `/health` 是常量大小聚合面） |
 | `client/i18n.js` | 客户 | 共享 `t` 活绑定 + `bindLocale`（#348 → #378 抽取；未装配回落 key 本体） |
 | `client/ensure-style.js` | 客户 | 参数化 `ensureStyle({ id, cssText, version? })`（#477 收敛；按 id 幂等 / head 缺失静默 no-op 不抛 / version 变化重建 / 返回 disposer） |

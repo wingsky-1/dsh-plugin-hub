@@ -11,6 +11,7 @@ import type { UpgradeDeps } from "../deps.ts";
 import { migrateLastRun } from "../last-run-morph.ts";
 import { migrateReportConfig } from "../config-morph.ts";
 import { migrateStorageLayout } from "../storage-layout.ts";
+import { tickUpgradeVersion } from "../../../../../../shared/upgrade-tick.js";
 import {
   compareVersions,
   pluginVersion,
@@ -43,10 +44,13 @@ export interface UpgradeStep {
  * 与 package.json 的 0.2.5 对齐在最后一步（链跑完的对账会把漂移报出来）。
  * 按目标版本升序维护；执行顺序由链驱动排序决定，此处顺序只为便于阅读。
  */
+/** 0.2.5 → 0.2.6：用量呈现与模板落盘（#940）+ 节假日判定（#945）+ 存储清理诊断（#934）——新文件缺失即种、余下纯逻辑，无既有形态割接，空步推进刻度。 */
 export const STEPS: readonly UpgradeStep[] = [
   { fromVersion: "0.0.0", targetVersion: "0.2.3", run: migrateStorageLayout },
   { fromVersion: "0.2.3", targetVersion: "0.2.4", run: migrateReportConfig },
   { fromVersion: "0.2.4", targetVersion: "0.2.5", run: migrateLastRun },
+  // 0.2.5 → 0.2.6 为空步（用量呈现、节假日判定、存储清理诊断，无既有形态割接）：run 指共享空函数。
+  { fromVersion: "0.2.5", targetVersion: "0.2.6", run: tickUpgradeVersion },
 ];
 
 /**

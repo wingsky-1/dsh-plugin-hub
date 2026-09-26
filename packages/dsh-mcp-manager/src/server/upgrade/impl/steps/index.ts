@@ -4,6 +4,7 @@
  */
 import type { UpgradeStep } from "../chain/type.ts";
 import { migrateStorageLayout } from "./storage-layout.ts";
+import { tickUpgradeVersion } from "../../../../../../../shared/upgrade-tick.js";
 
 /**
  * 0.0.0 → 0.2.5：存储布局归位（§7.1 的目标布局 + §7.2 的迁移语义），本次迁移唯一的一步。
@@ -19,4 +20,6 @@ import { migrateStorageLayout } from "./storage-layout.ts";
  */
 export const STEPS: readonly UpgradeStep[] = [
   { fromVersion: "0.0.0", targetVersion: "0.2.5", run: migrateStorageLayout },
+  // 0.2.5 → 0.2.6 为空步（调用超时跟随配置、关面板还焦、客户端类型收窄，无形态变化）：run 指共享空函数。
+  { fromVersion: "0.2.5", targetVersion: "0.2.6", run: tickUpgradeVersion },
 ];

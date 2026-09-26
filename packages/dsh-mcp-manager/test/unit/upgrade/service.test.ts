@@ -43,6 +43,13 @@ function newestTarget(): string {
   );
 }
 
+/** 步骤表里最低的目标版本：没有刻度文件时链从零跑起，制造失败的用例先红在这一步。 */
+function oldestTarget(): string {
+  return STEPS.map((step) => step.targetVersion).reduce((oldest, version) =>
+    compareVersions(version, oldest) < 0 ? version : oldest,
+  );
+}
+
 /** 装配一次升级域（链在装配期跑完）。 */
 async function assemble(overrides: Partial<UpgradeDeps> = {}) {
   const logger = overrides.logger ?? makeLogger();
@@ -104,7 +111,7 @@ describe("装配期跑链", () => {
     // 于是「刻度没被写」是这次失败的直接后果，不是障碍物的副作用。
     mkdirSync(legacy, { recursive: true });
 
-    await expect(assemble()).rejects.toThrow(`存储升级到 ${newestTarget()} 失败`);
+    await expect(assemble()).rejects.toThrow(`存储升级到 ${oldestTarget()} 失败`);
 
     expect(existsSync(versionFile())).toBe(false);
     // 失败点之前没有任何一项落定：中止不是「跳过失败的那项继续跑」。
@@ -124,7 +131,7 @@ describe("装配期跑链", () => {
     mkdirSync(versionFile(), { recursive: true });
     writeFileSync(join(versionFile(), "占位"), "", "utf8");
 
-    await expect(assemble()).rejects.toThrow(`存储版本号回写失败（${newestTarget()}）`);
+    await expect(assemble()).rejects.toThrow(`存储版本号回写失败（${oldestTarget()}）`);
   });
 });
 

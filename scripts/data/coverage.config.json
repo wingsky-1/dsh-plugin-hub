@@ -144,6 +144,12 @@
       "since": "#1012"
     },
     {
+      "pattern": "shared/test/upgrade-tick.test.ts",
+      "kind": "not-source",
+      "reason": "shared 空步契约测试不是运行时代码，不进入覆盖率分母；其断言由 node:test 面执行",
+      "since": "v0.2.6"
+    },
+    {
       "pattern": "shared/test/settings-namespace.mutation.test.ts",
       "kind": "not-source",
       "reason": "root-shared mutation 测试只验证 shared/settings-namespace.js，不进入运行时代码覆盖率分母；源文件仍由独立 mutation surface 计量",

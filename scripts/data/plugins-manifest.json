@@ -1,6 +1,5 @@
 {
   "active": [
-    "dsh-decision-gateway",
     "dsh-lan-proxy",
     "dsh-mcp-manager",
     "dsh-notifier",
@@ -8,7 +7,7 @@
     "dsh-verify-isolated",
     "dsh-worktree-sidebar"
   ],
-  "standalone": [],
+  "standalone": ["dsh-decision-gateway"],
   "dshPeerContracts": {
     "dsh-decision-gateway": [
       "@deepseek-ai/cordis",
