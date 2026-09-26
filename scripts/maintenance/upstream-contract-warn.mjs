@@ -219,22 +219,22 @@ function visitAConst(node, acc, hop) {
   }
 }
 
-function visitAService(node, acc, cx) {
-  if (node.type !== "CallExpression" || node.callee.type !== "MemberExpression") return false;
-  const recv = node.callee.object;
-  const prop = staticProp(node.callee);
-  if (recv.type !== "Identifier" || recv.name !== "ctx" || prop === null) return false;
-  if (prop !== "get" && prop !== "provide" && prop !== "inject") return false;
-  if (prop === "inject" && (!node.arguments[0] || node.arguments[0].type !== "ArrayExpression"))
-    return true;
-  if (prop === "get" || prop === "provide") {
-    const r = cx.hop(node.arguments[0]);
-    pushServiceInto(acc, node, prop, r);
-    if (prop === "provide" && (r.kind === "literal" || r.kind === "hop")) {
-      acc.provides.push({ ...atNode(node), name: r.name, via: r.kind });
-    }
-    return true;
+/** `ctx.get(x)` / `ctx.provide(x)`：单个服务名，两者在「是否算 provide」上分道。 */
+function visitServiceSingle(node, acc, cx, prop) {
+  const r = cx.hop(node.arguments[0]);
+  pushServiceInto(acc, node, prop, r);
+  if (prop === "provide" && (r.kind === "literal" || r.kind === "hop")) {
+    acc.provides.push({ ...atNode(node), name: r.name, via: r.kind });
   }
+}
+
+/**
+ * `ctx.inject([...])`：数组形态的批量注入。
+ *
+ * 数组不是数组时（`ctx.inject(x)` 形态）不是「批量注入」而是别的东西，交给调用方判；
+ * 元素是 spread 时服务名静态不可知，记 forwarding 而不是猜一个名字。
+ */
+function visitServiceInject(node, acc, cx) {
   for (const el of node.arguments[0].elements) {
     if (!el || el.type === "SpreadElement") {
       acc.forwarding.push({ ...atNode(node), verb: "inject", why: "spread" });
@@ -242,6 +242,22 @@ function visitAService(node, acc, cx) {
     }
     pushServiceInto(acc, node, "inject", cx.hop(el));
   }
+}
+
+const SERVICE_VERBS = new Set(["get", "provide", "inject"]);
+
+function visitAService(node, acc, cx) {
+  if (node.type !== "CallExpression" || node.callee.type !== "MemberExpression") return false;
+  const recv = node.callee.object;
+  const prop = staticProp(node.callee);
+  if (recv.type !== "Identifier" || recv.name !== "ctx" || prop === null) return false;
+  if (!SERVICE_VERBS.has(prop)) return false;
+  if (prop === "inject") {
+    if (node.arguments[0] && node.arguments[0].type === "ArrayExpression")
+      visitServiceInject(node, acc, cx);
+    return true;
+  }
+  visitServiceSingle(node, acc, cx, prop);
   return true;
 }
 
@@ -261,38 +277,61 @@ function visitAEvent(node, acc, cx) {
   } else acc.dynamics.push({ ...atNode(node), verb: prop });
 }
 
+/**
+ * `ctx.<prop>()`：服务面调用点。`ctx.get/provide/inject` 与事件动词不是服务调用（它们各自
+ * 另有判据），框架内建动词也不是。
+ */
+function visitServiceCall(node, acc) {
+  const recv = node.callee.object;
+  const prop = staticProp(node.callee);
+  if (recv.type === "Identifier" && recv.name === "ctx" && prop !== null) {
+    if (!FRAMEWORK_ONLY.has(prop) && !EVENT_VERBS.includes(prop)) {
+      acc.svcCalls.push({ ...atNode(node), svc: prop, method: null });
+    }
+  }
+}
+
+/** `ctx.<svc>.<method>()`：带方法名的服务调用点（R4 判的就是它）。 */
+function visitMethodCall(node, acc) {
+  const recv = node.callee.object;
+  const prop = staticProp(node.callee);
+  if (
+    recv.type === "MemberExpression" &&
+    recv.object.type === "Identifier" &&
+    recv.object.name === "ctx" &&
+    prop !== null
+  ) {
+    const svc = staticProp(recv);
+    if (svc !== null && !FRAMEWORK_ONLY.has(svc))
+      acc.calls.push({ ...atNode(node), svc, method: prop });
+  }
+}
+
+/**
+ * `ctx.<svc>` 单独出现（不是被调用的、也不是别人的接收者）：服务**引用**而非调用。
+ * parent 判据用来排掉前两种形态的重复计数——它们各自已经记过了。
+ */
+function visitServiceRef(node, parent, acc) {
+  if (
+    node.object.type !== "Identifier" ||
+    node.object.name !== "ctx" ||
+    !parent ||
+    (parent.type === "CallExpression" && parent.callee === node) ||
+    (parent.type === "MemberExpression" && parent.object === node)
+  )
+    return;
+  const svc = staticProp(node);
+  if (svc !== null && !FRAMEWORK_ONLY.has(svc) && !EVENT_VERBS.includes(svc))
+    acc.svcRefs.push({ ...atNode(node), svc });
+}
+
 function visitACall(node, parent, acc) {
   if (node.type === "CallExpression" && node.callee.type === "MemberExpression") {
-    const recv = node.callee.object;
-    const prop = staticProp(node.callee);
-    if (recv.type === "Identifier" && recv.name === "ctx" && prop !== null) {
-      if (!FRAMEWORK_ONLY.has(prop) && !EVENT_VERBS.includes(prop)) {
-        acc.svcCalls.push({ ...atNode(node), svc: prop, method: null });
-      }
-    } else if (
-      recv.type === "MemberExpression" &&
-      recv.object.type === "Identifier" &&
-      recv.object.name === "ctx" &&
-      prop !== null
-    ) {
-      const svc = staticProp(recv);
-      if (svc !== null && !FRAMEWORK_ONLY.has(svc))
-        acc.calls.push({ ...atNode(node), svc, method: prop });
-    }
+    visitServiceCall(node, acc);
+    visitMethodCall(node, acc);
     return;
   }
-  if (
-    node.type === "MemberExpression" &&
-    node.object.type === "Identifier" &&
-    node.object.name === "ctx" &&
-    parent &&
-    !(parent.type === "CallExpression" && parent.callee === node) &&
-    !(parent.type === "MemberExpression" && parent.object === node)
-  ) {
-    const svc = staticProp(node);
-    if (svc !== null && !FRAMEWORK_ONLY.has(svc) && !EVENT_VERBS.includes(svc))
-      acc.svcRefs.push({ ...atNode(node), svc });
-  }
+  if (node.type === "MemberExpression") visitServiceRef(node, parent, acc);
 }
 
 export function analyzeAFile(ast) {
@@ -376,21 +415,36 @@ export function stripComments(src) {
       i += 1;
       continue;
     }
-    if (ch === "/" && next === "*") {
-      const end = src.indexOf("*/", i + 2);
-      i = end === -1 ? src.length : end + 2;
-      out += "\n";
-      continue;
-    }
-    if (ch === "/" && next === "/") {
-      const end = src.indexOf("\n", i + 2);
-      i = end === -1 ? src.length : end;
+    const commentEnd = commentEndAt(src, i, next);
+    if (commentEnd !== null) {
+      i = commentEnd.next;
+      out += commentEnd.replacement;
       continue;
     }
     out += ch;
     i += 1;
   }
   return out;
+}
+
+/**
+ * 当前位置是否开启一段注释；是则返回「跳过到哪 + 用什么替换」。不是注释返回 null。
+ *
+ * 块注释替换成换行、行注释替换成空串：块注释里可能藏着换行，替成换行才能保持后续的
+ * 行号与「行内有没有东西」不变（行注释整行丢掉即可）。两种形态的**结束位置规则不同**
+ * （块注释找闭合标记 vs 行注释找换行），故各自成支而不是共用一个查找。
+ */
+function commentEndAt(src, i, next) {
+  if (src[i] !== "/") return null;
+  if (next === "*") {
+    const end = src.indexOf("*/", i + 2);
+    return { next: end === -1 ? src.length : end + 2, replacement: "\n" };
+  }
+  if (next === "/") {
+    const end = src.indexOf("\n", i + 2);
+    return { next: end === -1 ? src.length : end, replacement: "" };
+  }
+  return null;
 }
 
 function skipSpaces(s, i) {
@@ -441,55 +495,62 @@ function matchBrace(s, openIdx) {
   return null;
 }
 
+const BLOCK_KEYWORDS = ["interface", "class", "enum", "namespace", "module"];
+
+/**
+ * 一个声明的名字与它之后的下标（字符串字面量名或标识符名）；两种形态都不是时返回 null。
+ *
+ * 与关键字匹配分开：关键字是**五种固定词**的识别，名字是**任意 token** 的读法，两者的
+ * 词法规则各自会变（加一种声明形态 vs 换一种名字写法）。
+ */
+function readDeclName(code, from) {
+  const j = skipSpaces(code, from);
+  if (code[j] === '"' || code[j] === "\u0027") {
+    const r = readString(code, j);
+    return r === null ? null : { name: r.value, end: r.end };
+  }
+  if (j < code.length && isIdStart(code[j])) {
+    let k = j;
+    while (k < code.length && isIdPart(code[k])) k += 1;
+    return { name: code.slice(j, k), end: k };
+  }
+  return null;
+}
+
+/**
+ * 从名字之后找到**顶层**的 `{`（顶层 = 不在泛型参数 `<…>` 内）：
+ * 泛型参数里可以有花括号，声明体只可能在角括号归零之后。`;` 表示这是个无体声明，
+ * 不是判据要的面——返回 -1。
+ */
+function bodyBraceAt(code, from) {
+  let angle = 0;
+  for (let k = from; k < code.length; k += 1) {
+    const ch = code[k];
+    if (ch === "<") angle += 1;
+    else if (ch === ">") angle = Math.max(0, angle - 1);
+    else if (ch === "{" && angle === 0) return k;
+    else if (ch === ";" && angle === 0) return -1;
+  }
+  return -1;
+}
+
 export function findBlocks(code) {
   const blocks = [];
   let i = 0;
   while (i < code.length) {
-    let hit = null;
-    for (const kind of ["interface", "class", "enum", "namespace", "module"]) {
-      if (matchWord(code, i, kind)) {
-        hit = kind;
-        break;
-      }
-    }
-    if (hit === null) {
+    const hit = BLOCK_KEYWORDS.find((kind) => matchWord(code, i, kind));
+    if (hit === undefined) {
       i += 1;
       continue;
     }
-    let j = skipSpaces(code, i + hit.length);
-    let name = null;
-    if (code[j] === '"' || code[j] === "\u0027") {
-      const r = readString(code, j);
-      if (r === null) {
-        i = j + 1;
-        continue;
-      }
-      name = r.value;
-      j = r.end;
-    } else if (j < code.length && isIdStart(code[j])) {
-      let k = j;
-      while (k < code.length && isIdPart(code[k])) k += 1;
-      name = code.slice(j, k);
-      j = k;
-    } else {
-      i = j + 1;
+    const decl = readDeclName(code, i + hit.length);
+    if (decl === null) {
+      i = skipSpaces(code, i + hit.length) + 1;
       continue;
     }
-    let angle = 0;
-    let brace = -1;
-    let k = j;
-    while (k < code.length) {
-      const ch = code[k];
-      if (ch === "<") angle += 1;
-      else if (ch === ">") angle = Math.max(0, angle - 1);
-      else if (ch === "{" && angle === 0) {
-        brace = k;
-        break;
-      } else if (ch === ";" && angle === 0) break;
-      k += 1;
-    }
+    const brace = bodyBraceAt(code, decl.end);
     if (brace === -1) {
-      i = k + 1;
+      i = decl.end + 1;
       continue;
     }
     const m = matchBrace(code, brace);
@@ -497,7 +558,7 @@ export function findBlocks(code) {
       i = brace + 1;
       continue;
     }
-    blocks.push({ kind: hit, name, body: m.body });
+    blocks.push({ kind: hit, name: decl.name, body: m.body });
     i = m.end;
   }
   return blocks;
@@ -873,39 +934,77 @@ export function closureMembers(entryAbs) {
     }
     files += 1;
     const parsed = parseDtsMembers(text);
-    const tables = new Map([...parsed.ifaces, ...parsed.classes]);
-    for (const [n, v] of tables) {
-      if (!ifaces.has(n)) {
-        ifaces.set(n, {
-          members: new Set(),
-          quoted: new Set(),
-          links: new Map(),
-          opaque: 0,
-          classKind: parsed.classes.has(n),
-        });
-      }
-      const acc = ifaces.get(n);
-      for (const m of v.members) acc.members.add(m);
-      for (const q of v.quoted) acc.quoted.add(q);
-      for (const [k, t] of v.links) if (!acc.links.has(k)) acc.links.set(k, t);
-      acc.opaque += v.opaque;
-      opaque += v.opaque;
-    }
+    opaque += mergeIfaceTables(ifaces, parsed);
     for (const m of parsed.modules) modules.push({ file: real, name: m.name });
-    const code = stripComments(text);
-    const specs = new Set();
-    const re = /(?:from\s+|import\s*\(\s*|require\s*\(\s*)(["\u0027])(\.[^"\u0027]*)\1/g;
-    let mt = null;
-    while ((mt = re.exec(code)) !== null) specs.add(mt[2]);
-    // 裸 side-effect import（如 context 链的 import "./fiber"）：无 from/import(/require( 前缀，上式收不到。
-    const bareRe = /(^|[;{}()\s])import\s*(["\u0027])(\.[^"\u0027]*)\2/g;
-    while ((mt = bareRe.exec(code)) !== null) specs.add(mt[3]);
-    for (const s of specs) {
+    for (const s of relativeSpecifiersOf(text)) {
       const r = resolveRelativeSpec(real, s);
       if (r !== null && !seen.has(realpathSync(r))) queue.push(r);
     }
   }
   return { ifaces, modules, opaque, files };
+}
+
+/**
+ * 把一个文件解析出的表合并进累加器（同名成员取并集，links 不后到保留先到的类型，opaque 累加）。
+ * 返回本文件新增的 opaque 量，让调用方只维护一个总计。
+ *
+ * 与 BFS 循环分开：「合并一个解析结果」与「遍历闭包」是两个变化原因——合并规则改了不应该跟着
+ * BFS 的去重/入队规则一起变。
+ */
+function mergeIfaceTables(ifaces, parsed) {
+  let opaque = 0;
+  for (const [n, v] of new Map([...parsed.ifaces, ...parsed.classes])) {
+    if (!ifaces.has(n)) {
+      ifaces.set(n, {
+        members: new Set(),
+        quoted: new Set(),
+        links: new Map(),
+        opaque: 0,
+        classKind: parsed.classes.has(n),
+      });
+    }
+    const acc = ifaces.get(n);
+    for (const m of v.members) acc.members.add(m);
+    for (const q of v.quoted) acc.quoted.add(q);
+    for (const [k, t] of v.links) if (!acc.links.has(k)) acc.links.set(k, t);
+    acc.opaque += v.opaque;
+    opaque += v.opaque;
+  }
+  return opaque;
+}
+
+/**
+ * 一份源文本里的相对请求读到器。
+ *
+ * 两个形态分开收：带 from / import( / require( 前缀的，与裸 side-effect import（如 context 链的
+ * import "./fiber"）——后者无前缀，上式收不到。先剥注释再扫：注释里的请求不是依赖。
+ */
+function relativeSpecifiersOf(text) {
+  const code = stripComments(text);
+  const specs = new Set();
+  let mt = null;
+  const re = /(?:from\s+|import\s*\(\s*|require\s*\(\s*)(["\u0027])(\.[^"\u0027]*)\1/g;
+  while ((mt = re.exec(code)) !== null) specs.add(mt[2]);
+  const bareRe = /(^|[;{}()\s])import\s*(["\u0027])(\.[^"\u0027]*)\2/g;
+  while ((mt = bareRe.exec(code)) !== null) specs.add(mt[3]);
+  return specs;
+}
+
+/**
+ * 把一个闭包里的 Context 接口并进服务/事件/链接三张表。
+ *
+ * Context 是**接口**才有意义：class 形态的同名声明不是服务契约（`classKind` 时整体跳过），
+ * 成员按「含 / 是事件名，否则是服务名」分流，links 不后到覆盖先到的。
+ *
+ * 与外层逐 peer 累积分开：本函数只回答「一份闭包的 Context 说明什么」，不关心累积到哪了。
+ */
+function absorbContext(ctx, services, events, links) {
+  if (!ctx || ctx.classKind) return;
+  for (const m of ctx.members) {
+    if (m.includes("/")) events.add(m);
+    else services.add(m);
+  }
+  for (const [k, t] of ctx.links) if (!links.has(k)) links.set(k, t);
 }
 
 export function buildB(root) {
@@ -926,14 +1025,7 @@ export function buildB(root) {
     files += closed.files;
     opaque += closed.opaque;
     for (const m of closed.modules) moduleNames.push(`${name} :: ${m.name}`);
-    const ctx = closed.ifaces.get("Context");
-    if (ctx && !ctx.classKind) {
-      for (const m of ctx.members) {
-        if (m.includes("/")) events.add(m);
-        else services.add(m);
-      }
-      for (const [k, t] of ctx.links) if (!links.has(k)) links.set(k, t);
-    }
+    absorbContext(closed.ifaces.get("Context"), services, events, links);
     for (const [iname, v] of closed.ifaces) {
       if (!methodTables.has(iname)) methodTables.set(iname, new Set());
       const acc = methodTables.get(iname);
@@ -963,14 +1055,19 @@ export function buildB(root) {
   };
 }
 
-export function evaluate(A, B) {
+/**
+ * S2：被消费但 B 面没声明的服务名（blessed 值与 B 侧已声明的除外），按名字排序。
+ *
+ * 与 evaluate 分开：本函数只回答「哪些服务名没被对上」，不参与任何一条 fail 判定——
+ * s2fail 的阈值与白名单是另一件事（改阈值不该重读这段扫描）。
+ */
+function untrackedServiceNames(A, B, blessedValues) {
   const consumeNames = new Map();
   for (const s of A.services) {
     if (s.verb === "provide") continue;
     if (!consumeNames.has(s.name)) consumeNames.set(s.name, []);
     consumeNames.get(s.name).push(s);
   }
-  const blessedValues = new Set(A.blessedValues);
   const untracked = [];
   for (const [name, sites] of [...consumeNames.entries()].sort()) {
     if (B.services.has(name) || blessedValues.has(name)) continue;
@@ -980,12 +1077,16 @@ export function evaluate(A, B) {
       count: sites.length,
     });
   }
-  const s2fail =
-    untracked.length > UNTRACKED_BASE || untracked.some((u) => !KNOWN_UNTRACKED.includes(u.name));
-  const missingEvents = [...new Set(A.events.map((e) => e.name))]
-    .sort()
-    .filter((n) => !B.events.has(n));
-  const r2fail = missingEvents.length > 0;
+  return untracked;
+}
+
+/**
+ * R4：调用点的两种缺口——服务名在 B 面查不到方法表（untyped，服务根本不在契约里），
+ * 与方法表在但该方法没有（契约里有、调用了没声明的方法）。前者不判红只记录。
+ *
+ * 与 evaluate 分开同 S2：这里只产缺口清单，r4fail 的判定在调用方。
+ */
+function scanMethodCalls(A, B) {
   const missingMethods = [];
   const untypedSvcs = new Map();
   for (const c of A.calls) {
@@ -999,6 +1100,19 @@ export function evaluate(A, B) {
     }
     if (!table.has(c.method)) missingMethods.push({ ...c });
   }
+  return { missingMethods, untypedSvcs };
+}
+
+export function evaluate(A, B) {
+  const blessedValues = new Set(A.blessedValues);
+  const untracked = untrackedServiceNames(A, B, blessedValues);
+  const s2fail =
+    untracked.length > UNTRACKED_BASE || untracked.some((u) => !KNOWN_UNTRACKED.includes(u.name));
+  const missingEvents = [...new Set(A.events.map((e) => e.name))]
+    .sort()
+    .filter((n) => !B.events.has(n));
+  const r2fail = missingEvents.length > 0;
+  const { missingMethods, untypedSvcs } = scanMethodCalls(A, B);
   const r4fail = missingMethods.length > 0;
   const s1fail = A.dynamics.length > DYN_BASE;
   const s3fail = A.cascades.length > 0;
