@@ -209,39 +209,115 @@ const str = (v: unknown, fb = ""): string => (typeof v === "string" ? v : fb);
 const optStr = (v: unknown): string | undefined => (typeof v === "string" ? v : undefined);
 const num = (v: unknown, fb: number): number => asNumber(v, fb);
 const enumOf = <T extends string>(v: unknown, xs: readonly T[], fb: T): T =>
-  (xs as readonly unknown[]).includes(v) ? (v as T) : fb;
+  xs.find((x) => x === v) ?? fb;
 const optScore = (v: unknown): number | undefined =>
   typeof v === "number" && Number.isFinite(v) ? v : undefined;
-const F: Array<[string, (v: unknown) => unknown]> = [
-  ["rootHash", str],
-  ["rootDisplay", str],
-  ["presetId", str],
-  ["templateVersion", (v) => num(v, 1)],
-  ["stateHash", str],
-  ["snippetRedacted", str],
-  ["resultKind", str],
-  ["tier", (v) => enumOf(v, ["high", "low"] as const, "none")],
-  ["lang", (v) => enumOf(v, ["en", "zh"] as const, "unknown")],
-  ["automation", (v) => normalizeAutomation(v)],
-  ["truncated", (v) => v === true],
-  ["originalLength", (v) => num(v, 0)],
-  ["confidence", (v) => num(v, 0)],
-  ["latencyMs", (v) => num(v, 0)],
-  ["choice", optStr],
-  ["score", optScore],
-  ["errorCode", optStr],
-];
+const nonEmptyStr = (v: unknown): string | undefined =>
+  typeof v === "string" && v.length > 0 ? v : undefined;
+const normTier = (v: unknown): DecisionTier => enumOf(v, ["high", "low"], "none");
+const normLang = (v: unknown): DecisionLang => enumOf(v, ["en", "zh"], "unknown");
+
+/** 可缺失的键：形状不对/为空即整个 key 不存在（写入面一律条件展开，六键同写法）。 */
+type OptionalKey = "choice" | "score" | "errorCode" | "presetTitle" | "sessionTitle" | "questions";
+/** 归一器覆盖的必填键（键名笔误越出该联合，tsc 报 TS2536/TS2345，不必等运行期字段 undefined）。 */
+type RequiredKey =
+  | "rootHash"
+  | "rootDisplay"
+  | "presetId"
+  | "templateVersion"
+  | "stateHash"
+  | "snippetRedacted"
+  | "resultKind"
+  | "tier"
+  | "lang"
+  | "automation"
+  | "truncated"
+  | "originalLength"
+  | "confidence"
+  | "latencyMs";
+type NormalizedKey = RequiredKey | OptionalKey;
+type NormalizerFor<K extends NormalizedKey> = (v: unknown) => DecisionHistoryEntry[K];
+
+/**
+ * 键 → 归一器：键与归一器返回类型逐键绑定，这层标注就是编译期护栏。
+ *
+ * 漏键/多键报 TS2741/TS2353，归一器返回类型与 DecisionHistoryEntry[K] 不符报 TS2322。
+ * 表项不是一维的 [string, fn] 对：键的取值域由 NormalizedKey 锁死，所以
+ * ["confidenceMs", …] 这类笔误在 tsc 阶段判红，而不是运行期该字段 undefined。
+ */
+const NORMALIZERS: { [K in NormalizedKey]: NormalizerFor<K> } = {
+  rootHash: str,
+  rootDisplay: str,
+  presetId: str,
+  templateVersion: (v) => num(v, 1),
+  stateHash: str,
+  snippetRedacted: str,
+  resultKind: str,
+  tier: normTier,
+  lang: normLang,
+  automation: normalizeAutomation,
+  truncated: (v) => v === true,
+  originalLength: (v) => num(v, 0),
+  confidence: (v) => num(v, 0),
+  latencyMs: (v) => num(v, 0),
+  choice: optStr,
+  score: optScore,
+  errorCode: optStr,
+  presetTitle: optStr,
+  sessionTitle: nonEmptyStr,
+  questions: parseQuestions,
+};
+
+/** 按键取归一值：K 同时约束键与返回类型，调用点写错键名 tsc 即报 TS2345。 */
+function norm<K extends NormalizedKey>(
+  key: K,
+  raw: Record<string, unknown>,
+): DecisionHistoryEntry[K] {
+  return NORMALIZERS[key](raw[key]);
+}
+
+/** 六个可缺失键的归一结果面（缺键即不写，供 toHistoryEntry 一次展开）。 */
+function optionalHistoryFields(
+  raw: Record<string, unknown>,
+): Partial<Pick<DecisionHistoryEntry, OptionalKey>> {
+  const choice = norm("choice", raw);
+  const score = norm("score", raw);
+  const errorCode = norm("errorCode", raw);
+  const presetTitle = norm("presetTitle", raw);
+  const sessionTitle = norm("sessionTitle", raw);
+  const questions = norm("questions", raw);
+  return {
+    ...(choice !== undefined ? { choice } : {}),
+    ...(score !== undefined ? { score } : {}),
+    ...(errorCode !== undefined ? { errorCode } : {}),
+    ...(presetTitle !== undefined ? { presetTitle } : {}),
+    ...(sessionTitle !== undefined ? { sessionTitle } : {}),
+    ...(questions !== undefined ? { questions } : {}),
+  };
+}
 export function toHistoryEntry(it: unknown): DecisionHistoryEntry | null {
   if (!isRecord(it)) return null;
   if (typeof it.ts !== "number" || typeof it.sessionId !== "string") return null;
-  const o: Record<string, unknown> = { ts: it.ts, sessionId: it.sessionId, provider: "official" };
-  for (const [k, f] of F) o[k] = f(it[k]);
-  o.presetTitle = optStr(it.presetTitle);
-  if (typeof it.sessionTitle === "string" && it.sessionTitle.length > 0)
-    o.sessionTitle = it.sessionTitle;
-  const q = parseQuestions(it.questions);
-  if (q !== undefined) o.questions = q;
-  return o as unknown as DecisionHistoryEntry;
+  return {
+    ts: it.ts,
+    sessionId: it.sessionId,
+    provider: "official",
+    rootHash: norm("rootHash", it),
+    rootDisplay: norm("rootDisplay", it),
+    presetId: norm("presetId", it),
+    templateVersion: norm("templateVersion", it),
+    stateHash: norm("stateHash", it),
+    snippetRedacted: norm("snippetRedacted", it),
+    resultKind: norm("resultKind", it),
+    tier: norm("tier", it),
+    lang: norm("lang", it),
+    automation: norm("automation", it),
+    truncated: norm("truncated", it),
+    originalLength: norm("originalLength", it),
+    confidence: norm("confidence", it),
+    latencyMs: norm("latencyMs", it),
+    ...optionalHistoryFields(it),
+  };
 }
 export function parseHistoryPayload(payload: unknown): DecisionHistoryEntry[] {
   let list: unknown = [];
