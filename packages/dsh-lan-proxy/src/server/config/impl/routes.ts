@@ -134,37 +134,68 @@ async function persistPatchedConfig(
   const clearingCa = rawSrc[CA_CERT_KEY] === "";
   try {
     if (clearingLeaf || clearingCa) {
+      // update 是 merge 语义无法 unset，owner scope 无 mutate 面 → 走 replace：
+      // 从当前用户层复制全节、剔除被清除的键后整节替换，其余语义不变。
+      // readUser 整段只调一次（末尾回 value 时还要再调一次，那是返回值，不是这条路径）。
       const { user } = deps.readUser();
-      const section: Record<string, unknown> = { ...user };
-      if (clearingLeaf) {
-        for (const key of TLS_PAIR_KEYS) {
-          if (rawSrc[key] === "" || user[key] !== undefined) delete section[key];
-        }
-      }
-      if (clearingCa) delete section[CA_CERT_KEY];
       await deps.replace(
-        { ...section, ...(sanitized as Record<string, unknown>) },
+        replacedSection(
+          user,
+          sanitized as Record<string, unknown>,
+          rawSrc,
+          clearingLeaf,
+          clearingCa,
+        ),
         expectedRevision,
       );
     } else {
       await deps.update(sanitized as Record<string, unknown>, expectedRevision);
     }
   } catch (err) {
-    const code = (err as { code?: unknown })?.code;
-    if (code === "SETTINGS_CONFLICT") {
-      return {
-        ok: false,
-        status: 409,
-        code: "conflict",
-        details: "设置已被其他窗口修改，请刷新后重试",
-      };
-    }
-    // P2-2：对外收敛固定文案，不把底层异常原文（可能含路径等内部信息）回给
-    // 客户端；完整原因走服务端日志。
-    deps.logWarn?.(`lan-proxy: 配置保存写入设置存储失败 — ${errorMessage(err)}`);
-    return { ok: false, status: 500, code: "error", details: "保存失败，请查看服务端日志" };
+    return writeFailureOf(deps, err);
   }
   return { ok: true, value: deps.readUser() };
+}
+
+/**
+ * replace 用的整节：从用户层复制 → 剔除被清除的键 → 铺上净化后的 patch。
+ *
+ * 叶对的剔除条件是「raw 层显式空串 **或** 用户层本来就有」——后者覆盖「raw 给了新值但
+ * 用户层残留旧空串」这类半迁移形态。CA 独立清除，不与叶对绑定（单清 CA 不得触碰叶子配置）。
+ * 纯函数：读 user、给 raw，不碰 deps，故可被直接单测。
+ */
+function replacedSection(
+  user: Record<string, unknown>,
+  sanitized: Record<string, unknown>,
+  rawSrc: Record<string, unknown>,
+  clearingLeaf: boolean,
+  clearingCa: boolean,
+): Record<string, unknown> {
+  const section: Record<string, unknown> = { ...user };
+  if (clearingLeaf) {
+    for (const key of TLS_PAIR_KEYS) {
+      if (rawSrc[key] === "" || user[key] !== undefined) delete section[key];
+    }
+  }
+  if (clearingCa) delete section[CA_CERT_KEY];
+  return { ...section, ...sanitized };
+}
+
+/** 写入失败的对外映射：409 走冲突文案，其余收敛为固定 500 文案（原文只进日志）。 */
+function writeFailureOf(deps: ConfigRouteDeps, err: unknown): PatchResult {
+  const code = (err as { code?: unknown })?.code;
+  if (code === "SETTINGS_CONFLICT") {
+    return {
+      ok: false,
+      status: 409,
+      code: "conflict",
+      details: "设置已被其他窗口修改，请刷新后重试",
+    };
+  }
+  // P2-2：对外收敛固定文案，不把底层异常原文（可能含路径等内部信息）回给
+  // 客户端；完整原因走服务端日志。
+  deps.logWarn?.(`lan-proxy: 配置保存写入设置存储失败 — ${errorMessage(err)}`);
+  return { ok: false, status: 500, code: "error", details: "保存失败，请查看服务端日志" };
 }
 
 /**

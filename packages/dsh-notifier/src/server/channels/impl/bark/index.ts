@@ -70,7 +70,7 @@ export async function sendBark(
 
   try {
     const parsed = (await response.json()) as BarkPushResponse;
-    if (parsed !== null && typeof parsed === "object" && "code" in parsed && parsed.code !== 200) {
+    if (isBarkRejected(parsed)) {
       // 业务码非 200：服务端拒绝，POST 幂等故按可重试面处理
       return failed(
         "reasonBarkRejected",
@@ -86,6 +86,16 @@ export async function sendBark(
     }
   }
   return { status: "ok", stage: "delivered" };
+}
+
+/**
+ * 业务码判定：2xx 不足以算送达——bark 服务端带 `code`，非 200 即拒收。
+ *
+ * 单立一函数是因为这是本出口唯一的「2xx 但仍失败」分支，判据却藏在四个条件的合取里：
+ * 少一个条件（`code` 缺失、非对象）都会把拒收读成送达，而症状是用户看到「已送达」却没收到。
+ */
+function isBarkRejected(parsed: BarkPushResponse): boolean {
+  return parsed !== null && typeof parsed === "object" && "code" in parsed && parsed.code !== 200;
 }
 
 /** 推送体：可选键「取不到就不写」，与服务端的缺省语义对齐。 */

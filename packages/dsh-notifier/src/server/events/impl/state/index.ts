@@ -130,25 +130,15 @@ class AgentStateMachine {
 
   /** 推送证据优先、快照兜底；不比进入 running 时更新的快照是上一轮的（冻结）。 */
   private resolveEvidence(agent: Agent, run: AgentRun): TurnEvidence {
-    const streamed = this.turnEnds.get(agent.id);
-    const pushed = streamed !== undefined && Number.isFinite(streamed.turn) ? streamed : undefined;
-    const read = pushed === undefined ? lastTurnEndOf(agent) : undefined;
-    const snapshot = read !== undefined && read.found ? read.evidence : undefined;
-    const baselineTurn = run.runningBaseline?.turn;
-    const stale =
-      pushed === undefined &&
-      snapshot !== undefined &&
-      baselineTurn !== undefined &&
-      snapshot.turn <= baselineTurn;
-    const best = pushed ?? (stale ? undefined : snapshot);
+    const picked = pickEvidence(agent, run, this.turnEnds.get(agent.id));
     const rememberedTurn = run.lastEndedTurn;
     return {
-      best,
-      snapshot,
-      pushed,
-      source: evidenceSourceOf(stale, pushed, snapshot),
+      best: picked.best,
+      snapshot: picked.snapshot,
+      pushed: picked.pushed,
+      source: evidenceSourceOf(picked.stale, picked.pushed, picked.snapshot),
       rememberedTurn,
-      hasNewEnd: best !== undefined && (rememberedTurn === undefined || best.turn > rememberedTurn),
+      hasNewEnd: isNewEnd(picked.best, rememberedTurn),
     };
   }
 
@@ -162,6 +152,43 @@ class AgentStateMachine {
         `记忆turn=${rememberedTurn !== undefined ? String(rememberedTurn) : "-"}`,
     );
   }
+}
+
+/** 取证：推送优先；无推送才读快照。带 stale 时快照整体作废，best 一并落空。 */
+function pickEvidence(
+  agent: Agent,
+  run: AgentRun,
+  streamed: TurnEndEvidence | undefined,
+): {
+  readonly best: TurnEndEvidence | undefined;
+  readonly snapshot: TurnEndEvidence | undefined;
+  readonly pushed: TurnEndEvidence | undefined;
+  readonly stale: boolean;
+} {
+  const pushed = streamed !== undefined && Number.isFinite(streamed.turn) ? streamed : undefined;
+  const read = pushed === undefined ? lastTurnEndOf(agent) : undefined;
+  const snapshot = read !== undefined && read.found ? read.evidence : undefined;
+  const stale = isStaleSnapshot(pushed, snapshot, run.runningBaseline?.turn);
+  return { best: pushed ?? (stale ? undefined : snapshot), snapshot, pushed, stale };
+}
+
+/** 快照冻结：四条同时成立才算（无推送 + 有快照 + 有基线 + 快照不比基线新）。 */
+function isStaleSnapshot(
+  pushed: TurnEndEvidence | undefined,
+  snapshot: TurnEndEvidence | undefined,
+  baselineTurn: number | undefined,
+): boolean {
+  return (
+    pushed === undefined &&
+    snapshot !== undefined &&
+    baselineTurn !== undefined &&
+    snapshot.turn <= baselineTurn
+  );
+}
+
+/** 「这一轮算新的吗」：没有证据、或不比记忆里的 turn 新，都不算。 */
+function isNewEnd(best: TurnEndEvidence | undefined, rememberedTurn: number | undefined): boolean {
+  return best !== undefined && (rememberedTurn === undefined || best.turn > rememberedTurn);
 }
 
 /** 证据源标签：推送优先，其次快照（比基线旧的快照属于上一轮），都没有就是「无」。 */

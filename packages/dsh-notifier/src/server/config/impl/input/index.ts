@@ -278,22 +278,35 @@ function validateQuietHours(raw: RawSettingValue): ValidationResult {
   if (!Array.isArray(raw.windows)) return reject("quietHours", "windows 需要数组");
   if (raw.windows.length > QUIET_WINDOWS_LIMIT)
     return reject("quietHours", "windows 最多 " + QUIET_WINDOWS_LIMIT + " 个");
-  for (let index = 0; index < raw.windows.length; index += 1) {
-    const item = raw.windows[index];
-    if (!isRecord(item)) return reject("quietHours", "windows[" + index + "] 需要对象");
-    if (typeof item.start !== "string" || !isClockText(item.start))
-      return reject("quietHours", "windows[" + index + "].start 需要 HH:MM");
-    if (typeof item.end !== "string" || !isClockText(item.end))
-      return reject("quietHours", "windows[" + index + "].end 需要 HH:MM");
-    // 零长窗口写面直接拒：读面把它当未命中丢掉，而写面放行等于让用户存下一条永远不生效的时段。
-    if (item.start === item.end)
-      return reject(
-        "quietHours",
-        "windows[" + index + "].start 与 windows[" + index + "].end 不能相同",
-      );
-  }
+  const windows = validateQuietWindows(raw.windows);
+  if (!windows.ok) return windows;
   if ("allowKinds" in raw && !isStringArray(raw.allowKinds))
     return reject("quietHours", "allowKinds 需要字符串数组");
+  return { ok: true };
+}
+
+/** 逐条窗口校验：一次只报首错（定位光标落不到具体行，行号靠 hint 里的 windows[i]）。 */
+function validateQuietWindows(windows: readonly RawSettingValue[]): ValidationResult {
+  for (let index = 0; index < windows.length; index += 1) {
+    const verdict = validateQuietWindow(windows[index], index);
+    if (!verdict.ok) return verdict;
+  }
+  return { ok: true };
+}
+
+/** 单条窗口的四处判据：对象形状 / start / end / 零长。与整组形态守卫是两类判据。 */
+function validateQuietWindow(item: RawSettingValue, index: number): ValidationResult {
+  if (!isRecord(item)) return reject("quietHours", "windows[" + index + "] 需要对象");
+  if (typeof item.start !== "string" || !isClockText(item.start))
+    return reject("quietHours", "windows[" + index + "].start 需要 HH:MM");
+  if (typeof item.end !== "string" || !isClockText(item.end))
+    return reject("quietHours", "windows[" + index + "].end 需要 HH:MM");
+  // 零长窗口写面直接拒：读面把它当未命中丢掉，而写面放行等于让用户存下一条永远不生效的时段。
+  if (item.start === item.end)
+    return reject(
+      "quietHours",
+      "windows[" + index + "].start 与 windows[" + index + "].end 不能相同",
+    );
   return { ok: true };
 }
 

@@ -69,7 +69,7 @@ export function reasonDetail(value: unknown): string {
 /** 一条逐出口明细的视图：界面只消费它，于是「渲染成什么」在 node 环境里就能断言。 */
 export interface DeliveryView {
   channelId: string;
-  status: "ok" | "failed" | "skipped";
+  status: DeliveryStatus;
   /** 状态标签文案。 */
   statusText: string;
   /** 主理由文案；`ok` 那一支为空串（成功没有理由可说）。 */
@@ -85,28 +85,47 @@ export interface DeliveryView {
  * 把一次真实的失败画成成功）。判据与渲染分开，界面那侧才只剩一层机械投影。
  */
 export function deliveryViewOf(value: unknown, t: ReasonTranslator): DeliveryView | undefined {
+  const row = deliveryRowOf(value);
+  return row === undefined ? undefined : projectDelivery(row, t);
+}
+
+/** 明细行的状态闭集：`status` 是这一行的判据，值域外一律读不出。 */
+type DeliveryStatus = "ok" | "failed" | "skipped";
+
+/** 值域守卫：认不出容器、channelId 或 status 就读不出（认不出的代价是界面去猜）。 */
+function deliveryRowOf(
+  value: unknown,
+):
+  | { readonly channelId: string; readonly status: DeliveryStatus; readonly reason: unknown }
+  | undefined {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
   const source = value as Record<string, unknown>;
   if (typeof source.channelId !== "string" || source.channelId === "") return undefined;
-  if (source.status !== "ok" && source.status !== "failed" && source.status !== "skipped") {
-    return undefined;
-  }
   const status = source.status;
-  if (status === "ok") {
+  if (status !== "ok" && status !== "failed" && status !== "skipped") return undefined;
+  return { channelId: source.channelId, status, reason: source.reason };
+}
+
+/** 认得之后只剩机械投影：`ok` 那一支没有理由可说，与 DeliveryView 同口径。 */
+function projectDelivery(
+  row: { readonly channelId: string; readonly status: DeliveryStatus; readonly reason: unknown },
+  t: ReasonTranslator,
+): DeliveryView {
+  if (row.status === "ok") {
     return {
-      channelId: source.channelId,
-      status,
+      channelId: row.channelId,
+      status: row.status,
       statusText: t("chStatusOk"),
       reason: "",
       detail: "",
     };
   }
   return {
-    channelId: source.channelId,
-    status,
-    statusText: status === "failed" ? t("chStatusFailed") : t("chStatusSkipped"),
-    reason: reasonText(source.reason, t),
-    detail: reasonDetail(source.reason),
+    channelId: row.channelId,
+    status: row.status,
+    statusText: row.status === "failed" ? t("chStatusFailed") : t("chStatusSkipped"),
+    reason: reasonText(row.reason, t),
+    detail: reasonDetail(row.reason),
   };
 }
 

@@ -223,22 +223,7 @@ interface RemediationInput {
  * 与音色文件无关（主题缺失由合成兜底）。
  */
 function remediationOf(input: RemediationInput): readonly Remediation[] {
-  const out: Remediation[] = [];
-  if (input.popup.state === "unreachable") {
-    if (input.name.kind === "no-session-bus") out.push({ code: "host-no-dbus-session" });
-    else if (input.name.kind === "absent" && input.probe.notifySendAvailable) {
-      out.push({ code: "host-popup-no-daemon" });
-    }
-    // 平台护栏不可省：darwin/win32 压根不探 notify-send（`notifySendAvailable` 恒 false），
-    // 少了它，win32 上 toast 脚本缺失导致的不可达会被说成「宿主缺 notify-send」——方向正好反了。
-    else if (
-      input.probe.platform === "linux" &&
-      input.name.kind === "absent" &&
-      !input.probe.notifySendAvailable
-    ) {
-      out.push({ code: "host-no-notify-send" });
-    }
-  }
+  const out: Remediation[] = [...popupRemedies(input)];
   if (input.sound.state === "unreachable" && input.probe.platform === "linux") {
     out.push(packageRemedy(input.osRelease, "host-no-sound-server-and-player"));
   }
@@ -254,6 +239,31 @@ function remediationOf(input: RemediationInput): readonly Remediation[] {
     out.push({ code: "host-managed-by-others" });
   }
   return out;
+}
+
+/**
+ * 弹窗不可达时的出路：三条互斥（无会话总线 / 有 notify-send 但无守护进程 / linux 压根没有
+ * notify-send），故至多给一条，不是一条都不给就是三条都给。
+ *
+ * 与「声音维度的出路」分成两个函数：前者按 D-Bus 探测的三种 kind 分派，后者按
+ * players / 音色文件分派——判据来源不同，改一条不影响另一条。
+ */
+function popupRemedies(input: RemediationInput): readonly Remediation[] {
+  if (input.popup.state !== "unreachable") return [];
+  if (input.name.kind === "no-session-bus") return [{ code: "host-no-dbus-session" }];
+  if (input.name.kind === "absent" && input.probe.notifySendAvailable) {
+    return [{ code: "host-popup-no-daemon" }];
+  }
+  // 平台护栏不可省：darwin/win32 压根不探 notify-send（`notifySendAvailable` 恒 false），
+  // 少了它，win32 上 toast 脚本缺失导致的不可达会被说成「宿主缺 notify-send」——方向正好反了。
+  if (
+    input.probe.platform === "linux" &&
+    input.name.kind === "absent" &&
+    !input.probe.notifySendAvailable
+  ) {
+    return [{ code: "host-no-notify-send" }];
+  }
+  return [];
 }
 
 /**

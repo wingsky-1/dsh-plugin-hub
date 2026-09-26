@@ -137,17 +137,31 @@ export function normalizeChannelForCompare(ch: unknown): unknown {
   const stripped = stripChannelEmpties(ch);
   if (typeof stripped !== "object" || stripped === null || Array.isArray(stripped)) return stripped;
   const out = stripped as Record<string, unknown>;
-  if (out.type === "bark") {
-    if (out.levels === undefined) out.levels = {};
-    if (out.timeoutMs === undefined) out.timeoutMs = 0;
-  } else if (out.type === "webhook") {
-    if (out.headers === undefined) out.headers = {};
-    if (out.timeoutSec === undefined) out.timeoutSec = 0;
-    if (out.preset === undefined) out.preset = "custom";
-    if (out.auth === undefined) out.auth = "none";
+  const defaults = CHANNEL_COMPARE_DEFAULTS.find((entry) => entry.type === out.type)?.defaults;
+  if (defaults === undefined) return out;
+  for (const field of Object.keys(defaults)) {
+    if (out[field] === undefined) out[field] = defaults[field];
   }
   return out;
 }
+
+/**
+ * 按频道类型补的缺省默认值（只补缺席，已有的值原样保留）。
+ *
+ * 这张表是**二维**的：行 = 频道类型，列 = 该类型补哪几个字段、默认成什么。写成 if 链时
+ * 「bark 少补一个 levels」与「webhook 多补一个 auth」要混在同一段里改，加字段时得回去数
+ * 哪个分支。表序无关（每行字段互不重叠），命中即整行套用。
+ *
+ * 内置（browser/system）与未知类型**不补**：全量补会把 webhook 的 headers 空对象塞进 bark
+ * （或反向），提交时 validateExtras 以「只能是字符串或数字」400 拒收——比较对称不能污染提交形态。
+ */
+const CHANNEL_COMPARE_DEFAULTS: readonly {
+  readonly type: string;
+  readonly defaults: Readonly<Record<string, unknown>>;
+}[] = [
+  { type: "bark", defaults: { levels: {}, timeoutMs: 0 } },
+  { type: "webhook", defaults: { headers: {}, timeoutSec: 0, preset: "custom", auth: "none" } },
+];
 
 /**
  * 设置整体的比较规范形：channels 逐项过 normalizeChannelForCompare，其余键原样（浅拷贝）。

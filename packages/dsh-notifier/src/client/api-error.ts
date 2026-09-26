@@ -101,13 +101,21 @@ export function markHttpFailure<T extends Error>(
  */
 function failureMessageOf(error: unknown, source: Record<string, unknown> | undefined): string {
   if (typeof error === "string") return error;
-  if (source === undefined) return error === null || error === undefined ? "" : String(error);
+  return source === undefined ? unparsedText(error) : bodyText(error, source);
+}
+
+/** 认不出的形状：null/undefined 给空串，其余沿旧 catch 表达式 `(e && e.message) || e` 交回对象本身。 */
+function unparsedText(error: unknown): string {
+  return error === null || error === undefined ? "" : String(error);
+}
+
+/** 失败响应体：先看顶层 message/details，再看顶层 error（裸字符串或嵌套对象各一套字段名）。 */
+function bodyText(error: unknown, source: Record<string, unknown>): string {
   const direct = stringOf(source.message) ?? stringOf(source.details);
   if (direct !== undefined) return direct;
   if (typeof source.error === "string" && source.error !== "") return source.error;
   const nested = objectOf(source.error);
-  const nestedText = stringOf(nested?.details) ?? stringOf(nested?.error);
-  return nestedText ?? String(error);
+  return stringOf(nested?.details) ?? stringOf(nested?.error) ?? String(error);
 }
 
 function objectOf(value: unknown): Record<string, unknown> | undefined {

@@ -2095,18 +2095,39 @@ process.exit(0);
     });
     const stdout = String(result.stdout ?? "");
     const stderr = String(result.stderr ?? "");
-    const lines = stdout.trim().split("\n").filter(Boolean);
-    const verdict = JSON.parse(lines.at(-1) ?? "{}");
-    const home = verdict.dshHome ?? null;
-    const settingsPath = home ? join(home, "settings.yaml") : null;
-    return {
+    const verdict = parseVerdict(stdout);
+    return readCaseArtifacts(runTmp, {
       status: result.status,
       report: stdout + stderr,
       verdict,
-      settingsExists: settingsPath ? existsSync(settingsPath) : false,
+    });
+  };
+
+  /** 子进程最后一行的 JSON 判决（无输出时给空对象，断言自己判）。 */
+  const parseVerdict = (stdout: string): Record<string, unknown> => {
+    const lines = stdout.trim().split("\n").filter(Boolean);
+    return JSON.parse(lines.at(-1) ?? "{}");
+  };
+
+  /** 从判决里的 dshHome 推出 settings.yaml 的三件读数（存在性 / 本轮写过的文件 / 文本）。 */
+  const readCaseArtifacts = (
+    runTmp: string,
+    base: {
+      status: number | null;
+      report: string;
+      verdict: Record<string, unknown>;
+    },
+  ) => {
+    const home = base.verdict.dshHome ?? null;
+    const settingsPath = home ? join(home, "settings.yaml") : null;
+    const hasSettings = settingsPath !== null && existsSync(settingsPath);
+    return {
+      status: base.status,
+      report: base.report,
+      verdict: base.verdict,
+      settingsExists: hasSettings,
       settingsWrites: settingsFilesUnder(runTmp),
-      settings:
-        settingsPath && existsSync(settingsPath) ? readFileSync(settingsPath, "utf8") : null,
+      settings: hasSettings && settingsPath !== null ? readFileSync(settingsPath, "utf8") : null,
     };
   };
 

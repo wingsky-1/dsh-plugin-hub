@@ -124,16 +124,7 @@ export async function sendWebhook(
 
   const headers: Record<string, string> = { ...target.headers };
   setHeader(headers, "content-type", "application/json; charset=utf-8");
-  const auth = target.auth;
-  // 枚举之外的认证方式（跨边界值）一律不套用：凭据只走请求头，拼进 URL 会留在对端访问日志里。
-  if (auth !== undefined) {
-    if (auth.kind === "bearer") {
-      setHeader(headers, "authorization", `Bearer ${auth.token}`);
-    } else if (auth.kind === "basic") {
-      const pair = Buffer.from(`${auth.user}:${auth.password}`).toString("base64");
-      setHeader(headers, "authorization", `Basic ${pair}`);
-    }
-  }
+  applyAuthHeader(headers, target.auth);
 
   let response: HttpFetchResult;
   try {
@@ -157,6 +148,22 @@ export async function sendWebhook(
     return failed("reasonWebhookHttp", { params: { status: response.status }, detail });
   }
   return { status: "ok", stage: "delivered" };
+}
+
+/**
+ * 套用认证头。枚举之外的认证方式（跨边界值）一律不套用：凭据只走请求头，
+ * 拼进 URL 会留在对端访问日志里。两种方式各自决定 header 值，故与 setHeader 分开成一处。
+ */
+function applyAuthHeader(headers: Record<string, string>, auth: WebhookTarget["auth"]): void {
+  if (auth === undefined) return;
+  if (auth.kind === "bearer") {
+    setHeader(headers, "authorization", `Bearer ${auth.token}`);
+    return;
+  }
+  if (auth.kind === "basic") {
+    const pair = Buffer.from(`${auth.user}:${auth.password}`).toString("base64");
+    setHeader(headers, "authorization", `Basic ${pair}`);
+  }
 }
 
 /**

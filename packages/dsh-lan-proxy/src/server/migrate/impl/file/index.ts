@@ -51,41 +51,58 @@ export interface MigrationOutcome {
  * 成功后保留 bak（update 同值 merge 幂等，后续启动重放无害）；损坏/无效/
  * 写入失败则 warn 明示手动恢复路径。
  */
+/** 「本次不重放」的结论：五种标记固定。两个拒绝点共用这一份形状。 */
+function resumeSkipped(): MigrationOutcome {
+  return {
+    performed: false,
+    migrated: false,
+    rolledBack: false,
+    skippedCorrupt: true,
+    resumed: true,
+  };
+}
+
+/** 读 bak：解析失败即 warn 并返回 undefined（JSON.parse 的合法结果不会是 undefined）。 */
+function readBakJson(bakPath: string, logger?: { warn?: (...a: unknown[]) => void }): unknown {
+  try {
+    return JSON.parse(readFileSync(bakPath, "utf8"));
+  } catch {
+    logger?.warn?.(
+      `lan-proxy: 检测到上次未完成的迁移残留 ${MIGRATED_BAK_NAME}，但文件不是合法 JSON — 无法自动恢复，请手动检查该文件（原始 config.json 内容应在其内）或删除它`,
+    );
+    return undefined;
+  }
+}
+
 async function resumeMigrateFromBak(
   bakPath: string,
   scope: Pick<OwnerScopeLike, "update">,
   logger?: { warn?: (...a: unknown[]) => void },
 ): Promise<MigrationOutcome> {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(readFileSync(bakPath, "utf8"));
-  } catch {
-    logger?.warn?.(
-      `lan-proxy: 检测到上次未完成的迁移残留 ${MIGRATED_BAK_NAME}，但文件不是合法 JSON — 无法自动恢复，请手动检查该文件（原始 config.json 内容应在其内）或删除它`,
-    );
-    return {
-      performed: false,
-      migrated: false,
-      rolledBack: false,
-      skippedCorrupt: true,
-      resumed: true,
-    };
-  }
+  // 读 bak 失败与「无有效键」是两种不可重放的成因，但结论形状相同（见 resumeSkipped）。
+  const parsed = readBakJson(bakPath, logger);
+  if (parsed === undefined) return resumeSkipped();
   const sanitized0 =
     typeof parsed === "object" && parsed !== null ? sanitizeSettings(parsed) : null;
   if (sanitized0 === null || Object.keys(sanitized0).length === 0) {
     logger?.warn?.(
       `lan-proxy: 上次未完成的迁移残留 ${MIGRATED_BAK_NAME} 无可迁移的有效键 — 已跳过，确认无误后可手动删除该文件`,
     );
-    return {
-      performed: false,
-      migrated: false,
-      rolledBack: false,
-      skippedCorrupt: true,
-      resumed: true,
-    };
+    return resumeSkipped();
   }
   const sanitized = normalizeMigratedWsCompressPaths(sanitized0);
+  return replayMigrated(scope, sanitized, logger);
+}
+
+/**
+ * 重放写入（parse→sanitize 之后唯一的 IO 步）：成功与失败两种结论只差 migrated 标记，
+ * warn 文案各带一条。与「读 bak」「判有无有效键」分成三步，故任一步的失败都只影响那一步的结论。
+ */
+async function replayMigrated(
+  scope: Pick<OwnerScopeLike, "update">,
+  sanitized: ReturnType<typeof normalizeMigratedWsCompressPaths>,
+  logger?: { warn?: (...a: unknown[]) => void },
+): Promise<MigrationOutcome> {
   try {
     await scope.update(sanitized as Record<string, unknown>);
     logger?.warn?.(

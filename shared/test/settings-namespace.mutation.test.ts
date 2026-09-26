@@ -72,6 +72,12 @@ interface Fixture {
   readonly changes: number;
 }
 
+/** 桩 fiber 的初始 state：deferOwnerReady 时停在 loading（就绪由测试显式放行），否则取指定/默认 active。 */
+function initialFiberState(options: FixtureOptions): string {
+  if (options.deferOwnerReady === true) return "loading";
+  return options.fiberState ?? "active";
+}
+
 function makeFixture(options: FixtureOptions = {}): Fixture {
   const listeners = new Map<number, Listener>();
   const warnings: string[] = [];
@@ -83,7 +89,7 @@ function makeFixture(options: FixtureOptions = {}): Fixture {
     resolveOwnerReadyPromise = resolve;
   });
   const ownerFiber = {
-    state: options.deferOwnerReady === true ? "loading" : (options.fiberState ?? "active"),
+    state: initialFiberState(options),
     await: () => ownerReady,
   };
   if (options.deferOwnerReady !== true) resolveOwnerReadyPromise();

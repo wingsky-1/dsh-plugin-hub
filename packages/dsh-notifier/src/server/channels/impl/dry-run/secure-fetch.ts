@@ -93,6 +93,10 @@ const REDIRECT_STATUS = new Set([301, 302, 303, 307, 308]);
  * 安全 fetch：整单只做一次「解析—核验—建连—读数」的循环，重定向每跳重来一遍。
  * 302/303 也按 POST 原样重发（307/308 语义）：测试投递的 body 不能在跳转里丢，丢了等于
  * 「测的是 A、打的是 B 的空包」。上限 5 跳，超了即失败（不是静默停在最后一跳）。
+ *
+ * 母体只留编排：一跳之内做「URL 准入 → 主机钉死 → 建连 → 落地下一跳」四步，
+ * 每步的判据各自成函数（urlGate / pinHost / dialPinned / redirectNext）。
+ * 顺序即安全语义——URL 准入与主机核验都必须在建连之前完成，故四步不可调换。
  */
 export async function secureFetch(
   input: string,
@@ -103,46 +107,103 @@ export async function secureFetch(
   const transport = ports.transport ?? realTransport;
   let current = input;
   for (let hop = 0; hop <= MAX_REDIRECTS; hop += 1) {
-    let url: URL;
-    try {
-      url = new URL(current);
-    } catch {
-      return failed("URL 解析失败");
-    }
-    if (url.protocol !== "http:" && url.protocol !== "https:") {
-      return failed("仅允许 http(s)，拒绝 " + url.protocol);
-    }
-    if (url.username !== "" || url.password !== "") {
-      return failed("URL 不得内嵌 userinfo（凭据只能走请求头）");
-    }
-    const pinned = await pinHost(url.hostname, dns);
+    const admitted = urlGate(current);
+    if (!admitted.ok) return failed(admitted.cause);
+    const pinned = await pinHost(admitted.url.hostname, dns);
     if (!pinned.ok) return failed(pinned.cause);
-    let outcome: PinnedOutcome;
-    try {
-      outcome = await transport(url, pinned.ip, pinned.family, {
-        method: init.method,
-        headers: init.headers,
-        body: init.body,
-        timeoutMs: init.timeoutMs,
-      });
-    } catch (cause) {
-      return failed(cause instanceof Error ? cause.message : String(cause));
-    }
-    if (outcome.kind !== "redirect") {
-      return { ok: true, status: outcome.status, body: outcome.body };
-    }
-    if (hop === MAX_REDIRECTS) return failed("重定向过多（超过 " + MAX_REDIRECTS + " 跳）");
-    try {
-      current = new URL(outcome.location, url).toString();
-    } catch {
-      return failed("重定向地址非法");
-    }
+    const dialed = await dialPinned(transport, admitted.url, pinned, init);
+    if (!dialed.ok) return failed(dialed.cause);
+    const landed = landHop(dialed.outcome, admitted.url, hop);
+    if (landed.kind === "done") return landed.outcome;
+    current = landed.url;
   }
-  return failed("重定向过多（超过 " + MAX_REDIRECTS + " 跳）");
+  return failed(tooManyRedirects);
 }
+
+/** 一跳的落地：非重定向即终局；重定向交出下一跳地址（超限或非法即终局失败）。 */
+type HopLanding =
+  | { readonly kind: "done"; readonly outcome: SecureFetchOutcome }
+  | { readonly kind: "next"; readonly url: string };
+
+function landHop(outcome: PinnedOutcome, base: URL, hop: number): HopLanding {
+  if (outcome.kind !== "redirect") {
+    return { kind: "done", outcome: { ok: true, status: outcome.status, body: outcome.body } };
+  }
+  if (hop === MAX_REDIRECTS) return { kind: "done", outcome: failed(tooManyRedirects) };
+  const next = redirectNext(outcome.location, base);
+  return next === undefined
+    ? { kind: "done", outcome: failed("重定向地址非法") }
+    : { kind: "next", url: next };
+}
+
+/** 单跳 URL 准入结论：ok 侧带 URL，失败侧带一句原因。 */
+type UrlGateResult =
+  { readonly ok: true; readonly url: URL } | { readonly ok: false; readonly cause: string };
+
+/** 单跳建连结论：ok 侧带传输层结论，失败侧带一句原因。 */
+type DialResult =
+  | { readonly ok: true; readonly outcome: PinnedOutcome }
+  | { readonly ok: false; readonly cause: string };
+
+/** 超限文案单点（两处出口共用，措辞不得分叉）。 */
+const tooManyRedirects = "重定向过多（超过 " + MAX_REDIRECTS + " 跳）";
 
 function failed(cause: string): SecureFetchOutcome {
   return { ok: false, cause };
+}
+
+/**
+ * 单跳的 URL 硬闸：解析失败 / 非 http(s) / 内嵌 userinfo，三条各自给原文案。
+ * 三条判据的先后即安全语义：协议未过就不必看 userinfo，而解析未过则后两条无从判断。
+ */
+function urlGate(current: string): UrlGateResult {
+  let url: URL;
+  try {
+    url = new URL(current);
+  } catch {
+    return { ok: false, cause: "URL 解析失败" };
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    return { ok: false, cause: "仅允许 http(s)，拒绝 " + url.protocol };
+  }
+  if (url.username !== "" || url.password !== "") {
+    return { ok: false, cause: "URL 不得内嵌 userinfo（凭据只能走请求头）" };
+  }
+  return { ok: true, url };
+}
+
+/** 抛出的建连原因归一成一句话（非 Error 的抛值走 String）。 */
+function causeText(cause: unknown): string {
+  return cause instanceof Error ? cause.message : String(cause);
+}
+
+/** 单跳建连：把入参铺成 PinnedInit 再钉死建连，抛错归一成失败侧。 */
+async function dialPinned(
+  transport: PinnedTransport,
+  url: URL,
+  pinned: { readonly ip: string; readonly family: 4 | 6 },
+  init: SecureFetchInit,
+): Promise<DialResult> {
+  try {
+    const outcome = await transport(url, pinned.ip, pinned.family, {
+      method: init.method,
+      headers: init.headers,
+      body: init.body,
+      timeoutMs: init.timeoutMs,
+    });
+    return { ok: true, outcome };
+  } catch (cause) {
+    return { ok: false, cause: causeText(cause) };
+  }
+}
+
+/** 下一跳地址：相对 Location 按本跳 URL 解析，解析不了即 undefined。 */
+function redirectNext(location: string, base: URL): string | undefined {
+  try {
+    return new URL(location, base).toString();
+  } catch {
+    return undefined;
+  }
 }
 
 /** 默认 DNS：系统 getaddrinfo 全量解析（只取地址，不做任何过滤——过滤是分类器的事）。 */
@@ -211,39 +272,79 @@ export function parseIpLiteral(text: string): ParsedIp | undefined {
 function parseIpv4Loose(text: string): [number, number, number, number] | undefined {
   if (text === "" || text.includes(":")) return undefined;
   const parts = text.split(".");
-  if (parts.length < 1 || parts.length > 4) return undefined;
+  if (parts.length < 1 || parts.length > IPV4_MAX_PARTS) return undefined;
   const values: number[] = [];
   for (const part of parts) {
-    if (part === "") return undefined;
-    let base = 10;
-    let digits = part;
-    if (part.startsWith("0x") || part.startsWith("0X")) {
-      base = 16;
-      digits = part.slice(2);
-    } else if (part.length > 1 && part.startsWith("0")) {
-      base = 8;
-      digits = part.slice(1);
-    }
-    if (digits === "" || !/^[0-9a-fA-F]+$/.test(digits)) return undefined;
-    if (base === 10 && /[^0-9]/.test(digits)) return undefined;
-    if (base === 8 && /[^0-7]/.test(digits)) return undefined;
-    const value = Number.parseInt(digits, base);
-    if (!Number.isSafeInteger(value)) return undefined;
+    const value = decodeIpv4Part(part);
+    if (value === undefined) return undefined;
     values.push(value);
   }
-  const full =
-    values.length === 1
-      ? values[0]
-      : values.length === 2
-        ? values[0] * 2 ** 24 + values[1]
-        : values.length === 3
-          ? values[0] * 2 ** 24 + values[1] * 2 ** 16 + values[2]
-          : values[0] * 2 ** 24 + values[1] * 2 ** 16 + values[2] * 2 ** 8 + values[3];
-  const limits = [0xffffffff, 0xffffff, 0xffff, 0xff];
-  for (let index = 0; index < values.length; index += 1) {
-    if (values[index] < 0 || values[index] > (limits[index] ?? 0xff)) return undefined;
-  }
+  if (ipV4PartOverflows(values)) return undefined;
+  const full = assembleIpv4(values);
   if (full < 0 || full > 0xffffffff) return undefined;
+  return ipv4Bytes(full);
+}
+
+/** v4 段数上限（inet_aton 最多四段）。 */
+const IPV4_MAX_PARTS = 4;
+
+/** 基数：inet_aton 的三种前缀写法。 */
+type Ipv4Base = 8 | 10 | 16;
+
+/**
+ * 各基数的合法字符集：十六进制收全部十六进制数字，十进制/八进制各收窄到自己的数字。
+ * 键即基数（Ipv4Base），故查表不需兜底分支——新增基数会在这里编译期报错。
+ */
+const IPV4_BASE_PATTERNS: { readonly [base in Ipv4Base]: RegExp } = {
+  8: /^[0-7]+$/,
+  10: /^[0-9]+$/,
+  16: /^[0-9a-fA-F]+$/,
+};
+
+/** 各段上限（1 段 32 位、2 段 24 位、3 段 16 位、4 段 8 位），按段序索引。 */
+const IPV4_PART_LIMITS: readonly number[] = [0xffffffff, 0xffffff, 0xffff, 0xff];
+
+/** 段序 → 该段（末段除外）占的位宽：末段吃掉剩余全部位，故不进表。 */
+const IPV4_LEADING_SHIFTS: readonly number[] = [24, 16, 8];
+
+/** 段的前缀定基数：0x 十六进制、首 0 八进制、其余十进制，并剥掉前缀。 */
+function ipv4PartBase(part: string): { readonly base: Ipv4Base; readonly digits: string } {
+  if (part.startsWith("0x") || part.startsWith("0X")) {
+    return { base: 16, digits: part.slice(2) };
+  }
+  if (part.length > 1 && part.startsWith("0")) {
+    return { base: 8, digits: part.slice(1) };
+  }
+  return { base: 10, digits: part };
+}
+
+/** 单段解码：空段、字符集越出该基数、数字超出安全整数，三者任一即非法。 */
+function decodeIpv4Part(part: string): number | undefined {
+  if (part === "") return undefined;
+  const { base, digits } = ipv4PartBase(part);
+  if (digits === "") return undefined;
+  if (!IPV4_BASE_PATTERNS[base].test(digits)) return undefined;
+  const value = Number.parseInt(digits, base);
+  return Number.isSafeInteger(value) ? value : undefined;
+}
+
+/** 逐段越界：第 i 段不得为负、不得越过 IPV4_PART_LIMITS[i]。 */
+function ipV4PartOverflows(values: readonly number[]): boolean {
+  return values.some((value, index) => value < 0 || value > (IPV4_PART_LIMITS[index] ?? 0xff));
+}
+
+/** 按段数拼成 32 位值：前 n-1 段各占 IPV4_LEADING_SHIFTS[i] 位，末段吃掉剩余全部位。 */
+function assembleIpv4(values: readonly number[]): number {
+  const last = values.length - 1;
+  let full = 0;
+  for (let index = 0; index < last; index += 1) {
+    full += (values[index] ?? 0) * 2 ** (IPV4_LEADING_SHIFTS[index] ?? 0);
+  }
+  return full + (values[last] ?? 0);
+}
+
+/** 32 位值拆成四个字节（各取 8 位，取模去掉进位余量）。 */
+function ipv4Bytes(full: number): [number, number, number, number] {
   return [
     Math.floor(full / 2 ** 24) % 256,
     Math.floor(full / 2 ** 16) % 256,
@@ -265,51 +366,123 @@ export function ipBlockCause(parsed: ParsedIp): string | undefined {
 }
 
 function v4BlockCause(octets: readonly [number, number, number, number]): string | undefined {
-  const first = octets[0] ?? 0;
-  const second = octets[1] ?? 0;
-  const third = octets[2] ?? 0;
-  if (first === 0) return "未指定地址（0.0.0.0/8）";
-  if (first === 10) return "私网地址（10.0.0.0/8）";
-  if (first === 172 && second >= 16 && second <= 31) return "私网地址（172.16.0.0/12）";
-  if (first === 192 && second === 168) return "私网地址（192.168.0.0/16）";
-  if (first === 100 && second >= 64 && second <= 127) return "运营商级 NAT 保留段（100.64.0.0/10）";
-  if (first === 127) return "回环地址（127.0.0.0/8）";
-  if (first === 169 && second === 254) return "链路本地地址（169.254.0.0/16，含云元数据地址）";
-  if (first === 192 && second === 0 && (third === 0 || third === 2)) {
-    return "IETF 保留段（192.0.0.0/24，含文档网段）";
-  }
-  if (first === 192 && second === 88 && third === 99)
-    return "已退役的 6to4 中继段（192.88.99.0/24）";
-  if (
-    (first === 192 && second === 0 && third === 113) ||
-    (first === 198 && second === 51 && third === 100) ||
-    (first === 203 && second === 0 && third === 113)
-  ) {
-    return "文档保留段（TEST-NET，不可路由）";
-  }
-  if (first === 198 && (second === 18 || second === 19)) return "基准测试保留段（198.18.0.0/15）";
-  if (first >= 224 && first <= 239) return "组播地址（224.0.0.0/4）";
-  if (first >= 240) return "保留地址（240.0.0.0/4，含广播地址）";
-  return undefined;
+  return V4_BLOCK_RULES.find((rule) => covers(rule, ipv4Value(octets)))?.cause;
+}
+
+/** 一条 v4 阻断规则：CIDR 的 prefix 与 mask，加阻断文案。 */
+interface V4BlockRule {
+  readonly prefix: number;
+  readonly mask: number;
+  readonly cause: string;
+}
+
+/**
+ * v4 阻断规则表，**表序即原判据的 if 顺序**，逐条照搬不得重排：顺序变了，命中哪条文案
+ * 就变了。**192.0.0.0/24 与 192.0.2.0/24 是两段、共用同一条 IETF 文案**——原判据写的是
+ * `first === 192 && second === 0 && (third === 0 || third === 2)`，只比较前三个字节，
+ * 故 third===2 命中的是 192.0.2.0/24 整段（不是 192.0.0.2/32）。第一次改写时误读成
+ * /32，被 secure-fetch.test.ts 的 `192.0.2.1 → IETF 保留段` 抓出。**改这张表前先看这句。**
+ * 写成前缀/掩码而不是逐字节的 if 链，是因为前缀与掩码就是判据本身；写成 if 链时
+ * 「同文案的几条规则挤在一个条件里」，加一条保留段就得回去数「哪个字节参与比较」。
+ */
+const V4_BLOCK_RULES: readonly V4BlockRule[] = [
+  { prefix: 0x00000000, mask: 0xff000000, cause: "未指定地址（0.0.0.0/8）" },
+  { prefix: 0x0a000000, mask: 0xff000000, cause: "私网地址（10.0.0.0/8）" },
+  { prefix: 0xac100000, mask: 0xfff00000, cause: "私网地址（172.16.0.0/12）" },
+  { prefix: 0xc0a80000, mask: 0xffff0000, cause: "私网地址（192.168.0.0/16）" },
+  { prefix: 0x64400000, mask: 0xffc00000, cause: "运营商级 NAT 保留段（100.64.0.0/10）" },
+  { prefix: 0x7f000000, mask: 0xff000000, cause: "回环地址（127.0.0.0/8）" },
+  {
+    prefix: 0xa9fe0000,
+    mask: 0xffff0000,
+    cause: "链路本地地址（169.254.0.0/16，含云元数据地址）",
+  },
+  {
+    prefix: 0xc0000000,
+    mask: 0xffffff00,
+    cause: "IETF 保留段（192.0.0.0/24，含文档网段）",
+  },
+  { prefix: 0xc0000200, mask: 0xffffff00, cause: "IETF 保留段（192.0.0.0/24，含文档网段）" },
+  { prefix: 0xc0586300, mask: 0xffffff00, cause: "已退役的 6to4 中继段（192.88.99.0/24）" },
+  { prefix: 0xc0007100, mask: 0xffffff00, cause: "文档保留段（TEST-NET，不可路由）" },
+  { prefix: 0xc6336400, mask: 0xffffff00, cause: "文档保留段（TEST-NET，不可路由）" },
+  { prefix: 0xcb007100, mask: 0xffffff00, cause: "文档保留段（TEST-NET，不可路由）" },
+  { prefix: 0xc6120000, mask: 0xfffe0000, cause: "基准测试保留段（198.18.0.0/15）" },
+  { prefix: 0xe0000000, mask: 0xf0000000, cause: "组播地址（224.0.0.0/4）" },
+  { prefix: 0xf0000000, mask: 0xf0000000, cause: "保留地址（240.0.0.0/4，含广播地址）" },
+];
+
+/** 一条前缀规则是否覆盖给定 32 位值（mask 两侧都归一到无符号再比）。 */
+function covers(rule: { readonly prefix: number; readonly mask: number }, value: number): boolean {
+  return (value & rule.mask) >>> 0 === rule.prefix >>> 0;
+}
+
+/** 四个字节拼成 32 位值（各字节 0~255，恒非负，无符号归一即可）。 */
+function ipv4Value(octets: readonly [number, number, number, number]): number {
+  const [first = 0, second = 0, third = 0, fourth = 0] = octets;
+  return first * 2 ** 24 + second * 2 ** 16 + third * 2 ** 8 + fourth;
 }
 
 function v6BlockCause(words: readonly number[]): string | undefined {
   if (words.length !== 8) return "IPv6 解析失败";
-  if (words.every((word) => word === 0)) return "未指定地址（::）";
-  const headZero7 = words.slice(0, 7).every((word) => word === 0);
-  if (headZero7 && words[7] === 1) return "回环地址（::1）";
+  return v6WholeAddressCause(words) ?? v6EmbeddedV4Cause(words) ?? v6PrefixCause(words);
+}
+
+/** 整地址就两个特殊值（:: 与 ::1）：八个字逐字比对。 */
+function v6WholeAddressCause(words: readonly number[]): string | undefined {
+  return V6_WHOLE_ADDRESS_CAUSES.find((entry) =>
+    words.every((word, index) => word === entry.words[index]),
+  )?.cause;
+}
+
+/**
+ * 内嵌 v4 的三种布局：命中即把内层 v4 交 v4 判据（外层全球可达不代表内层也是）；
+ * 内层 v4 若公开，此处返回 undefined 放行，继续问前缀段。
+ */
+function v6EmbeddedV4Cause(words: readonly number[]): string | undefined {
   const headZero5 = words.slice(0, 5).every((word) => word === 0);
-  if (headZero5 && words[5] === 0xffff) return v4BlockCause(innerV4(words));
-  if (headZero5 && words[5] === 0) return v4BlockCause(innerV4(words));
+  if (headZero5 && (words[5] === 0xffff || words[5] === 0)) return v4BlockCause(innerV4(words));
   // 6to4 的 v4 藏在第 2~3 个字（2002:V4HIGH:V4LOW::/48），与映射/兼容的末 32 位不同布局。
   if (words[0] === 0x2002) return v4BlockCause(sixToFourInner(words));
-  if (((words[0] ?? 0) & 0xffc0) === 0xfe80) return "链路本地地址（fe80::/10）";
-  if (((words[0] ?? 0) & 0xfe00) === 0xfc00) return "唯一本地地址（fc00::/7）";
-  if (((words[0] ?? 0) & 0xff00) === 0xff00) return "组播地址（ff00::/8）";
-  if (words[0] === 0x2001 && words[1] === 0x0db8) return "文档保留段（2001:db8::/32）";
-  if (words[0] === 0x2001 && words[1] === 0) return "Teredo 保留段（2001::/32）";
   return undefined;
 }
+
+/** 首 32 位的前缀段：按表序取首条命中。 */
+function v6PrefixCause(words: readonly number[]): string | undefined {
+  const head32 = ((words[0] ?? 0) * 2 ** 16 + (words[1] ?? 0)) >>> 0;
+  return V6_PREFIX_RULES.find((rule) => covers(rule, head32))?.cause;
+}
+
+/** 整地址特殊值：八个字逐字比对，命中即给文案。 */
+interface V6WholeAddress {
+  readonly words: readonly [number, number, number, number, number, number, number, number];
+  readonly cause: string;
+}
+
+/** 整地址特殊值表（表序即 :: 先于 ::1）。 */
+const V6_WHOLE_ADDRESS_CAUSES: readonly V6WholeAddress[] = [
+  { words: [0, 0, 0, 0, 0, 0, 0, 0], cause: "未指定地址（::）" },
+  { words: [0, 0, 0, 0, 0, 0, 0, 1], cause: "回环地址（::1）" },
+];
+
+/** 一条 v6 首 32 位前缀规则：prefix 与 mask 加阻断文案。 */
+interface V6PrefixRule {
+  readonly prefix: number;
+  readonly mask: number;
+  readonly cause: string;
+}
+
+/**
+ * v6 首 32 位前缀段表，**表序即原判据的 if 顺序**（fe80 → fc00 → ff00 → 2001:db8 → 2001）。
+ * 末两条在原文案里比的是 (words[0], words[1]) 两个字，等价于 32 位整比。
+ */
+const V6_PREFIX_RULES: readonly V6PrefixRule[] = [
+  { prefix: 0xfe800000, mask: 0xffc00000, cause: "链路本地地址（fe80::/10）" },
+  { prefix: 0xfc000000, mask: 0xfe000000, cause: "唯一本地地址（fc00::/7）" },
+  { prefix: 0xff000000, mask: 0xff000000, cause: "组播地址（ff00::/8）" },
+  { prefix: 0x20010db8, mask: 0xffffffff, cause: "文档保留段（2001:db8::/32）" },
+  { prefix: 0x20010000, mask: 0xffffffff, cause: "Teredo 保留段（2001::/32）" },
+];
 
 /** 内嵌 v4 的末 32 位：映射/兼容两支共用，调用前已确认布局。 */
 function sixToFourInner(words: readonly number[]): [number, number, number, number] {
@@ -330,32 +503,48 @@ function innerV4(words: readonly number[]): [number, number, number, number] {
  * 剩下的头按 :: 切开补零。非法即 undefined（调用方按「不是字面量」走 DNS）。
  */
 function expandIpv6(text: string): number[] | undefined {
-  let head = text;
-  const tailWords: number[] = [];
-  if (text.includes(".")) {
-    const at = text.lastIndexOf(":");
-    if (at === -1) return undefined;
-    const v4 = parseIpv4Loose(text.slice(at + 1));
-    if (v4 === undefined) return undefined;
-    tailWords.push(v4[0] * 256 + v4[1], v4[2] * 256 + v4[3]);
-    head = text.slice(0, at);
-    if (head.endsWith(":")) head = head.slice(0, -1);
-    // 兼容形的头被剥到只剩空串（::10.0.0.1 → ""）：它就是全压缩的 ::，不能按无压缩解析。
-    if (head === "") head = "::";
-  }
-  const halves = head.split("::");
+  const split = splitIpv6Tail(text);
+  if (split === undefined) return undefined;
+  const halves = split.head.split("::");
   if (halves.length > 2) return undefined;
-  if (halves.length === 1) {
-    const all = parseHextets(halves[0] ?? "");
-    if (all === undefined || all.length !== 8 - tailWords.length) return undefined;
-    return [...all, ...tailWords];
-  }
-  const left = parseHextets(halves[0] ?? "");
-  const right = parseHextets(halves[1] ?? "");
-  if (left === undefined || right === undefined) return undefined;
-  const missing = 8 - tailWords.length - left.length - right.length;
+  return halves.length === 1
+    ? expandIpv6Full(halves[0] ?? "", split.tailWords)
+    : expandIpv6Compressed(halves[0] ?? "", halves[1] ?? "", split.tailWords);
+}
+
+/** 点分十进制尾（::ffff:1.2.3.4）：收成两个字并交回剥好的头；无点分即原样返回。 */
+function splitIpv6Tail(text: string): { head: string; tailWords: number[] } | undefined {
+  if (!text.includes(".")) return { head: text, tailWords: [] };
+  const at = text.lastIndexOf(":");
+  if (at === -1) return undefined;
+  const v4 = parseIpv4Loose(text.slice(at + 1));
+  if (v4 === undefined) return undefined;
+  let head = text.slice(0, at);
+  if (head.endsWith(":")) head = head.slice(0, -1);
+  // 兼容形的头被剥到只剩空串（::10.0.0.1 → ""）：它就是全压缩的 ::，不能按无压缩解析。
+  if (head === "") head = "::";
+  return { head, tailWords: [v4[0] * 256 + v4[1], v4[2] * 256 + v4[3]] };
+}
+
+/** 无压缩形：必须有 :: 且总字数恰好补齐 8 个字。 */
+function expandIpv6Full(group: string, tailWords: readonly number[]): number[] | undefined {
+  const all = parseHextets(group);
+  if (all === undefined || all.length !== 8 - tailWords.length) return undefined;
+  return [...all, ...tailWords];
+}
+
+/** 压缩形：:: 至少要吃掉一个字（missing < 1 即两侧已写满或超满）。 */
+function expandIpv6Compressed(
+  left: string,
+  right: string,
+  tailWords: readonly number[],
+): number[] | undefined {
+  const head = parseHextets(left);
+  const tail = parseHextets(right);
+  if (head === undefined || tail === undefined) return undefined;
+  const missing = 8 - tailWords.length - head.length - tail.length;
   if (missing < 1) return undefined;
-  return [...left, ...new Array<number>(missing).fill(0), ...right, ...tailWords];
+  return [...head, ...new Array<number>(missing).fill(0), ...tail, ...tailWords];
 }
 
 function parseHextets(group: string): number[] | undefined {

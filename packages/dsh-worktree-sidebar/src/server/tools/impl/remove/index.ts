@@ -7,9 +7,109 @@
  * **继承态不摘任何东西**：本会话没有自己的登记时，右栏的根属于父会话——摘它是改别人的状态，
  * 删目录更是销毁别人的工作区。这一态只如实说明并给出路。
  */
+/**
+ * 摘登记 + 删目录（removeDirectory: true）：落盘顺序是 removeWorktree → drop → 重解析。
+ *
+ * 顺序不能换：先 drop 再 remove 的话，remove 失败就留下一条「指向已不存在目录」的登记，
+ * 而解析器会把「目录不存在」按未绑定处理——那等于静默把一次失败的删除说成成功。
+ */
+async function unbindAndRemove(
+  deps: ToolsDeps,
+  sessionId: string,
+  origin: WorktreeOrigin & { readonly kind: "own" },
+  force: boolean,
+): Promise<ToolResultValue> {
+  const removed = await deps.git.removeWorktree(
+    origin.record.repoRoot,
+    origin.record.worktreeRoot,
+    force,
+  );
+  if (!removed.ok) {
+    return resultOf(
+      origin,
+      false,
+      "git worktree remove failed: " + removed.reason + " The binding is unchanged.",
+    );
+  }
+  const dropped = await deps.binding.drop(sessionId);
+  if (!dropped.ok) {
+    // 目录已经没了、登记还在：解析器会把「目录不存在」按未绑定处理，故这是一条自愈路径，
+    // 但对调用者必须说清楚，否则下次来看会以为还绑着。
+    return resultOf(
+      origin,
+      false,
+      "Removed the worktree directory, but the binding could not be dropped: " +
+        dropped.reason +
+        " It is now stale and will be treated as unbound; call this tool again to retry the unbind.",
+    );
+  }
+  const after = await readOrigin(deps, sessionId);
+  if (after.problem !== undefined) {
+    // 目录与登记都已经落地，动作成功；现状读不回来时如实说明。
+    return resultOf(
+      after.origin,
+      true,
+      "Unbound this session and removed the worktree directory with git worktree remove. " +
+        "The Files tab root could not be read back: " +
+        after.problem,
+    );
+  }
+  return resultOf(
+    after.origin,
+    true,
+    after.origin.kind === "inherited"
+      ? "Unbound this session and removed the worktree directory with git worktree remove. The " +
+          "Files tab now follows the root inherited from session " +
+          after.origin.ownerSessionId +
+          "."
+      : "Unbound this session and removed the worktree directory with git worktree remove.",
+  );
+}
+
+/**
+ * 只摘登记（removeDirectory 缺席）：目录留在原地。
+ *
+ * 与「连目录一起删」分成两个函数：两条路径的**落盘顺序**不同（这条是 drop→重解析；
+ * 那条是 removeWorktree→drop→重解析），且各自的部分成功文案不同。挤在一个 execute 里时，
+ * 「目录还在但登记没了」这个状态要读完两段才知道它属于哪条路径。
+ */
+async function unbindOnly(
+  deps: ToolsDeps,
+  sessionId: string,
+  origin: WorktreeOrigin,
+): Promise<ToolResultValue> {
+  const dropped = await deps.binding.drop(sessionId);
+  if (!dropped.ok) {
+    return resultOf(origin, false, "Could not persist the unbind: " + dropped.reason);
+  }
+  // 摘掉自己的登记之后**必须重新解析**：右栏可能回落到继承来的根，那是调用者必须知道的事实。
+  const after = await readOrigin(deps, sessionId);
+  if (after.problem !== undefined) {
+    // 摘除已经落盘，动作成功；只是现状读不回来——如实说不确定，而不是猜一个状态。
+    return resultOf(
+      after.origin,
+      true,
+      "Unbound this session's own binding. The Files tab root could not be read back: " +
+        after.problem,
+    );
+  }
+  return resultOf(
+    after.origin,
+    true,
+    after.origin.kind === "inherited"
+      ? "Unbound this session's own binding. The Files tab now follows the root inherited from " +
+          "session " +
+          after.origin.ownerSessionId +
+          "."
+      : "Unbound the worktree from this session. The directory was left in place; open or refresh " +
+          "the Files tab to return to the session cwd.",
+  );
+}
+
 import type { ToolDefinition } from "@deepseek-ai/dsh-tools";
 import type { ToolsDeps } from "../../deps.ts";
 import { NO_ORIGIN, readOrigin, resultOf } from "../bind/index.ts";
+import type { WorktreeOrigin } from "../bind/index.ts";
 import { argBool, RESULT_SCHEMA, renderResult } from "../protocol/index.ts";
 import type { ToolResultValue } from "../protocol/index.ts";
 import { sessionOf } from "../session/index.ts";
@@ -103,80 +203,8 @@ export function buildRemoveTool(deps: ToolsDeps): ToolDefinition {
         );
       }
 
-      if (!removeDirectory) {
-        const dropped = await deps.binding.drop(session.id);
-        if (!dropped.ok) {
-          return resultOf(origin, false, "Could not persist the unbind: " + dropped.reason);
-        }
-        // 摘掉自己的登记之后**必须重新解析**：右栏可能回落到继承来的根，那是调用者必须知道的事实。
-        const after = await readOrigin(deps, session.id);
-        if (after.problem !== undefined) {
-          // 摘除已经落盘，动作成功；只是现状读不回来——如实说不确定，而不是猜一个状态。
-          return resultOf(
-            after.origin,
-            true,
-            "Unbound this session's own binding. The Files tab root could not be read back: " +
-              after.problem,
-          );
-        }
-        return resultOf(
-          after.origin,
-          true,
-          after.origin.kind === "inherited"
-            ? "Unbound this session's own binding. The Files tab now follows the root inherited from " +
-                "session " +
-                after.origin.ownerSessionId +
-                "."
-            : "Unbound the worktree from this session. The directory was left in place; open or refresh " +
-                "the Files tab to return to the session cwd.",
-        );
-      }
-
-      const removed = await deps.git.removeWorktree(
-        origin.record.repoRoot,
-        origin.record.worktreeRoot,
-        force,
-      );
-      if (!removed.ok) {
-        return resultOf(
-          origin,
-          false,
-          "git worktree remove failed: " + removed.reason + " The binding is unchanged.",
-        );
-      }
-      const dropped = await deps.binding.drop(session.id);
-      if (!dropped.ok) {
-        // 目录已经没了、登记还在：解析器会把「目录不存在」按未绑定处理，故这是一条自愈路径，
-        // 但对调用者必须说清楚，否则下次来看会以为还绑着。
-        return resultOf(
-          origin,
-          false,
-          "Removed the worktree directory, but the binding could not be dropped: " +
-            dropped.reason +
-            " It is now stale and will be treated as unbound; call this tool again to retry the unbind.",
-        );
-      }
-      const after = await readOrigin(deps, session.id);
-      if (after.problem !== undefined) {
-        // 目录与登记都已经落地，动作成功；现状读不回来时如实说明。
-        return resultOf(
-          after.origin,
-          true,
-          "Unbound this session and removed the worktree directory with git worktree remove. " +
-            "The Files tab root could not be read back: " +
-            after.problem,
-        );
-      }
-      return resultOf(
-        after.origin,
-        true,
-        after.origin.kind === "inherited"
-          ? "Unbound this session and removed the worktree directory with git worktree remove. The " +
-              "Files tab now follows the root inherited from session " +
-              after.origin.ownerSessionId +
-              "."
-          : "Unbound this session and removed the worktree directory with git worktree remove.",
-      );
+      if (!removeDirectory) return unbindOnly(deps, session.id, origin);
+      return unbindAndRemove(deps, session.id, origin, force);
     },
   };
 }

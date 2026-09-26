@@ -72,32 +72,59 @@ export function resolvePluginDir(options: LayoutMigrateOptions): LayoutMigrateOu
   const warn = (message: string) => options.logger?.warn?.(message);
   for (const name of options.files) {
     if (!isSafeName(name)) continue;
-    const src = join(from, name);
-    const dst = join(to, name);
-    if (!existsSync(src)) continue;
-    if (existsSync(dst)) {
-      try {
-        renameSync(src, src + LEGACY_BAK_SUFFIX);
-      } catch (err) {
-        warn("lan-proxy: 旧目录文件 " + name + " 归档失败（保留原位）— " + errMsg(err));
-      }
-      continue;
-    }
-    try {
-      renameSync(src, dst);
+    const step = migrateFileOnce(name, from, to, warn);
+    if (step.outcome === "moved") {
       moved.push(name);
       rollback.push(name);
-    } catch (err) {
-      warn("lan-proxy: 旧目录迁移 " + name + " 失败 — " + errMsg(err) + "，回滚并回落旧目录");
-      for (const done of [...rollback].reverse()) {
-        try {
-          renameSync(join(to, done), join(from, done));
-        } catch {
-          // 回滚 best effort：残留即下次重跑，本轮仍回落旧目录（单目录抉择）。
-        }
-      }
-      return { dir: from, moved: [], fallback: true };
+      continue;
     }
+    if (step.outcome !== "failed") continue;
+    warn("lan-proxy: 旧目录迁移 " + name + " 失败 — " + errMsg(step.err) + "，回滚并回落旧目录");
+    rollbackMoved(rollback, from, to);
+    return { dir: from, moved: [], fallback: true };
   }
   return { dir: to, moved, fallback: false };
+}
+
+/**
+ * 单个文件的迁出判定。四种结局各自独立成一支，故收成一个函数：
+ * 原来四种结局（含两层 try/catch 与一层回滚循环）挤在 resolvePluginDir 的 for 体里，
+ * 「搬不动就回落旧目录」这条主路径要穿过三层缩进才看得见。
+ *
+ * 纯判定 + 单次 rename：archived（目标已在位，源改名为 .bak）与 failed 不改 moved/rollback。
+ */
+function migrateFileOnce(
+  name: string,
+  from: string,
+  to: string,
+  warn: (message: string) => void,
+): { readonly outcome: "skipped" | "archived" | "moved" | "failed"; readonly err?: unknown } {
+  const src = join(from, name);
+  const dst = join(to, name);
+  if (!existsSync(src)) return { outcome: "skipped" };
+  if (existsSync(dst)) {
+    try {
+      renameSync(src, src + LEGACY_BAK_SUFFIX);
+    } catch (err) {
+      warn("lan-proxy: 旧目录文件 " + name + " 归档失败（保留原位）— " + errMsg(err));
+    }
+    return { outcome: "archived" };
+  }
+  try {
+    renameSync(src, dst);
+    return { outcome: "moved" };
+  } catch (err) {
+    return { outcome: "failed", err };
+  }
+}
+
+/** 回滚：把本轮已搬走的文件逆序搬回旧目录（best effort）。 */
+function rollbackMoved(rollback: readonly string[], from: string, to: string): void {
+  for (const done of [...rollback].reverse()) {
+    try {
+      renameSync(join(to, done), join(from, done));
+    } catch {
+      // 回滚 best effort：残留即下次重跑，本轮仍回落旧目录（单目录抉择）。
+    }
+  }
 }

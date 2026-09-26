@@ -32,6 +32,82 @@ function soundIsOn(value: unknown): boolean {
 }
 
 /**
+ * 三态摘要：样式类与文案一次算出。
+ *
+ * 三态是「停用 / 仅声音 / 正常」，两条派生（卡头 class 与摘要文案）由**同一个**「仅声音」判定
+ * 驱动——两条各判一遍正是本文件 soundIsOn 注释警告的分裂（卡片说有声、开关说没有）。
+ */
+function builtinState(
+  enabled: boolean,
+  popup: boolean,
+  soundOn: boolean,
+  t: Translate,
+): { readonly stateClass: string; readonly stateText: string } {
+  if (!enabled) return { stateClass: " dn-ch-off", stateText: t("chStateOff") };
+  if (!popup && soundOn) return { stateClass: " dn-ch-sound", stateText: t("chStateSound") };
+  return { stateClass: "", stateText: t("chStateOn") };
+}
+
+/**
+ * 「启用但弹窗关」的卡体提示：开声音给一条、声音也关给另一条；
+ * 启用关或弹窗开时两者都不出现，故先按这一条短路。
+ */
+function builtinSoundNote(
+  enabled: boolean,
+  popup: boolean,
+  soundOn: boolean,
+  t: Translate,
+): React.ReactNode {
+  if (!enabled || popup) return null;
+  return (
+    <div className="dn-set-note-inline dn-soundOnly">
+      {soundOn ? t("chSoundOnlyNote") : t("chPopupSoundOffNote")}
+    </div>
+  );
+}
+
+/** 类型相关诊断行的入参：这些行按 ch.type 分派，与「怎么发」的三开关是两类不同变化来源。 */
+interface BuiltinTypeRowsProps {
+  readonly type: string;
+  readonly t: Translate;
+  readonly diag: ClientDiagnosticsView;
+  readonly hostPlatform: string | null;
+  readonly isSecureContext: () => boolean;
+  readonly requestNotificationPermission: () => void;
+}
+
+/**
+ * 类型相关的诊断行：浏览器卡挂权限状态与自检，系统卡挂平台提示与宿主能力自检。
+ *
+ * 分派键只有 ch.type 一个，故用两组早退而不是把四个三元表达式散在卡体里——
+ * 「加一条诊断行」在这里是往一个表里加一项，不是在 JSX 中间插一段。
+ */
+function builtinTypeRows(props: BuiltinTypeRowsProps): React.ReactNode {
+  const { type, t, diag, hostPlatform, isSecureContext, requestNotificationPermission } = props;
+  if (type === "browser") {
+    return (
+      <>
+        {/* 浏览器通知权限状态行归入浏览器频道卡（权限授权入口同卡就近可达） */}
+        {browserPermLine(t, isSecureContext(), requestNotificationPermission)}
+        {/* 浏览器面自检行：宿主侧接口看不到本页的权限与音频解锁状态 */}
+        {browserDiagnosticsLine(diag)}
+      </>
+    );
+  }
+  if (type === "system") {
+    return (
+      <>
+        {/* 系统卡平台提示（/health platform 消费；宿主 OS 与浏览器 OS 可异机） */}
+        {systemPlatformHint(hostPlatform, t)}
+        {/* 宿主能力自检（/diagnostics）：结论 + 处置建议 + 明细折叠 */}
+        {hostDiagnosticsBlock(diag)}
+      </>
+    );
+  }
+  return null;
+}
+
+/**
  * 内置频道卡（browser/system）：三开关（启用 / 弹窗 / 声音）+ 状态行 + per-channel 测试。
  * 与实例卡同源——两者都是 `settings.channels` 里的一项，只是本卡不渲染删除入口、也没有凭据。
  *
@@ -68,12 +144,7 @@ export function builtinCard(
   const enabled = ch.enabled === true;
   const popup = ch.popup === true;
   const soundOn = soundIsOn(ch.sound);
-  const stateCls = !enabled ? " dn-ch-off" : !popup && soundOn ? " dn-ch-sound" : "";
-  const summaryState = !enabled
-    ? t("chStateOff")
-    : !popup && soundOn
-      ? t("chStateSound")
-      : t("chStateOn");
+  const state = builtinState(enabled, popup, soundOn, t);
   const extras: React.ReactNode[] = [];
   extras.push(
     chRow(
@@ -104,7 +175,7 @@ export function builtinCard(
   extras.push(soundRow(index, ch, label, soundOn, t, chPatch, audioEngine));
   return (
     <details
-      className={"dn-ch-card" + stateCls}
+      className={"dn-ch-card" + state.stateClass}
       key={"ch-" + channelId + ":" + enabled + ":" + popup + ":" + soundOn}
       open={enabled}
     >
@@ -112,7 +183,7 @@ export function builtinCard(
         {iconEl(String(ch.type))}
         <span className="dn-ch-name">{label}</span>
         <span className="dn-ch-type">{t("chTypeBuiltin")}</span>
-        <span className="dn-ch-stateTxt">{summaryState}</span>
+        <span className="dn-ch-stateTxt">{state.stateText}</span>
         <span className={"dn-ch-statusDot " + statusDotClass(channelId, statusMap)} />
         <span className="dn-ch-statusTxt" title={statusText(channelId, statusMap, t, history)}>
           {statusText(channelId, statusMap, t, history)}
@@ -130,22 +201,15 @@ export function builtinCard(
       </summary>
       <div className="dn-ch-body">
         {extras}
-        {enabled && !popup && soundOn ? (
-          <div className="dn-set-note-inline dn-soundOnly">{t("chSoundOnlyNote")}</div>
-        ) : null}
-        {enabled && !popup && !soundOn ? (
-          <div className="dn-set-note-inline dn-soundOnly">{t("chPopupSoundOffNote")}</div>
-        ) : null}
-        {/* 浏览器通知权限状态行归入浏览器频道卡（权限授权入口同卡就近可达） */}
-        {ch.type === "browser"
-          ? browserPermLine(t, isSecureContext(), requestNotificationPermission)
-          : null}
-        {/* 浏览器面自检行：宿主侧接口看不到本页的权限与音频解锁状态 */}
-        {ch.type === "browser" ? browserDiagnosticsLine(diag) : null}
-        {/* 系统卡平台提示（/health platform 消费；宿主 OS 与浏览器 OS 可异机） */}
-        {ch.type === "system" ? systemPlatformHint(hostPlatform, t) : null}
-        {/* 宿主能力自检（/diagnostics）：结论 + 处置建议 + 明细折叠 */}
-        {ch.type === "system" ? hostDiagnosticsBlock(diag) : null}
+        {builtinSoundNote(enabled, popup, soundOn, t)}
+        {builtinTypeRows({
+          type: String(ch.type),
+          t,
+          diag,
+          hostPlatform,
+          isSecureContext,
+          requestNotificationPermission,
+        })}
         <div className="dn-ch-actions">{testBtn(channelId, sendTest, t, testDirty)}</div>
       </div>
     </details>

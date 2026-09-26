@@ -66,22 +66,77 @@ export function isManagedPath(candidate: string): boolean {
  * 409 拒绝并指引（fail-closed，不自动改写用户文件）。
  */
 export function classifyCaState(input: CaStateInput): CaState {
-  const ca = nonEmpty(input.tlsCaCertFile) ? input.tlsCaCertFile : undefined;
-  const cert = nonEmpty(input.tlsCertFile) ? input.tlsCertFile : undefined;
-  const key = nonEmpty(input.tlsKeyFile) ? input.tlsKeyFile : undefined;
-  if (ca === undefined && cert === undefined && key === undefined) return "self-signed";
-  if (ca !== undefined && cert !== undefined && key !== undefined) {
-    if (!pathInCertsDir(ca) || !pathInCertsDir(cert) || !pathInCertsDir(key)) return "custom";
-    // 界内路径：realpath 全落界内即托管，任一失败即托管文件缺失/链出 → error。
-    if (isManagedPath(ca) && isManagedPath(cert) && isManagedPath(key)) return "managed";
-    return "error";
-  }
-  if (ca === undefined && cert !== undefined && key !== undefined) {
-    // 叶对完整而 CA 缺席：叶路径任一在界外即自定义孤叶子（custom）；
-    // 叶路径均在界内即托管脱钩（scope 与磁盘不一致，error 指引清键重建）。
-    if (!pathInCertsDir(cert) || !pathInCertsDir(key)) return "custom";
-    return "error";
-  }
+  const keys = caKeysOf(input);
+  if (keys.shape === "none") return "self-signed";
+  if (keys.shape === "all") return allPresentState(keys);
+  if (keys.shape === "leaf-pair") return leafPairState(keys.cert, keys.key);
   // 孤 CA 与叶对单侧均为半套：error。
+  return "error";
+}
+
+/**
+ * 真值表的第一层：三个键的**在不在**（空串视同未配置，与 sanitizeSettings 清除语义同口径）。
+ *
+ * 单独一层是因为「键的组合」与「路径落在哪」是两类判据、也各有各的失败文案：前者只回
+ * none / all / leaf-pair / partial 四态，后者才谈 custom / managed / error。原先两层揉在
+ * 一个函数里，改组合判据要小心别动到路径判据。
+ */
+type CaKeys =
+  | { readonly shape: "none" }
+  | { readonly shape: "all"; readonly ca: string; readonly cert: string; readonly key: string }
+  | { readonly shape: "leaf-pair"; readonly cert: string; readonly key: string }
+  | { readonly shape: "partial" };
+
+/** 三键的已配置形态（未配置者为 undefined，不做第二份值）。 */
+interface CaKeyTriple {
+  readonly ca: string | undefined;
+  readonly cert: string | undefined;
+  readonly key: string | undefined;
+}
+
+/** 三键全在：判据与类型收窄同一条，故返回类型谓词。 */
+function isFullTriple(
+  keys: CaKeyTriple,
+): keys is { readonly ca: string; readonly cert: string; readonly key: string } {
+  return keys.ca !== undefined && keys.cert !== undefined && keys.key !== undefined;
+}
+
+/** 叶对完整而 CA 缺席：同样让判据与收窄同一条。 */
+function isLeafPair(
+  keys: CaKeyTriple,
+): keys is { readonly ca: undefined; readonly cert: string; readonly key: string } {
+  return keys.ca === undefined && keys.cert !== undefined && keys.key !== undefined;
+}
+
+function caKeysOf(input: CaStateInput): CaKeys {
+  const keys: CaKeyTriple = {
+    ca: nonEmpty(input.tlsCaCertFile) ? input.tlsCaCertFile : undefined,
+    cert: nonEmpty(input.tlsCertFile) ? input.tlsCertFile : undefined,
+    key: nonEmpty(input.tlsKeyFile) ? input.tlsKeyFile : undefined,
+  };
+  // present 在收窄分支之前算：后两个分支会把 keys 收窄掉，那时读不到 ca。
+  const present = [keys.ca, keys.cert, keys.key].filter((path) => path !== undefined).length;
+  if (isFullTriple(keys)) return { shape: "all", ca: keys.ca, cert: keys.cert, key: keys.key };
+  if (isLeafPair(keys)) return { shape: "leaf-pair", cert: keys.cert, key: keys.key };
+  return present === 0 ? { shape: "none" } : { shape: "partial" };
+}
+
+/** 三键全在：路径任一在界外即 custom；界内但 realpath 未全落界内即托管文件缺失 → error。 */
+function allPresentState(keys: { ca: string; cert: string; key: string }): CaState {
+  if (!pathInCertsDir(keys.ca) || !pathInCertsDir(keys.cert) || !pathInCertsDir(keys.key)) {
+    return "custom";
+  }
+  // 界内路径：realpath 全落界内即托管，任一失败即托管文件缺失/链出 → error。
+  if (isManagedPath(keys.ca) && isManagedPath(keys.cert) && isManagedPath(keys.key))
+    return "managed";
+  return "error";
+}
+
+/**
+ * 叶对完整而 CA 缺席：叶路径任一在界外即自定义孤叶子（custom）；
+ * 叶路径均在界内即托管脱钩（scope 与磁盘不一致，error 指引清键重建）。
+ */
+function leafPairState(cert: string, key: string): CaState {
+  if (!pathInCertsDir(cert) || !pathInCertsDir(key)) return "custom";
   return "error";
 }
