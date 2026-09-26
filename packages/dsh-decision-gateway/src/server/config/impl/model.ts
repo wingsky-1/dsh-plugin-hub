@@ -99,6 +99,73 @@ function checkInt(value: unknown, min: number, max: number): number | undefined 
   return num;
 }
 
+/** automationCap 三档谓词（0|1|2）。收窄成类型谓词后调用点免断言。 */
+function isCap(v: unknown): v is AutomationCap {
+  return v === 0 || v === 1 || v === 2;
+}
+
+/** 退役键扫描：根 + connection + history 三个作用域，键名去重后回名单（供告警，不阻断启动）。 */
+function scanRetiredKeys(raw: Record<string, unknown>): string[] {
+  const scopes: Record<string, unknown>[] = [raw];
+  for (const scope of [raw["connection"], raw["history"]]) {
+    if (isRecord(scope)) scopes.push(scope);
+  }
+  const retired: string[] = [];
+  for (const key of RETIRED_KEYS) {
+    if (scopes.some((scope) => key in scope) && !retired.includes(key)) retired.push(key);
+  }
+  return retired;
+}
+
+/** 预设列归一：磁盘项覆写 frozen 默认项；未知 id 整项忽略（磁盘不得新增预设）。 */
+function mergePresets(
+  presetsRaw: readonly unknown[],
+  fallback: ConfigV1,
+): Map<string, ConfigV1["presets"][number]> {
+  const byId = new Map(fallback.presets.map((entry) => [entry.id, entry]));
+  for (const item of presetsRaw) {
+    if (!isRecord(item)) continue;
+    const id = item["id"];
+    if (typeof id !== "string") continue;
+    const prev = byId.get(id);
+    if (prev === undefined) continue;
+    const rawEnabled = item["enabled"];
+    const enabled = typeof rawEnabled === "boolean" ? rawEnabled : prev.enabled;
+    const cap = item["automationCap"];
+    const automationCap = isCap(cap) ? cap : prev.automationCap;
+    byId.set(id, { id: prev.id, enabled, automationCap });
+  }
+  return byId;
+}
+
+/** connection 面归一：apiKeyRef 形状、三项区间数回落默认、hasPlaintextKey 只读派生。 */
+function normalizeConnection(
+  connRaw: Record<string, unknown>,
+  fallback: ConfigV1,
+): ConfigV1["connection"] {
+  const refRaw = connRaw["apiKeyRef"];
+  const apiKeyRef = typeof refRaw === "string" && API_KEY_REF_RE.test(refRaw) ? refRaw : undefined;
+  return {
+    ...(apiKeyRef !== undefined ? { apiKeyRef } : {}),
+    hasPlaintextKey: connRaw["hasPlaintextKey"] === true,
+    timeoutMs: checkInt(connRaw["timeoutMs"], 1000, 120000) ?? fallback.connection.timeoutMs,
+    maxConcurrency:
+      checkInt(connRaw["maxConcurrency"], 1, 16) ?? fallback.connection.maxConcurrency,
+    truncBudget: checkInt(connRaw["truncBudget"], 1000, 200000) ?? fallback.connection.truncBudget,
+  };
+}
+
+/** history 面归一：两项区间数，缺省/越界回落默认。 */
+function normalizeHistory(
+  histRaw: Record<string, unknown>,
+  fallback: ConfigV1,
+): ConfigV1["history"] {
+  return {
+    perSession: checkInt(histRaw["perSession"], 10, 1000) ?? fallback.history.perSession,
+    totalSessions: checkInt(histRaw["totalSessions"], 1, 200) ?? fallback.history.totalSessions,
+  };
+}
+
 /** 归一化磁盘读到的 config.json（退役键剥离+缺口补默认；返回剥离名单供告警）。 */
 export function normalizeLoadedConfig(raw: unknown): {
   readonly config: ConfigV1;
@@ -106,48 +173,14 @@ export function normalizeLoadedConfig(raw: unknown): {
 } {
   const fallback = buildDefaultConfig();
   if (!isRecord(raw)) return { config: fallback, retired: [] };
-  const retired: string[] = [];
-  const scanScopes: Record<string, unknown>[] = [raw];
-  for (const scope of [raw["connection"], raw["history"]]) {
-    if (isRecord(scope)) scanScopes.push(scope);
-  }
-  for (const key of RETIRED_KEYS) {
-    if (scanScopes.some((scope) => key in scope) && !retired.includes(key)) retired.push(key);
-  }
-  const connRaw = isRecord(raw["connection"]) ? (raw["connection"] as Record<string, unknown>) : {};
-  const histRaw = isRecord(raw["history"]) ? (raw["history"] as Record<string, unknown>) : {};
-  const presetsRaw = Array.isArray(raw["presets"]) ? (raw["presets"] as unknown[]) : [];
-  const byId = new Map(fallback.presets.map((entry) => [entry.id, entry]));
-  for (const item of presetsRaw) {
-    if (!isRecord(item) || typeof item["id"] !== "string") continue;
-    const prev = byId.get(item["id"] as string);
-    if (prev === undefined) continue;
-    const enabled =
-      typeof item["enabled"] === "boolean" ? (item["enabled"] as boolean) : prev.enabled;
-    const cap = item["automationCap"];
-    const automationCap =
-      cap === 0 || cap === 1 || cap === 2 ? (cap as AutomationCap) : prev.automationCap;
-    byId.set(item["id"] as string, { id: prev.id, enabled, automationCap });
-  }
-  const refRaw = connRaw["apiKeyRef"];
-  const apiKeyRef = typeof refRaw === "string" && API_KEY_REF_RE.test(refRaw) ? refRaw : undefined;
-  const timeout = checkInt(connRaw["timeoutMs"], 1000, 120000) ?? fallback.connection.timeoutMs;
-  const concurrency =
-    checkInt(connRaw["maxConcurrency"], 1, 16) ?? fallback.connection.maxConcurrency;
-  const budget = checkInt(connRaw["truncBudget"], 1000, 200000) ?? fallback.connection.truncBudget;
-  const perSession = checkInt(histRaw["perSession"], 10, 1000) ?? fallback.history.perSession;
-  const totalSessions =
-    checkInt(histRaw["totalSessions"], 1, 200) ?? fallback.history.totalSessions;
+  const connRaw = isRecord(raw["connection"]) ? raw["connection"] : {};
+  const histRaw = isRecord(raw["history"]) ? raw["history"] : {};
+  const presetsRaw = Array.isArray(raw["presets"]) ? raw["presets"] : [];
+  const byId = mergePresets(presetsRaw, fallback);
   return {
     config: {
       version: CONFIG_VERSION,
-      connection: {
-        ...(apiKeyRef !== undefined ? { apiKeyRef } : {}),
-        hasPlaintextKey: connRaw["hasPlaintextKey"] === true,
-        timeoutMs: timeout,
-        maxConcurrency: concurrency,
-        truncBudget: budget,
-      },
+      connection: normalizeConnection(connRaw, fallback),
       presets: FROZEN_PRESETS.map(
         (preset) =>
           byId.get(preset.id) ?? {
@@ -156,9 +189,105 @@ export function normalizeLoadedConfig(raw: unknown): {
             automationCap: preset.automationCap,
           },
       ),
-      history: { perSession: perSession, totalSessions: totalSessions },
+      history: normalizeHistory(histRaw, fallback),
     },
-    retired,
+    retired: scanRetiredKeys(raw),
+  };
+}
+
+/** 自建预设校验失败（类别恒为 bad-request；错误码区分形状/保留字/重复三类）。 */
+function badCustom(
+  errorCode: string,
+  message: string,
+): { readonly ok: false; readonly failure: PutFailure } {
+  return { ok: false, failure: { errorCode, category: "bad-request", message } };
+}
+
+/** 跨条目共享的判定上下文（保留字表与已用 id 集在整列内累积）。 */
+interface CustomEntryCtx {
+  readonly frozenIds: ReadonlySet<string>;
+  /** 整列累积：checkCustomId 只读，母体在每条通过后补记——故此处是可写集。 */
+  readonly seen: Set<string>;
+  readonly now: number;
+}
+
+type CustomIdCheck =
+  { readonly ok: true; readonly id: string } | { readonly ok: false; readonly failure: PutFailure };
+
+/** 自建 id 面：缺 id、ASCII 形状、撞 frozen 保留字、列内重复（都归「这条 id 能不能用」）。 */
+function checkCustomId(item: Record<string, unknown>, ctx: CustomEntryCtx): CustomIdCheck {
+  const id = item["id"];
+  if (typeof id !== "string") return badCustom("INVALID_CUSTOM", "custom preset needs id");
+  if (!PRESET_ID_RE.test(id) || containsCjk(id)) {
+    return badCustom("BAD_CUSTOM_ID", "custom id must be ASCII a-z0-9- 1..64");
+  }
+  if (ctx.frozenIds.has(id)) {
+    return badCustom("RESERVED_PRESET", "custom id collides with a frozen preset: " + id);
+  }
+  if (ctx.seen.has(id)) return badCustom("DUPLICATE_CUSTOM_ID", "custom ids must be unique");
+  return { ok: true, id };
+}
+
+/** 展示面：label 与 description 同一规则（1..max 码点、非纯空白），只是上限不同。 */
+function customText(value: unknown, max: number): string | null {
+  if (typeof value !== "string" || value.trim().length === 0) return null;
+  return Array.from(value).length > max ? null : value;
+}
+
+/** 开关/档位面：enabled 布尔 + automationCap 三档（收窄成谓词后免断言）。 */
+function checkCustomSwitch(
+  item: Record<string, unknown>,
+):
+  | { readonly ok: true; readonly enabled: boolean; readonly cap: AutomationCap }
+  | { readonly ok: false; readonly failure: PutFailure } {
+  const enabled = item["enabled"];
+  if (typeof enabled !== "boolean") {
+    return badCustom("INVALID_CUSTOM", "custom entry needs boolean enabled");
+  }
+  const cap = item["automationCap"];
+  if (!isCap(cap)) return badCustom("INVALID_CUSTOM", "automationCap must be 0|1|2");
+  return { ok: true, enabled, cap };
+}
+
+/** createdAt 归一：非负有限数向下取整，否则回本轮 now。 */
+function entryStamp(v: unknown, now: number): number {
+  return typeof v === "number" && Number.isFinite(v) && v >= 0 ? Math.floor(v) : now;
+}
+
+/** 单条自建预设：id 面 + 展示面 + 开关档位面 + 时间戳面。 */
+function toCustomEntry(
+  item: unknown,
+  ctx: CustomEntryCtx,
+):
+  | { readonly ok: true; readonly preset: CustomPreset }
+  | { readonly ok: false; readonly failure: PutFailure } {
+  if (!isRecord(item)) return badCustom("INVALID_CUSTOM", "custom preset needs id");
+  const idR = checkCustomId(item, ctx);
+  if (!idR.ok) return idR;
+  const label = customText(item["label"], MAX_CUSTOM_LABEL);
+  if (label === null) {
+    return badCustom("INVALID_CUSTOM", "custom label must be 1.." + MAX_CUSTOM_LABEL + " chars");
+  }
+  const description = customText(item["description"], MAX_CUSTOM_DESCRIPTION);
+  if (description === null) {
+    return badCustom(
+      "INVALID_CUSTOM",
+      "custom description must be 1.." + MAX_CUSTOM_DESCRIPTION + " chars",
+    );
+  }
+  const sw = checkCustomSwitch(item);
+  if (!sw.ok) return sw;
+  return {
+    ok: true,
+    preset: {
+      id: idR.id,
+      label,
+      description,
+      enabled: sw.enabled,
+      automationCap: sw.cap,
+      createdAt: entryStamp(item["createdAt"], ctx.now),
+      updatedAt: ctx.now,
+    },
   };
 }
 
@@ -169,71 +298,21 @@ export function validateCustomPresets(
 ):
   | { readonly ok: true; readonly list: CustomPreset[] }
   | { readonly ok: false; readonly failure: PutFailure } {
-  const bad = (
-    errorCode: string,
-    message: string,
-  ): { readonly ok: false; readonly failure: PutFailure } => ({
-    ok: false,
-    failure: { errorCode, category: "bad-request", message },
-  });
-  if (!Array.isArray(raw)) return bad("INVALID_CUSTOM", "customPresets must be an array");
+  if (!Array.isArray(raw)) return badCustom("INVALID_CUSTOM", "customPresets must be an array");
   if (raw.length > MAX_CUSTOM_PRESETS) {
-    return bad("INVALID_CUSTOM", "customPresets holds <=" + MAX_CUSTOM_PRESETS + " entries");
+    return badCustom("INVALID_CUSTOM", "customPresets holds <=" + MAX_CUSTOM_PRESETS + " entries");
   }
-  const frozenIds = new Set(FROZEN_PRESETS.map((preset) => preset.id));
-  const seen = new Set<string>();
+  const ctx: CustomEntryCtx = {
+    frozenIds: new Set(FROZEN_PRESETS.map((preset) => preset.id)),
+    seen: new Set<string>(),
+    now: Date.now(),
+  };
   const list: CustomPreset[] = [];
-  const now = Date.now();
-  for (const item of raw as unknown[]) {
-    if (!isRecord(item) || typeof item["id"] !== "string") {
-      return bad("INVALID_CUSTOM", "custom preset needs id");
-    }
-    const id = item["id"] as string;
-    if (!PRESET_ID_RE.test(id) || containsCjk(id)) {
-      return bad("BAD_CUSTOM_ID", "custom id must be ASCII a-z0-9- 1..64");
-    }
-    if (frozenIds.has(id)) {
-      return bad("RESERVED_PRESET", "custom id collides with a frozen preset: " + id);
-    }
-    if (seen.has(id)) return bad("DUPLICATE_CUSTOM_ID", "custom ids must be unique");
-    seen.add(id);
-    const label = item["label"];
-    if (
-      typeof label !== "string" ||
-      label.trim().length === 0 ||
-      Array.from(label).length > MAX_CUSTOM_LABEL
-    ) {
-      return bad("INVALID_CUSTOM", "custom label must be 1.." + MAX_CUSTOM_LABEL + " chars");
-    }
-    const description = item["description"];
-    if (
-      typeof description !== "string" ||
-      description.trim().length === 0 ||
-      Array.from(description).length > MAX_CUSTOM_DESCRIPTION
-    ) {
-      return bad(
-        "INVALID_CUSTOM",
-        "custom description must be 1.." + MAX_CUSTOM_DESCRIPTION + " chars",
-      );
-    }
-    if (typeof item["enabled"] !== "boolean") {
-      return bad("INVALID_CUSTOM", "custom entry needs boolean enabled");
-    }
-    const cap = item["automationCap"];
-    if (cap !== 0 && cap !== 1 && cap !== 2) {
-      return bad("INVALID_CUSTOM", "automationCap must be 0|1|2");
-    }
-    const stamp = (v: unknown): number =>
-      typeof v === "number" && Number.isFinite(v) && v >= 0 ? Math.floor(v) : now;
-    list.push({
-      id,
-      label: label as string,
-      description: description as string,
-      enabled: item["enabled"] as boolean,
-      automationCap: cap as AutomationCap,
-      createdAt: stamp(item["createdAt"]),
-      updatedAt: now,
-    });
+  for (const item of raw) {
+    const entry = toCustomEntry(item, ctx);
+    if (!entry.ok) return entry;
+    ctx.seen.add(entry.preset.id);
+    list.push(entry.preset);
   }
   return { ok: true, list };
 }
@@ -313,9 +392,6 @@ function checkApiKeyPlaintext(
   }
   return { ok: true, value: plain };
 }
-function isValidCap(cap: unknown): boolean {
-  return cap === 0 || cap === 1 || cap === 2;
-}
 function checkPresetsField(value: unknown):
   | {
       readonly ok: true;
@@ -379,7 +455,7 @@ function checkPresetsField(value: unknown):
       };
     }
     const cap = item["automationCap"];
-    if (!isValidCap(cap)) {
+    if (!isCap(cap)) {
       return {
         ok: false,
         failure: {
@@ -392,7 +468,7 @@ function checkPresetsField(value: unknown):
     list.push({
       id: item["id"] as string,
       enabled: item["enabled"] as boolean,
-      automationCap: cap as AutomationCap,
+      automationCap: cap,
     });
   }
   return { ok: true, list };

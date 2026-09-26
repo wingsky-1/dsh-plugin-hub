@@ -17,7 +17,7 @@ import {
   containsCjk,
   frozenPresetOf,
 } from "../../../shared/interface.ts";
-import type { CustomPreset } from "../../../shared/interface.ts";
+import type { CustomPreset, DecisionLang } from "../../../shared/interface.ts";
 import type { ValidDecide, ValidQuestion } from "../deps.ts";
 
 /** 校验失败（调用方映射为 400/ErrorEnvelope，不抛）。 */
@@ -36,74 +36,104 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
-/** 单题校验（kind/options 互斥 + 255 + ASCII id）。 */
+/** 题 id 谓词：非空、ASCII a-z0-9-、不含 CJK（题 id 不放行中文，state 正文不受此限）。 */
+function isQuestionId(v: unknown): v is string {
+  return typeof v === "string" && v.length > 0 && QUESTION_ID_RE.test(v) && !containsCjk(v);
+}
+
+/** 题面文本谓词：1..MAX_QUESTION_TEXT codepoints 且非纯空白（中文正文合法）。 */
+function isQuestionText(v: unknown): v is string {
+  if (typeof v !== "string") return false;
+  const n = Array.from(v).length;
+  return n > 0 && n <= MAX_QUESTION_TEXT && v.trim().length > 0;
+}
+
+/** 串项谓词：非空、≤64 codepoints、非纯空白（options 元素与 levels 元素同一规则）。 */
+function isLabelText(v: unknown): v is string {
+  return typeof v === "string" && v.length > 0 && Array.from(v).length <= 64 && v.trim().length > 0;
+}
+
+/**
+ * 2..10 个合格串项的形状校验（options 与 levels 共用同一规则）。
+ *
+ * 返回窄联合而非 boolean：形状不合（缺数组/数量越界）与元素不合是两类不同的失败，
+ * 各自映射不同的 errorCode 与文案，由调用方按 kind 分派——所以 reason 不能在这里抹平。
+ */
+type LabelListCheck =
+  | { readonly ok: true; readonly list: readonly string[] }
+  | { readonly ok: false; readonly reason: "shape" | "element" };
+
+function checkLabelList(raw: unknown): LabelListCheck {
+  if (!Array.isArray(raw) || raw.length < 2 || raw.length > 10) {
+    return { ok: false, reason: "shape" };
+  }
+  const list: string[] = [];
+  for (const item of raw) {
+    if (!isLabelText(item)) return { ok: false, reason: "element" };
+    list.push(item);
+  }
+  return { ok: true, list };
+}
+
+/** choice 题分支：options 必带 2..10 项、禁带 levels（互斥规则的 choice 侧）。 */
+function checkChoiceQuestion(
+  item: Record<string, unknown>,
+  id: string,
+  text: string,
+): { readonly ok: true; readonly question: ValidQuestion } | Invalid {
+  const options = checkLabelList(item["options"]);
+  if (!options.ok) {
+    return options.reason === "element"
+      ? fail("BAD_OPTIONS", "option must be non-empty string <=64 codepoints")
+      : fail("BAD_OPTIONS", "choice question needs 2..10 options");
+  }
+  if (item["levels"] !== undefined) {
+    return fail("BAD_LEVELS", "choice question must not carry levels");
+  }
+  return { ok: true, question: { id, text, kind: "choice", options: options.list } };
+}
+
+/** score 题分支：禁带 options，levels 缺省回默认 1-5、给了就校验 2..10 项（互斥规则的 score 侧）。 */
+function checkScoreQuestion(
+  item: Record<string, unknown>,
+  id: string,
+  text: string,
+): { readonly ok: true; readonly question: ValidQuestion } | Invalid {
+  if (item["options"] !== undefined) {
+    return fail("BAD_OPTIONS", "score question must not carry options");
+  }
+  if (item["levels"] === undefined) {
+    return { ok: true, question: { id, text, kind: "score" } };
+  }
+  const levels = checkLabelList(item["levels"]);
+  if (!levels.ok) {
+    return levels.reason === "element"
+      ? fail("BAD_LEVELS", "level must be non-empty string <=64 codepoints")
+      : fail("BAD_LEVELS", "score levels must be 2..10 rubric strings (or omit for default 1-5)");
+  }
+  return { ok: true, question: { id, text, kind: "score", levels: levels.list } };
+}
+
+/** 单题校验：题面骨架（id/text/kind）+ 按 kind 分派到两条互斥分支。 */
 function checkQuestion(
   item: unknown,
 ): { readonly ok: true; readonly question: ValidQuestion } | Invalid {
   if (!isRecord(item)) return fail("BAD_QUESTION", "question must be an object");
-  const id: unknown = item["id"];
-  const text: unknown = item["text"];
-  const kind: unknown = item["kind"];
-  if (typeof id !== "string" || id.length === 0 || !QUESTION_ID_RE.test(id) || containsCjk(id)) {
+  const id = item["id"];
+  if (!isQuestionId(id)) {
     return fail("BAD_QUESTION_ID", "question id must be ASCII a-z0-9- 1..64");
   }
-  if (
-    typeof text !== "string" ||
-    Array.from(text).length === 0 ||
-    Array.from(text).length > MAX_QUESTION_TEXT ||
-    text.trim().length === 0
-  ) {
+  const text = item["text"];
+  if (!isQuestionText(text)) {
     return fail("BAD_QUESTION_TEXT", "question text must be 1..255 codepoints and non-blank");
   }
+  const kind = item["kind"];
   if (kind !== "choice" && kind !== "score") {
     return fail("BAD_QUESTION_KIND", "question kind must be choice|score");
   }
-  const options: unknown = item["options"];
-  if (kind === "choice") {
-    if (!Array.isArray(options) || options.length < 2 || options.length > 10) {
-      return fail("BAD_OPTIONS", "choice question needs 2..10 options");
-    }
-    for (const opt of options as unknown[]) {
-      if (
-        typeof opt !== "string" ||
-        opt.length === 0 ||
-        Array.from(opt).length > 64 ||
-        (opt as string).trim().length === 0
-      ) {
-        return fail("BAD_OPTIONS", "option must be non-empty string <=64 codepoints");
-      }
-    }
-    if (item["levels"] !== undefined) {
-      return fail("BAD_LEVELS", "choice question must not carry levels");
-    }
-    const opts = (options as unknown[]).map((opt) => opt as string);
-    return { ok: true, question: { id, text, kind, options: opts } };
-  }
-  if (options !== undefined) {
-    return fail("BAD_OPTIONS", "score question must not carry options");
-  }
-  const levels: unknown = item["levels"];
-  if (levels === undefined) return { ok: true, question: { id, text, kind } };
-  if (!Array.isArray(levels) || levels.length < 2 || levels.length > 10) {
-    return fail(
-      "BAD_LEVELS",
-      "score levels must be 2..10 rubric strings (or omit for default 1-5)",
-    );
-  }
-  for (const lv of levels as unknown[]) {
-    if (
-      typeof lv !== "string" ||
-      lv.length === 0 ||
-      Array.from(lv).length > 64 ||
-      (lv as string).trim().length === 0
-    ) {
-      return fail("BAD_LEVELS", "level must be non-empty string <=64 codepoints");
-    }
-  }
-  return {
-    ok: true,
-    question: { id, text, kind, levels: (levels as unknown[]).map((lv) => lv as string) },
-  };
+  return kind === "choice"
+    ? checkChoiceQuestion(item, id, text)
+    : checkScoreQuestion(item, id, text);
 }
 
 /** override 数组校验（非空 + 题数上限 + id 唯一）。 */
@@ -130,13 +160,21 @@ function checkOverrideList(
   return { ok: true, questions };
 }
 
-/** ws_request_verdict 参数校验（成功即 ValidDecide，失败即 400 类错误；custom 自建 id 经第二参传入）。 */
-export function validateDecideArgs(
-  args: unknown,
+/** preset_id 解析结果：形状校验通过后判内建/自建归属，appliedSource 由 isCustom 决定。 */
+type PresetPick =
+  { readonly ok: true; readonly presetId: string; readonly isCustom: boolean } | Invalid;
+
+/**
+ * preset_id 校验与内建/自建判定。
+ *
+ * 内建命中即不看自建表（自建 id 不得覆盖 frozen 预设），所以 customPreset 的查表在
+ * template 缺席时才发生——这条优先级是契约，不能简化成两次无条件查表。
+ */
+function pickPreset(
+  args: Record<string, unknown>,
   custom?: ReadonlyMap<string, CustomPreset>,
-): { readonly ok: true; readonly valid: ValidDecide } | Invalid {
-  if (!isRecord(args)) return fail("BAD_ARGS", "args must be an object");
-  const presetRaw: unknown = args["preset_id"];
+): PresetPick {
+  const presetRaw = args["preset_id"];
   if (typeof presetRaw !== "string" || presetRaw.length === 0) {
     return fail("MISSING_PRESET", "preset_id is required");
   }
@@ -148,19 +186,38 @@ export function validateDecideArgs(
   if (template === undefined && customPreset === undefined) {
     return fail("UNKNOWN_PRESET", "unknown preset");
   }
-  const state: unknown = args["state"];
+  const isCustom = presetRaw === "custom" || customPreset !== undefined;
+  return { ok: true, presetId: presetRaw, isCustom };
+}
+
+/** state 校验：text 非空串（中文正文合法），lang 无缺省——写错即 400。 */
+function checkState(
+  state: unknown,
+): { readonly ok: true; readonly text: string; readonly lang: DecisionLang } | Invalid {
   if (!isRecord(state)) return fail("MISSING_STATE", "state is required");
-  const text: unknown = state["text"];
-  if (typeof text !== "string" || text.length === 0 || (text as string).trim().length === 0) {
+  const text = state["text"];
+  if (typeof text !== "string" || text.length === 0 || text.trim().length === 0) {
     return fail("EMPTY_TEXT", "state.text must be a non-blank string");
   }
-  const langRaw: unknown = state["lang"];
-  const lang: "en" | "zh" | "unknown" =
-    langRaw === undefined ? "unknown" : (langRaw as "en" | "zh" | "unknown");
+  const langRaw = state["lang"];
+  const lang: unknown = langRaw === undefined ? "unknown" : langRaw;
   if (lang !== "en" && lang !== "zh" && lang !== "unknown") {
     return fail("BAD_LANG", "state.lang must be en|zh|unknown");
   }
-  const override: unknown = args["questions_override"];
+  return { ok: true, text, lang };
+}
+
+/** ws_request_verdict 参数校验（成功即 ValidDecide，失败即 400 类错误；custom 自建 id 经第二参传入）。 */
+export function validateDecideArgs(
+  args: unknown,
+  custom?: ReadonlyMap<string, CustomPreset>,
+): { readonly ok: true; readonly valid: ValidDecide } | Invalid {
+  if (!isRecord(args)) return fail("BAD_ARGS", "args must be an object");
+  const preset = pickPreset(args, custom);
+  if (!preset.ok) return preset;
+  const state = checkState(args["state"]);
+  if (!state.ok) return state;
+  const override = args["questions_override"];
   if (override === undefined) {
     return fail("MISSING_OVERRIDE", "questions_override is required (templates hold no questions)");
   }
@@ -169,11 +226,11 @@ export function validateDecideArgs(
   return {
     ok: true,
     valid: {
-      presetId: presetRaw,
-      text,
-      lang,
+      presetId: preset.presetId,
+      text: state.text,
+      lang: state.lang,
       questions: checked.questions,
-      appliedSource: presetRaw === "custom" || customPreset !== undefined ? "custom" : "override",
+      appliedSource: preset.isCustom ? "custom" : "override",
     },
   };
 }
