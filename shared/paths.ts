@@ -42,10 +42,10 @@ import { join } from "node:path";
  * provider-registry 的旧 `pluginHome(base = dshHome())` 保留为包内 facade（公开签名不变），
  * 不收敛到本模块。
  *
- * @param {string} base - DSH home 格（一般取 `dshHome()`）。
- * @param {...string} segments - 包分区目录及其下子段。
- * @returns {string} 拼装后的路径（等同 `join(base, ...segments)`）。
+ * @param base - DSH home 格（一般取 `dshHome()`）。
+ * @param segments - 包分区目录及其下子段。
+ * @returns 拼装后的路径（等同 `join(base, ...segments)`）。
  */
-export function pluginHome(base, ...segments) {
+export function pluginHome(base: string, ...segments: string[]): string {
   return join(base, ...segments);
 }

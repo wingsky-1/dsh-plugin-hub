@@ -23,7 +23,7 @@
     "threshold": 60,
     "segments": {
       "settings-namespace": {
-        "mutate": ["shared/settings-namespace.js"],
+        "mutate": ["shared/settings-namespace.ts"],
         "excludes": [],
         "testFiles": ["shared/test/settings-namespace.mutation.test.ts"],
         "comment": "Phase 5 P2：lan/mcp 共同运行时接缝；descriptor/source/onChange 与写入委托由独立 Vitest 行为判据直接覆盖。"
@@ -784,7 +784,7 @@
           {
             "pattern": "!packages/dsh-notifier/src/**/*.ps1",
             "kind": "not-source",
-            "reason": "系统通知出口的 PowerShell 资源脚本 toast.ps1：构建期作为资源随包分发（WinRT 投影只有 powershell.exe 5.1 可用），宿主以子进程 -File 调用，不在 JS/TS 源码面内。"
+            "reason": "系统通知出口的 PowerShell 资源脚本 toast.ps1：构建期作为资源随包分发（WinRT 投影只有 powershell.exe 5.1 可用），宿主以子进程 -File 调用，不在 JS/TS 源码面内。它是已跟踪且未 ignore 的资源，所以必须留在本清单里——删掉它会让 verify-dir-imports 的 uncoveredSrcFiles 判它「未登记证据」。"
           }
         ],
         "testMutationExemptions": {}

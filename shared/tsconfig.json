@@ -1,0 +1,29 @@
+{
+  // shared/ — 仓库根共享层的 TypeScript 工程（#1028 后续重构）。
+  //
+  // 三个设计要点都是被现有构建链**推导**出来的，不是偏好：
+  //
+  // 1. 原地 emit（outDir "."，无 dist/）。消费方用相对说明符 `../../shared/paths.js`，
+  //    而构建是两段式：包 tsc 出 lib → bundle-host 用 esbuild 打 lib/*.js。emit 出去的
+  //    说明符必须指向磁盘上真实存在的 .js，所以产物必须与源码同目录。代价是
+  //    shared/*.js、shared/*.d.ts 成为构建产物（已 gitignore）。
+  // 2. composite + project references。各包 tsconfig 加 references 指到这里，于是
+  //    「改了 shared/*.ts 但没重建」会变成 TS6305 硬红，而不是悄悄用旧声明。
+  // 3. 说明符一个字不改。97 处 import、bundle-host 的内联与 d.ts X1 拷贝、
+  //    shared-dts-lib 的枚举、verify-shared-fanin、pack-check、rewrite-dts-paths
+  //    全部零改动——它们认的是「仓库根 shared/」这个位置，不是文件形态。
+  //
+  // 配套不变量：shared/ 在版本库里**只允许有 .ts 源码**（含 README.md 与 test/），
+  // 手写 .js/.d.ts 对的回归由 scripts/test/shared-ts-shape.test.ts 冻结守卫判红。
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "rootDir": ".",
+    "outDir": ".",
+    "declaration": true,
+    "declarationMap": false,
+    "sourceMap": false
+  },
+  "include": ["*.ts", "client/*.ts"],
+  "exclude": ["test"]
+}

@@ -59,7 +59,7 @@ test("P2 root-shared：真实拓扑精确登记 settings namespace 变异段", (
     threshold: 60,
     segments: {
       "settings-namespace": {
-        mutate: ["shared/settings-namespace.js"],
+        mutate: ["shared/settings-namespace.ts"],
         excludes: [],
         testFiles: ["shared/test/settings-namespace.mutation.test.ts"],
         comment:
@@ -76,7 +76,7 @@ test("P2 root-shared：独立 surface 纳入形状、算子与文件面棘轮", 
     threshold: 60,
     segments: {
       "settings-namespace": {
-        mutate: ["shared/settings-namespace.js"],
+        mutate: ["shared/settings-namespace.ts"],
         excludes: [],
         testFiles: ["shared/test/settings-namespace.mutation.test.ts"],
       },
@@ -97,7 +97,7 @@ test("P2 root-shared：独立 surface 纳入形状、算子与文件面棘轮", 
   );
 
   const expand = (pattern: string) =>
-    pattern === "shared/settings-namespace.js" ? ["shared/settings-namespace.js"] : [];
+    pattern === "shared/settings-namespace.ts" ? ["shared/settings-namespace.ts"] : [];
   const sharedDefaults = { excludedMutations: ["StringLiteral"] };
   const ratchet = mutationFaceRatchetProblems({
     baseTopology: { sharedDefaults, packages: {}, $rootShared: valid },
@@ -105,7 +105,7 @@ test("P2 root-shared：独立 surface 纳入形状、算子与文件面棘轮", 
     expand,
   });
   assert.deepEqual([ratchet.packagesCompared, ratchet.filesCompared], [1, 1]);
-  assert.match(ratchet.problems.join(), /\[\$rootShared\].*shared\/settings-namespace\.js/);
+  assert.match(ratchet.problems.join(), /\[\$rootShared\].*shared\/settings-namespace\.ts/);
   assert.match(
     mutationPolicyRatchetProblems(
       {

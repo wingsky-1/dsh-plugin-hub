@@ -1,12 +1,17 @@
 {
   "version": 1,
   "note": "覆盖率面（include / exclude / thresholds）的单一事实源（#733 计划项 3.4）。此前这三样内联在 vitest.config.ts 里：阈值与门槛混在配置代码里，改「算什么」与改「卡多严」在 diff 里长得一样，且 #722 的基线注释（分母 132 文件）与静态复算（223）差了 40% 无人能解释。现在：配置只 import 本文件，`vitest.config.ts` 不得再内联 thresholds/include/exclude 字面量（判据见 scripts/gate/verify-coverage-scope.mjs）。\n\ninclude 的两条口径是**两个面**，别混：#722 起的宿主端面是 `{ts,tsx}`；`.mjs` 是 #733 3.4 补进来的适配器实现（3 个文件、1756 行，此前既不在分母也不在变异面——变异面里它们被 mutation-topology.json 显式排除，属**两个面的不同口径**，理由见该文件的 coverageExcludes）。实测（本轮全量 cov，含 .mjs）：statements 79.70 / functions 81.86 / branches 72.30，对阈值 78/80/70 仍有余量；其中 deepseek-official.mjs 96.7%、opencode-go.mjs 95.5% 覆盖良好，zai-coding-cn.mjs 仅 13.9%（274 语句 / 26 函数）——**如实记录，不因此把它排除**：排除只会把缺口藏起来，而它已被 10 个测试文件引用，属可测面。\n\nexclude 条目是**结构化的**（pattern + reason + kind），不是裸 glob：kind 值域 type-only（无运行时代码的声明）/ not-source（src 下的非源码资源）/ pending-project（是源码，但要等某个 project 落地才能计）。**只有 pending-project 允许带 reviewBy**（临时豁免，自动进 collect-exemptions 的到期台账）与 exitCriteria（解除条件）；其它 kind 带上即判红——给永久事实编到期日只会逼出「永不续期」的假条目。pattern 命中 0 个物理文件即判红（条目腐烂）。",
-  "include": ["packages/*/src/**/*.{ts,tsx}", "packages/*/src/**/*.mjs", "shared/**/*.js"],
+  "include": [
+    "packages/*/src/**/*.{ts,tsx}",
+    "packages/*/src/**/*.mjs",
+    "shared/*.ts",
+    "shared/client/*.ts"
+  ],
   "exclude": [
     {
       "pattern": "**/*.d.ts",
       "kind": "type-only",
-      "reason": "类型声明文件无运行时代码，不可覆盖（packages/*/src 下 4 个 + shared 下 9 个）",
+      "reason": "类型声明文件无运行时代码，不可覆盖（packages/*/src 下 4 个 + shared 下 9 个 tsc 产物声明）",
       "since": "#722 阶段三"
     },
     {
@@ -162,6 +167,24 @@
       "exitCriteria": "为这两个模块建 project，或把它们的测试移入 unit 层后删除本条",
       "since": "#769",
       "reviewBy": "2027-03-31"
+    },
+    {
+      "pattern": "shared/tsconfig.json",
+      "kind": "not-source",
+      "reason": "shared 的 TS 工程配置（composite + 原地 emit），无运行时代码；include 面只列 9 个被测模块，不含它。注：shared 下 tsc 产出的 .js / .d.ts 无需在此排除——它们被 .gitignore 挡在源码世界之外（glob-files 的 sourceUniverse 按 gitignore 收口）",
+      "since": "#1028 后续重构"
+    },
+    {
+      "pattern": "shared/**/*.js",
+      "kind": "not-source",
+      "reason": "shared TS 化（#1028 后续重构）后的 tsc 原地 emit 产物，与源码同目录。源码是同名 .ts（已在 include 面内），这些 .js 是它的编译输出——计入分母等于把同一份实现数两遍。注：变异面棘轮不看这条，它按 gitignore 单独收口（glob-files 的 excludeBuildArtifacts），两条口径互不依赖",
+      "since": "#1028 后续重构"
+    },
+    {
+      "pattern": "shared/*.tsbuildinfo",
+      "kind": "not-source",
+      "reason": "composite 工程的增量构建信息（tsc -b 产出），无源码内容、随构建刷新",
+      "since": "#1028 后续重构"
     }
   ],
   "thresholds": {
