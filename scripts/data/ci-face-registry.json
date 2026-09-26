@@ -1,5 +1,5 @@
 {
-  "$comment": "packages/ 之外每个 tracked 文件的 CI 归属登记（#742 阶段 2.3）。另有可选字段 invalidatesBaseline：#742 阶段 1.7 会让改了它就必须失效该包增量基线的条目置 true（测试面输入——共享测试库、stryker 段配置、包级 stryker 测试面配置），因为 Stryker 的 static mutant 没有覆盖信息、测试侧变更对它们不可见。为什么需要：paths-filter 是 fail-open 的——把文件从所有面里删掉不会让任何断言变红，只会让它静默不再触发任何切片。本表把「归属」变成可断言的完整性契约：scripts/test/ci-face-coverage.test.ts 用真实 git ls-files 与 ci.yml 的 filters 双向核对（未登记即红、悬空条目即红、声明的面未被 filters 覆盖即红）。faces 语义：\"global\" = global 面；包名 = 该包面；空数组 = 显式豁免（消费方是每个 PR 都常驻的静态闸，如 test:scripts / lint / format:check / docs:check，故无需包面）。核对是双向的：条目声明的面必须在 filters 里接上，且 filters 每条 glob 命中的文件也必须由声明了该面的条目覆盖（否则包面可以被静默扩到未声明的文件）。同一条路径被多条命中时按并集判定：每条声明的面都必须被 ci.yml 覆盖，豁免条目不产生约束。新增本表自身这类「消费方是常驻闸」的数据文件时，要先把条目写进本表再提交——完整性断言会先判红一次（顺序陷阱，不是缺陷）。packages/** 不在本表内：它们由 workflow-assert 的「filters 键集合 == manifest.active ∪ standalone ∪ 聚合包」加逐包 packages/<pkg>/** 断言守着。 consumers / consumerGap 语义（#843 L5）：consumers 是该条目 source 的**仓内直接读取方**（仓库相对路径；对目录/脚本类 source 即执行它的仓内入口）——每个路径必须真实存在，且其文件文本必须字面命中该 source 的基名、glob 静态前缀、或当前命中该 glob 的真实文件基名之一；只判「路径存在」拦不住假 why（旧条目曾声称 contract-check.ts 消费 worktree-sidebar 基线，而该文件并不引用它）。consumerGap 只用于「无仓内直接读取方」：kind 只许 none | external | indirect，kind=none 是真缺口、必须带 trackingIssue，external / indirect 的 reason 必须点名加载它的调用点。两者排他（XOR）：consumers 非空与 consumerGap 恰好其一，都不写或都写都判红；核对、引用命中与覆盖自证在 scripts/test/ci-face-coverage.test.ts。",
+  "$comment": "packages/ 之外每个 tracked 文件的 CI 归属登记（#742 阶段 2.3；faces 语义见 #875 H9）。另有可选字段 invalidatesBaseline：#742 阶段 1.7 会让改了它就必须失效该包增量基线的条目置 true（测试面输入——共享测试库、stryker 段配置、包级 stryker 测试面配置），因为 Stryker 的 static mutant 没有覆盖信息、测试侧变更对它们不可见。为什么需要：paths-filter 是 fail-open 的——把文件从所有面里删掉不会让任何断言变红，只会让它静默不再触发任何切片。本表把「归属」变成可断言的完整性契约：scripts/test/ci-face-coverage.test.ts 用真实 git ls-files 与 ci.yml 的 filters 双向核对。 faces 语义（#875 H9 改；原「空数组 = 显式豁免」通道已删除）：faces 可缺省；写了就必须非空、且面名是 ci.yml 的真实 filters 键，写空数组直接判红。缺省 faces 的含义是「该条目命中的文件都不需要任何 CI 面」——但这不再是登记的声明，而是被规则从对象特征推导、并逐条核对的事实，三条同时成立才算推导成功：N1 无切片触发（ci.yml 任何面的 glob 都不命中该文件——filters 是「什么会触发切片」的唯一事实源）；N2 无包消费（没有任何 packages/** 下的代码文件按真实 import 图 import/require 它）；N3 消费者非包内（条目的 consumers 不含 packages/** 路径，消费它的入口都是仓级常驻闸）。任一条不成立即判红；载体失效（扫描面为空 / 条件恒真）同样判红。面归属改为集合等值核对：命中某文件的所有条目声明的面并集，必须恰好等于 ci.yml 为该文件派生出的面集合——等值比旧的「每个声明的面都被 filters 接上」更严，少声明与多声明都判红。同一条路径被多条命中时按并集判定。缺省 faces 的条目不再写 why：理由已由 N1/N2/N3 推导给出，继续手写只会把推导出的事实退化成登记的声明。新增本表自身这类「消费方是常驻闸」的数据文件时，要先把条目写进本表再提交——完整性断言会先判红一次（顺序陷阱，不是缺陷）。packages/** 不在本表内：它们由 workflow-assert 的「filters 键集合 == manifest.active ∪ standalone ∪ 聚合包」加逐包 packages/<pkg>/** 断言守着。 consumers / consumerGap 语义（#843 L5）：consumers 是该条目 source 的**仓内直接读取方**（仓库相对路径；对目录/脚本类 source 即执行它的仓内入口）——每个路径必须真实存在，且其文件文本必须字面命中该 source 的基名、glob 静态前缀、或当前命中该 glob 的真实文件基名之一；只判「路径存在」拦不住假 why（旧条目曾声称 contract-check.ts 消费 worktree-sidebar 基线，而该文件并不引用它）。consumerGap 只用于「无仓内直接读取方」：kind 只许 none | external | indirect，kind=none 是真缺口、必须带 trackingIssue，external / indirect 的 reason 必须点名加载它的调用点。两者排他（XOR）：consumers 非空与 consumerGap 恰好其一，都不写或都写都判红；核对、引用命中与覆盖自证在 scripts/test/ci-face-coverage.test.ts。",
   "entries": [
     {
       "path": ".github/**",
@@ -9,9 +9,7 @@
     },
     {
       "path": "agents/**",
-      "faces": [],
-      "consumers": ["scripts/gate/verify-docs.ts"],
-      "why": "纯文档：自治循环角色规程 5 个 markdown，无机器消费者（链接检查由本地 test:scripts 覆盖），无需包面。#899 起移出全局面，与 docs/** 同等待遇。"
+      "consumers": ["scripts/gate/verify-docs.ts"]
     },
     {
       "path": "shared/**",
@@ -155,9 +153,7 @@
     },
     {
       "path": "scripts/data/plugin-row-migration.json",
-      "faces": [],
-      "consumers": ["scripts/maintenance/migrate-plugin-rows.mjs"],
-      "why": "一次性 profile row identity 迁移映射：只被维护脚本读取，属于脚本输入数据而非 CI 切片触发面。"
+      "consumers": ["scripts/maintenance/migrate-plugin-rows.mjs"]
     },
     {
       "path": "scripts/data/plugins-manifest.json",
@@ -167,18 +163,14 @@
     },
     {
       "path": "scripts/data/threshold-registry.json",
-      "faces": [],
-      "consumers": ["scripts/lib/threshold-registry.mjs", "scripts/gate/threshold-monotonic.mjs"],
-      "why": "阈值事实源的声明表（#843 D5）：只声明各类事实源的守护形态，不改变任何 filters，与 gate-wiring-exceptions.json / ci-face-registry.json 自身同类（归 global 面需要改 ci.yml 的 filters —— 那是红线段，收益为零）。"
+      "consumers": ["scripts/lib/threshold-registry.mjs", "scripts/gate/threshold-monotonic.mjs"]
     },
     {
       "path": "scripts/data/vendored-binaries.json",
-      "faces": [],
       "consumers": [
         "scripts/gate/verify-vendored-binaries.mjs",
         "scripts/lib/vendored-binaries-lib.mjs"
-      ],
-      "why": "发布物面内 vendored 裸二进制的登记表（批 2b）：只声明「哪些随包分发的副本已登记许可」，不改变任何 filters，与 scripts/data/ci-face-registry.json 自身同类。"
+      ]
     },
     {
       "path": "scripts/data/dsh-notifier-*.json",
@@ -233,22 +225,18 @@
     },
     {
       "path": "stryker.conf.d/shared-settings-namespace.json",
-      "faces": [],
       "artifactPolicy": "nightly-only",
       "consumerGap": {
         "kind": "indirect",
         "reason": "stryker 经 stryker.conf.d/shared-settings-namespace.json 的 vitest.configFile 读取；该段由 scripts/gate/gen-stryker-conf.mjs 从 mutation-topology.json 的 $rootShared.segments.settings-namespace 间接派生，不含逐文件字面量。"
-      },
-      "why": "$rootShared 段的生成配置：不属于包级增量切片，由常驻 stryker:check 校验其与拓扑一致。"
+      }
     },
     {
       "path": "vitest.stryker.d/shared-settings-namespace.config.ts",
-      "faces": [],
       "consumerGap": {
         "kind": "indirect",
         "reason": "stryker 经 stryker.conf.d/shared-settings-namespace.json 的 vitest.configFile 读取；该文件由 scripts/gate/gen-stryker-conf.mjs 从 $rootShared 段的 testFiles 间接派生，不含逐文件字面量。"
-      },
-      "why": "$rootShared 段的生成测试面配置：不属于包级增量切片，由常驻 stryker:check 校验其与拓扑一致。"
+      }
     },
     {
       "path": "stryker.conf.d/dsh-notifier*.json",
@@ -432,157 +420,117 @@
     },
     {
       "path": "scripts/data/ci-face-registry.json",
-      "faces": [],
       "consumers": [
         "scripts/test/ci-face-coverage.test.ts",
         "scripts/ci/changed-test-packages.mjs",
         "scripts/test/changed-test-packages.test.ts"
-      ],
-      "why": "本表自身：不改变任何 filters，只声明并核对归属；改动立刻在本 PR 上被消费。"
+      ]
     },
     {
       "path": "scripts/data/gate-wiring-exceptions.json",
-      "faces": [],
-      "consumers": ["scripts/test/gate-wiring.test.ts"],
-      "why": "判据接线例外台账：只声明「两侧形态不对称是设计如此」并受悬空/方向/条件/上限五条守卫，不改变任何 filters，与 ci-face-registry.json 自身同类。"
+      "consumers": ["scripts/test/gate-wiring.test.ts"]
     },
     {
       "path": "docs/**",
-      "faces": [],
-      "consumers": ["scripts/gate/verify-docs.ts"],
-      "why": "纯文档：校相对链接与 pnpm 命令引用，无需包面。#220 起刻意不在全局面。"
+      "consumers": ["scripts/gate/verify-docs.ts"]
     },
     {
       "path": ".dsh/**",
-      "faces": [],
-      "consumers": ["scripts/gate/verify-docs.ts", "scripts/test/gate-wiring.test.ts"],
-      "why": "项目级 skill 与 MCP 声明。"
+      "consumers": ["scripts/gate/verify-docs.ts", "scripts/test/gate-wiring.test.ts"]
     },
     {
       "path": ".agents/**",
-      "faces": [],
       "consumerGap": {
         "kind": "external",
         "reason": "人阅读与 Agent 按 write-notes-like-deepseek skill（全局 ~/.dsh/skills，非仓内文件）查阅；仓内无机械读取方，没有校验脚本扫描该目录。"
-      },
-      "why": "纯决策记录文档：只增决策上下文，不影响任何包行为；faces 空数组为显式豁免（无需包面）。"
+      }
     },
     {
       "path": "tools/**",
-      "faces": [],
-      "consumers": ["scripts/test/lint-toolchain.test.ts", "package.json"],
-      "why": "lint 工具链隔离包：改动由 repo-gate 常驻的 pnpm lint 消费。"
+      "consumers": ["scripts/test/lint-toolchain.test.ts", "package.json"]
     },
     {
       "path": "scripts/test/**",
-      "faces": [],
-      "consumers": ["package.json", ".github/workflows/ci.yml"],
-      "why": "除 run-vitest.mjs（另有全局面条目）外只服务 test:scripts 静态闸。"
+      "consumers": ["package.json", ".github/workflows/ci.yml"]
     },
     {
       "path": "scripts/maintenance/**",
-      "faces": [],
       "consumers": [
         "scripts/test/repair-mcp-catalog-sessions.test.ts",
         "scripts/test/scan-actions-concurrency.test.ts",
         "scripts/test/migrate-plugin-rows.test.ts"
-      ],
-      "why": "运维辅助脚本（会话修复、并发扫描）：不进任何 CI 切片；改动只由常驻 test:scripts 的用例覆盖，PR 面无其他执行点。"
+      ]
     },
     {
       "path": "scripts/release/**",
-      "faces": [],
       "consumers": [
         ".github/workflows/release.yml",
         ".github/workflows/health-report.yml",
         "scripts/test/observe-precheck.test.ts"
-      ],
-      "why": "发版与体检管线：PR 面无执行点。"
+      ]
     },
     {
       "path": "scripts/README.md",
-      "faces": [],
-      "consumers": ["scripts/gate/verify-scripts-index.mjs"],
-      "why": "脚本索引文档：校索引与真实脚本集合一致。"
+      "consumers": ["scripts/gate/verify-scripts-index.mjs"]
     },
     {
       "path": "scripts/derive/host-contract.mjs",
-      "faces": [],
       "consumerGap": {
         "kind": "none",
         "trackingIssue": "#802",
         "reason": "人工执行暂无仓内直接读取方，接线后改 consumers"
-      },
-      "why": "P1 只读派生骨架暂未接门禁"
+      }
     },
     {
       "path": "scripts/tsconfig.json",
-      "faces": [],
-      "consumers": ["scripts/test/verify-docs-typecheck.test.ts"],
-      "why": "scripts/ 的增量编译面。"
+      "consumers": ["scripts/test/verify-docs-typecheck.test.ts"]
     },
     {
       "path": "*.md",
-      "faces": [],
-      "consumers": ["scripts/gate/verify-docs.ts"],
-      "why": "根级文档（AGENTS.md / CONTRIBUTING.md / README*）。"
+      "consumers": ["scripts/gate/verify-docs.ts"]
     },
     {
       "path": "eslint-suppressions.json",
-      "faces": [],
-      "consumers": ["tools/lint/bin/lint.mjs", "scripts/test/lint-toolchain.test.ts"],
-      "why": "lint 抑制清单。"
+      "consumers": ["tools/lint/bin/lint.mjs", "scripts/test/lint-toolchain.test.ts"]
     },
     {
       "path": "prettier.config.mjs",
-      "faces": [],
       "consumerGap": {
         "kind": "external",
         "reason": "Prettier CLI 隐式加载：repo-gate 的 pnpm format:check（.github/workflows/ci.yml 的 Format check（Prettier 形态；面见 .prettierignore）步骤）与本地 cheapGlobal 的 format:check 步骤（scripts/gate/gate-steps.mjs），另见 package.json 的 format / format:check 脚本。"
-      },
-      "why": "格式配置：Prettier 的形态事实源。"
+      }
     },
     {
       "path": ".prettierignore",
-      "faces": [],
       "consumerGap": {
         "kind": "external",
         "reason": "Prettier CLI 隐式加载（--ignore-path 默认取本文件）：调用点同 prettier.config.mjs——.github/workflows/ci.yml 的 Format check 步骤与 scripts/gate/gate-steps.mjs 的 format:check 步骤。"
-      },
-      "why": "format:check 的扫描面控制（Prettier 不读 .gitignore，见文件内说明）。"
+      }
     },
     {
       "path": "commitlint.config.js",
-      "faces": [],
       "consumerGap": {
         "kind": "external",
         "reason": "commitlint CLI 隐式加载：lefthook.yml:18-19 的 commit-msg 钩子 pnpm exec commitlint --edit {1}；CI 侧无执行点。"
-      },
-      "why": "提交信息规范（Conventional Commits 规则集）。"
+      }
     },
     {
       "path": "lefthook.yml",
-      "faces": [],
-      "consumers": ["scripts/gate/verify-scripts-index.mjs", "scripts/test/gate-wiring.test.ts"],
-      "why": "本地钩子编排（pre-commit / commit-msg）。"
+      "consumers": ["scripts/gate/verify-scripts-index.mjs", "scripts/test/gate-wiring.test.ts"]
     },
     {
       "path": ".gitignore",
-      "faces": [],
       "consumerGap": {
         "kind": "indirect",
         "reason": "git 读取：scripts/gate/verify-docs.ts 的草稿/产物排除面取自 git ls-files -o -i 的忽略集（行为依赖本文件），仓内没有直接解析 .gitignore 的读取方。"
-      },
-      "why": "未跟踪文件的过滤面：不改任何已跟踪文件自身的判据，但被忽略集会进入 verify-docs 的草稿/产物排除面。"
+      }
     },
     {
       "path": ".git-blame-ignore-revs",
-      "faces": [],
       "consumerGap": {
         "kind": "external",
         "reason": "git blame --ignore-revs-file 与 GitHub blame 视图读取（仓内规程见 docs/DEVELOPMENT.md）；仓内无调用点，本地需 git config blame.ignoreRevsFile 显式开启。"
-      },
-      "why": "git blame 的忽略清单（纯格式化提交登记）。"
+      }
     },
     {
       "path": "LICENSE",

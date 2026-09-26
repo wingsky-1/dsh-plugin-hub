@@ -148,7 +148,8 @@ test("planChangedScope：全局面命中回退全量；单包改动只命中该�
   assert.equal(global.globalHit, true);
 
   // #742 阶段 2.1：整树 scripts/** 收窄为白名单后，白名单外的 scripts 条目不再升级为全量
-  // （它们的消费方是每个 PR 都常驻的静态闸，见 scripts/data/ci-face-registry.json 的豁免条目）
+  // （它们的消费方是每个 PR 都常驻的静态闸；scripts/data/ci-face-registry.json 里这些条目
+  //  缺省 faces，#875 H9 起「不需要面」由 N1/N2/N3 从对象特征推导，不再是登记的豁免声明）
   const exempt = planChangedScope({
     root: ROOT,
     files: ["scripts/maintenance/scan-actions-concurrency.mjs"],
@@ -211,7 +212,7 @@ test("#742 2.1: 本地快线升档判据（全局面 + 空切片的非文档改�
       files: ["scripts/test/foo.test.ts", "tools/lint/bin/lint.mjs"],
     }),
     true,
-    "其它豁免条目同理（scripts/test/**、tools/**）",
+    "其它无面条目同理（scripts/test/**、tools/**）",
   );
   assert.equal(
     esc({
