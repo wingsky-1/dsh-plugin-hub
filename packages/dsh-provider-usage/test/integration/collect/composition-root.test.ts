@@ -61,6 +61,7 @@ import type {
   TrendEmit,
 } from "../../../src/server/collect/interface.ts";
 import type { FetchContext, UsageStatsAdapter } from "../../../src/shared/interface.ts";
+import { normalizeConfig } from "../../../src/shared/interface.ts";
 import type { SessionEvent } from "@deepseek-ai/dsh-session/types";
 import { safeFetchData, runV2Pipeline } from "../../../src/server/pipeline/interface.ts";
 import { safeFetchData as ImplSafeFetch } from "../../../src/server/pipeline/guards.ts";
@@ -327,8 +328,11 @@ describe("D9二 采集线路钉住（60s tick 汇入 + 5min 预热）", () => {
     expect(applySrc.includes("startWarmupTimer")).toBe(true);
     expect(applySrc.includes("warmupIntervalMs")).toBe(true);
     expect(applySrc.includes("statsService.getStats")).toBe(true);
-    expect(configSrc.includes("warmupIntervalMs: 300000")).toBe(true);
-    expect(configSrc.includes("Math.max(60000")).toBe(true);
+    // 预热间隔的默认与下界改用**行为锚点**（原先扫 config.ts 的 `Math.max(60000` 文本窗口：
+    // 归一化实现换成规则表后窗口一改就误红，而它是源码形状不是契约）。下界去 clamp、
+    // 默认值改小、或把下界挂到别的键上，三种变异都各自打红这条。
+    expect(normalizeConfig({}).warmupIntervalMs).toBe(300000);
+    expect(normalizeConfig({ warmupIntervalMs: 1 }).warmupIntervalMs).toBe(60000);
   });
 });
 

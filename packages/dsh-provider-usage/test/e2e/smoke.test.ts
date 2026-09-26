@@ -3993,26 +3993,29 @@ describe("#503 M2：/trend 路由集成断言", () => {
 describe("#503 M3：用量报告接线", () => {
   const obs: Record<string, unknown> = {};
 
-  beforeAll(async () => {
-    // 独立 historyDir：报告产物与趋势分片全部隔离在临时目录（零污染纪律）
-    const dir = mkdtempSync(join(tmpdir(), "dou-report-"));
-    const histDir = join(dir, "hist");
-    const reportsDir = join(histDir, "reports");
-    const { ctx, routes, listeners, emitEvent, effects } = makeFakeCtx();
-    await apply(ctx, { ...ISOLATED_CONFIG, historyDir: histDir });
-    const cfgRoute = routes.find((r) => r.path === ROUTES.reportConfig);
-    const listRoute = routes.find((r) => r.path === ROUTES.reports);
-    const detailRoute = routes.find((r) => r.path === ROUTES.reportDetail);
-    const genRoute = routes.find((r) => r.path === ROUTES.reportGenerate);
-    const trendRoute = routes.find((r) => r.path === ROUTES.trend);
-    obs.reportRoutesExist =
-      cfgRoute !== undefined &&
-      listRoute !== undefined &&
-      detailRoute !== undefined &&
-      genRoute !== undefined;
+  // ---- 下面这些 phase 函数把「#503 M3 接线」这一大段 beforeAll 切成可读的段落。
+  // 切法按**断言主题**（默认挂载 / 配置往返 / 模型候选 / 趋势前置 / 生成产物 /
+  // XSS 净化 / 目录范围 / 幂等与 force / 守卫），不按行号切：每个 phase 回答一个
+  // 独立问题，各自的 obs 键成组出现，混在一起才看不出这条用例到底钉住了什么。
+  // 顺序即依赖：这些 phase 共享同一个已挂载 ctx 与台账，调用次序不可换。
 
-    // b. 默认挂载（报告全关）：无报告产物（html/meta/index）；S3 存储归位后 reports/ 含版本化空形
-    // （config.json{version:1}/last-run.json{schema:2}）属预期初始形态，不算报告产物。
+  type SmokeCtx = ReturnType<typeof makeFakeCtx>;
+  type ReportMeta = NonNullable<GenerateStatusPayload["meta"]>;
+
+  /** 尽力拆除 effect（单个抛错不连坐，逆序保证后注册的先退）。 */
+  function disposeEffects(effects: Array<() => void>): void {
+    for (const d of [...effects].reverse()) {
+      try {
+        d();
+      } catch {
+        /* 忽略 */
+      }
+    }
+  }
+
+  // b. 默认挂载（报告全关）：无报告产物（html/meta/index）；S3 存储归位后 reports/ 含版本化空形
+  // （config.json{version:1}/last-run.json{schema:2}）属预期初始形态，不算报告产物。
+  async function probeDefaultMount(reportsDir: string): Promise<void> {
     try {
       const names = readdirSync(reportsDir);
       obs.noReportArtifactsOnDefaultMount = names.every(
@@ -4022,8 +4025,12 @@ describe("#503 M3：用量报告接线", () => {
       obs.noReportArtifactsOnDefaultMount = true;
     }
     obs.noReportsDirOnDefaultMount = obs.noReportArtifactsOnDefaultMount;
+  }
+
+  /** b2. 报告全关时 GET /report-config 的默认回包（daily on / weekly off / monthly off）。 */
+  async function probeDefaultConfig(cfgRoute: SmokeRoute): Promise<void> {
     const defaultCfg = await callHandler<ReportConfigPayload>(
-      cfgRoute!,
+      cfgRoute,
       fakeReq({ url: ROUTES.reportConfig }),
     );
     obs.defaultCfgOk = defaultCfg.ok;
@@ -4033,10 +4040,13 @@ describe("#503 M3：用量报告接线", () => {
     obs.defaultPromptTemplateHasStats = defaultCfg.config.promptTemplate.includes("{stats}");
     obs.defaultProvidersFromLlm =
       Array.isArray(defaultCfg.providers) && defaultCfg.providers.length >= 2;
+  }
 
-    // c. POST /report-config 保存（启用日报 22:00）→ GET 回读一致
+  // c. POST /report-config 保存（启用日报 22:00）→ GET 回读一致  // d. 畸形 / 缺席 body 一律 400：读不出来的 body 不能当「没给配置」——那会把上面刚存的
+  //    配置静默重置回默认值（历史上这里没有非对象判据，readJsonBody 又把畸形收敛成 undefined）。
+  async function saveAndRereadConfig(cfgRoute: SmokeRoute): Promise<ReportConfigPayload> {
     const savedCfg = await callHandler<ReportConfigPayload>(
-      cfgRoute!,
+      cfgRoute,
       fakeReq({
         method: "POST",
         body: JSON.stringify({ daily: { enabled: true, time: "22:00" }, push: { enabled: false } }),
@@ -4046,14 +4056,12 @@ describe("#503 M3：用量报告接线", () => {
     obs.savedDailyEnabled = savedCfg.config.daily.enabled;
     obs.savedDailyTime = savedCfg.config.daily.time;
     const reread = await callHandler<ReportConfigPayload>(
-      cfgRoute!,
+      cfgRoute,
       fakeReq({ url: ROUTES.reportConfig }),
     );
     obs.rereadConfig = reread.config;
     obs.savedConfigSnapshot = savedCfg.config;
 
-    // d. 畸形 / 缺席 body 一律 400：读不出来的 body 不能当「没给配置」——那会把上面刚存的
-    //    配置静默重置回默认值（历史上这里没有非对象判据，readJsonBody 又把畸形收敛成 undefined）。
     const statusOf = { code: 0 };
     const resExt = {
       writeHead: (code: number) => {
@@ -4061,7 +4069,7 @@ describe("#503 M3：用量报告接线", () => {
       },
     };
     const badJson = await callHandler<ReportConfigPayload>(
-      cfgRoute!,
+      cfgRoute,
       fakeReq({ method: "POST", body: "{" }),
       resExt,
     );
@@ -4069,48 +4077,55 @@ describe("#503 M3：用量报告接线", () => {
     obs.badJsonError = badJson.error;
     statusOf.code = 0;
     const noBody = await callHandler<ReportConfigPayload>(
-      cfgRoute!,
+      cfgRoute,
       fakeReq({ method: "POST" }),
       resExt,
     );
     obs.noBodyStatus = statusOf.code;
     obs.noBodyError = noBody.error;
     const afterBad = await callHandler<ReportConfigPayload>(
-      cfgRoute!,
+      cfgRoute,
       fakeReq({ url: ROUTES.reportConfig }),
     );
     obs.configSurvivesBadJson = afterBad.config?.daily?.time;
     obs.configSurvivesNoBody = afterBad.config?.daily?.enabled;
+    return savedCfg;
+  }
 
-    // e0. #532 报告模型候选路由：已知 provider → listModels 白名单映射；未知/缺失 → unknown-provider
-    {
-      const modelsRoute = routes.find((r) => r.path === ROUTES.reportModels);
-      obs.modelsRouteExists = modelsRoute !== undefined;
-      const modelsOk = await callHandler<ModelsPayload>(
-        modelsRoute!,
-        fakeReq({ url: `${ROUTES.reportModels}?provider=anthropic` }),
-      );
-      obs.modelsOkOk = modelsOk.ok;
-      obs.modelsWhitelist = modelsOk.models;
-      const modelsUnknown = await callHandler<ModelsPayload>(
-        modelsRoute!,
-        fakeReq({ url: `${ROUTES.reportModels}?provider=no-such` }),
-      );
-      obs.modelsUnknown = modelsUnknown;
-      const modelsMissing = await callHandler<ModelsPayload>(
-        modelsRoute!,
-        fakeReq({ url: ROUTES.reportModels }),
-      );
-      obs.modelsMissing = modelsMissing;
-    }
+  // e0. #532 报告模型候选路由：已知 provider → listModels 白名单映射；未知/缺失 → unknown-provider
+  async function probeModelCandidates(routes: SmokeRoute[]): Promise<void> {
+    const modelsRoute = routes.find((r) => r.path === ROUTES.reportModels);
+    obs.modelsRouteExists = modelsRoute !== undefined;
+    const modelsOk = await callHandler<ModelsPayload>(
+      modelsRoute!,
+      fakeReq({ url: `${ROUTES.reportModels}?provider=anthropic` }),
+    );
+    obs.modelsOkOk = modelsOk.ok;
+    obs.modelsWhitelist = modelsOk.models;
+    const modelsUnknown = await callHandler<ModelsPayload>(
+      modelsRoute!,
+      fakeReq({ url: `${ROUTES.reportModels}?provider=no-such` }),
+    );
+    obs.modelsUnknown = modelsUnknown;
+    const modelsMissing = await callHandler<ModelsPayload>(
+      modelsRoute!,
+      fakeReq({ url: ROUTES.reportModels }),
+    );
+    obs.modelsMissing = modelsMissing;
+  }
 
-    // f. 前置：合成一点趋势数据（生成「不入统计」断言的对照快照）
-    // 事件时间必须落在手动生成的闭环窗口内（昨日全天；空窗口会走 noData 短路不再调模型）
+  // f. 前置：合成一点趋势数据（生成「不入统计」断言的对照快照）
+  // 事件时间必须落在手动生成的闭环窗口内（昨日全天；空窗口会走 noData 短路不再调模型）
+  async function seedTrendSession(
+    fake: SmokeCtx,
+    trendRoute: SmokeRoute,
+    savedCfg: ReportConfigPayload,
+  ): Promise<TrendPayload> {
     const dueDaily = previousClosedWindow("daily", savedCfg.config, Date.now());
     const [wy, wm, wd] = dueDaily.endDay.split("-").map(Number);
     const t = new Date(wy, wm - 1, wd, 12, 0, 0).getTime();
     const sess = { id: "sess-report" };
-    emitEvent("session/event", sess, {
+    fake.emitEvent("session/event", sess, {
       type: "request/header",
       seq: 1,
       time: t,
@@ -4119,26 +4134,25 @@ describe("#503 M3：用量报告接线", () => {
         reason: "initial",
       },
     });
-    emitEvent("session/event", sess, {
+    fake.emitEvent("session/event", sess, {
       type: "assistant/message",
       seq: 2,
       time: t,
       data: { turn: 1, step: 1, usage: { inputTokens: 80, outputTokens: 40 } },
     });
-    await listeners.get("session/flush")![0](); // 官方排空点先行刷盘
-    const trendBefore = await callHandler<TrendPayload>(
-      trendRoute!,
-      fakeReq({ url: ROUTES.trend }),
-    );
+    await fake.listeners.get("session/flush")![0](); // 官方排空点先行刷盘
+    return callHandler<TrendPayload>(trendRoute, fakeReq({ url: ROUTES.trend }));
+  }
 
-    // #625 辅助：提交生成 → 轮询 status 到 done（fake 队列立即执行；防 flake 轮询替代固定 sleep）
-    const statusRoute = routes.find((r) => r.path === ROUTES.reportGenerateStatus);
-    obs.statusRouteExists = statusRoute !== undefined;
-    /** 每次 generateAndAwait 调用的观测（原 helper 内 5 条断言各自逐次记录） */
-    const genObs: Array<Record<string, unknown>> = [];
-    const generateAndAwait = async (body: Record<string, unknown>) => {
+  // #625 辅助：提交生成 → 轮询 status 到 done（fake 队列立即执行；防 flake 轮询替代固定 sleep）
+  function makeGenerateAwait(
+    genRoute: SmokeRoute,
+    statusRoute: SmokeRoute,
+    genObs: Array<Record<string, unknown>>,
+  ): (body: Record<string, unknown>) => Promise<ReportMeta> {
+    return async (body: Record<string, unknown>) => {
       const gen = await callHandler<GeneratePayload>(
-        genRoute!,
+        genRoute,
         fakeReq({ method: "POST", body: JSON.stringify(body) }),
       );
       const rec: Record<string, unknown> = {
@@ -4149,7 +4163,7 @@ describe("#503 M3：用量报告接线", () => {
       const done = await pollUntil(
         async () => {
           const st = await callHandler<GenerateStatusPayload>(
-            statusRoute!,
+            statusRoute,
             fakeReq({
               url: `${ROUTES.reportGenerateStatus}?taskId=${encodeURIComponent(gen.taskId)}`,
             }),
@@ -4166,10 +4180,13 @@ describe("#503 M3：用量报告接线", () => {
       genObs.push(rec);
       return done!.meta!;
     };
-    obs.genObs = genObs;
+  }
 
-    // d. 手动生成 daily → 202+taskId → 轮询 done → meta → 三件套就位
-    const genMeta = await generateAndAwait({ period: "daily" });
+  // d. 手动生成 daily → 202+taskId → 轮询 done → meta → 三件套就位
+  async function probeGeneratedArtifacts(
+    reportsDir: string,
+    genMeta: ReportMeta,
+  ): Promise<{ htmlFile: string; metaFile: string; indexFile: string }> {
     obs.genMetaOk = genMeta.ok;
     obs.genMetaPeriod = genMeta.period;
     obs.genMetaProvider = genMeta.provider;
@@ -4188,107 +4205,112 @@ describe("#503 M3：用量报告接线", () => {
     const storedHtml = readFileSync(htmlFile, "utf8");
     obs.storedHtmlIsMinimalSkeleton =
       storedHtml.startsWith("<!doctype html>") && storedHtml.includes("dou-report-body");
+    return { htmlFile, metaFile, indexFile };
+  }
 
-    // e/f. 双断言：生成不入统计（方案 §2.3 显式断言）——生成前后 /trend 桶快照完全一致
-    const trendAfter = await callHandler<TrendPayload>(trendRoute!, fakeReq({ url: ROUTES.trend }));
+  // e/f. 双断言：生成不入统计（方案 §2.3 显式断言）——生成前后 /trend 桶快照完全一致
+  async function probeTrendUnchanged(
+    trendRoute: SmokeRoute,
+    trendBefore: TrendPayload,
+    listeners: Map<string, Array<(...args: unknown[]) => void>>,
+  ): Promise<void> {
+    const trendAfter = await callHandler<TrendPayload>(trendRoute, fakeReq({ url: ROUTES.trend }));
     obs.trendAfterSeries = trendAfter.series;
     obs.trendBeforeSeries = trendBefore.series;
     obs.trendAfterSummary = trendAfter.summary;
     obs.trendBeforeSummary = trendBefore.summary;
     // 事件通道计数佐证：生成过程只经 llm.stream，无 session/event 派发
     obs.sessionEventListenerCount = (listeners.get("session/event") ?? []).length;
+  }
 
-    // e. XSS 双层净化：恶意 LLM 正文 → detail 响应既无明文载体、也无实体化标签残留
-    {
-      const xssDir = mkdtempSync(join(tmpdir(), "dou-report-xss-"));
-      const xssCtx = makeFakeCtx({
-        llmStreamChunks: [
-          {
-            type: "text-delta",
-            index: 0,
-            text: "<script>alert(1)</script>安全正文<img onerror=x src=y>收尾",
-          },
-          { type: "usage", usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 } },
-          { type: "finish", reason: { kind: "stop" } },
-        ],
-      });
-      await apply(xssCtx.ctx, { ...ISOLATED_CONFIG, historyDir: join(xssDir, "hist") });
-      // #532：空窗口会 noData 短路不落盘——先向本 ctx 合成落在 daily 闭环窗口内的用量
-      {
-        const xssCfgRoute = xssCtx.routes.find((r) => r.path === ROUTES.reportConfig);
-        const xssCfg = await callHandler<ReportConfigPayload>(
-          xssCfgRoute!,
-          fakeReq({ url: ROUTES.reportConfig }),
-        );
-        const xssDue = previousClosedWindow("daily", xssCfg.config, Date.now());
-        const [xy, xm, xd] = xssDue.endDay.split("-").map(Number);
-        const xt = new Date(xy, xm - 1, xd, 12, 0, 0).getTime();
-        const xssSess = { id: "sess-xss" };
-        xssCtx.emitEvent("session/event", xssSess, {
-          type: "request/header",
-          seq: 1,
-          time: xt,
-          data: {
-            header: { config: { provider: "deepseek", model: "deepseek-chat" } },
-            reason: "initial",
-          },
-        });
-        xssCtx.emitEvent("session/event", xssSess, {
-          type: "assistant/message",
-          seq: 2,
-          time: xt,
-          data: { turn: 1, step: 1, usage: { inputTokens: 80, outputTokens: 40 } },
-        });
-        await xssCtx.listeners.get("session/flush")![0]();
-      }
-      const xssGenRoute = xssCtx.routes.find((r) => r.path === ROUTES.reportGenerate);
-      const xssStatusRoute = xssCtx.routes.find((r) => r.path === ROUTES.reportGenerateStatus);
-      const xssGenRes = await callHandler<GeneratePayload>(
-        xssGenRoute!,
-        fakeReq({ method: "POST", body: JSON.stringify({ period: "daily" }) }),
-      );
-      obs.xssGen202 = xssGenRes.ok;
-      const xssDone = await pollUntil(
-        async () => {
-          const st = await callHandler<GenerateStatusPayload>(
-            xssStatusRoute!,
-            fakeReq({
-              url: `${ROUTES.reportGenerateStatus}?taskId=${encodeURIComponent(xssGenRes.taskId)}`,
-            }),
-          );
-          return st.status === "done" || st.status === "failed" ? st : undefined;
+  // e. XSS 双层净化：恶意 LLM 正文 → detail 响应既无明文载体、也无实体化标签残留
+  async function probeXssLayer(): Promise<void> {
+    const xssDir = mkdtempSync(join(tmpdir(), "dou-report-xss-"));
+    const xssCtx = makeFakeCtx({
+      llmStreamChunks: [
+        {
+          type: "text-delta",
+          index: 0,
+          text: "<script>alert(1)</script>安全正文<img onerror=x src=y>收尾",
         },
-        5000,
-        5,
-      );
-      obs.xssDoneStatus = xssDone?.status;
-      obs.xssDoneError = xssDone?.error ?? "";
-      const xssGen = xssDone!.meta!;
-      obs.xssGenOk = xssGen.ok;
-      const xssDetail = await callHandler<ReportDetailPayload>(
-        xssCtx.routes.find((r) => r.path === ROUTES.reportDetail)!,
-        fakeReq({
-          url: `${ROUTES.reportDetail}?period=daily&key=${encodeURIComponent(xssGen.key)}`,
-        }),
-      );
-      obs.xssDetailOk = xssDetail.ok;
-      obs.xssDetailMetaOk = xssDetail.meta.ok;
-      obs.xssNoRawScript = !xssDetail.html.includes("<script");
-      obs.xssNoOnErrorAttr = !xssDetail.html.includes("onerror");
-      obs.xssNoEntityScript = !xssDetail.html.includes("&lt;script");
-      obs.xssKeepsText = xssDetail.html.includes("安全正文");
-      for (const d of [...xssCtx.effects].reverse()) {
-        try {
-          d();
-        } catch {
-          /* 忽略 */
-        }
-      }
-    }
+        { type: "usage", usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 } },
+        { type: "finish", reason: { kind: "stop" } },
+      ],
+    });
+    await apply(xssCtx.ctx, { ...ISOLATED_CONFIG, historyDir: join(xssDir, "hist") });
+    // #532：空窗口会 noData 短路不落盘——先向本 ctx 合成落在 daily 闭环窗口内的用量
+    const xssCfgRoute = xssCtx.routes.find((r) => r.path === ROUTES.reportConfig);
+    const xssCfg = await callHandler<ReportConfigPayload>(
+      xssCfgRoute!,
+      fakeReq({ url: ROUTES.reportConfig }),
+    );
+    const xssDue = previousClosedWindow("daily", xssCfg.config, Date.now());
+    const [xy, xm, xd] = xssDue.endDay.split("-").map(Number);
+    const xt = new Date(xy, xm - 1, xd, 12, 0, 0).getTime();
+    const xssSess = { id: "sess-xss" };
+    xssCtx.emitEvent("session/event", xssSess, {
+      type: "request/header",
+      seq: 1,
+      time: xt,
+      data: {
+        header: { config: { provider: "deepseek", model: "deepseek-chat" } },
+        reason: "initial",
+      },
+    });
+    xssCtx.emitEvent("session/event", xssSess, {
+      type: "assistant/message",
+      seq: 2,
+      time: xt,
+      data: { turn: 1, step: 1, usage: { inputTokens: 80, outputTokens: 40 } },
+    });
+    await xssCtx.listeners.get("session/flush")![0]();
+    const xssGenRoute = xssCtx.routes.find((r) => r.path === ROUTES.reportGenerate);
+    const xssStatusRoute = xssCtx.routes.find((r) => r.path === ROUTES.reportGenerateStatus);
+    const xssGenRes = await callHandler<GeneratePayload>(
+      xssGenRoute!,
+      fakeReq({ method: "POST", body: JSON.stringify({ period: "daily" }) }),
+    );
+    obs.xssGen202 = xssGenRes.ok;
+    const xssDone = await pollUntil(
+      async () => {
+        const st = await callHandler<GenerateStatusPayload>(
+          xssStatusRoute!,
+          fakeReq({
+            url: `${ROUTES.reportGenerateStatus}?taskId=${encodeURIComponent(xssGenRes.taskId)}`,
+          }),
+        );
+        return st.status === "done" || st.status === "failed" ? st : undefined;
+      },
+      5000,
+      5,
+    );
+    obs.xssDoneStatus = xssDone?.status;
+    obs.xssDoneError = xssDone?.error ?? "";
+    const xssGen = xssDone!.meta!;
+    obs.xssGenOk = xssGen.ok;
+    const xssDetail = await callHandler<ReportDetailPayload>(
+      xssCtx.routes.find((r) => r.path === ROUTES.reportDetail)!,
+      fakeReq({
+        url: `${ROUTES.reportDetail}?period=daily&key=${encodeURIComponent(xssGen.key)}`,
+      }),
+    );
+    obs.xssDetailOk = xssDetail.ok;
+    obs.xssDetailMetaOk = xssDetail.meta.ok;
+    obs.xssNoRawScript = !xssDetail.html.includes("<script");
+    obs.xssNoOnErrorAttr = !xssDetail.html.includes("onerror");
+    obs.xssNoEntityScript = !xssDetail.html.includes("&lt;script");
+    obs.xssKeepsText = xssDetail.html.includes("安全正文");
+    disposeEffects(xssCtx.effects);
+  }
 
-    // f2. 趋势查询对生成免疫已由 f 覆盖；此处补 list/detail 读面
+  // f2. 趋势查询对生成免疫已由 f 覆盖；此处补 list/detail 读面
+  async function probeListAndDetail(
+    listRoute: SmokeRoute,
+    detailRoute: SmokeRoute,
+    genMeta: ReportMeta,
+  ): Promise<void> {
     const listPayload = await callHandler<ReportsListPayload>(
-      listRoute!,
+      listRoute,
       fakeReq({ url: ROUTES.reports }),
     );
     obs.listOk = listPayload.ok;
@@ -4296,7 +4318,7 @@ describe("#503 M3：用量报告接线", () => {
     obs.listFirstKey = listPayload.reports[0].key;
 
     const detail = await callHandler<ReportDetailPayload>(
-      detailRoute!,
+      detailRoute,
       fakeReq({
         url: `${ROUTES.reportDetail}?period=daily&key=${encodeURIComponent(genMeta.key)}`,
       }),
@@ -4304,168 +4326,178 @@ describe("#503 M3：用量报告接线", () => {
     obs.detailOk = detail.ok;
     obs.detailMetaOk = detail.meta.ok;
     obs.detailHtmlNonEmpty = typeof detail.html === "string" && detail.html.length > 0;
+  }
 
-    // g. 手动生成推进 lastRun（防调度 tick 重复生成同窗）
+  // g. 手动生成推进 lastRun（防调度 tick 重复生成同窗）
+  function probeLastRun(reportsDir: string): string {
     const lastRunFile = join(reportsDir, "last-run.json");
     obs.lastRunFileExists = existsSync(lastRunFile);
     const lastRun = JSON.parse(readFileSync(lastRunFile, "utf8"));
     obs.lastRunDaily = lastRun.daily;
+    return lastRunFile;
+  }
 
-    // ---------------------------------------------------------------- #633 分片 b B4：报告配置目录范围 round-trip（路由读写）
-    {
-      const withDirs = await callHandler<ReportConfigPayload>(
-        cfgRoute!,
-        fakeReq({
-          method: "POST",
-          body: JSON.stringify({
-            daily: { enabled: true, time: "22:00" },
-            directories: ["/tmp/some/proj", "repo"],
-            push: { enabled: false },
-          }),
+  // ---------------------------------------------------------------- #633 分片 b B4：报告配置目录范围 round-trip（路由读写）
+  async function probeDirectories(cfgRoute: SmokeRoute): Promise<void> {
+    const withDirs = await callHandler<ReportConfigPayload>(
+      cfgRoute,
+      fakeReq({
+        method: "POST",
+        body: JSON.stringify({
+          daily: { enabled: true, time: "22:00" },
+          directories: ["/tmp/some/proj", "repo"],
+          push: { enabled: false },
         }),
-      );
-      obs.withDirsOk = withDirs.ok;
-      obs.withDirsDirectories = withDirs.config.directories;
-      const readBack = await callHandler<ReportConfigPayload>(
-        cfgRoute!,
-        fakeReq({ url: ROUTES.reportConfig }),
-      );
-      obs.readBackDirectories = readBack.config.directories;
-      // 显式 all → 全部（空数组）
-      const allDirs = await callHandler<ReportConfigPayload>(
-        cfgRoute!,
-        fakeReq({
-          method: "POST",
-          body: JSON.stringify({
-            daily: { enabled: true, time: "22:00" },
-            directories: "all",
-            push: { enabled: false },
-          }),
+      }),
+    );
+    obs.withDirsOk = withDirs.ok;
+    obs.withDirsDirectories = withDirs.config.directories;
+    const readBack = await callHandler<ReportConfigPayload>(
+      cfgRoute,
+      fakeReq({ url: ROUTES.reportConfig }),
+    );
+    obs.readBackDirectories = readBack.config.directories;
+    // 显式 all → 全部（空数组）
+    const allDirs = await callHandler<ReportConfigPayload>(
+      cfgRoute,
+      fakeReq({
+        method: "POST",
+        body: JSON.stringify({
+          daily: { enabled: true, time: "22:00" },
+          directories: "all",
+          push: { enabled: false },
         }),
-      );
-      obs.allDirsDirectories = allDirs.config.directories;
-      // 非法形态 → 回退空数组
-      const badDirs = await callHandler<ReportConfigPayload>(
-        cfgRoute!,
-        fakeReq({
-          method: "POST",
-          body: JSON.stringify({
-            daily: { enabled: true, time: "22:00" },
-            directories: 42,
-            push: { enabled: false },
-          }),
+      }),
+    );
+    obs.allDirsDirectories = allDirs.config.directories;
+    // 非法形态 → 回退空数组
+    const badDirs = await callHandler<ReportConfigPayload>(
+      cfgRoute,
+      fakeReq({
+        method: "POST",
+        body: JSON.stringify({
+          daily: { enabled: true, time: "22:00" },
+          directories: 42,
+          push: { enabled: false },
         }),
-      );
-      obs.badDirsDirectories = badDirs.config.directories;
-    }
+      }),
+    );
+    obs.badDirsDirectories = badDirs.config.directories;
+  }
 
-    // ---------------------------------------------------------------- #633 分片 b C1：报告链路 byDirectory 端到端
-    // f 步已注入会话用量（fake ctx 无 sessions store → 目录归未识别桶，落盘 dir 行），
-    // 手动生成（d 步）的快照经 runner 接线 trend.dirRows()——验证落盘 meta/索引
-    // 与生成链路不因目录维度抛错，且 /trend 目录查询面读得到落盘数据。
-    {
-      const UNK = "(unidentified)";
-      const dirRowsRoute = trendRoute; // 同一路由：dir 分支读 aggregator 目录查询面
-      const dirTrend = await callHandler<TrendPayload>(
-        dirRowsRoute!,
-        fakeReq({ url: `${ROUTES.trend}?dir=${encodeURIComponent(UNK)}` }),
-      );
-      obs.dirTrendTodayReachable =
-        dirTrend.series.find((p) => p.key === dayKey(Date.now())) !== undefined;
-      // 报告 meta（含 summary）已落盘且无路径形态（与 C2 出口约束一致）
-      const metaOnDisk = JSON.parse(readFileSync(metaFile, "utf8"));
-      obs.metaOnDiskKey = metaOnDisk.key;
-      const metaText = readFileSync(metaFile, "utf8");
-      obs.metaTextHasNoAbsolutePath = !metaText.includes("/home/") && !metaText.includes("C:\\");
-    }
+  // ---------------------------------------------------------------- #633 分片 b C1：报告链路 byDirectory 端到端
+  // f 步已注入会话用量（fake ctx 无 sessions store → 目录归未识别桶，落盘 dir 行），
+  // 手动生成（d 步）的快照经 runner 接线 trend.dirRows()——验证落盘 meta/索引
+  // 与生成链路不因目录维度抛错，且 /trend 目录查询面读得到落盘数据。
+  async function probeDirTrend(trendRoute: SmokeRoute, metaFile: string): Promise<void> {
+    const UNK = "(unidentified)";
+    // 同一路由：dir 分支读 aggregator 目录查询面
+    const dirTrend = await callHandler<TrendPayload>(
+      trendRoute,
+      fakeReq({ url: `${ROUTES.trend}?dir=${encodeURIComponent(UNK)}` }),
+    );
+    obs.dirTrendTodayReachable =
+      dirTrend.series.find((p) => p.key === dayKey(Date.now())) !== undefined;
+    // 报告 meta（含 summary）已落盘且无路径形态（与 C2 出口约束一致）
+    const metaOnDisk = JSON.parse(readFileSync(metaFile, "utf8"));
+    obs.metaOnDiskKey = metaOnDisk.key;
+    const metaText = readFileSync(metaFile, "utf8");
+    obs.metaTextHasNoAbsolutePath = !metaText.includes("/home/") && !metaText.includes("C:\\");
+  }
 
-    // g2. #626 幂等短路 + force 强制重生成 + #625 status 守卫
-    {
-      const dailyLineCount = () => {
-        const raw = readFileSync(indexFile, "utf8");
-        return raw
-          .split("\n")
-          .filter((l) => l.includes('"period":"daily"') && l.includes(`"key":"${genMeta.key}"`))
-          .length;
-      };
-      const countBeforeForce = dailyLineCount();
-      const again = await callHandler<GeneratePayload>(
-        genRoute!,
-        fakeReq({ method: "POST", body: JSON.stringify({ period: "daily" }) }),
-      );
-      obs.againOk = again.ok;
-      obs.againReused = again.reused;
-      obs.againMetaKey = again.meta!.key;
-      obs.againLineCount = dailyLineCount();
-      obs.countBeforeForce = countBeforeForce;
-      // #629 P2 复用提示对称说明：200 直接复用路径的 reused 透传已由上方 again 断言覆盖；
-      // executor 短路复用（202 任务化 → 执行前重查 index 命中 → task.reused）在 HTTP 面
-      // 被路由层 200 短路先行遮蔽，正常流量下不可达，集成层不构造时序赌注（防 flake），
-      // 该透传断言归位单元层（unit-report.test.ts 直调 handleReportStatus 覆盖）。
-      const forceMeta = await generateAndAwait({ period: "daily", force: true });
-      obs.forceMetaOk = forceMeta.ok;
-      obs.forceMetaKey = forceMeta.key;
-      obs.forceLineCount = dailyLineCount();
-      const forceList = await callHandler<ReportsListPayload>(
-        listRoute!,
-        fakeReq({ url: ROUTES.reports }),
-      );
-      const dailies = forceList.reports.filter(
-        (m) => m.period === "daily" && m.key === genMeta.key,
-      );
-      obs.forceListDailyCount = dailies.length;
-      const bad1 = await callHandler<GenerateStatusPayload>(
-        statusRoute!,
-        fakeReq({ url: `${ROUTES.reportGenerateStatus}?taskId=not-a-uuid` }),
-      );
-      obs.statusBadUuidError = bad1.error;
-      const bad2 = await callHandler<GenerateStatusPayload>(
-        statusRoute!,
-        fakeReq({
-          url: `${ROUTES.reportGenerateStatus}?taskId=00000000-0000-4000-8000-000000000000`,
+  // g2. #626 幂等短路 + force 强制重生成 + #625 status 守卫
+  async function probeIdempotentAndForce(
+    genRoute: SmokeRoute,
+    listRoute: SmokeRoute,
+    statusRoute: SmokeRoute,
+    indexFile: string,
+    genMeta: ReportMeta,
+    generateAndAwait: (body: Record<string, unknown>) => Promise<ReportMeta>,
+  ): Promise<void> {
+    const dailyLineCount = () => {
+      const raw = readFileSync(indexFile, "utf8");
+      return raw
+        .split("\n")
+        .filter((l) => l.includes('"period":"daily"') && l.includes(`"key":"${genMeta.key}"`))
+        .length;
+    };
+    const countBeforeForce = dailyLineCount();
+    const again = await callHandler<GeneratePayload>(
+      genRoute,
+      fakeReq({ method: "POST", body: JSON.stringify({ period: "daily" }) }),
+    );
+    obs.againOk = again.ok;
+    obs.againReused = again.reused;
+    obs.againMetaKey = again.meta!.key;
+    obs.againLineCount = dailyLineCount();
+    obs.countBeforeForce = countBeforeForce;
+    // #629 P2 复用提示对称说明：200 直接复用路径的 reused 透传已由上方 again 断言覆盖；
+    // executor 短路复用（202 任务化 → 执行前重查 index 命中 → task.reused）在 HTTP 面
+    // 被路由层 200 短路先行遮蔽，正常流量下不可达，集成层不构造时序赌注（防 flake），
+    // 该透传断言归位单元层（unit-report.test.ts 直调 handleReportStatus 覆盖）。
+    const forceMeta = await generateAndAwait({ period: "daily", force: true });
+    obs.forceMetaOk = forceMeta.ok;
+    obs.forceMetaKey = forceMeta.key;
+    obs.forceLineCount = dailyLineCount();
+    const forceList = await callHandler<ReportsListPayload>(
+      listRoute,
+      fakeReq({ url: ROUTES.reports }),
+    );
+    const dailies = forceList.reports.filter((m) => m.period === "daily" && m.key === genMeta.key);
+    obs.forceListDailyCount = dailies.length;
+    const bad1 = await callHandler<GenerateStatusPayload>(
+      statusRoute,
+      fakeReq({ url: `${ROUTES.reportGenerateStatus}?taskId=not-a-uuid` }),
+    );
+    obs.statusBadUuidError = bad1.error;
+    const bad2 = await callHandler<GenerateStatusPayload>(
+      statusRoute,
+      fakeReq({
+        url: `${ROUTES.reportGenerateStatus}?taskId=00000000-0000-4000-8000-000000000000`,
+      }),
+    );
+    obs.statusUnknownTaskError = bad2.error;
+  }
+
+  // g3. #629 P2 交叉写者：启用 weekly（preset 走 updateLastRun 临界区）后 lastRun.daily 不丢
+  async function probeWeeklySave(cfgRoute: SmokeRoute, lastRunFile: string): Promise<void> {
+    const saveWeekly = await callHandler<ReportConfigPayload>(
+      cfgRoute,
+      fakeReq({
+        method: "POST",
+        body: JSON.stringify({
+          daily: { enabled: true, time: "22:00" },
+          weekly: { enabled: true, time: "09:00", weekStartsOn: 1 },
+          push: { enabled: false },
         }),
-      );
-      obs.statusUnknownTaskError = bad2.error;
-    }
+      }),
+    );
+    obs.saveWeeklyOk = saveWeekly.ok;
+    const lastRunAfter = JSON.parse(readFileSync(lastRunFile, "utf8"));
+    obs.lastRunAfterDaily = lastRunAfter.daily;
+    obs.lastRunAfterWeeklyIsString =
+      typeof lastRunAfter.weekly === "string" && lastRunAfter.weekly.length > 0;
+  }
 
-    // g3. #629 P2 交叉写者：启用 weekly（preset 走 updateLastRun 临界区）后 lastRun.daily 不丢
-    {
-      const saveWeekly = await callHandler<ReportConfigPayload>(
-        cfgRoute!,
-        fakeReq({
-          method: "POST",
-          body: JSON.stringify({
-            daily: { enabled: true, time: "22:00" },
-            weekly: { enabled: true, time: "09:00", weekStartsOn: 1 },
-            push: { enabled: false },
-          }),
-        }),
-      );
-      obs.saveWeeklyOk = saveWeekly.ok;
-      const lastRunAfter = JSON.parse(readFileSync(lastRunFile, "utf8"));
-      obs.lastRunAfterDaily = lastRunAfter.daily;
-      obs.lastRunAfterWeeklyIsString =
-        typeof lastRunAfter.weekly === "string" && lastRunAfter.weekly.length > 0;
-    }
+  // g4. #629 P1 解析记忆化：重复读走缓存（计数器证明不重解析）+ 失效正确 + 路由不服务过期投影
+  async function probeIndexCache(listRoute: SmokeRoute, indexFile: string): Promise<void> {
+    // 直接向 index.jsonl 追加一行（size/mtime 双变 → 缓存必失效；新 generatedAt 最大 → 排序首位）
+    appendFileSync(
+      indexFile,
+      `${JSON.stringify({ period: "daily", key: "2099-01-01", startDay: "2099-01-01", endDay: "2099-01-01", provider: "anthropic", model: "model-a", generatedAt: Date.now() + 1000000, ok: true })}\n`,
+    );
+    const afterAppend = await callHandler<ReportsListPayload>(
+      listRoute,
+      fakeReq({ url: ROUTES.reports }),
+    );
+    obs.afterAppendFirstKey = afterAppend.reports[0].key;
+    // #629 P1 计数器机制归位单元层（unit-report P1 直接三读断言 miss/hit）；
+    // 集成层仅经路由验证失效语义（afterAppendFirstKey），不直读计数器。
+    __clearReportIndexCacheForTests(); // 清场，防跨块计数残留影响语义
+  }
 
-    // g4. #629 P1 解析记忆化：重复读走缓存（计数器证明不重解析）+ 失效正确 + 路由不服务过期投影
-    {
-      // 直接向 index.jsonl 追加一行（size/mtime 双变 → 缓存必失效；新 generatedAt 最大 → 排序首位）
-      appendFileSync(
-        indexFile,
-        `${JSON.stringify({ period: "daily", key: "2099-01-01", startDay: "2099-01-01", endDay: "2099-01-01", provider: "anthropic", model: "model-a", generatedAt: Date.now() + 1000000, ok: true })}\n`,
-      );
-      const afterAppend = await callHandler<ReportsListPayload>(
-        listRoute!,
-        fakeReq({ url: ROUTES.reports }),
-      );
-      obs.afterAppendFirstKey = afterAppend.reports[0].key;
-      // #629 P1 计数器机制归位单元层（unit-report P1 直接三读断言 miss/hit）；
-      // 集成层仅经路由验证失效语义（afterAppendFirstKey），不直读计数器。
-      __clearReportIndexCacheForTests(); // 清场，防跨块计数残留影响语义
-    }
-
-    // h. 路径隔离：reports 产物全部落在临时 historyRoot 下，无 undefined 段
+  // h. 路径隔离：reports 产物全部落在临时 historyRoot 下，无 undefined 段
+  function probePathIsolation(dir: string, reportsDir: string): void {
     const produced = readdirSync(reportsDir);
     const PRODUCED_RE =
       /^(daily|weekly|monthly)-\d{4}-\d{2}(-\d{2})?(\.html|\.meta\.json)$|^index\.jsonl$|^last-run\.json$|^retry-ledger\.json$|^retry-fence\.json$|^config\.json$/;
@@ -4473,62 +4505,115 @@ describe("#503 M3：用量报告接线", () => {
     obs.producedWithUndefined = produced.filter((f) => f.includes("undefined"));
     obs.producedNotWhitelisted = produced.filter((f) => !PRODUCED_RE.test(f));
     obs.noUndefinedDirSegment = !existsSync(join(dir, "undefined"));
+  }
 
-    // detail 守卫：period 枚举 + key 白名单（防路径穿越）
-    {
-      const bad1 = await callHandler<ReportDetailPayload>(
-        detailRoute!,
-        fakeReq({ url: `${ROUTES.reportDetail}?period=evil&key=2026-09-04` }),
-      );
-      obs.detailInvalidPeriodError = bad1.error;
-      const bad2 = await callHandler<ReportDetailPayload>(
-        detailRoute!,
-        fakeReq({ url: `${ROUTES.reportDetail}?period=daily&key=..%2F..%2Fevil` }),
-      );
-      obs.detailTraversalKeyError = bad2.error;
-      const bad3 = await callHandler<ReportDetailPayload>(
-        detailRoute!,
-        fakeReq({ url: `${ROUTES.reportDetail}?period=monthly&key=2026-09-04` }),
-      );
-      obs.detailWrongPeriodKeyError = bad3.error;
-      const bad4 = await callHandler<ReportDetailPayload>(
-        detailRoute!,
-        fakeReq({ url: `${ROUTES.reportDetail}?period=daily&key=2099-01-01` }),
-      );
-      obs.detailNotFoundError = bad4.error;
-    }
+  // detail 守卫：period 枚举 + key 白名单（防路径穿越）
+  async function probeDetailGuards(detailRoute: SmokeRoute): Promise<void> {
+    const bad1 = await callHandler<ReportDetailPayload>(
+      detailRoute,
+      fakeReq({ url: `${ROUTES.reportDetail}?period=evil&key=2026-09-04` }),
+    );
+    obs.detailInvalidPeriodError = bad1.error;
+    const bad2 = await callHandler<ReportDetailPayload>(
+      detailRoute,
+      fakeReq({ url: `${ROUTES.reportDetail}?period=daily&key=..%2F..%2Fevil` }),
+    );
+    obs.detailTraversalKeyError = bad2.error;
+    const bad3 = await callHandler<ReportDetailPayload>(
+      detailRoute,
+      fakeReq({ url: `${ROUTES.reportDetail}?period=monthly&key=2026-09-04` }),
+    );
+    obs.detailWrongPeriodKeyError = bad3.error;
+    const bad4 = await callHandler<ReportDetailPayload>(
+      detailRoute,
+      fakeReq({ url: `${ROUTES.reportDetail}?period=daily&key=2099-01-01` }),
+    );
+    obs.detailNotFoundError = bad4.error;
+  }
 
-    // generate 守卫：非法 period 拒绝
-    {
-      const badGen = await callHandler<GeneratePayload>(
-        genRoute!,
-        fakeReq({ method: "POST", body: JSON.stringify({ period: "hourly" }) }),
-      );
-      obs.generateInvalidPeriodError = badGen.error;
-    }
+  // generate 守卫：非法 period 拒绝
+  async function probeGenerateGuard(genRoute: SmokeRoute): Promise<void> {
+    const badGen = await callHandler<GeneratePayload>(
+      genRoute,
+      fakeReq({ method: "POST", body: JSON.stringify({ period: "hourly" }) }),
+    );
+    obs.generateInvalidPeriodError = badGen.error;
+  }
 
-    // reasoningEffort wire：保存与 GET 回读均必须保留 opaque ID（放在所有生成观测之后，
-    // 避免改变既有报告生成的 fake model 能力路径）。
-    {
-      const effortCfg = await callHandler<ReportConfigPayload>(
-        cfgRoute!,
-        fakeReq({
-          method: "POST",
-          body: JSON.stringify({
-            daily: { enabled: true, time: "22:00" },
-            push: { enabled: false },
-            reasoningEffort: "high",
-          }),
+  // reasoningEffort wire：保存与 GET 回读均必须保留 opaque ID（放在所有生成观测之后，
+  // 避免改变既有报告生成的 fake model 能力路径）。
+  async function probeReasoningEffort(cfgRoute: SmokeRoute): Promise<void> {
+    const effortCfg = await callHandler<ReportConfigPayload>(
+      cfgRoute,
+      fakeReq({
+        method: "POST",
+        body: JSON.stringify({
+          daily: { enabled: true, time: "22:00" },
+          push: { enabled: false },
+          reasoningEffort: "high",
         }),
-      );
-      const effortRead = await callHandler<ReportConfigPayload>(
-        cfgRoute!,
-        fakeReq({ url: ROUTES.reportConfig }),
-      );
-      obs.savedReasoningEffort = effortCfg.config.reasoningEffort;
-      obs.rereadReasoningEffort = effortRead.config.reasoningEffort;
-    }
+      }),
+    );
+    const effortRead = await callHandler<ReportConfigPayload>(
+      cfgRoute,
+      fakeReq({ url: ROUTES.reportConfig }),
+    );
+    obs.savedReasoningEffort = effortCfg.config.reasoningEffort;
+    obs.rereadReasoningEffort = effortRead.config.reasoningEffort;
+  }
 
+  beforeAll(async () => {
+    // 独立 historyDir：报告产物与趋势分片全部隔离在临时目录（零污染纪律）
+    const dir = mkdtempSync(join(tmpdir(), "dou-report-"));
+    const histDir = join(dir, "hist");
+    const reportsDir = join(histDir, "reports");
+    const fake = makeFakeCtx();
+    const { ctx, routes, listeners, effects } = fake;
+    await apply(ctx, { ...ISOLATED_CONFIG, historyDir: histDir });
+    const cfgRoute = routes.find((r) => r.path === ROUTES.reportConfig);
+    const listRoute = routes.find((r) => r.path === ROUTES.reports);
+    const detailRoute = routes.find((r) => r.path === ROUTES.reportDetail);
+    const genRoute = routes.find((r) => r.path === ROUTES.reportGenerate);
+    const trendRoute = routes.find((r) => r.path === ROUTES.trend);
+    const statusRoute = routes.find((r) => r.path === ROUTES.reportGenerateStatus);
+    obs.reportRoutesExist =
+      cfgRoute !== undefined &&
+      listRoute !== undefined &&
+      detailRoute !== undefined &&
+      genRoute !== undefined;
+    obs.statusRouteExists = statusRoute !== undefined;
+
+    await probeDefaultMount(reportsDir);
+    await probeDefaultConfig(cfgRoute!);
+
+    const savedCfg = await saveAndRereadConfig(cfgRoute!);
+    await probeModelCandidates(routes);
+    const trendBefore = await seedTrendSession(fake, trendRoute!, savedCfg);
+    const genObs: Array<Record<string, unknown>> = [];
+    obs.genObs = genObs;
+    const generateAndAwait = makeGenerateAwait(genRoute!, statusRoute!, genObs);
+    const genMeta = await generateAndAwait({ period: "daily" });
+    const { metaFile, indexFile } = await probeGeneratedArtifacts(reportsDir, genMeta);
+    await probeTrendUnchanged(trendRoute!, trendBefore, listeners);
+    await probeXssLayer();
+    await probeListAndDetail(listRoute!, detailRoute!, genMeta);
+    const lastRunFile = probeLastRun(reportsDir);
+    await probeDirectories(cfgRoute!);
+    await probeDirTrend(trendRoute!, metaFile);
+    await probeIdempotentAndForce(
+      genRoute!,
+      listRoute!,
+      statusRoute!,
+      indexFile,
+      genMeta,
+      generateAndAwait,
+    );
+    await probeWeeklySave(cfgRoute!, lastRunFile);
+    await probeIndexCache(listRoute!, indexFile);
+    probePathIsolation(dir, reportsDir);
+    await probeDetailGuards(detailRoute!);
+    await probeGenerateGuard(genRoute!);
+    await probeReasoningEffort(cfgRoute!);
     await (effects.at(-1) as () => Promise<void>)(); // 卸载（async disposer：trend 刷盘 + scheduler 停 tick）
   });
 

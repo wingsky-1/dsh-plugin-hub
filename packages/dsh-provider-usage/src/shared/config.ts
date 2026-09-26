@@ -151,31 +151,90 @@ export const Config: z<{
   trendRetentionDays: number;
 }>;
 
+/** 只按「是字符串就透传」归一的键（键集即语义，勿把别类键塞进来）。 */
+const STRING_KEYS = [
+  "adapter",
+  "staticPath",
+  "provider",
+  "apiEndpoint",
+  "apiKey",
+  "historyDir",
+] as const satisfies readonly (keyof NormalizedConfig)[];
+
+/** 数值键的接受条件：finite=任意有限数；positiveInt=正整数（0 与负数一律非法）。 */
+type AcceptKind = "finite" | "positiveInt";
+
+/** 一把数值键的归一规则。 */
+interface NumberKeyRule {
+  readonly key: keyof NormalizedConfig;
+  readonly accept: AcceptKind;
+  /** 下界（含），缺省即不设下界。 */
+  readonly min?: number;
+  /** 上界（含），缺省即不设上界。 */
+  readonly max?: number;
+}
+
+/**
+ * 数值键的逐条规则。表是二维的（接受条件 + 上下界各自独立），不是 key→fn 的一维映射：
+ * 五把数值键有三种互不相同的接受语义——仅下界（warmup/cache）、仅上界（maxSizeMB，
+ * 负数合法）、正整数且有上界（maxAgeDays/trendRetentionDays）。压成一维表就得把三种
+ * 语义里的两种牺牲掉，故按规则表逐条声明。
+ *
+ * 上下界数值与上面 COUNT_LIMITS 同源，config-matrix 门禁的 N4 断言它们与 DEFAULT_CONFIG 一致。
+ */
+const NUMBER_KEY_RULES = [
+  // warmupIntervalMs / cacheDurationMs 只有下界（机器极限不是产品约束，不设上界）
+  { key: "warmupIntervalMs", accept: "finite", min: 60000 },
+  { key: "cacheDurationMs", accept: "finite", min: 5000 },
+  { key: "maxSizeMB", accept: "finite", max: 500 },
+  // maxAgeDays 仅接受正整数——<=0 会令 maybePrune 下界落在未来（历史被全量清理）、
+  // 面板查询区间 start>end 永空；非法一律回落默认值，上界 365 维持既有 clamp
+  { key: "maxAgeDays", accept: "positiveInt", max: 365 },
+  // trend 聚合保留天数——仅正整数（上界 3650≈10 年），非法回落默认 180
+  { key: "trendRetentionDays", accept: "positiveInt", max: 3650 },
+] as const satisfies readonly NumberKeyRule[];
+
+/** 值是否满足该键的接受条件（承担类型收窄，故返回类型谓词而非 boolean）。 */
+function isAcceptedNumber(v: unknown, accept: AcceptKind): v is number {
+  if (accept === "finite") return typeof v === "number" && Number.isFinite(v);
+  return typeof v === "number" && Number.isInteger(v) && v > 0;
+}
+
+/** 按规则把已接受的值夹进上下界（先下后上，两端各自可缺省）。 */
+function clampNumber(v: number, rule: NumberKeyRule): number {
+  let out = v;
+  if (rule.min !== undefined) out = Math.max(rule.min, out);
+  if (rule.max !== undefined) out = Math.min(rule.max, out);
+  return out;
+}
+
+/** 字符串键：非字符串一律沿用默认值（不做空串/空白归一，语义同原实现）。 */
+function applyStringKeys(base: NormalizedConfig, cfg: Record<string, unknown>): void {
+  for (const key of STRING_KEYS) {
+    const v = cfg[key];
+    if (typeof v === "string") base[key] = v;
+  }
+}
+
+/** 布尔键：仅 autoReload（fetchTimeoutMs 固定 5s 不开放配置：远端慢时 2s 频繁超时）。 */
+function applyBooleanKeys(base: NormalizedConfig, cfg: Record<string, unknown>): void {
+  if (typeof cfg.autoReload === "boolean") base.autoReload = cfg.autoReload;
+}
+
+/** 数值键：逐条走自己的接受条件与上下界，非法值不覆写（回落默认值）。 */
+function applyNumberKeys(base: NormalizedConfig, cfg: Record<string, unknown>): void {
+  for (const rule of NUMBER_KEY_RULES) {
+    const v = cfg[rule.key];
+    if (isAcceptedNumber(v, rule.accept)) base[rule.key] = clampNumber(v, rule);
+  }
+}
+
 export function normalizeConfig(input: unknown): NormalizedConfig {
   const base = { ...DEFAULT_CONFIG };
   if (typeof input !== "object" || input === null) return base;
   const cfg = input as Record<string, unknown>;
-  if (typeof cfg.adapter === "string") base.adapter = cfg.adapter;
-  if (typeof cfg.staticPath === "string") base.staticPath = cfg.staticPath;
-  if (typeof cfg.provider === "string") base.provider = cfg.provider;
-  if (typeof cfg.apiEndpoint === "string") base.apiEndpoint = cfg.apiEndpoint;
-  if (typeof cfg.apiKey === "string") base.apiKey = cfg.apiKey;
-  if (typeof cfg.historyDir === "string") base.historyDir = cfg.historyDir;
-  if (Number.isFinite(cfg.warmupIntervalMs))
-    base.warmupIntervalMs = Math.max(60000, cfg.warmupIntervalMs as number);
-  if (Number.isFinite(cfg.cacheDurationMs))
-    base.cacheDurationMs = Math.max(5000, cfg.cacheDurationMs as number);
-  // fetchTimeoutMs 固定 5s（不开放配置）：远端慢时 2s 频繁超时
-  if (typeof cfg.autoReload === "boolean") base.autoReload = cfg.autoReload;
-  // maxAgeDays 仅接受正整数——<=0 会令 maybePrune 下界落在未来（历史被全量清理）、
-  // 面板查询区间 start>end 永空；非正整数一律视为非法回落默认值，上界 365 维持既有 clamp
-  if (Number.isInteger(cfg.maxAgeDays) && (cfg.maxAgeDays as number) > 0) {
-    base.maxAgeDays = Math.min(365, cfg.maxAgeDays as number);
-  }
-  if (Number.isFinite(cfg.maxSizeMB)) base.maxSizeMB = Math.min(500, cfg.maxSizeMB as number);
-  // trend 聚合保留天数——仅正整数（上界 3650≈10 年），非法回落默认 180
-  if (Number.isInteger(cfg.trendRetentionDays) && (cfg.trendRetentionDays as number) > 0) {
-    base.trendRetentionDays = Math.min(3650, cfg.trendRetentionDays as number);
-  }
+  applyStringKeys(base, cfg);
+  applyBooleanKeys(base, cfg);
+  applyNumberKeys(base, cfg);
   return base;
 }

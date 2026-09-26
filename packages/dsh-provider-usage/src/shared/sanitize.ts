@@ -252,38 +252,66 @@ function mergeRanges(ranges: Array<[number, number]>): Array<[number, number]> {
  * 协议类模式在「解码 + 剥除 \t\n\r」二级视图上定位（WHATWG URL 语义），
  * match 区间经剥除下标 → 解码下标两跳映射回原文区间。
  */
-function stripDecodedDanger(html: string): string {
-  const view = decodeEntitiesOnce(html);
-  // URL 剥除视图：view.text 去掉全部 \t\n\r，urlChars[k] = 剥除文本第 k 个
-  // code unit 在 view.text（解码副本）中的下标
+/**
+ * URL 剥除视图：text 去掉全部 \t\n\r（WHATWG URL 语义），chars[k] = 剥除文本第 k 个
+ * code unit 在解码副本 text 中的下标。协议类模式只在这个视图上定位。
+ */
+function urlStrippedView(text: string): { urlText: string; urlChars: number[] } {
   const urlChars: number[] = [];
   let urlText = "";
-  for (let i = 0; i < view.text.length; i++) {
-    if (isUrlStrippedChar(view.text[i])) continue;
-    urlText += view.text[i];
+  for (let i = 0; i < text.length; i++) {
+    if (isUrlStrippedChar(text[i])) continue;
+    urlText += text[i];
     urlChars.push(i);
   }
-  const ranges: Array<[number, number]> = []; // 解码副本 code unit 下标区间 [s,e)
+  return { urlText, urlChars };
+}
+
+/** 协议类模式在解码副本上的危险区间（match 下标即解码下标，无需回跳）。 */
+function decodedDangerRanges(text: string): Array<[number, number]> {
+  const ranges: Array<[number, number]> = [];
   for (const re of DECODED_DANGER_RES) {
     re.lastIndex = 0;
-    for (const m of view.text.matchAll(re)) {
+    for (const m of text.matchAll(re)) {
       ranges.push([m.index, m.index + m[0].length]);
     }
   }
+  return ranges;
+}
+
+/**
+ * 协议类模式的危险区间：在剥除视图中定位后经 urlChars 两跳映射回解码副本下标。
+ * match 首尾字符之间的被剥字符随连续原文区间一并覆盖。
+ */
+function urlDangerRanges(
+  text: string,
+  urlText: string,
+  urlChars: number[],
+): Array<[number, number]> {
+  const ranges: Array<[number, number]> = [];
   for (const re of URL_PROTOCOL_RES) {
     re.lastIndex = 0;
     for (const m of urlText.matchAll(re)) {
-      // match 首尾字符映射回解码副本；夹在两者之间的被剥字符随连续原文区间一并覆盖
       let e = urlChars[m.index + m[0].length - 1] + 1;
       // 尾部吞掉紧邻的被剥字符（如 javascript:&#10;），不留孤儿实体碎片
-      while (e < view.text.length && isUrlStrippedChar(view.text[e])) e++;
+      while (e < text.length && isUrlStrippedChar(text[e])) e++;
       ranges.push([urlChars[m.index], e]);
     }
   }
+  return ranges;
+}
+
+/**
+ * 按解码副本区间裁剪原文。两步合并非冗余：第一步合并解码层跨正则重叠；映射回原文后，
+ * 多 code-unit token（如 astral 实体的代理对）理论上可横跨两个相邻区间，故第二步做
+ * 防御性合并（拆开嵌套双调调用以便阅读）。无区间即原样返回。
+ */
+function cutDecodedRanges(
+  html: string,
+  view: DecodedView,
+  ranges: Array<[number, number]>,
+): string {
   if (ranges.length === 0) return html;
-  // 两步合并非冗余：第一步合并解码层跨正则重叠；映射回原文后，多 code-unit
-  // token（如 astral 实体的代理对）理论上可横跨两个相邻区间，故第二步做
-  // 防御性合并（拆开嵌套双调调用以便阅读）
   const decodedCuts = mergeRanges(ranges);
   const cuts = mergeRanges(
     decodedCuts.map(([s, e]) => [view.starts[s], view.ends[e - 1]] as [number, number]),
@@ -295,6 +323,18 @@ function stripDecodedDanger(html: string): string {
     pos = e;
   }
   return out + html.slice(pos);
+}
+
+function stripDecodedDanger(html: string): string {
+  const view = decodeEntitiesOnce(html);
+  const { urlText, urlChars } = urlStrippedView(view.text);
+  // 解码副本 code unit 下标区间 [s,e)；收集顺序与原实现一致（实体感知类在前、协议类在后），
+  // mergeRanges 按起点排序但取 max 端点，顺序本不影响结果——保留原序只为 diff 可读。
+  const ranges = [
+    ...decodedDangerRanges(view.text),
+    ...urlDangerRanges(view.text, urlText, urlChars),
+  ];
+  return cutDecodedRanges(html, view, ranges);
 }
 
 /**

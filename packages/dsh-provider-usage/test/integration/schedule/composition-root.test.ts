@@ -74,6 +74,43 @@ import type { ReportPeriod } from "../../../src/server/config/interface.ts";
 import type { ReportTaskInput } from "../../../src/server/schedule/interface.ts";
 import { DEFAULT_CONFIG } from "../../../src/shared/config.ts";
 
+/** 台账条目与 claim 入参：形状由端口签名推导，端口改了这里跟着红（勿手写镜像类型）。 */
+type LedgerEntry = NonNullable<Awaited<ReturnType<RetryLedgerPort["get"]>>>;
+type BeginAttemptInput = Parameters<RetryLedgerPort["beginAttempt"]>[0];
+
+/**
+ * claim 入参：已有条目沿用它自己的 route 与 cycleId（续同一次 claim），没有条目才拿本次
+ * route 新开。「续用还是新开」正是 force cycle 归属的核心断言，混在 executor 里读不出来。
+ */
+function claimInputFor(
+  input: ReportTaskInput,
+  existing: LedgerEntry | undefined,
+  route: BeginAttemptInput["route"],
+): BeginAttemptInput {
+  return {
+    period: input.period,
+    key: input.key,
+    startDay: input.startDay,
+    endDay: input.endDay,
+    route: existing?.route ?? route,
+    ...(existing === undefined ? {} : { cycleId: existing.cycleId }),
+  };
+}
+
+/**
+ * 任务完成里程碑：K0/K2 各放行一个闸门；K1 只有 force 才放行——normal 的 K1 被队列吞掉时
+ * 根本不会走到 executor，放行了就是时序造错了。
+ */
+function signalMilestone(
+  input: ReportTaskInput,
+  keys: { K0: string; K1: string; K2: string },
+  marks: { k0: () => void; k2: () => void; force: () => void },
+): void {
+  if (input.key === keys.K0) marks.k0();
+  if (input.key === keys.K2) marks.k2();
+  if (input.key === keys.K1 && input.force === true) marks.force();
+}
+
 interface ApplyTestContext {
   ctx: Parameters<typeof apply>[0];
   disposers: Array<() => void | Promise<void>>;
@@ -1374,26 +1411,18 @@ describe("#1010 B2b coordinator/scheduler/queue 纵向切片", () => {
             await k0Gate;
           }
           const existing = await ledger.get(input.period, input.key);
-          const claim = await ledger.beginAttempt(
-            {
-              period: input.period,
-              key: input.key,
-              startDay: input.startDay,
-              endDay: input.endDay,
-              route: existing?.route ?? route,
-              ...(existing === undefined ? {} : { cycleId: existing.cycleId }),
-            },
-            claimNow,
-          );
+          const claim = await ledger.beginAttempt(claimInputFor(input, existing, route), claimNow);
           executorCalls.push({
             key: input.key,
             force: input.force === true,
             cycleId: claim?.cycleId,
           });
           if (claim === null) throw new Error("expected ledger claim");
-          if (input.key === dateKeys.K0) markK0Done();
-          if (input.key === dateKeys.K2) markK2Done();
-          if (input.key === dateKeys.K1 && input.force === true) markForceDone();
+          signalMilestone(input, dateKeys, {
+            k0: markK0Done,
+            k2: markK2Done,
+            force: markForceDone,
+          });
           return {};
         },
         prepareForce: async () => {
