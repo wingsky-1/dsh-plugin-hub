@@ -9,12 +9,15 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { guardLoopbackMethod, writeJson } from "../../../../../shared/host-utils.js";
 import { ADAPTER_CONTRACT_VERSION } from "../../shared/interface.ts";
 import { TREND_DIR_MAX } from "../shared/interface.ts";
-import type {
-  TrendGranularity,
-  TrendMetric,
-  TrendStackPoint,
-} from "../aggregate/interface.ts";
 import type { UiRoutesContext } from "./context.ts";
+
+// 趋势形状就地派生：本块只经 UiRoutesContext.trend 与聚合面打交道，粒度 / 指标 / 堆叠点
+// 三种形状从它既有方法的签名反推即可，不必为同一形状另开一条跨域 type 引用边
+//（#732 E3：纯重构不抬高 dir-imports 结构计数）。
+type TrendService = UiRoutesContext["trend"];
+type TrendGranularity = Parameters<TrendService["dirStacked"]>[1];
+type TrendMetric = Parameters<TrendService["dirStacked"]>[2];
+type TrendStackPoint = ReturnType<TrendService["dirStacked"]>["series"][number];
 
 const TREND_WINDOW: Record<string, number> = { day: 30, week: 12, month: 12 };
 
@@ -126,10 +129,7 @@ type TrendStack = {
  * （dir 行无 provider 关联的既定数据边界不变，加性返回不破坏「未传参数零变化」）。
  * dir 过滤面保持空 providers（既有形状，过滤面选中态下适配器已互斥清空）。
  */
-function buildTrendStack(
-  trend: UiRoutesContext["trend"],
-  query: TrendQuery,
-): TrendStack {
+function buildTrendStack(trend: TrendService, query: TrendQuery): TrendStack {
   const { n, granularity, metric, provider, dir, byModel, byDir, byDirAll } = query;
   if (byDir) {
     const dirStack = trend.dirStacked(n, granularity, metric, dir);

@@ -38,10 +38,6 @@ import {
 import { HistoryStore, migrateLegacyV3 } from "../server/history/interface.ts";
 import { HotReloadableAdapter } from "../server/registry/interface.ts";
 import { resolvePath } from "../server/registry/interface.ts";
-import type { UserAdapterRecord } from "../server/registry/interface.ts";
-import type { ReportPeriod } from "../server/config/interface.ts";
-import type { GenerateRouteOutcome } from "../server/execute/interface.ts";
-import type { RetryRouteSnapshot } from "../server/schedule/interface.ts";
 import { Config, normalizeConfig, type NormalizedConfig } from "../shared/interface.ts";
 import { readUiConfig } from "../shared/interface.ts";
 import { makeLayerErrorSurface } from "../server/shared/interface.ts";
@@ -84,6 +80,15 @@ import { createUiRoutes } from "../server/ui-routes/interface.ts";
 import { createReportRoutes } from "../server/report-routes/interface.ts";
 import { installUpgrade, releaseUpgrade } from "../server/upgrade/interface.ts";
 import type {} from "@deepseek-ai/dsh-session";
+
+// 跨域形状就地派生：本文件已按值引 readUserAdapters / resolveGenerateRoute /
+// createReportStateCoordinator 三个入口，其返回与入参形态就是各 helper 需要的类型——就地
+// 派生即可，不必为同一形状另开一条 type 引用边（#732 E3：纯重构不抬高 dir-imports
+// 结构计数）。
+type UserAdapterList = Awaited<ReturnType<typeof readUserAdapters>>;
+type RouteResolution = Awaited<ReturnType<typeof resolveGenerateRoute>>;
+type ReportStateCoordinator = ReturnType<typeof createReportStateCoordinator>;
+type ForceClaim = Parameters<ReportStateCoordinator["beginForce"]>[0];
 
 export const ROUTES: Record<string, string> = {
   stats: "/api/dsh-provider-usage/stats",
@@ -136,7 +141,7 @@ async function restoreSavedEnabledState(
 async function registerUserAdapters(
   registry: AdapterRegistry,
   config: NormalizedConfig,
-  userRecords: readonly UserAdapterRecord[],
+  userRecords: readonly UserAdapterList[number][],
 ): Promise<void> {
   if (config.adapter !== "") {
     const resolved = resolvePath(config.adapter);
@@ -161,7 +166,7 @@ async function registerUserAdapters(
 /** 自动重载挂点（配置单文件 + 清单用户适配器；未开 autoReload 即 no-op）。 */
 async function startAutoReload(
   config: NormalizedConfig,
-  userRecords: readonly UserAdapterRecord[],
+  userRecords: readonly UserAdapterList[number][],
   ensureHotReload: (file: string) => Promise<void>,
 ): Promise<void> {
   if (!config.autoReload) return;
@@ -177,16 +182,7 @@ async function startAutoReload(
 
 /** force claim 登记端口（coordinator 窄面；apply 只经它推进，不直引 schedule 值边）。 */
 interface ForceClaimCoordinator {
-  beginForce(
-    input: {
-      period: ReportPeriod;
-      key: string;
-      startDay: string;
-      endDay: string;
-      route: RetryRouteSnapshot;
-    },
-    now: number,
-  ): Promise<unknown>;
+  beginForce(input: ForceClaim, now: number): Promise<unknown>;
 }
 
 /**
@@ -195,12 +191,12 @@ interface ForceClaimCoordinator {
  */
 async function beginForceReport(
   ctx: Context,
-  input: { period: ReportPeriod; key: string; startDay: string; endDay: string },
+  input: Omit<ForceClaim, "route">,
   reportCfgService: ReportConfigService,
   reportState: ForceClaimCoordinator,
   resolveReportRoute: (
     input: Parameters<typeof resolveGenerateRoute>[0],
-  ) => Promise<GenerateRouteOutcome>,
+  ) => Promise<RouteResolution>,
 ): Promise<void> {
   const cfg = reportCfgService.get();
   const resolved = await resolveReportRoute({
