@@ -18,7 +18,10 @@ import {
   checkPackage,
   parseConfigProse,
   parseCountNumeral,
+  parseEnumProse,
+  parseRangeProse,
   parseScopeCount,
+  segmentSetMismatch,
 } from "../gate/verify-prose-counts.mjs";
 
 const ROOT = join(import.meta.dirname, "..", "..");
@@ -215,4 +218,57 @@ test("接线：local-gate 的 pr 计划含该闸（标签与 args 耦合）+ pac
   );
   const pkg = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8"));
   assert.equal(pkg.scripts["verify:prose-counts"], "node scripts/gate/verify-prose-counts.mjs");
+});
+
+// ── 拆出后各纯判据的直接单测（#732 E5）：每条锁一个形态判定，不经 checkPackage 间接观察 ──
+
+test("parseRangeProse：区间展开、形态非法与区间倒置各判一次", () => {
+  assert.deepEqual(parseRangeProse("1..3"), {
+    kind: "range",
+    segments: ["1", "2", "3"],
+    reason: "",
+  });
+  assert.deepEqual(parseRangeProse("2..2"), { kind: "range", segments: ["2"], reason: "" });
+  assert.deepEqual(parseRangeProse("1.."), {
+    kind: "unknown",
+    segments: [],
+    reason: "区间形态非法：{1..}",
+  });
+  assert.deepEqual(parseRangeProse("3..1"), {
+    kind: "unknown",
+    segments: [],
+    reason: "区间倒置：{3..1}",
+  });
+});
+
+test("parseEnumProse：逐项 trim 后校验，任一项非法即整段 unknown", () => {
+  assert.deepEqual(parseEnumProse("a, b"), { kind: "enum", segments: ["a", "b"], reason: "" });
+  // 空项（尾随逗号）非法。
+  assert.deepEqual(parseEnumProse("a,"), {
+    kind: "unknown",
+    segments: [],
+    reason: "枚举项非法：{a,}",
+  });
+  // 非法段名（带空格以外的形式）非法，判词不点哪一项。
+  assert.deepEqual(parseEnumProse("a, b/c"), {
+    kind: "unknown",
+    segments: [],
+    reason: "枚举项非法：{a, b/c}",
+  });
+});
+
+test("segmentSetMismatch：段清单与拓扑一致时无判词，缺/多各进一条判词", () => {
+  const enumParsed = { kind: "enum", segments: ["a", "b"], reason: "" };
+  assert.deepEqual(segmentSetMismatch("p", enumParsed, ["b", "a"]), []);
+  assert.deepEqual(segmentSetMismatch("p", enumParsed, ["a"]), [
+    "[p] config 段清单与拓扑不一致（enum形态）：拓扑多出无；散文多出b（拓扑 1 段，散文 2 段）",
+  ]);
+  assert.deepEqual(segmentSetMismatch("p", enumParsed, ["a", "b", "c"]), [
+    "[p] config 段清单与拓扑不一致（enum形态）：拓扑多出c；散文多出无（拓扑 3 段，散文 2 段）",
+  ]);
+  // range 形态把 kind 带进判词。
+  const rangeParsed = { kind: "range", segments: ["1", "2"], reason: "" };
+  assert.deepEqual(segmentSetMismatch("p", rangeParsed, ["2", "3"]), [
+    "[p] config 段清单与拓扑不一致（range形态）：拓扑多出3；散文多出1（拓扑 2 段，散文 2 段）",
+  ]);
 });

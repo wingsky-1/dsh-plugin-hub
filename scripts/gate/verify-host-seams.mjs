@@ -178,24 +178,29 @@ function visitR1(node, acc) {
   else acc.r1dyn += 1;
 }
 
+/** 对象字面量的属性键静态名：Identifier 取 name、字符串字面量取 value，其余（含非 Property）null。 */
+export function staticKeyOf(p) {
+  if (p.type !== "Property") return null;
+  if (p.key.type === "Identifier") return p.key.name;
+  if (p.key.type === "Literal" && typeof p.key.value === "string") return p.key.value;
+  return null;
+}
+
+/** `{ name: "settings.x" }` 形态的装配名；不是对象字面量或没有 name 键返回 null。 */
+function r3NameOfObject(first) {
+  if (first === null || first.type !== "ObjectExpression") return null;
+  for (const p of first.properties) {
+    if (staticKeyOf(p) !== "name") continue;
+    const v = staticString(p.value);
+    if (v !== null && v.startsWith("settings.")) return v;
+  }
+  return null;
+}
+
 function r3NameOf(first) {
   const s = staticString(first);
   if (s !== null && s.startsWith("settings.")) return s;
-  if (first !== null && first.type === "ObjectExpression") {
-    for (const p of first.properties) {
-      if (p.type !== "Property") continue;
-      const key =
-        p.key.type === "Identifier"
-          ? p.key.name
-          : p.key.type === "Literal" && typeof p.key.value === "string"
-            ? p.key.value
-            : null;
-      if (key !== "name") continue;
-      const v = staticString(p.value);
-      if (v !== null && v.startsWith("settings.")) return v;
-    }
-  }
-  return null;
+  return r3NameOfObject(first);
 }
 
 function visitR3(node, acc) {
@@ -298,35 +303,83 @@ function visitR2(node, acc) {
   }
 }
 
-function visitR4(node, parent, acc) {
-  if (node.type === "LogicalExpression" && (node.operator === "??" || node.operator === "||")) {
-    const r = staticString(node.right);
-    if (r !== null && isSlashDef(r))
-      acc.r4defs.push({ ...at(node.right), value: r, fallback: true });
-    return;
+/** 逻辑兜底（`??` `||` 的右操作数是定义形）——记成 fallback 定义。 */
+function collectR4Fallback(node, acc) {
+  if (node.operator !== "??" && node.operator !== "||") return;
+  const r = staticString(node.right);
+  if (r !== null && isSlashDef(r)) acc.r4defs.push({ ...at(node.right), value: r, fallback: true });
+}
+
+/** 是不是 R4 定义形的载体（字符串字面量 / 无插值模板串）；不是则该节点归 export 判据。 */
+export function isR4DefCarrier(node) {
+  if (node.type === "Literal") return typeof node.value === "string";
+  return node.type === "TemplateLiteral" && node.expressions.length === 0;
+}
+
+/** 定义形的静态值；非字符串字面量与有插值模板串返回 null。 */
+function r4DefValueOf(node) {
+  if (node.type === "Literal") return typeof node.value === "string" ? node.value : null;
+  return node.quasis.map((q) => q.value.cooked ?? "").join("");
+}
+
+/** 普通定义形：不是逻辑兜底右操作数时才记（那一支已由 collectR4Fallback 记过）。 */
+function collectR4Def(node, parent, acc) {
+  const v = r4DefValueOf(node);
+  if (!isLogicRightOf(node, parent) && isSlashDef(v)) {
+    acc.r4defs.push({ ...at(node), value: v, fallback: false });
   }
-  if (node.type === "Literal" && typeof node.value === "string") {
-    if (!isLogicRightOf(node, parent) && isSlashDef(node.value)) {
-      acc.r4defs.push({ ...at(node), value: node.value, fallback: false });
-    }
-    return;
-  }
-  if (node.type === "TemplateLiteral" && node.expressions.length === 0) {
-    const v = node.quasis.map((q) => q.value.cooked ?? "").join("");
-    if (!isLogicRightOf(node, parent) && isSlashDef(v)) {
-      acc.r4defs.push({ ...at(node), value: v, fallback: false });
-    }
-    return;
-  }
+}
+
+function isIdentifierNode(node) {
+  return node !== null && node !== undefined && node.type === "Identifier";
+}
+
+/** export const x / export default const x 的绑定名。 */
+function collectExportNames(node, acc) {
   const isExport =
     node.type === "ExportNamedDeclaration" || node.type === "ExportDefaultDeclaration";
   if (!isExport || node.declaration == null || node.declaration.type !== "VariableDeclaration")
     return;
   for (const d of node.declaration.declarations) {
-    if (d.id !== null && d.id !== undefined && d.id.type === "Identifier") {
-      acc.exportNames.push({ ...at(d.id), name: d.id.name });
-    }
+    if (isIdentifierNode(d.id)) acc.exportNames.push({ ...at(d.id), name: d.id.name });
   }
+}
+
+function visitR4(node, parent, acc) {
+  if (node.type === "LogicalExpression") {
+    collectR4Fallback(node, acc);
+    return;
+  }
+  if (isR4DefCarrier(node)) {
+    collectR4Def(node, parent, acc);
+    return;
+  }
+  collectExportNames(node, acc);
+}
+
+/** 是不是一个 AST 节点（有 `type` 字段的对象）；原始值、null、数组都不是。 */
+function isAstNode(v) {
+  return v !== null && typeof v === "object" && typeof v.type === "string";
+}
+
+/** `loc`/`range` 是元数据不是子节点；数组里的元素逐个判、其余字段按单个判。 */
+function eachAstChild(node, visit) {
+  for (const key of Object.keys(node)) {
+    if (key === "loc" || key === "range") continue;
+    const child = node[key];
+    if (Array.isArray(child)) {
+      for (const c of child) if (isAstNode(c)) visit(c, node);
+    } else if (isAstNode(child)) visit(child, node);
+  }
+}
+
+/** 先序遍历整棵树：`visit(node, parent)` 在进子节点之前先到，根的 parent 为 null。 */
+function walkAst(root, visit) {
+  (function walk(node, parent) {
+    if (!isAstNode(node)) return;
+    visit(node, parent);
+    eachAstChild(node, walk);
+  })(root, null);
 }
 
 export function analyzeAst(ast) {
@@ -340,24 +393,12 @@ export function analyzeAst(ast) {
     r4defs: [],
     exportNames: [],
   };
-  (function walk(node, parent) {
-    if (node === null || node === undefined || typeof node.type !== "string") return;
+  walkAst(ast, (node, parent) => {
     visitR1(node, acc);
     visitR2(node, acc);
     visitR3(node, acc);
     visitR4(node, parent, acc);
-    for (const key of Object.keys(node)) {
-      if (key === "loc" || key === "range") continue;
-      const child = node[key];
-      if (Array.isArray(child)) {
-        for (const c of child) {
-          if (c !== null && typeof c === "object" && typeof c.type === "string") walk(c, node);
-        }
-      } else if (child !== null && typeof child === "object" && typeof child.type === "string") {
-        walk(child, node);
-      }
-    }
-  })(ast, null);
+  });
   return {
     r1static: acc.r1static,
     r1dynamic: acc.r1dyn,

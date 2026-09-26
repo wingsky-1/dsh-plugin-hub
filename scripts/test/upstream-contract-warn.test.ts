@@ -21,14 +21,32 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 import * as acorn from "acorn";
+import type { CallExpression, MemberExpression } from "acorn";
 import {
   analyzeAFile,
+  atTopLevel,
+  BRACKET_OTHER,
+  BRACKET_TOP,
   checkPeerVersions,
   closureMembers,
+  ctxCallProp,
   evaluate,
   extractDeclareModules,
   formatReport,
+  HEAD_BRACKET,
+  HEAD_IDENT,
+  HEAD_OTHER,
+  HEAD_PARAMS,
+  HEAD_QUOTED,
+  HEAD_SEP,
+  headKindAt,
+  isAstNode,
+  isContractSvcName,
+  isOwnedByParent,
+  isTerminator,
   readCatalog,
+  stepBracketAt,
+  unquotedMemberName,
 } from "../maintenance/upstream-contract-warn.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -401,4 +419,125 @@ test("真实仓库锚：S2 校准后 7 名全绿（L1 裁决）", () => {
   assert.ok(!withoutKnownR2.includes("::warning::"));
   assert.ok(out.includes("S2 无类型服务 7") && out.includes("）OK"));
   assert.ok(out.includes("R1 服务 OK"));
+});
+
+// ── 拆出后各纯判据的直接单测（#732 E5）：每条锁一个判定，不经派生面间接观察 ──
+
+test("isAstNode：只有带 type 字段的对象算节点", () => {
+  assert.equal(isAstNode({ type: "Identifier" }), true);
+  assert.equal(isAstNode({ type: 1 }), false);
+  assert.equal(isAstNode(null), false);
+  assert.equal(isAstNode(undefined), false);
+  assert.equal(isAstNode([]), false);
+  assert.equal(isAstNode("Identifier"), false);
+  assert.equal(isAstNode(0), false);
+});
+
+test("isContractSvcName：框架内建与事件动词都不算服务面成员", () => {
+  for (const name of ["webServer", "sessionPersistence", "a"]) {
+    assert.equal(isContractSvcName(name), true, name);
+  }
+  for (const name of ["get", "provide", "inject", "effect", "plugin", "on", "emit", "waterfall"]) {
+    assert.equal(isContractSvcName(name), false, name);
+  }
+});
+
+/** 取一条源码的首条调用表达式；不是则抛错（夹具不该走到那）。 */
+function firstCallOf(src: string): CallExpression {
+  const stmt = acorn.parse(src, { ecmaVersion: "latest", sourceType: "module" }).body[0];
+  if (stmt.type !== "ExpressionStatement") throw new Error(`非表达式语句：${src}`);
+  const expr = stmt.expression;
+  if (expr.type !== "CallExpression") throw new Error(`非调用表达式：${src}`);
+  return expr;
+}
+
+/** 取一条源码首条调用的 callee 成员表达式（即 `ctx.<svc>` 那一层）。 */
+function calleeMemberOf(src: string): MemberExpression {
+  const callee = firstCallOf(src).callee;
+  if (callee.type !== "MemberExpression") throw new Error(`callee 非成员表达式：${src}`);
+  return callee;
+}
+
+test("ctxCallProp：只认 ctx.<prop>(...) 形态，其余返回 null", () => {
+  const propOf = (src: string): string | null => ctxCallProp(firstCallOf(src));
+  assert.equal(propOf("ctx.on('a', h);"), "on");
+  assert.equal(propOf("ctx.get('svc');"), "get");
+  assert.equal(propOf("other.on('a', h);"), null);
+  assert.equal(propOf("on('a', h);"), null);
+  const stmt = acorn.parse("ctx.on;", { ecmaVersion: "latest", sourceType: "module" }).body[0];
+  if (stmt.type !== "ExpressionStatement") throw new Error("非表达式语句");
+  assert.equal(ctxCallProp(stmt.expression), null);
+});
+
+test("isOwnedByParent：被调用与被挂在别人身上的 ctx 成员算有主", () => {
+  // ctx.webServer(1)：ctx.webServer 就是调用的 callee。
+  const direct = firstCallOf("ctx.webServer(1);");
+  assert.equal(isOwnedByParent(direct.callee, direct), true);
+  // ctx.webServer.register(1)：ctx.webServer 挂在 callee 上，是它的 object。
+  const callee = calleeMemberOf("ctx.webServer.register(1);");
+  const svcMember = callee.object;
+  if (svcMember.type !== "MemberExpression") throw new Error("callee.object 非成员表达式");
+  assert.equal(isOwnedByParent(svcMember, callee), true);
+  assert.equal(isOwnedByParent(svcMember, null), false);
+  assert.equal(isOwnedByParent(svcMember, { type: "ExpressionStatement" }), false);
+  assert.equal(isOwnedByParent(svcMember, { type: "MemberExpression", object: svcMember }), true);
+  assert.equal(
+    isOwnedByParent(svcMember, { type: "MemberExpression", property: svcMember }),
+    false,
+  );
+});
+
+test("atTopLevel / isTerminator：三层槽全零才算顶层；终止符只有分号与逗号", () => {
+  assert.equal(atTopLevel([0, 0, 0]), true);
+  assert.equal(atTopLevel([0, -1, 0]), false);
+  assert.equal(atTopLevel([1, 0, 0]), false);
+  assert.equal(isTerminator(";"), true);
+  assert.equal(isTerminator(","), true);
+  assert.equal(isTerminator("}"), false);
+  assert.equal(isTerminator("a"), false);
+});
+
+test("stepBracketAt：只有 } 撞底报终止，) 与 ] 撞底只把槽位退成负数", () => {
+  const d0 = [0, 0, 0];
+  assert.equal(stepBracketAt("{", d0), "opened");
+  assert.deepEqual(d0, [1, 0, 0]);
+  assert.equal(stepBracketAt("}", d0), "closed");
+  assert.deepEqual(d0, [0, 0, 0]);
+  assert.equal(stepBracketAt("}", d0), BRACKET_TOP);
+  const d1 = [0, 0, 0];
+  assert.equal(stepBracketAt(")", d1), "closed");
+  assert.deepEqual(d1, [0, -1, 0]);
+  const d2 = [0, 0, 0];
+  assert.equal(stepBracketAt("]", d2), "closed");
+  assert.deepEqual(d2, [0, 0, -1]);
+  assert.equal(stepBracketAt("x", [0, 0, 0]), BRACKET_OTHER);
+  const d3 = [0, 0, 0];
+  stepBracketAt("(", d3);
+  assert.equal(stepBracketAt(")", d3), "closed");
+  assert.deepEqual(d3, [0, 0, 0]);
+});
+
+test("headKindAt：成员头六种形态各自归类", () => {
+  assert.equal(headKindAt(";", 0), HEAD_SEP);
+  assert.equal(headKindAt(",", 0), HEAD_SEP);
+  assert.equal(headKindAt("(", 0), HEAD_PARAMS);
+  assert.equal(headKindAt("[", 0), HEAD_BRACKET);
+  assert.equal(headKindAt('"k"', 0), HEAD_QUOTED);
+  assert.equal(headKindAt("'k'", 0), HEAD_QUOTED);
+  assert.equal(headKindAt("name", 0), HEAD_IDENT);
+  assert.equal(headKindAt("0", 0), HEAD_OTHER);
+  assert.equal(headKindAt("*", 0), HEAD_OTHER);
+  assert.equal(headKindAt(" ", 0), HEAD_OTHER);
+  // 修饰符本身是标识符形态：它归 ident，由 headIdentAt 读完整串后由 skipModifiersAt 整段跳过。
+  assert.equal(headKindAt("readonly", 0), HEAD_IDENT);
+});
+
+test("unquotedMemberName：带引号的键名可读，其余（计算键、模板串）不透明", () => {
+  assert.equal(unquotedMemberName('"a"'), "a");
+  assert.equal(unquotedMemberName("'a'"), "a");
+  assert.equal(unquotedMemberName("key"), null);
+  assert.equal(unquotedMemberName("`a`"), null);
+  assert.equal(unquotedMemberName('"a'), null);
+  assert.equal(unquotedMemberName(""), null);
+  assert.equal(unquotedMemberName('"'), "");
 });

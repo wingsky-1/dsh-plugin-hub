@@ -85,27 +85,32 @@ function patchRow(src) {
   return m == null ? null : { id: m[1], name: m[2] };
 }
 
+/** `register(` 之后第一个 `{` 的闭括号位置；中间只容空白与注释，否则不是对象实参。 */
+function registerBlockEnd(src, from) {
+  const skip = /^(?:\s|\/\/[^\n]*|\/\*[\s\S]*?\*\/)*/;
+  const sk = skip.exec(src.slice(from));
+  let i = from + (sk ? sk[0].length : 0);
+  if (src[i] !== "{") return null;
+  let depth = 0;
+  for (; i < src.length; i++) {
+    if (src[i] === "{") depth++;
+    else if (src[i] === "}") {
+      depth--;
+      if (depth === 0) return i;
+    }
+  }
+  return null;
+}
+
 function registerOptionBlocks(src) {
   if (src == null) return [];
   const blocks = [];
   const rx = /(?:slots|slotHost)\.register\(/g;
   let m;
   while ((m = rx.exec(src)) !== null) {
-    let depth = 0;
-    let i = m.index + m[0].length;
-    const skip = /^(?:\s|\/\/[^\n]*|\/\*[\s\S]*?\*\/)*/;
-    const tail = src.slice(i);
-    const sk = skip.exec(tail);
-    i += sk ? sk[0].length : 0;
-    if (src[i] !== "{") continue;
-    for (; i < src.length; i++) {
-      if (src[i] === "{") depth++;
-      else if (src[i] === "}") {
-        depth--;
-        if (depth === 0) break;
-      }
-    }
-    blocks.push(src.slice(m.index, i + 1));
+    const end = registerBlockEnd(src, m.index + m[0].length);
+    if (end === null) continue;
+    blocks.push(src.slice(m.index, end + 1));
   }
   return blocks;
 }

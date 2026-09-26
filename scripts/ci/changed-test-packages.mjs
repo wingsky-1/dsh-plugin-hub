@@ -79,6 +79,20 @@ export function packageOfTestPath(file) {
  * 代价可接受，漏跑（假绿）不可接受。（D4：旧注释称其 4 个面只在 e2e/client 层用它，
  * 与注册表 consumers 矛盾，结论对、理由错，此处以注册表为准。）
  */
+/** 一个改动文件该失效的条目集合：本包的测试文件走段级认领，其余走 face 命中映射。 */
+function invalidatedByFile(file, flagged, topology, rootDir, faceCache) {
+  const out = new Set();
+  const own = packageOfTestPath(file);
+  if (own !== null) {
+    for (const entry of testFileEntries(topology, rootDir, faceCache, own, file)) out.add(entry);
+    return out;
+  }
+  for (const face of facesHitBy(file, flagged)) {
+    out.add(segmentEntryFor(file, face) ?? face);
+  }
+  return out;
+}
+
 export function packagesToInvalidate(files, registry, topology = null, rootDir = ROOT) {
   const pkgs = new Set();
   const flagged = (registry?.entries ?? []).filter(
@@ -87,14 +101,8 @@ export function packagesToInvalidate(files, registry, topology = null, rootDir =
   const faceCache = new Map();
   for (const file of files) {
     if (file === "") continue;
-    const own = packageOfTestPath(file);
-    if (own !== null) {
-      for (const entry of testFileEntries(topology, rootDir, faceCache, own, file)) pkgs.add(entry);
-      continue;
-    }
-    for (const face of facesHitBy(file, flagged)) {
-      const segEntry = segmentEntryFor(file, face);
-      pkgs.add(segEntry ?? face);
+    for (const entry of invalidatedByFile(file, flagged, topology, rootDir, faceCache)) {
+      pkgs.add(entry);
     }
   }
   return [...pkgs].sort();
@@ -116,23 +124,29 @@ export function packagesToInvalidate(files, registry, topology = null, rootDir =
  * 的复用/重算仍由 Stryker 自身 differ 完成——本函数只决定删哪些段文件，不替代它。
  */
 export function testFileEntries(topology, rootDir, faceCache, pkg, file) {
-  const pkgDef = topology?.packages?.[pkg];
-  const segDefs = pkgDef?.segments;
-  if (segDefs === null || typeof segDefs !== "object" || Array.isArray(segDefs)) return [pkg];
-  const segKeys = Object.keys(segDefs);
-  if (segKeys.length === 0) return [pkg];
-  let face = faceCache.get(pkg);
-  if (face === undefined) {
-    try {
-      face = projectTestSurface(rootDir, topology, pkg).testFiles;
-    } catch {
-      return [pkg];
-    }
-    faceCache.set(pkg, face);
-  }
+  const segDefs = topology?.packages?.[pkg]?.segments;
+  const segKeys = segKeysOf(segDefs);
+  if (segKeys === null) return [pkg];
+  const face = faceOfPkg(rootDir, topology, faceCache, pkg);
+  if (face === null) return [pkg];
   if (!face.includes(file)) {
     return supportFileEntries(topology, rootDir, faceCache, pkg, file, face);
   }
+  const matched = claimedSegKeys(segDefs, segKeys, rootDir, pkg, face, file);
+  if (matched === null) return [pkg];
+  if (matched.length === 0 || matched.length === segKeys.length) return [pkg];
+  return matched.map((segKey) => `${pkg}:${segKey}`);
+}
+
+/** 段登记的段键清单；形状异常（缺席/非对象/无段）返回 null，由调用方走整包失效。 */
+function segKeysOf(segDefs) {
+  if (segDefs === null || typeof segDefs !== "object" || Array.isArray(segDefs)) return null;
+  const segKeys = Object.keys(segDefs);
+  return segKeys.length === 0 ? null : segKeys;
+}
+
+/** 该文件被哪些段认领（显式或回落）；任一段解析异常返回 null（形状错时不静默窄化）。 */
+function claimedSegKeys(segDefs, segKeys, rootDir, pkg, face, file) {
   const matched = [];
   for (const segKey of segKeys) {
     const r = resolveSegmentTestFiles({
@@ -141,11 +155,23 @@ export function testFileEntries(topology, rootDir, faceCache, pkg, file) {
       segLabel: `[${pkg}:${segKey}]`,
       packageFace: face,
     });
-    if (r.mode !== "explicit" && r.mode !== "fallback") return [pkg];
+    if (r.mode !== "explicit" && r.mode !== "fallback") return null;
     if (r.files.includes(file)) matched.push(segKey);
   }
-  if (matched.length === 0 || matched.length === segKeys.length) return [pkg];
-  return matched.map((segKey) => `${pkg}:${segKey}`);
+  return matched;
+}
+
+/** 该包的变异测试面（带缓存）；投影失败时返回 null，由调用方走整包失效。 */
+function faceOfPkg(rootDir, topology, faceCache, pkg) {
+  const cached = faceCache.get(pkg);
+  if (cached !== undefined) return cached;
+  try {
+    const face = projectTestSurface(rootDir, topology, pkg).testFiles;
+    faceCache.set(pkg, face);
+    return face;
+  } catch {
+    return null;
+  }
 }
 
 /**

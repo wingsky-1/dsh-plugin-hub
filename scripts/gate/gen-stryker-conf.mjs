@@ -302,140 +302,158 @@ function reconcileRegistrations(topology, packages, noMutationPackages) {
  * 但派生函数被单独调用时不该再裸解引用。
  */
 function deriveAllConfigs(packages, rootShared, sharedDefaults, projections) {
-  const derivedConfigs = new Map();
-  const derivedVitestConfigs = new Map();
-  // P2：段级测试面。fallback 段沿用包级面（行为零变），explicit 段派生段级 config。
-  // fallback 计数打印给 --check（D3 收敛跟踪：全回落是合法过渡态，但必须可见）。
-  const segmentTests = new Map();
-  let fallbackSegments = 0;
-  // conf 文件名 → 所属包：判据 ⑤ 的锚定与 ⑥ 的有效面都要知道「这份 conf 是谁的」，
-  // 而 mutate 里的路径是仓库根相对的裸 glob，只有派生侧知道归属。
-  const confOwners = new Map();
-  // conf 名只由「包名 + 段名」决定（_single 段即 <pkg>.json），故不同包可能派生出同一个文件名。
-  // 相撞时后写者会静默覆盖前者的内容——⑤/⑥ 与磁盘/拓扑一致性判据都看不到被覆盖的包
-  // （独立复核实测：还输出「1 份配置 vs 2 份 vitest 配置」的自相矛盾）。故在派生侧 fail-closed。
-  const confCollisions = [];
-  // P2：段测试面解析（fallback 计数见 D3 收敛跟踪）。vitest 名碰撞与 conf 同算法（D5）。
-  const vitestOwners = new Map();
-  const vitestCollisions = [];
+  return deriveAllConfigsOn(deriveState(), packages, rootShared, sharedDefaults, projections);
+}
+
+/**
+ * 派生期的累加器。
+ *
+ * conf 文件名 → 所属 surface：判据 ⑤ 的锚定与 ⑥ 的有效面都要知道「这份 conf 是谁的」，
+ * 而 mutate 里的路径是仓库根相对的裸 glob，只有派生侧知道归属。conf 名只由「包名 + 段名」
+ * 决定（_single 段即 <pkg>.json），故不同 surface 可能派生出同一个文件名；相撞时后写者会
+ * 静默覆盖前者的内容——⑤/⑥ 与磁盘/拓扑一致性判据都看不到被覆盖的包（独立复核实测：还输出
+ * 「1 份配置 vs 2 份 vitest 配置」的自相矛盾）。故在派生侧 fail-closed。
+ * vitest 名碰撞与 conf 同算法（D5）。fallback 计数打印给 --check（D3 收敛跟踪）。
+ */
+function deriveState() {
+  return {
+    repoRoot,
+    derivedConfigs: new Map(),
+    derivedVitestConfigs: new Map(),
+    confOwners: new Map(),
+    confCollisions: [],
+    segmentTests: new Map(),
+    fallbackSegments: 0,
+    vitestOwners: new Map(),
+    vitestCollisions: [],
+  };
+}
+
+/**
+ * 一个 surface（包或 root-shared）逐段派生：段级 vitest config、段级 stryker conf、撞车记账。
+ *
+ * 两类 surface 的派生规则同构，只有四处不同，全部由 spec 带入而不是在函数里分叉：段标签前缀、
+ * `deriveConfig` 的 threshold 实参、回落段是否需要 surface 级 config，以及判词里的
+ * 「包名 / surface 名」（GitHub Actions 侧 vitest config 的叫法差异）。
+ */
+function deriveSurfaceSegments(st, spec) {
+  const {
+    surfaceName,
+    surfaceDef,
+    sharedDefaults,
+    packageFace,
+    segLabelPrefix,
+    vitestLabelPrefix,
+    nameNoun,
+    threshold,
+    fallbackNeedsSurfaceConfig,
+    segmentTestsKey,
+  } = spec;
+  const resolved = {};
+  let needsSurfaceConfig = false;
+  for (const [segKey, segDef] of Object.entries(surfaceDef.segments ?? {})) {
+    const r = resolveSegmentTestFiles({
+      root: st.repoRoot,
+      segDef,
+      segLabel: `[${segLabelPrefix}:${segKey}]`,
+      packageFace,
+    });
+    resolved[segKey] = r;
+    const segVitestFile = segVitestFileOf(st, surfaceName, segKey, r, nameNoun, vitestLabelPrefix);
+    if (r.mode === "fallback" && fallbackNeedsSurfaceConfig) needsSurfaceConfig = true;
+    const { confFileName, content } = deriveConfig(
+      sharedDefaults,
+      surfaceName,
+      segKey,
+      segDef,
+      surfaceDef,
+      segVitestFile,
+      threshold,
+    );
+    const previousOwner = st.confOwners.get(confFileName);
+    if (previousOwner !== undefined && previousOwner !== surfaceName) {
+      st.confCollisions.push(
+        `${confFileName} 同时由 ${previousOwner} 与 ${surfaceName} 派生（段名 ${segKey}）—— ` +
+          "包名与段名拼出的文件名相撞，前者的配置会被静默覆盖",
+      );
+    }
+    st.derivedConfigs.set(confFileName, content);
+    st.confOwners.set(confFileName, surfaceName);
+  }
+  st.segmentTests.set(segmentTestsKey, resolved);
+  return needsSurfaceConfig;
+}
+
+/**
+ * 一个段该用哪份 vitest config：显式段派生段级 config 并记撞车，回落段沿用 surface 级。
+ * `vitestLabelPrefix` 是段级 vitest config 里的显示名——包用包名，root-shared 用 `$rootShared`；
+ * 它与写进 conf 的 surface 名（root-shared 时是 `shared`）不是同一个字符串，两者不可合并。
+ */
+function segVitestFileOf(st, surfaceName, segKey, r, nameNoun, vitestLabelPrefix) {
+  if (r.mode !== "explicit") {
+    if (r.mode === "fallback") st.fallbackSegments += 1;
+    return vitestConfigPath(surfaceName);
+  }
+  const segVitestFile = vitestSegConfigPath(surfaceName, segKey);
+  st.derivedVitestConfigs.set(
+    segVitestFile,
+    deriveVitestConfig(`${vitestLabelPrefix}:${segKey}`, r.files),
+  );
+  const prev = st.vitestOwners.get(segVitestFile);
+  if (prev !== undefined && prev !== surfaceName) {
+    st.vitestCollisions.push(
+      `${segVitestFile} 同时由 ${prev} 与 ${surfaceName} 派生 —— ${nameNoun}与段名拼出的文件名相撞`,
+    );
+  }
+  st.vitestOwners.set(segVitestFile, surfaceName);
+  return segVitestFile;
+}
+
+/** 全部 surface（逐包 + 可选 root-shared）派生完，累加器即对外的派生结果。 */
+function deriveAllConfigsOn(st, packages, rootShared, sharedDefaults, projections) {
   for (const [pkgName, pkgDef] of Object.entries(packages)) {
     const packageFace = projections.get(pkgName)?.testFiles ?? [];
-    const resolved = {};
-    for (const [segKey, segDef] of Object.entries(pkgDef.segments ?? {})) {
-      const r = resolveSegmentTestFiles({
-        root: repoRoot,
-        segDef,
-        segLabel: `[${pkgName}:${segKey}]`,
-        packageFace,
-      });
-      resolved[segKey] = r;
-      let segVitestFile = vitestConfigPath(pkgName);
-      if (r.mode === "explicit") {
-        segVitestFile = vitestSegConfigPath(pkgName, segKey);
-        derivedVitestConfigs.set(
-          segVitestFile,
-          deriveVitestConfig(`${pkgName}:${segKey}`, r.files),
-        );
-        const prev = vitestOwners.get(segVitestFile);
-        if (prev !== undefined && prev !== pkgName) {
-          vitestCollisions.push(
-            `${segVitestFile} 同时由 ${prev} 与 ${pkgName} 派生 —— 包名与段名拼出的文件名相撞`,
-          );
-        }
-        vitestOwners.set(segVitestFile, pkgName);
-      } else if (r.mode === "fallback") {
-        fallbackSegments++;
-      }
-      const { confFileName, content } = deriveConfig(
-        sharedDefaults,
-        pkgName,
-        segKey,
-        segDef,
-        pkgDef,
-        segVitestFile,
-      );
-      const previousOwner = confOwners.get(confFileName);
-      if (previousOwner !== undefined && previousOwner !== pkgName) {
-        confCollisions.push(
-          `${confFileName} 同时由 ${previousOwner} 与 ${pkgName} 派生（段名 ${segKey}）—— ` +
-            "包名与段名拼出的文件名相撞，前者的配置会被静默覆盖",
-        );
-      }
-      derivedConfigs.set(confFileName, content);
-      confOwners.set(confFileName, pkgName);
-    }
-    segmentTests.set(pkgName, resolved);
+    deriveSurfaceSegments(st, {
+      surfaceName: pkgName,
+      surfaceDef: pkgDef,
+      sharedDefaults,
+      packageFace,
+      segLabelPrefix: pkgName,
+      vitestLabelPrefix: pkgName,
+      nameNoun: "包名",
+      threshold: undefined,
+      fallbackNeedsSurfaceConfig: false,
+      segmentTestsKey: pkgName,
+    });
     if (packageFace.length > 0) {
-      derivedVitestConfigs.set(vitestConfigPath(pkgName), deriveVitestConfig(pkgName, packageFace));
-    }
-  }
-  if (rootShared !== undefined) {
-    const surfaceName = "shared";
-    const packageFace = projections.get("$rootShared")?.testFiles ?? [];
-    const resolved = {};
-    let needsSurfaceConfig = false;
-    for (const [segKey, segDef] of Object.entries(rootShared.segments ?? {})) {
-      const r = resolveSegmentTestFiles({
-        root: repoRoot,
-        segDef,
-        segLabel: `[$rootShared:${segKey}]`,
-        packageFace,
-      });
-      resolved[segKey] = r;
-      let segVitestFile = vitestConfigPath(surfaceName);
-      if (r.mode === "explicit") {
-        segVitestFile = vitestSegConfigPath(surfaceName, segKey);
-        derivedVitestConfigs.set(
-          segVitestFile,
-          deriveVitestConfig(`$rootShared:${segKey}`, r.files),
-        );
-        const prev = vitestOwners.get(segVitestFile);
-        if (prev !== undefined && prev !== surfaceName) {
-          vitestCollisions.push(
-            `${segVitestFile} 同时由 ${prev} 与 ${surfaceName} 派生 —— surface 名与段名拼出的文件名相撞`,
-          );
-        }
-        vitestOwners.set(segVitestFile, surfaceName);
-      } else if (r.mode === "fallback") {
-        fallbackSegments++;
-        needsSurfaceConfig = true;
-      }
-      const { confFileName, content } = deriveConfig(
-        sharedDefaults,
-        surfaceName,
-        segKey,
-        segDef,
-        rootShared,
-        segVitestFile,
-        rootShared.threshold,
-      );
-      const previousOwner = confOwners.get(confFileName);
-      if (previousOwner !== undefined && previousOwner !== surfaceName) {
-        confCollisions.push(
-          `${confFileName} 同时由 ${previousOwner} 与 ${surfaceName} 派生（段名 ${segKey}）—— ` +
-            "surface 名与段名拼出的文件名相撞，前者的配置会被静默覆盖",
-        );
-      }
-      derivedConfigs.set(confFileName, content);
-      confOwners.set(confFileName, surfaceName);
-    }
-    segmentTests.set("$rootShared", resolved);
-    if (needsSurfaceConfig && packageFace.length > 0) {
-      derivedVitestConfigs.set(
-        vitestConfigPath(surfaceName),
-        deriveVitestConfig("$rootShared", packageFace),
+      st.derivedVitestConfigs.set(
+        vitestConfigPath(pkgName),
+        deriveVitestConfig(pkgName, packageFace),
       );
     }
   }
-  return {
-    derivedConfigs,
-    derivedVitestConfigs,
-    confOwners,
-    confCollisions,
-    segmentTests,
-    fallbackSegments,
-    vitestCollisions,
-  };
+  if (rootShared === undefined) return st;
+  const surfaceName = "shared";
+  const packageFace = projections.get("$rootShared")?.testFiles ?? [];
+  const needsSurfaceConfig = deriveSurfaceSegments(st, {
+    surfaceName,
+    surfaceDef: rootShared,
+    sharedDefaults,
+    packageFace,
+    segLabelPrefix: "$rootShared",
+    vitestLabelPrefix: "$rootShared",
+    nameNoun: "surface 名",
+    threshold: rootShared.threshold,
+    fallbackNeedsSurfaceConfig: true,
+    segmentTestsKey: "$rootShared",
+  });
+  if (needsSurfaceConfig && packageFace.length > 0) {
+    st.derivedVitestConfigs.set(
+      vitestConfigPath(surfaceName),
+      deriveVitestConfig("$rootShared", packageFace),
+    );
+  }
+  return st;
 }
 
 /**
@@ -796,24 +814,24 @@ function main() {
     fallbackSegments,
     vitestCollisions,
   } = deriveAllConfigs(packages, topology.$rootShared, sharedDefaults, projections);
-  if (confCollisions.length > 0) {
-    console.error("[gen-stryker-conf] 派生的 conf 名碰撞（配置名只由包名 + 段名决定）：");
-    for (const collision of confCollisions) console.error(`  ${collision}`);
-    return 1;
-  }
-  if (vitestCollisions.length > 0) {
-    console.error("[gen-stryker-conf] 派生的段级 vitest 名碰撞（D5，与 conf 同算法）：");
-    for (const collision of vitestCollisions) console.error(`  ${collision}`);
-    return 1;
-  }
+  const confGate = collisionGate(
+    "派生的 conf 名碰撞（配置名只由包名 + 段名决定）：",
+    confCollisions,
+  );
+  if (confGate !== null) return confGate;
+  const vitestGate = collisionGate(
+    "派生的段级 vitest 名碰撞（D5，与 conf 同算法）：",
+    vitestCollisions,
+  );
+  if (vitestGate !== null) return vitestGate;
   const segTestCheck = collectSegmentTestProblems(segmentTests, projections);
   const minMismatches = collectMinMismatches(discovered);
 
   if (isSyncMin) syncTestMin(minMismatches);
 
   if (isCheckMode) {
-    const ctx = {
-      errors: [...errors, ...segTestCheck.problems],
+    return runCheckMode(topology, {
+      errors,
       minMismatches,
       derivedConfigs,
       derivedVitestConfigs,
@@ -823,34 +841,59 @@ function main() {
       noMutationPackages,
       discovered,
       fallbackSegments,
-      unionCompared: segTestCheck.unionCompared,
-    };
-    const check = checkModeProblems(ctx);
-    // 判据⑦ 与上面各条独立：环境故障（基准 ref 读不到 / 台账坏）走 exit 2，不伪装成「有违规」。
-    const ratchet = faceRatchetCheck(topology);
-    if (ratchet.envError !== undefined) {
-      failClosed(`[gen-stryker-conf] ${ratchet.envError} —— 环境故障按 fail-closed 处理`);
-    }
-    if (segTestCheck.unionCompared === 0) {
-      check.problems.push(
-        "测试面并集空转：所有包的包级变异面条目数之和为 0 —— 判据没有比到任何载体（fail-closed）",
-      );
-    }
-    const problems = [...check.problems, ...ratchet.problems, ...ratchet.operatorProblems];
-    for (const p of problems) console.error(`[gen-stryker-conf] ${p}`);
-    if (problems.length > 0) {
-      console.error(
-        "[gen-stryker-conf] --check 失败：配置文件 / 测试面登记 / --min 与单一事实源脱节，" +
-          "或变异面并集相对基准收缩",
-      );
-      return 1;
-    }
-    printCheckPassed(ctx, check.scanned, ratchet);
-    return 0;
+      segTestCheck,
+    });
   }
 
   if (!isSyncMin) writeDerivedConfigs(derivedConfigs, derivedVitestConfigs, projections);
   return process.exitCode ?? 0;
+}
+
+/** 派生命名撞车即 fail-closed：打印清单后交回 exit 1；无撞车返回 null 继续走。 */
+function collisionGate(label, collisions) {
+  if (collisions.length === 0) return null;
+  console.error(`[gen-stryker-conf] ${label}`);
+  for (const collision of collisions) console.error(`  ${collision}`);
+  return 1;
+}
+
+/** `--check` 档：配置一致性 + 测试面登记 + `--min` + 判据⑦ 并集棘轮，一次收口。 */
+function runCheckMode(topology, input) {
+  const ctx = {
+    errors: [...input.errors, ...input.segTestCheck.problems],
+    minMismatches: input.minMismatches,
+    derivedConfigs: input.derivedConfigs,
+    derivedVitestConfigs: input.derivedVitestConfigs,
+    confOwners: input.confOwners,
+    projections: input.projections,
+    packages: input.packages,
+    noMutationPackages: input.noMutationPackages,
+    discovered: input.discovered,
+    fallbackSegments: input.fallbackSegments,
+    unionCompared: input.segTestCheck.unionCompared,
+  };
+  const check = checkModeProblems(ctx);
+  // 判据⑦ 与上面各条独立：环境故障（基准 ref 读不到 / 台账坏）走 exit 2，不伪装成「有违规」。
+  const ratchet = faceRatchetCheck(topology);
+  if (ratchet.envError !== undefined) {
+    failClosed(`[gen-stryker-conf] ${ratchet.envError} —— 环境故障按 fail-closed 处理`);
+  }
+  if (input.segTestCheck.unionCompared === 0) {
+    check.problems.push(
+      "测试面并集空转：所有包的包级变异面条目数之和为 0 —— 判据没有比到任何载体（fail-closed）",
+    );
+  }
+  const problems = [...check.problems, ...ratchet.problems, ...ratchet.operatorProblems];
+  for (const p of problems) console.error(`[gen-stryker-conf] ${p}`);
+  if (problems.length > 0) {
+    console.error(
+      "[gen-stryker-conf] --check 失败：配置文件 / 测试面登记 / --min 与单一事实源脱节，" +
+        "或变异面并集相对基准收缩",
+    );
+    return 1;
+  }
+  printCheckPassed(ctx, check.scanned, ratchet);
+  return 0;
 }
 
 // CLI 守卫：被测试 import 时（argv[1] 不是本文件）不得执行 main，也不会派生出任何写盘副作用。

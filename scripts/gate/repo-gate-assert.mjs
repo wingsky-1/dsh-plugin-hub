@@ -197,17 +197,15 @@ function checkPrerequisites(input) {
   return null;
 }
 
-/** 数据契约闸：切片清单与显式布尔必须同时合法且互相一致。 */
-function checkDataContract(input) {
-  // 归因优先于取值合法性：空串的成因（上游被取消）与「值写错了」必须分开报（见上）。
-  const voidVerdict = changesOutputsVoidVerdict(input);
-  if (voidVerdict !== null) return { failure: voidVerdict };
+/** 变异包切片的解析面：JSON 不可解析或不是数组即数据契约破坏（判词逐字保留）。 */
+function parseMutationPkgs(text) {
   let pkgs;
   try {
-    pkgs = JSON.parse(input.mutationPkgsJson);
+    pkgs = JSON.parse(text);
   } catch (err) {
     return {
-      failure: {
+      pkgs: null,
+      problem: {
         ok: false,
         code: 2,
         reason: `mutationPackages 不是合法 JSON（${err.message}）—— 数据契约破坏`,
@@ -216,27 +214,40 @@ function checkDataContract(input) {
   }
   if (!Array.isArray(pkgs)) {
     return {
-      failure: { ok: false, code: 2, reason: "mutationPackages 不是 JSON 数组 —— 数据契约破坏" },
+      pkgs: null,
+      problem: { ok: false, code: 2, reason: "mutationPackages 不是 JSON 数组 —— 数据契约破坏" },
     };
   }
-  if (input.hasMutations !== "true" && input.hasMutations !== "false") {
+  return { pkgs, problem: null };
+}
+
+/** ci.yml 注入的两个显式布尔：都必须是 'true'/'false' 字面量，按注入顺序报第一条。 */
+function explicitBoolProblems(input) {
+  for (const [field, label] of [
+    ["hasMutations", "hasMutations"],
+    ["fullRequested", "fullGate"],
+  ]) {
+    const value = input[field];
+    if (value === "true" || value === "false") continue;
     return {
-      failure: {
-        ok: false,
-        code: 2,
-        reason: `hasMutations 必须为 'true'/'false'（实际 "${input.hasMutations}"）—— 数据契约破坏`,
-      },
+      ok: false,
+      code: 2,
+      reason: `${label} 必须为 'true'/'false'（实际 "${value}"）—— 数据契约破坏`,
     };
   }
-  if (input.fullRequested !== "true" && input.fullRequested !== "false") {
-    return {
-      failure: {
-        ok: false,
-        code: 2,
-        reason: `fullGate 必须为 'true'/'false'（实际 "${input.fullRequested}"）—— 数据契约破坏`,
-      },
-    };
-  }
+  return null;
+}
+
+/** 数据契约闸：切片清单与显式布尔必须同时合法且互相一致。 */
+function checkDataContract(input) {
+  // 归因优先于取值合法性：空串的成因（上游被取消）与「值写错了」必须分开报（见上）。
+  const voidVerdict = changesOutputsVoidVerdict(input);
+  if (voidVerdict !== null) return { failure: voidVerdict };
+  const parsed = parseMutationPkgs(input.mutationPkgsJson);
+  if (parsed.problem !== null) return { failure: parsed.problem };
+  const pkgs = parsed.pkgs;
+  const boolVerdict = explicitBoolProblems(input);
+  if (boolVerdict !== null) return { failure: boolVerdict };
   // redline 放在这里而不是前提闸之前单列：它同属「显式布尔/枚举取值必须合法」这一类数据契约
   // 错误，同一维度的错都从同一处报，判词才可检索。空串（= ci.yml 没注入）同样落这一支。
   if (!JUMP_RESULTS.has(input.redline)) {

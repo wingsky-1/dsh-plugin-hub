@@ -174,10 +174,15 @@ function normalizeRun(run, index) {
     at,
     createdAt: readTime(run.created_at, index, "created_at"),
     number: Number.isInteger(run.run_number) ? run.run_number : null,
-    event: typeof run.event === "string" ? run.event : "",
-    sha: typeof run.head_sha === "string" ? run.head_sha : "",
-    url: typeof run.html_url === "string" ? run.html_url : "",
+    event: stringOr(run.event, ""),
+    sha: stringOr(run.head_sha, ""),
+    url: stringOr(run.html_url, ""),
   };
+}
+
+/** 展示用字段的窄化：是字符串就用它，否则用缺省（空串不是「有值」）。 */
+function stringOr(value, fallback) {
+  return typeof value === "string" ? value : fallback;
 }
 
 /** 展示用的 run 摘要（判词里只出现事实，措辞留给 renderVerdictLine）。 */
@@ -218,28 +223,16 @@ export function evaluateObserveRecency({
   workflow = DEFAULT_WORKFLOW,
   override = false,
 }) {
-  if (!(Number.isFinite(maxAgeHours) && maxAgeHours > 0)) {
-    throw new TypeError(`maxAgeHours 必须是正数：${String(maxAgeHours)}`);
-  }
-  if (override === true) {
-    return {
-      ok: true,
-      status: "overridden",
-      overridden: true,
-      workflow,
-      maxAgeHours,
-      now: null,
-      ageHours: null,
-      run: null,
-      total: null,
-      successCount: null,
-    };
-  }
+  assertMaxAgeOf(maxAgeHours);
+  // override 在校验 runs 之前返回：override 的契约是「不碰 run 数据即放行」，
+  // 刻意不可解析的 runs 在 override 档下也不该抛。
+  if (override === true) return overrideVerdict(workflow, maxAgeHours);
   const at = toDate(now, "now");
   if (!Array.isArray(runs)) {
     throw new TypeError(`run 列表不是数组：${runs === null ? "null" : typeof runs}`);
   }
   const normalized = runs.map(normalizeRun);
+  const successes = normalized.filter((run) => run.conclusion === "success");
   const base = {
     overridden: false,
     workflow,
@@ -250,11 +243,7 @@ export function evaluateObserveRecency({
   if (normalized.length === 0) {
     return { ...base, ok: false, status: "no-runs", ageHours: null, run: null, successCount: 0 };
   }
-  const successes = normalized.filter((run) => run.conclusion === "success");
-  const newest = [...normalized].sort((a, b) => runClock(b) - runClock(a))[0];
-  const fresh = successes
-    .filter((run) => ageInHours(at, run.at) < maxAgeHours)
-    .sort((a, b) => b.at.getTime() - a.at.getTime())[0];
+  const fresh = freshestSuccessAt(successes, at, maxAgeHours);
   if (fresh !== undefined) {
     return {
       ...base,
@@ -265,8 +254,18 @@ export function evaluateObserveRecency({
       successCount: successes.length,
     };
   }
+  return unfreshVerdict(base, normalized, successes, at);
+}
+
+/** 窗口内的成功 run 里最新的那个；窗口内没有则 undefined。 */
+function freshestSuccessAt(successes, at, maxAgeHours) {
+  return newestSuccessOf(successes.filter((run) => ageInHours(at, run.at) < maxAgeHours));
+}
+
+/** 窗口内没有新鲜成功 run 时的收口：有成功但过期（stale）/ 从未成功（no-success）。 */
+function unfreshVerdict(base, normalized, successes, at) {
   if (successes.length > 0) {
-    const latest = successes.sort((a, b) => b.at.getTime() - a.at.getTime())[0];
+    const latest = newestSuccessOf(successes);
     return {
       ...base,
       ok: false,
@@ -276,6 +275,7 @@ export function evaluateObserveRecency({
       successCount: successes.length,
     };
   }
+  const newest = [...normalized].sort((a, b) => runClock(b) - runClock(a))[0];
   return {
     ...base,
     ok: false,
@@ -284,6 +284,11 @@ export function evaluateObserveRecency({
     run: summarize(newest),
     successCount: 0,
   };
+}
+
+/** 成功 run 里最新的一个（按收口时刻倒序）。 */
+function newestSuccessOf(successes) {
+  return [...successes].sort((a, b) => b.at.getTime() - a.at.getTime())[0];
 }
 
 function shortSha(sha) {
@@ -404,6 +409,47 @@ function main(argv, env = process.env) {
   if (unknown.length > 0) {
     failClosed(`observe-precheck: 未知参数 ${unknown.join(" ")}（用 --help 查看可用参数）`);
   }
+  const { maxAgeHours, perPage } = numericArgsOf(argv);
+  const ctx = {
+    maxAgeHours,
+    perPage,
+    workflow: argValue(argv, "--workflow", DEFAULT_WORKFLOW),
+    repo: argValue(argv, "--repo", REPO_PLACEHOLDER),
+    runsFile: argValue(argv, "--runs-file", null),
+    nowArg: argValue(argv, "--now", null),
+    runsOut: argValue(argv, "--runs-out", null),
+    inputsOut: argValue(argv, "--inputs-out", null),
+  };
+
+  // override 在校验参数之后、取数据之前：API 故障时它必须仍然可用。
+  if (overrideRequested(argv, env)) return runOverridePath(ctx);
+  const verdict = judgeWithEvidence(ctx);
+  const line = renderVerdictLine(verdict);
+  console.log(verdict.ok === true ? line : `::error::${line}`);
+  return verdict.ok === true ? 0 : 1;
+}
+
+/** 取数 → 判定 → 落盘证据；任一步失败都收成 error 判定体，不抛到 CLI 之外。 */
+function judgeWithEvidence(ctx) {
+  const { workflow, maxAgeHours, perPage, repo, runsFile, nowArg } = ctx;
+  try {
+    const runs =
+      runsFile === null ? fetchRuns({ repo, workflow, perPage }) : readRunsFile(runsFile);
+    const nowInput = nowArg === null ? new Date() : nowArg;
+    let verdict = evaluateObserveRecency({ runs, now: nowInput, maxAgeHours, workflow });
+    try {
+      writeRunEvidence(ctx, runs, nowInput, false);
+    } catch (err) {
+      verdict = errorVerdict(ctx, "证据落盘失败：" + err.message);
+    }
+    return verdict;
+  } catch (err) {
+    return errorVerdict(ctx, err.message);
+  }
+}
+
+/** 两个数值参数的解析与范围判据（任一越界都是门禁故障，走 fail-closed 出口）。 */
+function numericArgsOf(argv) {
   const rawMaxAge = argValue(argv, "--max-age-hours", String(DEFAULT_MAX_AGE_HOURS));
   const maxAgeHours = Number(rawMaxAge);
   if (!(Number.isFinite(maxAgeHours) && maxAgeHours > 0)) {
@@ -414,102 +460,92 @@ function main(argv, env = process.env) {
   if (!(Number.isInteger(perPage) && perPage >= 1 && perPage <= MAX_PER_PAGE)) {
     failClosed(`observe-precheck: --per-page 需要 1..${MAX_PER_PAGE} 的整数（实际 ${rawPerPage}）`);
   }
-  const workflow = argValue(argv, "--workflow", DEFAULT_WORKFLOW);
-  const repo = argValue(argv, "--repo", REPO_PLACEHOLDER);
-  const runsFile = argValue(argv, "--runs-file", null);
-  const nowArg = argValue(argv, "--now", null);
-  const runsOut = argValue(argv, "--runs-out", null);
-  const inputsOut = argValue(argv, "--inputs-out", null);
+  return { maxAgeHours, perPage };
+}
 
-  // override 在校验参数之后、取数据之前：API 故障时它必须仍然可用。
-  if (overrideRequested(argv, env)) {
-    if (inputsOut !== null) {
-      try {
-        writeEvidenceFile(
-          inputsOut,
-          JSON.stringify(
-            {
-              workflow: workflow,
-              maxAgeHours: maxAgeHours,
-              perPage: perPage,
-              now: nowArg,
-              overridden: true,
-            },
-            null,
-            2,
-          ) + "\n",
-        );
-      } catch (err) {
-        console.log(
-          "::error::observe 发版前置（" +
-            workflow +
-            "，窗口 " +
-            maxAgeHours +
-            " h）：阻断（fail-closed）—— 判定输入落盘失败（" +
-            inputsOut +
-            "）：" +
-            err.message,
-        );
-        return 1;
-      }
-    }
-    // override 不取任何数据，故 --runs-out 无内容可写（缺数据不伪造“空 runs”，直接跳过）。
-    console.log(
-      "::warning::" +
-        renderVerdictLine({ status: "overridden", workflow: workflow, maxAgeHours: maxAgeHours }),
-    );
-    console.log(OVERRIDE_OBLIGATION);
-    return 0;
+/** 窗口参数必须是正数（不满足即结构损坏，抛给 CLI 转 fail-closed）。 */
+function assertMaxAgeOf(maxAgeHours) {
+  if (!(Number.isFinite(maxAgeHours) && maxAgeHours > 0)) {
+    throw new TypeError(`maxAgeHours 必须是正数：${String(maxAgeHours)}`);
   }
+}
 
-  let verdict;
-  try {
-    const runs =
-      runsFile === null ? fetchRuns({ repo, workflow, perPage }) : readRunsFile(runsFile);
-    const nowInput = nowArg === null ? new Date() : nowArg;
-    verdict = evaluateObserveRecency({
-      runs: runs,
-      now: nowInput,
-      maxAgeHours: maxAgeHours,
-      workflow: workflow,
-    });
+/** override 判定体：不取数、不评新旧，只声明「本次被 override」与义务仍在。 */
+function overrideVerdict(workflow, maxAgeHours) {
+  return {
+    ok: true,
+    status: "overridden",
+    overridden: true,
+    workflow,
+    maxAgeHours,
+    now: null,
+    ageHours: null,
+    run: null,
+    total: null,
+    successCount: null,
+  };
+}
+
+/** 取数或判定出错的判定体（判词逐字保留）。 */
+function errorVerdict(ctx, reason) {
+  return { status: "error", workflow: ctx.workflow, maxAgeHours: ctx.maxAgeHours, reason };
+}
+
+/** 判定输入/原始 run 落盘（override 路径只落输入、且 now 原样记）。 */
+function writeRunEvidence(ctx, runs, nowInput, overridden) {
+  if (ctx.runsOut !== null && !overridden) {
+    writeEvidenceFile(ctx.runsOut, JSON.stringify(runs, null, 2) + "\n");
+  }
+  if (ctx.inputsOut === null) return;
+  writeEvidenceFile(
+    ctx.inputsOut,
+    JSON.stringify(
+      {
+        workflow: ctx.workflow,
+        maxAgeHours: ctx.maxAgeHours,
+        perPage: ctx.perPage,
+        now: nowInput instanceof Date ? nowInput.toISOString() : nowInput,
+        overridden,
+      },
+      null,
+      2,
+    ) + "\n",
+  );
+}
+
+/**
+ * override 路径：不取任何数据（API 故障时仍须可用），只落判定输入并打义务提示。
+ * 落盘失败即阻断（fail-closed 判词逐字保留）。
+ */
+function runOverridePath(ctx) {
+  if (ctx.inputsOut !== null) {
     try {
-      if (runsOut !== null) writeEvidenceFile(runsOut, JSON.stringify(runs, null, 2) + "\n");
-      if (inputsOut !== null) {
-        writeEvidenceFile(
-          inputsOut,
-          JSON.stringify(
-            {
-              workflow: workflow,
-              maxAgeHours: maxAgeHours,
-              perPage: perPage,
-              now: nowInput instanceof Date ? nowInput.toISOString() : nowInput,
-              overridden: false,
-            },
-            null,
-            2,
-          ) + "\n",
-        );
-      }
+      writeRunEvidence(ctx, null, ctx.nowArg, true);
     } catch (err) {
-      verdict = {
-        status: "error",
-        workflow: workflow,
-        maxAgeHours: maxAgeHours,
-        reason: "证据落盘失败：" + err.message,
-      };
+      console.log(
+        "::error::observe 发版前置（" +
+          ctx.workflow +
+          "，窗口 " +
+          ctx.maxAgeHours +
+          " h）：阻断（fail-closed）—— 判定输入落盘失败（" +
+          ctx.inputsOut +
+          "）：" +
+          err.message,
+      );
+      return 1;
     }
-  } catch (err) {
-    verdict = {
-      status: "error",
-      workflow: workflow,
-      maxAgeHours: maxAgeHours,
-      reason: err.message,
-    };
   }
-  const line = renderVerdictLine(verdict);
-  console.log(verdict.ok === true ? line : `::error::${line}`);
-  return verdict.ok === true ? 0 : 1;
+  // override 不取任何数据，故 --runs-out 无内容可写（缺数据不伪造“空 runs”，直接跳过）。
+  console.log(
+    "::warning::" +
+      renderVerdictLine({
+        status: "overridden",
+        workflow: ctx.workflow,
+        maxAgeHours: ctx.maxAgeHours,
+      }),
+  );
+  console.log(OVERRIDE_OBLIGATION);
+  return 0;
 }
 
 /** 仅直接执行时跑 main（被 import 时只取纯函数）。 */

@@ -114,48 +114,21 @@ export function mutationEntryProblems(root, confFileName, patterns, owner) {
   const problems = [];
   const positive = new Set();
   const negative = new Set();
-  let scanned = 0;
-  let entryProblems = 0;
+  const acc = { scanned: 0, entryProblems: 0 };
   for (const pattern of patterns) {
-    if (typeof pattern !== "string" || pattern === "") {
-      problems.push(
-        `[${confFileName}] mutate 条目不是非空字符串（fail-closed）：${JSON.stringify(pattern)}`,
-      );
-      entryProblems += 1;
-      continue;
-    }
-    scanned += 1;
-    // `!` 只是「本条进的是排除面」的语义标记，命中判据与正向条目同口径。
-    const bare = pattern.startsWith("!") ? pattern.slice(1) : pattern;
-    const unanchored = unanchoredReason(owner, bare);
-    if (unanchored !== null) {
-      problems.push(`[${confFileName}] mutate 条目${unanchored}（判据⑤ 锚定）：${pattern}`);
-      entryProblems += 1;
-      continue;
-    }
-    // 命中面锚在**源码世界**：不锚的话 `packages/<pkg>/**` 会被同包构建产物 `lib/**` 满足
-    // （实测 lib 字面命中 107 个文件），判据就变成「描述了另一个真实的世界」。
-    const hits = globFiles(root, bare).filter((f) => universe.has(f));
-    if (hits.length === 0) {
-      problems.push(
-        `[${confFileName}] mutate 条目腐烂：在源码世界内命中 0 个文件（判据⑤ 存在性）：${pattern}`,
-      );
-      entryProblems += 1;
-      continue;
-    }
-    const escaped = hits.filter(
-      (f) => !f.startsWith(`packages/${owner}/`) && !f.startsWith("shared/"),
+    problems.push(
+      ...judgeMutateEntry(pattern, {
+        root,
+        confFileName,
+        owner,
+        universe,
+        acc,
+        positive,
+        negative,
+      }),
     );
-    if (escaped.length > 0) {
-      problems.push(
-        `[${confFileName}] mutate 条目命中了本包与 shared 之外的文件（${escaped.length} 个，如 ${escaped[0]}）` +
-          `—— 字面前缀不足以证明锚定（判据⑤ 越界，兜底）：${pattern}`,
-      );
-      entryProblems += 1;
-    }
-    for (const hit of hits) (pattern.startsWith("!") ? negative : positive).add(hit);
   }
-  if (entryProblems === 0) {
+  if (acc.entryProblems === 0) {
     const effective = [...positive].filter((hit) => !negative.has(hit));
     if (effective.length === 0) {
       problems.push(
@@ -165,7 +138,54 @@ export function mutationEntryProblems(root, confFileName, patterns, owner) {
       );
     }
   }
-  return { problems, scanned };
+  return { problems, scanned: acc.scanned };
+}
+
+/**
+ * 一条 mutate 条目的判词与命中面归集（判据⑤ 锚定 + 存在性 + 越界兜底）。
+ *
+ * 命中面锚在**源码世界**：不锚的话 `packages/<pkg>/**` 会被同包构建产物 `lib/**` 满足
+ * （实测 lib 字面命中 107 个文件），判据就变成「描述了另一个真实的世界」。
+ * `!` 只是「本条进的是排除面」的语义标记，命中判据与正向条目同口径。
+ */
+function judgeMutateEntry(pattern, ctx) {
+  const { root, confFileName, owner, universe, acc, positive, negative } = ctx;
+  const problems = [];
+  if (typeof pattern !== "string" || pattern === "") {
+    problems.push(
+      `[${confFileName}] mutate 条目不是非空字符串（fail-closed）：${JSON.stringify(pattern)}`,
+    );
+    acc.entryProblems += 1;
+    return problems;
+  }
+  acc.scanned += 1;
+  const bare = pattern.startsWith("!") ? pattern.slice(1) : pattern;
+  const unanchored = unanchoredReason(owner, bare);
+  if (unanchored !== null) {
+    problems.push(`[${confFileName}] mutate 条目${unanchored}（判据⑤ 锚定）：${pattern}`);
+    acc.entryProblems += 1;
+    return problems;
+  }
+  const hits = globFiles(root, bare).filter((f) => universe.has(f));
+  if (hits.length === 0) {
+    problems.push(
+      `[${confFileName}] mutate 条目腐烂：在源码世界内命中 0 个文件（判据⑤ 存在性）：${pattern}`,
+    );
+    acc.entryProblems += 1;
+    return problems;
+  }
+  const escaped = hits.filter(
+    (f) => !f.startsWith(`packages/${owner}/`) && !f.startsWith("shared/"),
+  );
+  if (escaped.length > 0) {
+    problems.push(
+      `[${confFileName}] mutate 条目命中了本包与 shared 之外的文件（${escaped.length} 个，如 ${escaped[0]}）` +
+        `—— 字面前缀不足以证明锚定（判据⑤ 越界，兜底）：${pattern}`,
+    );
+    acc.entryProblems += 1;
+  }
+  for (const hit of hits) (pattern.startsWith("!") ? negative : positive).add(hit);
+  return problems;
 }
 
 /**
@@ -455,20 +475,26 @@ export function resolveSegmentTestFiles({ root, segDef, segLabel, packageFace })
   const face = new Set(packageFace);
   const files = [...new Set(raw)].sort();
   for (const rel of files) {
-    if (typeof rel !== "string" || rel.trim() === "") {
-      errors.push(`${segLabel} 的 testFiles 含非字符串条目`);
-      continue;
-    }
-    if (!existsSync(join(root, rel)))
-      errors.push(`${segLabel} 的 testFiles 条目不存在于磁盘：${rel}`);
-    else if (!face.has(rel))
-      errors.push(
-        `${segLabel} 的 testFiles 条目不在包级变异面内：${rel} —— 须落在 mutation 层且非豁免（R3）`,
-      );
+    errors.push(...testFileEntryProblem(rel, { root, segLabel, face }));
   }
   if (files.length === 0)
     errors.push(`${segLabel} 的 testFiles 为空 —— 空段 include 跑零测试静默绿（R6）`);
   return { mode: "explicit", files, errors };
+}
+
+/** 一条显式 testFiles 条目的判词：形状、磁盘存在性、包级变异面归属（R3）。 */
+function testFileEntryProblem(rel, ctx) {
+  const { root, segLabel, face } = ctx;
+  if (typeof rel !== "string" || rel.trim() === "") {
+    return [`${segLabel} 的 testFiles 含非字符串条目`];
+  }
+  if (!existsSync(join(root, rel))) {
+    return [`${segLabel} 的 testFiles 条目不存在于磁盘：${rel}`];
+  }
+  if (face.has(rel)) return [];
+  return [
+    `${segLabel} 的 testFiles 条目不在包级变异面内：${rel} —— 须落在 mutation 层且非豁免（R3）`,
+  ];
 }
 
 /**

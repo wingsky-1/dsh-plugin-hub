@@ -76,12 +76,18 @@ function resolveChangedFiles(base) {
   return [...new Set([...tracked, ...untracked])];
 }
 
-function main(argv) {
+/** `--tier` 的档位；未知档位是门禁故障（走 fail-closed 出口，调用方直接退出）。 */
+function tierOf(argv) {
   const tierArg = valueOf(argv, "--tier") ?? "changed";
   const tier = TIER_ALIAS[tierArg];
   if (tier === undefined) {
     failClosed(`[local-gate] 未知 --tier ${tierArg}（可选 changed / pr / full）`);
   }
+  return tier;
+}
+
+function main(argv) {
+  const tier = tierOf(argv);
   const base = valueOf(argv, "--base") ?? "origin/main";
   const dryRun = argv.includes("--dry-run");
   const jsonOut = argv.includes("--json");

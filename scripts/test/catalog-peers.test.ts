@@ -15,8 +15,13 @@ import { join } from "node:path";
 import {
   checkCatalogPeers,
   checkMaterializedCatalogPeers,
+  memberDriftProblem,
+  officialDepProblems,
   parseCatalog,
   parseReleaseExclude,
+  plannedPeerChanges,
+  sideMemberProblems,
+  sideValueProblems,
   syncCatalogPeers,
   isCanonicalExactVersion,
 } from "../lib/catalog-peers-lib.ts";
@@ -514,4 +519,92 @@ test("负向：聚合包 peerDependencies 非对象/值非字符串 → 判红",
       );
     });
   }
+});
+
+// ── 拆出后各纯判据的直接单测（#732 E5）：每条锁一个判定，不经 checkCatalogPeers 间接观察 ──
+
+test("officialDepProblems：官方包条目要么字面量 catalog: 且 catalog 有该键，否则判词", () => {
+  const catalog = new Map([["@deepseek-ai/dsh", "4.0.0"]]);
+  // 非官方包不归本判据管。
+  assert.deepEqual(officialDepProblems("p", "dependencies", { react: "^19.0.0" }, catalog), []);
+  // 字面量 catalog: 且有该键：无判词。
+  assert.deepEqual(
+    officialDepProblems("p", "dependencies", { "@deepseek-ai/dsh": "catalog:" }, catalog),
+    [],
+  );
+  // 值不是字面量 catalog:（如 ^4.0.0 或 workspace:*）。
+  assert.deepEqual(
+    officialDepProblems("p", "dependencies", { "@deepseek-ai/dsh": "^4.0.0" }, catalog),
+    ['p: dependencies["@deepseek-ai/dsh"] = "^4.0.0" —— 官方包一律写 catalog:'],
+  );
+  // 字面量 catalog: 但 catalog 无该键。
+  assert.deepEqual(
+    officialDepProblems("p", "devDependencies", { "@deepseek-ai/other": "catalog:" }, catalog),
+    [
+      'p: devDependencies["@deepseek-ai/other"] 用了 catalog: 但 pnpm-workspace.yaml 无此 catalog 条目',
+    ],
+  );
+});
+
+test("memberDriftProblem：成员齐备返回 null，缺或多出各给一条判词", () => {
+  const peers = { "@deepseek-ai/dsh": "4.0.0" };
+  assert.equal(memberDriftProblem("p", ["@deepseek-ai/dsh"], peers), null);
+  assert.equal(memberDriftProblem("p", [], null), null);
+  assert.equal(
+    memberDriftProblem("p", ["@deepseek-ai/dsh", "@deepseek-ai/x"], peers),
+    "p: peer 成员合同漂移（缺少 @deepseek-ai/x；多出 无）",
+  );
+  assert.equal(
+    memberDriftProblem("p", [], { "@deepseek-ai/y": "1.0.0" }),
+    "p: peer 成员合同漂移（缺少 无；多出 @deepseek-ai/y）",
+  );
+});
+
+test("plannedPeerChanges：版本不同才算变更；缺版本记判词且不阻断其余成员", () => {
+  const catalog = new Map([
+    ["@deepseek-ai/a", "1.0.0"],
+    ["@deepseek-ai/b", "2.0.0"],
+  ]);
+  const peers = { "@deepseek-ai/a": "0.9.0", "@deepseek-ai/b": "2.0.0" };
+  const r = plannedPeerChanges("p", ["@deepseek-ai/a", "@deepseek-ai/b"], peers, catalog);
+  assert.deepEqual(r.problems, []);
+  assert.deepEqual(r.changes, [{ name: "@deepseek-ai/a", from: "0.9.0", to: "1.0.0" }]);
+  // 缺 catalog 版本的成员：只对它自己记判词，另一个成员照常产出变更。
+  const partial = plannedPeerChanges(
+    "p",
+    ["@deepseek-ai/a", "@deepseek-ai/missing"],
+    peers,
+    catalog,
+  );
+  assert.deepEqual(partial.problems, [
+    'p: peer "@deepseek-ai/missing" 缺少 canonical exact catalog 版本',
+  ]);
+  assert.deepEqual(partial.changes, [{ name: "@deepseek-ai/a", from: "0.9.0", to: "1.0.0" }]);
+  // catalog 里是非 canonical exact（如 ^1.0.0）同样记判词。
+  const badRange = new Map([["@deepseek-ai/a", "^1.0.0"]]);
+  assert.deepEqual(plannedPeerChanges("p", ["@deepseek-ai/a"], null, badRange).problems, [
+    'p: peer "@deepseek-ai/a" 缺少 canonical exact catalog 版本',
+  ]);
+  // 全部齐平时零变更零判词。
+  const same = plannedPeerChanges("p", ["@deepseek-ai/b"], peers, catalog);
+  assert.deepEqual(same.problems, []);
+  assert.deepEqual(same.changes, []);
+});
+
+test("sideMemberProblems / sideValueProblems：发布边界两侧各判一次", () => {
+  const expected = new Set(["@deepseek-ai/dsh"]);
+  assert.deepEqual(sideMemberProblems("L", "源", { "@deepseek-ai/dsh": "4.0.0" }, expected), []);
+  assert.deepEqual(sideMemberProblems("L", "源", {}, expected), [
+    "L: 源 peer 成员不匹配合同（缺少 @deepseek-ai/dsh；多出 无）",
+  ]);
+  assert.deepEqual(sideMemberProblems("L", "tarball", { "@deepseek-ai/z": "1.0.0" }, expected), [
+    "L: tarball peer 成员不匹配合同（缺少 @deepseek-ai/dsh；多出 @deepseek-ai/z）",
+  ]);
+  assert.deepEqual(
+    sideValueProblems("L", "源", { "@deepseek-ai/dsh": "4.0.0" }, "@deepseek-ai/dsh", "4.0.0"),
+    [],
+  );
+  assert.deepEqual(sideValueProblems("L", "tarball", null, "@deepseek-ai/dsh", "4.0.0"), [
+    'L: tarball peerDependencies["@deepseek-ai/dsh"] 不是 catalog exact version',
+  ]);
 });

@@ -189,14 +189,21 @@ export function loadEntryAliases(aliasPath: string): Record<string, Record<strin
     throw new Error("入口别名登记顶层必须是对象：" + aliasPath);
   }
   if (parsed.aliases === undefined) return {};
-  if (
-    typeof parsed.aliases !== "object" ||
-    parsed.aliases === null ||
-    Array.isArray(parsed.aliases)
-  ) {
+  if (!isRecord(parsed.aliases)) {
     throw new Error("入口别名登记的 aliases 必须是对象：" + aliasPath);
   }
-  for (const [pkg, perPkg] of Object.entries(parsed.aliases)) {
+  assertAliasEntries(parsed.aliases);
+  return parsed.aliases as Record<string, Record<string, string>>;
+}
+
+/** 非 null 的普通对象（登记面的形状前提；承担类型收窄，故返回类型谓词）。 */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** 逐层形状校验：包条目是对象、每个目标是非空字符串。 */
+function assertAliasEntries(aliases: Record<string, unknown>): void {
+  for (const [pkg, perPkg] of Object.entries(aliases)) {
     if (typeof perPkg !== "object" || perPkg === null || Array.isArray(perPkg)) {
       throw new Error("入口别名登记包条目必须是对象：" + pkg);
     }
@@ -206,7 +213,6 @@ export function loadEntryAliases(aliasPath: string): Record<string, Record<strin
       }
     }
   }
-  return parsed.aliases as Record<string, Record<string, string>>;
 }
 
 /**

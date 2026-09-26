@@ -64,31 +64,48 @@ function memberName(node) {
  * 三种形态都与判据口径逐字对应（含 `exitCode = 2` 的裸标识符赋值），其余退出码不在这里判——
  * 那是判红（1）与正常收尾（0）的事。
  */
+/** `process.exit(2)` 形态：接收者是 process、方法是 exit、字面量参数恰为 2。 */
+function isProcessExit2Call(node) {
+  const callee = node.callee;
+  const [arg] = node.arguments ?? [];
+  return (
+    callee?.type === "MemberExpression" &&
+    callee.object?.name === "process" &&
+    memberName(callee) === "exit" &&
+    arg?.type === "Literal" &&
+    arg.value === 2
+  );
+}
+
+/** 赋值目标的名字：成员表达式取属性名，标识符取变量名。 */
+function assignTargetName(node) {
+  return node.left?.type === "MemberExpression" ? memberName(node.left) : node.left?.name;
+}
+
 function rawExitOf(node) {
   if (node.type === "CallExpression") {
-    const callee = node.callee;
-    const [arg] = node.arguments ?? [];
-    if (
-      callee?.type === "MemberExpression" &&
-      callee.object?.name === "process" &&
-      memberName(callee) === "exit" &&
-      arg?.type === "Literal" &&
-      arg.value === 2
-    ) {
-      return "process.exit(2)";
-    }
-    return null;
+    return isProcessExit2Call(node) ? "process.exit(2)" : null;
   }
   if (node.type === "AssignmentExpression" && node.operator === "=") {
-    const target = node.left?.type === "MemberExpression" ? memberName(node.left) : node.left?.name;
-    if (target === "exitCode" && node.right?.type === "Literal" && node.right.value === 2) {
+    if (
+      assignTargetName(node) === "exitCode" &&
+      node.right?.type === "Literal" &&
+      node.right.value === 2
+    ) {
       return "exitCode = 2";
     }
   }
   return null;
 }
 
-/** 递归访问全部节点；loc / range 这类旁挂字段不进遍历，避免重复访问与环。 */
+/** 旁挂字段（位置/区间元数据）不是 AST 子节点，不进遍历，避免重复访问与环。 */
+const SKIP_KEYS = new Set(["loc", "range", "start", "end"]);
+
+function isWalkable(child) {
+  return child !== null && typeof child === "object";
+}
+
+/** 递归访问全部节点。 */
 function walkAst(value, visit) {
   if (Array.isArray(value)) {
     for (const item of value) walkAst(item, visit);
@@ -97,8 +114,8 @@ function walkAst(value, visit) {
   if (value === null || typeof value !== "object") return;
   if (typeof value.type === "string") visit(value);
   for (const [key, child] of Object.entries(value)) {
-    if (key === "loc" || key === "range" || key === "start" || key === "end") continue;
-    if (child !== null && typeof child === "object") walkAst(child, visit);
+    if (SKIP_KEYS.has(key)) continue;
+    if (isWalkable(child)) walkAst(child, visit);
   }
 }
 

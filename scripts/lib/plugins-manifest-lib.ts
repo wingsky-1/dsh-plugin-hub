@@ -290,18 +290,23 @@ function collectPeerContracts(
     if (!knownPackages.has(pkg)) {
       fail(`dshPeerContracts 含不在 active ∪ standalone 的包：${pkg}`);
     }
-    if (!Array.isArray(rawNames)) fail(`dshPeerContracts.${pkg} 必须是数组`);
-    const seen = new Set<string>();
-    for (const name of rawNames) {
-      if (typeof name !== "string" || !name.startsWith("@deepseek-ai/")) {
-        fail(`dshPeerContracts.${pkg} 含非法官方 peer：${JSON.stringify(name)}`);
-      }
-      if (seen.has(name)) fail(`dshPeerContracts.${pkg} peer 重复：${name}`);
-      seen.add(name);
-    }
-    result[pkg] = [...rawNames];
+    result[pkg] = peerNamesOf(pkg, rawNames);
   }
   return result;
+}
+
+/** 一个包登记的官方 peer 名清单：逐名校形状与去重（判词逐字保留）。 */
+function peerNamesOf(pkg: string, rawNames: unknown): string[] {
+  if (!Array.isArray(rawNames)) fail(`dshPeerContracts.${pkg} 必须是数组`);
+  const seen = new Set<string>();
+  for (const name of rawNames) {
+    if (typeof name !== "string" || !name.startsWith("@deepseek-ai/")) {
+      fail(`dshPeerContracts.${pkg} 含非法官方 peer：${JSON.stringify(name)}`);
+    }
+    if (seen.has(name)) fail(`dshPeerContracts.${pkg} peer 重复：${name}`);
+    seen.add(name);
+  }
+  return [...rawNames];
 }
 
 interface LoadedManifest {
