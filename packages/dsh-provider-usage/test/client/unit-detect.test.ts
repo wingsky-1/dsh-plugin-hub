@@ -1,7 +1,9 @@
 /**
  * dsh-provider-usage — unit：provider 检测链（issue #69；#383 投影形状修正）。
  *
- * 覆盖：per-session modelSelection 投影（0.1.2 list 行拍平 projectionValues）读取
+ * 覆盖：**当前会话判据**（rc.2 官方口径 `retainedBy.mainView > 0`；含「旧形状只有
+ * `current` 无 mainView → 判不出」回归，#1028）、
+ * per-session modelSelection 投影（list 行拍平 projectionValues）读取
  * provider —— 子代理会话自身投影缺失时沿 parentId 上溯父会话投影取 provider、
  * 上溯深度封顶与环防御、全链投影缺失回落 ctx.remote.session.modelCatalog().default
  * 兜底、wire 形状（projections.values）不得被误读（#383 反向断言）、
@@ -58,9 +60,62 @@ const {
 
 // ---------------------------------------------------------------- 构造工具
 
-/** fake sessions：list 快照 {current, byId}（0.1.2：current 来自 list 快照）。 */
-function makeSessions(byId: Record<string, unknown>, current?: string) {
-  return { list: { getSnapshot: () => ({ current, byId }) } };
+/**
+ * fake sessions：**rc.2 真实快照形状** `{ids, byId, phase, projectionsBySession}`。
+ *
+ * rc.2 删掉了快照上的 `current` 字段——本夹具此前靠 `current` 造「当前会话」，
+ * 那是一个 rc.2 根本不存在的形状，等于把同源 bug 一起锁进了测试（改对了代码测试反而判红）。
+ * 现在改按**官方判据**造：`currentId` 指定的行带 `retainedBy.mainView = 1`
+ * （官方 dsh-client-ui-workspace 的 retain 写入面、dsh-client-ui-session 的读取面），
+ * 其余行 `retainedBy` 为空（`referenceCount: 0`，即非当前会话）。
+ */
+function makeSessions(byId: Record<string, unknown>, currentId?: string) {
+  const rows: Record<string, unknown> = {};
+  for (const [id, raw] of Object.entries(byId)) {
+    const retainedBy = id === currentId ? { mainView: 1 } : {};
+    rows[id] = {
+      ...sessionRow(raw),
+      id,
+      retainedBy: { referenceCount: id === currentId ? 1 : 0, ...retainedBy },
+    };
+  }
+  return {
+    list: {
+      getSnapshot: () => ({
+        ids: Object.keys(rows),
+        byId: rows,
+        phase: "ready",
+        projectionsBySession: {},
+      }),
+    },
+  };
+}
+
+/**
+ * 补齐官方 `SessionSummary` 的必填面（id / displayTitle / running / blank / updatedAt /
+ * retainedBy 由 makeSessions 写），使每行都长得像 rc.2 真行而不是「只有被测字段」的空壳。
+ * 用例可继续内联任意字段覆盖默认值。
+ */
+function sessionRow(raw: unknown): Record<string, unknown> {
+  return {
+    displayTitle: "session",
+    running: false,
+    blank: false,
+    updatedAt: 0,
+    ...(raw as Record<string, unknown>),
+  };
+}
+
+/**
+ * 旧形状快照（rc.2 已删 `current`，此形状只应出现在回归用例里）：
+ * 有 `current`、无任何 mainView 引用者 → 判不出当前会话（官方口径不认 `current`）。
+ */
+function makeLegacyCurrentSessions(byId: Record<string, unknown>, current: string) {
+  const rows: Record<string, unknown> = {};
+  for (const [id, raw] of Object.entries(byId)) {
+    rows[id] = { ...sessionRow(raw), id, retainedBy: { referenceCount: 0 } };
+  }
+  return { list: { getSnapshot: () => ({ current, ids: Object.keys(rows), byId: rows }) } };
 }
 
 /**
@@ -286,8 +341,8 @@ describe("客户端源码契约：title 标注接线真实存在（issue #348 i1
 
 describe("无任何会话 → 维持原回落行为（回归防护）", () => {
   let noSessions: string | undefined;
-  let noCurrent: string | undefined;
-  let emptyCurrent: string | undefined;
+  let noMainView: string | undefined;
+  let emptyId: string | undefined;
   let catalogCalls: number;
   let d1: { provider: string; unknown: boolean };
   let d2: { provider: string; unknown: boolean };
@@ -304,8 +359,8 @@ describe("无任何会话 → 维持原回落行为（回归防护）", () => {
       },
     };
     noSessions = await resolveProviderFromSession(undefined, remote);
-    noCurrent = await resolveProviderFromSession(makeSessions({}, undefined), remote);
-    emptyCurrent = await resolveProviderFromSession(makeSessions({ a: {} }, ""), remote);
+    noMainView = await resolveProviderFromSession(makeSessions({}, undefined), remote);
+    emptyId = await resolveProviderFromSession(makeSessions({ a: {} }, ""), remote);
     catalogCalls = calls;
     // 决策层：无任何会话一律回落默认（即使有历史检测也不沿用——维持原行为）
     d1 = decideProviderAfterDetect({
@@ -324,12 +379,12 @@ describe("无任何会话 → 维持原回落行为（回归防护）", () => {
     expect(noSessions).toBeUndefined();
   });
 
-  it("无 current → undefined", () => {
-    expect(noCurrent).toBeUndefined();
+  it("有行但无 mainView 引用者 → undefined", () => {
+    expect(noMainView).toBeUndefined();
   });
 
-  it("空串 current 视为无会话", () => {
-    expect(emptyCurrent).toBeUndefined();
+  it("空串 id 视为无会话", () => {
+    expect(emptyId).toBeUndefined();
   });
 
   it("无会话场景不得触发 modelCatalog", () => {
@@ -445,17 +500,41 @@ describe("currentSessionId 边界 + ordinary 会话直连回归", () => {
     expect(currentSessionId(undefined)).toBeUndefined();
   });
 
-  it("list.current 直读", () => {
-    // current 会话 id 读取：0.1.2 仅走 list 快照 current（currentProvideInfo 已移除）
-    expect(currentSessionId(makeSessions({ a: {} }, "a"))).toBe("a");
+  it("官方判据：retainedBy.mainView > 0 的行即当前会话", () => {
+    // 当前会话读取走官方口径：byId 里 mainView 引用计数 > 0 的那一行。
+    // （rc.2 起 ISessions 没有任何「当前会话」访问器，mainView 是唯一判据。）
+    const sessions = makeSessions({ a: {}, b: {} }, "b");
+    expect(currentSessionId(sessions)).toBe("b");
   });
 
-  it("无 current → undefined", () => {
-    expect(currentSessionId(makeSessions({}), undefined)).toBeUndefined();
+  it("无 mainView 引用者 → undefined", () => {
+    // 全部行 retainedBy 为空（referenceCount 0）时没有当前会话。
+    expect(currentSessionId(makeSessions({ a: {}, b: {} }))).toBeUndefined();
+    expect(currentSessionId(makeSessions({}))).toBeUndefined();
   });
 
-  it("空串 current 视为无会话", () => {
+  it("mainView 计数为 0 不算当前会话（判据是 > 0 而非存在）", () => {
+    // 官方 retainedBy 只记正计数来源，但判据本身仍按 > 0 读：显式写 0 必须判不出。
+    const snapshot = makeSessions({ a: {} });
+    (
+      snapshot.list.getSnapshot() as {
+        byId: Record<string, { retainedBy: Record<string, number> }>;
+      }
+    ).byId.a.retainedBy.mainView = 0;
+    expect(currentSessionId(snapshot)).toBeUndefined();
+  });
+
+  it("空串 id 视为无会话", () => {
+    // 防御：currentId 传空串时没有行匹配 → 无 mainView 引用者。
     expect(currentSessionId(makeSessions({ a: {} }, ""))).toBeUndefined();
+  });
+
+  it("旧形状（只有 current 无 mainView）→ 判不出当前会话（rc.2 回归）", () => {
+    // #1028 回归：rc.2 删掉了快照上的 `current`。读面若仍认 `current`，宿主真实快照里
+    // 这个字段不存在 → 恒 undefined → 检测半区恒回落 opencode-go。此用例把该形状钉死：
+    // 快照即便带着 `current`，只要没有官方 mainView 引用者，就判不出当前会话。
+    const legacy = makeLegacyCurrentSessions({ a: row("opencode-go") }, "a");
+    expect(currentSessionId(legacy)).toBeUndefined();
   });
 
   it("ordinary 会话直接解析", async () => {

@@ -11,6 +11,7 @@ import { api, toolDisableServerKey, cwdQueryOf } from "../core/api.ts";
 import { STATUS_ORDER, statusDot } from "../core/constants.ts";
 import { tStatus } from "../core/i18n.ts";
 import { t } from "../../../../../shared/client/i18n.js";
+import { readCurrentSession } from "../core/current-session.ts";
 import type { McpClientContext, McpServerListEntry, McpState, UiActions } from "../core/state.ts";
 import type { ClientUiConfig, FloatBreakpoint, ViewportPoint } from "../../shared/interface.ts";
 import {
@@ -559,12 +560,15 @@ export function panelHost(): Element {
   return document.querySelector("[data-shell-overlay]") ?? document.body;
 }
 
-/** 当前会话是否空白会话（空白会话用另一档垂直偏移）。取不到会话面一律判非空白。 */
+/**
+ * 当前会话是否空白会话（空白会话用另一档垂直偏移）。取不到会话面一律判非空白。
+ *
+ * #1028：与 core/session.ts 共用 core/current-session.ts 单一接缝，判定改用官方口径
+ * `retainedBy.mainView`；`blank` 直读官方 `SessionSummary.blank`，不从 cwd 空串推。
+ */
 export function isBlankSession(ctx: McpClientContext): boolean {
-  const snap = ctx?.sessions?.list?.getSnapshot?.();
-  const current = snap?.current;
-  if (current === undefined) return false;
-  return snap?.byId?.[current]?.blank === true;
+  const read = readCurrentSession(ctx?.sessions?.list);
+  return read.kind === "session" && read.blank;
 }
 
 /** 从 settings.yaml 读取的配置决定新/老会话垂直偏移。 */

@@ -12,6 +12,7 @@
 import { API } from "./constants.ts";
 import { DEFAULT_Z_INDEX_BASE } from "../../shared/interface.ts";
 import type { ClientUiConfig, McpServerListEntry, ServerState } from "../../shared/interface.ts";
+import type { ISessions } from "@deepseek-ai/dsh-api-session-controller/client";
 
 export type { ClientUiConfig, McpServerListEntry } from "../../shared/interface.ts";
 
@@ -58,6 +59,13 @@ export interface McpState {
   floatPanel: HTMLElement | undefined;
   floatOpen: boolean;
   currentCwd: string | undefined;
+  /**
+   * 是否已解析出当前会话（#1028）。false = **未知**，与「已知但无 cwd」是两态：
+   * 未知时不得向宿主上报 `cwd:""`，否则会把「读不到」变成「清空项目级绑定」。
+   */
+  sessionResolved: boolean;
+  /** 未知态的一次性告警闸（可观测性：未知态无 UI 表现，不告警等于静默失效）。 */
+  warnedUnknownSession: boolean;
   projectRoot: string | undefined;
   updateFloatState: (() => void) | undefined;
   mcpUiConfig: ClientUiConfig;
@@ -93,6 +101,8 @@ export function createState(): McpState {
     floatPanel: undefined,
     floatOpen: false,
     currentCwd: undefined,
+    sessionResolved: false,
+    warnedUnknownSession: false,
     projectRoot: undefined,
     updateFloatState: undefined,
     mcpUiConfig: {
@@ -121,28 +131,6 @@ export interface UiActions {
   toggleFloat: (force?: boolean) => void;
 }
 
-/**
- * 会话快照条目（S2 ctx 形状最小面：cwd/blank；H6 不反向依赖未清洁形状）。
- */
-export interface McpSessionEntry {
-  cwd?: string;
-  blank?: boolean;
-}
-
-/**
- * 会话快照（S2：current/byId 最小面；成员一律 optional，调用侧 ?./typeof 守卫保留 H4）。
- */
-export interface McpSessionSnapshot {
-  current?: string;
-  byId?: Record<string, McpSessionEntry>;
-}
-
-/** 会话列表服务最小面（成员一律 optional）。 */
-export interface McpSessionList {
-  getSnapshot?: () => McpSessionSnapshot | undefined;
-  subscribe?: (listener: () => void) => () => void;
-}
-
 /** locale 服务最小面（成员一律 optional；调用前 typeof 守卫保留 H4）。 */
 export interface McpLocaleService {
   register?: (ns: string, dict: unknown) => void;
@@ -166,9 +154,11 @@ export interface McpClientContext {
   get(name: "slots"): McpSlotsService | undefined;
   get(name: string): unknown;
   effect: (fn: () => () => void, label?: string) => void;
-  sessions?: {
-    list?: McpSessionList;
-  };
+  /**
+   * 官方会话服务（#1028：不再自建镜像面——rc.2 的 `SessionListState` 已无 `current`，
+   * 自建形状会与官方静默分叉）。未注入时为 undefined。
+   */
+  sessions?: ISessions;
 }
 
 /**

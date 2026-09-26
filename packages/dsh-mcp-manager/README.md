@@ -321,15 +321,28 @@ pnpm --filter @wingsky-1/dsh-mcp-manager test
 - 中间层目录是「采集边界内的 last-good 快照」（单服务器 ≤512 工具 / ≤256KB 总量），
   发现失败时 list 透出 `unavailable` 原因
 - 仅桥接工具能力；MCP 的 resources 与 prompts 尚无 harness 消费接口
+- **多标签页各自绑定不同会话时，项目级 MCP 只能跟随一个会话**（issue #1028 未解决项）：
+  宿主 `projectRoot` 是单例，多个页签会互相覆盖，且每次切回前台的 `rebindSession` 会
+  放大覆盖。本包不自行仲裁「哪个页签优先」。
+- **读不到当前会话时保持既有绑定、不做清空**（#1028）：官方会话快照就绪前、或该页签
+  暂未被官方 `mainView` 持有时，本包判定为「未知」并**不**向宿主发送 `cwd:""`——未知
+  不等于无项目，误清会造成面板只剩全局条目、项目级导入报
+  `no active project session`。此时控制台会打一次告警提示项目级 MCP 暂未绑定。
 - 依赖 Node ≥ 20
 
 ## 类型依赖
 
-宿主端类型来自官方 `@deepseek-ai/*` 包（`cordis` / `dsh-host-webserver` / `dsh-agent` /
-`dsh-tools` / `dsh-system-prompt`，版本统一锁在仓库 `pnpm-workspace.yaml` catalog，
-随 DSH 发布节奏升级）：**仅 `import type` 编译期使用**，编译产物零官方运行时导入。
-包以 optional peerDependencies 声明这一宿主耦合；对插件做类型检查的消费者需可解析
-这些官方包（跳过类型检查则无影响）。
+宿主端与客户端类型均来自官方 `@deepseek-ai/*` 包（`cordis` / `dsh-host-webserver` /
+`dsh-agent` / `dsh-tools` / `dsh-system-prompt` / `dsh-llm` / `dsh-client-ui-slots` /
+`dsh-api-session-controller` / `dsh-client-ui-session`，版本统一锁在仓库
+`pnpm-workspace.yaml` catalog，随 DSH 发布节奏升级）：**仅 `import type` 编译期使用**，
+编译产物零官方运行时导入。包以 optional peerDependencies 声明这一宿主耦合；对插件做
+类型检查的消费者需可解析这些官方包（跳过类型检查则无影响）。
+
+客户端的「当前会话」读数经 `src/client/core/current-session.ts` 单一接缝，判据用官方
+口径 `retainedBy.mainView > 0` 并以官方 `SessionListState` / `SessionSummary` 类型锚定
+（**不自建镜像类型**）：DSH 0.1.7-rc.2 起会话列表快照已删除 `current` 字段，官方
+`ISessions` 也不提供「当前会话」访问器，因此不再自造 `{current, byId}` 形状。
 
 ## License
 
