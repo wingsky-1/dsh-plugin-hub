@@ -499,6 +499,68 @@ test("#765 第 6 项：no-var 不在降级集里，且在常规规则面按 erro
   );
 });
 
+test("#875 批次 1.3：死代码两条核心规则按 error 生效，且 .ts 与 .mjs 两个面都真报", async () => {
+  const { ESLint } = requireLint("eslint");
+  const eslint = new ESLint({
+    cwd: ROOT,
+    overrideConfigFile: join(ROOT, "tools", "lint", "eslint.config.js"),
+  });
+  const level = (configured: unknown) => (Array.isArray(configured) ? configured[0] : configured);
+
+  // ① 配置层：两条都得是 error，且 TS 面与 JS 面**都**铺到了。缺一面就会退化成
+  // 「只拦 .mjs」——本仓此前的缺口形态正是 .ts 与 .mjs 一起漏，所以两侧都要钉。
+  for (const rel of ["scripts/gate/verify-docs.ts", "scripts/gate/local-gate.mjs"]) {
+    const rules = (await eslint.calculateConfigForFile(join(ROOT, rel))).rules ?? {};
+    for (const rule of ["no-unreachable", "no-constant-condition"]) {
+      assert.equal(
+        level(rules[rule]),
+        2,
+        `${rel}：${rule} 必须按 error 生效，实际 ${JSON.stringify(rules[rule])}`,
+      );
+    }
+  }
+
+  // ② 行为层：两种扩展名 × 两条规则都要真报出 error（不是「配置里写了就算」）。
+  // 用 lintText 而不是往仓库落临时文件——判据不该为了让自己被门禁看见而制造产物（#218）。
+  // 两条规则各钉一段最小反例：常量条件 vs return 之后的语句（后者才是 no-unreachable 的活，
+  // 它走 code path 分析，不下钻 if (false) 的分支体——见 eslint.config.js 的边界说明）。
+  const cases: Array<{ file: string; source: string; rule: string }> = [
+    {
+      file: "dead-code-probe.ts",
+      source:
+        "export function p(x: number) {\n  if (x < 0) return -1;\n  if (false) {\n    return 2;\n  }\n  return x;\n}\n",
+      rule: "no-constant-condition",
+    },
+    {
+      file: "dead-code-probe.mjs",
+      source:
+        "export function p(x) {\n  if (x < 0) return -1;\n  if (false) {\n    return 2;\n  }\n  return x;\n}\n",
+      rule: "no-constant-condition",
+    },
+    {
+      file: "dead-code-probe.ts",
+      source: "export function p(x: number) {\n  return x;\n  return 0;\n}\n",
+      rule: "no-unreachable",
+    },
+    {
+      file: "dead-code-probe.mjs",
+      source: "export function p(x) {\n  return x;\n  return 0;\n}\n",
+      rule: "no-unreachable",
+    },
+  ];
+  for (const c of cases) {
+    const [result] = await eslint.lintText(c.source, {
+      filePath: join(ROOT, "scripts", "gate", c.file),
+    });
+    assert.ok(
+      result.messages.some(
+        (m: { ruleId: string | null; severity: number }) => m.ruleId === c.rule && m.severity === 2,
+      ),
+      `${c.file}：${c.rule} 必须报错（实际 ${JSON.stringify(result.messages)}）`,
+    );
+  }
+});
+
 test("#722 阶段五：lint 面完整性——同名源码目录不得被构建产物忽略规则吞掉", async () => {
   const { ESLint } = requireLint("eslint");
   const eslint = new ESLint({

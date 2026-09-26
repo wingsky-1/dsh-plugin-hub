@@ -61,6 +61,30 @@ const complexityRules = {
   "sonarjs/cognitive-complexity": ["error", cognitive],
 };
 
+/**
+ * 死代码的两条 ESLint **核心**规则（#875 批次 1.3）：`no-unreachable` + `no-constant-condition`。
+ *
+ * 为什么显式点名而不 spread `js.configs.recommended`：本配置只 spread 了
+ * `tseslint.configs.recommended`（见 export default），ESLint 核心 recommended 规则集从未进入配置。
+ * 实跑反例：往 `.mjs` 与 `.ts` 同一段 `if (false) { return 2; }`，`pnpm lint` 两种扩展名都
+ * exit 0 / error 0。缺口不限于 JS 面，故这两条同时铺在 TS_SOURCES 与 JS_SOURCES 两个块
+ * （只铺 JS_SOURCES 会让 .ts 继续漏，而验收反例本身就有 .ts 一份）。
+ *
+ * 存量实测 **0 命中**（全仓 1013 个可 lint 文件的面，含默认 lint 面之外的根级配置与包级构建脚本），
+ * 按 #764 A5「只收实测零误报的 correctness 规则」零成本准入，故未挂 `eslint-suppressions.json`。
+ *
+ * **覆盖边界（勿读成「不可达代码已被完全覆盖」）**：这两条只覆盖**语法层可判**的死代码——
+ * 常量条件（`if (false)`、`while (0)`）与 `return` / `throw` / `break` / `continue` 之后的语句。
+ * 它们**不覆盖跨函数数据流不可达**（「这个分支永不成立，因为上游恒返回某值」要类型与全仓数据流
+ * 才答得出，核心规则没有 program）。另一条实测边界：`no-unreachable` 走 code path 分析，
+ * **不下钻常量条件的分支体**——`if (false) { ... }` 的分支体由 `no-constant-condition` 报，
+ * 不是 `no-unreachable`；报「return 之后的语句」才是后者。
+ */
+const deadCodeRules = {
+  "no-unreachable": "error",
+  "no-constant-condition": "error",
+};
+
 // 存量面降级清单：这几条在本次重写之外的代码里有 340+ 处，且都**不可自动修**。
 // 降为 warn 让新规则先「可见」——它立刻挡得住新写的代码，而不把落地阻塞在存量清理上。
 // 全量清理与关闭这条清单见 #762。
@@ -113,6 +137,7 @@ export default [
     plugins: { sonarjs },
     rules: {
       ...complexityRules,
+      ...deadCodeRules,
       "no-var": "error",
       "@typescript-eslint/no-unused-vars": UNUSED_VARS_RULE,
     },
@@ -122,6 +147,7 @@ export default [
     plugins: { sonarjs },
     rules: {
       ...complexityRules,
+      ...deadCodeRules,
       "no-var": "error",
       "@typescript-eslint/no-unused-vars": UNUSED_VARS_RULE,
     },

@@ -740,6 +740,15 @@ entries }`——兼容字段 `exports` = **主入口**的导出面、`declBlocks
     sonarjs 的 typed 规则**缺 program 时静默 `return {}`**（typescript-eslint 的
     `getParserServices` 则会抛错），所以给一条 typed 规则配一个没有 program 的面 = 假绿。
     扩面必须同时给那个面配 `projectService`。
+  - **死代码两条核心规则（#875 批次 1.3）**：`no-unreachable` + `no-constant-condition` 按 error 铺在
+    TS 面与 JS 面两侧。缺口成因是本配置只 spread 了 `tseslint.configs.recommended`，**ESLint 核心
+    recommended 从未进入**（实测反例：`.mjs` 与 `.ts` 同一段 `if (false) { return 2; }` 两种扩展名都
+    exit 0）。存量实测 0 命中，故未挂 `eslint-suppressions.json`。
+    **覆盖边界（勿读成「不可达代码已被完全覆盖」）**：只覆盖**语法层可判**的死代码——常量条件与
+    `return` / `throw` / `break` / `continue` 之后的语句；**不覆盖跨函数数据流不可达**（核心规则没有
+    program，答不出「这个分支永不成立，因为上游恒返回某值」）。另：`no-unreachable` 不下钻常量条件的
+    分支体，`if (false) { ... }` 由 `no-constant-condition` 报。判据见
+    `scripts/test/lint-toolchain.test.ts` 的对应一测。
   - **警告预算是硬判据**：阈值在 `gauntlet.config.json` 的 `lint.maxWarnings`（只许降，上调由
     `threshold-monotonic.mjs` 判红）；入口对 `errorCount + warningCount` 求和判定，**读不到预算
     即 fail-closed**。ESLint 自带的 `--max-warnings` 在本仓无效（参数会被入口的参数过滤丢弃）。
