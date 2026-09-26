@@ -353,6 +353,10 @@ test("#843 D5: 幽灵判据判红（声明了路径但两侧都取不到值）",
   }
 });
 
+// 依据更正（#875 H11 复核）：**本用例才是钉住这条 exit 2 的那条**。同族的「#843 D5: 幽灵声明判红」
+//（:328）判的是 **notAGate 悬空**（产出函数 checkNotAGateEntries），与这里的 **sources 悬空**
+//（checkGuardEntries）是两道不同判据——实测把本条判据摘掉后该用例仍 exit 0 全绿，而本用例转红。
+// 故若将来要把悬空 source 改走 exit 1，挡住的是本用例，不是 :328。
 test("#875 H11: 新增 sources 全指向不存在文件的幽灵 guard 判红（声明表也造不出无源判据）", () => {
   const ghost = guard({
     id: "ghost.source",

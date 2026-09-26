@@ -16,14 +16,23 @@
  *     事实源比较——影子源正是这样把守卫与被守护的事实源解耦的。比较器另记录两侧实际命中的源，
  *     工作区命中一个基准未声明的文件即判红。
  *
- * 三态：failures（放宽/摘除，exit 1）/ envErrors（配置或环境故障，exit 2，fail-closed）/
  *   - **没有自授权通道**（#875 H11）：声明表里不得出现 `retired` / `contractApprovals`。
  *     这两个键曾经让「删一条 guard / 翻一个 direction / 把 onRemoval 改成 ignore / 改某个
  *     判据字段」成为**一行数据改动且 CI 全绿**——表本身是数据，改它不需要碰任何代码。
  *     维护者裁决「取消全部豁免入口」，故两条通道整体删除，且由 `selfAuthChannelProblems`
- *     反向守卫住「不可重建」：这两个键重新出现在声明表里即判红。改 guard 的唯一合法路径
- *     是改判据代码（本文件或 gate/threshold-monotonic.mjs）：该路径走 PR 评审 + 本仓自测把关，
- *     `scripts/gate/**` 与 `scripts/lib/**` 均不在 `approved` 派生面内，故不需要 `approved` 标签。
+ *     反向守卫住这两个**具名**键不可重建：它们重新出现在声明表里即判红。改 guard 的唯一
+ *     合法路径是改判据代码（本文件或 gate/threshold-monotonic.mjs）：该路径走 PR 评审 +
+ *     本仓自测把关；本文件与 gate/threshold-monotonic.mjs 都不在 `approved` 派生面内
+ *     （该面恰 9 条：`.github/**`、`.dsh/skills/**`、`scripts/gate/red-line-approval.mjs`、
+ *     声明表自身及其 `guards[].sources`——`scripts/gate/**` 整树并不在面内，但
+ *     `red-line-approval.mjs` 在，别按目录通配推），故不需要 `approved` 标签。
+ *
+ * 上限（如实声明，勿误读）：本判据保证的只是「这两个具名键不能只靠一行数据重建」（实测
+ * exit 1）。**自授权通道在类上并未消除**——实测：新增一个顶层键（`waivers`）加约 4 行代码，
+ * 即可让真实判据被削弱而门禁 exit 0、`node --test` 83/83 全绿（含本仓真值快照用例）。
+ * 原因是**比较器自我验证**：任何内置于它的通道都会吸收自己的全部检测，而真值快照用例跑
+ * 的正是同一个被削弱的比较器，故一并失明。更根本地说，**判据无法保护自己不被改**。
+ * 收口办法是紧随本 PR 的下一件 PR 加顶层键白名单。
  *
  * 三态：failures（放宽/摘除，exit 1）/ envErrors（配置或环境故障，exit 2，fail-closed）/
  * warnings（非单调旋钮的收紧方向，只报警不判红）。
@@ -654,7 +663,9 @@ export function selfAuthChannelProblems(registry) {
  * 同 id 的判据形状字段只许「补全 / 收紧」（`sources` 是尾部追加，不是任意改写），
  * **数据面没有任何通道能放行一次削弱**。于是「退役一条 guard / 翻一个方向 / 把 onRemoval
  * 改成 ignore」不再是一次登记动作，而是必须改判据代码的显式动作。该路径走 PR 评审 + 本仓
- * 自测把关；`scripts/gate/**` 与 `scripts/lib/**` 均不在 `approved` 派生面内，故不需要 `approved` 标签。
+ * 自测把关；本文件与 gate/threshold-monotonic.mjs 都不在 `approved` 派生面内（该面恰 9 条，
+ * 含 `scripts/gate/red-line-approval.mjs`，不含本文件与 threshold-monotonic.mjs），故不需要
+ * `approved` 标签。类上的上限（新顶层键仍可引入、比较器自我验证）见文件头的「上限」段。
  */
 export function compareDeclarationTable(baseRegistry, workspaceRegistry) {
   const failures = selfAuthChannelProblems(workspaceRegistry);
