@@ -19,7 +19,13 @@ import { ProbBar, tierBadge } from "./prob.tsx";
 
 const PAGE_LIMIT = 200;
 
-function EntryItem({ entry }: { readonly entry: DecisionHistoryEntry }): React.ReactElement {
+/**
+ * 条目 meta 行文案（结果类别 → choice → 原文长度 → 自动化 → provider → 时延）。
+ *
+ * 空值一律不占位：resultKind 空串不出现在行首，choice 缺失即整段略去——
+ * 这一行是用户扫读历史的唯一摘要面，缺席信息不写空位。
+ */
+export function entryMeta(entry: DecisionHistoryEntry): string[] {
   const meta: string[] = [];
   if (entry.resultKind !== "") meta.push(entry.resultKind);
   if (entry.choice !== undefined && entry.choice !== "") meta.push("choice=" + entry.choice);
@@ -27,49 +33,74 @@ function EntryItem({ entry }: { readonly entry: DecisionHistoryEntry }): React.R
   meta.push(entry.automation);
   meta.push(entry.provider);
   meta.push(entry.latencyMs + "ms");
+  return meta;
+}
+
+/** 条目徽标行（时间 / 工作目录 / 会话 / 预设 / 语言 / 截断 / 分层）。 */
+function EntryHead({ entry }: { readonly entry: DecisionHistoryEntry }): React.ReactElement {
+  return (
+    <div className="dj-histHead">
+      <span className="dj-histTime">{fmtTime(entry.ts)}</span>
+      {entry.rootDisplay !== "" && <span className="dj-badge">{entry.rootDisplay}</span>}
+      <span className="dj-badge" title={entry.sessionId}>
+        {entry.sessionTitle !== undefined && entry.sessionTitle !== ""
+          ? entry.sessionTitle
+          : shortId(entry.sessionId)}
+      </span>
+      {entry.presetId !== "" && (
+        <span className="dj-badge" title={entry.presetId}>
+          {(entry.presetTitle ?? entry.presetId) +
+            (entry.templateVersion > 0 ? " v" + entry.templateVersion : "")}
+        </span>
+      )}
+      <span className="dj-badge">{entry.lang}</span>
+      {entry.truncated && <span className="dj-badge dj-badgeWarn">{t("truncBadge")}</span>}
+      {tierBadge(entry.tier)}
+    </div>
+  );
+}
+
+/** 题目快照列表（缺席/空列即整块不渲染；题面与选项来自落史快照，密钥永不入库）。 */
+function EntryQuestions(props: {
+  readonly questions: NonNullable<DecisionHistoryEntry["questions"]>;
+}): React.ReactElement {
+  return (
+    <ul className="dj-opts">
+      {props.questions.map((q) => (
+        <li className="dj-opt" key={q.id}>
+          <div className="dj-optHead">
+            <span>{q.text}</span>
+          </div>
+          {q.options !== undefined && <div className="dj-meta">{q.options.join(" / ")}</div>}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** 错误行（errorCode 缺席/空串即不渲染）。 */
+function EntryError({ entry }: { readonly entry: DecisionHistoryEntry }): React.ReactElement {
+  return (
+    <div className="dj-errLine">
+      {t("errPrefix")}
+      {entry.errorCode}
+    </div>
+  );
+}
+
+function EntryItem({ entry }: { readonly entry: DecisionHistoryEntry }): React.ReactElement {
   return (
     <li className="dj-histItem">
-      <div className="dj-histHead">
-        <span className="dj-histTime">{fmtTime(entry.ts)}</span>
-        {entry.rootDisplay !== "" && <span className="dj-badge">{entry.rootDisplay}</span>}
-        <span className="dj-badge" title={entry.sessionId}>
-          {entry.sessionTitle !== undefined && entry.sessionTitle !== ""
-            ? entry.sessionTitle
-            : shortId(entry.sessionId)}
-        </span>
-        {entry.presetId !== "" && (
-          <span className="dj-badge" title={entry.presetId}>
-            {(entry.presetTitle ?? entry.presetId) +
-              (entry.templateVersion > 0 ? " v" + entry.templateVersion : "")}
-          </span>
-        )}
-        <span className="dj-badge">{entry.lang}</span>
-        {entry.truncated && <span className="dj-badge dj-badgeWarn">{t("truncBadge")}</span>}
-        {tierBadge(entry.tier)}
-      </div>
+      <EntryHead entry={entry} />
       {entry.snippetRedacted !== "" && (
         <div className="dj-histSnippet">{entry.snippetRedacted}</div>
       )}
       <ProbBar entry={entry} />
-      <div className="dj-meta">{meta.join(" · ")}</div>
+      <div className="dj-meta">{entryMeta(entry).join(" · ")}</div>
       {entry.questions !== undefined && entry.questions.length > 0 && (
-        <ul className="dj-opts">
-          {entry.questions.map((q) => (
-            <li className="dj-opt" key={q.id}>
-              <div className="dj-optHead">
-                <span>{q.text}</span>
-              </div>
-              {q.options !== undefined && <div className="dj-meta">{q.options.join(" / ")}</div>}
-            </li>
-          ))}
-        </ul>
+        <EntryQuestions questions={entry.questions} />
       )}
-      {entry.errorCode !== undefined && entry.errorCode !== "" && (
-        <div className="dj-errLine">
-          {t("errPrefix")}
-          {entry.errorCode}
-        </div>
-      )}
+      {entry.errorCode !== undefined && entry.errorCode !== "" && <EntryError entry={entry} />}
     </li>
   );
 }
