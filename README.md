@@ -33,7 +33,7 @@ DSH（DeepSeek Harness）Web GUI 插件集，npm 分发：一键装全家桶，�
 
 ### 独立安装与全家桶：二选一
 
-独立包与聚合包的 patch `id` 相同（`ui-*`）。**请只选一种安装方式**——
+独立包与聚合包的 patch `id` 相同（`dsh-*`）。**请只选一种安装方式**——
 同时装 `dsh-plugins-all` 与任一 `@wingsky-1/dsh-lan-proxy` 等独立包会导致同名 entry
 重复，`dsh web` 启动时报 duplicate 错误（可发现，不代表损坏）。需要调整时：
 卸载聚合包，或卸载对应独立包，重启即可。
@@ -272,6 +272,20 @@ dsh plugin --profile web add @wingsky-1/dsh-provider-usage
 ```
 
 > 两个旧包的 npm 版本均已标记 deprecated（安装时会提示迁移去向）。
+
+**插件行 ID 迁移（v0.2.5 → 新版本）**
+
+新版本将插件行 ID 统一为 `dsh-*`。旧 profile 不会自动改写；请先停止 `dsh web`，再执行迁移。
+
+源码仓库或维护者环境：
+
+```sh
+pnpm migrate:plugin-rows -- --home "$DSH_HOME"
+# 核对 dry-run 报告后：
+pnpm migrate:plugin-rows -- --home "$DSH_HOME" --apply
+```
+
+工具只改 patch 的 `id` 字段，保留 `name`、`disabled`、config 和行顺序，并生成备份。已通过 npm 安装、没有源码 checkout 的用户不要直接运行仓库脚本；请按对应版本 release notes 执行一次性迁移。人工兜底时必须先备份 profile patch，只把 `id: ui-dsh-*` 改为 `id: dsh-*`，不要改 `name` 或 `config`，再启动 DSH。
 
 </details>
 

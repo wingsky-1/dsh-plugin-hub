@@ -40,7 +40,7 @@ This plugin set only adapts to **rc (release-candidate) releases of DeepSeek Har
 
 ### Individual install vs. bundle: pick ONE
 
-Each individual package and the bundle share the same patch `id` (`ui-*`). **Install only one way**
+Each individual package and the bundle share the same patch `id` (`dsh-*`). **Install only one way**
 — installing both `dsh-plugins-all` and any individual package such as `@wingsky-1/dsh-lan-proxy`
 results in duplicate same-name entries, and `dsh web` fails to start with a *duplicate* error
 (detectable, not corrupting). To adjust: uninstall the bundle, or uninstall the corresponding
@@ -332,6 +332,20 @@ dsh plugin --profile web add @wingsky-1/dsh-provider-usage
 ```
 
 > Both legacy packages are marked deprecated on npm (installing them prints a migration hint).
+
+**Plugin row ID migration (v0.2.5 → the next release)**
+
+The next release uses `dsh-*` row IDs. Existing profiles are not rewritten automatically; stop `dsh web` before migrating.
+
+From a source checkout (maintainers):
+
+```sh
+pnpm migrate:plugin-rows -- --home "$DSH_HOME"
+# Review the dry-run report, then:
+pnpm migrate:plugin-rows -- --home "$DSH_HOME" --apply
+```
+
+The tool changes only patch `id` fields, preserves `name`, `disabled`, config and row order, and writes a backup. Users who installed from npm without a source checkout must not run the repository script directly; follow the one-time procedure in the matching release notes. As a manual fallback, back up the profile patch first, change only `id: ui-dsh-*` to `id: dsh-*`, leave `name` and `config` untouched, and start DSH afterwards.
 
 </details>
 
