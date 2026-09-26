@@ -3,7 +3,7 @@
 DSH 插件家族共用的模块（构建期 esbuild 内联进各插件包，不单独发布）。分两类：
 
 - **宿主端**：各包 `src/*.ts` 相对 import，bundle-host 内联进 `lib/index.js`
-  （loopback / host-utils / settings-namespace / dsh-home / sse-hub 等）。
+  （loopback / host-utils / settings-namespace / dsh-home / sse-hub / upgrade-chain 等）。
 
   placement-math 已退役（#767 终轮收尾：mcp-manager 与 provider-usage 先后自持包内实现以满足
   shared-leaf 叶子约束，共享层仅剩单一消费者，触规则 1 下限；按规则 7 一次做完——删模块与
@@ -21,6 +21,7 @@ DSH 插件家族共用的模块（构建期 esbuild 内联进各插件包，不�
 | `dsh-home.js` | 宿主 | `dshHome`（DSH home 解析单一事实源，#517：`DSH_HOME` 非空白原样采用、未设置或空白回落 `~/.dsh`——空白视同未设置对齐官方 `dsh-home-paths#resolveDshHome`；不 resolve/不展开 `~`，默认形态路径逐字节不变。豁免口径（非 dsh 生态凭据不跟随）与落盘纪律条款见 DEVELOPMENT.md §1，由 PR #523 承载）+ `userHome`（用户 home 接缝，#722：`HOME`（Windows 为 `USERPROFILE`）非空白原样采用、否则回落 `os.homedir()`；取值次序与 libuv 一致故默认形态逐字节不变，显式读 env 是为了在 worker_threads（Stryker 的 vitest-runner 强制 `pool: 'threads'`）下仍可被测试的 `process.env` 隔离） |
 | `paths.js` | 宿主 | `pluginHome`（包主目录拼装单一事实源：`join(base, ...segments)`，默认形态路径逐字节不变；只收敛包主目录直拼，legacy 旧根/settings 文档/resolve 对比/用户输入解析/credentials-userHome/展示脱敏/包内反推 7 类排除，provider 旧 `pluginHome` 保留包内 facade） |
 | `upgrade-tick.js` | 宿主 | `tickUpgradeVersion` 升级链空步单一事实源（立即完成、不碰存储；各包只登记版本号，不再为新版本加空函数） |
+| `upgrade-chain.js` | 宿主 | 升级链骨架单一事实源：`runUpgradeChain`（唯一 async 执行器，**逐步 await 保证串行**、**每步成功后立刻回写刻度**、任一步抛错即中止并带包名前缀与目标版本、`cause` 透传、对账落差只 `logger.warn` 不改动作）+ `createUpgradeRunner`（**三重守卫**：链跑成功后才标记已装配 → 重复装配即抛；另有在途标记，第二次 `install` 当场抛「正在装配中」而不是与第一次并跑——链是异步的，只靠前一条拦不住并发；在途标记随链结束在 finally 清零，失败不把 runner 锁死）+ `compareVersions` / `selectPendingSteps`（按目标版本升序、`fromVersion >= recorded` 即待办、不就地排序入参）/ `newestTargetVersion` / `diagnoseGap`（落后 / 步骤表超前 / 降级三态判词，包名前缀由调用方传第 4 参 `label`）/ `packageRootFrom` / `pluginVersion`（**收 `fromDir` 而非自定位 `import.meta.url`**：本模块内联进各包产物后运行时目录与源目录深度不同，自定位必有一种形态错且是静默回落 0.0.0 的那种错）。边界：刻度落在哪个文件、读不到刻度时 fail-safe 还是 fail-closed、迁移动作做什么，一律经 `ports` 注入，本模块只 await 不替消费方做业务决定；`run` 收 `void \| Promise<void>`——统一异步链不等于强迫所有 step 异步 |
 | `sse-hub.js` | 宿主 | `createSseHub` SSE 长连接枢纽单一事实源（#515：连接表 + 心跳 + stalled/maxAge 主动回收，取代各包自建连接表；#769 移除了连接上限机制：半开/僵尸连接此后只靠 stalled 收住，maxAge 只回收「长命且业务空闲」的正常连接）。行为契约：广播帧由调用方生成、hub 不感知业务语义；stalled 判据是「write 返回 false 连续超窗」而非 writableLength（背压不等价于僵尸）；心跳是 hub 级单 interval；健康明细**不进** `/health`（大小随连接数增长，而 `/health` 是常量大小聚合面） |
 | `client/i18n.js` | 客户 | 共享 `t` 活绑定 + `bindLocale`（#348 → #378 抽取；未装配回落 key 本体） |
 | `client/ensure-style.js` | 客户 | 参数化 `ensureStyle({ id, cssText, version? })`（#477 收敛；按 id 幂等 / head 缺失静默 no-op 不抛 / version 变化重建 / 返回 disposer） |

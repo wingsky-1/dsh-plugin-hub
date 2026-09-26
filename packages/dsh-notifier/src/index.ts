@@ -52,12 +52,15 @@ export interface NotifierApplyConfig {
   enabled?: boolean;
 }
 
-/** 挂载 dsh-notifier。 */
-export function apply(ctx: Context, config: NotifierApplyConfig = {}): void {
+/**
+ * 挂载 dsh-notifier。**异步**：升级域的存储迁移是异步链，调用方（宿主或测试）必须 `await`——
+ * 不等待就等于让各域在迁移跑完之前去读磁盘，读到的是被搬走一半的旧形态。
+ */
+export async function apply(ctx: Context, config: NotifierApplyConfig = {}): Promise<void> {
   const host = bindHost(ctx);
   const stack = createDisposerStack();
   try {
-    assemble(host, config, stack);
+    await assemble(host, config, stack);
   } finally {
     // 登记点留在采集之后：cordis 按 LIFO 释放 effect，提前登记会让整条栈在服务面已撤之后
     // 才释放各域（api 域在别人已放开的入参上继续服务）。用 finally 而不是顺序执行，是为了
@@ -234,18 +237,28 @@ function bindHost(ctx: Context): HostPort {
 }
 
 /**
- * 装配：按依赖顺序接上各域，返回它们的释放函数。每步入参都来自上一步的产出或 `host`，
- * 顺序错了就是运行期空值。
+ * 装配：按依赖顺序接上各域，把释放点登记进 `stack`。每步入参都来自上一步的产出或 `host`，
+ * 顺序错了就是运行期空值。异步是因为第 1 步的升级链是异步的——不 `await` 它，后面的域就都
+ * 读着迁移中的磁盘跑起来了。
  */
-function assemble(host: HostPort, config: NotifierApplyConfig, stack: DisposerStack): void {
+async function assemble(
+  host: HostPort,
+  config: NotifierApplyConfig,
+  stack: DisposerStack,
+): Promise<void> {
   // 0. 音频临时目录的释放面：通道域没有装配步骤，但临时目录必须有人收。放在链首 = 逆序释放时
   //    最后执行——卸载瞬间若还有一笔自播在读那个文件，先删目录会让它复现「spawn 后立即 unlink」
   //    的失败（实测播放器报 42B 的「打不开」）。
   stack.own(channelsApi.releaseSoundTemps);
 
   // 1. 存储与配置形态迁移：动的是磁盘（存储三个文件 + 配置文件），必须早于任何读文件的域。
-  //    存量配置由 settings 的显式依赖保证在装配期可读，所以整条链是同步的。
-  installUpgrade({ logger: host.logger, legacySettings: host.legacySettings });
+  //    存量配置由 settings 的显式依赖保证在装配期可读；链本身是异步的，故 await 到跑完为止。
+  //
+  //    装配前先复位单例标记：apply 在同一进程里会被多次调用（宿主重载插件），而 upgrade 域的标记
+  //    是进程级的；不先复位，第二次装配会在链跑之前就撞上「只能装配一次」。链本身幂等（归档名固定、
+  //    目标存在即不覆盖），重跑不累积。真正的双重装配仍由 installUpgrade 自己的标记在直接调用面上兜住。
+  releaseUpgrade();
+  await installUpgrade({ logger: host.logger, legacySettings: host.legacySettings });
   stack.own(releaseUpgrade);
 
   // 1. 设置：读面在装配返回时即可用，后续各域不必等加载。

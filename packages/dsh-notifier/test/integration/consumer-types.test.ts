@@ -79,9 +79,10 @@ type _NotifierServiceShape = Expect<
 /** 类型 2/6：NotifierApplyConfig —— 组合层入口配置（interface，快照门禁的盲区①，靠本文件兜住）。 */
 type _NotifierApplyConfigShape = Expect<Same<NotifierApplyConfig, { enabled?: boolean }>>;
 
-/** 类型 3/6：apply 签名 —— 消费方经 cordis patch 调用的那个入口。 */
+/** 类型 3/6：apply 签名 —— 消费方经 cordis patch 调用的那个入口。宿主入口是异步的（升级链异步
+ *  跑完），调用方必须 await：返回值类型是这条锚真正要锁住的东西。 */
 type _ApplyShape = Expect<
-  Same<typeof apply, (ctx: Context, config?: { enabled?: boolean }) => void>
+  Same<typeof apply, (ctx: Context, config?: { enabled?: boolean }) => Promise<void>>
 >;
 
 /** 类型 4/6：inject —— 依赖的宿主服务清单。 */

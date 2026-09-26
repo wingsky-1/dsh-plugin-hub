@@ -28,19 +28,11 @@ import {
 } from "../../../src/server/upgrade/storage-layout.ts";
 import { migrateReportConfig } from "../../../src/server/upgrade/config-morph.ts";
 import { migrateLastRun } from "../../../src/server/upgrade/last-run-morph.ts";
-import {
-  STEPS,
-  pendingSteps,
-  reportGap,
-  runUpgradeChain,
-  type UpgradeStep,
-} from "../../../src/server/upgrade/chain/index.ts";
+import { newestTargetVersion } from "../../../../../shared/upgrade-chain.js";
+import { runUpgradeChain } from "../../../src/server/upgrade/chain/index.ts";
 import { installUpgrade, releaseUpgrade } from "../../../src/server/upgrade/interface.ts";
-import {
-  compareVersions,
-  readStoredVersion,
-  upgradeVersionFile,
-} from "../../../src/server/upgrade/version.ts";
+import { STEPS } from "../../../src/server/upgrade/steps.ts";
+import { readStoredVersion, upgradeVersionFile } from "../../../src/server/upgrade/version.ts";
 import { LAST_RUN_SCHEMA } from "../../../src/server/shared/interface.ts";
 import {
   DEFAULT_PROMPTS,
@@ -90,9 +82,7 @@ function makeLogger(): { warns: string[]; warn: (message: string) => void } {
  * 写死版本号等于把「链跑到了表末」这条判据绑死在某一版上，每次发版都要来改一次。
  */
 function newestTarget(): string {
-  return STEPS.map((step) => step.targetVersion).reduce((newest, version) =>
-    compareVersions(version, newest) > 0 ? version : newest,
-  );
+  return newestTargetVersion(STEPS);
 }
 
 function permissionBits(path: string): number {
@@ -361,88 +351,19 @@ describe("last-run 迁移：derive/align 纯函数复用", () => {
   });
 });
 
-describe("链驱动：排序/边界/对账/吞错", () => {
-  it("不按声明顺序执行：声明倒序也按目标升序（判据：漏排序后一步读旧形态，改坏必须红）", () => {
-    const table = [
-      { fromVersion: "0.2.4", targetVersion: "0.2.5", run: () => Promise.resolve() },
-      { fromVersion: "0.0.0", targetVersion: "0.2.3", run: () => Promise.resolve() },
-    ];
-    expect(pendingSteps(table, "0.0.0").map((s) => s.targetVersion)).toEqual(["0.2.3", "0.2.5"]);
+describe("刻度读侧：空白刻度按起点起算", () => {
+  it("刻度文件只有空白 → 读回 0.0.0（空串不是合法刻度），改坏必须红", async () => {
+    writeFileSync(upgradeVersionFile(root), " \n\t\n", "utf8");
+
+    expect(await readStoredVersion(root)).toBe("0.0.0");
   });
+});
 
-  it("刻度停在 fromVersion 即待办（含边界），之后即跳过（判据：边界写成>即整步跳过，改坏必须红）", () => {
-    // 判据喂合成表而不是真实步骤表：本条测的是「待办边界」这条语义，写死真实表等于每发一版
-    // 就要来改一遍断言。真实表的步序由「装配前 await 跑完」那条集成用例（跑到 newestTarget）兜底。
-    const table: UpgradeStep[] = [
-      { fromVersion: "0.0.0", targetVersion: "0.2.3", run: () => Promise.resolve() },
-      { fromVersion: "0.2.3", targetVersion: "0.2.4", run: () => Promise.resolve() },
-      { fromVersion: "0.2.4", targetVersion: "0.2.5", run: () => Promise.resolve() },
-    ];
-
-    expect(pendingSteps(table, "0.0.0").map((s) => s.targetVersion)).toEqual([
-      "0.2.3",
-      "0.2.4",
-      "0.2.5",
-    ]);
-    expect(pendingSteps(table, "0.2.3").map((s) => s.targetVersion)).toEqual(["0.2.4", "0.2.5"]);
-    expect(pendingSteps(table, "0.2.5")).toEqual([]);
-  });
-
-  it("任一步失败即抛且带目标版本（判据：吞错静默绿，改坏必须红）", async () => {
-    const bad: UpgradeStep = {
-      fromVersion: "0.0.0",
-      targetVersion: "9.9.9",
-      run: (_deps: UpgradeDeps) => Promise.reject(new Error("boom")),
-    };
-    const { writeStoredVersion: _w } = await import("../../../src/server/upgrade/version.ts");
-    void _w;
-    const failingDeps = deps();
-    const { compareVersions: _c } = await import("../../../src/server/upgrade/version.ts");
-    void _c;
-    // 直接喂合成表验证 pending/apply 语义：此处仅断言链包装语义（目标版本进消息）
-    await expect(
-      (async () => {
-        try {
-          await bad.run(failingDeps);
-        } catch (cause) {
-          throw new Error(
-            `dsh-provider-usage: 存储升级到 ${bad.targetVersion} 失败 — ${cause instanceof Error ? cause.message : String(cause)}`,
-          );
-        }
-      })(),
-    ).rejects.toThrow("存储升级到 9.9.9 失败");
-  });
-
-  it("三种落差分开报（判据：合成一条三处都只剩有出声，改坏必须红）", () => {
-    const newest = newestTarget();
-    const quiet = makeLogger();
-    reportGap(newest, newest, quiet);
-    expect(quiet.warns).toEqual([]);
-
-    const behind = makeLogger();
-    reportGap("0.1.0", "0.3.0", behind);
-    expect(behind.warns.join()).toContain("缺少对应的升级步骤");
-
-    const aheadTable = makeLogger();
-    reportGap("0.3.0", "0.2.3", aheadTable);
-    expect(aheadTable.warns.join()).toContain("不同步");
-
-    const downgrade = makeLogger();
-    reportGap("0.3.0", newest, downgrade);
-    expect(downgrade.warns.join()).toContain("不回退");
-  });
-
-  it("装配前 await 跑完：await 后刻度落到最后一步且初始形态已落定（判据：不等待即各域读旧形态，改序必须红）", async () => {
+describe("装配顺序：迁移在读存储的域之前跑完", () => {
+  it("await 门面返回后刻度落到本包最后一步且初始形态已落定（判据：不等待即各域读旧形态，改序必须红）", async () => {
     await installUpgrade(deps());
     expect(await readStoredVersion(root)).toBe(newestTarget());
     expect(existsSync(targetConfigFile(root))).toBe(true);
     expect(basename(root).length).toBeGreaterThan(0);
-  });
-
-  it("重复装配当场抛，release 后可再装（判据：单例标记，改坏必须红）", async () => {
-    await installUpgrade(deps());
-    await expect(installUpgrade(deps())).rejects.toThrow("只能装配一次");
-    releaseUpgrade();
-    await expect(installUpgrade(deps())).resolves.toBeUndefined();
   });
 });

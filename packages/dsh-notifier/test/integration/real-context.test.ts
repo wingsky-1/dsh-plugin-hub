@@ -1,7 +1,8 @@
 /**
  * dsh-notifier — 组合根（`src/index.ts`）的真实 cordis Context 集成测试。
  *
- * 面口径：这里测的是**宿主看见的那一面**——`apply` 收窄宿主上下文、按序装配八个域、卸载逆序释放。
+ * 面口径：这里测的是**宿主看见的那一面**——`apply` 收窄宿主上下文、按序装配八个域、卸载逆序释放；
+ * 「按序」里唯一在运行期无观测量的那一段（升级链 await 跑完才轮到读文件的域）以源码文本先后锁定。
  * 这些行为只有放进真实 cordis 才成立：`inject` 门（未就绪不装配）、两条 waterfall 的 `prepend`
  * 链序、`{ global: true }` 的作用域过滤、`ctx.effect` 的卸载时机、`internal/service` 的晚到通知。
  * 假宿主只提供 `webServer`（组合根唯一触碰的宿主服务）与可选的 `settings`；事件总线、落盘、
@@ -20,6 +21,7 @@
  */
 import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { Context } from "@deepseek-ai/cordis";
@@ -464,6 +466,40 @@ describe("装配与暴露", () => {
     // ——所以这里断「没走到下一格」而不是「等于锚点」，免得受上一个用例迟到的那一笔影响。
     expect(seqValue()).not.toBe(seqAnchor + 1);
     await unmount();
+  });
+});
+
+/**
+ * 装配顺序（源码序锁定）：升级链必须 await 跑完，才轮到任何读文件的域。
+ *
+ * 为什么只能钉源码顺序：运行期能观测到的只有「apply 返回时链已跑完」，而各域的**装配先后**在运行期
+ * 没有观测量——把它挪到 config/stores 之后，变坏的只是「各域读着被搬走一半的磁盘跑起来」这件事，
+ * 假 ctx 装配照样成功。组合根里唯一可判的形态就是源码文本的先后（同先例：
+ * dsh-provider-usage test/integration/report-routes/composition-root.test.ts 的装配序锁定）。
+ */
+describe("装配顺序：升级链 await 跑完才装其它域", () => {
+  const applySrc = readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), "..", "..", "src", "index.ts"),
+    "utf8",
+  );
+
+  it("升级域是 await 装配方（漏掉 await 即红）", () => {
+    expect(applySrc.indexOf("await installUpgrade({")).toBeGreaterThan(-1);
+  });
+
+  it("先复位 upgrade 装配标记再装配（release 晚于 install 即红）", () => {
+    const release = applySrc.indexOf("releaseUpgrade();");
+    const install = applySrc.indexOf("await installUpgrade({");
+    expect(release).toBeGreaterThan(-1);
+    expect(release).toBeLessThan(install);
+  });
+
+  it("升级链早于 config 域（迁移必须早于任何读文件的域）", () => {
+    const install = applySrc.indexOf("await installUpgrade({");
+    const config = applySrc.indexOf("configApi.installConfig(");
+    expect(install).toBeGreaterThan(-1);
+    expect(config).toBeGreaterThan(-1);
+    expect(install).toBeLessThan(config);
   });
 });
 

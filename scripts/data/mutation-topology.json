@@ -493,9 +493,8 @@
             "packages/dsh-mcp-manager/test/unit/unit-stats-a4.test.ts",
             "packages/dsh-mcp-manager/test/unit/unit-store.test.ts",
             "packages/dsh-mcp-manager/test/unit/unit-summary-a3.test.ts",
-            "packages/dsh-mcp-manager/test/unit/upgrade/service.test.ts",
-            "packages/dsh-mcp-manager/test/unit/upgrade/storage-layout.test.ts",
-            "packages/dsh-mcp-manager/test/unit/upgrade/version.test.ts"
+            "packages/dsh-mcp-manager/test/unit/upgrade/steps.test.ts",
+            "packages/dsh-mcp-manager/test/unit/upgrade/storage-layout.test.ts"
           ],
           "comment": "#767 B2b 重画：runtime——packages/dsh-mcp-manager/src/shared/placement-math.ts（#378 上移的 placement 纯核心，由本段 mutate 覆盖）+执行管道（pipeline）+目录（catalog）+包内共享层（server/shared）+迁移链（upgrade）+跨端共享面（src/shared）；B2b 后文件归各域段，本段只留这些。同时收敛 #767 B0 的临时超集 src/server/**/*.ts——当时目标树全新，不先挂超集会让 B1 新文件进 uncoveredSrcFiles 而 --write-baseline 拒绝接受新证据；各段并集现已覆盖它（本刀实测 uncoveredSrcFiles 仍为 0），故删除。W11b2a 删除 src/types 与 src/integration 后，原两条排除已成 0 命中死条目，随本刀删除；excludes 仅保留 client 一条（另一端）。测试按段 testFiles 清单跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
         },
@@ -720,7 +719,7 @@
             "packages/dsh-notifier/test/unit/upgrade/steps.test.ts",
             "packages/dsh-notifier/test/unit/upgrade/version.test.ts"
           ],
-          "comment": "#733 按域重写：upgrade——存量迁移域（version 版本戳；chain 迁移链；legacy 旧位置读取；steps.storage-layout 存储布局搬迁）。"
+          "comment": "#733 按域重写：upgrade——存量迁移域（version 版本戳；chain 迁移链；legacy 旧位置读取；steps.storage-layout 存储布局搬迁）。链驱动已下沉 shared/upgrade-chain.js，本段只余本包事实：刻度读策略（fail-closed，见 test/unit/upgrade/version.test.ts）与四个业务 step。 "
         },
         "client": {
           "mutate": ["packages/dsh-notifier/src/client/**/*.ts"],

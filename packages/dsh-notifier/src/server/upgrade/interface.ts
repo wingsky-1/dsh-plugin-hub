@@ -3,11 +3,17 @@
 import type { UpgradeDeps } from "./deps.ts";
 import { upgradeRunner } from "./impl/service/index.ts";
 
-/** 装配升级域。升级链**同步跑完**（存储布局归位 + 配置形态割接），任何一步失败即抛出、`apply` 随之失败
- * ——带半完成迁移的存储比不启动危险得多。存量配置的读取面由组合根以显式依赖注入（宿主保证服务就绪才装配），
- * 所以割接在同一趟装配里完成，没有等待回调。抛出的那一步不回写刻度，下次启动从同一步重跑。 */
-export function installUpgrade(deps: UpgradeDeps): void {
-  upgradeRunner.install(deps);
+/**
+ * 装配升级域。升级链**异步跑完**（存储布局归位 + 配置形态割接），任何一步失败即抛出、`apply` 随之失败
+ * ——带半完成迁移的存储比不启动危险得多。调用方必须 `await`：不等待就等于让各域在迁移跑完之前去读磁盘。
+ * 失败的那一步不回写刻度，下次启动从同一步重跑。
+ *
+ * 为什么不是 `export async function`：注入面对账（`verify-dir-imports` 的 `analyzeInjectionFaces`）按
+ * `export function installXxx(` 采点，`async` 前缀会让这条对账静默失明——签名保持同步形态、返回值是
+ * Promise，判据面与调用方语义都不受影响。
+ */
+export function installUpgrade(deps: UpgradeDeps): Promise<void> {
+  return upgradeRunner.install(deps);
 }
 
 /** 卸载升级域。只复位装配标记：升级链没有留下需要释放的东西——它写的是文件。 */
