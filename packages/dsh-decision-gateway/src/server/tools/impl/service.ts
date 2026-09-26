@@ -20,11 +20,13 @@ import type {
   AutomationLevel,
   CustomPreset,
   DecideOutput,
+  DecisionLang,
   ErrorEnvelope,
   DecisionTier,
 } from "../../../shared/interface.ts";
-import type { DecideDeps, DecideEvent } from "../deps.ts";
+import type { DecideDeps, DecideEvent, ValidDecide, ValidQuestion } from "../deps.ts";
 import { callWithRetry, defaultFetchImpl, toWireQuestions } from "./client.ts";
+import type { DecisionFailure, RemoteVerdict } from "./client.ts";
 import { localPrecheckHit } from "./precheck.ts";
 import { validateDecideArgs } from "./validate.ts";
 
@@ -91,6 +93,178 @@ export async function decide(
     return envelope("ABORTED", "aborted", "caller aborted");
   }
 
+  /** 截断结果（truncateCodePoints 的返回面，本文件多处共用故取其 ReturnType）。 */
+  type TruncResult = ReturnType<typeof truncateCodePoints>;
+
+  /**
+   * 落史事件的公共面。
+   *
+   * 会话/预设/正文/截断/题面/预检命中这八个字段在预检命中、缺密钥、远端失败、
+   * 远端成功四条落史路径上完全一致，抽成一处免得逐条改漏；各路径只在此之上
+   * 追加自己的 resultKind 与概率/时延面。
+   */
+  interface EventBase {
+    readonly sessionId: string;
+    readonly presetId: string;
+    readonly text: string;
+    readonly lang: DecisionLang;
+    readonly truncated: boolean;
+    readonly originalLength: number;
+    readonly questions: readonly ValidQuestion[];
+    readonly precheckHit: boolean;
+  }
+
+  /** 事件公共面构造（已校验入参 + 截断结果 + 预检命中位）。 */
+  function eventBase(
+    deps: DecideDeps,
+    valid: ValidDecide,
+    trunc: TruncResult,
+    hit: boolean,
+  ): EventBase {
+    return {
+      sessionId: deps.sessionId,
+      presetId: valid.presetId,
+      text: valid.text,
+      lang: valid.lang,
+      truncated: trunc.truncated,
+      originalLength: trunc.originalLength,
+      questions: valid.questions,
+      precheckHit: hit,
+    };
+  }
+
+  /**
+   * 本地预检命中：不出境直转人工。
+   *
+   * choice=human / tier=none / automation=manual 在此钉死，不受 automationCap
+   * 与截断影响——R5 的 suggest-only 只作用于远端成功面，本路径恒 manual。
+   */
+  function localPrecheckOutput(
+    deps: DecideDeps,
+    base: EventBase,
+    trunc: TruncResult,
+  ): DecideOutput {
+    safeRecord(deps, {
+      ...base,
+      resultKind: "local-precheck",
+      choice: "human",
+      confidence: 1,
+      tier: "none",
+      automation: "manual",
+      latencyMs: 0,
+    });
+    return {
+      ok: true,
+      provider: "official",
+      appliedSource: "local-precheck",
+      truncated: trunc.truncated,
+      originalLength: trunc.originalLength,
+      tier: "none",
+      automation: "manual",
+      codepoints: 0,
+      retries: 0,
+      latencyMs: 0,
+      resultKind: "local-precheck",
+      choice: "human",
+      confidence: 1,
+    };
+  }
+
+  /** 缺密钥：不发起远端调用，落史标 not-executed（不静默成功也不静默失败）。 */
+  function noKeyEnvelope(deps: DecideDeps, base: EventBase): ErrorEnvelope {
+    safeRecord(deps, {
+      ...base,
+      resultKind: "not-executed",
+      confidence: 0,
+      tier: "none",
+      automation: "manual",
+      latencyMs: 0,
+      errorCode: "NO_KEY",
+    });
+    return envelope("NO_KEY", "no-key", "no api key (set apiKeyRef or plaintext)");
+  }
+
+  /** 远端失败：回无概率字段的失败包络（choice/score/confidence/tier 一律不出现）。 */
+  function upstreamFailureEnvelope(
+    deps: DecideDeps,
+    base: EventBase,
+    latencyMs: number,
+    failure: DecisionFailure | undefined,
+  ): ErrorEnvelope {
+    const reason = failure ?? { code: "UPSTREAM", category: "upstream", message: "unknown" };
+    safeRecord(deps, {
+      ...base,
+      resultKind: "upstream-error",
+      confidence: 0,
+      tier: "none",
+      automation: "manual",
+      latencyMs,
+      errorCode: reason.code,
+    });
+    return envelope(reason.code, reason.category, reason.message);
+  }
+
+  /** tier/automation 投影：Noul 置空 tier（弃权不分级）→ cap 封顶 → 截断强制 suggest-only（R5）。 */
+  function projectLevels(
+    verdict: RemoteVerdict,
+    cap: number,
+    truncated: boolean,
+  ): { readonly tier: DecisionTier; readonly automation: AutomationLevel } {
+    const tierIndex =
+      verdict.resultKind === "choice" && verdict.choice === "Noul"
+        ? 0
+        : Math.min(verdict.tier, cap);
+    const autoIndex = Math.min(verdict.automation, cap);
+    const tier = tierOf(tierIndex);
+    return { tier, automation: truncated ? "suggest-only" : automationOf(tier, autoIndex) };
+  }
+
+  /** 远端成功投影的输入（把 outcome 之外的面收成一束，母体调用处一眼可读）。 */
+  interface RemoteProjection {
+    readonly appliedSource: ValidDecide["appliedSource"];
+    readonly cap: number;
+    readonly trunc: TruncResult;
+    readonly latencyMs: number;
+    readonly retries: number;
+  }
+
+  /** 远端成功：落史 + 回 DecideOutput（计费 codepoints 取远端回值，缺席回落原文长度）。 */
+  function projectVerdict(
+    deps: DecideDeps,
+    base: EventBase,
+    verdict: RemoteVerdict,
+    proj: RemoteProjection,
+  ): DecideOutput {
+    const { tier, automation } = projectLevels(verdict, proj.cap, proj.trunc.truncated);
+    const codepoints = verdict.codepoints > 0 ? verdict.codepoints : proj.trunc.originalLength;
+    safeRecord(deps, {
+      ...base,
+      resultKind: verdict.resultKind,
+      ...(verdict.choice !== undefined ? { choice: verdict.choice } : {}),
+      ...(verdict.score !== undefined ? { score: verdict.score } : {}),
+      confidence: verdict.confidence,
+      tier,
+      automation,
+      latencyMs: proj.latencyMs,
+    });
+    return {
+      ok: true,
+      provider: "official",
+      appliedSource: proj.appliedSource,
+      truncated: proj.trunc.truncated,
+      originalLength: proj.trunc.originalLength,
+      tier,
+      automation,
+      codepoints,
+      retries: proj.retries,
+      latencyMs: proj.latencyMs,
+      resultKind: verdict.resultKind,
+      ...(verdict.choice !== undefined ? { choice: verdict.choice } : {}),
+      ...(verdict.score !== undefined ? { score: verdict.score } : {}),
+      confidence: verdict.confidence,
+    };
+  }
+
   const direct = <T>(task: () => Promise<T>): Promise<T> => task();
   const limit = deps.limit ?? direct;
   const execute = async (runRemote: typeof direct): Promise<DecideOutput | ErrorEnvelope> => {
@@ -99,143 +273,34 @@ export async function decide(
     const cap = deps.capOf(valid.presetId);
     const started = now();
     const hit = localPrecheckHit(valid.text);
-    if (hit) {
-      safeRecord(deps, {
-        sessionId: deps.sessionId,
-        precheckHit: true,
-        presetId: valid.presetId,
-        text: valid.text,
-        lang: valid.lang,
-        truncated: trunc.truncated,
-        originalLength: trunc.originalLength,
-        resultKind: "local-precheck",
-        questions: valid.questions,
-        choice: "human",
-        confidence: 1,
-        tier: "none",
-        automation: "manual",
-        latencyMs: 0,
-      });
-      return {
-        ok: true,
-        provider: "official",
-        appliedSource: "local-precheck",
-        truncated: trunc.truncated,
-        originalLength: trunc.originalLength,
-        tier: "none",
-        automation: "manual",
-        codepoints: 0,
-        retries: 0,
-        latencyMs: 0,
-        resultKind: "local-precheck",
-        choice: "human",
-        confidence: 1,
-      };
-    }
+    const base = eventBase(deps, valid, trunc, hit);
+    if (hit) return localPrecheckOutput(deps, base, trunc);
     const resolved = deps.resolveKey();
-    if (resolved.key === undefined) {
-      safeRecord(deps, {
-        sessionId: deps.sessionId,
-        presetId: valid.presetId,
-        text: valid.text,
-        lang: valid.lang,
-        truncated: trunc.truncated,
-        originalLength: trunc.originalLength,
-        resultKind: "not-executed",
-        questions: valid.questions,
-        precheckHit: hit,
-        confidence: 0,
-        tier: "none",
-        automation: "manual",
-        latencyMs: 0,
-        errorCode: "NO_KEY",
-      });
-      return envelope("NO_KEY", "no-key", "no api key (set apiKeyRef or plaintext)");
-    }
-    const fetchImpl = deps.fetchImpl ?? defaultFetchImpl();
-    const body = {
-      model: JEV_MODEL,
-      state: trunc.text,
-      questions: toWireQuestions(valid.questions),
-    };
+    if (resolved.key === undefined) return noKeyEnvelope(deps, base);
     const outcome = await runRemote(() =>
       callWithRetry(
-        body,
+        {
+          model: JEV_MODEL,
+          state: trunc.text,
+          questions: toWireQuestions(valid.questions),
+        },
         resolved.key as string,
         deps.connection.timeoutMs,
-        fetchImpl,
+        deps.fetchImpl ?? defaultFetchImpl(),
         deps.signal,
       ),
     );
     const latencyMs = now() - started;
     if (outcome.failure !== undefined || outcome.verdict === undefined) {
-      const failure = outcome.failure ?? {
-        code: "UPSTREAM",
-        category: "upstream",
-        message: "unknown",
-      };
-      safeRecord(deps, {
-        sessionId: deps.sessionId,
-        presetId: valid.presetId,
-        text: valid.text,
-        lang: valid.lang,
-        truncated: trunc.truncated,
-        originalLength: trunc.originalLength,
-        resultKind: "upstream-error",
-        questions: valid.questions,
-        precheckHit: hit,
-        confidence: 0,
-        tier: "none",
-        automation: "manual",
-        latencyMs,
-        errorCode: failure.code,
-      });
-      return envelope(failure.code, failure.category, failure.message);
+      return upstreamFailureEnvelope(deps, base, latencyMs, outcome.failure);
     }
-    const verdict = outcome.verdict;
-    const tierIndex =
-      verdict.resultKind === "choice" && verdict.choice === "Noul"
-        ? 0
-        : Math.min(verdict.tier, cap);
-    const autoIndex = Math.min(verdict.automation, cap);
-    const tier = tierOf(tierIndex);
-    const automation: AutomationLevel = trunc.truncated
-      ? "suggest-only"
-      : automationOf(tier, autoIndex);
-    const codepoints = verdict.codepoints > 0 ? verdict.codepoints : trunc.originalLength;
-    safeRecord(deps, {
-      sessionId: deps.sessionId,
-      presetId: valid.presetId,
-      text: valid.text,
-      lang: valid.lang,
-      truncated: trunc.truncated,
-      originalLength: trunc.originalLength,
-      resultKind: verdict.resultKind,
-      questions: valid.questions,
-      precheckHit: hit,
-      ...(verdict.choice !== undefined ? { choice: verdict.choice } : {}),
-      ...(verdict.score !== undefined ? { score: verdict.score } : {}),
-      confidence: verdict.confidence,
-      tier,
-      automation,
-      latencyMs,
-    });
-    return {
-      ok: true,
-      provider: "official",
+    return projectVerdict(deps, base, outcome.verdict, {
       appliedSource: valid.appliedSource,
-      truncated: trunc.truncated,
-      originalLength: trunc.originalLength,
-      tier,
-      automation,
-      codepoints,
-      retries: outcome.retries,
+      cap,
+      trunc,
       latencyMs,
-      resultKind: verdict.resultKind,
-      ...(verdict.choice !== undefined ? { choice: verdict.choice } : {}),
-      ...(verdict.score !== undefined ? { score: verdict.score } : {}),
-      confidence: verdict.confidence,
-    };
+      retries: outcome.retries,
+    });
   };
 
   try {
