@@ -128,6 +128,12 @@
 （test 回调内与模块顶层同例）而**丢失三态区分**——仍会判红，但门禁故障与判红在日志里不可区分，
 2 这条「禁止合并」的通道随之失效。确需在自测里验证真实退出码，须以子进程模式在测试内自证。
 
+- `test/local-gate-exit.test.ts` — `gate/local-gate.mjs` 退出码三态自测（#875 S1，即上一条约束的第一个
+  应用）：以 `spawnSync` 拉真子进程断言**真实退出码**——步骤 exit 0 / 1 / 2 与 spawn 失败、被信号杀死各自
+  映射到整体 0 / 1 / 2，并逐条断言判词内容（步骤名 + `exit=<code>` / `fault=<kind>` + 成因）。场景由**注入
+  副本**构造：副本落 `mkdtempSync` 目录、相对 import 与 ROOT 改写成绝对路径（仓库内不得落临时 .mjs——
+  `test/mjs-freeze-guard.test.ts` 会把新增未登记的 .mjs 判红，而各测试文件并行），不靠真实门禁偶发触发：
+  偶发即不可复现，而不可复现的判据等于没有判据。
 - `test/run-vitest.mjs` — 包级 test 脚本的 vitest 包装：在 vitest 之上恢复 `--min <文件数>` fail-closed 判据（防 include 漂移的假绿）。
 - `test/build-client.test.ts` — build-client 脚本自测。
 - `test/collect-licenses.test.ts` — collect-licenses 脚本自测。
