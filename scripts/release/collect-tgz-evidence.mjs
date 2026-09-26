@@ -139,49 +139,61 @@ export function main(argv) {
   emit("待发布包（与 publish 步骤同源）：" + pkgs.join(", "));
   const tmp = mkdtempSync(join(tmpdir(), "tgz-evidence-"));
   try {
-    for (const pkg of pkgs) {
-      emit("pack " + pkg);
-      try {
-        execFileSync("pnpm", ["--filter", pkg, "pack", "--pack-destination", tmp], {
-          cwd: ROOT,
-          stdio: "pipe",
-        });
-      } catch (err) {
-        return fail("pnpm pack 失败：" + pkg + "（" + (err.message || err) + "）");
-      }
-    }
-    const tgz = readdirSync(tmp)
+    const packFailed = packAll(pkgs, tmp, emit, fail);
+    if (packFailed !== null) return packFailed;
+    const packed = readdirSync(tmp)
       .filter(function (f) {
         return f.endsWith(".tgz");
       })
       .sort();
-    if (tgz.length === 0) return fail("pack 未产出任何 tgz");
-    for (const f of tgz) copyFileSync(join(tmp, f), join(opts.outDir, f));
-    const lines = renderShaLines(
-      tgz.map(function (f) {
-        return { name: f, path: join(opts.outDir, f) };
-      }),
-    );
-    try {
-      writeFileSync(join(opts.outDir, SHA_FILENAME), lines.join("\n") + "\n", "utf8");
-    } catch (err) {
-      return fail("SHA256SUMS 落盘失败：" + (err.message || err));
-    }
-    for (const line of lines) emit(line);
-    emit("SHA256SUMS： " + tgz.length + " 个 tgz");
-    if (!opts.keepTgz) {
-      for (const f of tgz) rmSync(join(opts.outDir, f));
-      emit("tgz 本体已删除（不上传，只留校验和）");
-    }
-    try {
-      writeFileSync(join(opts.outDir, LOG_FILENAME), log.join("\n") + "\n", "utf8");
-    } catch (err) {
-      return fail("收集日志落盘失败：" + (err.message || err));
-    }
-    return 0;
+    if (packed.length === 0) return fail("pack 未产出任何 tgz");
+    return writeEvidence(opts, tmp, packed, log, emit, fail);
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }
+}
+
+/** 逐个 pack 到临时目录；任一失败即 emit 判词并给出退出码，否则返回 null。 */
+function packAll(pkgs, tmp, emit, fail) {
+  for (const pkg of pkgs) {
+    emit("pack " + pkg);
+    try {
+      execFileSync("pnpm", ["--filter", pkg, "pack", "--pack-destination", tmp], {
+        cwd: ROOT,
+        stdio: "pipe",
+      });
+    } catch (err) {
+      return fail("pnpm pack 失败：" + pkg + "（" + (err.message || err) + "）");
+    }
+  }
+  return null;
+}
+
+/** 证据落盘：复制 tgz、写 SHA256SUMS、写日志、按需删除 tgz 本体。 */
+function writeEvidence(opts, tmp, packed, log, emit, fail) {
+  for (const f of packed) copyFileSync(join(tmp, f), join(opts.outDir, f));
+  const lines = renderShaLines(
+    packed.map(function (f) {
+      return { name: f, path: join(opts.outDir, f) };
+    }),
+  );
+  try {
+    writeFileSync(join(opts.outDir, SHA_FILENAME), lines.join("\n") + "\n", "utf8");
+  } catch (err) {
+    return fail("SHA256SUMS 落盘失败：" + (err.message || err));
+  }
+  for (const line of lines) emit(line);
+  emit("SHA256SUMS： " + packed.length + " 个 tgz");
+  if (!opts.keepTgz) {
+    for (const f of packed) rmSync(join(opts.outDir, f));
+    emit("tgz 本体已删除（不上传，只留校验和）");
+  }
+  try {
+    writeFileSync(join(opts.outDir, LOG_FILENAME), log.join("\n") + "\n", "utf8");
+  } catch (err) {
+    return fail("收集日志落盘失败：" + (err.message || err));
+  }
+  return 0;
 }
 
 /** 仅直接执行时跑 main（被 import 时只取纯函数）。 */

@@ -269,8 +269,13 @@ function coverageExcludeValueProblems(entry, label, seen) {
  * 一份没人复核过的默认面。段不是对象时也必须先判红，否则下一个判据要读的 `seg.excludes`
  * 就是一次裸解引用（抛栈而非判红）。
  */
+/** 登记面形状判据的共同前提：非 null、对象、且不是数组。 */
+export function isPlainObject(v) {
+  return v !== null && typeof v === "object" && !Array.isArray(v);
+}
+
 export function packageEntryProblems(pkgDef) {
-  if (pkgDef === null || typeof pkgDef !== "object" || Array.isArray(pkgDef)) {
+  if (!isPlainObject(pkgDef)) {
     return [
       `包登记必须是对象（当前 ${JSON.stringify(pkgDef)}）——形状不对时没有可判定的变异面，fail-closed`,
     ];
@@ -279,12 +284,7 @@ export function packageEntryProblems(pkgDef) {
   // 抛栈（gen-stryker-conf 与 collectMutationSpecs 都读它）。缺了它就没有可判定的变异面，
   // 故与「包登记不是对象」同族判红，而不是留给下游崩栈、或退化成「一堆 uncoveredSrcFiles 噪声」。
   const segments = pkgDef.segments;
-  if (
-    segments === undefined ||
-    segments === null ||
-    typeof segments !== "object" ||
-    Array.isArray(segments)
-  ) {
+  if (!isPlainObject(segments)) {
     return [
       `包登记的 segments 必须是对象（当前 ${JSON.stringify(segments)}）——形状不对时没有可判定的变异面，fail-closed`,
     ];
@@ -299,33 +299,41 @@ export function packageEntryProblems(pkgDef) {
   }
   const problems = [];
   for (const [segKey, segDef] of Object.entries(segments)) {
-    if (segDef === null || typeof segDef !== "object" || Array.isArray(segDef)) {
+    problems.push(...segmentEntryProblems(segKey, segDef));
+  }
+  return problems;
+}
+
+/**
+ * 一个段登记的形状与 excludes 条目判词。
+ *
+ * 条目形状：excludes 的每条都进排除面，靠 `!` 前缀与 conf 里的正向条目区分。缺 `!` 的条目
+ * 会被原样拼进派生 conf 的 mutate，语义从「排除这个文件」**极性反转**成「要变异这个文件」
+ * ——而两条路径都真实存在，只判「命中 ≥1 文件」的判据全绿（#848 复核前的实测形态）。
+ */
+export function segmentEntryProblems(segKey, segDef) {
+  if (!isPlainObject(segDef)) {
+    return [
+      `段 "${segKey}" 必须是对象（当前 ${JSON.stringify(segDef)}）——形状不对时该段没有可判定的变异面，fail-closed`,
+    ];
+  }
+  if (!Array.isArray(segDef.excludes)) {
+    return [
+      `段 "${segKey}" 的 excludes 必须是数组（可显式为空）（当前 ${JSON.stringify(segDef.excludes)}）——` +
+        "段必须自己声明排除面（#836 起缺省回退已删除），否则会把排除面静默收敛成空集",
+    ];
+  }
+  const problems = [];
+  for (const [i, entry] of segDef.excludes.entries()) {
+    if (typeof entry !== "string" || entry.trim() === "") {
       problems.push(
-        `段 "${segKey}" 必须是对象（当前 ${JSON.stringify(segDef)}）——形状不对时该段没有可判定的变异面，fail-closed`,
+        `段 "${segKey}" 的 excludes[${i}] 必须是非空字符串（当前 ${JSON.stringify(entry)}）`,
       );
-      continue;
-    }
-    if (!Array.isArray(segDef.excludes)) {
+    } else if (!entry.startsWith("!")) {
       problems.push(
-        `段 "${segKey}" 的 excludes 必须是数组（可显式为空）（当前 ${JSON.stringify(segDef.excludes)}）——` +
-          "段必须自己声明排除面（#836 起缺省回退已删除），否则会把排除面静默收敛成空集",
+        `段 "${segKey}" 的 excludes[${i}] 缺 ! 前缀（当前 ${entry}）—— ` +
+          "该条目会被原样拼进 conf 的 mutate，从「排除」极性反转成「要变异这个文件」",
       );
-      continue;
-    }
-    // 条目形状：excludes 的每条都进排除面，靠 `!` 前缀与 conf 里的正向条目区分。缺 `!` 的条目
-    // 会被原样拼进派生 conf 的 mutate，语义从「排除这个文件」**极性反转**成「要变异这个文件」
-    // ——而两条路径都真实存在，只判「命中 ≥1 文件」的判据全绿（#848 复核前的实测形态）。
-    for (const [i, entry] of segDef.excludes.entries()) {
-      if (typeof entry !== "string" || entry.trim() === "") {
-        problems.push(
-          `段 "${segKey}" 的 excludes[${i}] 必须是非空字符串（当前 ${JSON.stringify(entry)}）`,
-        );
-      } else if (!entry.startsWith("!")) {
-        problems.push(
-          `段 "${segKey}" 的 excludes[${i}] 缺 ! 前缀（当前 ${entry}）—— ` +
-            "该条目会被原样拼进 conf 的 mutate，从「排除」极性反转成「要变异这个文件」",
-        );
-      }
     }
   }
   return problems;
@@ -347,12 +355,13 @@ export function packageRegistrationProblems(topology) {
 }
 
 /** root-shared 形状：固定测试根/模式与 0–100 阈值，段形状沿用 package 的严格口径。 */
-export function rootSharedEntryProblems(rootShared) {
-  if (rootShared === null || typeof rootShared !== "object" || Array.isArray(rootShared)) {
-    return [
-      `${ROOT_SHARED_SURFACE} 必须是对象（当前 ${JSON.stringify(rootShared)}）——形状不对时没有可判定的 root-shared 变异面，fail-closed`,
-    ];
-  }
+/** threshold 必须是 0–100 的有限数字。 */
+export function isThresholdNumber(v) {
+  return typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= 100;
+}
+
+/** root-shared 的固定字段（testRoot / testPattern / threshold / coverageExcludes）判词。 */
+function rootSharedFixedProblems(rootShared) {
   const problems = [];
   if (rootShared.testRoot !== ROOT_SHARED_TEST_ROOT) {
     problems.push(
@@ -365,12 +374,7 @@ export function rootSharedEntryProblems(rootShared) {
         "node:test 标准入口不得混入 Vitest 变异面",
     );
   }
-  if (
-    typeof rootShared.threshold !== "number" ||
-    !Number.isFinite(rootShared.threshold) ||
-    rootShared.threshold < 0 ||
-    rootShared.threshold > 100
-  ) {
+  if (!isThresholdNumber(rootShared.threshold)) {
     problems.push(
       `${ROOT_SHARED_SURFACE}.threshold 必须是 0–100 的有限数字（当前 ${JSON.stringify(rootShared.threshold)}）`,
     );
@@ -378,6 +382,16 @@ export function rootSharedEntryProblems(rootShared) {
   if (rootShared.testLayers?.coverageExcludes !== undefined) {
     problems.push(`${ROOT_SHARED_SURFACE} 不支持 coverageExcludes；只允许段级 excludes 精确登记`);
   }
+  return problems;
+}
+
+export function rootSharedEntryProblems(rootShared) {
+  if (!isPlainObject(rootShared)) {
+    return [
+      `${ROOT_SHARED_SURFACE} 必须是对象（当前 ${JSON.stringify(rootShared)}）——形状不对时没有可判定的 root-shared 变异面，fail-closed`,
+    ];
+  }
+  const problems = rootSharedFixedProblems(rootShared);
   for (const problem of packageEntryProblems(rootShared)) {
     problems.push(problem.replaceAll("包登记", `${ROOT_SHARED_SURFACE} 登记`));
   }
@@ -460,24 +474,35 @@ function expandInto(target, patterns, expand) {
  * 基准侧的条目也用它展开，故「文件已从本分支删除」自然从基准面里消失——这正是「真删除即正当
  * 收缩」的实现方式，不需要额外的存在性分支（也就没有第二条判断文件是否存在的口径）。
  */
+/** 一个段的 keep/drop 展开：正向 mutate 进 keep，`!` 前缀的 mutate 与段 excludes 进 drop。 */
+function segmentFaces(seg, coverageDrop, expand) {
+  const keep = new Set();
+  const drop = new Set(coverageDrop);
+  for (const pattern of seg.mutate ?? []) {
+    if (typeof pattern !== "string" || pattern === "") continue;
+    expandInto(pattern.startsWith("!") ? drop : keep, [pattern], expand);
+  }
+  expandInto(drop, seg.excludes, expand);
+  return { keep, drop };
+}
+
+/** 一个段的变异面（keep 剔 drop）并进总面；候选集不剔排除面，故两个集各记各的。 */
+function absorbSegmentFace(seg, coverageDrop, face, candidates, expand) {
+  if (seg === null || typeof seg !== "object" || Array.isArray(seg)) return;
+  const { keep, drop } = segmentFaces(seg, coverageDrop, expand);
+  for (const hit of keep) {
+    candidates.add(hit);
+    if (!drop.has(hit)) face.add(hit);
+  }
+}
+
 function faceAndCandidates(pkgDef, expand) {
   const coverageDrop = new Set();
   expandInto(coverageDrop, collectCoverageExcludePatterns(pkgDef), expand);
   const face = new Set();
   const candidates = new Set();
   for (const seg of Object.values(pkgDef?.segments ?? {})) {
-    if (seg === null || typeof seg !== "object" || Array.isArray(seg)) continue;
-    const keep = new Set();
-    const drop = new Set(coverageDrop);
-    for (const pattern of seg.mutate ?? []) {
-      if (typeof pattern !== "string" || pattern === "") continue;
-      expandInto(pattern.startsWith("!") ? drop : keep, [pattern], expand);
-    }
-    expandInto(drop, seg.excludes, expand);
-    for (const hit of keep) {
-      candidates.add(hit);
-      if (!drop.has(hit)) face.add(hit);
-    }
+    absorbSegmentFace(seg, coverageDrop, face, candidates, expand);
   }
   return { face, candidates };
 }
@@ -525,44 +550,65 @@ export function mutationFaceRatchetProblems({
     const base = faceAndCandidates(surfaceDef, expand);
     packagesCompared += 1;
     filesCompared += base.candidates.size;
-    const headFace = headFaces.get(surfaceName) ?? new Set();
-    const wholeSurfaceKey = `${surfaceName}:*`;
-    for (const file of [...base.face].sort()) {
-      if (headFace.has(file)) continue;
-      if (exemptions.has(wholeSurfaceKey)) {
-        used.add(wholeSurfaceKey);
-        continue;
-      }
-      const key = `${surfaceName}:${file}`;
-      if (exemptions.has(key)) {
-        used.add(key);
-        continue;
-      }
-      problems.push(
-        `[${surfaceName}] 变异面并集相对基准收缩：${file} 在基准的变异面内，本分支却不在了` +
-          "——段之间挪动合法，挪进任何段的 excludes / coverageExcludes 非法；" +
-          "文件在本分支已真正删除才算正当收缩（判据⑦ surface 并集棘轮）",
-      );
-    }
+    problems.push(...surfaceShrinkProblems(surfaceName, base.face, headFaces, exemptions, used));
   }
-  // 台账反向腐烂：豁免还在、缺口已消失（或键形态认不出来）一律判红——否则台账会长期挂着一堆
-  // 其实什么也没豁免的条目。与 threshold-registry 的同名判据同形。
+  problems.push(...staleExemptionProblems(exemptions, used));
+  problems.push(...ratchetCarrierProblems(packagesCompared, filesCompared));
+  return { problems, packagesCompared, filesCompared };
+}
+
+/**
+ * 一个 surface 的收缩缺口判词；整面豁免（`<surface>:*`）优先于单文件豁免（`<surface>:<file>`）。
+ * 用到的豁免键记进 `used`，供台账反向腐烂判据对账。
+ */
+function surfaceShrinkProblems(surfaceName, baseFace, headFaces, exemptions, used) {
+  const problems = [];
+  const headFace = headFaces.get(surfaceName) ?? new Set();
+  const wholeSurfaceKey = `${surfaceName}:*`;
+  for (const file of [...baseFace].sort()) {
+    if (headFace.has(file)) continue;
+    if (exemptions.has(wholeSurfaceKey)) {
+      used.add(wholeSurfaceKey);
+      continue;
+    }
+    const key = `${surfaceName}:${file}`;
+    if (exemptions.has(key)) {
+      used.add(key);
+      continue;
+    }
+    problems.push(
+      `[${surfaceName}] 变异面并集相对基准收缩：${file} 在基准的变异面内，本分支却不在了` +
+        "——段之间挪动合法，挪进任何段的 excludes / coverageExcludes 非法；" +
+        "文件在本分支已真正删除才算正当收缩（判据⑦ surface 并集棘轮）",
+    );
+  }
+  return problems;
+}
+
+/**
+ * 台账反向腐烂：豁免还在、缺口已消失（或键形态认不出来）一律判红——否则台账会长期挂着一堆
+ * 其实什么也没豁免的条目。与 threshold-registry 的同名判据同形。
+ */
+function staleExemptionProblems(exemptions, used) {
+  const problems = [];
   for (const key of exemptions.keys()) {
     if (used.has(key)) continue;
     problems.push(
       `变异面棘轮：台账里的 ${key} 没有对应的收缩缺口（无法识别的键或反向腐烂）—— 请删除该条目`,
     );
   }
-  if (packagesCompared === 0 || filesCompared === 0) {
-    problems.push(
-      `变异面棘轮空转：进入比对面的包 ${packagesCompared} 个、候选文件 ${filesCompared} 个` +
-        "—— 判据没有比到任何载体（基准拓扑无包登记、或基准的 mutate 面不命中任何现存文件）。" +
-        "这是 fail-closed 判红而不是恒绿：请确认基准 ref 是否正确、拓扑是否被整体清空",
-    );
-  }
-  return { problems, packagesCompared, filesCompared };
+  return problems;
 }
 
+/** 载体自证：比对面为空是 fail-closed 判红，不是恒绿。 */
+function ratchetCarrierProblems(packagesCompared, filesCompared) {
+  if (packagesCompared > 0 && filesCompared > 0) return [];
+  return [
+    `变异面棘轮空转：进入比对面的包 ${packagesCompared} 个、候选文件 ${filesCompared} 个` +
+      "—— 判据没有比到任何载体（基准拓扑无包登记、或基准的 mutate 面不命中任何现存文件）。" +
+      "这是 fail-closed 判红而不是恒绿：请确认基准 ref 是否正确、拓扑是否被整体清空",
+  ];
+}
 /**
  * 段 testFiles 的形状判据（P2：`segments.<seg>.testFiles`）。
  *

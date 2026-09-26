@@ -1154,6 +1154,17 @@ function findDeadDeclarations({ modules, refs }) {
  * 分段函数只做搬运，不改判据与顺序：deploy 面（modules / refs / 规则 / R-A / 值图 /
  * 死声明）必须按此顺序求值，基线证据面的排序与去重依赖它。
  */
+/** 目标**非共享层**的叶子模块值边（升序前的 `from|to` 清单）。 */
+function crossDomainEdgesOf(graphs) {
+  const out = [];
+  for (const [from, targets] of graphs.leaf.edges) {
+    for (const to of targets) {
+      if (!isSharedLayerModule(to)) out.push(`${from}|${to}`);
+    }
+  }
+  return out;
+}
+
 function analyzePackage(pkgName, topology) {
   const srcDir = join(ROOT, "packages", pkgName, "src");
   if (!existsSync(srcDir)) return null;
@@ -1168,12 +1179,7 @@ function analyzePackage(pkgName, topology) {
   // leafValueEdges 变量）。它与结构型计数的区别是双重的：①剔除指向共享层的边（那是 I2 允许
   // 的出口，见 isSharedLayerModule）；②它是质量型**证据集合**（新增判红、只许缩小、终态
   // 为空），而结构型计数只判不升。
-  const crossDomainValueEdges = [];
-  for (const [from, targets] of graphs.leaf.edges) {
-    for (const to of targets) {
-      if (!isSharedLayerModule(to)) crossDomainValueEdges.push(`${from}|${to}`);
-    }
-  }
+  const crossDomainValueEdges = crossDomainEdgesOf(graphs);
   crossDomainValueEdges.sort();
 
   // I2④（§0.1 第 5 条的「第三判据」）：域内文件**值引** src 根 index.ts。组合根是装配面，
@@ -1574,15 +1580,7 @@ function renderZones(analysis) {
 
 /** 渲染 --graph 段：依赖矩阵 + 扇入扇出 + 模块级/文件级值环 + 死声明。 */
 function renderGraph(analysis) {
-  const {
-    package: pkgName,
-    moduleIds,
-    graphs,
-    cycles,
-    deadDeclarations,
-    depsValueImports,
-    refs,
-  } = analysis;
+  const { package: pkgName, moduleIds, graphs, refs } = analysis;
   const lines = [`graph ${pkgName}（叶子粒度依赖图）`];
   const cellType = (from, to) => {
     const hasV = (graphs.leafValueEdges.get(from) ?? new Set()).has(to);
@@ -1620,6 +1618,17 @@ function renderGraph(analysis) {
     ).size;
     lines.push(`  ${id.padEnd(26)} 扇出 ${outV}/${outT}  扇入 ${inV}/${inT}`);
   }
+  return renderGraphEvidence(lines, analysis);
+}
+
+/**
+ * `--graph` 的证据段：三类值环、死声明、deps.ts 值依赖，以及 #767 B0 新增的四条判据明细。
+ *
+ * 与矩阵段分开：矩阵是「按 moduleIds 排版」，证据段是「按判据分段列举」——两种变化原因。
+ * 段落顺序是对外契约（`--graph` 的既有消费者按「叶子模块级值环…文件级值环」切段）。
+ */
+function renderGraphEvidence(lines, analysis) {
+  const { cycles, deadDeclarations, depsValueImports } = analysis;
   lines.push(
     `顶层域值环（历史对照口径，复刻修复粒度前算法，按节点集合去重的环集合数）：${cycles.top.size} 个`,
   );

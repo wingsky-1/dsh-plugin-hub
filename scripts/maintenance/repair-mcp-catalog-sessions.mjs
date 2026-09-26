@@ -352,8 +352,7 @@ export function planSession(sessionDir, { legacyOnly = false } = {}) {
   const hasV4 = files.some((file) => /^session\.v4\.jsonl\.zstd$/u.test(file));
   const target = candidate ?? (legacyOnly ? undefined : v3);
   if (target === undefined) {
-    const status = v3 !== undefined ? "already-v3" : hasV4 ? "already-v4" : "no-log";
-    return { status, sources: 0 };
+    return { status: idleStatus(v3, hasV4), sources: 0 };
   }
   const lines = decodeLines(readFileSync(join(sessionDir, target.file)));
   const stats = { sources: 0 };
@@ -370,24 +369,33 @@ export function planSession(sessionDir, { legacyOnly = false } = {}) {
   };
 }
 
+/** 无可修目标时的状态：v3 产物在但只修 v0-v2，或已有 v4，都没有才是 no-log。 */
+function idleStatus(v3, hasV4) {
+  if (v3 !== undefined) return "already-v3";
+  return hasV4 ? "already-v4" : "no-log";
+}
+
 function jsonPointerSegment(value) {
   return String(value).replaceAll("~", "~0").replaceAll("/", "~1");
 }
 
 /** 收集所有 source 对象及其 JSON Pointer；输出与原日志据此保持同一事件位置。 */
+/** 是不是一个 `source` 键上的 source 对象（不是数组的普通对象）。 */
+function isSourceEntry(key, child) {
+  return key === "source" && child !== null && typeof child === "object" && !Array.isArray(child);
+}
+
 function collectSourceLocations(value, path = "", found = []) {
   if (Array.isArray(value)) {
-    value.forEach((item, index) => {
+    for (const [index, item] of value.entries()) {
       collectSourceLocations(item, `${path}/${index}`, found);
-    });
+    }
     return found;
   }
   if (value === null || typeof value !== "object") return found;
   for (const [key, child] of Object.entries(value)) {
     const childPath = `${path}/${jsonPointerSegment(key)}`;
-    if (key === "source" && child !== null && typeof child === "object" && !Array.isArray(child)) {
-      found.push({ path: childPath, source: child });
-    }
+    if (isSourceEntry(key, child)) found.push({ path: childPath, source: child });
     collectSourceLocations(child, childPath, found);
   }
   return found;

@@ -113,11 +113,15 @@ function collectRows(document) {
   return rows;
 }
 
-function checkRows(path, text) {
-  const document = parseYaml(text, path);
-  const rows = collectRows(document).filter((row) => typeof row.id === "string");
+/** id 出现次数：同一 id 出现两次即冲突，故计数而非布尔。 */
+function idCountsOf(rows) {
   const counts = new Map();
   for (const row of rows) counts.set(row.id, (counts.get(row.id) ?? 0) + 1);
+  return counts;
+}
+
+/** 迁移映射表逐条的冲突判词：legacy 重复、与 canonical 并存。 */
+function legacyConflicts(counts) {
   const conflicts = [];
   for (const [legacy, canonical] of Object.entries(LEGACY_TO_CANONICAL)) {
     if ((counts.get(legacy) ?? 0) > 1) conflicts.push(`重复 legacy id: ${legacy}`);
@@ -125,6 +129,13 @@ function checkRows(path, text) {
       conflicts.push(`legacy/canonical 同时存在: ${legacy} / ${canonical}`);
     }
   }
+  return conflicts;
+}
+
+function checkRows(path, text) {
+  const document = parseYaml(text, path);
+  const rows = collectRows(document).filter((row) => typeof row.id === "string");
+  const conflicts = legacyConflicts(idCountsOf(rows));
   if (conflicts.length > 0) throw new MigrationConflict(`${path}: ${conflicts.join("; ")}`);
   return rows;
 }
@@ -184,16 +195,8 @@ function migrateFile(path, apply) {
   return { path, changes: result.changes, backup };
 }
 
-function main() {
-  const options = parseArgs(process.argv.slice(2));
-  if (options.help) {
-    console.log(usage());
-    return;
-  }
-  if (!existsSync(options.home)) throw new Error(`DSH home 不存在: ${options.home}`);
-  const files = discoverPatchFiles(options.home, options.patches);
-  const settingsSections = legacySettingsSections(options.home);
-  const results = files.map((path) => migrateFile(path, options.apply));
+/** 迁移报告本体：档位、DSH home、逐文件结果、变更总数、旧 settings section。 */
+function buildReport(options, files, results, settingsSections) {
   const report = {
     mode: options.apply ? "apply" : "dry-run",
     home: options.home,
@@ -205,14 +208,33 @@ function main() {
     report.error =
       "发现旧 ui-* settings section；请先按插件 schema 定向处理，工具未修改 settings 文档";
   }
+  return report;
+}
+
+/** 人读档位的报告渲染（逐文件一行 change/skip）。 */
+function printHumanReport(report) {
+  console.log(`[${report.mode}] files=${report.files.length} changes=${report.totalChanges}`);
+  for (const item of report.files) {
+    console.log(
+      `${item.changes > 0 ? "change" : "skip  "} ${item.path}${item.backup ? ` backup=${item.backup}` : ""}`,
+    );
+  }
+}
+
+function main() {
+  const options = parseArgs(process.argv.slice(2));
+  if (options.help) {
+    console.log(usage());
+    return;
+  }
+  if (!existsSync(options.home)) throw new Error(`DSH home 不存在: ${options.home}`);
+  const files = discoverPatchFiles(options.home, options.patches);
+  const settingsSections = legacySettingsSections(options.home);
+  const results = files.map((path) => migrateFile(path, options.apply));
+  const report = buildReport(options, files, results, settingsSections);
   if (options.json) console.log(JSON.stringify(report, null, 2));
   else {
-    console.log(`[${report.mode}] files=${files.length} changes=${report.totalChanges}`);
-    for (const item of results) {
-      console.log(
-        `${item.changes > 0 ? "change" : "skip  "} ${item.path}${item.backup ? ` backup=${item.backup}` : ""}`,
-      );
-    }
+    printHumanReport(report);
     for (const section of settingsSections) {
       console.log(`settings legacy namespace: ${section.namespace} (${section.file})`);
     }

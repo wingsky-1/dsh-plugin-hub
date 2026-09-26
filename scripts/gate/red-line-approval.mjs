@@ -91,6 +91,19 @@ function registrySelfPattern(registryPath) {
  * 结构不合法时返回 `{ error }` 而不抛：import 期抛出会让 CLI 以未捕获异常退出，退出码 1 与
  * 「判红」同码，读起来像「有未批准的红线改动」。
  */
+/** 一个 guard 的 sources 字段是否可用；不可用时给出该 guard 的判词（无 sources 即跳过）。 */
+function guardSourcesProblem(guard) {
+  if (guard?.sources === undefined) return null;
+  const id = guard?.id ?? "?";
+  if (!Array.isArray(guard.sources)) return `guard ${id} 的 sources 不是数组`;
+  for (const source of guard.sources) {
+    if (typeof source !== "string" || source.trim() === "") {
+      return `guard ${id} 的 sources 含非字符串或空项`;
+    }
+  }
+  return null;
+}
+
 function declaredSources(text) {
   let registry;
   try {
@@ -101,15 +114,9 @@ function declaredSources(text) {
   if (!Array.isArray(registry?.guards)) return { error: "缺少 guards 数组" };
   const sources = [];
   for (const guard of registry.guards) {
-    if (guard?.sources === undefined) continue;
-    if (!Array.isArray(guard.sources))
-      return { error: `guard ${guard?.id ?? "?"} 的 sources 不是数组` };
-    for (const source of guard.sources) {
-      if (typeof source !== "string" || source.trim() === "") {
-        return { error: `guard ${guard?.id ?? "?"} 的 sources 含非字符串或空项` };
-      }
-      sources.push(source);
-    }
+    const problem = guardSourcesProblem(guard);
+    if (problem !== null) return { error: problem };
+    if (guard?.sources !== undefined) sources.push(...guard.sources);
   }
   return { sources };
 }
@@ -285,6 +292,31 @@ function normalizeLabel(label) {
  * 于是**真实响应必然 exit 2**（退出码 2 会让 repo-gate 因 needs 连坐，对所有 PR 判红）。
  * 扫描器必须感知字符串与转义，才能把 `patch` 里的括号当数据而不是结构。
  */
+/** 字符串内部一步的转义状态推进（\\x 不闭合字符串，\\" 不开字符串）。 */
+function stepInString(ch, escaped) {
+  if (escaped) return { inString: true, escaped: false };
+  if (ch === "\\") return { inString: true, escaped: true };
+  return { inString: ch !== '"', escaped: false };
+}
+
+/** 文档之间的一步：只许空白，碰到括号开新文档，别的都是多余内容。 */
+function startDocAt(ch, i) {
+  if (ch === "{" || ch === "[") return { start: i, depth: 1, error: null };
+  if (/\s/.test(ch)) return { start: -1, depth: 0, error: null };
+  return { start: -1, depth: 0, error: `JSON 文档之外出现多余内容（偏移 ${i}）` };
+}
+
+/** 文档内部的一步：引号开串、括号增减；闭括号把深度退到 0 即该文档收口。 */
+function stepInsideDoc(ch, depth) {
+  if (ch === '"') return { depth, inString: true, closed: false };
+  if (ch === "{" || ch === "[") return { depth: depth + 1, inString: false, closed: false };
+  if (ch === "}" || ch === "]") {
+    const opened = depth - 1;
+    return { depth: opened, inString: false, closed: opened === 0 };
+  }
+  return { depth, inString: false, closed: false };
+}
+
 function splitJsonDocuments(text) {
   const docs = [];
   let depth = 0;
@@ -294,28 +326,24 @@ function splitJsonDocuments(text) {
   for (let i = 0; i < text.length; i += 1) {
     const ch = text[i];
     if (inString) {
-      if (escaped) escaped = false;
-      else if (ch === "\\") escaped = true;
-      else if (ch === '"') inString = false;
+      const step = stepInString(ch, escaped);
+      inString = step.inString;
+      escaped = step.escaped;
       continue;
     }
     if (depth === 0) {
-      if (ch === "{" || ch === "[") {
-        start = i;
-        depth = 1;
-      } else if (!/\s/.test(ch)) {
-        throw new Error(`JSON 文档之外出现多余内容（偏移 ${i}）`);
-      }
+      const opened = startDocAt(ch, i);
+      if (opened.error !== null) throw new Error(opened.error);
+      start = opened.start;
+      depth = opened.depth;
       continue;
     }
-    if (ch === '"') inString = true;
-    else if (ch === "{" || ch === "[") depth += 1;
-    else if (ch === "}" || ch === "]") {
-      depth -= 1;
-      if (depth === 0) {
-        docs.push(text.slice(start, i + 1));
-        start = -1;
-      }
+    const step = stepInsideDoc(ch, depth);
+    depth = step.depth;
+    inString = step.inString;
+    if (step.closed && depth === 0) {
+      docs.push(text.slice(start, i + 1));
+      start = -1;
     }
   }
   if (inString || depth !== 0) throw new Error("JSON 不完整（引号或括号未闭合）");
@@ -344,6 +372,16 @@ function readJsonValues(text) {
  * `alsoFields` 只在条目真的带该字段时追加，不要求每个条目都有（GitHub 只在 renamed 条目上给
  * `previous_filename`）。
  */
+/** 一个条目上 `alsoFields` 的附加取值：只有真带非空字符串才收（GitHub 只在 renamed 条目给）。 */
+function alsoFieldValues(item, alsoFields) {
+  const out = [];
+  for (const extra of alsoFields) {
+    const extraValue = item?.[extra];
+    if (typeof extraValue === "string" && extraValue !== "") out.push(extraValue);
+  }
+  return out;
+}
+
 function extractField(values, field, alsoFields = []) {
   const out = [];
   for (const value of values) {
@@ -352,10 +390,7 @@ function extractField(values, field, alsoFields = []) {
       const v = item?.[field];
       if (typeof v !== "string" || v === "") throw new Error(`条目缺少字符串字段 ${field}`);
       out.push(v);
-      for (const extra of alsoFields) {
-        const extraValue = item?.[extra];
-        if (typeof extraValue === "string" && extraValue !== "") out.push(extraValue);
-      }
+      out.push(...alsoFieldValues(item, alsoFields));
     }
   }
   return out;
@@ -411,44 +446,55 @@ export function judgeRedLine({ changedFiles, labels, patterns = RED_LINE_PATTERN
  * 则用默认声明表派生的 `RED_LINE_PATTERNS`。给两种来源是**调用点写错参数**，判 exit 2 而不是
  * 悄悄取其一：判了一轮却不是调用方以为的那一面，是比判红更坏的假绿。
  */
-export function parseArgs(argv) {
-  const values = new Map();
-  for (let i = 0; i < argv.length; i++) {
-    const arg = argv[i];
-    if (!arg.startsWith(FLAG_PREFIX) || arg === FLAG_PREFIX) {
-      return { ok: false, error: `无法解析的参数：${arg}` };
-    }
-    const eq = arg.indexOf("=");
-    const name = eq === -1 ? arg : arg.slice(0, eq);
-    if (!KNOWN_FLAGS.has(name)) return { ok: false, error: `未知参数：${name}` };
-    let value;
-    if (eq === -1) {
-      if (i + 1 >= argv.length || argv[i + 1].startsWith(FLAG_PREFIX)) {
-        return { ok: false, error: `${name} 缺少参数值` };
-      }
-      value = argv[++i];
-    } else {
-      value = arg.slice(eq + 1);
-    }
-    if (values.has(name)) return { ok: false, error: `${name} 重复给出` };
-    values.set(name, value);
+/** 一个 `--flag` token 的读取：`--x v` 吃掉 2 个 argv 元素，`--x=v` 吃掉 1 个。 */
+function readFlagToken(argv, i) {
+  const arg = argv[i];
+  if (!arg.startsWith(FLAG_PREFIX) || arg === FLAG_PREFIX) {
+    return { error: `无法解析的参数：${arg}` };
   }
+  const eq = arg.indexOf("=");
+  const name = eq === -1 ? arg : arg.slice(0, eq);
+  if (!KNOWN_FLAGS.has(name)) return { error: `未知参数：${name}` };
+  if (eq !== -1) return { name, value: arg.slice(eq + 1), consumed: 1 };
+  if (i + 1 >= argv.length || argv[i + 1].startsWith(FLAG_PREFIX)) {
+    return { error: `${name} 缺少参数值` };
+  }
+  return { name, value: argv[i + 1], consumed: 2 };
+}
+
+/** 取数口径的组合校验：缺输入、两种口径互斥、两种面来源互斥。 */
+function inputShape(values) {
   const hasLiteral = values.has("--files") || values.has("--labels");
   const hasJson = values.has("--files-json") || values.has("--labels-json");
   if (!hasLiteral && !hasJson) {
     return {
-      ok: false,
+      mode: null,
       error:
         "缺少输入（--files / --files-json 至少给一个）；用法：node scripts/gate/red-line-approval.mjs --files a,b --labels x,y",
     };
   }
   if (hasLiteral && hasJson) {
-    return { ok: false, error: "--files 与 --files-json 互斥（同一字段只能有一种取数口径）" };
+    return { mode: null, error: "--files 与 --files-json 互斥（同一字段只能有一种取数口径）" };
   }
   if (values.has("--patterns") && values.has("--registry")) {
-    return { ok: false, error: "--patterns 与 --registry 互斥（红线面只能有一种来源）" };
+    return { mode: null, error: "--patterns 与 --registry 互斥（红线面只能有一种来源）" };
   }
-  const mode = hasJson ? "json" : "literal";
+  return { mode: hasJson ? "json" : "literal", error: null };
+}
+
+export function parseArgs(argv) {
+  const values = new Map();
+  let i = 0;
+  while (i < argv.length) {
+    const token = readFlagToken(argv, i);
+    if ("error" in token) return { ok: false, error: token.error };
+    if (values.has(token.name)) return { ok: false, error: `${token.name} 重复给出` };
+    values.set(token.name, token.value);
+    i += token.consumed;
+  }
+  const shape = inputShape(values);
+  if (shape.error !== null) return { ok: false, error: shape.error };
+  const mode = shape.mode;
   return {
     ok: true,
     mode,

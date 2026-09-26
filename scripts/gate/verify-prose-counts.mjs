@@ -101,18 +101,32 @@ export function parseCountNumeral(s) {
   return parseBelowHundred(s);
 }
 
+/** 单个汉字数字字的值；不是恰好一位的已知数字字返回 null。 */
+function singleDigit(s) {
+  if (s.length !== 1) return null;
+  const value = CN_DIGITS[s];
+  return value === undefined ? null : value;
+}
+
+/**
+ * 百以下片段里一位数字的读法：空串合法且记 `empty`（"十"=10、"二十"=20 靠它），
+ * 非空串必须是一位已知数字字。ok=false 即整个片段无法解析。
+ */
+function oneDigit(s) {
+  if (s === "") return { ok: true, empty: true, value: 0 };
+  const value = singleDigit(s);
+  return value === null ? { ok: false, empty: false, value: 0 } : { ok: true, empty: false, value };
+}
+
 /** 解析百以内的中文数字片段；无法解析返回 null。 */
 function parseBelowHundred(s) {
   if (s === "") return 0;
   const tenAt = s.indexOf("十");
-  if (tenAt === -1) {
-    return s.length === 1 && CN_DIGITS[s] !== undefined ? CN_DIGITS[s] : null;
-  }
-  const left = s.slice(0, tenAt);
-  const right = s.slice(tenAt + 1);
-  if (left !== "" && (left.length !== 1 || CN_DIGITS[left] === undefined)) return null;
-  if (right !== "" && (right.length !== 1 || CN_DIGITS[right] === undefined)) return null;
-  return (left === "" ? 1 : CN_DIGITS[left]) * 10 + (right === "" ? 0 : CN_DIGITS[right]);
+  if (tenAt === -1) return singleDigit(s);
+  const left = oneDigit(s.slice(0, tenAt));
+  const right = oneDigit(s.slice(tenAt + 1));
+  if (!left.ok || !right.ok) return null;
+  return (left.empty ? 1 : left.value) * 10 + right.value;
 }
 
 /**
@@ -135,15 +149,23 @@ export function parseConfigProse(text) {
     return { kind: "unknown", segments: [], reason: "含多组花括号，无法确定哪组是段清单" };
   }
   const inner = groups[0][1].trim();
-  if (inner.includes("..")) {
-    const m = RANGE_RE.exec(inner);
-    if (m === null) return { kind: "unknown", segments: [], reason: `区间形态非法：{${inner}}` };
-    const [from, to] = [Number(m[1]), Number(m[2])];
-    if (from > to) return { kind: "unknown", segments: [], reason: `区间倒置：{${inner}}` };
-    const segments = [];
-    for (let i = from; i <= to; i += 1) segments.push(String(i));
-    return { kind: "range", segments, reason: "" };
-  }
+  if (inner.includes("..")) return parseRangeProse(inner);
+  return parseEnumProse(inner);
+}
+
+/** `{m..n}` 区间形态：展开区间内的段名清单；形态非法或区间倒置即 unknown。 */
+export function parseRangeProse(inner) {
+  const m = RANGE_RE.exec(inner);
+  if (m === null) return { kind: "unknown", segments: [], reason: `区间形态非法：{${inner}}` };
+  const [from, to] = [Number(m[1]), Number(m[2])];
+  if (from > to) return { kind: "unknown", segments: [], reason: `区间倒置：{${inner}}` };
+  const segments = [];
+  for (let i = from; i <= to; i += 1) segments.push(String(i));
+  return { kind: "range", segments, reason: "" };
+}
+
+/** `{a,b,c}` 枚举形态：任一项不是合法段名即 unknown（判词只说形态非法，不点哪一项）。 */
+export function parseEnumProse(inner) {
   const items = inner.split(",").map((s) => s.trim());
   const bad = items.find((s) => s === "" || !SEGMENT_RE.test(s));
   if (bad !== undefined) {
@@ -172,85 +194,150 @@ export function parseScopeCount(text) {
  * 单包比对：散文（config 段清单 + scope 段数词）vs 拓扑段键集合。
  * 返回 { problems（失配，exit 1）, fatals（无法求值，exit 2） }。
  */
-export function checkPackage(pkgName, configText, scopeText, segKeys) {
-  const problems = [];
-  const fatals = [];
-  if (!Array.isArray(segKeys) || segKeys.length === 0) {
-    fatals.push(`[${pkgName}] 拓扑 segments 为空或缺失——没有可比对的事实源`);
-    return { problems, fatals };
-  }
+/** 段清单形态（enum/range）与拓扑段键集合的失配判词；齐备时无判词。 */
+export function segmentSetMismatch(pkgName, parsed, segKeys) {
+  const expected = new Set(parsed.segments);
+  const actual = new Set(segKeys);
+  const missing = segKeys.filter((k) => !expected.has(k));
+  const extra = parsed.segments.filter((k) => !actual.has(k));
+  if (missing.length === 0 && extra.length === 0) return [];
+  return [
+    `[${pkgName}] config 段清单与拓扑不一致（${parsed.kind}形态）：` +
+      `拓扑多出${missing.length > 0 ? missing.join("、") : "无"}；` +
+      `散文多出${extra.length > 0 ? extra.join("、") : "无"}` +
+      `（拓扑 ${actual.size} 段，散文 ${expected.size} 段）`,
+  ];
+}
+
+/** config 面：形态未知即无法求值（fatal）；single 只断言段数；enum/range 比段清单。 */
+function configFace(pkgName, configText, segKeys) {
   const parsed = parseConfigProse(configText);
   if (parsed.kind === "unknown") {
-    fatals.push(`[${pkgName}] config 散文形态未知（${parsed.reason}）——无法求值`);
-  } else if (parsed.kind === "single") {
-    if (segKeys.length !== 1) {
-      problems.push(
-        `[${pkgName}] config 无括号（单段形态）但拓扑有 ${segKeys.length} 段（${segKeys.join("、")}）`,
-      );
-    }
-  } else {
-    const expected = new Set(parsed.segments);
-    const actual = new Set(segKeys);
-    const missing = segKeys.filter((k) => !expected.has(k));
-    const extra = parsed.segments.filter((k) => !actual.has(k));
-    if (missing.length > 0 || extra.length > 0) {
-      problems.push(
-        `[${pkgName}] config 段清单与拓扑不一致（${parsed.kind}形态）：` +
-          `拓扑多出${missing.length > 0 ? missing.join("、") : "无"}；` +
-          `散文多出${extra.length > 0 ? extra.join("、") : "无"}` +
-          `（拓扑 ${actual.size} 段，散文 ${expected.size} 段）`,
-      );
-    }
+    return {
+      problems: [],
+      fatals: [`[${pkgName}] config 散文形态未知（${parsed.reason}）——无法求值`],
+    };
   }
+  if (parsed.kind === "single") {
+    const problems =
+      segKeys.length === 1
+        ? []
+        : [
+            `[${pkgName}] config 无括号（单段形态）但拓扑有 ${segKeys.length} 段（${segKeys.join("、")}）`,
+          ];
+    return { problems, fatals: [] };
+  }
+  return { problems: segmentSetMismatch(pkgName, parsed, segKeys), fatals: [] };
+}
+
+/** scope 面：段数词无法解析即无法求值（fatal）；有段数词则与拓扑段数比。 */
+function scopeFace(pkgName, scopeText, segKeys) {
   const scope = parseScopeCount(scopeText);
   if (scope.kind === "unknown") {
-    fatals.push(`[${pkgName}] scope 段数词无法解析（${scope.reason}）——无法求值`);
-  } else if (scope.kind === "count" && scope.count !== segKeys.length) {
-    problems.push(`[${pkgName}] scope 段数词 ${scope.count}段 与拓扑 ${segKeys.length} 段不一致`);
+    return {
+      problems: [],
+      fatals: [`[${pkgName}] scope 段数词无法解析（${scope.reason}）——无法求值`],
+    };
   }
-  return { problems, fatals };
+  if (scope.kind === "count" && scope.count !== segKeys.length) {
+    return {
+      problems: [`[${pkgName}] scope 段数词 ${scope.count}段 与拓扑 ${segKeys.length} 段不一致`],
+      fatals: [],
+    };
+  }
+  return { problems: [], fatals: [] };
+}
+
+export function checkPackage(pkgName, configText, scopeText, segKeys) {
+  if (!Array.isArray(segKeys) || segKeys.length === 0) {
+    return {
+      problems: [],
+      fatals: [`[${pkgName}] 拓扑 segments 为空或缺失——没有可比对的事实源`],
+    };
+  }
+  const config = configFace(pkgName, configText, segKeys);
+  const scope = scopeFace(pkgName, scopeText, segKeys);
+  return {
+    problems: [...config.problems, ...scope.problems],
+    fatals: [...config.fatals, ...scope.fatals],
+  };
 }
 
 /**
  * 全包比对：gauntlet.mutation.packages 的每包 config/scope vs topology.packages 的 segments。
  * 段数一律现算现比，不写死任何包的当前段数。
  */
-export function checkAll(gauntlet, topology) {
-  const report = [];
-  const problems = [];
-  const fatals = [];
-  let scopeSkipped = 0;
+/** 两处事实源的存在性前置：任一缺失都是无法求值（判词逐字保留）。 */
+function sourceFaces(gauntlet, topology) {
   const pkgs = gauntlet?.mutation?.packages;
   if (pkgs === null || typeof pkgs !== "object" || Object.keys(pkgs).length === 0) {
-    fatals.push("gauntlet 的 mutation.packages 为空或缺失——没有待核对的散文面");
-    return { report, problems, fatals, checked: 0, scopeSkipped };
+    return {
+      pkgs: null,
+      topoPkgs: null,
+      fatals: ["gauntlet 的 mutation.packages 为空或缺失——没有待核对的散文面"],
+    };
   }
   const topoPkgs = topology?.packages;
   if (topoPkgs === null || typeof topoPkgs !== "object") {
-    fatals.push("拓扑事实源的 packages 为空或缺失——没有可比对的事实源");
-    return { report, problems, fatals, checked: 0, scopeSkipped };
+    return {
+      pkgs: null,
+      topoPkgs: null,
+      fatals: ["拓扑事实源的 packages 为空或缺失——没有可比对的事实源"],
+    };
   }
-  for (const [pkgName, entry] of Object.entries(pkgs)) {
-    const segKeys = topoPkgs[pkgName] ? Object.keys(topoPkgs[pkgName].segments ?? {}) : null;
-    if (segKeys === null) {
-      fatals.push(`[${pkgName}] 拓扑中无此包——没有可比对的事实源`);
-      continue;
-    }
-    const { problems: p, fatals: f } = checkPackage(pkgName, entry?.config, entry?.scope, segKeys);
-    problems.push(...p);
-    fatals.push(...f);
-    if (p.length === 0 && f.length === 0) {
-      const scope = parseScopeCount(entry?.scope);
-      const scopeNote =
-        scope.kind === "count" ? `scope ${scope.count}段一致` : "scope 无段数词跳过";
-      if (scope.kind !== "count") scopeSkipped += 1;
-      const parsed = parseConfigProse(entry?.config);
-      const configNote =
-        parsed.kind === "single"
-          ? "config 单段形态一致"
-          : `config ${parsed.kind}清单 ${parsed.segments.length} 项一致`;
-      report.push(`PASS | [${pkgName}] ${configNote}；${scopeNote}（拓扑 ${segKeys.length} 段）`);
-    }
+  return { pkgs, topoPkgs, fatals: [] };
+}
+
+/** 一个包核对全绿时的 PASS 行文案（config 形态 + scope 段数）与 scope 跳过标记。 */
+function passNote(pkgName, entry, segCount) {
+  const scope = parseScopeCount(entry?.scope);
+  const scopeNote = scope.kind === "count" ? `scope ${scope.count}段一致` : "scope 无段数词跳过";
+  const parsed = parseConfigProse(entry?.config);
+  const configNote =
+    parsed.kind === "single"
+      ? "config 单段形态一致"
+      : `config ${parsed.kind}清单 ${parsed.segments.length} 项一致`;
+  return {
+    note: `PASS | [${pkgName}] ${configNote}；${scopeNote}（拓扑 ${segCount} 段）`,
+    scopeSkipped: scope.kind !== "count",
+  };
+}
+
+/** 一个包的一轮核对：拓扑段键、散文失配、以及全绿时的 PASS 文案。 */
+function packagePass(topoPkgs, pkgName, entry) {
+  const segKeys = topoPkgs[pkgName] ? Object.keys(topoPkgs[pkgName].segments ?? {}) : null;
+  if (segKeys === null) {
+    return {
+      problems: [],
+      fatals: [`[${pkgName}] 拓扑中无此包——没有可比对的事实源`],
+      passed: null,
+    };
+  }
+  const result = checkPackage(pkgName, entry?.config, entry?.scope, segKeys);
+  const green = result.problems.length === 0 && result.fatals.length === 0;
+  return {
+    problems: result.problems,
+    fatals: result.fatals,
+    passed: green ? passNote(pkgName, entry, segKeys.length) : null,
+  };
+}
+
+export function checkAll(gauntlet, topology) {
+  const report = [];
+  const problems = [];
+  const source = sourceFaces(gauntlet, topology);
+  if (source.fatals.length > 0) {
+    return { report, problems, fatals: source.fatals, checked: 0, scopeSkipped: 0 };
+  }
+  const fatals = [];
+  let scopeSkipped = 0;
+  for (const [pkgName, entry] of Object.entries(source.pkgs)) {
+    const pass = packagePass(source.topoPkgs, pkgName, entry);
+    problems.push(...pass.problems);
+    fatals.push(...pass.fatals);
+    if (pass.passed === null) continue;
+    if (pass.passed.scopeSkipped) scopeSkipped += 1;
+    report.push(pass.passed.note);
   }
   return {
     report,
