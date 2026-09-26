@@ -27,4 +27,6 @@ export const STEPS: readonly UpgradeStep[] = [
   // 0.2.4 → 0.2.5 为空步（客户端半区分层重构，无形态变化）：run 指共享空函数，不再为新版本加空函数。
   { fromVersion: "0.2.4", targetVersion: "0.2.5", run: tickUpgradeVersionSync },
   { fromVersion: "0.2.5", targetVersion: "0.2.6", run: migrateToV026 },
+  // 0.2.6 → 0.2.7 为空步（本版不含 notifier 存储形态变化）：run 指共享空函数。
+  { fromVersion: "0.2.6", targetVersion: "0.2.7", run: tickUpgradeVersionSync },
 ];

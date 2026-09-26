@@ -22,4 +22,6 @@ export const STEPS: readonly UpgradeStep[] = [
   { fromVersion: "0.0.0", targetVersion: "0.2.5", run: migrateStorageLayout },
   // 0.2.5 → 0.2.6 为空步（调用超时跟随配置、关面板还焦、客户端类型收窄，无形态变化）：run 指共享空函数。
   { fromVersion: "0.2.5", targetVersion: "0.2.6", run: tickUpgradeVersion },
+  // 0.2.6 → 0.2.7 为空步（#1028 项目级会话绑定修复只动客户端，存储形态不变）：run 指共享空函数。
+  { fromVersion: "0.2.6", targetVersion: "0.2.7", run: tickUpgradeVersion },
 ];

@@ -17,6 +17,8 @@ import {
 } from "../../../src/server/shared/interface.ts";
 import type { UpgradeDeps } from "../../../src/server/upgrade/deps.ts";
 import { migrateQuietWindows } from "../../../src/server/upgrade/impl/steps/quiet-windows.ts";
+import { STEPS } from "../../../src/server/upgrade/impl/steps/index.ts";
+import { compareVersions } from "../../../src/server/upgrade/impl/version/index.ts";
 import { installUpgrade, releaseUpgrade } from "../../../src/server/upgrade/interface.ts";
 import { makeLogger, tempDshHome } from "../../helpers.ts";
 
@@ -34,6 +36,16 @@ afterEach(() => {
 /** 种一份磁盘上的配置文件。 */
 function seedConfig(stored: Record<string, unknown>): void {
   writeTextAtomicSync(notifierFile(CONFIG_FILE_NAME), JSON.stringify(stored, null, 2) + "\n");
+}
+
+/**
+ * 步骤表里最高的目标版本：链跑完的刻度应当正好落在它上面。
+ * 写死版本号会让后续发版把这条用例打红，而它本意是「链跑到了表末」，不是「表末恰好是某个版本」。
+ */
+function newestTarget(): string {
+  return STEPS.map((step) => step.targetVersion).reduce((newest, version) =>
+    compareVersions(version, newest) > 0 ? version : newest,
+  );
 }
 
 /** 磁盘上的配置文件内容。 */
@@ -123,7 +135,7 @@ describe("migrateQuietWindows：旧 start/end 搬进 windows[0] 并删旧键", (
 });
 
 describe("链级：刻度停在 0.2.5 的装机跑完这一步", () => {
-  it("旧形文件被割接，刻度到 0.2.6", () => {
+  it("旧形文件被割接，刻度到步骤表末步", () => {
     writeTextAtomicSync(notifierFile(VERSION_FILE_NAME), "0.2.5\n");
     seedConfig({ quietHours: { enabled: true, start: "23:00", end: "07:00" } });
     const face = {
@@ -137,6 +149,6 @@ describe("链级：刻度停在 0.2.5 的装机跑完这一步", () => {
 
     const quiet = configOnDisk().quietHours as Record<string, unknown>;
     expect(quiet).toEqual({ enabled: true, windows: [{ start: "23:00", end: "07:00" }] });
-    expect(readFileSync(notifierFile(VERSION_FILE_NAME), "utf8").trim()).toBe("0.2.6");
+    expect(readFileSync(notifierFile(VERSION_FILE_NAME), "utf8").trim()).toBe(newestTarget());
   });
 });
