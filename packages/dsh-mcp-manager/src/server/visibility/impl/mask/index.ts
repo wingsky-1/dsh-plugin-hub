@@ -102,6 +102,65 @@ function collectDenyNames(
   };
 }
 
+/** 逆序摘除一串摘除器：后挂的先撤。单个失败不阻断其余（宿主的 effect 也会兜一层）；
+ *  清理路径一律不盖首因。回滚与正常摘除两条路径共用。 */
+function disposeAll(disposers: readonly (() => void)[]): void {
+  for (const dispose of [...disposers].reverse()) {
+    try {
+      dispose();
+    } catch {
+      // 清理路径不盖首因。
+    }
+  }
+}
+
+/**
+ * 把整份 deny 名单挂到 face 上：批量层一次直挂，批量死在 TOCTOU 未知名字上时退化成逐名挂；
+ *  其余错误整单回滚（已挂的逐个摘除）后重抛。返回本次挂上的摘除器。
+ *
+ * 挂载口径全在本函数（顺序、批量优先、TOCTOU 跳过、整单回滚），调用方只管「该不该挂、
+ * 挂完记什么」——两者是两种变化原因。onUnknown 是逐名跳过时的出声口（warn + 计数）。
+ */
+function mountDenyList(
+  face: AgentFace,
+  deny: readonly string[],
+  batched: readonly string[],
+  onUnknown: (name: string, error: unknown) => void,
+): Array<() => void> {
+  const disposers: Array<() => void> = [];
+  /** 逐名挂载（机制 4）：未知名字跳过并 warn+计数，其余错误上抛整单回滚。 */
+  const restrictOne = (name: string): void => {
+    try {
+      disposers.push(face.tools.restrict({ deny: [name] }));
+    } catch (error) {
+      if (!isUnknownNameError(error)) throw error;
+      onUnknown(name, error);
+    }
+  };
+  try {
+    if (batched.length > 0) {
+      try {
+        // 批量层一次直挂（稳态单调用，少一次 tools/change 自激）。
+        // 宿主先校验后生效，批量失败视为零生效（见下整单回滚）。
+        disposers.push(face.tools.restrict({ deny: [...batched] }));
+      } catch (error) {
+        // 批量只可能死在 TOCTOU 未知名字上：退化成逐名；其余错误直接走整单回滚。
+        if (!isUnknownNameError(error)) throw error;
+        for (const name of batched) restrictOne(name);
+      }
+    }
+    const batchedSet = new Set(batched);
+    for (const name of deny) {
+      if (!batchedSet.has(name)) restrictOne(name);
+    }
+  } catch (error) {
+    // 整单回滚：已挂的逐个摘除、不留「已应用」的假记忆，下一次 reconcile 才有机会重试。
+    disposeAll(disposers);
+    throw error;
+  }
+  return disposers;
+}
+
 /**
  * 启动模型可见面隐藏。返回域 disposer（摘监听 + 撤掉全部已应用限制）。
  *
@@ -133,6 +192,14 @@ export function startAgentVisibility(args: StartAgentVisibilityArgs): () => void
     return agent;
   };
 
+  /** 逐名挂载遇到 TOCTOU 未知名字时的出声口：累计计数 + warn（计数是闭包态，供抖动期观测）。 */
+  const skipUnknown = (name: string, error: unknown): void => {
+    skippedUnknownTotal += 1;
+    logger.warn(
+      `dsh-mcp-manager: 跳过挂载时已销的工具名 ${JSON.stringify(name)}（累计跳过 ${skippedUnknownTotal} 个）：${String(error)}`,
+    );
+  };
+
   const applyTo = (
     face: AgentFace,
     deny: readonly string[],
@@ -148,56 +215,16 @@ export function startAgentVisibility(args: StartAgentVisibilityArgs): () => void
     if (prev !== undefined) prev.dispose();
     // 空 filter 会被宿主当场拒（"Empty filters ... fail"）：名单为空时只撤旧限制、不调 restrict。
     if (deny.length === 0) return;
-    const disposers: Array<() => void> = [];
-    /** 逐名挂载（机制 4）：未知名字跳过并 warn+计数，其余错误上抛整单回滚。 */
-    const restrictOne = (name: string): void => {
-      try {
-        disposers.push(face.tools.restrict({ deny: [name] }));
-      } catch (error) {
-        if (!isUnknownNameError(error)) throw error;
-        skippedUnknownTotal += 1;
-        logger.warn(
-          `dsh-mcp-manager: 跳过挂载时已销的工具名 ${JSON.stringify(name)}（累计跳过 ${skippedUnknownTotal} 个）：${String(error)}`,
-        );
-      }
-    };
+    let disposers: Array<() => void>;
     try {
-      if (batched.length > 0) {
-        try {
-          // 批量层一次直挂（稳态单调用，少一次 tools/change 自激）。
-          // 宿主先校验后生效，批量失败视为零生效（见下整单回滚）。
-          disposers.push(face.tools.restrict({ deny: [...batched] }));
-        } catch (error) {
-          // 批量只可能死在 TOCTOU 未知名字上：退化成逐名；其余错误直接走整单回滚。
-          if (!isUnknownNameError(error)) throw error;
-          for (const name of batched) restrictOne(name);
-        }
-      }
-      const batchedSet = new Set(batched);
-      for (const name of deny) {
-        if (!batchedSet.has(name)) restrictOne(name);
-      }
+      disposers = mountDenyList(face, deny, batched, skipUnknown);
     } catch (error) {
-      // 整单回滚：已挂的逐个摘除、不留「已应用」的假记忆，下一次 reconcile 才有机会重试。
-      for (const dispose of [...disposers].reverse()) {
-        try {
-          dispose();
-        } catch {
-          // 清理路径不盖首因。
-        }
-      }
+      // 整单回滚已由 mountDenyList 做完（先摘已挂的，再上抛）；此处只去掉「已应用」的
+      // 假记忆——顺序照旧：摘除发生时 record 仍在表里，与改前一致。
       applied.delete(face);
       throw error;
     }
-    record.dispose = () => {
-      for (const dispose of [...disposers].reverse()) {
-        try {
-          dispose();
-        } catch {
-          // 摘除失败不阻断其余清理（宿主的 effect 也会兜一层）。
-        }
-      }
-    };
+    record.dispose = () => disposeAll(disposers);
   };
 
   /** 活 agent 表（服务缺席 → 空表；域不把它当错误）。 */

@@ -22,7 +22,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createState } from "../../src/client/core/state.ts";
 import type { UiActions } from "../../src/client/core/state.ts";
-import { close, disposePanel, showPanel } from "../../src/client/float/panel.ts";
+import { close, disposePanel, refresh, showPanel } from "../../src/client/float/panel.ts";
 import { bindLocale } from "../../../../shared/client/i18n.js";
 
 /** 空快照：refresh/首刷走同一 fetch 假件，返回零服务器。 */
@@ -35,13 +35,13 @@ class FetchLog {
   urls: string[] = [];
 }
 
-function installFetchFake(log: FetchLog): () => void {
+function installFetchFake(log: FetchLog, payload: unknown = fakeServersPayload()): () => void {
   const realFetch = globalThis.fetch;
   const fake = async (input: unknown): Promise<unknown> => {
     log.urls.push(String(input));
     return {
       ok: true,
-      json: async (): Promise<unknown> => fakeServersPayload(),
+      json: async (): Promise<unknown> => payload,
     };
   };
   globalThis.fetch = fake as unknown as typeof fetch;
@@ -244,5 +244,99 @@ describe("R6 关还焦：焦点回到打开者", () => {
     close(state);
     expect(queryAriaModal()).toBe(null);
     disposePanel(state);
+  });
+});
+
+// 健康摘要徽标（.dm-counts，面板头内）：摘要文案按 counts 逐档拼装，失败计数就地标红。
+// 文案与标红是两件不同的事（countsSummaryText / renderCountsBadge），两条都锁：
+// 删掉标红那一句只打红标红用例，文案用例照绿。
+describe("健康摘要徽标：文案与失败标红", () => {
+  /** 按真实 zh 文案绑 locale：标红靠 failedText 是 summary 的子串，key 形态绑不出来。 */
+  function bindRealisticLocale(): void {
+    bindLocale(
+      {
+        bind: (): ((key: string, params?: Record<string, unknown>) => string) => (key, params) => {
+          const n = String(params?.n ?? "");
+          if (key === "countsConnected") return `运行中 ${n}`;
+          if (key === "countsConnecting") return `连接中 ${n}`;
+          if (key === "countsFailed") return `失败 ${n}`;
+          if (key === "countsSummary") return `共 ${n} 台 · ${String(params?.parts ?? "")}`;
+          if (key === "countsSummaryOnly") return `共 ${n} 台`;
+          return key;
+        },
+      },
+      "mcpManager",
+    );
+  }
+
+  // 徽标节点由 showPanel 建面板头时创建；随后 refresh 单飞复用同一次拉取把文案画上去。
+  async function paintBadge(counts: Record<string, number>, serverCount: number): Promise<void> {
+    const log = new FetchLog();
+    restoreFetch = installFetchFake(log, {
+      servers: Array.from({ length: serverCount }, (_, i) => ({ name: "s" + i })),
+      counts,
+      projectRoot: "/tmp/proj",
+    });
+    const state = createState();
+    const { actions } = makeActions();
+    showPanel(state, actions);
+    await refresh(state, actions);
+    vi.advanceTimersByTime(400);
+  }
+
+  it("三档齐全：文案按 running/connecting/failed 顺序拼接", async () => {
+    bindRealisticLocale();
+    await paintBadge({ connected: 2, connecting: 1, reconnecting: 2, failed: 1 }, 3);
+    expect(document.querySelector(".dm-counts")?.textContent).toBe(
+      "共 3 台 · 运行中 2 · 连接中 3 · 失败 1",
+    );
+  });
+
+  it("connecting 与 reconnecting 合并为一段（连接中取两者之和）", async () => {
+    bindRealisticLocale();
+    await paintBadge({ reconnecting: 2 }, 3);
+    expect(document.querySelector(".dm-counts")?.textContent).toBe("共 3 台 · 连接中 2");
+  });
+
+  it("无任何计数档位 → 退到「共 N 台」单段", async () => {
+    bindRealisticLocale();
+    await paintBadge({}, 3);
+    expect(document.querySelector(".dm-counts")?.textContent).toBe("共 3 台");
+  });
+
+  it("缺档位按 0 读（不产生 0 值文案段）", async () => {
+    bindRealisticLocale();
+    await paintBadge({ connected: 0, failed: 0 }, 3);
+    expect(document.querySelector(".dm-counts")?.textContent).toBe("共 3 台");
+  });
+
+  it("失败计数标红：失败段被 .dm-health-bad 拆出，其余原样可读", async () => {
+    bindRealisticLocale();
+    await paintBadge({ connected: 2, failed: 1 }, 3);
+    const badge = document.querySelector(".dm-counts")!;
+    const bad = badge.querySelectorAll(".dm-health-bad");
+    expect(bad.length).toBe(1);
+    expect(bad[0]!.textContent).toBe("失败 1");
+    expect(badge.textContent).toBe("共 3 台 · 运行中 2 · 失败 1");
+  });
+
+  it("无失败计数 → 不产生 .dm-health-bad（不误标）", async () => {
+    bindRealisticLocale();
+    await paintBadge({ connected: 2, connecting: 1 }, 3);
+    expect(document.querySelectorAll(".dm-health-bad").length).toBe(0);
+  });
+
+  it("面板头未建（徽标缺席）→ 静默跳过，不抛", async () => {
+    bindRealisticLocale();
+    const log = new FetchLog();
+    restoreFetch = installFetchFake(log, {
+      servers: [{ name: "a" }],
+      counts: { connected: 1, failed: 1 },
+      projectRoot: "/tmp/proj",
+    });
+    const state = createState();
+    const ok = await refresh(state, makeActions().actions);
+    expect(ok).toBe(true);
+    expect(document.querySelector(".dm-counts")).toBeNull();
   });
 });

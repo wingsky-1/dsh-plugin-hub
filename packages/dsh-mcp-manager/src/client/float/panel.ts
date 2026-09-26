@@ -33,6 +33,40 @@ export function refresh(state: McpState, actions: UiActions): Promise<boolean> {
   return inflight;
 }
 
+/** 健康摘要文案：按 counts 逐档拼段，无段时退到「共 N 台」。缺档位按 0 读（服务端省略未发生的档）。 */
+function countsSummaryText(state: McpState): string {
+  const parts: string[] = [];
+  const { connected = 0, connecting = 0, reconnecting = 0, failed = 0 } = state.counts;
+  if (connected > 0) parts.push(t("countsConnected", { n: connected }));
+  if (connecting > 0 || reconnecting > 0)
+    parts.push(t("countsConnecting", { n: connecting + reconnecting }));
+  if (failed > 0) parts.push(t("countsFailed", { n: failed }));
+  return parts.length > 0
+    ? t("countsSummary", { n: state.servers.length, parts: parts.join(" · ") })
+    : t("countsSummaryOnly", { n: state.servers.length });
+}
+
+/** 健康摘要徽标（面板头 .dm-counts）：文案由 countsSummaryText 给；失败计数在文案里就地
+ *  标红（与浮窗同语义）。徽标缺席（面板头未建）时静默跳过。 */
+function renderCountsBadge(state: McpState): void {
+  const countsEl = document.querySelector(".dm-counts");
+  if (countsEl === null) return;
+  const summary = countsSummaryText(state);
+  const failed = state.counts.failed ?? 0;
+  if (failed > 0 && typeof summary === "string") {
+    const failedText = t("countsFailed", { n: failed });
+    countsEl.textContent = "";
+    summary.split(failedText).forEach((chunk, index) => {
+      if (index > 0) {
+        countsEl.appendChild(el("span", { class: "dm-health-bad", text: failedText }));
+      }
+      if (chunk !== "") countsEl.appendChild(document.createTextNode(chunk));
+    });
+    return;
+  }
+  countsEl.textContent = summary;
+}
+
 /** 实际拉取（单飞内部）。 */
 async function doRefresh(state: McpState, actions: UiActions): Promise<boolean> {
   try {
@@ -49,37 +83,7 @@ async function doRefresh(state: McpState, actions: UiActions): Promise<boolean> 
     state.projectRoot = payload.projectRoot;
     renderPill(state);
     if (state.floatOpen) renderFloatPanel(state, actions);
-    const countsEl = document.querySelector(".dm-counts");
-    if (countsEl !== null) {
-      const parts = [];
-      if ((state.counts.connected ?? 0) > 0)
-        parts.push(t("countsConnected", { n: state.counts.connected }));
-      if ((state.counts.connecting ?? 0) > 0 || (state.counts.reconnecting ?? 0) > 0)
-        parts.push(
-          t("countsConnecting", {
-            n: (state.counts.connecting ?? 0) + (state.counts.reconnecting ?? 0),
-          }),
-        );
-      if ((state.counts.failed ?? 0) > 0) parts.push(t("countsFailed", { n: state.counts.failed }));
-      const summary =
-        parts.length > 0
-          ? t("countsSummary", { n: state.servers.length, parts: parts.join(" · ") })
-          : t("countsSummaryOnly", { n: state.servers.length });
-      // 失败计数标红（健康摘要与浮窗同语义）。
-      if ((state.counts.failed ?? 0) > 0 && typeof summary === "string") {
-        const failedText = t("countsFailed", { n: state.counts.failed });
-        countsEl.textContent = "";
-        const chunks = summary.split(failedText);
-        chunks.forEach((chunk, index) => {
-          if (index > 0) {
-            countsEl.appendChild(el("span", { class: "dm-health-bad", text: failedText }));
-          }
-          if (chunk !== "") countsEl.appendChild(document.createTextNode(chunk));
-        });
-      } else {
-        countsEl.textContent = summary;
-      }
-    }
+    renderCountsBadge(state);
     if (state.bodyEl !== undefined && state.activeTab === "servers") renderServers(state, actions);
     return true;
   } catch (error) {

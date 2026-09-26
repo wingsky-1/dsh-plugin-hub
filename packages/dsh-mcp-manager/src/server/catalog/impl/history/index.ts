@@ -39,6 +39,22 @@ function matchCatalogEvent(
   return resolveCatalogEntries(event.data?.source);
 }
 
+/** 会话面上本块要的两件输入：当前可见的节点集 + 持久化事件流。宿主面可能整段缺席
+ *  （agent 缺席 / 无 session / 无 surface / 0.1.2-rc.1 前无 snapshotEvents），
+ *  一律读成空面而不是抛——「读不到历史」与「历史为空」同义，调用方都走重新注入。 */
+interface CatalogSession {
+  visible: Set<unknown>;
+  events: ReadonlyArray<{ type?: string; seq?: unknown; data?: { source?: CatalogSourceLike } }>;
+}
+
+function readCatalogSession(agent: CatalogAgent | undefined): CatalogSession {
+  const session = agent?.session;
+  return {
+    visible: new Set(session?.surface?.nodes ?? []),
+    events: session?.snapshotEvents?.() ?? [],
+  };
+}
+
 /**
  * 从会话持久化日志（agent.session.snapshotEvents()）倒序找最后一条**可见**的
  * 能力目录消息。**这是去重的权威来源**（与官方 dsh-tool-skill catalogHistory
@@ -48,8 +64,7 @@ function matchCatalogEvent(
  * - 只认 snapshot 形态的目录消息（旧 kind:mcp-catalog 落盘走修复脚本迁移）。
  */
 export function catalogHistory(agent: CatalogAgent | undefined): CatalogHistoryResult {
-  const visible = new Set(agent?.session?.surface?.nodes ?? []);
-  const events = agent?.session?.snapshotEvents?.() ?? [];
+  const { visible, events } = readCatalogSession(agent);
   let published = false;
   for (let index = events.length - 1; index >= 0; index -= 1) {
     const event = events[index];

@@ -24,16 +24,12 @@ export function pangu(text: string): string {
     .replace(/([A-Za-z0-9@#$%^&*()[\]{}<>+\-=/\\|])([㐀-䶿一-鿿豈-﫿])/g, "$1 $2");
 }
 
-/** 创建带属性/子节点的 DOM 元素（泛型按标签名收窄返回）。 */
-export function el<K extends keyof HTMLElementTagNameMap>(
-  tag: K,
-  attrs: Record<string, unknown> = {},
-  children?: unknown[],
-): HTMLElementTagNameMap[K] {
-  // children 兼容两种传法：第三个位置参数，或 attrs.children（本插件调用点
-  // 一直把 children 放进 attrs——早期版本只读第三参数导致子节点从未挂载）。
-  const kids: unknown[] = children ?? (attrs.children as unknown[] | undefined) ?? [];
-  const node = document.createElement(tag);
+/**
+ * 逐条把属性袋落到元素上：回答「这个键该走哪条属性通道？」——
+ * class/text/dataset/事件/表单布尔各有专属通道，其余一律 setAttribute。
+ * 与「子节点怎么挂」是两种变化原因，故分块；判定顺序与通道归属逐条照旧。
+ */
+function applyAttrs(node: HTMLElement, attrs: Record<string, unknown>): void {
   for (const [key, value] of Object.entries(attrs)) {
     if (key === "class") node.className = value == null ? "" : String(value);
     else if (key === "text") node.textContent = String(value);
@@ -44,9 +40,27 @@ export function el<K extends keyof HTMLElementTagNameMap>(
     else if (key === "children") continue;
     else node.setAttribute(key, String(value));
   }
+}
+
+/** 把子节点值挂到元素下：字符串建文本节点，null/undefined 跳过，其余按 Node 直挂。 */
+function appendKids(node: Node, kids: readonly unknown[]): void {
   for (const child of kids) {
     if (child === undefined || child === null) continue;
     node.appendChild(typeof child === "string" ? document.createTextNode(child) : (child as Node));
   }
+}
+
+/** 创建带属性/子节点的 DOM 元素（泛型按标签名收窄返回）。 */
+export function el<K extends keyof HTMLElementTagNameMap>(
+  tag: K,
+  attrs: Record<string, unknown> = {},
+  children?: unknown[],
+): HTMLElementTagNameMap[K] {
+  // children 兼容两种传法：第三个位置参数，或 attrs.children（本插件调用点
+  // 一直把 children 放进 attrs——早期版本只读第三参数导致子节点从未挂载）。
+  const kids: unknown[] = children ?? (attrs.children as unknown[] | undefined) ?? [];
+  const node = document.createElement(tag);
+  applyAttrs(node, attrs);
+  appendKids(node, kids);
   return node;
 }

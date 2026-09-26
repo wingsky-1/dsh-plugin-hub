@@ -74,34 +74,47 @@ export function projectCallToolResult(
   result: unknown,
   handlers: CallResultTextHandlers = {},
 ): ProjectedCallResult {
-  const resultObj = (typeof result === "object" && result !== null ? result : undefined) as
-    | { content?: unknown; isError?: unknown; structuredContent?: unknown; toolResult?: unknown }
-    | undefined;
   // 兜底文本惰性求值（F3）：仅缺省分支实际消费，正常 content 路径零开销。
   const resolveFallbackText = (): string =>
     handlers.fallbackText !== undefined
       ? handlers.fallbackText(result)
       : defaultCallResultFallbackText(result);
-  const structured = resultObj?.structuredContent;
-  if (!Array.isArray(resultObj?.content)) {
-    // 无 content / 非数组 content：兜底文本分支（toolResult JSON 或占位符）。
-    if (resultObj?.isError === true) throw new Error(resolveFallbackText());
-    const fallbackText = resolveFallbackText();
-    return {
-      content: [{ type: "text", text: fallbackText }],
-      ...(structured !== undefined ? { structuredContent: structured } : {}),
-    };
+  if (!isRawResult(result)) {
+    // 非对象结果：既无 content 也无 isError，走同一条兜底文本分支。
+    return withStructured({ content: [{ type: "text", text: resolveFallbackText() }] }, undefined);
   }
-  if (resultObj?.isError === true) {
+  const structured = result.structuredContent;
+  if (!Array.isArray(result.content)) {
+    // 无 content / 非数组 content：兜底文本分支（toolResult JSON 或占位符）。
+    if (result.isError === true) throw new Error(resolveFallbackText());
+    return withStructured({ content: [{ type: "text", text: resolveFallbackText() }] }, structured);
+  }
+  if (result.isError === true) {
     const fallbackText = resolveFallbackText();
     throw new Error(
       handlers.errorText !== undefined
-        ? handlers.errorText(resultObj.content)
-        : defaultErrorText(resultObj.content, fallbackText),
+        ? handlers.errorText(result.content)
+        : defaultErrorText(result.content, fallbackText),
     );
   }
-  return {
-    content: resultObj.content,
-    ...(structured !== undefined ? { structuredContent: structured } : {}),
-  };
+  return withStructured({ content: result.content }, structured);
+}
+
+/** 远端应答的最小对象面：MCP 各字段皆 optional，宿主类型面不约束（宽松 ResultSchema）。 */
+interface RawResult {
+  content?: unknown;
+  isError?: unknown;
+  structuredContent?: unknown;
+  toolResult?: unknown;
+}
+
+/** 未定形结果 → 最小对象面的收窄：非对象（null / 标量 / undefined）一律不收。 */
+function isRawResult(result: unknown): result is RawResult {
+  return typeof result === "object" && result !== null;
+}
+
+/** 附上 structuredContent：契约 additionalProperties:false 不接受显式 undefined 键，
+ *  故只在真值存在时展开（两条返回路径共用同一写法）。 */
+function withStructured(base: ProjectedCallResult, structured: unknown): ProjectedCallResult {
+  return structured === undefined ? base : { ...base, structuredContent: structured };
 }

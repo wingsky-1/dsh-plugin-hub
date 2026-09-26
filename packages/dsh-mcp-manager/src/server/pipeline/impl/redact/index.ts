@@ -62,19 +62,32 @@ function isSecretFlagName(flag: string): boolean {
  * （headers/URL 用户信息）的收集在 createRedactor 内（不同问题）。 */
 function collectStdioSecrets(server: ServerConfig, secrets: Set<string>): void {
   for (const value of Object.values(server.env ?? {})) addSecretPair(secrets, value);
-  const args = server.args ?? [];
+  collectArgSecrets(server.args ?? [], secrets);
+}
+
+/** 取值口径：undefined 与空串都算「这一拍没有秘密」（与 addSecretPair 的空跳过同族）。 */
+function nonEmpty(value: string | undefined): string | undefined {
+  return value !== undefined && value.length > 0 ? value : undefined;
+}
+
+/** 判定**单个参数**的秘密值：短 flag（-p/-k/-s）取下一拍；长 flag 精确名匹配后，
+ *  `--flag=x` 取等号后、`--flag x` 取下一拍。非凭据形参或取不到值 → undefined（不收）。
+ * 与展示侧 maskSecretArgsForDisplay 同一套 flag 口径。 */
+function secretValueAt(args: readonly string[], index: number): string | undefined {
+  const argument = args[index] ?? "";
+  if (SECRET_SHORT_FLAGS.has(argument)) return nonEmpty(args[index + 1]);
+  const equals = argument.indexOf("=");
+  const flag = equals < 0 ? argument : argument.slice(0, equals);
+  if (!isSecretFlagName(flag)) return undefined;
+  return nonEmpty(equals < 0 ? args[index + 1] : argument.slice(equals + 1));
+}
+
+/** 逐拍收集 args 里的秘密值。刻意逐拍独立判定（不跳过已消费的下一拍）：值本身长得像
+ *  flag 时下一拍仍按 flag 判——原口径如此，收集面因此偏大不偏小。 */
+function collectArgSecrets(args: readonly string[], secrets: Set<string>): void {
   for (let index = 0; index < args.length; index += 1) {
-    const argument = args[index] ?? "";
-    if (SECRET_SHORT_FLAGS.has(argument)) {
-      const value = args[index + 1];
-      if (value !== undefined && value.length > 0) addSecretPair(secrets, value);
-      continue;
-    }
-    const equals = argument.indexOf("=");
-    const flag = equals < 0 ? argument : argument.slice(0, equals);
-    if (!isSecretFlagName(flag)) continue;
-    const value = equals < 0 ? args[index + 1] : argument.slice(equals + 1);
-    if (value !== undefined && value.length > 0) addSecretPair(secrets, value);
+    const value = secretValueAt(args, index);
+    if (value !== undefined) addSecretPair(secrets, value);
   }
 }
 
