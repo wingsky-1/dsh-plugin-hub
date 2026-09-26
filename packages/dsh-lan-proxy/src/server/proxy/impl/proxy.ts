@@ -668,21 +668,65 @@ export function bridgeCompressedWs(
  * @param logger 可选日志器（默认 console）。
  * @returns 转发器实例。
  */
-export function createLanProxy(options: LanProxyOptions, logger: LanLogger = console): LanProxy {
-  // 入口强校验：targetHost 仅允许回环（配置层/文件层已过滤，此处为最后防线）
+/**
+ * 入口强校验：targetHost 仅允许回环（防止开放转发）、targetPort 必须是 1..65535 的整数。
+ *
+ * 与「取缺省」分成两步：缺省是配置层的语义（每个键各有一条），校验是安全语义（不通过就
+ * 拒绝启动）。原先两者交织在 createLanProxy 的头 15 行里，读代码要先把缺默认看明白才知道
+ * 哪两行是在拒绝启动。
+ */
+function assertProxyTarget(options: LanProxyOptions): void {
   const th = options.targetHost ?? DEFAULT_OPTIONS.targetHost;
   if (!isLoopbackTarget(th)) {
     throw new Error(`lan-proxy: targetHost 仅允许回环地址（收到 "${th}"），拒绝启动——防止开放转发`);
   }
+  const targetPort = options.targetPort;
+  if (!Number.isInteger(targetPort) || (targetPort ?? 0) < 1 || (targetPort ?? 0) > 65535) {
+    throw new Error(`lan-proxy: targetPort must be a valid port, got ${targetPort}`);
+  }
+}
+
+/**
+ * Private Network Access 预检：Chrome/Edge 对「非安全上下文页面 → 私网 WebSocket」会先发
+ * OPTIONS 预检（带 access-control-request-private-network），服务器必须回放行头，
+ * 否则预检 404 → WS 握手被拖慢/拒绝。页面与 WS 经 lan-proxy 同源，故直接放行。
+ */
+function isPnaPreflight(req: IncomingMessage): boolean {
+  return (
+    req.method === "OPTIONS" && req.headers["access-control-request-private-network"] !== undefined
+  );
+}
+
+/**
+ * WS 升级该不该走桥接（issue #552 解耦），三态：
+ *   true：所有 WS 升级一律走「终结 + 桥接」（保活基座）；
+ *   false：全部 TCP 字节透传（显式放弃保活与压缩，README 标注断连风险）；
+ *   缺省（undefined）：回退旧行为——仅命中 wsCompressPaths 的 WS 走桥接，其余透传
+ *         （兼容 smoke/unit 现有无参/旧参 createLanProxy 调用）。
+ */
+function shouldBridgeWs(
+  options: LanProxyOptions,
+  url: string | undefined,
+  compressEnabled: boolean,
+): boolean {
+  const bridgeEnabled = options.wsBridge?.enabled;
+  if (bridgeEnabled === true) return true;
+  if (bridgeEnabled === undefined) {
+    return compressEnabled && compressWsPath(options.wsCompress?.paths, url);
+  }
+  return false;
+}
+
+export function createLanProxy(options: LanProxyOptions, logger: LanLogger = console): LanProxy {
+  // 入口强校验：targetHost 仅允许回环、targetPort 必须是端口（配置层/文件层已过滤，
+  // 此处为最后防线）。校验与取缺省分成两步，见 assertProxyTarget。
+  assertProxyTarget(options);
 
   const host = options.host ?? DEFAULT_OPTIONS.host;
   const port = options.port ?? DEFAULT_OPTIONS.port;
   const httpsPort = options.httpsPort ?? DEFAULT_OPTIONS.httpsPort;
   const targetHost = options.targetHost ?? DEFAULT_OPTIONS.targetHost;
   const targetPort = options.targetPort;
-  if (!Number.isInteger(targetPort) || targetPort < 1 || targetPort > 65535) {
-    throw new Error(`lan-proxy: targetPort must be a valid port, got ${targetPort}`);
-  }
   const targetAuthority = formatAuthority(targetHost, targetPort);
   /** 上游连接的 keep-alive 连接池；close() 时销毁。http-proxy 经 agent 选项复用。 */
   const agent = new Agent({ keepAlive: true, maxSockets: MAX_UPSTREAM_SOCKETS });
@@ -888,10 +932,7 @@ export function createLanProxy(options: LanProxyOptions, logger: LanLogger = con
     // 私网 WebSocket"会先发 OPTIONS 预检（带 access-control-request-private-network），
     // 服务器必须回放行头，否则预检 404 → WS 握手被拖慢/拒绝。
     // 页面与 WS 经 lan-proxy 同源，这里直接放行预检。
-    if (
-      req.method === "OPTIONS" &&
-      req.headers["access-control-request-private-network"] !== undefined
-    ) {
+    if (isPnaPreflight(req)) {
       markLocal(res);
       res.writeHead(204, {
         "access-control-allow-origin": req.headers.origin ?? "*",
@@ -942,15 +983,9 @@ export function createLanProxy(options: LanProxyOptions, logger: LanLogger = con
     //   false：全部 TCP 字节透传（显式放弃保活与压缩，README 标注断连风险）；
     //   缺省（undefined）：回退旧行为——仅命中 wsCompressPaths 的 WS 走桥接，
     //         其余透传（兼容 smoke/unit 现有无参/旧参 createLanProxy 调用）。
-    const bridgeEnabled = options.wsBridge?.enabled;
     const compressEnabled = options.wsCompress?.enabled !== false;
-    const shouldBridge =
-      bridgeEnabled === true ||
-      (bridgeEnabled === undefined &&
-        compressEnabled &&
-        compressWsPath(options.wsCompress?.paths, req.url));
-    if (shouldBridge) {
-      // 压缩仅作用于「压缩白名单命中且压缩开关开」的桥接路径；其余桥接明文
+    if (shouldBridgeWs(options, req.url, compressEnabled)) {
+      // 压缩仅作用于「压缩白名单命中且压缩开关开」的桥接路径；其余桥透传明文
       // （保活不丢、压缩按需，issue #552——清空白名单/关压缩不再丢保活）。
       const compress = compressEnabled && compressWsPath(options.wsCompress?.paths, req.url);
       bridgeCompressedWs(req, socket, head, {

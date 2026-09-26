@@ -206,6 +206,20 @@ function isFormsNamespaceServed(settings, ns) {
  * @returns {() => void} 退订函数。
  */
 function subscribeFormsDocumentUpdated(ctx, sctx, ns, listener) {
+  for (const candidate of eventTargetsOf(ctx, sctx)) {
+    const disposer = subscribeOne(candidate, ns, listener);
+    if (disposer !== undefined) return disposer;
+  }
+  return () => {};
+}
+
+/**
+ * 订阅面候选：优先注入后的 scoped context，其次宿主 context。
+ * 两者是同一个 on 时只留 scoped 那一个（避免同一事件被过滤后回调两次）。
+ *
+ * 与「逐个尝试订阅」分成两步：候选的**挑选**是优先级问题，订阅的**成败**是可用性问题。
+ */
+function eventTargetsOf(ctx, sctx) {
   const sctxOn =
     sctx && typeof sctx === "object" && "on" in sctx
       ? /** @type {unknown} */ (/** @type {any} */ (sctx).on)
@@ -216,28 +230,34 @@ function subscribeFormsDocumentUpdated(ctx, sctx, ns, listener) {
       : undefined;
   const candidates = [{ on: sctxOn, target: sctx }];
   if (typeof ctxOn === "function" && ctxOn !== sctxOn) candidates.push({ on: ctxOn, target: ctx });
-  for (const candidate of candidates) {
-    if (typeof candidate.on !== "function") continue;
-    try {
-      const disposer =
-        /** @type {(event: string, cb: (...args: any[]) => void, options?: { global?: boolean }) => unknown} */ (
-          candidate.on
-        ).call(
-          candidate.target,
-          "settings/document-updated",
-          (...args) => {
-            const evNs = args.length > 0 ? args[0] : undefined;
-            if (String(evNs) !== String(ns)) return;
-            listener(evNs, args.length > 1 ? args[1] : undefined);
-          },
-          { global: true },
-        );
-      return typeof disposer === "function" ? disposer : () => {};
-    } catch {
-      // scoped context 不可用时继续尝试宿主 context。
-    }
+  return candidates;
+}
+
+/**
+ * 在一个订阅面上尝试挂 document-updated：成功交出 disposer，
+ * on 不是函数或抛错（scoped context 不可用）即返回 undefined，让调用方试下一个候选。
+ */
+function subscribeOne(candidate, ns, listener) {
+  if (typeof candidate.on !== "function") return undefined;
+  try {
+    const disposer =
+      /** @type {(event: string, cb: (...args: any[]) => void, options?: { global?: boolean }) => unknown} */ (
+        candidate.on
+      ).call(
+        candidate.target,
+        "settings/document-updated",
+        (...args) => {
+          const evNs = args.length > 0 ? args[0] : undefined;
+          if (String(evNs) !== String(ns)) return;
+          listener(evNs, args.length > 1 ? args[1] : undefined);
+        },
+        { global: true },
+      );
+    return typeof disposer === "function" ? disposer : () => {};
+  } catch {
+    // scoped context 不可用时继续尝试宿主 context。
+    return undefined;
   }
-  return () => {};
 }
 /**
  * Forms 安装：describe 按 ns 定位读、update/replace/mutate 写、document-updated
@@ -252,22 +272,64 @@ function subscribeFormsDocumentUpdated(ctx, sctx, ns, listener) {
  * @param {{ setSource(source: () => unknown): void; onChange(): void; onScope?: (scope: unknown, settings: unknown) => void }} hooks - 回调面。
  * @returns {void}
  */
+/** 退订：幂等（disposer 可能被多次调用，订阅侧抛错不该打断后续的回落接线）。 */
+function disposeSubscription(unwatch) {
+  try {
+    unwatch();
+  } catch {
+    // 退订幂等。
+  }
+}
+
+/** 写面方法缺席时的错误（文案单点：三格共用，避免各写一份措辞漂移）。 */
+function missingWriteMethod(method) {
+  return new Error(`settings service unavailable: ${String(method)} 缺失`);
+}
+
+/** fiber.state 的读取（fiber 不是对象时给 undefined）。 */
+function stateOfFiber(fiber) {
+  return fiber && typeof fiber === "object" ? fiber.state : undefined;
+}
+
+/** fiber 是否处于「可交付」态：state 缺席（无状态机）或 2 / "active"。 */
+function fiberSettled(state) {
+  return state === undefined || state === 2 || state === "active";
+}
+
+/**
+ * 交付 scope 的前置门禁：已交付过 / 正在交付中 / owning fiber 未就绪 / 已卸载 /
+ * 调用方没要 onScope / ctx 正在卸载——任一命中即本轮不交付。
+ *
+ * 单立一函数是因为这六条是**跨事件累积**的状态（scopeDelivered / deliveringScope / ownerReady /
+ * disposed 都会在别处被改），而真正的交付动作（isFormsNamespaceServed + onScope）只读它们。
+ * 门禁与动作挤在一个箭头里时，「哪一条被谁改、为什么改」要读完整个 installViaForms 才找得到。
+ */
+function scopeBlockedBy(state) {
+  return (
+    state.scopeDelivered ||
+    state.deliveringScope ||
+    !state.ownerReady ||
+    state.disposed ||
+    typeof state.hooks?.onScope !== "function" ||
+    isUnloading(state.ctx)
+  );
+}
+
 function installViaForms(ctx, sctx, settings, ns, entry, hooks) {
   const readCurrent = () => readFormsValue(settings, ns, entry);
   const writeVia = (method, payload, expectedRevision) => {
     const fn = settings[method];
-    if (typeof fn !== "function") {
-      return Promise.reject(new Error(`settings service unavailable: ${String(method)} 缺失`));
-    }
+    if (typeof fn !== "function") return Promise.reject(missingWriteMethod(method));
+    // 缺席 expectedRevision 时**不传该位**：宿主按「无乐观并发」处理；多传一个
+    // undefined 在部分宿主实现里会被读成 revision=undefined 而拒收。
+    const args = expectedRevision === undefined ? [ns, payload] : [ns, payload, expectedRevision];
     try {
-      if (expectedRevision === undefined) {
-        return fn.call(settings, ns, payload);
-      }
-      return fn.call(settings, ns, payload, expectedRevision);
+      return fn.call(settings, ...args);
     } catch (err) {
       return Promise.reject(err);
     }
   };
+  // 写面三格共用一份 writeVia；「缺哪个方法」的文案由 missingWriteMethod 单点给出。
   const scope = {
     get: () => readCurrent(),
     update: (patch, expectedRevision) => writeVia("update", patch, expectedRevision),
@@ -275,24 +337,13 @@ function installViaForms(ctx, sctx, settings, ns, entry, hooks) {
     mutate: (ops, expectedRevision) => writeVia("mutate", ops, expectedRevision),
   };
   const ownerFiber = ctx && typeof ctx === "object" ? ctx.fiber : undefined;
-  const ownerState = ownerFiber && typeof ownerFiber === "object" ? ownerFiber.state : undefined;
-  let ownerReady =
-    typeof ownerFiber?.await !== "function" ||
-    ownerState === undefined ||
-    ownerState === 2 ||
-    ownerState === "active";
+  const ownerReady0 = fiberSettled(stateOfFiber(ownerFiber));
+  let ownerReady = typeof ownerFiber?.await !== "function" || ownerReady0;
   let scopeDelivered = false;
   let deliveringScope = false;
   let disposed = false;
   const deliverScope = () => {
-    if (
-      scopeDelivered ||
-      deliveringScope ||
-      !ownerReady ||
-      disposed ||
-      typeof hooks?.onScope !== "function" ||
-      isUnloading(ctx)
-    ) {
+    if (scopeBlockedBy({ scopeDelivered, deliveringScope, ownerReady, disposed, hooks, ctx })) {
       return;
     }
     deliveringScope = true;
@@ -310,11 +361,9 @@ function installViaForms(ctx, sctx, settings, ns, entry, hooks) {
   if (typeof sctx?.effect === "function") {
     sctx.effect(() => () => {
       disposed = true;
-      try {
-        unwatchForms();
-      } catch {
-        // 退订幂等。
-      }
+      disposeSubscription(unwatchForms);
+      // scoped fiber 注销而插件仍存活：来源回落到组合层 entry。插件自身卸载时**不回落**
+      //（disposer 短路，随 fiber 一起注销）——否则卸载后配置来源又活了过来。
       if (isUnloading(ctx)) return;
       hooks.setSource(() => entry);
       hooks.onChange();
@@ -322,7 +371,7 @@ function installViaForms(ctx, sctx, settings, ns, entry, hooks) {
   }
 
   let last = snapshotFormsValue(readCurrent());
-  unwatchForms = subscribeFormsDocumentUpdated(ctx, sctx, ns, () => {
+  const onDocumentUpdated = () => {
     if (isUnloading(ctx)) return;
     deliverScope();
     let next;
@@ -338,21 +387,16 @@ function installViaForms(ctx, sctx, settings, ns, entry, hooks) {
     } catch {
       // 观察者异常不扩散。
     }
-  });
+  };
+  unwatchForms = subscribeFormsDocumentUpdated(ctx, sctx, ns, onDocumentUpdated);
 
   // owning fiber 真正 ACTIVE 后主动探测一次；document-updated 只覆盖之后的重载/替换。
   // 就绪判据是 fiber.await()，不是微任务、定时器或时序猜测。
   if (typeof ownerFiber?.await === "function" && !ownerReady) {
     void ownerFiber.await().then(
       () => {
-        const state = ownerFiber.state;
-        if (
-          disposed ||
-          isUnloading(ctx) ||
-          (state !== undefined && state !== 2 && state !== "active")
-        ) {
-          return;
-        }
+        // awaiting 期间可能已被卸载，也可能 fiber 已不处于 ACTIVE——两种都不交付。
+        if (disposed || isUnloading(ctx) || !fiberSettled(stateOfFiber(ownerFiber))) return;
         ownerReady = true;
         deliverScope();
       },

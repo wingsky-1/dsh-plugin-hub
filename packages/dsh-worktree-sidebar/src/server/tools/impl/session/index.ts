@@ -17,18 +17,15 @@ export interface SessionFace {
 
 /** 解析会话身份。形状不符即 undefined，不猜。 */
 export function sessionOf(exec: unknown): SessionFace | undefined {
-  if (typeof exec !== "object" || exec === null) return undefined;
   const session = readObject(readObject(exec, "agent"), "session");
   if (session === undefined) return undefined;
-  const id = (session as { id?: unknown }).id;
+  const id = readField(session, "id");
   if (typeof id !== "string" || id.length === 0) return undefined;
   const header = readObject(session, "header");
-  const cwd = header === undefined ? undefined : (header as { cwd?: unknown }).cwd;
-  const createdAt = header === undefined ? undefined : (header as { createdAt?: number }).createdAt;
   return {
     id,
-    cwd: typeof cwd === "string" && cwd.length > 0 ? cwd : undefined,
-    createdAt: typeof createdAt === "number" && Number.isFinite(createdAt) ? createdAt : undefined,
+    cwd: nonEmptyTextOrUndefined(readField(header, "cwd")),
+    createdAt: finiteNumberOrUndefined(readField(header, "createdAt")),
   };
 }
 
@@ -36,4 +33,20 @@ function readObject(source: unknown, key: string): unknown {
   if (typeof source !== "object" || source === null) return undefined;
   const value = (source as Record<string, unknown>)[key];
   return typeof value === "object" && value !== null ? value : undefined;
+}
+
+/** 读一层字段（容器不是对象即 undefined，不抛）。容器判定的断言只在本模块 readRecord 一处出现。 */
+function readField(source: unknown, key: string): unknown {
+  if (typeof source !== "object" || source === null) return undefined;
+  return (source as Record<string, unknown>)[key];
+}
+
+/** 非空文本，否则 undefined（空串与缺失在「工作目录」这件事上是同一件事）。 */
+function nonEmptyTextOrUndefined(value: unknown): string | undefined {
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+/** 有限数字，否则 undefined（NaN / Infinity 不是可登记的创建时间）。 */
+function finiteNumberOrUndefined(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }

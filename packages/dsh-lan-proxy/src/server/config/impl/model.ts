@@ -197,6 +197,77 @@ export const Config: z<LanProxyConfig> = z.object({
 export const DEFAULT_CONFIG: LanProxyConfig = Config({});
 
 /**
+ * apply 的 resolve() 缺省兜底后的一份完整生效配置（**缺省值的事实源**）。
+ *
+ * 基础取 DEFAULT_CONFIG（= Config({})，schema 的缺省即此），再把 ResolvedConfig 里那 14 个
+ * **必填**键的缺省显式补上——`z<LanProxyConfig>` 这个注解把 schema 的缺填性擦成了全可选，
+ * 故 DEFAULT_CONFIG 的静态类型读不出「这些键恒有值」，只能在这里按域分组补一遍。
+ * 两组与原先 resolve() 里的注释分组一致：监听面（地址/端口/上游/横幅）与投递面
+ * （桥接/压缩/令牌/host trust）。tlsCertFile / tlsKeyFile / tlsCaCertFile / targetPort 无
+ * `.default()`，故不在必填集里——缺省即 undefined。
+ *
+ * 为什么不在 apply 的 resolve() 里逐键 `??`：那份写法把每个键的缺省抄在 resolve 里，域内加一个
+ * 带 `.default()` 的键却忘了在 resolve 补一条 `??`，症状是该键以 undefined 直达转发器（而不是
+ * 落到缺省）。缺省现在只有这一处，且与 schema 同域。
+ */
+export const RESOLVED_DEFAULTS: ResolvedConfig = {
+  ...DEFAULT_CONFIG,
+  ...listenDefaults(),
+  ...deliveryDefaults(),
+};
+
+/** 监听面那七项的缺省（ResolvedConfig 里它们是必填，故此处返回类型也是必填）。 */
+type ListenDefaults = Pick<
+  ResolvedConfig,
+  "enabled" | "host" | "port" | "httpsEnabled" | "httpsPort" | "targetHost" | "printBanner"
+>;
+
+/** 投递面那八项的缺省（同上：必填）。 */
+type DeliveryDefaults = Pick<
+  ResolvedConfig,
+  | "wsBridgeEnabled"
+  | "wsCompressEnabled"
+  | "wsCompressPaths"
+  | "wsDeflatePolicy"
+  | "httpCompressEnabled"
+  | "httpCompressLevel"
+  | "injectToken"
+  | "ownsHostCompat"
+>;
+
+/** 监听面缺省：开关 / 绑定地址 / 两个端口 / 上游 / 启动横幅。 */
+function listenDefaults(): ListenDefaults {
+  return {
+    enabled: DEFAULT_CONFIG.enabled ?? true,
+    host: DEFAULT_CONFIG.host ?? DEFAULT_OPTIONS.host,
+    port: DEFAULT_CONFIG.port ?? DEFAULT_OPTIONS.port,
+    httpsEnabled: DEFAULT_CONFIG.httpsEnabled ?? true,
+    httpsPort: DEFAULT_CONFIG.httpsPort ?? DEFAULT_OPTIONS.httpsPort,
+    targetHost: DEFAULT_CONFIG.targetHost ?? DEFAULT_OPTIONS.targetHost,
+    printBanner: DEFAULT_CONFIG.printBanner ?? true,
+  };
+}
+
+/** 投递面缺省：WS 桥接与压缩 / HTTP 压缩 / launch 令牌注入 / host trust 兼容开关。
+ *
+ * 桥接总开关（issue #552 解耦）：默认 true 实现在 resolve 接线层——createLanProxy 参数层不设
+ * 默认，保证 smoke/unit 现有无参/旧参调用行为不变（透传升级测试不意外走桥接）。
+ * host trust 兼容开关（issue #856）：默认关；tap 内逐请求读取 resolve() 结果。
+ */
+function deliveryDefaults(): DeliveryDefaults {
+  return {
+    wsBridgeEnabled: DEFAULT_CONFIG.wsBridgeEnabled ?? true,
+    wsCompressEnabled: DEFAULT_CONFIG.wsCompressEnabled ?? true,
+    wsCompressPaths: DEFAULT_CONFIG.wsCompressPaths ?? DEFAULT_WSS_COMPRESS_PATHS,
+    wsDeflatePolicy: DEFAULT_CONFIG.wsDeflatePolicy ?? DEFAULT_DEFLATE_POLICY,
+    httpCompressEnabled: DEFAULT_CONFIG.httpCompressEnabled ?? true,
+    httpCompressLevel: DEFAULT_CONFIG.httpCompressLevel ?? 1,
+    injectToken: DEFAULT_CONFIG.injectToken ?? true,
+    ownsHostCompat: DEFAULT_CONFIG.ownsHostCompat ?? false,
+  };
+}
+
+/**
  * 归一化：把未知输入按 schema 校验并补默认值。
  * 与 `sanitizeSettings` 分工不同：本函数用于「给出一份完整配置」，后者用于「判断客户端
  * 提交的 patch 是否可信」（只做已知键 + 类型合法过滤，不补默认值）。
@@ -275,23 +346,32 @@ export function sanitizeSettings(raw: unknown): Partial<LanProxyConfig> | null {
   const src = raw as Record<string, unknown>;
   const out: Partial<LanProxyConfig> = {};
   for (const key of Object.keys(FILE_CONFIG_VALIDATORS)) {
-    let value = src[key];
-    // 旧档位（0..9）迁移：整数 4..9 视为「高」档；其余仍走校验器
-    if (
-      key === "httpCompressLevel" &&
-      typeof value === "number" &&
-      Number.isInteger(value) &&
-      value > 3 &&
-      value <= 9
-    )
-      value = 3;
+    const value = migrateSettingValue(key, src[key]);
     if (value === undefined || value === null) continue;
     if (!FILE_CONFIG_VALIDATORS[key](value)) return null;
-    if ((key === "tlsCertFile" || key === "tlsKeyFile" || key === "tlsCaCertFile") && value === "")
-      continue;
+    // 空字符串证书路径被剔除（保存通道据 raw 判定清除语义，迁移场景等价于未设置）
+    if (isCertPathKey(key) && value === "") continue;
     (out as Record<string, unknown>)[key] = value;
   }
   return out;
+}
+
+/**
+ * 旧档位迁移：整数 4..9 视为「高」档（3）。只有 httpCompressLevel 一键有迁移。
+ *
+ * sanitizeSettings 与 validateSettings **共用这一份**：两处原先各写一遍同口径的迁移，
+ * 「同口径」靠注释维系，改一侧漏另一侧的症状是「保存过了但校验报非法」。
+ */
+function migrateSettingValue(key: string, value: unknown): unknown {
+  if (key !== "httpCompressLevel") return value;
+  return typeof value === "number" && Number.isInteger(value) && value > 3 && value <= 9
+    ? 3
+    : value;
+}
+
+/** 三个证书路径键（空串在净化面被剔除，在校验面按非法处理）。 */
+function isCertPathKey(key: string): boolean {
+  return key === "tlsCertFile" || key === "tlsKeyFile" || key === "tlsCaCertFile";
 }
 
 /**
@@ -366,16 +446,8 @@ export function validateSettings(raw: unknown): SettingInvalid | null {
   if (typeof raw !== "object" || raw === null) return { key: "(payload)", hint: "需为配置对象" };
   const src = raw as Record<string, unknown>;
   for (const key of Object.keys(FILE_CONFIG_VALIDATORS)) {
-    const value = src[key];
-    // 与 sanitizeSettings 同口径：旧档位整数 4..9 先迁移再校验。
-    const normalized =
-      key === "httpCompressLevel" &&
-      typeof value === "number" &&
-      Number.isInteger(value) &&
-      value > 3 &&
-      value <= 9
-        ? 3
-        : value;
+    // 与 sanitizeSettings 共用 migrateSettingValue：旧档位整数 4..9 先迁移再校验。
+    const normalized = migrateSettingValue(key, src[key]);
     if (normalized === undefined || normalized === null) continue;
     if (!FILE_CONFIG_VALIDATORS[key](normalized)) {
       return { key, hint: SETTING_FIELD_HINTS[key] ?? "类型非法" };

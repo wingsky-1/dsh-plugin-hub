@@ -33,6 +33,7 @@ import {
   evaluateHostTrust,
   hostTrustAlert,
   readHostTrustSignals,
+  type HostTrustSignals,
   type RemoteLike,
 } from "./host-trust-status.ts";
 // 显式类型导入，先把 @deepseek-ai/dsh-client-ui-slots 拉进模块解析图：上游发布物
@@ -91,22 +92,65 @@ interface ConfigFormsView {
   ) => () => void;
 }
 
+/** locale 服务的窄读面（与 inject 声明的 ["slots", "configForms", "locale", "remote"] 对齐）。 */
+interface LocalePort {
+  register?: (ns: string, dict: { zh: unknown; en: unknown }) => void;
+  subscribe?: (listener: () => void) => () => void;
+  getSnapshot?: () => unknown;
+}
+
+/**
+ * 故障态告警（P1-1）：配置页受 Host authority 与 settings namespace 投影约束，
+ * compat-off / contract-drift 下可能不可达。故在 apply 最前面独立告警一次（每页一次，
+ * 不在渲染期重复、不刷屏），且刻意排在 slots / configForms 读取之前：告警不依赖配置面。
+ * 整段防御式读取，异常绝不外抛（观测失败不得打断页面启动）。
+ */
+function warnHostTrustOnce(hostTrustSignals: () => HostTrustSignals): void {
+  try {
+    const alert = hostTrustAlert(evaluateHostTrust(hostTrustSignals()));
+    if (alert !== null) console.warn(`[dsh-lan-proxy] ${alert}`);
+  } catch {
+    /* 观测失败不得影响页面启动 */
+  }
+}
+
+/**
+ * locale 接缝：注册字典 → 绑翻译函数 → 订阅 locale 变化重绑，返回取消订阅（无订阅时 null）。
+ *
+ * 与 host trust 告警、页面注册是三处独立接缝，各有各的降级口径：这一处失败只回落 key 本体，
+ * 页面注册失败则是配置页没挂上。
+ */
+function bindClientLocale(ctx: ClientContext): (() => void) | null {
+  const locale = ctx.get("locale") as LocalePort | null | undefined;
+  let unsubLocale: (() => void) | null = null;
+  if (locale && typeof locale.register === "function") {
+    try {
+      locale.register(NS, { zh: zh, en: en });
+      bindLocale(locale, NS);
+      if (typeof locale.subscribe === "function" && typeof locale.getSnapshot === "function") {
+        unsubLocale = locale.subscribe(function () {
+          try {
+            bindLocale(locale, NS);
+          } catch {
+            /* 忽略 */
+          }
+        });
+      }
+    } catch (e) {
+      console.warn("[dsh-lan-proxy] locale 注册失败：", e);
+    }
+  }
+  return unsubLocale;
+}
+
 export function apply(ctx: ClientContext): void {
   try {
     // host trust 观测（issue #856）：只交出信号读取器，判定在卡片渲染期做——
     // 缓存判定结果会让「兼容开关刚被保存但页面未重载」这类中间态显示错。
     const hostTrustSignals = () => readHostTrustSignals(ctx.remote as RemoteLike | undefined);
 
-    // 故障态告警（P1-1）：配置页受 Host authority 与 settings namespace 投影约束，
-    // compat-off / contract-drift 下可能不可达。故在 apply 最前面独立告警一次（每页一次，
-    // 不在渲染期重复、不刷屏），且刻意排在 slots / configForms 读取之前：告警不依赖配置面。
-    // 整段防御式读取，异常绝不外抛（观测失败不得打断页面启动）。
-    try {
-      const alert = hostTrustAlert(evaluateHostTrust(hostTrustSignals()));
-      if (alert !== null) console.warn(`[dsh-lan-proxy] ${alert}`);
-    } catch {
-      /* 观测失败不得影响页面启动 */
-    }
+    // 告警排在 slots / configForms 读取之前：告警不依赖配置面。
+    warnHostTrustOnce(hostTrustSignals);
 
     const slots = ctx.get("slots") as SlotsView | null | undefined;
     const configForms = ctx.get("configForms") as ConfigFormsView | null | undefined;
@@ -118,32 +162,7 @@ export function apply(ctx: ClientContext): void {
     ensureStyle({ id: STYLE_ID, cssText: STYLE, version: CSS_VERSION });
 
     // i18n（issue #348）：注册本插件字典；t 绑定官方 locale 服务（未装配回落 key 本体）。
-    const locale = ctx.get("locale") as
-      | {
-          register?: (ns: string, dict: { zh: unknown; en: unknown }) => void;
-          subscribe?: (listener: () => void) => () => void;
-          getSnapshot?: () => unknown;
-        }
-      | null
-      | undefined;
-    let unsubLocale: (() => void) | null = null;
-    if (locale && typeof locale.register === "function") {
-      try {
-        locale.register(NS, { zh: zh, en: en });
-        bindLocale(locale, NS);
-        if (typeof locale.subscribe === "function" && typeof locale.getSnapshot === "function") {
-          unsubLocale = locale.subscribe(function () {
-            try {
-              bindLocale(locale, NS);
-            } catch {
-              /* 忽略 */
-            }
-          });
-        }
-      } catch (e) {
-        console.warn("[dsh-lan-proxy] locale 注册失败：", e);
-      }
-    }
+    const unsubLocale = bindClientLocale(ctx);
 
     // 页面只在 Host 服务 canonical settings namespace 时注册；namespace 撤下时，
     // whileServed 会调用这个返回值，移除 slot 注入及其注册 disposer。

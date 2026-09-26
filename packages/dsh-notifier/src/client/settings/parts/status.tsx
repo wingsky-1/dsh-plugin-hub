@@ -100,6 +100,41 @@ export function testBtn(
   );
 }
 
+/**
+ * 删除二次确认按钮：bark / webhook / 内置三张卡的这段逐字相同（一次点击上膛，3 秒后自动
+ * 解除），故收成一个原子——三处各留一份时，改确认时长只会改到其中一张卡。
+ *
+ * 定时器仍在 onClick 闭包里就地创建（不持 ref、不走 effect）：这三张卡都不持有 state/ref，
+ * 上膛状态由 SettingsCard 顶层的 delArmedId 反传，闭包捕获的只有 setter 与 id。
+ */
+export function delArmedBtn(
+  armed: boolean,
+  channelId: string,
+  remove: () => void,
+  setArmedId: (v: string | null) => void,
+  t: Translate,
+) {
+  return (
+    <button
+      type="button"
+      className={"dn-set-btn dn-set-btnSmall" + (armed ? " dn-set-btnDanger" : "")}
+      onClick={function () {
+        if (armed) {
+          remove();
+          setArmedId(null);
+        } else {
+          setArmedId(channelId);
+          setTimeout(function () {
+            setArmedId(null);
+          }, 3000);
+        }
+      }}
+    >
+      {armed ? t("chDeleteConfirm") : t("chDelete")}
+    </button>
+  );
+}
+
 /** 投递失败徽标：最近投递失败时上提至卡头 summary 行，收起态仍可见。 */
 export function failBadge(channelKey: string, statusMap: ChannelStatusMap, t: Translate) {
   const st = statusMap[channelKey];

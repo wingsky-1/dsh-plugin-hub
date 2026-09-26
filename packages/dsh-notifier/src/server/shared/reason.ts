@@ -63,13 +63,21 @@ export function reasonFromCause(code: ReasonCode, cause: unknown): ProducedReaso
  * 用户手改、半截写入、旧版本写下的行都会到这里，判断散开就必然有一处漏。
  */
 export function normalizeReason(value: unknown): DeliverReason | undefined {
-  if (typeof value === "string") {
-    return value === "" ? undefined : { code: REASON_LEGACY, detail: value };
-  }
+  if (typeof value === "string") return legacyFrom(value);
   if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
   const source = value as Record<string, unknown>;
   if (typeof source.code !== "string" || source.code === "") return undefined;
-  const normalized: DeliverReason = { code: source.code };
+  return projectReason(source.code, source);
+}
+
+/** 升级前的散文：空串读不出，非空收编成 legacy + detail（散文即宿主原文）。 */
+function legacyFrom(value: string): DeliverReason | undefined {
+  return value === "" ? undefined : { code: REASON_LEGACY, detail: value };
+}
+
+/** 结构化投影：只取认识的那几个字段——code 必填，params / detail 有值才带上。 */
+function projectReason(code: string, source: Record<string, unknown>): DeliverReason {
+  const normalized: DeliverReason = { code };
   const params = normalizeParams(source.params);
   if (params !== undefined) normalized.params = params;
   if (typeof source.detail === "string" && source.detail !== "") normalized.detail = source.detail;

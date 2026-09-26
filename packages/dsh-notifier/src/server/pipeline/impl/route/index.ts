@@ -126,6 +126,15 @@ export function barkTarget(channel: BarkConfig, kind: NotifyKind): BarkTarget {
   assignText(target, "sound", channel.sound ?? "");
   assignText(target, "icon", channel.icon ?? "");
   assignText(target, "url", channel.url ?? "");
+  assignBarkOptional(target, channel);
+  return target;
+}
+
+/**
+ * 有值才带的三格。它们的「带」判据三样各别（badge 认 undefined、timeoutSec 认正数、
+ * extras 认整袋），故与上面那五格文本字段分开——改一格的判据不会牵动另外两格。
+ */
+function assignBarkOptional(target: BarkTarget, channel: BarkConfig): void {
   // badge 是数字（0 有语义：清掉角标），所以「有值就带」而不是「非零才带」。
   if (channel.badge !== undefined) target.badge = channel.badge;
   if (channel.timeoutMs !== undefined && channel.timeoutMs > 0) {
@@ -133,7 +142,6 @@ export function barkTarget(channel: BarkConfig, kind: NotifyKind): BarkTarget {
   }
   // 未知键整袋带走：出口把它原样写进推送体（前向兼容），这里不做逐键判断。
   if (channel.extras !== undefined) target.extras = channel.extras;
-  return target;
 }
 
 /** 可选文本字段：空串即「没配置」，不带进目标。 */

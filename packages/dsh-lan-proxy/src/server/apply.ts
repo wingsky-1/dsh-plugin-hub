@@ -12,7 +12,10 @@ import type { Context } from "@deepseek-ai/cordis";
 import { writeJson, errorMessage, guardLoopbackMethod } from "../../../../shared/host-utils.js";
 import { createLanProxy } from "./proxy/interface.ts";
 import type { LanProxy } from "./proxy/interface.ts";
-import { DEFAULT_DEFLATE_POLICY, DEFAULT_OPTIONS } from "./shared/interface.ts";
+
+/** 转发引擎的入参面：从 createLanProxy 的签名派生，
+ *  故转发域改了这个面而本模块漏改时，编译期即红（不必等转发器少一个参数才在运行期发现）。 */
+type LanProxyOptions = Parameters<typeof createLanProxy>[0];
 import type { TlsMaterials } from "./tls/interface.ts";
 import {
   SELF_SIGNED_CERT,
@@ -29,7 +32,11 @@ import type { CaActionDeps } from "./ca/interface.ts";
 import { MANAGED_CERT_FILES } from "./shared/interface.ts";
 // 配置层值依赖单向 apply → config：默认白名单常量（单一事实源）与存量归一化纯函数
 // 均定义于配置域，本模块消费并 re-export（保持 apply 既有导出面不变）。
-import { normalizeLegacyWsCompressPaths, DEFAULT_WSS_COMPRESS_PATHS } from "./config/interface.ts";
+import {
+  DEFAULT_WSS_COMPRESS_PATHS,
+  RESOLVED_DEFAULTS,
+  normalizeLegacyWsCompressPaths,
+} from "./config/interface.ts";
 import type { HttpCompressSnapshot, LanProxyConfig, ResolvedConfig } from "./config/interface.ts";
 import { SETTINGS_NS, installLanProxySettings, warnLog } from "./config/interface.ts";
 import type { OwnerScopeLike, SettingsServiceLike } from "./config/interface.ts";
@@ -42,6 +49,15 @@ import { registerHostTrustInjection } from "./host-trust/interface.ts";
 // 重新导出默认压缩白名单（定义见配置域），保持 `from "./server/apply.ts"` 的既有消费面。
 export { DEFAULT_WSS_COMPRESS_PATHS };
 
+/** 只留「有值」的键（undefined 与 null 都算没配）；null 在旧实现里同样落 `??` 缺省。 */
+function definedOnly(value: LanProxyConfig): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [key, item] of Object.entries(value)) {
+    if (item !== undefined && item !== null) out[key] = item;
+  }
+  return out;
+}
+
 /**
  * 终端横幅输出（用户可感知信息走原生 console：cordis logger 只进内存 buffer，
  * 终端不可见——与官方 dsh web 启动横幅的 console.log 做法一致）。
@@ -51,6 +67,100 @@ const out = {
   warn: (...args: unknown[]) => console.warn("[lan-proxy]", ...args),
   error: (...args: unknown[]) => console.error("[lan-proxy]", ...args),
 };
+
+/**
+ * 转发器参数装配（转发引擎的入参面）。与 sync() 的「何时重建」是两类变化来源：重建是生命周期，
+ * 参数是配置到引擎入参的投影（加一个引擎参数只动这里）。
+ *
+ * 值全部取自 resolve() 的产物，故本函数里**不再有缺省兜底**（wsCompressPaths / wsDeflatePolicy
+ * 在 ResolvedConfig 里是必填；原先那两处 `??` 是外层 resolve 已经兜过一次的重复守卫）。
+ */
+function proxyOptionsOf(
+  value: ResolvedConfig,
+  targetPort: number,
+  tls: TlsMaterials | undefined,
+  tokenProvider: { getToken: () => string | undefined },
+): LanProxyOptions {
+  return {
+    host: value.host,
+    port: value.port,
+    httpsPort: value.httpsPort,
+    tls,
+    targetHost: value.targetHost,
+    targetPort,
+    // 桥接总开关（issue #552 解耦）：保活默认基座能力。显式传入 enabled
+    // （resolve 层已兜底默认 true），不依赖 createLanProxy 缺省回退。
+    wsBridge: { enabled: value.wsBridgeEnabled },
+    wsCompress: {
+      // 语义收窄为压缩维度：仅控制桥接路径上是否协商 permessage-deflate。
+      enabled: value.wsCompressEnabled !== false,
+      paths: value.wsCompressPaths,
+    },
+    wsDeflatePolicy: value.wsDeflatePolicy,
+    // HTTP 响应压缩随转发器整体重建（配置热更新走同一条 sync() 路径）。
+    httpCompress: {
+      enabled: value.enabled !== false && value.httpCompressEnabled !== false,
+      level: value.httpCompressLevel,
+    },
+    // 自动注入启动令牌（issue #380）：仅开关开启时交给转发器；提供者 getter
+    // 跨重建共享（connection 服务 attach 前返回 undefined，逐请求降级）。
+    injectToken: value.injectToken ? tokenProvider : undefined,
+  };
+}
+
+/** 监听结果（listen() 的解析值）。 */
+interface ListenPorts {
+  readonly httpPort: number;
+  readonly httpsPort?: number;
+}
+
+/**
+ * 启动横幅的多行正文（监听 / HTTPS / 每个 LAN 地址 / injectToken 状态 / ownsHostCompat 状态）。
+ *
+ * 单独成函数是因为它与「要不要打印」是两件事：正文按当前配置与监听结果算，打不打印由
+ * printBanner 与防刷屏比较（lastBanner）决定。原先两者在一个 then 回调里，加一行横幅文案要
+ * 连带碰防刷屏逻辑。
+ */
+function listenBanner(
+  value: ResolvedConfig,
+  proxy: LanProxy,
+  ports: ListenPorts,
+  lanIps: readonly string[],
+): string {
+  const { httpPort, httpsPort } = ports;
+  // 证书来源：配了自定义证书就写路径，否则写「self-signed」。
+  const source = value.tlsCertFile ? value.tlsCertFile : "self-signed";
+  const lines = [
+    `listening http://${value.host}:${httpPort} -> http://${proxy.targetAuthority} (dsh web UI)`,
+  ];
+  if (httpsPort !== undefined) {
+    lines.push(
+      `https https://${value.host}:${httpsPort} -> http://${proxy.targetAuthority} (${source})`,
+    );
+  }
+  for (const ip of lanIps) {
+    lines.push(
+      `LAN access http://${ip}:${httpPort}${httpsPort !== undefined ? ` · https://${ip}:${httpsPort}` : ""}`,
+    );
+  }
+  // injectToken 开启警示（issue #380）：开启 = LAN 内设备免 token 直入，
+  // 横幅每次监听结果变化都带此行，保持可感知。
+  if (value.injectToken) {
+    lines.push(
+      "injectToken: ON — 局域网设备免 token 直接进入（等效信任整个 LAN，关闭见 插件管理器 → dsh-lan-proxy → 行详情）",
+    );
+  }
+  // ownsHostCompat 状态（issue #856）：默认关意味着非回环页面的设置面按上游策略
+  // 整体不可用，而该状态下的页面自身无法显示提示（官方设置插件列表在 scope
+  // unavailable 时不渲染任何条目，本插件卡片也不挂载）——横幅是唯一能把这个降级
+  // 讲给操作者的地方。
+  lines.push(
+    value.ownsHostCompat
+      ? "ownsHostCompat: ON — 已向非回环页面声明 ownsHost（伪造上游拓扑事实位；关闭见 插件管理器 → dsh-lan-proxy → 行详情）"
+      : "ownsHostCompat: OFF — 非回环页面的设置面不可用（上游策略；需要时在 插件管理器 → dsh-lan-proxy → 行详情 开启，或直接编辑 settings.yaml，或改用 ssh -L 走回环）",
+  );
+  return lines.map((line) => `  ${line}`).join("\n");
+}
 
 /** 本机非回环 IPv4 地址，用于启动时的 LAN URL 日志行。 */
 function lanIpv4Addresses(): string[] {
@@ -121,35 +231,18 @@ export function apply(ctx: Context, config: LanProxyConfig = {}): void {
   /** 合并默认值，得到一份完整配置（settings 缺失时兜底组合层 entry）。 */
   const resolve = (): ResolvedConfig => {
     const value = current();
-    return {
-      enabled: value.enabled ?? true,
-      host: value.host ?? DEFAULT_OPTIONS.host,
-      port: value.port ?? DEFAULT_OPTIONS.port,
-      httpsEnabled: value.httpsEnabled ?? true,
-      httpsPort: value.httpsPort ?? DEFAULT_OPTIONS.httpsPort,
-      tlsCertFile: value.tlsCertFile,
-      tlsKeyFile: value.tlsKeyFile,
-      tlsCaCertFile: value.tlsCaCertFile,
-      targetHost: value.targetHost ?? DEFAULT_OPTIONS.targetHost,
-      targetPort: value.targetPort,
-      printBanner: value.printBanner ?? true,
-      // 桥接总开关（issue #552 解耦）：默认 true 实现在本 resolve 接线层——
-      // createLanProxy 参数层不设默认，保证 smoke/unit 现有无参/旧参调用
-      // 行为不变（透传升级测试不意外走桥接）。
-      wsBridgeEnabled: value.wsBridgeEnabled ?? true,
-      wsCompressEnabled: value.wsCompressEnabled ?? true,
+    // 缺省一律由 RESOLVED_DEFAULTS 兜住，这里只铺「有值」的键。
+    // 桥接总开关（issue #552 解耦）：默认 true 实现在本 resolve 接线层——
+    // createLanProxy 参数层不设默认，保证 smoke/unit 现有无参/旧参调用
+    // 行为不变（透传升级测试不意外走桥接）。
+    // host trust 兼容开关（issue #856）：默认关；tap 内逐请求读取本函数结果。
+    return Object.assign({}, RESOLVED_DEFAULTS, definedOnly(value), {
       // 存量迁移（issue #395 M2）：显式保存过旧默认白名单
       // ["/api/events.mux", "/api/events.host"] 的 settings 用户层值升级后仍要
       // 归一化为新默认 ["/api/remote.mux"]，否则压缩桥接对新 mux 端点静默失效。
       wsCompressPaths:
         normalizeLegacyWsCompressPaths(value.wsCompressPaths) ?? DEFAULT_WSS_COMPRESS_PATHS,
-      wsDeflatePolicy: value.wsDeflatePolicy ?? DEFAULT_DEFLATE_POLICY,
-      httpCompressEnabled: value.httpCompressEnabled ?? true,
-      httpCompressLevel: value.httpCompressLevel ?? 1,
-      injectToken: value.injectToken ?? true,
-      // host trust 兼容开关（issue #856）：默认关；tap 内逐请求读取本函数结果。
-      ownsHostCompat: value.ownsHostCompat ?? false,
-    };
+    });
   };
 
   // ---- injectToken（issue #380）：launch token 动态提供者 ----
@@ -260,8 +353,6 @@ export function apply(ctx: Context, config: LanProxyConfig = {}): void {
       disposeProxy = undefined;
     }
     const value = resolve();
-    // HTTP 响应压缩开关（随转发器在 sync() 内一并生效/关闭）。
-    const httpCompressEnabled = value.enabled !== false && value.httpCompressEnabled !== false;
     if (!value.enabled) {
       return;
     }
@@ -273,70 +364,12 @@ export function apply(ctx: Context, config: LanProxyConfig = {}): void {
     const tls = value.httpsEnabled === false ? undefined : prepareTls(value);
     // HTTP 响应压缩随转发器整体重建：配置热更新（scope.watch 驱动）走同一条
     // sync() 路径，无需独立拆装生命周期。
-    const proxy = createLanProxy(
-      {
-        host: value.host,
-        port: value.port,
-        httpsPort: value.httpsPort,
-        tls,
-        targetHost: value.targetHost,
-        targetPort,
-        // 桥接总开关（issue #552 解耦）：保活默认基座能力。显式传入 enabled
-        // （resolve 层已兜底默认 true），不依赖 createLanProxy 缺省回退。
-        wsBridge: { enabled: value.wsBridgeEnabled },
-        wsCompress: {
-          // 语义收窄为压缩维度：仅控制桥接路径上是否协商 permessage-deflate。
-          enabled: value.wsCompressEnabled !== false,
-          paths: value.wsCompressPaths ?? DEFAULT_WSS_COMPRESS_PATHS,
-        },
-        wsDeflatePolicy: value.wsDeflatePolicy ?? DEFAULT_DEFLATE_POLICY,
-        httpCompress: {
-          enabled: httpCompressEnabled,
-          level: value.httpCompressLevel,
-        },
-        // 自动注入启动令牌（issue #380）：仅开关开启时交给转发器；提供者 getter
-        // 跨重建共享（connection 服务 attach 前返回 undefined，逐请求降级）。
-        injectToken: value.injectToken ? tokenProvider : undefined,
-      },
-      ctx.logger,
-    );
+    const proxy = createLanProxy(proxyOptionsOf(value, targetPort, tls, tokenProvider), ctx.logger);
     activeProxy = proxy;
     proxy
       .listen()
-      .then(({ httpPort, httpsPort }) => {
-        // 终端横幅：3 行式（监听 / HTTPS / LAN 访问），参考官方 dsh web 启动横幅
-        // 的 console.log 做法；监听结果没变化不重复打印（防热更新刷屏）。
-        const source = value.tlsCertFile ? value.tlsCertFile : "self-signed";
-        const lines = [
-          `listening http://${value.host}:${httpPort} -> http://${proxy.targetAuthority} (dsh web UI)`,
-        ];
-        if (httpsPort !== undefined) {
-          lines.push(
-            `https https://${value.host}:${httpsPort} -> http://${proxy.targetAuthority} (${source})`,
-          );
-        }
-        for (const ip of lanIpv4Addresses()) {
-          lines.push(
-            `LAN access http://${ip}:${httpPort}${httpsPort !== undefined ? ` · https://${ip}:${httpsPort}` : ""}`,
-          );
-        }
-        // injectToken 开启警示（issue #380）：开启 = LAN 内设备免 token 直入，
-        // 横幅每次监听结果变化都带此行，保持可感知。
-        if (value.injectToken) {
-          lines.push(
-            "injectToken: ON — 局域网设备免 token 直接进入（等效信任整个 LAN，关闭见 插件管理器 → dsh-lan-proxy → 行详情）",
-          );
-        }
-        // ownsHostCompat 状态（issue #856）：默认关意味着非回环页面的设置面按上游策略
-        // 整体不可用，而该状态下的页面自身无法显示提示（官方设置插件列表在 scope
-        // unavailable 时不渲染任何条目，本插件卡片也不挂载）——横幅是唯一能把这个降级
-        // 讲给操作者的地方。
-        lines.push(
-          value.ownsHostCompat
-            ? "ownsHostCompat: ON — 已向非回环页面声明 ownsHost（伪造上游拓扑事实位；关闭见 插件管理器 → dsh-lan-proxy → 行详情）"
-            : "ownsHostCompat: OFF — 非回环页面的设置面不可用（上游策略；需要时在 插件管理器 → dsh-lan-proxy → 行详情 开启，或直接编辑 settings.yaml，或改用 ssh -L 走回环）",
-        );
-        const banner = lines.map((line) => `  ${line}`).join("\n");
+      .then((ports) => {
+        const banner = listenBanner(value, proxy, ports, lanIpv4Addresses());
         if (value.printBanner !== false && banner !== lastBanner) {
           lastBanner = banner;
           console.log(`[lan-proxy]\n${banner}`);

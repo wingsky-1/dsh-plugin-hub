@@ -2,9 +2,65 @@
 import type { ToolDefinition } from "@deepseek-ai/dsh-tools";
 import type { ToolsDeps } from "../../deps.ts";
 import { bindWorktree, NO_ORIGIN, readOrigin, resolveTarget, resultOf } from "../bind/index.ts";
+import type { WorktreeOrigin } from "../bind/index.ts";
 import { argString, RESULT_SCHEMA, renderResult } from "../protocol/index.ts";
 import type { ToolResultValue } from "../protocol/index.ts";
 import { sessionOf } from "../session/index.ts";
+
+/** 分支名是否合法：git check-ref-format 说了算（宿主不自己写分支名正则，那套规则随 git 版本变）。 */
+async function checkBranch(
+  deps: ToolsDeps,
+  origin: WorktreeOrigin,
+  branch: string | undefined,
+): Promise<{ readonly ok: true } | { readonly ok: false; readonly result: ToolResultValue }> {
+  if (branch === undefined) return { ok: true };
+  if (await deps.git.checkRefFormat(branch)) return { ok: true };
+  return {
+    ok: false,
+    result: resultOf(
+      origin,
+      false,
+      "Not a valid git branch name: " + branch + " (git check-ref-format --branch rejected it).",
+    ),
+  };
+}
+
+/**
+ * 起点位置（base）的校验与归一化。base 缺席即返回 ok（worktree add 自己在 HEAD 上建）。
+ *
+ * 与「执行 worktree add」分成两步：这两道 guard 各自要在 git 调用**之前**生效（一条防选项
+ * 注入、一条把 base 归一成 SHA），而它们的失败结论与 add 的失败结论长得一样但原因不同——
+ * 混在 execute 里时，「为什么没建出来」要读完两段才知道。
+ */
+async function resolveStartPoint(
+  deps: ToolsDeps,
+  repo: string,
+  origin: WorktreeOrigin,
+  base: string | undefined,
+): Promise<
+  | { readonly ok: true; readonly startPoint?: string }
+  | { readonly ok: false; readonly result: ToolResultValue }
+> {
+  if (base === undefined) return { ok: true };
+  // 形态 guard 必须在 git 调用之前：起点位置的 "-" 开头值会被 worktree add 内部的选项解析吞掉
+  // （实测 -f / --force 会 rc=0 但忽略起点、从 HEAD 建），那正是「静默产出过期基线」本身。
+  if (base.startsWith("-")) {
+    return {
+      ok: false,
+      result: resultOf(
+        origin,
+        false,
+        "Not a valid start point: " + base + ' (a start point must not begin with "-").',
+      ),
+    };
+  }
+  // 归一化成 SHA 之后再进 argv：SHA 不以 "-" 开头，二次解析因此无处下手。
+  const startPoint = await deps.git.resolveCommit(repo, base);
+  if (startPoint === undefined) {
+    return { ok: false, result: resultOf(origin, false, "Not a valid start point: " + base + ".") };
+  }
+  return { ok: true, startPoint };
+}
 
 export function buildCreateTool(deps: ToolsDeps): ToolDefinition {
   return {
@@ -83,33 +139,11 @@ export function buildCreateTool(deps: ToolsDeps): ToolDefinition {
       const origin = read.origin;
       const target = resolveTarget(repo, raw);
       const branch = argString(args, "branch");
-      if (branch !== undefined && !(await deps.git.checkRefFormat(branch))) {
-        return resultOf(
-          origin,
-          false,
-          "Not a valid git branch name: " +
-            branch +
-            " (git check-ref-format --branch rejected it).",
-        );
-      }
-      const base = argString(args, "base");
-      // 形态 guard 必须在 git 调用之前：起点位置的 "-" 开头值会被 worktree add 内部的选项解析吞掉
-      // （实测 -f / --force 会 rc=0 但忽略起点、从 HEAD 建），那正是「静默产出过期基线」本身。
-      if (base !== undefined && base.startsWith("-")) {
-        return resultOf(
-          origin,
-          false,
-          "Not a valid start point: " + base + ' (a start point must not begin with "-").',
-        );
-      }
-      let startPoint: string | undefined;
-      if (base !== undefined) {
-        // 归一化成 SHA 之后再进 argv：SHA 不以 "-" 开头，二次解析因此无处下手。
-        startPoint = await deps.git.resolveCommit(repo, base);
-        if (startPoint === undefined) {
-          return resultOf(origin, false, "Not a valid start point: " + base + ".");
-        }
-      }
+      const branchCheck = await checkBranch(deps, origin, branch);
+      if (!branchCheck.ok) return branchCheck.result;
+      const start = await resolveStartPoint(deps, repo, origin, argString(args, "base"));
+      if (!start.ok) return start.result;
+      const startPoint = start.startPoint;
 
       const created = await deps.git.addWorktree(repo, target, branch, startPoint);
       if (!created.ok) {

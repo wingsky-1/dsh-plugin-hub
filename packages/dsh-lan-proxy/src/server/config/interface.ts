@@ -8,6 +8,7 @@
 export {
   Config,
   DEFAULT_WSS_COMPRESS_PATHS,
+  RESOLVED_DEFAULTS,
   normalizeLegacyWsCompressPaths,
   sanitizeSettings,
   validateSettings,

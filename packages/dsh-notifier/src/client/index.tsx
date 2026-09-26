@@ -94,6 +94,7 @@ import {
   createDisposerStack,
   isBuiltinKind,
 } from "../shared/interface.ts";
+import type { DisposerStack } from "../shared/disposers.ts";
 import type { NotifySeverity } from "../shared/interface.ts";
 // 显式类型导入，先把 @deepseek-ai/dsh-client-ui-slots 拉进模块解析图：上游发布物
 // lib/types/*.d.ts 相对导入保留 .ts 后缀，declare module 增强的模块名解析会判
@@ -515,6 +516,198 @@ function sendTestReq(channelId?: string, draftChannels?: unknown): Promise<SendT
     });
   }
   return chain;
+}
+
+// ── SettingsCard 的四个呈现块（#732 E6）────────────────────────────────────
+// 它们与组件本体是两类不同的变化来源：组件持有 state 与事件回调，这四块只做「给定这些值，
+// 渲染成什么」。混写在组件里时，改一条降级文案要去数半个组件的闭包依赖。
+
+/**
+ * 三端降级文案（服务不可用 / 非安全上下文 / 平台不支持）。
+ * 浏览器通知权限状态行已移入「浏览器通知」频道卡，故这里只留三条全局说明。
+ */
+function degradationNotes(
+  meta: MetaView | null,
+  t: Translate,
+  isSecureContext: () => boolean,
+): React.ReactNode[] {
+  const degradation: React.ReactNode[] = [];
+  if (meta && meta.writable === false) {
+    degradation.push(
+      <div className="dn-set-note" key="settings-unavailable">
+        {t("settingsSvcDown")}
+      </div>,
+    );
+  }
+  if ("Notification" in window) {
+    if (!isSecureContext()) {
+      degradation.push(
+        <div className="dn-set-note" key="insecure">
+          {t("httpDegraded")}
+        </div>,
+      );
+    }
+  } else {
+    degradation.push(
+      <div className="dn-set-note" key="noapi">
+        {t("iosUnsupported")}
+      </div>,
+    );
+  }
+  return degradation;
+}
+
+/** 三个 tab 的按钮：分段 icon + 待确认 kind 徽标（确认流是安全设计，不可被 tab 埋没）。 */
+function tabBar(
+  activeTab: "events" | "channels" | "history",
+  pendingKinds: number,
+  t: Translate,
+  setActiveTab: (v: "events" | "channels" | "history") => void,
+): React.ReactNode {
+  const tab = (which: "events" | "channels" | "history", label: string, badge: React.ReactNode) => (
+    <button
+      type="button"
+      className={"dn-set-tab" + (activeTab === which ? " dn-set-tabActive" : "")}
+      onClick={function () {
+        setActiveTab(which);
+      }}
+    >
+      {tabIcon(which)}
+      {label}
+      {badge}
+    </button>
+  );
+  return (
+    <div className="dn-set-tabs">
+      {tab(
+        "events",
+        t("secEvents"),
+        pendingKinds > 0 ? <span className="dn-set-tabBadge">{String(pendingKinds)}</span> : null,
+      )}
+      {tab("channels", t("secChannels"), null)}
+      {tab("history", t("secHistory"), null)}
+    </div>
+  );
+}
+
+/** dry-run 的 status 词 → 状态标签文案（认不出的词原样透出，不替它编一个）。 */
+function dryRunStatusTextOf(status: string, t: Translate): string {
+  if (status === "ok") return t("chStatusOk");
+  if (status === "failed") return t("chStatusFailed");
+  if (status === "skipped") return t("chStatusSkipped");
+  return status;
+}
+
+/**
+ * dry-run 结果行：独立行、打标「草稿测试·未落盘」，常驻 [去保存][放弃草稿]，通过不自动保存。
+ * 在飞（pending）时只显结论位、不给动作按钮——两个动作在结论出来前无处可去。
+ */
+function dryRunRowOf(
+  dryRun: { channelId: string; pending: boolean; status?: string; reason?: string } | null,
+  saving: boolean,
+  t: Translate,
+  saveFor: () => void,
+  discard: () => void,
+): React.ReactNode {
+  if (dryRun === null) return null;
+  const result = dryRun.pending ? null : (
+    <span className="dn-dryrunResult">
+      {dryRun.channelId +
+        " · " +
+        dryRunStatusTextOf(dryRun.status || "", t) +
+        (dryRun.reason ? "：" + dryRun.reason : "")}
+    </span>
+  );
+  const actions = dryRun.pending ? null : (
+    <span className="dn-dryrunActions">
+      <button
+        type="button"
+        className="dn-set-btn dn-set-btnSmall dn-set-save"
+        disabled={saving}
+        onClick={saveFor}
+      >
+        {t("dryRunGoSave")}
+      </button>
+      <button
+        type="button"
+        className="dn-set-btn dn-set-btnSmall"
+        disabled={saving}
+        onClick={discard}
+      >
+        {t("dryRunDiscard")}
+      </button>
+    </span>
+  );
+  return (
+    <div className="dn-dryrun" role="status" title={t("chTestDraftTitle")}>
+      <span className="dn-dryrunTag">{t("dryRunTag")}</span>
+      {result === null ? <span className="dn-dryrunPending">{t("dryRunPending")}</span> : result}
+      {actions}
+      <div className="dn-dryrunNote">{t("dryRunNote")}</div>
+    </div>
+  );
+}
+
+/** 当前 tab 的 pane：三个 pane 是**条件调用**（普通函数返回 JSX，非 active tab 根本不调用
+ *  ——保持既有条件渲染语义；改成组件会引入挂载/卸载）。故按 tab 名分发到对应调用。 */
+function activePaneOf(
+  activeTab: "events" | "channels" | "history",
+  panes: {
+    events: () => React.ReactNode;
+    channels: () => React.ReactNode;
+    history: () => React.ReactNode;
+  },
+): React.ReactNode {
+  if (activeTab === "events") return panes.events();
+  if (activeTab === "channels") return panes.channels();
+  return panes.history();
+}
+
+/** 409 冲突双动作横幅（非模态：横幅期间可继续编辑；动作触发时实时重算本地变更）。 */
+function conflictBanner(
+  conflict: { entry: string; latest: ConflictLatest } | null,
+  saving: boolean,
+  t: Translate,
+  loadLatest: () => void,
+  overwrite: () => void,
+  ignore: () => void,
+): React.ReactNode {
+  if (conflict === null) return null;
+  return (
+    <div className="dn-conflict" role="alert">
+      <span className="dn-conflictText">
+        {t(conflict.entry === "channels" ? "conflictChannels" : "conflictTitle")}
+      </span>
+      <span className="dn-conflictActions">
+        <button type="button" className="dn-set-btn dn-set-btnSmall" onClick={loadLatest}>
+          {t("conflictLoadLatest")}
+        </button>
+        <button
+          type="button"
+          className="dn-set-btn dn-set-btnSmall dn-set-save"
+          disabled={saving}
+          onClick={overwrite}
+        >
+          {t("conflictOverwrite")}
+        </button>
+        {/* 「忽略」= 关闭横幅、草稿保留原样 */}
+        <button type="button" className="dn-set-btn dn-set-btnSmall" onClick={ignore}>
+          {t("conflictIgnore")}
+        </button>
+      </span>
+    </div>
+  );
+}
+
+/** 底部保存栏的左侧状态位：保存反馈优先于脏文案，两者都没有就留空。 */
+function saveStatusNode(
+  saved: { msg: string; err: boolean } | null,
+  dirtyText: string | null,
+): React.ReactNode {
+  if (saved !== null) {
+    return <span className={saved.err ? "dn-set-error" : "dn-set-saved"}>{saved.msg}</span>;
+  }
+  return dirtyText === null ? null : <span className="dn-dirty">{dirtyText}</span>;
 }
 
 /**
@@ -1382,29 +1575,7 @@ function SettingsCard() {
 
   // 三端降级文案（浏览器通知权限状态行已移入「浏览器通知」频道卡，
   // 这里只保留服务不可用 / 非安全上下文 / 平台不支持三条全局降级说明）
-  const degradation: React.ReactNode[] = [];
-  if (metaValue && metaValue.writable === false) {
-    degradation.push(
-      <div className="dn-set-note" key="settings-unavailable">
-        {t("settingsSvcDown")}
-      </div>,
-    );
-  }
-  if ("Notification" in window) {
-    if (!isSecureContext()) {
-      degradation.push(
-        <div className="dn-set-note" key="insecure">
-          {t("httpDegraded")}
-        </div>,
-      );
-    }
-  } else {
-    degradation.push(
-      <div className="dn-set-note" key="noapi">
-        {t("iosUnsupported")}
-      </div>,
-    );
-  }
+  const degradation = degradationNotes(metaValue, t, isSecureContext);
 
   // ---- 卡内三 tab（通知事件 / 通知频道 / 通知记录）----
 
@@ -1414,41 +1585,7 @@ function SettingsCard() {
   }).length;
 
   // tab 栏：三个普通 button（不引入 role=tablist 管理成本）+ 分段 icon
-  const tabbar = (
-    <div className="dn-set-tabs">
-      <button
-        type="button"
-        className={"dn-set-tab" + (activeTab === "events" ? " dn-set-tabActive" : "")}
-        onClick={function () {
-          setActiveTab("events");
-        }}
-      >
-        {tabIcon("events")}
-        {t("secEvents")}
-        {pendingKinds > 0 ? <span className="dn-set-tabBadge">{String(pendingKinds)}</span> : null}
-      </button>
-      <button
-        type="button"
-        className={"dn-set-tab" + (activeTab === "channels" ? " dn-set-tabActive" : "")}
-        onClick={function () {
-          setActiveTab("channels");
-        }}
-      >
-        {tabIcon("channels")}
-        {t("secChannels")}
-      </button>
-      <button
-        type="button"
-        className={"dn-set-tab" + (activeTab === "history" ? " dn-set-tabActive" : "")}
-        onClick={function () {
-          setActiveTab("history");
-        }}
-      >
-        {tabIcon("history")}
-        {t("secHistory")}
-      </button>
-    </div>
-  );
+  const tabbar = tabBar(activeTab, pendingKinds, t, setActiveTab);
 
   // 去掉设置卡 title/副标题；顶部直接是 tab 栏。
   // 底部保存栏 = 脏状态指示（diffSettingsPayload 键数）+ 放弃更改 + 保存。
@@ -1468,51 +1605,15 @@ function SettingsCard() {
    * dry-run 结果行（B-S1-4）：独立行、打标「草稿测试·未落盘」，常驻 [去保存][放弃草稿]，
    * 通过不自动保存。state 在卡片顶层：切 tab 保留（B8），改草稿即清（patch/commitSettings）。
    */
-  function dryRunStatusText(status: string): string {
-    if (status === "ok") return t("chStatusOk");
-    if (status === "failed") return t("chStatusFailed");
-    if (status === "skipped") return t("chStatusSkipped");
-    return status;
-  }
-  const dryRunRow =
-    dryRun === null ? null : (
-      <div className="dn-dryrun" role="status" title={t("chTestDraftTitle")}>
-        <span className="dn-dryrunTag">{t("dryRunTag")}</span>
-        {dryRun.pending ? (
-          <span className="dn-dryrunPending">{t("dryRunPending")}</span>
-        ) : (
-          <span className="dn-dryrunResult">
-            {dryRun.channelId +
-              " · " +
-              dryRunStatusText(dryRun.status || "") +
-              (dryRun.reason ? "：" + dryRun.reason : "")}
-          </span>
-        )}
-        {dryRun.pending ? null : (
-          <span className="dn-dryrunActions">
-            <button
-              type="button"
-              className="dn-set-btn dn-set-btnSmall dn-set-save"
-              disabled={saving}
-              onClick={function () {
-                saveFor("channels");
-              }}
-            >
-              {t("dryRunGoSave")}
-            </button>
-            <button
-              type="button"
-              className="dn-set-btn dn-set-btnSmall"
-              disabled={saving}
-              onClick={discardChanges}
-            >
-              {t("dryRunDiscard")}
-            </button>
-          </span>
-        )}
-        <div className="dn-dryrunNote">{t("dryRunNote")}</div>
-      </div>
-    );
+  const dryRunRow = dryRunRowOf(
+    dryRun,
+    saving,
+    t,
+    function () {
+      saveFor("channels");
+    },
+    discardChanges,
+  );
 
   // 三个 pane 的**条件调用**（普通函数返回 JSX，非 active tab 根本不调用——保持既有条件渲染
   // 语义；改成组件会引入挂载/卸载）。依赖一律显式传参，pane 模块内不读本组件闭包。
@@ -1553,61 +1654,40 @@ function SettingsCard() {
         {dryRunRow}
         {/* 历史独立成 tab：清理/发送测试/刷新并排工具行；请求权限按钮随权限状态行归入
             「浏览器通知」频道卡 */}
-        {activeTab === "events"
-          ? eventsPane(settings, kindsList, patch, confirmOne, routeChipsRow, severityOf, t)
-          : activeTab === "channels"
-            ? channelsPane(channelsPaneDeps)
-            : historyPane(
-                history,
-                clearArmedValue,
-                confirmClear,
-                sendTest,
-                loadHistory,
-                severityOf,
-                t,
-              )}
+        {activePaneOf(activeTab, {
+          events: function () {
+            return eventsPane(settings, kindsList, patch, confirmOne, routeChipsRow, severityOf, t);
+          },
+          channels: function () {
+            return channelsPane(channelsPaneDeps);
+          },
+          history: function () {
+            return historyPane(
+              history,
+              clearArmedValue,
+              confirmClear,
+              sendTest,
+              loadHistory,
+              severityOf,
+              t,
+            );
+          },
+        })}
         <div className="dn-set-notes">{degradation}</div>
         {/* 409 冲突双动作横幅（非模态：横幅期间可继续编辑；动作触发时
               实时重算本地变更）。「忽略」= 关闭横幅、草稿保留原样。 */}
-        {conflict ? (
-          <div className="dn-conflict" role="alert">
-            <span className="dn-conflictText">
-              {t(conflict.entry === "channels" ? "conflictChannels" : "conflictTitle")}
-            </span>
-            <span className="dn-conflictActions">
-              <button
-                type="button"
-                className="dn-set-btn dn-set-btnSmall"
-                onClick={resolveConflictLoadLatest}
-              >
-                {t("conflictLoadLatest")}
-              </button>
-              <button
-                type="button"
-                className="dn-set-btn dn-set-btnSmall dn-set-save"
-                disabled={saving}
-                onClick={resolveConflictOverwrite}
-              >
-                {t("conflictOverwrite")}
-              </button>
-              <button
-                type="button"
-                className="dn-set-btn dn-set-btnSmall"
-                onClick={function () {
-                  setConflict(null);
-                }}
-              >
-                {t("conflictIgnore")}
-              </button>
-            </span>
-          </div>
-        ) : null}
+        {conflictBanner(
+          conflict,
+          saving,
+          t,
+          resolveConflictLoadLatest,
+          resolveConflictOverwrite,
+          function () {
+            setConflict(null);
+          },
+        )}
         <div className="dn-set-foot">
-          {saved ? (
-            <span className={saved.err ? "dn-set-error" : "dn-set-saved"}>{saved.msg}</span>
-          ) : dirtyText !== null ? (
-            <span className="dn-dirty">{dirtyText}</span>
-          ) : null}
+          {saveStatusNode(saved, dirtyText)}
           <span className="dn-spacer" />
           {/* 保存中（guard 在途）禁用「放弃更改」与「保存」——防提交窗口内矛盾操作
                 （放弃被在途成功回调覆盖基线）与连点重复 PUT；按钮文案切换「保存中…」。 */}
@@ -1667,6 +1747,92 @@ interface ClientContext {
   effect: (callback: () => () => void, id: string) => void;
 }
 
+/**
+ * locale 接缝：注册字典 → 绑翻译函数 → 订阅 locale 变化重绑。
+ *
+ * 与 slots 接线、通知半区是**三处独立的宿主接缝**，各有各的降级口径：这一处失败只回落
+ * key 本体（面板照常，只是文案是 key），slots 失败只少一个 tab，通知半区失败才是半区不可用。
+ * 三条口径混在 apply 一处时，判红分不清是哪条接缝坏了。
+ */
+function bindLocaleService(ctx: ClientContext, stack: DisposerStack): void {
+  const locale = ctx.get("locale") as LocaleServiceView | null | undefined;
+  // 订阅取消函数供 disposer 卸载调用（守卫对齐 provider-usage/
+  // mcp-manager 的 undefined 形态——不预设 subscribe 返回 null，防其返回
+  // null 时 null 初始化遮蔽导致守卫失效），防重复 apply 后旧订阅持续重绑
+  // 已停用实例。
+  let unsubLocale: (() => void) | undefined;
+  if (locale && typeof locale.register === "function") {
+    // 收窄后的别名：嵌套回调内 narrowing 会重置，别名本身即非空类型，回调内照常可用。
+    const localeService = locale;
+    // bind/subscribe 必须带接收者调用：宿主实现依赖 this，detached 摘出即抛，失败被各层 catch 静默吞掉后整面板回落 key 本体。
+    try {
+      localeService.register(NS, { zh: zh, en: en });
+      // 宿主 bind 出的签名以本包字典键为参数，比端口声明的 string 更窄——收口在适配这一处
+      bindTranslate(localeService.bind(NS) as Translate);
+      if (
+        typeof localeService.subscribe === "function" &&
+        typeof localeService.getSnapshot === "function"
+      ) {
+        unsubLocale = localeService.subscribe(function () {
+          try {
+            bindTranslate(localeService.bind(NS) as Translate);
+          } catch {
+            /* 忽略 */
+          }
+        });
+      }
+    } catch (e) {
+      console.warn("[dsh-notifier] locale 注册失败：", e);
+    }
+  }
+  if (unsubLocale !== undefined) {
+    const unsubscribe = unsubLocale;
+    stack.own(function () {
+      unsubscribe();
+    });
+  }
+}
+
+/**
+ * slots 接缝：把设置面板注册成独立 tab。
+ *
+ * 参照 dsh-provider-usage「用量统计」tab 的接线（slots.inject + register，独立顶层页）。
+ * 旧运行时若不声明该插槽，inject 回调不执行 → tab 不挂载、通知半区照常工作（与
+ * provider-usage 同语义，不做 plugin.item 双插槽重复展示）。
+ */
+function injectSettingsTab(ctx: ClientContext): void {
+  const slots = ctx.get("slots") as SlotsView | null | undefined;
+  if (slots && typeof slots.inject === "function") {
+    const slotHost = slots;
+    // 就地兜住插槽接线：这里失败只意味着设置 tab 没挂上，通知半区照常工作；冒到外层会被
+    // 报成整段「挂载失败」，把一次可降级的缺页说成插件不可用。
+    try {
+      slotHost.inject("settings.section", function () {
+        return slotHost.register(
+          // label 传 thunk：宿主 nav rows 每次读取经 resolveSlotLabel
+          // 求值 + shell 订阅 locale 重渲染，切语言即跟随（注册期求值字符串快照是旧行为）。
+          // t 走 client/locale.ts 的当前绑定（locale.subscribe 回调重绑），thunk 保持最小
+          // t(key) 形态、不包任何可能抛错的逻辑（thunk 抛错会炸宿主 nav 渲染）。
+          {
+            name: "settings.section",
+            id: "dsh-notifier",
+            order: 70,
+            label: () => t("tabLabel"),
+            locale: NS,
+          },
+          function () {
+            return <SettingsCard />;
+          },
+        );
+      });
+    } catch (error) {
+      console.warn("[dsh-notifier] 设置 tab 未挂载：", error);
+    }
+  } else {
+    console.warn("[dsh-notifier] 缺少 slots 服务，设置 tab 未挂载（通知半区照常工作）");
+  }
+}
+
 export function apply(ctx: ClientContext): void {
   // 清理栈：边装配边采集 teardown，登记点（attach）放在 finally——中途同步抛错时，
   // 已建立的那些资源也仍有 disposer 可摘（见 shared/disposers.ts 文件头对登记点在后的说明）。
@@ -1720,42 +1886,7 @@ export function apply(ctx: ClientContext): void {
     });
 
     // i18n：注册本插件字典；t 绑定官方 locale 服务（未装配回落 key 本体）。
-    const locale = ctx.get("locale") as LocaleServiceView | null | undefined;
-    // 订阅取消函数供 disposer 卸载调用（守卫对齐 provider-usage/
-    // mcp-manager 的 undefined 形态——不预设 subscribe 返回 null，防其返回
-    // null 时 null 初始化遮蔽导致守卫失效），防重复 apply 后旧订阅持续重绑
-    // 已停用实例。
-    let unsubLocale: (() => void) | undefined;
-    if (locale && typeof locale.register === "function") {
-      // 收窄后的别名：嵌套回调内 narrowing 会重置，别名本身即非空类型，回调内照常可用。
-      const localeService = locale;
-      // bind/subscribe 必须带接收者调用：宿主实现依赖 this，detached 摘出即抛，失败被各层 catch 静默吞掉后整面板回落 key 本体。
-      try {
-        localeService.register(NS, { zh: zh, en: en });
-        // 宿主 bind 出的签名以本包字典键为参数，比端口声明的 string 更窄——收口在适配这一处
-        bindTranslate(localeService.bind(NS) as Translate);
-        if (
-          typeof localeService.subscribe === "function" &&
-          typeof localeService.getSnapshot === "function"
-        ) {
-          unsubLocale = localeService.subscribe(function () {
-            try {
-              bindTranslate(localeService.bind(NS) as Translate);
-            } catch {
-              /* 忽略 */
-            }
-          });
-        }
-      } catch (e) {
-        console.warn("[dsh-notifier] locale 注册失败：", e);
-      }
-    }
-    if (unsubLocale !== undefined) {
-      const unsubscribe = unsubLocale;
-      stack.own(function () {
-        unsubscribe();
-      });
-    }
+    bindLocaleService(ctx, stack);
 
     // 通知半区（SSE / 浏览器通知）：不依赖任何插件 DOM，直接启动。
     // 会话是「建立 + 配对释放」的资源，走 acquire：make 抛错就不留释放登记（会话没建成，
@@ -1804,36 +1935,7 @@ export function apply(ctx: ClientContext): void {
     // 独立顶层页）；label 为导航显示文本。旧运行时若不声明该插槽，inject
     // 回调不执行 → tab 不挂载、通知半区照常工作（与 provider-usage 同语义，
     // 不做 plugin.item 双插槽重复展示）。
-    const slots = ctx.get("slots") as SlotsView | null | undefined;
-    if (slots && typeof slots.inject === "function") {
-      const slotHost = slots;
-      // 就地兜住插槽接线：这里失败只意味着设置 tab 没挂上，通知半区照常工作；冒到外层会被
-      // 报成整段「挂载失败」，把一次可降级的缺页说成插件不可用。
-      try {
-        slotHost.inject("settings.section", function () {
-          return slotHost.register(
-            // label 传 thunk：宿主 nav rows 每次读取经 resolveSlotLabel
-            // 求值 + shell 订阅 locale 重渲染，切语言即跟随（注册期求值字符串快照是旧行为）。
-            // t 走 client/locale.ts 的当前绑定（locale.subscribe 回调重绑），thunk 保持最小
-            // t(key) 形态、不包任何可能抛错的逻辑（thunk 抛错会炸宿主 nav 渲染）。
-            {
-              name: "settings.section",
-              id: "dsh-notifier",
-              order: 70,
-              label: () => t("tabLabel"),
-              locale: NS,
-            },
-            function () {
-              return <SettingsCard />;
-            },
-          );
-        });
-      } catch (error) {
-        console.warn("[dsh-notifier] 设置 tab 未挂载：", error);
-      }
-    } else {
-      console.warn("[dsh-notifier] 缺少 slots 服务，设置 tab 未挂载（通知半区照常工作）");
-    }
+    injectSettingsTab(ctx);
   } catch (error) {
     console.warn("[dsh-notifier] 挂载失败：", error);
   } finally {

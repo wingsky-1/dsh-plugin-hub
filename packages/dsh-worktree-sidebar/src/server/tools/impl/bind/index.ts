@@ -15,6 +15,12 @@ import type { AgentFace, ToolsDeps } from "../../deps.ts";
 import type { SessionFace } from "../session/index.ts";
 import type { ToolResultValue } from "../protocol/index.ts";
 
+/**
+ * 绑定来源的形态。本域内各工具一律从**这里**取，不各自直引 scope/interface：
+ * tools → scope 是域间引用，纪律要求它只出现在一个面上（bind 域已经替本域读过一次）。
+ */
+export type { WorktreeOrigin };
+
 /** 当前的绑定状态（三个工具的返回信封都要它）。 */
 export interface BindingState {
   readonly bound: boolean;

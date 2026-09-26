@@ -44,8 +44,13 @@ describe("产物契约：能力自检面真的被界面挂上（源码 + 产物�
       "utf8",
     );
     expect(card).toContain("export function builtinCard(");
-    expect(card).toMatch(/\{ch\.type === "system" \? hostDiagnosticsBlock\(diag\) : null\}/u);
-    expect(card).toMatch(/\{ch\.type === "browser" \? browserDiagnosticsLine\(diag\) : null\}/u);
+    // 诊断行按类型分派已收进 builtinTypeRows（#732 E6）：卡体调用点 + 分派守卫 + 两处行渲染
+    // 三个锚一起判——只看行渲染会漏掉「行还在但卡不挂」，只看调用点会漏掉「挂了但不按类型分派」。
+    expect(card).toContain("{builtinTypeRows({");
+    expect(card).toContain('if (type === "browser") {');
+    expect(card).toContain('if (type === "system") {');
+    expect(card).toContain("{browserDiagnosticsLine(diag)}");
+    expect(card).toContain("{hostDiagnosticsBlock(diag)}");
     // 卡头那行在窄屏 @media (max-width: 480px) 下 display:none——诊断结论必须落在卡体。
     expect(card).toContain("<summary>");
     expect(card).toContain("</summary>");

@@ -114,16 +114,8 @@ export function loadDownloadableCertificate(
   format: "der" | "pem",
   logWarn?: (message: string) => void,
 ): DownloadCertResult {
-  let file: string | undefined;
-  if (hasCertPath(source.tlsCaCertFile)) {
-    file = source.tlsCaCertFile;
-  } else if (hasCertPath(source.tlsCertFile) || hasCertPath(source.tlsKeyFile)) {
-    return { ok: false, code: "ca-unconfigured" };
-  } else {
-    // #930 Phase 1：自签模式无 CA 可下发（下发自签叶子对 iOS 无用但外观可用，
-    // 口径不诚实），与自定义无 CA 同码 404，调用方凭 caConfigured=false 联合判定。
-    return { ok: false, code: "ca-unconfigured" };
-  }
+  const file = downloadableCaFile(source);
+  if (file === undefined) return { ok: false, code: "ca-unconfigured" };
   let raw: Buffer;
   try {
     raw = readFileSync(file);
@@ -143,6 +135,21 @@ export function loadDownloadableCertificate(
     );
     return { ok: false, code: "ca-invalid" };
   }
+  return downloadableBody(der, format);
+}
+
+/** 可下发的 CA 文件：只有显式配置的 tlsCaCertFile。自签与「有叶子无 CA」都返回 undefined。
+ *
+ *  #930 Phase 1：自签模式无 CA 可下发（下发自签叶子对 iOS 无用但外观可用，
+ *  口径不诚实），与自定义无 CA 同码 404，调用方凭 caConfigured=false 联合判定。
+ *  「配了叶子但没配 CA」同样不可下发——它与自签在调用方看来都是 caConfigured=false。 */
+function downloadableCaFile(source: DownloadCertSource): string | undefined {
+  if (hasCertPath(source.tlsCaCertFile)) return source.tlsCaCertFile;
+  return undefined;
+}
+
+/** 下发体：PEM 走文本封装与 .pem 文件名，DER 走二进制与 .cer 文件名。 */
+function downloadableBody(der: Buffer, format: "der" | "pem"): DownloadCertResult {
   if (format === "pem") {
     return {
       ok: true,

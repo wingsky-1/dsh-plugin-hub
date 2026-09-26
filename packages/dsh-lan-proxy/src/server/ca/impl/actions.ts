@@ -21,6 +21,8 @@ import {
   writeJson,
 } from "../../../../../../shared/host-utils.js";
 import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
+import type { ResolvedConfig } from "../../config/interface.ts";
+import type { CaState } from "./state.ts";
 import {
   CA_CERT_FILE,
   CA_KEY_FILE,
@@ -65,8 +67,16 @@ const CA_ERROR_DETAILS: Record<string, string> = {
   "settings-unavailable": "settings 服务不可用，无法保存配置",
 };
 
+/** 托管四件套的绝对路径（每次现读：certsDir 随 DSH_HOME 变，装配期快照会跨账号串味）。 */
+interface ManagedPaths {
+  readonly caCert: string;
+  readonly caKey: string;
+  readonly leafCert: string;
+  readonly leafKey: string;
+}
+
 /** 托管四件套绝对路径（固定文件名 + certsDir，见 shared/paths.ts F18）。 */
-function managedPaths(): { caCert: string; caKey: string; leafCert: string; leafKey: string } {
+function managedPaths(): ManagedPaths {
   const dir = certsDir();
   return {
     caCert: join(dir, CA_CERT_FILE),
@@ -200,53 +210,21 @@ export function buildCaActionRoutes(deps: CaActionDeps): WebRoute[] {
     path: deps.path,
     handler: async (req, res) => {
       if (!guardLoopbackMethod(req, res, ["POST"])) return;
-      const outcome = await readJsonBodyOutcome(req, 64 * 1024);
-      if (outcome.kind === "invalid") {
-        writeJson(res, 400, {
-          ok: false,
-          error: { code: "invalid-json", details: "invalid JSON body: " + outcome.reason },
-        });
-        return;
-      }
-      // JSON 体边界收窄：reader 只承诺 object，字段读取走 Record 视图（数组体各字段即缺席）。
-      const rawBody: Record<string, unknown> =
-        outcome.kind === "json" ? (outcome.value as Record<string, unknown>) : {};
-      const parsed = parsePostBody(rawBody);
-      if (!deps.config.writable()) {
-        writeCaError(res, 503, "settings-unavailable");
-        return;
-      }
-      // P2-4：expectedRevision 缺席即 409（禁 last-write-wins 静默覆盖；
-      // 调用方刷新拿新 revision 后重试，文案复用 conflict）。
-      const expectedRevision = parsed.expectedRevision;
-      if (expectedRevision === undefined) {
-        writeCaError(res, 409, "ca-revision-stale");
-        return;
-      }
+      const parsed = await readCaPostBody(req, res);
+      if (parsed === undefined) return;
       const current = deps.config.resolve();
-      const state = classifyCaState({
-        tlsCaCertFile: current.tlsCaCertFile,
-        tlsCertFile: current.tlsCertFile,
-        tlsKeyFile: current.tlsKeyFile,
-      });
-      if (state === "custom") {
-        writeCaError(res, 409, "ca-customized");
+      // 放行判定：设置面、乐观并发、证书态势三道都在这里出结论（见 caPrecheck）。
+      const pre = caPrecheck(deps, parsed, current);
+      if (!pre.ok) {
+        writeCaError(res, pre.status, pre.code);
         return;
       }
-      if (state === "error") {
-        writeCaError(res, 409, "ca-misconfigured");
-        return;
-      }
+      const expectedRevision = pre.expectedRevision;
+      const state = pre.state;
       const paths = managedPaths();
-      const full = state === "self-signed" ? true : parsed.rotateCa;
-      const rotateTargets = full
-        ? [paths.caCert, paths.caKey, paths.leafCert, paths.leafKey]
-        : [paths.leafCert, paths.leafKey];
-      // 已存在即需确认（F16）：托管态恒需（轮换具破坏性）；自签态仅残留文件时需
-      // （真正全新安装一键直达；残留覆盖走确认 + .bak 留痕）。
-      const needsConfirm =
-        state === "managed" ? true : rotateTargets.some((target) => existsSync(target));
-      if (needsConfirm && !parsed.confirmed) {
+      const full = caFullOf(state, parsed.rotateCa);
+      const rotateTargets = caRotateTargetsOf(full, paths);
+      if (caNeedsConfirm(state, rotateTargets) && !parsed.confirmed) {
         writeCaError(res, 409, "needs-confirm");
         return;
       }
@@ -264,25 +242,114 @@ export function buildCaActionRoutes(deps: CaActionDeps): WebRoute[] {
       } catch (err) {
         const code = (err as { code?: unknown })?.code;
         if (code === "SETTINGS_CONFLICT") {
-          for (const target of rotateTargets) cleanupTempFile(target);
+          cleanupTempFiles(rotateTargets);
           writeCaError(res, 409, "conflict");
           return;
         }
-        for (const target of rotateTargets) cleanupTempFile(target);
+        cleanupTempFiles(rotateTargets);
         deps.logWarn("lan-proxy: 一键 CA 动作失败 — " + errorMessage(err));
         writeCaError(res, 500, "ca-generate-failed");
         return;
       } finally {
         gate.release();
       }
-      let result: CaActionResult;
-      if (state === "self-signed") result = { ok: true, mode: "generated" };
-      else if (full) result = { ok: true, mode: "ca-rotated" };
-      else result = { ok: true, mode: "leaf-rotated" };
-      writeJson(res, 200, result);
+      writeJson(res, 200, caResultOf(state, full));
     },
   };
   return [actionRoute];
+}
+
+/**
+ * 本轮是「建全套 / 轮换 CA」还是「只轮换叶子」：自签态恒建全套（没有 CA 可续用，
+ * rotateCa 对它无意义）；托管态听调用方的 rotateCa。
+ */
+function caFullOf(state: CaState, rotateCa: boolean): boolean {
+  return state === "self-signed" ? true : rotateCa;
+}
+
+/** 本轮要轮换的目标文件：全套（CA 两件 + 叶子两件）或只换叶子两件。 */
+function caRotateTargetsOf(full: boolean, paths: ManagedPaths): string[] {
+  return full
+    ? [paths.caCert, paths.caKey, paths.leafCert, paths.leafKey]
+    : [paths.leafCert, paths.leafKey];
+}
+
+/**
+ * 读体 → 收窄 → 解析：body 非法即就地 400 并返回 undefined（handler 见到 undefined 即结束）。
+ *
+ * 「体读不出来」与「体读出来但字段不对」是两级判据，混在 handler 里时 handler 前 20 行都在
+ * 处理入参、真正的动作编排被推到看不见的地方。
+ */
+async function readCaPostBody(
+  req: Parameters<NonNullable<WebRoute["handler"]>>[0],
+  res: ServerResponse,
+): Promise<ParsedPostBody | undefined> {
+  const outcome = await readJsonBodyOutcome(req, 64 * 1024);
+  if (outcome.kind === "invalid") {
+    writeJson(res, 400, {
+      ok: false,
+      error: { code: "invalid-json", details: "invalid JSON body: " + outcome.reason },
+    });
+    return undefined;
+  }
+  // JSON 体边界收窄：reader 只承诺 object，字段读取走 Record 视图（数组体各字段即缺席）。
+  const rawBody: Record<string, unknown> =
+    outcome.kind === "json" ? (outcome.value as Record<string, unknown>) : {};
+  return parsePostBody(rawBody);
+}
+
+/** 失败补偿：把本轮已动过的目标逐个撤回来（两条 catch 分支共用，故收一处）。 */
+function cleanupTempFiles(targets: readonly string[]): void {
+  for (const target of targets) cleanupTempFile(target);
+}
+
+/**
+ * 放行预检的结论：拒绝侧带状态码与错误码（handler 就地 4xx 出去，不抛）；
+ * 放行侧带**收窄后**的 expectedRevision 与证书态势（handler 直接用，不必再判一次）。
+ */
+type CaPrecheck =
+  | { readonly ok: true; readonly expectedRevision: number; readonly state: CaState }
+  | { readonly ok: false; readonly status: number; readonly code: string };
+
+/**
+ * 三道门：设置面在不在、并发基线在不在、证书态势允许不允许动。三者是三类不同的事实，
+ * 混在 handler 里时，读代码要一路数到第四个 writeCaError 才看得清「还有没有别的门」。
+ */
+function caPrecheck(
+  deps: CaActionDeps,
+  parsed: ParsedPostBody,
+  current: ResolvedConfig,
+): CaPrecheck {
+  if (!deps.config.writable()) {
+    return { ok: false, status: 503, code: "settings-unavailable" };
+  }
+  // P2-4：expectedRevision 缺席即 409（禁 last-write-wins 静默覆盖；
+  // 调用方刷新拿新 revision 后重试，文案复用 conflict）。
+  if (parsed.expectedRevision === undefined) {
+    return { ok: false, status: 409, code: "ca-revision-stale" };
+  }
+  const state = classifyCaState({
+    tlsCaCertFile: current.tlsCaCertFile,
+    tlsCertFile: current.tlsCertFile,
+    tlsKeyFile: current.tlsKeyFile,
+  });
+  if (state === "custom") return { ok: false, status: 409, code: "ca-customized" };
+  if (state === "error") return { ok: false, status: 409, code: "ca-misconfigured" };
+  return { ok: true, expectedRevision: parsed.expectedRevision, state };
+}
+
+/**
+ * 已存在即需确认（F16）：托管态恒需（轮换具破坏性）；自签态仅残留文件时需
+ * （真正全新安装一键直达；残留覆盖走确认 + .bak 留痕）。
+ */
+function caNeedsConfirm(state: CaState, rotateTargets: readonly string[]): boolean {
+  return state === "managed" ? true : rotateTargets.some((target) => existsSync(target));
+}
+
+/** 动作落定后的结论（自签态建全套、托管态轮换 CA 或只轮换叶子）。 */
+function caResultOf(state: CaState, full: boolean): CaActionResult {
+  if (state === "self-signed") return { ok: true, mode: "generated" };
+  return { ok: true, mode: full ? "ca-rotated" : "leaf-rotated" };
 }
 
 /** runCaAction 入参（handler 内已校验态势，本函数只做生成→落盘→提交）。 */
