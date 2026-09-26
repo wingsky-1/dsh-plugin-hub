@@ -353,6 +353,33 @@ test("#843 D5: 幽灵判据判红（声明了路径但两侧都取不到值）",
   }
 });
 
+// 依据更正（#875 H11 复核）：**本用例才是钉住这条 exit 2 的那条**。同族的「#843 D5: 幽灵声明判红」
+//（:328）判的是 **notAGate 悬空**（产出函数 checkNotAGateEntries），与这里的 **sources 悬空**
+//（checkGuardEntries）是两道不同判据——实测把本条判据摘掉后该用例仍 exit 0 全绿，而本用例转红。
+// 故若将来要把悬空 source 改走 exit 1，挡住的是本用例，不是 :328。
+test("#875 H11: 新增 sources 全指向不存在文件的幽灵 guard 判红（声明表也造不出无源判据）", () => {
+  const ghost = guard({
+    id: "ghost.source",
+    kind: "value",
+    sources: ["scripts/data/never-written.json"],
+    paths: ["thresholds"],
+    weaken: "increase",
+    onRemoval: "fail",
+  });
+  const dir = gitFixture(vitestText(80), defaultGauntlet(), { guards: [...BASE_GUARDS, ghost] });
+  try {
+    const r = runFixture(dir);
+    assert.equal(
+      r.exitCode,
+      2,
+      "sources 一个都不存在属悬空声明，是配置故障按 fail-closed 走 exit 2（同样阻止合并），不得变成无守卫可通过",
+    );
+    assert.match(r.stderr, /ghost\.source：sources 一个都不存在/);
+  } finally {
+    removeFixture(dir);
+  }
+});
+
 test("#843 D5: 声明表判红经由直调入口生效（spawn 真值脚本，不只看函数返回值）", () => {
   const dir = gitFixture(vitestText(80));
   try {
@@ -823,8 +850,6 @@ function writeRegistry(dir: string, guards: unknown, extra: Record<string, unkno
     JSON.stringify(
       {
         version: 1,
-        retired: [],
-        contractApprovals: [],
         note: "fixture",
         guards,
         notAGate: [],
@@ -852,7 +877,26 @@ test("#843 P0-1: 声明表删掉一条 guard 判红（一行数据改动不再�
   }
 });
 
-test("#843 P0-1: 登记 retired（带 trackingIssue）后退役放行", () => {
+// #875 H11：retired / contractApprovals 两条自授权通道已整体删除。取代原来两条「登记即放行」的
+// 用例——通道不在了，「登记」这个动作本身退化成违规键的出现，故断言的是**键出现即判红**，
+// 而不是登记块的形状是否合法。
+test("#875 H11: retired 键重新出现即判红（退役通道不可重建，空数组也不行）", () => {
+  const dir = gitFixture(vitestText(80));
+  try {
+    writeRegistry(dir, BASE_GUARDS, { retired: [] });
+    const r = runFixture(dir);
+    assert.equal(
+      r.exitCode,
+      1,
+      "空数组也是重建入口：留着它就等于宣告「一行数据改动即可退役一条判据」这条路还开着",
+    );
+    assert.match(r.stderr, /出现已废止的自授权键 retired/);
+  } finally {
+    removeFixture(dir);
+  }
+});
+
+test("#875 H11: 删 guard + 加回退役登记仍判红（退役无法经数据完成）", () => {
   const dir = gitFixture(vitestText(80));
   try {
     writeRegistry(dir, without(["complexity.cyclomatic"]), {
@@ -864,19 +908,14 @@ test("#843 P0-1: 登记 retired（带 trackingIssue）后退役放行", () => {
         },
       ],
     });
-    assert.equal(runFixture(dir).exitCode, 0, "退役必须可审计，但不得默认禁止");
-  } finally {
-    removeFixture(dir);
-  }
-});
-
-test("#843 P0-1: retired 登记了却仍在 guards 里判红（登记与事实不符）", () => {
-  const dir = gitFixture(vitestText(80));
-  try {
-    writeRegistry(dir, BASE_GUARDS, {
-      retired: [{ id: "complexity.cyclomatic", trackingIssue: "#999", reason: "fixture" }],
-    });
-    assert.equal(runFixture(dir).exitCode, 2);
+    const r = runFixture(dir);
+    assert.equal(
+      r.exitCode,
+      1,
+      "登记退役曾是这条操作的唯一合法路径；删通道后它必须变成「无法通过数据完成」，而不是「无守卫可通过」",
+    );
+    assert.match(r.stderr, /出现已废止的自授权键 retired/);
+    assert.match(r.stderr, /complexity\.cyclomatic 被整体移除/, "删 guard 本身仍独立判红");
   } finally {
     removeFixture(dir);
   }
@@ -939,9 +978,11 @@ test("#843 P0-1: 收紧方向放行（新增绝对下限不需要批准块）", 
   }
 });
 
-test("#843 P0-1: 合法改动经 contractApprovals 登记后放行", () => {
+test("#875 H11: contractApprovals 键重新出现即判红（登记块写全也不放行）", () => {
   const dir = gitFixture(vitestText(80));
   try {
+    // 登记块形状完整（id / field / trackingIssue / reason 齐备）**且确有对应的字段改动**——
+    // 这正是旧语义里「放行」的那一组输入。删通道后判据只认「键是否出现」，不看内容。
     writeRegistry(
       dir,
       BASE_GUARDS.map((item) =>
@@ -958,28 +999,37 @@ test("#843 P0-1: 合法改动经 contractApprovals 登记后放行", () => {
         ],
       },
     );
-    assert.equal(runFixture(dir).exitCode, 0);
+    const r = runFixture(dir);
+    assert.equal(r.exitCode, 1, "字段批准通道已删除，改判据形状只能改判据代码");
+    assert.match(r.stderr, /出现已废止的自授权键 contractApprovals/);
+    assert.match(
+      r.stderr,
+      /complexity\.cyclomatic\.weaken 相对基准被改动/,
+      "字段改动本身仍独立判红（不是被登记块吞掉）",
+    );
   } finally {
     removeFixture(dir);
   }
 });
 
-test("#843 P0-1: 失效的批准块判红（已无对应改动）", () => {
+test("#875 H11: onRemoval 改 ignore 无论有没有登记都判红（删键语义无法经数据关掉）", () => {
   const dir = gitFixture(vitestText(80));
   try {
-    writeRegistry(dir, BASE_GUARDS, {
-      contractApprovals: [
-        {
-          id: "complexity.cyclomatic",
-          field: "weaken",
-          trackingIssue: "#999",
-          reason: "fixture",
-        },
-      ],
-    });
+    writeRegistry(
+      dir,
+      BASE_GUARDS.map((item) =>
+        item.id === "lint.maxWarnings" ? { ...item, onRemoval: "ignore" } : item,
+      ),
+      {
+        contractApprovals: [
+          { id: "lint.maxWarnings", field: "onRemoval", trackingIssue: "#999", reason: "fixture" },
+        ],
+      },
+    );
     const r = runFixture(dir);
-    assert.equal(r.exitCode, 1);
-    assert.match(r.stderr, /已无对应改动/);
+    assert.equal(r.exitCode, 1, "关掉删键语义是三类「摘除」里最隐蔽的一类，通道删除后它必须走不通");
+    assert.match(r.stderr, /出现已废止的自授权键 contractApprovals/);
+    assert.match(r.stderr, /lint\.maxWarnings\.onRemoval 相对基准被改动/);
   } finally {
     removeFixture(dir);
   }
@@ -1147,31 +1197,25 @@ test("#843 F-1: sources 只许尾部追加——前置一个源即判红（影�
   }
 });
 
-test("#843 F-1: sources 改动即使有批准块，两侧命中不同的事实源仍判红", () => {
+test("#843 F-1: sources 前置后两侧命中不同的事实源，命中源比对独立判红", () => {
   const dir = gitFixture(vitestText(80), withMutation({ strict: true }));
   try {
-    // 批准块只能放行「声明表被改动」这件事；它不该同时放行「守卫私自换了事实源」。
+    // 「声明表被改动」与「守卫私自换了事实源」是**两道不同源**的判据：前者是声明表自比对
+    // （lib 的 compareDeclarationTable），后者是两侧命中源比对（gate 的 checkShadowSources）。
+    // #875 H11 删除批准通道后前者恒红，这条用例要证明后者独立判红——它在前置阶段短路返回，
+    // 于是 failures 恰好 1 且判词只有影子源那一条（声明表自比对根本没跑到）。
     writeFixtureFile(dir, SHADOW, JSON.stringify({ mutation: { strict: true } }));
     writeRegistry(
       dir,
       BASE_GUARDS.map((item) =>
         item.id === STRICT_GUARD.id ? { ...item, sources: [SHADOW, GAUNTLET] } : item,
       ),
-      {
-        notAGate: [{ source: SHADOW, why: "fixture：影子文件" }],
-        contractApprovals: [
-          {
-            id: STRICT_GUARD.id,
-            field: "sources",
-            trackingIssue: "#999",
-            reason: "fixture：模拟已批准的 sources 改动",
-          },
-        ],
-      },
+      { notAGate: [{ source: SHADOW, why: "fixture：影子文件" }] },
     );
     writeGauntlet(dir, withMutation({ strict: false }));
     const r = runFixture(dir);
-    assert.equal(r.exitCode, 1, "批准块只放行声明表改动，放行不了「守卫私自换源」");
+    assert.equal(r.exitCode, 1, "影子源让两侧比的不是同一份事实，判据已放宽");
+    assert.equal(r.failures, 1, "只有影子源一处判红：命中源比对先于声明表自比对短路返回");
     assert.match(r.stderr, /不是基准对 mutation\.strict 声明的事实源/);
   } finally {
     removeFixture(dir);

@@ -6,12 +6,17 @@
  * blankY/offsetY 回落链、快照缺失）及 McpClientContext.effect 配对（label 透传 +
  * disposer 执行，对齐 apply ctx.effect 语义）。
  *
+ * #1028：夹具一律用官方 rc.2 快照形状（无 current，当前会话由 retainedBy.mainView
+ * 表达），并新增四条回归——未知态不上报、旧形状判未知、rebindSession 的 body 断言、
+ * 已知 blank 会话显式上报空串。旧实现在「快照抛错」处断言「继续走变更通知」，
+ * 那条断言钉的正是把「读不到」变成「清空宿主绑定」的病根，已按新契约重写。
+ *
  * 离线，无落盘。直连 src/client（client-unit 层，自动落 testLayers；已认领进 client-panel 段——所测 state.ts 归属该段，session/float 暂无归属段故同落，k 约 0；变异无信号声明见 PR 正文）。
  */
 import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { apply, inject as clientInject } from "../../src/client/index.ts";
-import { bindSession } from "../../src/client/core/session.ts";
+import { bindSession, rebindSession } from "../../src/client/core/session.ts";
 import { floatTopOffset } from "../../src/client/float/float.ts";
 import { createState } from "../../src/client/core/state.ts";
 import { MCP_MANAGER_IDENTITY } from "../../src/shared/interface.ts";
@@ -37,14 +42,21 @@ function fetchBodies(): string[] {
   return f.mock.calls.map((c) => String((c[1] as { body?: unknown } | undefined)?.body ?? ""));
 }
 
-function makeState(cwd: string | undefined): {
+function makeState(
+  cwd: string | undefined,
+  resolved = true,
+): {
   currentCwd: string | undefined;
+  sessionResolved: boolean;
+  warnedUnknownSession: boolean;
   updateFloatState: (() => void) | undefined;
   API: { session: string };
   updateCalls: number;
 } {
   const st = {
     currentCwd: cwd,
+    sessionResolved: resolved,
+    warnedUnknownSession: false,
     updateFloatState: undefined as (() => void) | undefined,
     API: { session: SESSION_PATH },
     updateCalls: 0,
@@ -53,6 +65,29 @@ function makeState(cwd: string | undefined): {
     st.updateCalls += 1;
   };
   return st;
+}
+
+/**
+ * 官方 rc.2 会话列表快照夹具（#1028）。
+ *
+ * 形状必须与 `SessionListState` 一致：`{ ids, byId, phase, projectionsBySession }`，
+ * **没有 `current`**——旧夹具用 `current` 造「当前会话」，正是让 #1028 全绿放行的假端口。
+ * 「当前会话」改由官方口径 `retainedBy.mainView > 0` 表达。
+ */
+function listWith(row: Record<string, unknown> | undefined): {
+  ids: string[];
+  byId: Record<string, unknown>;
+  phase: string;
+  projectionsBySession: Record<string, unknown>;
+} {
+  if (row === undefined) return { ids: [], byId: {}, phase: "empty", projectionsBySession: {} };
+  const mainView = { mainView: 1 };
+  return {
+    ids: ["s1"],
+    byId: { s1: { id: "s1", retainedBy: mainView, ...row } },
+    phase: "ready",
+    projectionsBySession: {},
+  };
 }
 
 function makeActions(): { refresh: ReturnType<typeof vi.fn> } {
@@ -91,7 +126,7 @@ describe("bindSession 分支", () => {
     const ctx = {
       sessions: {
         list: {
-          getSnapshot: () => ({ current: "s1", byId: { s1: { cwd: "/a" } } }),
+          getSnapshot: () => listWith({ cwd: "/a" }),
         },
       },
     } as unknown as McpClientContext;
@@ -112,7 +147,7 @@ describe("bindSession 分支", () => {
     const ctx = {
       sessions: {
         list: {
-          getSnapshot: () => ({ current: "s1", byId: { s1: { cwd: "/a" } } }),
+          getSnapshot: () => listWith({ cwd: "/a" }),
         },
       },
     } as unknown as McpClientContext;
@@ -130,7 +165,7 @@ describe("bindSession 分支", () => {
     const ctx = {
       sessions: {
         list: {
-          getSnapshot: () => ({ current: "s1", byId: { s1: {} } }),
+          getSnapshot: () => listWith({}),
         },
       },
     } as unknown as McpClientContext;
@@ -143,7 +178,7 @@ describe("bindSession 分支", () => {
     expect(fetchBodies()[0]).toContain('\"cwd\":\"\"');
   });
 
-  it("快照抛错时回落 cwd=undefined 并继续走变更通知", async () => {
+  it("快照抛错时回落未知：不上报，保住宿主绑定（#1028 回归）", async () => {
     okFetch();
     const ctx = {
       sessions: {
@@ -159,7 +194,107 @@ describe("bindSession 分支", () => {
     bindSession(ctx, state as never, actions as never);
     await new Promise((r) => setTimeout(r, 0));
     expect(state.currentCwd).toBeUndefined();
+    // 旧实现在此断言「继续走变更通知」（POST cwd:""），那正是 #1028 把「读不到」
+    // 变成「清空宿主项目级绑定」的病根。未知态一律不发请求。
+    expect(state.sessionResolved).toBe(false);
+    expect(fetchCalls()).toEqual([]);
+    expect(actions.refresh).not.toHaveBeenCalled();
+  });
+
+  it("旧快照形状（只有 current、无 mainView）判为未知且不发 POST（#1028 回归）", async () => {
+    okFetch();
+    const ctx = {
+      sessions: {
+        list: {
+          // rc.2 已删除 current：这份形状模拟「按旧字段读」的代码路径
+          getSnapshot: () => ({ current: "s1", byId: { s1: { cwd: "/a" } } }),
+        },
+      },
+    } as unknown as McpClientContext;
+    const state = makeState(undefined, false);
+    const actions = makeActions();
+    bindSession(ctx, state as never, actions as never);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(state.sessionResolved).toBe(false);
+    expect(state.currentCwd).toBeUndefined();
+    expect(fetchCalls()).toEqual([]);
+  });
+
+  it("rebindSession：未知态不发 POST，已知 cwd 时 POST 且 body 恰为该 cwd（#1028 回归）", async () => {
+    okFetch();
+    const unknown = makeState(undefined, false);
+    await rebindSession(unknown as never);
+    expect(fetchCalls()).toEqual([]);
+
+    const known = makeState("/a");
+    await rebindSession(known as never);
     expect(fetchCalls()).toEqual([SESSION_PATH]);
+    expect(fetchBodies()[0]).toContain('"/a"');
+  });
+
+  it("已知 blank 会话（行存在但无 cwd）显式上报空串防串台（#1028 回归）", async () => {
+    okFetch();
+    const ctx = {
+      sessions: { list: { getSnapshot: () => listWith({ blank: true }) } },
+    } as unknown as McpClientContext;
+    const state = makeState("/a");
+    const actions = makeActions();
+    bindSession(ctx, state as never, actions as never);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(state.sessionResolved).toBe(true);
+    expect(fetchCalls()).toEqual([SESSION_PATH]);
+    expect(fetchBodies()[0]).toContain('"cwd":""');
+  });
+
+  it("首帧即已知 blank 会话（上一轮未知）仍必须上报空串，防跨页签串台（#1028 回归）", async () => {
+    okFetch();
+    const ctx = {
+      sessions: { list: { getSnapshot: () => listWith({ blank: true }) } },
+    } as unknown as McpClientContext;
+    // prevResolved=false 且 prevCwd=undefined：cwd「没变」，但仍必须发。
+    // 删掉 session.ts 短路条件里的 prevResolved &&，本用例立刻打红。
+    const state = makeState(undefined, false);
+    const actions = makeActions();
+    bindSession(ctx, state as never, actions as never);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(state.sessionResolved).toBe(true);
+    expect(fetchCalls()).toEqual([SESSION_PATH]);
+    expect(fetchBodies()[0]).toContain('"cwd":""');
+  });
+
+  it("未知态打一次告警（可观测性：静默失效与「没这个 bug」不可区分，#1028）", async () => {
+    okFetch();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    // 真正的未知：快照在，但没有 main-view 行（listWith 会补 mainView，故手写空行表）。
+    let listener: (() => void) | undefined;
+    const ctx = {
+      sessions: {
+        list: {
+          getSnapshot: () => ({
+            ids: ["s1"],
+            byId: { s1: { id: "s1" } },
+            phase: "ready",
+            projectionsBySession: {},
+          }),
+          subscribe: (fn: () => void) => {
+            listener = fn;
+            return () => {
+              listener = undefined;
+            };
+          },
+        },
+      },
+    } as unknown as McpClientContext;
+    const state = makeState(undefined, false);
+    const actions = makeActions();
+    bindSession(ctx, state as never, actions as never);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(state.sessionResolved).toBe(false);
+    expect(warn).toHaveBeenCalledTimes(1);
+    // 幂等闸：再触发一帧 unknown 不得刷屏（订阅回调被调用一次后再手工调一次）。
+    listener?.();
+    expect(warn).toHaveBeenCalledTimes(1);
+    warn.mockRestore();
   });
 
   it("subscribe 存在时返回其 disposer（配对），缺失时返回 noop", () => {
@@ -169,7 +304,7 @@ describe("bindSession 分支", () => {
     const ctx = {
       sessions: {
         list: {
-          getSnapshot: () => ({ current: "s1", byId: { s1: { cwd: "/a" } } }),
+          getSnapshot: () => listWith({ cwd: "/a" }),
           subscribe,
         },
       },
@@ -183,7 +318,7 @@ describe("bindSession 分支", () => {
     const ctx2 = {
       sessions: {
         list: {
-          getSnapshot: () => ({ current: "s1", byId: { s1: { cwd: "/a" } } }),
+          getSnapshot: () => listWith({ cwd: "/a" }),
         },
       },
     } as unknown as McpClientContext;
@@ -199,7 +334,7 @@ describe("floatTopOffset blank 链", () => {
     return {
       sessions: {
         list: {
-          getSnapshot: () => ({ current: "s1", byId: { s1: session } }),
+          getSnapshot: () => listWith(session),
         },
       },
     } as unknown as McpClientContext;

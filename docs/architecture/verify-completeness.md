@@ -107,7 +107,8 @@
 - 正式锚要求 fixedCovered 与 baselineCovered 双全且生效值大于 0。
 - 当前比较器对 existence 只校验生效值大于 0，单锚即过；
   对 baseline 逐字段只许抬不许降；双全由夜间全量班回填流程保证。
-- 双全形状的例外走 contractApprovals 登记标识加字段加跟踪 issue 加理由；
+- 双全形状的例外本表无登记通道（#875 H11 起 contractApprovals 已整体删除，重现即判红），
+  只能改判据代码（该路径走 PR 评审 + 本仓自测把关，不需要 `approved` 标签）；
   单包缺锚的临时状态走豁免台账的 membership 或 anchor，
   按判据分开登记并带复核人与解除条件。
 - 本节是对声明表文档性字段的复述，比较器行为以代码为准。

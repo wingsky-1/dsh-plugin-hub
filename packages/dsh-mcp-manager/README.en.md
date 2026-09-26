@@ -400,17 +400,36 @@ pnpm --filter @wingsky-1/dsh-mcp-manager test
   reason
 - Only bridges tool capabilities; MCP resources and prompts have no harness consumption
   interface yet
+- **With several tabs bound to different sessions, project-scoped MCP can follow only one**
+  (open item from issue #1028): the host keeps a single `projectRoot`, so tabs overwrite
+  each other, and the `rebindSession` on every foreground switch amplifies the overwrite.
+  This package does not arbitrate which tab wins.
+- **An unresolvable current session keeps the existing binding instead of clearing it**
+  (#1028): before the official session snapshot is ready, or while the tab is not held by
+  the official `mainView`, the package treats the read as *unknown* and does **not** send
+  `cwd:""` — unknown is not "no project", and a wrong clear leaves the panel with global
+  entries only and makes project-scoped imports fail with
+  `no active project session`. One console warning is emitted while project MCP is unbound.
 - Requires Node ≥ 20
 
 ## Type dependencies
 
-Host-side types come from the official `@deepseek-ai/*` packages (`cordis`,
-`dsh-host-webserver`, `dsh-agent`, `dsh-tools`, `dsh-system-prompt`; versions are
-pinned in the repository's `pnpm-workspace.yaml` catalog and upgraded with DSH
-releases): **`import type` only, compile-time usage** — build artifacts contain zero
-official runtime imports. The package declares this host coupling as optional
-peerDependencies; consumers running type checks against the plugin must be able to
-resolve these official packages (skipping type checking is unaffected).
+Host-side and client-side types both come from the official `@deepseek-ai/*` packages
+(`cordis`, `dsh-host-webserver`, `dsh-agent`, `dsh-tools`, `dsh-system-prompt`,
+`dsh-llm`, `dsh-client-ui-slots`, `dsh-api-session-controller`,
+`dsh-client-ui-session`; versions are pinned in the repository's `pnpm-workspace.yaml`
+catalog and upgraded with DSH releases): **`import type` only, compile-time usage** —
+build artifacts contain zero official runtime imports. The package declares this host
+coupling as optional peerDependencies; consumers running type checks against the plugin
+must be able to resolve these official packages (skipping type checking is unaffected).
+
+The client's "current session" read goes through the single seam
+`src/client/core/current-session.ts`, using the official criterion
+`retainedBy.mainView > 0` and anchored to the official `SessionListState` /
+`SessionSummary` types (**no self-declared mirror types**): since DSH 0.1.7-rc.2 the
+session list snapshot no longer has a `current` field and the official `ISessions`
+exposes no current-session accessor, so the package stopped hand-rolling a
+`{current, byId}` shape.
 
 ## License
 

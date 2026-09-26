@@ -158,10 +158,35 @@ describe("float：锚点与终坐标", () => {
 
   it("isBlankSession：取不到会话面判非空白", () => {
     expect(isBlankSession({} as never)).toBe(false);
+    // #1028：夹具改官方 rc.2 形状——快照没有 current 字段，「当前会话」由
+    // retainedBy.mainView 表达；blank 直读 SessionSummary.blank。
     const blank = {
-      sessions: { list: { getSnapshot: () => ({ current: "a", byId: { a: { blank: true } } }) } },
+      sessions: {
+        list: {
+          getSnapshot: () => ({
+            ids: ["a"],
+            byId: { a: { id: "a", blank: true, retainedBy: { mainView: 1 } } },
+            phase: "ready",
+            projectionsBySession: {},
+          }),
+        },
+      },
     };
     expect(isBlankSession(blank as never)).toBe(true);
+    // 无 mainView 行 = 读不到当前会话 → 判非空白（不得据旧形状臆造）。
+    const noMainView = {
+      sessions: {
+        list: {
+          getSnapshot: () => ({
+            ids: ["a"],
+            byId: { a: { id: "a", blank: true, retainedBy: {} } },
+            phase: "ready",
+            projectionsBySession: {},
+          }),
+        },
+      },
+    };
+    expect(isBlankSession(noMainView as never)).toBe(false);
   });
 });
 

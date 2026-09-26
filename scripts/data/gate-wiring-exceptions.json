@@ -67,6 +67,11 @@
       "endpoint": "script:scripts/gate/overlay-baseline.mjs",
       "class": "nightly-only",
       "reason": "主干合入后的秒级差量覆盖基线：只在 baseline-overlay.yml（push 到 main）触发，与 PR 面无关"
+    },
+    {
+      "endpoint": "script:scripts/gate/forbid-session-snapshot-src.mjs",
+      "class": "tier-only",
+      "reason": "#1028 防复发闸（会话快照面）：执行点只在本地 full 档（gate-steps 的 fullOnly 段）。pr 档里的判据端点按 A1 必须在 ci.yml 的 repo-gate 有对应执行点，而 .github/workflows 属红线段、本轮未取维护者批准；取得批准后加 CI 步骤并把执行点移进 cheapGlobal，本条目即可删除"
     }
   ],
   "structuredSteps": [

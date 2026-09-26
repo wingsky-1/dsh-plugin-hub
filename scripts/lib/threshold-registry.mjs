@@ -16,6 +16,24 @@
  *     事实源比较——影子源正是这样把守卫与被守护的事实源解耦的。比较器另记录两侧实际命中的源，
  *     工作区命中一个基准未声明的文件即判红。
  *
+ *   - **没有自授权通道**（#875 H11）：声明表里不得出现 `retired` / `contractApprovals`。
+ *     这两个键曾经让「删一条 guard / 翻一个 direction / 把 onRemoval 改成 ignore / 改某个
+ *     判据字段」成为**一行数据改动且 CI 全绿**——表本身是数据，改它不需要碰任何代码。
+ *     维护者裁决「取消全部豁免入口」，故两条通道整体删除，且由 `selfAuthChannelProblems`
+ *     反向守卫住这两个**具名**键不可重建：它们重新出现在声明表里即判红。改 guard 的唯一
+ *     合法路径是改判据代码（本文件或 gate/threshold-monotonic.mjs）：该路径走 PR 评审 +
+ *     本仓自测把关；本文件与 gate/threshold-monotonic.mjs 都不在 `approved` 派生面内
+ *     （该面恰 9 条：`.github/**`、`.dsh/skills/**`、`scripts/gate/red-line-approval.mjs`、
+ *     声明表自身及其 `guards[].sources`——`scripts/gate/**` 整树并不在面内，但
+ *     `red-line-approval.mjs` 在，别按目录通配推），故不需要 `approved` 标签。
+ *
+ * 上限（如实声明，勿误读）：本判据保证的只是「这两个具名键不能只靠一行数据重建」（实测
+ * exit 1）。**自授权通道在类上并未消除**——实测：新增一个顶层键（`waivers`）加约 4 行代码，
+ * 即可让真实判据被削弱而门禁 exit 0、`node --test` 83/83 全绿（含本仓真值快照用例）。
+ * 原因是**比较器自我验证**：任何内置于它的通道都会吸收自己的全部检测，而真值快照用例跑
+ * 的正是同一个被削弱的比较器，故一并失明。更根本地说，**判据无法保护自己不被改**。
+ * 收口办法是紧随本 PR 的下一件 PR 加顶层键白名单。
+ *
  * 三态：failures（放宽/摘除，exit 1）/ envErrors（配置或环境故障，exit 2，fail-closed）/
  * warnings（非单调旋钮的收紧方向，只报警不判红）。
  */
@@ -543,6 +561,7 @@ function readExemptKeys(ctx, guard) {
  * 而表本身是数据，改一行不需要碰任何代码，所以必须由同一套「相对基准只许补全收紧」的语义守住它自己。
  * 语义必须分档：一律「变了就红」会把收紧也拦下（例如给逐包阈值补一个绝对下限、给 onRemoval 从
  * ignore 改成 fail），那会让合法的加固也需要批准块，最终逼出「批准块写满」的假治理。
+ * 分档的另一半是**只拦削弱**：加固方向不需要任何登记（#875 H11 起削弱方向也没有登记通道）。
  */
 const CONTRACT_RULES = {
   kind: "equal",
@@ -585,7 +604,7 @@ const CONTRACT_WEAKENERS = {
 };
 
 /**
- * 该字段相对基准是否被「削弱」（true = 变弱，需要批准块）。
+ * 该字段相对基准是否被「削弱」（true = 变弱 = 判红；#875 H11 起没有任何登记可放行）。
  * 表而非分支：这些规则各自判的**形状**不同（数组序 vs 标量基准值 vs 全等），把它们并排
  * 放进一张按规则名索引的表，才能一眼看全「这张声明表共有几种削弱判法」。未登记的规则名
  * 判 false——与原行为一致（规则名只来自 CONTRACT_RULES 常量，未知名由其它判据兜）。
@@ -612,69 +631,67 @@ const CONTRACT_FIELDS = [
   "maxAllowed",
 ];
 
-function approvalKey(id, field) {
-  return id + "::" + field;
+/**
+ * 已废止的自授权键（#875 H11）。二者曾是「一行数据改动 + CI 全绿」即可让某条判据整条失效
+ *（retired）或变弱（contractApprovals）的登记入口；维护者裁决按最佳实践取消全部豁免入口，
+ * 「结构性不适用不是豁免」是既有仓规，删除只是让执行跟上。
+ */
+export const FORBIDDEN_REGISTRY_KEYS = ["retired", "contractApprovals"];
+
+/**
+ * 反向守卫（核心）：这两个键只要**重新出现在**声明表里即判红，内容是不是空数组都一样。
+ * 不放在 `validateDeclarations` 那一侧是刻意的：那条通道的退出码是 2（fail-closed「门禁故障，
+ * 不可信」），而「重建自授权通道」是一次**判据削弱**的攻击，应走 exit 1——同 checkShadowSources
+ * 的取舍（报成 exit 2 会让读日志的人把攻击读成「工具坏了」）。
+ */
+export function selfAuthChannelProblems(registry) {
+  const out = [];
+  for (const key of FORBIDDEN_REGISTRY_KEYS) {
+    if (!Object.hasOwn(registry, key)) continue;
+    out.push(
+      "声明表：出现已废止的自授权键 " +
+        key +
+        " —— 该通道已于 #875 H11 删除（它让「删一条 guard / 翻一个 direction / 把 onRemoval 改成 ignore」成为一行数据改动且 CI 全绿）；" +
+        "改 guard 的唯一合法路径是改判据代码（scripts/lib/threshold-registry.mjs 或 scripts/gate/threshold-monotonic.mjs）",
+    );
+  }
+  return out;
 }
 
 /**
- * 声明表自身的对比（#843 对抗评审 P0-1）：guard **只许新增**，同 id 的判据形状字段只许
- * 「补全 / 收紧」（`sources` 是尾部追加，不是任意改写），除非在 `retired`（整条退役）或
- * `contractApprovals`（改某个字段）里显式登记 id + trackingIssue + reason。
- * 两条通道都做反向腐烂：登记了却无对应改动 = 失效条目，判红。
+ * 声明表自身的对比（#843 对抗评审 P0-1；#875 H11 取消自授权通道）：guard **只许新增**，
+ * 同 id 的判据形状字段只许「补全 / 收紧」（`sources` 是尾部追加，不是任意改写），
+ * **数据面没有任何通道能放行一次削弱**。于是「退役一条 guard / 翻一个方向 / 把 onRemoval
+ * 改成 ignore」不再是一次登记动作，而是必须改判据代码的显式动作。该路径走 PR 评审 + 本仓
+ * 自测把关；本文件与 gate/threshold-monotonic.mjs 都不在 `approved` 派生面内（该面恰 9 条，
+ * 含 `scripts/gate/red-line-approval.mjs`，不含本文件与 threshold-monotonic.mjs），故不需要
+ * `approved` 标签。类上的上限（新顶层键仍可引入、比较器自我验证）见文件头的「上限」段。
  */
 export function compareDeclarationTable(baseRegistry, workspaceRegistry) {
-  const failures = [];
-  const retired = indexBy(workspaceRegistry.retired, (entry) =>
-    isObject(entry) && typeof entry.id === "string" ? entry.id : null,
-  );
-  const approvals = indexBy(workspaceRegistry.contractApprovals, (entry) =>
-    isObject(entry) && typeof entry.id === "string" && typeof entry.field === "string"
-      ? approvalKey(entry.id, entry.field)
-      : null,
-  );
-  const usedRetired = new Set();
-  const usedApprovals = new Set();
+  const failures = selfAuthChannelProblems(workspaceRegistry);
   const wsById = new Map((workspaceRegistry.guards ?? []).map((guard) => [guard.id, guard]));
 
   for (const baseGuard of baseRegistry.guards ?? []) {
     const nowGuard = wsById.get(baseGuard.id);
     if (nowGuard === undefined) {
-      if (retired.has(baseGuard.id)) usedRetired.add(baseGuard.id);
-      else {
-        failures.push(
-          "声明表：" +
-            baseGuard.id +
-            " 被整体移除 —— 删掉一条 guard 等于摘掉该事实源的判据；确要退役请在 retired 里登记 { id, trackingIssue, reason }",
-        );
-      }
+      failures.push(
+        "声明表：" +
+          baseGuard.id +
+          " 被整体移除 —— 删掉一条 guard 等于摘掉该事实源的判据；退役已无登记通道，" +
+          "确要退役请改判据代码（scripts/lib/threshold-registry.mjs 或 scripts/gate/threshold-monotonic.mjs）" +
+          "并在测试面写明该事实源不再需要守卫的理由",
+      );
       continue;
     }
-    compareGuardContract(baseGuard, nowGuard, approvals, usedApprovals, failures);
+    compareGuardContract(baseGuard, nowGuard, failures);
   }
-  checkStaleRetired(retired, usedRetired, failures);
-  checkStaleApprovals(approvals, usedApprovals, failures);
   return failures;
 }
 
-/** 按 keyOf 抽索引；keyOf 返回 null 的条目不进表（形状不合法的登记交给结构校验去判红）。 */
-function indexBy(entries, keyOf) {
-  const index = new Map();
-  for (const entry of entries ?? []) {
-    const key = keyOf(entry);
-    if (key !== null) index.set(key, entry);
-  }
-  return index;
-}
-
-/** 一条 guard 的判据形状字段逐项对比：被削弱且无批准块即判红，有批准块则记为「用过」。 */
-function compareGuardContract(baseGuard, nowGuard, approvals, usedApprovals, failures) {
+/** 一条 guard 的判据形状字段逐项对比：被削弱即判红（#875 H11 起没有任何登记能放行一次削弱）。 */
+function compareGuardContract(baseGuard, nowGuard, failures) {
   for (const field of CONTRACT_FIELDS) {
     if (!isWeakenedChange(CONTRACT_RULES[field], baseGuard[field], nowGuard[field])) continue;
-    const key = approvalKey(baseGuard.id, field);
-    if (approvals.has(key)) {
-      usedApprovals.add(key);
-      continue;
-    }
     failures.push(
       "声明表：" +
         baseGuard.id +
@@ -684,34 +701,9 @@ function compareGuardContract(baseGuard, nowGuard, approvals, usedApprovals, fai
         JSON.stringify(baseGuard[field]) +
         " → " +
         JSON.stringify(nowGuard[field]) +
-        "）—— 判据形状只许补全收紧，确要改动请在 contractApprovals 里登记 { id, field, trackingIssue, reason }",
+        "）—— 判据形状只许补全收紧；本表没有字段批准通道，确要改动请改判据代码" +
+        "（scripts/lib/threshold-registry.mjs 或 scripts/gate/threshold-monotonic.mjs）",
     );
-  }
-}
-
-/** 反向腐烂：retired 里登记了却没对应的 guard 退役。 */
-function checkStaleRetired(retired, usedRetired, failures) {
-  for (const id of retired.keys()) {
-    if (!usedRetired.has(id)) {
-      failures.push(
-        "声明表：retired 里的 " + id + " 已无对应退役（基准上没有这条 guard）—— 失效条目，请删除",
-      );
-    }
-  }
-}
-
-/** 反向腐烂：contractApprovals 里登记了却没对应的字段改动。 */
-function checkStaleApprovals(approvals, usedApprovals, failures) {
-  for (const [key, entry] of approvals) {
-    if (!usedApprovals.has(key)) {
-      failures.push(
-        "声明表：contractApprovals 里的 " +
-          entry.id +
-          " / " +
-          entry.field +
-          " 已无对应改动 —— 批准块失效，请删除该条",
-      );
-    }
   }
 }
 
@@ -1033,60 +1025,6 @@ function checkGuardEntries(registry, repoRoot) {
   }
   return out;
 }
-function retiredDetailProblems(entry, guardIds) {
-  const out = [];
-  if (typeof entry.trackingIssue !== "string" || !/^#\d+$/.test(entry.trackingIssue)) {
-    out.push("retired " + entry.id + "：缺 trackingIssue（形如 #123）—— 退役必须可审计");
-  }
-  if (typeof entry.reason !== "string" || entry.reason === "") {
-    out.push("retired " + entry.id + "：缺 reason");
-  }
-  if (guardIds.has(entry.id)) {
-    out.push("retired " + entry.id + "：该 id 仍在 guards 里（退役登记与事实不符）");
-  }
-  return out;
-}
-function checkRetiredEntries(registry) {
-  const out = [];
-  const guardIds = new Set((registry.guards ?? []).map((guard) => guard.id));
-  const retiredIds = new Set();
-  for (const entry of registry.retired ?? []) {
-    if (!isObject(entry) || typeof entry.id !== "string" || entry.id === "") {
-      out.push("retired 条目缺 id");
-      continue;
-    }
-    if (retiredIds.has(entry.id)) out.push("retired id 重复：" + entry.id);
-    retiredIds.add(entry.id);
-    out.push(...retiredDetailProblems(entry, guardIds));
-  }
-  return out;
-}
-function approvalDetailProblems(entry, label) {
-  const out = [];
-  if (typeof entry.field !== "string" || entry.field === "") {
-    out.push("contractApprovals 条目缺 field：" + label);
-  }
-  if (typeof entry.trackingIssue !== "string" || !/^#\d+$/.test(entry.trackingIssue)) {
-    out.push("contractApprovals " + label + "：缺 trackingIssue（形如 #123）");
-  }
-  if (typeof entry.reason !== "string" || entry.reason === "") {
-    out.push("contractApprovals " + label + "：缺 reason");
-  }
-  return out;
-}
-function checkApprovalEntries(registry) {
-  const out = [];
-  for (const entry of registry.contractApprovals ?? []) {
-    if (!isObject(entry)) {
-      out.push("contractApprovals 含非对象项");
-      continue;
-    }
-    const label = String(entry.id) + " / " + String(entry.field);
-    if (typeof entry.id !== "string" || entry.id === "") out.push("contractApprovals 条目缺 id");
-    out.push(...approvalDetailProblems(entry, label));
-  }
-  return out;
-}
 function checkNotAGateEntries(registry, repoRoot, declared) {
   const out = [];
   for (const item of registry.notAGate) {
@@ -1151,8 +1089,6 @@ function checkUndeclaredFiles(repoRoot, dataDir, declared, declaredAsSource) {
 export function validateDeclarations(registry, { repoRoot, dataDir = DATA_DIR, consumed } = {}) {
   const problems = [];
   problems.push(...checkGuardEntries(registry, repoRoot));
-  problems.push(...checkRetiredEntries(registry));
-  problems.push(...checkApprovalEntries(registry));
   const { declared, declaredAsSource } = collectDeclared(registry, consumed);
   problems.push(...checkNotAGateEntries(registry, repoRoot, declared));
   problems.push(...checkUndeclaredFiles(repoRoot, dataDir, declared, declaredAsSource));

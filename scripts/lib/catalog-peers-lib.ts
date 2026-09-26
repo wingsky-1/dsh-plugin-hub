@@ -18,6 +18,20 @@
  * 坏 package.json 都在写入前 fail-closed。
  *
  * 零新增依赖：yaml 只解析本文件自用的两个顶层段（受限子集，非通用 YAML 解析器）。
+ *
+ * 第三条事实源（#1028 引入）：**源码实际引用了哪些官方包**。此前成员关系只有 manifest 一个
+ * 出处，于是「源码 import 了某个 @deepseek-ai/* 却没登记为 peer」没有任何判据——而这正是本仓
+ * 已经踩过的坑（会话快照字段漂移那一轮的连带修复：7 处官方引用此前全无 peer 登记）。本文件
+ * 从各包 src 派生引用事实并与 peerDependencies 比对，判红文案自带修法。
+ *
+ * 引用事实的采集是**两条腿的并集**，各覆盖另一条看不见的形态（依据见 lib/ts-lex.ts 的文件头：
+ * esbuild 剥类型会擦除 import type 与 declare module，而本仓对官方包的引用几乎全是类型导入，
+ * 只跑 AST 的判据会恒零命中）：
+ *   - 运行时腿：esbuild 剥类型 + acorn AST → import / export…from / 动态 import()；
+ *   - 类型腿：lib/ts-lex.ts 的词法流 → import（含 import type / 副作用式 import type {}）与
+ *     declare module "X"。
+ * 裸字符串字面量（宿主 loader 的 specifier 常量等）两条腿都取不到：AST 侧它不是 import 节点，
+ * 词法侧它前面没有 import/declare 记号。
  */
 import {
   closeSync,
@@ -30,8 +44,12 @@ import {
   writeFileSync,
   writeSync,
 } from "node:fs";
-import { join } from "node:path";
+import { relative, sep, join } from "node:path";
+import { transformSync, type Loader } from "esbuild";
+import * as acorn from "acorn";
 import { loadManifest } from "./plugins-manifest-lib.ts";
+import { collectSrcFiles } from "./exemption-gate.ts";
+import { scanSource, skippedImportRisks, type SourceScan, type SourceToken } from "./ts-lex.ts";
 
 const OFFICIAL_SCOPE = "@deepseek-ai/";
 const DEP_FIELDS = ["peerDependencies", "devDependencies", "dependencies"];
@@ -221,6 +239,253 @@ function checkPackagePeerContract(
   return { problems, officialPeerCount: expected.length };
 }
 
+/**
+ * 源码里对某个官方包的一处引用事实。
+ * `via` 说明它是被哪条腿取到的（判词里要能让人复核，而不是只看到一个包名）。
+ */
+type OfficialReference = { spec: string; line: number; via: string };
+
+/** esbuild loader：按扩展名取（.tsx 必须走 tsx，否则 JSX 解析失败）。 */
+function loaderOf(file: string): Loader {
+  if (file.endsWith(".tsx")) return "tsx";
+  if (file.endsWith(".mjs")) return "js";
+  return "ts";
+}
+
+/** 官方包名（说明符去掉子路径）：`@deepseek-ai/dsh-session/types` → `@deepseek-ai/dsh-session`。
+ *  与 peerDependencies 的成员（包名，不含子路径）在同一层比较。 */
+export function packageNameOf(specifier: string): string {
+  const parts = specifier.split("/");
+  return parts[0]?.startsWith("@") === true ? parts.slice(0, 2).join("/") : (parts[0] ?? specifier);
+}
+
+/** AST 节点的模块说明符；不是模块引用形态返回 null。 */
+function moduleRefOf(node: Record<string, unknown>, type: string): string | null {
+  if (type === "ImportDeclaration") return literalOf(node.source);
+  if (type === "ExportNamedDeclaration" || type === "ExportAllDeclaration") {
+    return literalOf(node.source);
+  }
+  if (type === "ImportExpression") return literalOf(node.source);
+  return null;
+}
+
+function literalOf(value: unknown): string | null {
+  const node = value as { type?: unknown; value?: unknown } | null | undefined;
+  if (node === null || node === undefined || node.type !== "Literal") return null;
+  return typeof node.value === "string" ? node.value : null;
+}
+
+const SKIPPED_KEYS = new Set(["type", "start", "end", "loc", "range"]);
+
+/** 递归走 AST 收模块引用（不引 acorn-walk：只需三类节点，手写遍历比新依赖便宜）。 */
+function collectModuleRefs(node: unknown, out: string[]): void {
+  if (Array.isArray(node)) {
+    for (const child of node) collectModuleRefs(child, out);
+    return;
+  }
+  if (node === null || typeof node !== "object") return;
+  const record = node as Record<string, unknown>;
+  if (typeof record.type === "string") {
+    const spec = moduleRefOf(record, record.type);
+    if (spec !== null) out.push(spec);
+  }
+  for (const [key, value] of Object.entries(record)) {
+    if (SKIPPED_KEYS.has(key)) continue;
+    collectModuleRefs(value, out);
+  }
+}
+
+/** 运行时腿：剥类型后的 AST 里可见的模块引用（行号不可回映，故不带行）。 */
+function runtimeRefs(file: string, text: string): string[] {
+  const js = transformSync(text, { loader: loaderOf(file), format: "esm" }).code;
+  const ast = acorn.parse(js, { ecmaVersion: "latest", sourceType: "module" });
+  const out: string[] = [];
+  collectModuleRefs(ast, out);
+  return out;
+}
+
+const OPEN_BRACKETS = new Set(["(", "[", "{"]);
+const CLOSE_BRACKETS = new Set([")", "]", "}"]);
+/** import 子句里可合法跨行继续的记号：出现在行首且不在此集合内即视为语句已断（ASI）。 */
+const CLAUSE_CONTINUATION = new Set(["{", "}", "]", ")", ",", "from", "as", "type", "*"]);
+
+/**
+ * 从子句起点（`import`/`export` 记号之后）起找模块说明符。
+ *
+ * `bareAllowed`（仅 import）承认 `import "X"` 副作用式形态；其余形态一律要求先见到
+ * 深度 0 的 `from`——这条要求顺带排掉 `export const S = "X"` 这类**赋值右端的字符串**
+ * （它同样是深度 0 的字符串字面量，但没有 from）。深度 > 0 的字符串（import 子句里的
+ * 模块名 `import { "x" as y } from "z"`、函数体里的字面量）同样不计。
+ */
+function clauseSpecifier(
+  tokens: SourceToken[],
+  from: number,
+  bareAllowed: boolean,
+  via: string,
+): OfficialReference | null {
+  let depth = 0;
+  let seenFrom = false;
+  for (let i = from; i < tokens.length; i += 1) {
+    const tok = tokens[i];
+    if (clauseBroken(tok, depth)) return null;
+    if (depth === 0 && tok.text === "from") seenFrom = true;
+    const ref = specifierAt(tok, i, from, seenFrom, bareAllowed, via);
+    if (ref !== null) return ref;
+    depth = nextDepth(tok, depth);
+  }
+  return null;
+}
+
+/** 子句是否已断（分号 / ASI）：断了就不可能再出现模块说明符。 */
+function clauseBroken(tok: SourceToken, depth: number): boolean {
+  if (depth > 0) return false;
+  if (tok.text === ";") return true;
+  return tok.lineStart && !CLAUSE_CONTINUATION.has(tok.text);
+}
+
+/** 该 token 是不是本子句的模块说明符（import 的裸形态除外其余都要求先见过 from）。 */
+function specifierAt(
+  tok: SourceToken,
+  index: number,
+  from: number,
+  seenFrom: boolean,
+  bareAllowed: boolean,
+  via: string,
+): OfficialReference | null {
+  if (tok.label !== "string") return null;
+  if (!seenFrom && !(bareAllowed && index === from)) return null;
+  return { spec: tok.value ?? "", line: tok.line, via };
+}
+
+/** 括号深度推进（子句里的花括号/方括号/圆括号让说明符可能落在嵌套位置）。 */
+function nextDepth(tok: SourceToken, depth: number): number {
+  if (OPEN_BRACKETS.has(tok.text)) return depth + 1;
+  if (CLOSE_BRACKETS.has(tok.text)) return Math.max(0, depth - 1);
+  return depth;
+}
+
+/**
+ * 类型腿（静态 import / re-export）：覆盖 import、import type、副作用式 `import type {}`、
+ * `export … from`（含 `export type … from`）四类被擦除的形态；不含 `import()` 与
+ * `import.meta`（后两者由运行时腿在 AST 里取）。
+ */
+function staticImportRefs(scan: SourceScan): OfficialReference[] {
+  const out: OfficialReference[] = [];
+  const tokens = scan.tokens;
+  for (let i = 0; i < tokens.length; i += 1) {
+    const keyword = tokens[i].text;
+    if (keyword !== "import" && keyword !== "export") continue;
+    const next = tokens[i + 1];
+    if (keyword === "import" && (next === undefined || next.text === "(" || next.text === ".")) {
+      continue;
+    }
+    const found = clauseSpecifier(tokens, i + 1, keyword === "import", keyword);
+    if (found !== null) out.push(found);
+  }
+  return out;
+}
+
+/** 类型腿（环境模块声明）：`declare module "X"`——声明合并的目标包同样是依赖。 */
+function ambientModuleRefs(scan: SourceScan): OfficialReference[] {
+  const out: OfficialReference[] = [];
+  const tokens = scan.tokens;
+  for (let i = 0; i + 2 < tokens.length; i += 1) {
+    if (tokens[i].text !== "declare" || tokens[i + 1].text !== "module") continue;
+    const spec = tokens[i + 2];
+    if (spec.label === "string")
+      out.push({ spec: spec.value ?? "", line: spec.line, via: "declare module" });
+  }
+  return out;
+}
+
+/** 两条腿的并集（同一说明符去重，行号取词法腿的；运行时腿无行号故只补成员）。 */
+function officialRefsOf(file: string, text: string): OfficialReference[] {
+  const scan = scanSource(text);
+  const risks = skippedImportRisks(scan);
+  if (risks.length > 0) {
+    throw new Error(
+      `词法化跳过区里藏着 import/declare（偏移 ${risks[0].start}）：判据对该文件有盲区，不可判`,
+    );
+  }
+  const bySpec = new Map<string, OfficialReference>();
+  for (const ref of staticImportRefs(scan)) bySpec.set(ref.spec, ref);
+  for (const ref of ambientModuleRefs(scan)) bySpec.set(ref.spec, ref);
+  for (const spec of runtimeRefs(file, text)) {
+    if (!bySpec.has(spec)) bySpec.set(spec, { spec, line: 0, via: "运行时导入" });
+  }
+  return [...bySpec.values()];
+}
+
+/** 单文件的官方引用事实；解析失败时返回一条不可判判词（绝不静默当作零引用）。 */
+function fileOfficialRefs(
+  root: string,
+  file: string,
+): { refs: OfficialReference[]; unreadable: string | null } {
+  const rel = relative(root, file).split(sep).join("/");
+  let text: string;
+  try {
+    text = readFileSync(file, "utf8");
+  } catch (error) {
+    return { refs: [], unreadable: `${rel}: 读取失败 —— ${String(error)}` };
+  }
+  try {
+    return { refs: officialRefsOf(file, text), unreadable: null };
+  } catch (error) {
+    return {
+      refs: [],
+      unreadable: `${rel}: 源码引用事实采集失败（判据对该文件不可判）—— ${String(error)}`,
+    };
+  }
+}
+
+/**
+ * peer 反推判据：src 里引用了官方包却没登记为 peerDependencies 的成员即判红。
+ *
+ * 面 = 该包 src 下的 .ts/.tsx/.mts/.mjs（.d.ts 与 *.test.* 跳过，与 exemption-gate 的扫描面
+ * 同一形态）：peerDependencies 是**发布物运行面**的声明，test/** 走 devDependencies 解析，
+ * 不在本判据的分母里。
+ *
+ * 无豁免通道：成员关系是纯治理事实（要么登记要么不登记），留豁免只会让「忘了登记」有地方躲。
+ */
+export function officialSourceRefs(
+  root: string,
+  dir: string,
+): { referenced: Map<string, string[]>; problems: string[] } {
+  const sites = new Map<string, string[]>();
+  const problems: string[] = [];
+  for (const file of collectSrcFiles(root, [dir])) {
+    const found = fileOfficialRefs(root, file);
+    if (found.unreadable !== null) {
+      problems.push(`${dir}: ${found.unreadable}`);
+      continue;
+    }
+    for (const ref of found.refs) {
+      if (!ref.spec.startsWith(OFFICIAL_SCOPE)) continue;
+      const name = packageNameOf(ref.spec);
+      const at = ref.line > 0 ? `:${ref.line}` : "";
+      const list = sites.get(name) ?? [];
+      list.push(`${relative(root, file).split(sep).join("/")}${at} ${ref.via}`);
+      sites.set(name, list);
+    }
+  }
+  return { referenced: sites, problems };
+}
+
+/** peer 反推判据本体：引用了却没登记的官方包，每个成员一条判词（修法写在判词里）。 */
+export function sourceImportProblems(root: string, dir: string, source: Manifest): string[] {
+  const declared = officialNames(peerDependencyField(source, dir).record);
+  const { referenced, problems } = officialSourceRefs(root, dir);
+  for (const [name, list] of [...referenced].sort()) {
+    if (declared.has(name)) continue;
+    problems.push(
+      `${dir}: src 引用了官方包 "${name}"（${list.join("；")}）但 peerDependencies 未登记 —— ` +
+        `请在 plugins-manifest.json 的 dshPeerContracts[${dir}] 登记该成员、在 pnpm-workspace.yaml ` +
+        `catalog 锁精确版本，再跑 pnpm catalog:sync-peers 投影`,
+    );
+  }
+  return problems;
+}
+
 type ManifestRead =
   | { source: { manifest: Manifest; text: string }; problem: null }
   | { source: null; problem: string };
@@ -311,6 +576,7 @@ function collectPackageProblems(
     }
     const checked = checkPackagePeerContract(dir, read.source.manifest, expected, catalog);
     problems.push(...checked.problems);
+    problems.push(...sourceImportProblems(root, dir, read.source.manifest));
     officialPeerCount += checked.officialPeerCount;
   }
   problems.push(...managedDepFieldProblems(root, manifest, catalog));

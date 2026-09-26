@@ -1,7 +1,7 @@
 /**
  * dsh-provider-usage — 行为级 worker：refreshStats 取数前 provider 复检（issue #71 方案 A1）。
  *
- * 背景：宿主 sessions.list 订阅仅在切换会话（list.current 变化）/ roster
+ * 背景：宿主 sessions.list 订阅仅在切换会话（mainView 引用者变化）/ roster
  * 注册卸载时 fire；**会话内切模型/provider 不产生任何宿主信号**，而旧 refreshStats
  * 每 60s 只重拉旧 provider 的 /stats、从不复检 → 轮询零自愈（#71 主根因）。
  *
@@ -269,7 +269,10 @@ globalThis.clearInterval = () => {};
 
 function makeFakeServices(initialProvider) {
   const state = {
-    listCurrent: "s1",
+    // rc.2：快照上**没有** current 字段。当前会话改由官方判据表达——
+    // 「哪一行的 retainedBy.mainView > 0」（dsh-client-ui-workspace 写入 /
+    // dsh-client-ui-session 读取）。undefined = 没有 mainView 引用者 = 无当前会话。
+    mainViewSession: "s1",
     byId: { s1: {} },
     // 0.1.2-alpha.2：行携带 per-session modelSelection 投影——双槽位形状
     // { lastUsed, next }（宿主 wire view：next = pending ?? lastUsed）。
@@ -285,17 +288,31 @@ function makeFakeServices(initialProvider) {
   const sessions = {
     list: {
       getSnapshot: () => ({
-        current: state.listCurrent,
+        // rc.2 官方 SessionListState 形状（无 current）。
         ids: Object.keys(state.byId),
         byId: Object.fromEntries(
           Object.entries(state.byId).map(([id, base]) => {
             const proj = state.projectionBySession[id];
+            const isCurrent = id === state.mainViewSession;
             return [
               id,
-              proj === undefined ? base : { ...base, projectionValues: { modelSelection: proj } },
+              {
+                // 官方 SessionSummary 必填面，让每行都像 rc.2 真行而非空壳。
+                id,
+                displayTitle: id,
+                running: false,
+                blank: false,
+                updatedAt: 0,
+                ...base,
+                // 官方当前会话判据：retainedBy.mainView > 0。
+                retainedBy: isCurrent ? { referenceCount: 1, mainView: 1 } : { referenceCount: 0 },
+                ...(proj === undefined ? {} : { projectionValues: { modelSelection: proj } }),
+              },
             ];
           }),
         ),
+        phase: "ready",
+        projectionsBySession: {},
       }),
       subscribe: (fn) => {
         listSubs.push(fn);
@@ -395,7 +412,7 @@ async function main() {
     assert.ok(deepFind([docBody], ".dou-panel"), "面板已展开");
   }
 
-  // 场景 2a（#383 修复核心·即时路径）：会话内切模型 a→b——sessionId/list.current 均不变，
+  // 场景 2a（#383 修复核心·即时路径）：会话内切模型 a→b——sessionId/当前会话 均不变，
   // 但宿主 modelSelection 投影帧（control frame type:projection）会 fire sessions.list
   // subscribe → detect 立即复检 → 切完即重拉，不等 60s 轮询。
   // #383 追加根因：切模型只更新 next（pending），lastUsed 保持旧值（等真发请求才随动）——
@@ -450,7 +467,7 @@ async function main() {
   // 场景 3（维护者补充需求）：切换会话 s2，provider 相同（mock-b）→ 仍立即刷一次 stats
   {
     svc.state.byId.s2 = {};
-    svc.state.listCurrent = "s2";
+    svc.state.mainViewSession = "s2";
     svc.state.projectionBySession.s2 = {
       lastUsed: { provider: "mock-b", model: "model-x" },
       next: { provider: "mock-b", model: "model-x" },
@@ -463,10 +480,10 @@ async function main() {
   }
 
   // 场景 3b（#419 核心）：会话运行期间快照噪声帧（projection 写入 / running bit 等——
-  // current 不变）→ detect 复检但不补刷 stats，请求数不增长
+  // 当前会话不变）→ detect 复检但不补刷 stats，请求数不增长
   {
     const before = statsCalls.length;
-    // 模拟投影逐条写入（如 sessionListMetadata/title 更新）：current 不变
+    // 模拟投影逐条写入（如 sessionListMetadata/title 更新）：当前会话不变
     svc.state.projectionBySession.s2 = {
       lastUsed: { provider: "mock-b", model: "model-x" },
       next: { provider: "mock-b", model: "model-x" },
@@ -479,7 +496,7 @@ async function main() {
     assert.equal(
       statsCalls.length,
       before,
-      "快照噪声帧（current 不变）不触发 /stats（#419 diff 语义）",
+      "快照噪声帧（当前会话不变）不触发 /stats（#419 diff 语义）",
     );
     console.log("[client-revalidate.worker] 场景3b 快照噪声帧不刷 stats ✓");
   }
@@ -487,7 +504,7 @@ async function main() {
   // 场景 4：切换会话 s3 跨 provider（b→a）→ fire 后立即拉新 provider，不等轮询
   {
     svc.state.byId.s3 = {};
-    svc.state.listCurrent = "s3";
+    svc.state.mainViewSession = "s3";
     svc.state.projectionBySession.s3 = {
       lastUsed: { provider: "mock-a", model: "model-x" },
       next: { provider: "mock-a", model: "model-x" },
@@ -502,9 +519,9 @@ async function main() {
     console.log("[client-revalidate.worker] 场景4 切换会话跨 provider 即时跟随 ✓");
   }
 
-  // 场景 4b（#419 回归）：current 切走（undefined）再切回——即使 provider 相同也立即补刷
+  // 场景 4b（#419 回归）：当前会话切走（无 mainView 引用者）再切回——即使 provider 相同也立即补刷
   {
-    svc.state.listCurrent = undefined;
+    svc.state.mainViewSession = undefined;
     svc.fireSessionChanged();
     await until(
       () => statsCalls.length > 0 && pillLabel()?.innerHTML !== "",
@@ -512,14 +529,14 @@ async function main() {
       3000,
     );
     const before = statsCalls.length;
-    svc.state.listCurrent = "s3";
+    svc.state.mainViewSession = "s3";
     svc.state.projectionBySession.s3 = {
       lastUsed: { provider: "mock-a", model: "model-x" },
       next: { provider: "mock-a", model: "model-x" },
     };
     svc.fireSessionChanged();
-    await until(() => statsCalls.length > before, "current 变化（同 provider）立即补刷", 3000);
-    console.log("[client-revalidate.worker] 场景4b current 变化立即补刷（#419 diff 判定） ✓");
+    await until(() => statsCalls.length > before, "当前会话变化（同 provider）立即补刷", 3000);
+    console.log("[client-revalidate.worker] 场景4b 当前会话变化立即补刷（#419 diff 判定） ✓");
   }
 
   // 场景 5：卸载清理不抛错
