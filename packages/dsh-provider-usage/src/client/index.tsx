@@ -24,6 +24,8 @@ import {
 // 官方 sessions 服务契约（仅类型，编译期擦除）：ctx 面直接用官方 ISessions，
 // 不再把 ctx.sessions 强转进自建镜像类型（镜像与官方类型漂移过一次，见 core.ts）。
 import type { ISessions } from "@deepseek-ai/dsh-api-session-controller/client";
+// 官方 locale 服务读面（仅类型，编译期擦除）：本包用到的四个成员见下方 LocalePort。
+import type { LocaleRuntime } from "@deepseek-ai/dsh-client-locale/client";
 import type { RemoteLike, StatsResponseV2, HistoryResponseV2, UiPlacementConfig } from "./core.ts";
 import { SettingsPage } from "./settings/index.tsx";
 // 纯视图推导（数据 → 文案/判别）单点收口在 float-view.ts：index.tsx 只剩编排。
@@ -707,11 +709,20 @@ function mountFloat(): () => void {
 
 // ------------------------------------------------------------------ 插件入口
 
+/**
+ * 宿主 locale 服务读面（官方 LocaleRuntime 的最小面，本包真用到的四个成员）。
+ *
+ * 刻意**不**经 `Parameters<typeof bindLocale>[0]` 反推：共享函数的参数面只该描述它自己
+ * 消费什么（只有 bind），不该由调用方的额外需求撑大——否则 shared/ 声明成四成员后，
+ * 每个只喂 `{ bind }` 的测试都得加逃逸口。本包的面是自己用到的，就自己声明。
+ */
+type LocalePort = Pick<LocaleRuntime, "register" | "bind" | "subscribe" | "getSnapshot">;
+
 /** 客户端 ctx 最小面（三键可选 sessions/remote/locale；slots/effect 为装配必需）。 */
 interface ProviderUsageClientCtx {
   sessions?: ISessions;
   remote?: RemoteLike;
-  locale?: Parameters<typeof bindLocale>[0];
+  locale?: LocalePort;
   slots: {
     inject(name: string, setup: () => unknown): unknown;
     register(item: Record<string, unknown>, render: () => unknown): unknown;
@@ -724,9 +735,7 @@ interface ProviderUsageClientCtx {
  * 注册抛错（HMR 重 apply 幂等）不得跳过绑定，否则 t 全回落 key；
  * 返回退订函数（无 locale / 无 subscribe 能力时为 undefined）。
  */
-function bindPluginLocale(
-  locale: Parameters<typeof bindLocale>[0] | undefined,
-): (() => void) | undefined {
+function bindPluginLocale(locale: LocalePort | undefined): (() => void) | undefined {
   if (!(locale && typeof locale.register === "function")) return undefined;
   try {
     locale.register(NS, { zh: zh, en: en });

@@ -13,12 +13,19 @@
       "@deepseek-ai/cordis",
       "@deepseek-ai/dsh-host-webserver",
       "@deepseek-ai/dsh-tools",
-      "@deepseek-ai/dsh-session-title"
+      "@deepseek-ai/dsh-session-title",
+      "@deepseek-ai/dsh-client-locale",
+      "@deepseek-ai/dsh-client-ui-renderer",
+      "@deepseek-ai/dsh-client-ui-slots"
     ],
     "dsh-lan-proxy": [
       "@deepseek-ai/cordis",
       "@deepseek-ai/dsh-host-webserver",
-      "@deepseek-ai/dsh-client-ui-slots"
+      "@deepseek-ai/dsh-client-ui-slots",
+      "@deepseek-ai/dsh-client-locale",
+      "@deepseek-ai/dsh-client-ui-renderer",
+      "@deepseek-ai/dsh-client-ui-settings",
+      "@deepseek-ai/dsh-client-ui-plugin-manager"
     ],
     "dsh-mcp-manager": [
       "@deepseek-ai/cordis",
@@ -30,7 +37,11 @@
       "@deepseek-ai/dsh-llm",
       "@deepseek-ai/dsh-api-session-controller",
       "@deepseek-ai/dsh-client-ui-session",
-      "@deepseek-ai/dsh-client-store"
+      "@deepseek-ai/dsh-client-store",
+      "@deepseek-ai/dsh-client-locale",
+      "@deepseek-ai/dsh-client-ui-renderer",
+      "@deepseek-ai/dsh-client-ui-settings",
+      "@deepseek-ai/dsh-client-ui-plugin-manager"
     ],
     "dsh-notifier": [
       "@deepseek-ai/cordis",
@@ -41,7 +52,9 @@
       "@deepseek-ai/dsh-settings",
       "@deepseek-ai/dsh-user-approval",
       "@deepseek-ai/dsh-user-questions",
-      "@deepseek-ai/dsh-client-ui-slots"
+      "@deepseek-ai/dsh-client-ui-slots",
+      "@deepseek-ai/dsh-client-locale",
+      "@deepseek-ai/dsh-client-ui-renderer"
     ],
     "dsh-provider-usage": [
       "@deepseek-ai/cordis",
@@ -50,7 +63,8 @@
       "@deepseek-ai/dsh-session",
       "@deepseek-ai/dsh-client-ui-slots",
       "@deepseek-ai/dsh-api-session-controller",
-      "@deepseek-ai/dsh-client-ui-session"
+      "@deepseek-ai/dsh-client-ui-session",
+      "@deepseek-ai/dsh-client-locale"
     ],
     "dsh-verify-isolated": ["@deepseek-ai/dsh-skill-filesystem"],
     "dsh-worktree-sidebar": [

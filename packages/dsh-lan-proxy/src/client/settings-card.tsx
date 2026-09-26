@@ -25,6 +25,9 @@ import {
   HOST_TRUST_STATUS_KEY,
   type HostTrustSignals,
 } from "./host-trust-status.ts";
+// 官方 row entry 契约（仅 import type）：view 决定摘要/页面分支，form 由 0.1.7-rc.2
+// Plugin Manager 传入。本卡片按任务边界保留既有 HTTP 配置写面，故 form 只透传不消费。
+import type { PluginConfigViewProps } from "@deepseek-ai/dsh-client-ui-plugin-manager/client";
 
 import { APP_ROUTES } from "./shared/interface.ts";
 import { evaluateCaWarnings } from "./ca-status.ts";
@@ -139,12 +142,11 @@ function compressStatusLine(c: unknown): string | null {
 /**
  * row entry 的 owner props 与卡片入参。view 决定摘要/页面分支；form 由 0.1.7-rc.2
  * Plugin Manager 传入，当前实现按任务边界保留既有 HTTP 配置写面。
+ *
+ * view / form 直接继承官方 PluginConfigViewProps（view: 'summary' | 'page'、
+ * form?: ConfigPageForm | undefined），不另立镜像字段——官方改名或改形状在此判红。
  */
-export interface SettingsCardProps {
-  /** Plugin Manager 请求的 row entry 视图。 */
-  readonly view: "summary" | "page";
-  /** Plugin Manager 提供的官方配置表单面；当前 HTTP 写面暂不消费。 */
-  readonly form?: unknown;
+export interface SettingsCardProps extends PluginConfigViewProps {
   /** 调用方注入的宿主端默认值快照。 */
   defaults?: LanProxySettingsView;
   /** host trust 信号读取器（issue #856）；缺省时只读页面侧信号（无 ctx.remote）。 */

@@ -34,7 +34,7 @@ import { refresh, switchTab, close, showPanel, disposePanel } from "./float/pane
 import { resetForm, beginEdit } from "./float/quick-add.ts";
 import { toggleFloat, mountFloat, renderFloatPanel } from "./float/float.ts";
 import { bindSession, rebindSession } from "./core/session.ts";
-import { SettingsCard, type SettingsCardProps } from "./settings/settings-card.tsx";
+import { SettingsCard } from "./settings/settings-card.tsx";
 import { bindLocale } from "../../../../shared/client/i18n.js";
 import { MCP_MANAGER_IDENTITY, SSE_FRAMES } from "../shared/interface.ts";
 import { zh, en, type McpLocaleKey } from "./locales.ts";
@@ -47,6 +47,7 @@ const NS = "mcpManager";
 const ROW_CONFIG_SLOT = "plugins.row.config";
 
 import type { LocaleNamespaceMap as _LocaleNamespaceMap } from "@deepseek-ai/dsh-client-ui-slots";
+import type { ConfigForms } from "@deepseek-ai/dsh-client-ui-settings/client";
 
 declare module "@deepseek-ai/dsh-client-ui-slots" {
   interface LocaleNamespaceMap {
@@ -95,7 +96,7 @@ export function apply(ctx: McpClientContext): void {
 
     // 页面只在 Host 服务 canonical settings namespace 时注册；namespace 撤下时，
     // whileServed 会调用 register 回调返回的 disposer，移除 keyed slot 注册。
-    const slots = ctx.get("slots") as unknown as RowConfigSlotsService | undefined;
+    const slots = ctx.get("slots");
     const configForms = ctx.get("configForms") as ConfigFormsService | undefined;
     if (slots !== undefined && configForms !== undefined) {
       ctx.effect(
@@ -379,20 +380,12 @@ export function apply(ctx: McpClientContext): void {
   }
 }
 
-interface RowConfigSlotsService {
-  inject: (name: string, setup: () => () => void) => () => void;
-  register: (
-    item: Record<string, unknown>,
-    render: (props: SettingsCardProps) => unknown,
-  ) => () => void;
-}
-
-interface ConfigFormsService {
-  whileServed: (
-    namespaces: readonly string[],
-    register: (served: ReadonlySet<string>) => () => void,
-  ) => () => void;
-}
+/**
+ * configForms 服务最小面：官方 `ConfigForms`（dsh-client-ui-settings，宿主 ctx.configForms）的
+ * whileServed Pick——官方签名本就是 `(namespaces, register) => () => void`，此前本文件的镜像
+ * 声明形状与官方一致，改成派生后上游改名即判红。
+ */
+type ConfigFormsService = Pick<ConfigForms, "whileServed">;
 
 // ---- 客户端契约：apply/inject 由 build-client 经 factory 装配（干净模块）----
 // sessions 跟随当前会话；slots/configForms 装配插件行配置页；locale 注册字典与 t。

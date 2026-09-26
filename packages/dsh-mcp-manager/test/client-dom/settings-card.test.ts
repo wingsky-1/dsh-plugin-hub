@@ -75,10 +75,11 @@ function baseCfg(): Record<string, unknown> {
   return { position: "top-right", offsetX: 8, offsetY: 8, blankY: 40, zIndexBase: 3000 };
 }
 
-function card(view: "summary" | "page" = "page", form?: unknown): React.ReactElement {
-  const props: { view: "summary" | "page"; form?: unknown } =
-    form === undefined ? { view } : { view, form };
-  return React.createElement(SettingsCard, props);
+function card(view: "summary" | "page" = "page"): React.ReactElement {
+  // 只传 view：组件自己 fetch 配置，从不读 props.form（官方 PluginConfigViewProps.form
+  // 是 owner 契约的一部分，SettingsCard 不消费）。此前留了个 form?: unknown 形参，
+  // 没有任何用例传过它，且它与官方 ConfigPageForm 面不兼容——已随类型收敛删掉。
+  return React.createElement(SettingsCard, { view });
 }
 
 /** row page 直接渲染完整表单；GET 排空后字段即可操作。 */

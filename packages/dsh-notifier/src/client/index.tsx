@@ -100,6 +100,10 @@ import type { NotifySeverity } from "../shared/interface.ts";
 // lib/types/*.d.ts 相对导入保留 .ts 后缀，declare module 增强的模块名解析会判
 // TS2664（microsoft/TypeScript#63960 同类；上游修复发布物后此行可删）。
 import type { LocaleNamespaceMap as _LocaleNamespaceMap } from "@deepseek-ai/dsh-client-ui-slots";
+// 宿主服务面取官方类型本体（仅 import type）：locale = LocaleRuntime、slots = SlotRegistry，
+// 装配处的窄读面用 Pick<> 派生，不在本文件手抄签名。
+import type { LocaleRuntime } from "@deepseek-ai/dsh-client-locale/client";
+import type { SlotRegistry } from "@deepseek-ai/dsh-client-ui-renderer/client";
 
 declare module "@deepseek-ai/dsh-client-ui-slots" {
   interface LocaleNamespaceMap {
@@ -1723,19 +1727,20 @@ function SettingsCard() {
  */
 const pageOwner: { current: object | null } = { current: null };
 
-/** 宿主 locale 服务读形态（本包只用 register/bind/subscribe/getSnapshot；缺失即回落 key 本体）。 */
-interface LocaleServiceView {
-  register: (ns: string, dict: { zh: unknown; en: unknown }) => void;
-  bind: (ns: string) => unknown;
-  subscribe?: (listener: () => void) => () => void;
-  getSnapshot?: () => unknown;
-}
+/**
+ * 宿主 locale 服务读形态：官方 LocaleRuntime 的最小面（本包只用 register/bind/subscribe/
+ * getSnapshot；缺失即回落 key 本体）。Pick 派生而非手抄签名——register 的字典类型因此
+ * 直接受官方 LocaleDictOf 收口（漏键/多键编译期判红）。官方 register 返回 disposer，本包
+ * 沿用既有调用行为照旧不接返回值（不新增生命周期逻辑）。
+ */
+type LocaleServiceView = Pick<LocaleRuntime, "register" | "bind" | "subscribe" | "getSnapshot">;
 
-/** 宿主插槽读形态（本包只用 settings.section 的 inject/register；缺失即 tab 不挂载）。 */
-interface SlotsView {
-  inject: (name: string, setup: () => unknown) => void;
-  register: (item: Record<string, unknown>, render: () => unknown) => unknown;
-}
+/**
+ * 宿主插槽读形态：官方 SlotRegistry 的最小面（本包只用 settings.section 的 inject/register；
+ * 缺失即 tab 不挂载）。inject 的 key 面由官方 SlotMap 收口，register 的选项面由官方
+ * SlotCore 收口——宿主改签名/改槽位声明即判红。
+ */
+type SlotsView = Pick<SlotRegistry, "inject" | "register">;
 
 /**
  * 浏览器端上下文的窄面（本包实际使用的面：get + effect），与 inject 声明的
@@ -1767,7 +1772,9 @@ function bindLocaleService(ctx: ClientContext, stack: DisposerStack): void {
     // bind/subscribe 必须带接收者调用：宿主实现依赖 this，detached 摘出即抛，失败被各层 catch 静默吞掉后整面板回落 key 本体。
     try {
       localeService.register(NS, { zh: zh, en: en });
-      // 宿主 bind 出的签名以本包字典键为参数，比端口声明的 string 更窄——收口在适配这一处
+      // 官方 bind(NS) 命中类型化重载：返回 TranslateNS<'notifier'>，key 面比本包 t 收口的宽
+      // Translate（官方宽面，全文调用点）更窄，收口在适配这一处。断言两端都是官方类型；
+      // 端口本体已是 Pick<LocaleRuntime, …>，上游改 bind/register/subscribe/getSnapshot 仍判红。
       bindTranslate(localeService.bind(NS) as Translate);
       if (
         typeof localeService.subscribe === "function" &&

@@ -19,6 +19,18 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { t, bindLocale } from "../../shared/client/i18n.js";
 
+/**
+ * 测试侧单点收口（#1028 后续：shared/client/i18n.d.ts 的入参面改用官方 LocaleRuntime 派生）。
+ *
+ * 生产面只认官方 LocaleRuntime 的四个成员（register / bind / subscribe / getSnapshot），
+ * 上游改名即 tsc 判红——这正是本文件之外要保住的东西。而本文件要驱动的恰恰是
+ * i18n.js 的**运行时防御分支**（无 bind、bind 非函数），这些入参按实现契约有意不合生产类型。
+ * 故在此单点收口，不放宽生产声明：把「不合类型」这件事显式写在测试里，而不是漏进公共面。
+ */
+function localeStub(stub: object): Parameters<typeof bindLocale>[0] {
+  return stub as Parameters<typeof bindLocale>[0];
+}
+
 // 模拟调用方：经共享模块活绑定引用翻译函数（对齐各包 client 文件的 import 侧形态）
 // params 可选：实现 JSDoc 声明可选，未装配回落与已装配 mock 均按 (key, params?) 调用；单参调用处显式传
 // undefined（运行时与省略完全等价），以满足推断出的双参签名。
@@ -38,15 +50,15 @@ test("bindLocale(mock) 后 t 命中 mock", () => {
     calls.push([key, params]);
     return `TRANSLATED:${key}`;
   };
-  bindLocale({ bind: () => bound }, "test-ns");
+  bindLocale(localeStub({ bind: () => bound }), "test-ns");
   assert.equal(readT("hello", undefined), "TRANSLATED:hello");
   assert.deepEqual(calls[0], ["hello", undefined]);
 });
 
 test("重绑后调用方即时可见（活绑定语义）", () => {
-  bindLocale({ bind: () => (key: string) => `FIRST:${key}` }, "ns-a");
+  bindLocale(localeStub({ bind: () => (key: string) => `FIRST:${key}` }), "ns-a");
   const first = readT("k", undefined);
-  bindLocale({ bind: () => (key: string) => `SECOND:${key}` }, "ns-b");
+  bindLocale(localeStub({ bind: () => (key: string) => `SECOND:${key}` }), "ns-b");
   assert.equal(first, "FIRST:k", "首次绑定生效");
   assert.equal(readT("k", undefined), "SECOND:k", "重绑后同一函数引用即时指向新绑定（ESM 活绑定）");
 });
@@ -55,11 +67,11 @@ test("bindLocale 传 undefined / 无 bind 方法时保持既有 t 不变", () =>
   bindLocale(undefined, "ns");
   assert.equal(typeof t, "function", "undefined locale 不破坏 t");
   const before = readT("kept", undefined);
-  bindLocale({}, "ns");
+  bindLocale(localeStub({}), "ns");
   assert.equal(readT("kept", undefined), before, "无 bind 方法时 t 不被覆写");
 });
 
 test("bindLocale(locale 有 bind 但非函数) 保持既有 t", () => {
-  bindLocale({ bind: "not-a-function" }, "ns");
+  bindLocale(localeStub({ bind: "not-a-function" }), "ns");
   assert.equal(typeof t, "function");
 });
