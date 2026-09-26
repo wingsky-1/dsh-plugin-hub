@@ -51,6 +51,8 @@ export const STEPS: readonly UpgradeStep[] = [
   { fromVersion: "0.2.4", targetVersion: "0.2.5", run: migrateLastRun },
   // 0.2.5 → 0.2.6 为空步（用量呈现、节假日判定、存储清理诊断，无既有形态割接）：run 指共享空函数。
   { fromVersion: "0.2.5", targetVersion: "0.2.6", run: tickUpgradeVersion },
+  // 0.2.6 → 0.2.7 为空步（本版不含 provider-usage 存储形态变化）：run 指共享空函数。
+  { fromVersion: "0.2.6", targetVersion: "0.2.7", run: tickUpgradeVersion },
 ];
 
 /**
