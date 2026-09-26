@@ -143,6 +143,20 @@ export function tierSteps(tier, { hitPackages, withCoverage, base, scopeLabel })
     // 否则「本地全绿、CI 红在 format」这种落差会天天发生。面见 .prettierignore。
     { label: "format:check（Prettier 形态，代码面全量）", args: ["format:check"] },
   ];
+  // 只在 full 档跑的判据（每一条都必须在 gate-wiring-exceptions.json 登记 tier-only：
+  // 「执行点不在 PR 面」本身就是要显式可见的不对称，见 scripts/test/gate-wiring.test.ts A14）。
+  // #1028 防复发闸（会话快照面：禁 .current 读取 + 自建镜像 warn）在此而非 cheapGlobal——
+  // cheapGlobal 同时进 pr 档，而 pr 档里的判据端点按 A1 必须在 ci.yml 的 repo-gate 有对应执行点；
+  // .github/workflows 属红线段（改它要先在原 issue 内取维护者批准），故本轮只能先挂 full 档。
+  // 升级路径（一次显式 diff）：取得批准后在 ci.yml 的 repo-gate 恒跑段加同名步骤，把本条目移进
+  // cheapGlobal，并从 gate-wiring-exceptions.json 删掉 tier-only 条目。
+  const fullOnly = [
+    {
+      label: "forbid-session-snapshot-src（会话快照面：禁 .current 读取 + 自建镜像 warn）",
+      cmd: "node",
+      args: ["scripts/gate/forbid-session-snapshot-src.mjs"],
+    },
+  ];
   const prereqStep = {
     label: `build 编译面前置包（test:scripts 依赖：${PREREQ_PACKAGES.join(", ")}）`,
     // --filter 与取值必须是两个独立 argv 元素（与本文件其余步骤同写法）；拼成单个
@@ -164,7 +178,7 @@ export function tierSteps(tier, { hitPackages, withCoverage, base, scopeLabel })
     });
   }
 
-  return collectFullTierSteps({ scopeLabel, cheapGlobal, scriptsSelfTest, withCoverage });
+  return collectFullTierSteps({ scopeLabel, cheapGlobal, fullOnly, scriptsSelfTest, withCoverage });
 }
 
 /** 命中包的 build（含依赖）+ 逐包 test / typecheck；changed 与 pr 两档共用同一段。 */
@@ -234,7 +248,13 @@ function collectPrTierSteps({
 }
 
 /** full 档：同 pr 对象面（全仓直跑）+ 豁免到期台账；`--with-coverage` 时补 cov / crap。 */
-function collectFullTierSteps({ scopeLabel, cheapGlobal, scriptsSelfTest, withCoverage }) {
+function collectFullTierSteps({
+  scopeLabel,
+  cheapGlobal,
+  fullOnly,
+  scriptsSelfTest,
+  withCoverage,
+}) {
   const steps = [
     { label: "build（全仓）", args: ["build"] },
     { label: "test（全仓）", args: ["test"] },
@@ -243,6 +263,7 @@ function collectFullTierSteps({ scopeLabel, cheapGlobal, scriptsSelfTest, withCo
     { label: `pack:check（${scopeLabel}）`, args: ["pack:check"] },
     { label: `verify:npmlayout（${scopeLabel}）`, args: ["verify:npmlayout"] },
     ...cheapGlobal,
+    ...fullOnly,
     scriptsSelfTest,
     // 豁免/临时项到期台账：只在全量档收集打印（纯报告，退出码恒 0）。pr 档不跑——
     // PR 上反复打印同一份存量台账只会变成噪音，而它的用途是排期复核（裁决见 #765）。
