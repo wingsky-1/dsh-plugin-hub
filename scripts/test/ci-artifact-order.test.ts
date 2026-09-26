@@ -21,17 +21,17 @@ const first = steps.findIndex((s) => s.name === "Restore package outputs into pa
 const last = steps.findIndex((s) => s.name.startsWith("Build script-test prerequisites"));
 assert.ok(first >= 0 && last > first);
 
-function exercise(
-  t: test.TestContext,
-  options: {
-    full?: boolean;
-    hit?: string[];
-    all?: string[];
-    artifact?: boolean;
-    buildFails?: boolean;
-    buildMissing?: boolean;
-  } = {},
-) {
+type ExerciseOptions = {
+  full?: boolean;
+  hit?: string[];
+  all?: string[];
+  artifact?: boolean;
+  buildFails?: boolean;
+  buildMissing?: boolean;
+};
+
+/** 在临时目录里铺 pnpm 桩与（可选的）产物目录；临时目录挂在 t.after 上回收。 */
+function makeSandbox(t: test.TestContext, options: ExerciseOptions) {
   const dir = mkdtempSync(join(tmpdir(), "ci-artifact-order-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const bin = join(dir, "bin");
@@ -52,7 +52,11 @@ function exercise(
     mkdirSync(join(dir, "artifacts-tmp/pkg-A/lib"), { recursive: true });
     writeFileSync(join(dir, "artifacts-tmp/pkg-A/lib/index.js"), "artifact");
   }
-  const full = options.full ?? true;
+  return { dir, bin };
+}
+
+/** 依序跑 restore→build 区间的步骤，失败即停；返回末步的退出码与合并输出。 */
+function runSteps(dir: string, bin: string, full: boolean, options: ExerciseOptions) {
   let status = 0;
   let output = "";
   for (const step of steps.slice(first, last)) {
@@ -86,6 +90,11 @@ function exercise(
     if (status !== 0) break;
   }
   return { status, output, built: existsSync(join(dir, "build-called")) };
+}
+
+function exercise(t: test.TestContext, options: ExerciseOptions = {}) {
+  const { dir, bin } = makeSandbox(t, options);
+  return runSteps(dir, bin, options.full ?? true, options);
 }
 
 test("missing hit artifact fails before full build can mask it", (t) => {

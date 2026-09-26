@@ -755,72 +755,116 @@ test("#423+#722: 变异测试单份维护——禁 *.src.test.ts 回潮 + 变异
   const confDir = join(ROOT, "stryker.conf.d");
   const vitestConfDir = join(ROOT, "vitest.stryker.d");
   for (const pkgName of Object.keys(topology.packages)) {
-    // #722 方案 A 路径一：测试面由拓扑派生，落在该包专属的 vitest 配置 include 上；
-    // Stryker conf 里**不得**再出现 testFiles —— 它是上游 #6144（static mutant 被判
-    // runtime 激活 → 模块级变异体漏判）的唯一触发条件。
-    const projection = projectTestSurface(ROOT, topology, pkgName);
-    assert.deepEqual(
-      projection.errors,
-      [],
-      `${pkgName} 测试面投影不应有错误：${projection.errors.join("; ")}`,
-    );
-    assert.ok(projection.testFiles.length > 0, `${pkgName} 变异面不得为空`);
-
-    const vitestConfPath = join(vitestConfDir, `${pkgName}.config.ts`);
-    assert.ok(
-      existsSync(vitestConfPath),
-      `${pkgName} 必须有派生的 vitest 测试面配置：${vitestConfPath}`,
-    );
-    const vitestConf = readFileSync(vitestConfPath, "utf8");
-    for (const tf of projection.testFiles) {
-      assert.ok(
-        vitestConf.includes(`'${tf}'`),
-        `${pkgName} 的 vitest 配置 include 必须逐条覆盖变异面文件：缺 ${tf}`,
-      );
-      assert.ok(
-        !tf.includes(".src.test.ts"),
-        `${tf} 不得是 *.src.test.ts（#423 方案 A：复用单份 *.test.ts）`,
-      );
-      // 测试必须真的指向 src（效果判据）：import lib/ 产物会让变异跑在产物而非源码上
-      const body = readFileSync(join(ROOT, tf), "utf8");
-      assert.ok(
-        !/["']\.\.\/(?:\.\.\/)*lib\//.test(body),
-        `${tf}（${pkgName}）不得 import lib/——变异必须跑在源码上（#722）`,
-      );
-    }
-    const segDefs = topology.packages[pkgName]?.segments ?? {};
-    const confFiles = readdirSync(confDir).filter(
-      (x) => x.endsWith(".json") && (x === `${pkgName}.json` || x.startsWith(`${pkgName}-`)),
-    );
-    assert.ok(confFiles.length > 0, `${pkgName} 应有段配置`);
-    for (const cf of confFiles) {
-      const segKey = cf === `${pkgName}.json` ? "_single" : cf.slice(pkgName.length + 1, -5);
-      const segList = segDefs[segKey]?.testFiles;
-      const expectedRel =
-        Array.isArray(segList) && segList.length > 0
-          ? `vitest.stryker.d/${pkgName}-${segKey}.config.ts`
-          : `vitest.stryker.d/${pkgName}.config.ts`;
-      const conf = JSON.parse(readFileSync(join(confDir, cf), "utf8"));
-      assert.equal(
-        conf.testFiles,
-        undefined,
-        `${cf} 不得再出现 Stryker 顶层 testFiles（触发上游 #6144：static mutant 被判 runtime 激活）`,
-      );
-      assert.equal(
-        conf.vitest?.configFile,
-        expectedRel,
-        `${cf} 的 vitest.configFile 必须指向派生的测试面配置（${expectedRel}）`,
-      );
-      if (Array.isArray(segList) && segList.length > 0) {
-        const segConfPath = join(ROOT, expectedRel);
-        assert.ok(
-          existsSync(segConfPath),
-          `显式段 ${pkgName}:${segKey} 的段级 vitest 配置必须落盘`,
-        );
-      }
-    }
+    assertPkgTestFaceWiredToSrc(pkgName, topology, projectTestSurface, confDir, vitestConfDir);
   }
 });
+
+/** 变异拓扑的最小结构：只声明本文件用到的 packages→segments→testFiles 一条链。 */
+type Topology = {
+  packages: Record<string, { segments?: Record<string, { testFiles?: unknown }> }>;
+};
+
+/** test-surface.mjs 的 projectTestSurface：返回投影出的测试文件与形状判词。 */
+type ProjectTestSurface = (
+  root: string,
+  topology: Topology,
+  pkgName: string,
+) => { testFiles: string[]; errors: string[] };
+
+/**
+ * 单包的变异面接线核对（#423 单份维护 + #722 直连 src）：
+ *   1. 投影无错且非空；
+ *   2. 包的 vitest 配置存在，且 include 逐条覆盖投影出的每个测试文件；
+ *   3. 每个测试文件都不是 *.src.test.ts，且正文不 import lib/（变异必须跑在源码上）；
+ *   4. 每份段 conf 不得再出现顶层 testFiles（上游 #6144），且 vitest.configFile 指向派生配置。
+ */
+function assertPkgTestFaceWiredToSrc(
+  pkgName: string,
+  topology: Topology,
+  projectTestSurface: ProjectTestSurface,
+  confDir: string,
+  vitestConfDir: string,
+): void {
+  // #722 方案 A 路径一：测试面由拓扑派生，落在该包专属的 vitest 配置 include 上；
+  // Stryker conf 里**不得**再出现 testFiles —— 它是上游 #6144（static mutant 被判
+  // runtime 激活 → 模块级变异体漏判）的唯一触发条件。
+  const projection = projectTestSurface(ROOT, topology, pkgName);
+  assert.deepEqual(
+    projection.errors,
+    [],
+    `${pkgName} 测试面投影不应有错误：${projection.errors.join("; ")}`,
+  );
+  assert.ok(projection.testFiles.length > 0, `${pkgName} 变异面不得为空`);
+
+  const vitestConfPath = join(vitestConfDir, `${pkgName}.config.ts`);
+  assert.ok(
+    existsSync(vitestConfPath),
+    `${pkgName} 必须有派生的 vitest 测试面配置：${vitestConfPath}`,
+  );
+  const vitestConf = readFileSync(vitestConfPath, "utf8");
+  for (const tf of projection.testFiles) {
+    assert.ok(
+      vitestConf.includes(`'${tf}'`),
+      `${pkgName} 的 vitest 配置 include 必须逐条覆盖变异面文件：缺 ${tf}`,
+    );
+    assert.ok(
+      !tf.includes(".src.test.ts"),
+      `${tf} 不得是 *.src.test.ts（#423 方案 A：复用单份 *.test.ts）`,
+    );
+    // 测试必须真的指向 src（效果判据）：import lib/ 产物会让变异跑在产物而非源码上
+    const body = readFileSync(join(ROOT, tf), "utf8");
+    assert.ok(
+      !/["']\.\.\/(?:\.\.\/)*lib\//.test(body),
+      `${tf}（${pkgName}）不得 import lib/——变异必须跑在源码上（#722）`,
+    );
+  }
+  const segDefs = topology.packages[pkgName]?.segments ?? {};
+  const confFiles = readdirSync(confDir).filter(
+    (x) => x.endsWith(".json") && (x === `${pkgName}.json` || x.startsWith(`${pkgName}-`)),
+  );
+  assert.ok(confFiles.length > 0, `${pkgName} 应有段配置`);
+  for (const cf of confFiles) {
+    assertSegmentConfWired(cf, pkgName, segDefs, confDir);
+  }
+}
+
+/** 该段显式登记了 testFiles（与「无 testFiles 的段」互斥的判据，不靠长度近似）。 */
+function segmentHasTestFiles(segList: unknown): boolean {
+  return Array.isArray(segList) && segList.length > 0;
+}
+
+/**
+ * 单份段 conf 的接线核对：段键归并、包级/段级 vitest 配置名的选择、顶层 testFiles 不得回潮。
+ */
+function assertSegmentConfWired(
+  cf: string,
+  pkgName: string,
+  segDefs: Record<string, { testFiles?: unknown }>,
+  confDir: string,
+): void {
+  const segKey = cf === `${pkgName}.json` ? "_single" : cf.slice(pkgName.length + 1, -5);
+  const segList = segDefs[segKey]?.testFiles;
+  const expectedRel = segmentHasTestFiles(segList)
+    ? `vitest.stryker.d/${pkgName}-${segKey}.config.ts`
+    : `vitest.stryker.d/${pkgName}.config.ts`;
+  const conf = JSON.parse(readFileSync(join(confDir, cf), "utf8"));
+  assert.equal(
+    conf.testFiles,
+    undefined,
+    `${cf} 不得再出现 Stryker 顶层 testFiles（触发上游 #6144：static mutant 被判 runtime 激活）`,
+  );
+  assert.equal(
+    conf.vitest?.configFile,
+    expectedRel,
+    `${cf} 的 vitest.configFile 必须指向派生的测试面配置（${expectedRel}）`,
+  );
+  if (segmentHasTestFiles(segList)) {
+    assert.ok(
+      existsSync(join(ROOT, expectedRel)),
+      `显式段 ${pkgName}:${segKey} 的段级 vitest 配置必须落盘`,
+    );
+  }
+}
 
 test("#517 B5: ci.yml homedir 门禁——Forbid homedir 步骤存在并调 forbid-homedir-src.mjs + 根 scripts 入口", () => {
   assert.ok(
@@ -1100,6 +1144,11 @@ test("#217+#187+#722+#843: repo-gate-assert 判定表全组合锁定（事件 ×
   };
   const run = (over: Record<string, string | undefined>) => evaluateGate({ ...base, ...over });
   const RESULTS = ["success", "failure", "cancelled", "skipped"];
+  const HAS_MUTATIONS = ["true", "false"];
+  // 维度笛卡尔积，展开次序与原手写嵌套 for 完全一致（最后一维变化最快）：
+  // 组合集合与判词都不变，只是不再把 5 层循环压在一个函数里。
+  const cartesian = (dims: string[][]): string[][] =>
+    dims.reduce<string[][]>((acc, dim) => acc.flatMap((p) => dim.map((v) => [...p, v])), [[]]);
   const allSkipped = (cov: string, mut: string, verd: string) =>
     cov === "skipped" && mut === "skipped" && verd === "skipped";
 
@@ -1152,30 +1201,24 @@ test("#217+#187+#722+#843: repo-gate-assert 判定表全组合锁定（事件 ×
   // PR 全量路径（gate:full）：hasMutations × coverage × 矩阵 × verdict × redline 全组合
   // （2×4×4×4×4 = 512 case）
   const assertPrFullCombos = () => {
-    for (const hm of ["true", "false"]) {
+    const combos = cartesian([HAS_MUTATIONS, RESULTS, RESULTS, RESULTS, RESULTS]);
+    assert.equal(combos.length, 512, `gate:full 组合数应为 2×4×4×4×4（实测 ${combos.length}）`);
+    for (const [hm, cov, mut, verd, red] of combos) {
       const pkgsJson = hm === "true" ? '["dsh-notifier"]' : "[]";
-      for (const cov of RESULTS) {
-        for (const mut of RESULTS) {
-          for (const verd of RESULTS) {
-            for (const red of RESULTS) {
-              const expected = expectOf("pull_request", "true", hm, cov, mut, verd, red);
-              const v = run({
-                hasMutations: hm,
-                mutationPkgsJson: pkgsJson,
-                coverage: cov,
-                mutation: mut,
-                verdict: verd,
-                redline: red,
-              });
-              assert.equal(
-                v.code,
-                expected,
-                `PR gate:full hasMutations=${hm} coverage=${cov} mutation=${mut} verdict=${verd} redline=${red} 应为 code=${expected}`,
-              );
-            }
-          }
-        }
-      }
+      const expected = expectOf("pull_request", "true", hm, cov, mut, verd, red);
+      const v = run({
+        hasMutations: hm,
+        mutationPkgsJson: pkgsJson,
+        coverage: cov,
+        mutation: mut,
+        verdict: verd,
+        redline: red,
+      });
+      assert.equal(
+        v.code,
+        expected,
+        `PR gate:full hasMutations=${hm} coverage=${cov} mutation=${mut} verdict=${verd} redline=${red} 应为 code=${expected}`,
+      );
     }
   };
   assertPrFullCombos();
@@ -1183,31 +1226,25 @@ test("#217+#187+#722+#843: repo-gate-assert 判定表全组合锁定（事件 ×
   // PR 默认路径（无 gate:full 标签）：#742 阶段 1 起变异按切片强制跑，只有 coverage 该被跳过——
   // hasMutations × coverage × 矩阵 × verdict × redline 全组合（2×4×4×4×4 = 512 case）
   const assertPrDefaultCombos = () => {
-    for (const hm of ["true", "false"]) {
+    const combos = cartesian([HAS_MUTATIONS, RESULTS, RESULTS, RESULTS, RESULTS]);
+    assert.equal(combos.length, 512, `默认路径组合数应为 2×4×4×4×4（实测 ${combos.length}）`);
+    for (const [hm, cov, mut, verd, red] of combos) {
       const pkgsJson = hm === "true" ? '["dsh-notifier"]' : "[]";
-      for (const cov of RESULTS) {
-        for (const mut of RESULTS) {
-          for (const verd of RESULTS) {
-            for (const red of RESULTS) {
-              const expected = expectOf("pull_request", "false", hm, cov, mut, verd, red);
-              const v = run({
-                fullRequested: "false",
-                hasMutations: hm,
-                mutationPkgsJson: pkgsJson,
-                coverage: cov,
-                mutation: mut,
-                verdict: verd,
-                redline: red,
-              });
-              assert.equal(
-                v.code,
-                expected,
-                `PR 默认路径 hasMutations=${hm} coverage=${cov} mutation=${mut} verdict=${verd} redline=${red} 应为 code=${expected}`,
-              );
-            }
-          }
-        }
-      }
+      const expected = expectOf("pull_request", "false", hm, cov, mut, verd, red);
+      const v = run({
+        fullRequested: "false",
+        hasMutations: hm,
+        mutationPkgsJson: pkgsJson,
+        coverage: cov,
+        mutation: mut,
+        verdict: verd,
+        redline: red,
+      });
+      assert.equal(
+        v.code,
+        expected,
+        `PR 默认路径 hasMutations=${hm} coverage=${cov} mutation=${mut} verdict=${verd} redline=${red} 应为 code=${expected}`,
+      );
     }
   };
   assertPrDefaultCombos();
@@ -1535,19 +1572,21 @@ test("#217+#187: repo-gate-assert CLI 退出码转发（GitHub Actions 判红依
     fullRequested?: string;
     failureClass?: string | null;
   }
+  // 缺省取空串的直传维度共用这一个收敛点：语义（未注入即空串）只写一次。
+  const passthrough = (value: string | undefined): string => value ?? "";
   const envOf = (over: GateInputs): Record<string, string> => ({
-    GATE_EVENT: over.event ?? "",
-    GATE_CHANGES: over.changes ?? "",
-    GATE_BUILD_TEST: over.buildTest ?? "",
-    GATE_COVERAGE: over.coverage ?? "",
-    GATE_MUTATION: over.mutation ?? "",
-    GATE_VERDICT: over.verdict ?? "",
+    GATE_EVENT: passthrough(over.event),
+    GATE_CHANGES: passthrough(over.changes),
+    GATE_BUILD_TEST: passthrough(over.buildTest),
+    GATE_COVERAGE: passthrough(over.coverage),
+    GATE_MUTATION: passthrough(over.mutation),
+    GATE_VERDICT: passthrough(over.verdict),
     // 缺失即 exit 2 的维度：这里按事件给合法期望值（PR=success、非 PR=skipped）；
     // 「取值缺失 → exit 2」的专项场景在判定表组合用例里逐字钉住
     GATE_REDLINE: over.redline ?? (over.event === "pull_request" ? "success" : "skipped"),
-    GATE_HAS_MUTATIONS: over.hasMutations ?? "",
-    GATE_MUTATION_PKGS: over.mutationPkgsJson ?? "",
-    GATE_FULL_REQUESTED: over.fullRequested ?? "",
+    GATE_HAS_MUTATIONS: passthrough(over.hasMutations),
+    GATE_MUTATION_PKGS: passthrough(over.mutationPkgsJson),
+    GATE_FULL_REQUESTED: passthrough(over.fullRequested),
     // #843 P-2：本用例的既有场景都在钉「判据判红」那一面，故缺省给 judged；
     // 「缺省 = crashed」的 fail-closed 方向在下方单列（删掉这个键才是真缺省）。
     GATE_FAILURE_CLASS: over.failureClass ?? "judged",

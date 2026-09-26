@@ -279,14 +279,15 @@ type SmokeGuard = (
   next: () => Promise<PreToolDecision>,
 ) => Promise<PreToolDecision>;
 
+/** 沿宿主约定的 session.header.cwd 形状逐层收窄；任一层不是对象即中止。 */
+function nestedProp(value: unknown, key: string): unknown {
+  if (typeof value !== "object" || value === null) return undefined;
+  return key in value ? (value as Record<string, unknown>)[key] : undefined;
+}
+
 /** resolveRoot 桩从 agent 取 cwd：宿主约定的 session.header.cwd 形状，此处收窄读取。 */
 function agentCwd(agent: unknown): string | undefined {
-  if (typeof agent !== "object" || agent === null) return undefined;
-  const session = "session" in agent ? agent.session : undefined;
-  if (typeof session !== "object" || session === null) return undefined;
-  const header = "header" in session ? session.header : undefined;
-  if (typeof header !== "object" || header === null) return undefined;
-  const cwd = "cwd" in header ? header.cwd : undefined;
+  const cwd = nestedProp(nestedProp(nestedProp(agent, "session"), "header"), "cwd");
   return typeof cwd === "string" ? cwd : undefined;
 }
 
@@ -1139,10 +1140,16 @@ it("#362 P1：disabledTools 持久化（合并式写盘 + 重启保留）", asyn
     await manager.setToolDisabled("/proj", "ctx", "use_ctx", true);
     await manager.setToolDisabled(MIDDLEWARE_GLOBAL_ROOT, "gctx", "use_g", true);
     const reloaded = await loadDisabledTools(file);
-    expect(reloaded.get("/proj")?.get("ctx")?.has("use_ctx"), "/proj 记录落盘").toBe(true);
-    expect(reloaded.get("@global")?.get("gctx")?.has("use_g"), "@global 记录落盘").toBe(true);
+    const hasTool = (
+      state: Map<string, Map<string, Set<string>>>,
+      root: string,
+      s: string,
+      t: string,
+    ) => state.get(root)?.get(s)?.has(t) === true;
+    expect(hasTool(reloaded, "/proj", "ctx", "use_ctx"), "/proj 记录落盘").toBe(true);
+    expect(hasTool(reloaded, "@global", "gctx", "use_g"), "@global 记录落盘").toBe(true);
     expect(
-      reloaded.get("/other")?.get("s2")?.has("t2"),
+      hasTool(reloaded, "/other", "s2", "t2"),
       "既有 /other 记录保留（合并式，绝不整表覆盖）",
     ).toBe(true);
     // 解除禁用 → 记录清除；其他记录保留。

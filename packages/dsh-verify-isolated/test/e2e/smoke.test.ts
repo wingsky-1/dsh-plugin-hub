@@ -2078,6 +2078,12 @@ process.exit(0);
     return found;
   };
 
+  /** settings.yaml 的可读面：路径缺席或文件不存在时两项都给「缺席」形态，不抛。 */
+  const settingsProbe = (settingsPath: string | null) => {
+    if (settingsPath === null || !existsSync(settingsPath)) return { exists: false, content: null };
+    return { exists: true, content: readFileSync(settingsPath, "utf8") };
+  };
+
   const runCase = (entry: string | null, extraEnv: NodeJS.ProcessEnv = {}) => {
     const runTmp = mkdtempSync(join(tmp, "runtime-"));
     const args = [scriptFile, "--json", "--keep", "--port", "0"];
@@ -2095,39 +2101,18 @@ process.exit(0);
     });
     const stdout = String(result.stdout ?? "");
     const stderr = String(result.stderr ?? "");
-    const verdict = parseVerdict(stdout);
-    return readCaseArtifacts(runTmp, {
+    const lines = stdout.trim().split("\n").filter(Boolean);
+    const verdict = JSON.parse(lines.at(-1) ?? "{}");
+    const home = verdict.dshHome ?? null;
+    const settingsPath = home ? join(home, "settings.yaml") : null;
+    const settings = settingsProbe(settingsPath);
+    return {
       status: result.status,
       report: stdout + stderr,
       verdict,
-    });
-  };
-
-  /** 子进程最后一行的 JSON 判决（无输出时给空对象，断言自己判）。 */
-  const parseVerdict = (stdout: string): Record<string, unknown> => {
-    const lines = stdout.trim().split("\n").filter(Boolean);
-    return JSON.parse(lines.at(-1) ?? "{}");
-  };
-
-  /** 从判决里的 dshHome 推出 settings.yaml 的三件读数（存在性 / 本轮写过的文件 / 文本）。 */
-  const readCaseArtifacts = (
-    runTmp: string,
-    base: {
-      status: number | null;
-      report: string;
-      verdict: Record<string, unknown>;
-    },
-  ) => {
-    const home = base.verdict.dshHome ?? null;
-    const settingsPath = home ? join(home, "settings.yaml") : null;
-    const hasSettings = settingsPath !== null && existsSync(settingsPath);
-    return {
-      status: base.status,
-      report: base.report,
-      verdict: base.verdict,
-      settingsExists: hasSettings,
+      settingsExists: settings.exists,
       settingsWrites: settingsFilesUnder(runTmp),
-      settings: hasSettings && settingsPath !== null ? readFileSync(settingsPath, "utf8") : null,
+      settings: settings.content,
     };
   };
 

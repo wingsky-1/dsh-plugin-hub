@@ -72,8 +72,9 @@ interface Fixture {
   readonly changes: number;
 }
 
-/** 桩 fiber 的初始 state：deferOwnerReady 时停在 loading（就绪由测试显式放行），否则取指定/默认 active。 */
-function initialFiberState(options: FixtureOptions): string {
+/** 桩 fiber 的初始 state：deferOwnerReady 用例先落在 "loading"（就绪由测试显式放行），
+ * 否则取显式 fiberState，缺席时默认 "active"。 */
+function initialFiberState(options: FixtureOptions): string | number {
   if (options.deferOwnerReady === true) return "loading";
   return options.fiberState ?? "active";
 }
