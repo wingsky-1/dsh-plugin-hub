@@ -22,6 +22,110 @@
 // （notifier / lan-proxy 曾各复刻一份，现统一引用本导出）。
 //
 // 约定：js + d.ts 双写（tsc rootDir 硬约束）；只 import Node 内置；零运行时依赖。
+
+/** `installSettingsNamespace` 的 hooks 面。 */
+export interface SettingsNamespaceHooks {
+  /** 把插件对该命名空间的读取来源指向返回的 scope（`scope.get()`）。 */
+  setSource(source: () => unknown): void;
+  /** 来源切换或命名空间值变化时触发，插件据此刷新/落盘。 */
+  onChange(): void;
+  /**
+   * 可选；owning fiber ACTIVE 且 canonical namespace 被 settings 服务描述后回调一次。
+   * 供存量配置迁移 / 写路径装配使用；fiber / 服务 / namespace 未就绪时不触发。
+   *
+   * 两面均按 unknown 收窄：调用方（mcp-manager / lan-proxy）各自持有更窄的 scope /
+   * service 面并自行收窄，方法语法保持双变，窄实现可直接透传。
+   */
+  onScope?(scope: unknown, service: unknown): void;
+}
+
+/** 描述项窄面（按 ns 定位，合成 base + user，兼容 value 回退）。 */
+export interface SettingsFormsDescriptor {
+  /** 命名空间键。 */
+  ns?: unknown;
+  /** 运行时解析值（缺少分层字段时的兼容回退）。 */
+  value?: unknown;
+  /** 基础配置层。 */
+  base?: unknown;
+  /** 原始 user 覆盖层。 */
+  user?: unknown;
+  /** 乐观并发修订号。 */
+  revision?: unknown;
+}
+
+/** owner scope 窄面（describe 定位读＋写委托；订阅由接缝内部直连）。 */
+export interface SettingsFormsScope {
+  /** 当前有效值（describe base + user，缺席回落 entry）。 */
+  get(): unknown;
+  /** 委托 settings.update(ns, …)。 */
+  update(patch: object, expectedRevision?: number): Promise<unknown>;
+  /** 委托 settings.replace(ns, …)。 */
+  replace(section: object, expectedRevision?: number): Promise<unknown>;
+  /** 委托 settings.mutate(ns, …)；服务缺失时返回拒绝。 */
+  mutate(ops: readonly unknown[], expectedRevision?: number): Promise<unknown>;
+}
+
+/** settings 服务窄面（describe/写）。 */
+export interface SettingsFormsService {
+  /** 按 entry id 定位描述项。 */
+  describe(options?: { redactSecrets?: boolean }): SettingsFormsDescriptor[];
+  /** 合并写。 */
+  update?(ns: string, patch: object, expectedRevision?: number): Promise<unknown>;
+  /** 整节写。 */
+  replace?(ns: string, section: object, expectedRevision?: number): Promise<unknown>;
+  /** 路径写（可选）。 */
+  mutate?(ns: string, ops: readonly unknown[], expectedRevision?: number): Promise<unknown>;
+}
+
+/** 宿主 cordis 上下文的最小结构面（只取本模块真读到的键，其余按 unknown 收窄）。 */
+interface HostContextSurface {
+  /** 插件自有 fiber：state 判卸载 / await 判就绪。 */
+  fiber?: FiberSurface;
+  /** 注入面：ctx.inject(["settings"], setup)。 */
+  inject?: InjectSurface;
+  /** logger.warn 兜底告警。 */
+  logger?: { warn?: (...args: unknown[]) => void };
+  /** document-updated 事件订阅面（scoped 面不可用时的回退宿主 context）。 */
+  on?: unknown;
+}
+
+/** 注入后的 scoped context 最小结构面：settings 服务 + scoped 订阅 / 生命周期接缝。 */
+interface ScopedContextSurface extends HostContextSurface {
+  settings?: SettingsFormsService;
+  effect?: (setup: () => () => void) => unknown;
+}
+
+/** fiber 的结构面：state 判态、await 判 ACTIVE。 */
+interface FiberSurface {
+  state?: unknown;
+  await?: () => Promise<unknown>;
+}
+
+/** ctx.inject(["settings"], setup) 的最小结构面（setup 收到注入后的 scoped context）。 */
+type InjectSurface = (
+  keys: string[],
+  setup: (sctx: ScopedContextSurface | null | undefined) => void,
+) => unknown;
+
+/** 三个写面方法名（缺失时由 missingWriteMethod 单点给文案）。 */
+type FormsWriteMethod = "update" | "replace" | "mutate";
+
+/** 订阅面候选：on 可能是任意值（typeof 守卫后才派发），target 是 this 接收者。 */
+interface EventTargetCandidate {
+  on: unknown;
+  target: unknown;
+}
+
+/** scopeBlockedBy 的门禁状态（六条跨事件累积量的只读打包）。 */
+interface ScopeGateState {
+  scopeDelivered: boolean;
+  deliveringScope: boolean;
+  ownerReady: boolean;
+  disposed: boolean;
+  hooks: SettingsNamespaceHooks;
+  ctx: unknown;
+}
+
 /**
  * 是否正处于插件自身 fiber 卸载中（区别于「仅丢失 settings 服务」）。
  * 官方判据：Cordis 4 的 FiberState 4/5（DISPOSED/UNLOADING）；字符串形态仅供
@@ -29,10 +133,10 @@
  * @param {unknown} ctx - cordis 插件上下文。
  * @returns {boolean} 是否在卸载。
  */
-function isUnloading(ctx) {
+function isUnloading(ctx: unknown): boolean {
   const fiber =
     ctx && typeof ctx === "object" && "fiber" in ctx
-      ? /** @type {{ state?: unknown }} */ (/** @type {any} */ (ctx).fiber)
+      ? (ctx as HostContextSurface).fiber
       : undefined;
   const state = fiber && typeof fiber === "object" ? fiber.state : undefined;
   return (
@@ -49,10 +153,10 @@ function isUnloading(ctx) {
  * @param {unknown} ctx - cordis 插件上下文。
  * @param {string} message - 告警消息。
  */
-export function warnLog(ctx, message) {
+export function warnLog(ctx: unknown, message: string): void {
   const logger =
     ctx && typeof ctx === "object" && "logger" in ctx
-      ? /** @type {{ warn?: (...a: unknown[]) => void }} */ (/** @type {any} */ (ctx).logger)
+      ? (ctx as HostContextSurface).logger
       : undefined;
   if (typeof logger?.warn === "function") logger.warn(message);
 }
@@ -62,7 +166,7 @@ export function warnLog(ctx, message) {
  * @param {unknown} value - 待序列化值。
  * @returns {string} 可比较的字符串。
  */
-function stableStringifyForms(value) {
+function stableStringifyForms(value: unknown): string {
   try {
     return JSON.stringify(sortKeysForms(value));
   } catch {
@@ -78,11 +182,11 @@ function stableStringifyForms(value) {
  * @param {unknown} value - 待排序值。
  * @returns {unknown} 排序后的结构。
  */
-function sortKeysForms(value) {
+function sortKeysForms(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(sortKeysForms);
   if (value !== null && typeof value === "object") {
-    const record = /** @type {Record<string, unknown>} */ (value);
-    const next = {};
+    const record = value as Record<string, unknown>;
+    const next: Record<string, unknown> = {};
     for (const key of Object.keys(record).sort()) next[key] = sortKeysForms(record[key]);
     return next;
   }
@@ -94,7 +198,7 @@ function sortKeysForms(value) {
  * @param {unknown} b - 比较右值。
  * @returns {boolean} 是否深相等。
  */
-function isDeepEqualForms(a, b) {
+function isDeepEqualForms(a: unknown, b: unknown): boolean {
   if (Object.is(a, b)) return true;
   return stableStringifyForms(a) === stableStringifyForms(b);
 }
@@ -103,7 +207,7 @@ function isDeepEqualForms(a, b) {
  * @param {unknown} value - 待快照值。
  * @returns {unknown} 快照。
  */
-function snapshotFormsValue(value) {
+function snapshotFormsValue(value: unknown): unknown {
   try {
     if (typeof structuredClone === "function") return structuredClone(value);
   } catch {
@@ -119,19 +223,17 @@ function snapshotFormsValue(value) {
  * 经 describe() 定位本命名空间的描述项；缺席、畸形或读取异常时返回 undefined。
  * @param {unknown} settings - settings 服务。
  * @param {string} ns - 插件自有命名空间。
- * @returns {Record<string, unknown> | undefined} 当前描述项。
+ * @returns {SettingsFormsDescriptor | undefined} 当前描述项。
  */
-function findFormsDescriptor(settings, ns) {
+function findFormsDescriptor(settings: unknown, ns: string): SettingsFormsDescriptor | undefined {
   try {
-    const describe = /** @type {{ describe?: unknown }} */ (settings).describe;
+    const describe = (settings as { describe?: unknown }).describe;
     if (typeof describe !== "function") return undefined;
-    const entries = /** @type {unknown} */ (
-      /** @type {(opts?: unknown) => unknown} */ (describe).call(settings)
-    );
+    const entries = (describe as (opts?: unknown) => unknown).call(settings);
     if (!Array.isArray(entries)) return undefined;
     for (const item of entries) {
       if (!item || typeof item !== "object") continue;
-      const record = /** @type {Record<string, unknown>} */ (item);
+      const record = item as SettingsFormsDescriptor;
       if (record.ns === ns) return record;
     }
   } catch {
@@ -144,7 +246,7 @@ function findFormsDescriptor(settings, ns) {
  * @param {unknown} value - 待判断的表单层值。
  * @returns {boolean} 是否为可合并的普通对象。
  */
-function isFormRecord(value) {
+function isFormRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
@@ -155,7 +257,7 @@ function isFormRecord(value) {
  * @param {unknown} user - 用户覆盖层。
  * @returns {unknown} 合并后的表单值。
  */
-function mergeFormLayers(base, user) {
+function mergeFormLayers(base: unknown, user: unknown): unknown {
   if (!isFormRecord(base)) return snapshotFormsValue(user);
   if (!isFormRecord(user)) return snapshotFormsValue(base);
   const merged = { ...base };
@@ -176,7 +278,7 @@ function mergeFormLayers(base, user) {
  * @param {unknown} entry - 组合层配置（回落值）。
  * @returns {unknown} 当前解析值。
  */
-function readFormsValue(settings, ns, entry) {
+function readFormsValue(settings: unknown, ns: string, entry: unknown): unknown {
   const record = findFormsDescriptor(settings, ns);
   if (record === undefined) return entry;
   if (isFormRecord(record.base) || isFormRecord(record.user)) {
@@ -193,7 +295,7 @@ function readFormsValue(settings, ns, entry) {
  * @param {string} ns - 插件自有命名空间。
  * @returns {boolean} 是否已服务。
  */
-function isFormsNamespaceServed(settings, ns) {
+function isFormsNamespaceServed(settings: unknown, ns: string): boolean {
   return findFormsDescriptor(settings, ns) !== undefined;
 }
 /**
@@ -205,7 +307,12 @@ function isFormsNamespaceServed(settings, ns) {
  * @param {(evNs: unknown, revision: unknown) => void} listener - 过滤后的监听器。
  * @returns {() => void} 退订函数。
  */
-function subscribeFormsDocumentUpdated(ctx, sctx, ns, listener) {
+function subscribeFormsDocumentUpdated(
+  ctx: unknown,
+  sctx: unknown,
+  ns: string,
+  listener: (evNs: unknown, revision: unknown) => void,
+): () => void {
   for (const candidate of eventTargetsOf(ctx, sctx)) {
     const disposer = subscribeOne(candidate, ns, listener);
     if (disposer !== undefined) return disposer;
@@ -219,16 +326,12 @@ function subscribeFormsDocumentUpdated(ctx, sctx, ns, listener) {
  *
  * 与「逐个尝试订阅」分成两步：候选的**挑选**是优先级问题，订阅的**成败**是可用性问题。
  */
-function eventTargetsOf(ctx, sctx) {
+function eventTargetsOf(ctx: unknown, sctx: unknown): EventTargetCandidate[] {
   const sctxOn =
-    sctx && typeof sctx === "object" && "on" in sctx
-      ? /** @type {unknown} */ (/** @type {any} */ (sctx).on)
-      : undefined;
+    sctx && typeof sctx === "object" && "on" in sctx ? (sctx as HostContextSurface).on : undefined;
   const ctxOn =
-    ctx && typeof ctx === "object" && "on" in ctx
-      ? /** @type {unknown} */ (/** @type {any} */ (ctx).on)
-      : undefined;
-  const candidates = [{ on: sctxOn, target: sctx }];
+    ctx && typeof ctx === "object" && "on" in ctx ? (ctx as HostContextSurface).on : undefined;
+  const candidates: EventTargetCandidate[] = [{ on: sctxOn, target: sctx }];
   if (typeof ctxOn === "function" && ctxOn !== sctxOn) candidates.push({ on: ctxOn, target: ctx });
   return candidates;
 }
@@ -237,23 +340,29 @@ function eventTargetsOf(ctx, sctx) {
  * 在一个订阅面上尝试挂 document-updated：成功交出 disposer，
  * on 不是函数或抛错（scoped context 不可用）即返回 undefined，让调用方试下一个候选。
  */
-function subscribeOne(candidate, ns, listener) {
+function subscribeOne(
+  candidate: EventTargetCandidate,
+  ns: string,
+  listener: (evNs: unknown, revision: unknown) => void,
+): (() => void) | undefined {
   if (typeof candidate.on !== "function") return undefined;
   try {
-    const disposer =
-      /** @type {(event: string, cb: (...args: any[]) => void, options?: { global?: boolean }) => unknown} */ (
-        candidate.on
-      ).call(
-        candidate.target,
-        "settings/document-updated",
-        (...args) => {
-          const evNs = args.length > 0 ? args[0] : undefined;
-          if (String(evNs) !== String(ns)) return;
-          listener(evNs, args.length > 1 ? args[1] : undefined);
-        },
-        { global: true },
-      );
-    return typeof disposer === "function" ? disposer : () => {};
+    const on = candidate.on as (
+      event: string,
+      cb: (...args: unknown[]) => void,
+      options?: { global?: boolean },
+    ) => unknown;
+    const disposer: unknown = on.call(
+      candidate.target,
+      "settings/document-updated",
+      (...args: unknown[]) => {
+        const evNs = args.length > 0 ? args[0] : undefined;
+        if (String(evNs) !== String(ns)) return;
+        listener(evNs, args.length > 1 ? args[1] : undefined);
+      },
+      { global: true },
+    );
+    return typeof disposer === "function" ? (disposer as () => void) : () => {};
   } catch {
     // scoped context 不可用时继续尝试宿主 context。
     return undefined;
@@ -264,16 +373,16 @@ function subscribeOne(candidate, ns, listener) {
  * 按 ns 过滤＋快照比对后 onChange。onScope 只在 owning fiber ACTIVE 且
  * canonical namespace 首次被 settings 服务描述后交付一次；订阅由本函数内部直连，
  * 不对外暴露 watch 面。
- * @param {any} ctx - 插件上下文。
- * @param {any} sctx - 注入后的 scoped 上下文。
- * @param {any} settings - 有 describe 的 Forms settings 服务。
- * @param {string} ns - 命名空间。
- * @param {unknown} entry - 组合层配置（describe 缺席时的回落值）。
- * @param {{ setSource(source: () => unknown): void; onChange(): void; onScope?: (scope: unknown, settings: unknown) => void }} hooks - 回调面。
+ * @param ctx - 插件上下文。
+ * @param sctx - 注入后的 scoped 上下文。
+ * @param settings - 有 describe 的 Forms settings 服务。
+ * @param ns - 命名空间。
+ * @param entry - 组合层配置（describe 缺席时的回落值）。
+ * @param hooks - 回调面。
  * @returns {void}
  */
 /** 退订：幂等（disposer 可能被多次调用，订阅侧抛错不该打断后续的回落接线）。 */
-function disposeSubscription(unwatch) {
+function disposeSubscription(unwatch: () => void): void {
   try {
     unwatch();
   } catch {
@@ -282,17 +391,17 @@ function disposeSubscription(unwatch) {
 }
 
 /** 写面方法缺席时的错误（文案单点：三格共用，避免各写一份措辞漂移）。 */
-function missingWriteMethod(method) {
+function missingWriteMethod(method: FormsWriteMethod | string): Error {
   return new Error(`settings service unavailable: ${String(method)} 缺失`);
 }
 
 /** fiber.state 的读取（fiber 不是对象时给 undefined）。 */
-function stateOfFiber(fiber) {
-  return fiber && typeof fiber === "object" ? fiber.state : undefined;
+function stateOfFiber(fiber: unknown): unknown {
+  return fiber && typeof fiber === "object" ? (fiber as { state?: unknown }).state : undefined;
 }
 
 /** fiber 是否处于「可交付」态：state 缺席（无状态机）或 2 / "active"。 */
-function fiberSettled(state) {
+function fiberSettled(state: unknown): boolean {
   return state === undefined || state === 2 || state === "active";
 }
 
@@ -304,7 +413,7 @@ function fiberSettled(state) {
  * disposed 都会在别处被改），而真正的交付动作（isFormsNamespaceServed + onScope）只读它们。
  * 门禁与动作挤在一个箭头里时，「哪一条被谁改、为什么改」要读完整个 installViaForms 才找得到。
  */
-function scopeBlockedBy(state) {
+function scopeBlockedBy(state: ScopeGateState): boolean {
   return (
     state.scopeDelivered ||
     state.deliveringScope ||
@@ -315,28 +424,40 @@ function scopeBlockedBy(state) {
   );
 }
 
-function installViaForms(ctx, sctx, settings, ns, entry, hooks) {
+function installViaForms(
+  ctx: unknown,
+  sctx: ScopedContextSurface | null | undefined,
+  settings: SettingsFormsService,
+  ns: string,
+  entry: unknown,
+  hooks: SettingsNamespaceHooks,
+): void {
   const readCurrent = () => readFormsValue(settings, ns, entry);
-  const writeVia = (method, payload, expectedRevision) => {
-    const fn = settings[method];
+  const writeVia = (
+    method: FormsWriteMethod,
+    payload: object | readonly unknown[],
+    expectedRevision?: number,
+  ): Promise<unknown> => {
+    const fn: unknown = settings[method];
     if (typeof fn !== "function") return Promise.reject(missingWriteMethod(method));
     // 缺席 expectedRevision 时**不传该位**：宿主按「无乐观并发」处理；多传一个
     // undefined 在部分宿主实现里会被读成 revision=undefined 而拒收。
-    const args = expectedRevision === undefined ? [ns, payload] : [ns, payload, expectedRevision];
+    const args: unknown[] =
+      expectedRevision === undefined ? [ns, payload] : [ns, payload, expectedRevision];
     try {
-      return fn.call(settings, ...args);
+      return (fn as (...args: unknown[]) => Promise<unknown>).call(settings, ...args);
     } catch (err) {
       return Promise.reject(err);
     }
   };
   // 写面三格共用一份 writeVia；「缺哪个方法」的文案由 missingWriteMethod 单点给出。
-  const scope = {
+  const scope: SettingsFormsScope = {
     get: () => readCurrent(),
     update: (patch, expectedRevision) => writeVia("update", patch, expectedRevision),
     replace: (section, expectedRevision) => writeVia("replace", section, expectedRevision),
     mutate: (ops, expectedRevision) => writeVia("mutate", ops, expectedRevision),
   };
-  const ownerFiber = ctx && typeof ctx === "object" ? ctx.fiber : undefined;
+  const ownerFiber = ctx && typeof ctx === "object" ? (ctx as HostContextSurface).fiber : undefined;
   const ownerReady0 = fiberSettled(stateOfFiber(ownerFiber));
   let ownerReady = typeof ownerFiber?.await !== "function" || ownerReady0;
   let scopeDelivered = false;
@@ -351,7 +472,7 @@ function installViaForms(ctx, sctx, settings, ns, entry, hooks) {
       if (!isFormsNamespaceServed(settings, ns)) return;
       if (disposed || isUnloading(ctx)) return;
       scopeDelivered = true;
-      hooks.onScope(scope, settings);
+      hooks.onScope!(scope, settings);
     } finally {
       deliveringScope = false;
     }
@@ -419,11 +540,11 @@ function installViaForms(ctx, sctx, settings, ns, entry, hooks) {
  *
  * 这里不 import 官方包，纯粹以服务面注入驱动，规避插件运行时解析不到该包导致的静默失败。
  *
- * @param {any} ctx - 插件宿主端 apply 收到的 cordis 上下文。
- * @param {string} ns - 插件自有命名空间（小写 kebab，通常 `<plugin 名>`，须唯一）。
- * @param {unknown} schema - 占位：schema 由宿主持有，本函数不注册（签名为调用方零改而保留）。
- * @param {unknown} entry - 组合层配置（describe 缺席时的回落值）。
- * @param {{ setSource(source: () => unknown): void; onChange(): void; onScope?: (scope: unknown, settings: unknown) => void }} hooks
+ * @param ctx - 插件宿主端 apply 收到的 cordis 上下文。
+ * @param ns - 插件自有命名空间（小写 kebab，通常 `<plugin 名>`，须唯一）。
+ * @param schema - 占位：schema 由宿主持有，本函数不注册（签名为调用方零改而保留）。
+ * @param entry - 组合层配置（describe 缺席时的回落值）。
+ * @param hooks
  *   - setSource：把插件对该命名空间的读取来源指向返回的 scope（`scope.get()`）。
  *     settings 服务存在时，卡片数据应经此 scope 读写。
  *   - onChange：来源切换或命名空间值变化时触发，插件据此刷新自身状态/落盘。
@@ -431,15 +552,21 @@ function installViaForms(ctx, sctx, settings, ns, entry, hooks) {
  *     启动时已服务则仍先于 setSource；晚就绪时由 fiber.await 或 document-updated 唤醒。
  * @returns {void}
  */
-export function installSettingsNamespace(ctx, ns, schema, entry, hooks) {
+export function installSettingsNamespace(
+  ctx: unknown,
+  ns: string,
+  schema: unknown,
+  entry: unknown,
+  hooks: SettingsNamespaceHooks,
+): void {
   void schema;
   // 防御：ctx.inject 不可用（极简宿主/测试桩）与 settings 服务缺失同属降级场景，
   // 静默跳过（卡片降级，不影响插件主体）。
-  if (typeof ctx?.inject !== "function") {
+  if (typeof (ctx as HostContextSurface | null | undefined)?.inject !== "function") {
     warnLog(ctx, `${ns}: ctx.inject 不可用 — 设置命名空间未注册，卡片降级`);
     return;
   }
-  ctx.inject(["settings"], (sctx) => {
+  (ctx as { inject: InjectSurface }).inject(["settings"], (sctx) => {
     const settings = sctx && sctx.settings;
     if (!settings || typeof settings !== "object" || typeof settings.describe !== "function") {
       warnLog(ctx, `${ns}: settings 服务缺席 — 设置命名空间未注册，卡片降级`);

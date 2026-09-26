@@ -229,8 +229,9 @@ scripts/                   # 仓库维护脚本（*.ts，Node 直跑；按职能
 
 ### d.ts X1：shared 声明随包机制（#478）
 
-宿主端共享层（shared/）是 **js + d.ts 双写**（tsc `rootDir` 硬约束，shared 不可
-TS 化）：`.js` 实现经 esbuild 内联进各包运行时，`.d.ts` 声明则经 X1 随包发布。
+宿主端共享层（shared/）是 **真 TypeScript 源码 + 原地 emit 的声明**（#1028 后续重构
+取代此前的「js + d.ts 双写 / 不可 TS 化」）：`.ts` 实现编译出的 `.js` 经 esbuild 内联进
+各包运行时，同一次编译产出的 `.d.ts` 声明经 X1 随包发布。
 X1 在 bundle-host 构建宿主产物时对 **tsc 声明产物**做两件事（纯类型层，运行时无关）：
 
 - **2a 路径改写**（`scripts/lib/rewrite-dts-paths.ts`，`rewriteDtsPaths`）：改写

@@ -10,6 +10,11 @@
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true,
+    // 引用 shared 的包必须消费 shared 的**产物声明**（tsc -b 原地 emit 出来的 .d.ts），
+    // 而不是 TS 默认的「重定向到被引用项目的源码」。不关掉的话，shared/*.ts 会被拉进
+    // 消费包的 program，而各包 rootDir 恒为 "src"，于是 shared 落在 rootDir 之外 →
+    // TS2306 "is not a module" 及其后的隐式 any 级联（#1028 后续重构，CI 变异 job 实测判红）。
+    "disableSourceOfProjectReferenceRedirect": true,
     "declaration": true,
     "sourceMap": true,
     "jsx": "react",

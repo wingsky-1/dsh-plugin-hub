@@ -34,9 +34,21 @@ DSH 插件家族共用的模块（构建期 esbuild 内联进各插件包，不�
 - shared 是**构建期源码依赖**：插件 src 以相对路径 import，构建时由 esbuild 内联进
   各包 lib/ 产物。**发布物必须自包含**——npm 包内不得残留 `../../shared` 运行时引用。
 - 修改 shared 后回归：`pnpm build && pnpm test`（回归全部插件 smoke）+
-  `pnpm typecheck`（shared 双写 d.ts 与消费方类型一致性）。
-- **js + d.ts 双写**（tsc rootDir 硬约束）：shared 实现一律 `.js` + `.d.ts`（不可 TS 化），
-  类型经 d.ts 解析、实现经 esbuild 内联；client 侧同理（`shared/client/`）。
+  `pnpm typecheck`（shared 声明与消费方类型一致性）。
+- **真 TypeScript 源码**（#1028 后续重构，取代此前的「js + d.ts 双写 / 不可 TS 化」）：
+  shared 实现一律 `.ts`，声明由 tsc 产出、**原地 emit**（与源码同目录，已 gitignore）。
+  - 为什么能原地 emit：消费方用相对说明符 `../../shared/paths.js`，而构建是两段式
+    （包 tsc 出 lib → bundle-host 用 esbuild 打 lib/*.js），emit 出去的说明符必须指向
+    磁盘上真实存在的 `.js`，所以产物必须与源码同目录。
+  - 为什么不用 `dist/`：加路径段会牵动 rewrite-dts-paths 的 `../` 深度启发式与
+    d.ts X1 的三个根（枚举根 / 落点根 / 改写目标根），只改其一会得到**自洽的假绿**。
+  - 消费侧形态**一个字没改**：97 处 import、bundle-host 内联与 d.ts X1 拷贝、
+    shared-dts-lib 枚举、verify-shared-fanin、pack-check 全部零改动——它们认的是
+    「仓库根 shared/」这个位置，不是文件形态。
+  - **composite + project references** 是防回退的关键：各包 tsconfig 的
+    `references` 指到 shared，「改了 `.ts` 但没重建」会变成 TS6305 硬红。
+  - 版本库里 shared/ **只允许 `.ts` 源码**（含 README.md 与 test/）；手写 `.js`/`.d.ts`
+    对的回归由 `scripts/test/shared-ts-shape.test.ts` 冻结守卫判红。
 - 新增 shared 模块须满足下方准入规则；退役按规则 7 一次做完（迁消费方 + 删模块与声明）。
 - **发布面**：`.d.ts` 声明经 bundle-host **d.ts X1**（2a 引用改写 + 2b 副本随包）随每个
   消费包发布，pack:check 双向断言（查缺 + 查多 retired 残留）兜底——机制说明见
