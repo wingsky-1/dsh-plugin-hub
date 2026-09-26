@@ -14,6 +14,7 @@ export default defineConfig({
       'packages/dsh-provider-usage/test/integration/ui-routes/composition-root.test.ts',
       'packages/dsh-provider-usage/test/unit/apply/unit-apply.test.ts',
       'packages/dsh-provider-usage/test/unit/pipeline/unit-stats-service.test.ts',
+      'packages/dsh-provider-usage/test/unit/registry/unit-registry-pure.test.ts',
       'packages/dsh-provider-usage/test/unit/shared/unit-config.test.ts',
       'packages/dsh-provider-usage/test/unit/shared/unit-contract.test.ts',
       'packages/dsh-provider-usage/test/unit/trend/unit-trend.test.ts',

@@ -340,37 +340,55 @@ function eaFallback(s) {
  * - granted_balance = 赠款账户当前剩余；
  * - 恒等式 total = toppedUp + granted 成立；消费时 toppedUp 与 total 同步下降。
  */
+/**
+ * 发起余额请求并把传输层失败归一成稳定码。
+ * 超时/取消由插件 signal 负责；AbortError 重抛不被吞成 network（原型行为）。
+ */
+async function requestBalance(f, url, key, signal) {
+  try {
+    return await f(url, {
+      headers: { Authorization: `Bearer ${key}`, Accept: "application/json" },
+      signal,
+    });
+  } catch (err) {
+    if (err instanceof Error && err.name === "AbortError") throw err;
+    throw new Error("network");
+  }
+}
+
+/** HTTP 响应状态归一成稳定码（401/403 → unauthorized；其余非 2xx → http-<status>）。 */
+function assertOkStatus(res) {
+  if (res.status === 401 || res.status === 403) throw new Error("unauthorized");
+  if (!res.ok) throw new Error(`http-${res.status}`);
+}
+
+/** 响应体解析：非 JSON 一律 bad-json。 */
+async function readBalanceBody(res) {
+  assertOkStatus(res);
+  try {
+    return await res.json();
+  } catch {
+    throw new Error("bad-json");
+  }
+}
+
+/**
+ * 只保留 CNY 币种（官方 balance_infos 数组，金额为字符串）。
+ * 无 CNY 条目 → 返回 undefined，四项金额全 null 的正常帧（B4 修订版）。
+ */
+export function cnyBalanceInfo(body) {
+  const infos = Array.isArray(body.balance_infos) ? body.balance_infos : [];
+  return infos.find((b) => typeof b === "object" && b !== null && b.currency === "CNY");
+}
+
 export async function fetchDeepSeekOfficialV2(ctx, fetchImpl) {
   const key = resolveApiKey(ctx.apiKey);
   if (!key) throw new Error("no-api-key");
 
   const f = ctx.fetch ?? fetchImpl ?? globalThis.fetch;
   const url = resolveEndpoint(ctx.apiEndpoint);
-
-  let res;
-  try {
-    res = await f(url, {
-      headers: { Authorization: `Bearer ${key}`, Accept: "application/json" },
-      signal: ctx.signal,
-    });
-  } catch (err) {
-    // 超时/取消由插件 signal 负责；AbortError 重抛不被吞成 network（原型行为）
-    if (err instanceof Error && err.name === "AbortError") throw err;
-    throw new Error("network");
-  }
-  if (res.status === 401 || res.status === 403) throw new Error("unauthorized");
-  if (!res.ok) throw new Error(`http-${res.status}`);
-
-  let body;
-  try {
-    body = await res.json();
-  } catch {
-    throw new Error("bad-json");
-  }
-
-  // 只保留 CNY 币种（官方 balance_infos 数组，金额为字符串）；无 CNY 条目 → 全 null 正常帧（B4 修订版）
-  const infos = Array.isArray(body.balance_infos) ? body.balance_infos : [];
-  const cny = infos.find((b) => typeof b === "object" && b !== null && b.currency === "CNY");
+  const body = await readBalanceBody(await requestBalance(f, url, key, ctx.signal));
+  const cny = cnyBalanceInfo(body);
 
   return {
     isAvailable: body.is_available === true,
@@ -444,76 +462,97 @@ function layerDaily(sum) {
  * - truncated 参数保留签名兼容；新口径按区间记账，截断不再导致首日整日不计。
  * - 第 4 参 utils 可选：dayKey 优先消费注入实现，缺失回退文件内副本。
  */
-export function aggregateDaily(pts, keys, _truncated, utils) {
-  const dayKey = utils && typeof utils.dayKey === "function" ? utils.dayKey : dayKeyFallback;
-  const keysSet = new Set(keys);
-  /** 各目标日的取样帧数（区分 empty 与 insufficient）。 */
+/** 各目标日的取样帧数（纯函数；区分 empty 与 insufficient）。 */
+export function framesByDayOf(pts, dayKey, keysSet) {
   const framesByDay = new Map();
   for (const p of pts) {
     const k = dayKey(p.t);
     if (!keysSet.has(k)) continue;
     framesByDay.set(k, (framesByDay.get(k) ?? 0) + 1);
   }
+  return framesByDay;
+}
 
-  /** 各目标日的区间记账累加器。 */
+/** 区间分类落账（纯函数）：扰动区间提取充值/赠款变动额，绝不与消耗混算。 */
+export function applyDisturbed(slot, cls) {
+  slot.mixed = true;
+  if (cls.topup > 0) slot.topIn += cls.topup;
+  if (Math.abs(cls.grantDelta) > TOL) {
+    // grantDelta>0 赠款入账 / <0 过期出账：绝对额入文案
+    slot.grantParts.push(`赠款 ${cls.grantDelta > 0 ? "+" : ""}${cls.grantDelta.toFixed(2)}`);
+  }
+  return slot;
+}
+
+/** 区间分类 → 累加器（纯函数）：四类区间各自的记账口径。 */
+export function applyIntervalToSlot(slot, cls) {
+  if (cls.type === "unavailable") {
+    slot.unavail = true;
+    return slot;
+  }
+  if (cls.type === "gap") {
+    slot.gapSegs += 1;
+    return slot;
+  }
+  if (cls.type === "disturbed") return applyDisturbed(slot, cls);
+  slot.sum += cls.drop;
+  return slot;
+}
+
+/** 空白日累加器。 */
+function emptyDaySlot() {
+  return { sum: 0, topIn: 0, grantParts: [], mixed: false, gapSegs: 0, unavail: false };
+}
+
+/** 各目标日的区间记账累加（纯函数）：相邻区间计入 dayKey(b.t) 所在日。 */
+export function accumulateIntervals(pts, dayKey, keysSet) {
   const acc = new Map();
-
   for (let i = 1; i < pts.length; i += 1) {
-    const a = pts[i - 1];
     const b = pts[i];
     const k = dayKey(b.t);
     if (!keysSet.has(k)) continue;
-    const cls = classifyIntervalDs(a, b);
-    const slot = acc.get(k) ?? {
-      sum: 0,
-      topIn: 0,
-      grantParts: [],
-      mixed: false,
-      gapSegs: 0,
-      unavail: false,
-    };
-    if (cls.type === "unavailable") {
-      slot.unavail = true;
-    } else if (cls.type === "gap") {
-      slot.gapSegs += 1;
-    } else if (cls.type === "disturbed") {
-      slot.mixed = true;
-      if (cls.topup > 0) slot.topIn += cls.topup;
-      if (Math.abs(cls.grantDelta) > TOL) {
-        // grantDelta>0 赠款入账 / <0 过期出账：绝对额入文案
-        slot.grantParts.push(`赠款 ${cls.grantDelta > 0 ? "+" : ""}${cls.grantDelta.toFixed(2)}`);
-      }
-    } else {
-      slot.sum += cls.drop;
-    }
-    acc.set(k, slot);
+    acc.set(
+      k,
+      applyIntervalToSlot(acc.get(k) ?? emptyDaySlot(), classifyIntervalDs(pts[i - 1], b)),
+    );
   }
+  return acc;
+}
 
-  return keys.map((k) => {
-    const frames = framesByDay.get(k) ?? 0;
-    const s = acc.get(k);
-    if (!s) {
-      if (frames === 0) return { key: k, status: "empty", u: 0 };
-      return { key: k, status: "insufficient", u: 0 }; // 有帧但无可计区间（单帧冷启动极早期）
-    }
-    const layers = layerDaily(s.sum);
-    if (layers.status === "anomaly") {
-      return { key: k, status: "anomaly", u: 0, note: layers.note };
-    }
-    const notes = [];
-    if (s.topIn > 0) notes.push(`充值 +¥${s.topIn.toFixed(2)} 未计入`);
-    if (s.grantParts.length > 0) notes.push(`${s.grantParts.join(" · ")} 变动不计`);
-    if (s.gapSegs > 0) notes.push(`${s.gapSegs} 段中断不计`);
-    if (s.unavail) notes.push("含不可用区间不计");
-    return {
-      key: k,
-      status: "ok",
-      u: layers.u,
-      ...(layers.neg ? { neg: true } : {}),
-      ...(notes.length > 0 ? { extra: notes.join(" · ") } : {}),
-      ...(s.topIn > 0 ? { toppedUpIn: s.topIn } : {}),
-    };
-  });
+/** 未计入项文案（纯函数）：充值/赠款变动/中断/不可用四类，顺序即呈现顺序。 */
+export function dailyExclusionNotes(slot) {
+  const notes = [];
+  if (slot.topIn > 0) notes.push(`充值 +¥${slot.topIn.toFixed(2)} 未计入`);
+  if (slot.grantParts.length > 0) notes.push(`${slot.grantParts.join(" · ")} 变动不计`);
+  if (slot.gapSegs > 0) notes.push(`${slot.gapSegs} 段中断不计`);
+  if (slot.unavail) notes.push("含不可用区间不计");
+  return notes;
+}
+
+/** 单日记录渲染（纯函数）：无累加槽位时按帧数分 empty / insufficient。 */
+export function renderDailyRow(key, frames, slot) {
+  if (!slot) {
+    if (frames === 0) return { key, status: "empty", u: 0 };
+    return { key, status: "insufficient", u: 0 }; // 有帧但无可计区间（单帧冷启动极早期）
+  }
+  const layers = layerDaily(slot.sum);
+  if (layers.status === "anomaly") {
+    return { key, status: "anomaly", u: 0, note: layers.note };
+  }
+  const notes = dailyExclusionNotes(slot);
+  const row = { key, status: "ok", u: layers.u };
+  if (layers.neg) row.neg = true;
+  if (notes.length > 0) row.extra = notes.join(" · ");
+  if (slot.topIn > 0) row.toppedUpIn = slot.topIn;
+  return row;
+}
+
+export function aggregateDaily(pts, keys, _truncated, utils) {
+  const dayKey = utils && typeof utils.dayKey === "function" ? utils.dayKey : dayKeyFallback;
+  const keysSet = new Set(keys);
+  const framesByDay = framesByDayOf(pts, dayKey, keysSet);
+  const acc = accumulateIntervals(pts, dayKey, keysSet);
+  return keys.map((k) => renderDailyRow(k, framesByDay.get(k) ?? 0, acc.get(k)));
 }
 
 /** 聚合内部使用的 dayKey 实现（闭包注入，支持外部覆盖——见 aggregateDailyWith）。 */
@@ -682,33 +721,34 @@ function dailyBarsSvg(records, e) {
  * - 断轴处画竖直虚线连接两侧真实水位，title 注明金额——跳变不隐藏、可读可回溯；
  * - y 轴数值 = 剔除充值后的「校准水位」（title 声明），末点高亮与面积填充随段处理。
  */
-function balanceSvg(values, e, ea) {
-  if (values.length < 2) return "";
-  const W = 320,
-    H = 100,
-    PL = 44,
-    PR = 8,
-    PT = 14,
-    PB = 16;
-  const xw = W - PL - PR,
-    plotH = H - PT - PB;
-  const t0 = values[0].t,
-    t1 = values[values.length - 1].t;
-  const spanMs = t1 > t0 ? t1 - t0 : 60000;
+/** 余额走势图几何常量（viewBox 与边距）。 */
+const BAL_GEOM = { W: 320, H: 100, PL: 44, PR: 8, PT: 14, PB: 16, xw: 268, plotH: 70 };
 
-  // 充值事件：atIdx 表示发生在 values[atIdx-1] → values[atIdx] 区间
+/** 时间轴刻度：xOf 取时刻，xOfMid 取区间中点（断轴虚线用）。 */
+export function balanceXScale(t0, spanMs) {
+  return {
+    of: (t) => BAL_GEOM.PL + ((t - t0) / spanMs) * BAL_GEOM.xw,
+    ofMid: (ta, tb) => BAL_GEOM.PL + ((ta + (tb - ta) / 2 - t0) / spanMs) * BAL_GEOM.xw,
+  };
+}
+
+/**
+ * 充值事件归集（纯函数）：atIdx 表示事件发生在 values[atIdx-1] → values[atIdx] 区间。
+ */
+export function topUpEvents(values, xScale) {
   const events = [];
   for (let i = 1; i < values.length; i += 1) {
     const a = values[i - 1];
     const b = values[i];
     if (a.toppedUp !== null && b.toppedUp !== null && b.toppedUp - a.toppedUp > TOL) {
-      events.push({ atIdx: i, amt: b.toppedUp - a.toppedUp, xMid: xOfMid(a.t, b.t) });
+      events.push({ atIdx: i, amt: b.toppedUp - a.toppedUp, xMid: xScale.ofMid(a.t, b.t) });
     }
   }
-  function xOfMid(ta, tb) {
-    return PL + ((ta + (tb - ta) / 2 - t0) / spanMs) * xw;
-  }
-  // 每点累计下移量 = 该点之前发生的充值合计
+  return events;
+}
+
+/** 每点累计下移量 = 该点之前发生的充值合计（纯函数；除权语义）。 */
+export function cumulativeShifts(values, events) {
   const shifts = new Array(values.length).fill(0);
   let accShift = 0;
   for (let i = 0; i < values.length; i += 1) {
@@ -717,17 +757,22 @@ function balanceSvg(values, e, ea) {
     }
     shifts[i] = accShift;
   }
+  return shifts;
+}
 
-  // y 域：自适应（基于校准水位 balance − shift）
-  let lo = Infinity,
-    hi = -Infinity;
-  const calibAt = (i) => values[i].balance - shifts[i];
+/**
+ * 校准水位 y 域（纯函数）：基于 balance − shift 自适应，两端留 15% 余量；
+ * 全平（hi−lo 退化）时给 ±1 兜底窗口。无可比水位（空输入）返回 null。
+ */
+export function calibratedDomain(values, shifts) {
+  let lo = Infinity;
+  let hi = -Infinity;
   for (let i = 0; i < values.length; i += 1) {
-    const v = calibAt(i);
+    const v = values[i].balance - shifts[i];
     if (v < lo) lo = v;
     if (v > hi) hi = v;
   }
-  if (lo === Infinity) return "";
+  if (lo === Infinity) return null;
   const pad = (hi - lo) * 0.15 || Math.max(hi * 0.1, 0.01);
   lo = Math.max(0, lo - pad);
   hi = hi + pad;
@@ -735,51 +780,63 @@ function balanceSvg(values, e, ea) {
     lo = Math.max(0, lo - 1);
     hi = hi + 1;
   }
+  return { lo, hi };
+}
 
-  const xOf = (t) => PL + ((t - t0) / spanMs) * xw;
-  const yOf = (v) => PT + ((hi - v) / (hi - lo)) * plotH;
-  const fmtVal = (v) => (Math.abs(v) >= 100 ? String(Math.round(v)) : v.toFixed(2));
+/** 数值标签格式：三位以上取整，其余两位小数。 */
+function balanceValueLabel(v) {
+  return Math.abs(v) >= 100 ? String(Math.round(v)) : v.toFixed(2);
+}
 
+/** 网格三线 + 数值标签（校准水位）。 */
+function balanceGridParts(yOf, lo, hi) {
   const parts = [];
-  // 网格三线 + 数值标签（校准水位）
   for (const gv of [lo, (lo + hi) / 2, hi]) {
     const gy = yOf(gv);
     parts.push(
-      `<line x1="${PL}" y1="${gy.toFixed(1)}" x2="${W - PR}" y2="${gy.toFixed(1)}" style="stroke:var(--dsw-alias-border-l2,#e8eaf0);stroke-width:1;stroke-dasharray:3 3"/>`,
+      `<line x1="${BAL_GEOM.PL}" y1="${gy.toFixed(1)}" x2="${BAL_GEOM.W - BAL_GEOM.PR}" y2="${gy.toFixed(1)}" style="stroke:var(--dsw-alias-border-l2,#e8eaf0);stroke-width:1;stroke-dasharray:3 3"/>`,
     );
     parts.push(
-      `<text x="${PL - 4}" y="${(gy + 3).toFixed(1)}" text-anchor="end" style="font-size:9.5px">${fmtVal(gv)}</text>`,
+      `<text x="${BAL_GEOM.PL - 4}" y="${(gy + 3).toFixed(1)}" text-anchor="end" style="font-size:9.5px">${balanceValueLabel(gv)}</text>`,
     );
   }
+  return parts;
+}
 
-  // 折线分段子路径（事件处断开）+ 面积填充
-  const color = "var(--dsw-alias-state-business-primary,#3b82f6)";
+/** 段内下标序列（纯函数）：>300 点时按步长降采样并补回末点。 */
+export function segmentIndexes(from, to) {
+  const idxs = [];
+  const n = to - from + 1;
+  if (n > 300) {
+    const step = n / 300;
+    for (let k = 0; k < n; k += step) idxs.push(from + Math.floor(k));
+    if (idxs[idxs.length - 1] !== to) idxs.push(to);
+  } else {
+    for (let k = from; k <= to; k += 1) idxs.push(k);
+  }
+  return idxs;
+}
+
+/** 构造一个连续子段的 path d 与面积 d（纯函数；to-from<1 时无段）。 */
+function buildBalanceSegment(values, shifts, xOf, yOf, from, to) {
+  if (to - from < 1) return null;
+  const idxs = segmentIndexes(from, to);
+  const xy = idxs.map((i) => ({ x: xOf(values[i].t), y: yOf(values[i].balance - shifts[i]) }));
+  let d = `M ${xy[0].x.toFixed(1)} ${xy[0].y.toFixed(1)}`;
+  for (let k = 1; k < xy.length; k += 1) d += ` L ${xy[k].x.toFixed(1)} ${xy[k].y.toFixed(1)}`;
+  const btm = BAL_GEOM.PT + BAL_GEOM.plotH;
+  const areaD = `${d} L ${xy[xy.length - 1].x.toFixed(1)} ${btm} L ${xy[0].x.toFixed(1)} ${btm} Z`;
+  return { lineD: d, areaD };
+}
+
+/** 折线分段（纯函数）：事件处断开，段内出折线 path + 面积 path。 */
+function balanceSeriesParts(values, shifts, xOf, yOf, events, color) {
+  const parts = [];
   const eventAt = new Set(events.map((ev) => ev.atIdx));
-  /** 构造一个连续子段的 path d 与面积 d。 */
-  const buildSegment = (from, to) => {
-    if (to - from < 1) return null;
-    // 段内降采样 ≤300 点
-    const idxs = [];
-    const n = to - from + 1;
-    if (n > 300) {
-      const step = n / 300;
-      for (let k = 0; k < n; k += step) idxs.push(from + Math.floor(k));
-      if (idxs[idxs.length - 1] !== to) idxs.push(to);
-    } else {
-      for (let k = from; k <= to; k += 1) idxs.push(k);
-    }
-    const xy = idxs.map((i) => ({ x: xOf(values[i].t), y: yOf(calibAt(i)) }));
-    let d = `M ${xy[0].x.toFixed(1)} ${xy[0].y.toFixed(1)}`;
-    for (let k = 1; k < xy.length; k += 1) d += ` L ${xy[k].x.toFixed(1)} ${xy[k].y.toFixed(1)}`;
-    const btm = PT + plotH;
-    const areaD = `${d} L ${xy[xy.length - 1].x.toFixed(1)} ${btm} L ${xy[0].x.toFixed(1)} ${btm} Z`;
-    return { lineD: d, areaD };
-  };
-
   let segStart = 0;
   for (let i = 0; i <= values.length - 1; i += 1) {
     if (i === values.length - 1 || eventAt.has(i + 1)) {
-      const seg = buildSegment(segStart, i);
+      const seg = buildBalanceSegment(values, shifts, xOf, yOf, segStart, i);
       if (seg !== null) {
         parts.push(`<path d="${seg.areaD}" style="fill:${color};fill-opacity:.13"/>`);
         parts.push(
@@ -789,28 +846,12 @@ function balanceSvg(values, e, ea) {
       segStart = i + 1;
     }
   }
+  return parts;
+}
 
-  // 断轴标记：事件位置竖直虚线连接两侧显示水位（跳变显式可见，不隐藏）
-  for (const ev of events) {
-    const prevY = yOf(calibAt(ev.atIdx - 1)); // 充值前真实水位（无位移）
-    const nextY = yOf(calibAt(ev.atIdx)); // 充值后校准水位（已下移）
-    const topY = Math.min(prevY, nextY);
-    const botY = Math.max(prevY, nextY);
-    parts.push(
-      `<line x1="${ev.xMid.toFixed(1)}" y1="${topY.toFixed(1)}" x2="${ev.xMid.toFixed(1)}" y2="${botY.toFixed(1)}" style="stroke:var(--dsw-alias-label-tertiary,#9aa0ab);stroke-width:1;stroke-dasharray:2 3;stroke-opacity:.7"><title>${ea(`充值 +¥${ev.amt.toFixed(2)}（此处断轴，折线已平移抹平台阶）`)}</title></line>`,
-    );
-    parts.push(
-      `<path d="M ${ev.xMid.toFixed(1)} ${topY.toFixed(1)} l 3.5 3.5 l -7 0 z" style="fill:var(--dsw-alias-state-success-primary,#16a34a);fill-opacity:.8"><title>${ea(`充值 +¥${ev.amt.toFixed(2)}`)}</title></path>`,
-    );
-  }
-
-  // 末点高亮（最后一段终点）
-  const lastI = values.length - 1;
-  parts.push(
-    `<circle cx="${xOf(values[lastI].t).toFixed(1)}" cy="${yOf(calibAt(lastI)).toFixed(1)}" r="2.6" style="fill:${color};stroke:var(--dsw-alias-bg-base,#fdfdfd);stroke-width:1.2"/>`,
-  );
-
-  // x 轴时间刻度（≤7 个）
+/** x 轴时间刻度（≤7 个；跨日用月-日，同日用时:分）。 */
+function balanceTimeTickParts(t0, t1, spanMs, xOf, e) {
+  const parts = [];
   const stepMs = spanMs / 6;
   for (let k = 0; k <= 6; k += 1) {
     const tt = t0 + stepMs * k;
@@ -822,11 +863,55 @@ function balanceSvg(values, e, ea) {
         : `${String(dDate.getHours()).padStart(2, "0")}:${String(dDate.getMinutes()).padStart(2, "0")}`;
     const anchorAttr = k === 0 ? "start" : k === 6 ? "end" : "middle";
     parts.push(
-      `<text x="${tx.toFixed(1)}" y="${H - 4}" text-anchor="${anchorAttr}" style="font-size:9.5px">${e(label)}</text>`,
+      `<text x="${tx.toFixed(1)}" y="${BAL_GEOM.H - 4}" text-anchor="${anchorAttr}" style="font-size:9.5px">${e(label)}</text>`,
+    );
+  }
+  return parts;
+}
+
+function balanceSvg(values, e, ea) {
+  if (values.length < 2) return "";
+  const t0 = values[0].t;
+  const t1 = values[values.length - 1].t;
+  const spanMs = t1 > t0 ? t1 - t0 : 60000;
+  const xScale = balanceXScale(t0, spanMs);
+
+  // 断轴平移：充值后的点按累计充值额整体下移，抹平台阶（除权图语义）
+  const events = topUpEvents(values, xScale);
+  const shifts = cumulativeShifts(values, events);
+  const domain = calibratedDomain(values, shifts);
+  if (domain === null) return "";
+
+  const xOf = xScale.of;
+  const yOf = (v) => BAL_GEOM.PT + ((domain.hi - v) / (domain.hi - domain.lo)) * BAL_GEOM.plotH;
+  const color = "var(--dsw-alias-state-business-primary,#3b82f6)";
+
+  const parts = [
+    ...balanceGridParts(yOf, domain.lo, domain.hi),
+    ...balanceSeriesParts(values, shifts, xOf, yOf, events, color),
+  ];
+
+  // 断轴标记：竖直虚线 + 顶部三角 + 末点高亮
+  for (const ev of events) {
+    const prevY = yOf(values[ev.atIdx - 1].balance - shifts[ev.atIdx - 1]); // 充值前真实水位
+    const nextY = yOf(values[ev.atIdx].balance - shifts[ev.atIdx]); // 充值后校准水位
+    const topY = Math.min(prevY, nextY);
+    const botY = Math.max(prevY, nextY);
+    parts.push(
+      `<line x1="${ev.xMid.toFixed(1)}" y1="${topY.toFixed(1)}" x2="${ev.xMid.toFixed(1)}" y2="${botY.toFixed(1)}" style="stroke:var(--dsw-alias-label-tertiary,#9aa0ab);stroke-width:1;stroke-dasharray:2 3;stroke-opacity:.7"><title>${ea(`充值 +¥${ev.amt.toFixed(2)}（此处断轴，折线已平移抹平台阶）`)}</title></line>`,
+    );
+    parts.push(
+      `<path d="M ${ev.xMid.toFixed(1)} ${topY.toFixed(1)} l 3.5 3.5 l -7 0 z" style="fill:var(--dsw-alias-state-success-primary,#16a34a);fill-opacity:.8"><title>${ea(`充值 +¥${ev.amt.toFixed(2)}`)}</title></path>`,
     );
   }
 
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}">${parts.join("")}</svg>`;
+  const lastI = values.length - 1;
+  parts.push(
+    `<circle cx="${xOf(values[lastI].t).toFixed(1)}" cy="${yOf(values[lastI].balance - shifts[lastI]).toFixed(1)}" r="2.6" style="fill:${color};stroke:var(--dsw-alias-bg-base,#fdfdfd);stroke-width:1.2"/>`,
+  );
+  parts.push(...balanceTimeTickParts(t0, t1, spanMs, xOf, e));
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${BAL_GEOM.W} ${BAL_GEOM.H}">${parts.join("")}</svg>`;
 }
 
 // ---------------------------------------------------------------- 适配器对象
@@ -837,28 +922,139 @@ function balanceSvg(values, e, ea) {
  * 卡2：近 15 个自然日每日用量柱形图（区间记账口径：余额差 + 充值/赠款变动修正）。
  * 「现在」以 range.end 注入（T3 防 flake：面板判定路径不取墙钟；history 路由 end=查询时刻）。
  */
-function formatPanelImpl(input) {
-  const e = input.esc || hFallback;
-  // 日界/转义优先消费注入 utils，缺失回退文件内兜底副本
-  const utils = input.utils || {};
-  const ea = utils.escAttr || eaFallback;
-  const fin = utils.fin || finFallback;
-  if (!Array.isArray(input.entries) || input.entries.length === 0) return "<p>暂无历史数据</p>";
+/** 条目 data 面（非对象视作缺席）。 */
+function entryDataOf(en) {
+  return en && en.data ? en.data : null;
+}
 
-  const now = input.range.end;
-  // 过滤有效点 + 剔除未来时间戳（容差一个采样周期）+ 防御性稳定排序（契约保证升序，宿主升级兜底）
-  const pts = input.entries
-    .map((en) => ({
-      t: en && typeof en.time === "number" ? en.time : NaN,
-      balance: en && en.data && typeof en.data.balance === "number" ? en.data.balance : NaN,
-      toppedUp: en && en.data && typeof en.data.toppedUp === "number" ? en.data.toppedUp : null,
-      granted:
-        en && en.data && typeof en.data.grantedBalance === "number" ? en.data.grantedBalance : null,
-      available: !(en && en.data && en.data.isAvailable === false),
-    }))
+/**
+ * 数值字段取值（纯函数）：缺面或非 number 一律降级为 fallback。
+ * 非有限值不在此拦（与历史口径一致，由 samplePointsOf 的有效性过滤统一处置）。
+ */
+function numberField(data, key, fallback) {
+  if (!data || typeof data[key] !== "number") return fallback;
+  return data[key];
+}
+
+/** 单条历史条目 → 采样代表点（纯函数）：字段缺失一律降级为 NaN/null，不抛错。 */
+export function samplePointOf(en) {
+  const data = entryDataOf(en);
+  return {
+    t: numberField(en, "time", NaN),
+    balance: numberField(data, "balance", NaN),
+    toppedUp: numberField(data, "toppedUp", null),
+    granted: numberField(data, "grantedBalance", null),
+    available: !(data && data.isAvailable === false),
+  };
+}
+
+/**
+ * 采样序列归一（纯函数）：过滤无效点、剔除未来时间戳（容差一个采样周期）、
+ * 防御性稳定排序（契约保证升序，宿主升级兜底）。
+ */
+export function samplePointsOf(entries, now) {
+  return entries
+    .map(samplePointOf)
     .filter((p) => Number.isFinite(p.t) && Number.isFinite(p.balance))
     .filter((p) => p.t <= now + GAP_MS)
     .sort((a, b) => a.t - b.t);
+}
+
+/**
+ * 近 24h 区间记账汇总（纯函数）：逐区间分类，纯消费区间求降幅；
+ * 充值/赠款/中断/不可用区间一律不计（金额另行提示）。
+ */
+export function trendLedgerOf(values24) {
+  const ledger = { spent: 0, topIn: 0, skipped: false, counted: 0 };
+  for (let i = 1; i < values24.length; i += 1) {
+    const cls = classifyIntervalDs(values24[i - 1], values24[i]);
+    if (cls.type === "clean") {
+      if (cls.drop > TOL) ledger.spent += cls.drop;
+      ledger.counted += 1;
+    } else {
+      ledger.skipped = true;
+      if (cls.type === "disturbed") ledger.topIn += cls.topup;
+    }
+  }
+  return ledger;
+}
+
+/** 近 24h 消费徽标（纯函数）：有落账消费 / 无可计区间 / 消费≈0 三态。 */
+export function trendBadgeHtml(values24, fin, ea) {
+  const ledger = trendLedgerOf(values24);
+  const spent = fin(ledger.spent) ?? 0;
+  const tipParts = [];
+  if (ledger.topIn > 0) tipParts.push(`另有充值 +¥${ledger.topIn.toFixed(2)} 未计入`);
+  if (ledger.skipped) tipParts.push("部分区间未计");
+  const tipSuffix = tipParts.length > 0 ? `（${tipParts.join(" · ")}）` : "";
+  if (spent > TOL) {
+    return `<span class="dou-trend-up" title="${ea(`近24小时消费${tipSuffix}`)}">已用 ¥${spent.toFixed(2)}</span>`;
+  }
+  if (ledger.counted === 0) {
+    // 无任何可计账区间：不声称 ≈0（诚实），但充值等已知信息仍在 title 呈现
+    return `<span class="dou-trend-flat" title="${ea(`近24小时无可计消费区间${tipSuffix ? `，${tipParts.join(" · ")}` : ""}`)}">— 消费未知</span>`;
+  }
+  return `<span class="dou-trend-flat" title="${ea(`近24小时消费${tipSuffix}`)}">— 消费≈0</span>`;
+}
+
+/** 卡1 副标题断轴提示（纯函数）：近 24h 内有充值事件即注明。 */
+export function rechargeHintOf(values24) {
+  return values24.some(
+    (p, i) =>
+      i > 0 &&
+      values24[i - 1].toppedUp !== null &&
+      p.toppedUp !== null &&
+      p.toppedUp - values24[i - 1].toppedUp > TOL,
+  )
+    ? " · 充值已断轴"
+    : "";
+}
+
+/** 卡1 折线区（纯函数）：≥2 点出图；否则按采样点总数区分两种空态文案。 */
+function balanceChartHtml(values24, totalEntries, e, ea) {
+  if (values24.length >= 2) {
+    return `<div class="dou-miniChart">${balanceSvg(values24, e, ea)}</div>`;
+  }
+  if (totalEntries < 2) {
+    return `<p class="dou-chartEmpty">数据采集中：每次刷新记录一个采样点（约每 5 分钟一次），≥2 个点后显示趋势。</p>`;
+  }
+  return `<p class="dou-chartEmpty">近 24 小时内采样不足（&lt;2 点），随时间积累后显示。</p>`;
+}
+
+/** 卡1 头部（纯函数）：余额金额 + 消费徽标 + 断轴提示。 */
+function balanceCardHead(balance, trendHtml, rechargeHint, ea) {
+  const cur = balance !== null && Number.isFinite(balance) ? `¥${balance.toFixed(2)}` : "--";
+  return `<div class="dou-cardHead">
+    <div class="dou-cardMeta">
+      <span class="dou-legendDot" style="background:var(--dsw-alias-state-business-primary,#3b82f6)"></span>
+      <h4 class="dou-cardName">余额</h4>
+      <span class="dou-cardCur">${cur}</span>
+      ${trendHtml}
+    </div>
+    <p class="dou-cardLimit" title="${ea("DeepSeek 官方（CNY）")}">近 24 小时波动${rechargeHint}</p>
+  </div>`;
+}
+
+/**
+ * 面板注入面归一（纯函数）：文本转义 / 属性转义 / 数值归一三类，优先消费宿主注入，
+ * 缺失回退文件内兜底副本（utils 整面透传给日柱渲染）。
+ */
+export function panelUtils(input) {
+  const utils = input.utils || {};
+  return {
+    esc: input.esc || hFallback,
+    escAttr: utils.escAttr || eaFallback,
+    fin: utils.fin || finFallback,
+    utils,
+  };
+}
+
+function formatPanelImpl(input) {
+  const { esc: e, escAttr: ea, fin, utils } = panelUtils(input);
+  if (!Array.isArray(input.entries) || input.entries.length === 0) return "<p>暂无历史数据</p>";
+
+  const now = input.range.end;
+  const pts = samplePointsOf(input.entries, now);
   if (pts.length === 0) return "<p>暂无历史数据</p>";
 
   // 统一时间锚：折线「近 24h」与柱形窗口共用，避免停滞数据下两图基准割裂
@@ -868,69 +1064,9 @@ function formatPanelImpl(input) {
   const values24 = pts.filter((p) => p.t >= anchor - DAY_MS);
   const latest = values24[values24.length - 1] || pts[pts.length - 1];
   const first24 = values24[0];
-  const balance = latest.balance;
-
-  let trendHtml = "";
-  if (first24 && first24.t !== latest.t) {
-    // v2.3 徽章 = 近 24h 区间记账落账消费之和：逐区间分类，
-    // 纯消费区间求降幅；充值/赠款/中断/不可用区间一律不计（金额另行提示）。
-    let spent = 0;
-    let topIn = 0;
-    let skipped = false; // 存在未计区间（扰动/中断/不可用）
-    let counted = 0; // 有效计账区间数
-    for (let i = 1; i < values24.length; i += 1) {
-      const cls = classifyIntervalDs(values24[i - 1], values24[i]);
-      if (cls.type === "clean") {
-        if (cls.drop > TOL) spent += cls.drop;
-        counted += 1;
-      } else {
-        skipped = true;
-        if (cls.type === "disturbed") topIn += cls.topup;
-      }
-    }
-    spent = fin(spent) ?? 0;
-    const tipParts = [];
-    if (topIn > 0) tipParts.push(`另有充值 +¥${topIn.toFixed(2)} 未计入`);
-    if (skipped) tipParts.push("部分区间未计");
-    const tipSuffix = tipParts.length > 0 ? `（${tipParts.join(" · ")}）` : "";
-    if (spent > TOL) {
-      trendHtml = `<span class="dou-trend-up" title="${ea(`近24小时消费${tipSuffix}`)}">已用 ¥${spent.toFixed(2)}</span>`;
-    } else if (counted === 0) {
-      // 无任何可计账区间：不声称 ≈0（诚实），但充值等已知信息仍在 title 呈现
-      trendHtml = `<span class="dou-trend-flat" title="${ea(`近24小时无可计消费区间${tipSuffix ? `，${tipParts.join(" · ")}` : ""}`)}">— 消费未知</span>`;
-    } else {
-      trendHtml = `<span class="dou-trend-flat" title="${ea(`近24小时消费${tipSuffix}`)}">— 消费≈0</span>`;
-    }
-  }
-
-  // 卡1 副标题：有充值事件时注明断轴（B2 折线语义提示）
-  const rechargeHint = values24.some(
-    (p, i) =>
-      i > 0 &&
-      values24[i - 1].toppedUp !== null &&
-      p.toppedUp !== null &&
-      p.toppedUp - values24[i - 1].toppedUp > TOL,
-  )
-    ? " · 充值已断轴"
-    : "";
-  const head = `<div class="dou-cardHead">
-    <div class="dou-cardMeta">
-      <span class="dou-legendDot" style="background:var(--dsw-alias-state-business-primary,#3b82f6)"></span>
-      <h4 class="dou-cardName">余额</h4>
-      <span class="dou-cardCur">${balance !== null && Number.isFinite(balance) ? `¥${balance.toFixed(2)}` : "--"}</span>
-      ${trendHtml}
-    </div>
-    <p class="dou-cardLimit" title="${ea("DeepSeek 官方（CNY）")}">近 24 小时波动${rechargeHint}</p>
-  </div>`;
-
-  let chartHtml = "";
-  if (values24.length >= 2) {
-    chartHtml = `<div class="dou-miniChart">${balanceSvg(values24, e, ea)}</div>`;
-  } else if (input.entries.length < 2) {
-    chartHtml = `<p class="dou-chartEmpty">数据采集中：每次刷新记录一个采样点（约每 5 分钟一次），≥2 个点后显示趋势。</p>`;
-  } else {
-    chartHtml = `<p class="dou-chartEmpty">近 24 小时内采样不足（&lt;2 点），随时间积累后显示。</p>`;
-  }
+  const trendHtml = first24 && first24.t !== latest.t ? trendBadgeHtml(values24, fin, ea) : "";
+  const head = balanceCardHead(latest.balance, trendHtml, rechargeHintOf(values24), ea);
+  const chartHtml = balanceChartHtml(values24, input.entries.length, e, ea);
 
   const card1 = `<div class="dou-card">${head}${chartHtml}</div>`;
   const card2 = renderDailyUsageCard(pts, input.truncated === true, e, now, utils);

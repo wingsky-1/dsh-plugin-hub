@@ -106,6 +106,69 @@ export function __lastRunChainForTests(root: string): Promise<void> | undefined 
   return lastRunChainByRoot.get(root);
 }
 
+/** lastRun 校准结果（三键齐备，键存在性为对外契约）。 */
+interface LastRunCalibration {
+  changed: boolean;
+  before: Partial<Record<ReportPeriod, string>>;
+  after: Partial<Record<ReportPeriod, string>>;
+}
+
+/** plain object 判定（类型谓词，承担当前收窄）。 */
+function isRecordLike(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+/** lastRun 文档的 schema 版本；非对象或缺键视作 1（历史无版本文档）。 */
+export function schemaVersionOf(parsed: unknown): number {
+  return isRecordLike(parsed) && typeof parsed.schema === "number" ? parsed.schema : 1;
+}
+
+/** 校准输入事实源：schema 版本 + index 事实。缺任一 → 无事实（raw 为 null）。 */
+interface LastRunCalibrationInput {
+  schema: number;
+  before: Partial<Record<ReportPeriod, string>>;
+  records: LastRunRecord[];
+}
+
+/**
+ * 校准决策（纯函数）：schema 旧 → 全量重算（deriveLastRun）；schema 新 → 温和对齐
+ * （alignLastRun）。changed 判据与决策同一口径，落盘后仍可原样复算。
+ */
+export function calibrateLastRun(
+  schema: number,
+  previous: Partial<Record<ReportPeriod, string>>,
+  records: LastRunRecord[],
+): { after: Partial<Record<ReportPeriod, string>>; changed: boolean } {
+  const after = schema < LAST_RUN_SCHEMA ? deriveLastRun(records) : alignLastRun(previous, records);
+  return {
+    after,
+    changed: schema < LAST_RUN_SCHEMA || JSON.stringify(previous) !== JSON.stringify(after),
+  };
+}
+
+/**
+ * 采集校准事实：lastRun 原文缺失 → 无 lastRun 事实（facts 为 null）；
+ * index.jsonl 缺失或解析端口缺席 → 有 lastRun、无 index 事实（records 为 null）。
+ * 端口缺席与「无 index」同语义，不静默捏造校准值。
+ */
+async function collectLastRunCalibrationInput(
+  root: string,
+  parseIndex: ScheduleIndexParser | undefined,
+): Promise<LastRunCalibrationInput | { before: Partial<Record<ReportPeriod, string>> } | null> {
+  const raw = await readFile(lastRunFile(root), "utf8").catch(() => null);
+  if (raw === null) return null;
+  const before = await readLastRun(root);
+  const indexRaw = await readFile(join(root, "reports", "index.jsonl"), "utf8").catch(() => null);
+  if (indexRaw === null || parseIndex === undefined) return { before };
+  return { schema: schemaVersionOf(JSON.parse(raw)), before, records: parseIndex(indexRaw) };
+}
+
+export function isLastRunCalibrationInput(
+  facts: LastRunCalibrationInput | { before: Partial<Record<ReportPeriod, string>> },
+): facts is LastRunCalibrationInput {
+  return "records" in facts;
+}
+
 /**
  * 启动时 lastRun 一致性保证：schema 旧 → 全量重算（deriveLastRun）；
  * schema 新 → 温和对齐（alignLastRun）；无 index 视作无事实，不动 lastRun。
@@ -118,41 +181,44 @@ export async function ensureLastRunMigrated(
   root: string,
   warn?: (msg: string) => void,
   parseIndex?: ScheduleIndexParser,
-): Promise<{
-  changed: boolean;
-  before: Partial<Record<ReportPeriod, string>>;
-  after: Partial<Record<ReportPeriod, string>>;
-}> {
+): Promise<LastRunCalibration> {
   const diag = warn ?? ((msg: string) => console.warn(`[dsh-provider-usage] report: ${msg}`));
   try {
-    const raw = await readFile(lastRunFile(root), "utf8").catch(() => null);
-    if (raw === null) return { changed: false, before: {}, after: {} };
-    const parsed = JSON.parse(raw) as Record<string, unknown>;
-    const schema = typeof parsed.schema === "number" ? parsed.schema : 1;
-    const before = await readLastRun(root);
-    const indexRaw = await readFile(join(root, "reports", "index.jsonl"), "utf8").catch(() => null);
-    if (indexRaw === null) return { changed: false, before, after: before };
-    if (parseIndex === undefined) return { changed: false, before, after: before };
-    const records = parseIndex(indexRaw) as LastRunRecord[];
-    const after = schema < LAST_RUN_SCHEMA ? deriveLastRun(records) : alignLastRun(before, records);
-    const changed = schema < LAST_RUN_SCHEMA || JSON.stringify(before) !== JSON.stringify(after);
-    if (!changed) return { changed, before, after };
-    // 唯一写面：校准落盘经 per-root 链（与 preset/执行器同链串行）。
-    // 链内按最新快照重算（preset 同形）：链外预读定 changed，链内重算定落盘值。
-    let written: Partial<Record<ReportPeriod, string>> | undefined;
-    await updateLastRun(root, (cur) => {
-      const fresh = schema < LAST_RUN_SCHEMA ? deriveLastRun(records) : alignLastRun(cur, records);
-      written = fresh;
-      return fresh;
-    });
-    const finalAfter = written ?? after;
+    const facts = await collectLastRunCalibrationInput(root, parseIndex);
+    if (facts === null) return { changed: false, before: {}, after: {} };
+    if (!isLastRunCalibrationInput(facts)) {
+      return { changed: false, before: facts.before, after: facts.before };
+    }
+    const { after, changed } = calibrateLastRun(facts.schema, facts.before, facts.records);
+    if (!changed) return { changed, before: facts.before, after };
+    const finalAfter = await commitLastRunCalibration(root, facts);
     const msg =
-      `schema ${schema}→${LAST_RUN_SCHEMA}：` +
-      `${JSON.stringify(before)} → ${JSON.stringify(finalAfter)}`;
+      `schema ${facts.schema}→${LAST_RUN_SCHEMA}：` +
+      `${JSON.stringify(facts.before)} → ${JSON.stringify(finalAfter)}`;
     diag(`lastRun 已按 index 事实校准（${msg}）`);
-    return { changed, before, after: finalAfter };
+    return { changed, before: facts.before, after: finalAfter };
   } catch (e: unknown) {
     diag(`lastRun 校准失败（保持原状）：${e instanceof Error ? e.message : String(e)}`);
     return { changed: false, before: {}, after: {} };
   }
+}
+
+/**
+ * 唯一写面：校准落盘经 per-root 链（与 preset/执行器同链串行）。
+ * 链内按最新快照重算（preset 同形）：链外预读定 changed，链内重算定落盘值。
+ */
+async function commitLastRunCalibration(
+  root: string,
+  input: LastRunCalibrationInput,
+): Promise<Partial<Record<ReportPeriod, string>>> {
+  let written: Partial<Record<ReportPeriod, string>> | undefined;
+  await updateLastRun(root, (cur) => {
+    const fresh =
+      input.schema < LAST_RUN_SCHEMA
+        ? deriveLastRun(input.records)
+        : alignLastRun(cur, input.records);
+    written = fresh;
+    return fresh;
+  });
+  return written ?? calibrateLastRun(input.schema, input.before, input.records).after;
 }

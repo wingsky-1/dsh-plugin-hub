@@ -110,6 +110,97 @@ export async function resolveProviderConfig(
   return { apiEndpoint, apiKey };
 }
 
+/** configurable provider 目录条目（seam 沿线形状）。 */
+interface ConfigurableProviderEntry {
+  provider: string;
+  settingsNs: string;
+  settingsPath?: string[];
+}
+
+/** cordis 上下文在 seam 沿线关心的两个面（可选访问，缺席回落 V1 链）。 */
+interface CredentialSeamContext {
+  llm?: { listConfigurableProviders?: () => ConfigurableProviderEntry[] };
+  get?: (name: string) => unknown;
+}
+
+interface SettingsService {
+  get?: (ns: string) => unknown;
+}
+
+interface CredentialsService {
+  resolve?: (ref: string) => Promise<{ value?: string } | undefined>;
+}
+
+/** seam 沿线已就位的两服务（取用顺序固定 settings → credentials，与历史实现一致）。 */
+interface CredentialSeamServices {
+  settingsGet: (ns: string) => unknown;
+  credentialsResolve: (ref: string) => Promise<{ value?: string } | undefined>;
+}
+
+function isCredentialSeamContext(ctx: unknown): ctx is CredentialSeamContext {
+  return typeof ctx === "object" && ctx !== null;
+}
+
+function isSettingsService(value: unknown): value is SettingsService {
+  return typeof value === "object" && value !== null;
+}
+
+function isCredentialsService(value: unknown): value is CredentialsService {
+  return typeof value === "object" && value !== null;
+}
+
+/** 可下标对象判定（类型谓词，承当下钻与字段读取的收窄，取代 as 逃逸）。 */
+function isIndexable(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+/**
+ * 目录定位（纯函数）：configurable provider 目录里的本 provider 条目；
+ * ctx 无 llm 面或目录服务缺席即视为不在目录。
+ */
+export function findProviderDirEntry(
+  ctx: unknown,
+  provider: string,
+): ConfigurableProviderEntry | undefined {
+  if (!isCredentialSeamContext(ctx)) return undefined;
+  const listProviders = ctx.llm?.listConfigurableProviders;
+  if (typeof listProviders !== "function") return undefined;
+  return listProviders.call(ctx.llm).find((entry) => entry.provider === provider);
+}
+
+/** 沿 settingsPath 下钻到 provider profile 对象（覆盖 pi-ai 等嵌套命名空间）。 */
+export function drillSettingsPath(root: unknown, path: readonly string[]): unknown {
+  let node = root;
+  for (const seg of path) {
+    if (!isIndexable(node)) return undefined;
+    node = node[seg];
+  }
+  return node;
+}
+
+/** profile 对象上的凭据引用名（apiKeyEnv）；缺失或空串视同无引用。 */
+export function apiKeyEnvOf(profile: unknown): string | undefined {
+  if (!isIndexable(profile)) return undefined;
+  const ref: unknown = profile.apiKeyEnv;
+  return typeof ref === "string" && ref.length > 0 ? ref : undefined;
+}
+
+/** seam 所需两服务的就位判定（纯函数）：缺席任一即视同 seam 不可用。 */
+export function seamServicesOf(ctx: unknown): CredentialSeamServices | undefined {
+  if (!isCredentialSeamContext(ctx) || typeof ctx.get !== "function") return undefined;
+  // 入参是 unknown 鸭子上下文（未必是 cordis 的 Ctx），沿历史同名的 anyCtx 别名取用：
+  // 既标明「未类型化的 ctx 形态」，也与 upstream-contract-warn 的 S2 口径一致
+  // （该判据只认字面量 ctx 接收者，anyCtx 形态不计宿主服务消费）。
+  const anyCtx = ctx;
+  const settings = anyCtx.get?.("settings");
+  const credentials = anyCtx.get?.("credentials");
+  if (!isSettingsService(settings) || typeof settings.get !== "function") return undefined;
+  if (!isCredentialsService(credentials) || typeof credentials.resolve !== "function") {
+    return undefined;
+  }
+  return { settingsGet: settings.get, credentialsResolve: credentials.resolve };
+}
+
 /**
  * DSH 通用凭据 seam：由 configurable provider 目录驱动，读 provider 的 settings
  * 命名空间（llm adapter 声明的 `apiKeyEnv` 凭据引用名），再经 `credentials.resolve`
@@ -120,88 +211,87 @@ async function resolveViaCredentialSeam(
   provider: string,
   ctx?: unknown,
 ): Promise<string | undefined> {
-  const anyCtx = (ctx ?? {}) as {
-    llm?: {
-      listConfigurableProviders?: () => Array<{
-        provider: string;
-        settingsNs: string;
-        settingsPath?: string[];
-      }>;
-    };
-    get?: (name: string) => unknown;
-  };
-  if (typeof anyCtx.llm?.listConfigurableProviders !== "function") return undefined;
-
-  const dir = anyCtx.llm.listConfigurableProviders().find((c) => c.provider === provider);
+  const dir = findProviderDirEntry(ctx, provider);
   if (dir === undefined) return undefined;
-
-  const settings = anyCtx.get?.("settings") as { get?: (ns: string) => unknown } | undefined;
-  const credentials = anyCtx.get?.("credentials") as
-    { resolve?: (ref: string) => Promise<{ value?: string } | undefined> } | undefined;
-  if (settings === undefined || typeof settings.get !== "function") return undefined;
-  if (credentials === undefined || typeof credentials.resolve !== "function") return undefined;
-
-  // 沿 settingsPath 下钻到 provider profile 对象
-  let node: unknown = settings.get(dir.settingsNs);
-  for (const seg of dir.settingsPath ?? []) {
-    node = (node as Record<string, unknown> | undefined)?.[seg];
-  }
-  const ref = (node as { apiKeyEnv?: string } | undefined)?.apiKeyEnv;
-  if (typeof ref !== "string" || ref.length === 0) return undefined;
-
-  const got = await credentials.resolve(ref);
+  const services = seamServicesOf(ctx);
+  if (services === undefined) return undefined;
+  const ref = apiKeyEnvOf(
+    drillSettingsPath(services.settingsGet(dir.settingsNs), dir.settingsPath ?? []),
+  );
+  if (ref === undefined) return undefined;
+  const got = await services.credentialsResolve(ref);
   if (got !== undefined && typeof got.value === "string" && got.value.length > 0) {
     return got.value;
   }
   return undefined;
 }
 
-/** 解析密钥（V1 配置链）。 */
-async function resolveApiKey(provider: string, explicitKey?: string): Promise<string | undefined> {
-  // 1. 显式配置优先
-  if (typeof explicitKey === "string" && explicitKey.trim() !== "") return explicitKey.trim();
+/** 去掉首尾空白；非字符串或空白串视同无值。 */
+export function trimmedOrUndefined(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed === "" ? undefined : trimmed;
+}
 
-  // 2. 环境变量 {PROVIDER}_API_KEY
-  const envVar = `${provider.toUpperCase().replace(/-/g, "_")}_API_KEY`;
-  const env = process.env[envVar];
-  if (typeof env === "string" && env.trim() !== "") return env.trim();
+/** 步骤 2 的环境变量名：{PROVIDER}_API_KEY（大写，连字符 → 下划线）。 */
+export function providerApiKeyEnvVar(provider: string): string {
+  return `${provider.toUpperCase().replace(/-/g, "_")}_API_KEY`;
+}
 
-  // 3. opencode-go 兼容旧环境变量名
-  if (provider === "opencode-go") {
-    const legacy = process.env.OPENCODE_GO_API_KEY;
-    if (typeof legacy === "string" && legacy.trim() !== "") return legacy.trim();
-  }
+/**
+ * 进程内来源（步骤 1–3，纯函数，无 I/O）：显式配置 → 标准环境变量 →
+ * opencode-go 兼容旧环境变量名。
+ */
+export function resolveInlineKey(provider: string, explicitKey?: string): string | undefined {
+  const explicit = trimmedOrUndefined(explicitKey);
+  if (explicit !== undefined) return explicit;
+  const fromEnv = trimmedOrUndefined(process.env[providerApiKeyEnvVar(provider)]);
+  if (fromEnv !== undefined) return fromEnv;
+  if (provider !== "opencode-go") return undefined;
+  return trimmedOrUndefined(process.env.OPENCODE_GO_API_KEY);
+}
 
-  // 4. .credentials.yaml
+/**
+ * 步骤 4：.credentials.yaml（DSH 官方凭据文档）。opencode-go 在标准 key 未命中时
+ * 再查旧名 OPENCODE_GO_API_KEY。读盘异常一律忽略（回落下一来源）。
+ */
+async function credentialsYamlKey(provider: string, envVar: string): Promise<string | undefined> {
   try {
     const credFile = credentialsFile();
-    if (existsSync(credFile)) {
-      const text = await readFile(credFile, "utf8");
-      const fromYaml = credentialsKeyFromYaml(text, envVar);
-      if (fromYaml !== undefined) return fromYaml;
-      // opencode-go 兼容旧 key 名
-      if (provider === "opencode-go") {
-        const legacy = credentialsKeyFromYaml(text, "OPENCODE_GO_API_KEY");
-        if (legacy !== undefined) return legacy;
-      }
-    }
+    if (!existsSync(credFile)) return undefined;
+    const text = await readFile(credFile, "utf8");
+    const fromYaml = credentialsKeyFromYaml(text, envVar);
+    if (fromYaml !== undefined) return fromYaml;
+    if (provider !== "opencode-go") return undefined;
+    return credentialsKeyFromYaml(text, "OPENCODE_GO_API_KEY");
   } catch {
     /* 忽略 */
+    return undefined;
   }
+}
 
-  // 5. auth.json（仅 opencode-go）
-  if (provider === "opencode-go") {
-    try {
-      const authFile = opencodeAuthFile();
-      if (existsSync(authFile)) {
-        const text = await readFile(authFile, "utf8");
-        const fromAuth = opencodeKeyFromAuth(text);
-        if (fromAuth !== undefined) return fromAuth;
-      }
-    } catch {
-      /* 忽略 */
-    }
+/** 步骤 5：auth.json（仅 opencode-go）。读盘/解析异常一律忽略。 */
+async function opencodeAuthKey(): Promise<string | undefined> {
+  try {
+    const authFile = opencodeAuthFile();
+    if (!existsSync(authFile)) return undefined;
+    return opencodeKeyFromAuth(await readFile(authFile, "utf8"));
+  } catch {
+    /* 忽略 */
+    return undefined;
   }
+}
 
-  return undefined;
+/** 落盘来源（步骤 4–5）：.credentials.yaml → auth.json（仅 opencode-go）。 */
+async function resolveFileKey(provider: string, envVar: string): Promise<string | undefined> {
+  const fromYaml = await credentialsYamlKey(provider, envVar);
+  if (fromYaml !== undefined) return fromYaml;
+  return provider === "opencode-go" ? opencodeAuthKey() : undefined;
+}
+
+/** 解析密钥（V1 配置链）：进程内来源优先，落盘来源兜底。 */
+async function resolveApiKey(provider: string, explicitKey?: string): Promise<string | undefined> {
+  const inline = resolveInlineKey(provider, explicitKey);
+  if (inline !== undefined) return inline;
+  return resolveFileKey(provider, providerApiKeyEnvVar(provider));
 }

@@ -70,6 +70,63 @@ export type ReplaceFileResult =
   | { ok: false; code: "invalid-adapter" | "duplicate-name"; detail: string };
 
 /**
+ * 收集某文件注册的全部候选条目（纯函数）：同一条目可出现在多个 provider 桶，
+ * 按 name 去重。
+ */
+export function collectEntriesByFile(
+  candidatesByProvider: ReadonlyMap<string, AdapterEntry[]>,
+  file: string,
+): Map<string, AdapterEntry> {
+  const entries = new Map<string, AdapterEntry>();
+  for (const list of candidatesByProvider.values()) {
+    for (const entry of list) {
+      if (entry.file === file) entries.set(entry.name, entry);
+    }
+  }
+  return entries;
+}
+
+/** 契约校验失败的拒绝结果（纯函数）：形状描述 + 定稿文案。 */
+export function invalidAdapterRejection(next: unknown): ReplaceFileResult {
+  const detail = describeUsageStatsAdapterShape(next) ?? "未知形状问题";
+  return { ok: false, code: "invalid-adapter", detail: `契约校验失败（${detail}），已保留旧条目` };
+}
+
+/**
+ * 改名撞名预检（纯函数）：新 name 不属于本文件旧名、却已被其他来源占用即拒绝，
+ * 旧条目原样保留。
+ */
+export function rejectDuplicateName(
+  adapter: UsageStatsAdapter,
+  oldEntries: ReadonlyMap<string, AdapterEntry>,
+  registeredNames: ReadonlySet<string>,
+): ReplaceFileResult | null {
+  if (oldEntries.has(adapter.name) || !registeredNames.has(adapter.name)) return null;
+  return {
+    ok: false,
+    code: "duplicate-name",
+    detail: `适配器 name 冲突：${adapter.name}（已被其他适配器占用，旧条目保留）`,
+  };
+}
+
+/**
+ * 旧启用关系快照（纯函数）：本文件旧条目在其认领的每个 provider 上是否为当前启用者。
+ * 替换只更新代码、不改写启用关系——快照供替换后逐 provider 精确恢复。
+ */
+export function collectWasEnabledProviders(
+  oldEntries: ReadonlyMap<string, AdapterEntry>,
+  enabledNames: ReadonlyMap<string, string>,
+): Set<string> {
+  const wasEnabled = new Set<string>();
+  for (const entry of oldEntries.values()) {
+    for (const provider of entry.providers) {
+      if (enabledNames.get(provider) === entry.name) wasEnabled.add(provider);
+    }
+  }
+  return wasEnabled;
+}
+
+/**
  * 适配器注册表（候选 + 唯一启用）。
  * @param opts.diag - 诊断收集器（缺省 console.warn）。
  * @param opts.sanitizePath - 错误消息路径脱敏（把绝对路径归约为 `~` 形态，信息面最小披露）。
@@ -279,37 +336,15 @@ export function makeAdapterRegistry(
    * @param next - 新版适配器（契约校验失败同样拒绝且保留旧条目）。
    */
   function replaceByFile(file: string, next: unknown): ReplaceFileResult {
-    if (!isUsageStatsAdapter(next)) {
-      const detail = describeUsageStatsAdapterShape(next) ?? "未知形状问题";
-      return {
-        ok: false,
-        code: "invalid-adapter",
-        detail: `契约校验失败（${detail}），已保留旧条目`,
-      };
-    }
-    const a = next;
+    if (!isUsageStatsAdapter(next)) return invalidAdapterRejection(next);
+    const a: UsageStatsAdapter = next;
     // 收集本文件旧条目（同一条目可出现在多个 provider 桶，按 name 去重）
-    const oldEntries = new Map<string, AdapterEntry>();
-    for (const list of candidatesByProvider.values()) {
-      for (const e of list) {
-        if (e.file === file) oldEntries.set(e.name, e);
-      }
-    }
+    const oldEntries = collectEntriesByFile(candidatesByProvider, file);
     // 冲突预检：新 name 不属于本文件旧名、却已被其他来源占用 → 拒绝，旧条目原样保留
-    if (!oldEntries.has(a.name) && registeredNames.has(a.name)) {
-      return {
-        ok: false,
-        code: "duplicate-name",
-        detail: `适配器 name 冲突：${a.name}（已被其他适配器占用，旧条目保留）`,
-      };
-    }
+    const conflict = rejectDuplicateName(a, oldEntries, registeredNames);
+    if (conflict !== null) return conflict;
     // 记录旧启用状态：本文件旧条目在其认领的每个 provider 上是否是当前启用者
-    const wasEnabledProviders = new Set<string>();
-    for (const entry of oldEntries.values()) {
-      for (const provider of entry.providers) {
-        if (enabledNames.get(provider) === entry.name) wasEnabledProviders.add(provider);
-      }
-    }
+    const wasEnabledProviders = collectWasEnabledProviders(oldEntries, enabledNames);
     // 原子替换：移除旧条目后以「不默认启用」注册新版，再逐 provider 精确恢复原启用关系
     // （同步执行无 await 间隙，中间态外部不可观察）
     removeByFile(file);

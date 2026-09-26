@@ -164,7 +164,8 @@ function validAttemptTokens(value: unknown): value is RetryAttemptTokens {
   return keys.every((key) => record[key] === null || safeMetric(record[key]) !== null);
 }
 
-function requireObservation(observation: RetryAttemptObservation): void {
+/** 单条 attempt 的字段形状约束：attempt 正整数、result/status 枚举、code 稳定码形态。 */
+function requireObservationShape(observation: RetryAttemptObservation): void {
   if (!Number.isInteger(observation.attempt) || observation.attempt < 1) {
     throw new Error("retry observation attempt must be a positive integer");
   }
@@ -177,21 +178,35 @@ function requireObservation(observation: RetryAttemptObservation): void {
   if (observation.code !== null && !/^[a-z0-9][a-z0-9._:-]{0,63}$/.test(observation.code)) {
     throw new Error("retry observation code must be stable");
   }
+}
+
+/**
+ * status 与 result 是否自洽：成功必为 status=success，失败必非 status=success
+ * （失败可落在 retry/terminal/aborted）。等价于「success ⇔ status=success」。
+ */
+export function statusAgreesWithResult(observation: RetryAttemptObservation): boolean {
+  if (observation.result === "success") return observation.status === "success";
+  return observation.status !== "success";
+}
+
+/** 跨字段一致性约束：result⇔code 必填性、result⇔status、status⇔attempt 上限。 */
+function requireObservationConsistency(observation: RetryAttemptObservation): void {
   if (observation.result === "success" && observation.code !== null) {
     throw new Error("successful retry observation must not have a failure code");
   }
   if (observation.result === "failure" && observation.code === null) {
     throw new Error("failed retry observation must have a failure code");
   }
-  if (
-    (observation.result === "success" && observation.status !== "success") ||
-    (observation.result === "failure" && observation.status === "success")
-  ) {
+  if (!statusAgreesWithResult(observation)) {
     throw new Error("retry observation result and status are inconsistent");
   }
   if (observation.status === "retry" && observation.attempt > RETRY_MAX_ATTEMPTS) {
     throw new Error("retry observation status and attempt are inconsistent");
   }
+}
+
+/** 度量载荷约束：tokens 六元组与 durationMs 形态。 */
+function requireObservationMetrics(observation: RetryAttemptObservation): void {
   if (!validAttemptTokens(observation.tokens)) {
     throw new Error("retry observation tokens are invalid");
   }
@@ -203,6 +218,13 @@ function requireObservation(observation: RetryAttemptObservation): void {
   ) {
     throw new Error("retry observation duration is invalid");
   }
+}
+
+/** 单条 attempt 的全量校验（形状 + 一致性 + 度量，顺序即判词优先级）。 */
+function requireObservation(observation: RetryAttemptObservation): void {
+  requireObservationShape(observation);
+  requireObservationConsistency(observation);
+  requireObservationMetrics(observation);
 }
 
 function addNullable(left: number | null, right: number | null): number | null {
@@ -253,6 +275,56 @@ export function usageAfterRetryObservation(
   return usageFromRetryObservations(observations);
 }
 
+/**
+ * 覆盖既有 attempt 的前置条件：只允许覆盖最后一次 attempt，且只允许把「已判成功」
+ * 的那次改判为失败（成功不可回退成成功，留给人工重跑的语义；其余改动须走重试 cycle）。
+ */
+function requireReplacementAllowed(
+  claim: RetryClaim,
+  observation: RetryAttemptObservation,
+  index: number,
+): void {
+  if (index !== claim.entry.attemptObservations.length - 1) {
+    throw new Error("retry observation replacement is not the latest attempt");
+  }
+  if (
+    claim.entry.attemptObservations[index]?.result !== "success" ||
+    observation.result !== "failure"
+  ) {
+    throw new Error("retry observation replacement must change a success attempt to failure");
+  }
+}
+
+/**
+ * 观测落位判定（纯函数）：返回命中槽位下标（<0 = 追加）。
+ * 追加必须正好是 attempts+1（跳号/重号皆拒）；覆盖须过 requireReplacementAllowed。
+ */
+export function observationSlot(claim: RetryClaim, observation: RetryAttemptObservation): number {
+  const index = claim.entry.attemptObservations.findIndex(
+    (current) => current.attempt === observation.attempt,
+  );
+  if (index < 0) {
+    if (observation.attempt !== claim.entry.attempts + 1) {
+      throw new Error("retry observation attempt does not match claim");
+    }
+    return index;
+  }
+  requireReplacementAllowed(claim, observation, index);
+  return index;
+}
+
+/** 落位应用（纯函数）：命中槽位覆盖，否则追加。 */
+export function applyObservation(
+  previous: readonly RetryAttemptObservation[],
+  observation: RetryAttemptObservation,
+  index: number,
+): RetryAttemptObservation[] {
+  const next = [...previous];
+  if (index >= 0) next[index] = observation;
+  else next.push(observation);
+  return next;
+}
+
 export function addRetryObservation(
   claim: RetryClaim,
   observation: RetryAttemptObservation,
@@ -261,25 +333,11 @@ export function addRetryObservation(
   if (claim.cycleId !== claim.entry.cycleId || claim.entry.phase !== "in-flight") {
     throw new Error("retry observation claim is not in-flight");
   }
-  const existingIndex = claim.entry.attemptObservations.findIndex(
-    (current) => current.attempt === observation.attempt,
+  const attemptObservations = applyObservation(
+    claim.entry.attemptObservations,
+    observation,
+    observationSlot(claim, observation),
   );
-  if (existingIndex < 0 && observation.attempt !== claim.entry.attempts + 1) {
-    throw new Error("retry observation attempt does not match claim");
-  }
-  if (existingIndex >= 0 && existingIndex !== claim.entry.attemptObservations.length - 1) {
-    throw new Error("retry observation replacement is not the latest attempt");
-  }
-  if (
-    existingIndex >= 0 &&
-    (claim.entry.attemptObservations[existingIndex]?.result !== "success" ||
-      observation.result !== "failure")
-  ) {
-    throw new Error("retry observation replacement must change a success attempt to failure");
-  }
-  const attemptObservations = [...claim.entry.attemptObservations];
-  if (existingIndex >= 0) attemptObservations[existingIndex] = observation;
-  else attemptObservations.push(observation);
   return {
     cycleId: claim.cycleId,
     entry: {
