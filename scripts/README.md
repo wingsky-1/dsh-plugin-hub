@@ -123,6 +123,11 @@
 
 ## test/（脚本自测，`pnpm test:scripts`）
 
+**本目录只放自测，不放判据**（#875）：判据应置于 `gate/`，三态（0 通过 / 1 判红可信 / 2 门禁故障）
+可原样传出去；置于本目录的判据会因 `node --test` 把被测文件里任何非零 `process.exit` 一律折成 1
+（test 回调内与模块顶层同例）而**丢失三态区分**——仍会判红，但门禁故障与判红在日志里不可区分，
+2 这条「禁止合并」的通道随之失效。确需在自测里验证真实退出码，须以子进程模式在测试内自证。
+
 - `test/run-vitest.mjs` — 包级 test 脚本的 vitest 包装：在 vitest 之上恢复 `--min <文件数>` fail-closed 判据（防 include 漂移的假绿）。
 - `test/build-client.test.ts` — build-client 脚本自测。
 - `test/collect-licenses.test.ts` — collect-licenses 脚本自测。
