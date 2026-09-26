@@ -108,7 +108,8 @@
             "packages/dsh-decision-gateway/test/unit/tools.test.ts",
             "packages/dsh-decision-gateway/test/unit/verdict-tiers.test.ts",
             "packages/dsh-decision-gateway/test/unit/tool-description.test.ts",
-            "packages/dsh-decision-gateway/test/unit/signal-cancel.test.ts"
+            "packages/dsh-decision-gateway/test/unit/signal-cancel.test.ts",
+            "packages/dsh-decision-gateway/test/unit/project-levels.test.ts"
           ],
           "comment": "按域分段（#943 对账后，单段 _single 按 server 目录名拆分）：tools 域全量在面内（含 interface 门面与 deps 类型面）；面文件集与单段时代一致，仅执行分片变化；测试按段 testFiles 清单跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
         },
@@ -156,7 +157,10 @@
             "packages/dsh-decision-gateway/test/client-dom/tabs-mask-history.test.ts",
             "packages/dsh-decision-gateway/test/client-unit/format.test.ts",
             "packages/dsh-decision-gateway/test/client-unit/locale-i18n.test.ts",
-            "packages/dsh-decision-gateway/test/client-unit/routes-consistency.test.ts"
+            "packages/dsh-decision-gateway/test/client-unit/routes-consistency.test.ts",
+            "packages/dsh-decision-gateway/test/client-dom/pane-helpers.test.ts",
+            "packages/dsh-decision-gateway/test/client-unit/contract-parsers.test.ts",
+            "packages/dsh-decision-gateway/test/client-unit/history-entry.test.ts"
           ],
           "comment": "React 独立 tab（含 tsx 真实行为判据）：vanilla DOM 层已删，settings/*.tsx（密钥二选一、详情单开、保存守卫、清空两步、过滤）进变异面；css.d.ts 留面内保并集棘轮不收缩；测试按段 testFiles 清单跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
         }
