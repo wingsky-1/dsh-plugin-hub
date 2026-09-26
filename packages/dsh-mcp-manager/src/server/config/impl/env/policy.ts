@@ -220,13 +220,7 @@ function checkUrl(
   } catch {
     return;
   }
-  const candidates: string[] = [];
-  if (parsed.username !== "") candidates.push(parsed.username);
-  if (parsed.password !== "") candidates.push(parsed.password);
-  for (const value of parsed.searchParams.values()) {
-    if (value !== "") candidates.push(value);
-  }
-  for (const candidate of candidates) {
+  for (const candidate of urlSecretCandidates(parsed)) {
     const matchedVar = liveSecrets.get(candidate);
     if (matchedVar !== undefined) {
       throw duplicateErrorForSlot(
@@ -238,6 +232,20 @@ function checkUrl(
       );
     }
   }
+}
+
+/**
+ * url 里参与活秘密逐字比对的候选段：userinfo（username/password）与查询值；
+ * host/path/查询键不审，空串不进候选。产出顺序即原判定顺序，未改判定口径。
+ */
+function urlSecretCandidates(parsed: URL): string[] {
+  const candidates: string[] = [];
+  if (parsed.username !== "") candidates.push(parsed.username);
+  if (parsed.password !== "") candidates.push(parsed.password);
+  for (const value of parsed.searchParams.values()) {
+    if (value !== "") candidates.push(value);
+  }
+  return candidates;
 }
 
 /**

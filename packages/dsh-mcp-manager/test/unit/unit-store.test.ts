@@ -28,6 +28,7 @@ import { afterEach, describe, expect, it } from "vitest";
 // I8 导入面收窄：store/config 两域门面直引，不再经包根组合根。
 const { McpStore } = await import("../../src/server/store/interface.ts");
 const { fromClaudeEntry, parseClaudeJson } = await import("../../src/server/config/interface.ts");
+const { readCatalogServerFromDisk } = await import("../../src/server/store/interface.ts");
 
 let tempDirs: string[] = [];
 
@@ -606,5 +607,92 @@ describe("S2-b：save 取 mode 表 + 显式路径回落", () => {
     await store.save();
     expect(existsSync(projPath)).toBe(true);
     expect(JSON.parse(await readFile(projPath, "utf8")).servers[0].name).toBe("p");
+  });
+});
+
+// readCatalogServerFromDisk：目录注入端在中间层单元未建时的磁盘 last-good 兜底读。
+// 覆盖定位守卫（载荷/entries 缺失或异形、未命中该名字）与条目形状清洗两条不同问题。
+describe("readCatalogServerFromDisk", () => {
+  const write = (dir: string, text: string): string => {
+    const path = join(dir, "catalog.json");
+    writeFileSync(path, text, "utf8");
+    return path;
+  };
+
+  it("正常条目：discoveredAt 与工具清单原样取回", async () => {
+    const path = write(
+      tempDir(),
+      JSON.stringify({
+        entries: { alpha: { discoveredAt: 42, tools: [{ name: "t1", description: "d1" }] } },
+      }),
+    );
+    const out = await readCatalogServerFromDisk(path, "alpha");
+    expect(out).toEqual({
+      discoveredAt: 42,
+      tools: [{ name: "t1", description: "d1" }],
+    });
+  });
+
+  it("未命中该服务器名 → undefined（同名不串）", async () => {
+    const path = write(
+      tempDir(),
+      JSON.stringify({ entries: { alpha: { discoveredAt: 1, tools: [] } } }),
+    );
+    expect(await readCatalogServerFromDisk(path, "beta")).toBeUndefined();
+  });
+
+  it("entries 容器缺失或为 null → undefined（非对象不做键读取）", async () => {
+    const dir = tempDir();
+    for (const text of [
+      "{}",
+      JSON.stringify({ entries: null }),
+      JSON.stringify({ entries: "not-a-table" }),
+      "[]",
+      "null",
+    ]) {
+      expect(await readCatalogServerFromDisk(write(dir, text), "alpha"), text).toBeUndefined();
+    }
+  });
+
+  it("条目自身为 null / 标量 → undefined（命中名但非对象）", async () => {
+    const dir = tempDir();
+    for (const value of ["null", "5", '"str"']) {
+      const path = write(dir, JSON.stringify({ entries: { alpha: JSON.parse(value) } }));
+      expect(await readCatalogServerFromDisk(path, "alpha"), value).toBeUndefined();
+    }
+  });
+
+  it("损坏 JSON 与文件缺失 → undefined（容错不抛）", async () => {
+    const dir = tempDir();
+    expect(await readCatalogServerFromDisk(write(dir, "{not json"), "alpha")).toBeUndefined();
+    expect(await readCatalogServerFromDisk(join(dir, "nope.json"), "alpha")).toBeUndefined();
+  });
+
+  it("形状清洗：discoveredAt 非数字归 0、工具名非字符串跳过、描述缺失补空串", async () => {
+    const path = write(
+      tempDir(),
+      JSON.stringify({
+        entries: {
+          alpha: {
+            discoveredAt: "7",
+            tools: [{ name: "ok" }, { description: "no-name" }, null, "s", { name: 3 }, 42],
+          },
+        },
+      }),
+    );
+    const out = await readCatalogServerFromDisk(path, "alpha");
+    expect(out?.discoveredAt).toBe(0);
+    expect(out?.tools).toEqual([{ name: "ok", description: "" }]);
+  });
+
+  it("tools 非数组 → 空清单（不是 undefined）", async () => {
+    const path = write(
+      tempDir(),
+      JSON.stringify({ entries: { alpha: { discoveredAt: 1, tools: null } } }),
+    );
+    expect(await readCatalogServerFromDisk(path, "alpha")).toEqual({
+      discoveredAt: 1,
+      tools: [],
+    });
   });
 });

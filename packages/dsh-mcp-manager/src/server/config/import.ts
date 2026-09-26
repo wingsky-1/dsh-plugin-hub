@@ -13,7 +13,7 @@ import type { ServerConfig } from "./impl/model/type.ts";
 
 /** 把一条远端（http/sse/url）条目映射为服务器配置：回答「远端条目如何映射？」——
  * url 必填 + headers 透传 + env 只记来源（http 传输不支持 env，合并进 headers 之外忽略）。
- * 本地（command）条目的映射在 fromClaudeEntry 内（不同问题）。 */
+ * 本地（command）条目的映射在 fromStdioEntry 内（不同问题）。 */
 function fromHttpEntry(name: string, entry: Record<string, unknown>): ServerConfig {
   if (typeof entry.url !== "string" || entry.url === "")
     throw new Error(`server "${name}": missing url`);
@@ -31,12 +31,10 @@ function fromHttpEntry(name: string, entry: Record<string, unknown>): ServerConf
   return server;
 }
 
-/** 把一条 mcpServers JSON 条目映射为服务器配置。 */
-export function fromClaudeEntry(name: string, entry: Record<string, unknown>): ServerConfig {
-  const type = entry.type;
-  if (type === "http" || type === "sse" || entry.url !== undefined) {
-    return fromHttpEntry(name, entry);
-  }
+/** 把一条本地（command）条目映射为服务器配置：回答「本地条目如何映射？」——
+ * command 必填；args / cwd / env 三项各自按形态透传（空 cwd 不落键、env 值一律 String 化）。
+ * 远端条目的映射在 fromHttpEntry 内（不同问题）。 */
+function fromStdioEntry(name: string, entry: Record<string, unknown>): ServerConfig {
   if (typeof entry.command !== "string" || entry.command === "") {
     throw new Error(`server "${name}": unsupported entry (need command or url)`);
   }
@@ -53,6 +51,15 @@ export function fromClaudeEntry(name: string, entry: Record<string, unknown>): S
     );
   }
   return server;
+}
+
+/** 把一条 mcpServers JSON 条目映射为服务器配置：先分派远端/本地，再交各自的映射。 */
+export function fromClaudeEntry(name: string, entry: Record<string, unknown>): ServerConfig {
+  const type = entry.type;
+  if (type === "http" || type === "sse" || entry.url !== undefined) {
+    return fromHttpEntry(name, entry);
+  }
+  return fromStdioEntry(name, entry);
 }
 
 /** 解析一段 mcpServers JSON 文本为配置列表。 */

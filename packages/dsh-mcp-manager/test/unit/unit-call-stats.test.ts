@@ -14,7 +14,15 @@
  * - 配置守护：updateUiConfig 不抹除既有 debug 配置
  * - B2（修复红测）：configure({enabled:false}) 关闭前最后一批脏数据必须刷盘
  */
-import { mkdtempSync, rmSync, existsSync, readFileSync, readdirSync, mkdirSync } from "node:fs";
+import {
+  mkdtempSync,
+  rmSync,
+  existsSync,
+  readFileSync,
+  readdirSync,
+  mkdirSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -216,6 +224,56 @@ describe("开启时正确聚合调用与渐进式披露指标并原子落盘", (
     const collector2 = new McpStatsCollector({ enabled: true, filePath: statsFile });
     const snap2 = collector2.snapshot();
     expect(snap2.disclosure.searches["find symbol"]).toBe(2);
+  });
+
+  // 工具明细表（tools Map）与服务器级计数是**不同形状**的还原，单独锁一条：
+  // 删掉 tools 还原那一句只打红这一条，上面的计数断言照绿。
+  it("重启恢复：新实例读回每工具指标（次数/时长/lastError）", () => {
+    const { statsFile } = enabledFixture();
+    const tools = new McpStatsCollector({ enabled: true, filePath: statsFile }).snapshot().servers
+      .codegraph.tools;
+    expect(tools.codegraph_search.calls).toBe(2);
+    expect(tools.codegraph_search.success).toBe(2);
+    expect(tools.codegraph_search.totalDurationMs).toBe(300);
+    expect(tools.codegraph_search.avgDurationMs).toBe(150);
+    expect(tools.codegraph_search.maxDurationMs).toBe(200);
+    expect(tools.codegraph_explore.calls).toBe(1);
+    expect(tools.codegraph_explore.errors).toBe(1);
+    expect(tools.codegraph_explore.lastError).toBeTruthy();
+  });
+
+  it("重启恢复：tools 缺失/异形 → 空明细表（不崩溃、不沿用旧表）", () => {
+    const dir = tempDir();
+    const statsFile = join(dir, "stats.json");
+    for (const servers of [
+      { codegraph: { totalCalls: 3, successCalls: 2, failedCalls: 1 } },
+      { codegraph: { totalCalls: 3, tools: null } },
+      { codegraph: { totalCalls: 3, tools: "not-a-table" } },
+    ]) {
+      writeFileSync(
+        statsFile,
+        JSON.stringify({ version: 1, startedAt: "t", servers, disclosure: {} }),
+        "utf8",
+      );
+      const restored = new McpStatsCollector({ enabled: true, filePath: statsFile }).snapshot();
+      expect(restored.servers.codegraph.totalCalls, JSON.stringify(servers)).toBe(3);
+      expect(Object.keys(restored.servers.codegraph.tools).length, JSON.stringify(servers)).toBe(0);
+    }
+  });
+
+  it("重启恢复：servers 整段缺失/异形/损坏 → 零服务器（容错不抛）", () => {
+    const dir = tempDir();
+    const statsFile = join(dir, "stats.json");
+    for (const payload of [
+      JSON.stringify({ version: 1 }),
+      JSON.stringify({ version: 1, servers: null }),
+      JSON.stringify({ version: 1, servers: [] }),
+      "not json",
+    ]) {
+      writeFileSync(statsFile, payload, "utf8");
+      const restored = new McpStatsCollector({ enabled: true, filePath: statsFile }).snapshot();
+      expect(Object.keys(restored.servers).length, payload).toBe(0);
+    }
   });
 });
 

@@ -74,7 +74,17 @@ export function officialMcpConfig(
   expandServerEnv: (server: ServerConfig) => ServerConfig,
 ): OfficialMcpConfig {
   const expanded = expandServerEnv(server);
-  const common: OfficialConfigCommon = {
+  const common = officialConfigCommon(server, id);
+  if (server.transport === "stdio") {
+    return stdioOfficialConfig(server, expanded, common);
+  }
+  return httpOfficialConfig(server, expanded, common);
+}
+
+/** 三个 transport 无关字段的公共段（serverName / failOnStartupError / toolCallTimeoutMs
+ *  各有一条口径，见调用处注释）。 */
+function officialConfigCommon(server: ServerConfig, id: string): OfficialConfigCommon {
+  return {
     serverName: id,
     // 恒 false（§3.3）：置 true 会让首连失败直接杀掉实例、官方后台重连随之被回收，等于放弃
     // 「常驻重连」语义；failed 因此是软失败——实例仍在，只是拿不到具体错因（§3.2-1）。
@@ -84,23 +94,37 @@ export function officialMcpConfig(
     // 缺失时给 {}：官方 resolveReconnectPolicy 先补默认值再判关系，本块不重抄一份默认值表。
     reconnect: server.reconnect ?? {},
   };
-  if (server.transport === "stdio") {
-    if (typeof server.command !== "string" || server.command === "") {
-      throw new Error(
-        "dsh-mcp-manager: stdio 服务器缺 command，拒绝装载（配置面应已由 normalizeServer 保证非空）",
-      );
-    }
-    return {
-      transport: "stdio",
-      command: server.command,
-      // 三个字段都显式给默认值：官方 schema 虽有默认，但依赖它等于把「配置里到底写没写」与官方
-      // rc 的内部实现绑在一起（§2.1 表）。cwd 的空串不能给 undefined——见 §2.3。
-      args: server.args ?? [],
-      env: expanded.env ?? {},
-      cwd: server.cwd ?? "",
-      ...common,
-    };
+}
+
+/** stdio 支：command 必填，其余三项显式给默认值。 */
+function stdioOfficialConfig(
+  server: ServerConfig,
+  expanded: ServerConfig,
+  common: OfficialConfigCommon,
+): OfficialMcpConfig {
+  if (typeof server.command !== "string" || server.command === "") {
+    throw new Error(
+      "dsh-mcp-manager: stdio 服务器缺 command，拒绝装载（配置面应已由 normalizeServer 保证非空）",
+    );
   }
+  return {
+    transport: "stdio",
+    command: server.command,
+    // 三个字段都显式给默认值：官方 schema 虽有默认，但依赖它等于把「配置里到底写没写」与官方
+    // rc 的内部实现绑在一起（§2.1 表）。cwd 的空串不能给 undefined——见 §2.3。
+    args: server.args ?? [],
+    env: expanded.env ?? {},
+    cwd: server.cwd ?? "",
+    ...common,
+  };
+}
+
+/** streamable-http 支：url 必填，headers 取展开后的形态。 */
+function httpOfficialConfig(
+  server: ServerConfig,
+  expanded: ServerConfig,
+  common: OfficialConfigCommon,
+): OfficialMcpConfig {
   if (typeof server.url !== "string" || server.url === "") {
     throw new Error(
       "dsh-mcp-manager: streamable-http 服务器缺 url，拒绝装载（配置面应已由 normalizeServer 保证非空）",

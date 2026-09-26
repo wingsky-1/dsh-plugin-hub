@@ -39,6 +39,29 @@ export interface CatalogDecision {
 }
 
 /**
+ * 本轮不注入时的决策：撤掉本轮刚注入的那条目录消息（幂等——本轮没注入过就原样回）。
+ * 「历史 digest 相同」与「从未发布且无服务器」两条不注入分支共用此写法（同一份撤销动作）。
+ */
+function withoutInjectedCatalog(
+  decision: CatalogDecision,
+  existing: CatalogMessage | undefined,
+): CatalogDecision {
+  if (existing === undefined) return decision;
+  return {
+    kind: "enter",
+    messages: decision.messages.filter((message) => message.id !== existing.id),
+  };
+}
+
+/** 本轮已注入的那条目录消息，其 digest 是否已等于要注入的 digest（相等 → 本轮原样回，
+ * 不重复注入也不撤销）。本轮没注入过（existing 为 undefined）即不等。 */
+function injectedDigestMatches(existing: CatalogMessage | undefined, digest: string): boolean {
+  if (existing === undefined) return false;
+  const existingEntries = resolveCatalogEntries(existing.source);
+  return existingEntries !== undefined && digestCatalogEntries(existingEntries) === digest;
+}
+
+/**
  * 目录注入决策（纯函数，pre-step 监听器薄调用，便于单测）。
  * 完全复刻官方 dsh-tool-skill 的 catalog 语义（根治重复注入）：
  * 1. 历史（session.snapshotEvents()）digest 相同 → 本轮不注入（撤销本轮已注入的）——**去重源是历史而非本轮消息**；
@@ -69,25 +92,11 @@ export function resolveCatalogInjection(
 
   if (history.visibleDigest === digest) {
     // 历史已发布相同目录 → 本轮不注入；撤销本轮刚注入的（幂等）。
-    return existing === undefined
-      ? decision
-      : {
-          kind: "enter",
-          messages: decision.messages.filter((message) => message.id !== existing.id),
-        };
+    return withoutInjectedCatalog(decision, existing);
   }
-  if (existing !== undefined) {
-    const existingEntries = resolveCatalogEntries(existing.source);
-    if (existingEntries !== undefined && digestCatalogEntries(existingEntries) === digest)
-      return decision;
-  }
+  if (injectedDigestMatches(existing, digest)) return decision;
   if (!history.published && entries.length === 0) {
-    return existing === undefined
-      ? decision
-      : {
-          kind: "enter",
-          messages: decision.messages.filter((message) => message.id !== existing.id),
-        };
+    return withoutInjectedCatalog(decision, existing);
   }
   const catalog = history.published
     ? renderMcpCatalogUpdate(entries)

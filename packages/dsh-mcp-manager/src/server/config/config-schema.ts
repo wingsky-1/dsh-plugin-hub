@@ -35,12 +35,13 @@ const DebugConfigSchema = z
   })
   .default({ callStats: false, statsFile: "" });
 
-const UI_POSITIONS: UiPlacementConfig["position"][] = [
+// 集合内容与下方 UiConfigSchema 的 z.union 逐项对应：加锚点时两处同改（归一化白名单与 schema 校验同源）。
+const UI_POSITIONS: ReadonlySet<string> = new Set([
   "top-right",
   "top-left",
   "bottom-right",
   "bottom-left",
-];
+]);
 
 // 官方 ConfigForm 以 meta.volatile 识别稳定可编辑子树；extra 写入同一 metadata，
 // 同时保持本包对外 callable schema 的平面输入/输出类型。
@@ -68,25 +69,38 @@ const UiConfigSchema = z
   })
   .extra("volatile", true);
 
+/** 配置袋收窄：非空对象才是可按键读取的形态，其余（null / 标量 / undefined）一律视作空袋。 */
+function isConfigBag(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+/** position 是否落在受支持锚点上；白名单外（含缺省）一律回落默认，不抛。 */
+function isUiPosition(value: unknown): value is UiPlacementConfig["position"] {
+  return typeof value === "string" && UI_POSITIONS.has(value);
+}
+
+/** 实际承载 UI 值的配置袋：优先嵌套 ui（新 Config 形态），否则顶层（旧隐藏命名空间 / 客户端扁平形态）。 */
+function uiValueBag(raw: unknown): Record<string, unknown> {
+  if (!isConfigBag(raw)) return {};
+  return isConfigBag(raw.ui) ? raw.ui : raw;
+}
+
+/** 数值净化：非有限数（含非数字）回落默认，其余 clamp 到非负并四舍五入。 */
+function clampNum(value: unknown, dflt: number): number {
+  return typeof value === "number" && Number.isFinite(value)
+    ? Math.max(0, Math.round(value))
+    : dflt;
+}
+
 /**
  * 归一化浮窗 UI 配置（纯函数，可单测）。
  * 兼容三种形态：新 `Config.ui` 嵌套、旧隐藏命名空间的扁平 `position/offset`、
  * 客户端扁平 `position/offsetX/offsetY/blankY`。非法或缺失 → 安全回退默认，不抛。
  */
 export function normalizeUiConfig(raw: unknown): ClientUiConfig {
-  const src = (typeof raw === "object" && raw !== null ? raw : {}) as Record<string, unknown>;
-  const ui = (
-    typeof src.ui === "object" && src.ui !== null ? (src.ui as Record<string, unknown>) : src
-  ) as Record<string, unknown>;
-  const position = UI_POSITIONS.includes(ui.position as UiPlacementConfig["position"])
-    ? (ui.position as UiPlacementConfig["position"])
-    : DEFAULT_UI_CONFIG.position;
-  const offset = (typeof ui.offset === "object" && ui.offset !== null ? ui.offset : {}) as Record<
-    string,
-    unknown
-  >;
-  const clampNum = (value: unknown, dflt: number): number =>
-    typeof value === "number" && Number.isFinite(value) ? Math.max(0, Math.round(value)) : dflt;
+  const ui = uiValueBag(raw);
+  const position = isUiPosition(ui.position) ? ui.position : DEFAULT_UI_CONFIG.position;
+  const offset = isConfigBag(ui.offset) ? ui.offset : {};
   const offsetX = clampNum(ui.offsetX ?? offset.x, DEFAULT_UI_CONFIG.offset.x);
   const offsetY = clampNum(ui.offsetY ?? offset.y, DEFAULT_UI_CONFIG.offset.y);
   const blankY = clampNum(ui.blankY ?? offset.blankY, DEFAULT_UI_CONFIG.offset.blankY);

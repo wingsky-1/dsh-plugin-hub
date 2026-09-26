@@ -144,13 +144,8 @@ class CatalogDirectory {
         typeof parsed.entries === "object" &&
         parsed.entries !== null
       ) {
-        for (const [serverName, entry] of Object.entries(parsed.entries)) {
-          const rec = entry as { discoveredAt?: unknown; tools?: unknown } | undefined;
-          if (typeof rec !== "object" || rec === null) continue;
-          servers.set(serverName, {
-            discoveredAt: typeof rec.discoveredAt === "number" ? rec.discoveredAt : 0,
-            tools: parsePersistedTools(rec.tools),
-          });
+        for (const [serverName, entry] of parsePersistedEntries(parsed.entries)) {
+          servers.set(serverName, entry);
         }
       }
     } catch {
@@ -384,32 +379,54 @@ export function boundCatalogTools(
     const name = String(tool.name ?? "");
     if (name === "") continue;
     const description = typeof tool.description === "string" ? tool.description : "";
-    // B9：描述按 UTF-8 字节截断（slice 按字符会让中文等多字节场景超上限）；
-    // 逐字符累加字节，保证截断点落在字符边界（不产生替换符）。
-    let desc = description;
-    if (Buffer.byteLength(desc, "utf8") > MAX_BYTES_PER_TOOL) {
-      let bytes = 0;
-      let cut = 0;
-      while (
-        cut < desc.length &&
-        bytes + Buffer.byteLength(desc[cut], "utf8") <= MAX_BYTES_PER_TOOL
-      ) {
-        bytes += Buffer.byteLength(desc[cut], "utf8");
-        cut += 1;
-      }
-      desc = desc.slice(0, cut);
-    }
-    bounded.set(name, {
-      description: desc,
-      inputSchema: (tool.inputSchema ?? {}) as Record<string, unknown>,
-    });
+    const desc = boundDescription(description, MAX_BYTES_PER_TOOL);
+    const inputSchema = (tool.inputSchema ?? {}) as Record<string, unknown>;
+    bounded.set(name, { description: desc, inputSchema });
     // B9：totalBytes 全字节口径（JSON.stringify().length 按码元计，低估字节数）
-    totalBytes +=
-      Buffer.byteLength(desc, "utf8") +
-      Buffer.byteLength(JSON.stringify(bounded.get(name)?.inputSchema ?? {}), "utf8");
+    totalBytes += entryBytes(desc, inputSchema);
     if (totalBytes > MAX_TOTAL_CATALOG_BYTES) break;
   }
   return bounded;
+}
+
+/** B9：描述按 UTF-8 字节上限截断——slice 按字符会让中文等多字节场景超上限；
+ *  逐字符累加字节，保证截断点落在字符边界（不产生替换符）。 */
+function boundDescription(description: string, maxBytes: number): string {
+  if (Buffer.byteLength(description, "utf8") <= maxBytes) return description;
+  let bytes = 0;
+  let cut = 0;
+  while (
+    cut < description.length &&
+    bytes + Buffer.byteLength(description[cut], "utf8") <= maxBytes
+  ) {
+    bytes += Buffer.byteLength(description[cut], "utf8");
+    cut += 1;
+  }
+  return description.slice(0, cut);
+}
+
+/** B9：单条装箱后的字节开销 = 描述字节 + inputSchema 的 JSON 串字节。 */
+function entryBytes(description: string, inputSchema: unknown): number {
+  return (
+    Buffer.byteLength(description, "utf8") +
+    Buffer.byteLength(JSON.stringify(inputSchema ?? {}), "utf8")
+  );
+}
+
+/** 落盘 entries → 内存条目表：回答「这一项长什么样？」——逐条校验 rec 形状，
+ *  discoveredAt 非数字归 0，工具清单走 parsePersistedTools。形状清洗只此一处，
+ *  ensureRootLoaded 只管何时载入。 */
+function parsePersistedEntries(entries: Record<string, unknown>): Map<string, CatalogServer> {
+  const servers = new Map<string, CatalogServer>();
+  for (const [serverName, entry] of Object.entries(entries)) {
+    const rec = entry as { discoveredAt?: unknown; tools?: unknown } | undefined;
+    if (typeof rec !== "object" || rec === null) continue;
+    servers.set(serverName, {
+      discoveredAt: typeof rec.discoveredAt === "number" ? rec.discoveredAt : 0,
+      tools: parsePersistedTools(rec.tools),
+    });
+  }
+  return servers;
 }
 
 /** 磁盘条目里的工具数组 → 内存工具表（非字符串名跳过；描述与 schema 缺省补空）。 */

@@ -165,21 +165,32 @@ export async function readCatalogServerFromDisk(
 ): Promise<PersistedCatalogServer | undefined> {
   try {
     const parsed = await readJsonFile<{ entries?: Record<string, unknown> } | null>(file);
-    const entry =
-      parsed &&
-      typeof parsed === "object" &&
-      parsed.entries !== null &&
-      typeof parsed.entries === "object"
-        ? (parsed.entries as Record<string, unknown>)[serverName]
-        : undefined;
-    if (typeof entry !== "object" || entry === null) return undefined;
-    const rec = entry as { discoveredAt?: unknown; tools?: unknown } | undefined;
-    const tools = cleanPersistedTools(rec?.tools);
-    return { discoveredAt: typeof rec?.discoveredAt === "number" ? rec.discoveredAt : 0, tools };
+    const entry = locatePersistedEntry(parsed, serverName);
+    if (!isPersistedRecord(entry)) return undefined;
+    const rec: { discoveredAt?: unknown; tools?: unknown } = entry;
+    return {
+      discoveredAt: typeof rec.discoveredAt === "number" ? rec.discoveredAt : 0,
+      tools: cleanPersistedTools(rec.tools),
+    };
   } catch {
     // 损坏缓存忽略
     return undefined;
   }
+}
+
+/** 落盘载荷收窄：非空对象才有可按键读取的形态，其余一律视作「没有这一项」。 */
+function isPersistedRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+/** 从落盘载荷里定位**单个服务器**的原始条目：回答「这一项在哪？」——载荷缺失/异形、
+ *  entries 缺失/异形、以及未命中该名字，一律 undefined（与原守卫逐项同口径，未改判定顺序）。
+ *  条目自身的形状清洗在 cleanPersistedTools / readCatalogServerFromDisk 内（不同问题）。 */
+function locatePersistedEntry(parsed: unknown, serverName: string): unknown {
+  if (!isPersistedRecord(parsed)) return undefined;
+  const entries: unknown = parsed.entries;
+  if (!isPersistedRecord(entries)) return undefined;
+  return entries[serverName];
 }
 
 /** 从持久化载荷解析 disabledTools 三层结构（损坏/缺失 → 空；容错不抛）。

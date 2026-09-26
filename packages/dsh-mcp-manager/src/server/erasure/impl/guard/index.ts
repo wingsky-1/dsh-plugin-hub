@@ -59,14 +59,17 @@ function mcpDeclName(line: string): string | undefined {
   const name = rest.slice(0, sep);
   if (name.length === 0) return undefined;
   for (const ch of name) {
-    const word =
-      (ch >= "a" && ch <= "z") ||
-      (ch >= "A" && ch <= "Z") ||
-      (ch >= "0" && ch <= "9") ||
-      ch === "_";
-    if (!word) return undefined;
+    if (!isDeclIdent(ch)) return undefined;
   }
   return name;
+}
+
+/** 声明名是否恒为标识符字符：回答「这一段名字算不算 mcp__ 工具名？」——ASCII 字母/数字/下划线。
+ *  擦除面只认这四类字符（SDK 生成的工具名恒满足）；放宽即扩大擦除范围，故单点收口。 */
+function isDeclIdent(ch: string): boolean {
+  return (
+    (ch >= "a" && ch <= "z") || (ch >= "A" && ch <= "Z") || (ch >= "0" && ch <= "9") || ch === "_"
+  );
 }
 
 /** 行内花括号净增量（输出映射块收口跟踪用；只数字面量比较）。 */

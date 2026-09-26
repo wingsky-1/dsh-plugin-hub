@@ -66,19 +66,68 @@ function restoreServerSnapshot(
 ): void {
   if (servers === undefined || servers === null || typeof servers !== "object") return;
   for (const [sName, sVal] of Object.entries(servers)) {
-    const toolsMap = new Map<string, ToolCallMetric>();
-    if (sVal.tools !== undefined && sVal.tools !== null && typeof sVal.tools === "object") {
-      for (const [tName, tVal] of Object.entries(sVal.tools)) {
-        toolsMap.set(tName, { ...tVal });
-      }
-    }
     target.set(sName, {
       totalCalls: sVal.totalCalls ?? 0,
       successCalls: sVal.successCalls ?? 0,
       failedCalls: sVal.failedCalls ?? 0,
-      tools: toolsMap,
+      tools: restoreToolMetrics(sVal.tools),
     });
   }
+}
+
+/** 还原单个服务器的工具明细表：tools 缺失/异形 → 空表（与原三段守卫同口径——
+ *  typeof undefined !== "object"，故 undefined 由第一段即挡下，判定顺序未改）。
+ *
+ * 模块函数而非私有方法：理由同上（导出面零 diff）。 */
+function restoreToolMetrics(tools: unknown): Map<string, ToolCallMetric> {
+  const toolsMap = new Map<string, ToolCallMetric>();
+  if (typeof tools !== "object" || tools === null) return toolsMap;
+  for (const [tName, tVal] of Object.entries(tools)) {
+    toolsMap.set(tName, { ...(tVal as ToolCallMetric) });
+  }
+  return toolsMap;
+}
+
+/** 单个 server 的聚合桶（与 McpStatsCollector 私有字段同形；提到模块级供取桶函数复用，
+ *  私有字段的 .d.ts 形状不变——声明块里仍只出 `private servers;`）。 */
+interface ServerStatsBucket {
+  totalCalls: number;
+  successCalls: number;
+  failedCalls: number;
+  tools: Map<string, ToolCallMetric>;
+}
+
+/** 取（缺则就地建）server 聚合桶：逐调用懒建，未开启时零分配。 */
+function serverBucketFor(
+  servers: Map<string, ServerStatsBucket>,
+  server: string,
+): ServerStatsBucket {
+  const found = servers.get(server);
+  if (found !== undefined) return found;
+  const created: ServerStatsBucket = {
+    totalCalls: 0,
+    successCalls: 0,
+    failedCalls: 0,
+    tools: new Map(),
+  };
+  servers.set(server, created);
+  return created;
+}
+
+/** 取（缺则就地建）tool 指标记录：桶内逐工具懒建。 */
+function toolMetricFor(bucket: ServerStatsBucket, tool: string): ToolCallMetric {
+  const found = bucket.tools.get(tool);
+  if (found !== undefined) return found;
+  const created: ToolCallMetric = {
+    calls: 0,
+    success: 0,
+    errors: 0,
+    totalDurationMs: 0,
+    avgDurationMs: 0,
+    maxDurationMs: 0,
+  };
+  bucket.tools.set(tool, created);
+  return created;
 }
 
 export class McpStatsCollector {
@@ -87,15 +136,7 @@ export class McpStatsCollector {
   private logger?: { info?: (msg: string) => void; debug?: (msg: string) => void };
   private startedAt: string = new Date().toISOString();
   private updatedAt: string = new Date().toISOString();
-  private servers: Map<
-    string,
-    {
-      totalCalls: number;
-      successCalls: number;
-      failedCalls: number;
-      tools: Map<string, ToolCallMetric>;
-    }
-  > = new Map();
+  private servers: Map<string, ServerStatsBucket> = new Map();
   private disclosure: ProgressiveDisclosureStats = {
     searches: {},
     lists: {},
@@ -180,11 +221,7 @@ export class McpStatsCollector {
     if (!this.enabled) return;
 
     this.updatedAt = new Date().toISOString();
-    let s = this.servers.get(server);
-    if (!s) {
-      s = { totalCalls: 0, successCalls: 0, failedCalls: 0, tools: new Map() };
-      this.servers.set(server, s);
-    }
+    const s = serverBucketFor(this.servers, server);
     s.totalCalls += 1;
     if (success) {
       s.successCalls += 1;
@@ -192,18 +229,7 @@ export class McpStatsCollector {
       s.failedCalls += 1;
     }
 
-    let t = s.tools.get(tool);
-    if (!t) {
-      t = {
-        calls: 0,
-        success: 0,
-        errors: 0,
-        totalDurationMs: 0,
-        avgDurationMs: 0,
-        maxDurationMs: 0,
-      };
-      s.tools.set(tool, t);
-    }
+    const t = toolMetricFor(s, tool);
     t.calls += 1;
     if (success) {
       t.success += 1;

@@ -72,9 +72,6 @@ export function makeCatalogViewFor(host: CatalogViewHost): CatalogViewResolver {
     root: string,
     name: string,
   ): Promise<string | undefined> {
-    const {
-      store: { readCatalogServerFromDisk },
-    } = catalogPorts.get();
     const catalog = catalogDirectory.entryFor(root, name);
     const tools = catalog?.tools;
     if (tools !== undefined && tools.size > 0 && catalog?.unavailable === undefined) {
@@ -82,6 +79,15 @@ export function makeCatalogViewFor(host: CatalogViewHost): CatalogViewResolver {
       return summarizeToolDescriptions(tools as Map<string, { description?: unknown }>);
     }
     // 内存无该服务器数据（单元未建 / 条目缺失 / 发现失败）→ 磁盘 last-good 兜底。
+    return diskCatalogSummary(root, name);
+  }
+
+  /** 磁盘 last-good 那一级：按 mtime 缓存的单服务器摘要（读盘 + 解析 + 回填缓存）。
+   * 与上面的内存级是两种数据来源、两套失效口径，故分块；判定顺序逐句照旧。 */
+  async function diskCatalogSummary(root: string, name: string): Promise<string | undefined> {
+    const {
+      store: { readCatalogServerFromDisk },
+    } = catalogPorts.get();
     const file = host.catalogCachePathFor(root);
     const cachedRoot = diskCatalogSummaryCache.get(root);
     const cached = cachedRoot?.get(name);
@@ -108,29 +114,41 @@ export function makeCatalogViewFor(host: CatalogViewHost): CatalogViewResolver {
     return summary;
   }
 
-  return async (cwd, servers): Promise<CatalogCache> => {
+  /** 项目 root 只解析一次（所有 project scope 服务器共用；空 cwd → 无项目单元）。 */
+  async function projectRootOf(cwd: string | undefined): Promise<string | undefined> {
     const {
       workspace: { normalizedProjectRoot },
     } = catalogPorts.get();
-    const catalogCache = host.getCatalogCache();
-    const view: CatalogCache = new Map();
-    for (const [name, entry] of catalogCache) view.set(name, { summary: entry.summary });
-    const mw = host.getMiddleware();
-    if (mw === undefined) return view;
-    // 项目 root 只解析一次（所有 project scope 服务器共用；空 cwd → 无项目单元）。
-    const cwdRoot =
-      cwd === undefined || cwd === null || cwd === ""
-        ? undefined
-        : await normalizedProjectRoot(cwd);
+    return cwd === undefined || cwd === null || cwd === ""
+      ? undefined
+      : await normalizedProjectRoot(cwd);
+  }
+
+  /** 逐服务器按「scope + 模式」用中间层目录摘要覆盖 B 基底；跨 scope 不混配
+   * （同名项目级/全局是两份配置）。命中不到摘要者保留 B 那一份。 */
+  async function overlayFromMiddleware(
+    view: CatalogCache,
+    servers: Map<string, { server: ServerConfig; scope: string }>,
+    mw: McpMiddleware,
+    cwdRoot: string | undefined,
+  ): Promise<void> {
     for (const [name, { scope }] of servers) {
       if (name === "") continue;
       // root 解析：project scope → 项目 root；global scope → @global。
-      // 跨 scope 不混配（同名项目级/全局是两份配置）。
       const root = scope === SCOPE_PROJECT ? cwdRoot : MIDDLEWARE_GLOBAL_ROOT;
       if (root === undefined) continue;
       const summary = await middlewareCatalogSummary(mw, root, name);
       if (summary !== undefined) view.set(name, { summary });
     }
+  }
+
+  return async (cwd, servers): Promise<CatalogCache> => {
+    const catalogCache = host.getCatalogCache();
+    const view: CatalogCache = new Map();
+    for (const [name, entry] of catalogCache) view.set(name, { summary: entry.summary });
+    const mw = host.getMiddleware();
+    if (mw === undefined) return view;
+    await overlayFromMiddleware(view, servers, mw, await projectRootOf(cwd));
     return view;
   };
 }
