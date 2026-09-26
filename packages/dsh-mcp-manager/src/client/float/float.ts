@@ -12,6 +12,7 @@ import { STATUS_ORDER, statusDot } from "../core/constants.ts";
 import { tStatus } from "../core/i18n.ts";
 import { t } from "../../../../../shared/client/i18n.js";
 import type { McpClientContext, McpServerListEntry, McpState, UiActions } from "../core/state.ts";
+import type { ClientUiConfig, FloatBreakpoint, ViewportPoint } from "../../shared/interface.ts";
 import {
   DEFAULT_Z_INDEX_BASE,
   breakpointForWidth,
@@ -30,35 +31,50 @@ function replayAnim(node: Element): void {
   style.animation = "";
 }
 
+/** 胶囊状态点配色：失败红 / 有连接绿 / 否则中性灰（与历史三态一致）。 */
+export function pillDotColor(fail: boolean, connected: number): string {
+  if (fail) return "var(--dsw-alias-state-error-primary,#e0483e)";
+  if (connected > 0) return "var(--dsw-alias-state-success-primary,#0f9d6e)";
+  return "var(--dsw-alias-label-tertiary,#9aa1ad)";
+}
+
+/**
+ * 胶囊的 title / aria-label：一台服务器都没有时不设（保留宿主默认 tooltip），
+ * 有失败时追加失败计数，否则 aria 给出「已连/总数」（无总数时 title 保持朴素）。
+ */
+export function pillHints(
+  total: number,
+  bad: number,
+  connected: number,
+): { title: string; aria: string } {
+  const failed = t("healthFailed", { n: bad });
+  return {
+    title: bad > 0 ? `${t("floatTitle")} · ${failed}` : t("floatTitle"),
+    aria:
+      bad > 0
+        ? `${t("floatAriaLabel")} · ${failed}`
+        : `${t("floatAriaLabel")} · ${connected}/${total}`,
+  };
+}
+
 /** 渲染浮窗胶囊（状态点 + 摘要计数 + 失败/中性态）。 */
 export function renderPill(state: McpState): void {
   if (state.floatPill === undefined) return;
   const ok = state.counts.connected ?? 0;
   const bad = (state.counts.failed ?? 0) + (state.counts.reconnecting ?? 0);
   const total = state.servers.length;
-  const label = total > 0 ? `MCP ${ok}/${total}` : "MCP";
   const fail = bad > 0;
-  // 语义：失败红 / 有连接绿 / 否则中性灰（与历史三态一致）
-  const dotColor = fail
-    ? "var(--dsw-alias-state-error-primary,#e0483e)"
-    : ok > 0
-      ? "var(--dsw-alias-state-success-primary,#0f9d6e)"
-      : "var(--dsw-alias-label-tertiary,#9aa1ad)";
   state.floatPill.classList.toggle("dm-float--fail", fail);
   state.floatPill.textContent = "";
-  state.floatPill.appendChild(el("span", { class: "dm-dot", style: `background:${dotColor}` }));
+  state.floatPill.appendChild(
+    el("span", { class: "dm-dot", style: `background:${pillDotColor(fail, ok)}` }),
+  );
   if (fail) state.floatPill.appendChild(el("span", { class: "dm-float-fail", text: "!" }));
-  state.floatPill.appendChild(el("span", { text: label }));
-  if (total > 0) {
-    state.floatPill.title =
-      bad > 0 ? `${t("floatTitle")} · ${t("healthFailed", { n: bad })}` : t("floatTitle");
-    state.floatPill.setAttribute(
-      "aria-label",
-      bad > 0
-        ? `${t("floatAriaLabel")} · ${t("healthFailed", { n: bad })}`
-        : `${t("floatAriaLabel")} · ${ok}/${total}`,
-    );
-  }
+  state.floatPill.appendChild(el("span", { text: total > 0 ? `MCP ${ok}/${total}` : "MCP" }));
+  if (total === 0) return;
+  const hints = pillHints(total, bad, ok);
+  state.floatPill.title = hints.title;
+  state.floatPill.setAttribute("aria-label", hints.aria);
 }
 
 /**
@@ -137,6 +153,94 @@ function floatActionClass(server: McpServerListEntry): string {
   return "dm-float-action";
 }
 
+/**
+ * 一行上的动作描述：按钮外观 + 打到哪个口 + 请求形状 + 失败告警的稳定标识。
+ * tag 是 console 文案用的动作名（与 i18n 文案解耦：翻界面不改日志）。
+ */
+interface RowAction {
+  className: string;
+  label: string;
+  url: string;
+  method: "POST" | "PATCH";
+  tag: string;
+  /** 只有 PATCH 动作带载荷（连接/断开是纯 POST，历史形状如此）。 */
+  body?: string;
+}
+
+/** 主操作（每行恰好一个）：connected → 断开；disabled → 启用；其余 → 连接。 */
+export function primaryRowAction(
+  server: McpServerListEntry,
+  state: McpState,
+  cwdQuery: string,
+): RowAction {
+  const query = `name=${encodeURIComponent(server.name)}&scope=${server.scope}${cwdQuery}`;
+  const className = floatActionClass(server);
+  if (server.status === "connected") {
+    return {
+      className,
+      label: t("disconnect"),
+      url: `${state.API.disconnect}?${query}`,
+      method: "POST",
+      tag: "disconnect",
+    };
+  }
+  if (server.status === "disabled") {
+    return {
+      className,
+      label: t("enable"),
+      url: `${state.API.servers}?${query}`,
+      method: "PATCH",
+      tag: "enable",
+      body: JSON.stringify({ enabled: true }),
+    };
+  }
+  return {
+    className,
+    label: t("connect"),
+    url: `${state.API.connect}?${query}`,
+    method: "POST",
+    tag: "connect",
+  };
+}
+
+/** 禁用动作（仅非 disabled 行有）：URL 不带 cwd（历史形状如此，勿补）。 */
+export function disableRowAction(server: McpServerListEntry, state: McpState): RowAction {
+  return {
+    className: "dm-float-action",
+    label: t("disable"),
+    url: `${state.API.servers}?name=${encodeURIComponent(server.name)}&scope=${server.scope}`,
+    method: "PATCH",
+    tag: "disable",
+    body: JSON.stringify({ enabled: false }),
+  };
+}
+
+/** 请求 init：带载荷的 PATCH 补 content-type；纯 POST 不带头（历史形状）。 */
+export function rowRequestInit(action: RowAction): {
+  method: string;
+  headers?: Record<string, string>;
+  body?: string;
+} {
+  if (action.body === undefined) return { method: action.method };
+  return {
+    method: action.method,
+    headers: { "content-type": "application/json" },
+    body: action.body,
+  };
+}
+
+/** 动作按钮：点一下打口 → 成功后整面板刷新；失败只 warn（面板下次刷新自然回正）。 */
+function rowActionButton(action: RowAction, actions: UiActions): HTMLElement {
+  const button = el("button", { class: action.className });
+  button.textContent = action.label;
+  button.addEventListener("click", () => {
+    void api<unknown>(action.url, rowRequestInit(action))
+      .then(() => actions.refresh())
+      .catch((error: unknown) => console.warn(`[dsh-mcp-manager] ${action.tag} failed:`, error));
+  });
+  return button;
+}
+
 /** 浮窗面板里的一行服务器。 */
 function renderFloatRow(
   server: McpServerListEntry,
@@ -161,64 +265,11 @@ function renderFloatRow(
     }),
   );
   const actionsEl = el("div", { class: "dm-float-actions" });
-  const cwdQuery = cwdQueryOf(state);
-  if (server.status === "connected") {
-    const action = el("button", { class: floatActionClass(server) });
-    action.textContent = t("disconnect");
-    action.addEventListener("click", () => {
-      void api<unknown>(
-        `${state.API.disconnect}?name=${encodeURIComponent(server.name)}&scope=${server.scope}${cwdQuery}`,
-        { method: "POST" },
-      )
-        .then(() => actions.refresh())
-        .catch((error: unknown) => console.warn("[dsh-mcp-manager] disconnect failed:", error));
-    });
-    actionsEl.appendChild(action);
-  } else if (server.status === "disabled") {
-    const action = el("button", { class: floatActionClass(server) });
-    action.textContent = t("enable");
-    action.addEventListener("click", () => {
-      void api<unknown>(
-        `${state.API.servers}?name=${encodeURIComponent(server.name)}&scope=${server.scope}${cwdQuery}`,
-        {
-          method: "PATCH",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ enabled: true }),
-        },
-      )
-        .then(() => actions.refresh())
-        .catch((error: unknown) => console.warn("[dsh-mcp-manager] enable failed:", error));
-    });
-    actionsEl.appendChild(action);
-  } else {
-    const action = el("button", { class: floatActionClass(server) });
-    action.textContent = t("connect");
-    action.addEventListener("click", () => {
-      void api<unknown>(
-        `${state.API.connect}?name=${encodeURIComponent(server.name)}&scope=${server.scope}${cwdQuery}`,
-        { method: "POST" },
-      )
-        .then(() => actions.refresh())
-        .catch((error: unknown) => console.warn("[dsh-mcp-manager] connect failed:", error));
-    });
-    actionsEl.appendChild(action);
-  }
+  actionsEl.appendChild(
+    rowActionButton(primaryRowAction(server, state, cwdQueryOf(state)), actions),
+  );
   if (server.status !== "disabled") {
-    const disable = el("button", { class: "dm-float-action" });
-    disable.textContent = t("disable");
-    disable.addEventListener("click", () => {
-      void api<unknown>(
-        `${state.API.servers}?name=${encodeURIComponent(server.name)}&scope=${server.scope}`,
-        {
-          method: "PATCH",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ enabled: false }),
-        },
-      )
-        .then(() => actions.refresh())
-        .catch((error: unknown) => console.warn("[dsh-mcp-manager] disable failed:", error));
-    });
-    actionsEl.appendChild(disable);
+    actionsEl.appendChild(rowActionButton(disableRowAction(server, state), actions));
   }
   row.appendChild(actionsEl);
   if (opts.tools)
@@ -251,6 +302,30 @@ function renderFloatHealth(state: McpState): HTMLElement {
   return line;
 }
 
+/**
+ * 按状态分桶（桶序 = STATUS_ORDER，固定六态先建空桶）。未知状态归 stopped 桶——
+ * 六态是唯一合法取值域，落到兜底桶而不是丢弃该行。
+ */
+export function bucketServersByStatus(
+  list: McpServerListEntry[],
+): Map<string, McpServerListEntry[]> {
+  const byStatus = new Map<string, McpServerListEntry[]>();
+  for (const group of STATUS_ORDER) byStatus.set(group.key, []);
+  for (const server of list) {
+    const bucket = byStatus.get(server.status) ?? byStatus.get("stopped");
+    if (bucket !== undefined) bucket.push(server);
+  }
+  return byStatus;
+}
+
+/** 行级 stagger 序号：动画关闭返回 undefined（该行不加 dm-stagger、不进序）。 */
+export function nextStagger(staggerBase: { n: number }, animate: boolean): number | undefined {
+  if (!animate) return undefined;
+  const current = staggerBase.n;
+  staggerBase.n += 1;
+  return current;
+}
+
 /** 按 scope 过滤并按状态序渲染一组服务器。 */
 function appendScopeGroup(
   panel: Element,
@@ -272,32 +347,63 @@ function appendScopeGroup(
       text: titleOverride ?? (scope === "project" ? t("groupProject") : t("groupGlobal")),
     }),
   );
-  const byStatus = new Map<string, McpServerListEntry[]>();
-  for (const group of STATUS_ORDER) byStatus.set(group.key, []);
-  for (const server of list) {
-    const bucket = byStatus.get(server.status);
-    if (bucket !== undefined) bucket.push(server);
-    else if (byStatus.has("stopped")) byStatus.get("stopped")!.push(server);
-  }
+  const byStatus = bucketServersByStatus(list);
   for (const group of STATUS_ORDER) {
     const bucket = byStatus.get(group.key) ?? [];
     if (bucket.length === 0) continue;
-    for (const server of [...bucket].sort((a: McpServerListEntry, b: McpServerListEntry) =>
+    const ordered = [...bucket].sort((a: McpServerListEntry, b: McpServerListEntry) =>
       a.name.localeCompare(b.name),
-    )) {
-      const stagger = animateRows ? staggerBase.n : undefined;
-      if (stagger !== undefined) staggerBase.n += 1;
+    );
+    for (const server of ordered) {
       section.appendChild(
-        renderFloatRow(server, state, actions, { tools: true, openTools, stagger }),
+        renderFloatRow(server, state, actions, {
+          tools: true,
+          openTools,
+          stagger: nextStagger(staggerBase, animateRows),
+        }),
       );
     }
   }
   panel.appendChild(section);
 }
 
+/** 浮窗标题的项目名：项目根末段；无项目根回落「全局会话」。 */
+export function floatProjectName(state: McpState): string {
+  const root = state.projectRoot;
+  if (typeof root !== "string" || root === "") return t("floatGlobalSession");
+  return root.split(/[\\/]/).filter(Boolean).pop() ?? root;
+}
+
+/** 收起浮窗并打开主面板（空态 CTA 与标题「管理」同动作）。 */
+function openMainPanel(state: McpState, actions: UiActions): void {
+  toggleFloat(state, actions, false);
+  actions.showPanel();
+}
+
+/** 浮窗空态：一台服务器都没有时的说明 + 引导按钮。 */
+function renderFloatEmpty(state: McpState, actions: UiActions): HTMLElement {
+  const empty = el("div", { class: "dm-status" });
+  empty.appendChild(el("div", { text: t("floatEmptyTitle") }));
+  empty.appendChild(
+    el("button", {
+      class: "dm-float-action dm-primary",
+      text: t("floatEmptyCta"),
+      style: "margin-top:12px",
+      onclick: () => openMainPanel(state, actions),
+    }),
+  );
+  return empty;
+}
+
+/** 需要置顶提醒的服务器（失败 + 重连中）。 */
+export function needsAttention(server: McpServerListEntry): boolean {
+  return server.status === "failed" || server.status === "reconnecting";
+}
+
 /** 渲染浮窗下拉面板（健康摘要 + 失败优先 + scope 分组）。 */
 export function renderFloatPanel(state: McpState, actions: UiActions): void {
   if (state.floatPanel === undefined) return;
+  // C8：折叠态在重渲染前收集（details 重建会丢 open 属性）。
   const openTools = new Set<string>();
   for (const d of state.floatPanel.querySelectorAll<HTMLDetailsElement>("details.dm-float-tools")) {
     if (d.open && d.dataset.dmServer !== undefined) openTools.add(d.dataset.dmServer);
@@ -305,51 +411,24 @@ export function renderFloatPanel(state: McpState, actions: UiActions): void {
   state.floatPanel.textContent = "";
   const head = el("div", { class: "dm-float-head" });
   const headText = el("div", { class: "dm-float-head-text" });
-  const projectName =
-    typeof state.projectRoot === "string" && state.projectRoot !== ""
-      ? (state.projectRoot.split(/[\\/]/).filter(Boolean).pop() ?? state.projectRoot)
-      : t("floatGlobalSession");
-  headText.appendChild(el("div", { class: "dm-float-title", text: projectName }));
+  headText.appendChild(el("div", { class: "dm-float-title", text: floatProjectName(state) }));
   headText.appendChild(renderFloatHealth(state));
   head.appendChild(headText);
   head.appendChild(
-    el("button", {
-      text: t("floatManage"),
-      onclick: () => {
-        toggleFloat(state, actions, false);
-        actions.showPanel();
-      },
-    }),
+    el("button", { text: t("floatManage"), onclick: () => openMainPanel(state, actions) }),
   );
   state.floatPanel.appendChild(head);
 
   if (state.servers.length === 0) {
-    const empty = el("div", { class: "dm-status" });
-    empty.appendChild(el("div", { text: t("floatEmptyTitle") }));
-    empty.appendChild(
-      el("button", {
-        class: "dm-float-action dm-primary",
-        text: t("floatEmptyCta"),
-        style: "margin-top:12px",
-        onclick: () => {
-          toggleFloat(state, actions, false);
-          actions.showPanel();
-        },
-      }),
-    );
-    state.floatPanel.appendChild(empty);
+    state.floatPanel.appendChild(renderFloatEmpty(state, actions));
     if (state.floatOpen) placePanel(state);
     return;
   }
 
   const animateRows = state.floatPanel.dataset.dmStagger === "1";
   const staggerBase = { n: 0 };
-  const attention = state.servers.filter(
-    (server: McpServerListEntry) => server.status === "failed" || server.status === "reconnecting",
-  );
-  const rest = state.servers.filter(
-    (server: McpServerListEntry) => server.status !== "failed" && server.status !== "reconnecting",
-  );
+  const attention = state.servers.filter(needsAttention);
+  const rest = state.servers.filter((server: McpServerListEntry) => !needsAttention(server));
   appendScopeGroup(
     state.floatPanel,
     "attention",
@@ -419,6 +498,17 @@ export function toggleFloat(state: McpState, actions: UiActions, force?: boolean
   }
 }
 
+/** 水平锚点判定：left-* 贴左缘，其余贴右缘（胶囊与面板共用同一口径）。 */
+export function anchorsLeft(position: string | undefined): boolean {
+  return position === "top-left" || position === "bottom-left";
+}
+
+/** Fluid 展开原点：锚点所在的那个角（胶囊贴边角 → 面板向对角展开）。 */
+export function transformOriginFor(isLeft: boolean, anchorBottom: boolean): string {
+  if (anchorBottom) return isLeft ? "bottom left" : "bottom right";
+  return isLeft ? "top left" : "top right";
+}
+
 /** 下拉面板定位（fixed 跟随胶囊，避免被滚动容器裁剪；四角感知 + 视口终 clamp）。 */
 export function placePanel(state: McpState): void {
   if (state.floatPill === undefined || state.floatPanel === undefined) return;
@@ -427,7 +517,7 @@ export function placePanel(state: McpState): void {
   const panel = state.floatPanel;
   const position = state.mcpUiConfig?.position;
   const anchorBottom = panelAnchorForPosition(position) === "bottom";
-  const isLeft = position === "top-left" || position === "bottom-left";
+  const isLeft = anchorsLeft(position);
   const gap = 6;
   // 垂直：底部锚点向上弹出（clamp 到视口上缘）/ 顶部锚点向下弹出（历史行为）。
   const rawTop = anchorBottom
@@ -451,14 +541,7 @@ export function placePanel(state: McpState): void {
   panel.style.left = `${Math.round(point.x)}px`;
   panel.style.top = `${Math.round(point.y)}px`;
   panel.style.right = "auto";
-  // Fluid origin：锚点=胶囊所在角 → 向对角展开
-  panel.style.transformOrigin = isLeft
-    ? anchorBottom
-      ? "bottom left"
-      : "top left"
-    : anchorBottom
-      ? "bottom right"
-      : "top right";
+  panel.style.transformOrigin = transformOriginFor(isLeft, anchorBottom);
 }
 
 /** 会话滚动容器：聊天消息实际滚动的区域（shell 的 data-conversation-scroll）。 */
@@ -476,16 +559,95 @@ export function panelHost(): Element {
   return document.querySelector("[data-shell-overlay]") ?? document.body;
 }
 
-/** 从 settings.yaml 读取的配置决定新/老会话垂直偏移。 */
-export function floatTopOffset(ctx: McpClientContext, state: McpState): number {
+/** 当前会话是否空白会话（空白会话用另一档垂直偏移）。取不到会话面一律判非空白。 */
+export function isBlankSession(ctx: McpClientContext): boolean {
   const snap = ctx?.sessions?.list?.getSnapshot?.();
   const current = snap?.current;
-  const session = current === undefined ? undefined : snap?.byId?.[current];
-  const blank = session?.blank === true;
+  if (current === undefined) return false;
+  return snap?.byId?.[current]?.blank === true;
+}
+
+/** 从 settings.yaml 读取的配置决定新/老会话垂直偏移。 */
+export function floatTopOffset(ctx: McpClientContext, state: McpState): number {
   const cfg = state.mcpUiConfig || {};
   const y = typeof cfg.offsetY === "number" ? cfg.offsetY : 8;
   const blankY = typeof cfg.blankY === "number" ? cfg.blankY : y;
-  return blank ? blankY : y;
+  return isBlankSession(ctx) ? blankY : y;
+}
+
+/** 胶囊位置配置白名单：只认四个锚点，其余（含缺省）回落 top-right（历史行为）。 */
+export function floatPositionOf(cfg: ClientUiConfig): ClientUiConfig["position"] {
+  const position = cfg.position;
+  if (position === "top-left" || position === "bottom-right" || position === "bottom-left")
+    return position;
+  return "top-right";
+}
+
+/** 胶囊定位入参（锚点 + 偏移）：位置白名单归一、水平偏移缺省 8、垂直偏移按会话形态。 */
+export function pillAnchors(
+  cfg: ClientUiConfig,
+  ctx: McpClientContext,
+  state: McpState,
+): { isLeft: boolean; isBottom: boolean; offsetX: number; offsetY: number } {
+  const position = floatPositionOf(cfg);
+  return {
+    isLeft: anchorsLeft(position),
+    isBottom: panelAnchorForPosition(position) === "bottom",
+    offsetX: typeof cfg.offsetX === "number" ? cfg.offsetX : 8,
+    offsetY: floatTopOffset(ctx, state),
+  };
+}
+
+/** 底部锚点是否改用 composer seat 上缘当下边界（#128：仅非 wide 断点）。 */
+export function usesComposerSeat(isBottom: boolean, bp: FloatBreakpoint): boolean {
+  return isBottom && bp !== "wide";
+}
+
+/** 底部锚点的容器下边界：composer seat 贴底时改用 seat 上缘（胶囊上移到输入区上方）。 */
+export function dockedBottomEdge(containerRect: { top: number; bottom: number }): number {
+  const seat = document.querySelector<HTMLElement>("[data-composer-seat]");
+  const seatRect = seat !== null ? seat.getBoundingClientRect() : null;
+  return bottomAnchorEdge(
+    containerRect.bottom,
+    seatRect?.top ?? null,
+    composerDockedAtBottom(seatRect, containerRect),
+  );
+}
+
+/** 胶囊定位纯计算的入参（DOM 读口在调用面，坐标算式在这里，可直测）。 */
+interface PillPlacementInput {
+  rect: { top: number; bottom: number; left: number; right: number };
+  width: number;
+  height: number;
+  isLeft: boolean;
+  isBottom: boolean;
+  offsetX: number;
+  offsetY: number;
+  /** 底部锚点下边界（已含 composer seat 改写，见 dockedBottomEdge）。 */
+  bottomEdge: number;
+  viewportW: number;
+  viewportH: number;
+}
+
+/**
+ * 胶囊终坐标（纯计算）：水平按锚点贴容器左右缘、垂直按锚点（bottom 从下边界上推、
+ * clamp 到视口上缘；top 从容器顶下移），最后统一走视口 clamp。
+ */
+export function pillPlacement(input: PillPlacementInput): ViewportPoint {
+  const rawLeft = input.isLeft
+    ? input.rect.left + input.offsetX
+    : input.rect.right - input.width - input.offsetX;
+  const rawTop = input.isBottom
+    ? Math.max(6, input.bottomEdge - input.height - input.offsetY)
+    : input.rect.top + input.offsetY;
+  return clampPointToViewport(
+    rawLeft,
+    rawTop,
+    input.width,
+    input.height,
+    input.viewportW,
+    input.viewportH,
+  );
 }
 
 /**
@@ -538,9 +700,6 @@ export function mountFloat(ctx: McpClientContext, state: McpState, actions: UiAc
     if (best === null || best === undefined) return;
     const rect = best.getBoundingClientRect();
     const cfg = state.mcpUiConfig || {};
-    const position = ["top-left", "bottom-right", "bottom-left"].includes(cfg.position)
-      ? cfg.position
-      : "top-right";
     // 断点判定基准 = conversationHost rect 宽度（JS 判定，非纯 @media——
     // 防桌面窄窗 / iPad Slide Over 误触发）；data 属性驱动 CSS 档位样式。
     const bp = breakpointForWidth(rect.width);
@@ -551,37 +710,25 @@ export function mountFloat(ctx: McpClientContext, state: McpState, actions: UiAc
     const zBase = clampZIndexBase(cfg.zIndexBase, DEFAULT_Z_INDEX_BASE);
     pill.style.zIndex = String(zBase);
     panel.style.zIndex = String(zBase);
-    const isBottom = position === "bottom-right" || position === "bottom-left";
-    const isLeft = position === "top-left" || position === "bottom-left";
-    const offsetX = typeof cfg.offsetX === "number" ? cfg.offsetX : 8;
-    const y = floatTopOffset(ctx, state);
+    const anchors = pillAnchors(cfg, ctx, state);
     pill.style.position = "fixed";
-    // 水平：left 锚点 → 容器左缘 + offsetX；right 锚点 → 容器右缘 - 宽 - offsetX。
-    const rawLeft = isLeft ? rect.left + offsetX : rect.right - pill.offsetWidth - offsetX;
-    // 垂直：bottom 锚点 → 容器底 - 高 - y（clamp 到视口上缘防溢出）；top 锚点 → 容器顶 + y。
-    // #128 重开回归修复：bottom-* 在断点非 wide 且 composer seat 贴底时，把下边界换成
+    // 垂直：bottom 锚点 → 下边界 - 高 - y（clamp 到视口上缘防溢出）；top 锚点 → 容器顶 + y。
+    // #128 重开回归修复：bottom-* 在断点非 wide 且 composer seat 贴底时，下边界换成
     // seat.top（胶囊上移到输入区上方，避免遮挡输入卡片/底部状态条）；否则维持
-    // container.bottom（桌面零回归）。
-    let bottomEdge = rect.bottom;
-    if (isBottom && bp !== "wide") {
-      const seat = document.querySelector<HTMLElement>("[data-composer-seat]");
-      const seatRect = seat !== null ? seat.getBoundingClientRect() : null;
-      bottomEdge = bottomAnchorEdge(
-        rect.bottom,
-        seatRect?.top ?? null,
-        composerDockedAtBottom(seatRect, rect),
-      );
-    }
-    const rawTop = isBottom ? Math.max(6, bottomEdge - pill.offsetHeight - y) : rect.top + y;
-    // 终坐标视口 clamp（safe-area 语义；inset 缺省 0 自然退化，桌面行为不回归）。
-    const point = clampPointToViewport(
-      rawLeft,
-      rawTop,
-      pill.offsetWidth,
-      pill.offsetHeight,
-      window.innerWidth,
-      window.innerHeight,
-    );
+    // container.bottom（桌面零回归）。水平：left 锚点 → 容器左缘 + offsetX；
+    // right 锚点 → 容器右缘 - 宽 - offsetX。两者算式都在 pillPlacement 里。
+    const bottomEdge = usesComposerSeat(anchors.isBottom, bp)
+      ? dockedBottomEdge(rect)
+      : rect.bottom;
+    const point = pillPlacement({
+      rect,
+      width: pill.offsetWidth,
+      height: pill.offsetHeight,
+      ...anchors,
+      bottomEdge,
+      viewportW: window.innerWidth,
+      viewportH: window.innerHeight,
+    });
     pill.style.left = `${Math.round(point.x)}px`;
     pill.style.top = `${Math.round(point.y)}px`;
     pill.style.right = "auto";

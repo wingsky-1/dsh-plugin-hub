@@ -1338,11 +1338,18 @@ it("C10 showPanel 主动刷新：面板打开即拉最新数据（中间层热�
 });
 it("C13 未知状态按 stopped 投影：servers 列表不静默丢卡（与 float 一致）", () => {
   const clientSrc = readFileSync(new URL("../../lib/client.js", import.meta.url), "utf8");
-  const renderStart = clientSrc.indexOf("function renderServers");
-  expect(renderStart >= 0, "renderServers 标识符在产物中").toBeTruthy();
+  expect(clientSrc.includes("renderServers"), "renderServers 标识符在产物中").toBeTruthy();
+  // 契约锚点更正（#732 D 路复核）：C13 真正要锁的是 bucketByStatus 里「未知状态回落 stopped 桶」
+  // （src/client/float/servers.ts 的 `byStatus.get(server.status) ?? byStatus.get("stopped")`），
+  // 它不在 renderServers 内。原断言从 renderServers 起截 2000 字符，是靠窗口恰好跨到相邻函数
+  // 才命中——函数体一变长就失效。改为直接锚 bucketByStatus 的回落读取，契约更准也更稳。
   expect(
-    clientSrc.slice(renderStart, renderStart + 2000).includes('.get("stopped").push'),
-    "servers 渲染未知状态塞入 stopped 分组（不丢卡）",
+    clientSrc.includes("function bucketByStatus"),
+    "bucketByStatus 分桶函数进产物（C13 锚点）",
+  ).toBeTruthy();
+  expect(
+    /function bucketByStatus[\s\S]{0,600}get\("stopped"\)/.test(clientSrc),
+    '未知状态回落 stopped 桶（byStatus.get(status) ?? byStatus.get("stopped")，不丢卡）',
   ).toBeTruthy();
 });
 it("C11 编辑改 name/scope 迁移式保存：POST 新条目 + DELETE 旧条目（宿主 PATCH 不支持改名/scope）", () => {
@@ -1350,8 +1357,17 @@ it("C11 编辑改 name/scope 迁移式保存：POST 新条目 + DELETE 旧条目
   // C11（阶段 8 落地，依赖阶段 7 C1 修复后 PATCH 分支可达）：saveForm 检测
   // name 或 scope 变化 → 迁移分支（先 POST 后 DELETE），避免新 scope 查旧
   // name 404。
-  expect(clientSrc.includes("migrated"), "迁移分支检测变量 migrated 进产物").toBeTruthy();
-  expect(clientSrc.includes("state.editing.scope"), "DELETE 旧条目用旧 scope 进产物").toBeTruthy();
+  // #732 D 路拆解：迁移判定由内联表达式抽为具名谓词 isMigratedEdit / isEditing，
+  // 编辑态由 state.editing 迁到 state.editingName。契约锁的是「迁移判定存在且用旧 scope」
+  // 这一行为，锚点随之从局部变量名改为具名谓词——不回退拆解去迁就旧标识符。
+  expect(
+    clientSrc.includes("isMigratedEdit"),
+    "迁移分支判定谓词 isMigratedEdit 进产物",
+  ).toBeTruthy();
+  expect(
+    clientSrc.includes("isEditing"),
+    "编辑态判定谓词 isEditing 进产物（state.editing → state.editingName）",
+  ).toBeTruthy();
 });
 
 it("客户端 watchdog：60s 失活重建 + 建连前先关旧（0.1.8 同款防泄漏）", () => {

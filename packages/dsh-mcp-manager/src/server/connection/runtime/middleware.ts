@@ -186,24 +186,7 @@ async function mountRemoteServer(
       newEntry.everConnected = true;
       newEntry.connectedAt = Date.now();
       // 注册面 → 目录的投影自 #767 S1-3b 起归 catalog 域：id 前缀、脱敏与
-      // runtime 判定都是本层就地给的闭包（目录域不持服务器表）。
-      await runtimePorts.get().catalog.catalogDirectory.projectRegisteredTools({
-        root,
-        serverName,
-        id: newEntry.id,
-        schemas: faces.registeredSchemas(),
-        cachePath: () => faces.host.catalogCachePath(root),
-        redact: (error) => faces.redact(error),
-        isRuntimeServer: (name) => faces.host.isRuntimeServer(name),
-        warn: (message) => faces.host.logger.warn(message),
-      });
-      // B 层摘要缓存（原直连账本 mountEntry 结算路径的行为）：单池后由池侧继续喂，
-      // 否则 /health.catalogCacheEntries 与注入端目录视图的 B 层兜底会静默失源。
-      await faces.host.recordCatalogTools?.(
-        serverName,
-        faces.registeredToolMeta(newEntry.id ?? ""),
-      );
-      faces.host.logger.info(`dsh-mcp-manager(${serverName}@${root}): connected`);
+      await projectConnectedCatalog(root, serverName, mounted.id, faces);
     } else if (mounted.outcome.state === "failed") {
       // 文案已是「我方判词 + 官方原文」（窗口把归属本实例的官方日志接在了 error 上）。
       faces.host.logger.warn(
@@ -213,6 +196,80 @@ async function mountRemoteServer(
     faces.host.emitStatus();
   }
   // outcome.kind === "discarded"：本次结算作废，状态由拆除路径负责，这里不动。
+}
+
+/**
+ * connected 结算的副作用：注册面 → 目录投影 + B 层摘要缓存 + info 日志。
+ * 与 failed 分支同为「结算副作用」但成因与产出不同，故各自成函数。
+ *
+ * 模块函数而非私有方法：理由同 mountRemoteServer（导出面零 diff）。 */
+export async function projectConnectedCatalog(
+  root: string,
+  serverName: string,
+  id: string,
+  faces: MountRemoteFaces,
+): Promise<void> {
+  // 注册面 → 目录的投影自 #767 S1-3b 起归 catalog 域：id 前缀、脱敏与
+  // runtime 判定都是本层就地给的闭包（目录域不持服务器表）。
+  await runtimePorts.get().catalog.catalogDirectory.projectRegisteredTools({
+    root,
+    serverName,
+    id,
+    schemas: faces.registeredSchemas(),
+    cachePath: () => faces.host.catalogCachePath(root),
+    redact: (error) => faces.redact(error),
+    isRuntimeServer: (name) => faces.host.isRuntimeServer(name),
+    warn: (message) => faces.host.logger.warn(message),
+  });
+  // B 层摘要缓存（原直连账本 mountEntry 结算路径的行为）：单池后由池侧继续喂，
+  // 否则 /health.catalogCacheEntries 与注入端目录视图的 B 层兜底会静默失源。
+  await faces.host.recordCatalogTools?.(serverName, faces.registeredToolMeta(id));
+  faces.host.logger.info(`dsh-mcp-manager(${serverName}@${root}): connected`);
+}
+
+/**
+ * 非 force 时的状态短路：connected / connecting / reconnecting 都不再进（裁定 U）。
+ * reconnecting 同样不进——官方自己在退避重连，我方重挂会撞同一 id 的 serverName
+ * 活体预留（实测 §2.9-16）。force（用户显式「连接」/切回前台恢复）忽略当前状态
+ * 总是受控重建——修半开死连接卡在 connected 后 connect/refresh 均短路失效（#412）。
+ */
+export function shortCircuitsOnState(state: ServerState | undefined, force: boolean): boolean {
+  if (force) return false;
+  return state === "connected" || state === "connecting" || state === "reconnecting";
+}
+
+/**
+ * 重建前拆旧代际并**等**结算（裁定 V）：官方 serverName 是整个应用根的活体预留，
+ * 同 id 未释放就重挂当场抛。虚拟单元（toolDefinitions）没有官方实例：不进账本也不置
+ * 废弃位——它的重建语义由 wrapped 分支的同状态短路决定（#413 原语义）。
+ */
+export async function disposePreviousGeneration(
+  entry: ConnectionEntry | undefined,
+  disposeServer: (id: string) => unknown,
+): Promise<void> {
+  if (entry === undefined || Array.isArray(entry.server.toolDefinitions)) return;
+  entry.disposed = true;
+  if (entry.id !== undefined) await disposeServer(entry.id);
+}
+
+/** 可连接的服务器配置：缺省（未在册）或已启用=false 即 undefined。 */
+export function connectableServer(
+  servers: ServerConfig[] | undefined,
+  serverName: string,
+): ServerConfig | undefined {
+  const server = servers?.find((candidate) => candidate.name === serverName);
+  if (server === undefined || server.enabled === false) return undefined;
+  return server;
+}
+
+/**
+ * 虚拟连接单元（toolDefinitions，从不挂官方实例）的六态：
+ * 禁用 → disabled；已拆 → stopped；其余 → connected（#413「虚拟连接即 connected」
+ * 是既有契约）。进官方投影只会让「无 id / 无句柄」这些与它无关的输入面参与裁决。
+ */
+export function virtualUnitState(entry: ConnectionEntry, userDisabled: boolean): ServerState {
+  if (entry.server.enabled === false || userDisabled) return SERVER_STATES.disabled;
+  return entry.disposed ? SERVER_STATES.stopped : SERVER_STATES.connected;
 }
 
 /**
@@ -332,20 +389,11 @@ export class McpMiddleware {
     // （防重复建连）；reconnecting 同样不进——官方自己在退避重连，我方重挂会撞同一 id 的
     // serverName 活体预留（实测 §2.9-16）。force（用户显式「连接」/切回前台恢复）忽略当前
     // 状态总是受控重建——修半开死连接卡在 connected 后 connect/refresh 均短路失效（#412）。
-    const state = this.statusOf(root, serverName);
-    if (!force && (state === "connected" || state === "connecting" || state === "reconnecting")) {
-      return;
-    }
-    // 重建路径先拆旧代际并**等**结算（裁定 V）：官方 serverName 是整个应用根的活体预留，
-    // 同 id 未释放就重挂当场抛。虚拟单元（toolDefinitions）没有官方实例：不进账本也不置
-    // 废弃位——它的重建语义由下面 wrapped 分支的同状态短路决定（#413 原语义）。
-    if (entry !== undefined && !Array.isArray(entry.server.toolDefinitions)) {
-      entry.disposed = true;
-      if (entry.id !== undefined) await lifecycle.disposeServer(entry.id);
-    }
+    if (shortCircuitsOnState(this.statusOf(root, serverName), force)) return;
+    await disposePreviousGeneration(entry, (id) => lifecycle.disposeServer(id));
     const servers = await this.host.projectServersFor(root);
-    const server = servers?.find((entry) => entry.name === serverName);
-    if (server === undefined || server.enabled === false) return;
+    const server = connectableServer(servers, serverName);
+    if (server === undefined) return;
     // 防双进程探测（#382 F5）与它的一次性重试已删除：换引擎后「同名服务器只能有一个实例」
     // 由官方 serverName 的活体预留保证（同 id 二次挂载当场抛，实测 §2.9-16），跨 root 同名
     // 各自由 (scope,name) 分配的 id 区分——探测与重试都是旧栈的补丁，留着只会与官方判重打架。
@@ -401,16 +449,8 @@ export class McpMiddleware {
     const unit = this.units.get(root);
     const entry = unit?.connections.get(serverName);
     if (unit === undefined || entry === undefined) return undefined;
-    // 虚拟连接单元（toolDefinitions）没有官方实例、从不 mount：它的态由配置面与拆除位直接
-    // 决定（#413「虚拟连接即 connected」是既有契约），进投影只会让「无 id / 无句柄」这些
-    // 与它无关的输入面参与裁决。
     if (Array.isArray(entry.server.toolDefinitions)) {
-      const state: ServerState =
-        entry.server.enabled === false || unit.userDisabled.has(serverName)
-          ? SERVER_STATES.disabled
-          : entry.disposed
-            ? SERVER_STATES.stopped
-            : SERVER_STATES.connected;
+      const state = virtualUnitState(entry, unit.userDisabled.has(serverName));
       entry.status = state;
       return state;
     }

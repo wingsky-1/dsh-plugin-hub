@@ -81,40 +81,61 @@ export function summarizeToolDescriptions(
   toolMeta: Map<string, { description?: unknown }>,
 ): string | undefined {
   // ① 收集 (工具名, 首句)（非空）；全空 → undefined。
+  const collected = collectToolSentences(toolMeta);
+  if (collected.length === 0) return undefined;
+  // ② 排序去重 + 单句截断。
+  const sentences = dedupeToolSentences(collected);
+  const prefix = collected.length >= 2 ? `${collected.length} tools: ` : "";
+  // ③ 拼接（"; " 分隔），超总长按句整段回退补 "…"（绝不句中切）。
+  return joinSentencesWithinBudget(sentences, prefix);
+}
+
+/** ① 收集 (工具名, 首句)；首句为空的工具不贡献摘要。 */
+export function collectToolSentences(
+  toolMeta: Map<string, { description?: unknown }>,
+): Array<[string, string]> {
   const collected: Array<[string, string]> = [];
   for (const [name, meta] of toolMeta) {
     const sentence = firstSentenceOf(meta?.description);
     if (sentence === "") continue;
     collected.push([name, sentence]);
   }
-  if (collected.length === 0) return undefined;
-  // ② 按工具名升序（确定性：顺序抖动只变内容不变名序）→ 精确去重。
+  return collected;
+}
+
+/** ② 按工具名升序（确定性：顺序抖动只变内容不变名序）→ 精确去重 → 单句截断。 */
+export function dedupeToolSentences(collected: Array<[string, string]>): string[] {
   collected.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
   const seen = new Set<string>();
   const sentences: string[] = [];
   for (const [, sentence] of collected) {
     if (seen.has(sentence)) continue;
     seen.add(sentence);
-    sentences.push(
-      sentence.length <= CATALOG_SUMMARY_PER_TOOL_CHARS
-        ? sentence
-        : `${charTruncate(sentence, CATALOG_SUMMARY_PER_TOOL_CHARS - 1)}…`,
-    );
+    sentences.push(truncatePerTool(sentence));
   }
-  const prefix = collected.length >= 2 ? `${collected.length} tools: ` : "";
-  // ③ 拼接（"; " 分隔），超总长按句整段回退补 "…"（绝不句中切）。
+  return sentences;
+}
+
+/** 单句上限截断（超限留一位给省略号）。 */
+export function truncatePerTool(sentence: string): string {
+  if (sentence.length <= CATALOG_SUMMARY_PER_TOOL_CHARS) return sentence;
+  return `${charTruncate(sentence, CATALOG_SUMMARY_PER_TOOL_CHARS - 1)}…`;
+}
+
+/** ③ 拼接（"; " 分隔），超总长按句整段回退补 "…"（绝不句中切）。 */
+export function joinSentencesWithinBudget(sentences: string[], prefix: string): string {
   let text = prefix;
   for (const sentence of sentences) {
     const separator = text === prefix ? "" : "; ";
     if (text.length + separator.length + sentence.length <= CATALOG_SUMMARY_MAX_CHARS - 1) {
       text += separator + sentence;
-    } else if (text === prefix) {
-      // 前缀后连一句都放不下（极端长句）→ 前缀 + 截断 + 省略号。
-      return `${prefix}${charTruncate(sentence, CATALOG_SUMMARY_MAX_CHARS - prefix.length - 1)}…`;
-    } else {
-      // 已容纳若干句 → 保留完整句，尾部补省略号表示还有更多工具。
-      return `${text}…`;
+      continue;
     }
+    // 前缀后连一句都放不下（极端长句）→ 前缀 + 截断 + 省略号；否则保留已容纳的完整句。
+    if (text === prefix) {
+      return `${prefix}${charTruncate(sentence, CATALOG_SUMMARY_MAX_CHARS - prefix.length - 1)}…`;
+    }
+    return `${text}…`;
   }
   return text;
 }
@@ -145,9 +166,7 @@ function firstSentenceOf(description: unknown): string {
   const text = firstLine.replace(/\s+/gu, " ").trim();
   if (text === "") return "";
   for (let index = 0; index < text.length; index += 1) {
-    const ch = text[index];
-    if (ch !== "." && ch !== "!" && ch !== "?" && ch !== "。" && ch !== "！" && ch !== "？")
-      continue;
+    if (!SENTENCE_TERMINATORS.has(text[index])) continue;
     const kind = sentenceBoundaryKind(text, index);
     if (kind === false) continue;
     if (kind === "end") return text; // 句读收尾（"…URL."）→ 整行即句，不剥标点
@@ -155,6 +174,9 @@ function firstSentenceOf(description: unknown): string {
   }
   return text;
 }
+
+/** 句读字符集（ASCII 三种 + 全角三种）：扫描面见 firstSentenceOf。 */
+const SENTENCE_TERMINATORS: ReadonlySet<string> = new Set([".", "!", "?", "。", "！", "？"]);
 
 /** 按 Unicode 字符截断（防切代理对/emoji；JS length 为 UTF-16 码元）。 */
 function charTruncate(text: string, maxChars: number): string {
@@ -183,19 +205,7 @@ export function composeCatalogEntries(
   const entries: CatalogEntry[] = [];
   for (const [name, supervisor] of supervisors) {
     if (entries.length >= maxEntries) break;
-    const server = supervisor.server;
-    let text;
-    if (typeof server.description === "string" && server.description !== "") {
-      const sentence = firstSentenceOf(server.description);
-      const raw = sentence !== "" ? sentence : server.description.trim().replace(/\s+/gu, " ");
-      text =
-        raw.length <= CATALOG_ENTRY_MAX_CHARS
-          ? raw
-          : `${charTruncate(raw, CATALOG_ENTRY_MAX_CHARS - 1)}…`;
-    } else {
-      const cached = cache?.get(name);
-      if (typeof cached?.summary === "string" && cached.summary !== "") text = cached.summary;
-    }
+    const text = entryTextFor(name, supervisor.server, cache);
     // 无描述时剥离 text 属性（不产出 `text: undefined`）：条目保持干净可
     // JSON 序列化，否则目录消息 append 为 user/message 事件会被 dsh-session
     // 序列化校验拒绝（issue #192）。
@@ -206,6 +216,25 @@ export function composeCatalogEntries(
     entries.push(entry);
   }
   return entries;
+}
+
+/** 条目描述文本的三级来源：① 用户自写描述（首句，空则整句压空白）→ ② 磁盘缓存摘要
+ * → ③ 都没有则 undefined（调用方据此不产出 text 键）。用户描述按单条上限截断。 */
+export function entryTextFor(
+  name: string,
+  server: SupervisorLite["server"],
+  cache: CatalogCache | undefined,
+): string | undefined {
+  if (typeof server.description === "string" && server.description !== "") {
+    const sentence = firstSentenceOf(server.description);
+    const raw = sentence !== "" ? sentence : server.description.trim().replace(/\s+/gu, " ");
+    return raw.length <= CATALOG_ENTRY_MAX_CHARS
+      ? raw
+      : `${charTruncate(raw, CATALOG_ENTRY_MAX_CHARS - 1)}…`;
+  }
+  const cached = cache?.get(name);
+  if (typeof cached?.summary === "string" && cached.summary !== "") return cached.summary;
+  return undefined;
 }
 
 /** 渲染能力目录消息（source 标记供定位替换）。

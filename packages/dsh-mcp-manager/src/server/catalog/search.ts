@@ -12,6 +12,7 @@ import { LIST_DEFAULT_TOOLS_PER_SERVER } from "../shared/interface.ts";
 import { catalogDirectory } from "./impl/directory/index.ts";
 import { catalogPorts } from "./impl/service/index.ts";
 import type {
+  CatalogServer,
   CatalogTool,
   ListCatalogResult,
   ListServerEntry,
@@ -47,22 +48,40 @@ export function scoreTool(
   ]
     .join(" ")
     .toLowerCase();
-  // 中文子串匹配（连续中文段直接 substring 命中原始文本）
+  // 中文子串匹配优先（连续中文段直接 substring 命中原始文本）
   const cjkQuery = query.match(/[\u4e00-\u9fff]+/gu) ?? [];
   if (cjkQuery.length > 0) {
-    let score = 0;
-    const matchedTerms: string[] = [];
-    for (const segment of cjkQuery) {
-      if (segment.length < 2) continue;
-      if (haystack.includes(segment)) {
-        score += 2;
-        matchedTerms.push(segment);
-      }
-    }
-    if (score > 0) return { score, matchedTerms };
+    const cjk = scoreCjkSegments(cjkQuery, haystack);
+    if (cjk !== undefined) return cjk;
   }
   const terms = tokenize(query);
   if (terms.length === 0) return { score: 0, matchedTerms: [] };
+  return scoreTerms(terms, haystack);
+}
+
+/** 连续中文段命中原始文本即计 2 分（≥2 字才算命中）；一个都没命中返回 undefined
+ * ——让调用方回落分词打分（中文 query 同时含英文词时两路都试）。 */
+export function scoreCjkSegments(
+  segments: string[],
+  haystack: string,
+): { score: number; matchedTerms: string[] } | undefined {
+  let score = 0;
+  const matchedTerms: string[] = [];
+  for (const segment of segments) {
+    if (segment.length < 2) continue;
+    if (haystack.includes(segment)) {
+      score += 2;
+      matchedTerms.push(segment);
+    }
+  }
+  return score > 0 ? { score, matchedTerms } : undefined;
+}
+
+/** 词元命中原始文本即计 1 分（≥2 字才算命中，单字词元不计）。 */
+export function scoreTerms(
+  terms: string[],
+  haystack: string,
+): { score: number; matchedTerms: string[] } {
   let score = 0;
   const matchedTerms: string[] = [];
   for (const term of terms) {
@@ -188,21 +207,25 @@ function buildListToolEntries(
       truncated = true;
       break;
     }
-    // 工具级禁用标注（与服务器级 disabled 并列；查询面供模型感知）。
-    const rootTools = disabledTools?.get(root)?.get(serverName);
-    const globalTools =
-      root === MIDDLEWARE_GLOBAL_ROOT
-        ? undefined
-        : disabledTools?.get(MIDDLEWARE_GLOBAL_ROOT)?.get(serverName);
-    const disabledByUser =
-      (rootTools !== undefined && rootTools.has(toolName)) ||
-      (globalTools !== undefined && globalTools.has(toolName));
     const toolEntry: ListToolEntry = { tool: toolName, description: tool.description };
-    if (disabledByUser) toolEntry.disabled = true;
+    if (isToolDisabledForEntry(disabledTools, root, serverName, toolName))
+      toolEntry.disabled = true;
     entries.push(toolEntry);
     index += 1;
   }
   return { entries, truncated };
+}
+
+/** 工具级禁用标注判定（本 root 段 + @global 段并集命中即禁用；@global 自身不重复继承）。 */
+export function isToolDisabledForEntry(
+  disabledTools: DisabledToolsMap | undefined,
+  root: string,
+  serverName: string,
+  toolName: string,
+): boolean {
+  if (disabledTools?.get(root)?.get(serverName)?.has(toolName) === true) return true;
+  if (root === MIDDLEWARE_GLOBAL_ROOT) return false;
+  return disabledTools?.get(MIDDLEWARE_GLOBAL_ROOT)?.get(serverName)?.has(toolName) === true;
 }
 
 /** 解析盘点范围：回答「哪些 root 参与盘点？」——@全名过滤定 root，root 越界抛
@@ -250,52 +273,82 @@ export function listCatalog(
   const {
     workspace: { fullServerName },
   } = catalogPorts.get();
-  const safeLimit =
-    Number.isFinite(toolLimit) && toolLimit > 0
-      ? Math.floor(toolLimit)
-      : LIST_DEFAULT_TOOLS_PER_SERVER;
+  const safeLimit = safeToolLimit(toolLimit);
   const rootSet = resolveListRoots(roots, serverFilter);
   const servers: ListServerEntry[] = [];
   let totalTools = 0;
   let anyTruncated = false;
   for (const root of roots) {
-    if (rootSet !== undefined && !rootSet.has(root)) continue;
+    if (!rootParticipates(root, rootSet)) continue;
     const unit = units.get(root);
     if (unit === undefined) continue;
     const rootCatalog = catalogDirectory.serversFor(root);
     if (rootCatalog === undefined) continue;
     for (const [serverName, catalog] of rootCatalog) {
-      if (
-        serverFilter !== undefined &&
-        serverName !== serverFilter &&
-        fullServerName(root, serverName) !== serverFilter
-      )
-        continue;
-      const entry: ListServerEntry = {
-        server: fullServerName(root, serverName),
-        tools: [],
-        toolsTruncated: false,
-      };
-      if (unit.userDisabled.has(serverName)) entry.disabled = true;
-      if (catalog.unavailable !== undefined) {
-        entry.unavailable = catalog.unavailable;
-      } else {
-        const built = buildListToolEntries(
-          catalog.tools,
-          safeLimit,
-          disabledTools,
-          root,
-          serverName,
-        );
-        entry.tools = built.entries;
-        entry.toolsTruncated = built.truncated;
-        if (built.truncated) anyTruncated = true;
-        totalTools += built.entries.length;
-      }
-      servers.push(entry);
+      if (!matchesServerFilter(serverName, root, serverFilter, fullServerName)) continue;
+      const built = buildListServerEntry(
+        serverName,
+        root,
+        catalog,
+        unit.userDisabled,
+        safeLimit,
+        disabledTools,
+        fullServerName,
+      );
+      servers.push(built.entry);
+      if (built.truncated) anyTruncated = true;
+      totalTools += built.toolCount;
     }
   }
   return finalizeListResult(servers, roots, totalTools, anyTruncated, emptyHint);
+}
+
+/** 每服务器工具条数上限：非有限数或非正回落缺省；正数向下取整（历史口径）。 */
+export function safeToolLimit(toolLimit: number): number {
+  if (!Number.isFinite(toolLimit) || toolLimit <= 0) return LIST_DEFAULT_TOOLS_PER_SERVER;
+  return Math.floor(toolLimit);
+}
+
+/** 该 root 是否参与盘点：显式过滤集命中即参与，无过滤集则全参与。 */
+export function rootParticipates(root: string, rootSet: Set<string> | undefined): boolean {
+  return rootSet === undefined || rootSet.has(root);
+}
+
+/** 盘点过滤：serverFilter 为空即全收；给定后裸名或 @全名任一命中即收。 */
+export function matchesServerFilter(
+  serverName: string,
+  root: string,
+  serverFilter: string | undefined,
+  fullServerName: (root: string, server: string) => string,
+): boolean {
+  if (serverFilter === undefined) return true;
+  return serverName === serverFilter || fullServerName(root, serverName) === serverFilter;
+}
+
+/** 单台服务器的盘点条目：用户禁用标注 + 目录失败原因，或工具清单（含截断与工具数结算）。 */
+export function buildListServerEntry(
+  serverName: string,
+  root: string,
+  catalog: CatalogServer,
+  userDisabled: ReadonlySet<string>,
+  safeLimit: number,
+  disabledTools: DisabledToolsMap | undefined,
+  fullServerName: (root: string, server: string) => string,
+): { entry: ListServerEntry; truncated: boolean; toolCount: number } {
+  const entry: ListServerEntry = {
+    server: fullServerName(root, serverName),
+    tools: [],
+    toolsTruncated: false,
+  };
+  if (userDisabled.has(serverName)) entry.disabled = true;
+  if (catalog.unavailable !== undefined) {
+    entry.unavailable = catalog.unavailable;
+    return { entry, truncated: false, toolCount: 0 };
+  }
+  const built = buildListToolEntries(catalog.tools, safeLimit, disabledTools, root, serverName);
+  entry.tools = built.entries;
+  entry.toolsTruncated = built.truncated;
+  return { entry, truncated: built.truncated, toolCount: built.entries.length };
 }
 
 /** 定序组装盘点结果：回答「结果按什么顺序摆？」——稳定排序（root 出现序 +
@@ -312,16 +365,7 @@ function finalizeListResult(
     workspace: { parseFullServerName },
   } = catalogPorts.get();
   const rootIndex = new Map(roots.map((root, index) => [root, index]));
-  servers.sort((a, b) => {
-    const ra = parseFullServerName(a.server)?.root ?? "";
-    const rb = parseFullServerName(b.server)?.root ?? "";
-    const oa = rootIndex.get(ra) ?? Number.MAX_SAFE_INTEGER;
-    const ob = rootIndex.get(rb) ?? Number.MAX_SAFE_INTEGER;
-    if (oa !== ob) return oa - ob;
-    const sa = parseFullServerName(a.server)?.server ?? a.server;
-    const sb = parseFullServerName(b.server)?.server ?? b.server;
-    return sa.localeCompare(sb);
-  });
+  servers.sort(listOrderComparator(rootIndex, parseFullServerName));
   const result: ListCatalogResult = {
     workspace: roots[0] ?? "@global",
     servers,
@@ -331,6 +375,32 @@ function finalizeListResult(
   };
   if (servers.length === 0) result.message = emptyHint;
   return result;
+}
+
+/** 盘点定序比较器：root 出现序优先（不在列表里的排后），同 root 内按裸名升序。 */
+export function listOrderComparator(
+  rootIndex: ReadonlyMap<string, number>,
+  parseFullServerName: (full: string) => { root: string; server: string } | undefined,
+): (a: ListServerEntry, b: ListServerEntry) => number {
+  return (a, b) => {
+    const keyA = listOrderKey(a, rootIndex, parseFullServerName);
+    const keyB = listOrderKey(b, rootIndex, parseFullServerName);
+    if (keyA.rootOrder !== keyB.rootOrder) return keyA.rootOrder - keyB.rootOrder;
+    return keyA.server.localeCompare(keyB.server);
+  };
+}
+
+/** 条目排序键两格：root 出现序（不在 roots 列表里的排到末尾）+ root 内裸名。 */
+export function listOrderKey(
+  entry: ListServerEntry,
+  rootIndex: ReadonlyMap<string, number>,
+  parseFullServerName: (full: string) => { root: string; server: string } | undefined,
+): { rootOrder: number; server: string } {
+  const parsed = parseFullServerName(entry.server);
+  return {
+    rootOrder: rootIndex.get(parsed?.root ?? "") ?? Number.MAX_SAFE_INTEGER,
+    server: parsed?.server ?? entry.server,
+  };
 }
 
 /**
@@ -366,17 +436,7 @@ export function findToolDetail(
   }
   const catalog = catalogDirectory.entryFor(root, parsed.server);
   if (catalog === undefined || catalog.tools.size === 0) {
-    if (catalog?.unavailable !== undefined) {
-      throw new Error(
-        `ws_mcp_detail: server 发现失败：${JSON.stringify(server)}（${catalog.unavailable}）`,
-      );
-    }
-    if (unit.userDisabled.has(parsed.server)) {
-      throw new Error(
-        `ws_mcp_detail: server 未连接或未发现：${JSON.stringify(server)}（已被用户禁用）`,
-      );
-    }
-    throw new Error(`ws_mcp_detail: server 未连接或未发现：${JSON.stringify(server)}`);
+    throw toolDetailMissError(catalog, server, unit.userDisabled.has(parsed.server));
   }
   const toolName = normalizeToolName(parsed.server, tool, "ws_mcp_detail");
   const found = catalog.tools.get(toolName);
@@ -393,6 +453,25 @@ export function findToolDetail(
   };
   if (unit.userDisabled.has(parsed.server)) detail.disabled = true;
   return detail;
+}
+
+/** 目录里没有可用工具时的错误三分：发现失败（附原因）> 用户禁用（附说明）> 未连接。 */
+export function toolDetailMissError(
+  catalog: CatalogServer | undefined,
+  server: string,
+  userDisabled: boolean,
+): Error {
+  if (catalog?.unavailable !== undefined) {
+    return new Error(
+      `ws_mcp_detail: server 发现失败：${JSON.stringify(server)}（${catalog.unavailable}）`,
+    );
+  }
+  if (userDisabled) {
+    return new Error(
+      `ws_mcp_detail: server 未连接或未发现：${JSON.stringify(server)}（已被用户禁用）`,
+    );
+  }
+  return new Error(`ws_mcp_detail: server 未连接或未发现：${JSON.stringify(server)}`);
 }
 // 两个纯函数（新鲜判定 / 装箱）自 #767 S1-3b 起物理落点在 impl/directory：
 // 目录投影本体要用它们，而本文件要用目录读口——留在本文件会形成文件级值环。

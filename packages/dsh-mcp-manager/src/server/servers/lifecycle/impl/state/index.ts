@@ -58,9 +58,16 @@ export function projectServerState(id: string, input: ServerStateInput): ServerS
     // connecting 纯属我方动作面（发起 mount 到 ready settle 或我方超时之间），与工具面无关。
     return input.windowExpired ? SERVER_STATES.failed : SERVER_STATES.connecting;
   }
+  return settledState(input, id);
+}
+
+/**
+ * ready 已 settle 之后的裁决（第六态投影的最后一段，判据先后即优先级）：
+ * 工具前缀命中 → connected；否则曾 connected 且允许重连 → 半确定的 reconnecting（可判时点），
+ * 余下是 §3.1 的 failed ①（我方窗口耗尽）或 ②（首连 / 首次发现失败，官方已进后台重连）。
+ */
+export function settledState(input: ServerStateInput, id: string): ServerState {
   if (input.hasTools(id)) return SERVER_STATES.connected;
-  // ready 已 settle 而工具前缀为空：曾 connected 且允许重连 → 半确定的 reconnecting（可判时点）；
-  // 否则是 §3.1 的 failed ①（我方窗口耗尽）或 ②（首连 / 首次发现失败，官方已进后台重连）。
   if (!input.everConnected) return SERVER_STATES.failed;
   return input.reconnectEnabled ? SERVER_STATES.reconnecting : SERVER_STATES.failed;
 }
