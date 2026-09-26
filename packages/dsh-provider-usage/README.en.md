@@ -120,6 +120,17 @@ countdown badge, see below) work out of the box.
 | `fetchTimeoutMs` | `5000` | Forced fetchData timeout (**fixed, not configurable**; raised 2s→5s in #208, user values ignored) |
 | `autoReload` | `true` | Hot reload on adapter file edits (enabled by default; set `false` to disable) |
 
+### Reports: reasoning effort and bounded retries
+
+The report configuration lives in `historyDir/reports/config.json`. `provider`, `model`, three period schedules/templates, notification, and directory scope keep their existing meanings. `reasoningEffort` is optional: when unset, the request omits the field and keeps DSH's default. When set, it is an **opaque ID** validated against the current exact model's DSH capability response before any model request. The plugin preserves DSH's order, names, and default marker; it never maps to `low/off` or infers the last array entry. A temporarily unavailable capability keeps the saved value and shows a warning instead of silently clearing or falling back.
+
+- **Budget and backoff**: after the initial report call, at most 5 automatic retries are allowed (`attempts=0..5`), with 1/2/4/8/16-minute backoff before retries 1–5. Only classified transient failures and empty output (reasoning-only or fully empty) consume this budget. Authentication, quota, invalid request, content-filter, abort, unknown terminal states, and unsupported blocks fail closed without automatic retry.
+- **Attempt scope**: the initial call plus automatic retries form at most 6 **report-level outer attempts**, each dispatching at most one report stream. The plugin calls `ctx.llm.stream` directly and does not use DSH's agent request retry waterfall. This is a report-level budget, **not a claim or guarantee of exactly six underlying HTTP requests**.
+- **State and recovery**: the logical identity is `period + report key`. On read, the ledger normalizes each period in memory: all non-terminal entries remain in `records`, while only the last terminal entry by key order remains. Serialization prunes again before writing, recording pruned terminal keys in full `terminalKeys` (`period → key → terminal code`, sorted by key without a count limit). Tombstones contain only the terminal code, not attempts, observations, or usage; every known terminal key keeps a tombstone so historical keys cannot be automatically reopened. `flatten` and `list`/`listDue`/`get` project only `records` and do not expand tombstones into full entries. For a key with neither an entry nor a tombstone, automatic `beginAttempt` creates the initial entry. For an existing entry, the call must carry the matching `cycleId`; a waiting entry also must have reached `nextRetryAt`, while in-flight or terminal returns `null`. If `records` has no key but `terminalKeys` has a tombstone, `beginAttempt` also returns `null`. Manual **Regenerate** (force) is the path that clears that tombstone-only key's tombstone and starts a new cycle, resets the count, and snapshots current configuration; a failed force still does not advance lastRun.
+  For example, if `daily` keys `2026-09-21` and `2026-09-23` are both terminal, `records.daily` retains only the full `2026-09-23` entry, while `terminalKeys.daily` records `2026-09-21: "auth-failed"`; `beginAttempt` for the pruned `2026-09-21` returns `null`, and only `beginForce` removes the tombstone and starts a new cycle.
+- **Cumulative cost**: every actual report attempt records input/output/reasoning/total/cache-read/cache-write tokens and duration. Both `ReportTokenUsage.reasoningTokens` and retry usage use `number | null`. Cycle totals aggregate each field independently; if any attempt lacks a field, that total stays `null` rather than becoming 0. The settings status area shows the current outer attempt, cumulative cost, next retry, or terminal reason. Status responses without `retry` keep the previous UI.
+- **Durability boundary**: the retry ledger itself uses 0600 temporary files, complete writes, file fsync, atomic rename, and directory fsync where supported. Corrupt data is quarantined no-clobber for forensics and then handled fail-closed, never treated as an empty ledger. Existing report/index/lastRun writes are not all fsynced end-to-end, so this feature claims ledger durability and process-restart recovery, not whole-chain power-loss atomicity.
+
 ## Capsule placement
 
 The usage capsule (floating pill in the conversation corner) and its panel can be repositioned:
@@ -421,7 +432,10 @@ are an optional overlay only.
   manual generation is asynchronous (#625): POST returns 202+taskId immediately and the client polls status,
   decoupled from LLM latency (no longer subject to the 10s fetch timeout); manual generation is idempotent
   by default (#626) — an existing successful report for the window is reused, and "Regenerate" forces an
-  overwrite; report history is deduplicated per window by a read-side projection (one row per window =
+  overwrite. Per-attempt structured logs contain only attempt/result/stable code, the opaque effort ID,
+  input/output/reasoning/total/cache token numbers, and durationMs. They never record prompts, reasoning
+  text, API keys/credentials, or paths; reasoning is observed only as a numeric token count. Report history
+  is deduplicated per window by a read-side projection (one row per window =
   newest version; index.jsonl stays append-only); lastRun is derived/calibrated from the index facts
   (schema v2, #624: legacy "same-day" windows are recognized as not-closed and rolled back, so a 06:00
   Monday no longer drops the daily report)

@@ -29,11 +29,12 @@
  *
  * 每条附判据句（把 X 改坏必须红）；文本哨兵仅锚真实 ABI 与装配关系，不做风格断言。
  */
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
+import type { LlmResolvedModelInfo, ReasoningEffortId } from "@deepseek-ai/dsh-llm";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanupIsolatedDirs, containsAny, hasExportStar, makeIsolatedDir } from "../../helpers.ts";
 import {
   handleReportConfig,
@@ -78,6 +79,8 @@ import {
 } from "../../../src/server/execute/interface.ts";
 import {
   ReportTaskQueue,
+  createReportStateCoordinator,
+  createRetryLedger,
   presetLastRunForNewlyEnabled,
   previousClosedWindow,
   readLastRun,
@@ -222,21 +225,46 @@ function stubQueuePort(): ReportRoutesQueuePort {
   };
 }
 
+type RouteModelStub = { id: string; name?: string };
+type RouteLlmSeen = {
+  resolveCalls: Array<{ provider: string; model: string; signal?: AbortSignal }>;
+};
+
 function stubReportCtx(
   historyRoot: string,
-  opts: { throwingDirs?: boolean } = {},
+  opts: {
+    throwingDirs?: boolean;
+    models?: RouteModelStub[];
+    modelsError?: string;
+    capability?: LlmResolvedModelInfo;
+    capabilityError?: string;
+    capabilityNever?: boolean;
+  } = {},
 ): {
   ctx: ReportRoutesContext;
   cfg: ReportRoutesConfigPort & { _current(): unknown };
+  llmSeen: RouteLlmSeen;
 } {
   const cfg = stubConfigPort();
+  const llmSeen: RouteLlmSeen = { resolveCalls: [] };
+  const llm = {
+    listProviders: () => [{ id: "stub-p" }],
+    listModels: async () => {
+      if (opts.modelsError !== undefined) throw new Error(opts.modelsError);
+      return opts.models ?? [{ id: "m1" }];
+    },
+    resolveModelInfo: async (provider: string, model: string, signal?: AbortSignal) => {
+      llmSeen.resolveCalls.push({ provider, model, signal });
+      if (opts.capabilityNever === true) {
+        return new Promise<LlmResolvedModelInfo>(() => {});
+      }
+      if (opts.capabilityError !== undefined) throw new Error(opts.capabilityError);
+      if (opts.capability === undefined) throw new Error("capability fixture missing");
+      return opts.capability;
+    },
+  };
   const ctx: ReportRoutesContext = {
-    ctx: {
-      llm: {
-        listProviders: () => [{ id: "stub-p" }],
-        listModels: async () => [{ id: "m1" }],
-      },
-    } as unknown as ReportRoutesContext["ctx"],
+    ctx: { llm } as unknown as ReportRoutesContext["ctx"],
     historyRoot,
     reportQueue: stubQueuePort(),
     reportCfgService: cfg,
@@ -255,8 +283,22 @@ function stubReportCtx(
         }
       : () => [{ dir: "d", calls: 1, total: null }],
   };
-  return { ctx, cfg };
+  return { ctx, cfg, llmSeen };
 }
+
+const routeEffortId = (value: string): ReasoningEffortId => value as ReasoningEffortId;
+const routeCapability: LlmResolvedModelInfo = {
+  provider: "stub-p",
+  id: "m2",
+  name: "M2 capability",
+  reasoning: {
+    efforts: [
+      { id: routeEffortId("vendor::deep"), name: "Deep", description: "深度思考" },
+      { id: routeEffortId("vendor::balanced"), name: "Balanced" },
+    ],
+    defaultEffort: routeEffortId("vendor::balanced"),
+  },
+};
 
 type AnyHandler = (req: IncomingMessage, res: ServerResponse, ctx: object) => unknown;
 
@@ -389,6 +431,25 @@ describe("D11二 配置服务窄面消费 + 任务队列 + 执行器", () => {
     expect((cfg._current() as { daily: { time: string } }).daily.time).toBe("08:00");
   });
 
+  it.each([
+    { label: "非 string", value: 7 },
+    { label: "空串", value: "" },
+  ])("POST reasoningEffort 为$label时显式 400 且不改配置", async ({ value }) => {
+    const root = isolatedDir("dou-reportroutes-reasoning-effort-");
+    const { ctx, cfg } = stubReportCtx(root);
+    const before = cfg._current();
+
+    const posted = await callStatus(
+      handleReportConfig as AnyHandler,
+      fakeReq({ method: "POST", body: JSON.stringify({ reasoningEffort: value }) }),
+      ctx,
+    );
+
+    expect(posted.code).toBe(400);
+    expect((posted.body as { error?: string }).error).toBe("invalid-reasoning-effort");
+    expect(cfg._current()).toBe(before);
+  });
+
   it("首次启用翻转落盘lastRun（changed接线，断线即红）", async () => {
     // #768 B1b：changed=true→updateLastRun 接线覆盖（翻转 daily 关闭→启用，lastRun 落盘非空）。
     const root = isolatedDir("dou-reportroutesD11-flip-");
@@ -432,6 +493,151 @@ describe("D11二 配置服务窄面消费 + 任务队列 + 执行器", () => {
       ctx,
     );
     expect((unknown.body as { reason?: string }).reason).toBe("unknown-provider");
+  });
+
+  describe("report-models：exact model capability wire", () => {
+    it("无 model 参数保持 models[] 且不调用 resolver", async () => {
+      const root = isolatedDir("dou-reportroutes-model-capability-");
+      const { ctx, llmSeen } = stubReportCtx(root);
+
+      const response = await callStatus(
+        handleReportModels as AnyHandler,
+        fakeReq({ method: "GET", url: "/?provider=stub-p" }),
+        ctx,
+      );
+
+      expect(response.code).toBe(200);
+      expect(response.body).toEqual({ ok: true, models: [{ id: "m1" }] });
+      expect(llmSeen.resolveCalls).toEqual([]);
+    });
+
+    it("多模型目录只查 exact model 一次并透传 efforts 顺序、name、description、default", async () => {
+      const root = isolatedDir("dou-reportroutes-model-capability-");
+      const { ctx, llmSeen } = stubReportCtx(root, {
+        models: [
+          { id: "m1", name: "Catalog M1" },
+          { id: "m2", name: "Catalog M2" },
+          { id: "m3", name: "Catalog M3" },
+        ],
+        capability: routeCapability,
+      });
+
+      const response = await callStatus(
+        handleReportModels as AnyHandler,
+        fakeReq({ method: "GET", url: "/?provider=stub-p&model=m2" }),
+        ctx,
+      );
+
+      expect(response.code).toBe(200);
+      expect(response.body).toEqual({
+        ok: true,
+        models: [
+          { id: "m1", name: "Catalog M1" },
+          { id: "m2", name: "Catalog M2" },
+          { id: "m3", name: "Catalog M3" },
+        ],
+        selectedModel: {
+          id: "m2",
+          name: "M2 capability",
+          reasoning: {
+            efforts: [
+              { id: "vendor::deep", name: "Deep", description: "深度思考" },
+              { id: "vendor::balanced", name: "Balanced" },
+            ],
+            defaultEffort: "vendor::balanced",
+          },
+        },
+      });
+      expect(llmSeen.resolveCalls).toEqual([
+        { provider: "stub-p", model: "m2", signal: expect.any(AbortSignal) },
+      ]);
+    });
+
+    it("exact model 不在列表时返回 unknown-model 且不调用 resolver", async () => {
+      const root = isolatedDir("dou-reportroutes-model-capability-");
+      const { ctx, llmSeen } = stubReportCtx(root);
+
+      const response = await callStatus(
+        handleReportModels as AnyHandler,
+        fakeReq({ method: "GET", url: "/?provider=stub-p&model=missing" }),
+        ctx,
+      );
+
+      expect(response.code).toBe(200);
+      expect(response.body).toEqual({ ok: false, reason: "unknown-model" });
+      expect(llmSeen.resolveCalls).toEqual([]);
+    });
+
+    it("命中模型但 capability resolver 失败时保留 models[] 并标记 capabilityError", async () => {
+      const root = isolatedDir("dou-reportroutes-model-capability-");
+      const { ctx, llmSeen } = stubReportCtx(root, {
+        models: [{ id: "m1", name: "Catalog M1" }],
+        capabilityError: "capability unavailable",
+      });
+
+      const response = await callStatus(
+        handleReportModels as AnyHandler,
+        fakeReq({ method: "GET", url: "/?provider=stub-p&model=m1" }),
+        ctx,
+      );
+
+      expect(response.code).toBe(200);
+      expect(response.body).toEqual({
+        ok: true,
+        models: [{ id: "m1", name: "Catalog M1" }],
+        selectedModel: { id: "m1", capabilityError: true },
+      });
+      expect(llmSeen.resolveCalls).toEqual([
+        { provider: "stub-p", model: "m1", signal: expect.any(AbortSignal) },
+      ]);
+    });
+
+    it("never-settling resolver 超时返回 capabilityError 并尽力 abort 底层", async () => {
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+      try {
+        const root = isolatedDir("dou-reportroutes-model-capability-timeout-");
+        const { ctx, llmSeen } = stubReportCtx(root, {
+          models: [{ id: "m1" }, { id: "m2" }],
+          capabilityNever: true,
+        });
+        const pending = callStatus(
+          handleReportModels as AnyHandler,
+          fakeReq({ method: "GET", url: "/?provider=stub-p&model=m2" }),
+          ctx,
+        );
+
+        await vi.advanceTimersByTimeAsync(5000);
+        const response = await pending;
+
+        expect(response.code).toBe(200);
+        expect(response.body).toEqual({
+          ok: true,
+          models: [{ id: "m1" }, { id: "m2" }],
+          selectedModel: { id: "m2", capabilityError: true },
+        });
+        expect(llmSeen.resolveCalls).toHaveLength(1);
+        expect(llmSeen.resolveCalls[0]!.signal?.aborted).toBe(true);
+        expect(vi.getTimerCount()).toBe(0);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("模型列表异常只返回稳定 code，不泄露 resolver 原始文案", async () => {
+      const root = isolatedDir("dou-reportroutes-model-discover-safe-error-");
+      const raw = "key=sk-private path=/private/report.json";
+      const { ctx } = stubReportCtx(root, { modelsError: raw });
+
+      const response = await callStatus(
+        handleReportModels as AnyHandler,
+        fakeReq({ method: "GET", url: "/?provider=stub-p" }),
+        ctx,
+      );
+
+      expect(response.code).toBe(200);
+      expect(response.body).toEqual({ ok: false, reason: "discover-failed" });
+      expect(JSON.stringify(response.body)).not.toContain(raw);
+    });
   });
 
   it("窄面桩跑通历史索引与详情围栏（空索引 200，键非法 400，缺件 404）", async () => {
@@ -501,6 +707,244 @@ describe("D11二 配置服务窄面消费 + 任务队列 + 执行器", () => {
       ctx,
     );
     expect(illegal.code).toBe(404);
+  });
+
+  it("非 force 遇 waiting/terminal ledger 时明确 deferred/terminal 且不入队", async () => {
+    const root = isolatedDir("dou-reportroutes-retry-state-");
+    const { ctx } = stubReportCtx(root);
+    const ledger = createRetryLedger(root, {
+      createCycleId: (() => {
+        let n = 0;
+        return () => `route-cycle-${(n += 1)}`;
+      })(),
+    });
+    const state = createReportStateCoordinator({ root, ledger });
+    const due = previousClosedWindow("daily", ctx.reportCfgService.get(), Date.now());
+    const claim = await state.beginAttempt({
+      ...due,
+      route: { provider: "stub-p", model: "m1" },
+    });
+    if (claim === null) throw new Error("expected claim");
+    await state.recordFailure(claim, { code: "transient", kind: "transient" });
+    const waiting = await callStatus(
+      handleReportGenerate as AnyHandler,
+      fakeReq({ method: "POST", body: JSON.stringify({ period: "daily" }) }),
+      { ...ctx, retryState: state },
+    );
+    expect(waiting.code).toBe(409);
+    expect((waiting.body as { status?: string }).status).toBe("deferred");
+    await state.beginForce({
+      ...due,
+      route: { provider: "stub-p", model: "m1" },
+    });
+    const terminalEntry = await state.get(due.period, due.key);
+    if (terminalEntry === undefined) throw new Error("expected terminal ledger");
+    const terminalClaim = await state.beginAttempt({
+      ...due,
+      cycleId: terminalEntry.cycleId,
+      route: terminalEntry.route,
+    });
+    if (terminalClaim === null) throw new Error("expected terminal claim");
+    await state.recordFailure(terminalClaim, { code: "permanent", kind: "permanent" });
+    const terminal = await callStatus(
+      handleReportGenerate as AnyHandler,
+      fakeReq({ method: "POST", body: JSON.stringify({ period: "daily" }) }),
+      { ...ctx, retryState: state },
+    );
+    expect(terminal.code).toBe(409);
+    expect((terminal.body as { status?: string }).status).toBe("terminal");
+  });
+
+  it.each(["waiting", "in-flight"] as const)(
+    "旧 cycle index 遇到 force %s 时 non-force 仅复用，不清新 ledger/lastRun",
+    async (phase) => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      const now = Date.UTC(2026, 8, 24, 12, 0, 0);
+      vi.setSystemTime(now);
+      const root = isolatedDir(`dou-reportroutes-old-index-${phase}-`);
+      const { ctx } = stubReportCtx(root);
+      const due = previousClosedWindow("daily", ctx.reportCfgService.get(), now);
+      const ledger = createRetryLedger(root, {
+        createCycleId: (() => {
+          let sequence = 0;
+          return () => `route-cycle-${(sequence += 1)}`;
+        })(),
+      });
+      const state = createReportStateCoordinator({ root, ledger, now: () => now });
+      const oldClaim = await state.beginAttempt(
+        {
+          ...due,
+          route: { provider: "stub-p", model: "m1" },
+        },
+        now - 1,
+      );
+      if (oldClaim === null) throw new Error("expected old claim");
+      const oldMeta = {
+        period: due.period,
+        key: due.key,
+        startDay: due.startDay,
+        endDay: due.endDay,
+        provider: "stub-p",
+        model: "m1",
+        generatedAt: now - 1,
+        durationMs: 1,
+        ok: true,
+        cycleId: oldClaim.cycleId,
+      };
+      mkdirSync(join(root, "reports"), { recursive: true });
+      writeFileSync(join(root, "reports", "index.jsonl"), `${JSON.stringify(oldMeta)}\n`);
+      const forced = await state.beginForce(
+        {
+          ...due,
+          route: { provider: "stub-p", model: "m1" },
+        },
+        now,
+      );
+      if (phase === "in-flight") {
+        const claim = await state.beginAttempt(
+          {
+            ...due,
+            cycleId: forced.cycleId,
+            route: forced.route,
+          },
+          now,
+        );
+        if (claim === null) throw new Error("expected in-flight force claim");
+      }
+      const beforeLastRun = { daily: "2000-01-01" };
+      await updateLastRun(root, () => beforeLastRun);
+
+      try {
+        const response = await callStatus(
+          handleReportGenerate as AnyHandler,
+          fakeReq({ method: "POST", body: JSON.stringify({ period: "daily", force: false }) }),
+          { ...ctx, retryState: state },
+        );
+
+        expect(response.code).toBe(200);
+        expect(response.body).toMatchObject({ ok: true, reused: true, meta: oldMeta });
+        expect(await state.get(due.period, due.key)).toMatchObject({
+          cycleId: forced.cycleId,
+          phase,
+          terminal: false,
+        });
+        expect(await readLastRun(root)).toEqual(beforeLastRun);
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
+
+  it("force 走 submitForce；status 透出稳定 retry 状态", async () => {
+    const root = isolatedDir("dou-reportroutes-force-");
+    const { ctx } = stubReportCtx(root);
+    const taskId = "44444444-4444-4444-8444-444444444444";
+    let submitted = 0;
+    const queue: ReportRoutesQueuePort & {
+      submitForce?: (input: {
+        period: "daily";
+        key: string;
+        startDay: string;
+        endDay: string;
+        force: true;
+      }) => Promise<{ taskId: string; existing: boolean }>;
+    } = {
+      submit: () => ({ taskId: DONE_TASK_ID, existing: false }),
+      submitForce: async () => {
+        submitted += 1;
+        return { taskId, existing: false };
+      },
+      get: (id: string) =>
+        id === taskId
+          ? {
+              id,
+              period: "daily",
+              key: "2026-09-18",
+              startDay: "2026-09-18",
+              endDay: "2026-09-18",
+              force: true,
+              status: "failed",
+              createdAt: 1,
+              updatedAt: 2,
+              error: "storage",
+            }
+          : undefined,
+    };
+    const retryState = {
+      get: async () => ({
+        period: "daily" as const,
+        key: "2026-09-18",
+        startDay: "2026-09-18",
+        endDay: "2026-09-18",
+        route: { provider: "stub-p", model: "m1" },
+        attempts: 2,
+        maxAttempts: 5 as const,
+        nextRetryAt: 1234,
+        terminal: false,
+        reason: null,
+        cycleId: "c1",
+        phase: "waiting" as const,
+        attemptObservations: [],
+        usage: {
+          inputTokens: 11,
+          outputTokens: null,
+          reasoningTokens: 3,
+          totalTokens: null,
+          cacheReadTokens: null,
+          cacheWriteTokens: null,
+          durationMs: 42,
+        },
+      }),
+    } as unknown as ReportRoutesContext["retryState"];
+    const withState = { ...ctx, reportQueue: queue, retryState };
+    const response = await callStatus(
+      handleReportGenerate as AnyHandler,
+      fakeReq({ method: "POST", body: JSON.stringify({ period: "daily", force: true }) }),
+      withState,
+    );
+    expect(response.code).toBe(202);
+    expect(submitted).toBe(1);
+    const status = await callStatus(
+      handleReportStatus as AnyHandler,
+      fakeReq({ method: "GET", url: `/?taskId=${taskId}` }),
+      withState,
+    );
+    expect(status.code).toBe(200);
+    expect((status.body as { error?: string; retry?: unknown }).error).toBe("storage");
+    expect(
+      (status.body as { retry?: { attempts?: number; usage?: unknown } }).retry?.attempts,
+    ).toBe(2);
+    expect((status.body as { retry?: { usage?: unknown } }).retry?.usage).toEqual({
+      inputTokens: 11,
+      outputTokens: null,
+      reasoningTokens: 3,
+      totalTokens: null,
+      cacheReadTokens: null,
+      cacheWriteTokens: null,
+      durationMs: 42,
+    });
+  });
+
+  it("force prepare/提交失败返回稳定 code，不泄露原始错误", async () => {
+    const root = isolatedDir("dou-reportroutes-force-error-");
+    const { ctx } = stubReportCtx(root);
+    const queue: ReportRoutesQueuePort & {
+      submitForce?: () => Promise<{ taskId: string; existing: boolean }>;
+    } = {
+      submit: () => ({ taskId: DONE_TASK_ID, existing: false }),
+      submitForce: async () => {
+        throw new Error("secret path=/private/report.json key=sk-live");
+      },
+      get: () => undefined,
+    };
+    const response = await callStatus(
+      handleReportGenerate as AnyHandler,
+      fakeReq({ method: "POST", body: JSON.stringify({ period: "daily", force: true }) }),
+      { ...ctx, reportQueue: queue },
+    );
+    expect(response.code).toBe(503);
+    expect(JSON.stringify(response.body)).not.toContain("secret path");
+    expect(JSON.stringify(response.body)).not.toContain("sk-live");
   });
 
   it("执行器工厂不直引（实现内无执行器符号，越界即红）", () => {

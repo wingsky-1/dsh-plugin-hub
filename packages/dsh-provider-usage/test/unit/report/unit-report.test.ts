@@ -37,7 +37,7 @@ import { tmpdir } from "node:os";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { Context } from "@deepseek-ai/cordis";
 import type { SessionEvent } from "@deepseek-ai/dsh-session/types";
-import { beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { pollUntil, callHandler } from "../../helpers.ts";
 // 白盒直连深路径（#768 B波）：日界纯面经 shared 门面，不走组合根转发。
 import { dayKey } from "../../../src/shared/interface.ts";
@@ -84,6 +84,8 @@ import {
   applyPromptTemplate,
   buildStatsSnapshot,
   generateReport,
+  generateReportOutcome,
+  resolveGenerateRoute,
   parseReportIndexLines,
   persistReport,
   readReportIndex,
@@ -97,7 +99,15 @@ import {
   handleReportStatus,
   type ReportRoutesContext,
 } from "../../../src/server/report-routes/interface.ts";
-import type { GenerateOptions, StreamChunk } from "@deepseek-ai/dsh-llm";
+import type {
+  ContentBlock,
+  FinishReason,
+  GenerateOptions,
+  LlmResolvedModelInfo,
+  ReasoningEffortId,
+  StreamChunk,
+  ToolCallId,
+} from "@deepseek-ai/dsh-llm";
 import type {
   ReportLlmService,
   ReportMeta,
@@ -105,10 +115,12 @@ import type {
 } from "../../../src/server/execute/interface.ts";
 /** 首个 content 块的文本（生成侧恒为 user 文本块；类型面为块联合体）。 */
 const textOf = (block: unknown): string => (block as { text: string }).text;
-/** fakeLlm 观测快照（与 fakeLlm 返回的 seen 同形）。 */
+/** fakeLlm 观测快照：逐次保存 stream 入参，并记录 exact-model capability 查询。 */
 interface LlmSeen {
-  options: GenerateOptions | null;
-  streamCalled: boolean;
+  listProvidersCalls: number;
+  listModelsCalls: string[];
+  calls: GenerateOptions[];
+  resolveCalls: Array<{ provider: string; model: string; signal?: AbortSignal }>;
 }
 import type { ReportConfig, ReportPeriod } from "../../../src/server/config/interface.ts";
 // 白盒直连深路径（#768 B波）：词表纯数据经 server/config 门面，不走组合根转发。
@@ -156,49 +168,92 @@ const CHUNKS: StreamChunk[] = [
   { type: "text-delta", index: 0, text: "第一段。" },
   { type: "text-delta", index: 0, text: "第二段。" },
   { type: "usage", usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 } },
-  // finish 原因走官方对象形态（实现仅消费 text-delta/usage，finish 内容恒忽略——与旧字符串形态同行为）。
+  // finish 原因走官方对象形态；未知终态必须 fail closed。
   { type: "finish", reason: { kind: "stop" } },
 ];
 
-/** fake llm：罐头 chunk 流；seen 记录收到的 GenerateOptions（断言路由/信号透传）。
- * options 恒由 stream 在断言前置位（null 初始仅过构造面）。 */
+interface FakeLlmOptions {
+  throwInStream?: string;
+  throwInListProviders?: string;
+  throwInListModels?: string;
+  noProviders?: boolean;
+  noModels?: boolean;
+  capability?: LlmResolvedModelInfo;
+  capabilityError?: string;
+  capabilityNever?: boolean;
+  /** 边界测试用：明确模拟 provider 完全忽略 GenerateOptions.signal。 */
+  streamSignalMode?: "ignore";
+  onStreamStart?: () => void;
+  streamGate?: Promise<void>;
+}
+
+/** fake llm：罐头 chunk 流；seen 记录 route、stream 与可选 exact-model capability 查询。 */
 function fakeLlm(
   chunks: StreamChunk[] = CHUNKS,
-  opts: { throwInStream?: string; noProviders?: boolean; noModels?: boolean } = {},
+  opts: FakeLlmOptions = {},
 ): {
   llm: ReportLlmService;
-  seen: { options: GenerateOptions | null; streamCalled: boolean };
+  seen: LlmSeen;
 } {
-  const seen: { options: GenerateOptions | null; streamCalled: boolean } = {
-    options: null,
-    streamCalled: false,
+  const seen: LlmSeen = {
+    listProvidersCalls: 0,
+    listModelsCalls: [],
+    calls: [],
+    resolveCalls: [],
   };
   const llm: ReportLlmService = {
     stream(o: GenerateOptions): AsyncIterable<StreamChunk> {
-      seen.streamCalled = true;
-      seen.options = o;
+      seen.calls.push({ ...o, messages: [...o.messages] });
       return (async function* (): AsyncGenerator<StreamChunk> {
         if (opts.throwInStream) throw new Error(opts.throwInStream);
-        if (o.signal?.aborted) throw new Error("aborted before start");
+        if (o.signal?.aborted && opts.streamSignalMode !== "ignore") {
+          throw new Error("aborted before start");
+        }
+        opts.onStreamStart?.();
+        if (opts.streamGate !== undefined) await opts.streamGate;
         yield* chunks;
       })();
     },
-    listProviders: () =>
-      opts.noProviders
+    listProviders: () => {
+      seen.listProvidersCalls += 1;
+      if (opts.throwInListProviders !== undefined) throw new Error(opts.throwInListProviders);
+      return opts.noProviders
         ? []
         : [
             { id: "prov-a", name: "A" },
             { id: "prov-b", name: "B" },
-          ],
-    listModels: async () =>
-      opts.noModels ? [] : [{ provider: "prov-a", id: "model-a", name: "A" }],
+          ];
+    },
+    listModels: async (provider) => {
+      seen.listModelsCalls.push(provider);
+      if (opts.throwInListModels !== undefined) throw new Error(opts.throwInListModels);
+      return opts.noModels ? [] : [{ provider: "prov-a", id: "model-a", name: "A" }];
+    },
   };
+  const capability = opts.capability;
+  if (
+    capability !== undefined ||
+    opts.capabilityError !== undefined ||
+    opts.capabilityNever === true
+  ) {
+    Object.assign(llm, {
+      async resolveModelInfo(provider: string, model: string, signal?: AbortSignal) {
+        seen.resolveCalls.push({ provider, model, signal });
+        if (opts.capabilityNever === true) {
+          return new Promise<LlmResolvedModelInfo>(() => {});
+        }
+        if (opts.capabilityError !== undefined) throw new Error(opts.capabilityError);
+        if (capability === undefined) throw new Error("capability fixture missing");
+        return capability;
+      },
+    });
+  }
   return { llm, seen };
 }
 
 // GEN 的 llm 调用方恒覆写（全调用点均传 llm；null 默认永不被观测）：
 // 以必填收敛，调用缺 llm 即红。
-type GenOpts = Parameters<typeof generateReport>[0];
+type GenOpts = Parameters<typeof generateReportOutcome>[0];
 const GEN = (over: Partial<GenOpts> & { llm: ReportLlmService }): GenOpts => ({
   period: "daily",
   key: "2026-09-04",
@@ -491,6 +546,7 @@ describe("generate：成功路径（正文拼接 / token 元数据 / 空串跟�
     expect(r.meta.tokens).toEqual({
       inputTokens: 10,
       outputTokens: 5,
+      reasoningTokens: null,
       totalTokens: 15,
       cacheReadTokens: null,
       cacheWriteTokens: null,
@@ -505,34 +561,511 @@ describe("generate：成功路径（正文拼接 / token 元数据 / 空串跟�
     expect(r.meta.model).toBe("model-a");
   });
 
-  it("GenerateOptions 透传解析后路由", () => {
-    expect(seen.options!.provider).toBe("prov-a");
+  it("模型流仅调用一次并透传解析后路由", () => {
+    expect(seen.calls).toHaveLength(1);
+    expect(seen.calls[0]!.provider).toBe("prov-a");
   });
 
   it("单条 user 消息", () => {
-    expect(seen.options!.messages.length).toBe(1);
+    expect(seen.calls[0]!.messages.length).toBe(1);
   });
 
   it("user source", () => {
     // 0.1.7 起 messages 元素为 RequestMessage（source 可选，hand-built one-shot
     // 允许无 source）；?. 收窄后断言强度不变（缺 source 即 undefined ≠ "user" 照红）。
-    expect(seen.options!.messages[0]?.source?.kind).toBe("user");
+    expect(seen.calls[0]!.messages[0]?.source?.kind).toBe("user");
   });
 
   it("role=user（UserMessage 字面量，类型层同步钉死）", () => {
-    expect(seen.options!.messages[0].role).toBe("user");
+    expect(seen.calls[0]!.messages[0].role).toBe("user");
   });
 
   it("{stats} 注入统计 JSON", () => {
-    expect(textOf(seen.options!.messages[0].content[0]).includes('{"calls":1}')).toBeTruthy();
+    expect(textOf(seen.calls[0]!.messages[0].content[0]).includes('{"calls":1}')).toBeTruthy();
   });
 
   it("tools 不传 = 无工具面", () => {
-    expect(seen.options!.tools === undefined).toBeTruthy();
+    expect(seen.calls[0]!.tools === undefined).toBeTruthy();
   });
 
   it("时长记录", () => {
-    expect(r.meta.durationMs >= 0).toBeTruthy();
+    expect(typeof r.meta.durationMs).toBe("number");
+    expect(r.meta.durationMs).toBeGreaterThanOrEqual(0);
+  });
+});
+
+// ---------------------------------------------------------------- generate：官方完整 block 流
+
+const PRIVATE_REASONING = "不得保存的推理原文";
+const TOOL_ARGUMENTS =
+  '{"key":"sk-test-not-a-real-key","path":"/home/private/report.json","control":"\u0000"}';
+const REPORT_TOOL_CALL_ID = "report-tool-call" as ToolCallId;
+const UNSUPPORTED_TOOL_ERROR = "模型返回了报告不支持的工具调用";
+const UNSUPPORTED_CONTENT_ERROR = "模型返回了报告不支持的内容块";
+
+const PRIVATE_IMAGE_NAME = "private-image-name.png";
+const PRIVATE_FILE_NAME = "private-file-name.txt";
+const PRIVATE_TOOL_NAME = "private_dynamic_tool";
+
+// 官方 ContentBlock 的真实字段形状；附件 id 是品牌字符串，测试只在边界处做窄断言。
+const IMAGE_BLOCK = {
+  type: "image",
+  attachment: {
+    attachmentId: "image-fixture",
+    mediaType: "image/png",
+    bytes: 1,
+    width: 1,
+    height: 1,
+    name: PRIVATE_IMAGE_NAME,
+  },
+} as ContentBlock;
+const FILE_BLOCK = {
+  type: "file",
+  attachment: {
+    attachmentId: "file-fixture",
+    name: PRIVATE_FILE_NAME,
+    bytes: 1,
+  },
+} as ContentBlock;
+const TOOL_ADDITION_BLOCK: ContentBlock = {
+  type: "tool-addition",
+  toolName: PRIVATE_TOOL_NAME,
+};
+const TOOL_REMOVAL_BLOCK: ContentBlock = {
+  type: "tool-removal",
+  toolName: PRIVATE_TOOL_NAME,
+};
+
+const UNSUPPORTED_CONTENT_BLOCKS: Array<{ name: string; block: ContentBlock }> = [
+  { name: "image", block: IMAGE_BLOCK },
+  { name: "file", block: FILE_BLOCK },
+  { name: "tool-addition", block: TOOL_ADDITION_BLOCK },
+  { name: "tool-removal", block: TOOL_REMOVAL_BLOCK },
+];
+
+const UNSUPPORTED_CONTENT_STREAMS: Array<{ name: string; chunks: StreamChunk[] }> = [
+  ...UNSUPPORTED_CONTENT_BLOCKS.flatMap(
+    ({ name, block }): Array<{ name: string; chunks: StreamChunk[] }> => [
+      {
+        name: `${name} block-start`,
+        chunks: [
+          { type: "block-start", index: 0, blockType: block.type },
+          { type: "text-delta", index: 0, text: "不应保存的正文" },
+          { type: "finish", reason: { kind: "stop" } },
+        ],
+      },
+      {
+        name: `${name} block-end`,
+        chunks: [
+          { type: "block-end", index: 0, block },
+          { type: "text-delta", index: 0, text: "不应保存的正文" },
+          { type: "finish", reason: { kind: "stop" } },
+        ],
+      },
+    ],
+  ),
+];
+
+const UNSUPPORTED_TOOL_STREAMS: Array<{ name: string; chunks: StreamChunk[] }> = [
+  {
+    name: "tool-call-delta",
+    chunks: [
+      {
+        type: "tool-call-delta",
+        index: 0,
+        id: REPORT_TOOL_CALL_ID,
+        name: "read_private_file",
+        argumentsDelta: TOOL_ARGUMENTS,
+      },
+      { type: "finish", reason: { kind: "stop" } },
+    ],
+  },
+  {
+    name: "tool-call block-end",
+    chunks: [
+      {
+        type: "block-end",
+        index: 0,
+        block: {
+          type: "tool-call",
+          id: REPORT_TOOL_CALL_ID,
+          name: "read_private_file",
+          arguments: TOOL_ARGUMENTS,
+        },
+      },
+      { type: "finish", reason: { kind: "stop" } },
+    ],
+  },
+  {
+    name: "tool-calls finish",
+    chunks: [
+      { type: "text-delta", index: 0, text: "不应成功保存的正文" },
+      { type: "finish", reason: { kind: "tool-calls" } },
+    ],
+  },
+];
+
+describe("generate：官方完整 block 流", () => {
+  it("block-start + text-delta + block-end + stop 成功且正文只拼接 delta 一次", async () => {
+    const f = fakeLlm([
+      { type: "block-start", index: 0, blockType: "text" },
+      { type: "text-delta", index: 0, text: "完整正文" },
+      { type: "block-end", index: 0, block: { type: "text", text: "完整正文" } },
+      { type: "finish", reason: { kind: "stop" } },
+    ]);
+
+    const result = await generateReport(
+      GEN({ llm: f.llm, provider: "generic-provider", model: "generic-model" }),
+    );
+
+    expect(result.meta.ok).toBe(true);
+    expect(result.body).toBe("完整正文");
+    expect(f.seen.calls).toHaveLength(1);
+  });
+
+  it("无 text-delta 时以 text block-end 作为正文 fallback", async () => {
+    const f = fakeLlm([
+      { type: "block-start", index: 0, blockType: "text" },
+      { type: "block-end", index: 0, block: { type: "text", text: "仅块正文" } },
+      { type: "finish", reason: { kind: "stop" } },
+    ]);
+
+    const result = await generateReport(
+      GEN({ llm: f.llm, provider: "generic-provider", model: "generic-model" }),
+    );
+
+    expect(result.meta.ok).toBe(true);
+    expect(result.body).toBe("仅块正文");
+  });
+
+  it("reasoning block-end-only 精确归类为 reasoning-only 且不保存原文", async () => {
+    const f = fakeLlm([
+      { type: "block-start", index: 0, blockType: "reasoning" },
+      { type: "block-end", index: 0, block: { type: "reasoning", text: PRIVATE_REASONING } },
+      { type: "finish", reason: { kind: "stop" } },
+    ]);
+
+    const result = await generateReport(
+      GEN({ llm: f.llm, provider: "generic-provider", model: "generic-model" }),
+    );
+
+    expect(result.meta).toMatchObject({
+      ok: false,
+      error: "模型仅返回推理过程未产出正文",
+    });
+    expect(result.body).toBe("");
+    expect(JSON.stringify(result)).not.toContain(PRIVATE_REASONING);
+  });
+
+  it.each(UNSUPPORTED_TOOL_STREAMS)(
+    "$name 以固定安全错误 fail closed 且不泄露工具原文",
+    async ({ chunks }) => {
+      const f = fakeLlm(chunks);
+
+      const result = await generateReport(
+        GEN({ llm: f.llm, provider: "generic-provider", model: "generic-model" }),
+      );
+
+      expect(result.meta).toMatchObject({ ok: false, error: UNSUPPORTED_TOOL_ERROR });
+      expect(result.body).toBe("");
+      expect(JSON.stringify(result)).not.toContain(TOOL_ARGUMENTS);
+      expect(f.seen.calls).toHaveLength(1);
+    },
+  );
+
+  it.each(UNSUPPORTED_CONTENT_STREAMS)(
+    "$name 拒绝官方非文本 block，text-delta 不得绕过且不泄露 block 原文",
+    async ({ chunks }) => {
+      const f = fakeLlm(chunks);
+
+      const result = await generateReport(
+        GEN({ llm: f.llm, provider: "generic-provider", model: "generic-model" }),
+      );
+
+      expect(result.meta).toMatchObject({ ok: false, error: UNSUPPORTED_CONTENT_ERROR });
+      expect(result.body).toBe("");
+      expect(JSON.stringify(result)).not.toContain(PRIVATE_IMAGE_NAME);
+      expect(JSON.stringify(result)).not.toContain(PRIVATE_FILE_NAME);
+      expect(JSON.stringify(result)).not.toContain(PRIVATE_TOOL_NAME);
+      expect(f.seen.calls).toHaveLength(1);
+    },
+  );
+});
+
+describe("generate：结构化 retry outcome", () => {
+  it("无 reasoningEffort 的 pre-abort 在 route/capability/stream 前稳定失败", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const f = fakeLlm(CHUNKS, {
+      capability: GENERIC_CAPABILITY,
+      streamSignalMode: "ignore",
+      throwInListProviders: RAW_PROVIDER_FAILURE,
+    });
+
+    const outcome = await generateReportOutcome(GEN({ llm: f.llm, signal: controller.signal }));
+
+    expect(outcome).toMatchObject({
+      status: "failure",
+      failure: { kind: "aborted", code: "request-aborted" },
+      result: {
+        body: "",
+        meta: { ok: false, error: "模型请求已取消", provider: "", model: "" },
+      },
+    });
+    expect(f.seen.listProvidersCalls).toBe(0);
+    expect(f.seen.listModelsCalls).toEqual([]);
+    expect(f.seen.resolveCalls).toHaveLength(0);
+    expect(f.seen.calls).toHaveLength(0);
+  });
+
+  it("流中 abort 不等待忽略 signal 的 provider 并稳定收口", async () => {
+    let releaseStream = (): void => {};
+    const streamGate = new Promise<void>((resolve) => {
+      releaseStream = resolve;
+    });
+    let notifyStreamStarted = (): void => {};
+    const streamStarted = new Promise<void>((resolve) => {
+      notifyStreamStarted = resolve;
+    });
+    const f = fakeLlm(CHUNKS, {
+      streamSignalMode: "ignore",
+      onStreamStart: notifyStreamStarted,
+      streamGate,
+    });
+    const controller = new AbortController();
+
+    const pending = generateReportOutcome(
+      GEN({
+        llm: f.llm,
+        provider: "generic-provider",
+        model: "generic-model",
+        signal: controller.signal,
+      }),
+    );
+    await streamStarted;
+    controller.abort();
+
+    const unsettled = Symbol("unsettled");
+    const observed = await Promise.race([
+      pending,
+      (async () => {
+        for (let turn = 0; turn < 10; turn += 1) await Promise.resolve();
+        return unsettled;
+      })(),
+    ]);
+    releaseStream();
+    const outcome = await pending;
+
+    expect(observed).not.toBe(unsettled);
+    expect(outcome).toMatchObject({
+      status: "failure",
+      failure: { kind: "aborted", code: "request-aborted" },
+      result: { body: "", meta: { ok: false, error: "模型请求已取消" } },
+    });
+    expect(f.seen.calls).toHaveLength(1);
+    expect(f.seen.calls[0]!.signal).toBe(controller.signal);
+  });
+
+  it("caller abort 后的 stream throw 仍归 aborted 且不泄漏 provider 原文", async () => {
+    const controller = new AbortController();
+    const f = fakeLlm();
+    let streamCalls = 0;
+    const llm: ReportLlmService = {
+      ...f.llm,
+      stream: () => {
+        streamCalls += 1;
+        controller.abort();
+        throw new Error(RAW_PROVIDER_FAILURE);
+      },
+    };
+
+    const outcome = await generateReportOutcome(
+      GEN({
+        llm,
+        provider: "generic-provider",
+        model: "generic-model",
+        signal: controller.signal,
+      }),
+    );
+
+    expect(outcome).toMatchObject({
+      status: "failure",
+      failure: { kind: "aborted", code: "request-aborted" },
+      result: { body: "", meta: { ok: false, error: "模型请求已取消" } },
+    });
+    expect(streamCalls).toBe(1);
+    expect(JSON.stringify(outcome)).not.toContain(RAW_PROVIDER_FAILURE);
+  });
+
+  it("reasoning-only 标记 empty-output/reasoning-only 且不保留推理原文", async () => {
+    const privateReasoning = "provider reasoning secret must not escape";
+    const f = fakeLlm([
+      { type: "reasoning-delta", index: 0, text: privateReasoning },
+      { type: "finish", reason: { kind: "stop" } },
+    ]);
+
+    const outcome = await generateReportOutcome(GEN({ llm: f.llm }));
+
+    expect(outcome).toMatchObject({
+      status: "failure",
+      failure: { kind: "empty-output", code: "reasoning-only" },
+      result: { body: "", meta: { ok: false, error: "模型仅返回推理过程未产出正文" } },
+    });
+    expect(JSON.stringify(outcome)).not.toContain(privateReasoning);
+  });
+
+  it("finish 后 provider 再抛错按 protocol-after-terminal 收口", async () => {
+    const f = fakeLlm();
+    const llm: ReportLlmService = {
+      ...f.llm,
+      stream: () =>
+        (async function* (): AsyncGenerator<StreamChunk> {
+          yield { type: "finish", reason: { kind: "stop" } };
+          throw { code: "SERVER", message: RAW_PROVIDER_FAILURE };
+        })(),
+    };
+    const outcome = await generateReportOutcome(GEN({ llm }));
+
+    expect(outcome).toMatchObject({
+      status: "failure",
+      failure: { kind: "unknown", code: "protocol-after-terminal" },
+      result: { body: "", meta: { ok: false, error: "模型在结束后仍返回内容" } },
+    });
+    expect(JSON.stringify(outcome)).not.toContain(RAW_PROVIDER_FAILURE);
+  });
+
+  it("流异常前已收到的 usage 仍进入失败 attempt 观测", async () => {
+    const f = fakeLlm();
+    const llm: ReportLlmService = {
+      ...f.llm,
+      stream: () =>
+        (async function* (): AsyncGenerator<StreamChunk> {
+          yield {
+            type: "usage",
+            usage: {
+              inputTokens: 7,
+              outputTokens: 3,
+              reasoningTokens: 1,
+              totalTokens: 10,
+              cacheReadTokens: 2,
+              cacheWriteTokens: 1,
+            },
+          };
+          throw { code: "SERVER", message: RAW_PROVIDER_FAILURE };
+        })(),
+    };
+    const outcome = await generateReportOutcome(GEN({ llm }));
+
+    expect(outcome).toMatchObject({
+      status: "failure",
+      failure: { kind: "transient", code: "provider-stream-failed" },
+      attempt: {
+        tokens: {
+          inputTokens: 7,
+          outputTokens: 3,
+          reasoningTokens: 1,
+          totalTokens: 10,
+          cacheReadTokens: 2,
+          cacheWriteTokens: 1,
+        },
+      },
+    });
+    expect(JSON.stringify(outcome)).not.toContain(RAW_PROVIDER_FAILURE);
+  });
+
+  it("普通流异常只暴露 unknown/provider-stream-failed，不携带 provider 原文", async () => {
+    const rawProviderError = "key=private path=/private/report response=private";
+    const f = fakeLlm(CHUNKS, { throwInStream: rawProviderError });
+
+    const outcome = await generateReportOutcome(GEN({ llm: f.llm }));
+
+    expect(outcome).toMatchObject({
+      status: "failure",
+      failure: { kind: "unknown", code: "provider-stream-failed" },
+      result: { body: "", meta: { ok: false, error: "模型请求失败" } },
+    });
+    expect(JSON.stringify(outcome)).not.toContain(rawProviderError);
+  });
+});
+
+// ---------------------------------------------------------------- generate：usage 冲突
+
+describe("generate：冲突 usage 采用首个 chunk", () => {
+  it("完整首 usage 的所有 token 字段均优先于冲突后块", async () => {
+    const f = fakeLlm([
+      { type: "text-delta", index: 0, text: "可见正文" },
+      {
+        type: "usage",
+        usage: {
+          inputTokens: 10,
+          outputTokens: 5,
+          totalTokens: 15,
+          cacheReadTokens: 2,
+          cacheWriteTokens: 1,
+        },
+      },
+      {
+        type: "usage",
+        usage: {
+          inputTokens: 999,
+          outputTokens: 888,
+          totalTokens: 1887,
+          cacheReadTokens: 777,
+          cacheWriteTokens: 666,
+        },
+      },
+      { type: "finish", reason: { kind: "stop" } },
+    ]);
+
+    const result = await generateReport(
+      GEN({ llm: f.llm, provider: "generic-provider", model: "generic-model" }),
+    );
+
+    expect(result.meta.ok).toBe(true);
+    expect(result.body).toBe("可见正文");
+    expect(result.meta.tokens).toEqual({
+      inputTokens: 10,
+      outputTokens: 5,
+      reasoningTokens: null,
+      totalTokens: 15,
+      cacheReadTokens: 2,
+      cacheWriteTokens: 1,
+    });
+    expect(f.seen.calls).toHaveLength(1);
+  });
+
+  it("首 usage 缺失可选字段形成的 null 不会被冲突后块补写", async () => {
+    const f = fakeLlm([
+      { type: "text-delta", index: 0, text: "可见正文" },
+      { type: "usage", usage: { inputTokens: 0, outputTokens: 0 } },
+      {
+        type: "usage",
+        usage: {
+          inputTokens: 999,
+          outputTokens: 888,
+          totalTokens: 1887,
+          cacheReadTokens: 777,
+          cacheWriteTokens: 666,
+        },
+      },
+      { type: "finish", reason: { kind: "stop" } },
+    ]);
+
+    const result = await generateReport(
+      GEN({ llm: f.llm, provider: "generic-provider", model: "generic-model" }),
+    );
+
+    expect(result.meta.ok).toBe(true);
+    expect(result.body).toBe("可见正文");
+    expect(result.meta.tokens).toEqual({
+      inputTokens: 0,
+      outputTokens: 0,
+      reasoningTokens: null,
+      totalTokens: null,
+      cacheReadTokens: null,
+      cacheWriteTokens: null,
+    });
+    expect(f.seen.calls).toHaveLength(1);
   });
 });
 
@@ -551,12 +1084,383 @@ describe("generate：显式路由透传", () => {
     expect(r.meta.provider).toBe("prov-b");
   });
 
-  it("显式 model 透传", () => {
-    expect(seen.options!.model).toBe("model-b");
+  it("显式路由仅调用一次且完整透传", () => {
+    expect(seen.calls).toHaveLength(1);
+    expect(seen.calls[0]!.provider).toBe("prov-b");
+    expect(seen.calls[0]!.model).toBe("model-b");
+  });
+});
+
+const effortId = (value: string): ReasoningEffortId => value as ReasoningEffortId;
+
+const GENERIC_CAPABILITY: LlmResolvedModelInfo = {
+  provider: "generic-provider",
+  id: "generic-model",
+  name: "Generic Model",
+  reasoning: {
+    efforts: [
+      { id: effortId("vendor::balanced"), name: "Balanced", description: "通用平衡档" },
+      { id: effortId("vendor::deep"), name: "Deep" },
+    ],
+    defaultEffort: effortId("vendor::balanced"),
+  },
+};
+
+const GENERIC_WITHOUT_REASONING: LlmResolvedModelInfo = {
+  provider: "generic-provider",
+  id: "generic-model",
+  name: "Generic Model",
+};
+
+describe("generate：reasoningEffort exact-model capability", () => {
+  it("未设置时不查询 capability，GenerateOptions 不创建属性且 stream=1", async () => {
+    const f = fakeLlm(CHUNKS, { capability: GENERIC_CAPABILITY });
+
+    const result = await generateReport(
+      GEN({ llm: f.llm, provider: "generic-provider", model: "generic-model" }),
+    );
+
+    expect(result.meta.ok).toBe(true);
+    expect(f.seen.resolveCalls).toHaveLength(0);
+    expect(f.seen.calls).toHaveLength(1);
+    expect(Object.hasOwn(f.seen.calls[0]!, "reasoningEffort")).toBe(false);
+  });
+
+  it("合法 opaque ID 精确命中后以 capability branded ID 传入且 stream=1", async () => {
+    const f = fakeLlm(CHUNKS, { capability: GENERIC_CAPABILITY });
+
+    const result = await generateReport(
+      GEN({
+        llm: f.llm,
+        provider: "generic-provider",
+        model: "generic-model",
+        reasoningEffort: "vendor::deep",
+      }),
+    );
+
+    expect(result.meta.ok).toBe(true);
+    expect(f.seen.resolveCalls).toEqual([
+      {
+        provider: "generic-provider",
+        model: "generic-model",
+        signal: expect.any(AbortSignal),
+      },
+    ]);
+    expect(f.seen.resolveCalls[0]!.signal?.aborted).toBe(false);
+    expect(f.seen.calls).toHaveLength(1);
+    expect(f.seen.calls[0]!.reasoningEffort).toBe("vendor::deep");
+  });
+
+  it("stale/unknown ID 不精确命中时 fail closed 且 stream=0", async () => {
+    const f = fakeLlm(CHUNKS, { capability: GENERIC_CAPABILITY });
+
+    const result = await generateReport(
+      GEN({
+        llm: f.llm,
+        provider: "generic-provider",
+        model: "generic-model",
+        reasoningEffort: "vendor::retired",
+      }),
+    );
+
+    expect(result.meta.ok).toBe(false);
+    expect(result.meta.error).toBe("配置指定的思考等级不受当前模型支持");
+    expect(f.seen.resolveCalls).toHaveLength(1);
+    expect(f.seen.calls).toHaveLength(0);
+  });
+
+  it("exact model 无 reasoning capability 时 fail closed 且 stream=0", async () => {
+    const f = fakeLlm(CHUNKS, { capability: GENERIC_WITHOUT_REASONING });
+
+    const result = await generateReport(
+      GEN({
+        llm: f.llm,
+        provider: "generic-provider",
+        model: "generic-model",
+        reasoningEffort: "vendor::deep",
+      }),
+    );
+
+    expect(result.meta.ok).toBe(false);
+    expect(result.meta.error).toBe("配置指定的思考等级不受当前模型支持");
+    expect(f.seen.resolveCalls).toHaveLength(1);
+    expect(f.seen.calls).toHaveLength(0);
+  });
+
+  it("resolver 缺失时 fail closed 且 stream=0", async () => {
+    const f = fakeLlm();
+
+    const result = await generateReport(
+      GEN({
+        llm: f.llm,
+        provider: "generic-provider",
+        model: "generic-model",
+        reasoningEffort: "vendor::deep",
+      }),
+    );
+
+    expect(result.meta.ok).toBe(false);
+    expect(result.meta.error).toBe("模型能力信息不可用");
+    expect(f.seen.resolveCalls).toHaveLength(0);
+    expect(f.seen.calls).toHaveLength(0);
+  });
+
+  it("resolver 抛错时 fail closed 且 stream=0", async () => {
+    const f = fakeLlm(CHUNKS, { capabilityError: "capability boom" });
+
+    const result = await generateReport(
+      GEN({
+        llm: f.llm,
+        provider: "generic-provider",
+        model: "generic-model",
+        reasoningEffort: "vendor::deep",
+      }),
+    );
+
+    expect(result.meta.ok).toBe(false);
+    expect(result.meta.error).toBe("模型能力解析失败");
+    expect(f.seen.resolveCalls).toHaveLength(1);
+    expect(f.seen.calls).toHaveLength(0);
+  });
+
+  describe("5s deadline 与调用方取消", () => {
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("never-settling resolver 恰在 5s fail closed、取消底层 signal 且 stream=0", async () => {
+      const f = fakeLlm(CHUNKS, { capabilityNever: true });
+      const pending = generateReport(
+        GEN({
+          llm: f.llm,
+          provider: "generic-provider",
+          model: "generic-model",
+          reasoningEffort: "vendor::deep",
+        }),
+      );
+      let settled = false;
+      void pending.then(
+        () => {
+          settled = true;
+        },
+        () => {
+          settled = true;
+        },
+      );
+
+      await vi.advanceTimersByTimeAsync(4999);
+      expect(f.seen.resolveCalls).toHaveLength(1);
+      expect(f.seen.resolveCalls[0]!.signal?.aborted).toBe(false);
+
+      await vi.advanceTimersByTimeAsync(1);
+      await Promise.resolve();
+      expect(settled).toBe(true);
+      const result = await pending;
+      expect(result.meta).toMatchObject({ ok: false, error: "模型能力解析超时" });
+      expect(result.body).toBe("");
+      expect(f.seen.resolveCalls[0]!.signal?.aborted).toBe(true);
+      expect(f.seen.calls).toHaveLength(0);
+      expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it("调用方 signal 已取消时入口直接取消且不启动 resolver/stream", async () => {
+      const controller = new AbortController();
+      controller.abort();
+      const f = fakeLlm(CHUNKS, { capability: GENERIC_CAPABILITY });
+
+      const result = await generateReport(
+        GEN({
+          llm: f.llm,
+          provider: "generic-provider",
+          model: "generic-model",
+          reasoningEffort: "vendor::deep",
+          signal: controller.signal,
+        }),
+      );
+
+      expect(result.meta).toMatchObject({ ok: false, error: "模型请求已取消" });
+      expect(result.body).toBe("");
+      expect(f.seen.resolveCalls).toHaveLength(0);
+      expect(f.seen.calls).toHaveLength(0);
+      expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it("resolver 忽略 signal 时调用方 abort 仍立即 fail closed 并清 timer", async () => {
+      const controller = new AbortController();
+      const f = fakeLlm(CHUNKS, { capabilityNever: true });
+      const pending = generateReport(
+        GEN({
+          llm: f.llm,
+          provider: "generic-provider",
+          model: "generic-model",
+          reasoningEffort: "vendor::deep",
+          signal: controller.signal,
+        }),
+      );
+      let settled = false;
+      void pending.then(
+        () => {
+          settled = true;
+        },
+        () => {
+          settled = true;
+        },
+      );
+
+      await vi.advanceTimersByTimeAsync(0);
+      expect(f.seen.resolveCalls).toHaveLength(1);
+      expect(f.seen.resolveCalls[0]!.signal?.aborted).toBe(false);
+      controller.abort();
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(settled).toBe(true);
+      const result = await pending;
+      expect(result.meta).toMatchObject({ ok: false, error: "模型能力解析已取消" });
+      expect(f.seen.resolveCalls[0]!.signal?.aborted).toBe(true);
+      expect(f.seen.calls).toHaveLength(0);
+      expect(vi.getTimerCount()).toBe(0);
+    });
   });
 });
 
 // ---------------------------------------------------------------- generate：失败路径
+
+const RAW_PROVIDER_FAILURE =
+  "key=sk-test-not-a-real-key path=/home/private/report.json control=\u0000";
+const SAFE_STREAM_FAILURE = {
+  kind: "transient",
+  code: "provider-stream-failed",
+} as const;
+const SAFE_STREAM_UNKNOWN = {
+  kind: "unknown",
+  code: "provider-stream-failed",
+} as const;
+const SAFE_STREAM_PERMANENT = {
+  kind: "permanent",
+  code: "provider-stream-failed",
+} as const;
+const SAFE_STREAM_ABORTED = {
+  kind: "aborted",
+  code: "request-aborted",
+} as const;
+const STREAM_CASES = [
+  {
+    name: "EMPTY_RESPONSE",
+    error: { code: "EMPTY_RESPONSE", message: RAW_PROVIDER_FAILURE },
+    expected: SAFE_STREAM_FAILURE,
+  },
+  {
+    name: "RATE_LIMIT",
+    error: { code: "RATE_LIMIT", message: RAW_PROVIDER_FAILURE },
+    expected: SAFE_STREAM_FAILURE,
+  },
+  {
+    name: "SERVER",
+    error: { code: "SERVER", message: RAW_PROVIDER_FAILURE },
+    expected: SAFE_STREAM_FAILURE,
+  },
+  {
+    name: "TIMEOUT",
+    error: { code: "TIMEOUT", message: RAW_PROVIDER_FAILURE },
+    expected: SAFE_STREAM_FAILURE,
+  },
+  {
+    name: "TRANSPORT",
+    error: { code: "TRANSPORT", message: RAW_PROVIDER_FAILURE },
+    expected: SAFE_STREAM_FAILURE,
+  },
+  {
+    name: "AUTH",
+    error: { code: "AUTH", message: RAW_PROVIDER_FAILURE },
+    expected: SAFE_STREAM_PERMANENT,
+  },
+  {
+    name: "INVALID_CREDENTIAL",
+    error: { code: "INVALID_CREDENTIAL", message: RAW_PROVIDER_FAILURE },
+    expected: SAFE_STREAM_PERMANENT,
+  },
+  {
+    name: "MISSING_CREDENTIAL",
+    error: { code: "MISSING_CREDENTIAL", message: RAW_PROVIDER_FAILURE },
+    expected: SAFE_STREAM_PERMANENT,
+  },
+  {
+    name: "QUOTA",
+    error: { code: "QUOTA", message: RAW_PROVIDER_FAILURE },
+    expected: SAFE_STREAM_PERMANENT,
+  },
+  {
+    name: "ACCOUNT_QUOTA",
+    error: { code: "ACCOUNT_QUOTA", message: RAW_PROVIDER_FAILURE },
+    expected: SAFE_STREAM_PERMANENT,
+  },
+  {
+    name: "INVALID_REQUEST",
+    error: { code: "INVALID_REQUEST", message: RAW_PROVIDER_FAILURE },
+    expected: SAFE_STREAM_PERMANENT,
+  },
+  {
+    name: "CONTEXT_WINDOW",
+    error: { code: "CONTEXT_WINDOW", message: RAW_PROVIDER_FAILURE },
+    expected: SAFE_STREAM_PERMANENT,
+  },
+  {
+    name: "CONTEXT_WINDOW_EXCEEDED",
+    error: { code: "CONTEXT_WINDOW_EXCEEDED", message: RAW_PROVIDER_FAILURE },
+    expected: SAFE_STREAM_PERMANENT,
+  },
+  {
+    name: "CONTENT_FILTER",
+    error: { code: "CONTENT_FILTER", message: RAW_PROVIDER_FAILURE },
+    expected: SAFE_STREAM_PERMANENT,
+  },
+  {
+    name: "NO_ADAPTER",
+    error: { code: "NO_ADAPTER", message: RAW_PROVIDER_FAILURE },
+    expected: SAFE_STREAM_PERMANENT,
+  },
+  {
+    name: "未知 code",
+    error: { code: "FUTURE_CODE", message: RAW_PROVIDER_FAILURE },
+    expected: SAFE_STREAM_UNKNOWN,
+  },
+  {
+    name: "HTTP 401",
+    error: { status: 401, message: RAW_PROVIDER_FAILURE },
+    expected: SAFE_STREAM_PERMANENT,
+  },
+  {
+    name: "HTTP 429 无结构化 code",
+    error: { statusCode: 429, message: RAW_PROVIDER_FAILURE },
+    expected: SAFE_STREAM_UNKNOWN,
+  },
+  {
+    name: "HTTP 429 + RATE_LIMIT",
+    error: { statusCode: 429, code: "RATE_LIMIT", message: RAW_PROVIDER_FAILURE },
+    expected: SAFE_STREAM_FAILURE,
+  },
+  {
+    name: "HTTP 429 + QUOTA",
+    error: { statusCode: 429, code: "QUOTA", message: RAW_PROVIDER_FAILURE },
+    expected: SAFE_STREAM_PERMANENT,
+  },
+  {
+    name: "嵌套 LlmFailure",
+    error: { failure: { code: "RATE_LIMIT", message: RAW_PROVIDER_FAILURE } },
+    expected: SAFE_STREAM_FAILURE,
+  },
+  {
+    name: "Error cause",
+    error: Object.assign(new Error(RAW_PROVIDER_FAILURE), {
+      cause: { code: "AUTH" },
+    }),
+    expected: SAFE_STREAM_PERMANENT,
+  },
+] as const;
 
 describe("generate：失败路径（流异常 / 取消 / 空正文 / 路由不可解析）", () => {
   let r1: ReportResult;
@@ -564,54 +1468,647 @@ describe("generate：失败路径（流异常 / 取消 / 空正文 / 路由不�
   let r3: ReportResult;
   let r4: ReportResult;
   let r5: ReportResult;
+  let seen1: LlmSeen;
+  let seen2: LlmSeen;
+  let seen3: LlmSeen;
+  let seen4: LlmSeen;
+  let seen5: LlmSeen;
 
   beforeAll(async () => {
     // 流异常 → 失败元数据（不抛；正文空）
-    const boom = fakeLlm(CHUNKS, { throwInStream: "stream boom" });
+    const boom = fakeLlm(CHUNKS, { throwInStream: RAW_PROVIDER_FAILURE });
     r1 = await generateReport(GEN({ llm: boom.llm }));
+    seen1 = boom.seen;
     // 取消 → 失败
-    const ac = new AbortController();
-    ac.abort();
-    r2 = await generateReport(GEN({ llm: fakeLlm().llm, signal: ac.signal }));
+    const controller = new AbortController();
+    controller.abort();
+    const canceled = fakeLlm();
+    r2 = await generateReport(GEN({ llm: canceled.llm, signal: controller.signal }));
+    seen2 = canceled.seen;
     // 空正文 → 失败
-    r3 = await generateReport(
-      GEN({ llm: fakeLlm([{ type: "usage", usage: { inputTokens: 1, outputTokens: 1 } }]).llm }),
-    );
+    const empty = fakeLlm([
+      { type: "usage", usage: { inputTokens: 1, outputTokens: 1 } },
+      { type: "finish", reason: { kind: "stop" } },
+    ]);
+    r3 = await generateReport(GEN({ llm: empty.llm }));
+    seen3 = empty.seen;
     // 路由不可解析 → 失败
-    r4 = await generateReport(GEN({ llm: fakeLlm(CHUNKS, { noProviders: true }).llm }));
-    r5 = await generateReport(GEN({ llm: fakeLlm(CHUNKS, { noModels: true }).llm }));
+    const noProviders = fakeLlm(CHUNKS, { noProviders: true });
+    r4 = await generateReport(GEN({ llm: noProviders.llm }));
+    seen4 = noProviders.seen;
+    const noModels = fakeLlm(CHUNKS, { noModels: true });
+    r5 = await generateReport(GEN({ llm: noModels.llm }));
+    seen5 = noModels.seen;
   });
 
-  it("流异常 → ok:false", () => {
+  it("流异常返回固定安全文案且不泄露 key、路径或控制文本", () => {
+    expect(seen1.calls).toHaveLength(1);
     expect(r1.meta.ok).toBe(false);
-  });
-
-  it("失败正文为空", () => {
     expect(r1.body).toBe("");
+    expect(r1.meta.error).toBe("模型请求失败");
   });
 
-  it("错误短句保留", () => {
-    expect(r1.meta.error!.includes("stream boom")).toBeTruthy();
-  });
-
-  it("已取消信号 → ok:false", () => {
+  it("已取消信号在 stream 前收口且返回固定安全文案", () => {
+    expect(seen2.calls).toHaveLength(0);
     expect(r2.meta.ok).toBe(false);
+    expect(r2.body).toBe("");
+    expect(r2.meta.error).toBe("模型请求已取消");
   });
 
-  it("无正文 → ok:false", () => {
+  it("正常终态空正文仅调用一次并返回旧错", () => {
+    expect(seen3.calls).toHaveLength(1);
     expect(r3.meta.ok).toBe(false);
+    expect(r3.body).toBe("");
+    expect(r3.meta.error).toBe("模型未产出任何正文");
   });
 
-  it("空正文错误说明", () => {
-    expect(r3.meta.error!.includes("正文")).toBeTruthy();
+  it("无注册 provider 时不调用模型流", () => {
+    expect(seen4.calls).toHaveLength(0);
+    expect(r4.meta).toMatchObject({
+      ok: false,
+      error: "无可用的已注册 provider/model（须先在 dsh 注册适配器路由）",
+    });
   });
 
-  it("无注册 provider → ok:false", () => {
-    expect(r4.meta.ok).toBe(false);
+  it("provider 无可用 model 时不调用模型流", () => {
+    expect(seen5.calls).toHaveLength(0);
+    expect(r5.meta).toMatchObject({
+      ok: false,
+      error: "无可用的已注册 provider/model（须先在 dsh 注册适配器路由）",
+    });
+  });
+});
+
+describe("generate：路由解析异常稳定脱敏", () => {
+  it("listModels 结构化 transient 返回 unresolved outcome，保留非空 ledger marker 且不 stream", async () => {
+    const f = fakeLlm(CHUNKS);
+    const llm: ReportLlmService = {
+      ...f.llm,
+      listModels: async () => {
+        throw { code: "TIMEOUT", message: RAW_PROVIDER_FAILURE };
+      },
+    };
+    const route = await resolveGenerateRoute({ llm, provider: "", model: "" });
+
+    expect(route).toMatchObject({
+      status: "failure",
+      unresolved: true,
+      failure: { kind: "transient", code: "route-resolution-failed" },
+    });
+    expect(route.route.provider).not.toBe("");
+    expect(route.route.model).not.toBe("");
+    expect(JSON.stringify(route)).not.toContain(RAW_PROVIDER_FAILURE);
+    expect(f.seen.calls).toHaveLength(0);
   });
 
-  it("provider 无可用 model → ok:false", () => {
-    expect(r5.meta.ok).toBe(false);
+  it("listModels 未知异常 fail closed，不标记为 transient", async () => {
+    const f = fakeLlm(CHUNKS, { throwInListModels: RAW_PROVIDER_FAILURE });
+    const route = await resolveGenerateRoute({ llm: f.llm, provider: "", model: "" });
+
+    expect(route).toMatchObject({
+      status: "failure",
+      unresolved: false,
+      failure: { kind: "unknown", code: "route-resolution-failed" },
+    });
+    expect(JSON.stringify(route)).not.toContain(RAW_PROVIDER_FAILURE);
+    expect(f.seen.calls).toHaveLength(0);
+  });
+
+  it("空 route 永不 stream", async () => {
+    const f = fakeLlm(CHUNKS);
+    const result = await generateReportOutcome(
+      GEN({
+        llm: f.llm,
+        route: { status: "success", route: { provider: "", model: "" } },
+      }),
+    );
+
+    expect(result).toMatchObject({
+      status: "failure",
+      failure: { kind: "permanent", code: "route-unavailable" },
+      result: {
+        body: "",
+        meta: { ok: false, error: "无可用的已注册 provider/model（须先在 dsh 注册适配器路由）" },
+      },
+    });
+    expect(f.seen.calls).toHaveLength(0);
+  });
+
+  it.each([
+    { name: "listProviders", options: { throwInListProviders: RAW_PROVIDER_FAILURE } },
+    { name: "listModels", options: { throwInListModels: RAW_PROVIDER_FAILURE } },
+  ])("$name 抛错返回固定安全错误且不启动 stream", async ({ options }) => {
+    const f = fakeLlm(CHUNKS, options);
+
+    const result = await generateReport(GEN({ llm: f.llm }));
+
+    expect(result.meta).toMatchObject({ ok: false, error: "模型路由解析失败" });
+    expect(result.body).toBe("");
+    expect(result.meta.error).not.toContain("sk-test-not-a-real-key");
+    expect(result.meta.error).not.toContain("/home/private/report.json");
+    expect(result.meta.error).not.toMatch(/[\u0000-\u001f\u007f-\u009f]/);
+    expect(f.seen.calls).toHaveLength(0);
+  });
+});
+
+const STRUCTURED_FAILURE_CASES = [
+  {
+    name: "空正文",
+    expected: { kind: "empty-output", code: "empty-output" },
+    run: () =>
+      generateReportOutcome(
+        GEN({ llm: fakeLlm([{ type: "finish", reason: { kind: "stop" } }]).llm }),
+      ),
+  },
+  {
+    name: "未知内容事件",
+    expected: { kind: "unknown", code: "unknown-stream-event" },
+    run: () =>
+      generateReportOutcome(
+        GEN({
+          llm: fakeLlm([futureContentChunk(), { type: "finish", reason: { kind: "stop" } }]).llm,
+        }),
+      ),
+  },
+  {
+    name: "未知终态",
+    expected: { kind: "unknown", code: "unknown-finish" },
+    run: () =>
+      generateReportOutcome(
+        GEN({
+          llm: fakeLlm([{ type: "text-delta", index: 0, text: "不能保存" }, futureFinishChunk()])
+            .llm,
+        }),
+      ),
+  },
+  {
+    name: "缺失终态",
+    expected: { kind: "unknown", code: "missing-finish" },
+    run: () =>
+      generateReportOutcome(
+        GEN({ llm: fakeLlm([{ type: "text-delta", index: 0, text: "不能保存" }]).llm }),
+      ),
+  },
+  {
+    name: "不支持工具",
+    expected: { kind: "permanent", code: "unsupported-tool" },
+    run: () =>
+      generateReportOutcome(GEN({ llm: fakeLlm(UNSUPPORTED_TOOL_STREAMS[0]!.chunks).llm })),
+  },
+  {
+    name: "不支持非文本内容块",
+    expected: { kind: "permanent", code: "unsupported-content" },
+    run: () =>
+      generateReportOutcome(GEN({ llm: fakeLlm(UNSUPPORTED_CONTENT_STREAMS[0]!.chunks).llm })),
+  },
+  {
+    name: "路由不可用",
+    expected: { kind: "permanent", code: "route-unavailable" },
+    run: () => generateReportOutcome(GEN({ llm: fakeLlm(CHUNKS, { noProviders: true }).llm })),
+  },
+  {
+    name: "空 route 不进入 stream",
+    expected: { kind: "permanent", code: "route-unavailable" },
+    run: () =>
+      generateReportOutcome(
+        GEN({
+          llm: fakeLlm(CHUNKS).llm,
+          route: { status: "success", route: { provider: "", model: "" } },
+        }),
+      ),
+  },
+  {
+    name: "路由解析异常",
+    expected: { kind: "unknown", code: "route-resolution-failed" },
+    run: () =>
+      generateReportOutcome(
+        GEN({
+          llm: fakeLlm(CHUNKS, {
+            throwInListProviders: "raw provider route credential must not escape",
+          }).llm,
+        }),
+      ),
+  },
+  ...STREAM_CASES.map(({ name, error, expected }) => ({
+    name: `流异常 ${name}`,
+    error,
+    expected,
+    run: () => {
+      const llm: ReportLlmService = {
+        ...fakeLlm().llm,
+        stream: () =>
+          (async function* (): AsyncGenerator<StreamChunk> {
+            throw error;
+          })(),
+      };
+      return generateReportOutcome(GEN({ llm }));
+    },
+  })),
+  {
+    name: "流异常时调用方 signal 已 abort",
+    expected: SAFE_STREAM_ABORTED,
+    run: () => {
+      const llm: ReportLlmService = {
+        ...fakeLlm().llm,
+        stream: () =>
+          (async function* (): AsyncGenerator<StreamChunk> {
+            throw { code: "RATE_LIMIT", message: RAW_PROVIDER_FAILURE };
+          })(),
+      };
+      const controller = new AbortController();
+      controller.abort();
+      return generateReportOutcome(GEN({ llm, signal: controller.signal }));
+    },
+  },
+  {
+    name: "capability 缺失",
+    expected: { kind: "permanent", code: "capability-unavailable" },
+    run: () =>
+      generateReportOutcome(GEN({ llm: fakeLlm(CHUNKS).llm, reasoningEffort: "vendor::deep" })),
+  },
+  {
+    name: "capability 不支持 effort",
+    expected: { kind: "permanent", code: "capability-unsupported" },
+    run: () =>
+      generateReportOutcome(
+        GEN({
+          llm: fakeLlm(CHUNKS, { capability: GENERIC_WITHOUT_REASONING }).llm,
+          reasoningEffort: "vendor::deep",
+        }),
+      ),
+  },
+  {
+    name: "capability 解析异常",
+    expected: { kind: "permanent", code: "capability-failed" },
+    run: () =>
+      generateReportOutcome(
+        GEN({
+          llm: fakeLlm(CHUNKS, { capabilityError: "raw capability response" }).llm,
+          reasoningEffort: "vendor::deep",
+        }),
+      ),
+  },
+  {
+    name: "finish error",
+    expected: { kind: "permanent", code: "provider-finish-failed" },
+    run: () =>
+      generateReportOutcome(
+        GEN({
+          llm: fakeLlm([
+            {
+              type: "finish",
+              reason: { kind: "error", failure: { message: "raw finish secret", code: "raw" } },
+            },
+          ]).llm,
+        }),
+      ),
+  },
+  {
+    name: "finish aborted",
+    expected: { kind: "aborted", code: "request-aborted" },
+    run: () =>
+      generateReportOutcome(
+        GEN({
+          llm: fakeLlm([
+            {
+              type: "finish",
+              reason: { kind: "aborted", failure: { message: "raw abort secret", code: "raw" } },
+            },
+          ]).llm,
+        }),
+      ),
+  },
+  {
+    name: "调用前 signal abort",
+    expected: { kind: "aborted", code: "request-aborted" },
+    run: () => {
+      const controller = new AbortController();
+      controller.abort();
+      return generateReportOutcome(GEN({ llm: fakeLlm(CHUNKS).llm, signal: controller.signal }));
+    },
+  },
+] as const;
+
+describe("generate：结构化失败分类矩阵", () => {
+  it.each(STRUCTURED_FAILURE_CASES)(
+    "$name 保留稳定 kind/code 且不携带 raw 文本",
+    async ({ expected, run }) => {
+      const outcome = await run();
+
+      expect(outcome.status).toBe("failure");
+      if (outcome.status === "failure") expect(outcome.failure).toEqual(expected);
+      expect(JSON.stringify(outcome)).not.toMatch(/raw|credential|secret/);
+      expect(JSON.stringify(outcome.result.meta)).not.toContain(
+        "raw finish secret must not escape",
+      );
+      expect(JSON.stringify(outcome.result.meta)).not.toContain("sk-test-not-a-real-key");
+      expect(JSON.stringify(outcome.result.meta)).not.toContain("/home/private/report.json");
+    },
+  );
+
+  it("capability timeout 标记 transient/capability-timeout 并清理 timer", async () => {
+    vi.useFakeTimers();
+    try {
+      const pending = generateReportOutcome(
+        GEN({
+          llm: fakeLlm(CHUNKS, { capabilityNever: true }).llm,
+          reasoningEffort: "vendor::deep",
+        }),
+      );
+      await vi.advanceTimersByTimeAsync(5_000);
+      const outcome = await pending;
+
+      expect(outcome).toMatchObject({
+        status: "failure",
+        failure: { kind: "transient", code: "capability-timeout" },
+      });
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+const NORMAL_FINISH_REASONS: Array<{ name: string; reason: FinishReason }> = [
+  { name: "stop", reason: { kind: "stop" } },
+  { name: "max-tokens", reason: { kind: "max-tokens" } },
+];
+
+describe("generate：已知正常终态分类正文与 reasoning", () => {
+  it.each(NORMAL_FINISH_REASONS)(
+    "$name 终态下正文成功且 reasoning 不进入正文",
+    async ({ reason }) => {
+      const f = fakeLlm([
+        { type: "reasoning-delta", index: 0, text: "不应进入正文的推理" },
+        { type: "text-delta", index: 0, text: "可见正文" },
+        { type: "finish", reason },
+      ]);
+
+      const result = await generateReport(
+        GEN({ llm: f.llm, provider: "generic-provider", model: "generic-model" }),
+      );
+
+      expect(result.meta.ok).toBe(true);
+      expect(result.body).toBe("可见正文");
+      expect(result.meta.error).toBeUndefined();
+      expect(f.seen.calls).toHaveLength(1);
+    },
+  );
+
+  it("reasoning 仅含空白时返回旧空正文错误", async () => {
+    const f = fakeLlm([
+      { type: "reasoning-delta", index: 0, text: " \n\t " },
+      { type: "finish", reason: { kind: "stop" } },
+    ]);
+
+    const result = await generateReport(
+      GEN({ llm: f.llm, provider: "generic-provider", model: "generic-model" }),
+    );
+
+    expect(result.meta.ok).toBe(false);
+    expect(result.body).toBe("");
+    expect(result.meta.error).toBe("模型未产出任何正文");
+    expect(f.seen.calls).toHaveLength(1);
+  });
+});
+
+describe("generate：通用 provider 仅返回推理时给出可分诊错误", () => {
+  it("正常终止但只有 reasoning 时不产出正文并精确报错", async () => {
+    const f = fakeLlm([
+      { type: "reasoning-delta", index: 0, text: "先分析数据，再决定结论。" },
+      { type: "finish", reason: { kind: "stop" } },
+    ]);
+
+    const result = await generateReport(
+      GEN({ llm: f.llm, provider: "generic-provider", model: "generic-model" }),
+    );
+
+    expect(result.meta.ok).toBe(false);
+    expect(result.body).toBe("");
+    expect(result.meta.error).toBe("模型仅返回推理过程未产出正文");
+    expect(f.seen.calls).toHaveLength(1);
+  });
+});
+
+const TERMINAL_FAILURES: Array<{
+  name: string;
+  reason: FinishReason;
+  expectedError: string;
+}> = [
+  {
+    name: "error",
+    reason: {
+      kind: "error",
+      failure: { message: RAW_PROVIDER_FAILURE, code: "sk-code-must-not-leak" },
+    },
+    expectedError: "模型请求失败",
+  },
+  {
+    name: "aborted",
+    reason: {
+      kind: "aborted",
+      failure: { message: RAW_PROVIDER_FAILURE, code: "sk-code-must-not-leak" },
+    },
+    expectedError: "模型请求已取消",
+  },
+];
+
+describe("generate：终止失败优先于已有正文", () => {
+  it.each(TERMINAL_FAILURES)(
+    "$name 终态返回固定安全文案且不保留正文",
+    async ({ reason, expectedError }) => {
+      const f = fakeLlm([
+        { type: "text-delta", index: 0, text: "不应保存的正文" },
+        { type: "finish", reason },
+      ]);
+
+      const result = await generateReport(
+        GEN({ llm: f.llm, provider: "generic-provider", model: "generic-model" }),
+      );
+
+      expect(result.meta.ok).toBe(false);
+      expect(result.body).toBe("");
+      expect(result.meta.error).toBe(expectedError);
+      expect(f.seen.calls).toHaveLength(1);
+    },
+  );
+
+  it.each(TERMINAL_FAILURES)(
+    "$name 终态仍优先于未知内容事件",
+    async ({ reason, expectedError }) => {
+      const f = fakeLlm([futureContentChunk(), { type: "finish", reason }]);
+
+      const result = await generateReport(
+        GEN({ llm: f.llm, provider: "generic-provider", model: "generic-model" }),
+      );
+
+      expect(result.meta.ok).toBe(false);
+      expect(result.body).toBe("");
+      expect(result.meta.error).toBe(expectedError);
+      expect(f.seen.calls).toHaveLength(1);
+    },
+  );
+});
+
+function futureFinishChunk(): StreamChunk {
+  const chunk: StreamChunk = { type: "finish", reason: { kind: "stop" } };
+  Object.defineProperty(chunk.reason, "kind", { value: "future-stop" });
+  return chunk;
+}
+
+function futureContentChunk(): StreamChunk {
+  const chunk: StreamChunk = {
+    type: "reasoning-delta",
+    index: 0,
+    text: "未来扩展内容",
+  };
+  Object.defineProperty(chunk, "type", { value: "future-delta" });
+  return chunk;
+}
+
+const ERROR_FINISH_CHUNK: StreamChunk = {
+  type: "finish",
+  reason: { kind: "error", failure: { message: RAW_PROVIDER_FAILURE, code: "raw-code" } },
+};
+const NORMAL_FINISH_CHUNK: StreamChunk = { type: "finish", reason: { kind: "stop" } };
+
+const TERMINAL_MERGE_CASES: Array<{
+  name: string;
+  first: StreamChunk;
+  second: StreamChunk;
+  expectedError: string;
+}> = [
+  {
+    name: "error→normal",
+    first: ERROR_FINISH_CHUNK,
+    second: NORMAL_FINISH_CHUNK,
+    expectedError: "模型请求失败",
+  },
+  {
+    name: "normal→unknown",
+    first: NORMAL_FINISH_CHUNK,
+    second: futureFinishChunk(),
+    expectedError: "模型流返回未知终态",
+  },
+  {
+    name: "unknown→error",
+    first: futureFinishChunk(),
+    second: ERROR_FINISH_CHUNK,
+    expectedError: "模型请求失败",
+  },
+  {
+    name: "unknown→normal",
+    first: futureFinishChunk(),
+    second: NORMAL_FINISH_CHUNK,
+    expectedError: "模型流返回未知终态",
+  },
+];
+
+describe("generate：多 finish 终态合并保持 fail closed", () => {
+  it.each(TERMINAL_MERGE_CASES)(
+    "$name 不被后续 finish 覆盖",
+    async ({ first, second, expectedError }) => {
+      const f = fakeLlm([{ type: "text-delta", index: 0, text: "不应保存的正文" }, first, second]);
+
+      const result = await generateReport(
+        GEN({ llm: f.llm, provider: "generic-provider", model: "generic-model" }),
+      );
+
+      expect(result.meta.ok).toBe(false);
+      expect(result.body).toBe("");
+      expect(result.meta.error).toBe(expectedError);
+      expect(f.seen.calls).toHaveLength(1);
+    },
+  );
+
+  it("unknown 终态伴随非空正文仍拒绝成功", async () => {
+    const f = fakeLlm([
+      { type: "text-delta", index: 0, text: "非空正文不能覆盖未知终态" },
+      futureFinishChunk(),
+    ]);
+
+    const result = await generateReport(
+      GEN({ llm: f.llm, provider: "generic-provider", model: "generic-model" }),
+    );
+
+    expect(result.meta.ok).toBe(false);
+    expect(result.body).toBe("");
+    expect(result.meta.error).toBe("模型流返回未知终态");
+    expect(f.seen.calls).toHaveLength(1);
+  });
+});
+
+describe("generate：未知流内容与终态 fail closed", () => {
+  it("正文存在但流未返回终态时拒绝成功", async () => {
+    const f = fakeLlm([{ type: "text-delta", index: 0, text: "未确认终态的正文" }]);
+
+    const result = await generateReport(
+      GEN({ llm: f.llm, provider: "generic-provider", model: "generic-model" }),
+    );
+
+    expect(result.meta.ok).toBe(false);
+    expect(result.body).toBe("");
+    expect(result.meta.error).toBe("模型流未返回可识别终态");
+    expect(f.seen.calls).toHaveLength(1);
+  });
+
+  it("缺失终态优先于 reasoning-only 分类", async () => {
+    const f = fakeLlm([{ type: "reasoning-delta", index: 0, text: "不能暴露的推理原文" }]);
+
+    const result = await generateReport(
+      GEN({ llm: f.llm, provider: "generic-provider", model: "generic-model" }),
+    );
+
+    expect(result.meta.ok).toBe(false);
+    expect(result.body).toBe("");
+    expect(result.meta.error).toBe("模型流未返回可识别终态");
+    expect(f.seen.calls).toHaveLength(1);
+  });
+
+  it("未知 finish 优先于空输出分类并拒绝成功", async () => {
+    const f = fakeLlm([
+      { type: "reasoning-delta", index: 0, text: "不能暴露的推理原文" },
+      futureFinishChunk(),
+    ]);
+
+    const result = await generateReport(
+      GEN({ llm: f.llm, provider: "generic-provider", model: "generic-model" }),
+    );
+
+    expect(result.meta.ok).toBe(false);
+    expect(result.body).toBe("");
+    expect(result.meta.error).toBe("模型流返回未知终态");
+    expect(f.seen.calls).toHaveLength(1);
+  });
+
+  it("未知内容块即使伴随正文与正常终态也拒绝成功", async () => {
+    const f = fakeLlm([
+      futureContentChunk(),
+      { type: "text-delta", index: 0, text: "不应保存的正文" },
+      { type: "finish", reason: { kind: "stop" } },
+    ]);
+
+    const result = await generateReport(
+      GEN({ llm: f.llm, provider: "generic-provider", model: "generic-model" }),
+    );
+
+    expect(result.meta.ok).toBe(false);
+    expect(result.body).toBe("");
+    expect(result.meta.error).toBe("模型返回了未知流事件");
+    expect(f.seen.calls).toHaveLength(1);
+  });
+
+  it("未知内容块不伪装成 reasoning-only 或双空", async () => {
+    const f = fakeLlm([futureContentChunk(), { type: "finish", reason: { kind: "stop" } }]);
+
+    const result = await generateReport(
+      GEN({ llm: f.llm, provider: "generic-provider", model: "generic-model" }),
+    );
+
+    expect(result.meta.ok).toBe(false);
+    expect(result.body).toBe("");
+    expect(result.meta.error).toBe("模型返回了未知流事件");
+    expect(f.seen.calls).toHaveLength(1);
   });
 });
 
@@ -1450,7 +2947,7 @@ describe("生成不入统计前提（方案 §2.3）", () => {
     // session 事件→不入统计」）。
     const { llm, seen } = fakeLlm();
     await generateReport(GEN({ llm }));
-    expect(seen.streamCalled).toBeTruthy();
+    expect(seen.calls).toHaveLength(1);
   });
 });
 
@@ -1530,6 +3027,128 @@ describe("ReportTaskQueue：串行单飞 + 入队去重（#625/#626）", () => {
   it("failed 任务后可重新提交（新 taskId）", () => {
     expect(fourthId).not.toBe(firstId);
   });
+
+  it("force prepare pending 时普通 submit 复用 reservation，不提前执行", async () => {
+    let markBlockStarted = (): void => {};
+    const blockStarted = new Promise<void>((resolve) => {
+      markBlockStarted = resolve;
+    });
+    let releaseBlock = (): void => {};
+    const blockGate = new Promise<void>((resolve) => {
+      releaseBlock = resolve;
+    });
+    let markPrepareStarted = (): void => {};
+    const prepareStarted = new Promise<void>((resolve) => {
+      markPrepareStarted = resolve;
+    });
+    let releasePrepare = (): void => {};
+    const prepareGate = new Promise<void>((resolve) => {
+      releasePrepare = resolve;
+    });
+    let markForceFinished = (): void => {};
+    const forceFinished = new Promise<void>((resolve) => {
+      markForceFinished = resolve;
+    });
+    const executions: Array<{ key: string; force: boolean }> = [];
+    const queue = new ReportTaskQueue({
+      executor: async (input) => {
+        executions.push({ key: input.key, force: input.force === true });
+        if (input.key === "block") {
+          markBlockStarted();
+          await blockGate;
+        }
+        if (input.key === "target" && input.force === true) markForceFinished();
+        return {};
+      },
+      prepareForce: async () => {
+        markPrepareStarted();
+        await prepareGate;
+      },
+      warn: () => {},
+    });
+    const target: ReportTaskInput = {
+      period: "daily",
+      key: "target",
+      startDay: "target",
+      endDay: "target",
+    };
+
+    queue.submit({ ...target, key: "block" });
+    await blockStarted;
+    const normal = queue.submit(target);
+    const forcePromise = queue.submitForce({ ...target, force: true });
+    await prepareStarted;
+
+    const duringPrepare = queue.submit(target);
+    expect(duringPrepare).toEqual({ taskId: normal.taskId, existing: true });
+    expect(queue.get(normal.taskId)?.status).toBe("queued");
+    expect(executions.filter((item) => item.key === "target")).toEqual([]);
+
+    releasePrepare();
+    const forced = await forcePromise;
+    releaseBlock();
+    await forceFinished;
+
+    expect(forced).toEqual({ taskId: normal.taskId, existing: true });
+    expect(executions.filter((item) => item.key === "target")).toEqual([
+      { key: "target", force: true },
+    ]);
+  });
+});
+
+it("force reservation 合并重复请求、拒绝后解锁且无 prepare 仍可运行", async () => {
+  const input: ReportTaskInput = {
+    period: "daily",
+    key: "reservation",
+    startDay: "2026-09-04",
+    endDay: "2026-09-04",
+  };
+  const noPrepareCalls: string[] = [];
+  const noPrepare = new ReportTaskQueue({
+    executor: async (task: ReportTaskInput) => {
+      noPrepareCalls.push(`${task.key}:${task.force === true}`);
+      return {};
+    },
+  });
+  const noPrepareResult = await noPrepare.submitForce({ ...input, force: true });
+  await pollUntil(() => noPrepare.get(noPrepareResult.taskId)?.status === "done", 3000);
+  expect(noPrepareCalls).toEqual(["reservation:true"]);
+
+  let releasePrepare: () => void = () => undefined;
+  let markPrepareStarted: () => void = () => undefined;
+  const prepareGate = new Promise<void>((resolve) => {
+    releasePrepare = resolve;
+  });
+  const prepareStarted = new Promise<void>((resolve) => {
+    markPrepareStarted = resolve;
+  });
+  const pending = new ReportTaskQueue({
+    executor: async () => ({}),
+    prepareForce: async () => {
+      markPrepareStarted();
+      await prepareGate;
+    },
+  });
+  const first = pending.submitForce({ ...input, force: true });
+  await prepareStarted;
+  const duplicate = pending.submitForce({ ...input, force: true });
+  expect(duplicate).toBe(first);
+  releasePrepare();
+  const firstResult = await first;
+  expect(await duplicate).toEqual(firstResult);
+
+  const failed = new ReportTaskQueue({
+    executor: async () => ({}),
+    prepareForce: async () => {
+      throw new Error("prepare failed");
+    },
+    sanitizeErrors: true,
+    warn: () => {},
+  });
+  await expect(failed.submitForce({ ...input, force: true })).rejects.toThrow("prepare failed");
+  const retry = failed.submit(input);
+  expect(retry.existing).toBe(false);
+  await pollUntil(() => failed.get(retry.taskId)?.status === "done", 3000);
 });
 
 // ---------------------------------------------------------------- tick→队列：失败不推进 lastRun + 下轮重试同窗
@@ -2455,7 +4074,7 @@ describe("#633 分片 a D1：旧格式（无 cwd/dir 键）报告生成链路回
       }),
     );
     rMetaOk = r.meta.ok;
-    injectedHasDirBucket = textOf(seen.options!.messages[0].content[0]).includes(
+    injectedHasDirBucket = textOf(seen.calls[0]!.messages[0].content[0]).includes(
       JSON.stringify(s.byDirectory[0]),
     );
     await tracker.dispose();
@@ -2610,7 +4229,7 @@ describe("#633 分片 b C2：脱敏出口逐条断言（basename 化 + 三出口
     ]);
     const r = await generateReport(GEN({ llm, statsJson: JSON.stringify(snap) }));
     rMetaOk = r.meta.ok;
-    promptText = textOf(seen.options!.messages[0].content[0]);
+    promptText = textOf(seen.calls[0]!.messages[0].content[0]);
     // 产物正文出口：persistReport 的 HTML 文档与 meta.json 落盘形态（临时目录隔离）
     const rootDir = mkdtempSync(join(tmpdir(), "dou-report-c2-"));
     await persistReport(rootDir, r.meta, r.body);
@@ -2878,7 +4497,7 @@ describe("#633 分片 b C1：三周期模板硬规则断言（fake llm 抓 promp
           }),
         );
         rMetaOk = r.meta.ok;
-        text = textOf(seen.options!.messages[0].content[0]);
+        text = textOf(seen.calls[0]!.messages[0].content[0]);
       });
 
       it(`${period} 生成成功`, () => {
@@ -3095,5 +4714,376 @@ describe("#633 分片 b B4：口径影响（reportCfg.directories 非空 → 快
 
   it("所选目录数值为该目录子集（不被其他目录污染）", () => {
     expect(scopedInput).toBe(100);
+  });
+});
+
+// ---------------------------------------------------------------- #1010 残余 A：after-terminal fail closed
+
+const AFTER_TERMINAL_ERROR = "模型在结束后仍返回内容";
+
+describe("generate：#1010 残余 A finish 之后任何 chunk 一律 fail closed", () => {
+  const AFTER_FINISH_CASES: Array<{ name: string; tail: StreamChunk[] }> = [
+    { name: "text-delta", tail: [{ type: "text-delta", index: 0, text: "结束后追加的正文" }] },
+    {
+      name: "reasoning-delta",
+      tail: [{ type: "reasoning-delta", index: 0, text: "结束后追加的推理" }],
+    },
+    {
+      name: "usage",
+      tail: [{ type: "usage", usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 } }],
+    },
+    {
+      name: "tool-call-delta",
+      tail: [
+        {
+          type: "tool-call-delta",
+          index: 0,
+          id: REPORT_TOOL_CALL_ID,
+          name: "read_private_file",
+          argumentsDelta: TOOL_ARGUMENTS,
+        },
+      ],
+    },
+    { name: "unknown chunk", tail: [futureContentChunk()] },
+    { name: "第二个 finish", tail: [{ type: "finish", reason: { kind: "stop" } }] },
+  ];
+
+  it.each(AFTER_FINISH_CASES)(
+    "stop 之后的 $name 进入 protocol-after-terminal 且正文不落盘",
+    async ({ tail }) => {
+      const f = fakeLlm([
+        { type: "text-delta", index: 0, text: "结束前正文" },
+        { type: "finish", reason: { kind: "stop" } },
+        ...tail,
+      ]);
+
+      const result = await generateReport(
+        GEN({ llm: f.llm, provider: "generic-provider", model: "generic-model" }),
+      );
+
+      expect(result.meta.ok).toBe(false);
+      expect(result.body).toBe("");
+      expect(result.meta.error).toBe(AFTER_TERMINAL_ERROR);
+      expect(f.seen.calls).toHaveLength(1);
+    },
+  );
+
+  it("after-terminal 走 unknown kind（不进入自动重试）", async () => {
+    const f = fakeLlm([
+      { type: "text-delta", index: 0, text: "结束前正文" },
+      { type: "finish", reason: { kind: "stop" } },
+      { type: "text-delta", index: 0, text: "结束后追加的正文" },
+    ]);
+
+    const outcome = await generateReportOutcome(
+      GEN({ llm: f.llm, provider: "generic-provider", model: "generic-model" }),
+    );
+
+    expect(outcome).toMatchObject({
+      status: "failure",
+      failure: { kind: "unknown", code: "protocol-after-terminal" },
+    });
+  });
+
+  it("error 终态优先于 after-terminal（错误分类不回归）", async () => {
+    const f = fakeLlm([
+      { type: "text-delta", index: 0, text: "不应保存的正文" },
+      {
+        type: "finish",
+        reason: { kind: "error", failure: { message: RAW_PROVIDER_FAILURE, code: "raw" } },
+      },
+      { type: "text-delta", index: 0, text: "结束后追加的正文" },
+    ]);
+
+    const result = await generateReport(
+      GEN({ llm: f.llm, provider: "generic-provider", model: "generic-model" }),
+    );
+
+    expect(result.meta).toMatchObject({ ok: false, error: "模型请求失败" });
+    expect(result.body).toBe("");
+    expect(JSON.stringify(result)).not.toContain(RAW_PROVIDER_FAILURE);
+  });
+
+  it("unknown finish 终态优先于 after-terminal（终态合并不回归）", async () => {
+    const f = fakeLlm([
+      { type: "text-delta", index: 0, text: "不应保存的正文" },
+      futureFinishChunk(),
+      { type: "text-delta", index: 0, text: "结束后追加的正文" },
+    ]);
+
+    const result = await generateReport(
+      GEN({ llm: f.llm, provider: "generic-provider", model: "generic-model" }),
+    );
+
+    expect(result.meta).toMatchObject({ ok: false, error: "模型流返回未知终态" });
+    expect(result.body).toBe("");
+  });
+
+  it("after-terminal 之前的 usage 仍为首个 usage 事实（first usage 不回归）", async () => {
+    const f = fakeLlm([
+      { type: "text-delta", index: 0, text: "结束前正文" },
+      { type: "usage", usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 } },
+      { type: "finish", reason: { kind: "stop" } },
+      { type: "usage", usage: { inputTokens: 999, outputTokens: 999, totalTokens: 1998 } },
+    ]);
+
+    const result = await generateReport(
+      GEN({ llm: f.llm, provider: "generic-provider", model: "generic-model" }),
+    );
+
+    expect(result.meta).toMatchObject({ ok: false, error: AFTER_TERMINAL_ERROR });
+    expect(result.meta.tokens).toMatchObject({ inputTokens: 10, outputTokens: 5, totalTokens: 15 });
+  });
+
+  it("after-terminal 之前的不支持内容块仍按 unsupported-content 归类（block policy 不回归）", async () => {
+    const f = fakeLlm([
+      { type: "block-start", index: 0, blockType: "image" },
+      { type: "finish", reason: { kind: "stop" } },
+      { type: "text-delta", index: 0, text: "结束后追加的正文" },
+    ]);
+
+    const result = await generateReport(
+      GEN({ llm: f.llm, provider: "generic-provider", model: "generic-model" }),
+    );
+
+    expect(result.meta).toMatchObject({ ok: false, error: UNSUPPORTED_CONTENT_ERROR });
+    expect(result.body).toBe("");
+  });
+});
+
+// ---------------------------------------------------------------- #1010 残余 B：空白 text-delta 不屏蔽完整块
+
+describe("generate：#1010 残余 B 空白 text-delta 不屏蔽 block-end 正文", () => {
+  it.each([
+    { name: "空串", text: "" },
+    { name: "半角空格", text: " " },
+    { name: "全角空白", text: "\u3000" },
+    { name: "换行缩进", text: "\n   " },
+  ])("$name delta + 非空 block-end.text 成功且正文取自块", async ({ text }) => {
+    const f = fakeLlm([
+      { type: "block-start", index: 0, blockType: "text" },
+      { type: "text-delta", index: 0, text },
+      { type: "block-end", index: 0, block: { type: "text", text: "完整块正文" } },
+      { type: "finish", reason: { kind: "stop" } },
+    ]);
+
+    const result = await generateReport(
+      GEN({ llm: f.llm, provider: "generic-provider", model: "generic-model" }),
+    );
+
+    expect(result.meta.ok).toBe(true);
+    expect(result.body).toBe(text + "完整块正文");
+    expect(f.seen.calls).toHaveLength(1);
+  });
+
+  it("空白 delta + 非空 block-end 不再误报空输出（不进入重试）", async () => {
+    const f = fakeLlm([
+      { type: "text-delta", index: 0, text: "   " },
+      { type: "block-end", index: 0, block: { type: "text", text: "块正文" } },
+      { type: "finish", reason: { kind: "stop" } },
+    ]);
+
+    const outcome = await generateReportOutcome(
+      GEN({ llm: f.llm, provider: "generic-provider", model: "generic-model" }),
+    );
+
+    expect(outcome.status).toBe("success");
+    expect(outcome.result.body).toContain("块正文");
+  });
+
+  it("非空 delta + 同块 block-end 仍去重（正文只拼接一次）", async () => {
+    const f = fakeLlm([
+      { type: "block-start", index: 0, blockType: "text" },
+      { type: "text-delta", index: 0, text: "第一段" },
+      { type: "text-delta", index: 0, text: "空白" },
+      { type: "block-end", index: 0, block: { type: "text", text: "第一段空白" } },
+      { type: "finish", reason: { kind: "stop" } },
+    ]);
+
+    const result = await generateReport(
+      GEN({ llm: f.llm, provider: "generic-provider", model: "generic-model" }),
+    );
+
+    expect(result.meta.ok).toBe(true);
+    expect(result.body).toBe("第一段空白");
+  });
+
+  it("空白 delta 后的同 index 非空 delta 仍抑制 block-end 重复", async () => {
+    const f = fakeLlm([
+      { type: "text-delta", index: 0, text: "  " },
+      { type: "text-delta", index: 0, text: "真实正文" },
+      { type: "block-end", index: 0, block: { type: "text", text: "  真实正文" } },
+      { type: "finish", reason: { kind: "stop" } },
+    ]);
+
+    const result = await generateReport(
+      GEN({ llm: f.llm, provider: "generic-provider", model: "generic-model" }),
+    );
+
+    expect(result.body).toBe("  真实正文");
+  });
+
+  it("纯空白 delta + 纯空白 block-end 仍归空正文错误（不误判成功）", async () => {
+    const f = fakeLlm([
+      { type: "text-delta", index: 0, text: "  " },
+      { type: "block-end", index: 0, block: { type: "text", text: "   " } },
+      { type: "finish", reason: { kind: "stop" } },
+    ]);
+
+    const result = await generateReport(
+      GEN({ llm: f.llm, provider: "generic-provider", model: "generic-model" }),
+    );
+
+    expect(result.meta).toMatchObject({ ok: false, error: "模型未产出任何正文" });
+  });
+});
+
+// ---------------------------------------------------------------- #1010 残余 C：默认路由发现有界收敛
+
+/**
+ * 只排空微任务、不引入真实等待的收敛探针：用于在 fake clock 下判定 promise 是否已
+ * settle（未 settle 的无界 await 会挂死测试进程，故不直接 await）。
+ */
+async function settleProbe<T>(
+  pending: Promise<T>,
+  turns = 50,
+): Promise<{ status: "settled"; value: T } | { status: "pending" }> {
+  let outcome: { status: "settled"; value: T } | { status: "pending" } = { status: "pending" };
+  void pending.then(
+    (value) => {
+      outcome = { status: "settled", value };
+    },
+    () => {
+      outcome = { status: "pending" };
+    },
+  );
+  for (let turn = 0; turn < turns; turn += 1) await Promise.resolve();
+  return outcome;
+}
+
+describe("generate：#1010 残余 C 默认路由发现 5s 有界收敛", () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("never-settling listModels 恰在 5s 收敛为 route-resolution-failed 且 stream=0", async () => {
+    let listModelsCalls = 0;
+    const f = fakeLlm(CHUNKS);
+    Object.assign(f.llm, {
+      listModels: async (provider: string) => {
+        f.seen.listModelsCalls.push(provider);
+        listModelsCalls += 1;
+        return new Promise<Array<{ provider: string; id: string; name: string }>>(() => {});
+      },
+    });
+
+    const pending = resolveGenerateRoute({ llm: f.llm, provider: "", model: "" });
+
+    await vi.advanceTimersByTimeAsync(4999);
+    expect(await settleProbe(pending)).toEqual({ status: "pending" });
+    expect(listModelsCalls).toBe(1);
+
+    await vi.advanceTimersByTimeAsync(1);
+    const settled = await settleProbe(pending);
+
+    expect(settled).toMatchObject({
+      status: "settled",
+      value: {
+        status: "failure",
+        unresolved: true,
+        failure: { kind: "transient", code: "route-resolution-failed" },
+      },
+    });
+    expect(f.seen.calls).toHaveLength(0);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("never-settling listModels 时 generateReport 同样收敛且不发起 stream", async () => {
+    const f = fakeLlm(CHUNKS);
+    Object.assign(f.llm, {
+      listModels: () =>
+        new Promise<Array<{ provider: string; id: string; name: string }>>(() => {}),
+    });
+
+    const pending = generateReport(GEN({ llm: f.llm }));
+
+    await vi.advanceTimersByTimeAsync(4999);
+    expect(await settleProbe(pending)).toEqual({ status: "pending" });
+
+    await vi.advanceTimersByTimeAsync(1);
+    const settled = await settleProbe(pending);
+
+    expect(settled).toMatchObject({
+      status: "settled",
+      value: { meta: { ok: false, error: "模型路由解析失败" } },
+    });
+    expect(f.seen.calls).toHaveLength(0);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("底层晚到 rejection 被吸收（不产生未处理拒绝、不二次失败）", async () => {
+    const f = fakeLlm(CHUNKS);
+    let rejectLate: (error: Error) => void = () => {};
+    Object.assign(f.llm, {
+      listModels: () =>
+        new Promise<Array<{ provider: string; id: string; name: string }>>((_resolve, reject) => {
+          rejectLate = reject;
+        }),
+    });
+
+    const pending = resolveGenerateRoute({ llm: f.llm, provider: "", model: "" });
+    await vi.advanceTimersByTimeAsync(5000);
+    const settled = await settleProbe(pending);
+    expect(settled).toMatchObject({ status: "settled", value: { status: "failure" } });
+
+    rejectLate(new Error(RAW_PROVIDER_FAILURE));
+    await vi.advanceTimersByTimeAsync(0);
+    await settleProbe(Promise.resolve());
+
+    if (settled.status !== "settled") throw new Error("expected settled route outcome");
+    expect(settled.value).toMatchObject({
+      status: "failure",
+      failure: { kind: "transient", code: "route-resolution-failed" },
+    });
+    expect(JSON.stringify(settled.value)).not.toContain(RAW_PROVIDER_FAILURE);
+    expect(f.seen.calls).toHaveLength(0);
+  });
+
+  it("显式 provider+model 时不发 listModels（有界化不新增调用）", async () => {
+    const f = fakeLlm(CHUNKS);
+
+    const result = await generateReport(
+      GEN({ llm: f.llm, provider: "generic-provider", model: "generic-model" }),
+    );
+
+    expect(result.meta.ok).toBe(true);
+    expect(f.seen.listModelsCalls).toEqual([]);
+    expect(f.seen.calls).toHaveLength(1);
+  });
+
+  it("超时后不遗留 timer（进程可自然退出）", async () => {
+    const f = fakeLlm(CHUNKS);
+    Object.assign(f.llm, {
+      listModels: () =>
+        new Promise<Array<{ provider: string; id: string; name: string }>>(() => {}),
+    });
+
+    const pending = generateReportOutcome(GEN({ llm: f.llm }));
+    await vi.advanceTimersByTimeAsync(5000);
+    const settled = await settleProbe(pending);
+    expect(settled).toMatchObject({
+      status: "settled",
+      value: {
+        status: "failure",
+        failure: { kind: "transient", code: "route-resolution-failed" },
+        result: { meta: { ok: false, error: "模型路由解析失败" } },
+      },
+    });
+    expect(JSON.stringify(settled)).not.toContain(RAW_PROVIDER_FAILURE);
+    expect(vi.getTimerCount()).toBe(0);
   });
 });

@@ -162,15 +162,154 @@ export function isScheduleDirty(
 
 /** 路由与范围区脏检查（目录按集合比对，顺序漂移不算脏）。 */
 export function isRoutingDirty(
-  a: { provider: string; model: string; directories: string[]; push: { enabled: boolean } },
-  b: { provider: string; model: string; directories: string[]; push: { enabled: boolean } },
+  a: {
+    provider: string;
+    model: string;
+    reasoningEffort?: string;
+    directories: string[];
+    push: { enabled: boolean };
+  },
+  b: {
+    provider: string;
+    model: string;
+    reasoningEffort?: string;
+    directories: string[];
+    push: { enabled: boolean };
+  },
 ): boolean {
   return (
     a.provider !== b.provider ||
     a.model !== b.model ||
+    a.reasoningEffort !== b.reasoningEffort ||
     !sameStringSet(a.directories, b.directories) ||
     a.push.enabled !== b.push.enabled
   );
+}
+
+/** effort 选择写入；空选择删除属性，保持 unset 的 wire 语义。 */
+export function withReasoningEffort<T extends { reasoningEffort?: string }>(
+  config: T,
+  effort: string,
+): T {
+  const next = { ...config };
+  if (effort === "") delete next.reasoningEffort;
+  else next.reasoningEffort = effort;
+  return next;
+}
+
+/** 保存完整配置；unset/空 effort 在 JSON 中省略，不改写其他字段。 */
+export function reportConfigPayload(config: { reasoningEffort?: string }): string {
+  const payload = { ...config };
+  if (payload.reasoningEffort === undefined || payload.reasoningEffort === "") {
+    delete payload.reasoningEffort;
+  }
+  return JSON.stringify(payload);
+}
+
+/** 状态 API 的报告级 retry 投影；所有成本字段保留 null 的未知语义。 */
+export interface ReportRetryView {
+  attempts: number;
+  maxAttempts: number;
+  currentAttempt: number;
+  nextRetryAt: number | null;
+  terminal: boolean;
+  terminalReason: { code: string; kind: string } | null;
+  usage: {
+    inputTokens: number | null;
+    outputTokens: number | null;
+    reasoningTokens: number | null;
+    totalTokens: number | null;
+    cacheReadTokens: number | null;
+    cacheWriteTokens: number | null;
+    durationMs: number | null;
+  };
+}
+
+function retryRecord(value: unknown): Record<string, unknown> | null {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function retryMetric(value: unknown): number | null | undefined {
+  if (value === null) return null;
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
+}
+
+function retryCount(value: unknown): number | null {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : null;
+}
+
+function retryReason(value: unknown): { code: string; kind: string } | null | undefined {
+  if (value === null) return null;
+  const record = retryRecord(value);
+  if (record === null || typeof record.code !== "string" || typeof record.kind !== "string") {
+    return undefined;
+  }
+  return { code: record.code, kind: record.kind };
+}
+
+/**
+ * 严格消费 status/POST body 的可选 retry 投影。
+ * 旧响应缺字段或任一字段畸形时返回 null，让调用方保留原 UI。
+ */
+export function reportRetryView(value: unknown): ReportRetryView | null {
+  const retry = retryRecord(value);
+  if (retry === null) return null;
+  const attempts = retryCount(retry.attempts);
+  const maxAttempts = retryCount(retry.maxAttempts);
+  const nextRetryAt = retryMetric(retry.nextRetryAt);
+  const terminalReason = retryReason(retry.terminalReason);
+  const usage = retryRecord(retry.usage);
+  if (
+    attempts === null ||
+    maxAttempts === null ||
+    attempts > maxAttempts ||
+    nextRetryAt === undefined ||
+    typeof retry.terminal !== "boolean" ||
+    terminalReason === undefined ||
+    usage === null
+  ) {
+    return null;
+  }
+  const inputTokens = retryMetric(usage.inputTokens);
+  const outputTokens = retryMetric(usage.outputTokens);
+  const reasoningTokens = retryMetric(usage.reasoningTokens);
+  const totalTokens = retryMetric(usage.totalTokens);
+  const cacheReadTokens = retryMetric(usage.cacheReadTokens);
+  const cacheWriteTokens = retryMetric(usage.cacheWriteTokens);
+  const durationMs = retryMetric(usage.durationMs);
+  if (
+    inputTokens === undefined ||
+    outputTokens === undefined ||
+    reasoningTokens === undefined ||
+    totalTokens === undefined ||
+    cacheReadTokens === undefined ||
+    cacheWriteTokens === undefined ||
+    durationMs === undefined ||
+    (retry.terminal && terminalReason === null) ||
+    (!retry.terminal && terminalReason !== null) ||
+    (retry.terminal && nextRetryAt !== null)
+  ) {
+    return null;
+  }
+  return {
+    attempts,
+    maxAttempts,
+    currentAttempt: attempts + 1,
+    nextRetryAt,
+    terminal: retry.terminal,
+    terminalReason,
+    usage: {
+      inputTokens,
+      outputTokens,
+      reasoningTokens,
+      totalTokens,
+      cacheReadTokens,
+      cacheWriteTokens,
+      durationMs,
+    },
+  };
 }
 
 /** 提示词区脏检查（三周期任一文本漂移即脏）。 */

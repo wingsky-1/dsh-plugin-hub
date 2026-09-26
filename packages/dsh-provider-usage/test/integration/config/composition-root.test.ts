@@ -19,7 +19,7 @@
  * 每条附判据句（把 X 改坏必须红）；红证明见同文件「探针：脏输入必被 flag」——
  * 同一 detector 在脏夹具上必须报出违规（detector 失明则探针先红）。
  */
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -27,6 +27,7 @@ import { describe, expect, it } from "vitest";
 import {
   ReportConfigService,
   normalizeReportConfig,
+  readReportConfig,
 } from "../../../src/server/config/interface.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -99,6 +100,75 @@ describe("D1③ 构造只递 root+initial+onUpdate", () => {
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
+  });
+});
+
+describe("reasoningEffort：旧配置缺省 + opaque ID 原样持久化", () => {
+  it("真实旧磁盘配置读回 provider 且 reasoningEffort 缺省为 unset", async () => {
+    const legacyRoot = mkdtempSync(join(tmpdir(), "d1-reasoning-effort-old-"));
+    const missingRoot = mkdtempSync(join(tmpdir(), "d1-reasoning-effort-missing-"));
+    try {
+      mkdirSync(join(legacyRoot, "reports"), { recursive: true });
+      writeFileSync(
+        join(legacyRoot, "reports", "config.json"),
+        JSON.stringify({ provider: "generic" }),
+      );
+
+      const loaded = await readReportConfig(legacyRoot);
+      const missing = await readReportConfig(missingRoot);
+
+      expect(loaded.provider).toBe("generic");
+      expect(Object.hasOwn(loaded, "reasoningEffort")).toBe(false);
+      expect(missing.provider).toBe("");
+    } finally {
+      rmSync(legacyRoot, { recursive: true, force: true });
+      rmSync(missingRoot, { recursive: true, force: true });
+    }
+  });
+
+  it.each([
+    { label: "缺失", raw: {}, expected: undefined },
+    { label: "空串", raw: { reasoningEffort: "" }, expected: undefined },
+    { label: "非 string", raw: { reasoningEffort: 7 }, expected: undefined },
+    {
+      label: "unknown opaque",
+      raw: { reasoningEffort: "vendor::unknown" },
+      expected: "vendor::unknown",
+    },
+  ])("normalize 对$label reasoningEffort 的结果符合 wire 语义", ({ raw, expected }) => {
+    const normalized = normalizeReportConfig(raw);
+
+    // HTTP wire：缺字段=unset；显式空串/非 string 在路由层 400。
+    // normalize 仍防御性丢弃非法磁盘值；opaque 值不在配置层猜语义，交 exact-model preflight。
+    if (expected === undefined) {
+      expect(Object.hasOwn(normalized, "reasoningEffort")).toBe(false);
+    } else {
+      expect(normalized.reasoningEffort).toBe(expected);
+    }
+  });
+
+  it("合法 opaque ID 不 trim/lowercase 且服务 roundtrip 保留", async () => {
+    const root = mkdtempSync(join(tmpdir(), "d1-reasoning-effort-roundtrip-"));
+    try {
+      const svc = new ReportConfigService({ root, initial: normalizeReportConfig({}) });
+      const effort = "  Vendor::Deep-Reasoning  ";
+
+      await svc.update(normalizeReportConfig({ reasoningEffort: effort }));
+      const disk = await readReportConfig(root);
+
+      expect(svc.get().reasoningEffort).toBe(effort);
+      expect(disk.reasoningEffort).toBe(effort);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("配置服务原型不新增 reasoning/capability 业务方法", () => {
+    expect(Object.getOwnPropertyNames(ReportConfigService.prototype).sort()).toEqual([
+      "constructor",
+      "get",
+      "update",
+    ]);
   });
 });
 

@@ -46,8 +46,16 @@ import { loadUserAdapterChecked, resolveAddAdapterFile } from "../server/registr
 import { StatsServiceCtor as StatsService } from "../server/pipeline/interface.ts";
 import { TrendTracker } from "../server/aggregate/interface.ts";
 import { TrendCollector } from "../server/collect/interface.ts";
-import { ReportScheduler } from "../server/schedule/interface.ts";
-import { optionalNotifier, parseReportIndexLines } from "../server/execute/interface.ts";
+import {
+  ReportScheduler,
+  createReportStateCoordinator,
+  createRetryLedger,
+} from "../server/schedule/interface.ts";
+import {
+  optionalNotifier,
+  parseReportIndexLines,
+  resolveGenerateRoute,
+} from "../server/execute/interface.ts";
 import {
   ReportConfigService,
   normalizeReportConfig,
@@ -65,8 +73,6 @@ import { ReportTaskQueue } from "../server/schedule/interface.ts";
 import {
   presetLastRunForNewlyEnabled,
   previousClosedWindow,
-  readLastRun,
-  updateLastRun,
 } from "../server/schedule/interface.ts";
 import { createStatsRoutes } from "../server/data-routes/interface.ts";
 import { createAdapterRoutes } from "../server/data-routes/interface.ts";
@@ -395,10 +401,25 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
     initial: await readReportConfig(historyRoot),
     onUpdate: (cfg) => reportScheduler.updateConfig(cfg),
   });
+  const retryLedger = createRetryLedger(historyRoot);
+  const reportState = createReportStateCoordinator({
+    root: historyRoot,
+    ledger: retryLedger,
+  });
+  const readReportState = reportState.readLastRun.bind(reportState);
+  const advanceReportState = reportState.updateLastRun.bind(reportState);
+
+  const resolveReportRoute = (input: Parameters<typeof resolveGenerateRoute>[0]) =>
+    resolveGenerateRoute(input);
 
   // 任务队列 = 定时 tick 与手动「立即生成」的单一执行入口。
   // 执行器职责（幂等下沉/生成/lastRun 推进/失败不推进/脱敏）在工厂契约内固化，
   // 队列只负责串行单飞与去重（tasks.ts）。
+  const reportWarn = (message: string): void => {
+    const safe = sanitizeDiagnostic(message);
+    layerErrors.record("execute", safe);
+    console.warn(`[dsh-provider-usage] report: ${safe}`);
+  };
   const reportQueue = new ReportTaskQueue({
     executor: makeDueReportExecutor({
       trend,
@@ -409,8 +430,41 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
       historyRoot,
       sanitizeDiagnostic,
       // B1 推进注入：per-root 链唯一实现留 schedule 域，执行器不直引值边
-      advanceLastRun: updateLastRun,
+      advanceLastRun: async (_root, patch) => advanceReportState(patch),
+      retry: {
+        ledger: reportState,
+        resolveRoute: resolveReportRoute,
+        commitSuccess: reportState,
+        reconcileIndex: reportState.reconcileIndex,
+        warn: reportWarn,
+        now: Date.now,
+      },
     }),
+    prepareForce: async (input) => {
+      const cfg = reportCfgService.get();
+      const resolved = await resolveReportRoute({
+        llm: ctx.llm,
+        provider: cfg.provider,
+        model: cfg.model,
+        reasoningEffort: cfg.reasoningEffort,
+      });
+      if (resolved.status === "failure") {
+        const error = new Error(resolved.failure.code) as Error & { code?: string };
+        error.code = resolved.failure.code;
+        throw error;
+      }
+      await reportState.beginForce(
+        {
+          period: input.period,
+          key: input.key,
+          startDay: input.startDay,
+          endDay: input.endDay,
+          route: resolved.route,
+        },
+        Date.now(),
+      );
+    },
+    sanitizeErrors: true,
     // execute 层错误面接线——任务执行失败（含 executor 脱敏后错误）
     // 经队列 warn 出口汇聚于此。
     warn: (msg) => {
@@ -426,6 +480,15 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
     // C 波单向化 + B1 值边清零：index 纯解析经 ScheduleIndexParser 端口注入调度域
     //（store 不再直引 execute 门面；B1 起执行器推进经 advanceLastRun 注入，值边清零）。
     parseIndex: parseReportIndexLines,
+    coordinator: reportState,
+    listIndexed: async () =>
+      (await readReportIndex(historyRoot))
+        .filter((meta) => meta.ok)
+        .map((meta) => ({
+          period: meta.period,
+          key: meta.key,
+          ...(meta.cycleId === undefined ? {} : { cycleId: meta.cycleId }),
+        })),
     // tick 只提交任务（非阻塞，队列去重吸收同窗口堆积），不再等待生成
     onDue: (due) => {
       reportQueue.submit(due);
@@ -439,6 +502,7 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
       console.warn(`[dsh-provider-usage] report: ${safe}`);
     },
   });
+  await reportScheduler.ready;
 
   function ensureReportKind(): void {
     const notifier = optionalNotifier(ctx);
@@ -515,13 +579,14 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
         historyRoot,
         reportQueue,
         reportCfgService,
+        retryState: reportState,
         // 目录候选清单收敛为注入查询面（makeListDirs 工厂，apply 零隐藏可变状态）
         listDirs: makeListDirs(trend),
         // B1 调度注入：纯函数不下沉 shared，读写共走 per-root 链（报告域不直引值边）
         presetLastRunForNewlyEnabled,
         previousClosedWindow,
-        readLastRun,
-        updateLastRun,
+        readLastRun: async () => readReportState(),
+        updateLastRun: async (_root, patch) => advanceReportState(patch),
         // B2 配置注入：归一化/磁盘读由组合根供给，默认表随服务返回（报告域不直引 config 值边）
         normalizeReportConfig,
         readReportConfig,

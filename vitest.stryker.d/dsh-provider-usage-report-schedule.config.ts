@@ -8,6 +8,7 @@ import { defineConfig } from 'vitest/config'
 export default defineConfig({
   test: {
     include: [
+      'packages/dsh-provider-usage/test/client-dom/report-section.test.ts',
       'packages/dsh-provider-usage/test/integration/config/composition-root.test.ts',
       'packages/dsh-provider-usage/test/integration/report-routes/composition-root.test.ts',
       'packages/dsh-provider-usage/test/integration/schedule/composition-root.test.ts',

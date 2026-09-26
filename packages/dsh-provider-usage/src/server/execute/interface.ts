@@ -19,8 +19,8 @@
  *   C 波起由组合根装配期经 ScheduleIndexParser 端口注入（store.ts 不直引
  *   本门面），不调业务实例（read/persist/run/notify 均不导入）；
  * - executor 工厂深封装：本面只暴露 `makeDueReportExecutor` 工厂与其
- *   依赖类型（DueExecutorDeps），执行器闭包内部（幂等下沉 → LLM 生成 →
- *   lastRun 推进 → 错误脱敏）一概不进入本面——工厂为本域唯一构造入口，
+ *   依赖类型（DueExecutorDeps），执行器闭包内部（幂等下沉 → claim → LLM outcome →
+ *   lastRun/coordinator 提交 → 错误脱敏）一概不进入本面——工厂为本域唯一构造入口，
  *   错误经 sanitizeDiagnostic 脱敏为工厂契约字段。listDirs 同理收敛为
  *   注入式查询面工厂（makeListDirs）。
  */
@@ -33,8 +33,10 @@ export { parseReportIndexLines } from "./report-index.ts";
 
 export {
   readReportIndex,
+  reportWindowHasUsage,
   prevWindowTotal,
   runDueReport,
+  runDueReportOutcome,
   persistReport,
   reportHtmlFile,
   reportMetaFile,
@@ -43,16 +45,28 @@ export {
   __clearReportIndexCacheForTests,
   __reportIndexCacheStatsForTests,
 } from "./runner.ts";
+export type {
+  PreparedDueReportOutcome,
+  ReportCycleMeta,
+  RunDueReportOutcome,
+  RunDueReportParams,
+} from "./runner.ts";
 
 // ------------------------------------------------------------------ 报告生成（generate.ts）
 
 export {
   generateReport,
+  generateReportOutcome,
+  resolveGenerateRoute,
   applyPromptTemplate,
   buildStatsSnapshot,
   PERIOD_BUCKETS,
 } from "./generate.ts";
 export type {
+  GenerateReportOutcome,
+  GenerateReportOutcomeOptions,
+  GenerateRouteOutcome,
+  UnresolvedRouteOutcome,
   ReportMeta,
   ReportResult,
   ReportStatsSnapshot,
@@ -67,7 +81,12 @@ export { reportBodyToHtml } from "./format.ts";
 // ------------------------------------------------------------------ 执行器工厂（executor.ts）
 
 export { makeDueReportExecutor } from "./executor.ts";
-export type { DueExecutorDeps } from "./executor.ts";
+export type {
+  DueExecutorDeps,
+  DueExecutorRetryOptions,
+  RetrySuccessCommitInput,
+  RetrySuccessCommitPort,
+} from "./executor.ts";
 
 // ------------------------------------------------------------------ 目录候选查询工厂（list-dirs.ts）
 

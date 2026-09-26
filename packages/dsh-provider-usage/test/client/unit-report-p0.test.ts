@@ -32,10 +32,13 @@ const {
   defaultStructureHeader,
   isScheduleDirty,
   isRoutingDirty,
+  withReasoningEffort,
+  reportConfigPayload,
   isPromptsDirty,
   groupReportsByPeriod,
   filterReportsByStatus,
   locatePendingRow,
+  reportRetryView,
   HISTORY_PAGE_SIZE,
 } = h;
 
@@ -215,11 +218,18 @@ describe("isScheduleDirty", () => {
   });
 });
 
-const routeOf = (provider: string, model: string, directories: string[], push: boolean) => ({
+const routeOf = (
+  provider: string,
+  model: string,
+  directories: string[],
+  push: boolean,
+  reasoningEffort?: string,
+) => ({
   provider,
   model,
   directories,
   push: { enabled: push },
+  ...(reasoningEffort === undefined ? {} : { reasoningEffort }),
 });
 
 describe("isRoutingDirty", () => {
@@ -243,8 +253,48 @@ describe("isRoutingDirty", () => {
     expect(isRoutingDirty(routeOf("a", "m", [], false), routeOf("b", "m", [], false))).toBe(true);
   });
 
+  it("model 漂移即脏", () => {
+    expect(isRoutingDirty(routeOf("a", "m", [], false), routeOf("a", "m2", [], false))).toBe(true);
+  });
+
   it("推送开关漂移即脏", () => {
     expect(isRoutingDirty(routeOf("a", "m", [], false), routeOf("a", "m", [], true))).toBe(true);
+  });
+
+  it("reasoning effort 从 unset 变为 opaque ID 即脏", () => {
+    expect(
+      isRoutingDirty(routeOf("a", "m", [], false), routeOf("a", "m", [], false, "vendor::deep")),
+    ).toBe(true);
+  });
+});
+
+describe("reasoningEffort：清除与保存载荷", () => {
+  it("用户清除时删除属性，不写空串", () => {
+    const cleared = withReasoningEffort(
+      { provider: "a", model: "m", reasoningEffort: "vendor::deep" },
+      "",
+    );
+    expect(Object.hasOwn(cleared, "reasoningEffort")).toBe(false);
+    expect(JSON.parse(reportConfigPayload(cleared))).toEqual({ provider: "a", model: "m" });
+  });
+
+  it("未设置 effort 时保存整份配置且 JSON 不出现该字段", () => {
+    const config = {
+      provider: "vendor",
+      model: "vendor::model",
+      directories: ["work"],
+      push: { enabled: true },
+    };
+    const body = JSON.parse(reportConfigPayload(config));
+    expect(body).toEqual(config);
+    expect(Object.hasOwn(body, "reasoningEffort")).toBe(false);
+  });
+
+  it("已设置 effort 时保存 opaque ID 原值", () => {
+    const body = JSON.parse(
+      reportConfigPayload(withReasoningEffort({ provider: "vendor", model: "m" }, "vendor::deep")),
+    );
+    expect(body.reasoningEffort).toBe("vendor::deep");
   });
 });
 
@@ -343,6 +393,105 @@ describe("locatePendingRow：D1 跳转判定点（新窗口重拉后定位）", 
       { period: "daily", key: "2026-03-13", ok: true },
     ] as typeof HIST_ROWS;
     expect(locatePendingRow(fresh, "daily:2026-03-13")?.key).toBe("2026-03-13");
+  });
+});
+
+// #1010 A8：retry wire 投影。字面量是第二事实源；把 null 归零、漏字段或
+// 把自动 retry 数误当 outer attempt 都会打红。
+const RETRY_WIRE = {
+  attempts: 2,
+  maxAttempts: 5,
+  nextRetryAt: 1_800_000_000_000,
+  terminal: false,
+  terminalReason: null,
+  usage: {
+    inputTokens: 120,
+    outputTokens: 30,
+    reasoningTokens: 18,
+    totalTokens: 168,
+    cacheReadTokens: 40,
+    cacheWriteTokens: 7,
+    durationMs: 2_750,
+  },
+} as const;
+
+describe("reportRetryView：#1010 A8 retry body 投影", () => {
+  it("保留全部状态与累计成本，并把 retry 数换算为当前 outer attempt", () => {
+    expect(reportRetryView(RETRY_WIRE)).toEqual({
+      attempts: 2,
+      maxAttempts: 5,
+      currentAttempt: 3,
+      nextRetryAt: 1_800_000_000_000,
+      terminal: false,
+      terminalReason: null,
+      usage: {
+        inputTokens: 120,
+        outputTokens: 30,
+        reasoningTokens: 18,
+        totalTokens: 168,
+        cacheReadTokens: 40,
+        cacheWriteTokens: 7,
+        durationMs: 2_750,
+      },
+    });
+  });
+
+  it("逐字段保留 null，缺失观测不伪装为 0", () => {
+    const wire = {
+      ...RETRY_WIRE,
+      attempts: 0,
+      nextRetryAt: null,
+      terminal: true,
+      terminalReason: { code: "empty-output", kind: "empty-output" },
+      usage: {
+        inputTokens: null,
+        outputTokens: null,
+        reasoningTokens: null,
+        totalTokens: null,
+        cacheReadTokens: null,
+        cacheWriteTokens: null,
+        durationMs: null,
+      },
+    };
+
+    expect(reportRetryView(wire)).toEqual({
+      attempts: 0,
+      maxAttempts: 5,
+      currentAttempt: 1,
+      nextRetryAt: null,
+      terminal: true,
+      terminalReason: { code: "empty-output", kind: "empty-output" },
+      usage: {
+        inputTokens: null,
+        outputTokens: null,
+        reasoningTokens: null,
+        totalTokens: null,
+        cacheReadTokens: null,
+        cacheWriteTokens: null,
+        durationMs: null,
+      },
+    });
+  });
+
+  it("旧响应没有 retry 字段时返回 null，不合成零成本状态", () => {
+    expect(reportRetryView(undefined)).toBeNull();
+    expect(reportRetryView({ status: "running" })).toBeNull();
+  });
+
+  it("retry 形状或任一指标畸形时 fail closed", () => {
+    expect(reportRetryView({ ...RETRY_WIRE, attempts: -1 })).toBeNull();
+    expect(
+      reportRetryView({
+        ...RETRY_WIRE,
+        usage: { ...RETRY_WIRE.usage, reasoningTokens: Number.NaN },
+      }),
+    ).toBeNull();
+    expect(
+      reportRetryView({
+        ...RETRY_WIRE,
+        usage: { ...RETRY_WIRE.usage, durationMs: Number.POSITIVE_INFINITY },
+      }),
+    ).toBeNull();
   });
 });
 
