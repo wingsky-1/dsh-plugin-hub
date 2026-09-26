@@ -104,10 +104,7 @@ export function parseSelectRequest(body: Record<string, unknown>): SelectRequest
  * → 落盘启用选择（清空面写 null 键，其余写当前快照）。
  * 返回 false = 候选里没有该适配器（404），此时副作用一步都不执行。
  */
-function applySelectRequest(
-  statsService: StatsService,
-  request: SelectRequest,
-): boolean {
+function applySelectRequest(statsService: StatsService, request: SelectRequest): boolean {
   const ok = statsService.registry.select(request.provider, request.adapterName);
   if (!ok) return false;
 

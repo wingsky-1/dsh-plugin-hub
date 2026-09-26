@@ -79,7 +79,11 @@ export async function runV2Pipeline(ctx: V2PipelineContext): Promise<V2PipelineR
     // 0 参 fetchData 忽略入参不受影响。
     async (signal) => {
       const fetcher: typeof fetch = ctx.fetchImpl ?? fetch;
-      return adapter.fetchData({ ...buildFetchContext(ctx), signal, fetch: fetcher } as unknown as FetchContext);
+      return adapter.fetchData({
+        ...buildFetchContext(ctx),
+        signal,
+        fetch: fetcher,
+      } as unknown as FetchContext);
     },
     ctx.timeoutMs,
     ctx.signal,

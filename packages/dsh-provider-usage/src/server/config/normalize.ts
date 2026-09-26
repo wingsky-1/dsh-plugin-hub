@@ -100,17 +100,11 @@ function boundedString(value: unknown, max: number, dflt: string): string {
 
 /** 月内触发日合法性（1–28 整数；覆盖上一自然月，故 29–31 不参与）。 */
 function isValidDayOfMonth(value: unknown): value is number {
-  return (
-    typeof value === "number" && Number.isInteger(value) && value >= 1 && value <= 28
-  );
+  return typeof value === "number" && Number.isInteger(value) && value >= 1 && value <= 28;
 }
 
 /** 单模板归一化（非空字符串且 ≤20000 用之；若严格等于任何旧版默认模板则自动升级新版；否则回退该周期默认）。 */
-function normalizePrompt(
-  raw: unknown,
-  dflt: string,
-  legacyTemplates?: readonly string[],
-): string {
+function normalizePrompt(raw: unknown, dflt: string, legacyTemplates?: readonly string[]): string {
   if (typeof raw !== "string" || raw.trim().length === 0 || raw.length > 20000) return dflt;
   if (legacyTemplates !== undefined && legacyTemplates.includes(raw)) return dflt;
   return raw;
@@ -165,7 +159,8 @@ const LEGACY_PROMPTS_BY_PERIOD: Record<keyof ReportPrompts, readonly string[]> =
  */
 function normalizePrompts(src: Record<string, unknown>, dflt: ReportPrompts): ReportPrompts {
   const promptsSrc = optionalObjectSource(src.prompts);
-  if (promptsSrc === null) return migrateLegacyPrompt(legacyPromptOf(src) ?? LEGACY_PROMPT_TEMPLATE);
+  if (promptsSrc === null)
+    return migrateLegacyPrompt(legacyPromptOf(src) ?? LEGACY_PROMPT_TEMPLATE);
   return {
     daily: normalizePrompt(promptsSrc.daily, dflt.daily, LEGACY_PROMPTS_BY_PERIOD.daily),
     weekly: normalizePrompt(promptsSrc.weekly, dflt.weekly, LEGACY_PROMPTS_BY_PERIOD.weekly),

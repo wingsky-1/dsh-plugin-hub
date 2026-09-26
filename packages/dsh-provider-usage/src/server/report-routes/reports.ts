@@ -207,9 +207,7 @@ function listModelProviders(ctx: Context): Array<{ id: string; name?: string }> 
  * 目录候选（calls 降序全留存聚合，含未识别桶键）；异常不连坐配置读取
  * （清单失败 → 空数组，多选控件降级，配置本身照常返回）。
  */
-function listDirCandidates(
-  context: ReportRoutesContext,
-): Array<{ dir: string }> {
+function listDirCandidates(context: ReportRoutesContext): Array<{ dir: string }> {
   try {
     return (context.listDirs?.() ?? []).map((r) => ({ dir: r.dir }));
   } catch {
@@ -342,9 +340,7 @@ export async function handleReportModels(
 
   let list: Array<{ id: string; name?: string }>;
   try {
-    list = normalizeModelList(
-      await withReportModelsDeadline(() => ctx.llm.listModels(provider)),
-    );
+    list = normalizeModelList(await withReportModelsDeadline(() => ctx.llm.listModels(provider)));
   } catch (error: unknown) {
     return writeJson(res, 200, {
       ok: false,
@@ -540,7 +536,10 @@ async function submitForceTask(
     const submitted = await reportQueue.submitForce({ ...due, force: true });
     return { status: 202, body: { ok: true, taskId: submitted.taskId } };
   } catch (error: unknown) {
-    return { status: 503, body: { ok: false, error: stableFailureCode(error, "force-unavailable") } };
+    return {
+      status: 503,
+      body: { ok: false, error: stableFailureCode(error, "force-unavailable") },
+    };
   }
 }
 
@@ -564,7 +563,11 @@ export async function handleReportGenerate(
   const force = body.force === true;
 
   // 手动生成恒定锚定已闭环的上一完整周期（日报=昨天全天，消灭凌晨漂移；不检查 enabled）
-  const due = context.previousClosedWindow(period as ReportPeriod, reportCfgService.get(), Date.now());
+  const due = context.previousClosedWindow(
+    period as ReportPeriod,
+    reportCfgService.get(),
+    Date.now(),
+  );
 
   // 幂等短路：窗口已有成功报告且非强制重生成 → 直接复用，不产生新任务
   const blocked = await reuseOrRetryBlockResponse(context, due, force);

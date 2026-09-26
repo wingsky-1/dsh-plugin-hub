@@ -12,10 +12,7 @@
  * 私有 helper（未导出）经其公开入口间接覆盖——本文件只对**已导出的纯函数**直接断言。
  */
 import { describe, expect, it } from "vitest";
-import {
-  isPlainRecord,
-  validateFetchedData,
-} from "../../../src/server/pipeline/guards.ts";
+import { isPlainRecord, validateFetchedData } from "../../../src/server/pipeline/guards.ts";
 import { parseSelectRequest } from "../../../src/server/data-routes/adapters.ts";
 import { parseTrendQuery } from "../../../src/server/ui-routes/trend.ts";
 

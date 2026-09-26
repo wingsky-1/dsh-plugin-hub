@@ -138,7 +138,10 @@ function granRangeForKey(key: string, gran: TrendGranularity): { start: string; 
 }
 
 /** 目录行的十数值字段（cell/row 形态通用；键序即落盘字段序）。 */
-type DirCellValues = Pick<TrendCell, "input" | "output" | "cacheRead" | "cacheWrite" | "calls" | "turns" | "toolCalls">;
+type DirCellValues = Pick<
+  TrendCell,
+  "input" | "output" | "cacheRead" | "cacheWrite" | "calls" | "turns" | "toolCalls"
+>;
 
 /** cell → 目录行的十数值字段（浅展开；字段名同构，直接搬）。 */
 function cellValues(cell: TrendCell): DirCellValues {

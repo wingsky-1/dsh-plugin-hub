@@ -539,8 +539,7 @@ async function failureOutcomeAfterGenerate(
   }
   return {
     ...generated,
-    result:
-      observed === null ? generated.result : withCumulativeUsage(generated.result, observed),
+    result: observed === null ? generated.result : withCumulativeUsage(generated.result, observed),
     attempt: generated.attempt,
   };
 }

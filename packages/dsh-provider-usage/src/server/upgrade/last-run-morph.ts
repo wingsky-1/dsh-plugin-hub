@@ -106,10 +106,7 @@ function parseLastRunDocument(
 }
 
 /** 索引文本读取（读不到 → null = 无事实，不动 last-run）。 */
-async function readIndexText(
-  deps: UpgradeDeps,
-  root: string,
-): Promise<string | null> {
+async function readIndexText(deps: UpgradeDeps, root: string): Promise<string | null> {
   const indexRaw = await deps.readOldFile(indexFile(root));
   return indexRaw.ok === false ? null : indexRaw.text;
 }

@@ -145,10 +145,7 @@ function rememberDone(done: Map<string, number>, key: string, retry: number): vo
  */
 function isTrackable(session: unknown, event: unknown): event is SessionEvent {
   return (
-    typeof session === "string" &&
-    session.length > 0 &&
-    typeof event === "object" &&
-    event !== null
+    typeof session === "string" && session.length > 0 && typeof event === "object" && event !== null
   );
 }
 

@@ -18,7 +18,6 @@
  *   仅作只读传参，无需 freeze）。
  */
 import type {
-  ContentBlock,
   ContentBlockType,
   FinishReason,
   GenerateOptions,
@@ -391,10 +390,7 @@ const CAPABILITY_UNSUPPORTED: CapabilityOutcome = {
  * effort 精确命中判定（唯一放行口）：必须落在该 exact model 的 efforts 白名单内，
  * 缺 reasoning 段、efforts 非数组、找不到 configured 三者同归 unsupported。
  */
-function matchConfiguredEffort(
-  info: LlmResolvedModelInfo,
-  configured: string,
-): CapabilityOutcome {
+function matchConfiguredEffort(info: LlmResolvedModelInfo, configured: string): CapabilityOutcome {
   const efforts = info.reasoning?.efforts;
   if (!Array.isArray(efforts)) return CAPABILITY_UNSUPPORTED;
   const exact = efforts.find((effort) => effort.id === configured);
@@ -404,7 +400,11 @@ function matchConfiguredEffort(
 /** 探测失败的归因（顺序即优先级：超时 → 外部取消 → 其它解析失败）。 */
 function classifyCapabilityFailure(timedOut: boolean, cancelled: boolean): CapabilityOutcome {
   if (timedOut) {
-    return { ok: false, error: CAPABILITY_ERROR.timeout, failure: GENERATE_FAILURE.capabilityTimeout };
+    return {
+      ok: false,
+      error: CAPABILITY_ERROR.timeout,
+      failure: GENERATE_FAILURE.capabilityTimeout,
+    };
   }
   if (cancelled) {
     return {
@@ -715,7 +715,9 @@ function withBlockEndText(
 ): StreamState {
   const block = chunk.block;
   if (block.type !== "text") return state;
-  return state.textDeltaIndexes.has(chunk.index) ? state : { ...state, body: state.body + block.text };
+  return state.textDeltaIndexes.has(chunk.index)
+    ? state
+    : { ...state, body: state.body + block.text };
 }
 
 /** block-end 的内容块分派（text/reasoning/tool-call 三类自有判据，其余走支持度表）。 */
@@ -1120,7 +1122,10 @@ function makeOutcomeBuilder(opts: GenerateReportOutcomeOptions, started: number)
 async function openRoute(
   opts: GenerateReportOutcomeOptions,
   outcome: ReturnType<typeof makeOutcomeBuilder>,
-): Promise<{ route: RetryRouteSnapshot; effortId: LlmReasoningEffortInfo["id"] | undefined } | GenerateReportOutcome> {
+): Promise<
+  | { route: RetryRouteSnapshot; effortId: LlmReasoningEffortInfo["id"] | undefined }
+  | GenerateReportOutcome
+> {
   if (opts.signal?.aborted) return outcome.failAborted();
   const routeOutcome = opts.route ?? (await resolveGenerateRoute(opts));
   if (opts.signal?.aborted) return outcome.failAborted(routeOutcome.route);
