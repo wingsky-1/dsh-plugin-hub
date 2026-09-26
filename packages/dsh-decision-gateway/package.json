@@ -56,13 +56,19 @@
     "@deepseek-ai/dsh-host-webserver": "catalog:",
     "@deepseek-ai/dsh-tools": "catalog:",
     "@typesafe-ai/sdk": "catalog:",
-    "@deepseek-ai/dsh-session-title": "catalog:"
+    "@deepseek-ai/dsh-session-title": "catalog:",
+    "@deepseek-ai/dsh-client-locale": "catalog:",
+    "@deepseek-ai/dsh-client-ui-renderer": "catalog:",
+    "@deepseek-ai/dsh-client-ui-slots": "catalog:"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "4.0.4",
     "@deepseek-ai/dsh-host-webserver": "0.1.7-rc.2",
     "@deepseek-ai/dsh-tools": "0.1.7-rc.2",
-    "@deepseek-ai/dsh-session-title": "0.1.7-rc.2"
+    "@deepseek-ai/dsh-session-title": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-client-locale": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-client-ui-renderer": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-client-ui-slots": "0.1.7-rc.2"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/cordis": {
@@ -75,6 +81,15 @@
       "optional": true
     },
     "@deepseek-ai/dsh-session-title": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-client-locale": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-client-ui-renderer": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-client-ui-slots": {
       "optional": true
     }
   },

@@ -41,6 +41,12 @@ import {
 // TS2664（microsoft/TypeScript#63960 同类；上游修复发布物后此行可删）。
 
 import type { LocaleNamespaceMap as _LocaleNamespaceMap } from "@deepseek-ai/dsh-client-ui-slots";
+// 宿主服务面一律取官方类型（仅 import type，编译期擦除、零运行时依赖）：cordis 的
+// Context 提供按服务名解析的 get 签名，下方四个窄面全部由它派生，不再自建镜像 interface。
+import type { Context } from "@deepseek-ai/cordis";
+import type { SlotRegistry } from "@deepseek-ai/dsh-client-ui-renderer/client";
+import type { ConfigForms } from "@deepseek-ai/dsh-client-ui-settings/client";
+import type { LocaleRuntime } from "@deepseek-ai/dsh-client-locale/client";
 
 declare module "@deepseek-ai/dsh-client-ui-slots" {
   interface LocaleNamespaceMap {
@@ -60,44 +66,45 @@ const CSS_VERSION = "4";
 
 /**
  * 浏览器端上下文的窄面（本包实际使用的面：remote/get/effect），与 inject 声明的
- * ["slots", "configForms", "locale", "remote"] 对齐；slots 与 configForms 的读形态
- * 见下方窄接口。多用一个服务却忘了声明会在类型层先露出来。
+ * ["slots", "configForms", "locale", "remote"] 对齐。多用一个服务却忘了声明会在类型层先露出来。
+ *
+ * get 取官方 cordis Context 的同名方法（Pick 保留其 `this` 绑定），故 ctx.get("slots")
+ * 直接得出官方 SlotRegistry | undefined，而不是本包自造的 unknown——服务面改名/改形状判红。
+ * remote 不在本包依赖图内（官方 ClientRemote 由 dsh-api-remotes 声明），仍是最小 unknown 面，
+ * 由 host-trust-status.ts 的 RemoteLike 单独收窄。
+ *
+ * effect 的 execute 形参取自官方 Fiber["effect"]，返回值不取（官方返回
+ * Disposable<Promise<void>>，本包只把 execute 交出去、清理写在 execute 内部），故返回值放宽
+ * 到 unknown。按方法语法声明（与官方 cordis 一致）：方法位是双变检查，测试替身那类
+ * 「只收 () => () => void」的窄形参仍可赋值，而形参类型本身始终是官方的。
  */
-interface ClientContext {
+interface ClientContext extends Pick<Context, "get"> {
   readonly remote?: unknown;
-  get: (name: string) => unknown;
-  effect: (execute: () => () => void, label?: string) => unknown;
+  effect(execute: Parameters<Context["effect"]>[0], label?: string): unknown;
 }
 
-/** 0.1.7-rc.2 目标的 row entry owner props；form 由宿主提供，当前卡片仍保留既有 HTTP 写面。 */
-interface RowConfigEntryProps {
-  readonly view: "summary" | "page";
-  readonly form?: unknown;
-}
+/** 宿主插槽读形态；缺失即页面不挂载。官方 SlotRegistry 的本包最小面。 */
+type SlotsView = Pick<SlotRegistry, "inject" | "register">;
 
-/** 宿主插槽读形态；缺失即页面不挂载。 */
-interface SlotsView {
-  inject: (name: string, setup: () => () => void) => () => void;
-  register: (
-    item: Record<string, unknown>,
-    render: (owner: RowConfigEntryProps) => unknown,
-  ) => () => void;
-}
+/**
+ * 0.1.7-rc.2 settings 配置服务的目标签名；页面注册只在 Host 服务 watched namespace 时存活。
+ * 官方 ConfigForms.whileServed 的本包最小面。
+ */
+type ConfigFormsView = Pick<ConfigForms, "whileServed">;
 
-/** 0.1.7-rc.2 settings 配置服务的目标签名；页面注册只在 Host 服务 watched namespace 时存活。 */
-interface ConfigFormsView {
-  whileServed: (
-    namespaces: readonly string[],
-    register: (served: ReadonlySet<string>) => () => void,
-  ) => () => void;
-}
-
-/** locale 服务的窄读面（与 inject 声明的 ["slots", "configForms", "locale", "remote"] 对齐）。 */
-interface LocalePort {
-  register?: (ns: string, dict: { zh: unknown; en: unknown }) => void;
-  subscribe?: (listener: () => void) => () => void;
-  getSnapshot?: () => unknown;
-}
+/**
+ * locale 服务的窄读面（与 inject 声明的 ["slots", "configForms", "locale", "remote"] 对齐）：
+ * 官方 LocaleRuntime 的本包最小面。四个成员都是官方类上的必选方法，服务本体缺失由
+ * ctx.get("locale") 的 | undefined 表达；调用点既有的 typeof 守卫是运行时防御，原样保留。
+ *
+ * 成员集与 shared/client/i18n.d.ts 的 bindLocale 形参一致（含 bind）——本包把整个 locale
+ * 读面交给 bindLocale，少一个成员即在该调用点判红。
+ *
+ * 已知瑕疵（按任务边界保持丢弃，不新增清理逻辑）：官方 register 两组重载都返回 disposer
+ * () => void，本包沿用既有调用形态不接返回值——字典注册的清理仍由第二个 effect 的 disposer
+ * 统一管，只有 subscribe 的 unsub 被存下并在卸载时调用。
+ */
+type LocalePort = Pick<LocaleRuntime, "register" | "bind" | "subscribe" | "getSnapshot">;
 
 /**
  * 故障态告警（P1-1）：配置页受 Host authority 与 settings namespace 投影约束，
@@ -121,7 +128,8 @@ function warnHostTrustOnce(hostTrustSignals: () => HostTrustSignals): void {
  * 页面注册失败则是配置页没挂上。
  */
 function bindClientLocale(ctx: ClientContext): (() => void) | null {
-  const locale = ctx.get("locale") as LocalePort | null | undefined;
+  // 官方 get 已按服务名给出 LocaleRuntime | undefined，窄面只是本包经 bindLocale 消费的那几个成员。
+  const locale: LocalePort | null | undefined = ctx.get("locale");
   let unsubLocale: (() => void) | null = null;
   if (locale && typeof locale.register === "function") {
     try {
@@ -152,8 +160,9 @@ export function apply(ctx: ClientContext): void {
     // 告警排在 slots / configForms 读取之前：告警不依赖配置面。
     warnHostTrustOnce(hostTrustSignals);
 
-    const slots = ctx.get("slots") as SlotsView | null | undefined;
-    const configForms = ctx.get("configForms") as ConfigFormsView | null | undefined;
+    // 官方 get 按服务名给出 SlotRegistry / ConfigForms，窄面是本包消费的那几个成员。
+    const slots: SlotsView | null | undefined = ctx.get("slots");
+    const configForms: ConfigFormsView | null | undefined = ctx.get("configForms");
     if (!slots || !configForms) {
       console.warn("[dsh-lan-proxy] 缺少 slots/configForms 服务，插件配置页未挂载");
       return;

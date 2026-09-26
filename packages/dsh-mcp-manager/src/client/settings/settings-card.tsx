@@ -11,12 +11,18 @@ import { API } from "../core/constants.ts";
 import { api } from "../core/api.ts";
 import { t } from "../../../../../shared/client/i18n.js";
 import type { ClientUiConfig } from "../../shared/interface.ts";
+import type { PluginConfigViewProps } from "@deepseek-ai/dsh-client-ui-plugin-manager/client";
 
-/** plugins.row.config owner 传给组件的视图与表单能力。 */
-export interface SettingsCardProps {
-  view: "summary" | "page";
-  form?: unknown;
-}
+/**
+ * plugins.row.config owner 传给组件的视图与表单能力：官方 `PluginConfigViewProps`
+ * （dsh-client-ui-plugin-manager，plugins.row.config / plugins.bundle.config /
+ * plugins.item 三个 seat 的 owner 形状）原样透传，不另立镜像。
+ *
+ * 事实记录：**本组件不读 props.form**——页面读写走自身的 /api/dsh-mcp/config
+ * （GET 读 / POST 写，见下 SettingsPage），props.form 只是类型面上随 owner 契约到达。
+ * 换官方类型不改变渲染行为，也不因「用上了 form」而新增任何读取。
+ */
+export type SettingsCardProps = PluginConfigViewProps;
 
 /**
  * summary 由插件行自身呈现；此组件不发配置/健康请求，也不返回嵌套 page DOM。

@@ -13,6 +13,8 @@ import { API } from "./constants.ts";
 import { DEFAULT_Z_INDEX_BASE } from "../../shared/interface.ts";
 import type { ClientUiConfig, McpServerListEntry, ServerState } from "../../shared/interface.ts";
 import type { ISessions } from "@deepseek-ai/dsh-api-session-controller/client";
+import type { LocaleRuntime } from "@deepseek-ai/dsh-client-locale/client";
+import type { SlotRegistry } from "@deepseek-ai/dsh-client-ui-renderer/client";
 
 export type { ClientUiConfig, McpServerListEntry } from "../../shared/interface.ts";
 
@@ -137,23 +139,35 @@ export interface UiActions {
   toggleFloat: (force?: boolean) => void;
 }
 
-/** locale 服务最小面（成员一律 optional；调用前 typeof 守卫保留 H4）。 */
-export interface McpLocaleService {
-  register?: (ns: string, dict: unknown) => void;
-  subscribe?: (listener: () => void) => () => void;
-  getSnapshot?: () => unknown;
-  bind?: (ns: string) => (key: string, params?: Record<string, unknown>) => string;
-}
+/**
+ * locale 服务最小面：官方 `LocaleRuntime`（dsh-client-locale，宿主 ctx.locale）的 Pick。
+ * 成员一律必选——官方类上本就是必选方法，服务本体缺失由 `ctx.get("locale")` 的
+ * `| undefined` 表达；index.ts 里既有的 typeof 守卫（H4）是运行时防御，原样保留。
+ *
+ * 官方形状对齐说明：官方 `register` 两个重载都返回 disposer `() => void`，本包调用点
+ * **既成事实地丢弃**该返回值（只把 subscribe 的 unsub 存进 effect 卸载），此处仅把返回
+ * 类型按官方补齐，**不新增任何清理/生命周期逻辑**。`getSnapshot` 官方必返 `LocaleSnapshot`，
+ * 本包只在 typeof 守卫里探测成员存在，从不读返回值，故面里只带方法类型不带结果。
+ */
+export type McpLocaleService = Pick<
+  LocaleRuntime,
+  "register" | "subscribe" | "getSnapshot" | "bind"
+>;
 
-/** slots 服务最小面（成员一律 optional；调用侧 typeof/?. 守卫承接，G2 零行为改动）。 */
-export interface McpSlotsService {
-  inject?: (name: string, setup: () => unknown) => void;
-  register?: (item: Record<string, unknown>, render: () => unknown) => unknown;
-}
+/**
+ * slots 服务最小面：官方 `SlotRegistry`（dsh-client-ui-renderer，宿主 ctx.slots）的
+ * inject/register Pick，与 index.ts 的行配置装配面同源同形。
+ *
+ * 官方形状对齐说明：官方 `inject(key, callback)` 与 `register(options, component)` **都**
+ * 返回 disposer `() => void`；本类型此前把 inject 误写成返回 void（index.ts 的局部声明
+ * 反而写对了），此处一律以官方为准。成员不再 optional：服务本体缺失已由
+ * `ctx.get("slots")` 的 `| undefined` 表达，调用点本就先判空再调（G2 零行为改动）。
+ */
+export type McpSlotsService = Pick<SlotRegistry, "inject" | "register">;
 
 /**
  * 客户端上下文最小面（S2：get 重载 + effect + sessions?；H6 不反向依赖未清洁形状）。
- * get("locale"/"slots")返回 optional 视图，未声明服务时为 undefined；其余名回落 unknown。
+ * get("locale"/"slots")返回上两个官方派生面，未声明服务时为 undefined；其余名回落 unknown。
  */
 export interface McpClientContext {
   get(name: "locale"): McpLocaleService | undefined;

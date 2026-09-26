@@ -8,7 +8,11 @@
  * 未装配时回落 key 本体：宿主没提供 locale 服务时界面照常渲染（显示 key 而不是崩）。
  */
 
-export type Translate = (key: string, params?: Record<string, unknown>) => string;
+// 翻译函数形态取官方 Translate（@deepseek-ai/dsh-client-locale 再导出
+// @deepseek-ai/dsh-client-ui-slots 的权威声明）：本模块不再自带一份手抄形态，
+// 上游改签名即判红。仅 import type，编译期擦除、零运行时依赖。
+import type { Translate } from "@deepseek-ai/dsh-client-locale/client";
+export type { Translate };
 
 /** 未装配时的回落：key 即文案。 */
 const fallbackTranslate: Translate = (key) => String(key);

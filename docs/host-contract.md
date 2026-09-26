@@ -93,19 +93,19 @@ peer 含 cordis 框架底座与仅经 `ctx.on` 事件消费的包（如 notifier
 
 | 包 | 端 | inject 值 | peer（@deepseek-ai/*） | 出处 |
 | --- | --- | --- | --- | --- |
-| dsh-decision-gateway | 宿主 | webServer， tools | cordis， dsh-host-webserver， dsh-tools | | packages/dsh-decision-gateway/src/index.ts:32 |
-| dsh-decision-gateway | 客户端 | slots | （同上） | | packages/dsh-decision-gateway/src/client/index.ts:210 |
-| dsh-lan-proxy | 宿主 | webServer | cordis， dsh-host-webserver | | packages/dsh-lan-proxy/src/index.ts:38 |
+| dsh-decision-gateway | 宿主 | webServer， tools | cordis， dsh-host-webserver， dsh-tools， dsh-session-title， dsh-client-locale， dsh-client-ui-renderer | | packages/dsh-decision-gateway/src/index.ts:32 |
+| dsh-decision-gateway | 客户端 | slots， locale | （同上） | | packages/dsh-decision-gateway/src/client/index.ts:210 |
+| dsh-lan-proxy | 宿主 | webServer | cordis， dsh-host-webserver， dsh-client-ui-slots， dsh-client-locale， dsh-client-ui-renderer， dsh-client-ui-settings， dsh-client-ui-plugin-manager | | packages/dsh-lan-proxy/src/index.ts:38 |
 | dsh-lan-proxy | 客户端 | slots， configForms， locale， remote | （同上） | | packages/dsh-lan-proxy/src/client/index.ts |
-| dsh-mcp-manager | 宿主 | tools， webServer， systemPrompt | cordis， dsh-host-webserver， dsh-agent， dsh-tools， dsh-system-prompt | | packages/dsh-mcp-manager/src/index.ts |
+| dsh-mcp-manager | 宿主 | tools， webServer， systemPrompt | cordis， dsh-host-webserver， dsh-agent， dsh-tools， dsh-system-prompt， dsh-client-ui-slots， dsh-llm， dsh-api-session-controller， dsh-client-ui-session， dsh-client-store， dsh-client-locale， dsh-client-ui-renderer， dsh-client-ui-settings， dsh-client-ui-plugin-manager | | packages/dsh-mcp-manager/src/index.ts |
 | dsh-mcp-manager | 客户端 | sessions， slots， configForms， locale | （同上） | | packages/dsh-mcp-manager/src/client/index.ts |
-| dsh-notifier | 宿主 | webServer， settings（经 `SETTINGS_SERVICE` 常量，`src/index.ts:35`） | cordis， dsh-agent， dsh-host-webserver， dsh-session， dsh-session-title， dsh-settings， dsh-user-approval， dsh-user-questions | | packages/dsh-notifier/src/index.ts:44 |
+| dsh-notifier | 宿主 | webServer， settings（经 `SETTINGS_SERVICE` 常量，`src/index.ts:35`） | cordis， dsh-agent， dsh-host-webserver， dsh-session， dsh-session-title， dsh-settings， dsh-user-approval， dsh-user-questions， dsh-client-ui-slots， dsh-client-locale， dsh-client-ui-renderer | | packages/dsh-notifier/src/index.ts:44 |
 | dsh-notifier | 客户端 | slots， locale | （同上） | | packages/dsh-notifier/src/client/index.tsx:1849 |
-| dsh-provider-usage | 宿主 | webServer， llm， sessions（`src/apply/index.ts:115`） | cordis， dsh-host-webserver， dsh-llm， dsh-session | | packages/dsh-provider-usage/src/apply/index.ts:115 |
+| dsh-provider-usage | 宿主 | webServer， llm， sessions（`src/apply/index.ts:115`） | cordis， dsh-host-webserver， dsh-llm， dsh-session， dsh-client-ui-slots， dsh-api-session-controller， dsh-client-ui-session | | packages/dsh-provider-usage/src/apply/index.ts:115 |
 | dsh-provider-usage | 客户端 | locale， sessions， remote， remote.session， slots | （同上） | | packages/dsh-provider-usage/src/client/index.tsx:828 |
-| dsh-worktree-sidebar | 宿主 | webServer， agents， typert， sessions | cordis， dsh-agent， dsh-api-workspace-files， dsh-host-webserver， dsh-tools， dsh-typert-protocol | | packages/dsh-worktree-sidebar/src/index.ts:39 |
+| dsh-worktree-sidebar | 宿主 | webServer， agents， typert， sessions | cordis， dsh-agent， dsh-api-workspace-files， dsh-host-webserver， dsh-tools， dsh-typert-protocol， dsh-session | | packages/dsh-worktree-sidebar/src/index.ts:39 |
 | dsh-worktree-sidebar | 客户端 | slots， sidebarRightTabs， sessions， locale | （同上） | | packages/dsh-worktree-sidebar/src/client/index.ts:133 |
-| dsh-verify-isolated | 宿主 | （无服务访问） | dsh-skill-filesystem（类型面） | | packages/dsh-verify-isolated/src 下无 `export const inject` |
+| dsh-verify-isolated | 宿主 | （无服务访问） | dsh-skill-filesystem | | packages/dsh-verify-isolated/src 下无 `export const inject` |
 | dsh-verify-isolated | 客户端 | （无客户端面） | （同上） | | （同上） |
 | dsh-plugins-all | 宿主 | （不适用，聚合包） | （无 peer） | | 无 `src/` |
 | dsh-plugins-all | 客户端 | （不适用，聚合包） | （无 peer） | | 无 `src/` |

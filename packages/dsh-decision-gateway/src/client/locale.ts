@@ -8,12 +8,15 @@
  * 切语言免刷新跟随；未装配（旧运行时 / 单测直调）回落本地字典——界面照常渲染中文案。
  */
 import { en, zh } from "./locales.ts";
+// 官方 Translate（@deepseek-ai/dsh-client-ui-slots 定义，dsh-client-locale/client 再导出）。
+// 本包此前手抄了一份同形的 HostTranslate——上游改签名时两处会分叉，故直接取官方类型。
+import type { Translate } from "@deepseek-ai/dsh-client-locale/client";
 
 export type DecisionLocale = "zh" | "en";
 export type DecisionTextKey = keyof typeof zh;
 
 /** 宿主装配的翻译函数（官方 ctx.locale.bind(ns) 产物；key 即本包字典键）。 */
-export type HostTranslate = (key: string, params?: Record<string, unknown>) => string;
+export type HostTranslate = Translate;
 
 let current: DecisionLocale = resolveLang();
 let bound: HostTranslate | null = null;

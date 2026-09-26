@@ -57,7 +57,8 @@
     "@deepseek-ai/dsh-session": "0.1.7-rc.2",
     "@deepseek-ai/dsh-client-ui-slots": "0.1.7-rc.2",
     "@deepseek-ai/dsh-api-session-controller": "0.1.7-rc.2",
-    "@deepseek-ai/dsh-client-ui-session": "0.1.7-rc.2"
+    "@deepseek-ai/dsh-client-ui-session": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-client-locale": "0.1.7-rc.2"
   },
   "peerDependenciesMeta": {
     "react": {
@@ -83,6 +84,9 @@
     },
     "@deepseek-ai/dsh-client-ui-session": {
       "optional": true
+    },
+    "@deepseek-ai/dsh-client-locale": {
+      "optional": true
     }
   },
   "engines": {
@@ -98,7 +102,8 @@
     "async-mutex": "^0.5.0",
     "schemastery": "^3.18.0",
     "@deepseek-ai/dsh-api-session-controller": "catalog:",
-    "@deepseek-ai/dsh-client-ui-session": "catalog:"
+    "@deepseek-ai/dsh-client-ui-session": "catalog:",
+    "@deepseek-ai/dsh-client-locale": "catalog:"
   },
   "repository": {
     "type": "git",

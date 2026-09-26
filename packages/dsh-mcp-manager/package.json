@@ -64,7 +64,11 @@
     "schemastery": "^3.18.0",
     "@deepseek-ai/dsh-api-session-controller": "catalog:",
     "@deepseek-ai/dsh-client-ui-session": "catalog:",
-    "@deepseek-ai/dsh-client-store": "catalog:"
+    "@deepseek-ai/dsh-client-store": "catalog:",
+    "@deepseek-ai/dsh-client-locale": "catalog:",
+    "@deepseek-ai/dsh-client-ui-renderer": "catalog:",
+    "@deepseek-ai/dsh-client-ui-settings": "catalog:",
+    "@deepseek-ai/dsh-client-ui-plugin-manager": "catalog:"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "4.0.4",
@@ -76,7 +80,11 @@
     "@deepseek-ai/dsh-llm": "0.1.7-rc.2",
     "@deepseek-ai/dsh-api-session-controller": "0.1.7-rc.2",
     "@deepseek-ai/dsh-client-ui-session": "0.1.7-rc.2",
-    "@deepseek-ai/dsh-client-store": "0.1.7-rc.2"
+    "@deepseek-ai/dsh-client-store": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-client-locale": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-client-ui-renderer": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-client-ui-settings": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-client-ui-plugin-manager": "0.1.7-rc.2"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/cordis": {
@@ -107,6 +115,18 @@
       "optional": true
     },
     "@deepseek-ai/dsh-client-store": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-client-locale": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-client-ui-renderer": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-client-ui-settings": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-client-ui-plugin-manager": {
       "optional": true
     }
   },
