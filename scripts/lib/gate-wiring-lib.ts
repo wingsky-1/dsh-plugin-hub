@@ -60,31 +60,42 @@ const CONDITION_CONTEXTS =
 export function isConstantCondition(condition: string): boolean {
   const c = String(condition ?? "").trim();
   if (!CONDITION_CONTEXTS.test(c)) return true;
-  // 自比：`github.event_name != github.event_name` 恒假、`==` 恒真——「提到上下文」这一条
-  // 白名单拦不住它（复核实测）。比较两侧字面同形即判常量。
-  for (const m of c.matchAll(/([\w.$[\]"\']+)\s*(?:===|==|!==|!=)\s*([\w.$[\]"\']+)/g)) {
+  if (hasSelfComparison(c)) return true;
+  return c.split("||").some(isContradictoryAlternative);
+}
+
+/**
+ * 自比：`github.event_name != github.event_name` 恒假、`==` 恒真——「提到上下文」这一条
+ * 白名单拦不住它（复核实测）。比较两侧字面同形即判常量。
+ */
+function hasSelfComparison(condition: string): boolean {
+  for (const m of condition.matchAll(/([\w.$[\]"\']+)\s*(?:===|==|!==|!=)\s*([\w.$[\]"\']+)/g)) {
     if (m[1] === m[2]) return true;
   }
-  // 矛盾合取：逐个「或」分支看该分支内部是否自相矛盾。
-  // 为什么按 || 分支而不是「整体含 || 就跳过」：`A || B` 里 A 与 B 各取一个值并不矛盾，但
-  // `(A && B) || false` 的矛盾藏在第一个分支里，整体带 || 就跳过检测会漏（复核实测两种写法
-  // 都能让判据在 CI 永不执行）。同时收 == 与 !=，`!= x && == x` 也自相矛盾。
-  for (const alt of c.split("||")) {
-    const eq = new Map<string, Set<string>>();
-    const ne = new Map<string, Set<string>>();
-    for (const m of alt.matchAll(/([\w.$]+)\s*(==|!=)\s*([\x27"][^\x27"]*[\x27"])/g)) {
-      const target = m[2] === "==" ? eq : ne;
-      const set = target.get(m[1]) ?? new Set<string>();
-      set.add(m[3]);
-      target.set(m[1], set);
-    }
-    for (const [key, set] of eq) {
-      if (set.size > 1) return true;
-      const negs = ne.get(key);
-      if (negs !== undefined && [...negs].some((v) => set.has(v))) return true;
-    }
-  }
   return false;
+}
+
+/**
+ * 一个 `||` 分支内部是否自相矛盾。
+ *
+ * 为什么按 || 分支而不是「整体含 || 就跳过」：`A || B` 里 A 与 B 各取一个值并不矛盾，但
+ * `(A && B) || false` 的矛盾藏在第一个分支里，整体带 || 就跳过检测会漏（复核实测两种写法
+ * 都能让判据在 CI 永不执行）。同时收 == 与 !=，`!= x && == x` 也自相矛盾。
+ */
+function isContradictoryAlternative(alternative: string): boolean {
+  const eq = new Map<string, Set<string>>();
+  const ne = new Map<string, Set<string>>();
+  for (const m of alternative.matchAll(/([\w.$]+)\s*(==|!=)\s*([\x27"][^\x27"]*[\x27"])/g)) {
+    const target = m[2] === "==" ? eq : ne;
+    const set = target.get(m[1]) ?? new Set<string>();
+    set.add(m[3]);
+    target.set(m[1], set);
+  }
+  return [...eq].some(([key, set]) => {
+    if (set.size > 1) return true;
+    const negs = ne.get(key);
+    return negs !== undefined && [...negs].some((value) => set.has(value));
+  });
 }
 
 /**
@@ -149,37 +160,60 @@ export function stepsOf(
   const layers = envLayers(yamlText, job);
   const byIndex = new Map<number, Omit<StepShape, "key">>();
   for (const s of extractRunSteps(yamlText, job)) {
-    const rec =
-      byIndex.get(s.stepIndex) ??
-      ({
-        cmds: [],
-        shell: null,
-        workingDirectory: null,
-        ifCond: null,
-        continueOnError: false,
-        rawLines: [],
-        id: null,
-        name: null,
-        envKeys: [],
-        unknownKeys: [],
-      } as Omit<StepShape, "key">);
-    rec.cmds.push(s.cmd);
-    rec.shell = s.shell ?? null;
-    rec.workingDirectory = s.workingDirectory ?? null;
-    rec.ifCond = s.ifCond ?? null;
-    rec.continueOnError = s.continueOnError === true;
-    rec.rawLines = s.rawLines ?? [];
-    rec.id = s.id ?? null;
-    rec.name = s.name ?? null;
-    rec.envKeys = [
-      ...new Set([...(s.envKeys ?? []), ...layers.job, ...layers.container, ...layers.workflow]),
-    ].sort();
-    rec.unknownKeys = s.unknownKeys ?? [];
+    const rec = byIndex.get(s.stepIndex) ?? emptyStepRecord();
+    applyRunStep(rec, s, layers);
     byIndex.set(s.stepIndex, rec);
   }
   return [...byIndex.entries()]
     .sort((a, b) => a[0] - b[0])
     .map(([, rec]) => ({ ...rec, key: stepKeyOf(scripts, file, job, rec.cmds) }));
+}
+
+/** 一个 stepIndex 首见时的空记录（key 留到归组后再由 stepKeyOf 补上）。 */
+function emptyStepRecord(): Omit<StepShape, "key"> {
+  return {
+    cmds: [],
+    shell: null,
+    workingDirectory: null,
+    ifCond: null,
+    continueOnError: false,
+    rawLines: [],
+    id: null,
+    name: null,
+    envKeys: [],
+    unknownKeys: [],
+  };
+}
+
+/** 把一条 run: 的解析结果并进该 stepIndex 的记录：标量取最后一条，env 键并入三层有效面。 */
+function applyRunStep(
+  rec: Omit<StepShape, "key">,
+  s: {
+    cmd: string;
+    shell?: string | null;
+    workingDirectory?: string | null;
+    ifCond?: string | null;
+    continueOnError?: boolean;
+    rawLines?: string[];
+    id?: string | null;
+    name?: string | null;
+    envKeys?: string[];
+    unknownKeys?: string[];
+  },
+  layers: { job: string[]; container: string[]; workflow: string[] },
+): void {
+  rec.cmds.push(s.cmd);
+  rec.shell = s.shell ?? null;
+  rec.workingDirectory = s.workingDirectory ?? null;
+  rec.ifCond = s.ifCond ?? null;
+  rec.continueOnError = s.continueOnError === true;
+  rec.rawLines = s.rawLines ?? [];
+  rec.id = s.id ?? null;
+  rec.name = s.name ?? null;
+  rec.envKeys = [
+    ...new Set([...(s.envKeys ?? []), ...layers.job, ...layers.container, ...layers.workflow]),
+  ].sort();
+  rec.unknownKeys = s.unknownKeys ?? [];
 }
 
 /**
@@ -202,6 +236,62 @@ export function stripExt(p: string): string {
 /** AST 里的一条**模块求值边**：静态 import / export-from / export * from。 */
 export type ModuleEdge = { source: string; locals: string[] };
 
+/** 非数组对象节点（AST 节点、specifier、callee…）。收窄用，不做 `as` 断言。 */
+function isRecord(node: unknown): node is Record<string, unknown> {
+  return node !== null && typeof node === "object" && !Array.isArray(node);
+}
+
+/** 只带位置/类型元信息的键：遍历时跳过，否则会把同一份元信息当子节点反复走。 */
+function isAstMetaKey(key: string): boolean {
+  return key === "type" || key === "start" || key === "end" || key === "loc";
+}
+
+/**
+ * AST 递归的统一骨架：非对象终止、数组逐项、对象跳过四个元键后逐值下探。
+ *
+ * 为什么三个收集器共用它：`终止条件 / 跳过哪些键` 是**遍历纪律**（一条错了三条一起错），
+ * 而每个收集器真正不同的只是「遇到一个节点时认不认它」——后者留在 visit 里。骨架与判据分开，
+ * 纪律改一处即可，不必在三处同步改。
+ */
+function walkAst(node: unknown, visit: (rec: Record<string, unknown>) => void): void {
+  if (Array.isArray(node)) {
+    for (const item of node) walkAst(item, visit);
+    return;
+  }
+  if (!isRecord(node)) return;
+  visit(node);
+  for (const [key, value] of Object.entries(node)) {
+    if (isAstMetaKey(key)) continue;
+    walkAst(value, visit);
+  }
+}
+
+const MODULE_DECL_TYPES = new Set([
+  "ImportDeclaration",
+  "ExportNamedDeclaration",
+  "ExportAllDeclaration",
+]);
+
+/** 模块求值边的来源字面量（非模块求值声明返回 null）。 */
+function moduleSourceOf(rec: Record<string, unknown>): string | null {
+  if (typeof rec.type !== "string" || !MODULE_DECL_TYPES.has(rec.type)) return null;
+  const source = rec.source;
+  if (!isRecord(source)) return null;
+  return typeof source.value === "string" ? source.value : null;
+}
+
+/** 具名 import 的本地绑定名；`import "./x.mjs"` 这种纯副作用 import 没有绑定。 */
+function localNamesOf(specifiers: unknown): string[] {
+  if (!Array.isArray(specifiers)) return [];
+  const locals: string[] = [];
+  for (const spec of specifiers) {
+    if (!isRecord(spec)) continue;
+    const local = spec.local;
+    if (isRecord(local) && typeof local.name === "string") locals.push(local.name);
+  }
+  return locals;
+}
+
 /**
  * 递归收集 AST 里的**模块求值边**说明符。
  *
@@ -209,47 +299,26 @@ export type ModuleEdge = { source: string; locals: string[] };
  * 洗白路径（复核实测）。库判定问的是「它会被加载吗」。
  */
 export function collectSpecifiers(node: unknown, out: ModuleEdge[]): void {
-  if (node === null || typeof node !== "object") return;
-  if (Array.isArray(node)) {
-    for (const item of node) collectSpecifiers(item, out);
-    return;
-  }
-  const rec = node as Record<string, unknown>;
-  const type = rec.type;
-  if (
-    type === "ImportDeclaration" ||
-    type === "ExportNamedDeclaration" ||
-    type === "ExportAllDeclaration"
-  ) {
-    const src = rec.source as { value?: unknown } | undefined;
-    if (typeof src?.value === "string") {
-      // 具名 import 记下本地绑定名；`import "./x.mjs"` 这种纯副作用 import 没有绑定。
-      const locals: string[] = [];
-      for (const spec of (rec.specifiers as { local?: { name?: unknown } }[]) ?? []) {
-        if (typeof spec?.local?.name === "string") locals.push(spec.local.name);
-      }
-      out.push({ source: src.value, locals });
-    }
-  }
-  for (const [key, value] of Object.entries(rec)) {
-    if (key === "type" || key === "start" || key === "end" || key === "loc") continue;
-    collectSpecifiers(value, out);
-  }
+  walkAst(node, (rec) => {
+    const source = moduleSourceOf(rec);
+    if (source !== null) out.push({ source, locals: localNamesOf(rec.specifiers) });
+  });
 }
 
 /** 递归收集某个 AST 子树里的全部字符串字面量。 */
 export function collectStringLiterals(node: unknown, out: string[]): void {
-  if (node === null || typeof node !== "object") return;
-  if (Array.isArray(node)) {
-    for (const item of node) collectStringLiterals(item, out);
-    return;
-  }
-  const rec = node as Record<string, unknown>;
-  if (rec.type === "Literal" && typeof rec.value === "string") out.push(rec.value);
-  for (const [key, value] of Object.entries(rec)) {
-    if (key === "type" || key === "start" || key === "end" || key === "loc") continue;
-    collectStringLiterals(value, out);
-  }
+  walkAst(node, (rec) => {
+    if (rec.type === "Literal" && typeof rec.value === "string") out.push(rec.value);
+  });
+}
+
+const SPAWN_CALLEES = new Set(["spawnSync", "execFileSync"]);
+
+/** 调用的被调名（不是 spawnSync / execFileSync 时返回 null）。 */
+function spawnCalleeOf(rec: Record<string, unknown>): boolean {
+  if (rec.type !== "CallExpression") return false;
+  const callee = rec.callee;
+  return isRecord(callee) && typeof callee.name === "string" && SPAWN_CALLEES.has(callee.name);
 }
 
 /**
@@ -261,27 +330,14 @@ export function collectStringLiterals(node: unknown, out: string[]): void {
  */
 export function spawnTargets(text: string): string[] {
   const out: string[] = [];
-  const walk = (node: unknown): void => {
-    if (node === null || typeof node !== "object") return;
-    if (Array.isArray(node)) {
-      for (const item of node) walk(item);
-      return;
+  walkAst(parseTs(text, "ts"), (rec) => {
+    if (!spawnCalleeOf(rec)) return;
+    const args = rec.arguments;
+    if (!Array.isArray(args)) return;
+    for (const arg of args) {
+      if (isRecord(arg) && arg.type === "ArrayExpression") collectStringLiterals(arg, out);
     }
-    const rec = node as Record<string, unknown>;
-    if (rec.type === "CallExpression") {
-      const callee = rec.callee as { name?: unknown } | undefined;
-      if (callee?.name === "spawnSync" || callee?.name === "execFileSync") {
-        for (const arg of (rec.arguments as Record<string, unknown>[]) ?? []) {
-          if (arg?.type === "ArrayExpression") collectStringLiterals(arg, out);
-        }
-      }
-    }
-    for (const [key, value] of Object.entries(rec)) {
-      if (key === "type" || key === "start" || key === "end" || key === "loc") continue;
-      walk(value);
-    }
-  };
-  walk(parseTs(text, "ts"));
+  });
   return out;
 }
 
@@ -320,16 +376,37 @@ export function importedGateTargets(
 }
 
 /**
+ * 一个 workflow 文本里的**活**执行点。
+ *
+ * 只收活的：恒假条件（`if: false` / `if: ${{ 0 }}`）下的步骤与 job 一律不算，否则一个
+ * decoy 步骤就能顶替被删掉的判据（对抗复核实测）。`if: <提到上下文但永不成立>` 这类静态判不出，
+ * 由 stepIfs / jobIfs 的逐字登记兜住，不靠这里。
+ */
+function collectWorkflowExecutionPoints(
+  text: string,
+  scripts: Scripts,
+  out: Map<string, Endpoint>,
+): void {
+  for (const job of extractJobs(text)) {
+    if (isDeadCondition(extractJobIf(text, job))) continue;
+    for (const step of extractRunSteps(text, job)) {
+      if (isDeadCondition(step.ifCond)) continue;
+      const ep = endpointOf(step.cmd, scripts);
+      if (ep !== null && ep.kind !== "shell") out.set(ep.kind + ":" + ep.id, ep);
+      for (const path of embeddedExecutions(step.cmd)) {
+        out.set("script:" + path, { kind: "script", id: path });
+      }
+    }
+  }
+}
+
+/**
  * 执行点全集 E：全部 workflow 的全部 job ∪ 本地 pr/full 档 ∪ lefthook。
  *
  * 为什么收全部 workflow 与 lefthook：判据不只活在 repo-gate（observe / release /
  * baseline-overlay / health-report 各有执行点），只看一处时脚本会「看起来没有任何执行点」。
  * 除端点身份外还收命令内部的执行位（进程替换）：release 的
  * `done < <(node scripts/release/publish-if-missing.ts)` 主身份是 shell:done。
- *
- * **只收活的执行点**：恒假条件（`if: false` / `if: ${{ 0 }}`）下的步骤与 job 一律不算，否则一个
- * decoy 步骤就能顶替被删掉的判据（对抗复核实测）。`if: <提到上下文但永不成立>` 这类静态判不出，
- * 由 stepIfs / jobIfs 的逐字登记兜住，不靠这里。
  */
 export function collectExecutionPoints({
   workflowTexts,
@@ -343,19 +420,7 @@ export function collectExecutionPoints({
   lefthookText: string;
 }): Map<string, Endpoint> {
   const out = new Map<string, Endpoint>();
-  for (const text of workflowTexts) {
-    for (const job of extractJobs(text)) {
-      if (isDeadCondition(extractJobIf(text, job))) continue;
-      for (const step of extractRunSteps(text, job)) {
-        if (isDeadCondition(step.ifCond)) continue;
-        const ep = endpointOf(step.cmd, scripts);
-        if (ep !== null && ep.kind !== "shell") out.set(ep.kind + ":" + ep.id, ep);
-        for (const path of embeddedExecutions(step.cmd)) {
-          out.set("script:" + path, { kind: "script", id: path });
-        }
-      }
-    }
-  }
+  for (const text of workflowTexts) collectWorkflowExecutionPoints(text, scripts, out);
   for (const tier of ["pr", "full"]) {
     for (const [key, ep] of localEndpoints(tier)) out.set(key, ep);
   }
@@ -506,29 +571,41 @@ export function conditionInputFaceOf(
         ),
     )
     .filter((p) => p !== "");
-  let producers: string[] | null = null;
-  if (patterns.length > 0) {
-    producers = [];
-    for (const [file2, yaml2] of workflowTexts) {
-      for (const job2 of extractJobs(yaml2)) {
-        for (const u of usesSteps(yaml2, job2)) {
-          if (!/actions\/upload-artifact/.test(u.uses)) continue;
-          const names = u.with
-            .filter((w) => w.startsWith("name="))
-            .map((w) => w.slice("name=".length));
-          if (!names.some((n) => patterns.some((p) => n.startsWith(p)))) continue;
-          producers.push([file2, job2, u.text].join(" "));
-        }
-      }
-    }
-    producers.sort();
-  }
+  const producers = artifactProducersOf(patterns, workflowTexts);
   return {
     digest: stepDigest(producer.rawLines),
     inputsDigest: stepDigest(uses.map((u) => u.text)),
     producers,
   };
 }
+/** 一个 upload 步骤的 name: 集合。 */
+function uploadNamesOf(withEntries: string[]): string[] {
+  return withEntries.filter((w) => w.startsWith("name=")).map((w) => w.slice("name=".length));
+}
+
+/**
+ * 跨 job 的 artifact 产出端：null = 本 job 没有 download-artifact（不受产出端约束）；
+ * 空数组 = 有 pattern 但匹配不到任何 upload，即 fail-closed 那一侧。
+ */
+function artifactProducersOf(
+  patterns: string[],
+  workflowTexts: Map<string, string>,
+): string[] | null {
+  if (patterns.length === 0) return null;
+  const producers: string[] = [];
+  for (const [file, yaml] of workflowTexts) {
+    for (const job of extractJobs(yaml)) {
+      for (const u of usesSteps(yaml, job)) {
+        if (!/actions\/upload-artifact/.test(u.uses)) continue;
+        const names = uploadNamesOf(u.with);
+        if (!names.some((n) => patterns.some((p) => n.startsWith(p)))) continue;
+        producers.push([file, job, u.text].join(" "));
+      }
+    }
+  }
+  return producers.sort();
+}
+
 export function coveredGatePaths(points: Map<string, Endpoint>): Set<string> {
   const out = new Set<string>();
   for (const key of points.keys()) {

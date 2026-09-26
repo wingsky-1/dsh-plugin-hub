@@ -10,7 +10,13 @@ import {
   parseCoverageThresholds as parseCoverageThresholdsImpl,
   runThresholdMonotonic,
 } from "../gate/threshold-monotonic.mjs";
-import { resolveSingle, validateDeclarations } from "../lib/threshold-registry.mjs";
+import {
+  booleanLeaves,
+  isWeakenedBoolean,
+  leafDirection,
+  resolveSingle,
+  validateDeclarations,
+} from "../lib/threshold-registry.mjs";
 
 const ROOT = join(import.meta.dirname, "../..");
 const SCRIPT = join(ROOT, "scripts/gate/threshold-monotonic.mjs");
@@ -1481,4 +1487,56 @@ test("#843: 认不出的豁免键进反向腐烂（照旧文档写出条目不�
   } finally {
     removeFixture(dir);
   }
+});
+
+// ---------------------------------------------------------------------------
+// #732-C：拆解后新增的**纯判定函数**的直接单测。
+//
+// 为什么放在这里而不是新开一个 threshold-registry.test.ts：本仓的测试面有登记棘轮
+// （stryker:check / test:scripts 强制新测试文件登记进 mutation-topology.json），
+// 判据 lib 的单测挂在调用方层的既有测试文件里更省一次登记。
+//
+// 这些函数是「判据的判据」：它们只回答「方向是什么 / 算不算变弱 / 什么算一个布尔叶子」，
+// 不读文件也不产判词，故能用构造输入直接钉——逻辑改错时表现为断言变红，而不是「某条判据
+// 恰好没跑到那条分支」。
+// ---------------------------------------------------------------------------
+
+test("leafDirection：weaken=decrease 时下调是放宽、上调是收紧（纯方向判定）", () => {
+  assert.equal(leafDirection({ weaken: "decrease" }, 10, 5), "weaken");
+  assert.equal(leafDirection({ weaken: "decrease" }, 10, 20), "tighten");
+  assert.equal(leafDirection({ weaken: "decrease" }, 10, 10), "same");
+});
+
+test("leafDirection：weaken=increase 方向相反（旋钮方向不是写死的）", () => {
+  assert.equal(leafDirection({ weaken: "increase" }, 10, 20), "weaken");
+  assert.equal(leafDirection({ weaken: "increase" }, 10, 5), "tighten");
+  assert.equal(leafDirection({ weaken: "increase" }, 10, 10), "same");
+});
+
+test("isWeakenedBoolean：只有「翻到声明的 weakenValue」才算放宽", () => {
+  const guard = { weakenValue: true };
+  assert.equal(isWeakenedBoolean(guard, false, true), true, "false→true 是放宽");
+  assert.equal(isWeakenedBoolean(guard, true, false), false, "true→false 是收紧不是放宽");
+  assert.equal(isWeakenedBoolean(guard, true, true), false, "没变不算放宽");
+  assert.equal(isWeakenedBoolean(guard, false, false), false);
+});
+
+test("isWeakenedBoolean：weakenValue=false 时方向反过来", () => {
+  const guard = { weakenValue: false };
+  assert.equal(isWeakenedBoolean(guard, true, false), true, "true→false 才是放宽");
+  assert.equal(isWeakenedBoolean(guard, false, true), false);
+});
+
+test("booleanLeaves：路径命中后取到布尔值才算叶子，取到别的类型不算（幽灵判据的语义）", () => {
+  const guard = { paths: ["flags.on", "flags.off", "flags.name", "flags.n"] };
+  const leaves = booleanLeaves(guard, { flags: { on: true, off: false, name: "x", n: 1 } });
+  assert.deepEqual([...leaves.keys()].sort(), ["flags.off", "flags.on"]);
+  assert.equal(leaves.get("flags.on"), true);
+  assert.equal(leaves.get("flags.off"), false);
+});
+
+test("booleanLeaves：路径命中但没有布尔值时返回空集（恒不生效的开关）", () => {
+  assert.equal(booleanLeaves({ paths: ["flags"] }, { flags: { name: "x" } }).size, 0);
+  assert.equal(booleanLeaves({ paths: ["flags"] }, null).size, 0, "缺源不是空集之外的一种");
+  assert.equal(booleanLeaves({ paths: ["flags"] }, {}).size, 0, "路径不存在");
 });

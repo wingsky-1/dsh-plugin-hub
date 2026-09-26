@@ -42,20 +42,29 @@ function joinPath(prefix, key) {
   return prefix === "" ? key : prefix + "." + key;
 }
 
+/**
+ * 一段路径分量的展开：`*` 展开对象全部键，具名段只取自有属性，非对象分支直接消失。
+ * 与母体分开是因为「一段怎么展开」与「多段怎么串起来」是两个变化原因（前者随路径语法改，
+ * 后者随求值策略改），且展开本身无状态、可对着构造输入直接钉。
+ */
+function expandSegment(level, segment) {
+  const next = [];
+  for (const [prefix, value] of level) {
+    if (!isObject(value)) continue;
+    if (segment === "*") {
+      for (const [key, inner] of Object.entries(value)) next.push([joinPath(prefix, key), inner]);
+    } else if (Object.hasOwn(value, segment)) {
+      next.push([joinPath(prefix, segment), value[segment]]);
+    }
+  }
+  return next;
+}
+
 /** 点分路径求值（`*` 展开对象键），返回 [[具体路径, 值], ...]；中途非对象即该分支消失。 */
 export function resolveDotted(root, dotted) {
   let level = [["", root]];
   for (const segment of dotted.split(".")) {
-    const next = [];
-    for (const [prefix, value] of level) {
-      if (!isObject(value)) continue;
-      if (segment === "*") {
-        for (const [key, inner] of Object.entries(value)) next.push([joinPath(prefix, key), inner]);
-      } else if (Object.hasOwn(value, segment)) {
-        next.push([joinPath(prefix, segment), value[segment]]);
-      }
-    }
-    level = next;
+    level = expandSegment(level, segment);
     if (level.length === 0) return [];
   }
   return level;
@@ -102,16 +111,43 @@ export function makeSourceLoader({ read, textReaders = {}, label, onHit }) {
 export function numericLeaves(guard, value) {
   const leaves = new Map();
   if (value === undefined || value === null) return leaves;
+  const keys = Array.isArray(guard.keys) ? guard.keys : null;
   for (const dotted of guard.paths) {
     for (const [path, node] of resolveDotted(value, dotted)) {
-      if (Array.isArray(guard.keys)) {
-        if (!isObject(node)) continue;
-        for (const key of guard.keys) {
-          if (typeof node[key] === "number") leaves.set(path + "." + key, node[key]);
-        }
-      } else if (typeof node === "number") {
-        leaves.set(path, node);
+      for (const [leaf, leafValue] of numericLeavesAt(path, node, keys)) {
+        leaves.set(leaf, leafValue);
       }
+    }
+  }
+  return leaves;
+}
+
+/**
+ * 一个路径命中节点能贡献哪些数值叶子：声明了 keys 就逐键取（节点不是对象则一个都没有），
+ * 没声明就把节点本身当叶子。两种形态是**声明形状的差别**而非判据逻辑的差别，故收在一个
+ * 返回条目序列的纯函数里，由 numericLeaves 只留遍历。
+ */
+function numericLeavesAt(path, node, keys) {
+  if (keys === null) return typeof node === "number" ? [[path, node]] : [];
+  if (!isObject(node)) return [];
+  const out = [];
+  for (const key of keys) {
+    if (typeof node[key] === "number") out.push([path + "." + key, node[key]]);
+  }
+  return out;
+}
+
+/**
+ * kind=boolean 的叶子集合：路径命中里**取到布尔值**的那些（取到别的类型不算——「路径存在」与
+ * 「取到了能参与判据的事实」不是一回事）。与 compareBooleanGuard 共用同一份求值，避免两处
+ * 各自演化出不同的「什么算一个布尔叶子」。
+ */
+export function booleanLeaves(guard, value) {
+  const leaves = new Map();
+  if (value === undefined || value === null) return leaves;
+  for (const dotted of guard.paths) {
+    for (const [path, node] of resolveDotted(value, dotted)) {
+      if (typeof node === "boolean") leaves.set(path, node);
     }
   }
   return leaves;
@@ -125,15 +161,7 @@ export function numericLeaves(guard, value) {
 function factCount(guard, value) {
   if (value === undefined || value === null) return 0;
   if (guard.kind === "value") return numericLeaves(guard, value).size;
-  if (guard.kind === "boolean") {
-    let count = 0;
-    for (const dotted of guard.paths) {
-      for (const [, node] of resolveDotted(value, dotted)) {
-        if (typeof node === "boolean") count += 1;
-      }
-    }
-    return count;
-  }
+  if (guard.kind === "boolean") return booleanLeaves(guard, value).size;
   if (guard.kind === "baseline") {
     const table = resolveSingle(value, guard.paths[0]);
     if (!isObject(table)) return 0;
@@ -150,23 +178,13 @@ function describeWeaken(guard) {
   return guard.weaken === "decrease" ? "下调" : "上调";
 }
 
-function compareValueGuard(ctx) {
-  const { guard, loadBase, loadWorkspace, failures, warnings, envErrors, skips } = ctx;
-  const { exemptions, usedExemptions } = ctx;
-  const baseSide = loadBase(guard);
-  if (baseSide === null) {
-    skips.push(guard.id + "：基准上无 " + guard.sources.join(" / ") + " —— 首次引入，跳过对比");
-    return;
-  }
-  const before = numericLeaves(guard, baseSide.value);
-  if (before.size === 0) {
-    skips.push(guard.id + "：基准侧无该事实（首次引入），跳过对比");
-    return;
-  }
-  const wsSide = loadWorkspace(guard);
-  const after = wsSide === null ? new Map() : numericLeaves(guard, wsSide.value);
-  // 绝对下限（minAllowed）：相对基准的比较对**新增条目**天然无效（首次引入 = 跳过对比），
-  // 于是「包改名后按 threshold=1 重新登记」能绕过逐包阈值——下限不受首次引入影响。
+/**
+ * 绝对下限 / 上限判词。相对基准的比较对**新增条目**天然无效（首次引入 = 跳过对比），于是
+ * 「包改名后按 threshold=1 重新登记」能绕过逐包阈值——绝对边界不受首次引入影响。
+ * 两个边界是**同构字段**（同一个「值 vs 数字界」的比较，只有运算符与措辞不同），故留在具名
+ * 代码里而不搬进 [bound, fn] 表：表在这里只把两条判词并排放，可读性换不到任何东西。
+ */
+function checkAbsoluteBounds(guard, after, failures) {
   if (typeof guard.minAllowed === "number") {
     for (const [path, value] of after) {
       if (value < guard.minAllowed) {
@@ -184,8 +202,7 @@ function compareValueGuard(ctx) {
       }
     }
   }
-  // 绝对上限（maxAllowed）：weaken=increase 的旋钮没有上限时，新增条目可以取任意大值——
-  // 相对比较对它天然无效（首次引入 = 跳过对比），与 minAllowed 同理。
+  // 上限侧同因：weaken=increase 的旋钮没有上限时，新增条目可以取任意大值。
   if (typeof guard.maxAllowed === "number") {
     for (const [path, value] of after) {
       if (value > guard.maxAllowed) {
@@ -203,75 +220,130 @@ function compareValueGuard(ctx) {
       }
     }
   }
-  if (guard.missingIsError === true && after.size === 0) {
-    envErrors.push(
-      guard.id +
-        "：工作区 " +
-        guard.sources[0] +
-        " 缺 " +
-        guard.paths.join(", ") +
-        " —— 硬门禁被摘除，fail-closed",
-    );
+}
+
+/**
+ * 一个基准侧叶子在工作区消失了怎么判。整包退役这类「条目该删」的场景与「静默摘除判据」在
+ * 数据上同形，故给前者一条显式台账通道：豁免键是**被移除的具体叶子路径** + `#removal`，
+ * 与 existence 守卫的 `#membership` / `#anchor` 一样按判据分开登记，不放宽任何阈值的比较。
+ * 摘除语义本身（onRemoval）仍由调用方读——这里只处理「确实要判红」的那一支。
+ */
+function checkRemovedLeaf(ctx, path, oldValue) {
+  const { guard, exemptions, usedExemptions, failures } = ctx;
+  if (guard.onRemoval !== "fail") return;
+  const removalKey = path + "#removal";
+  if (exemptions.has(removalKey)) {
+    usedExemptions.add(removalKey);
     return;
   }
+  failures.push(
+    guard.id +
+      "：" +
+      path +
+      " 被移除（基准 " +
+      oldValue +
+      "）—— 删键等价于摘除该维度的硬门禁；确要退役该条目请在 " +
+      removalKey +
+      " 登记豁免；" +
+      guard.hint,
+  );
+}
+
+/**
+ * 单个数值叶子相对基准是放宽、收紧还是不变（pure：只判方向，不产判词）。
+ * 收紧方向单独返回是因为它归 nonMonotonic 警告所有——「是否变弱」与「是否该报警」是两个问题。
+ */
+export function leafDirection(guard, oldValue, newValue) {
+  if (guard.weaken === "decrease") {
+    if (newValue < oldValue) return "weaken";
+    if (newValue > oldValue) return "tighten";
+  } else if (newValue > oldValue) {
+    return "weaken";
+  } else if (newValue < oldValue) {
+    return "tighten";
+  }
+  return "same";
+}
+
+/**
+ * 声明了 missingIsError 而工作区一个叶子都取不到 = 硬门禁被整体摘除：走 envErrors（exit 2
+ * fail-closed）而不是 failures——「配置说要 fail-closed」与「判词判红」是两件事，故返回
+ * 「是否应当就此中止后续逐叶比较」给调用方。
+ */
+function reportMissingFact(guard, after, envErrors) {
+  if (guard.missingIsError !== true || after.size !== 0) return false;
+  envErrors.push(
+    guard.id +
+      "：工作区 " +
+      guard.sources[0] +
+      " 缺 " +
+      guard.paths.join(", ") +
+      " —— 硬门禁被摘除，fail-closed",
+  );
+  return true;
+}
+
+function compareValueGuard(ctx) {
+  const { guard, loadBase, loadWorkspace, failures, warnings, envErrors, skips } = ctx;
+  const baseSide = loadBase(guard);
+  if (baseSide === null) {
+    skips.push(guard.id + "：基准上无 " + guard.sources.join(" / ") + " —— 首次引入，跳过对比");
+    return;
+  }
+  const before = numericLeaves(guard, baseSide.value);
+  if (before.size === 0) {
+    skips.push(guard.id + "：基准侧无该事实（首次引入），跳过对比");
+    return;
+  }
+  const wsSide = loadWorkspace(guard);
+  const after = wsSide === null ? new Map() : numericLeaves(guard, wsSide.value);
+  checkAbsoluteBounds(guard, after, failures);
+  if (reportMissingFact(guard, after, envErrors)) return;
   for (const [path, oldValue] of before) {
     if (!after.has(path)) {
-      if (guard.onRemoval === "fail") {
-        // 整包退役这类「条目该删」的场景与「静默摘除判据」在数据上同形，故给前者一条显式台账
-        // 通道：豁免键是**被移除的具体叶子路径** + `#removal`，与 existence 守卫的
-        // `#membership` / `#anchor` 一样按判据分开登记，不放宽任何阈值的比较。
-        const removalKey = path + "#removal";
-        if (exemptions.has(removalKey)) {
-          usedExemptions.add(removalKey);
-          continue;
-        }
-        failures.push(
-          guard.id +
-            "：" +
-            path +
-            " 被移除（基准 " +
-            oldValue +
-            "）—— 删键等价于摘除该维度的硬门禁；确要退役该条目请在 " +
-            removalKey +
-            " 登记豁免；" +
-            guard.hint,
-        );
-      }
+      checkRemovedLeaf(ctx, path, oldValue);
       continue;
     }
     const newValue = after.get(path);
-    const weaker = guard.weaken === "decrease" ? newValue < oldValue : newValue > oldValue;
-    if (weaker) {
-      failures.push(
-        guard.id +
-          "：" +
-          path +
-          " 放宽：" +
-          oldValue +
-          " → " +
-          newValue +
-          "（" +
-          describeWeaken(guard) +
-          "）；" +
-          guard.hint,
-      );
-    } else if (guard.nonMonotonic === true) {
-      const tighter = guard.weaken === "decrease" ? newValue > oldValue : newValue < oldValue;
-      if (tighter) {
-        warnings.push(
-          guard.id +
-            "：" +
-            path +
-            " 收紧：" +
-            oldValue +
-            " → " +
-            newValue +
-            " —— 该格不是单调旋钮（收紧方向另有风险），本表只报警不判红；" +
-            guard.hint,
-        );
-      }
+    const direction = leafDirection(guard, oldValue, newValue);
+    if (direction === "weaken") {
+      reportWeakenedLeaf(guard, failures, path, oldValue, newValue);
+    } else if (direction === "tighten" && guard.nonMonotonic === true) {
+      reportTightenedLeaf(guard, warnings, path, oldValue, newValue);
     }
   }
+}
+
+/** 放宽判词（failures）。 */
+function reportWeakenedLeaf(guard, failures, path, oldValue, newValue) {
+  failures.push(
+    guard.id +
+      "：" +
+      path +
+      " 放宽：" +
+      oldValue +
+      " → " +
+      newValue +
+      "（" +
+      describeWeaken(guard) +
+      "）；" +
+      guard.hint,
+  );
+}
+
+/** 非单调旋钮的收紧判词（warnings，只报警不判红）。 */
+function reportTightenedLeaf(guard, warnings, path, oldValue, newValue) {
+  warnings.push(
+    guard.id +
+      "：" +
+      path +
+      " 收紧：" +
+      oldValue +
+      " → " +
+      newValue +
+      " —— 该格不是单调旋钮（收紧方向另有风险），本表只报警不判红；" +
+      guard.hint,
+  );
 }
 
 function compareBooleanGuard(ctx) {
@@ -281,25 +353,13 @@ function compareBooleanGuard(ctx) {
     skips.push(guard.id + "：基准上无 " + guard.sources.join(" / ") + " —— 首次引入，跳过对比");
     return;
   }
-  const before = new Map();
-  for (const dotted of guard.paths) {
-    for (const [path, node] of resolveDotted(baseSide.value, dotted)) {
-      if (typeof node === "boolean") before.set(path, node);
-    }
-  }
+  const before = booleanLeaves(guard, baseSide.value);
   if (before.size === 0) {
     skips.push(guard.id + "：基准侧无该开关（首次引入），跳过对比");
     return;
   }
   const wsSide = loadWorkspace(guard);
-  const after = new Map();
-  if (wsSide !== null) {
-    for (const dotted of guard.paths) {
-      for (const [path, node] of resolveDotted(wsSide.value, dotted)) {
-        if (typeof node === "boolean") after.set(path, node);
-      }
-    }
-  }
+  const after = booleanLeaves(guard, wsSide === null ? undefined : wsSide.value);
   if (guard.missingIsError === true && after.size === 0) {
     envErrors.push(guard.id + "：工作区缺该开关 —— fail-closed");
     return;
@@ -319,13 +379,17 @@ function compareBooleanGuard(ctx) {
       }
       continue;
     }
-    const newValue = after.get(path);
-    if (oldValue !== guard.weakenValue && newValue === guard.weakenValue) {
+    if (isWeakenedBoolean(guard, oldValue, after.get(path))) {
       failures.push(
-        guard.id + "：" + path + " 放宽：" + oldValue + " → " + newValue + "；" + guard.hint,
+        guard.id + "：" + path + " 放宽：" + oldValue + " → " + after.get(path) + "；" + guard.hint,
       );
     }
   }
+}
+
+/** 布尔开关的放宽判定（pure）：从非放宽值翻到声明的 weakenValue 即摘弱了这条判据。 */
+export function isWeakenedBoolean(guard, oldValue, newValue) {
+  return oldValue !== guard.weakenValue && newValue === guard.weakenValue;
 }
 
 /** 回退链生效锚（anchorFields 顺序第一个命中的数字字段）；调用方层的锚同治复用，同上纯值。 */
@@ -338,7 +402,7 @@ export function effectiveAnchor(entry, fields) {
 }
 
 function compareBaselineGuard(ctx) {
-  const { guard, loadBase, loadWorkspace, failures, skips } = ctx;
+  const { guard, loadBase, loadWorkspace, skips } = ctx;
   const baseSide = loadBase(guard);
   const wsSide = loadWorkspace(guard);
   if (baseSide === null || wsSide === null) {
@@ -353,74 +417,96 @@ function compareBaselineGuard(ctx) {
   }
   for (const [pkg, entry] of Object.entries(afterTable)) {
     const beforeEntry = isObject(beforeTable) ? beforeTable[pkg] : undefined;
-    // 逐字段各自只许抬不许降：只比「生效锚点」会漏掉非生效字段被悄悄下调
-    // （fixedCovered 仍在、baselineCovered 92.27 → 0.5），而 why 声明的是「逐包回落锚点只许抬不许降」。
-    const beforeFields = guard.anchorFields.filter(
-      (field) => typeof beforeEntry?.[field] === "number",
-    );
-    const afterFields = guard.anchorFields.filter((field) => typeof entry[field] === "number");
-    for (const field of beforeFields) {
-      if (typeof entry[field] !== "number" || entry[field] >= beforeEntry[field]) continue;
-      failures.push(
-        guard.id +
-          "：" +
-          guard.paths[0] +
-          "." +
-          pkg +
-          "." +
-          field +
-          " 回落锚点下调：" +
-          beforeEntry[field] +
-          " → " +
-          entry[field] +
-          "；" +
-          guard.hint,
-      );
-    }
-    // 字段集合没变时上面已覆盖；只有集合变了（换字段 / 摘字段）才读回退链的**生效值**，
-    // 否则同一处下调会被两条判据各计一次。
-    if (beforeFields.join(",") === afterFields.join(",")) continue;
-    const before = effectiveAnchor(beforeEntry, guard.anchorFields);
-    const after = effectiveAnchor(entry, guard.anchorFields);
-    if (before === null) continue;
-    if (after === null) {
-      if (guard.onRemoval === "fail") {
-        failures.push(
-          guard.id +
-            "：" +
-            guard.paths[0] +
-            "." +
-            pkg +
-            " 的回落锚点（" +
-            guard.anchorFields.join(" / ") +
-            "）被移除（基准 " +
-            before.value +
-            "）—— 掉回观察期语义；" +
-            guard.hint,
-        );
-      }
-      continue;
-    }
-    if (after.value < before.value) {
-      failures.push(
-        guard.id +
-          "：" +
-          guard.paths[0] +
-          "." +
-          pkg +
-          " 回落锚点下调：" +
-          before.value +
-          "（" +
-          before.field +
-          "）→ " +
-          after.value +
-          "（" +
-          after.field +
-          "）；" +
-          guard.hint,
-      );
-    }
+    compareBaselineEntry(ctx, pkg, beforeEntry, entry);
   }
+}
+
+/** 两侧都在的锚点字段名（按声明顺序）：只有数字字段算数。 */
+function numericAnchorFields(entry, fields) {
+  return fields.filter((field) => typeof entry?.[field] === "number");
+}
+
+/**
+ * 逐字段各自只许抬不许降：只比「生效锚点」会漏掉非生效字段被悄悄下调
+ * （fixedCovered 仍在、baselineCovered 92.27 → 0.5），而 why 声明的是「逐包回落锚点只许抬不许降」。
+ * 这一支只处理**同名字段**的下调，锚点链换字段的情况由 checkAnchorChain 接管。
+ */
+function checkLoweredFields(ctx, pkg, beforeEntry, entry, beforeFields, afterFields) {
+  const { guard, failures } = ctx;
+  for (const field of beforeFields) {
+    if (typeof entry[field] !== "number" || entry[field] >= beforeEntry[field]) continue;
+    failures.push(
+      guard.id +
+        "：" +
+        guard.paths[0] +
+        "." +
+        pkg +
+        "." +
+        field +
+        " 回落锚点下调：" +
+        beforeEntry[field] +
+        " → " +
+        entry[field] +
+        "；" +
+        guard.hint,
+    );
+  }
+  // 字段集合没变时上面已覆盖；只有集合变了（换字段 / 摘字段）才读回退链的**生效值**，
+  // 否则同一处下调会被两条判据各计一次。
+  if (beforeFields.join(",") !== afterFields.join(",")) {
+    checkAnchorChain(ctx, pkg, beforeEntry, entry);
+  }
+}
+
+/** 锚点字段集合变了时的回退链判定：生效值被摘除或下调（换字段走的是这条链而不是逐字段那条）。 */
+function checkAnchorChain(ctx, pkg, beforeEntry, entry) {
+  const { guard, failures } = ctx;
+  const before = effectiveAnchor(beforeEntry, guard.anchorFields);
+  const after = effectiveAnchor(entry, guard.anchorFields);
+  if (before === null) return;
+  if (after === null) {
+    if (guard.onRemoval === "fail") {
+      failures.push(
+        guard.id +
+          "：" +
+          guard.paths[0] +
+          "." +
+          pkg +
+          " 的回落锚点（" +
+          guard.anchorFields.join(" / ") +
+          "）被移除（基准 " +
+          before.value +
+          "）—— 掉回观察期语义；" +
+          guard.hint,
+      );
+    }
+    return;
+  }
+  if (after.value < before.value) {
+    failures.push(
+      guard.id +
+        "：" +
+        guard.paths[0] +
+        "." +
+        pkg +
+        " 回落锚点下调：" +
+        before.value +
+        "（" +
+        before.field +
+        "）→ " +
+        after.value +
+        "（" +
+        after.field +
+        "）；" +
+        guard.hint,
+    );
+  }
+}
+
+function compareBaselineEntry(ctx, pkg, beforeEntry, entry) {
+  const beforeFields = numericAnchorFields(beforeEntry, ctx.guard.anchorFields);
+  const afterFields = numericAnchorFields(entry, ctx.guard.anchorFields);
+  checkLoweredFields(ctx, pkg, beforeEntry, entry, beforeFields, afterFields);
 }
 
 function readExemptKeys(ctx, guard) {
@@ -474,33 +560,40 @@ const CONTRACT_RULES = {
   maxAllowed: "ceiling",
 };
 
-/** 该字段相对基准是否被「削弱」（true = 变弱，需要批准块）。 */
-function isWeakenedChange(rule, before, after) {
-  if (rule === "equal") return JSON.stringify(before) !== JSON.stringify(after);
-  if (rule === "superset") {
+/** 各字段相对基准「是否被削弱」的具体算法；键即 CONTRACT_RULES 的值域。 */
+const CONTRACT_WEAKENERS = {
+  equal: (before, after) => JSON.stringify(before) !== JSON.stringify(after),
+  superset: (before, after) => {
     if (!Array.isArray(before) || before.length === 0) return false;
     const now = Array.isArray(after) ? after : [];
     return before.some((item) => !now.includes(item));
-  }
+  },
   // 回落链只许**尾部追加**：前置或重排会让守卫读到另一个文件，而基准侧与工作区侧各自
   // 独立解析——「先加一个镜像基准值的影子源、再篡改真实事实源」正是靠前置把两侧解耦的。
-  if (rule === "tail-append") {
+  "tail-append": (before, after) => {
     if (!Array.isArray(before)) return false;
     const now = Array.isArray(after) ? after : [];
     if (now.length < before.length) return true;
     return before.some((item, index) => now[index] !== item);
-  }
-  if (rule === "from-fail") return before === "fail" && after !== "fail";
-  if (rule === "from-true") return before === true && after !== true;
-  if (rule === "floor") {
-    if (typeof before !== "number") return false;
-    return typeof after !== "number" || after < before;
-  }
-  if (rule === "ceiling") {
-    if (typeof before !== "number") return false;
-    return typeof after !== "number" || after > before;
-  }
-  return false;
+  },
+  "from-fail": (before, after) => before === "fail" && after !== "fail",
+  "from-true": (before, after) => before === true && after !== true,
+  floor: (before, after) =>
+    typeof before !== "number" ? false : typeof after !== "number" || after < before,
+  ceiling: (before, after) =>
+    typeof before !== "number" ? false : typeof after !== "number" || after > before,
+};
+
+/**
+ * 该字段相对基准是否被「削弱」（true = 变弱，需要批准块）。
+ * 表而非分支：这些规则各自判的**形状**不同（数组序 vs 标量基准值 vs 全等），把它们并排
+ * 放进一张按规则名索引的表，才能一眼看全「这张声明表共有几种削弱判法」。未登记的规则名
+ * 判 false——与原行为一致（规则名只来自 CONTRACT_RULES 常量，未知名由其它判据兜）。
+ */
+function isWeakenedChange(rule, before, after) {
+  const weaker = CONTRACT_WEAKENERS[rule];
+  if (weaker === undefined) return false;
+  return weaker(before, after);
 }
 
 const CONTRACT_FIELDS = [
@@ -531,16 +624,14 @@ function approvalKey(id, field) {
  */
 export function compareDeclarationTable(baseRegistry, workspaceRegistry) {
   const failures = [];
-  const retired = new Map();
-  for (const entry of workspaceRegistry.retired ?? []) {
-    if (isObject(entry) && typeof entry.id === "string") retired.set(entry.id, entry);
-  }
-  const approvals = new Map();
-  for (const entry of workspaceRegistry.contractApprovals ?? []) {
-    if (isObject(entry) && typeof entry.id === "string" && typeof entry.field === "string") {
-      approvals.set(approvalKey(entry.id, entry.field), entry);
-    }
-  }
+  const retired = indexBy(workspaceRegistry.retired, (entry) =>
+    isObject(entry) && typeof entry.id === "string" ? entry.id : null,
+  );
+  const approvals = indexBy(workspaceRegistry.contractApprovals, (entry) =>
+    isObject(entry) && typeof entry.id === "string" && typeof entry.field === "string"
+      ? approvalKey(entry.id, entry.field)
+      : null,
+  );
   const usedRetired = new Set();
   const usedApprovals = new Set();
   const wsById = new Map((workspaceRegistry.guards ?? []).map((guard) => [guard.id, guard]));
@@ -558,26 +649,48 @@ export function compareDeclarationTable(baseRegistry, workspaceRegistry) {
       }
       continue;
     }
-    for (const field of CONTRACT_FIELDS) {
-      if (!isWeakenedChange(CONTRACT_RULES[field], baseGuard[field], nowGuard[field])) continue;
-      const key = approvalKey(baseGuard.id, field);
-      if (approvals.has(key)) {
-        usedApprovals.add(key);
-        continue;
-      }
-      failures.push(
-        "声明表：" +
-          baseGuard.id +
-          "." +
-          field +
-          " 相对基准被改动（" +
-          JSON.stringify(baseGuard[field]) +
-          " → " +
-          JSON.stringify(nowGuard[field]) +
-          "）—— 判据形状只许补全收紧，确要改动请在 contractApprovals 里登记 { id, field, trackingIssue, reason }",
-      );
-    }
+    compareGuardContract(baseGuard, nowGuard, approvals, usedApprovals, failures);
   }
+  checkStaleRetired(retired, usedRetired, failures);
+  checkStaleApprovals(approvals, usedApprovals, failures);
+  return failures;
+}
+
+/** 按 keyOf 抽索引；keyOf 返回 null 的条目不进表（形状不合法的登记交给结构校验去判红）。 */
+function indexBy(entries, keyOf) {
+  const index = new Map();
+  for (const entry of entries ?? []) {
+    const key = keyOf(entry);
+    if (key !== null) index.set(key, entry);
+  }
+  return index;
+}
+
+/** 一条 guard 的判据形状字段逐项对比：被削弱且无批准块即判红，有批准块则记为「用过」。 */
+function compareGuardContract(baseGuard, nowGuard, approvals, usedApprovals, failures) {
+  for (const field of CONTRACT_FIELDS) {
+    if (!isWeakenedChange(CONTRACT_RULES[field], baseGuard[field], nowGuard[field])) continue;
+    const key = approvalKey(baseGuard.id, field);
+    if (approvals.has(key)) {
+      usedApprovals.add(key);
+      continue;
+    }
+    failures.push(
+      "声明表：" +
+        baseGuard.id +
+        "." +
+        field +
+        " 相对基准被改动（" +
+        JSON.stringify(baseGuard[field]) +
+        " → " +
+        JSON.stringify(nowGuard[field]) +
+        "）—— 判据形状只许补全收紧，确要改动请在 contractApprovals 里登记 { id, field, trackingIssue, reason }",
+    );
+  }
+}
+
+/** 反向腐烂：retired 里登记了却没对应的 guard 退役。 */
+function checkStaleRetired(retired, usedRetired, failures) {
   for (const id of retired.keys()) {
     if (!usedRetired.has(id)) {
       failures.push(
@@ -585,6 +698,10 @@ export function compareDeclarationTable(baseRegistry, workspaceRegistry) {
       );
     }
   }
+}
+
+/** 反向腐烂：contractApprovals 里登记了却没对应的字段改动。 */
+function checkStaleApprovals(approvals, usedApprovals, failures) {
   for (const [key, entry] of approvals) {
     if (!usedApprovals.has(key)) {
       failures.push(
@@ -596,7 +713,6 @@ export function compareDeclarationTable(baseRegistry, workspaceRegistry) {
       );
     }
   }
-  return failures;
 }
 
 /** 按 guard 声明的 universe 从包目录派生应受约束的包集合（目录结构是独立事实源）。 */
@@ -613,7 +729,7 @@ function universePackages(guard, packages) {
 }
 
 function compareExistenceGuard(ctx) {
-  const { guard, loadWorkspace, exemptions, usedExemptions, failures, envErrors } = ctx;
+  const { guard, loadWorkspace, failures, envErrors } = ctx;
   const universe = universePackages(guard, ctx.packages);
   const wsSide = loadWorkspace(guard);
   if (wsSide === null) {
@@ -635,87 +751,129 @@ function compareExistenceGuard(ctx) {
   const fields = Array.isArray(guard.requireFields) ? guard.requireFields : [];
   // 表 → 磁盘的反向悬空检查：包改名/退役后忘删的条目会让阈值判据对它空转（而且改名后
   // 新条目天然走「首次引入」，等于用改名换一次免检）。
-  if (ctx.packages.length > 0 && isObject(table)) {
-    for (const key of Object.keys(table)) {
-      if (key.startsWith("$")) continue;
-      if (universe.includes(key) || exempt.keys.has(key)) continue;
-      failures.push(
-        guard.id +
-          "：" +
-          guard.paths[0] +
-          "." +
-          key +
-          " 没有对应的真实包（packages/" +
-          key +
-          " 下无 " +
-          (guard.universe?.requireDir ?? "src") +
-          "）—— 条目只许随包存在，改名或退役必须同步；" +
-          guard.hint,
-      );
-    }
-  }
+  checkDanglingTableEntries(ctx, table, universe, exempt.keys);
   for (const pkg of universe) {
     if (exempt.keys.has(pkg)) continue;
-    // 豁免按判据分开登记：一条豁免只能关掉它声明的那一条（否则「只豁免锚点」会顺带
-    // 豁免「整包退出变异面」，条目 reason 与机制就会不符）。
-    const membershipKey = guard.paths[0] + "." + pkg + "#membership";
-    const anchorKey = guard.paths[0] + "." + pkg + "#anchor";
-    const membershipExempt = exemptions.has(membershipKey);
-    const anchorExempt = exemptions.has(anchorKey);
-    if (membershipExempt) usedExemptions.add(membershipKey);
-    if (anchorExempt) usedExemptions.add(anchorKey);
-    const entry = isObject(table) ? table[pkg] : undefined;
-    if (!isObject(entry)) {
-      if (!membershipExempt) {
-        failures.push(
-          guard.id +
-            "：包 " +
-            pkg +
-            " 有 src 但不在 " +
-            guard.paths[0] +
-            " —— 整包退出变异门禁；" +
-            guard.hint,
-        );
-      }
-      continue;
-    }
-    // 「有锚点」不是「字段是数字」：observe-check 的回退链取 fixedCovered ?? baselineCovered，
-    // 生效锚点为 0（或负数）时 regressed = covered < 0 - 1 恒为假，与没有锚点等价，
-    // 于是绝对下限必须落在**生效值**上，而不是逐个字段判类型。
-    const anchorValue = effectiveAnchor(entry, fields);
-    const hasAnchor = fields.length === 0 || (anchorValue !== null && anchorValue.value > 0);
-    if (!hasAnchor && !anchorExempt) {
+    checkPackageCoverage(ctx, pkg, isObject(table) ? table[pkg] : undefined, fields);
+  }
+}
+
+/**
+ * 表 → 磁盘的反向悬空检查：包改名/退役后忘删的条目会让阈值判据对它空转（而且改名后
+ * 新条目天然走「首次引入」，等于用改名换一次免检）。这条只认工作区侧真能枚举到的包
+ * （packages 为空即不判），否则纯声明表场景会被整片判红。
+ */
+function checkDanglingTableEntries(ctx, table, universe, exemptKeys) {
+  const { guard, packages, failures } = ctx;
+  if (packages.length === 0 || !isObject(table)) return;
+  for (const key of Object.keys(table)) {
+    if (key.startsWith("$")) continue;
+    if (universe.includes(key) || exemptKeys.has(key)) continue;
+    failures.push(
+      guard.id +
+        "：" +
+        guard.paths[0] +
+        "." +
+        key +
+        " 没有对应的真实包（packages/" +
+        key +
+        " 下无 " +
+        (guard.universe?.requireDir ?? "src") +
+        "）—— 条目只许随包存在，改名或退役必须同步；" +
+        guard.hint,
+    );
+  }
+}
+
+/** 记下某条豁免是否登记在案（登记即算「用过」，否则末尾的反向腐烂会把它误判成失效条目）。 */
+function claimExemption(keys, key, usedExemptions) {
+  const claimed = keys.has(key);
+  if (claimed) usedExemptions.add(key);
+  return claimed;
+}
+
+/**
+ * 「有锚点」不是「字段是数字」：observe-check 的回退链取 fixedCovered ?? baselineCovered，
+ * 生效锚点为 0（或负数）时 regressed = covered < 0 - 1 恒为假，与没有锚点等价，
+ * 于是绝对下限必须落在**生效值**上，而不是逐个字段判类型。
+ */
+function hasEffectiveAnchor(entry, fields) {
+  if (fields.length === 0) return true;
+  const anchor = effectiveAnchor(entry, fields);
+  return anchor !== null && anchor.value > 0;
+}
+
+/** 台账反向腐烂：豁免还在，但它要豁免的缺口已经不存在了——照 gate-wiring 台账的同形做法判红，
+ * 否则台账会长期挂着一堆「已经没有缺口」的条目，把到期复核变成噪音。 */
+function checkExemptionRot(ctx, pkg, membershipExempt, anchorExempt, hasAnchor) {
+  const { guard, failures } = ctx;
+  if (membershipExempt) {
+    failures.push(
+      guard.id +
+        "：台账里 " +
+        membershipExemptKey(guard, pkg) +
+        " 的豁免已无对应缺口（该包已在 " +
+        guard.paths[0] +
+        " 里）—— 反向腐烂，请删除该条目",
+    );
+  }
+  if (anchorExempt && hasAnchor) {
+    failures.push(
+      guard.id +
+        "：台账里 " +
+        anchorExemptKey(guard, pkg) +
+        " 的豁免已无对应缺口（该包已声明回落锚点）—— 反向腐烂，请删除该条目",
+    );
+  }
+}
+
+/** 一个包在 existence 表里的三条缺口各自是什么：整表成员、条目形态、锚点。 */
+function membershipExemptKey(guard, pkg) {
+  return guard.paths[0] + "." + pkg + "#membership";
+}
+
+function anchorExemptKey(guard, pkg) {
+  return guard.paths[0] + "." + pkg + "#anchor";
+}
+
+/** 一个包是否被声明进了表、且有没有声明生效锚点——两条缺口各自判词不同，故合在一处判定。 */
+function checkPackageCoverage(ctx, pkg, entry, fields) {
+  const { guard, exemptions, usedExemptions, failures } = ctx;
+  // 豁免按判据分开登记：一条豁免只能关掉它声明的那一条（否则「只豁免锚点」会顺带
+  // 豁免「整包退出变异面」，条目 reason 与机制就会不符）。
+  const membershipExempt = claimExemption(
+    exemptions,
+    membershipExemptKey(guard, pkg),
+    usedExemptions,
+  );
+  const anchorExempt = claimExemption(exemptions, anchorExemptKey(guard, pkg), usedExemptions);
+  if (!isObject(entry)) {
+    if (!membershipExempt) {
       failures.push(
         guard.id +
           "：包 " +
           pkg +
-          " 没有声明任何回落锚点（" +
-          fields.join(" / ") +
-          "）—— 回落判据对它恒为假（regressed 永远 false），该包永远不会被判回落；" +
+          " 有 src 但不在 " +
+          guard.paths[0] +
+          " —— 整包退出变异门禁；" +
           guard.hint,
       );
     }
-    // 台账反向腐烂：豁免还在，但它要豁免的缺口已经不存在了——照 gate-wiring 台账的同形做法判红，
-    // 否则台账会长期挂着一堆「已经没有缺口」的条目，把到期复核变成噪音。
-    if (membershipExempt) {
-      failures.push(
-        guard.id +
-          "：台账里 " +
-          membershipKey +
-          " 的豁免已无对应缺口（该包已在 " +
-          guard.paths[0] +
-          " 里）—— 反向腐烂，请删除该条目",
-      );
-    }
-    if (anchorExempt && hasAnchor) {
-      failures.push(
-        guard.id +
-          "：台账里 " +
-          anchorKey +
-          " 的豁免已无对应缺口（该包已声明回落锚点）—— 反向腐烂，请删除该条目",
-      );
-    }
+    return;
   }
+  const hasAnchor = hasEffectiveAnchor(entry, fields);
+  if (!hasAnchor && !anchorExempt) {
+    failures.push(
+      guard.id +
+        "：包 " +
+        pkg +
+        " 没有声明任何回落锚点（" +
+        fields.join(" / ") +
+        "）—— 回落判据对它恒为假（regressed 永远 false），该包永远不会被判回落；" +
+        guard.hint,
+    );
+  }
+  checkExemptionRot(ctx, pkg, membershipExempt, anchorExempt, hasAnchor);
 }
 
 const COMPARATORS = {
@@ -963,28 +1121,30 @@ function collectDeclared(registry, consumed) {
   }
   return { declared: declared, declaredAsSource: declaredAsSource };
 }
+/**
+ * 未登记的单个数据文件怎么判。只在 sources 里列名、却没有任何 guard 真读到它：真实源被更靠前的
+ * 源接管（影子源），或该源已脱管。基准侧有本表时这条会先落在 exit 1 的判据放宽通道；基准侧还
+ * 没有本表（本表首次引入）时无从比对，只能按未登记 fail-closed 走 exit 2——判词要点名这一形态。
+ */
+function undeclaredFileProblem(rel, declaredAsSource) {
+  return (
+    rel +
+    (declaredAsSource.has(rel)
+      ? " 未在声明表登记：有 guard 在 sources 里列过它，但工作区里没有任何 guard 实际读到它（更靠前的源接管了该守卫，即影子源；或该源已脱管）"
+      : " 未在声明表登记 —— 每个阈值事实源必须显式声明「守护」或 not-a-gate（未登记即红）")
+  );
+}
+
 function checkUndeclaredFiles(repoRoot, dataDir, declared, declaredAsSource) {
   const out = [];
-  if (typeof repoRoot === "string") {
-    const dir = join(repoRoot, dataDir);
-    if (existsSync(dir)) {
-      const files = readdirSync(dir).filter(isEnumeratedDataFile).sort();
-      for (const name of files) {
-        const rel = dataDir + "/" + name;
-        if (rel === REGISTRY_PATH) continue;
-        if (!declared.has(rel)) {
-          // 只在 sources 里列名、却没有任何 guard 真读到它：真实源被更靠前的源接管（影子源），
-          // 或该源已脱管。基准侧有本表时这条会先落在 exit 1 的判据放宽通道；基准侧还没有本表
-          // （本表首次引入）时无从比对，只能按未登记 fail-closed 走 exit 2——判词要点名这一形态。
-          out.push(
-            rel +
-              (declaredAsSource.has(rel)
-                ? " 未在声明表登记：有 guard 在 sources 里列过它，但工作区里没有任何 guard 实际读到它（更靠前的源接管了该守卫，即影子源；或该源已脱管）"
-                : " 未在声明表登记 —— 每个阈值事实源必须显式声明「守护」或 not-a-gate（未登记即红）"),
-          );
-        }
-      }
-    }
+  if (typeof repoRoot !== "string") return out;
+  const dir = join(repoRoot, dataDir);
+  if (!existsSync(dir)) return out;
+  const files = readdirSync(dir).filter(isEnumeratedDataFile).sort();
+  for (const name of files) {
+    const rel = dataDir + "/" + name;
+    if (rel === REGISTRY_PATH) continue;
+    if (!declared.has(rel)) out.push(undeclaredFileProblem(rel, declaredAsSource));
   }
   return out;
 }
@@ -998,6 +1158,23 @@ export function validateDeclarations(registry, { repoRoot, dataDir = DATA_DIR, c
   problems.push(...checkUndeclaredFiles(repoRoot, dataDir, declared, declaredAsSource));
   return problems;
 }
+
+/**
+ * 幽灵判词的措辞：按 kind 指向**真正没命中的那部分声明**——baseline 的判据在 anchorFields 上，
+ * 只报 paths 会让人去找一个其实存在、只是没有锚点的表。
+ * 表而非三元链：三种 kind 指向三种不同的facet（锚点字段 / 布尔叶子 / 路径命中），并排摆出来才能
+ * 一眼看全「哪一类声明缺哪一部分」；未列出的 kind（value / existence 及未实现 kind）走默认措辞。
+ */
+const GHOST_VERDICTS = {
+  baseline: (guard) =>
+    "声明的锚点字段 " +
+    guard.anchorFields.join(", ") +
+    " 在两侧都取不到值（幽灵判据：回退链没有任何一个字段命中）",
+  boolean: (guard) =>
+    "声明的路径 " +
+    guard.paths.join(", ") +
+    " 在两侧都没有取到布尔值（幽灵判据：这条开关判据恒不生效）",
+};
 
 /** 声明的路径必须真的取得到值（两侧都取不到 = 幽灵判据），否则守卫是自我安慰。 */
 export function validateGuardFacts(registry, { loadBase, loadWorkspace }) {
@@ -1015,18 +1192,14 @@ export function validateGuardFacts(registry, { loadBase, loadWorkspace }) {
     if (count === 0) {
       // 判词按 kind 指向真正没命中的那部分声明：baseline 的判据在 anchorFields 上，
       // 只报 paths 会让人去找一个其实存在、只是没有锚点的表。
-      const what =
-        guard.kind === "baseline"
-          ? "声明的锚点字段 " +
-            guard.anchorFields.join(", ") +
-            " 在两侧都取不到值（幽灵判据：回退链没有任何一个字段命中）"
-          : guard.kind === "boolean"
-            ? "声明的路径 " +
-              guard.paths.join(", ") +
-              " 在两侧都没有取到布尔值（幽灵判据：这条开关判据恒不生效）"
-            : "声明的路径 " + guard.paths.join(", ") + " 在两侧都取不到值（幽灵判据）";
-      problems.push(guard.id + "：" + what);
+      problems.push(guard.id + "：" + ghostVerdict(guard));
     }
   }
   return problems;
+}
+
+function ghostVerdict(guard) {
+  const verdict = GHOST_VERDICTS[guard.kind];
+  if (verdict !== undefined) return verdict(guard);
+  return "声明的路径 " + guard.paths.join(", ") + " 在两侧都取不到值（幽灵判据）";
 }
