@@ -15,6 +15,7 @@ export default defineConfig({
       'packages/dsh-provider-usage/test/unit/apply/unit-apply.test.ts',
       'packages/dsh-provider-usage/test/unit/common/unit-errsurf.test.ts',
       'packages/dsh-provider-usage/test/unit/report/unit-report.test.ts',
+      'packages/dsh-provider-usage/test/unit/routes/unit-refactor-pure.test.ts',
       'packages/dsh-provider-usage/test/unit/routes/unit-routes.test.ts',
     ],
     environment: 'node',
