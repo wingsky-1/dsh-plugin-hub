@@ -179,6 +179,9 @@ importers:
       '@typesafe-ai/sdk':
         specifier: 'catalog:'
         version: 0.6.0
+      '@wingsky-1/dsh-shared':
+        specifier: workspace:*
+        version: link:../../shared
 
   packages/dsh-lan-proxy:
     devDependencies:
@@ -215,6 +218,9 @@ importers:
       '@types/ws':
         specifier: ^8.18.1
         version: 8.18.1
+      '@wingsky-1/dsh-shared':
+        specifier: workspace:*
+        version: link:../../shared
       compression:
         specifier: ^1.8.1
         version: 1.8.1(supports-color@7.2.0)
@@ -278,6 +284,9 @@ importers:
       '@deepseek-ai/dsh-tools':
         specifier: 'catalog:'
         version: 0.1.7-rc.2(a7e7fbceab3446684a20e22c3b6e9d09)
+      '@wingsky-1/dsh-shared':
+        specifier: workspace:*
+        version: link:../../shared
       schemastery:
         specifier: ^3.18.0
         version: 3.18.0
@@ -317,6 +326,9 @@ importers:
       '@deepseek-ai/dsh-user-questions':
         specifier: 'catalog:'
         version: 0.1.7-rc.2(@deepseek-ai/cordis@4.0.4)(@deepseek-ai/dsh-agent@0.1.7-rc.2(@deepseek-ai/cordis@4.0.4)(@deepseek-ai/dsh-llm@0.1.7-rc.2(@deepseek-ai/cordis@4.0.4))(@deepseek-ai/dsh-session@0.1.7-rc.2(@deepseek-ai/cordis@4.0.4))(@deepseek-ai/dsh-system-prompt@0.1.7-rc.2(@deepseek-ai/cordis@4.0.4)(@deepseek-ai/dsh-llm@0.1.7-rc.2(@deepseek-ai/cordis@4.0.4)))(@deepseek-ai/dsh-typert-protocol@0.1.7-rc.2(@deepseek-ai/cordis@4.0.4))(@deepseek-ai/dsh-util-values@0.1.7-rc.2(@deepseek-ai/cordis@4.0.4)))(@deepseek-ai/dsh-llm@0.1.7-rc.2(@deepseek-ai/cordis@4.0.4))
+      '@wingsky-1/dsh-shared':
+        specifier: workspace:*
+        version: link:../../shared
       yaml:
         specifier: ^2.9.0
         version: 2.9.0
@@ -341,6 +353,10 @@ importers:
       '@wingsky-1/dsh-worktree-sidebar':
         specifier: workspace:*
         version: link:../dsh-worktree-sidebar
+    devDependencies:
+      '@wingsky-1/dsh-shared':
+        specifier: workspace:*
+        version: link:../../shared
 
   packages/dsh-provider-usage:
     devDependencies:
@@ -368,6 +384,9 @@ importers:
       '@deepseek-ai/dsh-session':
         specifier: 'catalog:'
         version: 0.1.7-rc.2(@deepseek-ai/cordis@4.0.4)
+      '@wingsky-1/dsh-shared':
+        specifier: workspace:*
+        version: link:../../shared
       async-mutex:
         specifier: ^0.5.0
         version: 0.5.0
@@ -375,7 +394,11 @@ importers:
         specifier: ^3.18.0
         version: 3.18.0
 
-  packages/dsh-verify-isolated: {}
+  packages/dsh-verify-isolated:
+    devDependencies:
+      '@wingsky-1/dsh-shared':
+        specifier: workspace:*
+        version: link:../../shared
 
   packages/dsh-worktree-sidebar:
     devDependencies:
@@ -400,6 +423,11 @@ importers:
       '@deepseek-ai/dsh-typert-protocol':
         specifier: 'catalog:'
         version: 0.1.7-rc.2(@deepseek-ai/cordis@4.0.4)
+      '@wingsky-1/dsh-shared':
+        specifier: workspace:*
+        version: link:../../shared
+
+  shared: {}
 
   tools/lint:
     devDependencies:

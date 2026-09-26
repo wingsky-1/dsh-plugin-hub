@@ -5,9 +5,9 @@
   "type": "module",
   "main": "lib/index.js",
   "scripts": {
-    "build": "node ../../scripts/build/clean-lib.ts && tsc -p tsconfig.json && node ../../scripts/build/bundle-host.ts .",
+    "build": "node ../../scripts/build/clean-lib.ts && tsc -b ../../shared && tsc -p tsconfig.json && node ../../scripts/build/bundle-host.ts .",
     "test": "node ../../scripts/test/run-vitest.mjs --min 15",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsc -b ../../shared && tsc -p tsconfig.json --noEmit",
     "prepublishOnly": "pnpm run typecheck && pnpm run build && pnpm test"
   },
   "exports": {
@@ -116,21 +116,22 @@
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "catalog:",
+    "@deepseek-ai/dsh-client-locale": "catalog:",
+    "@deepseek-ai/dsh-client-ui-plugin-manager": "catalog:",
+    "@deepseek-ai/dsh-client-ui-renderer": "catalog:",
+    "@deepseek-ai/dsh-client-ui-settings": "catalog:",
     "@deepseek-ai/dsh-client-ui-slots": "catalog:",
     "@deepseek-ai/dsh-host-webserver": "catalog:",
     "@types/compression": "^1.7.5",
     "@types/http-proxy": "^1.17.17",
     "@types/node-forge": "1.3.14",
     "@types/ws": "^8.18.1",
+    "@wingsky-1/dsh-shared": "workspace:*",
     "compression": "^1.8.1",
     "http-proxy": "1.18.1",
     "node-forge": "1.4.0",
     "schemastery": "^3.18.0",
     "selfsigned": "^2.4.1",
-    "ws": "^8.21.3",
-    "@deepseek-ai/dsh-client-locale": "catalog:",
-    "@deepseek-ai/dsh-client-ui-renderer": "catalog:",
-    "@deepseek-ai/dsh-client-ui-settings": "catalog:",
-    "@deepseek-ai/dsh-client-ui-plugin-manager": "catalog:"
+    "ws": "^8.21.3"
   }
 }

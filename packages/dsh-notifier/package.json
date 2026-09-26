@@ -5,9 +5,9 @@
   "type": "module",
   "main": "lib/index.js",
   "scripts": {
-    "build": "node ../../scripts/build/clean-lib.ts && tsc -p tsconfig.json && node ../../scripts/build/bundle-host.ts .",
+    "build": "node ../../scripts/build/clean-lib.ts && tsc -b ../../shared && tsc -p tsconfig.json && node ../../scripts/build/bundle-host.ts .",
     "test": "node ../../scripts/test/run-vitest.mjs --min 79",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsc -b ../../shared && tsc -p tsconfig.json --noEmit",
     "prepublishOnly": "pnpm run typecheck && pnpm run build && pnpm test"
   },
   "exports": {
@@ -54,6 +54,8 @@
   "devDependencies": {
     "@deepseek-ai/cordis": "catalog:",
     "@deepseek-ai/dsh-agent": "catalog:",
+    "@deepseek-ai/dsh-client-locale": "catalog:",
+    "@deepseek-ai/dsh-client-ui-renderer": "catalog:",
     "@deepseek-ai/dsh-client-ui-slots": "catalog:",
     "@deepseek-ai/dsh-host-webserver": "catalog:",
     "@deepseek-ai/dsh-session": "catalog:",
@@ -61,9 +63,8 @@
     "@deepseek-ai/dsh-settings": "catalog:",
     "@deepseek-ai/dsh-user-approval": "catalog:",
     "@deepseek-ai/dsh-user-questions": "catalog:",
-    "yaml": "^2.9.0",
-    "@deepseek-ai/dsh-client-locale": "catalog:",
-    "@deepseek-ai/dsh-client-ui-renderer": "catalog:"
+    "@wingsky-1/dsh-shared": "workspace:*",
+    "yaml": "^2.9.0"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "4.0.4",

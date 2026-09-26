@@ -29,6 +29,10 @@ import { resolvePackageScopeOrExit } from "../lib/package-scope.ts";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const packagesDir = join(ROOT, "packages");
+// 仓库根共享层（#1028 后续重构：shared 已 TS 化）。它不是 workspace 包、不在任何包的
+// node_modules 里，故「仅类型导入」判据必须显式把它列为扫描面，否则 shared 的官方类型
+// import 完全在视野之外——而 shared 运行时零依赖是被这条不变量守着的。
+const sharedDir = join(ROOT, "shared");
 
 // T1（#397）：退役残留目录无 package.json，按 manifest.retired 过滤——残留目录
 // 属清理债不参与契约检查（plugins-manifest-lib 方向 B 已豁免并告警）。listPluginDirs
@@ -134,8 +138,14 @@ if (checked === 0) {
 // @deepseek-ai|@wingsky-1 模块名即报。
 {
   const offenders: string[] = [];
-  for (const p of pluginDirs) {
-    const srcDir = join(packagesDir, p, "src");
+  // 扫描面 = 各包 src + 仓库根 shared/（#1028 后续：shared 已 TS 化，官方类型 import
+  // 落在 shared/*.ts 里，此前完全在这道门禁的视野之外——不变量「shared 运行时零依赖」
+  // 无人守，值导入会经 build-client/bundle-host 内联进每个包）。
+  const typeImportScanRoots: readonly { label: string; dir: string }[] = [
+    ...pluginDirs.map((p) => ({ label: p + "/src", dir: join(packagesDir, p, "src") })),
+    { label: "shared", dir: sharedDir },
+  ];
+  for (const { label, dir: srcDir } of typeImportScanRoots) {
     if (!existsSync(srcDir)) continue;
     const walk = (dir: string): void => {
       for (const e of readdirSync(dir, { withFileTypes: true })) {
@@ -155,14 +165,14 @@ if (checked === 0) {
           /(^|\n)\s*import\s+(?!type\b)(?:[^;'"]|'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*")*?from\s*['"](@(?:deepseek-ai|wingsky-1)\/[^'"]+)['"]|(^|\n)\s*import\s+['"](@(?:deepseek-ai|wingsky-1)\/[^'"]+)['"]/g,
         )) {
           const spec = m[2] ?? m[4];
-          if (spec) offenders.push(`${p}/src${file.slice(srcDir.length)} → ${spec}`);
+          if (spec) offenders.push(`${label}${file.slice(srcDir.length)} → ${spec}`);
         }
         // 补充形态：export ... from / 动态 import() / require()（同样产生运行时引用；
         // export type ... from 为纯类型放行）
         for (const m of code.matchAll(
           /(?:export\s+(?!type\b)(?:\*(?:\s+as\s+\w+)?|\{[^}]*\})\s*from\s*|import\(\s*|require\(\s*)['"](@(?:deepseek-ai|wingsky-1)\/[^'"]+)['"]/g,
         )) {
-          offenders.push(`${p}/src${file.slice(srcDir.length)} → ${m[1]}`);
+          offenders.push(`${label}${file.slice(srcDir.length)} → ${m[1]}`);
         }
       }
     };
@@ -175,7 +185,7 @@ if (checked === 0) {
     );
     for (const o of offenders) console.log(`     ${o}`);
   } else {
-    console.log("PASS @deepseek-ai/@wingsky-1 仅类型导入 | src 下无运行时值导入");
+    console.log("PASS @deepseek-ai/@wingsky-1 仅类型导入 | 各包 src 与 shared/ 下无运行时值导入");
   }
 }
 

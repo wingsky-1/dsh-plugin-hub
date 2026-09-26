@@ -5,9 +5,9 @@
   "type": "module",
   "main": "lib/index.js",
   "scripts": {
-    "build": "node ../../scripts/build/clean-lib.ts && tsc -p tsconfig.json && node ../../scripts/build/bundle-host.ts .",
+    "build": "node ../../scripts/build/clean-lib.ts && tsc -b ../../shared && tsc -p tsconfig.json && node ../../scripts/build/bundle-host.ts .",
     "test": "node ../../scripts/test/run-vitest.mjs --min 1",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -b ../../shared && tsc -p tsconfig.json --noEmit"
   },
   "exports": {
     ".": {
@@ -66,5 +66,8 @@
     "@deepseek-ai/dsh-skill-filesystem": {
       "optional": true
     }
+  },
+  "devDependencies": {
+    "@wingsky-1/dsh-shared": "workspace:*"
   }
 }

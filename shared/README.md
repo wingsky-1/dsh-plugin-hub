@@ -15,16 +15,16 @@ DSH 插件家族共用的模块（构建期 esbuild 内联进各插件包，不�
 
 | 文件 | 端 | 内容与行为契约 |
 |------|----|------|
-| `loopback.js` | 宿主 | `isLoopbackRequest` 安全围栏（路由 loopback 校验单一事实源） |
-| `host-utils.js` | 宿主 | `writeJson` / `errorMessage` / `readBody`（限长显式化）/ `readJsonBody`（宽松版）/ `sseData`（SSE data 帧序列化 `data: <json>\n\n`；undefined / 含 `\n` payload 行为对齐历史消费方、非承诺契约）/ `guardLoopbackMethod`（loopback+方法白名单守卫；403 先于 405 为守卫自身执行顺序，仅适用于套守卫端点） |
-| `settings-namespace.js` | 宿主 | `installSettingsNamespace`（settings 服务面注入） |
-| `dsh-home.js` | 宿主 | `dshHome`（DSH home 解析单一事实源，#517：`DSH_HOME` 非空白原样采用、未设置或空白回落 `~/.dsh`——空白视同未设置对齐官方 `dsh-home-paths#resolveDshHome`；不 resolve/不展开 `~`，默认形态路径逐字节不变。豁免口径（非 dsh 生态凭据不跟随）与落盘纪律条款见 DEVELOPMENT.md §1，由 PR #523 承载）+ `userHome`（用户 home 接缝，#722：`HOME`（Windows 为 `USERPROFILE`）非空白原样采用、否则回落 `os.homedir()`；取值次序与 libuv 一致故默认形态逐字节不变，显式读 env 是为了在 worker_threads（Stryker 的 vitest-runner 强制 `pool: 'threads'`）下仍可被测试的 `process.env` 隔离） |
-| `paths.js` | 宿主 | `pluginHome`（包主目录拼装单一事实源：`join(base, ...segments)`，默认形态路径逐字节不变；只收敛包主目录直拼，legacy 旧根/settings 文档/resolve 对比/用户输入解析/credentials-userHome/展示脱敏/包内反推 7 类排除，provider 旧 `pluginHome` 保留包内 facade） |
-| `upgrade-tick.js` | 宿主 | `tickUpgradeVersion` 升级链空步单一事实源（立即完成、不碰存储；各包只登记版本号，不再为新版本加空函数） |
-| `upgrade-chain.js` | 宿主 | 升级链骨架单一事实源：`runUpgradeChain`（唯一 async 执行器，**逐步 await 保证串行**、**每步成功后立刻回写刻度**、任一步抛错即中止并带包名前缀与目标版本、`cause` 透传、对账落差只 `logger.warn` 不改动作）+ `createUpgradeRunner`（**三重守卫**：链跑成功后才标记已装配 → 重复装配即抛；另有在途标记，第二次 `install` 当场抛「正在装配中」而不是与第一次并跑——链是异步的，只靠前一条拦不住并发；在途标记随链结束在 finally 清零，失败不把 runner 锁死）+ `compareVersions` / `selectPendingSteps`（按目标版本升序、`fromVersion >= recorded` 即待办、不就地排序入参）/ `newestTargetVersion` / `diagnoseGap`（落后 / 步骤表超前 / 降级三态判词，包名前缀由调用方传第 4 参 `label`）/ `packageRootFrom` / `pluginVersion`（**收 `fromDir` 而非自定位 `import.meta.url`**：本模块内联进各包产物后运行时目录与源目录深度不同，自定位必有一种形态错且是静默回落 0.0.0 的那种错）。边界：刻度落在哪个文件、读不到刻度时 fail-safe 还是 fail-closed、迁移动作做什么，一律经 `ports` 注入，本模块只 await 不替消费方做业务决定；`run` 收 `void \| Promise<void>`——统一异步链不等于强迫所有 step 异步 |
-| `sse-hub.js` | 宿主 | `createSseHub` SSE 长连接枢纽单一事实源（#515：连接表 + 心跳 + stalled/maxAge 主动回收，取代各包自建连接表；#769 移除了连接上限机制：半开/僵尸连接此后只靠 stalled 收住，maxAge 只回收「长命且业务空闲」的正常连接）。行为契约：广播帧由调用方生成、hub 不感知业务语义；stalled 判据是「write 返回 false 连续超窗」而非 writableLength（背压不等价于僵尸）；心跳是 hub 级单 interval；健康明细**不进** `/health`（大小随连接数增长，而 `/health` 是常量大小聚合面） |
+| `loopback.ts` | 宿主 | `isLoopbackRequest` 安全围栏（路由 loopback 校验单一事实源） |
+| `host-utils.ts` | 宿主 | `writeJson` / `errorMessage` / `readBody`（限长显式化）/ `readJsonBody`（宽松版）/ `sseData`（SSE data 帧序列化 `data: <json>\n\n`；undefined / 含 `\n` payload 行为对齐历史消费方、非承诺契约）/ `guardLoopbackMethod`（loopback+方法白名单守卫；403 先于 405 为守卫自身执行顺序，仅适用于套守卫端点） |
+| `settings-namespace.ts` | 宿主 | `installSettingsNamespace`（settings 服务面注入） |
+| `dsh-home.ts` | 宿主 | `dshHome`（DSH home 解析单一事实源，#517：`DSH_HOME` 非空白原样采用、未设置或空白回落 `~/.dsh`——空白视同未设置对齐官方 `dsh-home-paths#resolveDshHome`；不 resolve/不展开 `~`，默认形态路径逐字节不变。豁免口径（非 dsh 生态凭据不跟随）与落盘纪律条款见 DEVELOPMENT.md §1，由 PR #523 承载）+ `userHome`（用户 home 接缝，#722：`HOME`（Windows 为 `USERPROFILE`）非空白原样采用、否则回落 `os.homedir()`；取值次序与 libuv 一致故默认形态逐字节不变，显式读 env 是为了在 worker_threads（Stryker 的 vitest-runner 强制 `pool: 'threads'`）下仍可被测试的 `process.env` 隔离） |
+| `paths.ts` | 宿主 | `pluginHome`（包主目录拼装单一事实源：`join(base, ...segments)`，默认形态路径逐字节不变；只收敛包主目录直拼，legacy 旧根/settings 文档/resolve 对比/用户输入解析/credentials-userHome/展示脱敏/包内反推 7 类排除，provider 旧 `pluginHome` 保留包内 facade） |
+| `upgrade-tick.ts` | 宿主 | `tickUpgradeVersion` 升级链空步单一事实源（立即完成、不碰存储；各包只登记版本号，不再为新版本加空函数） |
+| `upgrade-chain.ts` | 宿主 | 升级链骨架单一事实源：`runUpgradeChain`（唯一 async 执行器，**逐步 await 保证串行**、**每步成功后立刻回写刻度**、任一步抛错即中止并带包名前缀与目标版本、`cause` 透传、对账落差只 `logger.warn` 不改动作）+ `createUpgradeRunner`（**三重守卫**：链跑成功后才标记已装配 → 重复装配即抛；另有在途标记，第二次 `install` 当场抛「正在装配中」而不是与第一次并跑——链是异步的，只靠前一条拦不住并发；在途标记随链结束在 finally 清零，失败不把 runner 锁死）+ `compareVersions` / `selectPendingSteps`（按目标版本升序、`fromVersion >= recorded` 即待办、不就地排序入参）/ `newestTargetVersion` / `diagnoseGap`（落后 / 步骤表超前 / 降级三态判词，包名前缀由调用方传第 4 参 `label`）/ `packageRootFrom` / `pluginVersion`（**收 `fromDir` 而非自定位 `import.meta.url`**：本模块内联进各包产物后运行时目录与源目录深度不同，自定位必有一种形态错且是静默回落 0.0.0 的那种错）。边界：刻度落在哪个文件、读不到刻度时 fail-safe 还是 fail-closed、迁移动作做什么，一律经 `ports` 注入，本模块只 await 不替消费方做业务决定；`run` 收 `void \| Promise<void>`——统一异步链不等于强迫所有 step 异步 |
+| `sse-hub.ts` | 宿主 | `createSseHub` SSE 长连接枢纽单一事实源（#515：连接表 + 心跳 + stalled/maxAge 主动回收，取代各包自建连接表；#769 移除了连接上限机制：半开/僵尸连接此后只靠 stalled 收住，maxAge 只回收「长命且业务空闲」的正常连接）。行为契约：广播帧由调用方生成、hub 不感知业务语义；stalled 判据是「write 返回 false 连续超窗」而非 writableLength（背压不等价于僵尸）；心跳是 hub 级单 interval；健康明细**不进** `/health`（大小随连接数增长，而 `/health` 是常量大小聚合面） |
 | `client/i18n.js` | 客户 | 共享 `t` 活绑定 + `bindLocale`（#348 → #378 抽取；未装配回落 key 本体） |
-| `client/ensure-style.js` | 客户 | 参数化 `ensureStyle({ id, cssText, version? })`（#477 收敛；按 id 幂等 / head 缺失静默 no-op 不抛 / version 变化重建 / 返回 disposer） |
+| `client/ensure-style.ts` | 客户 | 参数化 `ensureStyle({ id, cssText, version? })`（#477 收敛；按 id 幂等 / head 缺失静默 no-op 不抛 / version 变化重建 / 返回 disposer） |
 
 > 消费方由脚本实时派生输出（`node scripts/gate/verify-shared-fanin.mjs`，逐模块打印消费包集合），
 > 本表只保留端别 / 内容 / 行为契约。为什么不在这里留一份人肉登记快照：实测它会漂移——上一次
@@ -35,9 +35,21 @@ DSH 插件家族共用的模块（构建期 esbuild 内联进各插件包，不�
 - shared 是**构建期源码依赖**：插件 src 以相对路径 import，构建时由 esbuild 内联进
   各包 lib/ 产物。**发布物必须自包含**——npm 包内不得残留 `../../shared` 运行时引用。
 - 修改 shared 后回归：`pnpm build && pnpm test`（回归全部插件 smoke）+
-  `pnpm typecheck`（shared 双写 d.ts 与消费方类型一致性）。
-- **js + d.ts 双写**（tsc rootDir 硬约束）：shared 实现一律 `.js` + `.d.ts`（不可 TS 化），
-  类型经 d.ts 解析、实现经 esbuild 内联；client 侧同理（`shared/client/`）。
+  `pnpm typecheck`（shared 声明与消费方类型一致性）。
+- **真 TypeScript 源码**（#1028 后续重构，取代此前的「js + d.ts 双写 / 不可 TS 化」）：
+  shared 实现一律 `.ts`，声明由 tsc 产出、**原地 emit**（与源码同目录，已 gitignore）。
+  - 为什么能原地 emit：消费方用相对说明符 `../../shared/paths.js`，而构建是两段式
+    （包 tsc 出 lib → bundle-host 用 esbuild 打 lib/*.js），emit 出去的说明符必须指向
+    磁盘上真实存在的 `.js`，所以产物必须与源码同目录。
+  - 为什么不用 `dist/`：加路径段会牵动 rewrite-dts-paths 的 `../` 深度启发式与
+    d.ts X1 的三个根（枚举根 / 落点根 / 改写目标根），只改其一会得到**自洽的假绿**。
+  - 消费侧形态**一个字没改**：97 处 import、bundle-host 内联与 d.ts X1 拷贝、
+    shared-dts-lib 枚举、verify-shared-fanin、pack-check 全部零改动——它们认的是
+    「仓库根 shared/」这个位置，不是文件形态。
+  - **composite + project references** 是防回退的关键：各包 tsconfig 的
+    `references` 指到 shared，「改了 `.ts` 但没重建」会变成 TS6305 硬红。
+  - 版本库里 shared/ **只允许 `.ts` 源码**（含 README.md 与 test/）；手写 `.js`/`.d.ts`
+    对的回归由 `scripts/test/shared-ts-shape.test.ts` 冻结守卫判红。
 - 新增 shared 模块须满足下方准入规则；退役按规则 7 一次做完（迁消费方 + 删模块与声明）。
 - **发布面**：`.d.ts` 声明经 bundle-host **d.ts X1**（2a 引用改写 + 2b 副本随包）随每个
   消费包发布，pack:check 双向断言（查缺 + 查多 retired 残留）兜底——机制说明见

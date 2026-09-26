@@ -109,6 +109,8 @@ const ALLOWLIST: Record<string, string> = {
   "scripts/lib/ci-ism-denylist.mjs": "CI-ism 未跟踪文件判据库，以 .mjs 被门禁 loader 直引",
   "scripts/lib/gate-endpoints.mjs":
     "判据接线解析层（别名→脚本身份归一），以 .mjs 被接线断言直引的库",
+  "scripts/lib/ensure-shared-built.mjs":
+    "shared 声明产物的统一前置（#1028 后续重构）：shared 的 .d.ts 由 tsc 产出不入库，带 references 的包在裸 tsc -p 下会报 TS6305。以 .mjs 是因为调用方是门禁与脚本（loader 直跑），无 TS 依赖",
   "scripts/lib/gate-exit.mjs": "门禁自身故障唯一退出口 failClosed，以 .mjs 被全部门禁直引的库",
   "scripts/lib/glob-files.mjs": "仓库根锚定 glob 展开库，以 .mjs 被派生链路直引",
   "scripts/lib/mutation-ledger-lib.mjs": "变异台账日志解析与对账库，以 .mjs 被台账链路直引",

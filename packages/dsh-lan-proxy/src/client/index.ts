@@ -97,7 +97,7 @@ type ConfigFormsView = Pick<ConfigForms, "whileServed">;
  * 官方 LocaleRuntime 的本包最小面。四个成员都是官方类上的必选方法，服务本体缺失由
  * ctx.get("locale") 的 | undefined 表达；调用点既有的 typeof 守卫是运行时防御，原样保留。
  *
- * 成员集与 shared/client/i18n.d.ts 的 bindLocale 形参一致（含 bind）——本包把整个 locale
+ * 成员集与 shared/client/i18n.ts 的 bindLocale 形参一致（含 bind）——本包把整个 locale
  * 读面交给 bindLocale，少一个成员即在该调用点判红。
  *
  * 已知瑕疵（按任务边界保持丢弃，不新增清理逻辑）：官方 register 两组重载都返回 disposer

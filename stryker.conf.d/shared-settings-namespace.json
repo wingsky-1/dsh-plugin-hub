@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@stryker-mutator/core/schema/stryker-schema.json",
   "mutate": [
-    "shared/settings-namespace.js"
+    "shared/settings-namespace.ts"
   ],
   "testRunner": "vitest",
   "mutator": {

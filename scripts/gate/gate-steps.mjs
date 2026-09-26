@@ -182,6 +182,10 @@ export function tierSteps(tier, { hitPackages, withCoverage, base, scopeLabel })
 }
 
 /** 命中包的 build（含依赖）+ 逐包 test / typecheck；changed 与 pr 两档共用同一段。 */
+// #1028 后续重构：shared 是 composite 工程，tsc -b 对同一工程不可并发——并行下多个包
+// 同写一份 tsbuildinfo 与输出，后读者判定「已最新」而跳过 emit，消费包遂回落到 .ts
+// 源码（在各包 rootDir 之外）报 TS2306。故在编排层先建一次，各包 build 里的
+// tsc -b ../../shared 退化为幂等 no-op（服务于单包构建路径）。
 function collectScopedPackageSteps(hitPackages, pkgFilters, scopedBuild) {
   const steps = [];
   if (hitPackages.length > 0) {

@@ -2,7 +2,7 @@
  * dsh-provider-usage — upgrade 域升级步骤表（业务割接 + 空步登记）。
  *
  * 步骤表的唯一职责是登记**本包**的存储形态代际：迁移动作做什么归各 step 文件，链怎么驱动归
- * chain/index.ts 的适配器，步骤的形状（UpgradeStep）归 shared/upgrade-chain.d.ts。
+ * chain/index.ts 的适配器，步骤的形状（UpgradeStep）归 shared/upgrade-chain.ts。
  */
 import type { UpgradeStep } from "../../../../../shared/upgrade-chain.js";
 import { migrateLastRun } from "./last-run-morph.ts";
