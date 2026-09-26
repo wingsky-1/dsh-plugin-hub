@@ -178,74 +178,150 @@ function toSdkFetch(
   };
 }
 
-/** 首题答案转 verdict（多题时首题驱动输出；noul/未知形状即 bad-payload 不重试）。 */
-export function mapFirstAnswer(
+type MapAnswerResult =
+  | { readonly ok: true; readonly verdict: RemoteVerdict }
+  | { readonly ok: false; readonly failure: DecisionFailure };
+
+/** bad-payload 失败面（noul/未知形状一律不重试：重试同一份坏载荷没有意义）。 */
+function badAnswer(message: string): { readonly ok: false; readonly failure: DecisionFailure } {
+  return {
+    ok: false,
+    failure: { code: "UPSTREAM", category: "bad-payload", message, retryable: false },
+  };
+}
+
+/** 错误文本（Error 取 message，其余取 String()）。 */
+function errorText(cause: unknown): string {
+  return cause instanceof Error ? cause.message : String(cause);
+}
+
+/**
+ * 首题答案定位：answers 容器形状 → 首题答案形状 → 记录面。
+ *
+ * 两级守卫各有各的文案（answers shape / answer shape），所以失败面带 message 而非
+ * 只回一个 null——调用点据此原样回传，不在此处合并两种形状错。
+ */
+function firstAnswerRecord(
   body: DecisionRequestBody,
   result: SystemOneResult<Questions>,
 ):
-  | { readonly ok: true; readonly verdict: RemoteVerdict }
-  | { readonly ok: false; readonly failure: DecisionFailure } {
-  const bad = (message: string): { readonly ok: false; readonly failure: DecisionFailure } => ({
-    ok: false,
-    failure: { code: "UPSTREAM", category: "bad-payload", message, retryable: false },
-  });
+  | { readonly ok: true; readonly rec: Record<string, unknown> }
+  | { readonly ok: false; readonly message: string } {
   const ids = Object.keys(body.questions);
   const first = ids[0];
   const answers: unknown = (result as { readonly answers?: unknown }).answers;
   if (answers === null || typeof answers !== "object" || Array.isArray(answers)) {
-    return bad("answers shape");
+    return { ok: false, message: "answers shape" };
   }
   const ans: unknown =
     first === undefined ? undefined : (answers as Record<string, unknown>)[first];
   if (ans === null || typeof ans !== "object" || Array.isArray(ans)) {
-    return bad("answer shape");
+    return { ok: false, message: "answer shape" };
   }
-  const rec = ans as Record<string, unknown>;
-  if (rec["type"] === "choice") {
-    const choice = rec["choice"];
-    if (typeof choice !== "string" || choice.length === 0) {
-      return bad("choice must be non-empty");
-    }
-    const confidence = clamp01(rec["confidence"]);
-    const level = confidenceTier(confidence);
+  return { ok: true, rec: ans as Record<string, unknown> };
+}
+
+/** confidence → tier/automation（两值同源：tier 与 automation 共用同一分档结果）。 */
+function confidenceLevel(rec: Record<string, unknown>): { confidence: number; level: number } {
+  const confidence = clamp01(rec["confidence"]);
+  return { confidence, level: confidenceTier(confidence) };
+}
+
+/** score 档位数：题面自带 criteria ≥2 即按其条数，否则回落默认 1-5。 */
+function rubricLevels(sent: { readonly criteria?: readonly unknown[] } | undefined): number {
+  return Array.isArray(sent?.criteria) && sent.criteria.length >= 2
+    ? sent.criteria.length
+    : SCORE_LEVELS.length;
+}
+
+/** choice 答案转 verdict（choice 必须非空串）。 */
+function mapChoiceAnswer(rec: Record<string, unknown>): MapAnswerResult {
+  const choice = rec["choice"];
+  if (typeof choice !== "string" || choice.length === 0) {
+    return badAnswer("choice must be non-empty");
+  }
+  const { confidence, level } = confidenceLevel(rec);
+  return {
+    ok: true,
+    verdict: {
+      resultKind: "choice",
+      choice,
+      confidence,
+      tier: level,
+      automation: level,
+      codepoints: 0,
+    },
+  };
+}
+
+/** score 答案转 verdict（上游分值按 rubric 条数线性折到 1..5）。 */
+function mapScoreAnswer(body: DecisionRequestBody, rec: Record<string, unknown>): MapAnswerResult {
+  const raw = rec["score"];
+  if (typeof raw !== "number" || !Number.isFinite(raw)) {
+    return badAnswer("score must be a number");
+  }
+  const sent = body.questions[Object.keys(body.questions)[0]] as
+    { readonly criteria?: readonly unknown[] } | undefined;
+  const levels = rubricLevels(sent);
+  const score = Math.min(5, Math.max(1, Math.round((raw / (levels - 1)) * 4) + 1));
+  const { confidence, level } = confidenceLevel(rec);
+  return {
+    ok: true,
+    verdict: {
+      resultKind: "score",
+      score,
+      confidence,
+      tier: level,
+      automation: level,
+      codepoints: 0,
+    },
+  };
+}
+
+/** 首题答案转 verdict（多题时首题驱动输出；noul/未知形状即 bad-payload 不重试）。 */
+export function mapFirstAnswer(
+  body: DecisionRequestBody,
+  result: SystemOneResult<Questions>,
+): MapAnswerResult {
+  const found = firstAnswerRecord(body, result);
+  if (!found.ok) return badAnswer(found.message);
+  if (found.rec["type"] === "choice") return mapChoiceAnswer(found.rec);
+  if (found.rec["type"] === "score") return mapScoreAnswer(body, found.rec);
+  return badAnswer("answer type must be choice|score");
+}
+
+/**
+ * 上游状态码 → 失败面。
+ *
+ * 401/403 凭据拒收不重试；429 与 5xx 可重试；其余按不可重试的上游错回传
+ * （原实现对 5xx 与非 5xx 各写一份同形返回，这里合成一份由 retryable 表达差别）。
+ */
+function statusToFailure(status: number): DecisionFailure {
+  if (status === 401 || status === 403) {
     return {
-      ok: true,
-      verdict: {
-        resultKind: "choice",
-        choice,
-        confidence,
-        tier: level,
-        automation: level,
-        codepoints: 0,
-      },
+      code: "UNAUTHORIZED",
+      category: "unauthorized",
+      message: "upstream rejected credentials",
+      retryable: false,
+      status,
     };
   }
-  if (rec["type"] === "score") {
-    const raw = rec["score"];
-    if (typeof raw !== "number" || !Number.isFinite(raw)) {
-      return bad("score must be a number");
-    }
-    const sent = body.questions[first] as { readonly criteria?: readonly unknown[] } | undefined;
-    const levels =
-      Array.isArray(sent?.criteria) && sent.criteria.length >= 2
-        ? sent.criteria.length
-        : SCORE_LEVELS.length;
-    const score = Math.min(5, Math.max(1, Math.round((raw / (levels - 1)) * 4) + 1));
-    const confidence = clamp01(rec["confidence"]);
-    const level = confidenceTier(confidence);
+  if (status === 429) {
     return {
-      ok: true,
-      verdict: {
-        resultKind: "score",
-        score,
-        confidence,
-        tier: level,
-        automation: level,
-        codepoints: 0,
-      },
+      code: "RATE_LIMITED",
+      category: "rate-limited",
+      message: "upstream rate limited",
+      retryable: true,
+      status,
     };
   }
-  return bad("answer type must be choice|score");
+  return {
+    code: "UPSTREAM",
+    category: "upstream",
+    message: "upstream status " + String(status),
+    retryable: status >= 500 && status <= 599,
+    status,
+  };
 }
 
 /** SDK 错误转失败面（状态码沿旧映射；客户端校验错不重试；裸抛错归网络可重试；调用方取消单列 ABORTED 不重试）。 */
@@ -260,46 +336,12 @@ export function sdkErrorToFailure(cause: unknown): DecisionFailure {
     return {
       code: "NETWORK",
       category: "network",
-      message: "fetch failed: " + (cause instanceof Error ? cause.message : String(cause)),
+      message: "fetch failed: " + errorText(cause),
       retryable: true,
     };
   }
   if (cause instanceof APIError) {
-    const status = cause.status;
-    if (status === 401 || status === 403) {
-      return {
-        code: "UNAUTHORIZED",
-        category: "unauthorized",
-        message: "upstream rejected credentials",
-        retryable: false,
-        status,
-      };
-    }
-    if (status === 429) {
-      return {
-        code: "RATE_LIMITED",
-        category: "rate-limited",
-        message: "upstream rate limited",
-        retryable: true,
-        status,
-      };
-    }
-    if (status >= 500 && status <= 599) {
-      return {
-        code: "UPSTREAM",
-        category: "upstream",
-        message: "upstream status " + String(status),
-        retryable: true,
-        status,
-      };
-    }
-    return {
-      code: "UPSTREAM",
-      category: "upstream",
-      message: "upstream status " + String(status),
-      retryable: false,
-      status,
-    };
+    return statusToFailure(cause.status);
   }
   if (cause instanceof Error && cause.name === "AbortError") {
     return { code: "TIMEOUT", category: "timeout", message: "request timed out", retryable: true };
@@ -371,6 +413,9 @@ async function attemptOnce(
   }
 }
 
+/** 重试次数上限（2 次重试 = 至多 3 次尝试；硬上限，不随预算或故障类型放大）。 */
+const MAX_RETRIES = 2;
+
 /**
  * 有限重试调用（最多 2 次重试；返回重试次数供输出计费面）。
  *
@@ -391,18 +436,17 @@ export async function callWithRetry(
 }> {
   const deadline = Date.now() + Math.max(0, timeoutMs);
   const budgetLeft = (): number => Math.max(0, deadline - Date.now());
-  const first = await attemptOnce(body, key, budgetLeft(), fetchImpl, callerSignal);
-  if (first.ok) return { verdict: first.verdict, retries: 0 };
-  if (!first.failure.retryable) return { failure: first.failure, retries: 0 };
-  if (first.failure.code === "TIMEOUT") return { failure: first.failure, retries: 0 };
-  if (isCallerAborted(callerSignal)) return { failure: callerAbortedFailure(), retries: 0 };
-  if (budgetLeft() <= 0) return { failure: first.failure, retries: 0 };
-  const second = await attemptOnce(body, key, budgetLeft(), fetchImpl, callerSignal);
-  if (second.ok) return { verdict: second.verdict, retries: 1 };
-  if (!second.failure.retryable) return { failure: second.failure, retries: 1 };
-  if (isCallerAborted(callerSignal)) return { failure: callerAbortedFailure(), retries: 1 };
-  if (budgetLeft() <= 0) return { failure: second.failure, retries: 1 };
-  const third = await attemptOnce(body, key, budgetLeft(), fetchImpl, callerSignal);
-  if (third.ok) return { verdict: third.verdict, retries: 2 };
-  return { failure: third.failure, retries: 2 };
+  // 闸序即重试序：不可重试 / 超时 / 调用方取消 / 预算耗尽，任一命中即如实回传，
+  // 都不再发起下一次尝试。末次尝试不判闸——闸只决定「还值不值得再试」。
+  let retries = 0;
+  for (;;) {
+    const attempt = await attemptOnce(body, key, budgetLeft(), fetchImpl, callerSignal);
+    if (attempt.ok) return { verdict: attempt.verdict, retries };
+    if (retries >= MAX_RETRIES) return { failure: attempt.failure, retries };
+    if (!attempt.failure.retryable) return { failure: attempt.failure, retries };
+    if (attempt.failure.code === "TIMEOUT") return { failure: attempt.failure, retries };
+    if (isCallerAborted(callerSignal)) return { failure: callerAbortedFailure(), retries };
+    if (budgetLeft() <= 0) return { failure: attempt.failure, retries };
+    retries += 1;
+  }
 }

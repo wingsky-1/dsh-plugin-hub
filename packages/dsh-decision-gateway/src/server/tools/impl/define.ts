@@ -21,37 +21,47 @@ export interface ToolAssembly {
   };
 }
 
+/** exec 面记录读取（非对象即 null；数组亦然——数组上取不到任何本域候选键）。 */
+function execRecord(exec: unknown): Record<string, unknown> | null {
+  return exec !== null && typeof exec === "object" ? (exec as Record<string, unknown>) : null;
+}
+
+/** 候选键里取第一个非空串（无命中回 undefined）。sessionOf/rootOf 同源收敛，见下。 */
+function firstNonEmptyStr(
+  rec: Record<string, unknown>,
+  keys: readonly string[],
+): string | undefined {
+  for (const key of keys) {
+    const value = rec[key];
+    if (typeof value === "string" && value.length > 0) return value;
+  }
+  return undefined;
+}
+
 /**
  * exec 取 sessionId（多形态防御读取）。
  *
  * 本函数是两处解析规则收敛后的唯一实现（D4）：组合根直接引用本导出，不再自写根侧版本。
  */
 export function sessionOf(exec: unknown): string {
-  if (exec !== null && typeof exec === "object") {
-    const rec = exec as Record<string, unknown>;
-    const direct = rec["sessionId"];
-    if (typeof direct === "string" && direct.length > 0) return direct;
-    for (const key of ["session", "agent"]) {
-      const nested = rec[key];
-      if (nested !== null && typeof nested === "object") {
-        const id = (nested as Record<string, unknown>)["id"];
-        if (typeof id === "string" && id.length > 0) return id;
-      }
-    }
+  const rec = execRecord(exec);
+  if (rec === null) return "unknown";
+  const direct = firstNonEmptyStr(rec, ["sessionId"]);
+  if (direct !== undefined) return direct;
+  for (const key of ["session", "agent"]) {
+    const nested = rec[key];
+    if (nested === null || typeof nested !== "object") continue;
+    const id = firstNonEmptyStr(nested as Record<string, unknown>, ["id"]);
+    if (id !== undefined) return id;
   }
   return "unknown";
 }
 
 /** exec 取工作目录（缺席回落进程 cwd；与 sessionOf 同源收敛，见上）。 */
 export function rootOf(exec: unknown): string {
-  if (exec !== null && typeof exec === "object") {
-    const rec = exec as Record<string, unknown>;
-    for (const key of ["cwd", "root", "workdir"]) {
-      const value = rec[key];
-      if (typeof value === "string" && value.length > 0) return value;
-    }
-  }
-  return process.cwd();
+  const rec = execRecord(exec);
+  if (rec === null) return process.cwd();
+  return firstNonEmptyStr(rec, ["cwd", "root", "workdir"]) ?? process.cwd();
 }
 
 /** 值转单文本块（失败包络同样 JSON 可读）。 */
