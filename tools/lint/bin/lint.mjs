@@ -117,16 +117,22 @@ if (fix) await ESLint.outputFixes(results);
  *
  * 判据：基线条目数 > 实际被抑制条数 = 有存量已修掉而基线未收缩；判定只覆盖**本次 lint 到的文件**。
  */
-function staleSuppressions(linted) {
-  if (!existsSync(suppressionsPath)) return [];
-  let baseline;
+/** 读并解析抑制基线；不可读即门禁故障（exit 2），不得当「无基线」放行。 */
+function readSuppressionsBaseline() {
+  if (!existsSync(suppressionsPath)) return null;
   try {
-    baseline = JSON.parse(readFileSync(suppressionsPath, "utf8"));
+    return JSON.parse(readFileSync(suppressionsPath, "utf8"));
   } catch (err) {
     console.error(`lint: 基线 ${suppressionsPath} 解析失败：${err.message} —— fail-closed`);
     process.exit(2);
   }
-  // 抑制消息按 result 分组（SuppressedLintMessage 自身不带 filePath），故以 result 为文件来源
+}
+
+/**
+ * 实际被抑制条数与本次跑过的文件。
+ * 抑制消息按 result 分组（SuppressedLintMessage 自身不带 filePath），故以 result 为文件来源。
+ */
+function collectSuppressedActual(linted) {
   const actual = new Map();
   const lintedFiles = new Set();
   for (const result of linted) {
@@ -137,17 +143,32 @@ function staleSuppressions(linted) {
       actual.set(key, (actual.get(key) ?? 0) + 1);
     }
   }
+  return { actual, lintedFiles };
+}
+
+/** 某文件是否进入判定：被删一律失效、跑过才判、未跑过跳过。 */
+function fileVerdict(file, lintedFiles) {
+  // 文件被删则无论如何都算失效，故先看存在性——它不依赖本次跑过哪些文件。
+  if (!existsSync(join(REPO_ROOT, file))) return "deleted";
+  return lintedFiles.has(file) ? "judged" : "skipped";
+}
+
+function staleSuppressions(linted) {
+  const baseline = readSuppressionsBaseline();
+  if (baseline === null) return [];
+  const { actual, lintedFiles } = collectSuppressedActual(linted);
   const stale = [];
   for (const [file, rules] of Object.entries(baseline)) {
     // 本次没 lint 到它（提交钩子只喂 staged 文件，或显式传了子集）→ 不在判定范围内。
     // 与官方 prune 同口径：只能对**真正跑过的文件**说「条目多余」。少了这一条，任何子集运行
     // 都会把其余文件的条目全判成失效（实测：pre-commit 钩子因此直接拦住提交）。
     // 文件被删则无论如何都算失效，故先用存在性单独判一次——它不依赖本次跑过哪些文件。
-    if (!existsSync(join(REPO_ROOT, file))) {
+    const verdict = fileVerdict(file, lintedFiles);
+    if (verdict === "deleted") {
       stale.push(`${file} → 文件已不存在（基线条目应删除）`);
       continue;
     }
-    if (!lintedFiles.has(file)) continue;
+    if (verdict === "skipped") continue;
     for (const [rule, entry] of Object.entries(rules)) {
       const suppressedHere = actual.get(`${file}\u0000${rule}`) ?? 0;
       if (entry.count > suppressedHere) {
