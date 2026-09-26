@@ -15,6 +15,8 @@ export default defineConfig({
       'packages/dsh-provider-usage/test/unit/report/unit-report-executor.test.ts',
       'packages/dsh-provider-usage/test/unit/report/unit-report.test.ts',
       'packages/dsh-provider-usage/test/unit/trend/unit-trend-ledger.test.ts',
+      'packages/dsh-provider-usage/test/unit/trend/unit-trend-sanitize-dir.test.ts',
+      'packages/dsh-provider-usage/test/unit/trend/unit-trend-shard-row.test.ts',
       'packages/dsh-provider-usage/test/unit/trend/unit-trend.test.ts',
     ],
     environment: 'node',

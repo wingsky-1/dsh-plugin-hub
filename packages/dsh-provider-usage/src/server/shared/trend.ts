@@ -84,6 +84,15 @@ function isValidDirKey(v: unknown): boolean {
 }
 
 /**
+ * 控制码点判定（C0 0x00–0x1F + DEL 0x7F + C1 0x80–0x9F，闭区间 0x7F–0x9F）。
+ * 从 sanitizeDirName 提出，使后者只留编排（剥除口径的**判定**部分自成一处，
+ * 权威性仍在下面那个函数——出口各处的「同口径」注释指的就是它）。
+ */
+function isControlCodePoint(c: number): boolean {
+  return c < 0x20 || (c >= 0x7f && c <= 0x9f);
+}
+
+/**
  * cwd → 目录键归一化（数据层约定：dir 字段落盘即存 basename 净化值）；
  * **控制字符剥除口径的权威定义**：出口各处（generate.ts
  * 注入面 / report/config.ts normalizeReportDirectories / apply.ts listDirs）与
@@ -99,8 +108,10 @@ export function sanitizeDirName(cwd: unknown): string | null {
   if (typeof cwd !== "string") return null;
   let cleaned = "";
   for (const ch of cwd) {
-    const c = ch.codePointAt(0) as number;
-    if (c < 0x20 || (c >= 0x7f && c <= 0x9f)) continue; // C0 + DEL + C1 控制字符剥除
+    // for-of 逐**码点**产出（代理对整体给出），故 codePointAt(0) 必为数字，
+    // ?? 0 分支不可达——用兜底代替 as 断言，剥除口径一字未改。
+    const c = ch.codePointAt(0) ?? 0;
+    if (isControlCodePoint(c)) continue; // C0 + DEL + C1 控制字符剥除
     cleaned += ch;
   }
   while (cleaned.endsWith("/") || cleaned.endsWith("\\")) cleaned = cleaned.slice(0, -1); // 尾部斜杠（两系）剥除
@@ -228,6 +239,17 @@ export interface TrendHourRow {
 
 export type TrendRow = TrendDetailRow | TrendCounterRow | TrendAggRow | TrendDirRow | TrendHourRow;
 
+/**
+ * 分片行 kind 判别联合——从 TrendRow 索引派生，**不另抄一份字面量**：新增或改名
+ * 行类型时本联合自动跟上，不存在「联合与表各说各话」的第二事实源。
+ *
+ * 分片校验表按本类型取键（Record<ShardKind, …> 而非 Record<string, …>），把两个
+ * 静默故障变成编译错误：键名笔误（`detaill:`）与漏写某个 kind。
+ * 二者在原 Record<string, …> 形态下都只是运行期 `SHARD_CHECKS[kind] === undefined`，
+ * 即该 kind 的**全部历史数据静默丢弃**（不抛不记，只是不收）。
+ */
+type ShardKind = TrendRow["kind"];
+
 /** 内存聚合桶（day×provider×model 单元）。null token 语义：桶内无任何有效数字则保持 null。 */
 export interface TrendCell {
   input: number | null;
@@ -271,8 +293,7 @@ function isStrOrNull(v: unknown): boolean {
   return v === null || typeof v === "string";
 }
 
-/** 判定明细/计数/聚合/目录汇总/小时汇总行是否完整可收（载入重建的防御校验；坏行跳过）。
- *  detail/counter 的 dir 为加性可选键——旧格式行（无 dir）不因缺键拒绝。 */
+/** 必过校验链中的一项：取行、判真假、不改行。类型谓词形态的 checker（hour 行）同样入列。 */
 type ShardChecker = (r: Record<string, unknown>) => boolean;
 function checkShardDay(r: Record<string, unknown>): boolean {
   return typeof r.day === "string" && TREND_DAY_RE.test(r.day);
@@ -284,9 +305,6 @@ function checkShardTokens(r: Record<string, unknown>): boolean {
     isNumOrNull(r.cacheRead) &&
     isNumOrNull(r.cacheWrite)
   );
-}
-function checkShardModel(r: Record<string, unknown>): boolean {
-  return isStrOrNull(r.model);
 }
 function checkShardCounts(r: Record<string, unknown>): boolean {
   return (
@@ -318,46 +336,86 @@ function checkCounterFlags(r: Record<string, unknown>): boolean {
 function checkAggBase(r: Record<string, unknown>): boolean {
   return typeof r.provider === "string";
 }
-function checkDirKey(r: Record<string, unknown>): boolean {
-  return isValidDirKey(r.dir);
+/**
+ * hour 字段的唯一不变量：0–23 的整数（hourOfDay 折算、落盘即定型，重建只信落盘值，
+ * 按文件头约定绝不按当前时区重算）。
+ *
+ * 原先拆成 checkHourType（整数性）+ checkHourRange（区间）两条：二者同属「hour 值非法」
+ * 这一种变化原因，拆开反而让区间判定拿不到 hour 的收窄，只能写 `(r.hour as number) >= 0`。
+ * 合并为一条后收窄在本函数内闭合，且**返回类型谓词而非 boolean**——调用侧零断言。
+ */
+function checkHourRange(r: Record<string, unknown>): r is { hour: number } {
+  const { hour } = r;
+  return typeof hour === "number" && Number.isInteger(hour) && hour >= 0 && hour <= 23;
 }
-function checkHourType(r: Record<string, unknown>): boolean {
-  return typeof r.hour === "number" && Number.isInteger(r.hour);
-}
-function checkHourRange(r: Record<string, unknown>): boolean {
-  return (r.hour as number) >= 0 && (r.hour as number) <= 23;
-}
-const SHARD_CHECKS: Record<string, ShardChecker[]> = {
+
+/**
+ * 分片 kind → 必过校验链。键类型取 ShardKind 判别联合，故「键名笔误」与「漏写某个
+ * kind」均为编译错误，而非运行期取到 undefined 后让该 kind 历史数据静默全丢。
+ *
+ * 这里保留 lookup 表而非 switch 分支：五种 kind 各收的字段集本身不同（detail 带
+ * turn/step/retry/calls、counter 带 turns/toolCalls、agg 强制 provider、dir 强制 dir、
+ * hour 强制 hour），属多维组合，查表即是查「这一类行的必过项」；一维同构的共用项
+ * （day / tokens / counts / model / 可选 dir）保持共用同一 checker，不各写一份。
+ */
+const SHARD_CHECKS: Record<ShardKind, ShardChecker[]> = {
   detail: [
     checkShardDay,
     checkDetailBase,
     checkDetailNums,
     checkDetailCalls,
     checkShardTokens,
-    checkShardModel,
+    (r) => isStrOrNull(r.model),
     checkShardDirOpt,
   ],
-  counter: [checkShardDay, checkCounterBase, checkShardModel, checkCounterFlags, checkShardDirOpt],
-  agg: [checkShardDay, checkAggBase, checkShardModel, checkShardTokens, checkShardCounts],
-  dir: [checkShardDay, checkDirKey, checkShardTokens, checkShardCounts],
-  hour: [checkShardDay, checkHourType, checkHourRange, checkShardTokens, checkShardCounts],
+  counter: [
+    checkShardDay,
+    checkCounterBase,
+    (r) => isStrOrNull(r.model),
+    checkCounterFlags,
+    checkShardDirOpt,
+  ],
+  agg: [
+    checkShardDay,
+    checkAggBase,
+    (r) => isStrOrNull(r.model),
+    checkShardTokens,
+    checkShardCounts,
+  ],
+  dir: [checkShardDay, (r) => isValidDirKey(r.dir), checkShardTokens, checkShardCounts],
+  hour: [checkShardDay, checkHourRange, checkShardTokens, checkShardCounts],
 };
-export function isValidShardRow(
-  row: unknown,
-): row is TrendDetailRow | TrendCounterRow | TrendAggRow | TrendDirRow | TrendHourRow {
-  if (typeof row !== "object" || row === null) {
+
+/**
+ * kind 守卫：合法 kind 集 = SHARD_CHECKS 的**自有键集**（同一事实源，无第二份清单）。
+ *
+ * 用 Object.hasOwn 而非直接索引：直接索引会取到 Object.prototype 上的成员——
+ * kind 为 "toString" 时拿到的是函数，随后 `.every` 抛 TypeError，载入分片时崩在坏行上。
+ * isValidShardRow 依赖本守卫把 row.kind 收窄到 ShardKind，之后对表的索引才类型安全。
+ */
+function isShardKind(v: unknown): v is ShardKind {
+  return typeof v === "string" && Object.hasOwn(SHARD_CHECKS, v);
+}
+
+/** 落盘行载荷守卫（JSON 解析结果的顶层形态：非 null 对象）。谓词形态让调用侧零断言。 */
+function isRowRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null;
+}
+
+/** 判定明细/计数/聚合/目录汇总/小时汇总行是否完整可收（载入重建的防御校验；坏行跳过）。
+ *  detail/counter 的 dir 为加性可选键——旧格式行（无 dir）不因缺键拒绝。 */
+export function isValidShardRow(row: unknown): row is TrendRow {
+  if (!isRowRecord(row)) {
     return false;
   }
-  const r = row as Record<string, unknown>;
-  if (r.v !== TREND_ROW_VERSION) {
+  if (row.v !== TREND_ROW_VERSION) {
     return false;
   }
-  const checks = typeof r.kind === "string" ? SHARD_CHECKS[r.kind] : undefined;
-  if (checks === undefined) {
+  if (!isShardKind(row.kind)) {
     return false;
   }
-  return checks.every(function (fn) {
-    return fn(r);
+  return SHARD_CHECKS[row.kind].every(function (fn) {
+    return fn(row);
   });
 }
 /** 聚合指标（序列查询的取值维度；total = 四项 token 之和）。 */

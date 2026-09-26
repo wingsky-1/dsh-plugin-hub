@@ -305,6 +305,8 @@ const EXPECT_FILES: Record<string, string[]> = {
     "unit/shared/unit-config.test.ts",
     "unit/shared/unit-contract.test.ts",
     "unit/trend/unit-trend-ledger.test.ts",
+    "unit/trend/unit-trend-sanitize-dir.test.ts",
+    "unit/trend/unit-trend-shard-row.test.ts",
     "unit/trend/unit-trend.test.ts",
   ],
   "dsh-worktree-sidebar": [
