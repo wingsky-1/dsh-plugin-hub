@@ -7,10 +7,12 @@
  * - apply 的 route disposer（卸载时 destroy 连接）
  * - apply 的 settings 注入（uiUpdate）
  * - apply 的 agent/pre-step 信号取消（signal.throwIfAborted）
+ * - 装配顺序（源码序锁定）：升级链 await 跑完才装读存储的域
  */
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { IncomingMessage } from "node:http";
 import { afterEach, describe, expect, it } from "vitest";
 import type { Context } from "@deepseek-ai/cordis";
@@ -524,5 +526,39 @@ describe("apply 的升级链失败穿透", () => {
       if (previous === undefined) delete process.env.DSH_HOME;
       else process.env.DSH_HOME = previous;
     }
+  });
+});
+
+/**
+ * 装配顺序（源码序锁定）：升级链必须 await 跑完，才轮到任何读存储的域。
+ *
+ * 为什么只能钉源码顺序：运行期能观测到的只有「apply 的 promise resolve 时链已跑完」（本文件上方
+ * 那条 fail-closed 用例就是它的运行期面），而**装配体内**的先后没有观测量——把 installUpgrade 挪到
+ * `store.load()` 之后，各域读着被搬走一半的磁盘跑起来，假 ctx 装配照样成功。组合根里唯一可判的形态
+ * 就是源码文本的先后（同先例：dsh-provider-usage report-routes/composition-root.test.ts 的装配序锁定）。
+ */
+describe("装配顺序：升级链 await 跑完才装读存储的域", () => {
+  const applySrc = readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), "..", "..", "src", "index.ts"),
+    "utf8",
+  );
+
+  it("升级域是 await 装配方（漏掉 await 即红）", () => {
+    expect(applySrc.indexOf("await installUpgrade({")).toBeGreaterThan(-1);
+  });
+
+  it("先复位 upgrade 装配标记再装配（release 晚于 install 即红）", () => {
+    const release = applySrc.indexOf("releaseUpgrade();");
+    const install = applySrc.indexOf("await installUpgrade({");
+    expect(release).toBeGreaterThan(-1);
+    expect(release).toBeLessThan(install);
+  });
+
+  it("升级链早于存储装载（迁移必须早于任何读存储的域）", () => {
+    const install = applySrc.indexOf("await installUpgrade({");
+    const load = applySrc.indexOf("await store.load();");
+    expect(install).toBeGreaterThan(-1);
+    expect(load).toBeGreaterThan(-1);
+    expect(install).toBeLessThan(load);
   });
 });

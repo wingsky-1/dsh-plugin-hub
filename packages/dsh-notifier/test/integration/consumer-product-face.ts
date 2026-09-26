@@ -22,10 +22,15 @@ import { apply, inject, name } from "@wingsky-1/dsh-notifier";
 /** 入口值面可达：消费方经 cordis patch 挂载时要用到这三个导出。 */
 export const entryFace = { apply, inject, name };
 
-/** 挂载形态：第二个入参在产物声明里同样可命名、可省略。 */
-export function mount(ctx: Context): void {
-  apply(ctx);
-  apply(ctx, { enabled: false });
+/**
+ * 挂载形态：第二个入参在产物声明里同样可命名、可省略。
+ *
+ * 两次 `apply` 都要 `await`：宿主入口是异步的（升级链异步跑完），不等待等于让两次装配在迁移
+ * 跑完之前各自往下走——而升级域的装配标记是进程级的，第二次会在链跑完前就撞上「只能装配一次」。
+ */
+export async function mount(ctx: Context): Promise<void> {
+  await apply(ctx);
+  await apply(ctx, { enabled: false });
 }
 
 /** 声明合并可达：这一行的类型来自 `lib/index.d.ts` 的 `declare module "@deepseek-ai/cordis"`。 */

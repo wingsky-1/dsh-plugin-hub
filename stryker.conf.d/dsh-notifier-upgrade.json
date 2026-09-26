@@ -41,5 +41,5 @@
   },
   "incremental": true,
   "incrementalFile": "coverage/mutation/incremental-notifier-upgrade.json",
-  "_comment": "#733 按域重写：upgrade——存量迁移域（version 版本戳；chain 迁移链；legacy 旧位置读取；steps.storage-layout 存储布局搬迁）。"
+  "_comment": "#733 按域重写：upgrade——存量迁移域（version 版本戳；chain 迁移链；legacy 旧位置读取；steps.storage-layout 存储布局搬迁）。链驱动已下沉 shared/upgrade-chain.js，本段只余本包事实：刻度读策略（fail-closed，见 test/unit/upgrade/version.test.ts）与四个业务 step。 "
 }

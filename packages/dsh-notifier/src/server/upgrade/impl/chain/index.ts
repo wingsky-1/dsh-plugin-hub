@@ -1,92 +1,49 @@
 /**
- * upgrade 域升级链驱动：读刻度 → 取刻度仍停在起点的步骤 → 执行并在整条链成功后回写最终刻度 → 与插件版本对账。**任何一步失败即抛出，
- * 启动随之中止**（存储没升完就被按错误形态解释，比不启动糟得多）；步骤按**目标版本**排序执行，不按声明顺序。
+ * upgrade 域升级链的装配面：把本域的刻度落点与步骤表接进共享链骨架（shared/upgrade-chain.js）。
+ *
+ * 骨架（读刻度 → 取待办步 → 逐步 await 执行并逐步回写 → 与插件版本对账）由共享层单一实现，本文件
+ * 只声明本包的事实：刻度落在哪个文件、读刻度是 fail-closed 还是 fail-safe、步骤表是什么。**任何一步
+ * 失败即抛出，装配随之中止**（存储没升完就被按错误形态解释，比不启动糟得多）。
+ *
+ * **本包的刻度提交语义本轮有变**：下沉前本包是「全链全部成功后才提交最终刻度」（失败时不写中间
+ * 版本，避免半完成迁移被下一次启动误判为已完成），现随骨架统一为「每步成功后立刻回写」。两者都可
+ * 辩护，取舍见 shared/upgrade-chain.js 文件头：按步对齐让「失败后从同一步重跑」成立（对齐
+ * .dsh/skills/dsh-plugin-hub-refactor/SKILL.md 第 6 章的幂等硬要求），代价是链中途失败时磁盘上会停在
+ * 一个中间刻度而非原刻度——这要求每一步自身幂等，本包四个业务 step 均满足。**这是本包存储行为契约的
+ * 变更，不是一次重构细节。**
  */
-import type { LoggerPort } from "../../../shared/interface.ts";
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+import {
+  pluginVersion,
+  runUpgradeChain as runSharedChain,
+} from "../../../../../../../shared/upgrade-chain.js";
 import type { UpgradeDeps } from "../../deps.ts";
 import { STEPS } from "../steps/index.ts";
-import {
-  compareVersions,
-  pluginVersion,
-  readStoredVersion,
-  writeStoredVersion,
-} from "../version/index.ts";
-import type { UpgradeStep } from "./type.ts";
+import { readStoredVersion, writeStoredVersion } from "../version/index.ts";
+
+/** 本模块运行时目录：shared 的 pluginVersion 收起点而不自定位（产物形态与白盒单测深度不同）。 */
+const MODULE_DIR = dirname(fileURLToPath(import.meta.url));
 
 /**
- * 装配前跑一遍升级链（组合根在 `apply` 期调用）。必须在各域装配**之前**：升级会重写配置文件与存储文件，
- * 先装配就等于让各域先读到旧形态，再让它们带着旧形态继续跑。
+ * 装配前跑一遍升级链（组合根在 `apply` 期 `await`）。必须在各域装配**之前**：升级会重写配置文件与
+ * 存储文件，先装配就等于让各域先读到旧形态，再让它们带着旧形态继续跑。
+ *
+ * 刻度原语在本包是**同步 + 返回值**语义（`writeStoredVersion` 失败给 `{ok:false}` 而不是抛），而共享
+ * 执行器靠抛错感知失败——故接缝在这里转一层：失败转成抛，抛的**只有原始 reason**（包名前缀与目标版本
+ * 由共享层统一包装成「存储版本号回写失败（版本）— 原因」，这里再拼一遍就成了同一句话说两次）。
  */
-export function runUpgradeChain(deps: UpgradeDeps): void {
-  const recorded = readStoredVersion();
-  runUpgradeSteps(pendingSteps(recorded), deps);
-  reportGap(readStoredVersion(), pluginVersion(), deps.logger);
-}
-
-/**
- * 执行一批待升级步骤，全部成功后才提交最终刻度。
- * 失败时不写中间版本，避免半完成迁移被下一次启动误判为已完成。
- */
-export function runUpgradeSteps(steps: readonly UpgradeStep[], deps: UpgradeDeps): void {
-  if (steps.length === 0) return;
-  for (const step of steps) runUpgradeStep(step, deps);
-  const finalVersion = steps[steps.length - 1].targetVersion;
-  const written = writeStoredVersion(finalVersion);
-  if (!written.ok) {
-    throw new Error(`dsh-notifier: 存储版本号回写失败（${finalVersion}）— ${written.reason}`);
-  }
-}
-
-/** 刻度还停在这一步起点或更早的步骤，按目标版本升序。 */
-function pendingSteps(recorded: string): UpgradeStep[] {
-  return [...STEPS]
-    .sort((left, right) => compareVersions(left.targetVersion, right.targetVersion))
-    .filter((step) => compareVersions(step.fromVersion, recorded) >= 0);
-}
-
-/** 执行一步；版本提交由整条链统一完成。 */
-function runUpgradeStep(step: UpgradeStep, deps: UpgradeDeps): void {
-  try {
-    step.run(deps);
-  } catch (cause) {
-    throw new Error(
-      `dsh-notifier: 存储升级到 ${step.targetVersion} 失败 — ${cause instanceof Error ? cause.message : "未知原因"}`,
-      { cause },
-    );
-  }
-}
-
-/**
- * 链跑完后的对账（导出只为本域用例能直接喂 (recorded, target) 断言三种落差；对外契约面仍只有 `installUpgrade`）。
- * 三种落差分开报，因为它们要人去改的地方完全不同：落后 = 这一步的升级函数还没写（开发期
- * 漏项）；超前且步骤表本身也超前 = 步骤表与 package.json 没同步；超前而步骤表没超前 = 装的是更旧的包（降级）。
- * 三者都不中止启动——它们不是迁移动作失败，而静默地把刻度改成看起来对的值更糟。
- */
-export function reportGap(recorded: string, target: string, logger: LoggerPort): void {
-  const gap = compareVersions(recorded, target);
-  if (gap === 0) return;
-
-  if (gap < 0) {
-    logger.warn(`dsh-notifier: 存储版本 ${recorded} 落后于插件版本 ${target}，缺少对应的升级步骤`);
-    return;
-  }
-
-  const newest = newestTargetVersion();
-  if (newest !== "" && compareVersions(newest, target) > 0) {
-    logger.warn(
-      `dsh-notifier: 升级链的目标版本 ${newest} 高于插件版本 ${target}（存储已升到 ${recorded}）——步骤表与 package.json 不同步`,
-    );
-    return;
-  }
-  logger.warn(`dsh-notifier: 存储版本 ${recorded} 高于插件版本 ${target}，本插件的升级链不回退`);
-}
-
-/** 步骤表里最高的目标版本；空表时给空串。 */
-function newestTargetVersion(): string {
-  let newest = "";
-  for (const step of STEPS) {
-    if (newest === "" || compareVersions(step.targetVersion, newest) > 0)
-      newest = step.targetVersion;
-  }
-  return newest;
+export function runUpgradeChain(deps: UpgradeDeps): Promise<void> {
+  return runSharedChain({
+    label: "dsh-notifier",
+    steps: STEPS,
+    deps,
+    readScale: () => readStoredVersion(),
+    writeScale: (version) => {
+      const written = writeStoredVersion(version);
+      if (!written.ok) throw new Error(written.reason);
+    },
+    targetVersion: pluginVersion(MODULE_DIR),
+    logger: deps.logger,
+  });
 }

@@ -102,7 +102,13 @@ function makeCtx(options: { localeThrows?: boolean; localeService?: unknown } = 
   return { ctx, effects };
 }
 
-/** 驱动一次 apply 并把释放点登进兜底清单（apply 抛错时也要登记：finally 里可能已经挂上了）。 */
+/**
+ * 驱动一次 apply 并把释放点登进兜底清单（apply 抛错时也要登记：finally 里可能已经挂上了）。
+ *
+ * 本文件驱动的是**客户端** apply（`src/client/index.tsx` 的 `apply(ctx: ClientContext): void`，
+ * 同步形态）——不是宿主组合根的那个（`src/index.ts` 的 `apply(ctx, config?): Promise<void>`，
+ * 升级链异步跑完）。两者同名不同物，**别把宿主入口的 await 要求套到这里**：本文件全程同步。
+ */
 function boot(options: { localeThrows?: boolean; localeService?: unknown } = {}): Boot {
   const handle = makeCtx(options);
   try {
@@ -201,6 +207,7 @@ describe("apply：装配中途同步抛错（R5）", () => {
   it("apply 中途抛错时不向外抛：宿主不会因一次可降级失败看到异常", () => {
     // 走 boot 而不是裸 apply：这次装配捕获到的释放点同样要进兜底清单，否则它挂上的
     // visibilitychange 监听会漏给后续用例（与文件头的状态纪律自相矛盾）。
+    // 客户端 apply 是同步形态（见 boot 的注释），所以这里同步断言成立。
     expect(() => boot({ localeThrows: true })).not.toThrow();
   });
 });

@@ -18,7 +18,7 @@ import {
 import type { UpgradeDeps } from "../../../src/server/upgrade/deps.ts";
 import { migrateQuietWindows } from "../../../src/server/upgrade/impl/steps/quiet-windows.ts";
 import { STEPS } from "../../../src/server/upgrade/impl/steps/index.ts";
-import { compareVersions } from "../../../src/server/upgrade/impl/version/index.ts";
+import { compareVersions } from "../../../../../shared/upgrade-chain.js";
 import { installUpgrade, releaseUpgrade } from "../../../src/server/upgrade/interface.ts";
 import { makeLogger, tempDshHome } from "../../helpers.ts";
 
@@ -135,7 +135,7 @@ describe("migrateQuietWindows：旧 start/end 搬进 windows[0] 并删旧键", (
 });
 
 describe("链级：刻度停在 0.2.5 的装机跑完这一步", () => {
-  it("旧形文件被割接，刻度到步骤表末步", () => {
+  it("旧形文件被割接，刻度到步骤表末步", async () => {
     writeTextAtomicSync(notifierFile(VERSION_FILE_NAME), "0.2.5\n");
     seedConfig({ quietHours: { enabled: true, start: "23:00", end: "07:00" } });
     const face = {
@@ -145,7 +145,7 @@ describe("链级：刻度停在 0.2.5 的装机跑完这一步", () => {
     };
     const deps: UpgradeDeps = { logger: makeLogger(), legacySettings: face };
 
-    installUpgrade(deps);
+    await installUpgrade(deps);
 
     const quiet = configOnDisk().quietHours as Record<string, unknown>;
     expect(quiet).toEqual({ enabled: true, windows: [{ start: "23:00", end: "07:00" }] });
