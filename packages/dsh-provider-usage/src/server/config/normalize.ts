@@ -60,17 +60,51 @@ export function normalizeReportDirectories(raw: unknown): string[] {
   return [...out];
 }
 
+/**
+ * 嵌套子源判定（承担类型收窄）：与顶层判定**刻意不同**——历史口径是
+ * `typeof x === "object" && x !== null`，数组也算对象源（污染形态的子对象按缺字段
+ * 回落默认）。收窄这一支会改写该边缘形态的行为，故两条判定分开钉死。
+ */
+function isObjectSource(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+/** 子源取用：非对象源（含缺键/null/原始值）一律回落空对象（逐字段走默认）。 */
+function objectSource(value: unknown): Record<string, unknown> {
+  return isObjectSource(value) ? value : {};
+}
+
+/** 可选子源取用：非对象源返回 null（区别于「空对象」——调用方据此走旧格式分支）。 */
+function optionalObjectSource(value: unknown): Record<string, unknown> | null {
+  return isObjectSource(value) ? value : null;
+}
+
+/** HH:MM 文本判定（承担类型收窄：parseHHMM 已拒非字符串，这里把字符串形态一并钉死）。 */
+function isHHMMText(value: unknown): value is string {
+  return typeof value === "string" && parseHHMM(value) !== null;
+}
+
 /** 归一化单周期配置。 */
 function normalizePeriod(raw: unknown, dflt: ReportPeriodConfig): ReportPeriodConfig {
-  const src = (typeof raw === "object" && raw !== null ? raw : {}) as Record<string, unknown>;
+  const src = objectSource(raw);
   return {
     enabled: typeof src.enabled === "boolean" ? src.enabled : dflt.enabled,
-    time: parseHHMM(src.time) !== null ? (src.time as string).trim() : dflt.time,
+    time: isHHMMText(src.time) ? src.time.trim() : dflt.time,
   };
 }
 
+/** 有界字符串字段（超长/非字符串回落默认；不截断——截断会造出匹配不到任何行的键）。 */
+function boundedString(value: unknown, max: number, dflt: string): string {
+  return typeof value === "string" && value.length <= max ? value : dflt;
+}
+
+/** 月内触发日合法性（1–28 整数；覆盖上一自然月，故 29–31 不参与）。 */
+function isValidDayOfMonth(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value >= 1 && value <= 28;
+}
+
 /** 单模板归一化（非空字符串且 ≤20000 用之；若严格等于任何旧版默认模板则自动升级新版；否则回退该周期默认）。 */
-function normalizePrompt(raw: unknown, dflt: string, legacyTemplates?: string[]): string {
+function normalizePrompt(raw: unknown, dflt: string, legacyTemplates?: readonly string[]): string {
   if (typeof raw !== "string" || raw.trim().length === 0 || raw.length > 20000) return dflt;
   if (legacyTemplates !== undefined && legacyTemplates.includes(raw)) return dflt;
   return raw;
@@ -97,54 +131,51 @@ function legacyPromptOf(src: Record<string, unknown>): string | null {
   return typeof v === "string" && v.trim().length > 0 && v.length <= 20000 ? v : null;
 }
 
+/** 三周期各自的旧默认锁表（未自定义的旧模板平滑升级为新默认的唯一词表事实源）。 */
+const LEGACY_PROMPTS_BY_PERIOD: Record<keyof ReportPrompts, readonly string[]> = {
+  daily: [
+    LEGACY_DAILY_PROMPT_V1,
+    LEGACY_DAILY_PROMPT_V2,
+    LEGACY_DAILY_PROMPT_V3,
+    LEGACY_DAILY_PROMPT_V4,
+  ],
+  weekly: [
+    LEGACY_WEEKLY_PROMPT_V1,
+    LEGACY_WEEKLY_PROMPT_V2,
+    LEGACY_WEEKLY_PROMPT_V3,
+    LEGACY_WEEKLY_PROMPT_V4,
+  ],
+  monthly: [
+    LEGACY_MONTHLY_PROMPT_V1,
+    LEGACY_MONTHLY_PROMPT_V2,
+    LEGACY_MONTHLY_PROMPT_V3,
+    LEGACY_MONTHLY_PROMPT_V4,
+  ],
+};
+
+/**
+ * 归一化三周期提示词表：新格式 prompts{daily,weekly,monthly} 逐周期取用（未自定义的
+ * 旧默认文本升级为新默认）；缺 prompts 子源 → 从旧单模板迁移。
+ */
+function normalizePrompts(src: Record<string, unknown>, dflt: ReportPrompts): ReportPrompts {
+  const promptsSrc = optionalObjectSource(src.prompts);
+  if (promptsSrc === null)
+    return migrateLegacyPrompt(legacyPromptOf(src) ?? LEGACY_PROMPT_TEMPLATE);
+  return {
+    daily: normalizePrompt(promptsSrc.daily, dflt.daily, LEGACY_PROMPTS_BY_PERIOD.daily),
+    weekly: normalizePrompt(promptsSrc.weekly, dflt.weekly, LEGACY_PROMPTS_BY_PERIOD.weekly),
+    monthly: normalizePrompt(promptsSrc.monthly, dflt.monthly, LEGACY_PROMPTS_BY_PERIOD.monthly),
+  };
+}
+
 /** 校验并归一化报告配置（非法值回退默认；旧单模板自动迁移为三周期表；未自定义的旧三周期模板平滑升级）。 */
 export function normalizeReportConfig(raw: unknown): ReportConfig {
-  const src = (typeof raw === "object" && raw !== null ? raw : {}) as Record<string, unknown>;
-  const weeklySrc = (
-    typeof src.weekly === "object" && src.weekly !== null ? src.weekly : {}
-  ) as Record<string, unknown>;
-  const monthlySrc = (
-    typeof src.monthly === "object" && src.monthly !== null ? src.monthly : {}
-  ) as Record<string, unknown>;
-  const pushSrc = (typeof src.push === "object" && src.push !== null ? src.push : {}) as Record<
-    string,
-    unknown
-  >;
+  const src = objectSource(raw);
+  const weeklySrc = objectSource(src.weekly);
+  const monthlySrc = objectSource(src.monthly);
+  const pushSrc = objectSource(src.push);
   const d = DEFAULT_REPORT_CONFIG;
-  const dom =
-    typeof monthlySrc.dayOfMonth === "number" &&
-    Number.isInteger(monthlySrc.dayOfMonth) &&
-    monthlySrc.dayOfMonth >= 1 &&
-    monthlySrc.dayOfMonth <= 28
-      ? monthlySrc.dayOfMonth
-      : d.monthly.dayOfMonth;
-  // prompts：新格式 prompts{daily,weekly,monthly} 优先；否则从旧 promptTemplate 迁移
-  const promptsSrc = (
-    typeof src.prompts === "object" && src.prompts !== null ? src.prompts : null
-  ) as Record<string, unknown> | null;
-  const prompts: ReportPrompts =
-    promptsSrc !== null
-      ? {
-          daily: normalizePrompt(promptsSrc.daily, d.prompts.daily, [
-            LEGACY_DAILY_PROMPT_V1,
-            LEGACY_DAILY_PROMPT_V2,
-            LEGACY_DAILY_PROMPT_V3,
-            LEGACY_DAILY_PROMPT_V4,
-          ]),
-          weekly: normalizePrompt(promptsSrc.weekly, d.prompts.weekly, [
-            LEGACY_WEEKLY_PROMPT_V1,
-            LEGACY_WEEKLY_PROMPT_V2,
-            LEGACY_WEEKLY_PROMPT_V3,
-            LEGACY_WEEKLY_PROMPT_V4,
-          ]),
-          monthly: normalizePrompt(promptsSrc.monthly, d.prompts.monthly, [
-            LEGACY_MONTHLY_PROMPT_V1,
-            LEGACY_MONTHLY_PROMPT_V2,
-            LEGACY_MONTHLY_PROMPT_V3,
-            LEGACY_MONTHLY_PROMPT_V4,
-          ]),
-        }
-      : migrateLegacyPrompt(legacyPromptOf(src) ?? LEGACY_PROMPT_TEMPLATE);
+  const prompts = normalizePrompts(src, d.prompts);
   const reasoningEffort =
     typeof src.reasoningEffort === "string" && src.reasoningEffort.length > 0
       ? { reasoningEffort: src.reasoningEffort }
@@ -157,11 +188,12 @@ export function normalizeReportConfig(raw: unknown): ReportConfig {
     },
     monthly: {
       ...normalizePeriod(src.monthly, d.monthly),
-      dayOfMonth: dom,
+      dayOfMonth: isValidDayOfMonth(monthlySrc.dayOfMonth)
+        ? monthlySrc.dayOfMonth
+        : d.monthly.dayOfMonth,
     },
-    provider:
-      typeof src.provider === "string" && src.provider.length <= 128 ? src.provider : d.provider,
-    model: typeof src.model === "string" && src.model.length <= 256 ? src.model : d.model,
+    provider: boundedString(src.provider, 128, d.provider),
+    model: boundedString(src.model, 256, d.model),
     // opaque ID 原样保留；旧磁盘配置与非法值缺省时不输出该键。
     ...reasoningEffort,
     // promptTemplate 保留 = 月报模板镜像（旧消费方/外部读者兼容；写侧同步回填）

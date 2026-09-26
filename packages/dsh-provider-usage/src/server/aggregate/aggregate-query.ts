@@ -137,6 +137,294 @@ function granRangeForKey(key: string, gran: TrendGranularity): { start: string; 
   return { start: key, end: key };
 }
 
+/** 目录行的十数值字段（cell/row 形态通用；键序即落盘字段序）。 */
+type DirCellValues = Pick<
+  TrendCell,
+  "input" | "output" | "cacheRead" | "cacheWrite" | "calls" | "turns" | "toolCalls"
+>;
+
+/** cell → 目录行的十数值字段（浅展开；字段名同构，直接搬）。 */
+function cellValues(cell: TrendCell): DirCellValues {
+  return {
+    input: cell.input,
+    output: cell.output,
+    cacheRead: cell.cacheRead,
+    cacheWrite: cell.cacheWrite,
+    calls: cell.calls,
+    turns: cell.turns,
+    toolCalls: cell.toolCalls,
+  };
+}
+
+/** 同键目录行合并（null-aware 求和；counts 独立累加）。 */
+function mergeDirCells(cur: TrendDirRow, add: DirCellValues): void {
+  cur.input = sumToken(cur.input, add.input);
+  cur.output = sumToken(cur.output, add.output);
+  cur.cacheRead = sumToken(cur.cacheRead, add.cacheRead);
+  cur.cacheWrite = sumToken(cur.cacheWrite, add.cacheWrite);
+  cur.calls += add.calls;
+  cur.turns += add.turns;
+  cur.toolCalls += add.toolCalls;
+}
+
+/** 聚合面逐日合计（cells：day → provider → model 三层求和）。 */
+function sumCellsByDay(
+  days: Map<string, Map<string, Map<string | null, TrendCell>>>,
+): Map<string, TrendCell> {
+  const aggByDay = new Map<string, TrendCell>();
+  for (const [day, providers] of days) {
+    const cell = cellBucketOf(aggByDay, day);
+    for (const models of providers.values()) {
+      for (const c of models.values()) {
+        cell.input = sumToken(cell.input, c.input);
+        cell.output = sumToken(cell.output, c.output);
+        cell.cacheRead = sumToken(cell.cacheRead, c.cacheRead);
+        cell.cacheWrite = sumToken(cell.cacheWrite, c.cacheWrite);
+        cell.calls += c.calls;
+        cell.turns += c.turns;
+        cell.toolCalls += c.toolCalls;
+      }
+    }
+  }
+  return aggByDay;
+}
+
+/** 目录面逐日合计（dirDays：day → dir 两层求和；无目录事实返回空壳零值）。 */
+function sumDirCellsByDay(cells: Map<string, TrendCell> | undefined): TrendCell {
+  const total = emptyCell();
+  for (const c of cells?.values() ?? []) {
+    total.input = sumToken(total.input, c.input);
+    total.output = sumToken(total.output, c.output);
+    total.cacheRead = sumToken(total.cacheRead, c.cacheRead);
+    total.cacheWrite = sumToken(total.cacheWrite, c.cacheWrite);
+    total.calls += c.calls;
+    total.turns += c.turns;
+    total.toolCalls += c.toolCalls;
+  }
+  return total;
+}
+
+/** 日桶取用（缺桶建空壳）。 */
+function cellBucketOf(byDay: Map<string, TrendCell>, day: string): TrendCell {
+  const existing = byDay.get(day);
+  if (existing !== undefined) return existing;
+  const created = emptyCell();
+  byDay.set(day, created);
+  return created;
+}
+
+/** 残差 token 的正残差保留（非正归 null——不产生负柱）。 */
+function positiveToken(value: number | null): number | null {
+  return value !== null && value > 0 ? value : null;
+}
+
+/** 残差计数的正残差保留（非正归 0——不产生负柱）。 */
+function positiveCount(value: number): number {
+  return value > 0 ? value : 0;
+}
+
+/**
+ * 是否存在正残差：四个 token 维度与三个计数字段同构判定
+ * （`(x ?? 0) > 0` 与 positiveToken(x) !== null 等价；负残差与全零同样判否）。
+ */
+function hasResidual(residual: TrendCell): boolean {
+  return (
+    residual.calls > 0 ||
+    residual.turns > 0 ||
+    residual.toolCalls > 0 ||
+    positiveToken(residual.input) !== null ||
+    positiveToken(residual.output) !== null ||
+    positiveToken(residual.cacheRead) !== null ||
+    positiveToken(residual.cacheWrite) !== null
+  );
+}
+
+/**
+ * 单日残差投影行（聚合面 − 目录面，null-aware：双方皆 null → 无残差；单侧 null 按 0 计）。
+ * 全零/全负残差返回 null（不补造行）：全零 = 该日目录面已覆盖全量（新分片常态）；
+ * 负残差 = 目录面多于聚合面，属数据不一致征兆（README「总量守恒」节已注明该边界
+ * 不保证恒等），同样不产行。
+ */
+function residualRowOf(
+  day: string,
+  agg: TrendCell,
+  dirCells: Map<string, TrendCell> | undefined,
+): TrendDirRow | null {
+  const dir = sumDirCellsByDay(dirCells);
+  const residual: TrendCell = {
+    input: diffToken(agg.input, dir.input),
+    output: diffToken(agg.output, dir.output),
+    cacheRead: diffToken(agg.cacheRead, dir.cacheRead),
+    cacheWrite: diffToken(agg.cacheWrite, dir.cacheWrite),
+    calls: agg.calls - dir.calls,
+    turns: agg.turns - dir.turns,
+    toolCalls: agg.toolCalls - dir.toolCalls,
+  };
+  if (!hasResidual(residual)) return null;
+  return {
+    v: TREND_ROW_VERSION,
+    kind: "dir",
+    day,
+    dir: TREND_UNIDENTIFIED,
+    input: positiveToken(residual.input),
+    output: positiveToken(residual.output),
+    cacheRead: positiveToken(residual.cacheRead),
+    cacheWrite: positiveToken(residual.cacheWrite),
+    calls: positiveCount(residual.calls),
+    turns: positiveCount(residual.turns),
+    toolCalls: positiveCount(residual.toolCalls),
+  };
+}
+
+/** 日区间闭区间判定（本地日字典序；窗口过滤的唯一口径）。 */
+function inDayRange(day: string, range: { start: string; end: string }): boolean {
+  return day >= range.start && day <= range.end;
+}
+
+/**
+ * 当前/上一窗口的日区间对（两个 summary 面共用）。
+ * prevKeys = 同长键序列整体前移 n 桶（day/week/month 各自步进语义），保证不与当前窗口重叠。
+ */
+function windowRanges(
+  n: number,
+  gran: TrendGranularity,
+  now: number,
+): { curRange: { start: string; end: string }; prevRange: { start: string; end: string } } {
+  const keys = granKeysFor(n, gran, now);
+  const curRange = {
+    start: granRangeForKey(keys[0], gran).start,
+    end: granRangeForKey(keys[keys.length - 1], gran).end,
+  };
+  const prevKeys = granKeysFor(n, gran, prevWindowAnchorFor(now, n, gran));
+  const prevRange = {
+    start: granRangeForKey(prevKeys[0], gran).start,
+    end: granRangeForKey(prevKeys[prevKeys.length - 1], gran).end,
+  };
+  return { curRange, prevRange };
+}
+
+/** 堆叠序列的峰值桶与取值最大段（两个 summary 面共用同一遍历口径）。 */
+function peakAndTopOf(series: TrendStackPoint[]): {
+  peakKey: string | null;
+  top: { provider: string; model: string | null; value: number } | null;
+} {
+  let peakKey: string | null = null;
+  let peakVal = -1;
+  let top: { provider: string; model: string | null; value: number } | null = null;
+  for (const point of series) {
+    if (point.total !== null && point.total > peakVal) {
+      peakVal = point.total;
+      peakKey = point.key;
+    }
+    for (const pt of point.parts) {
+      if (pt.value !== null && (top === null || pt.value > top.value)) {
+        top = { provider: pt.provider, model: pt.model, value: pt.value };
+      }
+    }
+  }
+  return { peakKey, top };
+}
+
+/** 堆叠单桶的段合计（null-aware；空桶 null）。 */
+function partsTotal(parts: TrendStackPart[]): number | null {
+  let total: number | null = null;
+  for (const pt of parts) total = sumToken(total, pt.value);
+  return total;
+}
+
+/** 段入桶（同 id 累加，首次出现按 byModel 形态定型 provider/model）。 */
+function addStackPart(
+  partsMap: Map<string, TrendStackPart>,
+  id: string,
+  provider: string,
+  model: string | null,
+  value: number | null,
+): void {
+  const cur = partsMap.get(id);
+  if (cur === undefined) partsMap.set(id, { provider, model, value });
+  else cur.value = sumToken(cur.value, value);
+}
+
+/** provider 面的段 id（byModel 时细到 provider+model；两处取用须同式）。 */
+function providerPartId(p: string, m: string | null, byModel: boolean): string {
+  return byModel ? `${p}\u0000${m ?? ""}` : p;
+}
+
+/** 图例并集（窗口内出现过的段；byModel 时键与段 id 同式）。 */
+function legendOf(
+  series: TrendStackPoint[],
+  byModel: boolean,
+): Array<{ provider: string; model: string | null }> {
+  const legend = new Map<string, { provider: string; model: string | null }>();
+  for (const point of series) {
+    for (const pt of point.parts) {
+      legend.set(providerPartId(pt.provider, pt.model, byModel), {
+        provider: pt.provider,
+        model: byModel ? pt.model : null,
+      });
+    }
+  }
+  return [...legend.values()];
+}
+
+/** 单日桶内按 provider（可选 model 细分）累加各段取值。 */
+function accumulateCellParts(
+  partsMap: Map<string, TrendStackPart>,
+  models: Map<string, Map<string | null, TrendCell>>,
+  provider: string | undefined,
+  byModel: boolean,
+  metric: TrendMetric,
+): void {
+  for (const [p, cells] of models) {
+    if (provider !== undefined && p !== provider) continue;
+    for (const [m, cell] of cells) {
+      addStackPart(
+        partsMap,
+        providerPartId(p, m, byModel),
+        p,
+        byModel ? m : null,
+        metricValue(cell, metric),
+      );
+    }
+  }
+}
+
+/** 单桶堆叠点（桶日区间一次算全，桶内只做窗口过滤与段累加）。 */
+function stackPointOf(
+  key: string,
+  range: { start: string; end: string },
+  days: Map<string, Map<string, Map<string | null, TrendCell>>>,
+  provider: string | undefined,
+  byModel: boolean,
+  metric: TrendMetric,
+): TrendStackPoint {
+  const partsMap = new Map<string, TrendStackPart>();
+  for (const [day, models] of days) {
+    if (!inDayRange(day, range)) continue;
+    accumulateCellParts(partsMap, models, provider, byModel, metric);
+  }
+  const parts = [...partsMap.values()];
+  return { key, parts, total: partsTotal(parts) };
+}
+
+/** 单桶目录堆叠点（目录面语义：段 id 即目录键，model 恒 null）。 */
+function dirStackPointOf(
+  key: string,
+  range: { start: string; end: string },
+  rows: TrendDirRow[],
+  dir: string | undefined,
+  metric: TrendMetric,
+): TrendStackPoint {
+  const partsMap = new Map<string, TrendStackPart>();
+  for (const row of rows) {
+    if (!inDayRange(row.day, range)) continue;
+    if (dir !== undefined && row.dir !== dir) continue;
+    addStackPart(partsMap, row.dir, row.dir, null, metricValue(row, metric));
+  }
+  const parts = [...partsMap.values()];
+  return { key, parts, total: partsTotal(parts) };
+}
+
 /** 上一窗口锚点（把 now 前移 n 桶，得到 prevKeys 与当前窗口不重叠的时点）。 */
 function prevWindowAnchorFor(now: number, n: number, gran: TrendGranularity): number {
   const d = new Date(now);
@@ -217,37 +505,10 @@ export function buildStackedSeries(
   const keys = granKeysFor(n, gran, now);
   // 桶日区间一次算全（原实现对每桶在 days 日循环内重复调 granRange）
   const ranges = new Map(keys.map((k) => [k, granRangeForKey(k, gran)] as const));
-  const series: TrendStackPoint[] = keys.map((key) => {
-    const partsMap = new Map<string, TrendStackPart>();
-    const range = ranges.get(key)!;
-    for (const [day, models] of days) {
-      if (day < range.start || day > range.end) continue;
-      for (const [p, cells] of models) {
-        if (provider !== undefined && p !== provider) continue;
-        for (const [m, cell] of cells) {
-          const id = byModel ? `${p}\u0000${m ?? ""}` : p;
-          const v = metricValue(cell, metric);
-          const cur = partsMap.get(id);
-          if (cur !== undefined) cur.value = sumToken(cur.value, v);
-          else partsMap.set(id, { provider: p, model: byModel ? m : null, value: v });
-        }
-      }
-    }
-    const parts = [...partsMap.values()];
-    let total: number | null = null;
-    for (const pt of parts) total = sumToken(total, pt.value);
-    return { key, parts, total };
-  });
-  const legend = new Map<string, { provider: string; model: string | null }>();
-  for (const point of series) {
-    for (const pt of point.parts) {
-      legend.set(byModel ? `${pt.provider}\u0000${pt.model ?? ""}` : pt.provider, {
-        provider: pt.provider,
-        model: byModel ? pt.model : null,
-      });
-    }
-  }
-  return { series, providers: [...legend.values()] };
+  const series = keys.map((key) =>
+    stackPointOf(key, ranges.get(key)!, days, provider, byModel, metric),
+  );
+  return { series, providers: legendOf(series, byModel) };
 }
 
 /**
@@ -268,22 +529,7 @@ export function buildDirStackedSeries(
   // 行快照提出桶循环（原实现每桶 this.dirRows() 全量快照，O(桶×行)
   // 单请求重复；与 seriesStacked 同策略——range 一次算全 + 快照单次
   // 取用，桶循环内只做窗口过滤消费）。
-  const series: TrendStackPoint[] = keys.map((key) => {
-    const partsMap = new Map<string, TrendStackPart>();
-    const range = ranges.get(key)!;
-    for (const row of rows) {
-      if (row.day < range.start || row.day > range.end) continue;
-      if (dir !== undefined && row.dir !== dir) continue;
-      const v = metricValue(row, metric);
-      const cur = partsMap.get(row.dir);
-      if (cur !== undefined) cur.value = sumToken(cur.value, v);
-      else partsMap.set(row.dir, { provider: row.dir, model: null, value: v });
-    }
-    const parts = [...partsMap.values()];
-    let total: number | null = null;
-    for (const pt of parts) total = sumToken(total, pt.value);
-    return { key, parts, total };
-  });
+  const series = keys.map((key) => dirStackPointOf(key, ranges.get(key)!, rows, dir, metric));
   const legend = new Set<string>();
   for (const point of series) {
     for (const pt of point.parts) legend.add(pt.provider);
@@ -305,49 +551,20 @@ export function buildWindowSummary(
   now: number,
   stackSeries?: TrendStackPoint[],
 ): TrendWindowSummary {
-  const keys = granKeysFor(n, gran, now);
-  const curRange = {
-    start: granRangeForKey(keys[0], gran).start,
-    end: granRangeForKey(keys[keys.length - 1], gran).end,
-  };
-  // 上一窗口：同长键序列整体前移 n 桶（day/week/month 各自步进语义）
-  const prevKeys = granKeysFor(n, gran, prevWindowAnchorFor(now, n, gran));
-  const prevRange = {
-    start: granRangeForKey(prevKeys[0], gran).start,
-    end: granRangeForKey(prevKeys[prevKeys.length - 1], gran).end,
-  };
-  let total: number | null = null;
-  let calls = 0;
-  let turns = 0;
-  let toolCalls = 0;
-  let peakKey: string | null = null;
-  let peakVal = -1;
-  let top: { provider: string; model: string | null; value: number } | null = null;
+  const { curRange, prevRange } = windowRanges(n, gran, now);
   // 复用路由已算的 stack 序列（消除单请求双算；缺省自算保持独立可用）
   const series =
     stackSeries ?? buildStackedSeries(days, n, gran, metric, provider, false, now).series;
-  for (const point of series) {
-    if (point.total !== null && point.total > peakVal) {
-      peakVal = point.total;
-      peakKey = point.key;
-    }
-    for (const pt of point.parts) {
-      if (pt.value !== null && (top === null || pt.value > top.value)) {
-        top = { provider: pt.provider, model: pt.model, value: pt.value };
-      }
-    }
-  }
+  const { peakKey, top } = peakAndTopOf(series);
+  const totals = { total: null as number | null, calls: 0, turns: 0, toolCalls: 0 };
   for (const { cell } of rangeCellsOf(days, curRange, provider)) {
-    total = sumToken(total, metricValue(cell, metric));
-    calls += cell.calls;
-    turns += cell.turns;
-    toolCalls += cell.toolCalls;
+    totals.total = sumToken(totals.total, metricValue(cell, metric));
+    totals.calls += cell.calls;
+    totals.turns += cell.turns;
+    totals.toolCalls += cell.toolCalls;
   }
   return {
-    total,
-    calls,
-    turns,
-    toolCalls,
+    ...totals,
     peakKey,
     top,
     prevTotal: rangeValueOf(days, prevRange, metric, provider),
@@ -371,63 +588,60 @@ export function buildDirWindowSummary(
   now: number,
   dirSeries?: TrendStackPoint[],
 ): TrendWindowSummary {
-  const keys = granKeysFor(n, gran, now);
-  const curRange = {
-    start: granRangeForKey(keys[0], gran).start,
-    end: granRangeForKey(keys[keys.length - 1], gran).end,
+  const { curRange, prevRange } = windowRanges(n, gran, now);
+  const series = dirSeries ?? buildDirStackedSeries(rows, n, gran, metric, dir, now).series;
+  const { peakKey, top } = peakAndTopOf(series);
+  // 单遍遍历（原实现 3 次全量遍历 rows——最早日 + 当前窗口 + 上一
+  // 窗口各一遍；窗口区间互斥，同遍累加语义不变）。
+  const scan = scanDirWindow(rows, dir, curRange, prevRange, metric);
+  return {
+    total: scan.total,
+    calls: scan.calls,
+    turns: scan.turns,
+    toolCalls: scan.toolCalls,
+    peakKey,
+    top,
+    prevTotal: scan.prevTotal,
+    // 与 windowSummary.prevComplete 同口径：prev 窗口起点早于目录数据起点 → 环比不可比
+    prevComplete: prevRange.start >= (scan.firstDirDay ?? "9999-12-31"),
   };
-  const prevKeys = granKeysFor(n, gran, prevWindowAnchorFor(now, n, gran));
-  const prevRange = {
-    start: granRangeForKey(prevKeys[0], gran).start,
-    end: granRangeForKey(prevKeys[prevKeys.length - 1], gran).end,
-  };
+}
+
+/** 目录面单遍扫描：最早日 + 当前窗口合计 + 上一窗口合计（窗口区间互斥）。 */
+function scanDirWindow(
+  rows: TrendDirRow[],
+  dir: string | undefined,
+  curRange: { start: string; end: string },
+  prevRange: { start: string; end: string },
+  metric: TrendMetric,
+): {
+  firstDirDay: string | null;
+  total: number | null;
+  calls: number;
+  turns: number;
+  toolCalls: number;
+  prevTotal: number | null;
+} {
+  let firstDirDay: string | null = null;
   let total: number | null = null;
   let calls = 0;
   let turns = 0;
   let toolCalls = 0;
   let prevTotal: number | null = null;
-  let peakKey: string | null = null;
-  let peakVal = -1;
-  let top: { provider: string; model: string | null; value: number } | null = null;
-  const series = dirSeries ?? buildDirStackedSeries(rows, n, gran, metric, dir, now).series;
-  for (const point of series) {
-    if (point.total !== null && point.total > peakVal) {
-      peakVal = point.total;
-      peakKey = point.key;
-    }
-    for (const pt of point.parts) {
-      if (pt.value !== null && (top === null || pt.value > top.value)) {
-        top = { provider: pt.provider, model: pt.model, value: pt.value };
-      }
-    }
-  }
-  let firstDirDay: string | null = null;
-  // 单遍遍历（原实现 3 次全量遍历 rows——最早日 + 当前窗口 + 上一
-  // 窗口各一遍；窗口区间互斥，同遍累加语义不变）。
   for (const row of rows) {
     if (firstDirDay === null || row.day < firstDirDay) firstDirDay = row.day;
-    const inDir = dir === undefined || row.dir === dir;
-    if (inDir && row.day >= curRange.start && row.day <= curRange.end) {
+    if (dir !== undefined && row.dir !== dir) continue;
+    if (inDayRange(row.day, curRange)) {
       total = sumToken(total, metricValue(row, metric));
       calls += row.calls;
       turns += row.turns;
       toolCalls += row.toolCalls;
     }
-    if (inDir && row.day >= prevRange.start && row.day <= prevRange.end) {
+    if (inDayRange(row.day, prevRange)) {
       prevTotal = sumToken(prevTotal, metricValue(row, metric));
     }
   }
-  return {
-    total,
-    calls,
-    turns,
-    toolCalls,
-    peakKey,
-    top,
-    prevTotal,
-    // 与 windowSummary.prevComplete 同口径：prev 窗口起点早于目录数据起点 → 环比不可比
-    prevComplete: prevRange.start >= (firstDirDay ?? "9999-12-31"),
-  };
+  return { firstDirDay, total, calls, turns, toolCalls, prevTotal };
 }
 
 /**
@@ -499,111 +713,23 @@ export function buildDirRows(
       out.push(row);
       return;
     }
-    cur.input = sumToken(cur.input, row.input);
-    cur.output = sumToken(cur.output, row.output);
-    cur.cacheRead = sumToken(cur.cacheRead, row.cacheRead);
-    cur.cacheWrite = sumToken(cur.cacheWrite, row.cacheWrite);
-    cur.calls += row.calls;
-    cur.turns += row.turns;
-    cur.toolCalls += row.toolCalls;
+    mergeDirCells(cur, row);
   };
   for (const day of [...dirDays.keys()].sort()) {
     for (const [dir, cell] of dirDays.get(day)!) {
-      put({
-        v: TREND_ROW_VERSION,
-        kind: "dir",
-        day,
-        dir,
-        input: cell.input,
-        output: cell.output,
-        cacheRead: cell.cacheRead,
-        cacheWrite: cell.cacheWrite,
-        calls: cell.calls,
-        turns: cell.turns,
-        toolCalls: cell.toolCalls,
-      });
+      put({ v: TREND_ROW_VERSION, kind: "dir", day, dir, ...cellValues(cell) });
     }
   }
   // 每日残差：聚合面（cells）− 目录面（dirDays）。cells 的键是 day → provider →
   // model，逐层求和得该日全量；dirDays 的键是 day → dir，同法求该日目录合计。
-  const aggByDay = new Map<string, TrendCell>();
-  for (const [day, providers] of days) {
-    let cell = aggByDay.get(day);
-    if (cell === undefined) {
-      cell = emptyCell();
-      aggByDay.set(day, cell);
-    }
-    for (const models of providers.values()) {
-      for (const c of models.values()) {
-        cell.input = sumToken(cell.input, c.input);
-        cell.output = sumToken(cell.output, c.output);
-        cell.cacheRead = sumToken(cell.cacheRead, c.cacheRead);
-        cell.cacheWrite = sumToken(cell.cacheWrite, c.cacheWrite);
-        cell.calls += c.calls;
-        cell.turns += c.turns;
-        cell.toolCalls += c.toolCalls;
-      }
-    }
-  }
+  const aggByDay = sumCellsByDay(days);
   // 残差按 day 升序处理（cells 的 Map 键序是插入序，时钟回拨会让旧日新桶排在末尾；
   // 公开方法契约声明 day 升序，故此处显式排序，不依赖插入序）。
   for (const day of [...aggByDay.keys()].sort()) {
-    const cell = aggByDay.get(day)!;
-    let dirInput: number | null = null;
-    let dirOutput: number | null = null;
-    let dirCacheRead: number | null = null;
-    let dirCacheWrite: number | null = null;
-    let dirCalls = 0;
-    let dirTurns = 0;
-    let dirToolCalls = 0;
-    const dirs = dirDays.get(day);
-    if (dirs !== undefined) {
-      for (const c of dirs.values()) {
-        dirInput = sumToken(dirInput, c.input);
-        dirOutput = sumToken(dirOutput, c.output);
-        dirCacheRead = sumToken(dirCacheRead, c.cacheRead);
-        dirCacheWrite = sumToken(dirCacheWrite, c.cacheWrite);
-        dirCalls += c.calls;
-        dirTurns += c.turns;
-        dirToolCalls += c.toolCalls;
-      }
-    }
-    // 残差 = 聚合面 − 目录面（null-aware：双方皆 null → 0/无残差；单侧 null 按 0 计）
-    const input = diffToken(cell.input, dirInput);
-    const output = diffToken(cell.output, dirOutput);
-    const cacheRead = diffToken(cell.cacheRead, dirCacheRead);
-    const cacheWrite = diffToken(cell.cacheWrite, dirCacheWrite);
-    const calls = cell.calls - dirCalls;
-    const turns = cell.turns - dirTurns;
-    const toolCalls = cell.toolCalls - dirToolCalls;
-    // 全部为 0/空 = 该日目录面已覆盖全量（新分片常态）→ 不补造行。
-    // 负残差（目录面多于聚合面）同样走此分支（不产行）：属数据不一致征兆
-    // （例如明细目录误落 dir 行——已由 readDetailShard 白名单阻断），此时目录面
-    // 日合计会大于聚合面，README「总量守恒」节已注明该边界不保证恒等。
-    const hasResidual =
-      calls > 0 ||
-      turns > 0 ||
-      toolCalls > 0 ||
-      (input ?? 0) > 0 ||
-      (output ?? 0) > 0 ||
-      (cacheRead ?? 0) > 0 ||
-      (cacheWrite ?? 0) > 0;
-    if (!hasResidual) continue;
-    // 同键（该日已有 (unidentified) 桶，混版日常态）由 put 合并到既有行，
-    // 保证 (day, dir) 键唯一；负值按 0 处理（不产生负柱）。
-    put({
-      v: TREND_ROW_VERSION,
-      kind: "dir",
-      day,
-      dir: TREND_UNIDENTIFIED,
-      input: input !== null && input > 0 ? input : null,
-      output: output !== null && output > 0 ? output : null,
-      cacheRead: cacheRead !== null && cacheRead > 0 ? cacheRead : null,
-      cacheWrite: cacheWrite !== null && cacheWrite > 0 ? cacheWrite : null,
-      calls: calls > 0 ? calls : 0,
-      turns: turns > 0 ? turns : 0,
-      toolCalls: toolCalls > 0 ? toolCalls : 0,
-    });
+    const residual = residualRowOf(day, aggByDay.get(day)!, dirDays.get(day));
+    // 无残差不补造行；同键（该日已有 (unidentified) 桶，混版日常态）由 put 合并到
+    // 既有行，保证 (day, dir) 键唯一。
+    if (residual !== null) put(residual);
   }
   // 顺序契约：dirDays 分支按 day 升序、day 内按 dir 键插入序输出；残差行按 day
   // 升序追加在尾段（已显式排序，不依赖 cells 插入序）。**不做全局 sort(day, dir)**：

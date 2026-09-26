@@ -18,7 +18,6 @@
  *   仅作只读传参，无需 freeze）。
  */
 import type {
-  ContentBlock,
   ContentBlockType,
   FinishReason,
   GenerateOptions,
@@ -376,31 +375,53 @@ function hasModelCapabilityResolver(
   return "resolveModelInfo" in llm && typeof llm.resolveModelInfo === "function";
 }
 
-async function resolveConfiguredReasoningEffort(
-  llm: ReportLlmService,
-  provider: string,
-  model: string,
-  configured: string,
-  signal?: AbortSignal,
-): Promise<
+/** 能力探测结论（成功携带 exact-model 命中的 opaque effort ID；失败带固定安全文案）。 */
+type CapabilityOutcome =
   | { ok: true; id: LlmReasoningEffortInfo["id"] }
-  | { ok: false; error: string; failure: RetryFailure }
-> {
-  if (signal?.aborted) {
+  | { ok: false; error: string; failure: RetryFailure };
+
+const CAPABILITY_UNSUPPORTED: CapabilityOutcome = {
+  ok: false,
+  error: CAPABILITY_ERROR.unsupported,
+  failure: GENERATE_FAILURE.capabilityUnsupported,
+};
+
+/**
+ * effort 精确命中判定（唯一放行口）：必须落在该 exact model 的 efforts 白名单内，
+ * 缺 reasoning 段、efforts 非数组、找不到 configured 三者同归 unsupported。
+ */
+function matchConfiguredEffort(info: LlmResolvedModelInfo, configured: string): CapabilityOutcome {
+  const efforts = info.reasoning?.efforts;
+  if (!Array.isArray(efforts)) return CAPABILITY_UNSUPPORTED;
+  const exact = efforts.find((effort) => effort.id === configured);
+  return exact === undefined ? CAPABILITY_UNSUPPORTED : { ok: true, id: exact.id };
+}
+
+/** 探测失败的归因（顺序即优先级：超时 → 外部取消 → 其它解析失败）。 */
+function classifyCapabilityFailure(timedOut: boolean, cancelled: boolean): CapabilityOutcome {
+  if (timedOut) {
+    return {
+      ok: false,
+      error: CAPABILITY_ERROR.timeout,
+      failure: GENERATE_FAILURE.capabilityTimeout,
+    };
+  }
+  if (cancelled) {
     return {
       ok: false,
       error: CAPABILITY_ERROR.cancelled,
       failure: GENERATE_FAILURE.capabilityCancelled,
     };
   }
-  if (!hasModelCapabilityResolver(llm)) {
-    return {
-      ok: false,
-      error: CAPABILITY_ERROR.unavailable,
-      failure: GENERATE_FAILURE.capabilityUnavailable,
-    };
-  }
+  return { ok: false, error: CAPABILITY_ERROR.failed, failure: GENERATE_FAILURE.capabilityFailed };
+}
 
+/**
+ * 能力探测的取消/超时作用域：内部 controller 承担 5s 超时兜底，caller signal
+ * 手动级联合流（不用 AbortSignal.any——engines node>=20 全系兼容）。
+ * finish() 幂等收口：停表、摘 caller 监听（防长生命周期 signal 累积监听器泄漏）。
+ */
+function beginCapabilityScope(signal: AbortSignal | undefined) {
   const controller = new AbortController();
   let timedOut = false;
   let callerCancelled = false;
@@ -419,56 +440,62 @@ async function resolveConfiguredReasoningEffort(
   };
   signal?.addEventListener("abort", onCallerAbort, { once: true });
   let timer: ReturnType<typeof setTimeout> | null = null;
+  return {
+    controller,
+    races: [deadline, cancellation],
+    /** 超时闸门起跑（resolveModelInfo 发起后才计时，保证时长覆盖真实调用）。 */
+    startTimer: (): void => {
+      timer = setTimeout(() => {
+        timedOut = true;
+        rejectDeadline?.();
+        controller.abort();
+      }, CAPABILITY_RESOLVE_TIMEOUT_MS);
+    },
+    state: (): { timedOut: boolean; cancelled: boolean } => ({
+      timedOut,
+      cancelled: callerCancelled || signal?.aborted === true,
+    }),
+    finish: (): void => {
+      if (timer !== null) clearTimeout(timer);
+      signal?.removeEventListener("abort", onCallerAbort);
+    },
+  };
+}
 
-  try {
-    const pending = llm.resolveModelInfo(provider, model, controller.signal);
-    void pending.catch(() => {});
-    timer = setTimeout(() => {
-      timedOut = true;
-      rejectDeadline?.();
-      controller.abort();
-    }, CAPABILITY_RESOLVE_TIMEOUT_MS);
-    const info = await Promise.race([pending, deadline, cancellation]);
-    const efforts = info.reasoning?.efforts;
-    if (!Array.isArray(efforts)) {
-      return {
-        ok: false,
-        error: CAPABILITY_ERROR.unsupported,
-        failure: GENERATE_FAILURE.capabilityUnsupported,
-      };
-    }
-    const exact = efforts.find((effort) => effort.id === configured);
-    if (exact === undefined) {
-      return {
-        ok: false,
-        error: CAPABILITY_ERROR.unsupported,
-        failure: GENERATE_FAILURE.capabilityUnsupported,
-      };
-    }
-    return { ok: true, id: exact.id };
-  } catch {
-    if (timedOut) {
-      return {
-        ok: false,
-        error: CAPABILITY_ERROR.timeout,
-        failure: GENERATE_FAILURE.capabilityTimeout,
-      };
-    }
-    if (callerCancelled || signal?.aborted) {
-      return {
-        ok: false,
-        error: CAPABILITY_ERROR.cancelled,
-        failure: GENERATE_FAILURE.capabilityCancelled,
-      };
-    }
+async function resolveConfiguredReasoningEffort(
+  llm: ReportLlmService,
+  provider: string,
+  model: string,
+  configured: string,
+  signal?: AbortSignal,
+): Promise<CapabilityOutcome> {
+  if (signal?.aborted) {
     return {
       ok: false,
-      error: CAPABILITY_ERROR.failed,
-      failure: GENERATE_FAILURE.capabilityFailed,
+      error: CAPABILITY_ERROR.cancelled,
+      failure: GENERATE_FAILURE.capabilityCancelled,
     };
+  }
+  if (!hasModelCapabilityResolver(llm)) {
+    return {
+      ok: false,
+      error: CAPABILITY_ERROR.unavailable,
+      failure: GENERATE_FAILURE.capabilityUnavailable,
+    };
+  }
+
+  const scope = beginCapabilityScope(signal);
+  try {
+    const pending = llm.resolveModelInfo(provider, model, scope.controller.signal);
+    void pending.catch(() => {});
+    scope.startTimer();
+    const info = await Promise.race([pending, ...scope.races]);
+    return matchConfiguredEffort(info, configured);
+  } catch {
+    const { timedOut, cancelled } = scope.state();
+    return classifyCapabilityFailure(timedOut, cancelled);
   } finally {
-    if (timer !== null) clearTimeout(timer);
-    signal?.removeEventListener("abort", onCallerAbort);
+    scope.finish();
   }
 }
 
@@ -570,41 +597,49 @@ function readStreamError(error: unknown, depth = 0): StreamErrorEnvelope | null 
   };
 }
 
+/** 错误码归一（去空白 + 大写；非字符串/空串 → ""，即「无可用 code」）。 */
+function normalizedErrorCode(value: unknown): string {
+  return typeof value === "string" ? value.trim().toUpperCase() : "";
+}
+
+/** code → 重试类别（两级策略表；表外一律 unknown —— fail closed 不自动重试）。 */
+function policyKindOf(code: string): RetryFailure["kind"] {
+  if (STREAM_ERROR_POLICY.transient.has(code)) return "transient";
+  if (STREAM_ERROR_POLICY.permanent.has(code)) return "permanent";
+  return "unknown";
+}
+
+/** 流失败的稳定标签（对外只见固定 code，kind 由分类决定）。 */
+function streamFailureOf(kind: RetryFailure["kind"]): RetryFailure {
+  return { kind, code: "provider-stream-failed" };
+}
+
+/**
+ * HTTP status 兜底分类：**只有 401 可安全判定**（凭据无效 = 永久失败）；
+ * 429 也可能是额度耗尽，没有结构化 code 时无法安全自动重试 → 一律 fail closed。
+ */
+function statusKindOf(rawStatus: unknown): RetryFailure["kind"] {
+  const statusCode = typeof rawStatus === "string" ? Number(rawStatus) : rawStatus;
+  return statusCode === 401 ? "permanent" : "unknown";
+}
+
+/** 嵌套信封（failure / cause）里的首个可用 code（都无则空串）。 */
+function nestedCodeOf(current: StreamErrorEnvelope | null): string {
+  for (const candidate of [current?.failure, current?.cause]) {
+    const code = normalizedErrorCode(readStreamError(candidate, 1)?.code);
+    if (code !== "") return code;
+  }
+  return "";
+}
+
 /** DSH 结构化错误信封优先，宿主未携带 LlmError.code 时才用精确 HTTP status 兜底。 */
 function classifyStreamFailure(error: unknown): RetryFailure {
   const current = readStreamError(error);
-  const nested = [current?.failure, current?.cause];
-  for (const candidate of nested) {
-    const failure = readStreamError(candidate, 1);
-    const code = typeof failure?.code === "string" ? failure.code.trim().toUpperCase() : "";
-    if (code) {
-      if (STREAM_ERROR_POLICY.transient.has(code)) {
-        return { kind: "transient", code: "provider-stream-failed" };
-      }
-      if (STREAM_ERROR_POLICY.permanent.has(code)) {
-        return { kind: "permanent", code: "provider-stream-failed" };
-      }
-      return { kind: "unknown", code: "provider-stream-failed" };
-    }
-  }
-
-  const code = typeof current?.code === "string" ? current.code.trim().toUpperCase() : "";
-  if (code) {
-    if (STREAM_ERROR_POLICY.transient.has(code)) {
-      return { kind: "transient", code: "provider-stream-failed" };
-    }
-    if (STREAM_ERROR_POLICY.permanent.has(code)) {
-      return { kind: "permanent", code: "provider-stream-failed" };
-    }
-    return { kind: "unknown", code: "provider-stream-failed" };
-  }
-
-  const rawStatus = current?.status ?? current?.statusCode;
-  const statusCode = typeof rawStatus === "string" ? Number(rawStatus) : rawStatus;
-  if (statusCode === 401) return { kind: "permanent", code: "provider-stream-failed" };
-  // 429 也可能是额度耗尽；没有结构化 code 时无法安全自动重试，fail closed。
-  if (statusCode === 429) return { kind: "unknown", code: "provider-stream-failed" };
-  return { kind: "unknown", code: "provider-stream-failed" };
+  const nested = nestedCodeOf(current);
+  if (nested !== "") return streamFailureOf(policyKindOf(nested));
+  const own = normalizedErrorCode(current?.code);
+  if (own !== "") return streamFailureOf(policyKindOf(own));
+  return streamFailureOf(statusKindOf(current?.status ?? current?.statusCode));
 }
 
 const REPORT_STREAM_ERROR = {
@@ -631,80 +666,107 @@ function reportBlockSupport(type: string): ReportBlockSupport | "unknown" {
   return REPORT_BLOCK_SUPPORT[type as ContentBlockType];
 }
 
-function hasNonWhitespaceText(
-  block: Extract<ContentBlock, { type: "text" | "reasoning" }>,
-): boolean {
-  return block.text.trim().length > 0;
-}
-
 /**
  * 生成报告：流式收集正文、reasoning 可见性、token 与终态。
  * reasoning 原文不保留；工具语义、未知内容块与未知/缺失终态均 fail closed。
  */
+/** finish chunk 的终态事实（tool-calls 标记 + 终态合并；block-start/finish 两处共用）。 */
+function finishFacts(state: StreamState, reason: FinishReason): Partial<StreamState> {
+  return {
+    hasUnsupportedTool: state.hasUnsupportedTool || reason.kind === "tool-calls",
+    terminal: mergeTerminal(state.terminal, classifyFinishReason(reason)),
+  };
+}
+
+/**
+ * 内容块支持度 → 状态标记（unsupported/unknown 两个 fail-closed 标记位）。
+ * supported 与 tool-call 之外的已知类型一律原样返回。
+ */
+function withBlockSupport(state: StreamState, type: string): StreamState {
+  const support = reportBlockSupport(type);
+  if (support === "unsupported") return { ...state, hasUnsupportedContent: true };
+  if (support === "unknown") return { ...state, hasUnknownChunk: true };
+  return state;
+}
+
+/** reasoning 可见性（reasoning-delta 与 block-end(reasoning) 共用同一判据）。 */
+function withReasoningText(state: StreamState, text: string): StreamState {
+  return text.trim().length > 0 ? { ...state, hasNonWhitespaceReasoning: true } : state;
+}
+
+/**
+ * text-delta 正文累加：只有见到非空白正文才算「该 index 已由 delta 提供」，
+ * 否则空/纯空白 delta 会屏蔽随后的合法 block-end.text，导致整段正文被丢弃并误报空输出。
+ */
+function withTextDelta(
+  state: StreamState,
+  chunk: Extract<StreamChunk, { type: "text-delta" }>,
+): StreamState {
+  if (chunk.text.trim().length === 0) return { ...state, body: state.body + chunk.text };
+  const textDeltaIndexes = new Set(state.textDeltaIndexes);
+  textDeltaIndexes.add(chunk.index);
+  return { ...state, body: state.body + chunk.text, textDeltaIndexes };
+}
+
+/** block-end(text) 正文累加：index 已由 delta 提供过则丢弃（防同一段重复计入）。 */
+function withBlockEndText(
+  state: StreamState,
+  chunk: Extract<StreamChunk, { type: "block-end" }>,
+): StreamState {
+  const block = chunk.block;
+  if (block.type !== "text") return state;
+  return state.textDeltaIndexes.has(chunk.index)
+    ? state
+    : { ...state, body: state.body + block.text };
+}
+
+/** block-end 的内容块分派（text/reasoning/tool-call 三类自有判据，其余走支持度表）。 */
+function accumulateBlockEnd(
+  chunk: Extract<StreamChunk, { type: "block-end" }>,
+  state: StreamState,
+): StreamState {
+  const block = chunk.block;
+  if (block.type === "text") return withBlockEndText(state, chunk);
+  if (block.type === "reasoning") return withReasoningText(state, block.text);
+  if (block.type === "tool-call") return { ...state, hasUnsupportedTool: true };
+  return withBlockSupport(state, block.type);
+}
+
+/** 终态之后仍有 chunk：协议违规，fail closed。正文/token/内容块事实一律不再累加，
+ *  只保留终态自身的合并（error/unknown 优先级不因该违规而降级）。 */
+function accumulateAfterTerminal(chunk: StreamChunk, state: StreamState): StreamState {
+  if (chunk.type !== "finish") return { ...state, afterTerminal: true };
+  return { ...state, afterTerminal: true, ...finishFacts(state, chunk.reason) };
+}
+
+/** 开流期 delta 家族（block-start / text-delta / reasoning-delta / tool-call-delta）。 */
+function accumulateDelta(chunk: StreamChunk, state: StreamState): StreamState {
+  switch (chunk.type) {
+    case "block-start":
+      return chunk.blockType === "tool-call"
+        ? { ...state, hasUnsupportedTool: true }
+        : withBlockSupport(state, chunk.blockType);
+    case "text-delta":
+      return withTextDelta(state, chunk);
+    case "reasoning-delta":
+      return withReasoningText(state, chunk.text);
+    case "tool-call-delta":
+      return { ...state, hasUnsupportedTool: true };
+    default:
+      return { ...state, hasUnknownChunk: true };
+  }
+}
+
 function accumulateChunk(chunk: StreamChunk, state: StreamState): StreamState {
-  // 终态之后仍有 chunk：协议违规，fail closed。正文/token/内容块事实一律不再累加，
-  // 只保留终态自身的合并（error/unknown 优先级不因该违规而降级）。
-  if (state.closed) {
-    if (chunk.type === "finish") {
-      return {
-        ...state,
-        afterTerminal: true,
-        hasUnsupportedTool: state.hasUnsupportedTool || chunk.reason.kind === "tool-calls",
-        terminal: mergeTerminal(state.terminal, classifyFinishReason(chunk.reason)),
-      };
-    }
-    return { ...state, afterTerminal: true };
+  if (state.closed) return accumulateAfterTerminal(chunk, state);
+  if (chunk.type === "finish") {
+    return { ...state, closed: true, ...finishFacts(state, chunk.reason) };
   }
-  if (chunk.type === "block-start") {
-    if (chunk.blockType === "tool-call") return { ...state, hasUnsupportedTool: true };
-    const support = reportBlockSupport(chunk.blockType);
-    if (support === "unsupported") return { ...state, hasUnsupportedContent: true };
-    if (support === "unknown") return { ...state, hasUnknownChunk: true };
-    return state;
-  }
-  if (chunk.type === "text-delta") {
-    // 只有见到非空白正文才算「该 index 已由 delta 提供」，否则空/纯空白 delta 会屏蔽
-    // 随后的合法 block-end.text，导致整段正文被丢弃并误报空输出。
-    if (chunk.text.trim().length === 0) {
-      return { ...state, body: state.body + chunk.text };
-    }
-    const textDeltaIndexes = new Set(state.textDeltaIndexes);
-    textDeltaIndexes.add(chunk.index);
-    return {
-      ...state,
-      body: state.body + chunk.text,
-      textDeltaIndexes,
-    };
-  }
-  if (chunk.type === "reasoning-delta")
-    return chunk.text.trim().length > 0 ? { ...state, hasNonWhitespaceReasoning: true } : state;
-  if (chunk.type === "tool-call-delta") return { ...state, hasUnsupportedTool: true };
-  if (chunk.type === "block-end") {
-    if (chunk.block.type === "text") {
-      return state.textDeltaIndexes.has(chunk.index)
-        ? state
-        : { ...state, body: state.body + chunk.block.text };
-    }
-    if (chunk.block.type === "reasoning") {
-      return hasNonWhitespaceText(chunk.block)
-        ? { ...state, hasNonWhitespaceReasoning: true }
-        : state;
-    }
-    if (chunk.block.type === "tool-call") return { ...state, hasUnsupportedTool: true };
-    const support = reportBlockSupport(chunk.block.type);
-    if (support === "unsupported") return { ...state, hasUnsupportedContent: true };
-    return { ...state, hasUnknownChunk: true };
-  }
-  if (chunk.type === "usage")
+  if (chunk.type === "usage") {
     return state.tokens === null ? { ...state, tokens: parseTokenUsage(chunk.usage) } : state;
-  if (chunk.type === "finish")
-    return {
-      ...state,
-      closed: true,
-      hasUnsupportedTool: state.hasUnsupportedTool || chunk.reason.kind === "tool-calls",
-      terminal: mergeTerminal(state.terminal, classifyFinishReason(chunk.reason)),
-    };
-  return { ...state, hasUnknownChunk: true };
+  }
+  if (chunk.type === "block-end") return accumulateBlockEnd(chunk, state);
+  return accumulateDelta(chunk, state);
 }
 
 type StreamCollection = { kind: "completed"; state: StreamState } | { kind: "aborted" };
@@ -716,6 +778,53 @@ const STREAM_ABORTED = Symbol("stream-aborted");
  * 响应 GenerateOptions.signal。取消时只发起 best-effort return，不等待一个同样
  * 可能忽略取消的 provider；后台 next/return 的 rejection 由已挂接的处理器收口。
  */
+/**
+ * 流取消闸门：caller abort 与 `next()` 竞速（不依赖 provider 是否响应 GenerateOptions.signal）。
+ * dispose() 摘除监听，防止长生命周期 signal 累积监听器泄漏。
+ */
+function beginStreamAbort(signal: AbortSignal | undefined) {
+  let resolveAbort: (() => void) | undefined;
+  const gate = new Promise<typeof STREAM_ABORTED>((resolve) => {
+    resolveAbort = () => resolve(STREAM_ABORTED);
+  });
+  const onAbort = (): void => resolveAbort?.();
+  signal?.addEventListener("abort", onAbort, { once: true });
+  return {
+    gate,
+    /** caller 是否已取消（闸门命中或 signal 已置位都算）。 */
+    cancelled: (): boolean => signal?.aborted === true,
+    dispose: (): void => {
+      signal?.removeEventListener("abort", onAbort);
+    },
+  };
+}
+
+/**
+ * 中断/异常时的状态回写：把已收集事实同步回 initialState（调用方在取消路径也读它取 token），
+ * 再按「已见终态 → 收尾完成 / caller 取消 → 取消 / 其余 → 上抛」三态收敛。
+ */
+function streamInterruption(
+  state: StreamState,
+  initialState: StreamState,
+  cancelled: boolean,
+): StreamCollection | null {
+  Object.assign(initialState, state);
+  if (state.closed) return { kind: "completed", state: { ...state, afterTerminal: true } };
+  if (cancelled) return { kind: "aborted" };
+  return null;
+}
+
+/** 提前收口迭代器（已完成则不调；收口失败不得覆盖调用方已观察到的取消/provider 失败）。 */
+function closeStreamIterator(iterator: AsyncIterator<StreamChunk>, completed: boolean): void {
+  if (completed) return;
+  try {
+    const closing = iterator.return?.();
+    if (closing !== undefined) void closing.catch(() => {});
+  } catch {
+    // 忽略
+  }
+}
+
 async function collectStream(
   stream: AsyncIterable<StreamChunk>,
   initialState: StreamState,
@@ -723,19 +832,16 @@ async function collectStream(
 ): Promise<StreamCollection> {
   if (signal?.aborted) return { kind: "aborted" };
   const iterator = stream[Symbol.asyncIterator]();
-  let resolveAbort: (() => void) | undefined;
-  const abort = new Promise<typeof STREAM_ABORTED>((resolve) => {
-    resolveAbort = () => resolve(STREAM_ABORTED);
-  });
-  const onAbort = (): void => resolveAbort?.();
-  signal?.addEventListener("abort", onAbort, { once: true });
+  const abort = beginStreamAbort(signal);
   let completed = false;
   let state = initialState;
 
   try {
     while (true) {
-      const next = await Promise.race([iterator.next(), abort]);
-      if (next === STREAM_ABORTED || signal?.aborted) {
+      const next = await Promise.race([iterator.next(), abort.gate]);
+      if (next === STREAM_ABORTED || abort.cancelled()) {
+        // 取消恒产出 aborted（即使已见终态）：本路径只回写状态，不改判终态优先级
+        // ——终态优先级由 streamInterruption 的异常路径单独裁决。
         Object.assign(initialState, state);
         return { kind: "aborted" };
       }
@@ -746,20 +852,12 @@ async function collectStream(
       state = accumulateChunk(next.value, state);
     }
   } catch (error) {
-    Object.assign(initialState, state);
-    if (state.closed) return { kind: "completed", state: { ...state, afterTerminal: true } };
-    if (signal?.aborted) return { kind: "aborted" };
+    const interrupted = streamInterruption(state, initialState, abort.cancelled());
+    if (interrupted !== null) return interrupted;
     throw error;
   } finally {
-    signal?.removeEventListener("abort", onAbort);
-    if (!completed) {
-      try {
-        const closing = iterator.return?.();
-        if (closing !== undefined) void closing.catch(() => {});
-      } catch {
-        // 收口失败不得覆盖调用方已观察到的取消/ provider 失败。
-      }
-    }
+    abort.dispose();
+    closeStreamIterator(iterator, completed);
   }
 }
 
@@ -806,12 +904,159 @@ function routeFailureMessage(failure: RetryFailure): string {
     : "无可用的已注册 provider/model（须先在 dsh 注册适配器路由）";
 }
 
-/** 包内结构化生成边界；所有失败只输出稳定 code/kind 与固定安全文案。 */
-export async function generateReportOutcome(
+/** 失败归因（固定安全文案 + 稳定 code/kind；母体各处只传这四元组）。 */
+interface StreamVerdict {
+  error: string;
+  failure: RetryFailure;
+}
+
+/** 阻断性事实优先：终态错误 → 工具 → 不支持内容块 → 未知流事件。 */
+function classifyBlockingFacts(state: StreamState): StreamVerdict | null {
+  if (state.terminal.kind === "error") {
+    return { error: state.terminal.error, failure: state.terminal.failure };
+  }
+  if (state.hasUnsupportedTool) {
+    return {
+      error: REPORT_STREAM_ERROR.unsupportedTool,
+      failure: GENERATE_FAILURE.unsupportedTool,
+    };
+  }
+  if (state.hasUnsupportedContent) {
+    return {
+      error: REPORT_STREAM_ERROR.unsupportedContent,
+      failure: GENERATE_FAILURE.unsupportedContent,
+    };
+  }
+  if (state.hasUnknownChunk) {
+    return {
+      error: "模型返回了未知流事件",
+      failure: GENERATE_FAILURE.unknownStreamEvent,
+    };
+  }
+  return null;
+}
+
+/**
+ * 终态归因：未知终态 → 封闭后仍有内容 → 终态缺失。
+ * after-terminal 排在终态缺失之前：封闭流不可能同时「未返回终态」。
+ */
+function classifyFinishFacts(state: StreamState): StreamVerdict | null {
+  if (state.terminal.kind === "unknown") {
+    return { error: "模型流返回未知终态", failure: GENERATE_FAILURE.unknownFinish };
+  }
+  if (state.afterTerminal) {
+    return {
+      error: REPORT_STREAM_ERROR.afterTerminal,
+      failure: GENERATE_FAILURE.protocolAfterTerminal,
+    };
+  }
+  if (state.terminal.kind === "none") {
+    return { error: "模型流未返回可识别终态", failure: GENERATE_FAILURE.missingFinish };
+  }
+  return null;
+}
+
+/** 正文归因：仅推理无正文 → 完全无正文（两者都按调用/正文证据缺失处理）。 */
+function classifyBodyFacts(state: StreamState): StreamVerdict | null {
+  if (state.body.trim().length > 0) return null;
+  if (state.hasNonWhitespaceReasoning) {
+    return {
+      error: "模型仅返回推理过程未产出正文",
+      failure: GENERATE_FAILURE.reasoningOnly,
+    };
+  }
+  return { error: "模型未产出任何正文", failure: GENERATE_FAILURE.emptyOutput };
+}
+
+/**
+ * 流终态归因阶梯（顺序即分类优先级，不可重排）：
+ * 阻断事实 → 终态事实 → 正文事实；全通过即成功。
+ */
+function classifyStreamState(state: StreamState): StreamVerdict | null {
+  return classifyBlockingFacts(state) ?? classifyFinishFacts(state) ?? classifyBodyFacts(state);
+}
+
+/** 空流状态（累计起点）。 */
+function emptyStreamState(): StreamState {
+  return {
+    body: "",
+    textDeltaIndexes: new Set(),
+    hasNonWhitespaceReasoning: false,
+    hasUnsupportedTool: false,
+    hasUnsupportedContent: false,
+    hasUnknownChunk: false,
+    closed: false,
+    afterTerminal: false,
+    tokens: null,
+    terminal: { kind: "none" },
+  };
+}
+
+/** 流执行结果（state 原对象在取消/异常路径被回写，token 由此透出给失败帧）。 */
+type StreamRun =
+  | { kind: "state"; state: StreamState }
+  | { kind: "aborted"; tokens: ReportTokenUsage | null }
+  | { kind: "failure"; failure: RetryFailure; tokens: ReportTokenUsage | null };
+
+async function runReportStream(
   opts: GenerateReportOutcomeOptions,
-): Promise<GenerateReportOutcome> {
+  genOpts: GenerateOptions,
+): Promise<StreamRun> {
+  const state = emptyStreamState();
+  try {
+    const collection = await collectStream(opts.llm.stream(genOpts), state, opts.signal);
+    if (collection.kind === "aborted" || opts.signal?.aborted) {
+      return { kind: "aborted", tokens: state.tokens };
+    }
+    return { kind: "state", state: collection.state };
+  } catch (error) {
+    // provider 异常可能携带 prompt、路径或凭据；只返回稳定安全文案。
+    if (opts.signal?.aborted) return { kind: "aborted", tokens: null };
+    return { kind: "failure", failure: classifyStreamFailure(error), tokens: state.tokens };
+  }
+}
+
+/** 生成调用的入参装配（prompt 模板注入 + 自拼 UserMessage + 可选 effort/signal）。 */
+function buildGenerateOptions(
+  opts: GenerateReportOutcomeOptions,
+  route: RetryRouteSnapshot,
+  effortId: LlmReasoningEffortInfo["id"] | undefined,
+): GenerateOptions {
+  const rangeText = opts.rangeText ?? `${opts.startDay} ~ ${opts.endDay}`;
+  const prompt = applyPromptTemplate(opts.promptTemplate, opts.statsJson, rangeText);
+  // 自拼 UserMessage（与官方 createUserMessage 产物同形：randomUUID 稳定 id +
+  // 单 text 块 content + user source；role 由 UserMessage 类型钉死为 user；
+  // 仅作只读传参，无需 freeze）
+  const message: UserMessage = {
+    id: crypto.randomUUID() as MessageId,
+    role: "user",
+    content: [{ type: "text", text: prompt }],
+    source: { kind: "user" },
+  };
+  const genOpts: GenerateOptions = {
+    provider: route.provider,
+    model: route.model,
+    messages: [message],
+    // tools 不传 = 无工具面（方案 §八5，类型层保证）
+  };
+  if (effortId !== undefined) genOpts.reasoningEffort = effortId;
+  if (opts.signal !== undefined) genOpts.signal = opts.signal;
+  return genOpts;
+}
+
+/** 路由门禁：非成功或未解析的路由不进 stream（携带既有固定文案）。 */
+function routeGate(routeOutcome: GenerateRouteOutcome): StreamVerdict | null {
+  if (routeOutcome.status === "success" && isResolvedRouteSnapshot(routeOutcome.route)) {
+    return null;
+  }
+  const failure =
+    routeOutcome.status === "success" ? GENERATE_FAILURE.routeUnavailable : routeOutcome.failure;
+  return { error: routeFailureMessage(failure), failure };
+}
+
+/** outcome 构造器（母体只经它产出终态，durationMs 与 metaBase 口径单点）。 */
+function makeOutcomeBuilder(opts: GenerateReportOutcomeOptions, started: number) {
   const now = opts.now ?? Date.now;
-  const started = now();
   const metaBase = {
     period: opts.period,
     key: opts.key,
@@ -852,138 +1097,79 @@ export async function generateReportOutcome(
     tokens: ReportTokenUsage | null = null,
   ): GenerateReportOutcome =>
     fail(REPORT_STREAM_ERROR.requestAborted, GENERATE_FAILURE.requestAborted, route, tokens);
-  if (opts.signal?.aborted) return failAborted();
+  const succeed = (route: RetryRouteSnapshot, state: StreamState): GenerateReportOutcome => {
+    const durationMs = now() - started;
+    return {
+      status: "success",
+      result: {
+        body: state.body,
+        meta: {
+          ...metaBase,
+          provider: route.provider,
+          model: route.model,
+          durationMs,
+          ok: true,
+          ...(state.tokens !== null ? { tokens: state.tokens } : {}),
+        },
+      },
+      attempt: { durationMs, tokens: state.tokens },
+    };
+  };
+  return { fail, failAborted, succeed };
+}
 
+/** 路由解析 + effort 能力探测（顺序即语义：任一环失败即产出终态，绝不进 stream）。 */
+async function openRoute(
+  opts: GenerateReportOutcomeOptions,
+  outcome: ReturnType<typeof makeOutcomeBuilder>,
+): Promise<
+  | { route: RetryRouteSnapshot; effortId: LlmReasoningEffortInfo["id"] | undefined }
+  | GenerateReportOutcome
+> {
+  if (opts.signal?.aborted) return outcome.failAborted();
   const routeOutcome = opts.route ?? (await resolveGenerateRoute(opts));
-  if (opts.signal?.aborted) return failAborted(routeOutcome.route);
-  if (routeOutcome.status !== "success" || !isResolvedRouteSnapshot(routeOutcome.route)) {
-    const failure =
-      routeOutcome.status === "success" ? GENERATE_FAILURE.routeUnavailable : routeOutcome.failure;
-    return fail(routeFailureMessage(failure), failure, {
+  if (opts.signal?.aborted) return outcome.failAborted(routeOutcome.route);
+  const gate = routeGate(routeOutcome);
+  if (gate !== null) {
+    return outcome.fail(gate.error, gate.failure, {
       provider: opts.provider,
       model: opts.model,
     });
   }
   const route = routeOutcome.route;
-  const reasoning =
-    opts.reasoningEffort === undefined
-      ? undefined
-      : await resolveConfiguredReasoningEffort(
-          opts.llm,
-          route.provider,
-          route.model,
-          opts.reasoningEffort,
-          opts.signal,
-        );
-  if (reasoning !== undefined && !reasoning.ok) {
-    return fail(reasoning.error, reasoning.failure, route);
+  if (opts.reasoningEffort === undefined) return { route, effortId: undefined };
+  const effort = await resolveConfiguredReasoningEffort(
+    opts.llm,
+    route.provider,
+    route.model,
+    opts.reasoningEffort,
+    opts.signal,
+  );
+  if (!effort.ok) return outcome.fail(effort.error, effort.failure, route);
+  return { route, effortId: effort.id };
+}
+
+/** 包内结构化生成边界；所有失败只输出稳定 code/kind 与固定安全文案。 */
+export async function generateReportOutcome(
+  opts: GenerateReportOutcomeOptions,
+): Promise<GenerateReportOutcome> {
+  const outcome = makeOutcomeBuilder(opts, (opts.now ?? Date.now)());
+  const opened = await openRoute(opts, outcome);
+  if ("status" in opened) return opened;
+
+  const genOpts = buildGenerateOptions(opts, opened.route, opened.effortId);
+  if (opts.signal?.aborted) return outcome.failAborted(opened.route);
+
+  const run = await runReportStream(opts, genOpts);
+  if (run.kind === "aborted") return outcome.failAborted(opened.route, run.tokens);
+  if (run.kind === "failure") {
+    return outcome.fail("模型请求失败", run.failure, opened.route, run.tokens);
   }
-  const rangeText = opts.rangeText ?? `${opts.startDay} ~ ${opts.endDay}`;
-  const prompt = applyPromptTemplate(opts.promptTemplate, opts.statsJson, rangeText);
-  // 自拼 UserMessage（与官方 createUserMessage 产物同形：randomUUID 稳定 id +
-  // 单 text 块 content + user source；role 由 UserMessage 类型钉死为 user；
-  // 仅作只读传参，无需 freeze）
-  const message: UserMessage = {
-    id: crypto.randomUUID() as MessageId,
-    role: "user",
-    content: [{ type: "text", text: prompt }],
-    source: { kind: "user" },
-  };
-  const genOpts: GenerateOptions = {
-    provider: route.provider,
-    model: route.model,
-    messages: [message],
-    // tools 不传 = 无工具面（方案 §八5，类型层保证）
-  };
-  if (reasoning?.ok === true) genOpts.reasoningEffort = reasoning.id;
-  if (opts.signal !== undefined) genOpts.signal = opts.signal;
-  if (opts.signal?.aborted) return failAborted(route);
-  let state: StreamState = {
-    body: "",
-    textDeltaIndexes: new Set(),
-    hasNonWhitespaceReasoning: false,
-    hasUnsupportedTool: false,
-    hasUnsupportedContent: false,
-    hasUnknownChunk: false,
-    closed: false,
-    afterTerminal: false,
-    tokens: null,
-    terminal: { kind: "none" },
-  };
-  try {
-    const collection = await collectStream(opts.llm.stream(genOpts), state, opts.signal);
-    if (collection.kind === "aborted" || opts.signal?.aborted)
-      return failAborted(route, state.tokens);
-    state = collection.state;
-  } catch (error) {
-    // provider 异常可能携带 prompt、路径或凭据；只返回稳定安全文案。
-    if (opts.signal?.aborted) return failAborted(route);
-    return fail("模型请求失败", classifyStreamFailure(error), route, state.tokens);
+  const verdict = classifyStreamState(run.state);
+  if (verdict !== null) {
+    return outcome.fail(verdict.error, verdict.failure, opened.route, run.state.tokens);
   }
-  if (state.terminal.kind === "error")
-    return fail(state.terminal.error, state.terminal.failure, route, state.tokens);
-  if (state.hasUnsupportedTool) {
-    return fail(
-      REPORT_STREAM_ERROR.unsupportedTool,
-      GENERATE_FAILURE.unsupportedTool,
-      route,
-      state.tokens,
-    );
-  }
-  if (state.hasUnsupportedContent) {
-    return fail(
-      REPORT_STREAM_ERROR.unsupportedContent,
-      GENERATE_FAILURE.unsupportedContent,
-      route,
-      state.tokens,
-    );
-  }
-  if (state.hasUnknownChunk) {
-    return fail("模型返回了未知流事件", GENERATE_FAILURE.unknownStreamEvent, route, state.tokens);
-  }
-  if (state.terminal.kind === "unknown") {
-    return fail("模型流返回未知终态", GENERATE_FAILURE.unknownFinish, route, state.tokens);
-  }
-  // 终态未知/失败/不支持内容块优先于 after-terminal 归因（分类优先级不回归）；
-  // after-terminal 本身排在终态缺失之前：封闭流不可能同时「未返回终态」。
-  if (state.afterTerminal) {
-    return fail(
-      REPORT_STREAM_ERROR.afterTerminal,
-      GENERATE_FAILURE.protocolAfterTerminal,
-      route,
-      state.tokens,
-    );
-  }
-  if (state.terminal.kind === "none") {
-    return fail("模型流未返回可识别终态", GENERATE_FAILURE.missingFinish, route, state.tokens);
-  }
-  if (state.body.trim().length === 0 && state.hasNonWhitespaceReasoning) {
-    return fail(
-      "模型仅返回推理过程未产出正文",
-      GENERATE_FAILURE.reasoningOnly,
-      route,
-      state.tokens,
-    );
-  }
-  if (state.body.trim().length === 0) {
-    return fail("模型未产出任何正文", GENERATE_FAILURE.emptyOutput, route, state.tokens);
-  }
-  const durationMs = now() - started;
-  return {
-    status: "success",
-    result: {
-      body: state.body,
-      meta: {
-        ...metaBase,
-        provider: route.provider,
-        model: route.model,
-        durationMs,
-        ok: true,
-        ...(state.tokens !== null ? { tokens: state.tokens } : {}),
-      },
-    },
-    attempt: { durationMs, tokens: state.tokens },
-  };
+  return outcome.succeed(opened.route, run.state);
 }
 
 /** 公开兼容 wrapper：保留既有 ReportResult 形状，不暴露结构化失败标签。 */

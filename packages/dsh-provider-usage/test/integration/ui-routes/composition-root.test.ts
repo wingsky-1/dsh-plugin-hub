@@ -294,8 +294,11 @@ describe("D12一 经 server/ui-routes 域门面装配", () => {
     expect(Object.keys(await import("../../../src/server/ui-routes/health.ts"))).toEqual([
       "handleHealth",
     ]);
+    // trend 块三个出口：两个 handler 面 + parseTrendQuery 纯函数（#732 E3 抽出，
+    // 口径同 clampTrendN「抽离供路由与单测共用」——见 unit/routes 下的直接单测）。
+    // 清单即白名单：再加出口必须同步改这里并说清理由。
     expect(Object.keys(await import("../../../src/server/ui-routes/trend.ts")).sort()).toEqual(
-      ["clampTrendN", "handleTrend"].sort(),
+      ["clampTrendN", "handleTrend", "parseTrendQuery"].sort(),
     );
     expect(Object.keys(await import("../../../src/server/ui-routes/ui-config.ts"))).toEqual([
       "handleUiConfig",

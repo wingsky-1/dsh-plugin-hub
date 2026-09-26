@@ -404,65 +404,94 @@ export function reportWindowHasUsage(
 export async function prepareDueReportOutcome(
   params: RunDueReportParams,
 ): Promise<PreparedDueReportOutcome> {
-  const { due, trend, ctx, reportCfg, promptTemplate } = params;
-  const buckets = trend.buckets();
-  // 目录维度日汇总行进快照（trend.dirRows 含今日桶，口径见
-  // aggregator.dirRows）。残差投影后旧数据（无 dir 行的分片）不再得到
-  // 空数组——其「无目录信息」的用量经残差归入 (unidentified) 桶，故 byDirectory 与
-  // totals 同口径（实测旧分片：byDirectory=[{unidentified,31,7481}] = totals）。
-  // 真正无任何用量时 dirRows 才为空数组（报告链路另有 totals.calls===0 的空窗口短路）。
-  // 报告配置目录范围非空时，byDirectory 只含所选目录（目录维度
-  // 投影可精确过滤）；totals/byDay/byProvider 保持全量口径——压实后的 agg 行无
-  // dir 键（明细行的 dir×provider 关联在日切压实即收敛为两个独立投影），provider/
-  // day 维度按目录精确归属在本数据面上不可行（既定数据边界，非实现缺口）。
-  // 占比口径自洽：模板目录占比 = byDirectory[i].total ÷ totals.total，报告呈
-  // 「全量统计 + 所选目录分布」口径；缺省「全部」（空数组）零过滤。
+  const buckets = params.trend.buckets();
+  const snapshot = buildDueSnapshot(params, buckets);
+  if (snapshot.totals.calls === 0) return noDataOutcome(params, snapshot);
+  const generated = await generateForDue(params, snapshot);
+  const attemptNumber = params.attemptNumber ?? 1;
+  if (generated.status === "failure") {
+    return failureOutcomeAfterGenerate(params, generated, attemptNumber);
+  }
+  return successOutcomeAfterGenerate(params, generated, snapshot, attemptNumber);
+}
+
+/**
+ * 窗口统计快照组装。
+ * 目录维度日汇总行进快照（trend.dirRows 含今日桶，口径见 aggregator.dirRows）。残差投影后
+ * 旧数据（无 dir 行的分片）不再得到空数组——其「无目录信息」的用量经残差归入
+ * (unidentified) 桶，故 byDirectory 与 totals 同口径（实测旧分片：
+ * byDirectory=[{unidentified,31,7481}] = totals）。真正无任何用量时 dirRows 才为空数组
+ * （报告链路另有 totals.calls===0 的空窗口短路）。报告配置目录范围非空时，byDirectory
+ * 只含所选目录（目录维度投影可精确过滤）；totals/byDay/byProvider 保持全量口径——
+ * 压实后的 agg 行无 dir 键（明细行的 dir×provider 关联在日切压实即收敛为两个独立
+ * 投影），provider/day 维度按目录精确归属在本数据面上不可行（既定数据边界，非实现
+ * 缺口）。占比口径自洽：模板目录占比 = byDirectory[i].total ÷ totals.total，报告呈
+ * 「全量统计 + 所选目录分布」口径；缺省「全部」（空数组）零过滤。
+ *
+ * 小时维度日汇总行进快照（trend.hourRows 内存单源快照，含今日桶）。覆盖度守卫在
+ * buildStatsSnapshot 内完成：coveredDays < windowDays 时 byHour/byPeriod/peakHour 整体
+ * 置 null（升级期部分天缺 hour 事实 → 时段段降级）。
+ */
+function buildDueSnapshot(
+  params: RunDueReportParams,
+  buckets: ReturnType<TrendTracker["buckets"]>,
+): ReportStatsSnapshot {
+  const { due, trend, reportCfg } = params;
   const scopeDirs = reportCfg.directories ?? [];
   const dirRows = trend.dirRows();
-  const scopedDirRows =
-    scopeDirs.length === 0 ? dirRows : dirRows.filter((r) => scopeDirs.includes(r.dir));
-  const snapshot = buildStatsSnapshot({
+  return buildStatsSnapshot({
     period: due.period,
     startDay: due.startDay,
     endDay: due.endDay,
     buckets,
-    dirRows: scopedDirRows,
-    // 小时维度日汇总行进快照（trend.hourRows 内存单源快照，含今日桶）。
-    // 覆盖度守卫在 buildStatsSnapshot 内完成：coveredDays < windowDays 时
-    // byHour/byPeriod/peakHour 整体置 null（升级期部分天缺 hour 事实 → 时段段降级）。
+    dirRows: scopeDirs.length === 0 ? dirRows : dirRows.filter((r) => scopeDirs.includes(r.dir)),
     hourRows: trend.hourRows(),
     prevTotal: prevWindowTotal(buckets, due.startDay, due.endDay),
   });
-  if (snapshot.totals.calls === 0) {
-    const priorUsage = params.getUsage?.() ?? null;
-    const noDataResult: ReportResult = {
-      body: "",
-      meta: {
-        period: due.period,
-        key: due.key,
-        startDay: due.startDay,
-        endDay: due.endDay,
-        provider: reportCfg.provider,
-        model: reportCfg.model,
-        generatedAt: Date.now(),
-        durationMs: priorUsage?.durationMs ?? 0,
-        ok: true,
-        noData: true,
-      },
-    };
-    return preparedSuccess(
-      params,
-      priorUsage === null
-        ? noDataResult
-        : withCumulativeUsage(noDataResult, {
-            ...priorUsage,
-            durationMs: priorUsage.durationMs ?? 0,
-          }),
-      snapshot,
-    );
-  }
+}
+
+/** 空窗口短路：不调模型、不落盘正文，只回 noData 元数据（调度侧据此正常推进 lastRun）。 */
+function noDataOutcome(
+  params: RunDueReportParams,
+  snapshot: ReportStatsSnapshot,
+): PreparedDueReportOutcome {
+  const { due, reportCfg } = params;
+  const priorUsage = params.getUsage?.() ?? null;
+  const noDataResult: ReportResult = {
+    body: "",
+    meta: {
+      period: due.period,
+      key: due.key,
+      startDay: due.startDay,
+      endDay: due.endDay,
+      provider: reportCfg.provider,
+      model: reportCfg.model,
+      generatedAt: Date.now(),
+      durationMs: priorUsage?.durationMs ?? 0,
+      ok: true,
+      noData: true,
+    },
+  };
+  return preparedSuccess(
+    params,
+    priorUsage === null
+      ? noDataResult
+      : withCumulativeUsage(noDataResult, {
+          ...priorUsage,
+          durationMs: priorUsage.durationMs ?? 0,
+        }),
+    snapshot,
+  );
+}
+
+/** 生成调用（route 已解析时复用 claim 快照，effort 以 route 优先）。 */
+function generateForDue(
+  params: RunDueReportParams,
+  snapshot: ReportStatsSnapshot,
+): Promise<Awaited<ReturnType<typeof generateReportOutcome>>> {
+  const { due, ctx, reportCfg, promptTemplate } = params;
   const route = params.route;
-  const generated = await generateReportOutcome({
+  return generateReportOutcome({
     llm: ctx.llm,
     period: due.period,
     key: due.key,
@@ -477,38 +506,51 @@ export async function prepareDueReportOutcome(
     ...(route === undefined ? {} : { route }),
     ...(params.signal === undefined ? {} : { signal: params.signal }),
   });
-  const attemptNumber = params.attemptNumber ?? 1;
-  if (generated.status === "failure") {
-    const observed = await observeAttempt(
-      params,
-      generated.attempt,
-      attemptNumber,
-      generated.failure,
-    );
-    if (observed === "error") {
-      return {
-        status: "failure",
-        failure: REPORT_OBSERVATION_STORAGE_FAILURE,
-        result: generated.result,
-        attempt: generated.attempt,
-      };
-    }
-    if (params.onAttempt !== undefined && observed === null) {
-      // 旧 cycle 的 observation CAS 失败只丢弃观测，不改写原 provider 失败；
-      // executor 随后的 recordFailure 也会按旧 claim CAS 静默丢弃。
-      return {
-        ...generated,
-        result: generated.result,
-        attempt: generated.attempt,
-      };
-    }
+}
+
+/** 生成失败后的观测收口（存储失败 / 旧 cycle CAS 失败 / 累计 usage 合并）。 */
+async function failureOutcomeAfterGenerate(
+  params: RunDueReportParams,
+  generated: Extract<Awaited<ReturnType<typeof generateReportOutcome>>, { status: "failure" }>,
+  attemptNumber: number,
+): Promise<PreparedDueReportOutcome> {
+  const observed = await observeAttempt(
+    params,
+    generated.attempt,
+    attemptNumber,
+    generated.failure,
+  );
+  if (observed === "error") {
     return {
-      ...generated,
-      result:
-        observed === null ? generated.result : withCumulativeUsage(generated.result, observed),
+      status: "failure",
+      failure: REPORT_OBSERVATION_STORAGE_FAILURE,
+      result: generated.result,
       attempt: generated.attempt,
     };
   }
+  if (params.onAttempt !== undefined && observed === null) {
+    // 旧 cycle 的 observation CAS 失败只丢弃观测，不改写原 provider 失败；
+    // executor 随后的 recordFailure 也会按旧 claim CAS 静默丢弃。
+    return {
+      ...generated,
+      result: generated.result,
+      attempt: generated.attempt,
+    };
+  }
+  return {
+    ...generated,
+    result: observed === null ? generated.result : withCumulativeUsage(generated.result, observed),
+    attempt: generated.attempt,
+  };
+}
+
+/** 生成成功后的观测收口 + hero 摘要回填（顺序：先摘要，后合并累计 usage）。 */
+async function successOutcomeAfterGenerate(
+  params: RunDueReportParams,
+  generated: Extract<Awaited<ReturnType<typeof generateReportOutcome>>, { status: "success" }>,
+  snapshot: ReportStatsSnapshot,
+  attemptNumber: number,
+): Promise<PreparedDueReportOutcome> {
   let result: ReportResult = {
     ...generated.result,
     meta: { ...generated.result.meta, summary: summaryOf(snapshot) },

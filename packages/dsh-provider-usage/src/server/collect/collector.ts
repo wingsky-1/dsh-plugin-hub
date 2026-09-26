@@ -139,10 +139,49 @@ function rememberDone(done: Map<string, number>, key: string, retry: number): vo
   }
 }
 
+/**
+ * 可记账事件判定（热路径廉价过滤）：session 非空字符串 + event 为非 null 对象。
+ * 承担类型收窄——跨宿主边界的入参不受信，类型谓词把 event 钉回 SessionEvent。
+ */
+function isTrackable(session: unknown, event: unknown): event is SessionEvent {
+  return (
+    typeof session === "string" && session.length > 0 && typeof event === "object" && event !== null
+  );
+}
+
+/** 有限数归一（跨宿主边界的数值字段不受信；非有限/非数字一律 null）。 */
+function finiteOrNull(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+/** 事件时间（防时钟回拨把 counter 落错日桶；非有限数回落注入时钟）。 */
+function eventTimeOf(event: SessionEvent, fallback: number): number {
+  return finiteOrNull(event.time) ?? fallback;
+}
+
+/** 对象载荷判定（承担类型收窄：跨宿主边界的嵌套字段不受信）。 */
+function objectSourceOf(value: unknown): Record<string, unknown> | null {
+  return typeof value === "object" && value !== null ? (value as Record<string, unknown>) : null;
+}
+
+/**
+ * 结算 token 二选一：顶层 usage 优先，回落 stream 内最后一条裸 usage chunk。
+ * message 与 attempt 的 stream 都可能带 usage，但 message 自带顶层 field，
+ * 二者恒等（实测），绝不可相加。
+ */
+function settledTokens(
+  data: { usage?: unknown; stream?: unknown },
+  kind: "message" | "attempt",
+): TrendTokens | null {
+  const fromStream = parseTokens(lastUsageFromStream(data.stream));
+  if (kind === "attempt") return fromStream;
+  return parseTokens(data.usage) ?? fromStream;
+}
+
 /** 从 EpochHeader.config / AssistantProvenance 形状的 payload 防御提取归属。 */
 function parseAttribution(v: unknown): TrendAttribution | null {
-  if (typeof v !== "object" || v === null) return null;
-  const src = v as Record<string, unknown>;
+  const src = objectSourceOf(v);
+  if (src === null) return null;
   const provider = safeId(src.provider, 128);
   const model = safeId(src.model, 256);
   if (provider === null || model === null) return null;
@@ -243,33 +282,40 @@ export class TrendCollector {
   handleEvent(session: string, event: SessionEvent): void {
     const nowMs = this.now();
     try {
-      if (typeof session !== "string" || session.length === 0) return;
-      if (typeof event !== "object" || event === null) return;
+      if (!isTrackable(session, event)) return;
       const state = this.stateOf(session);
       state.lastTouch = nowMs;
-      switch (event.type) {
-        case "request/header":
-          this.onHeader(state, event);
-          return;
-        case "assistant/message":
-          this.onSettled(state, session, event, "message");
-          return;
-        case "assistant/attempt":
-          this.onSettled(state, session, event, "attempt");
-          return;
-        case "turn/end":
-          this.onTurnEnd(state, session, event);
-          return;
-        case "tool/call":
-          this.onToolCall(state, session, event);
-          return;
-        default:
-          return; // 其余事件类型与记账无关
-      }
+      this.dispatch(state, session, event);
     } catch {
       /* 单事件失败不连坐 */
     } finally {
       this.lazySweep(nowMs);
+    }
+  }
+
+  /**
+   * 事件分派（热路径的第二跳：入参已过 isTrackable 廉价过滤）。
+   * 与记账无关的事件类型走 default 直接返回。
+   */
+  private dispatch(state: SessionFoldState, session: string, event: SessionEvent): void {
+    switch (event.type) {
+      case "request/header":
+        this.onHeader(state, event);
+        return;
+      case "assistant/message":
+        this.onSettled(state, session, event, "message");
+        return;
+      case "assistant/attempt":
+        this.onSettled(state, session, event, "attempt");
+        return;
+      case "turn/end":
+        this.onTurnEnd(state, session, event);
+        return;
+      case "tool/call":
+        this.onToolCall(state, session, event);
+        return;
+      default:
+        return; // 其余事件类型与记账无关
     }
   }
 
@@ -321,37 +367,12 @@ export class TrendCollector {
       stream?: unknown;
       message?: { source?: unknown };
     };
-    const turn = typeof d.turn === "number" && Number.isFinite(d.turn) ? d.turn : null;
-    const step = typeof d.step === "number" && Number.isFinite(d.step) ? d.step : null;
+    const turn = finiteOrNull(d.turn);
+    const step = finiteOrNull(d.step);
     if (turn === null || step === null) return;
-    // 副源归属：归属缺失时用 message.source（kind:"model"）补齐；主源在场
-    // 但与副源解析结果不一致（provider 或 model 不同）时仅告警不覆盖——主源 header
-    // 是记账归属的权威，message.source 仅为缺失时的补齐副源。
-    if (kind === "message") {
-      const src = d.message?.source as Record<string, unknown> | undefined;
-      if (src !== undefined && src.kind === "model") {
-        const alt = parseAttribution(src);
-        if (alt !== null) {
-          if (state.attribution === null) {
-            state.attribution = alt;
-          } else if (
-            state.attribution.provider !== alt.provider ||
-            state.attribution.model !== alt.model
-          ) {
-            this.onAnomaly?.(
-              `归属不一致（session=${session} turn=${turn} step=${step}）：主源 ${state.attribution.provider}/${state.attribution.model ?? "null"} 与 message.source ${alt.provider}/${alt.model} 不同，保留主源`,
-            );
-          }
-        }
-      }
-    }
-    // token 二选一：顶层 usage 优先，回落 stream 内最后一条裸 usage chunk。
-    // message 与 attempt 的 stream 都可能带 usage，但 message 自带顶层 field，
-    // 二者恒等（实测），绝不可相加。
-    const tokens =
-      kind === "message"
-        ? (parseTokens(d.usage) ?? parseTokens(lastUsageFromStream(d.stream)))
-        : parseTokens(lastUsageFromStream(d.stream));
+    // 副源归属只在 message 面出现（attempt 事件不提交 message，无 source 可取）。
+    if (kind === "message") this.reconcileSourceAttribution(state, d, session, turn, step);
+    const tokens = settledTokens(d, kind);
     // 无 usage 的失败尝试无调用证据（0.1.2 同边界：无 usage chunk 即不入账）；
     // 而提交了消息的结算即便无 usage 也要入账、token 记 null（零 usage 语义）。
     if (kind === "attempt" && tokens === null) return;
@@ -360,25 +381,49 @@ export class TrendCollector {
     const settled = state.done.get(key);
     const retry = settled === undefined ? 1 : settled + 1;
     rememberDone(state.done, key, retry);
-    const time =
-      typeof event.time === "number" && Number.isFinite(event.time) ? event.time : this.now();
     const { provider, model } = this.providerOf(state);
-    const dir = this.dirOf(state, session);
     this.emit({
       type: "call",
       record: {
-        time,
+        time: eventTimeOf(event, this.now()),
         session,
         turn,
         step,
         retry,
         provider,
         model,
-        dir,
+        dir: this.dirOf(state, session),
         tokens,
         ...(kind === "message" && d.interrupted === true ? { interrupted: true as const } : {}),
       },
     });
+  }
+
+  /**
+   * 副源归属对账：归属缺失时用 message.source（kind:"model"）补齐；主源在场
+   * 但与副源解析结果不一致（provider 或 model 不同）时仅告警不覆盖——主源 header
+   * 是记账归属的权威，message.source 仅为缺失时的补齐副源。
+   */
+  private reconcileSourceAttribution(
+    state: SessionFoldState,
+    data: { message?: { source?: unknown } },
+    session: string,
+    turn: number,
+    step: number,
+  ): void {
+    const src = objectSourceOf(data.message?.source);
+    if (src === null || src.kind !== "model") return;
+    const alt = parseAttribution(src);
+    if (alt === null) return;
+    if (state.attribution === null) {
+      state.attribution = alt;
+      return;
+    }
+    if (state.attribution.provider !== alt.provider || state.attribution.model !== alt.model) {
+      this.onAnomaly?.(
+        `归属不一致（session=${session} turn=${turn} step=${step}）：主源 ${state.attribution.provider}/${state.attribution.model ?? "null"} 与 message.source ${alt.provider}/${alt.model} 不同，保留主源`,
+      );
+    }
   }
 
   private onTurnEnd(
@@ -388,13 +433,18 @@ export class TrendCollector {
   ): void {
     void state;
     // counter 记账时间取事件 time（防时钟回拨时 counter 落错日桶），非有限数回落 now
-    const time =
-      typeof event.time === "number" && Number.isFinite(event.time) ? event.time : this.now();
     const { provider, model } = this.providerOf(state);
-    const dir = this.dirOf(state, session);
     this.emit({
       type: "counter",
-      record: { time, session, provider, model, dir, turns: 1, toolCalls: 0 },
+      record: {
+        time: eventTimeOf(event, this.now()),
+        session,
+        provider,
+        model,
+        dir: this.dirOf(state, session),
+        turns: 1,
+        toolCalls: 0,
+      },
     });
   }
 
@@ -404,13 +454,18 @@ export class TrendCollector {
     event: SessionEvent & { type: "tool/call" },
   ): void {
     // 同 onTurnEnd：counter 记账时间取事件 time，非有限数回落 now（口径与 onSettled 一致）
-    const time =
-      typeof event.time === "number" && Number.isFinite(event.time) ? event.time : this.now();
     const { provider, model } = this.providerOf(state);
-    const dir = this.dirOf(state, session);
     this.emit({
       type: "counter",
-      record: { time, session, provider, model, dir, turns: 0, toolCalls: 1 },
+      record: {
+        time: eventTimeOf(event, this.now()),
+        session,
+        provider,
+        model,
+        dir: this.dirOf(state, session),
+        turns: 0,
+        toolCalls: 1,
+      },
     });
   }
 

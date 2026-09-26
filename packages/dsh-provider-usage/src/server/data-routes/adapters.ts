@@ -75,6 +75,47 @@ export function handleAdapters(
   });
 }
 
+/** 选择请求的规范化结果（清空面与切换面共用同一形状；清空时 adapterName 为 null）。 */
+interface SelectRequest {
+  provider: string;
+  adapterName: string | null;
+  clearing: boolean;
+}
+
+/** provider/adapterName 长度上限（与 UI 契约同口径；超长即非法，不截断）。 */
+const NAME_MAX = 128;
+
+/**
+ * 选择请求体解析与准入（纯函数）：adapterName 显式 null = 清空该 provider 的启用选择；
+ * 切换面要求 provider 与 adapterName 双非空且双不超长，否则回落 400。
+ */
+export function parseSelectRequest(body: Record<string, unknown>): SelectRequest | null {
+  const provider = typeof body.provider === "string" ? body.provider : "";
+  const clearing = body.adapterName === null;
+  const adapterName = typeof body.adapterName === "string" ? body.adapterName : "";
+  if (clearing) return { provider, adapterName: null, clearing };
+  if (provider.length === 0 || adapterName.length === 0) return null;
+  if (provider.length > NAME_MAX || adapterName.length > NAME_MAX) return null;
+  return { provider, adapterName, clearing };
+}
+
+/**
+ * 落一次选择变更的副作用面（顺序即语义）：切换 → 清缓存 → 预热（清空面无 provider 可预热）
+ * → 落盘启用选择（清空面写 null 键，其余写当前快照）。
+ * 返回 false = 候选里没有该适配器（404），此时副作用一步都不执行。
+ */
+function applySelectRequest(statsService: StatsService, request: SelectRequest): boolean {
+  const ok = statsService.registry.select(request.provider, request.adapterName);
+  if (!ok) return false;
+
+  statsService.purgeAllCaches();
+  if (!request.clearing) statsService.warmupProviders([request.provider]);
+  statsService.scheduleWriteAdapterState(
+    request.clearing ? { [request.provider]: null } : undefined,
+  );
+  return true;
+}
+
 export async function handleSelect(
   req: IncomingMessage,
   res: ServerResponse,
@@ -87,29 +128,14 @@ export async function handleSelect(
   if (outcome.kind !== "json") return writeJson(res, 400, { error: "bad-json" });
   const body = outcome.value as Record<string, unknown>;
 
-  const provider = typeof body.provider === "string" ? body.provider : "";
-  const clearing = body.adapterName === null;
-  const adapterName = typeof body.adapterName === "string" ? body.adapterName : "";
-  if (
-    !clearing &&
-    (provider.length === 0 ||
-      adapterName.length === 0 ||
-      provider.length > 128 ||
-      adapterName.length > 128)
-  ) {
-    return writeJson(res, 400, { error: "invalid provider/adapterName" });
+  const request = parseSelectRequest(body);
+  if (request === null) return writeJson(res, 400, { error: "invalid provider/adapterName" });
+
+  if (!applySelectRequest(statsService, request)) {
+    return writeJson(res, 404, { error: "adapter not found" });
   }
 
-  const ok = statsService.registry.select(provider, clearing ? null : adapterName);
-  if (!ok) return writeJson(res, 404, { error: "adapter not found" });
-
-  statsService.purgeAllCaches();
-  if (!clearing) statsService.warmupProviders([provider]);
-
-  if (clearing) statsService.scheduleWriteAdapterState({ [provider]: null });
-  else statsService.scheduleWriteAdapterState();
-
-  writeJson(res, 200, { ok: true, provider, adapterName: clearing ? null : adapterName });
+  writeJson(res, 200, { ok: true, provider: request.provider, adapterName: request.adapterName });
 }
 
 export async function handleInspect(

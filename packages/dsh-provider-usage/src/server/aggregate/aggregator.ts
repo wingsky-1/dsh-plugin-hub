@@ -75,7 +75,99 @@ import {
   type TrendWindowSummary,
 } from "./aggregate-query.ts";
 
-/** 未压实行（内存持有；flush 时持久化，压实后移除）。 */
+/** 折算桶行（detail/counter 二选一；压实路径的两种素材）。 */
+type FoldableRow = TrendDetailRow | TrendCounterRow;
+
+/** agg 折算桶：键 = provider\u0000model（缺 model 归空串键，与 mergeAggRows 同键式）。 */
+function aggRowBucketOf(
+  byKey: Map<string, TrendAggRow>,
+  day: string,
+  row: FoldableRow,
+): TrendAggRow {
+  const key = `${row.provider}\u0000${row.model ?? ""}`;
+  const existing = byKey.get(key);
+  if (existing !== undefined) return existing;
+  const created = emptyAggRow(day, row.provider, row.model);
+  byKey.set(key, created);
+  return created;
+}
+
+/**
+ * dir 折算桶：目录维度为加性可选键，缺键返回 undefined（缺 dir 事实的行只进 agg 行，
+ * 不在折算侧补造——与 apply/rebuild 的 `dir !== undefined` 守卫同口径）。
+ */
+function dirRowBucketOf(
+  byKey: Map<string, TrendDirRow>,
+  day: string,
+  row: FoldableRow,
+): TrendDirRow | undefined {
+  if (row.dir === undefined) return undefined;
+  const existing = byKey.get(row.dir);
+  if (existing !== undefined) return existing;
+  const created = emptyDirRow(day, row.dir);
+  byKey.set(row.dir, created);
+  return created;
+}
+
+/** hour 折算桶：键 = 本地时区钟点（hourOfDay 与 apply/rebuild 同源，日界一致）。 */
+function hourRowBucketOf(
+  byKey: Map<number, TrendHourRow>,
+  day: string,
+  row: FoldableRow,
+): TrendHourRow {
+  const hour = hourOfDay(row.time);
+  const existing = byKey.get(hour);
+  if (existing !== undefined) return existing;
+  const created = emptyHourRow(day, hour);
+  byKey.set(hour, created);
+  return created;
+}
+
+/** 三面同步折算（agg 恒折算；dir 缺键跳过；hour 恒折算）。 */
+function accumulateRow(
+  agg: TrendAggRow,
+  dirAgg: TrendDirRow | undefined,
+  hour: TrendHourRow,
+  row: FoldableRow,
+): void {
+  if (row.kind === "detail") {
+    addDetailTo(agg, row);
+    if (dirAgg !== undefined) addDetailTo(dirAgg, row);
+    addDetailTo(hour, row);
+    return;
+  }
+  addCounterTo(agg, row.turns, row.toolCalls);
+  if (dirAgg !== undefined) addCounterTo(dirAgg, row.turns, row.toolCalls);
+  addCounterTo(hour, row.turns, row.toolCalls);
+}
+
+/**
+ * 是否为压实素材行（承担类型收窄）：只有 detail/counter 行是未压实明细，
+ * agg/dir/hour 是已压实落盘形态，登记进 pending 会造成压实回环。
+ */
+function isPendingRow(
+  row: TrendAggRow | TrendDetailRow | TrendCounterRow | TrendDirRow | TrendHourRow,
+): row is TrendDetailRow | TrendCounterRow {
+  return row.kind === "detail" || row.kind === "counter";
+}
+
+/**
+ * token 四维展开为落盘字段（缺维度记 null——零 usage 语义；0 是有效数字参与后续求和）。
+ * 承担类型收窄：缺 tokens 的调用记四项 null，字段集恒定。
+ */
+function tokenColumns(tokens: TrendTokens | null | undefined): TrendTokens {
+  if (tokens === null || tokens === undefined) {
+    return { input: null, output: null, cacheRead: null, cacheWrite: null };
+  }
+  return {
+    input: tokens.input,
+    output: tokens.output,
+    cacheRead: tokens.cacheRead,
+    cacheWrite: tokens.cacheWrite,
+  };
+}
+
+/** 未压试行（内存持有；flush 时持久化，压实后移除）。 */
 export interface PendingEntry {
   row: TrendDetailRow | TrendCounterRow;
   /** 已 append 到当日分片（重启重建的行也为 true，防二次落盘）。 */
@@ -158,10 +250,7 @@ export class TrendAggregator {
       provider: r.provider,
       model: r.model,
       dir: r.dir, // 目录归属落盘（collector.dirOf 已保证 sanitize 后 basename 或未识别桶，不重复净化）
-      input: r.tokens?.input ?? null,
-      output: r.tokens?.output ?? null,
-      cacheRead: r.tokens?.cacheRead ?? null,
-      cacheWrite: r.tokens?.cacheWrite ?? null,
+      ...tokenColumns(r.tokens),
       calls: 1,
       ...(r.interrupted === true ? { interrupted: true as const } : {}),
     };
@@ -264,61 +353,63 @@ export class TrendAggregator {
     persistedRows: boolean,
   ): void {
     for (const row of rows) {
-      if (row.kind === "agg") {
-        const cell = this.cellOf(row.day, row.provider, row.model);
-        mergeCell(cell, row);
-        continue;
-      }
-      // dir 汇总行重建 → 只进目录维度桶（cells 累加只发生在事件路径与
-      // detail/counter 行重建，防双重计数）
-      if (row.kind === "dir") {
-        mergeCell(this.dirCellOf(row.day, row.dir), row);
-        continue;
-      }
-      // hour 汇总行重建 → 只进小时维度桶（同 dir 行：防双重计数、不进 pending）
-      if (row.kind === "hour") {
-        mergeCell(this.hourCellOf(row.day, row.hour), row);
-        continue;
-      }
-      if (row.kind === "detail") {
-        this.addCall(this.cellOf(row.day, row.provider, row.model), {
-          input: row.input,
-          output: row.output,
-          cacheRead: row.cacheRead,
-          cacheWrite: row.cacheWrite,
-        });
-        // 明细行 rebuild 双面入账（与 cells 同策略）——dirDays 是目录
-        // 维度唯一事实源（dirRows 纯快照不折算 pending），重建明细行的 dir 事实
-        // 必须在此落桶，否则重启后目录查询面丢「分片明细形态存在、dirDays 缺失」
-        // 的事实（自愈/当日重建两条路径同病；实测 Day0 input 10 → 7）。
-        if (row.dir !== undefined) {
-          this.addCall(this.dirCellOf(row.day, row.dir), {
-            input: row.input,
-            output: row.output,
-            cacheRead: row.cacheRead,
-            cacheWrite: row.cacheWrite,
-          });
-        }
-        // 明细行 rebuild 第三面入账——hourDays 是小时维度唯一事实源，
-        // 重建明细行的 hour 事实必须在此落桶（hourOfDay 与 apply 同源现算；
-        // 已落盘 hour 行由上方 hour 分支直接入桶，两条路径不重叠）。
-        this.addCall(this.hourCellOf(row.day, hourOfDay(row.time)), {
-          input: row.input,
-          output: row.output,
-          cacheRead: row.cacheRead,
-          cacheWrite: row.cacheWrite,
-        });
-      } else {
-        this.addCounter(this.cellOf(row.day, row.provider, row.model), row.turns, row.toolCalls);
-        // 计数行 rebuild 同上（turns/toolCalls 平行落 dir 桶）。
-        if (row.dir !== undefined) {
-          this.addCounter(this.dirCellOf(row.day, row.dir), row.turns, row.toolCalls);
-        }
-        // 计数行 rebuild 第三面入账（同 detail 行分支）。
-        this.addCounter(this.hourCellOf(row.day, hourOfDay(row.time)), row.turns, row.toolCalls);
-      }
-      this.pending.push({ row, persisted: persistedRows });
+      this.rebuildRow(row);
+      // 汇总行（agg/dir/hour）只入桶、不进 pending：它们是已压实的落盘形态，
+      // 再登记为压实素材会造成压实回环（cells 也不得二次累加，见各分支注释）。
+      if (isPendingRow(row)) this.pending.push({ row, persisted: persistedRows });
     }
+  }
+
+  /**
+   * 单行重建入桶（按 kind 分派；cells 累加只发生在事件路径与 detail/counter
+   * 行重建，汇总行分支只 mergeCell，防双重计数）。
+   */
+  private rebuildRow(
+    row: TrendAggRow | TrendDetailRow | TrendCounterRow | TrendDirRow | TrendHourRow,
+  ): void {
+    switch (row.kind) {
+      case "agg":
+        mergeCell(this.cellOf(row.day, row.provider, row.model), row);
+        return;
+      // dir 汇总行重建 → 只进目录维度桶
+      case "dir":
+        mergeCell(this.dirCellOf(row.day, row.dir), row);
+        return;
+      // hour 汇总行重建 → 只进小时维度桶（同 dir 行：防双重计数、不进 pending）
+      case "hour":
+        mergeCell(this.hourCellOf(row.day, row.hour), row);
+        return;
+      case "detail":
+        this.rebuildDetailRow(row);
+        return;
+      case "counter":
+        this.rebuildCounterRow(row);
+        return;
+    }
+  }
+
+  /**
+   * 明细行 rebuild 三面入账（与 apply 的平行累加同策略）：
+   * - dirDays 是目录维度唯一事实源（dirRows 纯快照不折算 pending），重建明细行的
+   *   dir 事实必须在此落桶，否则重启后目录查询面丢「分片明细形态存在、dirDays 缺失」
+   *   的事实（自愈/当日重建两条路径同病；实测 Day0 input 10 → 7）；
+   * - hourDays 是小时维度唯一事实源，重建明细行的 hour 事实必须在此落桶
+   *   （hourOfDay 与 apply 同源现算；已落盘 hour 行由 hour 分支直接入桶，两路径不重叠）。
+   */
+  private rebuildDetailRow(row: TrendDetailRow): void {
+    const tokens = tokenColumns(row);
+    this.addCall(this.cellOf(row.day, row.provider, row.model), tokens);
+    if (row.dir !== undefined) this.addCall(this.dirCellOf(row.day, row.dir), tokens);
+    this.addCall(this.hourCellOf(row.day, hourOfDay(row.time)), tokens);
+  }
+
+  /** 计数行 rebuild 三面入账（同 rebuildDetailRow 的三条理由）。 */
+  private rebuildCounterRow(row: TrendCounterRow): void {
+    this.addCounter(this.cellOf(row.day, row.provider, row.model), row.turns, row.toolCalls);
+    if (row.dir !== undefined) {
+      this.addCounter(this.dirCellOf(row.day, row.dir), row.turns, row.toolCalls);
+    }
+    this.addCounter(this.hourCellOf(row.day, hourOfDay(row.time)), row.turns, row.toolCalls);
   }
 
   // ---------------------------------------------------------------- 压实（日切）
@@ -456,38 +547,13 @@ export class TrendAggregator {
       if (p.row.day !== day) continue;
       consumed.push(p);
       const row = p.row;
-      const aggKey = `${row.provider}\u0000${row.model ?? ""}`;
-      let agg = aggByKey.get(aggKey);
-      if (agg === undefined) {
-        agg = emptyAggRow(day, row.provider, row.model);
-        aggByKey.set(aggKey, agg);
-      }
-      let dirAgg: TrendDirRow | undefined;
-      if (row.dir !== undefined) {
-        dirAgg = dirByKey.get(row.dir);
-        if (dirAgg === undefined) {
-          dirAgg = emptyDirRow(day, row.dir);
-          dirByKey.set(row.dir, dirAgg);
-        }
-      }
-      const h = hourOfDay(row.time);
-      const hourAgg = hourByKey.get(h);
-      let hour: TrendHourRow;
-      if (hourAgg === undefined) {
-        hour = emptyHourRow(day, h);
-        hourByKey.set(h, hour);
-      } else {
-        hour = hourAgg;
-      }
-      if (row.kind === "detail") {
-        addDetailTo(agg, row);
-        if (dirAgg !== undefined) addDetailTo(dirAgg, row);
-        addDetailTo(hour, row);
-      } else {
-        addCounterTo(agg, row.turns, row.toolCalls);
-        if (dirAgg !== undefined) addCounterTo(dirAgg, row.turns, row.toolCalls);
-        addCounterTo(hour, row.turns, row.toolCalls);
-      }
+      const dirAgg = dirRowBucketOf(dirByKey, day, row);
+      accumulateRow(
+        aggRowBucketOf(aggByKey, day, row),
+        dirAgg,
+        hourRowBucketOf(hourByKey, day, row),
+        row,
+      );
     }
     return {
       consumed,

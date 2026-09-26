@@ -143,6 +143,22 @@ function retryView(entry: RetryEntry): ReportRetryView {
   };
 }
 
+/** 选中模型响应（能力探测失败时只带 id + capabilityError 标记）。 */
+interface ReportSelectedModel {
+  id: string;
+  name?: string;
+  reasoning?: {
+    efforts: Array<{ id: string; name: string; description?: string }>;
+    defaultEffort?: string;
+  };
+  capabilityError?: true;
+}
+
+/** 对象载荷判定（承担类型收窄：跨宿主边界的 body/清单项不受信）。 */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
 function stableFailureCode(error: unknown, fallback: string): string {
   if (typeof error === "object" && error !== null) {
     const code = (error as { code?: unknown }).code;
@@ -172,65 +188,72 @@ async function updateStateLastRun(
   await context.updateLastRun(context.historyRoot, patch);
 }
 
+/** 宿主 provider 清单投影（跨宿主边界防御解析；listProviders 抛错回落空数组）。 */
+function listModelProviders(ctx: Context): Array<{ id: string; name?: string }> {
+  try {
+    const listed: unknown = ctx.llm.listProviders();
+    if (!Array.isArray(listed)) return [];
+    return listed
+      .map((i) => (isRecord(i) ? i : {}))
+      .filter((i): i is { id: string; name?: string } => typeof i.id === "string")
+      .map((i) => ({ id: i.id, ...(typeof i.name === "string" ? { name: i.name } : {}) }));
+  } catch {
+    // 回落空数组
+    return [];
+  }
+}
+
+/**
+ * 目录候选（calls 降序全留存聚合，含未识别桶键）；异常不连坐配置读取
+ * （清单失败 → 空数组，多选控件降级，配置本身照常返回）。
+ */
+function listDirCandidates(context: ReportRoutesContext): Array<{ dir: string }> {
+  try {
+    return (context.listDirs?.() ?? []).map((r) => ({ dir: r.dir }));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * reasoningEffort wire 校验：缺字段表示 unset；显式空串或非 string 在归一化前返回 400。
+ * 承担类型收窄——跨宿主边界的 body 不受信，isRecord 把值钉回可索引对象。
+ */
+function hasValidReasoningEffort(value: unknown): boolean {
+  if (!isRecord(value) || !Object.hasOwn(value, "reasoningEffort")) return true;
+  const effort = value.reasoningEffort;
+  return typeof effort === "string" && effort.length > 0;
+}
+
+/** GET 面：内存/磁盘权威配置 + provider 清单 + 目录候选 + 提示词缺省表。 */
+async function sendReportConfigGet(
+  res: ServerResponse,
+  context: ReportRoutesContext,
+): Promise<void> {
+  const config = await context.readReportConfig(context.historyRoot);
+  writeJson(res, 200, {
+    ok: true,
+    config,
+    providers: listModelProviders(context.ctx),
+    dirs: listDirCandidates(context),
+    promptDefaults: context.reportCfgService.promptDefaults,
+  });
+}
+
 export async function handleReportConfig(
   req: IncomingMessage,
   res: ServerResponse,
   context: ReportRoutesContext,
 ): Promise<void> {
   if (!guardLoopbackMethod(req, res, ["GET", "POST"])) return;
-  const { ctx, historyRoot } = context;
-
-  if (req.method === "GET") {
-    const config = await context.readReportConfig(historyRoot);
-    let providers: Array<{ id: string; name?: string }> = [];
-    try {
-      const listed = ctx.llm.listProviders();
-      if (Array.isArray(listed)) {
-        providers = listed
-          .map((i) => i as { id?: unknown; name?: unknown } | null)
-          .filter(
-            (i): i is { id: string; name?: string } =>
-              typeof (i as { id?: unknown })?.id === "string",
-          )
-          .map((i) => ({
-            id: i.id as string,
-            ...(typeof i.name === "string" ? { name: i.name } : {}),
-          }));
-      }
-    } catch {
-      // 回落空数组
-    }
-    // 目录候选（calls 降序全留存聚合，含未识别桶键）；异常不连坐
-    // 配置读取（清单失败 → 空数组，多选控件降级，配置本身照常返回）。
-    let dirs: Array<{ dir: string }> = [];
-    try {
-      dirs = (context.listDirs?.() ?? []).map((r) => ({ dir: r.dir }));
-    } catch {
-      dirs = [];
-    }
-    return writeJson(res, 200, {
-      ok: true,
-      config,
-      providers,
-      dirs,
-      promptDefaults: context.reportCfgService.promptDefaults,
-    });
-  }
+  if (req.method === "GET") return sendReportConfigGet(res, context);
 
   // 读不出来的 body 不能当「没给配置」：normalizeReportConfig(undefined) 会回落**整套默认值**，
   // 于是畸形或超限的请求会把用户已存的报告配置静默重置（写盘 + 热更都照做）。
-  // reasoningEffort wire：缺字段表示 unset；显式空串或非 string 在归一化前稳定返回 400。
   const outcome = await readJsonBodyOutcome(req);
   if (outcome.kind !== "json") return writeJson(res, 400, { error: "bad-json" });
-  if (
-    typeof outcome.value === "object" &&
-    outcome.value !== null &&
-    Object.hasOwn(outcome.value, "reasoningEffort")
-  ) {
-    const effort = (outcome.value as Record<string, unknown>).reasoningEffort;
-    if (typeof effort !== "string" || effort.length === 0) {
-      return writeJson(res, 400, { error: "invalid-reasoning-effort" });
-    }
+  if (!hasValidReasoningEffort(outcome.value)) {
+    return writeJson(res, 400, { error: "invalid-reasoning-effort" });
   }
 
   const normalized = context.normalizeReportConfig(outcome.value);
@@ -280,6 +303,27 @@ async function withReportModelsDeadline<T>(start: (signal: AbortSignal) => Promi
   }
 }
 
+/** provider 是否已注册（listProviders 抛错按未知处理，不连坐整个请求）。 */
+function isKnownProvider(ctx: Context, provider: string): boolean {
+  try {
+    return ctx.llm.listProviders().some((i) => (i as { id?: unknown }).id === provider);
+  } catch {
+    return false;
+  }
+}
+
+/** 模型清单归一（跨宿主边界防御：非数组 → 空；无 id/空 id 丢弃；空 name 不输出）。 */
+function normalizeModelList(models: unknown): Array<{ id: string; name?: string }> {
+  if (!Array.isArray(models)) return [];
+  return models
+    .map((m) => (isRecord(m) ? m : {}))
+    .filter((m): m is { id: string; name?: string } => typeof m.id === "string" && m.id !== "")
+    .map((m) => ({
+      id: m.id,
+      ...(typeof m.name === "string" && m.name.length > 0 ? { name: m.name } : {}),
+    }));
+}
+
 export async function handleReportModels(
   req: IncomingMessage,
   res: ServerResponse,
@@ -290,83 +334,70 @@ export async function handleReportModels(
   const url = new URL(req.url ?? "/", "http://localhost");
   const provider = url.searchParams.get("provider") ?? "";
   const requestedModel = url.searchParams.get("model");
-  const known = (() => {
-    try {
-      return ctx.llm.listProviders().some((i) => (i as { id?: unknown })?.id === provider);
-    } catch {
-      return false;
-    }
-  })();
-  if (provider.length === 0 || !known) {
+  if (provider.length === 0 || !isKnownProvider(ctx, provider)) {
     return writeJson(res, 200, { ok: false, reason: "unknown-provider" });
   }
 
+  let list: Array<{ id: string; name?: string }>;
   try {
-    const models = await withReportModelsDeadline(() => ctx.llm.listModels(provider));
-    const list = Array.isArray(models)
-      ? (models as Array<{ id?: unknown; name?: unknown } | null>)
-          .filter(
-            (m): m is { id: string; name?: string } =>
-              typeof m?.id === "string" && (m.id as string).length > 0,
-          )
-          .map((m) => ({
-            id: m.id,
-            ...(typeof m.name === "string" && m.name.length > 0 ? { name: m.name as string } : {}),
-          }))
-      : [];
-
-    if (requestedModel === null) {
-      writeJson(res, 200, { ok: true, models: list });
-      return;
-    }
-    const selected = list.find((model) => model.id === requestedModel);
-    if (selected === undefined) {
-      writeJson(res, 200, { ok: false, reason: "unknown-model" });
-      return;
-    }
-
-    try {
-      const info = await withReportModelsDeadline((signal) =>
-        ctx.llm.resolveModelInfo(provider, selected.id, signal),
-      );
-      const selectedModel: {
-        id: string;
-        name?: string;
-        reasoning?: {
-          efforts: Array<{ id: string; name: string; description?: string }>;
-          defaultEffort?: string;
-        };
-      } = { id: selected.id };
-      if (typeof info.name === "string" && info.name.length > 0) {
-        selectedModel.name = info.name;
-      } else if (selected.name !== undefined) {
-        selectedModel.name = selected.name;
-      }
-      if (info.reasoning !== undefined) {
-        selectedModel.reasoning = {
-          efforts: info.reasoning.efforts.map((effort) => ({
-            id: effort.id,
-            name: effort.name,
-            ...(typeof effort.description === "string" ? { description: effort.description } : {}),
-          })),
-          ...(info.reasoning.defaultEffort !== undefined
-            ? { defaultEffort: info.reasoning.defaultEffort }
-            : {}),
-        };
-      }
-      writeJson(res, 200, { ok: true, models: list, selectedModel });
-    } catch {
-      writeJson(res, 200, {
-        ok: true,
-        models: list,
-        selectedModel: { id: selected.id, capabilityError: true },
-      });
-    }
+    list = normalizeModelList(await withReportModelsDeadline(() => ctx.llm.listModels(provider)));
   } catch (error: unknown) {
-    writeJson(res, 200, {
+    return writeJson(res, 200, {
       ok: false,
       reason: error === REPORT_MODELS_DISCOVERY_TIMEOUT ? "discover-timeout" : "discover-failed",
     });
+  }
+
+  if (requestedModel === null) {
+    writeJson(res, 200, { ok: true, models: list });
+    return;
+  }
+  const selected = list.find((model) => model.id === requestedModel);
+  if (selected === undefined) {
+    writeJson(res, 200, { ok: false, reason: "unknown-model" });
+    return;
+  }
+  writeJson(res, 200, {
+    ok: true,
+    models: list,
+    selectedModel: await probeSelectedModel(ctx, provider, selected),
+  });
+}
+
+/**
+ * 选中模型的能力探测（thinking 等级列表 + 展示名）。
+ * 探测失败不连坐清单：降级为 `capabilityError` 标记，模型清单照常返回。
+ */
+async function probeSelectedModel(
+  ctx: Context,
+  provider: string,
+  selected: { id: string; name?: string },
+): Promise<ReportSelectedModel> {
+  try {
+    const info = await withReportModelsDeadline((signal) =>
+      ctx.llm.resolveModelInfo(provider, selected.id, signal),
+    );
+    const selectedModel: ReportSelectedModel = { id: selected.id };
+    if (typeof info.name === "string" && info.name.length > 0) {
+      selectedModel.name = info.name;
+    } else if (selected.name !== undefined) {
+      selectedModel.name = selected.name;
+    }
+    if (info.reasoning !== undefined) {
+      selectedModel.reasoning = {
+        efforts: info.reasoning.efforts.map((effort) => ({
+          id: effort.id,
+          name: effort.name,
+          ...(typeof effort.description === "string" ? { description: effort.description } : {}),
+        })),
+        ...(info.reasoning.defaultEffort !== undefined
+          ? { defaultEffort: info.reasoning.defaultEffort }
+          : {}),
+      };
+    }
+    return selectedModel;
+  } catch {
+    return { id: selected.id, capabilityError: true };
   }
 }
 
@@ -417,13 +448,108 @@ export async function handleReportDetail(
   writeJson(res, 200, { ok: true, html, meta });
 }
 
+/** 路由响应描述（状态码 + JSON 体；由 handler 统一 writeJson 落盘）。 */
+type JsonResponse = { status: number; body: Record<string, unknown> };
+
+/** retry-state 读面不可用的统一 503（幂等短路与执行中轮询共用同一文案）。 */
+function retryStateUnavailable(): JsonResponse {
+  return { status: 503, body: { ok: false, error: "retry-state-unavailable" } };
+}
+
+/**
+ * 非强制生成的短路响应：窗口已有成功报告 → 复用（并清 cycle claim）；
+ * 已有重试记录 → 409 报出终态/在途/待重试；无短路条件 → null（正常入队）。
+ * force 恒返回 null（强制重生成不复用、不受重试记录阻挡）。
+ */
+async function reuseOrRetryBlockResponse(
+  context: ReportRoutesContext,
+  due: DueReport,
+  force: boolean,
+): Promise<JsonResponse | null> {
+  if (force) return null;
+  const existing = (await context.readReportIndex(context.historyRoot)).find(
+    (m) => m.period === due.period && m.key === due.key && m.ok === true,
+  );
+  if (existing !== undefined) return reuseResponse(context, due, existing);
+  if (context.retryState === undefined) return null;
+  let entry: RetryEntry | undefined;
+  try {
+    entry = await context.retryState.get(due.period, due.key);
+  } catch {
+    return retryStateUnavailable();
+  }
+  if (entry === undefined) return null;
+  if (entry.terminal) {
+    return {
+      status: 409,
+      body: {
+        ok: false,
+        status: "terminal",
+        reason: entry.reason?.code ?? "terminal",
+        retry: retryView(entry),
+      },
+    };
+  }
+  return {
+    status: 409,
+    body: {
+      ok: false,
+      status: entry.phase === "in-flight" ? "busy" : "deferred",
+      reason: "retry-in-progress",
+      retry: retryView(entry),
+    },
+  };
+}
+
+/** 幂等复用响应（reconcileIndex 失败即 503——不产生新任务）。 */
+async function reuseResponse(
+  context: ReportRoutesContext,
+  due: DueReport,
+  existing: ReportCycleMeta,
+): Promise<JsonResponse> {
+  if (context.retryState !== undefined) {
+    try {
+      await context.retryState.reconcileIndex({
+        period: due.period,
+        key: due.key,
+        indexed: true,
+        cycleId: existing.cycleId,
+      });
+    } catch {
+      return retryStateUnavailable();
+    }
+  }
+  return { status: 200, body: { ok: true, meta: existing, reused: true } };
+}
+
+/** 强制入队（submitForce 不可用/抛错 → 503 固定安全 code）。 */
+async function submitForceTask(
+  reportQueue: ReportRouteQueue,
+  due: DueReport,
+): Promise<JsonResponse> {
+  if (reportQueue.submitForce === undefined) {
+    return { status: 503, body: { ok: false, error: "force-unavailable" } };
+  }
+  try {
+    // 必须以 reportQueue.submitForce(...) 形式调用（方法调用保留 this）——队列实现依赖
+    // 实例态；解构成自由函数传进来会丢 this，令 submitForce 恒抛「force-unavailable」。
+    const submitted = await reportQueue.submitForce({ ...due, force: true });
+    return { status: 202, body: { ok: true, taskId: submitted.taskId } };
+  } catch (error: unknown) {
+    return {
+      status: 503,
+      body: { ok: false, error: stableFailureCode(error, "force-unavailable") },
+    };
+  }
+}
+
 export async function handleReportGenerate(
   req: IncomingMessage,
   res: ServerResponse,
   context: ReportRoutesContext,
 ): Promise<void> {
   if (!guardLoopbackMethod(req, res, ["POST"])) return;
-  const { historyRoot, reportQueue, reportCfgService } = context;
+  const { reportQueue, reportCfgService } = context;
 
   const outcome = await readJsonBodyOutcome(req);
   if (outcome.kind !== "json") return writeJson(res, 400, { error: "bad-json" });
@@ -444,65 +570,31 @@ export async function handleReportGenerate(
   );
 
   // 幂等短路：窗口已有成功报告且非强制重生成 → 直接复用，不产生新任务
-  if (!force) {
-    const existing = (await context.readReportIndex(historyRoot)).find(
-      (m) => m.period === due.period && m.key === due.key && m.ok === true,
-    );
-    if (existing !== undefined) {
-      if (context.retryState !== undefined) {
-        try {
-          await context.retryState.reconcileIndex({
-            period: due.period,
-            key: due.key,
-            indexed: true,
-            cycleId: existing.cycleId,
-          });
-        } catch {
-          return writeJson(res, 503, { ok: false, error: "retry-state-unavailable" });
-        }
-      }
-      return writeJson(res, 200, { ok: true, meta: existing, reused: true });
-    }
-    if (context.retryState !== undefined) {
-      let entry: RetryEntry | undefined;
-      try {
-        entry = await context.retryState.get(due.period, due.key);
-      } catch {
-        return writeJson(res, 503, { ok: false, error: "retry-state-unavailable" });
-      }
-      if (entry !== undefined) {
-        if (entry.terminal) {
-          return writeJson(res, 409, {
-            ok: false,
-            status: "terminal",
-            reason: entry.reason?.code ?? "terminal",
-            retry: retryView(entry),
-          });
-        }
-        return writeJson(res, 409, {
-          ok: false,
-          status: entry.phase === "in-flight" ? "busy" : "deferred",
-          reason: "retry-in-progress",
-          retry: retryView(entry),
-        });
-      }
-    }
-  }
+  const blocked = await reuseOrRetryBlockResponse(context, due, force);
+  if (blocked !== null) return writeJson(res, blocked.status, blocked.body);
 
   if (force && reportQueue.submitForce !== undefined) {
-    try {
-      const submitted = await reportQueue.submitForce({ ...due, force: true });
-      return writeJson(res, 202, { ok: true, taskId: submitted.taskId });
-    } catch (error: unknown) {
-      return writeJson(res, 503, {
-        ok: false,
-        error: stableFailureCode(error, "force-unavailable"),
-      });
-    }
+    const submitted = await submitForceTask(reportQueue, due);
+    return writeJson(res, submitted.status, submitted.body);
   }
 
   const { taskId } = reportQueue.submit({ ...due, force });
   writeJson(res, 202, { ok: true, taskId });
+}
+
+/** 任务状态响应体（按 status 增补 meta/reused/error 段；retry 段可选）。 */
+function taskStatusBody(
+  task: NonNullable<ReturnType<ReportRouteQueue["get"]>>,
+  retry: ReportRetryView | undefined,
+): Record<string, unknown> {
+  return {
+    ok: true,
+    status: task.status,
+    ...(task.status === "done" && task.meta !== undefined ? { meta: task.meta } : {}),
+    ...(task.status === "done" && task.reused === true ? { reused: true } : {}),
+    ...(task.status === "failed" ? { error: task.error ?? "生成失败" } : {}),
+    ...(retry !== undefined ? { retry } : {}),
+  };
 }
 
 export async function handleReportStatus(
@@ -523,17 +615,10 @@ export async function handleReportStatus(
       const entry = await context.retryState.get(task.period, task.key);
       if (entry !== undefined) retry = retryView(entry);
     } catch {
-      return writeJson(res, 503, { ok: false, error: "retry-state-unavailable" });
+      return writeJson(res, 503, retryStateUnavailable().body);
     }
   }
-  writeJson(res, 200, {
-    ok: true,
-    status: task.status,
-    ...(task.status === "done" && task.meta !== undefined ? { meta: task.meta } : {}),
-    ...(task.status === "done" && task.reused === true ? { reused: true } : {}),
-    ...(task.status === "failed" ? { error: task.error ?? "生成失败" } : {}),
-    ...(retry !== undefined ? { retry } : {}),
-  });
+  writeJson(res, 200, taskStatusBody(task, retry));
 }
 
 export function createReportRoutes(

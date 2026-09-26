@@ -36,36 +36,79 @@ function projectLastRun(parsed: Record<string, unknown>): Partial<Record<ReportP
   return out;
 }
 
-/** index.jsonl 最小解析（坏行跳过；与 common/report-index.ts 同白名单，不导入它以守纯面边界）。 */
+/** 普通对象判定（承担类型收窄：数组与 null 都不是可投影的 last-run 顶层）。 */
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** 报告周期白名单（承担类型收窄：非三周期值一律丢弃该行）。 */
+function isReportPeriod(value: unknown): value is ReportPeriod {
+  return value === "daily" || value === "weekly" || value === "monthly";
+}
+
+/**
+ * index 记录形状白名单（承担类型收窄）：六个字段逐个按类型校验，任一不符即丢弃该行。
+ * 字段集与 common/report-index.ts 同白名单，不导入它以守纯面边界。
+ */
+function isIndexRecord(value: unknown): value is LastRunRecord {
+  if (!isPlainObject(value)) return false;
+  return (
+    isReportPeriod(value.period) &&
+    typeof value.key === "string" &&
+    typeof value.endDay === "string" &&
+    typeof value.generatedAt === "number" &&
+    typeof value.ok === "boolean"
+  );
+}
+
+/** index.jsonl 单行解析（坏行与形状不符行一律丢弃）。 */
+function parseIndexRecord(line: string): LastRunRecord | null {
+  let obj: unknown;
+  try {
+    obj = JSON.parse(line);
+  } catch {
+    return null;
+  }
+  return isIndexRecord(obj) ? obj : null;
+}
+
+/** index.jsonl 最小解析（坏行跳过）。 */
 function parseIndexRecords(raw: string): LastRunRecord[] {
   const out: LastRunRecord[] = [];
   for (const line of raw.split("\n")) {
-    const trimmed = line.trim();
-    if (trimmed.length === 0) continue;
-    try {
-      const obj = JSON.parse(trimmed) as Partial<LastRunRecord> | null;
-      if (
-        obj !== null &&
-        typeof obj === "object" &&
-        (obj.period === "daily" || obj.period === "weekly" || obj.period === "monthly") &&
-        typeof obj.key === "string" &&
-        typeof obj.endDay === "string" &&
-        typeof obj.generatedAt === "number" &&
-        typeof obj.ok === "boolean"
-      ) {
-        out.push({
-          period: obj.period,
-          key: obj.key,
-          generatedAt: obj.generatedAt,
-          endDay: obj.endDay,
-          ok: obj.ok,
-        });
-      }
-    } catch {
-      continue;
-    }
+    const record = parseIndexRecord(line.trim());
+    if (record !== null) out.push(record);
   }
   return out;
+}
+
+/** last-run 顶层文档解析与形状校验（损坏/非对象 → 诊断 + 保持原状）。 */
+function parseLastRunDocument(
+  deps: UpgradeDeps,
+  file: string,
+  text: string,
+): { record: Record<string, unknown>; schema: number } | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    deps.logger.warn(`dsh-provider-usage: last-run 文件 ${basename(file)} 损坏，保持原状`);
+    return null;
+  }
+  if (!isPlainObject(parsed)) {
+    deps.logger.warn(`dsh-provider-usage: last-run 文件 ${basename(file)} 顶层非对象，保持原状`);
+    return null;
+  }
+  return {
+    record: parsed,
+    schema: typeof parsed.schema === "number" ? parsed.schema : 1,
+  };
+}
+
+/** 索引文本读取（读不到 → null = 无事实，不动 last-run）。 */
+async function readIndexText(deps: UpgradeDeps, root: string): Promise<string | null> {
+  const indexRaw = await deps.readOldFile(indexFile(root));
+  return indexRaw.ok === false ? null : indexRaw.text;
 }
 
 /**
@@ -76,29 +119,19 @@ export async function migrateLastRun(deps: UpgradeDeps): Promise<void> {
   const file = targetLastRunFile(root);
   const raw = await deps.readOldFile(file);
   if (raw.ok === false) return;
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw.text) as unknown;
-  } catch {
-    deps.logger.warn(`dsh-provider-usage: last-run 文件 ${basename(file)} 损坏，保持原状`);
-    return;
-  }
-  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-    deps.logger.warn(`dsh-provider-usage: last-run 文件 ${basename(file)} 顶层非对象，保持原状`);
-    return;
-  }
-  const record = parsed as Record<string, unknown>;
-  const schema = typeof record.schema === "number" ? record.schema : 1;
-  const before = projectLastRun(record);
-  const indexRaw = await deps.readOldFile(indexFile(root));
-  if (indexRaw.ok === false) return;
+  const document = parseLastRunDocument(deps, file, raw.text);
+  if (document === null) return;
+  const before = projectLastRun(document.record);
+  const indexText = await readIndexText(deps, root);
+  if (indexText === null) return;
   let indexParsed: LastRunRecord[];
   try {
-    indexParsed = parseIndexRecords(indexRaw.text);
+    indexParsed = parseIndexRecords(indexText);
   } catch {
     deps.logger.warn(`dsh-provider-usage: 报告索引损坏，保持 last-run 原状`);
     return;
   }
+  const schema = document.schema;
   const after =
     schema < LAST_RUN_SCHEMA ? deriveLastRun(indexParsed) : alignLastRun(before, indexParsed);
   const changed = schema < LAST_RUN_SCHEMA || JSON.stringify(before) !== JSON.stringify(after);

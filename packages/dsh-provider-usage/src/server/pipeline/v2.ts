@@ -69,103 +69,35 @@ export async function runV2Pipeline(ctx: V2PipelineContext): Promise<V2PipelineR
   // fail-fast：管道内部组装断言——组装前提非法时不发起任何取数，
   // 直接产出既有 error 帧（stale + error），不让请求悬挂。这是管线自身的防御性
   // 检查，不是对用户适配器的契约行为约束（不改 FetchContext 契约、不新增配置项）。
-  if (!(Number.isFinite(ctx.timeoutMs) && ctx.timeoutMs > 0)) {
-    return {
-      ok: false,
-      configured: true,
-      reason: "fetch-failed",
-      error: `pipeline 组装非法：timeoutMs=${ctx.timeoutMs}`,
-      fetchedAt,
-      provider,
-      adapterName: adapter.name,
-      status: "stale",
-    };
-  }
-
-  // 1. 组装 fetchData 入参（signal 由下方 safeFetchData 以合并信号注入，此处不预置；
-  //    utils 一律强制注入 ADAPTER_UTILS——内置 mjs 与用户 mjs 均可消费共享图表工具）
-  const fetchCtx: FetchContext = {
-    apiEndpoint: ctx.config.apiEndpoint ?? "",
-    staticPath: ctx.staticPath,
-    apiKey: ctx.config.apiKey,
-    provider,
-    model: ctx.meta?.model,
-    sessionId: ctx.meta?.sessionId,
-    timeoutMs: ctx.timeoutMs,
-    utils: ctx.utils ?? ADAPTER_UTILS,
-  };
+  if (!hasUsableTimeout(ctx.timeoutMs)) return assemblyFailure(ctx, fetchedAt);
 
   // 2. safeFetchData（5s 固定超时 + 序列化 + 错误隔离）。
-  // 闭包接收合并信号（超时兜底 × ctx.signal 外部信号，手动级联合流）
-  // 并放进 adapter.fetchData 入参——适配器把 ctx.signal 透传给底层 fetch 即获得真取消能力
-  // （deepseek-official 直传 fetch、opencode-go 监听 signal 均立即受益）；
-  // 0 参 fetchData 忽略入参不受影响。
   const fetched = await safeFetchData(
+    // 闭包接收合并信号（超时兜底 × ctx.signal 外部信号，手动级联合流）
+    // 并放进 adapter.fetchData 入参——适配器把 ctx.signal 透传给底层 fetch 即获得真取消能力
+    // （deepseek-official 直传 fetch、opencode-go 监听 signal 均立即受益）；
+    // 0 参 fetchData 忽略入参不受影响。
     async (signal) => {
       const fetcher: typeof fetch = ctx.fetchImpl ?? fetch;
-      return adapter.fetchData({ ...fetchCtx, signal, fetch: fetcher } as unknown as FetchContext);
+      return adapter.fetchData({
+        ...buildFetchContext(ctx),
+        signal,
+        fetch: fetcher,
+      } as unknown as FetchContext);
     },
     ctx.timeoutMs,
     ctx.signal,
   );
 
-  if (fetched.error !== undefined) {
-    // 取数失败仍产出 stale 胶囊 + status:'stale' + error；
-    // 不带 rawData → 上层不落盘历史（错误帧绝不以 fresh 身份进历史）。
-    // 带值降级：注入 history 时读取最后一条成功数据喂给 formatCapsule——
-    // 数值部分始终渲染最后成功值（避免健康值跌成 "--"），数据来源状态交给
-    // 客户端圆点颜色表达（dou-dot-warn 黄点 = 陈旧降级，见 client pillDotLevel）。
-    // history 读取失败视同无历史（空 data 占位），绝不因兜底读失败而改变错误帧语义。
-    let failData: Record<string, unknown> = {};
-    if (ctx.history !== undefined) {
-      const lastEntry = await ctx.history.last(provider, adapter.name).catch(() => null);
-      if (lastEntry !== null && lastEntry.data && typeof lastEntry.data === "object") {
-        failData = lastEntry.data;
-      }
-    }
-    const failCapsInput = {
-      time: fetchedAt,
-      data: failData,
-      status: "stale" as const,
-      error: fetched.error,
-      esc,
-    };
-    const failFormatted = await safeFormat(
-      () => adapter.formatCapsule(failCapsInput),
-      "formatCapsule",
-      ctx.timeoutMs,
-    );
-    const failCapsuleHtml =
-      failFormatted.html !== undefined ? sanitizeHtml(failFormatted.html) : undefined;
-    return {
-      ok: false,
-      configured: true,
-      reason: "fetch-failed",
-      error: fetched.error,
-      fetchedAt,
-      provider,
-      adapterName: adapter.name,
-      status: "stale",
-      ...(failCapsuleHtml !== undefined ? { capsuleHtml: failCapsuleHtml } : {}),
-    };
-  }
+  if (fetched.error !== undefined) return staleFailure(ctx, fetchedAt, fetched.error);
 
   // 3. 落盘历史（按天分片 JSONL；失败不阻断展示，只记日志）
   const data = fetched.data ?? {};
-  const capsInput = {
+  const capsuleHtml = await renderCapsule(ctx, {
     time: fetchedAt,
     data,
-    status: "fresh" as const,
-    esc,
-  };
-
-  // 4. safeFormat formatCapsule（宿主端渲染 HTML）+ 净化
-  const formatted = await safeFormat(
-    () => adapter.formatCapsule(capsInput),
-    "formatCapsule",
-    ctx.timeoutMs,
-  );
-  const capsuleHtml = formatted.html !== undefined ? sanitizeHtml(formatted.html) : undefined;
+    status: "fresh",
+  });
 
   return {
     ok: true,
@@ -179,6 +111,100 @@ export async function runV2Pipeline(ctx: V2PipelineContext): Promise<V2PipelineR
     capsuleHtml,
     rawData: data,
   };
+}
+
+/** 组装前提判定（超时值必须是正有限数；否则管线自身非法，不发起任何取数）。 */
+function hasUsableTimeout(timeoutMs: number): boolean {
+  return Number.isFinite(timeoutMs) && timeoutMs > 0;
+}
+
+/**
+ * 组装非法帧：不带 rawData（上层不落盘历史）、不带胶囊 HTML（连渲染都不发起）。
+ */
+function assemblyFailure(ctx: V2PipelineContext, fetchedAt: number): V2PipelineResult {
+  return {
+    ok: false,
+    configured: true,
+    reason: "fetch-failed",
+    error: `pipeline 组装非法：timeoutMs=${ctx.timeoutMs}`,
+    fetchedAt,
+    provider: ctx.provider,
+    adapterName: ctx.adapter.name,
+    status: "stale",
+  };
+}
+
+/**
+ * 组装 fetchData 入参（signal 由 safeFetchData 以合并信号注入，此处不预置；
+ * utils 一律强制注入 ADAPTER_UTILS——内置 mjs 与用户 mjs 均可消费共享图表工具）。
+ */
+function buildFetchContext(ctx: V2PipelineContext): FetchContext {
+  return {
+    apiEndpoint: ctx.config.apiEndpoint ?? "",
+    staticPath: ctx.staticPath,
+    apiKey: ctx.config.apiKey,
+    provider: ctx.provider,
+    model: ctx.meta?.model,
+    sessionId: ctx.meta?.sessionId,
+    timeoutMs: ctx.timeoutMs,
+    utils: ctx.utils ?? ADAPTER_UTILS,
+  };
+}
+
+/**
+ * 取数失败帧（stale 胶囊 + status:'stale' + error，不带 rawData → 上层不落盘历史，
+ * 错误帧绝不以 fresh 身份进历史）。
+ */
+async function staleFailure(
+  ctx: V2PipelineContext,
+  fetchedAt: number,
+  error: string,
+): Promise<V2PipelineResult> {
+  // 带值降级：注入 history 时读取最后一条成功数据喂给 formatCapsule——
+  // 数值部分始终渲染最后成功值（避免健康值跌成 "--"），数据来源状态交给
+  // 客户端圆点颜色表达（dou-dot-warn 黄点 = 陈旧降级，见 client pillDotLevel）。
+  // history 读取失败视同无历史（空 data 占位），绝不因兜底读失败而改变错误帧语义。
+  const capsuleHtml = await renderCapsule(ctx, {
+    time: fetchedAt,
+    data: await lastSuccessfulData(ctx),
+    status: "stale",
+    error,
+  });
+  return {
+    ok: false,
+    configured: true,
+    reason: "fetch-failed",
+    error,
+    fetchedAt,
+    provider: ctx.provider,
+    adapterName: ctx.adapter.name,
+    status: "stale",
+    ...(capsuleHtml !== undefined ? { capsuleHtml } : {}),
+  };
+}
+
+/** 最后一条成功数据（读失败/无历史/非对象载荷一律回落空 data 占位）。 */
+async function lastSuccessfulData(ctx: V2PipelineContext): Promise<Record<string, unknown>> {
+  if (ctx.history === undefined) return {};
+  const lastEntry = await ctx.history.last(ctx.provider, ctx.adapter.name).catch(() => null);
+  if (lastEntry === null || !lastEntry.data || typeof lastEntry.data !== "object") return {};
+  return lastEntry.data;
+}
+
+/** 胶囊渲染入参（宿主注入的 esc 随包下发，内置/用户适配器同形可用）。 */
+type CapsuleInput = Parameters<UsageStatsAdapter["formatCapsule"]>[0];
+
+/** safeFormat formatCapsule（宿主端渲染 HTML）+ 净化；失败/非字符串产出 undefined。 */
+async function renderCapsule(
+  ctx: V2PipelineContext,
+  input: Omit<CapsuleInput, "esc">,
+): Promise<string | undefined> {
+  const formatted = await safeFormat(
+    () => ctx.adapter.formatCapsule({ ...input, esc }),
+    "formatCapsule",
+    ctx.timeoutMs,
+  );
+  return formatted.html !== undefined ? sanitizeHtml(formatted.html) : undefined;
 }
 
 /** v2 面板管道：查询历史（全量）→ formatPanel → HTML。 */

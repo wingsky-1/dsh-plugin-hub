@@ -69,6 +69,76 @@ function normalizeOnePrompt(raw: unknown, dflt: string, legacy: readonly string[
   return raw;
 }
 
+/** 顶层配置源判定（承担类型收窄：数组与 null 都不是可割接的配置顶层）。 */
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * 嵌套子源判定（承担类型收窄）：与顶层判定**刻意不同**——历史口径是
+ * `typeof x === "object" && x !== null`，数组也算对象源（污染形态的 prompts
+ * 数组仍走新形态分支，按缺字段回落新默认）。收窄这一支会改写该边缘形态的行为，
+ * 故两条判定分开钉死。
+ */
+function isObjectSource(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+/**
+ * 配置文件顶层解析与形状校验（损坏/非对象 → 诊断 + 保持原状，语义与原实现逐字一致：
+ * JSON.parse 抛错走「损坏」文案；null/数组/原始值走「顶层非对象」文案）。
+ */
+function parseConfigDocument(
+  deps: UpgradeDeps,
+  file: string,
+  text: string,
+): Record<string, unknown> | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    deps.logger.warn(
+      `dsh-provider-usage: 配置文件 ${basename(file)} 损坏，保持原状（下次启动仍按默认归一化读）`,
+    );
+    return null;
+  }
+  if (!isPlainObject(parsed)) {
+    deps.logger.warn(`dsh-provider-usage: 配置文件 ${basename(file)} 顶层非对象，保持原状`);
+    return null;
+  }
+  return parsed;
+}
+
+/**
+ * 新形态（prompts 为对象）分支：把「用户从未自定义的旧默认文本」升级为新默认。
+ * 返回 null = 三周期均已是目标文本，无改写（幂等）。
+ */
+function morphExistingPrompts(promptsSrc: Record<string, unknown>): ReportPrompts | null {
+  const d = DEFAULT_PROMPTS;
+  const morphed: ReportPrompts = {
+    daily: normalizeOnePrompt(promptsSrc.daily, d.daily, LEGACY_DAILY),
+    weekly: normalizeOnePrompt(promptsSrc.weekly, d.weekly, LEGACY_WEEKLY),
+    monthly: normalizeOnePrompt(promptsSrc.monthly, d.monthly, LEGACY_MONTHLY),
+  };
+  const unchanged =
+    promptsSrc.daily === morphed.daily &&
+    promptsSrc.weekly === morphed.weekly &&
+    promptsSrc.monthly === morphed.monthly;
+  return unchanged ? null : morphed;
+}
+
+/**
+ * 旧单模板分支：旧默认 → 三份新默认；自定义文本 → 三周期同文本（用户文本不丢）。
+ * prompts 已是非对象形态（如字符串污染）时同样以展开为准（与归一化同向）。
+ * 返回 null = 无可割接的旧单模板（缺键/非字符串/空串/超长），保持原状。
+ */
+function morphLegacySingleTemplate(src: Record<string, unknown>): ReportPrompts | null {
+  const legacy = typeof src.promptTemplate === "string" ? src.promptTemplate : null;
+  if (legacy === null || legacy.trim().length === 0 || legacy.length > 20000) return null;
+  if (isLegacySingleDefault(legacy)) return { ...DEFAULT_PROMPTS };
+  return { daily: legacy, weekly: legacy, monthly: legacy };
+}
+
 /**
  * 配置形态割接。幂等：已是新形态即无改写；坏文件保持原状 + 诊断（不抛）。
  * 写失败即抛（调用方中止升级，下次从同一步重跑）。
@@ -77,57 +147,13 @@ export async function migrateReportConfig(deps: UpgradeDeps): Promise<void> {
   const file = targetConfigFile(deps.resolveRoot());
   const old = await deps.readOldFile(file);
   if (old.ok === false) return;
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(old.text) as unknown;
-  } catch {
-    deps.logger.warn(
-      `dsh-provider-usage: 配置文件 ${basename(file)} 损坏，保持原状（下次启动仍按默认归一化读）`,
-    );
-    return;
-  }
-  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-    deps.logger.warn(`dsh-provider-usage: 配置文件 ${basename(file)} 顶层非对象，保持原状`);
-    return;
-  }
-  const src = parsed as Record<string, unknown>;
-  const promptsSrc =
-    typeof src.prompts === "object" && src.prompts !== null
-      ? (src.prompts as Record<string, unknown>)
-      : null;
-  let next: ReportPrompts | null = null;
-  if (promptsSrc !== null) {
-    const d = DEFAULT_PROMPTS;
-    const morphed: ReportPrompts = {
-      daily: normalizeOnePrompt(promptsSrc.daily, d.daily, LEGACY_DAILY),
-      weekly: normalizeOnePrompt(promptsSrc.weekly, d.weekly, LEGACY_WEEKLY),
-      monthly: normalizeOnePrompt(promptsSrc.monthly, d.monthly, LEGACY_MONTHLY),
-    };
-    const cur = promptsSrc as Partial<Record<keyof ReportPrompts, unknown>>;
-    if (
-      cur.daily !== morphed.daily ||
-      cur.weekly !== morphed.weekly ||
-      cur.monthly !== morphed.monthly
-    ) {
-      next = morphed;
-    } else {
-      return;
-    }
-  } else {
-    const legacy = typeof src.promptTemplate === "string" ? src.promptTemplate : null;
-    if (legacy === null || legacy.trim().length === 0 || legacy.length > 20000) return;
-    if (isLegacySingleDefault(legacy)) {
-      next = { ...DEFAULT_PROMPTS };
-    } else {
-      next = { daily: legacy, weekly: legacy, monthly: legacy };
-      const cur = src as { prompts?: unknown };
-      if (cur.prompts !== undefined) {
-        // 已有 prompts 非对象形态（如字符串污染）→ 仍以展开为准（与归一化同向）
-      }
-    }
-  }
+  const src = parseConfigDocument(deps, file, old.text);
+  if (src === null) return;
+  const promptsSrc = isObjectSource(src.prompts) ? src.prompts : null;
+  const next =
+    promptsSrc !== null ? morphExistingPrompts(promptsSrc) : morphLegacySingleTemplate(src);
   if (next === null) return;
-  const out: Record<string, unknown> = { ...(src as Record<string, unknown>) };
+  const out: Record<string, unknown> = { ...src };
   out.prompts = next;
   out.promptTemplate = next.monthly;
   await writeFileAtomic(file, `${JSON.stringify(out, null, 2)}\n`);

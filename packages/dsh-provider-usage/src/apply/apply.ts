@@ -81,6 +81,15 @@ import { createReportRoutes } from "../server/report-routes/interface.ts";
 import { installUpgrade, releaseUpgrade } from "../server/upgrade/interface.ts";
 import type {} from "@deepseek-ai/dsh-session";
 
+// 跨域形状就地派生：本文件已按值引 readUserAdapters / resolveGenerateRoute /
+// createReportStateCoordinator 三个入口，其返回与入参形态就是各 helper 需要的类型——就地
+// 派生即可，不必为同一形状另开一条 type 引用边（#732 E3：纯重构不抬高 dir-imports
+// 结构计数）。
+type UserAdapterList = Awaited<ReturnType<typeof readUserAdapters>>;
+type RouteResolution = Awaited<ReturnType<typeof resolveGenerateRoute>>;
+type ReportStateCoordinator = ReturnType<typeof createReportStateCoordinator>;
+type ForceClaim = Parameters<ReportStateCoordinator["beginForce"]>[0];
+
 export const ROUTES: Record<string, string> = {
   stats: "/api/dsh-provider-usage/stats",
   history: "/api/dsh-provider-usage/history",
@@ -123,6 +132,94 @@ async function restoreSavedEnabledState(
       );
     }
   }
+}
+
+/**
+ * 内置 + 用户适配器登记（配置里点名的单文件 + 清单里的用户适配器）。
+ * 两条路径同构：解析路径失败只记诊断不抛（缺失内置才由 registerBuiltinAdapters fail-fast）。
+ */
+async function registerUserAdapters(
+  registry: AdapterRegistry,
+  config: NormalizedConfig,
+  userRecords: readonly UserAdapterList[number][],
+): Promise<void> {
+  if (config.adapter !== "") {
+    const resolved = resolvePath(config.adapter);
+    if (resolved === undefined) {
+      registry.recordError(`file:${basename(config.adapter)}`, "load", "文件不存在或不可读");
+    } else {
+      const loaded = await loadUserAdapterChecked(resolved, registry);
+      if (loaded.ok) registry.register(loaded.adapter, "user-file", resolved);
+    }
+  }
+  for (const rec of userRecords) {
+    const file = resolvePath(rec.file);
+    if (file === undefined) {
+      registry.recordError(`file:${basename(rec.file)}`, "load", "文件不存在或不可读");
+      continue;
+    }
+    const loaded = await loadUserAdapterChecked(file, registry);
+    if (loaded.ok) registry.register(loaded.adapter, "user-file", file);
+  }
+}
+
+/** 自动重载挂点（配置单文件 + 清单用户适配器；未开 autoReload 即 no-op）。 */
+async function startAutoReload(
+  config: NormalizedConfig,
+  userRecords: readonly UserAdapterList[number][],
+  ensureHotReload: (file: string) => Promise<void>,
+): Promise<void> {
+  if (!config.autoReload) return;
+  if (config.adapter !== "") {
+    const cfgFile = resolvePath(config.adapter);
+    if (cfgFile !== undefined) await ensureHotReload(cfgFile);
+  }
+  for (const rec of userRecords) {
+    const f = resolvePath(rec.file);
+    if (f !== undefined) await ensureHotReload(f);
+  }
+}
+
+/** force claim 登记端口（coordinator 窄面；apply 只经它推进，不直引 schedule 值边）。 */
+interface ForceClaimCoordinator {
+  beginForce(input: ForceClaim, now: number): Promise<unknown>;
+}
+
+/**
+ * 报告任务队列的强制准备入口（手动「立即生成」的 pre-submit 闸）：
+ * 解析路由 → 失败抛带 code 的 Error → coordinator 登记 force claim。
+ */
+async function beginForceReport(
+  ctx: Context,
+  input: Omit<ForceClaim, "route">,
+  reportCfgService: ReportConfigService,
+  reportState: ForceClaimCoordinator,
+  resolveReportRoute: (
+    input: Parameters<typeof resolveGenerateRoute>[0],
+  ) => Promise<RouteResolution>,
+): Promise<void> {
+  const cfg = reportCfgService.get();
+  const resolved = await resolveReportRoute({
+    llm: ctx.llm,
+    provider: cfg.provider,
+    model: cfg.model,
+    reasoningEffort: cfg.reasoningEffort,
+  });
+  if (resolved.status === "failure") {
+    const error = new Error(resolved.failure.code) as Error & { code?: string };
+    error.code = resolved.failure.code;
+    throw error;
+  }
+  await reportState.beginForce(
+    {
+      period: input.period,
+      key: input.key,
+      startDay: input.startDay,
+      endDay: input.endDay,
+      route: resolved.route,
+    },
+    Date.now(),
+  );
 }
 
 /** 创建热更新管理器 */
@@ -314,26 +411,8 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
     zaiCodingCnAdapter,
   ]);
 
-  if (config.adapter !== "") {
-    const resolved = resolvePath(config.adapter);
-    if (resolved === undefined) {
-      registry.recordError(`file:${basename(config.adapter)}`, "load", "文件不存在或不可读");
-    } else {
-      const loaded = await loadUserAdapterChecked(resolved, registry);
-      if (loaded.ok) registry.register(loaded.adapter, "user-file", resolved);
-    }
-  }
-
   const userRecords = await readUserAdapters(historyRoot);
-  for (const rec of userRecords) {
-    const file = resolvePath(rec.file);
-    if (file === undefined) {
-      registry.recordError(`file:${basename(rec.file)}`, "load", "文件不存在或不可读");
-      continue;
-    }
-    const loaded = await loadUserAdapterChecked(file, registry);
-    if (loaded.ok) registry.register(loaded.adapter, "user-file", file);
-  }
+  await registerUserAdapters(registry, config, userRecords);
 
   const statsService = new StatsService({
     ctx,
@@ -350,16 +429,7 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
 
   await restoreSavedEnabledState(historyRoot, registry, recordAdapterStateDiagnostic);
 
-  if (config.autoReload) {
-    if (config.adapter !== "") {
-      const cfgFile = resolvePath(config.adapter);
-      if (cfgFile !== undefined) await ensureHotReload(cfgFile);
-    }
-    for (const rec of userRecords) {
-      const f = resolvePath(rec.file);
-      if (f !== undefined) await ensureHotReload(f);
-    }
-  }
+  await startAutoReload(config, userRecords, ensureHotReload);
 
   const trend = await TrendTracker.start({
     // B1 有状态注入：采集器工厂由组合根装配（aggregate 不直引 collect 值边）
@@ -441,28 +511,7 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
       },
     }),
     prepareForce: async (input) => {
-      const cfg = reportCfgService.get();
-      const resolved = await resolveReportRoute({
-        llm: ctx.llm,
-        provider: cfg.provider,
-        model: cfg.model,
-        reasoningEffort: cfg.reasoningEffort,
-      });
-      if (resolved.status === "failure") {
-        const error = new Error(resolved.failure.code) as Error & { code?: string };
-        error.code = resolved.failure.code;
-        throw error;
-      }
-      await reportState.beginForce(
-        {
-          period: input.period,
-          key: input.key,
-          startDay: input.startDay,
-          endDay: input.endDay,
-          route: resolved.route,
-        },
-        Date.now(),
-      );
+      await beginForceReport(ctx, input, reportCfgService, reportState, resolveReportRoute);
     },
     sanitizeErrors: true,
     // execute 层错误面接线——任务执行失败（含 executor 脱敏后错误）
