@@ -31,11 +31,33 @@ export async function safeFetchData(
   if (externalSignal !== undefined && externalSignal.aborted) {
     return { error: "fetchData 已被取消" };
   }
+  const scope = beginFetchScope(timeoutMs, externalSignal);
+  try {
+    // 合并信号下发给用户 fetchData：超时兜底与外部取消共用同一 signal，
+    // 底层 fetch 收到 abort 后中断真实请求（超时文案稳定为「fetchData 超时」）
+    const userP = Promise.resolve().then(() => fn(scope.signal));
+    // 信号透传后，超时/外部取消判负的用户 promise 会随后收到
+    // abort 拒绝——挂一个空 catch 防 unhandled rejection（错误仍经下方 catch 上报）
+    userP.catch(() => {});
+    const raw = await Promise.race([userP, rejectOnAbort(scope)]);
+    return validateFetchedData(raw);
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return { error: msg };
+  } finally {
+    scope.finish();
+  }
+}
+
+/**
+ * 取数信号作用域：内部 controller 承担超时兜底，可选外部信号经**手动级联监听**并入
+ * 同一 controller（不用 AbortSignal.any——engines node>=20 全系兼容）。finish() 幂等
+ * 收口：置 done、停表、摘外部监听，防止长生命周期外部信号累积监听器泄漏。
+ */
+function beginFetchScope(timeoutMs: number, externalSignal: AbortSignal | undefined) {
   const controller = new AbortController();
   let done = false;
   let timedOut = false;
-  // 手动级联监听：外部信号 abort → 内部 controller 同步 abort（合并语义）；
-  // finally 中摘除监听，防止长生命周期外部信号累积监听器泄漏。
   const cascadeAbort = (): void => {
     if (!done) controller.abort();
   };
@@ -48,43 +70,43 @@ export async function safeFetchData(
       controller.abort();
     }
   }, timeoutMs);
-  try {
-    // 合并信号下发给用户 fetchData：超时兜底与外部取消共用同一 signal，
-    // 底层 fetch 收到 abort 后中断真实请求（超时文案稳定为「fetchData 超时」）
-    const userP = Promise.resolve().then(() => fn(controller.signal));
-    // 信号透传后，超时/外部取消判负的用户 promise 会随后收到
-    // abort 拒绝——挂一个空 catch 防 unhandled rejection（错误仍经下方 catch 上报）
-    userP.catch(() => {});
-    const raw = await Promise.race([
-      userP,
-      new Promise<never>((_, reject) => {
-        controller.signal.addEventListener(
-          "abort",
-          () => {
-            reject(new Error(timedOut ? "fetchData 超时" : "fetchData 已被取消"));
-          },
-          { once: true },
-        );
-      }),
-    ]);
-    // 序列化校验：确保可写入 JSONL / 下发客户端
-    const json = JSON.stringify(raw);
-    const parsed: unknown = JSON.parse(json);
-    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-      return { error: "fetchData 必须返回对象" };
-    }
-    return { data: parsed as Record<string, unknown> };
-  } catch (e: unknown) {
-    const msg = e instanceof Error ? e.message : String(e);
-    return { error: msg };
-  } finally {
-    done = true;
-    clearTimeout(timer);
-    // 摘除外部信号上的级联监听（取数已结束，后续外部 abort 与本次调用无关）
-    if (externalSignal !== undefined) {
-      externalSignal.removeEventListener("abort", cascadeAbort);
-    }
-  }
+  return {
+    signal: controller.signal,
+    /** 超时与外部取消的判别文案（timedOut 此刻才定，别提前冻结）。 */
+    abortError: (): Error => new Error(timedOut ? "fetchData 超时" : "fetchData 已被取消"),
+    finish: (): void => {
+      done = true;
+      clearTimeout(timer);
+      if (externalSignal !== undefined) {
+        externalSignal.removeEventListener("abort", cascadeAbort);
+      }
+    },
+  };
+}
+
+/** abort 竞速的败者分支（safeFormat 的超时文案同构复用）。 */
+function rejectOnAbort(scope: ReturnType<typeof beginFetchScope>): Promise<never> {
+  return new Promise<never>((_, reject) => {
+    scope.signal.addEventListener("abort", () => reject(scope.abortError()), { once: true });
+  });
+}
+
+/** 普通对象判定（承担类型收窄：数组与 null 都不是可落盘/下发的对象载荷）。 */
+export function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * 序列化校验：确保可写入 JSONL / 下发客户端。JSON 往返（不可序列化的值由
+ * JSON.stringify 抛错，错误经调用方 catch 上报为 error 分支）。
+ */
+export function validateFetchedData(raw: unknown): {
+  data?: Record<string, unknown>;
+  error?: string;
+} {
+  const parsed: unknown = JSON.parse(JSON.stringify(raw));
+  if (!isPlainRecord(parsed)) return { error: "fetchData 必须返回对象" };
+  return { data: parsed };
 }
 
 /**

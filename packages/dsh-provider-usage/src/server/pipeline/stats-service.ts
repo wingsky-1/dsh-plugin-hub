@@ -32,6 +32,16 @@ export interface StatsServiceOptions {
   recordAdapterStateDiagnostic: (message: string) => void;
 }
 
+/**
+ * 可落盘历史的样本判定（承担类型收窄）：ok + fresh + 带原始数据三者同时成立。
+ * 错误帧与陈旧帧绝不以 fresh 身份进历史——这是「错误帧只渲染不留数」的单一口径。
+ */
+function isFreshSample(
+  result: V2PipelineResult,
+): result is V2PipelineResult & { status: "fresh"; rawData: Record<string, unknown> } {
+  return result.ok && result.status === "fresh" && result.rawData !== undefined;
+}
+
 export class StatsService {
   readonly ctx: Context;
   readonly config: NormalizedConfig;
@@ -220,46 +230,66 @@ export class StatsService {
       // 纪元快照：在途期间若发生清理（select/热更/全清），完成后不再写回旧结果
       const gen = this.cacheGeneration;
       const entry = this.registry.getEntry(provider);
-      if (entry === undefined) {
-        const code = this.registry.hasCandidates(provider) ? "no-enabled-adapter" : "no-adapter";
-        const result: V2PipelineResult = {
-          ok: false,
-          configured: false,
-          reason: code,
-          error: null,
-          fetchedAt: Date.now(),
-          provider,
-          adapterName: provider,
-          status: "stale",
-        };
-        if (this.cacheGeneration === gen) this.cache.set(provider, result);
-        return result;
-      }
-
-      const providerConfig = await this.registry.resolveProviderConfig(provider, this.ctx, {
-        apiEndpoint: this.config.apiEndpoint || undefined,
-        apiKey: this.config.apiKey || undefined,
-      });
-
-      const result = await runV2Pipeline({
-        adapter: entry.adapter,
-        provider,
-        config: { apiEndpoint: providerConfig.apiEndpoint, apiKey: providerConfig.apiKey },
-        staticPath: this.config.staticPath,
-        timeoutMs: this.config.fetchTimeoutMs,
-        signal,
-        history: this.history,
-      });
-
-      if (result.ok && result.status === "fresh" && result.rawData !== undefined) {
-        const historyEntry = { time: result.fetchedAt, data: result.rawData };
-        await this.history.append(provider, entry.name, historyEntry).catch(() => {});
-        this.purgePanelCacheForProvider(provider);
-      }
-
-      if (this.cacheGeneration === gen) this.cache.set(provider, result);
+      const result =
+        entry === undefined
+          ? this.missingAdapterResult(provider)
+          : await this.fetchStats(provider, entry, signal);
+      this.commitIfGeneration(provider, gen, result);
       return result;
     });
+  }
+
+  /**
+   * 无启用适配器时的错误帧（stale 纪元 + 未配置原因码）。无候选与有候选但全禁用
+   * 分列两码（客户端可据此提示「装适配器」还是「启用一个」）。
+   */
+  private missingAdapterResult(provider: string): V2PipelineResult {
+    return {
+      ok: false,
+      configured: false,
+      reason: this.registry.hasCandidates(provider) ? "no-enabled-adapter" : "no-adapter",
+      error: null,
+      fetchedAt: Date.now(),
+      provider,
+      adapterName: provider,
+      status: "stale",
+    };
+  }
+
+  /**
+   * 缓存准入：纪元未变才写回（纪元已变说明在途期间发生清理，此时写回会污染新缓存）。
+   */
+  private commitIfGeneration(provider: string, gen: number, result: V2PipelineResult): void {
+    if (this.cacheGeneration === gen) this.cache.set(provider, result);
+  }
+
+  /** 锁内取数段：解析 provider 配置 → 跑 v2 管道 → fresh 结果落历史 + 失效面板缓存。 */
+  private async fetchStats(
+    provider: string,
+    entry: NonNullable<ReturnType<AdapterRegistry["getEntry"]>>,
+    signal?: AbortSignal,
+  ): Promise<V2PipelineResult> {
+    const providerConfig = await this.registry.resolveProviderConfig(provider, this.ctx, {
+      apiEndpoint: this.config.apiEndpoint || undefined,
+      apiKey: this.config.apiKey || undefined,
+    });
+
+    const result = await runV2Pipeline({
+      adapter: entry.adapter,
+      provider,
+      config: { apiEndpoint: providerConfig.apiEndpoint, apiKey: providerConfig.apiKey },
+      staticPath: this.config.staticPath,
+      timeoutMs: this.config.fetchTimeoutMs,
+      signal,
+      history: this.history,
+    });
+
+    if (isFreshSample(result)) {
+      const historyEntry = { time: result.fetchedAt, data: result.rawData };
+      await this.history.append(provider, entry.name, historyEntry).catch(() => {});
+      this.purgePanelCacheForProvider(provider);
+    }
+    return result;
   }
 
   dispose(): void {
