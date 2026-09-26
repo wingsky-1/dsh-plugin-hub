@@ -107,49 +107,56 @@ export function loadCustomPresets(home: string | undefined, deps: ConfigDeps): C
   return checked.list;
 }
 
+/** 明文轨是否有值（空串与缺席同义：hasPlaintextKey 只认非空串）。 */
+function hasPlaintext(plaintext: string | undefined): boolean {
+  return plaintext !== undefined && plaintext.length > 0;
+}
+
+/** 记录面判定（presets.json / secrets.json 两处同规则；非对象即 null，不抛）。 */
+function asRecord(v: unknown): Record<string, unknown> | null {
+  if (v === null || typeof v !== "object" || Array.isArray(v)) return null;
+  return v as Record<string, unknown>;
+}
+
+/**
+ * presets.json 开关覆盖（只覆盖 config.json 的开关面）。
+ *
+ * 覆盖列仍走一遍 normalizeLoadedConfig，于是 overlay 里的未知 id / 非法 cap 不会渗进
+ * 运行时配置——形状规则与主配置面共用一份实现，不在这里另写一套。
+ */
+function overlayPresetSwitches(config: ConfigV1, overlay: unknown): ConfigV1 {
+  const rec = asRecord(overlay);
+  if (rec === null) return config;
+  if (!Array.isArray(rec["presets"])) return config;
+  const again = normalizeLoadedConfig({ connection: {}, presets: rec["presets"], history: {} });
+  const switches = new Map(again.config.presets.map((entry) => [entry.id, entry]));
+  return { ...config, presets: config.presets.map((entry) => switches.get(entry.id) ?? entry) };
+}
+
+/** 读 secrets.json 里的明文（非对象面或非串值即 undefined，不回显原文）。 */
+function readPlaintextFile(home: string | undefined, deps: ConfigDeps): string | undefined {
+  const secrets = deps.io.readJsonSync(secretsFile(home));
+  if (!secrets.ok) return undefined;
+  const rec = asRecord(secrets.value);
+  if (rec === null) return undefined;
+  const plain = rec["apiKeyPlaintext"];
+  return typeof plain === "string" ? plain : undefined;
+}
+
 /** 加载全部状态（三文件合并：presets.json 覆盖 config.json 的开关；退役键剥离告警）。 */
 export function loadState(home: string | undefined, deps: ConfigDeps): LoadedState {
   const storedVersion = readStoredVersion(home, deps);
   const raw = deps.io.readJsonSync(configFile(home));
   const normalized = normalizeLoadedConfig(raw.ok ? raw.value : undefined);
   const overlay = deps.io.readJsonSync(presetsFile(home));
-  let config = normalized.config;
-  if (
-    overlay.ok &&
-    overlay.value !== null &&
-    typeof overlay.value === "object" &&
-    !Array.isArray(overlay.value)
-  ) {
-    const rec = overlay.value as Record<string, unknown>;
-    if (Array.isArray(rec["presets"])) {
-      const again = normalizeLoadedConfig({ connection: {}, presets: rec["presets"], history: {} });
-      const switches = new Map(again.config.presets.map((entry) => [entry.id, entry]));
-      config = {
-        ...config,
-        presets: config.presets.map((entry) => switches.get(entry.id) ?? entry),
-      };
-    }
-  }
-  const secrets = deps.io.readJsonSync(secretsFile(home));
-  let plaintext: string | undefined;
-  if (
-    secrets.ok &&
-    secrets.value !== null &&
-    typeof secrets.value === "object" &&
-    !Array.isArray(secrets.value)
-  ) {
-    const rec = secrets.value as Record<string, unknown>;
-    if (typeof rec["apiKeyPlaintext"] === "string") plaintext = rec["apiKeyPlaintext"] as string;
-  }
+  const config = overlayPresetSwitches(normalized.config, overlay.ok ? overlay.value : undefined);
+  const plaintext = readPlaintextFile(home, deps);
   const retired = [...normalized.retired];
   if (retired.length > 0)
     deps.logger.warn("dsh-decision-gateway: 退役键已剥离 —— " + retired.join(", "));
   const synced: ConfigV1 = {
     ...config,
-    connection: {
-      ...config.connection,
-      hasPlaintextKey: plaintext !== undefined && plaintext.length > 0,
-    },
+    connection: { ...config.connection, hasPlaintextKey: hasPlaintext(plaintext) },
   };
   const customPresets = loadCustomPresets(home, deps);
   return { config: synced, plaintext, retired, storedVersion, customPresets };
@@ -168,6 +175,83 @@ function mergePresetSwitches(
   return current.map((entry) => switches.get(entry.id) ?? entry);
 }
 
+/** apiKeyRef 补丁片段：undefined 不动；null 清除 ENV 引用；字符串即设引用。 */
+function apiKeyRefFragment(ref: ConfigPutPatch["apiKeyRef"]): Partial<ConfigV1["connection"]> {
+  if (ref === undefined) return {};
+  return { apiKeyRef: ref === null ? undefined : ref };
+}
+
+/** connection 面合并（补丁只给变更键；未提及的键保持存量）。 */
+function mergeConnection(
+  current: ConfigV1["connection"],
+  patch: ConfigPutPatch,
+): ConfigV1["connection"] {
+  return {
+    ...current,
+    ...apiKeyRefFragment(patch.apiKeyRef),
+    ...(patch.timeoutMs !== undefined ? { timeoutMs: patch.timeoutMs } : {}),
+    ...(patch.maxConcurrency !== undefined ? { maxConcurrency: patch.maxConcurrency } : {}),
+    ...(patch.truncBudget !== undefined ? { truncBudget: patch.truncBudget } : {}),
+  };
+}
+
+/** 下一版配置合成：connection 逐键合并 + presets 子集补丁 + history 子集补丁。 */
+function buildNextConfig(current: ConfigV1, patch: ConfigPutPatch): ConfigV1 {
+  return {
+    ...current,
+    connection: mergeConnection(current.connection, patch),
+    ...(patch.presets !== undefined
+      ? { presets: mergePresetSwitches(current.presets, patch.presets) }
+      : {}),
+    ...(patch.history !== undefined ? { history: { ...current.history, ...patch.history } } : {}),
+  };
+}
+
+/**
+ * 双轨密钥落盘并回传生效明文。
+ *
+ * 明文轨写入即生效；切到 ENV 轨即折叠明文（secrets.json 清空，明文不再落盘）。
+ * 两者都未提及则不碰 secrets.json，明文沿用存量。
+ */
+function writeSecretTrack(
+  home: string | undefined,
+  patch: ConfigPutPatch,
+  currentPlaintext: string | undefined,
+  deps: ConfigDeps,
+): string | undefined {
+  if (patch.apiKeyPlaintext !== undefined) {
+    deps.io.atomicWrite0600Sync(
+      secretsFile(home),
+      JSON.stringify({ apiKeyPlaintext: patch.apiKeyPlaintext }, null, 2) + "\n",
+    );
+    return patch.apiKeyPlaintext;
+  }
+  if (patch.apiKeyRef !== undefined && patch.apiKeyRef !== null) {
+    deps.io.atomicWrite0600Sync(secretsFile(home), JSON.stringify({}, null, 2) + "\n");
+    return undefined;
+  }
+  return currentPlaintext;
+}
+
+/** 自建预设落盘：同 id 沿用存量 createdAt（改配置不改生辰），返回新列。 */
+function saveCustomPresets(
+  home: string | undefined,
+  current: readonly CustomPreset[],
+  patch: readonly CustomPreset[],
+  deps: ConfigDeps,
+): CustomPreset[] {
+  const born = new Map(current.map((entry) => [entry.id, entry.createdAt]));
+  const customPresets = patch.map((entry) => ({
+    ...entry,
+    createdAt: born.get(entry.id) ?? entry.createdAt,
+  }));
+  deps.io.atomicWrite0600Sync(
+    customPresetsFile(home),
+    JSON.stringify({ version: CUSTOM_PRESETS_VERSION, customPresets }, null, 2) + "\n",
+  );
+  return customPresets;
+}
+
 /** 应用已校验补丁并落盘（config.json + presets.json + secrets.json 各归其位）。 */
 export function savePatch(
   home: string | undefined,
@@ -175,44 +259,11 @@ export function savePatch(
   deps: ConfigDeps,
 ): LoadedState {
   const current = loadState(home, deps);
-  const next: ConfigV1 = {
-    ...current.config,
-    connection: {
-      ...current.config.connection,
-      ...(patch.apiKeyRef !== undefined
-        ? patch.apiKeyRef === null
-          ? { apiKeyRef: undefined }
-          : { apiKeyRef: patch.apiKeyRef }
-        : {}),
-      ...(patch.timeoutMs !== undefined ? { timeoutMs: patch.timeoutMs } : {}),
-      ...(patch.maxConcurrency !== undefined ? { maxConcurrency: patch.maxConcurrency } : {}),
-      ...(patch.truncBudget !== undefined ? { truncBudget: patch.truncBudget } : {}),
-    },
-    ...(patch.presets !== undefined
-      ? { presets: mergePresetSwitches(current.config.presets, patch.presets) }
-      : {}),
-    ...(patch.history !== undefined
-      ? { history: { ...current.config.history, ...patch.history } }
-      : {}),
-  };
-  let plaintext = current.plaintext;
-  if (patch.apiKeyPlaintext !== undefined) {
-    plaintext = patch.apiKeyPlaintext;
-    deps.io.atomicWrite0600Sync(
-      secretsFile(home),
-      JSON.stringify({ apiKeyPlaintext: plaintext }, null, 2) + "\n",
-    );
-  } else if (patch.apiKeyRef !== undefined && patch.apiKeyRef !== null) {
-    // 切到 ENV 轨即折叠明文：secrets.json 清空，明文不再落盘。
-    plaintext = undefined;
-    deps.io.atomicWrite0600Sync(secretsFile(home), JSON.stringify({}, null, 2) + "\n");
-  }
+  const next = buildNextConfig(current.config, patch);
+  const plaintext = writeSecretTrack(home, patch, current.plaintext, deps);
   const synced: ConfigV1 = {
     ...next,
-    connection: {
-      ...next.connection,
-      hasPlaintextKey: plaintext !== undefined && plaintext.length > 0,
-    },
+    connection: { ...next.connection, hasPlaintextKey: hasPlaintext(plaintext) },
   };
   deps.io.atomicWrite0600Sync(configFile(home), JSON.stringify(synced, null, 2) + "\n");
   if (patch.presets !== undefined) {
@@ -221,18 +272,10 @@ export function savePatch(
       JSON.stringify({ presets: synced.presets }, null, 2) + "\n",
     );
   }
-  let customPresets = current.customPresets;
-  if (patch.customPresets !== undefined) {
-    const born = new Map(current.customPresets.map((entry) => [entry.id, entry.createdAt]));
-    customPresets = patch.customPresets.map((entry) => ({
-      ...entry,
-      createdAt: born.get(entry.id) ?? entry.createdAt,
-    }));
-    deps.io.atomicWrite0600Sync(
-      customPresetsFile(home),
-      JSON.stringify({ version: CUSTOM_PRESETS_VERSION, customPresets }, null, 2) + "\n",
-    );
-  }
+  const customPresets =
+    patch.customPresets !== undefined
+      ? saveCustomPresets(home, current.customPresets, patch.customPresets, deps)
+      : current.customPresets;
   return {
     config: synced,
     plaintext,
