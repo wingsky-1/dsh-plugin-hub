@@ -46,9 +46,9 @@ notifier 与 lan-proxy 曾各复刻的 `warnLog` 已经统一到这个导出（�
 当前已接线的包：
 
 - lan-proxy 经 `src/server/config` 的命名空间薄包装转发，canonical 命名空间为
-  `ui-dsh-lan-proxy`；
+  `dsh-lan-proxy`；
 - dsh-mcp-manager 在 `src/index.ts` 接线，canonical 命名空间为
-  `ui-dsh-mcp-manager`；
+  `dsh-mcp-manager`；
 - dsh-provider-usage 在 `src/apply/apply.ts` 注册，命名空间为
   `dsh-provider-usage`，`base` 为组合层原始配置；
 - dsh-notifier 不调用该函数：自持 `config.json`（见

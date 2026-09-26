@@ -18,6 +18,7 @@
     "stryker:check": "node scripts/gate/gen-stryker-conf.mjs --check",
     "test:scripts": "node --test scripts/test/*.test.ts",
     "repair:mcp-catalog": "node scripts/maintenance/repair-mcp-catalog-sessions.mjs",
+    "migrate:plugin-rows": "node scripts/maintenance/migrate-plugin-rows.mjs",
     "test:src-tests": "node scripts/gate/forbid-src-tests.mjs",
     "gate:homedir": "node scripts/gate/forbid-homedir-src.mjs",
     "gate:module-state": "node scripts/gate/forbid-module-state-src.mjs",

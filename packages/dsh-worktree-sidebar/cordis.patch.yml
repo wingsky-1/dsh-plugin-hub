@@ -5,5 +5,5 @@
 # 浏览器端（exports "./client"）在官方封装就绪后接管 files 页签的目录根。
 # 配置走 schema 默认值（enabled），行内不带 config。
 - insert:
-    - id: ui-dsh-worktree-sidebar
+    - id: dsh-worktree-sidebar
       name: "@wingsky-1/dsh-worktree-sidebar"

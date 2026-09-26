@@ -118,7 +118,7 @@ function makeRowLifecycleHarness(): RowLifecycleObservation {
       };
     },
     serve(served: readonly string[]): void {
-      const watched = served.includes("ui-dsh-lan-proxy");
+      const watched = served.includes("dsh-lan-proxy");
       if (watched && activeRegistrationOff === null && registerRowConfig !== null) {
         activeRegistrationOff = registerRowConfig(new Set(served));
       } else if (!watched) {
@@ -148,7 +148,7 @@ function makeRowLifecycleHarness(): RowLifecycleObservation {
   apply(ctx);
 
   const beforeServe = [...injectedSlotNames];
-  configForms.serve(["ui-dsh-lan-proxy"]);
+  configForms.serve(["dsh-lan-proxy"]);
   const firstEntry = entries[0];
   const afterFirstServe = entries.map((entry) => String(entry.options.name));
   const registrationsAfterFirstServe = entries.map((entry) => ({ ...entry.options }));
@@ -169,7 +169,7 @@ function makeRowLifecycleHarness(): RowLifecycleObservation {
   const afterUnserved = entries.map((entry) => String(entry.options.name));
   const firstEntryOffCalls = firstEntry?.offCalls ?? 0;
 
-  configForms.serve(["ui-dsh-lan-proxy"]);
+  configForms.serve(["dsh-lan-proxy"]);
   const secondEntry = entries[0];
   const afterReServed = entries.map((entry) => String(entry.options.name));
   const registrationsAfterReServed = entries.map((entry) => ({ ...entry.options }));
@@ -261,7 +261,7 @@ describe("client entry：row 配置装配", () => {
   it("whileServed 使用 canonical settings namespace", () => {
     const observation = makeRowLifecycleHarness();
 
-    expect(observation.watchedNamespaces).toEqual(["ui-dsh-lan-proxy"]);
+    expect(observation.watchedNamespaces).toEqual(["dsh-lan-proxy"]);
   });
 
   it("row config 使用 bundle package 与 canonical row id 组成 key", () => {
@@ -270,7 +270,7 @@ describe("client entry：row 配置装配", () => {
     expect(observation.registrationsAfterFirstServe).toEqual([
       {
         name: "plugins.row.config",
-        key: "@wingsky-1/dsh-lan-proxy#ui-dsh-lan-proxy",
+        key: "@wingsky-1/dsh-lan-proxy#dsh-lan-proxy",
         locale: "settings.lanProxy",
       },
     ]);
@@ -330,7 +330,7 @@ interface PatchRow {
 }
 
 const EXPECTED_LAN_PROXY_PATCH_ROW: PatchRow = {
-  id: "ui-dsh-lan-proxy",
+  id: "dsh-lan-proxy",
   name: "@wingsky-1/dsh-lan-proxy",
 };
 
@@ -359,9 +359,9 @@ describe("canonical identity：源码与 standalone/all patch", () => {
   it("canonical identity 保持固定 row id、bundle package 与派生 config key", () => {
     expect(LAN_PROXY_IDENTITY).toEqual({
       bundlePackage: "@wingsky-1/dsh-lan-proxy",
-      rowId: "ui-dsh-lan-proxy",
+      rowId: "dsh-lan-proxy",
       settingsNamespace: "dsh-lan-proxy",
-      rowConfigKey: "@wingsky-1/dsh-lan-proxy#ui-dsh-lan-proxy",
+      rowConfigKey: "@wingsky-1/dsh-lan-proxy#dsh-lan-proxy",
     });
   });
 
@@ -379,21 +379,23 @@ describe("canonical identity：源码与 standalone/all patch", () => {
       "utf8",
     );
 
-    expect(identitySource.match(/"ui-dsh-lan-proxy"/g)).toHaveLength(1);
+    expect(identitySource.match(/"dsh-lan-proxy"/g)).toHaveLength(2);
+    expect(identitySource).toContain("const LAN_PROXY_ROW_ID");
+    expect(identitySource).toContain("const LAN_PROXY_SETTINGS_NAMESPACE");
     expect(identitySource.match(/"@wingsky-1\/dsh-lan-proxy"/g)).toHaveLength(1);
     expect(identitySource).toContain("${LAN_PROXY_BUNDLE_PACKAGE}#${LAN_PROXY_ROW_ID}");
 
     expect(clientSource).toContain('from "../shared/interface.ts"');
-    expect(clientSource).toContain("LAN_PROXY_IDENTITY.rowId");
+    expect(clientSource).toContain("LAN_PROXY_IDENTITY.settingsNamespace");
     expect(clientSource).toContain("LAN_PROXY_IDENTITY.rowConfigKey");
-    expect(clientSource).not.toContain('"ui-dsh-lan-proxy"');
-    expect(clientSource).not.toContain('"@wingsky-1/dsh-lan-proxy"');
+    expect(clientSource).not.toContain("const LAN_PROXY_ROW_ID");
+    expect(clientSource).not.toContain("const LAN_PROXY_SETTINGS_NAMESPACE");
 
     expect(namespaceSource).toContain('from "../../../shared/interface.ts"');
     expect(namespaceSource).toContain(
       "export const SETTINGS_NS = LAN_PROXY_IDENTITY.settingsNamespace;",
     );
-    expect(namespaceSource).not.toContain('"ui-dsh-lan-proxy"');
+    expect(namespaceSource).not.toContain('"dsh-lan-proxy"');
   });
 
   it("standalone 与 dsh-plugins-all 聚合 patch 暴露同一 canonical row", () => {

@@ -154,6 +154,12 @@
       "why": "测试分层与变异面登记的单一事实源。"
     },
     {
+      "path": "scripts/data/plugin-row-migration.json",
+      "faces": [],
+      "consumers": ["scripts/maintenance/migrate-plugin-rows.mjs"],
+      "why": "一次性 profile row identity 迁移映射：只被维护脚本读取，属于脚本输入数据而非 CI 切片触发面。"
+    },
+    {
       "path": "scripts/data/plugins-manifest.json",
       "faces": ["global"],
       "consumers": ["scripts/lib/plugins-manifest-lib.ts", "scripts/ci/ci-matrix.mjs"],
@@ -478,7 +484,8 @@
       "faces": [],
       "consumers": [
         "scripts/test/repair-mcp-catalog-sessions.test.ts",
-        "scripts/test/scan-actions-concurrency.test.ts"
+        "scripts/test/scan-actions-concurrency.test.ts",
+        "scripts/test/migrate-plugin-rows.test.ts"
       ],
       "why": "运维辅助脚本（会话修复、并发扫描）：不进任何 CI 切片；改动只由常驻 test:scripts 的用例覆盖，PR 面无其他执行点。"
     },

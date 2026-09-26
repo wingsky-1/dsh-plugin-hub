@@ -299,7 +299,7 @@ contract-check 禁止运行时值导入）。原自建类型层 `types/dsh.d.ts`
   （如 mcp-manager 宿主用的 `fast-glob`），发布物不以运行时 npm 依赖形式发布。
 - **安全**：全部路由强制 loopback 围栏（非回环 403、方法错 405），`/health` 必项；
   RPC/端点做参数校验；密钥/凭据不入包。
-- **挂载**：`cordis.patch.yml`，patch **id 用 `ui-<name>`**；声明 `dsh.client` 时必须有
+- **挂载**：`cordis.patch.yml`，patch **id 用 `dsh-<name>`**；声明 `dsh.client` 时必须有
   `exports["./client"]`（`contract-check` 联动断言，缺则整包拒载）。**独立包与聚合包
   禁双装**（同 id 双装 loader 报 duplicate）；改独立包 patch 后必须
   `node scripts/gate/aggregate.ts` 重新生成聚合 patch。
@@ -523,7 +523,7 @@ export const inject: string[] = []; // 声明 apply 用到的 ctx 服务（如 [
 - **`inject` 语义：声明 `apply` 运行时用到的 ctx 服务；不需要则 `[]`。**这是运行时的
   服务注入声明**，与宿主的 cordis `inject`（插槽）是两码事，别混。
 - **插件设置行**：目标 runtime 使用 `plugins.row.config`。canonical row id 固定为
-  `ui-dsh-<包名>`；settings namespace 保持独立的稳定命名（当前为 `dsh-<包名>`），不因 row id 改名。keyed row 的 key 为
+  `dsh-<包名>`；settings namespace 与 row id 使用同一稳定身份。keyed row 的 key 为
   `<bundle package>#<canonical row id>`。注册由 `configForms.whileServed` 约束到 settings namespace，页面通过
   `slots.inject` / `slots.register` 注入；独立设置页才用
   `settings.section`。

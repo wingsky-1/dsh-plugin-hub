@@ -455,9 +455,9 @@ describe("0.1.7-rc.2 plugins.row.config 装配", () => {
     expect(clientSource).toContain("shared/interface.ts");
     expect(MCP_MANAGER_IDENTITY).toEqual({
       bundlePackage: "@wingsky-1/dsh-mcp-manager",
-      rowId: "ui-dsh-mcp-manager",
+      rowId: "dsh-mcp-manager",
       settingsNamespace: "dsh-mcp-manager",
-      rowConfigKey: "@wingsky-1/dsh-mcp-manager#ui-dsh-mcp-manager",
+      rowConfigKey: "@wingsky-1/dsh-mcp-manager#dsh-mcp-manager",
     });
   });
 

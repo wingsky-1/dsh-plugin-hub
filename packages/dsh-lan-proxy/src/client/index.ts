@@ -149,7 +149,7 @@ export function apply(ctx: ClientContext): void {
     // whileServed 会调用这个返回值，移除 slot 注入及其注册 disposer。
     ctx.effect(
       () =>
-        configForms.whileServed([LAN_PROXY_IDENTITY.rowId], () =>
+        configForms.whileServed([LAN_PROXY_IDENTITY.settingsNamespace], () =>
           slots.inject(ROW_CONFIG_SLOT, () =>
             slots.register(
               {

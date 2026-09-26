@@ -5,5 +5,5 @@
 # 浏览器端（exports "./client"）提供侧边栏入口与分级面板。
 # 配置走 schema 默认值（enabled / announceToAgent），行内不带 config。
 - insert:
-    - id: ui-dsh-mcp-manager
+    - id: dsh-mcp-manager
       name: "@wingsky-1/dsh-mcp-manager"

@@ -6,7 +6,7 @@
  */
 
 const LAN_PROXY_BUNDLE_PACKAGE = "@wingsky-1/dsh-lan-proxy";
-const LAN_PROXY_ROW_ID = "ui-dsh-lan-proxy";
+const LAN_PROXY_ROW_ID = "dsh-lan-proxy";
 const LAN_PROXY_SETTINGS_NAMESPACE = "dsh-lan-proxy";
 
 /** standalone 与聚合安装共享的 canonical 插件行身份。 */

@@ -14,7 +14,7 @@
  *
  * 配置单一通道（issue #110）：不再维护自建 `~/.dsh/lan-proxy/config.json` 与
  * RPC state/config 端点；配置一律存官方 settings 存储（条目 id 见 SETTINGS_NS
- * `ui-dsh-lan-proxy`，owner scope get/update/replace + describe 投影）。存量
+ * `dsh-lan-proxy`，owner scope get/update/replace + describe 投影）。存量
  * config.json 在 settings 服务 attach 后做一次性 marker 迁移（原子改名
  * `config.json.migrated.bak` 幂等标记 → 校验过滤 → scope.update 增量写入，
  * 失败回滚改名）；此后手改 config.json 不再生效。

@@ -119,8 +119,8 @@ peer 含 cordis 框架底座与仅经 `ctx.on` 事件消费的包（如 notifier
 
 | 包 | slot | id（插件行取 canonical row id） | key | order | 出处 |
 | --- | --- | --- | --- | --- | --- |
-| dsh-lan-proxy | plugins.row.config | ui-dsh-lan-proxy | `@wingsky-1/dsh-lan-proxy#ui-dsh-lan-proxy` | — | packages/dsh-lan-proxy/src/client/index.ts |
-| dsh-mcp-manager | plugins.row.config | ui-dsh-mcp-manager | `@wingsky-1/dsh-mcp-manager#ui-dsh-mcp-manager` | — | packages/dsh-mcp-manager/src/client/index.ts；packages/dsh-mcp-manager/src/shared/constants.ts |
+| dsh-lan-proxy | plugins.row.config | dsh-lan-proxy | `@wingsky-1/dsh-lan-proxy#dsh-lan-proxy` | — | packages/dsh-lan-proxy/src/client/index.ts |
+| dsh-mcp-manager | plugins.row.config | dsh-mcp-manager | `@wingsky-1/dsh-mcp-manager#dsh-mcp-manager` | — | packages/dsh-mcp-manager/src/client/index.ts；packages/dsh-mcp-manager/src/shared/constants.ts |
 | dsh-notifier | settings.section | dsh-notifier | — | 70 | packages/dsh-notifier/src/client/index.tsx |
 | dsh-provider-usage | settings.section | dsh-provider-usage | — | 90 | packages/dsh-provider-usage/src/client/index.tsx |
 | dsh-decision-gateway | （派生未覆盖，观察值：客户端未注册 settings slot） | — | — | — | `slotFiles` 未登记 |

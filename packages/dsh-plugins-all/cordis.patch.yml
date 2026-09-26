@@ -2,17 +2,17 @@
 # 聚合行 = 各独立包 cordis.patch.yml 的 insert 行原样拼接（id + name，无 config，
 # 配置走 schema 默认值）。改独立包 patch 后运行 `node scripts/gate/aggregate.ts` 重新生成。
 - insert:
-    - id: ui-dsh-decision-gateway
+    - id: dsh-decision-gateway
       name: '@wingsky-1/dsh-decision-gateway'
-    - id: ui-dsh-lan-proxy
+    - id: dsh-lan-proxy
       name: '@wingsky-1/dsh-lan-proxy'
-    - id: ui-dsh-mcp-manager
+    - id: dsh-mcp-manager
       name: '@wingsky-1/dsh-mcp-manager'
-    - id: ui-dsh-notifier
+    - id: dsh-notifier
       name: '@wingsky-1/dsh-notifier'
-    - id: ui-dsh-provider-usage
+    - id: dsh-provider-usage
       name: '@wingsky-1/dsh-provider-usage'
     - id: dsh-verify-isolated-skill-filesystem
       name: '@deepseek-ai/dsh-skill-filesystem'
-    - id: ui-dsh-worktree-sidebar
+    - id: dsh-worktree-sidebar
       name: '@wingsky-1/dsh-worktree-sidebar'

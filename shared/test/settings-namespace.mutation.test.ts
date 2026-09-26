@@ -6,7 +6,7 @@ import {
   type SettingsFormsScope,
 } from "../settings-namespace.js";
 
-const NAMESPACE = "ui-dsh-mcp-manager";
+const NAMESPACE = "dsh-mcp-manager";
 
 type Listener = (eventNamespace: unknown, revision: unknown) => void;
 type Scope = SettingsFormsScope;

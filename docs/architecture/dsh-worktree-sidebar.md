@@ -563,7 +563,7 @@ flowchart LR
 
     CATALOG["pnpm-workspace.yaml catalog<br/>@deepseek-ai/* 0.1.7-rc.2<br/>唯一 target runtime"] -.->|"peer + 仅 import type"| SRC
 
-    PATCH["cordis.patch.yml<br/>insert id=ui-dsh-worktree-sidebar"] --> PROFILE["dsh web profile 插件名册"]
+    PATCH["cordis.patch.yml<br/>insert id=dsh-worktree-sidebar"] --> PROFILE["dsh web profile 插件名册"]
     PROFILE --> CORDIS["cordis 组合：宿主端与浏览器端各跑一半"]
     HOSTJS --> CORDIS
     CLIJS --> CORDIS

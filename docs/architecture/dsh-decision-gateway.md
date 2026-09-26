@@ -197,7 +197,7 @@ flowchart LR
         H["宿主端 lib/index.js<br/>apply(ctx)"]
         CL["客户端 lib/client.js<br/>apply + inject slots"]
     end
-    PATCH["cordis.patch.yml<br/>ui-dsh-decision-gateway"]
+    PATCH["cordis.patch.yml<br/>dsh-decision-gateway"]
     HOST["dsh web 宿主<br/>webServer + tools"]
     LOOP["loopback 围栏<br/>403 先于 405"]
     UP["SystemOne 官方<br/>基址写死·Bearer·总预算超时·最多2重试"]
@@ -211,7 +211,7 @@ flowchart LR
 
 ### 4.1 挂载与构建依赖
 
-cordis.patch.yml 以 ui-dsh-decision-gateway 插入 profile；宿主 exports→`lib/index.js`，客户端→`lib/client.js`；宿主 inject 为 webServer＋tools，客户端 inject 为 slots（另经 `dsh.client.inject` 拿 `@deepseek-ai/dsh-client-connection`，platform=web）。Node >=20；官方 optional peer 走 catalog，实际服务来自宿主，适配版本以仓库 pnpm-workspace.yaml 的 rc catalog 为准，不以本机 dsh 版本推断（`package.json#exports` / `dsh` / `engines`）。
+cordis.patch.yml 以 dsh-decision-gateway 插入 profile；宿主 exports→`lib/index.js`，客户端→`lib/client.js`；宿主 inject 为 webServer＋tools，客户端 inject 为 slots（另经 `dsh.client.inject` 拿 `@deepseek-ai/dsh-client-connection`，platform=web）。Node >=20；官方 optional peer 走 catalog，实际服务来自宿主，适配版本以仓库 pnpm-workspace.yaml 的 rc catalog 为准，不以本机 dsh 版本推断（`package.json#exports` / `dsh` / `engines`）。
 
 build 为 clean-lib→tsc→scripts/build/bundle-host.ts；esbuild 内联第三方代码与 createRequire 垫片（`package.json#dsh.bundle.bannerJs`），发布物自包含。路由清单经入口 `ROUTES` 导出由 bundle-host 注入客户端；客户端零 bare import（不用 React，净化只用宿主已净化数据＋文本节点渲染）。
 

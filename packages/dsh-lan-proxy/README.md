@@ -87,7 +87,7 @@ dsh web 的浏览器会话认证（launch token
 launch token 与会话 cookie 认证保持不变；兼容开启后，LAN 页面与回环页面在界面上不再可区分。
 
 - **配置入口**：Plugin Manager → dsh-lan-proxy → Configure。canonical row id 为
-  `ui-dsh-lan-proxy`，keyed row 为 `@wingsky-1/dsh-lan-proxy#ui-dsh-lan-proxy`，
+  `dsh-lan-proxy`，keyed row 为 `@wingsky-1/dsh-lan-proxy#dsh-lan-proxy`，
   官方 settings namespace 使用 `dsh-lan-proxy`。
 - **挂载边界**：配置页由 `plugins.row.config` 渲染，仅在 Host 服务 canonical settings 条目时
   注册。`compat-off` 或上游契约漂移时，非回环页面可能无法进入配置行。
@@ -364,7 +364,7 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-lan-proxy
 | `httpCompressLevel` | `1`（0..3） | `1` | 未声明 |
 | `wsCompressPaths`／`wsDeflatePolicy`／`tlsCertFile`／`tlsKeyFile` | `["/api/remote.mux"]`／`{browser:true, uaDeny:[iPhone,iPad,iPod]}`／无默认值 | `["/api/remote.mux"]`／无此键／`""` | 未声明 |
 
-宿主默认来自 `src/server/shared/defaults.ts` 的 `DEFAULT_OPTIONS` 与 `src/server/shared/deflate.ts` 的 `DEFAULT_DEFLATE_POLICY`，经 `src/server/config/impl/model.ts` 的 `Config`／`DEFAULT_CONFIG` 生效；客户端缺省来自 `src/client/shared/defaults.ts` 的 `DEFAULTS`；`cordis.patch.yml`（`ui-dsh-lan-proxy`）独立／聚合行均不带 `config`。`injectToken` 开启等效信任整个局域网，`ownsHostCompat` 开启即向非回环页面声明 `ownsHost`，语义见「安全模型」。以上代码为单一事实源，文档与代码不一致时以代码为准。
+宿主默认来自 `src/server/shared/defaults.ts` 的 `DEFAULT_OPTIONS` 与 `src/server/shared/deflate.ts` 的 `DEFAULT_DEFLATE_POLICY`，经 `src/server/config/impl/model.ts` 的 `Config`／`DEFAULT_CONFIG` 生效；客户端缺省来自 `src/client/shared/defaults.ts` 的 `DEFAULTS`；`cordis.patch.yml`（`dsh-lan-proxy`）独立／聚合行均不带 `config`。`injectToken` 开启等效信任整个局域网，`ownsHostCompat` 开启即向非回环页面声明 `ownsHost`，语义见「安全模型」。以上代码为单一事实源，文档与代码不一致时以代码为准。
 
 ## License
 

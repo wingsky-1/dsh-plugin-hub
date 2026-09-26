@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "legacyToCanonical": {
+    "ui-dsh-decision-gateway": "dsh-decision-gateway",
+    "ui-dsh-lan-proxy": "dsh-lan-proxy",
+    "ui-dsh-mcp-manager": "dsh-mcp-manager",
+    "ui-dsh-notifier": "dsh-notifier",
+    "ui-dsh-provider-usage": "dsh-provider-usage",
+    "ui-dsh-worktree-sidebar": "dsh-worktree-sidebar"
+  }
+}

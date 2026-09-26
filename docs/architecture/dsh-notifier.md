@@ -172,7 +172,7 @@ upgrade 同步先跑 0.2.3 → 0.2.4：布局 → 配置形态 → 理由形态�
 
 ### 4.1 挂载与构建依赖
 
-cordis.patch.yml 以 ui-dsh-notifier 插入 profile；宿主 exports→lib/index.js，客户端→lib/client.js；dsh.client.platform=web，客户端包依赖 dsh-client-connection。Node >=20；官方 optional peer 走 catalog，实际服务来自宿主，适配版本以仓库 pnpm-workspace.yaml 的 rc catalog 为准，不以本机 dsh 版本推断（`package.json#exports` / `dsh` / `engines`）。
+cordis.patch.yml 以 dsh-notifier 插入 profile；宿主 exports→lib/index.js，客户端→lib/client.js；dsh.client.platform=web，客户端包依赖 dsh-client-connection。Node >=20；官方 optional peer 走 catalog，实际服务来自宿主，适配版本以仓库 pnpm-workspace.yaml 的 rc catalog 为准，不以本机 dsh 版本推断（`package.json#exports` / `dsh` / `engines`）。
 
 build 为 clean-lib→tsc→scripts/build/bundle-host.ts；esbuild 内联第三方代码、createRequire 垫片与许可证归集支持发布物自包含。yaml 用于旧 settings 文档，React 用于客户端设置组件；“构建期依赖”不代表相关逻辑不在运行期执行。样式为 src/client/style.css，经 ensureStyle 注入。
 

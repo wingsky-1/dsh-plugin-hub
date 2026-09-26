@@ -116,6 +116,8 @@ const ALLOWLIST: Record<string, string> = {
     "vendored 分发面判定与内容嗅探库，以 .mjs 被三处判据共用的库",
   "scripts/maintenance/repair-mcp-catalog-sessions.mjs":
     "一次性修复：dsh 升级后 mcp-catalog 会话修复，以 .mjs 手工直跑的维护脚本",
+  "scripts/maintenance/migrate-plugin-rows.mjs":
+    "一次性 profile row identity 迁移（dry-run/apply/备份），以 .mjs 手工直跑的维护脚本",
   "scripts/maintenance/scan-actions-concurrency.mjs":
     "Actions 并发峰值扫描诊断工具，以 .mjs 手工直跑的维护脚本",
   "scripts/maintenance/upstream-contract-warn.mjs":

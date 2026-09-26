@@ -104,7 +104,7 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-mcp-manager
 
 ## 配置（浮窗位置）
 
-配置页入口：**Plugin Manager → dsh-mcp-manager → Configure**。浮窗按钮（MCP 胶囊）的位置与偏移（`position` / `offset`）在此保存，canonical row id 为 `ui-dsh-mcp-manager`，settings namespace 为 `dsh-mcp-manager`，保存后即时生效。
+配置页入口：**Plugin Manager → dsh-mcp-manager → Configure**。浮窗按钮（MCP 胶囊）的位置与偏移（`position` / `offset`）在此保存，canonical row id 为 `dsh-mcp-manager`，settings namespace 为 `dsh-mcp-manager`，保存后即时生效。
 
 > 非回环 LAN 地址（例如 `192.168.*:3081`）默认不提供持久化设置面，Configure 按钮按 DSH 安全策略隐藏；请从 `127.0.0.1:3080` / `127.0.0.1:3081` 或 SSH 回环隧道管理。只有在可信 LAN、明确接受共享控制面风险时，才通过 dsh-lan-proxy 的 `ownsHostCompat` 恢复远程设置入口。
 
@@ -277,7 +277,7 @@ await ctx.mcpManager.registerServer({
   脱敏
 - **调用统计与 Debug 模式（Metadata-Only）**：默认关闭；启用后把 MCP 调用指标与渐进式披露漏斗防抖原子持久化至 `<DSH_HOME>/@wingsky-1/dsh-mcp-manager/stats.json`，且控制台输出单行跟踪；严格不持久化用户 arguments 与返回 content
 - 能力目录注入含来源标注与“不代表当前连接状态”说明
-- **能力目录 source**：`ui-dsh-mcp-manager` 是 canonical row/settings 条目 id；目录消息的当前业务格式是 producer-owned V4：`{ kind: "plugin:@wingsky-1/dsh-mcp-manager", form: "snapshot", sections: [{ name: "mcp-catalog", text }] }`
+- **能力目录 source**：`dsh-mcp-manager` 是 canonical row/settings 条目 id；目录消息的当前业务格式是 producer-owned V4：`{ kind: "plugin:@wingsky-1/dsh-mcp-manager", form: "snapshot", sections: [{ name: "mcp-catalog", text }] }`
 
 <a id="升级与历史会话边界"></a>
 ## 升级与历史会话边界

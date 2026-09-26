@@ -240,6 +240,10 @@
       "why": "插件清单（某插件是否参与聚合 / 发布校验的唯一声明处）：由 test/plugins-manifest.test.ts 与 aggregate:check 守，属结构声明。"
     },
     {
+      "source": "scripts/data/plugin-row-migration.json",
+      "why": "一次性 profile row identity 迁移映射：数据文件是维护脚本的输入，由脚本自身的重复/冲突判据校验，不属于可放宽的阈值面。"
+    },
+    {
       "source": "scripts/data/vendored-binaries.json",
       "why": "发布物面内 vendored 裸二进制登记（批 2b）：sha256 绑定 + 许可随包由 verify:vendored-binaries 守，属登记面。"
     }

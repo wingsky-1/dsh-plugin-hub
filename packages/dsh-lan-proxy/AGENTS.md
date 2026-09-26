@@ -49,7 +49,7 @@ issue #110 起不再使用自建 config.json）。
   （`defaults.ts` 是展示缺省值的单一事实源 + `interface.ts` 门面）——与 `src/server/shared/` 同形
 - `test/{unit,integration,e2e,client}/` — 单元 / 集成（真实 cordis 生命周期 + 真实转发器，
   进变异面）/ 冒烟（真端口 + 子进程，不进变异面）/ 客户端产物用例，由 `pnpm test` 统一调度
-- `cordis.patch.yml` — patch（id `ui-dsh-lan-proxy`）
+- `cordis.patch.yml` — patch（id `dsh-lan-proxy`）
 
 ## 改动前必守（本包特有）
 

@@ -58,7 +58,7 @@ const card = (view: "summary" | "page" = "page") =>
     hostTrustSignals: () => ({ hostname: "localhost" }),
   });
 async function mountRowEntry(view: "summary" | "page") {
-  const ownerKey = "@wingsky-1/dsh-lan-proxy#ui-dsh-lan-proxy";
+  const ownerKey = "@wingsky-1/dsh-lan-proxy#dsh-lan-proxy";
   const host =
     view === "summary"
       ? React.createElement("p", { "data-plugin-row-detail": ownerKey }, card(view))

@@ -19,7 +19,7 @@ export const MIDDLEWARE_GLOBAL_ROOT = "@global";
 
 /** bundle package、row ID 与 settings namespace 各自保持稳定身份。 */
 const MCP_MANAGER_BUNDLE_PACKAGE = "@wingsky-1/dsh-mcp-manager";
-const MCP_MANAGER_ROW_ID = "ui-dsh-mcp-manager";
+const MCP_MANAGER_ROW_ID = "dsh-mcp-manager";
 const MCP_MANAGER_SETTINGS_NAMESPACE = "dsh-mcp-manager";
 
 /** dsh 0.1.7-rc.2 插件行配置的 canonical identity；宿主与客户端只消费此对象。 */
