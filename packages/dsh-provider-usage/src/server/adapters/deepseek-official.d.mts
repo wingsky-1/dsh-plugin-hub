@@ -119,6 +119,117 @@ export declare function aggregateDaily(
   utils?: AdapterUtils,
 ): DayRecord[];
 
+/* ---------------------------------------------------------------- #732 抽出的纯面
+ * 以下声明对应格式面板与日聚合里拆出的纯函数（解析 / 归一 / 渲染三段），
+ * 与 .mjs 权威实现保持同步，供单测直接打纯面。 */
+
+/** 抽出的区间分类累加器形状（day 粒度）。 */
+export interface DaySlot {
+  sum: number;
+  topIn: number;
+  grantParts: string[];
+  mixed: boolean;
+  gapSegs: number;
+  unavail: boolean;
+}
+
+/** 相邻采样区间的分类结果（classifyIntervalDs 的返回形状）。 */
+export interface IntervalClass {
+  type: "unavailable" | "gap" | "disturbed" | "clean";
+  drop: number;
+  topup: number;
+  grantDelta: number;
+}
+
+/** 只保留 CNY 币种条目；无 CNY 条目返回 undefined。 */
+export declare function cnyBalanceInfo(body: unknown): unknown;
+
+/** 各目标日的取样帧数（区分 empty 与 insufficient）。 */
+export declare function framesByDayOf(
+  pts: SamplePoint[],
+  dayKey: (t: number) => string,
+  keysSet: Set<string>,
+): Map<string, number>;
+
+/** 区间分类 → 累加器（纯函数；原地改写传入槽位）。 */
+export declare function applyIntervalToSlot(slot: DaySlot, cls: IntervalClass): DaySlot;
+
+/** 各目标日的区间记账累加。 */
+export declare function accumulateIntervals(
+  pts: SamplePoint[],
+  dayKey: (t: number) => string,
+  keysSet: Set<string>,
+): Map<string, DaySlot>;
+
+/** 未计入项文案（充值 / 赠款变动 / 中断 / 不可用，顺序即呈现顺序）。 */
+export declare function dailyExclusionNotes(slot: DaySlot): string[];
+
+/** 单日记录渲染：无累加槽位时按帧数分 empty / insufficient。 */
+export declare function renderDailyRow(
+  key: string,
+  frames: number,
+  slot: DaySlot | undefined,
+): DayRecord;
+
+/** 余额走势图时间轴刻度（xOf 取时刻，xOfMid 取区间中点）。 */
+export declare function balanceXScale(
+  t0: number,
+  spanMs: number,
+): { of: (t: number) => number; ofMid: (ta: number, tb: number) => number };
+
+/** 充值事件归集（atIdx 表示事件发生在 values[atIdx-1] → values[atIdx] 区间）。 */
+export declare function topUpEvents(
+  values: SamplePoint[],
+  xScale: { ofMid: (ta: number, tb: number) => number },
+): Array<{ atIdx: number; amt: number; xMid: number }>;
+
+/** 每点累计下移量 = 该点之前发生的充值合计。 */
+export declare function cumulativeShifts(
+  values: SamplePoint[],
+  events: Array<{ atIdx: number; amt: number; xMid: number }>,
+): number[];
+
+/** 校准水位 y 域；无可比水位返回 null。 */
+export declare function calibratedDomain(
+  values: SamplePoint[],
+  shifts: number[],
+): { lo: number; hi: number } | null;
+
+/** 段内下标序列（>300 点时降采样并补回末点）。 */
+export declare function segmentIndexes(from: number, to: number): number[];
+
+/** 单条历史条目 → 采样代表点（字段缺失降级为 NaN / null）。 */
+export declare function samplePointOf(en: unknown): SamplePoint;
+
+/** 采样序列归一（过滤无效点、剔除未来时间戳、稳定排序）。 */
+export declare function samplePointsOf(entries: unknown[], now: number): SamplePoint[];
+
+/** 近 24h 区间记账汇总。 */
+export declare function trendLedgerOf(values: SamplePoint[]): {
+  spent: number;
+  topIn: number;
+  skipped: boolean;
+  counted: number;
+};
+
+/** 近 24h 消费徽标三态（有落账消费 / 无可计区间 / 消费≈0）。 */
+export declare function trendBadgeHtml(
+  values: SamplePoint[],
+  fin: (v: number) => number | null,
+  ea: (s: string) => string,
+): string;
+
+/** 卡1 副标题断轴提示。 */
+export declare function rechargeHintOf(values: SamplePoint[]): string;
+
+/** 面板注入面归一（优先宿主注入，缺失回退文件内兜底副本）。 */
+export declare function panelUtils(input: PanelInput): {
+  esc: (s: string) => string;
+  escAttr: (s: string) => string;
+  fin: (v: number) => number | null;
+  utils: AdapterUtils;
+};
+
 /** 柱形图 y 轴上限取整到 1/2/5×10^k 的好看步长。 */
 export declare function niceCeil(v: number): number;
 

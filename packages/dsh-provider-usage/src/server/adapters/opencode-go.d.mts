@@ -79,6 +79,76 @@ export declare function miniChartSvgMarkup(opts: {
   dateOnly: boolean;
 }): string;
 
+/* ---------------------------------------------------------------- #732 抽出的纯面 */
+
+/** 图表工具面归一（优先宿主注入 utils，缺失回退文件内兜底副本）。 */
+export declare function chartUtils(input: PanelInput): {
+  esc: (s: string) => string;
+  miniAreaSvg: (opts: Record<string, unknown>) => string;
+  niceDomain: (pcts: number[]) => [number, number];
+  trendOf: (pcts: Array<number | null>) => { up: boolean; down: boolean; delta: number } | null;
+};
+
+/** 归一化数据：窗口数组（供历史落盘与 format 使用）。 */
+export declare function normalizeWindows(parsed: Record<string, unknown>): Record<string, unknown>;
+
+/** 有限数值筛出（非 number / 非有限一律不入域）。 */
+export declare function finiteValuesOf(pcts: Array<number | null>): number[];
+
+/** 取值域；无输入返回 null（调用方视作 [0,100]）。 */
+export declare function valueRangeOf(vals: number[]): { dmin: number; dmax: number } | null;
+
+/** 最小跨度兜底（纯函数）：域过窄时以中点撑开 minSpan 并重新对齐步长网格。 */
+export declare function widenToMinSpan(
+  lo: number,
+  hi: number,
+  dmin: number,
+  dmax: number,
+  minSpan: number,
+  step: number,
+): [number, number];
+
+/** 上界收敛（纯函数）：贴顶数据必到 100%，域不越界 0–100，零跨度兜底 5 个点。 */
+export declare function capDomainAt100(lo: number, hi: number, dmax: number): [number, number];
+
+/** 窗口序列元组 → 具名字段（消除 CHART_SERIES 下标取值重复）。 */
+export declare function seriesViewOf(s: readonly unknown[]): {
+  key: string;
+  name: string;
+  short: string;
+  color: string;
+  limit: number;
+  obsMs: number;
+  period: number;
+};
+
+/** 窗口当前百分比（非 number 视作无数据）。 */
+export declare function windowPercentOf(win: unknown): number | null;
+
+/** 窗口重置文案（resetsAt 缺席或空串则不显示）。 */
+export declare function resetTextOf(win: unknown): string;
+
+/** 趋势徽标（null 无趋势；up / down / flat 三态）。 */
+export declare function trendBadgeHtml(
+  trend: { up: boolean; down: boolean; delta: number } | null,
+): string;
+
+/** 采样百分比序列（非有限 / 缺面记为 null，保留位置）。 */
+export declare function windowPctsOf(
+  entries: Array<{ time: number; data: Record<string, unknown> }>,
+  key: string,
+  obsMs: number,
+  tail: number,
+): Array<number | null>;
+
+/** 迷你图采样点（只收有限百分比）。 */
+export declare function chartPointsOf(
+  entries: Array<{ time: number; data: Record<string, unknown> }>,
+  key: string,
+  obsMs: number,
+  tail: number,
+): Array<{ x: number; y: number }>;
+
 /** 内置 OpenCode Go 适配器（v2 新契约，展示逻辑与 v1 一致）。 */
 export declare const openCodeGoAdapter: UsageStatsAdapter;
 

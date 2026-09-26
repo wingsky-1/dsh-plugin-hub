@@ -30,6 +30,7 @@ import {
   recover as policyRecover,
   shouldReconcileRetry,
   addRetryObservation,
+  statusAgreesWithResult,
   usageFromRetryObservations,
   RETRY_MAX_ATTEMPTS,
   type RetryAttemptObservation,
@@ -51,7 +52,38 @@ import {
 export const RETRY_LEDGER_SCHEMA = 1 as const;
 
 const PERIODS = ["daily", "weekly", "monthly"] as const;
-const PHASES = new Set<RetryPhase>(["initial", "waiting", "in-flight", "terminal"]);
+const PERIOD_SET: ReadonlySet<string> = new Set<ReportPeriod>(PERIODS);
+const PHASES: ReadonlySet<string> = new Set<RetryPhase>([
+  "initial",
+  "waiting",
+  "in-flight",
+  "terminal",
+]);
+
+/** period 键收窄（类型谓词，取代 PERIODS.includes(x as ReportPeriod) 的断言逃逸）。 */
+function isReportPeriod(value: string): value is ReportPeriod {
+  return PERIOD_SET.has(value);
+}
+
+/** 生命周期相位收窄（类型谓词）。 */
+function isRetryPhase(value: unknown): value is RetryPhase {
+  return typeof value === "string" && PHASES.has(value);
+}
+
+/** 已登记尝试次数收窄：0..RETRY_MAX_ATTEMPTS 的整数。 */
+function isRetryAttemptCounter(value: unknown): value is number {
+  return (
+    typeof value === "number" &&
+    Number.isInteger(value) &&
+    value >= 0 &&
+    value <= RETRY_MAX_ATTEMPTS
+  );
+}
+
+/** 下次重试时刻收窄：null（不排期）或非负安全整数。 */
+function isRetryNextRetryAt(value: unknown): value is number | null {
+  return value === null || isFiniteTimestamp(value);
+}
 const FAILURE_KINDS = new Set<RetryFailureKind>([
   "transient",
   "empty-output",
@@ -288,70 +320,107 @@ function parseUsage(value: unknown): RetryUsageTotals | null {
   return { ...tokens, durationMs };
 }
 
-function parseObservation(value: unknown): RetryAttemptObservation | null {
-  if (
-    !isRecord(value) ||
-    !hasExactKeys(value, ["attempt", "result", "code", "status", "durationMs", "tokens"])
-  ) {
-    return null;
-  }
+/** 单条 attempt 观测的精确键集合（读盘口径，缺键/多键即拒）。 */
+const OBSERVATION_KEYS = ["attempt", "result", "code", "status", "durationMs", "tokens"] as const;
+
+function isObservationResult(value: unknown): value is "success" | "failure" {
+  return value === "success" || value === "failure";
+}
+
+function isObservationStatus(value: unknown): value is RetryAttemptObservation["status"] {
+  return value === "success" || value === "retry" || value === "terminal" || value === "aborted";
+}
+
+/** code 收窄：null（无失败码）或稳定码形态。 */
+function isObservationCode(value: unknown): value is string | null {
+  return value === null || isStableCode(value);
+}
+
+/** attempt 收窄：≥1 的整数。 */
+function isObservationAttempt(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value >= 1;
+}
+
+/** 观测标量字段收窄（类型谓词承担 narrowing，取代读盘路径的 as 逃逸）。 */
+export function narrowObservationScalars(
+  value: Record<string, unknown>,
+): Pick<RetryAttemptObservation, "attempt" | "result" | "code" | "status"> | null {
+  if (!isObservationAttempt(value.attempt)) return null;
+  if (!isObservationResult(value.result)) return null;
+  if (!isObservationStatus(value.status)) return null;
+  if (!isObservationCode(value.code)) return null;
+  return {
+    attempt: value.attempt,
+    result: value.result,
+    code: value.code,
+    status: value.status,
+  };
+}
+
+/**
+ * 观测跨字段一致性（result⇔code 必填性、result⇔status、status⇔attempt 上限）。
+ * 与 retry-policy 的 requireObservationConsistency 同口径——读盘校验只判真假、
+ * 不抛错（抛错面在写入口）。
+ */
+export function hasConsistentObservationOutcome(observation: RetryAttemptObservation): boolean {
+  if (observation.result === "success" && observation.code !== null) return false;
+  if (observation.result === "failure" && observation.code === null) return false;
+  if (!statusAgreesWithResult(observation)) return false;
+  if (observation.status === "retry" && observation.attempt > RETRY_MAX_ATTEMPTS) return false;
+  return true;
+}
+
+export function parseObservation(value: unknown): RetryAttemptObservation | null {
+  if (!isRecord(value) || !hasExactKeys(value, OBSERVATION_KEYS)) return null;
   const durationMs = parseMetric(value.durationMs);
   if (durationMs === undefined) return null;
   const tokens = parseAttemptTokens(value.tokens);
   if (tokens === null) return null;
-  if (
-    !Number.isInteger(value.attempt) ||
-    (value.attempt as number) < 1 ||
-    (value.result !== "success" && value.result !== "failure") ||
-    (value.status !== "success" &&
-      value.status !== "retry" &&
-      value.status !== "terminal" &&
-      value.status !== "aborted") ||
-    (value.code !== null && !isStableCode(value.code)) ||
-    (value.result === "success" && value.code !== null) ||
-    (value.result === "failure" && value.code === null) ||
-    (value.result === "success" && value.status !== "success") ||
-    (value.result === "failure" && value.status === "success") ||
-    (value.status === "retry" && (value.attempt as number) > RETRY_MAX_ATTEMPTS)
-  ) {
-    return null;
+  const scalars = narrowObservationScalars(value);
+  if (scalars === null) return null;
+  const observation: RetryAttemptObservation = { ...scalars, durationMs, tokens };
+  return hasConsistentObservationOutcome(observation) ? observation : null;
+}
+
+/**
+ * 观测序列连续性（纯函数）：第 i 项的 attempt 必须是 i+1（跳号/重号皆拒），
+ * 任一项非法则整序列拒。
+ */
+export function collectSequentialObservations(
+  raw: readonly unknown[],
+): RetryAttemptObservation[] | null {
+  const attemptObservations: RetryAttemptObservation[] = [];
+  for (const [index, rawObservation] of raw.entries()) {
+    const observation = parseObservation(rawObservation);
+    if (observation === null || observation.attempt !== index + 1) return null;
+    attemptObservations.push(observation);
   }
-  return {
-    attempt: value.attempt as number,
-    result: value.result,
-    code: value.code as string | null,
-    status: value.status as RetryAttemptObservation["status"],
-    durationMs,
-    tokens,
-  };
+  return attemptObservations;
+}
+
+/**
+ * usage 合计自洽（纯函数）：落盘 usage 必须等于按观测序列重算的结果——
+ * 杜绝手改/半写账本里 usage 与观测互相矛盾的成本失真。
+ */
+export function usageMatchesObservations(
+  usage: RetryUsageTotals,
+  attemptObservations: readonly RetryAttemptObservation[],
+): boolean {
+  return sameUsage(usageFromRetryObservations(attemptObservations), usage);
 }
 
 function parseObservationCollection(
   value: Record<string, unknown>,
 ): { attemptObservations: RetryAttemptObservation[]; usage: RetryUsageTotals } | null {
   if (!Array.isArray(value.attemptObservations)) return null;
-  const attemptObservations: RetryAttemptObservation[] = [];
-  for (const [index, rawObservation] of value.attemptObservations.entries()) {
-    const observation = parseObservation(rawObservation);
-    if (observation === null || observation.attempt !== index + 1) return null;
-    attemptObservations.push(observation);
-  }
+  const attemptObservations = collectSequentialObservations(value.attemptObservations);
+  if (attemptObservations === null) return null;
   if (attemptObservations.length > RETRY_MAX_ATTEMPTS + 1) return null;
   const usage = parseUsage(value.usage);
   if (usage === null) return null;
-  const expectedUsage = usageFromRetryObservations(attemptObservations);
-  if (
-    expectedUsage.inputTokens !== usage.inputTokens ||
-    expectedUsage.outputTokens !== usage.outputTokens ||
-    expectedUsage.reasoningTokens !== usage.reasoningTokens ||
-    expectedUsage.totalTokens !== usage.totalTokens ||
-    expectedUsage.cacheReadTokens !== usage.cacheReadTokens ||
-    expectedUsage.cacheWriteTokens !== usage.cacheWriteTokens ||
-    expectedUsage.durationMs !== usage.durationMs
-  ) {
-    return null;
-  }
-  return { attemptObservations, usage };
+  return usageMatchesObservations(usage, attemptObservations)
+    ? { attemptObservations, usage }
+    : null;
 }
 
 function observationCountMatchesState(
@@ -370,15 +439,24 @@ function observationCountMatchesState(
   return observationCount === attempts + 1;
 }
 
-function parseEntryState(
+/** 终态条目形态：terminal 恒真、终态原因非空、不再排期。 */
+export function isWellFormedTerminalState(
   value: Record<string, unknown>,
   reason: RetryTerminalReason | null,
 ): boolean {
-  const phase = value.phase as RetryPhase;
-  const attempts = value.attempts as number;
-  if (phase === "terminal") {
-    return value.terminal === true && reason !== null && value.nextRetryAt === null;
-  }
+  return value.terminal === true && reason !== null && value.nextRetryAt === null;
+}
+
+/**
+ * 非终态条目不变量：terminal/reason 须同时为空；in-flight 不排期；
+ * initial/waiting 必有有限 nextRetryAt；initial 必零尝试。
+ */
+export function isWellFormedLiveState(
+  value: Record<string, unknown>,
+  reason: RetryTerminalReason | null,
+  phase: RetryPhase,
+  attempts: number,
+): boolean {
   if (value.terminal || reason !== null) return false;
   if (phase === "in-flight" && value.nextRetryAt !== null) return false;
   if ((phase === "initial" || phase === "waiting") && !isFiniteTimestamp(value.nextRetryAt)) {
@@ -387,79 +465,147 @@ function parseEntryState(
   return phase !== "initial" || attempts === 0;
 }
 
-function parseEntry(period: ReportPeriod, key: string, value: unknown): RetryEntry | null {
-  if (!isRecord(value)) return null;
-  const legacyKeys = [
-    "period",
-    "key",
-    "startDay",
-    "endDay",
-    "route",
-    "attempts",
-    "maxAttempts",
-    "nextRetryAt",
-    "terminal",
-    "reason",
-    "cycleId",
-    "phase",
-  ];
+/** 条目状态机自洽（终态与非终态两套不变量，见上）。 */
+export function parseEntryState(
+  value: Record<string, unknown>,
+  reason: RetryTerminalReason | null,
+  phase: RetryPhase,
+  attempts: number,
+): boolean {
+  if (phase === "terminal") return isWellFormedTerminalState(value, reason);
+  return isWellFormedLiveState(value, reason, phase, attempts);
+}
+
+/** 无观测序列的历史条目键集合（schema:1 基线形态）。 */
+const LEGACY_ENTRY_KEYS = [
+  "period",
+  "key",
+  "startDay",
+  "endDay",
+  "route",
+  "attempts",
+  "maxAttempts",
+  "nextRetryAt",
+  "terminal",
+  "reason",
+  "cycleId",
+  "phase",
+] as const;
+
+/** 观测载荷两键须同在同缺——只带其一的条目视为半写账本，拒。 */
+export function hasExpectedEntryKeys(value: Record<string, unknown>): boolean {
   const hasObservations = Object.hasOwn(value, "attemptObservations");
-  const hasUsage = Object.hasOwn(value, "usage");
-  if (hasObservations !== hasUsage) return null;
+  if (hasObservations !== Object.hasOwn(value, "usage")) return false;
   const expectedKeys = hasObservations
-    ? [...legacyKeys, "attemptObservations", "usage"]
-    : legacyKeys;
-  if (!hasExactKeys(value, expectedKeys)) return null;
+    ? [...LEGACY_ENTRY_KEYS, "attemptObservations", "usage"]
+    : LEGACY_ENTRY_KEYS;
+  return hasExactKeys(value, expectedKeys);
+}
+
+/** 条目身份面：period/key 对位 + 窗口合法 + 路由快照可解析。 */
+export function parseEntryIdentity(
+  value: Record<string, unknown>,
+  period: ReportPeriod,
+  key: string,
+): { startDay: string; endDay: string; route: RetryRouteSnapshot } | null {
   if (value.period !== period || value.key !== key || !isValidWindow(period, value)) return null;
   const route = parseRoute(value.route);
   if (route === null) return null;
-  if (
-    !Number.isInteger(value.attempts) ||
-    (value.attempts as number) < 0 ||
-    (value.attempts as number) > RETRY_MAX_ATTEMPTS ||
-    value.maxAttempts !== RETRY_MAX_ATTEMPTS ||
-    typeof value.terminal !== "boolean" ||
-    typeof value.cycleId !== "string" ||
-    !CYCLE_ID_RE.test(value.cycleId) ||
-    typeof value.phase !== "string" ||
-    !PHASES.has(value.phase as RetryPhase) ||
-    (value.nextRetryAt !== null && !isFiniteTimestamp(value.nextRetryAt))
-  ) {
-    return null;
-  }
-
-  const reason = parseReason(value.reason);
-  if (reason === null && value.reason !== null) return null;
-  const observations = hasObservations ? parseObservationCollection(value) : null;
-  if (hasObservations && observations === null) return null;
-  const attemptObservations = observations?.attemptObservations ?? [];
-  const usage = observations?.usage ?? emptyRetryUsage();
-  const phase = value.phase as RetryPhase;
-  const attempts = value.attempts as number;
-  if (
-    hasObservations &&
-    !observationCountMatchesState(phase, attempts, attemptObservations.length)
-  ) {
-    return null;
-  }
-  if (!parseEntryState(value, reason)) return null;
-
   return {
-    period,
-    key,
     startDay: value.startDay as string,
     endDay: value.endDay as string,
     route,
-    attempts,
-    maxAttempts: RETRY_MAX_ATTEMPTS,
-    nextRetryAt: value.nextRetryAt as number | null,
-    terminal: value.terminal,
-    reason,
-    cycleId: value.cycleId,
-    phase,
-    attemptObservations,
-    usage,
   };
+}
+
+interface NarrowedEntryFields {
+  attempts: number;
+  terminal: boolean;
+  nextRetryAt: number | null;
+  cycleId: string;
+  phase: RetryPhase;
+  reason: RetryTerminalReason | null;
+}
+
+/** 条目标量字段收窄：尝试计数、终态标记、排期时刻、cycleId、相位、终态原因。 */
+export function narrowEntryFields(value: Record<string, unknown>): NarrowedEntryFields | null {
+  if (value.maxAttempts !== RETRY_MAX_ATTEMPTS) return null;
+  if (!isRetryAttemptCounter(value.attempts)) return null;
+  if (typeof value.terminal !== "boolean") return null;
+  if (typeof value.cycleId !== "string" || !CYCLE_ID_RE.test(value.cycleId)) return null;
+  if (!isRetryPhase(value.phase)) return null;
+  if (!isRetryNextRetryAt(value.nextRetryAt)) return null;
+  const reason = parseReason(value.reason);
+  if (reason === null && value.reason !== null) return null;
+  return {
+    attempts: value.attempts,
+    terminal: value.terminal,
+    nextRetryAt: value.nextRetryAt,
+    cycleId: value.cycleId,
+    phase: value.phase,
+    reason,
+  };
+}
+
+/** 观测载荷：缺两键（历史条目）视作零观测空载荷。 */
+export function parseEntryPayload(
+  value: Record<string, unknown>,
+): { attemptObservations: RetryAttemptObservation[]; usage: RetryUsageTotals } | null {
+  if (!Object.hasOwn(value, "attemptObservations")) {
+    return { attemptObservations: [], usage: emptyRetryUsage() };
+  }
+  return parseObservationCollection(value);
+}
+
+/** 观测事实与状态机自洽（观测条数对应自动重试计数 + 条目状态机不变量）。 */
+export function isEntryCoherent(
+  value: Record<string, unknown>,
+  fields: NarrowedEntryFields,
+  observationCount: number,
+): boolean {
+  if (!observationCountMatchesState(fields.phase, fields.attempts, observationCount)) {
+    return false;
+  }
+  return parseEntryState(value, fields.reason, fields.phase, fields.attempts);
+}
+
+/** 条目装配（纯函数）：身份面 + 标量面 + 观测载荷 → RetryEntry。 */
+export function buildRetryEntry(
+  period: ReportPeriod,
+  key: string,
+  identity: { startDay: string; endDay: string; route: RetryRouteSnapshot },
+  fields: NarrowedEntryFields,
+  payload: { attemptObservations: RetryAttemptObservation[]; usage: RetryUsageTotals },
+): RetryEntry {
+  return {
+    period,
+    key,
+    startDay: identity.startDay,
+    endDay: identity.endDay,
+    route: identity.route,
+    attempts: fields.attempts,
+    maxAttempts: RETRY_MAX_ATTEMPTS,
+    nextRetryAt: fields.nextRetryAt,
+    terminal: fields.terminal,
+    reason: fields.reason,
+    cycleId: fields.cycleId,
+    phase: fields.phase,
+    attemptObservations: payload.attemptObservations,
+    usage: payload.usage,
+  };
+}
+
+export function parseEntry(period: ReportPeriod, key: string, value: unknown): RetryEntry | null {
+  if (!isRecord(value)) return null;
+  if (!hasExpectedEntryKeys(value)) return null;
+  const identity = parseEntryIdentity(value, period, key);
+  if (identity === null) return null;
+  const fields = narrowEntryFields(value);
+  if (fields === null) return null;
+  const payload = parseEntryPayload(value);
+  if (payload === null) return null;
+  if (!isEntryCoherent(value, fields, payload.attemptObservations.length)) return null;
+  return buildRetryEntry(period, key, identity, fields, payload);
 }
 
 function parseTerminalKeys(value: unknown): RetryLedgerDocument["terminalKeys"] {
@@ -467,7 +613,7 @@ function parseTerminalKeys(value: unknown): RetryLedgerDocument["terminalKeys"] 
   if (!isRecord(value)) throw new Error("invalid retry ledger terminal keys");
   const parsed: Record<string, Record<string, string>> = {};
   for (const [period, bucket] of Object.entries(value)) {
-    if (!PERIODS.includes(period as ReportPeriod) || !isRecord(bucket)) {
+    if (!isReportPeriod(period) || !isRecord(bucket)) {
       throw new Error("invalid retry ledger terminal key period");
     }
     for (const [key, code] of Object.entries(bucket)) {
@@ -478,44 +624,64 @@ function parseTerminalKeys(value: unknown): RetryLedgerDocument["terminalKeys"] 
   return parsed as RetryLedgerDocument["terminalKeys"];
 }
 
-function parseDocument(value: unknown): RetryLedgerDocument {
+/** 文档外壳键集合：terminalKeys 有无两形态（键多/键缺一律拒）。 */
+export function hasExpectedDocumentKeys(value: Record<string, unknown>): boolean {
+  const expectedKeys = Object.hasOwn(value, "terminalKeys")
+    ? ["schema", "records", "terminalKeys"]
+    : ["schema", "records"];
+  return hasExactKeys(value, expectedKeys);
+}
+
+/** 单个 period 桶解析（key 不得含路径分隔符；条目须全量合法）。 */
+export function parseRetryPeriodBucket(
+  period: ReportPeriod,
+  rawPeriod: unknown,
+): Record<string, RetryEntry> {
+  if (!isRecord(rawPeriod)) throw new Error("invalid retry ledger period");
+  const bucket: Record<string, RetryEntry> = {};
+  for (const [key, rawEntry] of Object.entries(rawPeriod)) {
+    if (!key || key.includes("/") || key.includes("\\")) {
+      throw new Error("invalid retry ledger key");
+    }
+    const entry = parseEntry(period, key, rawEntry);
+    if (entry === null) throw new Error("invalid retry ledger entry");
+    bucket[key] = entry;
+  }
+  return bucket;
+}
+
+/** 未知 period 拒绝（须在全部条目校验之后——判词顺序即错误优先级）。 */
+export function assertKnownPeriodsOnly(raw: Record<string, unknown>): void {
+  for (const period of Object.keys(raw)) {
+    if (!isReportPeriod(period)) {
+      throw new Error("unknown retry ledger period");
+    }
+  }
+}
+
+export function parseRetryRecords(raw: Record<string, unknown>): RetryRecords {
+  const records: RetryRecords = {};
+  for (const period of PERIODS) {
+    const rawPeriod = raw[period];
+    if (rawPeriod === undefined) continue;
+    records[period] = parseRetryPeriodBucket(period, rawPeriod);
+  }
+  assertKnownPeriodsOnly(raw);
+  return records;
+}
+
+export function parseDocument(value: unknown): RetryLedgerDocument {
   if (!isRecord(value)) {
     throw new Error("invalid retry ledger document");
   }
-  const hasTerminalKeys = Object.hasOwn(value, "terminalKeys");
-  const expectedKeys = hasTerminalKeys
-    ? ["schema", "records", "terminalKeys"]
-    : ["schema", "records"];
-  if (!hasExactKeys(value, expectedKeys)) {
+  if (!hasExpectedDocumentKeys(value)) {
     throw new Error("invalid retry ledger document");
   }
   if (value.schema !== RETRY_LEDGER_SCHEMA || !isRecord(value.records)) {
     throw new Error("invalid retry ledger schema");
   }
   const terminalKeys = parseTerminalKeys(value.terminalKeys);
-
-  const records: RetryRecords = {};
-  for (const period of PERIODS) {
-    const rawPeriod = value.records[period];
-    if (rawPeriod === undefined) continue;
-    if (!isRecord(rawPeriod)) throw new Error("invalid retry ledger period");
-    const bucket: Record<string, RetryEntry> = {};
-    for (const [key, rawEntry] of Object.entries(rawPeriod)) {
-      if (!key || key.includes("/") || key.includes("\\")) {
-        throw new Error("invalid retry ledger key");
-      }
-      const entry = parseEntry(period, key, rawEntry);
-      if (entry === null) throw new Error("invalid retry ledger entry");
-      bucket[key] = entry;
-    }
-    records[period] = bucket;
-  }
-
-  for (const period of Object.keys(value.records)) {
-    if (!PERIODS.includes(period as ReportPeriod)) {
-      throw new Error("unknown retry ledger period");
-    }
-  }
+  const records = parseRetryRecords(value.records);
   return {
     schema: RETRY_LEDGER_SCHEMA,
     records,
@@ -691,42 +857,65 @@ function sameTokens(left: RetryAttemptTokens, right: RetryAttemptTokens): boolea
   );
 }
 
-function sameObservations(
+/**
+ * 单条观测等价。右侧缺席即不等价（调用方已先比长度，越界只可能来自越界读取）；
+ * tokens 缺席视作全空，与历史实现的 `right?.[i]?.tokens ?? empty` 口径一致。
+ */
+function sameObservation(
+  left: RetryAttemptObservation,
+  right: RetryAttemptObservation | undefined,
+): boolean {
+  if (right === undefined) return false;
+  return (
+    left.attempt === right.attempt &&
+    left.result === right.result &&
+    left.code === right.code &&
+    left.status === right.status &&
+    left.durationMs === right.durationMs &&
+    sameTokens(left.tokens, right.tokens)
+  );
+}
+
+export function sameObservations(
   left: readonly RetryAttemptObservation[],
   right: readonly RetryAttemptObservation[],
 ): boolean {
-  return (
-    left.length === right.length &&
-    left.every(
-      (observation, index) =>
-        observation.attempt === right[index]?.attempt &&
-        observation.result === right[index]?.result &&
-        observation.code === right[index]?.code &&
-        observation.status === right[index]?.status &&
-        observation.durationMs === right[index]?.durationMs &&
-        sameTokens(observation.tokens, right[index]?.tokens ?? emptyRetryAttemptTokens()),
-    )
-  );
+  if (left.length !== right.length) return false;
+  return left.every((observation, index) => sameObservation(observation, right[index]));
 }
 
 function sameUsage(left: RetryUsageTotals, right: RetryUsageTotals): boolean {
   return sameTokens(left, right) && left.durationMs === right.durationMs;
 }
 
-function claimMatchesCurrent(claim: RetryClaim, current: RetryEntry): boolean {
+/** 条目窗口身份等价（period/key/窗口首末日）。 */
+export function sameEntryWindow(left: RetryEntry, right: RetryEntry): boolean {
+  return (
+    left.period === right.period &&
+    left.key === right.key &&
+    left.startDay === right.startDay &&
+    left.endDay === right.endDay
+  );
+}
+
+/** 条目周期状态等价（尝试次数/排期/终态标记/相位）。 */
+export function sameEntryCycle(left: RetryEntry, right: RetryEntry): boolean {
+  return (
+    left.attempts === right.attempts &&
+    left.nextRetryAt === right.nextRetryAt &&
+    left.terminal === right.terminal &&
+    left.phase === right.phase
+  );
+}
+
+export function claimMatchesCurrent(claim: RetryClaim, current: RetryEntry): boolean {
   const claimed = claim.entry;
   return (
     claim.cycleId === current.cycleId &&
-    claimed.period === current.period &&
-    claimed.key === current.key &&
-    claimed.startDay === current.startDay &&
-    claimed.endDay === current.endDay &&
+    sameEntryWindow(claimed, current) &&
+    sameEntryCycle(claimed, current) &&
     sameRoute(claimed.route, current.route) &&
-    claimed.attempts === current.attempts &&
-    claimed.nextRetryAt === current.nextRetryAt &&
-    claimed.terminal === current.terminal &&
     sameReason(claimed.reason, current.reason) &&
-    claimed.phase === current.phase &&
     sameObservations(claimed.attemptObservations, current.attemptObservations) &&
     sameUsage(claimed.usage, current.usage)
   );
@@ -794,25 +983,35 @@ async function ensureCorruptMarker(reports: string): Promise<void> {
   }
 }
 
+/** 不支持 hard-link 的文件系统错误码（退化为 exclusive copy 的前提）。 */
+const HARDLINK_UNSUPPORTED = ["EPERM", "ENOTSUP", "EOPNOTSUPP", "ENOSYS", "EXDEV"];
+
+/**
+ * no-clobber 占位（返回 true = candidate 已占位；false = 已被占，换名重试）。
+ * 同目录 hard-link 创建具备原子 no-clobber 语义；不支持时退化为 exclusive copy。
+ * 其余错误上抛（证据不完整，不得继续隔离流程）。
+ */
+async function reserveNoClobber(file: string, candidate: string): Promise<boolean> {
+  try {
+    await link(file, candidate);
+    return true;
+  } catch (linkError: unknown) {
+    if (errorCode(linkError) === "EEXIST") return false;
+    if (!HARDLINK_UNSUPPORTED.includes(errorCode(linkError) ?? "")) throw linkError;
+    try {
+      await copyFile(file, candidate, constants.COPYFILE_EXCL);
+      return true;
+    } catch (copyError: unknown) {
+      if (errorCode(copyError) === "EEXIST") return false;
+      throw copyError;
+    }
+  }
+}
+
 async function moveToBackupNoClobber(file: string, backupBase: string): Promise<string> {
   for (let suffix = 0; ; suffix += 1) {
     const candidate = suffix === 0 ? backupBase : `${backupBase}-${suffix}`;
-    try {
-      await link(file, candidate);
-    } catch (linkError: unknown) {
-      if (errorCode(linkError) === "EEXIST") continue;
-      if (
-        !["EPERM", "ENOTSUP", "EOPNOTSUPP", "ENOSYS", "EXDEV"].includes(errorCode(linkError) ?? "")
-      ) {
-        throw linkError;
-      }
-      try {
-        await copyFile(file, candidate, constants.COPYFILE_EXCL);
-      } catch (copyError: unknown) {
-        if (errorCode(copyError) === "EEXIST") continue;
-        throw copyError;
-      }
-    }
+    if (!(await reserveNoClobber(file, candidate))) continue;
     await chmod(candidate, 0o600);
     await unlink(file);
     return candidate;

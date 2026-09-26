@@ -833,7 +833,8 @@
             "packages/dsh-provider-usage/test/unit/pipeline/unit-stats-service.test.ts",
             "packages/dsh-provider-usage/test/unit/registry/unit-hotreload.test.ts",
             "packages/dsh-provider-usage/test/unit/shared/unit-chart.test.ts",
-            "packages/dsh-provider-usage/test/unit/shared/unit-contract.test.ts"
+            "packages/dsh-provider-usage/test/unit/shared/unit-contract.test.ts",
+            "packages/dsh-provider-usage/test/unit/adapters/unit-adapters-pure.test.ts"
           ],
           "comment": "#342 v4：src 级文件组分段（3）——contracts+server/pipeline/guards（契约面，#768 D6 随域改址）；测试按段 testFiles 清单跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
         },
@@ -856,7 +857,8 @@
             "packages/dsh-provider-usage/test/unit/pipeline/unit-stats-service.test.ts",
             "packages/dsh-provider-usage/test/unit/shared/unit-config.test.ts",
             "packages/dsh-provider-usage/test/unit/shared/unit-contract.test.ts",
-            "packages/dsh-provider-usage/test/unit/trend/unit-trend.test.ts"
+            "packages/dsh-provider-usage/test/unit/trend/unit-trend.test.ts",
+            "packages/dsh-provider-usage/test/unit/registry/unit-registry-pure.test.ts"
           ],
           "comment": "#342 v4：src 级文件组分段（1）——index+user-adapters+ui-config+config（配置/入口面）；#768 D7 注册表文件随域迁 server/registry（路径同步，行为零改 + 双启用判据）；#768 D13 包根入口 src/index.ts 落地（apply/index.ts 显式具名薄转发，导出面零漂移）并入本段；测试按段 testFiles 清单跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
         },
@@ -890,7 +892,8 @@
             "packages/dsh-provider-usage/test/unit/shared/unit-contract.test.ts",
             "packages/dsh-provider-usage/test/unit/pipeline/unit-signal-lock.test.ts",
             "packages/dsh-provider-usage/test/integration/pipeline/composition-root.test.ts",
-            "packages/dsh-provider-usage/test/integration/schedule/composition-root.test.ts"
+            "packages/dsh-provider-usage/test/integration/schedule/composition-root.test.ts",
+            "packages/dsh-provider-usage/test/unit/registry/unit-registry-pure.test.ts"
           ],
           "comment": "#962 A 拆大段（三向之一：管线-注册表服务面）——原 pipeline 段的 v2/stats-service（#768 D6 随域迁 server/pipeline，净化缺席判据；阶段零补 stats-service 盲区）+ hotreload/path-resolve/provider-config（#768 D7 随域迁 server/registry，双启用判据）；testFiles 原样继承原段 22 个（零收窄，理由同 pipeline-history）；测试按段 testFiles 清单跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
         },
@@ -922,7 +925,8 @@
             "packages/dsh-provider-usage/test/integration/registry/composition-root.test.ts",
             "packages/dsh-provider-usage/test/unit/apply/unit-apply.test.ts",
             "packages/dsh-provider-usage/test/unit/pipeline/unit-stats-service.test.ts",
-            "packages/dsh-provider-usage/test/unit/shared/unit-contract.test.ts"
+            "packages/dsh-provider-usage/test/unit/shared/unit-contract.test.ts",
+            "packages/dsh-provider-usage/test/unit/registry/unit-registry-pure.test.ts"
           ],
           "comment": "#342 二期：功能命名段（registry）——registry+user-adapter-loader（注册表域，25s；阶段零补 loader 盲区）；#768 D4 并入 server/adapters/register.ts（内置装配 fail-fast，杀灭面为 test/integration/adapters/composition-root）；#768 D7 注册表两文件随域迁 server/registry（路径同步，行为零改 + 双启用判据，杀灭面新增 test/integration/registry/composition-root）；测试按段 testFiles 清单跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
         },
@@ -1011,7 +1015,8 @@
             "packages/dsh-provider-usage/test/unit/report/unit-report-b2-3.test.ts",
             "packages/dsh-provider-usage/test/unit/report/unit-report-executor.test.ts",
             "packages/dsh-provider-usage/test/unit/report/unit-report.test.ts",
-            "packages/dsh-provider-usage/test/unit/server-shared/unit-s2-contracts.test.ts"
+            "packages/dsh-provider-usage/test/unit/server-shared/unit-s2-contracts.test.ts",
+            "packages/dsh-provider-usage/test/unit/schedule/unit-schedule-pure.test.ts"
           ],
           "comment": "阶段零新段（D17 分层变异）：E3 报告调度面——schedule+scheduler+tasks；阶段二（D8）并入 last-run.ts（公共原语）；#768 D1 起配置面归 server/config 域（shape/prompts/normalize/store/service）；#768 D2 起调度面整域归 server/schedule（due/scheduler/tasks/store，domain2/schedule 与 common/last-run 旧址删除，interface.ts/deps.ts 以 facade/type-only 口径排除）；#1010 B1 纳入 retry-policy/retry-ledger（纯状态机 + durable JSON/CAS/recover）；testFiles 含 unit-report/unit-report-executor + test/integration/schedule/composition-root（状态/持久化、串行锁与门面装配判据）。"
         },

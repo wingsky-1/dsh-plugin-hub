@@ -346,29 +346,53 @@ export class ReportTaskQueue {
   }
 
   private prune(): void {
+    this.dropExpired();
+    this.enforceCapacity();
+  }
+
+  /** 淘汰策略一：已结算且超出 TTL 的任务。 */
+  private dropExpired(): void {
     const cutoff = this.now() - this.ttlMs;
     for (const [id, task] of this.tasks) {
-      if ((task.status === "done" || task.status === "failed") && task.updatedAt < cutoff) {
-        this.tasks.delete(id);
-        this.runtimes.delete(id);
-        this.preparedForceTasks.delete(id);
-      }
-    }
-
-    while (this.tasks.size > this.maxTasks) {
-      let oldest: string | null = null;
-      let oldestAt = Number.POSITIVE_INFINITY;
-      for (const [id, task] of this.tasks) {
-        if (task.status !== "done" && task.status !== "failed") continue;
-        if (task.createdAt < oldestAt) {
-          oldestAt = task.createdAt;
-          oldest = id;
-        }
-      }
-      if (oldest === null) break;
-      this.tasks.delete(oldest);
-      this.runtimes.delete(oldest);
-      this.preparedForceTasks.delete(oldest);
+      if (isSettled(task) && task.updatedAt < cutoff) this.forget(id);
     }
   }
+
+  /**
+   * 淘汰策略二：超容量时逐个挤掉最老的已结算任务。
+   * 在跑的（queued/running）不可挤——容量超限且无可挤时保留现状，等其结算。
+   */
+  private enforceCapacity(): void {
+    while (this.tasks.size > this.maxTasks) {
+      const oldest = this.oldestSettledId();
+      if (oldest === null) break;
+      this.forget(oldest);
+    }
+  }
+
+  /** 最老的已结算任务 id；无已结算任务返回 null。 */
+  private oldestSettledId(): string | null {
+    let oldest: string | null = null;
+    let oldestAt = Number.POSITIVE_INFINITY;
+    for (const [id, task] of this.tasks) {
+      if (!isSettled(task)) continue;
+      if (task.createdAt < oldestAt) {
+        oldestAt = task.createdAt;
+        oldest = id;
+      }
+    }
+    return oldest;
+  }
+
+  /** 任务本体与两处旁挂表（runtime 句柄、force 预置任务）同步移除。 */
+  private forget(id: string): void {
+    this.tasks.delete(id);
+    this.runtimes.delete(id);
+    this.preparedForceTasks.delete(id);
+  }
+}
+
+/** 已结算（不再占用执行槽、可被淘汰）的任务状态判定。 */
+export function isSettled(task: Pick<ReportTask, "status">): boolean {
+  return task.status === "done" || task.status === "failed";
 }

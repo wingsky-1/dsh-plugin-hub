@@ -101,73 +101,111 @@ function pctOfLimit(limit) {
  * { level, windows: [{ key:"5h"|"week", percent, usage, currentValue, remaining, total,
  *   nextResetTime, unit }], tools?: { percent, currentValue, total, usageDetails? } }。
  */
-export async function fetchData(ctx) {
-  const apiKey = ctx.apiKey;
-  if (typeof apiKey !== "string" || apiKey === "") throw new Error("no-api-key");
-  // quota 端点是平台级固定路径：优先取 ctx.apiEndpoint 的 origin（支持中转/代理），
-  // 缺省用默认主机——**绝不**把 /api/coding/paas/v4 段拼进 quota 路径。
-  let host = DEFAULT_QUOTA_HOST;
-  const ep = ctx.apiEndpoint && ctx.apiEndpoint.trim();
-  if (ep) {
-    try {
-      const u = new URL(ep);
-      if (u.protocol === "https:" || u.protocol === "http:") host = u.origin;
-    } catch {
-      /* 非法端点回落默认主机 */
-    }
+/**
+ * 主机判定（纯函数）：优先取 ctx.apiEndpoint 的 origin（支持中转/代理），
+ * 缺省用默认主机。quota 端点是平台级固定路径——**绝不**把
+ * /api/coding/paas/v4 段拼进 quota 路径。非法端点回落默认主机。
+ */
+export function quotaHostOf(apiEndpoint) {
+  const ep = apiEndpoint && apiEndpoint.trim();
+  if (!ep) return DEFAULT_QUOTA_HOST;
+  try {
+    const u = new URL(ep);
+    if (u.protocol === "https:" || u.protocol === "http:") return u.origin;
+  } catch {
+    /* 非法端点回落默认主机 */
   }
-  const url = host.replace(/\/+$/, "") + QUOTA_PATH;
+  return DEFAULT_QUOTA_HOST;
+}
 
+/** 拉取期超时/上游取消接线：返回 abort signal 与幂等收尾函数。 */
+function withTimeout(ctx) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), ctx.timeoutMs ?? 2000);
   const onAbort = () => controller.abort();
   ctx.signal?.addEventListener("abort", onAbort, { once: true });
-  const finish = () => {
-    clearTimeout(timer);
-    ctx.signal?.removeEventListener("abort", onAbort);
+  return {
+    signal: controller.signal,
+    finish: () => {
+      clearTimeout(timer);
+      ctx.signal?.removeEventListener("abort", onAbort);
+    },
   };
+}
 
-  const body = await getJson(url, apiKey, controller.signal, finish);
-  // 业务码校验：网关对未知路径也回 HTTP 200 + {code:404,...}
-  if (!body || body.code !== OK_CODE) throw new Error("bad-data");
-  const data = body.data && typeof body.data === "object" ? body.data : null;
-  if (data === null || !Array.isArray(data.limits)) throw new Error("bad-data");
+/** 窗口键判定（纯函数）：按 unit 而非 number 判定窗口
+ * （实测 2026-08-27：5h=unit3/number5，周=unit6/number1）。 */
+function creditWindowKey(unit) {
+  if (unit === 3) return "5h";
+  if (unit === 6) return "week";
+  return undefined;
+}
 
-  const level = typeof data.level === "string" ? data.level : undefined;
-  const windows = [];
-  let tools = undefined;
-  for (const lim of data.limits) {
+/** CREDIT_LIMIT → 窗口记录（纯函数）：未知 unit 视作不认领。 */
+function creditWindowOf(lim, unit) {
+  const key = creditWindowKey(unit);
+  if (key === undefined) return null;
+  return {
+    key,
+    percent: pctOfLimit(lim),
+    usage: toNumber(lim.usage),
+    currentValue: toNumber(lim.currentValue),
+    remaining: toNumber(lim.remaining),
+    total: toNumber(lim.total),
+    nextResetTime: toEpochMs(lim.nextResetTime),
+    unit,
+  };
+}
+
+/** TIME_LIMIT → 工具配额记录（纯函数）：仅当存在时展示（本用户套餐无）。 */
+function toolsQuotaOf(lim) {
+  return {
+    percent: clampPct(lim.percentage ?? pctOfLimit(lim)),
+    currentValue: toNumber(lim.currentValue),
+    total: toNumber(lim.usage) ?? toNumber(lim.total),
+    usageDetails: lim.usageDetails,
+  };
+}
+
+/** limits 数组归一（纯函数）：分 CREDIT_LIMIT / TIME_LIMIT 两类收集，忽略非对象项。 */
+export function normalizeLimits(limits) {
+  const out = { level: undefined, windows: [], tools: undefined };
+  for (const lim of limits) {
     if (typeof lim !== "object" || lim === null) continue;
-    const type = lim.type;
-    const unit = toNumber(lim.unit);
-    if (type === "CREDIT_LIMIT") {
-      // 按 unit 而非 number 判定窗口（实测 2026-08-27：5h=unit3/number5，周=unit6/number1）
-      const key = unit === 3 ? "5h" : unit === 6 ? "week" : undefined;
-      if (key === undefined) continue;
-      windows.push({
-        key,
-        percent: pctOfLimit(lim),
-        usage: toNumber(lim.usage),
-        currentValue: toNumber(lim.currentValue),
-        remaining: toNumber(lim.remaining),
-        total: toNumber(lim.total),
-        nextResetTime: toEpochMs(lim.nextResetTime),
-        unit,
-      });
-    } else if (type === "TIME_LIMIT") {
-      // 工具配额类：仅当存在时展示（本用户套餐无）
-      tools = {
-        percent: clampPct(lim.percentage ?? pctOfLimit(lim)),
-        currentValue: toNumber(lim.currentValue),
-        total: toNumber(lim.usage) ?? toNumber(lim.total),
-        usageDetails: lim.usageDetails,
-      };
+    if (lim.type === "CREDIT_LIMIT") {
+      const win = creditWindowOf(lim, toNumber(lim.unit));
+      if (win !== null) out.windows.push(win);
+    } else if (lim.type === "TIME_LIMIT") {
+      out.tools = toolsQuotaOf(lim);
     }
   }
-  if (windows.length === 0) throw new Error("bad-data");
+  return out;
+}
 
-  const out = { level, windows };
-  if (tools !== undefined) out.tools = tools;
+/**
+ * 业务层取数（纯函数）：网关对未知路径也回 HTTP 200 + {code:404,...}，故业务码校验
+ * 在此执行（不并入 getJson 的 HTTP/JSON 层错误映射）。limits 非数组或窗口为空皆 bad-data。
+ */
+export function normalizeQuotaBody(body) {
+  if (!body || body.code !== OK_CODE) return null;
+  const data = body.data && typeof body.data === "object" ? body.data : null;
+  if (data === null || !Array.isArray(data.limits)) return null;
+  const limits = normalizeLimits(data.limits);
+  if (limits.windows.length === 0) return null;
+  const level = typeof data.level === "string" ? data.level : undefined;
+  const out = { level, windows: limits.windows };
+  if (limits.tools !== undefined) out.tools = limits.tools;
+  return out;
+}
+
+export async function fetchData(ctx) {
+  const apiKey = ctx.apiKey;
+  if (typeof apiKey !== "string" || apiKey === "") throw new Error("no-api-key");
+  const url = quotaHostOf(ctx.apiEndpoint).replace(/\/+$/, "") + QUOTA_PATH;
+  const guard = withTimeout(ctx);
+
+  const out = normalizeQuotaBody(await getJson(url, apiKey, guard.signal, guard.finish));
+  if (out === null) throw new Error("bad-data");
   return out;
 }
 
@@ -203,86 +241,105 @@ async function getJson(url, apiKey, signal, finish) {
 
 // ------------------------------------------------------------------ 图表兜底副本（自 charts.ts 同源，需同步；正常路径经注入 utils 消费）
 
-function miniAreaSvgFallback(opts) {
-  const { samples, color, lo, hi, resetsAt, resetPeriodMs, dateOnly } = opts;
-  if (samples.length < 2) return "";
-  const t0 = samples[0].x;
-  const t1 = samples[samples.length - 1].x;
-  const spanMs = t1 > t0 ? t1 - t0 : 60000;
-  const W = 320,
-    H = 100,
-    PL = 34,
-    PR = 6,
-    PT = 14,
-    PB = 16;
-  const xw = W - PL - PR,
-    plotH = H - PT - PB;
-  const fs = 9.5,
-    fs100 = 9;
-  const xOf = (ts) => PL + ((ts - t0) / spanMs) * xw;
-  const yOf = (pct) => PT + ((hi - pct) / (hi - lo)) * plotH;
-  const parts = [];
-  // 重置标记（resetsAt 归一化后落窗口 + 按周期外推）
-  if (resetPeriodMs > 0) {
-    const r = toEpochMs(resetsAt);
-    if (r !== undefined) {
-      const marks = [];
-      if (r >= t0 && r <= t1) marks.push(r);
-      let ts = r - resetPeriodMs;
-      for (let guard = 0; guard < 40 && ts >= t0; guard += 1) {
-        marks.push(ts);
-        ts -= resetPeriodMs;
-      }
-      for (const rr of marks) {
-        const rx = xOf(rr);
-        parts.push(
-          `<line x1="${rx.toFixed(1)}" y1="${PT}" x2="${rx.toFixed(1)}" y2="${(PT + plotH).toFixed(1)}" style="stroke:var(--dsw-alias-label-tertiary,#9aa0ab);stroke-width:1;stroke-dasharray:2 3;stroke-opacity:.55"><title>窗口重置点</title></line>`,
-        );
-        parts.push(
-          `<path d="M ${rx.toFixed(1)} ${PT} l 3.5 3.5 l -7 0 z" style="fill:var(--dsw-alias-label-tertiary,#9aa0ab);fill-opacity:.55"/>`,
-        );
-      }
-    }
+/** 迷你面积图几何与字号常量。 */
+const MINI_GEOM = {
+  W: 320,
+  H: 100,
+  PL: 34,
+  PR: 6,
+  PT: 14,
+  PB: 16,
+  xw: 280,
+  plotH: 70,
+  fs: 9.5,
+  fs100: 9,
+};
+
+/**
+ * 重置时刻外推（纯函数）：resetsAt 归一化后落窗口，按周期向前外推（上限 40 步），
+ * 不落到窗口起点之前。周期非正或时间戳无法归一化时返回空表。
+ */
+export function resetMarksOf(resetsAt, resetPeriodMs, t0, t1) {
+  if (!(resetPeriodMs > 0)) return [];
+  const r = toEpochMs(resetsAt);
+  if (r === undefined) return [];
+  const marks = [];
+  if (r >= t0 && r <= t1) marks.push(r);
+  let ts = r - resetPeriodMs;
+  for (let guard = 0; guard < 40 && ts >= t0; guard += 1) {
+    marks.push(ts);
+    ts -= resetPeriodMs;
   }
+  return marks;
+}
+
+/** 重置标记（纯函数渲染）：竖直虚线 + 顶部三角。 */
+function resetMarkerParts(marks, xOf) {
+  const parts = [];
+  for (const rr of marks) {
+    const rx = xOf(rr);
+    parts.push(
+      `<line x1="${rx.toFixed(1)}" y1="${MINI_GEOM.PT}" x2="${rx.toFixed(1)}" y2="${(MINI_GEOM.PT + MINI_GEOM.plotH).toFixed(1)}" style="stroke:var(--dsw-alias-label-tertiary,#9aa0ab);stroke-width:1;stroke-dasharray:2 3;stroke-opacity:.55"><title>窗口重置点</title></line>`,
+    );
+    parts.push(
+      `<path d="M ${rx.toFixed(1)} ${MINI_GEOM.PT} l 3.5 3.5 l -7 0 z" style="fill:var(--dsw-alias-label-tertiary,#9aa0ab);fill-opacity:.55"/>`,
+    );
+  }
+  return parts;
+}
+
+/** 网格三线 + 百分比标签（纯函数渲染）。 */
+function gridTickParts(yOf, lo, hi) {
+  const parts = [];
   for (const gv of [lo, (lo + hi) / 2, hi]) {
     const gy = yOf(gv);
     parts.push(
-      `<line x1="${PL}" y1="${gy.toFixed(1)}" x2="${W - PR}" y2="${gy.toFixed(1)}" style="stroke:var(--dsw-alias-border-l2,#e8eaf0);stroke-width:1;stroke-dasharray:3 3"/>`,
+      `<line x1="${MINI_GEOM.PL}" y1="${gy.toFixed(1)}" x2="${MINI_GEOM.W - MINI_GEOM.PR}" y2="${gy.toFixed(1)}" style="stroke:var(--dsw-alias-border-l2,#e8eaf0);stroke-width:1;stroke-dasharray:3 3"/>`,
     );
     parts.push(
-      `<text x="${PL - 4}" y="${(gy + 3).toFixed(1)}" text-anchor="end" style="font-size:${fs}px">${(Number.isInteger(gv) ? String(gv) : gv.toFixed(1)) + "%"}</text>`,
+      `<text x="${MINI_GEOM.PL - 4}" y="${(gy + 3).toFixed(1)}" text-anchor="end" style="font-size:${MINI_GEOM.fs}px">${(Number.isInteger(gv) ? String(gv) : gv.toFixed(1)) + "%"}</text>`,
     );
   }
-  if (lo <= 100 && 100 <= hi && hi - lo > 0.01) {
-    const ly = yOf(100);
-    parts.push(
-      `<line x1="${PL}" y1="${ly.toFixed(1)}" x2="${W - PR}" y2="${ly.toFixed(1)}" style="stroke:var(--dsw-alias-state-error-primary,#d64545);stroke-width:1;stroke-dasharray:4 3;stroke-opacity:.65"/>`,
-    );
-    parts.push(
-      `<text x="${W - PR - 2}" y="${(ly - 3).toFixed(1)}" text-anchor="end" style="fill:var(--dsw-alias-state-error-primary,#d64545);font-size:${fs100}px">100%</text>`,
-    );
-  }
+  return parts;
+}
+
+/** 100% 预警线（纯函数渲染）：仅当 100 落在域内且域宽于 0.01 时出现。 */
+function limit100Parts(yOf, lo, hi) {
+  if (!(lo <= 100 && 100 <= hi && hi - lo > 0.01)) return [];
+  const ly = yOf(100);
+  return [
+    `<line x1="${MINI_GEOM.PL}" y1="${ly.toFixed(1)}" x2="${MINI_GEOM.W - MINI_GEOM.PR}" y2="${ly.toFixed(1)}" style="stroke:var(--dsw-alias-state-error-primary,#d64545);stroke-width:1;stroke-dasharray:4 3;stroke-opacity:.65"/>`,
+    `<text x="${MINI_GEOM.W - MINI_GEOM.PR - 2}" y="${(ly - 3).toFixed(1)}" text-anchor="end" style="fill:var(--dsw-alias-state-error-primary,#d64545);font-size:${MINI_GEOM.fs100}px">100%</text>`,
+  ];
+}
+
+/** 采样点钳到域内并投影到画布坐标（纯函数）。 */
+function clampLineOf(samples, lo, hi, xOf, yOf) {
   const line = [];
   for (const s of samples) {
     line.push({ x: xOf(s.x), y: yOf(Math.min(Math.max(s.y, lo), hi)) });
   }
-  if (line.length >= 2) {
-    const lpts = downsampleFallback(line, 300);
-    const d = smoothPathFallback(lpts);
-    const first = lpts[0];
-    const lastPt = lpts[lpts.length - 1];
-    const bottom = PT + plotH;
-    parts.push(
-      `<path d="${d} L ${lastPt.x.toFixed(1)} ${bottom} L ${first.x.toFixed(1)} ${bottom} Z" style="fill:${color};fill-opacity:.13"/>`,
-    );
-    parts.push(
-      `<path d="${d}" style="fill:none;stroke:${color};stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round"/>`,
-    );
-    parts.push(
-      `<circle cx="${lastPt.x.toFixed(1)}" cy="${lastPt.y.toFixed(1)}" r="2.6" style="fill:${color};stroke:var(--dsw-alias-bg-base,#fdfdfd);stroke-width:1.2"/>`,
-    );
-  }
-  // x 轴时间刻度（简化：固定 5 等分标签）
+  return line;
+}
+
+/** 面积 + 折线 + 末点（纯函数渲染）。 */
+function areaSeriesParts(line, color) {
+  if (line.length < 2) return [];
+  const lpts = downsampleFallback(line, 300);
+  const d = smoothPathFallback(lpts);
+  const first = lpts[0];
+  const lastPt = lpts[lpts.length - 1];
+  const bottom = MINI_GEOM.PT + MINI_GEOM.plotH;
+  return [
+    `<path d="${d} L ${lastPt.x.toFixed(1)} ${bottom} L ${first.x.toFixed(1)} ${bottom} Z" style="fill:${color};fill-opacity:.13"/>`,
+    `<path d="${d}" style="fill:none;stroke:${color};stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round"/>`,
+    `<circle cx="${lastPt.x.toFixed(1)}" cy="${lastPt.y.toFixed(1)}" r="2.6" style="fill:${color};stroke:var(--dsw-alias-bg-base,#fdfdfd);stroke-width:1.2"/>`,
+  ];
+}
+
+/** x 轴时间刻度（纯函数渲染）：固定 5 等分；跨日用月-日，否则时:分。 */
+function axisTickParts(t0, t1, spanMs, dateOnly, xOf) {
+  const parts = [];
   const stepMs = spanMs / 5;
   for (let k = 0; k <= 5; k += 1) {
     const tt = t0 + stepMs * k;
@@ -295,10 +352,28 @@ function miniAreaSvgFallback(opts) {
         : `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
     const anchor = k === 0 ? "start" : k === 5 ? "end" : "middle";
     parts.push(
-      `<text x="${tx.toFixed(1)}" y="${H - 4}" text-anchor="${anchor}" style="font-size:${fs}px">${label}</text>`,
+      `<text x="${tx.toFixed(1)}" y="${MINI_GEOM.H - 4}" text-anchor="${anchor}" style="font-size:${MINI_GEOM.fs}px">${label}</text>`,
     );
   }
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}">${parts.join("")}</svg>`;
+  return parts;
+}
+
+function miniAreaSvgFallback(opts) {
+  const { samples, color, lo, hi, resetsAt, resetPeriodMs, dateOnly } = opts;
+  if (samples.length < 2) return "";
+  const t0 = samples[0].x;
+  const t1 = samples[samples.length - 1].x;
+  const spanMs = t1 > t0 ? t1 - t0 : 60000;
+  const xOf = (ts) => MINI_GEOM.PL + ((ts - t0) / spanMs) * MINI_GEOM.xw;
+  const yOf = (pct) => MINI_GEOM.PT + ((hi - pct) / (hi - lo)) * MINI_GEOM.plotH;
+  const parts = [
+    ...resetMarkerParts(resetMarksOf(resetsAt, resetPeriodMs, t0, t1), xOf),
+    ...gridTickParts(yOf, lo, hi),
+    ...limit100Parts(yOf, lo, hi),
+    ...areaSeriesParts(clampLineOf(samples, lo, hi, xOf, yOf), color),
+    ...axisTickParts(t0, t1, spanMs, dateOnly, xOf),
+  ];
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${MINI_GEOM.W} ${MINI_GEOM.H}">${parts.join("")}</svg>`;
 }
 
 function downsampleFallback(points, maxPoints) {
@@ -349,6 +424,44 @@ function escFallback(s) {
 // ------------------------------------------------------------------ 适配器
 
 /** 内置智谱 Coding Plan (CN) 适配器（v2 契约）。 */
+/** 窗口键 → 胶囊标签（纯函数）。 */
+export function windowLabelOf(key) {
+  if (key === "5h") return "5h";
+  if (key === "week") return "周";
+  return key;
+}
+
+/** 窗口百分比胶囊片段（纯函数）：非 number 的窗口不出片段。 */
+export function windowCapsuleParts(windows) {
+  const parts = [];
+  for (const w of windows) {
+    if (typeof w.percent === "number") {
+      parts.push(`${windowLabelOf(w.key)} ${Math.round(w.percent)}%`);
+    }
+  }
+  return parts;
+}
+
+/** 套餐等级首字母大写（纯函数）：非串或空串不出片段。 */
+export function levelCapsulePart(level) {
+  if (typeof level !== "string" || level === "") return null;
+  return level.charAt(0).toUpperCase() + level.slice(1).toLowerCase();
+}
+
+/** 胶囊文案（纯函数渲染）：窗口百分比 + 等级，stale 时附缓存标记。 */
+export function capsuleHtml(input) {
+  const e = input.esc || escFallback;
+  const data = input.data || {};
+  const windows = Array.isArray(data.windows) ? data.windows : [];
+  const parts = windowCapsuleParts(windows);
+  if (parts.length === 0) return "<span>无数据</span>";
+  const level = levelCapsulePart(data.level);
+  if (level !== null) parts.push(level);
+  const staleMark =
+    input.status === "stale" ? `<span style="opacity:.6;margin-left:6px">(缓存)</span>` : "";
+  return `<span>${e(parts.join(" · "))}</span>${staleMark}`;
+}
+
 export const zaiCodingCnAdapter = {
   version: 2,
   name: ZAI_CODING_CN_ADAPTER_ID,
@@ -360,21 +473,7 @@ export const zaiCodingCnAdapter = {
   },
 
   formatCapsule(input) {
-    const e = input.esc || escFallback;
-    const data = input.data || {};
-    const windows = Array.isArray(data.windows) ? data.windows : [];
-    const parts = [];
-    for (const w of windows) {
-      const label = w.key === "5h" ? "5h" : w.key === "week" ? "周" : w.key;
-      if (typeof w.percent === "number") parts.push(`${label} ${Math.round(w.percent)}%`);
-    }
-    if (parts.length === 0) return "<span>无数据</span>";
-    if (typeof data.level === "string" && data.level !== "") {
-      parts.push(data.level.charAt(0).toUpperCase() + data.level.slice(1).toLowerCase());
-    }
-    const staleMark =
-      input.status === "stale" ? `<span style="opacity:.6;margin-left:6px">(缓存)</span>` : "";
-    return `<span>${e(parts.join(" · "))}</span>${staleMark}`;
+    return capsuleHtml(input);
   },
 
   formatPanel(input) {

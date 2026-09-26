@@ -87,86 +87,118 @@ function fmtReset(iso) {
   });
 }
 
+/** 迷你面积图几何与字号常量。 */
+const MINI_GEOM = {
+  W: 320,
+  H: 100,
+  PL: 34,
+  PR: 6,
+  PT: 14,
+  PB: 16,
+  xw: 280,
+  plotH: 70,
+  fs: 9.5,
+  fs100: 9,
+};
+
+/** 窗口重置点标记（纯函数渲染）：竖直虚线 + 顶部三角。 */
+function resetMarkerParts(resets, xOf) {
+  const parts = [];
+  for (const rr of resets) {
+    const rx = xOf(rr);
+    parts.push(
+      `<line x1="${rx.toFixed(1)}" y1="${MINI_GEOM.PT}" x2="${rx.toFixed(1)}" y2="${(MINI_GEOM.PT + MINI_GEOM.plotH).toFixed(1)}" style="stroke:var(--dsw-alias-label-tertiary,#9aa0ab);stroke-width:1;stroke-dasharray:2 3;stroke-opacity:.55"><title>窗口重置点</title></line>`,
+    );
+    parts.push(
+      `<path d="M ${rx.toFixed(1)} ${MINI_GEOM.PT} l 3.5 3.5 l -7 0 z" style="fill:var(--dsw-alias-label-tertiary,#9aa0ab);fill-opacity:.55"/>`,
+    );
+  }
+  return parts;
+}
+
+/** 网格三线 + 百分比标签（纯函数渲染）。 */
+function gridTickParts(yOf, lo, hi) {
+  const parts = [];
+  for (const gv of [lo, (lo + hi) / 2, hi]) {
+    const gy = yOf(gv);
+    parts.push(
+      `<line x1="${MINI_GEOM.PL}" y1="${gy.toFixed(1)}" x2="${MINI_GEOM.W - MINI_GEOM.PR}" y2="${gy.toFixed(1)}" style="stroke:var(--dsw-alias-border-l2,#e8eaf0);stroke-width:1;stroke-dasharray:3 3"/>`,
+    );
+    parts.push(
+      `<text x="${MINI_GEOM.PL - 4}" y="${(gy + 3).toFixed(1)}" text-anchor="end" style="font-size:${MINI_GEOM.fs}px">${fmtPctTickFallback(gv)}</text>`,
+    );
+  }
+  return parts;
+}
+
+/** 100% 预警线（纯函数渲染）：仅当 100 落在域内且域宽于 0.01 时出现。 */
+function limit100Parts(yOf, lo, hi) {
+  if (!(lo <= 100 && 100 <= hi && hi - lo > 0.01)) return [];
+  const ly = yOf(100);
+  return [
+    `<line x1="${MINI_GEOM.PL}" y1="${ly.toFixed(1)}" x2="${MINI_GEOM.W - MINI_GEOM.PR}" y2="${ly.toFixed(1)}" style="stroke:var(--dsw-alias-state-error-primary,#d64545);stroke-width:1;stroke-dasharray:4 3;stroke-opacity:.65"/>`,
+    `<text x="${MINI_GEOM.W - MINI_GEOM.PR - 2}" y="${(ly - 3).toFixed(1)}" text-anchor="end" style="fill:var(--dsw-alias-state-error-primary,#d64545);font-size:${MINI_GEOM.fs100}px">100%</text>`,
+  ];
+}
+
+/** 采样点钳到域内并投影到画布坐标（纯函数）。 */
+function clampLineOf(samples, lo, hi, xOf, yOf) {
+  const line = [];
+  for (const s of samples) {
+    const clamped = Math.min(Math.max(s.y, lo), hi);
+    line.push({ x: xOf(s.x), y: yOf(clamped) });
+  }
+  return line;
+}
+
+/** 面积 + 折线 + 末点（纯函数渲染）。 */
+function areaSeriesParts(line, color) {
+  if (line.length < 2) return [];
+  const lpts = downsampleFallback(line, CHART_MAX_POINTS);
+  const d = smoothPathFallback(lpts);
+  const first = lpts[0];
+  const lastPt = lpts[lpts.length - 1];
+  const bottom = MINI_GEOM.PT + MINI_GEOM.plotH;
+  const areaD = `${d} L ${lastPt.x.toFixed(1)} ${bottom} L ${first.x.toFixed(1)} ${bottom} Z`;
+  return [
+    `<path d="${areaD}" style="fill:${color};fill-opacity:.13"/>`,
+    `<path d="${d}" style="fill:none;stroke:${color};stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round"/>`,
+    `<circle cx="${lastPt.x.toFixed(1)}" cy="${lastPt.y.toFixed(1)}" r="2.6" style="fill:${color};stroke:var(--dsw-alias-bg-base,#fdfdfd);stroke-width:1.2"/>`,
+  ];
+}
+
+/** x 轴时间刻度（纯函数渲染）：首尾贴边、中间居中。 */
+function axisTickParts(ticks, xOf, spanMs, dateOnly) {
+  const parts = [];
+  for (let k = 0; k < ticks.length; k += 1) {
+    const tx = xOf(ticks[k]);
+    const anchor = k === 0 ? "start" : k === ticks.length - 1 ? "end" : "middle";
+    parts.push(
+      `<text x="${tx.toFixed(1)}" y="${MINI_GEOM.H - 4}" text-anchor="${anchor}" style="font-size:${MINI_GEOM.fs}px">${fmtAxisTimeFallback(ticks[k], spanMs, dateOnly)}</text>`,
+    );
+  }
+  return parts;
+}
+
 function miniAreaSvgFallback(opts) {
   const { samples, color, lo, hi, resetsAt, resetPeriodMs, dateOnly } = opts;
   if (samples.length < 2) return "";
   const t0 = samples[0].x;
   const t1 = samples[samples.length - 1].x;
   const spanMs = t1 > t0 ? t1 - t0 : 60000;
-  const W = 320;
-  const H = 100;
-  const PL = 34;
-  const PR = 6;
-  const PT = 14;
-  const PB = 16;
-  const xw = W - PL - PR;
-  const plotH = H - PT - PB;
-  const fs = 9.5;
-  const fs100 = 9;
-  const xOf = (ts) => PL + ((ts - t0) / spanMs) * xw;
-  const yOf = (pct) => PT + ((hi - pct) / (hi - lo)) * plotH;
+  const xOf = (ts) => MINI_GEOM.PL + ((ts - t0) / spanMs) * MINI_GEOM.xw;
+  const yOf = (pct) => MINI_GEOM.PT + ((hi - pct) / (hi - lo)) * MINI_GEOM.plotH;
 
-  const parts = [];
-  const resets = resetTicksFallback(resetsAt, resetPeriodMs, t0, t1);
-  for (const rr of resets) {
-    const rx = xOf(rr);
-    parts.push(
-      `<line x1="${rx.toFixed(1)}" y1="${PT}" x2="${rx.toFixed(1)}" y2="${(PT + plotH).toFixed(1)}" style="stroke:var(--dsw-alias-label-tertiary,#9aa0ab);stroke-width:1;stroke-dasharray:2 3;stroke-opacity:.55"><title>窗口重置点</title></line>`,
-    );
-    parts.push(
-      `<path d="M ${rx.toFixed(1)} ${PT} l 3.5 3.5 l -7 0 z" style="fill:var(--dsw-alias-label-tertiary,#9aa0ab);fill-opacity:.55"/>`,
-    );
-  }
-  const gridVals = [lo, (lo + hi) / 2, hi];
-  for (const gv of gridVals) {
-    const gy = yOf(gv);
-    parts.push(
-      `<line x1="${PL}" y1="${gy.toFixed(1)}" x2="${W - PR}" y2="${gy.toFixed(1)}" style="stroke:var(--dsw-alias-border-l2,#e8eaf0);stroke-width:1;stroke-dasharray:3 3"/>`,
-    );
-    parts.push(
-      `<text x="${PL - 4}" y="${(gy + 3).toFixed(1)}" text-anchor="end" style="font-size:${fs}px">${fmtPctTickFallback(gv)}</text>`,
-    );
-  }
-  if (lo <= 100 && 100 <= hi && hi - lo > 0.01) {
-    const ly = yOf(100);
-    parts.push(
-      `<line x1="${PL}" y1="${ly.toFixed(1)}" x2="${W - PR}" y2="${ly.toFixed(1)}" style="stroke:var(--dsw-alias-state-error-primary,#d64545);stroke-width:1;stroke-dasharray:4 3;stroke-opacity:.65"/>`,
-    );
-    parts.push(
-      `<text x="${W - PR - 2}" y="${(ly - 3).toFixed(1)}" text-anchor="end" style="fill:var(--dsw-alias-state-error-primary,#d64545);font-size:${fs100}px">100%</text>`,
-    );
-  }
-  const line = [];
-  for (const s of samples) {
-    const clamped = Math.min(Math.max(s.y, lo), hi);
-    line.push({ x: xOf(s.x), y: yOf(clamped) });
-  }
-  if (line.length >= 2) {
-    const lpts = downsampleFallback(line, CHART_MAX_POINTS);
-    const d = smoothPathFallback(lpts);
-    const first = lpts[0];
-    const lastPt = lpts[lpts.length - 1];
-    const bottom = PT + plotH;
-    const areaD = `${d} L ${lastPt.x.toFixed(1)} ${bottom} L ${first.x.toFixed(1)} ${bottom} Z`;
-    parts.push(`<path d="${areaD}" style="fill:${color};fill-opacity:.13"/>`);
-    parts.push(
-      `<path d="${d}" style="fill:none;stroke:${color};stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round"/>`,
-    );
-    parts.push(
-      `<circle cx="${lastPt.x.toFixed(1)}" cy="${lastPt.y.toFixed(1)}" r="2.6" style="fill:${color};stroke:var(--dsw-alias-bg-base,#fdfdfd);stroke-width:1.2"/>`,
-    );
-  }
-  const labelPx = axisLabelWidthPxFallback(spanMs, fs, dateOnly);
-  const minGapMs = (labelPx * spanMs) / xw;
-  const ticks = timeTicksFallback(t0, t1, minGapMs);
-  for (let k = 0; k < ticks.length; k += 1) {
-    const tx = xOf(ticks[k]);
-    const anchor = k === 0 ? "start" : k === ticks.length - 1 ? "end" : "middle";
-    parts.push(
-      `<text x="${tx.toFixed(1)}" y="${H - 4}" text-anchor="${anchor}" style="font-size:${fs}px">${fmtAxisTimeFallback(ticks[k], spanMs, dateOnly)}</text>`,
-    );
-  }
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}">${parts.join("")}</svg>`;
+  const labelPx = axisLabelWidthPxFallback(spanMs, MINI_GEOM.fs, dateOnly);
+  const minGapMs = (labelPx * spanMs) / MINI_GEOM.xw;
+  const parts = [
+    ...resetMarkerParts(resetTicksFallback(resetsAt, resetPeriodMs, t0, t1), xOf),
+    ...gridTickParts(yOf, lo, hi),
+    ...limit100Parts(yOf, lo, hi),
+    ...areaSeriesParts(clampLineOf(samples, lo, hi, xOf, yOf), color),
+    ...axisTickParts(timeTicksFallback(t0, t1, minGapMs), xOf, spanMs, dateOnly),
+  ];
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${MINI_GEOM.W} ${MINI_GEOM.H}">${parts.join("")}</svg>`;
 }
 
 function fmtAxisTimeFallback(ts, spanMs, dateOnly) {
@@ -200,39 +232,61 @@ function niceStepFallback(raw) {
   return 10 * mag;
 }
 
-function niceDomainFallback(pcts) {
+/** 有限数值筛出（纯函数）：非 number / 非有限一律不入域。 */
+export function finiteValuesOf(pcts) {
   const vals = [];
   for (const v of pcts) if (typeof v === "number" && Number.isFinite(v)) vals.push(v);
-  if (vals.length === 0) return [0, 100];
+  return vals;
+}
+
+/** 取值域（纯函数）：min/max，无输入视作 [0, 100]。 */
+export function valueRangeOf(vals) {
+  if (vals.length === 0) return null;
   let dmin = vals[0];
   let dmax = vals[0];
   for (const v of vals) {
     if (v < dmin) dmin = v;
     if (v > dmax) dmax = v;
   }
-  const step = niceStepFallback((dmax - dmin) / 3);
-  let lo = Math.max(0, Math.floor(dmin / step) * step);
-  let hi = Math.ceil(dmax / step) * step;
-  const minSpan = Math.max(3 * step, 2);
-  if (hi - lo < minSpan) {
-    const mid = (dmin + dmax) / 2;
-    lo = mid - minSpan / 2;
-    hi = mid + minSpan / 2;
-    if (lo < 0) {
-      hi += -lo;
-      lo = 0;
-    }
-    if (hi > 100) {
-      lo = Math.max(0, lo - (hi - 100));
-      hi = 100;
-    }
-    lo = Math.floor(lo / step) * step;
-    hi = Math.ceil(hi / step) * step;
+  return { dmin, dmax };
+}
+
+/**
+ * 最小跨度兜底（纯函数）：域过窄时以中点撑开 minSpan，贴 0 / 贴 100 边界各让一次，
+ * 最后重新对齐到步长网格。
+ */
+export function widenToMinSpan(lo, hi, dmin, dmax, minSpan, step) {
+  const mid = (dmin + dmax) / 2;
+  let nlo = mid - minSpan / 2;
+  let nhi = mid + minSpan / 2;
+  if (nlo < 0) {
+    nhi += -nlo;
+    nlo = 0;
   }
-  if (dmax >= 90 && hi < 100) hi = 100;
-  if (hi > 100) hi = 100;
-  if (lo >= hi) lo = Math.max(0, hi - 5);
-  return [lo, hi];
+  if (nhi > 100) {
+    nlo = Math.max(0, nlo - (nhi - 100));
+    nhi = 100;
+  }
+  return [Math.floor(nlo / step) * step, Math.ceil(nhi / step) * step];
+}
+
+/** 上界收敛（纯函数）：贴顶数据必到 100%，域不得越界 0–100，零跨度兜底 5 个点。 */
+export function capDomainAt100(lo, hi, dmax) {
+  let nhi = dmax >= 90 && hi < 100 ? 100 : hi;
+  if (nhi > 100) nhi = 100;
+  const nlo = lo >= nhi ? Math.max(0, nhi - 5) : lo;
+  return [nlo, nhi];
+}
+
+export function niceDomainFallback(pcts) {
+  const range = valueRangeOf(finiteValuesOf(pcts));
+  if (range === null) return [0, 100];
+  const step = niceStepFallback((range.dmax - range.dmin) / 3);
+  let lo = Math.max(0, Math.floor(range.dmin / step) * step);
+  let hi = Math.ceil(range.dmax / step) * step;
+  const minSpan = Math.max(3 * step, 2);
+  if (hi - lo < minSpan) [lo, hi] = widenToMinSpan(lo, hi, range.dmin, range.dmax, minSpan, step);
+  return capDomainAt100(lo, hi, range.dmax);
 }
 
 function fmtPctTickFallback(v) {
@@ -398,50 +452,29 @@ export function parseUsageResponse(body) {
  * 新契约 fetchData：入参由插件注入 apiEndpoint/staticPath/apiKey。
  * 返回 { rolling: {percent, raw?, limit, resetsAt?}, weekly: {...}, monthly: {...} }。
  */
-export async function fetchOpenCodeGoV2(ctx, fetchImpl) {
-  if (typeof ctx.apiKey !== "string" || ctx.apiKey === "") {
-    throw new Error("no-api-key");
-  }
-  const url = (ctx.apiEndpoint || DEFAULT_BASE_URL) + ctx.staticPath;
-  const fetcher = fetchImpl ?? fetch;
+/** 拉取期超时/上游取消接线：返回 abort signal 与幂等收尾函数。 */
+function withTimeout(ctx) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), ctx.timeoutMs ?? 2000);
   const onAbort = () => controller.abort();
   ctx.signal?.addEventListener("abort", onAbort, { once: true });
-  const finish = () => {
-    clearTimeout(timer);
-    ctx.signal?.removeEventListener("abort", onAbort);
+  return {
+    signal: controller.signal,
+    finish: () => {
+      clearTimeout(timer);
+      ctx.signal?.removeEventListener("abort", onAbort);
+    },
   };
-  let res;
-  try {
-    res = await fetcher(url, {
-      headers: { Authorization: `Bearer ${ctx.apiKey}`, Accept: "application/json" },
-      signal: controller.signal,
-    });
-  } catch {
-    finish();
-    throw new Error("network");
-  }
-  if (res.status === 401 || res.status === 403) {
-    finish();
-    throw new Error("unauthorized");
-  }
-  if (!res.ok) {
-    finish();
-    throw new Error(`http-${res.status}`);
-  }
-  let body;
-  try {
-    body = await res.json();
-  } catch {
-    finish();
-    throw new Error("bad-json");
-  } finally {
-    finish();
-  }
-  const parsed = parseUsageResponse(body);
-  if (parsed === null) throw new Error("bad-data");
-  // 归一化数据：窗口数组（供历史落盘与 format 使用）
+}
+
+/** 响应状态归一成稳定码（401/403 → unauthorized；其余非 2xx → http-<status>）。 */
+function assertOkStatus(res) {
+  if (res.status === 401 || res.status === 403) throw new Error("unauthorized");
+  if (!res.ok) throw new Error(`http-${res.status}`);
+}
+
+/** 归一化数据（纯函数）：窗口数组（供历史落盘与 format 使用）。 */
+export function normalizeWindows(parsed) {
   const data = {};
   for (const w of OPENCODE_GO_WINDOWS) {
     data[w.key] = parsed[w.key] ?? { key: w.key, name: w.name, percent: null, limit: w.limit };
@@ -449,7 +482,159 @@ export async function fetchOpenCodeGoV2(ctx, fetchImpl) {
   return data;
 }
 
+export async function fetchOpenCodeGoV2(ctx, fetchImpl) {
+  if (typeof ctx.apiKey !== "string" || ctx.apiKey === "") {
+    throw new Error("no-api-key");
+  }
+  const url = (ctx.apiEndpoint || DEFAULT_BASE_URL) + ctx.staticPath;
+  const fetcher = fetchImpl ?? fetch;
+  const guard = withTimeout(ctx);
+  let res;
+  try {
+    res = await fetcher(url, {
+      headers: { Authorization: `Bearer ${ctx.apiKey}`, Accept: "application/json" },
+      signal: guard.signal,
+    });
+  } catch {
+    guard.finish();
+    throw new Error("network");
+  }
+  try {
+    assertOkStatus(res);
+    let body;
+    try {
+      body = await res.json();
+    } catch {
+      throw new Error("bad-json");
+    }
+    const parsed = parseUsageResponse(body);
+    if (parsed === null) throw new Error("bad-data");
+    return normalizeWindows(parsed);
+  } finally {
+    guard.finish();
+  }
+}
+
 // ------------------------------------------------------------------ 适配器
+
+/**
+ * 图表工具面归一（纯函数）：图表函数优先消费宿主注入的 utils，
+ * 缺失回退文件内兜底副本（与 charts.ts 同源）。
+ */
+export function chartUtils(input) {
+  const U = input.utils || {};
+  return {
+    esc: input.esc || escFallback,
+    miniAreaSvg: U.miniAreaSvg || miniAreaSvgFallback,
+    niceDomain: U.niceDomain || niceDomainFallback,
+    trendOf: U.trendOf || trendOfFallback,
+  };
+}
+
+/** 窗口序列行 → 具名字段（纯函数）：消除 CHART_SERIES 元组下标取值的重复。 */
+export function seriesViewOf(s) {
+  const [key, name, short, color, limit, obsMs, period] = s;
+  return { key, name, short, color, limit: Number(limit), obsMs, period };
+}
+
+/** 窗口当前百分比（纯函数）：非 number 视作无数据。 */
+export function windowPercentOf(win) {
+  return win && typeof win.percent === "number" ? win.percent : null;
+}
+
+/** 窗口重置文案（纯函数）：resetsAt 缺席或空串则不显示。 */
+export function resetTextOf(win) {
+  const resetsAt = win?.resetsAt;
+  return resetsAt !== undefined && resetsAt !== "" ? `重置 ${fmtReset(resetsAt)}` : "";
+}
+
+/** 趋势徽标（纯函数）：null 无趋势；up/down/flat 三态。 */
+export function trendBadgeHtml(trend) {
+  if (trend === null) return "";
+  if (trend.up)
+    return `<span class="dou-trend-up" title="较区间首个采样点">▲ +${trend.delta}%</span>`;
+  if (trend.down)
+    return `<span class="dou-trend-down" title="较区间首个采样点">▼ ${trend.delta}%</span>`;
+  return `<span class="dou-trend-flat" title="较区间首个采样点">— ${trend.delta}%</span>`;
+}
+
+/** 观察窗过滤（纯函数）：obsMs>0 时只留末点前 obsMs 内的采样。 */
+function inObservationWindow(en, obsMs, tail) {
+  if (obsMs <= 0) return true;
+  return en.time >= tail - obsMs;
+}
+
+/** 采样百分比序列（纯函数）：非有限/缺面记为 null（保留位置，交给 trendOf 判空）。 */
+export function windowPctsOf(entries, key, obsMs, tail) {
+  return entries
+    .filter((en) => inObservationWindow(en, obsMs, tail))
+    .map((en) => {
+      const v = en.data[key] ?? { percent: null };
+      return typeof v.percent === "number" && Number.isFinite(v.percent) ? v.percent : null;
+    });
+}
+
+/** 迷你图采样点（纯函数）：只收有限百分比，供 miniAreaSvg 投影。 */
+export function chartPointsOf(entries, key, obsMs, tail) {
+  const points = [];
+  for (const en of entries) {
+    if (!inObservationWindow(en, obsMs, tail)) continue;
+    const v = en.data[key] ?? { percent: null };
+    if (typeof v.percent === "number" && Number.isFinite(v.percent)) {
+      points.push({ x: en.time, y: v.percent });
+    }
+  }
+  return points;
+}
+
+/** 卡片头（纯函数渲染）：窗口名/当前百分比/趋势徽标/限额与重置时间。 */
+function cardHeadHtml(view, win, trendHtml, e) {
+  const pct = windowPercentOf(win);
+  const resetText = resetTextOf(win);
+  // 模板字面量缩进逐字保留（历史实现在 formatPanel 循环体内，缩进更深）：
+  // 渲染结果的空白是对外可见字节，重构不得改动。
+  return `<div class="dou-cardHead">
+        <div class="dou-cardMeta">
+          <span class="dou-legendDot" style="background:${view.color}"></span>
+          <h4 class="dou-cardName">${e(view.name)}</h4>
+          <span class="dou-cardCur">${pct === null ? "--" : `${pct}%`}</span>
+          ${trendHtml}
+        </div>
+        <p class="dou-cardLimit">限额 ${e(String(view.limit))}${resetText !== "" ? ` · ${e(resetText)}` : ""}</p>
+      </div>`;
+}
+
+/** 卡片体（纯函数渲染）：≥2 点出迷你图；否则按采样点总数区分两种空态文案。 */
+function windowBodyHtml(points, view, win, hasPoint, entryCount, u) {
+  if (points.length >= 2 && hasPoint) {
+    const domain = u.niceDomain(points.map((p) => p.y));
+    return `<div class="dou-miniChart">${u.miniAreaSvg({
+      samples: points,
+      color: view.color,
+      lo: domain[0],
+      hi: domain[1],
+      resetsAt: win?.resetsAt,
+      resetPeriodMs: view.period,
+      dateOnly: view.key === "weekly" || view.key === "monthly",
+    })}</div>`;
+  }
+  if (entryCount < 2) {
+    return `<p class="dou-chartEmpty">数据采集中：每次刷新记录一个采样点（约每 5 分钟一次），≥2 个点后显示趋势。</p>`;
+  }
+  return `<p class="dou-chartEmpty">该时间范围内采样不足（<2 点），随时间积累后显示。</p>`;
+}
+
+/** 单窗口卡片装配（纯函数渲染）。 */
+function windowCardHtml(s, entries, latest, tail, u) {
+  const view = seriesViewOf(s);
+  const win = latest[view.key];
+  const pcts = windowPctsOf(entries, view.key, view.obsMs, tail);
+  const points = chartPointsOf(entries, view.key, view.obsMs, tail);
+  const hasPoint = pcts.some((v) => typeof v === "number");
+  const head = cardHeadHtml(view, win, trendBadgeHtml(u.trendOf(pcts)), u.esc);
+  const bodyHtml = windowBodyHtml(points, view, win, hasPoint, entries.length, u);
+  return `<div class="dou-card">${head}${bodyHtml}</div>`;
+}
 
 /** 内置 OpenCode Go 适配器（v2 新契约，展示逻辑与 v1 一致）。 */
 export const openCodeGoAdapter = {
@@ -477,96 +662,14 @@ export const openCodeGoAdapter = {
   },
 
   formatPanel(input) {
-    const e = input.esc || escFallback;
-    // 图表函数优先消费注入 utils，缺失回退文件内兜底副本
-    const U = input.utils || {};
-    const miniArea = U.miniAreaSvg || miniAreaSvgFallback;
-    const niceDomain = U.niceDomain || niceDomainFallback;
-    const trendOf = U.trendOf || trendOfFallback;
+    const u = chartUtils(input);
     if (input.entries.length === 0) return "<p>暂无历史数据</p>";
 
     const cards = [];
     // 最新一条的窗口数据（卡片头当前百分比/重置时间用）
-    const latest = input.entries[input.entries.length - 1].data;
-
-    for (let ci = 0; ci < CHART_SERIES.length; ci += 1) {
-      const s = CHART_SERIES[ci];
-      const key = s[0];
-      const color = s[3];
-      const limit = s[4];
-      const obsMs = s[5];
-      const period = s[6];
-      const win = latest[key];
-      const pct = win && typeof win.percent === "number" ? win.percent : null;
-      const resetsAt = win?.resetsAt;
-
-      // 采样序列（v2 数据形态：entries[].data[key].percent）
-      const pcts = input.entries
-        .filter((en) => {
-          if (obsMs > 0) {
-            const tail = input.entries[input.entries.length - 1].time;
-            return en.time >= tail - obsMs;
-          }
-          return true;
-        })
-        .map((en) => {
-          const v = en.data[key] ?? { percent: null };
-          return typeof v.percent === "number" && Number.isFinite(v.percent) ? v.percent : null;
-        });
-      const hasPoint = pcts.some((v) => typeof v === "number");
-
-      // 卡片头
-      const resetText =
-        resetsAt !== undefined && resetsAt !== "" ? `重置 ${fmtReset(resetsAt)}` : "";
-      const trend = trendOf(pcts);
-      const trendHtml =
-        trend === null
-          ? ""
-          : trend.up
-            ? `<span class="dou-trend-up" title="较区间首个采样点">▲ +${trend.delta}%</span>`
-            : trend.down
-              ? `<span class="dou-trend-down" title="较区间首个采样点">▼ ${trend.delta}%</span>`
-              : `<span class="dou-trend-flat" title="较区间首个采样点">— ${trend.delta}%</span>`;
-      const head = `<div class="dou-cardHead">
-        <div class="dou-cardMeta">
-          <span class="dou-legendDot" style="background:${color}"></span>
-          <h4 class="dou-cardName">${e(s[1])}</h4>
-          <span class="dou-cardCur">${pct === null ? "--" : `${pct}%`}</span>
-          ${trendHtml}
-        </div>
-        <p class="dou-cardLimit">限额 ${e(String(limit))}${resetText !== "" ? ` · ${e(resetText)}` : ""}</p>
-      </div>`;
-
-      // 迷你图：构造 {x:time, y:pct} 序列
-      const points = [];
-      const tail = input.entries[input.entries.length - 1].time;
-      for (const en of input.entries) {
-        if (obsMs > 0 && en.time < tail - obsMs) continue;
-        const v = en.data[key] ?? { percent: null };
-        if (typeof v.percent === "number" && Number.isFinite(v.percent)) {
-          points.push({ x: en.time, y: v.percent });
-        }
-      }
-
-      let bodyHtml;
-      if (points.length >= 2 && hasPoint) {
-        const domain = niceDomain(points.map((p) => p.y));
-        bodyHtml = `<div class="dou-miniChart">${miniArea({
-          samples: points,
-          color,
-          lo: domain[0],
-          hi: domain[1],
-          resetsAt,
-          resetPeriodMs: period,
-          dateOnly: key === "weekly" || key === "monthly",
-        })}</div>`;
-      } else if (input.entries.length >= 2) {
-        bodyHtml = `<p class="dou-chartEmpty">该时间范围内采样不足（<2 点），随时间积累后显示。</p>`;
-      } else {
-        bodyHtml = `<p class="dou-chartEmpty">数据采集中：每次刷新记录一个采样点（约每 5 分钟一次），≥2 个点后显示趋势。</p>`;
-      }
-
-      cards.push(`<div class="dou-card">${head}${bodyHtml}</div>`);
+    const latestEntry = input.entries[input.entries.length - 1];
+    for (const s of CHART_SERIES) {
+      cards.push(windowCardHtml(s, input.entries, latestEntry.data, latestEntry.time, u));
     }
 
     // 与 v1 结构一致：卡片直接进 .dou-charts 容器（无额外 wrapper）

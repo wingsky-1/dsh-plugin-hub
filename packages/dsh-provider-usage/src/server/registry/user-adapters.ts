@@ -37,6 +37,35 @@ export function adapterStateFile(root: string): string {
   return join(root, "adapter-state.json");
 }
 
+/** plain object 判定（类型谓词，承担当前收窄）。 */
+function isRecordLike(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * 单条清单项归一（纯函数）：字段逐个容错取值，id/providers/file 三者齐备才成条目
+ * （缺一即视为坏条目丢弃——清单损坏不得让半条记录进入注册面）。
+ * label 缺省回落 id。
+ */
+export function toAdapterRecord(item: unknown): UserAdapterRecord | undefined {
+  if (!isRecordLike(item)) return undefined;
+  const id = typeof item.id === "string" ? item.id : "";
+  const label = typeof item.label === "string" ? item.label : "";
+  const providers = Array.isArray(item.providers)
+    ? item.providers.filter((p): p is string => typeof p === "string" && p.length > 0)
+    : [];
+  const file = typeof item.file === "string" ? item.file : "";
+  if (id.length === 0 || providers.length === 0 || file.length === 0) return undefined;
+  return { id, label: label || id, providers, file };
+}
+
+/** 清单外壳解析（纯函数）：adapters 数组或 undefined（坏文件/顶层形态无效皆视作无）。 */
+export function adapterListOf(data: unknown): unknown[] | undefined {
+  if (!isRecordLike(data)) return undefined;
+  const list = data["adapters"];
+  return Array.isArray(list) ? list : undefined;
+}
+
 /** 防御式解析用户适配器清单文本（坏文件返回 []）。 */
 export function parseUserAdapters(raw: string | undefined): UserAdapterRecord[] {
   if (typeof raw !== "string" || raw === "") return [];
@@ -46,22 +75,12 @@ export function parseUserAdapters(raw: string | undefined): UserAdapterRecord[] 
   } catch {
     return [];
   }
-  if (typeof data !== "object" || data === null) return [];
-  const list = (data as Record<string, unknown>)["adapters"];
-  if (!Array.isArray(list)) return [];
+  const list = adapterListOf(data);
+  if (list === undefined) return [];
   const out: UserAdapterRecord[] = [];
   for (const item of list) {
-    if (typeof item !== "object" || item === null) continue;
-    const rec = item as Record<string, unknown>;
-    const id = typeof rec.id === "string" ? rec.id : "";
-    const label = typeof rec.label === "string" ? rec.label : "";
-    const providers = Array.isArray(rec.providers)
-      ? rec.providers.filter((p): p is string => typeof p === "string" && p.length > 0)
-      : [];
-    const file = typeof rec.file === "string" ? rec.file : "";
-    if (id.length > 0 && providers.length > 0 && file.length > 0) {
-      out.push({ id, label: label || id, providers, file });
-    }
+    const record = toAdapterRecord(item);
+    if (record !== undefined) out.push(record);
   }
   return out;
 }
@@ -110,34 +129,48 @@ function defaultAdapterStateDiagnostic(message: string): void {
   console.warn(`[dsh-provider-usage] ${message}`);
 }
 
+/** 不支持 hard-link 的文件系统错误码（退化为 exclusive copy 的前提）。 */
+const HARDLINK_UNSUPPORTED = ["EPERM", "ENOTSUP", "EOPNOTSUPP", "ENOSYS", "EXDEV"];
+
+/**
+ * no-clobber 占位（true = candidate 已占位；false = 已被占，换名重试）。
+ * 同目录 hard-link 创建具备原子 no-clobber 语义；不支持时退化为 exclusive copy
+ * （原文件仅在完整复制后才由调用方移除）。其余错误上抛。
+ */
+async function reserveNoClobber(file: string, candidate: string): Promise<boolean> {
+  try {
+    await link(file, candidate);
+    return true;
+  } catch (linkError: unknown) {
+    if (errorCode(linkError) === "EEXIST") return false;
+    if (!HARDLINK_UNSUPPORTED.includes(errorCode(linkError) ?? "")) throw linkError;
+    try {
+      await copyFile(file, candidate, constants.COPYFILE_EXCL);
+      return true;
+    } catch (copyError: unknown) {
+      if (errorCode(copyError) === "EEXIST") return false;
+      throw copyError;
+    }
+  }
+}
+
+/** 占位成功后移除原路径即完成隔离；移除失败则证据与现场并存，上抛交调用方 fail-closed。 */
+async function unlinkIsolatedOriginal(file: string, candidate: string): Promise<void> {
+  try {
+    await unlink(file);
+  } catch (unlinkError: unknown) {
+    // candidate 已完整保留证据；原文件也仍在，调用方会 fail-closed，禁止后续写入覆盖。
+    throw new Error(
+      `备份已留存在 ${basename(candidate)}，但移除原文件失败：${thrownDetail(unlinkError)}`,
+    );
+  }
+}
+
 async function moveToBackupNoClobber(file: string, backupBase: string): Promise<string> {
   for (let suffix = 0; ; suffix += 1) {
     const candidate = suffix === 0 ? backupBase : `${backupBase}-${suffix}`;
-    try {
-      // 同目录 hard-link 创建具备原子 no-clobber 语义；随后 unlink 原路径即完成隔离。
-      await link(file, candidate);
-    } catch (linkError: unknown) {
-      const linkCode = errorCode(linkError);
-      if (linkCode === "EEXIST") continue;
-      if (!["EPERM", "ENOTSUP", "EOPNOTSUPP", "ENOSYS", "EXDEV"].includes(linkCode ?? ""))
-        throw linkError;
-      try {
-        // 不支持 hard-link 的文件系统退化为 exclusive copy；原文件仅在完整复制后移除。
-        await copyFile(file, candidate, constants.COPYFILE_EXCL);
-      } catch (copyError: unknown) {
-        if (errorCode(copyError) === "EEXIST") continue;
-        throw copyError;
-      }
-    }
-
-    try {
-      await unlink(file);
-    } catch (unlinkError: unknown) {
-      // candidate 已完整保留证据；原文件也仍在，调用方会 fail-closed，禁止后续写入覆盖。
-      throw new Error(
-        `备份已留存在 ${basename(candidate)}，但移除原文件失败：${thrownDetail(unlinkError)}`,
-      );
-    }
+    if (!(await reserveNoClobber(file, candidate))) continue;
+    await unlinkIsolatedOriginal(file, candidate);
     return candidate;
   }
 }
@@ -146,6 +179,41 @@ interface AdapterStateBackupEntry {
   file: string;
   timestamp: number;
   suffix: number;
+}
+
+/**
+ * 目录内取证备份名归集（纯函数）：只认 `<prefix><ts>[-<n>]` 形态且时间戳/序号
+ * 落在安全整数域的条目，按 (ts, n) 升序返回。
+ */
+export function collectBackupEntries(
+  names: readonly string[],
+  directory: string,
+  prefix: string,
+): AdapterStateBackupEntry[] {
+  const entries: AdapterStateBackupEntry[] = [];
+  for (const name of names) {
+    if (!name.startsWith(prefix)) continue;
+    const match = /^(\d+)(?:-(\d+))?$/.exec(name.slice(prefix.length));
+    if (match === null) continue;
+    const timestamp = Number(match[1]);
+    const suffix = Number(match[2] ?? 0);
+    if (!Number.isSafeInteger(timestamp) || !Number.isSafeInteger(suffix)) continue;
+    entries.push({ file: join(directory, name), timestamp, suffix });
+  }
+  return entries.sort(
+    (left, right) => left.timestamp - right.timestamp || left.suffix - right.suffix,
+  );
+}
+
+/** 轮转删除名单（纯函数）：剔除受保护的新备份，按老→新取超出上限的部分。 */
+export function removableBackupFiles(
+  entries: readonly AdapterStateBackupEntry[],
+  protectedBackup: string,
+): string[] {
+  const protectedPath = resolve(protectedBackup);
+  const removable = entries.filter((entry) => resolve(entry.file) !== protectedPath);
+  const removeCount = Math.max(0, removable.length - (ADAPTER_STATE_BACKUP_LIMIT - 1));
+  return removable.slice(0, removeCount).map((entry) => entry.file);
 }
 
 async function rotateAdapterStateBackups(
@@ -164,30 +232,14 @@ async function rotateAdapterStateBackups(
     );
     return;
   }
-
-  const backups: AdapterStateBackupEntry[] = [];
-  for (const name of names) {
-    if (!name.startsWith(prefix)) continue;
-    const match = /^(\d+)(?:-(\d+))?$/.exec(name.slice(prefix.length));
-    if (match === null) continue;
-    const timestamp = Number(match[1]);
-    const suffix = Number(match[2] ?? 0);
-    if (!Number.isSafeInteger(timestamp) || !Number.isSafeInteger(suffix)) continue;
-    backups.push({ file: join(directory, name), timestamp, suffix });
-  }
-
-  const protectedPath = resolve(protectedBackup);
-  const removable = backups
-    .filter((entry) => resolve(entry.file) !== protectedPath)
-    .sort((left, right) => left.timestamp - right.timestamp || left.suffix - right.suffix);
-  const removeCount = Math.max(0, removable.length - (ADAPTER_STATE_BACKUP_LIMIT - 1));
-  for (const entry of removable.slice(0, removeCount)) {
+  const entries = collectBackupEntries(names, directory, prefix);
+  for (const target of removableBackupFiles(entries, protectedBackup)) {
     try {
-      await unlink(entry.file);
+      await unlink(target);
     } catch (error: unknown) {
       if (errorCode(error) === "ENOENT") continue;
       diagnostic(
-        `adapter-state.json 旧取证备份 ${basename(entry.file)} 轮转失败（${thrownDetail(error)}）；现有备份保持不变`,
+        `adapter-state.json 旧取证备份 ${basename(target)} 轮转失败（${thrownDetail(error)}）；现有备份保持不变`,
       );
     }
   }
@@ -226,59 +278,106 @@ async function quarantineAdapterState(
  * 普通 I/O 失败则标为 unreadable，供写路径 fail-closed，避免把无法读取的旧状态覆盖掉。
  * 本函数仅供包内 apply 与源码级测试使用；公开兼容面仍为 readAdapterState(root)。
  */
+/**
+ * 启用映射归一（纯函数，两条读路径共用同一容错口径）：
+ * - key 必须是非空串；
+ * - 值为 null 表示「显式清空」，保留；
+ * - 值为非空串表示启用者，保留；
+ * - 其余（空串、数字、对象、数组、undefined）一律丢弃。
+ */
+export function adapterStateMap(data: Record<string, unknown>): Record<string, string | null> {
+  const out: Record<string, string | null> = {};
+  for (const [provider, id] of Object.entries(data)) {
+    if (provider.length === 0) continue;
+    if (id === null) out[provider] = null;
+    else if (typeof id === "string" && id.length > 0) out[provider] = id;
+  }
+  return out;
+}
+
+/** 顶层非 plain object 时的形态标签（隔离文案用，须与判词一致）。 */
+export function describeTopLevelShape(parsed: unknown): string {
+  if (parsed === null) return "null";
+  if (Array.isArray(parsed)) return "array";
+  return typeof parsed;
+}
+
+/** 读盘结果：原文，或已定稿的失败结果（键集合与历史逐字一致，缺失即缺失）。 */
+type AdapterStateFileRead =
+  { ok: true; raw: string } | { ok: false; result: AdapterStateReadResult };
+
+/** 启用状态文件读盘（ENOENT → missing；其他 I/O 失败 → 已诊断的 unreadable）。 */
+async function readAdapterStateFile(
+  file: string,
+  diagnostic: (message: string) => void,
+): Promise<AdapterStateFileRead> {
+  try {
+    return { ok: true, raw: await readFile(file, "utf8") };
+  } catch (error: unknown) {
+    if (errorCode(error) === "ENOENT")
+      return { ok: false, result: { state: {}, status: "missing" } };
+    const detail = thrownDetail(error);
+    diagnostic(`adapter-state.json 读取失败（${detail}），本次按默认启用关系继续`);
+    return { ok: false, result: { state: {}, status: "unreadable", detail } };
+  }
+}
+
+/** 隔离所需的注入参数（now / moveToBackup 的缺省兜底集中在此）。 */
+function quarantineHooks(
+  options: AdapterStateReadOptions,
+  diagnostic: (message: string) => void,
+): {
+  diagnostic: (message: string) => void;
+  now: () => number;
+  moveToBackup: (file: string, backupBase: string) => Promise<string>;
+} {
+  return {
+    diagnostic,
+    now: options.now ?? Date.now,
+    moveToBackup: options.moveToBackup ?? moveToBackupNoClobber,
+  };
+}
+
 export async function readAdapterStateResult(
   root: string,
   options: AdapterStateReadOptions = {},
 ): Promise<AdapterStateReadResult> {
   const diagnostic = options.diagnostic ?? defaultAdapterStateDiagnostic;
   const file = adapterStateFile(root);
-  let raw: string;
-  try {
-    raw = await readFile(file, "utf8");
-  } catch (error: unknown) {
-    if (errorCode(error) === "ENOENT") return { state: {}, status: "missing" };
-    const detail = thrownDetail(error);
-    diagnostic(`adapter-state.json 读取失败（${detail}），本次按默认启用关系继续`);
-    return { state: {}, status: "unreadable", detail };
-  }
+  const read = await readAdapterStateFile(file, diagnostic);
+  if (!read.ok) return read.result;
+  const hooks = quarantineHooks(options, diagnostic);
 
   let parsed: unknown;
   try {
-    parsed = JSON.parse(raw);
+    parsed = JSON.parse(read.raw);
   } catch (parseError: unknown) {
     return quarantineAdapterState(
       file,
       "JSON 损坏",
       thrownDetail(parseError),
       "quarantined",
-      diagnostic,
-      options.now ?? Date.now,
-      options.moveToBackup ?? moveToBackupNoClobber,
+      hooks.diagnostic,
+      hooks.now,
+      hooks.moveToBackup,
     );
   }
 
   // 顶层必须是 plain object——null / 数组 / 字符串等类数组输入一律拒绝，
   // 并隔离原文留证，避免后续状态写把现场直接覆盖掉。
-  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-    const actual = parsed === null ? "null" : Array.isArray(parsed) ? "array" : typeof parsed;
+  if (!isRecordLike(parsed)) {
+    const actual = describeTopLevelShape(parsed);
     return quarantineAdapterState(
       file,
       `顶层结构无效（必须为对象，实际为 ${actual}）`,
       `invalid top-level type: ${actual}`,
       "invalid-shape",
-      diagnostic,
-      options.now ?? Date.now,
-      options.moveToBackup ?? moveToBackupNoClobber,
+      hooks.diagnostic,
+      hooks.now,
+      hooks.moveToBackup,
     );
   }
-  const data = parsed as Record<string, unknown>;
-  const out: Record<string, string | null> = {};
-  for (const [provider, id] of Object.entries(data)) {
-    if (typeof provider !== "string" || provider.length === 0) continue;
-    if (id === null) out[provider] = null;
-    else if (typeof id === "string" && id.length > 0) out[provider] = id;
-  }
-  return { state: out, status: "ok" };
+  return { state: adapterStateMap(parsed), status: "ok" };
 }
 
 /** 读取持久化的启用映射（provider → name；null 表示显式清空）。 */
@@ -288,15 +387,7 @@ export async function readAdapterState(root: string): Promise<Record<string, str
   try {
     if (!existsSync(adapterStateFile(root))) return {};
     const parsed: unknown = JSON.parse(await readFile(adapterStateFile(root), "utf8"));
-    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return {};
-    const data = parsed as Record<string, unknown>;
-    const out: Record<string, string | null> = {};
-    for (const [provider, id] of Object.entries(data)) {
-      if (typeof provider !== "string" || provider.length === 0) continue;
-      if (id === null) out[provider] = null;
-      else if (typeof id === "string" && id.length > 0) out[provider] = id;
-    }
-    return out;
+    return isRecordLike(parsed) ? adapterStateMap(parsed) : {};
   } catch {
     return {};
   }
@@ -363,31 +454,44 @@ export async function writeAdapterState(
   }
 }
 
+/** 入参规整（纯函数）：非串、空串、含 NUL 一律拒。 */
+export function normalizeAdapterFileInput(input: unknown): string | undefined {
+  if (typeof input !== "string") return undefined;
+  const trimmed = input.trim();
+  if (trimmed === "" || trimmed.includes("\0")) return undefined;
+  return trimmed;
+}
+
+/**
+ * 拒绝 a/../b、./x 未规整形态（禁穿越）。比对前做分隔符归一：Windows 下
+ * `~` 展开会产混合分隔符（home 段是反斜杠、用户写的余段保留 /），resolve 归一 / → \
+ * 属平台语义而非未规整——按字面比对会把 ~/x 与全部正斜杠绝对路径误拒；
+ * POSIX 分隔符归一为恒等变换，行为与历史实现完全一致，穿越段仍被拒。
+ */
+export function isUntraversedPath(expanded: string): boolean {
+  const sepCanonical = (s: string) => (process.platform === "win32" ? s.replace(/\\/g, "/") : s);
+  return sepCanonical(resolve(expanded)) === sepCanonical(expanded);
+}
+
+/** 相对路径：解析结果必须位于 DSH_HOME 或插件 home 之内 */
+export function containedInHomes(dshHome: string, resolved: string): string | undefined {
+  for (const base of [dshHome, pluginHome(dshHome)]) {
+    const rel = relative(base, resolved);
+    if (rel !== "" && !rel.startsWith("..") && !isAbsolute(rel)) return resolved;
+  }
+  return undefined;
+}
+
 /** 校验 add 入参 file 字段：文件存在可读 + 路径规整禁穿越。 */
 export function resolveAddAdapterFile(
   input: unknown,
   dshHome = dshHomeDefault(),
 ): string | undefined {
-  if (typeof input !== "string") return undefined;
-  const trimmed = input.trim();
-  if (trimmed === "" || trimmed.includes("\0")) return undefined;
+  const trimmed = normalizeAdapterFileInput(input);
+  if (trimmed === undefined) return undefined;
   const expandedForCheck = expandHomePath(trimmed);
-  // 拒绝 a/../b、./x 未规整形态（禁穿越）。比对前做分隔符归一：Windows 下
-  // `~` 展开会产混合分隔符（home 段是反斜杠、用户写的余段保留 /），resolve 归一 / → \
-  // 属平台语义而非未规整——按字面比对会把 ~/x 与全部正斜杠绝对路径误拒；
-  // POSIX 分隔符归一为恒等变换，行为与历史实现完全一致，穿越段仍被拒。
-  const expandedCanonical = resolve(expandedForCheck);
-  const sepCanonical = (s: string) => (process.platform === "win32" ? s.replace(/\\/g, "/") : s);
-  if (sepCanonical(expandedCanonical) !== sepCanonical(expandedForCheck)) return undefined;
+  if (!isUntraversedPath(expandedForCheck)) return undefined;
   const resolved = resolvePath(expandedForCheck);
   if (resolved === undefined) return undefined;
-  if (!isAbsolute(trimmed)) {
-    // 相对路径：解析结果必须位于 DSH_HOME 或插件 home 之内
-    for (const base of [dshHome, pluginHome(dshHome)]) {
-      const rel = relative(base, resolved);
-      if (rel !== "" && !rel.startsWith("..") && !isAbsolute(rel)) return resolved;
-    }
-    return undefined;
-  }
-  return resolved;
+  return isAbsolute(trimmed) ? resolved : containedInHomes(dshHome, resolved);
 }

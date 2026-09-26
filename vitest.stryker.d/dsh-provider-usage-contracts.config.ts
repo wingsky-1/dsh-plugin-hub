@@ -13,6 +13,7 @@ export default defineConfig({
       'packages/dsh-provider-usage/test/integration/history/composition-root.test.ts',
       'packages/dsh-provider-usage/test/integration/pipeline/composition-root.test.ts',
       'packages/dsh-provider-usage/test/integration/registry/composition-root.test.ts',
+      'packages/dsh-provider-usage/test/unit/adapters/unit-adapters-pure.test.ts',
       'packages/dsh-provider-usage/test/unit/adapters/unit-deepseek-official.test.ts',
       'packages/dsh-provider-usage/test/unit/apply/unit-apply.test.ts',
       'packages/dsh-provider-usage/test/unit/common/unit-errsurf.test.ts',

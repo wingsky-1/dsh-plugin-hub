@@ -66,6 +66,60 @@ export interface ReportSchedulerOptions {
   listIndexed?: () => Promise<RetryIndexKey[]>;
 }
 
+/** 到期项的账本索引键（period:key）。 */
+export function dueReportKey(due: Pick<DueReport, "period" | "key">): string {
+  return `${due.period}:${due.key}`;
+}
+
+/** 账本条目降为到期项（终态过滤在合并侧做，此处不预判）。 */
+export function dueReportOf(entry: RetryEntry): DueReport {
+  return { period: entry.period, key: entry.key, startDay: entry.startDay, endDay: entry.endDay };
+}
+
+/**
+ * 到期集合合并（纯函数）：
+ * - 配置候选中，账本里**没有**对应条目的直接提交（尚未进入重试账本的首次窗口）；
+ * - 账本 listDue 命中的非终态条目一律补提（已认领但未闭环的窗口不得漏跑）；
+ * - 同键以先到者占位（Map 保持插入序，与历史实现的提交顺序一致）。
+ */
+export function mergeDueReports(
+  current: readonly DueReport[],
+  entries: readonly RetryEntry[],
+  due: readonly RetryEntry[],
+): DueReport[] {
+  const byKey = new Map<string, RetryEntry>();
+  for (const entry of entries) byKey.set(dueReportKey(entry), entry);
+  const dueKeys = new Set<string>();
+  for (const entry of due) dueKeys.add(dueReportKey(entry));
+  const merged = new Map<string, DueReport>();
+  for (const candidate of current) {
+    const key = dueReportKey(candidate);
+    if (byKey.get(key) === undefined || dueKeys.has(key)) merged.set(key, candidate);
+  }
+  for (const entry of due) {
+    if (entry.terminal) continue;
+    merged.set(dueReportKey(entry), dueReportOf(entry));
+  }
+  return [...merged.values()];
+}
+
+/** ledger 口径的到期集合：reconcile 后重算候选，再与账本非终态到期项合并。 */
+async function collectLedgerDue(
+  coordinator: ReportStateCoordinator,
+  config: ReportConfig,
+  now: () => number,
+  lastRun: Partial<Record<ReportPeriod, string>>,
+  listIndexed: (() => Promise<RetryIndexKey[]>) | undefined,
+): Promise<DueReport[]> {
+  const indexed = listIndexed === undefined ? [] : await listIndexed();
+  await coordinator.reconcile(lastRun, indexed);
+  const effectiveLastRun = await coordinator.readLastRun();
+  const current = pendingReports(config, now(), effectiveLastRun);
+  const entries = await coordinator.list();
+  const due = await coordinator.listDue(now(), effectiveLastRun);
+  return mergeDueReports(current, entries, due);
+}
+
 function diagnosticCode(error: unknown, fallback: string): string {
   if (typeof error === "object" && error !== null) {
     const code = (error as { code?: unknown }).code;
@@ -156,63 +210,47 @@ export class ReportScheduler {
     this.config = config;
   }
 
+  /** tick 前置闸门：已释放 / 正在 tick / 未 ready / 恢复失败——任一成立即跳过本轮。 */
+  private blocked(): boolean {
+    return this.disposed || this.ticking || !this.readyState || this.recoveryError;
+  }
+
+  /**
+   * 本轮到期集合。coordinator 缺席时只认配置候选；存在时先 reconcile 再重算，
+   * 并与账本里的非终态到期项合并（见 mergeDueReports）。
+   */
+  private async collectDue(): Promise<DueReport[]> {
+    const coordinator = this.coordinator;
+    const lastRun =
+      coordinator === undefined ? await readLastRun(this.root) : await coordinator.readLastRun();
+    const current = pendingReports(this.config, this.now(), lastRun);
+    if (coordinator === undefined) return current;
+    return collectLedgerDue(coordinator, this.config, this.now, lastRun, this.listIndexed);
+  }
+
+  /** 失败诊断：coordinator 缺席时给原始 message，在场时只给稳定错误码（不外泄原文）。 */
+  private reportFailure(context: string, error: unknown): void {
+    this.warn(
+      this.coordinator === undefined
+        ? `${context}：${error instanceof Error ? error.message : String(error)}`
+        : `${context}（${diagnosticCode(error, "storage")}）`,
+    );
+  }
+
   /** 一轮检查：ready 前直接返回；合并当前候选与已有 ledger 的非终态到期项。 */
   async tick(): Promise<void> {
-    if (this.disposed || this.ticking || !this.readyState || this.recoveryError) return;
+    if (this.blocked()) return;
     this.ticking = true;
     try {
-      const lastRun =
-        this.coordinator === undefined
-          ? await readLastRun(this.root)
-          : await this.coordinator.readLastRun();
-      let effectiveLastRun = lastRun;
-      let current = pendingReports(this.config, this.now(), effectiveLastRun);
-      const merged = new Map<string, DueReport>();
-      if (this.coordinator !== undefined) {
-        const indexed = this.listIndexed === undefined ? [] : await this.listIndexed();
-        await this.coordinator.reconcile(lastRun, indexed);
-        effectiveLastRun = await this.coordinator.readLastRun();
-        current = pendingReports(this.config, this.now(), effectiveLastRun);
-        const entries = await this.coordinator.list();
-        const byKey = new Map(entries.map((entry) => [`${entry.period}:${entry.key}`, entry]));
-        const due = await this.coordinator.listDue(this.now(), effectiveLastRun);
-        const dueKeys = new Set(due.map((entry) => `${entry.period}:${entry.key}`));
-        for (const candidate of current) {
-          const key = `${candidate.period}:${candidate.key}`;
-          const entry = byKey.get(key);
-          if (entry === undefined || dueKeys.has(key)) merged.set(key, candidate);
-        }
-        for (const entry of due) {
-          if (entry.terminal) continue;
-          merged.set(`${entry.period}:${entry.key}`, {
-            period: entry.period,
-            key: entry.key,
-            startDay: entry.startDay,
-            endDay: entry.endDay,
-          });
-        }
-      } else {
-        for (const due of current) merged.set(`${due.period}:${due.key}`, due);
-      }
-      for (const due of merged.values()) {
+      for (const due of await this.collectDue()) {
         try {
           await this.onDue(due);
         } catch (error: unknown) {
-          if (this.coordinator === undefined) {
-            this.warn(
-              `${due.period} ${due.key} 提交失败：${error instanceof Error ? error.message : String(error)}`,
-            );
-          } else {
-            this.warn(`${due.period} ${due.key} 提交失败（${diagnosticCode(error, "storage")}）`);
-          }
+          this.reportFailure(`${due.period} ${due.key} 提交失败`, error);
         }
       }
     } catch (error: unknown) {
-      if (this.coordinator === undefined) {
-        this.warn(`tick 异常：${error instanceof Error ? error.message : String(error)}`);
-      } else {
-        this.warn(`tick 异常（${diagnosticCode(error, "storage")}）`);
-      }
+      this.reportFailure("tick 异常", error);
     } finally {
       this.ticking = false;
     }
@@ -370,18 +408,33 @@ function withRootLock<T>(root: string, operation: () => Promise<T>): Promise<T> 
   });
 }
 
-function sameClaim(left: RetryClaim, right: RetryEntry | undefined): boolean {
+/** claim 所指条目的窗口身份等价。 */
+export function sameClaimWindow(left: RetryClaim, right: RetryEntry): boolean {
   return (
-    right !== undefined &&
-    left.cycleId === right.cycleId &&
     left.entry.period === right.period &&
     left.entry.key === right.key &&
     left.entry.startDay === right.startDay &&
-    left.entry.endDay === right.endDay &&
+    left.entry.endDay === right.endDay
+  );
+}
+
+/** claim 所指条目的周期状态等价。 */
+export function sameClaimCycle(left: RetryClaim, right: RetryEntry): boolean {
+  return (
     left.entry.phase === right.phase &&
     left.entry.attempts === right.attempts &&
     left.entry.terminal === right.terminal &&
-    left.entry.nextRetryAt === right.nextRetryAt &&
+    left.entry.nextRetryAt === right.nextRetryAt
+  );
+}
+
+/** claim 仍指向当前条目（cycle 围栏）：身份、周期状态与成本载荷全等。 */
+function sameClaim(left: RetryClaim, right: RetryEntry | undefined): boolean {
+  if (right === undefined) return false;
+  return (
+    left.cycleId === right.cycleId &&
+    sameClaimWindow(left, right) &&
+    sameClaimCycle(left, right) &&
     JSON.stringify(left.entry.attemptObservations) === JSON.stringify(right.attemptObservations) &&
     JSON.stringify(left.entry.usage) === JSON.stringify(right.usage)
   );
