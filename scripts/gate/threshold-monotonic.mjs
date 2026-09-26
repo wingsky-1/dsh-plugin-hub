@@ -15,10 +15,12 @@
  *
  * 声明表自己也被同一套语义守着（#843 对抗评审 P0-1）：guard 只许新增，同 id 的判据形状字段
  * （kind / weaken / weakenValue / onRemoval / paths / keys / anchorFields / requireFields / sources /
- * missingIsError / nonMonotonic / minAllowed / maxAllowed）相对基准只许补全收紧，除非在表里显式登记
- * `retired`（整条退役）或 `contractApprovals`（改某个字段），两者都要求 trackingIssue + reason，
- * 且都做反向腐烂校验。否则「删一条 guard / 翻一个 direction / 把 onRemoval 改成 ignore」就是一行
- * 数据改动且 CI 全绿。
+ * missingIsError / nonMonotonic / minAllowed / maxAllowed）相对基准只许补全收紧，且**数据面没有任何
+ * 通道能放行一次削弱**：#875 H11 删除了 `retired`（整条退役）与 `contractApprovals`（改某个字段）
+ * 两条自授权登记入口——它们曾让「删一条 guard / 翻一个 direction / 把 onRemoval 改成 ignore」成为
+ * 一行数据改动且 CI 全绿。通道**不可重建**是被判据守住的（这两个键重新出现在声明表里即判红），
+ * 不是靠人记得；因此改 guard 的**唯一合法路径是改判据代码**（本文件或
+ * scripts/lib/threshold-registry.mjs），代码改动走红线评审。
  * `sources` 是回落链，只许**尾部追加**：前置一个镜像基准值的影子源能让基准侧与工作区侧解析到
  * 不同的事实源，守卫于是对着影子文件判绿而真实事实源已被改弱（#850 批次评审 F-1）。声明表比对
  * 之外，比较器还记录两侧实际命中的源，工作区命中基准未声明的文件即判红——两道判据不同源。
@@ -797,7 +799,8 @@ function reportDeclarationProblems(problems) {
 }
 
 /**
- * 声明表自身相对基准只许补全收紧（P0-1）：删 guard / 翻方向 / 关删键语义都在这里拦下。
+ * 声明表自身相对基准只许补全收紧（P0-1）：删 guard / 翻方向 / 关删键语义都在这里拦下，
+ * 重建成已废止的自授权键（retired / contractApprovals）同样在这里拦下。
  * 基准上无本表（首次引入）时跳过并记一句；有失配则返回 exit 1 结果，否则 null（继续）。
  */
 function compareRegistrySelf(baseRegistry, registry, baseRef) {
@@ -817,7 +820,7 @@ function compareRegistrySelf(baseRegistry, registry, baseRef) {
   console.error(
     "\nthreshold-monotonic: 声明表自身被削弱（" +
       tableFailures.length +
-      " 处）—— 判据形状只许补全收紧，退役或改动须在表里登记",
+      " 处）—— 判据形状只许补全收紧；退役或改动须改判据代码（数据面已无登记通道）",
   );
   return { exitCode: 1, failures: tableFailures.length };
 }
