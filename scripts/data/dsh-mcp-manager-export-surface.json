@@ -555,7 +555,7 @@
     }
   ],
   "declBlocks": [
-    "export declare class McpManager { ctx: Context; store: McpStore; listeners: Set<() => void>; logger: LoggerService; projectRoot: string | undefined; projectStore: McpStore | undefined; reconcileBusy: boolean; projectStores: Map<string, McpStore>; catalogCache: CatalogCache; catalogCachePath: string; uiConfigSource: () => unknown; uiUpdate?: (patch: Record<string, unknown>) => Promise<unknown>; sseHub?: SseHub; middleware: McpMiddleware | undefined; userStatePath: string; stats: McpStatsCollector; runtimeRegistry: Map<string, ServerConfig>; private registerQueue; private catalogViewResolver; constructor(ctx: Context, store: McpStore); uiConfig(): ClientUiConfig; updateUiConfig(raw: unknown): Promise<ClientUiConfig>; loadCatalogCache(): Promise<void>; recordCatalogTools(serverName: string, toolMeta: Map<string, { description?: unknown; }>): Promise<void>; private registeredSchemas; private poolRootFor; serverNameForId(id: string): { root: string; server: string; } | undefined; registeredToolsFor(name: string): Array<{ name: string; description?: string; }>; private poolEntryFor; onStatus(handler: () => void): () => void; getRedactionServers(): ServerConfig[]; redactError(error: unknown): string; private statusTimer; emitStatus(): void; projectStoreOrThrow(): Promise<McpStore>; projectServersFor(root: string): Promise<ServerConfig[] | undefined>; isRuntimeServer(name: string): boolean; isGlobalServer(name: string): boolean; globalServers(): ServerConfig[]; saveUserState(units: Map<string, ProjectUnit>): Promise<void>; catalogCachePathFor(root: string): string; initMiddleware(): Promise<McpMiddleware>; disabledByRoot: Map<string, Set<string>>; disabledTools: DisabledToolsMap; setToolDisabled(root: string, server: string, tool: string, disabled: boolean): Promise<void>; projectStoreFor(root: string | undefined): Promise<McpStore | undefined>; catalogServersFor(cwd: string | undefined): Promise<Map<string, { server: ServerConfig; scope: string; }>>; catalogViewFor(cwd: string | undefined, servers: Map<string, { server: ServerConfig; scope: string; }>): Promise<CatalogCache>; setSession(cwd: string | undefined): Promise<void>; resumeReconnect(): Promise<void>; refreshFromDisk(): Promise<void>; reconcileServers(): boolean; startAll(): Promise<void>; start(name: string, scope?: string): void; private touchGlobalUnit; private ensureMiddlewareServer; private dropMiddlewareConnection; registerServer(options: Record<string, unknown>): Promise<{ name: string; existing: boolean; }>; unregisterServer(name: string): Promise<void>; add(server: Record<string, unknown>, scope?: string): Promise<ServerConfig>; update(name: string, patch: Record<string, unknown>, scope?: string): Promise<ServerConfig>; remove(name: string, scope?: string): Promise<void>; connect(name: string, scope?: string): Promise<void>; disconnect(name: string, scope?: string): Promise<void>; reconnect(name: string, scope?: string): Promise<void>; summary(): Record<string, unknown>; private middlewareUnitFor; summarize(server: ServerConfig, scope: string): Record<string, unknown>; dispose(): Promise<void>; }",
+    "export declare class McpManager { ctx: Context; store: McpStore; listeners: Set<() => void>; logger: LoggerService; projectRoot: string | undefined; projectStore: McpStore | undefined; reconcileBusy: boolean; projectStores: Map<string, McpStore>; catalogCache: CatalogCache; catalogCachePath: string; uiConfigSource: () => unknown; uiUpdate?: (patch: Record<string, unknown>) => Promise<unknown>; sseHub?: SseHub; middleware: McpMiddleware | undefined; userStatePath: string; stats: McpStatsCollector; runtimeRegistry: Map<string, ServerConfig>; private registerQueue; private catalogViewResolver; constructor(ctx: Context, store: McpStore); uiConfig(): ClientUiConfig; updateUiConfig(raw: unknown): Promise<ClientUiConfig>; loadCatalogCache(): Promise<void>; recordCatalogTools(serverName: string, toolMeta: Map<string, { description?: unknown; }>): Promise<void>; private registeredSchemas; private poolRootFor; serverNameForId(id: string): { root: string; server: string; } | undefined; registeredToolsFor(name: string): Array<{ name: string; description?: string; }>; private poolEntryFor; onStatus(handler: () => void): () => void; getRedactionServers(): ServerConfig[]; redactError(error: unknown): string; private statusTimer; emitStatus(): void; projectStoreOrThrow(): Promise<McpStore>; projectServersFor(root: string): Promise<ServerConfig[] | undefined>; isRuntimeServer(name: string): boolean; isGlobalServer(name: string): boolean; globalServers(): ServerConfig[]; saveUserState(units: Map<string, ProjectUnit>): Promise<void>; catalogCachePathFor(root: string): string; initMiddleware(): Promise<McpMiddleware>; disabledByRoot: Map<string, Set<string>>; disabledTools: DisabledToolsMap; setToolDisabled(root: string, server: string, tool: string, disabled: boolean): Promise<void>; projectStoreFor(root: string | undefined): Promise<McpStore | undefined>; catalogServersFor(cwd: string | undefined): Promise<CatalogServers>; catalogViewFor(cwd: string | undefined, servers: Map<string, { server: ServerConfig; scope: string; }>): Promise<CatalogCache>; setSession(cwd: string | undefined): Promise<void>; resumeReconnect(): Promise<void>; refreshFromDisk(): Promise<void>; reconcileServers(): boolean; startAll(): Promise<void>; start(name: string, scope?: string): void; private touchGlobalUnit; private ensureMiddlewareServer; private dropMiddlewareConnection; registerServer(options: Record<string, unknown>): Promise<{ name: string; existing: boolean; }>; unregisterServer(name: string): Promise<void>; add(server: Record<string, unknown>, scope?: string): Promise<ServerConfig>; update(name: string, patch: Record<string, unknown>, scope?: string): Promise<ServerConfig>; remove(name: string, scope?: string): Promise<void>; connect(name: string, scope?: string): Promise<void>; disconnect(name: string, scope?: string): Promise<void>; reconnect(name: string, scope?: string): Promise<void>; summary(): Record<string, unknown>; private middlewareUnitFor; summarize(server: ServerConfig, scope: string): Record<string, unknown>; dispose(): Promise<void>; }",
     "export declare class McpMiddleware { host: MiddlewareHost; units: Map<string, ProjectUnit>; disabledByRoot: Map<string, Set<string>>; disabledTools: DisabledToolsMap; forwarding: Set<ToolExecutionToken>; constructor(host: MiddlewareHost); projectUnitFor(root: string | undefined): Promise<ProjectUnit | undefined>; ensureConnected(root: string, serverName: string, opts?: { force?: boolean; }): Promise<void>; abandonInFlight(serverName: string): void; private connectInternal; private registeredSchemas; private registeredToolMeta; private redact; statusOf(root: string, serverName: string): ServerState | undefined; toolCountOf(root: string, serverName: string): number; callTool(fullName: string, toolRaw: string, rawArgs: unknown, signal: AbortSignal | undefined, identity: { agent?: unknown; callId: ToolExecutionInput[\"callId\"]; rootCallId?: ToolExecutionInput[\"rootCallId\"]; parent?: ToolExecutionToken; }): Promise<unknown>; releaseConnection(root: string, serverName: string): boolean; evictIfNeeded(maxUnits?: number): void; teardownUnit(root: string): void; dispose(): Promise<void>; }",
     "export declare class McpStatsCollector { private enabled; private filePath; private logger?; private startedAt; private updatedAt; private servers; private disclosure; private flushTimer?; private isDirty; constructor(options?: { enabled?: boolean; filePath?: string; logger?: { info?: (msg: string) => void; debug?: (msg: string) => void; }; }); configure(options: { enabled?: boolean; filePath?: string; logger?: { info?: (msg: string) => void; }; }): void; isEnabled(): boolean; private loadExisting; recordCall(server: string, tool: string, durationMs: number, success: boolean, errorMsg?: string): void; recordSearch(query: string): void; recordList(serverFilter?: string): void; recordDetail(server: string, tool: string): void; snapshot(): McpStatsSnapshot; private scheduleFlush; flushSync(): void; dispose(): void; }",
     "export declare class McpStore { path: string; data: { version: number; servers: ServerConfig[]; }; mtimeMs: number | undefined; snapshot: string | null; constructor(path: string); load(): Promise<void>; save(): Promise<void>; private writeSnapshot; changedOnDisk(): Promise<boolean>; reloadIfChanged(): Promise<boolean>; find(name: string): ServerConfig | undefined; upsert(server: ServerConfig): void; remove(name: string): void; }",
@@ -634,12 +634,16 @@
     "export declare const upgradeRunner: UpgradeRunner;",
     "export declare const zh: { readonly stConnected: \"运行中\"; readonly stConnecting: \"连接中\"; readonly stReconnecting: \"重连中\"; readonly stStopped: \"未连接\"; readonly stDisabled: \"已停用\"; readonly stFailed: \"失败\"; readonly connect: \"连接\"; readonly disconnect: \"断开\"; readonly reconnect: \"重连\"; readonly enable: \"启用\"; readonly enableAndConnect: \"启用并连接\"; readonly disable: \"禁用\"; readonly edit: \"编辑\"; readonly delete: \"删除\"; readonly save: \"保存\"; readonly cancel: \"取消\"; readonly refresh: \"刷新\"; readonly close: \"关闭\"; readonly cancelEdit: \"取消编辑\"; readonly saveFail: \"保存失败：{msg}\"; readonly actionFail: \"操作失败：{msg}\"; readonly loadFail: \"加载失败：{msg}\"; readonly floatAriaLabel: \"MCP 管理器\"; readonly floatTitle: \"MCP 管理器（点击展开）\"; readonly floatManage: \"管理\"; readonly floatGlobalSession: \"全局会话\"; readonly groupProject: \"项目级\"; readonly groupGlobal: \"全局\"; readonly badgeScopeProject: \"项目\"; readonly badgeScopeGlobal: \"全局\"; readonly serverMeta: \"{status} · {tools} 工具\"; readonly toolsCount: \"工具（{n}）\"; readonly toolsCountPlain: \"{n} 工具\"; readonly statusGroupCount: \"{status}（{n}）\"; readonly groupAttention: \"需关注（{n}）\"; readonly healthRunning: \"运行中 {n}\"; readonly healthConnecting: \"连接中 {n}\"; readonly healthStopped: \"未连接 {n}\"; readonly healthFailed: \"失败 {n}\"; readonly floatEmptyTitle: \"还没有 MCP 服务器\"; readonly floatEmptyCta: \"去添加\"; readonly panelTitle: \"MCP 管理器\"; readonly tabServers: \"服务器\"; readonly tabQuickAdd: \"快速接入\"; readonly countsConnected: \"运行中 {n}\"; readonly countsConnecting: \"连接中 {n}\"; readonly countsFailed: \"失败 {n}\"; readonly countsSummary: \"共 {n} 台 · {parts}\"; readonly countsSummaryOnly: \"共 {n} 台\"; readonly addServer: \"添加服务器\"; readonly editServer: \"编辑服务器：{name}\"; readonly nameLabel: \"服务器名称（唯一，作为 mcp__<name>__ 前缀）\"; readonly ownershipLabel: \"归属\"; readonly transportLabel: \"传输类型\"; readonly commandLabel: \"命令（stdio）\"; readonly argsLabel: \"参数（逗号分隔）\"; readonly envLabel: \"环境变量（每行 KEY=VALUE，支持 ${ENV} 引用，值为空则继承父环境）\"; readonly cwdLabel: \"工作目录（可选）\"; readonly urlLabel: \"URL（streamable-http）\"; readonly headersLabel: \"请求头（每行 KEY: VALUE，支持 ${ENV} 引用）\"; readonly enabledLabel: \"启用（保存后立即连接）\"; readonly scopeProjectOpt: \"项目级（<项目>/.dsh/@wingsky-1/dsh-mcp-manager/mcp.json，随会话切换）\"; readonly scopeGlobalOpt: \"全局（本机配置）\"; readonly transportStdioOpt: \"stdio（本地子进程）\"; readonly transportHttpOpt: \"streamable-http（远程）\"; readonly envPlaceholder: \"每行 KEY=VALUE，如\\nCONTEXT7_API_KEY=${CONTEXT7_API_KEY}\"; readonly headersPlaceholder: \"每行 KEY: VALUE，支持 ${ENV} 引用，如\\nAuthorization: Bearer ${CONTEXT7_API_KEY}\"; readonly cwdPlaceholder: \"可选工作目录\"; readonly pasteTitle: \"粘贴 mcpServers JSON 导入\"; readonly importJson: \"导入 JSON\"; readonly importedOk: \"已导入：{names}\"; readonly importedNone: \"（无）\"; readonly importSkipped: \"跳过（已存在）：{names}\"; readonly importFail: \"导入失败：{msg}\"; readonly serversEmpty: \"还没有配置 MCP 服务器。切到「快速接入」页添加，或粘贴 mcpServers JSON 导入。\"; readonly confirmDelete: \"删除 MCP 服务器「{name}」？\"; readonly settingsLoading: \"MCP 管理器：加载中…\"; readonly settingsName: \"MCP 管理器（dsh-mcp-manager）\"; readonly settingsDescription: \"浮窗位置 / 水平·垂直·空白偏移\"; readonly anchorLabel: \"锚点\"; readonly posTopRight: \"右上（top-right）\"; readonly posTopLeft: \"左上（top-left）\"; readonly posBottomRight: \"右下（bottom-right）\"; readonly posBottomLeft: \"左下（bottom-left）\"; readonly offsetX: \"水平偏移\"; readonly offsetY: \"垂直偏移\"; readonly blankY: \"空白偏移\"; readonly zIndexBase: \"层级基准\"; readonly settingsHint: \"保存即热更新：浮窗位置与偏移即时生效并持久化（无需重启 dsh web）。\"; readonly savingNow: \"保存中…\"; readonly settingsSavedOk: \"已保存——浮窗位置即时生效（无需重启）\"; };",
     "export declare function SettingsCard(props: SettingsCardProps): React.ReactElement | null;",
+    "export declare function absentFromPool(middleware: McpMiddleware | undefined, root: string, name: string): boolean;",
     "export declare function actionButton(label: string, onClick: () => void | Promise<void>, primary?: boolean, danger?: boolean): HTMLElement;",
+    "export declare function anchorsLeft(position: string | undefined): boolean;",
     "export declare function api<T = unknown>(path: string, options?: ApiRequestOptions): Promise<T>;",
     "export declare function apply(ctx: Context, config: Record<string, unknown> | undefined): Promise<void>;",
     "export declare function apply(ctx: McpClientContext): void;",
     "export declare function assemble<Host>(host: Host, domains: readonly DomainSpec<Host>[]): Promise<Array<() => void>>;",
+    "export declare function assertCallableTarget(toolCtx: MiddlewareToolContext, server: string, root: string): Promise<{ parsed: { root: string; server: string; }; unit: ProjectUnit; }",
     "export declare function assertEnvPolicy(env: Record<string, unknown> | undefined, headers: Record<string, unknown> | undefined, snapshot?: Record<string, string | undefined>, url?: unknown, args?: unknown): void;",
+    "export declare function assertReconnectFields(out: Record<string, unknown>): void;",
     "export declare function attributeOfficialLog(text: string, serverName: string): string | undefined;",
     "export declare function awaitMountWindow(input: MountWindowInput): Promise<MountWindowOutcome>;",
     "export declare function bareServerName(name: string): string;",
@@ -650,49 +654,71 @@
     "export declare function boundCatalogTools(tools: Iterable<{ name?: unknown; description?: unknown; inputSchema?: unknown; }",
     "export declare function breakpointForWidth(width: number): FloatBreakpoint;",
     "export declare function broadcastFrame(connections: SseHub | Set<ServerResponse> | undefined, frame: string): void;",
+    "export declare function bucketByStatus(list: McpServerListEntry[]): Map<string, McpServerListEntry[]>;",
+    "export declare function bucketServersByStatus(list: McpServerListEntry[]): Map<string, McpServerListEntry[]>;",
     "export declare function buildConfigRoute(manager: RoutesManager, helpers: RouteHelpers): WebRoute;",
     "export declare function buildConfigUiPatch(raw: unknown): UiPlacementConfig;",
     "export declare function buildConnectRoute(manager: RoutesManager, helpers: RouteHelpers): WebRoute;",
     "export declare function buildDisconnectRoute(manager: RoutesManager, helpers: RouteHelpers): WebRoute;",
     "export declare function buildImportJsonRoute(manager: RoutesManager, helpers: RouteHelpers): WebRoute;",
+    "export declare function buildListServerEntry(serverName: string, root: string, catalog: CatalogServer, userDisabled: ReadonlySet<string>, safeLimit: number, disabledTools: DisabledToolsMap | undefined, fullServerName: (root: string, server: string) => string): { entry: ListServerEntry; truncated: boolean; toolCount: number; };",
     "export declare function buildQuickAdd(state: McpState, actions: UiActions): HTMLElement;",
     "export declare function buildReconnectRoute(manager: RoutesManager, helpers: RouteHelpers): WebRoute;",
     "export declare function buildResumeRoute(manager: RoutesManager, helpers: RouteHelpers): WebRoute;",
     "export declare function buildServersRoute(manager: RoutesManager, helpers: RouteHelpers): WebRoute;",
     "export declare function buildSessionRoute(manager: RoutesManager, helpers: RouteHelpers): WebRoute;",
     "export declare function buildToolDisableRoute(manager: RoutesManager, helpers: RouteHelpers): WebRoute;",
+    "export declare function carriesProjectionPlaceholder(key: string, value: unknown): boolean;",
     "export declare function catalogCacheFile(): string;",
     "export declare function catalogCacheFileFor(root: string): string;",
     "export declare function catalogDir(): string;",
     "export declare function catalogFile(hash: string): string;",
     "export declare function catalogHistory(agent: CatalogAgent | undefined): CatalogHistoryResult;",
     "export declare function catalogSummaryFile(): string;",
+    "export declare function catalogToolNames(catalog: CatalogServer | undefined): string[];",
     "export declare function clampPointToViewport(x: number, y: number, width: number, height: number, viewportW: number, viewportH: number, safeInset?: number): ViewportPoint;",
     "export declare function clampZIndexBase(value: unknown, dflt: number): number;",
+    "export declare function classifyParsedJson(parsed: unknown, wasQuoted: boolean): UnwrapVerdict;",
     "export declare function close(state: McpState): void;",
+    "export declare function collectCatalogServers(into: CatalogServers, entries: Iterable<readonly [string, ServerConfig]>, scope: string): void;",
     "export declare function collectOfficialLogs(logs: LogsPort, serverName: string): OfficialLogCollector;",
+    "export declare function collectToolSentences(toolMeta: Map<string, { description?: unknown; }",
     "export declare function compareVersions(left: string, right: string): number;",
     "export declare function composeCatalogEntries(supervisors: Map<string, SupervisorLite>, maxEntries?: number, cache?: CatalogCache): CatalogEntry[];",
     "export declare function composerDockedAtBottom(seatRect: RectLike | null | undefined, containerRect: RectLike | null | undefined): boolean;",
     "export declare function configFile(): string;",
+    "export declare function connectableServer(servers: ServerConfig[] | undefined, serverName: string): ServerConfig | undefined;",
     "export declare function containsRemoteImage(content: readonly unknown[]): boolean;",
+    "export declare function controlText(control: { value: string; }",
     "export declare function conversationHost(): Element;",
+    "export declare function countRemoteImages(content: readonly unknown[]): number;",
     "export declare function createRedactor(servers: readonly ServerConfig[]): (error: unknown) => string;",
     "export declare function createState(): McpState;",
     "export declare function currentCwdBody(state: McpState): Record<string, string>;",
     "export declare function cwdQueryOf(state: McpState): string;",
+    "export declare function decodeRemoteImages(content: readonly unknown[]): { indexes: number[]; images: SaveImageInput[]; validationErrors: Map<number, string>; };",
+    "export declare function dedupeToolSentences(collected: Array<[string, string]>): string[];",
     "export declare function defaultCallResultFallbackText(result: unknown): string;",
     "export declare function defaultStatsPath(): string;",
     "export declare function defaultStorePath(): string;",
+    "export declare function deleteAction(server: McpServerListEntry, state: McpState, actions: UiActions, scopeQuery: string): ActionSpec;",
+    "export declare function deniedInScope(disabledTools: DisabledToolsMap | undefined, root: string, server: string, tool: string): boolean;",
+    "export declare function diagnosticProjection(content: readonly unknown[], formatBlock: (block: unknown) => string, reason: string): ModelContentBlock[];",
     "export declare function diagnosticText(lines: readonly string[]): string | undefined;",
     "export declare function digestCatalogEntries(entries: CatalogEntry[]): string;",
     "export declare function directoryMode(dir: string): number | null;",
+    "export declare function disableAction(server: McpServerListEntry, state: McpState, actions: UiActions, scopeQuery: string, cwdQuery: string): ActionSpec;",
+    "export declare function disableRowAction(server: McpServerListEntry, state: McpState): RowAction;",
     "export declare function disposePanel(state: McpState): void;",
+    "export declare function disposePreviousGeneration(entry: ConnectionEntry | undefined, disposeServer: (id: string) => unknown): Promise<void>;",
     "export declare function disposeServer(key: string): Promise<void>;",
+    "export declare function dockedBottomEdge(containerRect: { top: number; bottom: number; }",
     "export declare function el<K extends keyof HTMLElementTagNameMap>(tag: K, attrs?: Record<string, unknown>, children?: unknown[]): HTMLElementTagNameMap[K];",
     "export declare function endpointOf(server: McpServerListEntry): string;",
     "export declare function ensureDir(dir: string): Promise<void>;",
+    "export declare function entryTextFor(name: string, server: SupervisorLite[\"server\"], cache: CatalogCache | undefined): string | undefined;",
     "export declare function eraseMcpSdkDeclarations(text: string): ErasureResult;",
+    "export declare function errorText(error: unknown): string;",
     "export declare function escapeCatalogText(value: unknown): string;",
     "export declare function executeMcpCall(input: DispatchCallInput): Promise<unknown>;",
     "export declare function expandEnv(value: unknown): string;",
@@ -701,14 +727,22 @@
     "export declare function extractEnvRefs(value: unknown): string[];",
     "export declare function fileMode(file: string): number | null;",
     "export declare function fillForm(state: McpState, fill: McpServerListEntry): void;",
+    "export declare function fillKvField(input: HTMLTextAreaElement | undefined, table: Record<string, string> | undefined, separator: \"=\" | \": \"): void;",
     "export declare function findCatalogMessage(messages: CatalogMessage[]): CatalogMessage | undefined;",
     "export declare function findProjectRoot(cwd: string | undefined): Promise<string>;",
+    "export declare function findProjectionPlaceholderKey(server: Record<string, unknown>): string | undefined;",
     "export declare function findToolDetail(units: Map<string, ProjectUnit>, root: string, server: string, tool: string): ToolDetail;",
+    "export declare function floatPositionOf(cfg: ClientUiConfig): ClientUiConfig[\"position\"];",
+    "export declare function floatProjectName(state: McpState): string;",
     "export declare function floatTopOffset(ctx: McpClientContext, state: McpState): number;",
     "export declare function formScopeValue(state: McpState): string;",
+    "export declare function formTransportValue(state: McpState): McpManagerServerInput[\"transport\"];",
     "export declare function fromClaudeEntry(name: string, entry: Record<string, unknown>): ServerConfig;",
     "export declare function fullServerName(root: string, server: string): string;",
     "export declare function globMatch(pattern: string, name: string): boolean;",
+    "export declare function globalScopeToolDisabled(disabledTools: DisabledToolsMap | undefined, server: string, tool: string): boolean;",
+    "export declare function hasSecretTable(table: Record<string, string> | undefined): boolean;",
+    "export declare function importOneServer(server: ServerConfig, store: McpStore, scope: string, overwrite: boolean, manager: RoutesManager, imported: string[], skipped: string[]): Promise<void>;",
     "export declare function installApi(deps: ApiDeps): void;",
     "export declare function installCatalog(deps: CatalogDeps): void;",
     "export declare function installInject(deps: InjectDeps): void;",
@@ -717,15 +751,33 @@
     "export declare function installPipeline(deps: PipelineDeps): void;",
     "export declare function installRuntime(deps: RuntimeDeps): void;",
     "export declare function installUpgrade(deps: UpgradeDeps): Promise<void>;",
+    "export declare function isBlankCwd(cwd: string | null | undefined): cwd is null | undefined | \"\";",
+    "export declare function isBlankSession(ctx: McpClientContext): boolean;",
+    "export declare function isCallable(value: unknown): value is () => unknown;",
     "export declare function isCatalogFresh(catalog: CatalogServer | undefined): boolean;",
     "export declare function isCatalogSource(source: { kind?: unknown; }",
+    "export declare function isEditing(state: McpState): boolean;",
+    "export declare function isMigratedEdit(state: McpState, server: McpManagerServerInput, payload: Record<string, unknown>): boolean;",
+    "export declare function isPlainRecord(value: unknown): value is Record<string, unknown>;",
+    "export declare function isPlainRecord(value: unknown): value is Record<string, unknown>;",
+    "export declare function isProjectionPlaceholder(value: unknown): boolean;",
     "export declare function isProjectionValue(value: unknown): boolean;",
     "export declare function isRemoteImageBlock(block: unknown): boolean;",
     "export declare function isSecretEnvName(name: unknown): boolean;",
+    "export declare function isServerTransport(value: string): value is McpManagerServerInput[\"transport\"];",
     "export declare function isToolDenied(disabledTools: DisabledToolsMap | undefined, serverKey: string, tool: string): boolean;",
+    "export declare function isToolDisabledForEntry(disabledTools: DisabledToolsMap | undefined, root: string, serverName: string, toolName: string): boolean;",
+    "export declare function isToolDisabledIn(tool: string, disabled: ReadonlySet<string> | undefined, inheritedDisabled: ReadonlySet<string> | undefined): boolean;",
+    "export declare function joinSentencesWithinBudget(sentences: string[], prefix: string): string;",
+    "export declare function jsonHeadKind(trimmed: string): { container: boolean; quoted: boolean; };",
+    "export declare function jsonPatchInit(enabled: boolean): { method: \"PATCH\"; headers: Record<string, string>; body: string; };",
+    "export declare function jsonWriteInit(payload: Record<string, unknown>): { method: \"POST\" | \"PATCH\"; headers: Record<string, string>; body: string; };",
+    "export declare function judgeEntryReadiness(fullName: string, server: string, userDisabled: boolean, entry: CallEntry | undefined): ReadinessVerdict;",
     "export declare function legacyFile(fileName: string): string;",
     "export declare function legacyProjectConfigFile(projectRoot: string): string;",
     "export declare function listCatalog(units: Map<string, ProjectUnit>, roots: readonly string[], serverFilter: string | undefined, toolLimit: number, emptyHint: string, disabledTools?: DisabledToolsMap): ListCatalogResult;",
+    "export declare function listOrderComparator(rootIndex: ReadonlyMap<string, number>, parseFullServerName: (full: string) => { root: string; server: string; }",
+    "export declare function listOrderKey(entry: ListServerEntry, rootIndex: ReadonlyMap<string, number>, parseFullServerName: (full: string) => { root: string; server: string; }",
     "export declare function loadDisabledTools(file: string): Promise<DisabledToolsMap>;",
     "export declare function loadUserState(file: string): Promise<Map<string, Set<string>>>;",
     "export declare function makeCatalogViewFor(host: CatalogViewHost): CatalogViewResolver;",
@@ -735,18 +787,25 @@
     "export declare function makeRoutes(manager: RoutesManager, _cwd?: string): WebRoute[];",
     "export declare function makeServerIdTable(options?: ServerIdTableOptions): ServerIdTable;",
     "export declare function maskSecretArgsForDisplay(args: readonly unknown[]): string[];",
+    "export declare function matchesServerFilter(serverName: string, root: string, serverFilter: string | undefined, fullServerName: (root: string, server: string) => string): boolean;",
     "export declare function mcpManagerHome(): string;",
     "export declare function migrateStorageLayout(deps: UpgradeDeps): Promise<void>;",
     "export declare function mountFloat(ctx: McpClientContext, state: McpState, actions: UiActions): () => void;",
     "export declare function mountServer(input: MountServerInput): Promise<MountServerResult>;",
     "export declare function msgOf(error: unknown): string;",
+    "export declare function needsAttention(server: McpServerListEntry): boolean;",
+    "export declare function needsAttention(server: McpServerListEntry): boolean;",
+    "export declare function nextStagger(staggerBase: { n: number; }",
     "export declare function normalizeArguments(raw: unknown): unknown;",
     "export declare function normalizeConfig(input: unknown): { enabled: boolean; announceToAgent: boolean; storePath: string; announceCatalog: boolean; catalogMaxEntries: number; debug: { callStats: boolean; statsFile: string; }; ui: UiPlacementConfig; };",
+    "export declare function normalizeDescription(value: unknown): string | undefined;",
     "export declare function normalizeScope(value: string): \"global\" | \"project\";",
     "export declare function normalizeServer(input: unknown): ServerConfig;",
+    "export declare function normalizeToolCallTimeoutMs(value: unknown): number;",
     "export declare function normalizeToolName(serverName: string, toolName: string, caller?: string): string;",
     "export declare function normalizeUiConfig(raw: unknown): ClientUiConfig;",
     "export declare function normalizedProjectRoot(cwd: string | undefined): Promise<string | undefined>;",
+    "export declare function notReadyError(fullName: string, status: ServerState | undefined, userDisabled: boolean): Error;",
     "export declare function officialLogText(record: LogRecord): string | undefined;",
     "export declare function officialMcpConfig(server: ServerConfig, id: string, expandServerEnv: (server: ServerConfig) => ServerConfig): OfficialMcpConfig;",
     "export declare function packageRootFrom(fromDir: string): string | undefined;",
@@ -760,21 +819,39 @@
     "export declare function parseFullServerName(name: string): { root: string; server: string; }",
     "export declare function parseKV(text: string): Record<string, string>;",
     "export declare function pendingSteps(steps: readonly UpgradeStep[], recorded: string): UpgradeStep[];",
+    "export declare function performSaveRequest(state: McpState, server: McpManagerServerInput, payload: Record<string, unknown>): Promise<boolean>;",
+    "export declare function pillAnchors(cfg: ClientUiConfig, ctx: McpClientContext, state: McpState): { isLeft: boolean; isBottom: boolean; offsetX: number; offsetY: number; };",
+    "export declare function pillDotColor(fail: boolean, connected: number): string;",
+    "export declare function pillHints(total: number, bad: number, connected: number): { title: string; aria: string; };",
+    "export declare function pillPlacement(input: PillPlacementInput): ViewportPoint;",
     "export declare function placePanel(state: McpState): void;",
     "export declare function pluginVersion(): string;",
+    "export declare function pooledErrorText(entry: ConnectionEntry, catalog: CatalogServer | undefined, redact: (error: unknown) => string): string | undefined;",
+    "export declare function postThenRefresh(state: McpState, actions: UiActions, url: string): () => Promise<void>;",
+    "export declare function primaryRowAction(server: McpServerListEntry, state: McpState, cwdQuery: string): RowAction;",
+    "export declare function projectBaseFieldsForSummary(server: ServerConfig): Record<string, unknown>;",
     "export declare function projectCallToolResult(result: unknown, handlers?: CallResultTextHandlers): ProjectedCallResult;",
     "export declare function projectConfigFile(projectRoot: string): string;",
+    "export declare function projectConnectedCatalog(root: string, serverName: string, id: string, faces: MountRemoteFaces): Promise<void>;",
+    "export declare function projectHttpFieldsForSummary(server: ServerConfig): Record<string, unknown>;",
     "export declare function projectImageAdmission(request: ImageAdmissionRequest): Promise<ModelContentBlock[] | undefined>;",
+    "export declare function projectRootForCwd(cwd: string | undefined, findProjectRoot: (cwd: string | undefined) => Promise<string>): Promise<string | undefined>;",
     "export declare function projectServerState(id: string, input: ServerStateInput): ServerState;",
+    "export declare function projectStdioFieldsForSummary(server: ServerConfig, maskSecretArgsForDisplay: (args: readonly string[]) => string[]): { fields: Record<string, unknown>; argsHadSecret: boolean; };",
+    "export declare function projectStoredImages(content: readonly unknown[], formatBlock: (block: unknown) => string, attachments: AttachmentsPort, decoded: { indexes: number[]; images: SaveImageInput[]; }",
     "export declare function publicToolName(serverName: string, rawName: string): string;",
     "export declare function queryParam(url: URL, name: string): string | undefined;",
     "export declare function readCatalogEntries(source: CatalogSourceLike | undefined): CatalogEntry[] | undefined;",
     "export declare function readCatalogServerFromDisk(file: string, serverName: string): Promise<PersistedCatalogServer | undefined>;",
     "export declare function readForm(state: McpState): McpManagerServerInput;",
+    "export declare function readHttpFormFields(state: McpState): Pick<McpManagerServerInput, \"url\" | \"headers\">;",
     "export declare function readJsonFile<T>(file: string): Promise<T | null>;",
+    "export declare function readStdioFormFields(state: McpState): Pick<McpManagerServerInput, \"command\" | \"args\" | \"env\" | \"cwd\">;",
     "export declare function readStoredVersion(): Promise<string>;",
     "export declare function readTextFile(file: string): Promise<string | null>;",
     "export declare function rebindSession(state: McpState): Promise<unknown>;",
+    "export declare function recordCallFailed(toolCtx: MiddlewareToolContext, server: string, tool: string, startTime: number, error: unknown): void;",
+    "export declare function recordCallOk(toolCtx: MiddlewareToolContext, server: string, tool: string, startTime: number): void;",
     "export declare function redactMcpError(pipeline: DispatchPipelinePort, servers: readonly ServerConfig[], text: string): string;",
     "export declare function refresh(state: McpState, actions: UiActions): Promise<boolean>;",
     "export declare function registerDirectMcpGuard(ctx: Context, disabledTools: DisabledToolsMap | undefined, resolveRoot: (agent: unknown) => Promise<string | undefined>, resolveServerId?: ServerIdResolver): (() => void) | undefined;",
@@ -787,7 +864,10 @@
     "export declare function releasePipeline(): void;",
     "export declare function releaseRuntime(): void;",
     "export declare function releaseServer(key: string): void;",
+    "export declare function releaseUndesiredConnections(middleware: McpMiddleware | undefined, desired: DesiredServers): boolean;",
     "export declare function releaseUpgrade(): void;",
+    "export declare function reloadStoreQuietly(store: McpStore, onFail: (error: unknown) => void): Promise<boolean>;",
+    "export declare function remoteExecutionInput(input: DispatchCallInput, id: string, tool: string, args: unknown): ToolExecutionInput;",
     "export declare function renderFloatPanel(state: McpState, actions: UiActions): void;",
     "export declare function renderMcpCatalogMessage(entries: CatalogEntry[]): CatalogMessage;",
     "export declare function renderMcpCatalogUpdate(entries: CatalogEntry[]): CatalogMessage;",
@@ -798,37 +878,68 @@
     "export declare function resetForm(state: McpState): void;",
     "export declare function resolveCatalogEntries(source: CatalogSourceLike | undefined): CatalogEntry[] | undefined;",
     "export declare function resolveCatalogInjection(decision: CatalogDecision, messages: CatalogMessage[], supervisors: Map<string, SupervisorLite>, maxEntries?: number, cache?: CatalogCache, agent?: CatalogAgent): CatalogDecision;",
+    "export declare function resolveConnectableServer(store: McpStore, runtimeRegistry: ReadonlyMap<string, ServerConfig>, name: string, scope: string, warn: (message: string) => void): ServerConfig | undefined;",
     "export declare function resolveDebugConfig(config: Record<string, unknown> | undefined, settingsSource?: unknown): DebugConfig;",
     "export declare function resolveMiddlewareCallTimeoutMs(sources: readonly (number | undefined)[]): number;",
+    "export declare function resolveRegisteredTarget(agent: unknown, segment: string, resolveRoot: (agent: unknown) => Promise<string | undefined>, resolveServerId: ServerIdResolver | undefined): Promise<{ server: string; root: string | undefined; }",
     "export declare function resolveRoute(agent: unknown): ImageRoute;",
+    "export declare function rootParticipates(root: string, rootSet: Set<string> | undefined): boolean;",
+    "export declare function routedConfigOf(session: Record<string, unknown> | undefined): Record<string, unknown> | undefined;",
+    "export declare function rowRequestInit(action: RowAction): { method: string; headers?: Record<string, string>; body?: string; };",
     "export declare function runUpgradeChain(deps: UpgradeDeps): Promise<void>;",
     "export declare function safeDisposeAll(disposers: readonly (() => void)[]): void;",
+    "export declare function safeToolLimit(toolLimit: number): number;",
     "export declare function saveDisabledTools(file: string, disabledTools: DisabledToolsMap): Promise<void>;",
     "export declare function saveForm(state: McpState, actions: UiActions): Promise<void>;",
     "export declare function saveUserState(file: string, units: Map<string, ProjectUnit>): Promise<void>;",
+    "export declare function scoreCjkSegments(segments: string[], haystack: string): { score: number; matchedTerms: string[]; }",
+    "export declare function scoreTerms(terms: string[], haystack: string): { score: number; matchedTerms: string[]; };",
     "export declare function scoreTool(query: string, server: string, toolName: string, tool: CatalogTool): { score: number; matchedTerms: string[]; };",
     "export declare function searchCatalog(units: Map<string, ProjectUnit>, root: string, query: string, limit: number): { results: SearchHit[]; unavailable: Array<{ server: string; reason: string; }>; truncated: boolean; };",
     "export declare function searchCatalogMulti(units: Map<string, ProjectUnit>, roots: readonly string[], query: string, limit: number): { results: SearchHit[]; unavailable: Array<{ server: string; reason: string; }>; truncated: boolean; };",
+    "export declare function serverCardClass(server: McpServerListEntry): string;",
+    "export declare function serverCardHeader(server: McpServerListEntry, toolCount: number): HTMLElement;",
+    "export declare function serverEntry(server: ServerConfig): readonly [string, ServerConfig];",
+    "export declare function serverToolsDetails(server: McpServerListEntry, toolCount: number, opts: { tools: boolean; openTools?: Set<string>; }",
     "export declare function settleOne(source: string, target: string, initial: string | null, deps: UpgradeDeps): Promise<void>;",
     "export declare function settleProjectConfig(root: string, logger: UpgradeLogger): Promise<void>;",
+    "export declare function settledState(input: ServerStateInput, id: string): ServerState;",
+    "export declare function shortCircuitsOnState(state: ServerState | undefined, force: boolean): boolean;",
     "export declare function showPanel(state: McpState, actions: UiActions): void;",
+    "export declare function splitRegisteredName(name: string): { segment: string; tool: string; }",
     "export declare function startAgentVisibility(args: StartAgentVisibilityArgs): () => void;",
     "export declare function startSdkErasure(args: StartSdkErasureArgs): () => void;",
     "export declare function statsFile(): string;",
+    "export declare function statusActions(server: McpServerListEntry, state: McpState, actions: UiActions, scopeQuery: string, cwdQuery: string): ActionSpec[];",
     "export declare function statusDot(status: string): string;",
     "export declare function stripMcpPrefix(registeredName: string, serverName: string): string;",
+    "export declare function summarizeAbsent(base: Record<string, unknown>, scope: string, server: ServerConfig): Record<string, unknown>;",
+    "export declare function summarizePooled(base: Record<string, unknown>, scope: string, view: PooledSummaryView): Record<string, unknown>;",
     "export declare function summarizeToolDescriptions(toolMeta: Map<string, { description?: unknown; }",
     "export declare function switchTab(state: McpState, actions: UiActions, tab: string): void;",
+    "export declare function syncPool(middleware: McpMiddleware | undefined, desired: DesiredServers, projectRoot: string | undefined, start: (name: string, scope: string) => void): boolean;",
     "export declare function tStatus(status: string): string;",
     "export declare function toggleFloat(state: McpState, actions: UiActions, force?: boolean): void;",
+    "export declare function toolDetailMissError(catalog: CatalogServer | undefined, server: string, userDisabled: boolean): Error;",
     "export declare function toolDisableServerKey(server: McpServerListEntry, state: McpState): string | undefined;",
     "export declare function toolDisabledReason(serverKey: string, tool: string): string;",
+    "export declare function touchRootFor(scope: string, projectRoot: string | undefined): string | undefined;",
+    "export declare function touchUnitInBackground(middleware: McpMiddleware, target: string, onFail: (error: unknown) => void): void;",
+    "export declare function transformOriginFor(isLeft: boolean, anchorBottom: boolean): string;",
+    "export declare function truncatePerTool(sentence: string): string;",
     "export declare function uiConfigChangedFrame(): string;",
+    "export declare function urlCarriesSecrets(url: unknown): boolean;",
+    "export declare function urlPlaceholderBlocks(state: McpState, server: McpManagerServerInput, payload: Record<string, unknown>): boolean;",
     "export declare function userStateFile(): string;",
     "export declare function userStatePath(): string;",
+    "export declare function usesComposerSeat(isBottom: boolean, bp: FloatBreakpoint): boolean;",
     "export declare function versionFile(): string;",
+    "export declare function virtualUnitState(entry: ConnectionEntry, userDisabled: boolean): ServerState;",
     "export declare function withSettledProjectConfig<T>(root: string, logger: UpgradeLogger, useSettled: (settledPath: string) => Promise<T>): Promise<T>;",
     "export declare function withTimeout<T>(promise: Promise<T>, ms: number, message: string, signal?: AbortSignal): Promise<T>;",
+    "export declare function workspaceMismatchError(root: string, sessionRoot: string | undefined, server: string): string | null;",
+    "export declare function wrappedContent(def: ToolDefinition, args: unknown, value: unknown): { type: string; text: string; }",
+    "export declare function wrappedExecContext(input: DispatchCallInput): Parameters<NonNullable<ToolDefinition[\"execute\"]>>[1];",
     "export declare function writeFileAtomic(file: string, data: string): Promise<void>;",
     "export declare function writeStoredVersion(version: string): Promise<void>;"
   ],
@@ -1499,7 +1610,7 @@
           "export declare const MIDDLEWARE_GLOBAL_ROOT = \"@global\";"
         ],
         "McpManager": [
-          "export declare class McpManager { ctx: Context; store: McpStore; listeners: Set<() => void>; logger: LoggerService; projectRoot: string | undefined; projectStore: McpStore | undefined; reconcileBusy: boolean; projectStores: Map<string, McpStore>; catalogCache: CatalogCache; catalogCachePath: string; uiConfigSource: () => unknown; uiUpdate?: (patch: Record<string, unknown>) => Promise<unknown>; sseHub?: SseHub; middleware: McpMiddleware | undefined; userStatePath: string; stats: McpStatsCollector; runtimeRegistry: Map<string, ServerConfig>; private registerQueue; private catalogViewResolver; constructor(ctx: Context, store: McpStore); uiConfig(): ClientUiConfig; updateUiConfig(raw: unknown): Promise<ClientUiConfig>; loadCatalogCache(): Promise<void>; recordCatalogTools(serverName: string, toolMeta: Map<string, { description?: unknown; }>): Promise<void>; private registeredSchemas; private poolRootFor; serverNameForId(id: string): { root: string; server: string; } | undefined; registeredToolsFor(name: string): Array<{ name: string; description?: string; }>; private poolEntryFor; onStatus(handler: () => void): () => void; getRedactionServers(): ServerConfig[]; redactError(error: unknown): string; private statusTimer; emitStatus(): void; projectStoreOrThrow(): Promise<McpStore>; projectServersFor(root: string): Promise<ServerConfig[] | undefined>; isRuntimeServer(name: string): boolean; isGlobalServer(name: string): boolean; globalServers(): ServerConfig[]; saveUserState(units: Map<string, ProjectUnit>): Promise<void>; catalogCachePathFor(root: string): string; initMiddleware(): Promise<McpMiddleware>; disabledByRoot: Map<string, Set<string>>; disabledTools: DisabledToolsMap; setToolDisabled(root: string, server: string, tool: string, disabled: boolean): Promise<void>; projectStoreFor(root: string | undefined): Promise<McpStore | undefined>; catalogServersFor(cwd: string | undefined): Promise<Map<string, { server: ServerConfig; scope: string; }>>; catalogViewFor(cwd: string | undefined, servers: Map<string, { server: ServerConfig; scope: string; }>): Promise<CatalogCache>; setSession(cwd: string | undefined): Promise<void>; resumeReconnect(): Promise<void>; refreshFromDisk(): Promise<void>; reconcileServers(): boolean; startAll(): Promise<void>; start(name: string, scope?: string): void; private touchGlobalUnit; private ensureMiddlewareServer; private dropMiddlewareConnection; registerServer(options: Record<string, unknown>): Promise<{ name: string; existing: boolean; }>; unregisterServer(name: string): Promise<void>; add(server: Record<string, unknown>, scope?: string): Promise<ServerConfig>; update(name: string, patch: Record<string, unknown>, scope?: string): Promise<ServerConfig>; remove(name: string, scope?: string): Promise<void>; connect(name: string, scope?: string): Promise<void>; disconnect(name: string, scope?: string): Promise<void>; reconnect(name: string, scope?: string): Promise<void>; summary(): Record<string, unknown>; private middlewareUnitFor; summarize(server: ServerConfig, scope: string): Record<string, unknown>; dispose(): Promise<void>; }"
+          "export declare class McpManager { ctx: Context; store: McpStore; listeners: Set<() => void>; logger: LoggerService; projectRoot: string | undefined; projectStore: McpStore | undefined; reconcileBusy: boolean; projectStores: Map<string, McpStore>; catalogCache: CatalogCache; catalogCachePath: string; uiConfigSource: () => unknown; uiUpdate?: (patch: Record<string, unknown>) => Promise<unknown>; sseHub?: SseHub; middleware: McpMiddleware | undefined; userStatePath: string; stats: McpStatsCollector; runtimeRegistry: Map<string, ServerConfig>; private registerQueue; private catalogViewResolver; constructor(ctx: Context, store: McpStore); uiConfig(): ClientUiConfig; updateUiConfig(raw: unknown): Promise<ClientUiConfig>; loadCatalogCache(): Promise<void>; recordCatalogTools(serverName: string, toolMeta: Map<string, { description?: unknown; }>): Promise<void>; private registeredSchemas; private poolRootFor; serverNameForId(id: string): { root: string; server: string; } | undefined; registeredToolsFor(name: string): Array<{ name: string; description?: string; }>; private poolEntryFor; onStatus(handler: () => void): () => void; getRedactionServers(): ServerConfig[]; redactError(error: unknown): string; private statusTimer; emitStatus(): void; projectStoreOrThrow(): Promise<McpStore>; projectServersFor(root: string): Promise<ServerConfig[] | undefined>; isRuntimeServer(name: string): boolean; isGlobalServer(name: string): boolean; globalServers(): ServerConfig[]; saveUserState(units: Map<string, ProjectUnit>): Promise<void>; catalogCachePathFor(root: string): string; initMiddleware(): Promise<McpMiddleware>; disabledByRoot: Map<string, Set<string>>; disabledTools: DisabledToolsMap; setToolDisabled(root: string, server: string, tool: string, disabled: boolean): Promise<void>; projectStoreFor(root: string | undefined): Promise<McpStore | undefined>; catalogServersFor(cwd: string | undefined): Promise<CatalogServers>; catalogViewFor(cwd: string | undefined, servers: Map<string, { server: ServerConfig; scope: string; }>): Promise<CatalogCache>; setSession(cwd: string | undefined): Promise<void>; resumeReconnect(): Promise<void>; refreshFromDisk(): Promise<void>; reconcileServers(): boolean; startAll(): Promise<void>; start(name: string, scope?: string): void; private touchGlobalUnit; private ensureMiddlewareServer; private dropMiddlewareConnection; registerServer(options: Record<string, unknown>): Promise<{ name: string; existing: boolean; }>; unregisterServer(name: string): Promise<void>; add(server: Record<string, unknown>, scope?: string): Promise<ServerConfig>; update(name: string, patch: Record<string, unknown>, scope?: string): Promise<ServerConfig>; remove(name: string, scope?: string): Promise<void>; connect(name: string, scope?: string): Promise<void>; disconnect(name: string, scope?: string): Promise<void>; reconnect(name: string, scope?: string): Promise<void>; summary(): Record<string, unknown>; private middlewareUnitFor; summarize(server: ServerConfig, scope: string): Record<string, unknown>; dispose(): Promise<void>; }"
         ],
         "McpMiddleware": [
           "export declare class McpMiddleware { host: MiddlewareHost; units: Map<string, ProjectUnit>; disabledByRoot: Map<string, Set<string>>; disabledTools: DisabledToolsMap; forwarding: Set<ToolExecutionToken>; constructor(host: MiddlewareHost); projectUnitFor(root: string | undefined): Promise<ProjectUnit | undefined>; ensureConnected(root: string, serverName: string, opts?: { force?: boolean; }): Promise<void>; abandonInFlight(serverName: string): void; private connectInternal; private registeredSchemas; private registeredToolMeta; private redact; statusOf(root: string, serverName: string): ServerState | undefined; toolCountOf(root: string, serverName: string): number; callTool(fullName: string, toolRaw: string, rawArgs: unknown, signal: AbortSignal | undefined, identity: { agent?: unknown; callId: ToolExecutionInput[\"callId\"]; rootCallId?: ToolExecutionInput[\"rootCallId\"]; parent?: ToolExecutionToken; }): Promise<unknown>; releaseConnection(root: string, serverName: string): boolean; evictIfNeeded(maxUnits?: number): void; teardownUnit(root: string): void; dispose(): Promise<void>; }"
@@ -1570,6 +1681,9 @@
         "Z_INDEX_PANEL_DELTA": [
           "export declare const Z_INDEX_PANEL_DELTA = 30;"
         ],
+        "absentFromPool": [
+          "export declare function absentFromPool(middleware: McpMiddleware | undefined, root: string, name: string): boolean;"
+        ],
         "apiPorts": [
           "export declare const apiPorts: ApiPorts;"
         ],
@@ -1579,8 +1693,14 @@
         "assemble": [
           "export declare function assemble<Host>(host: Host, domains: readonly DomainSpec<Host>[]): Promise<Array<() => void>>;"
         ],
+        "assertCallableTarget": [
+          "export declare function assertCallableTarget(toolCtx: MiddlewareToolContext, server: string, root: string): Promise<{ parsed: { root: string; server: string; }; unit: ProjectUnit; }"
+        ],
         "assertEnvPolicy": [
           "export declare function assertEnvPolicy(env: Record<string, unknown> | undefined, headers: Record<string, unknown> | undefined, snapshot?: Record<string, string | undefined>, url?: unknown, args?: unknown): void;"
+        ],
+        "assertReconnectFields": [
+          "export declare function assertReconnectFields(out: Record<string, unknown>): void;"
         ],
         "attributeOfficialLog": [
           "export declare function attributeOfficialLog(text: string, serverName: string): string | undefined;"
@@ -1621,6 +1741,9 @@
         "buildImportJsonRoute": [
           "export declare function buildImportJsonRoute(manager: RoutesManager, helpers: RouteHelpers): WebRoute;"
         ],
+        "buildListServerEntry": [
+          "export declare function buildListServerEntry(serverName: string, root: string, catalog: CatalogServer, userDisabled: ReadonlySet<string>, safeLimit: number, disabledTools: DisabledToolsMap | undefined, fullServerName: (root: string, server: string) => string): { entry: ListServerEntry; truncated: boolean; toolCount: number; };"
+        ],
         "buildReconnectRoute": [
           "export declare function buildReconnectRoute(manager: RoutesManager, helpers: RouteHelpers): WebRoute;"
         ],
@@ -1635,6 +1758,9 @@
         ],
         "buildToolDisableRoute": [
           "export declare function buildToolDisableRoute(manager: RoutesManager, helpers: RouteHelpers): WebRoute;"
+        ],
+        "carriesProjectionPlaceholder": [
+          "export declare function carriesProjectionPlaceholder(key: string, value: unknown): boolean;"
         ],
         "catalogCacheFile": [
           "export declare function catalogCacheFile(): string;"
@@ -1660,14 +1786,26 @@
         "catalogSummaryFile": [
           "export declare function catalogSummaryFile(): string;"
         ],
+        "catalogToolNames": [
+          "export declare function catalogToolNames(catalog: CatalogServer | undefined): string[];"
+        ],
         "clampPointToViewport": [
           "export declare function clampPointToViewport(x: number, y: number, width: number, height: number, viewportW: number, viewportH: number, safeInset?: number): ViewportPoint;"
         ],
         "clampZIndexBase": [
           "export declare function clampZIndexBase(value: unknown, dflt: number): number;"
         ],
+        "classifyParsedJson": [
+          "export declare function classifyParsedJson(parsed: unknown, wasQuoted: boolean): UnwrapVerdict;"
+        ],
+        "collectCatalogServers": [
+          "export declare function collectCatalogServers(into: CatalogServers, entries: Iterable<readonly [string, ServerConfig]>, scope: string): void;"
+        ],
         "collectOfficialLogs": [
           "export declare function collectOfficialLogs(logs: LogsPort, serverName: string): OfficialLogCollector;"
+        ],
+        "collectToolSentences": [
+          "export declare function collectToolSentences(toolMeta: Map<string, { description?: unknown; }"
         ],
         "compareVersions": [
           "export declare function compareVersions(left: string, right: string): number;"
@@ -1681,11 +1819,23 @@
         "configFile": [
           "export declare function configFile(): string;"
         ],
+        "connectableServer": [
+          "export declare function connectableServer(servers: ServerConfig[] | undefined, serverName: string): ServerConfig | undefined;"
+        ],
         "containsRemoteImage": [
           "export declare function containsRemoteImage(content: readonly unknown[]): boolean;"
         ],
+        "countRemoteImages": [
+          "export declare function countRemoteImages(content: readonly unknown[]): number;"
+        ],
         "createRedactor": [
           "export declare function createRedactor(servers: readonly ServerConfig[]): (error: unknown) => string;"
+        ],
+        "decodeRemoteImages": [
+          "export declare function decodeRemoteImages(content: readonly unknown[]): { indexes: number[]; images: SaveImageInput[]; validationErrors: Map<number, string>; };"
+        ],
+        "dedupeToolSentences": [
+          "export declare function dedupeToolSentences(collected: Array<[string, string]>): string[];"
         ],
         "defaultCallResultFallbackText": [
           "export declare function defaultCallResultFallbackText(result: unknown): string;"
@@ -1696,6 +1846,12 @@
         "defaultStorePath": [
           "export declare function defaultStorePath(): string;"
         ],
+        "deniedInScope": [
+          "export declare function deniedInScope(disabledTools: DisabledToolsMap | undefined, root: string, server: string, tool: string): boolean;"
+        ],
+        "diagnosticProjection": [
+          "export declare function diagnosticProjection(content: readonly unknown[], formatBlock: (block: unknown) => string, reason: string): ModelContentBlock[];"
+        ],
         "diagnosticText": [
           "export declare function diagnosticText(lines: readonly string[]): string | undefined;"
         ],
@@ -1705,14 +1861,23 @@
         "directoryMode": [
           "export declare function directoryMode(dir: string): number | null;"
         ],
+        "disposePreviousGeneration": [
+          "export declare function disposePreviousGeneration(entry: ConnectionEntry | undefined, disposeServer: (id: string) => unknown): Promise<void>;"
+        ],
         "disposeServer": [
           "export declare function disposeServer(key: string): Promise<void>;"
         ],
         "ensureDir": [
           "export declare function ensureDir(dir: string): Promise<void>;"
         ],
+        "entryTextFor": [
+          "export declare function entryTextFor(name: string, server: SupervisorLite[\"server\"], cache: CatalogCache | undefined): string | undefined;"
+        ],
         "eraseMcpSdkDeclarations": [
           "export declare function eraseMcpSdkDeclarations(text: string): ErasureResult;"
+        ],
+        "errorText": [
+          "export declare function errorText(error: unknown): string;"
         ],
         "escapeCatalogText": [
           "export declare function escapeCatalogText(value: unknown): string;"
@@ -1741,6 +1906,9 @@
         "findProjectRoot": [
           "export declare function findProjectRoot(cwd: string | undefined): Promise<string>;"
         ],
+        "findProjectionPlaceholderKey": [
+          "export declare function findProjectionPlaceholderKey(server: Record<string, unknown>): string | undefined;"
+        ],
         "findToolDetail": [
           "export declare function findToolDetail(units: Map<string, ProjectUnit>, root: string, server: string, tool: string): ToolDetail;"
         ],
@@ -1752,6 +1920,15 @@
         ],
         "globMatch": [
           "export declare function globMatch(pattern: string, name: string): boolean;"
+        ],
+        "globalScopeToolDisabled": [
+          "export declare function globalScopeToolDisabled(disabledTools: DisabledToolsMap | undefined, server: string, tool: string): boolean;"
+        ],
+        "hasSecretTable": [
+          "export declare function hasSecretTable(table: Record<string, string> | undefined): boolean;"
+        ],
+        "importOneServer": [
+          "export declare function importOneServer(server: ServerConfig, store: McpStore, scope: string, overwrite: boolean, manager: RoutesManager, imported: string[], skipped: string[]): Promise<void>;"
         ],
         "inject": [
           "export declare const inject: string[];"
@@ -1783,11 +1960,23 @@
         "installUpgrade": [
           "export declare function installUpgrade(deps: UpgradeDeps): Promise<void>;"
         ],
+        "isBlankCwd": [
+          "export declare function isBlankCwd(cwd: string | null | undefined): cwd is null | undefined | \"\";"
+        ],
+        "isCallable": [
+          "export declare function isCallable(value: unknown): value is () => unknown;"
+        ],
         "isCatalogFresh": [
           "export declare function isCatalogFresh(catalog: CatalogServer | undefined): boolean;"
         ],
         "isCatalogSource": [
           "export declare function isCatalogSource(source: { kind?: unknown; }"
+        ],
+        "isPlainRecord": [
+          "export declare function isPlainRecord(value: unknown): value is Record<string, unknown>;"
+        ],
+        "isProjectionPlaceholder": [
+          "export declare function isProjectionPlaceholder(value: unknown): boolean;"
         ],
         "isRemoteImageBlock": [
           "export declare function isRemoteImageBlock(block: unknown): boolean;"
@@ -1797,6 +1986,21 @@
         ],
         "isToolDenied": [
           "export declare function isToolDenied(disabledTools: DisabledToolsMap | undefined, serverKey: string, tool: string): boolean;"
+        ],
+        "isToolDisabledForEntry": [
+          "export declare function isToolDisabledForEntry(disabledTools: DisabledToolsMap | undefined, root: string, serverName: string, toolName: string): boolean;"
+        ],
+        "isToolDisabledIn": [
+          "export declare function isToolDisabledIn(tool: string, disabled: ReadonlySet<string> | undefined, inheritedDisabled: ReadonlySet<string> | undefined): boolean;"
+        ],
+        "joinSentencesWithinBudget": [
+          "export declare function joinSentencesWithinBudget(sentences: string[], prefix: string): string;"
+        ],
+        "jsonHeadKind": [
+          "export declare function jsonHeadKind(trimmed: string): { container: boolean; quoted: boolean; };"
+        ],
+        "judgeEntryReadiness": [
+          "export declare function judgeEntryReadiness(fullName: string, server: string, userDisabled: boolean, entry: CallEntry | undefined): ReadinessVerdict;"
         ],
         "legacyFile": [
           "export declare function legacyFile(fileName: string): string;"
@@ -1809,6 +2013,12 @@
         ],
         "listCatalog": [
           "export declare function listCatalog(units: Map<string, ProjectUnit>, roots: readonly string[], serverFilter: string | undefined, toolLimit: number, emptyHint: string, disabledTools?: DisabledToolsMap): ListCatalogResult;"
+        ],
+        "listOrderComparator": [
+          "export declare function listOrderComparator(rootIndex: ReadonlyMap<string, number>, parseFullServerName: (full: string) => { root: string; server: string; }"
+        ],
+        "listOrderKey": [
+          "export declare function listOrderKey(entry: ListServerEntry, rootIndex: ReadonlyMap<string, number>, parseFullServerName: (full: string) => { root: string; server: string; }"
         ],
         "loadDisabledTools": [
           "export declare function loadDisabledTools(file: string): Promise<DisabledToolsMap>;"
@@ -1837,6 +2047,9 @@
         "maskSecretArgsForDisplay": [
           "export declare function maskSecretArgsForDisplay(args: readonly unknown[]): string[];"
         ],
+        "matchesServerFilter": [
+          "export declare function matchesServerFilter(serverName: string, root: string, serverFilter: string | undefined, fullServerName: (root: string, server: string) => string): boolean;"
+        ],
         "mcpManagerHome": [
           "export declare function mcpManagerHome(): string;"
         ],
@@ -1861,11 +2074,17 @@
         "normalizeConfig": [
           "export declare function normalizeConfig(input: unknown): { enabled: boolean; announceToAgent: boolean; storePath: string; announceCatalog: boolean; catalogMaxEntries: number; debug: { callStats: boolean; statsFile: string; }; ui: UiPlacementConfig; };"
         ],
+        "normalizeDescription": [
+          "export declare function normalizeDescription(value: unknown): string | undefined;"
+        ],
         "normalizeScope": [
           "export declare function normalizeScope(value: string): \"global\" | \"project\";"
         ],
         "normalizeServer": [
           "export declare function normalizeServer(input: unknown): ServerConfig;"
+        ],
+        "normalizeToolCallTimeoutMs": [
+          "export declare function normalizeToolCallTimeoutMs(value: unknown): number;"
         ],
         "normalizeToolName": [
           "export declare function normalizeToolName(serverName: string, toolName: string, caller?: string): string;"
@@ -1875,6 +2094,9 @@
         ],
         "normalizedProjectRoot": [
           "export declare function normalizedProjectRoot(cwd: string | undefined): Promise<string | undefined>;"
+        ],
+        "notReadyError": [
+          "export declare function notReadyError(fullName: string, status: ServerState | undefined, userDisabled: boolean): Error;"
         ],
         "officialLogText": [
           "export declare function officialLogText(record: LogRecord): string | undefined;"
@@ -1915,17 +2137,38 @@
         "pluginVersion": [
           "export declare function pluginVersion(): string;"
         ],
+        "pooledErrorText": [
+          "export declare function pooledErrorText(entry: ConnectionEntry, catalog: CatalogServer | undefined, redact: (error: unknown) => string): string | undefined;"
+        ],
+        "projectBaseFieldsForSummary": [
+          "export declare function projectBaseFieldsForSummary(server: ServerConfig): Record<string, unknown>;"
+        ],
         "projectCallToolResult": [
           "export declare function projectCallToolResult(result: unknown, handlers?: CallResultTextHandlers): ProjectedCallResult;"
         ],
         "projectConfigFile": [
           "export declare function projectConfigFile(projectRoot: string): string;"
         ],
+        "projectConnectedCatalog": [
+          "export declare function projectConnectedCatalog(root: string, serverName: string, id: string, faces: MountRemoteFaces): Promise<void>;"
+        ],
+        "projectHttpFieldsForSummary": [
+          "export declare function projectHttpFieldsForSummary(server: ServerConfig): Record<string, unknown>;"
+        ],
         "projectImageAdmission": [
           "export declare function projectImageAdmission(request: ImageAdmissionRequest): Promise<ModelContentBlock[] | undefined>;"
         ],
+        "projectRootForCwd": [
+          "export declare function projectRootForCwd(cwd: string | undefined, findProjectRoot: (cwd: string | undefined) => Promise<string>): Promise<string | undefined>;"
+        ],
         "projectServerState": [
           "export declare function projectServerState(id: string, input: ServerStateInput): ServerState;"
+        ],
+        "projectStdioFieldsForSummary": [
+          "export declare function projectStdioFieldsForSummary(server: ServerConfig, maskSecretArgsForDisplay: (args: readonly string[]) => string[]): { fields: Record<string, unknown>; argsHadSecret: boolean; };"
+        ],
+        "projectStoredImages": [
+          "export declare function projectStoredImages(content: readonly unknown[], formatBlock: (block: unknown) => string, attachments: AttachmentsPort, decoded: { indexes: number[]; images: SaveImageInput[]; }"
         ],
         "publicToolName": [
           "export declare function publicToolName(serverName: string, rawName: string): string;"
@@ -1947,6 +2190,12 @@
         ],
         "readTextFile": [
           "export declare function readTextFile(file: string): Promise<string | null>;"
+        ],
+        "recordCallFailed": [
+          "export declare function recordCallFailed(toolCtx: MiddlewareToolContext, server: string, tool: string, startTime: number, error: unknown): void;"
+        ],
+        "recordCallOk": [
+          "export declare function recordCallOk(toolCtx: MiddlewareToolContext, server: string, tool: string, startTime: number): void;"
         ],
         "redactMcpError": [
           "export declare function redactMcpError(pipeline: DispatchPipelinePort, servers: readonly ServerConfig[], text: string): string;"
@@ -1981,8 +2230,17 @@
         "releaseServer": [
           "export declare function releaseServer(key: string): void;"
         ],
+        "releaseUndesiredConnections": [
+          "export declare function releaseUndesiredConnections(middleware: McpMiddleware | undefined, desired: DesiredServers): boolean;"
+        ],
         "releaseUpgrade": [
           "export declare function releaseUpgrade(): void;"
+        ],
+        "reloadStoreQuietly": [
+          "export declare function reloadStoreQuietly(store: McpStore, onFail: (error: unknown) => void): Promise<boolean>;"
+        ],
+        "remoteExecutionInput": [
+          "export declare function remoteExecutionInput(input: DispatchCallInput, id: string, tool: string, args: unknown): ToolExecutionInput;"
         ],
         "renderMcpCatalogMessage": [
           "export declare function renderMcpCatalogMessage(entries: CatalogEntry[]): CatalogMessage;"
@@ -1999,14 +2257,26 @@
         "resolveCatalogInjection": [
           "export declare function resolveCatalogInjection(decision: CatalogDecision, messages: CatalogMessage[], supervisors: Map<string, SupervisorLite>, maxEntries?: number, cache?: CatalogCache, agent?: CatalogAgent): CatalogDecision;"
         ],
+        "resolveConnectableServer": [
+          "export declare function resolveConnectableServer(store: McpStore, runtimeRegistry: ReadonlyMap<string, ServerConfig>, name: string, scope: string, warn: (message: string) => void): ServerConfig | undefined;"
+        ],
         "resolveDebugConfig": [
           "export declare function resolveDebugConfig(config: Record<string, unknown> | undefined, settingsSource?: unknown): DebugConfig;"
         ],
         "resolveMiddlewareCallTimeoutMs": [
           "export declare function resolveMiddlewareCallTimeoutMs(sources: readonly (number | undefined)[]): number;"
         ],
+        "resolveRegisteredTarget": [
+          "export declare function resolveRegisteredTarget(agent: unknown, segment: string, resolveRoot: (agent: unknown) => Promise<string | undefined>, resolveServerId: ServerIdResolver | undefined): Promise<{ server: string; root: string | undefined; }"
+        ],
         "resolveRoute": [
           "export declare function resolveRoute(agent: unknown): ImageRoute;"
+        ],
+        "rootParticipates": [
+          "export declare function rootParticipates(root: string, rootSet: Set<string> | undefined): boolean;"
+        ],
+        "routedConfigOf": [
+          "export declare function routedConfigOf(session: Record<string, unknown> | undefined): Record<string, unknown> | undefined;"
         ],
         "runUpgradeChain": [
           "export declare function runUpgradeChain(deps: UpgradeDeps): Promise<void>;"
@@ -2017,11 +2287,20 @@
         "safeDisposeAll": [
           "export declare function safeDisposeAll(disposers: readonly (() => void)[]): void;"
         ],
+        "safeToolLimit": [
+          "export declare function safeToolLimit(toolLimit: number): number;"
+        ],
         "saveDisabledTools": [
           "export declare function saveDisabledTools(file: string, disabledTools: DisabledToolsMap): Promise<void>;"
         ],
         "saveUserState": [
           "export declare function saveUserState(file: string, units: Map<string, ProjectUnit>): Promise<void>;"
+        ],
+        "scoreCjkSegments": [
+          "export declare function scoreCjkSegments(segments: string[], haystack: string): { score: number; matchedTerms: string[]; }"
+        ],
+        "scoreTerms": [
+          "export declare function scoreTerms(terms: string[], haystack: string): { score: number; matchedTerms: string[]; };"
         ],
         "scoreTool": [
           "export declare function scoreTool(query: string, server: string, toolName: string, tool: CatalogTool): { score: number; matchedTerms: string[]; };"
@@ -2032,11 +2311,23 @@
         "searchCatalogMulti": [
           "export declare function searchCatalogMulti(units: Map<string, ProjectUnit>, roots: readonly string[], query: string, limit: number): { results: SearchHit[]; unavailable: Array<{ server: string; reason: string; }>; truncated: boolean; };"
         ],
+        "serverEntry": [
+          "export declare function serverEntry(server: ServerConfig): readonly [string, ServerConfig];"
+        ],
         "settleOne": [
           "export declare function settleOne(source: string, target: string, initial: string | null, deps: UpgradeDeps): Promise<void>;"
         ],
         "settleProjectConfig": [
           "export declare function settleProjectConfig(root: string, logger: UpgradeLogger): Promise<void>;"
+        ],
+        "settledState": [
+          "export declare function settledState(input: ServerStateInput, id: string): ServerState;"
+        ],
+        "shortCircuitsOnState": [
+          "export declare function shortCircuitsOnState(state: ServerState | undefined, force: boolean): boolean;"
+        ],
+        "splitRegisteredName": [
+          "export declare function splitRegisteredName(name: string): { segment: string; tool: string; }"
         ],
         "startAgentVisibility": [
           "export declare function startAgentVisibility(args: StartAgentVisibilityArgs): () => void;"
@@ -2050,17 +2341,41 @@
         "stripMcpPrefix": [
           "export declare function stripMcpPrefix(registeredName: string, serverName: string): string;"
         ],
+        "summarizeAbsent": [
+          "export declare function summarizeAbsent(base: Record<string, unknown>, scope: string, server: ServerConfig): Record<string, unknown>;"
+        ],
+        "summarizePooled": [
+          "export declare function summarizePooled(base: Record<string, unknown>, scope: string, view: PooledSummaryView): Record<string, unknown>;"
+        ],
         "summarizeToolDescriptions": [
           "export declare function summarizeToolDescriptions(toolMeta: Map<string, { description?: unknown; }"
         ],
+        "syncPool": [
+          "export declare function syncPool(middleware: McpMiddleware | undefined, desired: DesiredServers, projectRoot: string | undefined, start: (name: string, scope: string) => void): boolean;"
+        ],
+        "toolDetailMissError": [
+          "export declare function toolDetailMissError(catalog: CatalogServer | undefined, server: string, userDisabled: boolean): Error;"
+        ],
         "toolDisabledReason": [
           "export declare function toolDisabledReason(serverKey: string, tool: string): string;"
+        ],
+        "touchRootFor": [
+          "export declare function touchRootFor(scope: string, projectRoot: string | undefined): string | undefined;"
+        ],
+        "touchUnitInBackground": [
+          "export declare function touchUnitInBackground(middleware: McpMiddleware, target: string, onFail: (error: unknown) => void): void;"
+        ],
+        "truncatePerTool": [
+          "export declare function truncatePerTool(sentence: string): string;"
         ],
         "uiConfigChangedFrame": [
           "export declare function uiConfigChangedFrame(): string;"
         ],
         "upgradeRunner": [
           "export declare const upgradeRunner: UpgradeRunner;"
+        ],
+        "urlCarriesSecrets": [
+          "export declare function urlCarriesSecrets(url: unknown): boolean;"
         ],
         "userStateFile": [
           "export declare function userStateFile(): string;"
@@ -2071,11 +2386,23 @@
         "versionFile": [
           "export declare function versionFile(): string;"
         ],
+        "virtualUnitState": [
+          "export declare function virtualUnitState(entry: ConnectionEntry, userDisabled: boolean): ServerState;"
+        ],
         "withSettledProjectConfig": [
           "export declare function withSettledProjectConfig<T>(root: string, logger: UpgradeLogger, useSettled: (settledPath: string) => Promise<T>): Promise<T>;"
         ],
         "withTimeout": [
           "export declare function withTimeout<T>(promise: Promise<T>, ms: number, message: string, signal?: AbortSignal): Promise<T>;"
+        ],
+        "workspaceMismatchError": [
+          "export declare function workspaceMismatchError(root: string, sessionRoot: string | undefined, server: string): string | null;"
+        ],
+        "wrappedContent": [
+          "export declare function wrappedContent(def: ToolDefinition, args: unknown, value: unknown): { type: string; text: string; }"
+        ],
+        "wrappedExecContext": [
+          "export declare function wrappedExecContext(input: DispatchCallInput): Parameters<NonNullable<ToolDefinition[\"execute\"]>>[1];"
         ],
         "writeFileAtomic": [
           "export declare function writeFileAtomic(file: string, data: string): Promise<void>;"
@@ -2113,6 +2440,9 @@
         "actionButton": [
           "export declare function actionButton(label: string, onClick: () => void | Promise<void>, primary?: boolean, danger?: boolean): HTMLElement;"
         ],
+        "anchorsLeft": [
+          "export declare function anchorsLeft(position: string | undefined): boolean;"
+        ],
         "api": [
           "export declare function api<T = unknown>(path: string, options?: ApiRequestOptions): Promise<T>;"
         ],
@@ -2125,11 +2455,20 @@
         "bindSession": [
           "export declare function bindSession(ctx: McpClientContext, state: McpState, actions: UiActions): () => void;"
         ],
+        "bucketByStatus": [
+          "export declare function bucketByStatus(list: McpServerListEntry[]): Map<string, McpServerListEntry[]>;"
+        ],
+        "bucketServersByStatus": [
+          "export declare function bucketServersByStatus(list: McpServerListEntry[]): Map<string, McpServerListEntry[]>;"
+        ],
         "buildQuickAdd": [
           "export declare function buildQuickAdd(state: McpState, actions: UiActions): HTMLElement;"
         ],
         "close": [
           "export declare function close(state: McpState): void;"
+        ],
+        "controlText": [
+          "export declare function controlText(control: { value: string; }"
         ],
         "conversationHost": [
           "export declare function conversationHost(): Element;"
@@ -2143,8 +2482,20 @@
         "cwdQueryOf": [
           "export declare function cwdQueryOf(state: McpState): string;"
         ],
+        "deleteAction": [
+          "export declare function deleteAction(server: McpServerListEntry, state: McpState, actions: UiActions, scopeQuery: string): ActionSpec;"
+        ],
+        "disableAction": [
+          "export declare function disableAction(server: McpServerListEntry, state: McpState, actions: UiActions, scopeQuery: string, cwdQuery: string): ActionSpec;"
+        ],
+        "disableRowAction": [
+          "export declare function disableRowAction(server: McpServerListEntry, state: McpState): RowAction;"
+        ],
         "disposePanel": [
           "export declare function disposePanel(state: McpState): void;"
+        ],
+        "dockedBottomEdge": [
+          "export declare function dockedBottomEdge(containerRect: { top: number; bottom: number; }"
         ],
         "el": [
           "export declare function el<K extends keyof HTMLElementTagNameMap>(tag: K, attrs?: Record<string, unknown>, children?: unknown[]): HTMLElementTagNameMap[K];"
@@ -2158,20 +2509,60 @@
         "fillForm": [
           "export declare function fillForm(state: McpState, fill: McpServerListEntry): void;"
         ],
+        "fillKvField": [
+          "export declare function fillKvField(input: HTMLTextAreaElement | undefined, table: Record<string, string> | undefined, separator: \"=\" | \": \"): void;"
+        ],
+        "floatPositionOf": [
+          "export declare function floatPositionOf(cfg: ClientUiConfig): ClientUiConfig[\"position\"];"
+        ],
+        "floatProjectName": [
+          "export declare function floatProjectName(state: McpState): string;"
+        ],
         "floatTopOffset": [
           "export declare function floatTopOffset(ctx: McpClientContext, state: McpState): number;"
         ],
         "formScopeValue": [
           "export declare function formScopeValue(state: McpState): string;"
         ],
+        "formTransportValue": [
+          "export declare function formTransportValue(state: McpState): McpManagerServerInput[\"transport\"];"
+        ],
         "inject": [
           "export declare const inject: string[];"
+        ],
+        "isBlankSession": [
+          "export declare function isBlankSession(ctx: McpClientContext): boolean;"
+        ],
+        "isEditing": [
+          "export declare function isEditing(state: McpState): boolean;"
+        ],
+        "isMigratedEdit": [
+          "export declare function isMigratedEdit(state: McpState, server: McpManagerServerInput, payload: Record<string, unknown>): boolean;"
+        ],
+        "isPlainRecord": [
+          "export declare function isPlainRecord(value: unknown): value is Record<string, unknown>;"
         ],
         "isProjectionValue": [
           "export declare function isProjectionValue(value: unknown): boolean;"
         ],
+        "isServerTransport": [
+          "export declare function isServerTransport(value: string): value is McpManagerServerInput[\"transport\"];"
+        ],
+        "jsonPatchInit": [
+          "export declare function jsonPatchInit(enabled: boolean): { method: \"PATCH\"; headers: Record<string, string>; body: string; };"
+        ],
+        "jsonWriteInit": [
+          "export declare function jsonWriteInit(payload: Record<string, unknown>): { method: \"POST\" | \"PATCH\"; headers: Record<string, string>; body: string; };"
+        ],
         "mountFloat": [
           "export declare function mountFloat(ctx: McpClientContext, state: McpState, actions: UiActions): () => void;"
+        ],
+        "needsAttention": [
+          "export declare function needsAttention(server: McpServerListEntry): boolean;",
+          "export declare function needsAttention(server: McpServerListEntry): boolean;"
+        ],
+        "nextStagger": [
+          "export declare function nextStagger(staggerBase: { n: number; }"
         ],
         "panelHost": [
           "export declare function panelHost(): Element;"
@@ -2182,11 +2573,38 @@
         "parseKV": [
           "export declare function parseKV(text: string): Record<string, string>;"
         ],
+        "performSaveRequest": [
+          "export declare function performSaveRequest(state: McpState, server: McpManagerServerInput, payload: Record<string, unknown>): Promise<boolean>;"
+        ],
+        "pillAnchors": [
+          "export declare function pillAnchors(cfg: ClientUiConfig, ctx: McpClientContext, state: McpState): { isLeft: boolean; isBottom: boolean; offsetX: number; offsetY: number; };"
+        ],
+        "pillDotColor": [
+          "export declare function pillDotColor(fail: boolean, connected: number): string;"
+        ],
+        "pillHints": [
+          "export declare function pillHints(total: number, bad: number, connected: number): { title: string; aria: string; };"
+        ],
+        "pillPlacement": [
+          "export declare function pillPlacement(input: PillPlacementInput): ViewportPoint;"
+        ],
         "placePanel": [
           "export declare function placePanel(state: McpState): void;"
         ],
+        "postThenRefresh": [
+          "export declare function postThenRefresh(state: McpState, actions: UiActions, url: string): () => Promise<void>;"
+        ],
+        "primaryRowAction": [
+          "export declare function primaryRowAction(server: McpServerListEntry, state: McpState, cwdQuery: string): RowAction;"
+        ],
         "readForm": [
           "export declare function readForm(state: McpState): McpManagerServerInput;"
+        ],
+        "readHttpFormFields": [
+          "export declare function readHttpFormFields(state: McpState): Pick<McpManagerServerInput, \"url\" | \"headers\">;"
+        ],
+        "readStdioFormFields": [
+          "export declare function readStdioFormFields(state: McpState): Pick<McpManagerServerInput, \"command\" | \"args\" | \"env\" | \"cwd\">;"
         ],
         "rebindSession": [
           "export declare function rebindSession(state: McpState): Promise<unknown>;"
@@ -2209,11 +2627,26 @@
         "resetForm": [
           "export declare function resetForm(state: McpState): void;"
         ],
+        "rowRequestInit": [
+          "export declare function rowRequestInit(action: RowAction): { method: string; headers?: Record<string, string>; body?: string; };"
+        ],
         "saveForm": [
           "export declare function saveForm(state: McpState, actions: UiActions): Promise<void>;"
         ],
+        "serverCardClass": [
+          "export declare function serverCardClass(server: McpServerListEntry): string;"
+        ],
+        "serverCardHeader": [
+          "export declare function serverCardHeader(server: McpServerListEntry, toolCount: number): HTMLElement;"
+        ],
+        "serverToolsDetails": [
+          "export declare function serverToolsDetails(server: McpServerListEntry, toolCount: number, opts: { tools: boolean; openTools?: Set<string>; }"
+        ],
         "showPanel": [
           "export declare function showPanel(state: McpState, actions: UiActions): void;"
+        ],
+        "statusActions": [
+          "export declare function statusActions(server: McpServerListEntry, state: McpState, actions: UiActions, scopeQuery: string, cwdQuery: string): ActionSpec[];"
         ],
         "statusDot": [
           "export declare function statusDot(status: string): string;"
@@ -2229,6 +2662,15 @@
         ],
         "toolDisableServerKey": [
           "export declare function toolDisableServerKey(server: McpServerListEntry, state: McpState): string | undefined;"
+        ],
+        "transformOriginFor": [
+          "export declare function transformOriginFor(isLeft: boolean, anchorBottom: boolean): string;"
+        ],
+        "urlPlaceholderBlocks": [
+          "export declare function urlPlaceholderBlocks(state: McpState, server: McpManagerServerInput, payload: Record<string, unknown>): boolean;"
+        ],
+        "usesComposerSeat": [
+          "export declare function usesComposerSeat(isBottom: boolean, bp: FloatBreakpoint): boolean;"
         ],
         "zh": [
           "export declare const zh: { readonly stConnected: \"运行中\"; readonly stConnecting: \"连接中\"; readonly stReconnecting: \"重连中\"; readonly stStopped: \"未连接\"; readonly stDisabled: \"已停用\"; readonly stFailed: \"失败\"; readonly connect: \"连接\"; readonly disconnect: \"断开\"; readonly reconnect: \"重连\"; readonly enable: \"启用\"; readonly enableAndConnect: \"启用并连接\"; readonly disable: \"禁用\"; readonly edit: \"编辑\"; readonly delete: \"删除\"; readonly save: \"保存\"; readonly cancel: \"取消\"; readonly refresh: \"刷新\"; readonly close: \"关闭\"; readonly cancelEdit: \"取消编辑\"; readonly saveFail: \"保存失败：{msg}\"; readonly actionFail: \"操作失败：{msg}\"; readonly loadFail: \"加载失败：{msg}\"; readonly floatAriaLabel: \"MCP 管理器\"; readonly floatTitle: \"MCP 管理器（点击展开）\"; readonly floatManage: \"管理\"; readonly floatGlobalSession: \"全局会话\"; readonly groupProject: \"项目级\"; readonly groupGlobal: \"全局\"; readonly badgeScopeProject: \"项目\"; readonly badgeScopeGlobal: \"全局\"; readonly serverMeta: \"{status} · {tools} 工具\"; readonly toolsCount: \"工具（{n}）\"; readonly toolsCountPlain: \"{n} 工具\"; readonly statusGroupCount: \"{status}（{n}）\"; readonly groupAttention: \"需关注（{n}）\"; readonly healthRunning: \"运行中 {n}\"; readonly healthConnecting: \"连接中 {n}\"; readonly healthStopped: \"未连接 {n}\"; readonly healthFailed: \"失败 {n}\"; readonly floatEmptyTitle: \"还没有 MCP 服务器\"; readonly floatEmptyCta: \"去添加\"; readonly panelTitle: \"MCP 管理器\"; readonly tabServers: \"服务器\"; readonly tabQuickAdd: \"快速接入\"; readonly countsConnected: \"运行中 {n}\"; readonly countsConnecting: \"连接中 {n}\"; readonly countsFailed: \"失败 {n}\"; readonly countsSummary: \"共 {n} 台 · {parts}\"; readonly countsSummaryOnly: \"共 {n} 台\"; readonly addServer: \"添加服务器\"; readonly editServer: \"编辑服务器：{name}\"; readonly nameLabel: \"服务器名称（唯一，作为 mcp__<name>__ 前缀）\"; readonly ownershipLabel: \"归属\"; readonly transportLabel: \"传输类型\"; readonly commandLabel: \"命令（stdio）\"; readonly argsLabel: \"参数（逗号分隔）\"; readonly envLabel: \"环境变量（每行 KEY=VALUE，支持 ${ENV} 引用，值为空则继承父环境）\"; readonly cwdLabel: \"工作目录（可选）\"; readonly urlLabel: \"URL（streamable-http）\"; readonly headersLabel: \"请求头（每行 KEY: VALUE，支持 ${ENV} 引用）\"; readonly enabledLabel: \"启用（保存后立即连接）\"; readonly scopeProjectOpt: \"项目级（<项目>/.dsh/@wingsky-1/dsh-mcp-manager/mcp.json，随会话切换）\"; readonly scopeGlobalOpt: \"全局（本机配置）\"; readonly transportStdioOpt: \"stdio（本地子进程）\"; readonly transportHttpOpt: \"streamable-http（远程）\"; readonly envPlaceholder: \"每行 KEY=VALUE，如\\nCONTEXT7_API_KEY=${CONTEXT7_API_KEY}\"; readonly headersPlaceholder: \"每行 KEY: VALUE，支持 ${ENV} 引用，如\\nAuthorization: Bearer ${CONTEXT7_API_KEY}\"; readonly cwdPlaceholder: \"可选工作目录\"; readonly pasteTitle: \"粘贴 mcpServers JSON 导入\"; readonly importJson: \"导入 JSON\"; readonly importedOk: \"已导入：{names}\"; readonly importedNone: \"（无）\"; readonly importSkipped: \"跳过（已存在）：{names}\"; readonly importFail: \"导入失败：{msg}\"; readonly serversEmpty: \"还没有配置 MCP 服务器。切到「快速接入」页添加，或粘贴 mcpServers JSON 导入。\"; readonly confirmDelete: \"删除 MCP 服务器「{name}」？\"; readonly settingsLoading: \"MCP 管理器：加载中…\"; readonly settingsName: \"MCP 管理器（dsh-mcp-manager）\"; readonly settingsDescription: \"浮窗位置 / 水平·垂直·空白偏移\"; readonly anchorLabel: \"锚点\"; readonly posTopRight: \"右上（top-right）\"; readonly posTopLeft: \"左上（top-left）\"; readonly posBottomRight: \"右下（bottom-right）\"; readonly posBottomLeft: \"左下（bottom-left）\"; readonly offsetX: \"水平偏移\"; readonly offsetY: \"垂直偏移\"; readonly blankY: \"空白偏移\"; readonly zIndexBase: \"层级基准\"; readonly settingsHint: \"保存即热更新：浮窗位置与偏移即时生效并持久化（无需重启 dsh web）。\"; readonly savingNow: \"保存中…\"; readonly settingsSavedOk: \"已保存——浮窗位置即时生效（无需重启）\"; };"
