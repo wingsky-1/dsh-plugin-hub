@@ -528,11 +528,16 @@ async function reuseResponse(
 
 /** 强制入队（submitForce 不可用/抛错 → 503 固定安全 code）。 */
 async function submitForceTask(
-  submitForce: (input: ReportTaskInput) => Promise<{ taskId: string; existing: boolean }>,
+  reportQueue: ReportRouteQueue,
   due: DueReport,
 ): Promise<JsonResponse> {
+  if (reportQueue.submitForce === undefined) {
+    return { status: 503, body: { ok: false, error: "force-unavailable" } };
+  }
   try {
-    const submitted = await submitForce({ ...due, force: true });
+    // 必须以 reportQueue.submitForce(...) 形式调用（方法调用保留 this）——队列实现依赖
+    // 实例态；解构成自由函数传进来会丢 this，令 submitForce 恒抛「force-unavailable」。
+    const submitted = await reportQueue.submitForce({ ...due, force: true });
     return { status: 202, body: { ok: true, taskId: submitted.taskId } };
   } catch (error: unknown) {
     return { status: 503, body: { ok: false, error: stableFailureCode(error, "force-unavailable") } };
@@ -565,9 +570,8 @@ export async function handleReportGenerate(
   const blocked = await reuseOrRetryBlockResponse(context, due, force);
   if (blocked !== null) return writeJson(res, blocked.status, blocked.body);
 
-  const { submitForce } = reportQueue;
-  if (force && submitForce !== undefined) {
-    const submitted = await submitForceTask(submitForce, due);
+  if (force && reportQueue.submitForce !== undefined) {
+    const submitted = await submitForceTask(reportQueue, due);
     return writeJson(res, submitted.status, submitted.body);
   }
 
