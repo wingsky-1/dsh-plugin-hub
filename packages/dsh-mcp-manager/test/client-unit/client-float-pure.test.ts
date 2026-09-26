@@ -34,10 +34,17 @@ import {
   isServerTransport,
   urlPlaceholderBlocks,
 } from "../../src/client/float/quick-add.ts";
-import type { McpServerListEntry, McpState, UiActions } from "../../src/client/core/state.ts";
+import type {
+  McpClientContext,
+  McpServerListEntry,
+  McpState,
+  UiActions,
+} from "../../src/client/core/state.ts";
 import type { ClientUiConfig } from "../../src/shared/interface.ts";
 
 const state = (raw: Record<string, unknown>): McpState => raw as unknown as McpState;
+// McpClientContext 的最小可用面：get 返回 undefined（无 i18n/slots），effect 空实现。
+const ctx = (): McpClientContext => ({ get: () => undefined, effect: () => {} });
 const actions = {} as unknown as UiActions;
 const cfg = (raw: Partial<ClientUiConfig>): ClientUiConfig =>
   ({
@@ -48,7 +55,7 @@ const cfg = (raw: Partial<ClientUiConfig>): ClientUiConfig =>
     zIndexBase: 10,
     ...raw,
   }) as ClientUiConfig;
-const server = (raw: Partial<McpServerListEntry>): McpServerListEntry =>
+const server = (raw: Partial<McpServerListEntry> = {}): McpServerListEntry =>
   ({
     name: "s",
     transport: "stdio",
@@ -116,10 +123,14 @@ describe("float：锚点与终坐标", () => {
   it("pillAnchors：锚点与偏移取自配置（越界偏移回落缺省）", () => {
     // offsetX 取自配置入参，offsetY 取自 state.mcpUiConfig（垂直偏移按会话形态，见 floatTopOffset）。
     const st = state({ mcpUiConfig: cfg({ position: "bottom-right", offsetX: 3, offsetY: 7 }) });
-    const anchors = pillAnchors(cfg({ position: "bottom-right", offsetX: 3, offsetY: 7 }), {}, st);
+    const anchors = pillAnchors(
+      cfg({ position: "bottom-right", offsetX: 3, offsetY: 7 }),
+      ctx(),
+      st,
+    );
     expect(anchors).toEqual({ isLeft: false, isBottom: true, offsetX: 3, offsetY: 7 });
     // 会话面取不到时按非空白会话回落 y 缺省 8。
-    expect(pillAnchors(cfg({ position: "top-left" }), {}, state({})).offsetY).toBe(8);
+    expect(pillAnchors(cfg({ position: "top-left" }), ctx(), state({})).offsetY).toBe(8);
   });
 
   it("usesComposerSeat：仅底部锚点 + 非 wide 断点才换下边界", () => {
@@ -185,10 +196,14 @@ describe("float：行内动作描述符", () => {
       "/c?name=s&scope=global",
     );
     expect(primaryRowAction(server({ status: "connected" }), st, "").method).toBe("POST");
+    // body 只在 PATCH 动作（disabled→enable）上存在；connected 的断开动作是纯 POST。
     expect(primaryRowAction(server({ status: "disabled" }), st, "").body).toBe('{"enabled":true}');
+    expect(primaryRowAction(server({ status: "connected" }), st, "").body).toBeUndefined();
   });
 
   it("disableRowAction：URL 不带 cwd（历史形状）", () => {
+    // 本 describe 自带 st：disableRowAction 读 state.API.servers，故该键必须齐。
+    const st = state({ API: { disconnect: "/d", connect: "/c", servers: "/s" }, currentCwd: "" });
     const spec = disableRowAction(server(), st);
     expect(spec.url).toBe("/s?name=s&scope=global");
     expect(spec.body).toBe('{"enabled":false}');
@@ -212,7 +227,7 @@ describe("servers 卡片：类名与状态动作", () => {
     });
     expect(
       statusActions(server({ status: "connected" }), st, actions, "&scope=global", "").map(
-        (a) => a.tag ?? a.label,
+        (a) => a.label,
       ),
     ).toHaveLength(2);
     expect(

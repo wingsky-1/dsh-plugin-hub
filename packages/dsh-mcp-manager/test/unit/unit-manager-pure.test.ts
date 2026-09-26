@@ -5,7 +5,10 @@
  * 投影形状与键序、占位符回写 guard、目录数据源的同名覆盖、池同步的释放/变化口径。
  */
 import { describe, expect, it, vi } from "vitest";
-import type { CatalogServers } from "../../src/server/connection/orchestrator/manager.ts";
+// CatalogServers 是 manager.ts 的模块内类型（未导出，属实现面）：按其源码定义
+// （Map<string, { server: ServerConfig; scope: string }>）就地声明，形状由下方
+// catalogToolNames/collectCatalogServers 的实参在编译期校验。
+type CatalogServers = Map<string, { server: ServerConfig; scope: string }>;
 import {
   absentFromPool,
   carriesProjectionPlaceholder,
@@ -233,7 +236,9 @@ describe("manager 纯函数：池同步口径", () => {
 describe("manager 纯函数：connect 目标与 summary 投影", () => {
   it("resolveConnectableServer：store 优先；global scope 未命中回退 runtime 并 warn", () => {
     const store = { find: (name: string) => (name === "in" ? { name: "in" } : undefined) } as never;
-    const runtime = new Map([["rt", { name: "rt", transport: "stdio" }]]);
+    // satisfies 固定 transport 的字面量类型，否则数组推导成 string 宽度、与 ServerConfig 不兼容。
+    const rt = { name: "rt", transport: "stdio" } satisfies ServerConfig;
+    const runtime = new Map([["rt", rt]]);
     const warnings: string[] = [];
     expect(
       resolveConnectableServer(store, runtime, "in", "global", (m) => warnings.push(m))?.name,
@@ -292,10 +297,11 @@ describe("manager 纯函数：connect 目标与 summary 投影", () => {
   });
 
   it("summarizeAbsent：配置禁用判 disabled，其余 stopped，工具面空", () => {
-    expect(summarizeAbsent({ name: "s" }, "global", { name: "s", enabled: false }).status).toBe(
-      "disabled",
-    );
-    expect(summarizeAbsent({ name: "s" }, "global", { name: "s" }).status).toBe("stopped");
-    expect(summarizeAbsent({ name: "s" }, "global", { name: "s" }).tools).toEqual([]);
+    // transport 是 ServerConfig 必填项，fixture 补齐（不靠断言绕过）。
+    const off = { name: "s", transport: "stdio", enabled: false } satisfies ServerConfig;
+    const on = { name: "s", transport: "stdio" } satisfies ServerConfig;
+    expect(summarizeAbsent({ name: "s" }, "global", off).status).toBe("disabled");
+    expect(summarizeAbsent({ name: "s" }, "global", on).status).toBe("stopped");
+    expect(summarizeAbsent({ name: "s" }, "global", on).tools).toEqual([]);
   });
 });

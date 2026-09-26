@@ -189,8 +189,13 @@ describe("catalog/entries：目录摘要三段", () => {
       entryTextFor("a", { name: "a", transport: "stdio" }, new Map([["a", { summary: "" }]])),
     ).toBeUndefined();
     const long = "z".repeat(CATALOG_ENTRY_MAX_CHARS + 10);
-    expect(
-      entryTextFor("a", { name: "a", transport: "stdio", description: long }, undefined).length,
-    ).toBe(CATALOG_ENTRY_MAX_CHARS);
+    // 返回 string | undefined：先判存在再取长度（截断分支必返回字符串）。
+    const truncated = entryTextFor(
+      "a",
+      { name: "a", transport: "stdio", description: long },
+      undefined,
+    );
+    expect(truncated).toBeDefined();
+    expect(truncated?.length).toBe(CATALOG_ENTRY_MAX_CHARS);
   });
 });

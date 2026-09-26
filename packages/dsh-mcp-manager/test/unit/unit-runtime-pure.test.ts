@@ -100,9 +100,10 @@ describe("dispatch：调用就绪裁决", () => {
     for (const status of ["failed", "reconnecting", "stopped", "disabled"] as const) {
       expect(judgeEntryReadiness("@r/s", "s", false, entry({ status })).ready).toBe(false);
     }
-    expect(
-      judgeEntryReadiness("@r/s", "s", false, entry({ status: "connecting" })).error?.message,
-    ).toContain("连接仍在进行");
+    // ReadinessVerdict 是判别联合：error 只存在于 ready:false 分支，先窄化再取。
+    const connecting = judgeEntryReadiness("@r/s", "s", false, entry({ status: "connecting" }));
+    expect(connecting.ready).toBe(false);
+    expect(connecting.ready === false ? connecting.error.message : "").toContain("连接仍在进行");
     const ok = judgeEntryReadiness("@r/s", "s", false, entry({ status: "connected" }));
     expect(ok.ready).toBe(true);
     expect(ok.ready && ok.entry.status).toBe("connected");
