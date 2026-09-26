@@ -70,15 +70,27 @@ const complexityRules = {
  * exit 0 / error 0。缺口不限于 JS 面，故这两条同时铺在 TS_SOURCES 与 JS_SOURCES 两个块
  * （只铺 JS_SOURCES 会让 .ts 继续漏，而验收反例本身就有 .ts 一份）。
  *
- * 存量实测 **0 命中**（全仓 1013 个可 lint 文件的面，含默认 lint 面之外的根级配置与包级构建脚本），
- * 按 #764 A5「只收实测零误报的 correctness 规则」零成本准入，故未挂 `eslint-suppressions.json`。
+ * 存量实测 **0 命中**：量的是「全仓任一可 lint 文件」的**更宽面**（`lintFiles(["."])`，
+ * 1013 个文件），比 `pnpm lint` 默认面的 941 个多出根级配置、各包随包的 skills 目录、
+ * `vitest.stryker.d` 等约 72 个（默认面清单见 bin/lint.mjs 的 DEFAULT_PATTERNS）。方向保守：
+ * 更宽面 0 命中蕴含默认面 0 命中。据此按 #764 A5「只收实测零误报的 correctness 规则」零成本准入，
+ * 故未挂 `eslint-suppressions.json`。
  *
  * **覆盖边界（勿读成「不可达代码已被完全覆盖」）**：这两条只覆盖**语法层可判**的死代码——
  * 常量条件（`if (false)`、`while (0)`）与 `return` / `throw` / `break` / `continue` 之后的语句。
  * 它们**不覆盖跨函数数据流不可达**（「这个分支永不成立，因为上游恒返回某值」要类型与全仓数据流
- * 才答得出，核心规则没有 program）。另一条实测边界：`no-unreachable` 走 code path 分析，
- * **不下钻常量条件的分支体**——`if (false) { ... }` 的分支体由 `no-constant-condition` 报，
- * 不是 `no-unreachable`；报「return 之后的语句」才是后者。
+ * 才答得出，核心规则没有 program）。
+ *
+ * 两条实测细节，都别读反：
+ *   1. **循环条件默认被豁免**：未配 options，`checkLoops` 取默认 `allExceptWhileTrue`——
+ *      `while (true)` 与 `for (;;)` 仍合法（`while (0)`、`do...while (false)` 照报）。这条豁免在
+ *      本仓**承重**：provider-usage 的流式消费循环（src/server/execute/generate.ts）与轮询夹具
+ *      （test/helpers.ts）都写着 `while (true)` / `for (;;)`。谁把 `checkLoops` 配成 `"all"`，
+ *      `pnpm lint` 会立刻红一片——那时该看到的是「有人改了豁免」，不是「仓库突然多了死代码」。
+ *   2. **常量条件的分支体归 `no-constant-condition`**：`no-unreachable` 走 code path 分析，
+ *      不把 `if (false) { ... }` 的分支体**本身**判成不可达；但分支体**内部**由
+ *      `return`/`throw`/`break`/`continue` 造成的不可达照报——`if (false) { return 2; return 3; }`
+ *      两条规则各报一次（前者报常量条件那一行，后者报第二个 return）。
  */
 const deadCodeRules = {
   "no-unreachable": "error",

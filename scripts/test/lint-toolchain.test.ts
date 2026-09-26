@@ -520,37 +520,53 @@ test("#875 批次 1.3：死代码两条核心规则按 error 生效，且 .ts �
     }
   }
 
-  // ② 行为层：两种扩展名 × 两条规则都要真报出 error（不是「配置里写了就算」）。
-  // 用 lintText 而不是往仓库落临时文件——判据不该为了让自己被门禁看见而制造产物（#218）。
-  // 两条规则各钉一段最小反例：常量条件 vs return 之后的语句（后者才是 no-unreachable 的活，
-  // 它走 code path 分析，不下钻 if (false) 的分支体——见 eslint.config.js 的边界说明）。
+  // ② 行为层：两种扩展名 × 两条规则 × **门禁面与产品面**都要真报出 error
+  //（不是「配置里写了就算」）。用 lintText 而不是往仓库落临时文件——判据不该为了让自己被门禁
+  // 看见而制造产物（#218）。
+  // 两条规则各钉一段最小反例：常量条件 vs return 之后的语句。后者才是 no-unreachable 的活——
+  //`if (false)` 的分支体本身由 no-constant-condition 负责（边界说明见 eslint.config.js）。
+  //
+  // 为什么必须有 products 那两条：只锚 scripts/ 时，把两个规则对 packages/** 置 off 仍全绿，
+  // 而「挡产品代码里的死代码」正是 #875 的价值——守卫被静默摘掉而测试不红。路径取 #764 A3 的同一
+  // 代表文件（那边只判配置层，因为它那三条是 type-checked、lintText 喂不进 program；本两条不是）。
   const cases: Array<{ file: string; source: string; rule: string }> = [
     {
-      file: "dead-code-probe.ts",
+      file: "scripts/gate/dead-code-probe.ts",
       source:
         "export function p(x: number) {\n  if (x < 0) return -1;\n  if (false) {\n    return 2;\n  }\n  return x;\n}\n",
       rule: "no-constant-condition",
     },
     {
-      file: "dead-code-probe.mjs",
+      file: "scripts/gate/dead-code-probe.mjs",
       source:
         "export function p(x) {\n  if (x < 0) return -1;\n  if (false) {\n    return 2;\n  }\n  return x;\n}\n",
       rule: "no-constant-condition",
     },
     {
-      file: "dead-code-probe.ts",
+      file: "scripts/gate/dead-code-probe.ts",
       source: "export function p(x: number) {\n  return x;\n  return 0;\n}\n",
       rule: "no-unreachable",
     },
     {
-      file: "dead-code-probe.mjs",
+      file: "scripts/gate/dead-code-probe.mjs",
       source: "export function p(x) {\n  return x;\n  return 0;\n}\n",
       rule: "no-unreachable",
+    },
+    {
+      file: "packages/dsh-mcp-manager/src/index.ts",
+      source: "export function p(x: number) {\n  return x;\n  return 0;\n}\n",
+      rule: "no-unreachable",
+    },
+    {
+      file: "packages/dsh-mcp-manager/src/index.ts",
+      source:
+        "export function p(x: number) {\n  if (x < 0) return -1;\n  if (false) {\n    return 2;\n  }\n  return x;\n}\n",
+      rule: "no-constant-condition",
     },
   ];
   for (const c of cases) {
     const [result] = await eslint.lintText(c.source, {
-      filePath: join(ROOT, "scripts", "gate", c.file),
+      filePath: join(ROOT, c.file),
     });
     assert.ok(
       result.messages.some(
