@@ -16,9 +16,17 @@ import {
   activeDayCount,
   heatCells,
   fmtCompact,
-  trendDelta,
   seriesColor,
+  type trendDelta,
 } from "../trend-math.js";
+// 纯推导单点收口在 settings-view.ts：本文件只留「取数 + 状态 + DOM 落位」。
+import {
+  deltaOf,
+  ioTotalsOf,
+  peakValueOf,
+  providerStatusMeta,
+  topShareOf,
+} from "./settings-view.ts";
 
 /** /stats 响应中本页消费的字段（v2）。 */
 export interface StatsView {
@@ -32,13 +40,16 @@ export interface StatsView {
   fetchedAt?: number;
 }
 
+/** 窗口环比投影（trendDelta 出参；未就绪为 null）。 */
+export type UsageDelta = ReturnType<typeof trendDelta>;
+
 /** /trend 日桶最小形状（本页只读 key/total/parts/summary）。 */
-interface TrendDayBucket {
+export interface TrendDayBucket {
   key: string;
   total: number | null;
   parts: Array<{ provider: string; model: string | null; value: number | null }>;
 }
-interface TrendDayResponse {
+export interface TrendDayResponse {
   ok: boolean;
   series: TrendDayBucket[];
   summary: {
@@ -68,14 +79,6 @@ async function fetchTrendDay(metric: string, n: number): Promise<TrendDayRespons
     throw new Error("bad shape");
   }
   return body as TrendDayResponse;
-}
-
-/** 状态 → 文案（i18n：渲染期求值）。 */
-function statusLabel(status: string | undefined): string {
-  if (status === "fresh") return t("statusFresh");
-  if (status === "cached") return t("statusCached");
-  if (status === "stale") return t("statusStale");
-  return t("statusUnconfigured");
 }
 
 /** 状态 → 颜色（主题变量 + 浅色回退）。 */
@@ -199,13 +202,168 @@ function DonutCard({
   );
 }
 
+/** provider 状态行正文（职责：宿主 capsuleHtml / 错误文案 / 无数据 三态）。 */
+function providerStatusBody(s: StatsView | null | undefined): React.ReactElement {
+  if (s?.capsuleHtml) return <div dangerouslySetInnerHTML={{ __html: s.capsuleHtml }} />;
+  if (s?.error) {
+    return (
+      <div style={{ color: "var(--dsw-alias-state-error-primary,#d64545)" }}>{String(s.error)}</div>
+    );
+  }
+  return <div style={{ color: "var(--dsw-alias-label-tertiary,#9aa0ab)" }}>{t("noData")}</div>;
+}
+
+/** provider 状态行（职责：状态点 + 名称 + 元信息 + 正文三态）。 */
+function ProviderStatusRow(props: {
+  provider: string;
+  s: StatsView | null | undefined;
+}): React.ReactElement {
+  const { provider, s } = props;
+  return (
+    <div style={{ marginBottom: 10 }}>
+      <div style={{ marginBottom: 4 }}>
+        <span
+          key="dot"
+          style={{
+            display: "inline-block",
+            width: 8,
+            height: 8,
+            borderRadius: "50%",
+            background: statusColor(s?.status),
+            marginRight: 6,
+            verticalAlign: "middle",
+          }}
+        />
+        <span style={{ fontWeight: 600 }}>{provider}</span>
+        <span
+          style={{
+            color: "var(--dsw-alias-label-tertiary,#9aa0ab)",
+            marginLeft: 8,
+            fontSize: 11,
+          }}
+        >
+          {providerStatusMeta(s, provider)}
+        </span>
+      </div>
+      {providerStatusBody(s)}
+    </div>
+  );
+}
+
+/** 各启用 provider 状态列表（职责：空态提示 + 逐 provider 状态行）。 */
+function ProviderStatusList(props: {
+  statsByProvider: Record<string, StatsView | null>;
+}): React.ReactElement {
+  const providers = Object.keys(props.statsByProvider);
+  if (providers.length === 0) {
+    return (
+      <div style={{ color: "var(--dsw-alias-label-tertiary,#9aa0ab)" }}>{t("noProviders")}</div>
+    );
+  }
+  return (
+    <React.Fragment>
+      {providers.map((provider) => (
+        <ProviderStatusRow
+          key={provider}
+          provider={provider}
+          s={props.statsByProvider[provider] ?? null}
+        />
+      ))}
+    </React.Fragment>
+  );
+}
+
+/** 今日环图行（职责：IO 构成环 + provider 构成环，含图例与空态占位）。 */
+function UsageDonutRow(props: {
+  io: ReturnType<typeof ioTotalsOf>;
+  sums: Array<{ provider: string; value: number }>;
+  windowTotal: number;
+}): React.ReactElement {
+  const { io, sums, windowTotal } = props;
+  const { vals, ready, dayTotal } = io;
+  return (
+    <div className="dou-donutRow">
+      <DonutCard
+        title={t("usageDonutIO")}
+        centerTop={ready ? fmtCompact(dayTotal) : "-"}
+        centerSub={t("usageTodayTokens")}
+        segs={[
+          { label: t("usageIOLabelInput"), value: vals[0], color: IO_COLORS.input },
+          { label: t("usageIOLabelOutput"), value: vals[1], color: IO_COLORS.output },
+          { label: t("usageIOLabelCache"), value: vals[2], color: IO_COLORS.cache },
+        ]}
+        legend={[
+          {
+            label: t("usageIOLabelInput"),
+            text: ready ? fmtCompact(vals[0]) : "-",
+            color: IO_COLORS.input,
+          },
+          {
+            label: t("usageIOLabelOutput"),
+            text: ready ? fmtCompact(vals[1]) : "-",
+            color: IO_COLORS.output,
+          },
+          {
+            label: t("usageIOLabelCache"),
+            text: ready ? fmtCompact(vals[2]) : "-",
+            color: IO_COLORS.cache,
+          },
+        ]}
+      />
+      <DonutCard
+        title={t("usageDonutModels")}
+        centerTop={sums.length > 0 ? topShareOf(sums, windowTotal) : "-"}
+        centerSub={sums.length > 0 ? sums[0].provider : t("noData")}
+        segs={sums.map((s) => ({
+          label: s.provider,
+          value: s.value,
+          color: seriesColor(s.provider),
+        }))}
+        legend={sums.slice(0, 5).map((s) => ({
+          label: s.provider,
+          text:
+            windowTotal > 0
+              ? `${((s.value / windowTotal) * 100).toFixed(0)}% · ${fmtCompact(s.value)}`
+              : "-",
+          color: seriesColor(s.provider),
+        }))}
+      />
+    </div>
+  );
+}
+
+/** 指标小卡行（职责：总量 / 调用数 / 活跃天 / 峰值 四张小卡）。 */
+function UsageMiniRow(props: {
+  ov: TrendDayResponse;
+  delta: UsageDelta;
+  peakVal: number | null;
+  activeDays: number;
+  seriesLength: number;
+}): React.ReactElement {
+  const { ov, delta, peakVal, activeDays, seriesLength } = props;
+  return (
+    <div className="dou-miniRow">
+      <MiniCard
+        label={t("trendCardTotal")}
+        value={ov.summary.total === null ? "-" : fmtCompact(ov.summary.total)}
+        hint={delta === null ? null : delta.text}
+      />
+      <MiniCard label={t("trendCardCalls")} value={fmtCompact(ov.summary.calls)} />
+      <MiniCard label={t("usageActiveLabel")} value={`${activeDays}/${seriesLength}`} />
+      <MiniCard
+        label={`${t("trendCardPeak")} · ${ov.summary.peakKey === null ? "-" : ov.summary.peakKey.slice(5)}`}
+        value={peakVal === null ? "-" : fmtCompact(peakVal)}
+      />
+    </div>
+  );
+}
+
 /** 用量可视化区：今日概览（/trend 日面）+ 各启用 provider 状态点（既有）。 */
 export function UsageSection({
   statsByProvider,
 }: {
   statsByProvider: Record<string, StatsView | null>;
 }): React.ReactElement {
-  const providers = Object.keys(statsByProvider);
   const [heatDays, setHeatDays] = React.useState<number>(180);
   const [overview, setOverview] = React.useState<TrendDayResponse | null>(null);
   const [ioDay, setIoDay] = React.useState<{
@@ -259,25 +417,9 @@ export function UsageSection({
   const windowTotal = sums.reduce((a, s) => a + s.value, 0);
   const cells = React.useMemo(() => heatCells(series, heatDays), [series, heatDays]);
   const activeDays = React.useMemo(() => activeDayCount(series), [series]);
-  const delta =
-    overview === null
-      ? null
-      : trendDelta(
-          overview.summary.total,
-          overview.summary.prevTotal,
-          overview.summary.prevComplete,
-        );
-  const peakVal =
-    overview === null || overview.summary.peakKey === null
-      ? null
-      : (series.find((p) => p.key === overview.summary.peakKey)?.total ?? null);
-  const ioVals = [ioDay?.input ?? 0, ioDay?.output ?? 0, ioDay?.cache ?? 0];
-  const ioReady = ioDay !== null && ioVals.some((v) => v > 0);
-  const dayTotal = ioVals[0] + ioVals[1] + ioVals[2];
-  const topShare =
-    windowTotal > 0 && sums.length > 0
-      ? `${((sums[0].value / windowTotal) * 100).toFixed(0)}%`
-      : "-";
+  const delta = deltaOf(overview);
+  const peakVal = peakValueOf(overview, series);
+  const io = ioTotalsOf(ioDay);
 
   // 非空收窄别名：复合三元下 TS 无法收窄 overview，改嵌套单条件收窄
   const ov = overview;
@@ -296,67 +438,15 @@ export function UsageSection({
           <div className="dou-hint" style={{ marginBottom: 6 }}>
             {t("usageToday")}
           </div>
-          <div className="dou-donutRow">
-            <DonutCard
-              title={t("usageDonutIO")}
-              centerTop={ioReady ? fmtCompact(dayTotal) : "-"}
-              centerSub={t("usageTodayTokens")}
-              segs={[
-                { label: t("usageIOLabelInput"), value: ioVals[0], color: IO_COLORS.input },
-                { label: t("usageIOLabelOutput"), value: ioVals[1], color: IO_COLORS.output },
-                { label: t("usageIOLabelCache"), value: ioVals[2], color: IO_COLORS.cache },
-              ]}
-              legend={[
-                {
-                  label: t("usageIOLabelInput"),
-                  text: ioReady ? fmtCompact(ioVals[0]) : "-",
-                  color: IO_COLORS.input,
-                },
-                {
-                  label: t("usageIOLabelOutput"),
-                  text: ioReady ? fmtCompact(ioVals[1]) : "-",
-                  color: IO_COLORS.output,
-                },
-                {
-                  label: t("usageIOLabelCache"),
-                  text: ioReady ? fmtCompact(ioVals[2]) : "-",
-                  color: IO_COLORS.cache,
-                },
-              ]}
-            />
-            <DonutCard
-              title={t("usageDonutModels")}
-              centerTop={sums.length > 0 ? topShare : "-"}
-              centerSub={sums.length > 0 ? sums[0].provider : t("noData")}
-              segs={sums.map((s) => ({
-                label: s.provider,
-                value: s.value,
-                color: seriesColor(s.provider),
-              }))}
-              legend={sums.slice(0, 5).map((s) => ({
-                label: s.provider,
-                text:
-                  windowTotal > 0
-                    ? `${((s.value / windowTotal) * 100).toFixed(0)}% · ${fmtCompact(s.value)}`
-                    : "-",
-                color: seriesColor(s.provider),
-              }))}
-            />
-          </div>
+          <UsageDonutRow io={io} sums={sums} windowTotal={windowTotal} />
           {/* 指标小卡独立行（一图一栏后另起一行，不再嵌 donut 行） */}
-          <div className="dou-miniRow">
-            <MiniCard
-              label={t("trendCardTotal")}
-              value={ov.summary.total === null ? "-" : fmtCompact(ov.summary.total)}
-              hint={delta === null ? null : delta.text}
-            />
-            <MiniCard label={t("trendCardCalls")} value={fmtCompact(ov.summary.calls)} />
-            <MiniCard label={t("usageActiveLabel")} value={`${activeDays}/${series.length}`} />
-            <MiniCard
-              label={`${t("trendCardPeak")} · ${ov.summary.peakKey === null ? "-" : ov.summary.peakKey.slice(5)}`}
-              value={peakVal === null ? "-" : fmtCompact(peakVal)}
-            />
-          </div>
+          <UsageMiniRow
+            ov={ov}
+            delta={delta}
+            peakVal={peakVal}
+            activeDays={activeDays}
+            seriesLength={series.length}
+          />
           <div className="dou-hint" style={{ marginBottom: 4 }}>
             {t("usageHeat")}
           </div>
@@ -386,63 +476,7 @@ export function UsageSection({
           <div className="dou-hint">{t("usageHeatNote")}</div>
         </>
       )}
-      {providers.length === 0 ? (
-        <div style={{ color: "var(--dsw-alias-label-tertiary,#9aa0ab)" }}>{t("noProviders")}</div>
-      ) : (
-        providers.map((provider) => {
-          const s = statsByProvider[provider];
-          const dot = (
-            <span
-              key="dot"
-              style={{
-                display: "inline-block",
-                width: 8,
-                height: 8,
-                borderRadius: "50%",
-                background: statusColor(s?.status),
-                marginRight: 6,
-                verticalAlign: "middle",
-              }}
-            />
-          );
-          // 适配器名与 provider 同名时省略，避免「rjkrjk」式连读
-          const adapterPart =
-            s?.adapterName && s.adapterName !== provider ? `${s.adapterName} · ` : "";
-          const meta = `${adapterPart}${statusLabel(s?.status)}${
-            typeof s?.fetchedAt === "number"
-              ? ` · ${t("updatedAt", { t: new Date(s.fetchedAt).toLocaleTimeString("zh-CN", { hour12: false }) })}`
-              : ""
-          }`;
-          return (
-            <div key={provider} style={{ marginBottom: 10 }}>
-              <div style={{ marginBottom: 4 }}>
-                {dot}
-                <span style={{ fontWeight: 600 }}>{provider}</span>
-                <span
-                  style={{
-                    color: "var(--dsw-alias-label-tertiary,#9aa0ab)",
-                    marginLeft: 8,
-                    fontSize: 11,
-                  }}
-                >
-                  {meta}
-                </span>
-              </div>
-              {s?.capsuleHtml ? (
-                <div dangerouslySetInnerHTML={{ __html: s.capsuleHtml }} />
-              ) : s?.error ? (
-                <div style={{ color: "var(--dsw-alias-state-error-primary,#d64545)" }}>
-                  {String(s.error)}
-                </div>
-              ) : (
-                <div style={{ color: "var(--dsw-alias-label-tertiary,#9aa0ab)" }}>
-                  {t("noData")}
-                </div>
-              )}
-            </div>
-          );
-        })
-      )}
+      <ProviderStatusList statsByProvider={statsByProvider} />
     </div>
   );
 }

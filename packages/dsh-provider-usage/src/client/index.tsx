@@ -29,6 +29,17 @@ import type {
   UiPlacementConfig,
 } from "./core.ts";
 import { SettingsPage } from "./settings/index.tsx";
+// 纯视图推导（数据 → 文案/判别）单点收口在 float-view.ts：index.tsx 只剩编排。
+import {
+  PILL_PREFIX,
+  errorMessage,
+  panelBodyKind,
+  panelFootStamp,
+  pillDotLevel,
+  pillTitle,
+  statsReason,
+} from "./float-view.ts";
+import type { PanelBodyKind } from "./float-view.ts";
 import { t, bindLocale } from "../../../../shared/client/i18n.js";
 // 样式注入收敛 shared/client/ensure-style.js：head 缺失由 shared
 // 静默 no-op 兜底（旧 DOMContentLoaded 兜底属理论不可达防御，随迁移删除）。
@@ -63,11 +74,48 @@ declare module "@deepseek-ai/dsh-client-ui-slots" {
 }
 
 const REFRESH_MS = 60000; // 轮询间隔
-const PILL_PREFIX = "dou-"; // 样式类名前缀
 const STYLE_ID = "dsh-provider-usage-style"; // <style> 幂等键（dsh-<pkg>-style 命名）
 const MAX_HISTORY_DAYS = 30; // 历史请求天数
 
 // ------------------------------------------------------------------ 工具
+
+/**
+ * 单属性落位（职责：key → DOM 落法）。返回 false = 未知键，交调用方 setAttribute 兜底。
+ * class / text / style / hidden / onX 五类特殊键在此收口——新增键只改这一处，
+ * el() 的属性遍历保持纯编排。
+ */
+function applyAttr(node: HTMLElement, key: string, value: unknown): boolean {
+  if (key === "class") {
+    node.className = String(value);
+    return true;
+  }
+  if (key === "text") {
+    node.textContent = String(value);
+    return true;
+  }
+  if (key === "style" && typeof value === "object") {
+    Object.assign(node.style, value as Partial<CSSStyleDeclaration>);
+    return true;
+  }
+  if (key === "hidden") {
+    node.hidden = Boolean(value);
+    return true;
+  }
+  if (key.startsWith("on") && typeof value === "function") {
+    node.addEventListener(key.slice(2).toLowerCase(), value as EventListener);
+    return true;
+  }
+  return false;
+}
+
+/** children 落位（职责：子树装配）：数组逐项、非数组单项；字符串走文本节点。 */
+function appendChildren(node: HTMLElement, children: unknown): void {
+  const list = Array.isArray(children) ? children : [children];
+  for (const item of list) {
+    if (item === undefined || item === null) continue;
+    node.appendChild(typeof item === "string" ? document.createTextNode(item) : (item as Node));
+  }
+}
 
 /** el() helper：children / attrs.children、dataset、onX、class/text 等。 */
 function el(
@@ -80,32 +128,11 @@ function el(
     for (const key of Object.keys(attrs)) {
       const value = attrs[key];
       if (key === "children" || value === undefined || value === null) continue;
-      if (key === "class") node.className = String(value);
-      else if (key === "text") node.textContent = String(value);
-      else if (key === "style" && typeof value === "object")
-        Object.assign(node.style, value as Partial<CSSStyleDeclaration>);
-      else if (key === "hidden") node.hidden = Boolean(value);
-      else if (key.startsWith("on") && typeof value === "function") {
-        node.addEventListener(key.slice(2).toLowerCase(), value as EventListener);
-      } else node.setAttribute(key, String(value));
+      if (!applyAttr(node, key, value)) node.setAttribute(key, String(value));
     }
   }
-  const list = Array.isArray(children) ? children : [children];
-  for (const item of list) {
-    if (item === undefined || item === null) continue;
-    node.appendChild(typeof item === "string" ? document.createTextNode(item) : (item as Node));
-  }
+  appendChildren(node, children);
   return node;
-}
-
-/** 相对时间文案。 */
-function fmtAge(ts: number | undefined): string {
-  if (typeof ts !== "number" || !Number.isFinite(ts)) return "";
-  const diff = Date.now() - ts;
-  if (diff < 60000) return t("justNow");
-  if (diff < 3600000) return t("minutesAgo", { n: Math.floor(diff / 60000) });
-  if (diff < 86400000) return t("hoursAgo", { n: Math.floor(diff / 3600000) });
-  return t("daysAgo", { n: Math.floor(diff / 86400000) });
 }
 
 // ------------------------------------------------------------------ 状态
@@ -141,19 +168,48 @@ let uiConfig: UiPlacementConfig = { ...DEFAULT_CLIENT_UI_CONFIG };
  *  固定定位（fixed）：胶囊钉在会话容器视口（rect）内，滚动内容滑动不改变其位置，
  *  无动态避让（不再探测 MCP 浮窗做偏移），彻底消除滚动时频繁位移造成的 jitter/闪烁。
  *  位置完全由配置的 placement/offset 决定（配置值即最终位置，滚动稳定）。 */
+/**
+ * 断点档位同步（职责：CSS 档位选择）：胶囊与面板同步同一个 data-dou-bp。
+ * 判定基准 = conversationHost rect 宽度（JS 判定，非 @media——防桌面窄窗 /
+ * iPad Slide Over 误触发）。
+ */
+function syncBreakpoint(pill: HTMLElement, panel: HTMLElement | undefined, bp: string): void {
+  if (pill.dataset.douBp !== bp) pill.dataset.douBp = bp;
+  if (panel !== undefined && panel.dataset.douBp !== bp) panel.dataset.douBp = bp;
+}
+
+/**
+ * 层级同步（职责：z-index 落位）：胶囊与点击后弹出的主面板 computed z-index
+ * 一律取配置基准（clamp 1-9000），不再派生 +30；面板内子浮层可派生见 panelZIndexFor。
+ */
+function syncZIndex(pill: HTMLElement, panel: HTMLElement | undefined, zBase: number): void {
+  pill.style.zIndex = String(zBase);
+  if (panel !== undefined) panel.style.zIndex = String(zBase);
+}
+
+/**
+ * 垂直锚点的下边界（职责：bottom-* 的输入区避让）：
+ * 非 bottom 锚点或 wide 断点维持 container.bottom；bottom-* 在断点非 wide 且
+ * composer seat 贴底时把下边界换成 seat.top（胶囊上移到输入区上方，避免遮挡输入卡片）。
+ */
+function pillBottomEdge(rect: DOMRect, isBottom: boolean, bp: string): number {
+  if (!(isBottom && bp !== "wide")) return rect.bottom;
+  const seat = document.querySelector<HTMLElement>("[data-composer-seat]");
+  const seatRect = seat !== null ? seat.getBoundingClientRect() : null;
+  return bottomAnchorEdge(
+    rect.bottom,
+    seatRect?.top ?? null,
+    composerDockedAtBottom(seatRect, rect),
+  );
+}
+
 function repositionPill(pill: HTMLElement, target: HTMLElement): void {
   const rect = target.getBoundingClientRect();
   if (rect.width === 0 && rect.height === 0) return;
-  // 断点判定基准 = conversationHost rect 宽度（JS 判定，非 @media——防桌面窄窗 /
-  // iPad Slide Over 误触发）；data 属性驱动 CSS 档位样式（胶囊与面板同步）。
   const bp = breakpointForWidth(rect.width);
-  if (pill.dataset.douBp !== bp) pill.dataset.douBp = bp;
-  if (floatPanel !== undefined && floatPanel.dataset.douBp !== bp) floatPanel.dataset.douBp = bp;
-  // 层级：胶囊与点击后弹出的主面板 computed z-index 一律取配置基准（clamp 1-9000），
-  // 不再派生 +30；面板内子浮层可派生见 panelZIndexFor。
+  syncBreakpoint(pill, floatPanel, bp);
   const zBase = clampZIndexBase(uiConfig.zIndexBase, DEFAULT_Z_INDEX_BASE);
-  pill.style.zIndex = String(zBase);
-  if (floatPanel !== undefined) floatPanel.style.zIndex = String(zBase);
+  syncZIndex(pill, floatPanel, zBase);
   const isBottom = panelAnchorForPlacement(uiConfig.placement) === "bottom";
   const isLeft = uiConfig.placement === "top-left" || uiConfig.placement === "bottom-left";
   pill.style.position = "fixed";
@@ -165,16 +221,7 @@ function repositionPill(pill: HTMLElement, target: HTMLElement): void {
   // 垂直：bottom 锚点 → 容器底 - 高 - offsetY（clamp 到视口上缘防溢出）；top 锚点 → 容器顶 + offsetY。
   // bottom-* 在断点非 wide 且 composer seat 贴底时，把下边界换成
   // seat.top（胶囊上移到输入区上方，避免遮挡输入卡片）；否则维持 container.bottom（桌面零回归）。
-  let bottomEdge = rect.bottom;
-  if (isBottom && bp !== "wide") {
-    const seat = document.querySelector<HTMLElement>("[data-composer-seat]");
-    const seatRect = seat !== null ? seat.getBoundingClientRect() : null;
-    bottomEdge = bottomAnchorEdge(
-      rect.bottom,
-      seatRect?.top ?? null,
-      composerDockedAtBottom(seatRect, rect),
-    );
-  }
+  const bottomEdge = pillBottomEdge(rect, isBottom, bp);
   const rawTop = isBottom
     ? Math.max(6, bottomEdge - pill.offsetHeight - uiConfig.offsetY)
     : Math.max(0, rect.top + uiConfig.offsetY);
@@ -217,44 +264,29 @@ function conversationHost(): HTMLElement {
   );
 }
 
-/** 状态点等级：fresh/cached → ok；stale → warn；未配置/错误 → err。 */
-function pillDotLevel(stats: StatsResponseV2 | null): "ok" | "warn" | "err" {
-  if (stats === null) return "warn"; // 启动加载中：黄点（非错误）
-  if (!stats.configured) return "err"; // 确实未配置/无启用适配器
-  if (stats.status === "stale") return "warn"; // 降级陈旧（含 busy：取数进行中）
-  return "ok";
+/**
+ * 胶囊 label 落位（职责：内容区文字/HTML 切换）：
+ * 宿主 capsuleHtml 优先；无 HTML 但已有响应时回落 provider 名；首帧（无响应）空串。
+ */
+function applyPillLabel(labelEl: Element | null, stats: StatsResponseV2 | null): void {
+  if (labelEl === null) return;
+  if (stats?.capsuleHtml) labelEl.innerHTML = stats.capsuleHtml;
+  else if (stats !== null) labelEl.textContent = currentProvider;
+  else labelEl.textContent = "";
 }
 
-/** 渲染胶囊：状态点 + 宿主端 formatCapsule 的 HTML。 */
+/** 渲染胶囊：状态点 + 宿主端 formatCapsule 的 HTML（文案判据在 float-view.pillTitle）。 */
 function renderPill(): void {
-  if (floatPill === undefined) return;
-  const labelEl = floatPill.querySelector(`.${PILL_PREFIX}label`);
-  const dotEl = floatPill.querySelector(`.${PILL_PREFIX}dot`);
+  const pill = floatPill;
+  if (pill === undefined) return;
+  const labelEl = pill.querySelector(`.${PILL_PREFIX}label`);
+  const dotEl = pill.querySelector(`.${PILL_PREFIX}dot`);
   const stats = lastStats;
   // 仅在首帧（尚无任何响应）时隐藏；未配置适配器保留错误态胶囊（红点 + provider 名），
   // 点击展开面板可见接入引导（复制引导指令按钮可达）
-  const hide = stats === null;
-  floatPill.hidden = hide;
-  if (stats !== null) {
-    let title: string;
-    if (!stats.configured) {
-      title = `${currentProvider} · ${t("pillNotConfigured")}`;
-    } else if (stats.error !== null && stats.error !== undefined) {
-      title = t("pillFetchFail", { msg: stats.error });
-    } else if ((stats as { reason?: string | null }).reason === "busy") {
-      title = `${stats.adapterName} · ${t("pillBusy")}`;
-    } else {
-      title = `${stats.adapterName} · ${stats.status === "stale" ? t("pillStale") : stats.status === "cached" ? t("pillCached") : t("pillFresh")} · ${t("pillUpdatedAt", { t: fmtAge(stats.fetchedAt) })}`;
-    }
-    // 有会话但 provider 未确认 → title 显式标注（不再静默展示可能不对的数据）
-    if (providerUnknown) title += ` · ${t("providerUnknown")}`;
-    floatPill.title = title;
-  }
-  if (labelEl !== null) {
-    if (stats?.capsuleHtml) labelEl.innerHTML = stats.capsuleHtml;
-    else if (stats !== null) labelEl.textContent = currentProvider;
-    else labelEl.textContent = "";
-  }
+  pill.hidden = stats === null;
+  if (stats !== null) pill.title = pillTitle(stats, currentProvider, providerUnknown);
+  applyPillLabel(labelEl, stats);
   if (dotEl !== null) dotEl.className = `${PILL_PREFIX}dot dou-dot-${pillDotLevel(stats)}`;
 }
 
@@ -293,10 +325,7 @@ async function refreshStats(): Promise<void> {
   try {
     // 取数前先复检会话当前 provider/model——60s 轮询、可见性恢复、
     // 手动刷新均在此自愈；会话内切模型虽无宿主信号触发 detect()，最长一个轮询周期内跟随
-    if (await revalidateProvider()) {
-      if (floatPill !== undefined) renderPill();
-      if (floatOpen && floatPanel !== undefined) renderPanel();
-    }
+    if (await revalidateProvider()) renderChrome();
     gen = renderGeneration; // 复检可能推进代号，取数前再读
     const r = await fetchStats(currentProvider);
     if (gen !== renderGeneration) return;
@@ -331,36 +360,6 @@ async function refreshHistory(): Promise<void> {
   }
 }
 
-/** 错误码/原因 → 面板提示文案（覆盖 error 码与 reason 降级码）。 */
-function errorMessage(code: string | undefined | null): string {
-  switch (code) {
-    case "no-api-key":
-      return t("errNoApiKey", { p: "{PROVIDER}" });
-    case "unauthorized":
-      return t("errUnauthorized");
-    case "timeout":
-      return t("errTimeout");
-    case "network":
-      return t("errNetwork");
-    case "bad-data":
-    case "bad-json":
-      return t("errBadData");
-    case "adapter-load-failed":
-      return t("errAdapterLoadFailed");
-    // reason 降级码（error 为 null 但 ok=false 的形态）
-    case "busy":
-      return t("errBusy");
-    case "no-enabled-adapter":
-      return t("errNoEnabledAdapter");
-    case "no-adapter":
-      return t("errNoAdapter");
-    default:
-      if (typeof code === "string" && code.startsWith("http-"))
-        return t("errHttpStatus", { code: code.slice(5) });
-      return t("errGeneric", { code: code || t("noDataShort") });
-  }
-}
-
 /** 无启用适配器引导（v1 D11 语义）：说明文案 + 复制一句话指令，让 Agent 按文档自主接入。 */
 function showNoAdapterGuide(box: HTMLElement): void {
   box.appendChild(el("p", { class: PILL_PREFIX + "error", text: t("noAdapterTitle") }));
@@ -392,13 +391,62 @@ function showNoAdapterGuide(box: HTMLElement): void {
   box.appendChild(btn);
 }
 
+/** 已有 panelHtml 的内容区（职责：注入宿主净化 HTML + 附带错误降级提示）。 */
+function renderPanelHtml(box: HTMLElement, history: HistoryResponseV2 | null): void {
+  box.innerHTML = history?.panelHtml ?? "";
+  if (!history?.error) return;
+  box.appendChild(
+    el("p", { class: PILL_PREFIX + "hint", text: t("hintPrefix") + errorMessage(history.error) }),
+  );
+}
+
+/** stats 取数失败的内容区（职责：失败文案）。 */
+function renderPanelStatsError(box: HTMLElement, stats: StatsResponseV2 | null): void {
+  // error 有值给具体文案；无值的 reason 态（busy 等）也给明确提示
+  const reason = statsReason(stats);
+  box.appendChild(
+    el("p", { class: PILL_PREFIX + "error", text: errorMessage(stats?.error || reason) }),
+  );
+}
+
+/**
+ * 内容区渲染（职责：把判别结果落成 DOM）。
+ * 取舍判据在 float-view.panelBodyKind（纯函数，可单测）；此处只做分支到 DOM 的映射。
+ */
+function renderPanelBody(
+  box: HTMLElement,
+  kind: PanelBodyKind,
+  stats: StatsResponseV2 | null,
+  history: HistoryResponseV2 | null,
+): void {
+  if (kind === "html") {
+    renderPanelHtml(box, history);
+    return;
+  }
+  if (kind === "guide") {
+    showNoAdapterGuide(box);
+    return;
+  }
+  if (kind === "history-error") {
+    box.appendChild(el("p", { class: PILL_PREFIX + "error", text: errorMessage(history?.error) }));
+    return;
+  }
+  if (kind === "stats-error") {
+    renderPanelStatsError(box, stats);
+    return;
+  }
+  box.appendChild(el("p", { class: PILL_PREFIX + "hint", text: t("loading") }));
+}
+
 /** 渲染展开面板（head + 内容区[panelHtml] + foot）。 */
 function renderPanel(): void {
-  if (floatPanel === undefined) return;
-  floatPanel.textContent = "";
+  const panel = floatPanel;
+  if (panel === undefined) return;
+  panel.textContent = "";
   const stats = lastStats;
+  const history = lastHistory;
   const label = stats?.adapterName ?? currentProvider;
-  floatPanel.appendChild(
+  panel.appendChild(
     el("div", { class: PILL_PREFIX + "head" }, [
       el("h3", { class: PILL_PREFIX + "title", text: t("panelTitle", { provider: label }) }),
       el("button", {
@@ -413,51 +461,15 @@ function renderPanel(): void {
   );
 
   panelContentBox = el("div", { class: PILL_PREFIX + "charts" });
-  floatPanel.appendChild(panelContentBox);
-
-  // 优先级：面板内容（panelHtml）> 状态/历史错误 > 加载中
-  // （stats 失败但历史有图时仍展示图表——数据可用性优先于错误提示）
-  const histReason = lastHistory?.reason ?? null;
-  const hasPanelHtml = lastHistory !== null && lastHistory !== undefined && !!lastHistory.panelHtml;
-  // 「无启用适配器/未配置」→ 引导分支（说明文案 + 复制一句话指令）
-  const unconfigured =
-    histReason === "no-enabled-adapter" ||
-    histReason === "no-adapter" ||
-    (lastHistory === null && stats !== null && !stats.configured);
-  if (hasPanelHtml) {
-    panelContentBox.innerHTML = lastHistory!.panelHtml ?? "";
-    if (lastHistory!.error) {
-      panelContentBox.appendChild(
-        el("p", {
-          class: PILL_PREFIX + "hint",
-          text: t("hintPrefix") + errorMessage(lastHistory!.error),
-        }),
-      );
-    }
-  } else if (unconfigured) {
-    showNoAdapterGuide(panelContentBox);
-  } else if (lastHistory !== undefined && lastHistory !== null && lastHistory.error) {
-    panelContentBox.appendChild(
-      el("p", { class: PILL_PREFIX + "error", text: errorMessage(lastHistory.error) }),
-    );
-  } else if (stats !== null && stats.ok === false) {
-    // stats 取数失败：error 有值给具体文案；无值的 reason 态（busy 等）也给明确提示
-    const reason = (stats as { reason?: string | null }).reason;
-    panelContentBox.appendChild(
-      el("p", { class: PILL_PREFIX + "error", text: errorMessage(stats.error || reason) }),
-    );
-  } else {
-    panelContentBox.appendChild(el("p", { class: PILL_PREFIX + "hint", text: t("loading") }));
-  }
+  panel.appendChild(panelContentBox);
+  renderPanelBody(panelContentBox, panelBodyKind(stats, history), stats, history);
 
   // foot
-  floatPanel.appendChild(
+  const stamp = panelFootStamp(stats);
+  panel.appendChild(
     el("div", { class: PILL_PREFIX + "foot" }, [
       el("span", { text: label }),
-      el("span", {
-        text: stats?.fetchedAt ? `更新于 ${fmtAge(stats.fetchedAt)}` : "",
-        title: stats?.fetchedAt ? new Date(stats.fetchedAt).toLocaleString("zh-CN") : "",
-      }),
+      el("span", { text: stamp.text, title: stamp.title }),
     ]),
   );
 
@@ -470,10 +482,15 @@ function renderPanel(): void {
 
 // ------------------------------------------------------------------ provider 变化
 
-/** provider 已切换（状态重置由 revalidateProvider 完成）→ 重渲染 + 立即取新数据。 */
-function onProviderChanged(): void {
+/** 胶囊 + 面板 chrome 重绘（面板只在展开态画，省掉隐藏时的无谓 DOM 重建）。 */
+function renderChrome(): void {
   if (floatPill !== undefined) renderPill();
   if (floatOpen && floatPanel !== undefined) renderPanel();
+}
+
+/** provider 已切换（状态重置由 revalidateProvider 完成）→ 重渲染 + 立即取新数据。 */
+function onProviderChanged(): void {
+  renderChrome();
   void refreshStats();
 }
 
@@ -705,6 +722,98 @@ interface ProviderUsageClientCtx {
   effect(fn: () => () => void, label?: string): void;
 }
 
+/**
+ * i18n 接线（职责一：字典注册 + 语言切换重绑）：
+ * 注册抛错（HMR 重 apply 幂等）不得跳过绑定，否则 t 全回落 key；
+ * 返回退订函数（无 locale / 无 subscribe 能力时为 undefined）。
+ */
+function bindPluginLocale(
+  locale: Parameters<typeof bindLocale>[0] | undefined,
+): (() => void) | undefined {
+  if (!(locale && typeof locale.register === "function")) return undefined;
+  try {
+    locale.register(NS, { zh: zh, en: en });
+  } catch (error) {
+    // HMR/重 apply 幂等：字典已在册会抛 already-has，吞掉走重绑（下）
+    console.warn("[dsh-provider-usage] locale 重注册跳过：", error);
+  }
+  // 绑定必须在 try 之外：注册抛错不得跳过绑定，否则 t 全回落 key（D1）
+  bindLocale(locale, NS);
+  if (typeof locale.subscribe !== "function" || typeof locale.getSnapshot !== "function") {
+    return undefined;
+  }
+  return locale.subscribe(function () {
+    bindLocale(locale, NS);
+    renderPill(); // 胶囊 title 立即按新语言重绘（面板随下次渲染生效）
+  });
+}
+
+/**
+ * 设置面板独立 tab「用量统计」注册（职责二）：独立 try/catch，不连坐浮窗。
+ * 返回 disposer；slots 不可用、注册抛错、返回非函数三种情况都返回 undefined。
+ */
+function registerSettingsSection(slots: ProviderUsageClientCtx["slots"]): (() => void) | undefined {
+  try {
+    if (!(slots && typeof slots.inject === "function")) return undefined;
+    const injected: unknown = slots.inject("settings.section", function () {
+      return slots.register(
+        // label 传 thunk（SlotLabel = string | (() => string)）：宿主 nav rows 每次读取经
+        // resolveSlotLabel 求值 + shell 订阅 locale 重渲染，切语言即跟随；
+        // 注册期求值字符串快照是旧行为）。thunk 保持最小 t(key) 形态，不包任何可能抛错的逻辑。
+        {
+          name: "settings.section",
+          id: "dsh-provider-usage",
+          order: 90,
+          label: () => t("settingsTab"),
+          locale: NS,
+        },
+        function () {
+          return <SettingsPage />;
+        },
+      );
+    });
+    return typeof injected === "function" ? (injected as () => void) : undefined;
+  } catch (error) {
+    console.warn("[dsh-provider-usage] 设置面板 section 注册失败（跳过，不影响悬浮框）", error);
+    return undefined;
+  }
+}
+
+/**
+ * 会话快照订阅（职责三的数据面）：仅在 list 提供 subscribe 时订阅，
+ * 返回退订函数或 undefined。
+ */
+function subscribeSessions(detect: () => void): (() => void) | undefined {
+  const list = sessions?.list;
+  if (list === undefined || typeof list.subscribe !== "function") return undefined;
+  return list.subscribe(detect);
+}
+
+/**
+ * 会话变化检测（订阅回调与启动首检同源）：
+ * provider 变了 → 立即重拉；否则只刷胶囊 title，且仅「current 会话切换」才补刷 stats。
+ */
+function detectProvider(): void {
+  void (async () => {
+    // 先取快照 current（结构性判定基准），await 前读取防竞态
+    const cur = currentSessionId(sessions);
+    const changed = await revalidateProvider();
+    if (changed) {
+      lastDetectCurrent = cur; // 已立即重拉（onProviderChanged），同步判定基准
+      onProviderChanged(); // provider 变了 → 立即重拉（切换会话即时跟随）
+      return;
+    }
+    renderPill(); // provider 未变但未知标注可能变化 → 刷胶囊 title
+    // 仅在 current 会话切换（含空 ↔ 有值）时立即补刷；投影/运行态噪声
+    // 帧（current 不变）不打断轮询节奏——宿主 30s 缓存命中时请求本身仍照发，
+    // 逐帧补刷会放大为高频 HTTP（高频轮询的根因）。
+    if (cur !== lastDetectCurrent) {
+      lastDetectCurrent = cur;
+      if (floatPill !== undefined) void refreshStats();
+    }
+  })();
+}
+
 export function apply(ctx: ProviderUsageClientCtx): void {
   try {
     ensureStyle({ id: STYLE_ID, cssText: STYLE });
@@ -719,53 +828,10 @@ export function apply(ctx: ProviderUsageClientCtx): void {
 
     // i18n：注册本插件字典；t 经共享 i18n.ts 活绑定（多文件 client 共用），
     // 语言切换 subscribe 重绑（胶囊/面板/设置 tab 下次渲染即生效）。
-    let unsubLocale: (() => void) | undefined;
-    const locale: Parameters<typeof bindLocale>[0] = ctx.locale;
-    if (locale && typeof locale.register === "function") {
-      try {
-        locale.register(NS, { zh: zh, en: en });
-      } catch (error) {
-        // HMR/重 apply 幂等：字典已在册会抛 already-has，吞掉走重绑（下）
-        console.warn("[dsh-provider-usage] locale 重注册跳过：", error);
-      }
-      // 绑定必须在 try 之外：注册抛错不得跳过绑定，否则 t 全回落 key（D1）
-      bindLocale(locale, NS);
-      if (typeof locale.subscribe === "function" && typeof locale.getSnapshot === "function") {
-        unsubLocale = locale.subscribe(function () {
-          bindLocale(locale, NS);
-          renderPill(); // 胶囊 title 立即按新语言重绘（面板随下次渲染生效）
-        });
-      }
-    }
+    const unsubLocale = bindPluginLocale(ctx.locale);
 
-    // 设置面板独立 tab「用量统计」（settings.section）；独立 try/catch 不连坐浮窗
-    let disposeSettingsSection: (() => void) | undefined;
-    try {
-      const slots = ctx.slots;
-      if (slots && typeof slots.inject === "function") {
-        const injected: unknown = slots.inject("settings.section", function () {
-          return slots.register(
-            // label 传 thunk（SlotLabel = string | (() => string)）：宿主 nav rows 每次读取经
-            // resolveSlotLabel 求值 + shell 订阅 locale 重渲染，切语言即跟随；
-            // 注册期求值字符串快照是旧行为）。thunk 保持最小 t(key) 形态，不包任何可能抛错的逻辑。
-            {
-              name: "settings.section",
-              id: "dsh-provider-usage",
-              order: 90,
-              label: () => t("settingsTab"),
-              locale: NS,
-            },
-            function () {
-              return <SettingsPage />;
-            },
-          );
-        });
-        if (typeof injected === "function") disposeSettingsSection = injected as () => void;
-      }
-    } catch (error) {
-      console.warn("[dsh-provider-usage] 设置面板 section 注册失败（跳过，不影响悬浮框）", error);
-    }
-
+    // let：disposer 内消费后置 undefined（防重复 dispose，见下方 ctx.effect）。
+    let disposeSettingsSection = registerSettingsSection(ctx.slots);
     const disposeFloat = mountFloat();
 
     // provider 检测：会话变化 → 重新解析 provider → 重渲染
@@ -778,33 +844,9 @@ export function apply(ctx: ProviderUsageClientCtx): void {
     // 订阅回调只响应「current 会话切换」类结构性变化——立即补刷 stats；
     // 其余噪声帧仅重渲染胶囊 title（unknown 标注等），数据刷新交给 60s 轮询，
     // 消除 agent 活跃期间的 /stats 高频调用。
-    let unsubSessions: (() => void) | undefined;
-    const detect = (): void => {
-      void (async () => {
-        // 先取快照 current（结构性判定基准），await 前读取防竞态
-        const cur = currentSessionId(sessions);
-        const changed = await revalidateProvider();
-        if (changed) {
-          lastDetectCurrent = cur; // 已立即重拉（onProviderChanged），同步判定基准
-          onProviderChanged(); // provider 变了 → 立即重拉（切换会话即时跟随）
-          return;
-        }
-        renderPill(); // provider 未变但未知标注可能变化 → 刷胶囊 title
-        // 仅在 current 会话切换（含空 ↔ 有值）时立即补刷；投影/运行态噪声
-        // 帧（current 不变）不打断轮询节奏——宿主 30s 缓存命中时请求本身仍照发，
-        // 逐帧补刷会放大为高频 HTTP（高频轮询的根因）。
-        if (cur !== lastDetectCurrent) {
-          lastDetectCurrent = cur;
-          if (floatPill !== undefined) void refreshStats();
-        }
-      })();
-    };
     // 0.1.2-alpha.2：客户端 sessions 订阅统一走 list 快照（currentProvideInfo 已移除）。
-    const maybe = sessions?.list;
-    if (maybe !== undefined && typeof maybe.subscribe === "function") {
-      unsubSessions = maybe.subscribe(detect);
-    }
-    void detect();
+    const unsubSessions = subscribeSessions(detectProvider);
+    void detectProvider();
 
     ctx.effect(
       () => () => {

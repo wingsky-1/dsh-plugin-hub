@@ -459,6 +459,90 @@ function RoutingModelFallback(props: {
   if (models === null || haveModels) return null;
   return <div className="dou-reportHint">{t("reportModelFallback")}</div>;
 }
+/**
+ * 推理档位的取值态推导（纯）：当前值是否仍在候选内、是否为陈旧残留。
+ * 陈旧残留时允许「清除未知值」——下拉不因候选为空而整体禁用。
+ */
+function effortValueState(
+  value: string | undefined,
+  efforts: ReportReasoningEffortView[],
+): { current: string; stale: boolean; canClearUnknown: boolean } {
+  const current = value ?? "";
+  const known = efforts.some((effort) => effort.id === current);
+  const stale = current !== "" && !known;
+  return { current, stale, canClearUnknown: stale };
+}
+
+/**
+ * 能力提示判别（纯）：exact-model 能力查询失败 / 候选缺失 / 陈旧残留，三条独立提示。
+ * 三者互不覆盖（可同时出现），故返回三个独立布尔而非单一判别联合。
+ */
+function effortCapabilityHints(
+  selectedModel: ReportSelectedModelView | null | undefined,
+  modelSelected: boolean,
+  stale: boolean,
+): { failed: boolean; missing: boolean; staleNotice: boolean } {
+  const failed = selectedModel === null || selectedModel?.capabilityError === true;
+  const missing =
+    selectedModel !== undefined &&
+    selectedModel?.capabilityError !== true &&
+    selectedModel?.reasoning === undefined;
+  return { failed, missing, staleNotice: stale && (!modelSelected || selectedModel !== undefined) };
+}
+
+/** 推理档位 option 列表（职责：候选枚举 + 默认档位标注 + 陈旧值占位项）。 */
+function EffortOptions(props: {
+  efforts: ReportReasoningEffortView[];
+  selectedModel: ReportSelectedModelView | null | undefined;
+  current: string;
+  stale: boolean;
+}): React.ReactElement {
+  const { efforts, selectedModel, current, stale } = props;
+  const defaultEffort = selectedModel?.reasoning?.defaultEffort;
+  return (
+    <React.Fragment>
+      <option value="">{t("reportReasoningUnset")}</option>
+      {stale ? (
+        <option value={current}>{t("reportReasoningStaleOption", { v: current })}</option>
+      ) : null}
+      {efforts.map((effort) => (
+        <option key={effort.id} value={effort.id} title={effort.description}>
+          {effort.name} ({effort.id})
+          {effort.id === defaultEffort ? ` · ${t("reportReasoningDefault")}` : ""}
+        </option>
+      ))}
+    </React.Fragment>
+  );
+}
+
+/** 推理档位下拉本体（职责：select 元素与禁用态判定）。 */
+function EffortSelect(props: {
+  selectedModel: ReportSelectedModelView | null | undefined;
+  current: string;
+  stale: boolean;
+  canClearUnknown: boolean;
+  onChange: (effort: string) => void;
+}): React.ReactElement {
+  const { selectedModel, current, stale, canClearUnknown, onChange } = props;
+  const efforts = selectedModel?.reasoning?.efforts ?? [];
+  return (
+    <select
+      className="dou-reportSelect"
+      value={current}
+      disabled={efforts.length === 0 && !canClearUnknown}
+      title={selectedModel?.name}
+      onChange={(e: unknown) => onChange((e as { target: { value: string } }).target.value)}
+    >
+      <EffortOptions
+        efforts={efforts}
+        selectedModel={selectedModel}
+        current={current}
+        stale={stale}
+      />
+    </select>
+  );
+}
+
 function ReasoningEffortSelect(props: {
   value: string | undefined;
   selectedModel: ReportSelectedModelView | null | undefined;
@@ -467,47 +551,27 @@ function ReasoningEffortSelect(props: {
 }): React.ReactElement {
   const { value, selectedModel, modelSelected, onChange } = props;
   const efforts = selectedModel?.reasoning?.efforts ?? [];
-  const current = value ?? "";
-  const known = efforts.some((effort) => effort.id === current);
-  const stale = current !== "" && !known;
-  const capabilityMissing =
-    selectedModel !== undefined &&
-    selectedModel?.capabilityError !== true &&
-    selectedModel?.reasoning === undefined;
-  const capabilityFailed = selectedModel === null || selectedModel?.capabilityError === true;
-  const canClearUnknown = stale;
+  const { current, stale, canClearUnknown } = effortValueState(value, efforts);
+  const hints = effortCapabilityHints(selectedModel, modelSelected, stale);
   return (
     <React.Fragment>
       <label className="dou-reportInline">
         {t("reportReasoningEffort")}
-        <select
-          className="dou-reportSelect"
-          value={current}
-          disabled={efforts.length === 0 && !canClearUnknown}
-          title={selectedModel?.name}
-          onChange={(e: unknown) => onChange((e as { target: { value: string } }).target.value)}
-        >
-          <option value="">{t("reportReasoningUnset")}</option>
-          {stale ? (
-            <option value={current}>{t("reportReasoningStaleOption", { v: current })}</option>
-          ) : null}
-          {efforts.map((effort) => (
-            <option key={effort.id} value={effort.id} title={effort.description}>
-              {effort.name} ({effort.id})
-              {effort.id === selectedModel?.reasoning?.defaultEffort
-                ? ` · ${t("reportReasoningDefault")}`
-                : ""}
-            </option>
-          ))}
-        </select>
+        <EffortSelect
+          selectedModel={selectedModel}
+          current={current}
+          stale={stale}
+          canClearUnknown={canClearUnknown}
+          onChange={onChange}
+        />
       </label>
-      {capabilityFailed ? (
+      {hints.failed ? (
         <span className="dou-reportHint">{t("reportReasoningCapabilityError")}</span>
       ) : null}
-      {capabilityMissing ? (
+      {hints.missing ? (
         <span className="dou-reportHint">{t("reportReasoningUnavailable")}</span>
       ) : null}
-      {stale && (!modelSelected || selectedModel !== undefined) ? (
+      {hints.staleNotice ? (
         <span className="dou-reportHint">{t("reportReasoningStale")}</span>
       ) : null}
     </React.Fragment>
@@ -1042,6 +1106,91 @@ function ReportHeader(props: {
     </React.Fragment>
   );
 }
+/**
+ * 生效 provider 推导（纯）：draft 未指定或空串时回退候选目录首项
+ * （与宿主 resolveRoute 同序同源，providers 已按宿主 calls 降序）。
+ */
+function effectiveProviderOf(
+  draft: ReportConfigView | null,
+  providers: ReportProviderOption[],
+): string {
+  const key = draft?.provider ?? "";
+  return key === "" ? (providers[0]?.id ?? "") : key;
+}
+
+/**
+ * exact-model 能力缓存键（纯）：provider 或 model 任一为空即不查询
+ * （避免无谓 RPC，也避免拿半截参数去查）。
+ */
+function selectedModelKeyOf(provider: string, model: string | undefined): string {
+  if (provider === "" || (model ?? "") === "") return "";
+  return JSON.stringify([provider, model]);
+}
+
+/** 轮询 status body 形状（宿主 GET /reports/generate/status 响应）。 */
+interface PollStatusBody {
+  ok?: boolean;
+  status?: string;
+  meta?: ReportMetaView;
+  reused?: boolean;
+  error?: string;
+  retry?: unknown;
+}
+
+/**
+ * 轮询单轮的瞬态判别（纯）：移动端切后台/半开连接产生的
+ * AbortError / TimeoutError / fetch TypeError 均为瞬态——退避续轮不判死；
+ * 其余异常上抛（调用方转失败文案）。
+ */
+function isTransientPollError(e: unknown): boolean {
+  if (e instanceof TypeError) return true;
+  if (!(e instanceof DOMException)) return false;
+  return e.name === "AbortError" || e.name === "TimeoutError";
+}
+
+/** 轮询响应 HTTP 语义裁决：404 = 任务已被 TTL 修剪（转「仍在生成」）；非 ok = 致命。 */
+function assertPollResponse(res: Response): void {
+  if (res.status === 404) throw new PollInProgressError();
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+}
+
+/** 轮询单轮判别：done（带 meta 即成功）/ failed（携带宿主错误文案）/ 继续轮询。 */
+type PollTurn = { meta: ReportMetaView; reused: boolean } | "failed" | "continue";
+
+/** 生成响应体形状（宿主 POST /reports/generate 响应；与轮询 status 同构）。 */
+interface GenerateBody extends PollStatusBody {
+  taskId?: string;
+}
+
+/**
+ * 「静默接受」判别（纯）：非 ok + 携带 retry 投影 + 宿主给出排队/延迟/终止态
+ * → 既不报错也不跳转，UI 交给 retry 投影呈现。
+ */
+function isDeferredGenerate(
+  res: Response,
+  body: GenerateBody,
+  retry: ReportRetryView | null,
+): boolean {
+  if (res.ok || retry === null) return false;
+  return body.status === "busy" || body.status === "deferred" || body.status === "terminal";
+}
+
+/** 生成响应可用性裁决：非 ok，或既无 meta 也无 taskId → 抛宿主错误文案。 */
+function assertGeneratable(res: Response, body: GenerateBody): void {
+  if (!res.ok || (body.meta === undefined && typeof body.taskId !== "string")) {
+    throw new Error(body.error ?? `HTTP ${res.status}`);
+  }
+}
+
+function readPollTurn(body: PollStatusBody): PollTurn {
+  if (body.status === "done") {
+    if (body.meta === undefined) throw new Error("bad-task-result");
+    return { meta: body.meta, reused: body.reused === true };
+  }
+  if (body.status === "failed") return "failed";
+  return "continue";
+}
+
 export function ReportSection(props: {
   onGeneratedRow: (m: ReportMetaView) => void;
 }): React.ReactElement {
@@ -1144,14 +1293,10 @@ export function ReportSection(props: {
 
   // 模型候选：provider 空串（跟随默认）按注册序首个解析（与宿主 resolveRoute 同序同源）；
   // 按需拉取 + 组件生命周期内 memo（每 provider 至多一次）；live 标志丢弃过期响应防竞态。
-  const providerKey = draft?.provider ?? "";
-  const effectiveProvider = providerKey === "" ? (providers[0]?.id ?? "") : providerKey;
+  const effectiveProvider = effectiveProviderOf(draft, providers);
   const models = modelsCache[effectiveProvider];
   const haveModels = Array.isArray(models) && models.length > 0;
-  const selectedModelKey =
-    effectiveProvider !== "" && (draft?.model ?? "") !== ""
-      ? JSON.stringify([effectiveProvider, draft?.model])
-      : "";
+  const selectedModelKey = selectedModelKeyOf(effectiveProvider, draft?.model);
   const selectedModel = selectedModelKey === "" ? undefined : selectedModelsCache[selectedModelKey];
   React.useEffect(() => {
     if (effectiveProvider === "" || modelsCache[effectiveProvider] !== undefined) return;
@@ -1284,41 +1429,83 @@ export function ReportSection(props: {
           { headers: { Accept: "application/json" }, cache: "no-store" },
         );
       } catch (e) {
-        if (e instanceof DOMException && (e.name === "AbortError" || e.name === "TimeoutError")) {
-          delay = Math.min(delay * 2, POLL_MAX_DELAY_MS);
-          continue;
-        }
-        if (e instanceof TypeError) {
-          delay = Math.min(delay * 2, POLL_MAX_DELAY_MS);
-          continue;
-        }
-        throw e;
+        if (!isTransientPollError(e)) throw e;
+        delay = Math.min(delay * 2, POLL_MAX_DELAY_MS);
+        continue;
       }
-      if (res.status === 404) throw new PollInProgressError(); // 任务已修剪：转「仍在生成」
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const body = (await res.json().catch(() => ({}))) as {
-        ok?: boolean;
-        status?: string;
-        meta?: ReportMetaView;
-        reused?: boolean;
-        error?: string;
-        retry?: unknown;
-      };
-      const retry = reportRetryView(body.retry);
-      if (!disposedRef.current) {
-        setGenRetry(retry === null ? null : { view: retry, status: body.status ?? null });
-      }
-      if (body.status === "done") {
-        if (body.meta === undefined) throw new Error("bad-task-result");
-        return { meta: body.meta, reused: body.reused === true };
-      }
-      if (body.status === "failed") throw new Error(body.error ?? "生成失败");
+      assertPollResponse(res);
+      const body = (await res.json().catch(() => ({}))) as PollStatusBody;
+      publishGenRetry(body);
+      const turn = readPollTurn(body);
+      if (turn === "failed") throw new Error(body.error ?? "生成失败");
+      if (turn !== "continue") return turn;
       delay = Math.min(delay * 2, POLL_MAX_DELAY_MS);
     }
     throw new PollInProgressError();
   };
 
+  /** retry 投影对外广播（组件卸载后不再 setState；reportRetryView 为纯函数无副作用）。 */
+  const publishGenRetry = (body: { status?: string; retry?: unknown }): void => {
+    if (disposedRef.current) return;
+    const retry = reportRetryView(body.retry);
+    setGenRetry(retry === null ? null : { view: retry, status: body.status ?? null });
+  };
+
   /** 手动生成（异步任务化）：POST → 幂等复用(200+meta) 或 202+taskId 轮询 → 经壳跳转历史页展开（Q4）。 */
+  /**
+   * 200 终态落地（职责：幂等复用 / 空窗口 / 跳转 三态）。
+   * 返回 true = 本次生成已收尾（调用方不应再进轮询分支）；
+   * 返回 false = 已跳转但仍按原路径继续轮询（与拆解前一致）。
+   */
+  const settleImmediateMeta = (meta: ReportMetaView, reused: boolean): boolean => {
+    if (disposedRef.current) return true;
+    if (meta.noData === true) {
+      // 空窗口不调模型不落盘——正向提示，不进错误分支、不展开详情
+      setGenNotice(t("reportNoData"));
+      return true;
+    }
+    if (reused === true) setGenNotice(t("reportReused"));
+    else setGenNotice(null);
+    // 复用不跳转：用户正停留在配置页，强制切页体验差；只留提示，历史页一 tap 即达
+    // （上一行保持单语句形态：smoke 契约 #629 P2 用 bundle 正则锁定该行，改形状先改测试）
+    if (reused === true) return true;
+    if (disposedRef.current) return true;
+    onGeneratedRow(meta); // 成功经壳切历史页并展开
+    return false;
+  };
+
+  /** 202 轮询落地（职责：轮询结果三态收尾，与 200 终态路径对称）。 */
+  const settlePolledMeta = async (polled: {
+    meta: ReportMetaView;
+    reused: boolean;
+  }): Promise<void> => {
+    if (disposedRef.current) return;
+    if (polled.meta.noData === true) {
+      setGenNotice(t("reportNoData"));
+      return;
+    }
+    // executor 侧幂等短路复用 → 与 200 直接复用路径对称：只提示，不跳转
+    if (polled.reused) {
+      setGenNotice(t("reportReused"));
+      return;
+    }
+    setGenNotice(null);
+    if (disposedRef.current) return;
+    onGeneratedRow(polled.meta); // 成功经壳切历史页并展开
+  };
+
+  /** 202 分支全流程（职责：轮询 + 收尾 + 「仍在生成」降级），致命异常上抛。 */
+  const pollAndSettle = async (taskId: string): Promise<void> => {
+    try {
+      await settlePolledMeta(await pollReportTask(taskId));
+    } catch (e) {
+      if (!(e instanceof PollInProgressError)) throw e;
+      if (disposedRef.current) return;
+      // 超时：后端可能仍在生成——正向提示，不报失败
+      setGenNotice(t("reportStillGenerating"));
+    }
+  };
+
   const onGenerate = async (): Promise<void> => {
     if (generating) return;
     setGenerating(true);
@@ -1331,73 +1518,15 @@ export function ReportSection(props: {
         headers: { "Content-Type": "application/json", Accept: "application/json" },
         body: JSON.stringify({ period: genPeriod, force: genForce }),
       });
-      const body = (await res.json().catch(() => ({}))) as {
-        ok?: boolean;
-        meta?: ReportMetaView;
-        reused?: boolean;
-        taskId?: string;
-        error?: string;
-        status?: string;
-        retry?: unknown;
-      };
+      const body = (await res.json().catch(() => ({}))) as GenerateBody;
       const retry = reportRetryView(body.retry);
-      if (!disposedRef.current)
-        setGenRetry(retry === null ? null : { view: retry, status: body.status ?? null });
-      if (
-        !res.ok &&
-        retry !== null &&
-        (body.status === "busy" || body.status === "deferred" || body.status === "terminal")
-      ) {
-        return;
-      }
-      if (!res.ok || (body.meta === undefined && typeof body.taskId !== "string")) {
-        throw new Error(body.error ?? `HTTP ${res.status}`);
-      }
-      if (body.meta !== undefined) {
-        // 终态：幂等复用（窗口已有成功报告，未勾选强制重生成）
-        if (disposedRef.current) return;
-        if (body.meta.noData === true) {
-          // 空窗口不调模型不落盘——正向提示，不进错误分支、不展开详情
-          setGenNotice(t("reportNoData"));
-          return;
-        }
-        if (body.reused === true) setGenNotice(t("reportReused"));
-        else setGenNotice(null);
-        // 复用不跳转：用户正停留在配置页，强制切页体验差；只留提示，历史页一 tap 即达
-        // （上一行保持单语句形态：smoke 契约 #629 P2 用 bundle 正则锁定该行，改形状先改测试）
-        if (body.reused === true) return;
-        if (disposedRef.current) return;
-        onGeneratedRow(body.meta); // 成功经壳切历史页并展开
-      }
+      publishGenRetry(body);
+      if (isDeferredGenerate(res, body, retry)) return;
+      assertGeneratable(res, body);
+      // 终态：幂等复用（窗口已有成功报告，未勾选强制重生成）
+      if (body.meta !== undefined && settleImmediateMeta(body.meta, body.reused === true)) return;
       // 202 + taskId：轮询直到完成
-      let meta: ReportMetaView;
-      let polledReused = false;
-      try {
-        const polled = await pollReportTask(body.taskId as string);
-        meta = polled.meta;
-        polledReused = polled.reused;
-      } catch (e) {
-        if (e instanceof PollInProgressError) {
-          if (disposedRef.current) return;
-          // 超时：后端可能仍在生成——正向提示，不报失败
-          setGenNotice(t("reportStillGenerating"));
-          return;
-        }
-        throw e;
-      }
-      if (disposedRef.current) return;
-      if (meta.noData === true) {
-        setGenNotice(t("reportNoData"));
-        return;
-      }
-      // executor 侧幂等短路复用 → 与 200 直接复用路径对称：只提示，不跳转
-      if (polledReused) {
-        setGenNotice(t("reportReused"));
-        return;
-      }
-      setGenNotice(null);
-      if (disposedRef.current) return;
-      onGeneratedRow(meta); // 成功经壳切历史页并展开
+      await pollAndSettle(body.taskId as string);
     } catch (e) {
       if (disposedRef.current) return;
       setGenError(t("reportGenerateFail", { msg: e instanceof Error ? e.message : String(e) }));

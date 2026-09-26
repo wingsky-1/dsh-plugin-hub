@@ -278,6 +278,8 @@ const EXPECT_FILES: Record<string, string[]> = {
     "client/client-routes.test.ts",
     "client/unit-detect.test.ts",
     "client/unit-fetch-timeout.test.ts",
+    "client/unit-float-view.test.ts",
+    "client/unit-settings-view.test.ts",
     "client/unit-refresh-revalidate.test.ts",
     "client/unit-report-p0.test.ts",
     "client/unit-trend-view.test.ts",

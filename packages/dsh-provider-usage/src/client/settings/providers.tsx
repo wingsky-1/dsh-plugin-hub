@@ -10,6 +10,8 @@ import { providerBadgeText } from "../../shared/client-logic.ts";
 import type { ProviderListItem } from "../../shared/client-logic.ts";
 import { t } from "../../../../../shared/client/i18n.js";
 import { copyText, titleStyle } from "./shared.ts";
+// 纯推导（候选分组 / 错误索引）单点收口在 settings-view.ts。
+import { candidatesByProviderOf, errorIndexOf } from "./settings-view.ts";
 
 /** 候选条目（adapters.json host[]）。 */
 export interface AdapterInfo {
@@ -62,6 +64,111 @@ export interface AddResult {
 /** 一句话引导指令（v2 文档链接）。 */
 function guideCommand(provider: string): string {
   return `请为提供商 ${provider} 创建用量统计适配器（v2 契约）：以该提供商在模型配置中的 API 端点（baseUrl）为起点，自行确认用量接口与鉴权方式，自主设计适配器方案（name/展示名/接口路径），先给我审核方案（含 API 端点），确认后生成 .mjs 文件、告诉保存路径并引导我在「用量统计」设置页添加适配器。按用量统计适配器开发引导文档（https://github.com/wingsky-1/dsh-plugin-hub/blob/main/packages/dsh-provider-usage/docs/adapter-guide.md）执行引导流程。`;
+}
+
+/** 折叠头（职责：单项开合与徽标呈现）；展开管理区在 ProviderItem 体内。 */
+function ProviderHead({
+  item,
+  open,
+  badge,
+  onToggle,
+}: {
+  item: ProviderListItem;
+  open: boolean;
+  badge: string;
+  onToggle: () => void;
+}): React.ReactElement {
+  return (
+    <button type="button" className="dou-provHead" onClick={onToggle} aria-expanded={open}>
+      <span className={`dou-provArrow${open ? " dou-provArrowOpen" : ""}`} aria-hidden="true">
+        ▸
+      </span>
+      <span className="dou-provName">{item.provider}</span>
+      <span className={`dou-provBadge${item.enabledId === null ? " dou-provBadgeOff" : ""}`}>
+        {badge}
+      </span>
+    </button>
+  );
+}
+
+/** inspect 回显卡（职责：检测通过后的适配器身份回显；providers 为空回落所属 provider 名）。 */
+function ProviderInspectCard({
+  inspected,
+  provider,
+}: {
+  inspected: InspectAdapter;
+  provider: string;
+}): React.ReactElement {
+  return (
+    <div className="dou-inspectCard">
+      <div className="dou-inspectRow">
+        <span className="dou-inspectK">{t("inspectKName")}</span>
+        <span className="dou-inspectV">{inspected.name}</span>
+      </div>
+      <div className="dou-inspectRow">
+        <span className="dou-inspectK">{t("inspectKLabel")}</span>
+        <span className="dou-inspectV">{inspected.label}</span>
+      </div>
+      <div className="dou-inspectRow">
+        <span className="dou-inspectK">{t("inspectKProviders")}</span>
+        <span className="dou-inspectV">{inspected.providers.join("、") || provider}</span>
+      </div>
+      <div className="dou-inspectRow">
+        <span className="dou-inspectK">{t("inspectKVersion")}</span>
+        <span className="dou-inspectV">{`version ${inspected.version} ✓`}</span>
+      </div>
+    </div>
+  );
+}
+
+/** 添加表单动作行（职责：检测/确认添加/取消三动作及其禁用与文案态）。 */
+function ProviderAddActions({
+  fileFilled,
+  busy,
+  inspecting,
+  inspected,
+  adding,
+  onInspect,
+  onSubmit,
+  onToggleAdd,
+}: {
+  fileFilled: boolean;
+  busy: boolean;
+  inspecting: boolean;
+  inspected: boolean;
+  adding: boolean;
+  onInspect(): void;
+  onSubmit(): void;
+  onToggleAdd(): void;
+}): React.ReactElement {
+  return (
+    <div className="dou-provActions">
+      <button
+        type="button"
+        className="dou-btn"
+        disabled={busy || inspecting || !fileFilled}
+        onClick={() => {
+          onInspect();
+        }}
+      >
+        {inspecting ? t("detecting") : t("detectFile")}
+      </button>
+      <button
+        type="button"
+        className="dou-btn"
+        disabled={busy || adding || !inspected}
+        onClick={() => {
+          onSubmit();
+        }}
+        title={inspected ? undefined : t("detectFirst")}
+      >
+        {adding ? t("adding") : t("confirmAdd")}
+      </button>
+      <button type="button" className="dou-btn" disabled={busy || adding} onClick={onToggleAdd}>
+        {t("cancel")}
+      </button>
+    </div>
+  );
 }
 
 /** 单个提供商手风琴项：折叠头（徽标）+ 展开管理区（候选开关 + 内嵌添加表单）。 */
@@ -188,24 +295,7 @@ function ProviderItem({
 
   const inspectCard =
     inspected === null ? null : (
-      <div className="dou-inspectCard">
-        <div className="dou-inspectRow">
-          <span className="dou-inspectK">{t("inspectKName")}</span>
-          <span className="dou-inspectV">{inspected.name}</span>
-        </div>
-        <div className="dou-inspectRow">
-          <span className="dou-inspectK">{t("inspectKLabel")}</span>
-          <span className="dou-inspectV">{inspected.label}</span>
-        </div>
-        <div className="dou-inspectRow">
-          <span className="dou-inspectK">{t("inspectKProviders")}</span>
-          <span className="dou-inspectV">{inspected.providers.join("、") || item.provider}</span>
-        </div>
-        <div className="dou-inspectRow">
-          <span className="dou-inspectK">{t("inspectKVersion")}</span>
-          <span className="dou-inspectV">{`version ${inspected.version} ✓`}</span>
-        </div>
-      </div>
+      <ProviderInspectCard inspected={inspected} provider={item.provider} />
     );
 
   const addForm = (
@@ -224,32 +314,20 @@ function ProviderItem({
         maxLength={1024}
         onChange={(e: unknown) => setFile((e as { target: { value: string } }).target.value)}
       />
-      <div className="dou-provActions">
-        <button
-          type="button"
-          className="dou-btn"
-          disabled={busy || inspecting || file.trim() === ""}
-          onClick={() => {
-            void doInspect();
-          }}
-        >
-          {inspecting ? t("detecting") : t("detectFile")}
-        </button>
-        <button
-          type="button"
-          className="dou-btn"
-          disabled={busy || adding || inspected === null}
-          onClick={() => {
-            void submitAdd();
-          }}
-          title={inspected === null ? t("detectFirst") : undefined}
-        >
-          {adding ? t("adding") : t("confirmAdd")}
-        </button>
-        <button type="button" className="dou-btn" disabled={busy || adding} onClick={toggleAdd}>
-          {t("cancel")}
-        </button>
-      </div>
+      <ProviderAddActions
+        fileFilled={file.trim() !== ""}
+        busy={busy}
+        inspecting={inspecting}
+        inspected={inspected !== null}
+        adding={adding}
+        onInspect={() => {
+          void doInspect();
+        }}
+        onSubmit={() => {
+          void submitAdd();
+        }}
+        onToggleAdd={toggleAdd}
+      />
       {inspErr !== null ? <div className="dou-provErr">{inspErr}</div> : null}
       {inspectCard}
       {addMsg !== null ? <div className={addErr ? "dou-provErr" : "dou-hint"}>{addMsg}</div> : null}
@@ -259,20 +337,7 @@ function ProviderItem({
   return (
     <div className="dou-provItem">
       {/* 折叠头：▸/▾ + provider 名 + 徽标（已启用: <name> / 未启用适配器） */}
-      <button
-        type="button"
-        className="dou-provHead"
-        onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
-      >
-        <span className={`dou-provArrow${open ? " dou-provArrowOpen" : ""}`} aria-hidden="true">
-          ▸
-        </span>
-        <span className="dou-provName">{item.provider}</span>
-        <span className={`dou-provBadge${item.enabledId === null ? " dou-provBadgeOff" : ""}`}>
-          {badge}
-        </span>
-      </button>
+      <ProviderHead item={item} open={open} badge={badge} onToggle={() => setOpen((v) => !v)} />
       {!open ? null : (
         <div className="dou-provBody">
           {/* 无候选引导：文件注入 + 复制一句话引导指令（v2 文档） */}
@@ -327,27 +392,8 @@ export function ProviderListSection({
   onInspect(file: string): Promise<InspectResult>;
   onAdd(provider: string, form: { file: string }): Promise<AddResult>;
 }): React.ReactElement {
-  // host[] 按 providers 分组为候选映射
-  const candidatesByProvider = new Map<
-    string,
-    Array<{ name: string; label: string; source: string; file?: string | null }>
-  >();
-  for (const info of meta?.host ?? []) {
-    for (const provider of info.providers) {
-      const list = candidatesByProvider.get(provider) ?? [];
-      list.push({
-        name: info.name,
-        label: info.label,
-        source: info.source,
-        ...(info.file !== undefined && info.file !== null ? { file: info.file } : {}),
-      });
-      candidatesByProvider.set(provider, list);
-    }
-  }
-  const errorByKey = new Map<string, AdapterErrorEntry>();
-  for (const e of meta?.errors ?? []) errorByKey.set(e.key, e);
-  // 用户文件加载错误无 provider 归属（key=file:<名>），列表顶部全局展示一次
-  const fileErrors = [...errorByKey.entries()].filter(([k]) => k.startsWith("file:"));
+  const candidatesByProvider = candidatesByProviderOf(meta);
+  const { errorByKey, fileErrors } = errorIndexOf(meta);
   // 列表完全为空时的全局引导复制
   const [copiedGlobal, setCopiedGlobal] = React.useState<boolean>(false);
   const globalGuideCommand =

@@ -249,29 +249,46 @@ function retryReason(value: unknown): { code: string; kind: string } | null | un
   return { code: record.code, kind: record.kind };
 }
 
+/** retry 头段（计数 + 终态标记）严格解析结果；任一字段畸形即 null。 */
+interface RetryHead {
+  attempts: number;
+  maxAttempts: number;
+  nextRetryAt: number | null;
+  terminal: boolean;
+  terminalReason: { code: string; kind: string } | null;
+}
+
 /**
- * 严格消费 status/POST body 的可选 retry 投影。
- * 旧响应缺字段或任一字段畸形时返回 null，让调用方保留原 UI。
+ * 头段严格解析（职责一：计数/时点/终态标记自身合法性与不倒挂）。
+ * 畸形判 null——与「解析成功但字段互斥关系冲突」（职责三 retryTailConsistent）分层，
+ * 避免单个巨型合取式把三类变化原因糊在一起。
  */
-export function reportRetryView(value: unknown): ReportRetryView | null {
-  const retry = retryRecord(value);
-  if (retry === null) return null;
-  const attempts = retryCount(retry.attempts);
-  const maxAttempts = retryCount(retry.maxAttempts);
-  const nextRetryAt = retryMetric(retry.nextRetryAt);
-  const terminalReason = retryReason(retry.terminalReason);
-  const usage = retryRecord(retry.usage);
-  if (
-    attempts === null ||
-    maxAttempts === null ||
-    attempts > maxAttempts ||
-    nextRetryAt === undefined ||
-    typeof retry.terminal !== "boolean" ||
-    terminalReason === undefined ||
-    usage === null
-  ) {
-    return null;
-  }
+function retryHeadOf(value: Record<string, unknown>): RetryHead | null {
+  const attempts = retryCount(value.attempts);
+  const maxAttempts = retryCount(value.maxAttempts);
+  if (attempts === null || maxAttempts === null || attempts > maxAttempts) return null;
+  const nextRetryAt = retryMetric(value.nextRetryAt);
+  if (nextRetryAt === undefined) return null;
+  const { terminal } = value;
+  if (typeof terminal !== "boolean") return null;
+  const terminalReason = retryReason(value.terminalReason);
+  if (terminalReason === undefined) return null;
+  return { attempts, maxAttempts, nextRetryAt, terminal, terminalReason };
+}
+
+/**
+ * 头字段互斥一致性（职责三）：
+ * 终态须带 reason 且不得带 nextRetryAt；非终态须无 reason（nextRetryAt 任意）。
+ */
+function retryTailConsistent(head: RetryHead): boolean {
+  if (!head.terminal) return head.terminalReason === null;
+  return head.terminalReason !== null && head.nextRetryAt === null;
+}
+
+/** usage 七项成本指标的严格解析（职责二）：任一畸形即 null，null（未知）合法。 */
+function retryUsageOf(value: unknown): ReportRetryView["usage"] | null {
+  const usage = retryRecord(value);
+  if (usage === null) return null;
   const inputTokens = retryMetric(usage.inputTokens);
   const outputTokens = retryMetric(usage.outputTokens);
   const reasoningTokens = retryMetric(usage.reasoningTokens);
@@ -286,29 +303,41 @@ export function reportRetryView(value: unknown): ReportRetryView | null {
     totalTokens === undefined ||
     cacheReadTokens === undefined ||
     cacheWriteTokens === undefined ||
-    durationMs === undefined ||
-    (retry.terminal && terminalReason === null) ||
-    (!retry.terminal && terminalReason !== null) ||
-    (retry.terminal && nextRetryAt !== null)
+    durationMs === undefined
   ) {
     return null;
   }
   return {
-    attempts,
-    maxAttempts,
-    currentAttempt: attempts + 1,
-    nextRetryAt,
-    terminal: retry.terminal,
-    terminalReason,
-    usage: {
-      inputTokens,
-      outputTokens,
-      reasoningTokens,
-      totalTokens,
-      cacheReadTokens,
-      cacheWriteTokens,
-      durationMs,
-    },
+    inputTokens,
+    outputTokens,
+    reasoningTokens,
+    totalTokens,
+    cacheReadTokens,
+    cacheWriteTokens,
+    durationMs,
+  };
+}
+
+/**
+ * 严格消费 status/POST body 的可选 retry 投影。
+ * 旧响应缺字段或任一字段畸形时返回 null，让调用方保留原 UI。
+ */
+export function reportRetryView(value: unknown): ReportRetryView | null {
+  const retry = retryRecord(value);
+  if (retry === null) return null;
+  const head = retryHeadOf(retry);
+  if (head === null) return null;
+  const usage = retryUsageOf(retry.usage);
+  if (usage === null) return null;
+  if (!retryTailConsistent(head)) return null;
+  return {
+    attempts: head.attempts,
+    maxAttempts: head.maxAttempts,
+    currentAttempt: head.attempts + 1,
+    nextRetryAt: head.nextRetryAt,
+    terminal: head.terminal,
+    terminalReason: head.terminalReason,
+    usage,
   };
 }
 
