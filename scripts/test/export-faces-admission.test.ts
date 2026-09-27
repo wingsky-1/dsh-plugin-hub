@@ -164,10 +164,29 @@ for (const pkg of PACKAGES) {
       legacy: registry.legacy,
     });
     assert.deepEqual(problems, []);
+    // #875 M2b：这条断言原本钉的是「legacy 条数 == 基线条数」，即「全部都是存量」。存量分类
+    // （legacy → faces）按定义就是要推翻这个状态——M2a 冻结时点全部为存量，M2b 之后不再如此，
+    // 继续钉它等于让「legacy 归零」这个目标永远不可达。故改为钉**它本来要守的性质**：
+    // 登记逐条覆盖基线导出面，且不多不少。
+    //
+    // 如实说明这是一次**强弱互换**而非纯加强：原断言（legacy 条数 == 基线条数）连间接都不允许
+    // 出现分类——它是「一个包都还没被分类过」这个状态钉，而那正是 #875 M2b 要消灭的状态，
+    // 继续钉它等于让目标不可达。作为状态钉它确实比本条强（在「禁止分类」这个维度上），
+    // 故这里不声称「只做加强」。换来的是：本条按**符号**而不是按**条数**守覆盖——原断言经
+    // checkExportFaces 后其实也推不出符号错位（legacy 与基线同条数且 legacy ⊆ 基线即相等），
+    // 但那是从「条数相等 + 子集关系」间接推出来的，意图不写在断言里；本条把它写成集合相等，
+    // 意图自述且不依赖读者完成那步推理。合法性维度（分类值属于三类面、faces/legacy 互斥、
+    // 两侧都不得含已退役符号）由上面那次 checkExportFaces 独立兜住，未被本条取代。
+    const covered = new Set([...Object.keys(registry.faces), ...registry.legacy]);
+    assert.deepEqual(
+      [...covered].sort(),
+      [...baselineExports].sort(),
+      "分类登记必须逐条覆盖基线导出面，不多不少（faces ∪ legacy == 基线导出符号集）",
+    );
     assert.equal(
-      registry.legacy.length,
+      covered.size,
       baselineExports.length,
-      "存量白名单条数应等于基线条数（两包在各自冻结时点全部为存量）",
+      "覆盖集去重后仍须等于基线条数——出现重复登记时本条先红（faces/legacy 互斥由 checkExportFaces 兜住）",
     );
   });
 }
@@ -189,11 +208,24 @@ for (const pkg of PACKAGES) {
     assert.match(result.stdout, new RegExp(`PASS ${pkg} 导出面与基线零 diff`));
   });
 
-  test(`端到端（${pkg}）：模拟新增未登记导出（把一个存量符号移出 legacy）→ 真实门禁脚本 exit 1`, () => {
+  test(`端到端（${pkg}）：模拟新增未登记导出（拿掉一个已登记符号）→ 真实门禁脚本 exit 1`, () => {
     withTmp((dir: string) => {
       const registry = JSON.parse(readFileSync(registryPath(pkg), "utf8"));
-      const dropped = registry.legacy[0];
-      registry.legacy = registry.legacy.slice(1);
+      // #875 M2b：这条用例的判红力来自「拿掉一个已覆盖的符号 → 门禁判红」。存量归零后 legacy
+      // 可以为空，此时 legacy[0] 是 undefined、slice(1) 仍是原数组，等于什么都没拿掉，门禁
+      // 自然 exit 0 而用例红——那是**用例自身**的前置假设过期，不是判据变弱。故改成从
+      // 「实际有覆盖的那一侧」取符号：legacy 非空取 legacy，否则取 faces 的第一个键。
+      // 两种状态下判红力相同——都是拿掉一个已登记符号，断言门禁点名它。
+      const fromLegacy = registry.legacy.length > 0;
+      const dropped = fromLegacy ? registry.legacy[0] : Object.keys(registry.faces)[0];
+      if (fromLegacy) {
+        registry.legacy = registry.legacy.slice(1);
+      } else {
+        registry.faces = Object.fromEntries(
+          Object.entries(registry.faces).filter(([k]) => k !== dropped),
+        );
+      }
+      assert.notEqual(dropped, undefined, "登记文件两侧皆空，取不到可拿掉的符号——本用例失去判红力");
       const path = writeRegistry(dir, registry);
       const result = spawnSync(process.execPath, [SCRIPT, "--package", pkg, "--faces", path], {
         cwd: ROOT,

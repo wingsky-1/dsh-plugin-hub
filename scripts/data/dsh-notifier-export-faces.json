@@ -1,6 +1,11 @@
 {
-  "$comment": "包导出面分类登记（#733 宪法第 3 条 / M2a-3.5 准入门禁）：包导出面 ⊆ 安装面 ∪ 配置面 ∪ 契约面。 符号集不在此文件里重复枚举——判据的输入是 export-surface-snapshot.mjs 同一次 emitDeclarations() 的产物（§9 禁止双轨）。 faces：新增导出必须在此显式登记三类面之一（安装面 / 配置面 / 契约面），未登记即红； legacy：M2a 时点的 100 个存量导出白名单。存量分类（保留 / 移除清单）是 M2b 的一等交付物，本阶段不预判。 legacy 只许随符号退役而缩小；把新符号塞进 legacy 能绕过判据，但那是一次显眼且可评审的改动（判据的价值是让静默增长不可能）。 用法：node scripts/gate/export-surface-snapshot.mjs --package dsh-notifier --verbose",
+  "$comment": "包导出面分类登记（#733 宪法第 3 条 / M2a-3.5 准入门禁）：包导出面 ⊆ 安装面 ∪ 配置面 ∪ 契约面。 符号集不在此文件里重复枚举——判据的输入是 export-surface-snapshot.mjs 同一次 emitDeclarations() 的产物（§9 禁止双轨）。 #875 M2b 存量分类：M2a 冻结的 4 条 legacy 全部归零，legacy 保持为空，即「新符号无 legacy 通道」这条判据在本包身上完整成立。 三个值导出归安装面，与 M2a 之后新建的 dsh-worktree-sidebar 同规格：name 是稳定的 cordis 插件名、inject 是声明式宿主服务依赖、apply 是挂载入口，三者合起来就是「这个包怎么被装上」的全部对外事实。 NotifierService 归契约面，理由有消费方实证而非仅凭「它被 export」：packages/dsh-notifier/test/integration/consumer-product-face.ts:19 经包名 @wingsky-1/dsh-notifier 具名导入它，为 ctx[\"wingsky.notifier\"] 取标注类型；它同时是包入口 declare module 声明合并的载荷（src/index.ts:84-89）——兄弟插件经该服务面登记通知种类与发送通知，是本插件对包外承诺的稳定能力。 组合层入参 NotifierApplyConfig 仍不在本表内：tsc 对 interface 产出的是不带 declare 的 export interface，本门提取器只认 export declare 块，故类型不在其论域（门禁自述的盲区①）；其形状由 consumer-types.test.ts 的类型体锚与 test/tsconfig 编译面守，不是被静默漏掉。 用法：node scripts/gate/export-surface-snapshot.mjs --package dsh-notifier --verbose",
   "package": "dsh-notifier",
-  "faces": {},
-  "legacy": ["NotifierService", "apply", "inject", "name"]
+  "faces": {
+    "NotifierService": "契约面",
+    "apply": "安装面",
+    "inject": "安装面",
+    "name": "安装面"
+  },
+  "legacy": []
 }
