@@ -30,8 +30,9 @@
  *
  * 结构（#826 域归位）：实现按域归位到 src/server/<域>/（config / host-trust / migrate / proxy / tls）
  * 与 src/server/shared/（包内共享叶子），装配在 src/server/apply.ts；本文件保留插件契约
- * （name/inject 与 apply、路由表转发）与全部公共符号 re-export（导出面不变，外部消费者从
- * lib/index.js 导入不受影响）。apply 实现于 server/apply.ts，不 import 本文件。
+ * （name/inject 与 apply、路由表转发）与公共符号 re-export。apply 实现于 server/apply.ts，
+ * 不 import 本文件。导出面自 #875 M2b 起收窄：转发引擎与 TLS 的纯实现符号不再经本文件
+ * 转发，理由与撤回清单见下方「#875 M2b 收窄」段。
  */
 export const name = "lan-proxy";
 
@@ -76,38 +77,21 @@ export type { LayoutMigrateOptions, LayoutMigrateOutcome } from "./server/migrat
 // 契约字面量都只被包内 apply 消费，属实现细节而非安装面 / 配置面 / 契约面
 // （docs/ARCHITECTURE-METHOD.md §6）。域门面 src/server/host-trust/interface.ts 保留为
 // 内部 seam，白盒单测直连 src 即可；不得以「测试需要」为由重新追加导出。
-export { apply, pluginDir, DEFAULT_WSS_COMPRESS_PATHS } from "./server/apply.ts";
+export { apply, DEFAULT_WSS_COMPRESS_PATHS } from "./server/apply.ts";
 
-// 既有包导出面（历史 ABI，冻结）：下列内部符号自 #276 拆分起就随 lib/index.js 发布，
-// 收窄属公共 API 变更（红线，需独立 PR 走导出面评审）；不得以「测试需要」为由继续追加。
-export {
-  createLanProxy,
-  hostnameAllowed,
-  formatAuthority,
-  rewriteHeaders,
-  bridgeUpstreamHeaders,
-  compressWsPath,
-  isCompressible,
-  resolveCompressionOptions,
-  deflateAllowedByPolicy,
-  hasDshAuthCookie,
-  isTokenMintCandidate,
-  withLaunchToken,
-} from "./server/proxy/interface.ts";
+// #875 M2b 收窄：转发引擎与 TLS 的**纯实现**退出包导出面。下列符号自 #276 拆分起
+// 随 lib/index.js 发布，但它们既非安装面（非「包怎么被装上」）、非配置面（非 settings
+// 形状或默认值）、也非契约面（非能力入口或句柄类型）——只是引擎内部的头改写、authority
+// 格式化、回环判定与证书装配步骤。docs/ARCHITECTURE-METHOD.md §6「不属于这三类的内部符号
+// 不进包导出面」与「测试从产物入口导入 = 把内部符号钉死在公共 API 上」是同一处裁定的两面：
+// 留在入口的唯一理由是 e2e 冒烟经 lib/index.js 取它们。白盒用例改走域门面
+// src/server/<域>/interface.ts（§8 契约层允许的导入面）后，入口不再需要它们。
+// 与 host trust 域（#856）同一处置：域门面保留为包内 seam，不得以「测试需要」为由追加回来。
+export { createLanProxy, resolveCompressionOptions } from "./server/proxy/interface.ts";
 export type { ConnStats, LanProxy, TokenProvider } from "./server/proxy/interface.ts";
 // 包内共享叶子（#826：默认值常量与回环判定从 proxy.ts 归位）
-export {
-  DEFAULT_DEFLATE_POLICY,
-  DEFAULT_OPTIONS,
-  isLoopbackTarget,
-} from "./server/shared/interface.ts";
+export { DEFAULT_DEFLATE_POLICY, DEFAULT_OPTIONS } from "./server/shared/interface.ts";
 export type { DeflatePolicy } from "./server/shared/interface.ts";
-// TLS 域（#826：cert.ts 归位为 server/tls/）
-export {
-  ensureSelfSignedTls,
-  certStillValid,
-  toSanEntry,
-  loadTlsFromFiles,
-  SELF_SIGNED_KEY,
-  SELF_SIGNED_CERT,
-} from "./server/tls/interface.ts";
+// TLS 域（#826：cert.ts 归位为 server/tls/）。契约面只留能力入口 ensureSelfSignedTls
+// （「自签还是用既有证书」是消费方要选的策略）；签发、读盘与 PEM 装配留在域门面内。
+export { ensureSelfSignedTls } from "./server/tls/interface.ts";

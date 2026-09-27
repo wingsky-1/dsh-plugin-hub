@@ -57,11 +57,16 @@ import {
   DEFAULT_WSS_COMPRESS_PATHS,
   normalizeLegacyWsCompressPaths,
   ensureSelfSignedTls,
+} from "../../lib/index.js";
+// #875 M2b：证书装配的纯实现符号已退出包导出面（理由见 src/index.ts「#875 M2b 收窄」段）。
+// 冒烟仍从产物面取 apply / ROUTES 等安装面与契约面符号；这几条走域门面——§8 契约层允许的
+// 导入面。白盒断言不必为了「从产物导入」而把内部实现钉在公共 API 上。
+import {
   certStillValid,
   loadTlsFromFiles,
   SELF_SIGNED_KEY,
   SELF_SIGNED_CERT,
-} from "../../lib/index.js";
+} from "../../src/server/tls/interface.ts";
 import {
   assertClientProductContract,
   assertClientSourceContract,

@@ -86,14 +86,6 @@
       "isType": true
     },
     {
-      "name": "SELF_SIGNED_CERT",
-      "isType": false
-    },
-    {
-      "name": "SELF_SIGNED_KEY",
-      "isType": false
-    },
-    {
       "name": "SETTINGS_NS",
       "isType": false
     },
@@ -118,10 +110,6 @@
       "isType": false
     },
     {
-      "name": "bridgeUpstreamHeaders",
-      "isType": false
-    },
-    {
       "name": "buildCaCertRoutes",
       "isType": false
     },
@@ -130,35 +118,11 @@
       "isType": false
     },
     {
-      "name": "certStillValid",
-      "isType": false
-    },
-    {
-      "name": "compressWsPath",
-      "isType": false
-    },
-    {
       "name": "createLanProxy",
       "isType": false
     },
     {
-      "name": "deflateAllowedByPolicy",
-      "isType": false
-    },
-    {
       "name": "ensureSelfSignedTls",
-      "isType": false
-    },
-    {
-      "name": "formatAuthority",
-      "isType": false
-    },
-    {
-      "name": "hasDshAuthCookie",
-      "isType": false
-    },
-    {
-      "name": "hostnameAllowed",
       "isType": false
     },
     {
@@ -167,22 +131,6 @@
     },
     {
       "name": "installLanProxySettings",
-      "isType": false
-    },
-    {
-      "name": "isCompressible",
-      "isType": false
-    },
-    {
-      "name": "isLoopbackTarget",
-      "isType": false
-    },
-    {
-      "name": "isTokenMintCandidate",
-      "isType": false
-    },
-    {
-      "name": "loadTlsFromFiles",
       "isType": false
     },
     {
@@ -198,10 +146,6 @@
       "isType": false
     },
     {
-      "name": "pluginDir",
-      "isType": false
-    },
-    {
       "name": "resolveCompressionOptions",
       "isType": false
     },
@@ -210,23 +154,11 @@
       "isType": false
     },
     {
-      "name": "rewriteHeaders",
-      "isType": false
-    },
-    {
       "name": "sanitizeSettings",
       "isType": false
     },
     {
-      "name": "toSanEntry",
-      "isType": false
-    },
-    {
       "name": "validateSettings",
-      "isType": false
-    },
-    {
-      "name": "withLaunchToken",
       "isType": false
     }
   ],
@@ -256,6 +188,7 @@
     "export declare const LEGACY_BAK_SUFFIX = \".migrated.bak\";",
     "export declare const MANAGED_CERT_FILES: readonly string[];",
     "export declare const MIGRATED_BAK_NAME = \"config.json.migrated.bak\";",
+    "export declare const RESOLVED_DEFAULTS: ResolvedConfig;",
     "export declare const ROUTES: { health: string; config: string; caCert: string; caGenerate: string; };",
     "export declare const SELF_SIGNED_CERT = \"dsh-lan-proxy-cert.pem\";",
     "export declare const SELF_SIGNED_KEY = \"dsh-lan-proxy-key.pem\";",
@@ -406,14 +339,6 @@
           "isType": true
         },
         {
-          "name": "SELF_SIGNED_CERT",
-          "isType": false
-        },
-        {
-          "name": "SELF_SIGNED_KEY",
-          "isType": false
-        },
-        {
           "name": "SETTINGS_NS",
           "isType": false
         },
@@ -438,10 +363,6 @@
           "isType": false
         },
         {
-          "name": "bridgeUpstreamHeaders",
-          "isType": false
-        },
-        {
           "name": "buildCaCertRoutes",
           "isType": false
         },
@@ -450,35 +371,11 @@
           "isType": false
         },
         {
-          "name": "certStillValid",
-          "isType": false
-        },
-        {
-          "name": "compressWsPath",
-          "isType": false
-        },
-        {
           "name": "createLanProxy",
           "isType": false
         },
         {
-          "name": "deflateAllowedByPolicy",
-          "isType": false
-        },
-        {
           "name": "ensureSelfSignedTls",
-          "isType": false
-        },
-        {
-          "name": "formatAuthority",
-          "isType": false
-        },
-        {
-          "name": "hasDshAuthCookie",
-          "isType": false
-        },
-        {
-          "name": "hostnameAllowed",
           "isType": false
         },
         {
@@ -487,22 +384,6 @@
         },
         {
           "name": "installLanProxySettings",
-          "isType": false
-        },
-        {
-          "name": "isCompressible",
-          "isType": false
-        },
-        {
-          "name": "isLoopbackTarget",
-          "isType": false
-        },
-        {
-          "name": "isTokenMintCandidate",
-          "isType": false
-        },
-        {
-          "name": "loadTlsFromFiles",
           "isType": false
         },
         {
@@ -518,10 +399,6 @@
           "isType": false
         },
         {
-          "name": "pluginDir",
-          "isType": false
-        },
-        {
           "name": "resolveCompressionOptions",
           "isType": false
         },
@@ -530,23 +407,11 @@
           "isType": false
         },
         {
-          "name": "rewriteHeaders",
-          "isType": false
-        },
-        {
           "name": "sanitizeSettings",
           "isType": false
         },
         {
-          "name": "toSanEntry",
-          "isType": false
-        },
-        {
           "name": "validateSettings",
-          "isType": false
-        },
-        {
-          "name": "withLaunchToken",
           "isType": false
         }
       ],
@@ -607,6 +472,9 @@
         ],
         "MIGRATED_BAK_NAME": [
           "export declare const MIGRATED_BAK_NAME = \"config.json.migrated.bak\";"
+        ],
+        "RESOLVED_DEFAULTS": [
+          "export declare const RESOLVED_DEFAULTS: ResolvedConfig;"
         ],
         "ROUTES": [
           "export declare const ROUTES: { health: string; config: string; caCert: string; caGenerate: string; };"
