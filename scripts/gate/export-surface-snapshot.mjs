@@ -61,10 +61,11 @@
  *   node scripts/gate/export-surface-snapshot.mjs --package <pkg> --snapshot  # 生成/更新基线
  *   node scripts/gate/export-surface-snapshot.mjs --package <pkg>             # 与基线比对（--check 同义）
  *
- * 入口读取别名（#768 S1，临时）：scripts/data/export-entry-alias.json 登记「某包某入口
- * 的导出面从哪份 emit 文件读」（dsh-provider-usage 的点号入口读 apply/index.d.ts——包无
- * src/index.ts，emit 无根 index.d.ts）。别名只换读取源，不动块归属与判定；--entry-alias
- * 可指向另一份登记（fixture 隔离用）。D13 src/index.ts 落地时删条目并重冻结基线。
+ * 入口读取别名（#768 S1 起）：scripts/data/export-entry-alias.json 登记「某包某入口
+ * 的导出面从哪份 emit 文件读」，为「某包没有根入口 emit 文件」而设的读取重映射（dsh-provider-usage
+ * 曾用它把点号入口读 apply/index.d.ts；#768 D13 随包根 src/index.ts 落地删条目并重冻结基线，
+ * **条目有无以登记文件自身为准**，本段只描述机制）。别名只换读取源，不动块归属与判定；
+ * --entry-alias 可指向另一份登记（fixture 隔离用）。
  *
  * 除基线比对外，同一次 `emitDeclarations()` 产物还喂「导出面分类登记」准入判据
  *（#733 宪法第 3 条 / M2a-3.5：包导出面 ⊆ 安装面 ∪ 配置面 ∪ 契约面）——新增导出
@@ -72,6 +73,9 @@
  * 判据实现见 scripts/lib/export-faces-lib.ts（**同一实现**被门禁与 fixture 自测复用，
  * §9 禁止双轨）；`--snapshot` 只写基线、不碰登记文件，故「更新基线」不会顺手把新符号
  * 变成合法导出——分类登记始终是一次显式动作。
+ * **登记文件形态**由同族的 checkExportFacesCommentKey 同点判定：注释键必须是 `$comment`
+ * （它是指向规范正文 docs/ARCHITECTURE-METHOD.md §6.1〈导出面分类判别规则〉的唯一引用位，
+ * 键名漂了没有第二道判据看得见），顶层键不得越出 `$comment` / `package` / `faces` / `legacy`。
  * **faces 判据的论域 = 主入口（`.`）的导出面**：`./client` 只进基线比对，不喂
  * checkExportFaces。理由是 #733 宪法第 3 条指 SDK 面；客户端入口首次出现独有导出
  * （UI 组件/类型）时无法归入三类面，只能塞 `legacy`，与 M2b「legacy 归零」冲突。
@@ -100,7 +104,11 @@ import { spawnSync } from "node:child_process";
 import { ensureSharedBuilt } from "../lib/ensure-shared-built.mjs";
 import { dirname, join, posix, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { checkExportFaces, loadExportFaces } from "../lib/export-faces-lib.ts";
+import {
+  checkExportFaces,
+  checkExportFacesCommentKey,
+  loadExportFaces,
+} from "../lib/export-faces-lib.ts";
 import {
   attributeEmitFiles,
   declBlockName,
@@ -281,7 +289,7 @@ for (const e of entrySpecs) {
         e.subpath +
         " 经别名读取：" +
         exportSourceTarget +
-        "（登记见 scripts/data/export-entry-alias.json，D13 删除）",
+        "（登记见 scripts/data/export-entry-alias.json）",
     );
   const file = perFile.get(exportSourceTarget);
   if (file === undefined) {
@@ -415,6 +423,15 @@ for (const key of Object.keys(baseline.entries)) {
     registryPath: `scripts/data/${pkgName}-export-faces.json`,
   })) {
     problems.push(`  [导出面分类登记] ${p}`);
+  }
+  // 登记文件形态：注释键必须是 $comment、顶层键不越 schema（判别规则正文的唯一引用位，
+  // 键名漂了没有任何其他判据看得见——同族判据同一实现，见 export-faces-lib.ts 文件头）。
+  for (const p of checkExportFacesCommentKey({
+    topLevelKeys: registry.topLevelKeys,
+    comment: registry.comment,
+    registryPath: `scripts/data/${pkgName}-export-faces.json`,
+  })) {
+    problems.push(`  [导出面分类登记形态] ${p}`);
   }
 }
 

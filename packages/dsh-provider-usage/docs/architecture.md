@@ -369,7 +369,17 @@ flowchart TD
 
 ## 9. 关键模块索引
 
-构建链：`src/*.ts` 经 tsc 编译后由 bundle-host 把全部子模块**内联进单一 `lib/index.js`**（发布物自包含、无运行时 npm 依赖）。入口已收窄：`src/index.ts` 仅转发安装面（apply/inject/name/ROUTES）、共享设施（sseData）、暂缓项（HotReloadableAdapter）与类型——smoke/lint 只能从 `lib/index.js` 导入；测试一律走 `src/server/<域>/interface.ts` 深路径。各模块职责：
+构建链：`src/*.ts` 经 tsc 编译后由 bundle-host 把全部子模块**内联进单一 `lib/index.js`**（发布物自包含、无运行时 npm 依赖）。入口已收窄：`src/index.ts` 逐名转发安装面（apply/inject/name/ROUTES）、暂缓项
+（HotReloadableAdapter）与类型；`sseData` 等共享接缝与能力内部形状已在 #875 M2b 撤出
+公共面，只留在包内组合根 `src/apply/index.ts`。**导入面口径**：产物入口
+`lib/index.js` 只被 e2e smoke 消费一处（`test/e2e/smoke.test.ts` 导入安装面四条），
+它并非「只能」从产物导入——同一文件还直连 `src/server/<域>/…`；单测与集成测试白盒
+直连 `src/**`（域门面 `interface.ts`、域内实现，以及本包组合根
+`src/apply/index.ts`），**不是一律只走域门面**。机器侧口径是 `verify-dir-imports`
+的 I8①：`test/unit/**` 不得 import 包根组合根 `src/index.ts`、产物面 `lib/**` 与
+客户端面 `src/client/**`（存量证据登记在 `scripts/data/dir-imports-baseline.json` 的
+`unitImportFaceViolations`，类内新增即判红）；`test/e2e/**` 与 `test/integration/**`
+本轮不判。各模块职责：
 
 | 模块 | 职责 |
 | --- | --- |

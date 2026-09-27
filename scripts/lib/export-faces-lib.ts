@@ -27,6 +27,11 @@
  * 面；客户端入口首次出现独有导出（UI 组件/类型）时无法归入三类面，只能塞 `legacy`，与
  * M2b「legacy 归零」冲突。同一分工写在 docs/ARCHITECTURE-METHOD.md §6 三层裁定、
  * docs/DEVELOPMENT.md 的准入段与 export-surface-snapshot.mjs 的门禁自述里。
+ *
+ * 本文件承载**两条**同族判据（§9 禁止双轨：门禁与 fixture 自测都调这里，不在门禁里复刻）：
+ * `checkExportFaces` 管导出符号的分类准入，`checkExportFacesCommentKey` 管登记文件形态
+ * （注释键固定为 `$comment`、顶层键不越 schema）。判别规则的规范正文在
+ * docs/ARCHITECTURE-METHOD.md §6.1，登记文件的 `$comment` 只引用它。
  */
 
 import { existsSync, readFileSync } from "node:fs";
@@ -36,20 +41,21 @@ export const EXPORT_FACES = ["安装面", "配置面", "契约面"];
 
 /**
  * 读取分类登记文件（缺失即抛——登记文件是判据的输入，不能静默降级为「无约束」）。
+ *
+ * 顶层键**原样**取回：注释键判据（checkExportFacesCommentKey）要看「实际存在哪些键」，
+ * 而不是「哪些键被取过值」——一个从未被读过的键正是那条判据要抓的形态。
  * @param {string} path 登记文件路径
- * @returns {{ package?: string, faces: Record<string, string>, legacy: string[] }}
+ * @returns {{ package?: string, faces: Record<string, string>, legacy: string[], topLevelKeys: string[], comment: unknown }}
  */
 export function loadExportFaces(path: string): {
   package?: string;
   faces: Record<string, string>;
   legacy: string[];
+  topLevelKeys: string[];
+  comment: unknown;
 } {
   if (!existsSync(path)) throw new Error(`导出面分类登记文件不存在：${path}`);
-  const parsed = JSON.parse(readFileSync(path, "utf8")) as {
-    package?: unknown;
-    faces?: unknown;
-    legacy?: unknown;
-  };
+  const parsed = JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
   return {
     package: typeof parsed.package === "string" ? parsed.package : undefined,
     faces:
@@ -57,7 +63,50 @@ export function loadExportFaces(path: string): {
         ? (parsed.faces as Record<string, string>)
         : {},
     legacy: Array.isArray(parsed.legacy) ? (parsed.legacy as string[]) : [],
+    topLevelKeys: Object.keys(parsed),
+    comment: parsed.$comment,
   };
+}
+
+/** 登记文件顶层键的合法全集——后三个是判据的输入，`$comment` 是规则引用位（#875）。 */
+export const REGISTRY_TOP_LEVEL_KEYS = ["$comment", "package", "faces", "legacy"];
+
+/**
+ * 注释键判据：登记文件的注释必须挂在 `$comment` 上，且顶层键不得超出登记 schema。
+ *
+ * 为什么要有这条（不是「顺手补个格式检查」）：注释是**判别规则正文在本仓的唯一引用位**——
+ * 正文在 docs/ARCHITECTURE-METHOD.md §6.1，登记文件只引用、不复述。键名没有机器兜底时它会
+ * 静默漂走：实测同一批登记文件里有一个包把注释挂在 `""` 下、其余包用 `$comment`，
+ * 两边门禁都绿。键名一旦不统一，「指向规则正文的引用」与「随手记的备忘」在机器眼里
+ * 再也分不开——而这条引用正是判别规则与规范正文之间唯一的连接。
+ *
+ * 判据形态：顶层键 ∈ REGISTRY_TOP_LEVEL_KEYS，且 `$comment` 是非空字符串。未知键（含
+ * `""`）即判红。**这是登记文件的 schema**：新增顶层键必须同笔改这里，不得旁路。
+ * @param {{ topLevelKeys: string[], comment: unknown, registryPath?: string }} input
+ * @returns {string[]} 违规描述列表（空 = 合规）
+ */
+export function checkExportFacesCommentKey(input: {
+  topLevelKeys: string[];
+  comment: unknown;
+  registryPath?: string;
+}): string[] {
+  const { topLevelKeys, comment, registryPath = "scripts/data/<pkg>-export-faces.json" } = input;
+  const problems: string[] = [];
+  if (!topLevelKeys.includes("$comment")) {
+    problems.push(`登记文件缺 $comment 注释键（注释键必须是 $comment，见 ${registryPath}）`);
+  } else if (typeof comment !== "string" || comment.length === 0) {
+    problems.push(
+      `$comment 必须是非空字符串（当前是 ${comment === undefined ? "缺失" : typeof comment}）`,
+    );
+  }
+  for (const key of topLevelKeys) {
+    if (!REGISTRY_TOP_LEVEL_KEYS.includes(key)) {
+      problems.push(
+        `登记文件出现非法顶层键：${JSON.stringify(key)}（合法顶层键：${REGISTRY_TOP_LEVEL_KEYS.join(" / ")}；注释键固定为 $comment）`,
+      );
+    }
+  }
+  return problems;
 }
 
 /**

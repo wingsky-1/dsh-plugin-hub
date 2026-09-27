@@ -24,8 +24,11 @@
  */
 
 // ------------------------------------------------------------------ 对外 re-export
-// 注意：bundle-host 会把 tsc 产物中的子模块全部内联进 lib/index.js 并清理游离 .js，
-// smoke/lint 只能从 lib/index.js 导入，故契约与核心模块一律在此 re-export。
+// bundle-host 会把 tsc 产物中的子模块全部内联进 lib/index.js 并清理游离 .js，故包内
+// 只能经根入口 src/index.ts 触达产物面（e2e smoke 之外全仓无第二处从 lib/index.js
+// 导入）。本文件是**包内宽组合根**：域门面之上的转发层；哪些符号真的对外由根入口
+// 逐名收窄决定（#875 M2b 已把能力内部形状与共享接缝撤出公共面，它们只留在本层），
+// 故本层 re-export 的理由不再是「产物消费者需要」，而是包内消费方需要。
 export type {
   AdapterErrorCode,
   FetchContext,
@@ -117,7 +120,7 @@ export const inject: string[] = ["webServer", "llm", "sessions"];
 export type { FloatBreakpoint, ViewportPoint, RectLike } from "../shared/interface.ts";
 
 export type { UiPlacementConfig } from "../shared/interface.ts";
-// sseData 已收敛 shared/host-utils.js：单独改指共享层，导出面保持不变
+// sseData 已收敛 shared/host-utils.js（改指共享层）；它不在公共导出面内（#875 M2b 撤出根入口），只留在本组合根与包内测试可见
 export { sseData } from "../../../../shared/host-utils.js";
 export type { UserAdapterRecord } from "../server/registry/interface.ts";
 // 插件契约转发（apply 主流程 + 路由表实现于 apply.ts）

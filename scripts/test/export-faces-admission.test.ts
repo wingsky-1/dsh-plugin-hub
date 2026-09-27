@@ -17,19 +17,24 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 
-import { EXPORT_FACES, checkExportFaces, loadExportFaces } from "../lib/export-faces-lib.ts";
+import {
+  EXPORT_FACES,
+  checkExportFaces,
+  checkExportFacesCommentKey,
+  loadExportFaces,
+} from "../lib/export-faces-lib.ts";
 
 const ROOT = join(import.meta.dirname, "..", "..");
 const SCRIPT = join(ROOT, "scripts", "gate", "export-surface-snapshot.mjs");
 // 逐包参数化：判据与登记形态由同一实现（export-faces-lib）驱动，接入一个新包只是加一条，
 // 而不是复制一份测试逻辑——双轨会让「测试绿而门禁红」无从裁决（§9）。dsh-mcp-manager 于
 // #767 B0 接入，其 legacy 是重构前那棵树的存量全集。dsh-provider-usage 于
-// #768 S1 接入，其 legacy 是 S1 时点的存量全集（主入口经别名读 apply 产物）。
+// #768 S1 接入，其 legacy 是 S1 时点的存量全集（别名条目已于 #768 D13 删净，主入口直读根 index.d.ts）。
 const PACKAGES = ["dsh-notifier", "dsh-mcp-manager", "dsh-provider-usage"];
 const registryPath = (pkg: string) => join(ROOT, "scripts", "data", `${pkg}-export-faces.json`);
 const baselinePath = (pkg: string) => join(ROOT, "scripts", "data", `${pkg}-export-surface.json`);
@@ -288,3 +293,115 @@ for (const pkg of PACKAGES) {
     );
   });
 }
+
+// ---------------------------------------------------------------- 4) 登记文件形态：注释键（#875）
+
+/**
+ * 判别规则的规范正文在 docs/ARCHITECTURE-METHOD.md §6.1，登记文件的注释是**指向它的唯一
+ * 引用位**。键名没有机器兜底时它会静默漂走：实测同一批登记文件里有一个包把注释挂在空串键
+ * 下、其余包用 $comment，两边门禁都绿。故本组判据（checkExportFacesCommentKey）与分类准入
+ * 判据同族、同实现、同执行点——§9 禁止双轨。
+ */
+
+test("合规：注释挂在 $comment 且顶层键不越 schema → 无违规", () => {
+  assert.deepEqual(
+    checkExportFacesCommentKey({
+      topLevelKeys: ["$comment", "package", "faces", "legacy"],
+      comment: "判别规则见 ARCHITECTURE-METHOD §6.1",
+    }),
+    [],
+  );
+});
+
+test("违规：注释键写成空串（本仓实测过的形态）→ 判红，且两条问题分别点名缺键与非法键", () => {
+  const problems = checkExportFacesCommentKey({
+    topLevelKeys: ["", "package", "faces", "legacy"],
+    comment: "正文",
+  });
+  assert.equal(problems.length, 2, `期望 2 条，实际 ${problems.length}：${problems.join(" | ")}`);
+  assert.match(problems.join("\n"), /缺 \$comment 注释键/);
+  assert.match(problems.join("\n"), /非法顶层键：""/);
+});
+
+test("违规：注释键换成别的名字（note）→ 判红", () => {
+  const problems = checkExportFacesCommentKey({
+    topLevelKeys: ["note", "package", "faces", "legacy"],
+    comment: "正文",
+  });
+  assert.match(problems.join("\n"), /缺 \$comment 注释键/);
+  assert.match(problems.join("\n"), /非法顶层键："note"/);
+});
+
+test("违规：$comment 不是非空字符串 → 判红", () => {
+  const problems = checkExportFacesCommentKey({
+    topLevelKeys: ["$comment", "package", "faces", "legacy"],
+    comment: "",
+  });
+  assert.equal(problems.length, 1);
+  assert.match(problems[0], /\$comment 必须是非空字符串/);
+});
+
+test("loadExportFaces：顶层键原样取回（未被取过值的键也在内，否则本判据形同虚设）", () => {
+  withTmp((dir: string) => {
+    const path = writeRegistry(dir, {
+      $comment: "c",
+      package: "x",
+      faces: { apply: "安装面" },
+      legacy: [],
+      note: 1,
+    });
+    const loaded = loadExportFaces(path);
+    assert.deepEqual(loaded.topLevelKeys.sort(), [
+      "$comment",
+      "faces",
+      "legacy",
+      "note",
+      "package",
+    ]);
+    assert.equal(loaded.comment, "c");
+  });
+});
+
+test("全仓登记文件（逐文件派生，新增包自动纳入）：注释键一律 $comment、顶层键不越 schema", () => {
+  const dir = join(ROOT, "scripts", "data");
+  const files = readdirSync(dir)
+    .filter((f: string) => f.endsWith("-export-faces.json"))
+    .sort();
+  assert.equal(files.length > 0, true, "扫描面为空——先断言非空，否则本用例恒绿");
+  for (const f of files) {
+    const loaded = loadExportFaces(join(dir, f));
+    assert.deepEqual(
+      checkExportFacesCommentKey({
+        topLevelKeys: loaded.topLevelKeys,
+        comment: loaded.comment,
+        registryPath: `scripts/data/${f}`,
+      }),
+      [],
+      `${f} 的注释键或顶层键不合 schema`,
+    );
+  }
+});
+
+test("端到端（注释键）：把注释键种回空串 → 真实门禁脚本 exit 1 并点名该键", () => {
+  withTmp((dir: string) => {
+    const raw = JSON.parse(readFileSync(registryPath("dsh-provider-usage"), "utf8"));
+    const path = writeRegistry(dir, {
+      "": raw.$comment,
+      package: raw.package,
+      faces: raw.faces,
+      legacy: raw.legacy,
+    });
+    const result = spawnSync(
+      process.execPath,
+      [SCRIPT, "--package", "dsh-provider-usage", "--faces", path],
+      { cwd: ROOT, encoding: "utf8", timeout: 180000 },
+    );
+    assert.equal(
+      result.status,
+      1,
+      `期望 exit 1，实际 ${result.status}\n${result.stdout}\n${result.stderr}`,
+    );
+    assert.match(result.stdout, /\[导出面分类登记形态\]/);
+    assert.match(result.stdout, /非法顶层键：""/);
+  });
+});

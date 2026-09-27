@@ -209,7 +209,7 @@
         "kind": "indirect",
         "reason": "export-surface-snapshot 与 export-faces-lib 按包名模板拼名加载，不含逐包字面量，故无字面命中的仓内直接读取方（与 dsh-mcp-manager 条目同形）。"
       },
-      "why": "包级数据资产（#768 S1 新建）：dsh-provider-usage-export-surface.json 是 S1 时点的导出面基线（主入口经别名读 apply 产物），由 export-surface-snapshot 调用点与常驻的 test:scripts（export-faces-admission 逐包断言）消费；dsh-provider-usage-export-faces.json 是该基线的分类登记，只被同一条准入判据消费。两者都是本包资产，故归本包面；改动任一份即改变本包的契约判据输入，必须触发本包切片。"
+      "why": "包级数据资产（#768 S1 新建）：dsh-provider-usage-export-surface.json 是 S1 时点的导出面基线（主入口直读根 index.d.ts，别名条目已随 #768 D13 删净并重冻结），由 export-surface-snapshot 调用点与常驻的 test:scripts（export-faces-admission 逐包断言）消费；dsh-provider-usage-export-faces.json 是该基线的分类登记，只被同一条准入判据消费。两者都是本包资产，故归本包面；改动任一份即改变本包的契约判据输入，必须触发本包切片。"
     },
     {
       "path": "scripts/data/export-entry-alias.json",
