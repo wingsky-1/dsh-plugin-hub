@@ -160,7 +160,11 @@ test("exit 2：子门禁自身 exit 2 → 整体 2，判词含 fault=exit2 与�
     /::error::门禁故障（非判据结论）：\[local-gate\] 步骤「注入-子门禁故障」/,
     "收口判词须可检索：带步骤名 + 门禁故障语义",
   );
-  assert.doesNotMatch(out.out, /exit=1 {2}注入-子门禁故障/, "故障步不得混进 exit= 列表");
+  assert.doesNotMatch(
+    out.out,
+    /^ {2}exit=\d+ {2}注入-子门禁故障$/m,
+    "故障步不得混进 exit= 列表（子门禁 exit 2 场景）",
+  );
   assert.match(out.out, /（记录 code=2）/, "须打出记录里的 code，钉住它不是 null");
   assert.match(
     out.out,
