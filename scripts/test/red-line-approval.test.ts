@@ -4,7 +4,7 @@
  *
  * 判据有三层，缺一层都会给出假绿：
  *   1. 纯函数层——`judgeRedLine` 的语义（命中且无 approved 才判红）；
- *   2. 面层——红线面是**派生**的（基座 `.github/**` + `.dsh/skills/**` ∪ 声明表里每个 guard 的 `sources` ∪ 声明表自身），
+ *   2. 面层——红线面是**派生**的（基座 `.github/**` + `.dsh/skills/**` + 判据本体 + 已发布导出面基线 ∪ 声明表里每个 guard 的 `sources` ∪ 声明表自身），
  *      且 `scripts/gate/**` 明确**不在**面内（#851 撤回了上一版把它当"加固面"的扩大定义）；
  *   3. 接线层——CLI 的退出码契约（0/1/2）与 ci.yml 里那个 job 真的在调它、真的挂进
  *      repo-gate 的 needs。判据本体对而接线错，是"有测试却拦不住"的经典形态。
@@ -69,7 +69,7 @@ function jobBlock(text: string, job: string) {
 
 // ─────────────────────────── 一、红线面（派生） ───────────────────────────
 
-test("红线面：由 fixture 声明表派生——每个 guard 的 sources ∪ 基座（.github/** + .dsh/skills/** + 本体单文件）∪ 声明表自身", () => {
+test("红线面：由 fixture 声明表派生——每个 guard 的 sources ∪ 基座（.github/** + .dsh/skills/** + 本体单文件 + 导出面基线）∪ 声明表自身", () => {
   withRegistry(
     [
       {
@@ -87,6 +87,7 @@ test("红线面：由 fixture 声明表派生——每个 guard 的 sources ∪ 
         [
           ".dsh/skills/**",
           ".github/**",
+          "scripts/data/*-export-surface.json",
           "scripts/data/coverage.config.json",
           "scripts/data/gauntlet.config.json",
           "scripts/data/threshold-registry.json",
@@ -118,6 +119,7 @@ test("红线面：规范化——./ 前缀归一、跨 guard 重复只算一条�
         [
           ".dsh/skills/**",
           ".github/**",
+          "scripts/data/*-export-surface.json",
           "scripts/data/coverage.config.json",
           "scripts/data/gauntlet.config.json",
           "scripts/data/threshold-registry.json",
@@ -149,6 +151,7 @@ test("红线面：只收 guards[].sources——notAGate 的登记面不进面（
       [
         ".dsh/skills/**",
         ".github/**",
+        "scripts/data/*-export-surface.json",
         "scripts/data/gauntlet.config.json",
         "scripts/data/threshold-registry.json",
         "scripts/gate/red-line-approval.mjs",
@@ -165,7 +168,12 @@ test("红线面：声明表缺失 → 退化为仅基座面 + ::warning::，不�
     const missing = join(dir, "absent-registry.json");
     const warnings: string[] = [];
     const face = redLinePatterns(missing, (m) => warnings.push(m));
-    assert.deepEqual(face, [".dsh/skills/**", ".github/**", "scripts/gate/red-line-approval.mjs"]);
+    assert.deepEqual(face, [
+      ".dsh/skills/**",
+      ".github/**",
+      "scripts/data/*-export-surface.json",
+      "scripts/gate/red-line-approval.mjs",
+    ]);
     assert.equal(warnings.length, 1, "退化必须留痕，且只留一条");
     assert.match(warnings[0], /^::warning::/);
     assert.match(warnings[0], /声明表不可用/);
@@ -211,7 +219,12 @@ test("红线面：声明表存在但不可用 → 同样退化 + 报警，且告
       const warnings: string[] = [];
       assert.deepEqual(
         redLinePatterns(path, (m) => warnings.push(m)),
-        [".dsh/skills/**", ".github/**", "scripts/gate/red-line-approval.mjs"],
+        [
+          ".dsh/skills/**",
+          ".github/**",
+          "scripts/data/*-export-surface.json",
+          "scripts/gate/red-line-approval.mjs",
+        ],
         c.name,
       );
       assert.match(warnings[0], c.why, `${c.name} 的告警必须点名原因`);
@@ -299,6 +312,67 @@ test("基座面含 .dsh/skills/** 与判据本体单文件——改 skill/改守
     judgeRedLine({ changedFiles: ["scripts/gate/red-line-approval.mjs"], labels: [] }).ok,
     false,
   );
+});
+
+test("基座面含已发布导出面基线——收窄已发布 ABI 须带 approved（#875；PR #1049/#1052 的缺口）", () => {
+  // 这条钉的是**执法点存在**，不是「面里恰好有这条 glob」：同一次判定里既证命中、也证放行，
+  // 少任何一半都可能因为面是空的 / 判据恒绿而蒙混过去。
+  assert.ok(
+    RED_LINE_PATTERNS.includes("scripts/data/*-export-surface.json"),
+    `默认面必须含已发布导出面基线（实际 ${RED_LINE_PATTERNS.join(", ")})`,
+  );
+  // 判红侧：收窄一个包的已发布导出面（入口改动 + 重冻结基线 + 连带分类登记），无 approved
+  // 路径用已登记进 scripts/README.md 的那一份（verify-scripts-index 的「引用即登记」棘轮会把
+  // 源码里出现的字面路径要求登记；逐包覆盖见下面那个循环，故此处不必逐一点名 provider-usage）。
+  const narrowing = judgeRedLine({
+    changedFiles: [
+      "packages/dsh-notifier/src/index.ts",
+      "scripts/data/dsh-notifier-export-surface.json",
+      "scripts/data/dsh-notifier-export-faces.json",
+    ],
+    labels: ["ci", "enhancement"],
+  });
+  assert.equal(narrowing.ok, false, "收窄已发布 ABI 且无 approved 必须判红");
+  // 逐条点名：违规里要能看到真正命中的那个文件，否则「因为别的原因判红」也能满足上面那条
+  assert.match(
+    narrowing.violations.join("\n"),
+    /scripts\/data\/dsh-notifier-export-surface\.json 命中红线面/,
+  );
+  // 放行侧：带 approved 即放行（本条是留痕闸，不是禁令）
+  assert.deepEqual(
+    judgeRedLine({
+      changedFiles: ["scripts/data/dsh-notifier-export-surface.json"],
+      labels: ["approved"],
+    }),
+    { ok: true, violations: [] },
+  );
+  // 防误伤回归锚：同族的**分类登记**文件（*-export-faces.json）与普通数据文件不在面内。
+  // 分类登记随收窄连带改动，但它不是 ABI 记录本身（ABI 记录是 surface 基线），不另占红线位。
+  assert.equal(
+    judgeRedLine({ changedFiles: ["scripts/data/dsh-notifier-export-faces.json"], labels: [] }).ok,
+    true,
+    "分类登记文件不得被本条误判成红线",
+  );
+  assert.equal(
+    judgeRedLine({ changedFiles: ["scripts/data/export-entry-alias.json"], labels: [] }).ok,
+    true,
+    "别名登记不在面内（glob 应收敛到 -export-surface.json 这一类）",
+  );
+  // 覆盖：逐包的基线都在面内，不只是恰好某一个包
+  for (const pkg of [
+    "dsh-notifier",
+    "dsh-lan-proxy",
+    "dsh-worktree-sidebar",
+    "dsh-mcp-manager",
+    "dsh-provider-usage",
+    "dsh-decision-gateway",
+  ]) {
+    assert.equal(
+      judgeRedLine({ changedFiles: [`scripts/data/${pkg}-export-surface.json`], labels: [] }).ok,
+      false,
+      `${pkg} 的导出面基线必须在面内`,
+    );
+  }
 });
 
 test("红线面：RED_LINE_PATTERNS 就是默认声明表的派生面，默认表路径即规范路径", () => {
@@ -773,7 +847,7 @@ test("CLI：--registry 用 fixture 声明表派生面——声明源判红、app
       assert.equal(gate.status, 0, gate.stderr);
       assert.match(
         gate.stdout,
-        /红线面\[\.dsh\/skills\/\*\*, \.github\/\*\*, scripts\/data\/gauntlet\.config\.json, scripts\/data\/threshold-registry\.json, scripts\/gate\/red-line-approval\.mjs\]/,
+        /红线面\[\.dsh\/skills\/\*\*, \.github\/\*\*, scripts\/data\/\*-export-surface\.json, scripts\/data\/gauntlet\.config\.json, scripts\/data\/threshold-registry\.json, scripts\/gate\/red-line-approval\.mjs\]/,
         "OK 行必须打印实际判的那一面",
       );
     },
@@ -799,7 +873,7 @@ test("CLI：--registry 指向缺失的声明表 → 退化放行但必须打 ::w
     assert.match(r.stderr, /absent\.json/);
     assert.match(
       r.stdout,
-      /红线面\[\.dsh\/skills\/\*\*, \.github\/\*\*, scripts\/gate\/red-line-approval\.mjs\]/,
+      /红线面\[\.dsh\/skills\/\*\*, \.github\/\*\*, scripts\/data\/\*-export-surface\.json, scripts\/gate\/red-line-approval\.mjs\]/,
     );
   } finally {
     rmSync(dir, { recursive: true, force: true });

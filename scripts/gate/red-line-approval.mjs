@@ -16,9 +16,11 @@
  * 不可解析」与「判红」分成两个退出码——把「判据没跑起来」伪装成「有违规」会让门禁的可信度
  * 一起贬值（1 才是违规）。
  *
- * 红线面是**派生**的，不是常量：基座是 `AGENTS.md` 明写的 `.github/**` 与 `.dsh/skills/**`，其余进面的是数据
- * 事实源声明表里被声明为 `sources` 的每个文件（外加声明表自身）。三条理由与代价见
- * `redLinePatterns` 的注释——一句话：关闸开关是数据不是代码，谁被声明为事实源谁就该在面内。
+ * 红线面是**派生**的，不是常量：基座是 `AGENTS.md` 明写的 `.github/**`、`.dsh/skills/**`、判据本体单文件，
+ * 以及**已发布导出面基线** `scripts/data/*-export-surface.json`（#875：公共 API 行为变更红线此前无机器执法点，
+ * 落点与取舍见 `RED_LINE_BASE_PATTERNS` 的注释），其余进面的是数据事实源声明表里被声明为 `sources` 的每个
+ * 文件（外加声明表自身）。三条理由与代价见 `redLinePatterns` 的注释——一句话：关闸开关是数据不是代码，
+ * 谁被声明为事实源谁就该在面内。
  *
  * 用法：
  *   node scripts/gate/red-line-approval.mjs --files <逗号分隔|@json 路径> [--labels <同上>]
@@ -39,7 +41,7 @@ import { failClosed } from "../lib/gate-exit.mjs";
 
 /**
  * 红线面的**基座**：仓库 `AGENTS.md` 明写的红线（`.github/` 下 workflow 与分支保护、`.dsh/skills/**` skill 规程变更、
- * 红线判据本体单文件 `scripts/gate/red-line-approval.mjs`）。
+ * 判据本体单文件 `scripts/gate/red-line-approval.mjs`、**已发布导出面基线** `scripts/data/*-export-surface.json`）。
  *
  * 基座是本文件里仅有的静态项；其余红线面一律**派生**自数据事实源声明表（`redLinePatterns`）。
  * 上一版把 `scripts/gate/**` 整树钉成静态项，等于自行扩大 `AGENTS.md` 的红线定义，且在 GitHub
@@ -48,11 +50,45 @@ import { failClosed } from "../lib/gate-exit.mjs";
  * 后者是 #904 维护者评审的 P1 补钉——守卫的代码不受守卫，删基座里 skill 那一行不需要 approved，
  * 单文件改动稀少同样不卡自治（#851 理由②不适用），且只钉一个文件不违背“撤整树”的字面。
  * 两处都随 AGENTS 修訂同批入面，批准留痕即 PR 的 `approved` 标签。
+ *
+ * ## 为什么钉「导出面基线」而不是「包入口文件」（#875，与 .dsh/skills 同批）
+ *
+ * `AGENTS.md` 红线第一条是「**公共 API 行为变更**须 approved」。收窄已发布 ABI 就是公共 API 行为变更，
+ * 但它此前**没有任何机器执法点**：PR #1049 / #1052 收窄包入口 `src/index.ts` 的 re-export 面，
+ * 本判据 rc=0、唯一 required check 通过、mergeable=MERGEABLE。
+ *
+ * 落点选基线文件而非入口文件，三条依据（均为实测，非推断）：
+ *
+ * ① **覆盖等价且更完整**：入口文件是**因**，基线文件是**果**——收窄导出面必然改动基线
+ *    （export-surface-snapshot 与基线逐字节比对，不改基线则该闸自己判红），反向不成立：
+ *    实测近 100 个提交里 31 个动过包入口 `src/index.ts`，其中仅 17 个同时动了导出面基线——
+ *    动入口不改基线的 14 个是纯注释/实现细节改动。钉入口 = 把 14 个无辜改动一并拉进红线；
+ *    钉基线 = 精确命中「导出面真的变了」的那 17 个里的收窄类。基线还覆盖 `./client` 入口与
+ *    **声明块**（签名变更），而只钉 `src/index.ts` 的那条 glob **匹配不到 `src/client/index.ts`**
+ *    （node:path matchesGlob 实测）——只钉入口会漏掉客户端入口收窄，钉基线不会。
+ *
+ * ② **成本量化**：近 100 个提交里，入口方案新增 7 个 `approved` 需求，基线方案新增 6 个——
+ *    基线更窄且更准。（两者都远低于 #851 撤回 `scripts/gate/**` 时的 70%。）
+ *
+ * ③ **不引入「门禁套门禁」**：入口方案要判「是否收窄」就得读基线做差分，等于让本判据依赖
+ *    export-surface-snapshot 的执行结果（门禁 A 判门禁 B 的结论，失败还会互相掩盖）；
+ *    基线方案是**路径命中**判据，与既有 `.github/**` 同构，无跨门禁耦合。
+ *
+ * 边界（如实声明，勿夸大声称）：
+ *   · 本条**只拦「基线文件被改」**。删掉某条 re-export 而**不同步重冻结基线**的路径，由
+ *     export-surface-snapshot 自己判红（逐字节比对），不需要本判据兜；
+ *   · 它**不判方向**：导出面**扩宽**同样要 `approved`。这是有意的——AGENTS.md 红线写的是
+ *     「公共 API 行为变更」，扩宽也是行为变更，且「只拦收窄」需要跨门禁差分（见依据③）；
+ *   · `dsh-verify-isolated` 无导出面基线（未接入该闸），其入口收窄不在本条覆盖内；
+ *   · 钉基线**不是**钉 `notAGate`：那些条目仍不进派生面（red-line-approval.test.ts 的
+ *     notAGate 边界测试原样保留），本条是基座里的独立静态项，与派生通道互不影响。
  */
 export const RED_LINE_BASE_PATTERNS = [
   ".github/**",
   ".dsh/skills/**",
   "scripts/gate/red-line-approval.mjs",
+  // 已发布 ABI 的冻结记录：改它就是改公共 API。逐包一个文件，glob 收敛到「导出面基线」这一类。
+  "scripts/data/*-export-surface.json",
 ];
 
 /** 声明表的规范仓库路径（#850）。声明表自身也在面内：改它的 `sources` 等于改红线面。 */
