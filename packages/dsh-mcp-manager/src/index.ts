@@ -144,25 +144,9 @@ export const name = "mcp-manager";
 /** 需要已初始化的工具注册表、web 服务器与提示词组装器。 */
 export const inject = ["tools", "webServer", "systemPrompt"];
 
-// 浮窗定位/层级/断点纯函数：实现在 shared/placement-math.ts（零依赖单一事实源，
-// 客户端 bundle 与宿主端共用同一份），此处经 shared 门面 re-export 保持导出面不变。
-export {
-  DEFAULT_Z_INDEX_BASE,
-  Z_INDEX_BASE_MIN,
-  Z_INDEX_BASE_MAX,
-  Z_INDEX_PANEL_DELTA,
-  BREAKPOINT_NARROW_MAX,
-  BREAKPOINT_TABLET_MAX,
-  clampZIndexBase,
-  panelZIndexFor,
-  breakpointForWidth,
-  clampPointToViewport,
-  composerDockedAtBottom,
-  bottomAnchorEdge,
-} from "./shared/interface.ts";
-export type { FloatBreakpoint, ViewportPoint, RectLike } from "./shared/interface.ts";
-// 面板锚点判定同为纯函数，随定位数学一起从单一事实源 re-export。
-export { panelAnchorForPosition } from "./shared/interface.ts";
+// 浮窗定位/层级/断点纯函数（shared/placement-math.ts 的 17 条）已退出包导出面（#875 M2c，
+// 判据 (b) 能力内部的纯判定）：它们是客户端与宿主端共用的几何换算，不是本包对外承诺。
+// 域门面保留为包内 seam，src/client 经 ../../shared/interface.ts 取用不经本入口。
 
 // ------------------------------------------------------------ re-export
 // 导出面与拆分前 lib/index.js 完全一致（smoke 验收契约）。
@@ -838,65 +822,36 @@ async function assembleEnabledRuntime(
 }
 
 // 插件 Config schema 与配置归一化（类型自 types.ts 取）
+// panelTopForAnchor（几何纯判定）与 expandEnv（${ENV} 预展开步骤）按 (b)(c) 退出导出面：
+// 前者是跨端共用的定位换算，后者是配置写入通道的实现步骤，产出物 DEFAULT_UI_CONFIG /
+// normalizeUiConfig / buildConfigUiPatch 才是配置面。
 export {
   DEFAULT_UI_CONFIG,
   normalizeUiConfig,
   buildConfigUiPatch,
-  panelTopForAnchor,
   Config,
-  // ${ENV} 预展开的物理定义在 config 域（#767 S1-1 自 connection/runtime 迁出）；
-  // 入口导出名集合不变，只换来源。
-  expandEnv,
 } from "./server/config/interface.ts";
 export type { UiPlacementConfig } from "./server/config/interface.ts";
 export type { ClientUiConfig } from "./shared/interface.ts";
 
 // 管理器 / 连接域（orchestrator+runtime：#664 阶段 6 集中搬移完成）。runtime 的值面自 W10 起
 // 直接取自子层门面——connection/interface.ts 只留类型出口，不再转发值符号。
-export { McpManager } from "./server/connection/orchestrator/interface.ts";
-// 自研连接栈（ConnectionSupervisor / HttpTransport / StdioTransport / createTransport /
-// MCPClient / RECONNECT_DEFAULTS / resolveReconnect / ReconnectPolicy）与工具定义链
-// （truncateText / assertSupportedOutputSchema / buildToolDefinition）已在 #767 S1-5c
-// 随四文件退役——协议与传输交官方 @deepseek-ai/dsh-mcp-client，工具定义交官方契约。
-export { McpMiddleware } from "./server/connection/runtime/interface.ts";
+// #875 M2c：McpManager / McpMiddleware 两个句柄类与 10 条超时/截断档位常量按 (b) 退出导出面
+// （判据 R1：本包 12 个域门面的首句全是 seam 陈述，无一命名对外承诺，故不满足 (a) 的前置）。
+// 对外能力仍经 ctx.mcpManager 服务面（见本文件 provideMcpManagerService）与 official 协议栈。
 export {
   DEFAULT_TOOL_CALL_TIMEOUT_MS,
-  DEFAULT_RESULT_TRUNCATE_BYTES,
   publicToolName,
-  CONNECT_TIMEOUT_MS,
-  DISCOVERY_TIMEOUT_MS,
-  CALL_TIMEOUT_MS,
-  CATALOG_TTL_MS,
-  MAX_TOOLS_PER_SERVER,
-  MAX_BYTES_PER_TOOL,
-  MAX_TOTAL_CATALOG_BYTES,
-  LIST_DEFAULT_TOOLS_PER_SERVER,
-  LIST_MAX_TOOLS_PER_SERVER,
 } from "./server/connection/runtime/interface.ts";
 // 工作空间路由域（项目根发现 / 全名解析 / scope / 模式归一化；阶段 4 成形）
-export {
-  findProjectRoot,
-  normalizedProjectRoot,
-  makeResolveRoot,
-} from "./server/workspace/interface.ts";
-export {
-  fullServerName,
-  parseFullServerName,
-  normalizeToolName,
-} from "./server/workspace/interface.ts";
+// #875 M2c：findProjectRoot / normalizedProjectRoot / fullServerName / parseFullServerName /
+// normalizeToolName 按 (b) 退出——项目根发现与全名解析是 workspace 域内部的路由实现步骤。
+export { makeResolveRoot } from "./server/workspace/interface.ts";
 // 执行管道域（两路径同构纯函数族；#664 阶段 2）
-export {
-  normalizeArguments,
-  msgOf,
-  createRedactor,
-  globMatch,
-  isToolDenied,
-  toolDisabledReason,
-  withTimeout,
-  defaultCallResultFallbackText,
-  projectCallToolResult,
-} from "./server/pipeline/interface.ts";
-export type { CallResultTextHandlers, ProjectedCallResult } from "./server/pipeline/interface.ts";
+// #875 M2c：8 条纯函数与 2 个中间态类型按 (b) 退出——两路径同构的参数归一 / 消息提取 /
+// 禁用判定 / 超时包装 / 结果投影是管道内部的实现步骤。createRedactor 保留：它是 (d4)
+// 经 ctx.tools 注册工具返回的脱敏器工厂（登记文件列了产出点），契约面。
+export { createRedactor } from "./server/pipeline/interface.ts";
 // 核心化 service（官方 storageDomain 模式）：ctx.mcpManager 类型面 + 声明合并。
 // 仅类型导出（无副作用导入）：消费方 import 类型时 tsc 会解析 shared 门面，
 // 入口的 declare module 合并自动生效；副作用导入会让 stryker sandbox 解析
@@ -924,46 +879,24 @@ declare module "@deepseek-ai/cordis" {
 }
 
 // 存储与状态持久化（config/store：#664 阶段 6 落位）
-export { defaultStorePath, McpStore } from "./server/store/interface.ts";
-export {
-  userStateFile,
-  loadUserState,
-  saveUserState,
-  loadDisabledTools,
-  saveDisabledTools,
-  parseDisabledTools,
-  catalogCacheFileFor,
-  readCatalogServerFromDisk,
-} from "./server/store/interface.ts";
+// #875 M2c：McpStore 句柄类与 8 条用户态/禁用表读写通道按 (b)(c) 退出——它们是落盘通道的
+// 实现步骤与投影形状，写入产出物（磁盘上的 mcp.json / user-state.json）才是对外事实。
+export { defaultStorePath } from "./server/store/interface.ts";
 // 能力目录 / 目录缓存（#664 阶段 5：catalog 域成形）
+// #875 M2c：16 条目录物化步骤（档位常量 / 摘要裁剪 / 检索打分 / 目录缓存读写）按 (b) 退出；
+// 保留的是经宿主通道交付的形状与两个策略选择常量（见登记文件 (d4) 各条产出点）。
 export {
   DEFAULT_ANNOUNCE_CATALOG,
   DEFAULT_CATALOG_MAX_ENTRIES,
-  catalogCacheFile,
-  CATALOG_SUMMARY_MAX_CHARS,
-  CATALOG_SUMMARY_PER_TOOL_CHARS,
-  CATALOG_ENTRY_MAX_CHARS,
-  summarizeToolDescriptions,
-  composeCatalogEntries,
-  digestCatalogEntries,
   renderMcpCatalogMessage,
-  escapeCatalogText,
   findCatalogMessage,
   readCatalogEntries,
   isCatalogSource,
   resolveCatalogEntries,
   CATALOG_SOURCE_PLUGIN,
   CATALOG_SECTION_NAME,
-  catalogHistory,
   renderMcpCatalogUpdate,
   resolveCatalogInjection,
-  scoreTool,
-  searchCatalog,
-  isCatalogFresh,
-  boundCatalogTools,
-  searchCatalogMulti,
-  listCatalog,
-  findToolDetail,
 } from "./server/catalog/interface.ts";
 // mcpServers JSON 导入 / 归一化（config/model）
 export {
@@ -973,7 +906,8 @@ export {
   normalizeServer,
 } from "./server/config/interface.ts";
 // 统计与 Debug
-export { McpStatsCollector, defaultStatsPath } from "./server/stats/interface.ts";
+// #875 M2c：McpStatsCollector 句柄类按 (b)(R1) 退出——它是统计域的收集器实现，不是对外承诺。
+export { defaultStatsPath } from "./server/stats/interface.ts";
 export type {
   McpStatsSnapshot,
   ServerStats,
@@ -984,7 +918,7 @@ export type {
 // 工具注册面（inject：#664 阶段 6 落位）
 export { registerMiddlewareTools, registerDirectMcpGuard } from "./server/inject/interface.ts";
 // 共享类型面（物理定义在各域 impl/<块>/type.ts，按落点域门面分组转出；#767 W11b2a）
-export type { ProjectUnit } from "./server/connection/interface.ts";
+// #875 M2c：ProjectUnit 按 (b) 退出——它是 connection 域内部的池单元账本条目。
 export type {
   SearchHit,
   ListToolEntry,
@@ -994,9 +928,12 @@ export type {
 } from "./server/catalog/interface.ts";
 export type { DisabledToolsMap } from "./server/store/interface.ts";
 export type { ServerConfig } from "./server/config/interface.ts";
-export type { ServerStatus } from "./server/api/interface.ts";
+// #875 M2c：ServerStatus 按 (b) 退出——HTTP 响应的实际形状由 (d1) 已登记的序列化位置给出
+// （/api/dsh-mcp/servers 的 summary 字段），这个 TS 形状只是响应体的内部别名。
 
 // 路由
+// SSE_HEARTBEAT_MS 按 (c) 退出——它是 30s 心跳的实现档位；帧的 wire 形状由 SSE_PING_FRAME
+// 与 broadcastFrame（(d1)/(d4)）承担。
 export {
   ROUTES,
   makeRoutes,
@@ -1004,14 +941,13 @@ export {
   makeHealthRoute,
   uiConfigChangedFrame,
   broadcastFrame,
-  SSE_HEARTBEAT_MS,
   SSE_PING_FRAME,
 } from "./server/api/interface.ts";
-export { normalizeScope } from "./server/workspace/interface.ts";
 // 跨端契约常量（物理定义在 shared/constants.ts）：入口经共享层门面取，与两端消费者同一份；
 // workspace 域门面仍为域内消费者转出同一份。客户端目前仍以字面量重复实现 scope 与全局 root
 // 前缀，改引属 #769。
 export { MIDDLEWARE_GLOBAL_ROOT, SCOPE_GLOBAL, SCOPE_PROJECT } from "./shared/interface.ts";
-// 仓库共享层（loopback 围栏 / writeJson / readJsonBody / sseData）
-export { isLoopbackRequest } from "../../../shared/loopback.js";
-export { writeJson, readJsonBody, sseData } from "../../../shared/host-utils.js";
+// #875 M2c：仓级共享接缝的 4 条转发（loopback 围栏 / writeJson / readJsonBody / sseData）
+// 全部退出包导出面——它们是仓级 shared 层的转发，不是本包契约，各包不重复转发同一份。
+// provider-usage（#1052）与 lan-proxy（#1049）已同批撤出，本包是最后一个。
+// 围栏与序列化仍在本文件内按需从 shared 层直取（见 imports），对内行为不变。

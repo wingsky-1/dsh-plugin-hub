@@ -38,33 +38,30 @@ import {
   assertClientProductContract,
   assertClientSourceContract,
 } from "../../../../test/smoke-lib.ts";
-import { fakeManagerCtx, pollUntil } from "../helpers.ts";
+import {
+  fakeManagerCtx,
+  installCompositionPorts,
+  pollUntil,
+  releaseCompositionPorts,
+} from "../helpers.ts";
 const pkgDir = fileURLToPath(new URL("../../", import.meta.url));
 import {
   apply,
   broadcastFrame,
   buildConfigUiPatch,
-  composeCatalogEntries,
   Config,
   DEFAULT_UI_CONFIG,
-  digestCatalogEntries,
-  escapeCatalogText,
   findCatalogMessage,
   isCatalogSource,
   fromClaudeEntry,
-  expandEnv,
   inject,
   MCP_SECTION_ORDER,
   makeEventsRoute,
   makeHealthRoute,
   makeRoutes,
-  McpManager,
-  McpStore,
   name,
   normalizeServer,
   normalizeUiConfig,
-  panelAnchorForPosition,
-  panelTopForAnchor,
   parseClaudeJson,
   publicToolName,
   renderMcpCatalogMessage,
@@ -72,24 +69,55 @@ import {
   resolveCatalogInjection,
   ROUTES,
   SCOPE_PROJECT,
-  sseData,
-  Z_INDEX_BASE_MIN,
-  Z_INDEX_BASE_MAX,
-  Z_INDEX_PANEL_DELTA,
+  uiConfigChangedFrame,
+} from "../../lib/index.js";
+// #875 M2c：以下符号已退出包导出面（理由见 src/index.ts 同批注释）。冒烟仍从产物面取
+// 安装面与契约面符号；这几条走域门面——§8 契约层明确允许的导入面。白盒断言不必为了
+// 「从产物导入」而把能力内部的实现步骤钉死在公共 API 上（同 lan-proxy #1049 的口径）。
+import {
   BREAKPOINT_NARROW_MAX,
   BREAKPOINT_TABLET_MAX,
+  Z_INDEX_BASE_MAX,
+  Z_INDEX_BASE_MIN,
+  Z_INDEX_PANEL_DELTA,
+  bottomAnchorEdge,
   breakpointForWidth,
   clampPointToViewport,
   clampZIndexBase,
-  panelZIndexFor,
   composerDockedAtBottom,
-  bottomAnchorEdge,
+  panelAnchorForPosition,
+  panelTopForAnchor,
+  panelZIndexFor,
+} from "../../src/shared/interface.ts";
+import { expandEnv } from "../../src/server/config/interface.ts";
+import {
+  composeCatalogEntries,
+  digestCatalogEntries,
+  escapeCatalogText,
   summarizeToolDescriptions,
-  uiConfigChangedFrame,
-} from "../../lib/index.js";
+} from "../../src/server/catalog/interface.ts";
+import { McpManager } from "../../src/server/connection/orchestrator/interface.ts";
+import { McpStore } from "../../src/server/store/interface.ts";
+// sseData 是仓级 shared 接缝（shared/host-utils.ts），本包无域门面——与单元层
+// unit-routes-sse.test.ts:50 同一取法。
+import { sseData } from "../../../../shared/host-utils.js";
 
 // 服务契约门禁（#476）与结构化单元/集成测试由 vitest 的 unit / integration project 收集；
 // 本文件（e2e project）不再以包内 glob 聚合方式执行，避免同一文件被求值两遍。
+
+// #875 M2c：上面那批被撤符号改指 src/ 域门面后，六张静态端口表必须手装。原因是它们是
+// **模块级单例**（runtime/impl/service/index.ts 的 export const runtimePorts = new RuntimePorts()），
+// 正常由组合根 src/index.ts 在模块求值期装配；而 lib/index.js 是自包含 bundle，有自己一份已装配的。
+// 从 lib/ 切到 src/ 就是换了一组模块实例——直接 new 出来的类拿到的是从未装配的那份单例，
+// get() 会抛「子层未装配」。故按单元层（test/unit/unit-routes-sse.test.ts:36-51）同一口径：
+// 域门面直取 + helpers 以同实参、同顺序手装。**换 import 来源不是纯语法操作，它会改变模块实例身份。**
+beforeAll(() => {
+  installCompositionPorts();
+});
+
+afterAll(() => {
+  releaseCompositionPorts();
+});
 
 /** 假路由：fakeCtx.webServer 收到的注册项，只表达测试回读的面（path/handler）。 */
 interface FakeRoute {
@@ -349,8 +377,10 @@ it("宿主路径断言锚点有效性（反例：含 ~/.dsh 的产物必须被�
   ).toEqual([]);
 });
 it("中间层工具注册（ws_mcp_search / ws_mcp_call / ws_mcp_list / ws_mcp_detail + 路由一致性）", async () => {
-  const { registerMiddlewareTools, McpMiddleware, fullServerName, parseFullServerName } =
-    await import("../../lib/index.js");
+  const { registerMiddlewareTools } = await import("../../src/server/inject/interface.ts");
+  const { McpMiddleware } = await import("../../src/server/connection/runtime/interface.ts");
+  const { fullServerName, parseFullServerName } =
+    await import("../../src/server/workspace/interface.ts");
   const registered: ToolDefinition[] = [];
   const ctx = captureCtx(registered);
   const host: MiddlewareHost = {
@@ -475,7 +505,8 @@ it("中间层工具注册（ws_mcp_search / ws_mcp_call / ws_mcp_list / ws_mcp_d
   dispose();
 });
 it("search 早退分支（unit undefined）返回 truncated=false（P1-1）", async () => {
-  const { registerMiddlewareTools, McpMiddleware } = await import("../../lib/index.js");
+  const { registerMiddlewareTools } = await import("../../src/server/inject/interface.ts");
+  const { McpMiddleware } = await import("../../src/server/connection/runtime/interface.ts");
   const registered: ToolDefinition[] = [];
   const ctx = captureCtx(registered);
   const host: MiddlewareHost = {
@@ -504,8 +535,10 @@ it("search 早退分支（unit undefined）返回 truncated=false（P1-1）", as
   dispose();
 });
 it("中间层 all 模式：@global 覆盖（list/search 可见全局，call 放行 @global）", async () => {
-  const { registerMiddlewareTools, McpMiddleware, fullServerName, MIDDLEWARE_GLOBAL_ROOT } =
-    await import("../../lib/index.js");
+  const { MIDDLEWARE_GLOBAL_ROOT } = await import("../../lib/index.js");
+  const { registerMiddlewareTools } = await import("../../src/server/inject/interface.ts");
+  const { McpMiddleware } = await import("../../src/server/connection/runtime/interface.ts");
+  const { fullServerName } = await import("../../src/server/workspace/interface.ts");
   const registered: ToolDefinition[] = [];
   const ctx = captureCtx(registered);
   // 目录投影的文案随「发现完成」这一步变换：hook 住描述即可让最后一次投影成为断言面。
@@ -715,8 +748,10 @@ it("MCP_GUIDANCE 与隐藏后的模型面一致：全局与项目级同走 ws_mc
   expect(MCP_GUIDANCE, "绝对口径已改写").not.toMatch(/are NOT in your tool list/);
 });
 it("#362 A2 / #767 笔 1a：project root 会话下 @global 可达（「改 mcp__ 直呼」拒绝门已删）", async () => {
-  const { registerMiddlewareTools, McpMiddleware, fullServerName, MIDDLEWARE_GLOBAL_ROOT } =
-    await import("../../lib/index.js");
+  const { MIDDLEWARE_GLOBAL_ROOT } = await import("../../lib/index.js");
+  const { registerMiddlewareTools } = await import("../../src/server/inject/interface.ts");
+  const { McpMiddleware } = await import("../../src/server/connection/runtime/interface.ts");
+  const { fullServerName } = await import("../../src/server/workspace/interface.ts");
   const registered: ToolDefinition[] = [];
   const ctx = captureCtx(registered);
   const globalServer = {
@@ -796,7 +831,8 @@ it("#362 A2 / #767 笔 1a：project root 会话下 @global 可达（「改 mcp__
   dispose();
 });
 it("#362 isGlobalServer 双源：runtime 注册的 codegraph 判全局（P1 修正）", async () => {
-  const { McpManager, McpStore } = await import("../../lib/index.js");
+  const { McpManager } = await import("../../src/server/connection/orchestrator/interface.ts");
+  const { McpStore } = await import("../../src/server/store/interface.ts");
   const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-manager-global-"));
   try {
     const store = new McpStore(join(dir, "mcp.json"));
@@ -821,8 +857,10 @@ it("#362 isGlobalServer 双源：runtime 注册的 codegraph 判全局（P1 修�
   }
 });
 it("#362 A1：ws_mcp_list 带 serverFilter 过滤 0 命中 → message 可归因（不谎报未配置）", async () => {
-  const { registerMiddlewareTools, McpMiddleware, fullServerName, MIDDLEWARE_GLOBAL_ROOT } =
-    await import("../../lib/index.js");
+  const { MIDDLEWARE_GLOBAL_ROOT } = await import("../../lib/index.js");
+  const { registerMiddlewareTools } = await import("../../src/server/inject/interface.ts");
+  const { McpMiddleware } = await import("../../src/server/connection/runtime/interface.ts");
+  const { fullServerName } = await import("../../src/server/workspace/interface.ts");
   const registered: ToolDefinition[] = [];
   const ctx = captureCtx(registered);
   const host: MiddlewareHost = {
@@ -893,14 +931,12 @@ it("#362 A1：ws_mcp_list 带 serverFilter 过滤 0 命中 → message 可归因
   dispose();
 });
 it("#362 P0-1：工具级禁用三入口一致（callTool / pre-execute guard / mcp__ 直呼）", async () => {
-  const {
-    registerMiddlewareTools,
-    McpMiddleware,
-    fullServerName,
-    parseDisabledTools,
-    isToolDenied,
-    toolDisabledReason,
-  } = await import("../../lib/index.js");
+  const { registerMiddlewareTools } = await import("../../src/server/inject/interface.ts");
+  const { McpMiddleware } = await import("../../src/server/connection/runtime/interface.ts");
+  const { fullServerName } = await import("../../src/server/workspace/interface.ts");
+  const { parseDisabledTools } = await import("../../src/server/store/interface.ts");
+  const { isToolDenied, toolDisabledReason } =
+    await import("../../src/server/pipeline/interface.ts");
   // 1) isToolDenied 纯函数：项目 root 命中 + @global 回落 + 哈希超长名不误禁。
   const map = parseDisabledTools({ "/proj": { ctx: ["use_ctx"] }, "@global": { gctx: ["use_g"] } });
   expect(isToolDenied(map, fullServerName("/proj", "ctx"), "use_ctx"), "项目 root 记录命中").toBe(
@@ -1058,7 +1094,7 @@ it("#362 P0-1：工具级禁用三入口一致（callTool / pre-execute guard / 
   ]);
 
   // 4) stats：四个原子工具埋点与统计断言
-  const { McpStatsCollector } = await import("../../lib/index.js");
+  const { McpStatsCollector } = await import("../../src/server/stats/interface.ts");
   const testStatsDir = mkdtempSync(join(tmpdir(), "mcp-smoke-stats-"));
   const testStatsFile = join(testStatsDir, "smoke-stats.json");
   try {
@@ -1119,14 +1155,10 @@ it("#362 P0-1：工具级禁用三入口一致（callTool / pre-execute guard / 
   dispose();
 });
 it("#362 P1：disabledTools 持久化（合并式写盘 + 重启保留）", async () => {
-  const {
-    McpManager,
-    McpStore,
-    loadDisabledTools,
-    saveDisabledTools,
-    parseDisabledTools,
-    MIDDLEWARE_GLOBAL_ROOT,
-  } = await import("../../lib/index.js");
+  const { MIDDLEWARE_GLOBAL_ROOT } = await import("../../lib/index.js");
+  const { McpManager } = await import("../../src/server/connection/orchestrator/interface.ts");
+  const { McpStore, loadDisabledTools, saveDisabledTools, parseDisabledTools } =
+    await import("../../src/server/store/interface.ts");
   const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-manager-tools-"));
   try {
     const file = join(dir, "dsh-mcp-user-state.json");
@@ -1677,16 +1709,16 @@ it("uiConfigChangedFrame 写出一帧 ui-config-changed", () => {
   expect(uiConfigChangedFrame()).toBe('data: {"type":"ui-config-changed"}\n\n');
   expect(sseData({ type: "ui-config-changed" }), "与 sseData 同构").toBe(uiConfigChangedFrame());
 });
-// #472 收敛锚定：lib/index.js 仍可 import sseData（re-export 面不漂移），
-// 且输出与 shared/host-utils.js 单一事实源一致（防 re-export 链被误删/改指）。
-it("lib/index.js 导出 sseData 且输出与 shared/host-utils.js 一致（#472）", async () => {
-  const { sseData: libSseData } = await import("../../lib/index.js");
-  const { sseData: sharedSseData } = await import("../../../../shared/host-utils.js");
-  expect(typeof libSseData, "lib/index.js 可 import sseData").toBe("function");
-  expect(libSseData({ type: "ui-config-changed" })).toBe(
-    sharedSseData({ type: "ui-config-changed" }),
-  );
-  expect(libSseData({ type: "ping" })).toBe('data: {"type":"ping"}\n\n');
+// #472 收敛锚定 · 方向已反转（#875 M2c）：sseData 是**仓级** shared 接缝
+// （shared/host-utils.ts:71），本包无域门面可迁移，判据 (b) 判它不进任何包的导出面——
+// 各包不重复转发同一份。provider-usage（#1052）、lan-proxy（#1049）已同批撤出，本包是最后一个。
+//
+// 为什么反转而不是删掉：这条锚定的**目的是防 re-export 链漂移**，正面断言「它存在且与
+// shared 同源」只防得住「被改指」。反转成否定断言后，它同时防住「被重新加回来」——
+// 任何人再写一次 sseData 的 re-export，本条立刻红。判据更严，不是放宽。
+it("lib/index.js 不导出仓级 shared 接缝 sseData（#472 收敛锚 · 反转）", async () => {
+  const lib = await import("../../lib/index.js");
+  expect(lib, "sseData 不得回到本包导出面").not.toHaveProperty("sseData");
 });
 it("broadcastFrame 向全部连接写帧（掉线忽略）", () => {
   const written: string[] = [];
@@ -2063,7 +2095,7 @@ describe("项目根发现（findProjectRoot / setSession）", () => {
     );
     prevDshHome = process.env.DSH_HOME;
     process.env.DSH_HOME = join(home, ".dsh");
-    ({ findProjectRoot } = await import("../../lib/index.js"));
+    ({ findProjectRoot } = await import("../../src/server/workspace/interface.ts"));
     manager = new McpManager(fakeManagerCtx(), new McpStore(join(base, "dsh-mcp.json")));
   });
 

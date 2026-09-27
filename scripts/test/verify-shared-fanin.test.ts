@@ -331,12 +331,12 @@ test("真实仓库：扇入全部达标、无悬空引用", () => {
 test("#792 PR2 登记偏差修正：四行登记以派生结果为准", () => {
   const result = fanin(ROOT);
   // loopback：原快照登 4 包，实测 2 包——lan-proxy / provider-usage 是经 host-utils 间接用，
-  // 属 host-utils 的消费者关系，不构成 loopback 的扇入
-  assert.deepEqual(rowOf(result, "loopback").consumers, [
-    "dsh-decision-gateway",
-    "dsh-mcp-manager",
-    "dsh-notifier",
-  ]);
+  // 属 host-utils 的消费者关系，不构成 loopback 的扇入。
+  // #875 M2c 再校正：mcp-manager 此前唯一的 loopback 说明符是入口的 re-export（纯转发，
+  // 包内零使用点），随该转发撤出而消失。其运行期围栏走 host-utils 的 guardLoopbackMethod
+  // （server/api/routes.ts:18），那条边记在 host-utils 行上——按本文件「不传递」的口径，
+  // 不回流成 loopback 的扇入。故本行由 3 包收敛为 2 包。
+  assert.deepEqual(rowOf(result, "loopback").consumers, ["dsh-decision-gateway", "dsh-notifier"]);
   // settings-namespace：原快照多登 notifier（零引用）
   assert.deepEqual(rowOf(result, "settings-namespace").consumers, [
     "dsh-lan-proxy",

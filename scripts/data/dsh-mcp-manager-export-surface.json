@@ -2,48 +2,12 @@
   "package": "dsh-mcp-manager",
   "exports": [
     {
-      "name": "BREAKPOINT_NARROW_MAX",
-      "isType": false
-    },
-    {
-      "name": "BREAKPOINT_TABLET_MAX",
-      "isType": false
-    },
-    {
-      "name": "CALL_TIMEOUT_MS",
-      "isType": false
-    },
-    {
-      "name": "CATALOG_ENTRY_MAX_CHARS",
-      "isType": false
-    },
-    {
       "name": "CATALOG_SECTION_NAME",
       "isType": false
     },
     {
       "name": "CATALOG_SOURCE_PLUGIN",
       "isType": false
-    },
-    {
-      "name": "CATALOG_SUMMARY_MAX_CHARS",
-      "isType": false
-    },
-    {
-      "name": "CATALOG_SUMMARY_PER_TOOL_CHARS",
-      "isType": false
-    },
-    {
-      "name": "CATALOG_TTL_MS",
-      "isType": false
-    },
-    {
-      "name": "CONNECT_TIMEOUT_MS",
-      "isType": false
-    },
-    {
-      "name": "CallResultTextHandlers",
-      "isType": true
     },
     {
       "name": "ClientUiConfig",
@@ -62,23 +26,11 @@
       "isType": false
     },
     {
-      "name": "DEFAULT_RESULT_TRUNCATE_BYTES",
-      "isType": false
-    },
-    {
       "name": "DEFAULT_TOOL_CALL_TIMEOUT_MS",
       "isType": false
     },
     {
       "name": "DEFAULT_UI_CONFIG",
-      "isType": false
-    },
-    {
-      "name": "DEFAULT_Z_INDEX_BASE",
-      "isType": false
-    },
-    {
-      "name": "DISCOVERY_TIMEOUT_MS",
       "isType": false
     },
     {
@@ -88,18 +40,6 @@
     {
       "name": "DisabledToolsMap",
       "isType": true
-    },
-    {
-      "name": "FloatBreakpoint",
-      "isType": true
-    },
-    {
-      "name": "LIST_DEFAULT_TOOLS_PER_SERVER",
-      "isType": false
-    },
-    {
-      "name": "LIST_MAX_TOOLS_PER_SERVER",
-      "isType": false
     },
     {
       "name": "ListCatalogResult",
@@ -114,18 +54,6 @@
       "isType": true
     },
     {
-      "name": "MAX_BYTES_PER_TOOL",
-      "isType": false
-    },
-    {
-      "name": "MAX_TOOLS_PER_SERVER",
-      "isType": false
-    },
-    {
-      "name": "MAX_TOTAL_CATALOG_BYTES",
-      "isType": false
-    },
-    {
       "name": "MCP_GUIDANCE",
       "isType": false
     },
@@ -138,10 +66,6 @@
       "isType": false
     },
     {
-      "name": "McpManager",
-      "isType": false
-    },
-    {
       "name": "McpManagerServerInput",
       "isType": true
     },
@@ -150,40 +74,16 @@
       "isType": true
     },
     {
-      "name": "McpMiddleware",
-      "isType": false
-    },
-    {
-      "name": "McpStatsCollector",
-      "isType": false
-    },
-    {
       "name": "McpStatsSnapshot",
       "isType": true
-    },
-    {
-      "name": "McpStore",
-      "isType": false
     },
     {
       "name": "ProgressiveDisclosureStats",
       "isType": true
     },
     {
-      "name": "ProjectUnit",
-      "isType": true
-    },
-    {
-      "name": "ProjectedCallResult",
-      "isType": true
-    },
-    {
       "name": "ROUTES",
       "isType": false
-    },
-    {
-      "name": "RectLike",
-      "isType": true
     },
     {
       "name": "SCOPE_GLOBAL",
@@ -195,10 +95,6 @@
     },
     {
       "name": "SERVER_NAME_PATTERN",
-      "isType": false
-    },
-    {
-      "name": "SSE_HEARTBEAT_MS",
       "isType": false
     },
     {
@@ -218,10 +114,6 @@
       "isType": true
     },
     {
-      "name": "ServerStatus",
-      "isType": true
-    },
-    {
       "name": "ToolCallMetric",
       "isType": true
     },
@@ -234,35 +126,7 @@
       "isType": true
     },
     {
-      "name": "ViewportPoint",
-      "isType": true
-    },
-    {
-      "name": "Z_INDEX_BASE_MAX",
-      "isType": false
-    },
-    {
-      "name": "Z_INDEX_BASE_MIN",
-      "isType": false
-    },
-    {
-      "name": "Z_INDEX_PANEL_DELTA",
-      "isType": false
-    },
-    {
       "name": "apply",
-      "isType": false
-    },
-    {
-      "name": "bottomAnchorEdge",
-      "isType": false
-    },
-    {
-      "name": "boundCatalogTools",
-      "isType": false
-    },
-    {
-      "name": "breakpointForWidth",
       "isType": false
     },
     {
@@ -274,39 +138,7 @@
       "isType": false
     },
     {
-      "name": "catalogCacheFile",
-      "isType": false
-    },
-    {
-      "name": "catalogCacheFileFor",
-      "isType": false
-    },
-    {
-      "name": "catalogHistory",
-      "isType": false
-    },
-    {
-      "name": "clampPointToViewport",
-      "isType": false
-    },
-    {
-      "name": "clampZIndexBase",
-      "isType": false
-    },
-    {
-      "name": "composeCatalogEntries",
-      "isType": false
-    },
-    {
-      "name": "composerDockedAtBottom",
-      "isType": false
-    },
-    {
       "name": "createRedactor",
-      "isType": false
-    },
-    {
-      "name": "defaultCallResultFallbackText",
       "isType": false
     },
     {
@@ -318,27 +150,7 @@
       "isType": false
     },
     {
-      "name": "digestCatalogEntries",
-      "isType": false
-    },
-    {
-      "name": "escapeCatalogText",
-      "isType": false
-    },
-    {
-      "name": "expandEnv",
-      "isType": false
-    },
-    {
       "name": "findCatalogMessage",
-      "isType": false
-    },
-    {
-      "name": "findProjectRoot",
-      "isType": false
-    },
-    {
-      "name": "findToolDetail",
       "isType": false
     },
     {
@@ -346,43 +158,11 @@
       "isType": false
     },
     {
-      "name": "fullServerName",
-      "isType": false
-    },
-    {
-      "name": "globMatch",
-      "isType": false
-    },
-    {
       "name": "inject",
       "isType": false
     },
     {
-      "name": "isCatalogFresh",
-      "isType": false
-    },
-    {
       "name": "isCatalogSource",
-      "isType": false
-    },
-    {
-      "name": "isLoopbackRequest",
-      "isType": false
-    },
-    {
-      "name": "isToolDenied",
-      "isType": false
-    },
-    {
-      "name": "listCatalog",
-      "isType": false
-    },
-    {
-      "name": "loadDisabledTools",
-      "isType": false
-    },
-    {
-      "name": "loadUserState",
       "isType": false
     },
     {
@@ -402,19 +182,7 @@
       "isType": false
     },
     {
-      "name": "msgOf",
-      "isType": false
-    },
-    {
       "name": "name",
-      "isType": false
-    },
-    {
-      "name": "normalizeArguments",
-      "isType": false
-    },
-    {
-      "name": "normalizeScope",
       "isType": false
     },
     {
@@ -422,43 +190,11 @@
       "isType": false
     },
     {
-      "name": "normalizeToolName",
-      "isType": false
-    },
-    {
       "name": "normalizeUiConfig",
       "isType": false
     },
     {
-      "name": "normalizedProjectRoot",
-      "isType": false
-    },
-    {
-      "name": "panelAnchorForPosition",
-      "isType": false
-    },
-    {
-      "name": "panelTopForAnchor",
-      "isType": false
-    },
-    {
-      "name": "panelZIndexFor",
-      "isType": false
-    },
-    {
       "name": "parseClaudeJson",
-      "isType": false
-    },
-    {
-      "name": "parseDisabledTools",
-      "isType": false
-    },
-    {
-      "name": "parseFullServerName",
-      "isType": false
-    },
-    {
-      "name": "projectCallToolResult",
       "isType": false
     },
     {
@@ -467,14 +203,6 @@
     },
     {
       "name": "readCatalogEntries",
-      "isType": false
-    },
-    {
-      "name": "readCatalogServerFromDisk",
-      "isType": false
-    },
-    {
-      "name": "readJsonBody",
       "isType": false
     },
     {
@@ -506,51 +234,7 @@
       "isType": false
     },
     {
-      "name": "saveDisabledTools",
-      "isType": false
-    },
-    {
-      "name": "saveUserState",
-      "isType": false
-    },
-    {
-      "name": "scoreTool",
-      "isType": false
-    },
-    {
-      "name": "searchCatalog",
-      "isType": false
-    },
-    {
-      "name": "searchCatalogMulti",
-      "isType": false
-    },
-    {
-      "name": "sseData",
-      "isType": false
-    },
-    {
-      "name": "summarizeToolDescriptions",
-      "isType": false
-    },
-    {
-      "name": "toolDisabledReason",
-      "isType": false
-    },
-    {
       "name": "uiConfigChangedFrame",
-      "isType": false
-    },
-    {
-      "name": "userStateFile",
-      "isType": false
-    },
-    {
-      "name": "withTimeout",
-      "isType": false
-    },
-    {
-      "name": "writeJson",
       "isType": false
     }
   ],
@@ -612,7 +296,7 @@
     "export declare const STATS_FILE_NAME = \"stats.json\";",
     "export declare const STATUS_ORDER: ({ key: \"connected\"; titleKey: McpLocaleKey; dot: string; }",
     "export declare const STATUS_TEXT: Record<string, McpLocaleKey>;",
-    "export declare const STEPS: readonly UpgradeStep[];",
+    "export declare const STEPS: readonly UpgradeStep<UpgradeDeps>[];",
     "export declare const USER_STATE_FILE_NAME = \"user-state.json\";",
     "export declare const VERSION_FILE_NAME = \"version\";",
     "export declare const Z_INDEX_BASE_MAX = 9000;",
@@ -631,7 +315,7 @@
     "export declare const orchestratorPorts: OrchestratorPorts;",
     "export declare const pipelinePorts: PipelinePorts;",
     "export declare const runtimePorts: RuntimePorts;",
-    "export declare const upgradeRunner: UpgradeRunner;",
+    "export declare const upgradeRunner: UpgradeRunner<UpgradeDeps>;",
     "export declare const zh: { readonly stConnected: \"运行中\"; readonly stConnecting: \"连接中\"; readonly stReconnecting: \"重连中\"; readonly stStopped: \"未连接\"; readonly stDisabled: \"已停用\"; readonly stFailed: \"失败\"; readonly connect: \"连接\"; readonly disconnect: \"断开\"; readonly reconnect: \"重连\"; readonly enable: \"启用\"; readonly enableAndConnect: \"启用并连接\"; readonly disable: \"禁用\"; readonly edit: \"编辑\"; readonly delete: \"删除\"; readonly save: \"保存\"; readonly cancel: \"取消\"; readonly refresh: \"刷新\"; readonly close: \"关闭\"; readonly cancelEdit: \"取消编辑\"; readonly saveFail: \"保存失败：{msg}\"; readonly actionFail: \"操作失败：{msg}\"; readonly loadFail: \"加载失败：{msg}\"; readonly floatAriaLabel: \"MCP 管理器\"; readonly floatTitle: \"MCP 管理器（点击展开）\"; readonly floatManage: \"管理\"; readonly floatGlobalSession: \"全局会话\"; readonly groupProject: \"项目级\"; readonly groupGlobal: \"全局\"; readonly badgeScopeProject: \"项目\"; readonly badgeScopeGlobal: \"全局\"; readonly serverMeta: \"{status} · {tools} 工具\"; readonly toolsCount: \"工具（{n}）\"; readonly toolsCountPlain: \"{n} 工具\"; readonly statusGroupCount: \"{status}（{n}）\"; readonly groupAttention: \"需关注（{n}）\"; readonly healthRunning: \"运行中 {n}\"; readonly healthConnecting: \"连接中 {n}\"; readonly healthStopped: \"未连接 {n}\"; readonly healthFailed: \"失败 {n}\"; readonly floatEmptyTitle: \"还没有 MCP 服务器\"; readonly floatEmptyCta: \"去添加\"; readonly panelTitle: \"MCP 管理器\"; readonly tabServers: \"服务器\"; readonly tabQuickAdd: \"快速接入\"; readonly countsConnected: \"运行中 {n}\"; readonly countsConnecting: \"连接中 {n}\"; readonly countsFailed: \"失败 {n}\"; readonly countsSummary: \"共 {n} 台 · {parts}\"; readonly countsSummaryOnly: \"共 {n} 台\"; readonly addServer: \"添加服务器\"; readonly editServer: \"编辑服务器：{name}\"; readonly nameLabel: \"服务器名称（唯一，作为 mcp__<name>__ 前缀）\"; readonly ownershipLabel: \"归属\"; readonly transportLabel: \"传输类型\"; readonly commandLabel: \"命令（stdio）\"; readonly argsLabel: \"参数（逗号分隔）\"; readonly envLabel: \"环境变量（每行 KEY=VALUE，支持 ${ENV} 引用，值为空则继承父环境）\"; readonly cwdLabel: \"工作目录（可选）\"; readonly urlLabel: \"URL（streamable-http）\"; readonly headersLabel: \"请求头（每行 KEY: VALUE，支持 ${ENV} 引用）\"; readonly enabledLabel: \"启用（保存后立即连接）\"; readonly scopeProjectOpt: \"项目级（<项目>/.dsh/@wingsky-1/dsh-mcp-manager/mcp.json，随会话切换）\"; readonly scopeGlobalOpt: \"全局（本机配置）\"; readonly transportStdioOpt: \"stdio（本地子进程）\"; readonly transportHttpOpt: \"streamable-http（远程）\"; readonly envPlaceholder: \"每行 KEY=VALUE，如\\nCONTEXT7_API_KEY=${CONTEXT7_API_KEY}\"; readonly headersPlaceholder: \"每行 KEY: VALUE，支持 ${ENV} 引用，如\\nAuthorization: Bearer ${CONTEXT7_API_KEY}\"; readonly cwdPlaceholder: \"可选工作目录\"; readonly pasteTitle: \"粘贴 mcpServers JSON 导入\"; readonly importJson: \"导入 JSON\"; readonly importedOk: \"已导入：{names}\"; readonly importedNone: \"（无）\"; readonly importSkipped: \"跳过（已存在）：{names}\"; readonly importFail: \"导入失败：{msg}\"; readonly serversEmpty: \"还没有配置 MCP 服务器。切到「快速接入」页添加，或粘贴 mcpServers JSON 导入。\"; readonly confirmDelete: \"删除 MCP 服务器「{name}」？\"; readonly settingsLoading: \"MCP 管理器：加载中…\"; readonly settingsName: \"MCP 管理器（dsh-mcp-manager）\"; readonly settingsDescription: \"浮窗位置 / 水平·垂直·空白偏移\"; readonly anchorLabel: \"锚点\"; readonly posTopRight: \"右上（top-right）\"; readonly posTopLeft: \"左上（top-left）\"; readonly posBottomRight: \"右下（bottom-right）\"; readonly posBottomLeft: \"左下（bottom-left）\"; readonly offsetX: \"水平偏移\"; readonly offsetY: \"垂直偏移\"; readonly blankY: \"空白偏移\"; readonly zIndexBase: \"层级基准\"; readonly settingsHint: \"保存即热更新：浮窗位置与偏移即时生效并持久化（无需重启 dsh web）。\"; readonly savingNow: \"保存中…\"; readonly settingsSavedOk: \"已保存——浮窗位置即时生效（无需重启）\"; };",
     "export declare function SettingsCard(props: SettingsCardProps): React.ReactElement | null;",
     "export declare function absentFromPool(middleware: McpMiddleware | undefined, root: string, name: string): boolean;",
@@ -683,7 +367,6 @@
     "export declare function collectCatalogServers(into: CatalogServers, entries: Iterable<readonly [string, ServerConfig]>, scope: string): void;",
     "export declare function collectOfficialLogs(logs: LogsPort, serverName: string): OfficialLogCollector;",
     "export declare function collectToolSentences(toolMeta: Map<string, { description?: unknown; }",
-    "export declare function compareVersions(left: string, right: string): number;",
     "export declare function composeCatalogEntries(supervisors: Map<string, SupervisorLite>, maxEntries?: number, cache?: CatalogCache): CatalogEntry[];",
     "export declare function composerDockedAtBottom(seatRect: RectLike | null | undefined, containerRect: RectLike | null | undefined): boolean;",
     "export declare function configFile(): string;",
@@ -808,7 +491,6 @@
     "export declare function notReadyError(fullName: string, status: ServerState | undefined, userDisabled: boolean): Error;",
     "export declare function officialLogText(record: LogRecord): string | undefined;",
     "export declare function officialMcpConfig(server: ServerConfig, id: string, expandServerEnv: (server: ServerConfig) => ServerConfig): OfficialMcpConfig;",
-    "export declare function packageRootFrom(fromDir: string): string | undefined;",
     "export declare function panelAnchorForPosition(placement: string | undefined): \"top\" | \"bottom\";",
     "export declare function panelHost(): Element;",
     "export declare function panelTopForAnchor(anchor: \"top\" | \"bottom\", pillTop: number, pillBottom: number, panelHeight: number, gap: number): number;",
@@ -818,14 +500,12 @@
     "export declare function parseDisabledTools(raw: unknown): DisabledToolsMap;",
     "export declare function parseFullServerName(name: string): { root: string; server: string; }",
     "export declare function parseKV(text: string): Record<string, string>;",
-    "export declare function pendingSteps(steps: readonly UpgradeStep[], recorded: string): UpgradeStep[];",
     "export declare function performSaveRequest(state: McpState, server: McpManagerServerInput, payload: Record<string, unknown>): Promise<boolean>;",
     "export declare function pillAnchors(cfg: ClientUiConfig, ctx: McpClientContext, state: McpState): { isLeft: boolean; isBottom: boolean; offsetX: number; offsetY: number; };",
     "export declare function pillDotColor(fail: boolean, connected: number): string;",
     "export declare function pillHints(total: number, bad: number, connected: number): { title: string; aria: string; };",
     "export declare function pillPlacement(input: PillPlacementInput): ViewportPoint;",
     "export declare function placePanel(state: McpState): void;",
-    "export declare function pluginVersion(): string;",
     "export declare function pooledErrorText(entry: ConnectionEntry, catalog: CatalogServer | undefined, redact: (error: unknown) => string): string | undefined;",
     "export declare function postThenRefresh(state: McpState, actions: UiActions, url: string): () => Promise<void>;",
     "export declare function primaryRowAction(server: McpServerListEntry, state: McpState, cwdQuery: string): RowAction;",
@@ -843,6 +523,7 @@
     "export declare function queryParam(url: URL, name: string): string | undefined;",
     "export declare function readCatalogEntries(source: CatalogSourceLike | undefined): CatalogEntry[] | undefined;",
     "export declare function readCatalogServerFromDisk(file: string, serverName: string): Promise<PersistedCatalogServer | undefined>;",
+    "export declare function readCurrentSession(list: SessionListFace | undefined): CurrentSessionRead;",
     "export declare function readForm(state: McpState): McpManagerServerInput;",
     "export declare function readHttpFormFields(state: McpState): Pick<McpManagerServerInput, \"url\" | \"headers\">;",
     "export declare function readJsonFile<T>(file: string): Promise<T | null>;",
@@ -874,7 +555,6 @@
     "export declare function renderPill(state: McpState): void;",
     "export declare function renderServer(server: McpServerListEntry, state: McpState, actions: UiActions, opts?: { tools: boolean; openTools?: Set<string>; }",
     "export declare function renderServers(state: McpState, actions: UiActions): void;",
-    "export declare function reportGap(recorded: string, target: string, logger: UpgradeLogger): void;",
     "export declare function resetForm(state: McpState): void;",
     "export declare function resolveCatalogEntries(source: CatalogSourceLike | undefined): CatalogEntry[] | undefined;",
     "export declare function resolveCatalogInjection(decision: CatalogDecision, messages: CatalogMessage[], supervisors: Map<string, SupervisorLite>, maxEntries?: number, cache?: CatalogCache, agent?: CatalogAgent): CatalogDecision;",
@@ -948,48 +628,12 @@
       "types": "./lib/index.d.ts",
       "exports": [
         {
-          "name": "BREAKPOINT_NARROW_MAX",
-          "isType": false
-        },
-        {
-          "name": "BREAKPOINT_TABLET_MAX",
-          "isType": false
-        },
-        {
-          "name": "CALL_TIMEOUT_MS",
-          "isType": false
-        },
-        {
-          "name": "CATALOG_ENTRY_MAX_CHARS",
-          "isType": false
-        },
-        {
           "name": "CATALOG_SECTION_NAME",
           "isType": false
         },
         {
           "name": "CATALOG_SOURCE_PLUGIN",
           "isType": false
-        },
-        {
-          "name": "CATALOG_SUMMARY_MAX_CHARS",
-          "isType": false
-        },
-        {
-          "name": "CATALOG_SUMMARY_PER_TOOL_CHARS",
-          "isType": false
-        },
-        {
-          "name": "CATALOG_TTL_MS",
-          "isType": false
-        },
-        {
-          "name": "CONNECT_TIMEOUT_MS",
-          "isType": false
-        },
-        {
-          "name": "CallResultTextHandlers",
-          "isType": true
         },
         {
           "name": "ClientUiConfig",
@@ -1008,23 +652,11 @@
           "isType": false
         },
         {
-          "name": "DEFAULT_RESULT_TRUNCATE_BYTES",
-          "isType": false
-        },
-        {
           "name": "DEFAULT_TOOL_CALL_TIMEOUT_MS",
           "isType": false
         },
         {
           "name": "DEFAULT_UI_CONFIG",
-          "isType": false
-        },
-        {
-          "name": "DEFAULT_Z_INDEX_BASE",
-          "isType": false
-        },
-        {
-          "name": "DISCOVERY_TIMEOUT_MS",
           "isType": false
         },
         {
@@ -1034,18 +666,6 @@
         {
           "name": "DisabledToolsMap",
           "isType": true
-        },
-        {
-          "name": "FloatBreakpoint",
-          "isType": true
-        },
-        {
-          "name": "LIST_DEFAULT_TOOLS_PER_SERVER",
-          "isType": false
-        },
-        {
-          "name": "LIST_MAX_TOOLS_PER_SERVER",
-          "isType": false
         },
         {
           "name": "ListCatalogResult",
@@ -1060,18 +680,6 @@
           "isType": true
         },
         {
-          "name": "MAX_BYTES_PER_TOOL",
-          "isType": false
-        },
-        {
-          "name": "MAX_TOOLS_PER_SERVER",
-          "isType": false
-        },
-        {
-          "name": "MAX_TOTAL_CATALOG_BYTES",
-          "isType": false
-        },
-        {
           "name": "MCP_GUIDANCE",
           "isType": false
         },
@@ -1084,10 +692,6 @@
           "isType": false
         },
         {
-          "name": "McpManager",
-          "isType": false
-        },
-        {
           "name": "McpManagerServerInput",
           "isType": true
         },
@@ -1096,40 +700,16 @@
           "isType": true
         },
         {
-          "name": "McpMiddleware",
-          "isType": false
-        },
-        {
-          "name": "McpStatsCollector",
-          "isType": false
-        },
-        {
           "name": "McpStatsSnapshot",
           "isType": true
-        },
-        {
-          "name": "McpStore",
-          "isType": false
         },
         {
           "name": "ProgressiveDisclosureStats",
           "isType": true
         },
         {
-          "name": "ProjectUnit",
-          "isType": true
-        },
-        {
-          "name": "ProjectedCallResult",
-          "isType": true
-        },
-        {
           "name": "ROUTES",
           "isType": false
-        },
-        {
-          "name": "RectLike",
-          "isType": true
         },
         {
           "name": "SCOPE_GLOBAL",
@@ -1141,10 +721,6 @@
         },
         {
           "name": "SERVER_NAME_PATTERN",
-          "isType": false
-        },
-        {
-          "name": "SSE_HEARTBEAT_MS",
           "isType": false
         },
         {
@@ -1164,10 +740,6 @@
           "isType": true
         },
         {
-          "name": "ServerStatus",
-          "isType": true
-        },
-        {
           "name": "ToolCallMetric",
           "isType": true
         },
@@ -1180,35 +752,7 @@
           "isType": true
         },
         {
-          "name": "ViewportPoint",
-          "isType": true
-        },
-        {
-          "name": "Z_INDEX_BASE_MAX",
-          "isType": false
-        },
-        {
-          "name": "Z_INDEX_BASE_MIN",
-          "isType": false
-        },
-        {
-          "name": "Z_INDEX_PANEL_DELTA",
-          "isType": false
-        },
-        {
           "name": "apply",
-          "isType": false
-        },
-        {
-          "name": "bottomAnchorEdge",
-          "isType": false
-        },
-        {
-          "name": "boundCatalogTools",
-          "isType": false
-        },
-        {
-          "name": "breakpointForWidth",
           "isType": false
         },
         {
@@ -1220,39 +764,7 @@
           "isType": false
         },
         {
-          "name": "catalogCacheFile",
-          "isType": false
-        },
-        {
-          "name": "catalogCacheFileFor",
-          "isType": false
-        },
-        {
-          "name": "catalogHistory",
-          "isType": false
-        },
-        {
-          "name": "clampPointToViewport",
-          "isType": false
-        },
-        {
-          "name": "clampZIndexBase",
-          "isType": false
-        },
-        {
-          "name": "composeCatalogEntries",
-          "isType": false
-        },
-        {
-          "name": "composerDockedAtBottom",
-          "isType": false
-        },
-        {
           "name": "createRedactor",
-          "isType": false
-        },
-        {
-          "name": "defaultCallResultFallbackText",
           "isType": false
         },
         {
@@ -1264,27 +776,7 @@
           "isType": false
         },
         {
-          "name": "digestCatalogEntries",
-          "isType": false
-        },
-        {
-          "name": "escapeCatalogText",
-          "isType": false
-        },
-        {
-          "name": "expandEnv",
-          "isType": false
-        },
-        {
           "name": "findCatalogMessage",
-          "isType": false
-        },
-        {
-          "name": "findProjectRoot",
-          "isType": false
-        },
-        {
-          "name": "findToolDetail",
           "isType": false
         },
         {
@@ -1292,43 +784,11 @@
           "isType": false
         },
         {
-          "name": "fullServerName",
-          "isType": false
-        },
-        {
-          "name": "globMatch",
-          "isType": false
-        },
-        {
           "name": "inject",
           "isType": false
         },
         {
-          "name": "isCatalogFresh",
-          "isType": false
-        },
-        {
           "name": "isCatalogSource",
-          "isType": false
-        },
-        {
-          "name": "isLoopbackRequest",
-          "isType": false
-        },
-        {
-          "name": "isToolDenied",
-          "isType": false
-        },
-        {
-          "name": "listCatalog",
-          "isType": false
-        },
-        {
-          "name": "loadDisabledTools",
-          "isType": false
-        },
-        {
-          "name": "loadUserState",
           "isType": false
         },
         {
@@ -1348,19 +808,7 @@
           "isType": false
         },
         {
-          "name": "msgOf",
-          "isType": false
-        },
-        {
           "name": "name",
-          "isType": false
-        },
-        {
-          "name": "normalizeArguments",
-          "isType": false
-        },
-        {
-          "name": "normalizeScope",
           "isType": false
         },
         {
@@ -1368,43 +816,11 @@
           "isType": false
         },
         {
-          "name": "normalizeToolName",
-          "isType": false
-        },
-        {
           "name": "normalizeUiConfig",
           "isType": false
         },
         {
-          "name": "normalizedProjectRoot",
-          "isType": false
-        },
-        {
-          "name": "panelAnchorForPosition",
-          "isType": false
-        },
-        {
-          "name": "panelTopForAnchor",
-          "isType": false
-        },
-        {
-          "name": "panelZIndexFor",
-          "isType": false
-        },
-        {
           "name": "parseClaudeJson",
-          "isType": false
-        },
-        {
-          "name": "parseDisabledTools",
-          "isType": false
-        },
-        {
-          "name": "parseFullServerName",
-          "isType": false
-        },
-        {
-          "name": "projectCallToolResult",
           "isType": false
         },
         {
@@ -1413,14 +829,6 @@
         },
         {
           "name": "readCatalogEntries",
-          "isType": false
-        },
-        {
-          "name": "readCatalogServerFromDisk",
-          "isType": false
-        },
-        {
-          "name": "readJsonBody",
           "isType": false
         },
         {
@@ -1452,51 +860,7 @@
           "isType": false
         },
         {
-          "name": "saveDisabledTools",
-          "isType": false
-        },
-        {
-          "name": "saveUserState",
-          "isType": false
-        },
-        {
-          "name": "scoreTool",
-          "isType": false
-        },
-        {
-          "name": "searchCatalog",
-          "isType": false
-        },
-        {
-          "name": "searchCatalogMulti",
-          "isType": false
-        },
-        {
-          "name": "sseData",
-          "isType": false
-        },
-        {
-          "name": "summarizeToolDescriptions",
-          "isType": false
-        },
-        {
-          "name": "toolDisabledReason",
-          "isType": false
-        },
-        {
           "name": "uiConfigChangedFrame",
-          "isType": false
-        },
-        {
-          "name": "userStateFile",
-          "isType": false
-        },
-        {
-          "name": "withTimeout",
-          "isType": false
-        },
-        {
-          "name": "writeJson",
           "isType": false
         }
       ],
@@ -1664,7 +1028,7 @@
           "export declare const STATS_FILE_NAME = \"stats.json\";"
         ],
         "STEPS": [
-          "export declare const STEPS: readonly UpgradeStep[];"
+          "export declare const STEPS: readonly UpgradeStep<UpgradeDeps>[];"
         ],
         "USER_STATE_FILE_NAME": [
           "export declare const USER_STATE_FILE_NAME = \"user-state.json\";"
@@ -1806,9 +1170,6 @@
         ],
         "collectToolSentences": [
           "export declare function collectToolSentences(toolMeta: Map<string, { description?: unknown; }"
-        ],
-        "compareVersions": [
-          "export declare function compareVersions(left: string, right: string): number;"
         ],
         "composeCatalogEntries": [
           "export declare function composeCatalogEntries(supervisors: Map<string, SupervisorLite>, maxEntries?: number, cache?: CatalogCache): CatalogEntry[];"
@@ -2107,9 +1468,6 @@
         "orchestratorPorts": [
           "export declare const orchestratorPorts: OrchestratorPorts;"
         ],
-        "packageRootFrom": [
-          "export declare function packageRootFrom(fromDir: string): string | undefined;"
-        ],
         "panelAnchorForPosition": [
           "export declare function panelAnchorForPosition(placement: string | undefined): \"top\" | \"bottom\";"
         ],
@@ -2128,14 +1486,8 @@
         "parseFullServerName": [
           "export declare function parseFullServerName(name: string): { root: string; server: string; }"
         ],
-        "pendingSteps": [
-          "export declare function pendingSteps(steps: readonly UpgradeStep[], recorded: string): UpgradeStep[];"
-        ],
         "pipelinePorts": [
           "export declare const pipelinePorts: PipelinePorts;"
-        ],
-        "pluginVersion": [
-          "export declare function pluginVersion(): string;"
         ],
         "pooledErrorText": [
           "export declare function pooledErrorText(entry: ConnectionEntry, catalog: CatalogServer | undefined, redact: (error: unknown) => string): string | undefined;"
@@ -2247,9 +1599,6 @@
         ],
         "renderMcpCatalogUpdate": [
           "export declare function renderMcpCatalogUpdate(entries: CatalogEntry[]): CatalogMessage;"
-        ],
-        "reportGap": [
-          "export declare function reportGap(recorded: string, target: string, logger: UpgradeLogger): void;"
         ],
         "resolveCatalogEntries": [
           "export declare function resolveCatalogEntries(source: CatalogSourceLike | undefined): CatalogEntry[] | undefined;"
@@ -2372,7 +1721,7 @@
           "export declare function uiConfigChangedFrame(): string;"
         ],
         "upgradeRunner": [
-          "export declare const upgradeRunner: UpgradeRunner;"
+          "export declare const upgradeRunner: UpgradeRunner<UpgradeDeps>;"
         ],
         "urlCarriesSecrets": [
           "export declare function urlCarriesSecrets(url: unknown): boolean;"
@@ -2596,6 +1945,9 @@
         ],
         "primaryRowAction": [
           "export declare function primaryRowAction(server: McpServerListEntry, state: McpState, cwdQuery: string): RowAction;"
+        ],
+        "readCurrentSession": [
+          "export declare function readCurrentSession(list: SessionListFace | undefined): CurrentSessionRead;"
         ],
         "readForm": [
           "export declare function readForm(state: McpState): McpManagerServerInput;"
