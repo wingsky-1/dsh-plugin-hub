@@ -203,13 +203,22 @@ test("相对 import 臂：目标已登记 → exit 0，且目录说明符不展�
 });
 
 test("相对 import 臂：说明符按所在文件解析（同名串在不同深度指向不同目标）", () => {
-  // 同一串 "../lib/x.mjs"：`scripts/gate/` 下解析到 scripts/lib/x.mjs（已登记），
-  // `scripts/build/nested/` 下解析到 scripts/build/lib/x.mjs（未登记）。按基名匹配或按
-  // 仓库根解析的实现会把两者混同——判红必须点名后者，且不得把前者误报成未登记。
+  // 同一串 "../lib/x.mjs" 出现在两个不同深度的文件里：scripts/gate/demo.mjs 解析到
+  // scripts/lib/x.mjs（**已登记**），scripts/build/nested/builder.mjs 解析到
+  // scripts/build/lib/x.mjs（**未登记**）。判红必须**只**点名后者。
+  // 为什么摆成「三个同名、两个是真实目标、一个无人指向」（复核 P2-2：原夹具两种实现
+  // 同判，全绿）：
+  //   · 按仓库根/基名直接拼的实现 -> 目标不存在，被存在性过滤吃掉 => rc=0，被 status
+  //     断言判死；
+  //   · 「扫 scripts/ 下所有与说明符同基名的文件」的实现 -> 把**无人指向**的
+  //     scripts/release/x.mjs 也算成引用 => 多点一个名字，被下面 doesNotMatch 判死；
+  //   · 只有「按所在文件解析」的实现恰好只点 build/lib/x.mjs 一个。
+  // 已登记的 scripts/lib/x.mjs 是真实目标且已登记，任何实现都不得点名它（第二道
+  // doesNotMatch），这条同时钉住「不误报已登记项」。
   const r = run(
     fixture([
       { rel: "package.json", content: PKG },
-      { rel: "scripts/README.md", content: `${INDEX}- \`lib/x.mjs\` — 顶层同名库。\n` },
+      { rel: "scripts/README.md", content: `${INDEX}- \`lib/x.mjs\` — 已登记的同名库。\n` },
       {
         rel: "scripts/gate/demo.mjs",
         content: 'import { x } from "../lib/x.mjs";\nexport const a = x;\n',
@@ -220,12 +229,16 @@ test("相对 import 臂：说明符按所在文件解析（同名串在不同深
       },
       { rel: "scripts/lib/x.mjs", content: "export const x = 1;\n" },
       { rel: "scripts/build/lib/x.mjs", content: "export const x = 2;\n" },
+      // 同基名但**无任何说明符指向**（正确实现不得把它算成引用）
+      { rel: "scripts/release/x.mjs", content: "export const x = 3;\n" },
     ]),
   );
   assert.equal(r.status, 1, r.stderr);
   assert.doesNotMatch(r.stderr, /::error::门禁故障/);
+  // 只点名 build/lib/x.mjs：已登记项与「无人指向的同基名文件」都不得出现。
   assert.match(r.stderr, /未登记进 scripts\/README\.md：scripts\/build\/lib\/x\.mjs/);
-  assert.doesNotMatch(r.stderr, /scripts\/lib\/x\.mjs/);
+  assert.doesNotMatch(r.stderr, /未登记进 [^\n]*：scripts\/lib\/x\.mjs/);
+  assert.doesNotMatch(r.stderr, /未登记进 [^\n]*：scripts\/release\/x\.mjs/);
 });
 
 test("相对 import 臂：解析后不存在的目标（判据自造夹具串）不参与判据", () => {
@@ -243,9 +256,12 @@ test("相对 import 臂：解析后不存在的目标（判据自造夹具串）
   assert.doesNotMatch(r.stderr, /::error::门禁故障/);
 });
 
-test("相对 import 臂：指向测试文件的目标按命名约定免登记（排除的是被引用方）", () => {
-  // 排除面只作用在被引用方：测试文件自身不要求登记，但测试作为**引用源**仍计入——
-  // 故 demo.mjs 这条 import 照常生效（它已登记），测试文件不判红。
+test("相对 import 臂：指向测试文件的目标免登记（排除的是被引用方）", () => {
+  // 被引用方是测试文件 ⇒ 免登记。判红与不判红要能分辨方向，故这里让 demo.mjs 反过来
+  // import 测试文件：测试文件作为**目标**免登记（期望 rc=0），而它作为**源**对
+  // gate/demo.mjs 的引用照常生效——gate/demo.mjs 已登记，故不判红。若把排除挪到引用方
+  // （即测试文件整体不参与扫描），本用例仍会绿，所以方向由下面「源侧仍计入」那条
+  // 独立钉住，不靠本条自证。
   const r = run(
     fixture([
       { rel: "package.json", content: PKG },
@@ -259,6 +275,91 @@ test("相对 import 臂：指向测试文件的目标按命名约定免登记（
   );
   assert.equal(r.status, 0, r.stderr);
   assert.doesNotMatch(r.stderr, /::error::门禁故障/);
+});
+
+test("new URL 臂：运行时读文件的相对目标未登记 → 红（不是 import 面却是真依赖）", () => {
+  // 复核 P1-1：`new URL` 不带 import 关键词，前两条臂都读不到，`data/plugin-row-migration.json`
+  // 长期未登记而门禁不响——就是这类活假绿。这条用例是第三臂存在的理由。
+  const r = run(
+    fixture([
+      { rel: "package.json", content: PKG },
+      { rel: "scripts/README.md", content: INDEX },
+      {
+        rel: "scripts/gate/demo.mjs",
+        content:
+          'import { readFileSync } from "node:fs";\nconst d = readFileSync(new URL("../data/rows.json", import.meta.url), "utf8");\nexport const a = d;\n',
+      },
+      { rel: "scripts/data/rows.json", content: "{}\n" },
+    ]),
+  );
+  assert.equal(r.status, 1, r.stderr);
+  assert.doesNotMatch(r.stderr, /::error::门禁故障/);
+  assert.match(r.stderr, /被调用点引用但未登记进 scripts\/README\.md：scripts\/data\/rows\.json/);
+});
+
+test("new URL 臂：目标已登记 → exit 0；解析出仓库根等非 scripts/ 目标不参与", () => {
+  // `new URL("../..", import.meta.url)` 解析到仓库根，不在 scripts/ 下，不归本判据。
+  const r = run(
+    fixture([
+      { rel: "package.json", content: PKG },
+      { rel: "scripts/README.md", content: `${INDEX}- \`data/rows.json\` — 迁移映射数据。\n` },
+      {
+        rel: "scripts/gate/demo.mjs",
+        content:
+          'import { readFileSync } from "node:fs";\nconst root = new URL("../..", import.meta.url);\nconst d = readFileSync(new URL("../data/rows.json", import.meta.url), "utf8");\nexport const a = [root.href, d];\n',
+      },
+      { rel: "scripts/data/rows.json", content: "{}\n" },
+    ]),
+  );
+  assert.equal(r.status, 0, r.stderr);
+  assert.doesNotMatch(r.stderr, /::error::门禁故障/);
+  assert.match(r.stdout, /verify-scripts-index: OK/);
+});
+
+test("引用面口径：glob 说明符不展开（相对臂使该闸承重，删除即判红）", () => {
+  // 复核 P3-2：字面臂的正则字符类不含 `*`，glob 在那条臂上根本匹配不出，`*` 闸因此
+  // 曾是不可达分支；相对臂的说明符类允许 `*`，它第一次变得可达并承重，所以要钉住。
+  // 夹具让解析结果**真的存在**（文件名里带 `*`，Linux 允许）：正常实现被 `*` 闸挡下
+  // => rc=0；删掉 `*` 闸则该文件计入引用面且未登记 => rc=1。只写「目标不存在」的夹具
+  // 会被存在性过滤兜住，删闸仍绿，钉不住。
+  const r = run(
+    fixture([
+      { rel: "package.json", content: PKG },
+      { rel: "scripts/README.md", content: INDEX },
+      {
+        rel: "scripts/gate/demo.mjs",
+        content: 'import { x } from "../lib/star*.mjs";\nexport const a = x;\n',
+      },
+      { rel: "scripts/lib/star*.mjs", content: "export const x = 1;\n" },
+    ]),
+  );
+  assert.equal(r.status, 0, r.stderr);
+  assert.doesNotMatch(r.stderr, /::error::门禁故障/);
+  assert.match(r.stdout, /verify-scripts-index: OK/);
+});
+
+test("相对 import 臂：测试文件作为**引用源**仍计入（排除只作用在被引用方）", () => {
+  // 方向的反向钉子：测试文件 import 了一个**未登记**的库，判据必须判红——证明
+  // `scripts/test/**` 免登记是「被引用方」的豁免，不是「测试文件不参与扫描」。
+  // 把排除挪到引用方（测试文件整体跳过）会让本用例转绿，故它才是方向的真正守卫。
+  const r = run(
+    fixture([
+      { rel: "package.json", content: PKG },
+      { rel: "scripts/README.md", content: INDEX },
+      { rel: "scripts/gate/demo.mjs", content: "export const a = 1;\n" },
+      {
+        rel: "scripts/test/uses.test.ts",
+        content: 'import { t } from "../lib/only-test-used.ts";\nexport const u = t;\n',
+      },
+      { rel: "scripts/lib/only-test-used.ts", content: "export const t = 1;\n" },
+    ]),
+  );
+  assert.equal(r.status, 1, r.stderr);
+  assert.doesNotMatch(r.stderr, /::error::门禁故障/);
+  assert.match(
+    r.stderr,
+    /被调用点引用但未登记进 scripts\/README\.md：scripts\/lib\/only-test-used\.ts/,
+  );
 });
 
 test("fail-closed：索引不可读 → exit 2 且统一故障注解包含原因", () => {
@@ -305,12 +406,19 @@ test("本仓真实快照：索引与引用面一致 → exit 0，且报告面被
 });
 
 /**
- * #875 S3 的两个实证盲区：只被相对 import 指向的库（`dir-imports-spec.ts` 只被单测引用），
- * 在判据改前对引用面隐形——从索引删掉它们，判据不响。
+ * #875 S3 的实证盲区（改判据前对引用面隐形，从索引删掉它们门禁不响）：
+ *   - `lib/dir-imports-spec.ts`：只被相对 import（且只被单测）指向；
+ *   - `lib/shared-dts-lib.ts`：被 pack-check 生产判据相对 import 指向；
+ *   - `data/plugin-row-migration.json`：被 `new URL(…, import.meta.url)` 运行时读文件
+ *     指向（复核 P1-1 的活假绿，判据当时无感）。
  */
-const BLIND_SPOT_ENTRIES = ["lib/dir-imports-spec.ts", "lib/shared-dts-lib.ts"];
+const BLIND_SPOT_ENTRIES = [
+  "lib/dir-imports-spec.ts",
+  "lib/shared-dts-lib.ts",
+  "data/plugin-row-migration.json",
+];
 
-test("反向验证（本仓真实快照）：把两个盲区目标的登记行删掉 → 门禁响", () => {
+test("反向验证（本仓真实快照）：把三个盲区目标的登记行删掉 → 门禁响", () => {
   const realIndex = readFileSync(join(ROOT, "scripts", "README.md"), "utf8");
   for (const entry of BLIND_SPOT_ENTRIES) {
     assert.ok(realIndex.includes(`\`${entry}\``), `盲区目标必须在索引里登记：${entry}`);

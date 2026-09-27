@@ -6,7 +6,7 @@
 本文件的**索引边界是「仓库会调用什么」**，不是目录清单：新增一个会被调用点引用的脚本必须登记
 在此（判据见 `gate/verify-scripts-index.mjs`，`pnpm verify:scripts-index`）；「被调用点引用」含
 `scripts/` 内部的相对 import（`from "../lib/x.ts"`），只被单测引用的库同样算被调用；未被任何
-调用点引用的文件、以及测试文件自身（按 `<被测脚本>.test.ts` 命名约定发现）不强制登记。
+调用点引用的文件、以及 `scripts/test/` 下的测试文件自身（按 `<被测脚本>.test.ts` 命名约定发现）不强制登记。
 
 ## ci/（CI 切片与矩阵派生）
 
@@ -154,6 +154,7 @@
 ## data/（配置数据）
 
 - `data/plugins-manifest.json` — 插件清单（某插件是否参与聚合/发布校验的唯一声明处）。
+- `data/plugin-row-migration.json` — profile row identity 一次性迁移映射（`legacyToCanonical`）：由 `maintenance/migrate-plugin-rows.mjs` 以 `readFileSync(new URL(…, import.meta.url))` 读取，重复/冲突由该脚本自身判据校验。#875 S3 由新增的 new URL 臂暴露此前未登记（同名条目另见 `data/ci-face-registry.json` 与 `data/threshold-registry.json`）。
 - `data/mutation-segment-ledger.json` — 变异段实测台账（#718 S0.2）：逐段 `wallSeconds` + mutant 数 + 复用率，由 `gate/mutation-ledger.mjs` 从 run 日志生成；`unmeasured` 登记尚无测量值的段，`superseded` 登记被拆分/更名的历史段。
 - `data/gauntlet.config.json` — 变异 / CRAP / ESLint 复杂度阈值唯一事实源（覆盖率阈值自 #733 计划项 3.4 起在 `data/coverage.config.json`；`complexity` 段自 #722 阶段五起供 `tools/lint` 消费）。
 - `data/mutation-topology.json` — 测试分层与变异面登记的单一事实源（#690 S2b / #713 T1-T3）：runner 层 = `test/**/*.test.ts` 全集，变异面按段登记。

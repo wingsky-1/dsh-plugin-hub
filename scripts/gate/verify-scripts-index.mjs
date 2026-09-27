@@ -4,14 +4,16 @@
  * （#733 计划项 3.3 E2）。
  *
  * 为什么只有这两条判据、而不是「全仓文件清单 + 存量基线」：索引的用途是**可发现性**，不是
- * `ls` 的副本（原则 ⑥）。实测 scripts/ 下 116 个文件里只有约 50 个被机器可见的调用点引用，
- * 其余多为测试文件（按 `<被测脚本>.test.ts` 命名约定发现）与纯库；把它们逐一登记进 README
- * 等于把目录列表抄进文档——立刻漂移、而且没人读。索引的边界应当是「仓库会调用什么」。
+ * `ls` 的副本（原则 ⑥）。实测 scripts/ 下大量文件只被间接引用（测试文件按
+ * `<被测脚本>.test.ts` 命名约定发现、未被任何调用点引用的纯库与数据），把它们逐一登记进
+ * README 等于把目录列表抄进文档——立刻漂移、而且没人读。索引的边界应当是「仓库会调用什么」
+ * （具体引用面口径见下，与判据实现逐条对齐）。
  *
  *   A 存在性——索引里写出的每条路径必须真的存在：索引项腐烂 = 把读者指到空处。
  *   B 引用即登记——凡在机器可见调用点里被引用的脚本/数据（`package.json` 的 scripts、
  *     `packages/*​/package.json`、`.github/workflows/**`、`lefthook.yml`、以及 `scripts/**`
- *     与 `tools/**` 源码里出现的**字面路径或相对 import 说明符**），必须在索引里出现。
+ *     与 `tools/**` 源码里出现的**字面路径、相对 import 说明符或 `new URL` 读文件目标**），
+ *     必须在索引里出现。
  *     **新增一个会被调用的脚本却没有登记 → 红**，这就是棘轮；不需要存量基线，因为「未被任何
  *     调用点引用」的文件本来就不必登记（它们由报告面列出，供人工按需补）。
  *
@@ -20,18 +22,30 @@
  *   - 条目按所在 `## <path>/（…）` 小节解析：`tools/` 开头的小节相对仓库根的 `tools/`，
  *     「仓库根的派生生成物」小节相对仓库根，其余小节相对 `scripts/`。
  * 引用面口径（逐条写进判据，避免「口径外」的静默豁免）：
- *   - 两条臂并集：字面 `scripts/…` 路径；以及源码里的相对说明符（`./` `../`，带引号的
- *     `from` / `import()` / `require()` 形态），**按所在文件**解析成仓库相对路径
- *     （#875 S3）。只认字面前缀时 `scripts/` 内部的互引在引用面里是隐形的：被相对
- *     import 指向的库若从索引里消失，判据不响，而它确实被仓库调用——库只被单测引用
- *     同样算被调用。源面是整个 `scripts/`，故传递闭包天然覆盖，不另做图遍历；
- *   - 两条臂都只认 `mjs|ts|cjs|json` 扩展名，**目录说明符**（`./lib`）因此不展开成
- *     `lib/index.ts`——它不是一次具名文件引用，按命名约定的发现方式处理；
- *   - 提取是**文本级**的（正则扫全文，注释与字符串里的同形文本也命中）：取向为多算
- *     而非漏算，配合下面的存在性过滤不产生假红，但引用面是**上界近似**而非精确
- *     依赖图；反引号（模板串）说明符不在识别形态内。
- *   - 含 `*` 的 glob 引用不展开——测试文件的发现方式就是 glob，展开它等于要求逐一登记 48 个
- *     测试文件；
+ *   - **三条臂并集**（#875 S3）：① 字面 `scripts/…` 路径；② 相对模块说明符
+ *     （`./` `../`，带引号的 `from` / `import()` / `require()` 形态）；③ `new URL(
+ *     "…", import.meta.url)` 的运行时读文件目标。三条臂都**按所在文件**解析成仓库
+ *     相对路径（同一串 `"../lib/x.mjs"` 在不同目录下指向不同文件），源面是整个
+ *     `scripts/`，故传递闭包天然覆盖、不另做图遍历。
+ *   - 为什么要有这三条臂：只认字面前缀时，被 `scripts/` 内部互引指向的库在引用面里
+ *     是**隐形**的——它若从索引消失，判据不响，而它确实被仓库调用（库只被单测引用
+ *     同样算被调用）。臂 ③ 是实测的活漏法：`new URL` 不带 import 关键词，前两条臂
+ *     都读不到，`data/plugin-row-migration.json` 就这样长期未登记。
+ *   - 三条臂都只认 `mjs|ts|cjs|json` 扩展名，**目录说明符**（`./lib`）因此不展开
+ *     成 `lib/index.ts`——它不是一次具名文件引用。
+ *   - 提取是**文本级**的（正则扫全文，注释与字符串里的同形文本也命中），故引用面是
+ *     **上界近似**而非精确依赖图。
+ *   - 已知漏法（如实披露，与 `ci-face-coverage.test.ts` 的 N2 清单同级；这些不参与
+ *     判据，故引用面是下界之上的近似）：反引号模板字面量 import、动态拼接 specifier、
+ *     `?query` / `#fragment` 后缀、`import.meta.resolve`、`createRequire` 产出的
+ *     `req(...)`、`.js` 说明符指向磁盘上真实存在的 `.ts`、以 `process.cwd()` 为锚的
+ *     路径拼接。
+ *   - **假红边界**：存在性过滤只吸收「目标不存在」那一类多算；**目标存在但未登记的
+ *     多算仍会判红**。即注释/字符串里若出现指向某个存在文件的相对说明符，该文件会被
+ *     要求登记。这是有意的保守取向（宁可多要求一次登记，也不放过真实漏登记），不是
+     「绝不产生假红」。
+ *   - 含 `*` 的 glob 引用不展开——测试文件的发现方式就是 glob，展开它等于要求逐一
+ *     登记 86 个测试文件（scripts/test 下 `*.test.ts` 的计数）；
  *   - `scripts/test/**​/*.test.ts` 按命名约定排除（同上）；
  *   - 被引用但**不存在**的路径不参与：历史注记与用法示例里会出现已退役的路径
  *     （如 `gauntlet.config.json` 注释里的 tap 桥接）。
@@ -57,7 +71,13 @@ const SCRIPT_REF_RE = /scripts\/[A-Za-z0-9_./-]+\.(?:mjs|ts|cjs|json)/g;
  * 按基名或按仓库根解析都会把引用面算错。
  */
 const RELATIVE_SPEC_RE = /\b(?:from|import|require)\s*\(?\s*["'](\.{1,2}\/[^"'\n]*)["']/g;
-/** 计入引用面的扩展名白名单（两条臂共用；目录说明符因此不展开）。 */
+/**
+ * 运行时文件读取的相对目标（第三条臂，`#875` S3 复核 P1-1）：`readFileSync(new URL(
+ * "../data/x.json", import.meta.url))` 这类**不是 import 面**却是真的文件依赖——
+ * `new URL` 不带 import 关键词，前两条臂都读不到，目标因此在引用面里隐形。
+ */
+const NEW_URL_REL_RE =
+  /\bnew URL\(\s*["'](\.{1,2}\/[^"'\n]*)["']\s*,\s*import\.meta\.url\s*\)/g; /** 计入引用面的扩展名白名单（两条臂共用；目录说明符因此不展开）。 */
 const REF_EXT_RE = /\.(?:mjs|ts|cjs|json)$/;
 /** 引用面扫描的文本源：调用点声明 + 脚本源码本身。 */
 const REF_SOURCES = ["package.json", "lefthook.yml"];
@@ -155,18 +175,20 @@ function isRefCounted(p, root) {
 }
 
 /**
- * 一个文件里引用到的 `scripts/**` 路径：字面引用 + 按所在文件解析的相对说明符。
- * 相对说明符解析后必须仍在 `scripts/` 下（越出 scripts/ 的目标不归本判据，判据 A 与
- * 报告面管的是 scripts/ 索引）。
+ * 一个文件里引用到的 `scripts/**` 路径：字面引用 + 按所在文件解析的相对目标
+ * （模块说明符臂 + `new URL` 运行时读文件臂）。相对目标解析后必须仍在 `scripts/` 下
+ * （越出 scripts/ 的目标不归本判据，判据 A 与报告面管的是 scripts/ 索引）。
  */
 function extractRefs(rel, text, root) {
   const refs = new Set();
   for (const m of text.matchAll(SCRIPT_REF_RE)) refs.add(m[0]);
-  for (const m of text.matchAll(RELATIVE_SPEC_RE)) {
-    const target = relative(root, resolve(dirname(join(root, rel)), m[1]))
-      .split(sep)
-      .join("/");
-    if (target.startsWith("scripts/")) refs.add(target);
+  for (const re of [RELATIVE_SPEC_RE, NEW_URL_REL_RE]) {
+    for (const m of text.matchAll(re)) {
+      const target = relative(root, resolve(dirname(join(root, rel)), m[1]))
+        .split(sep)
+        .join("/");
+      if (target.startsWith("scripts/")) refs.add(target);
+    }
   }
   return [...refs].filter((p) => isRefCounted(p, root));
 }
