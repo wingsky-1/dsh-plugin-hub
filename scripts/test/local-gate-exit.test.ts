@@ -128,15 +128,26 @@ test("exit 0：注入的全过步骤走完即 exit 0，摘要无故障栏", () =
   assert.match(out.out, /exit=0 {2}注入-通过甲/, "摘要应逐条列 exit=0 与步骤名");
   assert.match(out.out, /\[local-gate\] 结果：PASS/, "全过应判 PASS");
   assert.doesNotMatch(out.out, /门禁故障/, "全过时不得出现故障栏");
+  assert.doesNotMatch(out.out, /GATE-FAULT/, "全过时不得出现故障判决词");
 });
 
 test("exit 1：某步按设计判红 → 整体 1，且判词含 exit=1 与步骤名", () => {
-  const out = runInjected([exitStep("注入-判红", 1)]);
+  const out = runInjected([
+    exitStep("注入-判红", 1),
+    { label: "注入-红路径本不该跑", cmd: process.execPath, args: ["-e", "process.exit(0)"] },
+  ]);
   assertStatus(out, 1);
   assert.match(out.out, /exit=1 {2}注入-判红/, "判红步应留在 exit= 列表里并带步骤名");
   assert.match(out.out, /\[local-gate\] 结果：FAIL/, "判红应判 FAIL");
   assert.doesNotMatch(out.out, /门禁故障/, "判红不得被报成门禁故障（验收 h：1 不是 2）");
   assert.doesNotMatch(out.out, /::error::/, "判红不是门禁故障，不该有 ::error:: 注解");
+  assert.doesNotMatch(out.out, /GATE-FAULT/, "判红的判决词是 FAIL，不是 GATE-FAULT");
+  assert.match(
+    out.out,
+    /^ {2}exit=skip {2}注入-红路径本不该跑$/m,
+    "判红步之后的步骤应记 exit=skip（fail-fast 未被弱化）",
+  );
+  assert.match(out.out, /因首个失败跳过 1 步/, "判红须照旧打印跳过计数");
 });
 
 test("exit 2：子门禁自身 exit 2 → 整体 2，判词含 fault=exit2 与步骤名", () => {
@@ -150,6 +161,17 @@ test("exit 2：子门禁自身 exit 2 → 整体 2，判词含 fault=exit2 与�
     "收口判词须可检索：带步骤名 + 门禁故障语义",
   );
   assert.doesNotMatch(out.out, /exit=1 {2}注入-子门禁故障/, "故障步不得混进 exit= 列表");
+  assert.match(out.out, /（记录 code=2）/, "须打出记录里的 code，钉住它不是 null");
+  assert.match(
+    out.out,
+    /\[local-gate\] 结果：GATE-FAULT（不可信 ⇒ 禁止合并/,
+    "故障的判决词必须是 GATE-FAULT",
+  );
+  assert.doesNotMatch(
+    out.out,
+    /\[local-gate\] 结果：FAIL/,
+    "故障时打 FAIL 会把「禁止合并 + 开 P0」读成「改代码」——两者处置方向相反",
+  );
 });
 
 test("exit 2：spawn 失败（命令不存在）→ 整体 2，判词含 res.error 的 ENOENT", () => {
@@ -160,6 +182,18 @@ test("exit 2：spawn 失败（命令不存在）→ 整体 2，判词含 res.err
   assert.match(out.out, /fault=spawn {2}注入-spawn失败/, "spawn 失败须在故障栏标出 kind 与步骤名");
   assert.match(out.out, /ENOENT/, "判词须逐字带上 res.error 的内容（可检索）");
   assert.match(out.out, /::error::门禁故障/, "门禁故障须经 failClosed 收口");
+  assert.doesNotMatch(
+    out.out,
+    /^ {2}exit=\d+ {2}注入-spawn失败$/m,
+    "故障步不得混进 exit= 列表（spawn 场景）",
+  );
+  assert.match(out.out, /（记录 code=2）/, "须打出记录里的 code，钉住它不是 null");
+  assert.match(
+    out.out,
+    /\[local-gate\] 结果：GATE-FAULT（不可信 ⇒ 禁止合并/,
+    "故障的判决词必须是 GATE-FAULT",
+  );
+  assert.doesNotMatch(out.out, /\[local-gate\] 结果：FAIL/, "故障时不得打 FAIL");
 });
 
 test(
@@ -180,5 +214,29 @@ test(
     assertStatus(out, 2);
     assert.match(out.out, /fault=signal {2}注入-信号杀死/, "信号杀死须在故障栏标出 kind 与步骤名");
     assert.match(out.out, /signal=SIGKILL/, "判词须逐字带上 res.signal 的信号名（可检索）");
+    assert.doesNotMatch(
+      out.out,
+      /^ {2}exit=\d+ {2}注入-信号杀死$/m,
+      "故障步不得混进 exit= 列表（信号场景）",
+    );
+    assert.match(out.out, /（记录 code=2）/, "须打出记录里的 code，钉住它不是 null");
+    assert.match(
+      out.out,
+      /\[local-gate\] 结果：GATE-FAULT（不可信 ⇒ 禁止合并/,
+      "故障的判决词必须是 GATE-FAULT",
+    );
+    assert.doesNotMatch(out.out, /\[local-gate\] 结果：FAIL/, "故障时不得打 FAIL");
   },
 );
+
+test("门禁故障同样 fail-fast：故障步之后的步骤记 exit=skip 且不执行", () => {
+  const out = runInjected([
+    { label: "注入-故障首步", cmd: "dsh-no-such-command-875-xyz", args: [] },
+    { label: "注入-本不该跑", cmd: process.execPath, args: ["-e", "process.exit(0)"] },
+  ]);
+  assertStatus(out, 2);
+  assert.match(out.out, /^ {2}exit=skip {2}注入-本不该跑$/m, "故障步之后的步骤应记 exit=skip");
+  assert.match(out.out, /因首个失败跳过 1 步/, "跳过计数须照旧打印，不因故障而消失");
+  assert.doesNotMatch(out.out, /▶ {2}注入-本不该跑/, "故障步之后的步骤不得真的执行");
+  assert.match(out.out, /\[local-gate\] 结果：GATE-FAULT/, "故障时判决词为 GATE-FAULT");
+});
