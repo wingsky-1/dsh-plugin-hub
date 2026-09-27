@@ -22,6 +22,7 @@ import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  assertSharedDtsInventoryNonEmpty,
   assertSharedDtsNoExtras,
   assertSharedDtsPresent,
   listSharedDts,
@@ -156,4 +157,92 @@ test("#7 同源防漂移：pack-check 每包接入查多出口（assertSharedDts
     "pack-check 必须调用查多出口 assertSharedDtsNoExtras",
   );
   assert.match(packCheck, /shared 副本残留/, "pack-check 对残留须报 fail-loud 文案");
+});
+
+test("#8 事实源非空：shared 未构建（清单为空）⇒ 判红（红线级静默绿的打红用例）", () => {
+  const { dir, cleanup } = tempDir();
+  try {
+    // 造「shared 未构建」的真实形态：只有 .ts 源码、零 .d.ts 产物（声明是 tsc 产物、不入库）
+    const shared = join(dir, "shared");
+    mkdirSync(join(shared, "client"), { recursive: true });
+    writeFileSync(join(shared, "paths.ts"), "export const a = 1;\n");
+    writeFileSync(join(shared, "client", "i18n.ts"), "export const b = 1;\n");
+    const expected = listSharedDts(dir);
+    // 前置自检：确认本用例真的落在「清单为空」这一支上（否则断言会空转成恒真）
+    assert.deepEqual(expected, [], "前置：只有 .ts 源码时清单必须为空");
+    // 前提事实：空清单下查缺/查多双双空转恒真——这正是本闸要拦的静默绿
+    assert.deepEqual(
+      assertSharedDtsPresent(shared, expected),
+      [],
+      "前提：空清单下查缺出口恒真（无判据力）",
+    );
+    assert.deepEqual(
+      assertSharedDtsNoExtras(shared, expected),
+      [],
+      "前提：空清单下查多出口恒真（无判据力）",
+    );
+    const problems = assertSharedDtsInventoryNonEmpty(expected);
+    assert.equal(problems.length, 1, "清单为空必须判红：发布面判据不许在事实源为空时通过");
+    assert.match(problems[0], /清单为空/, "判词须点明事实源为空");
+    assert.match(problems[0], /先构建 shared/, "判词须给出可执行的下一步（构建 shared）");
+  } finally {
+    cleanup();
+  }
+});
+
+test("#8b 事实源非空：清单非空 ⇒ 不判红（防恒真：绿必须只在有事实源时给出）", () => {
+  const { dir, cleanup } = tempDir();
+  try {
+    fixtureShared(dir);
+    const expected = listSharedDts(dir);
+    assert.ok(expected.length >= 2, "前置：清单非空");
+    assert.deepEqual(
+      assertSharedDtsInventoryNonEmpty(expected),
+      [],
+      "清单非空不得判红（否则构建后恒红，本闸即误报）",
+    );
+  } finally {
+    cleanup();
+  }
+});
+
+test("#8c 真实仓库方向：shared 已构建 ⇒ 事实源非空闸放行（防误报打红 CI/发布）", () => {
+  const root = join(import.meta.dirname, "..", "..");
+  const expected = listSharedDts(root);
+  // 本用例只在 shared 已构建时有意义（未构建时是 #8 的形态，不是误报）
+  if (expected.length === 0) return;
+  assert.deepEqual(
+    assertSharedDtsInventoryNonEmpty(expected),
+    [],
+    "shared 已构建时清单非空，事实源闸必须放行",
+  );
+});
+
+test("#8d 接入：pack-check 取到清单后立即 fail-closed，且退出码是 1（判红）不是 2（门禁故障）", () => {
+  const root = join(import.meta.dirname, "..", "..");
+  const packCheck = readFileSync(join(root, "scripts", "gate", "pack-check.ts"), "utf8");
+  // 生产路径接入（防「检测出口不进生产路径」假绿回归）
+  assert.match(
+    packCheck,
+    /assertSharedDtsInventoryNonEmpty\(SHARED_DTS_EXPECTED\)/,
+    "pack-check 必须在取到清单后立即调用事实源非空出口",
+  );
+  // 退出码语义：判红（1）与门禁故障（2）必须可区分，判据判红不得用门禁故障顶替
+  const after = packCheck.slice(
+    packCheck.indexOf("assertSharedDtsInventoryNonEmpty(SHARED_DTS_EXPECTED)"),
+  );
+  const exitSite = after.slice(0, 600);
+  // 守卫必须真的挂在清单判据上：只断言「调用与 exit 存在」会把 if (false) 这类**不可达守卫**
+  // 判成绿（实测过：把守卫改成 if (false) 后调用与 exit 都还在，纯文本断言完全看不见）。
+  // 故此处把「判据条件 → 逐条判词 → exit(1)」三段绑成一条正则，条件被旁路即判红。
+  assert.match(
+    exitSite,
+    /if \(sharedDtsInventoryProblems\.length > 0\) \{\s*\n\s*for \(const p of sharedDtsInventoryProblems\)[^\n]*\n\s*process\.exit\(1\);/,
+    "守卫必须由清单判据驱动并紧接 exit(1)（防不可达守卫把闸门架空）",
+  );
+  assert.doesNotMatch(
+    exitSite,
+    /process\.exit\(2\)/,
+    "不得用 exit 2 结案：那语义是门禁故障（读不到输入/自身不可信），与判红不同",
+  );
 });

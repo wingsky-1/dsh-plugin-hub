@@ -32,6 +32,34 @@ export function listSharedDts(root: string): string[] {
 }
 
 /**
+ * 事实源非空断言：期望清单为空即判红（#1028 后续重构引入的静默绿出口）。
+ *
+ * 为什么必须 fail-closed：shared 的声明是 tsc 产物、不入库。此前清单恒非空，
+ * shared 未构建时它是**空**的——而查缺（expected.filter）与查多（遍历包内后比对
+ * expected 集合）两个出口在空清单下都返回空，于是发布面两条断言同时空转恒真。同一时刻
+ * bundle-host 的复制循环也复制不到文件，但 lib/*.d.ts 里 ../shared/xxx.js 的说明符改写
+ * 照跑，发布 tarball 的类型面直接断链，没有任何判据看得见。
+ * 即「事实源为空时判据恒真」= 红线级静默绿，发布面判据不许在事实源为空时通过。
+ *
+ * 退出码口径：调用方以 **exit 1（判红）** 结案，不是 exit 2（门禁故障）。
+ * 「shared 未构建」是门禁**如实读到**的仓库状态、结论可信（发布面确实不达标）；exit 2
+ * 留给「门禁读不到输入 / 自身不可信」，两者语义不同、不可互相顶替。同本闸 --log-file
+ * 证据缺失出口同口径（判据绿但证据缺失 → exit 1 判红）。
+ *
+ * @param {string[]} expected listSharedDts 结果（相对路径清单）
+ * @returns {string[]} 判词列表（空 = 事实源非空，可继续逐包比对）
+ */
+export function assertSharedDtsInventoryNonEmpty(expected: string[]): string[] {
+  if (expected.length > 0) return [];
+  return [
+    "仓库 shared/ 下 0 个 .d.ts，声明期望清单为空——shared 声明由 tsc 产出、不入库，" +
+      "未构建时本闸查缺/查多两个出口都空转恒真，而 bundle-host 复制不到文件、" +
+      "lib/*.d.ts 里 ../shared/*.js 的改写照跑，发布 tarball 类型面断链却无判据可见。" +
+      "先构建 shared（pnpm --filter @wingsky-1/dsh-shared build，或 pnpm build）再跑本闸。",
+  ];
+}
+
+/**
  * 断言 tarball 内 shared/ 副本覆盖期望清单。
  * @param {string} pkgSharedDir tarball 解包后的 shared/ 目录
  * @param {string[]} expected listSharedDts 结果（相对路径清单）

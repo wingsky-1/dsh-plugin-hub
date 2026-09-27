@@ -14,8 +14,8 @@
 
 ## build/（构建流水线，每个插件包 build 都会跑）
 
-- `build/clean-lib.ts` — 构建前清空插件 `lib/`（产物目录）。
-- `build/shared.ts` — 仓库根 shared 的**唯一**构建入口（#1028 后续重构）：根 `build` 的第一步，先把 shared 这个 composite 工程编好，再让 `pnpm -r` 并行编各包。必须独立成步的原因：`tsc -b` 对同一工程不可并发，并行下多个进程同写一份 `tsconfig.tsbuildinfo` 与输出，后读者读到半写产物判定「已最新」而跳过 emit，消费包遂回落到 `.ts` 源码——而源码在各包 `rootDir` 之外，报 `TS2306 is not a module` 及隐式 any 级联（CI 实测：随机切片红、本地常绿、每次红的切片不同）。各包 build 里的 `tsc -b ../../shared` 是为**单包构建路径**（gate changed 档、CI 单包 job）准备的幂等 no-op。
+- `build/clean-lib.ts` — 构建前清空插件 `lib/`（产物目录）**与 `tsconfig.tsbuildinfo`**：包 build 已改用 `tsc -b`，带增量状态；只清 `lib/` 而留陈旧 buildinfo 会让 tsc 判「已最新」跳过 emit，于是 `lib/` 空而 exit 0。
+- shared 的构建**没有独立入口脚本**（#1028 后续重构收口后 `build/shared.ts` 已删），两条路径各建一次：① 各包 `build` 的 `tsc -b tsconfig.json` 按 project references 自动先建 shared（**单包构建路径**：gate changed 档、CI 单包 job）；② shared 自己的 `typecheck` 脚本（`tsc -b .`）——全仓类型检查靠 `pnpm -r` 拓扑序把它排在所有消费包**之前**（各包 devDepend `@wingsky-1/dsh-shared`，这条依赖边正是为排序而存在；实测输出里 `shared typecheck` 先跑完、消费包才开始）。各包 `typecheck` 用的是 `tsc -p`（**不建 references**），shared 没建好时消费包即报 TS6305。**这两处都必须单次建成**：`tsc -b` 对同一工程不可并发，而 `pnpm -r` 实测同层最多 4 包并发，多进程同写一份 `tsconfig.tsbuildinfo` 与输出时后读者读到半写产物判定「已最新」而跳过 emit，消费包遂回落到 `.ts` 源码——而源码在各包 `rootDir` 之外，报 `TS2306 is not a module` 及隐式 any 级联（CI 实测：随机切片红、本地常绿、每次红的切片不同）。这也是各包脚本里**不得**再写内联 `tsc -b ../../shared` 的原因（会退化成 4 路并发同写）。
 - `build/bundle-host.ts` — 宿主端发布构建（esbuild 内联 shared + d.ts X1），单包构建编排。
 - `build/build-client.ts` — 客户端契约外壳/唯一注入点，构建 `lib/client.js`。
 - `build/collect-licenses.ts` — 归集被内联第三方库的 LICENSE 进 `lib/THIRD-PARTY-LICENSES`。
@@ -86,7 +86,7 @@
 - `lib/client-contract-lib.ts` — 客户端契约断言（stub/执行实现同源唯一事实源）。
 - `lib/plugins-manifest-lib.ts` — 插件清单单一事实源（issue #36）纯函数库。
 - `lib/mutation-ledger-lib.mjs` — 变异段台账的解析与覆盖对账纯函数（#718 S0.2，与 `gate/mutation-ledger.mjs` 同源实现，测试离线 import）。
-- `lib/ensure-shared-built.mjs` — 跑包级 tsc 之前的统一前置（#1028 后续重构）：shared 的声明由 tsc 产出、不入库，带 references 的包在裸 `tsc -p` 下会报 TS6305。各包 `typecheck` 脚本与 export-surface-snapshot 门禁都经它先建 shared；已构建时是秒级 no-op。
+- `lib/ensure-shared-built.mjs` — 跑**裸 `tsc -p`** 之前的 shared 前置：shared 的 .d.ts 由 tsc 产出、不入库，带 references 的包在 `tsc -p` 下会报 TS6305。**注意分工**：只有 `tsc -b` 才按 references 自动先建 shared，`tsc -p` 不建——所以包 `build` 的 `tsc -b tsconfig.json` 自己会先建，而包 `typecheck` 的 `tsc -p tsconfig.json --noEmit` **不会**，它依赖调用方先把 shared 建好（全仓 `pnpm typecheck` 靠 shared 包的 `typecheck` 脚本经 `pnpm -r` 拓扑序先建一次；单包 typecheck 依赖编排层 / CI 的前置 build）。本模块供**进程内**调用方兜底，当前唯一调用方是 export-surface-snapshot（必须用 `tsc -p --emitDeclarationOnly`）。以 .mjs 是因为调用方是门禁脚本（loader 直跑）。
 - `lib/gate-exit.mjs` — 门禁「自身故障」的唯一退出口（#843 P-2）：只暴露 `failClosed(why)`，打印 `::error::门禁故障（非判据结论）：<why>` 后 `process.exit(2)`。1 = 判据按设计判红、2 = 门禁自己坏了，两者必须在日志上可区分（本轮真实事故正是把 exit 2 读成了判红）。语义的唯一事实源在 `AGENTS.md` 的门禁一节。
 - `lib/ci-ism-denylist.mjs` — 仓库根 CI-ism 未跟踪文件判据（#843 评论侧 L4）的纯实现：denylist（GitHub Actions 运行时文件 + `*.jsonl` / `undefined/`）+ 载体自证（扫描面为空 / 不是仓库根 / 清单漏形态一律判红）+ git 探测与裁决分离；`test/ci-ism-denylist.test.ts` 离线 import 它做注入对照。
 - `lib/exemption-gate.ts` — 路径受限门禁的共享实现（#733 计划项 3.2.2）：豁免机制（真实行注释词法 / marker 匹配 / 三态裁决 / 台账读取与反向腐烂校验）+ 扫描面与参数枚举（`isScannedSourceFile` / `collectSrcFiles` / `listPackageNames` / `relPath` / `argValue`）；策略与扫描器留在各门禁自己手里。豁免机制当前只剩 `gate/forbid-module-state-src.mjs` 一个用户（`gate/verify-dir-imports.mjs` 共用台账读取；homedir 面已无豁免通道，#765）。

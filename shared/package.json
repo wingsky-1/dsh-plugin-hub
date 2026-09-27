@@ -5,7 +5,8 @@
   "type": "module",
   "description": "仓库根共享层（构建期被各插件内联，不单独发布）",
   "scripts": {
-    "build": "tsc -b .",
+    "build": "tsc -b . --force",
+    "typecheck": "tsc -b . --force",
     "test": "node ../scripts/test/run-vitest.mjs"
   }
 }

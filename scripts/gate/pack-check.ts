@@ -39,6 +39,7 @@ import {
 import { resolvePackageScopeOrExit } from "../lib/package-scope.ts";
 import { checkExportTypesResolvable } from "../lib/exports-types-lib.ts";
 import {
+  assertSharedDtsInventoryNonEmpty,
   assertSharedDtsNoExtras,
   assertSharedDtsPresent,
   listSharedDts,
@@ -237,6 +238,18 @@ if (scoped !== null) {
 // shared 声明副本期望清单（issue #461 L2）：仓库 shared/ 全部 .d.ts（递归含子目录）
 // 随包逐一断言——新增 shared 子目录/文件（如 client/i18n.d.ts）自动纳入，防漏打包静默
 const SHARED_DTS_EXPECTED = listSharedDts(ROOT);
+// 事实源非空闸（fail-closed，#1028 后续重构引入的静默绿出口）：清单为空即判红。
+// shared 声明是 tsc 产物、不入库 ⇒ 未构建时清单恒空，而下方查缺/查多两个出口在空清单下
+// 都返回空，发布面两条断言同时空转恒真；bundle-host 复制循环同样复制不到文件，
+// 但 lib/*.d.ts 里 ../shared/*.js 的改写照跑 → 发布的包类型面断链却判绿。
+// 退出码取 1（判红）不是 2（门禁故障）：「shared 未构建」是本闸如实读到的仓库状态、
+// 结论可信；exit 2 留给「门禁读不到输入 / 自身不可信」。口径同本文件 --log-file 证据
+// 缺失那条（判据绿但证据缺失 → exit 1），两者语义不同、不可互相顶替。
+const sharedDtsInventoryProblems = assertSharedDtsInventoryNonEmpty(SHARED_DTS_EXPECTED);
+if (sharedDtsInventoryProblems.length > 0) {
+  for (const p of sharedDtsInventoryProblems) console.log(`FAIL shared-dts-inventory | ${p}`);
+  process.exit(1);
+}
 
 let failed = 0;
 for (const p of targets) {

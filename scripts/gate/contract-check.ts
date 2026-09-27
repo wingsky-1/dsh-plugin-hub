@@ -29,7 +29,7 @@ import { resolvePackageScopeOrExit } from "../lib/package-scope.ts";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const packagesDir = join(ROOT, "packages");
-// 仓库根共享层（#1028 后续重构：shared 已 TS 化）。它不是 workspace 包、不在任何包的
+// 仓库根共享层（#1028 后续重构：shared 已 TS 化）。它是 workspace 包（private、不发布）——依赖经 pnpm 的 workspace: 边建立，但运行期无引用；
 // node_modules 里，故「仅类型导入」判据必须显式把它列为扫描面，否则 shared 的官方类型
 // import 完全在视野之外——而 shared 运行时零依赖是被这条不变量守着的。
 const sharedDir = join(ROOT, "shared");
