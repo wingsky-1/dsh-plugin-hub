@@ -299,23 +299,6 @@ function TrendControls(p: TrendControlsProps): React.ReactElement {
           );
         })}
       </select>
-      <select
-        style={selectStyle}
-        value={p.provider}
-        aria-label={t("trendAdapterLabel")}
-        onChange={function (e) {
-          p.onProvider((e as { target: { value: string } }).target.value);
-        }}
-      >
-        <option value="">{t("trendAdapterAll")}</option>
-        {p.providers.map(function (pr) {
-          return (
-            <option key={pr.provider + "/" + (pr.model ?? "")} value={pr.provider}>
-              {pr.provider}
-            </option>
-          );
-        })}
-      </select>
       {showDir ? (
         <select
           style={selectStyle}
