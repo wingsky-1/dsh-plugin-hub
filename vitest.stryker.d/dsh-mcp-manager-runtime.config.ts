@@ -8,10 +8,10 @@ import { defineConfig } from 'vitest/config'
 export default defineConfig({
   test: {
     include: [
+      'packages/dsh-mcp-manager/test/integration/apply-lifecycle.test.ts',
       'packages/dsh-mcp-manager/test/integration/real-context.test.ts',
       'packages/dsh-mcp-manager/test/unit/ports/catalog-ports.test.ts',
       'packages/dsh-mcp-manager/test/unit/ports/pipeline-ports.test.ts',
-      'packages/dsh-mcp-manager/test/unit/unit-apply.test.ts',
       'packages/dsh-mcp-manager/test/unit/unit-call-stats.test.ts',
       'packages/dsh-mcp-manager/test/unit/unit-call-timeout.test.ts',
       'packages/dsh-mcp-manager/test/unit/unit-catalog-pure.test.ts',

@@ -9,8 +9,8 @@ export default defineConfig({
   test: {
     include: [
       'packages/dsh-mcp-manager/test/client-unit/unit-summary-a3-guard.test.ts',
+      'packages/dsh-mcp-manager/test/integration/apply-lifecycle.test.ts',
       'packages/dsh-mcp-manager/test/integration/real-context.test.ts',
-      'packages/dsh-mcp-manager/test/unit/unit-apply.test.ts',
       'packages/dsh-mcp-manager/test/unit/unit-call-stats.test.ts',
       'packages/dsh-mcp-manager/test/unit/unit-config-env-policy.test.ts',
       'packages/dsh-mcp-manager/test/unit/unit-config-env.test.ts',

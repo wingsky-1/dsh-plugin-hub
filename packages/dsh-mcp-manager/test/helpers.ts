@@ -356,3 +356,80 @@ export function fakeLogsPort() {
     },
   };
 }
+
+// 组合根顶层端口表的手装面（#875 I8①）。
+//
+// 为什么需要它：编排子层等六张端口表由 src/index.ts 在**模块求值期**装配（顶层 installXxx），
+// 而 I8① 判据禁止单元层 import 组合根——直接 import 会把装配顺序与服务面带进单元测试。
+// 既有配方（unit-call-timeout / unit-stats-a4 / unit-redaction / unit-stats / unit-visibility /
+// unit-erasure / unit-image-admission）是在各测试文件内手装自己用到的那几张；本函数把**组合根
+// 顶层那六张全量**收成一处，供「原本靠 import 包根顺带完成装配」的测试改直连域门面后调用。
+//
+// 实参与 src/index.ts 顶层逐项同源（全是静态模块引用，不需要宿主 ctx 或配置），调用顺序亦同——
+// 故装配结果与经包根求值完全一致，而单元层不再触碰组合根。重复装配当场抛错，故每个文件只装一次。
+import * as apiApi from "../src/server/api/interface.ts";
+import * as catalogApi from "../src/server/catalog/interface.ts";
+import * as configModelApi from "../src/server/config/interface.ts";
+import * as dispatchApi from "../src/server/servers/dispatch/interface.ts";
+import * as lifecycleApi from "../src/server/servers/lifecycle/interface.ts";
+import * as pipelineApi from "../src/server/pipeline/interface.ts";
+import * as runtimeApi from "../src/server/connection/runtime/interface.ts";
+import * as statsApi from "../src/server/stats/interface.ts";
+import * as storeApi from "../src/server/store/interface.ts";
+import * as upgradeApi from "../src/server/upgrade/interface.ts";
+import * as workspaceApi from "../src/server/workspace/interface.ts";
+import { installInject, releaseInject } from "../src/server/inject/interface.ts";
+import {
+  installOrchestrator,
+  releaseOrchestrator,
+} from "../src/server/connection/orchestrator/interface.ts";
+
+/** 按组合根顶层的同实参、同顺序装齐六张静态端口表。 */
+export function installCompositionPorts(): void {
+  catalogApi.installCatalog({ store: storeApi, connection: runtimeApi, workspace: workspaceApi });
+  pipelineApi.installPipeline({ workspace: workspaceApi });
+  installInject({
+    catalog: catalogApi,
+    runtime: runtimeApi,
+    pipeline: pipelineApi,
+    workspace: workspaceApi,
+  });
+  installOrchestrator({
+    catalog: catalogApi,
+    configModel: configModelApi,
+    configStore: storeApi,
+    runtime: runtimeApi,
+    lifecycle: lifecycleApi,
+    pipeline: pipelineApi,
+    stats: statsApi,
+    workspace: workspaceApi,
+    upgrade: upgradeApi,
+  });
+  runtimeApi.installRuntime({
+    catalog: catalogApi,
+    configEnv: configModelApi,
+    dispatch: dispatchApi,
+    lifecycle: lifecycleApi,
+    pipeline: pipelineApi,
+    workspace: workspaceApi,
+  });
+  apiApi.installApi({ workspace: workspaceApi, configModel: configModelApi });
+}
+
+/** 逆序复位六张端口表的装配标记（组合根不释放静态端口，单测按需自清以免跨例污染）。 */
+export function releaseCompositionPorts(): void {
+  for (const release of [
+    apiApi.releaseApi,
+    runtimeApi.releaseRuntime,
+    releaseOrchestrator,
+    releaseInject,
+    pipelineApi.releasePipeline,
+    catalogApi.releaseCatalog,
+  ]) {
+    try {
+      release();
+    } catch {
+      // 未装配的域忽略：清理面必须对「本例没装过」幂等。
+    }
+  }
+}

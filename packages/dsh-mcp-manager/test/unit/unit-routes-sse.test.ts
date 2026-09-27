@@ -14,7 +14,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { McpManager as McpManagerType } from "../../src/server/connection/orchestrator/interface.ts";
 import type { McpMiddleware as McpMiddlewareType } from "../../src/server/connection/runtime/interface.ts";
@@ -26,17 +26,38 @@ import {
   callHandler,
   fakeManagerCtx,
   fakeToolsService,
+  installCompositionPorts,
   pollUntil,
+  releaseCompositionPorts,
 } from "../helpers.ts";
 import type { FakeResponseState } from "../helpers.ts";
 
-// S6-B2：路由装配/管理器构造/中间层是装配依赖 + sseData 无域门面，留包根；其余纯符号改道域门面。
-const { makeRoutes, makeEventsRoute, makeHealthRoute, sseData, McpManager, McpMiddleware } =
-  await import("../../src/index.ts");
-const { uiConfigChangedFrame, broadcastFrame, ROUTES, SSE_HEARTBEAT_MS, SSE_PING_FRAME } =
-  await import("../../src/server/api/interface.ts");
+// I8①：单元层不得值引组合根 src/index.ts——路由工厂、管理器与中间层改经各自域门面直取，
+// sseData 取仓库共享层（包内无域门面，其物理定义本就在 shared/host-utils.js），
+// 组合根顶层那六张静态端口表由 helpers 以同实参、同顺序手装。
+const {
+  makeRoutes,
+  makeEventsRoute,
+  makeHealthRoute,
+  uiConfigChangedFrame,
+  broadcastFrame,
+  ROUTES,
+  SSE_HEARTBEAT_MS,
+  SSE_PING_FRAME,
+} = await import("../../src/server/api/interface.ts");
+const { McpManager } = await import("../../src/server/connection/orchestrator/interface.ts");
+const { McpMiddleware } = await import("../../src/server/connection/runtime/interface.ts");
+const { sseData } = await import("../../../../shared/host-utils.js");
 const { McpStore } = await import("../../src/server/store/interface.ts");
 const { normalizeServer } = await import("../../src/server/config/interface.ts");
+
+beforeAll(() => {
+  installCompositionPorts();
+});
+
+afterAll(() => {
+  releaseCompositionPorts();
+});
 
 // 伪造 req/res：只实现 handler 实际读取的面，其余按接缝收窄（`as unknown as`）。
 const fakeReq = (

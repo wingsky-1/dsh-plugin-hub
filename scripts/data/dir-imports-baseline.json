@@ -4,12 +4,12 @@
   "packages": {
     "dsh-lan-proxy": {
       "modules": 8,
-      "scannedSrcFiles": 26,
-      "allSrcTsFiles": 36,
+      "scannedSrcFiles": 25,
+      "allSrcTsFiles": 35,
       "interfaceFacades": 8,
-      "leafValueEdges": 7,
-      "fileValueEdges": 41,
-      "crossModuleRefs": 57,
+      "leafValueEdges": 6,
+      "fileValueEdges": 37,
+      "crossModuleRefs": 51,
       "quality": {
         "leafModuleCycles": [],
         "fileCycles": [],
@@ -22,9 +22,7 @@
         ],
         "rootIndexImports": [],
         "clientServerImports": [],
-        "unitImportFaceViolations": [
-          "test/unit/unit-apply.test.ts|src/index.ts"
-        ]
+        "unitImportFaceViolations": []
       }
     },
     "dsh-mcp-manager": {
@@ -45,16 +43,7 @@
         "crossDomainValueEdges": [],
         "rootIndexImports": [],
         "clientServerImports": [],
-        "unitImportFaceViolations": [
-          "test/unit/unit-apply.test.ts|src/index.ts",
-          "test/unit/unit-call-stats.test.ts|src/index.ts",
-          "test/unit/unit-hotspot.test.ts|src/index.ts",
-          "test/unit/unit-manager.test.ts|src/index.ts",
-          "test/unit/unit-manager2.test.ts|src/index.ts",
-          "test/unit/unit-middleware.test.ts|src/index.ts",
-          "test/unit/unit-routes-sse.test.ts|src/index.ts",
-          "test/unit/unit-workspace.test.ts|src/index.ts"
-        ]
+        "unitImportFaceViolations": []
       }
     },
     "dsh-notifier": {
@@ -117,18 +106,7 @@
         "crossDomainValueEdges": [],
         "rootIndexImports": [],
         "clientServerImports": [],
-        "unitImportFaceViolations": [
-          "test/unit/client-bindings.test.ts|src/client/bindings.ts",
-          "test/unit/client-index.test.ts|src/client/index.ts",
-          "test/unit/client-index.test.ts|src/client/shared/ports.ts",
-          "test/unit/client-index.test.ts|src/client/takeover.ts",
-          "test/unit/client-source.test.ts|src/client/source.ts",
-          "test/unit/client-takeover.test.ts|src/client/inject.ts",
-          "test/unit/client-takeover.test.ts|src/client/shared/ports.ts",
-          "test/unit/client-takeover.test.ts|src/client/takeover.ts",
-          "test/unit/inject-attach.test.ts|src/client/inject.ts",
-          "test/unit/inject-attach.test.ts|src/client/shared/ports.ts"
-        ]
+        "unitImportFaceViolations": []
       }
     }
   }

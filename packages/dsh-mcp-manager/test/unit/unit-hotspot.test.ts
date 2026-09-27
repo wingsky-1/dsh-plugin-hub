@@ -1,24 +1,33 @@
 /**
- * dsh-mcp-manager — unit：通过公共 API 覆盖剩余的未覆盖热点。
+ * dsh-mcp-manager — unit：路由 handler 热点（connect / disconnect / reconnect）。
  *
- * 方法：通过 makeRoutes 调用实际 route handler 覆盖 connect/disconnect/reconnect 路由；
- * 通过 apply 完整 settings 生命周期覆盖 isUnloading。
+ * 方法：通过 makeRoutes 调用实际 route handler 覆盖 connect/disconnect/reconnect 路由。
+ * 驱动 apply() 的那组热点（settings 生命周期、agent/pre-step 注册、SSE broadcast、
+ * settings 注入）已整段迁至 test/integration/apply-lifecycle.test.ts——apply 是组合根
+ * 装配体且就地定义在 src/index.ts 内，§8 导入面矩阵把它列为集成层的许可导入面。
  */
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
-import type { Context } from "@deepseek-ai/cordis";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { RoutesManager } from "../../src/server/connection/interface.ts";
-import { fakeManagerCtx } from "../helpers.ts";
-import { MCP_MANAGER_IDENTITY } from "../../src/shared/interface.ts";
+import { fakeManagerCtx, installCompositionPorts, releaseCompositionPorts } from "../helpers.ts";
 
-// S6-B2：apply/路由装配/管理器构造是装配依赖，留包根；纯符号改道域门面。
-const { apply, makeRoutes, McpManager } = await import("../../src/index.ts");
-const { ROUTES } = await import("../../src/server/api/interface.ts");
+// I8①：单元层不得值引组合根 src/index.ts——路由工厂与管理器改经各自域门面直取，
+// 组合根顶层那六张静态端口表由 helpers 以同实参、同顺序手装。
+const { makeRoutes, ROUTES } = await import("../../src/server/api/interface.ts");
+const { McpManager } = await import("../../src/server/connection/orchestrator/interface.ts");
 const { McpStore } = await import("../../src/server/store/interface.ts");
 const { normalizeServer } = await import("../../src/server/config/interface.ts");
+
+beforeAll(() => {
+  installCompositionPorts();
+});
+
+afterAll(() => {
+  releaseCompositionPorts();
+});
 
 let tempDirs: string[] = [];
 
@@ -215,240 +224,5 @@ describe("路由 handlers：connect / disconnect / reconnect", () => {
     };
     await find(ROUTES.connect)!.handler(extReq as unknown as IncomingMessage, res);
     expect(res.state.status).toBe(403);
-  });
-});
-
-describe("apply 完整 settings 生命周期（isUnloading 覆盖）", () => {
-  async function applyWithSettingsLifecycle() {
-    const dir = makeTempDir("dsh-mcp-manager-bundled-");
-    const refs: { disposer: null | (() => void); emit: null | ((ns: string) => void) } = {
-      disposer: null,
-      emit: null,
-    };
-
-    const ctx = {
-      fiber: { state: "active" },
-      logger: { warn: () => {}, info: () => {}, error: () => {} },
-      tools: { register: () => () => {} },
-      webServer: { register: () => () => {} },
-      systemPrompt: { section: () => () => {} },
-      inject: (keys: unknown, cb: (services: unknown) => void) => {
-        if (Array.isArray(keys) && keys.includes("settings")) {
-          cb({
-            settings: {
-              describe: () => [
-                {
-                  ns: MCP_MANAGER_IDENTITY.settingsNamespace,
-                  value: {
-                    ui: { position: "top-right", offset: { x: 8, y: 8, blankY: 40 } },
-                  },
-                  revision: 0,
-                },
-              ],
-            },
-            effect: (fn: () => () => void) => {
-              refs.disposer = fn();
-              return () => {};
-            },
-            on: (event: string, cb2: (ns: string, revision: number) => void) => {
-              if (event !== "settings/document-updated") throw new Error("unexpected event");
-              refs.emit = (ns: string) => cb2(ns, 1);
-              return () => {
-                refs.emit = null;
-              };
-            },
-          });
-        }
-        return () => {};
-      },
-      on: () => () => {},
-      effect: (fn: () => () => void) => {
-        const d = fn();
-        return () => {
-          d();
-        };
-      },
-    };
-
-    await apply(ctx as unknown as Context, { enabled: true, storePath: join(dir, "mcp.json") });
-    return { ctx, refs };
-  }
-
-  it("effect disposer 已注册", async () => {
-    const { refs } = await applyWithSettingsLifecycle();
-    expect(refs.disposer).not.toBeNull();
-  });
-
-  it("内部订阅已接线（settings 装配面）", async () => {
-    const { refs } = await applyWithSettingsLifecycle();
-    expect(refs.emit).not.toBeNull();
-  });
-
-  // 哑断言清理（#664 阶段 8）：isUnloading 短路（unloading/disposed 态
-  // 订阅/disposer 不触发 onChange）由 shared/settings-namespace.js 自身
-  // 单测覆盖——此处保留卸载路径执行冒烟（不抛）。
-  it("卸载态 disposer/订阅执行不抛", async () => {
-    const { ctx, refs } = await applyWithSettingsLifecycle();
-    const emit = refs.emit!;
-    expect(() => {
-      ctx.fiber.state = "unloading";
-      refs.disposer!();
-      ctx.fiber.state = "disposed";
-      emit(MCP_MANAGER_IDENTITY.settingsNamespace);
-    }).not.toThrow();
-  });
-});
-
-describe("apply 的 agent/pre-step 在 announceCatalog=true 时注册", () => {
-  async function applyWithPreStep() {
-    const dir = makeTempDir("dsh-mcp-manager-pre-");
-    const refs: { preHandler: null | ((...args: unknown[]) => unknown) } = { preHandler: null };
-    const ctx = {
-      fiber: { state: "active" },
-      logger: { warn: () => {}, info: () => {}, error: () => {} },
-      tools: { register: () => () => {} },
-      webServer: { register: () => () => {} },
-      systemPrompt: { section: () => () => {} },
-      inject: (keys: unknown, cb: (services: unknown) => void) => {
-        if (Array.isArray(keys) && keys.includes("settings")) {
-          cb({
-            settings: {
-              describe: () => [],
-            },
-            effect: () => () => {},
-          });
-        }
-        return () => {};
-      },
-      on: (evt: string, handler: (...args: unknown[]) => void) => {
-        if (evt === "agent/pre-step") refs.preHandler = handler;
-        return () => {};
-      },
-      effect: (fn: () => () => void) => {
-        const d = fn();
-        return () => {
-          d();
-        };
-      },
-    };
-
-    await apply(ctx as unknown as Context, {
-      enabled: true,
-      announceCatalog: true,
-      storePath: join(dir, "mcp.json"),
-    });
-    return refs;
-  }
-
-  it("pre-step handler 通过 apply 注册", async () => {
-    const refs = await applyWithPreStep();
-    expect(refs.preHandler).not.toBeNull();
-  });
-
-  it("pre-step reject 透传", async () => {
-    const refs = await applyWithPreStep();
-    // 调用 handler: reject 透传
-    // pre-step 已注册由上一用例保证（同一装配器），此处非空。
-    const rejectResult = (await refs.preHandler!(
-      {
-        agent: { session: { header: { cwd: "/tmp" } } },
-        messages: [],
-        signal: { aborted: false, throwIfAborted: () => {} },
-      },
-      async () => ({ kind: "reject" }),
-    )) as { kind: unknown };
-    expect(rejectResult.kind).toBe("reject");
-  });
-});
-
-describe("apply 的 SSE broadcast 与 route disposer", () => {
-  async function applyWithBroadcast() {
-    const dir = makeTempDir("dsh-mcp-manager-broadcast-");
-    const refs: { effectDisposer: null | (() => void) } = { effectDisposer: null };
-
-    const ctx = {
-      fiber: { state: "active" },
-      logger: { warn: () => {}, info: () => {}, error: () => {} },
-      tools: { register: () => () => {} },
-      webServer: {
-        register: (route: { path: string }) => {
-          if (route.path === "/api/dsh-mcp/events") {
-            // 不处理，只验证 apply 完成
-          }
-          return () => {};
-        },
-      },
-      systemPrompt: { section: () => () => {} },
-      inject: () => () => {},
-      on: () => () => {},
-      effect: (fn: () => () => void) => {
-        const d = fn();
-        refs.effectDisposer = () => {
-          d();
-        };
-        return () => {};
-      },
-    };
-
-    await apply(ctx as unknown as Context, { enabled: true, storePath: join(dir, "mcp.json") });
-    return refs;
-  }
-
-  it("effect disposer 已注册", async () => {
-    const refs = await applyWithBroadcast();
-    expect(refs.effectDisposer).not.toBeNull();
-  });
-
-  it("disposer 重复触发幂等（不抛）", async () => {
-    const refs = await applyWithBroadcast();
-    expect(() => {
-      // 触发 disposer（模拟卸载场景）
-      refs.effectDisposer!();
-      // 再次触发（幂等，不抛）
-      refs.effectDisposer!();
-    }).not.toThrow();
-  });
-});
-
-describe("apply 的 settings 注入（uiUpdate 写入路径）", () => {
-  it("settings 命名空间接线（inject settings 装配面）", async () => {
-    const dir = makeTempDir("dsh-mcp-manager-ui2-");
-    let describeCalled = false;
-    const ctx = {
-      fiber: { state: "active" },
-      logger: { warn: () => {}, info: () => {}, error: () => {} },
-      tools: { register: () => () => {} },
-      webServer: { register: () => () => {} },
-      systemPrompt: { section: () => () => {} },
-      inject: (keys: unknown, cb: (services: unknown) => void) => {
-        if (Array.isArray(keys) && keys.includes("settings")) {
-          cb({
-            settings: {
-              update: function (_ns: unknown, _patch: unknown) {
-                return Promise.resolve();
-              },
-              describe: () => {
-                describeCalled = true;
-                return [];
-              },
-            },
-            effect: () => () => {},
-          });
-        }
-        return () => {};
-      },
-      on: () => () => {},
-      effect: (fn: () => () => void) => {
-        const d = fn();
-        return () => {
-          d();
-        };
-      },
-    };
-
-    await apply(ctx as unknown as Context, { enabled: true, storePath: join(dir, "mcp.json") });
-    // 哑断言清理（#664 阶段 8）：假 ok 输出改真实断言——settings 命名空间
-    // 接线（installSettingsNamespace 经 inject(["settings"]) 调 describe）。
-    expect(describeCalled).toBeTruthy();
   });
 });

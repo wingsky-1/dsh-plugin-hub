@@ -176,6 +176,7 @@
           "excludes": ["!packages/dsh-lan-proxy/src/client/**"],
           "testFiles": [
             "packages/dsh-lan-proxy/test/integration/apply-token-provider.test.ts",
+            "packages/dsh-lan-proxy/test/integration/entry-contract.test.ts",
             "packages/dsh-lan-proxy/test/unit/unit-apply.test.ts",
             "packages/dsh-lan-proxy/test/unit/unit-ca.test.ts",
             "packages/dsh-lan-proxy/test/unit/unit-cacert.test.ts",
@@ -189,6 +190,7 @@
           "testFiles": [
             "packages/dsh-lan-proxy/test/client-unit/client-routes.test.ts",
             "packages/dsh-lan-proxy/test/integration/apply-token-provider.test.ts",
+            "packages/dsh-lan-proxy/test/integration/entry-contract.test.ts",
             "packages/dsh-lan-proxy/test/unit/unit-apply.test.ts",
             "packages/dsh-lan-proxy/test/unit/unit-ca.test.ts",
             "packages/dsh-lan-proxy/test/unit/unit-cacert.test.ts",
@@ -204,6 +206,7 @@
           "excludes": ["!packages/dsh-lan-proxy/src/client/**"],
           "testFiles": [
             "packages/dsh-lan-proxy/test/integration/apply-token-provider.test.ts",
+            "packages/dsh-lan-proxy/test/integration/entry-contract.test.ts",
             "packages/dsh-lan-proxy/test/unit/unit-apply.test.ts",
             "packages/dsh-lan-proxy/test/unit/unit-ca.test.ts",
             "packages/dsh-lan-proxy/test/unit/unit-cacert.test.ts",
@@ -216,6 +219,7 @@
           "excludes": ["!packages/dsh-lan-proxy/src/client/**"],
           "testFiles": [
             "packages/dsh-lan-proxy/test/integration/apply-token-provider.test.ts",
+            "packages/dsh-lan-proxy/test/integration/entry-contract.test.ts",
             "packages/dsh-lan-proxy/test/unit/unit-apply.test.ts",
             "packages/dsh-lan-proxy/test/unit/unit-ca.test.ts",
             "packages/dsh-lan-proxy/test/unit/unit-cacert.test.ts",
@@ -231,6 +235,7 @@
           "excludes": ["!packages/dsh-lan-proxy/src/client/**"],
           "testFiles": [
             "packages/dsh-lan-proxy/test/integration/apply-token-provider.test.ts",
+            "packages/dsh-lan-proxy/test/integration/entry-contract.test.ts",
             "packages/dsh-lan-proxy/test/unit/unit-apply.test.ts",
             "packages/dsh-lan-proxy/test/unit/unit-ca.test.ts",
             "packages/dsh-lan-proxy/test/unit/unit-cacert.test.ts",
@@ -243,6 +248,7 @@
           "excludes": ["!packages/dsh-lan-proxy/src/client/**"],
           "testFiles": [
             "packages/dsh-lan-proxy/test/integration/apply-token-provider.test.ts",
+            "packages/dsh-lan-proxy/test/integration/entry-contract.test.ts",
             "packages/dsh-lan-proxy/test/unit/unit-apply.test.ts",
             "packages/dsh-lan-proxy/test/unit/unit-proxy.test.ts"
           ],
@@ -258,6 +264,7 @@
           "excludes": ["!packages/dsh-lan-proxy/src/client/**"],
           "testFiles": [
             "packages/dsh-lan-proxy/test/integration/apply-token-provider.test.ts",
+            "packages/dsh-lan-proxy/test/integration/entry-contract.test.ts",
             "packages/dsh-lan-proxy/test/unit/unit-apply.test.ts",
             "packages/dsh-lan-proxy/test/unit/unit-ca.test.ts",
             "packages/dsh-lan-proxy/test/unit/unit-cacert.test.ts",
@@ -271,6 +278,7 @@
           "excludes": ["!packages/dsh-lan-proxy/src/client/**"],
           "testFiles": [
             "packages/dsh-lan-proxy/test/integration/apply-token-provider.test.ts",
+            "packages/dsh-lan-proxy/test/integration/entry-contract.test.ts",
             "packages/dsh-lan-proxy/test/unit/unit-ca.test.ts",
             "packages/dsh-lan-proxy/test/unit/unit-cacert.test.ts",
             "packages/dsh-lan-proxy/test/unit/unit-proxy.test.ts",
@@ -322,7 +330,7 @@
           "excludes": ["!packages/dsh-mcp-manager/src/client/**"],
           "testFiles": [
             "packages/dsh-mcp-manager/test/integration/real-context.test.ts",
-            "packages/dsh-mcp-manager/test/unit/unit-apply.test.ts",
+            "packages/dsh-mcp-manager/test/integration/apply-lifecycle.test.ts",
             "packages/dsh-mcp-manager/test/unit/unit-call-stats.test.ts",
             "packages/dsh-mcp-manager/test/unit/unit-config-env-policy.test.ts",
             "packages/dsh-mcp-manager/test/unit/unit-config-env.test.ts",
@@ -350,7 +358,7 @@
           "excludes": ["!packages/dsh-mcp-manager/src/client/**"],
           "testFiles": [
             "packages/dsh-mcp-manager/test/unit/ports/orchestrator-ports.test.ts",
-            "packages/dsh-mcp-manager/test/unit/unit-apply.test.ts",
+            "packages/dsh-mcp-manager/test/integration/apply-lifecycle.test.ts",
             "packages/dsh-mcp-manager/test/unit/unit-call-stats.test.ts",
             "packages/dsh-mcp-manager/test/unit/unit-config-env-policy.test.ts",
             "packages/dsh-mcp-manager/test/unit/unit-hotspot.test.ts",
@@ -381,7 +389,7 @@
           "testFiles": [
             "packages/dsh-mcp-manager/test/unit/ports/inject-ports.test.ts",
             "packages/dsh-mcp-manager/test/unit/ports/runtime-ports.test.ts",
-            "packages/dsh-mcp-manager/test/unit/unit-apply.test.ts",
+            "packages/dsh-mcp-manager/test/integration/apply-lifecycle.test.ts",
             "packages/dsh-mcp-manager/test/unit/unit-call-timeout.test.ts",
             "packages/dsh-mcp-manager/test/unit/unit-erasure.test.ts",
             "packages/dsh-mcp-manager/test/unit/unit-hotspot.test.ts",
@@ -403,7 +411,7 @@
           "excludes": ["!packages/dsh-mcp-manager/src/client/**"],
           "testFiles": [
             "packages/dsh-mcp-manager/test/unit/ports/api-ports.test.ts",
-            "packages/dsh-mcp-manager/test/unit/unit-apply.test.ts",
+            "packages/dsh-mcp-manager/test/integration/apply-lifecycle.test.ts",
             "packages/dsh-mcp-manager/test/unit/unit-config-env-policy.test.ts",
             "packages/dsh-mcp-manager/test/unit/unit-hotspot.test.ts",
             "packages/dsh-mcp-manager/test/unit/unit-manager2.test.ts",
@@ -419,7 +427,7 @@
           ],
           "excludes": ["!packages/dsh-mcp-manager/src/client/**"],
           "testFiles": [
-            "packages/dsh-mcp-manager/test/unit/unit-apply.test.ts",
+            "packages/dsh-mcp-manager/test/integration/apply-lifecycle.test.ts",
             "packages/dsh-mcp-manager/test/unit/unit-call-stats.test.ts",
             "packages/dsh-mcp-manager/test/unit/unit-config-env-policy.test.ts",
             "packages/dsh-mcp-manager/test/unit/unit-hotspot.test.ts",
@@ -442,7 +450,7 @@
           "excludes": ["!packages/dsh-mcp-manager/src/client/**"],
           "testFiles": [
             "packages/dsh-mcp-manager/test/unit/ports/lifecycle-ports.test.ts",
-            "packages/dsh-mcp-manager/test/unit/unit-apply.test.ts",
+            "packages/dsh-mcp-manager/test/integration/apply-lifecycle.test.ts",
             "packages/dsh-mcp-manager/test/unit/unit-dispatch.test.ts",
             "packages/dsh-mcp-manager/test/unit/unit-hotspot.test.ts",
             "packages/dsh-mcp-manager/test/unit/unit-lifecycle-logs.test.ts",
@@ -469,7 +477,7 @@
             "packages/dsh-mcp-manager/test/integration/real-context.test.ts",
             "packages/dsh-mcp-manager/test/unit/ports/catalog-ports.test.ts",
             "packages/dsh-mcp-manager/test/unit/ports/pipeline-ports.test.ts",
-            "packages/dsh-mcp-manager/test/unit/unit-apply.test.ts",
+            "packages/dsh-mcp-manager/test/integration/apply-lifecycle.test.ts",
             "packages/dsh-mcp-manager/test/unit/unit-call-stats.test.ts",
             "packages/dsh-mcp-manager/test/unit/unit-call-timeout.test.ts",
             "packages/dsh-mcp-manager/test/unit/unit-catalog.test.ts",
@@ -1128,16 +1136,16 @@
             "packages/dsh-worktree-sidebar/test/integration/tools-real.test.ts",
             "packages/dsh-worktree-sidebar/test/unit/api-routes.test.ts",
             "packages/dsh-worktree-sidebar/test/unit/binding-model.test.ts",
-            "packages/dsh-worktree-sidebar/test/unit/client-bindings.test.ts",
-            "packages/dsh-worktree-sidebar/test/unit/client-index.test.ts",
-            "packages/dsh-worktree-sidebar/test/unit/client-source.test.ts",
-            "packages/dsh-worktree-sidebar/test/unit/client-takeover.test.ts",
+            "packages/dsh-worktree-sidebar/test/client-unit/client-bindings.test.ts",
+            "packages/dsh-worktree-sidebar/test/client-unit/client-index.test.ts",
+            "packages/dsh-worktree-sidebar/test/client-unit/client-source.test.ts",
+            "packages/dsh-worktree-sidebar/test/client-unit/client-takeover.test.ts",
             "packages/dsh-worktree-sidebar/test/unit/git-inspect.test.ts",
             "packages/dsh-worktree-sidebar/test/unit/git-service.test.ts",
             "packages/dsh-worktree-sidebar/test/unit/host-agents.test.ts",
             "packages/dsh-worktree-sidebar/test/unit/host-sessions.test.ts",
             "packages/dsh-worktree-sidebar/test/unit/host-typert.test.ts",
-            "packages/dsh-worktree-sidebar/test/unit/inject-attach.test.ts",
+            "packages/dsh-worktree-sidebar/test/client-unit/inject-attach.test.ts",
             "packages/dsh-worktree-sidebar/test/unit/scope.test.ts",
             "packages/dsh-worktree-sidebar/test/unit/tools.test.ts",
             "packages/dsh-worktree-sidebar/test/client-unit/inject-keep-mounted.test.ts",

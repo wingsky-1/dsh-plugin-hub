@@ -9,25 +9,57 @@
  *   域的纯函数，且是全仓唯一覆盖点——随自研连接栈退役，原宿主文件已删）
  *
  * 其余域函数（findProjectRoot/normalizedProjectRoot/full-name）由
- * unit-manager2 / unit-middleware 既有断言面覆盖（T1：经 src/index.ts 公共 re-export 面）。
+ * unit-manager2 / unit-middleware 既有断言面覆盖（T1：经域门面 re-export 面）。
  */
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import * as catalogApi from "../../src/server/catalog/interface.ts";
+import * as configModelApi from "../../src/server/config/interface.ts";
+import * as storeApi from "../../src/server/store/interface.ts";
+import * as statsApi from "../../src/server/stats/interface.ts";
+import * as workspaceApi from "../../src/server/workspace/interface.ts";
+import * as runtimeApi from "../../src/server/connection/runtime/interface.ts";
+import * as lifecycleApi from "../../src/server/servers/lifecycle/interface.ts";
+import * as pipelineApi from "../../src/server/pipeline/interface.ts";
+import * as upgradeApi from "../../src/server/upgrade/interface.ts";
 import { fakeManagerCtx } from "../helpers.ts";
 
-// I8 判定（S6 实测回退）：本文件构造 McpManager，而编排子层端口表只在包根组合根
-// （src/index.ts 顶层 installOrchestrator）装配、且重复装配当场抛错——直引域门面会跳过装配、
-// 构造即红（实测 exit 1）。故保留包根导入（基线 unitImportFaceViolations 条目保留）；
-// 把组合根装配搬进门面属运行时改动，越界（见遗留）。
-// S6-B2：McpManager 构造是装配依赖，留包根（理由见上）；其余纯符号改道域门面。
-const { McpManager } = await import("../../src/index.ts");
+// I8①：单元层不得值引组合根 src/index.ts——本文件只取 workspace 域门面与 McpManager 门面，
+// 编排子层端口表按组合根同实参在此手装（与 unit-call-timeout / unit-stats-a4 同一配方），
+// 不经组合根求值装配。
+const { installOrchestrator, releaseOrchestrator, McpManager } =
+  await import("../../src/server/connection/orchestrator/interface.ts");
 const { McpStore } = await import("../../src/server/store/interface.ts");
 const { makeResolveRoot, normalizeScope } = await import("../../src/server/workspace/interface.ts");
 const { normalizeServer } = await import("../../src/server/config/interface.ts");
 const { MIDDLEWARE_GLOBAL_ROOT, SCOPE_GLOBAL, SCOPE_PROJECT } =
   await import("../../src/shared/interface.ts");
+
+/**
+ * 编排子层端口表：九组实参与组合根 src/index.ts 顶层 installOrchestrator 调用逐项同源
+ * （静态模块引用，无需宿主 ctx 或配置）。重复装配当场抛错，故本文件只装一次。
+ */
+function installOrchestratorPorts(): void {
+  installOrchestrator({
+    catalog: catalogApi,
+    configModel: configModelApi,
+    configStore: storeApi,
+    runtime: runtimeApi,
+    lifecycle: lifecycleApi,
+    pipeline: pipelineApi,
+    stats: statsApi,
+    workspace: workspaceApi,
+    upgrade: upgradeApi,
+  });
+}
+
+installOrchestratorPorts();
+
+afterAll(() => {
+  releaseOrchestrator();
+});
 
 describe("normalizeScope（#767 S1-5c 自 unit-transport.test.ts 迁入）", () => {
   it("project → SCOPE_PROJECT", () => {

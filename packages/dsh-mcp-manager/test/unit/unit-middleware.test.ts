@@ -16,7 +16,7 @@
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { expandServerEnv } from "../../src/server/config/impl/env/index.ts";
 import { withTimeout } from "../../src/server/pipeline/impl/timeout/index.ts";
 import { OFFICIAL_MCP_CLIENT_SPECIFIER } from "../../src/server/shared/interface.ts";
@@ -26,7 +26,14 @@ import {
   releaseLifecycle,
 } from "../../src/server/servers/lifecycle/interface.ts";
 import { catalogDirectory } from "../../src/server/catalog/interface.ts";
-import { fakeLoaderPort, fakeLogsPort, fakeToolsService, pollUntil } from "../helpers.ts";
+import {
+  fakeLoaderPort,
+  fakeLogsPort,
+  fakeToolsService,
+  installCompositionPorts,
+  pollUntil,
+  releaseCompositionPorts,
+} from "../helpers.ts";
 import type { FakeToolEntry, FakeToolsScript } from "../helpers.ts";
 import type { MiddlewareHost } from "../../src/server/connection/runtime/deps.ts";
 import type { LoaderPort, LogsPort } from "../../src/server/shared/interface.ts";
@@ -59,9 +66,18 @@ import type { ListCatalogResult } from "../../src/server/catalog/interface.ts";
 import type { McpMiddleware as McpMiddlewareType } from "../../src/server/connection/runtime/interface.ts";
 import type { ServerConfig } from "../../src/server/config/interface.ts";
 
-// S6-B2：中间层装配依赖（McpMiddleware 方法/registerMiddlewareTools 调用消费组合根装配的
-// 端口，全量去包根探针 161/210 红 exit 1）留包根；其余纯符号改道域门面。
-const { McpMiddleware, registerMiddlewareTools } = await import("../../src/index.ts");
+// I8①：单元层不得值引组合根 src/index.ts——中间层类与注册入口改经各自域门面直取，
+// 组合根顶层那六张静态端口表由 helpers 以同实参、同顺序手装，不经组合根求值装配。
+const { McpMiddleware } = await import("../../src/server/connection/runtime/interface.ts");
+const { registerMiddlewareTools } = await import("../../src/server/inject/interface.ts");
+
+beforeAll(() => {
+  installCompositionPorts();
+});
+
+afterAll(() => {
+  releaseCompositionPorts();
+});
 const { fullServerName, parseFullServerName, normalizeToolName } =
   await import("../../src/server/workspace/interface.ts");
 const { normalizeArguments, createRedactor, globMatch, projectCallToolResult } =

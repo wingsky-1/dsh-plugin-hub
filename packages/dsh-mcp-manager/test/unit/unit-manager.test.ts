@@ -10,17 +10,25 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
-import type { Context } from "@deepseek-ai/cordis";
-// S6-B2：McpManager 构造是装配依赖，留包根；纯符号改道域门面（apply 仍经包根动态导入，见下）。
-import { McpManager } from "../../src/index.ts";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { McpStore } from "../../src/server/store/interface.ts";
 import { SCOPE_PROJECT } from "../../src/shared/interface.ts";
 import { normalizeServer } from "../../src/server/config/interface.ts";
 import { stripMcpPrefix } from "../../src/server/connection/orchestrator/tool-names.ts";
-import { fakeManagerCtx } from "../helpers.ts";
+import { McpManager } from "../../src/server/connection/orchestrator/interface.ts";
+import { fakeManagerCtx, installCompositionPorts, releaseCompositionPorts } from "../helpers.ts";
 
-const { apply } = await import("../../src/index.ts");
+// I8①：单元层不得值引组合根 src/index.ts——McpManager 改经编排子层门面直取，
+// 组合根顶层那六张静态端口表由 helpers 以同实参、同顺序手装，不经组合根求值装配。
+// 驱动 apply() 的那组用例（installSettingsNamespace 降级三分支）已整段迁至
+// test/integration/apply-lifecycle.test.ts（§8 矩阵：apply 是集成层的许可导入面）。
+beforeAll(() => {
+  installCompositionPorts();
+});
+
+afterAll(() => {
+  releaseCompositionPorts();
+});
 
 let tempDirs: string[] = [];
 let managers: McpManager[] = [];
@@ -202,87 +210,6 @@ describe("McpManager.connect", () => {
 });
 
 // 通过 apply 间接覆盖 installSettingsNamespace 的降级分支
-describe("通过 apply 间接覆盖 installSettingsNamespace 降级分支", () => {
-  it("ctx.inject 不可用时静默降级（不抛）", async () => {
-    // 通过 fakeCtx 模拟 apply 的 settings 注入路径
-    // 覆盖 installSettingsNamespace 的 ctx.inject 不可用分支
-    // 故意缺 inject 方法的残缺宿主：apply 必须静默降级。残缺形状按接缝收窄（运行时原样传入）。
-    const noInjectCtx = {
-      logger: { warn: () => {} },
-      // 没有 inject 方法
-      effect: () => () => {},
-      on: () => () => {},
-      tools: { register: () => () => {} },
-      webServer: { register: () => () => {} },
-      systemPrompt: { section: () => () => {} },
-    };
-    const dir = makeTempDir("dsh-mcp-manager-ni-");
-    await expect(
-      apply(noInjectCtx as unknown as Context, {
-        enabled: false,
-        storePath: join(dir, "mcp.json"),
-      }),
-    ).resolves.toBeUndefined();
-  });
-
-  it("settings.describe 抛错时降级（不抛）", async () => {
-    // settings 服务存在但 describe 抛错 → 回落 entry
-    const failSettingsCtx = {
-      logger: { warn: () => {} },
-      inject: (keys: unknown, cb: (services: unknown) => void) => {
-        if (Array.isArray(keys) && keys.includes("settings")) {
-          cb({
-            settings: {
-              describe: () => {
-                throw new Error("describe failed");
-              },
-            },
-            effect: () => () => {},
-          });
-        }
-        return () => {};
-      },
-      effect: () => () => {},
-      on: () => () => {},
-      tools: { register: () => () => {} },
-      webServer: { register: () => () => {} },
-      systemPrompt: { section: () => () => {} },
-    };
-    const dir = makeTempDir("dsh-mcp-manager-sf-");
-    await expect(
-      apply(failSettingsCtx as unknown as Context, {
-        enabled: false,
-        storePath: join(dir, "mcp.json"),
-      }),
-    ).resolves.toBeUndefined();
-  });
-
-  it("settings 缺少 register 时降级（不抛）", async () => {
-    // settings 服务存在但 register 不是函数
-    const noRegCtx = {
-      logger: { warn: () => {} },
-      inject: (keys: unknown, cb: (services: unknown) => void) => {
-        if (Array.isArray(keys) && keys.includes("settings")) {
-          cb({
-            settings: {},
-            effect: () => () => {},
-          });
-        }
-        return () => {};
-      },
-      effect: () => () => {},
-      on: () => () => {},
-      tools: { register: () => () => {} },
-      webServer: { register: () => () => {} },
-      systemPrompt: { section: () => () => {} },
-    };
-    const dir = makeTempDir("dsh-mcp-manager-nr-");
-    await expect(
-      apply(noRegCtx as unknown as Context, { enabled: false, storePath: join(dir, "mcp.json") }),
-    ).resolves.toBeUndefined();
-  });
-});
-
 // S2-b 接线判据（既有文件内选一处，不新增文件）：旧扁平夹具 + projectStoreFor →
 // 新路径落内容 + 旧文件归档 .migrated.bak + store 读到条目（第九键 + settle + 读取三段一次证全）。
 describe("S2-b：projectStoreFor 经 upgrade 端口落定新形态", () => {

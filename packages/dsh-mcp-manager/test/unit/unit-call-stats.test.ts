@@ -26,12 +26,12 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { fakeManagerCtx } from "../helpers.ts";
 
-// S6-B2：McpManager 构造取端口 + resolveDebugConfig 组合根定义，留包根；纯符号改道域门面。
-const { McpManager, resolveDebugConfig } = await import("../../src/index.ts");
+// I8①：单元层不得值引组合根 src/index.ts。本文件剩的是统计收集器一域（纯值对象 + 落盘），
+// 不构造管理器，故不需要手装组合根端口表；驱动 resolveDebugConfig（就地定义在 src/index.ts
+// 内、无第二出口）与 McpManager 的那两组判据已整段迁至
+// test/integration/apply-lifecycle.test.ts（§8 矩阵：包产物入口是集成层的许可导入面）。
 const { McpStatsCollector } = await import("../../src/server/stats/interface.ts");
-const { McpStore } = await import("../../src/server/store/interface.ts");
 
 let tempDirs: string[] = [];
 
@@ -278,53 +278,6 @@ describe("开启时正确聚合调用与渐进式披露指标并原子落盘", (
 });
 
 // McpManager & routes: 前端 POST /config 不会覆盖抹除已有的 debug 配置 ----
-describe("前端 POST /config 不会覆盖抹除已有的 debug 配置", () => {
-  async function updateUiOnly() {
-    const dir = tempDir();
-    const store = new McpStore(join(dir, "mcp.json"));
-    const manager = new McpManager(fakeManagerCtx(), store);
-
-    let persistedSettings = {
-      ui: { position: "top-right", offset: { x: 8, y: 8, blankY: 40 }, zIndexBase: 10 },
-      debug: { callStats: true, statsFile: "/tmp/custom.json" },
-    };
-
-    manager.uiConfigSource = () => persistedSettings;
-    manager.uiUpdate = async (patch) => {
-      // 模拟 settings.update 行为：合并 patch，不抹除不在 patch 中的字段
-      persistedSettings = { ...persistedSettings, ...patch };
-      return persistedSettings;
-    };
-
-    // 前端更新 UI（只提交扁平 UI 参数）
-    await manager.updateUiConfig({ position: "bottom-left", offsetX: 10, offsetY: 20 });
-    return {
-      persisted: () => persistedSettings,
-      debugCfg: () => resolveDebugConfig(undefined, persistedSettings),
-    };
-  }
-
-  it("更新 UI 后 debug.callStats 未被抹除", async () => {
-    const { persisted } = await updateUiOnly();
-    expect(persisted().debug?.callStats).toBe(true);
-  });
-
-  it("更新 UI 后 debug.statsFile 未被抹除", async () => {
-    const { persisted } = await updateUiOnly();
-    expect(persisted().debug?.statsFile).toBe("/tmp/custom.json");
-  });
-
-  it("debug 解析依然生效（callStats）", async () => {
-    const { debugCfg } = await updateUiOnly();
-    expect(debugCfg().callStats).toBe(true);
-  });
-
-  it("debug 解析依然生效（statsFile）", async () => {
-    const { debugCfg } = await updateUiOnly();
-    expect(debugCfg().statsFile).toBe("/tmp/custom.json");
-  });
-});
-
 // B2 红测：configure({enabled:false}) 关闭前最后一批脏数据必须刷盘 ----
 describe("B2：configure({enabled:false}) 关闭前最后一批脏数据必须刷盘", () => {
   function configureOffFixture() {

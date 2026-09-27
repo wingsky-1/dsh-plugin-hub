@@ -146,81 +146,32 @@ test("非 JSON 文件不参与扫描（只看 scripts/data 下的 .json）", () 
   }
 });
 
-test("本仓真实快照：27 条在册（数字变即提示同步台账与 #765）", () => {
+test("本仓真实快照：16 条在册（数字变即提示同步台账与 #765）", () => {
   // 7 = coverage.config.json 4（#769 把一条 **/client/** 拆成 per-package 的 pending-project
   //     条目：notifier 的 .tsx 渲染面 + 另外 3 个包的整个 client 面 + shared/client/**；
   //     #840 退役 dsh-web-file-preview 时删掉它那一条，7 → 6；
   //     #883 给 lan-proxy 客户端补直连判据后删掉它那一条，6 → 5 当中的覆盖率部分 5 → 4；
   //     #947 把 mcp-manager 的一条整个 client 面按文件拆成 11 条（panel.ts 与 state.ts 计入分母），覆盖率部分 4 → 14）
   //     + gauntlet.config.json 1（crap.strict 观察期，仅解除条件、无到期日）
-  //     + gate-exemptions.json 12（#767 B0：#770 mcp panel 单飞句柄 + #767 lan-proxy unit-apply
-  //       + #847 sidebar 客户端单测 10 条；#1011 keep-mounted 两条随测试迁出 unit 面而删除；
-  //       reviewBy + exitCriteria 双全；首登 dsh-decision-gateway 两条（#membership+#anchor）随本地实测锚
-  //       落定全部删除：#membership 随条目进表先删，#anchor 随 fixedCovered=64.84 本地锚后删）。
+  //     + gate-exemptions.json 1（#770 mcp panel 单飞句柄）
+  // #875 4c：gate-exemptions.json 的 12 → 1——#767 lan-proxy unit-apply 1 条与 #847 sidebar
+  //   客户端单测 10 条的 I8① 证据全部清零（迁 test/client-unit / 改直连域门面 / 入口契约
+  //   判据迁集成层），11 条随证据消失按反向腐烂校验删除，27 → 16。
   const r = spawnSync(process.execPath, [SCRIPT], { cwd: ROOT, encoding: "utf8" });
   assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stdout, /合计 27 条：已过期 0 /);
+  assert.match(r.stdout, /合计 16 条：已过期 0 /);
   assert.match(r.stdout, /仅解除条件（无到期日）1/);
   // crap.strict 的解除条件必须在台账里（只写日期会逼出「到期了再讨论一次」）
   assert.match(r.stdout, /\$\.crap {2}threshold=16/);
   assert.match(r.stdout, /exitCriteria 超阈 hotspots 计数降为 0/);
   assert.doesNotMatch(r.stdout, /mutation\.packages\.dsh-worktree-sidebar#anchor/);
-  // #847 在此快照里是 sidebar 十条 I8 存量的跟踪号（合法出现）；变异回落锚点仍不得出现。
-  assert.match(r.stdout, /trackingIssue #847/);
-
-  // #767 B0：扩包后新增的存量豁免同样必须在台账里——只判红不登记，或只登记不进台账，
-  // 都会让「到期复核」失去输入（这一条是台账完整性的锚，不是计数装饰）
-  assert.match(r.stdout, /\$\.exemptions\[0\] {2}gate=forbid-module-state-src/);
-  assert.match(r.stdout, /trackingIssue #770/);
-  // #767 B0 切片 3b：I8① 判据上线时跨包存量同样必须进台账（逐条钉住证据键本身，
-  // 而不是只钉一个总数：条目被换成人手写的近似路径时先红）。同批 unit-proxy/wfp 两条
-  // 已随主干演进消除而不登记，此处只钉幸存的 unit-apply 一条。
-  assert.match(r.stdout, /trackingIssue #767/);
-  assert.match(
-    r.stdout,
-    /\$\.exemptions\[1\] {2}gate=verify-dir-imports {2}path=dsh-lan-proxy:test\/unit\/unit-apply\.test\.ts\|src\/index\.ts/,
-  );
-  // sidebar 十条 I8 存量逐条钉住证据键（#847 跟踪）：换成近似路径先红。索引 [2..11] 与台账顺序一致。
-  assert.match(
-    r.stdout,
-    /\$\.exemptions\[2\] {2}gate=verify-dir-imports {2}path=dsh-worktree-sidebar:test\/unit\/client-bindings\.test\.ts\|src\/client\/bindings\.ts/,
-  );
-  assert.match(
-    r.stdout,
-    /\$\.exemptions\[3\] {2}gate=verify-dir-imports {2}path=dsh-worktree-sidebar:test\/unit\/client-index\.test\.ts\|src\/client\/index\.ts/,
-  );
-  assert.match(
-    r.stdout,
-    /\$\.exemptions\[4\] {2}gate=verify-dir-imports {2}path=dsh-worktree-sidebar:test\/unit\/client-index\.test\.ts\|src\/client\/shared\/ports\.ts/,
-  );
-  assert.match(
-    r.stdout,
-    /\$\.exemptions\[5\] {2}gate=verify-dir-imports {2}path=dsh-worktree-sidebar:test\/unit\/client-index\.test\.ts\|src\/client\/takeover\.ts/,
-  );
-  assert.match(
-    r.stdout,
-    /\$\.exemptions\[6\] {2}gate=verify-dir-imports {2}path=dsh-worktree-sidebar:test\/unit\/client-source\.test\.ts\|src\/client\/source\.ts/,
-  );
-  assert.match(
-    r.stdout,
-    /\$\.exemptions\[7\] {2}gate=verify-dir-imports {2}path=dsh-worktree-sidebar:test\/unit\/client-takeover\.test\.ts\|src\/client\/inject\.ts/,
-  );
-  assert.match(
-    r.stdout,
-    /\$\.exemptions\[8\] {2}gate=verify-dir-imports {2}path=dsh-worktree-sidebar:test\/unit\/client-takeover\.test\.ts\|src\/client\/shared\/ports\.ts/,
-  );
-  assert.match(
-    r.stdout,
-    /\$\.exemptions\[9\] {2}gate=verify-dir-imports {2}path=dsh-worktree-sidebar:test\/unit\/client-takeover\.test\.ts\|src\/client\/takeover\.ts/,
-  );
-  assert.match(
-    r.stdout,
-    /\$\.exemptions\[10\] {2}gate=verify-dir-imports {2}path=dsh-worktree-sidebar:test\/unit\/inject-attach\.test\.ts\|src\/client\/inject\.ts/,
-  );
-  assert.match(
-    r.stdout,
-    /\$\.exemptions\[11\] {2}gate=verify-dir-imports {2}path=dsh-worktree-sidebar:test\/unit\/inject-attach\.test\.ts\|src\/client\/shared\/ports\.ts/,
-  );
+  // #875 4c：#767 lan-proxy 那一条与 #847 sidebar 十条 I8① 证据已全部清零
+  //   （迁 test/client-unit / 改直连域门面 / 入口契约判据迁集成层），11 条随证据消失
+  //   按反向腐烂校验删除。本快照改为**反向**钉住：verify-dir-imports 通道在册数必须
+  //   为 0 —— 零豁免是目标，台账里再出现任何一条都说明有人重新登记了同一处越界。
+  assert.doesNotMatch(r.stdout, /gate=verify-dir-imports/);
+  assert.doesNotMatch(r.stdout, /trackingIssue #847/);
+  assert.doesNotMatch(r.stdout, /trackingIssue #767/);
   // keep-mounted 两条已随测试迁出 unit 面，证据与 exemption 一并删除。
   // 覆盖率面的临时排除项也必须在台账里（它是「到期复核」的输入，不该只活在配置里）
   // 索引 5 = 前五条是 type-only / not-source 的永久事实（d.ts / d.mts / ps1 / md / css），

@@ -30,13 +30,15 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import {
   assertNoGrowth,
   fakeLoaderPort,
   fakeLogsPort,
   fakeToolsService,
+  installCompositionPorts,
   pollUntil,
+  releaseCompositionPorts,
 } from "../helpers.ts";
 import type { FakeLoaderScript, FakeToolEntry } from "../helpers.ts";
 import type { Context } from "@deepseek-ai/cordis";
@@ -49,7 +51,6 @@ import type { ProjectUnit } from "../../src/server/connection/runtime/interface.
 import type { MiddlewareHost } from "../../src/server/connection/runtime/deps.ts";
 import type { ConnectionEntry } from "../../src/server/connection/runtime/interface.ts";
 import type { ToolDefinition, ToolRunContext } from "@deepseek-ai/dsh-tools";
-import type { McpManagerService } from "../../src/shared/interface.ts";
 import { expandServerEnv } from "../../src/server/config/impl/env/index.ts";
 import { withTimeout } from "../../src/server/pipeline/impl/timeout/index.ts";
 import { OFFICIAL_MCP_CLIENT_SPECIFIER } from "../../src/server/shared/interface.ts";
@@ -60,8 +61,20 @@ import {
 } from "../../src/server/servers/lifecycle/interface.ts";
 import { catalogDirectory } from "../../src/server/catalog/interface.ts";
 
-// S6-B2：McpManager 构造/apply/路由装配是装配依赖，留包根；其余纯符号改道域门面。
-const { apply, McpManager, McpMiddleware, makeHealthRoute } = await import("../../src/index.ts");
+// I8①：单元层不得值引组合根 src/index.ts——管理器、中间层与健康路由改经各自域门面直取，
+// 组合根顶层那六张静态端口表由 helpers 以同实参、同顺序手装。驱动 apply() 的那两组用例
+// （ctx.mcpManager 服务面、apply 配置分支）已整段迁至 test/integration/apply-lifecycle.test.ts。
+const { McpManager } = await import("../../src/server/connection/orchestrator/interface.ts");
+const { McpMiddleware } = await import("../../src/server/connection/runtime/interface.ts");
+const { makeHealthRoute } = await import("../../src/server/api/interface.ts");
+
+beforeAll(() => {
+  installCompositionPorts();
+});
+
+afterAll(() => {
+  releaseCompositionPorts();
+});
 const { McpStore } = await import("../../src/server/store/interface.ts");
 const {
   normalizeServer,
@@ -3740,304 +3753,7 @@ describe("B19 红测：summarize 合并禁用集", () => {
 // 今天全仓零行为断言（只有 service-contract 的编译期类型断言 test/integration/service-contract.test.ts:127
 // 与形参锁 :202）。本笔换了数据源（supervisor.toolMeta → 连接池单元表），必须把
 // 「返回注册名」与「未连接 / 未知 server 返回 []」钉成行为判据。
-describe("#767 笔 1a：ctx.mcpManager.getTools 行为判据", () => {
-  let prevHome: string | undefined;
-  let homeDir: string;
-  beforeEach(() => {
-    prevHome = process.env.DSH_HOME;
-    homeDir = makeTempDir("dsh-mcp-mgr2gt-");
-    process.env.DSH_HOME = homeDir;
-  });
-  afterEach(() => {
-    if (prevHome === undefined) delete process.env.DSH_HOME;
-    else process.env.DSH_HOME = prevHome;
-  });
-
-  /**
-   * 最小 apply 宿主：`provide` 捕获核心化服务；loader / plugin / tools.schemas 支撑一条
-   * 真装载链（官方 client 的 syncTools 在本夹具里由 OFFICIAL_MODULE.apply 代替）。
-   */
-  async function appliedService() {
-    const provided = new Map<string, unknown>();
-    const schemas: FakeToolEntry[] = [];
-    const officialModule = {
-      name: "test:official",
-      // 真实引擎里这一步由官方 client 的 syncTools 做：把 `mcp__<serverName>__<tool>`
-      // 写进宿主注册表。六态投影的 hasTools 与 getTools 的注册面因此同源。
-      apply: (_pluginCtx: unknown, config: { serverName: string }) => {
-        schemas.push({
-          name: `mcp__${config.serverName}__echo`,
-          description: "回显给定的文本",
-        });
-      },
-    };
-    const ctx = {
-      logger: { warn: () => {}, info: () => {}, error: () => {}, exporter: () => () => {} },
-      tools: { register: () => () => {}, schemas: () => schemas },
-      webServer: { register: () => () => {} },
-      systemPrompt: { section: () => () => {} },
-      inject: () => () => {},
-      on: () => () => {},
-      effect: (fn: () => unknown) => fn(),
-      provide: (serviceName: string, service: unknown) => {
-        provided.set(serviceName, service);
-      },
-      get: (serviceName: string) =>
-        serviceName === "loader" ? { import: async () => officialModule } : undefined,
-      plugin: (
-        module: { apply?: (ctx: unknown, config: { serverName: string }) => unknown },
-        config: { serverName: string },
-      ) => {
-        if (typeof module?.apply === "function") module.apply(ctx, config);
-        return { await: async () => undefined, dispose: async () => {} };
-      },
-    };
-    const store = new McpStore(join(homeDir, "mcp.json"));
-    store.data = { version: 1, servers: [] };
-    await store.save();
-    // 残缺宿主（只实现装配触达面）：按接缝收窄，装配语义不变。
-    await apply(ctx as unknown as Context, {
-      storePath: store.path,
-      announceToAgent: false,
-      announceCatalog: false,
-    });
-    // 提供方挂载的真服务（行为面由本组用例钉住），此处取其类型面。
-    return { svc: provided.get("mcpManager") as McpManagerService, schemas };
-  }
-
-  /** 起一台全局服务器并等它在池里拿到 id（单池：进 @global 单元）。 */
-  async function connectedService(svc: McpManagerService) {
-    await svc.registerServer({
-      name: "g1",
-      transport: "stdio",
-      command: "dsh-noop-cmd",
-      reconnect: { enabled: false },
-      enabled: true,
-    });
-    await pollUntil("池内条目拿到 id 且注册面命中", () => svc.getTools("g1").length > 0);
-  }
-
-  it("① 中间层接管的服务器返回非空且逐字是注册名（mcp__<id>__<tool>）", async () => {
-    const { svc } = await appliedService();
-    await connectedService(svc);
-    const tools = svc.getTools("g1");
-    // 旧数据源（直连账本 toolMeta）只由已退役的那条路径填充 → 这里会恒返回 []。
-    expect(tools.length, "非空（数据源换到池了）").toBeGreaterThan(0);
-    // 逐字是注册名：`mcp__<id>__<tool>`，id 是装配期分配的不透明短 id（不是裸名、不是裸名加前缀）。
-    expect(tools.map((tool) => tool.name)).toEqual([
-      expect.stringMatching(/^mcp__[A-Za-z0-9_-]+__echo$/),
-    ]);
-    expect(tools[0].description).toBe("回显给定的文本");
-  });
-
-  it("① 否定：返回的不是裸名（改成裸名即红）", async () => {
-    const { svc } = await appliedService();
-    await connectedService(svc);
-    const names = svc.getTools("g1").map((tool) => tool.name);
-    expect(names, "裸名口径（summary().tools / 目录读口）不在这里返回").not.toContain("echo");
-    for (const name of names) expect(name.startsWith("mcp__")).toBe(true);
-  });
-
-  it("② 未知 server 返回 []", async () => {
-    const { svc } = await appliedService();
-    expect(svc.getTools("ghost")).toEqual([]);
-  });
-
-  it("② 未连接（断开后）返回 []", async () => {
-    const { svc } = await appliedService();
-    await connectedService(svc);
-    await svc.disconnect("g1");
-    expect(svc.getTools("g1"), "断开后条目已拆 → 不再返回工具").toEqual([]);
-  });
-});
-
 // apply：配置分支 ----
-describe("apply：配置分支", () => {
-  let prevHome: string | undefined;
-  let homeDir: string;
-  beforeEach(() => {
-    prevHome = process.env.DSH_HOME;
-    homeDir = makeTempDir("dsh-mcp-apply2-");
-    process.env.DSH_HOME = homeDir;
-  });
-  afterEach(() => {
-    if (prevHome === undefined) delete process.env.DSH_HOME;
-    else process.env.DSH_HOME = prevHome;
-  });
-
-  // enabled:false：无路由、无 section、无 pre-step。
-  // （cordis effect(fn, label) 语义：立即执行工厂取回 disposer。）
-  function makeCtx() {
-    const state: {
-      preSteps: Array<(...args: unknown[]) => void>;
-      sections: string[];
-      routes: string[];
-      disposers: Array<() => void>;
-      injected: unknown[];
-    } = { preSteps: [], sections: [], routes: [], disposers: [], injected: [] };
-    const ctx = {
-      logger: { warn: () => {}, info: () => {}, error: () => {} },
-      tools: { register: () => () => {} },
-      webServer: {
-        register: (route: { path: string }) => {
-          state.routes.push(route.path);
-          return () => {
-            const i = state.routes.indexOf(route.path);
-            if (i >= 0) state.routes.splice(i, 1);
-          };
-        },
-      },
-      systemPrompt: {
-        section: (opts: { name: string }) => {
-          state.sections.push(opts.name);
-          return () => {
-            const i = state.sections.indexOf(opts.name);
-            if (i >= 0) state.sections.splice(i, 1);
-          };
-        },
-      },
-      inject: (keys: unknown, _cb: (services: unknown) => void) => {
-        state.injected.push(keys);
-        return () => {};
-      },
-      on: (event: string, handler: (...args: unknown[]) => void) => {
-        if (event === "agent/pre-step") state.preSteps.push(handler);
-        return () => {};
-      },
-      effect: (fn: () => () => void) => {
-        const disposer = fn();
-        state.disposers.push(disposer);
-        return disposer;
-      },
-    };
-    return { ctx, state };
-  }
-
-  async function applied(options: Record<string, unknown> | undefined) {
-    const { ctx, state } = makeCtx();
-    // 残缺宿主（只实现装配触达面）：按接缝收窄，装配语义不变。
-    await apply(ctx as unknown as Context, options);
-    return { ctx, state };
-  }
-
-  it("禁用不注册路由", async () => {
-    const { state } = await applied({ enabled: false });
-    expect(state.routes.length).toBe(0);
-    for (const disposeEffect of [...state.disposers]) disposeEffect();
-  });
-
-  it("禁用不注入提示词", async () => {
-    const { state } = await applied({ enabled: false });
-    expect(state.sections.length).toBe(0);
-    for (const disposeEffect of [...state.disposers]) disposeEffect();
-  });
-
-  it("禁用不注册 pre-step", async () => {
-    const { state } = await applied({ enabled: false });
-    expect(state.preSteps.length).toBe(0);
-    for (const disposeEffect of [...state.disposers]) disposeEffect();
-  });
-
-  it("禁用仅注册 dispose effect", async () => {
-    const { state } = await applied({ enabled: false });
-    expect(state.disposers.length).toBe(1);
-    for (const disposeEffect of [...state.disposers]) disposeEffect();
-  });
-
-  // announceToAgent:false：有路由无 section；announceCatalog:false：无 pre-step。
-  const disabledAnnounce = () =>
-    applied({
-      announceToAgent: false,
-      announceCatalog: false,
-      storePath: join(homeDir, "st.json"),
-    });
-
-  it("启用时注册全部路由", async () => {
-    const { state } = await disabledAnnounce();
-    expect(state.routes.length >= 9).toBeTruthy();
-    for (const disposeEffect of [...state.disposers]) disposeEffect();
-  });
-
-  it("关闭宣告不注入提示词", async () => {
-    const { state } = await disabledAnnounce();
-    expect(state.sections.length).toBe(0);
-    for (const disposeEffect of [...state.disposers]) disposeEffect();
-  });
-
-  it("关闭目录不注册 pre-step", async () => {
-    const { state } = await disabledAnnounce();
-    expect(state.preSteps.length).toBe(0);
-    for (const disposeEffect of [...state.disposers]) disposeEffect();
-  });
-
-  // 默认开启：section + pre-step + settings 注入。
-  const defaultOn = () => applied({ storePath: join(homeDir, "st2.json") });
-
-  it("默认注入提示词 section", async () => {
-    const { state } = await defaultOn();
-    expect(state.sections.length).toBe(1);
-    for (const disposeEffect of [...state.disposers]) disposeEffect();
-  });
-
-  it("默认注册目录 pre-step", async () => {
-    const { state } = await defaultOn();
-    expect(state.preSteps.length).toBe(1);
-    for (const disposeEffect of [...state.disposers]) disposeEffect();
-  });
-
-  it("尝试注入 settings", async () => {
-    const { state } = await defaultOn();
-    expect(state.injected.some((k) => Array.isArray(k) && k.includes("settings"))).toBeTruthy();
-    for (const disposeEffect of [...state.disposers]) disposeEffect();
-  });
-
-  it("settings 注入回调通路（cb 收到 settings 服务即挂载成功）", async () => {
-    const { ctx } = await defaultOn();
-    // settings 注入回调挂 uiUpdate 的通路验证（cb 收到 settings 服务即挂载成功）。
-    const settingsCalls: Array<[unknown, unknown]> = [];
-    const settingsCtx = {
-      logger: ctx.logger,
-      effect: ctx.effect,
-      inject: (keys: unknown, cb: (services: unknown) => void) => {
-        if (Array.isArray(keys) && keys.includes("settings")) {
-          cb({
-            settings: {
-              update: async (ns: unknown, patch: unknown) => settingsCalls.push([ns, patch]),
-            },
-          });
-        }
-        return () => {};
-      },
-    };
-    // 残缺宿主（只实现 settings 注入面）：按接缝收窄。
-    await apply(settingsCtx as unknown as Context, { enabled: false });
-    expect(typeof settingsCalls).toBe("object");
-  });
-
-  // effect disposer：卸载时注销路由与提示词。
-  function unloadFixture() {
-    return applied({ storePath: join(homeDir, "st3.json") });
-  }
-
-  it("默认注册多个 effect disposer", async () => {
-    const { state } = await unloadFixture();
-    expect(state.disposers.length >= 2).toBeTruthy();
-    for (const disposeEffect of [...state.disposers]) disposeEffect();
-  });
-
-  it("卸载注销全部路由", async () => {
-    const { state } = await unloadFixture();
-    for (const disposeEffect of [...state.disposers]) disposeEffect();
-    expect(state.routes.length).toBe(0);
-  });
-
-  it("卸载注销提示词", async () => {
-    const { state } = await unloadFixture();
-    for (const disposeEffect of [...state.disposers]) disposeEffect();
-    expect(state.sections.length).toBe(0);
-  });
-});
-
 // #569：catalogViewFor 合成注入端目录视图（B 起步 + 中间层覆盖 + 磁盘兜底） ----
 describe("#569 catalogViewFor 合成注入端目录视图", () => {
   let prevHome: string | undefined;

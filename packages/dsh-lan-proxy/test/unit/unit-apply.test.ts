@@ -20,10 +20,10 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { createServer } from "node:http";
 
-// 单元层导入面（ARCHITECTURE-METHOD §8）：同域白盒直连 impl。
-// 唯一例外是包入口 src/index.ts——它承载 cordis 插件契约（name/inject），不是内部
-// barrel；不从这里取就取不到（白盒化后它的 2 条语句曾掉到 0% 覆盖）。
-import { inject, name } from "../../src/index.ts";
+// 单元层导入面（ARCHITECTURE-METHOD §8）：同域白盒直连 impl，不经组合根。
+// 包入口的 cordis 插件契约（name/inject）按 §8 导入面矩阵属集成层（矩阵把「包产物入口 +
+// apply()」列为集成层的许可导入面，且 name/inject 就地定义在 src/index.ts 内、无域门面可取），
+// 那两条判据已原样迁至 test/integration/entry-contract.test.ts。
 import { apply, pluginDir, DEFAULT_WSS_COMPRESS_PATHS } from "../../src/server/apply.ts";
 import {
   BOOLEAN_KEYS,
@@ -44,12 +44,6 @@ import type { Context } from "@deepseek-ai/cordis";
 import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
 import type { IncomingMessage } from "node:http";
 import type { ConfigRouteDeps, PatchResult } from "../../src/server/config/interface.ts";
-
-// 包入口契约：cordis 靠这两个符号定位与调度本插件，写错即插件静默不加载。
-describe("包入口契约（src/index.ts）", () => {
-  it("插件名与 cordis.patch.yml 的挂载行一致", () => expect(name).toBe("lan-proxy"));
-  it("只声明注入 webServer（回环服务器就绪后才启动）", () => expect(inject).toEqual(["webServer"]));
-});
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
