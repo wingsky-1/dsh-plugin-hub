@@ -33,19 +33,21 @@
  *     都读不到，`data/plugin-row-migration.json` 就这样长期未登记。
  *   - 三条臂都只认 `mjs|ts|cjs|json` 扩展名，**目录说明符**（`./lib`）因此不展开
  *     成 `lib/index.ts`——它不是一次具名文件引用。
- *   - 提取是**文本级**的（正则扫全文，注释与字符串里的同形文本也命中），故引用面是
- *     **上界近似**而非精确依赖图。
- *   - 已知漏法（如实披露，与 `ci-face-coverage.test.ts` 的 N2 清单同级；这些不参与
- *     判据，故引用面是下界之上的近似）：反引号模板字面量 import、动态拼接 specifier、
- *     `?query` / `#fragment` 后缀、`import.meta.resolve`、`createRequire` 产出的
- *     `req(...)`、`.js` 说明符指向磁盘上真实存在的 `.ts`、以 `process.cwd()` 为锚的
- *     路径拼接。
+ *   - 引用面的性质，**一句话说完**（相邻两句各说一半会给出两幅矛盾的图）：文本级提取
+ *     使它相对「已识别形态」是**上界**（多算）；已披露的漏法又使它对「真实引用集」
+ *     **既非上界也非下界**（漏算）。它不是精确依赖图，别当编译器语义用。
+ *   - 已知漏法（如实披露，与 `ci-face-coverage.test.ts` 的 N2 清单同级，均不参与
+ *     判据）：反引号模板字面量 import、动态拼接 specifier、`?query` / `#fragment`
+ *     后缀、`import.meta.resolve`、`createRequire` 产出的 `req(...)`、`.js` 说明符指向
+ *     磁盘上真实存在的 `.ts`、以 `process.cwd()` 为锚的路径拼接、
+ *     **`new URL("…", import.meta.dirname)`**（只认 `import.meta.url` 作锚，本仓自身
+ *     就在用 `import.meta.dirname`）。
  *   - **假红边界**：存在性过滤只吸收「目标不存在」那一类多算；**目标存在但未登记的
  *     多算仍会判红**。即注释/字符串里若出现指向某个存在文件的相对说明符，该文件会被
  *     要求登记。这是有意的保守取向（宁可多要求一次登记，也不放过真实漏登记），不是
      「绝不产生假红」。
  *   - 含 `*` 的 glob 引用不展开——测试文件的发现方式就是 glob，展开它等于要求逐一
- *     登记 86 个测试文件（scripts/test 下 `*.test.ts` 的计数）；
+ *     登记 scripts/test 下的全部测试文件（数量随测试面增长，刻意不在此写死分母）；
  *   - `scripts/test/**​/*.test.ts` 按命名约定排除（同上）；
  *   - 被引用但**不存在**的路径不参与：历史注记与用法示例里会出现已退役的路径
  *     （如 `gauntlet.config.json` 注释里的 tap 桥接）。
@@ -76,9 +78,9 @@ const RELATIVE_SPEC_RE = /\b(?:from|import|require)\s*\(?\s*["'](\.{1,2}\/[^"'\n
  * "../data/x.json", import.meta.url))` 这类**不是 import 面**却是真的文件依赖——
  * `new URL` 不带 import 关键词，前两条臂都读不到，目标因此在引用面里隐形。
  */
-const NEW_URL_REL_RE =
-  /\bnew URL\(\s*["'](\.{1,2}\/[^"'\n]*)["']\s*,\s*import\.meta\.url\s*\)/g; /** 计入引用面的扩展名白名单（两条臂共用；目录说明符因此不展开）。 */
+/** 计入引用面的扩展名白名单（三条臂共用；目录说明符因此不展开）。 */
 const REF_EXT_RE = /\.(?:mjs|ts|cjs|json)$/;
+const NEW_URL_REL_RE = /\bnew URL\(\s*["'](\.{1,2}\/[^"'\n]*)["']\s*,\s*import\.meta\.url\s*\)/g;
 /** 引用面扫描的文本源：调用点声明 + 脚本源码本身。 */
 const REF_SOURCES = ["package.json", "lefthook.yml"];
 const REF_GLOBS = [
@@ -165,7 +167,7 @@ function refFiles(root) {
 
 /**
  * 一条路径是否计入引用面：扩展名白名单、glob 不展开、测试文件按命名约定发现、
- * 已退役/夹具串里的不存在路径不算数。两条臂共用，故口径只在这里写一遍。
+ * 已退役/夹具串里的不存在路径不算数。三条臂共用，故口径只在这里写一遍。
  */
 function isRefCounted(p, root) {
   if (!REF_EXT_RE.test(p)) return false; // 目录说明符解析出的路径没有扩展名，在此出局
