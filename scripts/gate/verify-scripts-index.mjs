@@ -11,15 +11,25 @@
  *   A 存在性——索引里写出的每条路径必须真的存在：索引项腐烂 = 把读者指到空处。
  *   B 引用即登记——凡在机器可见调用点里被引用的脚本/数据（`package.json` 的 scripts、
  *     `packages/*​/package.json`、`.github/workflows/**`、`lefthook.yml`、以及 `scripts/**`
- *     与 `tools/**` 源码里出现的字面路径），必须在索引里出现。**新增一个会被调用的脚本却没有
- *     登记 → 红**，这就是棘轮；不需要存量基线，因为「未被任何调用点引用」的文件本来就不必登记
- *     （它们由报告面列出，供人工按需补）。
+ *     与 `tools/**` 源码里出现的**字面路径或相对 import 说明符**），必须在索引里出现。
+ *     **新增一个会被调用的脚本却没有登记 → 红**，这就是棘轮；不需要存量基线，因为「未被任何
+ *     调用点引用」的文件本来就不必登记（它们由报告面列出，供人工按需补）。
  *
  * 解析口径（跟文档结构走，不猜）：
  *   - 只认 `- \`path\`` 形态的列表项；含 `<...>` 的是模板/模式条目，跳过存在性检查；
  *   - 条目按所在 `## <path>/（…）` 小节解析：`tools/` 开头的小节相对仓库根的 `tools/`，
  *     「仓库根的派生生成物」小节相对仓库根，其余小节相对 `scripts/`。
- * 引用面口径（三条都写进判据，避免「口径外」的静默豁免）：
+ * 引用面口径（逐条写进判据，避免「口径外」的静默豁免）：
+ *   - 两条臂并集：字面 `scripts/…` 路径；以及源码里的相对说明符（`./` `../`，带引号的
+ *     `from` / `import()` / `require()` 形态），**按所在文件**解析成仓库相对路径
+ *     （#875 S3）。只认字面前缀时 `scripts/` 内部的互引在引用面里是隐形的：被相对
+ *     import 指向的库若从索引里消失，判据不响，而它确实被仓库调用——库只被单测引用
+ *     同样算被调用。源面是整个 `scripts/`，故传递闭包天然覆盖，不另做图遍历；
+ *   - 两条臂都只认 `mjs|ts|cjs|json` 扩展名，**目录说明符**（`./lib`）因此不展开成
+ *     `lib/index.ts`——它不是一次具名文件引用，按命名约定的发现方式处理；
+ *   - 提取是**文本级**的（正则扫全文，注释与字符串里的同形文本也命中）：取向为多算
+ *     而非漏算，配合下面的存在性过滤不产生假红，但引用面是**上界近似**而非精确
+ *     依赖图；反引号（模板串）说明符不在识别形态内。
  *   - 含 `*` 的 glob 引用不展开——测试文件的发现方式就是 glob，展开它等于要求逐一登记 48 个
  *     测试文件；
  *   - `scripts/test/**​/*.test.ts` 按命名约定排除（同上）；
@@ -30,7 +40,7 @@
  * 退出码：0 = 通过；1 = 有违规；2 = 结构/环境错误（索引不可读、无任何索引条目）。
  */
 import { existsSync, readFileSync, readdirSync } from "node:fs";
-import { join, relative, sep } from "node:path";
+import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { realpathSync } from "node:fs";
 
@@ -41,6 +51,14 @@ const INDEX_REL = join("scripts", "README.md");
 
 /** `scripts/<path>.<ext>` 形态的字面引用（引用面提取用）。 */
 const SCRIPT_REF_RE = /scripts\/[A-Za-z0-9_./-]+\.(?:mjs|ts|cjs|json)/g;
+/**
+ * 相对模块说明符（引用面提取的第二条臂）。捕获组是**未解析**的说明符——必须按所在
+ * 文件解析：同一串 `"../lib/gate-exit.mjs"` 在 `gate/` 与 `build/` 下指向不同文件，
+ * 按基名或按仓库根解析都会把引用面算错。
+ */
+const RELATIVE_SPEC_RE = /\b(?:from|import|require)\s*\(?\s*["'](\.{1,2}\/[^"'\n]*)["']/g;
+/** 计入引用面的扩展名白名单（两条臂共用；目录说明符因此不展开）。 */
+const REF_EXT_RE = /\.(?:mjs|ts|cjs|json)$/;
 /** 引用面扫描的文本源：调用点声明 + 脚本源码本身。 */
 const REF_SOURCES = ["package.json", "lefthook.yml"];
 const REF_GLOBS = [
@@ -104,49 +122,62 @@ function walk(dir, root, out) {
   return out;
 }
 
-/** 调用点声明文本（文件不存在即视为没有这个调用点）。 */
-function refSourceTexts(root) {
-  const texts = [];
+/**
+ * 引用面扫描的文件（仓库相对 posix 路径）：调用点声明 + 脚本源码本身。
+ * 这里返回**路径**而不是文本——相对说明符必须与所在文件成对才能解析；读取延到提取处。
+ */
+function refFiles(root) {
+  const files = [];
   for (const rel of REF_SOURCES) {
-    const abs = join(root, rel);
-    if (existsSync(abs)) texts.push(readFileSync(abs, "utf8"));
+    if (existsSync(join(root, rel))) files.push(rel); // 缺失的调用点声明视为没有这个调用点
   }
-  return texts;
-}
-
-/** glob 面上的调用点源码文本：扩展名与 basename 都是引用面口径的一部分。 */
-function refGlobTexts(root) {
-  const texts = [];
   for (const { dir, ext, basename } of REF_GLOBS) {
     const absDir = join(root, dir);
     if (!existsSync(absDir)) continue;
     for (const rel of walk(absDir, root, [])) {
       if (!ext.some((e) => rel.endsWith(e))) continue;
       if (basename !== undefined && !rel.endsWith(`/${basename}`)) continue;
-      texts.push(readFileSync(join(root, rel), "utf8"));
+      files.push(rel);
     }
   }
-  return texts;
+  return files;
 }
 
-/** 从文本里抽 `scripts/**` 字面引用：glob、测试文件、已退役路径都不算数。 */
-function extractRefs(texts, root) {
+/**
+ * 一条路径是否计入引用面：扩展名白名单、glob 不展开、测试文件按命名约定发现、
+ * 已退役/夹具串里的不存在路径不算数。两条臂共用，故口径只在这里写一遍。
+ */
+function isRefCounted(p, root) {
+  if (!REF_EXT_RE.test(p)) return false; // 目录说明符解析出的路径没有扩展名，在此出局
+  if (p.includes("*")) return false; // glob 引用不逐文件展开
+  if (/^scripts\/test\/.*\.test\.ts$/.test(p)) return false; // 测试文件按命名约定发现
+  return existsSync(join(root, p)); // 历史注记/用法示例/判据自造夹具里的退役路径
+}
+
+/**
+ * 一个文件里引用到的 `scripts/**` 路径：字面引用 + 按所在文件解析的相对说明符。
+ * 相对说明符解析后必须仍在 `scripts/` 下（越出 scripts/ 的目标不归本判据，判据 A 与
+ * 报告面管的是 scripts/ 索引）。
+ */
+function extractRefs(rel, text, root) {
   const refs = new Set();
-  for (const text of texts) {
-    for (const m of text.matchAll(SCRIPT_REF_RE)) {
-      const p = m[0];
-      if (p.includes("*")) continue; // glob 引用不逐文件展开
-      if (/^scripts\/test\/.*\.test\.ts$/.test(p)) continue; // 测试文件按命名约定发现
-      if (!existsSync(join(root, p))) continue; // 历史注记/用法示例里的退役路径
-      refs.add(p);
-    }
+  for (const m of text.matchAll(SCRIPT_REF_RE)) refs.add(m[0]);
+  for (const m of text.matchAll(RELATIVE_SPEC_RE)) {
+    const target = relative(root, resolve(dirname(join(root, rel)), m[1]))
+      .split(sep)
+      .join("/");
+    if (target.startsWith("scripts/")) refs.add(target);
   }
-  return refs;
+  return [...refs].filter((p) => isRefCounted(p, root));
 }
 
-/** 引用面：机器可见调用点里字面引用的 `scripts/**` 路径（去重、排序）。 */
+/** 引用面：机器可见调用点引用到的 `scripts/**` 路径（去重、排序）。 */
 function collectRefs(root) {
-  return [...extractRefs([...refSourceTexts(root), ...refGlobTexts(root)], root)].sort();
+  const refs = new Set();
+  for (const rel of refFiles(root)) {
+    for (const p of extractRefs(rel, readFileSync(join(root, rel), "utf8"), root)) refs.add(p);
+  }
+  return [...refs].sort();
 }
 
 /** 判据 A：索引里写出的每条路径必须真的存在（模板条目是模式，跳过）。 */

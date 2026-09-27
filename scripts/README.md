@@ -4,8 +4,9 @@
 `release/` 发布/周期 CI、`test/` 脚本自测、`data/` 配置数据。
 
 本文件的**索引边界是「仓库会调用什么」**，不是目录清单：新增一个会被调用点引用的脚本必须登记
-在此（判据见 `gate/verify-scripts-index.mjs`，`pnpm verify:scripts-index`）；纯库、测试文件与
-未被引用的文件不强制登记。
+在此（判据见 `gate/verify-scripts-index.mjs`，`pnpm verify:scripts-index`）；「被调用点引用」含
+`scripts/` 内部的相对 import（`from "../lib/x.ts"`），只被单测引用的库同样算被调用；未被任何
+调用点引用的文件、以及测试文件自身（按 `<被测脚本>.test.ts` 命名约定发现）不强制登记。
 
 ## ci/（CI 切片与矩阵派生）
 
@@ -57,7 +58,7 @@
 - `gate/forbid-module-state-src.mjs` — #733 N2a：插件 src 禁**模块级可变状态**（只看 AST 作用域，缩进不再是绕过口），豁免走 `data/gate-exemptions.json` 登记。
 - `gate/forbid-raw-exit2.mjs` — #843 P-2 的否定判据：`scripts/gate/**` 与 `scripts/release/**` 内不得出现裸 `process.exit(2)` / `process.exitCode = 2` / `exitCode = 2`，必须经 `lib/gate-exit.mjs` 的 `failClosed()`（exit 2 的语义是「门禁故障（非判据结论）」，判词必须可检索）。检测走 AST，注释与字符串里的同形文本不命中；`return 2`（把退出码经返回值交给调用方，22 处）**显式排除**——它归已登记的 L3 退出码契约归一，见文件头注释。扫描面为空即 exit 2，不判绿。
 - `gate/forbid-session-snapshot-src.mjs` — #1028 防复发闸（会话快照面）：A 腿判红「会话快照上的 `.current` 成员读取」（rc.2 已从 `SessionListState` 删除该字段，官方判据是 `retainedBy.mainView > 0`），B 腿 warn「本地 interface/type 成员名与官方会话类型交集 >= 2 且含语义敏感名」（自建镜像；`extends` / `Pick<>` / `typeof` 等官方派生写法不判）。判据是**派生关系**（由 `getSnapshot()` 派生的值 / 自建对象形状），不是「同文件有没有 import 官方类型」——后者加一行 import 就能整体击穿。A 腿走 esbuild 剥类型 + acorn AST，B 腿走 `lib/ts-lex.ts` 的词法流（interface / type 声明会被剥类型整条擦除，只跑 AST 的判据对 B 恒零命中）；污点传播按作用域分界（`ownDeclarators`），故 React ref 一律不命中。面 = 登记范围内各包的 `src/client/**`，文件级豁免走 `data/gate-exemptions.json`；范围/豁免机制失效、扫描面为空、源码不可判一律 exit 2。执行点是本地 **full** 档（`gate/gate-steps.mjs` 的 `fullOnly` 段；pr 档里的判据端点按接线断言 A1 必须在 `ci.yml` 的 repo-gate 有对应执行点，而 `.github/workflows` 属红线段，本轮未取批准）。
-- `gate/verify-scripts-index.mjs` — 本文件的索引门禁（#733 计划项 3.3 E2）：① 索引项必须存在 ② 被调用点引用的脚本必须登记（棘轮）。未被任何调用点引用的文件只报告、不判红。
+- `gate/verify-scripts-index.mjs` — 本文件的索引门禁（#733 计划项 3.3 E2）：① 索引项必须存在 ② 被调用点引用的脚本必须登记（棘轮）。引用面 = 调用点声明与 `scripts/**`、`tools/**` 源码里的**字面路径 + 按所在文件解析的相对 import 说明符**（#875 S3：只认 `scripts/` 字面前缀时，被相对 import 指向的库在引用面里是隐形的——它从本文件消失，判据也不响，而它确实被仓库调用）。未被任何调用点引用的文件只报告、不判红。
 
 - `gate/verify-prose-counts.mjs` — 散文段数判据（#767 P6）：`gauntlet.config.json` 的 config/scope 散文字段与 `data/mutation-topology.json` 的 segments 事实源一致（config 三形态 `{a,b,c}` / `{m..n}` / 无括号按集合比对、scope 只看段首段数词；失配 exit 1，未知形态与事实源缺失 fail-closed exit 2，禁止合并）。
 - `gate/verify-coverage-scope.mjs` — 覆盖率面判据（#733 计划项 3.4）：`vitest.config.ts` 不得内联 `include`/`exclude`/`thresholds`；exclude 条目须带 `reason` 与 `kind`（值域三值），`reviewBy`/`exitCriteria` **只允许且必须由 `pending-project` 携带**——给永久事实编到期日是假条目，临时豁免缺了到期日或解除条件则成了永久事实；**kind 必须与命中文件形态自洽**：`not-source` 不得命中 include 面内的文件（判据取自 include 的 glob，不镜像后缀表——后缀是整面的并集，套到单条 pattern 上会误判）、也不得命中声明文件（面外的声明同样归 `type-only`）——边界：本判据只保证「`not-source` 不命中 include 面内文件」，不检查文件的资源性，面外的代码文件被标 `not-source` 不判红（它本来就不在分母里，也就不该被要求登记台账）；将来 include 面扩大时，本判据会对**当时的**面求值，那一刻就判红——`type-only` 只许命中 `.d.ts`/`.d.mts`、`pending-project` 不作形态限制，判词直接给出 pattern、命中了哪些文件、声明成什么 kind 与为什么不允许（关掉「把 `.ts` 源码声明成 `not-source` 移出覆盖分母、两条闸都不响」这条通道）；物理枚举的每个源文件必须落在 include 或某条 exclude 里（未分类即红）；模式命中 0 文件即红；产物 keys ⊆ include 面（产物比配置新时才执行）。
@@ -107,6 +108,8 @@
 - `lib/rewrite-dts-paths.ts` — bundle-host d.ts X1 2a 段「shared 相对引用改写」共享库（issue #478）。
 - `lib/walk-files.ts` — 递归收集目录下满足谓词的文件（构建复制 d.ts X1 2b 段与 pack-check 随包断言共用同一遍历）。
 - `lib/vendored-binaries-lib.mjs` — 发布物面判定 + 内容嗅探 + 登记表校验（批 2b）：发布物面 = 各包 `package.json` 的 `files` 白名单 ∪ npm 强制包含集（不维护硬编码排除表），供 `gate/verify-vendored-binaries.mjs`、`build/collect-licenses.ts`、`gate/pack-check.ts` 三处共用同一套判据。
+- `lib/dir-imports-spec.ts` — import specifier 三分类纯函数（#792 A9 取数层）：relative / builtin / external 归一（`node:` 前缀与 scoped 包名各自归一），供门禁判据层消费；当前仓内直接消费方是 `test/dir-imports-spec.test.ts`，判红接入见 #792 PR6。
+- `lib/shared-dts-lib.ts` — shared 声明副本随包断言的共享库（#461 L2）：把「仓库 `shared/` 下全部 .d.ts 枚举清单」与「tarball 内 `shared/` 副本」逐一比对（查缺 + 查多，#478），供 `gate/pack-check.ts` 随包断言调用，shared 新增子目录自动纳入断言。
 
 ## release/（发布/周期 CI 专用）
 
