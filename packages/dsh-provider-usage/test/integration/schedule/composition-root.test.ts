@@ -515,6 +515,8 @@ describe("D2三-链 ensure经链：校准与并发推进交错不丢更新（#77
         })}\n`,
       );
       let started = false;
+      // holder 是否仍卡在 gate（=仍在临界区内，未提交）：交错窗是否真开着的观测量。
+      let holderParked = true;
       let releaseGate: () => void = () => undefined;
       const gate = new Promise<void>((resolve) => {
         releaseGate = resolve;
@@ -523,16 +525,37 @@ describe("D2三-链 ensure经链：校准与并发推进交错不丢更新（#77
       const holder = updateLastRun(root, async (cur) => {
         started = true;
         await gate;
+        holderParked = false;
         return { ...cur, weekly: "B" };
       });
-      await pollUntil(() => started, 3000);
-      const ensuring = ensureLastRunMigrated(root, quietWarn, scheduleParser);
-      await pollUntil(() => true, 50);
+      // 占链超时即环境病态：fail-fast 就地暴露（对齐 pollUntilJsonlReady 纪律），
+      // 不带着「holder 从未进临界区」继续跑，让后面的断言错位红。
+      expect(await pollUntil(() => started, 3000)).toBe(true);
+      // 交错窗开在 index 解析端口上：端口被调用恰好落在「两次读完成之后、提交之前」，
+      // 此刻 holder 仍卡在 gate，两个写者同时在飞。等待面只认可观测条件——固定时长
+      // 等待在此等于零等待（pollUntil 对恒真条件立即返回），开窗时刻一旦交给 fs
+      // 调度，慢盘上校准会在 holder 落盘之后才入链，两写根本不重叠。
+      let factsRead = false;
+      let openedWhileHolderParked = false;
+      const openingParser: ScheduleIndexParser = (raw) => {
+        factsRead = true;
+        openedWhileHolderParked = holderParked;
+        return scheduleParser(raw);
+      };
+      const ensuring = ensureLastRunMigrated(root, quietWarn, openingParser);
+      // 端口缺席视同校准没读事实（#768 C 波：缺端口=无 index 事实），同样 fail-fast。
+      expect(await pollUntil(() => factsRead, 3000)).toBe(true);
       releaseGate();
       const res = await ensuring;
       await holder;
       const fin = await readLastRun(root);
       expect(res.changed).toBe(true);
+      // 开窗判据一：校准读事实的那一刻，并发推进仍卡在 gate（两个写者同时在飞）。
+      // 缺这条，窗口塌成「holder 先落盘、校准再入链」的串行也照样绿——本用例退化成
+      // 普通校准用例，#764 类 lost-update 回归对它失明。
+      expect(openedWhileHolderParked).toBe(true);
+      // 开窗判据二：校准的链外快照早于并发推进的落盘写（快照里还没有 weekly:"B"）。
+      expect(res.before).toEqual({ daily: "2026-09-06", monthly: "2026-08" });
       expect(res.after.daily).toBe("2026-09-04");
       // 收敛断言：校准值 + 并发值 + 预置键三方在场；本窗不断言丢失。
       expect(fin).toEqual({
