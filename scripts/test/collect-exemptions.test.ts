@@ -146,7 +146,7 @@ test("非 JSON 文件不参与扫描（只看 scripts/data 下的 .json）", () 
   }
 });
 
-test("本仓真实快照：16 条在册（数字变即提示同步台账与 #765）", () => {
+test("本仓真实快照：15 条在册（数字变即提示同步台账与 #765）", () => {
   // 7 = coverage.config.json 4（#769 把一条 **/client/** 拆成 per-package 的 pending-project
   //     条目：notifier 的 .tsx 渲染面 + 另外 3 个包的整个 client 面 + shared/client/**；
   //     #840 退役 dsh-web-file-preview 时删掉它那一条，7 → 6；
@@ -157,9 +157,13 @@ test("本仓真实快照：16 条在册（数字变即提示同步台账与 #765
   // #875 4c：gate-exemptions.json 的 12 → 1——#767 lan-proxy unit-apply 1 条与 #847 sidebar
   //   客户端单测 10 条的 I8① 证据全部清零（迁 test/client-unit / 改直连域门面 / 入口契约
   //   判据迁集成层），11 条随证据消失按反向腐烂校验删除，27 → 16。
+  // #T1A：mcp-manager 客户端 core/session.ts 那条已陈旧（实测 lines 100% / branches 95.45%，
+  //   且其 reason「尚无直连判据」为假——test/client-unit/client-context-s2.test.ts:19 直接导入
+  //   bindSession / rebindSession），随删除消失，覆盖率部分 14 → 13，16 → 15。同批评的 9 条
+  //   只改 exitCriteria 措辞、不增删条目，故台账数不再变。
   const r = spawnSync(process.execPath, [SCRIPT], { cwd: ROOT, encoding: "utf8" });
   assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stdout, /合计 16 条待办：已过期 0 /);
+  assert.match(r.stdout, /合计 15 条待办：已过期 0 /);
   assert.match(r.stdout, /仅解除条件（无到期日）1/);
   // crap.strict 的解除条件必须在台账里（只写日期会逼出「到期了再讨论一次」）
   assert.match(r.stdout, /\$\.crap {2}threshold=16/);
@@ -266,7 +270,7 @@ test("本仓真实快照：排除面按 kind 分为 13 + 16 结构性，合计�
     r.stdout,
     /结构性 16 条（不计入待办）：facade×4、not-mutated×4、not-source×1、type-only×7/,
   );
-  // 14 条 pending-project + gauntlet 1 + gate-exemptions 1 = 16 条待办（与 #875 4c 的 16 一致）
-  assert.match(r.stdout, /合计 16 条待办/);
+  // 13 条 pending-project + gauntlet 1 + gate-exemptions 1 = 15 条待办
+  assert.match(r.stdout, /合计 15 条待办/);
   assert.match(r.stdout, /结构性（按设计不计入待办）29/);
 });
