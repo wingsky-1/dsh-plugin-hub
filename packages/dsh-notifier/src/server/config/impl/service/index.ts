@@ -11,11 +11,13 @@ import {
   CONFIG_FILE_NAME,
   notifierFile,
 } from "../../../shared/interface.ts";
+// 两端共享面（不是上面那个 server/shared）：频道比较规范形与客户端 diff 共用同一份。
+import { canonicalChannelsForCompare } from "../../../../shared/interface.ts";
 import {
   normalizeConfig,
   parseJsonObject,
   sanitizeSettings,
-  validateSettings,
+  validateSettingsWithBase,
 } from "../input/index.ts";
 import { DEFAULT_CONFIG } from "../model/index.ts";
 import type {
@@ -98,13 +100,69 @@ class ConfigStore {
   }
 
   /**
-   * 写：掩码还原 → 校验 → 合并 → 落盘 → 刷新快照。
+   * 写：整段挂进写队列，队列内完成掩码还原 → 校验 → 合并 → 落盘 → 刷新快照。
+   *
+   * 为什么不把还原与校验留在队列外：它们都要读存量（掩码还原的原值、校验的基线），
+   * 队列外读到的存量会被并发的另一次写抽走。详见 `apply` 的注释。
+   *
+   * `apply` 必须**直调 commit，不得再 enqueue**：enqueue 同步把 tail 设成 result.then(...)，
+   * task 内再 enqueue 就是等自己刚挂上去的 tail——那个 tail 排在自己后面，自己不返回它就不 resolve。
+   * 故 apply 与 commit 之间不经队列，是**结构上**写死的，不靠调用方记得。
+   */
+  async write(patch: SettingsPatch, expectedRevision?: number): Promise<WriteResult> {
+    return this.enqueue(() => this.apply(patch, expectedRevision));
+  }
+
+  /**
+   * 一次写的全过程：掩码还原 → 带存量基线的校验 → 合并 → 落盘 → 刷新快照。
+   *
+   * **整段在写队列内**，还原与校验都算在内（issue #1016 批次 B）。原来还原与校验在队列外，
+   * 于是它们读到的存量是「入队那一刻」的：并发的两次写里，后一次会用前一次落盘**之前**的
+   * 用户层去还原掩码、判定「原样带回」，基线跟着另一次写漂走。把它们移进队列后，还原、判据、
+   * 合并三者看到的是同一份存量快照。
    *
    * 顺序不可换：掩码不是合法密钥值，未还原就被校验拦死；校验早于落盘，否则非法值会先写进文件。
    * 校验与合并之间不净化：陌生键是透传保留的，一次保存不该把它们抹掉。0.2.3 的顶层渠道键已由
    * upgrade 域在装配期搬走，写面收到它们会被校验直接拒（退役键清单），不在这里做二次翻译。
+   *
+   * **基线取「客户端看过的那份视图」，且是明文**（`writeScopeOf` 的入参，见 `baseChannels`）：
+   * 取磁盘原样（`this.user.channels`）是错的——客户端草稿来自 `GET /config` 的 `effective`
+   * 再过一遍比较规范形，它交回的每一个键都是归一化之后的形态。拿磁盘原样当基线，客户端带回的
+   * 归一化补值（enabled/timeoutMs/levels/auth/preset/headers/timeoutSec）、空串剥除、非法值钳制、
+   * 陌生键搬进 extras、旧顶层键投影就全成了「本次改动」：最普通的一份 bark 配置，用户只改名字，
+   * 机制会报三到八个字段都动过。实测 10 种磁盘形态（形态清单与逐条判据见
+   * test/integration/config-write-scope-roundtrip.test.ts 的十条形态用例，与下表一一对应）：
+   *
+   *   形态                              user-base  裸 effective  canon-base
+   *   1 最普通 bark                          3           4          0
+   *   2 webhook                             5           1          0
+   *   3 残留空串                            7           4          0
+   *   4 越界钳制                            3           4          0
+   *   5 非法枚举                            4           4          0
+   *   6 陌生键搬 extras                     5           4          0
+   *   7 旧顶层键投影                        5           0          0
+   *   8 半坏条目并存                        3           4          0
+   *   9 webhook 凭据空串                    8           4          0
+   *   10 webhook 越界+非法枚举               5           1          0
+   *   区间                                  3~8         0~4        全 0
+   *
+   * 三列的读法：同一份磁盘、同一组用户手势，只换基线取哪一侧。三条要点——**区间下界来自
+   * 最普通的那份 bark**（形态 1/4/8 各 3），**上界来自形态九**（凭据在磁盘上是空串，掩码往返
+   * 把三个空串请回提交侧），**canon-base 全 0 才是本机制要的那个数**：另两列不是「差不多对」，
+   * 是系统性偏。
+   *
+   * canon-base 那一列**不是**「把基线取对就够」：凭据字段的空串是在掩码还原**之后**才回到提交侧
+   * 的（磁盘 token:"" → 读出口掩码 → 客户端原样带回 → 服务端还原成 ""），基线再对，提交侧不跟着
+   * 剥空串仍然是三个假阳性。两侧同形这件事两端各做一半，见 `writeScopeOf` 里的剥除。
+   *
+   * 不套 redactConfig：比的是**明文**，而掩码还原的原值也是明文，两侧同源才逐字节相同。
+   * 归一化视图里没有的半坏条目（无投递目标的空壳）在两侧**同时缺席**，天然不参与比较——
+   * 客户端草稿里本来就没有它，真实往返链不会把它带回来。
+   *
+   * `checked.scope`（本次改动 vs 存量带回）本 PR 不据此拒任何东西：判据结论与不带基线时逐字
+   * 相同。它随返回值交出去，是后续边界判据（重复 id / URL 写面 / 边界值）唯一要接的缝。
    */
-  async write(patch: SettingsPatch, expectedRevision?: number): Promise<WriteResult> {
+  private async apply(patch: SettingsPatch, expectedRevision?: number): Promise<WriteResult> {
     const restored = this.restoreSecrets(patch);
     if (!restored.ok) {
       return {
@@ -113,11 +171,36 @@ class ConfigStore {
         error: { key: "channels", hint: NEW_CHANNEL_MASK_HINT },
       };
     }
-    const verdict = validateSettings(restored.patch);
+    const checked = validateSettingsWithBase(restored.patch, this.baseChannels());
+    const verdict = checked.verdict;
     if (!verdict.ok) return { ok: false, reason: "invalid", error: verdict.error };
 
     const incoming = writableEntries(restored.patch);
-    return this.enqueue(() => this.commit(incoming, expectedRevision));
+    return this.commit(incoming, expectedRevision);
+  }
+
+  /**
+   * 写面判定用的存量基线：**客户端看过的那份视图**，明文。
+   *
+   * 为什么是 effective 而不是 `this.user.channels`（磁盘原样）：客户端的草稿与基线都来自
+   * `GET /config` 的 `effective`，提交回来的是那份的子集。磁盘原样与客户端所见在归一化补值、
+   * 空串剥除、非法值钳制、陌生键搬 extras、旧顶层键投影这五类上分叉——两侧形态不同，
+   * 「原样带回」就会被读成「本次改动」，而用户明明只改了一个字段。
+   *
+   * 为什么还要过一遍 `canonicalChannelsForCompare`：`effective` 自己会写出空串
+   * （normalize 的「空串即没有」是输出约定），而客户端提交前会把这些空串剥掉（stripChannelEmpties）。
+   * 基线不跟着剥，同一批空串就成了假阳性。与客户端**共用同一份**比较规范形，两端才不会各自漂。
+   *
+   * 基线这一侧剥了还不够，提交侧也得剥（`writeScopeOf` 里做）：凭据字段的空串是**掩码往返之后**
+   * 才回到提交侧的——磁盘上 `token:""` 的频道，读出口把它掩码成占位、客户端原样带回占位、
+   * 服务端按 id 还原成 ""。还原发生在剥除之后，于是那一批空串只在提交侧出现，基线侧永远没有。
+   * 这是「只有密钥字段会这样」的原因：只有它们走掩码往返。
+   *
+   * 为什么明文不掩码：掩码还原（restoreSecrets）的原值来源是 `this.user.channels`，还原出来的是
+   * 明文；基线若带掩码，客户端原样带回的凭据就会与基线逐字不等，被读成「用户刚改过凭据」。
+   */
+  private baseChannels(): RawSettingValue {
+    return canonicalChannelsForCompare(this.effective.channels) as RawSettingValue;
   }
 
   /**
@@ -125,6 +208,13 @@ class ConfigStore {
    *
    * 整段在写队列内执行：比对与写入之间若能被另一次写插入，乐观并发就形同虚设
    * ——两次写都读到同一旧版本、都判定通过，后写的把先写的悄悄覆盖。
+   *
+   * `expectedRevision` 与 `apply` 里的存量基线**语义不同，不许合并成一个参数**：
+   * 前者是**内容摘要**比对，防的是「两个客户端同时改」的丢失更新（防的是覆盖）；
+   * 后者是**同 id 同名字段**比对，解的是「存量非法值不该因一次无关保存被拒」的过度拒绝
+   * （防的是错杀）。两者一个按内容断版本、一个按字段认改动，混在一起会让任一条判据
+   * 悄悄变成另一条：把字段比对当版本号，用户改一个字段就凭空冲突；把版本号当字段比对，
+   * 别的键变过就会让这次保存看起来「没改过」。
    */
   private async commit(incoming: StoredSettings, expectedRevision?: number): Promise<WriteResult> {
     if (expectedRevision !== undefined && expectedRevision !== this.revision) {

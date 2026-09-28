@@ -459,3 +459,98 @@ describe("写面：频道的可选键（缺省即合法，显式非法仍拦）"
     expect(existsSync(configFile)).toBe(false);
   });
 });
+
+// ---------------------------------------------------------------- 写面范围（#1016 批次 B 使能面）
+//
+// 本块从写入口径验两件机制层的事：① 还原与校验取到的存量必须是**队列内那一刻**的
+// （基线漂移会让「原样带回」判成「本次改动」）；② 机制本身**不新增任何拒绝**——
+// 存量里非法的值原样带回时仍按今天的判据走，本次改动触碰的字段也仍走今天的判据。
+
+describe("写面：存量基线在写队列内取（#1016 批次 B）", () => {
+  // 机制的地基用例：并发的两次写里，后一次必须拿前一次**落盘后**的存量去还原掩码。
+  // 还原在队列外做的话，后一次会用前一次落盘前的 deviceKey 覆盖回去——前一次的改动被吃掉，
+  // 而界面上看不出任何异常。
+  it("并发两次写：后一次在队列内取基线，不会把前一次刚落盘的凭据用旧值盖回去", async () => {
+    assemble();
+    expect((await writeConfig({ channels: [...BUILTINS, BARK] })).ok).toBe(true);
+
+    // 两次写都不带 expectedRevision：乐观并发不参与，这里只看基线取的时刻。
+    const results = await Promise.all([
+      // 第一次：把 deviceKey 换成新值。
+      writeConfig({ channels: [...BUILTINS, { ...BARK, deviceKey: "key-2" }] }),
+      // 第二次：凭据原样带回（掩码），别的字段改一个无关的。
+      writeConfig({ channels: [...BUILTINS, { ...BARK, deviceKey: MASK, name: "改名" }] }),
+    ]);
+    expect(results[0].ok).toBe(true);
+    expect(results[1].ok).toBe(true);
+
+    // 关键断言：后一次的「原样带回」必须还原成前一次刚落盘的 key-2，而不是最初的 key-1。
+    // 还原在队列外做时这里会是 key-1 —— 前一次的改动被静默吃掉。
+    expect(channelOfType(diskChannels(), "bark").deviceKey).toBe("key-2");
+    expect(channelOfType(diskChannels(), "bark").name).toBe("改名");
+  });
+
+  // 回归护栏：一条**非法**的提交，带不带存量基线，判据结论都必须与今天逐字相同。
+  //
+  // 提交体是手拼的（照抄视图里的原样存储形态）：真实客户端不会产出这种 payload——它的草稿
+  // 来自归一化视图，半坏条目压根不在草稿里（真实往返链的形态见
+  // test/integration/config-write-scope-roundtrip.test.ts）。这里要断的是**判据结论不变**，
+  // 而不是某一类客户端会不会这么发。
+  it("手拼的非法提交（半坏条目 baseUrl 为空）：仍按今天的判据 400——机制不放行也不加拒", async () => {
+    // 手写配置文件造出半坏条目：baseUrl 为空但 deviceKey 在。
+    writeConfigFile(
+      JSON.stringify({
+        channels: [...BUILTINS, { type: "bark", id: "bark:half", baseUrl: "", deviceKey: "key-1" }],
+      }),
+    );
+    assemble();
+
+    // 前提事实：这条频道在生效设置里不存在（归一化丢弃），但在存储视图里看得见。
+    expect(readConfig().channels.some((c) => c.id === "bark:half")).toBe(false);
+    const view = readSettingsView();
+    expect(channelsOf(view.user).some((c) => c.id === "bark:half")).toBe(true);
+
+    // 原样提交（凭据是掩码，其余逐字照抄视图）。
+    const before = readFileSync(configFile, "utf8");
+    const result = await writeConfig({ channels: channelsOf(view.user) });
+
+    // 结论：仍然按今天的判据 400（本 PR 不加也不减任何判据）。
+    // 后续的边界 PR 才是把这一条放行的那一方——它会查 scope 而不是查值。
+    expect(invalidOf(result).key).toBe("channels");
+    expect(readFileSync(configFile, "utf8")).toBe(before);
+  });
+
+  // 回归护栏：本次改动触碰的字段仍走现有判据。机制在这里必须**没有**任何话语权。
+  it("本次改动触碰的非法字段仍被现有判据拒（机制不放行任何东西）", async () => {
+    assemble();
+    expect((await writeConfig({ channels: [...BUILTINS, BARK] })).ok).toBe(true);
+    const before = readFileSync(configFile, "utf8");
+
+    // level 非法：当前就会 400，本次改动与否都该 400。
+    const result = await writeConfig({
+      channels: [...BUILTINS, { ...BARK, level: "urgent" }],
+    });
+    expect(invalidOf(result).hint).toContain("level");
+    expect(readFileSync(configFile, "utf8")).toBe(before);
+
+    // 顶层的非法值同理：机制只管频道字段，但结论必须一个字都没变。
+    const topLevel = await writeConfig({ historyMaxAgeDays: -1 });
+    expect(invalidOf(topLevel).key).toBe("historyMaxAgeDays");
+    expect(readFileSync(configFile, "utf8")).toBe(before);
+  });
+
+  // 合法保存照常成功：机制不是「多一个拒绝口」。这条守住「不得引入任何新的拒绝行为」。
+  it("合法保存照常成功：既有的凭据往返与掩码还原行为一字未变", async () => {
+    assemble();
+    expect((await writeConfig({ channels: [...BUILTINS, BARK] })).ok).toBe(true);
+    const view = readSettingsView();
+
+    const submitted = channelsOf(view.user).map((channel) => ({ ...channel, name: "手机" }));
+    const result = await writeConfig({ channels: submitted }, view.revision);
+
+    expect(result.ok).toBe(true);
+    expect(channelOfType(diskChannels(), "bark").name).toBe("手机");
+    // 未编辑的凭据仍是原值（掩码还原路径没被本 PR 动过）。
+    expect(channelOfType(diskChannels(), "bark").deviceKey).toBe("key-1");
+  });
+});

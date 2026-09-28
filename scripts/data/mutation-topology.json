@@ -652,6 +652,7 @@
           "testFiles": [
             "packages/dsh-notifier/test/client-dom/apply-lifecycle.test.ts",
             "packages/dsh-notifier/test/client-unit/disposers.test.ts",
+            "packages/dsh-notifier/test/integration/config-write-scope-roundtrip.test.ts",
             "packages/dsh-notifier/test/integration/real-context.test.ts",
             "packages/dsh-notifier/test/integration/service-contract.test.ts",
             "packages/dsh-notifier/test/integration/status-roundtrip.test.ts",
@@ -666,6 +667,7 @@
             "packages/dsh-notifier/test/unit/channels/webhook.test.ts",
             "packages/dsh-notifier/test/unit/config/input.test.ts",
             "packages/dsh-notifier/test/unit/config/model.test.ts",
+            "packages/dsh-notifier/test/unit/config/service-write-scope-baseline.test.ts",
             "packages/dsh-notifier/test/unit/config/service.test.ts",
             "packages/dsh-notifier/test/unit/pipeline/dispatch.test.ts",
             "packages/dsh-notifier/test/unit/pipeline/finalize.test.ts",
@@ -684,12 +686,14 @@
           "mutate": ["packages/dsh-notifier/src/server/config/**/*.ts"],
           "excludes": [],
           "testFiles": [
+            "packages/dsh-notifier/test/integration/config-write-scope-roundtrip.test.ts",
             "packages/dsh-notifier/test/integration/real-context.test.ts",
             "packages/dsh-notifier/test/unit/api/dry-run.test.ts",
             "packages/dsh-notifier/test/unit/config/draft.test.ts",
             "packages/dsh-notifier/test/unit/config/input.test.ts",
             "packages/dsh-notifier/test/unit/config/model.test.ts",
             "packages/dsh-notifier/test/unit/config/redact.test.ts",
+            "packages/dsh-notifier/test/unit/config/service-write-scope-baseline.test.ts",
             "packages/dsh-notifier/test/unit/config/service.test.ts",
             "packages/dsh-notifier/test/unit/pipeline/dispatch.test.ts",
             "packages/dsh-notifier/test/unit/shared/quiet.test.ts"
@@ -827,6 +831,7 @@
             "packages/dsh-notifier/test/client-unit/settings-ui-v3.test.ts",
             "packages/dsh-notifier/test/client-unit/status-poll.test.ts",
             "packages/dsh-notifier/test/client-unit/status-text.test.ts",
+            "packages/dsh-notifier/test/integration/config-write-scope-roundtrip.test.ts",
             "packages/dsh-notifier/test/integration/status-roundtrip.test.ts"
           ],
           "comment": "#769 客户端半区门禁：mutate 面 = src/client 下的纯 .ts 模块（node 判据在 client-unit 层、DOM 判据在 client-dom 层，两层都已进 mutationLayers，故这里的变异体有真实杀灭来源）。实测 covered 87.38%（killed 457 / survived 66 / noCoverage 0，concurrency 2 用时 4m03s）。两处排除各有一条理由：① **/*.tsx（13 个文件、含 1494 行的 index.tsx）——渲染需要 react 运行时，全仓未安装，判据面为零，等运行时与渲染 harness 落地后收掉本条；② **/*.d.ts——声明层无运行时代码。capabilities.ts 与 reason-text.ts 曾因判据建在 in-place esbuild 的已构建副本上（静态导入图里没有目标模块、变异体一律 noCoverage）被排除，现已由 client-unit 层的直连判据补齐，排除随之收掉。"

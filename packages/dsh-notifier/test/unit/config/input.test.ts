@@ -18,8 +18,12 @@ import {
   parseJsonObject,
   sanitizeSettings,
   validateSettings,
+  validateSettingsWithBase,
 } from "../../../src/server/config/impl/input/index.ts";
+import { redactConfig, unmaskChannels } from "../../../src/server/config/impl/redact/index.ts";
+import { canonicalChannelsForCompare } from "../../../src/shared/interface.ts";
 import { DEFAULT_CONFIG } from "../../../src/server/config/impl/model/index.ts";
+import type { ChannelWriteScope } from "../../../src/server/config/impl/input/type.ts";
 import type {
   BarkChannelConfig,
   BrowserChannelConfig,
@@ -87,6 +91,20 @@ const BUILTINS = [
 /** 出站频道提交体补上两条内置条目：内置不能删除，缺了它们提交会先被那条规则拦下。 */
 function withBuiltins(list: readonly Record<string, unknown>[]): RawSettingValue[] {
   return [...BUILTINS, ...list] as unknown as RawSettingValue[];
+}
+
+/** 原始频道项的 id：非对象或 id 不是字符串时给 undefined（形状不受契约约束，一律按原始值看）。 */
+function channelIdOf(item: RawSettingValue): string | undefined {
+  if (typeof item !== "object" || item === null || Array.isArray(item)) return undefined;
+  const id = (item as { id?: unknown }).id;
+  return typeof id === "string" ? id : undefined;
+}
+
+/** 频道数组里按 id 取那一条；取不到当场抛（断言落在一个不存在的事实上比红掉更糟）。 */
+function channelOf(list: readonly RawSettingValue[], id: string): Record<string, RawSettingValue> {
+  const found = list.find((item) => channelIdOf(item) === id);
+  if (found === undefined) throw new Error(`数组里没有 id=${id} 的频道`);
+  return found as Record<string, RawSettingValue>;
 }
 
 /** 一条内置条目，只带被测字段：缺的字段由归一化沿「存量别名 → 默认表」补齐。 */
@@ -768,5 +786,489 @@ describe("sanitizeSettings：只留认识的键，且不归一化", () => {
     for (const value of [null, undefined, [], "notifyAsk", 3, true]) {
       expect(sanitizeSettings(stored(value)), String(value)).toEqual({});
     }
+  });
+});
+
+// ---------------------------------------------------------------- 写面范围（#1016 批次 B 使能面）
+//
+// 本块守的是一个**前提机制**的判别力：后续配置边界判据（重复 id、URL 写面、边界值）要靠它
+// 分辨「这个值是用户本次改的」还是「用户只是把磁盘上的原值原样带回来」。判错方向只有一个
+// 后果可接受——判成「本次改动」是收紧（本 PR 明确不做），判成「原样带回」才可能漏拒。
+// 故每条用例都成对断言两侧：真改动判 true，原样带回判 false。
+
+/** 存量基线：一条合法 bark 频道。 */
+const BASE_CHANNELS = [{ ...BARK }] as unknown as RawSettingValue[];
+
+/** 带上基线跑一遍校验，取回范围面。base 显式传（不给默认值）：默认值会在「刻意传
+ *  undefined 测无基线」时被当成缺省，把那条用例悄悄换成有基线。 */
+function scopeOf(patch: SettingsPatch, base: RawSettingValue | undefined): ChannelWriteScope {
+  return validateSettingsWithBase(patch, base).scope;
+}
+
+/** 存量基线 + 默认基线的快捷入口。 */
+function scopedWith(patch: SettingsPatch): ChannelWriteScope {
+  return scopeOf(patch, BASE_CHANNELS);
+}
+
+describe("validateSettingsWithBase：本次改动 vs 存量带回", () => {
+  // 口径第一条：base 里没有这个 id = 新增频道，它的**全部**字段都是本次改动。
+  // 判错的后果最重——用户新建一条频道时忘了填某个可选字段，机制会把它读成「没改过」，
+  // 后续判据据此放过一条用户从没填过的值。
+  it("base 里没有该 id：全字段都是本次改动，且该频道是新增（漏掉任一条兜底就红）", () => {
+    // 提交里同时带着存量那条与新增那条：断言兜底只作用于新增那条，不污染同一次调用里的存量条目。
+    const scope = scopedWith({ channels: [{ ...BARK, id: "bark:new" }, { ...BARK }] });
+    for (const field of ["id", "type", "baseUrl", "deviceKey", "name", "level", "enabled"]) {
+      expect(scope.isEdited("bark:new", field), field).toBe(true);
+    }
+    expect(scope.isNewChannel("bark:new")).toBe(true);
+    // 兜底不能反过来污染存量里有的频道：同一次调用里它仍应是原样带回。
+    expect(scope.isEdited(BARK.id, "baseUrl")).toBe(false);
+    expect(scope.isNewChannel(BARK.id)).toBe(false);
+  });
+
+  // 口径第二条：逐字相同 = 原样带回。这条是整套机制的地基。
+  it("字段与 base 逐字相同：判定为原样带回（对象键序不同也算同一份内容）", () => {
+    const scope = scopedWith({ channels: [{ ...BARK }] });
+    for (const field of ["id", "type", "baseUrl", "deviceKey"]) {
+      expect(scope.isEdited(BARK.id, field), field).toBe(false);
+    }
+    // 嵌套对象（levels）键序不同仍算同一份内容：JSON 往返不保证键序，
+    // 按键序判「改过」会让用户什么都没动也被算成本次改动。
+    const base = [
+      { ...BARK, levels: { error: "critical", ask: "active" } },
+    ] as unknown as RawSettingValue[];
+    const reordered = scopeOf(
+      { channels: [{ ...BARK, levels: { ask: "active", error: "critical" } }] },
+      base,
+    );
+    expect(reordered.isEdited(BARK.id, "levels")).toBe(false);
+  });
+
+  // 口径第三条：逐字不同 = 本次改动。逐字段独立，不是一个频道一个结论。
+  it("字段与 base 不同：只把真变了的那几个字段判成本次改动", () => {
+    const scope = scopedWith({
+      channels: [{ ...BARK, name: "改过的名字", level: "critical" }],
+    });
+    expect(scope.isEdited(BARK.id, "name")).toBe(true);
+    expect(scope.isEdited(BARK.id, "level")).toBe(true);
+    // 没碰的字段不受牵连：同一次提交里，未编辑的字段必须仍是原样带回。
+    expect(scope.isEdited(BARK.id, "baseUrl")).toBe(false);
+    expect(scope.isEdited(BARK.id, "deviceKey")).toBe(false);
+    expect(scope.isNewChannel(BARK.id)).toBe(false);
+  });
+
+  // **本机制最关键的一条**：掩码还原后，凭据字段与 base 逐字节相同，必须判「原样带回」。
+  // 判成「本次改动」的后果是后续判据按用户本次输入重新审一遍未编辑的字段——
+  // 用户手改过 config.json 存着非法值时，任何一次无关保存都会把整表带上、被新判据拦下，
+  // 存量用户就此锁死在设置页外面。
+  it("掩码还原后的字段与 base 逐字节相同：必须判为原样带回（判反即红）", () => {
+    const base = [{ ...BARK }] as unknown as RawSettingValue[];
+    // 走真实还原路径，而不是手工拼一个等值对象：还原按 id 对齐换回原值。
+    const masked = [{ ...BARK, deviceKey: "********" }] as unknown as RawSettingValue;
+    const restored = unmaskChannels(masked, base);
+    if (!restored.ok) throw new Error("应当还原成功");
+
+    // 前置事实：还原出来的值与 base 里的确实是同一个字符串。
+    expect(JSON.stringify(restored.channels)).toBe(JSON.stringify(base));
+
+    const scope = scopeOf({ channels: restored.channels as RawSettingValue[] }, base);
+    expect(scope.isEdited(BARK.id, "deviceKey")).toBe(false);
+    expect(scope.isEdited(BARK.id, "baseUrl")).toBe(false);
+    expect(scope.isEdited(BARK.id, "id")).toBe(false);
+    expect(scope.isNewChannel(BARK.id)).toBe(false);
+  });
+
+  // 上一条的 webhook 对偶，也是它**只覆盖非空原值**时漏掉的那一种：磁盘上凭据是空串时，
+  // 读出口把空串掩码成占位、客户端原样带回占位、服务端按 id 还原成 ""——而剥空串与比较规范形
+  // 都发生在**掩码还原之前**，还原把磁盘的 "" 请回来之后提交侧凭空多出该键、基线侧没有，
+  // 于是凭据字段凭空读成「用户刚改过」。
+  // 判据形态：两侧同形时 false。提交侧不剥即红；用户主动改成非空仍必须是 true（别把读数洗平）。
+  it('提交侧也剥空串：还原回来的 token:"" 与基线同形，不算本次改动（不剥即红）', () => {
+    const diskChannels = [
+      { ...WEBHOOK, token: "", password: "", headerValue: "" },
+    ] as unknown as RawSettingValue[];
+    // 前提事实一：基线（客户端看过的那份视图）里这三个键已经被剥掉了。
+    const base = canonicalChannelsForCompare(
+      normalizeConfig({ channels: diskChannels }).channels,
+    ) as unknown as RawSettingValue[];
+    const baseHook = channelOf(base, WEBHOOK.id);
+    for (const key of ["token", "password", "headerValue"]) {
+      expect(key in baseHook, key).toBe(false);
+    }
+    // 前提事实二：走真实链路——读出口的凭据是掩码，还原后回到磁盘上的空串。
+    const sent = redactConfig(normalizeConfig({ channels: diskChannels }))
+      .channels as RawSettingValue[];
+    const restored = unmaskChannels(sent, diskChannels);
+    if (!restored.ok) throw new Error("应当还原成功");
+    const submitted = restored.channels as RawSettingValue[];
+    const submittedHook = channelOf(submitted, WEBHOOK.id);
+    expect(submittedHook.token).toBe("");
+
+    const scope = scopeOf({ channels: submitted }, base);
+    for (const key of ["token", "password", "headerValue"]) {
+      expect(scope.isEdited(WEBHOOK.id, key), key).toBe(false);
+    }
+    // 按下标问是同一份口径（同 id 第 k 条对第 k 条），剥除不能只做在按 id 那条路上。
+    const index = submitted.findIndex((item) => channelIdOf(item) === WEBHOOK.id);
+    expect(scope.isEditedAt(index, "token")).toBe(false);
+    expect(scope.isEditedAt(index, "headerValue")).toBe(false);
+    // 读数不能被洗平：用户主动把 token 改成非空，仍然是本次改动。
+    const retokenized = submitted.map((item) =>
+      channelIdOf(item) === WEBHOOK.id
+        ? { ...channelOf(submitted, WEBHOOK.id), token: "新令牌" }
+        : item,
+    );
+    expect(scopeOf({ channels: retokenized }, base).isEdited(WEBHOOK.id, "token")).toBe(true);
+    // 剥的是**空串**不是凭据本身：非空且与基线逐字相同仍是原样带回，换成别的非空值则是本次改动。
+    const withToken = [{ ...WEBHOOK, token: "tok" }] as unknown as RawSettingValue[];
+    const tokenBase = canonicalChannelsForCompare(
+      normalizeConfig({ channels: withToken }).channels,
+    ) as unknown as RawSettingValue[];
+    expect(channelOf(tokenBase, WEBHOOK.id).token).toBe("tok");
+    expect(scopeOf({ channels: withToken }, tokenBase).isEdited(WEBHOOK.id, "token")).toBe(false);
+    expect(
+      scopeOf(
+        { channels: [{ ...WEBHOOK, token: "另一个令牌" }] as unknown as RawSettingValue[] },
+        tokenBase,
+      ).isEdited(WEBHOOK.id, "token"),
+    ).toBe(true);
+  });
+
+  // 半坏配置（baseUrl 为空、无投递目标）会被读面归一化丢弃，**客户端草稿里因此压根没有它**——
+  // 真实往返链不会把它带回来，基线（客户端看过的那份视图）里也没有它：两侧同时缺席，天然一致。
+  //
+  // 本条断的是「万一有人问了」的兜底方向：没有基线可依时必须按「本次改动」判，不能判成原样带回。
+  // 判反（false）会让后续判据对一条它没有任何存量可比的频道网开一面，那正是本机制要防的漏拒。
+  it("半坏条目两侧同时缺席：真被问到时按兜底判「本次改动」，绝不判原样带回", () => {
+    const diskChannels = [
+      { type: "bark", id: "bark:ok", baseUrl: "https://api.day.app", deviceKey: "key-1" },
+      { type: "bark", id: "bark:half", baseUrl: "", deviceKey: "key-half" },
+    ] as unknown as RawSettingValue[];
+    // 前置事实：客户端那份视图（生效设置过比较规范形）里没有半坏条目。
+    const clientView = canonicalChannelsForCompare(
+      normalizeConfig({ channels: diskChannels }).channels,
+    ) as Array<{ id?: string }>;
+    expect(clientView.some((c) => c.id === "bark:half")).toBe(false);
+    // 客户端提交的那份里也没有它（草稿就没有，diff 不会凭空造出来）。
+    const submitted = [
+      {
+        type: "bark",
+        id: "bark:ok",
+        baseUrl: "https://api.day.app",
+        deviceKey: "key-1",
+        name: "手机",
+      },
+    ] as unknown as RawSettingValue[];
+
+    const scope = scopeOf({ channels: submitted }, clientView as unknown as RawSettingValue);
+    // 兜底方向：问它 ⇒ 「本次改动」/「新增」，不是「原样带回」。
+    expect(scope.isNewChannel("bark:half")).toBe(true);
+    expect(scope.isEdited("bark:half", "deviceKey")).toBe(true);
+    expect(scope.isEdited("bark:half", "baseUrl")).toBe(true);
+    // 同一份调用里，客户端真正交回的那条仍只把真改的字段算改动。
+    expect(scope.isEdited("bark:ok", "name")).toBe(true);
+    expect(scope.isEdited("bark:ok", "baseUrl")).toBe(false);
+  });
+
+  // 回归护栏：本机制**不得**让当前就会 400 的值通过。存量非法值与本次改动要分开：
+  // 本次改动触碰的字段仍走现有判据（这里构造的就是当前必拒的值）。
+  it("本次改动触碰的字段仍走现有判据：机制不改变任何一条校验结论", () => {
+    // 当前就会 400 的提交（level 非法、缺 baseUrl、缺 auth），带基线跑出来结论必须逐字相同。
+    const rejected: SettingsPatch[] = [
+      { channels: [{ ...BARK, level: "urgent" }] },
+      { channels: [{ type: "bark", id: "bark:x", deviceKey: "k" }] },
+      { channels: [{ type: "webhook", id: "webhook:x", url: "https://x" }] },
+      { historyMaxAgeDays: -1 },
+      { notifyAsk: "yes" },
+      { browserNotify: false } as SettingsPatch,
+    ];
+    for (const patch of rejected) {
+      const label = JSON.stringify(patch);
+      const withoutBase = validateSettings(patch);
+      const withBase = validateSettingsWithBase(patch, BASE_CHANNELS);
+      expect(withBase.verdict, label).toEqual(withoutBase);
+      expect(withoutBase.ok, label).toBe(false);
+    }
+    // 本次改动把这些非法字段标成本次改动（后续判据据此收紧的方向），本 PR 不据此拒任何东西。
+    const scope = scopedWith({ channels: [{ ...BARK, level: "urgent" }] });
+    expect(scope.isEdited(BARK.id, "level")).toBe(true);
+  });
+
+  // 合法提交在带基线时也必须放行：机制不是「多一个拒绝口」，存量非法值那类才由后续判据管。
+  it("合法提交带基线照样放行，且不改动过的字段判原样带回", () => {
+    const legal = validateSettingsWithBase(
+      { channels: withBuiltins([{ ...BARK, name: "手机" }]) },
+      BASE_CHANNELS,
+    );
+    expect(legal.verdict).toEqual({ ok: true });
+    expect(legal.scope.isEdited(BARK.id, "name")).toBe(true);
+    expect(legal.scope.isEdited(BARK.id, "deviceKey")).toBe(false);
+  });
+
+  // 没有基线时（首次保存）一律按「本次改动」：方向必须保守，宁可让后续判据收紧，
+  // 也不许在一份空基线上网开一面。
+  it("没有基线：每个字段都算本次改动、每条频道都算新增（不得当成原样带回）", () => {
+    for (const base of [undefined, null, [], "not-an-array", 42]) {
+      const scope = scopeOf({ channels: [{ ...BARK, name: "x" }] }, raw(base));
+      expect(scope.isEdited(BARK.id, "name"), String(base)).toBe(true);
+      expect(scope.isEdited(BARK.id, "deviceKey"), String(base)).toBe(true);
+      expect(scope.isNewChannel(BARK.id), String(base)).toBe(true);
+    }
+  });
+
+  // channels 是**整组替换**：提交里少了一条就是「把它删了」，那是一次真改动。
+  // 判成「原样带回」会让这次删除被静默吞掉——那条频道从此不会再被任何按 id 的判据提到，
+  // 后续判据（重复 id / URL 写面）再也看不见它。方向判反即红。
+  it("存量里一条频道、本次提交整组把它删掉：判为本次改动（不是原样带回）", () => {
+    const base = [
+      { ...BARK, name: "旧名字" },
+      { ...BARK, id: "bark:other", name: "别的" },
+    ] as unknown as RawSettingValue[];
+    // 提交里只剩 bark:other：bark:phone 整条不在了。
+    const scope = scopeOf({ channels: [{ ...BARK, id: "bark:other", name: "别的" }] }, base);
+    // 删除的语义是「这条的每个字段都变了」——它整个不存在了。
+    for (const field of ["id", "type", "baseUrl", "deviceKey", "name", "level", "enabled"]) {
+      expect(scope.isEdited(BARK.id, field), field).toBe(true);
+    }
+    // 删掉的那条不是「新增」，它在存量里是有位置的。
+    expect(scope.isNewChannel(BARK.id)).toBe(false);
+    // 同一次调用里，被保留的那条不受牵连：没改的字段仍是原样带回。
+    expect(scope.isEdited("bark:other", "baseUrl")).toBe(false);
+    expect(scope.isNewChannel("bark:other")).toBe(false);
+  });
+
+  // 存量的键被提交抹掉，是一次真改动：客户端的空串剥除会把这类键在下次保存时写掉。
+  it("一侧缺键即视为不同：存量的键被提交抹掉算本次改动，两侧都缺才算原样带回", () => {
+    // 基线里带 name、提交里没有 → 这次保存把 name 抹掉了，是一次真改动。
+    const base = [{ ...BARK, name: "旧名字" }] as unknown as RawSettingValue[];
+    const scope = scopeOf(
+      {
+        channels: [{ type: "bark", id: BARK.id, baseUrl: BARK.baseUrl, deviceKey: BARK.deviceKey }],
+      },
+      base,
+    );
+    expect(scope.isEdited(BARK.id, "name")).toBe(true);
+    // 两侧都没有 enabled → 同一份内容，不算改动。
+    expect(scope.isEdited(BARK.id, "enabled")).toBe(false);
+    // 两侧都有的字段照常逐字比。
+    expect(scope.isEdited(BARK.id, "baseUrl")).toBe(false);
+  });
+
+  // 按 id 对齐，不按下标：数组顺序一变，按下标会把 A 实例的字段算到 B 头上。
+  it("按 id 对齐而非按下标：顺序颠倒后仍认得同一条频道", () => {
+    const other = { ...BARK, id: "bark:other", name: "别的" };
+    const scope = scopeOf({ channels: [{ ...other, name: "别的" }, { ...BARK }] }, [
+      { ...BARK },
+      other,
+    ] as unknown as RawSettingValue[]);
+    expect(scope.isEdited(BARK.id, "name")).toBe(false);
+    expect(scope.isEdited("bark:other", "name")).toBe(false);
+    // 顺序颠倒本身不是字段改动。
+    expect(scope.isEdited(BARK.id, "baseUrl")).toBe(false);
+  });
+
+  // 基线必须取**客户端看过的那份视图**（生效设置过共享面比较规范形），不是磁盘原样。
+  // 取错侧的判据形态是「两侧不等价」：同一份磁盘、同一份提交，取对侧只有真改的字段算改动，
+  // 取错侧会把归一化产物（补的默认值、剥掉的空串、钳制过的越界值）全读成本次改动。
+  // 改 service 域的基线取法（改回磁盘原样、或者只取裸 effective）不会让本条变红——
+  // 那由 test/unit/config/service-write-scope-baseline.test.ts 断「真的取了哪一份」。
+  it("基线取客户端那份视图：磁盘原样当基线会把归一化补值读成本次改动（裸 effective 也一样）", () => {
+    const diskChannels = [
+      { type: "bark", id: "bark:1", baseUrl: "https://api.day.app", deviceKey: "key-1" },
+    ] as unknown as RawSettingValue[];
+    // 客户端交回的那份提交：enabled/timeoutMs/levels 三个键磁盘上没有，是归一化补出来的。
+    const submitted = [
+      {
+        type: "bark",
+        id: "bark:1",
+        baseUrl: "https://api.day.app",
+        deviceKey: "key-1",
+        name: "手机",
+        enabled: false,
+        timeoutMs: 0,
+        levels: {},
+      },
+    ] as unknown as RawSettingValue[];
+
+    // 取对侧：只有 name。
+    const clientView = canonicalChannelsForCompare(
+      normalizeConfig({ channels: diskChannels }).channels,
+    ) as unknown as RawSettingValue[];
+    const rightScope = scopeOf({ channels: submitted }, clientView);
+    expect(rightScope.isEdited("bark:1", "name")).toBe(true);
+    expect(rightScope.isEdited("bark:1", "enabled")).toBe(false);
+    expect(rightScope.isEdited("bark:1", "timeoutMs")).toBe(false);
+    expect(rightScope.isEdited("bark:1", "levels")).toBe(false);
+
+    // 取错侧一：磁盘原样——三个归一化补出来的键全被判成本次改动。
+    const rawScope = scopeOf({ channels: submitted }, diskChannels);
+    expect(rawScope.isEdited("bark:1", "enabled")).toBe(true);
+    expect(rawScope.isEdited("bark:1", "timeoutMs")).toBe(true);
+    expect(rawScope.isEdited("bark:1", "levels")).toBe(true);
+
+    // 取错侧二：裸 effective（没剥空串）——读面补的空串成了假阳性。
+    const bareEffective = normalizeConfig({ channels: diskChannels })
+      .channels as unknown as RawSettingValue[];
+    const bareScope = scopeOf({ channels: submitted }, bareEffective);
+    expect(bareScope.isEdited("bark:1", "enabled")).toBe(false);
+    expect(bareScope.isEdited("bark:1", "name")).toBe(true);
+    // group/sound/icon/url 在 effective 里是空串、在提交里被剥掉了 ⇒ 判成「用户刚删了它们」。
+    expect(bareScope.isEdited("bark:1", "group")).toBe(true);
+    expect(bareScope.isEdited("bark:1", "icon")).toBe(true);
+  });
+
+  // 下标寻址：按 id 问是本类型的主入口，按下标问是给「重复 id 逐元素自查」那条判据用的。
+  // 两者必须给同一个答案——id 唯一时。它们是同一个 isEdited 的两种寻址方式，不是两套口径。
+  it("`isEditedAt`：id 唯一时与按 id 问完全一致（含越界与非对象的兜底方向）", () => {
+    const base = [
+      { ...BARK },
+      { ...BARK, id: "bark:other", name: "别的" },
+    ] as unknown as RawSettingValue[];
+    const scope = scopeOf(
+      {
+        channels: [
+          { ...BARK, name: "新名字" },
+          { ...BARK, id: "bark:other", name: "别的" },
+        ],
+      },
+      base,
+    );
+    // 同一条：两种寻址同答。
+    expect(scope.isEditedAt(0, "name")).toBe(scope.isEdited(BARK.id, "name"));
+    expect(scope.isEditedAt(0, "name")).toBe(true);
+    expect(scope.isEditedAt(0, "baseUrl")).toBe(false);
+    expect(scope.isEditedAt(1, "name")).toBe(false);
+    // 兜底方向：越界 / 该项不是带非空 id 的频道对象 ⇒ 按「本次改动」，不判原样带回。
+    for (const index of [-1, 2, 99]) {
+      expect(scope.isEditedAt(index, "name"), String(index)).toBe(true);
+    }
+    const withJunk = scopeOf(
+      { channels: ["不是对象", { id: "", type: "bark" }, { ...BARK, name: "新名字" }] },
+      base,
+    );
+    expect(withJunk.isEditedAt(0, "name")).toBe(true);
+    expect(withJunk.isEditedAt(1, "name")).toBe(true);
+    expect(withJunk.isEditedAt(2, "baseUrl")).toBe(false);
+  });
+
+  // 本条是 `isEditedAt` 存在的全部理由：重复 id 时按 id 问**读不到第二条**（基线按 id
+  // 建索引，首条胜出），而重复 id 判据恰恰要逐元素地说清第二条改没改。
+  // 判据形态：把第二种的改法去掉则本条转红（那时按 id 与按下标都答不出第二条的真值）。
+  it("`isEditedAt`：重复 id 时按 id 问读不到第二条，按下标问读得到（首条胜出是已知边界）", () => {
+    const base = [
+      { ...BARK, baseUrl: "https://a.example" },
+      { ...BARK, baseUrl: "https://b.example" },
+    ] as unknown as RawSettingValue[];
+    const scope = scopeOf(
+      {
+        channels: [
+          { ...BARK, baseUrl: "https://a.example" },
+          { ...BARK, baseUrl: "https://CHANGED" },
+        ],
+      },
+      base,
+    );
+    // 按 id 问：基线首条胜出，两条提交项共用它 ⇒ 第二种的改法看不见。
+    expect(scope.isEdited(BARK.id, "baseUrl")).toBe(false);
+    // 按下标问：第二条对第二条的基线，改了就是改了。
+    expect(scope.isEditedAt(1, "baseUrl")).toBe(true);
+    expect(scope.isEditedAt(0, "baseUrl")).toBe(false);
+    // 两种寻址在别的字段上仍同答（重复只影响 id 寻址那一维）。
+    expect(scope.isEditedAt(1, "deviceKey")).toBe(false);
+  });
+
+  // 上一条的**另一半**，也是把 `isEditedAt` 退回首条胜出那一步唯一能被打红的地方：
+  // 两条都没改时，按「第 k 条对第 k 条」应判原样带回；退回首条胜入会拿第二条去比第一条，
+  // 凭空读出「用户改了 baseUrl」——造出一个不存在的本次改动，正是过度拒绝的方向。
+  it("isEditedAt：重复 id 且两条都没改时判原样带回（退回首条胜出会读成「改了 baseUrl」）", () => {
+    const base = [
+      { ...BARK, baseUrl: "https://a.example" },
+      { ...BARK, baseUrl: "https://b.example" },
+    ] as unknown as RawSettingValue[];
+    // 整组原样带回：两条都与存量逐字相同。
+    const scope = scopeOf(
+      {
+        channels: [
+          { ...BARK, baseUrl: "https://a.example" },
+          { ...BARK, baseUrl: "https://b.example" },
+        ],
+      },
+      base,
+    );
+    expect(scope.isEditedAt(0, "baseUrl")).toBe(false);
+    expect(scope.isEditedAt(1, "baseUrl")).toBe(false);
+  });
+
+  // 存量只有一条、提交里出现第二条同 id：那条是**多出来的**，判「本次改动」。
+  // 退回首条胜出会拿它去比存量那唯一一条——内容相同时读成「没改」，重复 id 判据据此放行。
+  it("isEditedAt：存量里同 id 只有一条而提交里有两条，多出来的那条判本次改动", () => {
+    const base = [{ ...BARK, baseUrl: "https://a.example" }] as unknown as RawSettingValue[];
+    const scope = scopeOf(
+      {
+        channels: [
+          { ...BARK, baseUrl: "https://a.example" },
+          { ...BARK, baseUrl: "https://a.example" },
+        ],
+      },
+      base,
+    );
+    expect(scope.isEditedAt(0, "baseUrl")).toBe(false);
+    expect(scope.isEditedAt(1, "baseUrl")).toBe(true);
+  });
+
+  // 没有基线时（首次保存、基线形状不对）按下标问也必须是「本次改动」：无基线可依 ⇒ 不给放行。
+  it("没有基线时 `isEditedAt` 与另外两条同向：每个字段都算本次改动", () => {
+    for (const base of [undefined, null, [], "not-an-array", 42]) {
+      const scope = scopeOf(
+        { channels: [{ ...BARK, name: "x" }] },
+        base as unknown as RawSettingValue,
+      );
+      expect(scope.isEditedAt(0, "name"), String(base)).toBe(true);
+      expect(scope.isEditedAt(0, "deviceKey"), String(base)).toBe(true);
+      expect(scope.isEditedAt(5, "name"), String(base)).toBe(true);
+    }
+  });
+
+  // 嵌套结构（headers 这类 Record）按内容比，不按引用比：JSON 往返拿到的是新对象。
+  it("嵌套对象按内容比：提交与 base 各自构造的等值对象判原样带回", () => {
+    const base = [
+      {
+        type: "webhook",
+        id: "webhook:x",
+        url: "https://x",
+        auth: "none",
+        headers: { "X-Token": "v" },
+      },
+    ] as unknown as RawSettingValue[];
+    const scope = scopeOf(
+      {
+        channels: [
+          {
+            type: "webhook",
+            id: "webhook:x",
+            url: "https://x",
+            auth: "none",
+            headers: { "X-Token": "v" },
+          },
+        ],
+      },
+      base,
+    );
+    expect(scope.isEdited("webhook:x", "headers")).toBe(false);
+    const changed = scopeOf(
+      {
+        channels: [
+          {
+            type: "webhook",
+            id: "webhook:x",
+            url: "https://x",
+            auth: "none",
+            headers: { "X-Token": "w" },
+          },
+        ],
+      },
+      base,
+    );
+    expect(changed.isEdited("webhook:x", "headers")).toBe(true);
   });
 });

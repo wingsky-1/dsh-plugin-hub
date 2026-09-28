@@ -8,6 +8,7 @@ import {
   WEBHOOK_PRESETS,
   isClockText,
   isSoundId,
+  stripChannelEmpties,
 } from "../../../../shared/interface.ts";
 import { DEFAULT_CONFIG } from "../model/index.ts";
 import { QUIET_WINDOWS_LIMIT } from "../model/type.ts";
@@ -27,7 +28,7 @@ import type {
   SystemChannelConfig,
   WebhookChannelConfig,
 } from "../model/type.ts";
-import type { ValidationResult } from "./type.ts";
+import type { ChannelWriteScope, ScopedValidationResult, ValidationResult } from "./type.ts";
 
 // ---------------------------------------------------------------- 合法域
 
@@ -218,6 +219,38 @@ export function normalizeConfig(input: StoredSettings): NotifyConfig {
  * 等于替未来的版本拒绝今天的用户（退役键是例外，见 RETIRED_KEYS）。
  */
 export function validateSettings(raw: SettingsPatch): ValidationResult {
+  return verdictOf(raw);
+}
+
+/**
+ * 校验 + 写面范围（issue #1016 批次 B 的**使能面**，本身不收紧任何判据）。
+ *
+ * 与 `validateSettings` **共用同一个 `verdictOf`**：判定结论逐字相同，一个字都没多判。
+ * 多出来的只是「这次提交里哪些字段是用户真改的、哪些只是把磁盘上的原值原样带回来」这份信息，
+ * 交给后续的边界判据（重复 id、URL 写面、边界值）用。
+ *
+ * 单列一个函数而不是给 `validateSettings` 加可选参数：那是把一个纯函数改成「视参数而定
+ * 行为」的形状，调用方分不清自己拿到的是哪一种；而本机制的全部安全性（不改变任何现有结论）
+ * 靠的是两条入口**共用同一个 `verdictOf`**，不是靠两处同步维护。
+ * （`validateSettings` 不在包入口的导出面上——改它的签名不触及导出面基线；本条分工取的是
+ * 形态上的可辩护性，不是「动了要改基线」。）
+ *
+ * @param raw 提交体。
+ * @param baseChannels 存量频道数组，**必须是客户端实际看过的那份**（生效设置过一遍共享面的
+ *   比较规范形，见 service 域 `baseChannels`）。形状不对就会有系统性假阳性：磁盘原样与
+ *   客户端所见在归一化补值、空串剥除、非法值钳制、陌生键搬 extras 上分叉，客户端把那些形态
+ *   原样带回来就会被读成「本次改动」。
+ *   缺省 = 没有存量，全部字段都算本次改动（首次保存的保守方向，与本机制落地前的行为一致）。
+ */
+export function validateSettingsWithBase(
+  raw: SettingsPatch,
+  baseChannels?: RawSettingValue,
+): ScopedValidationResult {
+  return { verdict: verdictOf(raw), scope: writeScopeOf(raw.channels, baseChannels) };
+}
+
+/** 判据本体：无基线与带基线两条入口都走它，「本机制不改变任何现有校验结论」靠这一点保证。 */
+function verdictOf(raw: SettingsPatch): ValidationResult {
   for (const [key, value] of Object.entries(raw)) {
     if (value === undefined) continue;
     // 走 hasOwn 而不是直接索引：constructor 这类键经 JSON 提交是可能的，直接索引会摸到
@@ -229,6 +262,150 @@ export function validateSettings(raw: SettingsPatch): ValidationResult {
     if (!verdict.ok) return verdict;
   }
   return { ok: true };
+}
+
+/**
+ * 没有存量时的范围面：每个字段都算本次改动。
+ *
+ * 方向是刻意选的——「当成改动」等于继续用今天的判据（不 grandfather 任何东西），
+ * 「当成原样带回」才会让未来的边界判据对一份空配置网开一面。
+ */
+const NO_BASE_SCOPE: ChannelWriteScope = {
+  isEdited: () => true,
+  isNewChannel: () => true,
+  isEditedAt: () => true,
+};
+
+/**
+ * 写面范围：把「本次改动」这份判定收在一处。
+ *
+ * 按 **id** 对齐，不按下标：数组顺序一变，按下标就会把 A 实例的字段算到 B 头上——
+ * 那正是「把用户没改过的东西判成本次改动」的另一种写法。
+ *
+ * 已知边界（同 id 重复出现时按首条对齐）：存量里 id 重复的频道，两条提交项会拿到同一份基线，
+ * 于是 `isEdited(id, field)` 读不到第二条——按 id 问这件事本来就没有答案。重复 id 本身是
+ * 后续判据要拒的东西；要逐元素自查的那一方走 `isEditedAt(index, field)`（按下标定位**提交**里
+ * 的那一条，再按它同 id 的出现次序取基线），口径与本函数同源、只是寻址维度不同。
+ */
+function writeScopeOf(
+  patchChannels: RawSettingValue | undefined,
+  baseChannels: RawSettingValue | undefined,
+): ChannelWriteScope {
+  if (!Array.isArray(baseChannels)) return NO_BASE_SCOPE;
+  const baseById = indexById(baseChannels);
+  const baseByOccurrence = occurrencesById(baseChannels);
+  // 提交侧也过一遍空串剥除（与客户端同一份 stripChannelEmpties）：基线是「客户端看过的那份
+  // 视图」，它已经剥过一遍（比较规范形），而提交侧的空串会在**掩码还原之后**被请回来——磁盘上
+  // token:"" 的频道，读出口把它掩码成占位、客户端原样带回占位、服务端按 id 还原成 ""，于是
+  // 提交侧凭空多出该键而基线侧没有。只有密钥字段会这样：只有它们走掩码往返。
+  // 两侧同形这件事两端各做一半：基线侧在 service 域 baseChannels，这里补另一半。
+  //
+  // **只剥、不补默认值**：补齐服务端默认值是**基线**那一侧的对称化（比较规范形），复制到提交侧
+  // 会让「本次改动」取决于比较形状而不是用户输入——「用户填了默认值」与「客户端压根没带这个键」
+  // 洗成同一种读数。剥除只统一「空串」与「缺席」两种写法；真删除（非空变空/变缺席）两侧仍不等，
+  // 仍读得出。
+  //
+  // 已知代价（方向是漏拒，可接受）：直接调 API 把某个可选字段提交成空串，读数是「原样带回」。
+  // 真实客户端走不到（输入框清空走 assignChannelFields 删键、提交前再剥一次），且判据结论不受影响。
+  //
+  // 纯读：剥完的副本只用于比较，落盘的仍是 apply 手里那份原样 patch。
+  const list = Array.isArray(patchChannels)
+    ? ((patchChannels as unknown[]).map(stripChannelEmpties) as RawSettingValue[])
+    : [];
+  const patchById = indexById(list);
+  const isEdited = (channelId: string, field: string): boolean => {
+    const base = baseById.get(channelId);
+    // base 里没有这个 id：新增频道，它的全部字段都是本次改动。
+    if (base === undefined) return true;
+    const incoming = patchById.get(channelId);
+    // 提交里没有这个 id：channels 是整组替换，少了一条就是**删掉了它**——一次真改动。
+    // 判成「原样带回」会让这次删除被静默吞掉，那条频道从此不会再被任何按 id 的判据提到。
+    if (incoming === undefined) return true;
+    return !sameValue(incoming[field], base[field]);
+  };
+  return {
+    isEdited,
+    isNewChannel: (channelId) => !baseById.has(channelId),
+    isEditedAt: (index, field) => {
+      const item = list[index];
+      // 越界 / 不是带非空 id 的频道对象：无从判断，按「本次改动」兜底（与上面两条同向）。
+      if (!isRecord(item)) return true;
+      const id = item.id;
+      if (typeof id !== "string" || id === "") return true;
+      // 重复 id 时按「同 id 的第几条」对齐：提交里第 k 条 b1 对基线里第 k 条 b1。
+      // 不按下标对齐（数组整体换序就张冠李戴），也不复用 isEdited（那边首条胜出，
+      // 会把第二条的改法吞掉——那正是按下标寻址要解决的盲区）。
+      const occurrence = occurrencesBefore(list, index, id);
+      const base = baseByOccurrence.get(id)?.[occurrence];
+      // 存量里没有同 id 的第 occurrence 条：本次多出来的一条，按「本次改动」兜底。
+      if (base === undefined) return true;
+      return !sameValue(item[field], base[field]);
+    },
+  };
+}
+
+/** 提交数组里，位于 `index` 之前、与该项同 id 的条目数（0 基的出现次序）。 */
+function occurrencesBefore(list: readonly RawSettingValue[], index: number, id: string): number {
+  let seen = 0;
+  for (let i = 0; i < index; i += 1) {
+    const item = list[i];
+    if (isRecord(item) && item.id === id) seen += 1;
+  }
+  return seen;
+}
+
+/** 频道数组 → id → 该 id 的**全部**条目（按出现次序）；不是对象或没有非空 id 字符串的项不进索引。 */
+function occurrencesById(
+  list: readonly RawSettingValue[],
+): Map<string, Array<Record<string, RawSettingValue>>> {
+  const index = new Map<string, Array<Record<string, RawSettingValue>>>();
+  for (const item of list) {
+    if (!isRecord(item)) continue;
+    const id = item.id;
+    if (typeof id !== "string" || id === "") continue;
+    const bucket = index.get(id);
+    if (bucket === undefined) index.set(id, [item]);
+    else bucket.push(item);
+  }
+  return index;
+}
+
+/** 频道数组 → id → 首条该 id 的条目；不是对象或没有非空 id 字符串的项不进索引。 */
+function indexById(list: readonly RawSettingValue[]): Map<string, Record<string, RawSettingValue>> {
+  const index = new Map<string, Record<string, RawSettingValue>>();
+  for (const item of list) {
+    if (!isRecord(item)) continue;
+    const id = item.id;
+    if (typeof id !== "string" || id === "") continue;
+    if (!index.has(id)) index.set(id, item);
+  }
+  return index;
+}
+
+/**
+ * 逐值相同判定：标量用 `===`，数组逐项比，对象按键集合比（**键序无关**）。
+ *
+ * 键序无关有实测依据：客户端把视图原样交回，JSON 往返不保证键序，而「同一份内容、
+ * 键序不同」在修订号那侧已经是不算改动（见 service 侧 `stableJson` 的注释）——
+ * 两处对「什么算同一份内容」必须给同一个答案，否则用户什么都没改却被判成本次改动。
+ *
+ * 一侧缺键即视为不同：存量的键被提交抹掉，是一次真改动（客户端的 `stripChannelEmpties`
+ * 会剥掉空串可选字段，那一类确实会在下次保存时被写掉）。
+ */
+function sameValue(left: RawSettingValue | undefined, right: RawSettingValue | undefined): boolean {
+  if (left === right) return true;
+  // 走到这里至多一侧缺键（两侧都缺已被上一行判成相同），缺键即不同。
+  if (left === undefined || right === undefined) return false;
+  if (Array.isArray(left) && Array.isArray(right)) {
+    if (left.length !== right.length) return false;
+    return left.every((item, index) => sameValue(item, right[index]));
+  }
+  if (isRecord(left) && isRecord(right)) {
+    const leftKeys = Object.keys(left);
+    if (leftKeys.length !== Object.keys(right).length) return false;
+    return leftKeys.every((key) => Object.hasOwn(right, key) && sameValue(left[key], right[key]));
+  }
+  return false;
 }
 
 /** 单键校验；分支与归一化的取值助手一一对应，两处判断的是同一件事。 */

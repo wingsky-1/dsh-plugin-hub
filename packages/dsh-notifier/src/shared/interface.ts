@@ -18,6 +18,15 @@ export { FOLLOW_SYSTEM_TONE, TONES } from "./tones.ts";
 export type { ToneNote } from "./tones.ts";
 export { SOUND_IDS, isSoundId } from "./sounds.ts";
 export type { SoundId } from "./sounds.ts";
+// 频道比较规范形：客户端的 diff 与服务端的写面基线共用同一份（两端对「什么算同一份内容」
+// 必须给同一个答案，见 channel-compare.ts 文件头）。
+export {
+  CHANNEL_OPTIONAL_STRING_KEYS,
+  canonicalChannelsForCompare,
+  canonicalSettingsForCompare,
+  normalizeChannelForCompare,
+  stripChannelEmpties,
+} from "./channel-compare.ts";
 export {
   BUILTIN_KINDS,
   KIND_SEVERITY,

@@ -33,6 +33,7 @@ export default defineConfig({
       'packages/dsh-notifier/test/client-unit/settings-ui-v3.test.ts',
       'packages/dsh-notifier/test/client-unit/status-poll.test.ts',
       'packages/dsh-notifier/test/client-unit/status-text.test.ts',
+      'packages/dsh-notifier/test/integration/config-write-scope-roundtrip.test.ts',
       'packages/dsh-notifier/test/integration/status-roundtrip.test.ts',
     ],
     environment: 'node',
