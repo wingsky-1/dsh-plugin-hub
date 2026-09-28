@@ -51,6 +51,28 @@ const GENERATOR = join(ROOT, "scripts", "gate", "gen-stryker-conf.mjs");
 const VERIFY_DIR_IMPORTS = join(ROOT, "scripts", "gate", "verify-dir-imports.mjs");
 const TOPOLOGY_PATH = join(ROOT, "scripts", "data", "mutation-topology.json");
 
+/**
+ * 派生口径：coverageExcludes 形状校验的**对象**取「`testLayers` 是对象且 `coverageExcludes` 键
+ * 在场」的登记包，按包名排序返回。
+ *
+ * 口径落在「键在场」而不是包名或条数上——包名清单与计数清单都是必须跟着代码走的漂移源，键在场是
+ * 形状事实。值为非数组（形状错误）也留在面内：否则形状错误会被派生层当「没登记」静默吃掉。
+ */
+function declaredCoverageExcludePackages(topology: {
+  packages?: Record<string, unknown>;
+}): string[] {
+  const declared: string[] = [];
+  for (const [name, def] of Object.entries(topology.packages ?? {})) {
+    // isPlainObject 来自 .mjs（推断出 boolean 而非类型守卫），故此处用本地守卫做收窄。
+    if (def === null || typeof def !== "object" || Array.isArray(def)) continue;
+    const layers = (def as { testLayers?: unknown }).testLayers;
+    if (layers !== null && typeof layers === "object" && !Array.isArray(layers)) {
+      if ("coverageExcludes" in layers) declared.push(name);
+    }
+  }
+  return declared.sort();
+}
+
 test("P2 root-shared：真实拓扑精确登记 settings namespace 变异段", () => {
   const topology = JSON.parse(readFileSync(TOPOLOGY_PATH, "utf8"));
   assert.deepEqual(topology.$rootShared, {
@@ -230,34 +252,38 @@ test("F15 反证：落盘 conf 的 mutate 面与断言口径同源（含 coverag
   }
 });
 
-test("#773 R4：coverageExcludes 是 { pattern, reason, kind } 结构化条目（3 包共 14 条）", () => {
+/**
+ * coverageExcludes 的形状校验：**对象**是「每一个声明了 `testLayers.coverageExcludes` 的登记包」，
+ * 从拓扑派生，不手挑包名。
+ *
+ * 为什么对象必须是派生的（本条的由来）：一份手挑的包名清单是「必须跟着代码走的清单」，登记里
+ * 新增豁免的包（本轮实测即 dsh-lan-proxy 的 2 条）整段落空，而用例名与断言却声称覆盖全部登记包——
+ * 过度声称。此时形态回归对清单外的包恒绿：裸 glob / 缺 pattern / reason 过短 / 未知 kind 都打不
+ * 红它（已实测：把 dsh-lan-proxy 某条 kind 改成非法值、把另一条退化成裸字符串，本用例 30 条全绿）。
+ *
+ * 规模（每包条数、总条数）是**报告不是断言**：写死总数等于把清单复制进测试，于是下一次有意的登记
+ * 动作必须改测试代码——那既制造漂移源，又让「数量变了」在 diff 里被当成测试改动顺带溜过。
+ * 「加豁免必须是有意的登记动作」这条关切由谁接，写在本用例末尾的注释里。
+ */
+test("#773 R4：每个声明 coverageExcludes 的登记包都逐条过形状校验（对象派生，规模只报告）", (t) => {
   const topology = JSON.parse(readFileSync(TOPOLOGY_PATH, "utf8"));
-  // 规模断言：形状变更范围 14 条（dsh-mcp-manager 3 / dsh-notifier 5 / dsh-provider-usage 6）。
-  // notifier 是 5 而不是 4：原 `**/deps.ts` 一条拆成两条——7 个纯类型域出口 + 含运行时
-  // 实现的 system/deps.ts 单列（复核实测它转译后有运行时代码，不能与纯类型共用一条 reason）。
-  // mcp 是 3 而不是 1（#767 B0 + B2a-wire W8）：原 facade 条重估后保留（目标形态的门面转译后仍有
-  // 运行时代码，但只转调、不裁决，故不属 type-only）、新增目标树 `src/server/*/deps.ts` 的纯类型面
-  // 出口条，W8 再新增 `src/connection/runtime/deps.ts`（B2b 前首个落在 `src/<域>/` 顶层的 deps.ts，
-  // 该子层 mutate glob 全是显式文件，不登记就进 uncoveredSrcFiles）。
-  // wfp 包已随 #840 退役（拓扑里无该包条目），故不计入三包范围。
-  // 数量变化必须是有意的登记动作，不能靠 diff 顺带溜过。
-  // pu 6→5（#767 终轮收尾：共享层 placement-math.js 退役，两包自持实现；
-  // pu 的薄 facade coverageExcludes 条目随之删除，包内实现已在 pipeline 段 mutate 面内）。
-  // pu 5→6（#768 S2：server/upgrade/deps.ts 纯类型窄面（UpgradeDeps 三项）新增 type-only 条目；
-  // S3 新增 server/upgrade/interface.ts 复用既有 facade 条（**/interface.ts），不新增条目）。
-  const expected = { "dsh-mcp-manager": 3, "dsh-notifier": 5, "dsh-provider-usage": 6 };
+  const registered = Object.entries(topology.packages) as Array<
+    [string, { testLayers?: Record<string, unknown> }]
+  >;
+  const declaredNames = new Set(declaredCoverageExcludePackages(topology));
+  const declared = registered.filter(([name]) => declaredNames.has(name));
+  // 载体自证：派生集合为空 = 一条都没判，恒绿；这是判红不是跳过（与判据⑤⑥⑦ 同一纪律）。
+  assert.ok(
+    declared.length > 0,
+    "没有任何登记包声明 testLayers.coverageExcludes（形状校验一条都没判，不得恒绿）",
+  );
 
-  const allReasons = [];
+  const allReasons: string[] = [];
+  const rows: string[] = [];
   let total = 0;
-  for (const [pkgName, count] of Object.entries(expected)) {
-    const pkgDef = topology.packages[pkgName];
-    const entries = pkgDef.testLayers.coverageExcludes;
+  for (const [pkgName, pkgDef] of declared) {
+    const entries = pkgDef.testLayers?.coverageExcludes;
     assert.ok(Array.isArray(entries), `${pkgName} 的 coverageExcludes 必须是数组`);
-    assert.equal(
-      entries.length,
-      count,
-      `${pkgName} 的 coverageExcludes 条目数与登记不符（形状变更范围必须显式同步）`,
-    );
     // 共享校验器：形状合法即零 problems（裸字符串 / 缺 pattern / reason 过短 / 未知 kind 都会红）
     assert.deepEqual(
       coverageExcludeProblems(pkgDef),
@@ -286,18 +312,33 @@ test("#773 R4：coverageExcludes 是 { pattern, reason, kind } 结构化条目�
       );
       allReasons.push(entry.reason);
     }
+    rows.push(`${pkgName}=${entries.length}`);
     total += entries.length;
   }
   assert.equal(
-    total,
-    14,
-    "coverageExcludes 共 14 条（#773 R4 的形状变更范围：notifier deps.ts 拆分后 5 条；#840 退役 wfp（13→12）；#767 B0 mcp 第 2 条（→13）；W8 connection/runtime/deps.ts 第 3 条（→14）；#767 终轮收尾删 pu 薄 facade 条（→13）；#768 S2 加 pu server/upgrade/deps.ts 条（→14））",
-  );
-  assert.equal(
     new Set(allReasons).size,
     allReasons.length,
-    "每条排除都是独立裁决，reason 不得复制同一句",
+    "每条排除都是独立裁决，reason 不得复制同一句（跨全部声明包去重）",
   );
+  // 规模是报告不是断言：`pnpm test:scripts` 的输出里能直接看到「谁、多少条」，
+  // 评审 diff 时不必去数，也就不必在测试里维护第二份计数。
+  t.diagnostic(
+    `coverageExcludes 登记面：${declared.length}/${registered.length} 个登记包声明，共 ${total} 条（${rows.join(" / ")}）`,
+  );
+
+  // 「数量变化必须是有意的登记动作」这条关切，去掉计数后机器还接得住多少（逐层如实，均已实跑）：
+  // 1) 形状层（本用例）：每条 entry 的 pattern/reason/kind、重复 pattern、复制 reason——机器化，且
+  //    对象是「每个声明包」，新增登记包不会再掉出校验面。
+  // 2) 有效裁剪层（既有判据⑦ `mutationFaceRatchetProblems`，gen-stryker-conf --check 跑）：新增一条
+  //    coverageExcludes 若真把在面文件挪出本分支的变异面，就是一次并集收缩，与 origin/main 比对即判红
+  //    （实测 exit 1）。唯一放宽通道是 gate-exemptions.json 里 gate=mutation-face 的台账条目——
+  //    「有意的登记动作」在机器上留下的痕迹正是这条台账，不需要测试再记一份计数。
+  // 3) 幽灵 glob（判据⑤ 存在性）：glob 在源码世界命中 0 个文件即判红（实测 exit 1）。
+  // 4) 不可机器化的一层：glob 命中磁盘上真实存在、但当前不在任何段正向面里的文件（例如
+  //    `!src/server/**/interface.ts`——服务端 8 个段的 mutate 都是显式文件，不含 interface.ts）。
+  //    这类「口径声明」判据⑤⑥⑦ 与形状校验全都看不见（实测 gen-stryker-conf --check exit 0 通过）：
+  //    机器无法区分「为将来形态兜底的有意声明」与「悄悄多加一条面不痛的排除」。改由 PR review
+  //    承接——它是四条里唯一需要人裁决的，形状/数量/裁剪三类回归已不再依赖它。
 });
 
 test("#773 R4 反证：形状不合法必须判红（裸字符串 / 缺 pattern / reason 空或过短 / 未知 kind）", () => {
@@ -343,6 +384,37 @@ test("#773 R4 反证：形状不合法必须判红（裸字符串 / 缺 pattern 
   assert.deepEqual(coverageExcludeProblems({ testLayers: { coverageExcludes: [valid] } }), []);
   // absent ≠ 空数组：未登记 coverageExcludes 的包不是形状错误
   assert.deepEqual(coverageExcludeProblems({ testLayers: {} }), []);
+});
+
+/**
+ * 本用例的「对象派生」这一层自身的反证：筛选口径落在「`testLayers` 是对象且该键在场」上，
+ * 不是包名、也不是条数。派生逻辑抽成纯函数后逐形态判红——派生写错（键名写死、只认真值、
+ * 漏了非数组形态）都会在这里被打红，而不是退化成静默少判几个包。
+ */
+test("#773 R4 反证：声明包派生口径（键在场即入面；非对象 / 无 testLayers / 无键都不入面）", () => {
+  // 判定落在「键在场」：值为非数组（形状错误）也必须入面，否则 shape 错误会被派生层静默吃掉。
+  assert.deepEqual(
+    declaredCoverageExcludePackages({
+      packages: {
+        "a-good": { testLayers: { coverageExcludes: ["!x"] } },
+        "b-nonarray": { testLayers: { coverageExcludes: "!x" } },
+        "c-emptyarray": { testLayers: { coverageExcludes: [] } },
+        "d-nokey": { testLayers: { other: 1 } },
+        e: { testLayers: { coverageExcludes: ["!x"] } },
+        f: {},
+        g: { testLayers: null },
+        h: { testLayers: "nope" },
+        i: null,
+      } as never,
+    }),
+    ["a-good", "b-nonarray", "c-emptyarray", "e"],
+    "派生只认「登记是对象 + testLayers 是对象 + coverageExcludes 键在场」；非数组/空数组是形状错误，必须留在校验面内",
+  );
+  // 对照组：无人声明即空集（真实拓扑里的空集由上一条用例的载体自证判红，不在此处静默放过）
+  assert.deepEqual(
+    declaredCoverageExcludePackages({ packages: { a: {}, b: { testLayers: {} } } }),
+    [],
+  );
 });
 
 test("#773 R4 反证：生成器遇旧形状（裸 glob）必须以判词退出，不得抛栈崩掉", () => {
