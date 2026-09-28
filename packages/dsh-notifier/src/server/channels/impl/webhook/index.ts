@@ -22,6 +22,7 @@ import type {
   NotifyMessage,
   NotifySeverity,
 } from "../deliver/type.ts";
+import { admitDeliveryUrl } from "../deliver/url-gate.ts";
 import type {
   WebhookPreset,
   WebhookRenderVars,
@@ -107,6 +108,11 @@ export async function sendWebhook(
   message: NotifyMessage,
   fetchImpl: HttpFetch = defaultFetch,
 ): Promise<DeliverResult> {
+  // 准入先于模板渲染（#1016 P0）：地址不合规时没有可发的地方，渲染 body 只是白做一遍解析。
+  // 顺序反过来会让「地址错 + 模板错」的频道只报模板问题，用户改完模板再撞一次地址。
+  const admitted = admitDeliveryUrl(target.url);
+  if (!admitted.ok) return failed("reasonWebhookRequestFailed", { detail: admitted.cause });
+
   let body: string;
   try {
     // 空模板由 renderWebhookBody 回落到 preset 默认模板

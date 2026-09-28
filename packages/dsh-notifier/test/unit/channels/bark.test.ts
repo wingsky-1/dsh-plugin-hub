@@ -295,3 +295,125 @@ describe("失败分类：只回答可不可重试，不自己重投", () => {
     });
   });
 });
+
+describe("出站 URL 硬闸（#1016 P0）：发出去之前先判地址", () => {
+  // 判据逐条是「桩 fetch 没被调用」：只断言返回 failed 时，一个把校验写在 fetch 之后、
+  // 或者干脆把 URL 原样发出去的实现同样能绿。
+  it("解析失败 / userinfo / 非 http(s) 的 baseUrl 一律不出站，原因自带「已拒绝投递」", async () => {
+    const cases: ReadonlyArray<readonly [string, string, string]> = [
+      // 解析失败这一支同时是**行为变更点**：写面只校验 baseUrl 是非空串
+      // （config/impl/input/index.ts 的 bark 频道校验），"api.day.app" 存得进配置。
+      // 改前它在 fetch 里抛 TypeError、被 catch 成网络错误（retryable=true，重投三次同一个
+      // 错地址）；改后由硬闸拒投（retryable=false，detail 说明是地址解析不了）。
+      ["解析失败", "api.day.app", "解析失败"],
+      // 凭据拼进 URL 会留在对端访问日志里（与本包「device key 不落 URL」同一条红线）
+      ["userinfo", "http://user:pass@127.0.0.1:40281/bark", "userinfo"],
+      // userinfo 判据是「用户名或口令**任一**非空」，两种单边形态同样要拒：写面只校验 baseUrl 是
+      // 非空串，`user@` / `:pass@` 都存得进配置，且都会把凭据留在对端访问日志里。
+      // 只测 `user:pass@` 一种形态时，判据被写成 `&&`（两边都非空才拒）的实现全文照绿——实测它把
+      // 这两种真的放了出去。同仓原版 secure-fetch.test.ts:141 早有「userinfo 无口令同样拒绝」，
+      // 这次补齐即是对齐那份样板。
+      ["userinfo 无口令", "http://user@127.0.0.1:40281/bark", "userinfo"],
+      ["userinfo 无用户", "http://:pass@127.0.0.1:40281/bark", "userinfo"],
+      ["ftp", "ftp://127.0.0.1:40281/bark", "ftp:"],
+    ];
+    for (const [label, baseUrl, expected] of cases) {
+      const calls = stubFetch(() => jsonResponse({ code: 200 }));
+      const result = await sendBark(targetOf({ baseUrl }), messageOf());
+
+      expect(calls, label + "：地址不合规时桩 fetch 不该被调用").toHaveLength(0);
+      expect(result.status, label).toBe("failed");
+      // URL 是配置事实：判成可重试会把用户的错配置打三遍
+      expect(retryableOf(result), label).toBe(false);
+      const reason = reasonOf(result);
+      expect(reason.code, label).toBe("reasonBarkRequestFailed");
+      // 原因必须自带「没发出去」：客户端主文案是「Bark 请求失败（网络或超时）」
+      expect(reason.detail, label).toContain("已拒绝投递");
+      expect(reason.detail, label).toContain(expected);
+    }
+  });
+
+  // 防收紧过头：内网自建 bark-server 是 README 明写支持的场景，拦私网等于关掉主要用法。
+  // 判的是真的发出去并按 2xx 判成功，不是「没被拒」。
+  it("合法私网 bark 仍放行并照常投递（不得按私网 / 回环 / 链路本地拦）", async () => {
+    const calls = stubFetch(() => jsonResponse({ code: 200 }));
+    expect(await sendBark(targetOf({ baseUrl: "http://192.168.1.10:8080" }), messageOf())).toEqual({
+      status: "ok",
+      stage: "delivered",
+    });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.url).toBe("http://192.168.1.10:8080/push");
+  });
+
+  // 回归护栏：准人是「多一道否决」不是「换了发送方式」。默认 baseUrl 是回环地址——本文件其余
+  // 用例全部经它，若闸误拦回环，全文一起红，这条因此是把「放行路径一字未改」钉住的锚。
+  it("放行时地址拼接与推送体一字不变（准入不改变放行路径的行为）", async () => {
+    const calls = stubFetch(() => jsonResponse({ code: 200 }));
+    expect(await sendBark(targetOf(), messageOf())).toEqual({ status: "ok", stage: "delivered" });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.url).toBe("http://127.0.0.1:40281/bark/push");
+    expect(calls[0]!.method).toBe("POST");
+    expect(bodyOf(calls[0]!)).toMatchObject({ device_key: "dk-secret-1", title: "标题" });
+  });
+});
+
+describe("/push 拼到 pathname 上（#1016 P0）：query 与尾斜杠都不再打歪地址", () => {
+  // 判据是桩 fetch 收到的**完整 URL**：只断「已送达」的话，一个把 /push 拼到别处、或者干脆
+  // 不拼的实现同样能绿。旧实现是 `baseUrl + "/push"` 字符串拼接，两档 base 各打歪一次。
+  it("base 带 query：/push 落在 pathname 上，query 原样留在后面", async () => {
+    const calls = stubFetch(() => jsonResponse({ code: 200 }));
+    expect(
+      await sendBark(targetOf({ baseUrl: "http://127.0.0.1:40281/bark?tenant=a" }), messageOf()),
+    ).toEqual({ status: "ok", stage: "delivered" });
+    expect(calls).toHaveLength(1);
+    // 旧拼接得到 .../bark?tenant=a/push —— /push 掉进 query 串，实际打到被截断的 /bark
+    expect(calls[0]!.url).toBe("http://127.0.0.1:40281/bark/push?tenant=a");
+  });
+
+  it("base 带尾斜杠：/push 紧跟末段之后（不得拼出 //push 双斜杠）", async () => {
+    const calls = stubFetch(() => jsonResponse({ code: 200 }));
+    expect(await sendBark(targetOf({ baseUrl: "https://api.day.app/bark/" }), messageOf())).toEqual(
+      { status: "ok", stage: "delivered" },
+    );
+    expect(calls).toHaveLength(1);
+    // 旧拼接得到 .../bark//push —— 多出一个空路径段，部分反代会把它当成独立段拒收
+    expect(calls[0]!.url).toBe("https://api.day.app/bark/push");
+  });
+
+  // 连续尾斜杠是**另一种**形态：只测单个 `/` 时，把去尾斜杠的正则从 `/\/+$/` 收窄成
+  // `/\/$/` 的实现同样全绿，而它拼出的 `https://host/a//push` 与本 issue 要修的 `//push` 是同一
+  // 种空路径段（部分反代把它当独立段拒收，用户只看到「推不出去」）。判据是完整 URL 逐字比对。
+  it("base 带连续尾斜杠：整段尾斜杠都去掉（不得拼出 /a//push 空路径段）", async () => {
+    const calls = stubFetch(() => jsonResponse({ code: 200 }));
+    expect(await sendBark(targetOf({ baseUrl: "https://host/a//" }), messageOf())).toEqual({
+      status: "ok",
+      stage: "delivered",
+    });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.url).toBe("https://host/a/push");
+  });
+
+  // 见证「修 query 拼接没把最常见形态改坏」：默认 baseUrl 带子路径且不带 query。
+  // 上一条 describe 的锚也断同一事实，那条锚的是整个请求（method/header/body），此处是拼接本身。
+  it("base 带子路径且无 query：/push 追加在路径末尾", async () => {
+    const calls = stubFetch(() => jsonResponse({ code: 200 }));
+    expect(await sendBark(targetOf({ baseUrl: "https://host/a/b" }), messageOf())).toEqual({
+      status: "ok",
+      stage: "delivered",
+    });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.url).toBe("https://host/a/b/push");
+  });
+
+  // hash 无需特判的理由钉在这里：fragment 不随请求发出、fetch 忽略它，故落点是 /x/push
+  // 而不是被 fragment 截断的 /x —— 旧的字符串拼接在这个 base 上正好打歪成后者。
+  it("base 带 hash：/push 同样落在 pathname 上（fragment 不参与请求）", async () => {
+    const calls = stubFetch(() => jsonResponse({ code: 200 }));
+    expect(await sendBark(targetOf({ baseUrl: "https://host/x?t=1#frag" }), messageOf())).toEqual({
+      status: "ok",
+      stage: "delivered",
+    });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.url).toBe("https://host/x/push?t=1#frag");
+  });
+});

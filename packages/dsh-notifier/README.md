@@ -249,7 +249,10 @@ http/https）、`deviceKey`（Bark App 内查看；响应中一律掩码 `******
   - **device key 不落 URL**：推送走 `POST {baseUrl}/push` + JSON body（`device_key` 字段）——反代 access log 默认只记 URL 与 header，正文不落日志
   - **响应掩码单一出口**：GET /config 的 user+effective 与 PUT 成功响应中的 `deviceKey` 一律掩码 `********`；提交整值掩码 = 保持原值（按实例 id 对齐回填，防止数组顺序变化串凭据）
   - **错误出口不做凭据替换（实测）**：Bark 4xx 响应体会回显 key 原文——失败原因按原文截断后进 logger 与 `status.json`，不再按 device key 字面替换，也不再有 `sent` 事件这一路出口（详见「安全模型」）
-  - **SSRF 姿态**：`baseUrl` 限 http/https scheme、拒绝带凭据 URL（`user:pass@host`）、丢弃 query/hash。**不做域名白名单**——baseUrl 指向内网自建 bark-server 是合法场景；已知残余风险：局域网内可访问 dsh web 的调用方（经 lan-proxy 反代可穿透 loopback 围栏，见部署文档）可借 `/test` 触发一次对 `baseUrl` 的出站 POST（半盲，响应错误摘要仅回显一段截断后的原文）。对该风险敏感的部署可将插件 `enabled` 关闭或用独立端口方案（后续版本）
+  - **SSRF 姿态**：`baseUrl` 限 http/https scheme、拒绝内嵌凭据的 URL（`user:pass@host`）。这些判据（另加 URL 解析失败）由**出站前硬闸**（`deliver/url-gate.ts`）在 `fetch` 之前逐条判定：不合规的目标根本不发，原因进失败理由的 `detail`（`retryable=false`，不重投——URL 是配置事实，重投只是把同一个错地址打三遍）。**不做域名白名单**——baseUrl 指向内网自建 bark-server 是合法场景
+  - **`/push` 用 URL API 拼到 pathname 上（#1016 P0）**：此前是 `baseUrl + "/push"` 字符串拼接，base 带 query 时 `/push` 会掉进 query 串（实际打到被截断的路径），base 带尾斜杠时拼出 `//push` 双斜杠；改后 `/push` 一定落在 pathname 上，query 原样留在后面
+  - **明示残余风险（安全债务，#1016 放宽项）**：本条曾把「去 query/hash」写成对用户的承诺，本次方向变更**放弃机器强制**——query 里的凭据（如 `?token=`、`?api_key=`）会随 URL 进对端访问日志，现在**不再有任何机器拦截**，只剩本 README 的「凭据只走请求头、不拼 URL」文档约定。凭据型 query 的诊断告警需新的展示面（配置批次范围），写面按关键字拦又会误伤用户自建网关的正常 `?api_key=`，两侧均登记为 follow-up
+  - **其他已知残余风险**：局域网内可访问 dsh web 的调用方（经 lan-proxy 反代可穿透 loopback 围栏，见部署文档）可借 `/test` 触发一次对 `baseUrl` 的出站 POST（半盲，响应错误摘要仅回显一段截断后的原文）。对该风险敏感的部署可将插件 `enabled` 关闭或用独立端口方案（后续版本）
 
 ### Webhook 推送频道（#508）
 
@@ -263,7 +266,7 @@ http/https）、`deviceKey`（Bark App 内查看；响应中一律掩码 `******
 |---|---|
 | `id` | 实例 id（2-32 位小写字母/数字/连字符，创建后锁定；`kindRoutes` 对齐键与掩码回填对齐键） |
 | `name` | 显示名（缺省回退 id） |
-| `url` | 目标地址（http/https；normalize 规范化为 origin+path——去 query/hash、拒绝带凭据 URL） |
+| `url` | 目标地址（写面只校验非空串；出站前硬闸拒绝非 http(s) 与内嵌凭据 URL，query 原样保留） |
 | `enabled` | 是否启用（默认 **false**——出站授权须显式开启） |
 | `auth` | 认证方式：`none`（默认）/ `bearer` / `basic` / `header` |
 | `token` | bearer 认证令牌（secret：响应一律掩码 `********`） |
@@ -305,7 +308,8 @@ http/https）、`deviceKey`（Bark App 内查看；响应中一律掩码 `******
   - **保留键防配置绕过（`WEBHOOK_RESERVED_KEYS`）**：`auth_token` / `access_token` / `bearer_token` / `api_key` / `apikey` / `client_secret` / `secret` / `password_hash` 等凭据别名键一律剔除/写拒——合法凭据只能走已知 secret 字段（经掩码收口）
   - **JSON 注入防护**：模板渲染 JSON-aware 两步法（值级替换 + 重新序列化统一转义），通知内容无法逃逸出字符串注入额外 JSON 字段
   - **错误出口不做凭据替换**：与 Bark 同款——非 2xx 响应体截断 200 字符后按原文进失败理由的 `detail`，不再按凭据字面替换、不过规则表（详见「安全模型」）
-  - **URL SSRF 姿态（与 Bark 同款 normalize）**：scheme 限 http/https、拒绝带凭据 URL（`user:pass@host`）、去 query/hash；不做域名白名单——内网自建网关是合法场景；自定义头名禁端到端关键头（`content-type`/`content-length`/`host`/`cookie`/`authorization`）防请求走私/破坏 JSON body
+  - **URL SSRF 姿态（与 Bark 同款硬闸）**：scheme 限 http/https、拒绝内嵌凭据的 URL（`user:pass@host`）——出站前逐条判定，不合规即拒投（`retryable=false`，原因入 `detail`）；不做域名白名单——内网自建网关是合法场景；自定义头名禁端到端关键头（`content-type`/`content-length`/`host`/`cookie`/`authorization`）防请求走私/破坏 JSON body
+  - **url 原样使用，不做拼接**（与 Bark 不同）：`fetch(target.url)` 逐字发出，带 query 的地址（`https://gateway/hook?tenant=x`）合法可用。与 Bark 同样的明示残余风险见上：query 里的凭据不再有机器拦截（#1016 放宽项）
   - **失败不重试**：投递失败即终态（4xx/5xx/网络错误/渲染失败），无自动重试带来的出站放大
   - webhook 为**增量频道类型**：不改变既有频道与通知出口（SSE 帧 / 系统通知 / 历史 jsonl）的语义与兼容承诺
 
@@ -436,7 +440,7 @@ SSE 通知帧（浏览器 EventSource 订阅；`?since=<seq>` 断线补拉）
 
 测试通知（收敛到 service 管线，绕过免打扰；body 可选 `{channelId}` 指定单频道测试）。请求体上限 16K（与 settings 端对齐）。
 
-**草稿测试（dry-run）**：body 带 `draft` 即测眼前草稿——`{channelId, draft: {channels: [...]}}`（`draft` 只认 `channels`，须含目标频道的完整条目；顶层其它键与 `revision` 忽略；此时 `channelId` 必填）。逐项校验（跳过「内置必须在场」），掩码按 id 还原（新频道无源 / 改名带掩码 / 跨类型残留掩码一律 400）；直构单目标实测（跳过 enabled 门，不走裁决 / 路由 / 节奏 / 重试，单次尝试），同步返回 `{ok, channelId, status, reason?}`（`status` 为 `ok` / `failed` / `skipped`，`reason` 为截断后的结构化理由）。**全程零落盘**：不写历史与状态、不推进 `revision`、不记日志、不推浏览器真通知（browser 返回 ok 但不 emit，以面板结果为准）。出站安全：bark / webhook 走 SSRF 安全 fetch（仅 http(s)、拒 userinfo、全量 DNS 分类、重定向逐跳复检、建连钉死核验 IP、上限 5 跳、响应体至多读 16K、单跳超时复用出口 clamp 再压 15s 上限）；system 沿用出口原函数（平台能力读共享缓存，子进程靠 KILL 8s 回收）。服务端总预算 15s（超时 408，结果丢弃，在飞的投递无法撤回）；并发帽 2（超限 429 `dry-run-busy`，不排队，请手动重试）。
+**草稿测试（dry-run）**：body 带 `draft` 即测眼前草稿——`{channelId, draft: {channels: [...]}}`（`draft` 只认 `channels`，须含目标频道的完整条目；顶层其它键与 `revision` 忽略；此时 `channelId` 必填）。逐项校验（跳过「内置必须在场」），掩码按 id 还原（新频道无源 / 改名带掩码 / 跨类型残留掩码一律 400）；直构单目标实测（跳过 enabled 门，不走裁决 / 路由 / 节奏 / 重试，单次尝试），同步返回 `{ok, channelId, status, reason?}`（`status` 为 `ok` / `failed` / `skipped`，`reason` 为截断后的结构化理由）。**全程零落盘**：不写历史与状态、不推进 `revision`、不记日志、不推浏览器真通知（browser 返回 ok 但不 emit，以面板结果为准）。出站安全：bark / webhook 走 SSRF 安全 fetch（仅 http(s)、拒 userinfo、全量 DNS 分类、重定向逐跳复检、建连钉死核验 IP、上限 5 跳、响应体至多读 16K、单跳超时复用出口 clamp 再压 15s 上限）——**这一整套只属于 dry-run 路径**：保存后的真实投递走的是出口默认的全局 fetch，只过出站前的三判据硬闸（见上文「SSRF 姿态」），**不做** DNS 分类、逐跳复检与建连 IP 钉死；system 沿用出口原函数（平台能力读共享缓存，子进程靠 KILL 8s 回收）。服务端总预算 15s（超时 408，结果丢弃，在飞的投递无法撤回）；并发帽 2（超限 429 `dry-run-busy`，不排队，请手动重试）。
 
 #### `/history`
 

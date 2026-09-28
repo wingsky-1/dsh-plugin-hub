@@ -264,3 +264,87 @@ describe("投递：凭据只走请求头，失败即终态", () => {
     expect(Array.from(reasonOf(result).detail ?? "")).toHaveLength(300);
   });
 });
+
+describe("出站 URL 硬闸（#1016 P0）：发出去之前先判地址", () => {
+  // 判据是「桩 fetch 没被调用」：只断言返回 failed 时，一个把校验写在 fetch 之后、
+  // 或者干脆把 URL 原样发出去的实现同样能绿。
+  it("解析失败 / userinfo / 非 http(s) 的 url 一律不出站，原因自带「已拒绝投递」", async () => {
+    const cases: ReadonlyArray<readonly [string, string, string]> = [
+      // 写面只校验 url 是非空串（config/impl/input/index.ts 的 webhook 频道校验），
+      // "ntfy.sh/x" 存得进配置，故这一支生产可达（把它 catch 成放行，全部测试仍会绿）
+      ["解析失败", "ntfy.sh/x", "解析失败"],
+      // 凭据拼进 URL 会留在对端访问日志与代理历史里（凭据只走请求头，见本文件上方用例）
+      ["userinfo", "http://user:pass@ntfy.sh/x", "userinfo"],
+      // userinfo 判据是「用户名或口令**任一**非空」，两种单边形态同样要拒（与 bark 出口同款判据）。
+      // 只测 `user:pass@` 时，判据被写成 `&&` 的实现全文照绿——实测它把这两种真的放了出去。
+      // 同仓原版 secure-fetch.test.ts:141 早有「userinfo 无口令同样拒绝」，这里是它的对齐。
+      ["userinfo 无口令", "http://user@ntfy.sh/x", "userinfo"],
+      ["userinfo 无用户", "http://:pass@ntfy.sh/x", "userinfo"],
+      ["ftp", "ftp://ntfy.sh/x", "ftp:"],
+    ];
+    for (const [label, url, expected] of cases) {
+      const calls = stubFetch(() => new Response("{}", { status: 200 }));
+      const result = await sendWebhook(targetOf({ url }), messageOf());
+
+      expect(calls, label + "：地址不合规时桩 fetch 不该被调用").toHaveLength(0);
+      expect(result.status, label).toBe("failed");
+      // 出口本就零重试（webhook 不幂等），这里只是把「地址不合规」也归到同一侧，不新开口子
+      expect(retryableOf(result), label).toBe(false);
+      const reason = reasonOf(result);
+      expect(reason.code, label).toBe("reasonWebhookRequestFailed");
+      // 原因必须自带「没发出去」：客户端主文案是「Webhook 请求失败（网络或超时）」
+      expect(reason.detail, label).toContain("已拒绝投递");
+      expect(reason.detail, label).toContain(expected);
+    }
+  });
+
+  // 防收紧过头：只读 origin + path 的公网 ntfy 是本出口的主用例，判据里不得出现地址分类。
+  it("合法 ntfy 仍放行并照常投递（不得按私网 / 回环 / 链路本地拦）", async () => {
+    const calls = stubFetch(() => new Response("{}", { status: 200 }));
+    expect(await sendWebhook(targetOf({ url: "https://ntfy.sh/x" }), messageOf())).toEqual({
+      status: "ok",
+      stage: "delivered",
+    });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.url).toBe("https://ntfy.sh/x");
+  });
+
+  // 回归护栏：准人是「多一道否决」不是「换了发送方式」。默认 url 是回环地址——本文件其余用例
+  // 全部经它，若闸误拦回环，全文一起红，这条因此是把「放行路径一字未改」钉住的锚。
+  it("放行时地址与请求体一字不变（准入不改变放行路径的行为）", async () => {
+    const calls = stubFetch(() => new Response("{}", { status: 200 }));
+    expect(await sendWebhook(targetOf(), messageOf())).toEqual({
+      status: "ok",
+      stage: "delivered",
+    });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.url).toBe("http://127.0.0.1:40281/hook");
+    expect(calls[0]!.method).toBe("POST");
+    expect(JSON.parse(calls[0]!.body)).toMatchObject({ title: "标题", body: "正文" });
+  });
+
+  // 顺序决定（#1016）：地址错与模板错同时成立时报哪一个。此前的安全属性（准人在 fetch 之前）
+  // 已被上面用例的 `calls` 为空钉住，剩下来的是「先判地址」这个顺序本身没有钉——把准入整块挪到
+  // 渲染之后，全部用例照绿，而用户改完模板再撞一次地址。判据是 reason.code：
+  // `{ url: "ntfy.sh/x", template: "{" }` 必须报地址解析失败（reasonWebhookRequestFailed），
+  // 而不是模板非法（reasonWebhookTemplateInvalid）。
+  it("地址与模板同时不合法时先报地址（准入先于模板渲染）", async () => {
+    const calls = stubFetch(() => new Response("{}", { status: 200 }));
+    const result = await sendWebhook(targetOf({ url: "ntfy.sh/x", template: "{" }), messageOf());
+    expect(reasonOf(result).code).toBe("reasonWebhookRequestFailed");
+    expect(reasonOf(result).detail).toContain("已拒绝投递");
+    expect(calls).toHaveLength(0);
+  });
+
+  // 防收紧过头（#1016 方向变更的正面判据）：webhook 出站是 fetchImpl(target.url)，**原样使用、
+  // 不做任何拼接**，带 query 的地址今日就能工作——`https://gateway/hook?tenant=x` 是合法且常用的
+  // 配法。判据是桩 fetch 收到的地址**逐字不变**：一旦有人又把 query 加回拒绝清单，这条先红。
+  it("带 query 的 url 放行且原样发出（不得把 query 收回拒绝清单）", async () => {
+    const calls = stubFetch(() => new Response("{}", { status: 200 }));
+    expect(await sendWebhook(targetOf({ url: "https://ntfy.sh/x?tenant=a" }), messageOf())).toEqual(
+      { status: "ok", stage: "delivered" },
+    );
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.url).toBe("https://ntfy.sh/x?tenant=a");
+  });
+});
