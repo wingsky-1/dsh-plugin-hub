@@ -68,10 +68,17 @@ export const RATCHET_BUCKETS: readonly RatchetBucket[] = [
     // float/panel/quick-add 渲染路径的顺带执行。本轮以 test/client-dom/core-dom.test.ts 补真判据
     // （25 例：pangu 四向 + 连字符不撕开、七条属性通道归属、子节点两种传法）。同一手法下
     // pangu 恒等化现 exit 1。
+    // 10 → 9：删掉 core/constants.ts 那条。量化日本文件 lines 60% / functions 0% / branches 0%——
+    // statusDot 被 float.ts:259 真实调用，但三个导出常量（API / STATUS_ORDER / STATUS_TEXT）无任何
+    // 直接断言，且 statusDot 的表外回落分支从未被走到。本轮以
+    // test/client-unit/client-core-constants.test.ts 补齐（11 例）：statusDot 六态配色用字面量表钉、
+    // 表外回落中性灰、回落色与 stopped/disabled 同串；STATUS_ORDER 展示次序与 titleKey 字面量钉；
+    // STATUS_TEXT 六态字典键字面量钉；API 11 条路由键面 + 绝对路径形态。
+    // 探针两处 exit 1：改 failed 档色值、改 statusDot 表外回落色。
     // 两条删除条件同时成立：① lines/branches 达 thresholds 同名键（见 pnpm cov 产物）；
     // ② 已登记进 mutation-topology 的 client-panel 段 mutate（持续执法面）。
     // 按维护者裁定「一条豁免一次落地」，每条豁免自成一次可独立回退的提交。
-    ceiling: 10,
+    ceiling: 9,
     note: "覆盖率排除面的 pending-project 暂缺豁免（水位与变异面同时成立才可删）",
   },
   {
