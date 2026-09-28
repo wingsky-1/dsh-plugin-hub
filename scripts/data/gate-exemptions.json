@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "note": "路径受限门禁的豁免台账（#733 计划项 3.1.2 / 3.2.2）。单一事实源：门禁不得再内嵌豁免常量（旧 forbid-homedir-src.mjs 的 WHITELIST、config-matrix-gate.ts 的 LAN_PROXY_UI_EXEMPT 均已迁入数据面）。机制实现在 scripts/lib/exemption-gate.ts：条目是**文件级**的，调用点粒度由各门禁的 marker 策略（markerRequired）决定。reviewBy 可选——**有**=临时豁免（自动进入全量门禁档的收口台账，见 scripts/gate/collect-exemptions.mjs 与 #765），**无**=长期条目（设计事实，不是待办）。exitCriteria 可选且与 reviewBy **平级入账**（#765 裁决「目标是零豁免，台账只是过渡期手段」：日期只说明何时再看一眼，条件才说明凭什么能删）。收口**不判红**（#765 裁决：收集打印 + 汇总 issue，人工处理），因此台账不会在到期日冻结 PR。",
+  "note": "路径受限门禁的豁免台账（#733 计划项 3.1.2 / 3.2.2）。单一事实源：门禁不得再内嵌豁免常量（旧 forbid-homedir-src.mjs 的 WHITELIST、config-matrix-gate.ts 的 LAN_PROXY_UI_EXEMPT 均已迁出判据本体——前者进数据面，lan-proxy 的 UI 豁免在 #875 H10 起进一步改为共置在 Config 键旁的 @not-gui 标记，本台账不承载它）。机制实现在 scripts/lib/exemption-gate.ts：条目是**文件级**的，调用点粒度由各门禁的 marker 策略（markerRequired）决定。reviewBy 可选——**有**=临时豁免（自动进入全量门禁档的收口台账，见 scripts/gate/collect-exemptions.mjs 与 #765），**无**=长期条目（设计事实，不是待办）。exitCriteria 可选且与 reviewBy **平级入账**（#765 裁决「目标是零豁免，台账只是过渡期手段」：日期只说明何时再看一眼，条件才说明凭什么能删）。收口**不判红**（#765 裁决：收集打印 + 汇总 issue，人工处理），因此台账不会在到期日冻结 PR。",
   "exemptions": [
     {
       "gate": "forbid-module-state-src",

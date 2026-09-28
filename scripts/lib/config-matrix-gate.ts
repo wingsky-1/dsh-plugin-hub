@@ -14,9 +14,10 @@
  * 断言清单（对齐 issue #471 v2 验收 2/3/4/5/6/7）：
  *   L1 lan-proxy：Config / FILE_CONFIG_VALIDATORS / SETTING_FIELD_HINTS 三表
  *      键集全等（双向，现 16）
- *   L2 lan-proxy：client DEFAULTS ⊆ schema；schema − DEFAULTS 差集 == UI 豁免表
- *      （scripts/data/dsh-lan-proxy-ui-exempt.json，门禁不再内嵌条目）；豁免带原因
- *      「文件:行」+ 单包 ≤8（条目数是策略，留代码）；豁免残留（键已 UI 化）亦红
+ *   L2 lan-proxy：client DEFAULTS ⊆ schema；schema − DEFAULTS 差集 == 带 @not-gui 标记的
+ *      豁免集（理由与键共置：标记写在 Config 键自己的相邻注释块内，无外部数据面）+ 单包
+ *      ≤8（上限是策略，留代码）；标记缺理由、标记不在任何键的相邻块内、豁免残留（键已
+ *      UI 化）亦红
  *   N1 notifier：configSurfaces 声明的 defaults 导出必须是非空对象（声明驱动，取代旧
  *      硬编码路径 src/config/{config,validators,normalize}.ts——#733 配置域搬到
  *      src/server/config/impl/** 后那三条路径全部 ENOENT，路径硬编码本身就是红因）
@@ -41,24 +42,24 @@ import {
 } from "./config-matrix-lib.ts";
 import { loadManifest } from "./plugins-manifest-lib.ts";
 
-// lan-proxy 客户端 UI 豁免表（#733 计划项 3.2.2 数据化）：条目（哪些键、为什么）是**事实**，
-// 在 scripts/data/dsh-lan-proxy-ui-exempt.json；条目数上限与「超限即红」是**策略**，留在代码里
-// ——把上限放进被约束的数据文件等于让被约束方自己改约束。
-const UI_EXEMPT_REL = "scripts/data/dsh-lan-proxy-ui-exempt.json";
+// lan-proxy 客户端 UI 豁免：**共置于 Config 键旁的 JSDoc 标记** `@not-gui <理由>`（#875 H10）。
+//
+// 为什么理由只能共置、不能派生：豁免的不是某种结构特征，是人的判断——targetHost 不给 GUI
+// 编辑是开放转发红线，wsDeflatePolicy 是 iOS Safari 启用 permessage-deflate 即失败（#308）。
+// 实测四个候选派生判据的干净并集只覆盖 {wsDeflatePolicy, targetPort}，host / targetHost
+// 无任何可派生依据，所以理由必须跟着它解释的那个键走。
+//
+// 旧形态（scripts/data/dsh-lan-proxy-ui-exempt.json + 自报「文件:行」锚点）已删、不留读：
+// 行号锚点连续漂移过四轮（重排、#826、f572cca5 展开文件头 import、#856 新键）而形态判据
+// 只认 /:\d+/ 看不出来，且同段的符号名从未被机器核验（把 reason 里的符号名改错照样过）。
+// 本形态用「标记必须落在该键自己的相邻注释块内」取代自报坐标：坐标不再由人申报，
+// 漂移与越界一并消失。
+//
+// 条目数上限与「超限即红」是**策略**，留在代码里——放进被约束的数据文件等于让被约束方改约束。
+const NOT_GUI_RE = /@not-gui\b[ \t]*(.*)$/;
 const UI_EXEMPT_MAX = 8;
 
-/**
- * 读取 UI 豁免表（键 → { reason, rationale }）。只做**结构**加载：IO / JSON / 数组形态 /
- * 键与原因的存在性 / 重复键。策略检查（≤8、原因含「文件:行」、锚点指向真身）留给
- * checkExempts，避免同一判据两处实现。
- * 任何结构错误都转 problem：豁免机制失效不能表现为「没有豁免」——那会把合法差集报成
- * 「漏 UI」，把修复方向指错。
- */
-interface UiExemptEntry {
-  reason: string;
-  rationale: string;
-}
-type UiExemptMap = Record<string, UiExemptEntry>;
+/** 单张表的加载结果：结构键集 + 源码文本/AST/声明行（豁免派生与后续断言都从这份读）。 */
 interface TableLoaded {
   err?: string;
   text?: string;
@@ -67,142 +68,163 @@ interface TableLoaded {
   keys?: string[];
   line?: number | null;
 }
-function loadUiExempt(root: string, problems: string[]): UiExemptMap {
-  const filePath = join(root, UI_EXEMPT_REL);
-  let json: Record<string, unknown>;
-  try {
-    json = JSON.parse(readFileSync(filePath, "utf8")) as Record<string, unknown>;
-  } catch (e) {
+
+/** 注释行（JSDoc 首行 / 续行 / 结尾行、斜杠注释行）——相邻块与缩进导出共用这一个词法。 */
+function isCommentLine(line: string): boolean {
+  const t = line.trim();
+  return t.startsWith("/*") || t.startsWith("*") || t.startsWith("//");
+}
+
+/** Config 表对象字面量所在行：声明行之后第一条以左花括号收尾的行。0 = 没找到。 */
+function configObjectStartLine(lines: string[], declLine: number, spanEnd: number): number {
+  for (let n = declLine; n < spanEnd && n <= lines.length; n += 1) {
+    if (lines[n - 1].trimEnd().endsWith("{")) return n;
+  }
+  return 0;
+}
+
+/**
+ * Config 表**顶层**属性的缩进：由对象字面量里第一条非注释属性行导出。
+ *
+ * 顶层属性比嵌套属性浅一层，故「同缩进 + 键名 + 冒号」就是顶层判据——嵌套对象里的同名
+ * 属性行缩进更深，天然不匹配。旧判据只认「行首缩进 + 键名 + 冒号」不校验层级：把
+ * `host: z.string()` 塞进 wsDeflatePolicy 的嵌套对象（零新增顶层键）再把锚点指过去即通过，
+ * 当时注释里写的「当前不可达」是错的。
+ */
+function topLevelIndent(lines: string[], startLine: number, spanEnd: number): string | null {
+  for (let n = startLine + 1; n < spanEnd && n <= lines.length; n += 1) {
+    const m = /^([ \t]+)\S/.exec(lines[n - 1]);
+    if (m && !isCommentLine(lines[n - 1])) return m[1];
+  }
+  return null;
+}
+
+/** 对象字面量的锚点（起始行 + 顶层缩进）；定位不到返回 null，调用方按未标记判红。 */
+function configObjectAnchor(
+  lines: string[],
+  declLine: number,
+  spanEnd: number,
+): { startLine: number; indent: string } | null {
+  if (declLine <= 0) return null;
+  const startLine = configObjectStartLine(lines, declLine, spanEnd);
+  if (startLine === 0) return null;
+  const indent = topLevelIndent(lines, startLine, spanEnd);
+  return indent === null ? null : { startLine, indent };
+}
+
+/** 该键的顶层定义行（1-based）；0 = 表里没有这一行。 */
+function propertyLineOf(
+  lines: string[],
+  key: string,
+  indent: string,
+  startLine: number,
+  spanEnd: number,
+): number {
+  const re = new RegExp(`^${indent}${key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}[ \\t]*:`);
+  for (let n = startLine + 1; n < spanEnd && n <= lines.length; n += 1) {
+    if (re.test(lines[n - 1])) return n;
+  }
+  return 0;
+}
+
+/**
+ * 键定义行正上方那段**连续注释**（1-based 闭区间）。空行即断链：留了空行就不再算「相邻」，
+ * 标记也就不会因为「反正挨着」而被收下。键上方没有注释时返回 null。
+ */
+function commentBlockAbove(lines: string[], defLine: number): [number, number] | null {
+  const to = defLine - 1;
+  if (to < 1 || !isCommentLine(lines[to - 1])) return null;
+  let from = to;
+  while (from - 1 >= 1 && isCommentLine(lines[from - 2])) from -= 1;
+  return [from, to];
+}
+
+/** 注释块里第一处 @not-gui：行号与理由；没有则 null。理由只取该行余下部分。 */
+function markerInBlock(
+  lines: string[],
+  block: [number, number],
+): { line: number; reason: string } | null {
+  for (let n = block[0]; n <= block[1]; n += 1) {
+    const m = NOT_GUI_RE.exec(lines[n - 1]);
+    if (m) return { line: n, reason: m[1].replace(/\*\/\s*$/, "").trim() };
+  }
+  return null;
+}
+
+/** 单键标记裁决：返回该键是否被豁免；块内行号记进 claimed（供反查认领）。 */
+function keyMarker(
+  lines: string[],
+  key: string,
+  defLine: number,
+  claimed: Set<number>,
+  problems: string[],
+): boolean {
+  const block = commentBlockAbove(lines, defLine);
+  if (block === null) return false;
+  for (let n = block[0]; n <= block[1]; n += 1) claimed.add(n);
+  const marker = markerInBlock(lines, block);
+  if (marker === null) return false;
+  if (marker.reason.length === 0) {
     problems.push(
-      `lan-proxy UI 豁免表不可读（${UI_EXEMPT_REL}）：${String((e as Error).message).split("\n")[0]}`,
+      `lan-proxy 配置键 ${key}（Config 第 ${defLine} 行）的 @not-gui 标记没有理由——「为什么不渲染 GUI」必须写出来`,
     );
-    return {};
+    return false;
   }
-  if (!Array.isArray(json.exemptKeys)) {
-    problems.push(`lan-proxy UI 豁免表缺 exemptKeys 数组（${UI_EXEMPT_REL}）`);
-    return {};
-  }
-  const out: UiExemptMap = {};
-  for (const item of json.exemptKeys as unknown[]) {
-    applyExemptEntry(out, item, problems);
+  return true;
+}
+
+/**
+ * 全文件里没有被任何键的相邻注释块认领的 @not-gui 一律判红：标记必须紧贴它豁免的那个键。
+ *
+ * 这是旧「:90-190 覆盖整段」假绿的封口。行号锚点能括住任意区间而门禁只查「区间内有一行
+ * 命中」，仓内测试甚至祝福过区间写法；共置标记没有坐标可填，挪到别的键的注释里、或挪到
+ * Config 表之外（文件头注释、同文件其它声明）都冒充不了豁免。
+ */
+function strayMarkerProblems(lines: string[], claimed: Set<number>): string[] {
+  const out: string[] = [];
+  for (let n = 1; n <= lines.length; n += 1) {
+    if (NOT_GUI_RE.test(lines[n - 1]) && !claimed.has(n)) {
+      out.push(
+        `lan-proxy 第 ${n} 行的 @not-gui 标记不属于任何配置键的相邻注释块——标记必须紧贴它豁免的键`,
+      );
+    }
   }
   return out;
 }
 
-function applyExemptEntry(out: UiExemptMap, item: unknown, problems: string[]): void {
-  const entry = item as Record<string, unknown>;
-  if (
-    item === null ||
-    typeof item !== "object" ||
-    typeof entry.key !== "string" ||
-    (entry.key as string).length === 0
-  ) {
-    problems.push(`lan-proxy UI 豁免表条目缺 key（${UI_EXEMPT_REL}）`);
-    return;
-  }
-  if (typeof entry.reason !== "string" || (entry.reason as string).length === 0) {
-    problems.push(`lan-proxy UI 豁免键 ${entry.key as string} 缺 reason（${UI_EXEMPT_REL}）`);
-    return;
-  }
-  const key = entry.key as string;
-  if (out[key] !== undefined) {
-    problems.push(`lan-proxy UI 豁免表存在重复键：${key}`);
-    return;
-  }
-  out[key] = {
-    reason: entry.reason as string,
-    rationale: typeof entry.rationale === "string" ? (entry.rationale as string) : "",
-  };
+interface NotGuiScan {
+  keys: string[];
+  problems: string[];
 }
 
-/** 豁免表结构自检：≤8 键 + 每条 reason 含「文件:行」+ 锚点必须指向真身（见 exemptAnchorProblems）。 */
-function checkExempts(
-  pkg: string,
-  exempt: UiExemptMap,
-  schema: TableLoaded,
-  cfgPath: string,
-): string[] {
+/** 豁免集从 Config 源码派生：逐键「顶层定义行 → 相邻注释块 → @not-gui」，无外部数据面。 */
+function scanNotGui(schema: TableLoaded, spanEnd: number): NotGuiScan {
+  const lines = schema.text!.split("\n");
   const problems: string[] = [];
-  const keys = Object.keys(exempt);
-  if (keys.length > UI_EXEMPT_MAX) {
-    problems.push(`${pkg} 豁免表 ${keys.length} 键 > ${UI_EXEMPT_MAX}（超限即红，强制走评审）`);
+  const keys: string[] = [];
+  const claimed = new Set<number>();
+  const anchor = configObjectAnchor(lines, schema.line ?? 0, spanEnd);
+  if (anchor === null) {
+    problems.push(
+      `lan-proxy Config 表对象字面量定位失败（声明行 ${schema.line ?? "未知"}）——豁免标记无从归属，按未标记判红`,
+    );
+    return { keys, problems };
   }
-  // Config 表跨「export const Config」到校验表声明之前，锚点必须落在这个区间内。
-  const spanEnd = sourceLineOf(schema.text!, "FILE_CONFIG_VALIDATORS") ?? Number.POSITIVE_INFINITY;
-  for (const k of keys) {
-    const { reason, rationale } = exempt[k];
-    if (typeof reason !== "string" || reason.length === 0 || !/:\d+/.test(reason)) {
-      problems.push(`${pkg} 豁免键 ${k} 缺原因（须含「文件:行 + 一句理由」）`);
+  for (const k of schema.keys!) {
+    const defLine = propertyLineOf(lines, k, anchor.indent, anchor.startLine, spanEnd);
+    if (defLine === 0) {
+      problems.push(`lan-proxy Config 表里找不到键 ${k} 的顶层定义行（提取器与源码不同步）`);
       continue;
     }
-    problems.push(...exemptAnchorProblems(pkg, k, reason, rationale, schema, cfgPath, spanEnd));
+    if (keyMarker(lines, k, defLine, claimed, problems)) keys.push(k);
   }
-  return problems;
-}
-
-/**
- * 豁免键的「文件:行」锚点必须指向该键在 Config 表里的定义行。
- *
- * 为什么需要机器判据：本包的行号锚点连续漂移过两次——重排前登记 80/96/102/119 而真身在
- * 94/110/116/141；#826 改成 87/103/109/134 之后，f572cca5 展开文件头 import 又把它推到
- * 91/107/113/138。原来的形态判据只认 /:\d+/，漂移只能靠人眼发现，而门禁绿反而会让人
- * 以为锚点是对的。
- *
- * 判据取文本而非 AST：esbuild transform 会重排行号，AST 的 loc 对不上源文件——同
- * sourceLineOf 放弃 AST 的原因。锚点路径允许写成全仓库路径 / 包内相对路径 / 裸文件名
- * （都以 Config 文件路径为后缀，`./` 前缀先归一），引用其它文件的锚点不在本判据的适用面内。
- *
- * 已知边界（当前不可达，如实写明胜过过度声称）：propRe 只认「行首缩进 + 键名 + 冒号」，
- * 不校验它是 Config 的**顶层**属性——若将来某个嵌套对象里出现与顶层豁免键同名的属性行，
- * 锚点指向那一行也会通过。当前 4 个豁免键在 Config 区间内各自只有 1 行匹配（逐键实测）。
- *
- * 路径比较取「以 Config 文件路径为**后缀**」而非相等，是为了同时收下全仓库路径、包内相对
- * 路径与裸文件名三种写法。它不会误收别的文件：被接受者必然是 Config 路径的字符串后缀，因而
- * 在某个祖先目录下解析出的就是同一个文件。实测被判否的写法：not-model.ts / xmodel.ts /
- * del/model.ts / scripts/data/model.ts / ../../etc/model.ts（全部落进「未指向 Config 表所在
- * 文件」）。改文件名或用不构成后缀的路径都躲不开。
- */
-function exemptAnchorProblems(
-  pkg: string,
-  k: string,
-  reason: string,
-  rationale: string,
-  schema: TableLoaded,
-  cfgPath: string,
-  spanEnd: number,
-): string[] {
-  const problems: string[] = [];
-  const lines = schema.text!.split("\n");
-  const propRe = new RegExp(`^[ \\t]*${k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}[ \\t]*:`);
-  // 锚点形态「<路径>:<行>」；区间写法（`:91-95`）与 `./` 前缀都是人写锚点的自然形态，
-  // 判据不该因为写法差异判红——那只会把修复方向指错。
-  const anchors = [...`${reason}\n${rationale}`.matchAll(/([\w./-]+\.[A-Za-z]+):(\d+)(?:-(\d+))?/g)]
-    .map((m) => ({
-      path: m[1].replace(/^\.\//, ""),
-      raw: m[0],
-      from: Number(m[2]),
-      to: m[3] === undefined ? Number(m[2]) : Number(m[3]),
-    }))
-    .filter((a) => cfgPath.endsWith(a.path));
-  if (anchors.length === 0) {
+  problems.push(...strayMarkerProblems(lines, claimed));
+  if (keys.length > UI_EXEMPT_MAX) {
     problems.push(
-      `${pkg} 豁免键 ${k} 的锚点未指向 Config 表所在文件（${cfgPath}）：须写成「<路径>:<行>」才可被机器校验`,
+      `lan-proxy @not-gui 豁免 ${keys.length} 键 > ${UI_EXEMPT_MAX}（上限是策略，超限即红）`,
     );
-    return problems;
   }
-  for (const a of anchors) {
-    // 区间内**任意**一行命中即算指向正确——区间常把上方注释一起括进来。
-    let hit = false;
-    for (let line = a.from; line <= a.to && !hit; line += 1) {
-      hit = line >= schema.line! && line < spanEnd && propRe.test(lines[line - 1] ?? "");
-    }
-    if (!hit) {
-      problems.push(
-        `${pkg} 豁免键 ${k} 的锚点 ${a.raw} 指错——区间内没有一行是 Config 里 ${k} 的定义行（Config 表跨 ${schema.line}-${spanEnd - 1} 行）`,
-      );
-    }
-  }
-  return problems;
+  return { keys, problems };
 }
 
 /** 读取表键（容错返回 err；附带 text/ast/init/line 供下游派生断言）。 */
@@ -278,14 +300,7 @@ function runLanProxy(root: string): { problems: string[]; warnings: string[]; li
 
   checkLanProxyTableEquality(cfgPath, problems, schema, validators, hints);
 
-  const exemptKeys = checkLanProxyClientDefaults(
-    root,
-    problems,
-    schema,
-    defaults,
-    clientPath,
-    cfgPath,
-  );
+  const exemptKeys = checkLanProxyClientDefaults(problems, schema, defaults, clientPath);
 
   lines.push(
     `lan-proxy ${schema.keys!.length} 键 × [schema/validators/hints] 全等 + client DEFAULTS ${defaults.keys!.length}(豁免 ${exemptKeys.length})`,
@@ -333,37 +348,38 @@ function checkLanProxyTableEquality(
 }
 
 function checkLanProxyClientDefaults(
-  root: string,
   problems: string[],
   schema: TableLoaded,
   defaults: TableLoaded,
   clientPath: string,
-  cfgPath: string,
 ): string[] {
-  // L2：DEFAULTS ⊆ schema；schema − DEFAULTS == 豁免；豁免表结构自检
-  const exempt = loadUiExempt(root, problems);
-  problems.push(...checkExempts("lan-proxy", exempt, schema, cfgPath));
-  const exemptKeys = Object.keys(exempt);
+  // L2：DEFAULTS ⊆ schema；schema − DEFAULTS == 豁免；豁免集与标记自检（全部从 Config 派生）
+  // Config 表跨「export const Config」到校验表声明之前，顶层属性与标记都只在这个区间内认。
+  const spanEnd = sourceLineOf(schema.text!, "FILE_CONFIG_VALIDATORS") ?? Number.POSITIVE_INFINITY;
+  const scan = scanNotGui(schema, spanEnd);
+  problems.push(...scan.problems);
+  const exemptKeys = scan.keys;
   const d = diffKeys(schema.keys!, defaults.keys!);
   // DEFAULTS 出现 schema 外键 → 红（客户端提交未知键被宿主白名单静默丢弃）
   for (const k of d.extra)
     problems.push(
       `lan-proxy client DEFAULTS 多键（Config 之外）: ${k} @ ${clientPath}:${defaults.line}`,
     );
-  // schema − DEFAULTS 缺键必须恰为豁免集合（新增可编辑键漏 UI → 红）
+  // schema − DEFAULTS 缺键必须恰为带 @not-gui 标记的豁免集合（新增可编辑键漏 UI → 红；
+  // 真不给 GUI 编辑的键则因没标记而落在这里，报错行直接指回该写标记的地方）
   for (const k of d.missing) {
     if (!exemptKeys.includes(k))
       problems.push(
-        `lan-proxy client DEFAULTS 缺键（相对 Config，非豁免）: ${k} @ ${clientPath}:${defaults.line}（新增可编辑键漏 UI）`,
+        `lan-proxy client DEFAULTS 缺键（相对 Config，非豁免）: ${k} @ ${clientPath}:${defaults.line}（它确实不给 GUI 编辑就在该键相邻注释块内写 @not-gui <理由>）`,
       );
   }
-  // 豁免残留：豁免键出现在客户端 DEFAULTS 中 = 键已 UI 化但白名单未删
-  // （注意判据是「∈ DEFAULTS」而非「∉ 差集」——豁免键从 schema 删除时差集自然
-  // 不含它，此时不算残留）
+  // 豁免残留：带标记的键出现在客户端 DEFAULTS 中 = 键已 UI 化但标记没删
+  // （注意判据是「∈ DEFAULTS」而非「∉ 差集」——键从 Config 删除时差集自然不含它，
+  // 此时不算残留）
   for (const k of exemptKeys) {
     if (defaults.keys!.includes(k))
       problems.push(
-        `lan-proxy 豁免键 ${k} 已在客户端 DEFAULTS 中（豁免残留，应移除豁免或改豁免原因）`,
+        `lan-proxy 键 ${k} 标了 @not-gui 却已在客户端 DEFAULTS 中（豁免残留，应删标记或改理由）`,
       );
   }
   return exemptKeys;

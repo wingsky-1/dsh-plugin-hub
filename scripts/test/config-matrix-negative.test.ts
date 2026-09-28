@@ -11,6 +11,7 @@
  * 覆盖方向：
  *   lan-proxy ① 删 FILE_CONFIG_VALIDATORS 一键 → 红 ② DEFAULTS 增 schema 外键 → 红
  *     ③ 删 Config schema 键 → 红 ④ DEFAULTS 删非豁免键 → 红
+ *   UI 豁免（#875 H10 起共置为 Config 键旁的 @not-gui 标记，10 条见下方该节）
  *   notifier ⑤ 删 DEFAULT_CONFIG 一键（normalizeConfig 仍显式写该键 → 键集不等）→ 红
  *     ⑥ DEFAULT_CONFIG 加假键（normalizeConfig 不产出）→ 红
  *     ⑦ 声明指向不存在的模块 → 红（本轮红因「路径硬编码腐烂」的回归守卫）
@@ -86,11 +87,8 @@ function fakeRepo() {
           },
     );
     writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
-    // lan-proxy UI 豁免表（#733 3.2.2 起门禁读数据面而非内嵌常量）。
-    copyLf(
-      join(ROOT, "scripts/data/dsh-lan-proxy-ui-exempt.json"),
-      join(root, "scripts/data/dsh-lan-proxy-ui-exempt.json"),
-    );
+    // 不再复制 UI 豁免数据文件：#875 H10 起豁免理由共置在 Config 键旁的 @not-gui 标记里，
+    // 副本的输入面就是上面那份 model.ts 文本。
   } catch (e) {
     rmSync(root, { recursive: true, force: true });
     throw e;
@@ -387,77 +385,115 @@ test("notifier: COUNT_LIMITS 上界低于 DEFAULT_CONFIG 默认值 → 红（默
   );
 });
 
-// ---- UI 豁免表（#733 3.2.2 数据化）：门禁读数据面，数据面坏掉必须 fail-closed ----
+// ---- UI 豁免 = Config 键旁的 @not-gui 共置标记（#875 H10）----
+//
+// 事实源就是 Config 源码本身：豁免集由「顶层定义行 → 相邻注释块 → @not-gui」逐键派生，
+// 副本里没有独立数据文件可注入，故本段全部从 model.ts 注入。每条都是把对应 bug 种回去
+// 验过的负例；判据侧一旦放松（例如把「相邻」放宽成「同文件任意注释」），对应用例先红。
 
-/** 编辑副本里的数据文件（豁免表）。 */
-function editData(root: string, rel: string, fn: (text: string) => string) {
-  const f = join(root, "scripts", "data", rel);
-  writeFileSync(f, fn(readFileSync(f, "utf8").replace(/\r\n/g, "\n")));
+/** 编辑副本里的 Config 源文件，并自证注入真的改动了文本（真值漂移时先红，不空跑）。 */
+function mutateConfig(fn: (s: string) => string) {
+  return (root: string) => {
+    edit(root, "dsh-lan-proxy", "server/config/impl/model.ts", (s) => {
+      const after = fn(s);
+      assert.notEqual(after, s, "fixture 未被改写（Config 真值文本漂移了，请同步本注入）");
+      return after;
+    });
+  };
 }
 
-test("UI 豁免表: 文件缺失 → 红（fail-closed，不得退化成「没有豁免可用」）", () => {
+/** 摘掉第一处 @not-gui 标记行（host 是文件里第一个带标记的键）。 */
+function dropFirstMarker(s: string): string {
+  return s.replace(/^[ \t]*\*[ \t]*@not-gui[^\n]*\n/m, "");
+}
+
+test("UI 豁免标记: Config 文件缺失 → 红（fail-closed，豁免面坏掉不得当作零豁免）", () => {
   const root = fakeRepo();
   try {
-    rmSync(join(root, "scripts/data/dsh-lan-proxy-ui-exempt.json"));
+    rmSync(join(root, "packages/dsh-lan-proxy/src/server/config/impl/model.ts"));
     const r = runConfigMatrix(root);
-    assert.equal(r.pass, false, "豁免表缺失应红");
+    assert.equal(r.pass, false, "Config 源文件缺失应红");
     assert.ok(
-      r.problems.some((p) => p.includes("UI 豁免表不可读")),
-      `报错应指明豁免表不可读: ${r.problems.join("; ")}`,
+      r.problems.some((p) => p.includes("文件不可读")),
+      `报错应指明文件不可读: ${r.problems.join("; ")}`,
     );
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
 });
 
-test("UI 豁免表: 条目超上限（>8）→ 红（上限是策略，数据面不得自放宽）", () => {
+test("UI 豁免标记: 标记缺失 → 红并点名键（豁免理由只能共置在键旁，缺标记即等于漏 GUI）", () => {
+  assertRed("摘掉 host 的 @not-gui 标记", mutateConfig(dropFirstMarker), [
+    "host",
+    "DEFAULTS 缺键",
+    "@not-gui",
+  ]);
+});
+
+test("UI 豁免标记: 理由为空 → 红并点名键（「为什么不渲染 GUI」必须写出来）", () => {
   assertRed(
-    "豁免表塞进 9 条",
-    (root) => {
-      editData(root, "dsh-lan-proxy-ui-exempt.json", (s) => {
-        const json = JSON.parse(s);
-        for (let i = 0; i < 5; i++) {
-          json.exemptKeys.push({
-            key: `extra${i}`,
-            reason: "packages/dsh-lan-proxy/src/server/config/impl/model.ts:1 注入用例",
-          });
-        }
-        return `${JSON.stringify(json, null, 2)}\n`;
-      });
-    },
-    ["豁免表 9 键 > 8"],
+    "把 host 的 @not-gui 理由清空",
+    mutateConfig((s) => s.replace(/^([ \t]*\*[ \t]*)@not-gui[^\n]*$/m, "$1@not-gui")),
+    ["host", "标记没有理由"],
   );
 });
 
-test("UI 豁免表: 条目缺 reason → 红并点名键（结构自检不得静默跳过）", () => {
+test("UI 豁免标记: 标记挪到别的键的注释里 → 红（标记必须紧贴它豁免的键）", () => {
   assertRed(
-    "豁免表删掉一条 reason",
-    (root) => {
-      editData(root, "dsh-lan-proxy-ui-exempt.json", (s) => {
-        const json = JSON.parse(s);
-        delete json.exemptKeys[0].reason;
-        return `${JSON.stringify(json, null, 2)}\n`;
-      });
-    },
-    ["host", "缺 reason"],
+    "把 host 的标记挪到 port 上方",
+    mutateConfig((s) =>
+      dropFirstMarker(s).replace(/^(  )port: /m, "$1/* @not-gui 挪错了键 */\n$1port: "),
+    ),
+    ["host", "DEFAULTS 缺键", "port", "残留"],
   );
 });
 
-test("UI 豁免表: 重复键 → 红（重复即两处事实源）", () => {
+test("UI 豁免标记: 标记挪到 Config 表之外 → 红（这是旧「行号区间覆盖整段」的等价物）", () => {
+  // 旧形态里把锚点写成 :90-190 即可一次覆盖整个 Config 表而门禁判绿；共置形态没有坐标可填，
+  // 但「在 Config 声明自己的文档注释里写一条标记」是它最接近的等价物——判据必须识破。
   assertRed(
-    "豁免表复制一条 host",
-    (root) => {
-      editData(root, "dsh-lan-proxy-ui-exempt.json", (s) => {
-        const json = JSON.parse(s);
-        json.exemptKeys.push({ ...json.exemptKeys[0] });
-        return `${JSON.stringify(json, null, 2)}\n`;
-      });
-    },
-    ["重复键", "host"],
+    "把 4 条标记全撤掉并塞进 Config 声明的文档注释",
+    mutateConfig((s) =>
+      dropFirstMarker(s.replace(/^[ \t]*\*[ \t]*@not-gui[^\n]*\n/gm, "")).replace(
+        "/** 插件配置，由同名 schemastery schema 校验",
+        "/** 插件配置，@not-gui 覆盖整段。\n * 由同名 schemastery schema 校验",
+      ),
+    ),
+    ["不属于任何配置键的相邻注释块", "host", "targetHost"],
   );
 });
 
-test("UI 豁免表: 豁免键已出现在客户端 DEFAULTS → 红（豁免残留，键已 UI 化）", () => {
+test("UI 豁免标记: 标记与键之间留空行 → 红（相邻不许被空行稀释）", () => {
+  assertRed(
+    "在 host 的标记与定义行之间插空行",
+    mutateConfig((s) =>
+      s.replace(/^(  host: z\.string\(\)\.default\(DEFAULT_OPTIONS\.host\),)$/m, "\n$1"),
+    ),
+    ["host", "DEFAULTS 缺键", "不属于任何配置键的相邻注释块"],
+  );
+});
+
+test("UI 豁免标记: 豁免数超上限（>8）→ 红（上限是策略，标记面不得自放宽）", () => {
+  assertRed(
+    "再给 5 个键补上 @not-gui 标记（共 9 个）",
+    mutateConfig((s) => {
+      let out = s;
+      for (const re of [
+        /^  enabled: /m,
+        /^  port: /m,
+        /^  httpsEnabled: /m,
+        /^  httpsPort: /m,
+        /^  printBanner: /m,
+      ]) {
+        out = out.replace(re, (m) => `  /* @not-gui 注入用例 */\n${m}`);
+      }
+      return out;
+    }),
+    ["@not-gui 豁免 9 键 > 8"],
+  );
+});
+
+test("UI 豁免标记: 键已进客户端 DEFAULTS → 红（豁免残留，标记该删）", () => {
   assertRed(
     "客户端 DEFAULTS 补上 host",
     (root) => {
@@ -467,7 +503,7 @@ test("UI 豁免表: 豁免键已出现在客户端 DEFAULTS → 红（豁免残�
         return after;
       });
     },
-    ["豁免键 host 已在客户端 DEFAULTS 中"],
+    ["host", "标了 @not-gui 却已在客户端 DEFAULTS 中"],
   );
 });
 
@@ -504,77 +540,33 @@ test("量级: README 配置表缺键 → warn 不红（pass 仍 true）", () => 
   }
 });
 
-// ---- 豁免锚点判据（#826）：新增的机器判据自己也要能被一次实现改动打红 ----
+// ---- 标记定位判据：顶层定义行必须真在该键上，且写法差异不得误伤 ----
 
-test("UI 豁免表: 锚点指向错误的行 → 红并点名键（#826 新增判据的负向 fixture）", () => {
+test("UI 豁免标记: Config 键写成引号形态 → 红（顶层定义行定位失败即 fail-closed，不静默放行）", () => {
+  // 文本层按「同缩进 + 裸键名 + 冒号」认顶层属性行（与旧锚点判据同口径）。引号键不在该形态内，
+  // 故此处必须报出来而不是当作「没有标记」——后者会把合法源码改动报成「漏 GUI」，指错方向。
   assertRed(
-    "把 host 的锚点指到 Config 注释行（101）而不是定义行（102）",
-    (root) => {
-      editData(root, "dsh-lan-proxy-ui-exempt.json", (s) => {
-        const after = s
-          .split("server/config/impl/model.ts:102")
-          .join("server/config/impl/model.ts:101");
-        assert.notEqual(after, s, "fixture 应含 model.ts:102");
-        return after;
-      });
-    },
-    ["锚点", "指错", "host"],
+    '把 Config 里的 host 写成 "host"',
+    mutateConfig((s) =>
+      s.replace(
+        /^(  )host: z\.string\(\)\.default\(DEFAULT_OPTIONS\.host\),$/m,
+        '$1"host": z.string().default(DEFAULT_OPTIONS.host),',
+      ),
+    ),
+    ["找不到键 host 的顶层定义行"],
   );
 });
 
-test("UI 豁免表: 锚点指向别的文件 → 红（不能靠换路径躲开核验）", () => {
-  assertRed(
-    "把 host 的锚点路径换成 client/shared/defaults.ts（reason 与 rationale 两处）",
-    (root) => {
-      editData(root, "dsh-lan-proxy-ui-exempt.json", (s) => {
-        // 两处都要换：只换一处时另一处仍是合法锚点，判据本就不该报「未指向」。
-        const after = s.split("model.ts:102").join("defaults.ts:102");
-        assert.notEqual(after, s, "fixture 应含 model.ts:102");
-        return after;
-      });
-    },
-    ["未指向 Config 表所在文件"],
-  );
-});
-
-test("UI 豁免表: 锚点写法变体（./ 前缀 / 区间）仍应通过——判据不得被写法差异误伤", () => {
+test("UI 豁免标记: 标记写成斜杠注释 / 带括号与中文标点 → 仍应绿（不得因写法差异误伤）", () => {
   const root = fakeRepo();
   try {
-    editData(root, "dsh-lan-proxy-ui-exempt.json", (s) => {
-      const json = JSON.parse(s);
-      const host = json.exemptKeys.find((e: { key: string }) => e.key === "host");
-      const targetHost = json.exemptKeys.find((e: { key: string }) => e.key === "targetHost");
-      const before = JSON.stringify([
-        host.reason,
-        host.rationale,
-        targetHost.reason,
-        targetHost.rationale,
-      ]);
-      // **reason 与 rationale 都要改**：判据把两段文本合起来找锚点，只要任一字段还留着普通
-      // 路径锚点，这条用例对 `./` 归一子句就是空钉（实测：删掉归一的副本下本用例仍绿）。
-      // 区间把上方注释一起括进来，也是人写锚点的自然形态。
-      host.reason = host.reason.replace(
-        "packages/dsh-lan-proxy/src/server/config/impl/model.ts:102",
-        "./packages/dsh-lan-proxy/src/server/config/impl/model.ts:99-105",
+    edit(root, "dsh-lan-proxy", "server/config/impl/model.ts", (s) => {
+      const after = s.replace(
+        /^[ \t]*\*[ \t]*@not-gui[^\n]*\n([ \t]*\*\/)\n/m,
+        "$1\n  // @not-gui 斜杠注释形态也认（括号 + 中文标点：，。）\n",
       );
-      host.rationale = host.rationale.replace(
-        "server/config/impl/model.ts:102",
-        "./server/config/impl/model.ts:99-105",
-      );
-      targetHost.reason = targetHost.reason.replace(
-        "packages/dsh-lan-proxy/src/server/config/impl/model.ts:124",
-        "./packages/dsh-lan-proxy/src/server/config/impl/model.ts:124",
-      );
-      targetHost.rationale = targetHost.rationale.replace(
-        "server/config/impl/model.ts:124",
-        "./server/config/impl/model.ts:124",
-      );
-      assert.notEqual(
-        JSON.stringify([host.reason, host.rationale, targetHost.reason, targetHost.rationale]),
-        before,
-        "fixture 未改写任何锚点——真值文本漂移了，请同步本注入",
-      );
-      return `${JSON.stringify(json, null, 2)}\n`;
+      assert.notEqual(after, s, "fixture 未改写任何标记（Config 真值漂移了，请同步本注入）");
+      return after;
     });
     const r = runConfigMatrix(root);
     assert.equal(r.pass, true, `写法变体不应判红。实际 problems: ${r.problems.join("; ")}`);

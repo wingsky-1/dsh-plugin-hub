@@ -7,7 +7,8 @@
  * （AST 解析顶层 `DEFAULTS`），路径改动见 runLanProxy 的 clientPath。
  *
  * 口径：它是「界面展示缺省」而非宿主 schema——键集必须是 Config 的子集，且
- * schema − DEFAULTS 的差集必须恰为 UI 豁免表（两条都由 config-matrix 门禁强制）。
+ * schema − DEFAULTS 的差集必须恰为带 @not-gui 标记的豁免集（标记写在 Config 键自己的
+ * 相邻注释块内，理由与键共置；两条都由 config-matrix 门禁强制）。
  * 注意它不等于宿主 DEFAULT_OPTIONS：后者只覆盖 host / port / httpsPort / targetHost。
  */
 import type { LanProxySettingsView } from "./view.ts";

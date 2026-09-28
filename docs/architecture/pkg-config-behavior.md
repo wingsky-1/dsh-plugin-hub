@@ -105,11 +105,16 @@ notifier 与 lan-proxy 曾各复刻的 `warnLog` 已经统一到这个导出（�
   `wsDeflatePolicy`（服务端压缩协商子结构，GUI 无对应控件；路径白名单
   `wsCompressPaths` 已可编辑，覆盖了实际使用面）。以上豁免是现状事实记录，
   卡片本身的改动依赖 3.1，本片除外。
-- 豁免表唯一事实源是 [scripts/data/dsh-lan-proxy-ui-exempt.json](../../scripts/data/dsh-lan-proxy-ui-exempt.json)，
-  门禁不再内嵌条目；条目数上限 8 是策略，留在门禁代码里；每条 `reason`
-  须含文件加行号且该行必须是该键在 `Config` 里的真实定义行（行号锚点历史
-  上连续漂移过两次，门禁现按文本核验真身；文档引用一律用 `Config.<键>`
-  符号名）；豁免键出现在 `DEFAULTS` 里属豁免残留，同样判红。
+- 豁免理由**与键共置**：唯一事实源是 `Config` 表里该键自己那段文档注释中的
+  `@not-gui <理由>` 标记（#875 H10），门禁逐键取「顶层定义行 → 正上方连续注释 →
+  标记」派生豁免集，没有外部数据文件。理由写在这里而不是派生，是因为「为什么不
+  渲染 GUI」是人的判断（`targetHost` 是开放转发红线、`wsDeflatePolicy` 是 iOS
+  Safari 压缩失败），代码里没有任何可派生的痕迹。条目数上限 8 是策略，留在门禁
+  代码里；标记缺理由、标记不落在任何键的相邻注释块内（含被空行隔开、挪到别的键
+  或挪到 `Config` 表之外）都判红；豁免键出现在 `DEFAULTS` 里属豁免残留，同样判红。
+  旧形态（`scripts/data/dsh-lan-proxy-ui-exempt.json` + 自报「文件:行」锚点）已删：
+  行号锚点连续漂移过四轮（重排、#826、展开文件头 import、#856 新键），而同段的
+   符号名从未被机器核验。
 
 ### 3.4 写面与迁移行为
 
@@ -225,8 +230,10 @@ config-matrix 段（声明读不到或结构不合法即红，不退化为跳过
 3. 历史数字口径：issue 相关讨论中出现过的 notifier 旧键数表述，属 #733
    配置域搬迁前的文本提取口径；现行门禁已重建为声明驱动加运行时取值，
    旧数字不得再当现行判据引用。
-4. 豁免行号锚点历史漂移：文档引用配置键一律用 `Config.<键>` 符号名，
-   行号只允许作基线快照，不作长期锚点。
+4. 豁免理由的引用口径：门禁侧的坐标已随 #875 H10 一并取消（理由改为共置在
+   键旁的 `@not-gui` 标记，机器按「顶层定义行 → 相邻注释块」定位，不再有人工
+   申报的行号），但**本文档**引用配置键仍一律用 `Config.<键>` 符号名，行号只
+   允许作基线快照——本文件头部的证据基线 commit 仍是行号的唯一有效期声明。
 
 ## 10. 非目标
 
@@ -243,7 +250,7 @@ config-matrix 段（声明读不到或结构不合法即红，不退化为跳过
   `pnpm docs:check`（相对链接与命令引用校验）。
 - 配置键复核用符号搜索（如 `grep -rn "apiKey" packages/dsh-provider-usage/src/shared/config.ts`），
   不以行号为长期依据。
-- 门禁语义的唯一出处是门禁代码与数据文件本身（`scripts/lib/config-matrix-gate.ts`、
-  `scripts/lib/config-matrix-lib.ts`、`scripts/data/plugins-manifest.json`、
-  `scripts/data/dsh-lan-proxy-ui-exempt.json`）；本文档是现状记录，
-  语义分歧以它们为准。
+- 门禁语义的唯一出处是门禁代码与其数据/源码输入面本身
+  （`scripts/lib/config-matrix-gate.ts`、`scripts/lib/config-matrix-lib.ts`、
+  `scripts/data/plugins-manifest.json`、以及 lan-proxy `Config` 键旁的 `@not-gui`
+  标记）；本文档是现状记录，语义分歧以它们为准。

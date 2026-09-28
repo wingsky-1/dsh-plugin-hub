@@ -98,7 +98,10 @@ export interface HttpCompressSnapshot {
 export const Config: z<LanProxyConfig> = z.object({
   /** 总开关。 */
   enabled: z.boolean().default(true),
-  /** LAN 绑定地址。 */
+  /**
+   * LAN 绑定地址。
+   * @not-gui 组合层装配键：绑定地址由 DEFAULT_OPTIONS 决定，GUI 卡片不编辑（README 安全模型另述）。
+   */
   host: z.string().default(DEFAULT_OPTIONS.host),
   /** LAN 监听端口（不是固定值，默认 3081）。 */
   port: z.natural().max(65535).default(DEFAULT_OPTIONS.port),
@@ -120,12 +123,16 @@ export const Config: z<LanProxyConfig> = z.object({
    * 模式与自定义叶子无 CA 一律 404）。无默认值（同 tlsCertFile 系）。
    */
   tlsCaCertFile: z.string(),
-  /** 回环上游主机。 */
+  /**
+   * 回环上游主机。
+   * @not-gui 转发红线：只允许回环上游，开放转发由 shared 层判定，GUI 不提供编辑面。
+   */
   targetHost: z.string().default(DEFAULT_OPTIONS.targetHost),
   /**
    * 上游端口；缺省时取 web 服务器实际绑定端口（ctx.webServer.port），
    * 因此无需配置即可跟随 `--port` 变化。schemastery 中不带 `.required()`
    * 的字段默认可选（3.18 无 `.optional()` 方法）。
+   * @not-gui 组合层装配键：缺省跟随 web 服务器实际绑定端口，GUI 无独立控件。
    */
   targetPort: z.natural().max(65535),
   /** 启动横幅（终端 console.log；默认开，可经 GUI 设置面板关闭）。 */
@@ -151,6 +158,7 @@ export const Config: z<LanProxyConfig> = z.object({
    * iOS Safari 启用 permessage-deflate 即失败，uWebSockets.js #76 实证，issue #308）。
    * browser=false 全局关压缩；uaDeny 片段命中即降级为明文帧（对这类端省去
    * compress 字节流的解压负担，连接更稳）。热更新经 scope.watch 生效。
+   * @not-gui 服务端协商子结构无 GUI 控件；实际使用面由可编辑的 wsCompressPaths 白名单覆盖。
    */
   wsDeflatePolicy: z
     .object({
