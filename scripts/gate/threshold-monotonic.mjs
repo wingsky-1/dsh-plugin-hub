@@ -34,6 +34,21 @@
  * 不同的事实源，守卫于是对着影子文件判绿而真实事实源已被改弱（#850 批次评审 F-1）。声明表比对
  * 之外，比较器还记录两侧实际命中的源，工作区命中基准未声明的文件即判红——两道判据不同源。
  *
+ * 另一条判据：**豁免台账分桶只减棘轮**（scripts/lib/exemption-ratchet.ts）。台账跨三个事实源
+ * （coverage.config.json 14 条 / gate-exemptions.json 1 条 / gauntlet.config.json 的 crap 1 条），
+ * 每桶一个代码常量，要求「常量恒等于当下计数」且「不得比基准多」——收口一条就在同一 PR 下调一格，
+ * 新增一条即红。分桶是必需的：钉单一总数时「A 桶 +1、B 桶 −1」总数持平、门禁全绿。落点选本闸而不是
+ * collect-exemptions.mjs：后者只在 gate:full 与 observe 跑（gate-steps.mjs 显式排除 pr 档），
+ * 判红放那儿拦不住 PR。桶收到 0 时常量随之为 0，此后任何新增条目 = 实际 1 > 上限 0，
+ * 该桶自动成为硬判红，不需要另设「零值守卫」。
+ *
+ * 残余风险（如实声明，勿读成「通道已封」）：**判据无法保护自己不被改**——同时改
+ * `lib/exemption-ratchet.ts` 的计数实现与常量，可让某桶读数下降而数据一行未删（等式与基准比
+ * 都仍成立）。现有防线只有真值快照用例（`test/exemption-ratchet.test.ts` 内**独立重数**，
+ * 不调被测计数）与 PR 评审可见性，与本文件头自承的「自授权通道在类上并未消除」同型、同强度上限。
+ * 另：`UI_EXEMPT_MAX`（lan-proxy @not-gui 豁免上限）**没有任何配套防线**——全仓只有它定义处的
+ * 一处比较，无测试钉值、无声明表登记、无基准比；本棘轮是仓内第一道带基准比的「只许收紧」代码常量。
+ *
  * 用法：node scripts/gate/threshold-monotonic.mjs [git-ref]
  * 退出码：三态（0 / 1 / 2）的**语义**唯一事实源是 AGENTS.md 的门禁一节，本文件不复述；这里只
  *   声明归属——「存在放宽/摘除（含声明表自身被削弱）」走 1，「声明表、事实源或环境故障」走 2。
@@ -44,6 +59,12 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseExpressionAt, tokenizer } from "acorn";
 import { loadLedger } from "../lib/exemption-gate.ts";
+import {
+  RATCHET_BUCKETS,
+  bucketSourceState,
+  countDeferralNodes,
+  ratchetProblems,
+} from "../lib/exemption-ratchet.ts";
 import {
   REGISTRY_PATH,
   compareDeclarationTable,
@@ -987,6 +1008,33 @@ export function runThresholdMonotonic(
     baseRef,
     exemptions,
   });
+  // 豁免台账**分桶只减棘轮**（维护者裁决：不落「计数 > 0 即红」的硬判红——那会今天就冻结全仓 PR，
+  // 与 #765 两处明文裁决冲突；改落「新增一条即红、收口一条同 PR 下调一格」）。落点选本闸而不是
+  // collect-exemptions.mjs：后者只在 gate:full 与 observe 跑（gate-steps.mjs 显式排除 pr 档），
+  // 判红放那儿拦不住 PR；本闸是 pr 档第一道，已持有基准 ref 读取与 fail-closed 管道。
+  // 桶读不出按环境故障走 exit 2（runStage），不降级为判红。三种「读不出」分开处理：
+  //   · 基准有、工作区没有 → **事实源被删除**，exit 2（删掉整个文件不能等于「这个桶已收口」）；
+  //   · 两侧都没有 → 本仓没有这个面（单测 fixture 就是这种），桶为空转；
+  //   · 在但 JSON 坏 → readJsonText 抛错，exit 2。
+  // 基准上没有而工作区有（新事实源）按基准 0 计：任何待办都算「比基准多」，取保守的一侧。
+  const ratchet = runStage(
+    ["threshold-monotonic: 豁免台账棘轮读取失败：", " —— 环境故障按 fail-closed 处理"],
+    () =>
+      RATCHET_BUCKETS.flatMap((bucket) => {
+        const baseText = readBase(bucket.file);
+        const state = bucketSourceState(existsSync(join(repoRoot, bucket.file)), baseText !== null);
+        if (state === "vacuous") return [];
+        if (state === "deleted") {
+          throw new Error(`${bucket.file}：基准上存在、工作区缺失 —— 事实源被删除`);
+        }
+        const actual = countDeferralNodes(readJsonText(readWorkspace(bucket.file), bucket.file));
+        const baseline =
+          baseText === null ? 0 : countDeferralNodes(readJsonText(baseText, bucket.file));
+        return ratchetProblems(bucket, actual, baseline);
+      }),
+  );
+  if (ratchet.failed) return EXIT_FAIL_CLOSED;
+  result.failures.push(...ratchet.value);
   return reportResult(result);
 }
 

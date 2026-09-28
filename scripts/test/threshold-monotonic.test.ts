@@ -153,7 +153,9 @@ const defaultGauntlet = () => ({
     packages: { "dsh-x": { threshold: 60, fixedCovered: 70 } },
   },
   complexity: { cyclomatic: 78, cognitive: 84 },
-  crap: { threshold: 16, strict: false },
+  // crap 带 exitCriteria：与真实 gauntlet.config.json 同形（观察期待办）。本 fixture 仓库也会被
+  // 「豁免台账分桶棘轮」求值（同一道闸里的另一条判据），缺这个字段会让棘轮判「已收口却没下调上限」。
+  crap: { threshold: 16, strict: false, exitCriteria: "fixture：超阈热点降为 0 后置 strict" },
   lint: { maxWarnings: 671 },
 });
 
