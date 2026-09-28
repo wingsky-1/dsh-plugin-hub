@@ -75,10 +75,17 @@ export const RATCHET_BUCKETS: readonly RatchetBucket[] = [
     // 表外回落中性灰、回落色与 stopped/disabled 同串；STATUS_ORDER 展示次序与 titleKey 字面量钉；
     // STATUS_TEXT 六态字典键字面量钉；API 11 条路由键面 + 绝对路径形态。
     // 探针两处 exit 1：改 failed 档色值、改 statusDot 表外回落色。
+    // 9 → 8：删掉 core/api.ts 那条。量化日 lines 66.66% / functions 25% / branches 43.47%——
+    // 三个导出纯函数（toolDisableServerKey / cwdQueryOf / api）**零直接断言**，水位全是被调用路径
+    // 顺带执行的。本轮以 test/client-unit/client-core-api.test.ts 补齐（23 例）：
+    // toolDisableServerKey 的 @@global/<name> 与 @<root>/<name> 两形态 + projectRoot 缺失/空串/非字符串
+    // 三种 undefined 回落；cwdQueryOf 的非空编码与空串/非字符串空回落；api() 的 2xx/非 2xx error/无 error
+    // 兜底 HTTP <status>/body 解析失败两支、调用方自带 signal 时不装超时兜底且推钟后仍不 abort、
+    // 抛错路径定时器同样被清掉。探针四处 exit 1。
     // 两条删除条件同时成立：① lines/branches 达 thresholds 同名键（见 pnpm cov 产物）；
     // ② 已登记进 mutation-topology 的 client-panel 段 mutate（持续执法面）。
     // 按维护者裁定「一条豁免一次落地」，每条豁免自成一次可独立回退的提交。
-    ceiling: 9,
+    ceiling: 8,
     note: "覆盖率排除面的 pending-project 暂缺豁免（水位与变异面同时成立才可删）",
   },
   {
