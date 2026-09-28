@@ -66,7 +66,11 @@ export const RATCHET_BUCKETS: readonly RatchetBucket[] = [
   {
     file: "scripts/data/gate-exemptions.json",
     ceiling: 1,
-    note: "路径受限门禁台账（#770 mcp panel 单飞句柄，阻塞于 #769）",
+    // 桶说明曾写「#770 mcp panel 单飞句柄」——#770 已于 2026-09-19 关闭且与本条无关（见 #1066）。
+    // 顺带记一条实测约束：往本面**新增**任何一条待办（如拟增设的 gate=crap 面）会被本桶两条判据
+    // 同时判红（超上限 + 比基准多），且下调常量解决不了——那要求先收口本桶现有的 panel.ts，
+    // 而它阻塞于 #769。**新增面因此被硬串行化在 #769 之后。**
+    note: "路径受限门禁台账（mcp panel 单飞句柄，阻塞于 #769）",
   },
   {
     file: "scripts/data/gauntlet.config.json",
