@@ -1694,6 +1694,7 @@ type FixtureBaseline = {
  * 全程只读，真实仓库的 `scripts/data/dir-imports-baseline.json` 也全程不参与。
  */
 let sharedStaleFixture: string | null = null;
+const staleCopyDirs: string[] = [];
 function staleFixture() {
   if (sharedStaleFixture === null) {
     const root = makeFixtureRoot(chainFixture(""));
@@ -1704,6 +1705,8 @@ function staleFixture() {
 }
 after(() => {
   if (sharedStaleFixture !== null) rmSync(sharedStaleFixture, { recursive: true, force: true });
+  // 基线副本的临时目录同样登记清理：留在 /tmp 里每次跑测试都多几个孤儿目录。
+  for (const dir of staleCopyDirs) rmSync(dir, { recursive: true, force: true });
 });
 
 /**
@@ -1713,10 +1716,9 @@ after(() => {
 function staleBaselineCopy(fn: (b: FixtureBaseline) => void) {
   const baseline = readFixtureBaseline(staleFixture());
   fn(baseline);
-  const copy = join(
-    mkdtempSync(join(tmpdir(), "verify-dir-imports-stale-")),
-    "dir-imports-baseline.json",
-  );
+  const dir = mkdtempSync(join(tmpdir(), "verify-dir-imports-stale-"));
+  staleCopyDirs.push(dir);
+  const copy = join(dir, "dir-imports-baseline.json");
   writeFileSync(copy, `${JSON.stringify(baseline, null, 2)}\n`);
   return copy;
 }
