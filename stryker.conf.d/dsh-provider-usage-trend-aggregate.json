@@ -6,7 +6,6 @@
     "packages/dsh-provider-usage/src/server/aggregate/aggregate-query.ts",
     "packages/dsh-provider-usage/src/server/aggregate/store.ts",
     "packages/dsh-provider-usage/src/server/aggregate/index.ts",
-    "!packages/dsh-provider-usage/src/client/**",
     "!packages/dsh-provider-usage/src/**/interface.ts",
     "!packages/dsh-provider-usage/src/server/*/deps.ts",
     "!packages/dsh-provider-usage/src/**/*.d.mts",

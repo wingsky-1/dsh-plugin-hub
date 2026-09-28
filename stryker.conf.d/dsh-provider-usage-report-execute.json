@@ -7,7 +7,6 @@
     "packages/dsh-provider-usage/src/server/execute/format.ts",
     "packages/dsh-provider-usage/src/server/execute/executor.ts",
     "packages/dsh-provider-usage/src/server/execute/list-dirs.ts",
-    "!packages/dsh-provider-usage/src/client/**",
     "!packages/dsh-provider-usage/src/**/interface.ts",
     "!packages/dsh-provider-usage/src/server/*/deps.ts",
     "!packages/dsh-provider-usage/src/**/*.d.mts",

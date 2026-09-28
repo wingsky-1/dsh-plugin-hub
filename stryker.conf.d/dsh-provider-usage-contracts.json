@@ -3,7 +3,6 @@
   "mutate": [
     "packages/dsh-provider-usage/src/shared/contracts.ts",
     "packages/dsh-provider-usage/src/server/pipeline/guards.ts",
-    "!packages/dsh-provider-usage/src/client/**",
     "!packages/dsh-provider-usage/src/**/interface.ts",
     "!packages/dsh-provider-usage/src/server/*/deps.ts",
     "!packages/dsh-provider-usage/src/**/*.d.mts",

@@ -4,7 +4,6 @@
     "packages/dsh-provider-usage/src/shared/placement-math.ts",
     "packages/dsh-provider-usage/src/shared/client-logic.ts",
     "packages/dsh-provider-usage/src/shared/charts.ts",
-    "!packages/dsh-provider-usage/src/client/**",
     "!packages/dsh-provider-usage/src/**/interface.ts",
     "!packages/dsh-provider-usage/src/server/*/deps.ts",
     "!packages/dsh-provider-usage/src/**/*.d.mts",

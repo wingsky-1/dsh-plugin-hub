@@ -4,7 +4,6 @@
     "packages/dsh-provider-usage/src/server/registry/registry.ts",
     "packages/dsh-provider-usage/src/server/registry/user-adapter-loader.ts",
     "packages/dsh-provider-usage/src/server/adapters/register.ts",
-    "!packages/dsh-provider-usage/src/client/**",
     "!packages/dsh-provider-usage/src/**/interface.ts",
     "!packages/dsh-provider-usage/src/server/*/deps.ts",
     "!packages/dsh-provider-usage/src/**/*.d.mts",

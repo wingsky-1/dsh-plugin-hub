@@ -783,15 +783,57 @@ function isSharedLayerModule(id) {
   );
 }
 
+/** client 系测试目录（层 glob 落在 test/<层>/ 下，故按路径段判定，不写死层名清单）。 */
+const CLIENT_TEST_PATH_RE = /\/test\/(client|client-unit|client-dom)\//;
+
 /**
- * 源码全覆盖断言的未覆盖清单：src 下每个文件必须落在 ∪mutate ∪ ∪excludes 内。
+ * 段 testFiles 是否认领了 client 系测试文件（#875 4b+4d 提案 1）。
+ *
+ * 为什么需要这个派生量：client 子树的「已覆盖」此前没有任何正交表达位，只能靠把
+ * `!packages/<pkg>/src/client/**` 抄进**每一个 server 段的 excludes** 来顶——本仓实测
+ * 39 条这样的条目，而它们对变异面**零作用**（server 段正向面全是 `src/server/**`，
+ * 与 client 子树零交集）。也就是说同一件事被登记了 39 遍，且登记形态与它真正承担的
+ * 职责（覆盖率断言的「已覆盖」凭据）毫无关系。
+ *
+ * 改成派生后，「本包有 client 判据」这件事由**段 testFiles 认领了 client 系测试**
+ * 这一客观事实表达：本仓六包实测全部为真（decision-gateway 11 / lan-proxy 6 /
+ * mcp-manager 5 / notifier 26 / provider-usage 2 / worktree-sidebar 7 份 client 系
+ * 判据被段认领），故不需要任何一条登记。
+ *
+ * 判红方向也一并变强（这是选派生而非选「再登记 4 条」的理由）：有 client 系判据却
+ * **没有任何段认领**它们时，`clientCovered` 为 false，client 子树立刻进未覆盖清单
+ * ——即「写了 client 测试但没落进任何段」从此可见，此前它被 39 条 excludes 静默兜住。
+ */
+function segmentsClaimClientTests(segments) {
+  return Object.values(segments ?? {}).some((seg) => {
+    const testFiles = seg?.testFiles;
+    return Array.isArray(testFiles) && testFiles.some((f) => CLIENT_TEST_PATH_RE.test(f));
+  });
+}
+
+/**
+ * 源码全覆盖断言的未覆盖清单：src 下每个文件必须落在 ∪mutate ∪ ∪excludes 内，
+ * 且 client 子树另有一条派生凭据（见 segmentsClaimClientTests）。
  *
  * 返回 `null` 表示「断言不适用」（包未登记变异面，含 $noMutationPackages 成员），
  * 空数组表示「可判定且零未覆盖」。但该区分**只在本函数内部成立**：analysis 边界用
  * `?? []` 归一，`null` 不会流到任何消费者——对外守卫是 `topologyRegistered` /
  * `noMutationReason`，不是这里的 `null`（#773 批 B 复核）。
+ *
+ * `clientCovered` 由调用方按包传入（true = 有段认领 client 系测试）。它**只**对
+ * `src/client/` 下的文件生效：server / shared 侧的覆盖判据一字未改。
  */
-function collectUncoveredSrcFiles(srcDir, specs) {
+/**
+ * 本包是否有 client 判据（段 testFiles 认领了 client 系测试）——覆盖断言的 client 侧凭据。
+ * 拓扑缺失 / 包未登记时返回 false：那两条路径上覆盖断言本就不适用（见 collectMutationSpecs 的三态），
+ * 此时把 client 树算作「未覆盖」只会把「不可判定」渲染成「有缺口」。
+ */
+function clientJudged(topology, pkgName) {
+  const segments = topology === null ? undefined : topology?.packages?.[pkgName]?.segments;
+  return segmentsClaimClientTests(segments);
+}
+
+function collectUncoveredSrcFiles(srcDir, specs, clientCovered) {
   if (specs === null || specs.noMutation) return null;
   const covered = (relPath) =>
     specs.excludes.some((g) => globToRegExp(g).test(relPath)) ||
@@ -799,7 +841,10 @@ function collectUncoveredSrcFiles(srcDir, specs) {
   const out = [];
   for (const file of collectAllFiles(srcDir)) {
     const r = rel(ROOT, file);
-    if (!covered(r)) out.push(r);
+    if (covered(r)) continue;
+    // client 子树的覆盖凭据是「有段认领了 client 系测试」，不是逐段抄一份 !src/client/**。
+    if (clientCovered && rel(srcDir, file).startsWith("client" + sep)) continue;
+    out.push(r);
   }
   return out.sort();
 }
@@ -1215,7 +1260,14 @@ function analyzePackage(pkgName, topology) {
   const specs = collectMutationSpecs(topology, pkgName);
   // 「不适用」与「空集」的区分只在本函数内部；metrics 统一落数组（?? []），
   // 对外判据是 topologyRegistered / noMutationReason。
-  const uncoveredSrcFiles = collectUncoveredSrcFiles(srcDir, specs);
+  // client 子树的覆盖凭据是**派生量**（有段认领了 client 系测试），不是逐段抄一份
+  // !src/client/**：后者在本仓是 39 条对变异面零作用的死条目（#875 4b+4d 提案 1）。
+  // 取值单独成函数：可选链留在小函数里，analyzePackage 的认知复杂度不因它越过 lint 阈值。
+  const uncoveredSrcFiles = collectUncoveredSrcFiles(
+    srcDir,
+    specs,
+    clientJudged(topology, pkgName),
+  );
 
   const valueCount = raLegacy.filter((r) => !r.isType).length;
   return {

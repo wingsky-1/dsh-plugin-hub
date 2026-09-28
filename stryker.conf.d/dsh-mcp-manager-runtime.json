@@ -6,7 +6,6 @@
     "packages/dsh-mcp-manager/src/server/shared/**/*.ts",
     "packages/dsh-mcp-manager/src/server/upgrade/**/*.ts",
     "packages/dsh-mcp-manager/src/shared/**/*.ts",
-    "!packages/dsh-mcp-manager/src/client/**",
     "!packages/dsh-mcp-manager/src/**/interface.ts",
     "!packages/dsh-mcp-manager/src/server/*/deps.ts",
     "!packages/dsh-mcp-manager/src/server/*/*/deps.ts"

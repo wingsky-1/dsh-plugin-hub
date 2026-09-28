@@ -9,7 +9,6 @@
     "packages/dsh-provider-usage/src/server/ui-routes/ui-config.ts",
     "packages/dsh-provider-usage/src/server/ui-routes/events.ts",
     "packages/dsh-provider-usage/src/server/report-routes/reports.ts",
-    "!packages/dsh-provider-usage/src/client/**",
     "!packages/dsh-provider-usage/src/**/interface.ts",
     "!packages/dsh-provider-usage/src/server/*/deps.ts",
     "!packages/dsh-provider-usage/src/**/*.d.mts",

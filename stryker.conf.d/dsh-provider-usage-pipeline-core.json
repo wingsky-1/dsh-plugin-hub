@@ -6,7 +6,6 @@
     "packages/dsh-provider-usage/src/server/registry/hotreload.ts",
     "packages/dsh-provider-usage/src/server/registry/path-resolve.ts",
     "packages/dsh-provider-usage/src/server/registry/provider-config.ts",
-    "!packages/dsh-provider-usage/src/client/**",
     "!packages/dsh-provider-usage/src/**/interface.ts",
     "!packages/dsh-provider-usage/src/server/*/deps.ts",
     "!packages/dsh-provider-usage/src/**/*.d.mts",

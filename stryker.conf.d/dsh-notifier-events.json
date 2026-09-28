@@ -2,7 +2,6 @@
   "$schema": "../node_modules/@stryker-mutator/core/schema/stryker-schema.json",
   "mutate": [
     "packages/dsh-notifier/src/server/events/**/*.ts",
-    "!packages/dsh-notifier/src/client/**",
     "!packages/dsh-notifier/src/**/interface.ts",
     "!packages/dsh-notifier/src/server/*/deps.ts",
     "!packages/dsh-notifier/src/server/channels/impl/system/deps.ts",

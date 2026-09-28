@@ -1,7 +1,7 @@
 {
   "$comment": "变异面登记与派生的单一事实源（#690 S2b）。本文件是**派生红线面**的成员（被 scripts/data/threshold-registry.json 的 mutation.timeoutMS 声明为 sources），改它会触发 Build / Red-line approval 的人工批准。判据⑦（#843 计划项 3-1）：gen-stryker-conf --check 除既有各条外，还把本文件每个包的变异文件**并集**与基准 ref（默认 origin/main）比对，收缩即判红——段之间挪动合法（并集不变），把文件挪出变异面到任何段的 excludes / 包级 coverageExcludes 非法，文件在本分支已被真正删除属正当收缩。唯一放宽通道是 scripts/data/gate-exemptions.json 里 gate=mutation-face 的条目（path 形如 <包名>:<仓库根相对文件>，或 <包名>:* 豁免整包）；台账里对不上缺口的键判红。判据自带载体自证：进入比对面的包数 / 候选文件数任一为 0 即判红，不是恒绿。",
   "$testLayers": {
-    "$comment": "测试分层与变异面登记的单一事实源（#690 S2b / #713 T1–T3）。runner 层 = test/**/*.test.ts 的全集（vitest include 的 glob 即此口径）；mutation 层 = unit + integration + client-unit + client-dom（四层都直连 src、都能贡献杀灭；client-unit 是 node 环境下的客户端纯逻辑判据，client-dom 是 happy-dom 环境下的客户端 DOM 判据）；exclude 层 = client（**只剩断言对象不是 src 本身的那部分**：读 lib/client.js 的产物契约、或 in-place esbuild 后执行已构建副本——静态导入图里没有目标模块，登记进变异面清单只会增加每个段的 dry run 成本、杀灭贡献为零）+ e2e（真实端口/子进程/真机系统调用）。support 不入任何层：test/helpers.ts、test/client-helpers.ts、test/smoke-lib.ts、test/smoke-pure.ts、test/*.worker.mjs 是支撑模块，不是测试条目。unitExemptions 是单元层内「写了单元测试但刻意不进变异面」的逐条裁决（每条必须写明理由；gate 校验其非空且真实存在于 unit 层）。gate 判据：每个 test/**/*.test.ts 必须落入某一层的 glob 或某条排除 glob（无第三条路），故新增测试文件必须显式决定其层归属，不能靠「没写进清单」逃逸。",
+    "$comment": "测试分层与变异面登记的单一事实源（#690 S2b / #713 T1–T3）。runner 层 = test/**/*.test.ts 的全集（vitest include 的 glob 即此口径）；mutation 层 = unit + integration + client-unit + client-dom（四层都直连 src、都能贡献杀灭；client-unit 是 node 环境下的客户端纯逻辑判据，client-dom 是 happy-dom 环境下的客户端 DOM 判据）；exclude 层 = client（**只剩断言对象不是 src 本身的那部分**：读 lib/client.js 的产物契约、或 in-place esbuild 后执行已构建副本——静态导入图里没有目标模块，登记进变异面清单只会增加每个段的 dry run 成本、杀灭贡献为零）+ e2e（真实端口/子进程/真机系统调用）。support 不入任何层：test/helpers.ts、test/client-helpers.ts、test/smoke-lib.ts、test/smoke-pure.ts、test/*.worker.mjs 是支撑模块，不是测试条目。gate 判据（scripts/gate/test-surface.mjs 的 collectUnattributedErrors，判词「测试文件无层归属」）：每个 test/**/*.test.ts 必须落入某一层的 glob，或写进该包 testLayers.testMutationExemptions（按层分组、逐条带理由）——**无第三条路**，故新增测试文件必须显式决定其层归属，不能靠「没写进清单」逃逸。刻意不进变异面的**唯一**登记位就是 testMutationExemptions（#875 4b+4d：原 unitExemptions 键全仓无任何判据读取，是零消费的登记，已删；它描述的「gate 校验其非空且真实存在于 unit 层」从未存在）。",
     "layers": {
       "unit": "test/unit/**/*.test.ts",
       "integration": "test/integration/**/*.test.ts",
@@ -173,7 +173,7 @@
       "segments": {
         "ca": {
           "mutate": ["packages/dsh-lan-proxy/src/server/ca/impl/*.ts"],
-          "excludes": ["!packages/dsh-lan-proxy/src/client/**"],
+          "excludes": [],
           "testFiles": [
             "packages/dsh-lan-proxy/test/integration/apply-token-provider.test.ts",
             "packages/dsh-lan-proxy/test/integration/entry-contract.test.ts",
@@ -186,7 +186,7 @@
         },
         "config": {
           "mutate": ["packages/dsh-lan-proxy/src/server/config/impl/*.ts"],
-          "excludes": ["!packages/dsh-lan-proxy/src/client/**"],
+          "excludes": [],
           "testFiles": [
             "packages/dsh-lan-proxy/test/client-unit/client-routes.test.ts",
             "packages/dsh-lan-proxy/test/integration/apply-token-provider.test.ts",
@@ -203,7 +203,7 @@
             "packages/dsh-lan-proxy/src/index.ts",
             "packages/dsh-lan-proxy/src/server/apply.ts"
           ],
-          "excludes": ["!packages/dsh-lan-proxy/src/client/**"],
+          "excludes": [],
           "testFiles": [
             "packages/dsh-lan-proxy/test/integration/apply-token-provider.test.ts",
             "packages/dsh-lan-proxy/test/integration/entry-contract.test.ts",
@@ -216,7 +216,7 @@
         },
         "host-trust": {
           "mutate": ["packages/dsh-lan-proxy/src/server/host-trust/impl/*.ts"],
-          "excludes": ["!packages/dsh-lan-proxy/src/client/**"],
+          "excludes": [],
           "testFiles": [
             "packages/dsh-lan-proxy/test/integration/apply-token-provider.test.ts",
             "packages/dsh-lan-proxy/test/integration/entry-contract.test.ts",
@@ -232,7 +232,7 @@
             "packages/dsh-lan-proxy/src/server/migrate/impl/file/index.ts",
             "packages/dsh-lan-proxy/src/server/migrate/impl/layout/index.ts"
           ],
-          "excludes": ["!packages/dsh-lan-proxy/src/client/**"],
+          "excludes": [],
           "testFiles": [
             "packages/dsh-lan-proxy/test/integration/apply-token-provider.test.ts",
             "packages/dsh-lan-proxy/test/integration/entry-contract.test.ts",
@@ -245,7 +245,7 @@
         },
         "proxy": {
           "mutate": ["packages/dsh-lan-proxy/src/server/proxy/impl/proxy.ts"],
-          "excludes": ["!packages/dsh-lan-proxy/src/client/**"],
+          "excludes": [],
           "testFiles": [
             "packages/dsh-lan-proxy/test/integration/apply-token-provider.test.ts",
             "packages/dsh-lan-proxy/test/integration/entry-contract.test.ts",
@@ -261,7 +261,7 @@
             "packages/dsh-lan-proxy/src/server/shared/net.ts",
             "packages/dsh-lan-proxy/src/server/shared/paths.ts"
           ],
-          "excludes": ["!packages/dsh-lan-proxy/src/client/**"],
+          "excludes": [],
           "testFiles": [
             "packages/dsh-lan-proxy/test/integration/apply-token-provider.test.ts",
             "packages/dsh-lan-proxy/test/integration/entry-contract.test.ts",
@@ -275,7 +275,7 @@
         },
         "tls": {
           "mutate": ["packages/dsh-lan-proxy/src/server/tls/impl/index.ts"],
-          "excludes": ["!packages/dsh-lan-proxy/src/client/**"],
+          "excludes": [],
           "testFiles": [
             "packages/dsh-lan-proxy/test/integration/apply-token-provider.test.ts",
             "packages/dsh-lan-proxy/test/integration/entry-contract.test.ts",
@@ -327,7 +327,7 @@
             "packages/dsh-mcp-manager/src/server/workspace/**/*.ts",
             "packages/dsh-mcp-manager/src/server/config/**/*.ts"
           ],
-          "excludes": ["!packages/dsh-mcp-manager/src/client/**"],
+          "excludes": [],
           "testFiles": [
             "packages/dsh-mcp-manager/test/integration/real-context.test.ts",
             "packages/dsh-mcp-manager/test/integration/apply-lifecycle.test.ts",
@@ -355,7 +355,7 @@
         },
         "manager": {
           "mutate": ["packages/dsh-mcp-manager/src/server/connection/orchestrator/**/*.ts"],
-          "excludes": ["!packages/dsh-mcp-manager/src/client/**"],
+          "excludes": [],
           "testFiles": [
             "packages/dsh-mcp-manager/test/unit/ports/orchestrator-ports.test.ts",
             "packages/dsh-mcp-manager/test/integration/apply-lifecycle.test.ts",
@@ -385,7 +385,7 @@
             "packages/dsh-mcp-manager/src/server/visibility/**/*.ts",
             "packages/dsh-mcp-manager/src/server/erasure/**/*.ts"
           ],
-          "excludes": ["!packages/dsh-mcp-manager/src/client/**"],
+          "excludes": [],
           "testFiles": [
             "packages/dsh-mcp-manager/test/unit/ports/inject-ports.test.ts",
             "packages/dsh-mcp-manager/test/unit/ports/runtime-ports.test.ts",
@@ -408,7 +408,7 @@
         },
         "routes": {
           "mutate": ["packages/dsh-mcp-manager/src/server/api/**/*.ts"],
-          "excludes": ["!packages/dsh-mcp-manager/src/client/**"],
+          "excludes": [],
           "testFiles": [
             "packages/dsh-mcp-manager/test/unit/ports/api-ports.test.ts",
             "packages/dsh-mcp-manager/test/integration/apply-lifecycle.test.ts",
@@ -425,7 +425,7 @@
             "packages/dsh-mcp-manager/src/server/store/**/*.ts",
             "packages/dsh-mcp-manager/src/server/stats/**/*.ts"
           ],
-          "excludes": ["!packages/dsh-mcp-manager/src/client/**"],
+          "excludes": [],
           "testFiles": [
             "packages/dsh-mcp-manager/test/integration/apply-lifecycle.test.ts",
             "packages/dsh-mcp-manager/test/unit/unit-call-stats.test.ts",
@@ -447,7 +447,7 @@
         },
         "servers": {
           "mutate": ["packages/dsh-mcp-manager/src/server/servers/**/*.ts"],
-          "excludes": ["!packages/dsh-mcp-manager/src/client/**"],
+          "excludes": [],
           "testFiles": [
             "packages/dsh-mcp-manager/test/unit/ports/lifecycle-ports.test.ts",
             "packages/dsh-mcp-manager/test/integration/apply-lifecycle.test.ts",
@@ -472,7 +472,7 @@
             "packages/dsh-mcp-manager/src/server/upgrade/**/*.ts",
             "packages/dsh-mcp-manager/src/shared/**/*.ts"
           ],
-          "excludes": ["!packages/dsh-mcp-manager/src/client/**"],
+          "excludes": [],
           "testFiles": [
             "packages/dsh-mcp-manager/test/integration/real-context.test.ts",
             "packages/dsh-mcp-manager/test/unit/ports/catalog-ports.test.ts",
@@ -522,9 +522,6 @@
         }
       },
       "testLayers": {
-        "unitExemptions": {
-          "packages/dsh-mcp-manager/test/unit/unit-shared.test.ts": "被测对象是 workspace 根 shared/settings-namespace.ts（不在本包 mutate 面内），登记它零杀灭、只增加各段 dry run 执行面"
-        },
         "coverageExcludes": [
           {
             "pattern": "!packages/dsh-mcp-manager/src/**/interface.ts",
@@ -559,7 +556,7 @@
       "segments": {
         "api": {
           "mutate": ["packages/dsh-notifier/src/server/api/**/*.ts"],
-          "excludes": ["!packages/dsh-notifier/src/client/**"],
+          "excludes": [],
           "testFiles": [
             "packages/dsh-notifier/test/integration/real-context.test.ts",
             "packages/dsh-notifier/test/integration/status-roundtrip.test.ts",
@@ -579,7 +576,7 @@
             "packages/dsh-notifier/src/server/channels/**/*.ts",
             "packages/dsh-notifier/src/shared/**/*.ts"
           ],
-          "excludes": ["!packages/dsh-notifier/src/client/**"],
+          "excludes": [],
           "testFiles": [
             "packages/dsh-notifier/test/client-dom/apply-lifecycle.test.ts",
             "packages/dsh-notifier/test/client-unit/disposers.test.ts",
@@ -613,7 +610,7 @@
         },
         "config": {
           "mutate": ["packages/dsh-notifier/src/server/config/**/*.ts"],
-          "excludes": ["!packages/dsh-notifier/src/client/**"],
+          "excludes": [],
           "testFiles": [
             "packages/dsh-notifier/test/integration/real-context.test.ts",
             "packages/dsh-notifier/test/unit/api/dry-run.test.ts",
@@ -629,7 +626,7 @@
         },
         "events": {
           "mutate": ["packages/dsh-notifier/src/server/events/**/*.ts"],
-          "excludes": ["!packages/dsh-notifier/src/client/**"],
+          "excludes": [],
           "testFiles": [
             "packages/dsh-notifier/test/integration/real-context.test.ts",
             "packages/dsh-notifier/test/unit/events/listen.test.ts",
@@ -640,7 +637,7 @@
         },
         "pipeline": {
           "mutate": ["packages/dsh-notifier/src/server/pipeline/**/*.ts"],
-          "excludes": ["!packages/dsh-notifier/src/client/**"],
+          "excludes": [],
           "testFiles": [
             "packages/dsh-notifier/test/integration/real-context.test.ts",
             "packages/dsh-notifier/test/integration/status-roundtrip.test.ts",
@@ -659,7 +656,7 @@
             "packages/dsh-notifier/src/index.ts",
             "packages/dsh-notifier/src/server/sdk/**/*.ts"
           ],
-          "excludes": ["!packages/dsh-notifier/src/client/**"],
+          "excludes": [],
           "testFiles": [
             "packages/dsh-notifier/test/integration/consumer-types.test.ts",
             "packages/dsh-notifier/test/integration/real-context.test.ts",
@@ -669,7 +666,7 @@
         },
         "shared": {
           "mutate": ["packages/dsh-notifier/src/server/shared/**/*.ts"],
-          "excludes": ["!packages/dsh-notifier/src/client/**"],
+          "excludes": [],
           "testFiles": [
             "packages/dsh-notifier/test/integration/real-context.test.ts",
             "packages/dsh-notifier/test/integration/status-roundtrip.test.ts",
@@ -706,7 +703,7 @@
         },
         "stores": {
           "mutate": ["packages/dsh-notifier/src/server/stores/**/*.ts"],
-          "excludes": ["!packages/dsh-notifier/src/client/**"],
+          "excludes": [],
           "testFiles": [
             "packages/dsh-notifier/test/integration/real-context.test.ts",
             "packages/dsh-notifier/test/integration/status-roundtrip.test.ts",
@@ -717,7 +714,7 @@
         },
         "upgrade": {
           "mutate": ["packages/dsh-notifier/src/server/upgrade/**/*.ts"],
-          "excludes": ["!packages/dsh-notifier/src/client/**"],
+          "excludes": [],
           "testFiles": [
             "packages/dsh-notifier/test/integration/real-context.test.ts",
             "packages/dsh-notifier/test/unit/upgrade/legacy.test.ts",
@@ -731,10 +728,7 @@
         },
         "client": {
           "mutate": ["packages/dsh-notifier/src/client/**/*.ts"],
-          "excludes": [
-            "!packages/dsh-notifier/src/client/**/*.tsx",
-            "!packages/dsh-notifier/src/**/*.d.ts"
-          ],
+          "excludes": ["!packages/dsh-notifier/src/**/*.d.ts"],
           "testFiles": [
             "packages/dsh-notifier/test/client-dom/apply-lifecycle.test.ts",
             "packages/dsh-notifier/test/client-dom/controls.test.ts",
@@ -803,7 +797,7 @@
       "segments": {
         "apply": {
           "mutate": ["packages/dsh-provider-usage/src/apply/apply.ts"],
-          "excludes": ["!packages/dsh-provider-usage/src/client/**"],
+          "excludes": [],
           "testFiles": [
             "packages/dsh-provider-usage/test/integration/schedule/composition-root.test.ts",
             "packages/dsh-provider-usage/test/unit/apply/unit-apply.test.ts"
@@ -812,7 +806,7 @@
         },
         "errsurf": {
           "mutate": ["packages/dsh-provider-usage/src/server/shared/errsurf.ts"],
-          "excludes": ["!packages/dsh-provider-usage/src/client/**"],
+          "excludes": [],
           "testFiles": [
             "packages/dsh-provider-usage/test/integration/ui-routes/composition-root.test.ts",
             "packages/dsh-provider-usage/test/unit/apply/unit-apply.test.ts",
@@ -826,7 +820,7 @@
             "packages/dsh-provider-usage/src/shared/contracts.ts",
             "packages/dsh-provider-usage/src/server/pipeline/guards.ts"
           ],
-          "excludes": ["!packages/dsh-provider-usage/src/client/**"],
+          "excludes": [],
           "testFiles": [
             "packages/dsh-provider-usage/test/integration/adapters/composition-root.test.ts",
             "packages/dsh-provider-usage/test/integration/collect/composition-root.test.ts",
@@ -855,7 +849,7 @@
             "packages/dsh-provider-usage/src/shared/config.ts",
             "packages/dsh-provider-usage/src/shared/provider.ts"
           ],
-          "excludes": ["!packages/dsh-provider-usage/src/client/**"],
+          "excludes": [],
           "testFiles": [
             "packages/dsh-provider-usage/test/integration/pipeline/composition-root.test.ts",
             "packages/dsh-provider-usage/test/integration/registry/composition-root.test.ts",
@@ -872,7 +866,7 @@
         },
         "pipeline-history": {
           "mutate": ["packages/dsh-provider-usage/src/server/history/history.ts"],
-          "excludes": ["!packages/dsh-provider-usage/src/client/**"],
+          "excludes": [],
           "testFiles": [
             "packages/dsh-provider-usage/test/unit/history/unit-history.test.ts",
             "packages/dsh-provider-usage/test/unit/trend/unit-trend.test.ts",
@@ -890,7 +884,7 @@
             "packages/dsh-provider-usage/src/server/registry/path-resolve.ts",
             "packages/dsh-provider-usage/src/server/registry/provider-config.ts"
           ],
-          "excludes": ["!packages/dsh-provider-usage/src/client/**"],
+          "excludes": [],
           "testFiles": [
             "packages/dsh-provider-usage/test/unit/shared/unit-config.test.ts",
             "packages/dsh-provider-usage/test/unit/apply/unit-apply.test.ts",
@@ -911,7 +905,7 @@
             "packages/dsh-provider-usage/src/shared/client-logic.ts",
             "packages/dsh-provider-usage/src/shared/charts.ts"
           ],
-          "excludes": ["!packages/dsh-provider-usage/src/client/**"],
+          "excludes": [],
           "testFiles": [
             "packages/dsh-provider-usage/test/unit/shared/unit-config.test.ts",
             "packages/dsh-provider-usage/test/unit/trend/unit-trend.test.ts",
@@ -926,7 +920,7 @@
             "packages/dsh-provider-usage/src/server/registry/user-adapter-loader.ts",
             "packages/dsh-provider-usage/src/server/adapters/register.ts"
           ],
-          "excludes": ["!packages/dsh-provider-usage/src/client/**"],
+          "excludes": [],
           "testFiles": [
             "packages/dsh-provider-usage/test/integration/adapters/composition-root.test.ts",
             "packages/dsh-provider-usage/test/integration/pipeline/composition-root.test.ts",
@@ -940,7 +934,7 @@
         },
         "sanitize": {
           "mutate": ["packages/dsh-provider-usage/src/shared/sanitize.ts"],
-          "excludes": ["!packages/dsh-provider-usage/src/client/**"],
+          "excludes": [],
           "testFiles": [
             "packages/dsh-provider-usage/test/integration/collect/composition-root.test.ts",
             "packages/dsh-provider-usage/test/integration/pipeline/composition-root.test.ts",
@@ -961,7 +955,7 @@
             "packages/dsh-provider-usage/src/server/aggregate/store.ts",
             "packages/dsh-provider-usage/src/server/aggregate/index.ts"
           ],
-          "excludes": ["!packages/dsh-provider-usage/src/client/**"],
+          "excludes": [],
           "testFiles": [
             "packages/dsh-provider-usage/test/integration/aggregate/composition-root.test.ts",
             "packages/dsh-provider-usage/test/integration/schedule/composition-root.test.ts",
@@ -979,7 +973,7 @@
             "packages/dsh-provider-usage/src/server/collect/types.ts",
             "packages/dsh-provider-usage/src/server/shared/trend.ts"
           ],
-          "excludes": ["!packages/dsh-provider-usage/src/client/**"],
+          "excludes": [],
           "testFiles": [
             "packages/dsh-provider-usage/test/integration/aggregate/composition-root.test.ts",
             "packages/dsh-provider-usage/test/integration/collect/composition-root.test.ts",
@@ -1011,7 +1005,7 @@
             "packages/dsh-provider-usage/src/server/shared/prompts.ts",
             "packages/dsh-provider-usage/src/server/shared/last-run.ts"
           ],
-          "excludes": ["!packages/dsh-provider-usage/src/client/**"],
+          "excludes": [],
           "testFiles": [
             "packages/dsh-provider-usage/test/client-dom/report-section.test.ts",
             "packages/dsh-provider-usage/test/integration/config/composition-root.test.ts",
@@ -1037,7 +1031,7 @@
             "packages/dsh-provider-usage/src/server/execute/executor.ts",
             "packages/dsh-provider-usage/src/server/execute/list-dirs.ts"
           ],
-          "excludes": ["!packages/dsh-provider-usage/src/client/**"],
+          "excludes": [],
           "testFiles": [
             "packages/dsh-provider-usage/test/integration/execute/composition-root.test.ts",
             "packages/dsh-provider-usage/test/integration/report-routes/composition-root.test.ts",
@@ -1060,7 +1054,7 @@
             "packages/dsh-provider-usage/src/server/ui-routes/events.ts",
             "packages/dsh-provider-usage/src/server/report-routes/reports.ts"
           ],
-          "excludes": ["!packages/dsh-provider-usage/src/client/**"],
+          "excludes": [],
           "testFiles": [
             "packages/dsh-provider-usage/test/integration/data-routes/composition-root.test.ts",
             "packages/dsh-provider-usage/test/integration/report-routes/composition-root.test.ts",
@@ -1076,7 +1070,7 @@
         },
         "upgrade": {
           "mutate": ["packages/dsh-provider-usage/src/server/upgrade/**/*.ts"],
-          "excludes": ["!packages/dsh-provider-usage/src/client/**"],
+          "excludes": [],
           "testFiles": [
             "packages/dsh-provider-usage/test/integration/schedule/composition-root.test.ts",
             "packages/dsh-provider-usage/test/integration/upgrade/upgrade-chain.test.ts",

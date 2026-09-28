@@ -767,3 +767,119 @@ test("I8①（B1.0）：裸包名写法进的是同一条基线面与台账键�
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+/**
+ * #875 4b+4d 提案 1：client 子树的「已覆盖」由**派生量**（有段认领了 client 系测试）给出，
+ * 不再靠把 !src/client/** 抄进每个 server 段的 excludes。
+ *
+ * 为什么这组用例必须是正反一对：派生口径最危险的失效形态是「恒真」——只要
+ * segmentsClaimClientTests 返回 true 就全绿，而它若因写错（把 testFiles 的形态认成对象、
+ * 或路径正则写松）恒返回 true，本仓 39 条死条目一删 unnoticed，全绿依旧。
+ * 正例钉「认领了 → client 子树零未覆盖」；反例钉「磁盘上有 client 测试但无段认领 →
+ * client 子树进未覆盖清单」，反例同时证明这条判据确实在看段 testFiles。
+ */
+function clientCoverageFixture(segments: unknown, extraSrc: Record<string, string> = {}) {
+  return {
+    [TOPOLOGY_REL]: JSON.stringify({
+      sharedDefaults: {},
+      packages: { [PKG]: { segments } },
+    }),
+    // client 文件在两种用例里都存在：差别只在段有没有认领 client 判据。
+    [SRC + "/client/ui.ts"]: "export const UI = 1;\n",
+    [SRC + "/server/a/impl.ts"]: "export const A = 1;\n",
+    [SRC + "/index.ts"]: "export const ROOT = 1;\n",
+    ...extraSrc,
+  };
+}
+
+test("#875 提案 1 正例：有段认领 client 系测试 → client 子树零未覆盖（无需任何 !src/client/** 登记）", () => {
+  const root = makeFixtureRoot(
+    clientCoverageFixture({
+      server: {
+        // 正向面覆盖 server 与组合根，**独不覆盖 client** —— client 的覆盖只能来自派生量。
+        mutate: [SRC + "/server/**/*.ts", SRC + "/index.ts"],
+        excludes: [],
+        testFiles: ["packages/" + PKG + "/test/client-unit/probe.test.ts"],
+      },
+    }),
+  );
+  try {
+    const res = runOn(root, ["--write-baseline"]);
+    assert.equal(res.status, 0, "认领了 client 判据就不该报未覆盖：\n" + res.out);
+    assert.deepEqual(
+      qualityOf(root).uncoveredSrcFiles,
+      [],
+      "认领了 client 系测试时 client 子树不得进未覆盖清单（提案 1 的核心行为）",
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("#875 提案 1 反证：无段认领 client 系测试 → client 子树判红（这条判据确实在看段 testFiles）", () => {
+  const root = makeFixtureRoot(
+    clientCoverageFixture({
+      server: {
+        mutate: [SRC + "/server/**/*.ts", SRC + "/index.ts"],
+        excludes: [],
+        // 段认领的是 server 侧判据：client 系测试在磁盘上，却没有任何段认领它。
+        testFiles: ["packages/" + PKG + "/test/unit/probe.test.ts"],
+      },
+    }),
+  );
+  try {
+    const unitDir = join(root, "packages/" + PKG + "/test/unit");
+    mkdirSync(unitDir, { recursive: true });
+    writeFileSync(join(unitDir, "probe.test.ts"), "export {};\n");
+    const res = runOn(root, ["--write-baseline"]);
+    assert.equal(res.status, 1, "无段认领 client 判据时必须判红：\n" + res.out);
+    assert.match(
+      res.out,
+      /未登记的新增质量证据/,
+      "判红原因应是未覆盖清单进了新增证据：\n" + res.out,
+    );
+    assert.ok(
+      pendingLedgerKeys(res.out).some((k) => k.startsWith(PKG + ":") && k.includes("client/")),
+      "待登记键应点名 client 子树里的文件：\n" + res.out,
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("#875 提案 1 边界：派生凭据只对 client/ 生效，server 侧漏覆盖仍照旧判红", () => {
+  // 防「派生量越界」：把 clientCovered 实现成「整棵 src 都算已覆盖」，上面两条仍会绿
+  // （它们只碰 client），但 server 侧的漏覆盖会被静默吞掉。
+  const root = makeFixtureRoot(
+    clientCoverageFixture(
+      {
+        server: {
+          mutate: [SRC + "/server/a/**/*.ts"],
+          excludes: [],
+          testFiles: ["packages/" + PKG + "/test/client-unit/probe.test.ts"],
+        },
+      },
+      // server/b 与组合根都不在正向面里：它们必须照旧进未覆盖清单。
+      { [SRC + "/server/b/impl.ts"]: "export const B = 1;\n" },
+    ),
+  );
+  try {
+    const res = runOn(root, ["--write-baseline"]);
+    assert.equal(res.status, 1, "server 侧漏覆盖必须判红：\n" + res.out);
+    const keys = pendingLedgerKeys(res.out);
+    assert.ok(
+      keys.some((k) => k.includes("server/b/impl.ts")),
+      "待登记键应点名 server/b（派生凭据不得越界到 server）：\n" + res.out,
+    );
+    assert.ok(
+      keys.some((k) => k.endsWith("/src/index.ts")),
+      "待登记键应点名组合根 index.ts：\n" + res.out,
+    );
+    assert.ok(
+      !keys.some((k) => k.includes("client/")),
+      "client 子树已被派生量覆盖，不该出现在待登记键里：\n" + res.out,
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});

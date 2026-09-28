@@ -4,7 +4,6 @@
     "packages/dsh-mcp-manager/src/index.ts",
     "packages/dsh-mcp-manager/src/server/workspace/**/*.ts",
     "packages/dsh-mcp-manager/src/server/config/**/*.ts",
-    "!packages/dsh-mcp-manager/src/client/**",
     "!packages/dsh-mcp-manager/src/**/interface.ts",
     "!packages/dsh-mcp-manager/src/server/*/deps.ts",
     "!packages/dsh-mcp-manager/src/server/*/*/deps.ts"

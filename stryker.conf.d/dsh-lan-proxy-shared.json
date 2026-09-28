@@ -5,7 +5,6 @@
     "packages/dsh-lan-proxy/src/server/shared/deflate.ts",
     "packages/dsh-lan-proxy/src/server/shared/net.ts",
     "packages/dsh-lan-proxy/src/server/shared/paths.ts",
-    "!packages/dsh-lan-proxy/src/client/**",
     "!packages/dsh-lan-proxy/src/**/interface.ts",
     "!packages/dsh-lan-proxy/src/**/deps.ts"
   ],
