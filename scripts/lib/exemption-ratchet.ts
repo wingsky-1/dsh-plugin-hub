@@ -82,10 +82,18 @@ export const RATCHET_BUCKETS: readonly RatchetBucket[] = [
     // 三种 undefined 回落；cwdQueryOf 的非空编码与空串/非字符串空回落；api() 的 2xx/非 2xx error/无 error
     // 兜底 HTTP <status>/body 解析失败两支、调用方自带 signal 时不装超时兜底且推钟后仍不 abort、
     // 抛错路径定时器同样被清掉。探针四处 exit 1。
+    // 8 → 7：删掉 float/servers.ts 那条。量化日 lines 23.84% / functions 35.71% / branches 18.82%——
+    // 已有 client-float-pure.test.ts / smoke.test.ts 的直连判据只覆盖纯函数层（4 个纯函数），
+    // 18 个渲染/动作函数（renderServer / renderServers / serverToolsDetails / statusActions /
+    // disableAction / deleteAction / actionButton / serverCardHeader …）**全部未覆盖**，DOM 装配面
+    // 零判据。本轮以 test/client-dom/float-servers-render.test.ts 补齐（49 例）：端点摘要两形态、
+    // 状态动作三档的 URL/query 逐条钉、禁用/删除动作的 method+body、delete 的 confirm 闸（未确认
+    // 零请求）、编辑中才 resetForm、actionButton 失败 alert、单卡结构与 busy 态禁用删除、列表页
+    // 空态/需关注置顶/project+global 分组/组内排序/details 折叠态跨重渲染恢复。探针六处 exit 1。
     // 两条删除条件同时成立：① lines/branches 达 thresholds 同名键（见 pnpm cov 产物）；
     // ② 已登记进 mutation-topology 的 client-panel 段 mutate（持续执法面）。
     // 按维护者裁定「一条豁免一次落地」，每条豁免自成一次可独立回退的提交。
-    ceiling: 8,
+    ceiling: 7,
     note: "覆盖率排除面的 pending-project 暂缺豁免（水位与变异面同时成立才可删）",
   },
   {
