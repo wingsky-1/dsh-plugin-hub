@@ -167,7 +167,7 @@ test("本仓真实快照：15 条在册（数字变即提示同步台账与 #765
   //   shared/client/** 只改 reason 与 exitCriteria。收窄与改写都不增删条目。
   const r = spawnSync(process.execPath, [SCRIPT], { cwd: ROOT, encoding: "utf8" });
   assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stdout, /合计 14 条待办：已过期 0 /);
+  assert.match(r.stdout, /合计 13 条待办：已过期 0 /);
   assert.match(r.stdout, /仅解除条件（无到期日）1/);
   // crap.strict 的解除条件必须在台账里（只写日期会逼出「到期了再讨论一次」）
   assert.match(r.stdout, /\$\.crap {2}threshold=16/);
@@ -263,7 +263,7 @@ test("未识别 kind 落待办兜底并点名依据（多算不少算，漂移�
   assert.match(r.stdout, /合计 1 条待办/);
 });
 
-test("本仓真实快照：排除面按 kind 分为 12 + 16 结构性，合计待办 14 条", () => {
+test("本仓真实快照：排除面按 kind 分为 11 + 16 结构性，合计待办 13 条", () => {
   const r = spawnSync(process.execPath, [SCRIPT, "--today", "2026-09-28"], {
     cwd: ROOT,
     encoding: "utf8",
@@ -276,8 +276,9 @@ test("本仓真实快照：排除面按 kind 分为 12 + 16 结构性，合计�
     r.stdout,
     /结构性 16 条（不计入待办）：facade×4、not-mutated×4、not-source×1、type-only×7/,
   );
-  // 12 条 pending-project + gauntlet 1 + gate-exemptions 1 = 14 条待办
-  // （删掉 mcp-manager core/i18n.ts 那条：补直连判据 + 进 mutation-topology mutate 面 + 探针打红）
-  assert.match(r.stdout, /合计 14 条待办/);
+  // 11 条 pending-project + gauntlet 1 + gate-exemptions 1 = 13 条待办
+  // （删掉 mcp-manager core/i18n.ts 与 client/locales.ts 两条：各自补直连判据 +
+  //  进 mutation-topology mutate 面 + 变异探针打红；一条豁免一次落地）
+  assert.match(r.stdout, /合计 13 条待办/);
   assert.match(r.stdout, /结构性（按设计不计入待办）29/);
 });

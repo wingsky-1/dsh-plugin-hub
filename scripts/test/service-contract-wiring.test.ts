@@ -140,6 +140,7 @@ const EXPECT_FILES: Record<string, string[]> = {
     "client-unit/client-context-s2.test.ts",
     "client-unit/client-core-i18n.test.ts",
     "client-unit/client-float-pure.test.ts",
+    "client-unit/client-locales.test.ts",
     "client-unit/unit-summary-a3-guard.test.ts",
     "helpers.ts",
     "integration/apply-lifecycle.test.ts",

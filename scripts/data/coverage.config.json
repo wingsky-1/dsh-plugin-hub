@@ -103,14 +103,6 @@
       "reviewBy": "2027-03-31"
     },
     {
-      "pattern": "packages/dsh-mcp-manager/src/client/locales.ts",
-      "kind": "pending-project",
-      "reason": "同上（#947 按面收窄）：确无直连判据。100% / 100% 是**模块加载的假象**——唯一运行时 importer 是 src/client/index.ts:40 的顶层 import（core/constants.ts 只 import type，运行时擦除），字典全部是顶层 const 声明，加载即满。**变异探针实测零断言信号**：把 4 个字典值改成乱码后 dsh-mcp-manager 全部 1520 个测试仍全绿（exit 0）。纯数据字典但无任何判据钉住它，**故保留本条**。",
-      "exitCriteria": "删除条件（须**同时**成立）：① `pnpm cov` 产物里本文件 lines 与 branches 均不低于本文件 `thresholds` 的同名键（80 / 70）——**持续判据**，数字派生自同文件 thresholds 不另立第二份，收紧阈值本条随之变严；`pnpm cov` 是既定执行点（CI 夜间班次与 `gate:full --with-coverage` 已恒跑），故无需新增负责人。② 本文件已进入 `scripts/data/mutation-topology.json` 某段的 `mutate`（判据已能杀死其变异体）。**水位单条不够**：可被「模块加载即执行」满足而不产生任何断言信号（locales.ts 100%、dom.ts 94.44% 即如此，两者的变异探针全绿），证据与判词见本文件 note 的「传递覆盖不算达标」段。两项同时成立即删本条并一次性重新基线化阈值。",
-      "since": "#947",
-      "reviewBy": "2027-03-31"
-    },
-    {
       "pattern": "packages/dsh-mcp-manager/src/client/settings/settings-card.tsx",
       "kind": "pending-project",
       "reason": "同上（#947 按面收窄）。**旧 reason「等组件级渲染判据」为假**：test/client-dom/settings-card.test.ts 早已直连 import 本文件（`../../src/client/settings/settings-card.tsx`）并用 render/fireEvent 驱动，水位 lines 95.23% / branches 85.18%（量化日 2026-09-28）。**变异探针实测两处均打红**（改实现后跑 dsh-mcp-manager 全量测试 53 文件 / 1520 用例）：① 保存按钮的 `disabled={saving}` 改成 `disabled={false}` → 1 条红，判词 `AssertionError: expected false to be true // Object.is equality`（用例「飞行中保存按钮禁用（saving 态），落地后恢复」），exit 1；② 成功/失败提示的 class 三元 `msg.ok ? \"dm-set-saved\" : \"dm-set-error\"` 两值互换 → 3 条红，判词 `AssertionError: expected 'dm-set-error' to be 'dm-set-saved' // Object.is equality` 等，exit 1。**故本条缺的不是判据，是第二条件**：本文件不在 `scripts/data/mutation-topology.json` 的任何 `mutate` 段内。探针是一次性测量（有人加一个没覆盖的函数，上面那两句照样成立），mutate 面登记才是持续执法——故按本轮确立的双条件规则，**保留本条**，不改 pattern。判词与探针纪律见本文件 note 的「传递覆盖不算达标」段。",

@@ -57,10 +57,15 @@ export const RATCHET_BUCKETS: readonly RatchetBucket[] = [
     // 本轮以 test/client-unit/client-core-i18n.test.ts 直连补齐：字面量键锚表 + 恒等绑定
     // 两支，六态逐态可求值。变异探针（把 tStatus 三元的两支对调）实测 exit 1，
     // 判词为 tStatus 断言的 Expected/Received 反向，证明判据落在实现上。
+    // 12 → 11：删掉 client/locales.ts 那条 pending-project 豁免。该文件此前**零直接判据**——
+    // 水位 100%/100% 是被 index.ts 顶层 import「加载即满」的假达标（量化日把 4 个字典值
+    // 改成乱码后全量 1520 个测试仍全绿，exit 0）。本轮以 test/client-unit/client-locales.test.ts
+    // 补真判据：91 条键 × zh/en 的全量字面量镜像（期望值一行不从被测实现 import）+ 键平衡 /
+    // 占位符配对 / 非空三条机械判据。变异探针（即量化日那个「4 个字典值改乱码」）现 exit 1。
     // 两条删除条件同时成立：① lines/branches 达 thresholds 同名键（见 pnpm cov 产物）；
     // ② 已登记进 mutation-topology 的 client-panel 段 mutate（持续执法面）。
-    // 按维护者裁定「一条豁免一次落地」，本轮只收这一条，其余 7 条各自成独立改动。
-    ceiling: 12,
+    // 按维护者裁定「一条豁免一次落地」，每条豁免自成一次可独立回退的提交。
+    ceiling: 11,
     note: "覆盖率排除面的 pending-project 暂缺豁免（水位与变异面同时成立才可删）",
   },
   {
