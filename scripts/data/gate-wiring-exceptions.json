@@ -346,6 +346,12 @@
       "envKeys": []
     },
     {
+      "step": "ci.yml|coverage|Build shared（原地 emit 产物，TS 源码按相对路径引用）",
+      "digest": "c6fba2a33bd98151",
+      "envKeys": [],
+      "reason": "#1028/#1039 起 shared 是全仓唯一 outDir 原地 emit 工程，产物 shared/*.js 与 .ts 源码同目录且被 gitignore，而 TS 源码按相对路径引用它（provider-config.ts:22 / apply.ts:29 → shared/dsh-home.js）。hotreload 探针是纯 Node 子进程（不进 Vite 模块图），Node 的 ESM resolver 无 .js→.ts 回落，无此步则 unit-contract.test.ts 抛 ERR_MODULE_NOT_FOUND、pnpm cov exit 1（302109a0 worktree 实测 1 failed/226 passed，崩溃点 unit-contract.test.ts:1401）。原注释的「刻意不构建」前提已不成立，一并订正。定向而非全量 pnpm build：实测仅建 shared 即 227/227 exit 0。"
+    },
+    {
       "step": "ci.yml|mutation-gate|Build all packages（变异对象 lib 分段依赖全集一致的构建链）",
       "digest": "be8d67ab86b44655",
       "envKeys": []
@@ -464,7 +470,7 @@
     },
     {
       "job": "ci.yml|coverage",
-      "digest": "022126454dfba391"
+      "digest": "d926b65dd257ca6d"
     },
     {
       "job": "ci.yml|mutation-gate",

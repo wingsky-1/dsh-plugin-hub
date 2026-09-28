@@ -434,9 +434,32 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # 刻意不构建：unit/integration 直连 src（#722 阶段一），覆盖率分母只含
-      # packages/*/src + shared，不消费 lib 产物。实测无 lib 产物时本链路 exit 0
-      # （原始「必须全量构建」注释属 c8 产物口径遗留）。
+      # 必须先**定向**构建 shared 层：shared/ 是全仓唯一 outDir: "." 的原地 emit 工程，产物
+      # shared/*.js 与 .ts 源码同目录、且被 gitignore；而 TS 源码按**相对路径**引用它
+      # （packages/dsh-provider-usage/src/server/registry/provider-config.ts:22 与
+      # src/apply/apply.ts:29 → shared/dsh-home.js）。unit-contract.test.ts 的 hotreload 段会
+      # fork 一个纯 Node 子进程跑 test/hotreload-probe.mjs（刻意不进 Vite 模块图，回放生产
+      # 运行态的原生 ESM 语义），Node 的 ESM resolver 没有 .js→.ts 回落 → 无产物即
+      # ERR_MODULE_NOT_FOUND，整条 pnpm cov exit 1。进程内的 vitest 用例由 Vite 解析（有该回落）
+      # 故安然无恙，于是 227 个 suite 里恰好只有这 1 个死，症状极具迷惑性。
+      #
+      # 被订正的原注释（逐字）：「刻意不构建：unit/integration 直连 src（#722 阶段一），覆盖率
+      # 分母只含 packages/*/src + shared，不消费 lib 产物。实测无 lib 产物时本链路 exit 0
+      # （原始「必须全量构建」注释属 c8 产物口径遗留）。」这是两句话拼在一起、一真一假：
+      # - 「分母不消费 lib 产物」至今成立（coverage.include 仍只有 packages/*/src + shared/*.ts +
+      #   shared/client/*.ts），istanbul 侧安然无恙；
+      # - 「实测无 lib 产物时本链路 exit 0」已被推翻——它写于 shared 还是**仓内手写 .js** 的年代，
+      #   #1028/#1039 把 shared TS 化 + outDir "." 原地 emit 之后，shared/*.js 变成 gitignore 的
+      #   构建产物，no-build 前提被抽掉。
+      # 死的是**子进程的模块解析**，不是分母。讽刺点正在于：注释给的理由与真实失败毫无交集，
+      # 偏偏正是它让这条链路一年没人动——读到「刻意不构建」的人只会把缺步骤当成设计如此。
+      # 订正它与补步骤必须同一次改动，否则下一个读注释的人会再次依据它把 build 删掉。
+      #
+      # 为什么定向而不是全量 pnpm build：全量要跑 7 个包的 esbuild，而本 job 的死因只需要
+      # shared 这一层 emit（实测：仅建 shared、packages/*/lib 仍不存在时 pnpm cov 227/227
+      # exit 0）。少一个无谓的分钟级开销，也不动 timeout-minutes: 10 的口径。
+      - name: Build shared（原地 emit 产物，TS 源码按相对路径引用）
+        run: pnpm --filter @wingsky-1/dsh-shared build
 
       # Mutate 面守卫已随 #276 方案 A 退役：src 级 mutate 用文件 glob 声明
       # （stryker.conf.d/<pkg>[-<n>].json 的 mutate = 源文件名清单），无产物

@@ -1934,16 +1934,27 @@ test("#217: coverage job 全局单次采集——if 精确、步骤链与 artifa
     "github.event_name == 'pull_request' && needs.changes.outputs.fullGate == 'true' && needs.changes.outputs.hasMutations == 'true'",
     "coverage if 必须精确为「仅 PR 且 gate:full 且 hasMutations」（#722：覆盖率是全仓分母口径，归夜间/标签触发）",
   );
-  // #722 阶段三步骤链：install → cov → upload。
-  // build 已移除（unit/integration 直连 src，不消费 lib 产物）；self-cov 判分已并入
-  // vitest 的 coverage.thresholds（未达标即非零退出，故 PR 侧不再「只落盘不判红」）。
+  // 步骤链：install → **build shared（定向）** → cov → upload。
+  // self-cov 判分已并入 vitest 的 coverage.thresholds（未达标即非零退出，故 PR 侧不再
+  // 「只落盘不判红」）。
   const covRunIdx = cov.indexOf("run: pnpm cov");
   const upIdx = cov.indexOf("Upload coverage artifact");
   assert.ok(covRunIdx > 0, "coverage 步骤 pnpm cov 在位");
   assert.ok(upIdx > covRunIdx, "coverage 步骤 upload artifact 在位且排在 pnpm cov 之后");
+  // 构建形态改成「只允许定向建 shared」——这与本条断言的旧形态是反向的，旧形态是**只禁**。
+  // 为什么必须同时钉住正面：#1039 起 shared/*.js 是 gitignore 的原地 emit 产物，而 TS 源码
+  // 按相对路径引用它（provider-config.ts:22 / apply.ts:29 → shared/dsh-home.js），hotreload
+  // 探针（纯 Node 子进程，Node 的 ESM resolver 无 .js→.ts 回落）在无产物时抛
+  // ERR_MODULE_NOT_FOUND、整条 pnpm cov exit 1。只留旧断言的话，**删掉**这个步骤本地全绿、
+  // CI 才红——正是让这条链路从 #1039 起烂到今天的那类静默回归。死因是子进程的模块解析，
+  // 与覆盖率分母无关（分母仍只含 packages/*/src + shared，不消费 lib 产物——那半句依然成立）。
   assert.ok(
-    !cov.includes("- name: Build all packages"),
-    "coverage job 不得再全量构建（#722 阶段三：分母只含 packages/*/src + shared，不消费 lib）",
+    cov.includes("run: pnpm --filter @wingsky-1/dsh-shared build"),
+    "coverage job 必须在 pnpm cov 之前定向构建 shared 层（无此步则 hotreload 子进程解析不到 shared/*.js，cov exit 1）",
+  );
+  assert.ok(
+    !cov.includes("- name: Build all packages") && !/^\s*run: pnpm build$/m.test(cov),
+    "coverage job 只允许定向构建 shared 层，不得全量构建（实测仅建 shared 即 227/227 exit 0，全量是拖慢本 job 的无谓开销）",
   );
   assert.ok(
     !cov.includes("node scripts/gate/self-cov.mjs"),
