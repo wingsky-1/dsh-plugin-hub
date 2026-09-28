@@ -374,9 +374,8 @@ afterEach(async () => {
     live = null;
     await fiber.dispose();
   }
-  // api 域的装配标记只在它自己的 release() 走完时才复位，而有一条用例刻意让摘除器抛错把它停在
-  // 半释放（那是它的判据）。这里无条件补一次收尾：域释放幂等，正常用例上是空转——不放在用例里
-  // 是因为用例前面任何一条断言红了就会跳过补偿，后续用例会级联红成一片。
+  // 无条件补一次 api 域收尾：域释放幂等，正常用例上是空转。不放在用例里是因为用例前面任何一条
+  // 断言红了就会跳过补偿（路由/心跳会漏到下一个用例，症状是「上一条用例弄脏了这条」）。
   apiApi.releaseApi();
 });
 
@@ -1017,8 +1016,8 @@ describe("释放", () => {
   it("单个域释放失败不阻断其余：一条路由摘除抛错，卸载链照样走完", async () => {
     const root = new Context();
     // 第 3 条摘除器抛错：宿主摘不掉路由是真实会发生的（路由已被别人摘掉、宿主换实现），
-    // api 域的释放循环会停在它那里，而组合根的安全释放壳必须继续走完 sdk / events /
-    // pipeline / stores / config——否则一次清理失败就拖垮整条卸载链。
+    // 组合根的安全释放壳必须继续走完 sdk / events / pipeline / stores / config——否则一次清理
+    // 失败就拖垮整条卸载链。
     const host = fakeWebServer(() => ({ configDays: 0, serviceAlive: false }), { failAt: 3 });
     root.provide("webServer", host.service);
     root.provide("settings", fakeSettings({}));
@@ -1027,9 +1026,10 @@ describe("释放", () => {
 
     await fiber.dispose();
     live = null;
-    expect(host.removals).toHaveLength(3);
+    // 两层隔离都在这里看得见：**域内**逐条摘除互不阻断（8 条路由全摘，抛错那条自己已记账），
+    // **组合根**的释放壳也不被这个失败拖住（下面两个凭据）。缺了域内那层，这里会是 3。
+    expect(host.removals.map((removal) => removal.path).sort()).toEqual([...ROUTE_PATHS].sort());
     // 链走完的两个凭据：服务面收回（sdk 域放过了）与设置回落默认（config 域也放过了）。
-    // api 域停在半释放状态的收尾由 `afterEach` 无条件做（见那里的注释：用例内补偿会被断言红跳过）。
     expect(root.get("wingsky.notifier", false)).toBeUndefined();
     expect(configApi.readConfig().historyMaxAgeDays).toBe(0);
   });

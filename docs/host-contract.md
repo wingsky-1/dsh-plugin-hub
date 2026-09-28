@@ -167,14 +167,14 @@ peer 含 cordis 框架底座与仅经 `ctx.on` 事件消费的包（如 notifier
 | /api/dsh-provider-usage/reports/detail | dsh-provider-usage | GET | `src/server/report-routes/reports.ts:243`（装配表 366 行） |
 | /api/dsh-provider-usage/reports/generate | dsh-provider-usage | POST | `src/server/report-routes/reports.ts:280`（装配表 371 行） |
 | /api/dsh-provider-usage/reports/generate/status | dsh-provider-usage | GET | `src/server/report-routes/reports.ts:320`（装配表 376 行） |
-| /api/dsh-notifier/config | dsh-notifier | GET， PUT | `src/server/api/impl/service/index.ts:32`（端点 `methods` 表） |
-| /api/dsh-notifier/history | dsh-notifier | GET， DELETE | `src/server/api/impl/service/index.ts:33`（端点 `methods` 表） |
-| /api/dsh-notifier/status | dsh-notifier | GET | `src/server/api/impl/service/index.ts:34`（端点 `methods` 表） |
-| /api/dsh-notifier/kinds | dsh-notifier | GET， POST | `src/server/api/impl/service/index.ts:35`（端点 `methods` 表） |
-| /api/dsh-notifier/test | dsh-notifier | POST | `src/server/api/impl/service/index.ts:36`（端点 `methods` 表） |
-| /api/dsh-notifier/health | dsh-notifier | GET | `src/server/api/impl/service/index.ts:37`（端点 `methods` 表） |
-| /api/dsh-notifier/diagnostics | dsh-notifier | GET | `src/server/api/impl/service/index.ts:38`（端点 `methods` 表） |
-| /api/dsh-notifier/events | dsh-notifier | GET（SSE） | `src/server/api/impl/service/index.ts:41-42`（端点 `methods` 表，经 `streamHub`） |
+| /api/dsh-notifier/config | dsh-notifier | GET， PUT | `src/server/api/impl/service/index.ts:33`（端点 `methods` 表） |
+| /api/dsh-notifier/history | dsh-notifier | GET， DELETE | `src/server/api/impl/service/index.ts:34`（端点 `methods` 表） |
+| /api/dsh-notifier/status | dsh-notifier | GET | `src/server/api/impl/service/index.ts:35`（端点 `methods` 表） |
+| /api/dsh-notifier/kinds | dsh-notifier | GET， POST | `src/server/api/impl/service/index.ts:36`（端点 `methods` 表） |
+| /api/dsh-notifier/test | dsh-notifier | POST | `src/server/api/impl/service/index.ts:37`（端点 `methods` 表） |
+| /api/dsh-notifier/health | dsh-notifier | GET | `src/server/api/impl/service/index.ts:38`（端点 `methods` 表） |
+| /api/dsh-notifier/diagnostics | dsh-notifier | GET | `src/server/api/impl/service/index.ts:39`（端点 `methods` 表） |
+| /api/dsh-notifier/events | dsh-notifier | GET（SSE） | `src/server/api/impl/service/index.ts:42-44`（端点 `methods` 表，经 `streamHub`） |
 | /api/dsh-decision-gateway/health | dsh-decision-gateway | GET | （派生未覆盖）`src/server/api/impl/handlers.ts:69`，路由定义 `src/shared/contract.ts:33` |
 | /api/dsh-decision-gateway/config | dsh-decision-gateway | GET， PUT | （派生未覆盖）`src/server/api/impl/handlers.ts:81`，路由定义 `src/shared/contract.ts:34` |
 | /api/dsh-decision-gateway/presets | dsh-decision-gateway | GET | （派生未覆盖）`src/server/api/impl/handlers.ts:111`，路由定义 `src/shared/contract.ts:35` |

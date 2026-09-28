@@ -36,8 +36,17 @@ import type {
 
 /** 探测超时（毫秒）：探测不许拖住第一次投递。 */
 const PROBE_TIMEOUT_MS = 3000;
-/** 子进程兜底杀进程时限：通知与音频进程都是短命任务。 */
-const KILL_TIMEOUT_MS = 8000;
+/**
+ * 子进程兜底三段（毫秒）：通知与音频进程都是短命任务，卡住时要先礼后兵，且**必须留一个硬终点**。
+ *
+ * 硬结算这一档是**对着**客户端的测试按钮预算定的：`TEST_STATUS_ATTEMPTS = 8`（**含首轮即时读**）×
+ * `TEST_STATUS_INTERVAL_MS = 1500` ⇒ 实际等待 `7 × 1500 = 10.5s`。取 9000 是**留 1.5s 余量**，
+ * 不是一个算准的覆盖——热路径（能力探测已缓存）到这里才轮到子进程，冷启动那次串行的探测挡在前面，
+ * 完整的账见 `client/settings/status-poll.ts`。三段一起拉长就是拿掉那份余量，不是「更安全」。
+ */
+const TERM_MS = 7000;
+const KILL_MS = 8500;
+const HARD_DEADLINE_MS = 9000;
 /** stderr 收集上限与进日志的尾部长度（字符）。 */
 const STDERR_TAIL_MAX = 512;
 const STDERR_LOG_MAX = 300;
@@ -236,22 +245,41 @@ function run(command: readonly string[]): Promise<CommandFacts> {
       if (stderrTail.length < STDERR_TAIL_MAX) stderrTail += chunk.toString("utf8");
     });
     let settled = false;
+    // 三个定时器一起登记、一起清：结局先到就都不该再动（进程早已回收，回调照样打进来）。
+    const timers: Array<ReturnType<typeof setTimeout>> = [];
     const settle = (outcome: CommandOutcome): void => {
       if (settled) return;
       settled = true;
-      clearTimeout(killer);
+      for (const timer of timers.splice(0)) clearTimeout(timer);
       resolve({ outcome, stderr: stderrTail });
     };
-    // 结局先到就清掉定时器，别让已回收的进程再挨一刀
-    const killer = setTimeout(() => {
+    /** 尽力杀掉：杀不掉不影响结论（进程可能已退出，或压根不认这个信号）。 */
+    const tryKill = (signal?: NodeJS.Signals): void => {
       try {
-        child.kill();
+        child.kill(signal);
       } catch {
         // 子进程可能已退出：杀不掉不影响结论
       }
-      // 子进程忽略 SIGTERM 时 onExit 永远不到：在这里就地结算，否则 `await` 永久挂着（零日志零落盘）
-      settle({ kind: "timeout" });
-    }, KILL_TIMEOUT_MS);
+    };
+    // 第一段 7s：先礼。短命任务正常在它之前自己退了，这一段只是给「卡住但不赖着不走」的那个兜底。
+    // 只发信号**不结算**：正常收尾走 onExit，就地结算等于把一次还在跑的投递提前判死。
+    timers.push(setTimeout(() => tryKill("SIGTERM"), TERM_MS));
+    // 第二段 8.5s：强杀。忽略 SIGTERM 的进程（旧实现发完就结算、进程还活着，实测 8006ms 后接口
+    // 已返回 failed 而它仍在跑）在这一段才被真正收掉。
+    timers.push(setTimeout(() => tryKill("SIGKILL"), KILL_MS));
+    // 第三段 9s：硬结算。**必须有这一段**：连 SIGKILL 都不理的进程（内核态 D 状态、被冻结的
+    // 容器）永远不回调 onExit，缺了它 `await` 就永久挂着——那正是本次要消灭的那个失败面。
+    timers.push(
+      setTimeout(() => {
+        settle({ kind: "timeout" });
+        // 结算之后才 unref：此刻它已经是孤儿（能杀的信号都发过了），不该再拖住宿主退出。
+        try {
+          child.unref();
+        } catch {
+          // unref 失败不影响结论：这次投递的终态已经定了
+        }
+      }, HARD_DEADLINE_MS),
+    );
     child.onExit((exit) =>
       settle(exit.exited ? { kind: "exit", code: exit.code } : { kind: "killed" }),
     );

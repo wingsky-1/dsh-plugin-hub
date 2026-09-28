@@ -39,6 +39,21 @@ describe("跨端一致性：服务端每个 code 都有客户端文案", () => {
       expect(en[localeKey], `${code} 的 en 文案回落到 key 本体`).not.toBe(code);
     }
   });
+
+  // 上面那条只保证「有文案」，不保证「这条 code 走字典而不是落进中性回退」——后者要断渲染结果。
+  it("reasonDispatchCanceled 渲染成取消文案，而不是「原因未知」", () => {
+    expect(reasonText({ code: "reasonDispatchCanceled" }, t)).toBe(zh.reasonDispatchCanceled);
+    const view = deliveryViewOf(
+      {
+        channelId: "bark:a",
+        status: "skipped",
+        reason: { code: "reasonDispatchCanceled" },
+      },
+      t,
+    );
+    expect(view?.statusText).toBe(zh.chStatusSkipped);
+    expect(view?.reason).toBe(zh.reasonDispatchCanceled);
+  });
 });
 
 describe("reasonText：主文案", () => {

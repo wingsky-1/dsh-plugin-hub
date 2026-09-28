@@ -144,6 +144,7 @@ export const zh = {
   reasonUnknownTarget: "未知的投递目标类型（{kind}）",
   reasonChannelThrew: "投递出口内部错误",
   reasonThrottled: "距上一条不足 1 秒，本次未投递（结论见上一条记录）",
+  reasonDispatchCanceled: "插件卸载时这条还在排队，未投递",
   // 分区/tab（设置卡 title/副标题已移除；secEvents/secChannels 现为
   // 卡内双 tab 文案，术语统一为「通知频道」）
   secEvents: "通知事件",
@@ -454,6 +455,7 @@ export const en: Record<NotifierLocaleKey, string> = {
   reasonUnknownTarget: "Unknown delivery target type ({kind})",
   reasonChannelThrew: "Delivery channel raised an internal error",
   reasonThrottled: "Less than 1s since the previous one; not delivered (see the previous record)",
+  reasonDispatchCanceled: "Still queued when the plugin was unloaded; not delivered",
   secEvents: "Events",
   secChannels: "Channels",
   secDedup: "Limits",

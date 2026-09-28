@@ -87,7 +87,7 @@ export const LINUX_PLAYERS: readonly PlayerSpec[] = [
     probeArgs: [["-version"], ["-h"]],
     // 四个参数都必需：`-hide_banner`/`-loglevel error` 压噪声，`-nodisp` 禁开窗口
     // （缺它实测 exit 0 但只报 `Failed to create window or renderer`，根本不出声），
-    // `-autoexit` 播完即退（缺它进程不退出，只能等 8 秒兜底杀）
+    // `-autoexit` 播完即退（缺它进程不退出，只能等 9 秒硬结算）
     fileArgs: (file) => ["-hide_banner", "-loglevel", "error", "-nodisp", "-autoexit", file],
     needsServer: false,
     fatalMarkers: FATAL_MARKERS,

@@ -15,6 +15,7 @@ import { execFile, spawn } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { Readable } from "node:stream";
 import type { NotificationNameProbe, OsReleaseProbe, PlatformProbe, ToneStage } from "./type.ts";
 
 /** 子进程退出事实。`exited` 为假 = 被信号杀死（多数是我们自己的超时兜底），是主动行为不是异常。 */
@@ -28,7 +29,21 @@ export interface ChildHandle {
   onExit(handler: (exit: ProcessExit) => void): void;
   /** 启动失败（二进制缺失、权限不足）。没人接住的 error 事件会把宿主进程打挂。 */
   onError(handler: (cause: Error) => void): void;
-  kill(): void;
+  /**
+   * 杀进程。不给信号 = `SIGTERM`（Node 的缺省）；给 `SIGKILL` 才是「不再讲道理」那一档。
+   *
+   * 带上信号是必要的：子进程忽略 SIGTERM 时，重复发 SIGTERM 只会重复被忽略，而旧实现发完
+   * SIGTERM 就地结算、进程还活着——实测 8006ms 后接口已返回 failed 而进程仍在跑。
+   * Windows 上 `kill(signal)` 不给信号语义、直接 terminate，故调用侧不需要平台分支。
+   */
+  kill(signal?: NodeJS.Signals): void;
+  /**
+   * 脱离事件循环：此后它既不挡进程退出、也不让它自己的管道把事件循环吊住。
+   *
+   * 只在**硬结算之后**调（那时子进程已尽力杀掉、还活着就是孤儿）；正常退出路径上进程已经没了，
+   * 调它没有意义。
+   */
+  unref(): void;
 }
 
 /** 起进程的选项：本块只关心要不要接 stderr（Windows 的 PS 诊断只在 stderr 上）。 */
@@ -93,8 +108,15 @@ function spawnChild(command: readonly string[], options: SpawnOptions): ChildHan
     onError(handler) {
       child.on("error", handler);
     },
-    kill() {
-      child.kill();
+    kill(signal) {
+      child.kill(signal);
+    },
+    unref() {
+      child.unref();
+      // stderr 管道也是一条 socket：孤儿进程还在往里写时，它同样会让事件循环活下来。
+      // 类型面上 `child.stderr` 只是 `Readable`，而 `unref` 长在 `net.Socket` 上，故按存在性取。
+      const stderr = child.stderr as (Readable & { unref?: () => void }) | null;
+      stderr?.unref?.();
     },
   };
 }

@@ -80,7 +80,7 @@
 1. judgeRequest（`src/server/pipeline/impl/judge/index.ts:50-66`）：disabled → **test 短路**（`:59`，唯一例外：过了总开关即放行，注释明言「被静音吃掉等于测试按钮失效」）→ kind-off（`:60`）→ unlisted（`:61`，动态 kind 只认 allowKinds）→ quiet（`:62-64`）。quiet 是多窗口并集（`windows.some`，`:37-42`）：单窗口由纯函数 `inWindow` 判定（`:27-34`），支持跨午夜（start 大于 end），零长窗口与解析失败一律未命中——脏设置不该把通知全部吃掉；空数组等于未命中；豁免只认显式 `allowKinds`（`:79-82`）。每条判据一个有名函数、顺序在四行里读得出来（`:44-49` 注释：此前四条规则混在一个函数体里）。
 2. routeTargets：只取 enabled 频道；kindRoutes 空或缺省表示全部启用频道；onlyChannel 收窄且绕过 kindRoutes。失效 id 被识别，不代表自动重写用户配置。
 3. finalize 与出口展示上限：按码点截断；标题均 64，正文 system 256、browser 2048、Bark/Webhook 4096。
-4. dispatch：逐目标 fail-soft，策略表 `POLICIES` 按出口类型键控（`src/server/pipeline/impl/dispatch/index.ts:13`）。Bark 仅可重试失败最多重试 2 次，退避 1s/2s、每频道在途 2，等待队列无上限。system 1s 节流当前记 skipped/reasonThrottled，**不沿用上次成功结果**；其它出口不重试。节奏按 channelId 键控，skipped 不更新「最后投递状态」。
+4. dispatch：逐目标 fail-soft，策略表 `POLICIES` 按出口类型键控（`src/server/pipeline/impl/dispatch/index.ts:22`）。Bark 仅可重试失败最多重试 2 次，退避 1s/2s、每频道在途 2，等待队列无上限。system 1s 节流当前记 skipped/reasonThrottled，**不沿用上次成功结果**；其它出口不重试。节奏按 channelId 键控，skipped 不更新「最后投递状态」。
 
 证据：`src/server/pipeline/impl/judge/index.ts#judgeRequest`、`impl/route/index.ts#narrowRoutes`、`impl/dispatch/index.ts#POLICIES` / `Dispatcher`；`src/server/channels/impl/deliver/caps.ts#displayCaps`。
 
@@ -105,7 +105,7 @@ apply 不要求打开设置卡片就启动通知半区；回前台恢复标题�
 
 路径统一前缀 /api/dsh-notifier；事实源为 `src/server/api/impl/service/index.ts#ApiService.install`。
 
-八条端点以字面量表登记（`src/server/api/impl/service/index.ts:31-44`）：
+八条端点以字面量表登记（`src/server/api/impl/service/index.ts:32-45`）：
 
 | 路径 | 方法 | 语义 |
 | --- | --- | --- |

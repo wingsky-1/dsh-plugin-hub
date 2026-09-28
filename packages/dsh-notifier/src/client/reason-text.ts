@@ -38,6 +38,7 @@ const REASON_KEYS = {
   reasonUnknownTarget: "reasonUnknownTarget",
   reasonChannelThrew: "reasonChannelThrew",
   reasonThrottled: "reasonThrottled",
+  reasonDispatchCanceled: "reasonDispatchCanceled",
 } satisfies Record<ReasonCode, NotifierLocaleKey>;
 
 /**

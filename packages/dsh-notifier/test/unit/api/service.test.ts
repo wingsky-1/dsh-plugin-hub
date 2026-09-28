@@ -131,8 +131,12 @@ function makeRes() {
   };
 }
 
-/** 假帧入口：handler 捕获下来手动触发，退订记账。 */
-function makeFrameInlet() {
+/**
+ * 假帧入口：handler 捕获下来手动触发，退订记账。
+ * order 给了就把退订也记进同一张表（与路由摘除共表，「谁先谁后」才是真的同一条序）；
+ * failOnFrame 让订阅当场抛错——那是装配期才看得见的失败面，端点块与 route 块都碰不到。
+ */
+function makeFrameInlet(options: { order?: string[]; failOnFrame?: boolean } = {}) {
   const handlers: Array<(payload: OutgoingFrame) => void> = [];
   let disposed = 0;
   return {
@@ -140,9 +144,11 @@ function makeFrameInlet() {
     disposedCount: () => disposed,
     port: {
       onFrame: (handler: (payload: OutgoingFrame) => void) => {
+        if (options.failOnFrame === true) throw new Error("帧订阅失败");
         handlers.push(handler);
         return () => {
           disposed += 1;
+          options.order?.push("frame");
         };
       },
     },
@@ -154,14 +160,47 @@ const HISTORY = [{ ts: 1, kind: "done", title: "历史", message: "正文" }];
 const STATUS = { "bark:main": { lastTs: 1, lastStatus: "ok" as const, failStreak: 0 } };
 const KINDS = [{ id: "demo:x", label: "X", confirmed: false }];
 
-/** 装配一次 api 域，交出全部观测面。 */
-function assemble() {
+/**
+ * 装配期故障注入。三类失败都只在**装配面**看得见，端点块与 route 块都碰不到：
+ * 宿主注册中途抛错（前 N-1 条已挂上）、帧订阅抛错（8 条全已挂上）、摘除时抛错（卸载中途失败）。
+ */
+interface Faults {
+  /** 第 N 条注册抛错（0 起，按路径表顺序数）。 */
+  readonly failRegisterAt?: number;
+  /** 这些路径的摘除器在记账之后抛错。 */
+  readonly failDisposePaths?: readonly string[];
+  /** 帧订阅当场抛错：8 条路由此时已全部挂在宿主上，回滚表里没有它们。 */
+  readonly failOnFrame?: boolean;
+}
+
+/** 造一份装配入参与它的记账夹具。入参与 `installApi` 分开是因为故障用例要在**装配抛错时**
+ *  也拿得到观测物（`makeRegister` 的记账就是判据本身），组合起来的那层留给 `assemble()`。 */
+function makeDeps(faults: Faults = {}) {
   const hub = makeRegister();
-  const frames = makeFrameInlet();
+  // 退订序：帧退订与路由摘除记进同一张表，故「谁先谁后」是可断言的事实，而不是两个各记各的计数器。
+  const order: string[] = [];
+  const frames = makeFrameInlet({ order, failOnFrame: faults.failOnFrame });
   const logger = makeLogger();
   const submitted: Array<{ kind: string }> = [];
+  // 注册与摘除都走记账夹具，故「摘没摘干净」永远可数；抛错点只包一层，不改记账口径。
+  let registered = 0;
+  const register: ApiDeps["register"] = (route) => {
+    const index = registered;
+    registered += 1;
+    if (index === faults.failRegisterAt) throw new Error(`注册失败：${route.path}`);
+    const dispose = hub.register(route);
+    const tracked = (): void => {
+      dispose();
+      order.push(route.path);
+    };
+    if (faults.failDisposePaths?.includes(route.path) !== true) return tracked;
+    return () => {
+      tracked();
+      throw new Error(`摘除失败：${route.path}`);
+    };
+  };
   const deps: ApiDeps = {
-    register: hub.register,
+    register,
     frames: frames.port,
     logger,
     config: {
@@ -208,8 +247,14 @@ function assemble() {
       dryRunTarget,
     },
   };
-  installApi(deps);
-  return { hub, frames, logger, submitted };
+  return { hub, frames, logger, submitted, order, deps };
+}
+
+/** 装配一次 api 域，交出全部观测面。 */
+function assemble(faults: Faults = {}) {
+  const wired = makeDeps(faults);
+  installApi(wired.deps);
+  return wired;
 }
 
 /** 取一条已注册的路由；没注册就直接抛，免得后面的断言在 undefined 上假绿。 */
@@ -346,5 +391,83 @@ describe("生命周期", () => {
     // 再装配的实质是「8 条路由又被挂回去」，就判这个。
     const again = assemble();
     expect(again.hub.routes.map((route) => route.path).sort()).toEqual([...PATHS].sort());
+  });
+
+  it("release 途中第 3 条摘除器抛错：其余路由与帧订阅仍全部摘除", () => {
+    // 第 3 条装配序的摘除器（status）抛错。宿主摘不掉路由是真实会发生的（路由已被别人摘掉、
+    // 宿主换实现），而「抛一条就跳出循环」等于把另外 7 条与帧订阅永久留在宿主上。
+    const { hub, frames } = assemble({ failDisposePaths: ["/api/dsh-notifier/status"] });
+    expect(hub.disposed).toEqual([]);
+
+    releaseApi();
+
+    // 抛错的那条自己已记账（先记账后抛），所以「全摘」与「抛错」不冲突。
+    expect([...hub.disposed].sort()).toEqual([...PATHS].sort());
+    expect(frames.disposedCount()).toBe(1);
+  });
+
+  it("release 途中抛错不阻断流枢纽与闸：SSE 停摆、installed 复位、下次装得上", () => {
+    assemble({ failDisposePaths: ["/api/dsh-notifier/status"] });
+    expect(() => releaseApi()).not.toThrow();
+
+    // 只断「没抛」不够：闸卡在 true 时再装配会撞「api 域只能装配一次」，而半释放的域永远起不来。
+    const again = assemble();
+    expect(again.hub.routes.map((route) => route.path).sort()).toEqual([...PATHS].sort());
+    // 流枢纽也得复位：它自己的「只能装配一次」会先于本域的闸撞上（半装配的心跳没人停）。
+    expect(again.frames.handlers).toHaveLength(1);
+  });
+
+  it("注册中途失败：已挂上的前缀整单回滚，摘除器不随异常丢失", () => {
+    // 第 4 条（kinds）注册抛错：前 3 条已挂在宿主上，帧订阅还没接上。摘除器只活在
+    // registerEndpoints 的局部表里，不就地回滚就是永久泄漏（实测 release 摘掉 0 条）。
+    const { hub, frames, deps } = makeDeps({ failRegisterAt: 3 });
+    expect(() => installApi(deps)).toThrow(/注册失败/u);
+
+    expect([...hub.disposed].sort()).toEqual([...PATHS.slice(0, 3)].sort());
+    expect(frames.handlers).toEqual([]);
+    // 回滚之后这次装配仍要能被撤销（afterEach 无条件调），且不重复摘。
+    releaseApi();
+    expect([...hub.disposed].sort()).toEqual([...PATHS.slice(0, 3)].sort());
+  });
+
+  it("注册中途失败不把闸焊死：回滚后可以再装配（生产里对应宿主重试挂载）", () => {
+    const { deps } = makeDeps({ failRegisterAt: 3 });
+    expect(() => installApi(deps)).toThrow(/注册失败/u);
+
+    const again = assemble();
+    expect(again.hub.routes.map((route) => route.path).sort()).toEqual([...PATHS].sort());
+  });
+
+  it("帧订阅抛错：8 条路由全挂在宿主上，回滚一条不漏（摘除表不能只靠那条会中断的 push）", () => {
+    // 展开求值 `push(...register(...), onFrame(...))` 时 onFrame 抛错，push 根本不发生：
+    // 8 条路由全挂在宿主上而摘除表仍是空的（实测回滚摘掉 0 条、期望 8）。本例的判红力在这句
+    // 「全部 8 条都进过 hub.disposed」——只断「抛错传上来了」的话，删掉整个回滚照样绿。
+    const { hub, frames, deps } = makeDeps({ failOnFrame: true });
+    expect(() => installApi(deps)).toThrow(/帧订阅失败/u);
+
+    expect([...hub.disposed].sort()).toEqual([...PATHS].sort());
+    expect(frames.handlers).toEqual([]);
+    // 回滚之后这次装配仍要能被撤销（afterEach 无条件调），且不重复摘。
+    releaseApi();
+    expect([...hub.disposed].sort()).toEqual([...PATHS].sort());
+  });
+
+  it("帧订阅抛错不把闸焊死：回滚后可以再装配（半装配的域永远起不来是最难查的一种）", () => {
+    const { deps } = makeDeps({ failOnFrame: true });
+    expect(() => installApi(deps)).toThrow(/帧订阅失败/u);
+
+    const again = assemble();
+    expect(again.hub.routes.map((route) => route.path).sort()).toEqual([...PATHS].sort());
+  });
+
+  it("release 逆序退订：帧订阅先于第一条路由被摘（后挂的先撤——先断帧的来路，再拆它的出口）", () => {
+    const { order } = assemble();
+
+    releaseApi();
+
+    // 只判「帧排在第一条路由之前」：8 条路由彼此独立，谁先谁后没有语义差别，把整条序钉死只会
+    // 让加一条端点就红一次；「逆序」真正要保的只有后挂的帧订阅先撤（把 reverse 改成正序即红）。
+    expect(order[0]).toBe("frame");
+    expect(order).toHaveLength(PATHS.length + 1);
   });
 });
