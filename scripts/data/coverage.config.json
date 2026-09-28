@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "note": "覆盖率面（include / exclude / thresholds）的单一事实源（#733 计划项 3.4）。此前这三样内联在 vitest.config.ts 里：阈值与门槛混在配置代码里，改「算什么」与改「卡多严」在 diff 里长得一样，且 #722 的基线注释（分母 132 文件）与静态复算（223）差了 40% 无人能解释。现在：配置只 import 本文件，`vitest.config.ts` 不得再内联 thresholds/include/exclude 字面量（判据见 scripts/gate/verify-coverage-scope.mjs）。\n\ninclude 的两条口径是**两个面**，别混：#722 起的宿主端面是 `{ts,tsx}`；`.mjs` 是 #733 3.4 补进来的适配器实现（3 个文件、1756 行，此前既不在分母也不在变异面——变异面里它们被 mutation-topology.json 显式排除，属**两个面的不同口径**，理由见该文件的 coverageExcludes）。实测（本轮全量 cov，含 .mjs）：statements 79.70 / functions 81.86 / branches 72.30，对阈值 78/80/70 仍有余量；其中 deepseek-official.mjs 96.7%、opencode-go.mjs 95.5% 覆盖良好，zai-coding-cn.mjs 仅 13.9%（274 语句 / 26 函数）——**如实记录，不因此把它排除**：排除只会把缺口藏起来，而它已被 10 个测试文件引用，属可测面。\n\nexclude 条目是**结构化的**（pattern + reason + kind），不是裸 glob：kind 值域 type-only（无运行时代码的声明）/ not-source（src 下的非源码资源）/ pending-project（是源码，但要等某个 project 落地才能计）。**只有 pending-project 允许带 reviewBy**（临时豁免，自动进 collect-exemptions 的到期台账）与 exitCriteria（解除条件）；其它 kind 带上即判红——给永久事实编到期日只会逼出「永不续期」的假条目。pattern 命中 0 个物理文件即判红（条目腐烂）。",
+  "note": "覆盖率面（include / exclude / thresholds）的单一事实源（#733 计划项 3.4）。此前这三样内联在 vitest.config.ts 里：阈值与门槛混在配置代码里，改「算什么」与改「卡多严」在 diff 里长得一样，且 #722 的基线注释（分母 132 文件）与静态复算（223）差了 40% 无人能解释。现在：配置只 import 本文件，`vitest.config.ts` 不得再内联 thresholds/include/exclude 字面量（判据见 scripts/gate/verify-coverage-scope.mjs）。\n\ninclude 的两条口径是**两个面**，别混：#722 起的宿主端面是 `{ts,tsx}`；`.mjs` 是 #733 3.4 补进来的适配器实现（3 个文件、1756 行，此前既不在分母也不在变异面——变异面里它们被 mutation-topology.json 显式排除，属**两个面的不同口径**，理由见该文件的 coverageExcludes）。实测（本轮全量 cov，含 .mjs）：statements 79.70 / functions 81.86 / branches 72.30，对阈值 78/80/70 仍有余量；其中 deepseek-official.mjs 96.7%、opencode-go.mjs 95.5% 覆盖良好，zai-coding-cn.mjs 仅 13.9%（274 语句 / 26 函数）——**如实记录，不因此把它排除**：排除只会把缺口藏起来，而它已被 10 个测试文件引用，属可测面。\n\nexclude 条目是**结构化的**（pattern + reason + kind），不是裸 glob：kind 值域 type-only（无运行时代码的声明）/ not-source（src 下的非源码资源）/ pending-project（是源码，但要等某个 project 落地才能计）。**只有 pending-project 允许带 reviewBy**（临时豁免，自动进 collect-exemptions 的到期台账）与 exitCriteria（解除条件）；其它 kind 带上即判红——给永久事实编到期日只会逼出「永不续期」的假条目。pattern 命中 0 个物理文件即判红（条目腐烂）。\\n\\npending-project 的 exitCriteria 口径（#T1A）：**不得**写「有了直连判据」这类布尔条件——它被一条 import 就饱和（float.ts 早有 client-float-pure.test.ts 直连，却 85% 的行未被执行），会让豁免在真实条件未达成时被删掉。解除条件一律是**覆盖水位**：本文件 lines 与 branches 达到 thresholds 的同名键（派生自本文件 thresholds，故收紧阈值即收紧豁免面），或本文件进入 mutation-topology 的 mutate 面（判据已能杀死其变异体，强于覆盖率）。为何不含 functions：函数**计数**比率与「多少代码被执行」不同量纲（panel.ts 88.52% lines 却只有 73.68% functions，而它并不在豁免里——本仓既有实践并不要求豁免文件的 functions 达 80），拿它当门槛比既有实践更严，还会把「多小函数」的文件判死。各条 reason 里的百分比是**量化日快照**（只说明当时的排期位置，不作解除依据），到期复看由 reviewBy 驱动。",
   "include": [
     "packages/*/src/**/*.{ts,tsx}",
     "packages/*/src/**/*.mjs",
@@ -49,80 +49,72 @@
     {
       "pattern": "packages/dsh-mcp-manager/src/client/core/api.ts",
       "kind": "pending-project",
-      "reason": "mcp-manager 客户端按面收窄（#947 首个直连判据：panel aria-modal）：本文件尚无直连判据，计入分母只稀释阈值。panel.ts 与 state.ts 已有 test/client-dom 判据并计入分母，其余文件随判据落地逐个移出本清单（抄 notifier #769 按面收窄先例）。",
-      "exitCriteria": "本文件有了直连 src 的判据后删除本条",
+      "reason": "mcp-manager 客户端按面收窄（#947 首个直连判据：panel aria-modal）：本文件**确无**直连判据（量化日 2026-09-28：lines 66.66% / branches 43.47%），计入分母会稀释阈值。panel.ts 与 state.ts 已有 test/client-dom 判据并计入分母，其余文件随**覆盖水位达标**逐个移出本清单（抄 notifier #769 按面收窄先例）。",
+      "exitCriteria": "删除条件（二者之一）：① `pnpm cov` 产物里本文件 lines 与 branches 均不低于本文件 `thresholds` 的同名键（80 / 70）——**持续判据**，数字派生自同文件 thresholds 不另立第二份，收紧阈值本条随之变严；`pnpm cov` 是既定执行点（CI 夜间班次与 `gate:full --with-coverage` 已恒跑），故无需新增负责人。② 本文件已进入 `scripts/data/mutation-topology.json` 某段的 `mutate`（判据已能杀死其变异体，强于覆盖率水位）。条件成立即删本条并一次性重新基线化阈值。",
       "since": "#947",
       "reviewBy": "2027-03-31"
     },
     {
       "pattern": "packages/dsh-mcp-manager/src/client/core/constants.ts",
       "kind": "pending-project",
-      "reason": "同上（#947 按面收窄）：尚无直连判据。",
-      "exitCriteria": "本文件有了直连 src 的判据后删除本条",
+      "reason": "同上（#947 按面收窄）：**已有**直连判据（test/unit/cross-end-lock.test.ts 导入），但只触及少数常量；statusDot 被 float/float.ts:259 调用却无任何判据（量化日 2026-09-28：lines 60% / branches 0%）。旧措辞「有了直连判据即删」在本文件上已被证伪。",
+      "exitCriteria": "删除条件（二者之一）：① `pnpm cov` 产物里本文件 lines 与 branches 均不低于本文件 `thresholds` 的同名键（80 / 70）——**持续判据**，数字派生自同文件 thresholds 不另立第二份，收紧阈值本条随之变严；`pnpm cov` 是既定执行点（CI 夜间班次与 `gate:full --with-coverage` 已恒跑），故无需新增负责人。② 本文件已进入 `scripts/data/mutation-topology.json` 某段的 `mutate`（判据已能杀死其变异体，强于覆盖率水位）。条件成立即删本条并一次性重新基线化阈值。",
       "since": "#947",
       "reviewBy": "2027-03-31"
     },
     {
       "pattern": "packages/dsh-mcp-manager/src/client/core/dom.ts",
       "kind": "pending-project",
-      "reason": "同上（#947 按面收窄）：尚无直连判据。",
-      "exitCriteria": "本文件有了直连 src 的判据后删除本条",
+      "reason": "同上（#947 按面收窄）：确无直连判据，但经 float 判据传递获得覆盖（量化日 2026-09-28：lines 94.44% / branches 76.92%）——**已越过本条 exitCriteria 的水位，即本条现已可删**；本 PR 不删（超出「删 2 条」的授权范围），留待同批评审决定。",
+      "exitCriteria": "删除条件（二者之一）：① `pnpm cov` 产物里本文件 lines 与 branches 均不低于本文件 `thresholds` 的同名键（80 / 70）——**持续判据**，数字派生自同文件 thresholds 不另立第二份，收紧阈值本条随之变严；`pnpm cov` 是既定执行点（CI 夜间班次与 `gate:full --with-coverage` 已恒跑），故无需新增负责人。② 本文件已进入 `scripts/data/mutation-topology.json` 某段的 `mutate`（判据已能杀死其变异体，强于覆盖率水位）。条件成立即删本条并一次性重新基线化阈值。",
       "since": "#947",
       "reviewBy": "2027-03-31"
     },
     {
       "pattern": "packages/dsh-mcp-manager/src/client/core/i18n.ts",
       "kind": "pending-project",
-      "reason": "同上（#947 按面收窄）：尚无直连判据。",
-      "exitCriteria": "本文件有了直连 src 的判据后删除本条",
-      "since": "#947",
-      "reviewBy": "2027-03-31"
-    },
-    {
-      "pattern": "packages/dsh-mcp-manager/src/client/core/session.ts",
-      "kind": "pending-project",
-      "reason": "同上（#947 按面收窄）：尚无直连判据。",
-      "exitCriteria": "本文件有了直连 src 的判据后删除本条",
+      "reason": "同上（#947 按面收窄）：确无直连判据，唯一导出 tStatus 零执行（量化日 2026-09-28：lines 0% / branches 0%）；18 行的低成本高收益项。",
+      "exitCriteria": "删除条件（二者之一）：① `pnpm cov` 产物里本文件 lines 与 branches 均不低于本文件 `thresholds` 的同名键（80 / 70）——**持续判据**，数字派生自同文件 thresholds 不另立第二份，收紧阈值本条随之变严；`pnpm cov` 是既定执行点（CI 夜间班次与 `gate:full --with-coverage` 已恒跑），故无需新增负责人。② 本文件已进入 `scripts/data/mutation-topology.json` 某段的 `mutate`（判据已能杀死其变异体，强于覆盖率水位）。条件成立即删本条并一次性重新基线化阈值。",
       "since": "#947",
       "reviewBy": "2027-03-31"
     },
     {
       "pattern": "packages/dsh-mcp-manager/src/client/float/float.ts",
       "kind": "pending-project",
-      "reason": "同上（#947 按面收窄）：本文件 Esc 一行变更暂无直连判据（panel Esc 由 panel-aria-modal 覆盖），计入分母稀释阈值；后续为 float 补直连判据后删除本条。",
-      "exitCriteria": "本文件有了直连 src 的判据后删除本条",
+      "reason": "同上（#947 按面收窄）：**已有**直连判据（test/client-unit/client-float-pure.test.ts 与 client-context-s2.test.ts），但只覆盖纯函数层；本文件 838 行里 DOM 渲染与装配部分无判据（量化日 2026-09-28：lines 14.92% / branches 23.37%）。旧措辞正是在这里会被误用成「已可删」。",
+      "exitCriteria": "删除条件（二者之一）：① `pnpm cov` 产物里本文件 lines 与 branches 均不低于本文件 `thresholds` 的同名键（80 / 70）——**持续判据**，数字派生自同文件 thresholds 不另立第二份，收紧阈值本条随之变严；`pnpm cov` 是既定执行点（CI 夜间班次与 `gate:full --with-coverage` 已恒跑），故无需新增负责人。② 本文件已进入 `scripts/data/mutation-topology.json` 某段的 `mutate`（判据已能杀死其变异体，强于覆盖率水位）。条件成立即删本条并一次性重新基线化阈值。",
       "since": "#947",
       "reviewBy": "2027-03-31"
     },
     {
       "pattern": "packages/dsh-mcp-manager/src/client/float/quick-add.ts",
       "kind": "pending-project",
-      "reason": "同上（#947 按面收窄）：尚无直连判据（client-unit 仅覆盖其 guard 纯函数，不覆盖本文件整体）。",
-      "exitCriteria": "本文件有了直连 src 的判据后删除本条",
+      "reason": "同上（#947 按面收窄）：**已有**直连判据（client-float-pure.test.ts 仅覆盖其 guard 纯函数，unit-summary-a3-guard.test.ts 覆盖 guard），不覆盖本文件整体（量化日 2026-09-28：lines 43.78% / branches 43.47%）。",
+      "exitCriteria": "删除条件（二者之一）：① `pnpm cov` 产物里本文件 lines 与 branches 均不低于本文件 `thresholds` 的同名键（80 / 70）——**持续判据**，数字派生自同文件 thresholds 不另立第二份，收紧阈值本条随之变严；`pnpm cov` 是既定执行点（CI 夜间班次与 `gate:full --with-coverage` 已恒跑），故无需新增负责人。② 本文件已进入 `scripts/data/mutation-topology.json` 某段的 `mutate`（判据已能杀死其变异体，强于覆盖率水位）。条件成立即删本条并一次性重新基线化阈值。",
       "since": "#947",
       "reviewBy": "2027-03-31"
     },
     {
       "pattern": "packages/dsh-mcp-manager/src/client/float/servers.ts",
       "kind": "pending-project",
-      "reason": "同上（#947 按面收窄）：尚无直连判据。",
-      "exitCriteria": "本文件有了直连 src 的判据后删除本条",
+      "reason": "同上（#947 按面收窄）：**已有**直连判据（client-float-pure.test.ts / smoke.test.ts），但只覆盖纯函数层，DOM 渲染层未覆盖（量化日 2026-09-28：lines 23.84% / branches 18.82%）。",
+      "exitCriteria": "删除条件（二者之一）：① `pnpm cov` 产物里本文件 lines 与 branches 均不低于本文件 `thresholds` 的同名键（80 / 70）——**持续判据**，数字派生自同文件 thresholds 不另立第二份，收紧阈值本条随之变严；`pnpm cov` 是既定执行点（CI 夜间班次与 `gate:full --with-coverage` 已恒跑），故无需新增负责人。② 本文件已进入 `scripts/data/mutation-topology.json` 某段的 `mutate`（判据已能杀死其变异体，强于覆盖率水位）。条件成立即删本条并一次性重新基线化阈值。",
       "since": "#947",
       "reviewBy": "2027-03-31"
     },
     {
       "pattern": "packages/dsh-mcp-manager/src/client/index.ts",
       "kind": "pending-project",
-      "reason": "同上（#947 按面收窄）：尚无直连判据。",
-      "exitCriteria": "本文件有了直连 src 的判据后删除本条",
+      "reason": "同上（#947 按面收窄）：**已有**直连判据（test/client-unit/client-context-s2.test.ts 导入并调用 apply），但 392 行里仅 20/186 语句被执行、144 行未覆盖（量化日 2026-09-28：lines 12.19% / branches 6.09%）。旧措辞「有了直连判据即删」在本文件上是**已实测的误判入口**——它会让 88% 未被执行的代码悄悄进入分母。",
+      "exitCriteria": "删除条件（二者之一）：① `pnpm cov` 产物里本文件 lines 与 branches 均不低于本文件 `thresholds` 的同名键（80 / 70）——**持续判据**，数字派生自同文件 thresholds 不另立第二份，收紧阈值本条随之变严；`pnpm cov` 是既定执行点（CI 夜间班次与 `gate:full --with-coverage` 已恒跑），故无需新增负责人。② 本文件已进入 `scripts/data/mutation-topology.json` 某段的 `mutate`（判据已能杀死其变异体，强于覆盖率水位）。条件成立即删本条并一次性重新基线化阈值。",
       "since": "#947",
       "reviewBy": "2027-03-31"
     },
     {
       "pattern": "packages/dsh-mcp-manager/src/client/locales.ts",
       "kind": "pending-project",
-      "reason": "同上（#947 按面收窄）：尚无直连判据。",
-      "exitCriteria": "本文件有了直连 src 的判据后删除本条",
+      "reason": "同上（#947 按面收窄）：确无直连判据（经 float / i18n 传递覆盖），但纯数据字典已全覆盖（量化日 2026-09-28：lines 100% / branches 100%）——**已越过本条 exitCriteria 的水位，即本条现已可删**；本 PR 不删（超出「删 2 条」的授权范围），留待同批评审决定。",
+      "exitCriteria": "删除条件（二者之一）：① `pnpm cov` 产物里本文件 lines 与 branches 均不低于本文件 `thresholds` 的同名键（80 / 70）——**持续判据**，数字派生自同文件 thresholds 不另立第二份，收紧阈值本条随之变严；`pnpm cov` 是既定执行点（CI 夜间班次与 `gate:full --with-coverage` 已恒跑），故无需新增负责人。② 本文件已进入 `scripts/data/mutation-topology.json` 某段的 `mutate`（判据已能杀死其变异体，强于覆盖率水位）。条件成立即删本条并一次性重新基线化阈值。",
       "since": "#947",
       "reviewBy": "2027-03-31"
     },
