@@ -90,10 +90,18 @@ export const RATCHET_BUCKETS: readonly RatchetBucket[] = [
     // 状态动作三档的 URL/query 逐条钉、禁用/删除动作的 method+body、delete 的 confirm 闸（未确认
     // 零请求）、编辑中才 resetForm、actionButton 失败 alert、单卡结构与 busy 态禁用删除、列表页
     // 空态/需关注置顶/project+global 分组/组内排序/details 折叠态跨重渲染恢复。探针六处 exit 1。
+    // 7 → 6：删掉 float/quick-add.ts 那条。量化日 lines 43.78% / functions 35.71% / branches 43.47%——
+    // client-float-pure.test.ts 与 unit-summary-a3-guard.test.ts 只覆盖 5 个 guard 纯函数，
+    // buildQuickAdd（10 个表单控件 + transport 显隐切换 + 粘贴 JSON 导入）、saveForm /
+    // performSaveRequest 三种落点、fillForm 回填、resetForm、beginEdit 全部无判据。本轮以
+    // test/client-dom/float-quick-add-form.test.ts 补齐（76 例）：parseKV 两种分隔与空值落空串、
+    // stdio/http 两侧字段的空值不落键、fillKvField 投影省略时清零、isMigratedEdit 三判、
+    // performSaveRequest 三落点与「原条目有凭据时无条件中止」、saveForm 的占位符中止/整表清空删键、
+    // buildQuickAdd 的 10 控件与显隐切换、JSON 导入三态结果文案。探针见提交记录。
     // 两条删除条件同时成立：① lines/branches 达 thresholds 同名键（见 pnpm cov 产物）；
     // ② 已登记进 mutation-topology 的 client-panel 段 mutate（持续执法面）。
     // 按维护者裁定「一条豁免一次落地」，每条豁免自成一次可独立回退的提交。
-    ceiling: 7,
+    ceiling: 6,
     note: "覆盖率排除面的 pending-project 暂缺豁免（水位与变异面同时成立才可删）",
   },
   {
