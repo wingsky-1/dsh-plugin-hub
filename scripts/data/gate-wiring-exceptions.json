@@ -444,6 +444,12 @@
       "step": "release.yml|publish|Require release notes（push 缺人工 notes 即红）",
       "digest": "8b77390a2b9392a8",
       "envKeys": []
+    },
+    {
+      "step": "health-report.yml|report|Build all（shared 原地 emit 产物，TS 源码按相对路径引用）",
+      "digest": "be8d67ab86b44655",
+      "envKeys": [],
+      "reason": "#1039 起 shared 是唯一 outDir 原地 emit 工程，产物 shared/*.js 被 gitignore，而 TS 源码按相对路径引用它（apply.ts:29 → shared/dsh-home.js）。无此步则 unit-contract.test.ts 的 hotreload 探针抛 ERR_MODULE_NOT_FOUND、coverage 步骤 exit 1（main 0386bb22 实测 1 failed/226 passed，崩溃点 :1401）。原注释称「刻意不构建」的前提已不成立，一并订正。"
     }
   ],
   "maxJobFaces": 16,
@@ -482,7 +488,7 @@
     },
     {
       "job": "health-report.yml|report",
-      "digest": "a461233c2d5d52ba"
+      "digest": "aa57635369fd7819"
     },
     {
       "job": "observe.yml|mutation-collect",
