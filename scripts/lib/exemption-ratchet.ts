@@ -62,10 +62,16 @@ export const RATCHET_BUCKETS: readonly RatchetBucket[] = [
     // 改成乱码后全量 1520 个测试仍全绿，exit 0）。本轮以 test/client-unit/client-locales.test.ts
     // 补真判据：91 条键 × zh/en 的全量字面量镜像（期望值一行不从被测实现 import）+ 键平衡 /
     // 占位符配对 / 非空三条机械判据。变异探针（即量化日那个「4 个字典值改乱码」）现 exit 1。
+    // 11 → 10：删掉 core/dom.ts 那条。该文件此前是台账里点名的**第二个假达标**——量化日水位
+    // 94.44%/76.92% 看似达标，但**变异探针实测零断言信号**（把 pangu 恒等化、把 el 的 class
+    // 通道改走 setAttribute 后，dsh-mcp-manager 全部 1520 个测试仍全绿，exit 0）；那 94.44% 全是
+    // float/panel/quick-add 渲染路径的顺带执行。本轮以 test/client-dom/core-dom.test.ts 补真判据
+    // （25 例：pangu 四向 + 连字符不撕开、七条属性通道归属、子节点两种传法）。同一手法下
+    // pangu 恒等化现 exit 1。
     // 两条删除条件同时成立：① lines/branches 达 thresholds 同名键（见 pnpm cov 产物）；
     // ② 已登记进 mutation-topology 的 client-panel 段 mutate（持续执法面）。
     // 按维护者裁定「一条豁免一次落地」，每条豁免自成一次可独立回退的提交。
-    ceiling: 11,
+    ceiling: 10,
     note: "覆盖率排除面的 pending-project 暂缺豁免（水位与变异面同时成立才可删）",
   },
   {

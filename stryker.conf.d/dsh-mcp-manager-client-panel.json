@@ -5,6 +5,7 @@
     "packages/dsh-mcp-manager/src/client/core/state.ts",
     "packages/dsh-mcp-manager/src/client/core/i18n.ts",
     "packages/dsh-mcp-manager/src/client/locales.ts",
+    "packages/dsh-mcp-manager/src/client/core/dom.ts",
     "!packages/dsh-mcp-manager/src/**/interface.ts",
     "!packages/dsh-mcp-manager/src/server/*/deps.ts",
     "!packages/dsh-mcp-manager/src/server/*/*/deps.ts"
@@ -41,5 +42,5 @@
   },
   "incremental": true,
   "incrementalFile": "coverage/mutation/incremental-mcp-manager-client-panel.json",
-  "_comment": "新增（#947）：面板 aria-modal 同步 + opener 还焦 + Esc 让位——直连判据两份（test/client-dom/panel-aria-modal.test.ts，happy-dom 直连 src；test/client-unit/client-context-s2.test.ts，P3-b/B5 S2 ctx 最小面直测，所测 state.ts 归属本段、session/float 暂无归属段故同落，k 约 0）。P3-b/B6 并入 settings-card 直测（test/client-dom/settings-card.test.ts，happy-dom 直连 settings-card.tsx 六映射 L25/L37/L56/L67/L80/L136，所测 settings-card.tsx 暂无归属段故同落本段，k 约 0；不新建段）。只含本次有判据的三文件，其余客户端文件仍由覆盖率按面收窄逐个移入；float.ts Esc 一行暂无直连判据，随后续补判据后移入本段。core/i18n.ts（tStatus 已知/未知两支）随「一条豁免一次落地」批次以 test/client-unit/client-core-i18n.test.ts 直连判据入面：字面量键锚 + 恒等绑定两支，变异探针（两支对调）exit 1。 client/locales.ts（双语字典）以 test/client-unit/client-locales.test.ts 入面：**91 条键 × zh/en 的全量字面量镜像** + 键平衡 / 占位符配对 / 非空四条机械判据。**它不贡献变异分**——纯字面量表在 sharedDefaults.excludedMutations（StringLiteral/ObjectLiteral/ArrayLiteral/TemplateLiteral）下产不出变异体，这与 dsh-notifier channels 段的 refusal.ts「纯数据无变异体」同型，是仓内已承认的一类（见本文件 dsh-notifier 段 channels 注释：纯数据字面量由 excludedMutations 排除）；登记它是为了让「该文件已在 mutate 面」这一持续执法事实成立，真实信号来自字面量镜像与变异探针，不拿它充变异分。"
+  "_comment": "新增（#947）：面板 aria-modal 同步 + opener 还焦 + Esc 让位——直连判据两份（test/client-dom/panel-aria-modal.test.ts，happy-dom 直连 src；test/client-unit/client-context-s2.test.ts，P3-b/B5 S2 ctx 最小面直测，所测 state.ts 归属本段、session/float 暂无归属段故同落，k 约 0）。P3-b/B6 并入 settings-card 直测（test/client-dom/settings-card.test.ts，happy-dom 直连 settings-card.tsx 六映射 L25/L37/L56/L67/L80/L136，所测 settings-card.tsx 暂无归属段故同落本段，k 约 0；不新建段）。只含本次有判据的三文件，其余客户端文件仍由覆盖率按面收窄逐个移入；float.ts Esc 一行暂无直连判据，随后续补判据后移入本段。core/i18n.ts（tStatus 已知/未知两支）随「一条豁免一次落地」批次以 test/client-unit/client-core-i18n.test.ts 直连判据入面：字面量键锚 + 恒等绑定两支，变异探针（两支对调）exit 1。 client/locales.ts（双语字典）以 test/client-unit/client-locales.test.ts 入面：**91 条键 × zh/en 的全量字面量镜像** + 键平衡 / 占位符配对 / 非空四条机械判据。**它不贡献变异分**——纯字面量表在 sharedDefaults.excludedMutations（StringLiteral/ObjectLiteral/ArrayLiteral/TemplateLiteral）下产不出变异体，这与 dsh-notifier channels 段的 refusal.ts「纯数据无变异体」同型，是仓内已承认的一类（见本文件 dsh-notifier 段 channels 注释：纯数据字面量由 excludedMutations 排除）；登记它是为了让「该文件已在 mutate 面」这一持续执法事实成立，真实信号来自字面量镜像与变异探针，不拿它充变异分。 core/dom.ts（pangu 与 el 的属性通道）以 test/client-dom/core-dom.test.ts 入面：25 例覆盖 pangu 四向插空 + 连字符不撕开、el 的七条属性通道归属（class/text/dataset/on*/checked/disabled/其余 setAttribute）、子节点两种传法与 null 跳过。该文件此前是台账点名的第二个假达标（94.44% 全是渲染路径顺带执行，pangu 恒等化与 class 通道改道均 exit 0），本轮后同一手法 exit 1。"
 }
