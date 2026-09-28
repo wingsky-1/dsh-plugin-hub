@@ -11,6 +11,7 @@ export default defineConfig({
       'packages/dsh-mcp-manager/test/client-dom/panel-aria-modal.test.ts',
       'packages/dsh-mcp-manager/test/client-dom/settings-card.test.ts',
       'packages/dsh-mcp-manager/test/client-unit/client-context-s2.test.ts',
+      'packages/dsh-mcp-manager/test/client-unit/client-core-i18n.test.ts',
       'packages/dsh-mcp-manager/test/client-unit/client-float-pure.test.ts',
       'packages/dsh-mcp-manager/test/client-unit/unit-summary-a3-guard.test.ts',
       'packages/dsh-mcp-manager/test/integration/apply-lifecycle.test.ts',

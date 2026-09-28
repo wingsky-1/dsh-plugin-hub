@@ -71,14 +71,6 @@
       "reviewBy": "2027-03-31"
     },
     {
-      "pattern": "packages/dsh-mcp-manager/src/client/core/i18n.ts",
-      "kind": "pending-project",
-      "reason": "同上（#947 按面收窄）：确无直连判据，唯一导出 tStatus 零执行（量化日 2026-09-28：lines 0% / branches 0%）；18 行的低成本高收益项。",
-      "exitCriteria": "删除条件（须**同时**成立）：① `pnpm cov` 产物里本文件 lines 与 branches 均不低于本文件 `thresholds` 的同名键（80 / 70）——**持续判据**，数字派生自同文件 thresholds 不另立第二份，收紧阈值本条随之变严；`pnpm cov` 是既定执行点（CI 夜间班次与 `gate:full --with-coverage` 已恒跑），故无需新增负责人。② 本文件已进入 `scripts/data/mutation-topology.json` 某段的 `mutate`（判据已能杀死其变异体）。**水位单条不够**：可被「模块加载即执行」满足而不产生任何断言信号（locales.ts 100%、dom.ts 94.44% 即如此，两者的变异探针全绿），证据与判词见本文件 note 的「传递覆盖不算达标」段。两项同时成立即删本条并一次性重新基线化阈值。",
-      "since": "#947",
-      "reviewBy": "2027-03-31"
-    },
-    {
       "pattern": "packages/dsh-mcp-manager/src/client/float/float.ts",
       "kind": "pending-project",
       "reason": "同上（#947 按面收窄）：**已有**直连判据（test/client-unit/client-float-pure.test.ts 与 client-context-s2.test.ts），但只覆盖纯函数层；本文件 838 行里 DOM 渲染与装配部分无判据（量化日 2026-09-28：lines 14.92% / branches 23.37%）。旧措辞正是在这里会被误用成「已可删」。",
