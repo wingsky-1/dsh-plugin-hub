@@ -58,7 +58,22 @@ jobs:
             --status-file baseline-staleness.json \
             --issue-file baseline-staleness-issue.md
 
-      # 刻意不构建：覆盖率只跑 unit + integration（直连 src），不消费 lib 产物
+      # 必须先构建（#1039/#1041 回归的修复）：shared/ 是全仓唯一 outDir: "." 的原地 emit
+      # 工程，产物 shared/*.js 与 .ts 源码同目录且被 gitignore；而 TS 源码用**相对路径**引用它
+      # （packages/dsh-provider-usage/src/apply/apply.ts:29 → ../../../../shared/dsh-home.js），
+      # 于是 unit-contract.test.ts 的 hotreload 探针在无产物时抛 ERR_MODULE_NOT_FOUND，
+      # 整条 coverage 步骤 exit 1。实测（main 0386bb22）：无 build 时
+      # `1 failed | 226 passed (227)` / `6933 passed | 12 skipped (6945)`，崩溃点
+      # unit-contract.test.ts:1401；`pnpm build` 后同一命令 exit 0、227/227、6945/6945。
+      #
+      # 原注释写「刻意不构建：覆盖率只跑 unit + integration（直连 src），不消费 lib 产物」——
+      # **该前提在 #1039 之后已不成立**：cov 脚本现在是
+      # `--project unit --project integration --project client-unit --project client-dom`，
+      # 且覆盖率确实消费 shared 的构建产物。过期理由比缺步骤更危险：它让「缺 build」看起来
+      # 像是有意设计。订正它与补步骤必须同一次改动，否则下一个读注释的人会再次依据它删掉 build。
+      - name: Build all（shared 原地 emit 产物，TS 源码按相对路径引用）
+        run: pnpm build
+
       - name: Coverage（vitest coverage，分母仅 src，阈值见 vitest.config.ts）
         run: pnpm cov
 
