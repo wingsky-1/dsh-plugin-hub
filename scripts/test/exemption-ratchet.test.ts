@@ -93,7 +93,9 @@ test("计数：数组 / 嵌套 / 非对象都算，父与子各自成条", () =>
 
 test("真值快照：本仓三桶的待办数与代码常量一致（独立重数，不调被测计数）", () => {
   const expected: Record<string, number> = {
-    "scripts/data/coverage.config.json": 14,
+    // 14 → 13：#T1A 删掉 mcp-manager 客户端 core/session.ts 那条陈旧豁免。本行是**独立重数**
+    // 的对照值，与 RATCHET_BUCKETS 的 ceiling 各钉一次；两边必须同 PR 更新。
+    "scripts/data/coverage.config.json": 13,
     "scripts/data/gate-exemptions.json": 1,
     "scripts/data/gauntlet.config.json": 1,
   };
