@@ -589,7 +589,7 @@ test("CLI 三态：判红仍 exit 1 且无故障注解", () => {
 });
 
 test("洗白通道两侧闭合：kind / reason 缺失即红（台账认面谓词的两个前提由本闸守住）", () => {
-  // 收口台账按 kind 分桶、且认面要求 pattern + reason（scripts/lib/exemption-kind.mjs）。
+  // 收口台账按 kind 分桶、且认面要求 pattern + reason（scripts/lib/exemption-kind.ts）。
   // 「台账收不到」必须蕴含「本闸已响」——否则把 kind 或 reason 删掉就能让一条待办从台账消失。
   const noKind = {
     ...BASE_CONFIG,

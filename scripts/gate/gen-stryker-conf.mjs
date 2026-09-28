@@ -582,14 +582,15 @@ function fileSetProblems(derivedNames, diskNames, missingLabel, strayLabel) {
 }
 
 /**
- * 拓扑形状不合法时的判词（fail-closed 的第一道关）。两类形状错误都不该继续派生：
+ * 拓扑形状不合法时的判词（fail-closed 的第一道关）。形状错误都不该继续派生：
  * 包登记为 null 会让 `pkgDef.segments` 抛栈崩掉；覆盖排除条目形状不对会被取值函数跳过
- * （静默缩小判据面），而 `--check` 只会报「与拓扑派生不一致」——把形状错误误诊成同步问题。
+ * （静默缩小判据面），写错登记位置（不在 testLayers 下）则整组条目根本不进取值面，
+ * 而 `--check` 只会报「与拓扑派生不一致」——把形状错误误诊成同步问题。
  */
 function reportShapeProblems(shapeProblems) {
   console.error(
-    "[gen-stryker-conf] 拓扑形状不合法（包登记必须是对象；coverageExcludes 条目须写成" +
-      " { pattern, reason, kind }：pattern 含 ! 前缀、reason 不少于 10 字、kind 取" +
+    "[gen-stryker-conf] 拓扑形状不合法（包登记必须是对象；coverageExcludes 只登记在 testLayers 下" +
+      " 且条目须写成 { pattern, reason, kind }：pattern 含 ! 前缀、reason 不少于 10 字、kind 取" +
       " COVERAGE_EXCLUDE_KINDS 之一）：\n" +
       shapeProblems.map((p) => `  ${p}`).join("\n"),
   );

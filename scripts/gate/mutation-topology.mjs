@@ -254,6 +254,40 @@ function coverageExcludeValueProblems(entry, label, seen) {
 }
 
 /**
+ * 覆盖排除面的**位置**不变量：唯一取值点 `collectCoverageExcludePatterns` 只认
+ * `testLayers.coverageExcludes`，键写在别处（包级 / 段级）等于把整组条目移出取值面。
+ *
+ * 为什么位置错也必须判红（实测形态，非推演）：把某包的两条 type-only 条目从
+ * `testLayers.coverageExcludes` 挪到包级 `coverageExcludes` 后，`gen-stryker-conf --check` 与
+ * `verify-dir-imports` 双双 exit 0——派生 conf 少出这两条展开的全部 mutate 条目（实测 305 → 285），
+ * 而形状校验面已不再看它们。形状判词只认「键在场于 testLayers」，于是「挪位置」这条最省事的
+ * 绕法是纯收益的：既不报错，又让条目退出校验面。
+ *
+ * 判据只约束**键该待在哪**，不约束「哪些包该声明」：后者是一份必须跟着代码走的清单（正是
+ * 本仓刚消灭掉的漂移源），而位置是 `collectCoverageExcludePatterns` 这一个读取点的固有事实，
+ * 任何包挪错位置都会自动落进本条。
+ */
+function misplacedCoverageExcludesProblems(pkgDef) {
+  const problems = [];
+  if (Object.hasOwn(pkgDef, "coverageExcludes")) {
+    problems.push(
+      "包登记的 coverageExcludes 只能写在 testLayers 下（唯一读取点只认 testLayers.coverageExcludes）——" +
+        "写在包级不会报错、也不会进派生 conf，等于让这些条目静默离开覆盖排除面与形状校验面",
+    );
+  }
+  if (isPlainObject(pkgDef.segments)) {
+    for (const [segKey, segDef] of Object.entries(pkgDef.segments)) {
+      if (isPlainObject(segDef) && Object.hasOwn(segDef, "coverageExcludes")) {
+        problems.push(
+          `段 "${segKey}" 不认 coverageExcludes（覆盖排除面是包级 testLayers 下的唯一登记处，段只认 excludes）——` +
+            "写在段里会被静默忽略",
+        );
+      }
+    }
+  }
+  return problems;
+}
+/**
  * 包登记本身的形状判据：`packages.<name>` 必须是对象，其 `segments` 也必须是对象，
  * 且每个段必须自带 `excludes` 数组（允许显式空数组）（#836 起必填）、数组里每条必须是以 `!` 开头的非空字符串。
  *
@@ -280,6 +314,10 @@ export function packageEntryProblems(pkgDef) {
       `包登记必须是对象（当前 ${JSON.stringify(pkgDef)}）——形状不对时没有可判定的变异面，fail-closed`,
     ];
   }
+  // 覆盖排除面的**位置**也是形状：键写错地方与键写错形态同样让条目静默离开取值面。
+  // 先于 segments 判：它与段形状无关，且挪错位置时不报就等于没人判过（见函数注释）。
+  const misplaced = misplacedCoverageExcludesProblems(pkgDef);
+  if (misplaced.length > 0) return misplaced;
   // 包登记是对象还不够：`segments` 缺失 / null / 标量 / 数组都会让 `Object.entries(pkgDef.segments)`
   // 抛栈（gen-stryker-conf 与 collectMutationSpecs 都读它）。缺了它就没有可判定的变异面，
   // 故与「包登记不是对象」同族判红，而不是留给下游崩栈、或退化成「一堆 uncoveredSrcFiles 噪声」。
