@@ -5,7 +5,7 @@
  * 为什么需要它：覆盖率面此前内联在 `vitest.config.ts` 里，没有任何判据守着——「改算什么」与
  * 「改卡多严」在 diff 里长得一样；#722 的基线注释（分母 132 文件）与静态复算（223）差了 40%，
  * 无人能解释；`.d.mts`、`.ps1` 这类 src 下的文件既不进分母也不进任何清单，属**静默逃逸**
- * （旧口径下 `uncoveredSrcFiles` 报 0，先例自身就是一次已发生的假绿）。故本闸判六件事：
+ * （旧口径下 `uncoveredSrcFiles` 报 0，先例自身就是一次已发生的假绿）。故本闸判七件事（末条是可数性围栏，其余六条是对覆盖率面的判定）：
  *
  *   1. **单一事实源**：`vitest.config.ts` 不得再内联 `thresholds` / `include` / `exclude` 字面量
  *      ——两个事实源必然有一处先腐烂（原则 ④）。
@@ -27,11 +27,16 @@
  *      不超出 include 减 exclude 的源码面；其中具有自身可计数语句的文件不得缺失。
  *      纯类型与仅静态导入/重导出的模块无 Istanbul 计数器，由语法解析确认，不按文件名豁免。
  *      无产物或产物不比配置新时保留静态预检；强制新鲜度与执行指纹不属于这里的判据。
+ *   7. **事实源可数性**：`exclude` 缺失或不是数组即 fail-closed（exit 2）——排除面不可数时，
+ *      本闸与收口台账（scripts/gate/collect-exemptions.mjs，按 kind 分桶）都失去求值对象，
+ *      「门禁没跑起来」与「有点违规」必须分属两个退出码。台账的认面谓词要求条目带 `pattern` +
+ *      `reason`，而这两者的缺失在本闸 ② 已判红——故「台账收不到」蕴含「本闸已响」，删字段洗白
+ *      待办的通道两侧都封住了。
  *
  * 匹配与「源码世界」定义都用 `scripts/lib/glob-files.mjs`（与变异面判据 `gen-stryker-conf --check`
  * 的 ⑤/⑥ 同一份实现与同一个 universe），不引第三方 glob。
  * 用法：node scripts/gate/verify-coverage-scope.mjs [--root <dir>] [--coverage-config <file>]
- * 退出码：0 = 通过；1 = 有违规；2 = 结构/环境错误（配置不可读、include 面为空）。
+ * 退出码：0 = 通过；1 = 有违规；2 = 结构/环境错误（配置不可读、include 面为空、exclude 面不可数）。
  */
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
@@ -110,7 +115,12 @@ function checkEntryKind(entry, label, problems) {
   return true;
 }
 
-/** 校验 exclude 条目结构；返回 problems。 */
+/**
+ * 校验 exclude 条目结构；返回 problems。
+ * 「非数组」不在这里判红：main 先 fail-closed（面不可数 ⇒ 门禁不可信 ⇒ exit 2）。落到本函数的只有
+ * 空数组，那是**可数但不合规**的判定面，判红可信（exit 1）——与 `include: []` 的 exit 2 分属两码，
+ * 不是笔误：include 为空会让分母消失、后续判据全部失去对象，exclude 为空本闸仍能完整求值。
+ */
 export function checkExcludeEntries(entries) {
   const problems = [];
   if (!Array.isArray(entries) || entries.length === 0) {
@@ -378,6 +388,16 @@ function main() {
   if (loaded.error !== undefined) failClosed(loaded.error);
   const config = loaded.config;
   const thresholdKeys = Object.keys(config.thresholds);
+
+  // exclude 面必须可数：本闸的 pattern / kind 判据、以及收口台账按 kind 的分桶（scripts/lib/
+  // exemption-kind.ts）都建立在「exclude 是数组」上。事实源缺失 / 形态未知一律 fail-closed
+  // （exit 2），不降级为判红——此前这里没有闸，缺 exclude 一路走到 config.exclude.map 抛
+  // TypeError，退出码 1：一次崩溃被读成「有违规」，与门禁故障不可分辨（#843 P-2 的原始事故形态）。
+  if (!Array.isArray(config.exclude)) {
+    failClosed(
+      `verify-coverage-scope: ${configRel} 的 exclude 缺失或不是数组 —— 排除面不可数，本闸与收口台账都失去求值对象，fail-closed`,
+    );
+  }
 
   const problems = [];
   problems.push(...checkExcludeEntries(config.exclude));

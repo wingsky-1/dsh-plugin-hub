@@ -587,3 +587,48 @@ test("CLI 三态：判红仍 exit 1 且无故障注解", () => {
   assert.doesNotMatch(r1.stderr, /::error::门禁故障/);
   assert.match(r1.stderr, /既不在 include 也不在任何 exclude 条目里/);
 });
+
+test("洗白通道两侧闭合：kind / reason 缺失即红（台账认面谓词的两个前提由本闸守住）", () => {
+  // 收口台账按 kind 分桶、且认面要求 pattern + reason（scripts/lib/exemption-kind.mjs）。
+  // 「台账收不到」必须蕴含「本闸已响」——否则把 kind 或 reason 删掉就能让一条待办从台账消失。
+  const noKind = {
+    ...BASE_CONFIG,
+    exclude: [{ pattern: "**/*.d.ts", reason: "理由够长了", reviewBy: "2027-03-31" }],
+  };
+  const r1 = run(fixture(noKind));
+  assert.equal(r1.status, 1, r1.stderr);
+  assert.match(r1.stderr, /kind 须为 type-only \/ not-source \/ pending-project 之一/);
+  const noReason = {
+    ...BASE_CONFIG,
+    exclude: [{ pattern: "**/*.d.ts", kind: "pending-project", reviewBy: "2027-03-31" }],
+  };
+  const r2 = run(fixture(noReason));
+  assert.equal(r2.status, 1, r2.stderr);
+  assert.match(r2.stderr, /exclude 条目缺 reason/);
+});
+
+test("fail-closed：exclude 缺失 → exit 2 且统一故障注解（面不可数，不是「有违规」）", () => {
+  // 反证：改动前这里一路走到 config.exclude.map 抛 TypeError，退出码 1——一次崩溃被读成判红。
+  const withoutExclude = { ...BASE_CONFIG } as Record<string, unknown>;
+  delete withoutExclude.exclude;
+  const r = run(fixture(withoutExclude));
+  assert.equal(r.status, 2, r.stderr);
+  assert.match(
+    r.stderr,
+    /^::error::门禁故障（非判据结论）：verify-coverage-scope: .*exclude 缺失或不是数组/m,
+  );
+  assert.equal(r.stdout, "");
+  assert.doesNotMatch(r.stderr, /TypeError|at main/);
+});
+
+test("fail-closed：exclude 不是数组（对象 / 字符串）→ exit 2", () => {
+  for (const shape of [{ "**/*.d.ts": "x" }, "**/*.d.ts"]) {
+    const r = run(fixture({ ...BASE_CONFIG, exclude: shape }));
+    assert.equal(r.status, 2, r.stderr);
+    assert.match(
+      r.stderr,
+      /::error::门禁故障（非判据结论）：verify-coverage-scope: .*exclude 缺失或不是数组/,
+    );
+    assert.doesNotMatch(r.stderr, /TypeError|at main/);
+  }
+});

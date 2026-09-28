@@ -82,7 +82,7 @@ test("分档：90 天内到期单列，其余归入合计", () => {
   );
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stdout, /剩 31 天/);
-  assert.match(r.stdout, /合计 2 条：已过期 0 \/ 90 天内到期 1 \/ 其余 1/);
+  assert.match(r.stdout, /合计 2 条待办：已过期 0 \/ 90 天内到期 1 \/ 其余 1/);
 });
 
 test("收集：exitCriteria 与 reviewBy 平级入账；只有日期没有解除条件的条目被点名", () => {
@@ -101,15 +101,15 @@ test("收集：exitCriteria 与 reviewBy 平级入账；只有日期没有解除
   assert.match(r.stdout, /exitCriteria happy-dom project 落地/);
   assert.match(
     r.stdout,
-    /合计 2 条：已过期 0 \/ 90 天内到期 0 \/ 其余 1 \/ 仅解除条件（无到期日）1/,
+    /合计 2 条待办：已过期 0 \/ 90 天内到期 0 \/ 其余 1 \/ 仅解除条件（无到期日）1/,
   );
   assert.match(r.stdout, /其中 1 条只有到期日、没有 exitCriteria/);
 });
 
-test("既无 reviewBy 也无 exitCriteria 的数据文件不产生条目；空目录给明确说明而非静默", () => {
+test("既无排除形状也无待办字段的数据文件不产生条目；空目录给明确说明而非静默", () => {
   const r = run(fixture({ "x.json": { active: ["dsh-a"], retired: [] } }));
   assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stdout, /未发现带 reviewBy 或 exitCriteria 的条目（扫描 1 个数据文件）/);
+  assert.match(r.stdout, /未发现待办条目（结构性 0 条；扫描 1 个数据文件/);
 });
 
 test("坏 JSON 只跳过该文件并计数，不影响其余文件的收集", () => {
@@ -159,7 +159,7 @@ test("本仓真实快照：16 条在册（数字变即提示同步台账与 #765
   //   判据迁集成层），11 条随证据消失按反向腐烂校验删除，27 → 16。
   const r = spawnSync(process.execPath, [SCRIPT], { cwd: ROOT, encoding: "utf8" });
   assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stdout, /合计 16 条：已过期 0 /);
+  assert.match(r.stdout, /合计 16 条待办：已过期 0 /);
   assert.match(r.stdout, /仅解除条件（无到期日）1/);
   // crap.strict 的解除条件必须在台账里（只写日期会逼出「到期了再讨论一次」）
   assert.match(r.stdout, /\$\.crap {2}threshold=16/);
@@ -181,4 +181,92 @@ test("本仓真实快照：16 条在册（数字变即提示同步台账与 #765
     /\$\.exclude\[5\] {2}pattern=packages\/dsh-notifier\/src\/client\/\*\*\/\*\.tsx/,
   );
   assert.match(r.stdout, /reviewBy 2027-03-31/);
+});
+
+/** 排除面条目 fixture：形状（pattern + reason）+ kind，字段按用例给。 */
+function exclusion(pattern: string, kind: string, extra: Record<string, unknown> = {}) {
+  return { pattern, kind, reason: `理由：${pattern} 按 ${kind} 分类`, ...extra };
+}
+
+test("反证：删掉 pending-project 的 reviewBy/exitCriteria，它仍在台账里（按 kind 分桶）", () => {
+  // 旧口径下这条会随字段一起消失：计数 0 → 台账里什么都没有、exit 0、无判词。
+  const r = run(
+    fixture({
+      "coverage.config.json": {
+        exclude: [
+          exclusion("packages/dsh-fake/src/client/**", "pending-project"), // 无 reviewBy / exitCriteria
+          exclusion("**/*.ps1", "not-source"),
+        ],
+      },
+    }),
+    ["--today", "2026-01-01"],
+  );
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /待办（依据 kind=pending-project \/ kind）/);
+  assert.match(r.stdout, /合计 1 条待办/);
+  assert.match(r.stdout, /结构性 1 条（不计入待办）：not-source×1/);
+});
+
+test("反证：结构性 kind（not-source / type-only / facade / not-mutated）一条都不计入待办", () => {
+  const r = run(
+    fixture({
+      "coverage.config.json": {
+        exclude: [
+          exclusion("**/*.d.ts", "type-only"),
+          exclusion("**/*.ps1", "not-source"),
+          exclusion("packages/dsh-fake/src/server/interface.ts", "facade"),
+          exclusion("packages/dsh-fake/src/port.ts", "not-mutated"),
+        ],
+      },
+    }),
+    ["--today", "2026-01-01"],
+  );
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /未发现待办条目（结构性 4 条/);
+  assert.match(
+    r.stdout,
+    /结构性 4 条（不计入待办）：facade×1、not-mutated×1、not-source×1、type-only×1/,
+  );
+});
+
+test("认面按形状而非键名：非排除面的 kind 节点（CI 面 / 阈值声明面）不收进台账", () => {
+  // 形状同源于 scripts/lib/exemption-kind.ts 的实测：ci-face-registry 有 26 个 kind 节点、
+  // threshold-registry 有 12 个，按键名发现会凭空多出 38 条待办。
+  const r = run(
+    fixture({
+      "ci-face-registry.json": { faces: [{ kind: "indirect", face: "gate" }] },
+      "threshold-registry.json": { guards: [{ kind: "value", paths: ["a.b"], why: "阈值守卫" }] },
+    }),
+    ["--today", "2026-01-01"],
+  );
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /未发现待办条目（结构性 0 条/);
+});
+
+test("未识别 kind 落待办兜底并点名依据（多算不少算，漂移可见）", () => {
+  const r = run(fixture({ "x.json": { exclude: [exclusion("**/vendor.ts", "brand-new")] } }), [
+    "--today",
+    "2026-01-01",
+  ]);
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /待办（依据 kind=brand-new \/ unknown-kind）/);
+  assert.match(r.stdout, /合计 1 条待办/);
+});
+
+test("本仓真实快照：排除面按 kind 分为 13 + 16 结构性，合计待办仍 16 条", () => {
+  const r = spawnSync(process.execPath, [SCRIPT, "--today", "2026-09-28"], {
+    cwd: ROOT,
+    encoding: "utf8",
+  });
+  assert.equal(r.status, 0, r.stderr);
+  // 覆盖率面：13 条 type-only / not-source 不计入待办（本仓实测值，数字变即提示同步判词）
+  assert.match(r.stdout, /结构性 13 条（不计入待办）：not-source×11、type-only×2/);
+  // 变异面 coverageExcludes：16 条全是结构性的（facade / not-mutated / type-only / not-source）
+  assert.match(
+    r.stdout,
+    /结构性 16 条（不计入待办）：facade×4、not-mutated×4、not-source×1、type-only×7/,
+  );
+  // 14 条 pending-project + gauntlet 1 + gate-exemptions 1 = 16 条待办（与 #875 4c 的 16 一致）
+  assert.match(r.stdout, /合计 16 条待办/);
+  assert.match(r.stdout, /结构性（按设计不计入待办）29/);
 });
