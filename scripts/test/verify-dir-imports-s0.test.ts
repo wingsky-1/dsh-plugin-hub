@@ -22,7 +22,7 @@
  * 不在仓库内造包目录（产物零污染纪律）。断言同时校验 exit code 与输出计数——
  * `node --test` 零匹配也会 exit 0，只看 exit code 会假绿。
  */
-import { test } from "node:test";
+import { after, test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -1684,16 +1684,56 @@ type FixtureBaseline = {
 };
 
 /**
- * 改写 fixture 基线（造陈旧用）：只动本 fixture 根下的基线文件，真实仓库的
- * `scripts/data/dir-imports-baseline.json` 全程不参与（VERIFY_DIR_IMPORTS_ROOT 换根）。
+ * 陈旧观察用例共用的一份 fixture（只读）。
+ *
+ * 为什么共享而不是每个用例各造一份：登记基线要真跑一次 `--write-baseline`，每个用例各造
+ * 一份就是 6 次额外子进程（每次 ~0.4 s），而这些用例的差别只在**基线副本的内容**上，源码
+ * 一模一样。本文件已有 50+ 个用例、子进程是主要耗时，按用例复制会把 `test:scripts` 的
+ * 并行压力推高到 node:test 事件循环报「Promise resolution is still pending」（实测踩过一次）。
+ * 基线副本一律写到 fixture 根**之外**并用 VERIFY_DIR_IMPORTS_BASELINE 指向，fixture 本体
+ * 全程只读，真实仓库的 `scripts/data/dir-imports-baseline.json` 也全程不参与。
  */
-function mutateFixtureBaseline(root: string, fn: (b: FixtureBaseline) => void) {
-  const baseline = readFixtureBaseline(root);
+let sharedStaleFixture: string | null = null;
+function staleFixture() {
+  if (sharedStaleFixture === null) {
+    const root = makeFixtureRoot(chainFixture(""));
+    registerFixtureStock(root);
+    sharedStaleFixture = root;
+  }
+  return sharedStaleFixture;
+}
+after(() => {
+  if (sharedStaleFixture !== null) rmSync(sharedStaleFixture, { recursive: true, force: true });
+});
+
+/**
+ * 造一份「基线副本 + 改写」：副本落在 fixture 根之外，fixture 与真实基线都不被改动。
+ * 返回副本路径，直接交给 VERIFY_DIR_IMPORTS_BASELINE。
+ */
+function staleBaselineCopy(fn: (b: FixtureBaseline) => void) {
+  const baseline = readFixtureBaseline(staleFixture());
   fn(baseline);
-  writeFileSync(
-    join(root, "scripts/data/dir-imports-baseline.json"),
-    `${JSON.stringify(baseline, null, 2)}\n`,
+  const copy = join(
+    mkdtempSync(join(tmpdir(), "verify-dir-imports-stale-")),
+    "dir-imports-baseline.json",
   );
+  writeFileSync(copy, `${JSON.stringify(baseline, null, 2)}\n`);
+  return copy;
+}
+
+/** 对共用 fixture 跑一次判据路径；基线副本由调用方给（缺省 = fixture 自带的干净基线）。 */
+function runStale(baselineCopy: string | null, args: string[] = []) {
+  const env: Record<string, string | undefined> = {
+    ...process.env,
+    VERIFY_DIR_IMPORTS_ROOT: staleFixture(),
+  };
+  if (baselineCopy === null) delete env.VERIFY_DIR_IMPORTS_BASELINE;
+  else env.VERIFY_DIR_IMPORTS_BASELINE = baselineCopy;
+  const r = spawnSync(process.execPath, [SCRIPT, "--package", PKG, ...args], {
+    env,
+    encoding: "utf8",
+  });
+  return { status: r.status, out: `${r.stdout ?? ""}${r.stderr ?? ""}` };
 }
 
 /** 取基线陈旧观察段的条数行（报告面，与 summary 段分开）。 */
@@ -1704,133 +1744,90 @@ function stalenessLine(out: string) {
 }
 
 test("陈旧观察：基线比实测宽（计数偏松）必须被点名，且**不得**因此判红", () => {
-  const root = makeFixtureRoot(chainFixture(""));
-  try {
-    registerFixtureStock(root);
-    // 人工陈旧：把 modules 抬高 1 —— 判据只会看到「基线 4 > 实测 3」。
-    mutateFixtureBaseline(root, (b) => {
-      b.packages[PKG].modules = b.packages[PKG].modules + 1;
-    });
-    const { status, out } = runOn(root);
-    assert.equal(status, 0, `陈旧只观察不判红，实际 ${status}：\n${out}`);
-    assert.match(
-      out,
-      /\[计数比实测宽\] fixture-pkg modules: 基线 4 > 实测 3/,
-      `应点名偏松项：\n${out}`,
-    );
-    assert.match(stalenessLine(out), /：1 条/, `条数应为 1：\n${out}`);
-    assert.match(out, /PASS/, `陈旧不得改写判词：\n${out}`);
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
+  // 人工陈旧：把 modules 抬高 1 —— 判据只会看到「基线 4 > 实测 3」。
+  const copy = staleBaselineCopy((b) => {
+    b.packages[PKG].modules = b.packages[PKG].modules + 1;
+  });
+  const { status, out } = runStale(copy);
+  assert.equal(status, 0, `陈旧只观察不判红，实际 ${status}：\n${out}`);
+  assert.match(
+    out,
+    /\[计数比实测宽\] fixture-pkg modules: 基线 4 > 实测 3/,
+    `应点名偏松项：\n${out}`,
+  );
+  assert.match(stalenessLine(out), /：1 条/, `条数应为 1：\n${out}`);
+  assert.match(out, /PASS/, `陈旧不得改写判词：\n${out}`);
 });
 
 test("陈旧观察：0 条时必须带比对面（0 不可证伪等于没查）", () => {
-  const root = makeFixtureRoot(chainFixture(""));
-  try {
-    registerFixtureStock(root);
-    const { status, out } = runOn(root);
-    assert.equal(status, 0, `干净 fixture 应 PASS，实际 ${status}：\n${out}`);
-    assert.match(stalenessLine(out), /：0 条/, `干净 fixture 应报 0 条：\n${out}`);
-    // 比对面三要素：条目数、实际比了几个、结构计数与证据引用各比了几项。
-    assert.match(
-      out,
-      /比对面：基线条目 1 个；包键悬空扫全部 1 个，结构计数与证据引用只比本次分析到的 1 个（结构计数 7 项、证据引用 \d+ 条）/,
-      `0 条必须附可证伪的比对面：\n${out}`,
-    );
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
+  const { status, out } = runStale(null);
+  assert.equal(status, 0, `干净 fixture 应 PASS，实际 ${status}：\n${out}`);
+  assert.match(stalenessLine(out), /：0 条/, `干净 fixture 应报 0 条：\n${out}`);
+  // 比对面三要素：条目数、实际比了几个、结构计数与证据引用各比了几项。
+  assert.match(
+    out,
+    /比对面：基线条目 1 个；包键悬空扫全部 1 个，结构计数与证据引用只比本次分析到的 1 个（结构计数 7 项、证据引用 \d+ 条）/,
+    `0 条必须附可证伪的比对面：\n${out}`,
+  );
 });
 
 test("陈旧观察：基线条目指向的包目录不存在 → 悬空条目（永不参与比对的事实源）", () => {
-  const root = makeFixtureRoot(chainFixture(""));
-  try {
-    registerFixtureStock(root);
-    mutateFixtureBaseline(root, (b) => {
-      b.packages["dsh-retired-pkg"] = b.packages[PKG];
-    });
-    const { status, out } = runOn(root);
-    assert.equal(status, 0, `悬空条目只观察不判红，实际 ${status}：\n${out}`);
-    assert.match(
-      out,
-      /\[包键悬空\] 基线条目 `dsh-retired-pkg` 指向的 .*dsh-retired-pkg\/src 不存在/,
-      `应点名悬空包键：\n${out}`,
-    );
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
+  const copy = staleBaselineCopy((b) => {
+    b.packages["dsh-retired-pkg"] = b.packages[PKG];
+  });
+  const { status, out } = runStale(copy);
+  assert.equal(status, 0, `悬空条目只观察不判红，实际 ${status}：\n${out}`);
+  assert.match(
+    out,
+    /\[包键悬空\] 基线条目 `dsh-retired-pkg` 指向的 .*dsh-retired-pkg\/src 不存在/,
+    `应点名悬空包键：\n${out}`,
+  );
 });
 
 test("陈旧观察：证据 id 的引用在树上解析不到 → 引用悬空（对象没了的清理 vs 真修好）", () => {
-  const root = makeFixtureRoot(chainFixture(""));
-  try {
-    registerFixtureStock(root);
-    mutateFixtureBaseline(root, (b) => {
-      // 未覆盖源文件清单：登记一个树上没有的相对路径（形态与真实存量登记同形）。
-      b.packages[PKG].quality.uncoveredSrcFiles = ["server/ghost/impl.ts"];
-    });
-    const { status, out } = runOn(root);
-    assert.equal(status, 0, `悬空引用只观察不判红，实际 ${status}：\n${out}`);
-    assert.match(
-      out,
-      /\[引用悬空\] fixture-pkg uncoveredSrcFiles: server\/ghost\/impl\.ts/,
-      `应点名悬空引用：\n${out}`,
-    );
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
+  const copy = staleBaselineCopy((b) => {
+    // 未覆盖源文件清单：登记一个树上没有的相对路径（形态与真实存量登记同形）。
+    b.packages[PKG].quality.uncoveredSrcFiles = ["server/ghost/impl.ts"];
+  });
+  const { status, out } = runStale(copy);
+  assert.equal(status, 0, `悬空引用只观察不判红，实际 ${status}：\n${out}`);
+  assert.match(
+    out,
+    /\[引用悬空\] fixture-pkg uncoveredSrcFiles: server\/ghost\/impl\.ts/,
+    `应点名悬空引用：\n${out}`,
+  );
 });
 
 test("陈旧观察反证：引用仍在树上（合法存量）不得被误报为悬空", () => {
-  const root = makeFixtureRoot(chainFixture(""));
-  try {
-    registerFixtureStock(root);
-    mutateFixtureBaseline(root, (b) => {
-      b.packages[PKG].quality.uncoveredSrcFiles = ["a/impl.ts", "b/impl.ts"];
-    });
-    const { status, out } = runOn(root);
-    assert.equal(status, 0, `实际 ${status}：\n${out}`);
-    // 这两条登记的证据与实测不符（它们其实已被度量覆盖），但**存在**——
-    // 观察只问「引用还在不在」，不因此报悬空。
-    assert.doesNotMatch(out, /\[引用悬空\]/, `仍存在的引用不得被报成悬空：\n${out}`);
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
+  const copy = staleBaselineCopy((b) => {
+    b.packages[PKG].quality.uncoveredSrcFiles = ["a/impl.ts", "b/impl.ts"];
+  });
+  const { status, out } = runStale(copy);
+  assert.equal(status, 0, `实际 ${status}：\n${out}`);
+  // 这两条登记的证据与实测不符（它们其实已被度量覆盖），但**存在**——
+  // 观察只问「引用还在不在」，不因此报悬空。
+  assert.doesNotMatch(out, /\[引用悬空\]/, `仍存在的引用不得被报成悬空：\n${out}`);
 });
 
 test("陈旧观察：本次未分析的包即使基线明显偏宽也不判（门禁按调用点分包跑）", () => {
-  // 第二个包**目录真实存在**（否则命中的是「包键悬空」而不是本用例要钉的那条），
-  // 但本次 --package 不点名它，且把它的基线计数抬到荒谬的宽度：
-  // 观察若替没比对过的面下结论，就会把它报成陈旧；正确行为是既不报、也不把它算进比对面。
-  const other = Object.fromEntries(
-    Object.entries(chainFixture("")).map(([k, v]) => [
-      k.replace(`packages/${PKG}/`, "packages/dsh-another-pkg/"),
-      v,
-    ]),
+  // 条目 `dsh-another-pkg` 的计数抬到荒谬的宽度，但它的包目录在树上**不存在**：
+  // 于是它命中的判据是「包键悬空」（那条扫全部条目），而「计数比实测宽」必须对它保持沉默
+  // ——观察不得替没实测过的面下结论，比对面也不得把它算成比过的项。
+  const copy = staleBaselineCopy((b) => {
+    b.packages["dsh-another-pkg"] = { ...b.packages[PKG], modules: 999 };
+  });
+  const { status, out } = runStale(copy);
+  assert.equal(status, 0, `实际 ${status}：\n${out}`);
+  assert.match(
+    out,
+    /本次未分析、结构计数与证据引用不计的条目：dsh-another-pkg/,
+    `未分析条目须点名：\n${out}`,
   );
-  const root = makeFixtureRoot({ ...chainFixture(""), ...other });
-  try {
-    registerFixtureStock(root);
-    mutateFixtureBaseline(root, (b) => {
-      b.packages["dsh-another-pkg"] = { ...b.packages[PKG], modules: 999 };
-    });
-    const { status, out } = runOn(root);
-    assert.equal(status, 0, `实际 ${status}：\n${out}`);
-    assert.match(
-      out,
-      /本次未分析、结构计数与证据引用不计的条目：dsh-another-pkg/,
-      `未分析条目须点名：\n${out}`,
-    );
-    assert.match(stalenessLine(out), /：0 条/, `未分析的包不得被判陈旧：\n${out}`);
-    assert.doesNotMatch(out, /999/, `未分析条目的计数不得进入比对面：\n${out}`);
-    // 比对面只算本次真比对过的 1 个包 × 7 类结构计数。
-    assert.match(
-      out,
-      /比对面：基线条目 2 个；包键悬空扫全部 2 个，结构计数与证据引用只比本次分析到的 1 个（结构计数 7 项、/,
-      `比对面不得把未分析条目算进去：\n${out}`,
-    );
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
+  assert.match(stalenessLine(out), /：1 条/, `只该报包键悬空一条：\n${out}`);
+  assert.doesNotMatch(out, /999/, `未分析条目的计数不得进入比对面：\n${out}`);
+  assert.match(
+    out,
+    /比对面：基线条目 2 个；包键悬空扫全部 2 个，结构计数与证据引用只比本次分析到的 1 个（结构计数 7 项、/,
+    `比对面不得把未分析条目算进去：\n${out}`,
+  );
 });
