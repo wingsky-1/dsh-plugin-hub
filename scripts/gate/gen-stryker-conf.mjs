@@ -47,6 +47,11 @@
  *      `gate=mutation-face` 的条目；判据自带载体自证（进入比对面的包数 / 候选文件数任一为 0
  *      即判红而不是恒绿）。
  *
+ * 另有一条派生规则（#875）：`mutate` 命中 `shared/` 的段要带 `ignorePatterns` 排除 shared 的
+ * tsc 原地 emit 产物——不排掉它，测试里的 .js 说明符会解析到产物、被变异的 .ts 根本不在模块图里，
+ * 变异测量静默失效（实测 0.00 分、336 个变异体全 survived）。取舍见
+ * `SHARED_BUILD_ARTIFACT_IGNORE_PATTERNS`。
+ *
  * 环境变量 GEN_STRYKER_ROOT：仓库根覆盖（测试用临时 fixture 根，避免在仓库内造包目录）。
  * 环境变量 GEN_STRYKER_BASE：`--check` 的基准 ref 覆盖（等价于 `--base <ref>`）。
  */
@@ -80,6 +85,39 @@ import {
   segmentTestUnion,
 } from "./test-surface.mjs";
 import { failClosed } from "../lib/gate-exit.mjs";
+
+/**
+ * 变异的 `shared/` 段共用的 `ignorePatterns`：shared 是 tsc **原地 emit**（outDir "."），
+ * 声明与实现都落在源码同目录，于是 `shared/*.js` / `*.d.ts` 是构建产物而非源码。
+ *
+ * 为什么必须排掉它们才测得到东西：Stryker 在 sandbox 里跑测试，测试面 import 的是
+ * `"../settings-namespace.js"` 这个**说明符**，产物在盘时解析器优先命中它、被变异的
+ * `.ts` 根本不在测试的模块图里——336 个变异体一个都没被激活，全 survived，
+ * 分数 0.00、退出码 1（#875 夜间分片红）。排掉产物后说明符回落到 `.ts` 源码。
+ *
+ * 为什么用 `ignorePatterns` 而不是把产物删掉：CI 夜间分片顺序是 install → build → stryker
+ *（.github/workflows/observe.yml），删产物要求构建链改顺序或测试前多一步清理；
+ * `ignorePatterns` 是「不进 sandbox」的既有语义——产物照常参与类型检查与打包，
+ * 只是不被复制进变异沙箱。
+ *
+ * 口径是**产物形态**不是具体文件：shared/ 下按不变量只允许有 .ts 源码
+ *（scripts/test/shared-ts-shape.test.ts 冻结），故上面那条 .js glob 只会命中 tsc 产物，
+ * 漏不掉任何应被变异的 .js 源文件。.d.ts 与 .tsbuildinfo 同理，一并列出以防
+ * 声明 / 增量信息经别的解析路径影响测试。
+ *
+ * 只对 `mutate` 命中 `shared/` 的段派生：7 个包的 outDir 都是 `lib`，产物不进
+ * 源码树、也匹配不上它们的 mutate 面，给它们加纯属噪音。
+ */
+const SHARED_BUILD_ARTIFACT_IGNORE_PATTERNS = [
+  "shared/**/*.js",
+  "shared/**/*.d.ts",
+  "shared/**/*.tsbuildinfo",
+];
+
+/** 该段的正向 mutate（不含 `!` 排除条目）是否命中 `shared/` 下的文件。 */
+function mutatesSharedFiles(mutate) {
+  return mutate.some((pattern) => !pattern.startsWith("!") && pattern.startsWith("shared/"));
+}
 
 const repoRoot =
   process.env.GEN_STRYKER_ROOT ?? join(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -205,6 +243,15 @@ function deriveConfig(sharedDefaults, pkgName, segKey, segDef, pkgDef, segVitest
     incremental: true,
     incrementalFile: `coverage/mutation/${incrementalName}`,
   };
+
+  // 变异 shared/ 的段必须把 shared 的 tsc 原地 emit 产物挡在 sandbox 之外（#875）。
+  // shared 是全仓唯一 outDir "." 的工程，产物与源码同目录；而段测试面 import 的是
+  // `"../settings-namespace.js"` 这样的 .js 说明符，产物在盘时解析器命中它，
+  // 被变异的 .ts 压根不在测试的模块图里——变异体全 survived、分数 0.00，测量静默失效。
+  // 见 SHARED_BUILD_ARTIFACT_IGNORE_PATTERNS 的取舍说明。
+  if (mutatesSharedFiles(mutate)) {
+    config.ignorePatterns = [...SHARED_BUILD_ARTIFACT_IGNORE_PATTERNS];
+  }
 
   if (typeof threshold === "number") {
     config.thresholds = { high: threshold, low: threshold, break: threshold };

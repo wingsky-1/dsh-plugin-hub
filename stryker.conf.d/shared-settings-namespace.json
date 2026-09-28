@@ -35,6 +35,11 @@
   },
   "incremental": true,
   "incrementalFile": "coverage/mutation/incremental-shared-settings-namespace.json",
+  "ignorePatterns": [
+    "shared/**/*.js",
+    "shared/**/*.d.ts",
+    "shared/**/*.tsbuildinfo"
+  ],
   "thresholds": {
     "high": 60,
     "low": 60,
