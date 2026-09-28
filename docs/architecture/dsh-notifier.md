@@ -105,7 +105,7 @@ apply 不要求打开设置卡片就启动通知半区；回前台恢复标题�
 
 路径统一前缀 /api/dsh-notifier；事实源为 `src/server/api/impl/service/index.ts#ApiService.install`。
 
-八条端点以字面量表登记（`src/server/api/impl/service/index.ts:32-45`）：
+八条端点以字面量表登记（`src/server/api/impl/service/index.ts:38-51`）：
 
 | 路径 | 方法 | 语义 |
 | --- | --- | --- |

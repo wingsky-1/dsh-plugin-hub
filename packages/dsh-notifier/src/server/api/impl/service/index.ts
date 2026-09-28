@@ -18,12 +18,18 @@ class ApiService {
   /** 摘除器：路由与帧订阅混在一起，卸载时逐个调用。 */
   private disposers: Array<() => void> = [];
 
-  /** 装配：挂路由、接帧。**中途抛错整单回滚**：注册第 N 条抛错时前 N-1 条已挂在宿主上，帧订阅抛错时
-   *  8 条路由全都挂在宿主上——两种情况的摘除器都得当场摘干净，不能随异常一起丢失（见下方两张局部表）。 */
+  /**
+   * 装配：挂路由、接帧。**中途抛错整单回滚**：建面抛错时一条路由都还没挂，注册第 N 条抛错时前 N-1 条
+   *  已挂在宿主上，帧订阅抛错时 8 条路由全都挂在宿主上——各种情况的摘除器都得当场摘干净，
+   *  不能随异常一起丢失（见下方两张局部表）。
+   *
+   *  **这是结构性收口，不是修一处已经发生的线上故障**：装的三步今天都找不到可达抛点（建面的真实
+   *  实现只建 Map + setInterval、四个端点构造只存字段），所以下面那段回滚在生产上一条也走不到。
+   *  写它是为了「任一步将来开始抛错」时边界已经就位；判据由注入建面端口的那条用例撑着
+   *  （`test/unit/api/service.test.ts` 的「建面失败」一条），不靠今天能复现。
+   */
   install(deps: ApiDeps): void {
     if (this.installed) throw new Error("dsh-notifier: api 域只能装配一次");
-    this.installed = true;
-    streamHub.install({ logger: deps.logger });
 
     const settings = new SettingsEndpoints(deps.config);
     const journal = new JournalEndpoints(deps.stores);
@@ -52,15 +58,24 @@ class ApiService {
     const routes: Array<() => void> = [];
     const frames: Array<() => void> = [];
     try {
+      // 必须留在 try 内的是**能被抛错的东西**：闸的翻面自己不会抛错，它放哪儿都不影响结果——
+      // catch 里 `this.installed = false` 是无条件复位（实测只把这一行挪到 try 之外，判据照样全绿）。
+      // 它是 try 的第一行，故下面三步任一抛错都走同一条回滚。
+      this.installed = true;
+      // 建面排在挂路由之前：它是唯一会让本域进入「已有心跳 / 已有连接表」的步骤，排在前面
+      // 才能保证回滚时它必定已装配——release() 对未装配的流枢纽是幂等空转，反过来不成立。
+      streamHub.install({ logger: deps.logger });
       // registerEndpoints 自己抛错时它内部已整单回滚，routes 留空即可——两条回滚各管一段。
       routes.push(...registerEndpoints(deps.register, endpoints, deps.logger));
       frames.push(deps.frames.onFrame((payload) => streamHub.publish(payload)));
     } catch (error) {
       // 整单回滚：已挂的逐个摘除、不留「已装配」的假记忆。流枢纽与 installed 一起复位，否则
-      // 这次半装配会把「可再装配」这个闸焊死（streamHub 自己的「只能装配一次」会先撞上）。
+      // 这次半装配会把「可再装配」这个闸焊死（streamHub 自己的「只能装配一次」会先撞上；
+      // 实测删掉它，三条「回滚后可再装配」的判据全红）。
       disposeAll([...routes, ...frames]);
       streamHub.release();
       this.installed = false;
+      // 首因上抛：清理路径自己抛错也不许顶掉它，调用方要看到的是「为什么装失败」。
       throw error;
     }
     this.disposers = [...routes, ...frames];

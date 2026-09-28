@@ -113,7 +113,11 @@ function spawnChild(command: readonly string[], options: SpawnOptions): ChildHan
     },
     unref() {
       child.unref();
-      // stderr 管道也是一条 socket：孤儿进程还在往里写时，它同样会让事件循环活下来。
+      // stderr 管道也是一条 socket，故一并摘出事件循环（孤儿进程还在往里写时它同样会吊住）。
+      // **当前无判据覆盖**：本文件被排除在变异面外，而 `spawnChild` 走的是真实 `spawn`，
+      // `stderr.unref` 有没有被调没有可注入的观测点（要么读 Node 的活动句柄内部表，要么再开一条
+      // `spawn` 端口——两者都比这一行本身贵）。故这里按「意图声明」记、不按「已证事实」记：
+      // 未来改动这一段请保留这个调用，删它不会有用例变红。
       // 类型面上 `child.stderr` 只是 `Readable`，而 `unref` 长在 `net.Socket` 上，故按存在性取。
       const stderr = child.stderr as (Readable & { unref?: () => void }) | null;
       stderr?.unref?.();

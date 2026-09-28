@@ -14,11 +14,15 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { afterAll, afterEach, describe, expect, it } from "vitest";
 
 import type { ApiDeps, HostCapabilities, OutgoingFrame } from "../../../src/server/api/deps.ts";
+import type { StreamBuildPort } from "../../../src/server/api/impl/stream/type.ts";
 import { DEFAULT_CONFIG } from "../../../src/server/config/impl/model/index.ts";
 import { jsonReq, makeLogger, makeRegister, pollUntil, tempDshHome, wire } from "../../helpers.ts";
 
 const home = tempDshHome();
 const { installApi, releaseApi } = await import("../../../src/server/api/interface.ts");
+// 建面端口的装载/复位面：动态导入与上同纪（流实例是模块级单例，落盘路径在导入期定下）。
+const { installStreamBuild, releaseStreamBuild } =
+  await import("../../../src/server/api/impl/stream/index.ts");
 // 端口新增的 dry-run 纯函数走真实实现（动态导入与上同纪：config 单例的落盘路径在构造时定下）。
 const { resolveDraftChannels, normalizeConfig } =
   await import("../../../src/server/config/interface.ts");
@@ -154,6 +158,19 @@ function makeFrameInlet(options: { order?: string[]; failOnFrame?: boolean } = {
     },
   };
 }
+
+/**
+ * 建面端口的失败面：当场抛错，造「装的第一步就失败」那一格。
+ *
+ * 生产真实实现抛不了（序号读回吞错、`createSseHub` 只建 Map + setInterval），所以这是**注入的**
+ * 失败面而不是复现出来的：它守的是装配面的回滚边界——闸有没有被焊死、有没有把半装配留在宿主上、
+ * 清理路径有没有盖掉首因。接缝见 `impl/stream/type.ts` 的 `StreamBuildPort`。
+ */
+const FAILS_TO_BUILD: StreamBuildPort = {
+  open() {
+    throw new Error("安装失败：流面建不起来");
+  },
+};
 
 /** 各能力面返回带标记的值：端点回给我的标记来自哪一份面，一读就知道有没有接错线。 */
 const HISTORY = [{ ts: 1, kind: "done", title: "历史", message: "正文" }];
@@ -430,6 +447,21 @@ describe("生命周期", () => {
     expect([...hub.disposed].sort()).toEqual([...PATHS.slice(0, 3)].sort());
   });
 
+  it("注册中途失败且已挂路由的摘除器也抛错：3 条全摘干净，且首因仍是注册失败", () => {
+    // 组合故障（逐项隔离的判红力在这一条）：注册第 4 条（kinds）抛错时前 3 条已挂在宿主上，
+    // 而第 3 条（status）的摘除器在回滚时也抛错。去掉回滚里的逐项隔离，则 3 条里只摘 1 条、
+    // 泄漏 2 条，抛给调用方的错误还会从「注册失败」变成「摘除失败」——「逐项隔离」与
+    // 「清理路径不盖首因」两条承诺同时破。只断「抛的是错」的话，去掉隔离照样绿。
+    const { hub, deps } = makeDeps({
+      failRegisterAt: 3,
+      failDisposePaths: ["/api/dsh-notifier/status"],
+    });
+
+    expect(() => installApi(deps)).toThrow(/注册失败/u);
+    // 抛错的那条自己已记账（先记账后抛），所以「3 条全摘」与「有摘除器抛错」不冲突。
+    expect([...hub.disposed].sort()).toEqual([...PATHS.slice(0, 3)].sort());
+  });
+
   it("注册中途失败不把闸焊死：回滚后可以再装配（生产里对应宿主重试挂载）", () => {
     const { deps } = makeDeps({ failRegisterAt: 3 });
     expect(() => installApi(deps)).toThrow(/注册失败/u);
@@ -455,6 +487,25 @@ describe("生命周期", () => {
   it("帧订阅抛错不把闸焊死：回滚后可以再装配（半装配的域永远起不来是最难查的一种）", () => {
     const { deps } = makeDeps({ failOnFrame: true });
     expect(() => installApi(deps)).toThrow(/帧订阅失败/u);
+
+    const again = assemble();
+    expect(again.hub.routes.map((route) => route.path).sort()).toEqual([...PATHS].sort());
+  });
+
+  it("建面抛错：闸没焊死（可再装配）、一条路由都没挂上、抛给调用方的仍是建面失败", () => {
+    // 装的第一步就失败那一格。判红力在第一条断言：闸的翻面与建面都排在 try 之外时，这次失败
+    // 没人回滚，`installed` 卡在 true——之后直接再装就撞「api 域只能装配一次」（实测红在这一行）。
+    const { hub, deps } = makeDeps();
+    installStreamBuild(FAILS_TO_BUILD);
+    try {
+      // 首因上抛：清理路径（此时一条摘除器都没有）不许把「建面失败」换成别的错误。
+      expect(() => installApi(deps)).toThrow(/安装失败/u);
+    } finally {
+      // 复位端口再走下面的再装配：让下一次装配走真实建面，否则量到的是同一个失败面。
+      releaseStreamBuild();
+    }
+    // 建面排在挂路由之前，故失败时一条路由都不该挂在宿主上。
+    expect(hub.routes).toEqual([]);
 
     const again = assemble();
     expect(again.hub.routes.map((route) => route.path).sort()).toEqual([...PATHS].sort());
