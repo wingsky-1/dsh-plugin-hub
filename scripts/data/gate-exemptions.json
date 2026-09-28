@@ -6,9 +6,10 @@
       "gate": "forbid-module-state-src",
       "path": "packages/dsh-mcp-manager/src/client/float/panel.ts",
       "reason": "客户端刷新单飞句柄（模块级 let inflight，单一 in-flight 拉取的去重状态）：它是真实的模块级可变状态，作用域在模块而非面板实例。判据口径源自 #733 宪法第 1 条，而本轮重构面是宿主端 src/server/**；把该句柄收进实例需要改客户端装配与 refresh 的调用约定，属 #769 的客户端结构改动，不在 767 B0 范围内。按文件级豁免登记而不是留在判据外——mcp 已在 B0 登记进扫描面，不登记就是当天判红的存量。",
-      "trackingIssue": "#770",
+      "trackingIssue": "#769",
       "reviewBy": "2027-03-31",
-      "exitCriteria": "#769 落地到 dsh-mcp-manager 客户端、panel.ts 的 inflight 单飞句柄收进面板实例（届时删本条）"
+      "exitCriteria": "#769 落地到 dsh-mcp-manager 客户端、panel.ts 的 inflight 单飞句柄收进面板实例（届时删本条）",
+      "_meta": "trackingIssue 原写 #770——该 issue 已于 2026-09-19 关闭且正文是 mcp-manager 缺陷清单，与本条无关；真正的阻塞方是 #769（客户端半区结构重构，在开），已改正。_meta 字段不被任何判据消费（collect-exemptions 只认 reviewBy/exitCriteria 作待办信号），故不进入台账计数。"
     }
   ]
 }
