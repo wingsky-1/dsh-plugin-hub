@@ -255,9 +255,10 @@ test("本仓真实快照：notifier/lan-proxy 零模块级可变状态，mcp 仅
   // 锚点的行号随客户端源码增删而移动（豁免台账本身是文件级、不跟行号），改到 inflight 所在行即可。
   assert.match(
     r.stdout,
-    /packages\/dsh-mcp-manager\/src\/client\/float\/panel\.ts:19 \[模块级 let（inflight）\] 登记豁免 #770（reviewBy 2027-03-31）/,
+    /packages\/dsh-mcp-manager\/src\/client\/float\/panel\.ts:19 \[模块级 let（inflight）\] 登记豁免 #769（reviewBy 2027-03-31）/,
   );
-  // 台账现仅 mcp 一条（#770）：notifier/lan-proxy 存量已随 #769/#765 清零，判据没有放松——
+  // 台账现仅 mcp 一条（trackingIssue #769；原写 #770，该 issue 已于 2026-09-19 关闭且与本条无关，见 #1066）：
+  // notifier/lan-proxy 存量已随 #769/#765 清零，判据没有放松——
   // 再有人写模块级 let/var，门禁会在同一格判红（见上方「反例：模块级 let → exit 1」）。
   // 台账条目被删、var 回流、或新增第二处豁免，此断言先红以提示复核 gate-exemptions.json 与客户端源码。
   // 注：汇总行「登记豁免 1 处」本身也含该词，故按明细行（带 #issue 号）计数。
