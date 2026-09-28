@@ -36,6 +36,16 @@
  *     key = `<包名>:<证据项>` 或 `<包名>:*`；后者专用于「本包无基线」，不声称任何证据）
  *     ——与另两闸共用同一份台账与同一个校验器，条目带 reason + trackingIssue（+ 可选
  *     reviewBy），并自动进 `collect-exemptions` 的到期台账。
+ *   - **基线陈旧观察（只观察、不判红）**：基线只判「上升」，于是三个方向的事实从来没被
+ *     看见过——①**计数比实测宽**（`cur < base`，棘轮比现实宽，没有任何输出说明这件事发生过）；
+ *     ②**包键悬空**（条目的键在树上没有 `packages/<名>/src`，永远不会被任何调用点比对、
+ *     也不会被 `--write-baseline` 更新）；③**引用悬空**（质量证据 id 里的路径引用解析不到，
+ *     证据会因对象消失而被当作「改善」自动清理，与「违规真被修好」在报告上同形）。
+ *     三条都落在**形状**上：包目录由分析本体的同一个推导给出，引用由「id 按 `|` 切出的每个
+ *     token 是一个引用」给出（§5.3 与 I8① 用包相对路径、其余用 `src` 相对，由「任一基准命中
+ *     即解析成功」吸收，新增证据类无需在此登记形态）。**判红与否由维护者裁决**——本段刻意
+ *     不接 `failures`，只与判定同屏打印，并附比对面（扫了几个条目 / 比了几个包 / 几项计数 /
+ *     几条引用），使「0 条」可证伪。
  *   - **源码全覆盖断言**：`src` 下每个文件必须落在 `∪mutate ∪ ∪excludes` 之内。
  *     `gen-stryker-conf --check` 只比对「磁盘配置 ↔ 拓扑派生」，不会因新增源文件
  *     而变红，故新增未被度量覆盖的源文件必须由本断言兜住（存量登记在基线里）。
@@ -1210,8 +1220,19 @@ function crossDomainEdgesOf(graphs) {
   return out;
 }
 
+/**
+ * 包的 `src` 目录（`packages/<包名>/src`）——本脚本唯一的包定位约定。
+ *
+ * 抽成函数是为了让基线陈旧观察（见 observeBaselineStaleness）与分析本体共用**同一个**
+ * 推导：判据若自己再拼一次路径，两处一旦漂移，「基线条目指向的目录不存在」就会在分析
+ * 侧与观察侧给出相反的答案，而两边都不会报错。
+ */
+function srcDirOf(pkgName) {
+  return join(ROOT, "packages", pkgName, "src");
+}
+
 function analyzePackage(pkgName, topology) {
-  const srcDir = join(ROOT, "packages", pkgName, "src");
+  const srcDir = srcDirOf(pkgName);
   if (!existsSync(srcDir)) return null;
   const { modules, isFacade, allTsFiles, files, refs } = scanPackageSources(srcDir);
   const rules = collectRuleViolations(refs, srcDir, isFacade);
@@ -1549,6 +1570,147 @@ function compareWithBaseline(analysis, baseline) {
   rises.push(...qualityDeltas.rises);
   improvements.push(...qualityDeltas.improvements);
   return { mode: "compared", rises, improvements };
+}
+
+/**
+ * 基线陈旧观察（**只打印、不判红**；判红与否留给维护者裁决，本段刻意不接 `failures`）。
+ *
+ * 为什么要有：单调基线只判「上升」，三个方向的事实因此从来没被看见过——
+ *   1. **计数比实测宽**（`cur < base`）：`collectStructuralRises` 只有 `cur > base` 一条臂。
+ *      代码删掉一个模块后基线不会自己降，棘轮从此比现实宽，且没有任何输出说明这件事发生过。
+ *   2. **包键悬空**：基线条目的键在树上没有对应 `packages/<名>/src`。这类条目既不会被
+ *      `--package` 点到（点不到就没人更新它），也不会自己消失——一条永远不会被比对的保护。
+ *   3. **引用悬空**：质量证据的 id 里嵌着路径引用（`uncoveredSrcFiles` 的相对路径、
+ *      `from|to` 边的两端、环签名的成员、模块 id）。被引用的对象删掉后，证据必然随之消失
+ *      并被 `--write-baseline` 清理——**但输出只说「证据已消除」，不说它是因为对象没了**，
+ *      于是一次「删文件导致的自动清理」与一次「真的修好了」在报告上完全同形。
+ *
+ * 为什么判据落在**形状**上而不是词表：本段不认识任何一个指标名或路径前缀。包目录由
+ * `srcDirOf()`（分析本体同一个推导）给出；证据引用由「id 按 `|` 切出的每个 token 是一个
+ * 引用」这一条规则给出，解析基准取本脚本自己的两个根（`src` 相对 / 包相对）——两条证据类
+ * （§5.3 与 I8①）用包相对路径、其余用 `src` 相对，这个差异由「任一基准命中即算解析成功」
+ * 吸收，故新增一类证据不需要在这里登记它的路径形态。
+ *
+ * 为什么「计数比实测宽」不构成对代码的指控：它问的是「基线记的那个数还是不是树上量出来的
+ * 那个数」，与代码对错无关，也就没有任何豁免能合法地让一个过期数字继续留在基线里。
+ * 合法的长期豁免（台账里的证据级条目）指向的是**仍然存在的证据**，它在三条判据下都命中
+ * 「不陈旧」——豁免的存在不会让这三条误报，这是不加白名单也能站住的原因。
+ *
+ * 覆盖面对账必须一起打印：门禁按调用点分包跑（本地档位分两次调用），单次运行看不到别的包，
+ * 若只报「0 条」而不说比了哪些面，0 就不可证伪。
+ */
+function observeBaselineStaleness(analyses, baseline) {
+  const entries = baseline?.packages ?? {};
+  const analyzed = new Map(analyses.map((a) => [a.package, a]));
+  const notes = danglingPackageEntries(entries);
+  let counted = 0;
+  let refs = 0;
+  for (const [name, pkgBase] of Object.entries(entries)) {
+    // 本次未分析的包：②③ 需要实测，既不判也不计数（覆盖面对账如实点名）。
+    const analysis = analyzed.get(name);
+    if (analysis === undefined) continue;
+    const drops = structuralDrops(name, pkgBase, analysis.metrics);
+    const dangling = danglingReferences(name, pkgBase);
+    notes.push(...drops.notes, ...dangling.notes);
+    counted += drops.counted;
+    refs += dangling.refs;
+  }
+  return { notes, counted, refs };
+}
+
+/**
+ * 判据①包键悬空：基线条目的键在树上没有对应 `packages/<名>/src`。
+ *
+ * 判据与分析本体共用 `srcDirOf()`，两侧对「包在哪」不可能有第二种答案；本条只读键、
+ * 不需要分析，故覆盖**全部**基线条目（含本次未 --package 点名的那些）。
+ */
+function danglingPackageEntries(entries) {
+  const notes = [];
+  for (const name of Object.keys(entries)) {
+    if (existsSync(srcDirOf(name))) continue;
+    notes.push(
+      `[包键悬空] 基线条目 \`${name}\` 指向的 ${srcDirOf(name)} 不存在——该条目永远不会被任何 --package 调用点比对，也永远不会被 --write-baseline 更新（处置：删除该条目）`,
+    );
+  }
+  return notes;
+}
+
+/**
+ * 判据②计数比实测宽：与 `collectStructuralRises` 同一份指标清单，只多一条 `<` 臂。
+ *
+ * `counted` 只数**真的比过**的项（基线里不是数字的那些已由 collectStructuralRises 判红，
+ * 既不重复计也不谎报比过）。
+ */
+function structuralDrops(name, pkgBase, metrics) {
+  const notes = [];
+  let counted = 0;
+  for (const key of STRUCTURAL_METRICS) {
+    const base = pkgBase[key];
+    const cur = metrics[key];
+    if (typeof base !== "number") continue;
+    counted += 1;
+    if (cur >= base) continue;
+    notes.push(
+      `[计数比实测宽] ${name} ${key}: 基线 ${base} > 实测 ${cur}（基线已不是当前事实；这不是代码缺陷，处置是跑 --write-baseline 收紧）`,
+    );
+  }
+  return { notes, counted };
+}
+
+/**
+ * 判据③引用悬空：质量证据的 id 按 `|` 切出的每个 token 都是一个引用（kind 尾缀已由
+ * `splitEvidenceItem` 摘掉——它自己知道哪些证据类带 kind，不在此处复述那张表）。
+ *
+ * 解析基准取本脚本自己的两个根：`src` 相对（叶子模块 id / src 内文件边 / 未覆盖文件）与
+ * 包相对（§5.3 与 I8① 两条证据类）；任一基准命中即算解析成功，故新增一类证据不需要在
+ * 这里登记它的路径形态。
+ */
+function danglingReferences(name, pkgBase) {
+  const notes = [];
+  let refs = 0;
+  const bases = [srcDirOf(name), join(ROOT, "packages", name)];
+  for (const key of QUALITY_EVIDENCE_METRICS) {
+    for (const item of pkgBase.quality?.[key] ?? []) {
+      for (const token of splitEvidenceItem(key, item).id.split("|")) {
+        refs += 1;
+        if (bases.some((base) => existsSync(join(base, token)))) continue;
+        notes.push(
+          `[引用悬空] ${name} ${key}: ${item}（引用 \`${token}\` 在树上解析不到——该证据会因对象消失而被 --write-baseline 当作「改善」清理，与「违规真被修好」在报告上同形）`,
+        );
+      }
+    }
+  }
+  return { notes, refs };
+}
+
+/**
+ * 渲染基线陈旧观察段。
+ *
+ * 「0 条」必须**可证伪**：不带比对面的一行 0 读起来与「什么都没查」完全一样，而门禁按调用点
+ * 分包跑（本地档位分两次），单次运行确实看不到别的包——所以覆盖面对账与条数同段打印。
+ * 无基线时报「无比对面」而不是 0：基线缺失时「陈旧 0 条」是无意义的断言。
+ */
+function renderBaselineStaleness(observed, baseline, analyzedNames) {
+  if (baseline === null) {
+    return [`基线陈旧观察（仅报告不判红）：基线缺失，本次无比对面——不报条数`];
+  }
+  const { notes, counted, refs } = observed;
+  const entryNames = Object.keys(baseline.packages ?? {});
+  const unanalyzed = entryNames.filter((name) => !analyzedNames.has(name));
+  const lines = [
+    `基线陈旧观察（仅报告不判红；判红与否由维护者裁决）：${notes.length} 条`,
+    // 覆盖面必须说清「哪条判据扫了多大一面」：包键悬空只读键、不需要分析，故扫全部条目；
+    // 结构计数与证据引用必须实测，故只覆盖本次分析到的包。不分这两者就会让一个只看了
+    // 4/5 条目的运行报出「0 条陈旧」——读起来与全覆盖的 0 没有区别。
+    `  比对面：基线条目 ${entryNames.length} 个；包键悬空扫全部 ${entryNames.length} 个，结构计数与证据引用只比本次分析到的 ${entryNames.length - unanalyzed.length} 个（结构计数 ${counted} 项、证据引用 ${refs} 条）`,
+  ];
+  if (unanalyzed.length > 0) {
+    lines.push(
+      `  本次未分析、结构计数与证据引用不计的条目：${unanalyzed.join(" / ")}（门禁按调用点分包跑；包键悬空仍已逐条扫到，这些条目在别的调用点里被比对）`,
+    );
+  }
+  for (const n of notes) lines.push(`  ${n}`);
+  return lines;
 }
 
 /** 有基线时的存量违规明细（只作报告，判红交给单调基线）。 */
@@ -2265,6 +2427,12 @@ for (const analysis of analyses) {
   if (ZONES) reports.push(renderZones(analysis));
   if (GRAPH) reports.push(renderGraph(analysis));
 }
+
+// 基线陈旧观察：与判定同屏打印（读 PASS 的人不必再翻基线文件才知道基线已经偏宽），
+// 但**不进 failures**——本段只观察，判红与否由维护者裁决。
+reports.push(
+  renderBaselineStaleness(observeBaselineStaleness(analyses, baseline), baseline, analyzedNames),
+);
 
 for (const line of summary) console.log(`verify-dir-imports | ${line}`);
 for (const block of reports) {

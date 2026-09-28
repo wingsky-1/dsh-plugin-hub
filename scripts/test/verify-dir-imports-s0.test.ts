@@ -1670,3 +1670,167 @@ test("全覆盖断言：未登记在任何一处的包名仍 fail-closed（$noMu
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+/** fixture 基线的最小形状：包条目 = 7 类结构计数 + quality 证据段。 */
+type FixtureBaseline = {
+  packages: Record<
+    string,
+    {
+      modules: number;
+      quality: Record<string, string[]>;
+      [key: string]: unknown;
+    }
+  >;
+};
+
+/**
+ * 改写 fixture 基线（造陈旧用）：只动本 fixture 根下的基线文件，真实仓库的
+ * `scripts/data/dir-imports-baseline.json` 全程不参与（VERIFY_DIR_IMPORTS_ROOT 换根）。
+ */
+function mutateFixtureBaseline(root: string, fn: (b: FixtureBaseline) => void) {
+  const baseline = readFixtureBaseline(root);
+  fn(baseline);
+  writeFileSync(
+    join(root, "scripts/data/dir-imports-baseline.json"),
+    `${JSON.stringify(baseline, null, 2)}\n`,
+  );
+}
+
+/** 取基线陈旧观察段的条数行（报告面，与 summary 段分开）。 */
+function stalenessLine(out: string) {
+  const m = out.match(/^verify-dir-imports \| 基线陈旧观察[^\n]*$/m);
+  assert.ok(m !== null, `输出里必须有基线陈旧观察段：\n${out}`);
+  return m[0];
+}
+
+test("陈旧观察：基线比实测宽（计数偏松）必须被点名，且**不得**因此判红", () => {
+  const root = makeFixtureRoot(chainFixture(""));
+  try {
+    registerFixtureStock(root);
+    // 人工陈旧：把 modules 抬高 1 —— 判据只会看到「基线 4 > 实测 3」。
+    mutateFixtureBaseline(root, (b) => {
+      b.packages[PKG].modules = b.packages[PKG].modules + 1;
+    });
+    const { status, out } = runOn(root);
+    assert.equal(status, 0, `陈旧只观察不判红，实际 ${status}：\n${out}`);
+    assert.match(
+      out,
+      /\[计数比实测宽\] fixture-pkg modules: 基线 4 > 实测 3/,
+      `应点名偏松项：\n${out}`,
+    );
+    assert.match(stalenessLine(out), /：1 条/, `条数应为 1：\n${out}`);
+    assert.match(out, /PASS/, `陈旧不得改写判词：\n${out}`);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("陈旧观察：0 条时必须带比对面（0 不可证伪等于没查）", () => {
+  const root = makeFixtureRoot(chainFixture(""));
+  try {
+    registerFixtureStock(root);
+    const { status, out } = runOn(root);
+    assert.equal(status, 0, `干净 fixture 应 PASS，实际 ${status}：\n${out}`);
+    assert.match(stalenessLine(out), /：0 条/, `干净 fixture 应报 0 条：\n${out}`);
+    // 比对面三要素：条目数、实际比了几个、结构计数与证据引用各比了几项。
+    assert.match(
+      out,
+      /比对面：基线条目 1 个；包键悬空扫全部 1 个，结构计数与证据引用只比本次分析到的 1 个（结构计数 7 项、证据引用 \d+ 条）/,
+      `0 条必须附可证伪的比对面：\n${out}`,
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("陈旧观察：基线条目指向的包目录不存在 → 悬空条目（永不参与比对的事实源）", () => {
+  const root = makeFixtureRoot(chainFixture(""));
+  try {
+    registerFixtureStock(root);
+    mutateFixtureBaseline(root, (b) => {
+      b.packages["dsh-retired-pkg"] = b.packages[PKG];
+    });
+    const { status, out } = runOn(root);
+    assert.equal(status, 0, `悬空条目只观察不判红，实际 ${status}：\n${out}`);
+    assert.match(
+      out,
+      /\[包键悬空\] 基线条目 `dsh-retired-pkg` 指向的 .*dsh-retired-pkg\/src 不存在/,
+      `应点名悬空包键：\n${out}`,
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("陈旧观察：证据 id 的引用在树上解析不到 → 引用悬空（对象没了的清理 vs 真修好）", () => {
+  const root = makeFixtureRoot(chainFixture(""));
+  try {
+    registerFixtureStock(root);
+    mutateFixtureBaseline(root, (b) => {
+      // 未覆盖源文件清单：登记一个树上没有的相对路径（形态与真实存量登记同形）。
+      b.packages[PKG].quality.uncoveredSrcFiles = ["server/ghost/impl.ts"];
+    });
+    const { status, out } = runOn(root);
+    assert.equal(status, 0, `悬空引用只观察不判红，实际 ${status}：\n${out}`);
+    assert.match(
+      out,
+      /\[引用悬空\] fixture-pkg uncoveredSrcFiles: server\/ghost\/impl\.ts/,
+      `应点名悬空引用：\n${out}`,
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("陈旧观察反证：引用仍在树上（合法存量）不得被误报为悬空", () => {
+  const root = makeFixtureRoot(chainFixture(""));
+  try {
+    registerFixtureStock(root);
+    mutateFixtureBaseline(root, (b) => {
+      b.packages[PKG].quality.uncoveredSrcFiles = ["a/impl.ts", "b/impl.ts"];
+    });
+    const { status, out } = runOn(root);
+    assert.equal(status, 0, `实际 ${status}：\n${out}`);
+    // 这两条登记的证据与实测不符（它们其实已被度量覆盖），但**存在**——
+    // 观察只问「引用还在不在」，不因此报悬空。
+    assert.doesNotMatch(out, /\[引用悬空\]/, `仍存在的引用不得被报成悬空：\n${out}`);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("陈旧观察：本次未分析的包即使基线明显偏宽也不判（门禁按调用点分包跑）", () => {
+  // 第二个包**目录真实存在**（否则命中的是「包键悬空」而不是本用例要钉的那条），
+  // 但本次 --package 不点名它，且把它的基线计数抬到荒谬的宽度：
+  // 观察若替没比对过的面下结论，就会把它报成陈旧；正确行为是既不报、也不把它算进比对面。
+  const other = Object.fromEntries(
+    Object.entries(chainFixture("")).map(([k, v]) => [
+      k.replace(`packages/${PKG}/`, "packages/dsh-another-pkg/"),
+      v,
+    ]),
+  );
+  const root = makeFixtureRoot({ ...chainFixture(""), ...other });
+  try {
+    registerFixtureStock(root);
+    mutateFixtureBaseline(root, (b) => {
+      b.packages["dsh-another-pkg"] = { ...b.packages[PKG], modules: 999 };
+    });
+    const { status, out } = runOn(root);
+    assert.equal(status, 0, `实际 ${status}：\n${out}`);
+    assert.match(
+      out,
+      /本次未分析、结构计数与证据引用不计的条目：dsh-another-pkg/,
+      `未分析条目须点名：\n${out}`,
+    );
+    assert.match(stalenessLine(out), /：0 条/, `未分析的包不得被判陈旧：\n${out}`);
+    assert.doesNotMatch(out, /999/, `未分析条目的计数不得进入比对面：\n${out}`);
+    // 比对面只算本次真比对过的 1 个包 × 7 类结构计数。
+    assert.match(
+      out,
+      /比对面：基线条目 2 个；包键悬空扫全部 2 个，结构计数与证据引用只比本次分析到的 1 个（结构计数 7 项、/,
+      `比对面不得把未分析条目算进去：\n${out}`,
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
