@@ -161,6 +161,10 @@ test("本仓真实快照：15 条在册（数字变即提示同步台账与 #765
   //   且其 reason「尚无直连判据」为假——test/client-unit/client-context-s2.test.ts:19 直接导入
   //   bindSession / rebindSession），随删除消失，覆盖率部分 14 → 13，16 → 15。同批评的 9 条
   //   只改 exitCriteria 措辞、不增删条目，故台账数不再变。
+  // 本 PR：**台账数不变（15）**。处理了 4 条 pending-project 但一条未删——
+  //   settings-card.tsx 那条水位与变异探针均已达标，只缺第二条件（未进 mutate 面），故保留；
+  //   notifier .tsx 与 provider-usage 客户端两条按文件收窄（各出 3 个文件进分母）；
+  //   shared/client/** 只改 reason 与 exitCriteria。收窄与改写都不增删条目。
   const r = spawnSync(process.execPath, [SCRIPT], { cwd: ROOT, encoding: "utf8" });
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stdout, /合计 15 条待办：已过期 0 /);
@@ -180,9 +184,11 @@ test("本仓真实快照：15 条在册（数字变即提示同步台账与 #765
   // 覆盖率面的临时排除项也必须在台账里（它是「到期复核」的输入，不该只活在配置里）
   // 索引 5 = 前五条是 type-only / not-source 的永久事实（d.ts / d.mts / ps1 / md / css），
   // 第六条起才是带 reviewBy 的临时排除项。
+  // 本 PR 把 notifier .tsx 那条按文件收窄（pattern 由 **/*.tsx 通配改为逐文件枚举，
+  // 三个已过变异探针的文件出分母），索引不变、pattern 变，故这里跟到新 pattern 的前缀。
   assert.match(
     r.stdout,
-    /\$\.exclude\[5\] {2}pattern=packages\/dsh-notifier\/src\/client\/\*\*\/\*\.tsx/,
+    /\$\.exclude\[5\] {2}pattern=packages\/dsh-notifier\/src\/client\/\{index\.tsx,/,
   );
   assert.match(r.stdout, /reviewBy 2027-03-31/);
 });
@@ -257,7 +263,7 @@ test("未识别 kind 落待办兜底并点名依据（多算不少算，漂移�
   assert.match(r.stdout, /合计 1 条待办/);
 });
 
-test("本仓真实快照：排除面按 kind 分为 13 + 16 结构性，合计待办仍 16 条", () => {
+test("本仓真实快照：排除面按 kind 分为 13 + 16 结构性，合计待办 15 条", () => {
   const r = spawnSync(process.execPath, [SCRIPT, "--today", "2026-09-28"], {
     cwd: ROOT,
     encoding: "utf8",
@@ -271,6 +277,7 @@ test("本仓真实快照：排除面按 kind 分为 13 + 16 结构性，合计�
     /结构性 16 条（不计入待办）：facade×4、not-mutated×4、not-source×1、type-only×7/,
   );
   // 13 条 pending-project + gauntlet 1 + gate-exemptions 1 = 15 条待办
+  // （本 PR 处理 4 条但未删任何一条：1 条保留 + 2 条按文件收窄 + 1 条只改措辞，条数不变）
   assert.match(r.stdout, /合计 15 条待办/);
   assert.match(r.stdout, /结构性（按设计不计入待办）29/);
 });

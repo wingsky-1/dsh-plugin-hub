@@ -339,6 +339,33 @@ contract-check 禁止运行时值导入）。原自建类型层 `types/dsh.d.ts`
 `e2e-*.test.ts` 用的是 in-process cordis Context + fake 驱动（不 listen、不 spawn），
 故归集成层并保留在变异面；反之 `smoke.test.ts`（真实端口/子进程）归 e2e 层。
 
+#### 「unit 层」的可判定定义
+
+覆盖率台账 `scripts/data/coverage.config.json` 的 `shared/client/**` 条目在 exitCriteria
+里引用本段，请与本段同改。
+
+一个测试文件算「在 unit 层」，当且仅当**同时**满足两条：
+
+- **(A) 它被某个 vitest project 收集** —— 路径命中 `packages/*/<该层 glob>`。根
+  `vitest.config.ts` 的 `projects` 由 `$testLayers.layers` 派生，`include` 恒带
+  `packages/*/` 前缀，故 `shared/test/**` 与 `scripts/test/**` 落在**全部六层之外**
+  （实测 `npx vitest run --project unit shared/test/config-shape.test.ts` **exit 1**，
+  vitest 打印 `include: packages/*/test/unit/**/*.test.ts`；同一文件 `node --test` **exit 0**）。
+- **(B) 它 import 的是被测模块的**源文件**，不是 tsc 产物。** 对 `shared/client/*.ts` 而言即
+  直连 `.ts` 源，而非 `shared/**/*.js`（#1028 后续重构后 shared 走 tsc 原地 emit，
+  `.js` 与源码同目录，已被 `shared/**/*.js` 的 not-source 条目排除）。
+
+(B) 是覆盖率面的硬要求而非风格偏好：istanbul 逐个「被 import 的文件」插桩，`.js` 产物已被
+排除，故**只搬测试文件位置而不直连 `.ts` 源等于什么都没变**——这正是 `shared/client/**`
+至今 0% 的原因。反过来直连 `.ts` 源确实能计分：实测在某包 `test/client-dom` 用例里
+`import` `shared/client/ensure-style.ts`，两条冒烟断言即让 istanbul 报出该文件
+lines 80.95% / branches 47.36%。
+
+因此满足 (A) 只有两条路，都**不是**「搬测试」：在 `$testLayers.layers` 里新增一层
+（要改 `mutation-topology.json` 这个事实源），或把 shared 判据放进某个包的
+`test/<层>/` 下（要同步该包 `--min` 与变异面登记）。这正是 `shared/client/**` 至今仍是
+pending-project 的原因。
+
 登记链路（唯一事实源 = `scripts/data/mutation-topology.json` 的 `$testLayers` 与各包 `testLayers`）：
 
 - 变异面测试清单由 `scripts/gate/gen-stryker-conf.mjs` **从层 glob 展开为真实文件清单**，落在

@@ -54,6 +54,12 @@ export const RATCHET_BUCKETS: readonly RatchetBucket[] = [
     file: "scripts/data/coverage.config.json",
     // 14 → 13：#T1A 删掉 mcp-manager 客户端 core/session.ts 那条陈旧豁免
     // （reason「尚无直连判据」为假、探针可打红）。按判据 ①，收口与下调必须同 PR。
+    // 本轮常量**维持 13（净减 0）**：本轮处理了 4 条 pending-project，但一条都没删。
+    // settings-card.tsx 那条本已具备删条条件（变异探针两处均打红、水位达标），仍保留——
+    // 缺的是**第二条件**（未进入 mutation-topology 的 mutate 面）：探针是一次性测量，
+    // mutate 面登记才是持续执法，两者不能互相顶替，故不放宽到 12。
+    // 另 3 条是**按文件收窄**（notifier .tsx 与 provider-usage 客户端各出 3 个文件进分母；
+    // shared/client/** 改写 reason 与 exitCriteria），收窄与改写都不增删条目。
     ceiling: 13,
     note: "覆盖率排除面的 pending-project 暂缺豁免（水位与变异面同时成立才可删）",
   },
