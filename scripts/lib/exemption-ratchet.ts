@@ -52,8 +52,10 @@ export interface RatchetBucket {
 export const RATCHET_BUCKETS: readonly RatchetBucket[] = [
   {
     file: "scripts/data/coverage.config.json",
-    ceiling: 14,
-    note: "覆盖率排除面的 pending-project 暂缺豁免（等组件级 / 直连判据落地后逐条删除）",
+    // 14 → 13：#T1A 删掉 mcp-manager 客户端 core/session.ts 那条陈旧豁免
+    // （reason「尚无直连判据」为假、探针可打红）。按判据 ①，收口与下调必须同 PR。
+    ceiling: 13,
+    note: "覆盖率排除面的 pending-project 暂缺豁免（水位与变异面同时成立才可删）",
   },
   {
     file: "scripts/data/gate-exemptions.json",
