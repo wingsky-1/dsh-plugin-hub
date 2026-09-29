@@ -136,6 +136,7 @@ const EXPECT_FILES: Record<string, string[]> = {
   ],
   "dsh-mcp-manager": [
     "client-dom/core-dom.test.ts",
+    "client-dom/float-pill-render.test.ts",
     "client-dom/float-quick-add-form.test.ts",
     "client-dom/float-servers-render.test.ts",
     "client-dom/panel-aria-modal.test.ts",
