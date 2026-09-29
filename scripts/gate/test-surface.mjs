@@ -218,7 +218,7 @@ export function projectTestSurface(root, topologyDoc, pkgName) {
   const { mutationLayers, excludeLayers } = layerNames(layers);
 
   // ⓪ 充分性：必需层必须都在 mutationLayers 内，且不得被排除层覆盖
-  collectSufficiencyErrors(errors, mutationLayers, excludeLayers);
+  collectSufficiencyErrors(errors, mutationLayers, excludeLayers, layers.layerMeta);
 
   // ① runner 面：glob 全集（与 vitest include 同口径）
   const runFiles = expandGlob(pkgDir, RUN_TESTS_PATTERN).map((p) => relPosix(root, p));
@@ -296,11 +296,45 @@ export function projectRootSharedTestSurface(root, topologyDoc) {
   };
 }
 
-/** 层名清单：缺声明的层退化为空表，调用方据此走原有的 fail-closed 判据。 */
+/**
+ * 变异面资格的**语义谓词**：`layerMeta.<层>.assertionTarget === "src"` 的层必须进变异面。
+ * 取值域：src（直连源码，有杀灭能力）/ artifact（断言构建产物）/ live（真实端口与子进程）。
+ * 取代旧形态的散文规则（哪些层进变异面写在 `$comment` 里）与手写键 `mutationLayers`——
+ * 后者让「把 unit 加进排除层」这种削面动作退化成两行与行为无关的数据改动。
+ *
+ * @param {Record<string, {assertionTarget?: string}>} layerMeta
+ * @returns {string[]} assertionTarget 为 src 的层名（升序）
+ */
+export function mutationSurfaceLayers(layerMeta) {
+  if (layerMeta === null || typeof layerMeta !== "object" || Array.isArray(layerMeta)) {
+    return [];
+  }
+  return Object.entries(layerMeta)
+    .filter(([, meta]) => meta?.assertionTarget === "src")
+    .map(([name]) => name)
+    .sort();
+}
+
+/**
+ * 层名清单：**全部由 `layerMeta` 派生**，不再有手写键。
+ * 返回键名仍为 `mutationLayers` / `excludeLayers`——键名是 `equiv-check` 等价基线的稳定标识，
+ * 改键名会让 delta 变化而与行为无关，故**只换取值来源**。
+ *
+ * `layerMeta` 整节缺失 / 形状不合法时**抛错**（fail-closed）：静默退化成空表会让两处调用方
+ * 各自产出看似合理的空变异面，属静默削面（#690 S2b 记录过的失效形态）。
+ */
 function layerNames(layers) {
+  const meta = layers?.layerMeta;
+  if (meta === null || typeof meta !== "object" || Array.isArray(meta)) {
+    throw new Error(
+      "$testLayers.layerMeta 缺失或形状不合法 —— 无法派生变异面资格（fail-closed，不静默退化为空表）",
+    );
+  }
   return {
-    mutationLayers: layers.mutationLayers ?? [],
-    excludeLayers: layers.mutationExcludeLayers ?? [],
+    mutationLayers: mutationSurfaceLayers(meta),
+    excludeLayers: Object.keys(meta)
+      .filter((name) => meta[name]?.assertionTarget !== "src")
+      .sort(),
   };
 }
 
@@ -310,18 +344,36 @@ function mutationExemptions(def) {
 }
 
 /** ⓪ 必需层必须在变异层内、且不得被排除层覆盖（#690 S2b 的充分性下限）。 */
-function collectSufficiencyErrors(errors, mutationLayers, excludeLayers) {
-  for (const required of REQUIRED_MUTATION_LAYERS) {
+function collectSufficiencyErrors(errors, mutationLayers, excludeLayers, layerMeta) {
+  // 语义谓词：凡 layerMeta 里 assertionTarget === "src" 的层都必须在变异面内。
+  // 改任一层的 assertionTarget 会立刻改变本检查的期望集合——「削面」从此必须与 layerMeta 同步。
+  for (const required of mutationSurfaceLayers(layerMeta)) {
     if (!mutationLayers.includes(required)) {
       errors.push(
-        `必需层 "${required}" 不在 $testLayers.mutationLayers 内 —— 变异面被静默削减（#690 S2b 充分性下限）`,
+        `必需层 "${required}" 的 assertionTarget 是 src 却不在变异面内 —— 变异面被静默削减`,
       );
     }
     if (excludeLayers.includes(required)) {
-      errors.push(`必需层 "${required}" 同时出现在 mutationExcludeLayers 内 —— 声明自相矛盾`);
+      errors.push(`必需层 "${required}" 同时出现在排除层内 —— 声明自相矛盾`);
     }
   }
-  if (mutationLayers.length === 0) errors.push("$testLayers.mutationLayers 为空 —— 变异面为零");
+  // 「层集合非空」兜底：谓词算出空集（layerMeta 写坏 / 全改成非 src）必须判红。
+  if (mutationLayers.length === 0) errors.push("由 layerMeta 派生的变异面层集合为空 —— 变异面为零");
+  // 常量兜底：即使谓词被写成空，冻结清单里的层仍必须在变异面内。
+  for (const required of REQUIRED_MUTATION_LAYERS) {
+    if (!mutationLayers.includes(required)) {
+      errors.push(`兜底必需层 "${required}" 不在变异面内 —— 变异面被静默削减`);
+    }
+  }
+}
+
+/**
+ * 该层是否被 layerMeta 声明为必答（mandatory）。
+ * 抽成独立函数是刻意的：内联的可选链 + 比较会把 collectLayerFiles 的复杂度顶过 lint 上限，
+ * 而这里的语义（数据派生，不是层名硬编码）必须原样保留。
+ */
+function isMandatoryLayer(layers, layerName) {
+  return layers.layerMeta?.[layerName]?.mandatory === true;
 }
 
 /** ② 逐层展开 glob 得层内文件表，并核对 mutationLayers / excludeLayers 引用的层都已定义。 */
@@ -335,11 +387,12 @@ function collectLayerFiles({ root, pkgDir, layers, mutationLayers, excludeLayers
     }
     const hits = expandGlob(pkgDir, pattern).map((p) => relPosix(root, p));
     layerFiles[layerName] = hits;
-    // 只对 unit 层要求非空：unit 是每个包的必答项（新单元测试的默认落点）；
-    // integration/client/e2e 是可选层，包内不存在该层是正常形态（如 lan-proxy 无集成层）。
-    if (hits.length === 0 && layerName === "unit") {
+    // 只对 layerMeta.mandatory === true 的层要求非空（当前只有 unit：每个包的必答项、
+    // 新单元测试的默认落点）。**不按层名硬判、更不按 scope 谓词判**：实测 dsh-provider-usage 的
+    // client-unit 是 0 文件，按 scope 判会立刻误红；可选层零命中是正常形态（如 lan-proxy 无集成层）。
+    if (hits.length === 0 && isMandatoryLayer(layers, layerName)) {
       errors.push(
-        `层 "unit"（glob=${pattern}）在本包零命中 —— 单元层是每个包的必答项，glob 写错或测试被误删`,
+        `层 "${layerName}"（glob=${pattern}）在本包零命中 —— 该层 layerMeta.mandatory 为 true，glob 写错或测试被误删`,
       );
     }
   }
@@ -416,7 +469,7 @@ function collectUnattributedErrors(runFiles, explained, errors) {
 export function readTestMin(root, pkgName) {
   const pkgJsonPath = join(root, "packages", pkgName, "package.json");
   if (!existsSync(pkgJsonPath)) return { path: pkgJsonPath, min: null };
-  const m = readFileSync(pkgJsonPath, "utf8").match(/"test"\s*:\s*"node [^"]*--min (\d+)"/);
+  const m = readFileSync(pkgJsonPath, "utf8").match(/"test"\s*:\s*"[^"]*--min (\d+)"/);
   return { path: pkgJsonPath, min: m === null ? null : Number(m[1]) };
 }
 

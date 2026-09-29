@@ -876,11 +876,16 @@ function makeMutationFixture(excludes: string[] | undefined) {
           layers: {
             unit: "test/unit/**/*.test.ts",
             integration: "test/integration/**/*.test.ts",
-            client: "test/bundle/**/*.test.ts",
+            bundle: "test/bundle/**/*.test.ts",
             e2e: "test/e2e/**/*.test.ts",
           },
-          mutationLayers: ["unit", "integration"],
-          mutationExcludeLayers: ["client", "e2e"],
+          // 变异面资格由 layerMeta.assertionTarget 派生，两个手写列表键已删。
+          layerMeta: {
+            unit: { assertionTarget: "src", environment: "node", mandatory: true },
+            integration: { assertionTarget: "src", environment: "node", mandatory: false },
+            bundle: { assertionTarget: "artifact", environment: "node", mandatory: false },
+            e2e: { assertionTarget: "live", environment: "node", mandatory: false },
+          },
         },
         sharedDefaults: {
           testRunner: "vitest",

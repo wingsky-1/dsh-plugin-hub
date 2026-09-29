@@ -465,17 +465,53 @@ test("P3c-① supportFileEntries 三路返回/face边界/null哨兵行为锁定"
   // null 哨兵：topology 缺席/segments 异常一律回落整包
   assert.deepEqual(supportFileEntries(null, ROOT, new Map(), pkg, "x", []), [pkg], "null topology");
   assert.deepEqual(
-    supportFileEntries({ packages: { [pkg]: { segments: null } } }, ROOT, new Map(), pkg, "x", []),
+    supportFileEntries(
+      {
+        $testLayers: {
+          layerMeta: { unit: { assertionTarget: "src", environment: "node", mandatory: true } },
+        },
+        packages: { [pkg]: { segments: null } },
+      },
+      ROOT,
+      new Map(),
+      pkg,
+      "x",
+      [],
+    ),
     [pkg],
     "segments null",
   );
   assert.deepEqual(
-    supportFileEntries({ packages: { [pkg]: { segments: [] } } }, ROOT, new Map(), pkg, "x", []),
+    supportFileEntries(
+      {
+        $testLayers: {
+          layerMeta: { unit: { assertionTarget: "src", environment: "node", mandatory: true } },
+        },
+        packages: { [pkg]: { segments: [] } },
+      },
+      ROOT,
+      new Map(),
+      pkg,
+      "x",
+      [],
+    ),
     [pkg],
     "segments array",
   );
   assert.deepEqual(
-    supportFileEntries({ packages: { [pkg]: { segments: {} } } }, ROOT, new Map(), pkg, "x", []),
+    supportFileEntries(
+      {
+        $testLayers: {
+          layerMeta: { unit: { assertionTarget: "src", environment: "node", mandatory: true } },
+        },
+        packages: { [pkg]: { segments: {} } },
+      },
+      ROOT,
+      new Map(),
+      pkg,
+      "x",
+      [],
+    ),
     [pkg],
     "segments empty",
   );

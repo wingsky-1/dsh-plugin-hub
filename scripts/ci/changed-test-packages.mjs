@@ -41,18 +41,56 @@ const TOPOLOGY_REL = "scripts/data/mutation-topology.json";
  * client-unit / client-dom 与 support 文件（helpers 等）仍触发（保守：support 被
  * 变异层 import，误放行=假绿）。
  */
-export function packageOfTestPath(file) {
+/**
+ * 从拓扑取 `$testLayers.layerMeta`；整节缺失 / 形状不合法时**抛错**（fail-closed）。
+ *
+ * 为什么不能退化成空对象：`excludedLayerFor` 对空表一律返回 null，调用方于是会把
+ * **每一层**都当成「进变异面」而全部触发失基线——不报错、不判红，只是把本该剪掉的
+ * e2e/bundle 全量重跑，静默放大最坏成本。缺声明必须响。
+ */
+function layerMetaOf(topology, rootDir) {
+  // 拓扑缺席 ≠ 声明损坏：调用方（与 parseTestDiffPaths 这类便捷入口）可能只是没传进来，
+  // 此时读**规范那份**。但读到之后形状仍不对，就必须抛错——判据是「派生不出来」，不是
+  // 「谁传的」。
+  const doc = topology ?? loadTopology(rootDir ?? ROOT);
+  const meta = doc?.$testLayers?.layerMeta;
+  if (
+    meta === null ||
+    typeof meta !== "object" ||
+    Array.isArray(meta) ||
+    Object.keys(meta).length === 0
+  ) {
+    throw new Error(
+      "拓扑缺少 $testLayers.layerMeta —— 无法派生变异面剪枝面（fail-closed，不静默全量触发）",
+    );
+  }
+  return meta;
+}
+
+/**
+ * 层目录名 → `layerMeta` 声明的「断言对象」；未命中任何非 src 层时返回 null（不豁免，保守触发）。
+ *
+ * 变异面资格**由数据派生**（`$testLayers.layerMeta.<层>.assertionTarget`）：
+ * `src` 进变异面，`artifact` / `live` 不进。两处剪枝（`packageOfTestPath` 与
+ * `isExemptTestFile`）共用本函数——旧形态是两份各写死层名的复制品，改一处漏一处即成假绿。
+ *
+ * @param {string} rest                                `packages/<pkg>/test/` 之后的相对路径
+ * @param {Record<string, {assertionTarget?: string}>} layerMeta
+ * @returns {string | null}                            命中的非 src 层名
+ */
+function excludedLayerFor(rest, layerMeta) {
+  for (const [layer, meta] of Object.entries(layerMeta ?? {})) {
+    if (meta?.assertionTarget === "src") continue;
+    if (rest === `${layer}/` || rest.startsWith(`${layer}/`)) return layer;
+  }
+  return null;
+}
+
+export function packageOfTestPath(file, layerMeta) {
   const m = /^packages\/([^/]+)\/test\//.exec(file);
   if (m === null) return null;
   const rest = file.slice(m[0].length);
-  if (
-    rest === "e2e/" ||
-    rest.startsWith("e2e/") ||
-    rest === "bundle/" ||
-    rest.startsWith("bundle/")
-  ) {
-    return null;
-  }
+  if (excludedLayerFor(rest, layerMeta ?? layerMetaOf(null, ROOT)) !== null) return null;
   return m[1];
 }
 
@@ -82,7 +120,7 @@ export function packageOfTestPath(file) {
 /** 一个改动文件该失效的条目集合：本包的测试文件走段级认领，其余走 face 命中映射。 */
 function invalidatedByFile(file, flagged, topology, rootDir, faceCache) {
   const out = new Set();
-  const own = packageOfTestPath(file);
+  const own = packageOfTestPath(file, layerMetaOf(topology, rootDir));
   if (own !== null) {
     for (const entry of testFileEntries(topology, rootDir, faceCache, own, file)) out.add(entry);
     return out;
@@ -183,10 +221,9 @@ function faceOfPkg(rootDir, topology, faceCache, pkg) {
  * 段级 vitest 配置（`vitest.stryker.d/<pkg>-<seg>.config.ts`，P2 首个显式窄化起存在，
  * registry glob + filters 同步）同理拆段：改段清单只失效该段。
  */
-export function isExemptTestFile(file, pkg) {
-  return (
-    file.startsWith(`packages/${pkg}/test/bundle/`) || file.startsWith(`packages/${pkg}/test/e2e/`)
-  );
+export function isExemptTestFile(file, pkg, layerMeta) {
+  const rest = file.slice(`packages/${pkg}/test/`.length);
+  return excludedLayerFor(rest, layerMeta ?? layerMetaOf(null, ROOT)) !== null;
 }
 export function listPackageTestFiles(rootDir, pkg) {
   const base = join(rootDir, "packages", pkg, "test");
@@ -285,23 +322,32 @@ function supportSegKeys(topology, pkg) {
   if (keys.length === 0) return null;
   return keys;
 }
-function classifySupportConsumer(d, pkg, faceSet) {
-  if (isExemptTestFile(d, pkg)) return "exempt";
+function classifySupportConsumer(d, pkg, faceSet, layerMeta) {
+  if (isExemptTestFile(d, pkg, layerMeta)) return "exempt";
   if (faceSet.has(d)) return "mutation";
   if (!d.startsWith(`packages/${pkg}/test/`)) return "outside";
   return "transit";
 }
-function visitSupportDirect(d, pkg, faceSet, visited, mutationConsumers, exemptConsumers, queue) {
+function visitSupportDirect(
+  d,
+  pkg,
+  faceSet,
+  visited,
+  mutationConsumers,
+  exemptConsumers,
+  queue,
+  layerMeta,
+) {
   if (visited.has(d)) return false;
   visited.add(d);
-  const kind = classifySupportConsumer(d, pkg, faceSet);
+  const kind = classifySupportConsumer(d, pkg, faceSet, layerMeta);
   if (kind === "exempt") exemptConsumers.add(d);
   else if (kind === "mutation") mutationConsumers.add(d);
   else if (kind === "outside") return true;
   else queue.push(d);
   return false;
 }
-function collectSupportConsumers(rootDir, pkg, file, faceSet) {
+function collectSupportConsumers(rootDir, pkg, file, faceSet, layerMeta) {
   const visited = new Set([file]);
   const queue = [file];
   const mutationConsumers = new Set();
@@ -319,7 +365,18 @@ function collectSupportConsumers(rootDir, pkg, file, faceSet) {
       continue;
     }
     for (const d of directs) {
-      if (visitSupportDirect(d, pkg, faceSet, visited, mutationConsumers, exemptConsumers, queue)) {
+      if (
+        visitSupportDirect(
+          d,
+          pkg,
+          faceSet,
+          visited,
+          mutationConsumers,
+          exemptConsumers,
+          queue,
+          layerMeta,
+        )
+      ) {
         return { mutationConsumers, exemptConsumers, fallback: true };
       }
     }
@@ -341,12 +398,15 @@ function resolveSupportTail(collected, topology, rootDir, faceCache, pkg, segKey
   ]);
 }
 export function supportFileEntries(topology, rootDir, faceCache, pkg, file, packageFace) {
+  // layerMeta 的形状校验**必须在 try 之外**：下面的兜底 catch 会把任何异常都降级成
+  // 「整包失效」，那对丢基线是安全的却是静默的。缺 layerMeta 属声明损坏，必须响。
+  const layerMeta = layerMetaOf(topology, rootDir);
   try {
     const segKeys = supportSegKeys(topology, pkg);
     if (segKeys === null) return [pkg];
     const face = supportFaceOf(packageFace, faceCache, pkg);
     if (face.includes(file)) return testFileEntries(topology, rootDir, faceCache, pkg, file);
-    const collected = collectSupportConsumers(rootDir, pkg, file, new Set(face));
+    const collected = collectSupportConsumers(rootDir, pkg, file, new Set(face), layerMeta);
     return resolveSupportTail(collected, topology, rootDir, faceCache, pkg, segKeys);
   } catch {
     return [pkg];

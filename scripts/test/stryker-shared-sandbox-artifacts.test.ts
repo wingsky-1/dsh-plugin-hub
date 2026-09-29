@@ -49,9 +49,12 @@ type DerivedConf = Record<string, unknown>;
 function makeTopology(sharedMutate: string[]): Record<string, unknown> {
   return {
     $testLayers: {
-      layers: { unit: "test/unit/**/*.test.ts" },
-      mutationLayers: ["unit"],
-      mutationExcludeLayers: ["client"],
+      layers: { unit: "test/unit/**/*.test.ts", bundle: "test/bundle/**/*.test.ts" },
+      // 变异面资格由 layerMeta.assertionTarget 派生，两个手写列表键已删。
+      layerMeta: {
+        unit: { assertionTarget: "src", environment: "node", mandatory: true },
+        bundle: { assertionTarget: "artifact", environment: "node", mandatory: false },
+      },
     },
     sharedDefaults: {
       testRunner: "vitest",
