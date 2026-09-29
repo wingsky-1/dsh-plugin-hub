@@ -101,7 +101,14 @@ export const RATCHET_BUCKETS: readonly RatchetBucket[] = [
     // 两条删除条件同时成立：① lines/branches 达 thresholds 同名键（见 pnpm cov 产物）；
     // ② 已登记进 mutation-topology 的 client-panel 段 mutate（持续执法面）。
     // 按维护者裁定「一条豁免一次落地」，每条豁免自成一次可独立回退的提交。
-    ceiling: 6,
+    // 6 → 5：删掉 float/float.ts 那条（838 行，本批次最重的一条）。按维护者裁定的 8a/8b 两笔落：
+    // 8a 补胶囊与渲染层（renderPill / renderFloatHealth / renderFloatRow / renderFloatPanel 等），
+    // 实测 lines 193/335 = 57.61%、branches 144/231 = 62.34% —— 条件①**未**达成，故 8a 不删条目、
+    // 且不把本文件登记进 mutate（Stryker 按文件变异，判据未齐时登记等于向 client-panel 共用段
+    // 注入注定存活的变异体，代价由该段已收口的七个文件共同承担）。
+    // 8b 补 placePanel / toggleFloat / mountFloat / conversationHost / panelHost / dockedBottomEdge
+    // 后实测 lines 316/335 = 94.33%、branches 201/231 = 87.01%，双条件齐备，本笔才登记入面并删条目。
+    ceiling: 5,
     note: "覆盖率排除面的 pending-project 暂缺豁免（水位与变异面同时成立才可删）",
   },
   {

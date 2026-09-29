@@ -9,6 +9,7 @@ export default defineConfig({
   test: {
     include: [
       'packages/dsh-mcp-manager/test/client-dom/core-dom.test.ts',
+      'packages/dsh-mcp-manager/test/client-dom/float-panel-mount.test.ts',
       'packages/dsh-mcp-manager/test/client-dom/float-pill-render.test.ts',
       'packages/dsh-mcp-manager/test/client-dom/float-quick-add-form.test.ts',
       'packages/dsh-mcp-manager/test/client-dom/float-servers-render.test.ts',
