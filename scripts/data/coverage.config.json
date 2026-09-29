@@ -95,12 +95,10 @@
       "since": "#1012"
     },
     {
-      "pattern": "shared/client/**",
-      "kind": "pending-project",
-      "reason": "跨包共享的客户端设施（**源码是 .ts 不是 .js**——旧措辞写的 ensure-style.js / i18n.js 是 #1028 后续重构之前的事，同目录下的 .js 是 tsc 原地 emit 产物，已由 shared/**/*.js 那条 not-source 单独排除）：ensure-style.ts / i18n.ts 两个模块的判据在 scripts/test 下（shared-client-ensure-style.test.ts / shared-client-i18n.test.ts，由 node --test 跑、即 pnpm test:scripts），而 **vitest projects 的 include 恒带 packages/*/ 前缀**（由 $testLayers.layers 派生），故 shared/test 与 scripts/test 都不属于任何 vitest project，`pnpm cov` 永远收不到——实测 npx vitest run --project unit shared/test/config-shape.test.ts exit 1（vitest 打印 include: packages/*/test/unit/**/*.test.ts），而 node --test 同一文件 exit 0。**只搬测试位置不够**：各包 client-dom 判据 import 的是 shared/client/i18n.js（tsc 产物，被 not-source 排除），istanbul 计的是被 import 的那个文件，.ts 源因此仍是 0%。实测补上了这个洞：在某包 test/client-dom 用例里直接 import shared/client/ensure-style.ts，istanbul 立刻给出该文件的覆盖率（两条冒烟断言即得 lines 80.95% / branches 47.36%），即「直连 .ts 源」是可行且必要的条件。**「unit 层」的可判定定义见 docs/DEVELOPMENT.md「测试分层与变异面登记」下的同名小节**（两条同时满足：(A) 被某个 vitest project 收集 + (B) 直连 .ts 源而非 tsc 产物），旧 exitCriteria 的「建 project 或移入 unit 层」实为三选一（project / node:test / vitest 三种含义混用）且不可机械判定，已按该定义改写。",
-      "exitCriteria": "删除条件（须**同时**成立）：① 两个文件在 `pnpm cov` 产物里 lines 与 branches 均不低于本文件 `thresholds` 的同名键——**持续判据**，数字派生自同文件 thresholds 不另立第二份，收紧阈值本条随之变严。② 存在**直连 shared/client/*.ts 源**的判据并已进入 `scripts/data/mutation-topology.json` 某段的 `mutate`（判据已能杀死其变异体）。达成路径（不属解除条件，只供排期参考，成本高于「搬测试」）：在 $testLayers.layers 新增一层以收 shared/test，或把 shared 判据放进某包 test/<层>/ 下并同步该包 --min 与变异面登记。**水位单条不够**：可被「模块加载即执行」满足而不产生任何断言信号（locales.ts 100%、dom.ts 94.44% 即如此，两者的变异探针全绿），证据与判词见本文件 note 的「传递覆盖不算达标」段。",
-      "since": "#769",
-      "reviewBy": "2027-03-31"
+      "pattern": "shared/test/shared-client.mutation.test.ts",
+      "kind": "not-source",
+      "reason": "root-shared mutation 测试只验证 shared/client/ensure-style.ts 与 shared/client/i18n.ts 的**直连 .ts 源**（不是 tsc 原地 emit 的 .js 产物），不进入运行时代码覆盖率分母；两个源文件由独立 mutation surface（stryker.conf.d/shared-client.json）计量。与上面 settings-namespace 那条同形同判据，只是一份测试文件对应两个源",
+      "since": "#1074"
     },
     {
       "pattern": "shared/tsconfig.json",

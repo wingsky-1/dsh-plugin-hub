@@ -40,6 +40,9 @@ const LAYER_RUNTIME = {
   // happy-dom 下变成 http 协议并抛「The URL must be of scheme file」，而纯逻辑判据又必须直连
   // 源码才能进变异面。
   bundle: { environment: "node" },
+  // root-shared 层（#1074）：shared/test 下的 *.mutation.test.ts。node 环境、无 DOM；
+  // 超时与 unit 对齐（与既有 shared-settings-namespace 段的 vitest.stryker.d 配置同口径）。
+  "shared-mutation": { environment: "node", testTimeout: 60_000, hookTimeout: 60_000 },
   // test/client-unit/** 直连 src/client/** 的纯逻辑判据：不要 DOM，但必须直连源码（见文件头）。
   // 超时口径与 unit 对齐：这里跑的是同一批实现里的判断，个别用例的预算同样是 30s 量级。
   "client-unit": { environment: "node", testTimeout: 60_000, hookTimeout: 60_000 },
@@ -90,13 +93,31 @@ export default defineConfig({
     // 单例会共享第一次求值时的 home：轻则写进已删除的临时目录（红得莫名其妙），重则写进真实
     // `~/.dsh`（#218 污染红线）。vitest 大版本换过隔离实现，故把这条不变量写成可审查的事实。
     isolate: true,
-    projects: Object.entries(mutationTopology.$testLayers.layers).map(([layer, glob]) => ({
-      test: {
-        name: PROJECT_NAME[layer] ?? layer,
-        include: [`packages/*/${glob}`],
-        ...runtimeFor(layer),
-      },
-    })),
+    projects: [
+      // ── 第一组：包级层 ────────────────────────────────────────────────
+      // `layers` 的 glob 是**包内相对**（test/unit/**），故要加 `packages/*/` 前缀才是
+      // 仓库根相对路径。前缀写在这里而不是数据里：数据保持「层内相对」这一单一语义。
+      ...Object.entries(mutationTopology.$testLayers.layers).map(([layer, glob]) => ({
+        test: {
+          name: PROJECT_NAME[layer] ?? layer,
+          include: [`packages/*/${glob}`],
+          ...runtimeFor(layer),
+        },
+      })),
+      // ── 第二组：root-shared 层（#1074）─────────────────────────────────
+      // `rootLayers` 的 glob 已经是**根相对**（shared/test/**），**不再加任何前缀**——
+      // 这是它与 `layers` 的唯一区别，也是最易写错的一处（加前缀或段序写反都会让该
+      // project 静默零命中：vitest 在同一次运行里只要有别的 project 命中，空 project
+      // 不会被报错，只会被跳过）。
+      // 形状与「零命中即红」判据见 scripts/gate/gen-stryker-conf.mjs 的 rootLayerProblems。
+      ...Object.entries(mutationTopology.$testLayers.rootLayers).map(([layer, glob]) => ({
+        test: {
+          name: PROJECT_NAME[layer] ?? layer,
+          include: [glob],
+          ...runtimeFor(layer),
+        },
+      })),
+    ],
     coverage: {
       provider: "istanbul",
       include: coverage.include,

@@ -95,7 +95,7 @@ test("真值快照：本仓三桶的待办数与代码常量一致（独立重�
   const expected: Record<string, number> = {
     // 6 → 5：删掉 mcp-manager 客户端 float/float.ts 那条（本行是**独立重数**
     // 的对照值，与 RATCHET_BUCKETS 的 ceiling 各钉一次；两边必须同 PR 更新。
-    "scripts/data/coverage.config.json": 5,
+    "scripts/data/coverage.config.json": 4,
     "scripts/data/gate-exemptions.json": 1,
     "scripts/data/gauntlet.config.json": 1,
   };

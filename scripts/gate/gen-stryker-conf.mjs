@@ -265,6 +265,53 @@ function deriveConfig(sharedDefaults, pkgName, segKey, segDef, pkgDef, segVitest
 }
 
 /**
+ * `$testLayers.rootLayers` 的形状与**零命中**判据。
+ *
+ * 核心是**零命中即红**：每条 rootLayer 的 glob 必须在磁盘上至少命中一个测试文件。
+ *
+ * 为什么必须 fail-closed（原样记录实测依据，勿压缩）——本判据存在的唯一理由：
+ * ```
+ *   projects: [ {name:probe-has-files, include: <abs>/a.probe.test.ts},
+ *               {name:probe-empty,     include: shared/test/does-not-exist-*.test.ts} ]
+ *   npx vitest run --project probe-has-files --project probe-empty
+ *   → 1 passed，exit 0，全程零字提到那个空 project
+ * ```
+ * 即「glob 写错 → vitest 报 No test files found → 非零退出」这个假设是**错的**：
+ * 只要同一次运行里还有别的 project 命中，空 project 被**静默跳过**。不 fail-closed 的话，
+ * 一个拼错的 rootLayer（段序写反、加错前缀）会让 `pnpm cov` 照常绿、该 project 的判据
+ * 永不执行、覆盖率解除条件①永不成立，而**没有任何一条判词指出这件事**。
+ *
+ * 形状判据同时覆盖：整节缺失、值为空串、glob 命中 0 个文件。
+ * 整节缺失按**必填**处理——`rootLayers` 是 vitest 第二组 project 的唯一事实源，
+ * 缺席等于第二组 project 整体消失，而那同样是无判据的静默。
+ */
+function rootLayerProblems(topology) {
+  const rootLayers = topology?.$testLayers?.rootLayers;
+  if (rootLayers === null || typeof rootLayers !== "object" || Array.isArray(rootLayers)) {
+    return [
+      "$testLayers.rootLayers 缺失或形状不合法 —— vitest 的第二组 project 无事实源，" +
+        "缺席等于该组 project 整体消失（fail-closed）",
+    ];
+  }
+  const problems = [];
+  for (const [layer, pattern] of Object.entries(rootLayers)) {
+    if (typeof pattern !== "string" || pattern.trim() === "") {
+      problems.push(`rootLayer "${layer}" 的 glob 不是非空字符串：${JSON.stringify(pattern)}`);
+      continue;
+    }
+    // rootLayers 是**根相对**（不加 packages/<pkg>/ 前缀），故直接对仓库根展开。
+    // 复用既有 globFiles（已过滤非文件、输出 posix 相对路径），不另开 glob 口径。
+    const hits = globFiles(repoRoot, pattern).filter((f) => f.endsWith(".test.ts"));
+    if (hits.length === 0) {
+      problems.push(
+        `rootLayer "${layer}"（glob=${pattern}）在磁盘上零命中 —— 该 project 的判据永不执行、` +
+          "覆盖率解除条件①永不成立，且 vitest 不会报错（空 project 在同次运行中被静默跳过）",
+      );
+    }
+  }
+  return problems;
+}
+/**
  * 全拓扑的形状问题：包登记本身（`packages.<name>` 必须是对象）与包级覆盖排除面
  * （`testLayers.coverageExcludes` 条目），逐条带包名前缀。
  *
@@ -277,6 +324,7 @@ function topologyShapeProblems(topology) {
     ...packageRegistrationProblems(topology),
     ...rootSharedRegistrationProblems(topology),
     ...mutationPolicyProblems(topology),
+    ...rootLayerProblems(topology),
   ];
   for (const [pkgName, pkgDef] of Object.entries(topology.packages ?? {})) {
     for (const problem of coverageExcludeProblems(pkgDef)) {

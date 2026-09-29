@@ -403,7 +403,7 @@ test("endpoint：tool 身份带判据面摘要，收窄扫描对象不再静默�
   // 改了跑哪些 project 就会打红这里，逼着改的人显式确认「覆盖率分母变了」。
   assert.deepEqual(endpointOf("pnpm cov", SCRIPTS), {
     kind: "tool",
-    id: "vitest|--coverage,--project,client-dom,client-unit,integration,run,unit",
+    id: "vitest|--coverage,--project,client-dom,client-unit,integration,run,shared-mutation,unit",
   });
   assert.deepEqual(endpointOf("pnpm test:contract", SCRIPTS), {
     kind: "tool",

@@ -167,7 +167,8 @@ test("本仓真实快照：15 条在册（数字变即提示同步台账与 #765
   //   shared/client/** 只改 reason 与 exitCriteria。收窄与改写都不增删条目。
   const r = spawnSync(process.execPath, [SCRIPT], { cwd: ROOT, encoding: "utf8" });
   assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stdout, /合计 7 条待办：已过期 0 /);
+  // #1074 清掉 shared/client/** 那条 pending-project 豁免 ⇒ 台账 7 → 6。
+  assert.match(r.stdout, /合计 6 条待办：已过期 0 /);
   assert.match(r.stdout, /仅解除条件（无到期日）1/);
   // crap.strict 的解除条件必须在台账里（只写日期会逼出「到期了再讨论一次」）
   assert.match(r.stdout, /\$\.crap {2}threshold=16/);
@@ -269,8 +270,9 @@ test("本仓真实快照：排除面按 kind 分为 5 + 16 结构性，合计待
     encoding: "utf8",
   });
   assert.equal(r.status, 0, r.stderr);
-  // 覆盖率面：13 条 type-only / not-source 不计入待办（本仓实测值，数字变即提示同步判词）
-  assert.match(r.stdout, /结构性 13 条（不计入待办）：not-source×11、type-only×2/);
+  // 覆盖率面：14 条 type-only / not-source 不计入待办（本仓实测值，数字变即提示同步判词）
+  // #1074 增一条 shared/test/shared-client.mutation.test.ts 的 not-source 排除，故 13→14、not-source 11→12。
+  assert.match(r.stdout, /结构性 14 条（不计入待办）：not-source×12、type-only×2/);
   // 变异面 coverageExcludes：16 条全是结构性的（facade / not-mutated / type-only / not-source）
   assert.match(
     r.stdout,
@@ -279,6 +281,6 @@ test("本仓真实快照：排除面按 kind 分为 5 + 16 结构性，合计待
   // 5 条 pending-project + gauntlet 1 + gate-exemptions 1 = 7 条待办
   // （已删 mcp-manager core/i18n.ts、client/locales.ts、core/dom.ts、core/constants.ts、core/api.ts、
   //  进 mutation-topology mutate 面 + 变异探针打红；一条豁免一次落地）
-  assert.match(r.stdout, /合计 7 条待办/);
-  assert.match(r.stdout, /结构性（按设计不计入待办）29/);
+  assert.match(r.stdout, /合计 6 条待办/);
+  assert.match(r.stdout, /结构性（按设计不计入待办）30/);
 });

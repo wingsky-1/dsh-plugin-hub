@@ -98,8 +98,10 @@ function declaredCoverageExcludePackages(topology: {
   return declared.sort();
 }
 
-test("P2 root-shared：真实拓扑精确登记 settings namespace 变异段", () => {
+test("P2 root-shared：真实拓扑精确登记两段变异面（settings-namespace + client）", () => {
   const topology = JSON.parse(readFileSync(TOPOLOGY_PATH, "utf8"));
+  // 闭枚举快照：$rootShared 的**全部**段连同 comment 逐字钉住。#1074 起是两段（此前只有
+  // settings-namespace 一段）。少一段=漏登记，多一段=凭空冒出来的未登记段——两种都判红。
   assert.deepEqual(topology.$rootShared, {
     testRoot: "shared",
     testPattern: "test/**/*.mutation.test.ts",
@@ -111,6 +113,13 @@ test("P2 root-shared：真实拓扑精确登记 settings namespace 变异段", (
         testFiles: ["shared/test/settings-namespace.mutation.test.ts"],
         comment:
           "Phase 5 P2：lan/mcp 共同运行时接缝；descriptor/source/onChange 与写入委托由独立 Vitest 行为判据直接覆盖。",
+      },
+      client: {
+        mutate: ["shared/client/ensure-style.ts", "shared/client/i18n.ts"],
+        excludes: [],
+        testFiles: ["shared/test/shared-client.mutation.test.ts"],
+        comment:
+          "新增（#1074）：shared/client 的**直连 .ts 源**判据。这两个文件此前记在 scripts/test/ 下的两个 node:test 文件里，import 的是 `shared/client/ensure-style.js` / `i18n.js`——**tsc 原地 emit 的产物**，被 shared 下的 .js not-source 条目排除，istanbul 计的是那个被 import 的 .js，.ts 源因此恒 0%；且那两个文件跑在 `node --test` 上，**根本不属于任何 vitest project**（vitest projects 的 include 恒带 `packages/*/` 前缀，见 coverage.config.json 里 shared/client/** 那条的 reason）。故 coverage.config.json 的 shared/client/** 豁免**从建立起就诚实**：它记的是「这个源没有任何可计分的判据」。本段修的是**根因**——判据换成 import `.ts` 源并落到 vitest 的 root-shared 面，判据一落位，豁免自然消失，不必单独去改台账。**为什么这两个文件没有登记进包级变异面资格**：`layerMeta` 的 assertionTarget 判据只覆盖 `$testLayers.layers`（包级六层），root-shared 面是独立一组 project，其断言对象是 shared 的直连源码、不属于任何包的 test/ 层，故不进包的变异面并集。**面内可变异的是什么**：`ensure-style.ts` 的注入/幂等/version 重建/disposer 路径，与 `i18n.ts` 的 bindLocale 活绑定与防御分支。**纯字面量表为何不逐个排除、而靠 sharedDefaults.excludedMutations**：仓内既有先例见本文件 `packages/dsh-notifier` 的 `channels` 段——「#769 批 4 加围栏拒答 code 表（refusal.ts，纯数据无变异体）」；该形态由 `sharedDefaults.excludedMutations` 的 StringLiteral / ArrayLiteral / ObjectLiteral / TemplateLiteral 四项统一排除，逐个登记只会**增加每个段的 dry run 成本、杀灭贡献为零**。本段不逐文件登记字面量表，同此纪律。",
       },
     },
   });
@@ -886,6 +895,10 @@ function makeMutationFixture(excludes: string[] | undefined) {
             bundle: { assertionTarget: "artifact", environment: "node", mandatory: false },
             e2e: { assertionTarget: "live", environment: "node", mandatory: false },
           },
+          // 形状契约必填项：rootLayers 是 vitest 第二组 project 的唯一事实源，缺席即
+          // fail-closed（gen-stryker-conf.mjs 的 rootLayerProblems）。本 fixture 自带
+          // packages/fixture-pkg/test/unit/unit-a.test.ts，根相对 glob 命中它，零命中为假。
+          rootLayers: { "fixture-unit": "packages/*/test/unit/*.test.ts" },
         },
         sharedDefaults: {
           testRunner: "vitest",

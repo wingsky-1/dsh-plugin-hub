@@ -10,7 +10,7 @@
     "build": "pnpm -r --filter !dsh-plugin-hub build",
     "catalog:sync-peers": "node scripts/maintenance/sync-catalog-peers.ts",
     "contract": "node scripts/gate/contract-check.ts",
-    "cov": "vitest run --coverage --project unit --project integration --project client-unit --project client-dom",
+    "cov": "vitest run --coverage --project unit --project integration --project client-unit --project client-dom --project shared-mutation",
     "crap": "node scripts/gate/crap-check.mjs",
     "docs:check": "node scripts/gate/verify-docs.ts --strict-en",
     "format": "prettier --write .",

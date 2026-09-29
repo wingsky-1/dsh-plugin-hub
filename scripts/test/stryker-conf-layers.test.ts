@@ -51,6 +51,8 @@ interface FixtureTopology {
   $testLayers: {
     layers: Record<string, string>;
     layerMeta: Record<string, FixtureLayerMeta>;
+    /** vitest 第二组 project 的唯一事实源（根相对 glob）；缺席即 fail-closed。 */
+    rootLayers: Record<string, string>;
   };
   sharedDefaults: Record<string, unknown>;
   packages: Record<string, FixturePackage>;
@@ -73,6 +75,11 @@ const TOPOLOGY: FixtureTopology = {
       bundle: { assertionTarget: "artifact", environment: "node", mandatory: false },
       e2e: { assertionTarget: "live", environment: "node", mandatory: false },
     },
+    // 形状契约必填项：rootLayers 是 vitest 第二组 project 的唯一事实源，缺席即 fail-closed
+    // （gen-stryker-conf.mjs 的 rootLayerProblems）。本 fixture 是**合成仓库**，被测判据另有其人，
+    // 但形状合法性是所有判据的前置，故必须自带一份「零命中为假」的登记：这里指向 fixture 自带的
+    // unit 层文件（BASE_FILES 里 unit-a/b/d 三个），既满足必填，又不改动任何派生产物。
+    rootLayers: { "fixture-unit": "packages/*/test/unit/*.test.ts" },
   },
   sharedDefaults: {
     testRunner: "vitest",

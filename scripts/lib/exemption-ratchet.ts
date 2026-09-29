@@ -108,7 +108,15 @@ export const RATCHET_BUCKETS: readonly RatchetBucket[] = [
     // 注入注定存活的变异体，代价由该段已收口的七个文件共同承担）。
     // 8b 补 placePanel / toggleFloat / mountFloat / conversationHost / panelHost / dockedBottomEdge
     // 后实测 lines 316/335 = 94.33%、branches 201/231 = 87.01%，双条件齐备，本笔才登记入面并删条目。
-    ceiling: 5,
+    // 5 → 4：删掉 shared/client/** 那条 pending-project 豁免（#1074）。该条**从建立起就诚实**——
+    // 它记的是「这个源没有任何可计分的判据」，而判据确实断在产物上：scripts/test 下那两个
+    // node:test 文件 import 的是 shared/client/*.js（tsc 原地 emit 产物，被 shared 下的 .js
+    // not-source 条目排除），且它们跑在 node --test 上、不属于任何 vitest project。
+    // 本轮修的是**根因**而非台账：判据换到 shared/test/shared-client.mutation.test.ts、
+    // 直连 .ts 源、落进 vitest 的 shared-mutation project（$testLayers.rootLayers 的
+    // 「零命中即红」判据由 gen-stryker-conf.mjs 的 rootLayerProblems 把守）。
+    // 判据一落位，shared/client 的两个文件即进 pnpm cov 分母，豁免自然消失。
+    ceiling: 4,
     note: "覆盖率排除面的 pending-project 暂缺豁免（水位与变异面同时成立才可删）",
   },
   {

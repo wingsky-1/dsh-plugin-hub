@@ -544,6 +544,21 @@
     {
       "path": "scripts/data/ci-ism-samples.json",
       "consumers": ["scripts/lib/ci-ism-denylist.mjs"]
+    },
+    {
+      "path": "stryker.conf.d/shared-client.json",
+      "artifactPolicy": "nightly-only",
+      "consumerGap": {
+        "kind": "indirect",
+        "reason": "stryker 经 stryker.conf.d/shared-client.json 的 vitest.configFile 读取；该段由 scripts/gate/gen-stryker-conf.mjs 从 mutation-topology.json 的 $rootShared.segments.client 间接派生，不含逐文件字面量。"
+      }
+    },
+    {
+      "path": "vitest.stryker.d/shared-client.config.ts",
+      "consumerGap": {
+        "kind": "indirect",
+        "reason": "stryker 经 stryker.conf.d/shared-client.json 的 vitest.configFile 读取；该文件由 scripts/gate/gen-stryker-conf.mjs 从 $rootShared 段的 testFiles 间接派生，不含逐文件字面量。"
+      }
     }
   ]
 }
