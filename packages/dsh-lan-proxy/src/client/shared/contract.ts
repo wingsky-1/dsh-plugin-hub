@@ -3,7 +3,7 @@
  *
  * 与宿主 ROUTES（src/server/config/impl/routes.ts）同值的镜像：两边各写一份的
  * 失败形态是静默的（对不上只表现成请求 404），故两端一致性由单测锁定
- * （CLIENT_ROUTES 与宿主 ROUTES 值全等，见 test/unit/unit-cacert.test.ts）。
+ * （CLIENT_ROUTES 与宿主 ROUTES 值全等，见 test/unit/cacert.test.ts）。
  *
  * 构建期 __DSH_ROUTES__ 存在时优先取注入值（bundle-host extraDefine）；非 bundle
  * 环境（单测/源码直引）回落本地镜像——typeof 守卫写法抄 worktree-sidebar

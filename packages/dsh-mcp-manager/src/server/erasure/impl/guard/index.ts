@@ -1,7 +1,7 @@
 /**
  * dsh-mcp-manager — erasure/impl/guard/index.ts：tools:sdk 段的 mcp__ 声明级擦除。
  *
- * 承重约束（三条，判据都在 test/unit/unit-erasure.test.ts）：
+ * 承重约束（三条，判据都在 test/unit/erasure.test.ts）：
  *
  * 1. 只擦行首声明：SDK 生成的 TS 声明里 mcp__ 工具名恒在行首（去缩进后），
  *    散文里的 mcp__ 提及不在行首，故不受影响；段外文本本函数碰不到——

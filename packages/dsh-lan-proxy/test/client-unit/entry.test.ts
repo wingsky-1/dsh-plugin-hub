@@ -3,7 +3,7 @@
  *
  * 本文件直连 src/client/index.ts，属于 client-unit：它验证 apply 的真实装配接线，
  * 而不是执行已经构建好的 bundle。这样 index.ts 的行为改动会进入 client 变异面。
- * test/client/client-style.test.ts 只保留 bundle 样式生命周期与 package 产物形态哨兵。
+ * test/bundle/style.test.ts 只保留 bundle 样式生命周期与 package 产物形态哨兵。
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";

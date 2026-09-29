@@ -437,7 +437,7 @@ jobs:
       # 必须先**定向**构建 shared 层：shared/ 是全仓唯一 outDir: "." 的原地 emit 工程，产物
       # shared/*.js 与 .ts 源码同目录、且被 gitignore；而 TS 源码按**相对路径**引用它
       # （packages/dsh-provider-usage/src/server/registry/provider-config.ts:22 与
-      # src/apply/apply.ts:29 → shared/dsh-home.js）。unit-contract.test.ts 的 hotreload 段会
+      # src/apply/apply.ts:29 → shared/dsh-home.js）。contract.test.ts 的 hotreload 段会
       # fork 一个纯 Node 子进程跑 test/hotreload-probe.mjs（刻意不进 Vite 模块图，回放生产
       # 运行态的原生 ESM 语义），Node 的 ESM resolver 没有 .js→.ts 回落 → 无产物即
       # ERR_MODULE_NOT_FOUND，整条 pnpm cov exit 1。进程内的 vitest 用例由 Vite 解析（有该回落）

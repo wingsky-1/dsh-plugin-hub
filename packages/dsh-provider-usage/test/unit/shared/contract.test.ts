@@ -1382,7 +1382,7 @@ describe("hotreload：start 文件缺失失败回调；pollOnce 文件删除保�
   // （生产运行态），与测试运行器的模块图隔离。历史上此处还用于规避旧版本戳
   // `import(url + "?t=" + mtimeMs)` 被 vite 系运行器按 `/\bt=\d{13}&?\b/` 剥离毫秒整数位、
   // 只剩亚毫秒小数位参与模块标识而撞进同一模块缓存的缺陷（#722 实证，版本戳现已改为
-  // `?mtime=<mtimeMs>&size=<size>`；确定性驱动覆盖见 test/unit/registry/unit-hotreload.test.ts）。
+  // `?mtime=<mtimeMs>&size=<size>`；确定性驱动覆盖见 test/unit/registry/hotreload.test.ts）。
   let startedMissing: { ok: boolean };
   let startedMissingError: string;
   let eventsLength: number;

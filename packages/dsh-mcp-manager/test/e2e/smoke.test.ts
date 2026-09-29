@@ -99,7 +99,7 @@ import {
 import { McpManager } from "../../src/server/connection/orchestrator/interface.ts";
 import { McpStore } from "../../src/server/store/interface.ts";
 // sseData 是仓级 shared 接缝（shared/host-utils.ts），本包无域门面——与单元层
-// unit-routes-sse.test.ts:50 同一取法。
+// routes-sse.test.ts:50 同一取法。
 import { sseData } from "../../../../shared/host-utils.js";
 
 // 服务契约门禁（#476）与结构化单元/集成测试由 vitest 的 unit / integration project 收集；
@@ -109,7 +109,7 @@ import { sseData } from "../../../../shared/host-utils.js";
 // **模块级单例**（runtime/impl/service/index.ts 的 export const runtimePorts = new RuntimePorts()），
 // 正常由组合根 src/index.ts 在模块求值期装配；而 lib/index.js 是自包含 bundle，有自己一份已装配的。
 // 从 lib/ 切到 src/ 就是换了一组模块实例——直接 new 出来的类拿到的是从未装配的那份单例，
-// get() 会抛「子层未装配」。故按单元层（test/unit/unit-routes-sse.test.ts:36-51）同一口径：
+// get() 会抛「子层未装配」。故按单元层（test/unit/routes-sse.test.ts:36-51）同一口径：
 // 域门面直取 + helpers 以同实参、同顺序手装。**换 import 来源不是纯语法操作，它会改变模块实例身份。**
 beforeAll(() => {
   installCompositionPorts();

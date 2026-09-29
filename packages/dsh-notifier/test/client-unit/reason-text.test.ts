@@ -11,7 +11,7 @@
  * 为什么它属于本层（直连 src）：判据的对象是 `src/client/reason-text.ts` 的纯函数与 locales 字典
  * 本身。它们原先建在 in-place esbuild 后执行的构建副本上——静态导入图里没有目标模块，perTest
  * 覆盖分析据此判零覆盖、变异体一律 noCoverage。这里直接 import 源码符号；产物外壳、源码调用点
- * 与打包不变量的断言对象不是 src 本身，留在 test/client/。
+ * 与打包不变量的断言对象不是 src 本身，留在 test/bundle/。
  */
 import { describe, expect, it } from "vitest";
 

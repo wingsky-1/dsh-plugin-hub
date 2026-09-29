@@ -330,7 +330,7 @@ contract-check 禁止运行时值导入）。原自建类型层 `types/dsh.d.ts`
 | `test/integration/**` | 以真实 socket/真实组合根为被测对象：起真实 http server（内核临时端口）走完整转发链、真实 cordis Context、真实配置迁移                               | 是       |
 | `test/client-unit/**` | 直连 `src/client/**` 的**纯逻辑**判据（判定、映射表、状态机），不需要 DOM；环境 `node`                                                                  | 是       |
 | `test/client-dom/**`  | 直连 `src/client/**` 但被测模块在**加载期或运行期真的读写 DOM**（`document.title`、横幅挂载），必须 `happy-dom`；文件头用 `@vitest-environment happy-dom` 声明（派生配置是单 project `node`，不吃根配置的层环境） | 是       |
-| `test/client/**`      | 断言对象是客户端**构建产物**形态（`lib/client.js`、或 in-place esbuild 后执行已构建副本）——产物外壳无法用 perTest 覆盖分析归因到任何 `src/**` 模块，登记进变异面只增加每个段的 dry run 成本、杀灭贡献为零；直连 src 的判据在 `client-unit` / `client-dom` | 否       |
+| `test/bundle/**`      | 断言对象是客户端**构建产物**形态（`lib/client.js`、或 in-place esbuild 后执行已构建副本）——产物外壳无法用 perTest 覆盖分析归因到任何 `src/**` 模块，登记进变异面只增加每个段的 dry run 成本、杀灭贡献为零；直连 src 的判据在 `client-unit` / `client-dom` | 否       |
 | `test/e2e/**`         | 真实监听端口 / spawn 子进程 / 真机系统调用的大 smoke                                                                                                | 否       |
 
 支撑模块不入任何层：`test/helpers.ts`、`test/client-helpers.ts`（客户端判据共用的替身，只服务
@@ -391,7 +391,7 @@ pending-project 的原因。
 - 新增测试文件后的固定动作：放进对应层目录 → 在所属包认领它的段的 `testFiles` 里登记（见下段归属） → `node scripts/gate/gen-stryker-conf.mjs --sync-test-min`
   → `pnpm stryker:gen` → 提交。层归属**零手工登记**（目录即分类）；段归属必须显式登记；`testMutationExemptions`（按层分组）只用于
   「刻意不进变异面」的逐条裁决，必须写明理由，模型样例两条：
-  mcp 的 `unit/unit-shared.test.ts`（测的是 shared 层，不在本包 mutate 面内）、
+  mcp 的 `unit/shared.test.ts`（测的是 shared 层，不在本包 mutate 面内）、
   notifier 的 `integration/real-context.test.ts`（Stryker 沙箱内 dry run 失败，属 #712 记录的沙箱语义族）；
 - 变异面扩缩**在 PR 门禁里看不出来**（`incremental: true` 复用基线状态）。真信号来自 observe.yml
   班次全量重建；PR 内的自证方式是「派生测试面 ↔ 基线的集合对比 + 单段真跑 stryker 报告的
@@ -407,7 +407,7 @@ pending-project 的原因。
   漏进才危险。拿不准就多放，`--check` 只拦漏不拦多。
 - **三条硬约束**（`gen --check` 自动判）：① 并集恒等——变异层的新测试必须进 ≥1 段，
   否则并集缺口判红（删文件请删磁盘文件本身）；② 层成员资格——条目必须已在包级变异面内，
-  `test/e2e/**`、`test/client/**`、support 文件写进去即红（e2e/client 的新测试不落段）；
+  `test/e2e/**`、`test/bundle/**`、support 文件写进去即红（e2e/client 的新测试不落段）；
   ③ 段非空——清单不得为空数组。
 - **固定动作**：改拓扑对应段清单 → `pnpm stryker:gen`（派生段级 vitest 配置并切换 conf 指针）
   → `gen --check` 绿。段级 vitest 配置变更只失效该段增量基线（registry＋`changed-test-packages`

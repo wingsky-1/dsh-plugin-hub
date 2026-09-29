@@ -9,12 +9,12 @@ export default defineConfig({
   test: {
     include: [
       'packages/dsh-worktree-sidebar/test/client-dom/inject-visibility.test.ts',
-      'packages/dsh-worktree-sidebar/test/client-unit/client-bindings.test.ts',
-      'packages/dsh-worktree-sidebar/test/client-unit/client-index.test.ts',
-      'packages/dsh-worktree-sidebar/test/client-unit/client-source.test.ts',
-      'packages/dsh-worktree-sidebar/test/client-unit/client-takeover.test.ts',
+      'packages/dsh-worktree-sidebar/test/client-unit/bindings.test.ts',
+      'packages/dsh-worktree-sidebar/test/client-unit/index.test.ts',
       'packages/dsh-worktree-sidebar/test/client-unit/inject-attach.test.ts',
       'packages/dsh-worktree-sidebar/test/client-unit/inject-keep-mounted.test.ts',
+      'packages/dsh-worktree-sidebar/test/client-unit/source.test.ts',
+      'packages/dsh-worktree-sidebar/test/client-unit/takeover.test.ts',
       'packages/dsh-worktree-sidebar/test/integration/apply-lifecycle.test.ts',
       'packages/dsh-worktree-sidebar/test/integration/binding-store.test.ts',
       'packages/dsh-worktree-sidebar/test/integration/file-io-concurrency.test.ts',

@@ -96,7 +96,7 @@ const routesAdaptersSrc = readFileSync(
 const registryFaceSrc = readFileSync(join(srcDir, "server", "registry", "interface.ts"), "utf8");
 const registryDepsSrc = readFileSync(join(srcDir, "server", "registry", "deps.ts"), "utf8");
 const unitStatsTestSrc = readFileSync(
-  join(srcDir, "..", "test", "unit", "pipeline", "unit-stats-service.test.ts"),
+  join(srcDir, "..", "test", "unit", "pipeline", "stats-service.test.ts"),
   "utf8",
 );
 const topologySrc = readFileSync(

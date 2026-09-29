@@ -51,7 +51,7 @@ const statsServiceSrc = readFileSync(
 const pipelineV2Src = readFileSync(join(srcDir, "server", "pipeline", "v2.ts"), "utf8");
 const historyFaceSrc = readFileSync(join(srcDir, "server", "history", "interface.ts"), "utf8");
 const statsServiceTestSrc = readFileSync(
-  join(pkgDir, "test", "unit", "pipeline", "unit-stats-service.test.ts"),
+  join(pkgDir, "test", "unit", "pipeline", "stats-service.test.ts"),
   "utf8",
 );
 const topologySrc = readFileSync(

@@ -6,7 +6,7 @@
  * 自身**——`name` 与 `inject` 在 src/index.ts 内就地定义（全仓无第二个定义点，见该文件
  * `export const name = "lan-proxy"`），任何域门面都取不到它们，故它们天生不属于单元层。
  *
- * 断言从 test/unit/unit-apply.test.ts 原样迁来（逐字未改）：那两条判据的失效形态是
+ * 断言从 test/unit/apply.test.ts 原样迁来（逐字未改）：那两条判据的失效形态是
  * 「插件静默不加载」——cordis 靠 name/inject 定位与调度插件，写错不抛错、不进日志。
  */
 import { describe, expect, it } from "vitest";

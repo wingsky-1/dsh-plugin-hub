@@ -7,7 +7,7 @@
  * 主类保留状态容器与需要 this 的 IO/记账方法，查询方法变成薄壳委托。
  * 依赖方向无环：aggregate-query → types / charts / aggregate-rows；aggregator → 三者。
  *
- * 守恒边界（对账口径见 unit-trend-ledger.test.ts）：dirRows() 输出 = 目录桶
+ * 守恒边界（对账口径见 trend-ledger.test.ts）：dirRows() 输出 = 目录桶
  * 快照 + 每日残差投影（归 TREND_UNIDENTIFIED）；无 dir 键的旧格式行只进聚合面不进
  * 目录面——目录维度守恒以「有 dir 事实」为界。小时面（buildHourRows）不做残差投影
  * （detail/counter 行必有 time，旧分片缺小时是物理缺失，报告侧 coveredDays 守卫降级）。

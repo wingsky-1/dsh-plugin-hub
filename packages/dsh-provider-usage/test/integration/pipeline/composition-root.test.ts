@@ -76,7 +76,7 @@ const statsServiceSrc = readFileSync(
 );
 const registrySrc = readFileSync(join(srcDir, "server", "registry", "registry.ts"), "utf8");
 const unitStatsTestSrc = readFileSync(
-  join(srcDir, "..", "test", "unit", "pipeline", "unit-stats-service.test.ts"),
+  join(srcDir, "..", "test", "unit", "pipeline", "stats-service.test.ts"),
   "utf8",
 );
 const topologySrc = readFileSync(

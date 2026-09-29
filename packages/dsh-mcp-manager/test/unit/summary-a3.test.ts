@@ -13,14 +13,14 @@
  * - 无秘密时 hasSecrets 为 false 且字段缺省无害；
  * - 回写链：投影整体喂给 update 时既有秘密与原 URL 不变、盘上无占位符；
  *   add 含占位符时抛错（新建无既有可保）。
- *   （客户端 guard 见 test/client-unit/unit-summary-a3-guard.test.ts：I8① 禁 unit 层值引
+ *   （客户端 guard 见 test/client-unit/summary-a3-guard.test.ts：I8① 禁 unit 层值引
  *   src/client，isProjectionValue 的两形态锁在 client-unit 层直连源码断言。）
  *
  * 消费者核查：
  * GET/POST/PATCH/DELETE/session/resume/connect/tool-disable 的响应 summary 均经
  * manager.summary()（已投影）；#770-L3 起 POST/PATCH 响应中的 server 字段亦经
  * manager.summarize 投影（不再明文回显写路径原文，与 A3 同一红线伞；锁见
- * test/unit/unit-routes-a2.test.ts 的 L3 面）；
+ * test/unit/routes-a2.test.ts 的 L3 面）；
  * src/index.ts getStatus/list 直转 summary（自动得投影，无需改代码）；
  * 客户端 beginEdit→fillForm→readForm→saveForm→PATCH 链由 fillForm 省略语义 +
  * saveForm 省略占位符 URL + 宿主 stripProjectionPatch 三道锁（本文件锁后两道，
@@ -248,7 +248,7 @@ describe("#770-A3 回写链锁定（投影值永不进入写路径）", () => {
 });
 
 // I8①：客户端 guard（isProjectionValue 两形态）已迁
-// test/client-unit/unit-summary-a3-guard.test.ts直连 src/client 断言，本层不再值引 src/client。
+// test/client-unit/summary-a3-guard.test.ts直连 src/client 断言，本层不再值引 src/client。
 
 describe("#770-L4 错误面显示侧脱敏（settled 原文可含凭据）", () => {
   function poolWith(name: string, status: string, error: unknown): unknown {

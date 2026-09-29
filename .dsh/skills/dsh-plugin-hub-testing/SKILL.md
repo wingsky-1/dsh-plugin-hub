@@ -30,7 +30,7 @@ description: >
 ## 1. 分层与归属
 
 目录即分类源，机制决定层：`test/unit/**`、`test/integration/**`、`test/client-unit/**`（客户端纯逻辑，
-node 环境）、`test/client-dom/**`（要 DOM 的客户端判据，happy-dom，进变异面）、`test/client/**`
+node 环境）、`test/client-dom/**`（要 DOM 的客户端判据，happy-dom，进变异面）、`test/bundle/**`
 （只剩断言产物形态的那部分，**不进**变异面）、`test/e2e/**` 各自的判据、替身面、是否进变异面，
 见 DEVELOPMENT.md 的表格。`test/helpers.ts`、`test/client-helpers.ts`、`test/*.worker.mjs`
 是支撑模块，**不入任何层、不计 `--min`**。

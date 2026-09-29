@@ -9,9 +9,9 @@ export default defineConfig({
   test: {
     include: [
       'packages/dsh-provider-usage/test/integration/ui-routes/composition-root.test.ts',
-      'packages/dsh-provider-usage/test/unit/apply/unit-apply.test.ts',
-      'packages/dsh-provider-usage/test/unit/common/unit-errsurf.test.ts',
-      'packages/dsh-provider-usage/test/unit/server-shared/unit-s2-contracts.test.ts',
+      'packages/dsh-provider-usage/test/unit/apply/apply.test.ts',
+      'packages/dsh-provider-usage/test/unit/common/errsurf.test.ts',
+      'packages/dsh-provider-usage/test/unit/server-shared/s2-contracts.test.ts',
     ],
     environment: 'node',
     testTimeout: 60_000,

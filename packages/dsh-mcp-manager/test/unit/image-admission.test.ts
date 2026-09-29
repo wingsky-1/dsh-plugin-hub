@@ -3,7 +3,7 @@
  *
  * 覆盖：合法图片落库成正附件块且文本块保序、附件库缺席、路由解不出、模型不声明 image 模态、
  * 非法 media type / 非 canonical base64 的整批拒绝、落库抛错降级；以及「模型面图片块不被二次
- * 准入」。接线面（finalizeContent 换入）在 unit-middleware.test.ts 里另有判据。
+ * 准入」。接线面（finalizeContent 换入）在 middleware.test.ts 里另有判据。
  *
  * 直连 `inject/impl/image-admission/index.ts`——不 import src/index.ts（单元层导入面越界存量）。
  */

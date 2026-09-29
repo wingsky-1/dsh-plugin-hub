@@ -61,7 +61,7 @@ v5 定稿后再派一个**只读**视角复验 §6 的**现状事实**（不给�
 | 1 | 出口实为 **8 类**（§6.2 现 8 行） | §0.1 第 3 条原写的「7 类」是笔误，已改 |
 | 2 | `createRedactor` **4 个构造点**（`manager.ts:209` / `supervisor.ts:433` / `middleware.ts:452` / `middleware.ts:783`），**无一处**包含 `app` 展开后的真值；`projectStore` 只在 `middleware` 两处、且仅当该 root 单元已实例化；`manager.redactError` 完全看不到 `projectStore` | §0.1 第 15 条「输入集写成能力 `credentialSecrets()`」是**必需修正**而非优化 |
 | 3 | 端到端实测（真实 `makeRoutes` + 真实 `McpManager` + 真实 `normalizeServer`，唯一 stub 是 manager 且 `manager.ts:906` 在 `store.upsert` 前调 `normalizeServer`）：⑦ 400 body 回显 `s3cr3t`；①②⑤⑥⑧ 的明文 / stderr 尾注 / 工具文案全部外发；③ 展开真值 `REAL-EXPANDED-6` **穿过** redactor（配置字面量 `${MY_TOKEN}` 才会被替换） | 8 类出口**现状全红**，D3「本轮修完」有了可复跑的红的基线 |
-| 4 | 现状测试面 **1137 用例全绿，但零条**断言「出口不含明文」（`unit-manager2.test.ts:251-255` 只断言 `/invalid url/` 正则；`unit-middleware.test.ts:1714+` 只测 `createRedactor` 本体） | §6.2 验收的 `redaction-exits.test.ts` 不是补强，是**首次**建立该判据 |
+| 4 | 现状测试面 **1137 用例全绿，但零条**断言「出口不含明文」（`manager2.test.ts:251-255` 只断言 `/invalid url/` 正则；`middleware.test.ts:1714+` 只测 `createRedactor` 本体） | §6.2 验收的 `redaction-exits.test.ts` 不是补强，是**首次**建立该判据 |
 | 5 | 落盘权限：**1 处**带 mode（`store.ts:66`），**6 处**不传（`middleware-state.ts:57/174`、`middleware.ts:497/535`、`manager.ts:192`、`collector.ts:256`）；**6 处 `mkdir` 全部不传 mode**（目录 = `0777 & ~umask`） | §7.1 的「五个写点」应为**六个**，并新增**目录 mode 行** |
 | 6 | 行号漂移（§6 已按复验结果修正）：⑤ `:186`→**`:187`**；② `apply-services.ts:36`→**`:39`**；⑥ `this.error` 落点是 `435/461/467/482-487/494`（`469-472` 是退避判定）；⑧ `330-332` 的 catch **只有埋点**（`createRedactor([this.server])` 在 `:433` 的另一处 catch）；§6.1 纪律 5 的 `{enabled}` **不在** `routes-controllers.ts:175/211`（该文件无此分支；`{enabled}` 来自客户端 `float/float.ts:149/177`、`float/servers.ts:177/213`，宿主经 `:186-187` 的通用 `manager.update` 合并路径处理）；§6.3 `/health` 是 `routes.ts:168-209` | B2 引用行号以本节为准 |
 | 7 | `docs/architecture-contract.md:28-30` 声称 `makeRoutes` 注入 `api/redactor-factory.ts` 构建的 redactor、`handleError` 写 body 前先脱敏——**该文件与行为都不存在** | B0② 的三分类打标必须把这段判「作废」 |
@@ -165,7 +165,7 @@ B2 必须补的探针（每条都要**正例 + 反例**，反例用于证明断�
 
 - **不变式**：`test/unit/**` 白盒直连 `src/server/<域>/impl/<块>/`；`test/integration/**` 只 import 域 `interface.ts`/`deps.ts` 与跨端线协议；`test/e2e/**` 只经包产物入口 + `apply()`。
 - **判据**：新增「测试导入面」判据，**扩展既有脚本**（不新增门禁工具、不新增 workflow）：①`test/unit/**` 不得出现 `src/index.ts` 与 `lib/`；②`test/e2e/**` 不得 import `src/`；③`test/integration/**` 不得 import `src/server/<域>/impl/`。**只对 `test/unit/**` 生效**（`client` / `e2e` 各有产物与浏览器语义）。包范围**登记在数据面**（不内嵌脚本常量）。
-- **存量处置**：其他包 3 处（`dsh-lan-proxy` 的 `unit-proxy.test.ts:38`、`unit-apply.test.ts:38`；`dsh-web-file-preview` 的 `unit-present-open.test.ts:21`）走 `scripts/data/gate-exemptions.json`（文件级 + tracking issue，缺 issue 号判红）；本包 13 处走**单调基线**（只许降），随 §12 的批次清零。
+- **存量处置**：其他包 3 处（`dsh-lan-proxy` 的 `proxy.test.ts:38`、`apply.test.ts:38`；`dsh-web-file-preview` 的 `unit-present-open.test.ts:21`）走 `scripts/data/gate-exemptions.json`（文件级 + tracking issue，缺 issue 号判红）；本包 13 处走**单调基线**（只许降），随 §12 的批次清零。
 - **成本与收益**：成本 = 一次脚本扩展 + 一条脚本自测 + 3 条豁免数据；收益 = 把「测试从产物入口导入」这条反模式从「约定」变成判据（v4 选 (b) 的代价是这条线交给时间腐化）。
 - **现状**：违反（13 个单元测试经 `src/index.ts`；`architecture-contract.md` §3.1 把该形态写成 T1 契约）。
 - **判据①已交付（`84a5941`/`8727cf0`）**：新增质量证据类 `unitImportFaceViolations`（扫 `test/unit/**`，命中 `src/index.(ts|tsx|mts|…)` / `lib/**` / `src/client/**` 即记 `测试文件|目标`）。存量两档：本包 **13** 条进单调基线，跨包 **3** 条（lan-proxy 2 + web-file-preview 1）进 `gate-exemptions.json`（`trackingIssue #767`、`reviewBy 2027-03-31`）。
@@ -582,7 +582,7 @@ sdk/deps.ts          -> ConnectionPort  = Pick<typeof connectionApi, "summary" |
 | 契约 | `test/integration/` | 域 `interface.ts` + `deps.ts` + 跨端线协议 | 接缝的形状与承诺 |
 | 集成 | `test/e2e/` | 包产物入口 + `apply()` | 端到端 user case |
 | 组合根 | `test/integration/real-context.test.ts` | `src/index.ts` + 真实 `Context` | 装配顺序、释放逆序、服务面、声明合并 |
-| 客户端 | `test/client/` | `src/client/**` | UI 模块（归 #769） |
+| 客户端 | `test/bundle/` | `src/client/**` | UI 模块（归 #769） |
 
 判据见 **I8**（本轮上线；执法点 = 扩展既有脚本）。**规则（A10 的必然推论）**：凡直接 `new` 内部类 / 取内部符号的 e2e 用例一律改为 `test/unit/<域>` 的白盒用例；e2e 只保留 `apply()` + 产物入口的 user case（现状 `smoke.test.ts` 有 **9 处** `new McpManager`，实测行号 `:604/907/1942/2030/2116/2993/3011/3582/3673`）。
 
@@ -1322,7 +1322,7 @@ sdk/deps.ts          -> ConnectionPort  = Pick<typeof connectionApi, "summary" |
 2. **收窄路径的硬约束**：`McpManager` 在 `connection/interface.ts` 是 **type-only** 转出，故 7 个文件**不能**只引域门面，必须直连 `connection/orchestrator/interface.ts`；评审给出逐文件「符号数 / 需门面数 / 目标模块」表（13 文件共 116 符号 → 47 条 import），可直接当 B3 作业单。**主控裁决：推迟到 B3**（B2b 会给 11 域加 `server/` 前缀，现在改要改两遍）。
 3. **`@ts-nocheck` 存量 18 个文件**（14 unit + `e2e/smoke` + `helpers.ts` + 2 个 integration——**评审漏了后两个，主控实测订正**）；掩盖两类：语句级无注解形参（可静态判定下界 **≥68** 条 TS7006）+ 假宿主/假 ctx 的结构不匹配。最省摘除顺序已给（workspace → call-stats → store → supervisor → apply → pipeline → hotspot → manager → catalog → routes-sse → manager2 → middleware → helpers → smoke）。
 4. **两处判据/文档缺口**：① `test/tsconfig.json:12` 的 `exclude: ["e2e/**"]` 注释理由（「该文件不产生类型诊断」）只对带 pragma 的 smoke 成立，**无 pragma 的 `e2e/cross-end-lock.test.ts` 因此不在任何编译面**（`package.json` 的 `typecheck` 只跑 src；唯一编译 test 面的是 `scripts/test/service-contract-wiring.test.ts`）；② `service-contract-wiring.test.ts:24-25` 那句「契约与单元测试文件无 `@ts-nocheck`」**与事实相反且两头都错**（14 个 unit + 2 个 integration 都带）。后者属**本 PR 内可改**（纯文案，主控自己改）。
-5. **断言强度**：`toBeTruthy()` **216**、`toBeUndefined()` **82**、快照式 **0**、`as any` 0、`ts-ignore` 0；`vi.mock` 全包唯一在 `unit-file-io-queue.test.ts`（是否纳入 skill 例外清单待裁决）。逐条弱断言与更强写法已列（manager2 内部字段直取 67 条、墙钟阈值 flake、只断「不抛」的 resolve 断言等）。
+5. **断言强度**：`toBeTruthy()` **216**、`toBeUndefined()` **82**、快照式 **0**、`as any` 0、`ts-ignore` 0；`vi.mock` 全包唯一在 `file-io-queue.test.ts`（是否纳入 skill 例外清单待裁决）。逐条弱断言与更强写法已列（manager2 内部字段直取 67 条、墙钟阈值 flake、只断「不抛」的 resolve 断言等）。
 6. **无值锚常量清单**（改值不会红任何用例；**9 条「同源期望」**（期望值取同一个常量）另计）：最高优先 = limits 族 5 个（`MAX_TOOLS_PER_SERVER`/`MAX_TOTAL_CATALOG_BYTES`/`DISCOVERY_TIMEOUT_MS`/`CATALOG_LRU_MAX`/`LIST_DEFAULT_TOOLS_PER_SERVER`）+ `DEFAULT_RESULT_TRUNCATE_BYTES` + `DEFAULT_Z_INDEX_BASE`；反例：`cross-end-lock` 的 4 条是**双源互校**（本仓最强判据之一），不算同源期望。
 7. **覆盖盲区**：最薄的是 `workspace`（仅 3 it / 79 行）与 `inject`/`config`（无独立文件）；`client` 侧 `float/*`/`settings/*`/`core/{api,dom,i18n,session}` **零测试文件**（归 #769）；`sdk` 域未落位故无测试（不是遗漏）。已落地机制的缺口：`file-io` 串行队列只有 2 条（缺「队列表清理守卫 / 不同路径不互阻 / 临时名唯一性」）、**掩码往返是「未落地」不是「未覆盖」**（`src/` 里 `mask` 零命中）、`upgrade` 四态齐但**装配接线零覆盖**（B2 落）、`compose.ts` 9 条驱动的是夹具域。
 8. **判据覆盖退化清单**：`verify-shared-fanin` 的**类型面分支**（本仓 shared/ 8 模块全有配对 `.js` → type 恒 0）与**悬空引用分支**；`verify-dir-imports` 的**裸包名映射分支**（仓内无实例，只有 fixture 跑）；mutation-topology 的 **0 命中 pattern**（G18 的 mcp 实例已随 #767 W11b2b 清零；**判据本身仍缺**，全仓另有 26 处活体，归 #837）；本包基线里 **5 个恒空证据类**；`export-faces.json` 的 `faces` 为**空**（159 项全在 legacy，存量零分类）；I8②/I8③ 只有文字。
@@ -1369,7 +1369,7 @@ sdk/deps.ts          -> ConnectionPort  = Pick<typeof connectionApi, "summary" |
 8. **测试面（B3 作业单，终态版）**：
    - I8① **13 条**：8 个文件共 **26 条 import** 可纯改 specifier 收窄；**5 个文件的用例必须整段搬 `test/integration`**（`apply`/`resolveDebugConfig`/`resolveMiddlewareMode`/`makeMiddlewareHotSwitch` 只存在于入口、无第二出口）。**收窄后只从入口传递可达的 src 文件有 79 个**（含全部域）→ 改写时必须逐域补回门面 import，否则变异段会失去加载者。
    - `@ts-nocheck`：**16 个 pragma 文件**（口径见 H.3·1）；最省摘除顺序已由评审给出（workspace/transport 下界 0 → call-stats/store/shared 各 1 → … → manager2/middleware 各 20 → helpers → smoke）。
-   - 弱断言：`toBeTruthy()` **216** / `toBeUndefined()` **82** / `toBeDefined()` 2 / 快照 0；**装饰性用例点名 5 处**（`unit-apply.test.ts:270-272` 的「卸载不抛」是入口整条卸载链的唯一断言 → 应改成「7 个 disposer 各调用一次 + 顺序」；`unit-manager.test.ts:188/215/244/269`；`unit-manager2.test.ts:2175` 墙钟；`unit-catalog.test.ts:262` 恒真 id；`unit-hotspot.test.ts:368` + `unit-middleware.test.ts:449` 占位式）。
+   - 弱断言：`toBeTruthy()` **216** / `toBeUndefined()` **82** / `toBeDefined()` 2 / 快照 0；**装饰性用例点名 5 处**（`apply.test.ts:270-272` 的「卸载不抛」是入口整条卸载链的唯一断言 → 应改成「7 个 disposer 各调用一次 + 顺序」；`manager.test.ts:188/215/244/269`；`manager2.test.ts:2175` 墙钟；`catalog.test.ts:262` 恒真 id；`hotspot.test.ts:368` + `middleware.test.ts:449` 占位式）。
    - 无值锚常量 **11 条**（limits 族 + `DEFAULT_RESULT_TRUNCATE_BYTES` + `DEFAULT_Z_INDEX_BASE` + `MCP_GUIDANCE` + `EMPTY_STATUS_COUNTS` + `ROUTE_FENCE`）。
    - `test/tsconfig.json` 的 `exclude: ["e2e/**"]` 使 **`cross-end-lock.test.ts` 不在任何编译面**（它没有 pragma）；但**收窄 exclude 不是分钟级改动**——该文件同样静态 import `lib/index.js`，很可能同样触发 TS2717，**先探明再动**（H.4 ⑨ 的口径订正）。
    - `smoke` 的 `clientSrc` 源文本断言实测 **85 处**（此前口径写 88；`.includes(` 58 + `readFileSync` 25）。

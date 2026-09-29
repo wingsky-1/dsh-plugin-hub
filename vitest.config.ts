@@ -35,11 +35,11 @@ const LAYER_RUNTIME = {
   integration: { environment: "node", testTimeout: 60_000, hookTimeout: 60_000 },
   // e2e 走真实端口、文件系统与子进程，单文件最坏数百秒（mcp-manager smoke 实测 328s）
   e2e: { environment: "node", testTimeout: 600_000, hookTimeout: 600_000 },
-  // test/client/** 只剩断言对象不是 src 本身的那部分（读 lib 产物、或 in-place esbuild 后执行
+  // test/bundle/** 只剩断言对象不是 src 本身的那部分（读 lib 产物、或 in-place esbuild 后执行
   // 已构建副本），不需要 DOM 环境。两层不能合并：直连 src 的 DOM 用例会让 import.meta.url 在
   // happy-dom 下变成 http 协议并抛「The URL must be of scheme file」，而纯逻辑判据又必须直连
   // 源码才能进变异面。
-  client: { environment: "node" },
+  bundle: { environment: "node" },
   // test/client-unit/** 直连 src/client/** 的纯逻辑判据：不要 DOM，但必须直连源码（见文件头）。
   // 超时口径与 unit 对齐：这里跑的是同一批实现里的判断，个别用例的预算同样是 30s 量级。
   "client-unit": { environment: "node", testTimeout: 60_000, hookTimeout: 60_000 },
@@ -50,7 +50,7 @@ const LAYER_RUNTIME = {
 };
 
 /** 层名 → project 名：`--project contract` 是既有 CLI 契约（release.yml / package.json 在用），保留别名。 */
-const PROJECT_NAME = { client: "contract" };
+const PROJECT_NAME = { bundle: "contract" };
 
 export default defineConfig({
   test: {

@@ -41,7 +41,7 @@ test("#742 1.7 + P1-D1: packageOfTestPath 不认 e2e/client 层（永不进变�
     "e2e 层不进变异面，不得触发失基线",
   );
   assert.equal(
-    packageOfTestPath("packages/dsh-notifier/test/client/a.test.ts"),
+    packageOfTestPath("packages/dsh-notifier/test/bundle/a.test.ts"),
     null,
     "client 层不进变异面，不得触发失基线",
   );
@@ -70,7 +70,7 @@ test("#742 1.7 + P1-D1: parseTestDiffPaths 去重升序，忽略空段与排除�
   const z = [
     "packages/dsh-notifier/test/a.test.ts",
     "packages/dsh-lan-proxy/test/e2e/smoke.test.ts",
-    "packages/dsh-lan-proxy/test/client/a.test.ts",
+    "packages/dsh-lan-proxy/test/bundle/a.test.ts",
     "packages/dsh-notifier/test/b.test.ts",
     "packages/dsh-notifier/src/index.ts",
     "shared/util.ts",
@@ -107,7 +107,7 @@ test("#742 1.7: packagesToInvalidate 覆盖 test/** 之外的测试面输入（�
   ]);
   // e2e / client 测试变更不触发（D1），unit 仍触发
   assert.deepEqual(packagesToInvalidate(["packages/dsh-notifier/test/e2e/smoke.test.ts"], reg), []);
-  assert.deepEqual(packagesToInvalidate(["packages/dsh-notifier/test/client/a.test.ts"], reg), []);
+  assert.deepEqual(packagesToInvalidate(["packages/dsh-notifier/test/bundle/a.test.ts"], reg), []);
   assert.deepEqual(packagesToInvalidate(["packages/dsh-notifier/test/unit/a.test.ts"], reg), [
     "dsh-notifier",
   ]);
@@ -324,8 +324,8 @@ test("D: 双 worker allowlist 锚 + 各 1 消费者全在豁免层 + 不失效",
   const w2 = "packages/dsh-provider-usage/test/client-revalidate.worker.mjs";
   const c1 = findDirectConsumers(ROOT, pkg, w1);
   const c2 = findDirectConsumers(ROOT, pkg, w2);
-  assert.deepEqual(c1, ["packages/dsh-provider-usage/test/client/unit-fetch-timeout.test.ts"]);
-  assert.deepEqual(c2, ["packages/dsh-provider-usage/test/client/unit-refresh-revalidate.test.ts"]);
+  assert.deepEqual(c1, ["packages/dsh-provider-usage/test/bundle/fetch-timeout.test.ts"]);
+  assert.deepEqual(c2, ["packages/dsh-provider-usage/test/bundle/refresh-revalidate.test.ts"]);
   for (const c of [...c1, ...c2]) {
     assert.equal(isExemptTestFile(c, pkg), true, c + " 须在豁免层");
   }
@@ -363,7 +363,7 @@ test("D: helpers 反向断言 + 命中窄化/全段回落 + 未命中复用", ()
   const helpersPath = "packages/dsh-provider-usage/test/helpers.ts";
   const hDirects = findDirectConsumers(ROOT, pkg, helpersPath);
   assert.ok(hDirects.length >= 10, "helpers 须有变异面消费者");
-  assert.ok(hDirects.includes("packages/dsh-provider-usage/test/unit/apply/unit-apply.test.ts"));
+  assert.ok(hDirects.includes("packages/dsh-provider-usage/test/unit/apply/apply.test.ts"));
   assert.ok(
     hDirects.includes(
       "packages/dsh-provider-usage/test/integration/pipeline/composition-root.test.ts",
@@ -374,7 +374,7 @@ test("D: helpers 反向断言 + 命中窄化/全段回落 + 未命中复用", ()
     "经 support 中转的 e2e 链须被闭包发现",
   );
   assert.equal(
-    hDirects.includes("packages/dsh-provider-usage/test/client/unit-report-p0.test.ts"),
+    hDirects.includes("packages/dsh-provider-usage/test/bundle/report-p0.test.ts"),
     false,
     "report-helpers 不得误计为 test/helpers 消费者",
   );
@@ -390,7 +390,7 @@ test("D: helpers 反向断言 + 命中窄化/全段回落 + 未命中复用", ()
   );
   const probe = "packages/dsh-provider-usage/test/hotreload-probe.mjs";
   assert.deepEqual(findDirectConsumers(ROOT, pkg, probe), [
-    "packages/dsh-provider-usage/test/unit/shared/unit-contract.test.ts",
+    "packages/dsh-provider-usage/test/unit/shared/contract.test.ts",
   ]);
   assert.deepEqual(
     packagesToInvalidate([probe], reg, topo),
@@ -401,7 +401,7 @@ test("D: helpers 反向断言 + 命中窄化/全段回落 + 未命中复用", ()
       "dsh-provider-usage:registry",
       "dsh-provider-usage:sanitize",
     ],
-    "仅闭包命中段失效", // #962 B：history/view 收窄后不再含 unit-contract.test.ts
+    "仅闭包命中段失效", // #962 B：history/view 收窄后不再含 contract.test.ts
   );
   const pure = "packages/dsh-provider-usage/test/smoke-pure.ts";
   assert.deepEqual(findDirectConsumers(ROOT, pkg, pure), [
@@ -418,7 +418,7 @@ test("D: helpers 反向断言 + 命中窄化/全段回落 + 未命中复用", ()
       "dsh-provider-usage:registry",
       "dsh-provider-usage:sanitize",
     ],
-    "worker 叠加不扩散", // #962 B：同上，history/view 不再含 unit-contract.test.ts
+    "worker 叠加不扩散", // #962 B：同上，history/view 不再含 contract.test.ts
   );
 });
 
@@ -443,15 +443,15 @@ test("D: 解析失败回整包 + 混合 diff 工人不扩散", () => {
     [pkg],
     "闭包直调 fail-closed",
   );
-  assert.equal(isExemptTestFile("packages/dsh-provider-usage/test/client/a.test.ts", pkg), true);
+  assert.equal(isExemptTestFile("packages/dsh-provider-usage/test/bundle/a.test.ts", pkg), true);
   assert.equal(isExemptTestFile("packages/dsh-provider-usage/test/e2e/a.test.ts", pkg), true);
   assert.equal(isExemptTestFile("packages/dsh-provider-usage/test/unit/a.test.ts", pkg), false);
   assert.equal(isExemptTestFile("packages/dsh-provider-usage/test/helpers.ts", pkg), false);
-  const unit = "packages/dsh-provider-usage/test/unit/apply/unit-apply.test.ts";
+  const unit = "packages/dsh-provider-usage/test/unit/apply/apply.test.ts";
   const onlyUnit = packagesToInvalidate([unit], reg, topo);
   assert.ok(onlyUnit.length > 0);
   assert.deepEqual(packagesToInvalidate([w1, w2, unit], reg, topo), onlyUnit, "worker 不扩散");
-  const lanUnit = "packages/dsh-lan-proxy/test/unit/unit-apply.test.ts";
+  const lanUnit = "packages/dsh-lan-proxy/test/unit/apply.test.ts";
   const lanOnly = packagesToInvalidate([lanUnit], reg, topo);
   assert.deepEqual(packagesToInvalidate([w1, lanUnit], reg, topo), lanOnly, "跨包不扩散");
 });

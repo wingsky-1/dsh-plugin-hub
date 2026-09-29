@@ -525,7 +525,7 @@ describe("G1：T4 月报无降级正文 + 配置页 footnote/重试指引（loca
     expect(DEFAULT_MONTHLY_PROMPT.includes("降级")).toBe(false);
   });
 
-  // locales 中英断言归 test/client 层（单元层禁引 src/client，I8①）：见 unit-report-p0.test.ts 末尾 B2-3 块。
+  // locales 中英断言归 test/client 层（单元层禁引 src/client，I8①）：见 report-p0.test.ts 末尾 B2-3 块。
 });
 // ---------------------------------------------------------------- G1：report-helpers 双变量联动
 

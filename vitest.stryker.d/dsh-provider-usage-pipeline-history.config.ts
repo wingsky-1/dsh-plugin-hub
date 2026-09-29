@@ -10,9 +10,9 @@ export default defineConfig({
     include: [
       'packages/dsh-provider-usage/test/integration/history/composition-root.test.ts',
       'packages/dsh-provider-usage/test/integration/schedule/composition-root.test.ts',
-      'packages/dsh-provider-usage/test/unit/apply/unit-apply.test.ts',
-      'packages/dsh-provider-usage/test/unit/history/unit-history.test.ts',
-      'packages/dsh-provider-usage/test/unit/trend/unit-trend.test.ts',
+      'packages/dsh-provider-usage/test/unit/apply/apply.test.ts',
+      'packages/dsh-provider-usage/test/unit/history/history.test.ts',
+      'packages/dsh-provider-usage/test/unit/trend/trend.test.ts',
     ],
     environment: 'node',
     testTimeout: 60_000,

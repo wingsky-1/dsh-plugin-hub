@@ -140,7 +140,7 @@ function makeHost(
 // 不走 apply（也就没有安装装配表），故池夹具必须自己装一次六键端口，afterEach 统一释放。
 // 假 loader 不 spawn 子进程，全离线。
 
-/** 假 id 表：按 (scope, name) 稳定返回并自增（mirror unit-lifecycle-mount.test.ts 的同名夹具）。 */
+/** 假 id 表：按 (scope, name) 稳定返回并自增（mirror lifecycle-mount.test.ts 的同名夹具）。 */
 function fakeIdTable() {
   const byKey = new Map<string, string>();
   let seq = 0;
@@ -2844,7 +2844,7 @@ describe("#767 S1-4d：guard 判发起者", () => {
 });
 
 // #767 笔 1b：A+ 自持图片准入的接线面 + F4 远端转发去 agent ----
-// 图片准入的**纯逻辑**判据在 unit-image-admission.test.ts；这里只钉接线：executeCall 按 exec
+// 图片准入的**纯逻辑**判据在 image-admission.test.ts；这里只钉接线：executeCall 按 exec
 // 存投影、finalizeContent 换入、未命中返回 undefined（保留 render），以及远端转发不再带 agent。
 describe("#767 笔 1b：A+ 图片准入接线与 F4 转发去 agent", () => {
   /** canonical base64 的合法图片。 */

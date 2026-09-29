@@ -9,12 +9,12 @@ export default defineConfig({
   test: {
     include: [
       'packages/dsh-mcp-manager/test/integration/apply-lifecycle.test.ts',
+      'packages/dsh-mcp-manager/test/unit/config-env-policy.test.ts',
+      'packages/dsh-mcp-manager/test/unit/hotspot.test.ts',
+      'packages/dsh-mcp-manager/test/unit/manager2.test.ts',
       'packages/dsh-mcp-manager/test/unit/ports/api-ports.test.ts',
-      'packages/dsh-mcp-manager/test/unit/unit-config-env-policy.test.ts',
-      'packages/dsh-mcp-manager/test/unit/unit-hotspot.test.ts',
-      'packages/dsh-mcp-manager/test/unit/unit-manager2.test.ts',
-      'packages/dsh-mcp-manager/test/unit/unit-routes-a2.test.ts',
-      'packages/dsh-mcp-manager/test/unit/unit-routes-sse.test.ts',
+      'packages/dsh-mcp-manager/test/unit/routes-a2.test.ts',
+      'packages/dsh-mcp-manager/test/unit/routes-sse.test.ts',
     ],
     environment: 'node',
     testTimeout: 60_000,

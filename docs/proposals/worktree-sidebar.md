@@ -318,7 +318,7 @@ notifier / mcp-manager 给的都只是**单文件**分位数（中位 44/58、p9
 ## 12. 测试与门禁
 
 - 单测：`test/unit/**`（纯逻辑，无 cordis）、`test/integration/**`（域装配）。
-- 客户端契约：`test/client/**` 断言构建产物（`assertClientSourceContract` / `assertClientProductContract`）。
+- 客户端契约：`test/bundle/**` 断言构建产物（`assertClientSourceContract` / `assertClientProductContract`）。
 - 路由必含 403/405 围栏用例与两端路由一致性断言。
 - git fixture 用 mkdtempSync + 临时 DSH_HOME；禁用固定 sleep 等 git；端口 listen(0) 且 finally 回收。
 - 产物零污染：`git status --porcelain` 不得出现 `undefined/`、`*.jsonl`。
@@ -710,8 +710,8 @@ S0–S5 全部落地；独立复核（第二轮）的四项必修 P0-1 / P0-2 / 
 
 | # | 裁决 | 依据（复核后的事实） | 状态 |
 |---|---|---|---|
-| A1 | 做：更正「props 里塞 hooks 不被读」的错误表述（源码注释四处） | 官方 `bindInjectSources` 把 entry inject 面里的 `hooks.<name>` 经 `standardHookPropName` 变成 `use<Name>` props（`dsh-client-ui-renderer/lib/client.js:342-357`）；展开序 `{...kit, ...injected, ...}` 在 `:644-650`（ContextualEntry）与 `:653-658`（renderEntry）两处，`injected` 在 `kit` 之后 ⇒ 覆盖 | S1a 落地（`d62f775`）：`takeover.ts` 头、`ports.ts` 段、`client-takeover.test.ts` 原 `:302-304`；`contribute.ts` 随删除消失 |
-| A2 | 做：为 P0 修复行 `ctx.sessions.list` 补判据 | 探针实测边界：把该行改回 `ctx.sessions`，**构造期不抛**、`typeof getSnapshot === "function"` 为 true，只有**调用** `getSnapshot()` 才 `TypeError: real.getSnapshot is not a function` ⇒「只驱动到注入对象生成」的写法是恒真断言 | S1b 落地（`03038d7` 新增 `test/unit/client-index.test.ts`，与逐会话剪枝同一片——比原排期提前一片）；`d7e852b` 随 B2 改到 `typeof __DSH_ROUTES__` 注入形态；S4/S5 又补一条路由字面量哨兵（见 §18.5） |
+| A1 | 做：更正「props 里塞 hooks 不被读」的错误表述（源码注释四处） | 官方 `bindInjectSources` 把 entry inject 面里的 `hooks.<name>` 经 `standardHookPropName` 变成 `use<Name>` props（`dsh-client-ui-renderer/lib/client.js:342-357`）；展开序 `{...kit, ...injected, ...}` 在 `:644-650`（ContextualEntry）与 `:653-658`（renderEntry）两处，`injected` 在 `kit` 之后 ⇒ 覆盖 | S1a 落地（`d62f775`）：`takeover.ts` 头、`ports.ts` 段、`takeover.test.ts` 原 `:302-304`；`contribute.ts` 随删除消失 |
+| A2 | 做：为 P0 修复行 `ctx.sessions.list` 补判据 | 探针实测边界：把该行改回 `ctx.sessions`，**构造期不抛**、`typeof getSnapshot === "function"` 为 true，只有**调用** `getSnapshot()` 才 `TypeError: real.getSnapshot is not a function` ⇒「只驱动到注入对象生成」的写法是恒真断言 | S1b 落地（`03038d7` 新增 `test/unit/index.test.ts`，与逐会话剪枝同一片——比原排期提前一片）；`d7e852b` 随 B2 改到 `typeof __DSH_ROUTES__` 注入形态；S4/S5 又补一条路由字面量哨兵（见 §18.5） |
 | A3 | 做：补 `shared/README.md` 消费方登记 | `src/server/api/impl/route/index.ts:9`、`api/impl/handlers/index.ts:11` 取 `guardLoopbackMethod/writeJson`；`src/server/shared/paths.ts:6` 取 `dshHome` | S4/S5 落地（本片）：`shared/README.md:15`（`host-utils.js`）与 `:18`（`dsh-home.js`）两行消费方登记各补 `worktree-sidebar`。**判据：无**（该表无门禁读），按 testing skill §7 显式登记为「靠自查」，靠在 PR 正文写明 |
 | A4 | 做（与 B7(b) 合并）：消除静默空实现 | `src/index.ts:92-94` 对未知 agent 回 `() => undefined`；但 `publish` 的唯一调用点 `tools/impl/service/index.ts:43` 拿到的 face 恒来自 `bindAgents` 先 `live.set` 过的同一条（`:84` list / `:85` subscribe）⇒ **该分支不可达**，`bindAgents` 又未导出（`src/index.ts:73`）⇒ 判据无处驱动 | S3 落地（`141a11e`）：拆 `src/host/{agents,typert,defaults}.ts` + 窄端口（87/47/53 行），`test/unit/host-agents.test.ts` 白盒断言「`publish(未知 id)` → 抛错」，`src/index.ts` 260 到 160。先例与例外：refactor §4 要求「未装配即抛错」，notifier 有相反先例（挂宿主事件链的出口可静默），我们的 `publish` 是自家 tools 域**同步调用**，不属该例外 |
 
@@ -803,7 +803,7 @@ node scripts/gate/export-surface-snapshot.mjs --package dsh-worktree-sidebar --s
 - **已采纳**：「`src/client/**` 里不存在硬编码的 `/api/` 路由字面量」。它守的是与字段名同一类的单端漂移
   （路由串只经 `src/contract.ts` 的 `ROUTES` 与构建期 `__DSH_ROUTES__`），符合 `DEVELOPMENT.md:419`
   「路由引用用构建期注入的 `__DSH_ROUTES__`（或宿主 ROUTES 字面量），防两端漂移」。
-- **落点**：写进**已有**的 `test/unit/client-index.test.ts`（一条 `it`），**不新增测试文件**——
+- **落点**：写进**已有**的 `test/unit/index.test.ts`（一条 `it`），**不新增测试文件**——
   因此 `--min` 与 `pnpm stryker:gen` 的登记一次都不用再同步（只有增删测试文件才要动它们）。
 - **红绿实验**：把 `src/client/index.ts` 的 `const BINDINGS_URL = ROUTES_INJECTED.bindings;` 换成字面量
   `"/api/dsh-worktree-sidebar/bindings"` → 单跑该文件 **1 failed | 3 passed**（只有哨兵那条红，
@@ -1499,7 +1499,7 @@ cd $WT && pnpm gate:pr
 - `api/impl/service/index.ts`：**先注册、成功了才算装上**（原实现先置 `installed`，中途失败就停在半装态且组合根的释放链够不到它）。
 - 组合根的回滚路径补判据（注入抛错的 `webServer.register` → 断言 apply 重抛、路由为空、已装域按「尚未装配」失败、同进程还能重装）。
 
-**N1 / N3 / N9 的判据**：`commonDir` 只缓存正结果；新增 `test/unit/host-typert.test.ts`（7 条）与 `test/unit/client-bindings.test.ts`（6 条）；F1–F12 的 12 条判据分别落在 `client-bindings` / `client-index` / `host-typert` / `scope` / `git-service` / `tools` / `binding-model`；另补 `tools/impl/create` 的四条前置失败分支。
+**N1 / N3 / N9 的判据**：`commonDir` 只缓存正结果；新增 `test/unit/host-typert.test.ts`（7 条）与 `test/unit/bindings.test.ts`（6 条）；F1–F12 的 12 条判据分别落在 `client-bindings` / `client-index` / `host-typert` / `scope` / `git-service` / `tools` / `binding-model`；另补 `tools/impl/create` 的四条前置失败分支。
 
 **两处「补判据时发现判据自己不够」**
 
@@ -1524,7 +1524,7 @@ cd $WT && pnpm gate:pr
 
 1. **N10 的引用位置**：不可达的引用在 `src/client/takeover.ts:7` 与 `test/helpers.ts:44`（都指向 `dsh-client-ui-slots`）；`src/client/shared/ports.ts:6-11` 引的是**树内**的 `dsh-client-ui-renderer/lib/types/client/registry.d.ts:46/84`，本来就读得到。已按「可达路径 + 树内行号」重写，并补上「该包在构建期被内联进 `dsh-web-frontend/dist/assets/index-*.js`」这一事实。
 2. **M1 脚本的 exit code 读数**：评论里的 `exit=0` / `exit=255` 与它自己的 `| head` 管道冲突（`$?` 取到的是 `head` 的）。三种失败形态的结论我复跑后成立，但那组退出码读数不能照抄。
-3. **F1 与 F2 的重叠**：F1（`bindings.refresh` 保持上次成功态）与 F2（`readBinding` 把 HTTP 失败当未绑定）在同一条路径上，但只有 F2 能靠装配根那条链路打到；F1 的 catch 分支需要独立驱动（本轮新增 `client-bindings.test.ts`）。
+3. **F1 与 F2 的重叠**：F1（`bindings.refresh` 保持上次成功态）与 F2（`readBinding` 把 HTTP 失败当未绑定）在同一条路径上，但只有 F2 能靠装配根那条链路打到；F1 的 catch 分支需要独立驱动（本轮新增 `bindings.test.ts`）。
 
 ### 23.6 反向探针（27 条，全部 RED，还原逐字节一致）
 

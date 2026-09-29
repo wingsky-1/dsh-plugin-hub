@@ -391,7 +391,7 @@ describe("主动回收：连接上限机制移除后，连接表的有界性只�
   // 上限机制退役后，连接表没有「触顶淘汰」这条确定性收口了。真正会把表撑爆的是半开连接：
   // 设备息屏 / NAT 静默掐断不发 FIN，close/error 都不触发，写心跳也不抛错（数据进内核缓冲），
   // 于是一个不再消费的客户端会永远挂在表里。清掉它只剩共享层心跳里的两路主动回收。
-  // 其中 destroyed 那一路由 dsh-mcp-manager 的 unit-routes-sse.test.ts 覆盖，stalled / maxAge
+  // 其中 destroyed 那一路由 dsh-mcp-manager 的 routes-sse.test.ts 覆盖，stalled / maxAge
   // 两路**全仓再无第二条判据**——任一路静默失效（判定恒 false、窗口算式写反、心跳写被当成
   // 业务活动刷新 lastWriteAt），连接表就随半开连接无界增长，而没有任何用例会红。
   // 所以这两条不是「顺手补覆盖」，它们是移除上限之后仅存的有界性证据，不可省。

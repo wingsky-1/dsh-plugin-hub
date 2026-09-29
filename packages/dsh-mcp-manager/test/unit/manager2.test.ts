@@ -147,7 +147,7 @@ afterEach(async () => {
 // 的池用例必须走这条真链路（假 loader 不 spawn 子进程，全离线），故在工厂里装一次六键端口。
 // id 表按 (scope, name) 稳定分配——「跨 root 同名各自成条」正靠它（与 unit-lifecycle-mount 同形）。
 
-/** 假 id 表：按 (scope, name) 稳定返回并自增（mirror unit-lifecycle-mount.test.ts 的同名夹具）。 */
+/** 假 id 表：按 (scope, name) 稳定返回并自增（mirror lifecycle-mount.test.ts 的同名夹具）。 */
 function fakeIdTable() {
   const byKey = new Map<string, string>();
   let seq = 0;

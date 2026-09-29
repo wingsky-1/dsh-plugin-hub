@@ -10,7 +10,7 @@
  *
  * S1-5c 同笔删除：原「supervisor 路径 stats 埋点契约」5 例——被测实现（buildToolDefinition
  * 的 stats 注入）随四文件退役，工具调用埋点现只在 inject/middleware-register.ts 的
- * ws_mcp_call 路径上发生（由 unit-call-stats.test.ts 覆盖）。
+ * ws_mcp_call 路径上发生（由 call-stats.test.ts 覆盖）。
  */
 import { describe, expect, it } from "vitest";
 

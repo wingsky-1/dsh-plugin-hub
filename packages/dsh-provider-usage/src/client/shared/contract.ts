@@ -3,7 +3,7 @@
  *
  * 与宿主 ROUTES（src/apply/apply.ts）同值的镜像：两边各写一份的失败形态是静默的
  * （对不上只表现成请求 404），故两端一致性由单测锁定（16 键与宿主 ROUTES 键 1:1、
- * 值全等，见 test/client/client-routes.test.ts）。
+ * 值全等，见 test/bundle/routes.test.ts）。
  *
  * 收敛前 16 个字面量散在 client/core.ts（11 处）与 client/report.tsx（5 处），
  * 两处皆不在 verify-host-seams R2 定义层允许集内（非 shared、非 client/index、

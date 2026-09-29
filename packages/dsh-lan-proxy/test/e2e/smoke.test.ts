@@ -3608,7 +3608,7 @@ describe("client 契约（lib/client.js 产物字面量）", () => {
 
 // ===== host trust 注入（issue #856）：真 cordis Context + 官方 WebServer 整链 =====
 // 真 socket / 真服务面只在 e2e（不进变异面）；「覆盖 vs 不覆盖」等杀灭力留在
-// test/unit/unit-host-trust.test.ts。这里验证的是装配链本身：官方 renderIndex
+// test/unit/host-trust.test.ts。这里验证的是装配链本身：官方 renderIndex
 // （结构化注入表 → tapIndex 变换）把注入送到 head 内的正确位置。
 describe("host trust 注入：真 Context + WebServer 整链（issue #856）", () => {
   // 与 dsh-web-frontend/dist/index.html 同形（module 入口在 head 内）。

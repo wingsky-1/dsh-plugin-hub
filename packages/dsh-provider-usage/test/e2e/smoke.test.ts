@@ -4434,7 +4434,7 @@ describe("#503 M3：用量报告接线", () => {
     // #629 P2 复用提示对称说明：200 直接复用路径的 reused 透传已由上方 again 断言覆盖；
     // executor 短路复用（202 任务化 → 执行前重查 index 命中 → task.reused）在 HTTP 面
     // 被路由层 200 短路先行遮蔽，正常流量下不可达，集成层不构造时序赌注（防 flake），
-    // 该透传断言归位单元层（unit-report.test.ts 直调 handleReportStatus 覆盖）。
+    // 该透传断言归位单元层（report.test.ts 直调 handleReportStatus 覆盖）。
     const forceMeta = await generateAndAwait({ period: "daily", force: true });
     obs.forceMetaOk = forceMeta.ok;
     obs.forceMetaKey = forceMeta.key;

@@ -13,7 +13,7 @@
  * - 切换会话同 provider → 维护者补充需求：仍立即刷一次 stats；
  * - 初次挂载：检测先行，首拉即新 provider（FALLBACK 不泄漏进任何 /stats 请求）。
  *
- * 运行形态：由 unit-refresh-revalidate.test.ts 以子进程执行。本脚本需替换
+ * 运行形态：由 refresh-revalidate.test.ts 以子进程执行。本脚本需替换
  * document/fetch/setInterval 全局对象——独立进程隔离，既不污染 smoke 模块图，
  * 也不受其他测试文件 fetch 替换/恢复交错的影响（TLA 并发求值语义下同进程必冲突）。
  * 全部断言通过打印 WORKER-PASS 标记行；任何失败经非零退出码 + stderr 上报。

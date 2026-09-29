@@ -3,7 +3,7 @@
  *
  * I8① 分层：test/unit 不得值引 src/client，故 isProjectionValue 的两形态锁由本层
  * 直连 src/client/float/quick-add.ts 断言（client-unit 即客户端纯逻辑层，node 环境）。
- * 与 unit-summary-a3.test.ts 的宿主回写链（stripProjectionPatch / update / add）同源：
+ * 与 summary-a3.test.ts 的宿主回写链（stripProjectionPatch / update / add）同源：
  * 客户端省略占位符 URL + 宿主丢弃占位符，两侧同判 [REDACTED] / %5BREDACTED%5D。
  *
  * 离线，无落盘。

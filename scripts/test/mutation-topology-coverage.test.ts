@@ -876,7 +876,7 @@ function makeMutationFixture(excludes: string[] | undefined) {
           layers: {
             unit: "test/unit/**/*.test.ts",
             integration: "test/integration/**/*.test.ts",
-            client: "test/client/**/*.test.ts",
+            client: "test/bundle/**/*.test.ts",
             e2e: "test/e2e/**/*.test.ts",
           },
           mutationLayers: ["unit", "integration"],

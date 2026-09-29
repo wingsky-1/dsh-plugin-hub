@@ -418,7 +418,7 @@ sdk/deps.ts          → ConnectionPort  = Pick<typeof connectionApi, "summary/ 
 | 契约 | `test/integration/` | 域 `interface.ts` + `deps.ts` + 跨端线协议（HTTP / SSE / DTO） | 接缝的形状与承诺，不测实现细节 | 入口本身即注入面，可用 fake |
 | 集成 | `test/e2e/` | 包产物入口 + `apply()` | 端到端 user case | 仅系统边界（网络、子进程、临时目录、时钟） |
 | 组合根 | `test/integration/real-context.test.ts` | `src/index.ts` + 真实 `Context` | 装配顺序、释放逆序、服务面、声明合并 | 真实宿主面 |
-| 客户端 | `test/client/` | `src/client/**` | UI 模块 | 归 #769 |
+| 客户端 | `test/bundle/` | `src/client/**` | UI 模块 | 归 #769 |
 
 **分层不能只靠文件名前缀，必须由导入面定义**。**A11 已决：本轮暂不设机器判据**，下列三条作为 **PR 评审清单**执行（跟踪 issue 待建）：
 
@@ -430,20 +430,20 @@ sdk/deps.ts          → ConnectionPort  = Pick<typeof connectionApi, "summary/ 
 
 | 现文件 | 行数 | 目标 |
 |---|---|---|
-| `unit/unit-manager2.test.ts` | 3142 | 随中枢解体拆入 `unit/{connection,catalog,config,sdk,workspace}/` |
-| `unit/unit-middleware.test.ts` | 2109 | 拆入 `unit/connection/` + `unit/inject/` |
+| `unit/manager2.test.ts` | 3142 | 随中枢解体拆入 `unit/{connection,catalog,config,sdk,workspace}/` |
+| `unit/middleware.test.ts` | 2109 | 拆入 `unit/connection/` + `unit/inject/` |
 | `unit/unit-supervisor.test.ts` | 900 | `unit/connection/` |
-| `unit/unit-catalog.test.ts` | 771 | `unit/catalog/` |
-| `unit/unit-routes-sse.test.ts` | 705 | `unit/api/`（帧契约部分下沉 `integration/`） |
-| `unit/unit-store.test.ts` | 501 | `unit/{config,store}/` |
-| `unit/unit-apply.test.ts` | 412 | `integration/real-context.test.ts`（组合根真实 Context） |
-| `unit/unit-hotspot.test.ts` | 370 | 按被测符号归域 |
+| `unit/catalog.test.ts` | 771 | `unit/catalog/` |
+| `unit/routes-sse.test.ts` | 705 | `unit/api/`（帧契约部分下沉 `integration/`） |
+| `unit/store.test.ts` | 501 | `unit/{config,store}/` |
+| `unit/apply.test.ts` | 412 | `integration/real-context.test.ts`（组合根真实 Context） |
+| `unit/hotspot.test.ts` | 370 | 按被测符号归域 |
 | `unit/unit-transport.test.ts` | 356 | `unit/connection/` |
-| `unit/unit-shared.test.ts` | 338 | 被测对象是仓库 `shared/settings-namespace`，迁 `scripts/test/` 或保留并登记（现登记为「零杀灭」） |
-| `unit/unit-call-stats.test.ts` | 296 | `unit/stats/` |
-| `unit/unit-manager.test.ts` | 271 | `unit/connection/` |
-| `unit/unit-pipeline.test.ts` | 203 | `unit/pipeline/`（两路径同构契约下沉 `integration/`） |
-| `unit/unit-workspace.test.ts` | 79 | `unit/workspace/` |
+| `unit/shared.test.ts` | 338 | 被测对象是仓库 `shared/settings-namespace`，迁 `scripts/test/` 或保留并登记（现登记为「零杀灭」） |
+| `unit/call-stats.test.ts` | 296 | `unit/stats/` |
+| `unit/manager.test.ts` | 271 | `unit/connection/` |
+| `unit/pipeline.test.ts` | 203 | `unit/pipeline/`（两路径同构契约下沉 `integration/`） |
+| `unit/workspace.test.ts` | 79 | `unit/workspace/` |
 | `integration/service-contract.test.ts` | 338 | 改为**消费方编译夹具**（现为读 `src/bootstrap/apply-services.ts` 源文本比对 marker，该文件在重写后消失） |
 | `e2e/smoke.test.ts` | 3844 / 159 it | 按**导入面**而非 describe 名分层：整体走产物（T3）保留 `e2e/`；其中的「两路径同构」「DTO 形状」「SSE 帧集合」下沉 `integration/` |
 | `test/helpers.ts` | 161 | 保留在 `test/`；`pollUntil/assertNoGrowth` 等防 flake 原语是单一事实源，继续沿用 |
@@ -680,7 +680,7 @@ refactor skill §8 的原文仍然是最终裁决：「精炼的判据是读者�
 | R7 | **客户端文案与 #769 交叉** | 本重构只改宿主侧路径知识（客户端从 DTO/路由取），文案改动与 #769 的客户端重构之间留接口 |
 | R8 | **`interface.ts` 纳入变异面后覆盖率分母上升** | P0 重估排除面；`verify-coverage-scope` 守面完整性；宁可如实降分也不排除 |
 | R9 | **子 Agent 评审结论需交叉复核**（§10 实证：一次评审 4 条「必须修」被否决或降级） | 每条结论附 `文件:行` 或命令输出；协调者一手复跑；只读 worktree 基线 |
-| R10 | **测试导入面**（A11 已决：本轮不设门禁） | 风险从「判据上线判红一片」转为「**约束靠自觉、会随时间腐化**」。实测存量若将来补门禁：lan-proxy 2 个（`unit-proxy.test.ts:38`、`unit-apply.test.ts:38`）+ web-file-preview 1 个（`unit-present-open.test.ts:21`）+ 本包 13 个。对冲：写进 PR 评审清单 + 跟踪 issue 待建 |
+| R10 | **测试导入面**（A11 已决：本轮不设门禁） | 风险从「判据上线判红一片」转为「**约束靠自觉、会随时间腐化**」。实测存量若将来补门禁：lan-proxy 2 个（`proxy.test.ts:38`、`apply.test.ts:38`）+ web-file-preview 1 个（`unit-present-open.test.ts:21`）+ 本包 13 个。对冲：写进 PR 评审清单 + 跟踪 issue 待建 |
 | R11 | **包内多一份待迁出的 IO 设施**（A9 原决策的代价） | **已被第三方调研消解**：改用 `atomically` 后不再自写 file-io，也就不存在「待迁出」；若最终不引入依赖，则本包实现须以 notifier 包内版为唯一参照（`packages/dsh-notifier/src/server/shared/file-io.ts:15/25/40`：无 mode、pid-only tmp 名、无 remove），并逐条登记有意差异 |
 
 ---
@@ -748,7 +748,7 @@ refactor skill §8 的原文仍然是最终裁决：「精炼的判据是读者�
 
 | # | 来源 | 分歧 | 选项 | 协调者建议 |
 |---|---|---|---|---|
-| A1 | 安全视角 P0（二轮已细化） | I10 把「HTTP body 与日志同口径脱敏」写成不变式 + 机器判据，但现状**六条**出口未脱敏、N12/§9.2 又禁止改可观察输出。**二轮评审纠正三点**：(1) 出口是 **6 条**不是 4 条（§7.4，新增 ⑤ POST/PATCH 响应体、⑥ stdio stderr 尾巴）；(2)「都在 loopback 围栏后」对 ② 为假（sdk 进程内通道无围栏）；(3) (b) 的两处调用点**都不是**「同层内、不涉域边界」——① 要脱敏就得给 `api/deps.ts` 加脱敏面（域边界改动），改成枚举文案则打红 `unit-routes-sse.test.ts:557-564`；② 的成本在跨端 DTO（破 N5） | **已决：(a)**——§7.2/§7.4 已拆行、I10 已拆 J1/J2 并标 pending；**剩余待办** = P0/P2 把 §7.4 的六条出口清单落成契约测试（`test/integration/redaction-exits.test.ts`），#770 第 1/7 项修复批次清空清单后才启用 J2 绝对值断言。若走 (b)，二轮评审建议拆 **(b1)** ①④⑥ 出口面收口（不动 DTO）与 **(b2)** ② 的跨端形状变更（破 N5、逐字段登记）两条独立裁决 |
+| A1 | 安全视角 P0（二轮已细化） | I10 把「HTTP body 与日志同口径脱敏」写成不变式 + 机器判据，但现状**六条**出口未脱敏、N12/§9.2 又禁止改可观察输出。**二轮评审纠正三点**：(1) 出口是 **6 条**不是 4 条（§7.4，新增 ⑤ POST/PATCH 响应体、⑥ stdio stderr 尾巴）；(2)「都在 loopback 围栏后」对 ② 为假（sdk 进程内通道无围栏）；(3) (b) 的两处调用点**都不是**「同层内、不涉域边界」——① 要脱敏就得给 `api/deps.ts` 加脱敏面（域边界改动），改成枚举文案则打红 `routes-sse.test.ts:557-564`；② 的成本在跨端 DTO（破 N5） | **已决：(a)**——§7.2/§7.4 已拆行、I10 已拆 J1/J2 并标 pending；**剩余待办** = P0/P2 把 §7.4 的六条出口清单落成契约测试（`test/integration/redaction-exits.test.ts`），#770 第 1/7 项修复批次清空清单后才启用 J2 绝对值断言。若走 (b)，二轮评审建议拆 **(b1)** ①④⑥ 出口面收口（不动 DTO）与 **(b2)** ② 的跨端形状变更（破 N5、逐字段登记）两条独立裁决 |
 | A2 | 安全视角 P1（二轮已推翻其前提） | 「`mode` 必填 vs 可选」。**二轮评审证明原论证前提失效**：A9 撤销仓库级 PR 后 notifier 不再被改，且 notifier 现存实现**根本没有 mode 参数**（`dsh-notifier/src/server/shared/file-io.ts:25/40`）→「必填会让 8 个调用点编译失败」的代价归零；同时 R3 以「mode 必填」为前提，与 A2(b) 方向相反 | **改判：权限不再由写函数的参数形状承载，而是存储布局的文件属性**——在 `server/shared/paths.ts` 的登记里写 `path + mode`（四个现状 0644 文件保持、`config.json` = `0o600`），写函数接该规格。若采纳 `atomically`（A16），其 `mode` 语义正好承载（**默认复制旧文件 mode**、显式传值则用之）。这样权限决策从 4 个调用点收敛到 1 处，满足 I3/I7 |
 | A3 | 分层视角 P1 | 迁移期旧文件**解析失败**（JSON 坏）的语义 | (a) 抛错中止启动（notifier 口径）；(b) warn + 保留旧文件不迁移 + 按空形态继续（mcp 现状口径） | **(b)**：现状读面全容错（`store.ts:38` / `middleware-state.ts:36`），改成抛错是行为变更。**补一条决定性语义（二轮评审指出未写死）**：解析失败时**不推进 `version` 刻度、旧文件原样保留、每次启动重试并 warn**——若不推进，用户修好坏 JSON 后仍能迁移；若推进，旧文件成永久孤儿而新位置已写空形态。P1 验收的迁移测试随之从四态改**五态**（有旧文件 / 无旧文件 / 目标已存在 / IO 读失败 / 解析失败） |
 | A4 | 分层视角 P1 | 5 个目录边界常量（`CATALOG_TTL_MS`/`LIST_*`/`MAX_*`）物理定义在 `connection/runtime/limits.ts`，被 `catalog` 与 `inject` 跨域取值 | (a) 归位 `catalog` + 跨域常量消费写进 `deps.ts` + 泄漏面统计纳入常量边；(b) 维持现状、只登记 | **(a)**：常量归语义所有者（目录边界常量 → `catalog/interface.ts`），否则意图图与事实图长期不一致。**落地子句要改（二轮评审指出不可执行）**：原写「跨域常量消费写进 `deps.ts`」——`deps.ts` 是**纯类型面**且值 import 硬判红，常量为值、无法经它传递。改为：常量归 `catalog` 的 `interface.ts`，跨域消费是**合法值边**，在常量边清单与泄漏面里显式登记 |
@@ -817,4 +817,4 @@ refactor skill §8 的原文仍然是最终裁决：「精炼的判据是读者�
 | D5 | 前置 PR 的迁移成本 | notifier：`file-io` 引用 **31 处 / 10 文件（其中 8 个调用点）**；provider-usage：8 文件 | **修正**：原结论「改 1 处 re-export」只在签名不变（`mode` 可选）时成立；`mode` 必填则 8 个调用点全要改（安全视角复核，协调者已实测） |
 | D7 | 参照包 `upgrade` 域的机制完整度 | `packages/dsh-notifier/src/server/upgrade/`（interface/chain/version/steps/legacy/service） | 初稿只抄了 storage-layout；实际有**六件套**（步骤表/链驱动/刻度/失败即中止/对账/装配标记），已补 §5.4 |
 | D8 | 注释成分（过程类 vs 理由类） | `/tmp/comment-stats.mjs`：mcp 21.2%（过程类 296 行 / 12.6%）vs notifier 重构后 25.2%（过程类 25 行 / 1.2%） | 「以重构后密度为基准」的口径已写入 §9.6.2（判据 = 过程类≤2% 且理由类不下滑） |
-| D6 | 测试对中枢内部的耦合度 | `unit-manager2.test.ts` 中 `.supervisors` 45 处、`.middleware` 45 处、`.catalogCache` 24 处、`.runtimeRegistry` 7 处 | 中枢解体时该文件大量断言失锚；§6.2 需补「失锚断言的改写口径」（待评审汇总后补） |
+| D6 | 测试对中枢内部的耦合度 | `manager2.test.ts` 中 `.supervisors` 45 处、`.middleware` 45 处、`.catalogCache` 24 处、`.runtimeRegistry` 7 处 | 中枢解体时该文件大量断言失锚；§6.2 需补「失锚断言的改写口径」（待评审汇总后补） |

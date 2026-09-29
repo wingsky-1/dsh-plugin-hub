@@ -10,7 +10,7 @@
  * - 快响应正常透传返回 Response，注入的超时信号未被误触发；
  * - init.signal 存在时不注入兜底信号（调用方信号优先，#111 同款语义）。
  *
- * 运行形态：由 unit-fetch-timeout.test.ts 以子进程执行（需替换全局 fetch，
+ * 运行形态：由 fetch-timeout.test.ts 以子进程执行（需替换全局 fetch，
  * 进程隔离理由同 client-revalidate.worker.mjs：TLA 并发求值语义下同进程必与
  * smoke 模块图内其他文件的 fetch 替换交错冲突）。全部断言通过打印 WORKER-PASS。
  */

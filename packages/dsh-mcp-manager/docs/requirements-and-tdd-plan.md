@@ -301,7 +301,7 @@
 - **三通道不对称**：
   1. smoke 只跑 8 个 unit；
   2. stryker testFiles 是 10 个（多 unit-catalog / unit-store / unit-supervisor / unit-transport）——**这 4 个文件在本地 `pnpm test` 从不执行**，其断言只在 mutation 管线跑；
-  3. **unit-call-stats.test.ts 零引用孤儿**——不在 smoke import、不在任何 stryker 配置、不在 mutation-topology.json，其断言（含聚合/重启恢复）**从未在任何门禁执行**（B2 bug 未被发现的直接原因之一）。
+  3. **call-stats.test.ts 零引用孤儿**——不在 smoke import、不在任何 stryker 配置、不在 mutation-topology.json，其断言（含聚合/重启恢复）**从未在任何门禁执行**（B2 bug 未被发现的直接原因之一）。
 - 覆盖质量：store/normalize/transport/supervisor/manager/middleware/catalog/routes 真断言深覆盖（状态机 mock + 临时文件 I/O + smoke SDK 端到端真实子进程重连）；apply/config-schema/placement/catalog 注入决策覆盖全；service 契约双层锁到位。
 
 ### 7.2 覆盖缺口清单（待补测试）
@@ -318,7 +318,7 @@
 - 客户端 UI：无运行时测试，仅构建产物/源码正则断言（assertClientProductContract/SourceContract）。
 
 ### 7.3 哑断言与脆弱点
-- 哑断言：unit-apply.test.ts L79-127/L129-177/L209-247 三块纯哑（无任何 assert）；unit-hotspot L104-168/L262-296 哑；unit-manager2 L309 `X===false||true` 恒真、L323 `logWarnCount===undefined` 恒真空断言；unit-manager L167-251 三个 apply 块半哑。
+- 哑断言：apply.test.ts L79-127/L129-177/L209-247 三块纯哑（无任何 assert）；unit-hotspot L104-168/L262-296 哑；unit-manager2 L309 `X===false||true` 恒真、L323 `logWarnCount===undefined` 恒真空断言；unit-manager L167-251 三个 apply 块半哑。
 - 脆弱点：① unit-supervisor L152 读 Node Timer 私有字段 `_idleTimeout`；② unit-middleware L708-726 封装超时用例真实等待 30s（CALL_TIMEOUT_MS，stryker 下放大）；③ unit-manager2 L727 裸固定 sleep 20ms 违反自身防 flake 纪律；④ smoke SDK 端到端 `process.kill(SIGTERM)` 平台差异（Windows）；⑤ schema 交叉校验依赖 dsh-tools 可解析性，失败仅 warning 跳过；⑥ 执行矩阵不对称 → 4 个 unit 断言失败存在漏检窗口；⑦ #218 红线合规（全部 mkdtempSync 隔离，无固定路径落盘）。
 - 优先级建议（子代理）：接线 unit-call-stats（补 configure/debounce/截断断言）+ createRedactor 测试为最高；其次把 4 个仅 stryker 面文件纳入 smoke import；清理哑断言与恒真断言。
 

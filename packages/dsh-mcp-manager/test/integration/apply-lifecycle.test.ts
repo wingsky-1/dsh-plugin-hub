@@ -4,7 +4,7 @@
  * 集成层（docs/ARCHITECTURE-METHOD.md §8 导入面矩阵）：矩阵把「包产物入口 + `apply()`」列为
  * 集成层的许可导入面，本文件的被测对象**就是 `apply()` 本身**——它在 src/index.ts 内就地定义
  * （包自己的架构计划「各落点域端口化之后才谈把它再拆出去」把它压在组合根里），全仓无第二出口，
- * 故单元层不存在合法导入面。断言与其夹具自 test/unit/unit-apply.test.ts 逐字迁来，未改判据。
+ * 故单元层不存在合法导入面。断言与其夹具自 test/unit/apply.test.ts 逐字迁来，未改判据。
  *
  * 覆盖：
  * - apply enabled:true 时注册 agent/pre-step 监听（catalog 注入路径）

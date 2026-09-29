@@ -58,7 +58,7 @@ const TOPOLOGY: FixtureTopology = {
     layers: {
       unit: "test/unit/**/*.test.ts",
       integration: "test/integration/**/*.test.ts",
-      client: "test/client/**/*.test.ts",
+      client: "test/bundle/**/*.test.ts",
       e2e: "test/e2e/**/*.test.ts",
     },
     mutationLayers: ["unit", "integration"],
@@ -97,7 +97,7 @@ const BASE_FILES = {
   [`packages/${PKG}/test/unit/unit-b.test.ts`]: 'import "../../src/index.ts"\n',
   [`packages/${PKG}/test/unit/unit-d.test.ts`]: 'import "../../src/index.ts"\n',
   [`packages/${PKG}/test/integration/flow.test.ts`]: 'import "../../src/index.ts"\n',
-  [`packages/${PKG}/test/client/client-a.test.ts`]: 'import "../../src/client/ui.ts"\n',
+  [`packages/${PKG}/test/bundle/client-a.test.ts`]: 'import "../../src/client/ui.ts"\n',
   [`packages/${PKG}/test/e2e/smoke.test.ts`]: 'import "../../src/index.ts"\n',
   [`packages/${PKG}/test/helpers.ts`]: "export const h = 1\n",
   [`packages/${PKG}/package.json`]: `${JSON.stringify({ name: PKG, scripts: { test: "node ../../scripts/test/run-vitest.mjs --min 6" } }, null, 2)}\n`,
@@ -219,7 +219,7 @@ test("T2/T3①：runner 面文件全部自动分层，单元/集成层进变异�
     );
     assert.deepEqual(
       p.excludedFiles.map((f) => f.replace(`packages/${PKG}/`, "")),
-      ["test/client/client-a.test.ts", "test/e2e/smoke.test.ts"],
+      ["test/bundle/client-a.test.ts", "test/e2e/smoke.test.ts"],
       "client/e2e 层必须被排除",
     );
     assert.ok(

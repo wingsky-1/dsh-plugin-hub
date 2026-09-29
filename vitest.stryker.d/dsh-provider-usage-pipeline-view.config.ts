@@ -9,9 +9,9 @@ export default defineConfig({
   test: {
     include: [
       'packages/dsh-provider-usage/test/integration/schedule/composition-root.test.ts',
-      'packages/dsh-provider-usage/test/unit/report/unit-report.test.ts',
-      'packages/dsh-provider-usage/test/unit/shared/unit-config.test.ts',
-      'packages/dsh-provider-usage/test/unit/trend/unit-trend.test.ts',
+      'packages/dsh-provider-usage/test/unit/report/report.test.ts',
+      'packages/dsh-provider-usage/test/unit/shared/config.test.ts',
+      'packages/dsh-provider-usage/test/unit/trend/trend.test.ts',
     ],
     environment: 'node',
     testTimeout: 60_000,

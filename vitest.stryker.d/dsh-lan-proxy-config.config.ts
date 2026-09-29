@@ -8,13 +8,13 @@ import { defineConfig } from 'vitest/config'
 export default defineConfig({
   test: {
     include: [
-      'packages/dsh-lan-proxy/test/client-unit/client-routes.test.ts',
+      'packages/dsh-lan-proxy/test/client-unit/routes.test.ts',
       'packages/dsh-lan-proxy/test/integration/apply-token-provider.test.ts',
       'packages/dsh-lan-proxy/test/integration/entry-contract.test.ts',
-      'packages/dsh-lan-proxy/test/unit/unit-apply.test.ts',
-      'packages/dsh-lan-proxy/test/unit/unit-ca.test.ts',
-      'packages/dsh-lan-proxy/test/unit/unit-cacert.test.ts',
-      'packages/dsh-lan-proxy/test/unit/unit-host-trust.test.ts',
+      'packages/dsh-lan-proxy/test/unit/apply.test.ts',
+      'packages/dsh-lan-proxy/test/unit/ca.test.ts',
+      'packages/dsh-lan-proxy/test/unit/cacert.test.ts',
+      'packages/dsh-lan-proxy/test/unit/host-trust.test.ts',
     ],
     environment: 'node',
     testTimeout: 60_000,

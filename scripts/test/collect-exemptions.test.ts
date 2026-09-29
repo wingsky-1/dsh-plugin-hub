@@ -158,7 +158,7 @@ test("本仓真实快照：15 条在册（数字变即提示同步台账与 #765
   //   客户端单测 10 条的 I8① 证据全部清零（迁 test/client-unit / 改直连域门面 / 入口契约
   //   判据迁集成层），11 条随证据消失按反向腐烂校验删除，27 → 16。
   // #T1A：mcp-manager 客户端 core/session.ts 那条已陈旧（实测 lines 100% / branches 95.45%，
-  //   且其 reason「尚无直连判据」为假——test/client-unit/client-context-s2.test.ts:19 直接导入
+  //   且其 reason「尚无直连判据」为假——test/client-unit/context-s2.test.ts:19 直接导入
   //   bindSession / rebindSession），随删除消失，覆盖率部分 14 → 13，16 → 15。同批评的 9 条
   //   只改 exitCriteria 措辞、不增删条目，故台账数不再变。
   // 本 PR：**台账数不变（15）**。处理了 4 条 pending-project 但一条未删——

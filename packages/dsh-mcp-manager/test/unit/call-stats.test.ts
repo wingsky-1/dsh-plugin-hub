@@ -1,7 +1,7 @@
 /**
  * dsh-mcp-manager — unit：McpStatsCollector 全形态 + 配置域接线。
  *
- * 本文件原为 node:test 零执行孤儿（unit-call-stats.test.ts 不在 smoke import、
+ * 本文件原为 node:test 零执行孤儿（call-stats.test.ts 不在 smoke import、
  * 不在任何 stryker testFiles、不在 mutation-topology.json——B2 未被发现的直接
  * 原因之一）。issue #664 阶段 1 改造为与其余 unit 一致的形态，并登记进
  * mutation-topology testFiles（#690 S2 起 smoke import 聚合已移除，单份断言服务

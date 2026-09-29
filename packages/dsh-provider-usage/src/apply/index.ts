@@ -114,7 +114,7 @@ export const name = "provider-usage";
 // 取会话工作目录（目录维度归属主源）。cordis 4 对未在 inject 声明的服务属性直访抛
 // 「cannot get property "sessions" without inject」；该异常会被 resolveCwd 的 catch 吞掉，
 // 于是每个会话恒归未识别桶、目录维度全链路失效（历史与当期数据双失）。缺声明是静默
-// 降级（无告警、无失败），故补源码契约断言锁定（unit-trend.test.ts「inject 契约」节）。
+// 降级（无告警、无失败），故补源码契约断言锁定（trend.test.ts「inject 契约」节）。
 export const inject: string[] = ["webServer", "llm", "sessions"];
 
 export type { FloatBreakpoint, ViewportPoint, RectLike } from "../shared/interface.ts";

@@ -8,7 +8,7 @@
  * 为什么它属于本层（直连 src）：判据的对象是 `src/client/capabilities.ts` 的纯函数本身。它们原先
  * 建在 in-place esbuild 后执行的构建副本上——静态导入图里没有目标模块，perTest 覆盖分析据此判
  * 零覆盖、变异体一律 noCoverage。这里直接 import 源码符号，判据才既贡献覆盖率又能杀灭变异体；
- * 产物外壳、源码文本结构与打包不变量的断言对象不是 src 本身，留在 test/client/。
+ * 产物外壳、源码文本结构与打包不变量的断言对象不是 src 本身，留在 test/bundle/。
  */
 import { describe, expect, it } from "vitest";
 

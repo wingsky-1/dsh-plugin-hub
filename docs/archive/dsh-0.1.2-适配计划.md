@@ -62,7 +62,7 @@
 > 实施（2026-08-31）：上游 alpha.2 实测确认——**per-session `modelSelection` 投影就在 `ctx.sessions.list` 快照行**（`byId[sid].projections.values.modelSelection.lastUsed/next`），主判据无需 Remote；`modelCatalog().default` 仅在全链投影缺失时兜底。
 - [x] **逻辑重设计**：`resolveProviderFromSession` 改为投影优先——沿 parentId 上溯链逐会话读 `modelSelection`（lastUsed 优先、next 次之），首个非空者胜；全链缺失兜底 `ctx.remote.session.modelCatalog()` 的 `default`（RemoteResult 解包）。上游实测：投影按会话取（lastUsed/next 字段，`model-selection-projection.ts`）、目录全局取（`ModelCatalog.default`，`types.ts:140-146`）
 - [x] 依赖面：客户端 `connection` 体面废弃 → `remote = ctx.get("remote")`（上游 api-gateway `apply` 提供 `ctx.remote`，inject 面 `/client` 依赖 typert-protocol + client-connection）；`RemoteResult={ok,value}|{ok,error}`（`typert/protocol/src/types.ts:74-76`）
-- [x] 单测适配：`unit-detect.test.ts` 的 `makeConnection`（`connection.api.sessions.models`）→ 行投影 fake + `makeRemote` modelCatalog 兜底；worker 剧本 `client-revalidate.worker.mjs` 改 `projectionBySession`；`currentProvideInfo` 分支移除（上游已无此服务）
+- [x] 单测适配：`detect.test.ts` 的 `makeConnection`（`connection.api.sessions.models`）→ 行投影 fake + `makeRemote` modelCatalog 兜底；worker 剧本 `client-revalidate.worker.mjs` 改 `projectionBySession`；`currentProvideInfo` 分支移除（上游已无此服务）
 - [x] 类型面实证：上游 `dsh-v0.1.2-alpha.2` 源码（`/tmp/dsh-harness-src`）逐项核对后实施
 - [x] provider 检测恢复——unit-detect 投影面 10 组断言 + worker 场景 1-5 + smoke 全绿（0.1.2-alpha.2 语义）
 

@@ -2,7 +2,7 @@
  * dsh-provider-usage — unit：R8 台账守恒（不变量4）事件回放式端到端对账（#670）。
  *
  * 为什么要端到端回放（真缺口定位，layer-architecture.md §2 E2）：不变量 1/2/3（身份快照 /
- * 防双计 / 残差归未识别）已被 unit-trend.test.ts 分段覆盖；唯「台账守恒」从未被断言——
+ * 防双计 / 残差归未识别）已被 trend.test.ts 分段覆盖；唯「台账守恒」从未被断言——
  * Σ事件 == buckets == agg == dirRows + unidentified 是 D2 aggregator 拆分的前置安全网
  * （拆分后若压实/折算逻辑漂移，本文件应第一时间红）。
  *
@@ -45,7 +45,7 @@ import {
 import { sumToken, TREND_UNIDENTIFIED } from "../../../src/server/shared/interface.ts";
 import type { SessionEvent } from "@deepseek-ai/dsh-session/types";
 
-// ---------------------------------------------------------------- 工具（与 unit-trend.test.ts 同口径）
+// ---------------------------------------------------------------- 工具（与 trend.test.ts 同口径）
 
 /** 固定本地时刻：2026-09-04（周五）12:00 与次日（跨天对账）。 */
 const T0 = new Date(2026, 8, 4, 12, 0, 0).getTime();
@@ -54,7 +54,7 @@ const DAY0 = dayKey(T0);
 const DAY1 = dayKey(T1);
 
 /**
- * 事件工厂。0.1.5 迁移适配（与 unit-trend.test.ts 同口径）：旧用例以
+ * 事件工厂。0.1.5 迁移适配（与 trend.test.ts 同口径）：旧用例以
  * `assistant/chunk` + 内嵌 usage 表达一次 usage 到达，官方已移除该事件、usage 改由
  * 结算事件承载——这里把 usage chunk 形态映射为 assistant/message 结算形态；
  * 非 usage chunk 映射为空 stream 的 assistant/attempt（不构成调用证据）。

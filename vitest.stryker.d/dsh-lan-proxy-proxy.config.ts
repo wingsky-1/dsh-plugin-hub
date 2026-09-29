@@ -10,8 +10,8 @@ export default defineConfig({
     include: [
       'packages/dsh-lan-proxy/test/integration/apply-token-provider.test.ts',
       'packages/dsh-lan-proxy/test/integration/entry-contract.test.ts',
-      'packages/dsh-lan-proxy/test/unit/unit-apply.test.ts',
-      'packages/dsh-lan-proxy/test/unit/unit-proxy.test.ts',
+      'packages/dsh-lan-proxy/test/unit/apply.test.ts',
+      'packages/dsh-lan-proxy/test/unit/proxy.test.ts',
     ],
     environment: 'node',
     testTimeout: 60_000,

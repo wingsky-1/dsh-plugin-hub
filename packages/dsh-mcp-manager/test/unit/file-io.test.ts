@@ -1,7 +1,7 @@
 /**
  * dsh-mcp-manager — unit：落盘原语（mode 登记表 + 原子写 + 容错读）。
  *
- * 这里全部走真实文件系统；**同路径串行**的判据在 unit-file-io-queue.test.ts——它要控住
+ * 这里全部走真实文件系统；**同路径串行**的判据在 file-io-queue.test.ts——它要控住
  * writeFile 的一拍才能稳定区分「有队列」与「没队列」。
  */
 import { mkdirSync, mkdtempSync, readdirSync, rmSync, statSync } from "node:fs";

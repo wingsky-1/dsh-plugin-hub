@@ -377,7 +377,7 @@ true、`ownsHostCompat` 默认 false）与 `FILE_CONFIG_VALIDATORS`（`:225`）�
 
 ### 4.3 测试、门禁与兼容性
 
-- 代码判据分布在 `test/unit/`、`test/integration/`、`test/e2e/`、`test/client/` 与
+- 代码判据分布在 `test/unit/`、`test/integration/`、`test/e2e/`、`test/bundle/` 与
   `test/client-unit/`；重点覆盖回环围栏、真实转发器、配置迁移、证书、桥接与 host trust 判定。
   测试文件存在不等于本次已执行；实跑范围与 exit code 以任务交付说明为准。
 - 结构与发布约束由仓库门禁守卫：导入目录边界、公共导出快照、客户端契约、发布物自包含。

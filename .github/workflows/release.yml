@@ -179,7 +179,7 @@ jobs:
       - name: Tests
         run: pnpm test
 
-      # packages/*/test/client/**（vitest 的 contract project）不在 `pnpm test` 的覆盖内——
+      # packages/*/test/bundle/**（vitest 的 contract project）不在 `pnpm test` 的覆盖内——
       # 后者是逐包 test 脚本，而 dsh-verify-isolated 与 dsh-plugins-all 根本没有 test 脚本。
       # 发布链路是「产物面契约」的最后一道闸，这层缺失意味着客户端契约可能在发版时无人验。
       - name: Client contract tests（vitest --project contract）

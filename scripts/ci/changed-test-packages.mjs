@@ -34,7 +34,7 @@ const TOPOLOGY_REL = "scripts/data/mutation-topology.json";
 /**
  * `packages/<pkg>/test/**` 的相对路径 → 包名；不在该面内返回 null。
  *
- * D1（增量命中率）：`test/e2e/**` 与 `test/client/**` 永不进变异面（拓扑
+ * D1（增量命中率）：`test/e2e/**` 与 `test/bundle/**` 永不进变异面（拓扑
  * `mutationLayers=[unit,integration,client-unit,client-dom]`，派生的
  * `vitest.stryker.d/<pkg>.config.ts` 全仓 grep 零含这两层），故不触发失基线——
  * 否则纯 e2e/client 改动的 PR 会误让整包变异段退化为全量。unit / integration /
@@ -48,8 +48,8 @@ export function packageOfTestPath(file) {
   if (
     rest === "e2e/" ||
     rest.startsWith("e2e/") ||
-    rest === "client/" ||
-    rest.startsWith("client/")
+    rest === "bundle/" ||
+    rest.startsWith("bundle/")
   ) {
     return null;
   }
@@ -185,7 +185,7 @@ function faceOfPkg(rootDir, topology, faceCache, pkg) {
  */
 export function isExemptTestFile(file, pkg) {
   return (
-    file.startsWith(`packages/${pkg}/test/client/`) || file.startsWith(`packages/${pkg}/test/e2e/`)
+    file.startsWith(`packages/${pkg}/test/bundle/`) || file.startsWith(`packages/${pkg}/test/e2e/`)
   );
 }
 export function listPackageTestFiles(rootDir, pkg) {
