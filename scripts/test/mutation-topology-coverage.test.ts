@@ -872,7 +872,18 @@ function confOwnerOf(
 
 /** #836 反证用的最小仓库根：一份 conf 的 mutate 面完全由段声明决定。 */
 // excludes 取 undefined 时 JSON 落盘丢键，正是「段没写 excludes」的形态（见调用方注释）。
-function makeMutationFixture(excludes: string[] | undefined) {
+//
+// rootLayers 同理：默认给一份**合法且非零命中**的登记（形状契约的对照组），传
+// ABSENT_ROOT_LAYERS 则整个键在 JSON 里消失 = 「rootLayers 整节缺席」那条反证形态；传非法值则是
+// 第三条反证。哨兵不能用 undefined —— 显式传 undefined 会触发默认参数，构造不出「整节缺席」。
+const ABSENT_ROOT_LAYERS = Symbol("absent-rootLayers");
+
+function makeMutationFixture(
+  excludes: string[] | undefined,
+  rootLayers: unknown = { "fixture-unit": "packages/*/test/unit/*.test.ts" },
+) {
+  // 哨兵折成 undefined：JSON.stringify 遇到 undefined 的属性会直接丢键，整节即缺席。
+  const declaredRootLayers = rootLayers === ABSENT_ROOT_LAYERS ? undefined : rootLayers;
   const root = mkdtempSync(join(tmpdir(), "f836-fixture-"));
   const pkg = "fixture-pkg";
   const files = {
@@ -895,10 +906,10 @@ function makeMutationFixture(excludes: string[] | undefined) {
             bundle: { assertionTarget: "artifact", environment: "node", mandatory: false },
             e2e: { assertionTarget: "live", environment: "node", mandatory: false },
           },
-          // 形状契约必填项：rootLayers 是 vitest 第二组 project 的唯一事实源，缺席即
-          // fail-closed（gen-stryker-conf.mjs 的 rootLayerProblems）。本 fixture 自带
-          // packages/fixture-pkg/test/unit/unit-a.test.ts，根相对 glob 命中它，零命中为假。
-          rootLayers: { "fixture-unit": "packages/*/test/unit/*.test.ts" },
+          // 形状契约必填项（#1074）：rootLayers 是 vitest 第二组 project 的唯一事实源。
+          // 默认值指向本 fixture 自带的 packages/fixture-pkg/test/unit/unit-a.test.ts，零命中为假；
+          // 传 ABSENT_ROOT_LAYERS 时下面的 declaredRootLayers 是 undefined，落盘即整节缺席。
+          rootLayers: declaredRootLayers,
         },
         sharedDefaults: {
           testRunner: "vitest",
@@ -953,6 +964,91 @@ function runGenerator(root: string, args: string[] = []) {
   return { status: res.status, out: `${res.stdout ?? ""}${res.stderr ?? ""}` };
 }
 
+/**
+ * #1074：rootLayers 的形状与零命中判据（gen-stryker-conf.mjs 的 rootLayerProblems）。
+ *
+ * 为什么零命中必须 **fail-closed**——判据存在的唯一理由，构造与退出码均为实测（mkdtemp 内真跑
+ * vitest 4.1.11，两次分别复现）：
+ *
+ *   projects: [ {name:probe-has-files, include: <abs>/a.probe.test.ts},
+ *               {name:probe-empty,     include: test/does-not-exist-*.test.ts} ]
+ *   npx vitest run --project probe-has-files --project probe-empty
+ *     → Test Files 1 passed (1)、Tests 1 passed (1)、**exit 0**，输出全程**零字**提到 probe-empty
+ *   npx vitest run --project probe-empty          // 单独选它
+ *     → No test files found, exiting with code 1、exit 1
+ *
+ * 即空 project 的报错**只在它是唯一选择时成立**；真实运行（pnpm cov、stryker 的 vitest runner）
+ * 永远同时带着别的 project，那条报错**永不触发**。所以「运行期会不会发现」这个问题本身答案是
+ * 「不会」——一个拼错的 rootLayers（段序写反、加错前缀）会让覆盖率照常绿、该 project 的判据
+ * 永不执行，而没有任何一条判词指出这件事。故形状与零命中都必须在**生成期**判红。
+ */
+test("#1074 反证：rootLayers 的 glob 零命中 ⇒ 判红并点名该层与该 glob", () => {
+  // 段序写反 / 加错前缀的典型形态：glob 指向磁盘上不存在的路径（收集 0 个文件）。
+  const root = makeMutationFixture([], { "shared-mutation": "shared/test/**/*.mutation.test.ts" });
+  try {
+    const res = runGenerator(root);
+    assert.equal(res.status, 1, `零命中必须判红：\n${res.out}`);
+    assert.match(res.out, /rootLayer "shared-mutation"/, "判词要点名是哪个层");
+    assert.match(
+      res.out,
+      /shared\/test\/\*\*\/\*\.mutation\.test\.ts/,
+      "判词要点名那条 glob（否则改错的人不知道该改什么）",
+    );
+    assert.match(res.out, /零命中/, "判词要点明是零命中而不是别的形状问题");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("#1074 反证：rootLayers 整节缺席 ⇒ fail-closed 判红（不得静默退化为「没有 root 层」）", () => {
+  // rootLayers 是 vitest 第二组 project 的**唯一**事实源。整节缺席 = 那一组 project 整体消失，
+  // 与零命中同属无判据的静默，故按必填处理。
+  const root = makeMutationFixture([], ABSENT_ROOT_LAYERS);
+  try {
+    const res = runGenerator(root);
+    assert.equal(res.status, 1, `整节缺席必须判红：\n${res.out}`);
+    assert.match(res.out, /\$testLayers\.rootLayers 缺失或形状不合法/, "判词要点名缺的是哪一节");
+    assert.match(res.out, /fail-closed/, "判词要写明是 fail-closed 而非降级放行");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+/** [用例名, 非法 rootLayers 形态]：整节非法，以及在场但条目非法的三种。 */
+const BAD_ROOT_LAYERS: Array<[string, unknown]> = [
+  ["整节不是对象（字符串）", "nope"],
+  ["整节是数组", ["packages/*/test/unit/*.test.ts"]],
+  ["整节是 null", null],
+  ["条目值不是字符串", { "fixture-unit": 42 }],
+  ["条目值是空串", { "fixture-unit": "   " }],
+];
+for (const [label, bad] of BAD_ROOT_LAYERS) {
+  test(`#1074 反证：rootLayers ${label} ⇒ 判红`, () => {
+    const root = makeMutationFixture([], bad);
+    try {
+      const res = runGenerator(root);
+      assert.equal(res.status, 1, `${label} 必须判红：\n${res.out}`);
+      assert.match(res.out, /rootLayer|rootLayers/, `判词要点名是 rootLayers 这一节：\n${res.out}`);
+      assert.doesNotMatch(
+        res.out,
+        /TypeError|is not iterable|Cannot read/,
+        `形状错误不得以抛栈形态出现：\n${res.out}`,
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+}
+
+test("#1074 对照组：rootLayers 合法且非零命中 ⇒ 生成成功（证明上面几条红来自判据本身）", () => {
+  const root = makeMutationFixture([]);
+  try {
+    const res = runGenerator(root);
+    assert.equal(res.status, 0, `对照组应生成成功：\n${res.out}`);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
 test("#836 反证：段省略 excludes 时 --check 判红并点名段，不得抛栈", () => {
   // makeMutationFixture(undefined) 让 excludes 键整个缺席（JSON.stringify 会丢掉 undefined 值），
   // 这正是「段没写 excludes」的形态。
