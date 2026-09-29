@@ -156,6 +156,14 @@ export function tierSteps(tier, { hitPackages, withCoverage, base, scopeLabel })
       cmd: "node",
       args: ["scripts/gate/forbid-session-snapshot-src.mjs"],
     },
+    // #843 评论侧 L4（gate/ci-ism-check.mjs）**本刀未能挂上**，原因是本仓两条红线叠加，详见该脚本文件头：
+    //   ① 挂 pr 档 → 接线断言 A1 要求 ci.yml 的 repo-gate 有同名步骤，而 .github/workflows/** 属红线段、
+    //      且与在飞的 #1079 冲突（本批禁改 .github/**）；
+    //   ② 挂 full 档 → 接线断言 A14 与「pr 档须含 full 档全部判据端点」强制要求在
+    //      data/gate-wiring-exceptions.json 登记 tier-only 条目，而 maxExceptions 由 gateWiring.budgets
+    //      守卫（weaken=increase，任何上调无条件判红，属阈值治理红线）。
+    // 三条出路（改 ci.yml / 抬预算 / 藏进别的判据）都撞红线；第三条还会让判据在接线表里隐身，不做。
+    // 故按红线纪律停在「已实现、未接线」，待批准后在批次二与项 2 一并收口。
   ];
   const prereqStep = {
     label: `build 编译面前置包（test:scripts 依赖：${PREREQ_PACKAGES.join(", ")}）`,

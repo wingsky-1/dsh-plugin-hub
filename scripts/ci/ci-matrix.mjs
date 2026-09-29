@@ -6,6 +6,9 @@ import { fileURLToPath } from "node:url";
 
 import { loadFullScopePeaks, timeoutForSegment } from "../gate/mutation-plan.mjs";
 import { failClosed } from "../lib/gate-exit.mjs";
+// 聚合包名与清单路径都从插件清单单一事实源取，不在本文件另立字面量副本（#审计 batch1）：
+// 两处此前各写一份，改名时调度侧与产物侧会按不同名字找包而无人拦。
+import { AGGREGATE_NAME, MANIFEST_PATH_SEGMENTS } from "../lib/plugins-manifest-lib.ts";
 
 /**
  * 空切片时 build-test 矩阵的哨兵项（#722）：见 computeCiMatrix 内 buildPackages 注释。
@@ -56,7 +59,7 @@ export function parseSegmentEntry(entry) {
 
 // 1. 读取候选包全量集合（单一事实源：plugins-manifest.json）
 function readAllPackages(rootDir) {
-  const manifestPath = path.join(rootDir, "scripts/data/plugins-manifest.json");
+  const manifestPath = path.join(rootDir, ...MANIFEST_PATH_SEGMENTS);
   let manifest;
   try {
     const raw = fs.readFileSync(manifestPath, "utf8");
@@ -68,8 +71,8 @@ function readAllPackages(rootDir) {
   const active = Array.isArray(manifest.active) ? manifest.active : [];
   const standalone = Array.isArray(manifest.standalone) ? manifest.standalone : [];
   const pluginSet = new Set([...active, ...standalone]);
-  // allPackages = 全量插件集 ∪ ["dsh-plugins-all"]（排好序去重，供 downstream 产物验证）
-  const allPackages = Array.from(new Set([...pluginSet, "dsh-plugins-all"])).sort();
+  // allPackages = 全量插件集 ∪ {聚合包}（排好序去重，供 downstream 产物验证）
+  const allPackages = Array.from(new Set([...pluginSet, AGGREGATE_NAME])).sort();
 
   if (allPackages.length === 0) {
     throw new Error("包清单为空（fail-closed，禁止静默通过）");
@@ -160,11 +163,12 @@ function readMutationConfFiles(rootDir) {
   return confFiles;
 }
 
-// mutationPackages = hitPackages 中排除了 "dsh-plugins-all" 以及在 stryker.conf.d/ 中没有任何配置文件的包
+// mutationPackages = hitPackages 中排除了聚合包以及在 stryker.conf.d/ 中没有任何配置文件的包
 function resolveMutationPackages(hitPackages, confFiles) {
   const mutationPackages = [];
   for (const pkg of hitPackages) {
-    if (pkg === "dsh-plugins-all") continue;
+    // 聚合包无变异配置（见 ci.yml 的 paths-filter 注释），与全仓口径同用 AGGREGATE_NAME。
+    if (pkg === AGGREGATE_NAME) continue;
     const hasSingleConf = confFiles.includes(`${pkg}.json`);
     const hasSegConf = confFiles.some((f) => f.startsWith(`${pkg}-`));
     if (hasSingleConf || hasSegConf) {

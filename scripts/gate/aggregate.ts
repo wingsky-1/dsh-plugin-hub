@@ -22,6 +22,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  AGGREGATE_NAME,
   checkAggregateConsistency,
   listPluginDirs,
   loadManifest,
@@ -30,7 +31,9 @@ import {
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const CHECK = process.argv.includes("--check");
-const AGGREGATE_NAME = "dsh-plugins-all";
+// 聚合包名此前在本文件重声明一份字面量，与 plugins-manifest-lib 的 AGGREGATE_NAME 同值。
+// 两份拷贝各自漂移时没有任何判据会响（聚合 patch 生成与包清单核对会各自按不同名字找包），
+// 故改为从单一事实源 import：改聚合包名只有一处需要改。
 const PATCH_PATH = join(ROOT, "packages", AGGREGATE_NAME, "cordis.patch.yml");
 
 /** 解析子包 cordis.patch.yml 的 insert 行 -> [{ id, name }]（丢弃 config/注释）。 */

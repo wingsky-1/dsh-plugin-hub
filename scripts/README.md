@@ -156,6 +156,7 @@
 ## data/（配置数据）
 
 - `data/plugins-manifest.json` — 插件清单（某插件是否参与聚合/发布校验的唯一声明处）。
+- `data/ci-ism-samples.json` — CI-ism 自证样本的**独立声明**（`lib/ci-ism-denylist.mjs` 的载体自证面）：`samples` = 判据必须覆盖的目录项名，按 denylist 的 exact / suffix 规则匹配。**刻意与 denylist 分成两份**——两者此前同由一个模块内常量派生，从该常量删一条会让「判据」与「判据的自证」同时少掉那条、自证照样通过（实测：删 `GITHUB_STEP_SUMMARY` 后 `selfProofProblems` 仍为空数组）。独立成文件后，改判据必须同时改这里，两处都进 diff。
 - `data/plugin-row-migration.json` — profile row identity 一次性迁移映射（`legacyToCanonical`）：由 `maintenance/migrate-plugin-rows.mjs` 以 `readFileSync(new URL(…, import.meta.url))` 读取，重复/冲突由该脚本自身判据校验。#875 S3 由新增的 new URL 臂暴露此前未登记（同名条目另见 `data/ci-face-registry.json` 与 `data/threshold-registry.json`）。
 - `data/mutation-segment-ledger.json` — 变异段实测台账（#718 S0.2）：逐段 `wallSeconds` + mutant 数 + 复用率，由 `gate/mutation-ledger.mjs` 从 run 日志生成；`unmeasured` 登记尚无测量值的段，`superseded` 登记被拆分/更名的历史段。
 - `data/gauntlet.config.json` — 变异 / CRAP / ESLint 复杂度阈值唯一事实源（覆盖率阈值自 #733 计划项 3.4 起在 `data/coverage.config.json`；`complexity` 段自 #722 阶段五起供 `tools/lint` 消费）。

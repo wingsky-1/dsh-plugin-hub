@@ -1,0 +1,11 @@
+{
+  "$comment": "CI-ism 自证样本的**独立声明**（#843 评论侧 L4）。为什么必须独立成文件：此前 CONTROL_SAMPLES 由 GITHUB_ACTIONS_FILES 派生，而 CI_ISM_PATTERNS 也由同一个常量派生——从该常量删掉一条，denylist 与自证样本**同时**少掉那条，自证照样通过（实测：删 GITHUB_STEP_SUMMARY 后 selfProofProblems 仍为空数组、violations 由 3 条降为 2 条，形态静默逃逸）。本文件是第二处声明：改 denylist 必须同时改这里，两处改动都出现在 diff 里，\"悄悄少判一条\"做不到。\\n样本语义 = 「判据必须覆盖的目录项名」，按 denylist 的 exact / suffix 规则匹配（故 residue.jsonl 代表 .jsonl 后缀面，undefined 代表同名目录面）。\\n删任一条之前先回答：这条形态还会不会出现在仓库根？会 → 删不得；不会 → 连同 denylist 里对应条目一起删，并在本文件写明理由。",
+  "samples": [
+    "GITHUB_ENV",
+    "GITHUB_OUTPUT",
+    "GITHUB_PATH",
+    "GITHUB_STEP_SUMMARY",
+    "residue.jsonl",
+    "undefined"
+  ]
+}

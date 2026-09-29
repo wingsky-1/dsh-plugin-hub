@@ -793,7 +793,27 @@ function isSharedLayerModule(id) {
   );
 }
 
-/** client 系测试目录（层 glob 落在 test/<层>/ 下，故按路径段判定，不写死层名清单）。 */
+/**
+ * client 系测试目录（层 glob 落在 `test/<层>/` 下，故按路径段判定）。
+ *
+ * **这三层名是枚举的，此处不读 `$testLayers.layers`**——如实说明为什么，以及为什么此刻不能派生：
+ *   - 语义：这三层是本仓当前的 client 族层（`test/client/` / `test/client-unit/` / `test/client-dom/`）。
+ *     改动它们会让本派生量的口径跟着变，所以它们必须被钉住而不是被推导。
+ *   - 为什么不从拓扑派生（实测结论，非推测）：本仓拓扑的 `$testLayers` 只有 `layers`
+ *     （`层名 → glob` 的扁平映射）、`mutationLayers` 与 `mutationExcludeLayers` 三项，**没有任何
+ *     「这一层是 client 族」的属性**。按排除层派生层族（`E` 含 `E-*`）实测会把 `e2e` 一并拉进来
+ *     （`mutationExcludeLayers = [client, e2e]`），改变本派生量的取值；要排除 e2e 就得再补一条
+ *     「层族根必须存在派生层」的人为规则，而该规则在将来新增 `e2e-*` 层时会反向失效——用一个
+ *     新的静默通道换掉旧的枚举，不做。
+ *   - 计划中的正确做法：拓扑引入 per-layer 元数据（断言对象 / 是否必测）后按对象特征识别，
+ *     **届时本正则与 `collectUnitImportFaceViolations` 的 `test/unit` 字面量必须在同一次改动里一起
+ *     收口——只收一处等于把静默通道从一侧挪到另一侧**：收了这处而 `:963` 的 `test/unit` 仍在，则
+ *     「`existsSync` 恒假 ⇒ 证据恒 0 ⇒ 打 PASS」那条通道完好无损；收了 `:963` 而本正则仍在，则
+ *     新增 client 族层照旧静默漏判。
+ *   - **该收口依赖 #1079 先行合并**：per-layer 元数据（`layerMeta.<层>.assertionTarget` /
+ *     `mandatory`）由 #1079 引入 `scripts/data/mutation-topology.json`，当前基线上不存在。
+ *     故本刀只订正注释、保留枚举，判定逻辑一字未动。
+ */
 const CLIENT_TEST_PATH_RE = /\/test\/(client|client-unit|client-dom)\//;
 
 /**

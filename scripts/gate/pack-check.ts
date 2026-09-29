@@ -466,7 +466,8 @@ for (const p of targets) {
 //     两者都会执行本段（observe.yml 注释即声明「全仓产物闸必须在这里落地」）。
 // 历史：本段此前不受切片控制，凡 HIT_PACKAGES 不含聚合包的 PR 都会假红（PR #747 首次触发）。
 {
-  const AGG = "dsh-plugins-all";
+  // 聚合包名取自已 import 的 AGGREGATE_NAME（本文件 :30 起自单一事实源），不再另立字面量副本。
+  const AGG = AGGREGATE_NAME;
   const inScope = scoped === null || scoped.includes(AGG);
   // aggName 提到分支之前：缺产物分支与正常分支必须打印**同一标识形态**。目录名与 npm
   // 包名混用会让日志与断言口径分叉——回归测试只认包名形态，而缺产物分支打目录名，

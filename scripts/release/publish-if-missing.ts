@@ -17,6 +17,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { AGGREGATE_NAME, NPM_SCOPE } from "../lib/plugins-manifest-lib.ts";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const packagesDir = join(ROOT, "packages");
@@ -29,8 +30,12 @@ const pkgs = readdirSync(packagesDir)
   .map((d) => JSON.parse(readFileSync(join(packagesDir, d, "package.json"), "utf8")) as PkgJson)
   .filter((p) => !p.private);
 
-// 依赖序：聚合包（dsh-plugins-all）依赖全部子包 → 子包在前、聚合包最后
-const isAgg = (p: PkgJson) => p.name.includes("dsh-plugins-all");
+// 依赖序：聚合包依赖全部子包 → 子包在前、聚合包最后。
+// 判据同时收紧两处：① 包名取自单一事实源（NPM_SCOPE + AGGREGATE_NAME），本文件不再持有副本；
+// ② 匹配由子串 includes 改为**全等**——子串匹配会把任何含该串的包名误判成聚合包排到序列末尾，
+// 而改名后 includes 会静默失配（永不匹配 → 聚合包混进子包序先发）。两条都是静默通道。
+const AGG_NPM_NAME = NPM_SCOPE + AGGREGATE_NAME;
+const isAgg = (p: PkgJson) => p.name === AGG_NPM_NAME;
 const ordered = [...pkgs.filter((p) => !isAgg(p)), ...pkgs.filter(isAgg)];
 
 const missing = [];

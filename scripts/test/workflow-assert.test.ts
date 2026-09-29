@@ -1838,7 +1838,24 @@ test("#306+#586: 全量列表动态化——fallback/GLOBAL_HIT 从 manifest 派
   assert.ok(CI.includes("run: node scripts/ci/ci-matrix.mjs"), "ci.yml 必须委托给 ci-matrix.mjs");
   // 单一事实源：从 plugins-manifest.json 读 active + standalone
   assert.ok(/plugins-manifest\.json/.test(CI_MATRIX), "ci-matrix 必须读 plugins-manifest.json");
-  assert.ok(/dsh-plugins-all/.test(CI_MATRIX), "聚合包手工补入清单");
+  // 聚合包进全量清单这件事此前由「ci-matrix.mjs 文本里出现 dsh-plugins-all 字面量」来断言——
+  // 那条形态断言把「自己写一份字面量」钉成了合规形态：删掉副本改从单一事实源 import，它反而判红。
+  // 故改为断言**收敛方向**且更强：ci-matrix 必须从 plugins-manifest-lib 取聚合包名与清单路径，
+  // 且自身不得再持有该字面量。行为面（allPackages 真的含聚合包）由 ci-matrix.test.ts 覆盖，
+  // 这里守的是「只有一处声明」这条不变量本身。
+  assert.ok(
+    /AGGREGATE_NAME/.test(CI_MATRIX) &&
+      /from "\.\.\/lib\/plugins-manifest-lib\.ts"/.test(CI_MATRIX),
+    "ci-matrix 必须从 plugins-manifest-lib 导入聚合包名（单一事实源）",
+  );
+  assert.ok(
+    !/dsh-plugins-all/.test(CI_MATRIX),
+    "ci-matrix 不得再持有聚合包名字面量副本（副本会随改名静默失配）",
+  );
+  assert.ok(
+    !/scripts\/data\/plugins-manifest\.json/.test(CI_MATRIX),
+    "ci-matrix 不得再手写清单路径（须用 MANIFEST_PATH_SEGMENTS）",
+  );
   // 空清单 fail-closed（防 manifest 读失败 → 空切片 → 假绿）
   assert.ok(/包清单为空（fail-closed/.test(CI_MATRIX), "ci-matrix 空清单必须显式 fail-closed");
 });

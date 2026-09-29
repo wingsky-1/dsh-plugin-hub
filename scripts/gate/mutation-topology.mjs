@@ -16,8 +16,11 @@
  * 不得是空对象（它不派生任何 conf，条目判据永远看不到该包）。
  */
 
-// runner 面（test/**/*.test.ts，与 vitest include 同口径）：`--min` 与登记完整性判据 ③ 的唯一口径。
-export const RUN_TESTS_PATTERN = "test/**/*.test.ts";
+// runner 面（test/**/*.test.ts，与 vitest include 同口径）**刻意不导出**：#722 起活的那份是
+// `test-surface.mjs` 的模块私有副本（其注释已记明「不作为模块导出」）。本模块此前还导出一份
+// 同名常量，实测零消费者——那不是「共用同一份口径」，而是同一口径的两份拷贝，且拷贝品永远
+// 不会被任何测试覆盖。runner 面不进本模块的原因：本模块只承载**段登记形状**判据，runner 面
+// 与段登记无关（见文件头 F15 的分工）。
 
 /** 根 shared 变异面是独立 surface，不伪装成 packages/shared。 */
 export const ROOT_SHARED_SURFACE = "$rootShared";

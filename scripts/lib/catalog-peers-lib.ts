@@ -47,7 +47,7 @@ import {
 import { relative, sep, join } from "node:path";
 import { transformSync, type Loader } from "esbuild";
 import * as acorn from "acorn";
-import { loadManifest } from "./plugins-manifest-lib.ts";
+import { AGGREGATE_NAME, loadManifest } from "./plugins-manifest-lib.ts";
 import { collectSrcFiles } from "./exemption-gate.ts";
 import { scanSource, skippedImportRisks, type SourceScan, type SourceToken } from "./ts-lex.ts";
 
@@ -176,12 +176,12 @@ function catalogVersionProblems(catalog: Map<string, string>): string[] {
 }
 
 export function checkAggregatePeerBoundary(source: Manifest): string[] {
-  const field = peerDependencyField(source, "dsh-plugins-all");
+  const field = peerDependencyField(source, AGGREGATE_NAME);
   if (field.problems.length > 0) return field.problems;
   const names = [...officialNames(field.record)].sort();
   return names.length === 0
     ? []
-    : [`dsh-plugins-all: 聚合包不得声明 DSH 官方 peer（发现 ${names.join(", ")}）`];
+    : [`${AGGREGATE_NAME}: 聚合包不得声明 DSH 官方 peer（发现 ${names.join(", ")}）`];
 }
 
 function contractCoverageProblems(manifest: ReturnType<typeof loadManifest>): string[] {
@@ -502,13 +502,13 @@ function readPackageOrProblem(root: string, dir: string): ManifestRead {
   }
 }
 
-/** 聚合包（dsh-plugins-all）的 peer 边界：聚合包不得直接声明 DSH 官方 peer。 */
+/** 聚合包的 peer 边界：聚合包不得直接声明 DSH 官方 peer。 */
 function aggregateBoundaryProblems(root: string): string[] {
   try {
-    const aggregate = readPackageManifest(root, "dsh-plugins-all");
+    const aggregate = readPackageManifest(root, AGGREGATE_NAME);
     return checkAggregatePeerBoundary(aggregate.manifest);
   } catch (error) {
-    return [`dsh-plugins-all: package.json 读取或解析失败 —— ${String(error)}`];
+    return [`${AGGREGATE_NAME}: package.json 读取或解析失败 —— ${String(error)}`];
   }
 }
 
@@ -542,7 +542,7 @@ function managedDepFieldProblems(
   catalog: Map<string, string>,
 ): string[] {
   const problems: string[] = [];
-  const managedDirs = [...new Set([...manifest.active, ...manifest.standalone, "dsh-plugins-all"])];
+  const managedDirs = [...new Set([...manifest.active, ...manifest.standalone, AGGREGATE_NAME])];
   for (const field of DEP_FIELDS.slice(1)) {
     for (const dir of managedDirs) {
       const read = readPackageOrProblem(root, dir);

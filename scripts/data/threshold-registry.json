@@ -240,6 +240,10 @@
     {
       "source": "scripts/data/vendored-binaries.json",
       "why": "发布物面内 vendored 裸二进制登记（批 2b）：sha256 绑定 + 许可随包由 verify:vendored-binaries 守，属登记面。"
+    },
+    {
+      "source": "scripts/data/ci-ism-samples.json",
+      "why": "CI-ism 自证样本的**独立声明**（#843 评论侧 L4）：判据必须覆盖的目录项名清单，消费者是 scripts/lib/ci-ism-denylist.mjs 的自证面（删样本即自证判红；该判据的 CLI 与执行点尚未接线，逐条理由见该文件文件头）。它是判据的**覆盖面**声明而不是可放宽的阈值：没有单调方向——既不能「放宽」（少覆盖一条形态）也不能「收紧」（多覆盖一条形态），两种都是等价的一行改动，故不设 weaken 语义。反面由 test/ci-ism-denylist.test.ts 的「样本与 denylist 无派生关系」断言守（删 denylist 条目必须同时改本文件，否则自证判红）。"
     }
   ]
 }
