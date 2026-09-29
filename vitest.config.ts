@@ -50,7 +50,38 @@ const LAYER_RUNTIME = {
 };
 
 /** 层名 → project 名：`--project contract` 是既有 CLI 契约（release.yml / package.json 在用），保留别名。 */
-const PROJECT_NAME = { bundle: "contract" };
+const PROJECT_NAME: Record<string, string> = { bundle: "contract" };
+
+/**
+ * 取某层的运行环境与超时；**层未登记即抛错**（fail-closed）。
+ *
+ * 为什么不能像原先那样直接 `...LAYER_RUNTIME[layer]`：查不到会得到 undefined，展开即空对象，
+ * 静默退回 vitest 默认 5s / 10s——而其余层是 60s。一次「12 倍收紧」表现为随机 flake，
+ * **没有任何判据会红**，是本仓最难查的一类静默降级。
+ * 新增一层却忘了在 LAYER_RUNTIME 登记，必须在 import 期炸出来。
+ */
+function runtimeFor(layer: string): Record<string, unknown> {
+  const runtime = (LAYER_RUNTIME as Record<string, Record<string, unknown> | undefined>)[layer];
+  if (runtime === undefined) {
+    throw new Error(
+      `LAYER_RUNTIME 未登记层 "${layer}" —— 新增测试层必须在此声明 environment 与超时；` +
+        "缺登记会展开成空对象并静默退回 vitest 默认 5s/10s（其余层为 60s），表现为无判据的随机 flake",
+    );
+  }
+  return runtime;
+}
+
+/**
+ * 反向校验：PROJECT_NAME 的每个键都必须是已声明的层。
+ * 别名表写成陈旧层名时，project 名会悄悄变成层名本身，`--project contract` 静默失效。
+ */
+for (const alias of Object.keys(PROJECT_NAME)) {
+  if (!Object.prototype.hasOwnProperty.call(LAYER_RUNTIME, alias)) {
+    throw new Error(
+      `PROJECT_NAME 的键 "${alias}" 不是已声明的层 —— 别名指向不存在的层，project 名会退化为层名`,
+    );
+  }
+}
 
 export default defineConfig({
   test: {
@@ -63,7 +94,7 @@ export default defineConfig({
       test: {
         name: PROJECT_NAME[layer] ?? layer,
         include: [`packages/*/${glob}`],
-        ...LAYER_RUNTIME[layer],
+        ...runtimeFor(layer),
       },
     })),
     coverage: {
