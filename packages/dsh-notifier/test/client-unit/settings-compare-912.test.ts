@@ -64,7 +64,7 @@ describe("normalizeChannelForCompare：双侧同一规范形", () => {
   it("levels 缺席与空对象同形（双向，bark 只补 bark 域）", () => {
     const bare = { id: "b", type: "bark", baseUrl: "https://x", deviceKey: "k" };
     // 按类型补：bark 只补 levels/timeoutMs，不把 webhook 的 headers/timeoutSec/preset/auth
-    // 塞进提交形态（全量补会让 validateExtras 以对象值 400，见 normalize 注释）。
+    // 塞进提交形态（全量补会让写面以「不是已知键」400，见 normalize 注释）。
     expect(normalizeChannelForCompare(bare)).toEqual({
       ...bare,
       levels: {},
@@ -155,13 +155,17 @@ describe("normalizeChannelForCompare：双侧同一规范形", () => {
     });
   });
 
-  it("id/type/baseUrl/deviceKey 空串保留（必填，比较不替校验断案；未知类型不补）", () => {
+  it("id/type 空串保留（比较不替校验断案）；baseUrl/deviceKey 空串被剥成缺席（#1016 P2-1）", () => {
     // type "" 不是 bark/webhook：不补任何域默认值，否则未知条目会被洗出跨域键。
-    expect(normalizeChannelForCompare({ id: "", type: "", baseUrl: "", deviceKey: "" })).toEqual({
-      id: "",
-      type: "",
-      baseUrl: "",
-      deviceKey: "",
+    expect(normalizeChannelForCompare({ id: "", type: "" })).toEqual({ id: "", type: "" });
+    // 剥除清单跨类型取并集，baseUrl / deviceKey 属于「另一种类型里可选」的那一档。
+    expect(
+      normalizeChannelForCompare({ id: "b", type: "bark", baseUrl: "", deviceKey: "" }),
+    ).toEqual({
+      id: "b",
+      type: "bark",
+      levels: {},
+      timeoutMs: 0,
     });
   });
 

@@ -152,3 +152,49 @@ describe("底栏脏文案 dirtyStatusText", () => {
     expect(dirtyStatusText(2, false, 2, fakeT)).toBe("dirtySome(2)");
   });
 });
+
+/**
+ * 设置页的**删除手势方向**（#1016 S2）。
+ *
+ * 三处手势都表达「不要这个键了」，但**方向相反**，改错任何一处都不会在类型层或渲染层出声——
+ * 只会让服务端按字段合并后读成另一种意思，或者被顶层值域直接拒掉。故按源码锚住方向。
+ *
+ * 为什么不跑组件：这三段是 `apply()` 内部的闭包，node 侧引不到（index.tsx import 了 react 与
+ * style.css）。本仓对 index.tsx 内部的既有做法就是源码扫描（同本文件另两处），这里沿用同一形态。
+ */
+describe("删除手势的方向：频道条目发 null，顶层键保持 delete（#1016 S2）", () => {
+  const index = readClient("src/client/index.tsx");
+
+  it("chLevelsSet 两个分支方向相反：删单个 kind 删键、清空整个 levels 发 null", () => {
+    // 删单个 kind：levels 是一个键、值是整张映射，删一项走不到「删键」那一层。
+    expect(index).toContain("else delete levels[kind];");
+    // 清空整个 levels：必须发 null——键缺席会被服务端读成「不动」，磁盘上那张旧映射会留下来。
+    expect(index).toContain("if (Object.keys(levels).length === 0) ch.levels = null;");
+    // 旧写法（删键）不得复活。
+    expect(index).not.toContain("delete ch.levels");
+  });
+
+  // 话术随 P2-1 变过一次：空串在客户端的空串剥除清单里，提交前变成键缺席，于是新建频道缺必填键是
+  // 「缺少 url / baseUrl」而不是「必填键，不能删除」。**不预置空串占位**这条纪律本身不变——预置空串
+  // 只会让新建的条目带着一个「看起来填过」的键，而它的下场与「没填」完全一样。
+  it("chAdd 不预置 url / baseUrl 的空串占位：必填键只能是「缺席」（= 未填）", () => {
+    const body = index.slice(
+      index.indexOf("function chAdd("),
+      index.indexOf("function chAdd(") + 1200,
+    );
+    expect(body).not.toContain('url: ""');
+    expect(body).not.toContain('baseUrl: ""');
+    // 必填键只能是「缺席」（= 未填，由服务端以「缺少 url」拒），不是空串、不是 null。
+    expect(body).toContain('type: "webhook"');
+    expect(body).toContain('type: "bark"');
+  });
+
+  it("routeSetKind 保持 delete：顶层键整值替换，没有按键合并，写 null 会被值域拒", () => {
+    const body = index.slice(
+      index.indexOf("function routeSetKind("),
+      index.indexOf("function routeSetKind(") + 600,
+    );
+    expect(body).toContain("delete routes[kind]");
+    expect(body).not.toContain("routes[kind] = null");
+  });
+});

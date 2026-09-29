@@ -18,8 +18,8 @@ export { FOLLOW_SYSTEM_TONE, TONES } from "./tones.ts";
 export type { ToneNote } from "./tones.ts";
 export { SOUND_IDS, isSoundId } from "./sounds.ts";
 export type { SoundId } from "./sounds.ts";
-// 频道比较规范形：客户端的 diff 与服务端的写面基线共用同一份（两端对「什么算同一份内容」
-// 必须给同一个答案，见 channel-compare.ts 文件头）。
+// 频道比较规范形：客户端的 diff 用同一份（对「什么算同一份内容」必须给同一个答案，
+// 见 channel-compare.ts 文件头）。服务端已不再消费本模块。
 export {
   CHANNEL_OPTIONAL_STRING_KEYS,
   canonicalChannelsForCompare,
@@ -79,3 +79,20 @@ export { REFUSAL_CODES } from "./refusal.ts";
 export type { RefusalCode } from "./refusal.ts";
 export { createDisposerStack } from "./disposers.ts";
 export type { DisposerStack } from "./disposers.ts";
+// 配置 schema：字段名清单、必填标记、取值域、顶层默认值、凭据字段。客户端的选项渲染与
+// 宿主端的写面校验读同一份，两处各写一份就会出现「页面选得到、宿主拒收」。
+export {
+  BARK_KNOWN_KEYS,
+  BARK_LEVELS,
+  BARK_LEVELS_LIMIT,
+  BARK_TIMEOUT_MS_LIMIT,
+  CHANNEL_SECRET_FIELDS,
+  DEFAULTS,
+  HISTORY_MAX_AGE_DAYS_LIMIT,
+  REQUIRED_KEYS,
+  VALUE_DOMAIN_REQUIRED_KEYS,
+  WEBHOOK_KNOWN_KEYS,
+  WEBHOOK_TEMPLATE_MAX_CHARS,
+  WEBHOOK_TIMEOUT,
+} from "./config-schema.ts";
+export type { ChannelType } from "./config-schema.ts";

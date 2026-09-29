@@ -1,9 +1,9 @@
 /**
  * dsh-notifier — 设置草稿纯逻辑的判据（#769 阶段 1）。
  *
- * 这些函数决定「保存什么」：提交哪些键、什么时候整组带走 channels、清空输入算删键还是写空串。
+ * 这些函数决定「保存什么」：提交哪些键、什么时候整组带走 channels、清空输入写 null 还是删键。
  * 它们此前住在 index.tsx 内（node 无法导入），因此没有任何行为判据——本文件把每条语义钉住，
- * 尤其是那些「看起来等价、实际不是」的分支：删键与写 undefined、null 保留与否、
+ * 尤其是那些「看起来等价、实际不是」的分支：删键与写 null（#1016 S2 之后这两条路通向完全不同的
  * 必填键不参与空串剥除、未知保存入口 fail-closed、键序无关（#912，stableEqual）。
  */
 import { describe, expect, it } from "vitest";
@@ -72,30 +72,49 @@ describe("channels 空串剥除：读面 normalize 的写面对偶", () => {
     });
   });
 
-  it("清空 webhook 的 url 时提交的是「没有 url 键」而不是空串——服务端据此以缺少 url 400", () => {
-    // 两层合力：assignChannelFields 先删键（UI 写回路径），diff 侧再剥一次（存量残留路径）。
-    // 结果是这个通道不会带着一个打不通的地址被存下来。
+  // 判据 #1 的客户端一半（服务端那一半在 test/unit/config/service.test.ts）：清空走的是**显式
+  // 删除**手势。服务端按字段合并后「键缺席 = 不动」，删键会让磁盘上的旧 url 留在原地——
+  // 而用户清空它就是要删掉它。null 是这条手势在线上的形态。
+  it("清空 webhook 的 url：提交的是 `url: null`（显式删除）而不是空串、更不是删键", () => {
     const edited = assignChannelFields(
       { id: "w", type: "webhook", url: "https://x", auth: "none" },
       { url: "" },
     );
+    expect(edited).toEqual({ id: "w", type: "webhook", url: null, auth: "none" });
+    // diff 侧的剥除只处理空串，null 原样带走（它不是空串，也不是键缺席）。
     const submitted = diffSettingsPayload(
       { channels: [edited] },
       { channels: [{ id: "w", type: "webhook", url: "https://x", auth: "none" }] },
     );
-    expect(submitted).toEqual({ channels: [{ id: "w", type: "webhook", auth: "none" }] });
+    expect(submitted).toEqual({
+      channels: [{ id: "w", type: "webhook", url: null, auth: "none" }],
+    });
   });
 
-  it("id/type/baseUrl/deviceKey/auth 不在剥除清单内：空串原样提交给服务端拦", () => {
-    expect(stripChannelEmpties({ id: "", type: "", baseUrl: "", deviceKey: "", auth: "" })).toEqual(
-      {
-        id: "",
-        type: "",
-        baseUrl: "",
-        deviceKey: "",
-        auth: "",
-      },
-    );
+  it("id/type/auth 不在剥除清单内：空串原样提交给服务端拦", () => {
+    expect(stripChannelEmpties({ id: "", type: "", auth: "" })).toEqual({
+      id: "",
+      type: "",
+      auth: "",
+    });
+  });
+
+  // baseUrl / deviceKey **在**剥除清单内（#1016 P2-1）：它们是**另一种频道类型**里的可选字段，清单跨类型
+  // 取并集。剥掉之后键缺席，落进写面 preexisting 的放行路径——半坏条目不再让每一次保存都 400。
+  //
+  // 改坏方向（把它们移出清单）：客户端把空串原样交上去 → 写面判「删必填键」→ 400，用户改别的频道都存不下。
+  it("baseUrl/deviceKey 的空串被剥成键缺席（跨类型并集：webhook 那边它们是投递必需键）", () => {
+    expect(stripChannelEmpties({ id: "b", type: "bark", baseUrl: "", deviceKey: "" })).toEqual({
+      id: "b",
+      type: "bark",
+    });
+    // 比较规范形同源：两侧都剥，空串与缺席不再被算成「用户改过」（首屏恒脏的一处来源）。
+    expect(
+      diffSettingsPayload(
+        { channels: [{ id: "b", type: "bark", baseUrl: "" }] },
+        { channels: [{ id: "b", type: "bark" }] },
+      ),
+    ).toEqual({});
   });
 
   it("非 string 字段不剥除：number/boolean/对象即便“空”也照原样参与比较", () => {
@@ -153,17 +172,27 @@ describe("domainPayload：域保存只交该域的键，未知入口 fail-closed
   });
 });
 
-describe("assignChannelFields：空串与 undefined 删键，其余浅覆盖", () => {
-  it("空串删键（提交面与读面同语义：键不存在 = 未配置）", () => {
-    expect(assignChannelFields({ id: "b", token: "old" }, { token: "" })).toEqual({ id: "b" });
+describe("assignChannelFields：空串与 undefined 写成 null（显式删除），其余浅覆盖", () => {
+  it("空串写 null：删键会被服务端读成「不动」，旧凭据留在磁盘上继续投递（#1016 安全修复）", () => {
+    expect(assignChannelFields({ id: "b", token: "old" }, { token: "" })).toEqual({
+      id: "b",
+      token: null,
+    });
   });
 
-  it("undefined 删键（数字/下拉清空走同一条路）", () => {
-    expect(assignChannelFields({ id: "b", badge: 3 }, { badge: undefined })).toEqual({ id: "b" });
+  it("undefined 写 null：数字/下拉清空走同一条路（「这个字段不要了」是同一个手势）", () => {
+    expect(assignChannelFields({ id: "b", badge: 3 }, { badge: undefined })).toEqual({
+      id: "b",
+      badge: null,
+    });
   });
 
-  it("null 不删键：只处理空串与 undefined，null 是显式值", () => {
+  it("null 原样写入（本函数不再对它做任何转换）", () => {
     expect(assignChannelFields({ id: "b" }, { level: null })).toEqual({ id: "b", level: null });
+    expect(assignChannelFields({ id: "b", level: "active" }, { level: null })).toEqual({
+      id: "b",
+      level: null,
+    });
   });
 
   it("0 / false / 空对象照常写入（假值不等于未配置）", () => {

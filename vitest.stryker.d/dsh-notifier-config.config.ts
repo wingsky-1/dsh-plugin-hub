@@ -8,14 +8,13 @@ import { defineConfig } from 'vitest/config'
 export default defineConfig({
   test: {
     include: [
-      'packages/dsh-notifier/test/integration/config-write-scope-roundtrip.test.ts',
+      'packages/dsh-notifier/test/integration/config-merge-roundtrip.test.ts',
       'packages/dsh-notifier/test/integration/real-context.test.ts',
       'packages/dsh-notifier/test/unit/api/dry-run.test.ts',
       'packages/dsh-notifier/test/unit/config/draft.test.ts',
       'packages/dsh-notifier/test/unit/config/input.test.ts',
       'packages/dsh-notifier/test/unit/config/model.test.ts',
       'packages/dsh-notifier/test/unit/config/redact.test.ts',
-      'packages/dsh-notifier/test/unit/config/service-write-scope-baseline.test.ts',
       'packages/dsh-notifier/test/unit/config/service.test.ts',
       'packages/dsh-notifier/test/unit/pipeline/dispatch.test.ts',
       'packages/dsh-notifier/test/unit/shared/quiet.test.ts',

@@ -6,12 +6,12 @@
  * 文件 import 了 react 与 style.css，node 无法导入，于是只能挂在公共 apply 上或对源码做正则
  * 来测，实际结果是一条判据都没有。零依赖的独立模块让它们第一次可以被直测。
  *
- * 跨端契约提醒：channels 的空串形态同时被服务端读面 normalize 与服务端写面校验解释，
+ * 跨端契约提醒：channels 的空串形态同时被服务端**投递投影**（normalizeConfig）与服务端写面解释，
  * 动这里的剥除/删键语义等于动服务端行为，必须两端一起看。
  *
- * 比较规范形（剥空串 + 按类型补默认值）**住在 src/shared/channel-compare.ts**，不重写在本文件：
- * 服务端写面算「原样带回」的基线时走的是同一份（见 service/impl 的基线注释）。两端各留一份
- * 就一定会漂——漂了的后果是用户什么都没改却被判成本次改动。
+ * 比较规范形（剥空串 + 按类型补缺省值）**住在 src/shared/channel-compare.ts**，不重写在本文件：
+ * 它是「什么算同一份内容」这一问题的口径文本，客户端与宿主端的 merge 都要对着它读（见该文件头）。
+ * 两端各留一份就一定会漂——漂了的后果是用户什么都没改却被判成本次改动。
  */
 import {
   canonicalChannelsForCompare,
@@ -19,7 +19,7 @@ import {
   stripChannelEmpties,
 } from "../../shared/interface.ts";
 
-// 这三个函数的**定义**在 src/shared/channel-compare.ts（服务端写面基线要用同一份）。
+// 这三个函数的**定义**在 src/shared/channel-compare.ts（它是对端可对照的口径文本）。
 // 这里原样转出，客户端调用点与判据的导入路径一字不动：搬实现不等于搬入口。
 export {
   canonicalSettingsForCompare,
@@ -53,8 +53,9 @@ export function diffSettingsPayload(
     const base = baseLine[key];
     // channels 整组提交前对实例做空串可选字段剥除——存量配置（0.2.2 保存失败前/手改 yaml/
     // 旧版本）可能残留 token:"" 等空串形态，UI 编辑任一字段都会触发整组提交把残留一起带走
-    // → 400 死锁。剥除与读面 normalize（空串按未配置剥除）同语义，纯读不改草稿，用户后续
-    // 输入仍经 assignChannelFields 正常写。
+    // → 写面按字段合并把空串读成**显式删除**（状态 4），用户的凭据被一次无关保存静默删掉；
+    // 必填键上更直接撞 400「必填键，不能删除」。剥成键缺席后落进「不动 / preexisting 放行」两条路，
+    // 纯读不改草稿，用户后续输入仍经 assignChannelFields 正常写。
     const value = key === "channels" && Array.isArray(cur) ? cur.map(stripChannelEmpties) : cur;
     const same = stableEqual(canonicalForCompare(key, cur), canonicalForCompare(key, base));
     if (!same) payload[key] = value;
@@ -151,15 +152,19 @@ export function domainPayload(
 }
 
 /**
- * 频道实例字段合并：part 中**空串/undefined 值从 target 删除该键**，其余浅覆盖。
+ * 频道实例字段合并：part 中**值为空（`""` / `undefined`）的键写成 `null`**，其余浅覆盖。
  *
- * 空串在服务端写面校验中是「非法值」而非「未配置」——token/username/password/headerValue
- * 要求非空、headerName 过头名正则；读面 normalize 却把空串剥除（等价未配置）。若把清空输入
- * 回写成 "" 提交，实例会带着空串残留被整组 400（「填了又删空」死锁的必现根因之一）——空串
- * 删键后提交面与读面同语义（键不存在 = 未配置）。undefined 一并删键：数字/下拉清空走的是
- * 同一条路（清空 badge/level 传的就是 undefined），而 Object.assign 会把 undefined 保留成
- * 「有这个键但值为 undefined」，JSON 序列化后与删键等价、但草稿对象本身多一个键，
- * 「键在不在」正是 levels/badge 这些字段的值域判据。
+ * 为什么是 `null` 而不是删键（#1016 S2，**安全相关**）：服务端写面现在按字段合并，
+ * **键缺席读成「不动」**。用户清空 webhook 的 token 后若只是把键删掉，提交里就没有这个键，
+ * 合并判它「不动」——旧凭据原封不动留在磁盘上继续被投递，而界面上显示的是空。写 `null` 是
+ * 「显式删除」这条独立手势，服务端据此删键，磁盘与界面才重新对上。
+ *
+ * `undefined` 走同一条路：数字框与下拉清空传的就是 `undefined`，而它们与文本框表达的是
+ * 同一个手势——「这个字段不要了」。渲染侧不受影响（`textInput` / `numInput` 把 null 与 undefined
+ * 一律回显空串，`ch.levels || {}` 一类取值同样吃得下 null）。
+ *
+ * 必填键（url / baseUrl / deviceKey）清空后提交，服务端以「必填键，不能删除」400 拒收——
+ * 那是对的：一条打不通的频道不该被静默存下来。
  */
 export function assignChannelFields(
   target: Record<string, unknown>,
@@ -168,8 +173,7 @@ export function assignChannelFields(
   const out = Object.assign({}, target);
   for (const key of Object.keys(part)) {
     const value = part[key];
-    if (value === "" || value === undefined) delete out[key];
-    else out[key] = value;
+    out[key] = value === "" || value === undefined ? null : value;
   }
   return out;
 }

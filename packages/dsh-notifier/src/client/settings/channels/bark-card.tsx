@@ -6,7 +6,9 @@
  * 卡体不持有 state/ref/定时器，删除二次确认的 3 秒定时器也照搬原形态留在卡内 onClick 闭包里。
  */
 import * as React from "react";
-import { channelIdFor } from "../../../shared/interface.ts";
+// levels 的四档枚举来自 src/shared/config-schema.ts（两端共享面）：下拉三处与宿主端的白名单读同一份，
+// 各写一份就会出现「页面选得到、宿主拒收」。
+import { BARK_LEVELS, channelIdFor } from "../../../shared/interface.ts";
 import { KIND_KEYS } from "../../locales.ts";
 import type { Translate } from "../../locale.ts";
 import { credentialFieldKey, credentialFieldView } from "../mask.ts";
@@ -16,9 +18,6 @@ import { delArmedBtn, failBadge, statusDotClass, statusText, testBtn } from "../
 import type { ChannelStatusMap } from "../parts/status.tsx";
 import type { HistoryRecordView, RegisteredKindView, SettingsChannelView } from "../types.ts";
 import { iconEl } from "./channel-icon.tsx";
-
-/** levels 可选值：自动（空串）+ 四档固定枚举——下拉三处共用，故单点列出。 */
-const LEVEL_VALUES: readonly string[] = ["active", "timeSensitive", "passive", "critical"];
 
 /**
  * levels（kind→level）编辑器的入参。整块的编辑面都在这里：矩阵行、新增行、kind 建议表。
@@ -173,7 +172,7 @@ export function barkCard(
       {t("chLevelAuto")}
     </option>,
   ];
-  LEVEL_VALUES.forEach(function (lv: string) {
+  BARK_LEVELS.forEach(function (lv) {
     levelOpts.push(
       <option value={lv} key={lv}>
         {lv}

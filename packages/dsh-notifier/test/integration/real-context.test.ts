@@ -39,6 +39,7 @@ import {
   assertEventReachability,
   assertRealCordisContextSemantics,
 } from "../../../../test/smoke-lib.ts";
+import { DEFAULT_CONFIG } from "../../src/server/config/impl/model/index.ts";
 import { pollUntil, settleMicrotasks, tempDshHome } from "../helpers.ts";
 
 // DSH_HOME 必须先于被测模块求值：三个单例的落盘路径在构造时定下，而静态 import 会在任何语句
@@ -852,6 +853,17 @@ describe("宿主 agent 注册表（子代理归属）", () => {
 });
 
 describe("宿主 settings 服务：装配期同步割接存量配置", () => {
+  /**
+   * 链跑完之后磁盘上两条内置条目的形态（0.2.4 割接 + 0.2.8 形态清理的**终态**）。
+   *
+   * 逐字取自默认表而不是手抄：0.2.8 的补齐值就是默认表的值（#1016 P1-1），同源由 steps.test.ts 钉住。
+   * `over` 用来表达「用户当年在旧顶层键上表过态」的字段——它必须是**用户那个值**而不是默认值，
+   * 否则这条用例就分不出「搬了旧键」与「补了默认」。
+   */
+  function builtinEntries(over: Record<string, unknown>): unknown[] {
+    return DEFAULT_CONFIG.channels.map((channel) => ({ ...channel, ...over }));
+  }
+
   it("服务先于插件就绪：装配期读到存量并割接进当前配置文件（同步，没有「等一会儿」的窗口）", async () => {
     // 0.2.4 那一步只在刻度未到的装机上跑：真实升级场景就是把刻度退回起点；而 0.2.3 的装机
     // 没有这份配置文件（配置住在宿主 settings 里），割接就落在这一份新文件上。
@@ -867,11 +879,9 @@ describe("宿主 settings 服务：装配期同步割接存量配置", () => {
     expect(stored.notifyTaskDone).toBe(false);
     // 旧键搬完即删：文件里只留条目一处表达
     expect("notifySound" in stored).toBe(false);
-    // 两条内置条目被割接出来，旧的全局音效键摊到各自的 `sound` 上。
-    expect(stored.channels).toEqual([
-      { type: "browser", id: "browser", sound: false },
-      { type: "system", id: "system", sound: false },
-    ]);
+    // 两条内置条目被割接出来，旧的全局音效键摊到各自的 `sound` 上；其余字段由 0.2.8 的形态清理
+    // 按默认表补齐（#1016 P1-1）——所以这里是**链的终态**，不是 0.2.4 那一步的中间形态。
+    expect(stored.channels).toEqual(builtinEntries({ sound: false }));
     // 装配键（configFile）不进新配置：它在旧格式里就属于组合层的启动参数。
     expect("configFile" in stored).toBe(false);
     await unmount();
@@ -892,10 +902,7 @@ describe("宿主 settings 服务：装配期同步割接存量配置", () => {
     expect(stored.notifyTaskDone).toBe(false);
     // 旧键搬完即删，且装配键不进新配置。
     expect("notifySound" in stored).toBe(false);
-    expect(stored.channels).toEqual([
-      { type: "browser", id: "browser", sound: false },
-      { type: "system", id: "system", sound: false },
-    ]);
+    expect(stored.channels).toEqual(builtinEntries({ sound: false }));
     await unmount();
   });
 

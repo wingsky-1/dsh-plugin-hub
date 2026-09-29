@@ -124,20 +124,19 @@ describe("请求构造", () => {
     expect(Array.from(body.body)).toHaveLength(4096);
   });
 
-  // 未知键是 README 承诺的前向兼容面（配置层已按 string/number 过滤）；已知键必须赢，
-  // 否则配置里写一个 title 就能顶掉通知标题——那是透传面不该有的能力。
-  it("实例的未知键原样进推送体，且已知键优先：透传不参与改写通知本身", async () => {
+  // 推送体只由投递参数拼出（#1016 S2 删掉了 extras 概念）：配置域不再透传频道条目里的陌生键，
+  // 于是「配置里写一个 title 就能顶掉通知标题」这条面不再存在——不是靠「已知键覆盖」挡住的，
+  // 是根本没有第二个来源。判据按 `BarkPushBody` 的**封闭**形状断：多一个键即红。
+  it("推送体只含投递参数：没有任何透传来源能往里塞键", async () => {
     const calls = stubFetch(() => jsonResponse({ code: 200 }));
     await sendBark(
-      targetOf({ extras: { volume: 5, call: "1", title: "顶掉标题", body: "顶掉正文" } }),
+      targetOf({ group: "g", sound: "ding", icon: "i", url: "u", badge: 2, level: "active" }),
       messageOf({ title: "原标题", body: "原正文" }),
     );
-    // 透传键不在 `BarkPushBody` 的声明里（它描述的是**已知**键的形状），故按开放视图看整份 body。
     const body = wire<Record<string, unknown>>(bodyOf(calls[0]!));
-    expect(body.volume).toBe(5);
-    expect(body.call).toBe("1");
-    expect(body.title).toBe("原标题");
-    expect(body.body).toBe("原正文");
+    expect(Object.keys(body).sort()).toEqual(
+      ["badge", "body", "device_key", "group", "icon", "level", "sound", "title", "url"].sort(),
+    );
   });
 
   // 调用方给的超时若不生效，一次挂死的推送会一直占着管线到出口的 10s 硬超时。

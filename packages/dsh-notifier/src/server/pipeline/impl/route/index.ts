@@ -131,8 +131,8 @@ export function barkTarget(channel: BarkConfig, kind: NotifyKind): BarkTarget {
 }
 
 /**
- * 有值才带的三格。它们的「带」判据三样各别（badge 认 undefined、timeoutSec 认正数、
- * extras 认整袋），故与上面那五格文本字段分开——改一格的判据不会牵动另外两格。
+ * 有值才带的两格。它们的「带」判据两样各别（badge 认 undefined、timeoutMs 认正数），故与上面
+ * 那五格文本字段分开——改一格的判据不会牵动另外一格。
  */
 function assignBarkOptional(target: BarkTarget, channel: BarkConfig): void {
   // badge 是数字（0 有语义：清掉角标），所以「有值就带」而不是「非零才带」。
@@ -140,8 +140,6 @@ function assignBarkOptional(target: BarkTarget, channel: BarkConfig): void {
   if (channel.timeoutMs !== undefined && channel.timeoutMs > 0) {
     target.timeoutMs = channel.timeoutMs;
   }
-  // 未知键整袋带走：出口把它原样写进推送体（前向兼容），这里不做逐键判断。
-  if (channel.extras !== undefined) target.extras = channel.extras;
 }
 
 /** 可选文本字段：空串即「没配置」，不带进目标。 */
@@ -170,8 +168,6 @@ export function webhookTarget(channel: WebhookConfig): WebhookTarget {
   if (channel.timeoutSec !== undefined && channel.timeoutSec > 0) {
     target.timeoutSec = channel.timeoutSec;
   }
-  // 未知键只保留在生效设置里（webhook 的 body 由模板渲染，透传键不绕开模板语义）。
-  if (channel.extras !== undefined) target.extras = channel.extras;
   return target;
 }
 

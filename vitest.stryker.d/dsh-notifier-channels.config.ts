@@ -10,7 +10,7 @@ export default defineConfig({
     include: [
       'packages/dsh-notifier/test/client-dom/apply-lifecycle.test.ts',
       'packages/dsh-notifier/test/client-unit/disposers.test.ts',
-      'packages/dsh-notifier/test/integration/config-write-scope-roundtrip.test.ts',
+      'packages/dsh-notifier/test/integration/config-merge-roundtrip.test.ts',
       'packages/dsh-notifier/test/integration/real-context.test.ts',
       'packages/dsh-notifier/test/integration/service-contract.test.ts',
       'packages/dsh-notifier/test/integration/status-roundtrip.test.ts',
@@ -25,7 +25,6 @@ export default defineConfig({
       'packages/dsh-notifier/test/unit/channels/webhook.test.ts',
       'packages/dsh-notifier/test/unit/config/input.test.ts',
       'packages/dsh-notifier/test/unit/config/model.test.ts',
-      'packages/dsh-notifier/test/unit/config/service-write-scope-baseline.test.ts',
       'packages/dsh-notifier/test/unit/config/service.test.ts',
       'packages/dsh-notifier/test/unit/pipeline/dispatch.test.ts',
       'packages/dsh-notifier/test/unit/pipeline/finalize.test.ts',

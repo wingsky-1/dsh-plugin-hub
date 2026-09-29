@@ -10,7 +10,12 @@
  * 本模块只放类型（零运行时）：不新增覆盖率负担，不参与导出面值块比对（门禁只看值声明块）。
  */
 
-/** 设置草稿里的单条频道（服务端 ChannelConfig 经 /config 到客户端的视图）。 */
+/** 设置草稿里的单条频道（服务端 ChannelConfig 经 /config 到客户端的视图）。
+ *
+ * 可选字段都带 `| null`（#1016 S2）：草稿是**用户正在编辑的形态**，而「用户把这个字段清空了」
+ * 这一手势写的是 `null`（显式删除，见 settings/diff.ts 的 assignChannelFields）——服务端按字段
+ * 合并，键缺席读成「不动」，删键会让用户清空的凭据留在磁盘上继续投递。渲染侧一律按「null 与
+ * undefined 同显空」处理（`textInput` / `numInput` / `ch.levels || {}`），故各调用点不需要判空。 */
 export type SettingsChannelView = {
   [key: string]: unknown;
   /** 频道类型：内置（browser/system）与实例（bark/webhook）的分派键，服务端恒有。 */
@@ -18,49 +23,49 @@ export type SettingsChannelView = {
   /** 实例 id（路由对齐键）；内置恒等于 type。 */
   id: string;
   /** 设置卡显示名（缺省回退 id）。 */
-  name?: string;
+  name?: string | null;
   /** 发不发：本频道唯一的投递闸门。 */
-  enabled?: boolean;
+  enabled?: boolean | null;
   /** 弹不弹；关掉而声音开着 = 只响不弹。 */
-  popup?: boolean;
+  popup?: boolean | null;
   /** 声音设置：false = 静音；true = 跟随系统默认；SoundId = 显式音色（脏值由调用点收窄）。 */
   sound?: unknown;
   /** 页面可见时是否也弹。 */
-  whenVisible?: boolean;
+  whenVisible?: boolean | null;
   /** bark 自定义端点覆写（可选）。 */
-  baseUrl?: string;
+  baseUrl?: string | null;
   /** bark 设备密钥（服务端掩码回填，未编辑不回显）。 */
-  deviceKey?: string;
+  deviceKey?: string | null;
   /** bark 分组。 */
-  group?: string;
+  group?: string | null;
   /** bark 自定义图标。 */
-  icon?: string;
+  icon?: string | null;
   /** bark 跳转 URL / webhook 目标 URL。 */
-  url?: string;
+  url?: string | null;
   /** bark 角标数。 */
-  badge?: number;
+  badge?: number | null;
   /** bark 默认紧急度。 */
-  level?: string;
-  /** bark 按 kind 的紧急度稀疏映射（调用点只写 string 值，见 chLevelsSet）。 */
-  levels?: Record<string, string>;
+  level?: string | null;
+  /** bark 按 kind 的紧急度稀疏映射（调用点只写 string 值或 null，见 chLevelsSet）。 */
+  levels?: Record<string, string> | null;
   /** webhook 认证方式。 */
-  auth?: string;
+  auth?: string | null;
   /** webhook bearer 令牌（密钥）。 */
-  token?: string;
+  token?: string | null;
   /** webhook basic 用户名（非密钥）。 */
-  username?: string;
+  username?: string | null;
   /** webhook basic 密码（密钥）。 */
-  password?: string;
+  password?: string | null;
   /** webhook 自定义头名（非密钥）。 */
-  headerName?: string;
+  headerName?: string | null;
   /** webhook 自定义头值（密钥）。 */
-  headerValue?: string;
+  headerValue?: string | null;
   /** webhook JSON body 模板。 */
-  template?: string;
+  template?: string | null;
   /** webhook 预设（{{priority}} 频道感知映射的依据）。 */
-  preset?: string;
+  preset?: string | null;
   /** webhook 投递超时秒数（UI 先 clamp 1-60，服务端 normalize 权威 clamp）。 */
-  timeoutSec?: number;
+  timeoutSec?: number | null;
 };
 
 /** 动态 kind 清单项（GET /kinds 元素；形状对齐服务端 RegisteredKind）。 */
