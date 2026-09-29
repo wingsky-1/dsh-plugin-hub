@@ -540,6 +540,10 @@
       "faces": ["global"],
       "consumers": ["scripts/build/bundle-host.ts", "scripts/gate/pack-check.ts"],
       "why": "根许可证文本：全体包的构建输入（#742 阶段 2.3 归属盘点时补入），归全局面。"
+    },
+    {
+      "path": "scripts/data/ci-ism-samples.json",
+      "consumers": ["scripts/lib/ci-ism-denylist.mjs"]
     }
   ]
 }
