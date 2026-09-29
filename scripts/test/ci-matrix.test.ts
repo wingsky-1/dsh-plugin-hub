@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { execFileSync, spawnSync } from "node:child_process";
+import { pathToFileURL } from "node:url";
 import { computeCiMatrix, parseTestChangedPackages } from "../ci/ci-matrix.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "../..");
@@ -527,5 +528,115 @@ test("ci-matrix: 场景 f - GITHUB_OUTPUT 写入契约", () => {
     assert.equal(combos.length, 10);
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// 段配置目录（stryker.conf.d/）的 fail-closed 回归（ci-matrix 的静默降级路径）
+//
+// 修的是什么：readMutationConfFiles 此前对「目录不存在」与「readdirSync 抛错」都返回空数组，
+// 而下游 hasMutations = String(mutationPackages.length > 0) 会把空集读成「本次没有变异包」
+// ⇒ 整条变异矩阵与 PR 变异判分静默不跑、workflow 仍绿。现与夜间侧 mutation-plan.mjs 对同一
+// 目录取同一裁决：一律 failClosed（exit 2 = 门禁故障，不可信、禁止合并）。
+//
+// 为什么这些用例必须经子进程：fail-closed 走 scripts/lib/gate-exit.mjs 的 process.exit(2)，
+// 同进程断言会直接杀死 node --test 运行时，故只能观察子进程退出码与判词原文。
+// ---------------------------------------------------------------------------
+
+/** 在子进程里对 fixture 根求值 computeCiMatrix（env 空 ⇒ 全量命中口径）。 */
+function runMatrixOn(rootDir: string) {
+  const moduleUrl = pathToFileURL(path.join(ROOT, "scripts/ci/ci-matrix.mjs")).href;
+  const code =
+    `import { computeCiMatrix } from ${JSON.stringify(moduleUrl)};` +
+    `process.stdout.write(JSON.stringify(computeCiMatrix({ env: {}, rootDir: ${JSON.stringify(rootDir)} })));`;
+  return spawnSync(process.execPath, ["--input-type=module", "-e", code], { encoding: "utf8" });
+}
+
+/**
+ * fixture 根：合法且非空的 manifest（readAllPackages 在段配置之前求值，故必须先备好），
+ * 外加按需的 stryker.conf.d/。conf 为 null = 不建该目录；"file" = 该路径是普通文件（ENOTDIR）。
+ */
+function fixtureRoot(
+  conf: Record<string, string> | null | "file",
+  active: string[] = ["dsh-notifier"],
+): string {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ci-matrix-conf-"));
+  fs.mkdirSync(path.join(dir, "scripts/data"), { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, "scripts/data/plugins-manifest.json"),
+    JSON.stringify({ active, standalone: [] }),
+  );
+  if (conf === "file") {
+    fs.writeFileSync(path.join(dir, "stryker.conf.d"), "not a directory");
+  } else if (conf !== null) {
+    fs.mkdirSync(path.join(dir, "stryker.conf.d"), { recursive: true });
+    for (const [name, body] of Object.entries(conf)) {
+      fs.writeFileSync(path.join(dir, "stryker.conf.d", name), body);
+    }
+  }
+  return dir;
+}
+
+/** exit 2 的三条共同底线：门禁故障判词在、且绝不把矩阵当空集继续跑下去。 */
+function assertFailClosed(r: ReturnType<typeof runMatrixOn>, why: RegExp) {
+  assert.equal(r.status, 2, `期望门禁故障 exit 2，实际 ${r.status}；stderr=${r.stderr}`);
+  assert.match(r.stderr, /门禁故障（非判据结论）/);
+  assert.match(r.stderr, why);
+  // 否定断言：静默通过的形态是「exit 0 + hasMutations:false」，这里必须没有半截输出。
+  assert.equal(r.stdout, "", "fail-closed 后不得再写出矩阵（否则等于把空集当结论）");
+}
+
+test("ci-matrix: 场景 g - 段配置目录缺失时 fail-closed（不得回落空集静默停掉变异门禁）", () => {
+  const dir = fixtureRoot(null);
+  try {
+    assertFailClosed(runMatrixOn(dir), /段配置目录缺失/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("ci-matrix: 场景 g - 段配置路径不可读（readdirSync 抛错）时 fail-closed", () => {
+  // 用「该路径是普通文件」制造 ENOTDIR，而不是 chmod 000 的 EACCES：后者在 root 下恒不成立，
+  // 会让本用例在不同 uid 下给出不同结论。EACCES 形态由人工反证覆盖（chmod 000 实测 exit 2）。
+  const dir = fixtureRoot("file");
+  try {
+    assertFailClosed(runMatrixOn(dir), /段配置目录不可读/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("ci-matrix: 场景 g - 段配置目录存在但无 .json（段集合为空）时 fail-closed", () => {
+  const dir = fixtureRoot({ "README.md": "非段配置" });
+  try {
+    assertFailClosed(runMatrixOn(dir), /段集合为空/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("ci-matrix: 场景 h - 合法态：段配置目录存在且非空时正常求值（不得被误判红）", () => {
+  // dsh-verify-isolated 是登记在册的「无变异配置包」（mutation-topology.json 载明 CI 按
+  // 「无变异配置」把它排除出变异切片）⇒ hasMutations:false 在这里是合法结论，不是降级。
+  const dir = fixtureRoot(
+    {
+      "dsh-notifier-api.json": "{}",
+      "dsh-notifier-sdk.json": "{}",
+      "shared-settings-namespace.json": "{}",
+    },
+    ["dsh-notifier", "dsh-verify-isolated"],
+  );
+  try {
+    const r = runMatrixOn(dir);
+    assert.equal(r.status, 0, `合法态不得判红；stderr=${r.stderr}`);
+    const out = JSON.parse(r.stdout);
+    assert.deepEqual(out.mutationPackages, ["dsh-notifier"]);
+    assert.equal(out.hasMutations, "true");
+    assert.deepEqual(
+      out.mutationCombos.map((c: { seg: string }) => c.seg),
+      ["api", "sdk"],
+    );
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
   }
 });

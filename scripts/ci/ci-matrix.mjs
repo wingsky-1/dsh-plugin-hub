@@ -5,6 +5,7 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 
 import { loadFullScopePeaks, timeoutForSegment } from "../gate/mutation-plan.mjs";
+import { failClosed } from "../lib/gate-exit.mjs";
 
 /**
  * 空切片时 build-test 矩阵的哨兵项（#722）：见 computeCiMatrix 内 buildPackages 注释。
@@ -122,15 +123,39 @@ function resolveHitPackages(allPackages, env, filterOutputs) {
 }
 
 // 4. 变异切片逻辑（mutationPackages / mutationCombos）
+/**
+ * 段配置清单 = `stryker.conf.d/*.json`。
+ *
+ * 纪律与夜间侧 `scripts/gate/mutation-plan.mjs` 对**同一个目录**取同一裁决：目录缺失 /
+ * 不可读 / 无 `.json` 段配置一律 `failClosed`（exit 2 = 门禁故障，不可信、禁止合并），
+ * **绝不回落成空集**。此前这里返回空集，而下游
+ * `hasMutations = String(mutationPackages.length > 0)` 会把空集读成「本次没有变异包」
+ * ⇒ 整条变异矩阵与 PR 变异判分静默不跑、workflow 仍然绿（`--root` 指错、目录被改名或误删、
+ * 权限异常，三条现实路径任一即中）。同一文件里 `readAllPackages` 对 manifest 的
+ * 「读失败 / 空清单」也是抛错而非回落空集，两处原本是相反的两套纪律。
+ *
+ * 为什么不误伤合法态：`stryker.conf.d/*.json` 是**入库**的生成物（事实源是
+ * `scripts/data/mutation-topology.json`，由 `pnpm stryker:gen` 派生后提交；
+ * `git ls-tree 302109a0 -- stryker.conf.d` 实测 52 份，且不在 .gitignore），
+ * 故全新克隆在 `pnpm install` 之后、`pnpm stryker:gen` 之前该目录即已存在
+ * ⇒ 「目录缺失」不是合法状态，不存在需要放行的空态。
+ */
 function readMutationConfFiles(rootDir) {
   const confDir = path.join(rootDir, "stryker.conf.d");
-  let confFiles = [];
+  if (!fs.existsSync(confDir)) {
+    failClosed(
+      `[ci-matrix] 段配置目录缺失：${confDir} —— stryker.conf.d/*.json 是入库的派生配置，` +
+        `缺失即变异矩阵不可求值（fail-closed）`,
+    );
+  }
+  let confFiles;
   try {
-    if (fs.existsSync(confDir)) {
-      confFiles = fs.readdirSync(confDir).filter((f) => f.endsWith(".json"));
-    }
-  } catch {
-    confFiles = [];
+    confFiles = fs.readdirSync(confDir).filter((f) => f.endsWith(".json"));
+  } catch (err) {
+    failClosed(`[ci-matrix] 段配置目录不可读：${confDir} —— ${err.message}（fail-closed）`);
+  }
+  if (confFiles.length === 0) {
+    failClosed(`[ci-matrix] ${confDir} 下无 .json 段配置 —— 段集合为空（fail-closed）`);
   }
   return confFiles;
 }
