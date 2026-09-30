@@ -17,6 +17,11 @@
 // Symbol.toStringTag 装配）由 scripts/build/build-client.ts 统一生成——源码不写任何 loader。
 // 样式：独立 style.css（见同目录），build-client 的 .css text-loader 构建期内联为字符串
 import STYLE from "./style.css";
+// R3：跨包原语层的表现面（唯一副本 shared/client/ui/ui.css）经 ts 侧拼接注入。
+// .css 走同一个 text-loader，仍是纯文本内联，产物依旧自包含单文件、零运行时依赖。
+// **顺序是 UI_CSS + STYLE（原语层在前）**：原语层当底座、各包 style.css 在其之上，
+// 这样包内的窄屏/领域覆盖（同优先级下靠后者胜）永远压得住原语默认值。
+import UI_CSS from "../../../../shared/client/ui/ui.css";
 // 样式注入收敛 shared/client/ensure-style.js（issue #477）：本包只补
 // { id, cssText, version } 实参；STYLE_ID/CSS_VERSION 常量保留为调用实参来源，
 // disposer（getElementById(STYLE_ID)）沿用常量。
@@ -168,7 +173,7 @@ export function apply(ctx: ClientContext): void {
       return;
     }
 
-    ensureStyle({ id: STYLE_ID, cssText: STYLE, version: CSS_VERSION });
+    ensureStyle({ id: STYLE_ID, cssText: UI_CSS + STYLE, version: CSS_VERSION });
 
     // i18n（issue #348）：注册本插件字典；t 绑定官方 locale 服务（未装配回落 key 本体）。
     const unsubLocale = bindClientLocale(ctx);

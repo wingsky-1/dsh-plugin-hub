@@ -39,6 +39,7 @@ import { t } from "../../../../shared/client/i18n.js";
 
 /** 报告五路由经 ./shared/contract.ts 具名表（host-seams R2 收敛，字面量只留契约一份）。 */
 import { REPORT_CONFIG_URL, REPORT_GENERATE_URL, REPORT_MODELS_URL } from "./shared/contract.ts";
+import { SegmentedControl } from "../../../../shared/client/ui/index.js";
 
 /** 轮询退避：1s → 2s → 4s 封顶 5s；上限约 2 分钟。 */
 const POLL_INITIAL_DELAY_MS = 1_000;
@@ -830,20 +831,14 @@ function PromptsSection(props: {
         <div className="dou-reportCard">
           {/* 提示词模板（三周期结构化编辑 + 周期切换 tab；恢复默认在编辑器内） */}
           <div className="dou-reportCol">
-            <div className="dou-reportPromptTabs">
-              <span className="dou-reportLabel">{t("reportPrompt")}</span>
-              {PERIODS.map((p) => (
-                <button
-                  key={p}
-                  type="button"
-                  className={`dou-reportPromptTab${promptTab === p ? " dou-reportPromptTabActive" : ""}`}
-                  aria-pressed={promptTab === p}
-                  onClick={() => setPromptTab(p)}
-                >
-                  {periodLabel(p)}
-                </button>
-              ))}
-            </div>
+            <SegmentedControl
+              variant="pill"
+              label={t("reportPrompt")}
+              leading={<span className="dou-reportLabel">{t("reportPrompt")}</span>}
+              value={promptTab}
+              onChange={setPromptTab}
+              options={PERIODS.map((p) => ({ value: p, label: periodLabel(p) }))}
+            />
             <PromptEditor
               period={promptTab}
               text={draft.prompts[promptTab]}

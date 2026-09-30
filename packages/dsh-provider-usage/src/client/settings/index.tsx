@@ -1,7 +1,7 @@
 /**
  * dsh-provider-usage — 设置页根组件（多 tab 化，样式基准 = 通知中心）。
  *
- * 形态：共用头（dou-shellTop）+ 整页一张大卡（dou-set-card）+ 顶部六分段器 tab
+ * 形态：共用头（dou-shellTop）+ 整页一张大卡（<Surface variant="card">）+ 顶部六分段器 tab
  * （用量可视化/使用趋势/用量报告/历史报告/适配器/悬浮窗，今日概览置首），
  * 与通知中心同语言（普通 button，不引入 role=tablist）。
  * 六个区块 keep-mounted，行为不变（历史页见 history.tsx）。
@@ -36,6 +36,7 @@ import { UiSection } from "./ui.tsx";
 import { ProviderListSection } from "./providers.tsx";
 import type { AdaptersMeta, InspectAdapter, InspectResult, AddResult } from "./providers.tsx";
 import { jsonGet } from "./shared.ts";
+import { SegmentedControl, Surface } from "../../../../../shared/client/ui/index.js";
 
 /** 设置页 tab 键（与窗格一一对应；顺序即渲染顺序；usage 今日概览置首，history 紧随 report，还原生成→查看动线）。 */
 export type SettingsTabKey = "usage" | "trend" | "report" | "history" | "providers" | "float";
@@ -52,10 +53,11 @@ const TABS: Array<{ key: SettingsTabKey; labelKey: string }> = [
 /** 设置页根组件：模型配置提供商列表驱动手风琴；用量可视化对启用中的 provider 拉 /stats。 */
 export function SettingsPage(): React.ReactElement {
   const [tab, setTab] = React.useState<SettingsTabKey>("usage");
-  // R1 窄屏：激活 Tab 滚动可见（桌面端无视觉变化；flex:none + overflow-x:auto 见 style.css）。
+  // 窄屏：激活 Tab 滚动可见（桌面端无视觉变化；flex:none + overflow-x:auto 见 style.css）。
+  // 激活项按 aria-pressed 定位而非激活类名——分段器换实现换皮肤都不会打坏这条滚动。
   const tabsRef = React.useRef<HTMLDivElement | null>(null);
   React.useEffect(() => {
-    const active = tabsRef.current?.querySelector(".dou-set-tabActive") as
+    const active = tabsRef.current?.querySelector('[aria-pressed="true"]') as
       HTMLElement | null | undefined;
     active?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
   }, [tab]);
@@ -241,24 +243,19 @@ export function SettingsPage(): React.ReactElement {
         </div>
         <div className="dou-shellMeta">{providerPill}</div>
       </div>
-      <div className="dou-set-card">
-        {/* 分段器：普通 button（不用 tablist）。role 用 group——
-          不可用 navigation：宿主设置弹窗的移动端适配规则带 :not(:has([role=navigation]))
-          排除条件（选择器无引号形态；命中即整弹窗退回桌面 row 布局，
-          手机上内容区被压至 ~106px）。 */}
-        <div className="dou-set-tabs" ref={tabsRef} role="group" aria-label={t("settingsNavLabel")}>
-          {TABS.map((item) => (
-            <button
-              key={item.key}
-              type="button"
-              className={`dou-set-tab${tab === item.key ? " dou-set-tabActive" : ""}`}
-              aria-pressed={tab === item.key}
-              onClick={() => setTab(item.key)}
-            >
-              {t(item.labelKey as never)}
-            </button>
-          ))}
-        </div>
+      <Surface variant="card">
+        {/* 分段器语义在 SegmentedControl 原语内冻结：普通 button（不用 tablist）+
+            role="group"。不可用 navigation：宿主设置弹窗的移动端适配规则带
+            :not(:has([role=navigation])) 排除条件（选择器无引号形态；命中即整弹窗
+            退回桌面 row 布局，手机上内容区被压至 ~106px）。 */}
+        <SegmentedControl
+          variant="bar"
+          groupRef={tabsRef}
+          label={t("settingsNavLabel")}
+          value={tab}
+          onChange={setTab}
+          options={TABS.map((item) => ({ value: item.key, label: t(item.labelKey as never) }))}
+        />
         <div className="dou-set-body">
           {pane("usage", <UsageSection statsByProvider={statsByProvider} />)}
           {pane("trend", <TrendSection />)}
@@ -286,7 +283,7 @@ export function SettingsPage(): React.ReactElement {
           )}
           {pane("float", <UiSection />)}
         </div>
-      </div>
+      </Surface>
     </React.Fragment>
   );
 }

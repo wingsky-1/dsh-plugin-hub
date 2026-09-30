@@ -1,0 +1,50 @@
+{
+  "$schema": "../node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "mutate": [
+    "shared/client/ui/index.tsx",
+    "!packages/dsh-provider-usage/src/**/interface.ts",
+    "!packages/dsh-provider-usage/src/server/*/deps.ts",
+    "!packages/dsh-provider-usage/src/**/*.d.mts",
+    "!packages/dsh-provider-usage/src/server/adapters/deepseek-official.mjs",
+    "!packages/dsh-provider-usage/src/server/adapters/opencode-go.mjs",
+    "!packages/dsh-provider-usage/src/server/adapters/zai-coding-cn.mjs"
+  ],
+  "testRunner": "vitest",
+  "mutator": {
+    "excludedMutations": [
+      "StringLiteral",
+      "ArrayLiteral",
+      "ObjectLiteral",
+      "TemplateLiteral"
+    ]
+  },
+  "plugins": [
+    "@stryker-mutator/vitest-runner"
+  ],
+  "concurrency": 16,
+  "timeoutMS": 60000,
+  "dryRunTimeoutMinutes": 5,
+  "reporters": [
+    "progress",
+    "clear-text",
+    "json"
+  ],
+  "coverageAnalysis": "perTest",
+  "tempDirName": ".stryker-tmp",
+  "cleanTempDir": true,
+  "vitest": {
+    "related": false,
+    "configFile": "vitest.stryker.d/dsh-provider-usage-ui-primitives.config.ts"
+  },
+  "jsonReporter": {
+    "fileName": "coverage/mutation/dsh-provider-usage-ui-primitives.json"
+  },
+  "incremental": true,
+  "incrementalFile": "coverage/mutation/incremental-provider-usage-ui-primitives.json",
+  "ignorePatterns": [
+    "shared/**/*.js",
+    "shared/**/*.d.ts",
+    "shared/**/*.tsbuildinfo"
+  ],
+  "_comment": "T1 五原语层（R2 档 C 上提到 shared/client/ui/）：Button/Field/SegmentedControl/Status+Badge/Surface 的行为契约面。R1 时原语层在本包 src/client/shared/ui/ 下拆 7 个文件，R2 上提为跨包单文件（原语层文件头记了为什么必须单文件：fanin 门禁按 shared/ 下每个 .js 枚举模块并各自要扇入≥2）。判据走 role/aria 查询，不锚 className，故换实现不破判据；判据文件随之上移到消费包 test/client-dom/（shared/test/ 不在任何 vitest project 的收集面内）。"
+}

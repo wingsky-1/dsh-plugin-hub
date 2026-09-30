@@ -2,13 +2,15 @@
  * dsh-provider-usage — 设置页共享片段（拆分自 settings.ts）。
  *
  * 仅样式常量与微工具；组件各自独立文件。文案一律经 locales 字典。
+ * 容器/字段/按钮样式已收敛进 T1 原语层（client/shared/ui + style.css 的 dsu-*），
+ * 新代码一律用原语，不用这里的内联常量。
  */
 import * as React from "react";
 import { fetchTimeout } from "../core.ts";
 
-/** 设置页分区卡样式（浅色回退 + 主题变量）。
- * @deprecated 四窗格已统一挂 style.css `.dou-pane`（R5：12px/窄屏 10px 响应式，内联 style 做不到媒体查询）；
- * 仅留兼容既有引用，新代码一律用 `.dou-pane`。 */
+/** 分区卡样式（旧内联常量，保留兼容）。
+ * @deprecated 四窗格已统一走 T1 原语层 <Surface variant="pane">（R5：12px/窄屏 10px
+ * 响应式，内联 style 做不到媒体查询）；仅留兼容既有引用，新代码一律用 Surface。 */
 export const sectionStyle = {
   marginBottom: 16,
   padding: "10px 12px",

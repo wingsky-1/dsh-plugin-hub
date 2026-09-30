@@ -10,6 +10,7 @@ export default defineConfig({
     include: [
       'packages/dsh-provider-usage/test/client-dom/report-section.test.ts',
       'packages/dsh-provider-usage/test/client-dom/trend-section.test.ts',
+      'packages/dsh-provider-usage/test/client-dom/ui-primitives.test.ts',
       'packages/dsh-provider-usage/test/integration/adapters/composition-root.test.ts',
       'packages/dsh-provider-usage/test/integration/aggregate/composition-root.test.ts',
       'packages/dsh-provider-usage/test/integration/collect/composition-root.test.ts',

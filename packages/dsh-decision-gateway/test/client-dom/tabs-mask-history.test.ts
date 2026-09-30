@@ -160,3 +160,54 @@ describe("健康徽标三态", () => {
     await pollUntil(() => (card.textContent ?? "").includes("服务不可达"), "服务不可达");
   });
 });
+
+/**
+ * R3：跨包原语层（shared/client/ui）在本包的契约判据。
+ *
+ * 判据按语义层（role/aria-*）+ 样式钩子层（data-dsu-*）写，**不按 className 选元素**：
+ * 类名是冻结契约第 2 层的样式钩子，拿它选元素等于把钩子名焊死在测试里。
+ * 本包只消费 Button（15 处），故只锁 Button；tab 族刻意未迁（语义层不许在收敛中变）。
+ */
+describe("R3 原语层契约：Button（本包唯一消费档）", () => {
+  it("全部 dj-btn 按钮都带 dsu 钩子与恒定 type=button", async () => {
+    restore = installStub(baseStub).restore;
+    const card = mount();
+    await pollUntil(() => (card.textContent ?? "").includes("已加载配置"), "连接已加载");
+    const buttons = Array.from(card.querySelectorAll<HTMLButtonElement>("[data-dsu-btn]"));
+    // connection 窗格：离线自检 + 保存两枚（重试按钮只在 failed 态出现）。
+    expect(buttons.length).toBeGreaterThanOrEqual(2);
+    for (const btn of buttons) {
+      expect(btn.type).toBe("button");
+      expect(btn.classList.contains("dsu-btn")).toBe(true);
+      // 领域视觉仍由调用点传入的类承担（原语层不替消费包挑外观）。
+      expect(btn.classList.contains("dj-btn")).toBe(true);
+    }
+    // 覆盖「迁移只漏了一处」：按可见按钮数对齐，裸 <button> 一枚都不许有。
+    const all = card.querySelectorAll("button");
+    expect(all.length).toBe(
+      buttons.length + tabButtons(card).length + card.querySelectorAll(".dj-foldHead").length,
+    );
+  });
+
+  it("tab 族未被迁入 SegmentedControl：aria-selected 保持页签语义", async () => {
+    restore = installStub(baseStub).restore;
+    const card = mount();
+    const tabs = tabButtons(card);
+    // 迁移前的语义层：role=group 容器 + 每项 aria-selected（不是 aria-pressed）。
+    expect(card.querySelector('[role="group"]')).not.toBe(null);
+    expect(tabs.map((b) => b.getAttribute("aria-selected"))).toEqual(["true", "false", "false"]);
+    expect(card.querySelectorAll("[aria-pressed]")).toHaveLength(0);
+    // 永久禁用项：role=navigation 命中即整弹窗退回桌面 row 布局（手机内容区约 106px）。
+    expect(card.querySelector("[role=navigation]")).toBe(null);
+    expect(card.querySelector("[role=tablist]")).toBe(null);
+  });
+
+  it("本包未消费的 Surface/Field/Badge/Status 原语不在 DOM 上", async () => {
+    restore = installStub(baseStub).restore;
+    const card = mount();
+    expect(card.querySelector("[data-dsu-surface]")).toBe(null);
+    expect(card.querySelector("[data-dsu-field]")).toBe(null);
+    expect(card.querySelector("[data-dsu-badge]")).toBe(null);
+    expect(card.querySelector("[data-dsu-status]")).toBe(null);
+  });
+});

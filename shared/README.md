@@ -25,10 +25,75 @@ DSH 插件家族共用的模块（构建期 esbuild 内联进各插件包，不�
 | `sse-hub.ts` | 宿主 | `createSseHub` SSE 长连接枢纽单一事实源（#515：连接表 + 心跳 + stalled/maxAge 主动回收，取代各包自建连接表；#769 移除了连接上限机制：半开/僵尸连接此后只靠 stalled 收住，maxAge 只回收「长命且业务空闲」的正常连接）。行为契约：广播帧由调用方生成、hub 不感知业务语义；stalled 判据是「write 返回 false 连续超窗」而非 writableLength（背压不等价于僵尸）；心跳是 hub 级单 interval；健康明细**不进** `/health`（大小随连接数增长，而 `/health` 是常量大小聚合面） |
 | `client/i18n.js` | 客户 | 共享 `t` 活绑定 + `bindLocale`（#348 → #378 抽取；未装配回落 key 本体） |
 | `client/ensure-style.ts` | 客户 | 参数化 `ensureStyle({ id, cssText, version? })`（#477 收敛；按 id 幂等 / head 缺失静默 no-op 不抛 / version 变化重建 / 返回 disposer） |
+| `client/ui/index.tsx` | 客户 | 跨包 UI 原语层（T1 五原语 + 共享类型面，R2 由 dsh-provider-usage 端内面上提到档 C）。**单文件**（原因见下方小节）。语义层/样式钩子/props 面逐项契约见下方「client/ui 行为契约登记」 |
+| `client/ui/ui.css` | 客户 | 原语层表现面的**唯一副本**（R3）：Surface / Field / SegmentedControl / Status / Badge 的 dsu-* 规则。消费方式 = 各包 `src/client/index.*` 的 ts 侧拼接 `cssText: UI_CSS + STYLE`（顺序是契约，见下）。它不是 .ts，门禁不枚举 |
 
 > 消费方由脚本实时派生输出（`node scripts/gate/verify-shared-fanin.mjs`，逐模块打印消费包集合），
 > 本表只保留端别 / 内容 / 行为契约。为什么不在这里留一份人肉登记快照：实测它会漂移——上一次
 > 快照把零引用的包登成消费方、漏登真实消费方、整行模块缺失，而漂移的登记比没有登记更误导读者。
+
+### client/ui 行为契约登记（准入规则 5/6 的「同 PR 四齐」载体）
+
+R3 起本层有两份资产，**改一处必须想到另一处**：
+
+- `client/ui/index.tsx` —— 语义层 + props 面（role/aria-*、dsu-* 钩子、组件 API）。
+- `client/ui/ui.css` —— 表现面。R3 之前它是「各包 style.css 里人手复制的第 N 份」，
+  改一处要同步 N 处、漏改无任何测试报红；R3 起改为**唯一副本 + ts 侧拼接注入**。
+
+拼接的两条硬约束（都写在本文件头注释里，此处登记是因为它们是跨包契约）：
+
+1. **不能用 `@import`**。R3 实测：build-client 的 `loader: {".css": "text"}` 把 .css 当
+   纯文本内联，esbuild 不解析 CSS，`@import` 会原样留在产物里，浏览器再按**页面相对
+   URL** 去请求那个路径 → 404 → 规则静默消失，**而 build exit 0、测试全绿**。
+2. **顺序必须是 `UI_CSS + STYLE`**（原语层在前当底座）。各包 style.css 里对 dsu 钩子的
+   窄屏/领域覆盖（同优先级靠后者胜）要压得住原语默认值——dsh-provider-usage 的
+   `@media (max-width: 480px)` 段正是靠这条覆盖 `.dsu-badge` 与 `.dsu-surface-pane`。
+
+R2 把 T1 原语层从 dsh-provider-usage 的端内面（`src/client/shared/ui/`）上提到本层。
+准入四齐在同一 PR 内齐备：**代码**（本层源码）+ **契约登记**（本表）+ **独立测试**
+（`packages/dsh-provider-usage/test/client-dom/ui-primitives.test.ts`，直连本层**源码**
+而非 emit 产物）+ **扇入 ≥ 2**（provider-usage / notifier，由 fanin 门禁实时派生）。
+
+**冻结契约四层**（改动须先改本表）：
+
+1. **语义层冻结**——role 与 aria-* 逐个列名：
+
+   | 原语 | 语义层 |
+   |------|--------|
+   | Button | 原生 `<button type="button">`；**不注入 role**（冗余，且会盖掉原生禁用态语义） |
+   | FieldRow / NumberField / SelectField | `label` 包裹控件的隐式关联；**不注入 role/aria-***（加显式 aria-labelledby 即制造两份事实源） |
+   | SegmentedControl | 容器 `role="group"` + **必填** `aria-label`；项 `aria-pressed`（布尔）。**禁用 `role="tablist"` 与 `role="navigation"`** |
+   | Status | 无 label → `aria-hidden="true"` 装饰点（旁边的文字承担播报）；有 label → `role="img"` + `aria-label` |
+   | Badge | 纯文字容器，**不注入 role** |
+   | Surface | 裸容器，**不注入 role** |
+
+   `role="navigation"` 是本仓**最致命的失败模式**：宿主 `:not(:has([role=navigation]))`
+   移动端规则一旦命中，整弹窗退回桌面 row 布局，手机内容区被压至约 106px。测试用
+   `role="navigation"` 正面断言把它钉死（Surface 两种形态各一条）。
+
+2. **样式钩子冻结**——类名 `dsu-*` 与状态钩子 `data-dsu-*`（dsh-ui 前缀，**包无关**）。
+   消费包的领域类**不归本层**：provider-usage 的 `.dou-btn`、notifier 的 `.dn-*` 一律
+   由调用点经 `className` / `itemClassName` 传入。跨包层替某个包挑外观是它不可复用的
+   开始——R1 时 Button 硬编码 `.dou-btn`，上提时必须拆掉。
+3. **DOM 结构与第三方 `data-*` 不是契约**：改层级不得改语义层。
+4. **props 面冻结**：只冻结形状与默认值（`variant`/`size`/`tone` 等必填项与缺省值）。
+
+**为什么是单文件（本层最容易被「好心拆开」的形状）**：
+`verify-shared-fanin.mjs` 按 `shared/` 下**每个 `.js`/`.d.ts` 文件**枚举模块并各自要求
+扇入 ≥2（shared 是 TS 化 + 原地 emit，枚举到的是 tsc 产物）。R2 实测：`shared/client/` 下
+放两个 0 消费的探针 `.ts`，emit 之后门禁立刻报 `FAIL 值面 client/probe-alpha.js | 0 包`。
+两包都只从门面导入时，拆成 button/field/… 会让五个实现文件各自 0 消费者判红，故单文件是
+**当前门禁下的唯一可行形状**。将来要拆，前置条件是先解决「每个文件都得有 ≥2 个包直接
+import」这条约束。
+
+**两条已知治理缺口（如实登记，不假装闭合）**：
+- `scripts/test/shared-ts-shape.test.ts` 的 ALLOWLIST 只收 `.ts`（`f.endsWith(".ts")`），
+  本层的 `.tsx` **不在其冻结面内**——形态守卫对本层不生效。补该守卫要改 `scripts/test/**`，
+  不在本轮授权内。
+- `scripts/data/mutation-topology.json` 的 `ui-primitives` 段登记在
+  `packages.dsh-provider-usage` 下、`mutate` 指向 `shared/client/ui/index.tsx`
+  （段位随首个消费包走；`$rootShared` 段要求测试文件落在 `shared/test/*.mutation.test.ts`，
+  而该目录不在任何 vitest project 的收集面内）。
 
 ## 使用约束
 

@@ -12,6 +12,10 @@
 
 import * as React from "react";
 import { t } from "../../../../shared/client/i18n.js";
+// R3：本卡片接入跨包原语层 shared/client/ui（档 C，react 为宿主 loader 注入的 external）。
+// 相对路径按本文件层级数出：src/client/ → src/ → dsh-lan-proxy/ → packages/ → 仓库根，
+// 与上面既有的 i18n 引用同层（4 层），不手抄别的包的层数。
+import { Button } from "../../../../shared/client/ui/index.js";
 import { DEFAULTS as CLIENT_DEFAULTS } from "./shared/interface.ts";
 import type {
   CompressSnapshotView,
@@ -157,6 +161,23 @@ export interface SettingsCardProps extends PluginConfigViewProps {
  * 插件行配置页：启用 / LAN 端口 / HTTPS / 证书文件 / 启动横幅。
  * 改动只在点「保存」后生效：经 loopback HTTP 路由写入官方 settings 存储，
  * 宿主 scope.watch 立即重建转发器。
+ *
+ * 【R3 原语层接入：只迁 Button，且只迁能零视觉差异换钩子的那一档】
+ * 八处保存/CA 动作按钮改用 <Button className="lp-set-save">：Button 原语在 dsu 块里
+ * **一条规则都不出**（视觉与触控热区由调用点传入的领域类承担），故这是纯增益——
+ * 拿到 dsu-btn / data-dsu-btn 钩子与恒定的 type="button"，像素零变化。
+ *
+ * 下面四族**刻意不迁**，理由逐条钉住（防止下一个人把它们当漏项「顺手补上」）：
+ *   1. lp-set-row：space-between 单行（标签左/控件右），dsu-field-row 是 flex-wrap
+ *      横排 + row-gap 6 + margin-bottom 8。换过去既是布局改版，又多出 8px 下边距。
+ *   2. lp-set-input：max-width:280 + padding 5px 9px + radius 7；dsu-input 是
+ *      margin-left 6 + padding 2px 6px + radius 4。数字框更不能换 NumberField：本包的
+ *      端口越界**靠保存期 validateSaveNumbers 报 rangeFail**，原语的输入期钳制会让
+ *      那条报错永不可达（issue #33 子项 1 的行为契约）。
+ *   3. lp-set-card：dsu-surface-pane 带 padding 12 / margin-bottom 16 / font-size 12 /
+ *      line-height 1.7，card 档带 max-width 560 + box-shadow，两档都会改这张卡的观感。
+ *   4. lp-set-warn / lp-set-status / lp-set-hint / lp-set-foot / lp-set-body：本包的领域件，
+ *      T1 无同构原语（warn 是带边框的警示块，status 是整行文字，不是 Badge/Status 点）。
  */
 type CaConfirm = null | { kind: "generate" | "leaf" | "ca" };
 function BasicFields(props: {
@@ -364,54 +385,49 @@ function CaActions(props: {
       {view.state !== undefined ? (
         <div className="lp-set-row" id="lp-ca-generate">
           {view.state === "self-signed" ? (
-            <button
-              type="button"
+            <Button
               className="lp-set-save"
               onClick={() => onAction({ type: "submit", kind: "generate", confirmed: false })}
               disabled={view.caSaving}
             >
               {t("caGenerate")}
-            </button>
+            </Button>
           ) : null}
           {view.state === "managed" ? (
-            <button
-              type="button"
+            <Button
               className="lp-set-save"
               onClick={() => onAction({ type: "confirm", kind: "leaf" })}
               disabled={view.caSaving}
             >
               {t("caRotate")}
-            </button>
+            </Button>
           ) : null}
           {view.state === "managed" ? (
-            <button
-              type="button"
+            <Button
               className="lp-set-save"
               onClick={() => onAction({ type: "confirm", kind: "ca" })}
               disabled={view.caSaving}
             >
               {t("caRotateCa")}
-            </button>
+            </Button>
           ) : null}
           {view.state === "custom" || view.state === "error" ? (
-            <button
-              type="button"
+            <Button
               className="lp-set-save"
               disabled={true}
               title={t(view.state === "error" ? "caFilesMissing" : "caDisabledNoCa")}
             >
               {t("caGenerate")}
-            </button>
+            </Button>
           ) : null}
           {view.state === "error" ? (
-            <button
-              type="button"
+            <Button
               className="lp-set-save"
               onClick={() => onAction({ type: "clear" })}
               disabled={view.mainSaving}
             >
               {t("caClearSelfSigned")}
-            </button>
+            </Button>
           ) : null}
         </div>
       ) : null}
@@ -432,8 +448,7 @@ function CaConfirmBox(props: {
         <div className="lp-set-row">
           <span>{t("caConfirmTitle")}</span>
           <span className="lp-set-hint">{t("caConfirmBody")}</span>
-          <button
-            type="button"
+          <Button
             className="lp-set-save"
             onClick={() =>
               onAction({ type: "submit", kind: view.caConfirm!.kind, confirmed: true })
@@ -441,15 +456,14 @@ function CaConfirmBox(props: {
             disabled={view.caSaving}
           >
             {t(view.confirmLabel)}
-          </button>
-          <button
-            type="button"
+          </Button>
+          <Button
             className="lp-set-save"
             onClick={() => onAction({ type: "cancel" })}
             disabled={view.caSaving}
           >
             {t("caConfirmCancel")}
-          </button>
+          </Button>
         </div>
       ) : null}
     </React.Fragment>
@@ -656,9 +670,9 @@ function StatusFoot(props: {
         {saved ? (
           <span className={saved.err ? "lp-set-error" : "lp-set-saved"}>{saved.msg}</span>
         ) : null}
-        <button type="button" className="lp-set-save" onClick={() => save()} disabled={saving}>
+        <Button className="lp-set-save" onClick={() => save()} disabled={saving}>
           {t("save")}
-        </button>
+        </Button>
       </div>
     </React.Fragment>
   );

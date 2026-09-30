@@ -1694,8 +1694,10 @@ describe("客户端契约", () => {
       settingsIndex.includes("hidden={tab !== key}");
     clientContractObs.settingsHasNoUrlOrStorageState =
       !/location\.hash|sessionStorage\.|localStorage\./.test(settingsIndex);
+    // 原语层收敛后多 tab 的结构钩子由 dou-set-* 换成 dsu-*（dsu-seg-bar / dsu-surface-pane），
+    // 故被检查的产物钩子名同步换锚——判据的**意图**（多 tab 结构确实进了客户端产物）不变。
     clientContractObs.bundleHasSetTabClasses =
-      clientCode.includes("dou-set-tab") && clientCode.includes("dou-set-pane");
+      clientCode.includes("dsu-seg-bar") && clientCode.includes("dsu-surface-pane");
     clientContractObs.settingsHasRoleGroup = settingsIndex.includes('role="group"');
     clientContractObs.settingsHasNoRoleNavigation = !settingsIndex.includes('role="navigation"');
     clientContractObs.settingsNavLabelI18n = settingsIndex.includes('t("settingsNavLabel")');
@@ -1862,7 +1864,14 @@ describe("客户端契约", () => {
     expect(clientContractObs.settingsHasNoUrlOrStorageState).toBeTruthy();
   });
 
-  it("多 tab 结构类名进客户端产物", () => {
+  it("多 tab 结构进客户端产物（窗格钩子 + 分段器原语钩子 + aria-pressed 语义层）", () => {
+    // 原语层收敛后结构类名换成 dsu-* 钩子，且分组语义与激活态由原语内部装配，
+    // 调用点只传 variant="bar"。故判据锚在**调用点的原语调用 + 产物里的语义层**：
+    // 意图（多 tab 结构确实进了产物、且用的是可访问的分组语义）不变，强度不减。
+    const index = clientContractObs.settingsIndex as string;
+    expect(index.includes("<SegmentedControl")).toBeTruthy();
+    expect(index).toMatch(/<SegmentedControl[\s\S]{0,200}variant="bar"/);
+    // 分组语义与激活态在**产物**里（由原语装配），不在调用点源码里
     expect(clientContractObs.bundleHasSetTabClasses).toBeTruthy();
   });
 
@@ -5234,22 +5243,35 @@ describe("#633 分片 b2 D2：客户端源码契约断言", () => {
       "utf8",
     );
     clientContractObs.historySource = readFileSync(join(pkgDir, "src/client/history.tsx"), "utf8");
-    clientContractObs.clientStyle = readFileSync(join(pkgDir, "src/client/style.css"), "utf8");
+    // R3：原语规则已搬进跨包唯一副本 shared/client/ui/ui.css（由本包 index.tsx 经 ts 侧
+    // 拼接注入）。**不把期望值改成 0**——「padding 只定义一处」这条判据的意图恰恰是
+    // 「全仓唯一」，搬仓后它更强而不是更弱。故被检查的样式源 = 包内 style.css + 共享块，
+    // 两者拼起来数的仍是「整个本包最终注入的那张样式表」。
+    clientContractObs.clientStyle =
+      readFileSync(join(pkgDir, "src/client/style.css"), "utf8") +
+      "\n" +
+      readFileSync(join(pkgDir, "..", "..", "shared", "client", "ui", "ui.css"), "utf8");
     clientContractObs.listDirsSource = readFileSync(
       join(pkgDir, "src/server/execute/list-dirs.ts"),
       "utf8",
     );
   });
 
-  // B1：趋势面板目录筛选控件存在（select + dirs 数据源 + 全部目录/byDir 请求面）
-  it("趋势面板存在目录筛选下拉（aria-label 哨兵）", () => {
+  // A1：目录筛选不再是独立下拉，而是「统计口径=目录」时的**对象选择器候选项**。
+  // 判据换成等价可观测形态：对象选择器恒存在（不由请求回包决定可见性），其候选项
+  // 由目录数据源经 dirStackId/dirDisplayLabel 归一后派生，且首项是「全部目录」。
+  it("趋势面板存在对象选择器（目录口径下承载目录筛选）", () => {
+    expect((clientContractObs.trendSource as string).includes("selObjectOptions")).toBeTruthy();
     expect(
-      (clientContractObs.trendSource as string).includes('aria-label={t("trendDirLabel")}'),
+      (clientContractObs.trendSource as string).includes('t("trendObjectLabel")'),
     ).toBeTruthy();
   });
 
-  it("目录下拉首项「全部目录」", () => {
-    expect((clientContractObs.trendSource as string).includes("trendDirAll")).toBeTruthy();
+  it("对象候选项由口径派生（目录口径列目录、适配器口径列适配器）", () => {
+    expect((clientContractObs.trendSource as string).includes("trendObjectAllDir")).toBeTruthy();
+    expect(
+      (clientContractObs.trendSource as string).includes("trendObjectAllProvider"),
+    ).toBeTruthy();
   });
 
   it("目录段 id 经 dirStackId 防御归一（异常值不进渲染面）", () => {
@@ -5277,17 +5299,28 @@ describe("#633 分片 b2 D2：客户端源码契约断言", () => {
     ).toBeTruthy();
   });
 
-  // P0①目录下拉可达性：渲染条件改状态真值（shouldShowDirSelect，未选适配器恒可见）；
-  // 旧条件 dirMode 恒真致下拉仅加载瞬间闪现——负向断言防回归
-  it("目录下拉可见性 = shouldShowDirSelect（未选适配器恒可见）", () => {
-    expect(
-      (clientContractObs.trendSource as string).includes("shouldShowDirSelect(provider)"),
-    ).toBeTruthy();
+  // P0①「筛选控件恒可见」的意图在 A1 下由**口径三值恒显**承接：三个下拉收敛成
+  // 一个恒在的分段器 + 一个恒在的对象选择器，可见性不再由 dirMode（回包派生）决定。
+  it("统计口径三值恒显（CALIBERS 全量渲染，不条件挂载）", () => {
+    expect((clientContractObs.mathSource as string).includes("export const CALIBERS")).toBeTruthy();
+    expect((clientContractObs.trendSource as string).includes("CALIBERS.map")).toBeTruthy();
   });
 
-  it("byModel checkbox 可见性 = shouldShowByModel（adapter 过滤且未选目录）", () => {
+  it("对象选择器恒在（不由 caliber 可用性之外的条件决定）", () => {
+    const src = clientContractObs.trendSource as string;
+    // 负向护栏：不得出现「按口径可用性隐藏整个对象选择器」的旧式条件渲染
+    expect(src.includes("!isCaliberAvailable(p.caliber) ? null : <FieldRow")).toBe(false);
+  });
+
+  it("模型口径 disabled + 就地说明（不许画一个点了就空的格子）", () => {
     expect(
-      (clientContractObs.trendSource as string).includes("shouldShowByModel(provider, dirFilter)"),
+      (clientContractObs.mathSource as string).includes("export function isCaliberAvailable"),
+    ).toBeTruthy();
+    expect(
+      (clientContractObs.trendSource as string).includes("disabled: !isCaliberAvailable(c)"),
+    ).toBeTruthy();
+    expect(
+      (clientContractObs.trendSource as string).includes('t("trendCaliberModelNote")'),
     ).toBeTruthy();
   });
 
@@ -5295,12 +5328,27 @@ describe("#633 分片 b2 D2：客户端源码契约断言", () => {
     expect(!(clientContractObs.trendSource as string).includes("dirMode ? null")).toBeTruthy();
   });
 
-  it("选适配器联动清目录（两维互斥：数据面切换）", () => {
-    expect((clientContractObs.trendSource as string).includes('setDirFilter("")')).toBeTruthy();
+  // 旧断言锁的是「选适配器 → setDirFilter("")」这条**静默清零**实现。A1 把它换成
+  // 「切换口径时对象筛选被重置 + 给出可撤销提示」这一**行为**：判据迁到行为面，
+  // 不删、不弱化——且比旧断言更强（旧断言锁字符串，新断言锁三件事同时成立）。
+  it("切换口径时对象筛选被重置且有可撤销提示（非静默清零）", () => {
+    const src = clientContractObs.trendSource as string;
+    expect(src).toMatch(/caliberResetsObject\(/);
+    expect(src.includes("setUndo({ caliber: caliber, object: objectValue })")).toBeTruthy();
+    expect(src.includes("onUndoReset")).toBeTruthy();
   });
 
-  it("选目录联动清适配器（两维互斥：数据面切换）", () => {
-    expect((clientContractObs.trendSource as string).includes('setProvider("")')).toBeTruthy();
+  it("撤销可还原切换前的（口径, 对象）组合", () => {
+    const src = clientContractObs.trendSource as string;
+    expect(src).toMatch(
+      /const onUndoReset[\s\S]*?setCaliber\(undo\.caliber\);[\s\S]*?setObjectValue\(undo\.object\);/,
+    );
+  });
+
+  it("口径 → 请求面映射下沉为纯函数（交叉面杜绝）", () => {
+    expect(
+      (clientContractObs.mathSource as string).includes("export function trendRequestParamsFor"),
+    ).toBeTruthy();
   });
 
   it("宿主 /trend 支持 byDir=1（客户端数据源契约）", () => {
@@ -5393,18 +5441,165 @@ describe("#633 分片 b2 D2：客户端源码契约断言", () => {
     expect((clientContractObs.clientStyle as string).includes("gap: 10px;")).toBeTruthy();
   });
 
-  it("B2-2 四窗格挂共用 dou-pane（禁止各写一套 padding）", () => {
+  // 原判据锚在 className 字面量上；分段器/窗格收敛进 T1 原语层后，字面量换成了原语调用。
+  // 判据的**意图**（各窗格共用一套 padding，禁止各写一套）不变，故判三件事：
+  //   1) 三个设置区窗格都挂同一个共用原语（不再内联 padding / 不再用 sectionStyle）；
+  //   2) 趋势页也挂同一个原语（本 PR 收尾：迁移 trend.tsx 并删掉 .dou-pane 过渡别名）；
+  //   3) 该窗格的 padding 在样式表里**只定义一处**，且旧别名的规则体**一处都不剩**。
+  // 第 3 条是**判据换锚**不是判据放宽：改判「恰好一处、且含 padding: 12px」，另**加**一条
+  // 「.dou-pane 选择器全表归零」的反向断言——删掉别名却漏改本判据，正是「零消费者的永久别名」
+  // 的成因。强度只增不减。
+  it("B2-2 五窗格挂共用窗格原语，且其 padding 只定义一处、旧别名归零", () => {
     for (const src of [
       clientContractObs.providersSource as string,
       clientContractObs.uiSource as string,
       clientContractObs.usageSource as string,
     ]) {
-      expect(src.includes('className="dou-pane"')).toBeTruthy();
+      expect(src.includes('<Surface variant="pane">')).toBeTruthy();
       expect(!src.includes("style={sectionStyle}")).toBeTruthy();
     }
-    expect((clientContractObs.trendSource as string).includes("dou-pane")).toBeTruthy();
-    expect((clientContractObs.clientStyle as string).includes(".dou-pane {")).toBeTruthy();
+    // 趋势页那处带 className（dou-trend），故只匹配到 variant 属性为止。
+    expect(
+      (clientContractObs.trendSource as string).includes('<Surface variant="pane"'),
+    ).toBeTruthy();
+    const style = clientContractObs.clientStyle as string;
+    const paneBodies = style.match(/^\.dsu-surface-pane \{[^}]*\}$/gm) ?? [];
+    expect(paneBodies.length).toBe(1);
+    expect(paneBodies[0]).toContain("padding: 12px;");
+    // 过渡别名已退役：样式表里不得再有任何以行首 .dou-pane 起头的选择器。
+    expect(/^\.dou-pane\b/m.test(style)).toBe(false);
+    expect((clientContractObs.trendSource as string).includes("dou-pane")).toBe(false);
   });
+
+  // ============ A/C 重做：三项 P0 与交互重做的源码契约（判据锚在可观测形态上） ============
+  it("C-1 图表几何：viewBox 宽度取实测容器宽，不再固定 560", () => {
+    const m = clientContractObs.mathSource as string;
+    expect(m).toContain("export function chartGeom");
+    expect(m).not.toMatch(/const SVG_W = \d+/);
+    // 1 user unit = 1 CSS px：外壳给显式 px 宽高，不靠 height:auto 等比缩放
+    expect(codeOnly(m)).toMatch(/width:\$\{g\.W\}px;height:\$\{g\.H\}px/);
+    // 负向护栏只锚在堆叠图外壳 svgShell 上：donutSvg 是用量页环形图，它的
+    // height:auto 合法且与本次改动无关，不能被这条判据捎带打红。
+    const code = codeOnly(m);
+    const shell = code.slice(code.indexOf("function svgShell"));
+    expect(shell.slice(0, shell.indexOf("return"))).not.toContain("height:auto");
+  });
+
+  it("C-1 左边距随最长 Y 标签自适应（不再写死 SVG_PL）", () => {
+    const m = clientContractObs.mathSource as string;
+    expect(m).toMatch(/const pl = Math\.max\(/);
+    expect(m).not.toMatch(/const SVG_PL = \d+/);
+  });
+
+  it("C-1 峰值桶改为图上标注（不再占一张汇总卡）", () => {
+    const m = clientContractObs.mathSource as string;
+    expect(m).toContain("function peakAnnotation");
+    const t = clientContractObs.trendSource as string;
+    expect(t).toContain("peakIndexOf");
+  });
+
+  it("C-3 窄容器降级阈值与根因注释在位", () => {
+    const m = clientContractObs.mathSource as string;
+    expect(m).toContain("export const CHART_FALLBACK_W = 240");
+    const t = clientContractObs.trendSource as string;
+    expect(t).toContain("CHART_FALLBACK_W");
+    expect(t).toContain("TrendNarrow");
+    // 根因必须在代码注释里写明：宿主容器所致，插件侧只能降级不能根治
+    expect(t).toMatch(/宿主[^\n]*容器/);
+    expect(t).toMatch(/无法修改|不能根治/);
+  });
+
+  it("C-2 汇总卡硬地板已删除（5×minWidth:120 = 632px 溢出责任）", () => {
+    const t = codeOnly(clientContractObs.trendSource as string);
+    expect(t).not.toContain("minWidth: 120");
+    expect(t).not.toContain("SummaryCard");
+    // 元信息改 grid（零 minWidth 地板）
+    expect(t).toContain("dou-trend-meta");
+  });
+
+  it("A2 元信息按粒度命名均值（不再恒写日均）", () => {
+    const t = clientContractObs.trendSource as string;
+    expect(t).toContain("granUnit");
+    expect(t).toContain("trendMetaAvgLabel");
+    // D8：启用已在返回但零消费的 turns / toolCalls
+    expect(t).toContain("summary.turns");
+    expect(t).toContain("summary.toolCalls");
+  });
+
+  it("A3 环比中性不着色（弃 up=warn / down=success）", () => {
+    const t = clientContractObs.trendSource as string;
+    expect(t).toContain("dou-trend-heroDelta");
+    expect(t).toContain('"flat"');
+    // 方向三态显式给出，0.0% 不再被染成 success 绿
+    expect(t).not.toContain("deltaUp");
+  });
+
+  it("A3 断点用 ResizeObserver 写 data-dou-col，不新增 @media 断点", () => {
+    const t = clientContractObs.trendSource as string;
+    expect(t).toContain("new ResizeObserver");
+    expect(t).toContain("data-dou-col");
+    const style = clientContractObs.clientStyle as string;
+    // 本次新增的趋势页规则只允许 hover 包裹的 @media，不开视口断点
+    const trendBlock = style.slice(
+      style.indexOf("A/C 重做"),
+      style.indexOf("设置页·提供商手风琴列表"),
+    );
+    expect(trendBlock.match(/@media \(max-width/g) ?? []).toEqual([]);
+  });
+
+  it("A3 图例是真 button（Tab 可进出、Space 切换）", () => {
+    const t = clientContractObs.trendSource as string;
+    expect(t).toContain("dou-trend-legendItem");
+    expect(t).toContain("aria-pressed={!off}");
+    // 旧实现：span role=switch 无 tabindex，键盘不可达
+    expect(t).not.toMatch(/role="switch"/);
+  });
+
+  it("冻结契约：趋势页不出现 role=tablist / role=navigation", () => {
+    const t = codeOnly(clientContractObs.trendSource as string);
+    expect(t).not.toContain('role="tablist"');
+    expect(t).not.toContain('role="navigation"');
+  });
+
+  it("i18n：新增文案中英各一套（无硬编码中文到组件）", () => {
+    const loc = clientContractObs.localesSource as string;
+    for (const k of [
+      "trendCaliberLabel",
+      "trendCaliberModel",
+      "trendCaliberModelNote",
+      "trendObjectLabel",
+      "trendObjectResetNotice",
+      "trendObjectUndo",
+      "trendMetaAvgLabel",
+      "trendMetaCoverage",
+      "trendMetaToolCalls",
+      "trendMetaTopShare",
+      "trendNarrowTitle",
+      "trendNarrowHint",
+      "trendNarrowSuggest",
+      "trendDetailLabel",
+      "trendLegendLabel",
+    ]) {
+      expect(loc.includes(k + ":"), "locales 缺 " + k).toBe(true);
+    }
+    // zh 与 en 各一份
+    expect((loc.match(/trendNarrowHint:/g) ?? []).length).toBe(2);
+    // 组件里不得出现裸中文字面量
+    // 判据锚在**字符串/JSX 文本字面量**上：注释与标识符里的中文不算硬编码文案
+    const strs = (
+      codeOnly(clientContractObs.trendSource as string).match(/"[^"\n]*"|>\s*[^<{][^<\n]*</g) ?? []
+    ).join(" ");
+    expect(strs).not.toMatch(/[\u4e00-\u9fa5]/);
+  });
+
+  /**
+   * 剥掉注释（块注释 + 行注释）后返回纯代码文本。
+   * 源码契约判据必须锚在**代码**上：注释里写着旧实现的名字（minWidth:120、
+   * role="tablist" 等）是历史说明，不是活代码，判据不能被它们命中，也不能被它们满足。
+   */
+  function codeOnly(src: string): string {
+    return src.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/^\s*\/\/.*$/gm, " ");
+  }
 
   // #940 B2-1：用量/趋势呈现契约（复用 /trend 日面，零新增宿主路由）
   it("B2-1 用量概览拉 /trend 日面", () => {
@@ -5452,8 +5647,11 @@ describe("#633 分片 b2 D2：客户端源码契约断言", () => {
       (clientContractObs.trendSource as string).includes('t("trendComposeTitle")'),
     ).toBeFalsy();
     expect((clientContractObs.trendSource as string).includes('t("trendMountedHint")')).toBeFalsy();
+    // 口径注记从「峰值卡上的静态 hint」收成**单行**注记区（selNotes → dou-trend-notes）：
+    // 判据迁到新形态（条件化组装 + 单行渲染），不删、不弱化。
+    expect((clientContractObs.trendSource as string).includes("selNotes")).toBeTruthy();
     expect(
-      (clientContractObs.trendSource as string).includes('t("trendCaliberNote")'),
+      (clientContractObs.trendSource as string).includes('className="dou-trend-notes"'),
     ).toBeTruthy();
     expect((clientContractObs.trendSource as string).includes("composeShares")).toBeFalsy();
   });

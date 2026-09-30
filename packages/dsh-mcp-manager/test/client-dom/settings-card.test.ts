@@ -149,7 +149,9 @@ describe("SettingsCard row owner 视图", () => {
     expect(view.container.querySelector(".dm-set-card")?.tagName).toBe("DIV");
     expect(view.container.querySelector("select#dm-set-position")).not.toBe(null);
     expect(view.container.querySelectorAll("input.dm-set-input")).toHaveLength(4);
-    expect(view.container.querySelector(".dm-set-save")).not.toBe(null);
+    // R3 断言迁移：原按类名选保存按钮（.dm-set-save）。类名是样式钩子，拿它选元素等于把
+    // 钩子名焊进测试；改按语义层查（原生 button + 恒定 type="button"）。
+    expect((view.getByRole("button", { name: "save" }) as HTMLButtonElement).type).toBe("button");
     expect(view.container.querySelector("li")).toBe(null);
     expect(view.container.querySelector(".dm-set-name")).toBe(null);
     expect(view.container.querySelector(".dm-set-description")).toBe(null);
@@ -211,7 +213,7 @@ describe("SettingsCard 两态", () => {
     // 放行后排空即进入加载完成态
     resolveGet(baseCfg());
     await act(async () => {});
-    expect(view.container.querySelector(".dm-set-save")).not.toBe(null);
+    expect(view.getByRole("button", { name: "save" })).toBeTruthy();
     expect(view.container.querySelector(".dm-set-name")).toBe(null);
     expect(view.container.querySelector(".dm-set-description")).toBe(null);
     expect(posts()).toEqual([]);
@@ -333,5 +335,43 @@ describe("SettingsCard 编辑与保存", () => {
     await act(async () => {});
     expect((view.getByRole("button", { name: "save" }) as HTMLButtonElement).disabled).toBe(false);
     expect(view.getByText("settingsSavedOk").className).toBe("dm-set-saved");
+  });
+});
+
+/**
+ * R3：跨包原语层（shared/client/ui）在本包的契约判据。
+ *
+ * 判据按语义层（role/aria-*）+ 样式钩子层（data-dsu-*）写，**不按 className 选元素**：
+ * 类名是冻结契约第 2 层的样式钩子，拿它选元素等于把钩子名焊死在测试里——换皮肤仍绿、
+ * 钩子漂移无人发现。本包只消费 Button 一档，故只锁 Button。
+ */
+describe("R3 原语层契约：Button（本包唯一消费档）", () => {
+  it("保存按钮走原语：原生 button 语义 + 恒定 type + dsu 钩子，领域类仍在", async () => {
+    const view = await mountPage();
+    const btn = view.getByRole("button", { name: "save" }) as HTMLButtonElement;
+    expect(btn.tagName).toBe("BUTTON");
+    expect(btn.type).toBe("button");
+    expect(btn.getAttribute("data-dsu-btn")).toBe("md");
+    expect(btn.classList.contains("dsu-btn")).toBe(true);
+    // 领域视觉仍由调用点传入的类承担（原语层不替消费包挑外观）。
+    expect(btn.classList.contains("dm-set-save")).toBe(true);
+  });
+
+  it("本卡未消费的四档原语不在 DOM 上，且禁用项 role=navigation/tablist 为零", async () => {
+    const view = await mountPage();
+    expect(view.container.querySelector("[data-dsu-seg]")).toBe(null);
+    expect(view.container.querySelector("[data-dsu-surface]")).toBe(null);
+    expect(view.container.querySelector("[data-dsu-badge]")).toBe(null);
+    expect(view.container.querySelector("[data-dsu-status]")).toBe(null);
+    expect(view.container.querySelector("[data-dsu-field]")).toBe(null);
+    expect(view.container.querySelector("[role=navigation]")).toBe(null);
+    expect(view.container.querySelector("[role=tablist]")).toBe(null);
+  });
+
+  it("浮窗链路零原语痕迹：dm-set 卡里没有任何 dsu-seg/dj-seg 形态的横滑条", async () => {
+    const view = await mountPage();
+    // 浮窗（float/**）是命令式 DOM，接不了原语层；此断言守住「本包只改了 React 卡」。
+    expect(view.container.querySelector(".dm-float")).toBe(null);
+    expect(view.container.querySelector("[data-dsu-seg-bar]")).toBe(null);
   });
 });

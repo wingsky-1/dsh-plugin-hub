@@ -125,14 +125,64 @@ export function trendRequestParams(
   return params;
 }
 
-/** 目录下拉可见性：仅「全部适配器」时可见（adapter 过滤面隐藏——目录面无 provider 关联）。 */
-export function shouldShowDirSelect(provider: string): boolean {
-  return provider === "";
+/**
+ * 统计口径档位（A1 L1）。宿主 /trend 有两个**互斥数据面**：目录面（byDir=1 / dir=）
+ * 与 provider 面（provider= / byModel=），目录行不带 provider 关联。
+ * 「模型」档当前不可选：宿主 dirStacked 忽略 byModel（ui-routes/trend.ts:135），
+ * 点了必然落回目录面——故分段器里 disabled + 就地说明，不画一个点了就空的格子。
+ */
+export type TrendCaliber = "dir" | "provider" | "model";
+
+/** 口径档位表（三值恒显，永不条件渲染；顺序即分段器视觉顺序）。 */
+export const CALIBERS: ReadonlyArray<TrendCaliber> = ["dir", "provider", "model"];
+
+/** 「模型」档可用性：宿主 dirStacked 面不接 byModel，当前恒不可选。 */
+export function isCaliberAvailable(c: TrendCaliber): boolean {
+  return c !== "model";
 }
 
-/** byModel checkbox 可见性：adapter 过滤且未选目录时可见（目录过滤面无 provider/model 细分）。 */
-export function shouldShowByModel(provider: string, dirFilter: string): boolean {
-  return provider !== "" && dirFilter === "";
+/**
+ * 口径 → /trend 请求参数（A1：三值口径取代「适配器下拉 + 目录下拉 + 按模型复选框」
+ * 三个互斥清零的控件）。映射与原先三态互斥同构，但入口从一个分段器：
+ * - dir      + 无对象 → byDir=1（全目录拆段面）
+ * - dir      + 有对象 → dir=<键>
+ * - provider + 无对象 → 不带任何目录参数（provider 面全集）
+ * - provider + 有对象 → provider=<名>
+ * - model                → 不可选（isCaliberAvailable 恒假），落到 provider 面
+ * byModel 恒不携带：只有「模型」口径会用到它，而该口径不可选。
+ */
+export function trendRequestParamsFor(
+  caliber: TrendCaliber,
+  gran: string,
+  metric: string,
+  range: number,
+  object: string,
+): URLSearchParams {
+  const params = new URLSearchParams({ granularity: gran, metric, n: String(range) });
+  const face: TrendCaliber = isCaliberAvailable(caliber) ? caliber : "provider";
+  if (face === "dir") {
+    if (object !== "") params.set("dir", object);
+    else params.set("byDir", "1");
+  } else if (object !== "") {
+    params.set("provider", object);
+  }
+  return params;
+}
+
+/**
+ * 口径切换时对象筛选是否会被重置（A1：对象筛选**不静默清零**）。
+ * 目录键与 provider 名是两个命名空间，跨口径携带的值必然落空 → 返回 true，
+ * 调用点据此给「已重置为全部…」的可撤销提示；同名对象两边都存在则保留。
+ */
+export function caliberResetsObject(
+  from: TrendCaliber,
+  to: TrendCaliber,
+  object: string,
+  candidateInTo: (value: string) => boolean,
+): boolean {
+  if (object === "") return false;
+  if (from === to) return false;
+  return !candidateInTo(object);
 }
 
 /**
@@ -232,75 +282,160 @@ export interface RenderBar {
   mark: "ongoing" | "edge" | null;
 }
 
-const SVG_W = 560;
+/**
+ * 图表几何契约（C-1）：**viewBox 的 1 user unit = 1 CSS px**。
+ *
+ * 旧实现固定 viewBox 560×190 + style="width:100%;height:auto"，浏览器按容器宽把整张图
+ * 等比缩小——375px 宿主弹窗实测把内容列压到 56px，缩放系数 0.100，轴文字落到 0.9px、
+ * 桶命中区落到 0.5px（PC 1440 下轴字也只有 8.6px）。改为「viewBox 宽度 = 调用点用
+ * ResizeObserver 实测的内容盒宽」后，字号与命中区是真实 CSS px，不再随容器缩水。
+ *
+ * 代价：宽度不再是模块常量，几何必须每次渲染按实测宽重算（本段所有辅助函数因此都吃
+ * ChartGeom 而不再读全局常量）。**不引入 @media 断点**——.dsu-surface-card 上限 560
+ * 使桌面内容列恒定，800px 平板 column 布局的内容列反而比桌面宽，按视口断点会判反；
+ * 窄容器判定与降级由调用点拿同一个 ResizeObserver 量出的宽度给出。
+ */
+
+/** 绘图区宽度下限（clamp）：窄于此值不画柱体，调用点走 C-3 兜底。 */
+export const CHART_MIN_W = 200;
+/**
+ * 窄容器降级阈值（实测 375px 宿主弹窗把内容列压到 56px，远低于此值）。
+ * 根因在宿主设置弹窗的容器宽度，插件侧改不了，只能在此降级、不能根治。
+ */
+export const CHART_FALLBACK_W = 240;
 const SVG_H = 190;
-const SVG_PL = 44;
 const SVG_PR = 8;
-const SVG_PT = 12;
-const SVG_PB = 30; // 两行轴标签（日粒度日期 + 周/月键）
-const PLOT_H = SVG_H - SVG_PT - SVG_PB;
-const XW = SVG_W - SVG_PL - SVG_PR;
+const SVG_PT = 16;
+const SVG_PB = 26;
+const AXIS_FONT_PX = 10;
+/** 10px 字号下紧凑数字串的平均字宽（实测 5~6px），用于左边距自适应。 */
+const Y_LABEL_CHAR_W = 5.6;
+/** 每条 X 标签至少要的横向间距（防相邻标签粘连）。 */
+const X_LABEL_PITCH = 64;
+
+/** 按实测容器宽解出的绘图区几何（所有 SVG 辅助函数的唯一坐标事实源）。 */
+export interface ChartGeom {
+  W: number;
+  H: number;
+  pl: number;
+  pr: number;
+  pt: number;
+  pb: number;
+  plotW: number;
+  plotH: number;
+}
+
+/**
+ * 按实测容器宽解几何：左边距随**最长 Y 刻度标签**自适应（不再写死 44px）。
+ * measuredW <= 0（尚未测量 / 容器 display:none）时 clamp 到下限，调用点另行
+ * 按「未测量」走空图表分支，不拿下限值当真值渲染。
+ */
+export function chartGeom(measuredW: number, ticks: number[]): ChartGeom {
+  const W = Math.max(CHART_MIN_W, Math.round(measuredW));
+  const longest = ticks.reduce((m, v) => Math.max(m, fmtCompact(v).length), 0);
+  const pl = Math.max(22, Math.round(longest * Y_LABEL_CHAR_W) + 8);
+  return {
+    W: W,
+    H: SVG_H,
+    pl: pl,
+    pr: SVG_PR,
+    pt: SVG_PT,
+    pb: SVG_PB,
+    plotW: Math.max(1, W - pl - SVG_PR),
+    plotH: SVG_H - SVG_PT - SVG_PB,
+  };
+}
 
 /** 网格 + Y 轴刻度（两形态共用）。 */
-function gridParts(ticks: number[], yOf: (v: number) => number): string[] {
+function gridParts(g: ChartGeom, ticks: number[], yOf: (v: number) => number): string[] {
   const parts: string[] = [];
   for (const gv of ticks) {
     const gy = yOf(gv);
     parts.push(
-      `<line x1="${SVG_PL}" y1="${gy.toFixed(1)}" x2="${SVG_W - SVG_PR}" y2="${gy.toFixed(1)}" style="stroke:var(--dsw-alias-border-l2,#e8eaf0);stroke-width:1;${gv === 0 ? "" : "stroke-dasharray:3 3;"}"/>`,
+      `<line x1="${g.pl}" y1="${gy.toFixed(1)}" x2="${(g.W - g.pr).toFixed(1)}" y2="${gy.toFixed(1)}" style="stroke:var(--dsw-alias-border-l2,#e8eaf0);stroke-width:1;${gv === 0 ? "" : "stroke-dasharray:3 3;"}"/>`,
     );
     parts.push(
-      `<text x="${SVG_PL - 4}" y="${(gy + 3).toFixed(1)}" text-anchor="end" style="font-size:9.5px;fill:var(--dsw-alias-label-tertiary,#9aa0ab)">${escHtml(fmtCompact(gv))}</text>`,
+      `<text x="${g.pl - 4}" y="${(gy + 3).toFixed(1)}" text-anchor="end" style="font-size:${AXIS_FONT_PX}px;fill:var(--dsw-alias-label-tertiary,#9aa0ab)">${escHtml(fmtCompact(gv))}</text>`,
     );
   }
   return parts;
 }
 
-/** X 轴标签（均匀抽稀，首尾必显）。 */
-function axisLabelParts(bars: RenderBar[], gran: TrendGran): string[] {
+/** X 轴标签（按实测绘图宽定条数、均匀抽稀，首尾必显）。 */
+function axisLabelParts(g: ChartGeom, bars: RenderBar[], gran: TrendGran): string[] {
   const parts: string[] = [];
-  const gap = XW / bars.length;
-  const labelStep = Math.max(1, Math.ceil(bars.length / 8));
+  const gap = g.plotW / bars.length;
+  const maxLabels = Math.max(2, Math.min(8, Math.floor(g.plotW / X_LABEL_PITCH)));
+  const labelStep = Math.max(1, Math.ceil(bars.length / maxLabels));
   bars.forEach((b, i) => {
     if (i % labelStep !== 0 && i !== bars.length - 1) return;
-    const cx = SVG_PL + gap * i + gap / 2;
+    const cx = g.pl + gap * i + gap / 2;
     const anchor = i === 0 ? "start" : i === bars.length - 1 ? "end" : "middle";
     parts.push(
-      `<text x="${cx.toFixed(1)}" y="${SVG_H - 16}" text-anchor="${anchor}" style="font-size:9.5px;fill:var(--dsw-alias-label-tertiary,#9aa0ab)">${escHtml(fmtAxisLabel(b.key, gran))}</text>`,
+      `<text x="${cx.toFixed(1)}" y="${(g.H - 8).toFixed(1)}" text-anchor="${anchor}" style="font-size:${AXIS_FONT_PX}px;fill:var(--dsw-alias-label-tertiary,#9aa0ab)">${escHtml(fmtAxisLabel(b.key, gran))}</text>`,
     );
   });
   return parts;
 }
 
 /** 桶组公共包装：data-bucket（容器事件委托锚点）+ 整列命中区。 */
-function bucketGroup(i: number, colX: number, colW: number, inner: string): string {
-  return `<g data-bucket="${i}" style="cursor:pointer">${inner}<rect x="${colX.toFixed(1)}" y="${SVG_PT}" width="${colW.toFixed(1)}" height="${PLOT_H}" style="fill:transparent"/></g>`;
+function bucketGroup(g: ChartGeom, i: number, colX: number, colW: number, inner: string): string {
+  return `<g data-bucket="${i}" style="cursor:pointer">${inner}<rect x="${colX.toFixed(1)}" y="${g.pt}" width="${colW.toFixed(1)}" height="${g.plotH}" style="fill:transparent"/></g>`;
 }
 
 /**
- * 堆叠柱状 SVG（M2 基础上 M2.1 增强）：空桶虚位、部分桶描边、data-bucket 委托锚点、
- * 月键标签修复。segs 为可见段（hidden 已滤），Y 域由调用方按全量段算（隐藏不缩轴）。
+ * 峰值桶图上标注（A2：峰值不再占一张汇总卡，改成图上一个可定位的标记）。
+ * 三角标 + 桶键文字都属装饰，语义仍由 tooltip / 移动端详情块承担（图上不重复播报），
+ * 故整组走 aria-hidden——只加 role="img" 反而会与外层 svg 的 role="img" 争可访问名。
+ */
+function peakAnnotation(
+  g: ChartGeom,
+  peakIndex: number,
+  peakKey: string,
+  gran: TrendGran,
+  gap: number,
+): string[] {
+  if (!(peakIndex >= 0) || peakKey === "") return [];
+  const cx = g.pl + gap * peakIndex + gap / 2;
+  return [
+    `<g aria-hidden="true" style="pointer-events:none"><path d="M${cx.toFixed(1)} ${(g.pt - 8).toFixed(1)} l4 6 h-8 z" style="fill:var(--dsw-alias-state-warn-primary,#d9a13c)"/><text x="${cx.toFixed(1)}" y="${(g.pt - 11).toFixed(1)}" text-anchor="middle" style="font-size:${AXIS_FONT_PX}px;fill:var(--dsw-alias-label-tertiary,#9aa0ab)">${escHtml(fmtAxisLabel(peakKey, gran))}</text></g>`,
+  ];
+}
+
+/** SVG 外壳：1 user unit = 1 CSS px（显式 px 宽高，不再 width:100%/height:auto 等比缩放）。 */
+function svgShell(g: ChartGeom, parts: string[]): string {
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${g.W} ${g.H}" width="${g.W}" height="${g.H}" role="img" aria-label="${escHtml(t("trendTitle"))}" style="display:block;width:${g.W}px;height:${g.H}px">${parts.join("")}</svg>`;
+}
+
+/**
+ * 堆叠柱状 SVG：空桶虚位、部分桶描边、data-bucket 委托锚点、月键标签修复。
+ * segs 为可见段（hidden 已滤），Y 域由调用方按全量段算（隐藏不缩轴）。
+ * width = 调用点实测的内容盒宽（C-1：不再等比缩放）。
  */
 export function stackedBarsSvg(opts: {
   bars: RenderBar[];
   gran: TrendGran;
   ticks: number[];
+  width: number;
+  peakIndex?: number;
+  peakKey?: string | null;
 }): string {
-  const { bars, gran, ticks } = opts;
+  const { bars, gran, ticks, width, peakIndex, peakKey } = opts;
   const yMax = ticks[ticks.length - 1];
-  if (bars.length === 0 || XW <= 0) return "";
-  const gap = XW / bars.length;
+  if (bars.length === 0) return "";
+  const g = chartGeom(width, ticks);
+  const gap = g.plotW / bars.length;
   const barW = Math.max(2, Math.min(18, gap * 0.62));
-  const yOf = (v: number): number => SVG_PT + (1 - v / yMax) * PLOT_H;
-  const parts: string[] = [...gridParts(ticks, yOf)];
+  const yOf = (v: number): number => g.pt + (1 - v / yMax) * g.plotH;
+  const parts: string[] = [...gridParts(g, ticks, yOf)];
   bars.forEach((b, i) => {
-    const cx = SVG_PL + gap * i + gap / 2;
+    const cx = g.pl + gap * i + gap / 2;
     const x = cx - barW / 2;
     const segs: string[] = [];
     if (b.none) {
       // 空桶虚位：统一「无数据」（tooltip 标注；挂载前/超保留期不做三态区分）
       segs.push(
-        `<rect x="${x.toFixed(1)}" y="${(SVG_H - SVG_PB - 2).toFixed(1)}" width="${barW.toFixed(1)}" height="2" rx="1" style="fill:var(--dsw-alias-label-tertiary,#9aa0ab);fill-opacity:.45"/>`,
+        `<rect x="${x.toFixed(1)}" y="${(g.pt + g.plotH - 2).toFixed(1)}" width="${barW.toFixed(1)}" height="2" rx="1" style="fill:var(--dsw-alias-label-tertiary,#9aa0ab);fill-opacity:.45"/>`,
       );
     }
     let acc = 0;
@@ -319,18 +454,19 @@ export function stackedBarsSvg(opts: {
           ? "var(--dsw-alias-state-warn-primary,#d9a13c)"
           : "var(--dsw-alias-label-tertiary,#9aa0ab)";
       segs.push(
-        `<rect x="${(x - 2.5).toFixed(1)}" y="${yOf(acc).toFixed(1)}" width="${(barW + 5).toFixed(1)}" height="${(SVG_H - SVG_PB - yOf(acc)).toFixed(1)}" rx="4" style="fill:none;stroke:${stroke};stroke-width:1;stroke-dasharray:${b.mark === "ongoing" ? "3 2" : "1.5 2.5"}"/>`,
+        `<rect x="${(x - 2.5).toFixed(1)}" y="${yOf(acc).toFixed(1)}" width="${(barW + 5).toFixed(1)}" height="${(g.pt + g.plotH - yOf(acc)).toFixed(1)}" rx="4" style="fill:none;stroke:${stroke};stroke-width:1;stroke-dasharray:${b.mark === "ongoing" ? "3 2" : "1.5 2.5"}"/>`,
       );
     }
-    parts.push(bucketGroup(i, cx - gap / 2, gap, segs.join("")));
+    parts.push(bucketGroup(g, i, cx - gap / 2, gap, segs.join("")));
   });
-  parts.push(...axisLabelParts(bars, gran));
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${SVG_W} ${SVG_H}" role="img" aria-label="${escHtml(t("trendTitle"))}" style="width:100%;height:auto;display:block">${parts.join("")}</svg>`;
+  parts.push(...axisLabelParts(g, bars, gran));
+  parts.push(...peakAnnotation(g, peakIndex ?? -1, peakKey ?? "", gran, gap));
+  return svgShell(g, parts);
 }
 
 /**
- * 堆叠面积 SVG（M2.1 新增；月粒度默认形态）：趋势连续性优先、保留 provider 构成。
- * 逐 id 画带状 path（自底堆叠）；null 桶断开为独立连续段；禁用平滑曲线
+ * 堆叠面积 SVG（趋势连续性优先、保留 provider 构成）。
+ * 逐 id 画带状 path（自底堆叠）；null 桶断开为独立连续段；禁平滑曲线
  * （Catmull-Rom 过冲会产生负面积视觉失真——方案 §3.3 定稿）。
  */
 export function stackedAreasSvg(opts: {
@@ -338,13 +474,17 @@ export function stackedAreasSvg(opts: {
   gran: TrendGran;
   ticks: number[];
   stackOrder: string[];
+  width: number;
+  peakIndex?: number;
+  peakKey?: string | null;
 }): string {
-  const { bars, gran, ticks, stackOrder } = opts;
+  const { bars, gran, ticks, stackOrder, width, peakIndex, peakKey } = opts;
   const yMax = ticks[ticks.length - 1];
-  if (bars.length === 0 || XW <= 0) return "";
-  const gap = XW / bars.length;
-  const yOf = (v: number): number => SVG_PT + (1 - v / yMax) * PLOT_H;
-  const parts: string[] = [...gridParts(ticks, yOf)];
+  if (bars.length === 0) return "";
+  const g = chartGeom(width, ticks);
+  const gap = g.plotW / bars.length;
+  const yOf = (v: number): number => g.pt + (1 - v / yMax) * g.plotH;
+  const parts: string[] = [...gridParts(g, ticks, yOf)];
   const byId = bars.map((b) => new Map(b.segs.map((s) => [s.id, s.value] as const)));
   const bases = bars.map(() => 0);
   for (const id of stackOrder) {
@@ -368,7 +508,7 @@ export function stackedAreasSvg(opts: {
         flush();
         return;
       }
-      const x = SVG_PL + gap * i + gap / 2;
+      const x = g.pl + gap * i + gap / 2;
       run.push({ x, top: yOf(bases[i] + v), bottom: yOf(bases[i]) });
       bases[i] += v;
     });
@@ -376,14 +516,15 @@ export function stackedAreasSvg(opts: {
   }
   // 交互命中区与柱状同构（整列透明 rect，data-bucket 委托）；空桶同样给虚位（两形态一致）
   bars.forEach((b, i) => {
-    const cx = SVG_PL + gap * i + gap / 2;
+    const cx = g.pl + gap * i + gap / 2;
     const inner = b.none
-      ? `<rect x="${(cx - Math.max(1.5, Math.min(9, gap * 0.31))).toFixed(1)}" y="${(SVG_H - SVG_PB - 2).toFixed(1)}" width="${Math.max(3, Math.min(18, gap * 0.62)).toFixed(1)}" height="2" rx="1" style="fill:var(--dsw-alias-label-tertiary,#9aa0ab);fill-opacity:.45"/>`
+      ? `<rect x="${(cx - Math.max(1.5, Math.min(9, gap * 0.31))).toFixed(1)}" y="${(g.pt + g.plotH - 2).toFixed(1)}" width="${Math.max(3, Math.min(18, gap * 0.62)).toFixed(1)}" height="2" rx="1" style="fill:var(--dsw-alias-label-tertiary,#9aa0ab);fill-opacity:.45"/>`
       : "";
-    parts.push(bucketGroup(i, cx - gap / 2, gap, inner));
+    parts.push(bucketGroup(g, i, cx - gap / 2, gap, inner));
   });
-  parts.push(...axisLabelParts(bars, gran));
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${SVG_W} ${SVG_H}" role="img" aria-label="${escHtml(t("trendTitle"))}" style="width:100%;height:auto;display:block">${parts.join("")}</svg>`;
+  parts.push(...axisLabelParts(g, bars, gran));
+  parts.push(...peakAnnotation(g, peakIndex ?? -1, peakKey ?? "", gran, gap));
+  return svgShell(g, parts);
 }
 
 // ---------------------------------------------------------------- B2-1 用量页聚合（纯函数：donut/热力/分担）

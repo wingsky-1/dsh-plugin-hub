@@ -10,6 +10,7 @@ import { providerBadgeText } from "../../shared/client-logic.ts";
 import type { ProviderListItem } from "../../shared/client-logic.ts";
 import { t } from "../../../../../shared/client/i18n.js";
 import { copyText, titleStyle } from "./shared.ts";
+import { Badge, Button, Surface } from "../../../../../shared/client/ui/index.js";
 // 纯推导（候选分组 / 错误索引）单点收口在 settings-view.ts。
 import { candidatesByProviderOf, errorIndexOf } from "./settings-view.ts";
 
@@ -84,9 +85,7 @@ function ProviderHead({
         ▸
       </span>
       <span className="dou-provName">{item.provider}</span>
-      <span className={`dou-provBadge${item.enabledId === null ? " dou-provBadgeOff" : ""}`}>
-        {badge}
-      </span>
+      <Badge muted={item.enabledId === null}>{badge}</Badge>
     </button>
   );
 }
@@ -143,8 +142,7 @@ function ProviderAddActions({
 }): React.ReactElement {
   return (
     <div className="dou-provActions">
-      <button
-        type="button"
+      <Button
         className="dou-btn"
         disabled={busy || inspecting || !fileFilled}
         onClick={() => {
@@ -152,9 +150,8 @@ function ProviderAddActions({
         }}
       >
         {inspecting ? t("detecting") : t("detectFile")}
-      </button>
-      <button
-        type="button"
+      </Button>
+      <Button
         className="dou-btn"
         disabled={busy || adding || !inspected}
         onClick={() => {
@@ -163,10 +160,10 @@ function ProviderAddActions({
         title={inspected ? undefined : t("detectFirst")}
       >
         {adding ? t("adding") : t("confirmAdd")}
-      </button>
-      <button type="button" className="dou-btn" disabled={busy || adding} onClick={onToggleAdd}>
+      </Button>
+      <Button className="dou-btn" disabled={busy || adding} onClick={onToggleAdd}>
         {t("cancel")}
-      </button>
+      </Button>
     </div>
   );
 }
@@ -347,8 +344,7 @@ function ProviderItem({
                   {t("noCandidates")}
                 </div>,
                 <div key="guide" className="dou-provActions">
-                  <button
-                    type="button"
+                  <Button
                     className="dou-btn"
                     disabled={busy}
                     onClick={() => {
@@ -356,14 +352,14 @@ function ProviderItem({
                     }}
                   >
                     {copied ? t("copied") : t("copyGuide")}
-                  </button>
+                  </Button>
                 </div>,
               ]
             : adapterRows}
           <div className="dou-provActions">
-            <button type="button" className="dou-btn" disabled={busy} onClick={toggleAdd}>
+            <Button className="dou-btn" disabled={busy} onClick={toggleAdd}>
               {showAddForm ? t("collapse") : t("addAdapter")}
-            </button>
+            </Button>
           </div>
           {!showAddForm ? null : addForm}
         </div>
@@ -425,15 +421,14 @@ export function ProviderListSection({
   );
 
   return (
-    <div className="dou-pane">
+    <Surface variant="pane">
       <div className="dou-reportHead">
         <div>
           <h4 style={titleStyle}>{t("provTitle")}</h4>
           <div className="dou-hint">{t("provSub")}</div>
         </div>
         <span className="dou-reportHeadSpacer" />
-        <button
-          type="button"
+        <Button
           className="dou-btn"
           disabled={busy}
           onClick={() => {
@@ -441,7 +436,7 @@ export function ProviderListSection({
           }}
         >
           {copiedGlobal ? t("copied") : t("copyGuide")}
-        </button>
+        </Button>
       </div>
       <div className="dou-hint">{t("provListHint", { n: main.length })}</div>
       {fileErrors.length > 0
@@ -455,8 +450,7 @@ export function ProviderListSection({
         <div className="dou-hint">
           {t("noProvHint")}
           <div className="dou-provActions">
-            <button
-              type="button"
+            <Button
               className="dou-btn"
               disabled={busy}
               onClick={() => {
@@ -464,7 +458,7 @@ export function ProviderListSection({
               }}
             >
               {copiedGlobal ? t("copied") : t("copyGuide")}
-            </button>
+            </Button>
           </div>
         </div>
       ) : (
@@ -477,7 +471,7 @@ export function ProviderListSection({
           {accordion(extra)}
         </div>
       ) : null}
-    </div>
+    </Surface>
   );
 }
 

@@ -11,7 +11,7 @@ import type { Translate } from "../../locale.ts";
 import { credentialFieldKey, credentialFieldView } from "../mask.ts";
 import { chRow } from "../parts/rows.tsx";
 import { numInput, switchToggle, textInput } from "../parts/controls.tsx";
-import { delArmedBtn, failBadge, statusDotClass, statusText, testBtn } from "../parts/status.tsx";
+import { delArmedBtn, failBadge, statusDot, statusText, testBtn } from "../parts/status.tsx";
 import type { ChannelStatusMap } from "../parts/status.tsx";
 import type { HistoryRecordView, SettingsChannelView } from "../types.ts";
 import { iconEl } from "./channel-icon.tsx";
@@ -286,7 +286,7 @@ export function webhookCard(
         <span className="dn-ch-stateTxt">
           {ch.enabled === true ? t("chStateOn") : t("chStateOff")}
         </span>
-        <span className={"dn-ch-statusDot " + statusDotClass(channelKey, statusMap)} />
+        {statusDot(channelKey, statusMap)}
         <span className="dn-ch-statusTxt" title={statusText(channelKey, statusMap, t, history)}>
           {statusText(channelKey, statusMap, t, history)}
         </span>

@@ -212,12 +212,19 @@ test("④ 真实仓库：只有 shared 段 conf 带该字段，且取值与派�
     .filter((f) => f.endsWith(".json"))
     .filter((f) => JSON.parse(readFileSync(join(confDir, f), "utf8")).ignorePatterns !== undefined)
     .sort();
-  // 口径：这份**闭枚举**就是「$rootShared 下 mutate 命中 shared/ 的全部段」——每段一份 conf。
-  // #1074 起有两段（settings-namespace 与 client），两份都该带该字段。枚举仍是闭的：
-  // 少一份=漏重生成，多一份=派生条件写宽了（包级段 outDir 是 lib，产物不进源码树，一个都不该有）。
+  // 口径：凡是 mutate 面命中 shared/ 的段，其 conf 都必须带该字段（不排掉 emit 产物，
+  // 变异测量会静默失效——见 gen-stryker-conf.mjs 的 SHARED_BUILD_ARTIFACT_IGNORE_PATTERNS）。
+  // #1074 起两段（settings-namespace 与 client）；#1015 起第三段：dsh-provider-usage-ui-primitives
+  // 是**包级段**，但 mutate 面是 shared/client/ui/index.tsx（#1015 把 T1 原语层上提到 shared/），
+  // 故同样适用——「是否带排除」由 mutate 面位置决定，与该段挂在包级还是 $rootShared 无关。
+  // 枚举仍是闭的：少一份=漏重生成，多一份=派生条件写宽了（mutate 面不碰 shared/ 的段一个都不该有）。
   assert.deepEqual(
     withIgnore,
-    ["shared-client.json", "shared-settings-namespace.json"],
+    [
+      "dsh-provider-usage-ui-primitives.json",
+      "shared-client.json",
+      "shared-settings-namespace.json",
+    ],
     "只有 mutate 命中 shared/ 的段该带产物排除；缺失=漏重生成，多出来=派生条件写宽了",
   );
   // 逐份核对取值：闭枚举把名字钉住了，但取值必须每份都对（此前只查一份，client 段是漏的）。

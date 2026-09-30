@@ -59,6 +59,12 @@ import {
 // React externals 路径：运行时由 dsh web factory require("react") 注入
 import * as React from "react";
 import STYLE from "./style.css";
+// R3：跨包原语层的表现面（唯一副本 shared/client/ui/ui.css）经 ts 侧拼接注入。
+// .css 走同一个 text-loader，仍是纯文本内联，产物依旧自包含单文件、零运行时依赖。
+// **顺序是 UI_CSS + STYLE（原语层在前）**：原语层当底座、各包 style.css 在其之上，
+// 这样包内的窄屏/领域覆盖（同优先级下靠后者胜）永远压得住原语默认值——
+// provider-usage 的 @media 480px 段就靠这条把 .dsu-badge/.dsu-surface-pane 改窄屏尺寸。
+import UI_CSS from "../../../../shared/client/ui/ui.css";
 
 // i18n：字典命名空间 + LocaleNamespaceMap 声明合并（官方 ui-jobs 同款）。
 const NS = "providerUsage";
@@ -540,7 +546,7 @@ function placePanel(): void {
 }
 
 function mountFloat(): () => void {
-  ensureStyle({ id: STYLE_ID, cssText: STYLE });
+  ensureStyle({ id: STYLE_ID, cssText: UI_CSS + STYLE });
   const pill = el("button", {
     type: "button",
     class: PILL_PREFIX + "float",
@@ -822,7 +828,7 @@ function detectProvider(): void {
 
 export function apply(ctx: ProviderUsageClientCtx): void {
   try {
-    ensureStyle({ id: STYLE_ID, cssText: STYLE });
+    ensureStyle({ id: STYLE_ID, cssText: UI_CSS + STYLE });
     if (document.body === null) return;
 
     // 客户端插件服务须经 inject 数组声明（"sessions"/"remote"/

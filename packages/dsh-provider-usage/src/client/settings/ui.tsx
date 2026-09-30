@@ -2,6 +2,7 @@
  * dsh-provider-usage — 设置页「悬浮胶囊」分区（拆分自 settings.ts，行为不变）。
  *
  * 锚点 + 偏移输入，保存即热更新（宿主落盘 + 客户端轮询收敛）。设置页 tab「悬浮窗」窗格。
+ * 容器/字段/按钮走 T1 原语层（client/shared/ui），本页不再内联样式。
  */
 import * as React from "react";
 import { fetchUiConfig, saveUiConfig } from "../core.ts";
@@ -9,6 +10,13 @@ import type { UiPlacementConfig } from "../core.ts";
 import { t } from "../../../../../shared/client/i18n.js";
 import type { ProviderUsageLocaleKey } from "../locales.ts";
 import { titleStyle } from "./shared.ts";
+import {
+  Button,
+  FieldRow,
+  NumberField,
+  SelectField,
+  Surface,
+} from "../../../../../shared/client/ui/index.js";
 
 /** 胶囊位置配置区：锚点 + 偏移输入，保存即热更新（宿主落盘 + SSE 广播）。
  *  label 存字典 key（i18n：渲染期经 t 求值，模块加载时 t 尚未装配）。 */
@@ -58,71 +66,40 @@ export function UiSection(): React.ReactElement | null {
   };
 
   // 层级基准与偏移量分开钳制：层级 1-9000，偏移维持 0-2000。
+  // 钳制口径（越界回落到 min、非数字回落 min）已下沉到 NumberField 原语，此处只给边界。
   const numInput = (
     key: "offsetX" | "offsetY" | "panelOffsetY" | "zIndexBase",
     label: string,
     min = 0,
     max = 2000,
   ): React.ReactNode => (
-    <label style={{ marginRight: 12, whiteSpace: "nowrap" }}>
-      {label}
-      <input
-        type="number"
-        min={min}
-        max={max}
-        value={String(cfg[key])}
-        style={{
-          width: 64,
-          marginLeft: 6,
-          padding: "2px 6px",
-          border: "1px solid var(--dsw-alias-border-l2,#e8eaf0)",
-          borderRadius: 4,
-        }}
-        onChange={(e: unknown) => {
-          const v = Number((e as { target: { value: string } }).target.value);
-          set({
-            [key]: Number.isFinite(v) ? Math.min(max, Math.max(min, Math.round(v))) : min,
-          } as Partial<UiPlacementConfig>);
-        }}
-      />
-    </label>
+    <NumberField
+      label={label}
+      value={cfg[key]}
+      min={min}
+      max={max}
+      onValue={(v) => set({ [key]: v } as Partial<UiPlacementConfig>)}
+    />
   );
 
   return (
-    <div className="dou-pane">
+    <Surface variant="pane">
       <h4 style={titleStyle}>{t("uiTitle")}</h4>
-      <div style={{ marginBottom: 8 }}>
-        {t("uiAnchor")}
-        <select
-          value={cfg.placement}
-          style={{
-            marginLeft: 6,
-            padding: "2px 6px",
-            border: "1px solid var(--dsw-alias-border-l2,#e8eaf0)",
-            borderRadius: 4,
-          }}
-          onChange={(e: unknown) =>
-            set({
-              placement: (e as { target: { value: UiPlacementConfig["placement"] } }).target.value,
-            })
-          }
-        >
-          {PLACEMENT_OPTIONS.map((o) => (
-            <option key={o.value} value={o.value}>
-              {t(o.key)}
-            </option>
-          ))}
-        </select>
-      </div>
-      {/* 窄屏兜底：四个数字输入行允许换行（约 350px 内容宽度下 nowrap 横排会溢出） */}
-      <div style={{ marginBottom: 8, display: "flex", flexWrap: "wrap", rowGap: 6 }}>
+      <SelectField
+        label={t("uiAnchor")}
+        value={cfg.placement}
+        options={PLACEMENT_OPTIONS.map((o) => ({ value: o.value, label: t(o.key) }))}
+        onValue={(placement) => set({ placement })}
+      />
+      {/* 窄屏兜底：四个数字输入行允许换行（约 350px 内容宽度下 nowrap 横排会溢出，
+          换行能力落在 .dsu-field-row 的 flex-wrap 上，内联 style 做不到这一点） */}
+      <FieldRow>
         {numInput("offsetX", t("offsetX"))}
         {numInput("offsetY", t("offsetY"))}
         {numInput("panelOffsetY", t("panelOffsetY"))}
         {numInput("zIndexBase", t("zIndexBase"), 1, 9000)}
-      </div>
-      <button
-        type="button"
+      </FieldRow>
+      <Button
         className="dou-btn"
         disabled={saving}
         onClick={() => {
@@ -130,7 +107,7 @@ export function UiSection(): React.ReactElement | null {
         }}
       >
         {saving ? t("savingNow") : t("save")}
-      </button>
+      </Button>
       {msg !== null ? (
         <span
           style={{
@@ -143,6 +120,6 @@ export function UiSection(): React.ReactElement | null {
           {msg.text}
         </span>
       ) : null}
-    </div>
+    </Surface>
   );
 }

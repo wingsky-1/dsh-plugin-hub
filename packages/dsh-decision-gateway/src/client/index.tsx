@@ -8,6 +8,12 @@
  * 样式独立 style.css，经 .css text-loader 构建期内联。卸载清理进 ctx.effect。
  */
 import STYLE from "./style.css";
+// R3：跨包原语层的表现面（唯一副本 shared/client/ui/ui.css）经 ts 侧拼接注入。
+// .css 走同一个 text-loader，仍是纯文本内联，产物依旧自包含单文件、零运行时依赖。
+// **顺序是 UI_CSS + STYLE（原语层在前）**：原语层当底座、各包 style.css 在其之上，
+// 这样包内的窄屏/领域覆盖（同优先级下靠后者胜）永远压得住原语默认值——
+// provider-usage 的 @media 480px 段就靠这条把 .dsu-badge/.dsu-surface-pane 改窄屏尺寸。
+import UI_CSS from "../../../../shared/client/ui/ui.css";
 import { ensureStyle } from "../../../../shared/client/ensure-style.js";
 import * as React from "react";
 import { bindTranslate, t, unbindTranslate, type DecisionTextKey } from "./locale.ts";
@@ -113,7 +119,11 @@ function mountLocale(ctx: ClientContext): (() => void) | undefined {
 
 export function apply(ctx: ClientContext): void {
   try {
-    const disposeStyle = ensureStyle({ id: STYLE_ID, cssText: STYLE, version: CSS_VERSION });
+    const disposeStyle = ensureStyle({
+      id: STYLE_ID,
+      cssText: UI_CSS + STYLE,
+      version: CSS_VERSION,
+    });
     let styleDisposed = false;
     const slots: SlotsView | null | undefined = ctx.get("slots");
     if (slots === null || slots === undefined || typeof slots.inject !== "function") {

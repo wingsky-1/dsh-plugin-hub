@@ -46,8 +46,13 @@ const {
   dirDisplayLabel,
   dirNeedsScopeNote,
   trendRequestParams,
-  shouldShowDirSelect,
-  shouldShowByModel,
+  isCaliberAvailable,
+  trendRequestParamsFor,
+  caliberResetsObject,
+  CALIBERS,
+  CHART_MIN_W,
+  CHART_FALLBACK_W,
+  chartGeom,
   donutSvg,
   sumPartsByProvider,
   activeDayCount,
@@ -312,7 +317,7 @@ describe("stackedBarsSvg：空桶虚位 / 部分桶描边 / data-bucket 委托�
       mark: "ongoing",
     },
   ];
-  const svg = stackedBarsSvg({ bars, gran: "day", ticks: niceTicks(100).ticks });
+  const svg = stackedBarsSvg({ bars, gran: "day", ticks: niceTicks(100).ticks, width: 480 });
 
   it("每桶带 data-bucket 委托锚点", () => {
     expect(svg.includes('data-bucket="0"') && svg.includes('data-bucket="2"')).toBeTruthy();
@@ -356,6 +361,7 @@ describe("stackedAreasSvg：连续段 / null 桶断开 / 命中区同构", () =>
     gran: "month",
     ticks: niceTicks(70).ticks,
     stackOrder: ["p1", "p2"],
+    width: 480,
   });
 
   it("p1 两段 + p1 一段 = 3 条 path（null 桶断开）", () => {
@@ -371,6 +377,110 @@ describe("stackedAreasSvg：连续段 / null 桶断开 / 命中区同构", () =>
   });
 });
 
+describe("A2 峰值桶图上标注（取代原「峰值桶」汇总卡）", () => {
+  const bars = [
+    {
+      key: "2026-02-01",
+      segs: [{ id: "p1", value: 10 }],
+      visibleTotal: 10,
+      none: false,
+      mark: null,
+    },
+    {
+      key: "2026-02-02",
+      segs: [{ id: "p1", value: 90 }],
+      visibleTotal: 90,
+      none: false,
+      mark: null,
+    },
+  ];
+  const ticks = niceTicks(100).ticks;
+
+  it("给定峰值下标时图上出现三角标 + 桶键文字", () => {
+    const svg = stackedBarsSvg({
+      bars,
+      gran: "day",
+      ticks,
+      width: 480,
+      peakIndex: 1,
+      peakKey: "2026-02-02",
+    });
+    expect(svg.includes('<path d="M')).toBe(true);
+    expect(svg.includes("02-02")).toBe(true);
+  });
+
+  it("峰值标注是装饰（aria-hidden），语义仍由 tooltip / 详情块承担", () => {
+    const svg = stackedBarsSvg({
+      bars,
+      gran: "day",
+      ticks,
+      width: 480,
+      peakIndex: 1,
+      peakKey: "2026-02-02",
+    });
+    expect(svg).toMatch(/<g aria-hidden="true"[^>]*style="pointer-events:none"/);
+  });
+
+  it("未给峰值（index < 0）时不画标注", () => {
+    const svg = stackedBarsSvg({
+      bars,
+      gran: "day",
+      ticks,
+      width: 480,
+      peakIndex: -1,
+      peakKey: null,
+    });
+    expect(svg).not.toMatch(/<g aria-hidden="true"/);
+  });
+
+  it("面积形态同样支持峰值标注", () => {
+    const svg = stackedAreasSvg({
+      bars,
+      gran: "day",
+      ticks,
+      stackOrder: ["p1"],
+      width: 480,
+      peakIndex: 1,
+      peakKey: "2026-02-02",
+    });
+    expect(svg.includes("02-02")).toBe(true);
+  });
+});
+
+describe("C-1 SVG 外壳：显式 px 宽高（1:1 像素映射，无 height:auto 等比缩放）", () => {
+  const bars = [
+    {
+      key: "2026-02-01",
+      segs: [{ id: "p1", value: 10 }],
+      visibleTotal: 10,
+      none: false,
+      mark: null,
+    },
+  ];
+  const ticks = niceTicks(10).ticks;
+
+  it("viewBox 宽度 = 实测容器宽", () => {
+    const svg = stackedBarsSvg({ bars, gran: "day", ticks, width: 372 });
+    expect(svg).toContain('viewBox="0 0 372 190"');
+  });
+
+  it("样式带显式 px 宽高（不再依赖 height:auto 等比缩放）", () => {
+    const svg = stackedBarsSvg({ bars, gran: "day", ticks, width: 372 });
+    expect(svg).toContain("width:372px");
+    expect(svg).toContain("height:190px");
+  });
+
+  it("样式不再声明 height:auto（等比缩放依赖已移除）", () => {
+    const svg = stackedBarsSvg({ bars, gran: "day", ticks, width: 372 });
+    expect(svg.includes("height:auto")).toBe(false);
+  });
+
+  it("窄容器（如实测 56px）下轴字仍是 10px 真实像素（不被缩到 0.9px）", () => {
+    const svg = stackedBarsSvg({ bars, gran: "day", ticks, width: 56 });
+    expect(svg).toContain("font-size:10px");
+  });
+});
+
 describe("SVG 注入面：受信外文本不进 SVG（M2 的 <title> 注入面在 M2.1 已移除）", () => {
   // M2.1 的 SVG 内没有任何段 id/明细文本（id 仅哈希取色；明细走 React tooltip 文本节点自动转义）
   const evil = "<img src=x onerror=alert(1)>";
@@ -383,12 +493,13 @@ describe("SVG 注入面：受信外文本不进 SVG（M2 的 <title> 注入面�
       mark: null,
     },
   ];
-  const svg = stackedBarsSvg({ bars, gran: "day", ticks: niceTicks(10).ticks });
+  const svg = stackedBarsSvg({ bars, gran: "day", ticks: niceTicks(10).ticks, width: 480 });
   const areaSvg = stackedAreasSvg({
     bars,
     gran: "day",
     ticks: niceTicks(10).ticks,
     stackOrder: [evil],
+    width: 480,
   });
 
   it("恶意段 id 不以任何形态进 SVG", () => {
@@ -617,29 +728,123 @@ describe("#633 P0 trendRequestParams：未识别桶键同为合法过滤值（B2
   });
 });
 
-describe("#633 P0 shouldShowDirSelect/shouldShowByModel：两维控件互斥（状态真值渲染）", () => {
-  it("默认面目录下拉恒可见（P0①：修复前 dirMode 恒真不可达）", () => {
-    expect(shouldShowDirSelect("")).toBe(true);
+describe("A1 统计口径：目录/适配器可选、模型 disabled（不许画点了就空的格子）", () => {
+  it("口径恒为三值，顺序即视觉顺序", () => {
+    expect([...CALIBERS]).toEqual(["dir", "provider", "model"]);
   });
 
-  it("adapter 过滤面隐藏目录下拉", () => {
-    expect(shouldShowDirSelect("p1")).toBe(false);
+  it("目录口径可选", () => {
+    expect(isCaliberAvailable("dir")).toBe(true);
   });
 
-  it("默认面无 byModel checkbox", () => {
-    expect(shouldShowByModel("", "")).toBe(false);
+  it("适配器口径可选（维护者要求保留提供商选择能力，PR#1059）", () => {
+    expect(isCaliberAvailable("provider")).toBe(true);
   });
 
-  it("adapter 过滤面 checkbox 可见（修复前被 dirMode 恒真压制）", () => {
-    expect(shouldShowByModel("p1", "")).toBe(true);
+  it("模型口径恒不可选（宿主 dirStacked 面忽略 byModel）", () => {
+    expect(isCaliberAvailable("model")).toBe(false);
+  });
+});
+
+describe("A1 trendRequestParamsFor：口径到请求面映射（三面互斥）", () => {
+  it("目录口径 + 无对象 → byDir=1 全目录拆段面", () => {
+    const p = trendRequestParamsFor("dir", "day", "total", 30, "");
+    expect(p.get("byDir")).toBe("1");
+    expect(p.get("dir")).toBeNull();
+    expect(p.get("provider")).toBeNull();
   });
 
-  it("目录过滤面 checkbox 隐藏", () => {
-    expect(shouldShowByModel("", "proj")).toBe(false);
+  it("目录口径 + 有对象 → dir=<键> 过滤面（不发 byDir）", () => {
+    const p = trendRequestParamsFor("dir", "day", "total", 30, "proj");
+    expect(p.get("dir")).toBe("proj");
+    expect(p.get("byDir")).toBeNull();
+    expect(p.get("provider")).toBeNull();
   });
 
-  it("防御：异常组合同样隐藏（状态联动保证不可达）", () => {
-    expect(shouldShowByModel("p1", "proj")).toBe(false);
+  it("适配器口径 + 无对象 → 零目录参数（provider 面全集）", () => {
+    const p = trendRequestParamsFor("provider", "day", "total", 30, "");
+    expect(p.get("byDir")).toBeNull();
+    expect(p.get("dir")).toBeNull();
+    expect(p.get("provider")).toBeNull();
+  });
+
+  it("适配器口径 + 有对象 → provider=<名>（零目录参数）", () => {
+    const p = trendRequestParamsFor("provider", "week", "calls", 13, "p1");
+    expect(p.get("provider")).toBe("p1");
+    expect(p.get("byDir")).toBeNull();
+    expect(p.get("dir")).toBeNull();
+  });
+
+  it("模型口径（不可选）落到 provider 面，不发 byModel", () => {
+    const p = trendRequestParamsFor("model", "day", "total", 30, "");
+    expect(p.get("byModel")).toBeNull();
+    expect(p.get("byDir")).toBeNull();
+  });
+
+  it("任一口径都不发 byModel（唯一用得到它的模型口径不可选）", () => {
+    for (const c of ["dir", "provider", "model"] as const) {
+      expect(trendRequestParamsFor(c, "day", "total", 30, "x").get("byModel")).toBeNull();
+    }
+  });
+
+  it("基础参数 granularity / metric / n 原样", () => {
+    const p = trendRequestParamsFor("dir", "month", "output", 6, "");
+    expect(p.get("granularity")).toBe("month");
+    expect(p.get("metric")).toBe("output");
+    expect(p.get("n")).toBe("6");
+  });
+});
+
+describe("A1 caliberResetsObject：切换口径时对象筛选不静默清零（可撤销）", () => {
+  it("同口径内不重置", () => {
+    expect(caliberResetsObject("dir", "dir", "proj", () => true)).toBe(false);
+  });
+
+  it("空对象不重置（无筛选可清）", () => {
+    expect(caliberResetsObject("dir", "provider", "", () => false)).toBe(false);
+  });
+
+  it("跨口径且目标候选集不含该值 → 需重置（调用点据此给撤销提示）", () => {
+    expect(caliberResetsObject("dir", "provider", "proj", () => false)).toBe(true);
+  });
+
+  it("跨口径但目标候选集含同名对象 → 保留，不打扰用户", () => {
+    expect(caliberResetsObject("dir", "provider", "proj", (v: string) => v === "proj")).toBe(false);
+  });
+});
+
+describe("C-1 chartGeom：viewBox 1 user unit = 1 CSS px（不再等比缩放）", () => {
+  it("宽度取实测容器宽，不写死 560", () => {
+    expect(chartGeom(320, [0, 10]).W).toBe(320);
+  });
+
+  it("实测宽低于下限时 clamp 到 CHART_MIN_W", () => {
+    expect(chartGeom(10, [0, 10]).W).toBe(CHART_MIN_W);
+  });
+
+  it("未测量（宽 <= 0）同样 clamp，不产出负绘图区", () => {
+    const g = chartGeom(0, [0, 10]);
+    expect(g.W).toBe(CHART_MIN_W);
+    expect(g.plotW).toBeGreaterThan(0);
+  });
+
+  it("左边距随最长 Y 标签自适应（长标签 → 左边距更大）", () => {
+    const narrow = chartGeom(480, [0, 10]);
+    const wide = chartGeom(480, [0, 1234567]);
+    expect(wide.pl).toBeGreaterThan(narrow.pl);
+  });
+
+  it("左边距有下限（短标签也不贴死轴线）", () => {
+    expect(chartGeom(480, [0, 1]).pl).toBeGreaterThanOrEqual(22);
+  });
+
+  it("绘图区宽 = 容器宽 - 左 - 右", () => {
+    const g = chartGeom(480, [0, 10]);
+    expect(g.plotW).toBe(g.W - g.pl - g.pr);
+  });
+
+  it("窄容器降级阈值 240px（实测宿主 375px 弹窗把内容列压到 56px）", () => {
+    expect(CHART_FALLBACK_W).toBe(240);
   });
 });
 

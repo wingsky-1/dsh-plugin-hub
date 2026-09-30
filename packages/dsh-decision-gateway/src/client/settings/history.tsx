@@ -14,6 +14,9 @@ import {
 } from "../api/interface.ts";
 import type { DecisionHistoryEntry } from "../api/interface.ts";
 import { t } from "../locale.ts";
+// R3：接入跨包原语层 shared/client/ui（档 C；react 为宿主 loader 注入的 external）。
+// 层数按本文件数：settings/ → client/ → src/ → 包根 → packages/ → 仓库根（5 层）。
+import { Button } from "../../../../../shared/client/ui/index.js";
 import { fmtTime, shortId } from "./format.ts";
 import { ProbBar, tierBadge } from "./prob.tsx";
 
@@ -281,22 +284,17 @@ export function HistoryPane(): React.ReactElement {
       </div>
       <div className="dj-tools">
         <span className="dj-badge">{t("countEntries", { n: entries.length })}</span>
-        <button
-          type="button"
-          className="dj-btn dj-btnSmall"
-          onClick={() => fetchList(root, sessionId)}
-        >
+        <Button className="dj-btn dj-btnSmall" onClick={() => fetchList(root, sessionId)}>
           {t("refresh")}
-        </button>
-        <button
-          type="button"
+        </Button>
+        <Button
           className="dj-btn dj-btnSmall dj-btnDanger"
           title={t("clearScopeNote")}
           disabled={sessionId === "" || clearing}
           onClick={clear}
         >
           {armed ? t("confirmClear") : t("clearSession")}
-        </button>
+        </Button>
       </div>
       {msg !== null && (
         <div className="dj-field">
@@ -305,13 +303,9 @@ export function HistoryPane(): React.ReactElement {
       )}
       {failed && (
         <div className="dj-field">
-          <button
-            type="button"
-            className="dj-btn dj-btnSmall"
-            onClick={() => fetchList(root, sessionId)}
-          >
+          <Button className="dj-btn dj-btnSmall" onClick={() => fetchList(root, sessionId)}>
             {t("retry")}
-          </button>
+          </Button>
         </div>
       )}
       <ul className="dj-hist">

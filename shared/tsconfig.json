@@ -24,6 +24,9 @@
     "declarationMap": false,
     "sourceMap": false
   },
-  "include": ["*.ts", "client/*.ts"],
+  // include 必须显式收 .tsx：shared/client/ui/index.tsx 是跨包客户端原语层（§2.4 档 C），
+  // 它的产物 client/ui/index.js 正是 verify-shared-fanin 枚举到的那个「模块」。
+  // 漏了这条 glob 时 tsc 不编它 → 产物不存在 → 扇入门禁枚举不到（fail-closed）。
+  "include": ["*.ts", "client/*.ts", "client/**/*.tsx"],
   "exclude": ["test"]
 }

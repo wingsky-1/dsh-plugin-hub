@@ -16,6 +16,9 @@ import {
 } from "../api/interface.ts";
 import type { DecisionConfigV1 } from "../api/interface.ts";
 import { t } from "../locale.ts";
+// R3：接入跨包原语层 shared/client/ui（档 C；react 为宿主 loader 注入的 external）。
+// 层数按本文件数：settings/ → client/ → src/ → 包根 → packages/ → 仓库根（5 层）。
+import { Button } from "../../../../../shared/client/ui/index.js";
 
 type Msg = { readonly kind: "info" | "error" | "ok"; readonly text: string };
 
@@ -414,26 +417,25 @@ export function ConnectionPane(): React.ReactElement {
         setPlainOpen={setPlainOpen}
       />
       <div className="dj-tools">
-        <button type="button" className="dj-btn dj-btnSmall" disabled={testing} onClick={selfCheck}>
+        <Button className="dj-btn dj-btnSmall" disabled={testing} onClick={selfCheck}>
           {t("testOffline")}
-        </button>
+        </Button>
         <span className="dj-note">{testOut}</span>
       </div>
       <AdvancedSection open={advOpen} onToggle={setAdvOpen} fields={numFields} />
       <div className="dj-foot">
         {failed && (
-          <button type="button" className="dj-btn dj-btnSmall" onClick={load}>
+          <Button className="dj-btn dj-btnSmall" onClick={load}>
             {t("retry")}
-          </button>
+          </Button>
         )}
-        <button
-          type="button"
+        <Button
           className="dj-btn dj-btnPrimary"
           disabled={saving || snapshot === null}
           onClick={save}
         >
           {t("save")}
-        </button>
+        </Button>
       </div>
     </div>
   );

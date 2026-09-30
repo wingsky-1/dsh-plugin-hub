@@ -22,6 +22,9 @@ import type {
   DecisionPresetInfo,
 } from "../api/interface.ts";
 import { t } from "../locale.ts";
+// R3：接入跨包原语层 shared/client/ui（档 C；react 为宿主 loader 注入的 external）。
+// 层数按本文件数：settings/ → client/ → src/ → 包根 → packages/ → 仓库根（5 层）。
+import { Button } from "../../../../../shared/client/ui/index.js";
 
 interface CustomDraft {
   readonly id: string;
@@ -396,22 +399,20 @@ export function PresetsPane(): React.ReactElement {
                   <span className="dj-rangeVal">{capLabel(row.cap)}</span>
                 </div>
                 <div className="dj-tools">
-                  <button
-                    type="button"
+                  <Button
                     className="dj-btn dj-btnSmall"
                     aria-expanded={open ? "true" : "false"}
                     aria-controls={"dj-detail-" + row.id}
                     onClick={() => setOpenDetail(open ? null : row.id)}
                   >
                     {t("detail")}
-                  </button>
+                  </Button>
                 </div>
                 {open && (
                   <div className="dj-field" id={"dj-detail-" + row.id}>
                     <div className="dj-note">{row.desc ?? t("emptySpec")}</div>
                     <div className="dj-tools">
-                      <button
-                        type="button"
+                      <Button
                         className="dj-btn dj-btnSmall"
                         onClick={() => {
                           setDraftId(row.id + "-copy");
@@ -422,10 +423,9 @@ export function PresetsPane(): React.ReactElement {
                         }}
                       >
                         {t("copyCustom")}
-                      </button>
+                      </Button>
                       {row.custom && (
-                        <button
-                          type="button"
+                        <Button
                           className="dj-btn dj-btnSmall dj-btnDanger"
                           onClick={() => {
                             if (armedDelete === row.id) {
@@ -448,7 +448,7 @@ export function PresetsPane(): React.ReactElement {
                           }}
                         >
                           {armedDelete === row.id ? t("confirmDelete") : t("deleteCustom")}
-                        </button>
+                        </Button>
                       )}
                     </div>
                   </div>
@@ -459,9 +459,9 @@ export function PresetsPane(): React.ReactElement {
         )}
       </div>
       <div className="dj-tools">
-        <button type="button" className="dj-btn dj-btnSmall" onClick={() => setFormOpen((v) => !v)}>
+        <Button className="dj-btn dj-btnSmall" onClick={() => setFormOpen((v) => !v)}>
           {t("addCustom")}
-        </button>
+        </Button>
       </div>
       {formOpen && (
         <div className="dj-field">
@@ -503,42 +503,31 @@ export function PresetsPane(): React.ReactElement {
           </select>
           <span className="dj-note">{t("customDraftNote")}</span>
           <div className="dj-tools">
-            <button type="button" className="dj-btn dj-btnSmall" onClick={() => setFormOpen(false)}>
+            <Button className="dj-btn dj-btnSmall" onClick={() => setFormOpen(false)}>
               {t("cancelCustom")}
-            </button>
-            <button
-              type="button"
-              className="dj-btn dj-btnPrimary"
-              disabled={saving}
-              onClick={createCustom}
-            >
+            </Button>
+            <Button className="dj-btn dj-btnPrimary" disabled={saving} onClick={createCustom}>
               {t("createCustom")}
-            </button>
+            </Button>
           </div>
         </div>
       )}
       <div className="dj-foot">
         {failed && (
-          <button type="button" className="dj-btn dj-btnSmall" onClick={load}>
+          <Button className="dj-btn dj-btnSmall" onClick={load}>
             {t("retry")}
-          </button>
+          </Button>
         )}
-        <button
-          type="button"
-          className="dj-btn dj-btnSmall"
-          disabled={rows.length === 0}
-          onClick={doExport}
-        >
+        <Button className="dj-btn dj-btnSmall" disabled={rows.length === 0} onClick={doExport}>
           {t("exportJson")}
-        </button>
-        <button
-          type="button"
+        </Button>
+        <Button
           className="dj-btn dj-btnPrimary"
           disabled={saving || snapshot === null}
           onClick={save}
         >
           {t("save")}
-        </button>
+        </Button>
       </div>
       <div className="dj-note">{t("noImportNote")}</div>
     </div>
