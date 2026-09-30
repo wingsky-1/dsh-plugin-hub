@@ -191,9 +191,14 @@ class CatalogDirectory {
    * @returns 是否真的删掉了条目——调用方据此决定要不要广播状态（与 `Map.delete` 同口径）。
    */
   dropServer(root: string, serverName: string): boolean {
-    const dropped = this.byRoot.get(root)?.delete(serverName) ?? false;
-    if (dropped) this.clearDirty(root, serverName);
-    return dropped;
+    const servers = this.byRoot.get(root);
+    // 早返回而不是 `?.delete(...) ?? false`：后者在 Map.delete 的布尔返回上与 `|| false`
+    // 行为完全等价，会留下一个杀不掉的等价变异体（复核面 100% 命中、判红全靠它）。
+    if (servers === undefined || !servers.delete(serverName)) return false;
+    // 条目真被删掉才清它的失效标记：标记指的是「这台的目录待重投影」，条目都没了，
+    // 留着它会让下一次同名的重新登记白投影一次。
+    this.clearDirty(root, serverName);
+    return true;
   }
 
   /** 失效键：root 与裸名用 NUL 连接——两者都可能含 `/`，用路径分隔符会撞键。 */

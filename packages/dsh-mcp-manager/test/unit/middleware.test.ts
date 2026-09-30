@@ -2688,13 +2688,53 @@ describe("#767 S1-4d：池的转发登记、拆除走账本与读时刷新", () 
     const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-mw-dirty3-"));
     // 本条只验 catalog 域的账本生命周期，不碰连接层：makeHost 仍要调（它装池侧端口并复位）。
     makeHost(new Map([[ROOT, [PY]]]));
-    await catalogDirectory.ensureRootLoaded(ROOT, join(dir, "a.json"));
-    await catalogDirectory.ensureRootLoaded("/other-root", join(dir, "b.json"));
+    // 用**私有 root**而不是共享的 ROOT：本条会 dropRoot，而 catalogDirectory 是跨用例的
+    // 单例——拿 ROOT 做 destructive 用例会拆掉后续用例仍在读的目录。
+    const own = "/1014-drop-root";
+    const other = "/1014-other-root";
+    await catalogDirectory.ensureRootLoaded(own, join(dir, "a.json"));
+    await catalogDirectory.ensureRootLoaded(other, join(dir, "b.json"));
+    catalogDirectory.markDirty(own, "py");
+    catalogDirectory.markDirty(other, "py");
+    catalogDirectory.dropRoot(own);
+    expect(catalogDirectory.isDirty(own, "py")).toBe(false);
+    expect(catalogDirectory.isDirty(other, "py")).toBe(true);
+  });
+
+  it("dropServer 只清真被删掉那台的失效标记", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-mw-dropserver-"));
+    const { host, tools } = makeHost(new Map([[ROOT, [PY]]]));
+    const catalogHost = {
+      ...host,
+      isRuntimeServer: () => false,
+      catalogCachePath: (root: string) => join(dir, `${root.replace(/[^a-z0-9]/gi, "_")}.json`),
+    };
+    trackMw(new McpMiddleware(catalogHost as unknown as MiddlewareHost));
+    await catalogDirectory.ensureRootLoaded(ROOT, catalogHost.catalogCachePath(ROOT));
+    // 条目只能由投影产生（ensureRootLoaded 建的是空表），故先投两台。
+    for (const serverName of ["py", "other"]) {
+      const id = "id-" + serverName;
+      tools.entries = [{ name: `mcp__${id}__alpha`, description: "甲", parameters: {} }];
+      await catalogDirectory.projectRegisteredTools({
+        root: ROOT,
+        serverName,
+        id,
+        schemas: tools.schemas(),
+        cachePath: () => catalogHost.catalogCachePath(ROOT),
+        redact: (error: unknown) => String(error),
+        isRuntimeServer: () => false,
+        warn: () => {},
+      });
+    }
     catalogDirectory.markDirty(ROOT, "py");
-    catalogDirectory.markDirty("/other-root", "py");
-    catalogDirectory.dropRoot(ROOT);
-    expect(catalogDirectory.isDirty(ROOT, "py")).toBe(false);
-    expect(catalogDirectory.isDirty("/other-root", "py")).toBe(true);
+    catalogDirectory.markDirty(ROOT, "other");
+    expect(catalogDirectory.dropServer(ROOT, "py"), "在册条目应删掉").toBe(true);
+    expect(catalogDirectory.isDirty(ROOT, "py"), "被删掉那台的标记应清").toBe(false);
+    expect(catalogDirectory.isDirty(ROOT, "other"), "另一台不受影响").toBe(true);
+    // 不在册的名字 / 不在册的 root：早返回 false，且不得顺带清任何标记。
+    expect(catalogDirectory.dropServer(ROOT, "not-there")).toBe(false);
+    expect(catalogDirectory.dropServer("/no-such-root", "py")).toBe(false);
+    expect(catalogDirectory.isDirty(ROOT, "other"), "未命中时不得动别人的标记").toBe(true);
   });
 
   it("tools/change 后按 server diff 重投影：远端删掉的工具从目录消失（#1014 B7b）", async () => {
