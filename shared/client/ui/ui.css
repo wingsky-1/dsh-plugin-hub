@@ -39,6 +39,26 @@
   font-size: 12px;
   line-height: 1.7;
 }
+/* 极窄容器降级（#1015 A+C 的 C-3 配套）：宿主设置弹窗在 375px 下不折叠左侧导航，
+   内容列被压到约 139px，再经 pane padding 12px×2 层层扣减后趋势区只剩 56px——
+   实测装 dsh-web-mobile@3.0.3 亦然（nav 仍 flex:0 0 auto 固定 188px），故根因在宿主
+   布局、插件侧无法获得更多宽度。此处能做的唯一有效动作是**把容器自身的 padding 让给内容**：
+   收掉 padding 后可用宽度翻倍（56px → 104px 量级），标题/控件不再逐词竖排。
+   断点判据用 trend.tsx 已有的 data-dou-col（由 ResizeObserver 量**本窗格实测宽**写入），
+   不用视口断点也不依赖 container-type：宿主把内容列压到多窄与视口宽度无关，
+   桌面窄窗同样会命中，这是刻意的。 */
+.dou-trend-body[data-dou-col="s"] .dsu-surface-pane {
+  padding: 6px 4px;
+  border-radius: 8px;
+}
+/* 极窄档再让出设置区外壳的 padding：实测宿主 375px 下 content 仅 139px，经 set-body
+   padding 14 与 pane padding 各扣一轮后，内容实得 34px——不足一行中文。窄档下这些
+   padding 是纯损失（外壳描边已提供视觉边界），一并收掉。 */
+/* set-body 是所有设置区窗格共用的外壳，:has() 把作用域限死在「含窄档趋势窗格」的那一个，
+   不影响 usage/report/history/providers 等其他窗格（宿主与本仓均已在用 :has()）。 */
+.dou-set-body:has(.dou-trend-body[data-dou-col="s"]) {
+  padding: 4px 2px;
+}
 .dsu-surface-card {
   /* 壳宽 560px 是外壳卡独有的约束（原 settings/index.tsx 内联 maxWidth，行为不变收敛进样式表） */
   max-width: 560px;
@@ -57,8 +77,29 @@
   white-space: nowrap;
 }
 .dsu-field-block {
-  display: block;
+  /* 标签在上、控件在下：与 .dsu-field（行内标签）并存会让同一行里出现两种排版结构，
+     跨字段换行时左边缘对不齐。此处统一为竖排，行内字段若需保持原样走 .dsu-field。 */
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
   margin-bottom: 8px;
+}
+/* 标签文本是 <label> 内的裸文本节点（隐式关联 select），不是子元素——
+   故只能用 font/ ::first-line 类手段无法精确命中。改为给 label 本身定排版，
+   并让 select 独占一行：裸文本节点会生成匿名 flex item，与 select 同行。
+   这里把 label 设为 flex column，裸文本成为它的匿名 item，select 成为第二个。 */
+.dsu-field-block > select {
+  margin-top: 4px;
+  align-self: flex-start;
+}
+.dsu-field-block {
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary, #6d7480);
+}
+.dsu-field-block > select {
+  font-size: 12px;
+  color: var(--dsw-alias-label-primary, #1f2329);
 }
 .dsu-field-row {
   display: flex;
@@ -152,7 +193,32 @@
 .dsu-seg-plain {
   gap: 6px;
   flex-wrap: wrap;
+  /* 档内项距 6px、档与档之间靠外层 .dou-trend-controls 的 row-gap 拉开——
+     两级间距必须分层：项距 6 太挤会让「日/周/月」和「7d/30d/90d」读成一串。 */
   margin-bottom: 6px;
+}
+/* 段内项的视觉分组：给「粒度/范围」这类**同类单选**加一个共同的浅底槽，
+   与「口径/指标」这类**独立选择器**在形状上分开——此前四组控件全是同样的
+   透明圆角按钮平铺，视觉上分不出哪几个是一组。槽只描边不填色，
+   保持与设置页底色同调、不与已选态的 brand 底色抢注意力。 */
+.dsu-seg-plain > .dsu-seg-item {
+  border: 1px solid var(--dsw-alias-border-l3, #d7dae0);
+  background: var(--dsw-alias-bg-layer-1, #f5f6f8);
+  color: var(--dsw-alias-label-secondary, #5f6672);
+  padding: 3px 12px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  min-height: 26px;
+}
+.dsu-seg-plain > .dsu-seg-item:hover {
+  background: var(--dsw-alias-interactive-bg-hover, rgba(0, 0, 0, 0.04));
+}
+.dsu-seg-plain > .dsu-seg-item[data-dsu-seg-active="true"] {
+  background: var(--dsw-alias-bg-base, #ffffff);
+  color: var(--dsw-alias-label-primary, #1f2329);
+  font-weight: 600;
+  border-color: var(--dsw-alias-border-l3, #d7dae0);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
 }
 /* plain 档的项**不出规则**：视觉与触控热区由消费包自己的按钮类承担——
    本包调用点传 itemClassName="dou-btn"，命中 #128 触控热区

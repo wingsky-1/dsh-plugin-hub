@@ -266,30 +266,41 @@ function TrendControls(p: TrendControlsProps): React.ReactElement {
           options={p.objectOptions}
           onValue={p.onObject}
         />
-        <SegmentedControl
-          variant="plain"
-          label={t("trendGranularity")}
-          value={p.gran}
-          onChange={function (v) {
-            p.onGran(v as Gran);
-          }}
-          options={GRAN_ITEMS.map(function (it) {
-            return { value: it[0], label: t(it[1]) };
-          })}
-          itemClassName="dou-btn"
-        />
-        <SegmentedControl
-          variant="plain"
-          label={t("trendRangeLabel")}
-          value={String(p.effectiveRange)}
-          onChange={function (v) {
-            p.onRange(Number(v));
-          }}
-          options={trendRangeOptions(p.gran, p.retentionDays).map(function (n) {
-            return { value: String(n), label: t(unitKeyOf(p.gran), { n: String(n) }) };
-          })}
-          itemClassName="dou-btn"
-        />
+        {/* 行内标签放在分段器**外面**（不用 SegmentedControl 的 leading 槽）：
+            leading 与选项同为 .dsu-seg-plain 的可换行子项，标签会跟按钮排成一行、
+            换行时缩进错位。外面这层固定「标签在上、控件在下」，换行对齐一致。 */}
+        <span className="dou-trend-segField">
+          <span className="dou-trend-segLabel">{t("trendGranularity")}</span>
+          <SegmentedControl
+            variant="plain"
+            label={t("trendGranularity")}
+            value={p.gran}
+            onChange={function (v) {
+              p.onGran(v as Gran);
+            }}
+            options={GRAN_ITEMS.map(function (it) {
+              return { value: it[0], label: t(it[1]) };
+            })}
+            itemClassName="dou-btn"
+          />
+        </span>
+        <span className="dou-trend-segField">
+          <span className="dou-trend-segLabel">{t("trendRangeLabel")}</span>
+          <SegmentedControl
+            variant="plain"
+            label={t("trendRangeLabel")}
+            value={String(p.effectiveRange)}
+            onChange={function (v) {
+              p.onRange(Number(v));
+            }}
+            options={trendRangeOptions(p.gran, p.retentionDays).map(function (n) {
+              return { value: String(n), label: t(unitKeyOf(p.gran), { n: String(n) }) };
+            })}
+            itemClassName="dou-btn"
+          />
+        </span>
+      </FieldRow>
+      <FieldRow className="dou-trend-fields dou-trend-fieldsRow">
         <SelectField
           label={t("trendMetricLabel")}
           value={p.metric}
@@ -298,16 +309,19 @@ function TrendControls(p: TrendControlsProps): React.ReactElement {
           })}
           onValue={p.onMetric}
         />
-        <SegmentedControl
-          variant="plain"
-          label={t("trendViewLabel")}
-          value={p.effectiveView}
-          onChange={p.onView}
-          options={VIEW_ITEMS.map(function (it) {
-            return { value: it[0], label: t(it[1]) };
-          })}
-          itemClassName="dou-btn"
-        />
+        <span className="dou-trend-segField">
+          <span className="dou-trend-segLabel">{t("trendViewLabel")}</span>
+          <SegmentedControl
+            variant="plain"
+            label={t("trendViewLabel")}
+            value={p.effectiveView}
+            onChange={p.onView}
+            options={VIEW_ITEMS.map(function (it) {
+              return { value: it[0], label: t(it[1]) };
+            })}
+            itemClassName="dou-btn"
+          />
+        </span>
       </FieldRow>
       {p.objectResetAll !== null ? (
         <p className="dou-trend-reset" role="status">
@@ -361,9 +375,13 @@ interface TrendChartProps {
  */
 const LAYOUT_NARROW_PX = 400;
 
-/** 布局档：窄档整列排布，其余走默认横排。CSS 侧只认 [data-dou-col="s"]。 */
+/** 布局档：窄档整列排布，其余走默认横排。CSS 侧只认 [data-dou-col="s"]。
+ *
+ *  width === 0（未测量，或宿主把窗格压到 0 宽）按**窄档**处理：
+ *  窄档的 padding 收窄正是为了从 0 宽里抢回可显示的面积，若此时回退 wide，
+ *  收窄规则永远命中不了 → 0 宽自锁。故只有**明确测到宽且大于阈值**才算 wide。 */
 function layoutCol(width: number): "s" | "wide" {
-  return width > 0 && width <= LAYOUT_NARROW_PX ? "s" : "wide";
+  return width > LAYOUT_NARROW_PX ? "wide" : "s";
 }
 
 /**
@@ -1286,7 +1304,11 @@ export function TrendSection(): React.ReactElement {
   const narrow = chartWidth > 0 && chartWidth < CHART_FALLBACK_W;
   return (
     <Surface variant="pane" className="dou-trend">
-      <div className="dou-trend-body" data-dou-col={layoutCol(chartWidth)}>
+      {/* 测量点挂在 body 而非 plot：C-3 窄档降级时 plot 整块不渲染，若把 ref 留在
+          plot 上，窄档下 measureRef.current 为 null → chartWidth 恒 0 →
+          layoutCol(0) 恒返回 "wide"，窄档降级与窄档布局会互为前提、同时失效。
+          body 在两档都渲染，且其内容盒宽正是各档布局可用宽度的上界。 */}
+      <div className="dou-trend-body" ref={measureRef} data-dou-col={layoutCol(chartWidth)}>
         <h2 className="dou-trend-title">{t("trendTitle")}</h2>
         <TrendControls
           gran={gran}

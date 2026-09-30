@@ -325,10 +325,42 @@
   margin: 0 0 8px;
 }
 .dou-trend-controls {
+  /* 组间 14px、组内项距 6px：此前四组控件（口径 / 对象+粒度+范围 / 指标）
+     平铺在一个 flex-wrap 容器里，组间距与项间距同级，
+     「日/周/月」与「7d/30d/90d」在视觉上读成一串。拉开两级后分组才成立。 */
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px 18px;
   margin-bottom: 10px;
 }
 .dou-trend-fields {
   align-items: flex-end;
+}
+/* 行内分段器的可见标签：此前「日/周/月」与「7d/30d/90d」只靠 18px 间隔分开，
+   视觉上仍读成一串同类按钮。给每个分段器加行内标签后，靠标签而非靠间距区分，
+   两级层次才成立：标签（弱）— 槽（中）— 已选态（强）。 */
+.dou-trend-segWithLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 0;
+}
+/* 标签 + 分段器成组：竖排（标签在上、控件在下）而非同行——
+   同行时两者共享可换行行盒，标签会与按钮贴在一起、换行时缩进错位。
+   竖排后每组自身是一个不可分割的 flex 项，换行按组整体换、对齐一致。 */
+.dou-trend-segField {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  flex: none;
+}
+.dou-trend-segLabel {
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary, #6d7480);
+  white-space: nowrap;
+  flex: none;
 }
 /* 「需宿主支持」角标：disabled 档的可用性说明（与按钮同行，弱化态） */
 .dou-trend-need {
