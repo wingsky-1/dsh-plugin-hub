@@ -73,7 +73,7 @@ rc 升级流程引用：升级 dsh rc 时按本清单逐条核对上游变更（
 | dsh-mcp-manager | agent/created | packages/dsh-mcp-manager/src/server/shared/compose.ts（能力面转发） |
 | dsh-mcp-manager | agent/disposed | packages/dsh-mcp-manager/src/server/shared/compose.ts（能力面转发） |
 | dsh-mcp-manager | tools/change | packages/dsh-mcp-manager/src/server/shared/compose.ts（能力面转发） |
-| dsh-provider-usage | session/event | packages/dsh-provider-usage/src/apply/apply.ts（唯一目标 runtime `0.1.7-rc.2` 的结算事实源） |
+| dsh-provider-usage | session/event | packages/dsh-provider-usage/src/apply/apply.ts（唯一目标 runtime `0.2.0-rc.2` 的结算事实源） |
 | dsh-provider-usage | session/flush | packages/dsh-provider-usage/src/apply/apply.ts |
 | dsh-provider-usage | session/disposed | packages/dsh-provider-usage/src/apply/apply.ts |
 | dsh-provider-usage | internal/service | packages/dsh-provider-usage/src/apply/apply.ts |
@@ -196,9 +196,9 @@ provider-usage 经 `ctx.webServer.register`（`src/apply/apply.ts`）；notifier
 | 常量 / 锚 | 值 | 形态 | 出处与断言 |
 | --- | --- | --- | --- |
 | MCP_SECTION_ORDER | 160 | 常量 | `packages/dsh-mcp-manager/src/index.ts:562`；语义“紧随部署 persona 之后、计划策略之前（0 小于 160 小于 500）”，`sectionCall=true`（843 行经 `ctx.systemPrompt` 调用），`orderRangeOk=true`；区间由 smoke 锁定 |
-| SESSION 结算口径 | 唯一目标 runtime `0.1.7-rc.2` 的事实源为 `ctx.on("session/event")`；`assistant/chunk` 已删，`assistant/message`（内嵌 stream）+ `assistant/attempt` 为结算信号 | 版本锚 | 派生自注释口径；`SESSION_FORMAT_VERSION` 无代码符号锚（仅存档文档提及 0→3），`collectorMentionsChunkRemoval=false` |
+| SESSION 结算口径 | 唯一目标 runtime `0.2.0-rc.2` 的事实源为 `ctx.on("session/event")`；`assistant/chunk` 已删，`assistant/message`（内嵌 stream）+ `assistant/attempt` 为结算信号 | 版本锚 | 派生自注释口径；`SESSION_FORMAT_VERSION` 无代码符号锚（仅存档文档提及 0→3），`collectorMentionsChunkRemoval=false` |
 | 当前会话判据 | `retainedBy.mainView > 0`（rc.2 起会话列表快照**无** `current` 字段） | 常量（#1028） | 官方自用判据：写入方是 `dsh-client-ui-workspace` 的 `retain(target,{source:"mainView"})`，读取方遍布 `dsh-client-ui-session` / `ui-workspace` / `ui-layout` 等官方包；本仓经 `packages/dsh-mcp-manager/src/client/core/current-session.ts` 单一接缝消费，并以官方类型锚定：`SessionSummary.retainedBy.mainView` 走类型化访问（上游改名即 TS2339 判红，见该文件的副作用式类型导入）。**非承诺公开 API**：`mainView` 由 `dsh-client-ui-session` 声明合并注入 `SessionReferenceSourceMap`，退路＝跟随官方演进，必要时向上游提 issue 索取「当前会话」面 |
-| catalog 锁版 | `dsh-*` 19 个均为 `0.1.7-rc.2`，`@deepseek-ai/cordis` 独立为 `4.0.4` | 版本锚 | [pnpm-workspace.yaml](../pnpm-workspace.yaml) 字面量派生（派生输出 `result.catalog`，20 项）；唯一目标 runtime 之外的版本不在支持范围 |
+| catalog 锁版 | `dsh-*` 23 个均为 `0.2.0-rc.2`，`@deepseek-ai/cordis` 独立为 `4.0.4` | 版本锚 | [pnpm-workspace.yaml](../pnpm-workspace.yaml) 字面量派生（派生输出 `result.catalog`，24 项）；唯一目标 runtime 之外的版本不在支持范围 |
 | 官方地址复刻 | （无现存复刻：全包 `dsh-resource://` / `fileAddressFor` 0 命中，已随 dsh-web-file-preview 退役消除） | 常量 | 全仓 grep 观察值 |
 | DOM 锚（11 条） | `details.dm-float-tools`；`[data-conversation-scroll]`；`[data-pane="conversation"]`；`.pI_x6G_centerCol`；`[data-shell-overlay]`；`[data-composer-seat]`；`.${PILL_PREFIX}label`；`.${PILL_PREFIX}dot` | 版本锚（宿主 DOM 私有约定，无版本锚） | 派生输出 `result.domAnchors`：前 6 条出自 `packages/dsh-mcp-manager/src/client/float/float.ts`，后 5 条出自 `packages/dsh-provider-usage/src/client/index.tsx`（`[data-composer-seat]` 等 3 条两端共用）；宿主改壳即静默漂移 |
 
@@ -217,6 +217,6 @@ provider-usage 经 `ctx.webServer.register`（`src/apply/apply.ts`）；notifier
 | 8 | 缺口 G3（slot 协议） | `plugins.row.config` 的 canonical row id / bundle key 与 `settings.section` 的 label thunk 语义由当前实现和客户端产物断言；其它 runtime 不在本清单支持范围 |
 | 9 | 缺口 G4（DOM 锚） | 11 条选择器均为宿主 DOM 私有约定，无版本锚；派生只能列出当前在用 |
 | 10 | 缺口 G5（类型版本锚） | 锁版只是期望版本；`Session.fromRestore` 第 5 参与 `EpochHeader.system` 删除等破坏点只活在存档文档里 |
-| 11 | 验证状态 | `pnpm gate:pr` exit 0；真实 DSH 0.1.7-rc.2 隔离 profile 已加载 7 个插件，核验了 settings late-attach、LAN 端口热更新（39181/39182，`listening: true`）、MCP/用量入口、LAN health/root 与 390px 窄视口；隔离 profile 无 workspace/session，worktree Files 的会话级操作仍需有 workspace 的样本 |
+| 11 | 验证状态 | `pnpm gate:pr` exit 0；真实 DSH 0.1.7-rc.2 隔离 profile（本轮锁版 0.2.0-rc.2 后尚未重跑真机隔离验证）已加载 7 个插件，核验了 settings late-attach、LAN 端口热更新（39181/39182，`listening: true`）、MCP/用量入口、LAN health/root 与 390px 窄视口；隔离 profile 无 workspace/session，worktree Files 的会话级操作仍需有 workspace 的样本 |
 
 共享分档的规范正文见 [DEVELOPMENT §2.4](./DEVELOPMENT.md)；跨包共享准入见 [shared/README.md](../shared/README.md)。

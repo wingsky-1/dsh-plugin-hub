@@ -259,7 +259,7 @@ marker（`:39`、`:52-53`）。已有 transport 不覆盖——为什么不用�
 `loopback-page`（回环页，或无 marker 但 `isLoopback` 为 true 的宿主独占页——那是正常态，
 `:86-89`）/ `compat-active` / `contract-drift` / `compat-off`。`contract-drift` 是 marker 在
 而宿主事实非 true（**含未知**，fail-closed，`:91-92`）。告警经独立出口 `hostTrustAlert`
-（`:109-124`）：在目标 dsh `0.1.7-rc.2` 上，设置卡片由
+（`:109-124`）：在目标 dsh `0.2.0-rc.2` 上，设置卡片由
 `configForms.whileServed(["dsh-lan-proxy"])` 门控并注册到 keyed
 `plugins.row.config`；canonical row id 是 `dsh-lan-proxy`，settings namespace 是 `dsh-lan-proxy`，row key
 是 `@wingsky-1/dsh-lan-proxy#dsh-lan-proxy`。上游把非回环页设置面降级为 memory scope

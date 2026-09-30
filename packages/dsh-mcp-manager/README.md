@@ -284,7 +284,7 @@ await ctx.mcpManager.registerServer({
 
 当前写入与业务读取只认 producer-owned V4；本包不提供旧 V0/V2/V3 parser，也不把旧格式写成业务兼容。
 
-旧 `mcp-catalog` source 属于一次性维护责任。`scripts/maintenance/repair-mcp-catalog-sessions.mjs` 只把旧 source 元数据修为 V3 wrapper，保留消息正文与事件序列；它不写 V4，也不实现或伪造 v3→v4 迁移。修复后由 `dsh 0.1.7-rc.2` 的官方迁移链依次恢复旧产物并转为 V4，当前 V4 产物不动。
+旧 `mcp-catalog` source 属于一次性维护责任。`scripts/maintenance/repair-mcp-catalog-sessions.mjs` 只把旧 source 元数据修为 V3 wrapper，保留消息正文与事件序列；它不写 V4，也不实现或伪造 v3→v4 迁移。修复后由 `dsh 0.2.0-rc.2` 的官方迁移链依次恢复旧产物并转为 V4，当前 V4 产物不动。
 
 ```sh
 # 先停止 dsh web；默认预演，只列出受影响会话

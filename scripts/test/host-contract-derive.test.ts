@@ -58,9 +58,9 @@ test("--sample 只输出唯一目标 rc.2 与当前四个 slot 注册事实", ()
       "agent/error",
     ],
     mcpSectionOrder: "160",
-    targetRuntime: "0.1.7-rc.2",
+    targetRuntime: "0.2.0-rc.2",
     sessionAnchor:
-      '唯一目标 runtime 0.1.7-rc.2 的事实源为 ctx.on("session/event")；结算类型为 assistant/message（内嵌 stream）与 assistant/attempt；无 assistant/chunk',
+      '唯一目标 runtime 0.2.0-rc.2 的事实源为 ctx.on("session/event")；结算类型为 assistant/message（内嵌 stream）与 assistant/attempt；无 assistant/chunk',
     slotCount: 4,
     rowConfigSlots: EXPECTED_ROW_CONFIG_SLOTS,
     routeCount: 39,
@@ -76,7 +76,7 @@ test("完整派生保留 canonical row facts，且不含旧 runtime 兼容叙事
     sessionFormat: { targetRuntime: string; collectorMentionsChunkRemoval: boolean };
   };
 
-  assert.equal(derived.sessionFormat.targetRuntime, "0.1.7-rc.2");
+  assert.equal(derived.sessionFormat.targetRuntime, "0.2.0-rc.2");
   assert.equal(derived.sessionFormat.collectorMentionsChunkRemoval, false);
   assert.deepEqual(
     derived.slots.filter(({ slot }) => slot === "plugins.row.config"),

@@ -23,7 +23,7 @@
  *                            [--no-build] [--evidence-dir <dir>] [--audit]
  *                            [--audit-extra-dirs <dir>] [--no-skip-onboarding]
  *                            [--json] [-- <pkg-path>...]
- *   --dsh <path>       必填：显式指定 dsh 0.1.7-rc.2 入口。其它版本或读取失败一律
+ *   --dsh <path>       必填：显式指定 dsh 0.2.0-rc.2 入口。其它版本或读取失败一律
  *                      fail-closed，避免产出不属于目标 runtime 的 preset/验证证据。
  *   --port <port>      默认 3456；--port 0 自动探测真实空闲端口并打印（修复打印 0）。
  *                      探测块贴近 dsh 启动，防 EADDRINUSE 窗口。
@@ -121,6 +121,7 @@
  * 记不含令牌的 web.url——verdict 会经 --json 进入 CI 日志，令牌不进日志。
  */
 import { spawn, spawnSync, execFileSync } from "node:child_process";
+import { parseArgs } from "node:util";
 import {
   appendFileSync,
   existsSync,
@@ -151,7 +152,7 @@ import { isInside, runAudit, scanSnapshot, SKIP_DEEP, WHITELIST_V } from "./lib/
 const SCRIPT_DIR = import.meta.dirname; // Node >= 22 全程可用
 const DRIVER = join(SCRIPT_DIR, "browser-driver.mjs");
 const DEFAULT_PORT = 3456;
-const TARGET_DSH_VERSION = "0.1.7-rc.2";
+const TARGET_DSH_VERSION = "0.2.0-rc.2";
 const READY_TIMEOUT_MS = 15000;
 const URL_WAIT_MS = 5000; // 访问 URL 行晚于 HTTP 就绪的等待上限（见 9b 注释）
 const LOG_TAIL_LIMIT = 4096; // 防背压：收集缓冲限长（browser-driver stderrBuf 先例）
@@ -159,7 +160,7 @@ const LOG_TAIL_LIMIT = 4096; // 防背压：收集缓冲限长（browser-driver 
 const USAGE = `用法: node verify-isolated.mjs --dsh <path> [--port <port>] [--browser] [--keep] [--no-build] [--evidence-dir <dir>] [--audit] [--audit-extra-dirs <dir>] [--no-skip-onboarding] [--json] [-- <pkg-path>...]
 
 选项：
-  --dsh <path>         必须显式传入 --dsh <path> 指向 dsh 0.1.7-rc.2 入口；缺失、不可用、版本读取失败或其它版本均拒绝
+  --dsh <path>         必须显式传入 --dsh <path> 指向 dsh 0.2.0-rc.2 入口；缺失、不可用、版本读取失败或其它版本均拒绝
   --port <port>        端口（默认 3456；--port 0 自动探测真实空闲端口并打印）
   --browser            额外启动独立浏览器实例（browser-driver.mjs，raw CDP 零依赖）
   --keep               结束后保留临时 DSH_HOME（默认自动删除）
@@ -228,8 +229,18 @@ class CliError extends Error {
 }
 
 // --- CLI 解析（对齐 bash 版参数契约；--help 为新增） ---
-// 复杂度门禁（40）要求下 parseCli 只保留主循环骨架，分支下沉到小函数
-// （行为与报错文案逐字一致，见 smoke 6/9c/10g 子进程断言）。
+// 解析交 node:util 内置 parseArgs（与同包 browser-driver.mjs 等三个兄弟脚本同一口径，
+// 且不引第三方命令行库：本脚本随 skill 目录原样分发，多一个依赖就多一份自包含负担）。
+// 选项表即 OPTION_SPEC，改它必须同步 USAGE 与本文件头部的参数说明。
+// 等价性证据：39 例 argv 新旧两版真实子进程对拍，31 例输出逐字一致、**退出码全部一致**；
+// 余下 8 例是三条刻意处置。smoke 6c 另补 5 条断言，锁住未知选项文案、缺参中文文案、
+// --json 非法内联值、布尔内联值、--json 末位胜出——改造前这层一条断言都没有。
+// 三条刻意处置：
+//   1. 未知选项消息补 `错误: ` 前缀（旧版这两处是全脚本唯一没带前缀的 failUsage 调用点）；
+//   2. 单横线 token 不再能充当选项取值（--port -1 / --dsh -x 等改判 ambiguous）：退出码不变，
+//      仅 3 例「<选项> <单横线> --help」由 0 变 2——是收紧方向（拒绝歧义输入而非静默收下）；
+//   3. 未知选项与缺参走 rejectBadUsage 的中文自查（内置错误对象只带 code，既不带出错 token
+//      也不带选项名，拼不出可定位原文）；parseArgsStrict 只兜剩下的边缘形态。
 // jsonMode 只在 `--` 前段探测（`--` 之后为插件参数原样透传，不参与选项解析）；
 // `--json=false` 显式关闭；`--json --bogus` 等错误路径在循环内解析到 --json
 // 即置位，随后抛错时顶层 catch 仍按 JSON 输出（P1：修复 --dsh /x -- --json
@@ -248,12 +259,6 @@ function failUsage(msg) {
   throw new CliError(msg, EXIT.USAGE);
 }
 
-function requireOptValue(argv, i, opt) {
-  const v = argv[i + 1];
-  if (v === undefined || v.startsWith("--")) failUsage(`错误: ${opt} 需要一个参数`);
-  return v;
-}
-
 function parsePortNumber(raw) {
   // 严格十进制（拒绝 0x10 / 1e3 / 空串等 Number() 宽容形态）
   if (!/^\d+$/.test(raw)) failUsage(`错误: --port 需要 0-65535 的十进制整数: ${raw}`);
@@ -262,103 +267,140 @@ function parsePortNumber(raw) {
   return p;
 }
 
-function parseJsonInline(inline) {
-  // --json=<v> 显式布尔（true/false），非法值参数错误
-  if (inline !== "true" && inline !== "false")
-    failUsage(`错误: --json 只接受 true/false: ${inline}`);
-  return inline === "true";
+/**
+ * 选项表：与 USAGE 文案、SKILL.md 的参数说明一一对应。改任一处必须同步另两处
+ * （同包 browser-driver.mjs 等三个兄弟脚本同用内置 parseArgs，见 references/script-contracts.md）。
+ *
+ * 全走 node:util 内置解析器，不引第三方命令行库——本脚本随 skill 目录原样分发，
+ * 多一个依赖就多一份自包含负担。
+ */
+const OPTION_SPEC = {
+  dsh: { type: "string" },
+  port: { type: "string" },
+  browser: { type: "boolean" },
+  keep: { type: "boolean" },
+  "no-build": { type: "boolean" },
+  "evidence-dir": { type: "string" },
+  audit: { type: "boolean" },
+  "audit-extra-dirs": { type: "string", multiple: true },
+  "no-skip-onboarding": { type: "boolean" },
+  json: { type: "boolean" },
+  help: { type: "boolean" },
+};
+
+/** 取选项 token 的名字：`--k=v` 取 `--k`，单横线或无 `=` 取原 token。 */
+function optionName(token) {
+  const eq = token.indexOf("=");
+  return token.startsWith("--") && eq !== -1 ? token.slice(0, eq) : token;
 }
 
-/** 无值开关选项；命中返回 true，未命中返回 false（调用方继续走带值选项）。 */
-function applyFlagOption(f, key) {
-  switch (key) {
-    case "browser":
-      f.browser = true;
-      return true;
-    case "keep":
-      f.keep = true;
-      return true;
-    case "no-build":
-      f.noBuild = true;
-      return true;
-    case "audit":
-      f.audit = true;
-      return true;
-    case "no-skip-onboarding":
-      f.skipOnboarding = false;
-      return true;
-    case "help":
-      f.help = true;
-      return true;
-    default:
-      return false;
+/** 该 token 在 OPTION_SPEC 里声明的类型；不是长选项（含单横线）则为 undefined。 */
+function optionType(token) {
+  if (!token.startsWith("--")) return undefined;
+  return OPTION_SPEC[optionName(token).slice(2)]?.type;
+}
+
+/**
+ * `--json=<bool>` 归一：true 写裸 token；false 撤掉前一个裸 token——重复出现时
+ * **末位胜出**（与既有行为一致），故 `--json --json=false` 落在关闭侧。
+ */
+function applyJsonInline(out, token) {
+  const v = token.slice("--json=".length);
+  if (v !== "true" && v !== "false") failUsage(`错误: --json 只接受 true/false: ${v}`);
+  if (v === "true") out.push("--json");
+  else if (out[out.length - 1] === "--json") out.pop();
+}
+
+/**
+ * 布尔选项的内联值归一：内置 boolean 不接受内联值，而既有行为是**静默忽略内联值并置位**
+ * （`--browser=false` 也置位），故一律改写成裸选项，保持逐字等价。
+ * `--json` 例外——它有显式 true/false 形态与非法值报错（见 applyJsonInline）。
+ * `--` 之后原样透传（位置参数交给 parseArgs）。
+ */
+function normalizeBooleanArgs(args) {
+  const out = [];
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    if (a === "--") return [...out, ...args.slice(i)];
+    if (optionType(a) !== "boolean" || a === optionName(a)) {
+      out.push(a);
+      continue;
+    }
+    if (optionName(a) === "--json") applyJsonInline(out, a);
+    else out.push(optionName(a));
+  }
+  return out;
+}
+
+/**
+ * 内置解析器会逐个当「选项」看的 token 下标：取值型选项**消费掉紧随其后的 token**，
+ * 那个 token 不能再当选项判（否则 `--port -1` 会被误报成「未知选项: -1」）。
+ * 裸 `-` 与位置参数不是选项；`--` 之后全是位置参数。
+ */
+function optionTokenIndexes(args) {
+  const out = [];
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    if (a === "--") break;
+    if (a === "-" || !a.startsWith("-")) continue;
+    out.push(i);
+    if (optionType(a) === "string" && a === optionName(a)) i++;
+  }
+  return out;
+}
+
+/**
+ * 未知选项与缺参自查：内置解析器的错误对象既不带出错 token 也不带选项名，拼不出可定位的
+ * 中文原文，故先自查再交给内置。未知选项含单横线（内置无短选项声明）。
+ */
+function rejectBadUsage(args) {
+  const idx = optionTokenIndexes(args);
+  for (const i of idx) {
+    if (!optionType(args[i])) failUsage(`错误: 未知选项: ${args[i]}`);
+  }
+  for (const i of idx) {
+    if (optionType(args[i]) !== "string" || args[i] !== optionName(args[i])) continue;
+    const next = args[i + 1];
+    if (next === undefined || next.startsWith("--"))
+      failUsage(`错误: ${optionName(args[i])} 需要一个参数`);
   }
 }
 
 /**
- * 带值选项；返回消费的后续参数个数（0 或 1）。未知选项按原 token 报错
- * （`--bogus=x` 报全 token，与原 default 分支一致）。
+ * 兜底：rejectBadUsage 已覆盖未知选项与缺参，落到这里的只剩内置认不出的边缘形态。
+ * 内置文案是英文，这里归口到参数错误出口（EXIT.USAGE）并保留 code 与原文。
  */
-function applyValuedOption(f, key, inline, argv, i, token) {
-  switch (key) {
-    case "dsh":
-      f.dsh = inline ?? requireOptValue(argv, i, "--dsh");
-      return inline === null ? 1 : 0;
-    case "port": {
-      const raw = inline ?? requireOptValue(argv, i, "--port");
-      f.port = parsePortNumber(raw);
-      return inline === null ? 1 : 0;
-    }
-    case "evidence-dir":
-      f.evidenceDir = inline ?? requireOptValue(argv, i, "--evidence-dir");
-      return inline === null ? 1 : 0;
-    case "audit-extra-dirs":
-      f.auditExtraDirs.push(inline ?? requireOptValue(argv, i, "--audit-extra-dirs"));
-      return inline === null ? 1 : 0;
-    case "json":
-      f.json = inline !== null ? parseJsonInline(inline) : true;
-      return 0;
-    default:
-      failUsage(`未知选项: ${token}`);
-      return 0; // 不可达（failUsage 恒抛），仅满足 consistent-return
+function parseArgsStrict(args) {
+  try {
+    return parseArgs({ args, options: OPTION_SPEC, allowPositionals: true, strict: true });
+  } catch (e) {
+    failUsage(`错误: 参数不合法（${e.code}）: ${e.message}`);
   }
 }
 
+/** 解析 CLI：返回 flags 与位置参数（插件包路径）。 */
 function parseCli(argv) {
+  // 自举约束：jsonMode 必须在解析前定档（错误路径与 --help 的输出去向都依赖它），
+  // 故先按原 argv 预扫，再把归一后的 argv 交给内置解析器。
   jsonMode = detectJsonMode(argv);
+  const args = normalizeBooleanArgs(argv);
+  rejectBadUsage(args);
+  const { values, positionals } = parseArgsStrict(args);
   const f = {
-    dsh: null,
-    port: DEFAULT_PORT,
-    browser: false,
-    keep: false,
-    noBuild: false,
-    evidenceDir: null,
-    audit: false,
-    auditExtraDirs: [],
-    skipOnboarding: true,
-    json: jsonMode,
-    help: false,
+    dsh: values.dsh ?? null,
+    port: values.port === undefined ? DEFAULT_PORT : parsePortNumber(values.port),
+    browser: values.browser === true,
+    keep: values.keep === true,
+    noBuild: values["no-build"] === true,
+    evidenceDir: values["evidence-dir"] ?? null,
+    audit: values.audit === true,
+    auditExtraDirs: values["audit-extra-dirs"] ?? [],
+    // 默认跳过首启弹窗，故这里是**反向**选项：给出即关掉跳过。
+    skipOnboarding: values["no-skip-onboarding"] !== true,
+    json: values.json === true,
+    help: values.help === true,
   };
-  const pkgs = [];
-  for (let i = 0; i < argv.length; i++) {
-    const a = argv[i];
-    if (a === "--") {
-      pkgs.push(...argv.slice(i + 1));
-      break;
-    }
-    if (a.startsWith("--")) {
-      const eq = a.indexOf("=");
-      const key = eq === -1 ? a.slice(2) : a.slice(2, eq);
-      const inline = eq === -1 ? null : a.slice(eq + 1);
-      if (applyFlagOption(f, key)) continue;
-      i += applyValuedOption(f, key, inline, argv, i, a);
-    } else if (a.startsWith("-") && a !== "-") {
-      failUsage(`未知选项: ${a}`);
-    } else {
-      pkgs.push(a);
-    }
-  }
-  return { flags: f, pkgs };
+  return { flags: f, pkgs: positionals };
 }
 
 // --- dsh 入口校验与版本锚定 ---
@@ -373,6 +415,23 @@ function checkExecutable(p) {
   }
 }
 
+/** win32 三坑之 1：PATH 下无 PATHEXT 解析，.cmd/.bat 只能按扩展名逐个试。 */
+function winPathHit(dir, candidate) {
+  for (const ext of ["exe", "cmd", "bat"]) {
+    const hit = checkExecutable(`${join(dir, candidate)}.${ext}`);
+    if (hit) return hit;
+  }
+  return null;
+}
+
+/** PATH 某一目录下的命中：先按原名试；win32 再退到 winPathHit。 */
+function pathHit(dir, candidate) {
+  const hit = checkExecutable(join(dir, candidate));
+  if (hit) return hit;
+  if (process.platform !== "win32") return null;
+  return winPathHit(dir, candidate);
+}
+
 function resolveDsh(candidate) {
   if (!candidate) return null;
   const hasSep =
@@ -382,14 +441,8 @@ function resolveDsh(candidate) {
   // .cmd/.bat 时返回该路径，由 readDshVersion / runDsh / spawnDsh 统一
   // shell:true 回退（execFile/spawn 无 PATHEXT 解析，直接跑 .cmd 必失败）。
   for (const dir of (process.env.PATH || "").split(delimiter).filter(Boolean)) {
-    const hit = checkExecutable(join(dir, candidate));
+    const hit = pathHit(dir, candidate);
     if (hit) return hit;
-    if (process.platform === "win32") {
-      for (const ext of ["exe", "cmd", "bat"]) {
-        const h = checkExecutable(`${join(dir, candidate)}.${ext}`);
-        if (h) return h;
-      }
-    }
   }
   return null;
 }
@@ -532,57 +585,73 @@ function hasBuildScript(pkgAbs) {
   }
 }
 
+/** 已存在的构建产物目录（lib/ 或 dist/）。 */
+function buildProductDirs(abs) {
+  return ["lib", "dist"]
+    .map((d) => join(abs, d))
+    .filter((d) => {
+      try {
+        return statSync(d).isDirectory();
+      } catch {
+        return false;
+      }
+    });
+}
+
+/** 陈旧警告：src 比产物新 → 提示可能验证到旧版本。 */
+function warnIfStale(abs, prods) {
+  const src = join(abs, "src");
+  const s = existsSync(src) ? newestMtime(src) : 0;
+  const p = Math.max(...prods.map(newestMtime));
+  if (s > p) outWarn(`警告: 源码比构建产物新（--no-build 可能验证到旧版本）: ${abs}`);
+}
+
+/** 在目标插件目录跑 pnpm build。 */
+function runPluginBuild(abs) {
+  out(`构建插件: ${abs}`);
+  // 刻意不传 DSH_HOME：pnpm build 属宿主环境操作（目标插件目录的构建工具链），
+  // 不随隔离 home——比 bash 版全局 export DSH_HOME 的辐射面更窄、更安全；
+  // DSH_HOME 隔离仅限 dsh web 启动面（spawnDsh）与 dsh 子命令（runDsh）。
+  const r = spawnSync("pnpm", ["build"], {
+    cwd: abs,
+    env: process.env,
+    stdio: ["inherit", jsonMode ? "pipe" : "inherit", "inherit"],
+    timeout: 600000,
+  });
+  if (jsonMode && r.stdout) process.stderr.write(String(r.stdout)); // 不污染 stdout
+  if (r.status !== 0)
+    throw new CliError(`错误: pnpm build 失败（退出码 ${r.status}）: ${abs}`, EXIT.FAIL);
+}
+
+/** 单个插件的构建前置：非本地目录跳过构建；--no-build 校验产物；否则按需构建。 */
+function preparePlugin(it) {
+  const label = it.kind === "path" ? it.abs : it.input;
+  // 非本地插件目录（无 package.json）：跳过构建，原样交给 add（包名/git URL）
+  if (it.kind === "spec" || !existsSync(join(it.abs, "package.json"))) {
+    out(`跳过: 非本地插件目录（无 package.json）: ${label}（若为包名/git URL 将原样传给 dsh）`);
+    return;
+  }
+  if (flags.noBuild) {
+    const prods = buildProductDirs(it.abs);
+    if (prods.length === 0) {
+      throw new CliError(
+        `错误: --no-build 但缺少构建产物（lib/ 或 dist/）: ${it.abs}\n` +
+          "       请先 pnpm build，或去掉 --no-build 让脚本自动构建",
+        EXIT.USAGE,
+      );
+    }
+    warnIfStale(it.abs, prods);
+    return;
+  }
+  if (hasBuildScript(it.abs)) runPluginBuild(it.abs);
+  else out(`跳过构建（无 build 脚本）: ${it.abs}`);
+}
+
 function setupPlugins(pkgs) {
   if (pkgs.length === 0) return;
   // 1. 归一化全部参数：path → 绝对路径；spec → 原样透传
   const items = pkgs.map(resolvePkgArg);
-  for (const it of items) {
-    const label = it.kind === "path" ? it.abs : it.input;
-    // 非本地插件目录（无 package.json）：跳过构建，原样交给 add（包名/git URL）
-    if (it.kind === "spec" || !existsSync(join(it.abs, "package.json"))) {
-      out(`跳过: 非本地插件目录（无 package.json）: ${label}（若为包名/git URL 将原样传给 dsh）`);
-      continue;
-    }
-    if (flags.noBuild) {
-      const prods = ["lib", "dist"]
-        .map((d) => join(it.abs, d))
-        .filter((d) => {
-          try {
-            return statSync(d).isDirectory();
-          } catch {
-            return false;
-          }
-        });
-      if (prods.length === 0) {
-        throw new CliError(
-          `错误: --no-build 但缺少构建产物（lib/ 或 dist/）: ${it.abs}\n` +
-            "       请先 pnpm build，或去掉 --no-build 让脚本自动构建",
-          EXIT.USAGE,
-        );
-      }
-      // 陈旧警告：src 比产物新 → 提示可能验证到旧版本
-      const src = join(it.abs, "src");
-      const s = existsSync(src) ? newestMtime(src) : 0;
-      const p = Math.max(...prods.map(newestMtime));
-      if (s > p) outWarn(`警告: 源码比构建产物新（--no-build 可能验证到旧版本）: ${it.abs}`);
-    } else if (hasBuildScript(it.abs)) {
-      out(`构建插件: ${it.abs}`);
-      // 刻意不传 DSH_HOME：pnpm build 属宿主环境操作（目标插件目录的构建工具链），
-      // 不随隔离 home——比 bash 版全局 export DSH_HOME 的辐射面更窄、更安全；
-      // DSH_HOME 隔离仅限 dsh web 启动面（spawnDsh）与 dsh 子命令（runDsh）。
-      const r = spawnSync("pnpm", ["build"], {
-        cwd: it.abs,
-        env: process.env,
-        stdio: ["inherit", jsonMode ? "pipe" : "inherit", "inherit"],
-        timeout: 600000,
-      });
-      if (jsonMode && r.stdout) process.stderr.write(String(r.stdout)); // 不污染 stdout
-      if (r.status !== 0)
-        throw new CliError(`错误: pnpm build 失败（退出码 ${r.status}）: ${it.abs}`, EXIT.FAIL);
-    } else {
-      out(`跳过构建（无 build 脚本）: ${it.abs}`);
-    }
-  }
+  for (const it of items) preparePlugin(it);
   // 2. add 统一用归一化结果（相对路径已在 dsh 侧被当 git URL）
   const addArgs = items.map((it) => (it.kind === "path" ? it.abs : it.input));
   const add = runDsh(["plugin", "--profile", profile, "add", ...addArgs], true);
@@ -785,24 +854,26 @@ function finalizeVerdictAndHome() {
   rmSync(isolatedHome, { recursive: true, force: true });
 }
 
-function emitSettleOutput() {
-  // --json：stdout 只出一份 JSON——错误路径已输出错误对象则不再重复，否则出
-  // 最终 verdict（ok/cleanup 终态与 verdict.json 文件一致）。B4：error 对象
-  // 恒置 audit 字段（auditResult ?? null）与 verdict 对齐——t0 之前错误（如
-  // extra-dir 不存在）时 audit 为 null 而非缺失，字段契约一致（M6）。
-  if (jsonMode) {
-    if (errorPayload) {
-      errorPayload.audit = auditResult ?? null;
-      jsonOut(errorPayload);
-    } else {
-      jsonOut(
-        makeVerdict({
-          ok: readyOk && (exiting?.code ?? EXIT.FAIL) === 0,
-          cleanup: flags?.keep ? "kept" : "done",
-        }),
-      );
-    }
+/**
+ * 退出前 stdout 要出的那一份 JSON：错误路径已产出错误对象则补齐 audit 字段后原样出，
+ * 否则出最终 verdict（ok/cleanup 终态与 verdict.json 文件一致）。
+ */
+function settleJsonPayload() {
+  // B4：error 对象恒置 audit 字段（auditResult ?? null）与 verdict 对齐——t0 之前
+  // 错误（如 extra-dir 不存在）时 audit 为 null 而非缺失，字段契约一致（M6）。
+  if (errorPayload) {
+    errorPayload.audit = auditResult ?? null;
+    return errorPayload;
   }
+  return makeVerdict({
+    ok: readyOk && (exiting?.code ?? EXIT.FAIL) === 0,
+    cleanup: flags?.keep ? "kept" : "done",
+  });
+}
+
+function emitSettleOutput() {
+  // --json：stdout 只出一份 JSON；非 --json 模式此处不出声。
+  if (jsonMode) jsonOut(settleJsonPayload());
   process.exit(exiting?.code ?? EXIT.FAIL);
 }
 
@@ -1117,6 +1188,31 @@ async function awaitDshReady(collector, verdictPort) {
   resolveReadyPort(verdictPort);
 }
 
+/** 轮询 dsh.log 直到解析出带令牌 URL 或超时；解析不到时 webUrl 保持 null。 */
+async function awaitWebUrlFromLog() {
+  const deadline = Date.now() + URL_WAIT_MS;
+  for (;;) {
+    try {
+      webUrl = readDshUrl(readFileSync(dshLogPath, "utf8"));
+    } catch {}
+    if (webUrl || Date.now() >= deadline) break;
+    await new Promise((r) => setTimeout(r, 200));
+  }
+}
+
+/** 把带令牌 URL 记进 browser.state 供 browser-driver 以 --url state 取用；失败不阻断启动。 */
+function recordBrowserStateUrl(f) {
+  if (!f.browser || !existsSync(browserState)) return;
+  try {
+    const st = JSON.parse(readFileSync(browserState, "utf8"));
+    if (webUrl) st.dshWebUrl = webUrl;
+    writeFileSync(browserState, JSON.stringify(st, null, 2));
+    if (webUrl) out("浏览器命令: 用 `--url state` 取该带令牌 URL（示例见 SKILL.md §3.1）");
+  } catch {
+    /* state 解析失败不阻断启动 */
+  }
+}
+
 async function resolveAccessUrl(f) {
   // 9b. 访问 URL 与令牌：GUI 带鉴权，浏览器命令必须用带令牌的 URL（裸端口只得到
   //     401 文本页）。令牌只从 dsh 打印行取真值，只落 0o600 的 browser.state 与
@@ -1124,14 +1220,7 @@ async function resolveAccessUrl(f) {
   webUrlBare = `http://127.0.0.1:${actualPort}/`;
   // dsh 打印 URL 行的时刻晚于 HTTP 就绪（与端口 parsed 通道同源的既有实证），
   // 就绪即读会稳定落空——那会把「必须带令牌」的引导降级成一句无用警告。
-  const urlDeadline = Date.now() + URL_WAIT_MS;
-  for (;;) {
-    try {
-      webUrl = readDshUrl(readFileSync(dshLogPath, "utf8"));
-    } catch {}
-    if (webUrl || Date.now() >= urlDeadline) break;
-    await new Promise((r) => setTimeout(r, 200));
-  }
+  await awaitWebUrlFromLog();
   if (!webUrl) {
     outWarn(
       `警告: 未从 dsh 输出解析到带令牌的访问 URL（dsh.log 行格式变化？）——浏览器命令请自行从 ${dshLogPath} 取 URL`,
@@ -1139,16 +1228,7 @@ async function resolveAccessUrl(f) {
   } else {
     out(`访问 URL（含访问令牌，GUI 鉴权必需）: ${webUrl}`);
   }
-  if (f.browser && existsSync(browserState)) {
-    try {
-      const st = JSON.parse(readFileSync(browserState, "utf8"));
-      if (webUrl) st.dshWebUrl = webUrl;
-      writeFileSync(browserState, JSON.stringify(st, null, 2));
-      if (webUrl) out("浏览器命令: 用 `--url state` 取该带令牌 URL（示例见 SKILL.md §3.1）");
-    } catch {
-      /* state 解析失败不阻断启动 */
-    }
-  }
+  recordBrowserStateUrl(f);
 }
 
 function snapshotAuditBaseline(f, extraDirsAbs) {
