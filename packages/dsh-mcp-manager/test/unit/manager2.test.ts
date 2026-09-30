@@ -1269,10 +1269,17 @@ describe("reconcileServers", () => {
     manager.projectRoot = dir;
     await manager.initMiddleware();
     manager.reconcileServers();
-    await pollUntil("两个 root 各有一条 both", () => {
+    // 等**语义终点**而非代理条件（#1091）：条目在 middleware.ts:148 就带着 id: undefined
+    // 入表，has() 为真早于 id 在 :173 回填——只等 has() 会读到 id 未回填的窗口，
+    // 让下面「id 不同」那条用例偶发失败。断言不动，这里只把等待条件收紧到被断言的那个量。
+    await pollUntil("两个 root 各有一条 both 且 id 已回填", () => {
+      const globalEntry = manager.middleware!.units.get("@global")?.connections.get("both");
+      const projectEntry = manager.middleware!.units.get(dir)?.connections.get("both");
       return (
-        manager.middleware!.units.get("@global")?.connections.has("both") === true &&
-        manager.middleware!.units.get(dir)?.connections.has("both") === true
+        globalEntry !== undefined &&
+        projectEntry !== undefined &&
+        globalEntry.id !== undefined &&
+        projectEntry.id !== undefined
       );
     });
     return { manager, store, dir, log };
