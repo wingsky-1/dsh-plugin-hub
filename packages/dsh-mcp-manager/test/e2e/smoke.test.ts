@@ -1711,6 +1711,36 @@ it("README 含 position/offset 配置说明（键名与默认值，中英）", (
   }
 });
 
+// #1014 B6：README 的能力声明必须与实现一致（#1014 §4「能力声明与实际实现存在漂移」）。
+// 这些断的是**字面量**：文档里再写回「8KB 截断」「固定 30s」就会红——它们曾是与实现
+// 相反的声明，而实现侧没有任何机制拦。
+it("README 不再声称 8KB 结果截断 / 固定 30s 超时（实现从未如此）", () => {
+  for (const file of ["README.md", "README.en.md"]) {
+    const text = readFileSync(join(pkgDir, file), "utf8");
+    expect(text.includes("8KB"), `${file} 仍声称 8KB 截断`).toBeFalsy();
+    expect(text.includes("fixed 30s"), `${file} 仍声称固定 30s 超时`).toBeFalsy();
+    expect(text.includes("固定 30s"), `${file} 仍声称固定 30s 超时`).toBeFalsy();
+    expect(text.includes("Result truncation"), `${file} 仍有「结果截断」行`).toBeFalsy();
+  }
+});
+
+it("README 写明结果不截断、超时按最大值结算、禁直呼机器强制（#1014，中英）", () => {
+  for (const file of ["README.md", "README.en.md"]) {
+    const text = readFileSync(join(pkgDir, file), "utf8");
+    // 不截断是当前事实，必须被写出来（否则读者仍会以为有保护）。
+    expect(
+      /不做结果截断|no result truncation/.test(text),
+      `${file} 未声明不做结果截断`,
+    ).toBeTruthy();
+    // 超时不是固定值。
+    expect(text.includes("toolCallTimeoutMs"), `${file} 未提 toolCallTimeoutMs`).toBeTruthy();
+    // 禁直呼是机器强制（#1014 的核心交付），中英都要有对应段落。
+    expect(text.includes("#1014"), `${file} 未标注 #1014 机器强制禁直呼`).toBeTruthy();
+    // 统计隐私边界。
+    expect(/#1014|哈希桶|hash bucket/.test(text), `${file} 未声明搜索词只落哈希桶`).toBeTruthy();
+  }
+});
+
 it("uiConfigChangedFrame 写出一帧 ui-config-changed", () => {
   expect(uiConfigChangedFrame()).toBe('data: {"type":"ui-config-changed"}\n\n');
   expect(sseData({ type: "ui-config-changed" }), "与 sseData 同构").toBe(uiConfigChangedFrame());

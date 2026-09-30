@@ -56,9 +56,9 @@ dsh plugin --profile web add @wingsky-1/dsh-mcp-manager
   host credential-shaped variables never leak through; directory summaries and error
   paths go through a redactor
 - **Low-maintenance operations**: tiered status display (running / connecting / failed…);
-  bounded exponential-backoff auto-reconnect on disconnects; tool results are truncated at
-  8KB and accept a per-server timeout override (`toolCallTimeoutMs`), while middleware
-  calls use a fixed 30s timeout
+  bounded exponential-backoff auto-reconnect on disconnects; a per-server timeout override
+  (`toolCallTimeoutMs`), while a middleware call settles at the largest in-use server timeout
+  plus a 25s internal tail (15s + 25s = 40s by default)
 
 ## Installation
 
@@ -118,8 +118,8 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-mcp-manager
 | Model tools | Every server (project-level / global / runtime-injected) goes through the same four atomic middleware tools: `ws_mcp_list` / `ws_mcp_detail` / `ws_mcp_search` / `ws_mcp_call`, so workspaces never clash; the host registration name `mcp__<id>__<tool>` (`id` allocated at random per (workspace, server), stable within one assembly, opaque; names still obey the 64-char / `[A-Za-z0-9_-]` / hashed-suffix-on-conflict rules) is internal only — it is removed from the model's tool list and must never be called directly |
 | Workspace isolation | The middleware routes by the calling session's cwd to the matching workspace connection pool; server full-name consistency checks (`@<root>/<server>`) prevent cross-workspace crosstalk |
 | Reconnection | Exponential backoff (starts at 500ms, caps at 30s, gives up after 10 attempts and deregisters the tools) |
-| Result truncation | Direct-connect tool results truncated at 8KB and marked (prevents oversized JSON from entering context in full) |
-| Timeout fallback | Direct-connect tool call timeout defaults to 60s → 15s (overridable per server via `toolCallTimeoutMs`); middleware calls use a fixed 30s timeout |
+| Result size | This package performs **no result truncation**; tool results are returned as-is. The catalog boxing limits (4KB per tool / 256KB total) bound the **catalog**, not execution results — enforce a limit on the MCP server side or via the host compaction policy |
+| Timeout fallback | Direct-connect tool call timeout defaults to 60s → 15s (overridable per server via `toolCallTimeoutMs`); a middleware `ws_mcp_call` settles at the largest in-use server timeout plus a 25s internal tail, **not a fixed value** |
 | Push self-healing | Triple safeguard on the SSE channel: server sends a data ping heartbeat every 30s; client reconnects (closing the stale EventSource first) after 60s of frame silence (watchdog); connection is force-rebuilt when the page becomes visible again — half-open connections silently severed by mobile OS backgrounding heal on their own instead of piling up as zombies |
 
 ## Configuration (floating window position)
@@ -261,6 +261,14 @@ supports an optional `toolDefinitions` field (caller-provided wrapped tool defin
   is never exposed;
 - **Without**: current behavior is preserved (remote schema + generic `callTool`), zero
   impact on other servers;
+- **Direct calls are denied by the host, not by convention (#1014)**: `mcp__<id>__<tool>` is
+  an internal registration name; the pre-execute guard **denies by default** every `mcp__`
+  direct call that is not this package's own forwarding — it no longer relies on the model
+  obeying a prompt, nor on declaration-surface masking (which necessarily leaks during connection
+  flips). The single allow-path is the host-issued **in-flight** token: the sub-call of
+  `ws_mcp_call` → dispatch → `ctx.tools.execute` is admitted by its `parent`, deregistered when
+  it settles, and replaying the same token is denied. The denial text points at `ws_mcp_call`
+  and says not to retry the same call.
 - **No model-visible `mcp__` direct-call tool: calls only go through `ws_mcp_call` with bare
   names** (`@<root>/<server>` + bare name; a wrapped `execute` is caller JS, so there is
   no remote implementation to call directly). The call name is still derived via
@@ -302,7 +310,15 @@ await ctx.mcpManager.registerServer({
   declare explicitly is passed to the child verbatim** (explicit layers merge after the scrub), so
   `env` is not a redaction boundary — do not put credentials there if you want them isolated
 - **stdio subprocess inherits host privileges**: MCP server commands run under the host
-  process's permissions; only configure trusted servers
+  process's permissions; only configure trusted servers. Trust boundary: in-process plugin
+  injection (`ctx.mcpManager.registerServer`) shares this plugin's privileges and is not a
+  privilege escalation; **the project-level `mcp.json` that ships inside a repository is the
+  side you should scrutinize**
+- **Stats carry metadata only**: debug stats (`debug.callStats`) record call counts / durations /
+  outcomes plus the progressive-disclosure funnel; **search terms are persisted only as SHA-256
+  hash buckets** (`h:<12 hex>`, empty queries as `<empty>`), and plaintext keys written by older
+  versions are dropped on read. Hashing is **pseudonymization, not anonymization**: search terms
+  have low entropy and remain dictionary-attackable
 - **MCP tools execute on the real server — confirm before acting**; tool results are returned
   as-is and may contain sensitive information; treat tool descriptions/results as untrusted input
 - **Injection trust tiers**: remote tool descriptions/results are untrusted input — render and pass as parameters only, never execute as instructions; local configuration and explicit user actions are trusted
