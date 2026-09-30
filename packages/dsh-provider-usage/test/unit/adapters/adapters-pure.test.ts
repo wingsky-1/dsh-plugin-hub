@@ -21,6 +21,7 @@ import {
   topUpEvents,
   cumulativeShifts,
   calibratedDomain,
+  isUsableCalibratedDomain,
   segmentIndexes,
   samplePointOf,
   samplePointsOf,
@@ -211,6 +212,70 @@ describe("deepseek 余额走势图除权面", () => {
     // 全平水位：dmin==dmax 时首个余量项退到 max(hi*0.1, 0.01) 兜底
     const flat = calibratedDomain([pt({ balance: 5 }), pt({ balance: 5 })], [0, 0]);
     expect(flat).toEqual({ lo: 4.5, hi: 5.5 });
+  });
+
+  it("calibratedDomain：兜底②可达区（span 5e-7）给足可视宽度而非仅非零", () => {
+    // span 落在兜底②区间（1.3×span < 1e-6，即 span < 约 7.7e-7）：必须撑到 ±1 窗口。
+    // 断「仅非零」的弱判：span 5e-7 若只保证 hi>lo，yOf 分母 1.5e-7 会把噪声放大 1e7 倍。
+    const near = calibratedDomain([pt({ balance: 1 }), pt({ balance: 1 + 5e-7 })], [0, 0]);
+    expect(near).not.toBeNull();
+    expect(near!.hi - near!.lo).toBeGreaterThanOrEqual(1);
+    // 同族跨度一并守住（1e-9 / 3e-7 两个探针点）
+    for (const span of [1e-9, 3e-7, 5e-7]) {
+      const d = calibratedDomain([pt({ balance: 1 }), pt({ balance: 1 + span })], [0, 0]);
+      expect(d!.hi - d!.lo).toBeGreaterThanOrEqual(1);
+    }
+  });
+
+  it("calibratedDomain：全负校准水位产出非反相且覆盖数据的域", () => {
+    // 校准水位 = balance − 累计充值 = 期初 − 累计消耗，净消耗超过期初时全负是常态，
+    // 不是非法输入。0 地板对原始余额成立、对校准水位不成立：钳 0 会把下界抬到数据之上。
+    for (const balances of [
+      [-5, -5],
+      [-5, -2],
+      [-1, -0.9],
+      [-1e-7, -1e-7],
+      [-12, -2],
+    ]) {
+      const values = balances.map((b, i) => pt({ t: i, balance: b }));
+      const shifts = balances.map(() => 0);
+      const d = calibratedDomain(values, shifts);
+      expect(d).not.toBeNull();
+      expect(d!.hi).toBeGreaterThan(d!.lo);
+      // 域须覆盖每个校准水位值，否则整段折线落在画布外
+      expect(isUsableCalibratedDomain(d, values, shifts)).toBe(true);
+    }
+    // 真实除权序列：充值 100 后净消耗，v = balance − shift 走到 -100
+    const realValues = [20, -10, 60, 30, 0].map((b, i) => pt({ t: i, balance: b }));
+    const realShifts = [0, 0, 100, 100, 100];
+    const realDomain = calibratedDomain(realValues, realShifts);
+    expect(realDomain).not.toBeNull();
+    expect(realDomain!.hi).toBeGreaterThan(realDomain!.lo);
+    expect(isUsableCalibratedDomain(realDomain, realValues, realShifts)).toBe(true);
+  });
+
+  it("calibratedDomain：后置不变式——出口恒满足 hi > lo 且覆盖数据（四类输入逐条断）", () => {
+    // 常规 / 全平 / 近零跨度 / 全负四类，逐条断后置不变式（此前只活在注释里，无判据守着）
+    const cases: { name: string; balances: number[]; shifts?: number[] }[] = [
+      { name: "常规 [0,10]", balances: [0, 10] },
+      { name: "常规 [3,17.5]", balances: [3, 17.5] },
+      { name: "全平 [5,5]", balances: [5, 5] },
+      { name: "全平 [0,0]", balances: [0, 0] },
+      { name: "近零跨度 [1,1+5e-7]", balances: [1, 1 + 5e-7] },
+      { name: "全负 [-5,-5]", balances: [-5, -5] },
+      { name: "跨零 [-2,8]", balances: [-2, 8] },
+    ];
+    for (const c of cases) {
+      const values = c.balances.map((b, i) => pt({ t: i, balance: b }));
+      const shifts = c.shifts ?? c.balances.map(() => 0);
+      const d = calibratedDomain(values, shifts);
+      expect(d, c.name).not.toBeNull();
+      expect(d!.hi, c.name).toBeGreaterThan(d!.lo);
+      expect(isUsableCalibratedDomain(d, values, shifts), c.name).toBe(true);
+    }
+    // 空输入仍返回 null（无可比水位）
+    expect(calibratedDomain([], [])).toBeNull();
+    expect(isUsableCalibratedDomain(null, [], [])).toBe(true);
   });
 
   it("segmentIndexes：≤300 全收，>300 降采样并补回末点", () => {

@@ -763,6 +763,14 @@ export function cumulativeShifts(values, events) {
 /**
  * 校准水位 y 域（纯函数）：基于 balance − shift 自适应，两端留 15% 余量；
  * 全平（hi−lo 退化）时给 ±1 兜底窗口。无可比水位（空输入）返回 null。
+ *
+ * 0 地板只对「原始余额」成立，对本函数消费的「校准水位」不成立：校准水位 =
+ * balance − 累计充值 = 期初水位 − 累计消耗（除权语义，见 balanceSvg），消费
+ * 超过期初水位时天然为负。此时把下界钳到 0 会把它抬到数据最低点之上，产出
+ * 反相域（hi ≤ lo）或把整段数据挤出画布，故地板按数据最低水位是否非负取用。
+ *
+ * 后置不变式（由 isUsableCalibratedDomain 机器判定，测试逐条断言）：
+ * 非 null 返回值恒满足 hi > lo 且 [lo, hi] 覆盖全部校准水位值。
  */
 export function calibratedDomain(values, shifts) {
   let lo = Infinity;
@@ -773,14 +781,31 @@ export function calibratedDomain(values, shifts) {
     if (v > hi) hi = v;
   }
   if (lo === Infinity) return null;
+  const floorZero = lo >= 0;
   const pad = (hi - lo) * 0.15 || Math.max(hi * 0.1, 0.01);
-  lo = Math.max(0, lo - pad);
+  lo = floorZero ? Math.max(0, lo - pad) : lo - pad;
   hi = hi + pad;
   if (hi - lo < 1e-6) {
-    lo = Math.max(0, lo - 1);
+    lo = floorZero ? Math.max(0, lo - 1) : lo - 1;
     hi = hi + 1;
   }
   return { lo, hi };
+}
+
+/**
+ * 校准水位域可用性判定（纯函数，机器可查的后置不变式）：
+ * 域必须 (1) 非退化——hi > lo，否则 yOf 的分母 (hi − lo) ≤ 0，投影翻面或除零；
+ * 且 (2) 覆盖全部校准水位值——否则整段折线落在画布外。缺样本（null 域）视为可用。
+ * 供测试逐条断言，是 calibratedDomain 出口不变式的唯一判词。
+ */
+export function isUsableCalibratedDomain(domain, values, shifts) {
+  if (domain === null) return values.length === 0;
+  if (!(domain.hi > domain.lo)) return false;
+  for (let i = 0; i < values.length; i += 1) {
+    const v = values[i].balance - shifts[i];
+    if (v < domain.lo || v > domain.hi) return false;
+  }
+  return true;
 }
 
 /** 数值标签格式：三位以上取整，其余两位小数。 */

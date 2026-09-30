@@ -195,6 +195,13 @@ export declare function calibratedDomain(
   shifts: number[],
 ): { lo: number; hi: number } | null;
 
+/** 校准水位域可用性判定：非退化（hi > lo）且覆盖全部校准水位值。 */
+export declare function isUsableCalibratedDomain(
+  domain: { lo: number; hi: number } | null,
+  values: SamplePoint[],
+  shifts: number[],
+): boolean;
+
 /** 段内下标序列（>300 点时降采样并补回末点）。 */
 export declare function segmentIndexes(from: number, to: number): number[];
 
