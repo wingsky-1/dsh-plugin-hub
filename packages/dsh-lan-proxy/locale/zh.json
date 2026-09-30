@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "局域网代理",
+    "description": "局域网访问 dsh web UI：HTTP/HTTPS 与 WebSocket 转发到回环服务，HTTPS 默认并存，DNS 重绑定防护"
+  }
+}

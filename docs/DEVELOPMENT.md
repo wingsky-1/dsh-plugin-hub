@@ -574,6 +574,32 @@ export const inject: string[] = []; // 声明 apply 用到的 ctx 服务（如 [
   对门面转出链上的每个叶子模块机械判红（值引 `node:*` 会构建失败、值引 bare 包会**静默内联**
   进浏览器产物）。该目录的最终形态以 §2.4 三档共享规范为准。
 
+### 2.2b 两处「locale」的边界：包根 `locale/` vs 客户端 `locales.ts`
+
+本仓有两个都叫 locale 的东西，消费者不同、**不可合并**（合并会同时丢掉两侧各自的保障机制）。
+判别口诀：**这句话是给「用户看这插件叫什么」还是给「界面上这按钮叫什么」？**
+
+| | `packages/<pkg>/locale/<lang>.json` | `packages/<pkg>/src/client/locales.ts` |
+| --- | --- | --- |
+| 消费者 | **dsh 宿主**（`dsh-app-boot` 读包元数据，不经本仓构建链） | 我们自己的客户端 UI |
+| 内容 | `meta.{title,description}`，**一语言一文件** | UI key→文案，**一个文件装全部语言** |
+| 形态 | 静态 JSON，随 npm 包发布 | TS 字面量，esbuild 编译期内联进 `lib/client.js` |
+| 正确性保障 | `scripts/gate/plugin-locale.mjs`（复刻上游语义） | 编译期 `Record<keyof typeof zh, string>` + 手写字面量镜像单测 |
+| 加一门语言的成本 | +1 个文件 | +1 个 key（两侧都要） |
+
+**包根 `locale/` 的路径是上游写死的**，不可改名、不可挪位（`readPluginMeta` 硬编码
+`<包名>/locale/en.json`）。由此产生四条**缺一即静默失效**的约束，全部由 `plugin-locale` 判红：
+
+1. `exports` 必须含**通配** `"./locale/*": "./locale/*"`（逐字恒等、不带 `types` 条件）。
+   只导单个文件比全不导更糟：漏掉的语言文件在上游 `dictionariesOf` 里**硬解析抛错**，
+   被吞成 `{ error }` —— 设置页那一行插件会显示「Plugin metadata for …」而非回落到英文。
+2. `files` 必须含 `"locale"`，否则 locale/ 根本进不了 tarball。
+3. `locale/en.json` 是唯一入口锚，缺则整套机制不运行。
+4. 每个文件的键只允许 `meta.title` / `meta.description`；`icon` / `error` 上游静默忽略。
+   顶层多塞界面文案键同样静默——那正是**不许合并**的技术原因。
+
+`dsh.catalog.summary.{en,zh}` 是**只读镜像**：`plugin-locale` 断言它与 `meta.description` 逐字相等。
+本仓一个字节都不写 catalog（它是外部插件收录平台的采集面）；这条相等判据只是防两份文案副本各自漂移。
 ### 2.4 共享三档（端内 / 跨端 / 跨包放哪）
 
 本仓共享分三档，按“消费者集合”判定归属，禁止按“感觉像公共代码”放。判定顺序自下而上：先问能不能留在端内，再问够不够跨端，最后才问配不配跨包。

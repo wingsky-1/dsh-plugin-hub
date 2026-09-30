@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Worktree Sidebar",
+    "description": "Point the current session's right-sidebar file tree at a git worktree without changing the session cwd."
+  }
+}

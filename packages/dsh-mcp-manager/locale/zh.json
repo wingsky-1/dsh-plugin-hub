@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "MCP 管理器",
+    "description": "DSH MCP 管理器：Web 侧边栏 MCP 入口，按状态分级展示服务器，支持表单与 JSON 导入接入"
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "MCP Manager",
+    "description": "Manage MCP servers (stdio / streamable-http) for dsh web; tools are reached only through four middleware tools."
+  }
+}

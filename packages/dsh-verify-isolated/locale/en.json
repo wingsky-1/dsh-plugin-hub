@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Isolated Verify",
+    "description": "Isolated-environment browser verification for DSH plugin development: throwaway DSH_HOME, own profile, port and browser instance, cleaned up on exit."
+  }
+}

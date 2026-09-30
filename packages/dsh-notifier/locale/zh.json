@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "通知器",
+    "description": "审批/完成/错误事件通知：浏览器 Notification + 系统原生 toast；提示音可配、非安全上下文自动降级横幅"
+  }
+}

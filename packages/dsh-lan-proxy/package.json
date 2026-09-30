@@ -19,7 +19,8 @@
       "types": "./lib/client/index.d.ts",
       "default": "./lib/client.js"
     },
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./locale/*": "./locale/*"
   },
   "dsh": {
     "bundle": {
@@ -84,6 +85,7 @@
   },
   "files": [
     "lib",
+    "locale",
     "shared/**/*.d.ts",
     "cordis.patch.yml",
     "README.md",

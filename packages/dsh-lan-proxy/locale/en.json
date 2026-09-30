@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "LAN Proxy",
+    "description": "Access the dsh web UI over the LAN: HTTP/HTTPS/WebSocket forwarding to the loopback server with TLS and DNS-rebinding protection."
+  }
+}

@@ -6,7 +6,8 @@
   "main": "lib/index.js",
   "exports": {
     ".": "./lib/index.js",
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./locale/*": "./locale/*"
   },
   "dsh": {
     "bundle": {
@@ -33,6 +34,7 @@
   ],
   "files": [
     "lib",
+    "locale",
     "cordis.patch.yml"
   ],
   "repository": {

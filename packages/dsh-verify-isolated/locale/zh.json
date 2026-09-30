@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "隔离验证",
+    "description": "隔离环境浏览器验证 skill：临时 DSH_HOME 加独立 profile、端口与浏览器实例，不污染 web profile"
+  }
+}
