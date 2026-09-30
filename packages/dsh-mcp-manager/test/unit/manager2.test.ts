@@ -2336,7 +2336,9 @@ describe("#767 S1-5b：封装定义条目恒交中间层（(c)'）", () => {
     expect(decision.reason).toContain("@@global/g1/echo");
   });
 
-  it("直呼 mcp__<id>__<未禁用工具> 放行（不是一律拒）", async () => {
+  // #1014 B5：语义从「未禁用即放行」翻成「mcp__ 直呼一律拒」。断 nexted=false 是
+  // 关键的一半——只断 kind 的话，「先 next 再 deny」也能过这条。
+  it("直呼 mcp__<id>__<未禁用工具> 一律拒（内部注册名不可直呼）", async () => {
     const { entry, guard } = await directIdGuardFixture();
     let nexted = false;
     const decision = (await guard(
@@ -2346,8 +2348,9 @@ describe("#767 S1-5b：封装定义条目恒交中间层（(c)'）", () => {
         return { kind: "allow" };
       },
     )) as { kind: unknown; reason?: unknown };
-    expect(nexted).toBe(true);
-    expect(decision.kind).toBe("allow");
+    expect(nexted).toBe(false);
+    expect(decision.kind).toBe("deny");
+    expect(decision.reason).toContain("ws_mcp_call");
   });
 
   it("无 transport 的封装条目（直传配置）同样只经虚拟连接，不派官方实例", async () => {

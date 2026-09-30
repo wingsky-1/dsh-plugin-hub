@@ -2841,6 +2841,101 @@ describe("#767 S1-4d：guard 判发起者", () => {
     expect(decision.kind).toBe("deny");
     expect(decision.reason).toMatch(/已被用户在「MCP」浮窗禁用/);
   });
+
+  // #1014 B5 / 不变量 I-E：mw.forwarding 是 mcp__ 直呼**唯一**的放行位。
+  // 上一条只证明「集合外被拒」，没证明「集合内必须是飞行中的 token」——若放行改按
+  // (root, server) 这类**可重放**键判定，前者仍绿。此条把 token 的时效性钉住。
+  it("转发结算后（token 已摘除）同一 token 重放直呼 → 拒", async () => {
+    const { guards, mw } = guardFixture(parseDisabledTools({}));
+    const token = Symbol("forwarded") as unknown as ToolExecutionToken;
+    mw.forwarding.add(token);
+    const guard = guards.get("tools/pre-execute");
+    const inFlight = await guard(
+      { name: "mcp__my__t", parent: token, agent: { session: { header: { cwd: "/proj" } } } },
+      async () => ({ kind: "allow" }),
+    );
+    expect(inFlight.kind).toBe("allow");
+    // dispatch 的 finally 摘除 token 后，同一个 token 不应再有放行权。
+    mw.forwarding.delete(token);
+    const replayed = await guard(
+      { name: "mcp__my__t", parent: token, agent: { session: { header: { cwd: "/proj" } } } },
+      async () => ({ kind: "allow" }),
+    );
+    expect(replayed.kind).toBe("deny");
+    expect(replayed.reason).toContain("ws_mcp_call");
+  });
+
+  // 文案纪律：deny 是模型唯一能看到的自我纠正依据，冗长会挤占上下文并诱发重试。
+  it("兜底拒的文案短且指路 ws_mcp_call", async () => {
+    const { guards } = guardFixture(parseDisabledTools({}));
+    const decision = await guards.get("tools/pre-execute")(
+      { name: "mcp__my__t", agent: { session: { header: { cwd: "/proj" } } } },
+      async () => ({ kind: "allow" }),
+    );
+    expect(decision.kind).toBe("deny");
+    expect(decision.reason).toContain("ws_mcp_call");
+    expect(decision.reason.split("。").length, "文案最多三句").toBeLessThanOrEqual(3);
+  });
+});
+
+// #1014 B5：放行位的**来源**判据。
+//
+// 上一组用例用手工 mw.forwarding.add(token) 造豁免身份——那证明的是「集合内会放行」，
+// 不是「真实转发会进集合」。若 dispatch 忘了登记（或摘早��），全案唯一的放行位会静默失效、
+// 所有远端 MCP 调用被自家 guard 打死。此处让一次真实 ws_mcp_call 打到假执行器，在
+// execute 被调用的那一刻读集合，证明 parent 由 dispatch 自然产生、且 finally 事后摘除。
+describe("#1014 B5：我方转发的豁免身份由 dispatch 自然产生", () => {
+  it("execute 被调用时 parent 已在 forwarding 内，调用结束后已摘除", async () => {
+    const servers: ServerConfig[] = [
+      { name: "py", transport: "stdio", command: "python", enabled: true },
+    ];
+    const TOKEN = Symbol("outer-call") as unknown as ToolExecutionToken;
+    let parentSeen: unknown;
+    let inSetDuringCall: boolean | undefined;
+    // execute 闭包要在中间层实例建好**之前**就存在（实例依赖 makeHost 产出的 host），
+    // 故经 holder 间接取；execute 被调用时实例早已就位。
+    const holder: { mw?: McpMiddleware } = {};
+    const { host } = makeHost(new Map([[ROOT, servers]]), {
+      schemas: [{ name: "mcp__id-py__echo" }],
+      execute: async (input: unknown) => {
+        const parent = (input as { parent?: unknown }).parent;
+        parentSeen = parent;
+        inSetDuringCall =
+          parent !== undefined && holder.mw?.forwarding.has(parent as ToolExecutionToken) === true;
+        return { isError: false, content: [], value: { content: [] } };
+      },
+    });
+    const mw = trackMw(new McpMiddleware(host as unknown as MiddlewareHost));
+    holder.mw = mw;
+    const unit = makeUnit();
+    mw.units.set(ROOT, unit);
+    unit.connections.set("py", remoteEntry(servers[0], "id-py"));
+    const registered: ToolDefinition[] = [];
+    const ctx = {
+      tools: {
+        register: (def: ToolDefinition) => {
+          registered.push(def);
+          return () => {};
+        },
+        schemas: () => host.ctx.tools.schemas(),
+      },
+    };
+    registerMiddlewareTools(ctx as unknown as Context, mw, async () => ROOT, {
+      disabledTools: new Map(),
+    });
+    const call = registered.find((def) => def.name === "ws_mcp_call")!;
+    await call.execute({ server: fullServerName(ROOT, "py"), tool: "echo" }, {
+      callId: "call-b5",
+      rootCallId: "call-b5",
+      name: "ws_mcp_call",
+      arguments: {},
+      signal: new AbortController().signal,
+      token: TOKEN,
+    } as unknown as Readonly<ToolExecution>);
+    expect(parentSeen, "子调用必须带 parent").toBe(TOKEN);
+    expect(inSetDuringCall, "execute 被调用时 parent 必须在 forwarding 内").toBe(true);
+    expect(mw.forwarding.has(TOKEN), "结算后 finally 必须摘除 token").toBe(false);
+  });
 });
 
 // #767 笔 1b：A+ 自持图片准入的接线面 + F4 远端转发去 agent ----

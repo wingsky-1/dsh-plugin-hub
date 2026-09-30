@@ -428,6 +428,55 @@ describe("D8：mcp__ 直呼命中禁用表 → deny", () => {
     }
   });
 });
+// #1014 B4：pre-execute 守卫必须只有**一个**注册点。
+//
+// 为什么这条必须放在集成层：合并前有两条注册路径——registerMiddlewareTools 内的那条，
+// 与与中间层实例解耦的 registerDirectMcpGuard（组合根各调一次）。两者都裁决 mcp__ 直呼，
+// 但只有前者带我方转发的豁免判据。单元层只调 registerMiddlewareTools，看不见第二条；
+// 上面 D8 那组夹具用 Map.set 捕获 handler，同样看不见重复（后者覆盖前者）。
+// 故此处按事件名**计数**而不是取 handler：ctx.on 的收集面必须能数出条数。
+describe("#1014 B4：pre-execute 守卫单一注册点", () => {
+  async function countPreExecuteSubscriptions() {
+    const dir = makeTempDir("dsh-mcp-manager-b4-");
+    const prevHome = process.env.DSH_HOME;
+    process.env.DSH_HOME = dir;
+    const seen: string[] = [];
+    const ctx = baseCtx({
+      on: (evt: string) => {
+        seen.push(evt);
+        return () => {};
+      },
+    });
+    await apply(ctx as unknown as Context, { enabled: true, storePath: join(dir, "mcp.json") });
+    const restore = () => {
+      if (prevHome === undefined) delete process.env.DSH_HOME;
+      else process.env.DSH_HOME = prevHome;
+    };
+    return { seen, restore };
+  }
+
+  it("apply 后 tools/pre-execute 恰好注册一次", async () => {
+    const { seen, restore } = await countPreExecuteSubscriptions();
+    try {
+      const count = seen.filter((evt) => evt === "tools/pre-execute").length;
+      expect(count, "pre-execute 守卫必须单点注册（多注册点会让 mcp__ 裁决出现分歧）").toBe(1);
+    } finally {
+      restore();
+    }
+  });
+
+  it("装配期间确实走过 pre-execute 注册（防本用例恒真）", async () => {
+    const { seen, restore } = await countPreExecuteSubscriptions();
+    try {
+      // 对照判据：若上面的计数用例因某种原因恒真（例如事件名拼错），本条会红。
+      expect(seen.length).toBeGreaterThan(0);
+      expect(seen.some((evt) => evt.startsWith("tools/"))).toBe(true);
+    } finally {
+      restore();
+    }
+  });
+});
+
 describe("组合根接线：装载生命周期域（#767 S1-4c）", () => {
   afterEach(() => {
     releaseLifecycle();

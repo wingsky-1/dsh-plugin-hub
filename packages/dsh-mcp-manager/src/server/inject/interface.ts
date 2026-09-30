@@ -1,8 +1,8 @@
 /**
  * dsh-mcp-manager — inject/interface.ts：工具注册域（inject）门面（D10，#664 阶段 6）。
  *
- * 工具注册面：ws_mcp_* 四原子 + pre-execute guard（registerMiddlewareTools /
- * registerDirectMcpGuard）。目录外模块**只能**从这里引用
+ * 工具注册面：ws_mcp_* 四原子 + pre-execute guard（唯一注册点，随 registerMiddlewareTools
+ * 一同装配，见 #1014 B4）。目录外模块**只能**从这里引用
  * （verify-dir-imports 静态强制）。
  *
  * 本域**有对上依赖**（§3.1 规则 2；决策⑥ 以运行时能力消费为准）：catalog 检索族 / runtime
@@ -31,6 +31,6 @@ export function releaseInject(): void {
   injectPorts.release();
 }
 
-export { registerMiddlewareTools, registerDirectMcpGuard } from "./middleware-register.ts";
+export { registerMiddlewareTools } from "./middleware-register.ts";
 // 外层超时纯函数（#935）：组合根经本门面取（跨域只经门面），包导出面不转出。
 export { resolveMiddlewareCallTimeoutMs } from "./impl/call-timeout/index.ts";

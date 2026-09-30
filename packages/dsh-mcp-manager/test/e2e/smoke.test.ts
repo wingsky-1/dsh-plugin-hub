@@ -1038,7 +1038,9 @@ it("#362 P0-1：工具级禁用三入口一致（callTool / pre-execute guard / 
     } as unknown as Parameters<SmokeGuard>[0],
     async () => ({ kind: "allow" }) as PreToolDecision,
   );
-  expect(allow.kind, "未禁用工具放行").toBe("allow");
+  // #1014 B5：未禁用的 mcp__ 直呼也不再放行——内部注册名不可由模型发起。
+  expect(allow.kind, "未禁用工具直呼一律拒").toBe("deny");
+  expect((allow as unknown as { reason: string }).reason).toContain("ws_mcp_call");
   // agent-less → 按最宽可见范围放行（@global 记录仍生效）。
   const gDeny = await guard!(
     { name: "mcp__gctx__use_g" } as unknown as Parameters<SmokeGuard>[0],
@@ -1050,7 +1052,8 @@ it("#362 P0-1：工具级禁用三入口一致（callTool / pre-execute guard / 
     { name: "mcp__ctx__use_ctx_0123456789ab" } as unknown as Parameters<SmokeGuard>[0],
     async () => ({ kind: "allow" }) as PreToolDecision,
   );
-  expect(hashed.kind, "哈希后缀名按未知 server 放行").toBe("allow");
+  // 哈希/截断名同样以 mcp__ 开头：前缀判定恒成立，走兜底拒而非「按未知 server 放行」。
+  expect(hashed.kind, "哈希后缀名直呼一律拒").toBe("deny");
   // ws_mcp_call guard：禁用命中 → deny。
   const callDeny = await guard!(
     {

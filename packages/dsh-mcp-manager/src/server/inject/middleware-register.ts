@@ -878,6 +878,18 @@ function resolveServerIdFor(mw: McpMiddleware): ServerIdResolver {
   };
 }
 
+/**
+ * pre-execute 守卫的**唯一**注册点（#1014 B4）。
+ *
+ * 为什么曾是两个：历史上「模式为 off 时不建中间层实例」让本守卫无法保证挂载，于是另立一条
+ * 与中间层实例解耦的独立注册路径（registerDirectMcpGuard）。单池化（#767 笔 1a）后中间层
+ * 实例在 apply 完成后恒在，两条路径并存只剩代价：
+ *  - 同一个 mcp__ 直呼会被**两个 handler 依次裁决**，豁免判据只有其中一个有（它读
+ *    mw.forwarding）；翻转默认值时，缺豁免的那条会把自家转发打死；
+ *  - 两条路径各自维护一份 mcp__ 裁决调用，随时会漂移。
+ * 本函数把豁免、ws_mcp_call 参数禁用与 mcp__ 直呼裁决收在一个 handler 里：任一路径想改
+ * 判定，只有这一处可改。
+ */
 function registerPreExecuteGuard(
   ctx: Context,
   mw: McpMiddleware,
@@ -899,6 +911,10 @@ function registerPreExecuteGuard(
       // 任何 mcp__ 解析与 B11 早返回**之前**放行：放行晚一步，阶段 3 的模型面收敛会把自家
       // 转发当成模型直呼误拒（RECON 反例 9）。集合判定即全部裁决，工具级禁用已在 dispatch
       // 侧按 isToolDenied 判过。
+      //
+      // 这个集合是 mcp__ 直呼**唯一**的放行位（#1014 B5 / I-E）：放行只认「parent 是
+      // 飞行中的 ws_mcp_call token」，集合判定之外没有任何按名字或按 (root, server) 的
+      // 旁路——那些键可重放，token 不可构造（宿主注册表赋予）。
       if (exec.parent !== undefined && mw.forwarding.has(exec.parent)) return next();
       if (name === "ws_mcp_call") {
         const decision = handleCallGuard(exec.arguments, mw);
@@ -908,6 +924,12 @@ function registerPreExecuteGuard(
       if (name.startsWith("mcp__")) {
         // 直连账本优先、池侧兜底：project/off 下全局直连条目的 id 只在本层反查得到，
         // 而 all/project 的池条目只在单元表里。
+        //
+        // 顺序承重：**先前缀、后解析、最后兜底拒**。前缀命中即「这是内部注册名」，
+        // 后面的解析只用来挑一条更具体的 deny 文案（工具级禁用 / 双下划线歧义），
+        // 不再决定放行与否——因此哈希名、截断名、以及解析不出来的畸形名一律落到兜底拒，
+        // 不依赖 splitRegisteredName 能否反解（RECON 绕过面：把反解改成 fail-open 即可
+        // 复活直呼）。
         const poolResolve = resolveServerIdFor(mw);
         const decision = await handleDirectMcpGuard(
           name,
@@ -917,51 +939,14 @@ function registerPreExecuteGuard(
           (id) => hostResolveServerId?.(id) ?? poolResolve(id),
         );
         if (decision !== undefined) return decision;
-        return next();
+        return {
+          kind: "deny",
+          reason:
+            `工具注册名 ${JSON.stringify(name)} 是内部标识，模型可见面只有 ws_mcp_search / ` +
+            "ws_mcp_list / ws_mcp_detail / ws_mcp_call，不可直呼；" +
+            "请经 ws_mcp_call 以服务器全名 + 工具裸名调用（同一次调用不要重试本条）",
+        };
       }
-      return next();
-    },
-  );
-}
-
-/**
- * D8：独立 mcp__ 直呼守卫（guard 挂载与中间层实例解耦）。
- *
- * 历史上的动机是「模式为 off 时不建中间层实例，pre-execute guard 只在
- * registerMiddlewareTools 内注册 → mcp__ 直呼无禁用拦截」（「工具级禁用三入口」
- * 实际一入口）。本守卫数据源直查禁用表（只读），独立注册路径；单池（#767 笔 1a）
- * 后中间层实例 apply 完成后恒在（pre-step 窗口未装配走 B 兜底），两条注册路径并存
- * 仍是刻意的（守卫不依赖中间层实例）。
- * B11 反解规格化逻辑与 registerMiddlewareTools 内 guard 同源（handleDirectMcpGuard）。
- */
-export function registerDirectMcpGuard(
-  ctx: Context,
-  disabledTools: DisabledToolsMap | undefined,
-  resolveRoot: (agent: unknown) => Promise<string | undefined>,
-  /**
-   * id → (root, 裸名) 反查面（账本由持有者自持，只有调用点给得出来）。位置参数而非
-   * options 袋：与 resolveRoot 同为「装配点现造的入参契约」，且签名落在导出面快照的**同一个
-   * 声明块**里——带花括号的 options 袋会让提取器在第一个深度 0 的 `}` 截断整块。
-   */
-  resolveServerId?: ServerIdResolver,
-): (() => void) | undefined {
-  if (typeof ctx.on !== "function") return undefined;
-  return ctx.on(
-    "tools/pre-execute",
-    async function (
-      exec: { name?: string; agent?: unknown },
-      next: () => Promise<PreToolDecision>,
-    ): Promise<PreToolDecision> {
-      const name = exec?.name;
-      if (typeof name !== "string" || name === "" || !name.startsWith("mcp__")) return next();
-      const decision = await handleDirectMcpGuard(
-        name,
-        exec.agent,
-        disabledTools,
-        resolveRoot,
-        resolveServerId,
-      );
-      if (decision !== undefined) return decision;
       return next();
     },
   );
