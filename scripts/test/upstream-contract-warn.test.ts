@@ -10,7 +10,11 @@
  *   C3 闭包形状（export 星展开、循环截断、.ts 归一）与双版本 exit2；
  *   F4 注释样例（trend.ts:16 形）零派生，证 AST（grep 会误报）；
  *   C1 多行 ctx.on 收齐机制；S1 双动态与 S3 级联反向；R2、R4-lite 缺失反向。
- * 真实仓库锚：脚本 exit 0（只 warn 不阻塞）、S1 为 F1 一处、S2 具名、C1 为 19，R2 允许 OK 或已知 system-prompt warning。
+ * 真实仓库锚：脚本 exit 0（只 warn 不阻塞）、S1 为 F1 一处、S2 具名、C1 为 18，R2 允许 OK 或已知 system-prompt warning。
+ * C1 由 19 降到 18：#1014 B4 把 mcp-manager 的两条 pre-execute 注册（registerMiddlewareTools
+ * 内那条 + 独立的 registerDirectMcpGuard）合并成一条，仓内 ctx.on( 字面量少了一个。
+ * 这是同一事实的计数变化，不是判据放宽——数字仍被逐字钉住，且合并本身另有
+ * test/integration/apply-lifecycle.test.ts 的单点注册判据锁住。
  * fixture 零落盘：内存片段为主，文件级夹具一律 mkdtempSync 隔离并清场。
  */
 import test from "node:test";
@@ -379,13 +383,13 @@ test("真实仓库锚：脚本 exit 0（只 warn 不阻塞）", () => {
   assert.equal(r.status, 0, String(r.stderr).slice(0, 500));
 });
 
-test("真实仓库锚：S1 为 F1 一处、S2 具名、C1 为 19，R2 已知 warning 显式保留", () => {
+test("真实仓库锚：S1 为 F1 一处、S2 具名、C1 为 18，R2 已知 warning 显式保留", () => {
   const r = spawnSync(process.execPath, [SCRIPT], { cwd: ROOT, encoding: "utf8" });
   assert.equal(r.status, 0);
   const out = String(r.stdout) + String(r.stderr);
   assert.ok(out.includes("S1 动态 1") && out.includes("src/index.ts:66")); // 当前 worktree 同一 S1 动态 site
   assert.ok(out.includes("loader"));
-  assert.ok(out.includes("字面量 19 处"));
+  assert.ok(out.includes("字面量 18 处"));
   assert.ok(out.includes("internal/service"));
   const r2Known =
     out.includes("R2-cordis 事件 OK") ||

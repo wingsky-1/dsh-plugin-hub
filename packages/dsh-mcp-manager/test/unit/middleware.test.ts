@@ -2894,7 +2894,7 @@ describe("#1014 B5：我方转发的豁免身份由 dispatch 自然产生", () =
     let inSetDuringCall: boolean | undefined;
     // execute 闭包要在中间层实例建好**之前**就存在（实例依赖 makeHost 产出的 host），
     // 故经 holder 间接取；execute 被调用时实例早已就位。
-    const holder: { mw?: McpMiddleware } = {};
+    const holder: { mw?: InstanceType<typeof McpMiddleware> } = {};
     const { host } = makeHost(new Map([[ROOT, servers]]), {
       schemas: [{ name: "mcp__id-py__echo" }],
       execute: async (input: unknown) => {
@@ -2931,7 +2931,12 @@ describe("#1014 B5：我方转发的豁免身份由 dispatch 自然产生", () =
       arguments: {},
       signal: new AbortController().signal,
       token: TOKEN,
-    } as unknown as Readonly<ToolExecution>);
+      // ToolRunContext 在 ToolExecution 之外另带这两个面；本用例不碰，按接缝补最小实现。
+      deferContext: () => {},
+      concludeTurn: () => {},
+      // callId/rootCallId 是品牌类型，字面量不满足；按接缝收窄到 execute 的第二参位，
+      // 不去硬写 ToolRunContext（它随宿主版本变，测试不该跟着改）。
+    } as unknown as Parameters<typeof call.execute>[1]);
     expect(parentSeen, "子调用必须带 parent").toBe(TOKEN);
     expect(inSetDuringCall, "execute 被调用时 parent 必须在 forwarding 内").toBe(true);
     expect(mw.forwarding.has(TOKEN), "结算后 finally 必须摘除 token").toBe(false);
