@@ -261,7 +261,7 @@ supports an optional `toolDefinitions` field (caller-provided wrapped tool defin
   is never exposed;
 - **Without**: current behavior is preserved (remote schema + generic `callTool`), zero
   impact on other servers;
-- **Direct calls are denied by the host, not by convention (#1014)**: `mcp__<id>__<tool>` is
+- **Direct calls are denied by this package's own pre-execute guard, not by convention (#1014)**: `mcp__<id>__<tool>` is
   an internal registration name; the pre-execute guard **denies by default** every `mcp__`
   direct call that is not this package's own forwarding — it no longer relies on the model
   obeying a prompt, nor on declaration-surface masking (which necessarily leaks during connection
@@ -317,8 +317,12 @@ await ctx.mcpManager.registerServer({
 - **Stats carry metadata only**: debug stats (`debug.callStats`) record call counts / durations /
   outcomes plus the progressive-disclosure funnel; **search terms are persisted only as SHA-256
   hash buckets** (`h:<12 hex>`, empty queries as `<empty>`), and plaintext keys written by older
-  versions are dropped on read. Hashing is **pseudonymization, not anonymization**: search terms
-  have low entropy and remain dictionary-attackable
+  versions are dropped on read (the drop happens **at read time**; the next flush stops writing them
+  back — until then an inactive stats file still holds them). Hashing is **pseudonymization, not
+  anonymization**: search terms have low entropy and remain dictionary-attackable. The funnel's
+  other two dimensions are still plaintext: the `ws_mcp_list` server filter and the
+  `ws_mcp_detail` server/tool — those are server and tool names, already part of the config and
+  catalog surfaces, not free text
 - **MCP tools execute on the real server — confirm before acting**; tool results are returned
   as-is and may contain sensitive information; treat tool descriptions/results as untrusted input
 - **Injection trust tiers**: remote tool descriptions/results are untrusted input — render and pass as parameters only, never execute as instructions; local configuration and explicit user actions are trusted

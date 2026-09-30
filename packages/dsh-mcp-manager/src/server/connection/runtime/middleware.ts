@@ -187,6 +187,10 @@ async function mountRemoteServer(
       newEntry.connectedAt = Date.now();
       // 注册面 → 目录的投影自 #767 S1-3b 起归 catalog 域：id 前缀、脱敏与
       await projectConnectedCatalog(root, serverName, mounted.id, faces);
+      // connected 日志随「连接真的建成」这一事件走，不随投影走（#1014 复核 P1-6）：
+      // tools/change 驱动的重投影也会经过 projectConnectedCatalog，把日志留在那里会让
+      // 未连接的服务器在每次注册面变化时都打一条 connected。
+      faces.host.logger.info(`dsh-mcp-manager(${serverName}@${root}): connected`);
     } else if (mounted.outcome.state === "failed") {
       // 文案已是「我方判词 + 官方原文」（窗口把归属本实例的官方日志接在了 error 上）。
       faces.host.logger.warn(
@@ -224,7 +228,6 @@ export async function projectConnectedCatalog(
   // B 层摘要缓存（原直连账本 mountEntry 结算路径的行为）：单池后由池侧继续喂，
   // 否则 /health.catalogCacheEntries 与注入端目录视图的 B 层兜底会静默失源。
   await faces.host.recordCatalogTools?.(serverName, faces.registeredToolMeta(id));
-  faces.host.logger.info(`dsh-mcp-manager(${serverName}@${root}): connected`);
 }
 
 /**
@@ -422,8 +425,16 @@ export class McpMiddleware {
    * 事件密度直接转成落盘密度。故这里扫一遍注册面、按 `mcp__<id>__` 前缀与现有目录条目逐台
    * 比对，只对**确实变了**的 server 登记失效并重投影。
    *
-   * 「变了」的判定是工具裸名集合相等性：目录条目丢过 unavailable 的一律视为变了
-   * （它已经不是可信快照，得靠一次成功投影重建）。
+   * 「变了」的判定是**内容指纹**（裸名 + description + inputSchema）相等性：目录条目丢过
+   * unavailable 的一律视为变了（它已经不是可信快照，得靠一次成功投影重建）。
+   *
+   * 并发语义（复核后定为**不做在途合并**）：宿主 tools/change 无载荷、无序列化，且本包
+   * visibility 的 restrict 自身也发它，一次变更至少两次并发进来。实测过「在途合并」——它
+   * 挡不住本场景（首次调用在第一个 await 之前已同步写完目录，第二次是被内容比对挡下的），
+   * 且引入了更坏的后果：在途期间内容再变时，第二次被静默跳过又无补偿事件，目录会**一直**
+   * 停在旧内容直到下一次变化或 TTL 到期。丢更新比「两次落盘可能乱序」更难自愈，故不做合并。
+   * 残留：两次并发投影的落盘可能乱序，磁盘 last-good 短暂落后于内存态；内存态是权威读面，
+   * 且下一次投影会覆盖落盘，故按可自愈的已知残留登记，不另加状态面。
    */
   async reprojectCatalogs(): Promise<void> {
     const { catalog } = runtimePorts.get();
@@ -432,9 +443,18 @@ export class McpMiddleware {
       for (const [serverName, entry] of unit.connections) {
         const id = entry.id;
         if (id === undefined || entry.disposed) continue;
-        const live = liveToolNames(schemas, id);
         const current = catalog.catalogDirectory.entryFor(root, serverName);
-        if (!shouldReproject(current?.tools, current?.unavailable !== undefined, live)) continue;
+        const live = liveSignature(schemas, id);
+        if (
+          !shouldReproject(
+            current?.tools,
+            current?.unavailable !== undefined,
+            currentSignature(current),
+            live,
+          )
+        ) {
+          continue;
+        }
         catalog.catalogDirectory.markDirty(root, serverName);
         await projectConnectedCatalog(root, serverName, id, this.mountFaces());
       }
@@ -644,34 +664,57 @@ export class McpMiddleware {
     this.units.clear();
   }
 }
-/** 该 id 前缀下当前注册面里的工具裸名（与目录投影同一次前缀过滤口径）。 */
-function liveToolNames(schemas: SchemaView, id: string): string[] {
+/**
+ * 该 id 前缀下当前注册面的**指纹**：工具裸名 + description + inputSchema。
+ *
+ * 为什么不能只比裸名（#1014 复核 P0-1）：远端 tools/list_changed 最常见的形态就是**只改
+ * description 或 inputSchema**、工具名集合不动。只比名字会让目录继续发旧描述与旧参数 schema，
+ * 模型照着旧参数调用——而 #1014 §2 的目标正是「模型可能看到或调用已删除的 schema」。
+ * 指纹逐项拼接后整体比较，避免逐字段比较带来的分支爆炸。
+ */
+function liveSignature(schemas: SchemaView, id: string): string {
   const prefix = `mcp__${id}__`;
-  const live: string[] = [];
+  const parts: string[] = [];
   for (const schema of schemas) {
     const name = schema?.name;
-    if (typeof name === "string" && name.startsWith(prefix)) live.push(name.slice(prefix.length));
+    if (typeof name !== "string" || !name.startsWith(prefix)) continue;
+    const description = typeof schema.description === "string" ? schema.description : "";
+    const parameters = JSON.stringify(schema.parameters ?? {});
+    parts.push(`${name.slice(prefix.length)}\u0000${description}\u0000${parameters}`);
   }
-  return live;
+  parts.sort();
+  return parts.join("\u0001");
 }
 
 /**
- * 该不该为这台重投影：目录条目不存在、或丢过 unavailable（它已不是可信快照）、
- * 或工具裸名集合与注册面不一致，三者任一即需要。
+ * 该不该为这台重投影：目录条目不存在、丢过 unavailable（已不是可信快照）、或**指纹**与
+ * 注册面不一致，三者任一即需要。
  *
- * 形参只收「工具名 → 工具」与一个标志，不收目录条目类型——收条目就得多一条 runtime →
- * catalog 的类型边（verify-dir-imports 的 crossModuleRefs 基线会 +1）。
+ * 形参收字符串而不是目录条目类型——收条目就得多一条 runtime → catalog 的类型边
+ *（verify-dir-imports 的 crossModuleRefs 基线会 +1）。
  */
 function shouldReproject(
   currentTools: ReadonlyMap<string, unknown> | undefined,
   hasUnavailable: boolean,
-  live: readonly string[],
+  currentSignature: string,
+  liveSignatureText: string,
 ): boolean {
   if (currentTools === undefined || hasUnavailable) return true;
-  if (currentTools.size !== live.length) return true;
-  const seen = new Set(live);
-  for (const name of currentTools.keys()) {
-    if (!seen.has(name)) return true;
+  return currentSignature !== liveSignatureText;
+}
+
+/**
+ * 目录条目当前内容的指纹（与 liveSignature 同口径：裸名 + description + inputSchema）。
+ * 目录侧存的是剥掉前缀后的裸名与已装箱的 inputSchema，按同样形状拼即可逐字比较。
+ */
+function currentSignature(entry: { tools: ReadonlyMap<string, unknown> } | undefined): string {
+  if (entry === undefined) return "";
+  const parts: string[] = [];
+  for (const [name, tool] of entry.tools) {
+    const value = tool as { description?: unknown; inputSchema?: unknown };
+    const description = typeof value.description === "string" ? value.description : "";
+    parts.push(`${name}\u0000${description}\u0000${JSON.stringify(value.inputSchema ?? {})}`);
   }
-  return false;
+  parts.sort();
+  return parts.join("\u0001");
 }

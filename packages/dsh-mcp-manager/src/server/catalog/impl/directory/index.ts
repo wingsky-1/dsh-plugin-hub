@@ -223,14 +223,24 @@ class CatalogDirectory {
   clearDirty(root: string, serverName: string): void {
     this.dirty.delete(this.dirtyKey(root, serverName));
   }
-  /** 条目不可用（发现或落盘失败）：置空并带脱敏后的原因（unavailable 段）。 */
+  /**
+   * 条目不可用（发现或落盘失败）：带脱敏后的原因（unavailable 段），**并保留 last-good 工具表**。
+   *
+   * 为什么保留（#1014 §2「失败保留 last-good」）：此前实现是把 tools 换成空表，等于一次落盘
+   * 失败就让该服务器在模型视野里「工具消失」。落盘失败是本地问题（路径不可写、目录不存在），
+   * 与远端工具清单无关——丢掉 last-good 会把一次瞬时失败放大成「这台服务器没有工具」。
+   * 目录读口本来就带 unavailable 段，消费者据此知道该快照不新鲜。
+   *
+   * discoveredAt 仍归零：它是「这份快照有多新」的事实位，归零让 isCatalogFresh 判不新鲜，
+   * 下一次投影（含脏标记在途）会重试。
+   */
   markUnavailable(root: string, serverName: string, reason: string): void {
     // 只翻转已有条目：不存在的服务器不因「标记不可用」而在册（那是另一条语义）。
     const servers = this.byRoot.get(root);
     if (servers === undefined || !servers.has(serverName)) return;
     servers.set(serverName, {
       discoveredAt: 0,
-      tools: new Map(),
+      tools: servers.get(serverName)!.tools,
       unavailable: reason,
     });
   }
@@ -286,7 +296,7 @@ class CatalogDirectory {
       });
       // 失效标记在**落盘之后**才消费：内存条目在 servers.set 时已经更新，但落盘失败会走
       // catch 把条目打上 unavailable——那时目录并不算「已刷新」，留下标记让下一次投影
-      // 仍绕过 TTL 重试。放放在 servers.set 之后会让一次落盘失败把该服务器冻结 24h。
+      // 仍绕过 TTL 重试。放在 servers.set 之后会让一次落盘失败把该服务器冻结 24h。
       this.clearDirty(input.root, input.serverName);
     } catch (error) {
       this.markUnavailable(input.root, input.serverName, input.redact(error));

@@ -2734,10 +2734,47 @@ describe("#767 S1-4d：池的转发登记、拆除走账本与读时刷新", () 
     tools.entries = [{ name: "mcp__id-py__alpha", description: "甲", parameters: {} }];
     await mw.reprojectCatalogs();
     expect([...catalogDirectory.entryFor(ROOT, "py")!.tools.keys()].sort()).toEqual(["alpha"]);
-    // 注册面没变时不重投影：discoveredAt 不动（短路而非重复落盘）。
-    const before = catalogDirectory.entryFor(ROOT, "py")!.discoveredAt;
+    // 注册面没变时不重投影。
+    //
+    // 这里断的是**条目对象引用**而不是 discoveredAt：重投影走 servers.set 换掉整个条目，
+    // 引用变了即重投影过；引用不变即短路。discoveredAt 是 Date.now() 的毫秒分辨率——同一毫秒
+    // 内改与不改数值相等，拿它当判据等于恒绿（复核实测：把短路改成恒 true 仍全绿）。
+    const before = catalogDirectory.entryFor(ROOT, "py")!;
     await mw.reprojectCatalogs();
-    expect(catalogDirectory.entryFor(ROOT, "py")!.discoveredAt).toBe(before);
+    expect(catalogDirectory.entryFor(ROOT, "py"), "注册面没变不应重投影").toBe(before);
+  });
+
+  // #1014 复核 P0-1：list_changed 最常见的形态是**只改描述/参数 schema**、工具名集合不动。
+  // 只比裸名集合会让目录继续发旧描述，模型照旧参数调用——而这正是 issue §2 的目标面。
+  it("tools/change 后只改 description 也重投影（不止增删）", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-mw-desc-"));
+    const { host, tools } = makeHost(new Map([[ROOT, [PY]]]));
+    const catalogHost = {
+      ...host,
+      isRuntimeServer: () => false,
+      catalogCachePath: (root: string) => join(dir, `${root.replace(/[^a-z0-9]/gi, "_")}.json`),
+    };
+    const mw = trackMw(new McpMiddleware(catalogHost as unknown as MiddlewareHost));
+    const unit = makeUnit();
+    mw.units.set(ROOT, unit);
+    unit.connections.set("py", remoteEntry(PY, "id-py"));
+    tools.entries = [{ name: "mcp__id-py__alpha", description: "旧描述", parameters: {} }];
+    await catalogDirectory.ensureRootLoaded(ROOT, catalogHost.catalogCachePath(ROOT));
+    await catalogDirectory.projectRegisteredTools({
+      root: ROOT,
+      serverName: "py",
+      id: "id-py",
+      schemas: tools.schemas(),
+      cachePath: () => catalogHost.catalogCachePath(ROOT),
+      redact: (error: unknown) => String(error),
+      isRuntimeServer: () => false,
+      warn: () => {},
+    });
+    expect(catalogDirectory.entryFor(ROOT, "py")!.tools.get("alpha")!.description).toBe("旧描述");
+    // 工具名集合不变，只改描述。
+    tools.entries = [{ name: "mcp__id-py__alpha", description: "新描述", parameters: {} }];
+    await mw.reprojectCatalogs();
+    expect(catalogDirectory.entryFor(ROOT, "py")!.tools.get("alpha")!.description).toBe("新描述");
   });
 
   it("discover：目录落盘失败 → unavailable 降级（discoveredAt 归零）", async () => {
@@ -2781,7 +2818,11 @@ describe("#767 S1-4d：池的转发登记、拆除走账本与读时刷新", () 
     // 投影失败落在已有条目上（上一段 ensureRootLoaded 已建条目），此处断言存在。
     const catalog = catalogDirectory.entryFor(ROOT, "py")!;
     expect(catalog.discoveredAt).toBe(0);
-    expect(catalog.tools.size).toBe(0);
+    // last-good 保留（#1014 §2「失败保留 last-good」）：落盘失败是本地问题，与远端工具清单
+    // 无关。此前这里断言 tools 为空——一次落盘失败就把这台服务器在模型视野里变成
+    // 「没有工具」，而目录读口已经带 unavailable 段足以表达「这份快照不新鲜」。
+    // 断言锁的是「远端明明报了 alpha，失败后仍在」：把它改回清空即红。
+    expect([...catalog.tools.keys()]).toEqual(["alpha"]);
     // 真脱敏器的替换词是 [REDACTED]（fake pipeline 里的 *** 是另一套夹具，别混）。
     expect(catalog.unavailable).toBe("目录缓存路径不可用 token=[REDACTED]");
   });
@@ -3008,7 +3049,11 @@ describe("#767 S1-4d：guard 判发起者", () => {
     );
     expect(decision.kind).toBe("deny");
     expect(decision.reason).toContain("ws_mcp_call");
-    expect(decision.reason.split("。").length, "文案最多三句").toBeLessThanOrEqual(3);
+    // 长度断**字符数**而不是句数：按「。」断句对不含中文句号的文案恒返回长度 1 的数组，
+    // 判据等于真空（复核实测：文案追加 4 句仍全绿）。字符数与语言无关，膨胀即红。
+    expect(decision.reason.length, "兜底拒文案过长会挤占上下文并诱发重试").toBeLessThanOrEqual(160);
+    // README 已承诺「写明不要重试本次调用」，此前代码与测试都没有任何判据钉它。
+    expect(decision.reason).toContain("不要重试");
   });
 });
 
