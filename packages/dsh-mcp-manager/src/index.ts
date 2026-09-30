@@ -527,6 +527,8 @@ interface EnabledRuntimeDisposers {
   disposeVisibility: () => void;
   /** 装配侧兜底擦除（#922 伴随项 E）：摘组装监听，计数器随域一起释放。 */
   disposeErasure: () => void;
+  /** 目录失效消费（#1014 B7b）：摘 tools/change 监听。 */
+  disposeCatalogInvalidation: () => void;
   watchCleanup: () => void;
 }
 
@@ -613,6 +615,7 @@ export async function apply(
     disposeMiddleware: () => {},
     disposeVisibility: () => {},
     disposeErasure: () => {},
+    disposeCatalogInvalidation: () => {},
     watchCleanup: () => {},
   };
 
@@ -630,6 +633,7 @@ export async function apply(
       runtime.disposeMiddleware();
       runtime.disposeVisibility();
       runtime.disposeErasure();
+      runtime.disposeCatalogInvalidation();
       runtime.watchCleanup();
       void manager.dispose();
       // 装载账本只发起 dispose、不等结算（官方 dispose 会等在途首连，挂死的服务器能把它拖到
@@ -763,6 +767,15 @@ async function assembleEnabledRuntime(
     logger: faces.logger,
   });
 
+  // #1014 B7b：目录失效消费口。宿主 tools/change 无载荷，且本包 visibility 的 restrict
+  // 自身也会发它——所以重投影按 server diff 逐台判定（reprojectCatalogs 内），不做全量刷新。
+  // 必须挂在 startAll **之前**：startAll 期间的注册才不会被漏掉。
+  const disposeCatalogInvalidation = faces.events.onToolsChange(() => {
+    void mw.reprojectCatalogs().catch((error: unknown) => {
+      faces.logger.warn(`dsh-mcp-manager: catalog reprojection failed: ${String(error)}`);
+    });
+  });
+
   await manager.startAll();
   await manager.loadCatalogCache();
   manager.reconcileServers();
@@ -810,6 +823,7 @@ async function assembleEnabledRuntime(
     },
     disposeVisibility,
     disposeErasure,
+    disposeCatalogInvalidation,
     watchCleanup,
   };
 }

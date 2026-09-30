@@ -398,12 +398,47 @@ export class McpMiddleware {
     // 由官方 serverName 的活体预留保证（同 id 二次挂载当场抛，实测 §2.9-16），跨 root 同名
     // 各自由 (scope,name) 分配的 id 区分——探测与重试都是旧栈的补丁，留着只会与官方判重打架。
     if (connectWrappedServer(unit, root, serverName, server, this.host)) return;
-    await mountRemoteServer(unit, root, serverName, server, entry, {
+    await mountRemoteServer(unit, root, serverName, server, entry, this.mountFaces());
+  }
+
+  /**
+   * 装载面：注册面视图 / 工具元信息 / 脱敏都是本类方法的转发，形状与调用点无关——
+   * 建连结算与 #1014 B7b 的重投影共用同一份，故抽成一处。
+   */
+  private mountFaces(): MountRemoteFaces {
+    return {
       host: this.host,
       registeredSchemas: () => this.registeredSchemas(),
       registeredToolMeta: (id) => this.registeredToolMeta(id),
       redact: (error) => this.redact(error),
-    });
+    };
+  }
+
+  /**
+   * 重投影全部在册连接的目录（#1014 B7b）：tools/change 的失效消费口。
+   *
+   * 为什么按 server diff 而不是无脑全刷：宿主 tools/change **无载荷**（原话「故意不做作用域
+   * 过滤」），且本包 visibility 的 restrict 自身也会发它——无条件全刷会把连接翻转期的
+   * 事件密度直接转成落盘密度。故这里扫一遍注册面、按 `mcp__<id>__` 前缀与现有目录条目逐台
+   * 比对，只对**确实变了**的 server 登记失效并重投影。
+   *
+   * 「变了」的判定是工具裸名集合相等性：目录条目丢过 unavailable 的一律视为变了
+   * （它已经不是可信快照，得靠一次成功投影重建）。
+   */
+  async reprojectCatalogs(): Promise<void> {
+    const { catalog } = runtimePorts.get();
+    const schemas = this.registeredSchemas();
+    for (const [root, unit] of this.units) {
+      for (const [serverName, entry] of unit.connections) {
+        const id = entry.id;
+        if (id === undefined || entry.disposed) continue;
+        const live = liveToolNames(schemas, id);
+        const current = catalog.catalogDirectory.entryFor(root, serverName);
+        if (!shouldReproject(current?.tools, current?.unavailable !== undefined, live)) continue;
+        catalog.catalogDirectory.markDirty(root, serverName);
+        await projectConnectedCatalog(root, serverName, id, this.mountFaces());
+      }
+    }
   }
 
   /**
@@ -608,4 +643,35 @@ export class McpMiddleware {
     for (const root of [...this.units.keys()]) this.teardownUnit(root);
     this.units.clear();
   }
+}
+/** 该 id 前缀下当前注册面里的工具裸名（与目录投影同一次前缀过滤口径）。 */
+function liveToolNames(schemas: SchemaView, id: string): string[] {
+  const prefix = `mcp__${id}__`;
+  const live: string[] = [];
+  for (const schema of schemas) {
+    const name = schema?.name;
+    if (typeof name === "string" && name.startsWith(prefix)) live.push(name.slice(prefix.length));
+  }
+  return live;
+}
+
+/**
+ * 该不该为这台重投影：目录条目不存在、或丢过 unavailable（它已不是可信快照）、
+ * 或工具裸名集合与注册面不一致，三者任一即需要。
+ *
+ * 形参只收「工具名 → 工具」与一个标志，不收目录条目类型——收条目就得多一条 runtime →
+ * catalog 的类型边（verify-dir-imports 的 crossModuleRefs 基线会 +1）。
+ */
+function shouldReproject(
+  currentTools: ReadonlyMap<string, unknown> | undefined,
+  hasUnavailable: boolean,
+  live: readonly string[],
+): boolean {
+  if (currentTools === undefined || hasUnavailable) return true;
+  if (currentTools.size !== live.length) return true;
+  const seen = new Set(live);
+  for (const name of currentTools.keys()) {
+    if (!seen.has(name)) return true;
+  }
+  return false;
 }

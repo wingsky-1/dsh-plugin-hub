@@ -2606,6 +2606,140 @@ describe("#767 S1-4d：池的转发登记、拆除走账本与读时刷新", () 
     expect(catalog.unavailable).toBeUndefined();
   });
 
+  // #1014 B7：显式失效压过 TTL 短路。TTL 是 24h 的兜底上限，不是刷新策略——
+  // 此前 tools/change / 重连 / 手工刷新都没有落点，模型会一直看着已删除的 schema。
+  it("显式失效压过 TTL：未登记失效时 TTL 短路不重投影，登记后立刻重投影", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-mw-dirty-"));
+    const { host, tools } = makeHost(new Map([[ROOT, [PY]]]));
+    const catalogHost = {
+      ...host,
+      catalogCachePath: (root: string) => join(dir, `${root.replace(/[^a-z0-9]/gi, "_")}.json`),
+    };
+    const mw = trackMw(new McpMiddleware(catalogHost as unknown as MiddlewareHost));
+    const unit = makeUnit();
+    mw.units.set(ROOT, unit);
+    unit.connections.set("py", remoteEntry(PY, "id-py"));
+    const project = async () => {
+      await catalogDirectory.projectRegisteredTools({
+        root: ROOT,
+        serverName: "py",
+        id: "id-py",
+        schemas: tools.schemas(),
+        cachePath: () => catalogHost.catalogCachePath(ROOT),
+        redact: (error: unknown) => String(error),
+        isRuntimeServer: () => false,
+        warn: () => {},
+      });
+    };
+    tools.entries = [
+      { name: "mcp__id-py__alpha", description: "甲", parameters: {} },
+      { name: "mcp__id-py__beta", description: "乙", parameters: {} },
+    ];
+    await catalogDirectory.ensureRootLoaded(ROOT, catalogHost.catalogCachePath(ROOT));
+    await project();
+    expect([...catalogDirectory.entryFor(ROOT, "py")!.tools.keys()].sort()).toEqual([
+      "alpha",
+      "beta",
+    ]);
+    // 远端删掉 beta：未登记失效 → TTL 短路，目录**不动**（这正是旧行为，也说明判据有效）。
+    tools.entries = [{ name: "mcp__id-py__alpha", description: "甲", parameters: {} }];
+    await project();
+    expect([...catalogDirectory.entryFor(ROOT, "py")!.tools.keys()].sort()).toEqual([
+      "alpha",
+      "beta",
+    ]);
+    // 登记失效后同一份注册面立刻重投影，beta 消失。
+    catalogDirectory.markDirty(ROOT, "py");
+    expect(catalogDirectory.isDirty(ROOT, "py")).toBe(true);
+    await project();
+    expect([...catalogDirectory.entryFor(ROOT, "py")!.tools.keys()].sort()).toEqual(["alpha"]);
+    // 投影成功即消费标记：再投影回到 TTL 短路。
+    expect(catalogDirectory.isDirty(ROOT, "py")).toBe(false);
+  });
+
+  it("投影失败保留失效标记（不让一次失败把该服务器冻结 24h）", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-mw-dirty2-"));
+    const { host, tools } = makeHost(new Map([[ROOT, [PY]]]));
+    const mw = trackMw(new McpMiddleware(host as unknown as MiddlewareHost));
+    const unit = makeUnit();
+    mw.units.set(ROOT, unit);
+    unit.connections.set("py", remoteEntry(PY, "id-py"));
+    tools.entries = [{ name: "mcp__id-py__alpha", description: "甲", parameters: {} }];
+    await catalogDirectory.ensureRootLoaded(ROOT, join(dir, "root.json"));
+    catalogDirectory.markDirty(ROOT, "py");
+    // cachePath 求值抛错 → 落盘链失败 → catch 收口成 unavailable；标记必须还在。
+    await catalogDirectory.projectRegisteredTools({
+      root: ROOT,
+      serverName: "py",
+      id: "id-py",
+      schemas: tools.schemas(),
+      cachePath: () => {
+        throw new Error("path boom");
+      },
+      redact: (error: unknown) => String(error),
+      isRuntimeServer: () => false,
+      warn: () => {},
+    });
+    expect(catalogDirectory.entryFor(ROOT, "py")!.unavailable).toBeDefined();
+    expect(catalogDirectory.isDirty(ROOT, "py"), "失败后仍应重试").toBe(true);
+  });
+
+  it("dropRoot 清该 root 的失效标记，不动别的 root", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-mw-dirty3-"));
+    // 本条只验 catalog 域的账本生命周期，不碰连接层：makeHost 仍要调（它装池侧端口并复位）。
+    makeHost(new Map([[ROOT, [PY]]]));
+    await catalogDirectory.ensureRootLoaded(ROOT, join(dir, "a.json"));
+    await catalogDirectory.ensureRootLoaded("/other-root", join(dir, "b.json"));
+    catalogDirectory.markDirty(ROOT, "py");
+    catalogDirectory.markDirty("/other-root", "py");
+    catalogDirectory.dropRoot(ROOT);
+    expect(catalogDirectory.isDirty(ROOT, "py")).toBe(false);
+    expect(catalogDirectory.isDirty("/other-root", "py")).toBe(true);
+  });
+
+  it("tools/change 后按 server diff 重投影：远端删掉的工具从目录消失（#1014 B7b）", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-mw-change-"));
+    const { host, tools } = makeHost(new Map([[ROOT, [PY]]]));
+    const catalogHost = {
+      ...host,
+      // projectConnectedCatalog 经 host 读这一面（runtime 条目不落盘），缺了会让整次投影
+      // 走 unavailable 降级并把工具表清空——症状是「目录空了」，不是「夹具没造全」。
+      isRuntimeServer: () => false,
+      catalogCachePath: (root: string) => join(dir, `${root.replace(/[^a-z0-9]/gi, "_")}.json`),
+    };
+    const mw = trackMw(new McpMiddleware(catalogHost as unknown as MiddlewareHost));
+    const unit = makeUnit();
+    mw.units.set(ROOT, unit);
+    unit.connections.set("py", remoteEntry(PY, "id-py"));
+    tools.entries = [
+      { name: "mcp__id-py__alpha", description: "甲", parameters: {} },
+      { name: "mcp__id-py__beta", description: "乙", parameters: {} },
+    ];
+    await catalogDirectory.ensureRootLoaded(ROOT, catalogHost.catalogCachePath(ROOT));
+    await catalogDirectory.projectRegisteredTools({
+      root: ROOT,
+      serverName: "py",
+      id: "id-py",
+      schemas: tools.schemas(),
+      cachePath: () => catalogHost.catalogCachePath(ROOT),
+      redact: (error: unknown) => String(error),
+      isRuntimeServer: () => false,
+      warn: () => {},
+    });
+    expect([...catalogDirectory.entryFor(ROOT, "py")!.tools.keys()].sort()).toEqual([
+      "alpha",
+      "beta",
+    ]);
+    // 远端删掉 beta 后触发 tools/change 的等价调用。
+    tools.entries = [{ name: "mcp__id-py__alpha", description: "甲", parameters: {} }];
+    await mw.reprojectCatalogs();
+    expect([...catalogDirectory.entryFor(ROOT, "py")!.tools.keys()].sort()).toEqual(["alpha"]);
+    // 注册面没变时不重投影：discoveredAt 不动（短路而非重复落盘）。
+    const before = catalogDirectory.entryFor(ROOT, "py")!.discoveredAt;
+    await mw.reprojectCatalogs();
+    expect(catalogDirectory.entryFor(ROOT, "py")!.discoveredAt).toBe(before);
+  });
+
   it("discover：目录落盘失败 → unavailable 降级（discoveredAt 归零）", async () => {
     // 触发点说明：注册面读不到（schemas 抛错）**不会**走到这个降级——registeredSchemas 按设计
     // 吞掉读取异常并当空处理（读不到注册表不许阻塞投影）。真正能触发 catch 的是落盘链：
