@@ -31,11 +31,7 @@ export function releaseRuntime(): void {
   runtimePorts.release();
 }
 
-export {
-  DEFAULT_TOOL_CALL_TIMEOUT_MS,
-  DEFAULT_RESULT_TRUNCATE_BYTES,
-  publicToolName,
-} from "../../shared/interface.ts";
+export { DEFAULT_TOOL_CALL_TIMEOUT_MS, publicToolName } from "../../shared/interface.ts";
 export { McpMiddleware } from "./middleware.ts";
 export {
   CONNECT_TIMEOUT_MS,

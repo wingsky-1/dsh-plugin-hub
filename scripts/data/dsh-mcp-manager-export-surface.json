@@ -264,7 +264,6 @@
     "export declare const DEFAULT_ANNOUNCE_CATALOG = true;",
     "export declare const DEFAULT_CATALOG_MAX_ENTRIES = 6;",
     "export declare const DEFAULT_CONFIG: { enabled: boolean; announceToAgent: boolean; storePath: string; announceCatalog: boolean; catalogMaxEntries: number; debug: { callStats: boolean; statsFile: string; }; ui: UiPlacementConfig; };",
-    "export declare const DEFAULT_RESULT_TRUNCATE_BYTES = 8192;",
     "export declare const DEFAULT_TOOL_CALL_TIMEOUT_MS = 15000;",
     "export declare const DEFAULT_UI_CONFIG: UiPlacementConfig;",
     "export declare const DEFAULT_Z_INDEX_BASE = 10;",
@@ -924,9 +923,6 @@
         ],
         "DEFAULT_CONFIG": [
           "export declare const DEFAULT_CONFIG: { enabled: boolean; announceToAgent: boolean; storePath: string; announceCatalog: boolean; catalogMaxEntries: number; debug: { callStats: boolean; statsFile: string; }; ui: UiPlacementConfig; };"
-        ],
-        "DEFAULT_RESULT_TRUNCATE_BYTES": [
-          "export declare const DEFAULT_RESULT_TRUNCATE_BYTES = 8192;"
         ],
         "DEFAULT_TOOL_CALL_TIMEOUT_MS": [
           "export declare const DEFAULT_TOOL_CALL_TIMEOUT_MS = 15000;"
