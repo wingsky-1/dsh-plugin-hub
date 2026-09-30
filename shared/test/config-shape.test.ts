@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import { test } from "node:test";
 
-import { installSettingsNamespace } from "../settings-namespace.js";
+import { installSettingsNamespace } from "../settings-namespace.ts";
 
 const NAMESPACE = "dsh-mcp-manager";
 

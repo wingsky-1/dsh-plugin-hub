@@ -13,8 +13,8 @@ import {
   pluginVersion,
   runUpgradeChain,
   selectPendingSteps,
-} from "../upgrade-chain.js";
-import type { UpgradePorts, UpgradeStep } from "../upgrade-chain.js";
+} from "../upgrade-chain.ts";
+import type { UpgradePorts, UpgradeStep } from "../upgrade-chain.ts";
 
 /** 判词前缀换成别的包名：三包文案逐字可比，故注入 label 就能断言前缀确实来自调用方。 */
 const LABEL = "dsh-notifier";
