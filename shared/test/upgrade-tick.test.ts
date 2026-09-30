@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { tickUpgradeVersion, tickUpgradeVersionSync } from "../upgrade-tick.js";
+import { tickUpgradeVersion, tickUpgradeVersionSync } from "../upgrade-tick.ts";
 
 test("空步直接完成：返回 undefined 语义的完成态 Promise", async () => {
   await assert.doesNotReject(tickUpgradeVersion());
