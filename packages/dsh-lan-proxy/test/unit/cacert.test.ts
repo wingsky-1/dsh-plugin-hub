@@ -100,6 +100,41 @@ function callCaCert(
   return { path: route.path, status, headers, body: Buffer.concat(chunks) };
 }
 
+/**
+ * TLS 夹具读入完整性探针（纯诊断断言：不改生产代码、不放宽判据）。
+ *
+ * ensureSelfSignedTls 每次现生成随机证书、落盘再 readFileSync 读回
+ * （src/server/tls/impl/index.ts:220-224），读回的字节就是随后交给
+ * new X509Certificate(...) 的输入（同文件 index.ts:67）。若落盘/读回出现
+ * 0 字节或截断，Node 只回一句不透明的 OpenSSL 错误码，无法区分「空」
+ * 「截断」「内容被替换」。这里在读回之后、String() 之前把字节事实固定成
+ * 断言，使失败可直接判据。
+ *
+ * 失败信息走 vitest 断言通道（expect 的 message 形参），不用 console.log：
+ * Stryker runner 传 onConsoleLog: () => false 会掐掉全部 console 输出。
+ *
+ * 覆盖范围：describe("TLS 首证书提取") 内全部 5 条用到 ensureSelfSignedTls 夹具的
+ * 用例（该块第 1 条只断言 ROUTES 常量、不碰证书文件，无可探对象）。label 形如
+ * 「用例短名/材料名」，使 CI 日志能同时定位到是哪条用例的哪份材料——探针的全部
+ * 价值就在「响不响」，只装一条会漏掉 4/5 的命中。
+ */
+function assertPemReadIntact(label: string, material: string | Buffer): void {
+  const bytes = Buffer.isBuffer(material) ? material : Buffer.from(String(material), "utf8");
+  const text = bytes.toString("utf8");
+  const hasBegin = text.startsWith("-----BEGIN");
+  const hasEnd = text.includes("-----END");
+  const head = bytes.subarray(0, 32).toString("hex") || "(空)";
+  expect(
+    bytes.length > 0 && hasBegin && hasEnd,
+    `TlsFixtureReadIntegrity[${label}] 夹具读入完整性断言打红：\n` +
+      `  文件字节长度 = ${bytes.length}\n` +
+      `  首行是 -----BEGIN = ${hasBegin}\n` +
+      `  含 -----END = ${hasEnd}\n` +
+      `  前 32 字节 hex = ${head}\n` +
+      `  读回文本前 64 字符 = ${JSON.stringify(text.slice(0, 64))}`,
+  ).toBe(true);
+}
+
 describe("TLS 首证书提取", () => {
   it("下发路由挂在共享来源上（锚：改路径同步改客户端镜像）", () => {
     expect(ROUTES.caCert).toBe("/api/dsh-lan-proxy/ca-cert");
@@ -107,12 +142,14 @@ describe("TLS 首证书提取", () => {
   it("PEM 自签证书提首证书 DER（0x30 开头）", () => {
     const dir = mkdtempSync(join(home, "tls-"));
     const mat = ensureSelfSignedTls({ dir });
+    assertPemReadIntact("der-0x30/cert", mat.cert);
     const der = extractFirstCertificateDer(mat.cert);
     expect(der[0]).toBe(0x30);
   });
   it("PEM 编码往返一致", () => {
     const dir = mkdtempSync(join(home, "tls-"));
     const mat = ensureSelfSignedTls({ dir });
+    assertPemReadIntact("pem-roundtrip/cert", mat.cert);
     const der = extractFirstCertificateDer(mat.cert);
     const pem = encodeCertificatePem(der);
     expect(pem.startsWith("-----BEGIN CERTIFICATE-----\n")).toBe(true);
@@ -126,12 +163,16 @@ describe("TLS 首证书提取", () => {
   it("含链 PEM 只取首个", () => {
     const a = ensureSelfSignedTls({ dir: mkdtempSync(join(home, "tls-a-")) });
     const b = ensureSelfSignedTls({ dir: mkdtempSync(join(home, "tls-b-")) });
+    assertPemReadIntact("chain-first/a-cert", a.cert);
+    assertPemReadIntact("chain-first/b-cert", b.cert);
     const chain = String(a.cert) + String(b.cert);
     expect(extractFirstCertificateDer(chain).equals(extractFirstCertificateDer(a.cert))).toBe(true);
   });
   it("私钥在前证书在后：跳过私钥取证书（仍只出公钥）", () => {
     const dir = mkdtempSync(join(home, "tls-"));
     const mat = ensureSelfSignedTls({ dir });
+    assertPemReadIntact("key-then-cert/key", mat.key);
+    assertPemReadIntact("key-then-cert/cert", mat.cert);
     const mixed = String(mat.key) + String(mat.cert);
     expect(extractFirstCertificateDer(mixed).equals(extractFirstCertificateDer(mat.cert))).toBe(
       true,
@@ -140,6 +181,7 @@ describe("TLS 首证书提取", () => {
   it("纯私钥与垃圾抛错（调用方映射 404）", () => {
     const dir = mkdtempSync(join(home, "tls-"));
     const mat = ensureSelfSignedTls({ dir });
+    assertPemReadIntact("garbage-throws/key", mat.key);
     expect(() => extractFirstCertificateDer(mat.key)).toThrow();
     expect(() => extractFirstCertificateDer("not-a-cert")).toThrow();
   });
