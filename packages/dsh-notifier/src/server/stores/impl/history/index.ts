@@ -10,13 +10,22 @@ import {
   normalizeReason,
   notifierFile,
 } from "../../../shared/interface.ts";
-import type { ChannelDelivery, HistoryDeps, HistoryEntry, ParsedHistoryLine } from "./type.ts";
+import type {
+  ChannelDelivery,
+  ClearOutcome,
+  HistoryDeps,
+  HistoryEntry,
+  ParsedHistoryLine,
+} from "./type.ts";
 
 /** 通知历史滚动上限（行数；超出后从尾部截断重写）。 */
 const HISTORY_LIMIT = 200;
 
 /** 一天的毫秒数：按天清理与按天过滤是同一个刻度。 */
 const DAY_MS = 86_400_000;
+
+/** 队列的尾哨：只用来把「已消费掉的失败」变成一次正常的落定，不做任何事。 */
+const NOOP = (): void => {};
 
 /** 未装配时的占位：装配是必经路径，能力写成抛错，真被读到应当场暴露而不是静默按默认设置清理。 */
 const UNINSTALLED: HistoryDeps = {
@@ -52,11 +61,17 @@ class HistoryStore {
     this.deps = UNINSTALLED;
   }
 
-  /** 追加一条记录：入队即返回（不阻塞通知主流程），失败仅经日志出口告警。 */
+  /**
+   * 追加一条记录：入队即返回（不阻塞通知主流程），失败仅经日志出口告警。
+   *
+   * 经 `enqueue` 而不是直接 `this.queue = this.queue.then(...)`：直接赋值时排在本条之后的那次
+   * 写会挂在一个可能被拒绝的 promise 上，一次失败就让此后每一条历史静默不写。与 clear 共用
+   * 入队口，这条护栏就不必在两条写上各记得一次。
+   */
   append(entry: HistoryEntry): void {
     // 装配入参在调用点取一次：写发生在稍后，卸载会把 deps 换回占位，取晚一步就连失败日志都落不下来。
     const deps = this.deps;
-    this.queue = this.queue.then(async () => {
+    void this.enqueue(async () => {
       try {
         const lines = await this.currentLines();
         lines.push(JSON.stringify(entry));
@@ -106,20 +121,62 @@ class HistoryStore {
     return records;
   }
 
-  /** 清空全部记录，返回被清空条数。 */
-  async clear(): Promise<number> {
-    // 已知边界：清空不进写队列，与在飞 append 竞争时，那一次 append 可能把刚清掉的行写回。
-    let removed = 0;
-    try {
-      removed = (await readFile(this.file, "utf8")).split("\n").filter(Boolean).length;
-    } catch {
-      // 文件不存在：没有记录可清，清空动作本身照做（把文件补出来）。
-    }
-    const written = await writeTextAtomic(this.file, "");
-    if (!written.ok) {
-      this.deps.logger.warn(`dsh-notifier: 清空历史失败: ${written.reason}`);
-    }
-    return removed;
+  /**
+   * 清空全部记录。**进写队列**（#1016 残留 1）。
+   *
+   * 为什么不进队列是一条真数据竞态，不只是顺序问题：清空在队列外时，一次在飞的 append 会
+   * 「读旧行 → 追加新行 → 写回」，而清空恰好插在它读与写之间——清空把文件截空之后，那一次
+   * append 用它读到的旧行把**整段旧记录原样写回**。用户看到「已清空 N 条」，刷新后记录全在。
+   * 落进同一条队列后次序唯一：先到的 append 落完盘再清空，后到的 append 落在清空之后。
+   *
+   * 返回两态而不是条数：落盘失败必须让调用方**看得见**（返回裸条数时端点只能答 200，界面提示
+   * 「已清空 N 条」而文件纹丝未动）。**本方法不抛错**——抛错经路由的失败出口转成 500，error
+   * 字段是 Node 错误原文（带 errno 与绝对路径），与 issue #1016「errno/路径不外送」直接冲突。
+   */
+  async clear(): Promise<ClearOutcome> {
+    // 装配入参在调用点取一次：写发生在稍后，卸载会把 deps 换回占位，取晚一步连告警都落不下来。
+    const deps = this.deps;
+    return this.enqueue(async () => {
+      // 计条数与写入之间不再有并发写：整段在队列内，前面排队的写都已落盘。
+      let removed = 0;
+      try {
+        removed = (await readFile(this.file, "utf8")).split("\n").filter(Boolean).length;
+      } catch {
+        // 文件不存在：没有记录可清，清空动作本身照做（把文件补出来）。
+      }
+      const written = await writeTextAtomic(this.file, "");
+      if (!written.ok) {
+        // 告警保留（诊断要），但**不再由它决定返回值**：日志是给人看的，返回值是给端点与界面的。
+        deps.logger.warn(`dsh-notifier: 清空历史失败: ${written.reason}`);
+        return { ok: false, reason: "unavailable" };
+      }
+      return { ok: true, removed };
+    });
+  }
+
+  /**
+   * 把一次写挂到队列尾。写法照抄 config 域的同名方法。
+   *
+   * 前两条是**同一道护栏的两个冗余机制**，各自都足以挡住「前一次抛错 ⇒ 此后每一条历史都静默不写」：
+   * 1. `.then(task, task)`——两个分支都给同一个 task，前一次无论成败后一次都照常执行。
+   * 2. `result.then(NOOP, NOOP)` 中和之后**赋回队列的才是它**，于是队列上永远不挂 rejected promise。
+   *    append 的 task 自己 try/catch 住了；clear 的 task 若在兜底之外抛出（判据推翻了「绝不抛」的
+   *    前提），接住那次抛出的是第 1 条——第 2 条在**当前这个双分支写法下并不是**「抛出后后续写被
+   *    跳过」的原因，那个症状要退回单分支 `.then(task)` 才成立。
+   *
+   * **正因冗余，改掉任何一条单独看都判不出来**：实测单独去掉第 2 条全绿、单独退回单分支 `.then(task)`
+   * 也全绿，**两条一起去掉**才红，且只红 `test/unit/stores/history.test.ts` 里「清空的 task 抛错后，
+   * 紧随其后的 append 仍然落盘」那一条。这既是它们必须一起保留的理由（少一条时行为不变，但缓冲
+   * 归零），也是那条判据只能断**性质**、断不了某一条写法的原因。
+   *
+   * 3. task 内**绝不再入队**：enqueue 同步把队列设成 `result.then(...)`，task 里再入队就是等自己
+   *    刚挂上去的 tail，而那个 tail 排在自己后面，自己不返回它就不 resolve（死锁）。config 域为
+   *    此把 apply 与 commit 之间的经队列路径在结构上写死，这里靠同一条纪律。
+   */
+  private enqueue<T>(task: () => Promise<T>): Promise<T> {
+    const result = this.queue.then(task, task);
+    this.queue = result.then(NOOP, NOOP);
+    return result;
   }
 
   /** 现有行：读不到文件即空列表（首次写入从零开始，与读语义一致）。 */

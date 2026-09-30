@@ -21,7 +21,7 @@
  * 失败出口纪律：写入是 fire-and-forget，没有 Promise 的接收方，日志出口是**唯一**能观测失败的地方。
  * 故「写坏了要出声」与「写成了不许出声」两条都要有：只判前者，把 `!written.ok` 写反成恒真也绿。
  */
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -73,6 +73,25 @@ function lines(): string[] {
   }
 }
 
+/**
+ * 在存储目录只读（0o555）的条件下跑一次写，并**必定**把写位还回去。
+ *
+ * 为什么需要它：把历史文件的位置占成目录只能造出「写不进去」，同时那份文件也读不出来——
+ * 于是「写失败但读面照旧」这一条无从证明。只读目录把两件事分开：读得动、建不了新文件，
+ * 而原子写必须先在同目录落一个临时名，故必然 EACCES。
+ *
+ * 还权限走 finally：目录保持只读时，下一条用例的 beforeEach 清不掉文件，临时名也会留在里面。
+ */
+async function withReadOnlyStorageDir<T>(task: () => Promise<T>): Promise<T> {
+  const dir = dirname(historyFile);
+  chmodSync(dir, 0o555);
+  try {
+    return await task();
+  } finally {
+    chmodSync(dir, 0o700);
+  }
+}
+
 beforeEach(() => {
   keepDays = 0;
   // recursive：下面的失败面用例会把目标位置占成目录，非递归的 rm 在它上面会直接抛。
@@ -108,7 +127,7 @@ describe("读取语义", () => {
   it("无历史文件：读面给空数组、清空给 0 条（「没有文件」与「没有记录」是同一件事，不是错误）", async () => {
     assemble();
     expect(await readHistory()).toEqual([]);
-    expect(await clearHistory()).toBe(0);
+    expect(await clearHistory()).toEqual({ ok: true, removed: 0 });
   });
 
   it("append → read 往返：可选字段随行落盘并读回（字段丢了界面上就少一列）", async () => {
@@ -367,12 +386,12 @@ describe("写入侧的清理与截断", () => {
     expect(records[199].title).toBe("最新");
   });
 
-  it("clearHistory 返回被清空条数并让读面变空（清空是不可逆动作，条数要能对上）", async () => {
+  it("clearHistory 回 `{ok, removed}` 并让读面变空（清空是不可逆动作，条数要能对上）", async () => {
     const logger = assemble();
     writeHistoryFile(
       `${[JSON.stringify(entry({ title: "a" })), JSON.stringify(entry({ title: "b" }))].join("\n")}\n`,
     );
-    expect(await clearHistory()).toBe(2);
+    expect(await clearHistory()).toEqual({ ok: true, removed: 2 });
     expect(await readHistory()).toEqual([]);
     expect(readFileSync(historyFile, "utf8")).toBe("");
     // 文件末尾那个换行不是一条记录；写成了也不许出声。
@@ -470,15 +489,132 @@ describe("写入失败的唯一出口", () => {
     expect(logger.warns.join("\n")).toContain("设置读不出来");
   });
 
-  it("清空落盘失败经日志出口告警，条数照常返回（失败的是落盘，不是清空动作本身）", async () => {
+  // 落盘失败必须让调用方**看得见**：返回裸条数时端点只能答 200，界面提示「已清空 N 条」而文件
+  // 纹丝未动，刷新后旧记录全在（#1016 残留 1）。返回值与告警是两个出口，这条只钉前者、下面那条只钉后者。
+  it("清空落盘失败回 `unavailable` 而不是条数：端点据此答 503，界面不提示假成功", async () => {
     const logger = assemble();
     mkdirSync(historyFile, { recursive: true });
 
-    expect(await clearHistory()).toBe(0);
+    expect(await clearHistory()).toEqual({ ok: false, reason: "unavailable" });
     await pollUntil(
       () => logger.warns.some((text) => text.includes("清空历史失败")),
       "清空落盘失败告警",
     );
     expect(logger.warns.join("\n")).toContain("清空历史失败");
+  });
+
+  // 「写不进去」与「读不出来」必须能分开制造，否则上面那条只能证明「目录占位时写失败」，
+  // 证明不了「写失败时读面照旧」。只读目录（0o555）正是这个形状：读得动、建不了新文件，
+  // 而原子写要先在同目录建临时名 → EACCES。Windows 的 chmod 不约束写入，故跳过。
+  it.skipIf(process.platform === "win32")(
+    "清空写失败时磁盘上的旧记录一条不少、读面照旧（写没成就不该毁数据）",
+    async () => {
+      assemble();
+      const stored = `${[JSON.stringify(entry({ title: "a" })), JSON.stringify(entry({ title: "b" }))].join("\n")}\n`;
+      writeHistoryFile(stored);
+
+      expect(await withReadOnlyStorageDir(clearHistory)).toEqual({
+        ok: false,
+        reason: "unavailable",
+      });
+
+      expect(readFileSync(historyFile, "utf8")).toBe(stored);
+      expect((await readHistory()).map((record) => record.title)).toEqual(["a", "b"]);
+    },
+  );
+
+  // 失败态**不带原因**：`written.reason` 是 Node 的错误消息，形态是「EACCES: permission denied,
+  // open '/…/history.jsonl.tmp-…'」，端点一旦带出去就等于把宿主绝对路径交给浏览器。诊断走日志出口，
+  // 返回值只回答「成没成」。用只读目录排故障：那里才真的有一条带路径的错误消息可漏。
+  it.skipIf(process.platform === "win32")(
+    "清空写失败的返回值里没有 errno 与绝对路径（原因只许进日志出口）",
+    async () => {
+      const logger = assemble();
+      writeHistoryFile(`${JSON.stringify(entry({ title: "a" }))}\n`);
+
+      const outcome = await withReadOnlyStorageDir(clearHistory);
+
+      // 前提：这条用例排的故障真的产出了一条带路径的错误消息，否则下面的断言是恒真。
+      expect(logger.warns.join("\n")).toContain(dirname(historyFile));
+      // 逐键 + 逐字符双钉：多带一个字段、或把错误消息塞进 reason/hint，这条都红。
+      expect(Object.keys(outcome).sort()).toEqual(["ok", "reason"]);
+      expect(JSON.stringify(outcome)).not.toContain("/");
+      expect(JSON.stringify(outcome)).not.toContain("EACCES");
+    },
+  );
+});
+
+/**
+ * 写队列的次序（#1016 残留 1）。append 与 clear 共用一条队列，故「谁先谁后」由入队次序决定、
+ * 与 fs 调度无关：清空排在队列外时它会与在飞的 append 抢同一个文件，那一次 append 拿它读到的旧行
+ * 把整段旧记录原样写回，用户刷新后记录全在。这一组钉的就是「次序由入队决定」这件事。
+ */
+describe("写队列的次序", () => {
+  // 钉的是**终态**而不是某一次内部调用的顺序：终态在正确实现下与调度无关（队列里次序唯一），
+  // 反而在「清空不进队列」的实现下随 rename 先后漂移——那样的实现压根给不出稳定答案。
+  it("append → clear → append 的次序确定：清空前那条不复活，清空后那条活下来", async () => {
+    assemble();
+    appendHistory(entry({ title: "清空前" }));
+    const clearing = clearHistory();
+    appendHistory(entry({ title: "清空后" }));
+
+    // 条数是 1 而不是 0：清空跑在第一次追加**之后**，它数到的正是刚落盘的那条。
+    expect(await clearing).toEqual({ ok: true, removed: 1 });
+    await pollUntil(() => lines().length === 1, "清空后的那条落盘");
+
+    expect(lines()).toHaveLength(1);
+    expect(lines()[0]).toContain("清空后");
+    expect((await readHistory()).map((record) => record.title)).toEqual(["清空后"]);
+  });
+
+  // 并发的两次清空：后一条排在队尾，所以它是「最后一次动作」。钉终态（磁盘空 + 读面空）而不是
+  // 两次调用的条数——条数只说明各自数到了什么，终态才说明「复活」这件事有没有发生。
+  it("两次清空之间夹的追加不会被后一条清空复活：后一条的终态是磁盘空", async () => {
+    assemble();
+    appendHistory(entry({ title: "夹在中间" }));
+    const first = clearHistory();
+    appendHistory(entry({ title: "第一次清空后" }));
+    const second = clearHistory();
+
+    expect(await first).toEqual({ ok: true, removed: 1 });
+    expect(await second).toEqual({ ok: true, removed: 1 });
+    // 第二次的 promise 落地即它的 rename 落地（写队列在它内部 await 过），故这里不需要轮询。
+    expect(lines()).toEqual([]);
+    expect(await readHistory()).toEqual([]);
+  });
+
+  // 队列护栏（`enqueue` 的第 2 点）：让**兜底之外**的那次抛出真的发生一次，再断紧随其后的 append
+  // 仍然落盘——判据落在「队列有没有被这次 rejection 污染」上，而不是落在「抛没抛」上。
+  // 告警出口是 `clearTask` 里唯一能抛的现实路径（读侧包着 try/catch，原子写返回 `{ok,reason}`），
+  // 故用它注入：写失败 → 走到 `deps.logger.warn` → 该行抛出。
+  //
+  // 夹具的排法讲究顺序：先占成目录让清空写失败，等那次清空**真的抛完**再把位置腾出来；反过来的话
+  // 下面的 append 也会写不成功，判据就退化成「写失败时不写」。
+  it("清空的 task 抛错后，紧随其后的 append 仍然落盘（队列不被这次 rejection 污染）", async () => {
+    const warns: string[] = [];
+    let armed = true;
+    installStores({
+      logger: {
+        warn: (message: string) => {
+          warns.push(message);
+          if (armed) {
+            armed = false;
+            throw new Error("注入的告警出口故障");
+          }
+        },
+      },
+      config: { readConfig: () => ({ ...DEFAULT_CONFIG, historyMaxAgeDays: keepDays }) },
+    });
+    mkdirSync(historyFile, { recursive: true });
+
+    // 前提：排的故障真的走到了告警出口（`armed` 已 disarm 且告警真的发出来了），否则「抛错」是排出来的假象。
+    await expect(clearHistory()).rejects.toThrow("注入的告警出口故障");
+    expect(armed).toBe(false);
+    expect(warns.join("\n")).toContain("清空历史失败");
+
+    rmSync(historyFile, { recursive: true, force: true });
+    appendHistory(entry({ title: "清空抛错之后" }));
+    await pollUntil(() => lines().length === 1, "清空抛错之后的追加落盘");
+    expect(lines()[0]).toContain("清空抛错之后");
   });
 });

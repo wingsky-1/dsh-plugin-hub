@@ -248,12 +248,11 @@ function cleanTopLevel(stored: Record<string, RawSettingValue>, state: Cleaning)
   }
 }
 
-/** `channels`：不是数组即删键（判据在 `cleanTopLevel`）；数组则逐条清理 + 删非法条目 + 去重。 */
+/** `channels`：不是数组即删键（判据在 `cleanTopLevel`）；数组则逐条清理 + 删非法条目。**不去重**——理由见循环里那段注释（#1016 残留 2）。 */
 function cleanChannels(stored: Record<string, RawSettingValue>, state: Cleaning): void {
   const list = stored.channels;
   if (!Array.isArray(list)) return;
   const kept: Record<string, RawSettingValue>[] = [];
-  const seenIds = new Set<string>();
   let listChanged = false;
   for (const item of list) {
     const cleaned = cleanEntry(item, state);
@@ -264,12 +263,12 @@ function cleanChannels(stored: Record<string, RawSettingValue>, state: Cleaning)
       listChanged = true;
       continue;
     }
-    // 重复 id 保留首条：与掩码还原的 `findById`、合并的 `indexById` 同一口径，三处不各取一条。
-    if (seenIds.has(cleaned.identity)) {
-      listChanged = true;
-      continue;
-    }
-    seenIds.add(cleaned.identity);
+    // **不按重复身份去重**（#1016 残留 2，反转此前「重复 id 保留首条」的行为）：本步原来在这里静默丢掉
+    // 重复条目并写盘，于是升级那一刻就把用户第二条频道**连凭据一起从磁盘删掉**，而设置页上它还在、
+    // 任何一次无关保存又立刻 400 说「身份重复」——数据没了，理由还指向一个用户没做过的操作。
+    // issue #1016 批次 B 明文「迁移不得静默取首项」，本仓一贯的取舍也是「看得见的坏 > 看不见的消失」。
+    // 重复身份现在由**写面**绝对拒（用户删掉一条再保存即可自救），投递投影取首项**只**是为了不再双投，
+    // 两者都不改磁盘：升级不替用户决定留哪条。
     // `changed` 只在**真的删过键**时为真：逐条都逐字未动时不得换掉原数组，否则每次启动都会重写文件。
     if (cleaned.changed) listChanged = true;
     kept.push(cleaned.entry);
@@ -284,13 +283,6 @@ function cleanChannels(stored: Record<string, RawSettingValue>, state: Cleaning)
 type CleanedEntry = {
   readonly entry: Record<string, RawSettingValue>;
   readonly changed: boolean;
-  /**
-   * 去重身份：出站条目取 `id`，内置条目取 `type`（它可以没有 `id` 键）。
-   *
-   * 与读面 `builtinRaw`（同类型的后来者被丢弃）、写面 `indexById`（只索引有非空 id 的条目）同口径——
-   * 三处各取一条，早晚会在「两条同 id 的 bark」上给出三个不同的保留对象。
-   */
-  readonly identity: string;
 };
 
 /**
@@ -321,7 +313,7 @@ function cleanEntry(item: RawSettingValue, state: Cleaning): CleanedEntry | null
   // listChanged 一并记账，在这儿再记一次会让「删了几条」与「动了文件」两笔账对不上。
   if (local === null) return null;
   if (local.touched) state.touched = true;
-  return { entry, changed: local.touched, identity: identityOf(entry, type) };
+  return { entry, changed: local.touched };
 }
 
 /**
@@ -330,11 +322,6 @@ function cleanEntry(item: RawSettingValue, state: Cleaning): CleanedEntry | null
 function hasIdentity(entry: Record<string, RawSettingValue>, type: string): boolean {
   if (isBuiltin(type)) return entry.id === undefined || entry.id === type;
   return typeof entry.id === "string" && entry.id !== "";
-}
-
-/** 去重身份：出站取 id，内置取 type（它可以没有 id 键）。 */
-function identityOf(entry: Record<string, RawSettingValue>, type: string): string {
-  return typeof entry.id === "string" && entry.id !== "" ? entry.id : type;
 }
 
 /**

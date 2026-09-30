@@ -425,7 +425,56 @@ function validateChannels(
     const verdict = validateChannel(item, inherited?.[index], preexisting?.[index]);
     if (!verdict.ok) return verdict;
   }
+  // 数组级判据，排在逐条之后、内置在场之前：逐条已保证每条都过了形状判据（故这里读得到 type）。
+  const unique = requireUniqueIdentities(raw);
+  if (!unique.ok) return unique;
   return requireBuiltinsPresent(raw);
+}
+
+/**
+ * 频道身份唯一（#1016 残留 2）。**绝对 400**：重复身份不是「界面显示重复」，而是**凭据被销毁**。
+ *
+ * 销毁链条（每一环都已在仓内，不是推测）：设置页对 `channels` 是**整组提交**（未整体未变时才省略）；
+ * 合并的 `sameKindBase` 按**裸 id** 取首条，KEEP 分支又让其余键沿用首条的值——于是第二条的真实密钥
+ * 被第一条覆盖，**每次保存毁一条凭据**，而界面上看不出任何异常。掩码还原的 `findById` 同样按裸 id
+ * 查找，所以**跨类型同 id 也撞**（一条 bark 写 `id: "browser"` 会命中内置 browser 条目，连带把它的
+ * 掩码还原到 bark 的键上）。
+ *
+ * 落点为什么是 `validateChannels` 而不是 `validateChannel`：后者是 exported、给 dry-run 逐条调用的，
+ * 它**看不到数组**，重复与否在它那一层根本不是问题。数组级判据属于数组级。
+ *
+ * **不给 `preexisting` 放行**：放行是「存量残缺不该让一次无关保存被拒」，而重复身份是存量**自相矛盾**
+ * ——同一个身份挂着两套凭据，它不是残缺。放行等于把「每次保存毁一条凭据」合法化。
+ *
+ * 提示必须**带下标**并**给出路**：客户端没有 id 编辑器（`chAdd` 自动分配），用户改不了 id，文案只说
+ * 「重复」而不说「删掉其中一条」就等于堵死。id 不是凭据——它从不参与掩码、也不回显任何秘密——所以
+ * 带进提示是安全的。
+ */
+function requireUniqueIdentities(list: readonly RawSettingValue[]): ValidationResult {
+  const firstSeenAt = new Map<string, number>();
+  for (const [index, item] of list.entries()) {
+    if (!isRecord(item)) continue;
+    const identity = identityOfChannel(item);
+    const seenAt = firstSeenAt.get(identity);
+    if (seenAt !== undefined) {
+      return reject(
+        "channels",
+        `第 ${seenAt + 1} 条与第 ${index + 1} 条的频道身份都是 ${identity}：同一条频道只能有一个，删掉其中一条再保存`,
+      );
+    }
+    firstSeenAt.set(identity, index);
+  }
+  return { ok: true };
+}
+
+/**
+ * 身份口径：出站取 `id`，`id` 缺席或空串时回落 `type`（内置可以没有 `id` 键，而 `validateBuiltinChannel`
+ * 规定它写了就只能是 `type`）。与 `upgrade` 域的 `identityOf` 同一式子，沿用它换来零误伤——任何现存
+ * 合法配置的身份都与它一致，于是一条内置 browser 缺席 id 时不会被自己拒一次。
+ */
+function identityOfChannel(item: Record<string, RawSettingValue>): string {
+  const type = typeof item.type === "string" ? item.type : "";
+  return typeof item.id === "string" && item.id !== "" ? item.id : type;
 }
 
 /**
@@ -789,7 +838,28 @@ type ChannelRead = { ok: true; channel: ChannelConfig } | { ok: false };
 function outboundChannels(raw: RawSettingValue): ChannelConfig[] {
   const channels: ChannelConfig[] = [];
   if (!Array.isArray(raw)) return channels;
+  // 按身份取**首项**（#1016 残留 2）。写面已绝对拒重复身份，故能从磁盘读到重复的只有两种来源：手改过
+  // 文件，或 0.2.9 之前的存量。此处两条都投 = 一次通知发两遍。
+  //
+  // **不是「四处同一口径」**（此前的注释这么写，不实）：这里用的是 `id || type` 按**数组序**取首条；
+  // 掩码还原 `findById` 与合并 `indexById` 是另一把尺——**只按裸 id**，没有非空 id 的条目根本不进
+  // 索引；`builtinRaw` 是第三把——**只按 type**，完全无视 id。三把尺只在「内置条目都带 id、用户条目
+  // 都带唯一 id」这一种常见形态下碰巧同形，其余形态各说各话。
+  //
+  // **已知取舍（B / C 两个形状，登记在实现笔记的「已知缺口」段）**：`seen.add` 在 `asChannel` 之前，
+  // 于是**半坏条目（`baseUrl:""` / `deviceKey:""`）会先占掉身份**，把后面一条健康的同 `id` 条目挤出
+  // 投递池；跨类型重复时则是「数组里靠前的那条」赢，落选那条**从此不再投递**。两种形状都以「重复
+  // 身份」为前提——写面已绝对 400、客户端 `chAdd` 生成的 id 恒为 `bark-N` 且自带去重，故 UI 造不出
+  // 这种配置，只剩手改文件与 0.2.9 之前的存量。**本轮刻意不动这个位置**：把 `seen.add` 挪到
+  // `asChannel` 之后会让跨类型重复从 0 条变 1 条（让用户那条 bark 赢过内置条目），那是另一套语义、
+  // 需要单独决策；登记为缺口比顺手改对更诚实。
+  const seen = new Set<string>();
   for (const item of raw) {
+    if (isRecord(item)) {
+      const identity = identityOfChannel(item);
+      if (seen.has(identity)) continue;
+      seen.add(identity);
+    }
     const read = asChannel(item);
     if (read.ok) channels.push(read.channel);
   }
