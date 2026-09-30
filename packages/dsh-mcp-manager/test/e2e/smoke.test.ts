@@ -1144,7 +1144,10 @@ it("#362 P0-1：工具级禁用三入口一致（callTool / pre-execute guard / 
     const statsSnap = statsCollector.snapshot();
     expect(statsSnap.servers.ctx?.totalCalls, "ws_mcp_call 成功记录到 ctx 服务器").toBe(1);
     expect(statsSnap.servers.ctx?.tools.other?.calls, "other 工具调用成功记录").toBe(1);
-    expect(statsSnap.disclosure.searches["codegraph"], "ws_mcp_search 记录到漏斗").toBe(1);
+    expect(
+      statsSnap.disclosure.searches["h:c405d32b3ac2"],
+      "ws_mcp_search 记录到漏斗（哈希桶）",
+    ).toBe(1);
     expect(statsSnap.disclosure.lists["<all>"], "ws_mcp_list 记录到漏斗").toBe(1);
     expect(statsSnap.disclosure.details["ctx/use_ctx"], "ws_mcp_detail 记录到漏斗").toBe(1);
 

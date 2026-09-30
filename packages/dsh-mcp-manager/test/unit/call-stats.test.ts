@@ -186,9 +186,13 @@ describe("开启时正确聚合调用与渐进式披露指标并原子落盘", (
     expect(rawOf(statsFile).servers.mem0.tools.memory_search.calls).toBe(1);
   });
 
-  it("disclosure searches 非空查询计 2 次", () => {
+  // 桶键是手写字面量哈希（sha256("find symbol") 前 12 位），刻意不 import 实现里的
+  // 哈希函数——同源期望改坏了也一起绿，异源期望才打得住。
+  it("disclosure searches 非空查询落哈希桶（不落明文）", () => {
     const { statsFile } = enabledFixture();
-    expect(rawOf(statsFile).disclosure.searches["find symbol"]).toBe(2);
+    const searches = rawOf(statsFile).disclosure.searches;
+    expect(searches["h:d24b97411352"]).toBe(2);
+    expect(searches["find symbol"]).toBeUndefined();
   });
 
   it("disclosure searches 空查询归入 <empty>", () => {
@@ -219,11 +223,34 @@ describe("开启时正确聚合调用与渐进式披露指标并原子落盘", (
     expect(snap2.servers.codegraph.totalCalls).toBe(3);
   });
 
-  it("重启恢复：新实例读回 disclosure searches 2", () => {
+  it("重启恢复：新实例读回 disclosure searches 桶 2", () => {
     const { statsFile } = enabledFixture();
     const collector2 = new McpStatsCollector({ enabled: true, filePath: statsFile });
     const snap2 = collector2.snapshot();
-    expect(snap2.disclosure.searches["find symbol"]).toBe(2);
+    expect(snap2.disclosure.searches["h:d24b97411352"]).toBe(2);
+  });
+
+  // 存量面：旧版本把搜索词原文落盘（"legacy plain query"）。读回时必须筛掉，
+  // 否则「文件里不再出现明文搜索词」这条承诺对已升级的用户是假的——旧键会被
+  // 原样并进内存再写回去。断的是**盘上字节**，不是内存快照。
+  it("存量明文搜索词键读时丢弃，且不被再次写回盘", () => {
+    const dir = tempDir();
+    const statsFile = join(dir, "stats.json");
+    writeFileSync(
+      statsFile,
+      JSON.stringify({
+        startedAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+        servers: {},
+        disclosure: { searches: { "legacy plain query": 7 }, lists: {}, details: {} },
+      }),
+    );
+    const collector = new McpStatsCollector({ enabled: true, filePath: statsFile });
+    collector.recordList();
+    collector.flushSync();
+    const raw = readFileSync(statsFile, "utf8");
+    expect(raw.includes("legacy plain query"), "明文键不得留在盘上").toBe(false);
+    expect(collector.snapshot().disclosure.searches["legacy plain query"]).toBeUndefined();
   });
 
   // 工具明细表（tools Map）与服务器级计数是**不同形状**的还原，单独锁一条：

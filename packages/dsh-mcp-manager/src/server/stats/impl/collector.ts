@@ -9,7 +9,7 @@
  * 5. Metadata-Only：不记录任何业务 arguments 或结果 content，防隐私泄露。
  */
 
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { mkdirSync, rmSync, writeFileSync, renameSync, existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { directoryMode, fileMode, statsFile } from "../../shared/interface.ts";
@@ -20,6 +20,47 @@ import type {
   ProgressiveDisclosureStats,
 } from "./type.ts";
 
+/** 搜索词空桶键：空查询没有内容可哈希，用自描述的字面量，与既有落盘形态一致。 */
+const EMPTY_SEARCH_BUCKET = "<empty>";
+/** 非空搜索词的桶键前缀：键形态自描述，读时据此把旧版本的明文键筛掉（见 onlySearchBuckets）。 */
+const SEARCH_BUCKET_PREFIX = "h:";
+/** 桶键哈希位数：12 位 hex = 48 bit，对单机漏斗计数的碰撞概率可忽略。 */
+const SEARCH_BUCKET_HASH_LENGTH = 12;
+
+/**
+ * 搜索词 → 落盘桶键：空查询进 `<empty>`，其余一律只留 SHA-256 前 12 位的哈希桶。
+ *
+ * 为什么落哈希而不落明文：搜索词是模型自由文本，可能带文件名、符号名乃至片段密钥；
+ * 统计文件的读取面比配置面宽，明文落盘等于把一次会话里出现过的查询词长期留在盘上。
+ *
+ * 残留（不掩饰）：哈希是**假名化**不是匿名——搜索词熵低，存在字典攻击面。要真正
+ * 消除需加盐，而盐本身要持久化（属另一批次的新增持久化面），本批不做。
+ */
+function searchBucket(query: string): string {
+  const trimmed = query.trim();
+  if (trimmed === "") return EMPTY_SEARCH_BUCKET;
+  return (
+    SEARCH_BUCKET_PREFIX +
+    createHash("sha256").update(trimmed).digest("hex").slice(0, SEARCH_BUCKET_HASH_LENGTH)
+  );
+}
+
+/** 桶键形态判定：只有自描述的两种形态才算本版本的键，其余即旧版本落的明文搜索词。 */
+function isSearchBucketKey(key: string): boolean {
+  return key === EMPTY_SEARCH_BUCKET || /^h:[0-9a-f]{12}$/.test(key);
+}
+
+/** 读回时筛掉旧版本的明文搜索词键：它们不是内容、只是历史遗留，不该被再次落盘。 */
+function onlySearchBuckets(raw: unknown): Record<string, number> {
+  if (raw === null || typeof raw !== "object") return {};
+  const kept: Record<string, number> = {};
+  for (const [key, value] of Object.entries(raw as Record<string, number>)) {
+    if (!isSearchBucketKey(key)) continue;
+    if (typeof value !== "number" || !Number.isFinite(value)) continue;
+    kept[key] = value;
+  }
+  return kept;
+}
 /** 默认统计落盘路径（落点单源在 server/shared/paths.ts；此处只转发）。 */
 export function defaultStatsPath(): string {
   return statsFile();
@@ -200,7 +241,8 @@ export class McpStatsCollector {
         if (data.startedAt) this.startedAt = data.startedAt;
         restoreServerSnapshot(this.servers, data.servers);
         if (data.disclosure && typeof data.disclosure === "object") {
-          this.disclosure.searches = { ...data.disclosure.searches };
+          // 搜索词只留桶键：旧版本落的明文键在此丢弃，不进内存也不会被再次写回盘上。
+          this.disclosure.searches = onlySearchBuckets(data.disclosure.searches);
           this.disclosure.lists = { ...data.disclosure.lists };
           this.disclosure.details = { ...data.disclosure.details };
         }
@@ -254,8 +296,8 @@ export class McpStatsCollector {
   /** 记录渐进式披露漏斗：ws_mcp_search 搜索词。 */
   recordSearch(query: string): void {
     if (!this.enabled) return;
-    const q = query.trim() === "" ? "<empty>" : query.trim().slice(0, 100);
-    this.disclosure.searches[q] = (this.disclosure.searches[q] ?? 0) + 1;
+    const bucket = searchBucket(query);
+    this.disclosure.searches[bucket] = (this.disclosure.searches[bucket] ?? 0) + 1;
     this.updatedAt = new Date().toISOString();
     this.scheduleFlush();
   }
