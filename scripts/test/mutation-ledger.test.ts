@@ -11,7 +11,9 @@
  *   1. 解析器只认「日志里真实出现的段」，未闭合的 group 宁缺勿造；
  *   2. wallSeconds 必须是正数（解析失败不得以 0 冒充有效测量）；
  *   3. 入库台账的覆盖不变量：测量值 ∪ unmeasured == 当前 stryker.conf.d 段集合，
- *      消失的历史段必须在 superseded 登记取代关系。
+ *      消失的历史段必须在 superseded 登记取代关系；
+ *   4. scope ↔ reuse 一致性：`--scope` 是调用方 flag，而超时定标只吃 scope=full 的段——
+ *      增量 run 被静默标成 full 会把复用段的快墙钟喂成全量峰值（只增不减，永久抬高）。
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -233,6 +235,86 @@ test("覆盖对账：段名派生自 conf 文件名（与 ci-matrix / mutation-g
     ]),
     ["dsh-lan-proxy-1", "dsh-notifier-config-rest", "shared-settings-namespace"],
   );
+});
+
+// ── scope ↔ reuse 一致性 ────────────────────────────────────────────────────
+// `--scope` 是调用方 flag，而超时定标的唯一输入 fullScopePeaks 只吃 scope==="full"：
+// 增量 run 被静默标成 full 时，复用导致的快墙钟会被当成全量峰值（取 max，只增不减）。
+// 判据是「有无 reuse 记录」而非 reused 的数值——余量两侧都必须有断言锁住。
+
+/** 自洽的最小台账：measurements 覆盖全部 expected 段（否则覆盖不变量会掩盖本组断言）。 */
+const scopeLedger = (scope: string, segs: Array<Record<string, unknown>>) => ({
+  measurements: [{ run: { id: 1 }, scope, segments: segs }],
+  unmeasured: {},
+});
+const SCOPE_SEGS = ["dsh-x-a", "dsh-x-b"];
+const segOf = (seg: string, extra: Record<string, unknown> = {}) => ({
+  seg,
+  wallSeconds: 10,
+  mutants: 5,
+  reused: null,
+  reuseTotal: null,
+  ...extra,
+});
+
+test("scope ↔ reuse：full 段出现 reuse 记录必须判红（判词点名段名与实际 reused/reuseTotal）", () => {
+  const problems = checkLedger(
+    scopeLedger("full", [segOf("dsh-x-a", { reused: 0, reuseTotal: 0 }), segOf("dsh-x-b")]),
+    SCOPE_SEGS,
+  );
+  const hit = problems.find((p) => p.includes("scope=full 不得有 reuse 记录"));
+  assert.ok(hit, `未判红：\n${problems.join("\n")}`);
+  assert.match(hit, /段 dsh-x-a/);
+  assert.match(hit, /reused=0\/reuseTotal=0/);
+});
+
+test("scope ↔ reuse：incremental 段缺 reuse 记录必须判红（删字段与显式 null 两种编码）", () => {
+  const dropped = checkLedger(
+    scopeLedger("incremental", [
+      segOf("dsh-x-a", { reused: 40, reuseTotal: 100 }),
+      Object.fromEntries(
+        Object.entries(segOf("dsh-x-b")).filter(([k]) => k !== "reused" && k !== "reuseTotal"),
+      ),
+    ]),
+    SCOPE_SEGS,
+  );
+  const hitDropped = dropped.find((p) => p.includes("scope=incremental 必须有 reuse 记录"));
+  assert.ok(hitDropped, `删字段形态未判红：\n${dropped.join("\n")}`);
+  assert.match(hitDropped, /段 dsh-x-b/);
+  assert.match(hitDropped, /reused=null\/reuseTotal=null/);
+
+  // 显式 null 是解析器「日志无该行」的原生编码：lib 的 checkReused 对它完全短路
+  // （reused !== null 为假），故只有本判据能抓到它——删掉实现本用例即红。
+  const explicitNull = checkLedger(
+    scopeLedger("incremental", [
+      segOf("dsh-x-a", { reused: 40, reuseTotal: 100 }),
+      segOf("dsh-x-b"),
+    ]),
+    SCOPE_SEGS,
+  );
+  const hitNull = explicitNull.find((p) => p.includes("scope=incremental 必须有 reuse 记录"));
+  assert.ok(hitNull, `reused:null 形态未判红：\n${explicitNull.join("\n")}`);
+  assert.match(hitNull, /段 dsh-x-b/);
+});
+
+test("scope ↔ reuse：基线全失效的 incremental（reused=0）合法，不得判红", () => {
+  // 这条是本判据最容易写错的方向：判据若写成 reused > 0 / reused === 0 就会误杀它。
+  const problems = checkLedger(
+    scopeLedger("incremental", [
+      segOf("dsh-x-a", { reused: 0, reuseTotal: 0 }),
+      segOf("dsh-x-b", { reused: 7, reuseTotal: 20 }),
+    ]),
+    SCOPE_SEGS,
+  );
+  assert.deepEqual(problems, [], `合法的 reused=0 增量被误判红：\n${problems.join("\n")}`);
+});
+
+test("scope ↔ reuse：full 段无 reuse 记录是当前真实形态，保持绿", () => {
+  const problems = checkLedger(
+    scopeLedger("full", [segOf("dsh-x-a"), segOf("dsh-x-b")]),
+    SCOPE_SEGS,
+  );
+  assert.deepEqual(problems, [], `full + 无 reuse 记录应通过：\n${problems.join("\n")}`);
 });
 
 test("入库台账：覆盖全部段不变量成立（测量值 ∪ unmeasured == 当前 conf 段集合）", () => {

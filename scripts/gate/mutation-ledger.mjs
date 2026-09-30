@@ -120,7 +120,47 @@ function collectUnmeasuredProblems(ledger, measured, unmeasured) {
   return problems;
 }
 
-/** measurements 每条记录的字段完整性与段内不重复。 */
+/** reuse 字段的判词取值：null 与缺字段一律显示为 `null`（与解析器「缺失即 null」同口径）。 */
+const fmtReuse = (v) => (v === null || v === undefined ? "null" : String(v));
+
+/**
+ * scope ↔ reuse 一致性：判据是「**有无 reuse 记录**」，不是 `reused` 的数值大小。
+ *
+ * 为什么需要：`--scope` 是调用方 flag（`resolveRunArgs` 只校验取值合法，不校验与日志自洽），
+ * 而超时定标的唯一输入 `fullScopePeaks` 只吃 `scope === "full"`。于是一个**增量** run 被
+ * 静默标成 `full` 时，它因复用而偏短的墙钟会被 `fullScopePeaks` 当成全量峰值——而峰值按段名
+ * 取 max，只增不减，被喂坏的数会**永久**抬高派生超时。
+ *
+ * 余量（不得收紧，两条都是复核特意留下的合法形态）：
+ *   - `full` ⇒ 该段**不得**有 reuse 记录（全量跑不产 `… are reused` 行），判的是有无记录，
+ *     不是 `reused > 0`；
+ *   - `incremental` ⇒ 该段**必须**有 reuse 记录，但**不要求 `reused > 0`**：基线全失效的
+ *     增量班次（`reused === 0`）完全合法，判成 `reused === 0` 即判红会误杀合法形态。
+ *
+ * 只覆盖 full / incremental 两个已知口径：scope 取值合法性由生成模式与测试断言守，
+ * 此处不重复判（否则与既有的「scope 缺失」重复报红）。
+ */
+// 返回数组而非单条字符串：调用方因此不必新增分支（collectMeasurementProblems 的圈复杂度
+// 已顶在 ESLint 上限 10），也与同层 checkLedgerEntry 的 spread 形态一致。
+function collectScopeReuseProblems(scope, seg) {
+  // 缺字段与显式 null 同义：解析器口径是「日志里没有这行 ⇒ null」（见 lib 的 parseSegmentBody）
+  const hasReuse = seg.reused !== null && seg.reused !== undefined;
+  const actual = `实际 reused=${fmtReuse(seg.reused)}/reuseTotal=${fmtReuse(seg.reuseTotal)}`;
+  const problems = [];
+  if (scope === "full" && hasReuse) {
+    problems.push(
+      `段 ${seg.seg}: scope=full 不得有 reuse 记录，${actual}（复用段的墙钟会进 fullScopePeaks 全量峰值）`,
+    );
+  }
+  if (scope === "incremental" && !hasReuse) {
+    problems.push(
+      `段 ${seg.seg}: scope=incremental 必须有 reuse 记录，${actual}（该 run 的基线复用情况不明，口径不可信）`,
+    );
+  }
+  return problems;
+}
+
+/** measurements 每条记录的字段完整性与段内不重复 + scope ↔ reuse 一致性。 */
 function collectMeasurementProblems(measurements) {
   const problems = [];
   for (const m of measurements) {
@@ -134,6 +174,7 @@ function collectMeasurementProblems(measurements) {
     for (const s of segs) {
       if (seen.has(s.seg)) problems.push(`run ${runId}: 段 ${s.seg} 重复登记`);
       seen.add(s.seg);
+      problems.push(...collectScopeReuseProblems(m.scope, s).map((q) => `run ${runId}: ${q}`));
       problems.push(...checkLedgerEntry(s).map((p) => `run ${runId}: ${p}`));
     }
   }
