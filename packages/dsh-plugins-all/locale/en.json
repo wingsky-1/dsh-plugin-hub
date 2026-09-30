@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Plugin Bundle",
+    "description": "Meta-package installing all dsh-plugin-hub plugins at once: notifier, provider-usage, mcp-manager, lan-proxy, verify-isolated and worktree-sidebar."
+  }
+}

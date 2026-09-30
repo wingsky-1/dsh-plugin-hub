@@ -24,6 +24,7 @@
 ## gate/（根 pnpm 门禁 + 聚合 patch）
 
 - `gate/contract-check.ts` — 客户端契约门禁（load id === 包名、`dsh.client ⇒ exports["./client"]` 等）。目录门面 / 导出面快照 / 跨包扇入三闸原先内嵌在本脚本以 `spawnSync` 执行，审计 P0-1 后迁成 ci.yml 与本地档位的直接步骤——内嵌形态下 workflow 与本地计划都看不到它们，「每条判据至少一个可见执行点」因此恒为假。
+- `gate/plugin-locale.ts` — 包级展示文案的 **locale 目录契约**门禁。dsh 读插件展示文案走 `<包名>/locale/en.json`（上游 `dsh-app-boot/lib/index.js:1972` 硬编码），经 **Node ESM 解析器**解析，失败一律静默：`missingResource`（:1893）吞 `ERR_PACKAGE_PATH_NOT_EXPORTED` 后回落到 `package.json`；而 `dictionariesOf`（:1925）对目录里每个 json **硬解析不吞异常**，其 throw 被 `readPluginMeta` 的 catch 吞成 `{ error }`（:1996）——不是崩溃，是设置页那一行插件显示错误文案。故**漏导某个语言文件比全不导出更糟**，必须导通配 `"../locale/*"`。上游六种失败里五种静默（exit 0、零诊断），源码面任何测试都看不见，本门把上游语义（`LANGUAGE_ID` :1850、`LOCALE_IDS` :922、非空字符串 :1907、`meta` 包装层 :1936）逐字复刻成判据。覆盖：locale/ 目录与 en.json 锚点、`files` 白名单含 locale、`exports["./locale/*"]` 逐字恒等且不带 types 条件、**解析器实证**（resolve 后再 read+parse，resolve 成功不等于文件存在）、逐文件形状与 meta 键白名单、语言 id 须在宿主内置目录内（合法文件名 ≠ 宿主能选中）、`meta.description` 与 `dsh.catalog.summary[lang]` **只读镜像逐字相等**（catalog 是外部收录平台的采集面，本门一个字节都不写它）。退出码三态：0 通过 / 1 判红 / 2 门禁故障。执行点两侧同形：ci.yml 的 repo-gate 恒跑段 + 本地 `gate-steps.mjs` 的 `cheapGlobal`，故 A1 / A2 / A14 无需例外登记。
 - `gate/pack-check.ts` — tarball 完整性门禁（含聚合包、THIRD-PARTY-LICENSES 覆盖）。
 - `gate/verify-npm-layout.ts` — npm 发布布局校验。
 - `gate/verify-docs.ts` — 文档/description 校验（缺 .md、占位符残留）。相对链接面四档：

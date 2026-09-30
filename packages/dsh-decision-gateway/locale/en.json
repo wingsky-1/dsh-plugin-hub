@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "JEV Decision Gateway",
+    "description": "Calibrated assistant decisions (Choice/Score/Noul) for DSH agents with local secret precheck; JEV is the first provider."
+  }
+}

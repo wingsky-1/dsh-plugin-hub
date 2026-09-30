@@ -49,6 +49,16 @@ export function tierSteps(tier, { hitPackages, withCoverage, base, scopeLabel })
       cmd: "node",
       args: ["scripts/gate/ci-ism-check.mjs"],
     },
+    // 插件展示文案的 locale 契约：dsh 读不到 locale/ 时**静默**回落到 package.json
+    // （上游 missingResource 吞 ERR_PACKAGE_PATH_NOT_EXPORTED），且漏导某个语言文件比全不导
+    // 更糟（dictionariesOf 硬解析 → readPluginMeta 吞成 { error } → 设置页那一行显示错误）。
+    // 五种失败模式全是 exit 0 零诊断，故必须有判据。执行点两侧同形，与 ci-ism-check 同。
+    {
+      label:
+        "plugin-locale（包级展示文案 locale 契约：目录/锚点/files/exports/逐文件形状/只读镜像）",
+      cmd: "node",
+      args: ["scripts/gate/plugin-locale.ts"],
+    },
     { label: "stryker:check（变异配置与拓扑一致）", args: ["stryker:check"] },
     { label: "aggregate:check（聚合 patch 不漂移）", args: ["aggregate:check"] },
     { label: "test:src-tests（*.src.test.ts 禁现）", args: ["test:src-tests"] },

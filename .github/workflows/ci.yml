@@ -921,6 +921,13 @@ jobs:
       - name: CI-ism residue（仓库根 CI-ism 残留：.gitignore 藏不住的那些）
         run: node scripts/gate/ci-ism-check.mjs
 
+      # 插件展示文案的 locale 契约：dsh 读 <包名>/locale/en.json 走 Node ESM 解析器，
+      # 失败一律静默（缺资源回落到 package.json；文件级失败被吞成 { error }，让设置页那一
+      # 行插件显示错误文案）。源码面任何测试都看不见，故必须有判据。与兄弟闸同形接入本地
+      # cheapGlobal（gate/gate-steps.mjs），两侧都可见；刻意不加 if：纯本地只读检查，
+      # push 事件上语义同样成立。
+      - name: Plugin locale contract（包级展示文案 locale 契约）
+        run: node scripts/gate/plugin-locale.ts
       - name: Pack check（防发布断链；#722 默认只验命中包）
         env:
           FULL_GATE: ${{ needs.changes.outputs.fullGate }}

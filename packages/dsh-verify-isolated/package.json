@@ -14,7 +14,8 @@
       "types": "./lib/index.d.ts",
       "default": "./lib/index.js"
     },
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./locale/*": "./locale/*"
   },
   "dsh": {
     "bundle": {
@@ -33,6 +34,7 @@
   },
   "files": [
     "lib",
+    "locale",
     "shared/**/*.d.ts",
     "skills",
     "cordis.patch.yml",

@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "JEV 决策网关",
+    "description": "给 DSH agent 的校准辅助决策（Choice/Score/Noul），本地密形预检，双轨密钥；JEV 为首个提供方。"
+  }
+}

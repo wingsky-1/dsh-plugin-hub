@@ -38,6 +38,7 @@
 | 改 `scripts/` / workflow                                                     | `gate:pr` 起（含 `test:scripts`）；改 `.github/` 属红线，先评审                                |
 | 改 README、新增文档链接                                                      | `gate:pr` 起（含 `docs:check`，见 `scripts/gate/verify-docs.ts`）                                |
 | 改任意手写源码（`packages/*/src`、`packages/*/test`、`shared/`、`scripts/`） | `gate:pr` 起（含 `lint`：ESLint 复杂度门禁，阈值见 `scripts/data/gauntlet.config.json` 的 `complexity` 段） |
+| 改包级展示文案（`locale/**`、各包 `package.json` 的 `files` 与 `exports["./locale/*"]`） | `gate:pr` 起（含 `plugin-locale`：dsh 读不到 locale 时**静默**回落 `package.json`，源码面测试一律看不见） |
 | 提交前最终一遍                                                               | `pnpm gate:pr`；单包迭代用 `pnpm gate:changed`                                                 |
 
 分层**不减少检查，只改变时机**：CI 的 PR 默认路径与本地 `gate:changed` 走增量

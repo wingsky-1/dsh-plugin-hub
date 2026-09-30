@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Notifier",
+    "description": "Task-event notifications for dsh web via browser Notification and host system toast, with Bark and webhook push channels."
+  }
+}

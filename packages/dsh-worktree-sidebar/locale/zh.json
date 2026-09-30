@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Worktree 侧栏",
+    "description": "将会话右侧栏文件树根指向 git worktree，会话 cwd 不变，原生能力上线即退役"
+  }
+}
