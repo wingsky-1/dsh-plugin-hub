@@ -39,10 +39,58 @@ const PKG_NAME = "@wingsky-1/fixture-pkg";
 const MANIFEST_REL = "packages/" + PKG + "/package.json";
 const TOPOLOGY_REL = "scripts/data/mutation-topology.json";
 
+/** `$testLayers` 的 fixture 形态（与 scripts/data/mutation-topology.json 同形）。
+ *
+ * 为什么要它：批次二项 2 起，本闸的**两处层目录**（I8① 单元层、client 族层）都从这份声明
+ * 派生，缺 `$testLayers` 即 fail-closed 判红。fixture 必须带着它，否则被验证的行为会被
+ * 「派生失败」盖住——这正是 fail-closed 的代价，如实承担。
+ */
+const FIXTURE_TEST_LAYERS = {
+  layerMeta: {
+    unit: {
+      assertionTarget: "src",
+      environment: "node",
+      mandatory: true,
+      responsibility: "单模块判据",
+    },
+    integration: {
+      assertionTarget: "src",
+      environment: "node",
+      mandatory: false,
+      responsibility: "真实组合根判据",
+    },
+    "client-unit": {
+      assertionTarget: "src",
+      environment: "node",
+      mandatory: false,
+      responsibility: "客户端纯逻辑判据",
+    },
+    bundle: {
+      assertionTarget: "artifact",
+      environment: "node",
+      mandatory: false,
+      responsibility: "产物形态断言",
+    },
+    e2e: {
+      assertionTarget: "live",
+      environment: "node",
+      mandatory: false,
+      responsibility: "大 smoke",
+    },
+  },
+  layers: {
+    unit: "test/unit/**/*.test.ts",
+    integration: "test/integration/**/*.test.ts",
+    "client-unit": "test/client-unit/**/*.test.ts",
+    bundle: "test/bundle/**/*.test.ts",
+    e2e: "test/e2e/**/*.test.ts",
+  },
+};
 /** fixture 默认拓扑：本包 src 全量入 mutate（client 排除），使覆盖断言不引入额外噪声。 */
 function defaultTopology() {
   return JSON.stringify({
     sharedDefaults: {},
+    $testLayers: FIXTURE_TEST_LAYERS,
     packages: {
       [PKG]: {
         segments: {
@@ -782,6 +830,7 @@ function clientCoverageFixture(segments: unknown, extraSrc: Record<string, strin
   return {
     [TOPOLOGY_REL]: JSON.stringify({
       sharedDefaults: {},
+      $testLayers: FIXTURE_TEST_LAYERS,
       packages: { [PKG]: { segments } },
     }),
     // client 文件在两种用例里都存在：差别只在段有没有认领 client 判据。
@@ -878,6 +927,149 @@ test("#875 提案 1 边界：派生凭据只对 client/ 生效，server 侧漏�
     assert.ok(
       !keys.some((k) => k.includes("client/")),
       "client 子树已被派生量覆盖，不该出现在待登记键里：\n" + res.out,
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+/* ── 批次二项 2：两处层目录改由 $testLayers 派生（收口后的四组回归）── */
+
+test("批次二 2a：$testLayers.layerMeta 整节缺失 → fail-closed 判红（层名判据不得静默退化为空表）", () => {
+  const layers = structuredClone(FIXTURE_TEST_LAYERS);
+  delete (layers as { layerMeta?: unknown }).layerMeta;
+  const root = makeFixtureRoot({
+    [TOPOLOGY_REL]: JSON.stringify({
+      sharedDefaults: {},
+      $testLayers: layers,
+      packages: {
+        [PKG]: {
+          segments: {
+            server: {
+              mutate: [SRC + "/**/*.ts"],
+              excludes: [],
+              testFiles: ["packages/" + PKG + "/test/client-unit/probe.test.ts"],
+            },
+          },
+        },
+      },
+    }),
+  });
+  try {
+    const res = runOn(root);
+    assert.equal(res.status, 1, "删掉 layerMeta 必须判红：\n" + res.out);
+    assert.match(
+      res.out,
+      /测试分层派生失败：\$testLayers\.layerMeta 缺失或形状非法/,
+      "判词须点名 layerMeta 缺失：\n" + res.out,
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("批次二 2b：unit 的 assertionTarget 改成 artifact → I8① 的必答层集合为空 → fail-closed 判红", () => {
+  // 这条钉的是「单元层由 layerMeta 的语义谓词派生」而不是「test/unit 字面量」：把 unit 的
+  // assertionTarget 改掉，派生出的必答直连源码层即为空 → 判红。若实现仍写死 test/unit，
+  // 同一份 fixture 会安静地继续扫 test/unit，门禁全绿——那正是本项要消灭的静默通道。
+  const layers = structuredClone(FIXTURE_TEST_LAYERS);
+  (layers.layerMeta.unit as { assertionTarget: string }).assertionTarget = "artifact";
+  const root = makeFixtureRoot({
+    [TOPOLOGY_REL]: JSON.stringify({
+      sharedDefaults: {},
+      $testLayers: layers,
+      packages: {
+        [PKG]: {
+          segments: {
+            server: {
+              mutate: [SRC + "/**/*.ts"],
+              excludes: [],
+              testFiles: ["packages/" + PKG + "/test/client-unit/probe.test.ts"],
+            },
+          },
+        },
+      },
+    }),
+  });
+  try {
+    const res = runOn(root);
+    assert.equal(res.status, 1, "unit 退出直连源码层后必须判红：\n" + res.out);
+    assert.match(
+      res.out,
+      /测试分层派生失败：由 layerMeta 派生的必答直连源码层为空/,
+      "判词须点名派生出的必答层为空：\n" + res.out,
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("批次二 2c：client 族层由 $testLayers.layers 派生 —— 新增 client-probe 层后段认领即生效", () => {
+  // 钉的是「派生」而不是「枚举」：把一个**不在**旧三项枚举里的 client 族层加进事实源，
+  // 段认领它之后 client 子树应零未覆盖。写死枚举的实现在这里会判红（它不认 client-probe），
+  // 门禁因此不会因为「新增了一个 client 族层」而静默漏判。
+  const layers = structuredClone(FIXTURE_TEST_LAYERS) as {
+    layers: Record<string, string>;
+    layerMeta: Record<string, unknown>;
+  };
+  layers.layers["client-probe"] = "test/client-probe/**/*.test.ts";
+  layers.layerMeta["client-probe"] = {
+    assertionTarget: "src",
+    environment: "dom",
+    mandatory: false,
+    responsibility: "探针用的 client 族层",
+  };
+  const root = makeFixtureRoot({
+    ...clientCoverageFixture({}),
+    [TOPOLOGY_REL]: JSON.stringify({
+      sharedDefaults: {},
+      $testLayers: layers,
+      packages: {
+        [PKG]: {
+          segments: {
+            server: {
+              mutate: [SRC + "/server/**/*.ts", SRC + "/index.ts"],
+              excludes: [],
+              testFiles: ["packages/" + PKG + "/test/client-probe/probe.test.ts"],
+            },
+          },
+        },
+      },
+    }),
+  });
+  try {
+    const res = runOn(root, ["--write-baseline"]);
+    assert.equal(res.status, 0, "段认领新登记的 client 族层后 client 子树应零未覆盖：\n" + res.out);
+    assert.deepEqual(qualityOf(root).uncoveredSrcFiles, []);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("批次二 2d：client 族层只在一张事实源里登记 → 判红（两张表失配不放过）", () => {
+  const layers = structuredClone(FIXTURE_TEST_LAYERS) as { layers: Record<string, string> };
+  // 只加 layers 键、不加 layerMeta：派生出的 client 族层在另一张表里没有元数据。
+  layers.layers["client-orphan"] = "test/client-orphan/**/*.test.ts";
+  const root = makeFixtureRoot({
+    [TOPOLOGY_REL]: JSON.stringify({
+      sharedDefaults: {},
+      $testLayers: layers,
+      packages: {
+        [PKG]: {
+          segments: {
+            server: { mutate: [SRC + "/**/*.ts"], excludes: [], testFiles: [] },
+          },
+        },
+      },
+    }),
+  });
+  try {
+    const res = runOn(root);
+    assert.equal(res.status, 1, "两张事实源失配必须判红：\n" + res.out);
+    assert.match(
+      res.out,
+      /client-orphan.*在 layerMeta 里没有元数据/s,
+      "判词须点名失配的层名：\n" + res.out,
     );
   } finally {
     rmSync(root, { recursive: true, force: true });

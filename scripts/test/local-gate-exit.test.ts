@@ -40,12 +40,19 @@ interface Outcome {
   out: string;
 }
 
-/** 相对说明符 → 仓库内绝对路径。副本在 tmpdir 里，这四处是它全部的仓内依赖。 */
+/**
+ * 相对说明符 → 仓库内绝对路径。副本在 tmpdir 里，这里是它全部的仓内依赖。
+ *
+ * 清单必须与 local-gate.mjs 的 import 段**同步**：漏一条的后果不是「少改一处路径」，而是
+ * 副本直接 ERR_MODULE_NOT_FOUND 起不来，六个用例全部退化成「实得 1」——断言看着在跑，测的
+ * 却是模块解析失败。锚点唯一性由 replaceOnce 兜住。
+ */
 const IMPORTS: readonly (readonly [string, string])[] = [
   ["../ci/ci-matrix.mjs", "scripts/ci/ci-matrix.mjs"],
   ["./gate-steps.mjs", "scripts/gate/gate-steps.mjs"],
   ["./local-scope.mjs", "scripts/gate/local-scope.mjs"],
   ["../lib/gate-exit.mjs", "scripts/lib/gate-exit.mjs"],
+  ["../lib/gate-baseline.mjs", "scripts/lib/gate-baseline.mjs"],
 ];
 
 const ROOT_LINE = 'const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");';

@@ -43,6 +43,7 @@ import { computeCiMatrix } from "../ci/ci-matrix.mjs";
 import { TIER_ALIAS, tierSteps } from "./gate-steps.mjs";
 import { planChangedScope, shouldEscalateChangedTier } from "./local-scope.mjs";
 import { failClosed } from "../lib/gate-exit.mjs";
+import { GATE_BASELINE_REF } from "../lib/gate-baseline.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const PNPM = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
@@ -98,7 +99,8 @@ function tierOf(argv) {
 
 function main(argv) {
   const tier = tierOf(argv);
-  const base = valueOf(argv, "--base") ?? "origin/main";
+  // 缺省基准取单一常量（scripts/lib/gate-baseline.mjs）：与 CI repo-gate 侧同源，不再各写一份。
+  const base = valueOf(argv, "--base") ?? GATE_BASELINE_REF;
   const dryRun = argv.includes("--dry-run");
   const jsonOut = argv.includes("--json");
   const withCoverage = argv.includes("--with-coverage");

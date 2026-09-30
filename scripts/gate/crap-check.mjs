@@ -38,6 +38,7 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { createRequire } from "node:module";
 import { failClosed } from "../lib/gate-exit.mjs";
+import { GATE_BASELINE_REF } from "../lib/gate-baseline.mjs";
 
 const SCRIPT_PATH = fileURLToPath(import.meta.url);
 const SCRIPT_DIR = dirname(SCRIPT_PATH);
@@ -394,8 +395,8 @@ export function resolveBaseRef(base, cwd) {
     return res.status === 0;
   };
   if (base && tryRef(base)) return base;
-  if (!base || base === "origin/main") {
-    if (tryRef("origin/main")) return "origin/main";
+  if (!base || base === GATE_BASELINE_REF) {
+    if (tryRef(GATE_BASELINE_REF)) return GATE_BASELINE_REF;
     if (tryRef("main")) return "main";
     if (tryRef("HEAD~1")) return "HEAD~1";
     if (tryRef("HEAD")) return "HEAD";

@@ -794,27 +794,125 @@ function isSharedLayerModule(id) {
 }
 
 /**
- * client 系测试目录（层 glob 落在 `test/<层>/` 下，故按路径段判定）。
+ * 测试层目录的**派生口径**（批次二项 2；#1079 落地 layerMeta / rootLayers 后本文件两处层名收口）。
  *
- * **这三层名是枚举的，此处不读 `$testLayers.layers`**——如实说明为什么，以及为什么此刻不能派生：
- *   - 语义：这三层是本仓当前的 client 族层（`test/client/` / `test/client-unit/` / `test/client-dom/`）。
- *     改动它们会让本派生量的口径跟着变，所以它们必须被钉住而不是被推导。
- *   - 为什么不从拓扑派生（实测结论，非推测）：本仓拓扑的 `$testLayers` 只有 `layers`
- *     （`层名 → glob` 的扁平映射）、`mutationLayers` 与 `mutationExcludeLayers` 三项，**没有任何
- *     「这一层是 client 族」的属性**。按排除层派生层族（`E` 含 `E-*`）实测会把 `e2e` 一并拉进来
- *     （`mutationExcludeLayers = [client, e2e]`），改变本派生量的取值；要排除 e2e 就得再补一条
- *     「层族根必须存在派生层」的人为规则，而该规则在将来新增 `e2e-*` 层时会反向失效——用一个
- *     新的静默通道换掉旧的枚举，不做。
- *   - 计划中的正确做法：拓扑引入 per-layer 元数据（断言对象 / 是否必测）后按对象特征识别，
- *     **届时本正则与 `collectUnitImportFaceViolations` 的 `test/unit` 字面量必须在同一次改动里一起
- *     收口——只收一处等于把静默通道从一侧挪到另一侧**：收了这处而 `:963` 的 `test/unit` 仍在，则
- *     「`existsSync` 恒假 ⇒ 证据恒 0 ⇒ 打 PASS」那条通道完好无损；收了 `:963` 而本正则仍在，则
- *     新增 client 族层照旧静默漏判。
- *   - **该收口依赖 #1079 先行合并**：per-layer 元数据（`layerMeta.<层>.assertionTarget` /
- *     `mandatory`）由 #1079 引入 `scripts/data/mutation-topology.json`，当前基线上不存在。
- *     故本刀只订正注释、保留枚举，判定逻辑一字未动。
+ * 收口的两个对象**必须在同一次改动里一起改**，否则等于把静默通道从一侧挪到另一侧：
+ *   - client 族层目录（本文件原 CLIENT_TEST_PATH_RE 的三项枚举）；
+ *   - I8① 单元层目录 test/unit（collectUnitImportFaceViolations 的字面量）——
+ *     留着它，「existsSync 恒假 ⇒ 证据恒 0 ⇒ 打 PASS」那条通道完好无损。
+ *
+ * 为什么不「按排除层派生层族」（上一轮已实测否决）：E 含 E-* 的写法会把 e2e 一并拉进来
+ * （属行为变更），剔除它要再加一条「层族根必须存在派生层」的人为规则，而那条规则在将来
+ * 新增 e2e-* 层时**反向失效**——用一个新静默通道换掉旧枚举，不做。
+ *
+ * 现在的口径（全部由事实源派生，无手写层名）：
+ *   - **单元层** = layerMeta.<层>.assertionTarget === "src" && mandatory === true。
+ *     取交集而不是「全部 src 层」是实测逼出来的：放宽到「全部 src 层」会把 integration 拉进来，
+ *     I8① 随即在本仓判出 18 条真实假红（integration 的 src/index.ts×11 + src/client×4、
+ *     e2e 的 lib×13）。mandatory 恰是「本层缺失即判红」的那一层（test-surface.mjs 的
+ *     isMandatoryLayer 同一谓词），当前唯一成员是 unit。
+ *   - **client 族层** = $testLayers.layers 的键中匹配 client / client-* 的层名。
+ *     键即层目录名（glob 形如 test/<层>/ 下的递归 .test.ts），故新增 client-* 层自动进面。
+ *     配套的**对账**：派生出的每个 client 族层必须在 layerMeta 里有元数据，否则判红
+ *     （只在一张表里加层名 = 两张事实源失配）。
+ *
+ * fail-closed：$testLayers / layerMeta / layers 任一缺失或形状非法、任一派生集合为空、
+ * 或层目录名不是安全单段名（要拼进路径与正则两处），一律产出 problems → 主流程落硬违规。
+ * 「派生不出层集合」时退回旧枚举会正好回到本文件要消灭的那种静默（证据恒 0 却打 PASS）。
  */
-const CLIENT_TEST_PATH_RE = /\/test\/(client|client-unit|client-dom)\//;
+const CLIENT_LAYER_FAMILY_RE = /^client(?:-|$)/;
+/** 层目录名必须是安全单段名：它要被拼进文件路径与 RegExp，两处都靠这道闸。 */
+const SAFE_LAYER_DIR_RE = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+
+function isPlainObject(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+/**
+ * 三张事实源表的取用：任一缺失 / 形状非法即不可派生。
+ *
+ * 返回 `{ tables: null, problem }` 而不是把三张表合成一句判词：判红要能一眼看出**是哪张表**
+ * 坏了——三合一的话，读者拿到的是「三张里有一张不对」，得自己回去查。分支数与合成写法相同。
+ */
+function testLayerTables(topologyDoc) {
+  const testLayers = topologyDoc?.$testLayers;
+  if (!isPlainObject(testLayers)) return missingTables("$testLayers");
+  const meta = testLayers.layerMeta;
+  if (!isPlainObject(meta)) return missingTables("$testLayers.layerMeta");
+  const layers = testLayers.layers;
+  if (!isPlainObject(layers)) return missingTables("$testLayers.layers");
+  return { tables: { meta, layers }, problem: null };
+}
+
+/** 不可派生的返回值：点名缺哪一张表，并统一给出 fail-closed 口径。 */
+function missingTables(name) {
+  return {
+    tables: null,
+    problem: `${name} 缺失或形状非法（须为对象）——层目录无法派生，fail-closed`,
+  };
+}
+
+/** 单元层 = layerMeta 里「直连源码（src）且必答（mandatory）」的层——见文件头的口径注释。 */
+function deriveUnitDirs(meta) {
+  return Object.keys(meta)
+    .filter((name) => meta[name]?.assertionTarget === "src" && meta[name]?.mandatory === true)
+    .sort();
+}
+
+/** client 族层 = $testLayers.layers 的键中匹配 client / client-* 的层名（键即层目录名）。 */
+function deriveClientDirs(layers) {
+  return Object.keys(layers)
+    .filter((name) => CLIENT_LAYER_FAMILY_RE.test(name))
+    .sort();
+}
+
+/** 派生结果的形状与两侧对账（层名安全性 / 空集 / client 族层在 layerMeta 里有元数据）。 */
+function checkDerivedLayers(unitDirs, clientDirs, meta, problems) {
+  if (unitDirs.length === 0) {
+    problems.push(
+      '由 layerMeta 派生的必答直连源码层为空（assertionTarget="src" 且 mandatory=true 的层一个都没有）——I8① 的扫描面无定义，fail-closed',
+    );
+  }
+  if (clientDirs.length === 0) {
+    problems.push(
+      "由 $testLayers.layers 派生的 client 族层目录为空（没有 client / client-* 层）——client 覆盖凭据无定义，fail-closed",
+    );
+  }
+  for (const name of [...unitDirs, ...clientDirs]) {
+    if (!SAFE_LAYER_DIR_RE.test(name)) {
+      problems.push(
+        `层名 "${name}" 不是安全单段目录名（${SAFE_LAYER_DIR_RE.source}）——它要被拼进路径与正则，不做转义就等于打开注入面`,
+      );
+    }
+    if (CLIENT_LAYER_FAMILY_RE.test(name) && !isPlainObject(meta[name])) {
+      problems.push(
+        `$testLayers.layers 声明的 client 族层 "${name}" 在 layerMeta 里没有元数据——两张事实源失配，fail-closed`,
+      );
+    }
+  }
+}
+
+/**
+ * 派生两处层目录；形状非法 / 派生为空 / 两侧失配都落进 problems（由主循环落成硬违规）。
+ *
+ * 拆成四个小函数是 lint complexity 的硬约束（单函数上限 10），不是风格选择：判定集合
+ * 与判词逐字未动，拆开只让每个分支各归其位——**分支数与判红范围完全不变**。
+ */
+function testLayerFacts(topologyDoc) {
+  const { tables, problem } = testLayerTables(topologyDoc);
+  if (tables === null) return { unitDirs: [], clientDirs: [], problems: [problem] };
+  const unitDirs = deriveUnitDirs(tables.meta);
+  const clientDirs = deriveClientDirs(tables.layers);
+  const problems = [];
+  checkDerivedLayers(unitDirs, clientDirs, tables.meta, problems);
+  return { unitDirs, clientDirs, problems };
+}
+
+/** 派生出的 client 族层目录 → 「路径里含 test/<层>/」的正则（层名已过安全名闸，仍逐个转义）。 */
+function clientTestPathMatcher(clientDirs) {
+  const alts = clientDirs.map((name) => name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
+  return new RegExp(`\\/test\\/(?:${alts})\\/`);
+}
 
 /**
  * 段 testFiles 是否认领了 client 系测试文件（#875 4b+4d 提案 1）。
@@ -834,10 +932,11 @@ const CLIENT_TEST_PATH_RE = /\/test\/(client|client-unit|client-dom)\//;
  * **没有任何段认领**它们时，`clientCovered` 为 false，client 子树立刻进未覆盖清单
  * ——即「写了 client 测试但没落进任何段」从此可见，此前它被 39 条 excludes 静默兜住。
  */
-function segmentsClaimClientTests(segments) {
+function segmentsClaimClientTests(segments, clientDirs) {
+  const matcher = clientTestPathMatcher(clientDirs);
   return Object.values(segments ?? {}).some((seg) => {
     const testFiles = seg?.testFiles;
-    return Array.isArray(testFiles) && testFiles.some((f) => CLIENT_TEST_PATH_RE.test(f));
+    return Array.isArray(testFiles) && testFiles.some((f) => matcher.test(f));
   });
 }
 
@@ -858,9 +957,9 @@ function segmentsClaimClientTests(segments) {
  * 拓扑缺失 / 包未登记时返回 false：那两条路径上覆盖断言本就不适用（见 collectMutationSpecs 的三态），
  * 此时把 client 树算作「未覆盖」只会把「不可判定」渲染成「有缺口」。
  */
-function clientJudged(topology, pkgName) {
+function clientJudged(topology, pkgName, clientDirs) {
   const segments = topology === null ? undefined : topology?.packages?.[pkgName]?.segments;
-  return segmentsClaimClientTests(segments);
+  return segmentsClaimClientTests(segments, clientDirs);
 }
 
 function collectUncoveredSrcFiles(srcDir, specs, clientCovered) {
@@ -979,21 +1078,25 @@ function readPackageName(pkgDir) {
  * 与 `collectClientServerImports` 同因：内联会把 analyzePackage 的认知复杂度推过门禁阈值。
  * `pkgName` 是本包 `package.json` 的 `name`（可为 null），只用于裸自引用映射。
  */
-function collectUnitImportFaceViolations(pkgDir, pkgName) {
-  const unitDir = join(pkgDir, "test", "unit");
-  if (!existsSync(unitDir)) return [];
+function collectUnitImportFaceViolations(pkgDir, pkgName, unitDirs) {
   const out = [];
-  for (const fromFile of collectTsFiles(unitDir)) {
-    const text = stripComments(readFileSync(fromFile, "utf8"));
-    for (const { spec } of extractRefs(text)) {
-      // 目标不存在时（`lib/**` 还没构建、`.js` 后缀映射不到 `.ts`）退回**字面路径**：判据管的是
-      // 写下来的导入面，让「产物没构建」变成静默绕过才是这类门禁最典型的假绿。裸包名自引用先经
-      // selfReferenceLibTarget 映射到产物面——与相对写法落成同一条证据 id，换写法换不掉证据。
-      const target =
-        selfReferenceLibTarget(pkgName, spec) ??
-        rel(pkgDir, resolveTarget(fromFile, spec) ?? resolve(dirname(fromFile), spec));
-      const hit = unitImportFaceTarget(target);
-      if (hit !== null) out.push(`${rel(pkgDir, fromFile)}|${hit}`);
+  // 扫描面按**派生出的必答直连源码层**逐个展开（当前唯一成员是 unit）：层名不再是字面量，
+  // 层集合为空时由 testLayerFacts 判红（fail-closed），这里不得静默返回空证据。
+  for (const layerDir of unitDirs) {
+    const unitDir = join(pkgDir, "test", layerDir);
+    if (!existsSync(unitDir)) continue;
+    for (const fromFile of collectTsFiles(unitDir)) {
+      const text = stripComments(readFileSync(fromFile, "utf8"));
+      for (const { spec } of extractRefs(text)) {
+        // 目标不存在时（`lib/**` 还没构建、`.js` 后缀映射不到 `.ts`）退回**字面路径**：判据管的是
+        // 写下来的导入面，让「产物没构建」变成静默绕过才是这类门禁最典型的假绿。裸包名自引用先经
+        // selfReferenceLibTarget 映射到产物面——与相对写法落成同一条证据 id，换写法换不掉证据。
+        const target =
+          selfReferenceLibTarget(pkgName, spec) ??
+          rel(pkgDir, resolveTarget(fromFile, spec) ?? resolve(dirname(fromFile), spec));
+        const hit = unitImportFaceTarget(target);
+        if (hit !== null) out.push(`${rel(pkgDir, fromFile)}|${hit}`);
+      }
     }
   }
   return [...new Set(out)].sort();
@@ -1251,7 +1354,7 @@ function srcDirOf(pkgName) {
   return join(ROOT, "packages", pkgName, "src");
 }
 
-function analyzePackage(pkgName, topology) {
+function analyzePackage(pkgName, topology, layerFacts) {
   const srcDir = srcDirOf(pkgName);
   if (!existsSync(srcDir)) return null;
   const { modules, isFacade, allTsFiles, files, refs } = scanPackageSources(srcDir);
@@ -1296,6 +1399,7 @@ function analyzePackage(pkgName, topology) {
   const unitImportFaceEvidence = collectUnitImportFaceViolations(
     dirname(srcDir),
     readPackageName(dirname(srcDir)),
+    layerFacts.unitDirs,
   );
 
   const specs = collectMutationSpecs(topology, pkgName);
@@ -1307,7 +1411,7 @@ function analyzePackage(pkgName, topology) {
   const uncoveredSrcFiles = collectUncoveredSrcFiles(
     srcDir,
     specs,
-    clientJudged(topology, pkgName),
+    clientJudged(topology, pkgName, layerFacts.clientDirs),
   );
 
   const valueCount = raLegacy.filter((r) => !r.isType).length;
@@ -1898,7 +2002,7 @@ function renderGraphEvidence(lines, analysis) {
   );
   for (const e of clientServerImports) lines.push(`  ${e}`);
   lines.push(
-    `单元层导入面（I8①，test/unit 引组合根 src/index.ts / 产物 lib / 客户端 src/client，只许缩小）：${unitImportFaceViolations.length} 条`,
+    `单元层导入面（I8①，test/${layerFacts.unitDirs.join(" + test/")} 引组合根 src/index.ts / 产物 lib / 客户端 src/client，只许缩小）：${unitImportFaceViolations.length} 条`,
   );
   for (const e of unitImportFaceViolations) lines.push(`  ${e}`);
   return lines;
@@ -2133,10 +2237,19 @@ if (existsSync(TOPOLOGY_PATH)) {
     `[topology] 变异拓扑单一事实源缺失：${TOPOLOGY_PATH} —— 无法判定源码全覆盖，fail-closed`,
   );
 }
+// 测试层目录的派生（单元层 + client 族层；口径见 testLayerFacts）。失败即判红：
+// 「派生不出层集合」时若退回旧枚举/空集，正是本文件要消灭的那种静默（证据恒 0 却打 PASS）。
+// topology 为 null 时不在此重复报——那上面一条 fail-closed 已经把整份事实源判成不可判定。
+const layerFacts = testLayerFacts(topology);
+if (topology !== null) {
+  for (const problem of layerFacts.problems) {
+    failures.push(`[topology] 测试分层派生失败：${problem}`);
+  }
+}
 const applyPackages = resolvePackages();
 const analyses = [];
 for (const pkgName of applyPackages) {
-  const analysis = analyzePackage(pkgName, topology);
+  const analysis = analyzePackage(pkgName, topology, layerFacts);
   if (analysis === null) {
     // fail-closed：`--package` 点名的包没有 src 目录（拼错 / 改名 / 退役）时必须判红。
     // 静默跳过 = 该包从此不受任何检查而门禁仍打印 PASS——这是一条已被复现的静默失覆盖
@@ -2390,7 +2503,7 @@ for (const analysis of analyses) {
   );
   // #767 B0 切片 3b：I8① 单元层导入面的存量条数（质量证据，目标为空集；明细见 --graph）。
   summary.push(
-    `${pkgName}: 单元层导入面越界（I8①，test/unit → src/index.ts / lib / src/client）${metrics.unitImportFaceViolations} 条`,
+    `${pkgName}: 单元层导入面越界（I8①，test/${layerFacts.unitDirs.join(" + test/")} → src/index.ts / lib / src/client）${metrics.unitImportFaceViolations} 条`,
   );
 
   if (state.mode === "compared") {
@@ -2433,7 +2546,7 @@ for (const analysis of analyses) {
       ["clientServerImports", "client → src/server import"],
       [
         "unitImportFaceViolations",
-        "单元层导入面越界（test/unit → src/index.ts / lib / src/client）",
+        `单元层导入面越界（test/${layerFacts.unitDirs.join(" + test/")} → src/index.ts / lib / src/client）`,
       ],
     ]) {
       if (metrics[key] > 0)

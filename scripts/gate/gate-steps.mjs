@@ -8,6 +8,7 @@
  * 抽成无副作用模块后，「事实源」与「被断言的对象」是同一份数据。
  */
 import { PREREQ_PACKAGES } from "../test/script-test-prereqs.mjs";
+import { GATE_BASELINE_REF } from "../lib/gate-baseline.mjs";
 
 export const TIER_ALIAS = { changed: "changed", fast: "changed", pr: "pr", full: "full" };
 
@@ -26,12 +27,27 @@ export function tierSteps(tier, { hitPackages, withCoverage, base, scopeLabel })
   const cheapGlobal = [
     // 阈值单调性原先只在 ci.yml 的 `if: pull_request` 下跑——本地三档都跑不到它，
     // 「悄悄降线」要等 CI 才红（本地判绿的假象）。判据本身与 CI 同一入口，成本秒级。
-    // 基准取 --base（默认 origin/main，与 CI 的硬编码一致）；取不到该 ref 时判据自身
-    // fail-closed（exit 2），与本地其余步骤「取不到基准即按最严处理」的口径一致。
+    // 基准取 --base（缺省值见 scripts/lib/gate-baseline.mjs 的 GATE_BASELINE_REF：CI 侧那一步
+    // 已不再硬编码 ref，两侧同源——此前这里是「与 CI 的硬编码一致」这句自承的知情报复，
+    // 没有任何机器约束）；取不到该 ref 时判据自身 fail-closed（exit 2），与本地其余步骤
+    // 「取不到基准即按最严处理」的口径一致。
     {
       label: `threshold-monotonic（阈值只许升不许降，基准 ${base}）`,
       cmd: "node",
-      args: ["scripts/gate/threshold-monotonic.mjs", base],
+      // **等于缺省值时不传**：CI 的 repo-gate 那一步已不带 ref（取脚本内的单一常量），两侧
+      // 身份要逐字相同才过接线断言 A1/A2。反过来，本地显式给了别的 `--base` 时照传——
+      // 那是「本地按别的基准跑」的正当事由，不是分叉。
+      args: ["scripts/gate/threshold-monotonic.mjs", ...(base === GATE_BASELINE_REF ? [] : [base])],
+    },
+    // #843 评论侧 L4：仓库根的 CI-ism 残留。执行点此前**只有本判据的自测**，而覆盖性断言 A8
+    // 规定 scripts/gate/** 下每个判据要么有执行点、要么被会跑的判据可达地 import、要么登记
+    // indirect——「落 CLI 不接线」这条路本身是红的（上一刀据此撤回）。故 CLI 与接线一并落地：
+    // 挂 cheapGlobal（本步同时进 pr 与 full 档），CI 侧 ci.yml 的 repo-gate 恒跑段有同名步骤，
+    // 故 A1 / A2 / A14 三条接线断言都无需任何例外登记，gateWiring.budgets 一步未动。
+    {
+      label: "ci-ism-check（仓库根 CI-ism 残留：.gitignore 藏不住的那些）",
+      cmd: "node",
+      args: ["scripts/gate/ci-ism-check.mjs"],
     },
     { label: "stryker:check（变异配置与拓扑一致）", args: ["stryker:check"] },
     { label: "aggregate:check（聚合 patch 不漂移）", args: ["aggregate:check"] },
@@ -156,14 +172,11 @@ export function tierSteps(tier, { hitPackages, withCoverage, base, scopeLabel })
       cmd: "node",
       args: ["scripts/gate/forbid-session-snapshot-src.mjs"],
     },
-    // #843 评论侧 L4（gate/ci-ism-check.mjs）**本刀未能挂上**，原因是本仓两条红线叠加，详见该脚本文件头：
-    //   ① 挂 pr 档 → 接线断言 A1 要求 ci.yml 的 repo-gate 有同名步骤，而 .github/workflows/** 属红线段、
-    //      且与在飞的 #1079 冲突（本批禁改 .github/**）；
-    //   ② 挂 full 档 → 接线断言 A14 与「pr 档须含 full 档全部判据端点」强制要求在
-    //      data/gate-wiring-exceptions.json 登记 tier-only 条目，而 maxExceptions 由 gateWiring.budgets
-    //      守卫（weaken=increase，任何上调无条件判红，属阈值治理红线）。
-    // 三条出路（改 ci.yml / 抬预算 / 藏进别的判据）都撞红线；第三条还会让判据在接线表里隐身，不做。
-    // 故按红线纪律停在「已实现、未接线」，待批准后在批次二与项 2 一并收口。
+    // #843 评论侧 L4 的 ci-ism-check.mjs 已于批次二移入 cheapGlobal（见上），原先此处
+    // 「三条出路都撞红线」的记录随之作废：批准拿到后走的是 (a) 路径——改 ci.yml 的 repo-gate
+    // 加同名步骤（approved 标签覆盖 .github/** 红线面）+ 挂 cheapGlobal，
+    // **不需要任何例外登记、不碰 gateWiring.budgets**。改动留在注释里是刻意的：
+    // 「为什么它不在 fullOnly」本身是接线表的一部分，删掉等于把这次口径裁决变成无痕改动。
   ];
   const prereqStep = {
     label: `build 编译面前置包（test:scripts 依赖：${PREREQ_PACKAGES.join(", ")}）`,

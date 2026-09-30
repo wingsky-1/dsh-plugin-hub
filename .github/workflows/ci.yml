@@ -908,7 +908,18 @@ jobs:
 
       - name: Threshold monotonicity（F3：阈值只许升不许降，PR 场景生效）
         if: github.event_name == 'pull_request'
-        run: node scripts/gate/threshold-monotonic.mjs origin/main
+        # 基准 ref 不在此硬编码：它取 scripts/lib/gate-baseline.mjs 的单一常量（本地各闸同一来源）。
+        # 本步骤的 if 与完整身份（含参数）逐字登记在 data/gate-wiring-exceptions.json 的 stepIfs，
+        # 往命令行加回任何 ref 字面量都会让步骤键失配 → 接线断言 A6 判红（基准无法在 CI 侧私改）。
+        run: node scripts/gate/threshold-monotonic.mjs
+
+      # #843 评论侧 L4：仓库根的 CI-ism 残留（GITHUB_ENV 等）。这些形态被 .gitignore 从
+      # `git status` 的**默认**输出里藏起来，故「工作区干净」读不出它们——本仓已因此挂过一轮
+      # （#843 评审者在主 checkout 根发现一个 12 字节的 GITHUB_ENV）。与兄弟闸同形接入本地
+      # cheapGlobal（gate/gate-steps.mjs），两侧都可见；刻意不加 if：它是纯本地只读扫描，
+      # push 事件上语义同样成立（加了反而要进 stepIfs 登记表并被逐字钉住）。
+      - name: CI-ism residue（仓库根 CI-ism 残留：.gitignore 藏不住的那些）
+        run: node scripts/gate/ci-ism-check.mjs
 
       - name: Pack check（防发布断链；#722 默认只验命中包）
         env:

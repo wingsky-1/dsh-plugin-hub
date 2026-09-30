@@ -39,6 +39,22 @@ const BASE_CONFIG = {
 };
 
 /**
+ * 变异拓扑的 fixture 形态。**变异面为空会让接缝判据的载体自证 fail-closed（exit 2）**，
+ * 故缺省取 fixture 自己落盘的第一个文件——它一定存在，于是每个 fixture 的变异面都非空，
+ * 接缝判据始终有对象可判。需要「某文件已在变异面内」的反例时由调用方显式覆盖。
+ */
+function mutationTopology(mutate: string[]) {
+  return {
+    sharedDefaults: {},
+    packages: {
+      "dsh-fake": {
+        segments: { s1: { mutate, excludes: [] } },
+      },
+    },
+  };
+}
+
+/**
  * 构造最小 fixture 仓库：源文件 + 数据配置 + vitest.config.ts。
  * sourceFiles 默认给一个已分类的宿主端源码（落在 include 面内）。
  * config 取 unknown：缺 reason、kind 越界等非法形态是故意的反例输入，合法性由门禁判定，fixture 只落盘。
@@ -48,7 +64,12 @@ function fixture(
   {
     sourceFiles,
     vitest = VITEST_OK,
-  }: { sourceFiles?: Array<{ rel: string; content: string }>; vitest?: string } = {},
+    mutationFace,
+  }: {
+    sourceFiles?: Array<{ rel: string; content: string }>;
+    vitest?: string;
+    mutationFace?: string[];
+  } = {},
 ) {
   const root = mkdtempSync(join(tmpdir(), "cov-scope-"));
   const files = sourceFiles ?? [
@@ -64,6 +85,10 @@ function fixture(
   }
   mkdirSync(join(root, "scripts/data"), { recursive: true });
   writeFileSync(join(root, "scripts/data/coverage.config.json"), JSON.stringify(config, null, 2));
+  writeFileSync(
+    join(root, "scripts/data/mutation-topology.json"),
+    JSON.stringify(mutationTopology(mutationFace ?? [files[0].rel]), null, 2),
+  );
   writeFileSync(join(root, "vitest.config.ts"), vitest);
   return root;
 }
@@ -272,6 +297,9 @@ test("条目结构：pending-project 缺 reviewBy/exitCriteria → 红（临时�
         pattern: "packages/dsh-fake/src/client/**",
         kind: "pending-project",
         reason: "等某个 project 落地再计分母",
+        // probe 一并带上：本用例断言的是「reviewBy / exitCriteria 缺失即红」，
+        // 若 probe 也缺，判红原因会多出第三条（probe），掩盖本用例要验的那一条。
+        probe: { date: "2026-09-30", verdict: "1 处改动全部打红（fixture 探针）" },
       },
     ],
   };
@@ -301,6 +329,7 @@ test("kind 形态一致性：pending-project 命中 .ts 源码不判形态（字
         reason: "客户端面等 DOM project 落地后再计分母",
         reviewBy: "2027-03-31",
         exitCriteria: "DOM 判据落地后删除本条并重新基线化",
+        probe: { date: "2026-09-30", verdict: "1 处改动全部打红（fixture 探针）" },
       },
     ],
   };
@@ -355,6 +384,8 @@ test("条目结构：pending-project 的 reviewBy 形态错 → 红", () => {
         kind: "pending-project",
         reason: "理由够长了",
         reviewBy: "2027/03/31",
+        exitCriteria: "四步序列走完后删本条",
+        probe: { date: "2026-09-30", verdict: "1 处改动全部打红（fixture 探针）" },
       },
     ],
   };
@@ -363,6 +394,181 @@ test("条目结构：pending-project 的 reviewBy 形态错 → 红", () => {
   assert.match(r.stderr, /reviewBy 须形如 2027-03-31/);
 });
 
+test("条目结构：pending-project 缺 probe → 红（② 变异探针打红是四步序列的一步，凭据不许缺席）", () => {
+  const config = {
+    ...BASE_CONFIG,
+    exclude: [
+      ...BASE_CONFIG.exclude,
+      {
+        pattern: "packages/dsh-fake/src/client/**",
+        kind: "pending-project",
+        reason: "等某个 project 落地再计分母",
+        reviewBy: "2027-03-31",
+        exitCriteria: "四步序列走完后删本条",
+        // probe 故意缺席：本用例要验的就是它。
+      },
+    ],
+  };
+  const r = run(
+    fixture(config, {
+      sourceFiles: [
+        { rel: "packages/dsh-fake/src/a.ts", content: "export const a = 1\n" },
+        { rel: "packages/dsh-fake/src/client/ui.ts", content: "export const ui = 1\n" },
+      ],
+    }),
+  );
+  assert.equal(r.status, 1, r.stderr);
+  assert.match(r.stderr, /pending-project 必须有 probe/);
+});
+
+test("条目结构：probe.verdict 写成「零红」→ 红（② 未成立时不得把凭据写满）", () => {
+  // 这一条钉的是 PROBE_VERDICT_RE 的 [1-9] 边界：自由文本会让「零红」「还没探」都能填进
+  // 凭据栏，四步序列的第②步就退化成自我声明。
+  const config = {
+    ...BASE_CONFIG,
+    exclude: [
+      ...BASE_CONFIG.exclude,
+      {
+        pattern: "packages/dsh-fake/src/client/**",
+        kind: "pending-project",
+        reason: "等某个 project 落地再计分母",
+        reviewBy: "2027-03-31",
+        exitCriteria: "四步序列走完后删本条",
+        probe: { date: "2026-09-30", verdict: "零红" },
+      },
+    ],
+  };
+  const r = run(
+    fixture(config, {
+      sourceFiles: [
+        { rel: "packages/dsh-fake/src/a.ts", content: "export const a = 1\n" },
+        { rel: "packages/dsh-fake/src/client/ui.ts", content: "export const ui = 1\n" },
+      ],
+    }),
+  );
+  assert.equal(r.status, 1, r.stderr);
+  assert.match(r.stderr, /pending-project 必须有 probe\.verdict/);
+});
+
+test("条目结构：probe.date 形态错 → 红（没有日期的探针与「随手写一句」同形）", () => {
+  const config = {
+    ...BASE_CONFIG,
+    exclude: [
+      ...BASE_CONFIG.exclude,
+      {
+        pattern: "packages/dsh-fake/src/client/**",
+        kind: "pending-project",
+        reason: "等某个 project 落地再计分母",
+        reviewBy: "2027-03-31",
+        exitCriteria: "四步序列走完后删本条",
+        probe: { date: "上周", verdict: "1 处改动全部打红（fixture 探针）" },
+      },
+    ],
+  };
+  const r = run(
+    fixture(config, {
+      sourceFiles: [
+        { rel: "packages/dsh-fake/src/a.ts", content: "export const a = 1\n" },
+        { rel: "packages/dsh-fake/src/client/ui.ts", content: "export const ui = 1\n" },
+      ],
+    }),
+  );
+  assert.equal(r.status, 1, r.stderr);
+  assert.match(r.stderr, /pending-project 必须有 probe\.date/);
+});
+
+test("条目结构：非 pending-project 携带 probe → 红（凭据字段同样只属临时豁免）", () => {
+  const config = {
+    ...BASE_CONFIG,
+    exclude: [
+      {
+        pattern: "**/*.d.ts",
+        kind: "type-only",
+        reason: "声明文件无运行时代码",
+        probe: { date: "2026-09-30", verdict: "1 处改动全部打红" },
+      },
+    ],
+  };
+  const r = run(fixture(config));
+  assert.equal(r.status, 1, r.stderr);
+  assert.match(r.stderr, /字段 probe 只允许 pending-project 携带/);
+});
+
+test("四步序列接缝：pending-project 命中的文件已在 mutate 面内 → 红（第 3 步做了、第 4 步没做）", () => {
+  // 这条判据是本项**唯一真正持续执法**的新增面：probe 是一次性测量（形状闸只保证它写得像样，
+  // 内容仍自报），解除条件不能依赖它恒为真。可判定的是「命中的文件是否已进 mutate 面」。
+  const config = {
+    ...BASE_CONFIG,
+    exclude: [
+      ...BASE_CONFIG.exclude,
+      {
+        pattern: "packages/dsh-fake/src/client/**",
+        kind: "pending-project",
+        reason: "等某个 project 落地再计分母",
+        reviewBy: "2027-03-31",
+        exitCriteria: "四步序列走完后删本条",
+        probe: { date: "2026-09-30", verdict: "1 处改动全部打红（fixture 探针）" },
+      },
+    ],
+  };
+  const r = run(
+    fixture(config, {
+      sourceFiles: [
+        { rel: "packages/dsh-fake/src/a.ts", content: "export const a = 1\n" },
+        { rel: "packages/dsh-fake/src/client/ui.ts", content: "export const ui = 1\n" },
+      ],
+      // client/ui.ts 被登记进 mutate 面，而豁免条还在 → 接缝判红。
+      mutationFace: ["packages/dsh-fake/src/client/**"],
+    }),
+  );
+  assert.equal(r.status, 1, r.stderr);
+  assert.match(r.stderr, /已在 mutation-topology 某段的 mutate 面内/);
+  assert.match(r.stderr, /packages\/dsh-fake\/src\/client\/ui\.ts/);
+});
+
+test("四步序列接缝：pending-project 命中的文件都不在 mutate 面内 → 绿（今天的形态）", () => {
+  const config = {
+    ...BASE_CONFIG,
+    exclude: [
+      ...BASE_CONFIG.exclude,
+      {
+        pattern: "packages/dsh-fake/src/client/**",
+        kind: "pending-project",
+        reason: "等某个 project 落地再计分母",
+        reviewBy: "2027-03-31",
+        exitCriteria: "四步序列走完后删本条",
+        probe: { date: "2026-09-30", verdict: "1 处改动全部打红（fixture 探针）" },
+      },
+    ],
+  };
+  const r = run(
+    fixture(config, {
+      sourceFiles: [
+        { rel: "packages/dsh-fake/src/a.ts", content: "export const a = 1\n" },
+        // 这两条是 BASE_CONFIG 的 include / exclude 各自要命中的文件：少了它们，本用例的
+        // 绿灯会被「条目腐烂」这条与被验行为无关的判据吃掉。
+        { rel: "packages/dsh-fake/src/types.d.ts", content: "export type T = 1\n" },
+        { rel: "shared/x.js", content: "export const x = 1\n" },
+        { rel: "packages/dsh-fake/src/client/ui.ts", content: "export const ui = 1\n" },
+      ],
+    }),
+  );
+  assert.equal(r.status, 0, r.stderr);
+});
+
+test("四步序列接缝：变异拓扑缺失 → fail-closed exit 2（读不到输入不得静默放行）", () => {
+  const config = { ...BASE_CONFIG };
+  const root = fixture(config);
+  try {
+    rmSync(join(root, "scripts/data/mutation-topology.json"));
+    const r = spawnSync(process.execPath, [SCRIPT, "--root", root], { encoding: "utf8" });
+    assert.equal(r.status, 2, r.stderr);
+    assert.match(r.stderr, /::error::门禁故障/);
+    assert.match(r.stderr, /mutation-topology\.json/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
 test("条目结构：重复 pattern → 红（两处声明同一排除）", () => {
   const config = {
     ...BASE_CONFIG,
