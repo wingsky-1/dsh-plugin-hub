@@ -189,6 +189,31 @@ describe("normalizeConfig：永不失败（读面在脏文件下也必须交出�
     }
   });
 
+  // 投递投影取**首项**（#1016 残留 2）。写面已绝对拒重复身份，故能从磁盘读到重复的只有手改文件与
+  // 0.2.9 之前的存量；此时两条都投 = 一次通知发两遍，而掩码还原（findById）与合并（indexById /
+  // sameKindBase）那两侧本就只认首条——取首项让四处同一口径，投递面不再自成一套。
+  it("重复身份的条目在投递投影里只取首条：不会一次通知发两遍", () => {
+    const channels = normalizeConfig({
+      channels: [...BUILTINS, BARK, { ...BARK, deviceKey: "key-2" }],
+    }).channels;
+    const barks = channels.filter((item) => item.type === "bark");
+    expect(barks).toHaveLength(1);
+    // 取的是**首条**（key-1）：与 findById / indexById 的取首条口径一致，取末条会让两侧指向不同对象。
+    expect(barkOf(channels).deviceKey).toBe("key-1");
+  });
+
+  // 身份口径**不看 type**，所以「谁占着 browser 这个身份」由数组里的先后决定：本例内置在前，于是那条
+  // bark 被去重掉。这与 builtinRaw（同类型取首条）、findById（裸 id 取首条）是同一把尺——三处若有一处
+  // 按 type 各算各的，就会指向不同对象。写面已绝对拒这种配置，故它只可能来自手改文件。
+  it("跨类型同 id：身份归先到的那条（内置在前 → bark 被去重，不多投一个出口）", () => {
+    const channels = normalizeConfig({
+      channels: [BUILTINS[0], BUILTINS[1], { ...BARK, id: "browser" }],
+    }).channels;
+    // 出站侧一条不剩：bark 抢的身份已被内置 browser 占着。
+    expect(channels.filter((item) => item.type === "bark")).toHaveLength(0);
+    // 内置 browser 照常在场——去重不伤真正该在的那条。
+    expect(browserOf(channels).type).toBe("browser");
+  });
   it("quietHours 逐项独立回落：一个窗口脏不该连带丢掉整组（用户填对的那段要留住）", () => {
     const quiet = normalizeConfig({
       quietHours: {
@@ -487,6 +512,87 @@ describe("validateSettings：只审显式提交（缺键不是错误）", () => 
     const wrongId = invalidOf({ channels: [{ ...BUILTINS[0], id: "chrome" }, BUILTINS[1]] });
     expect(wrongId.key).toBe("channels");
     expect(wrongId.hint).toContain("id 只能是");
+  });
+  // ── 频道身份唯一（#1016 残留 2）──────────────────────────────────────────
+  //
+  // 重复身份是**凭据销毁**而不是显示重复：设置页对 channels 整组提交，合并的 sameKindBase 按裸 id
+  // 取首条、KEEP 又让其余键沿用首条的值，于是第二条的真实密钥被第一条覆盖，每次保存毁一条。
+  // 掩码还原的 findById 同样按裸 id 查找，故**跨类型同 id 也撞**。
+  it("同类型重复 id 一律 400：两条 bark 用同一个 id 即拒（每次保存都会毁掉第二条的 deviceKey）", () => {
+    const invalid = invalidOf({
+      channels: [...BUILTINS, BARK, { ...BARK, deviceKey: "key-2" }],
+    });
+    expect(invalid.key).toBe("channels");
+    // 提示必须点名那个身份：用户看得到两条 bark 卡片，却改不了它们的 id（客户端没有 id 编辑器）。
+    expect(invalid.hint).toContain("bark:phone");
+  });
+
+  it('跨类型重复 id 也 400：掩码还原按裸 id 查找，bark 写 id="browser" 会命中内置条目', () => {
+    const invalid = invalidOf({ channels: [BUILTINS[0], BUILTINS[1], { ...BARK, id: "browser" }] });
+    expect(invalid.key).toBe("channels");
+    expect(invalid.hint).toContain("browser");
+  });
+
+  // 提示要给**下标**与**可自救的动作**：用户改不了 id，只说「重复」等于堵死。文案按 1 起数（界面上的第几条），
+  // 所以落盘数组的下标要 +1——这条专门钉那个换算，写成 0 起数时用户会数错条目。
+  it("重复身份的提示带 1 起的下标，并明说删掉其中一条（用户改不了 id，文案必须给出路）", () => {
+    const invalid = invalidOf({ channels: [...BUILTINS, BARK, { ...BARK, deviceKey: "key-2" }] });
+    // BUILTINS 占前两条，故冲突发生在第 3 条与第 4 条。
+    expect(invalid.hint).toContain("第 3 条");
+    expect(invalid.hint).toContain("第 4 条");
+    expect(invalid.hint).toContain("删掉其中一条");
+  });
+
+  // 零误伤是这条判据的另一半：内置条目的 id **可以缺席**（0.2.4 割接在用户没设过旧键时写出的就是
+  // `{type,id}`，而更早的形态连 id 键都没有），身份此时回落 type。口径写错成「id 必填」就会让每一次
+  // 无关保存都被拒，用户还看不出是哪一条。
+  it("内置条目缺席 id 不误伤：身份回落 type（0.2.4 割接写出的就是没有 id 键的形态）", () => {
+    expect(validateSettings({ channels: [{ type: "browser" }, { type: "system" }, BARK] })).toEqual(
+      {
+        ok: true,
+      },
+    );
+  });
+
+  // 两条内置的 id 都缺席时身份分别是 browser / system，仍然互不相同——若口径写成「一律空串」或
+  // 「一律 type 常量」，这条会当场撞车并把合法的内置配置拒掉。
+  it("两条内置同时缺席 id 仍互不相同（口径不是把所有缺席 id 折成同一个身份）", () => {
+    expect(validateSettings({ channels: [{ type: "browser" }, { type: "system" }, BARK] })).toEqual(
+      {
+        ok: true,
+      },
+    );
+    // 同一类型重复出现（两条 browser）仍要拒：内置重复是「用户提交了两张一样的卡」，不是合法配置。
+    const dup = invalidOf({
+      channels: [{ type: "browser" }, { type: "browser" }, { type: "system" }, BARK],
+    });
+    expect(dup.key).toBe("channels");
+    expect(dup.hint).toContain("browser");
+  });
+
+  // 内置 id 写错仍由既有的「id 只能是 type」判据拒，本组不与之分叉：那条判据更早、话术更贴切。
+  it("内置 id 写错仍由既有判据拒（不因新增的数组级判据而改口）", () => {
+    const wrongId = invalidOf({ channels: [{ ...BUILTINS[0], id: "chrome" }, BUILTINS[1]] });
+    expect(wrongId.hint).toContain("id 只能是");
+  });
+
+  // 绝对 400：不给 preexisting 放行。放行是「存量残缺不该让无关保存被拒」，而重复身份是存量**自相矛盾**
+  //（同一个身份挂两套凭据）——放行等于把「每次保存毁一条凭据」合法化。走合并入口逐条钉。
+  it("存量里就有重复身份时，本次无关保存照样 400（不给 preexisting 放行）", () => {
+    // 真实形状：客户端只交一条 bark（它改的是别处），合并结果里却留着两条同 id 的——
+    // 「每次保存都毁一条凭据」正是这样发生的，不需要用户碰这两张卡。
+    const stored = [...BUILTINS, BARK, { ...BARK, deviceKey: "key-2" }];
+    const verdict = validateSettingsWithMerge(
+      { channels: [BARK] },
+      {
+        channels: stored,
+        inherited: stored.map(() => new Set<string>()),
+      },
+    );
+    expect(verdict.ok).toBe(false);
+    if (verdict.ok) throw new Error("期望判非法，实际放行");
+    expect(verdict.error.key).toBe("channels");
+    expect(verdict.error.hint).toContain("bark:phone");
   });
 
   // 这一批键已经没有值语义。当陌生键放行会让停在升级前页面上的旧客户端以为存上了

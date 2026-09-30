@@ -32,8 +32,10 @@ function makeReq(method: string): IncomingMessage {
   return jsonReq({ method, url: "/api/dsh-notifier/history" });
 }
 
-/** 假 stores 端口：三个读面各自回带标记的值。 */
-function fakeStores() {
+/** 假 stores 端口：三个读面各自回带标记的值。`clear` 覆盖清空结果，用来演失败态。 */
+function fakeStores(
+  clear: Awaited<ReturnType<StorePort["clearHistory"]>> = { ok: true, removed: 2 },
+) {
   const calls: string[] = [];
   const port: StorePort = {
     readHistory: async () => {
@@ -42,7 +44,7 @@ function fakeStores() {
     },
     clearHistory: async () => {
       calls.push("clearHistory");
-      return 2;
+      return clear;
     },
     readStatus: async () => {
       calls.push("readStatus");
@@ -67,6 +69,20 @@ describe("历史端点", () => {
     await new JournalEndpoints(stores.port).clear(makeReq("DELETE"), res);
     expect(rec.status).toBe(200);
     expect(json()).toEqual({ ok: true, removed: 2 });
+    expect(stores.calls).toEqual(["clearHistory"]);
+  });
+
+  // 落盘失败必须走 503 而不是被压成 200（#1016 残留 1）：答 200 时界面提示「已清空 N 条」，
+  // 而文件纹丝未动，刷新后旧记录全在。
+  it("DELETE /history 清空落盘失败：503 + `history-unavailable`（不是 200 的假成功）", async () => {
+    const stores = fakeStores({ ok: false, reason: "unavailable" });
+    const { res, rec, json } = makeRes();
+    await new JournalEndpoints(stores.port).clear(makeReq("DELETE"), res);
+    expect(rec.status).toBe(503);
+    expect(json()).toEqual({
+      ok: false,
+      error: { error: "历史记录服务不可用", code: "history-unavailable" },
+    });
     expect(stores.calls).toEqual(["clearHistory"]);
   });
 });

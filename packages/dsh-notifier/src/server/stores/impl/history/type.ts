@@ -29,6 +29,16 @@ export interface HistoryEntry {
 /** 一行 jsonl 的解析结果：坏行是常态，由调用点各自决定去向——读取侧跳过，清理侧保守保留。 */
 export type ParsedHistoryLine = { ok: true; entry: HistoryEntry } | { ok: false };
 
+/**
+ * 清空的结果两态。清空以前返回裸条数，落盘失败时也照返那个条数，于是端点只能答 200、
+ * 界面提示「已清空 N 条」，而文件纹丝未动——用户刷新后旧记录全在（#1016 残留 1）。
+ * 条数只在**真的清掉了**时才有意义，所以它属于成功态而不是与失败并列的旁路字段。
+ *
+ * 失败态**不带原因**：Node 的错误消息里含 errno 与绝对路径，本域带出去就等于把宿主路径
+ * 送到浏览器。诊断要留给日志出口，返回值只回答「成没成」。
+ */
+export type ClearOutcome = { ok: true; removed: number } | { ok: false; reason: "unavailable" };
+
 export interface HistoryDeps {
   /** 写入失败出口（append 为 fire-and-forget，失败无返回值可承载）。 */
   logger: LoggerPort;

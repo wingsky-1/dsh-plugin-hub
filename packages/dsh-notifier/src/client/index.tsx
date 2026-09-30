@@ -594,11 +594,24 @@ function tabBar(
   );
 }
 
-/** dry-run 的 status 词 → 状态标签文案（认不出的词原样透出，不替它编一个）。 */
+/**
+ * dry-run 的 status 词 → 状态标签文案（认不出的词原样透出，不替它编一个）。
+ *
+ * `request-failed` 排在已知值里（#1016 残留 4）：它是**客户端请求层**造的状态（400/408/429/中断），
+ * 不经服务端的 reason 闭集，但照样渲染在这一行上——不在表里就 `return status` 把英文原样透出去，
+ * 于是状态标签与理由两处英文。标签复用 `chStatusSkipped`（「未发出」/ "Not sent"）而不是另开 key：
+ * 这个状态的事实是**请求压根没发出去**，投递面根本没被触达。标成「投递失败」是一句**事实性错误
+ * 断言**——没有任何东西被投递过，于是界面上会出现「投递失败：测试请求失败：HTTP 400」，把用户沿着
+ * 「Bark 端点拒了 / 凭据错了」这条方向去排查，而真正的原因在请求层；同一格里的 `skipped`
+ * （被免打扰等挡在投递面之前）本就在用它，一格两义不必新开 pair。请求层与投递层的区别由紧邻的
+ * 理由行讲清（`testRequestFail` 前缀 + 原文）。为零新增 key 的差别新开一对 locale，
+ * 只会让表多一行而信息量不变。
+ */
 function dryRunStatusTextOf(status: string, t: Translate): string {
   if (status === "ok") return t("chStatusOk");
   if (status === "failed") return t("chStatusFailed");
   if (status === "skipped") return t("chStatusSkipped");
+  if (status === "request-failed") return t("chStatusSkipped");
   return status;
 }
 
@@ -933,7 +946,17 @@ function SettingsCard() {
   }, []);
 
   if (!settings) {
-    return <li className="dn-set-card">{t("settingsLoading")}</li>;
+    // 早退分支的第三态（#1016 残留 3）：`loadCard` 的 catch 已经把失败填进 `saved`（`err` 为真），
+    // 但那行状态在早退**之后**才渲染——于是局域网直连被回环围栏 403 时，`loadFail` 的提示连同
+    // `lanAccessHint` 的 HTTPS/隧道引导都到不了屏上，用户永远只看到「加载中」。
+    // 不新造文案也不新加 locale key：这条分支复用 `saved.msg`——它在 catch 里已由
+    // `t("loadFail", { msg, hint })` 填好，403 时 hint 就是本地化的局域网引导。
+    // `saved.err` 正是那条已内建的分界（`setSaved` 第二参），不需要新状态。
+    return (
+      <li className="dn-set-card">
+        {saved !== null && saved.err ? saved.msg : t("settingsLoading")}
+      </li>
+    );
   }
 
   /** settings 唯一写入口（ref 收口）：updater 内同步 settingsRef——
@@ -1243,7 +1266,9 @@ function SettingsCard() {
             channelId: channelId,
             pending: false,
             status: "request-failed",
-            reason: failure.message,
+            // 本地化前缀 + 英文原文（#1016 残留 4）：直接写 `failure.message` 时这一行整句是英文，
+            // 与紧邻的 toast 两处英文。形态照抄上面那行 toast 的 `testFail`——`{msg}` 留宿主原话供排查。
+            reason: t("testRequestFail", { msg: failure.message, hint: failure.hint }),
           });
           toast(t("testFail", { msg: failure.message, hint: failure.hint }));
         });

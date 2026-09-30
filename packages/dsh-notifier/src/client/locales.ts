@@ -77,6 +77,9 @@ export const zh = {
   // 测试/清理动作
   testSent: "测试通知已发送（服务端未释放句柄 {n} 条）",
   testFail: "发送测试通知失败：{msg}{hint}",
+  // 请求层失败（400/408/429/中断）走独立结果行，那一行此前直接写英文 `failure.message`（#1016 残留 4）。
+  // 形态与 testFail 同族：本地化前缀 + 原文细节，`{msg}` 留宿主原话供排查。
+  testRequestFail: "测试请求失败：{msg}{hint}",
   cleared: "已清空 {n} 条通知记录",
   clearFail: "清空失败：{msg}{hint}",
   // 配置行
@@ -389,6 +392,7 @@ export const en: Record<NotifierLocaleKey, string> = {
   conflictLoadedLatest: "Loaded latest configuration",
   testSent: "Test notification sent ({n} unreleased server handles)",
   testFail: "Failed to send test notification: {msg}{hint}",
+  testRequestFail: "Test request failed: {msg}{hint}",
   cleared: "Cleared {n} history entries",
   clearFail: "Clear failed: {msg}{hint}",
   historyRetention: "History retention (days, 0=no daily cleanup)",

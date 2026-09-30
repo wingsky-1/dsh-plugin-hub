@@ -237,7 +237,7 @@ function makeDeps(faults: Faults = {}) {
     },
     stores: {
       readHistory: async () => [...HISTORY],
-      clearHistory: async () => 2,
+      clearHistory: async () => ({ ok: true, removed: 2 }),
       readStatus: async () => ({ ...STATUS }),
     },
     pipeline: {
