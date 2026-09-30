@@ -459,18 +459,9 @@ describe("#1014 B4：pre-execute 守卫单一注册点", () => {
     const { seen, restore } = await countPreExecuteSubscriptions();
     try {
       const count = seen.filter((evt) => evt === "tools/pre-execute").length;
+      // 恒等于 1，故「事件名拼错 → 计数 0」「多注册点 → 计数 2」两种漂移都会红；
+      // 不需要另配对照判据（复核时曾加过一条 seen.length > 0，它守不住上面任何一种）。
       expect(count, "pre-execute 守卫必须单点注册（多注册点会让 mcp__ 裁决出现分歧）").toBe(1);
-    } finally {
-      restore();
-    }
-  });
-
-  it("装配期间确实走过 pre-execute 注册（防本用例恒真）", async () => {
-    const { seen, restore } = await countPreExecuteSubscriptions();
-    try {
-      // 对照判据：若上面的计数用例因某种原因恒真（例如事件名拼错），本条会红。
-      expect(seen.length).toBeGreaterThan(0);
-      expect(seen.some((evt) => evt.startsWith("tools/"))).toBe(true);
     } finally {
       restore();
     }

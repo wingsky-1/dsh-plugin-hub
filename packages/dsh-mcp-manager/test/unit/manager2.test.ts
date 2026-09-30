@@ -2287,7 +2287,7 @@ describe("#767 S1-5b：封装定义条目恒交中间层（(c)'）", () => {
    * 夹具：正常 transport 全局服务器（进 @global 单元，注册名 `mcp__<id>__<tool>`）
    * + 中间层工具与其 pre-execute guard（连 resolveServerId 一起按组合根的接线递入）。
    */
-  async function directIdGuardFixture() {
+  async function directGuardFixture() {
     const { manager } = makeManager(homeDir);
     // guard 回调捕获器：存取两用（ctx.on 侧存入、判据侧按 guard 形状调用），值面保持未知、调用点收窄。
     const handlers = new Map<string, unknown>();
@@ -2332,7 +2332,7 @@ describe("#767 S1-5b：封装定义条目恒交中间层（(c)'）", () => {
   }
 
   it("直呼 mcp__<id>__<禁用工具> 命中禁用面（guard 反解回 @global/g1）", async () => {
-    const { entry, guard } = await directIdGuardFixture();
+    const { entry, guard } = await directGuardFixture();
     // guard 回调返回裁决对象（kind/reason 面）：此处按测试读取面收窄。
     const decision = (await guard(
       { name: `mcp__${entry.id}__echo`, agent: { session: { header: {} } } },
@@ -2346,7 +2346,7 @@ describe("#767 S1-5b：封装定义条目恒交中间层（(c)'）", () => {
   // #1014 B5：语义从「未禁用即放行」翻成「mcp__ 直呼一律拒」。断 nexted=false 是
   // 关键的一半——只断 kind 的话，「先 next 再 deny」也能过这条。
   it("直呼 mcp__<id>__<未禁用工具> 一律拒（内部注册名不可直呼）", async () => {
-    const { entry, guard } = await directIdGuardFixture();
+    const { entry, guard } = await directGuardFixture();
     let nexted = false;
     const decision = (await guard(
       { name: `mcp__${entry.id}__other`, agent: { session: { header: {} } } },

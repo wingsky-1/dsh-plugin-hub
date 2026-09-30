@@ -1612,11 +1612,11 @@ async function main(argv) {
     .map((e) => `${e.rel}:${e.line} ${e.name}`)
     .sort();
   console.log(
-    `upstream-contract-warn: C1 ctx.on 字面量 ${onSites.length} 处（v2 称 18，差 1 为 provider 多行调用的 internal/service，见下）`,
+    `upstream-contract-warn: C1 ctx.on 字面量 ${onSites.length} 处（逐行匹配口径；与 AST 口径的差见下方差数交代）`,
   );
   for (const s of onSites) console.log(`upstream-contract-warn:   - ${s}`);
   console.log(
-    "upstream-contract-warn: C1 差数交代：行扫描逐行匹配 ctx.on( 加同行字面量会漏计 provider apply.ts:455 起多行书写的 internal/service 注册；AST 按调用收齐得 19，LAN 热更新订阅已由 shared seam 统一，不再重复计数。",
+    "upstream-contract-warn: C1 差数交代：逐行匹配 ctx.on( 加同行字面量会漏计 provider apply.ts:455 起多行书写的 internal/service 注册，故 AST 口径计数更高。本句只交代口径差、不写死具体数字——数字随仓库增删注册点而变，写死会在下一次变更后变成假陈述（#1014 B4 把两条 pre-execute 注册合成一条时就发生过一次）。LAN 热更新订阅已由 shared seam 统一，不再重复计数。",
   );
   console.log(
     `upstream-contract-warn: 结束（只 warn 不阻塞，exit 0；FAIL 项：${fails.join("、") || "无"}）`,

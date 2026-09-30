@@ -1745,10 +1745,13 @@ it("README 写明结果不截断、超时按最大值结算、禁直呼机器强
     ).toBeTruthy();
     // 超时不是固定值。
     expect(text.includes("toolCallTimeoutMs"), `${file} 未提 toolCallTimeoutMs`).toBeTruthy();
-    // 禁直呼是机器强制（#1014 的核心交付），中英都要有对应段落。
-    expect(text.includes("#1014"), `${file} 未标注 #1014 机器强制禁直呼`).toBeTruthy();
-    // 统计隐私边界。
-    expect(/#1014|哈希桶|hash bucket/.test(text), `${file} 未声明搜索词只落哈希桶`).toBeTruthy();
+    // 禁直呼是机器强制——锚到**实际句子**，不拿裸 issue 号当代理：#1014 在文档别处
+    // 也被引用（变更清单、目录锚），用它当代理的话，把「机器强制」改回「约定」仍会绿。
+    const enforced = file === "README.en.md" ? /denies by default/ : /默认拒绝/;
+    expect(enforced.test(text), `${file} 未写明禁直呼是默认拒绝`).toBeTruthy();
+    // 统计隐私边界：同样锚到句子。
+    const hashed = file === "README.en.md" ? /hash buckets/ : /哈希桶/;
+    expect(hashed.test(text), `${file} 未声明搜索词只落哈希桶`).toBeTruthy();
   }
 });
 

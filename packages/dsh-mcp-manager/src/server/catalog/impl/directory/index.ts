@@ -242,8 +242,13 @@ class CatalogDirectory {
    * 视图里，不需要第二份工具清单。fresh 短路：TTL 内不重投影（discover 惰性语义），且短路发生
    * 在任何落盘动作之前。落盘失败（含路径求值失败）由本层 catch 收口成 unavailable 降级。
    *
-   * 短路条件（#1014 B7）：**无失效标记且** TTL 内才短路。显式失效（tools/change / 重连 /
-   * 手工刷新 / 配置变更）压过 TTL——否则模型会一直看着已删除的 schema，而 TTL 是 24h。
+   * 短路条件（#1014 B7）：**无失效标记且** TTL 内才短路。显式失效压过 TTL——否则模型会
+   * 一直看着已删除的 schema，而 TTL 是 24h。
+   *
+   * 当前失效的生产者只有一个：tools/change 经 connection 域的 reprojectCatalogs 逐台 diff
+   * 后登记（connection/runtime/middleware.ts）。重连与配置变更只有在宿主顺带发出
+   * tools/change 时才间接生效；**手工刷新尚无失效落点**（刷新走的是纯读路径，不触发投影），
+   * 仍落在 TTL 短路内——该缺口记在 #1014，未在本批闭合。
    */
   async projectRegisteredTools(input: RegisteredProjectionInput): Promise<void> {
     const servers = this.byRoot.get(input.root);
@@ -281,7 +286,7 @@ class CatalogDirectory {
       });
       // 失效标记在**落盘之后**才消费：内存条目在 servers.set 时已经更新，但落盘失败会走
       // catch 把条目打上 unavailable——那时目录并不算「已刷新」，留下标记让下一次投影
-      // 仍绕过 TTL 重试。放�� servers.set 之后会让一次落盘失败把该服务器冻结 24h。
+      // 仍绕过 TTL 重试。放放在 servers.set 之后会让一次落盘失败把该服务器冻结 24h。
       this.clearDirty(input.root, input.serverName);
     } catch (error) {
       this.markUnavailable(input.root, input.serverName, input.redact(error));
