@@ -74,6 +74,7 @@
     "schemastery": "^3.18.0"
   },
   "peerDependencies": {
+    "react": "^18.2.0",
     "@deepseek-ai/cordis": "4.0.4",
     "@deepseek-ai/dsh-host-webserver": "0.2.0-rc.2",
     "@deepseek-ai/dsh-agent": "0.2.0-rc.2",
@@ -90,6 +91,9 @@
     "@deepseek-ai/dsh-client-ui-plugin-manager": "0.2.0-rc.2"
   },
   "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    },
     "@deepseek-ai/cordis": {
       "optional": true
     },
