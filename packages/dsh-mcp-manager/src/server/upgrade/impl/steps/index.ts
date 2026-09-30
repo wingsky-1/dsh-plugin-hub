@@ -25,4 +25,6 @@ export const STEPS: readonly UpgradeStep<UpgradeDeps>[] = [
   { fromVersion: "0.2.5", targetVersion: "0.2.6", run: tickUpgradeVersion },
   // 0.2.6 → 0.2.7 为空步（#1028 项目级会话绑定修复只动客户端，存储形态不变）：run 指共享空函数。
   { fromVersion: "0.2.6", targetVersion: "0.2.7", run: tickUpgradeVersion },
+  // 0.2.7 → 0.2.8 为空步（dsh 0.2.0-rc.2 适配 + 导出面收窄，均不落盘）：run 指共享空函数。
+  { fromVersion: "0.2.7", targetVersion: "0.2.8", run: tickUpgradeVersion },
 ];

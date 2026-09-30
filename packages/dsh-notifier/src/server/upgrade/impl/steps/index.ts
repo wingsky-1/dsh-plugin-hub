@@ -29,4 +29,6 @@ export const STEPS: readonly UpgradeStep<UpgradeDeps>[] = [
   { fromVersion: "0.2.5", targetVersion: "0.2.6", run: migrateToV026 },
   // 0.2.6 → 0.2.7 为空步（本版不含 notifier 存储形态变化）：run 指共享空函数。
   { fromVersion: "0.2.6", targetVersion: "0.2.7", run: tickUpgradeVersionSync },
+  // 0.2.7 → 0.2.8 为空步（dsh 0.2.0-rc.2 适配，无存储形态变化）：run 指共享空函数。
+  { fromVersion: "0.2.7", targetVersion: "0.2.8", run: tickUpgradeVersionSync },
 ];
