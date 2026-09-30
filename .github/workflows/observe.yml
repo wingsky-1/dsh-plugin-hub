@@ -27,7 +27,8 @@ name: Observe (nightly)
 #   注释：账户并发余量 + 与 ci.yml mutation-gate 同值限流；8 档并非「已饱和」）。
 # - **S1.4 逐段超时**：`timeout-minutes` 取 `matrix.shard.timeoutMinutes`，由
 #   `scripts/gate/mutation-plan.mjs` 按 `mutation-segment-ledger.json` 里该段 `scope=full`
-#   的实测墙钟 × 1.5 + 构建开销派生，下限 10 分钟（#718 整合版规定）；无实测的段取保守
+#   的实测墙钟 × 1.5 + 构建开销派生，下限 30 分钟（TIMEOUT_FLOOR_MINUTES；#718 整合版原定 10 分钟，
+#   2026-09-12 run 34681565987 实测证明不够、#742 阶段 1 再抬到 30）；无实测的段取保守
 #   默认值。`fail-fast: false`：单段失败不连坐其余段，配合 `gh run rerun --failed` 定向重跑。
 
 on:
@@ -190,8 +191,9 @@ jobs:
       fail-fast: false
       # S1.1 + #718 P3（维护者 approved）：取 8，与 ci.yml mutation-gate 同值限流。取 8 的
       # 依据是**账户并发余量**，不是「8 档已饱和」——8 档在两种调度形态下都尚未到零收益：
-      # - 本 job 按台账估计耗时降序（LPT，mutation-plan 的 buildShardMatrix）：夜间全量 32 段（当时口径；#826 后为 35 段）、
-      #   台账合计 14803 s，模型 @8 = 31.24 min、@10 = 25.22 min（总工作量下界 30.84 / 24.67）。
+      # - 本 job 按台账估计耗时降序（LPT，mutation-plan 的 buildShardMatrix）：夜间全量现 53 段（27 段有全量实测、
+      #   26 段尚无实测走默认 30 min）。下述模型值是**当时 32 段台账口径**（该口径下台账合计 14803 s）：
+      #   @8 = 31.24 min、@10 = 25.22 min（总工作量下界 30.84 / 24.67）——段集已从 32 段长到 53 段，这两个数是历史模型、不重算。
       # - ci.yml 侧的 PR 矩阵是 package+seg 字典序（非 LPT）：run 34764977606（12 段、
       #   合计 145.65 min、5 槽）实测窗口 43.05 min，与同序模型 43.00 min 吻合；
       #   同口径模型 @8 = 29.83 min、@10 = 26.80 min。
@@ -213,7 +215,7 @@ jobs:
         # 段清单与逐段超时均来自 mutation-plan（见该 job 与文件头注释）
         shard: ${{ fromJSON(needs.mutation-plan.outputs.shards) }}
     runs-on: ubuntu-latest
-    # S1.4：逐段超时（下限 10 分钟），由台账里该段 scope=full 的实测墙钟派生；
+    # S1.4：逐段超时（下限 30 分钟 = TIMEOUT_FLOOR_MINUTES），由台账里该段 scope=full 的实测墙钟派生；
     # 无实测的段取保守默认值。原实现取整班 90 分钟，长段擦边即整班被杀。
     timeout-minutes: ${{ matrix.shard.timeoutMinutes }}
 
