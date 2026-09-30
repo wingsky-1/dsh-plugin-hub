@@ -45,20 +45,107 @@ import { parse } from "acorn";
 
 import { SOURCE_UNIVERSE_PATTERNS, globFiles, sourceUniverse } from "../lib/glob-files.mjs";
 import { failClosed } from "../lib/gate-exit.mjs";
+import { packageMutationFace } from "./mutation-topology.mjs";
 
 const ROOT = join(import.meta.dirname, "../..");
 const COVERAGE_CONFIG_REL = join("scripts", "data", "coverage.config.json");
 const VITEST_CONFIG_REL = "vitest.config.ts";
 const ARTIFACT_REL = join("coverage", "coverage-final.json");
+/** 变异拓扑事实源：pending-project ↔ mutate 面接缝判据的唯一对侧输入。 */
+const MUTATION_TOPOLOGY_REL = join("scripts", "data", "mutation-topology.json");
+/** 拓扑顶层形状非法时的判红文案（与 dir-imports 同口径，不另造措辞）。 */
+function jsonShape(value) {
+  if (value === null) return "null";
+  if (Array.isArray(value)) return "数组";
+  return typeof value;
+}
+/**
+ * 四步序列的第 3↔4 步之间那条缝的**持续执法**：pending-project 命中的文件，不得已经躺在
+ * 某个段的 mutate 面里。
+ *
+ * 为什么它必须是派生的、而不是靠 `probe`：`probe` 是一次性测量（`probe` 形状闸保证它存在、
+ * 写得像样，但内容仍是自报），它**不能**当解除条件恒为真的依据。真正可判定的是这一步：
+ * 事实源只有两处——`mutation-topology.json` 各段的 `mutate` 面（`packageMutationFace` 逐段算完
+ * 再并，语义与 `mutation-face` 棘轮同一份实现）与本文件的 `globFiles` 展开。
+ *
+ * 判红方向：某条 pending-project 的 pattern 命中的文件被登记进 mutate 面（= 四步的第 3 步
+ * 做了）却没删豁免（第 4 步没做）——那一刻必须响。今天全绿（本仓 4 条 pending-project 命中的
+ * 文件一个都不在变异面内），它只在那一刻变红。
+ *
+ * 事实源不可读 / 形状非法一律 fail-closed（exit 2）：判据读不到输入时静默放行，等于把这条
+ * 新增面变成又一条「恒绿」通道。
+ */
+/** 读变异拓扑并派生全仓变异面并集；不可读 / 形状非法 / 空面一律 fail-closed。 */
+function loadMutationFace(root) {
+  const topologyPath = join(root, MUTATION_TOPOLOGY_REL);
+  if (!existsSync(topologyPath)) {
+    failClosed(
+      `verify-coverage-scope: 缺 ${MUTATION_TOPOLOGY_REL}（pending-project 与变异面的接缝判据无事实源，fail-closed）`,
+    );
+  }
+  let topology;
+  try {
+    topology = JSON.parse(readFileSync(topologyPath, "utf8"));
+  } catch (e) {
+    failClosed(
+      `verify-coverage-scope: ${MUTATION_TOPOLOGY_REL} 解析失败（${e.message}）——fail-closed`,
+    );
+  }
+  if (topology === null || typeof topology !== "object" || Array.isArray(topology)) {
+    failClosed(
+      `verify-coverage-scope: ${MUTATION_TOPOLOGY_REL} 顶层不是对象（${jsonShape(topology)}）——fail-closed`,
+    );
+  }
+  // 逐包逐段求值后合并。空面即载体自证失败：一条「没比过却全绿」的判据正是本闸最不能有的
+  // 失败方式，故与 universe 为空同级 fail-closed（不是判红、也不是跳过）。
+  const expand = (pattern) => globFiles(root, pattern);
+  const mutationFace = new Set();
+  for (const pkgDef of Object.values(topology.packages ?? {})) {
+    for (const file of packageMutationFace(pkgDef, expand)) mutationFace.add(file);
+  }
+  if (mutationFace.size === 0) {
+    failClosed(
+      "verify-coverage-scope: 变异面并集为空（各段 mutate 展开后一个文件都没有）——接缝判据无对象，fail-closed",
+    );
+  }
+  return mutationFace;
+}
+
+function pendingInMutationFaceProblems(root, entries, hitsInUniverse) {
+  const mutationFace = loadMutationFace(root);
+  const problems = [];
+  for (const entry of entries.filter((e) => e.kind === "pending-project")) {
+    for (const file of hitsInUniverse(entry.pattern).filter((f) => mutationFace.has(f))) {
+      problems.push(
+        `${entry.pattern}：命中文件 ${file} 已在 mutation-topology 某段的 mutate 面内 —— 四步序列的第 3 步（登记 mutate 面）已做而第 4 步（删本条）没做：probe 是一次性测量、不能当持续执法，本条必须立即删除`,
+      );
+    }
+  }
+  return problems;
+}
 
 /** exclude 条目的 kind 值域（无第三条路）。 */
 const KINDS = ["type-only", "not-source", "pending-project"];
 /** 只允许 pending-project 携带的字段：它们表达「临时性」，永久事实带上即是假条目。 */
-const PENDING_ONLY_FIELDS = ["reviewBy", "exitCriteria"];
+const PENDING_ONLY_FIELDS = ["reviewBy", "exitCriteria", "probe"];
 /** 必须由本文件持有、不得内联在 vitest.config.ts 的键。 */
 const INLINE_KEYS = ["thresholds", "include", "exclude"];
-/** 两个临时字段各自的语义，判词里直接说清缺的是哪件事。 */
-const PENDING_FIELD_MEANING = { reviewBy: "何时再看一眼", exitCriteria: "凭什么能删" };
+/** 三个临时字段各自的语义，判词里直接说清缺的是哪件事。 */
+const PENDING_FIELD_MEANING = {
+  reviewBy: "何时再看一眼",
+  exitCriteria: "凭什么能删",
+  probe: "变异探针的实测凭据（date + verdict）",
+};
+/**
+ * probe.verdict 的形态：**必须声明「N 处改动全部打红」且 N ≥ 1**。
+ *
+ * 为什么不给 verdict 留自由文本：exitCriteria 的四步序列里，②「变异探针打红」是唯一
+ * 「有 / 没有」全凭一次一次性测量的一步，而 probe 是它的凭据。写成任意字符串时，
+ * 「零红」「还没探」「探过了（记不清）」都能填进去——于是这一栏从证据退化成自我声明，
+ * 而看板与评审都读不出区别。`[1-9]\d*` 把「0 处 / 零红」一并拒掉。
+ */
+const PROBE_VERDICT_RE = /[1-9]\d*\s*处改动全部打红/;
+const PROBE_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 /** type-only 唯一允许命中的后缀：无运行时代码的声明文件。 */
 const DECLARATION_SUFFIXES = [".d.ts", ".d.mts"];
 /** 判词里最多逐个列出的命中文件数；超出只列前缀并附总数（不静默截断）。 */
@@ -88,6 +175,57 @@ function checkEntryShape(entry, seen, problems) {
   return label;
 }
 
+/**
+ * probe 字段的形状判红（`{ date, verdict }`）。**同源、不另开出口**：判词与 reviewBy /
+ * exitCriteria 共用 `PENDING_FIELD_MEANING` 的措辞，故「pending-project 必须有 probe」
+ * 这句话是由同一张字段表长出来的，不是为新字段单开一条判据。
+ *
+ * 提到模块作用域（而非内联进 checkEntryKind）：那个函数的分支数已顶到 lint 的 complexity
+ * 上限 10，再加一个三段判红就超限，而超限的修法只能是「把判定挪走」或「调高阈值」——
+ * 两者都会动判据的可读边界。故只搬位置，不动任何一条判词。
+ */
+function checkProbeShape(probe, label, problems) {
+  if (probe === null || typeof probe !== "object" || Array.isArray(probe)) {
+    problems.push(
+      `${label}：pending-project 必须有 probe（${PENDING_FIELD_MEANING.probe}）——当前值不是对象（${JSON.stringify(probe)}）：探针结论必须是可核对的日期 + 判词，不能是一句话`,
+    );
+    return;
+  }
+  if (typeof probe.date !== "string" || !PROBE_DATE_RE.test(probe.date)) {
+    problems.push(
+      `${label}：pending-project 必须有 probe.date（探针实测日期，形如 2026-10-09；当前 ${JSON.stringify(probe.date)}）——没有日期的探针与「随手写一句」同形`,
+    );
+  }
+  if (typeof probe.verdict !== "string" || !PROBE_VERDICT_RE.test(probe.verdict)) {
+    problems.push(
+      `${label}：pending-project 必须有 probe.verdict（形如「N 处改动全部打红」，N ≥ 1；当前 ${JSON.stringify(probe.verdict)}）——零红 / 没写处数的探针不是「判据已能打红」的凭据，写在这一栏只是自我声明`,
+    );
+  }
+}
+
+/** 三个临时字段逐条判红：pending-project 必须带齐，其余 kind 一律不许带。 */
+function checkPendingFields(entry, label, problems) {
+  for (const field of PENDING_ONLY_FIELDS) {
+    if (entry.kind !== "pending-project") {
+      if (entry[field] !== undefined) {
+        problems.push(
+          `${label}：字段 ${field} 只允许 pending-project 携带（当前 kind=${entry.kind}）——给永久事实编到期日是假条目`,
+        );
+      }
+      continue;
+    }
+    if (field === "probe") {
+      checkProbeShape(entry.probe, label, problems);
+      continue;
+    }
+    if (typeof entry[field] !== "string" || entry[field].length === 0) {
+      problems.push(
+        `${label}：pending-project 必须带 ${field}（${PENDING_FIELD_MEANING[field]}）——临时豁免缺了它就成了永久事实，台账里也无人知道何时能删`,
+      );
+    }
+  }
+}
+
 /** reason 必填；kind 越界即停手——临时字段判据以 kind 为前提。 */
 function checkEntryKind(entry, label, problems) {
   if (typeof entry.reason !== "string" || entry.reason.length < 10) {
@@ -99,19 +237,7 @@ function checkEntryKind(entry, label, problems) {
     );
     return false;
   }
-  for (const field of PENDING_ONLY_FIELDS) {
-    if (entry.kind === "pending-project") {
-      if (typeof entry[field] !== "string" || entry[field].length === 0) {
-        problems.push(
-          `${label}：pending-project 必须带 ${field}（${PENDING_FIELD_MEANING[field]}）——临时豁免缺了它就成了永久事实，台账里也无人知道何时能删`,
-        );
-      }
-    } else if (entry[field] !== undefined) {
-      problems.push(
-        `${label}：字段 ${field} 只允许 pending-project 携带（当前 kind=${entry.kind}）——给永久事实编到期日是假条目`,
-      );
-    }
-  }
+  checkPendingFields(entry, label, problems);
   return true;
 }
 
@@ -450,6 +576,9 @@ function main() {
 
   // 面完整性：universe 里每个文件都必须被 include 或某条 exclude 覆盖
   problems.push(...unclassifiedProblems(universe, includeHits, excludeHits));
+
+  // 四步序列第 3↔4 步之间的接缝：pending-project 命中的文件不得已在变异面内（派生，非登记）
+  problems.push(...pendingInMutationFaceProblems(root, config.exclude, hitsInUniverse));
 
   // 产物交叉断言（仅在产物比配置新时执行——旧的产物反映的是旧的面）
   const artifactNote = artifactCrossCheck(root, configPath, includeHits, excludeHits, problems);

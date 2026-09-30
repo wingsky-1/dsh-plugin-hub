@@ -85,6 +85,7 @@ import {
   segmentTestUnion,
 } from "./test-surface.mjs";
 import { failClosed } from "../lib/gate-exit.mjs";
+import { GATE_BASELINE_REF } from "../lib/gate-baseline.mjs";
 
 /**
  * 变异的 `shared/` 段共用的 `ignorePatterns`：shared 是 tsc **原地 emit**（outDir "."），
@@ -128,8 +129,8 @@ const confDir = join(repoRoot, "stryker.conf.d");
 const argv = process.argv.slice(2);
 const isCheckMode = argv.includes("--check");
 const isSyncMin = argv.includes("--sync-test-min");
-/** 判据⑦ 的基准 ref（段面棘轮只与基准比，本地 pr 档与 CI 的默认口径同为 origin/main）。 */
-const baseRef = argValue("--base") ?? process.env.GEN_STRYKER_BASE ?? "origin/main";
+/** 判据⑦ 的基准 ref（段面棘轮只与基准比；缺省取单一常量，与本地 pr 档 / CI 同一来源）。 */
+const baseRef = argValue("--base") ?? process.env.GEN_STRYKER_BASE ?? GATE_BASELINE_REF;
 
 /** 取 `--flag <value>` / `--flag=<value>` 的参数值；未给出返回 undefined。 */
 function argValue(flag) {

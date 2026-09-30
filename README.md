@@ -133,7 +133,7 @@ dsh plugin --profile web update
 当前 `dsh-mcp-manager` 只生成 producer-owned V4 source：
 `kind: "plugin:@wingsky-1/dsh-mcp-manager"`。业务代码不提供旧 V0/V2/V3 parser，也不承诺旧格式兼容。
 
-历史 `mcp-catalog` source 属于一次性维护边界。脚本只把旧 source 元数据修为 V3 wrapper，保留消息正文与事件序列；它不写 V4，也不实现 v3→v4 迁移。修复后由 `dsh 0.2.0-rc.2` 的官方迁移链依次恢复并转为 V4，当前 V4 产物不动。执行前先停止 `dsh web`，先用默认预演模式核对，再加 `--apply` 落盘。
+历史 `mcp-catalog` source 属于一次性维护边界。脚本只把旧 source 元数据修为 V3 wrapper，保留消息正文与事件序列；它不写 V4，也不实现 v3→v4 迁移。修复后由目标 dsh（版本见 catalog）的官方迁移链依次恢复并转为 V4，当前 V4 产物不动。执行前先停止 `dsh web`，先用默认预演模式核对，再加 `--apply` 落盘。
 
 详见 [dsh-mcp-manager README](packages/dsh-mcp-manager/README.md#升级与历史会话边界)。
 

@@ -49,6 +49,8 @@ const ALLOWLIST: Record<string, string> = {
     "变异基线归档纯函数面（分页取全+对账），以 .mjs 供 overlay 复用的 loader 库",
   "scripts/gate/baseline-push.mjs":
     "归档分支写路径共用管线（孤立 commit+租约推送），以 .mjs 被两写入方直引",
+  "scripts/gate/ci-ism-check.mjs":
+    "仓库根 CI-ism 残留的执行点（薄 CLI，判据在 lib/ci-ism-denylist.mjs），以 .mjs 为 ci.yml 与本地档位 loader 直跑的入口",
   "scripts/gate/collect-exemptions.mjs":
     "豁免到期台账收集器（reviewBy/exitCriteria 扫描），以 .mjs 在全量档 loader 直跑",
   "scripts/gate/crap-check.mjs":
@@ -111,6 +113,8 @@ const ALLOWLIST: Record<string, string> = {
     "判据接线解析层（别名→脚本身份归一），以 .mjs 被接线断言直引的库",
   "scripts/lib/ensure-shared-built.mjs":
     "shared 声明产物的统一前置（#1028 后续重构）：shared 的 .d.ts 由 tsc 产出不入库，带 references 的包在裸 tsc -p 下会报 TS6305。以 .mjs 是因为调用方是门禁与脚本（loader 直跑），无 TS 依赖",
+  "scripts/lib/gate-baseline.mjs":
+    "门禁比对基准 ref 的单一常量（GATE_BASELINE_REF），以 .mjs 被各闸 loader 直引的库",
   "scripts/lib/gate-exit.mjs": "门禁自身故障唯一退出口 failClosed，以 .mjs 被全部门禁直引的库",
   "scripts/lib/glob-files.mjs": "仓库根锚定 glob 展开库，以 .mjs 被派生链路直引",
   "scripts/lib/mutation-ledger-lib.mjs": "变异台账日志解析与对账库，以 .mjs 被台账链路直引",

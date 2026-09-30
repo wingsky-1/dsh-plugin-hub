@@ -59,6 +59,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseExpressionAt, tokenizer } from "acorn";
 import { loadLedger } from "../lib/exemption-gate.ts";
+import { GATE_BASELINE_REF } from "../lib/gate-baseline.mjs";
 import {
   RATCHET_BUCKETS,
   bucketSourceState,
@@ -976,7 +977,8 @@ export function runThresholdMonotonic(
   argv = process.argv.slice(2),
   { repoRoot = process.cwd() } = {},
 ) {
-  const baseRef = argv[0] ?? "origin/main";
+  // 缺省基准取单一常量（scripts/lib/gate-baseline.mjs）：CI 侧本步不再传 ref，两侧同源。
+  const baseRef = argv[0] ?? GATE_BASELINE_REF;
   const readBase = (rel) =>
     existsInGit(baseRef, rel, repoRoot) ? readFromGit(baseRef, rel, repoRoot) : null;
   const readWorkspace = (rel) => readWorkspaceText(repoRoot, rel);

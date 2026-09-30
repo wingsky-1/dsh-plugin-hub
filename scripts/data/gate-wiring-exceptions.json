@@ -118,9 +118,9 @@
       "reason": "CI 切片的计算入口：base 为空（首次推送 / 强制推送）时没有比对基准，整条切片逻辑不成立；这一条一旦被改成恒假形态，下面所有按切片跑的判据都会静默停摆"
     },
     {
-      "step": "ci.yml|repo-gate|script:scripts/gate/threshold-monotonic.mjs|origin/main",
+      "step": "ci.yml|repo-gate|script:scripts/gate/threshold-monotonic.mjs",
       "condition": "github.event_name == 'pull_request'",
-      "reason": "阈值单调性的基准是 origin/main 的三点比，push 事件上语义不成立（本地 pr 档仍会跑它，故它在 PR 面内）"
+      "reason": "阈值单调性的基准是主干的三点比（缺省值取 scripts/lib/gate-baseline.mjs 的单一常量，CI 侧不传 ref），push 事件上语义不成立（本地 pr 档仍会跑它，故它在 PR 面内）。本键同时是「CI 侧不许把 ref 写回命令行」的机器约束：加回任何 ref 参数都会让步骤键失配 → 判红"
     },
     {
       "step": "observe.yml|mutation-collect|script:scripts/gate/observe-check.mjs|--body-file,--marker-file,--status-file,observe-body.md,observe-marker.txt,observe-status.json",

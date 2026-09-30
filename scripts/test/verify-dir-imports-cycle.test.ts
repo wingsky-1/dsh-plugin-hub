@@ -38,12 +38,61 @@ function makeFixtureRoot(files: Record<string, string>) {
     mkdirSync(dirname(full), { recursive: true });
     writeFileSync(full, content);
   }
+  /**
+   * `$testLayers` 的 fixture 形态（与 scripts/data/mutation-topology.json 同形）。
+   *
+   * 为什么要它：本闸的两处层目录（I8① 单元层、client 族层）自批次二起由这份声明派生，
+   * 缺 `$testLayers` / `layerMeta` / `layers` 即 fail-closed 判红。fixture 必须带着它，否则
+   * 被验证的行为会被「派生失败」盖住——这是 fail-closed 的代价，如实承担。
+   */
+  const FIXTURE_TEST_LAYERS = {
+    layerMeta: {
+      unit: {
+        assertionTarget: "src",
+        environment: "node",
+        mandatory: true,
+        responsibility: "单模块 / 纯逻辑判据",
+      },
+      integration: {
+        assertionTarget: "src",
+        environment: "node",
+        mandatory: false,
+        responsibility: "真实组合根判据",
+      },
+      "client-unit": {
+        assertionTarget: "src",
+        environment: "node",
+        mandatory: false,
+        responsibility: "客户端纯逻辑判据",
+      },
+      bundle: {
+        assertionTarget: "artifact",
+        environment: "node",
+        mandatory: false,
+        responsibility: "产物形态断言",
+      },
+      e2e: {
+        assertionTarget: "live",
+        environment: "node",
+        mandatory: false,
+        responsibility: "大 smoke",
+      },
+    },
+    layers: {
+      unit: "test/unit/**/*.test.ts",
+      integration: "test/integration/**/*.test.ts",
+      "client-unit": "test/client-unit/**/*.test.ts",
+      bundle: "test/bundle/**/*.test.ts",
+      e2e: "test/e2e/**/*.test.ts",
+    },
+  };
   const topo = join(root, "scripts", "data", "mutation-topology.json");
   mkdirSync(dirname(topo), { recursive: true });
   writeFileSync(
     topo,
     JSON.stringify({
       sharedDefaults: {},
+      $testLayers: FIXTURE_TEST_LAYERS,
       packages: {
         "fixture-pkg": {
           segments: {

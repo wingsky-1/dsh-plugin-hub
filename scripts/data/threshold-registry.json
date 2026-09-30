@@ -53,6 +53,17 @@
       "hint": "降线须原 issue 内 approved；整包退役须同时满足 existence 守卫的退役条件；minAllowed=60 是绝对下限（两阶梯第一阶），对**新增条目**同样生效——否则「包改名后按 threshold=1 重新登记」会因「首次引入」而免疫本判据"
     },
     {
+      "id": "rootShared.threshold",
+      "kind": "value",
+      "sources": ["scripts/data/mutation-topology.json"],
+      "paths": ["$rootShared.threshold"],
+      "weaken": "decrease",
+      "onRemoval": "fail",
+      "minAllowed": 60,
+      "why": "根 shared 段（$rootShared，settings-namespace + client 两段）的变异阈值。此前它**只被 0–100 范围检查守着**（mutation-topology.mjs 的 rootSharedFixedProblems），而同形的 6 个包级阈值由 mutation.packageThreshold（minAllowed=60）守——同一件事两套强度：把 $rootShared.threshold 从 60 调到 30 属合法形状、没有任何一条断言会红，共享段变异分数随之静默降线。与包级同形的判据是本表项：weaken=decrease 相对基准只许升不许降，onRemoval=fail 把「删掉该键即该段不再有硬门禁」并成同罪，minAllowed=60 是绝对下限（与包级第一阶梯同值），对**首次引入**同样生效——否则「删段后按 threshold=1 重新登记」会因「首次引入 = 跳过对比」而免疫本判据。",
+      "hint": "降线须原 issue 内 approved（与包级阈值同口径）；minAllowed=60 是绝对下限，对新增条目同样生效"
+    },
+    {
       "id": "mutation.packageSet",
       "kind": "existence",
       "sources": ["scripts/data/gauntlet.config.json"],
