@@ -53,7 +53,7 @@ import type { ValidationResult } from "./type.ts";
  * 尺寸上界（#1016 S2）此前在本域就地写字面量，理由是「本轮不扩两端共享 schema」——那份「刻意」
  * 正是 S1 要消灭的第二事实源：客户端将来给这两个输入框加同源约束时只能来本域抄一份。
  * 两条尺寸判据的语义是**「拒新增、不动存量」**：本次提交的值超限即 400，沿用存量的旧值不重判
- * （判据的 `inherited` 面，见 validateChannel）；0.2.8 形态清理按同一口径不删它们。 */
+ * （判据的 `inherited` 面，见 validateChannel）；0.2.9 形态清理按同一口径不删它们。 */
 
 // webhook 认证方式与预设白名单的事实源在 src/shared/webhooks.ts（两端共享面）：设置页的选项与
 // 写入口径必须是同一份，各写一份就会出现「页面选得到、宿主拒收」。
@@ -133,7 +133,7 @@ export const RETIRED_KEYS: Readonly<Record<string, string>> = {
  *
  * 导出理由同 `BOOLEAN_KEYS`：门禁要按真实取值断言「每个键都在默认设置里且上界是非负整数」。
  *
- * 上界的**值**来自 shared 的 `HISTORY_MAX_AGE_DAYS_LIMIT`，不是就地写的字面量：0.2.8 形态清理按
+ * 上界的**值**来自 shared 的 `HISTORY_MAX_AGE_DAYS_LIMIT`，不是就地写的字面量：0.2.9 形态清理按
  * 「这个值在本版本有没有这种形态」删键，两处不同值就是两份「合法形态」的定义，而清理步那份一旦落后，
  * 用户一个合法的键会被静默删掉。
  */
@@ -473,7 +473,7 @@ export function validateChannel(
 
 /** 内置频道：身份由 `type` 唯一确定（`id` 只是回显，写了就必须一致），开关与声音逐个按各自值域校验。
  *
- * 这几个键**不按 inherited 跳过**：内置条目的字段集是固定的五六个，0.2.8 形态清理会把缺席字段
+ * 这几个键**不按 inherited 跳过**：内置条目的字段集是固定的五六个，0.2.9 形态清理会把缺席字段
  * 补齐，客户端也就每次都原样带回——存量里出现非布尔只可能是有人手改过文件（清理只在刻度推进时跑
  * 一次，救不了「升级后手改」），而那正是要拒的。 */
 function validateBuiltinChannel(
@@ -652,7 +652,7 @@ function isMember<T extends string>(raw: RawSettingValue, allowed: readonly T[])
  * 「空串算不算在场」上漂。
  *
  * 这一族的另两处：读面 `asChannel` 的空壳判定（`asBarkChannel` 对空串必填键返回 `ok: false`）与
- * upgrade 域 0.2.8 形态清理的**必填键判据**（canonical-keys 的 `requiredKeysOf`）。后者的必填键
+ * upgrade 域 0.2.9 形态清理的**必填键判据**（canonical-keys 的 `requiredKeysOf`）。后者的必填键
  * **清单**同样只从 `REQUIRED_KEYS` 读，不再在本域另抄一份。
  */
 export function isDeliveredRequired(value: RawSettingValue | undefined): boolean {
@@ -780,7 +780,7 @@ type ChannelRead = { ok: true; channel: ChannelConfig } | { ok: false };
  * 出站实例数组：逐项归一化，**认不出的项直接丢弃**——一个没写 id、没写 url、没写凭据的「频道」
  * 没有任何可投递的目标，补成空壳只会在投递时制造一次必然失败的尝试。
  *
- * **这一次丢弃是 upgrade 域 0.2.8 形态清理的承重前提**（#1016 P1-2 选 (a)）：那一步不再删「必填键
+ * **这一次丢弃是 upgrade 域 0.2.9 形态清理的承重前提**（#1016 P1-2 选 (a)）：那一步不再删「必填键
  * 空串或缺席」的半坏条目，理由正是这里把它们整条剔出投递投影——留在磁盘上不等于会被打出去。
  * 两边要一起读；单独动任一侧的症状写在 canonical-keys.ts 文件头的「第三条路」那段。
  *

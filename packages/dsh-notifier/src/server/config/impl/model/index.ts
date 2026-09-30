@@ -26,7 +26,7 @@ export const DEFAULT_CONFIG: NotifyConfig = {
     enabled: DEFAULTS.quietHours.enabled,
     windows: DEFAULTS.quietHours.windows.map((w) => ({ ...w })),
   },
-  // 内置频道恒在场且恒在最前：默认表就带它们，投递投影据此物化；0.2.8 形态清理负责把磁盘上
+  // 内置频道恒在场且恒在最前：默认表就带它们，投递投影据此物化；0.2.9 形态清理负责把磁盘上
   // 残缺的内置条目补成同一份形态（判据在 upgrade/steps.test.ts 的「与默认表逐字一致」）。
   channels: [
     { type: "browser", id: "browser", enabled: true, popup: true, sound: true, whenVisible: false },

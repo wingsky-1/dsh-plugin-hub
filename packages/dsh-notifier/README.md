@@ -371,19 +371,19 @@ settings `describe()` 的已注册分节与更早的自建 `dsh-notifier.json`�
   仅空 patch `{}`（或无任何可写键，如只含装配键）返回 **400**「需至少包含一个配置键」；
   **存量里已有的未知键不受影响**：它不在提交里，`channels` 按字段合并时原样沿用，
   保存其它已知键既不会抹掉它、也不会被它连坐拒掉。
-  保留它的一条路：在 `config.json` 里手动删掉（升级到 0.2.8 及以后时它也会被自动清理，见「升级路径」）；
+  保留它的一条路：在 `config.json` 里手动删掉（升级到 0.2.9 及以后时它也会被自动清理，见「升级路径」）；
 - **为什么不再透传保留**：透传面要求读面把频道条目上的陌生键收进 `extras` 子对象再原样
   交回客户端，而写面只放行 string/number——`extras` 这个**对象**自己撞上那条判据，
   该频道所在配置从此再也保存不了（#1016 缺陷 B）。收窄到「本版本认识的键」把那条自撞的
   口子关掉，同时保住「存量不丢」。
-- **升级路径**：0.2.8 起，配置文件里的**未知键在升级那一刻被清理掉**（顶层键与频道条目内的键
-  同理，逐条列在「配置格式附录」的 0.2.8 迁移条目里）——它们本来就交不回去（写面一律 400），
+- **升级路径**：0.2.9 起，配置文件里的**未知键在升级那一刻被清理掉**（顶层键与频道条目内的键
+  同理，逐条列在「配置格式附录」的 0.2.9 迁移条目里）——它们本来就交不回去（写面一律 400），
   留在文件里只会让设置页显示一个改不动的字段。**清理的边界是「本版本不可能是合法形态的值」**：
   用户已经表过态的合法取值（配满的 `levels`、8192 字符的 `template`、凭据留空串、必填键残缺的半坏
   条目）一个字都不动——升级只删键，不改值。
 - **存量迁移**：旧配置（0.2.3 settings 命名空间与更早的自建 json）的未知键在读取时
   **透传保留**——user 层缺失则补写、已存在不覆盖；纯未知键 legacy 不再被当作「无有效键」丢弃。
-  这一条只保证「搬到 `config.json` 时不丢」；刻度推到 0.2.8 时形态清理会把本版本不认识的键删掉（见
+  这一条只保证「搬到 `config.json` 时不丢」；刻度推到 0.2.9 时形态清理会把本版本不认识的键删掉（见
   「升级路径」）；
 - **边界例外**：
   - `patch` **必须是对象**：数组、`null` 等非对象形态一律 400（数组不会按数字
@@ -482,7 +482,7 @@ GET 动态 kind 清单（含确认态）；POST `{kind, confirmed}` 写确认（
 - 默认值以 `src/server/config/impl/model/index.ts` 的 `DEFAULT_CONFIG` 为准：事件开关 `notifyAsk` / `notifyQuestion` / `notifyTaskDone` / `notifyTaskError` 开、`notifySubagentDone` / `notifyTurnEnd` 关；`quietHours` 为 `{enabled:false, windows:[{start:"22:00", end:"08:00"}]}`；`channels` 恒带两条内置条目（browser 与 system，均 `enabled` / `popup` / `sound` 开，browser 另有 `whenVisible:false`）；`kindRoutes` 与 `allowKinds` 为空，`historyMaxAgeDays` 为 0。
 - 0.2.3 → 0.2.4 迁移：8 个顶层渠道键（`systemEnabled` / `browserEnabled` / `systemNotify` / `browserNotify` / `notifyWhenVisible` / `notifySound` / `browserSound` / `systemSound`）在装配期搬进两条内置条目后删除（`src/server/upgrade/impl/steps/config-shape.ts`）；升级后再提交这些键一律 400 并提示刷新页面，旧键残留需手删 `config.json` 对应行。
 - 0.2.5 → 0.2.6 迁移：免打扰旧 `start`/`end` 在装配期搬进 `windows[0]` 并删除旧键（`src/server/upgrade/impl/steps/quiet-windows.ts`）；升级后再提交旧形（无 `windows`）一律 400 并提示刷新页面。
-- **0.2.7 → 0.2.8 迁移（配置形态清理，`src/server/upgrade/impl/steps/canonical-keys.ts`）**：这是本插件
+- **0.2.8 → 0.2.9 迁移（配置形态清理，`src/server/upgrade/impl/steps/canonical-keys.ts`）**：这是本插件
   唯一一步会**丢弃取值**的升级步（0.2.4 / 0.2.6 那两步删的是旧键，取值都搬到了新键下），判据一律
   「条件 → 删/补」，**不猜值、不夹值**（越界值删键而不是
   改成边界值），且干净形态下**一个字都不写**（不会重新序列化你手改的格式）。**会被删的**：

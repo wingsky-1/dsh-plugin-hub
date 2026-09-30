@@ -446,16 +446,16 @@ values are never lost or migrated); on the **write** side they are always **reje
   config key". **Unknown keys already on disk are unaffected**: they are not in the patch,
   `channels` keeps them field by field, and saving other known keys neither drops them nor
   gets rejected because of them. To clear one, delete it manually in `config.json` (it is
-  also removed automatically when upgrading to 0.2.8 or later — see "Upgrade path").
+  also removed automatically when upgrading to 0.2.9 or later — see "Upgrade path").
 - **Why no longer pass-through**: the pass-through surface required the read side to fold a
   channel entry's unknown keys into an `extras` sub-object and hand it back verbatim, while
   the write side only accepted string/number values — so the `extras` **object itself**
   collided with that rule and the whole configuration became unsaveable (#1016 defect B).
   Narrowing to "keys this version knows" closes that self-collision while still keeping
   what is already on disk.
-- **Upgrade path**: since 0.2.8, unknown keys in the configuration file are **cleaned up at
+- **Upgrade path**: since 0.2.9, unknown keys in the configuration file are **cleaned up at
   upgrade time** (top-level keys and keys inside channel entries alike; every category is
-  listed in the 0.2.8 migration entry under the configuration-format appendix) — they could
+  listed in the 0.2.9 migration entry under the configuration-format appendix) — they could
   never be submitted anyway (the write path always returns 400), and keeping them only makes
   the settings page show a field that cannot be changed. **The boundary is "a value that
   cannot possibly be legal in this version"**: anything the user has already expressed stays
@@ -467,7 +467,7 @@ values are never lost or migrated); on the **write** side they are always **reje
   when missing from the user layer, never overwriting existing ones; a legacy file
   containing only unknown keys is no longer treated as "no valid keys". That only
   guarantees they are not lost on the way into `config.json`; once the version marker
-  reaches 0.2.8 the shape cleanup drops keys this version does not know (see "Upgrade
+  reaches 0.2.9 the shape cleanup drops keys this version does not know (see "Upgrade
   path").
 - **Boundary exceptions**:
   - `patch` **must be an object**: non-object shapes (arrays, `null`, numbers, etc.)
@@ -577,7 +577,7 @@ Error mapping (POST /kinds): kind-confirmation CAS retries (≤2) exhausted → 
 - Defaults follow `DEFAULT_CONFIG` in `src/server/config/impl/model/index.ts`: event toggles `notifyAsk` / `notifyQuestion` / `notifyTaskDone` / `notifyTaskError` on, `notifySubagentDone` / `notifyTurnEnd` off; `quietHours` is `{enabled:false, windows:[{start:"22:00", end:"08:00"}]}`; `channels` always carries the two built-in entries (browser and system, each `enabled` / `popup` / `sound` on, plus `whenVisible:false` on browser); `kindRoutes` and `allowKinds` are empty, `historyMaxAgeDays` is 0.
 - 0.2.3 → 0.2.4 migration: the 8 top-level channel keys (`systemEnabled` / `browserEnabled` / `systemNotify` / `browserNotify` / `notifyWhenVisible` / `notifySound` / `browserSound` / `systemSound`) are moved into the two built-in entries at assembly time and then deleted (`src/server/upgrade/impl/steps/config-shape.ts`); submitting them after the upgrade always returns 400 with a refresh hint, and leftover lines must be removed by hand in `config.json`.
 - 0.2.5 → 0.2.6 migration: the legacy do-not-disturb `start`/`end` are moved into `windows[0]` at assembly time and the old keys deleted (`src/server/upgrade/impl/steps/quiet-windows.ts`); submitting the old shape (no `windows`) after the upgrade always returns 400 with a refresh hint.
-- **0.2.7 → 0.2.8 migration (configuration-shape cleanup, `src/server/upgrade/impl/steps/canonical-keys.ts`)**:
+- **0.2.8 → 0.2.9 migration (configuration-shape cleanup, `src/server/upgrade/impl/steps/canonical-keys.ts`)**:
   the only upgrade step of this plugin that **discards values** (the 0.2.4 / 0.2.6 steps delete the
   old keys but move every value to a new one). Every criterion is "condition → delete/fill"; it
   never guesses and never clamps a value (an out-of-range value

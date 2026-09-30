@@ -86,7 +86,7 @@ export const REQUIRED_KEYS: Readonly<Record<string, readonly string[]>> = {
 };
 
 /**
- * 0.2.8 形态清理读的是**本表**而不是另抄一份必填键清单：清理步过去没有「哪些键是必填」的概念，
+ * 0.2.9 形态清理读的是**本表**而不是另抄一份必填键清单：清理步过去没有「哪些键是必填」的概念，
  * 于是它的值形态判据对必填键与对普通键一视同仁地「删键」——把 baseUrl 写成数字时它把这个键删掉，
  * **当场造出一条自己刚说过要整条保留的残缺条目**（判据 #6 与它相隔不到十行、方向相反）。
  * 两处各写一份「什么算必填」迟早漂，而漂的那次症状是清理步一边制造残缺、一边判它合法。
@@ -107,7 +107,7 @@ export const REQUIRED_KEYS: Readonly<Record<string, readonly string[]>> = {
  * 那些话术与处置随之改口——「`auth` 的判据是取值域」这条约定（S1 定下的共享 schema 语义）就消失
  * 在一个布尔标记里，而它正是本表存在的理由。
  *
- * **消费方只有 0.2.8 形态清理步**（server/upgrade 的 canonical-keys.ts，判据 #5 第二格多出来的那一格）：
+ * **消费方只有 0.2.9 形态清理步**（server/upgrade 的 canonical-keys.ts，判据 #5 第二格多出来的那一格）：
  * 值在白名单外时它**删整条**而不是删键。删键的后果不是「少一个可选字段」——写面对 `auth` 的缺席与
  * 非法同一句话拒收，于是删键当场造出一条**此后每一次保存都 400** 的频道，而那正是本步自己造出来的
  * 残缺，与判据 #6「用户手改出来的残缺原样保留」自相矛盾。
@@ -121,7 +121,7 @@ export const VALUE_DOMAIN_REQUIRED_KEYS: Readonly<Record<string, readonly string
 };
 
 /**
- * `historyMaxAgeDays` 的上界：写面 `COUNT_LIMITS` 与 0.2.8 形态清理读**这一个数**。
+ * `historyMaxAgeDays` 的上界：写面 `COUNT_LIMITS` 与 0.2.9 形态清理读**这一个数**。
  *
  * 清理步过去在本域另抄了一份 3650，并在注释里声明那是「刻意不落在 shared」。那份「刻意」的理由
  * （本轮不扩两端共享 schema）已经反过来成为病根本身：抄一份就意味着 config 域改了上界而清理步
@@ -131,7 +131,7 @@ export const VALUE_DOMAIN_REQUIRED_KEYS: Readonly<Record<string, readonly string
 export const HISTORY_MAX_AGE_DAYS_LIMIT = 3_650;
 
 /**
- * bark `timeoutMs` 的上界（毫秒）：读面归一化与 0.2.8 形态清理读**这一个数**。
+ * bark `timeoutMs` 的上界（毫秒）：读面归一化与 0.2.9 形态清理读**这一个数**。
  *
  * 与 `HISTORY_MAX_AGE_DAYS_LIMIT` 同因同解：读面的 `asCount(raw.timeoutMs, 0, 600_000)` 与清理步
  * 的越界判据必须同值，否则「读面认得的形态」与「清理步认得的形态」给出两个答案，而清理步会照
@@ -156,7 +156,7 @@ export const BARK_LEVELS_LIMIT = 64;
 
 /**
  * 投递超时边界与缺省（秒）。**投递出口的 clamp**（channels/impl/webhook 的 clampTimeoutSec）与
- * **0.2.8 形态清理的边界判据**（upgrade canonical-keys 的 webhookTimeout）读这一个数。
+ * **0.2.9 形态清理的边界判据**（upgrade canonical-keys 的 webhookTimeout）读这一个数。
  *
  * **写面/投递投影不读它**：那条链按 `asCount(raw.timeoutSec, 0, 600)` 收口（见 config/impl/input），
  * 范围比本表宽得多——它判的是「这个值在本版本有没有这种形态」，不是「投递时用几秒」。两边口径不同
