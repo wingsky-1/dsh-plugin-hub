@@ -1041,12 +1041,23 @@ it("#362 P0-1：工具级禁用三入口一致（callTool / pre-execute guard / 
   // #1014 B5：未禁用的 mcp__ 直呼也不再放行——内部注册名不可由模型发起。
   expect(allow.kind, "未禁用工具直呼一律拒").toBe("deny");
   expect((allow as unknown as { reason: string }).reason).toContain("ws_mcp_call");
-  // agent-less → 按最宽可见范围放行（@global 记录仍生效）。
+  // agent-less → root 解析不出，退到最宽可见面（@global 共享记录仍生效）。
   const gDeny = await guard!(
     { name: "mcp__gctx__use_g" } as unknown as Parameters<SmokeGuard>[0],
     async () => ({ kind: "allow" }) as PreToolDecision,
   );
   expect(gDeny.kind, "agent-less 时 @global 共享记录仍 deny").toBe("deny");
+  // #1014 B5 / R8：上面那条走的是「@global 命中禁用」分支；这里补它的**另一侧**——
+  // agent-less 且 @global 无记录时，handleDirectMcpGuard 返回 undefined（不构成裁决），
+  // 由兜底拒接手。缺这条时，把那个 return undefined 改成提前 deny 或提前放行都不会红：
+  // 两条分支在 B5 后都收敛到 deny，只是文案不同。这里把文案钉住（禁用语义 vs 内部名语义），
+  // 让「提前短路」这种改法也会被打红。
+  const gAllow = await guard!(
+    { name: "mcp__gctx__other" } as unknown as Parameters<SmokeGuard>[0],
+    async () => ({ kind: "allow" }) as PreToolDecision,
+  );
+  expect(gAllow.kind, "agent-less 且 @global 无记录时仍拒").toBe("deny");
+  expect((gAllow as unknown as { reason: string }).reason).not.toContain("禁用");
   // 超长哈希名（含非法字符被替换）→ 不误禁。
   const hashed = await guard!(
     { name: "mcp__ctx__use_ctx_0123456789ab" } as unknown as Parameters<SmokeGuard>[0],
