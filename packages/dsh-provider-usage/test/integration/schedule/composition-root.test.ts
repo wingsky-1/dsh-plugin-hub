@@ -589,6 +589,11 @@ describe("D2三-链 ensure经链：校准与并发推进交错不丢更新（#77
         })}\n`,
       );
       const seen: Array<{ period: string; key: string }> = [];
+      // 校准失败是**静默 no-op**：ensureLastRunMigrated 吞掉异常只打一行诊断就返回
+      // changed:false（store.ts），而 scheduler 在 finally 里照常点首轮 tick——所以
+      // 「tick 到了」并不蕴含「校准生效」。诊断必须留在这里：上一轮它被 quietWarn 吞掉，
+      // CI 上只留下一个读不懂的日期不匹配，无从复盘。
+      const warnings: string[] = [];
       const sched = ReportScheduler.start({
         root,
         config: normalizeReportConfig({
@@ -600,12 +605,26 @@ describe("D2三-链 ensure经链：校准与并发推进交错不丢更新（#77
           seen.push({ period: due.period, key: due.key });
         },
         tickMs: 20,
-        warn: quietWarn,
+        warn: (msg) => warnings.push(String(msg)),
         // C 波：启动校准的 index 解析经端口注入（缺端口视同无事实）。
         parseIndex: scheduleParser,
       });
       try {
+        // 等待面盯**被断言的那个事实**（校准落盘），不是等 tick：pollUntil 对恒真条件
+        // 立即返回，等 tick 会在校准静默 no-op 时立刻放行，随后读到未校准的种子键。
+        // pollUntil 超时返回 undefined 而不抛，故必须断言其返回值，否则失败会被吞。
+        const calibrated = await pollUntil(
+          async () => (await readLastRun(root)).daily === "2026-09-04",
+          5000,
+        );
+        expect(calibrated, `校准未在 5s 内落盘（诊断：${warnings.join(" | ") || "无"}）`).toBe(
+          true,
+        );
         await pollUntil(() => seen.length >= 1, 5000);
+        expect(
+          seen.length,
+          `首轮补跑未发生（诊断：${warnings.join(" | ") || "无"}）`,
+        ).toBeGreaterThan(0);
         expect(seen[0]?.period).toBe("daily");
         // 污染键已回退到最近已闭环键，schema 已升版。
         expect((await readLastRun(root)).daily).toBe("2026-09-04");
