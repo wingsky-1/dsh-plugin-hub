@@ -71,7 +71,6 @@ import * as storeApi from "./server/store/interface.ts";
 import { defaultStorePath, McpStore } from "./server/store/interface.ts";
 import {
   installInject,
-  registerDirectMcpGuard,
   registerMiddlewareTools,
   resolveMiddlewareCallTimeoutMs,
 } from "./server/inject/interface.ts";
@@ -310,17 +309,18 @@ function collectCallTimeoutSources(
 }
 
 /**
- * 中间层工具（ws_mcp_*）+ mcp__ 直呼守卫的组合注册。
+ * 中间层工具（ws_mcp_*）+ pre-execute 守卫的一次性注册。
  *
- * 为什么合成一个 disposer：两者各管一段——中间层内注册的 pre-execute guard 放行我方转发、
- * 拦 ws_mcp_call 参数；独立直呼守卫用 manager 的池账本反查 id（封装定义条目没有 mcp__
- * 宿主注册，池侧反查会把它当裸名 → 工具级禁用恒 miss）。卸载路径只有一个 `dispose.current`
- * 位置，拆成两个必然漏掉一个。`resolveServerId` 按入参递入，域间不加值边。
+ * #1014 B4：此前这里注册**两个** pre-execute 守卫——registerMiddlewareTools 内的那条，
+ * 与与中间层实例解耦的 registerDirectMcpGuard。两者都裁决 mcp__ 直呼，但只有前者带
+ * 我方转发的豁免判据（读 mw.forwarding）。现在守卫只有一条注册路径，豁免、ws_mcp_call
+ * 参数禁用与 mcp__ 裁决收在同一 handler 里；`resolveServerId` 仍按入参递入，域间不加值边。
  *
- * 单池（#767 笔 1a）：中间层实例与 ws_mcp_* 无条件装配——apply 完成后实例恒在，
- * 全部服务器（含封装定义条目）都只经中间层单元触达，模式键已不影响任何行为；
- * pre-step 窗口（装配尚未完成）实例缺失时走 B 兜底。
+ * 独立守卫退役后，"mcp__ 直呼即使中间层实例缺席也要拦"这一性质改由「实例缺席即无转发、
+ * 直呼照常裁决」保证：豁免只在 mw.forwarding 命中时生效，实例不在场时集合为空，直呼
+ * 走与此前独立守卫相同的禁用判定路径。
  *
+ * 单池（#767 笔 1a）：中间层实例与 ws_mcp_* 无条件装配——apply 完成后实例恒在。
  * 外层超时（#935）：注册时按全量源现算 max + 25s 内部尾经 options.callTimeoutMs 递入；
  * 后续变更由 assemble 内的 refreshCallTimeout 追（dispose + 重注册，见该处注释）。
  */
@@ -347,15 +347,8 @@ function registerMiddlewareAndGuard(
     // 图片准入的两条晚读 thunk（第 5 个位置参数：options 袋里加键会改导出面声明块）。
     faces === undefined ? undefined : { attachments: faces.attachments, models: faces.models },
   );
-  const guardDispose = registerDirectMcpGuard(
-    ctx,
-    manager.disabledTools,
-    resolveRoot,
-    resolveServerId,
-  );
   return () => {
     disposeTools();
-    guardDispose?.();
   };
 }
 
@@ -534,6 +527,8 @@ interface EnabledRuntimeDisposers {
   disposeVisibility: () => void;
   /** 装配侧兜底擦除（#922 伴随项 E）：摘组装监听，计数器随域一起释放。 */
   disposeErasure: () => void;
+  /** 目录失效消费（#1014 B7b）：摘 tools/change 监听。 */
+  disposeCatalogInvalidation: () => void;
   watchCleanup: () => void;
 }
 
@@ -620,6 +615,7 @@ export async function apply(
     disposeMiddleware: () => {},
     disposeVisibility: () => {},
     disposeErasure: () => {},
+    disposeCatalogInvalidation: () => {},
     watchCleanup: () => {},
   };
 
@@ -637,6 +633,7 @@ export async function apply(
       runtime.disposeMiddleware();
       runtime.disposeVisibility();
       runtime.disposeErasure();
+      runtime.disposeCatalogInvalidation();
       runtime.watchCleanup();
       void manager.dispose();
       // 装载账本只发起 dispose、不等结算（官方 dispose 会等在途首连，挂死的服务器能把它拖到
@@ -770,6 +767,15 @@ async function assembleEnabledRuntime(
     logger: faces.logger,
   });
 
+  // #1014 B7b：目录失效消费口。宿主 tools/change 无载荷，且本包 visibility 的 restrict
+  // 自身也会发它——所以重投影按 server diff 逐台判定（reprojectCatalogs 内），不做全量刷新。
+  // 必须挂在 startAll **之前**：startAll 期间的注册才不会被漏掉。
+  const disposeCatalogInvalidation = faces.events.onToolsChange(() => {
+    void mw.reprojectCatalogs().catch((error: unknown) => {
+      faces.logger.warn(`dsh-mcp-manager: catalog reprojection failed: ${String(error)}`);
+    });
+  });
+
   await manager.startAll();
   await manager.loadCatalogCache();
   manager.reconcileServers();
@@ -817,6 +823,7 @@ async function assembleEnabledRuntime(
     },
     disposeVisibility,
     disposeErasure,
+    disposeCatalogInvalidation,
     watchCleanup,
   };
 }
@@ -916,7 +923,7 @@ export type {
   DebugConfig,
 } from "./server/stats/interface.ts";
 // 工具注册面（inject：#664 阶段 6 落位）
-export { registerMiddlewareTools, registerDirectMcpGuard } from "./server/inject/interface.ts";
+export { registerMiddlewareTools } from "./server/inject/interface.ts";
 // 共享类型面（物理定义在各域 impl/<块>/type.ts，按落点域门面分组转出；#767 W11b2a）
 // #875 M2c：ProjectUnit 按 (b) 退出——它是 connection 域内部的池单元账本条目。
 export type {

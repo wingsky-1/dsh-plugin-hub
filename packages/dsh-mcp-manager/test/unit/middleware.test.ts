@@ -2606,6 +2606,217 @@ describe("#767 S1-4d：池的转发登记、拆除走账本与读时刷新", () 
     expect(catalog.unavailable).toBeUndefined();
   });
 
+  // #1014 B7：显式失效压过 TTL 短路。TTL 是 24h 的兜底上限，不是刷新策略——
+  // 此前 tools/change / 重连 / 手工刷新都没有落点，模型会一直看着已删除的 schema。
+  it("显式失效压过 TTL：未登记失效时 TTL 短路不重投影，登记后立刻重投影", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-mw-dirty-"));
+    const { host, tools } = makeHost(new Map([[ROOT, [PY]]]));
+    const catalogHost = {
+      ...host,
+      catalogCachePath: (root: string) => join(dir, `${root.replace(/[^a-z0-9]/gi, "_")}.json`),
+    };
+    const mw = trackMw(new McpMiddleware(catalogHost as unknown as MiddlewareHost));
+    const unit = makeUnit();
+    mw.units.set(ROOT, unit);
+    unit.connections.set("py", remoteEntry(PY, "id-py"));
+    const project = async () => {
+      await catalogDirectory.projectRegisteredTools({
+        root: ROOT,
+        serverName: "py",
+        id: "id-py",
+        schemas: tools.schemas(),
+        cachePath: () => catalogHost.catalogCachePath(ROOT),
+        redact: (error: unknown) => String(error),
+        isRuntimeServer: () => false,
+        warn: () => {},
+      });
+    };
+    tools.entries = [
+      { name: "mcp__id-py__alpha", description: "甲", parameters: {} },
+      { name: "mcp__id-py__beta", description: "乙", parameters: {} },
+    ];
+    await catalogDirectory.ensureRootLoaded(ROOT, catalogHost.catalogCachePath(ROOT));
+    await project();
+    expect([...catalogDirectory.entryFor(ROOT, "py")!.tools.keys()].sort()).toEqual([
+      "alpha",
+      "beta",
+    ]);
+    // 远端删掉 beta：未登记失效 → TTL 短路，目录**不动**（这正是旧行为，也说明判据有效）。
+    tools.entries = [{ name: "mcp__id-py__alpha", description: "甲", parameters: {} }];
+    await project();
+    expect([...catalogDirectory.entryFor(ROOT, "py")!.tools.keys()].sort()).toEqual([
+      "alpha",
+      "beta",
+    ]);
+    // 登记失效后同一份注册面立刻重投影，beta 消失。
+    catalogDirectory.markDirty(ROOT, "py");
+    expect(catalogDirectory.isDirty(ROOT, "py")).toBe(true);
+    await project();
+    expect([...catalogDirectory.entryFor(ROOT, "py")!.tools.keys()].sort()).toEqual(["alpha"]);
+    // 投影成功即消费标记：再投影回到 TTL 短路。
+    expect(catalogDirectory.isDirty(ROOT, "py")).toBe(false);
+  });
+
+  it("投影失败保留失效标记（不让一次失败把该服务器冻结 24h）", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-mw-dirty2-"));
+    const { host, tools } = makeHost(new Map([[ROOT, [PY]]]));
+    const mw = trackMw(new McpMiddleware(host as unknown as MiddlewareHost));
+    const unit = makeUnit();
+    mw.units.set(ROOT, unit);
+    unit.connections.set("py", remoteEntry(PY, "id-py"));
+    tools.entries = [{ name: "mcp__id-py__alpha", description: "甲", parameters: {} }];
+    await catalogDirectory.ensureRootLoaded(ROOT, join(dir, "root.json"));
+    catalogDirectory.markDirty(ROOT, "py");
+    // cachePath 求值抛错 → 落盘链失败 → catch 收口成 unavailable；标记必须还在。
+    await catalogDirectory.projectRegisteredTools({
+      root: ROOT,
+      serverName: "py",
+      id: "id-py",
+      schemas: tools.schemas(),
+      cachePath: () => {
+        throw new Error("path boom");
+      },
+      redact: (error: unknown) => String(error),
+      isRuntimeServer: () => false,
+      warn: () => {},
+    });
+    expect(catalogDirectory.entryFor(ROOT, "py")!.unavailable).toBeDefined();
+    expect(catalogDirectory.isDirty(ROOT, "py"), "失败后仍应重试").toBe(true);
+  });
+
+  it("dropRoot 清该 root 的失效标记，不动别的 root", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-mw-dirty3-"));
+    // 本条只验 catalog 域的账本生命周期，不碰连接层：makeHost 仍要调（它装池侧端口并复位）。
+    makeHost(new Map([[ROOT, [PY]]]));
+    // 用**私有 root**而不是共享的 ROOT：本条会 dropRoot，而 catalogDirectory 是跨用例的
+    // 单例——拿 ROOT 做 destructive 用例会拆掉后续用例仍在读的目录。
+    const own = "/1014-drop-root";
+    const other = "/1014-other-root";
+    await catalogDirectory.ensureRootLoaded(own, join(dir, "a.json"));
+    await catalogDirectory.ensureRootLoaded(other, join(dir, "b.json"));
+    catalogDirectory.markDirty(own, "py");
+    catalogDirectory.markDirty(other, "py");
+    catalogDirectory.dropRoot(own);
+    expect(catalogDirectory.isDirty(own, "py")).toBe(false);
+    expect(catalogDirectory.isDirty(other, "py")).toBe(true);
+  });
+
+  it("dropServer 只清真被删掉那台的失效标记", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-mw-dropserver-"));
+    const { host, tools } = makeHost(new Map([[ROOT, [PY]]]));
+    const catalogHost = {
+      ...host,
+      isRuntimeServer: () => false,
+      catalogCachePath: (root: string) => join(dir, `${root.replace(/[^a-z0-9]/gi, "_")}.json`),
+    };
+    trackMw(new McpMiddleware(catalogHost as unknown as MiddlewareHost));
+    await catalogDirectory.ensureRootLoaded(ROOT, catalogHost.catalogCachePath(ROOT));
+    // 条目只能由投影产生（ensureRootLoaded 建的是空表），故先投两台。
+    for (const serverName of ["py", "other"]) {
+      const id = "id-" + serverName;
+      tools.entries = [{ name: `mcp__${id}__alpha`, description: "甲", parameters: {} }];
+      await catalogDirectory.projectRegisteredTools({
+        root: ROOT,
+        serverName,
+        id,
+        schemas: tools.schemas(),
+        cachePath: () => catalogHost.catalogCachePath(ROOT),
+        redact: (error: unknown) => String(error),
+        isRuntimeServer: () => false,
+        warn: () => {},
+      });
+    }
+    catalogDirectory.markDirty(ROOT, "py");
+    catalogDirectory.markDirty(ROOT, "other");
+    expect(catalogDirectory.dropServer(ROOT, "py"), "在册条目应删掉").toBe(true);
+    expect(catalogDirectory.isDirty(ROOT, "py"), "被删掉那台的标记应清").toBe(false);
+    expect(catalogDirectory.isDirty(ROOT, "other"), "另一台不受影响").toBe(true);
+    // 不在册的名字 / 不在册的 root：早返回 false，且不得顺带清任何标记。
+    expect(catalogDirectory.dropServer(ROOT, "not-there")).toBe(false);
+    expect(catalogDirectory.dropServer("/no-such-root", "py")).toBe(false);
+    expect(catalogDirectory.isDirty(ROOT, "other"), "未命中时不得动别人的标记").toBe(true);
+  });
+
+  it("tools/change 后按 server diff 重投影：远端删掉的工具从目录消失（#1014 B7b）", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-mw-change-"));
+    const { host, tools } = makeHost(new Map([[ROOT, [PY]]]));
+    const catalogHost = {
+      ...host,
+      // projectConnectedCatalog 经 host 读这一面（runtime 条目不落盘），缺了会让整次投影
+      // 走 unavailable 降级并把工具表清空——症状是「目录空了」，不是「夹具没造全」。
+      isRuntimeServer: () => false,
+      catalogCachePath: (root: string) => join(dir, `${root.replace(/[^a-z0-9]/gi, "_")}.json`),
+    };
+    const mw = trackMw(new McpMiddleware(catalogHost as unknown as MiddlewareHost));
+    const unit = makeUnit();
+    mw.units.set(ROOT, unit);
+    unit.connections.set("py", remoteEntry(PY, "id-py"));
+    tools.entries = [
+      { name: "mcp__id-py__alpha", description: "甲", parameters: {} },
+      { name: "mcp__id-py__beta", description: "乙", parameters: {} },
+    ];
+    await catalogDirectory.ensureRootLoaded(ROOT, catalogHost.catalogCachePath(ROOT));
+    await catalogDirectory.projectRegisteredTools({
+      root: ROOT,
+      serverName: "py",
+      id: "id-py",
+      schemas: tools.schemas(),
+      cachePath: () => catalogHost.catalogCachePath(ROOT),
+      redact: (error: unknown) => String(error),
+      isRuntimeServer: () => false,
+      warn: () => {},
+    });
+    expect([...catalogDirectory.entryFor(ROOT, "py")!.tools.keys()].sort()).toEqual([
+      "alpha",
+      "beta",
+    ]);
+    // 远端删掉 beta 后触发 tools/change 的等价调用。
+    tools.entries = [{ name: "mcp__id-py__alpha", description: "甲", parameters: {} }];
+    await mw.reprojectCatalogs();
+    expect([...catalogDirectory.entryFor(ROOT, "py")!.tools.keys()].sort()).toEqual(["alpha"]);
+    // 注册面没变时不重投影。
+    //
+    // 这里断的是**条目对象引用**而不是 discoveredAt：重投影走 servers.set 换掉整个条目，
+    // 引用变了即重投影过；引用不变即短路。discoveredAt 是 Date.now() 的毫秒分辨率——同一毫秒
+    // 内改与不改数值相等，拿它当判据等于恒绿（复核实测：把短路改成恒 true 仍全绿）。
+    const before = catalogDirectory.entryFor(ROOT, "py")!;
+    await mw.reprojectCatalogs();
+    expect(catalogDirectory.entryFor(ROOT, "py"), "注册面没变不应重投影").toBe(before);
+  });
+
+  // #1014 复核 P0-1：list_changed 最常见的形态是**只改描述/参数 schema**、工具名集合不动。
+  // 只比裸名集合会让目录继续发旧描述，模型照旧参数调用——而这正是 issue §2 的目标面。
+  it("tools/change 后只改 description 也重投影（不止增删）", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-mw-desc-"));
+    const { host, tools } = makeHost(new Map([[ROOT, [PY]]]));
+    const catalogHost = {
+      ...host,
+      isRuntimeServer: () => false,
+      catalogCachePath: (root: string) => join(dir, `${root.replace(/[^a-z0-9]/gi, "_")}.json`),
+    };
+    const mw = trackMw(new McpMiddleware(catalogHost as unknown as MiddlewareHost));
+    const unit = makeUnit();
+    mw.units.set(ROOT, unit);
+    unit.connections.set("py", remoteEntry(PY, "id-py"));
+    tools.entries = [{ name: "mcp__id-py__alpha", description: "旧描述", parameters: {} }];
+    await catalogDirectory.ensureRootLoaded(ROOT, catalogHost.catalogCachePath(ROOT));
+    await catalogDirectory.projectRegisteredTools({
+      root: ROOT,
+      serverName: "py",
+      id: "id-py",
+      schemas: tools.schemas(),
+      cachePath: () => catalogHost.catalogCachePath(ROOT),
+      redact: (error: unknown) => String(error),
+      isRuntimeServer: () => false,
+      warn: () => {},
+    });
+    expect(catalogDirectory.entryFor(ROOT, "py")!.tools.get("alpha")!.description).toBe("旧描述");
+    // 工具名集合不变，只改描述。
+    tools.entries = [{ name: "mcp__id-py__alpha", description: "新描述", parameters: {} }];
+    await mw.reprojectCatalogs();
+    expect(catalogDirectory.entryFor(ROOT, "py")!.tools.get("alpha")!.description).toBe("新描述");
+  });
+
   it("discover：目录落盘失败 → unavailable 降级（discoveredAt 归零）", async () => {
     // 触发点说明：注册面读不到（schemas 抛错）**不会**走到这个降级——registeredSchemas 按设计
     // 吞掉读取异常并当空处理（读不到注册表不许阻塞投影）。真正能触发 catch 的是落盘链：
@@ -2647,7 +2858,11 @@ describe("#767 S1-4d：池的转发登记、拆除走账本与读时刷新", () 
     // 投影失败落在已有条目上（上一段 ensureRootLoaded 已建条目），此处断言存在。
     const catalog = catalogDirectory.entryFor(ROOT, "py")!;
     expect(catalog.discoveredAt).toBe(0);
-    expect(catalog.tools.size).toBe(0);
+    // last-good 保留（#1014 §2「失败保留 last-good」）：落盘失败是本地问题，与远端工具清单
+    // 无关。此前这里断言 tools 为空——一次落盘失败就把这台服务器在模型视野里变成
+    // 「没有工具」，而目录读口已经带 unavailable 段足以表达「这份快照不新鲜」。
+    // 断言锁的是「远端明明报了 alpha，失败后仍在」：把它改回清空即红。
+    expect([...catalog.tools.keys()]).toEqual(["alpha"]);
     // 真脱敏器的替换词是 [REDACTED]（fake pipeline 里的 *** 是另一套夹具，别混）。
     expect(catalog.unavailable).toBe("目录缓存路径不可用 token=[REDACTED]");
   });
@@ -2840,6 +3055,110 @@ describe("#767 S1-4d：guard 判发起者", () => {
     );
     expect(decision.kind).toBe("deny");
     expect(decision.reason).toMatch(/已被用户在「MCP」浮窗禁用/);
+  });
+
+  // #1014 B5 / 不变量 I-E：mw.forwarding 是 mcp__ 直呼**唯一**的放行位。
+  // 上一条只证明「集合外被拒」，没证明「集合内必须是飞行中的 token」——若放行改按
+  // (root, server) 这类**可重放**键判定，前者仍绿。此条把 token 的时效性钉住。
+  it("转发结算后（token 已摘除）同一 token 重放直呼 → 拒", async () => {
+    const { guards, mw } = guardFixture(parseDisabledTools({}));
+    const token = Symbol("forwarded") as unknown as ToolExecutionToken;
+    mw.forwarding.add(token);
+    const guard = guards.get("tools/pre-execute");
+    const inFlight = await guard(
+      { name: "mcp__my__t", parent: token, agent: { session: { header: { cwd: "/proj" } } } },
+      async () => ({ kind: "allow" }),
+    );
+    expect(inFlight.kind).toBe("allow");
+    // dispatch 的 finally 摘除 token 后，同一个 token 不应再有放行权。
+    mw.forwarding.delete(token);
+    const replayed = await guard(
+      { name: "mcp__my__t", parent: token, agent: { session: { header: { cwd: "/proj" } } } },
+      async () => ({ kind: "allow" }),
+    );
+    expect(replayed.kind).toBe("deny");
+    expect(replayed.reason).toContain("ws_mcp_call");
+  });
+
+  // 文案纪律：deny 是模型唯一能看到的自我纠正依据，冗长会挤占上下文并诱发重试。
+  it("兜底拒的文案短且指路 ws_mcp_call", async () => {
+    const { guards } = guardFixture(parseDisabledTools({}));
+    const decision = await guards.get("tools/pre-execute")(
+      { name: "mcp__my__t", agent: { session: { header: { cwd: "/proj" } } } },
+      async () => ({ kind: "allow" }),
+    );
+    expect(decision.kind).toBe("deny");
+    expect(decision.reason).toContain("ws_mcp_call");
+    // 长度断**字符数**而不是句数：按「。」断句对不含中文句号的文案恒返回长度 1 的数组，
+    // 判据等于真空（复核实测：文案追加 4 句仍全绿）。字符数与语言无关，膨胀即红。
+    expect(decision.reason.length, "兜底拒文案过长会挤占上下文并诱发重试").toBeLessThanOrEqual(160);
+    // README 已承诺「写明不要重试本次调用」，此前代码与测试都没有任何判据钉它。
+    expect(decision.reason).toContain("不要重试");
+  });
+});
+
+// #1014 B5：放行位的**来源**判据。
+//
+// 上一组用例用手工 mw.forwarding.add(token) 造豁免身份——那证明的是「集合内会放行」，
+// 不是「真实转发会进集合」。若 dispatch 忘了登记（或摘早了），全案唯一的放行位会静默失效、
+// 所有远端 MCP 调用被自家 guard 打死。此处让一次真实 ws_mcp_call 打到假执行器，在
+// execute 被调用的那一刻读集合，证明 parent 由 dispatch 自然产生、且 finally 事后摘除。
+describe("#1014 B5：我方转发的豁免身份由 dispatch 自然产生", () => {
+  it("execute 被调用时 parent 已在 forwarding 内，调用结束后已摘除", async () => {
+    const servers: ServerConfig[] = [
+      { name: "py", transport: "stdio", command: "python", enabled: true },
+    ];
+    const TOKEN = Symbol("outer-call") as unknown as ToolExecutionToken;
+    let parentSeen: unknown;
+    let inSetDuringCall: boolean | undefined;
+    // execute 闭包要在中间层实例建好**之前**就存在（实例依赖 makeHost 产出的 host），
+    // 故经 holder 间接取；execute 被调用时实例早已就位。
+    const holder: { mw?: InstanceType<typeof McpMiddleware> } = {};
+    const { host } = makeHost(new Map([[ROOT, servers]]), {
+      schemas: [{ name: "mcp__id-py__echo" }],
+      execute: async (input: unknown) => {
+        const parent = (input as { parent?: unknown }).parent;
+        parentSeen = parent;
+        inSetDuringCall =
+          parent !== undefined && holder.mw?.forwarding.has(parent as ToolExecutionToken) === true;
+        return { isError: false, content: [], value: { content: [] } };
+      },
+    });
+    const mw = trackMw(new McpMiddleware(host as unknown as MiddlewareHost));
+    holder.mw = mw;
+    const unit = makeUnit();
+    mw.units.set(ROOT, unit);
+    unit.connections.set("py", remoteEntry(servers[0], "id-py"));
+    const registered: ToolDefinition[] = [];
+    const ctx = {
+      tools: {
+        register: (def: ToolDefinition) => {
+          registered.push(def);
+          return () => {};
+        },
+        schemas: () => host.ctx.tools.schemas(),
+      },
+    };
+    registerMiddlewareTools(ctx as unknown as Context, mw, async () => ROOT, {
+      disabledTools: new Map(),
+    });
+    const call = registered.find((def) => def.name === "ws_mcp_call")!;
+    await call.execute({ server: fullServerName(ROOT, "py"), tool: "echo" }, {
+      callId: "call-b5",
+      rootCallId: "call-b5",
+      name: "ws_mcp_call",
+      arguments: {},
+      signal: new AbortController().signal,
+      token: TOKEN,
+      // ToolRunContext 在 ToolExecution 之外另带这两个面；本用例不碰，按接缝补最小实现。
+      deferContext: () => {},
+      concludeTurn: () => {},
+      // callId/rootCallId 是品牌类型，字面量不满足；按接缝收窄到 execute 的第二参位，
+      // 不去硬写 ToolRunContext（它随宿主版本变，测试不该跟着改）。
+    } as unknown as Parameters<typeof call.execute>[1]);
+    expect(parentSeen, "子调用必须带 parent").toBe(TOKEN);
+    expect(inSetDuringCall, "execute 被调用时 parent 必须在 forwarding 内").toBe(true);
+    expect(mw.forwarding.has(TOKEN), "结算后 finally 必须摘除 token").toBe(false);
   });
 });
 

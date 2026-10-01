@@ -24,7 +24,8 @@ export interface ServerStats {
 }
 
 export interface ProgressiveDisclosureStats {
-  /** ws_mcp_search 搜索词调用频次（query -> 次数） */
+  /** ws_mcp_search 搜索词调用频次（**哈希桶键** -> 次数；空查询为 `<empty>`）。
+   *  键不是搜索词原文——落盘不留模型自由文本；代价是桶键为假名化、低熵搜索词可被字典攻击。 */
   searches: Record<string, number>;
   /** ws_mcp_list 查询频次（serverFilter -> 次数；空串代表全量盘点） */
   lists: Record<string, number>;

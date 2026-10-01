@@ -1269,10 +1269,17 @@ describe("reconcileServers", () => {
     manager.projectRoot = dir;
     await manager.initMiddleware();
     manager.reconcileServers();
-    await pollUntil("两个 root 各有一条 both", () => {
+    // 等**语义终点**而非代理条件（#1091）：条目在 middleware.ts:148 就带着 id: undefined
+    // 入表，has() 为真早于 id 在 :173 回填——只等 has() 会读到 id 未回填的窗口，
+    // 让下面「id 不同」那条用例偶发失败。断言不动，这里只把等待条件收紧到被断言的那个量。
+    await pollUntil("两个 root 各有一条 both 且 id 已回填", () => {
+      const globalEntry = manager.middleware!.units.get("@global")?.connections.get("both");
+      const projectEntry = manager.middleware!.units.get(dir)?.connections.get("both");
       return (
-        manager.middleware!.units.get("@global")?.connections.has("both") === true &&
-        manager.middleware!.units.get(dir)?.connections.has("both") === true
+        globalEntry !== undefined &&
+        projectEntry !== undefined &&
+        globalEntry.id !== undefined &&
+        projectEntry.id !== undefined
       );
     });
     return { manager, store, dir, log };
@@ -2280,7 +2287,7 @@ describe("#767 S1-5b：封装定义条目恒交中间层（(c)'）", () => {
    * 夹具：正常 transport 全局服务器（进 @global 单元，注册名 `mcp__<id>__<tool>`）
    * + 中间层工具与其 pre-execute guard（连 resolveServerId 一起按组合根的接线递入）。
    */
-  async function directIdGuardFixture() {
+  async function directGuardFixture() {
     const { manager } = makeManager(homeDir);
     // guard 回调捕获器：存取两用（ctx.on 侧存入、判据侧按 guard 形状调用），值面保持未知、调用点收窄。
     const handlers = new Map<string, unknown>();
@@ -2325,7 +2332,7 @@ describe("#767 S1-5b：封装定义条目恒交中间层（(c)'）", () => {
   }
 
   it("直呼 mcp__<id>__<禁用工具> 命中禁用面（guard 反解回 @global/g1）", async () => {
-    const { entry, guard } = await directIdGuardFixture();
+    const { entry, guard } = await directGuardFixture();
     // guard 回调返回裁决对象（kind/reason 面）：此处按测试读取面收窄。
     const decision = (await guard(
       { name: `mcp__${entry.id}__echo`, agent: { session: { header: {} } } },
@@ -2336,8 +2343,10 @@ describe("#767 S1-5b：封装定义条目恒交中间层（(c)'）", () => {
     expect(decision.reason).toContain("@@global/g1/echo");
   });
 
-  it("直呼 mcp__<id>__<未禁用工具> 放行（不是一律拒）", async () => {
-    const { entry, guard } = await directIdGuardFixture();
+  // #1014 B5：语义从「未禁用即放行」翻成「mcp__ 直呼一律拒」。断 nexted=false 是
+  // 关键的一半——只断 kind 的话，「先 next 再 deny」也能过这条。
+  it("直呼 mcp__<id>__<未禁用工具> 一律拒（内部注册名不可直呼）", async () => {
+    const { entry, guard } = await directGuardFixture();
     let nexted = false;
     const decision = (await guard(
       { name: `mcp__${entry.id}__other`, agent: { session: { header: {} } } },
@@ -2346,8 +2355,9 @@ describe("#767 S1-5b：封装定义条目恒交中间层（(c)'）", () => {
         return { kind: "allow" };
       },
     )) as { kind: unknown; reason?: unknown };
-    expect(nexted).toBe(true);
-    expect(decision.kind).toBe("allow");
+    expect(nexted).toBe(false);
+    expect(decision.kind).toBe("deny");
+    expect(decision.reason).toContain("ws_mcp_call");
   });
 
   it("无 transport 的封装条目（直传配置）同样只经虚拟连接，不派官方实例", async () => {

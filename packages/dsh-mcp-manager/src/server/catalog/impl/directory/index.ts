@@ -20,6 +20,16 @@ import type { CatalogServer, CatalogTool } from "../entries/type.ts";
 import { catalogPorts } from "../service/index.ts";
 import { fileMode, readJsonFile, writeFileAtomic } from "../../../shared/interface.ts";
 
+/**
+ * 投影是否该被 TTL 短路（#1014 B7）：**无失效标记且** TTL 内才短路。
+ *
+ * 为什么提成函数：短路判据是「策略」不是「流程」，写在本方法里会与投影主体一起计入复杂度，
+ * 让一个纯判定淹没在副作用中间。失效标记由连接层在变更发生时刻登记，本层只读。
+ */
+function shortCircuitsFresh(invalidated: boolean, entry: CatalogServer | undefined): boolean {
+  return !invalidated && isCatalogFresh(entry);
+}
+
 /** 注册面视图：宿主 `ctx.tools.schemas()` 的返回形状（每次投影现取）。 */
 export type SchemaView = ReadonlyArray<{
   name?: unknown;
@@ -93,6 +103,17 @@ class CatalogDirectory {
   private readonly byRoot = new Map<string, Map<string, CatalogServer>>();
   /** 在册 root 集合：与 byRoot 同步维护，承载「单元存在但目录为空」这一可区分状态。 */
   private readonly roots = new Set<string>();
+  /**
+   * 失效账本：`root\0<裸 server 名>` 的脏标记集合（#1014 B7）。
+   *
+   * 为什么落在这里而不是连接层：本域是目录新鲜度的**唯一裁决点**，而「哪台脏了」是目录
+   * 事实。连接层只负责在变更发生时刻登记（markDirty）与在投影时消费，本域不依赖任何
+   * 上对能力——deps.ts 不动，域间值边保持 0。
+   *
+   * 为什么需要它：此前目录投影只按 TTL 短路（24h），tools/change / 重连 / 手工刷新 / 配置
+   * 变更全都没有落点，模型会一直看到旧 schema。TTL 是兜底上限，不是刷新策略。
+   */
+  private readonly dirty = new Set<string>();
 
   /** 读口：root 的整份目录；root 不在册 → undefined。域外只读，故给 ReadonlyMap。 */
   serversFor(root: string): ReadonlyMap<string, CatalogServer> | undefined {
@@ -157,6 +178,12 @@ class CatalogDirectory {
   dropRoot(root: string): void {
     this.byRoot.delete(root);
     this.roots.delete(root);
+    // 失效标记随 root 一起清：单元已拆，重建时目录会从 last-good 重新载入并按新鲜度判定，
+    // 留着上一代的标记只会让重建后白投影一次；反过来说，也不该在这里替单元「保留」未处理的
+    // 失效——那属于已随单元消失的状态。
+    for (const key of [...this.dirty]) {
+      if (key.startsWith(`${root}\0`)) this.dirty.delete(key);
+    }
   }
 
   /**
@@ -164,17 +191,61 @@ class CatalogDirectory {
    * @returns 是否真的删掉了条目——调用方据此决定要不要广播状态（与 `Map.delete` 同口径）。
    */
   dropServer(root: string, serverName: string): boolean {
-    return this.byRoot.get(root)?.delete(serverName) ?? false;
+    const servers = this.byRoot.get(root);
+    // 早返回而不是 `?.delete(...) ?? false`：后者在 Map.delete 的布尔返回上与 `|| false`
+    // 行为完全等价，会留下一个杀不掉的等价变异体（复核面 100% 命中、判红全靠它）。
+    if (servers === undefined || !servers.delete(serverName)) return false;
+    // 条目真被删掉才清它的失效标记：标记指的是「这台的目录待重投影」，条目都没了，
+    // 留着它会让下一次同名的重新登记白投影一次。
+    this.clearDirty(root, serverName);
+    return true;
   }
 
-  /** 条目不可用（发现或落盘失败）：置空并带脱敏后的原因（unavailable 段）。 */
+  /** 失效键：root 与裸名用 NUL 连接——两者都可能含 `/`，用路径分隔符会撞键。 */
+  private dirtyKey(root: string, serverName: string): string {
+    return `${root}\0${serverName}`;
+  }
+
+  /**
+   * 登记失效（#1014 B7）：投影短路前由调用点打上。幂等——同一条重复登记不叠加，
+   * 也不区分原因：失效只需要「要重投影」这一个事实。
+   */
+  markDirty(root: string, serverName: string): void {
+    this.dirty.add(this.dirtyKey(root, serverName));
+  }
+
+  /** 失效读口：显式失效压过 TTL 短路（这是本账本存在的全部意义）。 */
+  isDirty(root: string, serverName: string): boolean {
+    return this.dirty.has(this.dirtyKey(root, serverName));
+  }
+
+  /**
+   * 消费失效：投影成功后清标记。
+   *
+   * 为什么只在成功后清：投影失败走 markUnavailable 降级，目录并不更新——此时保留标记，
+   * 下一次投影仍会绕过 TTL 短路重试；清掉就等于让一次失败把该服务器冻结 24h。
+   */
+  clearDirty(root: string, serverName: string): void {
+    this.dirty.delete(this.dirtyKey(root, serverName));
+  }
+  /**
+   * 条目不可用（发现或落盘失败）：带脱敏后的原因（unavailable 段），**并保留 last-good 工具表**。
+   *
+   * 为什么保留（#1014 §2「失败保留 last-good」）：此前实现是把 tools 换成空表，等于一次落盘
+   * 失败就让该服务器在模型视野里「工具消失」。落盘失败是本地问题（路径不可写、目录不存在），
+   * 与远端工具清单无关——丢掉 last-good 会把一次瞬时失败放大成「这台服务器没有工具」。
+   * 目录读口本来就带 unavailable 段，消费者据此知道该快照不新鲜。
+   *
+   * discoveredAt 仍归零：它是「这份快照有多新」的事实位，归零让 isCatalogFresh 判不新鲜，
+   * 下一次投影（含脏标记在途）会重试。
+   */
   markUnavailable(root: string, serverName: string, reason: string): void {
     // 只翻转已有条目：不存在的服务器不因「标记不可用」而在册（那是另一条语义）。
     const servers = this.byRoot.get(root);
     if (servers === undefined || !servers.has(serverName)) return;
     servers.set(serverName, {
       discoveredAt: 0,
-      tools: new Map(),
+      tools: servers.get(serverName)!.tools,
       unavailable: reason,
     });
   }
@@ -185,11 +256,23 @@ class CatalogDirectory {
    * 官方注册名是 `mcp__<id>__<tool>`，去掉前缀即裸名；description 与 parameters 都在注册面
    * 视图里，不需要第二份工具清单。fresh 短路：TTL 内不重投影（discover 惰性语义），且短路发生
    * 在任何落盘动作之前。落盘失败（含路径求值失败）由本层 catch 收口成 unavailable 降级。
+   *
+   * 短路条件（#1014 B7）：**无失效标记且** TTL 内才短路。显式失效压过 TTL——否则模型会
+   * 一直看着已删除的 schema，而 TTL 是 24h。
+   *
+   * 当前失效的生产者只有一个：tools/change 经 connection 域的 reprojectCatalogs 逐台 diff
+   * 后登记（connection/runtime/middleware.ts）。重连与配置变更只有在宿主顺带发出
+   * tools/change 时才间接生效；**手工刷新尚无失效落点**（刷新走的是纯读路径，不触发投影），
+   * 仍落在 TTL 短路内——该缺口记在 #1014，未在本批闭合。
    */
   async projectRegisteredTools(input: RegisteredProjectionInput): Promise<void> {
     const servers = this.byRoot.get(input.root);
     if (servers === undefined) return;
-    if (isCatalogFresh(servers.get(input.serverName))) return; // fresh
+    if (
+      shortCircuitsFresh(this.isDirty(input.root, input.serverName), servers.get(input.serverName))
+    ) {
+      return; // fresh
+    }
     const prefix = `mcp__${input.id}__`;
     try {
       const tools: Array<{
@@ -216,6 +299,10 @@ class CatalogDirectory {
         isRuntimeServer: input.isRuntimeServer,
         warn: input.warn,
       });
+      // 失效标记在**落盘之后**才消费：内存条目在 servers.set 时已经更新，但落盘失败会走
+      // catch 把条目打上 unavailable——那时目录并不算「已刷新」，留下标记让下一次投影
+      // 仍绕过 TTL 重试。放在 servers.set 之后会让一次落盘失败把该服务器冻结 24h。
+      this.clearDirty(input.root, input.serverName);
     } catch (error) {
       this.markUnavailable(input.root, input.serverName, input.redact(error));
     }

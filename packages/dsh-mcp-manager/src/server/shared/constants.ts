@@ -34,8 +34,6 @@ export const CONNECT_TIMEOUT_MS = 10_000;
  * servers/lifecycle/impl/timeout）。
  */
 export const DISCOVERY_TIMEOUT_MS = 10_000;
-/** 工具结果渲染截断上限（字节）。extractText 现状不截断，超长 JSON 全量进上下文。 */
-export const DEFAULT_RESULT_TRUNCATE_BYTES = 8192;
 /** ws_mcp_list 每服务器工具条数默认上限（catalog 与 inject 两域消费，见本文件头注释）。 */
 export const LIST_DEFAULT_TOOLS_PER_SERVER = 50;
 /**

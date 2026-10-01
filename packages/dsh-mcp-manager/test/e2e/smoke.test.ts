@@ -1038,19 +1038,33 @@ it("#362 P0-1：工具级禁用三入口一致（callTool / pre-execute guard / 
     } as unknown as Parameters<SmokeGuard>[0],
     async () => ({ kind: "allow" }) as PreToolDecision,
   );
-  expect(allow.kind, "未禁用工具放行").toBe("allow");
-  // agent-less → 按最宽可见范围放行（@global 记录仍生效）。
+  // #1014 B5：未禁用的 mcp__ 直呼也不再放行——内部注册名不可由模型发起。
+  expect(allow.kind, "未禁用工具直呼一律拒").toBe("deny");
+  expect((allow as unknown as { reason: string }).reason).toContain("ws_mcp_call");
+  // agent-less → root 解析不出，退到最宽可见面（@global 共享记录仍生效）。
   const gDeny = await guard!(
     { name: "mcp__gctx__use_g" } as unknown as Parameters<SmokeGuard>[0],
     async () => ({ kind: "allow" }) as PreToolDecision,
   );
   expect(gDeny.kind, "agent-less 时 @global 共享记录仍 deny").toBe("deny");
+  // #1014 B5 / R8：上面那条走的是「@global 命中禁用」分支；这里补它的**另一侧**——
+  // agent-less 且 @global 无记录时，handleDirectMcpGuard 返回 undefined（不构成裁决），
+  // 由兜底拒接手。缺这条时，把那个 return undefined 改成提前 deny 或提前放行都不会红：
+  // 两条分支在 B5 后都收敛到 deny，只是文案不同。这里把文案钉住（禁用语义 vs 内部名语义），
+  // 让「提前短路」这种改法也会被打红。
+  const gAllow = await guard!(
+    { name: "mcp__gctx__other" } as unknown as Parameters<SmokeGuard>[0],
+    async () => ({ kind: "allow" }) as PreToolDecision,
+  );
+  expect(gAllow.kind, "agent-less 且 @global 无记录时仍拒").toBe("deny");
+  expect((gAllow as unknown as { reason: string }).reason).not.toContain("禁用");
   // 超长哈希名（含非法字符被替换）→ 不误禁。
   const hashed = await guard!(
     { name: "mcp__ctx__use_ctx_0123456789ab" } as unknown as Parameters<SmokeGuard>[0],
     async () => ({ kind: "allow" }) as PreToolDecision,
   );
-  expect(hashed.kind, "哈希后缀名按未知 server 放行").toBe("allow");
+  // 哈希/截断名同样以 mcp__ 开头：前缀判定恒成立，走兜底拒而非「按未知 server 放行」。
+  expect(hashed.kind, "哈希后缀名直呼一律拒").toBe("deny");
   // ws_mcp_call guard：禁用命中 → deny。
   const callDeny = await guard!(
     {
@@ -1144,7 +1158,10 @@ it("#362 P0-1：工具级禁用三入口一致（callTool / pre-execute guard / 
     const statsSnap = statsCollector.snapshot();
     expect(statsSnap.servers.ctx?.totalCalls, "ws_mcp_call 成功记录到 ctx 服务器").toBe(1);
     expect(statsSnap.servers.ctx?.tools.other?.calls, "other 工具调用成功记录").toBe(1);
-    expect(statsSnap.disclosure.searches["codegraph"], "ws_mcp_search 记录到漏斗").toBe(1);
+    expect(
+      statsSnap.disclosure.searches["h:c405d32b3ac2"],
+      "ws_mcp_search 记录到漏斗（哈希桶）",
+    ).toBe(1);
     expect(statsSnap.disclosure.lists["<all>"], "ws_mcp_list 记录到漏斗").toBe(1);
     expect(statsSnap.disclosure.details["ctx/use_ctx"], "ws_mcp_detail 记录到漏斗").toBe(1);
 
@@ -1702,6 +1719,39 @@ it("README 含 position/offset 配置说明（键名与默认值，中英）", (
     expect(/#116/.test(text), `#128 ${file} 未标注 #116 跨包避让契约`).toBeTruthy();
     const hotUpdatePhrase = file === "README.en.md" ? "without restarting" : "无需重启";
     expect(text.includes(hotUpdatePhrase), `${file} 未声明「保存即热更新无需重启」`).toBeTruthy();
+  }
+});
+
+// #1014 B6：README 的能力声明必须与实现一致（#1014 §4「能力声明与实际实现存在漂移」）。
+// 这些断的是**字面量**：文档里再写回「8KB 截断」「固定 30s」就会红——它们曾是与实现
+// 相反的声明，而实现侧没有任何机制拦。
+it("README 不再声称 8KB 结果截断 / 固定 30s 超时（实现从未如此）", () => {
+  for (const file of ["README.md", "README.en.md"]) {
+    const text = readFileSync(join(pkgDir, file), "utf8");
+    expect(text.includes("8KB"), `${file} 仍声称 8KB 截断`).toBeFalsy();
+    expect(text.includes("fixed 30s"), `${file} 仍声称固定 30s 超时`).toBeFalsy();
+    expect(text.includes("固定 30s"), `${file} 仍声称固定 30s 超时`).toBeFalsy();
+    expect(text.includes("Result truncation"), `${file} 仍有「结果截断」行`).toBeFalsy();
+  }
+});
+
+it("README 写明结果不截断、超时按最大值结算、禁直呼机器强制（#1014，中英）", () => {
+  for (const file of ["README.md", "README.en.md"]) {
+    const text = readFileSync(join(pkgDir, file), "utf8");
+    // 不截断是当前事实，必须被写出来（否则读者仍会以为有保护）。
+    expect(
+      /不做结果截断|no result truncation/.test(text),
+      `${file} 未声明不做结果截断`,
+    ).toBeTruthy();
+    // 超时不是固定值。
+    expect(text.includes("toolCallTimeoutMs"), `${file} 未提 toolCallTimeoutMs`).toBeTruthy();
+    // 禁直呼是机器强制——锚到**实际句子**，不拿裸 issue 号当代理：#1014 在文档别处
+    // 也被引用（变更清单、目录锚），用它当代理的话，把「机器强制」改回「约定」仍会绿。
+    const enforced = file === "README.en.md" ? /denies by default/ : /默认拒绝/;
+    expect(enforced.test(text), `${file} 未写明禁直呼是默认拒绝`).toBeTruthy();
+    // 统计隐私边界：同样锚到句子。
+    const hashed = file === "README.en.md" ? /hash buckets/ : /哈希桶/;
+    expect(hashed.test(text), `${file} 未声明搜索词只落哈希桶`).toBeTruthy();
   }
 });
 

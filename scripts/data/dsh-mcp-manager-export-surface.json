@@ -206,10 +206,6 @@
       "isType": false
     },
     {
-      "name": "registerDirectMcpGuard",
-      "isType": false
-    },
-    {
       "name": "registerMiddlewareTools",
       "isType": false
     },
@@ -264,7 +260,6 @@
     "export declare const DEFAULT_ANNOUNCE_CATALOG = true;",
     "export declare const DEFAULT_CATALOG_MAX_ENTRIES = 6;",
     "export declare const DEFAULT_CONFIG: { enabled: boolean; announceToAgent: boolean; storePath: string; announceCatalog: boolean; catalogMaxEntries: number; debug: { callStats: boolean; statsFile: string; }; ui: UiPlacementConfig; };",
-    "export declare const DEFAULT_RESULT_TRUNCATE_BYTES = 8192;",
     "export declare const DEFAULT_TOOL_CALL_TIMEOUT_MS = 15000;",
     "export declare const DEFAULT_UI_CONFIG: UiPlacementConfig;",
     "export declare const DEFAULT_Z_INDEX_BASE = 10;",
@@ -535,7 +530,6 @@
     "export declare function recordCallOk(toolCtx: MiddlewareToolContext, server: string, tool: string, startTime: number): void;",
     "export declare function redactMcpError(pipeline: DispatchPipelinePort, servers: readonly ServerConfig[], text: string): string;",
     "export declare function refresh(state: McpState, actions: UiActions): Promise<boolean>;",
-    "export declare function registerDirectMcpGuard(ctx: Context, disabledTools: DisabledToolsMap | undefined, resolveRoot: (agent: unknown) => Promise<string | undefined>, resolveServerId?: ServerIdResolver): (() => void) | undefined;",
     "export declare function registerMiddlewareTools(ctx: Context, mw: McpMiddleware, resolveRoot: (agent: unknown) => Promise<string | undefined>, options?: { disabledTools?: DisabledToolsMap; stats?: McpStatsCollector; resolveServerId?: ServerIdResolver; callTimeoutMs?: number; }",
     "export declare function releaseApi(): void;",
     "export declare function releaseCatalog(): void;",
@@ -832,10 +826,6 @@
           "isType": false
         },
         {
-          "name": "registerDirectMcpGuard",
-          "isType": false
-        },
-        {
           "name": "registerMiddlewareTools",
           "isType": false
         },
@@ -924,9 +914,6 @@
         ],
         "DEFAULT_CONFIG": [
           "export declare const DEFAULT_CONFIG: { enabled: boolean; announceToAgent: boolean; storePath: string; announceCatalog: boolean; catalogMaxEntries: number; debug: { callStats: boolean; statsFile: string; }; ui: UiPlacementConfig; };"
-        ],
-        "DEFAULT_RESULT_TRUNCATE_BYTES": [
-          "export declare const DEFAULT_RESULT_TRUNCATE_BYTES = 8192;"
         ],
         "DEFAULT_TOOL_CALL_TIMEOUT_MS": [
           "export declare const DEFAULT_TOOL_CALL_TIMEOUT_MS = 15000;"
@@ -1551,9 +1538,6 @@
         ],
         "redactMcpError": [
           "export declare function redactMcpError(pipeline: DispatchPipelinePort, servers: readonly ServerConfig[], text: string): string;"
-        ],
-        "registerDirectMcpGuard": [
-          "export declare function registerDirectMcpGuard(ctx: Context, disabledTools: DisabledToolsMap | undefined, resolveRoot: (agent: unknown) => Promise<string | undefined>, resolveServerId?: ServerIdResolver): (() => void) | undefined;"
         ],
         "registerMiddlewareTools": [
           "export declare function registerMiddlewareTools(ctx: Context, mw: McpMiddleware, resolveRoot: (agent: unknown) => Promise<string | undefined>, options?: { disabledTools?: DisabledToolsMap; stats?: McpStatsCollector; resolveServerId?: ServerIdResolver; callTimeoutMs?: number; }"
