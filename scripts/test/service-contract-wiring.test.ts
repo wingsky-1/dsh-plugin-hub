@@ -285,6 +285,7 @@ const EXPECT_FILES: Record<string, string[]> = {
   "dsh-provider-usage": [
     "client-dom/report-section.test.ts",
     "client-dom/trend-section.test.ts",
+    "client-dom/ui-primitives.test.ts",
     "bundle/routes.test.ts",
     "bundle/detect.test.ts",
     "bundle/fetch-timeout.test.ts",

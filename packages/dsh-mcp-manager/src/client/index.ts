@@ -16,6 +16,14 @@
  */
 
 import STYLE from "./style.css";
+// R3：跨包原语层的表现面（唯一副本 shared/client/ui/ui.css）经 ts 侧拼接注入。
+// .css 走同一个 text-loader，仍是纯文本内联，产物依旧自包含单文件、零运行时依赖。
+// **顺序是 UI_CSS + STYLE（原语层在前）**：原语层当底座、各包 style.css 在其之上，
+// 这样包内的窄屏/领域覆盖（同优先级下靠后者胜）永远压得住原语默认值——
+// provider-usage 的 @media 480px 段就靠这条把 .dsu-badge/.dsu-surface-pane 改窄屏尺寸。
+// 本包的浮窗（src/client/float/**）不消费原语层，但同一 <style> 里两份都进——
+// 拼接只影响样式表内容，不触及浮窗的任何 DOM 链路与 dm-* 规则。
+import UI_CSS from "../../../../shared/client/ui/ui.css";
 // 样式注入收敛 shared/client/ensure-style.js（issue #477）：幂等键统一
 // dsh-<pkg>-style 命名（旧 data-attr 标记退役）；本包维持不卸载语义（无 disposer）。
 import { ensureStyle } from "../../../../shared/client/ensure-style.js";
@@ -90,7 +98,7 @@ export function apply(ctx: McpClientContext): void {
     }
 
     // 注入样式（幂等；容错：重复 apply 不重复创建——幂等实现收敛 shared/client/ensure-style）
-    ensureStyle({ id: "dsh-mcp-manager-style", cssText: STYLE });
+    ensureStyle({ id: "dsh-mcp-manager-style", cssText: UI_CSS + STYLE });
 
     const disposers: (() => void)[] = [];
 

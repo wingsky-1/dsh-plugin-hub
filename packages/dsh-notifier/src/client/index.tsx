@@ -16,6 +16,12 @@
 // Symbol.toStringTag 装配）由 scripts/build/build-client.ts 统一生成——源码不写任何 loader。
 // 样式：独立 style.css（见同目录），build-client 的 .css text-loader 构建期内联为字符串
 import STYLE from "./style.css";
+// R3：跨包原语层的表现面（唯一副本 shared/client/ui/ui.css）经 ts 侧拼接注入。
+// .css 走同一个 text-loader，仍是纯文本内联，产物依旧自包含单文件、零运行时依赖。
+// **顺序是 UI_CSS + STYLE（原语层在前）**：原语层当底座、各包 style.css 在其之上，
+// 这样包内的窄屏/领域覆盖（同优先级下靠后者胜）永远压得住原语默认值——
+// provider-usage 的 @media 480px 段就靠这条把 .dsu-badge/.dsu-surface-pane 改窄屏尺寸。
+import UI_CSS from "../../../../shared/client/ui/ui.css";
 // 样式注入收敛 shared/client/ensure-style.js：本包只补
 // { id, cssText, version } 实参；STYLE_ID/CSS_VERSION 常量保留为调用实参来源，
 // disposer（getElementById(STYLE_ID)）沿用常量。
@@ -1904,7 +1910,7 @@ export function apply(ctx: ClientContext): void {
     // 样式注入后立刻认领页面级归属（就在这一行，不是装配成功之后）：认领的时刻就是「本实例开始
     // 为这个共享节点负责」的时刻。放到末尾会让半途失败的实例永远不认领，而它刚注入的样式表此后
     // 再也摘不掉——R5 的漏清理换了个形态复活（登记点有了，释放却被归属判定挡掉）。
-    ensureStyle({ id: STYLE_ID, cssText: STYLE, version: CSS_VERSION });
+    ensureStyle({ id: STYLE_ID, cssText: UI_CSS + STYLE, version: CSS_VERSION });
     pageOwner.current = owner;
 
     // 页面重新可见时：还原标题 + 强制重建 SSE（iOS 后台挂起后连接可能已失效，

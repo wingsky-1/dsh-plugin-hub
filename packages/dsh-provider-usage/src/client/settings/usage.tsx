@@ -27,6 +27,8 @@ import {
   providerStatusMeta,
   topShareOf,
 } from "./settings-view.ts";
+import { SegmentedControl, Status, Surface } from "../../../../../shared/client/ui/index.js";
+import type { Tone } from "../../../../../shared/client/ui/index.js";
 
 /** /stats 响应中本页消费的字段（v2）。 */
 export interface StatsView {
@@ -81,12 +83,12 @@ async function fetchTrendDay(metric: string, n: number): Promise<TrendDayRespons
   return body as TrendDayResponse;
 }
 
-/** 状态 → 颜色（主题变量 + 浅色回退）。 */
-function statusColor(status: string | undefined): string {
-  if (status === "stale") return "var(--dsw-alias-state-warn-primary,#c9820b)";
-  if (status === "fresh" || status === "cached")
-    return "var(--dsw-alias-state-success-primary,#0f9d6e)";
-  return "var(--dsw-alias-state-error-primary,#d64545)";
+/** 状态 → 色调档（色值由 style.css 的 --dsw-alias-state-* 解析，不在 TS 层写死颜色）。
+ *  末档为 err：未知状态按异常呈现，与收敛前 statusColor 的 else 分支同口径。 */
+function statusTone(status: string | undefined): Tone {
+  if (status === "stale") return "warn";
+  if (status === "fresh" || status === "cached") return "ok";
+  return "err";
 }
 
 /** 指标小卡（与趋势页 SummaryCard 同语言：描边 + 小灰 label + 粗值）。 */
@@ -222,18 +224,9 @@ function ProviderStatusRow(props: {
   return (
     <div style={{ marginBottom: 10 }}>
       <div style={{ marginBottom: 4 }}>
-        <span
-          key="dot"
-          style={{
-            display: "inline-block",
-            width: 8,
-            height: 8,
-            borderRadius: "50%",
-            background: statusColor(s?.status),
-            marginRight: 6,
-            verticalAlign: "middle",
-          }}
-        />
+        {/* 状态点为装饰件：状态文字由右侧 providerStatusMeta 承载，故不另加 aria 名，
+            避免读屏把同一状态播报两遍 */}
+        <Status tone={statusTone(s?.status)} />
         <span style={{ fontWeight: 600 }}>{provider}</span>
         <span
           style={{
@@ -424,7 +417,7 @@ export function UsageSection({
   // 非空收窄别名：复合三元下 TS 无法收窄 overview，改嵌套单条件收窄
   const ov = overview;
   return (
-    <div className="dou-pane">
+    <Surface variant="pane">
       <h4 style={titleStyle}>{t("usageTitle")}</h4>
       {/* 今日概览（B2-1）：加载中 / 失败 / 空态均有正向反馈，不静默空白 */}
       {ov === null ? (
@@ -450,20 +443,20 @@ export function UsageSection({
           <div className="dou-hint" style={{ marginBottom: 4 }}>
             {t("usageHeat")}
           </div>
-          <div className="dou-heatSeg" role="group" aria-label={t("usageHeat")}>
-            {HEAT_RANGES.map((d) => (
-              <button
-                key={d}
-                type="button"
-                className="dou-btn"
-                aria-pressed={heatDays === d}
-                disabled={heatDays === d}
-                onClick={() => setHeatDays(d)}
-              >
-                {t("usageHeatDays", { n: String(d) })}
-              </button>
-            ))}
-          </div>
+          <SegmentedControl
+            variant="plain"
+            // #128 触控热区按**类名**选中 .dou-btn（.dou-panel[data-dou-bp="narrow"] 档把
+            // min-height:36px 外扩到约 44px 命中区），领域类归调用点、不归跨包原语层。
+            itemClassName="dou-btn"
+            label={t("usageHeat")}
+            value={heatDays}
+            onChange={setHeatDays}
+            options={HEAT_RANGES.map((d) => ({
+              value: d,
+              label: t("usageHeatDays", { n: String(d) }),
+              disabled: heatDays === d,
+            }))}
+          />
           <div className="dou-heatGrid">
             {cells.map((c) => (
               <span
@@ -477,6 +470,6 @@ export function UsageSection({
         </>
       )}
       <ProviderStatusList statsByProvider={statsByProvider} />
-    </div>
+    </Surface>
   );
 }

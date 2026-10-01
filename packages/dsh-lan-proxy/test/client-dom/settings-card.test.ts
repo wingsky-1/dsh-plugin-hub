@@ -95,8 +95,13 @@ describe("SettingsCard row view 契约", () => {
     const page = view.container.querySelector("[data-lan-page]");
     expect(page?.tagName).toBe("DIV");
     expect(view.container.querySelector("li")).toBe(null);
-    expect(view.container.querySelector(".lp-set-body")).toBeTruthy();
-    expect(view.container.querySelector(".lp-set-head")).toBe(null);
+    // R3 断言迁移：原两条按类名选元素（.lp-set-body 存在 / .lp-set-head 不存在）。
+    // 类名选元素等于把「样式钩子」冻结成测试契约，故改成角色/可访问名查询：
+    //   body 存在 → 卡内的字段可被 label 关联读到（aria 面），比「某个 div 在」更强；
+    //   head 不存在 → 卡内没有任何展开态控件（aria-expanded），即无折叠头。
+    expect(view.getByLabelText("lanPort")).toBeTruthy();
+    expect(view.getByLabelText("keyFile")).toBeTruthy();
+    expect(view.container.querySelector("[aria-expanded]")).toBe(null);
     expect(view.queryByText("settingsName")).toBe(null);
     expect(view.queryByText("settingsDescription")).toBe(null);
     const portInput = view.getByLabelText("lanPort") as HTMLInputElement;
@@ -565,4 +570,57 @@ describe("SettingsCard L718 载荷容错（#732 T3-B 缺口先锁）", () => {
       await act(async () => {});
     },
   );
+});
+
+/**
+ * R3：跨包原语层（shared/client/ui）在本包的契约判据。
+ *
+ * 【判据为什么按 role/aria + data-dsu-* 钩子写，不按 className 写】
+ * 类名是**样式钩子**（冻结契约第 2 层），拿它选元素等于把钩子名焊死在测试里：换实现、
+ * 换皮肤时测试仍绿，钩子漂移却无人发现。语义层（role/aria-*，第 1 层）与样式钩子层
+ * （data-dsu-*）才是可观测契约，故本段只查这两层 + 原生行为属性。
+ *
+ * 【本包实际消费面】
+ * 只消费 Button 一档（8 处保存/CA 动作按钮），其余四档在本包是死规则（有意的冗余，
+ * 见 style.css 块头），故这里只锁 Button。
+ */
+describe("R3 原语层契约：Button（本包唯一消费档）", () => {
+  it("保存按钮是原生 button 语义 + type=button + dsu 钩子，不靠类名断言", async () => {
+    const view = await mountCard();
+    const btn = view.getByRole("button", { name: "save" }) as HTMLButtonElement;
+    // 语义层：仍是原生 button（不注入多余 role），type 恒为 button。
+    expect(btn.tagName).toBe("BUTTON");
+    expect(btn.getAttribute("type")).toBe("button");
+    // 样式钩子层：data-dsu-* 是包无关钩子（dsh-ui 前缀），dsu-btn 是原语本体位。
+    expect(btn.getAttribute("data-dsu-btn")).toBe("md");
+    expect(btn.classList.contains("dsu-btn")).toBe(true);
+    // 领域视觉仍由调用点传入的类承担（原语层不替消费包挑外观）。
+    expect(btn.classList.contains("lp-set-save")).toBe(true);
+  });
+
+  it("CA 动作按钮同样走 Button 原语（逐个按可访问名取，覆盖「漏迁一处」）", async () => {
+    health = { caState: "managed", certInfo: null, caConfigured: true };
+    const view = await mountCard();
+    for (const name of ["caRotate", "caRotateCa", "save"]) {
+      const btn = view.getByRole("button", { name }) as HTMLButtonElement;
+      expect(btn.getAttribute("type")).toBe("button");
+      expect(btn.getAttribute("data-dsu-btn")).toBe("md");
+      expect(btn.classList.contains("dsu-btn")).toBe(true);
+    }
+    // 本页此刻的 dsu 按钮总数 = 上述三枚：多一个说明有裸 <button> 漏迁。
+    expect(view.container.querySelectorAll("[data-dsu-btn]")).toHaveLength(3);
+  });
+
+  it("本包未消费的四档原语不在 DOM 上出现，且禁用项 role=navigation/tablist 为零", async () => {
+    const view = await mountCard();
+    expect(view.container.querySelector("[data-dsu-seg]")).toBe(null);
+    expect(view.container.querySelector("[data-dsu-surface]")).toBe(null);
+    expect(view.container.querySelector("[data-dsu-badge]")).toBe(null);
+    expect(view.container.querySelector("[data-dsu-status]")).toBe(null);
+    expect(view.container.querySelector("[data-dsu-field]")).toBe(null);
+    // 永久禁用：role=navigation 命中即整弹窗退回桌面 row 布局（手机内容区约 106px）；
+    // tablist 与本包「三段互斥单选」的语义不符。
+    expect(view.container.querySelector("[role=navigation]")).toBe(null);
+    expect(view.container.querySelector("[role=tablist]")).toBe(null);
+  });
 });

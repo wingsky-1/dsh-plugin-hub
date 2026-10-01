@@ -40,6 +40,8 @@ describe("客户端样式注入行为哨兵（issue #477 验收 3/8）", () => {
   let createdAfterReapply = 0;
   let productInject: string[] = [];
   let packageClientInject: string[] = [];
+  /** R3：首次 apply 注入的 <style> 文本快照（拼接产物级核验的取证点）。 */
+  let injectedCss = "";
 
   beforeAll(() => {
     const clientCode = readFileSync(new URL("../../lib/client.js", import.meta.url), "utf8");
@@ -150,6 +152,7 @@ describe("客户端样式注入行为哨兵（issue #477 验收 3/8）", () => {
     mod.apply(ctx);
     nodesAfterFirstApply = styleNodes();
     datasetVersionAfterFirstApply = headNodes[0].dataset.version;
+    injectedCss = styleEl.textContent;
 
     mod.apply(ctx);
     nodesAfterSecondApply = styleNodes();
@@ -202,6 +205,24 @@ describe("客户端样式注入行为哨兵（issue #477 验收 3/8）", () => {
 
   it("#477：重注入走新建节点", () => {
     expect(createdAfterReapply).toBe(2);
+  });
+
+  it("R3：注入文本里共享原语块真的在场（ts 侧拼接生效，不只是在源码里）", () => {
+    // 为什么要有这条：@import 方案实测是「build exit 0 + 测试全绿 + 样式静默消失」，
+    // 只看退出码或产物 grep 都会漏，必须断**运行期真正注入的那段文本**。
+    expect(injectedCss).toContain("dsu-surface-pane");
+    expect(injectedCss).toContain("dsu-badge");
+    expect(injectedCss).toContain("lp-set-card");
+  });
+
+  it("R3：共享原语块排在本包样式之前（层叠序=契约：原语层当底座）", () => {
+    // 各包 style.css 里对 dsu 钩子的窄屏/领域覆盖（同优先级靠后者胜）必须压得住原语
+    // 默认值；写成 STYLE + UI_CSS 时那些覆盖会静默变死规则（dsh-provider-usage 实有两条）。
+    const sharedAt = injectedCss.indexOf("T1 五原语层");
+    const packageAt = injectedCss.indexOf("dsh-lan-proxy — 客户端样式");
+    expect(sharedAt).toBeGreaterThanOrEqual(0);
+    expect(packageAt).toBeGreaterThanOrEqual(0);
+    expect(sharedAt).toBeLessThan(packageAt);
   });
 
   it("0.1.7-rc.2：产物 inject 精确声明当前服务依赖", () => {

@@ -21,6 +21,7 @@ import {
 } from "./report-helpers.ts";
 import type { HistoryStatusFilter } from "./report-helpers.ts";
 import { t } from "../../../../shared/client/i18n.js";
+import { Badge, SegmentedControl } from "../../../../shared/client/ui/index.js";
 
 /** 报告两路由经 ./shared/contract.ts 具名表（host-seams R2 收敛，字面量只留契约一份）。 */
 import { REPORT_DETAIL_URL, REPORTS_URL } from "./shared/contract.ts";
@@ -142,10 +143,6 @@ const filterLabel = (f: HistoryStatusFilter): string =>
       : f === "failed"
         ? t("reportFailed")
         : t("reportFilterNoData");
-
-/** 状态筛选按钮 class：命中当前筛选时追加 active 后缀。 */
-const filterTabClass = (f: HistoryStatusFilter, active: HistoryStatusFilter): string =>
-  "dou-reportPromptTab" + (active === f ? " dou-reportPromptTabActive" : "");
 
 /** 顶部报告数徽标：行表未就绪（null，首拉之前）时不渲染。 */
 function historyCountBadge(rows: ReportMetaView[] | null): React.ReactNode {
@@ -278,13 +275,9 @@ function HistoryRow(props: HistoryRowProps): React.ReactElement {
       >
         <span className="dou-reportItemPeriod">{periodLabel(m.period)}</span>
         <span className="dou-reportItemKey">{m.key}</span>
-        <span
-          className={
-            m.ok ? "dou-reportBadge dou-reportBadgeOk" : "dou-reportBadge dou-reportBadgeFail"
-          }
-        >
+        <Badge tone={m.ok ? "ok" : "err"} size="xs">
           {m.ok ? t("reportOk") : t("reportFailed")}
-        </span>
+        </Badge>
         <span className="dou-reportItemTime">
           {new Date(m.generatedAt).toLocaleString("zh-CN", { hour12: false })}
         </span>
@@ -443,20 +436,14 @@ export function HistorySection(props: {
         {historyCountBadge(filtered ?? list)}
       </div>
       <p className="dou-reportHint">{t("historySub")}</p>
-      <div className="dou-reportPromptTabs" role="group" aria-label={t("reportFilterStatus")}>
-        <span className="dou-reportLabel">{t("reportFilterStatus")}</span>
-        {FILTERS.map((f) => (
-          <button
-            key={f}
-            type="button"
-            className={filterTabClass(f, statusFilter)}
-            aria-pressed={statusFilter === f}
-            onClick={() => setStatusFilter(f)}
-          >
-            {filterLabel(f)}
-          </button>
-        ))}
-      </div>
+      <SegmentedControl
+        variant="pill"
+        label={t("reportFilterStatus")}
+        leading={<span className="dou-reportLabel">{t("reportFilterStatus")}</span>}
+        value={statusFilter}
+        onChange={setStatusFilter}
+        options={FILTERS.map((f) => ({ value: f, label: filterLabel(f) }))}
+      />
       {listFailed ? <div className="dou-reportFetchFail">{t("reportFetchFail")}</div> : null}
       {jumpNotice ? (
         <div className="dou-reportGenNotice">

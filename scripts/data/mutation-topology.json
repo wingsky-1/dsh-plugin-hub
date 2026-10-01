@@ -1152,6 +1152,12 @@
             "packages/dsh-provider-usage/test/unit/apply/apply.test.ts"
           ],
           "comment": "#768 S3 新段：upgrade 迁移链——storage-layout（纯字节归位）+config-morph（LEGACY 映射割接）+last-run-morph（derive/align）+chain（排序/刻度/对账）+service（装配标记）+version（刻度读写）；interface.ts/deps.ts 经包级 coverageExcludes 以 facade/type-only 口径排除；杀灭面为 test/integration/upgrade/upgrade-chain（幂等三条各有集成用例）。"
+        },
+        "ui-primitives": {
+          "mutate": ["shared/client/ui/index.tsx"],
+          "excludes": [],
+          "testFiles": ["packages/dsh-provider-usage/test/client-dom/ui-primitives.test.ts"],
+          "comment": "T1 五原语层（R2 档 C 上提到 shared/client/ui/）：Button/Field/SegmentedControl/Status+Badge/Surface 的行为契约面。R1 时原语层在本包 src/client/shared/ui/ 下拆 7 个文件，R2 上提为跨包单文件（原语层文件头记了为什么必须单文件：fanin 门禁按 shared/ 下每个 .js 枚举模块并各自要扇入≥2）。判据走 role/aria 查询，不锚 className，故换实现不破判据；判据文件随之上移到消费包 test/client-dom/（shared/test/ 不在任何 vitest project 的收集面内）。"
         }
       },
       "testLayers": {

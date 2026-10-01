@@ -14,50 +14,14 @@
     border-color 0.16s,
     background 0.16s;
 }
-.lp-set-card:hover {
-  border-color: var(--dsw-alias-label-dimmed, #9ba1a6);
-}
-.lp-set-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  width: 100%;
-  padding: 14px 16px;
-  border: none;
-  background: none;
-  cursor: pointer;
-  text-align: left;
-  font: inherit;
-}
-.lp-set-head:hover {
-  background: var(--dsw-alias-interactive-bg-hover, rgba(0, 0, 0, 0.04));
-}
-.lp-set-headText {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 0;
-}
-.lp-set-name {
-  font-size: 15px;
-  font-weight: 600;
-  line-height: 1.4;
-  color: var(--dsw-alias-label-primary, #1f2329);
-}
-.lp-set-description {
-  font-size: 13px;
-  line-height: 1.5;
-  color: var(--dsw-alias-label-tertiary, #8a919c);
-}
-.lp-set-chevron {
-  color: var(--dsw-alias-label-tertiary, #5f6672);
-  flex: none;
-  transition: transform 0.16s;
-}
-.lp-set-chevronOpen {
-  transform: rotate(180deg);
-}
+/* 【R3 删除了什么·先钉住，防止被当成漏项「补回来」】
+ * 本卡是**非折叠**卡：页体只有 <div className="lp-set-body">，没有 head 按钮、没有
+ * 名称/描述/折角。原 .lp-set-head / :hover / -headText / -name / -description /
+ * -chevron / -chevronOpen 共 7 条规则在客户端**零消费者**（0 命中，见 R3 报告的
+ * 判据表），留着就是一组永远命不中的死规则——「删掉之后没人发现」正是本仓反复付过
+ * 学费的形态（notifier R2 删 .dou-pane 别名同款处置）。
+ * 判定「真死」而非「漏渲染」的两条依据：① test/client-dom/settings-card.test.ts 用
+ * [aria-expanded] 断言卡片不含折叠头；② 组件源码里 head/name/chevron 一处都没有。 */
 .lp-set-body {
   padding: 4px 14px 14px;
   border-top: 1px solid var(--dsw-alias-border-l1, #e2e5ea);
@@ -129,9 +93,6 @@
   font-size: 12.5px;
   cursor: pointer;
 }
-.lp-set-save:hover {
-  background: var(--dsw-alias-interactive-bg-hover, rgba(0, 0, 0, 0.06));
-}
 .lp-set-saved {
   font-size: 12px;
   color: var(--dsw-alias-state-success-primary, #16a34a);
@@ -140,3 +101,23 @@
   font-size: 12px;
   color: var(--dsw-alias-state-danger-primary, #dc2626);
 }
+
+/* R3：悬停态统一收进 @media (hover: hover)（#128 规格第 7 条）。本包原先两条悬停
+   裸挂规则表——触屏点完会留下 hover 底色。**放在文件尾**是有意的：这两条与
+   .lp-set-card / .lp-set-save 同为单类选择器，靠后者胜出；提前放会被基础规则的
+   background 覆盖回去，悬停就静默失效。断点机制仍只有这一套，不引入第二套。 */
+@media (hover: hover) {
+  .lp-set-card:hover {
+    border-color: var(--dsw-alias-label-dimmed, #9ba1a6);
+  }
+  .lp-set-save:hover {
+    background: var(--dsw-alias-interactive-bg-hover, rgba(0, 0, 0, 0.06));
+  }
+}
+
+/* ---- T1 五原语层（dsu-*）不再在本文件 ----
+ * R3 起这段原语规则的**唯一副本**在 shared/client/ui/ui.css，由本包
+ * src/client/index.ts 经 ts 侧拼接注入（import UI_CSS + cssText: STYLE + UI_CSS）。
+ * 此前这里是人手复制的第 N 份拷贝——改一处要同步 N 处，漏改不会有任何测试报红。
+ * 领域样式（.lp-set-* / .lp-ca-*）仍全部留在本文件，本包产物依旧是自包含单文件。
+ */

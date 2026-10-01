@@ -2,7 +2,9 @@
  *
  * 由 build-client 的 .css text-loader 构建期内联进 client.js（产物仍自包含单文件、
  * 零运行时依赖、无独立网络请求）。ensureStyle（shared/client/ensure-style.js，issue #477 收敛）注入 <style id=dsh-provider-usage-style>。
- * 前缀统一 dou-（防与 shell 冲突）；颜色一律走 --dsw-alias-* 主题变量 + 浅色回退，
+ * 前缀 dou-（本包领域元素，防与 shell 冲突）+ dsu-（T1 原语层，包无关前缀，
+ * 计划在后续阶段上提到跨包 shared/client/ui/ 复用；两者不得混用命名空间）。
+ * 颜色一律走 --dsw-alias-* 主题变量 + 浅色回退，
  * 明暗双主题自适应。PILL_PREFIX 常量（dou-）在 JS 侧用于查询，此处已硬编码为
  * dou-，二者须保持一致。
  */
@@ -292,15 +294,312 @@
   outline-offset: 1px;
 }
 
-/* 图表容器：SVG 铺满宽度、按 viewBox 等比伸缩（与 .dou-miniChart 同语义） */
-.dou-trend-chart svg {
-  display: block;
-  width: 100%;
-  height: auto;
+/* 图表容器：C-1 起 SVG 的 px 宽高由 JS 实测后写进 style/viewBox
+   （1 user unit = 1 CSS px），此处**不再**覆写 width/height —— 覆写会把 1:1 像素映射
+   重新变回等比缩放，正是本次要根治的缺陷。容器只负责相对定位与窄屏内边距。 */
+.dou-trend-plot {
+  position: relative;
+  min-width: 0;
 }
+.dou-trend-chart {
+  position: relative;
+  min-width: 0;
+}
+
 /* 图例色点与轴文字跟随主题（颜色变量集中在 SVG 内联处与组件内联处） */
 .dou-trend-legendDot {
   display: inline-block;
+  border: 1px solid var(--dsw-alias-border-l2, #e8eaf0);
+}
+.dou-trend-legendItem[aria-pressed="false"] .dou-trend-legendDot {
+  border-style: dashed;
+}
+
+/* ============ A/C 重做：控件区（统计口径三值 + 单一对象选择器） ============ */
+/* 断点一律用 data-dou-col（JS 按容器实测宽写，见 trend.tsx 的 ResizeObserver）——
+   **不开新的 @media**：.dsu-surface-card 上限 560 使桌面内容列恒定，800px 平板
+   column 布局的内容列反而更宽，按视口断点会判反。 */
+.dou-trend-title {
+  font-size: 13px;
+  font-weight: 600;
+  margin: 0 0 8px;
+}
+.dou-trend-controls {
+  /* 组间 14px、组内项距 6px：此前四组控件（口径 / 对象+粒度+范围 / 指标）
+     平铺在一个 flex-wrap 容器里，组间距与项间距同级，
+     「日/周/月」与「7d/30d/90d」在视觉上读成一串。拉开两级后分组才成立。 */
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px 18px;
+  margin-bottom: 10px;
+}
+.dou-trend-fields {
+  align-items: flex-end;
+}
+/* 行内分段器的可见标签：此前「日/周/月」与「7d/30d/90d」只靠 18px 间隔分开，
+   视觉上仍读成一串同类按钮。给每个分段器加行内标签后，靠标签而非靠间距区分，
+   两级层次才成立：标签（弱）— 槽（中）— 已选态（强）。 */
+.dou-trend-segWithLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 0;
+}
+/* 标签 + 分段器成组：竖排（标签在上、控件在下）而非同行——
+   同行时两者共享可换行行盒，标签会与按钮贴在一起、换行时缩进错位。
+   竖排后每组自身是一个不可分割的 flex 项，换行按组整体换、对齐一致。 */
+.dou-trend-segField {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  flex: none;
+}
+.dou-trend-segLabel {
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary, #6d7480);
+  white-space: nowrap;
+  flex: none;
+}
+/* 「需宿主支持」角标：disabled 档的可用性说明（与按钮同行，弱化态） */
+.dou-trend-need {
+  margin-left: 4px;
+  font-size: 9px;
+  font-weight: 400;
+  color: var(--dsw-alias-label-caption, #8b9098);
+}
+.dou-trend-calNote,
+.dou-trend-reset,
+.dou-trend-narrowHint,
+.dou-trend-narrowSuggest {
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--dsw-alias-label-tertiary, #9aa0ab);
+  margin: 4px 0 0;
+}
+.dou-trend-reset {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.dou-trend-reset .dou-btn {
+  font-size: 11px;
+  padding: 1px 8px;
+}
+/* 窄档：控件整列排布，下拉/分段器让位整行（数据-dou-col 由 JS 写，不新增媒体查询） */
+[data-dou-col="s"] .dou-trend-fields {
+  flex-direction: column;
+  align-items: stretch;
+}
+[data-dou-col="s"] .dou-trend-fields > * {
+  width: 100%;
+}
+[data-dou-col="s"] .dou-trend-fields .dsu-input {
+  width: 100%;
+  min-height: 40px;
+}
+
+/* ============ A2 汇总区：1 主数值 + 4 格元信息 ============ */
+/* 原 5 张卡的 flex:1 1 120px + minWidth:120 是 375px 溢出的直接责任（5×120=632px
+   不可压缩）。此处改 grid：零 minWidth 地板，窄屏由 grid 列数换行兜底。 */
+.dou-trend-summary {
+  margin-bottom: 10px;
+}
+.dou-trend-hero {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+.dou-trend-heroLabel {
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary, #9aa0ab);
+}
+.dou-trend-heroVal {
+  font-size: 22px;
+  font-weight: 650;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+  color: var(--dsw-alias-label-primary, #1c1e26);
+}
+.dou-trend-heroUnit {
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary, #5f6672);
+}
+/* 环比：中性文字色 + 方向箭头。**不随方向改状态色**——用量上涨本就不是坏事，
+   且 0.0% 过去会被 up=false 判成 down 涂成 success 绿，属误报。 */
+.dou-trend-heroDelta {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--dsw-alias-label-secondary, #5f6672);
+}
+.dou-trend-meta {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+/* 零 minWidth 地板：minmax(0, 1fr) 允许格子收缩，窄屏换列即可 */
+.dou-trend-metaCell {
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid var(--dsw-alias-border-l1, #e2e5ea);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1, #f8f9fb);
+}
+.dou-trend-metaKey {
+  font-size: 10px;
+  line-height: 1.5;
+  color: var(--dsw-alias-label-tertiary, #9aa0ab);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dou-trend-metaVal {
+  font-size: 14px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dou-trend-metaValText {
+  font-size: 12px;
+}
+.dou-trend-metaNote {
+  font-size: 10px;
+  line-height: 1.5;
+  color: var(--dsw-alias-label-tertiary, #9aa0ab);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 口径注记：单行（进行中 / 基准不完整 / 起算与留存） */
+.dou-trend-notes {
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--dsw-alias-label-tertiary, #9aa0ab);
+  margin: 6px 0 0;
+}
+[data-dou-col="s"] .dou-trend-meta {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+/* ============ A3 图例：真 button（Tab 可进出、Space 切换） ============ */
+.dou-trend-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  align-items: center;
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary, #9aa0ab);
+  margin-bottom: 8px;
+}
+.dou-trend-legendItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 24px;
+  padding: 1px 6px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 11px;
+  line-height: 1.6;
+  cursor: pointer;
+  max-width: 100%;
+}
+.dou-trend-legendName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--dsw-alias-label-secondary, #5f6672);
+}
+.dou-trend-legendItem[aria-pressed="false"] .dou-trend-legendName {
+  color: var(--dsw-alias-label-caption, #8b9098);
+  text-decoration: line-through;
+}
+.dou-trend-legendHint {
+  font-size: 10px;
+}
+@media (hover: hover) {
+  .dou-trend-legendItem:hover {
+    background: var(--dsw-alias-interactive-bg-hover, rgba(0, 0, 0, 0.045));
+  }
+}
+
+/* tooltip 浮层：贴边翻转由 JS 给 left，外观在此（颜色单一事实源在本文件） */
+.dou-trend-tip {
+  position: absolute;
+  top: 6px;
+  z-index: 30;
+  pointer-events: none;
+  min-width: 150px;
+  max-width: 250px;
+  padding: 7px 10px;
+  font-size: 11px;
+  border: 1px solid var(--dsw-alias-border-l2, #d3d8df);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-base, #ffffff);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.14);
+}
+
+/* 移动端详情块：tooltip 移出绘图区，改挂在图下方（A3） */
+.dou-trend-detail {
+  margin-top: 8px;
+  padding: 7px 9px;
+  font-size: 11px;
+  border: 1px solid var(--dsw-alias-border-l1, #e2e5ea);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1, #f8f9fb);
+}
+.dou-trend-detailLabel {
+  font-weight: 600;
+  margin-bottom: 3px;
+}
+.dou-trend-detailHint {
+  color: var(--dsw-alias-label-tertiary, #9aa0ab);
+}
+
+/* C-3 窄容器兜底：容器窄于 240px 时不渲染图表，给可读摘要 + 说明 + 建议 */
+.dou-trend-narrow {
+  padding: 10px;
+  font-size: 11px;
+  line-height: 1.7;
+  border: 1px dashed var(--dsw-alias-border-l2, #e8eaf0);
+  border-radius: 8px;
+}
+.dou-trend-narrowTitle {
+  font-weight: 600;
+  margin-bottom: 3px;
+}
+.dou-trend-narrowSuggest {
+  margin: 4px 0 6px;
+}
+.dou-trend-error {
+  font-size: 12px;
+  color: var(--dsw-alias-state-error-primary, #d64545);
+  padding: 12px 0;
+}
+.dou-trend-empty {
+  padding: 22px 14px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--dsw-alias-label-tertiary, #9aa0ab);
+  border: 1px dashed var(--dsw-alias-border-l2, #e8eaf0);
+  border-radius: 8px;
+}
+.dou-trend-emptyTitle {
+  margin-bottom: 4px;
 }
 
 /* ---------------------------------------------------------------- 设置页·提供商手风琴列表（issue #38） */
@@ -343,23 +642,6 @@
   min-width: 0;
   font-weight: 600;
   overflow-wrap: anywhere;
-}
-.dou-provBadge {
-  flex: none;
-  max-width: 55%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 11px;
-  line-height: 1.5;
-  padding: 0 8px;
-  border-radius: 99px;
-  border: 1px solid var(--dsw-alias-border-l1, #d7dae0);
-  background: var(--dsw-alias-bg-layer-1, #f8f9fb);
-}
-.dou-provBadgeOff {
-  color: var(--dsw-alias-label-tertiary, #9aa0ab);
-  border-style: dashed;
 }
 .dou-provBody {
   display: flex;
@@ -710,20 +992,6 @@
   flex: none;
   font-variant-numeric: tabular-nums;
 }
-.dou-reportBadge {
-  flex: none;
-  font-size: 10px;
-  padding: 1px 6px;
-  border-radius: 8px;
-}
-.dou-reportBadgeOk {
-  color: var(--dsw-alias-state-success-primary, #3f9d63);
-  border: 1px solid var(--dsw-alias-state-success-primary, #3f9d63);
-}
-.dou-reportBadgeFail {
-  color: var(--dsw-alias-state-error-primary, #d64545);
-  border: 1px solid var(--dsw-alias-state-error-primary, #d64545);
-}
 .dou-reportItemTime {
   margin-left: auto;
   font-size: 11px;
@@ -793,7 +1061,7 @@
   .dou-provBody {
     padding-left: 10px;
   }
-  .dou-provBadge {
+  .dsu-badge[data-dsu-size="sm"] {
     max-width: 100%;
   }
   .dou-reportItemTime {
@@ -816,99 +1084,23 @@
 }
 
 /* ================= #532 设置页多 tab（通知中心 #508 分段器同语言） =================
- * 整页一张大卡 + 顶部五分段器（普通 button，#402 决策不用 tablist；role 用 group——
- * #543 实测：宿主设置弹窗移动端适配规则排除含 [role=navigation] 的弹窗，命中即
- * 整弹窗退回桌面 row 布局，手机上内容区仅 ~106px，分段器绝不可再用 navigation）。
- * 窗格 keep-mounted：hidden 属性切换显隐，组件实例不销毁（表单编辑态保留）。
+ * 外壳大卡与顶部分段器已收敛进 T1 原语层（.dsu-surface-card / .dsu-seg-bar），
+ * 本段只留本页壳体自身的两件事：
+ *   - 窗格 keep-mounted：hidden 属性切换显隐，组件实例不销毁（表单编辑态保留）。
+ *   - 分段器语义：普通 button，#402 决策不用 tablist；role 用 group（#543 实测：
+ *     宿主设置弹窗移动端适配规则排除含 [role=navigation] 的弹窗，命中即整弹窗
+ *     退回桌面 row 布局，手机上内容区仅 ~106px，分段器绝不可再用 navigation）。
  * 颜色一律 --dsw-alias-* 主题变量 + 浅色回退（暗色由宿主变量保证）。 */
-.dou-set-card {
-  /* 壳宽：原 settings/index.tsx 内联 maxWidth:560，行为不变收敛进样式表（B2 阻断项） */
-  max-width: 560px;
-  border: 1px solid var(--dsw-alias-border-l1, #e2e5ea);
-  border-radius: 12px;
-  overflow: hidden;
-  background: var(--dsw-alias-bg-base, #ffffff);
-  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.05);
-}
-.dou-set-tabs {
-  display: flex;
-  gap: 4px;
-  padding: 10px 14px;
-  border-bottom: 1px solid var(--dsw-alias-border-l1, #e2e5ea);
-  background: var(--dsw-alias-bg-layer-1, #f5f6f8);
-  overflow-x: auto;
-  white-space: nowrap;
-  scrollbar-width: none;
-}
-.dou-set-tabs::-webkit-scrollbar {
-  display: none;
-}
-.dou-set-tab {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 32px;
-  padding: 5px 14px;
-  flex: none;
-  white-space: nowrap;
-  border: 1px solid transparent;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--dsw-alias-label-secondary, #5f6672);
-  font-size: 12px;
-  cursor: pointer;
-  font-family: inherit;
-}
-.dou-set-tabActive {
-  background: var(--dsw-alias-bg-base, #ffffff);
-  border-color: var(--dsw-alias-border-l1, #e2e5ea);
-  color: var(--dsw-alias-label-primary, #1f2329);
-  font-weight: 600;
-  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
-}
-.dou-set-tab:focus-visible {
-  outline: 2px solid var(--dsw-alias-state-info-primary, #4a7dd6);
-  outline-offset: 2px;
-}
 .dou-set-body {
   padding: 14px;
 }
 .dou-set-pane[hidden] {
   display: none !important;
 }
-@media (hover: hover) {
-  .dou-set-tab:hover {
-    color: var(--dsw-alias-label-primary, #1f2329);
-  }
-}
 
 /* ================= #532 年报化：hero 摘要 + 三周期提示词 tab + 正文排版 =================
  * hero 为海报式渐变（不随主题反转，文字恒浅色——年报产品惯例）；正文 h3/strong/ul/p
  * 由宿主 reportBodyToHtml 管线产出（escape-then-transform，无属性白名单标签）。 */
-.dou-reportPromptTabs {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-  margin-bottom: 10px;
-}
-.dou-reportPromptTab {
-  border: 1px solid var(--dsw-alias-border-l1, #e2e5ea);
-  background: var(--dsw-alias-bg-layer-1, #f5f6f8);
-  color: var(--dsw-alias-label-tertiary, #6d7480);
-  border-radius: 999px;
-  padding: 3px 12px;
-  min-height: 28px;
-  font-size: 11px;
-  cursor: pointer;
-  font-family: inherit;
-}
-.dou-reportPromptTabActive {
-  background: var(--dsw-alias-state-info-soft, rgba(47, 111, 237, 0.1));
-  border-color: var(--dsw-alias-state-info-primary, #4a7dd6);
-  color: var(--dsw-alias-state-info-primary, #4a7dd6);
-  font-weight: 600;
-}
 .dou-reportPromptReset {
   margin-left: auto;
   border: 0;
@@ -1039,17 +1231,6 @@
  * 颜色一律 --dsw-alias-* + 浅色回退（暗色由宿主变量保证）；reduced-motion 降级。
  * 作用域 dou-report*（插件前缀隔离，不影响宿主与其他插件）。
  */
-/* R5 设置窗格统一外层：usage/trend/providers/float 四页共用（padding 12px 桌面 / 10px 窄屏），
-   禁止各页各写一套；原 settings/shared.ts sectionStyle 仅留兼容，新代码一律挂此类。 */
-.dou-pane {
-  margin-bottom: 16px;
-  padding: 12px;
-  border: 1px solid var(--dsw-alias-border-l1, #e2e5ea);
-  border-radius: 10px;
-  background: var(--dsw-alias-bg-base, #ffffff);
-  font-size: 12px;
-  line-height: 1.7;
-}
 /* B2-1 用量页：一图一栏 + 热力图（色阶 color-mix 相对混合，明暗自适应不分支主题） */
 .dou-donutRow {
   display: flex;
@@ -1159,12 +1340,6 @@
 }
 .dou-heatL4 {
   background: color-mix(in srgb, #0e6e42 88%, transparent);
-}
-.dou-heatSeg {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-  margin-bottom: 6px;
 }
 /* 用量页指标小卡：与趋势页 SummaryCard 同语言（描边 + 小灰 label + 粗值） */
 .dou-miniCard {
@@ -1409,7 +1584,7 @@
   .dou-report {
     padding: 10px;
   }
-  .dou-pane {
+  .dsu-surface-pane {
     padding: 10px;
   }
   .dou-reportSectionSummary {
@@ -1520,3 +1695,10 @@
   opacity: 0.55;
 }
 /* 历史独立页复用报告区既有类（列表/徽标/详情/空态），无新增选择器。 */
+
+/* ---- T1 五原语层（dsu-*）不再在本文件 ----
+ * R3 起这段原语规则的**唯一副本**在 shared/client/ui/ui.css，由本包
+ * src/client/index.tsx 经 ts 侧拼接注入（import UI_CSS + cssText: STYLE + UI_CSS）。
+ * 此前这里是人手复制的第 N 份拷贝——改一处要同步 N 处，漏改不会有任何测试报红。
+ * 领域样式（.dn-* / .dou-* 等）仍全部留在本文件，本包产物依旧是自包含单文件。
+ */

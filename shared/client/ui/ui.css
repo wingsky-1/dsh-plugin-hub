@@ -1,0 +1,307 @@
+/* ================= T1 五原语层（dsu-*）唯一副本 =================
+ * 职责：Surface / Field / SegmentedControl / Status+Badge 的唯一表现面。
+ *   Button 的视觉本体由**调用点自带的领域类**承担（见块尾说明），本块不出 dsu-btn 规则。
+ *
+ * 【怎么进到浏览器：ts 侧拼接，不是 @import】
+ * 各包 src/client/index.ts 两行接缝：
+ *     import UI_CSS from "<到仓库根的相对路径>/shared/client/ui/ui.css";
+ *     ensureStyle({ id: STYLE_ID, cssText: UI_CSS + STYLE, version: CSS_VERSION });
+ * **顺序不可颠倒**：原语层在前（当底座），各包 style.css 在后，这样包内针对原语钩子的
+ * 窄屏/领域覆盖（同优先级靠后者胜）才压得住——provider-usage 的 @media 480px 段正是
+ * 靠这条把 .dsu-badge 的 max-width 放宽到 100%、.dsu-surface-pane 的 padding 收到 10px。
+ * 写成 STYLE + UI_CSS 时这两条覆盖会变死规则，build 仍 exit 0、窄屏却悄悄变回原样。
+ * build-client 的 .css text-loader（scripts/build/build-client.ts）把本文件当**纯文本**
+ * 内联进各包 client.js，产物仍自包含单文件、零运行时依赖、无独立请求。
+ *
+ * 【为什么不是 @import：R3 实测证伪，勿再提】
+ * 试过在各包 style.css 顶部写 @import 指向本文件：text-loader 不解析 CSS，@import 会
+ * 原样留在产物字符串里（实测 `grep -c '@import' lib/client.js` → 1），而探针规则
+ * `grep -c 'dsu-probe' lib/client.js` → 0；浏览器随后按**页面相对 URL** 去请求那个
+ * 路径 → 404 → 规则静默消失，**而 build 仍 exit 0、测试仍全绿**。这是最坏的失败模式。
+ *
+ * 【与「各包 style.css 单文件」约定的关系】
+ * DEVELOPMENT §3 要求样式不写进 ts、留在各包 style.css。本文件不违反它：本文件**不含
+ * 任何包的领域样式**，只是跨包共享的那一段原语规则的单一事实源，由 ts 侧拼接注入；
+ * 各包 style.css 仍是该包领域样式的唯一位置。
+ *
+ * 纪律：颜色全走 --dsw-alias-* + 浅色回退（禁裸 hex）；悬停一律 @media (hover: hover)
+ *   包裹（#128 规格第 7 条），断点机制全仓只有这一套；禁 role="navigation"（语义层在
+ *   shared/client/ui/index.tsx 冻结，本块只管表现，结构不冻结）。
+ * 消费包不必逐档消费：未消费的档位在本包是死规则，属有意接受的冗余——宁可一段没人用的
+ *   规则，也不要给原语层开出「按包裁剪规则块」这条会立刻分叉的机制。
+ */
+.dsu-surface-pane {
+  margin-bottom: 16px;
+  padding: 12px;
+  border: 1px solid var(--dsw-alias-border-l1, #e2e5ea);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-base, #ffffff);
+  font-size: 12px;
+  line-height: 1.7;
+}
+/* 极窄容器降级（#1015 A+C 的 C-3 配套）：宿主设置弹窗在 375px 下不折叠左侧导航，
+   内容列被压到约 139px，再经 pane padding 12px×2 层层扣减后趋势区只剩 56px——
+   实测装 dsh-web-mobile@3.0.3 亦然（nav 仍 flex:0 0 auto 固定 188px），故根因在宿主
+   布局、插件侧无法获得更多宽度。此处能做的唯一有效动作是**把容器自身的 padding 让给内容**：
+   收掉 padding 后可用宽度翻倍（56px → 104px 量级），标题/控件不再逐词竖排。
+   断点判据用 trend.tsx 已有的 data-dou-col（由 ResizeObserver 量**本窗格实测宽**写入），
+   不用视口断点也不依赖 container-type：宿主把内容列压到多窄与视口宽度无关，
+   桌面窄窗同样会命中，这是刻意的。 */
+.dou-trend-body[data-dou-col="s"] .dsu-surface-pane {
+  padding: 6px 4px;
+  border-radius: 8px;
+}
+/* 极窄档再让出设置区外壳的 padding：实测宿主 375px 下 content 仅 139px，经 set-body
+   padding 14 与 pane padding 各扣一轮后，内容实得 34px——不足一行中文。窄档下这些
+   padding 是纯损失（外壳描边已提供视觉边界），一并收掉。 */
+/* set-body 是所有设置区窗格共用的外壳，:has() 把作用域限死在「含窄档趋势窗格」的那一个，
+   不影响 usage/report/history/providers 等其他窗格（宿主与本仓均已在用 :has()）。 */
+.dou-set-body:has(.dou-trend-body[data-dou-col="s"]) {
+  padding: 4px 2px;
+}
+.dsu-surface-card {
+  /* 壳宽 560px 是外壳卡独有的约束（原 settings/index.tsx 内联 maxWidth，行为不变收敛进样式表） */
+  max-width: 560px;
+  border: 1px solid var(--dsw-alias-border-l1, #e2e5ea);
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--dsw-alias-bg-base, #ffffff);
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.05);
+}
+
+/* ---- Field：标签 + 控件 ----
+   行内字段 nowrap 横排，换行能力由 .dsu-field-row 的 flex-wrap 承担
+   （约 350px 内容宽度下 nowrap 横排必然溢出，四个数字输入行必须能折行）。 */
+.dsu-field {
+  margin-right: 12px;
+  white-space: nowrap;
+}
+.dsu-field-block {
+  /* 标签在上、控件在下：与 .dsu-field（行内标签）并存会让同一行里出现两种排版结构，
+     跨字段换行时左边缘对不齐。此处统一为竖排，行内字段若需保持原样走 .dsu-field。 */
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+/* 标签文本是 <label> 内的裸文本节点（隐式关联 select），不是子元素——
+   故只能用 font/ ::first-line 类手段无法精确命中。改为给 label 本身定排版，
+   并让 select 独占一行：裸文本节点会生成匿名 flex item，与 select 同行。
+   这里把 label 设为 flex column，裸文本成为它的匿名 item，select 成为第二个。 */
+.dsu-field-block > select {
+  margin-top: 4px;
+  align-self: flex-start;
+}
+.dsu-field-block {
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary, #6d7480);
+}
+.dsu-field-block > select {
+  font-size: 12px;
+  color: var(--dsw-alias-label-primary, #1f2329);
+}
+.dsu-field-row {
+  display: flex;
+  flex-wrap: wrap;
+  row-gap: 6px;
+  margin-bottom: 8px;
+}
+.dsu-input {
+  margin-left: 6px;
+  padding: 2px 6px;
+  border: 1px solid var(--dsw-alias-border-l2, #e8eaf0);
+  border-radius: 4px;
+}
+.dsu-input-number {
+  width: 64px;
+}
+
+/* ---- SegmentedControl：bar=顶部导航条 / pill=行内药丸组 / plain=朴素按钮组 ----
+ * 窄屏：bar 靠 overflow-x + nowrap 横滑（与收敛前一致），pill/plain 靠 flex-wrap 折行。
+ * 激活项由 [data-dsu-seg-active] 定位而非类名，换实现不会打坏「激活档滚进视野」。 */
+.dsu-seg {
+  display: flex;
+}
+.dsu-seg-bar {
+  gap: 4px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--dsw-alias-border-l1, #e2e5ea);
+  background: var(--dsw-alias-bg-layer-1, #f5f6f8);
+  overflow-x: auto;
+  white-space: nowrap;
+  scrollbar-width: none;
+}
+.dsu-seg-bar::-webkit-scrollbar {
+  display: none;
+}
+.dsu-seg-bar .dsu-seg-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 5px 14px;
+  flex: none;
+  white-space: nowrap;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary, #5f6672);
+  font-size: 12px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.dsu-seg-bar .dsu-seg-item[data-dsu-seg-active="true"] {
+  background: var(--dsw-alias-bg-base, #ffffff);
+  border-color: var(--dsw-alias-border-l1, #e2e5ea);
+  color: var(--dsw-alias-label-primary, #1f2329);
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+}
+.dsu-seg-bar .dsu-seg-item:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-info-primary, #4a7dd6);
+  outline-offset: 2px;
+}
+@media (hover: hover) {
+  .dsu-seg-bar .dsu-seg-item:hover {
+    color: var(--dsw-alias-label-primary, #1f2329);
+  }
+}
+.dsu-seg-pill {
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.dsu-seg-pill .dsu-seg-item {
+  border: 1px solid var(--dsw-alias-border-l1, #e2e5ea);
+  background: var(--dsw-alias-bg-layer-1, #f5f6f8);
+  color: var(--dsw-alias-label-tertiary, #6d7480);
+  border-radius: 999px;
+  padding: 3px 12px;
+  min-height: 28px;
+  font-size: 11px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.dsu-seg-pill .dsu-seg-item[data-dsu-seg-active="true"] {
+  background: var(--dsw-alias-state-info-soft, rgba(47, 111, 237, 0.1));
+  border-color: var(--dsw-alias-state-info-primary, #4a7dd6);
+  color: var(--dsw-alias-state-info-primary, #4a7dd6);
+  font-weight: 600;
+}
+.dsu-seg-plain {
+  gap: 6px;
+  flex-wrap: wrap;
+  /* 档内项距 6px、档与档之间靠外层 .dou-trend-controls 的 row-gap 拉开——
+     两级间距必须分层：项距 6 太挤会让「日/周/月」和「7d/30d/90d」读成一串。 */
+  margin-bottom: 6px;
+}
+/* 段内项的视觉分组：给「粒度/范围」这类**同类单选**加一个共同的浅底槽，
+   与「口径/指标」这类**独立选择器**在形状上分开——此前四组控件全是同样的
+   透明圆角按钮平铺，视觉上分不出哪几个是一组。槽只描边不填色，
+   保持与设置页底色同调、不与已选态的 brand 底色抢注意力。 */
+.dsu-seg-plain > .dsu-seg-item {
+  border: 1px solid var(--dsw-alias-border-l3, #d7dae0);
+  background: var(--dsw-alias-bg-layer-1, #f5f6f8);
+  color: var(--dsw-alias-label-secondary, #5f6672);
+  padding: 3px 12px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  min-height: 26px;
+}
+.dsu-seg-plain > .dsu-seg-item:hover {
+  background: var(--dsw-alias-interactive-bg-hover, rgba(0, 0, 0, 0.04));
+}
+.dsu-seg-plain > .dsu-seg-item[data-dsu-seg-active="true"] {
+  background: var(--dsw-alias-bg-base, #ffffff);
+  color: var(--dsw-alias-label-primary, #1f2329);
+  font-weight: 600;
+  border-color: var(--dsw-alias-border-l3, #d7dae0);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+}
+/* plain 档的项**不出规则**：视觉与触控热区由消费包自己的按钮类承担——
+   本包调用点传 itemClassName="dou-btn"，命中 #128 触控热区
+   （.dou-panel[data-dou-bp="narrow"] .dou-btn::before 外扩）与既有按钮规则。 */
+
+/* ---- Status：状态点（无 label 时为装饰点，语义由 aria-hidden 承担）---- */
+.dsu-status {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 6px;
+  vertical-align: middle;
+  flex: none;
+}
+.dsu-status[data-dsu-tone="ok"] {
+  background: var(--dsw-alias-state-success-primary, #0f9d6e);
+}
+.dsu-status[data-dsu-tone="warn"] {
+  background: var(--dsw-alias-state-warn-primary, #c9820b);
+}
+.dsu-status[data-dsu-tone="err"] {
+  background: var(--dsw-alias-state-error-primary, #d64545);
+}
+.dsu-status[data-dsu-tone="off"],
+.dsu-status[data-dsu-tone="neutral"] {
+  background: var(--dsw-alias-label-tertiary, #9aa0ab);
+}
+
+/* ---- Badge：状态徽标 ----
+ * 色与边由两个自定义属性承载，尺寸档与色调档各改其一，避免 tone×size 组合爆炸。
+ * 规则顺序即优先级：size（定中性底）→ tone（定色）→ muted（定弱化，末位覆盖 tone）。
+ * sm 档承载 provider 身份药丸（含窄屏 100% 让位，由既有 480px 段改写本选择器）。 */
+.dsu-badge {
+  --dsu-badge-fg: inherit;
+  --dsu-badge-bd: var(--dsw-alias-border-l1, #d7dae0);
+  flex: none;
+  line-height: 1.5;
+  color: var(--dsu-badge-fg);
+  border: 1px solid var(--dsu-badge-bd);
+}
+.dsu-badge[data-dsu-size="sm"] {
+  max-width: 55%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  padding: 0 8px;
+  border-radius: 99px;
+  background: var(--dsw-alias-bg-layer-1, #f8f9fb);
+}
+.dsu-badge[data-dsu-size="xs"] {
+  --dsu-badge-bd: transparent;
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: transparent;
+}
+.dsu-badge[data-dsu-tone="ok"] {
+  --dsu-badge-fg: var(--dsw-alias-state-success-primary, #3f9d63);
+  --dsu-badge-bd: var(--dsw-alias-state-success-primary, #3f9d63);
+}
+.dsu-badge[data-dsu-tone="warn"] {
+  --dsu-badge-fg: var(--dsw-alias-state-warn-primary, #c9820b);
+  --dsu-badge-bd: var(--dsw-alias-state-warn-primary, #c9820b);
+}
+.dsu-badge[data-dsu-tone="err"] {
+  --dsu-badge-fg: var(--dsw-alias-state-error-primary, #d64545);
+  --dsu-badge-bd: var(--dsw-alias-state-error-primary, #d64545);
+}
+.dsu-badge[data-dsu-tone="off"] {
+  --dsu-badge-fg: var(--dsw-alias-label-tertiary, #9aa0ab);
+}
+.dsu-badge[data-dsu-muted="true"] {
+  --dsu-badge-fg: var(--dsw-alias-label-tertiary, #9aa0ab);
+  border-style: dashed;
+}
+
+/* ---- Button：本块不出规则 ----
+   Button 原语只出 dsu-btn 钩子与恒定的 type="button" 语义；视觉与触控热区由**调用点
+   传入的领域类**承担（provider-usage 传 .dou-btn、lan-proxy 传 .lp-set-save……）。
+   R1 时 Button 曾硬编码 .dou-btn，但原语层上提到档 C 后，那条类名就成了「provider-usage
+   的领域契约写在跨包层里」——别的包挂上去只会得到一条永远命不中的死类。#128 触控目标
+   契约又是按**类名**选中的（.dou-panel[data-dou-bp="narrow"] .dou-btn::before 的
+   inset:-4px 把 narrow 档的 min-height:36px 外扩到约 44px 命中区），所以各包的按钮类
+   必须仍挂在按钮元素上；在这里重复一份 dsu-btn 规则只会制造第二事实源。 */

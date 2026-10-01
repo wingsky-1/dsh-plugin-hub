@@ -21,6 +21,10 @@ shared/*.js.map
 shared/client/*.js
 shared/client/*.d.ts
 shared/client/*.js.map
+# shared/client/ui/（#1015 跨包原语层）：同上，产物与 .ts 源码同目录，版本库只留 .ts
+shared/client/ui/*.js
+shared/client/ui/*.d.ts
+shared/client/ui/*.js.map
 
 # 系统与编辑器
 .DS_Store

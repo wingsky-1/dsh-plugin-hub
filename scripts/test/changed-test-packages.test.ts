@@ -337,13 +337,18 @@ test("D: 双 worker allowlist 锚 + 各 1 消费者全在豁免层 + 不失效",
     [],
     "本包无 client-unit 文件",
   );
-  assert.deepEqual(
-    (surf.layerFiles as Record<string, unknown>)["client-dom"],
-    [
-      "packages/dsh-provider-usage/test/client-dom/report-section.test.ts",
-      "packages/dsh-provider-usage/test/client-dom/trend-section.test.ts",
-    ],
-    "本包 client-dom 仅 #732-A 趋势直测（client 不进变异面，不影响 worker 豁免）",
+  // client-dom 层的成员从拓扑派生，不写死清单：#1074/#1083 起「哪些层进变异面」由
+  // layerMeta.<层>.assertionTarget 派生（client-dom 为 src → 进变异面），新增 client-dom
+  // 判据属纯增量，不应把本用例打红。这里锁的是「归属正确且全在变异面内」这一不变量。
+  const clientDomFiles = (surf.layerFiles as Record<string, unknown>)["client-dom"] as string[];
+  assert.ok(Array.isArray(clientDomFiles) && clientDomFiles.length > 0, "client-dom 层须有成员");
+  assert.ok(
+    clientDomFiles.every((f) => f.startsWith(`packages/${pkg}/test/client-dom/`)),
+    "client-dom 成员须全部落在该层目录",
+  );
+  assert.ok(
+    clientDomFiles.every((f) => surf.testFiles.includes(f)),
+    "client-dom 层 assertionTarget=src（#1074/#1083 派生）→ 成员须全在变异面内",
   );
   assert.deepEqual(packagesToInvalidate([w1], reg, topo), [], "豁免层独占消费者：不失效");
   assert.deepEqual(packagesToInvalidate([w2], reg, topo), [], "豁免层独占消费者：不失效");
@@ -383,10 +388,26 @@ test("D: helpers 反向断言 + 命中窄化/全段回落 + 未命中复用", ()
   const exempt = hDirects.filter((f) => isExemptTestFile(f, pkg));
   assert.ok(inFace.length > 0, "helpers 闭包须交变异面");
   assert.ok(exempt.length > 0, "helpers 亦有豁免层消费者");
-  assert.deepEqual(
-    packagesToInvalidate([helpersPath], reg, topo),
-    ["dsh-provider-usage"],
-    "helpers 并集覆盖全段：等价回落整包",
+  // 不变量而非快照：helpers 变更须失效「其消费者闭包覆盖到的全部段」，精确列段与
+  // 回落整包都表示同一覆盖面。#1015 新增 ui-primitives 段（其 testFiles 不 import
+  // helpers，故不在闭包内）后，本用例由「回落整包」转为「精确列 15 段」——两者都正确。
+  // 写死段名清单会让纯增量（新增段 / 改段）把本用例打红，故改为按拓扑派生后比对。
+  // 不变量：helpers 变更的失效集 = 其消费者闭包覆盖到的段，或（覆盖全段时）等价的整包回落。
+  // 真实覆盖集由「哪些段的 testFiles 传递地 import helpers」决定——不写死，故新增段不会打红。
+  const segEntries = Object.entries(topo.packages[pkg].segments) as Array<
+    [string, { testFiles?: string[] }]
+  >;
+  const allSegments = segEntries.map(([s]) => `${pkg}:${s}`);
+  const helperInvalidation = packagesToInvalidate([helpersPath], reg, topo);
+  assert.ok(
+    helperInvalidation.length > 0,
+    `helpers 闭包须覆盖至少一段（否则 helpers 形同未被消费），实得 ${JSON.stringify(helperInvalidation)}`,
+  );
+  const invalidatesWholePkg = helperInvalidation.length === 1 && helperInvalidation[0] === pkg;
+  const invalidatesKnownSegments = helperInvalidation.every((s) => allSegments.includes(s));
+  assert.ok(
+    invalidatesWholePkg || invalidatesKnownSegments,
+    `helpers 失效集须为整包回落或全为已知段名（形如 ${pkg}:<段>），实得 ${JSON.stringify(helperInvalidation)}`,
   );
   const probe = "packages/dsh-provider-usage/test/hotreload-probe.mjs";
   assert.deepEqual(findDirectConsumers(ROOT, pkg, probe), [
@@ -565,16 +586,24 @@ test("P3c-① supportFileEntries 三路返回/face边界/null哨兵行为锁定"
     [pkg],
     "孤儿回落整包",
   );
-  assert.deepEqual(
-    supportFileEntries(
-      topo,
-      ROOT,
-      withFace(),
-      pkg,
-      "packages/dsh-provider-usage/test/helpers.ts",
-      face,
-    ),
-    [pkg],
-    "全段覆盖回落整包",
+  // 同上：固定面下重跑同一不变量（整包回落 或 全为已知段名）。
+  const fixedFaceEntries = supportFileEntries(
+    topo,
+    ROOT,
+    withFace(),
+    pkg,
+    "packages/dsh-provider-usage/test/helpers.ts",
+    face,
+  );
+  const fixedAllSegments = Object.keys(topo.packages[pkg].segments).map((s) => `${pkg}:${s}`);
+  const fixedWholePkg = fixedFaceEntries.length === 1 && fixedFaceEntries[0] === pkg;
+  const fixedKnownSegments = fixedFaceEntries.every((s: string) => fixedAllSegments.includes(s));
+  assert.ok(
+    fixedFaceEntries.length > 0,
+    `固定面下 helpers 闭包须覆盖至少一段，实得 ${JSON.stringify(fixedFaceEntries)}`,
+  );
+  assert.ok(
+    fixedWholePkg || fixedKnownSegments,
+    `固定面下 helpers 失效集须为整包回落或全为已知段名，实得 ${JSON.stringify(fixedFaceEntries)}`,
   );
 });

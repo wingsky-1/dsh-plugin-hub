@@ -8,6 +8,8 @@ import * as React from "react";
 import { reasonText } from "../../reason-text.ts";
 import type { Translate } from "../../locale.ts";
 import type { HistoryRecordView } from "../types.ts";
+import { Status } from "../../../../../../shared/client/ui/index.js";
+import type { Tone } from "../../../../../../shared/client/ui/index.js";
 
 /** 频道状态表（键 = 频道 id；/status 载荷逐项透传，读侧只取自己认识的字段）。 */
 interface ChannelStatus {
@@ -69,10 +71,28 @@ export function statusText(
   return t("chLastFail") + " · " + padTime(st.lastTs) + (why ? "：" + why : "");
 }
 
-export function statusDotClass(channelKey: string, statusMap: ChannelStatusMap): string {
+/**
+ * 频道状态点（R2：状态点本体上提到跨包原语层 shared/client/ui 的 Status）。
+ *
+ * 为什么改口径：原来这里返回的是**本包领域类名**（""/ "ok" / "fail"），色值与尺寸全在
+ * notifier 自己的 style.css 里。档 C 原语层把这层「圆点 + 三档色调」收成一处，跨包可复用，
+ * 故本函数改为返回原语的语义档 Tone，呈现交给 <Status>。
+ *
+ * 映射逐条对应旧类名，行为不变：无终态条目 = off（原 ""，即中性灰）；ok = ok；
+ * 其余（含 skipped 等非 ok 值）= err（原 "fail"）。
+ * 视觉差异（有意接受，收敛的代价）：点径 7px→8px、off 档底色由 border-l2 换成
+ * label-tertiary、右侧多 6px 外边距（原样式表里没有）。三处都是原语层的统一口径，
+ * 换来的是这一个圆点不再有第二份实现。
+ */
+export function statusTone(channelKey: string, statusMap: ChannelStatusMap): Tone {
   const st = statusMap[channelKey];
-  if (!st || !st.lastTs) return "";
-  return st.lastStatus === "ok" ? "ok" : "fail";
+  if (!st || !st.lastTs) return "off";
+  return st.lastStatus === "ok" ? "ok" : "err";
+}
+
+/** 状态点渲染原子（三张频道卡共用）。装饰点语义：可访问名由旁边的状态文字承担。 */
+export function statusDot(channelKey: string, statusMap: ChannelStatusMap) {
+  return <Status tone={statusTone(channelKey, statusMap)} />;
 }
 
 /**

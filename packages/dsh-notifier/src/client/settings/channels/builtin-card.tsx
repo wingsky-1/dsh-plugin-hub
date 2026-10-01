@@ -21,7 +21,7 @@ import {
   systemPlatformHint,
 } from "../parts/diagnostics.tsx";
 import { chRow } from "../parts/rows.tsx";
-import { failBadge, statusDotClass, statusText, testBtn } from "../parts/status.tsx";
+import { failBadge, statusDot, statusText, testBtn } from "../parts/status.tsx";
 import { iconEl } from "./channel-icon.tsx";
 import { soundRow } from "./sound-row.tsx";
 
@@ -184,7 +184,7 @@ export function builtinCard(
         <span className="dn-ch-name">{label}</span>
         <span className="dn-ch-type">{t("chTypeBuiltin")}</span>
         <span className="dn-ch-stateTxt">{state.stateText}</span>
-        <span className={"dn-ch-statusDot " + statusDotClass(channelId, statusMap)} />
+        {statusDot(channelId, statusMap)}
         <span className="dn-ch-statusTxt" title={statusText(channelId, statusMap, t, history)}>
           {statusText(channelId, statusMap, t, history)}
         </span>

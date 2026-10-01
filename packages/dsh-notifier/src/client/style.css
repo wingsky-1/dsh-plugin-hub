@@ -777,20 +777,9 @@
   padding: 0;
   line-height: 1.4;
 }
-.dn-set-card .dn-ch-statusDot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--dsw-alias-border-l2, #c5c5c0);
-  flex: none;
-}
-.dn-set-card .dn-ch-statusDot.ok {
-  background: var(--dsw-alias-state-success-primary, #3d7a4e);
-}
-.dn-set-card .dn-ch-statusDot.fail {
-  background: var(--dsw-alias-state-error-primary, #8a4f45);
-  box-shadow: none;
-}
+/* R2：状态点本体迁到跨包原语 <Status>（dsu-status），这三条 .dn-ch-statusDot* 规则
+   随之零消费者，故一并删除——留着就是「零消费者的永久别名」，与本轮在 provider-usage
+   删 .dou-pane 别名是同一条纪律。状态文字 .dn-ch-statusTxt 仍是本包领域样式，不动。 */
 .dn-set-card .dn-ch-statusTxt {
   font-size: 11px;
   color: var(--dsw-alias-label-tertiary, #6d7480);
@@ -1419,3 +1408,10 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ---- T1 五原语层（dsu-*）不再在本文件 ----
+ * R3 起这段原语规则的**唯一副本**在 shared/client/ui/ui.css，由本包
+ * src/client/index.tsx 经 ts 侧拼接注入（import UI_CSS + cssText: STYLE + UI_CSS）。
+ * 此前这里是人手复制的第 N 份拷贝——改一处要同步 N 处，漏改不会有任何测试报红。
+ * 领域样式（.dn-* / .dou-* 等）仍全部留在本文件，本包产物依旧是自包含单文件。
+ */

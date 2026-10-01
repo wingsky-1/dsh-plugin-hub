@@ -17,7 +17,8 @@ import * as React from "react";
 import {
   failBadge,
   padTime,
-  statusDotClass,
+  statusDot,
+  statusTone,
   statusText,
   testBtn,
 } from "../../src/client/settings/parts/status.tsx";
@@ -105,31 +106,47 @@ describe("statusText 状态摘要", () => {
   });
 });
 
-describe("statusDotClass 状态点", () => {
-  it("空表返回空串", () => {
-    expect(statusDotClass("browser", {})).toBe("");
+// R2：状态点本体上提到跨包原语 <Status>，本包原子层由返回**领域类名**
+// （""/ "ok" / "fail"）改为返回**原语语义档 Tone**。下面 5 条断言与迁移前逐条一一对应
+// （"" → "off"、"fail" → "err"），映射逻辑本身没有被放松。
+describe("statusTone 状态点色调档", () => {
+  it("空表返回 off", () => {
+    expect(statusTone("browser", {})).toBe("off");
   });
 
-  it("无 lastTs 返回空串", () => {
-    expect(statusDotClass("browser", { browser: { lastStatus: "ok" } })).toBe("");
+  it("无 lastTs 返回 off", () => {
+    expect(statusTone("browser", { browser: { lastStatus: "ok" } })).toBe("off");
   });
 
   it("ok 映射 ok", () => {
-    expect(statusDotClass("browser", { browser: { lastTs: ts030405(), lastStatus: "ok" } })).toBe(
-      "ok",
-    );
+    expect(statusTone("browser", { browser: { lastTs: ts030405(), lastStatus: "ok" } })).toBe("ok");
   });
 
-  it("failed 映射 fail", () => {
-    expect(statusDotClass("bark", { bark: { lastTs: ts030405(), lastStatus: "failed" } })).toBe(
-      "fail",
-    );
+  it("failed 映射 err", () => {
+    expect(statusTone("bark", { bark: { lastTs: ts030405(), lastStatus: "failed" } })).toBe("err");
   });
 
-  it("非 ok 非 failed 仍映射 fail", () => {
-    expect(
-      statusDotClass("system", { system: { lastTs: ts030405(), lastStatus: "skipped" } }),
-    ).toBe("fail");
+  it("非 ok 非 failed 仍映射 err", () => {
+    expect(statusTone("system", { system: { lastTs: ts030405(), lastStatus: "skipped" } })).toBe(
+      "err",
+    );
+  });
+});
+
+// 这条判据是「迁移后的调用点确实落到原语上」的证据，且顺带把原语的装饰点语义
+// （无 label → aria-hidden、不注入 role）从本包的消费面钉住：把 statusDot 换回
+// 自造 <span>、或给状态点加上 role，都会打红。
+describe("statusDot 状态点元素", () => {
+  it("渲染成原语装饰点：带 aria-hidden 与色调档，且不注入任何 role", () => {
+    const html = htmlOf(statusDot("bark", { bark: { lastTs: ts030405(), lastStatus: "failed" } }));
+    expect(html).toContain('aria-hidden="true"');
+    expect(html).toContain('data-dsu-tone="err"');
+    expect(html).not.toContain("role=");
+  });
+
+  it("无终态条目渲染 off 档装饰点", () => {
+    const html = htmlOf(statusDot("browser", {}));
+    expect(html).toContain('data-dsu-tone="off"');
   });
 });
 
