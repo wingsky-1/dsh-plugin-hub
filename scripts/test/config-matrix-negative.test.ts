@@ -208,11 +208,11 @@ test("notifier: 删 DEFAULT_CONFIG 一键 → 红且报错含键名", () => {
     "notifier 删 DEFAULT_CONFIG.historyMaxAgeDays",
     (root) => {
       edit(root, "dsh-notifier", "server/config/impl/model/index.ts", (s) => {
-        const after = s.replace(/  historyMaxAgeDays: 0,\n/, "");
+        const after = s.replace(/  historyMaxAgeDays: DEFAULTS\.historyMaxAgeDays,\n/, "");
         assert.notEqual(
           after,
           s,
-          "fixture 应含 historyMaxAgeDays: 0 默认值（源码改动后请同步本注入）",
+          "fixture 应含 historyMaxAgeDays 默认值（源码改动后请同步本注入）",
         );
         return after;
       });
@@ -372,11 +372,14 @@ test("notifier: COUNT_LIMITS 上界低于 DEFAULT_CONFIG 默认值 → 红（默
     "notifier DEFAULT_CONFIG.historyMaxAgeDays 抬到 9999",
     (root) => {
       edit(root, "dsh-notifier", "server/config/impl/model/index.ts", (s) => {
-        const after = s.replace(/  historyMaxAgeDays: 0,/, "  historyMaxAgeDays: 9_999,");
+        const after = s.replace(
+          /  historyMaxAgeDays: DEFAULTS\.historyMaxAgeDays,/,
+          "  historyMaxAgeDays: 9_999,",
+        );
         assert.notEqual(
           after,
           s,
-          "fixture 应含 historyMaxAgeDays: 0 默认值（源码改动后请同步本注入）",
+          "fixture 应含 historyMaxAgeDays 默认值（源码改动后请同步本注入）",
         );
         return after;
       });

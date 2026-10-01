@@ -594,11 +594,24 @@ function tabBar(
   );
 }
 
-/** dry-run 的 status 词 → 状态标签文案（认不出的词原样透出，不替它编一个）。 */
+/**
+ * dry-run 的 status 词 → 状态标签文案（认不出的词原样透出，不替它编一个）。
+ *
+ * `request-failed` 排在已知值里（#1016 残留 4）：它是**客户端请求层**造的状态（400/408/429/中断），
+ * 不经服务端的 reason 闭集，但照样渲染在这一行上——不在表里就 `return status` 把英文原样透出去，
+ * 于是状态标签与理由两处英文。标签复用 `chStatusSkipped`（「未发出」/ "Not sent"）而不是另开 key：
+ * 这个状态的事实是**请求压根没发出去**，投递面根本没被触达。标成「投递失败」是一句**事实性错误
+ * 断言**——没有任何东西被投递过，于是界面上会出现「投递失败：测试请求失败：HTTP 400」，把用户沿着
+ * 「Bark 端点拒了 / 凭据错了」这条方向去排查，而真正的原因在请求层；同一格里的 `skipped`
+ * （被免打扰等挡在投递面之前）本就在用它，一格两义不必新开 pair。请求层与投递层的区别由紧邻的
+ * 理由行讲清（`testRequestFail` 前缀 + 原文）。为零新增 key 的差别新开一对 locale，
+ * 只会让表多一行而信息量不变。
+ */
 function dryRunStatusTextOf(status: string, t: Translate): string {
   if (status === "ok") return t("chStatusOk");
   if (status === "failed") return t("chStatusFailed");
   if (status === "skipped") return t("chStatusSkipped");
+  if (status === "request-failed") return t("chStatusSkipped");
   return status;
 }
 
@@ -933,7 +946,17 @@ function SettingsCard() {
   }, []);
 
   if (!settings) {
-    return <li className="dn-set-card">{t("settingsLoading")}</li>;
+    // 早退分支的第三态（#1016 残留 3）：`loadCard` 的 catch 已经把失败填进 `saved`（`err` 为真），
+    // 但那行状态在早退**之后**才渲染——于是局域网直连被回环围栏 403 时，`loadFail` 的提示连同
+    // `lanAccessHint` 的 HTTPS/隧道引导都到不了屏上，用户永远只看到「加载中」。
+    // 不新造文案也不新加 locale key：这条分支复用 `saved.msg`——它在 catch 里已由
+    // `t("loadFail", { msg, hint })` 填好，403 时 hint 就是本地化的局域网引导。
+    // `saved.err` 正是那条已内建的分界（`setSaved` 第二参），不需要新状态。
+    return (
+      <li className="dn-set-card">
+        {saved !== null && saved.err ? saved.msg : t("settingsLoading")}
+      </li>
+    );
   }
 
   /** settings 唯一写入口（ref 收口）：updater 内同步 settingsRef——
@@ -1243,7 +1266,9 @@ function SettingsCard() {
             channelId: channelId,
             pending: false,
             status: "request-failed",
-            reason: failure.message,
+            // 本地化前缀 + 英文原文（#1016 残留 4）：直接写 `failure.message` 时这一行整句是英文，
+            // 与紧邻的 toast 两处英文。形态照抄上面那行 toast 的 `testFail`——`{msg}` 留宿主原话供排查。
+            reason: t("testRequestFail", { msg: failure.message, hint: failure.hint }),
           });
           toast(t("testFail", { msg: failure.message, hint: failure.hint }));
         });
@@ -1290,17 +1315,24 @@ function SettingsCard() {
   // ---- 频道编辑（settings.channels 不可变操作；deviceKey 掩码语义见服务端）----
 
   /** 更新第 idx 个频道实例（字段经 assignChannelFields 合并——空串/undefined
-   *  删键；函数式基于最新 channels，防后写覆盖）。 */
+   *  写成 null 即显式删除；函数式基于最新 channels，防后写覆盖）。 */
   function chPatch(idx: number, part: Record<string, unknown>) {
     patch(function (prev) {
       const list = (prev.channels || []).slice();
-      // 合并结果恒为频道字段集（assignChannelFields 只做删键/浅覆盖，见 settings/diff.ts）。
+      // 合并结果恒为频道字段集（assignChannelFields 只做「空值写 null」/浅覆盖，见 settings/diff.ts）。
       list[idx] = assignChannelFields(list[idx] || {}, part) as SettingsChannelView;
       return Object.assign({}, prev, { channels: list });
     });
   }
 
-  /** 写/删某实例的 levels 映射（kind→level；level 为空删除该 kind；函数式基于最新 channels）。 */
+  /** 写/删某实例的 levels 映射（kind→level）。
+   *
+   * 这里是**两个方向相反的手势**，别看成同一件事：
+   *  - 删**单个 kind**（`level` 为空）：`delete levels[kind]`。`levels` 是一个键、值是整张映射，
+   *    它的内容由这次提交整个替换，删一个 kind 是「这张表少一项」，走不到「删键」那一层。
+   *  - 清空**整个 levels**（映射被删空）：写 `null` 而不是删键。服务端按字段合并，键缺席读成
+   *    「不动」，删键会让磁盘上那张旧映射原封不动留下来——用户明明清空了它。
+   */
   function chLevelsSet(idx: number, kind: string, level: string) {
     if (!kind || kind === "__proto__" || kind === "constructor" || kind === "prototype") return;
     patch(function (prev) {
@@ -1309,7 +1341,7 @@ function SettingsCard() {
       const levels = Object.assign({}, ch.levels || {});
       if (level) levels[kind] = level;
       else delete levels[kind];
-      if (Object.keys(levels).length === 0) delete ch.levels;
+      if (Object.keys(levels).length === 0) ch.levels = null;
       else ch.levels = levels;
       list[idx] = ch;
       return Object.assign({}, prev, { channels: list });
@@ -1329,9 +1361,12 @@ function SettingsCard() {
    *  （bark-1… / webhook-1…），默认禁用（出站授权显式授予）。可选认证/
    *  凭据/模板字段一律**不预置键**——空串形态会被服务端写面校验整组 400（token/
    *  username/password/headerValue 要求非空、headerName 过头名正则），未填写 =
-   *  键不存在；输入清空经 assignChannelFields 同步删键。url/baseUrl 为必填占位，
-   *  未填保存由服务端 400 拦（url 非法即整组拒绝，语义正确）。超时缺省 10s 由
-   *  服务端 normalize 兜底。 */
+   *  键不存在；输入清空经 assignChannelFields 写成 null（显式删除）。
+   *
+   *  `url` / `baseUrl` 是**唯一两个不预置的必填键**：它们同样不预置空串占位，而是压根
+   *  没有这个键——必填键传空值会被写面以「必填键，不能删除」400 拒掉，而「没填」本就该由
+   *  服务端以「缺少 url」拒（同一件事的两种说法，后者说的是「你还没填」）。未填即保存：400。
+   *  超时缺省 10s 由服务端 normalize 兜底。 */
   function chAdd(kind: string) {
     patch(function (prev) {
       const list = prev.channels || [];
@@ -1349,7 +1384,6 @@ function SettingsCard() {
               id: id,
               name: t("chNewWebhookName") + " " + seq,
               type: "webhook",
-              url: "",
               auth: "none",
               timeoutSec: 10,
               enabled: false,
@@ -1358,7 +1392,6 @@ function SettingsCard() {
               id: id,
               name: t("chNewBarkName") + " " + seq,
               type: "bark",
-              baseUrl: "",
               enabled: false,
             };
       return Object.assign({}, prev, { channels: list.concat([base]) });
@@ -1374,7 +1407,12 @@ function SettingsCard() {
     return routes[kind];
   }
 
-  /** 写/清 kind 路由条目（ids=null 删除条目恢复默认；函数式基于最新 kindRoutes）。 */
+  /** 写/清 kind 路由条目（ids=null 删除条目恢复默认；函数式基于最新 kindRoutes）。
+   *
+   * 这里是**顶层键**，没有按键合并那回事：`kindRoutes` 整值替换，删条目就是 `delete`，
+   *  **不能**改成写 `null`——顶层值域要求每项是 `string[]`，`null` 会被 `validateKindRoutes`
+   *  拒（「null 需要字符串数组」），而整值替换下 `delete` 本来就是正确的那一支。
+   *  与频道条目里的 `chLevelsSet` 方向相反，别混。 */
   function routeSetKind(kind: string, ids: string[] | null) {
     patch(function (prev) {
       const routes = Object.assign({}, prev.kindRoutes || {});

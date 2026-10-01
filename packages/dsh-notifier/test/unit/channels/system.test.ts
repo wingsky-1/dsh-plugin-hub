@@ -125,8 +125,15 @@ function payloadOf(command: readonly string[]): Record<string, unknown> {
 
 /** 假子进程：三个出口都由用例显式驱动，不依赖真实进程的调度。 */
 class FakeChild implements ChildHandle {
-  /** 兜底杀进程的次数（超时用例断言它）。 */
-  killCount = 0;
+  /**
+   * 兜底杀进程按序记下**信号**（`undefined` = 不带信号那一次）。
+   *
+   * 记信号而不是只记次数：先礼后兵的两段（SIGTERM / SIGKILL）在「发了几次」这一层完全同形，
+   * 而「强杀那一段真的发过 SIGKILL」正是本组用例要守的东西。
+   */
+  readonly signals: Array<NodeJS.Signals | undefined> = [];
+  /** 结算后是否被 unref（孤儿既不挡进程退出、也不挡事件循环）。 */
+  unrefCount = 0;
 
   private readonly exits: Array<(exit: ProcessExit) => void> = [];
   private readonly errors: Array<(cause: Error) => void> = [];
@@ -134,6 +141,11 @@ class FakeChild implements ChildHandle {
 
   /** 结局到达的回执：临时文件的删除必须晚于它（D3 判据靠这条时序）。 */
   constructor(private readonly onExitEmitted: (() => void) | undefined = undefined) {}
+
+  /** 杀进程次数：只看「动过没有」的判据走它（信号序列本身走 `signals`）。 */
+  get killCount(): number {
+    return this.signals.length;
+  }
 
   onStderr(handler: (chunk: Buffer) => void): void {
     this.stderrs.push(handler);
@@ -147,8 +159,12 @@ class FakeChild implements ChildHandle {
     this.errors.push(handler);
   }
 
-  kill(): void {
-    this.killCount += 1;
+  kill(signal?: NodeJS.Signals): void {
+    this.signals.push(signal);
+  }
+
+  unref(): void {
+    this.unrefCount += 1;
   }
 
   emitStderr(text: string): void {
@@ -964,11 +980,13 @@ describe("命令执行：任何结局都收敛成投递结果", () => {
   });
 });
 
-describe("兜底杀进程（假时钟，不真等 8 秒）", () => {
-  // 卡住的子进程会一直占着投递，且旧实现在这一格**只 kill 不结算**：子进程忽略 SIGTERM 时
-  // `await run()` 永不返回（零日志、零落盘）。判据因此有三条：7999ms 不杀、8000ms 杀一次并**就地
-  // 结算失败**（留一条 warn）、晚到的退出码不再改结论。
-  it("卡满 8 秒即杀并结算失败：7999ms 不杀、8000ms 杀一次 + 一条 warn，晚到的退出码不改结论", async () => {
+describe("兜底杀进程（假时钟，不真等 9 秒）", () => {
+  // 卡住的子进程会一直占着投递。旧实现在 8000ms 只发一个裸 SIGTERM 就**就地结算**：忽略 SIGTERM
+  // 的进程照活（实测 8006ms 后接口已返回 failed 而进程仍在跑），而 `await run()` 也只因为就地结算
+  // 才没有永久挂着——于是一个「杀不掉」的事实被写成了「已按失败结算」。
+  // 新契约是三段，且每一段各守一条：7s 只发信号**不结算**（还在跑就是还在跑）、8.5s 补 SIGKILL、
+  // 9s 才硬结算并 unref 孤儿。时刻取自客户端的测试按钮预算（7 × 1500ms + 500ms debounce）。
+  it("三段兜底：7999ms 不动、7000ms 发 SIGTERM 且不结算、8500ms 发 SIGKILL、9000ms 硬结算失败", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
     const fake = fakeDeps({ available: ["notify-send"] });
     fake.autoExit = false;
@@ -978,12 +996,21 @@ describe("兜底杀进程（假时钟，不真等 8 秒）", () => {
     const pending = delivery.send();
     await vi.advanceTimersByTimeAsync(0);
     expect(fake.children.length).toBe(1);
+    const child = fake.children[0]!;
 
-    await vi.advanceTimersByTimeAsync(7999);
-    expect(fake.children[0]!.killCount).toBe(0);
+    await vi.advanceTimersByTimeAsync(6999);
+    expect(child.signals).toEqual([]);
     await vi.advanceTimersByTimeAsync(1);
-    expect(fake.children[0]!.killCount).toBe(1);
+    // 第一段只发信号：就地结算等于把一次还在跑的投递提前判死。
+    expect(child.signals).toEqual(["SIGTERM"]);
+    expect(delivery.warns).toEqual([]);
 
+    await vi.advanceTimersByTimeAsync(1500);
+    // 忽略 SIGTERM 的进程在第二段才被真正收掉（旧实现在这里已经结算并把它留在后台）。
+    expect(child.signals).toEqual(["SIGTERM", "SIGKILL"]);
+    expect(delivery.warns).toEqual([]);
+
+    await vi.advanceTimersByTimeAsync(500);
     expect(await pending).toEqual({
       status: "failed",
       stage: "delivered",
@@ -991,11 +1018,29 @@ describe("兜底杀进程（假时钟，不真等 8 秒）", () => {
       retryable: false,
     });
     expect(delivery.warns).toEqual(["dsh-notifier: 命令超时未退出（notify-send），已按失败结算"]);
+    // 结算之后它已经是孤儿：既不挡进程退出，也不让它自己的管道吊住事件循环。
+    expect(child.unrefCount).toBe(1);
+  });
 
-    // 晚到的退出码 0 不再二次结算（旧实现在这一格会把失败翻成成功）
-    fake.children[0]!.emitExit({ exited: true, code: 0 });
+  // 连 SIGKILL 都不理的进程（内核态 D 状态、被冻结的容器）永远不回调 onExit。硬结算这一段就是
+  // 为它存在的：缺了它 `await run()` 永久挂着，正是本次要消灭的那个失败面。
+  it("硬结算之后晚到的退出不再改结论（settled 幂等闸对在途回调仍然有效）", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+    const fake = fakeDeps({ available: ["notify-send"] });
+    fake.autoExit = false;
+    installSystemDeps(fake);
+    const delivery = new SystemDelivery();
+
+    const pending = delivery.send();
+    await vi.advanceTimersByTimeAsync(9000);
+    expect((await pending).status).toBe("failed");
+    const child = fake.children[0]!;
+    expect(child.unrefCount).toBe(1);
+
+    // 结算之后进程才真的退出（真机上就是「先硬结算、稍后被 SIGKILL 收掉」那一刻）。
+    child.emitExit({ exited: true, code: 0 });
     await vi.advanceTimersByTimeAsync(10_000);
-    expect(fake.children[0]!.killCount).toBe(1);
+    expect(child.signals).toEqual(["SIGTERM", "SIGKILL"]);
     expect(delivery.warns).toHaveLength(1);
   });
 
@@ -1008,14 +1053,15 @@ describe("兜底杀进程（假时钟，不真等 8 秒）", () => {
     const delivery = new SystemDelivery({ popup: false, sound: "ding" });
 
     const pending = delivery.send();
-    await vi.advanceTimersByTimeAsync(8000);
+    // 走到硬结算那一格（8s 只发了 SIGTERM，还没有结论）。
+    await vi.advanceTimersByTimeAsync(9000);
 
     expect((await pending).status).toBe("failed");
     expect(delivery.warns).toEqual(["dsh-notifier: 提示音播放失败：pw-play 超时未退出"]);
   });
 
-  // 结局已到的子进程不该在 8 秒后再被「杀」一次：定时器不清，进程早已回收而回调照样打进来。
-  it("结局先到（退出或 error）：定时器被清掉，不再有杀进程动作", async () => {
+  // 结局已到的子进程不该在 9 秒后再被「杀」一次：三个定时器都要清，进程早已回收而回调照样打进来。
+  it("结局先到（退出或 error）：三个定时器都被清掉，不再有杀进程动作", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
 
     const exited = fakeDeps({ available: ["notify-send"] });
@@ -1026,7 +1072,9 @@ describe("兜底杀进程（假时钟，不真等 8 秒）", () => {
     exited.children[0]!.emitExit({ exited: true, code: 0 });
     expect(await first).toEqual({ status: "ok", stage: "delivered" });
     await vi.advanceTimersByTimeAsync(10_000);
-    expect(exited.children[0]!.killCount).toBe(0);
+    expect(exited.children[0]!.signals).toEqual([]);
+    // 正常退出路径不该 unref：进程已经没了，它不是孤儿。
+    expect(exited.children[0]!.unrefCount).toBe(0);
 
     const errored = fakeDeps({ available: ["notify-send"] });
     errored.autoExit = false;
@@ -1038,7 +1086,41 @@ describe("兜底杀进程（假时钟，不真等 8 秒）", () => {
     // （弹窗命令非空 ⇒ 工具在，error 事件就是它的真失败）。
     expect((await second).status).toBe("failed");
     await vi.advanceTimersByTimeAsync(10_000);
-    expect(errored.children[0]!.killCount).toBe(0);
+    expect(errored.children[0]!.signals).toEqual([]);
+  });
+
+  // 真进程那一档：上面的假端口只能证明「发过 SIGKILL」，证明不了「SIGKILL 真能把一个忽略
+  // SIGTERM 的进程收掉」。这一条把那半边前提钉在真信号语义上（posix 才有信号语义）。
+  it("真子进程忽略 SIGTERM：SIGKILL 确实能把它收掉（Windows 无信号语义，跳过）", async (ctx) => {
+    ctx.skip(process.platform === "win32", "Windows 的 kill 不给信号语义（本用例守 posix 那一支）");
+    const child = systemDeps().spawn(
+      [
+        process.execPath,
+        "-e",
+        "process.on('SIGTERM', () => {}); process.stderr.write('ready\\n'); setTimeout(() => {}, 60_000)",
+      ],
+      { collectStderr: true },
+    );
+    const exit = exitOf(child);
+    let gone = false;
+    void exit.then(() => {
+      gone = true;
+    });
+    // 必须等它真的装上 SIGTERM 监听：早发会在 node 启动途中到达，走的是默认动作（直接死），
+    // 那样这条用例就退化成「SIGTERM 也杀得掉」，守不到要守的那半边前提。
+    let ready = false;
+    child.onStderr((chunk) => {
+      if (chunk.toString("utf8").includes("ready")) ready = true;
+    });
+    await pollUntil(() => ready, "子进程装上 SIGTERM 监听");
+
+    child.kill("SIGTERM");
+    // SIGTERM 被吞：进程照活（这正是需要第二段强杀的原因）。
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    expect(gone).toBe(false);
+
+    child.kill("SIGKILL");
+    expect(await exit).toEqual({ exited: false });
   });
 });
 
@@ -1769,7 +1851,7 @@ describe("自播回退链：首个成功即停、全失败才翻转终态", () =
   });
 
   // B4：argv 逐字快照。四个参数缺一不可（缺 -nodisp 实测 exit 0 却只报 Failed to create window
-  // or renderer，根本不出声；缺 -autoexit 进程不退出，只能等 8 秒兜底杀），而端到端结果断言
+  // or renderer，根本不出声；缺 -autoexit 进程不退出，只能等 9 秒硬结算），而端到端结果断言
   // 发现不了这两件事——只有逐字快照能。
   it("ffplay 的 argv 逐字快照：四个必需参数 + 文件在最后", async () => {
     const fake = fakeDeps({ available: ["ffplay"], present: [LINUX_DING_FILE] });

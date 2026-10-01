@@ -203,6 +203,10 @@
     {
       "step": "release.yml|observe-precheck|script:scripts/release/observe-precheck.mjs|$RUNNER_TEMP/release-evidence/observe-inputs.json,$RUNNER_TEMP/release-evidence/observe-runs.json,--inputs-out,--runs-out",
       "keys": ["GH_TOKEN", "SKIP_OBSERVE_CHECK"]
+    },
+    {
+      "step": "ci.yml|mutation-gate|tool:npx|${CONF},run,stryker",
+      "keys": ["DSH_CALIB_TRACE"]
     }
   ],
   "conditionInputs": [
@@ -474,7 +478,7 @@
     },
     {
       "job": "ci.yml|mutation-gate",
-      "digest": "69d16cebcfa35d03"
+      "digest": "94c8d1ebdc845e53"
     },
     {
       "job": "ci.yml|mutation-verdict",

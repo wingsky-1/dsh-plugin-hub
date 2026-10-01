@@ -12,32 +12,38 @@ import {
   notifierFile,
 } from "../../../shared/interface.ts";
 import {
+  UNSAFE_KEYS,
   normalizeConfig,
   parseJsonObject,
   sanitizeSettings,
-  validateSettings,
+  validateSettingsWithMerge,
 } from "../input/index.ts";
+import { mergeChannels } from "./merge.ts";
+import { projectForView } from "./view.ts";
 import { DEFAULT_CONFIG } from "../model/index.ts";
 import type {
   NotifyConfig,
   RawSettingValue,
+  SettingInvalid,
   SettingsPatch,
   StoredSettings,
 } from "../model/type.ts";
-import { redactConfig, redactStored, unmaskChannels } from "../redact/index.ts";
+import { redactStored } from "../redact/index.ts";
 import type { SettingsView, WriteResult } from "./type.ts";
 
-/** 掩码还原后的写入口 patch；失败 = patch 里的新实例提交了掩码占位。 */
-type RestoredPatch = { ok: true; patch: SettingsPatch } | { ok: false };
-
-/** 新增频道提交掩码占位时的拒绝理由（掩码只表达「未修改」，新实例没有原值可还原）。
- *
- * 导出给草稿测试（dry-run）复用同一句话：id 改名带掩码、无源新频道带掩码都是「没有原值可还原」
- * 的同一种失败，两处各写一句迟早漂成两种说法。 */
-export const NEW_CHANNEL_MASK_HINT = "新增频道不能提交掩码占位，请填写真实凭据";
-
-/** 原型链上的危险键名：JSON 文本能造出自有键，展开进设置对象就会改写原型。 */
-const UNSAFE_KEYS: readonly string[] = ["__proto__", "constructor", "prototype"];
+/** 合并结论的包装：`merged` 为 undefined = 本次提交没有 `channels` 这个键（「没动它」）。 */
+type MergeOutcome =
+  | {
+      readonly ok: true;
+      readonly merged:
+        | {
+            readonly channels: RawSettingValue;
+            readonly inherited: readonly ReadonlySet<string>[];
+            readonly preexisting: readonly ReadonlySet<string>[];
+          }
+        | undefined;
+    }
+  | { readonly ok: false; readonly error: SettingInvalid };
 
 /** 未装配时的占位：装配是必经路径，占位只是让字段不必每个使用点判空。 */
 const UNINSTALLED: ConfigDeps = { logger: { warn: () => {} } };
@@ -56,8 +62,10 @@ class ConfigStore {
   private stored: StoredSettings = {};
   /** 用户层（净化后）：写面做掩码还原、视图做回显都要它。 */
   private user: Partial<NotifyConfig> = {};
-  /** 生效设置：用户层归一化后的形态，读面直接给它。 */
+  /** 生效设置（**投递投影**）：归一化补过默认值、收敛过越界，**不外发**——`current()` 拿它。 */
   private effective: NotifyConfig = DEFAULT_CONFIG;
+  /** 视图投影（**外发**）：键子集 + 原样 + 掩码，**不补默认值**。与投递投影是两份数据，见 view 模块的文件头。 */
+  private viewConfig: Partial<NotifyConfig> = {};
   /** 用户层修订号（内容摘要）：乐观并发的比较依据。 */
   private revision = 0;
   /** 写队列尾：新写挂在它后面，「读-改-写」不会交错。 */
@@ -80,7 +88,9 @@ class ConfigStore {
     this.adopt({});
   }
 
-  /** 当前生效设置（含明文凭据；不外发）。 */
+  /** 当前生效设置（**投递投影**：补过默认值、收敛过越界；含明文凭据，**不外发**）。
+   *
+   *  pipeline / sdk / stores / dry-run 全靠它，故它一行不改地继续喂 `normalizeConfig` 的结果。 */
   current(): NotifyConfig {
     return this.effective;
   }
@@ -93,31 +103,55 @@ class ConfigStore {
       user: redactStored(this.stored),
       revision: this.revision,
       writable: true,
-      effective: redactConfig(this.effective),
+      // 视图投影**不是**投递投影（#1016 S3）：外发的是「磁盘原样 + 掩码」，补出来的默认值与被钳过的
+      // 越界值留在域内。两者混用会让一次无关保存把磁盘形态改写成读面的实现——见 view 模块的文件头。
+      effective: this.viewConfig,
     };
   }
 
   /**
-   * 写：掩码还原 → 校验 → 合并 → 落盘 → 刷新快照。
+   * 写：整段挂进写队列，队列内完成按字段合并（含掩码还原）→ 校验 → 落盘 → 刷新快照。
    *
-   * 顺序不可换：掩码不是合法密钥值，未还原就被校验拦死；校验早于落盘，否则非法值会先写进文件。
-   * 校验与合并之间不净化：陌生键是透传保留的，一次保存不该把它们抹掉。0.2.3 的顶层渠道键已由
-   * upgrade 域在装配期搬走，写面收到它们会被校验直接拒（退役键清单），不在这里做二次翻译。
+   * 为什么不把合并与校验留在队列外：两者都要读存量（合并沿用哪些键、判据据此决定重判哪些），
+   * 队列外读到的存量会被并发的另一次写抽走。详见 `apply` 的注释。
+   *
+   * `apply` 必须**直调 commit，不得再 enqueue**：enqueue 同步把 tail 设成 result.then(...)，
+   * task 内再 enqueue 就是等自己刚挂上去的 tail——那个 tail 排在自己后面，自己不返回它就不 resolve。
+   * 故 apply 与 commit 之间不经队列，是**结构上**写死的，不靠调用方记得。
    */
   async write(patch: SettingsPatch, expectedRevision?: number): Promise<WriteResult> {
-    const restored = this.restoreSecrets(patch);
-    if (!restored.ok) {
-      return {
-        ok: false,
-        reason: "invalid",
-        error: { key: "channels", hint: NEW_CHANNEL_MASK_HINT },
-      };
-    }
-    const verdict = validateSettings(restored.patch);
+    return this.enqueue(() => this.apply(patch, expectedRevision));
+  }
+
+  /**
+   * 一次写的全过程：按字段合并（含掩码还原）→ 校验合并结果 → 落盘 → 刷新快照。
+   *
+   * **整段在写队列内**，合并与校验都算在内（issue #1016 批次 B）。原来还原与校验在队列外，
+   * 于是它们读到的存量是「入队那一刻」的：并发的两次写里，后一次会用前一次落盘**之前**的
+   * 用户层去还原掩码、判定「原样带回」，基线跟着另一次写漂走。把它们移进队列后，合并、判据
+   * 三者看到的是同一份存量快照。
+   *
+   * 顺序不可换（#1016 S2）：合并必须**先于**校验——判据审的是合并后的条目，而「删键之后必填键
+   * 此刻为空」这条判据只有合并之后才问得出；校验必须早于落盘，否则非法值会先写进文件。掩码在
+   * 合并里解（五态之一，见 merge 模块），不再有独立的还原步骤：两条路径各解一次会让「掩码在
+   * 哪一步变成原值」有两个答案，而判据看到的形态与落盘的形态就必须逐字一致。
+   *
+   * 校验与合并之间不净化：磁盘上**存量**的陌生键不在提交里，合并原样沿用，一次保存抹不掉它们；
+   * 而**本次提交**的陌生键由判据 400（#1016 S2 删掉了 extras 透传面）。0.2.3 的顶层渠道键已由
+   * upgrade 域在装配期搬走，写面收到它们会被校验直接拒（退役键清单），不在这里做二次翻译。
+   * 合并那一侧读哪份存量（磁盘原样，不是 effective）由 `mergePatchChannels` 的注释交代。
+   */
+  private async apply(patch: SettingsPatch, expectedRevision?: number): Promise<WriteResult> {
+    const outcome = mergePatchChannels(patch.channels, this.stored);
+    if (!outcome.ok) return { ok: false, reason: "invalid", error: outcome.error };
+    // 判据看**合并后**的频道条目（形状与必填键）；顶层键仍按提交面逐值判——顶层没有按键合并这回事。
+    const verdict = validateSettingsWithMerge(patch, outcome.merged);
     if (!verdict.ok) return { ok: false, reason: "invalid", error: verdict.error };
 
-    const incoming = writableEntries(restored.patch);
-    return this.enqueue(() => this.commit(incoming, expectedRevision));
+    const subject: SettingsPatch =
+      outcome.merged === undefined ? patch : { ...patch, channels: outcome.merged.channels };
+    const incoming = writableEntries(subject);
+    return this.commit(incoming, expectedRevision);
   }
 
   /**
@@ -125,6 +159,13 @@ class ConfigStore {
    *
    * 整段在写队列内执行：比对与写入之间若能被另一次写插入，乐观并发就形同虚设
    * ——两次写都读到同一旧版本、都判定通过，后写的把先写的悄悄覆盖。
+   *
+   * `expectedRevision` 与合并结果的 `inherited` **语义不同，不许合并成一个参数**：
+   * 前者是**内容摘要**比对，防的是「两个客户端同时改」的丢失更新（防的是覆盖）；
+   * 后者是**同 id 同 type 同名字段**的沿用清单，解的是「存量非法值不该因一次无关保存被拒」的
+   * 过度拒绝（防的是错杀）。两者一个按内容断版本、一个按字段认改动，混在一起会让任一条判据
+   * 悄悄变成另一条：把字段比对当版本号，用户改一个字段就凭空冲突；把版本号当字段比对，
+   * 别的键变过就会让这次保存看起来「没改过」。
    */
   private async commit(incoming: StoredSettings, expectedRevision?: number): Promise<WriteResult> {
     if (expectedRevision !== undefined && expectedRevision !== this.revision) {
@@ -140,22 +181,19 @@ class ConfigStore {
     return { ok: true, view: this.view() };
   }
 
-  /** 文件内容到达：镜像原样留下，用户层与生效值由它派生。 */
+  /**
+   * 文件内容到达：镜像原样留下，**两份投影**由它各自派生（#1016 S3）。
+   *
+   * 这一行是「读面拆两条通道」的落点：`effective` 走归一化（投递侧要完整形态），`viewConfig` 走
+   * 键子集投影（外发侧要磁盘原样）。两者曾共用一份数据，于是「补出来的默认值」被当成用户存过的值
+   * 交回磁盘——见 view 模块的文件头与 `view()` 的注释。
+   */
   private adopt(stored: StoredSettings): void {
     this.stored = stored;
     this.user = sanitizeSettings(stored);
     this.effective = normalizeConfig(stored);
+    this.viewConfig = projectForView(stored);
     this.revision = revisionOf(stored);
-  }
-
-  /** 掩码还原：patch 里等于掩码的密钥字段按 id 换回用户层原值；只有带了频道才需要这一步。 */
-  private restoreSecrets(patch: SettingsPatch): RestoredPatch {
-    const channels = patch.channels;
-    if (channels === undefined) return { ok: true, patch };
-    const restored = unmaskChannels(channels, this.user.channels);
-    return restored.ok
-      ? { ok: true, patch: { ...patch, channels: restored.channels } }
-      : { ok: false };
   }
 
   /** 把一次写挂到队列尾；前一次无论成败，后一次都照常执行。 */
@@ -168,6 +206,35 @@ class ConfigStore {
 
 /** 本域唯一的存取点实例：类不外放，外面 `new` 不出第二份设置状态。 */
 export const configStore = new ConfigStore();
+
+/**
+ * 提交里的 `channels` → 合并结果（掩码也在这一步解，见 merge 模块的五态）。
+ *
+ * 基线取 `stored`（**磁盘原样**）而不是 `effective`：合并的目的是「客户端没带的字段落盘后还在」，
+ * 而 effective 是归一化补过默认值、剥过空串、钳过越界的形态——拿它当基底等于把一份补值写回文件，
+ * 让磁盘上的形态随读面实现漂移。
+ *
+ * 提交里没有 `channels` 这个键时给 `undefined`（「这次没动它」）：顶层仍是整值替换，提交里没有
+ * 的键不进 `merged`，由 `commit` 的基底原样带过去。
+ */
+function mergePatchChannels(
+  channels: RawSettingValue | undefined,
+  stored: StoredSettings,
+): MergeOutcome {
+  if (channels === undefined) return { ok: true, merged: undefined };
+  const merged = mergeChannels(channels, stored.channels ?? []);
+  if (!merged.ok) return { ok: false, error: merged.error };
+  return {
+    ok: true,
+    // 两笔账整份带过去：值域判据看 inherited（「值原样来自存量」），「必填键在场」看 preexisting
+    // （「键的缺席本来就来自存量」）。判据侧按同下标取用，见 MergedChannelScope。
+    merged: {
+      channels: merged.channels,
+      inherited: merged.inherited,
+      preexisting: merged.preexisting,
+    },
+  };
+}
 
 /** 提交体 → 可写入的原始设置：只剔除原型链危险键，契约不认识的键原样放行（抹掉属于静默破坏）。 */
 function writableEntries(patch: SettingsPatch): StoredSettings {

@@ -13,13 +13,16 @@ import { describe, expect, it } from "vitest";
 import {
   BARK_RESERVED_KEYS,
   RETIRED_KEYS,
+  UNSAFE_KEYS,
   WEBHOOK_RESERVED_KEYS,
   normalizeConfig,
   parseJsonObject,
   sanitizeSettings,
   validateSettings,
+  validateSettingsWithMerge,
 } from "../../../src/server/config/impl/input/index.ts";
 import { DEFAULT_CONFIG } from "../../../src/server/config/impl/model/index.ts";
+import { BARK_LEVELS_LIMIT, WEBHOOK_TEMPLATE_MAX_CHARS } from "../../../src/shared/interface.ts";
 import type {
   BarkChannelConfig,
   BrowserChannelConfig,
@@ -33,7 +36,7 @@ import type {
   WebhookChannelConfig,
 } from "../../../src/server/config/impl/model/type.ts";
 
-/** 绕过类型构造运行时真实存在、类型层却排除掉的脏值（`null` 不在 `RawSettingValue` 里）。 */
+/** 绕过类型构造运行时真实存在、类型层却排除掉的脏值。 */
 function raw(value: unknown): RawSettingValue {
   return value as RawSettingValue;
 }
@@ -186,6 +189,31 @@ describe("normalizeConfig：永不失败（读面在脏文件下也必须交出�
     }
   });
 
+  // 投递投影取**首项**（#1016 残留 2）。写面已绝对拒重复身份，故能从磁盘读到重复的只有手改文件与
+  // 0.2.9 之前的存量；此时两条都投 = 一次通知发两遍，而掩码还原（findById）与合并（indexById /
+  // sameKindBase）那两侧本就只认首条——取首项让四处同一口径，投递面不再自成一套。
+  it("重复身份的条目在投递投影里只取首条：不会一次通知发两遍", () => {
+    const channels = normalizeConfig({
+      channels: [...BUILTINS, BARK, { ...BARK, deviceKey: "key-2" }],
+    }).channels;
+    const barks = channels.filter((item) => item.type === "bark");
+    expect(barks).toHaveLength(1);
+    // 取的是**首条**（key-1）：与 findById / indexById 的取首条口径一致，取末条会让两侧指向不同对象。
+    expect(barkOf(channels).deviceKey).toBe("key-1");
+  });
+
+  // 身份口径**不看 type**，所以「谁占着 browser 这个身份」由数组里的先后决定：本例内置在前，于是那条
+  // bark 被去重掉。这与 builtinRaw（同类型取首条）、findById（裸 id 取首条）是同一把尺——三处若有一处
+  // 按 type 各算各的，就会指向不同对象。写面已绝对拒这种配置，故它只可能来自手改文件。
+  it("跨类型同 id：身份归先到的那条（内置在前 → bark 被去重，不多投一个出口）", () => {
+    const channels = normalizeConfig({
+      channels: [BUILTINS[0], BUILTINS[1], { ...BARK, id: "browser" }],
+    }).channels;
+    // 出站侧一条不剩：bark 抢的身份已被内置 browser 占着。
+    expect(channels.filter((item) => item.type === "bark")).toHaveLength(0);
+    // 内置 browser 照常在场——去重不伤真正该在的那条。
+    expect(browserOf(channels).type).toBe("browser");
+  });
   it("quietHours 逐项独立回落：一个窗口脏不该连带丢掉整组（用户填对的那段要留住）", () => {
     const quiet = normalizeConfig({
       quietHours: {
@@ -204,7 +232,7 @@ describe("normalizeConfig：永不失败（读面在脏文件下也必须交出�
     expect(quiet.allowKinds).toEqual(["error"]);
   });
 
-  it("quietHours 不是对象时整块回落默认；windows 缺席回落 legacy，显式空数组保持空（读侧容忍半截对象，写侧的整块校验是另一道关）", () => {
+  it("quietHours 不是对象时整块回落默认；windows 缺席一律给空，显式空数组保持空（读侧容忍半截对象，写侧的整块校验是另一道关）", () => {
     // `allowKinds` 在这一支上随默认表走（表上本就没有该键，缺省语义由裁决层定义），故不在此断言。
     for (const input of ["22:00", [], 7, raw(null)]) {
       const quiet = normalizeConfig({ quietHours: input }).quietHours;
@@ -214,14 +242,16 @@ describe("normalizeConfig：永不失败（读面在脏文件下也必须交出�
     // 半截对象走的是另一支：逐子键拼装，于是可选的 allowKinds 会被补成空数组（全量输出）。
     const partial = normalizeConfig({ quietHours: { enabled: true } }).quietHours;
     expect(partial.enabled).toBe(true);
-    expect(partial.windows).toEqual([{ start: "22:00", end: "08:00" }]);
+    // #1016 S3 删掉了读面的旧 start/end 回落：`windows` 缺席就是「一条时段都不命中」，
+    // 回落默认表等于替用户编一个他没配过的深夜窗口。旧形由 0.2.6 的割接在装配期搬进 windows[0]。
+    expect(partial.windows).toEqual([]);
     expect(partial.allowKinds).toEqual([]);
-    // 旧形 start/end 看成 windows[0]：还没跑过 0.2.6 升级的老文件行为不变。
+    // 旧形 start/end 读面**不再认**（形态演进是 upgrade 域的职责，读面不认历史）。
     const legacy = normalizeConfig({
       quietHours: { enabled: true, start: "23:00", end: "07:00" },
     }).quietHours;
     expect(legacy.enabled).toBe(true);
-    expect(legacy.windows).toEqual([{ start: "23:00", end: "07:00" }]);
+    expect(legacy.windows).toEqual([]);
     // 显式空数组保持空：它表达的是「一个都不命中」，不是「缺了要补默认」。
     const empty = normalizeConfig({ quietHours: { enabled: true, windows: [] } }).quietHours;
     expect(empty.windows).toEqual([]);
@@ -315,53 +345,57 @@ describe("normalizeConfig：永不失败（读面在脏文件下也必须交出�
     expect("badge" in dirty).toBe(false);
   });
 
-  it("频道的未知键按 string/number 透传成 extras（README 的前向兼容承诺：bark 将来加参数，用户现在写进去要留住）", () => {
+  // 归一化是**按已知键逐个物化**的（#1016 S2 删掉了 extras 概念）：磁盘上躺着的陌生键不进入
+  // 生效设置——既不会被带进投递面，也不会被回显给客户端去撞写面的陌生键判据。
+  it("频道条目里的陌生键不进入生效设置：不再有 extras 子对象可透传", () => {
     const channel = barkOf(
       normalizeConfig({
         channels: [{ ...BARK, volume: 5, call: "1", nested: { a: 1 }, flag: true }],
       }).channels,
     );
-    expect(channel.extras).toEqual({ volume: 5, call: "1" });
+    expect("extras" in channel).toBe(false);
+    expect("volume" in channel).toBe(false);
+    expect("call" in channel).toBe(false);
     const hook = webhookOf(
       normalizeConfig({ channels: [{ ...WEBHOOK, futureKey: "v", retries: 2 }] }).channels,
     );
-    expect(hook.extras).toEqual({ futureKey: "v", retries: 2 });
-    // 没有未知键时不该凭空多出一个空 extras（两类频道同一口径）。
-    expect("extras" in webhookOf(normalizeConfig({ channels: [BARK, WEBHOOK] }).channels)).toBe(
-      false,
-    );
+    expect("extras" in hook).toBe(false);
+    expect("futureKey" in hook).toBe(false);
   });
 
-  it("保留键在归一化里也剔除：手改过的配置文件不经过写入口径，一条手写的 device_key 就能绕开「凭据只走已知字段」", () => {
+  // 归一化读的是**磁盘上的内容**，手改过的文件不经过写入口径：一条手写的 device_key 若被收进
+  // 生效设置，就能绕开「凭据只能走已知字段」的收口进到投递面。逐键物化让这条路没有承载物。
+  it("保留键（凭据别名）同样不进入生效设置：手改过的文件绕不开收口", () => {
     // 保留键清单按频道类型分（bark 的别名与 webhook 的别名不是同一批），这里只用 bark 自己的。
     const channel = barkOf(
       normalizeConfig({
         channels: [{ ...BARK, device_key: "leak", ciphertext: "leak2" }],
       }).channels,
     );
-    expect(channel.extras).toBeUndefined();
     expect(JSON.stringify(channel)).not.toContain("leak");
+    expect("device_key" in channel).toBe(false);
   });
 
-  it("只写过旧全局键 notifySound 的存量：读面把它并进两条内置条目的 sound（当时关掉的提示音不该复活成有声）", () => {
-    const quiet = normalizeConfig({ notifySound: false });
-    expect(browserOf(quiet.channels).sound).toBe(false);
-    expect(systemOf(quiet.channels).sound).toBe(false);
-    // 显式写下的条目字段优先于旧键：回落只补缺，不覆盖用户后来的选择。
-    const mixed = normalizeConfig({
+  // #1016 S3：读面删除历史兼容。0.2.3 的顶层渠道键（`notifySound` / `browserSound` /
+  // `systemSound` 那一批）与更早的全局声音键一律**不再被读面消费**——它们由 upgrade 域 0.2.4 的
+  // 配置形态割接在装配期搬进条目并删除。读面再兜一次，两处实现对「只搬了一半的文件」迟早给出不同
+  // 答案，而那时已经没有任何用户能看出来是哪一处错了。
+  it("旧顶层渠道键不再被读面消费：磁盘上还在的 notifySound / browserSound 读成默认形态（判别力 #7）", () => {
+    const quiet = normalizeConfig({
       notifySound: false,
-      channels: [builtinWithSound("browser", "ding"), BUILTINS[1]],
+      browserSound: "ding",
+      systemSound: "chime",
     });
-    expect(browserOf(mixed.channels).sound).toBe("ding");
-    expect(systemOf(mixed.channels).sound).toBe(false);
-  });
-
-  it("存量出口音效键接受完整声音域：存过的音色名不能被吞成默认值（旧全局键只认布尔）", () => {
-    const toned = normalizeConfig({ browserSound: "ding", systemSound: "chime" });
-    expect(browserOf(toned.channels).sound).toBe("ding");
-    expect(systemOf(toned.channels).sound).toBe("chime");
-    // 旧全局键当年只有开关语义：音色名这类值不该经它流进配置（回落默认，而不是把它当音色用）
-    expect(browserOf(normalizeConfig({ notifySound: "ding" }).channels).sound).toBe(true);
+    // 回落方向是默认表，不是旧键的值：静音设置不会被一个读面已经不再认识的键改写。
+    expect(browserOf(quiet.channels).sound).toBe(true);
+    expect(systemOf(quiet.channels).sound).toBe(true);
+    // 条目里显式写下的字段照旧生效——丢的是「旧键」这条输入，不是「条目字段」这条输入。
+    const explicit = normalizeConfig({
+      notifySound: false,
+      channels: [builtinWithSound("browser", "ding"), { type: "system", id: "system" }],
+    });
+    expect(browserOf(explicit.channels).sound).toBe("ding");
+    expect(systemOf(explicit.channels).sound).toBe(true);
   });
 
   it("频道缺省不启用：出站授权须用户显式授予（两类频道同一口径——webhook 只是把同样的授权换成一次外发请求）", () => {
@@ -443,15 +477,17 @@ describe("validateSettings：只审显式提交（缺键不是错误）", () => 
     }
   });
 
-  it("未知键的写入口径：只放行 string/number（对象/布尔/数组的透传值会让下游分不清「有值」与「没值」）", () => {
-    expect(
-      validateSettings({ channels: withBuiltins([{ ...BARK, volume: 5, call: "1" }]) }),
-    ).toEqual({ ok: true });
-    expect(invalidOf({ channels: withBuiltins([{ ...BARK, nested: { a: 1 } }]) }).hint).toContain(
-      "nested",
-    );
-    expect(invalidOf({ channels: withBuiltins([{ ...BARK, flag: true }]) }).hint).toContain("flag");
-    expect(invalidOf({ channels: withBuiltins([{ ...BARK, list: [1] }]) }).hint).toContain("list");
+  // 陌生键一律 400（#1016 S2）：透传面要求读面把陌生键收进 `extras` 子对象再原样交回客户端，
+  // 而写面只放行 string/number——`extras` 这个**对象**自己撞上那条判据，该频道所在配置从此
+  // 再也保存不了（#1016 缺陷 B）。收窄到「本版本认识的键」把那条自撞的口子关掉。
+  // 值是什么（对象/布尔/数组/字符串）不再影响结论：只有「认不认识」这一件事。
+  it("频道条目里的陌生键一律 400：值是字符串、数字、对象、布尔、数组都不放行", () => {
+    for (const extra of [5, "1", { a: 1 }, true, [1]] as unknown[]) {
+      const invalid = invalidOf({ channels: withBuiltins([{ ...BARK, extraKey: extra }]) });
+      expect(invalid.key, JSON.stringify(extra)).toBe("channels");
+      expect(invalid.hint, JSON.stringify(extra)).toContain("extraKey");
+      expect(invalid.hint, JSON.stringify(extra)).toContain("不是已知键");
+    }
   });
 
   it("内置渠道不能删除：显式提交的 channels 少一条内置条目即 400，提示点名缺的那一条（其余一律按普通条目处理）", () => {
@@ -476,6 +512,87 @@ describe("validateSettings：只审显式提交（缺键不是错误）", () => 
     const wrongId = invalidOf({ channels: [{ ...BUILTINS[0], id: "chrome" }, BUILTINS[1]] });
     expect(wrongId.key).toBe("channels");
     expect(wrongId.hint).toContain("id 只能是");
+  });
+  // ── 频道身份唯一（#1016 残留 2）──────────────────────────────────────────
+  //
+  // 重复身份是**凭据销毁**而不是显示重复：设置页对 channels 整组提交，合并的 sameKindBase 按裸 id
+  // 取首条、KEEP 又让其余键沿用首条的值，于是第二条的真实密钥被第一条覆盖，每次保存毁一条。
+  // 掩码还原的 findById 同样按裸 id 查找，故**跨类型同 id 也撞**。
+  it("同类型重复 id 一律 400：两条 bark 用同一个 id 即拒（每次保存都会毁掉第二条的 deviceKey）", () => {
+    const invalid = invalidOf({
+      channels: [...BUILTINS, BARK, { ...BARK, deviceKey: "key-2" }],
+    });
+    expect(invalid.key).toBe("channels");
+    // 提示必须点名那个身份：用户看得到两条 bark 卡片，却改不了它们的 id（客户端没有 id 编辑器）。
+    expect(invalid.hint).toContain("bark:phone");
+  });
+
+  it('跨类型重复 id 也 400：掩码还原按裸 id 查找，bark 写 id="browser" 会命中内置条目', () => {
+    const invalid = invalidOf({ channels: [BUILTINS[0], BUILTINS[1], { ...BARK, id: "browser" }] });
+    expect(invalid.key).toBe("channels");
+    expect(invalid.hint).toContain("browser");
+  });
+
+  // 提示要给**下标**与**可自救的动作**：用户改不了 id，只说「重复」等于堵死。文案按 1 起数（界面上的第几条），
+  // 所以落盘数组的下标要 +1——这条专门钉那个换算，写成 0 起数时用户会数错条目。
+  it("重复身份的提示带 1 起的下标，并明说删掉其中一条（用户改不了 id，文案必须给出路）", () => {
+    const invalid = invalidOf({ channels: [...BUILTINS, BARK, { ...BARK, deviceKey: "key-2" }] });
+    // BUILTINS 占前两条，故冲突发生在第 3 条与第 4 条。
+    expect(invalid.hint).toContain("第 3 条");
+    expect(invalid.hint).toContain("第 4 条");
+    expect(invalid.hint).toContain("删掉其中一条");
+  });
+
+  // 零误伤是这条判据的另一半：内置条目的 id **可以缺席**（0.2.4 割接在用户没设过旧键时写出的就是
+  // `{type,id}`，而更早的形态连 id 键都没有），身份此时回落 type。口径写错成「id 必填」就会让每一次
+  // 无关保存都被拒，用户还看不出是哪一条。
+  it("内置条目缺席 id 不误伤：身份回落 type（0.2.4 割接写出的就是没有 id 键的形态）", () => {
+    expect(validateSettings({ channels: [{ type: "browser" }, { type: "system" }, BARK] })).toEqual(
+      {
+        ok: true,
+      },
+    );
+  });
+
+  // 两条内置的 id 都缺席时身份分别是 browser / system，仍然互不相同——若口径写成「一律空串」或
+  // 「一律 type 常量」，这条会当场撞车并把合法的内置配置拒掉。
+  it("两条内置同时缺席 id 仍互不相同（口径不是把所有缺席 id 折成同一个身份）", () => {
+    expect(validateSettings({ channels: [{ type: "browser" }, { type: "system" }, BARK] })).toEqual(
+      {
+        ok: true,
+      },
+    );
+    // 同一类型重复出现（两条 browser）仍要拒：内置重复是「用户提交了两张一样的卡」，不是合法配置。
+    const dup = invalidOf({
+      channels: [{ type: "browser" }, { type: "browser" }, { type: "system" }, BARK],
+    });
+    expect(dup.key).toBe("channels");
+    expect(dup.hint).toContain("browser");
+  });
+
+  // 内置 id 写错仍由既有的「id 只能是 type」判据拒，本组不与之分叉：那条判据更早、话术更贴切。
+  it("内置 id 写错仍由既有判据拒（不因新增的数组级判据而改口）", () => {
+    const wrongId = invalidOf({ channels: [{ ...BUILTINS[0], id: "chrome" }, BUILTINS[1]] });
+    expect(wrongId.hint).toContain("id 只能是");
+  });
+
+  // 绝对 400：不给 preexisting 放行。放行是「存量残缺不该让无关保存被拒」，而重复身份是存量**自相矛盾**
+  //（同一个身份挂两套凭据）——放行等于把「每次保存毁一条凭据」合法化。走合并入口逐条钉。
+  it("存量里就有重复身份时，本次无关保存照样 400（不给 preexisting 放行）", () => {
+    // 真实形状：客户端只交一条 bark（它改的是别处），合并结果里却留着两条同 id 的——
+    // 「每次保存都毁一条凭据」正是这样发生的，不需要用户碰这两张卡。
+    const stored = [...BUILTINS, BARK, { ...BARK, deviceKey: "key-2" }];
+    const verdict = validateSettingsWithMerge(
+      { channels: [BARK] },
+      {
+        channels: stored,
+        inherited: stored.map(() => new Set<string>()),
+      },
+    );
+    expect(verdict.ok).toBe(false);
+    if (verdict.ok) throw new Error("期望判非法，实际放行");
+    expect(verdict.error.key).toBe("channels");
+    expect(verdict.error.hint).toContain("bark:phone");
   });
 
   // 这一批键已经没有值语义。当陌生键放行会让停在升级前页面上的旧客户端以为存上了
@@ -515,12 +632,26 @@ describe("validateSettings：只审显式提交（缺键不是错误）", () => 
     expect(verdict.ok ? "" : verdict.error.hint).not.toContain("已移入渠道条目");
   });
 
-  // 前向兼容是 README 的承诺：退役键那刀只砍「曾经存在、现在没有了」的键，不能顺手把本版本还
-  // 不认识的键也拒了（那等于替未来的版本拒绝今天的用户）。
-  it("本版本不认识的顶层键仍放行：退役键拒收与前向兼容是两条口径，不能混", () => {
-    expect(validateSettings({ futureKey: 1 } as SettingsPatch)).toEqual({ ok: true });
-    // 归一化只认认识的键，陌生键的值得不到生效位——透传保留发生在存储层，不是这里。
+  // 顶层陌生键同样 400（#1016 S2）：写面不再「透传保留」它们。存量里已有的陌生键不受影响——
+  // 它们不在提交里，按字段合并时原样沿用（服务端那一半见 service.test.ts）。
+  it("本版本不认识的顶层键写拒：与频道条目里的陌生键同一条口径", () => {
+    const invalid = invalidOf({ futureKey: 1 } as unknown as SettingsPatch);
+    expect(invalid.key).toBe("futureKey");
+    expect(invalid.hint).toContain("不是已知配置键");
+    // 归一化本来就不认它，值得不到生效位——400 只是让「你以为存上了」这件事当场暴露。
     expect("futureKey" in normalizeConfig({ futureKey: 1 })).toBe(false);
+  });
+
+  // 原型链危险键是**另一类**：它们在落盘前被整条剔除（writableEntries），原型改写已经被挡下，
+  // 再报「陌生键」只会把一次安全的写变成 400。
+  it("原型链危险键不进判据：它们由写面剔除，不按陌生键拒收", () => {
+    for (const key of UNSAFE_KEYS) {
+      expect(validateSettings({ [key]: { pwned: true } } as unknown as SettingsPatch), key).toEqual(
+        {
+          ok: true,
+        },
+      );
+    }
   });
 
   it("逐键类型闸门：每个非法值都指向它自己那个键，且提示指向真正拦下它的那条分支（键对了、提示指向别处，等于把用户引到另一个字段）", () => {
@@ -768,5 +899,190 @@ describe("sanitizeSettings：只留认识的键，且不归一化", () => {
     for (const value of [null, undefined, [], "notifyAsk", 3, true]) {
       expect(sanitizeSettings(stored(value)), String(value)).toEqual({});
     }
+  });
+});
+
+// ---------------------------------------------------------------- #1016 S2：判据对象 = 合并后的条目
+//
+// 写面把 channels 改成按字段合并之后，判据问的问题也换了：不再是「提交上来的这条合不合法」，
+// 而是「**这次写真正要落盘的那条**合不合法」。两者在存量有非法值时给出相反的结论，而后者才是
+// 用户要的——磁盘上一份越界的旧配置不该让他此后改个名字都存不下去。
+//
+// 判据据此多收一个面：inherited（该条目里哪些字段的值原样来自存量）。清单里的字段不重判值域，
+// 但**形状**判据（必填键、内置在场）一条都不让——删掉一个必填键的后果与它是不是本次改动无关。
+// 服务端那一半（端到端、含真实落盘）在 test/unit/config/service.test.ts 的「按字段合并」块。
+
+describe("validateSettingsWithMerge：判据对象是合并后的条目（#1016 S2）", () => {
+  /** 一条 webhook 的合并结果 + 它的 inherited 清单 + 两条内置（内置在场是形状判据，别让它盖住要断的那条）。 */
+  function webhookMerge(extra: Record<string, RawSettingValue>, inherited: string[]) {
+    const entry = { ...WEBHOOK, auth: "none", ...extra };
+    return {
+      channels: [...BUILTINS, entry] as RawSettingValue[],
+      inherited: [new Set<string>(), new Set<string>(), new Set(inherited)],
+    };
+  }
+
+  // 「不动存量」的方向：磁盘上那份 9000 字符的 template 原样带回来，不重新判它超没超上限。
+  it("inherited 里的字段不重判值域：存量越界值不因一次无关保存被拒", () => {
+    const long = { template: "x".repeat(9000) };
+    // 不带 inherited（= 草稿路径的老行为）：照样 400——本次提交就要为这个值负责。
+    const bare = validateSettingsWithMerge({ channels: webhookMerge(long, []).channels });
+    expect(bare.ok).toBe(false);
+    expect(bare.ok ? "" : bare.error.hint).toContain("template");
+    // 声明它沿用存量：放行。
+    const kept = validateSettingsWithMerge(
+      { channels: webhookMerge(long, []).channels },
+      webhookMerge(long, ["template"]),
+    );
+    expect(kept.ok).toBe(true);
+  });
+
+  // 同一个字段、同样的值，只要**本次真的改了**它（不在 inherited 里）就重新判——
+  // 「不动存量」不是「不看值」。
+  it("同一个越界值不在 inherited 里时照样 400（不动存量 ≠ 不看值）", () => {
+    const long = { template: "x".repeat(9000) };
+    const checked = validateSettingsWithMerge(
+      { channels: webhookMerge(long, []).channels },
+      webhookMerge(long, []),
+    );
+    expect(checked.ok).toBe(false);
+    expect(checked.ok ? "" : checked.error.hint).toContain("template");
+  });
+
+  // 陌生键同理：存量条目上已有的陌生键由合并沿用，不该被一次无关保存追责；本次新交的拒。
+  it("inherited 里的陌生键放行：存量条目上那个键一次无关保存不追责", () => {
+    const extra = { myCustom: "kept" };
+    const kept = validateSettingsWithMerge(
+      { channels: webhookMerge(extra, []).channels },
+      webhookMerge(extra, ["myCustom"]),
+    );
+    expect(kept.ok).toBe(true);
+    // 不在 inherited 里 = 本次新交的：400。
+    const fresh = validateSettingsWithMerge(
+      { channels: webhookMerge(extra, []).channels },
+      webhookMerge(extra, []),
+    );
+    expect(fresh.ok).toBe(false);
+    expect(fresh.ok ? "" : fresh.error.hint).toContain("myCustom");
+  });
+
+  // 形状判据不让：必填键在合并后为空一律 400，哪怕那条键沿用自存量。
+  it("形状判据不看 inherited：必填键在合并结果里为空就 400", () => {
+    const entry = { type: "bark", id: "bark:1", baseUrl: "", deviceKey: "" };
+    const checked = validateSettingsWithMerge(
+      { channels: [...BUILTINS, entry] as RawSettingValue[] },
+      {
+        channels: [...BUILTINS, entry],
+        inherited: [new Set<string>(), new Set<string>(), new Set(["baseUrl", "deviceKey"])],
+      },
+    );
+    expect(checked.ok).toBe(false);
+    expect(checked.ok ? "" : checked.error.hint).toContain("baseUrl");
+  });
+
+  // 两条入口的**结论**逐字相同：合并面多收的那张 inherited 清单一个字都没多判，判定与不带它
+  // 时完全一致（合法与非法都试）。这正是「删掉 scope 面之后仍是同一套判据」的证据面。
+  it("多收 inherited 清单不改变判定结论：合法与非法都试", () => {
+    const cases = [
+      { channels: [{ ...BARK, name: "手机" }] },
+      { channels: [{ ...BARK, level: "urgent" }] },
+      { historyMaxAgeDays: -1 },
+    ];
+    for (const patch of cases) {
+      const label = JSON.stringify(patch);
+      // 不给 merged：退回「按草稿判」的旧行为。
+      expect(validateSettingsWithMerge(patch), label).toEqual(validateSettings(patch));
+      // 真实写面交的那一份：合并结果与草稿**同形**、inherited 全空（每个键都算本次提交）。
+      // 两侧审的必须是同一份内容，否则比的不是「多收一张清单有没有多判」。
+      const channels = (patch.channels ?? []) as RawSettingValue[];
+      const sameShape = { channels, inherited: channels.map(() => new Set<string>()) };
+      expect(validateSettingsWithMerge({ ...patch, channels }, sameShape), label).toEqual(
+        validateSettings(patch),
+      );
+    }
+  });
+
+  // 提交体里带 null（客户端「显式删除」手势的线上形态）在**判据**这一侧由合并先消费掉。
+  // 直调判据时它落进条目：必填键与陌生键都读得出拒绝，而**已知可选键**上的 null 判据不拦——
+  // 那一格的责任在合并（它把 null 变成删键），判据不必也不该替它再判一遍。
+  it("条目里带 null：必填键与陌生键都拒；已知可选键交给合并消费", () => {
+    const required = validateSettings({ channels: withBuiltins([{ ...WEBHOOK, url: null }]) });
+    expect(required.ok).toBe(false);
+    expect(required.ok ? "" : required.error.hint).toContain("缺少 url");
+
+    const unknown = validateSettings({ channels: withBuiltins([{ ...BARK, myCustom: null }]) });
+    expect(unknown.ok).toBe(false);
+    expect(unknown.ok ? "" : unknown.error.hint).toContain("myCustom");
+
+    // 已知可选键上的 null：判据放行不是漏洞——写面上它早在合并那一步就被删掉了，
+    // 落盘的是「键不存在」而不是 null。
+    expect(validateSettings({ channels: withBuiltins([{ ...BARK, group: null }]) }).ok).toBe(true);
+  });
+});
+// ---------------------------------------------------------------- 尺寸上界的事实源
+
+/**
+ * 尺寸判据的上界来自 src/shared/config-schema.ts（两端共享面），本块断言**分界线正好落在那个数上**。
+ *
+ * 为什么值得单列一块（service.test.ts 已经从写面端到端判过同一件事）：那边判的是「存量的越界值
+ * 放行、本次改的越界值 400」这条**双轨**，夹具只需落在上界的某一侧；一旦 impl/input 里重新长出
+ * 一个与共享值不同的就地字面量，双轨的两侧可能**同时**判对而整条分界线已经挪了——两侧恰好都落在
+ * 上界的同一侧时看不出来。故这里把边界钉死在共享值上：
+ *   - 就地字面量比共享值**小** → 「恰好等于共享值」本该放行却被打红；
+ *   - 就地字面量比共享值**大** → 「共享值 +1」本该打红却被放行。
+ * 两个方向都打红，故这块抓的是「写面与共享面各说一个上界」而不是只抓一半。
+ *
+ * 上界取自共享值本身而不是抄一份数字：上界一改，判据跟着改，判的仍是「分界线落在共享值上」这条语义。
+ */
+describe("尺寸判据：分界线落在 shared 的上界上（#1016 第二事实源收口）", () => {
+  it("webhook template：恰好等于共享上界放行，多一字符 400 且话术点名共享上界", () => {
+    // `auth` 必带且要合法，否则这条会先栽在取值域判据上——那不是本块要判的那一条。
+    const atLimit = validateSettings({
+      channels: withBuiltins([
+        { ...WEBHOOK, auth: "none", template: "x".repeat(WEBHOOK_TEMPLATE_MAX_CHARS) },
+      ]),
+    });
+    expect(atLimit.ok).toBe(true);
+
+    const verdict = validateSettings({
+      channels: withBuiltins([
+        { ...WEBHOOK, auth: "none", template: "x".repeat(WEBHOOK_TEMPLATE_MAX_CHARS + 1) },
+      ]),
+    });
+    expect(verdict.ok).toBe(false);
+    // 话术里的上界取自共享值：写面若忘了跟上共享 schema（或反过来自己另抄一份），这条打红。
+    expect(verdict.ok ? "" : verdict.error.hint).toContain(String(WEBHOOK_TEMPLATE_MAX_CHARS));
+  });
+
+  it("bark levels：恰好等于共享上界放行，多一项 400 且话术点名共享上界", () => {
+    const atLimit = Object.fromEntries(
+      Array.from({ length: BARK_LEVELS_LIMIT }, (_unused, index) => [`kind-${index}`, "active"]),
+    );
+    expect(validateSettings({ channels: withBuiltins([{ ...BARK, levels: atLimit }]) }).ok).toBe(
+      true,
+    );
+
+    const verdict = validateSettings({
+      channels: withBuiltins([{ ...BARK, levels: { ...atLimit, "kind-extra": "active" } }]),
+    });
+    expect(verdict.ok).toBe(false);
+    expect(verdict.ok ? "" : verdict.error.hint).toContain(String(BARK_LEVELS_LIMIT));
+  });
+
+  // 「拒新增、不动存量」在判据这一侧的那一笔账：不带 inherited 时每个键都算本次提交，故上面两条
+  // 越界的值必拒。带上 inherited 把这两个字段标成沿用存量，它们就不再重判值域——同一份越界值，
+  // 判定的分叉只由「这次动没动过」决定，与尺寸上界从哪读无关。
+  it("inherited 面把这两个字段标成沿用存量后，同一份越界值不再重判（双轨在判据这一侧）", () => {
+    const outbound = [
+      { ...WEBHOOK, auth: "none", template: "x".repeat(WEBHOOK_TEMPLATE_MAX_CHARS + 1) },
+      { ...BARK, id: "bark:pad", levels: { "kind-extra": "active" } },
+    ];
+    const channels = withBuiltins(outbound);
+    const merged = {
+      channels,
+      // 前两条是内置（无尺寸判据），第三条 webhook、第四条 bark 各自认一个 inherited 字段。
+      inherited: [new Set<string>(), new Set<string>(), new Set(["template"]), new Set(["levels"])],
+    };
+    expect(validateSettingsWithMerge({ channels }, merged).ok).toBe(true);
   });
 });

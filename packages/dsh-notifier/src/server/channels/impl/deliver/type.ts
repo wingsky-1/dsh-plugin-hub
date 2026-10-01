@@ -59,10 +59,3 @@ export interface HttpFetch {
  * 这边不受——出口拿到的目标未必经过本进程的编译期约束，与 bark 的 `level` 同理。
  */
 export type ToneSetting = boolean | string;
-
-/**
- * 频道实例上的未知键（值已按 string/number 过滤）：README 承诺的「未来参数前向兼容」那一面。
- * 配置域负责保留，出口按需带上——bark 原样写进推送体；webhook 的 body 由模板渲染，故只保留不发送
- * （与重写前一致，模板语义不该被透传键绕开）。
- */
-export type ChannelExtras = Record<string, string | number>;

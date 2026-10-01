@@ -3,9 +3,17 @@
  * 设置模型的唯一闸门。三道工序不可互换：归一化**永不失败**、校验**只审显式提交**（缺键不是错误）、净化**只留认识的键**。
  */
 import {
+  BARK_KNOWN_KEYS,
+  BARK_LEVELS,
+  BARK_LEVELS_LIMIT,
+  BARK_TIMEOUT_MS_LIMIT,
   BUILTIN_CHANNEL_TYPES,
+  HISTORY_MAX_AGE_DAYS_LIMIT,
+  REQUIRED_KEYS,
   WEBHOOK_AUTHS,
+  WEBHOOK_KNOWN_KEYS,
   WEBHOOK_PRESETS,
+  WEBHOOK_TEMPLATE_MAX_CHARS,
   isClockText,
   isSoundId,
 } from "../../../../shared/interface.ts";
@@ -38,8 +46,14 @@ import type { ValidationResult } from "./type.ts";
 // 内置频道类型的事实源在 src/shared/channels.ts（顺序即卡片顺序）：它们恒在场，是 `channels` 里
 // 唯一不可删除的项——身份由 `type` 唯一确定。
 
-/** bark 紧急度白名单。 */
-const BARK_LEVELS: readonly BarkLevel[] = ["active", "timeSensitive", "passive", "critical"];
+/** bark 紧急度白名单、频道已知键、必填键、**尺寸上界**（`WEBHOOK_TEMPLATE_MAX_CHARS` /
+ * `BARK_LEVELS_LIMIT`）的事实源都在 src/shared/config-schema.ts（两端共享面）：
+ * 写入口径与设置页的选项必须是同一份，各写一份就会出现「页面选得到、宿主拒收」。本域只消费。
+ *
+ * 尺寸上界（#1016 S2）此前在本域就地写字面量，理由是「本轮不扩两端共享 schema」——那份「刻意」
+ * 正是 S1 要消灭的第二事实源：客户端将来给这两个输入框加同源约束时只能来本域抄一份。
+ * 两条尺寸判据的语义是**「拒新增、不动存量」**：本次提交的值超限即 400，沿用存量的旧值不重判
+ * （判据的 `inherited` 面，见 validateChannel）；0.2.9 形态清理按同一口径不删它们。 */
 
 // webhook 认证方式与预设白名单的事实源在 src/shared/webhooks.ts（两端共享面）：设置页的选项与
 // 写入口径必须是同一份，各写一份就会出现「页面选得到、宿主拒收」。
@@ -64,45 +78,6 @@ export const WEBHOOK_RESERVED_KEYS: readonly string[] = [
   "client_secret",
   "secret",
   "password_hash",
-];
-
-/**
- * 频道实例的已知键。校验与归一化**共用这一份**——未知键的判定正是拿它做的减法，两处各写一份清单，
- * 「什么算未知」就会在两个工序里给出两种答案。
- */
-const BARK_KNOWN_KEYS: readonly string[] = [
-  "id",
-  "type",
-  "enabled",
-  "name",
-  "baseUrl",
-  "deviceKey",
-  "level",
-  "levels",
-  "group",
-  "sound",
-  "icon",
-  "url",
-  "badge",
-  "timeoutMs",
-];
-
-const WEBHOOK_KNOWN_KEYS: readonly string[] = [
-  "id",
-  "type",
-  "enabled",
-  "name",
-  "url",
-  "preset",
-  "auth",
-  "token",
-  "username",
-  "password",
-  "headerName",
-  "headerValue",
-  "template",
-  "headers",
-  "timeoutSec",
 ];
 
 /**
@@ -157,10 +132,22 @@ export const RETIRED_KEYS: Readonly<Record<string, string>> = {
  * 非负整数键及其上界（越界视为非法而不是截断——静默改写用户的输入比拒绝更糟）。
  *
  * 导出理由同 `BOOLEAN_KEYS`：门禁要按真实取值断言「每个键都在默认设置里且上界是非负整数」。
+ *
+ * 上界的**值**来自 shared 的 `HISTORY_MAX_AGE_DAYS_LIMIT`，不是就地写的字面量：0.2.9 形态清理按
+ * 「这个值在本版本有没有这种形态」删键，两处不同值就是两份「合法形态」的定义，而清理步那份一旦落后，
+ * 用户一个合法的键会被静默删掉。
  */
 export const COUNT_LIMITS: Record<string, number> = {
-  historyMaxAgeDays: 3_650,
+  historyMaxAgeDays: HISTORY_MAX_AGE_DAYS_LIMIT,
 };
+
+/**
+ * 原型链上的危险键名：JSON 文本能造出自有键，展开进设置对象就会改写原型。
+ *
+ * 事实源放在输入闸门（判据要认得它才能把它从「陌生键」里摘出来），写面从这儿取同一份——
+ * 两处各写一份清单，改了一处就会变成「一个判红一个放行」。
+ */
+export const UNSAFE_KEYS: readonly string[] = ["__proto__", "constructor", "prototype"];
 
 // ---------------------------------------------------------------- 解析
 
@@ -186,9 +173,11 @@ export function parseJsonObject(text: string): StoredSettings {
  */
 export function normalizeConfig(input: StoredSettings): NotifyConfig {
   const fallback = DEFAULT_CONFIG;
-  // 渠道形态只有 `channels` 一处输出：内置两条先物化，取值链是「条目字段 → 存量的旧顶层键 → 默认表」。
-  const browser = asBrowserChannel(builtinRaw(input.channels, "browser"), input);
-  const system = asSystemChannel(builtinRaw(input.channels, "system"), input);
+  // 渠道形态只有 `channels` 一处输出：内置两条先物化，取值链是「条目字段 → 默认表」——**没有中间那层
+  // 旧顶层键**（#1016 S3 删除）：形态演进是 upgrade 域的职责，读面不认历史。存量里的 `browserEnabled` /
+  // `notifySound` 那一批由 0.2.4 的配置形态割接在装配期搬进条目并删除，读面再兜一次等于同一件事有两处实现。
+  const browser = asBrowserChannel(builtinRaw(input.channels, "browser"));
+  const system = asSystemChannel(builtinRaw(input.channels, "system"));
   return {
     notifyAsk: asBoolean(input.notifyAsk, fallback.notifyAsk),
     notifyQuestion: asBoolean(input.notifyQuestion, fallback.notifyQuestion),
@@ -214,33 +203,142 @@ export function normalizeConfig(input: StoredSettings): NotifyConfig {
 
 /**
  * 校验：给出首个非法键与提示。只对**显式提交**的键负责——缺键不是错误，由归一化补默认；
- * 一次只报首个非法键，因为设置页的定位光标只能落在一个字段上。陌生键不参与校验：拦下它们
- * 等于替未来的版本拒绝今天的用户（退役键是例外，见 RETIRED_KEYS）。
+ * 一次只报首个非法键，因为设置页的定位光标只能落在一个字段上。**陌生键一律 400**（退役键
+ * 另有逐键话术，见 RETIRED_KEYS）：写面已经不再「透传保留」陌生键，理由见 validateKnownKeys。
  */
 export function validateSettings(raw: SettingsPatch): ValidationResult {
+  return verdictOf(raw);
+}
+
+/**
+ * 校验**合并结果**（#1016 S2 写面专用入口，本身不收紧任何判据）。
+ *
+ * 与 `validateSettings` **共用同一个 `verdictOf`**：判定结论逐字相同，一个字都没多判。两者
+ * 唯一的差别是审谁——本函数审「这次写真正要落盘的那条」，`validateSettings` 审「客户端交上来的
+ * 草稿」。存量里有越界值时两者给出相反的结论，而后者不是用户要的。
+ *
+ * 单列一个函数而不是给 `validateSettings` 加可选参数：那是把一个纯函数改成「视参数而定
+ * 行为」的形状，调用方分不清自己拿到的是哪一种；而两条入口结论一致这件事靠的是它们**共用同一个
+ * `verdictOf`**，不是靠两处同步维护。
+ * （`validateSettings` 在导出面基线上——改它的签名要动基线；本条分工取的是形态上的可辩护性，
+ * 不是「动了不用改基线」。）
+ *
+ * @param raw 提交体。
+ * @param merged 写面**按字段合并后**的结论（service 域 `mergeChannels` 的产物）。它与
+ *   `raw.channels` 是两份东西：前者是这次写要落盘的形态（存量没被提到的键都在里面）加上每条
+ *   里「哪些字段原样来自存量」的清单，后者是客户端交上来的草稿。
+ *   缺省 = 按 `raw.channels` 判（草稿测试与直调路径的旧行为，条目里每个键都算本次提交）。
+ */
+export function validateSettingsWithMerge(
+  raw: SettingsPatch,
+  merged?: MergedChannelScope,
+): ValidationResult {
+  return verdictOf(raw, merged);
+}
+
+/**
+ * 写面「按字段合并」结论在判据侧的形状：这次写要落盘的频道数组 + 与它同下标的**两条记账**。
+ *
+ * 两条记账问的是两个不同的事实，故分列而不是并成一条：
+ *   - `inherited`：**值**原样来自存量的字段（#1016 S2）。它让值域判据只审本次真正动过的字段。
+ *   - `preexisting`：**键的缺席**本来就来自存量的必填键（见 `firstMissing`）。存量里就缺、这次也没
+ *     补上的那个键。
+ * 「值沿用」与「缺席沿用」合成一条会让两种判据都说不清自己为什么跳过，故各自记各自的。
+ *
+ * 事实源是 service 域的 `ChannelMerge`（结构同构）；缺省 `preexisting` = 没有存量可谈，草稿与直调
+ * 路径因此维持原样——那里每个键都算本次提交。
+ */
+export type MergedChannelScope = {
+  readonly channels: RawSettingValue;
+  readonly inherited: readonly ReadonlySet<string>[];
+  readonly preexisting?: readonly ReadonlySet<string>[];
+};
+
+/**
+ * 判据本体：两条入口（草稿 / 合并结果）都走它，「两条入口给出同一份判定结论」靠这一点保证。
+ *
+ * 两条通道分工（#1016 S2）：`channels` 判**合并后**的条目，`inherited` 里的字段不再重判值域
+ * ——它们是存量原样带回来的，重判等于让一份越界的旧配置从此存不下任何东西。其余顶层键维持整值
+ * 替换：不带 `inherited` 时每个键都算本次提交。
+ */
+function verdictOf(raw: SettingsPatch, mergedChannels?: MergedChannelScope): ValidationResult {
   for (const [key, value] of Object.entries(raw)) {
     if (value === undefined) continue;
+    // 原型链危险键不进判据：写面在落盘前整条剔除它们（writableEntries），在这里报「陌生键」只会
+    // 把一次安全的写变成 400，而剔除本身已经挡住了原型改写。
+    if (UNSAFE_KEYS.includes(key)) continue;
     // 走 hasOwn 而不是直接索引：constructor 这类键经 JSON 提交是可能的，直接索引会摸到
     // Object.prototype 上的同名成员，把一个陌生键误判成退役键。
     const retiredHint = Object.hasOwn(RETIRED_KEYS, key) ? RETIRED_KEYS[key] : undefined;
     if (retiredHint !== undefined) return reject(key, retiredHint);
-    if (!CONFIG_KEYS.includes(key)) continue;
-    const verdict = validateOne(key, value);
+    // 陌生键 400（#1016 S2）：写面不再透传保留，理由见 validateKnownKeys 的注释。存量里已有的
+    // 陌生键不受影响——它们不在提交里，合并时原样沿用。
+    if (!CONFIG_KEYS.includes(key)) return reject(key, key + " 不是已知配置键，删除它或核对拼写");
+    const verdict = validateOne(key, value, key === "channels" ? mergedChannels : undefined);
     if (!verdict.ok) return verdict;
   }
   return { ok: true };
 }
 
+/**
+ * 逐值相同判定：标量用 `===`，数组逐项比，对象按键集合比（**键序无关**）。
+ *
+ * 键序无关有实测依据：客户端把视图原样交回，JSON 往返不保证键序，而「同一份内容、
+ * 键序不同」在修订号那侧已经是不算改动（见 service 侧 `stableJson` 的注释）——
+ * 两处对「什么算同一份内容」必须给同一个答案，否则用户什么都没改却被判成本次改动。
+ *
+ * 一侧缺键即视为不同：存量的键被提交抹掉，是一次真改动（客户端的 `stripChannelEmpties`
+ * 会剥掉空串可选字段，那一类确实会在下次保存时被写掉）。
+ *
+ * 导出给写面合并（service/impl/merge.ts）判「这次提交有没有真的改这个字段」：同一个问题——
+ * 「同一份内容」——两处必须给同一个答案，各写一份迟早把「原样带回」和「用户刚改的」读反。
+ */
+export function sameValue(
+  left: RawSettingValue | undefined,
+  right: RawSettingValue | undefined,
+): boolean {
+  if (left === right) return true;
+  // 走到这里至多一侧缺键（两侧都缺已被上一行判成相同），缺键即不同。
+  if (left === undefined || right === undefined) return false;
+  if (Array.isArray(left) && Array.isArray(right)) {
+    if (left.length !== right.length) return false;
+    return left.every((item, index) => sameValue(item, right[index]));
+  }
+  if (isRecord(left) && isRecord(right)) {
+    const leftKeys = Object.keys(left);
+    if (leftKeys.length !== Object.keys(right).length) return false;
+    return leftKeys.every((key) => Object.hasOwn(right, key) && sameValue(left[key], right[key]));
+  }
+  return false;
+}
+
 /** 单键校验；分支与归一化的取值助手一一对应，两处判断的是同一件事。 */
-function validateOne(key: string, raw: RawSettingValue): ValidationResult {
+function validateOne(
+  key: string,
+  raw: RawSettingValue,
+  mergedChannels?: MergedChannelScope,
+): ValidationResult {
   if (BOOLEAN_KEYS.includes(key)) return requireBoolean(key, raw);
   const limit = COUNT_LIMITS[key];
   if (Number.isFinite(limit)) return requireCount(key, raw, limit);
   if (key === "quietHours") return validateQuietHours(raw);
-  if (key === "channels") return validateChannels(raw);
+  if (key === "channels") return validateMergedChannels(raw, mergedChannels);
   if (key === "kindRoutes") return validateKindRoutes(raw);
   if (key === "allowKinds") return requireStringArray(key, raw);
   return { ok: true };
+}
+
+/**
+ * `channels` 一支：带合并结论时审**合并结果**（写面），不带时审提交面本身（草稿与直调路径）。
+ *
+ * 单列而不是把三笔账摊回 `validateOne`：那处是按 key 分派的开关链，摊开之后每加一笔账就多一个可选链
+ * 访问，复杂度会顶到门禁上限——而「加一笔记账」本不该是件要改判据骨架的事。
+ */
+function validateMergedChannels(
+  raw: RawSettingValue,
+  merged: MergedChannelScope | undefined,
+): ValidationResult {
+  return validateChannels(merged?.channels ?? raw, merged?.inherited, merged?.preexisting);
 }
 
 /** 布尔闸门键：`"true"` 之类的同义写法不算数——设置页提交的就是字面 boolean。 */
@@ -310,13 +408,73 @@ function validateQuietWindow(item: RawSettingValue, index: number): ValidationRe
   return { ok: true };
 }
 
-function validateChannels(raw: RawSettingValue): ValidationResult {
+/**
+ * 频道数组校验：逐条 + 内置在场。
+ *
+ * @param inherited 与数组同下标：该条目里**沿用存量**的字段名。清单里的字段不重判值域（#1016
+ *   S2 的「写面拒新增、不动存量」）；缺省 = 每个键都算本次提交。
+ * @param preexisting 与数组同下标：该条目里**存量本就残缺、这次也没补上**的必填键（见 MergedChannelScope）。
+ */
+function validateChannels(
+  raw: RawSettingValue,
+  inherited?: readonly ReadonlySet<string>[],
+  preexisting?: readonly ReadonlySet<string>[],
+): ValidationResult {
   if (!Array.isArray(raw)) return reject("channels", "需要数组");
-  for (const item of raw) {
-    const verdict = validateChannel(item);
+  for (const [index, item] of raw.entries()) {
+    const verdict = validateChannel(item, inherited?.[index], preexisting?.[index]);
     if (!verdict.ok) return verdict;
   }
+  // 数组级判据，排在逐条之后、内置在场之前：逐条已保证每条都过了形状判据（故这里读得到 type）。
+  const unique = requireUniqueIdentities(raw);
+  if (!unique.ok) return unique;
   return requireBuiltinsPresent(raw);
+}
+
+/**
+ * 频道身份唯一（#1016 残留 2）。**绝对 400**：重复身份不是「界面显示重复」，而是**凭据被销毁**。
+ *
+ * 销毁链条（每一环都已在仓内，不是推测）：设置页对 `channels` 是**整组提交**（未整体未变时才省略）；
+ * 合并的 `sameKindBase` 按**裸 id** 取首条，KEEP 分支又让其余键沿用首条的值——于是第二条的真实密钥
+ * 被第一条覆盖，**每次保存毁一条凭据**，而界面上看不出任何异常。掩码还原的 `findById` 同样按裸 id
+ * 查找，所以**跨类型同 id 也撞**（一条 bark 写 `id: "browser"` 会命中内置 browser 条目，连带把它的
+ * 掩码还原到 bark 的键上）。
+ *
+ * 落点为什么是 `validateChannels` 而不是 `validateChannel`：后者是 exported、给 dry-run 逐条调用的，
+ * 它**看不到数组**，重复与否在它那一层根本不是问题。数组级判据属于数组级。
+ *
+ * **不给 `preexisting` 放行**：放行是「存量残缺不该让一次无关保存被拒」，而重复身份是存量**自相矛盾**
+ * ——同一个身份挂着两套凭据，它不是残缺。放行等于把「每次保存毁一条凭据」合法化。
+ *
+ * 提示必须**带下标**并**给出路**：客户端没有 id 编辑器（`chAdd` 自动分配），用户改不了 id，文案只说
+ * 「重复」而不说「删掉其中一条」就等于堵死。id 不是凭据——它从不参与掩码、也不回显任何秘密——所以
+ * 带进提示是安全的。
+ */
+function requireUniqueIdentities(list: readonly RawSettingValue[]): ValidationResult {
+  const firstSeenAt = new Map<string, number>();
+  for (const [index, item] of list.entries()) {
+    if (!isRecord(item)) continue;
+    const identity = identityOfChannel(item);
+    const seenAt = firstSeenAt.get(identity);
+    if (seenAt !== undefined) {
+      return reject(
+        "channels",
+        `第 ${seenAt + 1} 条与第 ${index + 1} 条的频道身份都是 ${identity}：同一条频道只能有一个，删掉其中一条再保存`,
+      );
+    }
+    firstSeenAt.set(identity, index);
+  }
+  return { ok: true };
+}
+
+/**
+ * 身份口径：出站取 `id`，`id` 缺席或空串时回落 `type`（内置可以没有 `id` 键，而 `validateBuiltinChannel`
+ * 规定它写了就只能是 `type`）。与 `upgrade` 域的 `identityOf` 同一式子，沿用它换来零误伤——任何现存
+ * 合法配置的身份都与它一致，于是一条内置 browser 缺席 id 时不会被自己拒一次。
+ */
+function identityOfChannel(item: Record<string, RawSettingValue>): string {
+  const type = typeof item.type === "string" ? item.type : "";
+  return typeof item.id === "string" && item.id !== "" ? item.id : type;
 }
 
 /**
@@ -342,17 +500,31 @@ function requireBuiltinsPresent(list: readonly RawSettingValue[]): ValidationRes
  * 客户端新建频道时本就不带它们——照必填拦下等于让用户的合法提交保存不了。
  *
  * 导出给草稿测试（dry-run）逐项复用：它只审单条、不审「内置必须在场」（见 requireBuiltinsPresent），
- * 草稿里可以只有目标频道一条。 */
-export function validateChannel(raw: RawSettingValue): ValidationResult {
+ * 草稿里可以只有目标频道一条。
+ *
+ * @param inherited 该条目里**沿用存量**的字段名（#1016 S2）。清单里的字段不重判值域：磁盘上
+ *   一份越界的旧值不该让此后每一次无关保存都被拒——那不是用户造成的错误。缺省 = 每个键都算
+ *   本次提交（草稿路径没有存量可言）。
+ * @param preexisting 该条目里**存量本就残缺、这次也没补上**的必填键（#1016 S3 回归修复）。它只作用于
+ *   「必填键在场」这一条形状判据，且只对清单里的键放行；缺省 = 没有存量可谈，每个键都算本次提交。 */
+export function validateChannel(
+  raw: RawSettingValue,
+  inherited?: ReadonlySet<string>,
+  preexisting?: ReadonlySet<string>,
+): ValidationResult {
   if (!isRecord(raw)) return reject("channels", "频道项需要对象");
   if (raw.type === "browser" || raw.type === "system") return validateBuiltinChannel(raw, raw.type);
   if (typeof raw.id !== "string" || raw.id === "") return reject("channels", "频道缺少 id");
-  if (raw.type === "bark") return validateBarkChannel(raw, raw.id);
-  if (raw.type === "webhook") return validateWebhookChannel(raw, raw.id);
+  if (raw.type === "bark") return validateBarkChannel(raw, raw.id, inherited, preexisting);
+  if (raw.type === "webhook") return validateWebhookChannel(raw, raw.id, inherited, preexisting);
   return reject("channels", "频道 type 需要 bark、webhook、browser 或 system");
 }
 
-/** 内置频道：身份由 `type` 唯一确定（`id` 只是回显，写了就必须一致），开关与声音逐个按各自值域校验。 */
+/** 内置频道：身份由 `type` 唯一确定（`id` 只是回显，写了就必须一致），开关与声音逐个按各自值域校验。
+ *
+ * 这几个键**不按 inherited 跳过**：内置条目的字段集是固定的五六个，0.2.9 形态清理会把缺席字段
+ * 补齐，客户端也就每次都原样带回——存量里出现非布尔只可能是有人手改过文件（清理只在刻度推进时跑
+ * 一次，救不了「升级后手改」），而那正是要拒的。 */
 function validateBuiltinChannel(
   raw: Record<string, RawSettingValue>,
   type: BuiltinChannelType,
@@ -366,52 +538,97 @@ function validateBuiltinChannel(
   return raw.sound === undefined ? { ok: true } : requireSoundSetting("channels", raw.sound);
 }
 
-/** bark 频道：`baseUrl` 与 `deviceKey` 是投递必需；`level` 缺省时让 severity 映射生效，故可省。 */
-function validateBarkChannel(raw: Record<string, RawSettingValue>, id: string): ValidationResult {
-  if (typeof raw.baseUrl !== "string" || raw.baseUrl === "")
-    return reject("channels", `bark 频道 ${id} 缺少 baseUrl`);
-  if (typeof raw.deviceKey !== "string" || raw.deviceKey === "")
-    return reject("channels", `bark 频道 ${id} 缺少 deviceKey`);
-  if (raw.level !== undefined && !isMember(raw.level, BARK_LEVELS))
+/** bark 频道：`baseUrl` 与 `deviceKey` 是投递必需（清单见 shared 的 REQUIRED_KEYS.bark）；
+ * `level` 缺省时让 severity 映射生效，故可省。
+ *
+ * 必填键在**合并后**的条目上判：客户端可以只提交它改的那一个字段，其余从存量沿用。 */
+function validateBarkChannel(
+  raw: Record<string, RawSettingValue>,
+  id: string,
+  inherited?: ReadonlySet<string>,
+  preexisting?: ReadonlySet<string>,
+): ValidationResult {
+  const missing = firstMissing(raw, REQUIRED_KEYS.bark, preexisting);
+  if (missing !== undefined) return reject("channels", `bark 频道 ${id} 缺少 ${missing}`);
+  if (isEdited(inherited, "level") && raw.level !== undefined && !isMember(raw.level, BARK_LEVELS))
     return reject("channels", `bark 频道 ${id} 的 level 非法`);
-  return validateExtras(raw, id, BARK_KNOWN_KEYS, BARK_RESERVED_KEYS, "bark");
+  if (
+    isEdited(inherited, "levels") &&
+    isRecord(raw.levels) &&
+    Object.keys(raw.levels).length > BARK_LEVELS_LIMIT
+  ) {
+    return reject("channels", `bark 频道 ${id} 的 levels 最多 ${BARK_LEVELS_LIMIT} 项`);
+  }
+  return validateKnownKeys(raw, id, inherited, BARK_KNOWN_KEYS, BARK_RESERVED_KEYS, "bark");
 }
 
-/** webhook 频道：`url` 与 `auth` 是投递必需；`preset` 缺省归一到 custom，故可省。 */
+/** webhook 频道：`url` 与 `auth` 是投递必需；`preset` 缺省归一到 custom，故可省。
+ *
+ * `auth` 的判据是**取值域**（缺席与非法同一句话），故不按 inherited 跳过：客户端的草稿来自读面
+ * 归一化，永远带得出一个合法值，存量里出现非法 auth 只可能是手改过文件。 */
 function validateWebhookChannel(
   raw: Record<string, RawSettingValue>,
   id: string,
+  inherited?: ReadonlySet<string>,
+  preexisting?: ReadonlySet<string>,
 ): ValidationResult {
-  if (typeof raw.url !== "string" || raw.url === "")
-    return reject("channels", `webhook 频道 ${id} 缺少 url`);
+  const missing = firstMissing(raw, REQUIRED_KEYS.webhook, preexisting);
+  if (missing !== undefined) return reject("channels", `webhook 频道 ${id} 缺少 ${missing}`);
   if (!isMember(raw.auth, WEBHOOK_AUTHS))
     return reject("channels", `webhook 频道 ${id} 的 auth 非法`);
-  if (raw.preset !== undefined && !isMember(raw.preset, WEBHOOK_PRESETS))
+  if (
+    isEdited(inherited, "preset") &&
+    raw.preset !== undefined &&
+    !isMember(raw.preset, WEBHOOK_PRESETS)
+  )
     return reject("channels", `webhook 频道 ${id} 的 preset 非法`);
-  return validateExtras(raw, id, WEBHOOK_KNOWN_KEYS, WEBHOOK_RESERVED_KEYS, "webhook");
+  if (
+    isEdited(inherited, "template") &&
+    typeof raw.template === "string" &&
+    raw.template.length > WEBHOOK_TEMPLATE_MAX_CHARS
+  ) {
+    return reject(
+      "channels",
+      `webhook 频道 ${id} 的 template 最多 ${WEBHOOK_TEMPLATE_MAX_CHARS} 字符`,
+    );
+  }
+  return validateKnownKeys(
+    raw,
+    id,
+    inherited,
+    WEBHOOK_KNOWN_KEYS,
+    WEBHOOK_RESERVED_KEYS,
+    "webhook",
+  );
 }
 
 /**
- * 未知键的写入口径：保留键**写拒**（400），其余只放行 string/number。
+ * 频道条目里的陌生键：一律 400（#1016 S2 删掉了 extras 概念）。
  *
- * 为什么不做成「未知键一律拒绝」：README 承诺了前向兼容——bark 将来新增的参数，用户现在写进配置
- * 就该被保留并原样带出去；而为什么不做成「一律接受」：`{}`、数组、布尔的透传值会污染生效设置，
- * 让「有值」与「没值」在下游分不清。
+ * 为什么不再「透传保留」：透传面要求读面把陌生键收进 `extras` 子对象再原样交回客户端，而写面
+ * 只放行 string/number——于是 `extras` 这个**对象**自己撞上那条判据，该频道所在配置从此再也
+ * 保存不了（#1016 缺陷 B）。收窄到「本版本认识的键」把那条自撞的口子关掉：写面拒新增，磁盘上
+ * **已有**的陌生键由合并原样沿用（它不在提交里），既不丢也不锁人。
+ *
+ * 保留键（凭据别名）与其它陌生键**分两句**：前者是「你写的是别名，合法凭据只能走已知字段」，
+ * 后者是「这个键从来不是本包的字段」——两者的排查方向不同，共用一句会把人引到错误的原因上。
+ *
+ * @param inherited 沿用存量的字段名；清单里的键不判（存量里的陌生键不该被一次无关保存追责）。
  */
-function validateExtras(
+function validateKnownKeys(
   raw: Record<string, RawSettingValue>,
   id: string,
+  inherited: ReadonlySet<string> | undefined,
   known: readonly string[],
   reserved: readonly string[],
   kindLabel: string,
 ): ValidationResult {
   for (const key of Object.keys(raw)) {
     if (known.includes(key)) continue;
+    if (!isEdited(inherited, key)) continue;
     if (reserved.includes(key))
       return reject("channels", `${kindLabel} 频道 ${id} 的 ${key} 是保留键：凭据只能走已知字段`);
-    const value = raw[key];
-    if (typeof value !== "string" && typeof value !== "number")
-      return reject("channels", `${kindLabel} 频道 ${id} 的 ${key} 只能是字符串或数字`);
+    return reject("channels", `${kindLabel} 频道 ${id} 的 ${key} 不是已知键：删除它或核对拼写`);
   }
   return { ok: true };
 }
@@ -459,9 +676,66 @@ function isRecord(raw: RawSettingValue): raw is Record<string, RawSettingValue> 
   return typeof raw === "object" && raw !== null && !Array.isArray(raw);
 }
 
+/**
+ * 该字段是否算「本次提交」：没有存量基线时一律算（草稿与直调路径），有则跳过沿用存量的字段。
+ *
+ * 这是 #1016 S2「写面拒新增、不动存量」的执行点：值域与尺寸判据只审本次真正动过的字段，磁盘上
+ * 一份越界的旧值不该让此后每一次无关保存都被拒。形状判据（必填键、内置在场）**不看这个**——它问的
+ * 不是「值是不是本次改的」而是「这个键在不在」，两者问的不是同一件事。
+ *
+ * 「存量本就残缺的必填键」也**不看这个**、而是看另一笔 `preexisting` 账：`inherited` 记的是「值原样
+ * 来自存量」，而一个从未存在过的键没有值可沿用。两笔账分开记，各自只对自己的那族判据负责。
+ */
+function isEdited(inherited: ReadonlySet<string> | undefined, field: string): boolean {
+  return inherited === undefined || !inherited.has(field);
+}
+
 /** 命中白名单则保留，其余（含缺键）回落。 */
 function isMember<T extends string>(raw: RawSettingValue, allowed: readonly T[]): raw is T {
   return typeof raw === "string" && allowed.some((item) => item === raw);
+}
+
+/**
+ * 「这个必填键交上来了没有」：**非空串**才算交上来。事实源是 `REQUIRED_KEYS`（S1 的共享 schema），
+ * 「在场」是这一族判据共用的那一句，故单列并导出给写面合并用：两处各写一份「在场」，迟早在
+ * 「空串算不算在场」上漂。
+ *
+ * 这一族的另两处：读面 `asChannel` 的空壳判定（`asBarkChannel` 对空串必填键返回 `ok: false`）与
+ * upgrade 域 0.2.9 形态清理的**必填键判据**（canonical-keys 的 `requiredKeysOf`）。后者的必填键
+ * **清单**同样只从 `REQUIRED_KEYS` 读，不再在本域另抄一份。
+ */
+export function isDeliveredRequired(value: RawSettingValue | undefined): boolean {
+  return typeof value === "string" && value !== "";
+}
+
+/**
+ * 必填键里第一个**这次写该负责**的缺项，全都在（或缺的都早已残缺）则 undefined。
+ *
+ * 按清单序返回**第一个**缺项而不是逐条拒：话术里带的是键名，缺哪个就报哪个，两项皆缺时报前一个
+ * ——与逐条 if 链给出的结论完全一致（同一顺序、同一判据）。
+ *
+ * `preexisting` 里那些键**不计入缺项**，这是 #1016 S3 的一处回归修复：读面自 S3 起不丢弃半坏条目
+ * （视图逐字外发），而这条判据原本是**绝对**的（只看合并后的条目），于是「用户在升级之后手改文件造出
+ * 一条半坏条目」之后，此后每一次保存都 400——连改**别的**频道的名字都存不下去，比 S3 之前更差。
+ *
+ * 放行的条件是「两边都坏」：存量里这个键本来就是坏的（`preexisting` 由 merge 依存量事实算出），
+ * 且这次写既没补上也没删它。**显式的删除手势不在此列**——它由 merge 的第三态在判据之前就 400 拒掉
+ * （「必填键，不能删除」），所以「删掉一个必填键」的后果仍然一律被拒，只是拒在更早、更准的那一步。
+ *
+ * 反过来，存量里这个键是好的、这次被写成非法值（数字 / 对象 / 空串），`preexisting` 不含它，照样 400。
+ * 换句话说：这条判据问的是「这次写有没有把事情做坏」，不是「磁盘上这份配置现在完不完整」——后者归
+ * 读面（投递投影丢弃空壳）与 upgrade 域的形态清理，不归写面。
+ */
+function firstMissing(
+  raw: Record<string, RawSettingValue>,
+  keys: readonly string[],
+  preexisting?: ReadonlySet<string>,
+): string | undefined {
+  for (const key of keys) {
+    if (preexisting?.has(key) === true) continue;
+    if (!isDeliveredRequired(raw[key])) return key;
+  }
+  return undefined;
 }
 
 /** 字符串数组：元素逐个看，非字符串即不算（与归一化侧「剔除非字符串项」是同一口径的两面）。 */
@@ -490,33 +764,26 @@ function asSound(raw: RawSettingValue, fallback: SoundSetting): SoundSetting {
   return isSoundId(raw) ? raw : fallback;
 }
 
-/**
- * 旧全局声音键的**读面**回落：两个按出口的新键缺失（或非法）时先看 `notifySound`，再看默认值。
- *
- * 为什么保留这条链：存量 user 层不迁移（只在官方 settings 里写过旧键的用户），没有它，「当时关过提示音」
- * 这件事在升级后会被读成默认的 `true` —— 静音设置无声复活成有声。
- */
-function legacySound(legacy: RawSettingValue, fallback: SoundSetting): SoundSetting {
-  return typeof legacy === "boolean" ? legacy : fallback;
-}
-
 /** 字符串数组：非字符串项剔除而不是整组丢弃（一项脏值不该连累其余）。 */
 function asStrings(raw: RawSettingValue): string[] {
   return Array.isArray(raw) ? raw.filter((item): item is string => typeof item === "string") : [];
 }
 
 // 免打扰归一化：永不失败。单项非法（格式错、零长）只废该项，不废整组；全废则等于未命中
-// （沿用「脏设置不吃掉所有通知」）。windows 缺席或非数组时回落 legacy：还没跑过 0.2.6 升级的
-// 文件里只有旧的 start/end，读面在这里把它们看成 windows[0]，于是老文件在升级前后行为不变；
-// 显式 [] 保持 []（空数组 = 未命中，不是「缺了要补默认」）。
+// （沿用「脏设置不吃掉所有通知」）。`windows` 缺席或非数组一律给 []（空数组 = 未命中）——#1016 S3
+// 删掉了读面的旧 start/end 回落，那条链由 upgrade 域 0.2.6 的割接负责。显式 [] 同样保持 []。
 function asQuietHours(raw: RawSettingValue, fallback: QuietHoursConfig): QuietHoursConfig {
   // 回落交出深副本：默认表是共享的，调用方就地改写它会污染此后每一个读者（windows 是数组，
   // 浅拷贝仍与默认表共享同一份列表）。
   if (!isRecord(raw)) return copyQuietHours(fallback);
   const enabled = asBoolean(raw.enabled, fallback.enabled);
   const allowKinds = asStrings(raw.allowKinds);
+  // `windows` 缺席即「没有时段」，**不回落旧 start/end、不回落默认表**（#1016 S3 删除读面历史兼容）：
+  // 旧形由 0.2.6 的免打扰多时间窗割接在装配期搬进 `windows[0]` 并删旧键，读面再兜一次就等于同一件事
+  // 有两处实现，而两处迟早对「半截旧形」给出不同答案。回落方向是「丢键」而不是「落默认值」：
+  // 用户显式写了 `quietHours` 却没有 `windows`，那表达的就是一条时段都不命中。
   if (!Array.isArray(raw.windows)) {
-    return { enabled: enabled, windows: legacyWindows(raw, fallback), allowKinds: allowKinds };
+    return { enabled: enabled, windows: [], allowKinds: allowKinds };
   }
   const windows: QuietWindow[] = [];
   for (const item of raw.windows) {
@@ -534,16 +801,6 @@ function copyQuietHours(fallback: QuietHoursConfig): QuietHoursConfig {
   };
   if (fallback.allowKinds !== undefined) copied.allowKinds = [...fallback.allowKinds];
   return copied;
-}
-
-// 还没升级的文件：旧 start/end 看成 windows[0]；连旧键都没有才回落默认表。
-function legacyWindows(
-  raw: Record<string, RawSettingValue>,
-  fallback: QuietHoursConfig,
-): QuietWindow[] {
-  const window = asQuietWindow({ start: raw.start, end: raw.end });
-  if (window !== null) return [window];
-  return fallback.windows.map((item) => ({ ...item }));
 }
 
 // 单个窗口的读面收窄；非法与零长一律丢项（返回 null），不连累同组的其余项。
@@ -572,12 +829,37 @@ type ChannelRead = { ok: true; channel: ChannelConfig } | { ok: false };
  * 出站实例数组：逐项归一化，**认不出的项直接丢弃**——一个没写 id、没写 url、没写凭据的「频道」
  * 没有任何可投递的目标，补成空壳只会在投递时制造一次必然失败的尝试。
  *
+ * **这一次丢弃是 upgrade 域 0.2.9 形态清理的承重前提**（#1016 P1-2 选 (a)）：那一步不再删「必填键
+ * 空串或缺席」的半坏条目，理由正是这里把它们整条剔出投递投影——留在磁盘上不等于会被打出去。
+ * 两边要一起读；单独动任一侧的症状写在 canonical-keys.ts 文件头的「第三条路」那段。
+ *
  * 内置条目在这里被跳过：它们由 `asBrowserChannel` / `asSystemChannel` 单独物化，且恒排在最前。
  */
 function outboundChannels(raw: RawSettingValue): ChannelConfig[] {
   const channels: ChannelConfig[] = [];
   if (!Array.isArray(raw)) return channels;
+  // 按身份取**首项**（#1016 残留 2）。写面已绝对拒重复身份，故能从磁盘读到重复的只有两种来源：手改过
+  // 文件，或 0.2.9 之前的存量。此处两条都投 = 一次通知发两遍。
+  //
+  // **不是「四处同一口径」**（此前的注释这么写，不实）：这里用的是 `id || type` 按**数组序**取首条；
+  // 掩码还原 `findById` 与合并 `indexById` 是另一把尺——**只按裸 id**，没有非空 id 的条目根本不进
+  // 索引；`builtinRaw` 是第三把——**只按 type**，完全无视 id。三把尺只在「内置条目都带 id、用户条目
+  // 都带唯一 id」这一种常见形态下碰巧同形，其余形态各说各话。
+  //
+  // **已知取舍（B / C 两个形状，登记在实现笔记的「已知缺口」段）**：`seen.add` 在 `asChannel` 之前，
+  // 于是**半坏条目（`baseUrl:""` / `deviceKey:""`）会先占掉身份**，把后面一条健康的同 `id` 条目挤出
+  // 投递池；跨类型重复时则是「数组里靠前的那条」赢，落选那条**从此不再投递**。两种形状都以「重复
+  // 身份」为前提——写面已绝对 400、客户端 `chAdd` 生成的 id 恒为 `bark-N` 且自带去重，故 UI 造不出
+  // 这种配置，只剩手改文件与 0.2.9 之前的存量。**本轮刻意不动这个位置**：把 `seen.add` 挪到
+  // `asChannel` 之后会让跨类型重复从 0 条变 1 条（让用户那条 bark 赢过内置条目），那是另一套语义、
+  // 需要单独决策；登记为缺口比顺手改对更诚实。
+  const seen = new Set<string>();
   for (const item of raw) {
+    if (isRecord(item)) {
+      const identity = identityOfChannel(item);
+      if (seen.has(identity)) continue;
+      seen.add(identity);
+    }
     const read = asChannel(item);
     if (read.ok) channels.push(read.channel);
   }
@@ -597,43 +879,36 @@ function builtinRaw(
 }
 
 /**
- * 浏览器频道物化：条目字段 → 存量投影键（0.2.3 的顶层键）→ 默认表。
+ * 浏览器频道物化：条目字段 → 默认表。
  *
- * 别名只在这条链的末端参与，所以「用户已在新页面改过条目」与「文件里还躺着旧顶层键」不会互相覆盖
- * ——前者恒赢。这也是同一件事在文件里有两处表达却不打架的原因。
+ * **只认条目**（#1016 S3 删除读面历史兼容）：取值链上不再有「存量投影键（0.2.3 的顶层键）」那一层。
+ * 0.2.3 的 `browserEnabled` / `browserNotify` / `browserSound` / `notifyWhenVisible` 与更早的全局
+ * `notifySound` 都由 upgrade 域的 0.2.4 配置形态割接在装配期搬进本条目并删除旧键；读面再兜一次，
+ * 两处实现对「只搬了一半的文件」迟早给出不同答案，而那时已经没有任何用户能看出来是哪一处错了。
  */
-function asBrowserChannel(
-  raw: Record<string, RawSettingValue> | undefined,
-  input: StoredSettings,
-): BrowserChannelConfig {
+function asBrowserChannel(raw: Record<string, RawSettingValue> | undefined): BrowserChannelConfig {
   const fallback = builtinDefault("browser");
   const source: Record<string, RawSettingValue> = raw ?? {};
   return {
     type: "browser",
     id: "browser",
-    enabled: asBoolean(source.enabled, asBoolean(input.browserEnabled, fallback.enabled)),
-    popup: asBoolean(source.popup, asBoolean(input.browserNotify, fallback.popup)),
-    sound: asSound(source.sound, outletSoundOf(input, input.browserSound, fallback.sound)),
-    whenVisible: asBoolean(
-      source.whenVisible,
-      asBoolean(input.notifyWhenVisible, fallback.whenVisible),
-    ),
+    enabled: asBoolean(source.enabled, fallback.enabled),
+    popup: asBoolean(source.popup, fallback.popup),
+    sound: asSound(source.sound, fallback.sound),
+    whenVisible: asBoolean(source.whenVisible, fallback.whenVisible),
   };
 }
 
 /** 系统频道物化：链与浏览器频道同构，只是没有 `whenVisible`——那是浏览器出口独有的展示条件。 */
-function asSystemChannel(
-  raw: Record<string, RawSettingValue> | undefined,
-  input: StoredSettings,
-): SystemChannelConfig {
+function asSystemChannel(raw: Record<string, RawSettingValue> | undefined): SystemChannelConfig {
   const fallback = builtinDefault("system");
   const source: Record<string, RawSettingValue> = raw ?? {};
   return {
     type: "system",
     id: "system",
-    enabled: asBoolean(source.enabled, asBoolean(input.systemEnabled, fallback.enabled)),
-    popup: asBoolean(source.popup, asBoolean(input.systemNotify, fallback.popup)),
-    sound: asSound(source.sound, outletSoundOf(input, input.systemSound, fallback.sound)),
+    enabled: asBoolean(source.enabled, fallback.enabled),
+    popup: asBoolean(source.popup, fallback.popup),
+    sound: asSound(source.sound, fallback.sound),
   };
 }
 
@@ -650,21 +925,6 @@ function builtinDefault<T extends BuiltinChannelType>(
     if (channel.type === type) return channel as Extract<ChannelConfig, { type: T }>;
   }
   throw new Error(`dsh-notifier: 默认设置里缺少内置频道 ${type}`);
-}
-
-/**
- * 存量音效的物化：按出口的键（`browserSound` / `systemSound`）优先，其次旧的全局键 `notifySound`。
- *
- * 两者的值域不同，不能合在一层收窄：出口键当年就存音色名（完整声音域），全局键只有开关语义（只认布尔）
- * ——用同一个助手处理会把存量音色名吞成默认值。
- */
-function outletSoundOf(
-  input: StoredSettings,
-  outlet: RawSettingValue,
-  fallback: SoundSetting,
-): SoundSetting {
-  if (outlet !== undefined) return asSound(outlet, fallback);
-  return legacySound(input.notifySound, fallback);
 }
 
 function asChannel(raw: RawSettingValue): ChannelRead {
@@ -691,37 +951,14 @@ function asBarkChannel(raw: Record<string, RawSettingValue>, id: string): Channe
     sound: asString(raw.sound, ""),
     icon: asString(raw.icon, ""),
     url: asString(raw.url, ""),
-    timeoutMs: asCount(raw.timeoutMs, 0, 600_000),
+    timeoutMs: asCount(raw.timeoutMs, 0, BARK_TIMEOUT_MS_LIMIT),
     levels: asLevels(raw.levels),
   };
   // 紧急度不兜底：缺了它才轮到「severity → level」那层映射，兜成 active 会让 error 通知
   // 永远发不出 timeSensitive；徽标同理，0 是有意义的取值。
   if (isMember(raw.level, BARK_LEVELS)) channel.level = raw.level;
   if (typeof raw.badge === "number") channel.badge = raw.badge;
-  const extras = extrasOf(raw, BARK_KNOWN_KEYS, BARK_RESERVED_KEYS);
-  if (Object.keys(extras).length > 0) channel.extras = extras;
   return { ok: true, channel };
-}
-
-/**
- * 实例里的未知键：只留 string/number 值。
- *
- * 校验面已经拒掉保留键与非 string/number 值，这里再过滤一遍不是重复——归一化读的是**磁盘上的内容**，
- * 手改过的文件不经过写入口径；而保留键在这里必须剔除，否则一条手写的 `device_key` 就能绕开
- * 「凭据只能走已知字段」的收口。
- */
-function extrasOf(
-  raw: Record<string, RawSettingValue>,
-  known: readonly string[],
-  reserved: readonly string[],
-): Record<string, string | number> {
-  const extras: Record<string, string | number> = {};
-  for (const key of Object.keys(raw)) {
-    if (known.includes(key) || reserved.includes(key)) continue;
-    const value = raw[key];
-    if (typeof value === "string" || typeof value === "number") extras[key] = value;
-  }
-  return extras;
 }
 
 function asLevels(raw: RawSettingValue): Record<string, BarkLevel> {
@@ -754,8 +991,6 @@ function asWebhookChannel(raw: Record<string, RawSettingValue>, id: string): Cha
     headers: asHeaders(raw.headers),
     timeoutSec: asCount(raw.timeoutSec, 0, 600),
   };
-  const extras = extrasOf(raw, WEBHOOK_KNOWN_KEYS, WEBHOOK_RESERVED_KEYS);
-  if (Object.keys(extras).length > 0) channel.extras = extras;
   return { ok: true, channel };
 }
 

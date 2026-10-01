@@ -229,6 +229,7 @@ const EXPECT_FILES: Record<string, string[]> = {
     "bundle/reason-text.test.ts",
     "e2e/smoke.test.ts",
     "helpers.ts",
+    "integration/config-merge-roundtrip.test.ts",
     "integration/consumer-product-face.ts",
     "integration/consumer-types.test.ts",
     "integration/real-context.test.ts",

@@ -49,8 +49,9 @@ Pick one of the following access forms (both the settings card and the README su
 
 - Notification text only contains metadata such as task title / tool name / request reason — **never tool parameters** (prevents sensitive info leakage)
 - **Notification body and title are no longer masked (#733 convergence)**: the old `sanitizeContent` rule table (paths / PEM private keys / connection-string credentials / tokens / emails …) has been deleted — notifications, history writes (including suppressed entries) and delivery all carry the original text; the body is not truncated here, and length is capped by each delivery channel's display limit. Deployments that need "a given kind of text never appears in logs" must handle it at the event source
-- **The only remaining credential masking is in the settings view**: channel credentials in `GET /config`'s `user` + `effective` and in `PUT` success responses (bark `deviceKey`, webhook `token` / `password` / `headerValue`) are always masked as `********`; submitting the full mask = keep the original value (backfilled aligned by instance id so a reordering never swaps credentials between instances); a mask submitted for a new instance returns 400 (`CHANNEL_SECRET_FIELDS` is the per-channel-type single source of truth)
+- **The only remaining credential masking is in the settings view**: channel credentials in `GET /config`'s `user` + `effective` and in `PUT` success responses (bark `deviceKey`, webhook `token` / `password` / `headerValue`) are always masked as `********`; submitting the full mask = keep the original value (backfilled aligned by instance id so a reordering never swaps credentials between instances); **a mask with no stored value to restore (a new instance, or a cross-type mask left over from retyping) returns 400 — the write path and the dry-run share that one sentence, and a placeholder never reaches disk** (`CHANNEL_SECRET_FIELDS` is the per-channel-type single source of truth)
 - **Outbound error reasons no longer replace credential literals (measured risk, documented as-is)**: Bark 4xx response bodies echo the device key, and webhook non-2xx response bodies echo the credentials they received — failure reasons are only truncated (webhook response body 200 chars; status entry 300 chars), with **no guarantee that credentials stay out of the error text**. Those texts live in the reason's `detail` field (reasons are structured as of 0.2.4, see "Delivery reliability"), and go to server logs, the status file (`status.json`) and the notification history (`history.jsonl`), reaching the settings page via `GET /status` and `GET /history`; deployments sensitive to error-text exposure should act on the bullet above
+- **Channel identity (`id`) is unique, cross-type included (#1016)**: two channels sharing one identity is not "a duplicate row in the UI" but **credential destruction** — the settings page submits `channels` as one whole group, the merge takes the first entry by bare `id` and lets the remaining keys inherit that entry's values, so the second entry's real credentials (bark `deviceKey`, webhook credentials) are overwritten by the first — **one credential destroyed per save**. A cross-type duplicate `id` is worse: mask restoration looks up by bare `id`, so a bark written with `id: "browser"` hits the built-in browser entry and restores its mask onto the bark's keys. The write path therefore returns an **unconditional 400** for a duplicate identity (the message carries 1-based indices and says to delete one of them); the upgrade step **no longer** silently de-duplicates by identity (that would delete the second entry, credentials and all, at upgrade time); the delivery projection takes the first entry per identity — which keeps one notification from going out twice, at the price of **the entry that loses no longer being delivered at all**, and of the identity being claimed by **whichever entry comes first in the array, not by whichever one works**: a half-broken entry whose required delivery key is an empty string claims the identity first and pushes a later healthy entry with the same `id` out of the delivery pool (the half-broken entry itself is dropped from that pool anyway). **No path hides or deletes your data**: the view is forwarded verbatim, and deleting a card and saving goes through
 - Server-side internal errors still return fixed wording (root causes only go to server logs)
 - System notification failures are no longer silent: when a channel **executed an action and it failed**, the status row is written as `failed` and the per-channel detail appears in the notification history; when **no command can be constructed at all**, the outcome is `skipped` plus exactly one warn (as of 0.2.4 linux / darwin emit that log too — previously only the win32 branch did). A missing / non-executable native binary (ENOENT etc.) is caught by the `error` event and **never bubbles up as an unhandled error that crashes the host process** (see issue #1)
 - **The two channels are delivered to different machines (don't confuse them)**:
@@ -60,6 +61,7 @@ Pick one of the following access forms (both the settings card and the README su
 - **The capability self-check (as of 0.2.4) exposes a partial fingerprint of the host's software stack, and it is visible to the LAN once forwarded through `dsh-lan-proxy`**: `capabilities.host.sound.players` on `/diagnostics` lists the matched player executable names (in fallback-chain order, **all** matches: `paplay` → `pw-play` → `aplay` → `ffplay`; always `afplay` on darwin), and the `checked` arrays reveal whether `notify-send` is installed; `/health` carries only a **summary** (verdict / unknownDimensions / popup.state / sound.state, no players/checked details). This is a **deliberate trade-off** — users cannot act on "the host cannot play sound" unless they can see it — but be aware of what it means combined with lan-proxy's existing posture (that plugin's README states that requests forwarded through it are considered trusted by design). **Containment**: executable names only, tone-file availability as a boolean, **never absolute paths**, and `remediation` `params` come solely from an internal data table (never passed through input), so no `/etc/os-release` content or raw command output can appear in a response
 - **Probing has no side effects**: the capability self-check issues only two read-only queries to `org.freedesktop.DBus` (`NameHasOwner` and `ListActivatableNames`) and **never triggers service activation** (no `busctl status`/`list`, no `StartServiceByName`); on `darwin`/`win32` that child process is not even started
 - **Temporary audio files (as of 0.2.4)**: on Linux, when the themed event sound is missing, self-play creates a 0700 per-instance directory under the system temp directory and writes a 0600 WAV opened with `wx` (`wx` refuses pre-existing paths and symlinks); the file is deleted as soon as playback ends — only **this** delivery's file, so a concurrent delivery is unaffected — while the directory is removed when the process exits / the plugin unloads. On a read-only `/tmp` nothing is staged: a sound-only delivery is recorded as `skipped` (`reasonSystemToneUnwritable`), while popup+sound still counts as `ok` with one warn (the popup already went out, so sound is best-effort)
+- **On-disk permissions and write order (#1016)**: neither the plugin-private directory `<DSH_HOME>/@wingsky-1/dsh-notifier/` nor the data files in it (`config.json`, `history.jsonl`, `status.json`, `seq.json`, `version`) drift with the umask — a directory this plugin creates lands `0700`, and each file is written as a `0600` temporary name in the same directory that is then `rename`d over the target (`config.json` and `status.json` carry the bark device key, webhook credentials and failure reasons that may echo credentials). **Pre-existing directories are tightened to `mode & 0700`**: only the owner bits are kept, exactly as they are, so no permission bit is ever added. An older `0755`/`0777` directory is therefore pulled back to `0700`, while a directory an operator deliberately made read-only becomes `0500` and **stays read-only** — the plugin never re-opens it for writing. **The mask takes the special bits with it**: this plugin goes through the syscall-level `chmod` (Node `fs.chmod`), which sets only the bits present in its mode argument and clears every bit absent from it (coreutils' `chmod(1)` deliberately keeps setuid/setgid on directories — that is not what is meant here), so setuid/setgid/sticky outside the owner triple are cleared too — measured on the very same formula, `2770`, `1777`, `4755` and `7777` all end up `0700`, and the setgid of a team-shared `2770` is silently dropped (a hardening direction: those bits carry no practical meaning on a private data directory, but it is a **registered behavior change**). On a directory carrying a POSIX extended ACL the ACL mask is tightened to `0` as well, so named entries keep their own perm bits while their **effective** permissions drop to zero. **Within a single process**, **asynchronous** writes to the same path land in submission order (the queue is an in-process in-memory map: concurrent `rename` order was never guaranteed, and on the sequence file that showed up as the client silently dropping frames by seq; two processes sharing one `DSH_HOME` are not serialized against each other). The synchronous write `writeTextAtomicSync` is **not on that chain** — a synchronous function has no promise to hang it on, and it serves the exclusive path during an upgrade, so a **second assembly on hot reload can run it concurrently with an in-flight async write**; the serialization guarantee does not cover that. A failed write leaves no temporary file behind (unless the cleanup itself fails, in which case one stays: its name carries a random suffix, so the next write will not overwrite it, and it does not mask the real failure reason)
 - **Residual trust surface of D-Bus notifications**: on Linux the notification body is handed to the **current owner** of `org.freedesktop.Notifications`. Any process of the same UID that grabs the name first receives the content (cross-UID takeover does not work: the session bus is one socket per user). Deployments that need process isolation within the same user should evaluate the system channel themselves
 - **Capability contract evolution**: `capabilities` only gains keys, never loses them; the client **ignores unknown groups and unknown `verdict` values** (rendered as "unknown" rather than an error); with an older server that sends no `capabilities`, the settings page degrades gracefully. Upgrading the server therefore does not require upgrading the client
 - Browser notifications require a **secure context** (HTTPS or localhost); LAN HTTP access automatically routes through the fallback channel (banner / sound / title reminder)
@@ -240,8 +242,10 @@ Bark app; always masked as `********` in responses, submitting the mask = keep t
 value), `enabled` (default **false** — outbound authorization must be granted explicitly).
 
 Optional parameters (all omitted = not sent; unknown string/number keys pass through verbatim
-for forward compatibility with future Bark parameters; `device_key` / `device_keys` /
-`ciphertext` are reserved keys and never pass through):
+since #1016 S2 a channel entry's unknown keys are **no longer passed through** — they
+never reach the effective config or the push body and are rejected with 400 on submit;
+`device_key` / `device_keys` / `ciphertext` are reserved keys, with wording that
+differs from the "never legal" keys):
 
 | Field | Notes |
 |---|---|
@@ -265,7 +269,9 @@ subagent completions stay quiet":
 
 - Keys are event kinds (the built-ins `ask/question/done/subagent-done/error/turn-end/test` or
   dynamic kinds; any string); values are limited to `active` / `timeSensitive` / `passive` /
-  `critical`; at most 64 entries, each key at most 64 chars.
+  `critical`; at most 64 entries (the write side rejects an over-limit submission; an
+  over-limit value already on disk is not re-judged by an unrelated save), each key at
+  most 64 chars.
 - Full precedence: `levels[kind]` > `level` > severity mapping > not carried.
 - Note: `critical` requires special Apple authorization (regular apps cannot request it);
   without it Bark may downgrade or reject the request.
@@ -283,7 +289,10 @@ via `GET /api/dsh-notifier/status` (no polling, the D20 stance).
   - **The device key never lands in the URL**: pushes go to `POST {baseUrl}/push` with a JSON body (the `device_key` field) — reverse-proxy access logs record URLs and headers by default, never bodies
   - **A single masking exit**: `deviceKey` in `GET /config`'s user+effective and in `PUT` success responses is always masked as `********`; submitting the full mask = keep the original value (backfilled aligned by instance id so a reordering never swaps credentials between instances)
   - **No credential replacement at the error exit (measured)**: Bark 4xx response bodies echo the key verbatim — failure reasons are truncated as-is and go to the logger and to `status.json`; the literal device-key replacement is gone, and so is the `sent` event as an exit (see "Security model")
-  - **SSRF posture**: `baseUrl` is limited to the http/https scheme, credential URLs (`user:pass@host`) are rejected, and query/hash are dropped. **No domain allowlist** — pointing baseUrl at an intranet self-hosted bark-server is a legitimate case; known residual risk: a caller able to reach dsh web from the LAN (through a lan-proxy reverse proxy it can cross the loopback fence, see the deployment doc) can use `/test` to trigger one outbound POST to `baseUrl` (semi-blind: the response error summary echoes only a truncated raw excerpt). Deployments sensitive to that risk can turn the plugin's `enabled` off or adopt a dedicated-port setup (a later version)
+  - **SSRF posture**: `baseUrl` is limited to the http/https scheme and credential URLs (`user:pass@host`) are rejected. These criteria (plus URL parse failure) are checked one by one by a pre-egress gate (`deliver/url-gate.ts`) before `fetch`: a non-conforming target is never sent, and its reason lands in the failure reason's `detail` (`retryable=false`, no re-send — a URL is a configuration fact, re-sending only hits the same wrong address three times). **No domain allowlist** — pointing baseUrl at an intranet self-hosted bark-server is a legitimate case
+  - **`/push` is joined onto the pathname via the URL API (#1016 P0)**: this used to be the string concat `baseUrl + "/push"`, where a base carrying a query dropped `/push` into the query string (the request actually hit the truncated path) and a base with a trailing slash produced a `//push` double slash; now `/push` always lands on the pathname and the query is preserved as-is after it
+  - **Declared residual risk (security debt, the #1016 relaxation)**: this bullet used to promise "query/hash are dropped" to users. The current direction change **gives up machine enforcement** — credentials in the query (`?token=`, `?api_key=`) travel in the URL and land in the peer's access logs, and there is now **no machine check at all**, only this README's documented convention that credentials go in request headers only, never in the URL. A diagnostic warning for credential-shaped queries needs a new presentation surface (config batch scope), and blocking them on the write face by keyword would also hit a legitimate `?api_key=` on a user's self-hosted gateway — both are registered as follow-ups
+  - **Other known residual risk**: a caller able to reach dsh web from the LAN (through a lan-proxy reverse proxy it can cross the loopback fence, see the deployment doc) can use `/test` to trigger one outbound POST to `baseUrl` (semi-blind: the response error summary echoes only a truncated raw excerpt). Deployments sensitive to that risk can turn the plugin's `enabled` off or adopt a dedicated-port setup (a later version)
 
 ### Webhook push channel (#508)
 
@@ -298,7 +307,7 @@ Per-instance fields (`type` fixed to `"webhook"`):
 |---|---|
 | `id` | Instance id (2-32 chars, lowercase letters/digits/hyphens; locked after creation; the alignment key for `kindRoutes` and mask backfill) |
 | `name` | Display name (falls back to the id) |
-| `url` | Target URL (http/https; normalized to origin+path — query/hash stripped, credential URLs rejected) |
+| `url` | Target URL (the write face only requires a non-empty string; the pre-egress gate rejects non-http(s) and URLs carrying embedded credentials, and preserves the query as-is) |
 | `enabled` | Whether enabled (default **false** — outbound authorization must be granted explicitly) |
 | `auth` | Authentication: `none` (default) / `bearer` / `basic` / `header` |
 | `token` | Bearer token (secret: always masked `********` in responses) |
@@ -306,7 +315,7 @@ Per-instance fields (`type` fixed to `"webhook"`):
 | `password` | Basic auth password (secret: always masked) |
 | `headerName` / `headerValue` | Custom-header authentication (see constraints below). |
 | `preset` | Preset: `ntfy` (default) / `gotify` / `custom` (self-hosted gateway); selects the `{{priority}}` mapping and the default template |
-| `template` | JSON body template (≤8192 chars; empty = preset default template) |
+| `template` | JSON body template (≤8192 chars, the write side rejects an over-limit submission; empty = preset default template) |
 | `timeoutSec` | Delivery timeout in seconds (1-60, default 10; authoritatively clamped server-side) |
 
 **Custom-header constraints**: Custom-header auth (`headerValue` is a secret: masked); header names are limited to letters/digits/hyphens (≤64 chars) and forbid `content-type` / `content-length` / `host` / `cookie` / `authorization`
@@ -355,11 +364,12 @@ across types):
 - **Webhook channel credentials & outbound security (#508)**:
   - **Disabled by default**: `enabled` defaults to false — outbound authorization must be granted explicitly (same posture as Bark)
   - **Credentials never land in the URL**: credentials travel only in request headers (bearer → `Authorization: Bearer`, basic → `Authorization: Basic` (base64), header → custom header name + value); reverse-proxy access logs (URL + header names) never see them
-  - **Credential masking funneled via `CHANNEL_SECRET_FIELDS`**: the masked-field list is a per-channel-type single source of truth (bark → `deviceKey`, webhook → `token`/`password`/`headerValue`); GET /config (user + effective) and PUT success responses always mask `********`, submitting the full mask = keep the original value (backfilled aligned by instance id so a reordering never swaps credentials between instances); a mask submitted for a new instance returns 400
-  - **Reserved keys block config bypass (`WEBHOOK_RESERVED_KEYS`)**: credential alias keys such as `auth_token` / `access_token` / `bearer_token` / `api_key` / `apikey` / `client_secret` / `secret` / `password_hash` are always stripped / rejected on write — legitimate credentials can only enter via the known secret fields (masked end to end)
+  - **Credential masking funneled via `CHANNEL_SECRET_FIELDS`**: the masked-field list is a per-channel-type single source of truth (bark → `deviceKey`, webhook → `token`/`password`/`headerValue`); GET /config (user + effective) and PUT success responses always mask `********`, submitting the full mask = keep the original value (backfilled aligned by instance id so a reordering never swaps credentials between instances). The mask means "unmodified" **only on credential fields**: on any other key it is an ordinary string (a channel name typed as eight asterisks is written through as-is), while a mask sitting on *another* type's credential field name (a cross-type leftover from retyping) returns 400; so does a mask on this type's credential field with no stored value to restore (a new instance, a renamed id). Those are **two distinct hints** (`RESIDUAL_MASK_HINT` / `NEW_CHANNEL_MASK_HINT`), and the write path and the dry-run give the **verbatim same** hint for the same situation (both defined in `src/server/config/impl/service/merge.ts`)
+  - **Reserved keys block config bypass (`WEBHOOK_RESERVED_KEYS`)**: credential alias keys such as `auth_token` / `access_token` / `bearer_token` / `api_key` / `apikey` / `client_secret` / `secret` / `password_hash` are rejected with 400 on write (never materialized on read; whatever is already on disk is preserved) — legitimate credentials can only enter via the known secret fields (masked end to end)
   - **JSON injection protection**: the template renders JSON-aware in two steps (value-level substitution + uniform re-serialization escaping); notification content cannot break out of a string to inject extra JSON fields
   - **Outbound errors do not replace credentials**: same as Bark — non-2xx response bodies are truncated to 200 chars and enter the reason's `detail` as-is, with no credential-literal replacement and no rule table (see "Security model")
-  - **URL SSRF posture (same normalize as Bark)**: http/https schemes only, credential URLs (`user:pass@host`) rejected, query/hash stripped; no domain allowlist — an intranet self-hosted gateway is a legitimate use case; custom header names forbid end-to-end headers (`content-type`/`content-length`/`host`/`cookie`/`authorization`) against request smuggling / JSON body corruption
+  - **URL SSRF posture (same gate as Bark)**: http/https schemes only, credential URLs (`user:pass@host`) rejected — checked one by one before egress, which refuses to send a non-conforming target (`retryable=false`, reason in `detail`); no domain allowlist — an intranet self-hosted gateway is a legitimate use case; custom header names forbid end-to-end headers (`content-type`/`content-length`/`host`/`cookie`/`authorization`) against request smuggling / JSON body corruption
+  - **The url is used verbatim, never concatenated** (unlike Bark): `fetch(target.url)` sends it as written, so an address carrying a query (`https://gateway/hook?tenant=x`) is legitimate and works. The same declared residual risk as above applies: credentials in the query are no longer machine-blocked (the #1016 relaxation)
   - **No retry on failure**: a failed delivery is terminal (4xx/5xx/network/render) — no retry-driven outbound amplification
 
   - Webhook is an **additive channel type**: the semantics and compatibility commitments of existing channels and notification outputs (SSE frames / system notifications / history jsonl) are unchanged
@@ -416,51 +426,68 @@ write path used), and the 8 top-level channel keys are then moved into the two b
 `channels` and **deleted** (see "Per-channel three switches"). After that `config.json` is the only
 read/write path.
 
-**Unknown-key semantics (forward compatibility, issue #470)**: dsh-notifier applies a
-**"pass-through and preserve"** policy to configuration keys it does **not recognize** —
-read and write behave consistently; unknown keys are never dropped, validated or
-rewritten (except for composition-layer assembly keys, see boundaries below):
+**Unknown-key semantics (#1016 S2: wide reads, strict writes)**: on the **read** side keys
+the plugin does not recognize are still **preserved verbatim and kept visible** (existing
+values are never lost or migrated); on the **write** side they are always **rejected with
+400** — the same rule for top-level keys and for keys inside a channel entry.
 
 - **Reading**: `GET /api/dsh-notifier/config` returns unknown keys verbatim in `user`
-  (the raw user layer), keeping future-version / third-party keys visible. `effective`
-  (the resolved config) has a **fixed shape** and therefore never contains unknown keys
-  — they live in the file and in the `user` view only.
-- **Writing**: `PUT /api/dsh-notifier/config` is an incremental patch — it merges the
-  submitted known keys only; unknown keys already in the user layer are **not affected
-  by saving known keys**, and unknown keys carried in the current patch are **preserved
-  verbatim** (never silently dropped). A patch with only unknown keys (e.g.
-  `{"futureKey":1}`) returns **200** and is written; only an empty patch `{}` (or a
-  patch with nothing writable after filtering, e.g. only assembly keys) returns **400**
-  "need at least one config key".
-- **Upgrade path**: when a key is unknown in version vN (already passed through into the
-  user layer) and becomes a known key in vN+1 — stale dirty values in the user layer are
-  **not auto-cleaned** (an upgrade never overwrites fields the user has already set);
-  on read, normalize falls back to defaults for invalid known-key values (dirty values
-  do not affect the effective config or other keys); a **400 + hint** is only raised when
-  you **actively submit** that key with an invalid value. To clear a leftover dirty key,
-  delete it manually in `config.json`.
+  (the raw user layer), keeping future-version / third-party keys visible. `effective` is
+  the **view projection** (#1016 S3: known-key subset + verbatim + masking, **no default
+  filling**): it takes only the 11 known **top-level** keys (an unknown top-level key would
+  trip the write path's 400, so it never enters the view), while unknown keys **inside a
+  `channels` entry** are passed through as-is — the client hands them back unchanged, the write
+  path reads that as "brought back verbatim" and does not re-judge their domain, so they are not
+  rejected. The **delivery layer** (`readConfig()`) is a different channel: it materializes
+  field by field over the known keys, and an unknown key never reaches it.
+- **Writing**: `PUT /api/dsh-notifier/config` is an incremental patch. A patch carrying an
+  unknown key (e.g. `{"futureKey":1}`) returns **400** "futureKey is not a known config key —
+  delete it or check the spelling"; only an empty patch `{}` (or a patch with nothing
+  writable after filtering, e.g. only assembly keys) returns **400** "need at least one
+  config key". **Unknown keys already on disk are unaffected**: they are not in the patch,
+  `channels` keeps them field by field, and saving other known keys neither drops them nor
+  gets rejected because of them. To clear one, delete it manually in `config.json` (it is
+  also removed automatically when upgrading to 0.2.9 or later — see "Upgrade path").
+- **Why no longer pass-through**: the pass-through surface required the read side to fold a
+  channel entry's unknown keys into an `extras` sub-object and hand it back verbatim, while
+  the write side only accepted string/number values — so the `extras` **object itself**
+  collided with that rule and the whole configuration became unsaveable (#1016 defect B).
+  Narrowing to "keys this version knows" closes that self-collision while still keeping
+  what is already on disk.
+- **Upgrade path**: since 0.2.9, unknown keys in the configuration file are **cleaned up at
+  upgrade time** (top-level keys and keys inside channel entries alike; every category is
+  listed in the 0.2.9 migration entry under the configuration-format appendix) — they could
+  never be submitted anyway (the write path always returns 400), and keeping them only makes
+  the settings page show a field that cannot be changed. **The boundary is "a value that
+  cannot possibly be legal in this version"**: anything the user has already expressed stays
+  byte for byte (a full `levels` map, an 8192-character `template`, credentials left empty, a
+  half-broken entry whose required key is empty or absent) — the upgrade deletes keys, it never
+  rewrites values.
 - **Legacy migration**: unknown keys in the old configuration (the 0.2.3 settings
   namespace and the older self-maintained json) are **preserved** when read — written
   when missing from the user layer, never overwriting existing ones; a legacy file
-  containing only unknown keys is no longer treated as "no valid keys".
+  containing only unknown keys is no longer treated as "no valid keys". That only
+  guarantees they are not lost on the way into `config.json`; once the version marker
+  reaches 0.2.9 the shape cleanup drops keys this version does not know (see "Upgrade
+  path").
 - **Boundary exceptions**:
   - `patch` **must be an object**: non-object shapes (arrays, `null`, numbers, etc.)
     always return 400 — arrays are never passed through as numeric-index dirty keys.
-  - Prototype-chain / special member keys (`__proto__`, `constructor`, `prototype`,
-    `toString`, `hasOwnProperty`, `valueOf`, etc., which JSON text can inject as own
-    keys) are always stripped from both the read pass-through and the write channels —
-    never validated and never written.
+  - Prototype-chain keys (`__proto__`, `constructor`, `prototype`, which JSON text can
+    inject as own keys) are always **stripped** on the write path — never judged, never
+    written. Stripping already blocks the prototype rewrite, so they are not reported as
+    "unknown key" 400s.
   - Composition-layer assembly keys (`configFile` / `toastScript` / `historyFile` /
     `statusFile` / `enabled`) are cordis composition/startup parameters and **never
     enter the user layer** — PUT and migration drop same-named keys; entry
     composition goes through the whitelist filter.
-  - Reserved keys are still always stripped / rejected — `device_key` / `device_keys` /
-    `ciphertext` inside a Bark channel instance, and `WEBHOOK_RESERVED_KEYS`
-    (`auth_token` / `access_token` / `bearer_token` / `api_key` / `apikey` /
-    `client_secret` / `secret` / `password_hash`) inside a webhook channel instance;
-    unknown channel params only pass through as string/number values.
-  - Unknown keys take no part in validation (invalid known keys still return
-    400 + hint).
+  - Reserved keys are rejected with 400 too — `device_key` / `device_keys` / `ciphertext`
+    inside a Bark channel instance, and `WEBHOOK_RESERVED_KEYS` (`auth_token` /
+    `access_token` / `bearer_token` / `api_key` / `apikey` / `client_secret` / `secret` /
+    `password_hash`) inside a webhook channel instance — but the wording differs from the
+    "never legal" keys: the former says "is a reserved key: credentials can only go through
+    the known fields", the latter says "is not a known key: delete it or check the spelling".
+    The two need different troubleshooting.
 
 Consequence: after an upgrade, if the settings page does not show a field that still
 exists in `config.json`, that is the intended preserve behavior — saving other known
@@ -501,7 +528,7 @@ settings will not lose it.
 
 | Route | Method | Notes |
 |---|---|---|
-| `/api/dsh-notifier/config` | GET/PUT | File-backed user layer (unknown keys preserved, credentials masked); snapshot and incremental updates. |
+| `/api/dsh-notifier/config` | GET/PUT | File-backed user layer (stored values kept, credentials masked); snapshot and incremental updates; unknown keys are read-only (preserved, never submitted). |
 | `/api/dsh-notifier/events` | GET | SSE frames with reconnect replay. |
 | `/api/dsh-notifier/test` | POST | Send a test through the service pipeline. |
 | `/api/dsh-notifier/history` | GET / **DELETE** | Read or clear notification history. |
@@ -512,7 +539,7 @@ settings will not lose it.
 
 #### `/config`
 
-**GET** returns `{ok, user, revision, effective, writable}` (`user` = configuration-file user layer (stored values with unknown keys preserved and credentials masked), `revision` for optimistic concurrency, `effective` = resolved config; **credential fields (bark `deviceKey` / webhook `token`·`password`·`headerValue`) are always masked**); **PUT** accepts `{patch, expectedRevision?}` (incremental patch, optional `expectedRevision` for optimistic concurrency), returns `{ok, user, revision}` (also masked)
+**GET** returns `{ok, user, revision, effective, writable}` (`user` = configuration-file user layer (stored values with unknown keys preserved and credentials masked), `revision` for optimistic concurrency, `effective` = resolved config; **credential fields (bark `deviceKey` / webhook `token`·`password`·`headerValue`) are always masked**); **PUT** accepts `{patch, expectedRevision?}` (incremental patch, optional `expectedRevision` for optimistic concurrency), returns `{ok, user, revision}` (also masked). **`channels` merges field by field** (#1016 S2): a key the patch does not carry keeps its on-disk value, a key whose value is the mask `********` keeps its stored value, a key whose value is `null` or an empty string is deleted, anything else is written; deleting a required key (`url` / `baseUrl` / `deviceKey`) returns 400 "required key, cannot be deleted". **Other top-level keys are still whole-value replacement** (e.g. `kindRoutes`: the whole table is swapped, removing an entry means dropping it from the table — `null` is not accepted)
 
 #### `/events`
 
@@ -551,7 +578,38 @@ Error mapping (POST /kinds): kind-confirmation CAS retries (≤2) exhausted → 
 - Defaults follow `DEFAULT_CONFIG` in `src/server/config/impl/model/index.ts`: event toggles `notifyAsk` / `notifyQuestion` / `notifyTaskDone` / `notifyTaskError` on, `notifySubagentDone` / `notifyTurnEnd` off; `quietHours` is `{enabled:false, windows:[{start:"22:00", end:"08:00"}]}`; `channels` always carries the two built-in entries (browser and system, each `enabled` / `popup` / `sound` on, plus `whenVisible:false` on browser); `kindRoutes` and `allowKinds` are empty, `historyMaxAgeDays` is 0.
 - 0.2.3 → 0.2.4 migration: the 8 top-level channel keys (`systemEnabled` / `browserEnabled` / `systemNotify` / `browserNotify` / `notifyWhenVisible` / `notifySound` / `browserSound` / `systemSound`) are moved into the two built-in entries at assembly time and then deleted (`src/server/upgrade/impl/steps/config-shape.ts`); submitting them after the upgrade always returns 400 with a refresh hint, and leftover lines must be removed by hand in `config.json`.
 - 0.2.5 → 0.2.6 migration: the legacy do-not-disturb `start`/`end` are moved into `windows[0]` at assembly time and the old keys deleted (`src/server/upgrade/impl/steps/quiet-windows.ts`); submitting the old shape (no `windows`) after the upgrade always returns 400 with a refresh hint.
-- Masking rules: the per-channel-type credential field list is centralized in `CHANNEL_SECRET_FIELDS` (bark → `deviceKey`, webhook → `token` / `password` / `headerValue`); `user` and `effective` of GET /config plus PUT success responses are always masked as `********`, submitting a full mask means keep the original value (backfilled aligned by instance id); a mask submitted for a new instance returns 400 (`NEW_CHANNEL_MASK_HINT` in `src/server/config/impl/service/index.ts`).
+- **0.2.8 → 0.2.9 migration (configuration-shape cleanup, `src/server/upgrade/impl/steps/canonical-keys.ts`)**:
+  the only upgrade step of this plugin that **discards values** (the 0.2.4 / 0.2.6 steps delete the
+  old keys but move every value to a new one). Every criterion is "condition → delete/fill"; it
+  never guesses and never clamps a value (an out-of-range value
+  loses its key rather than becoming a boundary value), and on an already clean file it
+  **writes nothing at all** — your hand-edited formatting is never re-serialized. **Deleted**:
+  - unknown top-level keys (including `maxConnections`, retired in 0.2.5, and hand-written
+    future keys), top-level values whose type differs from the default table (`notifyAsk` as a
+    string, `allowKinds` as a number), out-of-range `historyMaxAgeDays`, and a `channels` value
+    that is not an array (the key is dropped);
+  - keys inside a channel entry that are not in that type's known-key set (including the
+    credential aliases `device_key` / `auth_token` etc.), and keys whose value has the wrong
+    shape: a non-boolean where a boolean belongs, out-of-range counts (`timeoutMs` /
+    `timeoutSec`), illegal enums (`level` / `auth` / `preset`), non-string credential values;
+  - **whole entries** that are not objects, whose `type` is unknown, or whose identity does not
+    hold (an outbound entry with a missing or empty `id`). **A duplicate `id` is not a deletion
+    criterion**: this step no longer de-duplicates by identity and drops nothing for it (the
+    previous behaviour deleted the second entry, credentials and all, at upgrade time). A
+    duplicate identity is handed to the **400 from the write path** instead, for the user to
+    pick one entry and delete it — see "Channel identity (`id`) is unique, cross-type included"
+    in the security model.
+  **Filled by the same step** (filling is not deleting): the two built-in entries (browser /
+  system) are added when absent, and a present one gets its **absent fields** filled from the
+  default table — **explicit values are never overwritten** (an explicit `false` is you switching
+  it off).
+  **Left untouched**: every legal-but-non-default value (a 64-entry `levels` map, an
+  8192-character `template`, an over-long name, credentials left empty), and **half-broken
+  entries** — an entry whose required key is empty or absent is kept whole (it is visible in
+  the settings page, fillable, and removable, and the delivery side already drops it entirely).
+  Half-broken entries hand-edited into the file *after* the upgrade are not repaired by this
+  step either: it runs once, when the version marker advances.
+- Masking rules: the per-channel-type credential field list is centralized in `CHANNEL_SECRET_FIELDS` (bark → `deviceKey`, webhook → `token` / `password` / `headerValue`); `user` and `effective` of GET /config plus PUT success responses are always masked as `********`, submitting a full mask means keep the original value (backfilled aligned by instance id). The mask semantics cover **credential fields only**: on a non-credential key it is written through as an ordinary value (a channel name typed as eight asterisks is neither treated as a credential sentinel nor silently dropped); a mask on another type's credential field name (cross-type leftover) returns 400, and so does a mask on this type's credential field with no stored value to restore (a new instance, a renamed id). Those are **two different hints** (`RESIDUAL_MASK_HINT` / `NEW_CHANNEL_MASK_HINT`); the write path and the dry-run give the verbatim same hint for the same situation, and both literals live in `src/server/config/impl/service/merge.ts` — a placeholder is not a credential and never reaches disk.
 
 ### Client contract: throttling, gesture unlock, and frame path
 

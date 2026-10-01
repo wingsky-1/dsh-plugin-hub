@@ -47,8 +47,9 @@ dsh plugin --profile web add @wingsky-1/dsh-notifier
 
 - 通知文本只含任务标题/工具名/申请理由等元信息，**不含工具参数**（防敏感信息外泄）
 - **通知正文与标题不再打码（#733 收敛）**：原 `sanitizeContent` 的规则表（路径 / PEM 私钥 / 连接串凭据 / 令牌 / 邮箱…）已删除——通知、历史落盘（含 suppressed 落史）与投递都是原文；正文不截断，长度由投递频道的展示上限截断。需要「日志里不出现某类文本」的部署，请自行在事件源侧处理
-- **仅存的凭据掩码在设置页视图**：`GET /config` 的 `user` + `effective` 与 `PUT` 成功响应中的频道凭据（bark `deviceKey`、webhook `token` / `password` / `headerValue`）一律掩码 `********`，提交整值掩码 = 保持原值（按实例 id 对齐回填，防数组序变化串凭据），新实例带掩码提交 400（`CHANNEL_SECRET_FIELDS` 按频道类型单一事实源）
+- **仅存的凭据掩码在设置页视图**：`GET /config` 的 `user` + `effective` 与 `PUT` 成功响应中的频道凭据（bark `deviceKey`、webhook `token` / `password` / `headerValue`）一律掩码 `********`，提交整值掩码 = 保持原值（按实例 id 对齐回填，防数组序变化串凭据），**没有原值可还原的掩码（新实例、换型残留的跨 type 掩码）写面 400，dry-run 同一句——占位符不是凭据，绝不落盘**（`CHANNEL_SECRET_FIELDS` 按频道类型单一事实源）
 - **出口错误原因不再做凭据字面替换（实测风险，照实登记）**：Bark 4xx 响应体会回显 device key，webhook 的非 2xx 响应体也会回显收到的凭据——失败原因只做长度截断（webhook 响应体 200 字符；状态条目 300 字符），**不保证凭据不出现在错误文本里**。这些文本落在失败理由的 `detail` 字段里（0.2.4 起理由结构化，见「投递可靠性」），会进服务端日志、状态文件（`status.json`）与通知历史（`history.jsonl`），并随 `GET /status` 与 `GET /history` 出到设置页；对错误文本外泄敏感的部署请按上一条自行处置
+- **频道身份（`id`）唯一，含跨类型**（#1016）：同一个身份挂两条频道不是「界面显示重复」，而是**凭据销毁**——设置页对 `channels` 是整组提交，合并按裸 `id` 取首条、其余键沿用首条的值，于是第二条的真实凭据（bark `deviceKey`、webhook 凭据）被第一条覆盖，**每次保存毁一条**。跨类型同 `id` 更糟：掩码还原按裸 `id` 查找，一条 bark 写 `id: "browser"` 会命中内置 browser 条目，把它的掩码还原到 bark 的键上。写面因此对重复身份**绝对 400**（提示带 1 起的下标并指明「删掉其中一条」）；升级步**不再**按重复身份静默去重（那会在升级那一刻把第二条连凭据一起从磁盘删掉）；投递投影按身份只取首项，免得一次通知发两遍——**代价是落选的那条从此不再投递**，且占身份的是「数组里排在前面的那条」而非「能用的那条」：投递必需键为空串的半坏条目会先占掉身份，把后面一条健康的同 `id` 条目从投递池里挤掉（半坏条目本身则整条不进投递池）。**没有任何一条路径会隐藏或删除你的数据**：视图原样外发，删掉一张卡再保存即通过
 - server 内部错误仍只回固定文案（底层原因只进服务端日志）；dry-run 的 500 同样固定文案且不记日志（禁写面含全部 logger）
 - **草稿测试（dry-run）不落盘也不记日志**：只测 `draft.channels` 里的单条频道（掩码按 id 还原，跨类型残留掩码整体拒绝），结果同步返回且只进面板独立结果行（打标「草稿测试·未落盘」，通过不自动保存，改草稿即清、重载即丢、切 tab 保留）。回显反射残留（对端把请求体反射回来）与现行历史落盘同 exposure（原文截断后进 `reason.detail`），仅 loopback 可读，可接受
 - **dry-run 出站安全**：bark / webhook 的 URL 必须可解析为 http(s) 且无 userinfo；主机名全量 DNS 解析逐条分类（回环 / 私网 / 链路本地（含云元数据）/ 未指定 / 组播 / 保留段一律拒绝，含十进制与十六进制等非点分写法），重定向手动逐跳复检（上限 5 跳），建连钉死核验过的 IP 并验 `remoteAddress` 熔断（关 TOCTOU），TLS 的 SNI 与证书校验仍走原始主机名
@@ -62,6 +63,7 @@ dsh plugin --profile web add @wingsky-1/dsh-notifier
 - **能力自检面（0.2.4 起）暴露宿主软件栈的局部指纹，且经 `dsh-lan-proxy` 转发后对局域网可见**：`/diagnostics` 的 `capabilities.host.sound.players` 会列出探测命中的播放器可执行文件名（按回退链顺序给出**全部**命中者：`paplay` → `pw-play` → `aplay` → `ffplay`；darwin 恒 `afplay`），`popup`/`sound` 的 `checked` 会暴露装了 `notify-send` 与否；`/health` 只给**摘要**（verdict / unknownDimensions / popup.state / sound.state，无 players/checked 明细）。这是**有意的设计取舍**——用户要能看见「宿主放不出声」才谈得上处置——但请知悉它与 lan-proxy 的既有姿态叠加后的含义（该插件 README 已自述「经本插件转发的请求按设计视为受信」）。**收敛手段**：只出可执行文件名、音色只出布尔，**绝不出绝对路径**，`remediation` 的 `params` 只由内置数据表产生、不经输入透传（响应体里不会出现 `/etc/os-release` 或任何命令原文）
 - **探测无副作用**：能力自检只向 `org.freedesktop.DBus` 发 `NameHasOwner` 与 `ListActivatableNames` 两个只读查询，**不触发任何服务激活**（不用 `busctl status`/`list`，不调 `StartServiceByName`）；`darwin`/`win32` 上连这个子进程都不起
 - **临时音频文件（0.2.4 起）**：Linux 上主题事件音缺失时，自播会在系统临时目录下建一个 0700 的实例目录，写入 0600 且以 `wx` 打开的 WAV（`wx` 拒绝已存在的路径与符号链接）；播放结束立即删掉**本次**文件，并发的另一笔投递因此不受影响，目录留到进程退出 / 插件卸载时统一清理。`/tmp` 只读挂载时本次不落盘：只响不弹记为 `skipped`（`reasonSystemToneUnwritable`），弹+响仍算 `ok` 并留一条 warn（弹窗已经出去，声音属尽力而为）
+- **落盘权限与写入顺序（#1016）**：本包私有目录 `<DSH_HOME>/@wingsky-1/dsh-notifier/` 与其下的数据文件（`config.json`、`history.jsonl`、`status.json`、`seq.json`、`version`）权限都不随 umask 漂移——新建的目录落 `0700`，文件每次先在同目录以 `0600` 建临时名再 `rename` 覆盖（`config.json` 与 `status.json` 内含 bark deviceKey、webhook 凭据与可能回显凭据的失败原因）。**已存在的目录按「只保留 owner 三位」收紧**（`mode & 0700`，永不新增任何权限位）：旧安装的 `0755`/`0777` 会被追溯收紧到 `0700`，运维刻意设成只读的目录收成 `0500`、**仍然只读**，本包不会替他重新打开可写。**这条掩码连特殊位一起清**：本包走的是系统调用层的 `chmod`（Node `fs.chmod`），只按 mode 参数里出现的位设置、参数里没有的位一律清掉，故 owner 之外的 setuid/setgid/sticky 同样被清——实测 `2770`/`1777`/`4755`/`7777` 一律落成 `0700`，团队共享目录常见的 `2770` 的 setgid 也会被静默清掉（方向是加固：私有数据目录上这些位本无实际语义；这是**已登记的行为变更**）。目录若带 POSIX 扩展 ACL，ACL mask 还会被收紧为 `0`，命名条目的**有效**权限随之归零（条目本身仍在）。**同一进程内**，同一路径的**异步**写按提交顺序串行落盘（写链是进程内的内存表：`rename` 的先后在并发下本无保证，落到序号文件上就是客户端按 seq 静默丢帧；两个进程共用同一个 `DSH_HOME` 时不适用）。同步写 `writeTextAtomicSync` **不进这条链**——同步函数没有 promise 可挂，它服务的是升级期的独占路径，所以**热重载二次装配时它可以与在飞的异步写并发**，这不在串行保证内。写失败不留临时文件残留（清理本身失败时会留下：文件名带随机后缀，不会被下次写覆盖，也不影响本次真正的失败原因）
 - **D-Bus 通知的残余信任面**：Linux 上的通知正文会交给 `org.freedesktop.Notifications` 的**当前 owner**。同一 UID 的进程先占住这个名字即可收到通知内容（跨 UID 抢占不成立：session bus 是每用户一个 socket）。对同机同用户下的进程隔离有要求的部署，请自行评估系统通道
 - **能力面契约演进**：`capabilities` 只增不删键；客户端**忽略不认识的组与不认识的 `verdict` 取值**（渲染为「未知」而不是报错）；旧服务端不带 `capabilities` 时设置页优雅降级。故升级服务端不需要同步升级客户端
 - 浏览器通知需要**安全上下文**（HTTPS 或 localhost）；局域网 HTTP 访问自动走降级通道（横幅/提示音/标题提醒）
@@ -212,8 +214,9 @@ curl -s http://127.0.0.1:3080/api/dsh-notifier/health
 http/https）、`deviceKey`（Bark App 内查看；响应中一律掩码 `********`，提交掩码 =
 保持原值）、`enabled`（默认 **false**——出站授权须显式开启）。
 
-可选参数（全部缺省不发送；未知 string/number 键原样透传，Bark 未来参数前向兼容；
-`device_key`/`device_keys`/`ciphertext` 为保留键不可透传）：
+可选参数（全部缺省不发送；#1016 S2 起**不再透传**频道条目上的未知键——它们不进入
+生效设置、不进入推送体，提交时 400；`device_key`/`device_keys`/`ciphertext` 为保留键，
+话术与「从未合法」的键分开）：
 
 | 字段 | 说明 |
 |---|---|
@@ -235,7 +238,8 @@ http/https）、`deviceKey`（Bark App 内查看；响应中一律掩码 `******
 ```
 
 - 键为事件 kind（内置 `ask/question/done/subagent-done/error/turn-end/test` 或动态 kind，任意字符串）；
-  值限 `active` / `timeSensitive` / `passive` / `critical`；至多 64 项、每键至多 64 字符。
+  值限 `active` / `timeSensitive` / `passive` / `critical`；至多 64 项（写面拒本次超限的提交，
+  磁盘上已存在的超限旧值不因一次无关保存被拒）、每键至多 64 字符。
 - 完整优先级：`levels[kind]` > `level` > severity 映射 > 不携带。
 - 注意：`critical` 需苹果特殊授权（普通 App 无法申请），未获授权时 Bark 可能降级/拒绝。
 - 与 `kindRoutes`（kind→channelId[] 路由）正交：路由决定「投给哪些频道」，`levels` 决定「在本实例上多响」。
@@ -249,7 +253,10 @@ http/https）、`deviceKey`（Bark App 内查看；响应中一律掩码 `******
   - **device key 不落 URL**：推送走 `POST {baseUrl}/push` + JSON body（`device_key` 字段）——反代 access log 默认只记 URL 与 header，正文不落日志
   - **响应掩码单一出口**：GET /config 的 user+effective 与 PUT 成功响应中的 `deviceKey` 一律掩码 `********`；提交整值掩码 = 保持原值（按实例 id 对齐回填，防止数组顺序变化串凭据）
   - **错误出口不做凭据替换（实测）**：Bark 4xx 响应体会回显 key 原文——失败原因按原文截断后进 logger 与 `status.json`，不再按 device key 字面替换，也不再有 `sent` 事件这一路出口（详见「安全模型」）
-  - **SSRF 姿态**：`baseUrl` 限 http/https scheme、拒绝带凭据 URL（`user:pass@host`）、丢弃 query/hash。**不做域名白名单**——baseUrl 指向内网自建 bark-server 是合法场景；已知残余风险：局域网内可访问 dsh web 的调用方（经 lan-proxy 反代可穿透 loopback 围栏，见部署文档）可借 `/test` 触发一次对 `baseUrl` 的出站 POST（半盲，响应错误摘要仅回显一段截断后的原文）。对该风险敏感的部署可将插件 `enabled` 关闭或用独立端口方案（后续版本）
+  - **SSRF 姿态**：`baseUrl` 限 http/https scheme、拒绝内嵌凭据的 URL（`user:pass@host`）。这些判据（另加 URL 解析失败）由**出站前硬闸**（`deliver/url-gate.ts`）在 `fetch` 之前逐条判定：不合规的目标根本不发，原因进失败理由的 `detail`（`retryable=false`，不重投——URL 是配置事实，重投只是把同一个错地址打三遍）。**不做域名白名单**——baseUrl 指向内网自建 bark-server 是合法场景
+  - **`/push` 用 URL API 拼到 pathname 上（#1016 P0）**：此前是 `baseUrl + "/push"` 字符串拼接，base 带 query 时 `/push` 会掉进 query 串（实际打到被截断的路径），base 带尾斜杠时拼出 `//push` 双斜杠；改后 `/push` 一定落在 pathname 上，query 原样留在后面
+  - **明示残余风险（安全债务，#1016 放宽项）**：本条曾把「去 query/hash」写成对用户的承诺，本次方向变更**放弃机器强制**——query 里的凭据（如 `?token=`、`?api_key=`）会随 URL 进对端访问日志，现在**不再有任何机器拦截**，只剩本 README 的「凭据只走请求头、不拼 URL」文档约定。凭据型 query 的诊断告警需新的展示面（配置批次范围），写面按关键字拦又会误伤用户自建网关的正常 `?api_key=`，两侧均登记为 follow-up
+  - **其他已知残余风险**：局域网内可访问 dsh web 的调用方（经 lan-proxy 反代可穿透 loopback 围栏，见部署文档）可借 `/test` 触发一次对 `baseUrl` 的出站 POST（半盲，响应错误摘要仅回显一段截断后的原文）。对该风险敏感的部署可将插件 `enabled` 关闭或用独立端口方案（后续版本）
 
 ### Webhook 推送频道（#508）
 
@@ -263,7 +270,7 @@ http/https）、`deviceKey`（Bark App 内查看；响应中一律掩码 `******
 |---|---|
 | `id` | 实例 id（2-32 位小写字母/数字/连字符，创建后锁定；`kindRoutes` 对齐键与掩码回填对齐键） |
 | `name` | 显示名（缺省回退 id） |
-| `url` | 目标地址（http/https；normalize 规范化为 origin+path——去 query/hash、拒绝带凭据 URL） |
+| `url` | 目标地址（写面只校验非空串；出站前硬闸拒绝非 http(s) 与内嵌凭据 URL，query 原样保留） |
 | `enabled` | 是否启用（默认 **false**——出站授权须显式开启） |
 | `auth` | 认证方式：`none`（默认）/ `bearer` / `basic` / `header` |
 | `token` | bearer 认证令牌（secret：响应一律掩码 `********`） |
@@ -271,7 +278,7 @@ http/https）、`deviceKey`（Bark App 内查看；响应中一律掩码 `******
 | `password` | Basic 认证密码（secret：响应一律掩码） |
 | `headerName` / `headerValue` | 自定义请求头认证（约束见下）。 |
 | `preset` | 预设：`ntfy`（默认）/ `gotify` / `custom`（自建网关）；决定 `{{priority}}` 映射与默认模板 |
-| `template` | JSON body 模板（≤8192 字符；留空 = 预设默认模板） |
+| `template` | JSON body 模板（≤8192 字符，写面拒本次超限的提交；留空 = 预设默认模板） |
 | `timeoutSec` | 投递超时秒（1-60，默认 10；服务端权威 clamp） |
 
 **自定义请求头约束**：自定义请求头认证（`headerValue` 为 secret：响应掩码）；头名限字母/数字/连字符（≤64 字符），禁 `content-type` / `content-length` / `host` / `cookie` / `authorization`
@@ -291,7 +298,7 @@ http/https）、`deviceKey`（Bark App 内查看；响应中一律掩码 `******
 
 投递可靠性：超时 1-60s（默认 10）；**失败不自动重试**——4xx / 5xx / 网络错误 / 渲染失败统一为失败终态，落 status 文件与通知历史（宿主原文截断后进失败理由的 `detail`，见「安全模型」），可经「发送测试通知」重发验证。`kindRoutes` 中以 `webhook:<id>` 引用（与 `bark:<id>` 同款 `type:id` 形态）。
 
-实例示例（与 Bark 实例同存于 `channels` 数组，id 跨类型去重）：
+实例示例（与 Bark 实例同存于 `channels` 数组，`id` 跨类型唯一——重复身份写面 400，见「安全模型」）：
 
 ```json
 { "id": "droid", "type": "webhook", "url": "https://ntfy.sh/mytopic",
@@ -301,11 +308,12 @@ http/https）、`deviceKey`（Bark App 内查看；响应中一律掩码 `******
 - **Webhook 频道凭据与出站安全（#508）**：
   - **默认停用**：`enabled` 默认 false——出站授权须显式开启（与 Bark 同姿态）
   - **凭据不落 URL**：凭据只走请求头（bearer→`Authorization: Bearer`、basic→`Authorization: Basic`（base64）、header→自定义头名+值），不拼 URL——反代 access log 默认只记 URL 与 header 名，凭据不落日志
-  - **凭据掩码收口（`CHANNEL_SECRET_FIELDS` 泛化）**：掩码字段清单按频道类型单一事实源化（bark→`deviceKey`、webhook→`token`/`password`/`headerValue`）；GET /config 的 user+effective 与 PUT 成功响应一律掩码 `********`，提交整值掩码 = 保持原值（按实例 id 对齐回填，防数组序变化串凭据），新实例带掩码提交 400
-  - **保留键防配置绕过（`WEBHOOK_RESERVED_KEYS`）**：`auth_token` / `access_token` / `bearer_token` / `api_key` / `apikey` / `client_secret` / `secret` / `password_hash` 等凭据别名键一律剔除/写拒——合法凭据只能走已知 secret 字段（经掩码收口）
+  - **凭据掩码收口（`CHANNEL_SECRET_FIELDS` 泛化）**：掩码字段清单按频道类型单一事实源化（bark→`deviceKey`、webhook→`token`/`password`/`headerValue`）；GET /config 的 user+effective 与 PUT 成功响应一律掩码 `********`，提交整值掩码 = 保持原值（按实例 id 对齐回填，防数组序变化串凭据）。掩码只在**密钥字段**上有「未修改」的语义：别的键上它就是一个普通字符串（用户把频道名写成八个星号照写落盘），而落在别的 type 的密钥字段名上（换型残留）一律 400。没有原值可还原的掩码（新实例、id 改名）同样 400。两种情形两句不同的话术，写面与 dry-run 对**同一情形逐字同句**（`NEW_CHANNEL_MASK_HINT` / `RESIDUAL_MASK_HINT`，事实源在 `src/server/config/impl/service/merge.ts`）
+  - **保留键防配置绕过（`WEBHOOK_RESERVED_KEYS`）**：`auth_token` / `access_token` / `bearer_token` / `api_key` / `apikey` / `client_secret` / `secret` / `password_hash` 等凭据别名键在写面一律 400（读面不物化，磁盘上已有的原样保留）——合法凭据只能走已知 secret 字段（经掩码收口）
   - **JSON 注入防护**：模板渲染 JSON-aware 两步法（值级替换 + 重新序列化统一转义），通知内容无法逃逸出字符串注入额外 JSON 字段
   - **错误出口不做凭据替换**：与 Bark 同款——非 2xx 响应体截断 200 字符后按原文进失败理由的 `detail`，不再按凭据字面替换、不过规则表（详见「安全模型」）
-  - **URL SSRF 姿态（与 Bark 同款 normalize）**：scheme 限 http/https、拒绝带凭据 URL（`user:pass@host`）、去 query/hash；不做域名白名单——内网自建网关是合法场景；自定义头名禁端到端关键头（`content-type`/`content-length`/`host`/`cookie`/`authorization`）防请求走私/破坏 JSON body
+  - **URL SSRF 姿态（与 Bark 同款硬闸）**：scheme 限 http/https、拒绝内嵌凭据的 URL（`user:pass@host`）——出站前逐条判定，不合规即拒投（`retryable=false`，原因入 `detail`）；不做域名白名单——内网自建网关是合法场景；自定义头名禁端到端关键头（`content-type`/`content-length`/`host`/`cookie`/`authorization`）防请求走私/破坏 JSON body
+  - **url 原样使用，不做拼接**（与 Bark 不同）：`fetch(target.url)` 逐字发出，带 query 的地址（`https://gateway/hook?tenant=x`）合法可用。与 Bark 同样的明示残余风险见上：query 里的凭据不再有机器拦截（#1016 放宽项）
   - **失败不重试**：投递失败即终态（4xx/5xx/网络错误/渲染失败），无自动重试带来的出站放大
   - webhook 为**增量频道类型**：不改变既有频道与通知出口（SSE 帧 / 系统通知 / 历史 jsonl）的语义与兼容承诺
 
@@ -351,39 +359,47 @@ settings `describe()` 的已注册分节与更早的自建 `dsh-notifier.json`�
 渠道键搬进 `channels` 的两条内置条目并**删除旧键**（见「每通道三个开关」）。此后只有
 `config.json` 一个读写面。
 
-**未知键语义（前向兼容，issue #470）**：dsh-notifier 对配置中**无法识别的键**
-采取「透传保留」策略——读取与写入口径一致，未知键不会被丢弃，也不会被校验
-或改写（仅组合层装配键名例外，见下）：
+**未知键语义（#1016 S2 收口：读宽写严）**：**读**侧对配置中无法识别的键仍「原样保留、
+保持可见」（存量不丢、不迁移）；**写**侧一律 **400 拒收**——顶层键与频道条目里的键同义。
 
 - **读取**：`GET /api/dsh-notifier/config` 的 `user`（用户层原始节）原样返回未知键，
-  供未来版本/第三方键保持可见；`effective`（生效配置）是归一化后的**固定形状**，
-  本就不含未知键（未知键只存在于文件与 `user` 视图里）；
-- **写入**：`PUT /api/dsh-notifier/config` 为增量 patch——仅合并提交的已知键；
-  存量 user 层中已有的未知键**不受已知键保存影响**，本次 patch 中携带的未知键
-  **一并原样保留**（不会静默丢弃）。纯未知键 patch（如 `{"futureKey":1}`）返回
-  **200** 并写入；仅空 patch `{}`（或无任何可写键，如只含装配键）返回 **400**
-  「需至少包含一个配置键」；
-- **升级路径**：某键在某版本还是未知键（已透传进 user 层）、下一版本成为已知键
-  时——旧脏键**不会被自动清洗**（升级本身不覆盖用户已表态字段）；读取时
-  normalize 对已知键非法值丢弃回默认（脏值不影响生效配置与其他键）；你**主动
-  提交**该键且值非法时才返回 400 + hint。若想清除残留脏键，可在
-  `config.json` 中手动删除；
+  供未来版本/第三方键保持可见；`effective` 是**视图投影**（#1016 S3：键子集 + 原样 + 掩码，
+  **不补默认值**）——它对**顶层**只取 11 个已知键（未知顶层键会撞写面的 400，不进视图），
+  而 `channels` **条目内**的未知键原样带出（客户端原样带回 → 写面判「原样带回」而不重判值域，
+  不会因此被拒）。**投递面**（`readConfig()`）是另一条通道：按已知键逐个物化，未知键从不进它；
+- **写入**：`PUT /api/dsh-notifier/config` 为增量 patch。纯未知键 patch（如
+  `{"futureKey":1}`）返回 **400**「futureKey 不是已知配置键，删除它或核对拼写」；
+  仅空 patch `{}`（或无任何可写键，如只含装配键）返回 **400**「需至少包含一个配置键」；
+  **存量里已有的未知键不受影响**：它不在提交里，`channels` 按字段合并时原样沿用，
+  保存其它已知键既不会抹掉它、也不会被它连坐拒掉。
+  保留它的一条路：在 `config.json` 里手动删掉（升级到 0.2.9 及以后时它也会被自动清理，见「升级路径」）；
+- **为什么不再透传保留**：透传面要求读面把频道条目上的陌生键收进 `extras` 子对象再原样
+  交回客户端，而写面只放行 string/number——`extras` 这个**对象**自己撞上那条判据，
+  该频道所在配置从此再也保存不了（#1016 缺陷 B）。收窄到「本版本认识的键」把那条自撞的
+  口子关掉，同时保住「存量不丢」。
+- **升级路径**：0.2.9 起，配置文件里的**未知键在升级那一刻被清理掉**（顶层键与频道条目内的键
+  同理，逐条列在「配置格式附录」的 0.2.9 迁移条目里）——它们本来就交不回去（写面一律 400），
+  留在文件里只会让设置页显示一个改不动的字段。**清理的边界是「本版本不可能是合法形态的值」**：
+  用户已经表过态的合法取值（配满的 `levels`、8192 字符的 `template`、凭据留空串、必填键残缺的半坏
+  条目）一个字都不动——升级只删键，不改值。
 - **存量迁移**：旧配置（0.2.3 settings 命名空间与更早的自建 json）的未知键在读取时
-  **透传保留**——user 层缺失则补写、已存在不覆盖；纯未知键 legacy 不再被当作「无有效键」丢弃；
+  **透传保留**——user 层缺失则补写、已存在不覆盖；纯未知键 legacy 不再被当作「无有效键」丢弃。
+  这一条只保证「搬到 `config.json` 时不丢」；刻度推到 0.2.9 时形态清理会把本版本不认识的键删掉（见
+  「升级路径」）；
 - **边界例外**：
   - `patch` **必须是对象**：数组、`null` 等非对象形态一律 400（数组不会按数字
     索引透传成脏键）；
-  - 原型链/特殊成员键（`__proto__`、`constructor`、`prototype`、`toString`、
-    `hasOwnProperty`、`valueOf` 等，JSON 文本可注入为自有键）在读取透传与写入
-    通道中一律剔除，不参与校验也不写入；
+  - 原型链/特殊成员键（`__proto__`、`constructor`、`prototype`，JSON 文本可注入为
+    自有键）在写入通道中一律**剔除**，不参与判据也不写入（原型改写已被剔除挡住，
+    故不按「陌生键」报 400）；
   - 组合层装配键（`configFile` / `toastScript` / `historyFile` / `statusFile` /
     `enabled`）是 cordis 组合层/启动参数，**不进入用户层**——PUT 与
     迁移提交同名键一律剔除，entry 组合层走白名单过滤；
-  - Bark 频道实例内 `device_key` / `device_keys` / `ciphertext` 与 webhook 频道实例内
-    `WEBHOOK_RESERVED_KEYS`（`auth_token` / `access_token` / `bearer_token` / `api_key` /
-    `apikey` / `client_secret` / `secret` / `password_hash`）保留键仍一律剔除/写拒，
-    未知参数仅透传 string/number 值；
-  - 未知键不参与合法性校验（已知键非法仍返回 400 + hint）。
+  - Bark 频道实例内 `BARK_RESERVED_KEYS`（`device_key` / `device_keys` / `ciphertext`）
+    与 webhook 频道实例内 `WEBHOOK_RESERVED_KEYS`（`auth_token` / `access_token` /
+    `bearer_token` / `api_key` / `apikey` / `client_secret` / `secret` / `password_hash`）
+    **同样 400**，但话术与「从未合法」的那些键分开：前者说「是保留键：凭据只能走已知字段」，
+    后者说「不是已知键：删除它或核对拼写」——两者的排查方向不同。
 
 后果提示：升级后若设置页未显示某字段但 `config.json` 中仍在，属预期保留
 行为，不会因保存其他已知配置而丢失。
@@ -415,7 +431,7 @@ settings `describe()` 的已注册分节与更早的自建 `dsh-notifier.json`�
 
 | 路由 | 方法 | 说明 |
 |---|---|---|
-| `/api/dsh-notifier/config` | GET/PUT | 配置文件用户层（保留未知键、凭据掩码）；快照与增量更新。 |
+| `/api/dsh-notifier/config` | GET/PUT | 配置文件用户层（存储原样保留、凭据掩码）；快照与增量更新；未知键只读（保留但不可提交）。 |
 | `/api/dsh-notifier/events` | GET | SSE 帧与断线补拉。 |
 | `/api/dsh-notifier/test` | POST | 经服务管线发送测试通知。 |
 | `/api/dsh-notifier/history` | GET / **DELETE** | 读取或清空通知历史。 |
@@ -426,7 +442,7 @@ settings `describe()` 的已注册分节与更早的自建 `dsh-notifier.json`�
 
 #### `/config`
 
-**GET** 返回 `{ok, user, revision, effective, writable}`（`user` 为配置文件用户层（存储原样、保留未知键，凭据字段掩码）、`revision` 供乐观并发、`effective` 为生效配置；**凭据字段（bark `deviceKey` / webhook `token`·`password`·`headerValue`）一律掩码**）；**PUT** 接收 `{patch, expectedRevision?}`（增量 patch，`expectedRevision` 可选做乐观并发），返回 `{ok, user, revision}`（同样掩码）
+**GET** 返回 `{ok, user, revision, effective, writable}`（`user` 为配置文件用户层（存储原样、保留未知键，凭据字段掩码）、`revision` 供乐观并发、`effective` 为生效配置；**凭据字段（bark `deviceKey` / webhook `token`·`password`·`headerValue`）一律掩码**）；**PUT** 接收 `{patch, expectedRevision?}`（增量 patch，`expectedRevision` 可选做乐观并发），返回 `{ok, user, revision}`（同样掩码）。**`channels` 按字段合并**（#1016 S2）：提交里没带的键沿用磁盘上的原值，值等于掩码 `********` 的键沿用原值，值 `null` 或空串的键被删除，其余写入；删一个必填键（`url` / `baseUrl` / `deviceKey`）返回 400「必填键，不能删除」。**其它顶层键仍是整值替换**（如 `kindRoutes`：整张表换掉，删条目即从表里去掉，不接受 `null`）
 
 #### `/events`
 
@@ -436,7 +452,7 @@ SSE 通知帧（浏览器 EventSource 订阅；`?since=<seq>` 断线补拉）
 
 测试通知（收敛到 service 管线，绕过免打扰；body 可选 `{channelId}` 指定单频道测试）。请求体上限 16K（与 settings 端对齐）。
 
-**草稿测试（dry-run）**：body 带 `draft` 即测眼前草稿——`{channelId, draft: {channels: [...]}}`（`draft` 只认 `channels`，须含目标频道的完整条目；顶层其它键与 `revision` 忽略；此时 `channelId` 必填）。逐项校验（跳过「内置必须在场」），掩码按 id 还原（新频道无源 / 改名带掩码 / 跨类型残留掩码一律 400）；直构单目标实测（跳过 enabled 门，不走裁决 / 路由 / 节奏 / 重试，单次尝试），同步返回 `{ok, channelId, status, reason?}`（`status` 为 `ok` / `failed` / `skipped`，`reason` 为截断后的结构化理由）。**全程零落盘**：不写历史与状态、不推进 `revision`、不记日志、不推浏览器真通知（browser 返回 ok 但不 emit，以面板结果为准）。出站安全：bark / webhook 走 SSRF 安全 fetch（仅 http(s)、拒 userinfo、全量 DNS 分类、重定向逐跳复检、建连钉死核验 IP、上限 5 跳、响应体至多读 16K、单跳超时复用出口 clamp 再压 15s 上限）；system 沿用出口原函数（平台能力读共享缓存，子进程靠 KILL 8s 回收）。服务端总预算 15s（超时 408，结果丢弃，在飞的投递无法撤回）；并发帽 2（超限 429 `dry-run-busy`，不排队，请手动重试）。
+**草稿测试（dry-run）**：body 带 `draft` 即测眼前草稿——`{channelId, draft: {channels: [...]}}`（`draft` 只认 `channels`，须含目标频道的完整条目；顶层其它键与 `revision` 忽略；此时 `channelId` 必填）。逐项校验（跳过「内置必须在场」），掩码按 id 还原（新频道无源 / 改名带掩码 / 跨类型残留掩码一律 400）；直构单目标实测（跳过 enabled 门，不走裁决 / 路由 / 节奏 / 重试，单次尝试），同步返回 `{ok, channelId, status, reason?}`（`status` 为 `ok` / `failed` / `skipped`，`reason` 为截断后的结构化理由）。**全程零落盘**：不写历史与状态、不推进 `revision`、不记日志、不推浏览器真通知（browser 返回 ok 但不 emit，以面板结果为准）。出站安全：bark / webhook 走 SSRF 安全 fetch（仅 http(s)、拒 userinfo、全量 DNS 分类、重定向逐跳复检、建连钉死核验 IP、上限 5 跳、响应体至多读 16K、单跳超时复用出口 clamp 再压 15s 上限）——**这一整套只属于 dry-run 路径**：保存后的真实投递走的是出口默认的全局 fetch，只过出站前的三判据硬闸（见上文「SSRF 姿态」），**不做** DNS 分类、逐跳复检与建连 IP 钉死；system 沿用出口原函数（平台能力读共享缓存，子进程靠 KILL 8s 回收）。服务端总预算 15s（超时 408，结果丢弃，在飞的投递无法撤回）；并发帽 2（超限 429 `dry-run-busy`，不排队，请手动重试）。
 
 #### `/history`
 
@@ -467,7 +483,26 @@ GET 动态 kind 清单（含确认态）；POST `{kind, confirmed}` 写确认（
 - 默认值以 `src/server/config/impl/model/index.ts` 的 `DEFAULT_CONFIG` 为准：事件开关 `notifyAsk` / `notifyQuestion` / `notifyTaskDone` / `notifyTaskError` 开、`notifySubagentDone` / `notifyTurnEnd` 关；`quietHours` 为 `{enabled:false, windows:[{start:"22:00", end:"08:00"}]}`；`channels` 恒带两条内置条目（browser 与 system，均 `enabled` / `popup` / `sound` 开，browser 另有 `whenVisible:false`）；`kindRoutes` 与 `allowKinds` 为空，`historyMaxAgeDays` 为 0。
 - 0.2.3 → 0.2.4 迁移：8 个顶层渠道键（`systemEnabled` / `browserEnabled` / `systemNotify` / `browserNotify` / `notifyWhenVisible` / `notifySound` / `browserSound` / `systemSound`）在装配期搬进两条内置条目后删除（`src/server/upgrade/impl/steps/config-shape.ts`）；升级后再提交这些键一律 400 并提示刷新页面，旧键残留需手删 `config.json` 对应行。
 - 0.2.5 → 0.2.6 迁移：免打扰旧 `start`/`end` 在装配期搬进 `windows[0]` 并删除旧键（`src/server/upgrade/impl/steps/quiet-windows.ts`）；升级后再提交旧形（无 `windows`）一律 400 并提示刷新页面。
-- 掩码规则：凭据字段清单按频道类型收口于 `CHANNEL_SECRET_FIELDS`（bark 为 `deviceKey`，webhook 为 `token` / `password` / `headerValue`）；GET /config 的 `user` 与 `effective` 及 PUT 成功响应一律掩码 `********`，提交整值掩码视为保持原值（按实例 id 对齐回填）；新实例带掩码提交返回 400（`src/server/config/impl/service/index.ts` 的 `NEW_CHANNEL_MASK_HINT`）。
+- **0.2.8 → 0.2.9 迁移（配置形态清理，`src/server/upgrade/impl/steps/canonical-keys.ts`）**：这是本插件
+  唯一一步会**丢弃取值**的升级步（0.2.4 / 0.2.6 那两步删的是旧键，取值都搬到了新键下），判据一律
+  「条件 → 删/补」，**不猜值、不夹值**（越界值删键而不是
+  改成边界值），且干净形态下**一个字都不写**（不会重新序列化你手改的格式）。**会被删的**：
+  - 顶层未知键（含 0.2.5 退役的 `maxConnections`、手写的未来键）与类型不符的顶层值（`notifyAsk`
+    写成字符串、`allowKinds` 写成数字）、越界的 `historyMaxAgeDays`、`channels` 不是数组（删该键）；
+  - 频道条目内不在该类型已知键集内的键（含凭据别名保留键 `device_key` / `auth_token` 等），以及值
+    形态不符的键：非布尔当布尔、越界计数（`timeoutMs` / `timeoutSec`）、非法枚举（`level` / `auth` /
+    `preset`）、凭据字段的非字符串值；
+  - **整条**删掉的条目：不是对象、`type` 不认识、或身份不成立（出站条目 `id` 缺失或空串）。
+    **同 `id` 重复不是删除判据**：这一步不再按重复身份去重，一条都不删（此前会在升级那一刻把
+    第二条连凭据一起从磁盘删掉）。重复身份改由**写面 400** 交给用户自己挑一条删掉，见
+    「安全模型」的「频道身份（`id`）唯一，含跨类型」。
+  **同一步会补的**（补不是删）：两条内置条目（browser / system）缺席则补齐、在场则补**缺席的字段**
+  （值取默认表，**不覆盖显式值**——显式 `false` 是你关掉它的表态）。
+  **同一步不会动的**：合法但非默认的一切取值（配满 64 项的 `levels`、8192 字符的 `template`、过长的名
+  称、凭据留空串），以及**半坏条目**——投递必需键空串或缺席的条目整条保留（它在设置页里看得见、
+  填得回、也删得掉，而投递侧本来就整条丢弃它）。升级后手改文件造出的半坏条目同样不会被这一步
+  救回：那一步只在刻度推进时跑一次。
+- 掩码规则：凭据字段清单按频道类型收口于 `CHANNEL_SECRET_FIELDS`（bark 为 `deviceKey`，webhook 为 `token` / `password` / `headerValue`）；GET /config 的 `user` 与 `effective` 及 PUT 成功响应一律掩码 `********`，提交整值掩码视为保持原值（按实例 id 对齐回填）。掩码的语义**只覆盖密钥字段**：非密钥键上它按普通值写入（频道名写成八个星号不会被当成凭据哨兵，也不会被静默丢弃）；落在别的 type 的密钥字段名上（跨 type 残留）400；本 type 密钥位上没有原值可还原（新实例、id 改名）400。后两种情形是**两句话**（`RESIDUAL_MASK_HINT` / `NEW_CHANNEL_MASK_HINT`），写面与 dry-run 对同一情形逐字同句，两句的事实源都在 `src/server/config/impl/service/merge.ts`——占位符不是凭据，绝不写进磁盘。
 
 ### 客户端契约：节流、手势解锁与帧通路
 

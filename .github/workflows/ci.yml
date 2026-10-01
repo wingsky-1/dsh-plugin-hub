@@ -499,11 +499,13 @@ jobs:
   # - 成本上界（#742 阶段 1.6，裁决选 A「接受」）。口径必须分清「实测墙钟」与「超时上限」：
   #   ① 基线命中良好（增量复用）：逐段实测墙钟 3~104 s（#718 S0.2 台账，
   #      dsh-provider-usage-pipeline 段 10.1 s），是绝大多数 PR 的形态；
-  #   ② 基线失效/首夜（全量冷跑）：台账 32 段（当时口径；#826 后为 35 段）逐段墙钟合计 14803 s（串行）；本 job 的 combo
-  #      是字典序（见下），@8 模型 makespan ≈ 41.6 min（夜间 LPT @8 = 31.2 min，LPT 是模型值）；
-  #   ③ 逐段**超时上限**区间 30~42 min（台账派生值，见 timeout-minutes），不是实测墙钟；
-  #      极端上界 = 各段都跑满超时（Σ 派生超时 990 min）÷ 8 个并发槽 ≈ 2.1 小时，
-  #      仅当全部实例卡死才会出现。
+  #   ② 基线失效/首夜（全量冷跑）：台账 53 段（27 段有全量实测、26 段尚无实测走默认 30 min），
+  #      有实测的 27 段逐段墙钟合计 12927 s（串行）；本 job 的 combo
+  #      是字典序（见下），@8 模型 makespan ≈ 41.6 min（夜间 LPT @8 = 31.2 min，LPT 是模型值；
+  #      这两个 makespan 是**当时 32 段台账口径**的模型，不随段集增长重算）；
+  #   ③ 逐段**超时上限**区间 30~40 min（台账派生值，见 timeout-minutes），不是实测墙钟；
+  #      极端上界 = 各段都跑满超时（Σ 派生超时 1608 min = 40×1 + 36×1 + 32×1 + 30×50）
+  #      ÷ 8 个并发槽 ≈ 3.4 小时，仅当全部实例卡死才会出现。
   #   注意 PR 矩阵的 combo 顺序是包名+段名字典序（ci-matrix 的确定性排序），不按耗时降序——
   #   耗时降序（LPT）只在夜间 mutation-plan 的 buildShardMatrix 里。长期超阈值再评估 1.6-B
   #   （按 diff 行采样）——它的行号脆弱依赖会静默漏 mutant，不作默认。
@@ -523,7 +525,8 @@ jobs:
       # - 本 job 的 combo 顺序是 package+seg 字典序（ci-matrix 的确定性排序），LPT 只在夜间
       #   mutation-plan。run 34764977606（12 段、合计 145.65 min、5 槽）实测窗口 43.05 min，
       #   与同序模型 43.00 min 吻合；同口径模型 @8 = 29.83 min、@10 = 26.80 min。
-      # - 夜间全量（当时 32 段 LPT，台账合计 14803 s）模型 @8 = 31.24 min、@10 = 25.22 min。
+      # - 夜间全量（**当时 32 段 LPT 台账口径**，该口径下台账合计 14803 s）模型 @8 = 31.24 min、
+      #   @10 = 25.22 min。段集已从 32 段长到 53 段，这两个数是历史模型、不重算。
       #   两者都是**模型值**：同段集的 LPT 模型给 30.63 min，而全量/失效形态实测窗口到过
       #   43.0 min（#718 approved 记录）——实际受 runner 排队与调度形态影响。
       # - 增量形态实测（本项 PR run 34796310130 / 96637f96，当时 32 段、8 档）：mutation 窗口
@@ -551,10 +554,10 @@ jobs:
     # 被 canceled、连带判分 job failure、整个 run cancelled；对 28 个短段（实测 20.6~944.2 s）又白等。
     # 口径提醒：那次 1819s 属于**旧文件面**（该段在 #733 重写前 2365 mutant，现 941 mutant /
     # 全量实测 117.5 s），它的作用是证明「单一固定值不可能服务所有段」，**不**等于该段现在需要
-    # 30 分钟以上。派生值本身的证据是台账：35 段中 27 段有 scope=full 实测，且每段派生值都不低于
-    # 该段实测墙钟（mutation-ledger --check 判据）；其余 8 段（#826 新增的 lan-proxy 6 段 +
-    # dsh-notifier client + dsh-worktree-sidebar）尚无实测，走保守默认 30 min
-    # （mutation-plan.mjs 的 DEFAULT_TIMEOUT_MINUTES），首夜全量班后由 ledger --record 补上。
+    # 30 分钟以上。派生值本身的证据是台账：53 段中 27 段有 scope=full 实测，且每段派生值都不低于
+    # 该段实测墙钟（mutation-ledger --check 判据）；其余 26 段（decision-gateway 8 段 + lan-proxy 9 段
+    # + mcp-manager 2 段 + notifier client + provider-usage 4 段 + shared 2 段）尚无实测，走保守默认 30 min
+    # （mutation-plan.mjs 的 DEFAULT_TIMEOUT_MINUTES），首夜全量班后由 ledger --write 补上。
     timeout-minutes: ${{ matrix.combo.timeoutMinutes }}
     steps:
       - name: Checkout
@@ -624,7 +627,40 @@ jobs:
           fi
 
       - name: Incremental mutation（incremental 生效跳过未变 mutant）
+        # #1058 E1 临时诊断仪器：DSH_CALIB_TRACE 门控 lastRun 校准决策轨迹
+        # （生产源码 packages/dsh-provider-usage/src/server/schedule/store.ts）。门控未设时
+        # 该模块行为与不写这段逐字相同；此处设它只为把变异运行里的日期判红定因。
+        # 退出条件：判红定因（落在 P1 / P2 / 第七种结局之一）后撤除——删本 env、删下面
+        # 「打印/上传校准轨迹」两个步骤、删 store.ts 的 trace 块；撤除另起 PR。
+        env:
+          DSH_CALIB_TRACE: coverage/calib-trace.log
         run: npx stryker run "${CONF}"
+
+      - name: 打印 lastRun 校准轨迹（#1058 E1 临时诊断仪器）
+        # if: always()：判红正是要看的场景，stryker 非零退出时轨迹仍须打印。
+        # 自证仪器：文件里有行 ⇒ 仪器活着，token 指到哪个决策点；
+        # 一行都没有 ⇒ 第七种结局（ensureLastRunMigrated 未被调用），
+        # 那是现有代码无法自述、只有空轨迹能发现的情形。
+        if: always()
+        run: |
+          set -e
+          if [ -s coverage/calib-trace.log ]; then
+            echo "--- DSH_CALIB_TRACE ---"
+            cat coverage/calib-trace.log
+            echo "--- end DSH_CALIB_TRACE ---"
+          else
+            echo "::notice::DSH_CALIB_TRACE 为空 —— ensureLastRunMigrated 未走到任何决策点（第七种结局）"
+          fi
+
+      - name: Upload calib trace artifact（#1058 E1 临时诊断仪器）
+        # if-no-files-found: ignore：空轨迹不是失败，正是要上报的观察结果，不能把实例判红。
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: calib-trace-${{ matrix.combo.package }}-${{ matrix.combo.seg }}
+          path: coverage/calib-trace.log
+          retention-days: 7
+          if-no-files-found: ignore
 
       - name: Upload stryker report artifact（报告交 mutation-verdict 统一判分）
         # if: always()：实例非零退出（如内建阈值不足/崩溃）时已产出的报告照常

@@ -13,7 +13,7 @@ import {
   notifierFile,
 } from "../../../shared/interface.ts";
 import type { OutgoingFrame } from "../../deps.ts";
-import type { StreamDeps, StreamEvent } from "./type.ts";
+import type { StreamBuildPort, StreamDeps, StreamEvent } from "./type.ts";
 
 /** 补拉缓冲上限（条）：断线重连能回放的窗口，超出后只能从最新开始接。 */
 const REPLAY_LIMIT = 200;
@@ -51,6 +51,13 @@ const UNINSTALLED_HUB: SseHub = {
   dispose: () => {},
 };
 
+/** 生产默认建面：真读盘、真建表（端口不是为测试开的后门，生产恒走这一份）。 */
+const REAL_BUILD: StreamBuildPort = {
+  open(file) {
+    return { seq: readSeq(file), hub: createSseHub({ heartbeatMs: HEARTBEAT_MS }) };
+  },
+};
+
 /** 流枢纽：连接表在共享层，序号与补拉在本块。 */
 class StreamHub {
   /** 是否已装配；单例实例重复装配是编程错误，当场暴露。 */
@@ -65,16 +72,28 @@ class StreamHub {
   private replay: StreamEvent[] = [];
   /** 序号落盘位置：DSH home 由环境决定、进程内不变，故随实例一次性定下。 */
   private readonly file = notifierFile(SEQ_FILE_NAME);
+  /** 建面端口：进程事实的边界，默认就是真实建面（换端口走 `installStreamBuild`）。 */
+  private build: StreamBuildPort = REAL_BUILD;
 
-  /** 装配：读回上次的序号，建起连接表与心跳。 */
+  /**
+   * 装配：读回上次的序号，建起连接表与心跳。**建面抛错即整单失败**，本块自己不留半装配——
+   * 唯一的复位面是 `release()`，由调用方在回滚里调。
+   */
   install(deps: StreamDeps): void {
     if (this.installed) throw new Error("dsh-notifier: api 流只能装配一次");
+    // 闸先翻再建面：建面失败时本块的 `installed` 已经是真，唯一能把它放回去的是调用方回滚时
+    // 走的那次 `release()`（故这行不能挪到建面之后——那样「失败即未装配」就成立，
+    // 调用方那次 release 反而多余，而本块自己无从知道该不该收面）。
     this.installed = true;
     this.deps = deps;
-    this.seq = readSeq(this.file);
-    this.hub = createSseHub({
-      heartbeatMs: HEARTBEAT_MS,
-    });
+    const opened = this.build.open(this.file);
+    this.seq = opened.seq;
+    this.hub = opened.hub;
+  }
+
+  /** 换掉建面端口（只给测试注入失败面用；生产不调——默认值就是真实建面）。 */
+  useBuild(port: StreamBuildPort): void {
+    this.build = port;
   }
 
   /** 卸载：停心跳、关连接、忘掉缓冲。序号留在盘上，下次接着数。 */
@@ -177,3 +196,18 @@ function readSeq(file: string): number {
 
 /** 本域唯一的流实例：类不外放，外面 `new` 不出第二份序号。 */
 export const streamHub = new StreamHub();
+
+/**
+ * 装载建面端口（只给测试用；生产不调用——默认值就是真实建面）。
+ *
+ * 与 `channels/impl/system/deps.ts` 的 `installSystemDeps` 同款：真实实现是缺省值，
+ * 端口槽只是把「建面会抛错」这个今天不可达的事实变成可注入的。
+ */
+export function installStreamBuild(port: StreamBuildPort): void {
+  streamHub.useBuild(port);
+}
+
+/** 复位建面端口，与 `installStreamBuild` 配对；重复调用无害。 */
+export function releaseStreamBuild(): void {
+  streamHub.useBuild(REAL_BUILD);
+}

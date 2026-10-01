@@ -38,6 +38,7 @@ const REASON_KEYS = {
   reasonUnknownTarget: "reasonUnknownTarget",
   reasonChannelThrew: "reasonChannelThrew",
   reasonThrottled: "reasonThrottled",
+  reasonDispatchCanceled: "reasonDispatchCanceled",
 } satisfies Record<ReasonCode, NotifierLocaleKey>;
 
 /**
@@ -129,14 +130,30 @@ function projectDelivery(
   };
 }
 
+/** 主文案与宿主原文之间的分隔：主文案自带括号（"（网络或超时）"），用竖线而不是冒号才读得开。 */
+const DETAIL_SEPARATOR = "｜";
+
 /**
  * dry-run 结果行的理由文案（#912 F1 回归 pin）：`ok` 那一支为空串——成功没有理由可说，
  * 与 DeliveryView 同口径；非 ok 走 reasonText。调用方（index.tsx sendTest）不得直调
  * reasonText，否则 ok 行必挂“原因未知”。
+ *
+ * 失败行逐字追加宿主原文（#1016 P0）。此前只给主文案，而这一行只有一个字符串可展示（不像历史
+ * 里的 DeliveryView 有独立的 detail 区域），于是被出站 URL 硬闸拒绝的投递显示成
+ * 「Bark 请求失败（网络或超时）」——真实原因（URL 含凭据 / 协议不支持）被丢在 detail 里，
+ * 用户看到的是一条与自己配置无关的结论。
+ *
+ * **逐字投影，不分类也不改写**：客户端无从判断一段 detail 是不是安全拒绝，一旦开始按内容
+ * 归类加提示，「连接超时」也会被说成安全问题——那比不显示更坏。是否「已拒绝投递」由服务端在
+ * 原因里自己说明。
  */
 export function dryRunReasonText(status: string, reason: unknown, t: ReasonTranslator): string {
   if (status === "ok") return "";
-  return reasonText(reason, t);
+  const text = reasonText(reason, t);
+  const detail = reasonDetail(reason);
+  // 主文案已经就是 detail 的两种情形：认不出的 code（回落成原文）与 reasonLegacy。再拼一次
+  // 等于同一条信息说两遍。
+  return detail === "" || detail === text ? text : text + DETAIL_SEPARATOR + detail;
 }
 
 /** 读侧视图：只取渲染用得上的三个字段，其余（半截值、陌生键）不进界面。 */

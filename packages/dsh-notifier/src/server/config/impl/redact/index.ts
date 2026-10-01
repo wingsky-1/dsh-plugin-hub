@@ -1,7 +1,10 @@
 /**
  * config 域凭据的掩码往返（安全模块）：**读出去一律掩码，写回来按 id 还原**——没有这条对称，凭据只有两种结局：
- * 明文出到界面与日志，或被掩码覆盖成字面量。`CHANNEL_SECRET_FIELDS` 是唯一扩展点，两处各写一份清单一定会漂移。
+ * 明文出到界面与日志，或被掩码覆盖成字面量。密钥字段清单在 src/shared/config-schema.ts
+ * （`CHANNEL_SECRET_FIELDS`），是唯一扩展点，两处各写一份清单一定会漂移。
  */
+import { CHANNEL_SECRET_FIELDS } from "../../../../shared/interface.ts";
+import type { ChannelType } from "../../../../shared/interface.ts";
 import type {
   ChannelConfig,
   NotifyConfig,
@@ -18,14 +21,10 @@ type UnmaskResult = { ok: true; channels: RawSettingValue } | { ok: false };
 /** 单项还原结果；失败即「没有原值可还原」，整批随之中止。 */
 type UnmaskedChannel = { ok: true; channel: RawSettingValue } | { ok: false };
 
-/** 各频道类型的密钥字段清单。 */
-const CHANNEL_SECRET_FIELDS: Record<ChannelConfig["type"], readonly string[]> = {
-  bark: ["deviceKey"],
-  webhook: ["token", "password", "headerValue"],
-  // 内置频道没有任何凭据字段；它们在表里必须出现（Record 强制穷尽），值就是空清单。
-  browser: [],
-  system: [],
-};
+// 各频道类型的密钥字段清单在 src/shared/config-schema.ts（两端共享面）：它是掩码往返的唯一
+// 扩展点，两处各写一份清单一定会漂移，症状是凭据明文出到界面或被掩码覆盖成字面量。本域只消费。
+// 键集由本域的类型面复核：新增频道类型而共享表漏登记，赋值处即编译失败。
+const SECRET_FIELDS: Record<ChannelType, readonly string[]> = CHANNEL_SECRET_FIELDS;
 
 /** 读出口脱敏：深拷贝后把密钥字段掩码。拷贝而非原地改，是因为它作用于**即将外发的视图**，而同一份设置在域内还要以
  * 明文参与投递；频道项按**原始值**处理——存储层不受契约约束，里面可能躺着更高版本写的频道类型。 */
@@ -81,7 +80,12 @@ function maskChannel(channel: RawSettingValue): RawSettingValue {
   if (!isRecord(channel)) return channel;
   const masked: Record<string, RawSettingValue> = { ...channel };
   for (const field of secretFieldsOfType(channel.type)) {
-    if (typeof masked[field] === "string") masked[field] = SECRET_MASK;
+    // 只掩**非空串**：空串在这份配置里的含义是「未设置」而不是「一个内容为空的凭据」——读面
+    // 把磁盘上缺席的密钥补成空串（input 的 asString 兜底），用户新建的频道三个密钥键本来就全无。
+    // 把它掩成占位，占位便绕过了客户端的空串剥除（值不是空串，剥不掉）原样回到写面；还原侧按
+    // id 取回的是 undefined（磁盘上并没有这个键），遂拒掉整批 400——用户只切一下 enabled 开关
+    // 就再也存不下去。非空串照旧掩码：脱敏的口子不能借这次放宽一并打开。
+    if (typeof masked[field] === "string" && masked[field] !== "") masked[field] = SECRET_MASK;
   }
   return masked;
 }
@@ -112,7 +116,7 @@ function unmaskChannel(
  * （某个陌生频道类型）没有任何线索指向它。
  */
 function secretFieldsOfType(type: RawSettingValue): readonly string[] {
-  if (type === "bark" || type === "webhook") return CHANNEL_SECRET_FIELDS[type];
+  if (type === "bark" || type === "webhook") return SECRET_FIELDS[type];
   return [];
 }
 
@@ -132,7 +136,7 @@ function secretFieldsOf(patch: Record<string, RawSettingValue>): readonly string
  */
 export function hasResidualMask(channel: RawSettingValue): boolean {
   if (!isRecord(channel)) return false;
-  for (const fields of Object.values(CHANNEL_SECRET_FIELDS)) {
+  for (const fields of Object.values(SECRET_FIELDS)) {
     for (const field of fields) {
       if (channel[field] === SECRET_MASK) return true;
     }

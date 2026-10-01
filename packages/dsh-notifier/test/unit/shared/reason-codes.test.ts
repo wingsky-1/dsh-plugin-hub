@@ -43,6 +43,7 @@ describe("REASON_CODES", () => {
       "reasonUnknownTarget",
       "reasonChannelThrew",
       "reasonThrottled",
+      "reasonDispatchCanceled",
     ]);
   });
 

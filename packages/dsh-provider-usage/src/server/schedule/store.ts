@@ -7,6 +7,7 @@
  * 经本域 interface.ts 门面消费同一原语（D2 前在 domain2/common，
  * 叶层与 domain2/schedule 构成值环；D2 后归属明确，环消失）。
  */
+import { appendFileSync } from "node:fs";
 import { readFile, writeFile, rename, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import type { ReportPeriod } from "../config/interface.ts";
@@ -17,6 +18,37 @@ import {
   type LastRunRecord,
 } from "../shared/interface.ts";
 import type { ScheduleIndexParser } from "./deps.ts";
+
+/**
+ * 临时诊断轨迹的落盘路径（#1058 E1）。未设（或设为空串）时下面 `traceCalib` 第一行
+ * 即返回，热路径只多一次布尔比较——不读环境、不开文件、不分配，
+ * 本模块行为与不写这段代码逐字相同。
+ *
+ * 退出条件（写在代码里，不只写在 PR 正文）：本块是**临时诊断仪器、不是产品能力**。
+ * 判红定因落在 P1（index 读失败被折叠）/ P2（写侧异常被吞）/ 第七种结局
+ * （ensureLastRunMigrated 根本没被调用）之一后，**必须撤除**：删本常量、`traceCalib`、
+ * `fsErrCode` 与 6 个 token 调用点，并删 ci.yml 里打印与上传该文件的两个步骤。
+ * 撤除另起 PR，不与定因同笔——先定因、后撤除，否则同一处复发时手上又没有仪器。
+ */
+const CALIB_TRACE_PATH = process.env.DSH_CALIB_TRACE;
+
+/**
+ * 6 个决策点各写一行互斥 token。detail 缺省时只写 token 本身。
+ *
+ * 为什么必须落文件而不是 warn 或 console：两层静默会把诊断吃掉——测试注入的
+ * quietWarn 丢弃全部 warn（schedule/composition-root.test.ts），Stryker 的 vitest-runner
+ * 又按进程掐掉全部 console（onConsoleLog 返回 false）。appendFileSync 是同步写，
+ * 不经过这两层。
+ */
+function traceCalib(token: string, detail?: string): void {
+  if (!CALIB_TRACE_PATH) return;
+  appendFileSync(CALIB_TRACE_PATH, `${token}${detail ? ` ${detail}` : ""}\n`, "utf8");
+}
+
+/** fs 错误码（B token 要点名 ENOENT 还是 EACCES——两者指向完全不同的定因方向）。 */
+function fsErrCode(e: unknown): string {
+  return typeof e === "object" && e !== null && "code" in e ? String(e.code) : "unknown";
+}
 
 /** lastRun 持久化文件。 */
 function lastRunFile(root: string): string {
@@ -156,10 +188,21 @@ async function collectLastRunCalibrationInput(
   parseIndex: ScheduleIndexParser | undefined,
 ): Promise<LastRunCalibrationInput | { before: Partial<Record<ReportPeriod, string>> } | null> {
   const raw = await readFile(lastRunFile(root), "utf8").catch(() => null);
-  if (raw === null) return null;
+  if (raw === null) {
+    traceCalib("A_lastrun_unreadable");
+    return null;
+  }
   const before = await readLastRun(root);
-  const indexRaw = await readFile(join(root, "reports", "index.jsonl"), "utf8").catch(() => null);
-  if (indexRaw === null || parseIndex === undefined) return { before };
+  const indexRaw = await readFile(join(root, "reports", "index.jsonl"), "utf8").catch(
+    (e: unknown) => {
+      traceCalib("B_index_unreadable", fsErrCode(e));
+      return null;
+    },
+  );
+  if (indexRaw === null || parseIndex === undefined) {
+    if (parseIndex === undefined) traceCalib("C_no_port");
+    return { before };
+  }
   return { schema: schemaVersionOf(JSON.parse(raw)), before, records: parseIndex(indexRaw) };
 }
 
@@ -190,14 +233,19 @@ export async function ensureLastRunMigrated(
       return { changed: false, before: facts.before, after: facts.before };
     }
     const { after, changed } = calibrateLastRun(facts.schema, facts.before, facts.records);
-    if (!changed) return { changed, before: facts.before, after };
+    if (!changed) {
+      traceCalib("D_nochange", `schema=${facts.schema}`);
+      return { changed, before: facts.before, after };
+    }
     const finalAfter = await commitLastRunCalibration(root, facts);
+    traceCalib("E_commit_ok", JSON.stringify(finalAfter));
     const msg =
       `schema ${facts.schema}→${LAST_RUN_SCHEMA}：` +
       `${JSON.stringify(facts.before)} → ${JSON.stringify(finalAfter)}`;
     diag(`lastRun 已按 index 事实校准（${msg}）`);
     return { changed, before: facts.before, after: finalAfter };
   } catch (e: unknown) {
+    traceCalib("F_exception", e instanceof Error ? e.message : String(e));
     diag(`lastRun 校准失败（保持原状）：${e instanceof Error ? e.message : String(e)}`);
     return { changed: false, before: {}, after: {} };
   }

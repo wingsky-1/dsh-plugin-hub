@@ -39,6 +39,21 @@ describe("跨端一致性：服务端每个 code 都有客户端文案", () => {
       expect(en[localeKey], `${code} 的 en 文案回落到 key 本体`).not.toBe(code);
     }
   });
+
+  // 上面那条只保证「有文案」，不保证「这条 code 走字典而不是落进中性回退」——后者要断渲染结果。
+  it("reasonDispatchCanceled 渲染成取消文案，而不是「原因未知」", () => {
+    expect(reasonText({ code: "reasonDispatchCanceled" }, t)).toBe(zh.reasonDispatchCanceled);
+    const view = deliveryViewOf(
+      {
+        channelId: "bark:a",
+        status: "skipped",
+        reason: { code: "reasonDispatchCanceled" },
+      },
+      t,
+    );
+    expect(view?.statusText).toBe(zh.chStatusSkipped);
+    expect(view?.reason).toBe(zh.reasonDispatchCanceled);
+  });
 });
 
 describe("reasonText：主文案", () => {
@@ -162,6 +177,52 @@ describe("dry-run 结果行理由（#912 F1）：ok 为空串，非 ok 走 reaso
       zh.reasonSystemPopupFailed,
     );
     expect(dryRunReasonText("skipped", { code: "reasonSkipConfig" }, t)).toBe(zh.reasonSkipConfig);
+    expect(dryRunReasonText("failed", 42, t)).toBe(zh.reasonUnknown);
+  });
+});
+
+describe("dry-run 结果行理由：失败追加宿主原文（#1016 P0）", () => {
+  // 这一行只有一个字符串可展示（历史里的 DeliveryView 另有 detail 区域），故 detail 必须并进来。
+  // 缺了它，被出站 URL 硬闸拒绝的投递只显示「Bark 请求失败（网络或超时）」——用户看到的是
+  // 一条与自己配置无关的结论，真实原因被丢在 detail 里。
+  it("detail 逐字追加在主文案之后（URL 拒绝的原因因此看得见）", () => {
+    const detail = "已拒绝投递：URL 不得内嵌 userinfo（凭据只能走请求头）";
+    expect(dryRunReasonText("failed", { code: "reasonBarkRequestFailed", detail }, t)).toBe(
+      zh.reasonBarkRequestFailed + "｜" + detail,
+    );
+  });
+
+  // 反例（防提示泛化）：客户端无从判断一段 detail 是不是安全拒绝。一旦改成按内容归类加提示，
+  // 「连接超时」也会被说成安全问题——那比不显示更坏。逐字投影是这个反例能守住的唯一形状。
+  it("detail 是普通网络故障时只逐字投影，不补任何安全类提示", () => {
+    const line = dryRunReasonText(
+      "failed",
+      { code: "reasonBarkRequestFailed", detail: "连接超时" },
+      t,
+    );
+    expect(line).toBe(zh.reasonBarkRequestFailed + "｜连接超时");
+    expect(line).not.toContain("已拒绝投递");
+    expect(line).not.toContain("凭据");
+    expect(line).not.toContain("SSRF");
+  });
+
+  // 主文案已经就是 detail 的两种情形：认不出的 code（回落成原文）与 reasonLegacy。
+  // 不去重就会把同一条信息说两遍——「abc｜abc」比只显示一次更糟。
+  it("主文案已经是 detail 时不重复拼接（陌生 code 与 reasonLegacy）", () => {
+    expect(dryRunReasonText("failed", { code: "reasonFromTheFuture", detail: "宿主原话" }, t)).toBe(
+      "宿主原话",
+    );
+    expect(dryRunReasonText("failed", { code: "reasonLegacy", detail: "旧的整句" }, t)).toBe(
+      "旧的整句",
+    );
+  });
+
+  // detail 缺席的既有形状不许变：本次只给「有 detail」的那一支加投影。
+  it("detail 缺席时与改前逐字一致（裸串与读不出形态的值都不追加）", () => {
+    expect(dryRunReasonText("failed", { code: "reasonBarkHttp", params: { status: 500 } }, t)).toBe(
+      zh.reasonBarkHttp.replace("{status}", "500"),
+    );
+    expect(dryRunReasonText("failed", "连接超时", t)).toBe("连接超时");
     expect(dryRunReasonText("failed", 42, t)).toBe(zh.reasonUnknown);
   });
 });

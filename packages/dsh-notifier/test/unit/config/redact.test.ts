@@ -115,6 +115,35 @@ describe("redactConfig：读出口只出掩码", () => {
     if (channel?.type !== "webhook") throw new Error("夹具形状不对");
     expect(channel.token).toBe(42);
   });
+
+  // 掩码判据必须是「非空串」而不是「字符串」：读面把磁盘上缺席的凭据补成空串（input 的
+  // asString 兜底），空串在配置里的含义是「未设置」而不是「一个空的凭据」。把它掩成占位，
+  // 占位就绕过了客户端的空串剥除（值不是空串，剥不掉）一路带回写面；还原侧按 id 取回
+  // 的是 undefined（磁盘上本来就没这个键），遂拒掉整批 400。真实路径：新建 webhook 保存
+  // 一次成功，之后只切一下 enabled 开关就再也存不下去。
+  it("只掩非空串：空串是「未设置」而不是一个空凭据，掩了它还原侧就会拒掉整批（空串必须原样透出）", () => {
+    const stored = {
+      channels: [{ ...WEBHOOK, token: "", password: "", headerValue: "" }],
+    } as unknown as Partial<NotifyConfig>;
+    const channel = redactConfig(stored).channels?.[0];
+    if (channel?.type !== "webhook") throw new Error("夹具形状不对");
+
+    expect(channel.token).toBe("");
+    expect(channel.password).toBe("");
+    expect(channel.headerValue).toBe("");
+  });
+
+  it("只掩非空串的另一半：非空的真凭据照旧掩码（判据放窄不得顺手把脱敏也一起关了）", () => {
+    const stored = {
+      channels: [{ ...WEBHOOK, token: "", headerValue: "h-1" }],
+    } as unknown as Partial<NotifyConfig>;
+    const channel = redactConfig(stored).channels?.[0];
+    if (channel?.type !== "webhook") throw new Error("夹具形状不对");
+
+    // 同一条频道上两个字段，两种判据：空的那侧透出，非空的那侧仍是占位。
+    expect(channel.token).toBe("");
+    expect(channel.headerValue).toBe(MASK);
+  });
 });
 
 describe("unmaskChannels：写入口按 id 还原", () => {

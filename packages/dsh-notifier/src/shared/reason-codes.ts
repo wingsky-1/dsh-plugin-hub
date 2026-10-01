@@ -53,6 +53,9 @@ export const REASON_CODES = [
   // 节流命中：本次**没有投递**。把它记成上一次的结论，等于让归档替一次没发生的投递背书——
   // 通知记录是用户唯一能逐条看的投递面，那一行必须是这一次的事实。
   "reasonThrottled",
+  // 卸载取消：还在在途门外排队的那一条，插件卸载时结算成 skipped（没有开投，故与节流同级）。
+  // 终态是 skipped 而不是 failed——没有出口被调用过，把它记成失败是在虚构一次没发生的故障。
+  "reasonDispatchCanceled",
 ] as const;
 
 export type ReasonCode = (typeof REASON_CODES)[number];

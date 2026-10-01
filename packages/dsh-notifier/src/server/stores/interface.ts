@@ -5,7 +5,7 @@
 import type { StoreDeps } from "./deps.ts";
 import type { ProducedReason } from "../shared/interface.ts";
 import { historyStore } from "./impl/history/index.ts";
-import type { HistoryEntry } from "./impl/history/type.ts";
+import type { ClearOutcome, HistoryEntry } from "./impl/history/type.ts";
 import { statusStore } from "./impl/status/index.ts";
 import type { ChannelStatusEntry } from "./impl/status/type.ts";
 
@@ -40,8 +40,13 @@ export async function readHistory(): Promise<HistoryEntry[]> {
   return historyStore.read();
 }
 
-/** 清空通知历史，返回被清空条数。 */
-export async function clearHistory(): Promise<number> {
+/**
+ * 清空通知历史：返回被清空条数，落盘失败则给 `unavailable`。
+ *
+ * 两态而不是裸条数（#1016 残留 1）：条数只在真的清掉了时才是事实，返回裸条数会让端点把
+ * 「写失败了」也答成 200。失败态不带原因（Node 错误原文含 errno 与绝对路径），诊断走日志出口。
+ */
+export async function clearHistory(): Promise<ClearOutcome> {
   return historyStore.clear();
 }
 

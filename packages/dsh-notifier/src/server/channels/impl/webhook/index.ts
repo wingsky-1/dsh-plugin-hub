@@ -6,7 +6,11 @@
 // 默认模板与 {{priority}} 映射表的事实源在 src/shared/webhooks.ts（两端共享面）：客户端「恢复
 // 默认模板」与本出口渲染读同一份字面量——两处各写一份时的漂移症状是「设置页看到的模板与实际发
 // 出去的 body 不是同一份」。命名差异（配置层 custom = 投递层 raw）也在那里单点化。
-import { WEBHOOK_DEFAULT_TEMPLATES, WEBHOOK_PRIORITY } from "../../../../shared/interface.ts";
+import {
+  WEBHOOK_DEFAULT_TEMPLATES,
+  WEBHOOK_PRIORITY,
+  WEBHOOK_TIMEOUT,
+} from "../../../../shared/interface.ts";
 import type { ReasonCode, ReasonParams } from "../../../shared/interface.ts";
 import { clampReasonDetail, reason } from "../../../shared/interface.ts";
 import {
@@ -22,6 +26,7 @@ import type {
   NotifyMessage,
   NotifySeverity,
 } from "../deliver/type.ts";
+import { admitDeliveryUrl } from "../deliver/url-gate.ts";
 import type {
   WebhookPreset,
   WebhookRenderVars,
@@ -29,10 +34,9 @@ import type {
   WebhookTemplateNode,
 } from "./type.ts";
 
-/** 投递超时边界与缺省（秒），与配置层同一口径。 */
-const MIN_TIMEOUT_SEC = 1;
-const MAX_TIMEOUT_SEC = 60;
-const DEFAULT_TIMEOUT_SEC = 10;
+// 投递超时边界与缺省（秒）在 src/shared/config-schema.ts 的 `WEBHOOK_TIMEOUT`（两端共享面）。
+// 配置层归一化按 0..600 收口（见 input/index.ts 的 asCount），比本出口的 clamp 宽——
+// 故这里是**兜跨边界值**的那一道，不声称与配置层同一口径。
 
 /** 占位符（`{{ts}}` 不在其中：它只在文本层替换，见 renderWebhookBody）。 */
 const TOKEN_RE = /\{\{\s*(title|message|kind|severity|priority|source)\s*\}\}/g;
@@ -107,6 +111,11 @@ export async function sendWebhook(
   message: NotifyMessage,
   fetchImpl: HttpFetch = defaultFetch,
 ): Promise<DeliverResult> {
+  // 准入先于模板渲染（#1016 P0）：地址不合规时没有可发的地方，渲染 body 只是白做一遍解析。
+  // 顺序反过来会让「地址错 + 模板错」的频道只报模板问题，用户改完模板再撞一次地址。
+  const admitted = admitDeliveryUrl(target.url);
+  if (!admitted.ok) return failed("reasonWebhookRequestFailed", { detail: admitted.cause });
+
   let body: string;
   try {
     // 空模板由 renderWebhookBody 回落到 preset 默认模板
@@ -184,8 +193,8 @@ function setHeader(headers: Record<string, string>, name: string, value: string)
  * ——「上界被改宽」与「下界被改成 0」在行为用例里都是绿的。
  */
 export function clampTimeoutSec(value?: number): number {
-  if (typeof value !== "number" || !Number.isFinite(value)) return DEFAULT_TIMEOUT_SEC;
-  return Math.min(MAX_TIMEOUT_SEC, Math.max(MIN_TIMEOUT_SEC, Math.round(value)));
+  if (typeof value !== "number" || !Number.isFinite(value)) return WEBHOOK_TIMEOUT.default;
+  return Math.min(WEBHOOK_TIMEOUT.max, Math.max(WEBHOOK_TIMEOUT.min, Math.round(value)));
 }
 
 /** 失败结果：code 出文案、detail 存宿主原文；截断是展示语义，不是脱敏。 */

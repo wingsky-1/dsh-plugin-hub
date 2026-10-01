@@ -126,7 +126,7 @@ function assemble() {
     },
     stores: {
       readHistory: async () => [],
-      clearHistory: async () => 0,
+      clearHistory: async () => ({ ok: true, removed: 0 }),
       readStatus: async () => ({}),
     },
     pipeline: {

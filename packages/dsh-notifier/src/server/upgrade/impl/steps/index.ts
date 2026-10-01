@@ -3,6 +3,7 @@
 import type { UpgradeStep } from "../../../../../../../shared/upgrade-chain.js";
 import { tickUpgradeVersionSync } from "../../../../../../../shared/upgrade-tick.js";
 import type { UpgradeDeps } from "../../deps.ts";
+import { migrateCanonicalKeys } from "./canonical-keys.ts";
 import { migrateConfigShape } from "./config-shape.ts";
 import { migrateQuietWindows } from "./quiet-windows.ts";
 import { migrateReasonShape } from "./reason-shape.ts";
@@ -21,6 +22,13 @@ function migrateToV026(): void {
   migrateQuietWindows();
 }
 
+/** 0.2.8 → 0.2.9：配置形态清理（#1016 S3）——读面不再兜底，兜底搬到这里。
+ * 形态清理不能挂 0.2.8：那一版已发布且对 notifier 是空步（dsh 0.2.0-rc.2 适配），刻度已推进过。
+ */
+function migrateToV029(): void {
+  migrateCanonicalKeys();
+}
+
 /** 按目标版本升序维护；执行顺序由链驱动排序决定，此处顺序只为便于阅读。 */
 export const STEPS: readonly UpgradeStep<UpgradeDeps>[] = [
   { fromVersion: "0.2.3", targetVersion: "0.2.4", run: migrateToNewLayout },
@@ -31,4 +39,6 @@ export const STEPS: readonly UpgradeStep<UpgradeDeps>[] = [
   { fromVersion: "0.2.6", targetVersion: "0.2.7", run: tickUpgradeVersionSync },
   // 0.2.7 → 0.2.8 为空步（dsh 0.2.0-rc.2 适配，无存储形态变化）：run 指共享空函数。
   { fromVersion: "0.2.7", targetVersion: "0.2.8", run: tickUpgradeVersionSync },
+  // 0.2.8 → 0.2.9：配置形态清理（#1016 S3）——读面不再兜底，兜底搬到这里。
+  { fromVersion: "0.2.8", targetVersion: "0.2.9", run: migrateToV029 },
 ];

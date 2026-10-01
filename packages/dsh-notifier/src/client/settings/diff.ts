@@ -6,9 +6,26 @@
  * 文件 import 了 react 与 style.css，node 无法导入，于是只能挂在公共 apply 上或对源码做正则
  * 来测，实际结果是一条判据都没有。零依赖的独立模块让它们第一次可以被直测。
  *
- * 跨端契约提醒：channels 的空串形态同时被服务端读面 normalize 与服务端写面校验解释，
+ * 跨端契约提醒：channels 的空串形态同时被服务端**投递投影**（normalizeConfig）与服务端写面解释，
  * 动这里的剥除/删键语义等于动服务端行为，必须两端一起看。
+ *
+ * 比较规范形（剥空串 + 按类型补缺省值）**住在 src/shared/channel-compare.ts**，不重写在本文件：
+ * 它是「什么算同一份内容」这一问题的口径文本，客户端与宿主端的 merge 都要对着它读（见该文件头）。
+ * 两端各留一份就一定会漂——漂了的后果是用户什么都没改却被判成本次改动。
  */
+import {
+  canonicalChannelsForCompare,
+  canonicalSettingsForCompare,
+  stripChannelEmpties,
+} from "../../shared/interface.ts";
+
+// 这三个函数的**定义**在 src/shared/channel-compare.ts（它是对端可对照的口径文本）。
+// 这里原样转出，客户端调用点与判据的导入路径一字不动：搬实现不等于搬入口。
+export {
+  canonicalSettingsForCompare,
+  normalizeChannelForCompare,
+  stripChannelEmpties,
+} from "../../shared/interface.ts";
 
 /**
  * 基线 diff：返回 settings 相对 baseLine 中**值不同**的键集合（增量 patch，只提交变更键——
@@ -36,8 +53,9 @@ export function diffSettingsPayload(
     const base = baseLine[key];
     // channels 整组提交前对实例做空串可选字段剥除——存量配置（0.2.2 保存失败前/手改 yaml/
     // 旧版本）可能残留 token:"" 等空串形态，UI 编辑任一字段都会触发整组提交把残留一起带走
-    // → 400 死锁。剥除与读面 normalize（空串按未配置剥除）同语义，纯读不改草稿，用户后续
-    // 输入仍经 assignChannelFields 正常写。
+    // → 写面按字段合并把空串读成**显式删除**（状态 4），用户的凭据被一次无关保存静默删掉；
+    // 必填键上更直接撞 400「必填键，不能删除」。剥成键缺席后落进「不动 / preexisting 放行」两条路，
+    // 纯读不改草稿，用户后续输入仍经 assignChannelFields 正常写。
     const value = key === "channels" && Array.isArray(cur) ? cur.map(stripChannelEmpties) : cur;
     const same = stableEqual(canonicalForCompare(key, cur), canonicalForCompare(key, base));
     if (!same) payload[key] = value;
@@ -45,40 +63,9 @@ export function diffSettingsPayload(
   return payload;
 }
 
-/** 空串即「未配置」的可选 string 字段清单（bark 与 webhook 实例的**并集**）。
- *  `url` 在这里是因为 bark 的 url 是可选的自定义端点覆写；对 webhook 而言 url 是必填，但那条路
- *  走不到剥除——UI 写回时 assignChannelFields 已把空串删键，接着服务端 validateWebhookChannel
- *  以「缺少 url」400 拦下（而不是静默写进一个打不通的地址）。
- *  真正不在清单内的是 id/type/baseUrl/deviceKey/auth：为空时原样提交、由服务端写面校验拦
- *  （必填不允许空，语义正确）；非 string 值（number/boolean/levels 对象）不触碰。 */
-const CHANNEL_OPTIONAL_STRING_KEYS: readonly string[] = [
-  "name",
-  "token",
-  "username",
-  "password",
-  "headerName",
-  "headerValue",
-  "template",
-  "sound",
-  "group",
-  "icon",
-  "url",
-];
-
-/** 单个频道实例的空串可选字段剥除：浅拷贝后删除值为空串的可选字段。只处理 string 值，
- *  number/boolean/对象字段不触碰；非对象输入原样返回（防御数组/null）。 */
-export function stripChannelEmpties(ch: unknown): unknown {
-  if (typeof ch !== "object" || ch === null || Array.isArray(ch)) return ch;
-  const out = Object.assign({}, ch as Record<string, unknown>);
-  for (const key of CHANNEL_OPTIONAL_STRING_KEYS) {
-    if (typeof out[key] === "string" && (out[key] as string).length === 0) delete out[key];
-  }
-  return out;
-}
-
-/** 单键的比较规范形：channels 逐项过 normalizeChannelForCompare，其余键原样。 */
+/** 单键的比较规范形：channels 逐项过共享面的比较规范形，其余键原样。 */
 function canonicalForCompare(key: string, value: unknown): unknown {
-  if (key === "channels" && Array.isArray(value)) return value.map(normalizeChannelForCompare);
+  if (key === "channels" && Array.isArray(value)) return canonicalChannelsForCompare(value);
   return value;
 }
 
@@ -114,67 +101,6 @@ export function stableJsonValue(value: unknown): string {
  */
 export function stableEqual(a: unknown, b: unknown): boolean {
   return stableJsonValue(a) === stableJsonValue(b);
-}
-
-/**
- * 频道实例的比较规范形：与服务端读面 normalize 同语义的收敛（纯读，返回浅拷贝）。
- *
- * - 可选 string 空串剥除：复用 stripChannelEmpties 的清单，不扩大——id/type/baseUrl 与
- *   deviceKey/auth 的空串仍原样保留，由服务端写面校验拦（必填不允许空）；非 string 不动；
- * - 缺键按类型补服务端默认值（只补缺席，已有的值原样保留——值域对错是写面的事，比较不替它断案）：
- *   bark 补 levels 空对象与 timeoutMs 0，webhook 补 headers 空对象、timeoutSec 0、preset custom、
- *   auth none，内置（browser/system）与未知类型不补。这只是比较用的补齐，payload 里仍是草稿原值
- *   （auth 缺席的提交照常被服务端 400——比较对称化没有把校验洗掉）；
- * - 掩码与其它非空值一律保留：掩码相等即未改，携带新值即脏（提交后由服务端按 id 还原）。
- *
- * 为什么按类型补而不是全量补：全量补会把 webhook 的 headers 空对象塞进 bark（或反向），
- * 提交时 validateExtras 以“只能是字符串或数字”400 拒收——比较对称不能污染提交形态。
- * 为什么是补齐而不是删空（例如删掉 levels 空对象或 timeout 0）：删空会把用户删掉最后一个
- * levels 映射洗成无变化（相对空基线恒等），那次删除就永远存不下去；补齐只统一缺席与
- * 默认值两种写法，真删除（非空变空）两侧仍不等。
- */
-export function normalizeChannelForCompare(ch: unknown): unknown {
-  const stripped = stripChannelEmpties(ch);
-  if (typeof stripped !== "object" || stripped === null || Array.isArray(stripped)) return stripped;
-  const out = stripped as Record<string, unknown>;
-  const defaults = CHANNEL_COMPARE_DEFAULTS.find((entry) => entry.type === out.type)?.defaults;
-  if (defaults === undefined) return out;
-  for (const field of Object.keys(defaults)) {
-    if (out[field] === undefined) out[field] = defaults[field];
-  }
-  return out;
-}
-
-/**
- * 按频道类型补的缺省默认值（只补缺席，已有的值原样保留）。
- *
- * 这张表是**二维**的：行 = 频道类型，列 = 该类型补哪几个字段、默认成什么。写成 if 链时
- * 「bark 少补一个 levels」与「webhook 多补一个 auth」要混在同一段里改，加字段时得回去数
- * 哪个分支。表序无关（每行字段互不重叠），命中即整行套用。
- *
- * 内置（browser/system）与未知类型**不补**：全量补会把 webhook 的 headers 空对象塞进 bark
- * （或反向），提交时 validateExtras 以「只能是字符串或数字」400 拒收——比较对称不能污染提交形态。
- */
-const CHANNEL_COMPARE_DEFAULTS: readonly {
-  readonly type: string;
-  readonly defaults: Readonly<Record<string, unknown>>;
-}[] = [
-  { type: "bark", defaults: { levels: {}, timeoutMs: 0 } },
-  { type: "webhook", defaults: { headers: {}, timeoutSec: 0, preset: "custom", auth: "none" } },
-];
-
-/**
- * 设置整体的比较规范形：channels 逐项过 normalizeChannelForCompare，其余键原样（浅拷贝）。
- *
- * 只收敛 channels：UI 写回删键（assignChannelFields 与 chLevelsSet）与服务端读面兜底的形态
- * 分叉只发生在这里；quietHours 与 kindRoutes 等两侧恒同形，不需要第二份实现。
- */
-export function canonicalSettingsForCompare(
-  settings: Record<string, unknown>,
-): Record<string, unknown> {
-  const out = Object.assign({}, settings);
-  if (Array.isArray(out.channels)) out.channels = out.channels.map(normalizeChannelForCompare);
-  return out;
 }
 
 /**
@@ -226,15 +152,19 @@ export function domainPayload(
 }
 
 /**
- * 频道实例字段合并：part 中**空串/undefined 值从 target 删除该键**，其余浅覆盖。
+ * 频道实例字段合并：part 中**值为空（`""` / `undefined`）的键写成 `null`**，其余浅覆盖。
  *
- * 空串在服务端写面校验中是「非法值」而非「未配置」——token/username/password/headerValue
- * 要求非空、headerName 过头名正则；读面 normalize 却把空串剥除（等价未配置）。若把清空输入
- * 回写成 "" 提交，实例会带着空串残留被整组 400（「填了又删空」死锁的必现根因之一）——空串
- * 删键后提交面与读面同语义（键不存在 = 未配置）。undefined 一并删键：数字/下拉清空走的是
- * 同一条路（清空 badge/level 传的就是 undefined），而 Object.assign 会把 undefined 保留成
- * 「有这个键但值为 undefined」，JSON 序列化后与删键等价、但草稿对象本身多一个键，
- * 「键在不在」正是 levels/badge 这些字段的值域判据。
+ * 为什么是 `null` 而不是删键（#1016 S2，**安全相关**）：服务端写面现在按字段合并，
+ * **键缺席读成「不动」**。用户清空 webhook 的 token 后若只是把键删掉，提交里就没有这个键，
+ * 合并判它「不动」——旧凭据原封不动留在磁盘上继续被投递，而界面上显示的是空。写 `null` 是
+ * 「显式删除」这条独立手势，服务端据此删键，磁盘与界面才重新对上。
+ *
+ * `undefined` 走同一条路：数字框与下拉清空传的就是 `undefined`，而它们与文本框表达的是
+ * 同一个手势——「这个字段不要了」。渲染侧不受影响（`textInput` / `numInput` 把 null 与 undefined
+ * 一律回显空串，`ch.levels || {}` 一类取值同样吃得下 null）。
+ *
+ * 必填键（url / baseUrl / deviceKey）清空后提交，服务端以「必填键，不能删除」400 拒收——
+ * 那是对的：一条打不通的频道不该被静默存下来。
  */
 export function assignChannelFields(
   target: Record<string, unknown>,
@@ -243,8 +173,7 @@ export function assignChannelFields(
   const out = Object.assign({}, target);
   for (const key of Object.keys(part)) {
     const value = part[key];
-    if (value === "" || value === undefined) delete out[key];
-    else out[key] = value;
+    out[key] = value === "" || value === undefined ? null : value;
   }
   return out;
 }

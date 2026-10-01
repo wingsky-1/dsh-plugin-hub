@@ -71,13 +71,50 @@ function sendRefused(
   sendJson(res, status, { error: reason, code, status }, headers);
 }
 
-/** 注册端点组，返回摘除器清单（与装配顺序相反地释放）。 */
+/**
+ * 注册端点组，返回摘除器清单（与装配顺序相反地释放）。
+ *
+ * **中途抛错整单回滚**：本函数逐条注册，第 N 条抛错时前 N-1 条已经挂在宿主上，而它们的摘除器
+ * 只存在于下面这个局部表里——调用方（按返回值登记）拿不到它们，不就地摘就是永久泄漏
+ * （实测后续卸载摘掉 0 条路由）。
+ *
+ * 回滚与成功路径共用同一把「逐项隔离」的尺子：一条摘除器抛错不阻断其余。实测组合故障（注册第 4 条
+ * kinds 抛错，且第 3 条 status 的摘除器也抛错）下去掉隔离，则 3 条里只摘 1 条、泄漏 2 条，抛给调用方的
+ * 错误还会从「注册失败」变成「摘除失败」——那同时违反本文件「清理路径不盖首因」那条承诺。
+ *
+ * **「逆序」这一半在这里不钉**：8 条路由彼此独立、谁先撤没有语义差别，把整条序钉死只会让加一条
+ * 端点就红一次。真正有语义的那处逆序在 api 域装配面（「帧订阅排在第一条路由之前」，先断帧的来路
+ * 再拆它的出口），那一处有判据。
+ */
 export function registerEndpoints(
   register: RegisterRoute,
   endpoints: Endpoint[],
   logger: LoggerPort,
 ): Array<() => void> {
   const disposers: Array<() => void> = [];
+  try {
+    registerAll(register, endpoints, logger, disposers);
+  } catch (error) {
+    // 整单回滚：已挂的逐个摘除、不留「已注册」的假记忆。清理路径不盖首因，也不上报。
+    for (const dispose of disposers.splice(0).reverse()) {
+      try {
+        dispose();
+      } catch {
+        // 一个资源的清理失败不拖垮其余：跳过其余等于把它们都留在宿主上。
+      }
+    }
+    throw error;
+  }
+  return disposers;
+}
+
+/** 逐条注册并把每条的摘除器记进 `disposers`（单独一层是为了让回滚罩住整个注册过程）。 */
+function registerAll(
+  register: RegisterRoute,
+  endpoints: Endpoint[],
+  logger: LoggerPort,
+  disposers: Array<() => void>,
+): void {
   for (const endpoint of endpoints) {
     disposers.push(
       register({
@@ -119,7 +156,6 @@ export function registerEndpoints(
       }),
     );
   }
-  return disposers;
 }
 
 /**

@@ -22,6 +22,7 @@ import {
   notifierFile,
   writeTextAtomicSync,
 } from "../../../src/server/shared/interface.ts";
+import { DEFAULT_CONFIG } from "../../../src/server/config/impl/model/index.ts";
 import type { UpgradeDeps } from "../../../src/server/upgrade/deps.ts";
 import { STEPS } from "../../../src/server/upgrade/impl/steps/index.ts";
 import { installUpgrade, releaseUpgrade } from "../../../src/server/upgrade/interface.ts";
@@ -94,26 +95,42 @@ async function assemble(options: { legacy?: ReturnType<typeof makeLegacy> } = {}
  * 判据面是「搬什么、什么时候搬」：只搬**有值**的键（缺的留给 config 域归一化补默认——割接不替用户决定
  * 默认值）、出口音效键优先于旧的全局键、条目恒在最前，以及在两种「没有活要干」的情形下一个字都不写。
  */
+/** 内置条目 + 用户当年在旧顶层键上表过态的字段（必须是**用户那个值**，不是默认值）。 */
+function builtins(over: Record<string, unknown>): unknown[] {
+  return DEFAULT_CONFIG.channels.map((channel) => ({ ...channel, ...over }));
+}
+
 describe("配置形态割接", () => {
   /** 种一份磁盘上的配置文件（0.2.3 的形态：顶层渠道键 + 实例）。 */
   function seedConfig(stored: Record<string, unknown>): void {
     writeTextAtomicSync(notifierFile(CONFIG_FILE_NAME), `${JSON.stringify(stored, null, 2)}\n`);
   }
 
-  /** 割接补出来的空壳条目：只带身份，字段全靠存量键有值才搬。 */
-  const EMPTY_BUILTINS = [
-    { type: "browser", id: "browser" },
-    { type: "system", id: "system" },
-  ];
+  /**
+   * 两条内置条目在**整条链跑完之后**的形态：0.2.4 割接只写身份与有值的存量键，0.2.9 的形态清理再把缺席
+   * 字段按默认表补齐（#1016 P1-1）。本文件断的是链的终态，故夹具取补齐后的形态。
+   *
+   * 逐字取自默认表而不是手抄——补的值本就是默认表的值，同源由 steps.test.ts 的同源守卫钉住。
+   */
+  const EMPTY_BUILTINS = DEFAULT_CONFIG.channels;
 
   it("存量顶层渠道键搬进两条内置条目后即删除：只搬有值的键，旧键一个都不留", async () => {
     seedConfig({ notifyAsk: false, browserNotify: false, systemNotify: true });
 
     await assemble();
 
+    // popup 是搬来的**用户值**（browserNotify: false / systemNotify: true），不是默认表的 true——
+    // 其余字段由 0.2.9 按默认表补齐（#1016 P1-1）。
     expect(configOnDisk().channels).toEqual([
-      { type: "browser", id: "browser", popup: false },
-      { type: "system", id: "system", popup: true },
+      {
+        type: "browser",
+        id: "browser",
+        enabled: true,
+        popup: false,
+        sound: true,
+        whenVisible: false,
+      },
+      { type: "system", id: "system", enabled: true, popup: true, sound: true },
     ]);
     // 搬完即删：同一个事实不留两处表达——留着旧键就是下一个 `notifySound` 式的隐患。
     expect("browserNotify" in configOnDisk()).toBe(false);
@@ -126,14 +143,23 @@ describe("配置形态割接", () => {
     await assemble();
 
     expect(configOnDisk().channels).toEqual([
-      { type: "browser", id: "browser", sound: "ding" },
-      { type: "system", id: "system", sound: false },
+      {
+        type: "browser",
+        id: "browser",
+        enabled: true,
+        popup: true,
+        sound: "ding",
+        whenVisible: false,
+      },
+      { type: "system", id: "system", enabled: true, popup: true, sound: false },
     ]);
   });
 
   it("补出来的内置条目恒在数组最前，实例按原有相对顺序留在后面", async () => {
-    const bark = { type: "bark", id: "a", enabled: true };
-    const hook = { type: "webhook", id: "b", enabled: true };
+    // 实例带齐各自的投递必需键：半坏条目在 0.2.9 的清理步里**不再被删**（#1016 P1-2 选 (a)），但它们
+    // 留在结果里会让这条用例断不到本意的「顺序」上——夹具该用干净形态。
+    const bark = { type: "bark", id: "a", enabled: true, baseUrl: "https://x", deviceKey: "k" };
+    const hook = { type: "webhook", id: "b", enabled: true, url: "https://y" };
     seedConfig({ channels: [bark, hook] });
 
     await assemble();
@@ -280,11 +306,9 @@ describe("存量设置的割接：装配期同步读，直接读写配置文件"
     expect(stored.notifyAsk).toBe(false);
     // 旧键搬完即删：文件里只留条目一处表达
     expect("notifySound" in stored).toBe(false);
-    // 旧的全局音效键摊到两条内置条目的 `sound` 上（用户当时关掉的提示音不该复活）。
-    expect(stored.channels).toEqual([
-      { type: "browser", id: "browser", sound: false },
-      { type: "system", id: "system", sound: false },
-    ]);
+    // 旧的全局音效键摊到两条内置条目的 `sound` 上（用户当时关掉的提示音不该复活——补齐只补缺席
+    // 字段，`sound` 已在场因此原样保留，见 #1016 P1-1）。
+    expect(stored.channels).toEqual(builtins({ sound: false }));
     // 组合层装配键在旧格式里就属于启动参数，迁移后不该出现在配置里。
     expect("configFile" in stored).toBe(false);
     expect("enabled" in stored).toBe(false);

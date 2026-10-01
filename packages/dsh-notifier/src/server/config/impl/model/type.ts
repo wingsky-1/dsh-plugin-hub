@@ -1,6 +1,7 @@
 /** 设置模型（本域形状）。模型即跨端契约：设置页与宿主端读同一份形状，字段名两侧同源，改动即两端同改；这里只放
  * 「设置长什么样」。全篇用类型别名而非接口——只有类型别名带隐式索引签名，能落进「原始值」这层宽类型。 */
 import type { BarkTarget, WebhookTarget } from "../../deps.ts";
+import type { BARK_LEVELS } from "../../../../shared/interface.ts";
 import type {
   BuiltinChannelType,
   SoundId,
@@ -11,11 +12,19 @@ import type {
 // ---------------------------------------------------------------- 原始输入
 
 /** 原始设置值：来自宿主存储或 HTTP 提交。只承诺「是 JSON 结构」，不承诺落在任何合法域——形状是清楚的，内容不受信，
- * 收窄它的责任在输入闸门。 */
+ * 收窄它的责任在输入闸门。
+ *
+ * 联合里有 `null`（#1016 S2）：客户端把「用户清空了这个字段」表达成**显式删除**而不是「键不
+ * 在提交里」——后者在新语义下读成「不动」，于是用户清空的凭据会留在磁盘上继续投递，而界面
+ * 显示空。键缺席与键为 null 从此是两种不同的手势，本类型必须能同时表达它们。
+ *
+ * 加这一支对共享它的两处无副作用：`stableJson` 走 `JSON.stringify(null)`（即 `"null"`，参与
+ * 修订号摘要），`isRecord` / `isJsonObject` 两处早已把 null 排除在「对象」之外。 */
 export type RawSettingValue =
   | string
   | number
   | boolean
+  | null
   | readonly RawSettingValue[]
   | { readonly [key: string]: RawSettingValue };
 
@@ -59,8 +68,9 @@ export type QuietHoursConfig = {
 
 // ---------------------------------------------------------------- 频道
 
-/** bark 紧急度。 */
-export type BarkLevel = "active" | "timeSensitive" | "passive" | "critical";
+/** bark 紧急度。事实源在 src/shared/config-schema.ts 的 `BARK_LEVELS`（两端共享面）：白名单与设置页的
+ *  选项、类型与判据必须是同一份，各写一遍就会出现「页面选得到、宿主拒收」。 */
+export type BarkLevel = (typeof BARK_LEVELS)[number];
 
 /** bark 频道实例 = 投递参数 + 配置元数据。`type` 与 `level` 重声明：前者是频道联合的判别键，后者在配置层受枚举
  * 约束而投递层不受（跨进程传来的 target 不被编译期类型约束）。 */
@@ -153,9 +163,10 @@ export type NotifyConfig = {
   // 投递形态
   // 渠道的开关、弹窗与声音都住在 `channels` 的条目里（两条内置 + 实例），这里没有第二处表达。
   // 0.2.3 的顶层渠道键（`browserEnabled` / `notifySound` 那一批）由 upgrade 域在装配期搬进条目并
-  // **删除**——本契约不认识它们；读面只为「还没割接的文件」保留消费它们的物化输入。
+  // **删除**——本契约不认识它们，读面也不消费它们（#1016 S3：形态演进是 upgrade 域的职责，读面不认历史）。
   quietHours: QuietHoursConfig;
-  /** 全部频道：内置恒在最前（browser、system），实例随后；读面保证两条内置条目恒在场。 */
+  /** 全部频道：内置恒在最前（browser、system），实例随后。读面（**投递投影**）保证两条内置条目恒在场；
+   *  外发的**视图**不物化它们——磁盘上有没有由 upgrade 域的形态清理保证（缺了就补齐）。 */
   channels: ChannelConfig[];
   /** kind → channelId[] 稀疏路由；缺省 = 广播全部启用频道。 */
   kindRoutes: Record<string, string[]>;
