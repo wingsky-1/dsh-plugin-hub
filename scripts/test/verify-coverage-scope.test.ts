@@ -592,6 +592,29 @@ test("条目腐烂：模式在覆盖率根内命中 0 个文件 → 红", () => 
   assert.match(r.stderr, /exclude 模式在覆盖率根内命中 0 个文件（条目腐烂）/);
 });
 
+test("条目腐烂：brace 组内的单个成员命中 0 个文件 → 红（逐子 pattern）", () => {
+  // 反例要点：整条 pattern 命中 a.ts（1 个文件），旧口径因此静默；逐子 pattern 才能看见 b.gone。
+  // kind 取 pending-project（不作形态限制），mutationFace 避开 a.ts 以免接缝判据抢答。
+  const config = {
+    ...BASE_CONFIG,
+    exclude: [
+      ...BASE_CONFIG.exclude,
+      {
+        pattern: "packages/dsh-fake/src/{a.ts,b.gone}",
+        kind: "pending-project",
+        reason: "组内 b.gone 指向不存在的文件（逐子 pattern 判据的反例）",
+        exitCriteria: "四步依次成立后删除本条",
+        reviewBy: "2027-03-31",
+        probe: { date: "2026-10-09", verdict: "1 处改动全部打红" },
+      },
+    ],
+  };
+  const r = run(fixture(config, { mutationFace: ["shared/x.js"] }));
+  assert.equal(r.status, 1, r.stderr);
+  assert.match(r.stderr, /条目腐烂/);
+  assert.match(r.stderr, /b\.gone/);
+});
+
 test("单一事实源：coverage 块内联 thresholds 对象字面量 → 红", () => {
   const vitest = VITEST_OK.replace(
     "thresholds: coverage.thresholds,",
