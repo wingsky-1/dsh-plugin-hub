@@ -362,12 +362,71 @@ function loadCoverageConfig(configPath, configRel) {
   return { config };
 }
 
-/** 条目腐烂：模式在覆盖率根内命中 0 个文件即指向了不存在的东西。 */
-function rottenPatternProblems(label, patterns, hitsInUniverse) {
+/**
+ * 展开 brace 组：`a/{b,c}/d` → `a/b/d`、`a/c/d`（递归，支持嵌套与多组）。
+ *
+ * 为什么必须展开再判：本判据原先对**整条** pattern 求值，于是 `{a.ts,b.t}` 里那个截断的
+ * `b.t` 被同组命中成员掩盖——#1096 把 `shared/contract.ts` 截断成 `shared/contract.t` 后
+ * 本闸全绿，直到 7 天后夜间班次的产物交叉断言才判红（2026-10-01…10-07 连续 7 次 observe 失败）。
+ * 逐子 pattern 求值才能让「组内单个成员指向不存在的东西」在引入当场可见。
+ */
+/** 找与 pattern[open] 配对的右花括号下标；无配对返回 -1。 */
+function matchingBrace(pattern, open) {
+  let depth = 0;
+  for (let i = open; i < pattern.length; i += 1) {
+    if (pattern[i] === "{") depth += 1;
+    if (pattern[i] === "}") depth -= 1;
+    if (depth === 0) return i;
+  }
+  return -1;
+}
+
+/** 按顶层逗号切分 brace 内容（忽略嵌套层内的逗号）。 */
+function splitTopLevel(inner) {
+  const parts = [];
+  let depth = 0;
+  let start = 0;
+  for (let i = 0; i < inner.length; i += 1) {
+    if (inner[i] === "{") depth += 1;
+    if (inner[i] === "}") depth -= 1;
+    if (inner[i] === "," && depth === 0) {
+      parts.push(inner.slice(start, i));
+      start = i + 1;
+    }
+  }
+  parts.push(inner.slice(start));
+  return parts;
+}
+
+/** 展开 brace 组：`a/{b,c}/d` → `a/b/d`、`a/c/d`（递归，支持嵌套与多组）。 */
+function expandBraces(pattern) {
+  const open = pattern.indexOf("{");
+  if (open === -1) return [pattern];
+  const close = matchingBrace(pattern, open);
+  if (close === -1) return [pattern];
+  const before = pattern.slice(0, open);
+  const after = pattern.slice(close + 1);
+  return splitTopLevel(pattern.slice(open + 1, close)).flatMap((part) =>
+    expandBraces(before + part + after),
+  );
+}
+
+/**
+ * 条目腐烂：模式在覆盖率根内命中 0 个文件即指向了不存在的东西。
+ *
+ * `expand` 只对 **exclude** 面开：exclude 的 brace 成员是**具体文件清单**，任一成员命中 0
+ * 即指向不存在的东西（#1096 的 `shared/contract.t` 正是这样漏过 7 天）。include 面的 brace
+ * 是**后缀集**（`{ts,tsx}`），某个后缀当前无文件是预留、不是腐烂，故保持整条判定。
+ */
+function rottenPatternProblems(label, patterns, hitsInUniverse, expand = false) {
   const problems = [];
   for (const pattern of patterns) {
-    if (hitsInUniverse(pattern).length === 0) {
-      problems.push(`${label} 模式在覆盖率根内命中 0 个文件（条目腐烂）：${pattern}`);
+    const members = expand ? expandBraces(pattern) : [pattern];
+    for (const member of members) {
+      if (hitsInUniverse(member).length === 0) {
+        const origin = member === pattern ? "" : `（展开自 ${pattern}）`;
+        problems.push(`${label} 模式在覆盖率根内命中 0 个文件（条目腐烂）：${member}${origin}`);
+      }
     }
   }
   return problems;
@@ -569,7 +628,7 @@ function main() {
 
   // 条目腐烂：模式必须在覆盖率根内命中至少一个文件
   problems.push(...rottenPatternProblems("include", includePatterns, hitsInUniverse));
-  problems.push(...rottenPatternProblems("exclude", excludePatterns, hitsInUniverse));
+  problems.push(...rottenPatternProblems("exclude", excludePatterns, hitsInUniverse, true));
 
   // kind 与命中文件形态自洽：结构合法只说明声明得「像」，不保证「对」
   problems.push(...excludeKindShapeProblems(config.exclude, hitsInUniverse, includeFace));
