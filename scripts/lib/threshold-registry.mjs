@@ -1006,26 +1006,59 @@ function checkGuardIdentity(guard, id, out) {
     );
   }
 }
+/**
+ * 必填非空字符串字段的缺失判词。
+ * @returns {string|null} null = 合规
+ */
+function missingTextField(guard, id, field) {
+  return typeof guard[field] === "string" && guard[field] !== "" ? null : id + "：缺 " + field;
+}
+
+/**
+ * 必填非空数组字段的缺失判词。
+ * @returns {string|null} null = 合规
+ */
+function missingListField(guard, id, field) {
+  return Array.isArray(guard[field]) && guard[field].length > 0 ? null : id + "：缺 " + field;
+}
+
+/**
+ * `fallbackSources` 形态判词。只在字段被声明过时查：缺失不是问题（回落源是可选兼容位）。
+ * @returns {string|null} null = 合规或未声明
+ */
+function fallbackShapeProblem(guard, id) {
+  return guard.fallbackSources === undefined || isStringArray(guard.fallbackSources)
+    ? null
+    : id + "：fallbackSources 必须是非空字符串数组";
+}
+
+/**
+ * 两栏重叠判词（null = 无重叠）。只在回落源形态合法后查重叠——写坏了先让
+ * `fallbackShapeProblem` 说话，否则会在非数组值上抛 TypeError，
+ * 把「形态判红」变成「门禁崩溃」。
+ * @returns {string|null} null = 无重叠（含形态不合法）
+ */
+function fallbackOverlapProblem(guard, id) {
+  if (!isStringArray(guard.fallbackSources)) return null;
+  const overlap = guard.fallbackSources.filter((source) => (guard.sources ?? []).includes(source));
+  return overlap.length === 0
+    ? null
+    : id + "：fallbackSources 与 sources 重复（" + overlap.join(", ") + "）";
+}
+
 function checkGuardDocs(guard, id, out) {
   for (const field of ["why", "hint"]) {
-    if (typeof guard[field] !== "string" || guard[field] === "") out.push(id + "：缺 " + field);
+    const missing = missingTextField(guard, id, field);
+    if (missing !== null) out.push(missing);
   }
-  // `sources` 必须非空、不能全靠回落源撑着：回落源只是「基准侧还没迁到新事实源」的兼容位，
-  // 没有主事实源的 guard 无从判断它守护的到底是哪个文件（契约的链比对也依赖这一条才闭环）。
-  if (!Array.isArray(guard.sources) || guard.sources.length === 0) out.push(id + "：缺 sources");
-  if (guard.fallbackSources !== undefined && !isStringArray(guard.fallbackSources)) {
-    out.push(id + "：fallbackSources 必须是非空字符串数组");
-  }
-  // 同一文件既是主事实源又是回落源没有意义：回落链取第一个存在的源，后一个声明恒不生效，
-  // 留着只会让人误判它参与读取。只在形态合法后查重叠——写坏了先让上面那条判词说话，否则这里
-  // 会在非数组值上抛 TypeError，把「形态判红」变成「门禁崩溃」。
-  const overlap = isStringArray(guard.fallbackSources)
-    ? guard.fallbackSources.filter((source) => (guard.sources ?? []).includes(source))
-    : [];
-  if (overlap.length > 0) {
-    out.push(id + "：fallbackSources 与 sources 重复（" + overlap.join(", ") + "）");
-  }
-  if (!Array.isArray(guard.paths) || guard.paths.length === 0) out.push(id + "：缺 paths");
+  const missingSources = missingListField(guard, id, "sources");
+  if (missingSources !== null) out.push(missingSources);
+  const badFallback = fallbackShapeProblem(guard, id);
+  if (badFallback !== null) out.push(badFallback);
+  const overlap = fallbackOverlapProblem(guard, id);
+  if (overlap !== null) out.push(overlap);
+  const missingPaths = missingListField(guard, id, "paths");
+  if (missingPaths !== null) out.push(missingPaths);
 }
 function checkGuardSimpleKinds(guard, id, out) {
   if (guard.kind === "value" && guard.weaken !== "decrease" && guard.weaken !== "increase") {

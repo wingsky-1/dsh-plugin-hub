@@ -138,16 +138,14 @@ function registrySelfPattern(registryPath) {
  */
 /** 一栏路径声明（sources / fallbackSources）是否可用；不可用时给出该 guard 的判词。 */
 function guardSourceListProblem(guard, field, required) {
-  const value = guard?.[field];
-  if (value === undefined) return required ? `guard ${guard?.id ?? "?"} 缺 ${field}` : null;
   const id = guard?.id ?? "?";
+  const value = guard?.[field];
+  if (value === undefined) return required ? `guard ${id} 缺 ${field}` : null;
   if (!Array.isArray(value)) return `guard ${id} 的 ${field} 不是数组`;
-  for (const source of value) {
-    if (typeof source !== "string" || source.trim() === "") {
-      return `guard ${id} 的 ${field} 含非字符串或空项`;
-    }
-  }
-  return null;
+  // 每项都必须是切过空白的非空串：空项会让「链上第一个存在的源」取到空路径，
+  // 读出来是 cwd 而不是事实源（这正是本判据要拦的形态）。
+  const bad = value.some((source) => typeof source !== "string" || source.trim() === "");
+  return bad ? `guard ${id} 的 ${field} 含非字符串或空项` : null;
 }
 
 /** sources 与 fallbackSources 不得重叠：同一文件声明两遍，后一遍恒不生效却会被读成「受守护」。 */
