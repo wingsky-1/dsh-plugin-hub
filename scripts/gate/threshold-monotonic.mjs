@@ -11,28 +11,38 @@
  * 唯一保留的**非 JSON 读取器**是 vitest.config.ts：覆盖率阈值在 #733 计划项 3.4 才迁到
  * scripts/data/coverage.config.json，基准侧仍可能只有 .ts，故该源走 acorn 词法+表达式解析
  * （不能用正则：`thresholds\s*:\s*\{([^}]*)\}` 会在第一个 `}` 截断，块内注释里的伪值也会被采信）。
- * 迁移期双读的语义现在是数据：coverage 守卫的 sources 是 [JSON, .ts]，按顺序取第一个存在的源。
+ * 迁移期双读的语义现在是数据：coverage 守卫把它拆成主事实源 `sources=[JSON]` 与回落源
+ * `fallbackSources=[.ts]`，合成链按序取第一个存在的源（`lib/threshold-registry.mjs` 的
+ * effectiveSources）。
+ *
+ * 回落源**只参与读取、不进红线面**（本轮治理项）：红线面由 `gate/red-line-approval.mjs` 自
+ * `guards[].sources` 派生，回落源不是当前的事实源，混在面里会让任何 vitest 配置改动
+ * （`LAYER_RUNTIME` 层超时、`isolate`、`PROJECT_NAME` 别名表）都要求 `approved`。
+ * 这条边界不放开任何读取：合成链与拆分前逐字一致，契约比对也仍看合成链（把生效主事实源
+ * 改写成回落源会因合成链换序而判红）。
  *
  * 声明表自己也被同一套语义守着（#843 对抗评审 P0-1）：guard 只许新增，同 id 的判据形状字段
- * （kind / weaken / weakenValue / onRemoval / paths / keys / anchorFields / requireFields / sources /
- * missingIsError / nonMonotonic / minAllowed / maxAllowed）相对基准只许补全收紧，且**数据面没有任何
- * 通道能放行一次削弱**：#875 H11 删除了 `retired`（整条退役）与 `contractApprovals`（改某个字段）
- * 两条自授权登记入口——它们曾让「删一条 guard / 翻一个 direction / 把 onRemoval 改成 ignore」成为
- * 一行数据改动且 CI 全绿。这两个**具名**键不可重建是被判据守住的（重现即判红），不是靠人记得；
- * 因此改 guard 的**唯一合法路径是改判据代码**（本文件或 scripts/lib/threshold-registry.mjs）。
- * 该路径走 PR 评审 + 本仓自测把关；本文件与 scripts/lib/threshold-registry.mjs 都不在
- * `approved` 派生面内（该面恰 9 条：`.github/**`、`.dsh/skills/**`、
- * scripts/gate/red-line-approval.mjs、声明表自身及其 `guards[].sources`——`scripts/gate/**`
- * 整树并不在面内，但 red-line-approval.mjs 在，别按目录通配推），故不需要 `approved` 标签。
+ * （kind / weaken / weakenValue / onRemoval / paths / keys / anchorFields / requireFields /
+ * sources / fallbackSources / missingIsError / nonMonotonic / minAllowed / maxAllowed）相对基准
+ * 只许补全收紧，且**数据面没有任何通道能放行一次削弱**：#875 H11 删除了 `retired`（整条退役）与
+ * `contractApprovals`（改某个字段）两条自授权登记入口——它们曾让「删一条 guard / 翻一个 direction /
+ * 把 onRemoval 改成 ignore」成为一行数据改动且 CI 全绿。这两个**具名**键不可重建是被判据守住的
+ * （重现即判红），不是靠人记得；因此改 guard 的**唯一合法路径是改判据代码**（本文件或
+ * scripts/lib/threshold-registry.mjs）。该路径走 PR 评审 + 本仓自测把关；本文件与
+ * scripts/lib/threshold-registry.mjs 都不在 `approved` 派生面内（该面恰 9 条：`.github/**`、
+ * `.dsh/skills/**`、scripts/gate/red-line-approval.mjs、声明表自身及其 `guards[].sources`——
+ * `scripts/gate/**` 整树并不在面内，但 red-line-approval.mjs 在，别按目录通配推；
+ * `guards[].fallbackSources` 参与读取但**不进面**，见下面回落源那段），故不需要 `approved` 标签。
  *
  * 上限（如实声明，勿误读）：本闸保证的只是「这两个具名键不能只靠一行数据重建」。**自授权
  * 通道在类上并未消除**——实测：新增一个顶层键（`waivers`）加约 4 行代码，即可让真实判据被
  * 削弱而本闸 exit 0、`node --test` 83/83 全绿。原因是**比较器自我验证**：任何内置于它的
  * 通道都会吸收自己的全部检测，而真值快照用例跑的正是同一个被削弱的比较器，故一并失明；
  * 更根本地说，**判据无法保护自己不被改**。收口办法是下一件 PR 的顶层键白名单。
- * `sources` 是回落链，只许**尾部追加**：前置一个镜像基准值的影子源能让基准侧与工作区侧解析到
- * 不同的事实源，守卫于是对着影子文件判绿而真实事实源已被改弱（#850 批次评审 F-1）。声明表比对
- * 之外，比较器还记录两侧实际命中的源，工作区命中基准未声明的文件即判红——两道判据不同源。
+ * `sources`（主事实源）与 `fallbackSources`（回落源）合成一条链，只许**尾部追加**：前置一个镜像基准值的
+ * 影子源能让基准侧与工作区侧解析到不同的事实源，守卫于是对着影子文件判绿而真实事实源已被改弱
+ * （#850 批次评审 F-1）。声明表比对之外，比较器还记录两侧实际命中的源，工作区命中基准未声明的
+ * 文件即判红——两道判据不同源。
  *
  * 另一条判据：**豁免台账分桶只减棘轮**（scripts/lib/exemption-ratchet.ts）。台账跨三个事实源
  * （coverage.config.json 14 条 / gate-exemptions.json 1 条 / gauntlet.config.json 的 crap 1 条），
@@ -71,6 +81,7 @@ import {
   compareDeclarationTable,
   compareRegistry,
   effectiveAnchor,
+  effectiveSources,
   loadRegistry,
   makeSourceLoader,
   numericLeaves,
@@ -80,7 +91,7 @@ import {
   validateGuardFacts,
 } from "../lib/threshold-registry.mjs";
 
-/** 覆盖率阈值在 #733 计划项 3.4 前的旧事实源；声明表的 coverage 守卫把双读表达成 sources。 */
+/** 覆盖率阈值在 #733 计划项 3.4 前的旧事实源；声明表的 coverage 守卫把它写成回落源。 */
 const VITEST_CONFIG = "vitest.config.ts";
 /** 声明表里 existence 守卫的豁免通道（#765：临时项的唯一登记处）。 */
 const EXEMPTIONS = "scripts/data/gate-exemptions.json";
@@ -775,11 +786,13 @@ function readBaseRegistry(baseRef, repoRoot) {
  * 而「未登记的新数据文件」这类声明表覆盖问题仍留在 exit 2，两者语义不同。
  *
  * 只查「工作区命中」这一侧：反过来要求基准声明的源都被命中，会把回落链的备用源
- * （覆盖率迁移完成后不再被读的 vitest.config.ts）误判成攻击。返回 null = 通过。
+ * （覆盖率迁移完成后不再被读的 vitest.config.ts）误判成攻击。基准侧的声明取**合成链**：
+ * 回落源同样是基准允许这条守卫读的文件——主事实源在基准上不存在时本来就要靠它兜底，
+ * 只认主事实源会把「回落源兜底」读成影子源攻击。返回 null = 通过。
  */
 function checkShadowSources(baseRegistry, workspaceHits) {
   const baseSourcesById = new Map(
-    (baseRegistry.guards ?? []).map((item) => [item.id, item.sources ?? []]),
+    (baseRegistry.guards ?? []).map((item) => [item.id, effectiveSources(item)]),
   );
   const shadowed = workspaceHits.filter((hit) => {
     const declared = baseSourcesById.get(hit.id);

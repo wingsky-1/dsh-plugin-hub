@@ -4,11 +4,10 @@
  * 注册能力经实例调用（#768 B2：模型配置与适配器状态读写收进 AdapterRegistry
  * 实例方法，本域不直引 registry 门面值边；类型经门面以 type 复用）。
  */
-import { rename, writeFile } from "node:fs/promises";
 import type { Context } from "@deepseek-ai/cordis";
 import { Mutex } from "async-mutex";
 import { errorMessage } from "../../../../../shared/host-utils.js";
-import type { NormalizedConfig } from "../../shared/interface.ts";
+import { atomicWrite, type NormalizedConfig } from "../../shared/interface.ts";
 import type { HistoryStore } from "../history/interface.ts";
 import {
   runV2Pipeline,
@@ -204,9 +203,8 @@ export class StatsService {
       const list = await this.registry.readUserAdapters(this.historyRoot);
       if (list.some((r) => r.id === rec.id)) return;
       list.push(rec);
-      const tmp = `${this.registry.userAdaptersFile(this.historyRoot)}.${Date.now()}.tmp`;
-      await writeFile(tmp, JSON.stringify({ version: 1, adapters: list }), { mode: 0o600 });
-      await rename(tmp, this.registry.userAdaptersFile(this.historyRoot));
+      const file = this.registry.userAdaptersFile(this.historyRoot);
+      await atomicWrite(file, JSON.stringify({ version: 1, adapters: list }));
     };
     try {
       await (this.stateChain = this.stateChain.then(write));

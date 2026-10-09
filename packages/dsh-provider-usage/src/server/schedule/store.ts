@@ -8,8 +8,9 @@
  * 叶层与 domain2/schedule 构成值环；D2 后归属明确，环消失）。
  */
 import { appendFileSync } from "node:fs";
-import { readFile, writeFile, rename, mkdir } from "node:fs/promises";
+import { readFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
+import { atomicWrite } from "../../shared/interface.ts";
 import type { ReportPeriod } from "../config/interface.ts";
 import {
   alignLastRun,
@@ -77,13 +78,10 @@ export async function writeLastRun(
 ): Promise<void> {
   const file = lastRunFile(root);
   await mkdir(join(root, "reports"), { recursive: true });
-  const tmp = `${file}.${Date.now()}.tmp`;
-  await writeFile(
-    tmp,
+  await atomicWrite(
+    file,
     JSON.stringify({ ...state, schema: LAST_RUN_SCHEMA, updatedAt: Date.now() }),
-    { mode: 0o600 },
   );
-  await rename(tmp, file);
 }
 
 /**

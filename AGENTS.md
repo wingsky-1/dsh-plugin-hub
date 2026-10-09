@@ -120,7 +120,7 @@ worktree 内。在仓库根直接跑出的读数是「某个落后提交」的�
 - **发布物自包含**：第三方依赖一律构建期由 esbuild 内联，不以运行时 npm 依赖分发；内联
   = 分发副本，故 license 由构建链归集到 `lib/THIRD-PARTY-LICENSES`，`pack:check` 断言覆盖。
 - **客户端是干净模块**：只 `export function apply(ctx)` + `export const inject`，样式独立
-  `src/client/style.css`，路由强制 loopback 围栏，patch id 用 `ui-<name>`；细则见
+  `src/client/style.css`，路由强制 loopback 围栏，patch id 用 `dsh-<name>`；细则见
   [DEVELOPMENT.md](docs/DEVELOPMENT.md)（[§1](docs/DEVELOPMENT.md#user-content-1-宿主端srcindexts规范) / [§2](docs/DEVELOPMENT.md#user-content-2-客户端规范) / [§3](docs/DEVELOPMENT.md#user-content-3-CSS规范)）。
 - **命名**：新包一律 `dsh-` 前缀，npm 包名 `@wingsky-1/dsh-*`，聚合包 `dsh-plugins-all`。
 - **安全语义**：涉及密钥 / 凭据 / 远程执行 / 令牌的改动，同步更新包 README 的

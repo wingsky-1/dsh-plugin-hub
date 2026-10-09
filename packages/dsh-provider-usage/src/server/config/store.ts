@@ -7,7 +7,8 @@
  * 迁移域最终落盘走 upgrade/storage-layout.ts 的同字面量路径（迁移只动旧形态，
  * 不另开归一化）；两条路对「什么算合法数据」的答案同源（本文件 normalize）。
  */
-import { readFile, writeFile, rename, mkdir } from "node:fs/promises";
+import { readFile, mkdir } from "node:fs/promises";
+import { atomicWrite } from "../../shared/interface.ts";
 import { normalizeReportConfig } from "./normalize.ts";
 import { DEFAULT_REPORT_CONFIG } from "./shape.ts";
 import type { ReportConfig } from "./shape.ts";
@@ -31,7 +32,5 @@ export async function readReportConfig(root: string): Promise<ReportConfig> {
 export async function writeReportConfig(root: string, cfg: ReportConfig): Promise<void> {
   const file = reportConfigFile(root);
   await mkdir(`${root}/reports`, { recursive: true });
-  const tmp = `${file}.${Date.now()}.tmp`;
-  await writeFile(tmp, JSON.stringify(normalizeReportConfig(cfg)), { mode: 0o600 });
-  await rename(tmp, file);
+  await atomicWrite(file, JSON.stringify(normalizeReportConfig(cfg)));
 }

@@ -5,7 +5,7 @@
 // data-attr 查询标记实现，行为同构、实现漂移；统一由本模块参数化承载。
 // 调用方只补 { id, cssText, version? } 实参，不再各自持有注入代码。
 //
-// 行为契约（验收锚点，测试 scripts/test/shared-client-ensure-style.test.ts）：
+// 行为契约（验收锚点，测试 shared/test/shared-client.mutation.test.ts）：
 // 1. head 缺失：首行静默早退（no-op 不抛）——与「注入尽力而为、挂载失败只
 //    warn」纪律同精神；页面无 head 时样式无渲染意义，幂等语义保证下次 apply
 //    重新注入。调用侧不得再为 head 缺失加 guard/DOMContentLoaded 兜底

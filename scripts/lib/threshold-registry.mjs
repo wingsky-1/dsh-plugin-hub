@@ -11,10 +11,17 @@
  *     落在 verify-coverage-scope 与 gen-stryker-conf 的判据⑤（#843 裁决清单 v2 的 C-2/C-3）。
  *   - 本库不碰 git / 不读时间：两侧事实源由调用方注入（readBase / readWorkspace），
  *     使比较器可以对着 fixture 直接跑，也让「基准侧缺失 = 首次引入」这类语义留在调用方。
- *   - `sources` 是**回落链**（按声明顺序取第一个存在的源）。它相对基准只许**尾部追加**：
+ *   - `sources` 是**主事实源**（回落链的头段，按声明顺序取第一个存在的源）。它相对基准只许**尾部追加**：
  *     前置或重排会让守卫读到另一个文件，而基准侧与工作区侧各自独立解析，两侧就可能对着不同的
  *     事实源比较——影子源正是这样把守卫与被守护的事实源解耦的。比较器另记录两侧实际命中的源，
  *     工作区命中一个基准未声明的文件即判红。
+ *   - `fallbackSources` 是**回落源**（迁移期兼容位，拼在 `sources` 之后参与同一条回落链，读取语义
+ *     与 `sources` 完全同构），但它**不进红线面**：`gate/red-line-approval.mjs` 的红线面派生自
+ *     `sources`，而回落源只是「基准侧还没有 JSON 时读得到」，不是当前的事实源。混在一个字段里会让
+ *     任何回落源文件的普通改动都要求 `approved`（实测 `vitest.config.ts`：改 `LAYER_RUNTIME` 层
+ *     超时与 `isolate` 都要过闸），与 AGENTS.md 对红线的文字描述不符。回落源因此**不是**自由通道：
+ *     契约比对看的是整条合成链（顺序仍只许尾部追加），且 `sources` 必须非空——把生效主事实源改写成
+ *     回落源会因合成链换序而被判红。
  *
  *   - **没有自授权通道**（#875 H11）：声明表里不得出现 `retired` / `contractApprovals`。
  *     这两个键曾经让「删一条 guard / 翻一个 direction / 把 onRemoval 改成 ignore / 改某个
@@ -25,7 +32,8 @@
  *     本仓自测把关；本文件与 gate/threshold-monotonic.mjs 都不在 `approved` 派生面内
  *     （该面恰 9 条：`.github/**`、`.dsh/skills/**`、`scripts/gate/red-line-approval.mjs`、
  *     声明表自身及其 `guards[].sources`——`scripts/gate/**` 整树并不在面内，但
- *     `red-line-approval.mjs` 在，别按目录通配推），故不需要 `approved` 标签。
+ *     `red-line-approval.mjs` 在，别按目录通配推；回落源 `fallbackSources` 参与读取但
+ *     **不进面**，理由见下面的字段说明），故不需要 `approved` 标签。
  *
  * 上限（如实声明，勿误读）：本判据保证的只是「这两个具名键不能只靠一行数据重建」（实测
  * exit 1）。**自授权通道在类上并未消除**——实测：新增一个顶层键（`waivers`）加约 4 行代码，
@@ -46,6 +54,15 @@ export const IMPLEMENTED_KINDS = ["value", "boolean", "baseline", "existence"];
 
 function isObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+/** 字符串数组（空数组不成立——声明一栏却什么都不声明，只可能是笔误）。 */
+function isStringArray(value) {
+  return (
+    Array.isArray(value) &&
+    value.length > 0 &&
+    value.every((item) => typeof item === "string" && item.trim() !== "")
+  );
 }
 
 export function readJsonText(text, label) {
@@ -105,12 +122,35 @@ export function loadRegistry(repoRoot) {
 }
 
 /**
+ * 一条 guard 的**完整回落链**：主事实源在前、回落源在后，取第一个存在的源命中。
+ *
+ * 分成两个字段而不是一个，理由见文件头：`sources` 兼任红线面的派生依据
+ * （`gate/red-line-approval.mjs` 把它每个文件整条拉进面），而回落源只是「基准侧还没有 JSON 时
+ * 读得到」的迁移期兼容位。合成链用于**一切读取与契约比对**——回落语义与拆分前一字节未改，
+ * 差别只在红线面不再收回落源。
+ *
+ * 非字符串项（写坏的形态）在这里被滤掉：`join(repoRoot, 42)` 会抛 TypeError，而形态判词
+ * （validateGuardShape 的「fallbackSources 必须是非空字符串数组」）本该以 fail-closed 出口说话。
+ * 让读取路径对坏形态「读不到」而不是「崩」，判词才走它该走的那个通道。
+ */
+export function effectiveSources(guard) {
+  const primary = Array.isArray(guard?.sources) ? guard.sources : [];
+  const fallback = Array.isArray(guard?.fallbackSources) ? guard.fallbackSources : [];
+  return [...primary, ...fallback].filter(
+    (source) => typeof source === "string" && source.trim() !== "",
+  );
+}
+
+/** 判词里展示的回落链：回落源也要列出来，否则读者会以为只有主事实源参与读取。 */
+const chainLabel = (guard) => effectiveSources(guard).join(" / ");
+
+/**
  * 按声明顺序取第一个**存在**的事实源。存在但取不到事实（reader 返回 null）时停在原地、
  * 不继续回落——回落链的语义是「基准侧还没迁到新事实源」，不是「取不到就换一个源」。
  */
 export function makeSourceLoader({ read, textReaders = {}, label, onHit }) {
   return (guard) => {
-    for (const source of guard.sources) {
+    for (const source of effectiveSources(guard)) {
       const text = read(source);
       if (text === null || text === undefined) continue;
       const reader = textReaders[source];
@@ -293,7 +333,7 @@ function reportMissingFact(guard, after, envErrors) {
   envErrors.push(
     guard.id +
       "：工作区 " +
-      guard.sources[0] +
+      effectiveSources(guard)[0] +
       " 缺 " +
       guard.paths.join(", ") +
       " —— 硬门禁被摘除，fail-closed",
@@ -305,7 +345,7 @@ function compareValueGuard(ctx) {
   const { guard, loadBase, loadWorkspace, failures, warnings, envErrors, skips } = ctx;
   const baseSide = loadBase(guard);
   if (baseSide === null) {
-    skips.push(guard.id + "：基准上无 " + guard.sources.join(" / ") + " —— 首次引入，跳过对比");
+    skips.push(guard.id + "：基准上无 " + chainLabel(guard) + " —— 首次引入，跳过对比");
     return;
   }
   const before = numericLeaves(guard, baseSide.value);
@@ -368,7 +408,7 @@ function compareBooleanGuard(ctx) {
   const { guard, loadBase, loadWorkspace, failures, envErrors, skips } = ctx;
   const baseSide = loadBase(guard);
   if (baseSide === null) {
-    skips.push(guard.id + "：基准上无 " + guard.sources.join(" / ") + " —— 首次引入，跳过对比");
+    skips.push(guard.id + "：基准上无 " + chainLabel(guard) + " —— 首次引入，跳过对比");
     return;
   }
   const before = booleanLeaves(guard, baseSide.value);
@@ -424,7 +464,7 @@ function compareBaselineGuard(ctx) {
   const baseSide = loadBase(guard);
   const wsSide = loadWorkspace(guard);
   if (baseSide === null || wsSide === null) {
-    skips.push(guard.id + "：基准或工作区缺 " + guard.sources[0] + " —— 跳过对比");
+    skips.push(guard.id + "：基准或工作区缺 " + chainLabel(guard) + " —— 跳过对比");
     return;
   }
   const beforeTable = resolveSingle(baseSide.value, guard.paths[0]);
@@ -562,6 +602,12 @@ function readExemptKeys(ctx, guard) {
  * 语义必须分档：一律「变了就红」会把收紧也拦下（例如给逐包阈值补一个绝对下限、给 onRemoval 从
  * ignore 改成 fail），那会让合法的加固也需要批准块，最终逼出「批准块写满」的假治理。
  * 分档的另一半是**只拦削弱**：加固方向不需要任何登记（#875 H11 起削弱方向也没有登记通道）。
+ *
+ * `sources` / `fallbackSources` 两栏比的是**合成链**（见 effectiveSources）：把末尾一项从主事实源
+ * 改写成回落源是重新贴标签，读链一个字节都没变，不该判红；而只比分栏又会放过「把生效主事实源
+ * 改成回落源」（合成链随之换序）与「sources 拆空、只剩回落源」。故 `sources` 的比对基准取合成链
+ * （`fallbackSources` 仍各按「只许尾部追加」独立判，见 compareGuardContract 的保守取向），
+ * 「sources 拆空」另由 validateGuardShape 的结构校验兜（fail-closed）。
  */
 const CONTRACT_RULES = {
   kind: "equal",
@@ -573,6 +619,7 @@ const CONTRACT_RULES = {
   anchorFields: "superset",
   requireFields: "superset",
   sources: "tail-append",
+  fallbackSources: "tail-append",
   missingIsError: "from-true",
   nonMonotonic: "from-true",
   minAllowed: "floor",
@@ -625,6 +672,7 @@ const CONTRACT_FIELDS = [
   "anchorFields",
   "requireFields",
   "sources",
+  "fallbackSources",
   "missingIsError",
   "nonMonotonic",
   "minAllowed",
@@ -688,19 +736,35 @@ export function compareDeclarationTable(baseRegistry, workspaceRegistry) {
   return failures;
 }
 
-/** 一条 guard 的判据形状字段逐项对比：被削弱即判红（#875 H11 起没有任何登记能放行一次削弱）。 */
+/**
+ * 一条 guard 的判据形状字段逐项对比：被削弱即判红（#875 H11 起没有任何登记能放行一次削弱）。
+ *
+ * 回落链的比对取**合成链**（effectiveSources）而不是分栏的 `sources`：读链才是守卫真正依赖的东西，
+ * 分栏只是表达「主事实源 / 回落源」之别。本治理项把 `vitest.config.ts` 从 `sources` 末尾挪进
+ * `fallbackSources`——合成链逐字未变，故不得判红；只比分栏会把它误判成「删了一个事实源」。
+ * 链契约想拦的攻击照旧全被合成链表达：拆短（`now.length < before.length`）与换序（同一下标不再
+ * 逐字相等）都触发。`fallbackSources` 仍作为独立契约栏参与「只许尾部追加」——保守取向：
+ * 在两栏都已存在时来回搬文件（链未变但分栏变了）不判红也不放行，走判据代码那条既有路径。
+ * 合成链唯一拦不到的形态是「sources 拆空、全靠回落源撑着」，那由 validateGuardShape 的
+ * 「sources 必须非空」以 fail-closed 兜住（exit 2）——它与链契约是两个不同性质的缺口。
+ */
 function compareGuardContract(baseGuard, nowGuard, failures) {
+  const chainView = (guard) => ({ ...guard, sources: effectiveSources(guard) });
+  const baseChain = chainView(baseGuard);
+  const nowChain = chainView(nowGuard);
   for (const field of CONTRACT_FIELDS) {
-    if (!isWeakenedChange(CONTRACT_RULES[field], baseGuard[field], nowGuard[field])) continue;
+    const before = baseChain[field];
+    const after = nowChain[field];
+    if (!isWeakenedChange(CONTRACT_RULES[field], before, after)) continue;
     failures.push(
       "声明表：" +
         baseGuard.id +
         "." +
         field +
         " 相对基准被改动（" +
-        JSON.stringify(baseGuard[field]) +
+        JSON.stringify(before) +
         " → " +
-        JSON.stringify(nowGuard[field]) +
+        JSON.stringify(after) +
         "）—— 判据形状只许补全收紧；本表没有字段批准通道，确要改动请改判据代码" +
         "（scripts/lib/threshold-registry.mjs 或 scripts/gate/threshold-monotonic.mjs）",
     );
@@ -729,7 +793,7 @@ function compareExistenceGuard(ctx) {
       envErrors.push(
         guard.id +
           "：工作区无 " +
-          guard.sources[0] +
+          effectiveSources(guard)[0] +
           " 而有 " +
           universe.length +
           " 个应受约束的包 —— 事实源缺失，fail-closed",
@@ -942,12 +1006,59 @@ function checkGuardIdentity(guard, id, out) {
     );
   }
 }
+/**
+ * 必填非空字符串字段的缺失判词。
+ * @returns {string|null} null = 合规
+ */
+function missingTextField(guard, id, field) {
+  return typeof guard[field] === "string" && guard[field] !== "" ? null : id + "：缺 " + field;
+}
+
+/**
+ * 必填非空数组字段的缺失判词。
+ * @returns {string|null} null = 合规
+ */
+function missingListField(guard, id, field) {
+  return Array.isArray(guard[field]) && guard[field].length > 0 ? null : id + "：缺 " + field;
+}
+
+/**
+ * `fallbackSources` 形态判词。只在字段被声明过时查：缺失不是问题（回落源是可选兼容位）。
+ * @returns {string|null} null = 合规或未声明
+ */
+function fallbackShapeProblem(guard, id) {
+  return guard.fallbackSources === undefined || isStringArray(guard.fallbackSources)
+    ? null
+    : id + "：fallbackSources 必须是非空字符串数组";
+}
+
+/**
+ * 两栏重叠判词（null = 无重叠）。只在回落源形态合法后查重叠——写坏了先让
+ * `fallbackShapeProblem` 说话，否则会在非数组值上抛 TypeError，
+ * 把「形态判红」变成「门禁崩溃」。
+ * @returns {string|null} null = 无重叠（含形态不合法）
+ */
+function fallbackOverlapProblem(guard, id) {
+  if (!isStringArray(guard.fallbackSources)) return null;
+  const overlap = guard.fallbackSources.filter((source) => (guard.sources ?? []).includes(source));
+  return overlap.length === 0
+    ? null
+    : id + "：fallbackSources 与 sources 重复（" + overlap.join(", ") + "）";
+}
+
 function checkGuardDocs(guard, id, out) {
   for (const field of ["why", "hint"]) {
-    if (typeof guard[field] !== "string" || guard[field] === "") out.push(id + "：缺 " + field);
+    const missing = missingTextField(guard, id, field);
+    if (missing !== null) out.push(missing);
   }
-  if (!Array.isArray(guard.sources) || guard.sources.length === 0) out.push(id + "：缺 sources");
-  if (!Array.isArray(guard.paths) || guard.paths.length === 0) out.push(id + "：缺 paths");
+  const missingSources = missingListField(guard, id, "sources");
+  if (missingSources !== null) out.push(missingSources);
+  const badFallback = fallbackShapeProblem(guard, id);
+  if (badFallback !== null) out.push(badFallback);
+  const overlap = fallbackOverlapProblem(guard, id);
+  if (overlap !== null) out.push(overlap);
+  const missingPaths = missingListField(guard, id, "paths");
+  if (missingPaths !== null) out.push(missingPaths);
 }
 function checkGuardSimpleKinds(guard, id, out) {
   if (guard.kind === "value" && guard.weaken !== "decrease" && guard.weaken !== "increase") {
@@ -1018,9 +1129,12 @@ function checkGuardEntries(registry, repoRoot) {
     ids.add(guard.id);
     out.push(...validateGuardShape(guard));
     if (typeof repoRoot === "string" && Array.isArray(guard.sources)) {
-      const existing = guard.sources.filter((source) => existsSync(join(repoRoot, source)));
+      // effectiveSources 已滤掉非字符串项：写坏的形态由 validateGuardShape 判 fail-closed，
+      // 走到这里还抛 TypeError 只会把「形态判红」伪装成「门禁崩溃」。
+      const chain = effectiveSources(guard);
+      const existing = chain.filter((source) => existsSync(join(repoRoot, source)));
       if (existing.length === 0)
-        out.push(guard.id + "：sources 一个都不存在（" + guard.sources.join(" / ") + "）");
+        out.push(guard.id + "：sources 一个都不存在（" + chain.join(" / ") + "）");
     }
   }
   return out;
@@ -1043,13 +1157,15 @@ function checkNotAGateEntries(registry, repoRoot, declared) {
 }
 function collectDeclared(registry, consumed) {
   const declared = new Set(consumed ?? []);
-  // 「出现在某条 guard 的 sources 里」与「确实被读到」是两件事：前者只是意向声明。
+  // 「出现在某条 guard 的回落链里」与「确实被读到」是两件事：前者只是意向声明。
   // 影子源攻击正是靠前者洗白（把新文件挂进 sources），所以判词要能区分这两种状态。
+  // 这里取**合成链**：回落源同样是被读取的事实源，漏登记会让「未登记即红」漏掉它。
   const declaredAsSource = new Set();
   for (const guard of registry.guards) {
-    for (const source of guard.sources ?? []) declaredAsSource.add(source);
+    const chain = effectiveSources(guard);
+    for (const source of chain) declaredAsSource.add(source);
     if (consumed === undefined) {
-      for (const source of guard.sources ?? []) declared.add(source);
+      for (const source of chain) declared.add(source);
     }
     // exemptFrom 读的是**另一份事实源**（如 topology 的 `$noMutationPackages`）：它同样要进已声明集合，
     // 否则「existence 守卫的豁免清单」会以未登记数据文件的形态被判红，而修法是把它塞进 sources 假声明。

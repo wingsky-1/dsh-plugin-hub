@@ -12,17 +12,9 @@
  * 并发纪律：同日明细分片写入经 per-day Promise 链单飞串行（防 flush 与压实互吞）；
  * 聚合分片整日重写天然幂等（最后一写为准）。
  */
-import {
-  appendFile,
-  mkdir,
-  readFile,
-  readdir,
-  rename,
-  rm,
-  stat,
-  writeFile,
-} from "node:fs/promises";
+import { appendFile, mkdir, readFile, readdir, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
+import { atomicWrite } from "../../shared/interface.ts";
 import {
   TREND_ROW_VERSION,
   isValidShardRow,
@@ -147,10 +139,8 @@ export class TrendStore {
         `聚合分片 tmp 残留清理失败（${day}）：${e instanceof Error ? e.message : String(e)}`,
       );
     }
-    const tmp = `${this.aggFile(day)}.${Date.now()}.tmp`;
     const body = rows.map((r) => JSON.stringify(r)).join("\n");
-    await writeFile(tmp, `${body}\n`, { encoding: "utf8", mode: 0o600 });
-    await rename(tmp, this.aggFile(day));
+    await atomicWrite(this.aggFile(day), `${body}\n`);
   }
 
   /** 删除明细分片（压实收尾；文件不存在视为成功）。 */

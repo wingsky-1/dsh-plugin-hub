@@ -15,6 +15,7 @@ export default defineConfig({
       'packages/dsh-provider-usage/test/unit/apply/apply.test.ts',
       'packages/dsh-provider-usage/test/unit/pipeline/stats-service.test.ts',
       'packages/dsh-provider-usage/test/unit/registry/registry-pure.test.ts',
+      'packages/dsh-provider-usage/test/unit/shared/atomic-write.test.ts',
       'packages/dsh-provider-usage/test/unit/shared/config.test.ts',
       'packages/dsh-provider-usage/test/unit/shared/contract.test.ts',
       'packages/dsh-provider-usage/test/unit/trend/trend.test.ts',

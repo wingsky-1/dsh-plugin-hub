@@ -165,6 +165,9 @@ function refFiles(root) {
   return files;
 }
 
+/** 报告面里「按 test:scripts glob 发现约定纳入」的测试文件形态（与 isRefCounted 同一条判据）。 */
+const TEST_FILE_RE = /^scripts\/test\/.*\.test\.ts$/;
+
 /**
  * 一条路径是否计入引用面：扩展名白名单、glob 不展开、测试文件按命名约定发现、
  * 已退役/夹具串里的不存在路径不算数。三条臂共用，故口径只在这里写一遍。
@@ -172,7 +175,7 @@ function refFiles(root) {
 function isRefCounted(p, root) {
   if (!REF_EXT_RE.test(p)) return false; // 目录说明符解析出的路径没有扩展名，在此出局
   if (p.includes("*")) return false; // glob 引用不逐文件展开
-  if (/^scripts\/test\/.*\.test\.ts$/.test(p)) return false; // 测试文件按命名约定发现
+  if (TEST_FILE_RE.test(p)) return false; // 测试文件按命名约定发现
   return existsSync(join(root, p)); // 历史注记/用法示例/判据自造夹具里的退役路径
 }
 
@@ -267,6 +270,21 @@ function main() {
   // 这些文件不需要登记，但列出来可供人工判断哪些其实该被文档化。
   const all = walk(join(root, "scripts"), root, []).filter((p) => p !== indexRel);
   const unreferenced = all.filter((p) => !indexed.has(p) && !refs.includes(p));
+  // 拆分报告面。`scripts/test/**/*.test.ts` 由 package.json 的
+  // `"test:scripts": "node --test scripts/test/*.test.ts"` 这个 glob 发现，而
+  // `isRefCounted` 刻意不展开 glob（文件头「含 * 的 glob 引用不展开」：展开等于要求
+  // 逐一登记，分母随测试面增长，刻意不写死）——它们因此**不在引用面里，但确实被消费**。
+  // 不拆开时「未被引用且未登记 N 个」会被读成「N 个孤儿」，而判定口径其实与被消费无关。
+  // 2026-10-08 实测该集合 86 个，构成为：78 个上述测试文件 + 6 个
+  // `scripts/data/{dsh-decision-gateway,dsh-mcp-manager,dsh-provider-usage}-export-{faces,surface}.json`
+  // （被 `${pkgName}-export-{surface,faces}.json` 模板拼名消费，取数处
+  // export-surface-snapshot.mjs:138/142 与 export-faces-admission.test.ts:39/40）
+  // + `scripts/gate/baseline/README.md` + `scripts/lib/export-diagram-svg.py`
+  // （后者被 7 处 docs 引用，是文档承诺的手工导出命令）。
+  // 只报总数不报构成，等于让一个已知窄引用面的读数看起来像孤儿清单，故拆成两个数；
+  // **判定口径不变**（索引条目存在性 + 引用面已登记，两项照旧判红）。
+  const byTestGlob = unreferenced.filter((p) => TEST_FILE_RE.test(p));
+  const restUnreferenced = unreferenced.length - byTestGlob.length;
 
   if (problems.length > 0) {
     console.error(`verify-scripts-index: ${problems.length} 条违规：`);
@@ -277,7 +295,9 @@ function main() {
     return 1;
   }
   console.log(
-    `verify-scripts-index: OK（索引条目 ${entries.length} 条全部存在，引用面 ${refs.length} 条全部已登记；scripts/ 物理文件 ${all.length} 个，其中未被引用且未登记 ${unreferenced.length} 个——仅报告，不判红）`,
+    `verify-scripts-index: OK（索引条目 ${entries.length} 条全部存在，引用面 ${refs.length} 条全部已登记；` +
+      `scripts/ 物理文件 ${all.length} 个，引用面外 ${unreferenced.length} 个 = test:scripts glob 发现约定 ` +
+      `${byTestGlob.length} + 其余 ${restUnreferenced}——仅报告，不判红）`,
   );
   return 0;
 }

@@ -152,7 +152,7 @@ test("本仓真实快照：15 条在册（数字变即提示同步台账与 #765
   //     #840 退役 dsh-web-file-preview 时删掉它那一条，7 → 6；
   //     #883 给 lan-proxy 客户端补直连判据后删掉它那一条，6 → 5 当中的覆盖率部分 5 → 4；
   //     #947 把 mcp-manager 的一条整个 client 面按文件拆成 11 条（panel.ts 与 state.ts 计入分母），覆盖率部分 4 → 14）
-  //     + gauntlet.config.json 1（crap.strict 观察期，仅解除条件、无到期日）
+  //     + gauntlet.config.json 1（crap.strict 观察期：exitCriteria 解除条件 + reviewBy 2026-11-08 到期复看）
   //     + gate-exemptions.json 1（#770 mcp panel 单飞句柄）
   // #875 4c：gate-exemptions.json 的 12 → 1——#767 lan-proxy unit-apply 1 条与 #847 sidebar
   //   客户端单测 10 条的 I8① 证据全部清零（迁 test/client-unit / 改直连域门面 / 入口契约
@@ -169,9 +169,17 @@ test("本仓真实快照：15 条在册（数字变即提示同步台账与 #765
   assert.equal(r.status, 0, r.stderr);
   // #1074 清掉 shared/client/** 那条 pending-project 豁免 ⇒ 台账 7 → 6。
   assert.match(r.stdout, /合计 6 条待办：已过期 0 /);
-  assert.match(r.stdout, /仅解除条件（无到期日）1/);
-  // crap.strict 的解除条件必须在台账里（只写日期会逼出「到期了再讨论一次」）
+  // 本 PR 给 crap 观察期补 reviewBy 2026-11-08 ⇒ 「只有解除条件、无到期日」的那一条归零
+  // （#765：日期与解除条件平级入账，互不替代）。该计数只认 reviewBy 缺失，不随统计日推移变化，
+  // 故此处钉的是「每条待办都带到期日」这个不变量，而不是某一天的剩余天数。
+  // **刻意不带尾数 1**：汇总行打印的是实际计数 `仅解除条件（无到期日）${tally.criteriaOnly}`
+  // （collect-exemptions.mjs:172-174），写成 `...1` 只挡住「恰好又变回 1 条」，出现 2 条以上
+  // 时短语变成 `...2`、断言反而通过（假绿）。去掉尾数才对任意非零计数生效。
+  // 该短语在全脚本唯一出处，去掉尾数不会误伤别的输出。
+  assert.doesNotMatch(r.stdout, /仅解除条件（无到期日）/);
+  // crap.strict 的解除条件必须在台账里（只写日期会逼出「到期了再讨论一次」），到期日也必须入账
   assert.match(r.stdout, /\$\.crap {2}threshold=16/);
+  assert.match(r.stdout, /reviewBy 2026-11-08/);
   assert.match(r.stdout, /exitCriteria 超阈 hotspots 计数降为 0/);
   assert.doesNotMatch(r.stdout, /mutation\.packages\.dsh-worktree-sidebar#anchor/);
   // #875 4c：#767 lan-proxy 那一条与 #847 sidebar 十条 I8① 证据已全部清零

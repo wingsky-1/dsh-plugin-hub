@@ -40,6 +40,7 @@ export default defineConfig({
       'packages/dsh-provider-usage/test/unit/routes/routes.test.ts',
       'packages/dsh-provider-usage/test/unit/schedule/schedule-pure.test.ts',
       'packages/dsh-provider-usage/test/unit/server-shared/s2-contracts.test.ts',
+      'packages/dsh-provider-usage/test/unit/shared/atomic-write.test.ts',
       'packages/dsh-provider-usage/test/unit/shared/chart.test.ts',
       'packages/dsh-provider-usage/test/unit/shared/config.test.ts',
       'packages/dsh-provider-usage/test/unit/shared/contract.test.ts',

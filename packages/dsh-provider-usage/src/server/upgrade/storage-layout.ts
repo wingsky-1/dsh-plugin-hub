@@ -11,15 +11,18 @@
  * 在装配后处理，不属本链）——缺了由各域按空形态重建。
  *
  * 读经注入（deps.readOldFile 读旧文件字节，不直连 fs 读旧文件）、写经同域原语
- * （writeFileAtomic 0600 原子写）、归档经直接 fs（renameSync 固定名留痕）。
- * 禁新建 file-io 叶（S2 约束）：本文件即存储原语的唯一落点，不另起 shared/file-io。
+ * （writeFileAtomic 0600 原子写，tmp+rename 载体为 shared/ui-config.ts 的
+ * atomicWrite 单一实现）、归档经直接 fs（renameSync 固定名留痕）。
+ * 禁新建 file-io 叶（S2 约束）：本文件即存储归位的唯一落点，不另起 shared/file-io。
  */
 import { existsSync, renameSync, statSync } from "node:fs";
-import { mkdir, rename, rm, writeFile } from "node:fs/promises";
-import { randomBytes } from "node:crypto";
+import { mkdir } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
-import type { UpgradeDeps } from "./deps.ts";
+// atomicWrite 在包级共享门面 `src/shared/`，LAST_RUN_SCHEMA 在服务端跨域共享层
+// `src/server/shared/`——两者同宗不同层，路径不能合并成一条（合并即其中一条解析不到）。
+import { atomicWrite } from "../../shared/interface.ts";
 import { LAST_RUN_SCHEMA } from "../shared/interface.ts";
+import type { UpgradeDeps } from "./deps.ts";
 
 /** 归档后缀：搬完留证据，也是「这一份处理过了」的标记（固定名 → 重跑不累积）。 */
 export const MIGRATED_SUFFIX = ".migrated.bak";
@@ -36,24 +39,14 @@ const EMPTY_LAST_RUN = `${JSON.stringify({ schema: LAST_RUN_SCHEMA }, null, 2)}\
 /** 同目标路径的写链：rename 先后在并发下无保证，串行防旧数据盖新数据。 */
 const writeChains = new Map<string, Promise<void>>();
 
-function temporaryNameFor(file: string): string {
-  return `${file}.${process.pid}.${Date.now().toString(36)}.${randomBytes(6).toString("hex")}.tmp`;
-}
-
 async function ensureDir(dir: string): Promise<void> {
   await mkdir(dir, { recursive: true, mode: 0o700 });
 }
 
+/** 单次落盘：先补本域目录（0700 由本域自持），再走 shared 的原子写原语。 */
 async function writeOnce(file: string, data: string): Promise<void> {
   await ensureDir(dirname(file));
-  const temporary = temporaryNameFor(file);
-  try {
-    await writeFile(temporary, data, { encoding: "utf8", mode: 0o600 });
-    await rename(temporary, file);
-  } catch (cause) {
-    await rm(temporary, { force: true }).catch(() => undefined);
-    throw cause;
-  }
+  await atomicWrite(file, data);
 }
 
 /**

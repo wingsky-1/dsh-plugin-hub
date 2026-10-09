@@ -9,11 +9,15 @@ import type { SessionEvent } from "@deepseek-ai/dsh-session";
 import type { TurnEndReason } from "@deepseek-ai/dsh-session/types";
 import type { AgentRegistryPort } from "../../deps.ts";
 import type { SessionTitle, TurnEndRead } from "./type.ts";
+// 截断走包内唯一的 code-point 截断而不是 `String.prototype.slice`：同包 8 个展示出口
+// （bark / webhook / browser / system / pipeline finalize / shared reason）都用它，
+// 唯独这里用 code-unit 切片会把 emoji 会话标题切成半个代理对（渲染成替换字符）。
+import { truncateCodePoints } from "../../../shared/interface.ts";
 
 /** 会话标题的展示上限；模板拼接与任务名共用这一个数字。 */
 const TITLE_LIMIT = 40;
 
-/** 会话标题：日志里最后一个 `session/title`，trim 后截断 40 字符。 */
+/** 会话标题：日志里最后一个 `session/title`，trim 后按 code-point 截断 40 字符。 */
 export function sessionTitleOf(agent: Agent): SessionTitle {
   try {
     // eslint-disable-next-line sonarjs/deprecation -- 0.1.7-rc.1 起 snapshotEvents 标 @deprecated（rc.2 沿用）（本仓规则名见 tools/lint/eslint.config.js，上游同位置 oxlint-disable）：同步快照读法在迁移前保留，测试 5 处不动（P2）。
@@ -23,7 +27,7 @@ export function sessionTitleOf(agent: Agent): SessionTitle {
       if (event.type !== "session/title") continue;
       const title = event.data.title.trim();
       if (title.length === 0) return { found: false };
-      return { found: true, title: title.slice(0, TITLE_LIMIT) };
+      return { found: true, title: truncateCodePoints(title, TITLE_LIMIT) };
     }
   } catch {
     // 日志读不出来不影响通知主流程
