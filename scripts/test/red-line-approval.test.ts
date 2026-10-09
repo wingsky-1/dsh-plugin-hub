@@ -4,8 +4,10 @@
  *
  * 判据有三层，缺一层都会给出假绿：
  *   1. 纯函数层——`judgeRedLine` 的语义（命中且无 approved 才判红）；
- *   2. 面层——红线面是**派生**的（基座 `.github/**` + `.dsh/skills/**` + 判据本体 + 已发布导出面基线 ∪ 声明表里每个 guard 的 `sources` ∪ 声明表自身），
- *      且 `scripts/gate/**` 明确**不在**面内（#851 撤回了上一版把它当"加固面"的扩大定义）；
+ *   2. 面层——红线面是**派生**的（基座 `.github/**` + `.dsh/skills/**` + 判据本体 + 已发布导出面基线 ∪ 声明表里每个 guard 的**主事实源**`sources` ∪ 声明表自身），
+ *      且 `scripts/gate/**` 明确**不在**面内（#851 撤回了上一版把它当"加固面"的扩大定义）。
+ *      迁移期回落源 `fallbackSources` 只参与**读取**、不进面（#3.0 治理项）：它不是当前的事实源，
+ *      混在面里会让该文件的任何普通改动都要求 approved；
  *   3. 接线层——CLI 的退出码契约（0/1/2）与 ci.yml 里那个 job 真的在调它、真的挂进
  *      repo-gate 的 needs。判据本体对而接线错，是"有测试却拦不住"的经典形态。
  *
@@ -39,7 +41,10 @@ const CI_YML_REL = ".github/workflows/ci.yml";
 const JOB = "red-line-approval";
 
 /** 写一份 fixture 声明表（只在 mkdtemp 目录里，不入库），返回其绝对路径。 */
-function writeRegistry(dir: string, guards: { id: string; sources: string[] }[]) {
+function writeRegistry(
+  dir: string,
+  guards: { id: string; sources: string[]; fallbackSources?: string[] }[],
+) {
   const path = join(dir, "threshold-registry.json");
   writeFileSync(path, JSON.stringify({ version: 1, guards }, null, 2));
   return path;
@@ -157,6 +162,107 @@ test("红线面：只收 guards[].sources——notAGate 的登记面不进面（
         "scripts/gate/red-line-approval.mjs",
       ],
     );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("红线面：只收主事实源——fallbackSources（迁移期回落源）不进面（#3.0 治理项）", () => {
+  const dir = mkdtempSync(join(tmpdir(), "red-line-fallback-"));
+  try {
+    const path = join(dir, "threshold-registry.json");
+    writeFileSync(
+      path,
+      JSON.stringify({
+        version: 1,
+        guards: [
+          {
+            id: "coverage.thresholds",
+            sources: ["scripts/data/coverage.config.json"],
+            fallbackSources: ["vitest.config.ts"],
+          },
+        ],
+      }),
+    );
+    // 回落源只参与**读取**（基准侧还没有 JSON 时按同一份老文件解析），不是当前的事实源。
+    // 把它拉进面会让该文件的任何普通改动都要求 approved——实测 vitest.config.ts 的层超时 /
+    // isolate / projects 别名都如此，与 AGENTS.md 对红线的文字描述不符。
+    assert.deepEqual(
+      redLinePatterns(path, () => {}),
+      [
+        ".dsh/skills/**",
+        ".github/**",
+        "scripts/data/*-export-surface.json",
+        "scripts/data/coverage.config.json",
+        "scripts/data/threshold-registry.json",
+        "scripts/gate/red-line-approval.mjs",
+      ],
+      "回落源不得进面，主事实源必须仍在面内",
+    );
+    // 非空洞性：同一次判定里回落源文件不是红线（改它 exit 0），主事实源仍是红线（判红）。
+    // 少任何一半，"不进面"都可能只是因为面恰好是空的。
+    assert.deepEqual(
+      judgeRedLine({
+        changedFiles: ["vitest.config.ts"],
+        labels: [],
+        patterns: redLinePatterns(path, () => {}),
+      }),
+      { ok: true, violations: [] },
+    );
+    assert.equal(
+      judgeRedLine({
+        changedFiles: ["scripts/data/coverage.config.json"],
+        labels: [],
+        patterns: redLinePatterns(path, () => {}),
+      }).ok,
+      false,
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("红线面：fallbackSources 形态写坏 → 退化为基座面并告警（与 sources 同口径）", () => {
+  const dir = mkdtempSync(join(tmpdir(), "red-line-fallback-shape-"));
+  try {
+    const cases = [
+      {
+        name: "非数组",
+        body: '{"version":1,"guards":[{"id":"a","sources":["x.json"],"fallbackSources":"y.ts"}]}',
+        why: /fallbackSources 不是数组/,
+      },
+      {
+        name: "含非字符串",
+        body: '{"version":1,"guards":[{"id":"a","sources":["x.json"],"fallbackSources":[42]}]}',
+        why: /fallbackSources 含非字符串或空项/,
+      },
+      {
+        name: "与 sources 重复",
+        body: '{"version":1,"guards":[{"id":"a","sources":["x.json"],"fallbackSources":["x.json"]}]}',
+        why: /与 sources 重复/,
+      },
+    ];
+    const messages: string[] = [];
+    for (const c of cases) {
+      const path = join(dir, `${c.name}.json`);
+      writeFileSync(path, c.body);
+      const warnings: string[] = [];
+      // 形态坏 = 声明表不可用：退回基座面（不静默缩小面），告警点名是哪一栏。
+      assert.deepEqual(
+        redLinePatterns(path, (m) => warnings.push(m)),
+        [
+          ".dsh/skills/**",
+          ".github/**",
+          "scripts/data/*-export-surface.json",
+          "scripts/gate/red-line-approval.mjs",
+        ],
+        c.name,
+      );
+      assert.match(warnings[0], c.why, `${c.name} 的告警必须点名是哪一栏`);
+      messages.push(warnings[0]);
+    }
+    // 三种告警互不相同：否则读者从告警里分不出该修哪一种形态。
+    assert.equal(new Set(messages).size, cases.length);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

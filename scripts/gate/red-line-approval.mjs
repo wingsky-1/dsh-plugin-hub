@@ -18,9 +18,10 @@
  *
  * 红线面是**派生**的，不是常量：基座是 `AGENTS.md` 明写的 `.github/**`、`.dsh/skills/**`、判据本体单文件，
  * 以及**已发布导出面基线** `scripts/data/*-export-surface.json`（#875：公共 API 行为变更红线此前无机器执法点，
- * 落点与取舍见 `RED_LINE_BASE_PATTERNS` 的注释），其余进面的是数据事实源声明表里被声明为 `sources` 的每个
- * 文件（外加声明表自身）。三条理由与代价见 `redLinePatterns` 的注释——一句话：关闸开关是数据不是代码，
- * 谁被声明为事实源谁就该在面内。
+ * 落点与取舍见 `RED_LINE_BASE_PATTERNS` 的注释），其余进面的是数据事实源声明表里被声明为**主事实源**
+ * 的每个文件（外加声明表自身）。三条理由与代价见 `redLinePatterns` 的注释——一句话：关闸开关是数据不是代码，
+ * 谁被声明为主事实源谁就该在面内。迁移期回落源（`guards[].fallbackSources`）只参与读取、不进面：
+ * 它不是当前的事实源，混进面会把「改一个兼容位」误判成「改红线」。
  *
  * 用法：
  *   node scripts/gate/red-line-approval.mjs --files <逗号分隔|@json 路径> [--labels <同上>]
@@ -120,24 +121,52 @@ function registrySelfPattern(registryPath) {
 }
 
 /**
- * 从声明表文本里取「每个 guard 声明的每个事实源路径」。
+ * 从声明表文本里取「每个 guard 声明的每个**主事实源**路径」。
  *
  * 只认 `guards[].sources`：`notAGate` 是显式声明「不是可放宽的阈值」的登记面，把它们一并拉进
  * 红线面等于把红线定义偷偷扩大到第二类登记面——那正是本轮撤回 `scripts/gate/**` 的同一条理由。
+ * 同理不认 `guards[].fallbackSources`：那是迁移期回落源（基准侧还没有 JSON 时按同一份老文件解析），
+ * 只参与读取、不是当前的事实源。把它拉进面会让该文件的任何普通改动（实测 `vitest.config.ts`：
+ * 改 `LAYER_RUNTIME` 层超时、`isolate`、`PROJECT_NAME` 别名表）都要求 `approved`，
+ * 与 AGENTS.md 对红线的文字描述不符。回落源不是自由通道：契约比对看的是合成链，
+ * 把生效主事实源改写成回落源仍会被 `threshold-monotonic` 判红。
+ *
+ * 回落源的**形态**仍然要校验（写坏会让声明表声称的回落链与比较器实际读的链不一致），
+ * 失配时与 `sources` 同样退化并告警——静默忽略等于把「声明表坏了」读成「没有回落源」。
  * 结构不合法时返回 `{ error }` 而不抛：import 期抛出会让 CLI 以未捕获异常退出，退出码 1 与
  * 「判红」同码，读起来像「有未批准的红线改动」。
  */
-/** 一个 guard 的 sources 字段是否可用；不可用时给出该 guard 的判词（无 sources 即跳过）。 */
-function guardSourcesProblem(guard) {
-  if (guard?.sources === undefined) return null;
+/** 一栏路径声明（sources / fallbackSources）是否可用；不可用时给出该 guard 的判词。 */
+function guardSourceListProblem(guard, field, required) {
+  const value = guard?.[field];
+  if (value === undefined) return required ? `guard ${guard?.id ?? "?"} 缺 ${field}` : null;
   const id = guard?.id ?? "?";
-  if (!Array.isArray(guard.sources)) return `guard ${id} 的 sources 不是数组`;
-  for (const source of guard.sources) {
+  if (!Array.isArray(value)) return `guard ${id} 的 ${field} 不是数组`;
+  for (const source of value) {
     if (typeof source !== "string" || source.trim() === "") {
-      return `guard ${id} 的 sources 含非字符串或空项`;
+      return `guard ${id} 的 ${field} 含非字符串或空项`;
     }
   }
   return null;
+}
+
+/** sources 与 fallbackSources 不得重叠：同一文件声明两遍，后一遍恒不生效却会被读成「受守护」。 */
+function guardSourceOverlapProblem(guard) {
+  const overlap = (guard.fallbackSources ?? []).filter((source) =>
+    (guard.sources ?? []).includes(source),
+  );
+  return overlap.length === 0
+    ? null
+    : `guard ${guard?.id ?? "?"} 的 fallbackSources 与 sources 重复（${overlap.join(", ")}）`;
+}
+
+/** 一个 guard 的事实源声明是否可用；无 sources 即跳过（回落源缺失不是问题）。 */
+function guardSourcesProblem(guard) {
+  return (
+    guardSourceListProblem(guard, "sources", false) ??
+    guardSourceListProblem(guard, "fallbackSources", false) ??
+    guardSourceOverlapProblem(guard)
+  );
 }
 
 function declaredSources(text) {
@@ -179,6 +208,12 @@ function normalizePatterns(patterns) {
  *      文件外加一条声明即可静默关闸（F-1 已实证：前置一个影子源 + 掏空真实事实源后四道闸全绿）。
  *      故红线面改为派生：谁被声明为事实源，谁就在面内。
  * 代价如实写明：派生面实测会让最近 20 个 merged PR 里的 7 个（35%）进面（读数口径见 PR #851）。
+ *
+ * 派生只收**主事实源**（`guards[].sources`）。迁移期回落源 `fallbackSources` 参与同一条读取链但不进面：
+ * 它不是当前的事实源，把它拉进面等于把「改一次兼容位」当成「改红线」——实测 `vitest.config.ts`
+ * 的 `LAYER_RUNTIME` 层超时、`isolate`、`PROJECT_NAME` 别名表都因此要维护者 `approved`，
+ * 与 AGENTS.md 对红线的文字描述不符。回落源不因此变成自由通道：契约比对看合成链，
+ * 把生效主事实源改写成回落源会被 `threshold-monotonic` 判红（判据形状只许补全收紧）。
  *
  * 边界（如实声明，勿误读）：
  *   · 声明表**缺失**（#850 尚未合入）时退化为基座面并打 `::warning::`，不 fail-closed——本判据的
