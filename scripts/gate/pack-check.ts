@@ -517,7 +517,7 @@ for (const p of targets) {
         const deps =
           JSON.parse(readFileSync(join(pkgRoot, "package.json"), "utf8")).dependencies ?? {};
         // 期望聚合 id 集 = 各 active 子包 cordis.patch.yml 的实际 insert id
-        // （客户端插件 ui-<dir>，纯宿主插件如 dsh-verify-isolated 用 skill- 前缀；
+        // （客户端插件 dsh-<dir>，纯宿主插件如 dsh-verify-isolated 用 skill- 前缀；
         //   与 aggregate.ts「子包行原样拼接」语义一致，不硬编码 ui-）
         const expectedPatchIds = [];
         for (const dir of manifest.active) {
