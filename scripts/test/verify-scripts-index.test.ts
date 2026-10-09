@@ -411,7 +411,12 @@ test("本仓真实快照：索引与引用面一致 → exit 0，且报告面被
   assert.equal(r.status, 0, r.stderr);
   assert.doesNotMatch(r.stderr, /::error::门禁故障/);
   assert.match(r.stdout, /索引条目 \d+ 条全部存在，引用面 \d+ 条全部已登记/);
-  assert.match(r.stdout, /未被引用且未登记 \d+ 个——仅报告，不判红/);
+  // 报告面自 2026-10-08 起拆成两个数（glob 发现约定 / 其余）：只报总数会把被
+  // test:scripts glob 与模板拼名消费的文件读成「孤儿」。判定口径不变，仍不判红。
+  assert.match(
+    r.stdout,
+    /引用面外 \d+ 个 = test:scripts glob 发现约定 \d+ \+ 其余 \d+——仅报告，不判红/,
+  );
 });
 
 /**
