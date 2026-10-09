@@ -8,10 +8,9 @@
  *
  * 目录结构：historyDir/<safe(provider)>/<safe(name)>/YYYY-MM-DD.jsonl
  */
-import { randomBytes } from "node:crypto";
-import { appendFile, mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile, readdir, rename, rm } from "node:fs/promises";
 import { join } from "node:path";
-import { safeSegment } from "../../shared/interface.ts";
+import { atomicWrite, safeSegment } from "../../shared/interface.ts";
 
 /** 历史条目（JSONL 行）。 */
 export interface HistoryEntry {
@@ -238,7 +237,7 @@ export class HistoryStore {
     });
   }
 
-  /** writeDirect 单次落盘：建目录（0700）+ 写临时名（0600）+ rename；失败清临时名。 */
+  /** writeDirect 单次落盘：建目录（0700）+ 经 shared 原子写原语（临时名与失败清理单一实现）。 */
   private async writeOnce(
     file: string,
     provider: string,
@@ -246,15 +245,8 @@ export class HistoryStore {
     entries: HistoryEntry[],
   ): Promise<void> {
     await mkdir(this.dirOf(provider, name), { recursive: true, mode: 0o700 });
-    const tmp = `${file}.${process.pid}.${Date.now().toString(36)}.${randomBytes(6).toString("hex")}.tmp`;
     const text = entries.map((e) => JSON.stringify(e)).join("\n") + "\n";
-    try {
-      await writeFile(tmp, text, { encoding: "utf8", mode: 0o600 });
-      await rename(tmp, file);
-    } catch (e) {
-      await rm(tmp, { force: true }).catch(() => undefined);
-      throw e;
-    }
+    await atomicWrite(file, text);
   }
 }
 

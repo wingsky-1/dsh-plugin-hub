@@ -71,7 +71,7 @@ export type { NormalizedConfig } from "./config.ts";
 
 export { sanitizeHtml } from "./sanitize.ts";
 
-// ------------------------------------------------------------------ 胶囊位置 UI 配置（ui-config.ts）
+// ------------------------------------------------------------------ 胶囊位置 UI 配置与原子写原语（ui-config.ts）
 
 export {
   DEFAULT_UI_CONFIG,
@@ -81,6 +81,9 @@ export {
   writeUiConfig,
 } from "./ui-config.ts";
 export type { UiPlacementConfig } from "./ui-config.ts";
+// 原子写原语（temporaryNameFor / atomicWrite）：本包 tmp+rename 的唯一实现，宿主在
+// ui-config.ts（shared/ 下唯一的持久化读写落点）。域侧一律经本面取用，不直引实现文件。
+export { atomicWrite, temporaryNameFor } from "./ui-config.ts";
 
 // ------------------------------------------------------------------ 客户端行为纯函数（client-logic.ts）
 
