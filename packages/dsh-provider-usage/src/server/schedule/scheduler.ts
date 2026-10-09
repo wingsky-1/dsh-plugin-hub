@@ -492,7 +492,7 @@ async function readFence(root: string): Promise<RetryFenceDocument> {
   }
 }
 
-/** 原子写围栏文档（0600 临时文件 → rename）；写失败即 storage 失败。 */
+/** 原子写围栏文档（0600；临时名与失败清理由 shared 的 atomicWrite 承担）；写失败即 storage 失败。 */
 async function writeFence(root: string, document: RetryFenceDocument): Promise<void> {
   const file = retryFenceFile(root);
   try {
