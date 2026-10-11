@@ -6,9 +6,9 @@
  * ready 之前 tick 直接返回；recovery/storage 失败保持 fail-closed。
  */
 
-import { randomUUID } from "node:crypto";
-import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
+import { atomicWrite } from "../../shared/interface.ts";
 import type { ReportConfig, ReportPeriod } from "../config/interface.ts";
 import { pendingReports, type DueReport } from "./due.ts";
 import { readLastRun, ensureLastRunMigrated, updateLastRun } from "./store.ts";
@@ -492,16 +492,14 @@ async function readFence(root: string): Promise<RetryFenceDocument> {
   }
 }
 
-/** 原子写围栏文档（0600 临时文件 → rename）；写失败即 storage 失败。 */
+/** 原子写围栏文档（0600；临时名与失败清理由 shared 的 atomicWrite 承担）；写失败即 storage 失败。 */
 async function writeFence(root: string, document: RetryFenceDocument): Promise<void> {
   const file = retryFenceFile(root);
-  const temporary = `${file}.${process.pid}.${randomUUID()}.tmp`;
   try {
     await mkdir(dirname(file), { recursive: true, mode: 0o700 });
-    await writeFile(temporary, JSON.stringify(document), { mode: 0o600 });
-    await rename(temporary, file);
+    // 临时名与失败清理走 shared 单一实现；失败一律收成 storage 失败，不越过包边界。
+    await atomicWrite(file, JSON.stringify(document));
   } catch {
-    await unlink(temporary).catch(() => {});
     throw new ReportStateStorageError();
   }
 }

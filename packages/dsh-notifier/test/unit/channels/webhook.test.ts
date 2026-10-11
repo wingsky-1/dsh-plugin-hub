@@ -45,10 +45,11 @@ afterEach(() => {
 
 describe("模板渲染（纯函数，无网络）", () => {
   // 预设模板是对端 API 的契约：键名或结构漂移，用户的 ntfy/gotify 就再也收不到。
+  // ntfy 的 priority 是数字（官方 JSON 协议 1..5；旧名称字面量由出口归一，见下）。
   it("空模板回落到预设默认模板，三个预设的顶层键各自固定", () => {
     const ntfy = JSON.parse(renderWebhookBody("", "ntfy", varsOf({ severity: "failure" })));
     expect(Object.keys(ntfy).sort()).toEqual(["message", "priority", "tags", "title", "topic"]);
-    expect(ntfy.priority).toBe("urgent");
+    expect(ntfy.priority).toBe(5);
 
     const gotify = JSON.parse(renderWebhookBody("", "gotify", varsOf({ severity: "failure" })));
     expect(Object.keys(gotify).sort()).toEqual(["message", "priority", "title"]);
@@ -115,11 +116,12 @@ describe("模板渲染（纯函数，无网络）", () => {
   });
 
   // 缺省回落若产出字面量 undefined，对端会收到一个非法优先级。
+  // ntfy 一格是数字（字符串形态经渲染归一，见上）；gotify / raw 沿用既有契约。
   it("priority 值表与缺省回落：没有 severity 时不得产出字面量 undefined", () => {
     const table: ReadonlyArray<readonly [WebhookPreset, NotifySeverity | undefined, string]> = [
-      ["ntfy", "failure", "urgent"],
-      ["ntfy", "info", "default"],
-      ["ntfy", undefined, "default"],
+      ["ntfy", "failure", "5"],
+      ["ntfy", "info", "3"],
+      ["ntfy", undefined, "3"],
       ["gotify", "failure", "9"],
       ["gotify", undefined, "3"],
       ["raw", "failure", "failure"],
@@ -130,8 +132,36 @@ describe("模板渲染（纯函数，无网络）", () => {
     }
     // `__proto__` 是唯一能区分布尔守卫「有没有做」的取值：它不在映射表里，但按原型链取得到
     // `Object.prototype`，没有 hasOwn 守卫时回落分支根本不执行（`critical` 两边都是 undefined，恒绿）。
-    expect(priorityFor("ntfy", wire<NotifySeverity>("__proto__"))).toBe("default");
+    expect(priorityFor("ntfy", wire<NotifySeverity>("__proto__"))).toBe("3");
     expect(priorityFor("raw", wire<NotifySeverity>("__proto__"))).toBe("");
+  });
+
+  // ntfy priority 归一成数字：旧名称字面量兼容映射，非法值抛错进投递失败。
+  it("ntfy priority 渲染归一：数字直出、旧名称兼容、非法抛错", () => {
+    expect(
+      JSON.parse(renderWebhookBody("", "ntfy", varsOf({ severity: "warning" }))).priority,
+    ).toBe(4);
+    expect(
+      JSON.parse(renderWebhookBody("", "ntfy", varsOf({ severity: "success" }))).priority,
+    ).toBe(2);
+    expect(JSON.parse(renderWebhookBody("", "ntfy", varsOf()))).toEqual(
+      expect.objectContaining({ priority: 3 }),
+    );
+    // 旧名称字面量（用户手写过旧映射的模板）兼容成数字
+    expect(JSON.parse(renderWebhookBody('{"priority": "high"}', "ntfy", varsOf())).priority).toBe(
+      4,
+    );
+    // 数字字面量 1..5 原样保留
+    expect(JSON.parse(renderWebhookBody('{"priority": 5}', "ntfy", varsOf())).priority).toBe(5);
+    // 越界数字与未知字符串抛错（调用方转成这次投递失败）
+    expect(() => renderWebhookBody('{"priority": 9}', "ntfy", varsOf())).toThrow(/priority 非法/u);
+    expect(() => renderWebhookBody('{"priority": "critical"}', "ntfy", varsOf())).toThrow(
+      /priority 非法/u,
+    );
+    // gotify 沿用既有契约：字符串不断言成数字
+    expect(JSON.parse(renderWebhookBody("", "gotify", varsOf()))).toEqual(
+      expect.objectContaining({ priority: "3" }),
+    );
   });
 });
 
@@ -346,5 +376,251 @@ describe("出站 URL 硬闸（#1016 P0）：发出去之前先判地址", () => 
     );
     expect(calls).toHaveLength(1);
     expect(calls[0]!.url).toBe("https://ntfy.sh/x?tenant=a");
+  });
+});
+
+describe("ntfy JSON 发布（#1102）：根地址 + 数字 priority，旧 topic URL 自动兼容", () => {
+  // issue 现象：JSON 发到 topic URL 会整包显示为正文；官方要求 JSON 发往服务根地址。
+  const topicTemplate = (topic: string): string =>
+    JSON.stringify({
+      topic,
+      title: "{{title}}",
+      message: "{{message}}",
+      tags: ["{{kind}}"],
+      priority: "{{priority}}",
+    });
+  const ntfyOf = (over: Partial<WebhookTarget> = {}): WebhookTarget =>
+    targetOf({ url: "https://ntfy.sh/demo", preset: "ntfy", ...over });
+
+  // 验收 1：旧默认模板（空模板回落，topic 仍是 <topic> 占位）+ topic URL → 改写为根地址。
+  it("旧 topic URL + 默认模板：改写为服务根地址，topic/title/message/tags 与数字 priority 齐全", async () => {
+    const calls = stubFetch(() => new Response("{}", { status: 200 }));
+    const result = await sendWebhook(ntfyOf({ template: "" }), messageOf({ severity: "failure" }));
+    expect(result).toEqual({ status: "ok", stage: "delivered" });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.url).toBe("https://ntfy.sh/");
+    const body = JSON.parse(calls[0]!.body);
+    expect(body.topic).toBe("demo");
+    expect(body.title).toBe("标题");
+    expect(body.message).toBe("正文");
+    expect(body.tags).toEqual(["done"]);
+    expect(body.priority).toBe(5);
+  });
+
+  // 验收 2：根地址 + 模板真实 topic → 原样保留；默认/空 topic 无出站且原因明确。
+  it("根地址 + 真实 topic：URL 原样保留、topic 保留", async () => {
+    const calls = stubFetch(() => new Response("{}", { status: 200 }));
+    const result = await sendWebhook(
+      ntfyOf({ url: "https://ntfy.sh/", template: topicTemplate("myreal") }),
+      messageOf({ severity: "info" }),
+    );
+    expect(result).toEqual({ status: "ok", stage: "delivered" });
+    expect(calls[0]!.url).toBe("https://ntfy.sh/");
+    const body = JSON.parse(calls[0]!.body);
+    expect(body.topic).toBe("myreal");
+    expect(body.priority).toBe(3);
+  });
+
+  it("根地址 + 默认/空 topic：不出站，报缺 topic（retryable=false）", async () => {
+    for (const template of ["", '{\n  "topic": "<topic>"\n}']) {
+      const calls = stubFetch(() => new Response("{}", { status: 200 }));
+      const result = await sendWebhook(ntfyOf({ url: "https://ntfy.sh/", template }), messageOf());
+      expect(result.status, `模板 ${template.slice(0, 12)}`).toBe("failed");
+      expect(retryableOf(result), `模板 ${template.slice(0, 12)}`).toBe(false);
+      expect(reasonOf(result).code).toBe("reasonWebhookTemplateInvalid");
+      expect(reasonOf(result).detail).toContain("缺少可用 topic");
+      expect(calls, "缺 topic 时桩 fetch 不该被调用").toHaveLength(0);
+    }
+  });
+
+  // 验收 3：自托管前缀根地址 + 显式 topic 原样保留；旧前缀 topic 模式（多段 + 占位）拒绝不盲猜。
+  it("自托管前缀根地址 + 显式 topic：base path 原样保留不截断", async () => {
+    const calls = stubFetch(() => new Response("{}", { status: 200 }));
+    const result = await sendWebhook(
+      ntfyOf({ url: "https://self.example/ntfy/", template: topicTemplate("demo") }),
+      messageOf(),
+    );
+    expect(result).toEqual({ status: "ok", stage: "delivered" });
+    expect(calls[0]!.url).toBe("https://self.example/ntfy/");
+    expect(JSON.parse(calls[0]!.body).topic).toBe("demo");
+  });
+
+  it("多段路径 + 占位 topic：拒绝不明确模式，不猜自托管前缀", async () => {
+    const calls = stubFetch(() => new Response("{}", { status: 200 }));
+    const result = await sendWebhook(
+      ntfyOf({ url: "https://self.example/ntfy/mytopic", template: "" }),
+      messageOf(),
+    );
+    expect(result.status).toBe("failed");
+    expect(retryableOf(result)).toBe(false);
+    expect(reasonOf(result).code).toBe("reasonWebhookTemplateInvalid");
+    expect(reasonOf(result).detail).toContain("无法明确提取 topic");
+    expect(calls).toHaveLength(0);
+  });
+
+  // 验收 4：topic URL 与显式 body.topic 冲突不得投错；query 与编码路径可观察。
+  it("topic URL 与显式 topic 冲突：不出站，报配置错误", async () => {
+    const calls = stubFetch(() => new Response("{}", { status: 200 }));
+    const result = await sendWebhook(
+      ntfyOf({ url: "https://ntfy.sh/demo", template: topicTemplate("other") }),
+      messageOf(),
+    );
+    expect(result.status).toBe("failed");
+    expect(retryableOf(result)).toBe(false);
+    expect(reasonOf(result).code).toBe("reasonWebhookTemplateInvalid");
+    expect(reasonOf(result).detail).toContain("不一致");
+    expect(calls).toHaveLength(0);
+  });
+
+  it("显式 topic 与 URL 末段一致：改写为根地址发出（不发往 topic URL）", async () => {
+    const calls = stubFetch(() => new Response("{}", { status: 200 }));
+    const result = await sendWebhook(
+      ntfyOf({ url: "https://ntfy.sh/demo", template: topicTemplate("demo") }),
+      messageOf(),
+    );
+    expect(result).toEqual({ status: "ok", stage: "delivered" });
+    expect(calls[0]!.url).toBe("https://ntfy.sh/");
+    expect(JSON.parse(calls[0]!.body).topic).toBe("demo");
+  });
+
+  it("改写保留 query：topic URL 的查询串跟到根地址上", async () => {
+    const calls = stubFetch(() => new Response("{}", { status: 200 }));
+    const result = await sendWebhook(
+      ntfyOf({ url: "https://ntfy.sh/demo?tenant=a", template: "" }),
+      messageOf(),
+    );
+    expect(result).toEqual({ status: "ok", stage: "delivered" });
+    expect(calls[0]!.url).toBe("https://ntfy.sh/?tenant=a");
+    expect(JSON.parse(calls[0]!.body).topic).toBe("demo");
+  });
+
+  // 验收 5：转义/认证/零重试/nonexistent 预设不回归。
+  it("改写不破坏转义与认证：恶意文本逃不出字符串，凭据仍只走请求头", async () => {
+    const calls = stubFetch(() => new Response("{}", { status: 200 }));
+    const result = await sendWebhook(
+      ntfyOf({ template: "", auth: { kind: "bearer", token: "tk-9f" } }),
+      messageOf({ title: 'a"b', body: '}},"evil":true,"z":"' }),
+    );
+    expect(result).toEqual({ status: "ok", stage: "delivered" });
+    const body = JSON.parse(calls[0]!.body);
+    expect(body.title).toBe('a"b');
+    expect(body.evil).toBeUndefined();
+    expect(calls[0]!.headers["authorization"]).toBe("Bearer tk-9f");
+    expect(calls[0]!.url).not.toContain("tk-9f");
+    expect(calls[0]!.body).not.toContain("tk-9f");
+  });
+
+  it("非法 topic（字符集外）出站前拒绝，不发错地址", async () => {
+    const calls = stubFetch(() => new Response("{}", { status: 200 }));
+    const result = await sendWebhook(
+      ntfyOf({ url: "https://ntfy.sh/", template: topicTemplate("has space") }),
+      messageOf(),
+    );
+    expect(result.status).toBe("failed");
+    expect(retryableOf(result)).toBe(false);
+    expect(reasonOf(result).code).toBe("reasonWebhookTemplateInvalid");
+    expect(reasonOf(result).detail).toContain("topic 非法");
+    expect(calls).toHaveLength(0);
+  });
+
+  // 主控复核风险 1：名称查表无 hasOwn 时 `"__proto__"` 会拿到 Object.prototype（truthy
+  // 非数字）并发出——priority 必须是数字，该反证钉住精确拒绝且无出站。
+  it("priority 原型污染键精确拒绝：__proto__/constructor 不得出站", async () => {
+    for (const evil of ['{"priority": "__proto__"}', '{"priority": "constructor"}']) {
+      const calls = stubFetch(() => new Response("{}", { status: 200 }));
+      const result = await sendWebhook(
+        ntfyOf({ url: "https://ntfy.sh/", template: evil }),
+        messageOf(),
+      );
+      expect(result.status, evil).toBe("failed");
+      expect(retryableOf(result), evil).toBe(false);
+      expect(reasonOf(result).code, evil).toBe("reasonWebhookTemplateInvalid");
+      expect(reasonOf(result).detail, evil).toContain("priority 非法");
+      expect(calls, "非法 priority 时桩 fetch 不该被调用").toHaveLength(0);
+    }
+  });
+
+  // 主控复核风险 2：改写只截原始 pathname 的已明确末段——编码前缀、双斜杠、query
+  // 原样保留；比较时才解码候选末段。
+  it("原始路径字节保留：双斜杠不被压扁，截段后前缀逐字保留", async () => {
+    const calls = stubFetch(() => new Response("{}", { status: 200 }));
+    const result = await sendWebhook(
+      ntfyOf({ url: "https://self.example/base//demo", template: topicTemplate("demo") }),
+      messageOf(),
+    );
+    expect(result).toEqual({ status: "ok", stage: "delivered" });
+    expect(calls[0]!.url).toBe("https://self.example/base//");
+    expect(JSON.parse(calls[0]!.body).topic).toBe("demo");
+  });
+
+  it("原始路径字节保留：单斜杠前缀截段后落到前缀根 /base/", async () => {
+    const calls = stubFetch(() => new Response("{}", { status: 200 }));
+    const result = await sendWebhook(
+      ntfyOf({ url: "https://self.example/base/demo", template: topicTemplate("demo") }),
+      messageOf(),
+    );
+    expect(result).toEqual({ status: "ok", stage: "delivered" });
+    expect(calls[0]!.url).toBe("https://self.example/base/");
+    expect(JSON.parse(calls[0]!.body).topic).toBe("demo");
+  });
+
+  it("原始路径字节保留：编码前缀截段后原样保留", async () => {
+    const calls = stubFetch(() => new Response("{}", { status: 200 }));
+    const result = await sendWebhook(
+      ntfyOf({ url: "https://self.example/%6Etfy/demo", template: topicTemplate("demo") }),
+      messageOf(),
+    );
+    expect(result).toEqual({ status: "ok", stage: "delivered" });
+    expect(calls[0]!.url).toBe("https://self.example/%6Etfy/");
+    expect(JSON.parse(calls[0]!.body).topic).toBe("demo");
+  });
+
+  it("编码末段按解码比对：d%65mo 命中显式 demo 后改写为根地址", async () => {
+    const calls = stubFetch(() => new Response("{}", { status: 200 }));
+    const result = await sendWebhook(
+      ntfyOf({ url: "https://ntfy.sh/d%65mo", template: topicTemplate("demo") }),
+      messageOf(),
+    );
+    expect(result).toEqual({ status: "ok", stage: "delivered" });
+    expect(calls[0]!.url).toBe("https://ntfy.sh/");
+    expect(JSON.parse(calls[0]!.body).topic).toBe("demo");
+  });
+
+  it("编码前缀根地址原样保留：%6Etfy/ + 显式 topic 不截断不错位", async () => {
+    const raw = "https://self.example/%6Etfy/?x=1";
+    const calls = stubFetch(() => new Response("{}", { status: 200 }));
+    const result = await sendWebhook(
+      ntfyOf({ url: raw, template: topicTemplate("demo") }),
+      messageOf(),
+    );
+    expect(result).toEqual({ status: "ok", stage: "delivered" });
+    expect(calls[0]!.url).toBe(raw);
+    expect(JSON.parse(calls[0]!.body).topic).toBe("demo");
+  });
+
+  // 主控复核风险 3：尾斜杠 + 缺 topic 是不明确根模式（前缀根与 topic 地址无法区分），
+  // 不猜、报不明确且无出站；与「显式 topic + 前缀根原样保留」配对。
+  it("尾斜杠 + 缺 topic：不把前缀根末段当 topic，结果是拒绝而非改写", async () => {
+    const calls = stubFetch(() => new Response("{}", { status: 200 }));
+    const result = await sendWebhook(
+      ntfyOf({ url: "https://self.example/ntfy/", template: "" }),
+      messageOf(),
+    );
+    expect(result.status).toBe("failed");
+    expect(retryableOf(result)).toBe(false);
+    expect(reasonOf(result).code).toBe("reasonWebhookTemplateInvalid");
+    expect(reasonOf(result).detail).toContain("以 / 结尾");
+    expect(calls).toHaveLength(0);
+  });
+
+  it("gotify / raw 不进 ntfy 分支：topic 形 URL 原样发出", async () => {
+    const calls = stubFetch(() => new Response("{}", { status: 200 }));
+    expect(
+      await sendWebhook(
+        targetOf({ url: "https://gotify.example/message?token=x", preset: "gotify" }),
+        messageOf(),
+      ),
+    ).toEqual({ status: "ok", stage: "delivered" });
+    expect(calls[0]!.url).toBe("https://gotify.example/message?token=x");
   });
 });

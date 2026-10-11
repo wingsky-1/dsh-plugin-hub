@@ -77,9 +77,9 @@ describe("预设词汇与两层改名", () => {
 });
 
 describe("{{priority}} 映射表", () => {
-  it("12 格逐项钉住（raw = severity 原文）", () => {
+  it("12 格逐项钉住（raw = severity 原文；ntfy = 官方 JSON 协议的 1..5 数字）", () => {
     expect(WEBHOOK_PRIORITY).toEqual({
-      ntfy: { failure: "urgent", warning: "high", success: "low", info: "default" },
+      ntfy: { failure: "5", warning: "4", success: "2", info: "3" },
       gotify: { failure: "9", warning: "7", success: "3", info: "3" },
       raw: { failure: "failure", warning: "warning", success: "success", info: "info" },
     });

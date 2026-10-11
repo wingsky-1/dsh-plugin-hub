@@ -69,7 +69,7 @@ IIFE 工厂、Symbol.toStringTag 装配、**load id === 包名** define 注入�
 - 只 import `../../shared/*` 与 Node 内置；第三方运行时依赖一律由 esbuild `--bundle`
   内联（发布物零运行时 npm 依赖）。
 - 路由强制 loopback 围栏（非回环 403 / 方法错 405）+ `/health` 必项。
-- patch id `ui-<name>`；声明 `dsh.client` 必须有 `exports["./client"]`。
+- patch id `dsh-<name>`；声明 `dsh.client` 必须有 `exports["./client"]`。
 
 ## 4. 目录 / 共享模块
 

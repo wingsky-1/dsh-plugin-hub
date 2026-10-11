@@ -22,6 +22,7 @@ import {
 import { randomUUID } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
 import type { ReportPeriod } from "../config/interface.ts";
+import { temporaryNameFor } from "../../shared/interface.ts";
 import {
   beginAttempt as policyBeginAttempt,
   beginForce as policyBeginForce,
@@ -1105,7 +1106,8 @@ async function writeDocumentUnlocked(
 ): Promise<void> {
   const file = retryLedgerFile(root);
   const reports = await ensureReportsDirectory(root);
-  const temporary = `${file}.${process.pid}.${randomUUID()}.tmp`;
+  // 独占临时名走 shared 单一实现：同进程并发双写各落各的 tmp（open "wx" 的独占性才有意义）。
+  const temporary = temporaryNameFor(file);
   let temporaryExists = false;
   try {
     const handle = await open(temporary, "wx", 0o600);

@@ -4,11 +4,11 @@
 /**
  * aggregate — 聚合包（dsh-plugins-all）cordis.patch.yml 生成/校验器。
  *
- * 语义（对齐 web-ui aggregate 实测做法 + 本仓 ui-<name> patch id 决策）：
+ * 语义（对齐 web-ui aggregate 实测做法 + 本仓 patch id 决策）：
  *   - 聚合 cordis.patch.yml = 各独立包 insert 行**原样拼接**（id + name，**不带
  *     config**——schema 默认值兜底：lan-proxy host/port、mcp-manager
  *     announceToAgent、各插件 enabled 均有默认）；
- *   - 聚合行 id 与独立行 id 相同（ui-<目录名>）：同一插件以独立+聚合两种方式
+ *   - 聚合行 id 与独立行 id 相同（dsh-<目录名>）：同一插件以独立+聚合两种方式
  *     同时安装时，loader 层按 id 出现 duplicate -> TypeError（fail-loud 启动
  *     失败，明确可发现）；因此 **README 声明禁双装**（任选一种安装方式）。
  *     保持 id 相同而非另加前缀——避免「不同 id 双 entry 各自 apply 的静默双激活」。

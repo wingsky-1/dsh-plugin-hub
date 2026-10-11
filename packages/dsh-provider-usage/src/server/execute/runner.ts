@@ -2,11 +2,11 @@
  * dsh-provider-usage — server/execute 域：报告生成执行器与索引读取辅助
  * （#768 D3，由 domain2/execute/runner.ts 搬入，零行为变更）。
  */
-import { appendFile, mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import type { Context } from "@deepseek-ai/cordis";
 import { errorMessage } from "../../../../../shared/host-utils.js";
-import { dayKey, escHtml } from "../../shared/interface.ts";
+import { atomicWrite, dayKey, escHtml } from "../../shared/interface.ts";
 import { metricValue } from "../shared/interface.ts";
 import type { TrendTracker } from "../aggregate/interface.ts";
 import { sumToken, type TrendCell } from "../shared/interface.ts";
@@ -213,13 +213,8 @@ export async function persistReport(
   const indexFile = reportIndexFile(historyRoot);
 
   await mkdir(dir, { recursive: true });
-  const tmpHtml = `${htmlFile}.${Date.now()}.tmp`;
-  await writeFile(tmpHtml, reportHtmlDocument(meta, bodyText), { mode: 0o600 });
-  await rename(tmpHtml, htmlFile);
-
-  const tmpMeta = `${metaFile}.${Date.now()}.tmp`;
-  await writeFile(tmpMeta, JSON.stringify(meta, null, 2), { mode: 0o600 });
-  await rename(tmpMeta, metaFile);
+  await atomicWrite(htmlFile, reportHtmlDocument(meta, bodyText));
+  await atomicWrite(metaFile, JSON.stringify(meta, null, 2));
 
   const indexedMeta: ReportCycleMeta = cycleId === undefined ? meta : { ...meta, cycleId };
   await appendFile(indexFile, `${JSON.stringify(indexedMeta)}\n`, { mode: 0o600 });

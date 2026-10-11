@@ -287,23 +287,29 @@ http/https）、`deviceKey`（Bark App 内查看；响应中一律掩码 `******
 
 | preset | info | success | warning | failure |
 |---|---|---|---|---|
-| `ntfy` | `default` | `low` | `high` | `urgent` |
+| `ntfy` | 3 | 2 | 4 | 5 |
 | `gotify` | 3 | 3 | 7 | 9 |
 
 `custom` 不映射——`{{priority}}` 直出 severity 原文，由网关自行处理。
 
 模板占位符清单：`{{title}}`、`{{message}}`、`{{kind}}`、`{{severity}}`、`{{priority}}`（映射见上表）、`{{source}}`（渲染为空串，预留位）、`{{ts}}`（毫秒时间戳取整，数字直出——唯一允许以裸值形态出现在模板中的占位符）。
 
-渲染语义（JSON-aware 两步法）：先把 `{{ts}}` 替换为数字字面量 → 模板整体 `JSON.parse` → 树遍历仅对**字符串值**做占位符替换 → 重新 `JSON.stringify`。替换发生在已解析字符串内部、重新序列化时统一转义——通知内容含引号 / `"}}` 也无法逃逸出字符串注入额外字段（防注入收口）。模板不是合法 JSON = 该频道投递失败并落记录（不静默降级为文本，不影响其他频道）。`ntfy` 预设默认模板含 `"topic": "<topic>"` 占位，投递前改成你的主题名。
+渲染语义（JSON-aware 两步法）：先把 `{{ts}}` 替换为数字字面量 → 模板整体 `JSON.parse` → 树遍历仅对**字符串值**做占位符替换 → 重新 `JSON.stringify`。替换发生在已解析字符串内部、重新序列化时统一转义——通知内容含引号 / `"}}` 也无法逃逸出字符串注入额外字段（防注入收口）。模板不是合法 JSON = 该频道投递失败并落记录（不静默降级为文本，不影响其他频道）。`ntfy` 预设的 `priority` 归一成 1..5 数字发出（旧名称字面量兼容映射，非法值按投递失败落记录）。
+
+**ntfy JSON 发布（#1102）**：官方要求 JSON 发往服务根地址、`body.topic` 必填。推荐配置：`url` 写服务根地址（如 `https://ntfy.sh/`，自托管前缀根地址如 `https://self.example/ntfy/` 原样保留），模板内填真实 `topic`。旧配置（`https://ntfy.sh/<topic>` + 默认模板）自动兼容：无尾斜杠单段路径提取末段 topic 并改写为根地址发出（只移除末段 topic 本身，前缀〈含分隔斜杠〉与 query 原样保留）。显式 topic + 非根路径时，路径以 `/` 结尾视同自托管前缀根地址、原样保留绝不截断；末段解码后与显式 topic 一致（无尾斜杠）则同样只移除末段发出；末段不一致（无尾斜杠）即冲突，报配置错误且不出站。模板无可用 topic 时：无尾斜杠单段路径提取，根路径报缺 topic，尾斜杠路径与多段路径因无法明确判断（前缀根与 topic 地址不可区分）而拒绝——三者都不发错地址、不猜测。`topic` 仅允许字母/数字/`_`/`-`（1..64 字符）。配置文件无需手工删键，也不新增公共配置键。
 
 投递可靠性：超时 1-60s（默认 10）；**失败不自动重试**——4xx / 5xx / 网络错误 / 渲染失败统一为失败终态，落 status 文件与通知历史（宿主原文截断后进失败理由的 `detail`，见「安全模型」），可经「发送测试通知」重发验证。`kindRoutes` 中以 `webhook:<id>` 引用（与 `bark:<id>` 同款 `type:id` 形态）。
 
 实例示例（与 Bark 实例同存于 `channels` 数组，`id` 跨类型唯一——重复身份写面 400，见「安全模型」）：
 
 ```json
-{ "id": "droid", "type": "webhook", "url": "https://ntfy.sh/mytopic",
-  "enabled": true, "auth": "bearer", "token": "…", "preset": "ntfy", "timeoutSec": 10 }
+{ "id": "droid", "type": "webhook", "url": "https://ntfy.sh/",
+  "enabled": true, "auth": "bearer", "token": "…", "preset": "ntfy",
+  "template": "{\"topic\":\"mytopic\",\"title\":\"{{title}}\",\"message\":\"{{message}}\",\"tags\":[\"{{kind}}\"],\"priority\":\"{{priority}}\"}",
+  "timeoutSec": 10 }
 ```
+
+旧写法 `url: https://ntfy.sh/mytopic` + 默认模板仍可投递（自动兼容改写），新配置请用上面的根地址形态。
 
 - **Webhook 频道凭据与出站安全（#508）**：
   - **默认停用**：`enabled` 默认 false——出站授权须显式开启（与 Bark 同姿态）
