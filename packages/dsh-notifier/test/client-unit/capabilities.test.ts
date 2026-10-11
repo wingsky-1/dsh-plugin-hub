@@ -28,6 +28,15 @@ import {
 // 用例里一律以 t 称呼翻译函数（与产品调用点同名），实现见 test/client-helpers.ts。
 import { translateWithZh as t } from "../client-helpers.ts";
 
+function translateWithEn(key: string, params?: Record<string, unknown>): string {
+  const template: string = en[key as NotifierLocaleKey];
+  return template.replace(/\{(\w+)\}/gu, (match, name: string) =>
+    params !== undefined && Object.prototype.hasOwnProperty.call(params, name)
+      ? String(params[name])
+      : match,
+  );
+}
+
 const OK_POPUP = { state: "ok", checked: ["notify-send", "session-bus"] };
 const OK_SOUND = {
   state: "ok",
@@ -466,8 +475,38 @@ describe("clientDiagnosticsOf：界面只做机械投影", () => {
   // 未授权时的动作提示必须出现在结论行里（权限状态行给按钮，这里给「下一步是什么」）。
   it("权限未请求时结论行给出可请求权限的动作提示", () => {
     const view = clientDiagnosticsOf(payloadOf(), factsOf({ permission: "default" }), t);
-    expect(view.browser.line).toContain(zh.diagBrowserPermissionDefault);
+    expect(view.browser.line).toBe(
+      "本页浏览器：弹窗 无法判定（未授权时不会弹浏览器系统通知；页面隐藏时只更新标题，页面可见且通知策略允许时显示页内横幅。权限尚未请求，可点「请求通知权限」授权） · 声音 可用",
+    );
     expect(view.browser.verdict).toBe("unknown");
+  });
+
+  it("权限被拒绝时结论行说明实际展示降级", () => {
+    const view = clientDiagnosticsOf(payloadOf(), factsOf({ permission: "denied" }), t);
+    expect(view.browser.line).toBe(
+      "本页浏览器：弹窗 不可用（未授权时不会弹浏览器系统通知；页面隐藏时只更新标题，页面可见且通知策略允许时显示页内横幅。权限已被拒绝，请在浏览器站点设置中允许） · 声音 可用",
+    );
+    expect(view.browser.verdict).toBe("unreachable");
+  });
+
+  it("英文能力 view 同样说明未授权时的实际展示方式", () => {
+    const denied = clientDiagnosticsOf(
+      payloadOf(),
+      factsOf({ permission: "denied" }),
+      translateWithEn,
+    );
+    expect(denied.browser.line).toBe(
+      "This browser page: popup unavailable（Without permission, browser system notifications cannot appear; while the page is hidden, only the title is updated. When the page is visible, an in-page banner appears only if the notification policy allows it. Permission was denied; allow it in the browser site settings） · sound available",
+    );
+
+    const notAsked = clientDiagnosticsOf(
+      payloadOf(),
+      factsOf({ permission: "default" }),
+      translateWithEn,
+    );
+    expect(notAsked.browser.line).toBe(
+      'This browser page: popup undetermined（Without permission, browser system notifications cannot appear; while the page is hidden, only the title is updated. When the page is visible, an in-page banner appears only if the notification policy allows it. Permission has not been requested; click "Request permission" to grant it） · sound available',
+    );
   });
 });
 
