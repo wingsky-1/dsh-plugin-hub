@@ -1635,10 +1635,10 @@ describe("#382 F5 删除后的等价判据：userDisabled 短路不装载", () =
   });
 });
 
-// #412 复报：resumeReconnect 配置全集重建（单元缺失 / entry 缺失场景） ----
-describe("#412 resumeReconnect 配置全集重建", () => {
+// #1120：resumeReconnect 非强制可用性恢复（单元缺失 / entry 缺失场景） ----
+describe("#1120 resumeReconnect 非强制可用性恢复", () => {
   function resumeFixture() {
-    const { dir, manager } = managerFixture("dsh-mcp-mgr2r-");
+    const { dir, manager, log } = managerFixture("dsh-mcp-mgr2r-");
     const projRoot = join(dir, "proj");
     mkdirSync(projRoot, { recursive: true });
     const projStore = new McpStore(join(projRoot, ".dsh", "mcp.json"));
@@ -1671,17 +1671,17 @@ describe("#412 resumeReconnect 配置全集重建", () => {
         calls.push(["projectUnitFor", root]);
         return unit;
       },
-      ensureConnected: async (root: string, name: string, opts: unknown) => {
+      ensureConnected: async (root: string, name: string, opts?: unknown) => {
         calls.push(["ensureConnected", root, name, opts]);
       },
       // 部分中间层桩（只实现 resume 触达的 units/projectUnitFor/ensureConnected）：按接缝收窄。
     };
     manager.middleware = fakeMw as unknown as McpManagerType["middleware"];
-    return { manager, projRoot, calls, fakeMw };
+    return { manager, projRoot, calls, fakeMw, log };
   }
 
   it("单元缺失时先 projectUnitFor 确保单元创建", async () => {
-    // 单元缺失：resumeReconnect 应先 projectUnitFor 创建单元，再按配置全集 force 重建。
+    // 单元缺失：resumeReconnect 应先 projectUnitFor 创建单元，再按配置全集恢复。
     const { manager, projRoot, calls } = resumeFixture();
     await manager.resumeReconnect();
     expect(calls.some((c) => c[0] === "projectUnitFor" && c[1] === projRoot)).toBeTruthy();
@@ -1694,18 +1694,19 @@ describe("#412 resumeReconnect 配置全集重建", () => {
     expect(recon.map((c) => c[2]).sort()).toEqual(["p1", "p3"]);
   });
 
-  it("全部 force 受控重建（#412）", async () => {
+  it("非强制恢复（健康/connecting/reconnecting 不强制重建）", async () => {
     const { manager, calls } = resumeFixture();
     await manager.resumeReconnect();
     const recon = calls.filter((c) => c[0] === "ensureConnected");
-    // opts 为调用方透传的未知形状：只读 force 面。
+    // 非强制：opts 缺省或 force 非 true——现有状态投影/在途去重决定是否真建连。
+    expect(recon.length).toBeGreaterThan(0);
     expect(
-      recon.every((c) => (c[3] as { force?: unknown } | undefined)?.force === true),
+      recon.every((c) => (c[3] as { force?: unknown } | undefined)?.force !== true),
     ).toBeTruthy();
   });
 
   it("userDisabled 过滤（p3 已禁用不复活）", async () => {
-    // 单元已存在但 entry 缺失：仍按配置全集重建（不重复 projectUnitFor）。
+    // 单元已存在但 entry 缺失：仍按配置全集恢复（不重复 projectUnitFor）。
     const { manager, projRoot, calls, fakeMw } = resumeFixture();
     await manager.resumeReconnect();
     calls.length = 0;
@@ -1722,6 +1723,289 @@ describe("#412 resumeReconnect 配置全集重建", () => {
     fakeMw.units.get(projRoot).userDisabled.add("p3");
     await manager.resumeReconnect();
     expect(!calls.some((c) => c[0] === "projectUnitFor")).toBeTruthy();
+  });
+
+  it("旧无 body 回落既有绑定（undefined→projectRoot）", async () => {
+    const { manager, projRoot, calls } = resumeFixture();
+    await manager.resumeReconnect(undefined);
+    expect(calls.some((c) => c[0] === "projectUnitFor" && c[1] === projRoot)).toBeTruthy();
+  });
+
+  it("新请求明确无工作区固定 @global（不回落他人 projectRoot）", async () => {
+    const { manager, projRoot, calls } = resumeFixture();
+    await manager.resumeReconnect("");
+    expect(calls.some((c) => c[0] === "projectUnitFor" && c[1] === projRoot)).toBe(false);
+    expect(
+      calls.some((c) => c[0] === "projectUnitFor" && c[1] === MIDDLEWARE_GLOBAL_ROOT),
+    ).toBeTruthy();
+    const recon = calls.filter((c) => c[0] === "ensureConnected");
+    // 全局配置为空：目标集为空但 root 固定正确（不断言目标名，只断 root 面）。
+    for (const c of recon) expect(c[1]).toBe(MIDDLEWARE_GLOBAL_ROOT);
+  });
+
+  it("新请求带 cwd 固定本次 root（不读并发可变的 projectRoot）", async () => {
+    const { manager, projRoot, calls } = resumeFixture();
+    // .git 标记使 findProjectRoot(subdir) 收敛到 projRoot。
+    mkdirSync(join(projRoot, ".git"), { recursive: true });
+    const subdir = join(projRoot, "sub");
+    mkdirSync(subdir, { recursive: true });
+    // 并发可变字段被改成别的 root：本次调用仍须用请求 cwd 解析出的 root。
+    manager.projectRoot = MIDDLEWARE_GLOBAL_ROOT;
+    const expected = realpathSync(projRoot);
+    await manager.resumeReconnect(subdir);
+    expect(calls.some((c) => c[0] === "projectUnitFor" && c[1] === expected)).toBe(true);
+    expect(calls.some((c) => c[0] === "projectUnitFor" && c[1] === MIDDLEWARE_GLOBAL_ROOT)).toBe(
+      false,
+    );
+  });
+
+  it("单台恢复失败记 warn 不阻断其余（真正失败不无条件吞掉）", async () => {
+    const { manager, calls, fakeMw, log } = resumeFixture();
+    fakeMw.ensureConnected = async (root: string, name: string, opts?: unknown) => {
+      calls.push(["ensureConnected", root, name, opts]);
+      if (name === "p1") throw new Error("boom-p1");
+    };
+    await manager.resumeReconnect();
+    const recon = calls.filter((c) => c[0] === "ensureConnected");
+    expect(recon.map((c) => c[2]).sort()).toEqual(["p1", "p3"]);
+    expect(log.warn.some((line) => line.includes("p1"))).toBe(true);
+  });
+});
+
+// #1120 resume 真实链路接缝：真实 manager + 真实 middleware + 官方装载替身 ----
+// 上一组只用部分中间层桩（不断 opts/调用面），证明不了代际保留、在途合并与失败恢复。
+// 本组走真链路：initMiddleware 装配真实 McpMiddleware，装载经假 loader（官方挂载替身，
+// 不 spawn 子进程、全离线），状态经注册面 mcp__<id>__ 前缀投影；判据只读可观测量
+// （mount/dispose 调用数、条目对象身份、statusOf），不断 stub 返回值。
+describe("#1120 resume 真实链路接缝", () => {
+  let prevHome: string | undefined;
+  let homeDir: string;
+  beforeEach(() => {
+    prevHome = process.env.DSH_HOME;
+    homeDir = makeTempDir("dsh-mcp-mgr2live-home-");
+    process.env.DSH_HOME = homeDir;
+  });
+  afterEach(() => {
+    if (prevHome === undefined) delete process.env.DSH_HOME;
+    else process.env.DSH_HOME = prevHome;
+  });
+
+  /** 真实 manager + 真实中间层：全局 store 含单台，中间层已装配。 */
+  async function liveGlobal(name: string, extra: Record<string, unknown> = {}) {
+    const fixture = managerFixture("dsh-mcp-mgr2live-");
+    fixture.store.upsert(normalizeServer(quietServer(name, extra)));
+    await fixture.manager.initMiddleware();
+    return fixture;
+  }
+
+  /** 经 reconcile 把全局服务器真装进 @global 单元，等 id 回填（#1091：不等 has() 窗口）。 */
+  async function connectGlobal(manager: McpManagerType, name: string) {
+    manager.reconcileServers();
+    await pollUntil(`${name} 真装进池且 id 回填`, () => {
+      const entry = manager.middleware!.units.get("@global")?.connections.get(name);
+      return entry !== undefined && entry.id !== undefined;
+    });
+    return manager.middleware!.units.get("@global")!;
+  }
+
+  /** 注册面补前缀（与装载窗口同源的那一份工具服务）：条目投影为 connected。 */
+  function prefixFor(manager: McpManagerType, root: string, name: string) {
+    const entry = manager.middleware!.units.get(root)!.connections.get(name)!;
+    const tools = manager.ctx.tools as unknown as { entries: FakeToolEntry[] };
+    tools.entries = [{ name: `mcp__${entry.id}__t` }];
+    expect(manager.middleware!.statusOf(root, name)).toBe("connected");
+    return entry;
+  }
+
+  const mountCount = () => poolLoader!.calls.filter((call) => call[0] === "mount").length;
+  const disposeCount = () => poolLoader!.calls.filter((call) => call[0] === "dispose").length;
+
+  it("健康连接 resume：同条目对象、零新增 mount、零 dispose（代际保留）", async () => {
+    const { manager } = await liveGlobal("g");
+    const unit = await connectGlobal(manager, "g");
+    const entry = prefixFor(manager, "@global", "g");
+    const mounts = mountCount();
+    const disposes = disposeCount();
+    await manager.resumeReconnect();
+    expect(unit.connections.get("g")).toBe(entry);
+    expect(mountCount()).toBe(mounts);
+    expect(disposeCount()).toBe(disposes);
+    expect(manager.middleware!.statusOf("@global", "g")).toBe("connected");
+  });
+
+  it("同 root 并发重复恢复合并为单 connect attempt（在途去重）", async () => {
+    // 装载窗口挂起时重复恢复必须合并：deferred 下两个 resume 共享同一 attempt。
+    loaderScript.ready = "deferred";
+    const { manager } = await liveGlobal("g");
+    await manager.initMiddleware();
+    const first = manager.resumeReconnect();
+    const second = manager.resumeReconnect();
+    await pollUntil("单 attempt 建连中", () => mountCount() === 1);
+    // 窗口未放闸前充分排空微任务：重复 attempt 会在此现形为第 2 次 mount。
+    for (let i = 0; i < 20; i += 1) await Promise.resolve();
+    expect(mountCount()).toBe(1);
+    poolLoader!.settleReady();
+    await Promise.all([first, second]);
+    expect(manager.middleware!.units.get("@global")?.connections.has("g")).toBe(true);
+  });
+
+  it("entry 缺失恢复：release 后 resume 重建（mount+1、条目换代际）", async () => {
+    const { manager } = await liveGlobal("g");
+    const unit = await connectGlobal(manager, "g");
+    const before = prefixFor(manager, "@global", "g");
+    manager.middleware!.releaseConnection("@global", "g");
+    expect(unit.connections.has("g")).toBe(false);
+    const mounts = mountCount();
+    await manager.resumeReconnect();
+    const after = unit.connections.get("g")!;
+    expect(mountCount()).toBe(mounts + 1);
+    expect(after).not.toBe(before);
+    // 同一 (root, name) 复用同一 id：注册面前缀仍命中，新代际照实 connected。
+    expect(after.id).toBe(before.id);
+    expect(manager.middleware!.statusOf("@global", "g")).toBe("connected");
+  });
+
+  it("真正失败恢复：failed 条目 resume 重建（mount+1、旧代际被 dispose）", async () => {
+    const { manager } = await liveGlobal("g");
+    const unit = await connectGlobal(manager, "g");
+    // 注册面无前缀 → 首连即 failed（quietServer 关重连，半开语义不适用）。
+    expect(manager.middleware!.statusOf("@global", "g")).toBe("failed");
+    const before = unit.connections.get("g")!;
+    const mounts = mountCount();
+    const disposes = disposeCount();
+    await manager.resumeReconnect();
+    expect(mountCount()).toBe(mounts + 1);
+    expect(disposeCount()).toBeGreaterThan(disposes);
+    expect(unit.connections.get("g")).not.toBe(before);
+  });
+
+  it("官方 reconnecting 保留：不断开、不重建（官方退避优先）", async () => {
+    // 重连开启的服务器：连上过（everConnected）后注册面前缀消失 → reconnecting。
+    const fixture = managerFixture("dsh-mcp-mgr2live-");
+    fixture.store.upsert(
+      normalizeServer({ name: "gr", transport: "stdio", command: "dsh-noop-cmd" }),
+    );
+    await fixture.manager.initMiddleware();
+    const { manager } = fixture;
+    const unit = await connectGlobal(manager, "gr");
+    // 首代 settle 时无前缀（failed，everConnected=false）：先把前缀补上再显式 force
+    // 重建一代——同一 id 在窗口内即见前缀，新代际 settle 为 connected 且 everConnected。
+    const first = unit.connections.get("gr")!;
+    const tools = manager.ctx.tools as unknown as { entries: FakeToolEntry[] };
+    tools.entries = [{ name: `mcp__${first.id}__t` }];
+    await manager.connect("gr");
+    const entry = unit.connections.get("gr")!;
+    expect(entry).not.toBe(first);
+    expect(manager.middleware!.statusOf("@global", "gr")).toBe("connected");
+    tools.entries = [];
+    expect(manager.middleware!.statusOf("@global", "gr")).toBe("reconnecting");
+    const mounts = mountCount();
+    const disposes = disposeCount();
+    await manager.resumeReconnect();
+    expect(unit.connections.get("gr")).toBe(entry);
+    expect(mountCount()).toBe(mounts);
+    expect(disposeCount()).toBe(disposes);
+  });
+
+  it("userDisabled 不复活（disconnect 后 resume 不重建）", async () => {
+    const { manager } = await liveGlobal("g");
+    await connectGlobal(manager, "g");
+    prefixFor(manager, "@global", "g");
+    await manager.disconnect("g");
+    const mounts = mountCount();
+    await manager.resumeReconnect();
+    expect(manager.middleware!.units.get("@global")?.connections.has("g")).toBe(false);
+    expect(mountCount()).toBe(mounts);
+  });
+
+  it("显式 force 仍确实重建（connect 走 force：换代际、旧代际 dispose）", async () => {
+    const { manager } = await liveGlobal("g");
+    const unit = await connectGlobal(manager, "g");
+    const before = prefixFor(manager, "@global", "g");
+    const mounts = mountCount();
+    const disposes = disposeCount();
+    await manager.connect("g");
+    expect(mountCount()).toBe(mounts + 1);
+    expect(disposeCount()).toBeGreaterThan(disposes);
+    expect(unit.connections.get("g")).not.toBe(before);
+  });
+
+  it("A/B root 异步交错：各回各的单元，不串 root", async () => {
+    const { dir, manager } = managerFixture("dsh-mcp-mgr2live-");
+    const projA = join(dir, "projA");
+    const projB = join(dir, "projB");
+    mkdirSync(projA, { recursive: true });
+    mkdirSync(projB, { recursive: true });
+    mkdirSync(join(projA, ".git"), { recursive: true });
+    mkdirSync(join(projB, ".git"), { recursive: true });
+    const subA = join(projA, "work");
+    const subB = join(projB, "work");
+    mkdirSync(subA, { recursive: true });
+    mkdirSync(subB, { recursive: true });
+    const rootA = realpathSync(projA);
+    const rootB = realpathSync(projB);
+    const storeA = new McpStore(join(projA, ".dsh", "mcp.json"));
+    storeA.data = { version: 1, servers: [normalizeServer(quietServer("a1"))] };
+    const storeB = new McpStore(join(projB, ".dsh", "mcp.json"));
+    storeB.data = { version: 1, servers: [normalizeServer(quietServer("b1"))] };
+    manager.projectStores.set(rootA, storeA);
+    manager.projectStores.set(rootB, storeB);
+    // 并发可变字段指向 A：B 的恢复不得被带偏。
+    manager.projectRoot = rootA;
+    await manager.initMiddleware();
+    await Promise.all([manager.resumeReconnect(subA), manager.resumeReconnect(subB)]);
+    const unitA = manager.middleware!.units.get(rootA)!;
+    const unitB = manager.middleware!.units.get(rootB)!;
+    expect([...unitA.connections.keys()].sort()).toEqual(["a1"]);
+    expect([...unitB.connections.keys()].sort()).toEqual(["b1"]);
+  });
+
+  it("A 健康 + B 在途时 resume(A)：不 dispose、不换 B 条目（跨单元零干扰）", async () => {
+    const { dir, manager } = managerFixture("dsh-mcp-mgr2live-");
+    const projA = join(dir, "projA");
+    const projB = join(dir, "projB");
+    mkdirSync(projA, { recursive: true });
+    mkdirSync(projB, { recursive: true });
+    mkdirSync(join(projA, ".git"), { recursive: true });
+    mkdirSync(join(projB, ".git"), { recursive: true });
+    const subA = join(projA, "work");
+    mkdirSync(subA, { recursive: true });
+    const rootA = realpathSync(projA);
+    const rootB = realpathSync(projB);
+    const storeA = new McpStore(join(projA, ".dsh", "mcp.json"));
+    storeA.data = { version: 1, servers: [normalizeServer(quietServer("a1"))] };
+    const storeB = new McpStore(join(projB, ".dsh", "mcp.json"));
+    storeB.data = { version: 1, servers: [normalizeServer(quietServer("b1"))] };
+    manager.projectStores.set(rootA, storeA);
+    manager.projectStores.set(rootB, storeB);
+    manager.projectRoot = rootA;
+    await manager.initMiddleware();
+    // A 先真装健康（注册面前缀 → connected）。
+    await manager.resumeReconnect(subA);
+    const unitA = manager.middleware!.units.get(rootA)!;
+    const entryA = prefixFor(manager, rootA, "a1");
+    // B 挂起在途：deferred 下先建单元（后台建连卡在装载窗口）。
+    loaderScript.ready = "deferred";
+    const mountsBeforeB = mountCount();
+    const touchB = manager.middleware!.projectUnitFor(rootB);
+    await pollUntil("b1 装载在途", () => mountCount() === mountsBeforeB + 1);
+    const unitB = manager.middleware!.units.get(rootB)!;
+    const entryB = unitB.connections.get("b1")!;
+    expect(entryB.id, "在途条目尚无 id 回填").toBe(undefined);
+    const mounts = mountCount();
+    const disposes = disposeCount();
+    // resume(A)：A 健康短路、B 条目对象不变、零新增 mount/dispose。
+    await manager.resumeReconnect(subA);
+    expect(unitA.connections.get("a1")).toBe(entryA);
+    expect(unitB.connections.get("b1")).toBe(entryB);
+    expect(mountCount()).toBe(mounts);
+    expect(disposeCount()).toBe(disposes);
+    expect(manager.middleware!.statusOf(rootA, "a1")).toBe("connected");
+    // 放闸：B 在途 attempt 正常结算（不断言状态，只断代际未被换过）。
+    poolLoader!.settleReady();
+    await touchB;
+    await pollUntil("b1 在途结算且 id 回填", () => entryB.id !== undefined);
+    expect(unitB.connections.get("b1")).toBe(entryB);
   });
 });
 

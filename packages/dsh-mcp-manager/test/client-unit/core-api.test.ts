@@ -20,7 +20,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { api, cwdQueryOf, toolDisableServerKey } from "../../src/client/core/api.ts";
+import { api, cwdQueryOf, resumeBodyOf, toolDisableServerKey } from "../../src/client/core/api.ts";
 import type { McpServerListEntry, McpState } from "../../src/client/core/state.ts";
 
 const state = (raw: Record<string, unknown>): McpState => raw as unknown as McpState;
@@ -145,6 +145,29 @@ describe("api：cwdQueryOf 会话 cwd 查询参数", () => {
   });
 });
 
+describe("api：resumeBodyOf 本次会话 cwd 请求体（#1120）", () => {
+  it("未知会话 → undefined（不带 body，服务端回落既有绑定）", () => {
+    expect(resumeBodyOf(state({ sessionResolved: false }))).toBeUndefined();
+    expect(resumeBodyOf(state({ sessionResolved: false, currentCwd: "/w" }))).toBeUndefined();
+  });
+
+  it("已知会话带非空 cwd → { cwd } 原样透传", () => {
+    expect(resumeBodyOf(state({ sessionResolved: true, currentCwd: "/w" }))).toEqual({
+      cwd: "/w",
+    });
+  });
+
+  it("已知空会话 → { cwd: '' }（明确无工作区，服务端固定 @global）", () => {
+    expect(resumeBodyOf(state({ sessionResolved: true, currentCwd: "" }))).toEqual({ cwd: "" });
+    expect(resumeBodyOf(state({ sessionResolved: true, currentCwd: undefined }))).toEqual({
+      cwd: "",
+    });
+  });
+
+  it("已知会话但 cwd 非字符串 → { cwd: '' }（不把任意值拼进请求）", () => {
+    expect(resumeBodyOf(state({ sessionResolved: true, currentCwd: 7 }))).toEqual({ cwd: "" });
+  });
+});
 describe("api：HTTP 请求面", () => {
   it("2xx：返回解析后的 body，并把 path 原样交给 fetch", async () => {
     fetchFake!.respondWith({ ok: true, status: 200, body: { servers: [1, 2] } });

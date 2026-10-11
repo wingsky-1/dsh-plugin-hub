@@ -100,7 +100,7 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-mcp-manager
 | 断线重连 | 有界指数退避（500ms 起、30s 上限、10 次后停止后台重试；用户手动连接或 ws_mcp_call 触发可再试） |
 | 结果体积 | 本包**不做结果截断**，工具结果原样返回。目录装箱限额（每工具 4KB / 总 256KB）约束的是**目录**、不是执行结果；需要限长请在 MCP 服务器侧或宿主 compaction 策略里做 |
 | 超时下探 | 工具调用超时默认 60s → 15s（可按服务器 `toolCallTimeoutMs` 覆盖）；中间层 `ws_mcp_call` 按在用服务器最大值 + 25s 内部尾结算，**不是固定值** |
-| 状态推送自愈 | SSE 通道共享 sse-hub（#515）：服务端每 30s data ping 心跳 + stalled 超窗回收 + maxAge 轮换（120min 无业务帧主动断开）；客户端 60s 无帧即关旧建新（watchdog）、页面回前台强制重建；SSE 连续失败降级 10s 轮询，期间每 5 个轮询周期自动探测恢复推送（C2，页面失联自愈）——移动端切后台被静默掐断的半开连接由客户端自愈 + 服务端确定性回收，不堆积僵尸连接 |
+| 状态推送自愈 | SSE 通道共享 sse-hub（#515）：服务端每 30s data ping 心跳 + stalled 超窗回收 + maxAge 轮换（120min 无业务帧主动断开）；客户端 60s 无帧即关旧建新（watchdog）、页面回前台重建 SSE 并 POST resume 做非强制可用性恢复（携带本次会话 cwd，服务端固定本次 root；旧无 body 请求回落既有绑定）；SSE 连续失败降级 10s 轮询，期间每 5 个轮询周期自动探测恢复推送（C2，页面失联自愈）——移动端切后台被静默掐断的半开连接由客户端自愈 + 服务端确定性回收，不堆积僵尸连接。自动恢复复用官方管理机制的已存在状态投影与在途去重，不强制重建健康/connecting/reconnecting 连接；**不声称检测真实健康**（有工具注册的健康连接与半开连接无法实时区分），半开仍由用户显式重连恢复 |
 
 ## 配置（浮窗位置）
 
@@ -342,6 +342,15 @@ pnpm --filter @wingsky-1/dsh-mcp-manager test
   `no active project session`。告警口径：**首帧未知是官方快照尚未就绪的竞态
   （每次冷启动必现），不告警**；只有「已解析过又读不到」或「连续多帧仍读不到」才打
   一次告警，以免正常态与异常态显示同一条黄警而丢掉判别价值。
+- **切回前台的自动恢复是非强制的（#1120），不是用户显式强制重连**：复用官方管理机制的
+  已存在状态投影与 per-root/server 在途去重，不以每次 visibilitychange 为由
+  dispose/restart；connected/connecting/reconnecting 保留现有代际与官方退避，
+  entry 缺失与真正失败走正常路径恢复，userDisabled 绝不复活。官方挂载层只提供
+  ready/disposed/工具注册面，**有工具注册的健康连接与半开连接无法实时区分**——自动恢复
+  不声称已检测真实健康、不发自研 ping；半开仍可由用户显式重连恢复。resume 携带本次会话
+  cwd，服务端在本次调用中解析并固定 root（旧无 body 请求回落既有绑定，新请求明确无工作区
+  即 `cwd:""` 固定 `@global`，不回落到别人的 projectRoot）；客户端恢复节流按 cwd 分键覆盖
+  resume，不同学 cwd 的恢复不互吞。
 - 依赖 Node ≥ 20
 
 ## 类型依赖

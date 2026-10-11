@@ -1063,25 +1063,34 @@ export class McpManager {
   }
 
   /**
-   * 切回前台恢复：对当前工作空间连接的受控重建（对齐 SSE forceReconnect，#412）。
-   * 移动端切后台会静默掐断 TCP（半开，双方收不到 FIN/RST → transport onClose 不触发），
-   * 连接池 entry 可能卡在 connected 而实际已死；此入口忽略当前状态 force 重建
-   * 当前工作空间单元（当前项目 root；无项目时回落 @global）内所有非
-   * userDisabled 连接。force 重建健康连接一次代价低（本地 stdio / http 重连毫秒级），
-   * 与 SSE 每次切回前台 forceReconnect 的语义对称。调用方：POST /api/dsh-mcp/resume
-   *（客户端 visibilitychange 回前台触发）。
+   * 切回前台可用性恢复：对本次请求工作空间连接的非强制恢复（对齐 SSE forceReconnect 的
+   * 触发时机，不对称其 force 语义，#1120）。
+   * 复用官方管理机制与现有 middleware.ensureConnected 的状态投影/在途去重：
+   * connected/connecting/reconnecting 走现有短路保留代际与官方退避，不以每次
+   * visibilitychange 为由 dispose/restart；entry 缺失、真正失败经正常路径恢复；
+   * userDisabled 绝不复活；显式用户 reconnect/force 保持现有能力走 connect()。
    *
-   * 目标集合从「单元已有 entry」扩为「配置中全部 enabled 服务器」（#412 复报）：
-   * - 宿主 dsh web 重启/状态丢失后 units 清空、entry 全失——只按 connections.keys()
-   *   重建拿不到任何目标；先 projectUnitFor 确保单元创建（其内部惰性连接全部
-   *   enabled 服务器是兜底），再对配置全集 force 重建（覆盖半开卡 connected、
-   *   entry 缺失、从未连接过的服务器）。
-   * - 仍尊重 userDisabled（用户断开的不复活）与无项目时的 @global 回落。
+   * 不做自研连接或协议 ping：官方挂载层只提供 ready/disposed/工具注册面，无法实时
+   * 区分“有工具注册的健康连接”与“有工具注册的半开连接”——自动恢复不声称检测真实
+   * 健康；半开仍由用户显式重连恢复（README 已知限制）。
+   *
+   * @param cwd 本次请求的会话 cwd：undefined=旧无 body 请求回落既有绑定
+   *   （this.projectRoot ?? @global）；""=新请求明确无工作区，固定 @global，
+   *   不回落到别人的 projectRoot；非空=本次解析并固定 root，不读并发可变的
+   *   manager.projectRoot 字段。
    */
-  async resumeReconnect(): Promise<void> {
+  async resumeReconnect(cwd?: string): Promise<void> {
     const mw = this.middleware;
     if (mw === undefined) return;
-    const root = this.projectRoot ?? MIDDLEWARE_GLOBAL_ROOT;
+    const { workspace } = orchestratorPorts.get();
+    let root: string;
+    if (cwd === undefined) {
+      root = this.projectRoot ?? MIDDLEWARE_GLOBAL_ROOT;
+    } else if (cwd === "") {
+      root = MIDDLEWARE_GLOBAL_ROOT;
+    } else {
+      root = (await workspace.normalizedProjectRoot(cwd)) ?? MIDDLEWARE_GLOBAL_ROOT;
+    }
     // 单元缺失（宿主重启/状态丢失）先创建：projectUnitFor 负责惰性连接兜底。
     const unit = mw.units.get(root) ?? (await mw.projectUnitFor(root));
     if (unit === undefined) return;
@@ -1094,9 +1103,11 @@ export class McpManager {
       .map((server: ServerConfig) => server.name);
     await Promise.all(
       targets.map((name) =>
-        mw.ensureConnected(root, name, { force: true }).catch(() => {
-          // ensureConnected 内部已捕获连接失败并落 failed + 退避重连；这里只兜底
-          // 防未处理 reject，单个服务器恢复失败不阻断其余。
+        mw.ensureConnected(root, name).catch((error: unknown) => {
+          // 单台恢复失败记 warn 不阻断其余：真正失败不得被无条件吞掉。
+          this.logger.warn(
+            `dsh-mcp-manager: resume ${name}@${root} failed: ${this.redactError(error)}`,
+          );
         }),
       ),
     );

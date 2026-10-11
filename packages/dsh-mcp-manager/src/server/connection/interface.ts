@@ -50,8 +50,12 @@ export interface RoutesManager {
   reconnect(name: string, scope?: string): Promise<void>;
   /** 设置/解除单个工具禁用（工具级，独立于服务器级 enabled）。 */
   setToolDisabled?(root: string, server: string, tool: string, disabled: boolean): Promise<void>;
-  /** 切回前台受控重建当前工作空间连接（apply 注入；缺省不可用）。 */
-  resumeReconnect?(): Promise<void>;
+  /** 切回前台可用性恢复（非强制）：复用官方管理机制的已存在状态投影与
+   * per-root/server 在途去重，不强制重建健康/connecting/reconnecting 连接。
+   * @param cwd 本次请求的会话 cwd：undefined=旧无 body 回落既有绑定；
+   *   ""=新请求明确无工作区（固定 @global，不回落他人 projectRoot）；
+   *   非空=解析并固定本次 root。 */
+  resumeReconnect?(cwd?: string): Promise<void>;
   projectStoreOrThrow(): Promise<McpStore>;
   store: McpStore;
   /** 当前会话项目根（tool-disable 路由一致性校验用）。 */

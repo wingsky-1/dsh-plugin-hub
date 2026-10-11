@@ -37,7 +37,7 @@ import {
   type McpState,
   type UiActions,
 } from "./core/state.ts";
-import { api } from "./core/api.ts";
+import { api, resumeBodyOf } from "./core/api.ts";
 import { refresh, switchTab, close, showPanel, disposePanel } from "./float/panel.ts";
 import { resetForm, beginEdit } from "./float/quick-add.ts";
 import { toggleFloat, mountFloat, renderFloatPanel } from "./float/float.ts";
@@ -241,6 +241,43 @@ export function apply(ctx: McpClientContext): void {
     // SSE（重）连接成功都核对一次：宿主 projectRoot 丢失但当前会话有 cwd →
     // 强制重绑会话 + resume（10s 节流挡自动重连风暴/高频 summary 帧）。
     let lastRecoverAt = 0;
+    // resume 节流（#1120）：与 SSE forceReconnect 同窗 5s，但按 cwd 分键——
+    // 同 cwd 高频触发合并（复用服务端 per-root/server 在途去重之外的客户端挡板），
+    // 不同 cwd 永不互吞（切会话的恢复不得被节流吃掉）；失败清理本次记录
+    // （同 cwd 真正失败后允许立即下一次恢复，不被 5s 无条件抑制）。
+    // 清理所有权用递增序号（非 key+Date.now：同毫秒 A1 挂起→B→A2 成功后 A1 才失败时，
+    // 三者 key 与 stamp 全同，序号才是唯一 attempt 身份）。
+    let lastResumeAt = 0;
+    let lastResumeCwd: string | undefined = undefined;
+    let resumeSeq = 0;
+    let lastResumeSeq = 0;
+    const postResume = () => {
+      const body = resumeBodyOf(state);
+      const key = body?.cwd ?? "<unknown>";
+      const now = Date.now();
+      if (key === lastResumeCwd && now - lastResumeAt < 5000) return;
+      resumeSeq += 1;
+      const attempt = resumeSeq;
+      lastResumeAt = now;
+      lastResumeCwd = key;
+      lastResumeSeq = attempt;
+      const init: RequestInit =
+        body === undefined
+          ? { method: "POST" }
+          : {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify(body),
+            };
+      void api<unknown>(state.API.resume, init).catch(() => {
+        // 失败清理本次节流记录（仅当记录仍指向本次 attempt）：期间新 cwd 的发送
+        // 或新成功窗口不被老请求的迟到失败误清。
+        if (lastResumeSeq === attempt) {
+          lastResumeAt = 0;
+          lastResumeCwd = undefined;
+        }
+      });
+    };
     const maybeRecoverSession = () => {
       const now = Date.now();
       if (now - lastRecoverAt < 10_000) return;
@@ -251,7 +288,7 @@ export function apply(ctx: McpClientContext): void {
           if (typeof cwd !== "string" || cwd === "") return;
           lastRecoverAt = Date.now();
           void rebindSession(state)
-            .then(() => api<unknown>(state.API.resume, { method: "POST" }))
+            .then(() => postResume())
             .catch(() => {});
         })
         .catch(() => {});
@@ -335,8 +372,15 @@ export function apply(ctx: McpClientContext): void {
     // #412：仅重建 SSE 不够——宿主中间层连接池里的项目级 MCP 连接同样可能被
     // 切后台掐成半开（transport onClose 不触发，entry 卡在 connected），此时
     // GET /servers 纯读只是重复显示僵死状态。故切回前台额外 POST resume 让宿主
-    // 对当前工作空间连接做受控重建（对齐 SSE forceReconnect 语义），再重新拉取
-    // 真实状态。resume 与 forceReconnect 共用 5s 节流挡快速切换。
+    // 对本次会话工作空间连接做可用性恢复，再重新拉取真实状态。
+    //
+    // #1120：resume 是可用性恢复请求，不是用户显式强制重连——服务端复用官方
+    // 管理机制的已存在状态投影与在途去重（健康/connecting/reconnecting 不强制
+    // 重建，userDisabled 不复活）；官方挂载层只提供 ready/disposed/工具注册面，
+    // 有工具注册的健康与半开无法实时区分，半开仍走用户显式重连。本次会话 cwd
+    // 经 resumeBodyOf 随请求固定服务端 root（未知会话不带 body 回落既有绑定，
+    // 已知空会话带 cwd:"" 固定 @global）；resume 与 forceReconnect 共用 5s 节流
+    // 语义（按 cwd 分键，不同 cwd 不互吞）。
     //
     // #412 复报：宿主 dsh web 重启后 projectRoot/中间层单元清空，而旧页面未重载
     // 时 bindSession 不重跑（cwd 未变短路）——resume 只重建 @global、项目级连接
@@ -347,7 +391,7 @@ export function apply(ctx: McpClientContext): void {
       if (document.hidden) return;
       forceReconnect();
       void rebindSession(state)
-        .then(() => api<unknown>(state.API.resume, { method: "POST" }))
+        .then(() => postResume())
         .catch(() => {});
       void refresh(state, actions).catch(() => {});
     };

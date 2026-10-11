@@ -1453,20 +1453,30 @@ it("客户端 watchdog：60s 失活重建 + 建连前先关旧（0.1.8 同款防
     /closeEvents\(\);\s*document\.removeEventListener\("visibilitychange"/,
   );
 });
-it("回前台强制重建 SSE + 受控重建连接（visibilitychange → rebindSession → forceReconnect + resume + 补拉）", () => {
+it("回前台重建 SSE + 可用性恢复（visibilitychange → rebindSession → forceReconnect + resume(cwd) + 补拉）", () => {
   const clientSrc = readFileSync(new URL("../../lib/client.js", import.meta.url), "utf8");
   expect(clientSrc, "visibilitychange 监听已挂").toMatch(
     /addEventListener\("visibilitychange",\s*onVisible\)/,
   );
-  expect(clientSrc, "回前台路径先强制重建 SSE").toMatch(
+  expect(clientSrc, "回前台路径先重建 SSE").toMatch(
     /onVisible\s*=\s*\(\)\s*=>\s*\{\s*if\s*\(document\.hidden\)\s*return;\s*forceReconnect\(\)/,
   );
   // #412：切回前台先 rebindSession（宿主重启后 projectRoot 丢失，旧页面
   // bindSession 不重跑——强制 POST /session 恢复 projectRoot + 惰性连接），
-  // 再 POST resume 驱动宿主受控重建当前工作空间连接（半开死连接卡 connected
-  // 时纯读 refresh 无法恢复）。
+  // 再经 postResume 做可用性恢复（半开死连接卡 connected 时纯读 refresh 无法恢复）。
   expect(clientSrc, "回前台路径先重绑会话再 resume（#412 复报：宿主重启场景恢复）").toMatch(
-    /rebindSession\(state\)\.then\(\(\)\s*=>\s*api\(state\.API\.resume,\s*\{\s*method:\s*"POST"\s*\}\)\)/,
+    /rebindSession\(state\)\.then\(\(\)\s*=>\s*postResume\(\)\)/,
+  );
+  // #1120：resume 携带本次会话 cwd（未知会话不带 body，已知空会话带 cwd:""），
+  // 恢复节流覆盖 resume 并按 cwd 分键（不同 cwd 不互吞），失败清理本次节流记录。
+  expect(clientSrc, "resume 请求体经 resumeBodyOf 拼装本次 cwd").toMatch(/resumeBodyOf\(state\)/);
+  expect(clientSrc, "resume 节流按 cwd 分键").toMatch(/lastResumeCwd/);
+  expect(clientSrc, "resume 失败清理本次节流记录（失败后可立即重试）").toMatch(
+    /lastResumeAt\s*=\s*0/,
+  );
+  // 清理所有权是递增序号（同毫秒多 attempt 下 key+stamp 不唯一，序号才是身份）。
+  expect(clientSrc, "resume 清理所有权用唯一 attempt 序号").toMatch(
+    /lastResumeSeq\s*===\s*attempt/,
   );
   // iOS bfcache 恢复（pageshow persisted）等价切回前台，走同一恢复路径。
   expect(clientSrc, "pageshow 监听已挂（bfcache 恢复）").toMatch(
@@ -2470,6 +2480,7 @@ describe("路由（makeRoutes / events / health / tool-disable / resume）", () 
     sessionCwd: string | undefined;
     lastScope: string | undefined;
     resumed: number;
+    resumedCwds: Array<string | undefined>;
   };
   let uiCfg: {
     position: string;
@@ -2504,7 +2515,7 @@ describe("路由（makeRoutes / events / health / tool-disable / resume）", () 
     connect: () => Promise<void>;
     disconnect: () => Promise<void>;
     reconnect: () => Promise<void>;
-    resumeReconnect: () => Promise<void>;
+    resumeReconnect: (cwd?: string) => Promise<void>;
   };
   let routes: WebRoute[];
   let find: (path: string) => WebRoute;
@@ -2513,7 +2524,7 @@ describe("路由（makeRoutes / events / health / tool-disable / resume）", () 
 
   beforeAll(async () => {
     ({ store, cleanup } = tempStore());
-    managerState = { sessionCwd: undefined, lastScope: undefined, resumed: 0 };
+    managerState = { sessionCwd: undefined, lastScope: undefined, resumed: 0, resumedCwds: [] };
     // 浮窗 UI 配置（可变，验证 config 读/写回传）。
     uiCfg = { position: "top-right", offsetX: 8, offsetY: 8, blankY: 40 };
     manager = {
@@ -2555,9 +2566,10 @@ describe("路由（makeRoutes / events / health / tool-disable / resume）", () 
       connect: async () => {},
       disconnect: async () => {},
       reconnect: async () => {},
-      // #412 resume：切回前台受控重建当前工作空间连接（记录调用次数供路由断言）。
-      resumeReconnect: async () => {
+      // #1120 resume：切回前台可用性恢复（记录调用次数与透传 cwd 供路由断言）。
+      resumeReconnect: async (cwd?: string) => {
         managerState.resumed += 1;
+        managerState.resumedCwds.push(cwd);
       },
     };
     routes = makeRoutes(manager as unknown as Parameters<typeof makeRoutes>[0], process.cwd());
@@ -2867,12 +2879,70 @@ describe("路由（makeRoutes / events / health / tool-disable / resume）", () 
     expect(managerState.resumed, "resumeReconnect 被调用（#412 切回前台恢复入口）").toBe(
       before + 1,
     );
+    // 旧无 body 请求：cwd 透传 undefined（服务端回落既有绑定）。
+    expect(managerState.resumedCwds[managerState.resumedCwds.length - 1]).toBe(undefined);
     const res403 = fakeRes();
     await find(ROUTES.resume).handler(fakeFenceBroken("POST", ROUTES.resume), res403);
     expect(res403.state.status).toBe(403);
     const res405 = fakeRes();
     await find(ROUTES.resume).handler(fakeReq("GET", ROUTES.resume), res405);
     expect(res405.state.status).toBe(405);
+  });
+
+  it("resume：带 cwd body 透传本次 root；cwd 非字符串 400", async () => {
+    const withCwd = fakeRes();
+    await find(ROUTES.resume).handler(fakeReq("POST", ROUTES.resume, { cwd: "/proj/a" }), withCwd);
+    expect(withCwd.state.status).toBe(200);
+    expect(managerState.resumedCwds[managerState.resumedCwds.length - 1]).toBe("/proj/a");
+    // 明确无工作区：cwd:"" 透传（服务端固定 @global，不回落他人绑定）。
+    const explicitGlobal = fakeRes();
+    await find(ROUTES.resume).handler(fakeReq("POST", ROUTES.resume, { cwd: "" }), explicitGlobal);
+    expect(explicitGlobal.state.status).toBe(200);
+    expect(managerState.resumedCwds[managerState.resumedCwds.length - 1]).toBe("");
+    // 非法 body：cwd 非字符串 → 400 且不触发恢复。
+    const before = managerState.resumed;
+    const bad = fakeRes();
+    await find(ROUTES.resume).handler(fakeReq("POST", ROUTES.resume, { cwd: 7 }), bad);
+    expect(bad.state.status).toBe(400);
+    expect(managerState.resumed).toBe(before);
+  });
+
+  it("resume：数组/原始值/畸形 JSON → 400 且不触发恢复；无 body 兼容不变", async () => {
+    // 数组是合法 JSON 但不是请求体对象：拒绝且不触发恢复（不回落既有绑定）。
+    const before = managerState.resumed;
+    const arr = fakeRes();
+    await find(ROUTES.resume).handler(fakeReq("POST", ROUTES.resume, [1, 2]), arr);
+    expect(arr.state.status).toBe(400);
+    // 原始值（JSON 字符串）不是对象：同样 400。
+    const prim = fakeRes();
+    await find(ROUTES.resume).handler(fakeReq("POST", ROUTES.resume, "str"), prim);
+    expect(prim.state.status).toBe(400);
+    // 畸形 JSON：原始字节直送（不经 JSON.stringify）。
+    const malformed = fakeRes();
+    await find(ROUTES.resume).handler(
+      {
+        method: "POST",
+        url: ROUTES.resume,
+        socket: { remoteAddress: "127.0.0.1" },
+        headers: {
+          host: "localhost:3080",
+          origin: "http://localhost:3080",
+          "sec-fetch-site": "same-origin",
+        },
+        async *[Symbol.asyncIterator]() {
+          yield Buffer.from("{not json");
+        },
+      } as unknown as IncomingMessage,
+      malformed,
+    );
+    expect(malformed.state.status).toBe(400);
+    expect(managerState.resumed).toBe(before);
+    // 无 body 兼容：仍 200 且 cwd 透传 undefined（回落既有绑定）。
+    const compat = fakeRes();
+    await find(ROUTES.resume).handler(fakeReq("POST", ROUTES.resume), compat);
+    expect(compat.state.status).toBe(200);
+    expect(managerState.resumedCwds[managerState.resumedCwds.length - 1]).toBe(undefined);
+    expect(managerState.resumed).toBe(before + 1);
   });
 
   it("tool-disable：缺 server/tool → 400；root 不属于工作空间 / setToolDisabled 未挂 → 400", async () => {

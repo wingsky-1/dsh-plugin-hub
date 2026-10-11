@@ -120,7 +120,7 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-mcp-manager
 | Reconnection | Exponential backoff (starts at 500ms, caps at 30s, gives up after 10 attempts and deregisters the tools) |
 | Result size | This package performs **no result truncation**; tool results are returned as-is. The catalog boxing limits (4KB per tool / 256KB total) bound the **catalog**, not execution results — enforce a limit on the MCP server side or via the host compaction policy |
 | Timeout fallback | Direct-connect tool call timeout defaults to 60s → 15s (overridable per server via `toolCallTimeoutMs`); a middleware `ws_mcp_call` settles at the largest in-use server timeout plus a 25s internal tail, **not a fixed value** |
-| Push self-healing | Triple safeguard on the SSE channel: server sends a data ping heartbeat every 30s; client reconnects (closing the stale EventSource first) after 60s of frame silence (watchdog); connection is force-rebuilt when the page becomes visible again — half-open connections silently severed by mobile OS backgrounding heal on their own instead of piling up as zombies |
+| Push self-healing | Triple safeguard on the SSE channel: server sends a data ping heartbeat every 30s; client reconnects (closing the stale EventSource first) after 60s of frame silence (watchdog); when the page becomes visible again the client rebuilds SSE and POSTs resume for a non-forced availability recovery (carrying the current session cwd, the server pins the root for that call; old body-less requests fall back to the existing binding) — half-open connections silently severed by mobile OS backgrounding heal on their own instead of piling up as zombies. Auto recovery reuses the official management mechanism's existing state projection and in-flight dedup and never force-rebuilds healthy/connecting/reconnecting connections; it does **not** claim to detect real health (a healthy connection with tool registrations is indistinguishable from a half-open one in real time) — half-open connections still recover through explicit user reconnect |
 
 ## Configuration (floating window position)
 
@@ -434,6 +434,20 @@ pnpm --filter @wingsky-1/dsh-mcp-manager test
   quiet; one console warning is emitted only when a previously resolved session becomes
   unreadable, or when the session stays unreadable across consecutive frames — so a normal
   cold start and a real failure do not show the same yellow warning.
+- **Foreground auto recovery is non-forced (#1120), not an explicit user reconnect**:
+  it reuses the official management mechanism's existing state projection and per-root/server
+  in-flight dedup instead of disposing/restarting on every visibilitychange;
+  connected/connecting/reconnecting connections keep their generation and official backoff,
+  missing entries and real failures recover through the normal path, and userDisabled entries
+  are never revived. The official mount layer only exposes ready/disposed/tool-registration
+  faces, so **a healthy connection with tool registrations is indistinguishable from a
+  half-open one in real time** — auto recovery makes no real-health claim and sends no
+  home-grown ping; half-open connections still recover through explicit user reconnect.
+  Resume carries the current session cwd, and the server resolves and pins the root within
+  that call (old body-less requests fall back to the existing binding; a new request that
+  explicitly has no workspace, i.e. `cwd:""`, pins `@global` instead of falling back to
+  someone else's projectRoot); the client recovery throttle covers resume keyed by cwd, so
+  recoveries for different cwds never swallow each other.
 - Requires Node ≥ 20
 
 ## Type dependencies

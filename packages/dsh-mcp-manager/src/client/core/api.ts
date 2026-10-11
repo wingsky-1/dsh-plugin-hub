@@ -36,6 +36,17 @@ export function cwdQueryOf(state: McpState): string {
 }
 
 /**
+ * resume 请求体（#1120）：本次会话 cwd 随请求固定服务端 root。
+ * - 未知会话（sessionResolved=false）：回 undefined（不带 body，服务端回落既有绑定，
+ *   不把「读不到」变成「清空」）；
+ * - 已知会话：恒带 { cwd }（空即 ""=明确无工作区，服务端固定 @global，
+ *   不回落到别人的 projectRoot）。
+ */
+export function resumeBodyOf(state: McpState): { cwd: string } | undefined {
+  if (!state.sessionResolved) return undefined;
+  return { cwd: typeof state.currentCwd === "string" ? state.currentCwd : "" };
+}
+/**
  * HTTP API 请求。
  * 返回 JSON 解析后的 body；非 2xx 抛 Error。
  * 带默认超时（10s，AbortSignal），防挂起请求占用连接（#111 变更点驱动）。

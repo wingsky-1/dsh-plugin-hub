@@ -17,7 +17,12 @@
  * installApi 在包入口顶层完成，handler 内的 get() 取到的一定是装配后的能力。
  */
 
-import { writeJson, readJsonBody, guardLoopbackMethod } from "../../../../../shared/host-utils.js";
+import {
+  writeJson,
+  readJsonBody,
+  readJsonBodyOutcome,
+  guardLoopbackMethod,
+} from "../../../../../shared/host-utils.js";
 import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { RoutesManager } from "../connection/interface.ts";
@@ -264,7 +269,23 @@ export function buildSessionRoute(manager: RoutesManager, helpers: RouteHelpers)
   };
 }
 
-/** 切回前台受控重建当前工作空间连接。 */
+/** 解析 resume 可选请求体：回答「本次要固定哪个 root？」——形状与必填校验。
+ *
+ * 返回携带 cwd 的成功体（缺 cwd 即回落既有绑定），或写 400 用的错误文案；
+ * 数组是合法 JSON 但不是请求体对象，同样拒绝且不触发恢复。 */
+function parseResumeCwd(value: object): { ok: true; cwd?: string } | { ok: false; error: string } {
+  if (Array.isArray(value)) return { ok: false, error: "invalid JSON body" };
+  const rec = value as Record<string, unknown>;
+  if (!("cwd" in rec)) return { ok: true };
+  if (typeof rec.cwd !== "string") return { ok: false, error: "body cwd must be a string" };
+  return { ok: true, cwd: rec.cwd };
+}
+
+/** 切回前台可用性恢复（非强制，#1120）：body 可选 { cwd?: string }。
+ * - 无 body（旧客户端）：回落既有绑定，manager.resumeReconnect() 无参；
+ * - 有 cwd（含 "")：本次固定 root（""=明确无工作区→@global，不回落他人绑定）；
+ * - 非对象（含数组，readJsonBodyOutcome 把数组归 json 需此处拒）/ cwd 非字符串 → 400
+ *   且不触发恢复。路径/围栏/方法分流不动。 */
 export function buildResumeRoute(manager: RoutesManager, helpers: RouteHelpers): WebRoute {
   return {
     kind: "exact",
@@ -274,7 +295,26 @@ export function buildResumeRoute(manager: RoutesManager, helpers: RouteHelpers):
       try {
         if (typeof manager.resumeReconnect !== "function")
           throw new Error("resumeReconnect unavailable");
-        await manager.resumeReconnect();
+        const outcome = await readJsonBodyOutcome(req);
+        if (outcome.kind === "invalid") {
+          writeJson(res, 400, { error: "invalid JSON body" });
+          return;
+        }
+        if (outcome.kind === "absent") {
+          await manager.resumeReconnect();
+          writeJson(res, 200, { ok: true, summary: manager.summary() });
+          return;
+        }
+        const parsed = parseResumeCwd(outcome.value);
+        if (!parsed.ok) {
+          writeJson(res, 400, { error: parsed.error });
+          return;
+        }
+        if (parsed.cwd === undefined) {
+          await manager.resumeReconnect();
+        } else {
+          await manager.resumeReconnect(parsed.cwd);
+        }
         writeJson(res, 200, { ok: true, summary: manager.summary() });
       } catch (error) {
         helpers.handleError(res, error);
