@@ -3,6 +3,10 @@
 感谢对 dsh-plugin-hub 感兴趣！本仓库是 DSH（DeepSeek Harness）插件集的开源发布仓，
 代码规范遵循 [Conventional Commits](https://www.conventionalcommits.org)。
 
+## 维护范围
+
+本项目处于有限维护阶段，详见[维护状态公告](https://github.com/wingsky-1/dsh-plugin-hub/issues/1121)。优先评估可复现的用户缺陷与必要的上游 rc 兼容修复；新功能、全面重构与 1.0.0 重写计划暂时搁置。PR 按维护者精力评审，不承诺响应或合并时间。较大的改动请先讨论范围，避免投入后无人承接；欢迎提出具体插件的维护交接方案。
+
 ## 提交信息
 
 ```

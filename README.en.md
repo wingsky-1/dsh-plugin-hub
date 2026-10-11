@@ -10,6 +10,14 @@
 
 [简体中文](README.md) | **English**
 
+## Maintenance status: limited maintenance
+
+I have temporarily stopped using DeepSeek Harness, and this project is entering limited maintenance. Maintenance will prioritize evaluating reproducible user-reported bugs, especially security, data integrity and core functionality issues. Support for newer upstream rc releases will be considered based on actual demand, the scope of changes and available time; there is no commitment to support every release or to a fixed response, fix or release schedule.
+
+New features, major refactoring and the 1.0.0 rewrite plan are on hold. The repository and published packages remain available. Community fixes, forks and maintenance handover proposals are welcome; PRs will be reviewed as time permits, without a guarantee of prompt merging. Compatibility is defined by this README and the corresponding release notes; alpha compatibility is not promised.
+
+See the [maintenance announcement](https://github.com/wingsky-1/dsh-plugin-hub/issues/1121) for the full statement and handover discussion.
+
 A collection of plugins for the **DSH (DeepSeek Harness)** web GUI, distributed via npm:
 install them all at once as a single bundle, or pick individual plugins as needed.
 
@@ -35,8 +43,9 @@ This plugin set only adapts to **rc (release-candidate) releases of DeepSeek Har
   do not use `allow-version` to bypass an incompatible runtime
 - Per-release adaptation baselines, breaking changes and upgrade guides live in
   [Release Notes](docs/release-notes/)
-- The plugin set follows official rc releases; **alpha versions are unsupported** — do not
-  install on an alpha dsh (or accept the compatibility risk yourself)
+- Support for newer official rc releases is evaluated individually, without a commitment to
+  follow every release. **Alpha versions are unsupported**; versions outside the stated
+  compatibility baseline are not covered by a compatibility promise.
 
 ### Individual install vs. bundle: pick ONE
 
