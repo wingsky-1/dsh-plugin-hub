@@ -1,6 +1,6 @@
 # dsh-decision-gateway 架构与运行机制（TOGAF 4A 四视图）
 
-> 包：`@wingsky-1/dsh-decision-gateway` · 当前版本：0.2.9 · 源码：`packages/dsh-decision-gateway/`。
+> 包：`@wingsky-1/dsh-decision-gateway` · 源码：`packages/dsh-decision-gateway/` · 版本见包 `package.json`（本文不复述版本号）。
 > 把一次“正文＋题目”的决议请求变成一次 frozen 预设裁决：本地密形预检先行，
 > 密钥可用时才调 SystemOne 官方接口，结果与自动化等级回给模型并留下脱敏历史。
 >

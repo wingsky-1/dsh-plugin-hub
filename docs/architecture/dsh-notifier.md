@@ -1,6 +1,6 @@
 # dsh-notifier 架构与运行机制（TOGAF 4A 四视图）
 
-> 包：`@wingsky-1/dsh-notifier` · 当前版本：0.2.9 · 源码：`packages/dsh-notifier/`。
+> 包：`@wingsky-1/dsh-notifier` · 源码：`packages/dsh-notifier/` · 版本见包 `package.json`（本文不复述版本号）。
 > 把审批、提问、完成与错误转成可配置的离屏提醒，并留下投递与抑制记录。
 >
 > 安装、配置与安全模型见 [包 README](../../packages/dsh-notifier/README.md)。本文解释业务 BA、应用 AA、数据 DA、技术 TA。
@@ -136,7 +136,7 @@ health/diagnostics 共用 Promise 缓存探测，8s 总预算；失败/超预算
 | history.jsonl | 逻辑追加，实际**写队列串行化 + 原子整文件替换**（`src/server/stores/impl/history/index.ts:39-40` 队列、`:70` writeTextAtomic；并发读改写会互相覆盖丢记录） | 阈值语义：行数 > `HISTORY_LIMIT*2`（=400，`:16` `HISTORY_LIMIT=200`）才截到尾 200（`:69`）；读最多 200，保留天数每次读时现取 `historyMaxAgeDays`（`:64`，装配期取快照会在用户改设置后失效，`:4`） |
 | status.json | channelId → lastTs/lastStatus/failStreak/lastError | 内存镜像即时更新；**500ms debounce 合并写**（`:24`，通知风暴时避免每条通知一次整文件重写，`:4`）；上限 64 条（`:21`），删了再插 = 移到表尾、最旧先出（`:73-77`）；detail 截 300 码点（`:28`）；failStreak 跨重启延续（`:67-68` 冷启动读回镜像） |
 | seq.json | 十进制整数文本加换行，不是 JSON 对象 | 每帧异步写序号；replay 不持久化；序号持久化是刻意的——重置会让重连客户端把旧帧当新的（`src/server/api/impl/stream/index.ts:1-2`） |
-| version | 单行存储版本刻度 | 成功迁移步骤后写，当前步骤目标 0.2.4 |
+| version | 单行存储版本刻度 | 成功迁移步骤后写，目标由步骤表 `STEPS` 决定 |
 
 历史含 suppressed 与 channels 明细；结果为 ok/failed/skipped。理由为 code/params/detail，旧散文读取时归一，状态 detail 截到 300 码点（`src/server/stores/impl/history/index.ts#HistoryStore`、`src/server/stores/impl/status/index.ts#StatusStore`）。
 
@@ -156,9 +156,9 @@ revision 是递归稳定 JSON 的 SHA-256 摘要前 32 位，**不是单调计�
 
 ### 3.4 迁移与卸载
 
-upgrade 同步先跑 0.2.3 → 0.2.4：布局 → 配置形态 → 理由形态（`src/server/upgrade/impl/steps/index.ts#STEPS`）。
+upgrade 按存储刻度依次执行待处理步骤；0.2.3 → 0.2.4 是布局、配置与理由形态割接的首步（`src/server/upgrade/impl/steps/index.ts#STEPS`）。
 
-- 布局保留已有目标；旧文件写到新位置后归档 .migrated.bak；无旧文件建空历史/状态/0 序号（`impl/steps/storage-layout.ts#migrateStorageLayout`）。步骤表 `STEPS` 当前单步 0.2.3→0.2.4（`src/server/upgrade/impl/steps/index.ts:18-19`）。
+- 布局保留已有目标；旧文件写到新位置后归档 .migrated.bak；无旧文件建空历史/状态/0 序号（`impl/steps/storage-layout.ts#migrateStorageLayout`；`src/server/upgrade/impl/steps/index.ts#STEPS`）。目标为 0.2.5、0.2.7、0.2.8 的步骤为空步；0.2.5 → 0.2.6 迁移 quiet-windows；0.2.8 → 0.2.9 由 canonical-keys 清理配置形态。
 - 旧配置读取：宿主文档文件 → settings.describe → 更早自建 JSON/Bak；迁移合并时存量覆盖现文件，顶层频道键搬入 channels；全新无用户层不凭空写默认配置（`impl/legacy/index.ts#readLegacySettings`、`impl/steps/config-shape.ts#migrateConfigShape`）。
 - 动作或刻度写失败中止启动，刻度不抢先前移；已完成文件操作不是整组事务回滚。存储版本落差告警，不自动降级（`impl/chain/index.ts#applyStep` / `reportGap`）。
 - apply 的 finally 登记已采集释放栈；正常逆序 api→sdk→events→pipeline→stores→config→upgrade，音频临时目录最后收。不能推断各域内部部分安装失败都具备完整回滚（`src/index.ts#apply` / `assemble`）。
