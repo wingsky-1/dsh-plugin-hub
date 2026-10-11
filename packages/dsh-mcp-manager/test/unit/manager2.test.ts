@@ -1835,14 +1835,21 @@ describe("#1120 resume 真实链路接缝", () => {
 
   it("同 root 并发重复恢复合并为单 connect attempt（在途去重）", async () => {
     // 装载窗口挂起时重复恢复必须合并：deferred 下两个 resume 共享同一 attempt。
-    loaderScript.ready = "deferred";
     const { manager } = await liveGlobal("g");
+    loaderScript.ready = "deferred";
     await manager.initMiddleware();
     const first = manager.resumeReconnect();
     const second = manager.resumeReconnect();
     await pollUntil("单 attempt 建连中", () => mountCount() === 1);
     // 窗口未放闸前充分排空微任务：重复 attempt 会在此现形为第 2 次 mount。
     for (let i = 0; i < 20; i += 1) await Promise.resolve();
+    let readySettled = false;
+    poolLoader!.handles[0]!.ready.then(() => {
+      readySettled = true;
+    });
+    for (let i = 0; i < 20; i += 1) await Promise.resolve();
+    expect(readySettled).toBe(false);
+    expect(manager.middleware!.units.get("@global")?.connections.get("g")?.id).toBeUndefined();
     expect(mountCount()).toBe(1);
     poolLoader!.settleReady();
     await Promise.all([first, second]);
