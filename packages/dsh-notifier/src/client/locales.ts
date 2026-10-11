@@ -108,8 +108,10 @@ export const zh = {
   httpDegraded:
     "当前为局域网 HTTP 访问（非安全上下文），浏览器禁止系统级弹窗，已启用「页面内横幅 + 提示音 + 标题提醒」降级通道。如需系统弹窗，请改用 dsh-lan-proxy 的 https://<局域网IP>:3443 或 localhost 隧道访问（如 ssh -L 3080:127.0.0.1:3080）后刷新页面。",
   permGranted: "浏览器通知权限：已授权 ✓",
-  permDenied: "浏览器通知权限：已拒绝（请在浏览器站点设置中允许本页通知）",
-  permDefault: "浏览器通知权限：未授权（点击下方按钮在浏览器弹窗中允许）",
+  permDenied:
+    "浏览器通知权限：已拒绝。未授权时不会弹浏览器系统通知；页面隐藏时只更新标题，页面可见且通知策略允许时显示页内横幅。请在浏览器站点设置中允许本页通知。",
+  permDefault:
+    "浏览器通知权限：未授权。未授权时不会弹浏览器系统通知；页面隐藏时只更新标题，页面可见且通知策略允许时显示页内横幅。可点击下方按钮请求授权。",
   iosUnsupported:
     "当前设备不支持系统级通知（如 iOS Safari 普通标签页无 Web Notifications）。可用通道：页面可见时的横幅 + 提示音（需保持页面打开），或经 dsh-lan-proxy 的 https://<局域网IP>:3443 访问并「添加到主屏幕」后获得 PWA 级通知能力。",
   // 动作区
@@ -319,8 +321,10 @@ export const zh = {
   diagBrowserLine: "本页浏览器：弹窗 {popup} · 声音 {sound}",
   diagBrowserNoNotificationApi: "此浏览器没有通知 API，系统级弹窗不可用",
   diagBrowserInsecureContext: "非安全上下文（明文 HTTP），浏览器禁止系统级弹窗",
-  diagBrowserPermissionDenied: "通知权限已被拒绝，请在浏览器站点设置中允许",
-  diagBrowserPermissionDefault: "通知权限尚未请求，可点「请求通知权限」授权",
+  diagBrowserPermissionDenied:
+    "未授权时不会弹浏览器系统通知；页面隐藏时只更新标题，页面可见且通知策略允许时显示页内横幅。权限已被拒绝，请在浏览器站点设置中允许",
+  diagBrowserPermissionDefault:
+    "未授权时不会弹浏览器系统通知；页面隐藏时只更新标题，页面可见且通知策略允许时显示页内横幅。权限尚未请求，可点「请求通知权限」授权",
   diagBrowserAudioNeverUnlocked: "音频尚未解锁：页面还没有过用户点击，点击页面后即可自播",
   diagBrowserAudioAutoSuspended:
     "音频上下文被浏览器挂起：曾经解锁过，或本次恢复被浏览器拒绝，下次用户交互时会再尝试",
@@ -420,9 +424,9 @@ export const en: Record<NotifierLocaleKey, string> = {
     "You are on a LAN HTTP connection (insecure context) — the browser blocks system notifications; in-page banner + sound + title reminders are active instead. For system notifications, use dsh-lan-proxy https://<LAN-IP>:3443 or a localhost tunnel (e.g. ssh -L 3080:127.0.0.1:3080), then refresh.",
   permGranted: "Browser notification permission: granted ✓",
   permDenied:
-    "Browser notification permission: denied (allow notifications for this site in the browser site settings)",
+    "Browser notification permission: denied. Without permission, browser system notifications cannot appear; while the page is hidden, only the title is updated. When the page is visible, an in-page banner appears only if the notification policy allows it. Allow notifications for this site in the browser site settings.",
   permDefault:
-    "Browser notification permission: not asked (click the button below and allow in the browser prompt)",
+    "Browser notification permission: not granted. Without permission, browser system notifications cannot appear; while the page is hidden, only the title is updated. When the page is visible, an in-page banner appears only if the notification policy allows it. Click the button below to request permission.",
   iosUnsupported:
     'This device does not support system notifications (e.g. iOS Safari in a normal tab). Available channels: in-page banner + sound while the page is open, or PWA-grade notifications via dsh-lan-proxy https://<LAN-IP>:3443 with "Add to Home Screen".',
   clearConfirm: "Clear history?",
@@ -636,9 +640,9 @@ export const en: Record<NotifierLocaleKey, string> = {
     "this browser has no notification API, so system popups are unavailable",
   diagBrowserInsecureContext: "insecure context (plain HTTP), the browser blocks system popups",
   diagBrowserPermissionDenied:
-    "notification permission was denied; allow it in the browser site settings",
+    "Without permission, browser system notifications cannot appear; while the page is hidden, only the title is updated. When the page is visible, an in-page banner appears only if the notification policy allows it. Permission was denied; allow it in the browser site settings",
   diagBrowserPermissionDefault:
-    'notification permission has not been requested; click "Request permission" to grant it',
+    'Without permission, browser system notifications cannot appear; while the page is hidden, only the title is updated. When the page is visible, an in-page banner appears only if the notification policy allows it. Permission has not been requested; click "Request permission" to grant it',
   diagBrowserAudioNeverUnlocked:
     "audio is not unlocked yet: the page has not seen a user click; a click enables self-playback",
   diagBrowserAudioAutoSuspended:
