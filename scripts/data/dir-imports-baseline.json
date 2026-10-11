@@ -51,9 +51,9 @@
       "scannedSrcFiles": 119,
       "allSrcTsFiles": 152,
       "interfaceFacades": 10,
-      "leafValueEdges": 12,
-      "fileValueEdges": 157,
-      "crossModuleRefs": 123,
+      "leafValueEdges": 13,
+      "fileValueEdges": 158,
+      "crossModuleRefs": 124,
       "quality": {
         "leafModuleCycles": [],
         "fileCycles": [],
@@ -70,11 +70,11 @@
     "dsh-provider-usage": {
       "modules": 15,
       "scannedSrcFiles": 95,
-      "allSrcTsFiles": 122,
+      "allSrcTsFiles": 115,
       "interfaceFacades": 15,
-      "leafValueEdges": 17,
-      "fileValueEdges": 152,
-      "crossModuleRefs": 162,
+      "leafValueEdges": 19,
+      "fileValueEdges": 160,
+      "crossModuleRefs": 169,
       "quality": {
         "leafModuleCycles": [],
         "fileCycles": [],

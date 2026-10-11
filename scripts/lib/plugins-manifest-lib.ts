@@ -354,7 +354,7 @@ export function loadManifest(root: string): LoadedManifest {
  * @param {{active: string[], retired: Array<{name: string}>}} manifest
  * @param {Record<string, string>} [aggDeps]     聚合包 package.json dependencies（缺省跳过 deps 段）
  * @param {string[]} [aggPatchIds]               聚合 cordis.patch.yml 的 insert id 集（缺省跳过 patch 段）
- * @param {string[]} [expectedPatchIds]          期望的聚合 insert id 集；缺省回退「ui-<dir>」约定
+ * @param {string[]} [expectedPatchIds]          期望的聚合 insert id 集；缺省回退历史「ui-<dir>」约定（不可达，见下）
  * @returns {string[]} 问题列表（空 = 通过）
  */
 /**
@@ -438,8 +438,9 @@ function checkAggregateDeps(
 
 /**
  * #3 聚合 patch insert id 集 == 期望集（双向）。期望集显式传入时以其为准（pack-check 读各
- * active 子包 patch 的实际 insert id——客户端插件 ui-<dir>、纯宿主插件如 dsh-verify-isolated
- * 用 skill- 前缀）；缺省回退历史「ui-<dir>」约定（防「门禁假设所有插件都有客户端」的过强断言）。
+ * active 子包 patch 的实际 insert id——客户端插件 dsh-<dir>、纯宿主插件如 dsh-verify-isolated
+ * 用 skill- 前缀）；缺省回退是历史「ui-<dir>」约定，唯一调用点 pack-check.ts 显式传参后
+ * 已不可达，保留只为防「门禁假设所有插件都有客户端」的过强断言。
  */
 function checkAggregatePatchIds(
   manifest: ConsistencyManifest,

@@ -40,7 +40,7 @@ flowchart TD
   schema 默认值兜底）原样拼接，dsh web 重启时按名册组合全部插件；
 - **patch 由脚本生成，禁止手改**：`node scripts/gate/aggregate.ts`（重新生成）/
   `--check`（CI 校验漂移）；改独立包 patch 后必须重跑；
-- **patch id 与独立行相同（`ui-<目录名>`）**：同一插件以独立 + 聚合两种方式同时安装时，
+- **patch id 与独立行相同（`dsh-<目录名>`）**：同一插件以独立 + 聚合两种方式同时安装时，
   loader 层按 id duplicate → TypeError 启动失败（fail-loud 明确可发现）——
   因此 README 声明**禁双装**（任选一种安装方式）；保持 id 相同而非另加前缀，避免
   「不同 id 双 entry 各自 apply 的静默双激活」。
@@ -52,7 +52,7 @@ flowchart TD
 | 维度 | 聚合包（dsh-plugins-all） | 独立安装（dsh-<name>） |
 |---|---|---|
 | 安装 | 一条命令装齐 | 逐个 install |
-| patch id | 与独立行相同（禁双装） | `ui-<目录名>` |
+| patch id | 与独立行相同（禁双装） | `dsh-<目录名>` |
 | 配置 | 各插件 schema 默认值生效 | 同 |
 | 适用 | 全家桶尝鲜 / 完整环境 | 按需 / 故障隔离排查 |
 

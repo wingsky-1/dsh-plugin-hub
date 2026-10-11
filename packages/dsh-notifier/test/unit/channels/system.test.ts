@@ -121,6 +121,16 @@ function payloadOf(command: readonly string[]): Record<string, unknown> {
   >;
 }
 
+/** 解码 win32 自播命令，并从固定脚本的数据载荷中还原原路径。 */
+function soundPathOf(command: readonly string[]): string {
+  const index = command.indexOf("-EncodedCommand");
+  if (index < 0) throw new Error("命令里没有 -EncodedCommand");
+  const script = Buffer.from(command[index + 1]!, "base64").toString("utf16le");
+  const match = script.match(/FromBase64String\('([A-Za-z0-9+/=]+)'\)/u);
+  if (match === null) throw new Error("固定 PowerShell 脚本里没有声音路径数据");
+  return Buffer.from(match[1]!, "base64").toString("utf8");
+}
+
 // ---------------------------------------------------------------- 假进程事实端口
 
 /** 假子进程：三个出口都由用例显式驱动，不依赖真实进程的调度。 */
@@ -1205,18 +1215,16 @@ describe("sendSystem：弹窗与自播的编排", () => {
     ]);
     // 只有声音那条命令真的起了进程：弹窗命令根本没构造出来
     expect(fake.spawned.map((record) => record.command[0])).toEqual(["powershell"]);
-    expect(fake.spawned.map((record) => record.command)).toEqual([
-      [
-        "powershell",
-        "-NoProfile",
-        "-NonInteractive",
-        "-ExecutionPolicy",
-        "Bypass",
-        "-Command",
-        "$p=$args[0]; (New-Object System.Media.SoundPlayer $p).PlaySync()",
-        wav,
-      ],
+    const command = fake.spawned[0]!.command;
+    expect(command.slice(0, 6)).toEqual([
+      "powershell",
+      "-NoProfile",
+      "-NonInteractive",
+      "-ExecutionPolicy",
+      "Bypass",
+      "-EncodedCommand",
     ]);
+    expect(soundPathOf(command)).toBe(wav);
   });
 
   // 用户文本一旦进 argv 就是命令注入面；stderr 管道漏接则 PS 的诊断全丢。
@@ -1327,25 +1335,74 @@ describe("sendSystem：弹窗与自播的编排", () => {
     expect(delivery.warns).toHaveLength(1);
   });
 
-  // win32 的播放骨架读 $args[0]：路径若拼进命令串，白名单就形同虚设。
-  it("win32 只响不弹：PowerShell SoundPlayer 播白名单 wav（路径作独立 argv）", async () => {
+  // PS 5.1 把 -Command 后的参数当脚本文本；解码 -EncodedCommand 并还原路径可守住「数据而非代码」。
+  it.each([
+    String.raw`C:\Windows\Media\Windows Ding.wav`,
+    String.raw`C:\音频 文件\提示音.wav`,
+    "C:\\音频\\O'Brien `tick` $env:PATH; exit 9.wav",
+  ])("win32 自播：EncodedCommand 能无损还原安全传递的路径 %s", async (wav) => {
+    const command = buildSoundCommands(probeOf({ platform: "win32" }), wav)[0]!.command;
+
+    expect(command.slice(0, 6)).toEqual([
+      "powershell",
+      "-NoProfile",
+      "-NonInteractive",
+      "-ExecutionPolicy",
+      "Bypass",
+      "-EncodedCommand",
+    ]);
+    expect(command).not.toContain(wav);
+    const script = Buffer.from(command[6]!, "base64").toString("utf16le");
+    expect(soundPathOf(command)).toBe(wav);
+    expect(script).toContain("$ErrorActionPreference = 'Stop'");
+    expect(script).toContain("exit 1");
+    expect(script).not.toContain(wav);
+  });
+
+  it("win32 只响不弹：PowerShell 播放失败收为 failed 且记录实际失败", async () => {
     const wav = String.raw`C:\Windows\Media\Windows Ding.wav`;
     const fake = fakeDeps({ platform: "win32", present: [wav] });
+    fake.autoExit = false;
     installSystemDeps(fake);
     const delivery = new SystemDelivery({ popup: false, sound: "ding" });
 
-    expect(await delivery.send()).toEqual({ status: "ok", stage: "delivered" });
-    expect(fake.spawned.map((record) => record.command)).toEqual([
-      [
-        "powershell",
-        "-NoProfile",
-        "-NonInteractive",
-        "-ExecutionPolicy",
-        "Bypass",
-        "-Command",
-        "$p=$args[0]; (New-Object System.Media.SoundPlayer $p).PlaySync()",
-        wav,
-      ],
+    const pending = delivery.send();
+    await pollUntil(() => fake.children.length === 1, "win32 自播应启动 PowerShell");
+    fake.children[0]!.emitStderr("audio device unavailable");
+    fake.children[0]!.emitExit({ exited: true, code: 1 });
+
+    expect(await pending).toEqual({
+      status: "failed",
+      stage: "delivered",
+      reason: {
+        code: "reasonSystemSoundFailed",
+        params: { bin: "powershell" },
+        detail: "powershell 退出码 1：audio device unavailable",
+      },
+      retryable: false,
+    });
+    expect(delivery.warns).toEqual([
+      "dsh-notifier: 提示音播放失败：powershell 退出码 1：audio device unavailable",
+    ]);
+  });
+
+  it("win32 弹窗成功但自播失败：保留 ok 并明确记录提示音失败", async () => {
+    const wav = String.raw`C:\Windows\Media\Windows Ding.wav`;
+    const fake = fakeDeps({ platform: "win32", present: [wav, TOAST_SCRIPT] });
+    fake.autoExit = false;
+    installSystemDeps(fake);
+    const delivery = new SystemDelivery({ popup: true, sound: "ding" });
+
+    const pending = delivery.send();
+    await pollUntil(() => fake.children.length === 1, "toast 应先启动");
+    fake.children[0]!.emitExit({ exited: true, code: 0 });
+    await pollUntil(() => fake.children.length === 2, "toast 成功后应启动自播");
+    fake.children[1]!.emitStderr("audio device unavailable");
+    fake.children[1]!.emitExit({ exited: true, code: 1 });
+
+    expect(await pending).toEqual({ status: "ok", stage: "delivered" });
+    expect(delivery.warns).toEqual([
+      "dsh-notifier: 提示音播放失败：powershell 退出码 1：audio device unavailable",
     ]);
   });
 

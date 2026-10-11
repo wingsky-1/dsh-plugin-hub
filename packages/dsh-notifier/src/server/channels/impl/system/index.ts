@@ -180,8 +180,23 @@ export interface ToneCommand {
 export function buildSoundCommands(probe: PlatformProbe, file: string): readonly ToneCommand[] {
   if (probe.platform === "darwin") return [{ command: ["afplay", file] }];
   if (probe.platform === "win32") {
-    // 路径不拼进命令串：固定骨架读 $args[0]，白名单 wav 绝对路径作为独立 argv 传入
-    const play = "$p=$args[0]; (New-Object System.Media.SoundPlayer $p).PlaySync()";
+    // PowerShell 5.1 的 -Command 会把后续 argv 当成脚本内容；路径可能含代码字符，不能放进脚本语法。
+    // 路径先独立 UTF-8 base64 编码为数据，再放进固定脚本；脚本本身按官方 -EncodedCommand 要求 UTF-16LE 编码。
+    const pathData = Buffer.from(file, "utf8").toString("base64");
+    const script = [
+      "$ErrorActionPreference = 'Stop'",
+      "try {",
+      `  $p = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${pathData}'))`,
+      "  $player = New-Object System.Media.SoundPlayer $p",
+      "  $player.Load()",
+      "  $player.PlaySync()",
+      "  exit 0",
+      "} catch {",
+      "  [Console]::Error.WriteLine($_.Exception.Message)",
+      "  exit 1",
+      "}",
+    ].join("\n");
+    const encodedScript = Buffer.from(script, "utf16le").toString("base64");
     return [
       {
         command: [
@@ -190,9 +205,8 @@ export function buildSoundCommands(probe: PlatformProbe, file: string): readonly
           "-NonInteractive",
           "-ExecutionPolicy",
           "Bypass",
-          "-Command",
-          play,
-          file,
+          "-EncodedCommand",
+          encodedScript,
         ],
       },
     ];

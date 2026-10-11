@@ -71,7 +71,7 @@ export type { NormalizedConfig } from "./config.ts";
 
 export { sanitizeHtml } from "./sanitize.ts";
 
-// ------------------------------------------------------------------ 胶囊位置 UI 配置（ui-config.ts）
+// ------------------------------------------------------------------ 胶囊位置 UI 配置与原子写原语（ui-config.ts）
 
 export {
   DEFAULT_UI_CONFIG,
@@ -81,6 +81,15 @@ export {
   writeUiConfig,
 } from "./ui-config.ts";
 export type { UiPlacementConfig } from "./ui-config.ts";
+// 原子写原语（temporaryNameFor / atomicWrite）：本包 tmp+rename 的唯一实现，宿主在
+// ui-config.ts（shared/ 下唯一的持久化读写落点）。两个符号的取用口径不同，别混：
+//   - atomicWrite 是「写 tmp + rename + 失败清残留」的落点统一入口，凡是要整体落盘的
+//     域都用它（本面即它的大门）；
+//   - temporaryNameFor 只给**需自持独占创建与目录 fsync 的耐久链**取名（`open("wx")`
+//     + `handle.sync()` + `syncDirectory`），那类链换不了 atomicWrite——后者用
+//     `writeFile`，没有 `wx` 独占标志，也没有 fsync。取它不等于漏改。
+// 直引 ui-config.ts 的实现细节仍禁止；符号本体一律经本面。
+export { atomicWrite, temporaryNameFor } from "./ui-config.ts";
 
 // ------------------------------------------------------------------ 客户端行为纯函数（client-logic.ts）
 

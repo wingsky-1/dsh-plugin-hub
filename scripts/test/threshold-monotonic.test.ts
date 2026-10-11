@@ -10,6 +10,7 @@ import {
   parseCoverageThresholds as parseCoverageThresholdsImpl,
   runThresholdMonotonic,
 } from "../gate/threshold-monotonic.mjs";
+import { judgeRedLine, redLinePatterns } from "../gate/red-line-approval.mjs";
 import {
   booleanLeaves,
   isWeakenedBoolean,
@@ -51,7 +52,10 @@ const guard = <T extends { id: string } & Record<string, unknown>>(fields: T) =>
 const COVERAGE_GUARD = guard({
   id: "coverage.thresholds",
   kind: "value",
-  sources: [COVERAGE_CONFIG, VITEST],
+  // 主事实源 / 回落源分栏（与真值表同形）：coverage.config.json 是当前事实源，
+  // vitest.config.ts 只在基准侧还没有 JSON 时兜底。回落链是两栏的拼接，读法与拆分前一致。
+  sources: [COVERAGE_CONFIG],
+  fallbackSources: [VITEST],
   paths: ["thresholds"],
   keys: COVERAGE_THRESHOLD_KEYS,
   weaken: "decrease",
@@ -1301,7 +1305,9 @@ test("#843 F-1: 只在 sources 里列名的数据文件不算已登记（必须�
     writeRegistry(
       dir,
       BASE_GUARDS.map((item) =>
-        item.id === STRICT_GUARD.id ? { ...item, sources: [GAUNTLET, FALLBACK] } : item,
+        item.id === STRICT_GUARD.id
+          ? { ...item, sources: [GAUNTLET], fallbackSources: [FALLBACK] }
+          : item,
       ),
     );
     const r = runFixture(dir);
@@ -1309,6 +1315,134 @@ test("#843 F-1: 只在 sources 里列名的数据文件不算已登记（必须�
     assert.match(r.stderr, /未在声明表登记/);
   } finally {
     removeFixture(dir);
+  }
+});
+
+// ── 主事实源 / 回落源分栏（vitest.config.ts 移出红线面对应的契约） ──
+
+test("回落源分栏：fallbackSources 尾部追加合法（读链未变，只是换了个字段名）", () => {
+  const dir = gitFixture(vitestText(80));
+  try {
+    // 真值表就是这个形态：coverage.config.json 为主事实源，vitest.config.ts 迁移期回落。
+    // 合成链与拆分前逐字一致，故不得因「换了字段」判红。
+    writeRegistry(
+      dir,
+      BASE_GUARDS.map((item) =>
+        item.id === COVERAGE_GUARD.id
+          ? { ...item, sources: [COVERAGE_CONFIG], fallbackSources: [VITEST] }
+          : item,
+      ),
+    );
+    const r = runFixture(dir);
+    assert.equal(r.exitCode, 0, "回落源分栏不改变读链，不得被判红");
+  } finally {
+    removeFixture(dir);
+  }
+});
+
+test("回落源分栏：把生效主事实源降级为回落源判红（合成链换序 = 守卫改读另一个文件）", () => {
+  const dir = gitFixture(vitestText(80));
+  try {
+    // coverage.config.json 与 vitest.config.ts 互换角色：链从 [json, ts] 变成 [ts, json]，
+    // 守卫转而以 vitest.config.ts 为准——这正是「前置影子源」的等价物，必须判红。
+    writeRegistry(
+      dir,
+      BASE_GUARDS.map((item) =>
+        item.id === COVERAGE_GUARD.id
+          ? { ...item, sources: [VITEST], fallbackSources: [COVERAGE_CONFIG] }
+          : item,
+      ),
+    );
+    const r = runFixture(dir);
+    assert.equal(r.exitCode, 1, "合成链换序即守卫改读另一个文件，判据形状只许补全收紧");
+    assert.match(r.stderr, /coverage\.thresholds\.sources 相对基准被改动/);
+  } finally {
+    removeFixture(dir);
+  }
+});
+
+test("回落源分栏：sources 拆空、全靠回落源撑着判红（fail-closed）", () => {
+  const dir = gitFixture(vitestText(80));
+  try {
+    // 没有主事实源的 guard 无从判断它守护的是哪个文件，且回落源只在基准侧缺源时兜底——
+    // 工作区侧永远读不到它，等于把该维度的事实源整个交出。
+    writeRegistry(
+      dir,
+      BASE_GUARDS.map((item) =>
+        item.id === COVERAGE_GUARD.id ? { ...item, sources: [], fallbackSources: [VITEST] } : item,
+      ),
+    );
+    const r = runFixture(dir);
+    assert.equal(r.exitCode, 2, "sources 为空属配置故障，按 fail-closed 处理");
+    assert.match(r.stderr, /缺 sources/);
+  } finally {
+    removeFixture(dir);
+  }
+});
+
+test("回落源分栏：形态写坏（非数组 / 空数组 / 与 sources 重复）一律判红", () => {
+  // 三处不同性质的形态错误：非数组会连带触发「sources 不存在」（字符串不是可回落的东西，合成链
+  // 因此只剩主事实源），空数组与重复则只由回落源自己的判词说清。这里统一钉 exit 2（fail-closed
+  // 而非 exit 1）——形态错误是「门禁读不清声明」不是「判据被放宽」，与 sources 同口径。
+  const cases = [
+    { name: "字符串", fallbackSources: VITEST, why: /fallbackSources 必须是非空字符串数组/ },
+    { name: "空数组", fallbackSources: [], why: /fallbackSources 必须是非空字符串数组/ },
+    {
+      name: "与 sources 重复",
+      fallbackSources: [COVERAGE_CONFIG],
+      why: /fallbackSources 与 sources 重复/,
+    },
+    { name: "含非字符串", fallbackSources: [42], why: /fallbackSources 必须是非空字符串数组/ },
+  ];
+  for (const c of cases) {
+    const dir = gitFixture(vitestText(80));
+    try {
+      writeRegistry(
+        dir,
+        BASE_GUARDS.map((item) =>
+          item.id === COVERAGE_GUARD.id
+            ? { ...item, sources: [COVERAGE_CONFIG], fallbackSources: c.fallbackSources }
+            : item,
+        ),
+      );
+      const r = runFixture(dir);
+      assert.equal(r.exitCode, 2, `${c.name} 形态必须 fail-closed`);
+      assert.match(r.stderr, c.why, `${c.name} 的判词必须点名是哪一栏`);
+    } finally {
+      removeFixture(dir);
+    }
+  }
+});
+
+test("回落源分栏：redLinePatterns 只收 sources——fallbackSources 不进红线面（#3.0 治理项）", async () => {
+  // 这是本治理项的**执法点本身**：合成链照旧参与读取，但红线面派生只认主事实源。
+  // #843 F-1 的「影子源前置判红」与本节互为补集——改面不许靠数据面，改读链不许靠拆字段。
+  const dir = mkdtempSync(join(tmpdir(), "red-line-fallback-"));
+  try {
+    const path = join(dir, "threshold-registry.json");
+    writeFileSync(
+      path,
+      JSON.stringify({
+        version: 1,
+        guards: [
+          {
+            id: "coverage.thresholds",
+            sources: ["scripts/data/coverage.config.json"],
+            fallbackSources: ["vitest.config.ts"],
+          },
+        ],
+      }),
+    );
+    const face = redLinePatterns(path, () => {});
+    assert.ok(!face.includes("vitest.config.ts"), "回落源不得进红线面");
+    assert.ok(face.includes("scripts/data/coverage.config.json"), "主事实源必须在红线面内");
+    // 非空洞性：同一次判定里回落源文件本身不是红线，改它不需要 approved。
+    assert.deepEqual(judgeRedLine({ changedFiles: ["vitest.config.ts"], labels: [] }), {
+      ok: true,
+      violations: [],
+    });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
   }
 });
 

@@ -247,10 +247,11 @@ export const zh = {
   whPresetNtfy: "ntfy（ntfy.sh 或自建）",
   whPresetGotify: "Gotify",
   whPresetCustom: "自建推送网关",
-  whPresetHint: "预设填充 URL 形态 / 认证方式 / 消息模板",
+  whPresetHint: "预设填充认证方式与消息模板；ntfy 发往服务根地址（旧 topic URL 自动兼容改写）",
   whUrl: "目标 URL",
-  whUrlPlaceholder: "https://ntfy.sh/<topic>",
-  whUrlHint: "POST JSON；仅允许 http(s) 且 URL 不得内嵌凭据；ntfy 主题名建议带随机后缀防遍历",
+  whUrlPlaceholder: "https://ntfy.sh/（topic 写进模板）",
+  whUrlHint:
+    "POST JSON；ntfy 发往服务根地址、模板内填真实 topic，旧 topic URL 自动兼容（末段明确时改写为根地址），自托管前缀根地址原样保留；仅允许 http(s) 且 URL 不得内嵌凭据；ntfy 主题名建议带随机后缀防遍历",
   whAuth: "认证",
   whAuthNone: "无",
   whAuthBearer: "Bearer Token（Authorization 头）",
@@ -267,7 +268,7 @@ export const zh = {
   whTimeoutHint: "秒 · 1–60（超限按边界取值，默认 10）；超时与失败均落记录，不自动重试",
   whTemplate: "消息模板（JSON body，占位符点击插入）",
   whTemplateHint:
-    "{{priority}} 由服务端按频道映射渲染（ntfy：info→default / success→low / warning→high / failure→urgent）；文本占位符 JSON-aware 转义，{{ts}} 数字直出",
+    "ntfy 发往服务根地址、模板内须填真实 topic；{{priority}} 由服务端按频道映射渲染（ntfy 数字：info→3 / success→2 / warning→4 / failure→5；gotify 沿用既有映射）；文本占位符 JSON-aware 转义，{{ts}} 数字直出",
   whTemplateFailHint: "模板非法或渲染失败按该频道投递失败落记录，不阻断其他频道",
   whTplRestore: "恢复预设模板",
   // ===== 能力自检（宿主能力面读 /diagnostics，浏览器面在本页本地判定）=====
@@ -556,11 +557,12 @@ export const en: Record<NotifierLocaleKey, string> = {
   whPresetNtfy: "ntfy (ntfy.sh or self-hosted)",
   whPresetGotify: "Gotify",
   whPresetCustom: "Custom push gateway",
-  whPresetHint: "Preset fills URL shape / auth method / message template",
+  whPresetHint:
+    "Preset fills the auth method and message template; ntfy publishes to the service root URL (legacy topic URLs are auto-rewritten)",
   whUrl: "Target URL",
-  whUrlPlaceholder: "https://ntfy.sh/<topic>",
+  whUrlPlaceholder: "https://ntfy.sh/ (put the topic in the template)",
   whUrlHint:
-    "POST JSON; http(s) only, no embedded credentials in the URL; add a random suffix to ntfy topic names",
+    "POST JSON; ntfy publishes to the service root URL with the real topic in the template, legacy topic URLs are auto-compat (rewritten to the root when the trailing segment is unambiguous), and self-hosted prefixed roots are kept as-is; http(s) only, no embedded credentials in the URL; add a random suffix to ntfy topic names",
   whAuth: "Auth",
   whAuthNone: "None",
   whAuthBearer: "Bearer Token (Authorization header)",
@@ -578,7 +580,7 @@ export const en: Record<NotifierLocaleKey, string> = {
     "seconds · 1–60 (clamped, default 10); timeouts and failures are recorded, no auto-retry",
   whTemplate: "Message template (JSON body, click to insert placeholders)",
   whTemplateHint:
-    "{{priority}} is rendered by the server per-channel map (ntfy: info→default / success→low / warning→high / failure→urgent); text placeholders are JSON-aware escaped, {{ts}} is raw number",
+    "ntfy publishes to the service root URL with the real topic in the template; {{priority}} is rendered by the server per-channel map (ntfy numbers: info→3 / success→2 / warning→4 / failure→5; gotify keeps its existing map); text placeholders are JSON-aware escaped, {{ts}} is raw number",
   whTemplateFailHint:
     "Invalid template or render failure counts as a failed delivery for this channel only; other channels are unaffected",
   whTplRestore: "Reset preset template",
