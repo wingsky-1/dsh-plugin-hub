@@ -68,18 +68,225 @@ export function renderWebhookBody(
     throw new Error(`webhook 模板不是合法 JSON: ${reason}`);
   }
   // 第二、三步：只替换字符串值；重新序列化时统一转义，注入内容逃不出这个字符串
-  return JSON.stringify(
-    renderTree(tree, {
-      title: vars.title,
-      message: vars.message,
-      kind: vars.kind,
-      severity: vars.severity ?? "",
-      priority: priorityFor(preset, vars.severity),
-      source: "",
-    }),
-  );
+  const rendered = renderTree(tree, {
+    title: vars.title,
+    message: vars.message,
+    kind: vars.kind,
+    severity: vars.severity ?? "",
+    priority: priorityFor(preset, vars.severity),
+    source: "",
+  });
+  // ntfy 官方 JSON 协议要求 `priority` 为 1..5 数字（字符串会被 400）：模板里仍写
+  // `"{{priority}}"` 占位，这里归一成数字。旧字面量（`urgent` 等名称）兼容映射，
+  // 非法值抛错进这次投递失败，不静默发出。gotify / raw 原样不动。
+  return JSON.stringify(preset === "ntfy" ? normalizeNtfyTree(rendered) : rendered);
 }
 
+/** ntfy 旧名称 → 数字（兼容用户手写过旧名称字面量的模板；大小写不敏感）。 */
+const NTFY_PRIORITY_NAMES: Readonly<Record<string, number>> = {
+  min: 1,
+  low: 2,
+  default: 3,
+  high: 4,
+  urgent: 5,
+  max: 5,
+};
+
+/** 单个 priority 值归一成数字（抛错进这次投递失败）。 */
+function ntfyPriorityValue(value: WebhookTemplateNode): number {
+  if (typeof value === "number") {
+    if (Number.isInteger(value) && value >= 1 && value <= 5) return value;
+    throw new Error(`ntfy priority 非法：${String(value)}（需 1..5 数字）`);
+  }
+  if (typeof value !== "string") throw new Error("ntfy priority 非法：需 1..5 数字");
+  const text = value.trim();
+  if (/^\d+$/.test(text)) {
+    const numeric = Number.parseInt(text, 10);
+    if (numeric >= 1 && numeric <= 5) return numeric;
+    throw new Error(`ntfy priority 非法：${value}（需 1..5 数字）`);
+  }
+  const named = text.toLowerCase();
+  // 原型链守卫（与 priorityFor 的 hasOwn 同因）：直接索引时 `"__proto__"` 会拿到
+  // `Object.prototype`（truthy 非数字），归一后发出的 priority 就不是数字了。
+  if (!Object.hasOwn(NTFY_PRIORITY_NAMES, named))
+    throw new Error(`ntfy priority 非法：${value}（需 1..5 数字）`);
+  return NTFY_PRIORITY_NAMES[named];
+}
+
+/**
+ * ntfy body 顶层 `priority` 归一成 1..5 数字。缺席与 null 视同缺席（交服务端默认 3，
+ * 不替用户补——补了就分不清「用户没写」与「用户写了 3」）；其余非法一律抛错。
+ */
+function normalizeNtfyTree(node: WebhookTemplateNode): WebhookTemplateNode {
+  if (typeof node !== "object") return node;
+  if (node === null) return node;
+  if (Array.isArray(node)) return node;
+  const record = node as Record<string, WebhookTemplateNode>;
+  if (!Object.hasOwn(record, "priority")) return node;
+  if (record.priority === null) {
+    delete record.priority;
+    return node;
+  }
+  record.priority = ntfyPriorityValue(record.priority);
+  return node;
+}
+
+/** ntfy topic 字符集（官方：字母/数字/`_`/`-`，1..64 字符）。 */
+const NTFY_TOPIC_RE = /^[A-Za-z0-9_-]{1,64}$/;
+
+/** topic 占位残留：空串、默认模板的 `<topic>` 字面量、未渲染的 `{{…}}` 视同缺席。 */
+function isPlaceholderTopic(value: string): boolean {
+  return value === "" || value === "<topic>" || value.includes("{{") || value.includes("}}");
+}
+
+/** path 单段安全解码：解码失败即用原文（随后走字符集校验，不抛穿）。 */
+function decodeTopicSegment(segment: string): string {
+  try {
+    return decodeURIComponent(segment);
+  } catch {
+    return segment;
+  }
+}
+
+/** ntfy 发布地址解析结论：成功带最终地址与 body，失败带一句进 reason.detail 的原因。 */
+type NtfyPublish =
+  | { readonly ok: true; readonly url: string; readonly body: string }
+  | { readonly ok: false; readonly cause: string };
+
+/** 读 body.topic：占位残留视同缺席（undefined）；非法抛错进投递失败。 */
+function readNtfyTopic(record: Record<string, unknown>): string | undefined {
+  if (record.topic === undefined) return undefined;
+  if (typeof record.topic !== "string") throw new Error("ntfy 配置错误：body.topic 需为字符串");
+  if (isPlaceholderTopic(record.topic)) return undefined;
+  if (!NTFY_TOPIC_RE.test(record.topic)) {
+    throw new Error(
+      `ntfy 配置错误：topic 非法：${record.topic}（仅允许字母/数字/_/-，1..64 字符）`,
+    );
+  }
+  return record.topic;
+}
+
+/**
+ * ntfy URL 拆解：只取原始 pathname（不解码——自托管前缀的大小写/编码/双斜杠原样保留，
+ * 截段只动已明确的末段）；解析失败给 undefined（调用方报配置错误，不抛穿）。
+ */
+interface NtfyUrlParts {
+  readonly origin: string;
+  readonly pathname: string;
+  readonly query: string;
+}
+
+function splitNtfyUrl(rawUrl: string): NtfyUrlParts | undefined {
+  let url: URL;
+  try {
+    url = new URL(rawUrl);
+  } catch {
+    return undefined;
+  }
+  return { origin: url.origin, pathname: url.pathname, query: url.search };
+}
+
+/** 原始路径非空段（不解码）：只用于定位末段，比较时才解码候选末段。 */
+function rawSegments(pathname: string): readonly string[] {
+  return pathname.split("/").filter((part) => part.length > 0);
+}
+
+/**
+ * 显式 topic 的地址判定：根路径原样保留；尾斜杠路径视同自托管前缀根地址，原样保留
+ * 绝不截断；末段解码后与 topic 一致（无尾斜杠）则从原始 pathname 截掉该末段（其余
+ * 字节/双斜杠/query 原样保留）；末段不一致（无尾斜杠）即 topic URL 与自定义模板
+ * topic 冲突，报配置错误、不发错地址。
+ */
+function publishWithTopic(
+  parts: NtfyUrlParts,
+  topic: string,
+  rawUrl: string,
+  bodyText: string,
+): NtfyPublish {
+  const raws = rawSegments(parts.pathname);
+  if (raws.length === 0) return { ok: true, url: rawUrl, body: bodyText };
+  const lastRaw = raws[raws.length - 1] as string;
+  if (decodeTopicSegment(lastRaw) !== topic) {
+    if (parts.pathname.endsWith("/")) return { ok: true, url: rawUrl, body: bodyText };
+    return {
+      ok: false,
+      cause: `ntfy 配置错误：URL 末段 "${decodeTopicSegment(lastRaw)}" 与模板 topic "${topic}" 不一致（JSON 须发往服务根地址）；请改用根地址或统一 topic`,
+    };
+  }
+  if (parts.pathname.endsWith("/")) return { ok: true, url: rawUrl, body: bodyText };
+  // 只移除末段 topic 本身：分隔斜杠是前缀的一部分（如 /base//demo → /base//，
+  // /base/demo → /base/），连同分隔符一起截会改写前缀字节。
+  const cut = parts.pathname.slice(0, parts.pathname.length - lastRaw.length) || "/";
+  return { ok: true, url: parts.origin + cut + parts.query, body: bodyText };
+}
+
+/**
+ * 无可用 topic 的地址判定：根路径报缺 topic；尾斜杠路径（非根）不明确是前缀根还是
+ * topic 地址，不猜、报不明确；多段路径同样不猜自托管前缀；仅无尾斜杠单段路径提取
+ * 末段（解码后校验）并改写为根地址。三者都不发错地址。
+ */
+function publishWithoutTopic(parts: NtfyUrlParts, record: Record<string, unknown>): NtfyPublish {
+  const raws = rawSegments(parts.pathname);
+  if (raws.length === 0) {
+    return {
+      ok: false,
+      cause:
+        "ntfy 配置错误：缺少可用 topic（模板 topic 为空或仍为 <topic> 占位，且 URL 为服务根地址无法提取）；请在模板填写真实 topic",
+    };
+  }
+  if (parts.pathname.endsWith("/")) {
+    return {
+      ok: false,
+      cause:
+        "ntfy 配置错误：模板无可用 topic 且 URL 以 / 结尾，无法明确判断这是前缀根地址还是 topic 地址；请在模板填写真实 topic",
+    };
+  }
+  if (raws.length > 1) {
+    return {
+      ok: false,
+      cause:
+        "ntfy 配置错误：模板 topic 为空/占位且 URL 路径含多段，无法明确提取 topic（不猜测自托管前缀）；请改用服务根地址并在模板填写真实 topic",
+    };
+  }
+  const extracted = decodeTopicSegment(raws[0] as string);
+  if (!NTFY_TOPIC_RE.test(extracted)) {
+    return {
+      ok: false,
+      cause: `ntfy 配置错误：URL 末段 topic 非法：${extracted}（仅允许字母/数字/_/-，1..64 字符）`,
+    };
+  }
+  record.topic = extracted;
+  return { ok: true, url: parts.origin + "/" + parts.query, body: JSON.stringify(record) };
+}
+
+/**
+ * ntfy JSON 发布地址解析（#1102）：官方要求 JSON 发往服务根地址、body.topic 必填。
+ * 根 JSON 模式与旧 topic URL 模式都明确判定、互相兼容，细则见 publishWithTopic /
+ * publishWithoutTopic（判定分散后本函数只做装配：解析 → 读 topic → 分派）。
+ */
+function resolveNtfyPublish(rawUrl: string, bodyText: string): NtfyPublish {
+  let payload: unknown;
+  try {
+    payload = JSON.parse(bodyText) as unknown;
+  } catch {
+    return { ok: false, cause: "ntfy 配置错误：body 不是合法 JSON 对象" };
+  }
+  if (typeof payload !== "object")
+    return { ok: false, cause: "ntfy 配置错误：body 顶层需为 JSON 对象" };
+  if (payload === null) return { ok: false, cause: "ntfy 配置错误：body 顶层需为 JSON 对象" };
+  if (Array.isArray(payload)) return { ok: false, cause: "ntfy 配置错误：body 顶层需为 JSON 对象" };
+  const record = payload as Record<string, unknown>;
+  let topic: string | undefined;
+  try {
+    topic = readNtfyTopic(record);
+  } catch (cause) {
+    return { ok: false, cause: errorDetail(cause) };
+  }
+  const parts = splitNtfyUrl(rawUrl);
+  if (parts === undefined) return { ok: false, cause: "ntfy 配置错误：URL 解析失败" };
+  if (topic !== undefined) return publishWithTopic(parts, topic, rawUrl, bodyText);
+  return publishWithoutTopic(parts, record);
+}
 /** 遍历模板树，单趟替换字符串值里的占位符（替换内容不会被再次扫描）。 */
 function renderTree(
   node: WebhookTemplateNode,
@@ -127,9 +334,16 @@ export async function sendWebhook(
       ts: message.ts,
     });
   } catch (cause) {
-    const detail = cause instanceof Error ? cause.message : String(cause);
-    return failed("reasonWebhookTemplateInvalid", { detail });
+    return failed("reasonWebhookTemplateInvalid", { detail: errorDetail(cause) });
   }
+
+  // ntfy JSON 须发往服务根地址（#1102）：旧 topic URL + 默认模板自动兼容改写，
+  // 根地址 + 显式 topic 原样保留，冲突/缺 topic/不明确模式在出站前报配置错误。
+  // gotify / raw 由 publishTargetOf 原样直通，不进 ntfy 分支。
+  const published = publishTargetOf(target, body);
+  if (published.failure !== undefined) return published.failure;
+  body = published.body;
+  const publishUrl = published.url;
 
   const headers: Record<string, string> = { ...target.headers };
   setHeader(headers, "content-type", "application/json; charset=utf-8");
@@ -137,15 +351,14 @@ export async function sendWebhook(
 
   let response: HttpFetchResult;
   try {
-    response = await fetchImpl(target.url, {
+    response = await fetchImpl(publishUrl, {
       method: "POST",
       headers,
       body,
       signal: AbortSignal.timeout(clampTimeoutSec(target.timeoutSec) * 1000),
     });
   } catch (cause) {
-    const detail = cause instanceof Error ? cause.message : String(cause);
-    return failed("reasonWebhookRequestFailed", { detail });
+    return failed("reasonWebhookRequestFailed", { detail: errorDetail(cause) });
   }
   if (!response.ok) {
     let detail = "";
@@ -197,6 +410,39 @@ export function clampTimeoutSec(value?: number): number {
   return Math.min(WEBHOOK_TIMEOUT.max, Math.max(WEBHOOK_TIMEOUT.min, Math.round(value)));
 }
 
+/** 失败原因的宿主原文：Error 取 message，其余 String 化（调用方截断进 detail）。 */
+function errorDetail(cause: unknown): string {
+  return cause instanceof Error ? cause.message : String(cause);
+}
+
+/**
+ * 本次投递的发布地址与 body。非 ntfy 原样直通；ntfy 解析失败直接带回这次投递的
+ * 失败结果（调用方单分支返回，sendWebhook 不再为 ntfy 增复杂度）。
+ * 改写后的地址在这里重新过出站硬闸，不绕过现有安全桩。
+ */
+function publishTargetOf(
+  target: WebhookTarget,
+  body: string,
+): { readonly url: string; readonly body: string; readonly failure?: DeliverResult } {
+  if (target.preset !== "ntfy") return { url: target.url, body };
+  const resolved = resolveNtfyPublish(target.url, body);
+  if (!resolved.ok) {
+    return {
+      url: target.url,
+      body,
+      failure: failed("reasonWebhookTemplateInvalid", { detail: resolved.cause }),
+    };
+  }
+  const readmitted = admitDeliveryUrl(resolved.url);
+  if (!readmitted.ok) {
+    return {
+      url: target.url,
+      body,
+      failure: failed("reasonWebhookRequestFailed", { detail: readmitted.cause }),
+    };
+  }
+  return { url: resolved.url, body: resolved.body };
+}
 /** 失败结果：code 出文案、detail 存宿主原文；截断是展示语义，不是脱敏。 */
 function failed(
   code: ReasonCode,

@@ -36,11 +36,16 @@ export const WEBHOOK_DEFAULT_TEMPLATES: Readonly<Record<WebhookDeliveryPreset, s
   raw: '{\n  "event": "{{kind}}",\n  "title": "{{title}}",\n  "body": "{{message}}",\n  "severity": "{{severity}}",\n  "ts": {{ts}}\n}',
 };
 
-/** `{{priority}}` 映射表（`raw` = severity 原文）；查不到即 severity 非法，视同未提供。 */
+/** `{{priority}}` 映射表（`raw` = severity 原文）；查不到即 severity 非法，视同未提供。
+ *
+ * `ntfy` 一格是数字字符串（官方 JSON 协议要求 `priority` 为 1..5 数字，见
+ * https://docs.ntfy.sh/publish/#publish-as-json ：5=urgent/max、4=high、3=default、
+ * 2=low、1=min）。宿主出口渲染后把该字段归一成 JSON 数字再发出——模板里仍写
+ * `"{{priority}}"` 占位即可，新老模板同形。 */
 export const WEBHOOK_PRIORITY: Readonly<
   Record<WebhookDeliveryPreset, Readonly<Record<NotifySeverity, string>>>
 > = {
-  ntfy: { failure: "urgent", warning: "high", success: "low", info: "default" },
+  ntfy: { failure: "5", warning: "4", success: "2", info: "3" },
   gotify: { failure: "9", warning: "7", success: "3", info: "3" },
   raw: { failure: "failure", warning: "warning", success: "success", info: "info" },
 };

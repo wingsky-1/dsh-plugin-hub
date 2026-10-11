@@ -325,7 +325,7 @@ is always the raw severity):
 
 | preset | info | success | warning | failure |
 |---|---|---|---|---|
-| `ntfy` | `default` | `low` | `high` | `urgent` |
+| `ntfy` | 3 | 2 | 4 | 5 |
 | `gotify` | 3 | 3 | 7 | 9 |
 
 `custom` does no mapping — `{{priority}}` passes the severity through verbatim for the
@@ -343,8 +343,29 @@ Substitution happens inside already-parsed strings and is uniformly escaped on
 re-serialization, so notification content containing quotes or `"}}` cannot break out of a
 string to inject extra fields. A template that is not valid JSON fails that channel's
 delivery and is recorded (never silently downgraded to plain text; other channels are
-unaffected). The `ntfy` preset default template contains `"topic": "<topic>"` — replace it
-with your topic name before delivering.
+unaffected). The `ntfy` preset's `priority` is normalized to the numbers 1..5 before
+sending (legacy name literals are compat-mapped; illegal values fail that delivery and
+are recorded).
+
+**ntfy JSON publishing (#1102)**: the official protocol requires publishing JSON to the
+service root URL with a mandatory `body.topic`. Recommended setup: put the service root
+URL in `url` (e.g. `https://ntfy.sh/`; a self-hosted prefixed root such as
+`https://self.example/ntfy/` is kept as-is) and the real `topic` in the template. Legacy
+setups (`https://ntfy.sh/<topic>` plus the default template) stay working: a
+slash-free single-segment path has its trailing segment extracted as the topic and the request is
+rewritten to the root URL (only the trailing topic segment itself is removed; the prefix,
+including separator slashes, and the query are preserved verbatim). With an explicit topic and a
+non-root path, a path ending in `/` counts as a self-hosted prefixed root and is kept
+verbatim, never truncated; a trailing segment that decodes to the explicit topic (no trailing
+slash) is likewise
+removed on its own with the prefix kept; a differing trailing segment (no trailing slash) is a conflict and
+fails with a configuration error without sending. With no usable topic in the template: a
+slash-free single-segment path is extracted, a root path fails with missing-topic, and a
+trailing-slash or multi-segment path is refused as ambiguous (a prefixed root cannot be told
+apart from a topic address) —
+none of them ever sends to a wrong address, and nothing is guessed. `topic` allows letters/digits/`_`/`-`
+(1..64 chars). No hand-editing of the config file is needed, and no new public config
+key is introduced.
 
 Delivery reliability: timeout 1-60 s (default 10); **failures are never retried
 automatically** — 4xx / 5xx / network errors / render failures all end as a terminal
@@ -357,9 +378,14 @@ Example instance (stored alongside Bark instances in the `channels` array, ids u
 across types):
 
 ```json
-{ "id": "droid", "type": "webhook", "url": "https://ntfy.sh/mytopic",
-  "enabled": true, "auth": "bearer", "token": "…", "preset": "ntfy", "timeoutSec": 10 }
+{ "id": "droid", "type": "webhook", "url": "https://ntfy.sh/",
+  "enabled": true, "auth": "bearer", "token": "…", "preset": "ntfy",
+  "template": "{\"topic\":\"mytopic\",\"title\":\"{{title}}\",\"message\":\"{{message}}\",\"tags\":[\"{{kind}}\"],\"priority\":\"{{priority}}\"}",
+  "timeoutSec": 10 }
 ```
+
+The legacy shape (`url: https://ntfy.sh/mytopic` plus the default template) still delivers
+(auto-compat rewrite); new setups should use the root-URL shape above.
 
 - **Webhook channel credentials & outbound security (#508)**:
   - **Disabled by default**: `enabled` defaults to false — outbound authorization must be granted explicitly (same posture as Bark)
