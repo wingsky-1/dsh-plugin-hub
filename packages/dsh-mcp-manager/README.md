@@ -350,7 +350,7 @@ pnpm --filter @wingsky-1/dsh-mcp-manager test
   不声称已检测真实健康、不发自研 ping；半开仍可由用户显式重连恢复。resume 携带本次会话
   cwd，服务端在本次调用中解析并固定 root（旧无 body 请求回落既有绑定，新请求明确无工作区
   即 `cwd:""` 固定 `@global`，不回落到别人的 projectRoot）；客户端恢复节流按 cwd 分键覆盖
-  resume，不同学 cwd 的恢复不互吞。
+  resume，不同 cwd 的恢复不互吞。
 - 依赖 Node ≥ 20
 
 ## 类型依赖

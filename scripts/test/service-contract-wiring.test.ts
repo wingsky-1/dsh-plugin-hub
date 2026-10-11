@@ -141,6 +141,7 @@ const EXPECT_FILES: Record<string, string[]> = {
     "client-dom/float-quick-add-form.test.ts",
     "client-dom/float-servers-render.test.ts",
     "client-dom/panel-aria-modal.test.ts",
+    "client-dom/resume-visibility.test.ts",
     "client-dom/settings-card.test.ts",
     "client-unit/context-s2.test.ts",
     "client-unit/core-api.test.ts",
