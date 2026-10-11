@@ -209,7 +209,7 @@ packages/dsh-*/            # 每个插件 = 独立 npm 包（@wingsky-1/dsh-*）
   src/client/*.ts          # 客户端辅助模块（宿主用不到、仅浏览器侧）
   src/*.ts                 # 其余为宿主模块；宿主导出的 profile 依赖另见 cordis.patch.yml
 packages/dsh-plugins-all/  # 聚合包（dependencies 引用全部子包，发布用 pnpm publish 替换版本号）
-shared/                    # 宿主端共享层（loopback/host-utils/frontmatter），构建期内联进各包，不发布
+shared/                    # 宿主端共享层（loopback/host-utils/paths/dsh-home/sse-hub/…），构建期内联进各包，不发布
 scripts/                   # 仓库维护脚本（*.ts，Node 直跑；按职能分 build/ gate/ lib/ release/ test/ data/）
 ```
 
@@ -295,7 +295,7 @@ contract-check 禁止运行时值导入）。原自建类型层 `types/dsh.d.ts`
 - **单入口**：`src/index.ts` export 一个 cordis service；需要给客户端传路由时
   `export const ROUTES` 作为**单一事实源**——`bundle-host` 经 `__DSH_ROUTES__`
   define 注入给客户端（客户端不引用则零影响）。
-- **依赖纪律**：只 import `../../shared/*`（loopback / host-utils / frontmatter，构建期
+- **依赖纪律**：只 import `../../shared/*`（loopback / host-utils / paths / dsh-home，构建期
   内联）与 Node 内置模块；**任何第三方运行时依赖一律由 esbuild `--bundle` 内联**
   （如 mcp-manager 宿主用的 `fast-glob`），发布物不以运行时 npm 依赖形式发布。
 - **安全**：全部路由强制 loopback 围栏（非回环 403、方法错 405），`/health` 必项；
@@ -464,7 +464,8 @@ projects: [
   home）下运行时，settings 存储等宿主数据已随 `DSH_HOME` 隔离；插件若仍硬拼
   `~/.dsh`，读写两面都会串到真实 home——#510 即 dsh-notifier 通知历史/投递状态
   落真实 `~/.dsh`，隔离实例的通知记录 tab 读出用户真实数据。
-- **写法先例**：`packages/dsh-provider-usage/src/path-resolve.ts`（`pluginHome()`）；
+- **写法先例**：`packages/dsh-provider-usage/src/server/registry/path-resolve.ts`（`pluginHome()`，
+  内部已改调 `shared/dsh-home.js` 的 `dshHome()` 接缝；该文件是渐进退役 facade，公开签名不变）；
   收敛方向为 `shared/dsh-home.js` 单一事实源（#517 C10 接缝），现阶段各包内聚
   helper 亦可，但不得绕过 env 读取。
 - **豁免口径**：读取**非 dsh 生态**的外部凭据/配置（如 provider-usage 读 opencode
@@ -1069,8 +1070,10 @@ dsh web 部署在 Linux 服务器，经局域网被多种设备 / 系统访问�
 ## 7. 浮窗移动端适配约定（#128，dsh-mcp-manager / dsh-provider-usage）
 
 带浮窗胶囊的插件共用以下跨包约定；判定与 clamp 逻辑以纯函数形式放在各包
-`src/placement-math.ts`（零依赖单一事实源：宿主端 re-export 供 smoke 断言、
-客户端直接内联），两包保持同构。
+`src/shared/placement-math.ts`（零依赖单一事实源：宿主端 re-export 供 smoke 断言、
+客户端直接内联），两包保持同构。两包的默认层级基准与公开函数名已分叉
+（`clampZIndexBase` 同名同形，默认值各钉自家样式事实），故**不**上提仓库根 `shared/`——
+取舍见 `.agents/notes/rejected/architecture/2026-09-21-placement-math-shared-extraction.md`。
 
 1. **断点档位**：判定基准 = conversationHost 的 rect 宽度（JS 判定 + data 属性
    `data-dm-bp` / `data-dou-bp` 切换样式），**不用窗口 @media**——防桌面窄窗 /

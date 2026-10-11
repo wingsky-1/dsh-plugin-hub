@@ -7,8 +7,8 @@
 
 import { copyFile, link, mkdir, open, readFile, readdir, rename, unlink } from "node:fs/promises";
 import { constants, existsSync } from "node:fs";
-import { randomUUID } from "node:crypto";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { temporaryNameFor } from "../../shared/interface.ts";
 import { expandHomePath, pluginHome, resolvePath } from "./path-resolve.ts";
 import { dshHome as dshHomeDefault } from "../../../../../shared/dsh-home.js";
 
@@ -421,7 +421,8 @@ export async function writeAdapterState(
   durabilityDiagnostic: (message: string) => void,
 ): Promise<void> {
   const file = adapterStateFile(root);
-  const tmp = `${file}.${process.pid}.${randomUUID()}.tmp`;
+  // 独占临时名走 shared 单一实现（open "wx" 靠它保证同进程并发双写各落各的 tmp）。
+  const tmp = temporaryNameFor(file);
   const payload = JSON.stringify(state);
   await mkdir(root, { recursive: true, mode: 0o700 });
   let temporaryExists = false;

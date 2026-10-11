@@ -21,7 +21,10 @@
 // 被 Settings 服务描述后回调，供存量配置迁移与写路径装配；warnLog 为单一事实源
 // （notifier / lan-proxy 曾各复刻一份，现统一引用本导出）。
 //
-// 约定：js + d.ts 双写（tsc rootDir 硬约束）；只 import Node 内置；零运行时依赖。
+// 约定：只 import Node 内置；零运行时依赖。#1028 起 shared/ 全量 TS 化（此前是
+// js + d.ts 双写，由 tsc rootDir 硬约束逼出），版本库里只允许 .ts 源码，
+// .js / .d.ts 是 tsc 原地 emit 的构建产物（已 gitignore，形状由
+// scripts/test/shared-ts-shape.test.ts 冻结守卫）。
 
 /** `installSettingsNamespace` 的 hooks 面。 */
 export interface SettingsNamespaceHooks {
