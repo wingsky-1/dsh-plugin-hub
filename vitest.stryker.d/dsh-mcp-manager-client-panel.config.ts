@@ -14,6 +14,7 @@ export default defineConfig({
       'packages/dsh-mcp-manager/test/client-dom/float-quick-add-form.test.ts',
       'packages/dsh-mcp-manager/test/client-dom/float-servers-render.test.ts',
       'packages/dsh-mcp-manager/test/client-dom/panel-aria-modal.test.ts',
+      'packages/dsh-mcp-manager/test/client-dom/resume-visibility.test.ts',
       'packages/dsh-mcp-manager/test/client-dom/settings-card.test.ts',
       'packages/dsh-mcp-manager/test/client-unit/context-s2.test.ts',
       'packages/dsh-mcp-manager/test/client-unit/core-api.test.ts',
