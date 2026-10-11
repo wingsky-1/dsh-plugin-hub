@@ -366,4 +366,20 @@ describe("装配顺序：迁移在读存储的域之前跑完", () => {
     expect(existsSync(targetConfigFile(root))).toBe(true);
     expect(basename(root).length).toBeGreaterThan(0);
   });
+
+  it("0.2.8 → 0.2.9 只推进刻度并可重复启动（判据：存储正文逐字不变，漏步或误写必须红）", async () => {
+    const storedData = '{"user":"keep exactly","count":7}\n';
+    mkdirSync(join(root, "reports"), { recursive: true });
+    writeFileSync(upgradeVersionFile(root), "0.2.8\n", "utf8");
+    writeFileSync(targetConfigFile(root), storedData, "utf8");
+
+    await installUpgrade(deps());
+    expect(await readStoredVersion(root)).toBe("0.2.9");
+    expect(readFileSync(targetConfigFile(root), "utf8")).toBe(storedData);
+
+    releaseUpgrade();
+    await installUpgrade(deps());
+    expect(await readStoredVersion(root)).toBe("0.2.9");
+    expect(readFileSync(targetConfigFile(root), "utf8")).toBe(storedData);
+  });
 });

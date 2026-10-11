@@ -82,6 +82,22 @@ describe("STEPS 表接线：装配方驱动的确实是本包迁移动作", () =
     expect(newest).not.toBe(migratedTarget());
     expect(readFileSync(versionFile(), "utf8").trim()).toBe(newest);
   });
+
+  it("0.2.8 → 0.2.9 只推进 home 刻度并可重复启动（判据：存储正文逐字不变，漏步或误写必须红）", async () => {
+    const storedData = '{"servers":["keep exactly"]}\n';
+    mkdirSync(dirname(versionFile()), { recursive: true });
+    writeFileSync(versionFile(), "0.2.8\n", "utf8");
+    writeFileSync(configFile(), storedData, "utf8");
+
+    await assemble();
+    expect(readFileSync(versionFile(), "utf8").trim()).toBe("0.2.9");
+    expect(readFileSync(configFile(), "utf8")).toBe(storedData);
+
+    releaseUpgrade();
+    await assemble();
+    expect(readFileSync(versionFile(), "utf8").trim()).toBe("0.2.9");
+    expect(readFileSync(configFile(), "utf8")).toBe(storedData);
+  });
 });
 
 describe("刻度读侧：空白刻度按起点起算", () => {

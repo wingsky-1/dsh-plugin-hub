@@ -1,6 +1,6 @@
 # dsh-notifier 架构与运行机制（TOGAF 4A 四视图）
 
-> 包：`@wingsky-1/dsh-notifier` · 当前版本：0.2.4 · 源码：`packages/dsh-notifier/`。
+> 包：`@wingsky-1/dsh-notifier` · 当前版本：0.2.9 · 源码：`packages/dsh-notifier/`。
 > 把审批、提问、完成与错误转成可配置的离屏提醒，并留下投递与抑制记录。
 >
 > 安装、配置与安全模型见 [包 README](../../packages/dsh-notifier/README.md)。本文解释业务 BA、应用 AA、数据 DA、技术 TA。
