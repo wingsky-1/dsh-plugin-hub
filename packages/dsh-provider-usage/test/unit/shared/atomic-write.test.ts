@@ -6,14 +6,22 @@
  * 从未有过任何针对**失败清理**路径的判据——catch 里的 `rm` 删掉不会有任何测试红。
  * 本文件把那条分支钉住。
  *
- * 失败注入不用 mock：`rename(tmp, <已存在的目录>)` 在 POSIX 下必以 EISDIR 失败，
- * 这是真实失败而非假装的异常，比 spyOn 更能证明清理路径真的走通。
+ * 主清理路径用 `rename(tmp, <已存在的目录>)` 触发真实 EISDIR；清理失败用单测内的
+ * `node:fs/promises` 模块替换分别注入 rename 与 rm 错误，并在 finally 解除替换。
  * 落盘一律进 `mkdtempSync` 的隔离目录（#218 产物零污染）。
  */
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, statSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  statSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { atomicWrite, temporaryNameFor } from "../../../src/shared/interface.ts";
 
 let root: string;
@@ -47,6 +55,7 @@ describe("atomicWrite：成功路径", () => {
     const file = join(root, "day.jsonl");
     await atomicWrite(file, "payload\n");
 
+    expect(readFileSync(file, "utf8")).toBe("payload\n");
     expect(readdirSync(root)).toEqual(["day.jsonl"]);
     expect(statSync(file).mode & 0o777).toBe(0o600);
     expect(existsSync(file)).toBe(true);
@@ -55,7 +64,9 @@ describe("atomicWrite：成功路径", () => {
   it("覆盖既有目标文件（rename 语义替换，不追加）", async () => {
     const file = join(root, "day.jsonl");
     await atomicWrite(file, "first\n");
+    expect(readFileSync(file, "utf8")).toBe("first\n");
     await atomicWrite(file, "second\n");
+    expect(readFileSync(file, "utf8")).toBe("second\n");
     expect(readdirSync(root)).toEqual(["day.jsonl"]);
   });
 });
@@ -77,14 +88,38 @@ describe("atomicWrite：失败路径清理（catch 分支的判据）", () => {
   });
 
   it("清理失败不覆盖原错误：调用方拿到的是写入失败的原因，不是清理失败的原因", async () => {
-    const target = join(root, "day.jsonl");
-    mkdirSync(target);
+    const renameError = new Error("injected rename failure");
+    const cleanupError = new Error("injected rm failure");
+    let rmAttempts = 0;
 
-    // 原错误是 rename 的那个 EISDIR；若实现写成 await rm(...) 而不 catch，
-    // 这里的 rejected 会变成 rm 的错误，断言即红。
-    const error = await atomicWrite(target, "payload\n").catch((e: unknown) => e);
-    expect(error).toBeInstanceOf(Error);
-    expect((error as NodeJS.ErrnoException).code).toBe("EISDIR");
+    // This one-test module override injects two distinct failures without mutating fs globally.
+    // The per-file Vitest environment is also reset in finally so later tests use real fs/promises.
+    vi.resetModules();
+    vi.doMock("node:fs/promises", async (importOriginal) => {
+      const actual = await importOriginal<typeof import("node:fs/promises")>();
+      return {
+        ...actual,
+        rename: async () => {
+          throw renameError;
+        },
+        rm: async () => {
+          rmAttempts += 1;
+          throw cleanupError;
+        },
+      };
+    });
+
+    try {
+      const { atomicWrite: writeWithInjectedFailures } =
+        await import("../../../src/shared/interface.ts");
+      await expect(writeWithInjectedFailures(join(root, "day.jsonl"), "payload\n")).rejects.toBe(
+        renameError,
+      );
+      expect(rmAttempts).toBe(1);
+    } finally {
+      vi.doUnmock("node:fs/promises");
+      vi.resetModules();
+    }
   });
 
   it("连续两次失败各自清理，残留不累积（旧形态同毫秒共用 tmp 时会被自己截断）", async () => {

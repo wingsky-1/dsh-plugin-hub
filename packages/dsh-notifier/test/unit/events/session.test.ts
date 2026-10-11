@@ -68,13 +68,20 @@ describe("sessionTitleOf：任务名取自日志里最后一条标题", () => {
     expect(sessionTitleOf(agent)).toEqual({ found: true, title: "x".repeat(40) });
   });
 
-  it("按码点而非 code unit 截断：40 个 emoji 不被腰斩成代理对（跨进程再编码会显示成替换符）", () => {
-    // 40 个 emoji = 80 个 UTF-16 code unit。按 code unit 切 40 会把每个代理对切成一半，
-    // 拼回来是 40 个替换字符；按码点切才是原样的 40 个 emoji。同包其余 8 个展示出口
-    // 一律走 truncateCodePoints，此处补齐同一口径。
+  it("按码点计数保留 40 个 emoji，UTF-16 单元截断会变为 20 个", () => {
+    // 40 个 emoji = 80 个 UTF-16 code unit。按 code unit 切 40 会留下 20 个完整 emoji；
+    // 按码点切才是原样的 40 个 emoji。同包其余 8 个展示出口一律走 truncateCodePoints，
+    // 此处补齐同一口径。
     const emoji = "\u{1F600}".repeat(40);
     const agent = makeAgent("s-emoji", { events: [titleEvent(emoji)] });
     expect(sessionTitleOf(agent)).toEqual({ found: true, title: emoji });
+  });
+
+  it("第 40 个码点可完整保留边界 emoji，后续标题不进入通知", () => {
+    const emoji = "\u{1F600}";
+    const title = `${"a".repeat(39)}${emoji}tail`;
+    const agent = makeAgent("s-emoji-boundary", { events: [titleEvent(title)] });
+    expect(sessionTitleOf(agent)).toEqual({ found: true, title: `${"a".repeat(39)}${emoji}` });
   });
 
   it("空白标题当作没有标题（否则通知里会出现一行「任务「」」）", () => {
