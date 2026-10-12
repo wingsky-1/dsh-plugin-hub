@@ -777,7 +777,7 @@ describe("Windows rename 暂时占用重试", () => {
     expect(readdirSync(dir).filter((name) => name.startsWith("mcp.json.tmp."))).toEqual([]);
   });
 
-  it("等待期间检测外部全文改动并保留外部文件", async () => {
+  it("等待期间同实例 reload 更新基线也不能让重试覆盖外部全文", async () => {
     const dir = tempDir();
     const path = join(dir, "mcp.json");
     const baselineTimeSeconds = 1_700_000_000;
@@ -789,6 +789,7 @@ describe("Windows rename 暂时占用重试", () => {
     expect(store.mtimeMs).toBe(baseline.mtimeMs);
     const external = JSON.stringify({ version: 1, servers: [{ name: "external" }] });
     store.upsert({ name: "mine", transport: "stdio", command: "mine" });
+    let renameCalls = 0;
     let firstFailure!: () => void;
     const failedOnce = new Promise<void>((resolve) => {
       firstFailure = resolve;
@@ -796,9 +797,13 @@ describe("Windows rename 暂时占用重试", () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
     await withRenamePort(
       "win32",
-      async () => {
-        firstFailure();
-        throw errno("EBUSY");
+      async (from, to, original) => {
+        renameCalls += 1;
+        if (renameCalls === 1) {
+          firstFailure();
+          throw errno("EBUSY");
+        }
+        await original(from, to);
       },
       async () => {
         const saving = store.save();
@@ -806,9 +811,16 @@ describe("Windows rename 暂时占用重试", () => {
         writeFileSync(path, external);
         utimesSync(path, baselineTimeSeconds, baselineTimeSeconds);
         expect(statSync(path).mtimeMs).toBe(store.mtimeMs);
+        await expect(store.reloadIfChanged()).resolves.toBe(true);
+        expect(store.data.servers.map((server) => server.name)).toEqual(["external"]);
+        expect(store.snapshot).toBe(external);
         await vi.advanceTimersByTimeAsync(50);
         await expect(saving).rejects.toThrow(/外部被修改/);
+        expect(renameCalls).toBe(1);
         expect(await readFile(path, "utf8")).toBe(external);
+        expect(store.data.servers.map((server) => server.name)).toEqual(["external"]);
+        expect(store.snapshot).toBe(external);
+        expect(store.mtimeMs).toBe(statSync(path).mtimeMs);
         expect(readdirSync(dir).filter((name) => name.startsWith("mcp.json.tmp."))).toEqual([]);
       },
     );
