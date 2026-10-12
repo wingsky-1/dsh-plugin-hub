@@ -21,6 +21,25 @@ import type { ServerConfig } from "../../config/interface.ts";
  */
 const saveChains = new Map<string, Promise<void>>();
 
+/** Windows may briefly refuse replacement while another process has the file open. */
+const windowsRenameRetryDelays = [50, 100, 150, 200, 250] as const;
+
+function isRetryableWindowsRenameError(error: unknown): boolean {
+  if (process.platform !== "win32" || typeof error !== "object" || error === null) return false;
+  const code = (error as NodeJS.ErrnoException).code;
+  return code === "EPERM" || code === "EBUSY";
+}
+
+function externalModificationError(path: string): Error {
+  return new Error(
+    `dsh-mcp-manager: 配置文件在外部被修改（${path}），本次写入已中止以防覆盖；请重载后重试`,
+  );
+}
+
+function wait(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
 /** 唯一临时名：pid + 时间戳 + 随机后缀——同名临时文件绝不会被两次写共用（#903 M-store）。 */
 function temporaryNameFor(path: string): string {
   return `${path}.tmp.${process.pid}.${Date.now().toString(36)}.${randomBytes(6).toString("hex")}.tmp`;
@@ -97,6 +116,21 @@ export class McpStore {
     }
   }
 
+  private async renameWithRetry(tmp: string) {
+    for (let retry = 0; ; retry += 1) {
+      try {
+        await rename(tmp, this.path);
+        return;
+      } catch (error) {
+        if (!isRetryableWindowsRenameError(error) || retry >= windowsRenameRetryDelays.length) {
+          throw error;
+        }
+        await wait(windowsRenameRetryDelays[retry]);
+        if (await this.changedOnDisk()) throw externalModificationError(this.path);
+      }
+    }
+  }
+
   /** 单次落盘：链内写前冲突检查（fail-closed）+ 唯一 tmp 名 + 失败清理后上抛原错误。 */
   private async writeSnapshot() {
     // #903 M3-store 反写：基线失配说明排队期间有外部写入，直接落盘会静默覆盖——
@@ -124,7 +158,7 @@ export class McpStore {
         payload,
         mode === null ? { encoding: "utf8" } : { encoding: "utf8", mode },
       );
-      await rename(tmp, this.path);
+      await this.renameWithRetry(tmp);
     } catch (error) {
       try {
         await rm(tmp, { force: true });

@@ -17,10 +17,18 @@
 // 用例；块内「动作 → 断言 → 新动作 → 新断言」的段落按逻辑步骤分组成用例（同文件内 vitest
 // 顺序执行，顺序语义不变），所有断言逐条保留。e2e 层走真实端口/子进程/临时目录，超时由
 // vitest 的 e2e project 统一给出（不在此硬编码）。
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync, rmSync, utimesSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  writeFileSync,
+  rmSync,
+  utimesSync,
+} from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Context, LoggerService } from "@deepseek-ai/cordis";
 import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
@@ -2042,7 +2050,7 @@ it("expandEnv 展开 ${ENV}", () => {
   }
 });
 
-it("保存并读回", async () => {
+it("保存并读回，成功后无临时文件残留", async () => {
   const { store, path, cleanup } = tempStore();
   try {
     store.data.servers = [normalizeServer({ name: "a", transport: "stdio", command: "echo" })];
@@ -2051,6 +2059,9 @@ it("保存并读回", async () => {
     await reloaded.load();
     expect(reloaded.data.servers.length).toBe(1);
     expect(reloaded.data.servers[0].name).toBe("a");
+    expect(
+      readdirSync(dirname(path)).filter((name) => name.startsWith("dsh-mcp.json.tmp.")),
+    ).toEqual([]);
   } finally {
     cleanup();
   }

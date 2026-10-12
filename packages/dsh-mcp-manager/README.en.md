@@ -300,7 +300,9 @@ await ctx.mcpManager.registerServer({
 ## Data and Security
 
 - Server config: `<DSH_HOME>/@wingsky-1/dsh-mcp-manager/mcp.json` (stores only `${ENV}` references, **never the
-  secrets themselves**); on-disk 0600 permissions + atomic write
+  secrets themselves**); on-disk 0600 permissions + same-directory temporary-file atomic replacement.
+  On Windows, `EPERM` / `EBUSY` replacement errors receive bounded asynchronous retries; an external
+  change detected during the wait aborts the save and preserves the external contents.
 - All `/api/dsh-mcp/*` routes are restricted to loopback access (non-loopback → 403 / wrong
   method → 405)
 - **stdio subprocess environment sanitization (official dsh-mcp-client semantics)**: sanitization
