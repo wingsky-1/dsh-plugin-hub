@@ -22,7 +22,7 @@ export type DeliverStage = "accepted" | "delivered";
 
 /** 逐出口投递结果（与目标清单下标同序，不带出口身份）；分成三支让失败与空动作各自成为必答项。 */
 export type DeliverResult =
-  | { status: "ok"; stage: DeliverStage }
+  | { status: "ok"; stage: DeliverStage; soundWarning?: ProducedReason }
   // 出口按配置判定「这一次没有可发的内容」：投递发生过，但没有动作，也没有可失败的环节
   | { status: "skipped"; reason: ProducedReason }
   // retryable 是出口对失败的分类，不是它自己去重试：次数、退避与在途上限全在管线

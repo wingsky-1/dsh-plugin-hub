@@ -8,6 +8,7 @@ import {
   writeTextAtomic,
   HISTORY_FILE_NAME,
   normalizeReason,
+  normalizeSoundWarning,
   notifierFile,
 } from "../../../shared/interface.ts";
 import type {
@@ -234,7 +235,18 @@ function normalizeDelivery(value: unknown): ChannelDelivery | undefined {
   const delivery: ChannelDelivery = { channelId: source.channelId, status: source.status };
   const reason = normalizeReason(source.reason);
   if (reason !== undefined) delivery.reason = reason;
+  const warning = warningOf(source);
+  if (warning !== undefined) delivery.soundWarning = warning;
   return delivery;
+}
+
+/**
+ * ok 随行警告的窄投影：坏的可选警告只丢该字段，主记录（状态与主理由）不受影响。
+ * 有界：上限走 normalizeSoundWarning 缺省（与既有 300 同值）；旧主 reason 的开放语义不改。
+ */
+function warningOf(source: Record<string, unknown>): ChannelDelivery["soundWarning"] {
+  if (source.status !== "ok") return undefined;
+  return normalizeSoundWarning(source.soundWarning);
 }
 
 /** 本域唯一的存储实例：类不外放，外面 `new` 不出第二份写队列。 */

@@ -12,7 +12,7 @@
  */
 import { FOLLOW_SYSTEM_TONE, TONES } from "../../../../shared/interface.ts";
 import type { LoggerPort, ReasonCode, ReasonParams } from "../../../shared/interface.ts";
-import { reason } from "../../../shared/interface.ts";
+import { clampReasonDetail, reason } from "../../../shared/interface.ts";
 import { displayCaps, truncateCodePoints } from "../deliver/caps.ts";
 import type { DeliverResult, NotifyMessage, ToneSetting } from "../deliver/type.ts";
 import { platformCapabilities, systemDeps } from "./deps.ts";
@@ -423,7 +423,7 @@ async function runSoundOnly(
 /**
  * 弹窗路径下播放未就绪分支（原 sendSystem 的 prep !== ready 段，需弹窗已构造）。
  * 空动作优先判：一条命令都没构造出来时，「弹窗失败」与「声音失败」都无从谈起。
- * 弹窗已经出去了：声音是尽力而为，但成因仍要留**一条** warn。
+ * 弹窗已经出去了：声音是尽力而为，但成因仍要留**一条** warn，并随 ok 结果带出 soundWarning。
  */
 function handleUnreadyPrepWithPopup(
   prep: Exclude<SoundPrep, { readonly kind: "ready" }>,
@@ -432,6 +432,7 @@ function handleUnreadyPrepWithPopup(
   popOk: boolean,
   target: SystemTarget,
   probe: PlatformProbe,
+  selfPlay: boolean,
 ): DeliverResult {
   // 空动作优先判：一条命令都没构造出来时，「弹窗失败」与「声音失败」都无从谈起。这一格旧实现
   // 在 linux / darwin 上是零输出、零状态、零日志——正是本次要修的静默。
@@ -441,8 +442,17 @@ function handleUnreadyPrepWithPopup(
       : unexecutable(target, probe);
   }
   // 弹窗已经出去了：声音这一格是尽力而为，但成因仍要留**一条** warn。
-  if (prep.kind === "unwritable") target.logger.warn(toneUnwritableWarn(prep.cause));
-  return popOk ? delivered() : failed("reasonSystemPopupFailed", { bin: commandNameOf(pop) });
+  if (prep.kind === "unwritable") {
+    target.logger.warn(toneUnwritableWarn(prep.cause));
+    return popOk
+      ? delivered(warned("reasonSystemToneUnwritable", { detail: prep.cause }))
+      : failed("reasonSystemPopupFailed", { bin: commandNameOf(pop) });
+  }
+  // 自播本就不需要（声音关闭或 toast 负责默认音）：没有声音事实可警告。
+  if (!selfPlay)
+    return popOk ? delivered() : failed("reasonSystemPopupFailed", { bin: commandNameOf(pop) });
+  if (popOk) return delivered(warned("reasonSkipEnvironment"));
+  return failed("reasonSystemPopupFailed", { bin: commandNameOf(pop) });
 }
 
 /**
@@ -467,6 +477,18 @@ function finishPopupWithSound(
   // 声音只在它是本次唯一动作时才翻转终态；toast 已经出去时声音是尽力而为。
   if (!played.ok && !popRan) {
     return failed("reasonSystemSoundFailed", { bin: chainBin(prep.commands) }, played.detail);
+  }
+  // 弹窗成功但回退链全失败：总体仍是 ok（failStreak 清零），成因随 soundWarning 带出。
+  // 链中途失败但最终成功时 played.ok 为真，此处无警告。
+  if (!played.ok) {
+    return delivered(
+      warned(
+        "reasonSystemSoundFailed",
+        played.detail === ""
+          ? { params: { bin: chainBin(prep.commands) } }
+          : { params: { bin: chainBin(prep.commands) }, detail: played.detail },
+      ),
+    );
   }
   return delivered();
 }
@@ -503,7 +525,7 @@ export async function sendSystem(
 
   // 本次没有可执行的播放命令：临时目录写不进去，或素材 / 候选播放器一个都没有。
   if (prep.kind !== "ready") {
-    return handleUnreadyPrepWithPopup(prep, pop, popRan, popOk, target, probe);
+    return handleUnreadyPrepWithPopup(prep, pop, popRan, popOk, target, probe, selfPlay);
   }
 
   const played = await playChain(prep, target);
@@ -584,9 +606,28 @@ function toneOf(sound: ToneSetting): string {
   return typeof sound === "string" ? sound : FOLLOW_SYSTEM_TONE;
 }
 
-/** 成功结果：两个分支共用同一形状。 */
-function delivered(): DeliverResult {
-  return { status: "ok", stage: "delivered" };
+/** ok 随行的警告类型：经 DeliverResult 可达，不另引类型（目录门面按引用计数基线）。 */
+type OkWarning = Extract<DeliverResult, { status: "ok" }>["soundWarning"];
+
+/** 成功结果：两个分支共用同一形状；弹窗成功但自播失败时带上声音警告（总体仍 ok）。 */
+function delivered(soundWarning?: OkWarning): DeliverResult {
+  return soundWarning === undefined
+    ? { status: "ok", stage: "delivered" }
+    : { status: "ok", stage: "delivered", soundWarning };
+}
+
+/**
+ * 声音警告的统一生产投影：code 受闭集约束，detail 按既有理由上限截断（与 deliver/caps 的
+ * FAILURE_REASON_MAX 同值 300，不另立阈值；此处用字面量而不 import——跨文件值边会抬目录门面的
+ * 单调基线，而上限值已由 300 断言钉住。截断按码点，emoji 代理对不断半）。
+ * 回退链全失败的成因摘要是多候选拼接、临时文件失败原因是 OS 原文，两者都可能超长，故必须在此收口——
+ * 只截 dry-run 会让正常管线的 history 落盘无界。
+ */
+function warned(
+  code: ReasonCode,
+  extra?: { readonly params?: ReasonParams; readonly detail?: string },
+) {
+  return clampReasonDetail(reason(code, extra), 300);
 }
 
 /**

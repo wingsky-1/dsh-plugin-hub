@@ -21,7 +21,11 @@ import type {
   NotifyMessage,
 } from "../../../src/server/channels/impl/deliver/type.ts";
 import type { PinnedOutcome } from "../../../src/server/channels/impl/dry-run/secure-fetch.ts";
-import { reasonOf } from "../../helpers.ts";
+import {
+  installSystemDeps,
+  releaseSystemDeps,
+} from "../../../src/server/channels/impl/system/deps.ts";
+import { makeLogger, reasonOf } from "../../helpers.ts";
 
 function messageOf(): NotifyMessage {
   return { title: "标题", body: "正文", kind: "test", ts: 1_700_000_000_000 };
@@ -199,5 +203,58 @@ describe("dryRunTarget：system（双关早退，无子进程）", () => {
     expect(result.status).toBe("skipped");
     if (result.status !== "skipped") throw new Error("期望 skipped");
     expect(result.reason.code).toBe("reasonSkipConfig");
+  });
+});
+
+describe("dryRunTarget：system 的 ok 随行 soundWarning（不吞掉）", () => {
+  // 最小假端口：探测只命中 notify-send（播放器全落空），弹窗自动退出 0。
+  // 全程无真实子进程、无文件系统；logger 走记录型夹具（链失败的 warn 本就属于出口行为）。
+  function installFakeSystem(): void {
+    installSystemDeps({
+      platform: "linux",
+      spawn: (command: readonly string[]) => ({
+        onStderr: () => {},
+        onExit: (handler: (exit: { exited: true; code: number }) => void) => {
+          if (command[0] === "notify-send")
+            queueMicrotask(() => handler({ exited: true, code: 0 }));
+        },
+        onError: () => {},
+        kill: () => {},
+        unref: () => {},
+      }),
+      execFile: (
+        bin: string,
+        _args: readonly string[],
+        _options: { readonly timeout: number },
+        done: (failed: boolean) => void,
+      ) => void done(bin !== "notify-send"),
+      existsSync: () => false,
+      probeNotificationName: () => Promise.resolve({ kind: "absent" as const }),
+      readOsRelease: () => ({ ok: false as const }),
+      stageToneAudio: () => ({ ok: true as const, path: "/tmp/dsh-notifier-fake/tone-1.wav" }),
+      unstageToneAudio: () => {},
+      releaseToneTemps: () => {},
+    });
+  }
+
+  it("自播需要但无播放器 ⇒ ok + soundWarning（skipEnvironment），总体仍成功", async () => {
+    installFakeSystem();
+    try {
+      const target: SystemTarget = {
+        type: "system",
+        popup: true,
+        sound: "ding",
+        toastScript: "/tmp/toast.ps1",
+        logger: makeLogger(),
+      };
+      const result = await dryRunTarget(target, messageOf());
+      expect(result).toEqual({
+        status: "ok",
+        stage: "delivered",
+        soundWarning: { code: "reasonSkipEnvironment" },
+      });
+    } finally {
+      releaseSystemDeps();
+    }
   });
 });

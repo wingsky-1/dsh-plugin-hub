@@ -193,6 +193,85 @@ describe("内存镜像的读写", () => {
   });
 });
 
+describe("lastSoundWarning：成功但提示音未出", () => {
+  // 总体 ok 的声音警告不翻转终态、不计失败：failStreak 清零且 lastError 缺席。
+  it("ok + 合法警告往返：终态仍 ok、failStreak 为 0、警告随行且落盘", async () => {
+    assemble();
+    recordStatus("system", "ok", undefined, {
+      code: "reasonSystemSoundFailed",
+      params: { bin: "pw-play" },
+      detail: "pw-play 退出码 3",
+    });
+
+    const entry = (await readStatus())["system"];
+    expect(entry.lastStatus).toBe("ok");
+    expect(entry.failStreak).toBe(0);
+    expect("lastError" in entry).toBe(false);
+    expect(entry.lastSoundWarning).toEqual({
+      code: "reasonSystemSoundFailed",
+      params: { bin: "pw-play" },
+      detail: "pw-play 退出码 3",
+    });
+
+    await pollUntil(() => onDisk()?.["system"] !== undefined, "带警告的状态落盘");
+    expect(onDisk()?.["system"].lastSoundWarning).toEqual(entry.lastSoundWarning);
+  });
+
+  // 下一次投递清掉旧警告：正常成功不再带警告；失败也不挂旧警告（只带自己的 lastError）。
+  it("下一次正常成功清掉旧警告；失败只带自己的 lastError", async () => {
+    assemble();
+    recordStatus("system", "ok", undefined, { code: "reasonSkipEnvironment" });
+    expect((await readStatus())["system"].lastSoundWarning).toEqual({
+      code: "reasonSkipEnvironment",
+    });
+
+    recordStatus("system", "ok");
+    const cleared = (await readStatus())["system"];
+    expect(cleared.lastStatus).toBe("ok");
+    expect("lastSoundWarning" in cleared).toBe(false);
+
+    recordStatus("system", "ok", undefined, { code: "reasonSkipEnvironment" });
+    recordStatus("system", "failed", { code: "reasonSystemPopupFailed", params: { bin: "x" } });
+    const failed = (await readStatus())["system"];
+    expect(failed.lastStatus).toBe("failed");
+    expect("lastSoundWarning" in failed).toBe(false);
+    expect(failed.lastError).toEqual({ code: "reasonSystemPopupFailed", params: { bin: "x" } });
+  });
+
+  // 旧数据无字段照读；坏的可选字段只丢警告、主状态不受影响；长 detail 按既有上限截断。
+  it("冷启动兼容：无字段照读、非法警告丢字段保主记录、长 detail 截到 300", async () => {
+    writeStatusFile(
+      JSON.stringify({
+        "system:old": { lastTs: 1, lastStatus: "ok", failStreak: 0 },
+        "system:bad": {
+          lastTs: 2,
+          lastStatus: "ok",
+          failStreak: 0,
+          lastSoundWarning: { code: "reasonChannelThrew", detail: "任意警告不收" },
+        },
+        "system:legacy": { lastTs: 3, lastStatus: "ok", failStreak: 0, lastSoundWarning: "旧散文" },
+        "system:long": {
+          lastTs: 4,
+          lastStatus: "ok",
+          failStreak: 0,
+          lastSoundWarning: { code: "reasonSystemSoundFailed", detail: `🔔${"x".repeat(400)}` },
+        },
+      }),
+    );
+    assemble();
+
+    const entries = await readStatus();
+    expect("lastSoundWarning" in entries["system:old"]).toBe(false);
+    expect("lastSoundWarning" in entries["system:bad"]).toBe(false);
+    expect(entries["system:bad"].lastStatus).toBe("ok");
+    expect("lastSoundWarning" in entries["system:legacy"]).toBe(false);
+    const long = entries["system:long"].lastSoundWarning;
+    expect(long?.code).toBe("reasonSystemSoundFailed");
+    expect(Array.from(long?.detail ?? "").length).toBe(300);
+    expect(/[\uD800-\uDFFF]$/u.test(long?.detail ?? "")).toBe(false);
+  });
+});
+
 describe("落盘与冷启动", () => {
   it("落盘延后合并但最终一致：文件里是该条目的完整 JSON（设置页重启后仍显示上次投递结果）", async () => {
     const logger = assemble();

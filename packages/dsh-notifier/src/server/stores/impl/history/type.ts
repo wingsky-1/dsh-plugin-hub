@@ -10,6 +10,8 @@ export interface ChannelDelivery {
   status: "ok" | "failed" | "skipped";
   /** 失败或跳过理由（结构化：code 出文案、detail 存宿主原文；不含凭据处理）；`ok` 那一支上没有。 */
   reason?: DeliverReason;
+  /** 弹窗成功但提示音未出的附加说明（仅 `ok` 那一支上；总体仍是成功，不计失败）。 */
+  soundWarning?: DeliverReason;
 }
 
 /**

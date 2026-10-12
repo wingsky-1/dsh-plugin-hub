@@ -53,10 +53,19 @@ export function deliveryLines(r: { channels?: unknown }, t: Translate) {
             <span className="dn-ch-deliveryName">{view.channelId}</span>
             <span className="dn-ch-deliveryStatus">{view.statusText}</span>
             {view.reason ? <span className="dn-ch-deliveryReason">{view.reason}</span> : null}
+            {view.soundWarning ? (
+              <span className="dn-ch-deliveryReason">{view.soundWarning}</span>
+            ) : null}
             {view.detail ? (
               <details className="dn-ch-reasonRaw">
                 <summary>{t("reasonDetailLabel")}</summary>
                 <div className="dn-ch-reasonRawText">{view.detail}</div>
+              </details>
+            ) : null}
+            {view.soundWarningDetail && view.soundWarningDetail !== view.soundWarning ? (
+              <details className="dn-ch-reasonRaw">
+                <summary>{t("reasonDetailLabel")}</summary>
+                <div className="dn-ch-reasonRawText">{view.soundWarningDetail}</div>
               </details>
             ) : null}
           </div>

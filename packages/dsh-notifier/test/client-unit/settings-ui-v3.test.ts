@@ -94,6 +94,19 @@ describe("设置卡 UI v3 契约", () => {
     }
   });
 
+  it("轮次完成行带频繁提示（P5）：提示只挂 turn-end 行，中英双语齐备且默认关闭不动", () => {
+    const events = codeOnly(readClient("src/client/settings/panes/events.tsx"));
+    // 提示只挂轮次行：条件钉在开关键上，而不是给每个事件行都加一句。
+    expect(events).toContain('key === "notifyTurnEnd"');
+    expect(events).toContain('t("evtTurnEndHint")');
+    const locales = readClient("src/client/locales.ts");
+    expect(locales, "zh 侧").toContain("evtTurnEndHint:");
+    expect(locales, "zh 文案").toContain("轮次完成每轮都触发");
+    expect(locales, "en 文案").toContain("Turn completions fire every turn");
+    // 默认关闭是配置事实：提示文案不得顺手改默认值（normalize 另有白名单判据守组成）。
+    expect(readClient("src/shared/config-schema.ts")).toContain("notifyTurnEnd: false");
+  });
+
   it("客户端源码不 import ../server/（类型面也一样）", () => {
     const files: string[] = [];
     const walk = (dir: string): void => {

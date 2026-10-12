@@ -9,6 +9,7 @@ import {
   STATUS_FILE_NAME,
   clampReasonDetail,
   normalizeReason,
+  normalizeSoundWarning,
   notifierFile,
 } from "../../../shared/interface.ts";
 import type { ProducedReason } from "../../../shared/interface.ts";
@@ -58,7 +59,12 @@ class StatusStore {
   }
 
   /** 记录一次投递终态：内存立即更新，落盘延后合并（失败仅经日志出口告警）。 */
-  record(channelId: string, status: "ok" | "failed", error?: ProducedReason): void {
+  record(
+    channelId: string,
+    status: "ok" | "failed",
+    error?: ProducedReason,
+    soundWarning?: ProducedReason,
+  ): void {
     this.loadFromDisk();
     const prev = this.mirror[channelId];
     const entry: ChannelStatusEntry = {
@@ -69,6 +75,10 @@ class StatusStore {
     };
     if (status === "failed" && error !== undefined) {
       entry.lastError = clampReasonDetail(error, STATUS_ERROR_LIMIT);
+    }
+    // 成功才可能带声音警告：失败不挂旧警告，下一次正常（无警告）清掉旧警告。
+    if (status === "ok" && soundWarning !== undefined) {
+      entry.lastSoundWarning = clampReasonDetail(soundWarning, STATUS_ERROR_LIMIT);
     }
     // 删了再插 = 移到表尾：镜像键序即最近使用序。频道 id 形如 `bark:<id>` 或内置通道名，
     // 不是整数样键——整数样键在对象里恒按数值升序枚举，回插改不动位置。
@@ -165,7 +175,22 @@ function normalizeEntry(entry: unknown): ChannelStatusEntry | undefined {
   };
   const lastError = normalizeReason(source.lastError);
   if (lastError !== undefined) normalized.lastError = lastError;
+  const warning = warningOf(source, normalized.lastStatus);
+  if (warning !== undefined) normalized.lastSoundWarning = warning;
   return normalized;
+}
+
+/**
+ * 成功支随行警告的窄投影：坏的可选警告只丢该字段，主状态（终态与计数）不受影响；
+ * 失败支上的警告不收。有界与主 reason 开放语义并存：警告 detail 按本文件既有上限截断，
+ * 主 reason 不动。
+ */
+function warningOf(
+  source: Record<string, unknown>,
+  lastStatus: "ok" | "failed",
+): ChannelStatusEntry["lastSoundWarning"] {
+  if (lastStatus !== "ok") return undefined;
+  return normalizeSoundWarning(source.lastSoundWarning, STATUS_ERROR_LIMIT);
 }
 
 /** 本域唯一的存储实例：类不外放，外面 `new` 不出第二份内存镜像。 */
