@@ -7,10 +7,10 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { zh } from "../../src/client/locales.ts";
+import { en, zh } from "../../src/client/locales.ts";
 import { statusText, type ChannelStatusMap } from "../../src/client/settings/parts/status.tsx";
 import type { HistoryRecordView } from "../../src/client/settings/types.ts";
-import { translateWithZh } from "../client-helpers.ts";
+import { translateWithEn, translateWithZh } from "../client-helpers.ts";
 
 /** 历史行假件（channels 明细直写，形状与服务端 HistoryEntry 同源）。 */
 function historyRecord(
@@ -172,7 +172,8 @@ describe("statusText 无终态条目时的 skipped 历史直达", () => {
     };
     const text = statusText("system", warned, translateWithZh);
     expect(text).toContain(zh.chLastOk);
-    expect(text).toContain(zh.reasonSkipEnvironment);
+    expect(text).toContain(zh.soundWarnNoPlayback);
+    expect(text).not.toContain(zh.reasonSkipEnvironment);
     for (const lastSoundWarning of [
       { code: "reasonChannelThrew" },
       "旧散文",
@@ -187,5 +188,20 @@ describe("statusText 无终态条目时的 skipped 历史直达", () => {
         zh.reasonUnknown,
       );
     }
+  });
+
+  // 英文 status 触点真实投影：警告走英文自有文案，主行成功标记保留且不含旧主文案。
+  it("英文 ok + 警告行精确值（警告 ≠ 主理由英文原值）", () => {
+    const warned: ChannelStatusMap = {
+      system: {
+        lastTs: 100,
+        lastStatus: "ok",
+        lastSoundWarning: { code: "reasonSkipEnvironment" },
+      },
+    };
+    const text = statusText("system", warned, translateWithEn);
+    expect(text).toContain(en.chLastOk);
+    expect(text).toContain(en.soundWarnNoPlayback);
+    expect(text).not.toContain(en.reasonSkipEnvironment);
   });
 });

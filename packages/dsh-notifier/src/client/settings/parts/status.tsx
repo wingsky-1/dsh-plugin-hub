@@ -5,7 +5,7 @@
  * 旧 state」这类闭包语义变化不会有任何编译期信号。
  */
 import * as React from "react";
-import { reasonText } from "../../reason-text.ts";
+import { reasonText, soundWarningText } from "../../reason-text.ts";
 import { isSoundWarningCode } from "../../../shared/interface.ts";
 import type { Translate } from "../../locale.ts";
 import type { HistoryRecordView } from "../types.ts";
@@ -81,9 +81,9 @@ export function statusText(
   }
   if (st.lastStatus === "ok") {
     const base = t("chLastOk") + " · " + padTime(st.lastTs);
-    // 非法警告忽略（坏字段不污染状态行）；主体成功标记保留，警告另行追加。
-    if (soundWarningCodeOf(st.lastSoundWarning) === undefined) return base;
-    return base + " · " + reasonText(st.lastSoundWarning, t);
+    // 警告文案走集中投影（自有上下文）；非法警告忽略，主体成功标记保留。
+    const warning = soundWarningText(st.lastSoundWarning, t);
+    return warning === "" ? base : base + " · " + warning;
   }
   const why = reasonText(st.lastError, t);
   return t("chLastFail") + " · " + padTime(st.lastTs) + (why ? "：" + why : "");

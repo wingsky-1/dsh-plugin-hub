@@ -120,13 +120,41 @@ function deliveryRowOf(value: unknown):
 }
 
 /**
- * 声音警告的严格读面：只有窄表内的 code 才成文案；字符串、数组、未知 code、非声音 code
+ * 声音警告的严格读面：只有窄表内的 code 才有视图；字符串、数组、未知 code、非声音 code
  * 一律视为无警告（坏的可选字段只丢该字段，主记录不受影响）。
  */
 function soundWarningViewOf(value: unknown): ReasonView | undefined {
   const view = reasonViewOf(value);
   if (view === undefined) return undefined;
   return isSoundWarningCode(view.code) ? view : undefined;
+}
+
+/** 声音警告 code → 自有文案 key（警告位不用主 reason 字典：同名 code 在失败/跳过支上是
+ * 「本次未发出」口径，复用会把已发出的弹窗说成没发出）。键集一致性由单测逐一按窄表行为验证
+ * （每项可渲染、非法为空串），本表保持私有。 */
+const SOUND_WARNING_KEYS: Record<string, NotifierLocaleKey> = {
+  reasonSystemSoundFailed: "soundWarnPlaybackFailed",
+  reasonSystemToneUnwritable: "soundWarnToneUnwritable",
+  reasonSkipEnvironment: "soundWarnNoPlayback",
+};
+
+/**
+ * 声音警告的主文案（status / history / dry-run 三处共用同一处）。
+ * 严格窄表：只有窄表内的 code 才成文案，其余（字符串、数组、未知 code、非声音 code）
+ * 一律空串——坏的可选字段只丢警告本身，不污染主体成功标记。
+ */
+export function soundWarningText(value: unknown, t: ReasonTranslator): string {
+  const view = soundWarningViewOf(value);
+  if (view === undefined) return "";
+  const key = SOUND_WARNING_KEYS[view.code];
+  if (key === undefined) return "";
+  return t(key, view.params);
+}
+
+/** 声音警告的宿主原文（折叠展示）；没有或认不出时为空串。 */
+export function soundWarningDetail(value: unknown): string {
+  const view = soundWarningViewOf(value);
+  return view?.detail ?? "";
 }
 
 /** 认得之后只剩机械投影：`ok` 那一支没有理由可说，与 DeliveryView 同口径。 */
@@ -147,13 +175,11 @@ function projectDelivery(
       reason: "",
       detail: "",
     };
-    const warning = soundWarningViewOf(row.soundWarning);
-    if (warning !== undefined) {
-      const key = knownKeyOf(warning.code);
-      if (key !== undefined) {
-        view.soundWarning = t(key, warning.params);
-        if (warning.detail !== undefined) view.soundWarningDetail = warning.detail;
-      }
+    const warning = soundWarningText(row.soundWarning, t);
+    if (warning !== "") {
+      view.soundWarning = warning;
+      const warningDetail = soundWarningDetail(row.soundWarning);
+      if (warningDetail !== "") view.soundWarningDetail = warningDetail;
     }
     return view;
   }
@@ -190,13 +216,10 @@ export function dryRunReasonText(
   soundWarning?: unknown,
 ): string {
   if (status === "ok") {
-    const warning = soundWarningViewOf(soundWarning);
-    if (warning === undefined) return "";
-    const key = knownKeyOf(warning.code);
-    if (key === undefined) return "";
-    const text = t(key, warning.params);
-    const detail = warning.detail ?? "";
-    return detail === "" || detail === text ? text : text + DETAIL_SEPARATOR + detail;
+    const warning = soundWarningText(soundWarning, t);
+    if (warning === "") return "";
+    const detail = soundWarningDetail(soundWarning);
+    return detail === "" || detail === warning ? warning : warning + DETAIL_SEPARATOR + detail;
   }
   const text = reasonText(reason, t);
   const detail = reasonDetail(reason);

@@ -141,6 +141,11 @@ export const zh = {
   reasonSystemSoundFailed: "提示音播放命令执行失败（{bin}）",
   reasonSystemToastScriptMissing: "插件自带的 Windows 通知脚本缺失（打包缺陷），本次未发出",
   reasonSystemToneUnwritable: "系统提示音无法写入临时目录，本次未发声",
+  // 声音警告（ok 随行）：主 reason 的同名 code 在失败/跳过支上另有文案（见上），警告位必须用
+  // 自有上下文——复用它们会把「弹窗已发出」说成「本次未发出」。
+  soundWarnPlaybackFailed: "提示音播放命令执行失败（{bin}，弹窗已发送）",
+  soundWarnToneUnwritable: "提示音未能准备（临时文件写不进去，本次仅弹窗成功）",
+  soundWarnNoPlayback: "提示音无法执行（缺少可用播放器或音频素材，本次仅弹窗成功）",
   reasonBarkRequestFailed: "Bark 请求失败（网络或超时）",
   reasonBarkHttp: "Bark 服务返回 HTTP {status}",
   reasonBarkRejected: "Bark 拒绝这次推送（业务码 {code}）",
@@ -457,6 +462,13 @@ export const en: Record<NotifierLocaleKey, string> = {
     "The plugin's bundled Windows notification script is missing (packaging defect); nothing was sent",
   reasonSystemToneUnwritable:
     "Could not write the synthesized tone to the temp directory; nothing was played",
+  // Sound warnings (carried by ok): the same codes have different copies on the failed/skipped
+  // branch (see above) — reusing them would describe an issued popup as "nothing was sent".
+  soundWarnPlaybackFailed: "Sound playback command failed ({bin}); the popup was sent",
+  soundWarnToneUnwritable:
+    "Could not prepare the sound (temp file unwritable; only the popup succeeded)",
+  soundWarnNoPlayback:
+    "Could not play the sound (no usable player or audio material; only the popup succeeded)",
   reasonBarkRequestFailed: "Bark request failed (network or timeout)",
   reasonBarkHttp: "Bark server returned HTTP {status}",
   reasonBarkRejected: "Bark rejected this push (business code {code})",

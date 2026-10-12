@@ -189,6 +189,34 @@ describe("statusDot 状态点元素", () => {
     const html = htmlOf(statusDot("browser", {}));
     expect(html).toContain('data-dsu-tone="off"');
   });
+
+  it("ok + 合法警告渲染 warn 档装饰点（真实 DOM，非仅映射值）", () => {
+    const html = htmlOf(
+      statusDot("system", {
+        system: {
+          lastTs: ts030405(),
+          lastStatus: "ok",
+          lastSoundWarning: { code: "reasonSystemSoundFailed" },
+        },
+      }),
+    );
+    expect(html).toContain('data-dsu-tone="warn"');
+    expect(html).toContain('aria-hidden="true"');
+  });
+
+  it("ok + 非法警告仍渲染 ok 档（坏字段不污染 DOM）", () => {
+    const html = htmlOf(
+      statusDot("system", {
+        system: {
+          lastTs: ts030405(),
+          lastStatus: "ok",
+          lastSoundWarning: { code: "reasonChannelThrew" },
+        },
+      }),
+    );
+    expect(html).toContain('data-dsu-tone="ok"');
+    expect(html).not.toContain('data-dsu-tone="warn"');
+  });
 });
 
 describe("testBtn 测试按钮", () => {

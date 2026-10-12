@@ -2234,8 +2234,8 @@ describe("soundWarning：弹窗成功但提示音未出（总体仍 ok）", () =
     });
   });
 
-  // 有界 detail：超长 stderr + emoji 边界按码点截到 300，且代理对不断半。
-  it("链全失败的警告 detail 按码点截到 300（emoji 边界不断半）", async () => {
+  // 有界 detail：明确超长的 stderr 按码点精确截到 300（上限改小即红），且代理对不断半。
+  it("链全失败的警告 detail 精确截到 300 码点（emoji 边界不断半）", async () => {
     const fake = fakeDeps({ available: ["notify-send", "pw-play"], present: [LINUX_DING_FILE] });
     fake.autoExit = false;
     installSystemDeps(fake);
@@ -2245,7 +2245,8 @@ describe("soundWarning：弹窗成功但提示音未出（总体仍 ok）", () =
     await pollUntil(() => fake.children.length === 1, "弹窗应先启动");
     fake.children[0]!.emitExit({ exited: true, code: 0 });
     await pollUntil(() => fake.children.length === 2, "自播应启动");
-    fake.children[1]!.emitStderr(`🔔${" diagnose".repeat(100)}`);
+    // 明确超长（约 490 码点）：emoji 落在截断保留区内，断言 Pin 住精确长度与完整性。
+    fake.children[1]!.emitStderr(`${"x".repeat(290)}🔔${"y".repeat(200)}`);
     fake.children[1]!.emitExit({ exited: true, code: 3 });
 
     const result = await pending;
@@ -2253,7 +2254,12 @@ describe("soundWarning：弹窗成功但提示音未出（总体仍 ok）", () =
     const warning = result.status === "ok" ? result.soundWarning : undefined;
     expect(warning?.code).toBe("reasonSystemSoundFailed");
     const detail = warning?.detail ?? "";
-    expect(Array.from(detail).length).toBeLessThanOrEqual(300);
+    // 输入明确超长：stderr 约 490 码点经尾部截断剩 299 码点（emoji 距尾 200 码点内，必保留），
+    // 再加 14 码点前缀成 313 码点，上限 300 时此处精确 300，改成更小的值即红。
+    // （x 取 270 与 290 结果一致：尾部截断从末尾取，emoji 保留只与距尾距离有关。）
+    expect(Array.from(detail).length).toBe(300);
+    expect(detail.startsWith("pw-play 退出码 3：")).toBe(true);
+    expect(detail).toContain("🔔");
     // 按 UTF-16 切会把 emoji 代理对腰斩：末尾不得是孤立代理项
     expect(/[\uD800-\uDFFF]$/u.test(detail)).toBe(false);
     expect(() => encodeURIComponent(detail)).not.toThrow();

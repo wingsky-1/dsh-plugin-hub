@@ -329,10 +329,10 @@ describe("真实警告链：sendSystem → dispatch → stores → journal → c
 
       const text = statusText("system", channels as ChannelStatusMap, translateWithZh);
       expect(text).toContain(zh.chLastOk);
-      expect(text).toContain(zh.reasonSystemSoundFailed.replace("{bin}", "paplay"));
+      expect(text).toContain(zh.soundWarnPlaybackFailed.replace("{bin}", "paplay"));
       const view = deliveryViewOf(systemItemOf(historyFound[0]), translateWithZh);
       expect(view?.statusText).toBe(zh.chStatusOk);
-      expect(view?.soundWarning).toBe(zh.reasonSystemSoundFailed.replace("{bin}", "paplay"));
+      expect(view?.soundWarning).toBe(zh.soundWarnPlaybackFailed.replace("{bin}", "paplay"));
       expect(view?.soundWarningDetail).toBe("paplay 退出码 3：no audio device");
     } finally {
       releaseSystemDeps();

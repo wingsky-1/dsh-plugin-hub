@@ -67,7 +67,7 @@ export {
   isSoundWarningCode,
 } from "./reason-codes.ts";
 export { QUIET_WINDOWS_LIMIT, clockToMinutes, inWindowMinutes, isClockText } from "./quiet.ts";
-export type { ReasonCode, ReasonParams, SoundWarningCode } from "./reason-codes.ts";
+export type { ReasonCode, ReasonParams } from "./reason-codes.ts";
 export type {
   CapabilityDimension,
   CheckedDimension,
