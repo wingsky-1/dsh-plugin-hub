@@ -52,7 +52,11 @@ afterEach(() => {
 /** Narrow test ports for imported fs/promises bindings; builtin exports and platform are always restored. */
 async function withRenamePort(
   platform: NodeJS.Platform,
-  port: (from: string, to: string, original: typeof fs.promises.rename) => Promise<void>,
+  port: (
+    from: Parameters<typeof fs.promises.rename>[0],
+    to: Parameters<typeof fs.promises.rename>[1],
+    original: typeof fs.promises.rename,
+  ) => Promise<void>,
   run: () => Promise<void>,
   rmPort?: (
     path: Parameters<typeof fs.promises.rm>[0],
@@ -643,7 +647,7 @@ describe("Windows rename 暂时占用重试", () => {
       store.upsert({ name: "saved", transport: "stdio", command: "echo" });
       const expected = JSON.stringify(store.data, null, 2);
       let calls = 0;
-      const tmpPaths: string[] = [];
+      const tmpPaths: Parameters<typeof fs.promises.rename>[0][] = [];
       let firstFailure!: () => void;
       const failedOnce = new Promise<void>((resolve) => {
         firstFailure = resolve;
@@ -745,7 +749,7 @@ describe("Windows rename 暂时占用重试", () => {
     const store = new McpStore(join(dir, "mcp.json"));
     const renameError = errno("EACCES", "terminal rename error");
     const cleanupError = errno("EPERM", "temporary cleanup error");
-    let tmpPath = "";
+    let tmpPath: Parameters<typeof fs.promises.rename>[0] | undefined;
     let rmCalls = 0;
     const originalRm = fs.promises.rm;
     const originalPlatform = process.platform;
@@ -766,6 +770,7 @@ describe("Windows rename 暂时占用重试", () => {
     );
     expect(fs.promises.rm).toBe(originalRm);
     expect(process.platform).toBe(originalPlatform);
+    if (tmpPath === undefined) throw new Error("rename port did not receive a tmp path");
     await fs.promises.rm(tmpPath, { force: true });
     mkdirSync(store.path);
     await expect(store.save()).rejects.toThrow();
@@ -775,10 +780,13 @@ describe("Windows rename 暂时占用重试", () => {
   it("等待期间检测外部全文改动并保留外部文件", async () => {
     const dir = tempDir();
     const path = join(dir, "mcp.json");
+    const baselineTimeSeconds = 1_700_000_000;
     writeFileSync(path, JSON.stringify({ version: 1, servers: [{ name: "before" }] }));
+    utimesSync(path, baselineTimeSeconds, baselineTimeSeconds);
     const store = new McpStore(path);
     await store.load();
     const baseline = statSync(path);
+    expect(store.mtimeMs).toBe(baseline.mtimeMs);
     const external = JSON.stringify({ version: 1, servers: [{ name: "external" }] });
     store.upsert({ name: "mine", transport: "stdio", command: "mine" });
     let firstFailure!: () => void;
@@ -796,7 +804,8 @@ describe("Windows rename 暂时占用重试", () => {
         const saving = store.save();
         await failedOnce;
         writeFileSync(path, external);
-        utimesSync(path, baseline.atime, baseline.mtime);
+        utimesSync(path, baselineTimeSeconds, baselineTimeSeconds);
+        expect(statSync(path).mtimeMs).toBe(store.mtimeMs);
         await vi.advanceTimersByTimeAsync(50);
         await expect(saving).rejects.toThrow(/外部被修改/);
         expect(await readFile(path, "utf8")).toBe(external);
