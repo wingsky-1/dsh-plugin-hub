@@ -22,6 +22,7 @@ export interface DryRunReason {
 /**
  * dry-run 结果（提案 B3 schema）：ok 恒 true（投递失败是结果里的 status，不是请求失败），
  * channelId 回显测的是谁，status 为此次实测结论，reason 只在非 ok 时出现（已截断+收编）。
+ * ok 且提示音未出时带 soundWarning（总体仍 ok，随行警告）。
  * 同步返回，不写 history / status，不推进 revision。
  */
 export interface DryRunResult {
@@ -29,6 +30,7 @@ export interface DryRunResult {
   readonly channelId: string;
   readonly status: DryRunStatus;
   readonly reason?: DryRunReason;
+  readonly soundWarning?: DryRunReason;
 }
 
 /** 服务端总预算（毫秒）：提案 B7，超时即 408，结果丢弃（在飞的投递无法撤回，见预算注释）。 */

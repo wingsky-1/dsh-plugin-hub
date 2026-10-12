@@ -43,11 +43,13 @@ const UNINSTALLED: DispatchPort = {
   },
 };
 
-/** 投递结果 → 归档明细：失败与空动作各自的理由只落在它们那一支上。 */
+/** 投递结果 → 归档明细：失败与空动作各自的理由只落在它们那一支上；ok 的附加声音警告随行。 */
 function deliveryOf(channelId: string, result: DeliverOutcome): ChannelDelivery {
   if (result.status === "failed") return { channelId, status: "failed", reason: result.reason };
   if (result.status === "skipped") return { channelId, status: "skipped", reason: result.reason };
-  return { channelId, status: "ok" };
+  return result.soundWarning === undefined
+    ? { channelId, status: "ok" }
+    : { channelId, status: "ok", soundWarning: result.soundWarning };
 }
 
 /** 出口违约的失败理由：宿主原文进 `detail`，文案归客户端字典。 */
@@ -283,7 +285,8 @@ class Dispatcher {
     if (!this.installed) return deliveryOf(channelId, result);
     if (result.status === "failed") port.stores.recordStatus(channelId, "failed", result.reason);
     // `skipped` 不写状态：出口这次什么都没做，没有「最后一次投递结论」可言——写 ok 等于替它宣称成功。
-    else if (result.status === "ok") port.stores.recordStatus(channelId, "ok");
+    else if (result.status === "ok")
+      port.stores.recordStatus(channelId, "ok", undefined, result.soundWarning);
     return deliveryOf(channelId, result);
   }
 }

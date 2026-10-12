@@ -21,6 +21,25 @@ import type { ServerConfig } from "../../config/interface.ts";
  */
 const saveChains = new Map<string, Promise<void>>();
 
+/** Windows may briefly refuse replacement while another process has the file open. */
+const windowsRenameRetryDelays = [50, 100, 150, 200, 250] as const;
+
+function isRetryableWindowsRenameError(error: unknown): boolean {
+  if (process.platform !== "win32" || typeof error !== "object" || error === null) return false;
+  const code = (error as NodeJS.ErrnoException).code;
+  return code === "EPERM" || code === "EBUSY";
+}
+
+function externalModificationError(path: string): Error {
+  return new Error(
+    `dsh-mcp-manager: 配置文件在外部被修改（${path}），本次写入已中止以防覆盖；请重载后重试`,
+  );
+}
+
+function wait(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
 /** 唯一临时名：pid + 时间戳 + 随机后缀——同名临时文件绝不会被两次写共用（#903 M-store）。 */
 function temporaryNameFor(path: string): string {
   return `${path}.tmp.${process.pid}.${Date.now().toString(36)}.${randomBytes(6).toString("hex")}.tmp`;
@@ -97,14 +116,36 @@ export class McpStore {
     }
   }
 
+  private async renameWithRetry(
+    tmp: string,
+    baseline: { mtimeMs: number | undefined; snapshot: string | null },
+  ) {
+    for (let retry = 0; ; retry += 1) {
+      try {
+        await rename(tmp, this.path);
+        return;
+      } catch (error) {
+        if (!isRetryableWindowsRenameError(error) || retry >= windowsRenameRetryDelays.length) {
+          throw error;
+        }
+        await wait(windowsRenameRetryDelays[retry]);
+        if (await this.changedSince(baseline.mtimeMs, baseline.snapshot)) {
+          throw externalModificationError(this.path);
+        }
+      }
+    }
+  }
+
   /** 单次落盘：链内写前冲突检查（fail-closed）+ 唯一 tmp 名 + 失败清理后上抛原错误。 */
   private async writeSnapshot() {
+    // 固定本次排队写入的检查基线和 payload。重试期间 reloadIfChanged 可更新实例当前基线；
+    // 那不应让已经暂存的旧 payload 获得覆盖新文件的许可。
+    const baseline = { mtimeMs: this.mtimeMs, snapshot: this.snapshot };
+    const payload = JSON.stringify(this.data, null, 2);
     // #903 M3-store 反写：基线失配说明排队期间有外部写入，直接落盘会静默覆盖——
     // 抛错让调用方（路由 handleError）如实返回。无基线（新 store 未 load）不视为冲突。
-    if (await this.changedOnDisk()) {
-      throw new Error(
-        `dsh-mcp-manager: 配置文件在外部被修改（${this.path}），本次写入已中止以防覆盖；请重载后重试`,
-      );
+    if (await this.changedSince(baseline.mtimeMs, baseline.snapshot)) {
+      throw externalModificationError(this.path);
     }
     const dir = dirname(this.path);
     if (!existsSync(dir)) await mkdir(dir, { recursive: true });
@@ -116,7 +157,6 @@ export class McpStore {
     } catch {
       mode = 0o600;
     }
-    const payload = JSON.stringify(this.data, null, 2);
     const tmp = temporaryNameFor(this.path);
     try {
       await writeFile(
@@ -124,7 +164,7 @@ export class McpStore {
         payload,
         mode === null ? { encoding: "utf8" } : { encoding: "utf8", mode },
       );
-      await rename(tmp, this.path);
+      await this.renameWithRetry(tmp, baseline);
     } catch (error) {
       try {
         await rm(tmp, { force: true });
@@ -143,18 +183,22 @@ export class McpStore {
 
   /** 磁盘文件是否已被外部修改（mtime 不等即变更；mtime 相等再比全文快照，防同毫秒漏检；无基线不视为变更）。 */
   async changedOnDisk() {
-    if (this.mtimeMs === undefined) return false;
+    return this.changedSince(this.mtimeMs, this.snapshot);
+  }
+
+  private async changedSince(mtimeMs: number | undefined, snapshot: string | null) {
+    if (mtimeMs === undefined) return false;
     let current;
     try {
       current = (await stat(this.path)).mtimeMs;
     } catch {
       current = 0; // 文件不存在
     }
-    if (current !== this.mtimeMs) return true;
+    if (current !== mtimeMs) return true;
     // #903 M3-store 同毫秒漏检：mtime 粒度内多次写 / 外部改与 save 同毫秒时读全文比对。
-    if (this.snapshot === null) return false;
+    if (snapshot === null) return false;
     try {
-      return (await readFile(this.path, "utf8")) !== this.snapshot;
+      return (await readFile(this.path, "utf8")) !== snapshot;
     } catch {
       return true; // 基线有文件、现在读不出 = 被删
     }

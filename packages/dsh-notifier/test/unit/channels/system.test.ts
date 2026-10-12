@@ -1400,7 +1400,15 @@ describe("sendSystem：弹窗与自播的编排", () => {
     fake.children[1]!.emitStderr("audio device unavailable");
     fake.children[1]!.emitExit({ exited: true, code: 1 });
 
-    expect(await pending).toEqual({ status: "ok", stage: "delivered" });
+    expect(await pending).toEqual({
+      status: "ok",
+      stage: "delivered",
+      soundWarning: {
+        code: "reasonSystemSoundFailed",
+        params: { bin: "powershell" },
+        detail: "powershell 退出码 1：audio device unavailable",
+      },
+    });
     expect(delivery.warns).toEqual([
       "dsh-notifier: 提示音播放失败：powershell 退出码 1：audio device unavailable",
     ]);
@@ -2004,7 +2012,11 @@ describe("临时音频文件：合成兜底与生命周期", () => {
     both.stageFailure = cause;
     installSystemDeps(both);
     const withPopup = new SystemDelivery({ popup: true, sound: "ding" });
-    expect(await withPopup.send()).toEqual({ status: "ok", stage: "delivered" });
+    expect(await withPopup.send()).toEqual({
+      status: "ok",
+      stage: "delivered",
+      soundWarning: { code: "reasonSystemToneUnwritable", detail: cause },
+    });
     expect(withPopup.warns).toEqual([
       `dsh-notifier: 系统提示音临时文件写入失败，本次未发声：${cause}`,
     ]);
@@ -2161,5 +2173,95 @@ describe("旧账与结构性判据", () => {
       /spawnSync\s*\(/u.test(readFileSync(join(dir, file), "utf8")),
     );
     expect(hits).toEqual([]);
+  });
+});
+
+describe("soundWarning：弹窗成功但提示音未出（总体仍 ok）", () => {
+  // 回退链中途失败但最终成功：没有声音事实可警告，ok 上不得带 soundWarning。
+  it("链中途失败最终成功 ⇒ ok 无 soundWarning（warn 也不多一条）", async () => {
+    const fake = fakeDeps({ available: ["notify-send", "pw-play", "ffplay"], present: [] });
+    fake.autoExit = false;
+    installSystemDeps(fake);
+    const delivery = new SystemDelivery({ popup: true, sound: true });
+
+    const pending = delivery.send();
+    await pollUntil(() => fake.children.length === 1, "弹窗应先启动");
+    fake.children[0]!.emitExit({ exited: true, code: 0 });
+    await pollUntil(() => fake.children.length === 2, "自播首候选应启动");
+    // 首候选失败（退出码非 0），链继续到次候选成功
+    fake.children[1]!.emitExit({ exited: true, code: 3 });
+    await pollUntil(() => fake.children.length === 3, "回退链应试次候选");
+    fake.children[2]!.emitExit({ exited: true, code: 0 });
+
+    const result = await pending;
+    expect(result).toEqual({ status: "ok", stage: "delivered" });
+    expect("soundWarning" in result).toBe(false);
+  });
+
+  // 声音关闭：没有要求自播，无警告。
+  it("声音关闭（sound:false）⇒ ok 无 soundWarning", async () => {
+    const fake = fakeDeps({ available: ["notify-send", "pw-play"], present: [LINUX_DING_FILE] });
+    installSystemDeps(fake);
+    const delivery = new SystemDelivery({ popup: true, sound: false });
+
+    const result = await delivery.send();
+    expect(result).toEqual({ status: "ok", stage: "delivered" });
+    expect("soundWarning" in result).toBe(false);
+    expect(delivery.warns).toEqual([]);
+  });
+
+  // toast 负责默认音（darwin 弹窗 + sound:true 不自播）：无警告。
+  it("toast 负责默认音（darwin 弹窗 + 跟随系统）⇒ ok 无 soundWarning", async () => {
+    const fake = fakeDeps({ platform: "darwin", present: [] });
+    installSystemDeps(fake);
+    const delivery = new SystemDelivery({ popup: true, sound: true });
+
+    const result = await delivery.send();
+    expect(result).toEqual({ status: "ok", stage: "delivered" });
+    expect("soundWarning" in result).toBe(false);
+  });
+
+  // 自播需要但无可执行声音（无播放器）：ok + skipEnvironment 警告。
+  it("自播需要但一个播放器都没有 ⇒ ok + soundWarning(skipEnvironment)", async () => {
+    const fake = fakeDeps({ available: ["notify-send"], present: [LINUX_DING_FILE] });
+    installSystemDeps(fake);
+    const delivery = new SystemDelivery({ popup: true, sound: "ding" });
+
+    expect(await delivery.send()).toEqual({
+      status: "ok",
+      stage: "delivered",
+      soundWarning: { code: "reasonSkipEnvironment" },
+    });
+  });
+
+  // 有界 detail：明确超长的 stderr 按码点精确截到 300（上限改小即红），且代理对不断半。
+  it("链全失败的警告 detail 精确截到 300 码点（emoji 边界不断半）", async () => {
+    const fake = fakeDeps({ available: ["notify-send", "pw-play"], present: [LINUX_DING_FILE] });
+    fake.autoExit = false;
+    installSystemDeps(fake);
+    const delivery = new SystemDelivery({ popup: true, sound: "ding" });
+
+    const pending = delivery.send();
+    await pollUntil(() => fake.children.length === 1, "弹窗应先启动");
+    fake.children[0]!.emitExit({ exited: true, code: 0 });
+    await pollUntil(() => fake.children.length === 2, "自播应启动");
+    // 明确超长（约 490 码点）：emoji 落在截断保留区内，断言 Pin 住精确长度与完整性。
+    fake.children[1]!.emitStderr(`${"x".repeat(290)}🔔${"y".repeat(200)}`);
+    fake.children[1]!.emitExit({ exited: true, code: 3 });
+
+    const result = await pending;
+    expect(result.status).toBe("ok");
+    const warning = result.status === "ok" ? result.soundWarning : undefined;
+    expect(warning?.code).toBe("reasonSystemSoundFailed");
+    const detail = warning?.detail ?? "";
+    // 输入明确超长：stderr 约 490 码点经尾部截断剩 299 码点（emoji 距尾 200 码点内，必保留），
+    // 再加 14 码点前缀成 313 码点，上限 300 时此处精确 300，改成更小的值即红。
+    // （x 取 270 与 290 结果一致：尾部截断从末尾取，emoji 保留只与距尾距离有关。）
+    expect(Array.from(detail).length).toBe(300);
+    expect(detail.startsWith("pw-play 退出码 3：")).toBe(true);
+    expect(detail).toContain("🔔");
+    // 按 UTF-16 切会把 emoji 代理对腰斩：末尾不得是孤立代理项
+    expect(/[\uD800-\uDFFF]$/u.test(detail)).toBe(false);
+    expect(() => encodeURIComponent(detail)).not.toThrow();
   });
 });

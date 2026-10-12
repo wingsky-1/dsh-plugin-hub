@@ -184,6 +184,69 @@ describe("读取语义", () => {
     });
   });
 
+  // 新可选警告的写入读出：ok 随行的 soundWarning 落盘并读回，主状态不受影响。
+  it("ok 随行的 soundWarning 落盘并读回（旧行无该字段照读）", async () => {
+    assemble();
+    const written = entry({
+      channels: [
+        {
+          channelId: "system",
+          status: "ok",
+          soundWarning: { code: "reasonSystemSoundFailed", params: { bin: "pw-play" } },
+        },
+      ],
+    });
+    appendHistory(written);
+    await pollUntil(() => lines().length === 1, "带警告的历史落盘");
+
+    const records = await readHistory();
+    expect(records).toHaveLength(1);
+    expect(records[0].channels?.[0]).toEqual({
+      channelId: "system",
+      status: "ok",
+      soundWarning: { code: "reasonSystemSoundFailed", params: { bin: "pw-play" } },
+    });
+  });
+
+  // 坏的可选警告只丢该字段：陌生 code、旧散文、数组一律不进界面，主记录仍在；
+  // 长 detail 按既有上限截到 300（码点，emoji 不断半）；旧主 reason 开放语义不改。
+  it("坏警告只丢字段保主记录：非法 code/散文/数组不收，长 detail 截到 300", async () => {
+    assemble();
+    writeHistoryFile(
+      [
+        JSON.stringify({
+          ts: Date.now(),
+          kind: "done",
+          title: "坏",
+          message: "正文",
+          channels: [
+            { channelId: "system", status: "ok", soundWarning: { code: "reasonChannelThrew" } },
+            { channelId: "system", status: "ok", soundWarning: "旧散文" },
+            { channelId: "system", status: "ok", soundWarning: ["reasonSystemSoundFailed"] },
+            {
+              channelId: "system",
+              status: "ok",
+              soundWarning: { code: "reasonSystemSoundFailed", detail: `🔔${"y".repeat(400)}` },
+            },
+          ],
+        }),
+      ].join("\n") + "\n",
+    );
+
+    const records = await readHistory();
+    expect(records).toHaveLength(1);
+    const channels = records[0].channels ?? [];
+    expect(channels).toHaveLength(4);
+    expect("soundWarning" in channels[0]).toBe(false);
+    expect("soundWarning" in channels[1]).toBe(false);
+    expect("soundWarning" in channels[2]).toBe(false);
+    expect(channels[0].status).toBe("ok");
+    const detail = (channels[3].soundWarning as { detail?: string } | undefined)?.detail ?? "";
+    expect(channels[3].soundWarning).toMatchObject({ code: "reasonSystemSoundFailed" });
+    expect(Array.from(detail).length).toBe(300);
+    expect(/[\uD800-\uDFFF]$/u.test(detail)).toBe(false);
+  });
+
   // 值域校验分两层：`status` 是判据，值域外整条丢；`reason` 只是解释，读不出就只丢解释，
   // 明细本身仍然如实交出去（把一条真发生过的失败整条抹掉，比少一句解释糟得多）。
   it("读面校验值域：陌生 status 整条丢，读不出 code 的理由只丢理由", async () => {

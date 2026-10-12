@@ -172,6 +172,7 @@ export type SendTestResult = {
   channelId?: unknown;
   status?: unknown;
   reason?: unknown;
+  soundWarning?: unknown;
   error?: ErrorDetail;
 };
 

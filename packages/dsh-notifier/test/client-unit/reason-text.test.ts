@@ -16,6 +16,7 @@
 import { describe, expect, it } from "vitest";
 
 import { REASON_CODES } from "../../src/server/shared/reason.ts";
+import { SOUND_WARNING_CODES } from "../../src/shared/interface.ts";
 import type { NotifierLocaleKey } from "../../src/client/locales.ts";
 import { en, zh } from "../../src/client/locales.ts";
 import {
@@ -23,10 +24,11 @@ import {
   dryRunReasonText,
   reasonDetail,
   reasonText,
+  soundWarningText,
 } from "../../src/client/reason-text.ts";
 
 // 用例里一律以 t 称呼翻译函数（与产品调用点同名），实现见 test/client-helpers.ts。
-import { translateWithZh as t } from "../client-helpers.ts";
+import { translateWithEn as ten, translateWithZh as t } from "../client-helpers.ts";
 
 describe("跨端一致性：服务端每个 code 都有客户端文案", () => {
   // 这条是「服务端加 code 而客户端漏配文案」的唯一拦截点：漏了就是用户看到 reasonBarkHttp。
@@ -166,6 +168,105 @@ describe("deliveryViewOf：历史里一条投递明细的视图", () => {
   });
 });
 
+describe("deliveryViewOf：ok 随行的 soundWarning", () => {
+  // 主体成功标记保留，警告另行成文案与原文两段；非法警告忽略且主行不受影响。
+  it("合法警告成行：状态仍已投递，警告文案与原文各就其位", () => {
+    const view = deliveryViewOf(
+      {
+        channelId: "system",
+        status: "ok",
+        soundWarning: {
+          code: "reasonSystemSoundFailed",
+          params: { bin: "pw-play" },
+          detail: "nope",
+        },
+      },
+      t,
+    );
+    expect(view?.status).toBe("ok");
+    expect(view?.statusText).toBe(zh.chStatusOk);
+    expect(view?.reason).toBe("");
+    expect(view?.soundWarning).toBe(zh.soundWarnPlaybackFailed.replace("{bin}", "pw-play"));
+    expect(view?.soundWarningDetail).toBe("nope");
+  });
+
+  // 三个警告 code 各有自有文案（中英精确值），与主 reason 字典的同名条目不同。
+  it("三警告中英文案精确值（自有上下文，不复用失败/跳过口径）", () => {
+    expect(
+      soundWarningText({ code: "reasonSystemSoundFailed", params: { bin: "pw-play" } }, t),
+    ).toBe(zh.soundWarnPlaybackFailed.replace("{bin}", "pw-play"));
+    expect(soundWarningText({ code: "reasonSystemToneUnwritable" }, t)).toBe(
+      zh.soundWarnToneUnwritable,
+    );
+    expect(soundWarningText({ code: "reasonSkipEnvironment" }, t)).toBe(zh.soundWarnNoPlayback);
+    expect(en.soundWarnPlaybackFailed).not.toBe(en.reasonSystemSoundFailed);
+    expect(en.soundWarnToneUnwritable).not.toBe(en.reasonSystemToneUnwritable);
+    expect(en.soundWarnNoPlayback).not.toBe(en.reasonSkipEnvironment);
+    for (const key of [
+      "soundWarnPlaybackFailed",
+      "soundWarnToneUnwritable",
+      "soundWarnNoPlayback",
+    ] as const) {
+      expect(zh[key], `zh ${key} 回落到 key 本体`).not.toBe(key);
+      expect(en[key], `en ${key} 回落到 key 本体`).not.toBe(key);
+    }
+  });
+
+  // 警告投影覆盖窄表每一项：逐一按行为验证（每项可渲染；窄表加一项而投影漏配即红）。
+  // 非法输入的空串回落由下两条守住，投影表本身保持私有。
+  it("警告投影覆盖窄表每一项（不漏配）", () => {
+    for (const code of SOUND_WARNING_CODES) {
+      expect(soundWarningText({ code }, t)).not.toBe("");
+    }
+  });
+
+  // 原主理由不动：同名 code 在失败/跳过支上仍是旧文案（F1 复现的反例不得重演）。
+  it("原主 reasonSkipEnvironment 文案不变（失败/跳过支仍是「本次未发出」口径）", () => {
+    expect(reasonText({ code: "reasonSkipEnvironment" }, t)).toBe(zh.reasonSkipEnvironment);
+    expect(zh.reasonSkipEnvironment).toContain("本次未发出");
+  });
+
+  // 英文三触点真实投影：警告走英文自有文案，主 reason 英文原值保留，两者不等（F1 反矛盾）。
+  it("英文 reasonSkipEnvironment 三触点投影精确值（警告 ≠ 主理由）", () => {
+    const warn = { code: "reasonSkipEnvironment" };
+    expect(soundWarningText(warn, ten)).toBe(en.soundWarnNoPlayback);
+    expect(
+      deliveryViewOf({ channelId: "system", status: "ok", soundWarning: warn }, ten)?.soundWarning,
+    ).toBe(en.soundWarnNoPlayback);
+    expect(dryRunReasonText("ok", undefined, ten, warn)).toBe(en.soundWarnNoPlayback);
+    expect(reasonText(warn, ten)).toBe(en.reasonSkipEnvironment);
+    expect(en.soundWarnNoPlayback).not.toBe(en.reasonSkipEnvironment);
+  });
+
+  it("非法警告忽略：陌生 code / 散文 / 数组都不成警告，主行仍是干净的 ok", () => {
+    for (const soundWarning of [
+      { code: "reasonChannelThrew" },
+      "旧散文",
+      ["reasonSystemSoundFailed"],
+      { code: "reasonFromTheFuture", detail: "宿主原话" },
+    ]) {
+      const view = deliveryViewOf({ channelId: "system", status: "ok", soundWarning }, t);
+      expect(view?.status).toBe("ok");
+      expect(view?.soundWarning).toBeUndefined();
+      expect(view?.soundWarningDetail).toBeUndefined();
+    }
+  });
+
+  it("非 ok 支上的警告不渲染（失败/跳过只讲自己的理由）", () => {
+    const view = deliveryViewOf(
+      {
+        channelId: "system",
+        status: "failed",
+        reason: { code: "reasonSystemPopupFailed", params: { bin: "notify-send" } },
+        soundWarning: { code: "reasonSystemSoundFailed" },
+      },
+      t,
+    );
+    expect(view?.reason).toBe(zh.reasonSystemPopupFailed.replace("{bin}", "notify-send"));
+    expect(view?.soundWarning).toBeUndefined();
+  });
+});
+
 describe("dry-run 结果行理由（#912 F1）：ok 为空串，非 ok 走 reasonText", () => {
   // F1 回归 pin：ok 行挂“原因未知”是把成功说成了有待解释的异常，此分支删了即红。
   it("ok 时理由为空串（reason 缺席/垃圾值都不展示）", () => {
@@ -178,6 +279,19 @@ describe("dry-run 结果行理由（#912 F1）：ok 为空串，非 ok 走 reaso
     );
     expect(dryRunReasonText("skipped", { code: "reasonSkipConfig" }, t)).toBe(zh.reasonSkipConfig);
     expect(dryRunReasonText("failed", 42, t)).toBe(zh.reasonUnknown);
+  });
+
+  // ok + 合法警告：主体成功标记保留，警告成行（含原文拼接）；非法警告按无警告处理。
+  it("ok + 合法警告渲染警告文案，非法警告仍为空串", () => {
+    expect(dryRunReasonText("ok", undefined, t, { code: "reasonSkipEnvironment" })).toBe(
+      zh.soundWarnNoPlayback,
+    );
+    expect(
+      dryRunReasonText("ok", undefined, t, { code: "reasonSystemToneUnwritable", detail: "EROFS" }),
+    ).toBe(zh.soundWarnToneUnwritable + "｜EROFS");
+    expect(dryRunReasonText("ok", undefined, t, { code: "reasonChannelThrew" })).toBe("");
+    expect(dryRunReasonText("ok", undefined, t, "旧散文")).toBe("");
+    expect(dryRunReasonText("ok", undefined, t)).toBe("");
   });
 });
 

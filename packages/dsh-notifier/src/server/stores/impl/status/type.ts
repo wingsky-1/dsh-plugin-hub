@@ -7,6 +7,8 @@ export interface ChannelStatusEntry {
   lastStatus: "ok" | "failed";
   /** 失败理由（结构化）；只在失败那一支上（成功记录会把它清掉）。 */
   lastError?: DeliverReason;
+  /** 弹窗成功但提示音未出的附加说明（仅成功那一支上；下一次投递清掉或替换）。 */
+  lastSoundWarning?: DeliverReason;
   /** 连续失败计数（成功即清零，跨重启延续）。 */
   failStreak: number;
 }

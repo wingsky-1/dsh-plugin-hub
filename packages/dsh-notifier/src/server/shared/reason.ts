@@ -8,7 +8,7 @@
  * `code` 在生产侧是闭集（拼错即编译错误），在读侧是**开放的 string**：磁盘上的旧行与跨版本
  * 数据不受本版编译期约束，拿闭集去读只会把不认识的记录整条丢掉——那比渲染一句中性文案糟得多。
  */
-import { REASON_CODES, REASON_LEGACY } from "../../shared/interface.ts";
+import { REASON_CODES, REASON_LEGACY, isSoundWarningCode } from "../../shared/interface.ts";
 import type { ReasonCode, ReasonParams } from "../../shared/interface.ts";
 import { truncateCodePoints } from "./text.ts";
 
@@ -73,6 +73,22 @@ export function normalizeReason(value: unknown): DeliverReason | undefined {
 /** 升级前的散文：空串读不出，非空收编成 legacy + detail（散文即宿主原文）。 */
 function legacyFrom(value: string): DeliverReason | undefined {
   return value === "" ? undefined : { code: REASON_LEGACY, detail: value };
+}
+
+/**
+ * 归一化声音警告（严格窄表 + 有界 detail）：主理由的开放读面（旧字符串、未知 code）在警告位上
+ * 一律拒收。数组、字符串、未知 code、非声音 code 全部返回 undefined——调用点丢该可选字段、
+ * 保留主记录。形状复用 normalizeReason（标量 params），detail 按 `max` 截断；缺省 300
+ * 与既有上限同值（通道 FAILURE_REASON_MAX / 状态 STATUS_ERROR_LIMIT；生产侧 system 的
+ * warned() 持另一份同值字面量——两处都不 import 对方，跨文件值边会抬目录门面的单调基线，
+ * 而上限值由三处 300 断言钉住，改一处即红）。
+ * 旧主 reason 的开放语义不改。
+ */
+export function normalizeSoundWarning(value: unknown, max = 300): DeliverReason | undefined {
+  const normalized = normalizeReason(value);
+  if (normalized === undefined) return undefined;
+  if (!isSoundWarningCode(normalized.code)) return undefined;
+  return clampReasonDetail(normalized, max);
 }
 
 /** 结构化投影：只取认识的那几个字段——code 必填，params / detail 有值才带上。 */

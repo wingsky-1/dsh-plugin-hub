@@ -246,7 +246,7 @@ await ctx.mcpManager.registerServer({
 ## 数据与安全
 
 - 服务器配置：`<DSH_HOME>/@wingsky-1/dsh-mcp-manager/mcp.json`（仅存 `${ENV}` 引用，**不落盘密钥本身**）；
-  落盘 0600 权限 + 原子写入
+  落盘 0600 权限 + 同目录临时文件原子替换；Windows 上替换遇到 `EPERM` / `EBUSY` 时会有界异步重试，重试期间检测到外部修改则中止以保留外部内容
 - 所有 `/api/dsh-mcp/*` 路由仅限 loopback 访问（非回环 403 / 方法错 405）
 - **stdio 子进程环境净化（官方 dsh-mcp-client 口径）**：净化只作用于**继承的父环境**——
   凭据词根（`KEY` / `PASSWORD` / `SECRET` / `TOKEN`）与全部 `DSH_*` 变量从父环境摘掉，

@@ -73,6 +73,7 @@ export function eventsPane(
           {switchControl(key, t("evtSwitch", { name: t(labelKey) }), settings, patch)}
         </div>
         {routeChipsRow(kindId)}
+        {key === "notifyTurnEnd" ? <div className="dn-sec-hint">{t("evtTurnEndHint")}</div> : null}
       </div>,
     );
   });

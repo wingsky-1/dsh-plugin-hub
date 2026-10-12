@@ -70,6 +70,7 @@ interface Harness {
     channelId: string;
     status: "ok" | "failed";
     error: DeliverReason | undefined;
+    soundWarning: DeliverReason | undefined;
   }>;
   readonly logger: ReturnType<typeof makeLogger>;
   readonly useConfig: (patch?: Partial<NotifyConfig>) => void;
@@ -138,9 +139,9 @@ function assemble(): Harness {
       appendHistory: (entry) => {
         history.push(entry);
       },
-      recordStatus: (channelId, status, error) => {
+      recordStatus: (channelId, status, error, soundWarning) => {
         if (brokenStatus.has(channelId)) throw new Error("状态写面违约");
-        statuses.push({ channelId, status, error });
+        statuses.push({ channelId, status, error, soundWarning });
       },
     },
     channels: { deliver: (message, targets) => state.deliver(message, targets) },
@@ -418,6 +419,65 @@ describe("逐频道归位", () => {
       { channelId: "system", status: "skipped", reason },
     ]);
     expect(harness.statuses).toEqual([]);
+  });
+
+  // ok 随行的声音警告是投递事实的一部分：归档与状态两处都随行，终态仍是 ok（不计失败）。
+  it("ok + soundWarning：历史明细带警告，状态记 ok + 警告（总体仍成功）", async () => {
+    const harness = assemble();
+    harness.useConfig(systemOnly());
+    const warning = { code: "reasonSystemSoundFailed", params: { bin: "pw-play" } } as const;
+    harness.onDeliver(async (_message, targets) =>
+      targets.map(() => ({
+        status: "ok" as const,
+        stage: "delivered" as const,
+        soundWarning: warning,
+      })),
+    );
+
+    submit(requestOf());
+    await pollUntil(() => harness.history.length === 1, "带警告的 ok 落史");
+    expect(harness.history[0]!.channels).toEqual([
+      { channelId: "system", status: "ok", soundWarning: warning },
+    ]);
+    expect(harness.statuses).toEqual([
+      { channelId: "system", status: "ok", error: undefined, soundWarning: warning },
+    ]);
+  });
+
+  // 下一次正常成功不再带警告：状态写面收到的是无警告的 ok（存储层据此清掉旧警告）。
+  it("下一次正常 ok 不带警告：状态写面收到无警告的 ok，旧警告不挂到新记录", async () => {
+    const harness = assemble();
+    harness.useConfig(systemOnly());
+    const warning = { code: "reasonSkipEnvironment" } as const;
+    let calls = 0;
+    harness.onDeliver(async (_message, targets) => {
+      calls += 1;
+      return calls === 1
+        ? targets.map(() => ({
+            status: "ok" as const,
+            stage: "delivered" as const,
+            soundWarning: warning,
+          }))
+        : targets.map(() => ({ status: "ok" as const, stage: "delivered" as const }));
+    });
+
+    submit(requestOf());
+    await pollUntil(() => harness.history.length === 1, "第一次落史");
+    // system 出口有 1 秒节流：时钟向前拨过窗口（相对现在，不钉固定过去时刻），第二条才开投。
+    vi.setSystemTime(new Date(Date.now() + 1200));
+    submit(requestOf());
+    await pollUntil(() => harness.history.length === 2, "第二次落史");
+
+    expect(harness.history[0]!.channels).toEqual([
+      { channelId: "system", status: "ok", soundWarning: warning },
+    ]);
+    expect(harness.history[1]!.channels).toEqual([{ channelId: "system", status: "ok" }]);
+    expect(harness.statuses[1]).toEqual({
+      channelId: "system",
+      status: "ok",
+      error: undefined,
+      soundWarning: undefined,
+    });
   });
 });
 
