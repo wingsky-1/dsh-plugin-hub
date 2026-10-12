@@ -11,7 +11,8 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
-import { REASON_CODES, REASON_LEGACY } from "../../../src/shared/interface.ts";
+import { REASON_CODES, REASON_LEGACY, SOUND_WARNING_CODES } from "../../../src/shared/interface.ts";
+import { isSoundWarningCode } from "../../../src/shared/interface.ts";
 
 const pkgDir = fileURLToPath(new URL("../../../", import.meta.url));
 
@@ -50,6 +51,40 @@ describe("REASON_CODES", () => {
   // 重复项不改变联合类型，却会让客户端的穷尽表看起来更全：漏一条文案仍能编译过。
   it("无重复项", () => {
     expect(new Set(REASON_CODES).size).toBe(REASON_CODES.length);
+  });
+});
+
+describe("SOUND_WARNING_CODES：声音警告的窄识别表", () => {
+  // 窄表只收既有 code：新增 code 即改行为契约，必须显式落在这里。
+  it("成员逐项钉住（链全失败 / 临时文件写不进去 / 无可执行声音）", () => {
+    expect([...SOUND_WARNING_CODES]).toEqual([
+      "reasonSkipEnvironment",
+      "reasonSystemSoundFailed",
+      "reasonSystemToneUnwritable",
+    ]);
+  });
+
+  // 窄表 ⊆ 闭集：警告 code 全是既有 code，不新增 code。
+  it("窄表是闭集的子集（无新 code）", () => {
+    for (const code of SOUND_WARNING_CODES) {
+      expect(REASON_CODES).toContain(code);
+    }
+  });
+
+  it("isSoundWarningCode：表内为真，其余（主失败/节流/旧散文/未知）为假", () => {
+    expect(isSoundWarningCode("reasonSystemSoundFailed")).toBe(true);
+    expect(isSoundWarningCode("reasonSystemToneUnwritable")).toBe(true);
+    expect(isSoundWarningCode("reasonSkipEnvironment")).toBe(true);
+    for (const code of [
+      "reasonSystemPopupFailed",
+      "reasonChannelThrew",
+      "reasonThrottled",
+      "reasonLegacy",
+      "reasonFromTheFuture",
+      "",
+    ]) {
+      expect(isSoundWarningCode(code), code).toBe(false);
+    }
   });
 });
 

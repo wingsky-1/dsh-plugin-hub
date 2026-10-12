@@ -161,4 +161,31 @@ describe("statusText 无终态条目时的 skipped 历史直达", () => {
     };
     expect(statusText("system", failed, translateWithZh, history)).toContain(zh.chLastFail);
   });
+
+  it("ok + 合法警告追加警告文案（主体成功标记保留）；非法警告忽略", () => {
+    const warned: ChannelStatusMap = {
+      system: {
+        lastTs: 100,
+        lastStatus: "ok",
+        lastSoundWarning: { code: "reasonSkipEnvironment" },
+      },
+    };
+    const text = statusText("system", warned, translateWithZh);
+    expect(text).toContain(zh.chLastOk);
+    expect(text).toContain(zh.reasonSkipEnvironment);
+    for (const lastSoundWarning of [
+      { code: "reasonChannelThrew" },
+      "旧散文",
+      ["reasonSystemSoundFailed"],
+      { code: "reasonFromTheFuture", detail: "宿主原话" },
+    ]) {
+      const map = { system: { lastTs: 100, lastStatus: "ok", lastSoundWarning } };
+      expect(statusText("system", map as ChannelStatusMap, translateWithZh)).not.toContain(
+        "宿主原话",
+      );
+      expect(statusText("system", map as ChannelStatusMap, translateWithZh)).not.toContain(
+        zh.reasonUnknown,
+      );
+    }
+  });
 });

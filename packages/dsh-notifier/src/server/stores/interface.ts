@@ -55,8 +55,9 @@ export function recordStatus(
   channelId: string,
   status: "ok" | "failed",
   error?: ProducedReason,
+  soundWarning?: ProducedReason,
 ): void {
-  statusStore.record(channelId, status, error);
+  statusStore.record(channelId, status, error, soundWarning);
 }
 
 /** 查询：读取全部频道状态（内存镜像优先，冷启动回落文件）。 */

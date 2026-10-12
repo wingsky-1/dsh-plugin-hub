@@ -6,6 +6,7 @@
  */
 import * as React from "react";
 import { reasonText } from "../../reason-text.ts";
+import { isSoundWarningCode } from "../../../shared/interface.ts";
 import type { Translate } from "../../locale.ts";
 import type { HistoryRecordView } from "../types.ts";
 import { Status } from "../../../../../../shared/client/ui/index.js";
@@ -16,6 +17,7 @@ interface ChannelStatus {
   lastTs?: number;
   lastStatus?: string;
   lastError?: unknown;
+  lastSoundWarning?: unknown;
 }
 export type ChannelStatusMap = Record<string, ChannelStatus | undefined>;
 
@@ -50,6 +52,17 @@ function latestSkippedDelivery(
   return undefined;
 }
 
+/**
+ * 本端警告投影（窄）：合法的声音警告 code 才成文案所需的值，否则按无警告处理。
+ * statusText 与 statusTone 共用这一处——两处各判一次就是把「什么算合法警告」写成两份。
+ * 坏的可选字段只丢警告本身：调用方（状态行/状态点）回落各自的无警告形态。
+ */
+function soundWarningCodeOf(raw: unknown): string | undefined {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return undefined;
+  const code = (raw as Record<string, unknown>).code;
+  return typeof code === "string" && isSoundWarningCode(code) ? code : undefined;
+}
+
 /** 频道状态摘要（上提卡头 statusDot + statusTxt；完整错误经 title 提示）。 */
 export function statusText(
   channelKey: string,
@@ -66,7 +79,12 @@ export function statusText(
     const skippedWhy = reasonText(skipped.reason, t);
     return t("chNeverSent") + (skippedWhy ? " · " + skippedWhy : "") + t("chSkippedSeeHistory");
   }
-  if (st.lastStatus === "ok") return t("chLastOk") + " · " + padTime(st.lastTs);
+  if (st.lastStatus === "ok") {
+    const base = t("chLastOk") + " · " + padTime(st.lastTs);
+    // 非法警告忽略（坏字段不污染状态行）；主体成功标记保留，警告另行追加。
+    if (soundWarningCodeOf(st.lastSoundWarning) === undefined) return base;
+    return base + " · " + reasonText(st.lastSoundWarning, t);
+  }
   const why = reasonText(st.lastError, t);
   return t("chLastFail") + " · " + padTime(st.lastTs) + (why ? "：" + why : "");
 }
@@ -80,6 +98,8 @@ export function statusText(
  *
  * 映射逐条对应旧类名，行为不变：无终态条目 = off（原 ""，即中性灰）；ok = ok；
  * 其余（含 skipped 等非 ok 值）= err（原 "fail"）。
+ * 部分声音失败（ok + 合法 lastSoundWarning）= warn：lastStatus / failStreak 不动，
+ * 只是状态点如实呈现「成功但提示音未出」（不属于策略扩展，无新状态值）。
  * 视觉差异（有意接受，收敛的代价）：点径 7px→8px、off 档底色由 border-l2 换成
  * label-tertiary、右侧多 6px 外边距（原样式表里没有）。三处都是原语层的统一口径，
  * 换来的是这一个圆点不再有第二份实现。
@@ -87,7 +107,8 @@ export function statusText(
 export function statusTone(channelKey: string, statusMap: ChannelStatusMap): Tone {
   const st = statusMap[channelKey];
   if (!st || !st.lastTs) return "off";
-  return st.lastStatus === "ok" ? "ok" : "err";
+  if (st.lastStatus !== "ok") return "err";
+  return soundWarningCodeOf(st.lastSoundWarning) === undefined ? "ok" : "warn";
 }
 
 /** 状态点渲染原子（三张频道卡共用）。装饰点语义：可访问名由旁边的状态文字承担。 */

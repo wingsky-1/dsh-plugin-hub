@@ -60,9 +60,14 @@ export {
   webhookTemplateOf,
 } from "./webhooks.ts";
 export type { WebhookAuth, WebhookDeliveryPreset, WebhookPreset } from "./webhooks.ts";
-export { REASON_CODES, REASON_LEGACY } from "./reason-codes.ts";
+export {
+  REASON_CODES,
+  REASON_LEGACY,
+  SOUND_WARNING_CODES,
+  isSoundWarningCode,
+} from "./reason-codes.ts";
 export { QUIET_WINDOWS_LIMIT, clockToMinutes, inWindowMinutes, isClockText } from "./quiet.ts";
-export type { ReasonCode, ReasonParams } from "./reason-codes.ts";
+export type { ReasonCode, ReasonParams, SoundWarningCode } from "./reason-codes.ts";
 export type {
   CapabilityDimension,
   CheckedDimension,

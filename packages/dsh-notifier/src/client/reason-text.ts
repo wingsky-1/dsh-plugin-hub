@@ -9,7 +9,7 @@
  * reason-codes.ts 一处维护（两端共享面），客户端不抄第二份——收口前 `reasonLegacy` 是本文件里
  * 一份靠注释维系同值的字面量，改一边就是一个读不出来的历史行。
  */
-import { REASON_LEGACY } from "../shared/interface.ts";
+import { REASON_LEGACY, isSoundWarningCode } from "../shared/interface.ts";
 import type { ReasonCode } from "../shared/interface.ts";
 import type { NotifierLocaleKey } from "./locales.ts";
 
@@ -77,6 +77,10 @@ export interface DeliveryView {
   reason: string;
   /** 宿主原文（折叠展示）；没有、或与主文案重复时为空串。 */
   detail: string;
+  /** `ok` 随行的声音警告文案；没有警告时缺席（不断言它的旧快照不受影响）。 */
+  soundWarning?: string;
+  /** 声音警告的宿主原文（折叠展示）；没有时缺席。 */
+  soundWarningDetail?: string;
 }
 
 /**
@@ -94,32 +98,64 @@ export function deliveryViewOf(value: unknown, t: ReasonTranslator): DeliveryVie
 type DeliveryStatus = "ok" | "failed" | "skipped";
 
 /** 值域守卫：认不出容器、channelId 或 status 就读不出（认不出的代价是界面去猜）。 */
-function deliveryRowOf(
-  value: unknown,
-):
-  | { readonly channelId: string; readonly status: DeliveryStatus; readonly reason: unknown }
+function deliveryRowOf(value: unknown):
+  | {
+      readonly channelId: string;
+      readonly status: DeliveryStatus;
+      readonly reason: unknown;
+      readonly soundWarning: unknown;
+    }
   | undefined {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
   const source = value as Record<string, unknown>;
   if (typeof source.channelId !== "string" || source.channelId === "") return undefined;
   const status = source.status;
   if (status !== "ok" && status !== "failed" && status !== "skipped") return undefined;
-  return { channelId: source.channelId, status, reason: source.reason };
+  return {
+    channelId: source.channelId,
+    status,
+    reason: source.reason,
+    soundWarning: source.soundWarning,
+  };
+}
+
+/**
+ * 声音警告的严格读面：只有窄表内的 code 才成文案；字符串、数组、未知 code、非声音 code
+ * 一律视为无警告（坏的可选字段只丢该字段，主记录不受影响）。
+ */
+function soundWarningViewOf(value: unknown): ReasonView | undefined {
+  const view = reasonViewOf(value);
+  if (view === undefined) return undefined;
+  return isSoundWarningCode(view.code) ? view : undefined;
 }
 
 /** 认得之后只剩机械投影：`ok` 那一支没有理由可说，与 DeliveryView 同口径。 */
 function projectDelivery(
-  row: { readonly channelId: string; readonly status: DeliveryStatus; readonly reason: unknown },
+  row: {
+    readonly channelId: string;
+    readonly status: DeliveryStatus;
+    readonly reason: unknown;
+    readonly soundWarning: unknown;
+  },
   t: ReasonTranslator,
 ): DeliveryView {
   if (row.status === "ok") {
-    return {
+    const view: DeliveryView = {
       channelId: row.channelId,
       status: row.status,
       statusText: t("chStatusOk"),
       reason: "",
       detail: "",
     };
+    const warning = soundWarningViewOf(row.soundWarning);
+    if (warning !== undefined) {
+      const key = knownKeyOf(warning.code);
+      if (key !== undefined) {
+        view.soundWarning = t(key, warning.params);
+        if (warning.detail !== undefined) view.soundWarningDetail = warning.detail;
+      }
+    }
+    return view;
   }
   return {
     channelId: row.channelId,
@@ -147,8 +183,21 @@ const DETAIL_SEPARATOR = "｜";
  * 归类加提示，「连接超时」也会被说成安全问题——那比不显示更坏。是否「已拒绝投递」由服务端在
  * 原因里自己说明。
  */
-export function dryRunReasonText(status: string, reason: unknown, t: ReasonTranslator): string {
-  if (status === "ok") return "";
+export function dryRunReasonText(
+  status: string,
+  reason: unknown,
+  t: ReasonTranslator,
+  soundWarning?: unknown,
+): string {
+  if (status === "ok") {
+    const warning = soundWarningViewOf(soundWarning);
+    if (warning === undefined) return "";
+    const key = knownKeyOf(warning.code);
+    if (key === undefined) return "";
+    const text = t(key, warning.params);
+    const detail = warning.detail ?? "";
+    return detail === "" || detail === text ? text : text + DETAIL_SEPARATOR + detail;
+  }
   const text = reasonText(reason, t);
   const detail = reasonDetail(reason);
   // 主文案已经就是 detail 的两种情形：认不出的 code（回落成原文）与 reasonLegacy。再拼一次

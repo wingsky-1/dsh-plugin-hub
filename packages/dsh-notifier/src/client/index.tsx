@@ -1262,7 +1262,7 @@ function SettingsCard() {
             channelId: channelId,
             pending: false,
             status: status,
-            reason: dryRunReasonText(status, data.reason, t),
+            reason: dryRunReasonText(status, data.reason, t, data.soundWarning),
           });
         })
         .catch(function (error: unknown) {

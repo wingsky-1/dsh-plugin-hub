@@ -20,7 +20,11 @@
  * （RESPONSE_DETAIL_MAX 已在出口内截响应体，STATUS_ERROR_LIMIT 与前者同值 300，
  * 一次截断即同时满足三上限），normalizeReason 收编形态。
  */
-import { clampReasonDetail, normalizeReason } from "../../../shared/interface.ts";
+import {
+  clampReasonDetail,
+  normalizeReason,
+  normalizeSoundWarning,
+} from "../../../shared/interface.ts";
 import type { ProducedReason } from "../../../shared/interface.ts";
 import { sendBark, timeoutMsOf } from "../bark/index.ts";
 import { sendBrowser } from "../browser/index.ts";
@@ -103,9 +107,18 @@ function dryRunFetch(
     });
 }
 
-/** 结果理由收口：ok 无理由；失败与空动作的理由截断 + 收编（见模块头三上限说明）。 */
+/** 结果理由收口：ok 无主理由但保留声音警告；失败与空动作的理由截断 + 收编（见模块头三上限说明）。 */
 function settled(result: DeliverResult): DeliverResult {
-  if (result.status === "ok") return result;
+  if (result.status === "ok") {
+    if (result.soundWarning === undefined) return result;
+    // 有界与 code 门一次收口（上限即本文件既有 FAILURE_REASON_MAX，不另立阈值）。
+    const warning = normalizeSoundWarning(result.soundWarning, FAILURE_REASON_MAX);
+    if (warning === undefined) {
+      const { soundWarning: _dropped, ...rest } = result;
+      return rest;
+    }
+    return { ...result, soundWarning: warning as ProducedReason };
+  }
   const normalized = normalizeReason(clampReasonDetail(result.reason, FAILURE_REASON_MAX));
   if (normalized === undefined) return result;
   return { ...result, reason: normalized as ProducedReason };

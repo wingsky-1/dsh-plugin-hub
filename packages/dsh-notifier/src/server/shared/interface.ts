@@ -14,6 +14,7 @@ export {
   REASON_LEGACY,
   clampReasonDetail,
   normalizeReason,
+  normalizeSoundWarning,
   reason,
   reasonFromCause,
   sameReasonShape,

@@ -62,3 +62,25 @@ export type ReasonCode = (typeof REASON_CODES)[number];
 
 /** 理由参数：只收能被字典插值的标量——对象与数组进不来，文案层不必再判嵌套。 */
 export type ReasonParams = Readonly<Record<string, string | number>>;
+
+/**
+ * 声音警告的窄识别表：`ok` 随行的 soundWarning 只接受这三个 code。
+ *
+ * 为什么另立窄表而不是复用 REASON_CODES：主理由的读面是开放的（旧散文、未知 code 都要
+ * 收编成可渲染的中性文案），而警告是新写面——手改磁盘把 `reasonChannelThrew` 这类任意 code
+ * 塞进 soundWarning 时，必须丢该字段保主记录，不能把它当事实渲染出来。三个取值各有事实：
+ * 链全失败（soundFailed）、临时文件写不进去（toneUnwritable）、自播需要但无可执行声音
+ * （skipEnvironment）。不新增 code，表内三项全是既有 code。
+ */
+export const SOUND_WARNING_CODES = [
+  "reasonSkipEnvironment",
+  "reasonSystemSoundFailed",
+  "reasonSystemToneUnwritable",
+] as const;
+
+export type SoundWarningCode = (typeof SOUND_WARNING_CODES)[number];
+
+/** 是否声音警告 code（纯函数，零 import，可进两端共享面）。 */
+export function isSoundWarningCode(code: string): code is SoundWarningCode {
+  return (SOUND_WARNING_CODES as readonly string[]).includes(code);
+}

@@ -131,6 +131,47 @@ describe("statusTone 状态点色调档", () => {
       "err",
     );
   });
+
+  it("ok + 合法警告映射 warn（lastStatus 与计数不动，只是色调如实）", () => {
+    expect(
+      statusTone("system", {
+        system: {
+          lastTs: ts030405(),
+          lastStatus: "ok",
+          lastSoundWarning: { code: "reasonSkipEnvironment" },
+        },
+      }),
+    ).toBe("warn");
+  });
+
+  it("ok + 非法警告仍映射 ok（坏字段不污染状态点）", () => {
+    expect(
+      statusTone("system", {
+        system: {
+          lastTs: ts030405(),
+          lastStatus: "ok",
+          lastSoundWarning: { code: "reasonChannelThrew" },
+        },
+      }),
+    ).toBe("ok");
+    expect(
+      statusTone("system", {
+        system: { lastTs: ts030405(), lastStatus: "ok", lastSoundWarning: "旧散文" },
+      }),
+    ).toBe("ok");
+  });
+
+  it("failed + 警告仍映射 err（警告只属于成功支）", () => {
+    expect(
+      statusTone("system", {
+        system: {
+          lastTs: ts030405(),
+          lastStatus: "failed",
+          lastSoundWarning: { code: "reasonSkipEnvironment" },
+        },
+      }),
+    ).toBe("err");
+  });
 });
 
 // 这条判据是「迁移后的调用点确实落到原语上」的证据，且顺带把原语的装饰点语义

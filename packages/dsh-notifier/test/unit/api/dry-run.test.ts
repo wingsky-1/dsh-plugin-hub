@@ -323,6 +323,33 @@ describe("POST /test dry-run：结果 schema 与禁写面（B3）", () => {
     });
   });
 
+  // ok + soundWarning 同步返回：警告随行（总体仍 ok），禁写面仍零调用。
+  it("ok + soundWarning 同步返回警告随行（总体仍成功，不写 history / status）", async () => {
+    const channels = fakeChannels({
+      dryRunTarget: () =>
+        Promise.resolve({
+          status: "ok",
+          stage: "delivered",
+          soundWarning: { code: "reasonSystemSoundFailed", params: { bin: "pw-play" } },
+        } as DeliverResult),
+    });
+    const logger = makeLogger();
+    const { rec, json, pipeline } = await postTest({
+      channels,
+      logger,
+      body: { channelId: "browser", draft: { channels: [DRAFT_BROWSER] } },
+    });
+    expect(rec.status).toBe(200);
+    expect(json()).toEqual({
+      ok: true,
+      channelId: "browser",
+      status: "ok",
+      soundWarning: { code: "reasonSystemSoundFailed", params: { bin: "pw-play" } },
+    });
+    expect(pipeline.submitted).toEqual([]);
+    expect(logger.warns).toEqual([]);
+  });
+
   it("出站抛错即 500 固定文案且不记日志（禁写面含异常收口）", async () => {
     const channels = fakeChannels({
       dryRunTarget: () => Promise.reject(new Error("boom")),

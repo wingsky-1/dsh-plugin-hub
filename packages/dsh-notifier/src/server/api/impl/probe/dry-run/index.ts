@@ -77,7 +77,11 @@ export async function executeDryRun(
   const message = deps.pipeline.finalizeRequest({ ...TEST_NOTIFICATION }, Date.now());
   const target = buildTarget(deps.pipeline, channel);
   const delivery = await deps.channels.dryRunTarget(target, message);
-  if (delivery.status === "ok") return { ok: true, channelId, status: "ok" };
+  if (delivery.status === "ok") {
+    return delivery.soundWarning === undefined
+      ? { ok: true, channelId, status: "ok" }
+      : { ok: true, channelId, status: "ok", soundWarning: toReason(delivery.soundWarning) };
+  }
   return { ok: true, channelId, status: delivery.status, reason: toReason(delivery.reason) };
 }
 

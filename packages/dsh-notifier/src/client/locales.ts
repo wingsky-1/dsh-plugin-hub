@@ -18,6 +18,8 @@ export const zh = {
   evtSubagentDone: "子任务完成",
   evtTaskError: "任务出错",
   evtTurnEnd: "轮次完成",
+  evtTurnEndHint:
+    "轮次完成每轮都触发、非常频繁，默认关闭；开启后可能与任务完成通知相邻；若同时投递多个频道，各频道会分别提醒（仍受节流与路由约束）。",
   // 通道开关（CHANNEL_KEYS label）
   chSystemNotify: "系统通知",
   chBrowserNotify: "浏览器通知",
@@ -343,6 +345,8 @@ export const en: Record<NotifierLocaleKey, string> = {
   evtSubagentDone: "Subtask completed",
   evtTaskError: "Task failed",
   evtTurnEnd: "Turn completed",
+  evtTurnEndHint:
+    "Turn completions fire every turn and are very frequent, so this stays off by default; once enabled, they may sit next to Task completed notifications; delivering to multiple channels reminds once per channel (still subject to throttling and routing).",
   chSystemNotify: "System notification",
   chBrowserNotify: "Browser notification",
   chWhenVisible: "Also banner when visible",
