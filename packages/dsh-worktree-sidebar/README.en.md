@@ -7,6 +7,20 @@ Three tools that let the agent bind a **git worktree** to the current session, s
 This is a **transitional adapter**: if the official product ships native worktree sessions, this plugin retires.
 How it works (five host domains, host/client chains, self-healing rules, the six things to remember) is documented in [docs/architecture/dsh-worktree-sidebar.md](../../docs/architecture/dsh-worktree-sidebar.md).
 
+## Retirement and migration (DSH 0.2.1-rc.2)
+
+**Status: this package has been published on npm (including 0.2.9), and retirement is planned; it is not unreleased.** Its current release remains installable. Neither npm deprecation nor removal from the aggregate bundle has happened yet. Track [#1141](https://github.com/wingsky-1/dsh-plugin-hub/issues/1141).
+
+DSH `0.2.1-rc.2` ships an **optional experimental Git Worktrees** integration. Enable it via **Plugins → Official → Git Worktrees**; `create_worktree({ name?, from? })` creates a new checkout (normally `.agents/worktrees/<name>`) and switches the current Session's active working directory. Use `working_directory({ cd: "/absolute/path" })` to switch to an existing checkout. **This differs from this plugin**: `ws_worktree_register` changes only the Files sidebar root while command cwd, `@` references and `present` remain anchored to the original directory. The native integration changes the active working directory, but not the Session's original project identity or sandbox write permissions. Uncommitted/untracked files are not copied, and native worktrees and branches are not automatically deleted. See the [official guide](https://github.com/deepseek-ai/deepseek-harness/blob/dsh-v0.2.1-rc.2/docs/subsystems/worktrees.md).
+
+To migrate an individually installed copy:
+1. Record the old bound paths and inspect actual checkouts with `git worktree list`.
+2. **Upgrade to and validate** DSH `0.2.1-rc.2` first, enable native Git Worktrees, and use `working_directory({ cd: "/absolute/path" })` for an existing checkout or `create_worktree` for a new one. Inspect cwd, Files, `@` references, commands and sandbox policy to confirm that the change in behavior is acceptable.
+3. For an **individually installed** plugin, the user may run `dsh plugin --profile web remove @wingsky-1/dsh-worktree-sidebar`. If it comes from `dsh-plugins-all`, wait for a **new aggregate release** that actually drops the dependency and update the aggregate package; removing a standalone copy does not disable an aggregate dependency.
+4. Existing `<DSH_HOME>/@wingsky-1/dsh-worktree-sidebar/bindings.json` can remain for reference, but native DSH will not import those bindings. Real Git worktree directories and branches **are never removed merely by uninstalling the plugin**. Do not run `git worktree remove` / `prune` automatically during migration.
+
+Users remaining on DSH `0.2.0-rc.2`, or requiring the sidebar-only behavior without switching cwd, should retain this plugin until they have verified an acceptable replacement. The retirement PR does not change profiles or uninstall packages on users' behalf.
+
 ## Quick install
 
 ```sh
