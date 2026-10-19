@@ -7,6 +7,21 @@
 这是一个**过渡适配层**：官方若推出原生 worktree 会话能力，本插件即退役。
 原理与运行机制（五域装配、宿主/客户端链路、自愈判据、命门清单）见 [架构图解](../../docs/architecture/dsh-worktree-sidebar.md)。
 
+<a id="退役迁移dsh-021-rc2"></a><a id="user-content-退役迁移dsh-021-rc2"></a>
+## 退役迁移（DSH 0.2.1-rc.2）
+
+**状态：本包已发布到 npm（含 0.2.9），但计划退役；不是“未发布”。** 当前版本仍保留安装能力，尚未执行 npm deprecate 或从全家桶移除。退役范围与进度见 [#1141](https://github.com/wingsky-1/dsh-plugin-hub/issues/1141)。
+
+DSH `0.2.1-rc.2` 提供**可选的实验性官方 Git Worktrees**：在「插件 → 官方 → Git 工作树」启用后，可用 `create_worktree({ name?, from? })` 新建检出目录（默认 `.agents/worktrees/<name>`），并切换当前 Session 的工作目录；`working_directory({ cd: "/absolute/path" })` 则切换到已有目录。两者**不等价于本包**：旧 `ws_worktree_register` 只改侧栏 Files 根，命令执行 cwd、`@` 与 `present` 仍保留旧目录；官方切换的是会话活动工作目录，原始项目身份与原有沙箱写权限仍不改变。未提交/未跟踪文件不会自动复制进新工作树，创建后的检出目录和分支也不会自动删除。详见[官方文档](https://github.com/deepseek-ai/deepseek-harness/blob/dsh-v0.2.1-rc.2/docs/subsystems/worktrees.zh.md)。
+
+从独立安装迁移时：
+1. 在旧环境记下需要保留的绑定路径，并运行 `git worktree list` 核对真实检出目录。
+2. **先升级并验证** DSH `0.2.1-rc.2`，在官方插件管理器开启 Git 工作树，按目标目录使用 `working_directory({ cd: "/absolute/path" })` 或为新工作树调用 `create_worktree`；核对当前目录、Files、`@`、命令与权限表现，确认能够接受语义差异。
+3. 如果旧插件是**单独安装**，由用户执行 `dsh plugin --profile web remove @wingsky-1/dsh-worktree-sidebar`；若来自 `dsh-plugins-all`，则等待明确去掉该依赖的**新聚合包版本**并由用户更新聚合包，不能仅通过单独卸载让聚合包不再加载它。
+4. 原 `<DSH_HOME>/@wingsky-1/dsh-worktree-sidebar/bindings.json` 可以留作历史备查，但官方工具不会读取旧绑定；任何真实 Git worktree 目录和分支**不会因卸载本包自动删除**。不要在迁移中自动执行 `git worktree remove` / `prune`。
+
+仍在 DSH `0.2.0-rc.2` 或依赖“只看 worktree、不切执行 cwd”语义的用户，应保留旧插件直至完成迁移验证。退役 PR 不会代表用户修改 profile 或执行卸载。
+
 ## 一键安装
 
 ```sh

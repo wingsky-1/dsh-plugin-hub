@@ -102,7 +102,7 @@ Restart `dsh web`, open its startup URL, and check the installed plugin cards un
 | `@wingsky-1/dsh-lan-proxy` | LAN HTTP/HTTPS/WebSocket forwarding with TLS, compression and keep-alive. | [README](packages/dsh-lan-proxy/README.en.md) · [Architecture](docs/architecture/dsh-lan-proxy.md) | Published |
 | `@wingsky-1/dsh-mcp-manager` | Per-workspace MCP configuration and middleware-based tool access. | [README](packages/dsh-mcp-manager/README.en.md) · [Architecture](docs/architecture/dsh-mcp-manager.md) · [Upgrade repair](#mcp-catalog-upgrade-notice-and-repair) | Published |
 | `@wingsky-1/dsh-verify-isolated` | Isolated browser verification for DSH plugin development. | [README](packages/dsh-verify-isolated/README.en.md) · [Architecture](docs/architecture/dsh-verify-isolated.md) | Published |
-| `@wingsky-1/dsh-worktree-sidebar` | Bind a worktree to the session sidebar without changing its cwd. | [README](packages/dsh-worktree-sidebar/README.en.md) · [Architecture](docs/architecture/dsh-worktree-sidebar.md) | Unreleased |
+| `@wingsky-1/dsh-worktree-sidebar` | Bind a worktree to the session sidebar without changing its cwd; DSH 0.2.1-rc.2 has a native alternative with different semantics. | [Retirement and migration](packages/dsh-worktree-sidebar/README.en.md#retirement-and-migration-dsh-021-rc2) · [Architecture](docs/architecture/dsh-worktree-sidebar.md) | Published (0.2.9); retirement planned |
 
 <a id="configuration-and-maintenance"></a><a id="user-content-configuration-and-maintenance"></a>
 ## Configuration and maintenance

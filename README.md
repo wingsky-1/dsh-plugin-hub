@@ -91,7 +91,7 @@ dsh plugin --profile web add @wingsky-1/dsh-lan-proxy
 | `@wingsky-1/dsh-lan-proxy` | 带 TLS、压缩与保活的局域网 HTTP/HTTPS/WebSocket 转发。 | [README](packages/dsh-lan-proxy/README.md) · [架构图解](docs/architecture/dsh-lan-proxy.md) | 已发布 |
 | `@wingsky-1/dsh-mcp-manager` | 按工作空间管理 MCP 配置与中间层工具接入。 | [README](packages/dsh-mcp-manager/README.md) · [架构图解](docs/architecture/dsh-mcp-manager.md) · [升级修复](#mcp-catalog-修复与升级须知) | 已发布 |
 | `@wingsky-1/dsh-verify-isolated` | 为 DSH 插件开发提供隔离环境浏览器验证。 | [README](packages/dsh-verify-isolated/README.md) · [架构图解](docs/architecture/dsh-verify-isolated.md) | 已发布 |
-| `@wingsky-1/dsh-worktree-sidebar` | 绑定会话侧栏 worktree，不改变会话 cwd。 | [README](packages/dsh-worktree-sidebar/README.md) · [架构图解](docs/architecture/dsh-worktree-sidebar.md) | 未发布 |
+| `@wingsky-1/dsh-worktree-sidebar` | 绑定会话侧栏 worktree，不改变会话 cwd；DSH 0.2.1-rc.2 提供不同语义的官方替代。 | [迁移与退役说明](packages/dsh-worktree-sidebar/README.md#退役迁移dsh-021-rc2) · [架构图解](docs/architecture/dsh-worktree-sidebar.md) | 已发布（0.2.9）；计划退役 |
 
 <a id="常用配置与维护"></a><a id="user-content-常用配置与维护"></a>
 ## 常用配置与维护
