@@ -273,7 +273,7 @@ http/https）、`deviceKey`（Bark App 内查看；响应中一律掩码 `******
 | `url` | 目标地址（写面只校验非空串；出站前硬闸拒绝非 http(s) 与内嵌凭据 URL，query 原样保留） |
 | `enabled` | 是否启用（默认 **false**——出站授权须显式开启） |
 | `auth` | 认证方式：`none`（默认）/ `bearer` / `basic` / `header` |
-| `token` | bearer 认证令牌（secret：响应一律掩码 `********`） |
+| `token` | Bearer 模式只填写裸 token（例如 `tk-...`），**不要填 `Bearer tk-...`**；插件会生成 `Authorization: Bearer <token>`，填写前缀会导致重复前缀与 401（secret：响应一律掩码 `********`） |
 | `username` | Basic 认证用户名（非 secret） |
 | `password` | Basic 认证密码（secret：响应一律掩码） |
 | `headerName` / `headerValue` | 自定义请求头认证（约束见下）。 |

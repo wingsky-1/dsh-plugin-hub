@@ -310,7 +310,7 @@ Per-instance fields (`type` fixed to `"webhook"`):
 | `url` | Target URL (the write face only requires a non-empty string; the pre-egress gate rejects non-http(s) and URLs carrying embedded credentials, and preserves the query as-is) |
 | `enabled` | Whether enabled (default **false** — outbound authorization must be granted explicitly) |
 | `auth` | Authentication: `none` (default) / `bearer` / `basic` / `header` |
-| `token` | Bearer token (secret: always masked `********` in responses) |
+| `token` | Bearer mode accepts the **raw token only** (e.g. `tk-...`), **not `Bearer tk-...`**; the plugin constructs `Authorization: Bearer <token>` and a pasted prefix causes a double prefix and likely 401 (secret: always masked `********`) |
 | `username` | Basic auth username (not a secret) |
 | `password` | Basic auth password (secret: always masked) |
 | `headerName` / `headerValue` | Custom-header authentication (see constraints below). |
