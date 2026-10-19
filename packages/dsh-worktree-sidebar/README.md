@@ -7,6 +7,7 @@
 这是一个**过渡适配层**：官方若推出原生 worktree 会话能力，本插件即退役。
 原理与运行机制（五域装配、宿主/客户端链路、自愈判据、命门清单）见 [架构图解](../../docs/architecture/dsh-worktree-sidebar.md)。
 
+<a id="退役迁移dsh-021-rc2"></a><a id="user-content-退役迁移dsh-021-rc2"></a>
 ## 退役迁移（DSH 0.2.1-rc.2）
 
 **状态：本包已发布到 npm（含 0.2.9），但计划退役；不是“未发布”。** 当前版本仍保留安装能力，尚未执行 npm deprecate 或从全家桶移除。退役范围与进度见 [#1141](https://github.com/wingsky-1/dsh-plugin-hub/issues/1141)。
