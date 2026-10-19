@@ -10,6 +10,7 @@
 import { describe, expect, it } from "vitest";
 
 import { bindTranslate, t, type Translate } from "../../src/client/locale.ts";
+import { en, zh } from "../../src/client/locales.ts";
 
 describe("文案绑定", () => {
   it("装配后走当前绑定，并把参数透传下去", () => {
@@ -29,5 +30,19 @@ describe("文案绑定", () => {
     expect(t("save")).toBe("zh:save");
     bindTranslate((key) => "en:" + key);
     expect(t("save")).toBe("en:save");
+  });
+});
+
+describe("Webhook Bearer 凭据提示契约（#1134）", () => {
+  it("中英文输入位都明确只接受裸 token", () => {
+    expect(zh.whAuthToken).toBe("裸 token（不含 Bearer 前缀）");
+    expect(en.whAuthToken).toBe("Raw token (without Bearer prefix)");
+  });
+
+  it("Bearer 自动补前缀，自定义请求头原样发送，两种模式不混淆", () => {
+    expect(zh.whAuthHint).toContain("插件自动添加");
+    expect(en.whAuthHint).toContain("the plugin adds it");
+    expect(zh.whAuthHeaderValue).toBe("原样发送的请求头值");
+    expect(en.whAuthHeaderValue).toBe("Header value (sent verbatim)");
   });
 });
