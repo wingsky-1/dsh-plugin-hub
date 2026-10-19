@@ -328,6 +328,31 @@ describe("secureFetch：重定向逐跳复检", () => {
   });
 });
 describe("realTransport：真实回环建连（离线）", () => {
+  it.each([
+    { label: "IPv4", ip: "127.0.0.1", family: 4 as const },
+    { label: "IPv6", ip: "::1", family: 6 as const },
+  ])("域名 URL 经 $label 已核验地址钉定后可真实建连（Node 20+）", async ({ ip, family }) => {
+    let receivedHost = "";
+    const server = createServer((req, res) => {
+      receivedHost = req.headers.host ?? "";
+      res.writeHead(200);
+      res.end("pinned");
+    });
+    await new Promise<void>((resolve) => server.listen(0, ip, resolve));
+    try {
+      const port = (server.address() as AddressInfo).port;
+      const outcome = await realTransport(
+        new URL("http://pinned.test:" + port + "/hook"),
+        ip,
+        family,
+        INIT,
+      );
+      expect(outcome).toEqual({ kind: "response", status: 200, body: "pinned" });
+      expect(receivedHost).toBe("pinned.test:" + port);
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
   it("302 只读 Location 不跟（命中计数证明只打一跳）", async () => {
     let hits = 0;
     const server = createServer((_req, res) => {
