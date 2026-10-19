@@ -7,6 +7,7 @@ Three tools that let the agent bind a **git worktree** to the current session, s
 This is a **transitional adapter**: if the official product ships native worktree sessions, this plugin retires.
 How it works (five host domains, host/client chains, self-healing rules, the six things to remember) is documented in [docs/architecture/dsh-worktree-sidebar.md](../../docs/architecture/dsh-worktree-sidebar.md).
 
+<a id="retirement-and-migration-dsh-021-rc2"></a><a id="user-content-retirement-and-migration-dsh-021-rc2"></a>
 ## Retirement and migration (DSH 0.2.1-rc.2)
 
 **Status: this package has been published on npm (including 0.2.9), and retirement is planned; it is not unreleased.** Its current release remains installable. Neither npm deprecation nor removal from the aggregate bundle has happened yet. Track [#1141](https://github.com/wingsky-1/dsh-plugin-hub/issues/1141).
