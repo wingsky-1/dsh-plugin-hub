@@ -594,48 +594,44 @@ export function realTransport(
       autoSelectFamily: false,
       lookup: (_host, _options, callback) => callback(null, ip, family),
     };
-    const req = lib.request(
-      url,
-      requestOptions,
-      (res) => {
-        const location = res.headers.location;
-        if (
-          typeof res.statusCode === "number" &&
-          REDIRECT_STATUS.has(res.statusCode) &&
-          typeof location === "string"
-        ) {
-          res.resume();
-          settleResolve({ kind: "redirect", location });
-          return;
-        }
-        const chunks: Buffer[] = [];
-        let size = 0;
-        res.on("data", (chunk: Buffer) => {
-          if (size >= RESPONSE_CAP) return;
-          // 超界的块只留前 room 个字节：整块丢弃会让一次大响应读成空串（32K 单块实测）。
-          const room = RESPONSE_CAP - size;
-          chunks.push(chunk.length > room ? chunk.subarray(0, room) : chunk);
-          size += chunk.length;
-          if (size >= RESPONSE_CAP) {
-            // 到界即按已有前缀结算并掐流：不再等 end（destroy 后它不会来）。
-            settleResolve({
-              kind: "response",
-              status: res.statusCode ?? 0,
-              body: Buffer.concat(chunks).toString("utf8"),
-            });
-            req.destroy();
-          }
-        });
-        res.on("end", () =>
+    const req = lib.request(url, requestOptions, (res) => {
+      const location = res.headers.location;
+      if (
+        typeof res.statusCode === "number" &&
+        REDIRECT_STATUS.has(res.statusCode) &&
+        typeof location === "string"
+      ) {
+        res.resume();
+        settleResolve({ kind: "redirect", location });
+        return;
+      }
+      const chunks: Buffer[] = [];
+      let size = 0;
+      res.on("data", (chunk: Buffer) => {
+        if (size >= RESPONSE_CAP) return;
+        // 超界的块只留前 room 个字节：整块丢弃会让一次大响应读成空串（32K 单块实测）。
+        const room = RESPONSE_CAP - size;
+        chunks.push(chunk.length > room ? chunk.subarray(0, room) : chunk);
+        size += chunk.length;
+        if (size >= RESPONSE_CAP) {
+          // 到界即按已有前缀结算并掐流：不再等 end（destroy 后它不会来）。
           settleResolve({
             kind: "response",
             status: res.statusCode ?? 0,
             body: Buffer.concat(chunks).toString("utf8"),
-          }),
-        );
-        res.on("error", settleReject);
-      },
-    );
+          });
+          req.destroy();
+        }
+      });
+      res.on("end", () =>
+        settleResolve({
+          kind: "response",
+          status: res.statusCode ?? 0,
+          body: Buffer.concat(chunks).toString("utf8"),
+        }),
+      );
+      res.on("error", settleReject);
+    });
     // socket 事件只代表「套接字已分配」，remoteAddress 在连上之前是空串——空串即熔断会把
     // 每一次建连都误杀。空时挂一次 connect 再验（单线程内无竞态：事件不可能插在本次
     // handler 中间触发）；https 另挂 secureConnect，哪个先到都只做同一件事（verify 幂等）。
