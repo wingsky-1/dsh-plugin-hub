@@ -591,6 +591,9 @@ export function realTransport(
       {
         method: init.method,
         headers: init.headers,
+        // 单一公网 IP 已由 pinHost 预检并钉定；禁止 Node 20+ 的多地址自动选择模式
+        // 将 lookup 回调当成 { all: true } 读取，触发 Invalid IP address: undefined。
+        autoSelectFamily: false,
         lookup: (_host, _options, callback) => callback(null, ip, family),
       },
       (res) => {
