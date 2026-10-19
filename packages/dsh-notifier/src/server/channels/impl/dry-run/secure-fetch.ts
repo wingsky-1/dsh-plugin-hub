@@ -586,16 +586,17 @@ export function realTransport(
       reject(cause instanceof Error ? cause : new Error(String(cause)));
     };
     const lib = url.protocol === "https:" ? https : http;
+    // http.RequestOptions 尚未声明 net.connect 支持的此运行时选项；
+    // 显式交叉类型保留 lookup 的函数签名，同时关闭已钉定单 IP 的多地址选择。
+    const requestOptions: http.RequestOptions & { autoSelectFamily: false } = {
+      method: init.method,
+      headers: init.headers,
+      autoSelectFamily: false,
+      lookup: (_host, _options, callback) => callback(null, ip, family),
+    };
     const req = lib.request(
       url,
-      {
-        method: init.method,
-        headers: init.headers,
-        // 单一公网 IP 已由 pinHost 预检并钉定；禁止 Node 20+ 的多地址自动选择模式
-        // 将 lookup 回调当成 { all: true } 读取，触发 Invalid IP address: undefined。
-        autoSelectFamily: false,
-        lookup: (_host, _options, callback) => callback(null, ip, family),
-      },
+      requestOptions,
       (res) => {
         const location = res.headers.location;
         if (
