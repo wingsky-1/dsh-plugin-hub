@@ -551,7 +551,6 @@ export function createReportStateCoordinator(
   const finishHalfCommits = async (fence: RetryFenceDocument): Promise<RetryFenceDocument> => {
     if (fence.commits.length === 0 && fence.storageTerminals.length === 0) return fence;
     const live = await ledger.list();
-    let advanced = await read(root);
     for (const marker of fence.commits) {
       const entry = live.find(
         (item) =>
@@ -560,8 +559,14 @@ export function createReportStateCoordinator(
           item.cycleId === marker.cycleId,
       );
       if (entry === undefined || entry.terminal) continue;
-      advanced = monotonic(advanced, marker.period, marker.key);
-      await write(root, () => advanced);
+      // 先读一次既有快照，仅用于判定本标记是否还需推进（并发写方可能已在「读到写」窗口
+      // 内推进；读同时保留注入 read 的副作用语义）；该值**不得**当 patch 交回。
+      const observed = await read(root);
+      if (monotonic(observed, marker.period, marker.key) !== observed) {
+        // 推进须在**写时**快照（per-root 链内重读的最新文件）上重算，否则旧快照整段覆盖
+        // 窗口内其它写方的推进（#1142）。
+        await write(root, (current) => monotonic(current, marker.period, marker.key));
+      }
       await ledger.clear({ cycleId: marker.cycleId, entry });
     }
     // storage-terminal 标记：记录已不存在（clear 成功）即过期；仍在则保留 fail-closed。
@@ -612,18 +617,26 @@ export function createReportStateCoordinator(
           isCurrentIndexFact(byKey.get(`${item.period}:${item.key}`), item),
         );
         const observed = await read(root);
-        const advanced = successful.reduce(
+        // 合并必须在**写时**快照上重算：observed 只用于判断是否需要写，不得把预计算值
+        // 当 patch 交回——临界区外的旧快照会盖掉窗口内其它写方的推进（#1142）。
+        let merged = successful.reduce(
           (state, item) => monotonic(state, item.period, item.key),
           observed,
         );
-        if (JSON.stringify(advanced) !== JSON.stringify(observed)) {
+        if (JSON.stringify(merged) !== JSON.stringify(observed)) {
           try {
-            await write(root, () => advanced);
+            await write(root, (current) => {
+              merged = successful.reduce(
+                (state, item) => monotonic(state, item.period, item.key),
+                current,
+              );
+              return merged;
+            });
           } catch {
             throw new ReportStateStorageError();
           }
         }
-        return ledger.reconcile(advanced, successful);
+        return ledger.reconcile(merged, successful);
       }),
     readLastRun: () => locked(() => read(root)),
     updateLastRun: (patch) => locked(() => write(root, patch)),
