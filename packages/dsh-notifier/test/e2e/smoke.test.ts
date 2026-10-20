@@ -203,9 +203,16 @@ async function mount(): Promise<Mounted> {
   // 组合根的 `inject = ["webServer", "settings"]` 由 cordis 兜住，`await()` 返回时 7 条路由已经挂上。
   const plugin: Fiber = await root.plugin(notifier);
   await plugin.await();
+  // dsh-host-webserver 0.2.1-rc.2 起 `port` 类型收窄为 `number | undefined`（listen 绑定前为
+  // undefined）。这里 WebServer 已起并 listen 完（bind(0)），先显式收窄再断言正整数，
+  // 断言强度不减（undefined 必判红）。
+  const port = root.webServer.port;
+  expect(port).not.toBeUndefined();
+  if (port === undefined) throw new Error("webServer.port 在 listen 后仍为 undefined");
+  expect(Number.isInteger(port) && port > 0).toBe(true);
   const mounted: Mounted = {
     root,
-    port: root.webServer.port,
+    port,
     unmount: async () => {
       live = null;
       await plugin.dispose();

@@ -3672,6 +3672,11 @@ describe("host trust 注入：真 Context + WebServer 整链（issue #856）", (
       ownsHostCompat: true,
     });
     const at = rendered.indexOf(HOST_TRUST_SCRIPT_OPEN);
+    // dsh-host-webserver 0.2.1-rc.2 起 `port` 类型收窄为 `number | undefined`（listen 绑定前为
+    // undefined）。这里已 attach 并 listen 完（bind(0)），先显式收窄再断言正整数，
+    // 断言强度与原 `Number.isInteger(port) && port > 0` 等价（undefined 必判红）。
+    expect(port).not.toBeUndefined();
+    if (port === undefined) throw new Error("webServer.port 在 listen 后仍为 undefined");
     expect(Number.isInteger(port) && port > 0).toBe(true);
     expect(rendered.indexOf("__DSH_BOOT_READY__")).toBeGreaterThan(-1);
     expect(at).toBeGreaterThan(rendered.indexOf("<head>"));
