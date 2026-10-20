@@ -10,6 +10,7 @@ export default defineConfig({
     include: [
       'packages/dsh-mcp-manager/test/client-unit/summary-a3-guard.test.ts',
       'packages/dsh-mcp-manager/test/integration/apply-lifecycle.test.ts',
+      'packages/dsh-mcp-manager/test/integration/dynamic-directory-concurrency.test.ts',
       'packages/dsh-mcp-manager/test/integration/real-context.test.ts',
       'packages/dsh-mcp-manager/test/unit/call-stats.test.ts',
       'packages/dsh-mcp-manager/test/unit/config-env-policy.test.ts',
@@ -29,6 +30,9 @@ export default defineConfig({
       'packages/dsh-mcp-manager/test/unit/summary-a3.test.ts',
       'packages/dsh-mcp-manager/test/unit/workspace-id.test.ts',
       'packages/dsh-mcp-manager/test/unit/workspace.test.ts',
+      'packages/dsh-mcp-manager/test/unit/workspace/dynamic-root.test.ts',
+      'packages/dsh-mcp-manager/test/unit/workspace/root-discovery.test.ts',
+      'packages/dsh-mcp-manager/test/unit/workspace/working-directory-face.test.ts',
     ],
     environment: 'node',
     testTimeout: 60_000,

@@ -9,6 +9,7 @@ export default defineConfig({
   test: {
     include: [
       'packages/dsh-mcp-manager/test/integration/apply-lifecycle.test.ts',
+      'packages/dsh-mcp-manager/test/integration/dynamic-directory-concurrency.test.ts',
       'packages/dsh-mcp-manager/test/unit/call-timeout.test.ts',
       'packages/dsh-mcp-manager/test/unit/erasure.test.ts',
       'packages/dsh-mcp-manager/test/unit/hotspot.test.ts',

@@ -28,7 +28,6 @@ import {
   utimesSync,
   writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import {
@@ -107,7 +106,10 @@ let trackedManagers: McpManagerType[] = [];
 let trackedTimers: Array<ReturnType<typeof setTimeout>> = [];
 
 function makeTempDir(prefix: string) {
-  const dir = mkdtempSync(join(tmpdir(), prefix));
+  // findProjectRoot 会向上找标记；本机 /tmp 可能有 .git，测试根不能放在那里，
+  // 否则「无标记目录回落自身」会被祖先标记污染。/var/tmp 是同样受 mkdtemp 隔离、
+  // 但默认无项目标记的测试根。
+  const dir = mkdtempSync(join("/var/tmp", prefix));
   tempDirs.push(dir);
   return dir;
 }

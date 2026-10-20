@@ -208,6 +208,35 @@ export interface LoaderPort {
 }
 
 /**
+ * 宿主会话投影服务面（官方 `ctx.sessionProjections`）的最小面。
+ *
+ * 为什么自持声明而不引官方包：官方 `dsh-working-directory` 与 `dsh-session-projection`
+ * 在本包类型层（catalog 锁 0.2.0-rc.2）上**都不存在**（取证见
+ * `.maintenance-drafts/rc2-contract-audit/mcp-1137/EVIDENCE-wd-surface.md`：
+ * 该包 0.2.1-rc.2 侧 diff 头为 `@@ -0,0 +1,167 @@`，即基线上无此包），
+ * 硬引会判 tsc 红；把它们加进 catalog 属 #1139 的锁版范围，不在本任务。
+ * 形状与官方 `SessionProjectionService.stateOf(session, key)` 逐字一致，锁版后应改回
+ * `import type {} from "@deepseek-ai/dsh-working-directory"`（本文件尾留 TODO 锚点）。
+ *
+ * 只收 `stateOf` 一面：本包要的是**原始可空投影**，不是官方 `get()` 的兜底值——
+ * `get()` 是 `stateOf(...) ?? defaultDirectory`，会把「未记录」变成进程 cwd，
+ * 那正是 #1137 语义 A 明令禁止的隐式退路（判据 F01）。
+ */
+export interface SessionProjectionsPort {
+  /** 取某 Session 某投影的**原始**值；未记录时返回 `null`（不回落部署默认目录）。 */
+  stateOf(session: unknown, key: string): unknown;
+}
+
+/**
+ * 活动工作目录面（#1137 语义 A）。
+ *
+ * 返回 `undefined` 的每一条都是**判定为无有效活动目录**，调用方须 fail-closed
+ * 拒绝项目级操作，且不得回退 `header.cwd` / `process.cwd` / UI 最近 session /
+ * 另一个已连接工作区。读的是该 session **自己的**投影，不是进程级全局可变目录。
+ */
+export type ActiveWorkingDirectoryPort = (session: unknown) => string | undefined;
+
+/**
  * 组合根允许触碰的宿主上下文面：把 `Context` 收窄成九条能力的 `Pick`，`bindHost` 的入参到此为止，
  * 域拿不到更宽的上下文。
  *
@@ -233,4 +262,10 @@ export interface HostFaces {
   readonly attachments: () => AttachmentsPort | undefined;
   /** 模型目录：**晚读** thunk，同上。 */
   readonly models: () => ModelInfoPort | undefined;
+  /**
+   * 活动工作目录：**晚读** thunk（`ctx.get` 可能在 apply 期早读不到）。
+   *
+   * 返回 undefined = 无有效活动目录 → 项目级操作 fail-closed。
+   */
+  readonly workingDirectory: () => ActiveWorkingDirectoryPort | undefined;
 }

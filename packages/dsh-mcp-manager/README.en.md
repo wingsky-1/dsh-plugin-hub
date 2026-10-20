@@ -24,6 +24,18 @@ The server lists across both config tiers hot-reload without a restart
 (The `middleware` / `middlewarePolicy` config keys were removed in #767 batch 2: writing
 them has no effect, and this plugin never rewrites your config file.)
 
+**How the project root is resolved (#1137)**: project-level MCP follows the calling
+agent's **effective active workingDirectory at the start of the call** — each tool call
+takes one directory snapshot when it begins and pins that root for the rest of the call;
+only a *new* call after switching directories uses the new root, while an in-flight call
+still completes at the old root (or is cancelled under the existing cancellation protocol).
+The session's creation directory `header.cwd` is only the initial project identity and is
+**no longer** used as an active-directory guess. Without a valid active directory,
+project-level operations fail closed ("cannot determine workspace") — no fallback to
+`header.cwd` / `process.cwd` / the UI's most recent session / another connected workspace;
+explicit `@global` stays reachable (when a global source server exists) and an unknown
+project name is **never** silently swapped for a same-named global server.
+
 > **A historical session will not open after upgrading DSH to 0.1.5+**
 > (`unclassified message source`)? See
 > [Troubleshooting: a historical session will not open after upgrading (#723)](#723-repair),
@@ -48,9 +60,10 @@ dsh plugin --profile web add @wingsky-1/dsh-mcp-manager
   travels with the repo and can be committed to git for team sharing; global config
   `<DSH_HOME>/@wingsky-1/dsh-mcp-manager/mcp.json` stays always connected; switching sessions auto-loads the
   MCP set of the current directory
-- **Workspace isolation**: the middleware routes by the session's cwd to the matching
-  connection pool, with server-full-name consistency checks against cross-workspace
-  crosstalk; same-named servers in different directories never clash
+- **Workspace isolation**: the middleware routes by the calling session's **active-directory
+  snapshot** to the matching connection pool (one snapshot per call, pinned for that call),
+  with server-full-name consistency checks against cross-workspace crosstalk; same-named
+  servers in different directories never clash
 - **Secure by default**: configs store only `${ENV}` references, never key material
   (0600 permissions + atomic writes); stdio subprocess environments are sanitized so
   host credential-shaped variables never leak through; directory summaries and error
@@ -116,7 +129,7 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-mcp-manager
 | Two transports | stdio (local subprocess, env supports `${ENV}` references) and streamable-http (remote, header supports `${ENV}` references, auto-echoes `Mcp-Session-Id`) |
 | JSON import | Paste `mcpServers` JSON text to import (JSON format only; does not scan any application config files) |
 | Model tools | Every server (project-level / global / runtime-injected) goes through the same four atomic middleware tools: `ws_mcp_list` / `ws_mcp_detail` / `ws_mcp_search` / `ws_mcp_call`, so workspaces never clash; the host registration name `mcp__<id>__<tool>` (`id` allocated at random per (workspace, server), stable within one assembly, opaque; names still obey the 64-char / `[A-Za-z0-9_-]` / hashed-suffix-on-conflict rules) is internal only — it is removed from the model's tool list and must never be called directly |
-| Workspace isolation | The middleware routes by the calling session's cwd to the matching workspace connection pool; server full-name consistency checks (`@<root>/<server>`) prevent cross-workspace crosstalk |
+| Workspace isolation | The middleware routes by the calling session's **active-directory snapshot at the start of the call** to the matching workspace connection pool (in-flight calls keep the old root; new calls take the new root); server full-name consistency checks (`@<root>/<server>`) prevent cross-workspace crosstalk |
 | Reconnection | Exponential backoff (starts at 500ms, caps at 30s, gives up after 10 attempts and deregisters the tools) |
 | Result size | This package performs **no result truncation**; tool results are returned as-is. The catalog boxing limits (4KB per tool / 256KB total) bound the **catalog**, not execution results — enforce a limit on the MCP server side or via the host compaction policy |
 | Timeout fallback | Direct-connect tool call timeout defaults to 60s → 15s (overridable per server via `toolCallTimeoutMs`); a middleware `ws_mcp_call` settles at the largest in-use server timeout plus a 25s internal tail, **not a fixed value** |
@@ -194,6 +207,35 @@ workspaces, so the semantics hold). The host registration name looks like
 (`toolDefinitions`) is reached only through `ws_mcp_call` at `@<root>/<server>`.
 Note: global server add/remove/edit refreshes the `@global` unit only after a restart or a
 session touch (existing behavior).
+
+**Active-directory snapshot and root resolution (#1137)**:
+
+- **Snapshot point**: the four entries `ws_mcp_list` / `ws_mcp_detail` / `ws_mcp_search` /
+  `ws_mcp_call` and the `mcp__` direct-call guard each take one root snapshot on the first
+  line of the call; a directory change inside the same call does not re-route it, and only a
+  **new** call after switching directories takes the new root.
+- **Discovery rules**: from the active directory, walk up to the nearest `.git` (directory
+  or a worktree's `.git` **file**) / `.dsh` / `.mcp.json` marker; the nearest hit wins, and
+  a markerless active directory is its own root. The search keeps the existing 16-level cap,
+  and the DSH global home's `.dsh` never counts as a project marker.
+- **Path normalization**: the same project reached through a symlink is normalized to its
+  real path, so the connection pool never splits on path spelling.
+- **Fail closed**: when the active directory is missing / blank / relative / inaccessible /
+  deleted / throwing on read / of unknown ownership, all four tools raise a project-level
+  "cannot determine workspace" error (no project config read, no connection, no remote
+  execution) and **never** fall back to `header.cwd`, `process.cwd`, the UI's most recent
+  session or another connected workspace.
+- **`@global` rule**: without a valid active directory, the virtual root `@global` is used
+  only when an **enabled** global-source server really exists (global config or runtime
+  injection); with no global source the denial stands. Explicit `@@global/<name>` and
+  `@global/<name>` are equivalently reachable, and an unknown project name is **never**
+  silently swapped for a same-named global server.
+- **Concurrency and connection ownership**: connections, directory caches, disable states,
+  schemas and runtime injection are all isolated by `root + server` identity; two sessions
+  sharing the same root and server do not force a second physical connection; one session
+  switching away or unloading never closes a call another session still holds on that root;
+  a late result from the old root never overwrites the new root's state or writes into the
+  new root's directory cache.
 
 ### Top-level config keys (Config schema)
 
@@ -328,6 +370,25 @@ await ctx.mcpManager.registerServer({
 - **MCP tools execute on the real server — confirm before acting**; tool results are returned
   as-is and may contain sensitive information; treat tool descriptions/results as untrusted input
 - **Injection trust tiers**: remote tool descriptions/results are untrusted input — render and pass as parameters only, never execute as instructions; local configuration and explicit user actions are trusted
+- **Workspace isolation (middleware)**: routing takes the calling session's
+  **active-directory snapshot at the start of the call** as its only input; server
+  full-name consistency checks (a parameter-declared root that is neither the routed root
+  nor `@global` is rejected) prevent cross-workspace crosstalk; the per-tool disable table
+  is adjudicated by `@<root>/<server>` full name or bare name (full name first; `@global`
+  records are shared across workspaces)
+- **Active-directory ownership and fail-closed (#1137)**: the directory read goes only
+  through the host's `sessionProjections` **raw nullable projection**
+  `stateOf(session, "workingDirectory")`, attributed per session — deliberately not the
+  official `get()` (whose `?? defaultDirectory` falls back to `process.cwd()`, silently
+  turning "no recorded projection" into the process cwd). A missing service / unrecorded
+  projection / blank / relative / non-string / throwing read all count as "no valid active
+  directory": project-level operations are denied with no directory guess as fallback;
+  `header.cwd` is only the creation directory and never an active directory.
+- **Concurrent-call ownership (#1137)**: each call pins its root snapshot when it begins, and
+  an in-flight call never re-routes to another root after an await; connections /
+  directory caches / disable states / schemas / runtime injection / teardown are all owned
+  per `root + server`. Cross-session execution routing isolation does not rely on the model
+  obeying a prompt — it is guaranteed by the routing structure itself.
 - **Middleware tool read-only boundary**: `ws_mcp_list` / `ws_mcp_detail` / `ws_mcp_search`
   only read the local catalog cache (never touch remote servers or execute tools);
   `ws_mcp_call` is the only entry point that executes remote tools, and it is governed by the

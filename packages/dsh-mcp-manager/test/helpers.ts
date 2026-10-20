@@ -10,7 +10,6 @@ import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { Context } from "@deepseek-ai/cordis";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 /**
@@ -20,7 +19,10 @@ import { join } from "node:path";
  * （#218 产物零污染）。`dshHome()` 每次调用都读环境变量，故桩随 dispose 还原即可。
  */
 export function tempDshHome() {
-  const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-home-"));
+  // findProjectRoot 会向上找 .git/.dsh/.mcp.json；若测试 home 放在含标记的
+  // 系统临时根（例如本机 /tmp/.git）下，DSH_HOME 排除用例会被祖先标记截获。
+  // /var/tmp 仍由 mkdtemp 隔离，但默认不含项目标记。
+  const dir = mkdtempSync(join("/var/tmp", "dsh-mcp-home-"));
   const previous = process.env.DSH_HOME;
   process.env.DSH_HOME = dir;
   return {

@@ -360,6 +360,8 @@ function registerCatalogInjection(
   ctx: Context,
   manager: McpManager,
   catalogMaxEntries: number,
+  /** 活动工作目录读取面（#1137 语义 A）：目录数据源跟随会话**活动**目录，不是 header.cwd。 */
+  activeDirectory: (session: unknown) => string | undefined,
 ): () => void {
   // 官方强类型 payload：PreStepDecision waterfall（{kind:'reject'}|{kind:'enter';messages}）。
   // 目录决策逻辑在纯函数 resolveCatalogInjection（自建 CatalogDecision 宽面，
@@ -367,14 +369,20 @@ function registerCatalogInjection(
   return ctx.on("agent/pre-step", async ({ agent, messages, signal }, next) => {
     const decision = await next();
     signal.throwIfAborted();
-    // 目录数据源按会话 cwd 计算（工作区缓存），不跟随 host 的"当前工作区"
-    // 实时状态——切换工作区不改变本会话目录集合，MCP 没变化就不重复注入。
-    const supervisors = await manager.catalogServersFor(agent?.session?.header?.cwd);
+    // 目录数据源按会话**活动**目录计算（工作区缓存），不跟随 host 的"当前工作区"
+    // 实时状态——切换目录不改变本会话目录集合，MCP 没变化就不重复注入。
+    //
+    // #1137 语义 A：这里原先读 header.cwd（创建目录），会话内切过目录后注入的目录会停在旧项目。
+    // 改读活动目录；取不到（服务缺席/未记录/非法）时传 undefined，让 manager 侧走
+    // 「无项目根 → 仅全局目录」既有分支，而不是回退 header.cwd。
+    const activeCwd =
+      agent === undefined || agent === null ? undefined : activeDirectory(agent.session);
+    const supervisors = await manager.catalogServersFor(activeCwd);
     // #569：合成注入端目录缓存视图（B 起步 + 中间层 per-root 目录覆盖 +
     // 磁盘 last-good 兜底）。manager.catalogCache 是 supervisor（直呼）路径的
     // 摘要缓存；middleware 模式下其采集的工具目录注入端此前读不到——视图把
     // 两套数据源收口为一个 CatalogCache 形态，公共函数签名不变。
-    const catalogView = await manager.catalogViewFor(agent?.session?.header?.cwd, supervisors);
+    const catalogView = await manager.catalogViewFor(activeCwd, supervisors);
     // 边界放宽：纯函数吃自建宽面 CatalogDecision，返回值即本轮 PreStepDecision
     return resolveCatalogInjection(
       decision as unknown as CatalogDecision,
@@ -664,7 +672,9 @@ async function assembleEnabledRuntime(
 ): Promise<EnabledRuntimeDisposers> {
   // F3（#382）：中间层初始化提前到 startAll 之前（防「先建后停」竞态，详见
   // 本文件运行期装配段的注释）。
-  const resolveRoot = makeResolveRoot(manager);
+  // 活动工作目录读取面（#1137 语义 A）：late-read thunk 现取，服务缺席即 fail-closed。
+  const activeDirectory = faces.workingDirectory();
+  const resolveRoot = makeResolveRoot(manager, activeDirectory);
   let currentMiddlewareDispose = () => {};
   // 禁用表不在此预载：守卫读到的是 init 后的唯一引用（先 init 后注册，预载值恒被替换、零引用）。
   // init 失败即 apply 中止——不存在“实例缺席但守卫存活”的中间态需要保数据源（#392 遗留⑤：
@@ -788,7 +798,14 @@ async function assembleEnabledRuntime(
 
   let disposeInjection = () => {};
   if (options.announceCatalog) {
-    disposeInjection = registerCatalogInjection(ctx, manager, options.catalogMaxEntries);
+    disposeInjection = registerCatalogInjection(
+      ctx,
+      manager,
+      options.catalogMaxEntries,
+      // 同一次装配内与 resolveRoot 共用同一个读取面（口径必须一致，否则目录注入与
+      // 工具路由会在「活动目录缺失」时给出两套答案）。缺席时退化为无活动目录的闭包。
+      activeDirectory ?? (() => undefined),
+    );
   }
 
   const disposeRoutes = ctx.effect(

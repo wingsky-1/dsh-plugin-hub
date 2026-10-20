@@ -25,8 +25,8 @@
  * 上的事件存在性断言，非仅 cordis 单包。
  * 基线更新规则：改数须先更新 KNOWN_TRACKING 源码注释指针并连续三轮 runs 顺延稳定才可上调；
  * 跟踪以注释指针为唯一载体，不开 issue。
- * DYN_BASE 为 1，UNTRACKED_BASE 为 7（首轮实测校准：v2 估计为 1，实测 7 名逐项核过
- * peers 无类型声明，见 KNOWN_TRACKING；超 7 或出新名即 FAIL），KNOWN 为 7 名。
+ * DYN_BASE 为 1，UNTRACKED_BASE 为 8（首轮实测校准 7 名逐项核过 peers 无类型声明，
+ * 另加 #1137 的 sessionProjections，见 KNOWN_TRACKING；超 8 或出新名即 FAIL），KNOWN 为 8 名。
  * C1：ctx.on 字面量实得 19，v2 称 18，差 1 为 provider 多行调用的
  * internal/service（行扫描漏计）；#1011 的 LAN 显式订阅已由 shared seam 统一，不再重复计数。
  * 出口：通过或 FAIL 一律 exit 0；范围、管线、基线三处结构与环境异常经 gate-exit failClosed。
@@ -41,7 +41,7 @@ import { failClosed } from "../lib/gate-exit.mjs";
 
 const DEFAULT_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const DYN_BASE = 1;
-const UNTRACKED_BASE = 7;
+const UNTRACKED_BASE = 8;
 const KNOWN_UNTRACKED = [
   "attachments",
   "configForms",
@@ -49,9 +49,10 @@ const KNOWN_UNTRACKED = [
   "loader",
   "locale",
   "sessionPersistence",
+  "sessionProjections",
   "slots",
 ];
-const TRACKING_ANCHOR = "首轮实测校准（7 名逐名跟踪见 KNOWN_TRACKING；超 7 或出新名即 FAIL）";
+const TRACKING_ANCHOR = "实测校准（8 名逐名跟踪见 KNOWN_TRACKING；超 8 或出新名即 FAIL）";
 const KNOWN_TRACKING = {
   loader:
     "packages/dsh-mcp-manager/src/server/shared/compose.ts 注释：loader 类型不进 catalog，只认运行时 import 方法",
@@ -65,6 +66,8 @@ const KNOWN_TRACKING = {
   slots: "客户端可选服务（宿主核心提供，if 守卫，peers 无类型声明）：4 包 client/index 共 4 处",
   sessionPersistence:
     "packages/dsh-worktree-sidebar/src/index.ts 注释：官方持久会话面可选，未提供回 undefined，peers 无类型声明",
+  sessionProjections:
+    "packages/dsh-mcp-manager/src/server/shared/compose.ts:127 注释：逐 session 读原始工作目录投影，#1137 语义 A；catalog 锁定 rc 无该官方包类型",
 };
 const EVENT_VERBS = ["on", "once", "emit", "parallel", "serial", "waterfall", "bail"];
 const FRAMEWORK_ONLY = new Set(["get", "provide", "inject", "effect", "plugin"]);

@@ -11,6 +11,7 @@ export { assemble, bindHost, safeDisposeAll } from "./compose.ts";
 export type { DomainSpec } from "./compose.ts";
 // 宿主能力面的类型（I1 第二白名单点）：域 deps.ts 与组合根都只认这一份形状。
 export type {
+  ActiveWorkingDirectoryPort,
   AgentFace,
   AttachmentsPort,
   EventsPort,

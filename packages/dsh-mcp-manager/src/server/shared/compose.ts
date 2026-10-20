@@ -7,6 +7,7 @@
  * （`bindHost(ctx)` → `assemble(host, domains)` → `ctx.effect(() => () => safeDisposeAll(disposers))`）。
  */
 import type { Agent } from "@deepseek-ai/dsh-agent";
+import { isAbsolute } from "node:path";
 import type {
   AttachmentsPort,
   HostContextPort,
@@ -114,6 +115,35 @@ export function bindHost(ctx: HostContextPort): HostFaces {
     // 晚读 thunk（不是装配期快照）：attachments/llm 都是晚到服务，apply 期取恒 undefined。
     attachments: () => ctx.get("attachments") as AttachmentsPort | undefined,
     models: () => ctx.get("llm") as ModelInfoPort | undefined,
+    // 活动工作目录（#1137 语义 A）：晚读 + **逐 session** 取原始投影。
+    // 不读官方 WorkingDirectoryService.get()——它的实现是
+    // `stateOf(...) ?? this.defaultDirectory`，而 defaultDirectory 兜底 process.cwd()，
+    // 会把「投影未记录」悄悄变成进程 cwd，正是语义 A 禁止的隐式退路（F01）。
+    workingDirectory: () => {
+      // 假 ctx / 早期装配常见：宿主服务查询面本身缺席。此时等价于「服务未提供」，
+      // 返回 undefined 让项目级操作 fail-closed；直接调 ctx.get 会在 apply 期抛 TypeError，
+      // 把「无活动目录」误报成插件装配失败。
+      if (typeof ctx.get !== "function") return undefined;
+      const projections = ctx.get("sessionProjections") as
+        { stateOf(session: unknown, key: string): unknown } | undefined;
+      if (projections === undefined || projections === null) return undefined;
+      return (session: unknown): string | undefined => {
+        if (session === undefined || session === null) return undefined;
+        let raw: unknown;
+        try {
+          raw = projections.stateOf(session, "workingDirectory");
+        } catch {
+          // 归属不可知（服务内部抛错）= 无有效活动目录，fail-closed。
+          return undefined;
+        }
+        if (typeof raw !== "string") return undefined;
+        const directory = raw.trim();
+        if (directory === "") return undefined;
+        // 相对路径不是有效活动目录（官方投影 schema 要求 absolute）；不 resolve 到 cwd。
+        if (!isAbsolute(directory)) return undefined;
+        return directory;
+      };
+    },
     loader: {
       load: async (specifier) => {
         // `loader` 不在 `Context` 类型面上，只能按名字现取；取不到就 fail closed——回落

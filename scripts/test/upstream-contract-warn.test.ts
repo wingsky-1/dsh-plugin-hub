@@ -398,11 +398,11 @@ test("真实仓库锚：S1 为 F1 一处、S2 具名、C1 为 18，R2 已知 war
   assert.ok(out.includes("R4-lite 方法 OK"));
 });
 
-test("真实仓库锚：S2 校准后 7 名全绿（L1 裁决）", () => {
+test("真实仓库锚：S2 校准后 8 名全绿（L1 裁决）", () => {
   const r = spawnSync(process.execPath, [SCRIPT], { cwd: ROOT, encoding: "utf8" });
   assert.equal(r.status, 0);
   const out = String(r.stdout) + String(r.stderr);
-  assert.ok(out.includes("S2 无类型服务 7（基线 7"));
+  assert.ok(out.includes("S2 无类型服务 8（基线 8"));
   for (const name of [
     "attachments",
     "configForms",
@@ -410,6 +410,7 @@ test("真实仓库锚：S2 校准后 7 名全绿（L1 裁决）", () => {
     "loader",
     "locale",
     "sessionPersistence",
+    "sessionProjections",
     "slots",
   ]) {
     assert.ok(out.includes(name) && out.includes("跟踪："), name);
@@ -421,7 +422,7 @@ test("真实仓库锚：S2 校准后 7 名全绿（L1 裁决）", () => {
     .filter((line) => !line.includes("R2-cordis 事件 FAIL"))
     .join("\n");
   assert.ok(!withoutKnownR2.includes("::warning::"));
-  assert.ok(out.includes("S2 无类型服务 7") && out.includes("）OK"));
+  assert.ok(out.includes("S2 无类型服务 8") && out.includes("）OK"));
   assert.ok(out.includes("R1 服务 OK"));
 });
 
