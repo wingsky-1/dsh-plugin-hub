@@ -232,7 +232,18 @@ export function seamServicesOf(ctx: unknown): CredentialSeamServices | undefined
       return undefined;
     }
   };
-  return { settingsGet, credentialsResolve: credentials.resolve };
+  // credentials.resolve 是宿主 LocalCredentialProvider 的原型方法（内部读 this.values /
+  // this.inherited）；裸函数取出再调用会把 this 换成取用面对象，抛 TypeError 击穿
+  // /stats（#1167 回归：describe seam 修好后首次真正走到这里）。闭包保留 receiver，
+  // 并吞掉解析失败——seam 契约是「任何环节失败即视同不可用」，不得冒泡。
+  const credentialsResolve = async (ref: string): Promise<{ value?: string } | undefined> => {
+    try {
+      return await credentials.resolve?.(ref);
+    } catch {
+      return undefined;
+    }
+  };
+  return { settingsGet, credentialsResolve };
 }
 
 /**
