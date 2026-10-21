@@ -9,20 +9,30 @@
  * - `settings` 是**晚到服务**（`ctx.inject(["settings"], …)` 的回调里才取得到），`bindHost` 那一刻
  *   拿不到，它的能力面只能由接线点自己声明；
  * - `sessions` 在 E.2 的实测表里零命中，不预置一条没人用过、形状也没验过的门面。
+ *
+ * 类型锚与豁免（#1164 WP4）——「能锚就锚，锚不到才自写，自写必须带理由」：
+ * - 已锚：`ModelInfoPort` 自 `Context["llm"]`（dsh-llm 声明合并）派生、`AgentFace` 自
+ *   `Context["agents"]`（dsh-agent 声明合并）派生，两者都只 `Pick` 本包真正用到的成员。
+ *   官方换签名时消费点在编译期显形，而不是运行期把 undefined 当「无此能力」。
+ * - 豁免自写：`AttachmentsPort` / `LoaderPort` / `SessionProjectionsPort` 对应的官方包都
+ *   **不在 catalog**（dsh-attachment / cordis-plugin-loader / dsh-session-projection），
+ *   本包类型层解析不到，硬引会判 tsc 红；各自注释里写明取证与「锁定后改回 import type」的退出条件。
  */
 import type { Context, Events } from "@deepseek-ai/cordis";
-// 宿主服务面靠声明合并挂到 `Context` 上：少了这几行，下面的 `Context["tools"]` 等取不到成员。
+// 宿主服务面靠声明合并挂到 `Context` 上：少了这几行，下面的 `Context["tools"]` / `Context["llm"]` /
+// `Context["agents"]` 等取不到成员。官方包一律只 `import type`（编译期擦除，零运行时依赖）。
 import type {} from "@deepseek-ai/dsh-agent";
+import type {} from "@deepseek-ai/dsh-llm";
 import type {} from "@deepseek-ai/dsh-system-prompt";
-import type { ToolDefinition, ToolRuntime } from "@deepseek-ai/dsh-tools";
+import type { ToolDefinition } from "@deepseek-ai/dsh-tools";
 
 /**
- * 模型面内容块：官方词表的所有者是 dsh-llm，本包不引它，形状自 `ToolDefinition` 的
- * `finalizeContent` 接缝派生（返回 `ContentBlock[] | undefined`）。
+ * 模型面内容块：官方词表的所有者是 dsh-llm，形状自 `ToolDefinition` 的 `finalizeContent`
+ * 接缝派生（返回 `ContentBlock[] | undefined`）。
  *
- * 为什么派生而不是直引 `@deepseek-ai/dsh-llm`：本包只为一处类型新增一个 npm 依赖（还要进
- * catalog、随宿主升版）不划算；若维护者日后要求直引，换法只是把这条别名换成
- * `import type { ContentBlock } from "@deepseek-ai/dsh-llm"`。
+ * 为什么派生而不是改引 `ContentBlock`：dsh-llm 在本文件只用于把 `Context["llm"]` 的声明合并
+ * 拉进来（见下方 `ModelInfoPort`）；内容块形状从更窄的 `ToolDefinition` 接缝已能取到，再引一个
+ * 导出面只会扩大宿主升版的影响面。
  */
 export type ModelContentBlock = NonNullable<
   ReturnType<NonNullable<ToolDefinition["finalizeContent"]>>
@@ -44,6 +54,11 @@ export interface SaveImageInput {
 /**
  * 附件库（`ctx.get("attachments")`）的最小面。**晚读**：服务可能缺席（宿主未挂
  * `dsh-attachment-local`），且 apply 期的早读恒得 undefined——故只能经 thunk 在调用时刻现取。
+ *
+ * 豁免自写（#1164 表 8）：官方类型在 `@deepseek-ai/dsh-attachment`，该包不在 catalog
+ * （`pnpm-workspace.yaml`），也不是本包直接依赖，`import type` 在此解析不到（pnpm 严格布局下
+ * 只有直接依赖可达）。形状锚在官方 `SaveImageAttachment` / 模型面 image 块的 `attachment`：
+ * 包一旦进 catalog 即改回 `import type`，本条随之删除。
  */
 export interface AttachmentsPort {
   saveImages(inputs: readonly SaveImageInput[]): Promise<readonly ModelAttachmentRef[]>;
@@ -51,22 +66,30 @@ export interface AttachmentsPort {
 
 /**
  * 模型目录（`ctx.get("llm")`）的最小面：只问该路由声明了哪些输入模态。**晚读**，理由同上。
+ *
+ * 类型锚：形状的唯一来源是官方 `Context["llm"]`（dsh-llm 的声明合并），这里只 `Pick` 出
+ * `resolveModelInfo` 一条，不把整个 `LlmRuntime` 递给域。宿主改签名（例如返回类型换形）时，
+ * 消费点 `image-admission` 会在编译期红，而不是把「解析失败」静默当成「无 image 模态」。
  */
-export interface ModelInfoPort {
-  resolveModelInfo(
-    provider: string,
-    model: string,
-    signal?: AbortSignal,
-  ): Promise<{ inputModalities?: readonly string[] }>;
-}
+export type ModelInfoPort = Pick<Context["llm"], "resolveModelInfo">;
+
+/**
+ * 官方活 agent 句柄：`ctx.agents.list()` 的元素（运行时面由 dsh-agent 的声明合并提供）。
+ * 只在本文件内用作派生锚，不对外转发——域拿到的始终是下面的最小 `AgentFace`。
+ */
+type LiveAgent = ReturnType<Context["agents"]["list"]>[number];
 
 /**
  * 一个活 agent 的模型可见面句柄：`restrict` 是宿主给的**作用域**原语（全局调用会被拒），
  * 故本包必须经 agent 自己的作用域上下文调用它——见 visibility 域。
+ *
+ * 类型锚：从官方 `Context["agents"]` 的活 agent（`list()` 元素）派生，只留 `id` 与作用域
+ * `ctx.tools.restrict`。派生而不是照抄字段名，是为了让宿主改 `Agent.id` / `Agent.ctx.tools`
+ * 形状时在组合根（`compose.ts` 的接线点）编译期显形。
  */
 export interface AgentFace {
-  readonly id: string;
-  readonly tools: Pick<ToolRuntime, "restrict">;
+  readonly id: LiveAgent["id"];
+  readonly tools: Pick<LiveAgent["ctx"]["tools"], "restrict">;
 }
 
 /** 宿主日志出口的收窄面：本包只在诊断处出声，且不因为出声改变动作。 */
@@ -199,6 +222,11 @@ export interface MountedPlugin {
  * 只收两样：按包名解析模块、把模块挂成我方拥有的实例。不收 loader 的 create / update /
  * remove——那三者末端都会写 loader 配置树（`EntryTree.create` 末行 `tree.write()`），把运行期
  * 的 `command` / `args` / `env` 暴露进用户 profile。
+ *
+ * 豁免自写（#1164 表 8）：官方 loader 服务面的所有者是 `@deepseek-ai/cordis-plugin-loader`，
+ * 该包不在 catalog、本包不可解析（`Pick<Context, "loader">` 会直接判 tsc 红，见 `HostContextPort`
+ * 注释）；运行时经 `ctx.get("loader")` 现取，形状只保留本包真正调用的 `import`。该包进 catalog
+ * 且服务面进 `Context` 后改回官方类型，本条随之删除。
  */
 export interface LoaderPort {
   /** 按包名解析官方插件模块：裸包名只有 loader 能解析（锚 `ctx.baseUrl`），是本包唯一合规入口。 */
@@ -217,6 +245,9 @@ export interface LoaderPort {
  * 硬引会判 tsc 红；把它们加进 catalog 属 #1139 的锁版范围，不在本任务。
  * 形状与官方 `SessionProjectionService.stateOf(session, key)` 逐字一致，锁版后应改回
  * `import type {} from "@deepseek-ai/dsh-working-directory"`（本文件尾留 TODO 锚点）。
+ *
+ * 豁免自写（#1164 表 8）：与 attachments / loader 同口径——官方包不在 catalog，故保留自写
+ * 最小面；退出条件已写在上一段（锁版后改回 `import type`）。
  *
  * 只收 `stateOf` 一面：本包要的是**原始可空投影**，不是官方 `get()` 的兜底值——
  * `get()` 是 `stateOf(...) ?? defaultDirectory`，会把「未记录」变成进程 cwd，
