@@ -26,6 +26,7 @@ interface SpyState {
   fetchCalls: number;
   panelCalls: number;
   failPanel: boolean;
+  failFetch: boolean;
   fetchGate: Promise<unknown> | null;
   panelGate: Promise<unknown> | null;
   fetchEntered: boolean;
@@ -44,6 +45,7 @@ function makeService(overrides: { spy?: Partial<SpyState> } = {}) {
     fetchCalls: 0,
     panelCalls: 0,
     failPanel: false,
+    failFetch: false,
     fetchGate: null,
     panelGate: null,
     fetchEntered: false,
@@ -58,6 +60,7 @@ function makeService(overrides: { spy?: Partial<SpyState> } = {}) {
         spy.fetchCalls += 1;
         spy.fetchEntered = true;
         if (spy.fetchGate !== null) await spy.fetchGate;
+        if (spy.failFetch) throw new Error("fetch-boom");
         return { v: 1 };
       },
       formatCapsule() {
@@ -296,6 +299,33 @@ describe("purgeAllCaches：清 cache+panelCache，后续重新 miss（评审 M1 
 
   it("purge 后再次 miss 重跑", () => {
     expect(panelCallsAfterPurge).toBe(callsBeforePurge + 1);
+  });
+});
+
+describe("fetchErrors：取数失败登记 / 成功清除（#1163 health 观测面）", () => {
+  it("失败取数登记 provider + 错误码 + 时刻；成功后清除", async () => {
+    const h = makeService({ spy: { failFetch: true } });
+    const failed = await h.service.getStats("pv");
+    expect(failed.ok).toBe(false);
+
+    const errors = h.service.fetchErrors();
+    expect(errors).toHaveLength(1);
+    expect(errors[0].provider).toBe("pv");
+    expect(errors[0].error).toBe("fetch-boom");
+    expect(typeof errors[0].at).toBe("number");
+
+    h.spy.failFetch = false;
+    h.service.purgeAllCaches();
+    expect((await h.service.getStats("pv")).ok).toBe(true);
+    expect(h.service.fetchErrors()).toEqual([]);
+  });
+
+  it("dispose 后观测面清空", async () => {
+    const h = makeService({ spy: { failFetch: true } });
+    await h.service.getStats("pv");
+    expect(h.service.fetchErrors()).toHaveLength(1);
+    h.service.dispose();
+    expect(h.service.fetchErrors()).toEqual([]);
   });
 });
 

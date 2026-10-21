@@ -22,6 +22,7 @@ export const zh = {
   pillCached: "缓存",
   pillFresh: "实时",
   pillUpdatedAt: "更新于 {t}",
+  pillLastSuccess: "最后更新 {t}",
   providerUnknown: "提供商未识别",
   // 悬浮面板
   panelTitle: "{provider} 用量",
@@ -360,6 +361,7 @@ export const en: Record<ProviderUsageLocaleKey, string> = {
   pillCached: "cached",
   pillFresh: "live",
   pillUpdatedAt: "updated {t}",
+  pillLastSuccess: "last updated {t}",
   providerUnknown: "provider unidentified",
   panelTitle: "{provider} usage",
   refresh: "Refresh",

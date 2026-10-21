@@ -1046,8 +1046,25 @@ function balanceChartHtml(values24, totalEntries, e, ea) {
   return `<p class="dou-chartEmpty">近 24 小时内采样不足（&lt;2 点），随时间积累后显示。</p>`;
 }
 
-/** 卡1 头部（纯函数）：余额金额 + 消费徽标 + 断轴提示。 */
-function balanceCardHead(balance, trendHtml, rechargeHint, ea) {
+/** 面板本地时间文案（MM-DD HH:mm；宿主本地时区，与日界口径一致）。 */
+function panelTimeLabel(t) {
+  const d = new Date(t);
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/**
+ * 卡1 采样陈旧提示（纯函数）：末次采样早于 24h 即注明具体时间，
+ * 防把「取数已失败多日」的旧余额读成实时值（#1163）。
+ */
+export function staleSampleHintOf(anchor, now) {
+  if (!Number.isFinite(anchor) || !Number.isFinite(now)) return "";
+  if (now - anchor <= DAY_MS) return "";
+  return ` · 最后采样 ${panelTimeLabel(anchor)}`;
+}
+
+/** 卡1 头部（纯函数）：余额金额 + 消费徽标 + 断轴/陈旧提示。 */
+function balanceCardHead(balance, trendHtml, rechargeHint, staleHint, ea) {
   const cur = balance !== null && Number.isFinite(balance) ? `¥${balance.toFixed(2)}` : "--";
   return `<div class="dou-cardHead">
     <div class="dou-cardMeta">
@@ -1056,7 +1073,7 @@ function balanceCardHead(balance, trendHtml, rechargeHint, ea) {
       <span class="dou-cardCur">${cur}</span>
       ${trendHtml}
     </div>
-    <p class="dou-cardLimit" title="${ea("DeepSeek 官方（CNY）")}">近 24 小时波动${rechargeHint}</p>
+    <p class="dou-cardLimit" title="${ea("DeepSeek 官方（CNY）")}">近 24 小时波动${rechargeHint}${staleHint}</p>
   </div>`;
 }
 
@@ -1090,7 +1107,13 @@ function formatPanelImpl(input) {
   const latest = values24[values24.length - 1] || pts[pts.length - 1];
   const first24 = values24[0];
   const trendHtml = first24 && first24.t !== latest.t ? trendBadgeHtml(values24, fin, ea) : "";
-  const head = balanceCardHead(latest.balance, trendHtml, rechargeHintOf(values24), ea);
+  const head = balanceCardHead(
+    latest.balance,
+    trendHtml,
+    rechargeHintOf(values24),
+    staleSampleHintOf(anchor, now),
+    ea,
+  );
   const chartHtml = balanceChartHtml(values24, input.entries.length, e, ea);
 
   const card1 = `<div class="dou-card">${head}${chartHtml}</div>`;

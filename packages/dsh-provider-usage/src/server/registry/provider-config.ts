@@ -2,9 +2,9 @@
  * dsh-provider-usage — 模型配置读取（V1 配置链 + DSH 凭据 seam 双层）。
  *
  * 密钥解析优先级（从高到低）：
- *   0. DSH 通用凭据 seam——由 configurable provider 目录驱动：读该 provider 的
- *      settings 命名空间（llm adapter 声明的 `apiKeyEnv` 凭据引用名），再经
- *      `credentials.resolve(ref)` 按 DSH 统一机制取值（env → .credentials.yaml
+ *   0. DSH 通用凭据 seam——由 configurable provider 目录驱动：经 `settings.describe()`
+ *      读该 provider 的命名空间 value（llm adapter 声明的 `apiKeyEnv` 凭据引用名），
+ *      再经 `credentials.resolve(ref)` 按 DSH 统一机制取值（env → .credentials.yaml
  *      refs → .env）。不猜环境变量名，与 llm 层同源同 key。
  *   1. 插件配置中的显式 apiKey
  *   2. 环境变量 {PROVIDER}_API_KEY（大写，连字符替换为下划线）
@@ -107,7 +107,11 @@ export async function resolveProviderConfig(
 
   // 1–5. V1 配置链兜底
   const apiKey = await resolveApiKey(provider, input?.apiKey);
-  return { apiEndpoint, apiKey };
+  if (apiKey !== undefined) return { apiEndpoint, apiKey };
+
+  // 6. 已知 provider 的凭据 ref 兜底：seam 不可用（宿主 settings 服务缺席/读面变更）
+  //    且 V1 链按 provider 名派生不到 ref 名时，仍与 llm 层共用同一把 key。
+  return { apiEndpoint, apiKey: await resolveViaKnownCredentialRef(provider, ctx) };
 }
 
 /** configurable provider 目录条目（seam 沿线形状）。 */
@@ -124,7 +128,8 @@ interface CredentialSeamContext {
 }
 
 interface SettingsService {
-  get?: (ns: string) => unknown;
+  /** 当前宿主读面：返回按 ns 可定位的条目描述（含 value 层）。dsh 0.1.7-rc.1 起取代旧 get(ns)。 */
+  describe?: (options?: { redactSecrets?: boolean }) => unknown;
 }
 
 interface CredentialsService {
@@ -185,6 +190,19 @@ export function apiKeyEnvOf(profile: unknown): string | undefined {
   return typeof ref === "string" && ref.length > 0 ? ref : undefined;
 }
 
+/**
+ * 从 settings.describe() 的条目数组里按 ns 取 value 层（纯函数）。
+ * 非数组 / 条目非对象 / 无该 ns 一律 undefined（seam 视同不可用，回落 V1 链）。
+ */
+function settingsValueOf(descriptors: unknown, ns: string): unknown {
+  if (!Array.isArray(descriptors)) return undefined;
+  for (const entry of descriptors) {
+    if (!isIndexable(entry)) continue;
+    if (entry.ns === ns) return entry.value;
+  }
+  return undefined;
+}
+
 /** seam 所需两服务的就位判定（纯函数）：缺席任一即视同 seam 不可用。 */
 export function seamServicesOf(ctx: unknown): CredentialSeamServices | undefined {
   if (!isCredentialSeamContext(ctx) || typeof ctx.get !== "function") return undefined;
@@ -194,11 +212,17 @@ export function seamServicesOf(ctx: unknown): CredentialSeamServices | undefined
   const anyCtx = ctx;
   const settings = anyCtx.get?.("settings");
   const credentials = anyCtx.get?.("credentials");
-  if (!isSettingsService(settings) || typeof settings.get !== "function") return undefined;
+  if (!isSettingsService(settings) || typeof settings.describe !== "function") return undefined;
   if (!isCredentialsService(credentials) || typeof credentials.resolve !== "function") {
     return undefined;
   }
-  return { settingsGet: settings.get, credentialsResolve: credentials.resolve };
+  // 捕获方法本体再调用（保留 receiver 语义）。现行读面是 describe() 的条目数组
+  // （ns → value）；旧 `get(ns)` 已随 dsh 0.1.7-rc.1 删除，不再作为兜底——缺失即
+  // 视为 seam 不可用并回落 V1 链（#1163：旧接口被删后 seam 静默失效 27 天）。
+  const describe = settings.describe;
+  const settingsGet = (ns: string): unknown =>
+    settingsValueOf(describe.call(settings, { redactSecrets: false }), ns);
+  return { settingsGet, credentialsResolve: credentials.resolve };
 }
 
 /**
@@ -220,6 +244,39 @@ async function resolveViaCredentialSeam(
   );
   if (ref === undefined) return undefined;
   const got = await services.credentialsResolve(ref);
+  if (got !== undefined && typeof got.value === "string" && got.value.length > 0) {
+    return got.value;
+  }
+  return undefined;
+}
+
+/**
+ * 已知 provider → llm 层凭据引用名（seam 不可用时的兜底，与官方 llm adapter 的默认
+ * apiKeyEnv 同源）。新增条目必须附「llm 侧默认 ref」证据；无证据不要猜。
+ */
+const KNOWN_CREDENTIAL_REFS: Readonly<Record<string, string>> = {
+  "deepseek-official": "DEEPSEEK_API_KEY",
+};
+
+/**
+ * 经 credentials 服务解析已知 ref（seam 不可用/无目录条目且 V1 链按 provider 名
+ * 派生不到 ref 时的最后兜底）。服务缺席、ref 未登记、解析无值一律 undefined。
+ */
+async function resolveViaKnownCredentialRef(
+  provider: string,
+  ctx?: unknown,
+): Promise<string | undefined> {
+  const ref = KNOWN_CREDENTIAL_REFS[provider];
+  if (ref === undefined) return undefined;
+  if (!isCredentialSeamContext(ctx) || typeof ctx.get !== "function") return undefined;
+  // 沿用 seam 的 anyCtx 别名：upstream-contract-warn 的 S2 只认字面量 ctx 接收者，
+  // credentials 服务仍属无类型面（见 seamServicesOf 注释），此处不另开一处消费点。
+  const anyCtx = ctx;
+  const credentials = anyCtx.get?.("credentials");
+  if (!isCredentialsService(credentials) || typeof credentials.resolve !== "function") {
+    return undefined;
+  }
+  const got = await credentials.resolve(ref);
   if (got !== undefined && typeof got.value === "string" && got.value.length > 0) {
     return got.value;
   }

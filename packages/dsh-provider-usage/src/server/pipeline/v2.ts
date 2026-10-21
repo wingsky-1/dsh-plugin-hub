@@ -30,6 +30,8 @@ export interface V2PipelineResult {
   capsuleHtml?: string;
   /** 拉取到的原始数据（供历史落盘）。 */
   rawData?: Record<string, unknown>;
+  /** 失败帧带值降级时最后一条成功采样时刻（epoch ms；仅 stale 失败帧提供）。 */
+  lastSuccessAt?: number;
 }
 
 /** v2 管道执行上下文。 */
@@ -164,9 +166,10 @@ async function staleFailure(
   // 数值部分始终渲染最后成功值（避免健康值跌成 "--"），数据来源状态交给
   // 客户端圆点颜色表达（dou-dot-warn 黄点 = 陈旧降级，见 client pillDotLevel）。
   // history 读取失败视同无历史（空 data 占位），绝不因兜底读失败而改变错误帧语义。
+  const last = await lastSuccessfulEntry(ctx);
   const capsuleHtml = await renderCapsule(ctx, {
     time: fetchedAt,
-    data: await lastSuccessfulData(ctx),
+    data: last?.data ?? {},
     status: "stale",
     error,
   });
@@ -180,15 +183,20 @@ async function staleFailure(
     adapterName: ctx.adapter.name,
     status: "stale",
     ...(capsuleHtml !== undefined ? { capsuleHtml } : {}),
+    ...(last !== null ? { lastSuccessAt: last.time } : {}),
   };
 }
 
-/** 最后一条成功数据（读失败/无历史/非对象载荷一律回落空 data 占位）。 */
-async function lastSuccessfulData(ctx: V2PipelineContext): Promise<Record<string, unknown>> {
-  if (ctx.history === undefined) return {};
+/** 最后一条成功帧（读失败/无历史/非对象载荷/t 非法一律 null）。 */
+async function lastSuccessfulEntry(
+  ctx: V2PipelineContext,
+): Promise<{ time: number; data: Record<string, unknown> } | null> {
+  if (ctx.history === undefined) return null;
   const lastEntry = await ctx.history.last(ctx.provider, ctx.adapter.name).catch(() => null);
-  if (lastEntry === null || !lastEntry.data || typeof lastEntry.data !== "object") return {};
-  return lastEntry.data;
+  if (lastEntry === null || !lastEntry.data || typeof lastEntry.data !== "object") return null;
+  const time = lastEntry.time;
+  if (typeof time !== "number" || !Number.isFinite(time)) return null;
+  return { time, data: lastEntry.data };
 }
 
 /** 胶囊渲染入参（宿主注入的 esc 随包下发，内置/用户适配器同形可用）。 */

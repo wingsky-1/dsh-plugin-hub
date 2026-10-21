@@ -93,6 +93,8 @@ export interface StatsResponseV2 {
   configured: boolean;
   error?: string | null;
   fetchedAt: number;
+  /** 失败帧带值降级时最后一条成功采样时刻（epoch ms）；非失败帧为 null/缺席。 */
+  lastSuccessAt?: number | null;
   adapterVersion: number;
 }
 

@@ -53,6 +53,8 @@ export class StatsService {
   readonly cache = new Map<string, V2PipelineResult>();
   readonly panelCache = new Map<string, PanelCacheEntry>();
   readonly providerLocks = new Map<string, Mutex>();
+  /** 取数失败观测面（health.fetchErrors）：同一 provider 成功取数一次即清除。 */
+  private readonly fetchErrorByProvider = new Map<string, { at: number; error: string }>();
 
   // 缓存纪元——任何「清理缓存」入口递增 generation，
   // 在途 getStats 完成后校验纪元未变才 set，防「选择切换×在途取数」交错污染新缓存。
@@ -97,6 +99,11 @@ export class StatsService {
   /** 只读观测口（health 响应字段名 cacheSize 保持，语义与直读 Map.size 等价）。 */
   cacheSize(): number {
     return this.cache.size;
+  }
+
+  /** 取数失败观测面（health 响应字段 fetchErrors）；成功取数即清除该 provider 条目。 */
+  fetchErrors(): Array<{ provider: string; at: number; error: string }> {
+    return [...this.fetchErrorByProvider.entries()].map(([provider, e]) => ({ provider, ...e }));
   }
 
   /** 全量清理（select/add/热更等选择变更挂点）：纪元失效防在途结果写回。 */
@@ -287,6 +294,13 @@ export class StatsService {
       await this.history.append(provider, entry.name, historyEntry).catch(() => {});
       this.purgePanelCacheForProvider(provider);
     }
+    // 失败可观测性：错误帧此前只活在胶囊 tooltip 里，health 看不到（#1163）。
+    // 以 provider 为键覆盖式登记，成功取数即删除，不残留陈旧错误。
+    if (result.error !== null && result.error !== undefined) {
+      this.fetchErrorByProvider.set(provider, { at: result.fetchedAt, error: result.error });
+    } else {
+      this.fetchErrorByProvider.delete(provider);
+    }
     return result;
   }
 
@@ -295,5 +309,6 @@ export class StatsService {
     this.providerLocks.clear();
     this.cache.clear();
     this.panelCache.clear();
+    this.fetchErrorByProvider.clear();
   }
 }

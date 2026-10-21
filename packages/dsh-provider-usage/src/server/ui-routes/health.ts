@@ -36,6 +36,8 @@ export function handleHealth(
     })),
     enabled: snap.enabled,
     errors: snap.errors,
+    // 取数失败面（#1163）：与 errors（适配器加载/执行登记）并列，成功取数即清除。
+    fetchErrors: statsService.fetchErrors(),
     historyDir: statsService.historyRoot,
     // 域2每层错误面：aggregate/schedule/execute 三层计数 + 最近 N 条；
     // 与 errors（域1 适配器最近一次登记）并列，字段风格一致（camelCase 平铺）。

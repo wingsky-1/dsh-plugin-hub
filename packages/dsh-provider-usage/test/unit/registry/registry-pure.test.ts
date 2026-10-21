@@ -18,6 +18,7 @@ import {
   drillSettingsPath,
   apiKeyEnvOf,
   seamServicesOf,
+  resolveProviderConfig,
 } from "../../../src/server/registry/provider-config.ts";
 import {
   toAdapterRecord,
@@ -101,7 +102,14 @@ describe("provider-config seam 定位纯面", () => {
     },
     get: (name: string) =>
       name === "settings"
-        ? { get: () => ({ providers: { "pi-ai-r": { apiKeyEnv: "RJK_API_KEY" } } }) }
+        ? {
+            describe: () => [
+              {
+                ns: "llm-pi-ai",
+                value: { providers: { "pi-ai-r": { apiKeyEnv: "RJK_API_KEY" } } },
+              },
+            ],
+          }
         : { resolve: async () => ({ value: "sk" }) },
   };
 
@@ -128,10 +136,90 @@ describe("provider-config seam 定位纯面", () => {
     expect(apiKeyEnvOf(null)).toBeUndefined();
   });
 
-  it("seamServicesOf：两服务就位时给出取用面，缺一即 undefined", () => {
+  it("seamServicesOf：settings 读面为 describe()，两服务就位时给出取用面", () => {
     expect(typeof seamServicesOf(ctx)?.settingsGet).toBe("function");
+    // 旧 `settings.get(ns)` 形状不再被当作 seam（#1163 回归：静默吃旧接口）
     expect(seamServicesOf({ get: () => undefined })).toBeUndefined();
+    // 缺 credentials 服务同样不可用
+    expect(seamServicesOf({ describe: () => [] })).toBeUndefined();
     expect(seamServicesOf({})).toBeUndefined();
+  });
+
+  it("settingsGet：按 ns 取 describe 条目 value；无该 ns 即 undefined", () => {
+    const services = seamServicesOf(ctx);
+    expect(services?.settingsGet("llm-pi-ai")).toEqual({
+      providers: { "pi-ai-r": { apiKeyEnv: "RJK_API_KEY" } },
+    });
+    expect(services?.settingsGet("missing-ns")).toBeUndefined();
+  });
+});
+
+describe("provider-config 凭据解析：describe seam + 已知 ref 兜底", () => {
+  it("seam：describe 取 apiKeyEnv 后经 credentials.resolve 取值", async () => {
+    const ctx = {
+      llm: {
+        listConfigurableProviders: () => [
+          { provider: "r-direct", settingsNs: "llm-r", settingsPath: [] },
+        ],
+      },
+      get: (name: string) =>
+        name === "settings"
+          ? { describe: () => [{ ns: "llm-r", value: { apiKeyEnv: "R_REF" } }] }
+          : {
+              resolve: async (ref: string) => (ref === "R_REF" ? { value: "sk-seam" } : undefined),
+            },
+    };
+    const r = await resolveProviderConfig("r-direct", ctx);
+    expect(r.apiKey).toBe("sk-seam");
+  });
+
+  it("旧 settings.get 形状不再被当作 seam（#1163 回归）", async () => {
+    const ctx = {
+      llm: {
+        listConfigurableProviders: () => [
+          { provider: "r-old", settingsNs: "llm-old", settingsPath: [] },
+        ],
+      },
+      get: (name: string) =>
+        name === "settings"
+          ? { get: () => ({ apiKeyEnv: "OLD_REF" }) }
+          : { resolve: async () => ({ value: "sk-old" }) },
+    };
+    const r = await resolveProviderConfig("r-old", ctx);
+    expect(r.apiKey).toBeUndefined();
+  });
+
+  it("已知 provider ref 兜底：settings 缺席时仍从 credentials 取 DEEPSEEK_API_KEY", async () => {
+    const calls: string[] = [];
+    const ctx = {
+      get: (name: string) =>
+        name === "credentials"
+          ? {
+              resolve: async (ref: string) => {
+                calls.push(ref);
+                return ref === "DEEPSEEK_API_KEY" ? { value: "sk-known" } : undefined;
+              },
+            }
+          : undefined,
+    };
+    const r = await resolveProviderConfig("deepseek-official", ctx);
+    expect(r.apiKey).toBe("sk-known");
+    expect(calls).toEqual(["DEEPSEEK_API_KEY"]);
+  });
+
+  it("非已知 provider 不触发已知 ref 兜底", async () => {
+    const calls: string[] = [];
+    const ctx = {
+      get: () => ({
+        resolve: async (ref: string) => {
+          calls.push(ref);
+          return { value: "x" };
+        },
+      }),
+    };
+    const r = await resolveProviderConfig("mystery-provider", ctx);
+    expect(r.apiKey).toBeUndefined();
+    expect(calls).toEqual([]);
   });
 });
 

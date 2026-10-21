@@ -34,6 +34,7 @@ export type StatsService = Pick<
   | "lockOf"
   | "cacheFresh"
   | "cacheSize"
+  | "fetchErrors"
   | "purgeAllCaches"
   | "purgePanelCacheForProvider"
   | "purgeCachesForProviders"

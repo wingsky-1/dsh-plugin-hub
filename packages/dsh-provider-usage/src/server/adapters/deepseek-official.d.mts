@@ -229,6 +229,9 @@ export declare function trendBadgeHtml(
 /** 卡1 副标题断轴提示。 */
 export declare function rechargeHintOf(values: SamplePoint[]): string;
 
+/** 卡1 采样陈旧提示（末次采样早于 24h 即注明具体时间）。 */
+export declare function staleSampleHintOf(anchor: number, now: number): string;
+
 /** 面板注入面归一（优先宿主注入，缺失回退文件内兜底副本）。 */
 export declare function panelUtils(input: PanelInput): {
   esc: (s: string) => string;

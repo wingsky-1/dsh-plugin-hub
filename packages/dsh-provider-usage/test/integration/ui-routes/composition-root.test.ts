@@ -208,6 +208,7 @@ function stubUiCtx(
     },
     config: { provider: "stub-provider", trendRetentionDays: 90 },
     cacheSize: () => 0,
+    fetchErrors: () => [],
     historyRoot,
   } as unknown as StatsService;
   const trend = {

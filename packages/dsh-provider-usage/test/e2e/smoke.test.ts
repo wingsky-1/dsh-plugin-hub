@@ -153,6 +153,8 @@ interface HealthPayload {
   ok: boolean;
   adapters: Array<Record<string, unknown>>;
   errors: Array<{ key: string; kind: string; message: string; at: number }>;
+  /** #1163 取数失败观测面（provider → 最近一次失败）。 */
+  fetchErrors?: Array<{ provider: string; at: number; error: string }>;
   cacheSize?: number;
   [key: string]: unknown;
 }
@@ -887,6 +889,19 @@ describe("/health 响应", () => {
           kind: expect.stringMatching(/^(load|exec)$/),
           message: expect.any(String),
           at: expect.any(Number),
+        }),
+      );
+    }
+  });
+
+  it("fetchErrors 观测面存在（#1163 取数失败不再只藏在胶囊 tooltip）", () => {
+    expect(Array.isArray(payload.fetchErrors)).toBe(true);
+    for (const e of payload.fetchErrors ?? []) {
+      expect(e).toEqual(
+        expect.objectContaining({
+          provider: expect.any(String),
+          at: expect.any(Number),
+          error: expect.any(String),
         }),
       );
     }
@@ -1903,6 +1918,7 @@ describe("#198 deepseek-official 内置适配器集成 · 场景 1（纯 builtin
   let failPayloadReason: unknown;
   let failPayloadCapsuleHtml: string;
   let failPayloadError: unknown;
+  let failPayloadLastSuccessAt: unknown;
   let builtinHistDirAbsent: boolean;
   let e5Bodies: Record<string, string>;
 
@@ -1961,6 +1977,7 @@ describe("#198 deepseek-official 内置适配器集成 · 场景 1（纯 builtin
     failPayloadReason = failPayload.reason;
     failPayloadCapsuleHtml = failPayload.capsuleHtml;
     failPayloadError = failPayload.error;
+    failPayloadLastSuccessAt = failPayload.lastSuccessAt;
 
     // A3：错误帧绝不落盘历史——builtin 历史目录不应存在
     const builtinHistDir = join(
@@ -2013,6 +2030,10 @@ describe("#198 deepseek-official 内置适配器集成 · 场景 1（纯 builtin
 
   it("A1: 空 data 渲染占位文案", () => {
     expect(failPayloadCapsuleHtml.includes("DeepSeek 余额 --")).toBeTruthy();
+  });
+
+  it("A1: 无历史时 lastSuccessAt=null（不伪造最后成功时间）", () => {
+    expect(failPayloadLastSuccessAt).toBeNull();
   });
 
   it("G8: stale 帧峰谷徽标常驻", () => {

@@ -744,7 +744,7 @@ import { judgeContained as sanContained, judgePad as pad } from "./helpers.ts";
   const r3 = await resolveProviderConfig("never-exists-prov", undefined, {});
   assert.equal(r3.apiKey, undefined);
 
-  // DSH 凭据 seam：fake ctx 提供 configurable provider + settings.get + credentials.resolve
+  // DSH 凭据 seam：fake ctx 提供 configurable provider + settings.describe + credentials.resolve
   const fakeCtx = {
     llm: {
       listConfigurableProviders: () => [
@@ -759,8 +759,7 @@ import { judgeContained as sanContained, judgePad as pad } from "./helpers.ts";
     get: (name: string) => {
       if (name === "settings")
         return {
-          get: (ns: string) =>
-            ns === "llm-deepseek" ? { apiKeyEnv: "DEEPSEEK_API_KEY" } : undefined,
+          describe: () => [{ ns: "llm-deepseek", value: { apiKeyEnv: "DEEPSEEK_API_KEY" } }],
         };
       if (name === "credentials")
         return {
@@ -774,7 +773,7 @@ import { judgeContained as sanContained, judgePad as pad } from "./helpers.ts";
   assert.equal(
     r4.apiKey,
     "sk-seam-test",
-    "seam 经 settings.get(apiKeyEnv) + credentials.resolve 取到 key",
+    "seam 经 settings.describe(apiKeyEnv) + credentials.resolve 取到 key",
   );
 
   // seam：settingsPath 下钻（pi-ai 类嵌套命名空间）
@@ -787,10 +786,9 @@ import { judgeContained as sanContained, judgePad as pad } from "./helpers.ts";
     get: (name: string) => {
       if (name === "settings")
         return {
-          get: (ns: string) =>
-            ns === "llm-pi-ai"
-              ? { providers: { "pi-ai-r": { apiKeyEnv: "RJK_API_KEY" } } }
-              : undefined,
+          describe: () => [
+            { ns: "llm-pi-ai", value: { providers: { "pi-ai-r": { apiKeyEnv: "RJK_API_KEY" } } } },
+          ],
         };
       if (name === "credentials")
         return {

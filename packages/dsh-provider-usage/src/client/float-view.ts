@@ -44,6 +44,20 @@ export function pillDotLevel(stats: StatsResponseV2 | null): "ok" | "warn" | "er
 }
 
 /**
+ * 取数失败但带旧值降级时，胶囊追加的「最后成功更新」文案（纯）。
+ * 判据只看 error + lastSuccessAt：失败帧在缓存期内 status 可能是 cached，
+ * 若再要求 status==="stale" 会让标注每 30s 抖动（#1163）。
+ */
+export function staleAgeText(stats: StatsResponseV2 | null): string {
+  if (stats === null) return "";
+  if (stats.error === null || stats.error === undefined) return "";
+  const at = stats.lastSuccessAt;
+  if (typeof at !== "number" || !Number.isFinite(at)) return "";
+  const age = fmtAge(at);
+  return age === "" ? "" : t("pillLastSuccess", { t: age });
+}
+
+/**
  * 胶囊 title 推导（纯，四态 + 未知标注）：
  * 未配置 → provider 名 + 提示；取数失败 → 具体错误；宿主 busy 降级 → 适配器名 + 忙；
  * 其余 → 适配器名 + 状态 + 相对更新时间。有会话但 provider 未确认时追加显式标注。
@@ -58,6 +72,8 @@ export function pillTitle(
     title = `${provider} · ${t("pillNotConfigured")}`;
   } else if (stats.error !== null && stats.error !== undefined) {
     title = t("pillFetchFail", { msg: stats.error });
+    const stale = staleAgeText(stats);
+    if (stale !== "") title += ` · ${stale}`;
   } else if (statsReason(stats) === "busy") {
     title = `${stats.adapterName} · ${t("pillBusy")}`;
   } else {

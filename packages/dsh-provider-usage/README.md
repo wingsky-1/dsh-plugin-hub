@@ -215,8 +215,11 @@ dsh-mcp-manager 浮窗的默认位置（`top-right`、距顶 8px、高约 26px�
   - 谷态显示距下次开峰倒计时（如 `⚡谷 · 距峰 02:41`），峰态显示距切谷倒计时；
     tooltip 注明 UTC 时段定义与服务器时区对照。
 
-## 密钥解析顺序（V1 配置链）
+## 密钥解析顺序
 
+0. DSH 通用凭据 seam：按 configurable provider 目录读 llm 适配器声明的 `apiKeyEnv`
+   （经 `settings.describe()`；dsh 0.1.7-rc.1 起取代旧 `settings.get(ns)`），再经
+   `credentials.resolve(ref)` 取值（env → 托管凭据 refs → .env）
 1. 插件配置 `apiKey`（显式指定）
 2. 环境变量 `{PROVIDER}_API_KEY`（大写，连字符换下划线）
 3. opencode-go 兼容旧环境变量 `OPENCODE_GO_API_KEY`
@@ -224,12 +227,13 @@ dsh-mcp-manager 浮窗的默认位置（`top-right`、距顶 8px、高约 26px�
    （opencode-go 在标准 key 未命中时再查旧名 `OPENCODE_GO_API_KEY`）
 5. opencode-go 兼容：`~/.local/share/opencode/auth.json` 的
    `opencode-go`（或 `opencode`）条目
+6. 已知 provider 的凭据 ref 兜底（`deepseek-official` → `DEEPSEEK_API_KEY`）：
+   seam 不可用且 V1 链按 provider 名派生不到 ref 名时，仍与 llm 层共用同一把 key
 
-> **DeepSeek 官方适配器三级密钥链**：插件配置 `apiKey` 注入 → 凭据链推导 env
-> （provider `deepseek-official` → `DEEPSEEK_OFFICIAL_API_KEY`）→ 适配器内自查
-> `DEEPSEEK_API_KEY` 兜底（与 llm 层共用，覆盖「llm 能跑、余额接口 401」场景；
-> 该兜底属适配器实现细节，不在共享 provider-config 层特判）。三级全空时取数报
-> `no-api-key` 并降级 stale 帧（峰谷徽标仍渲染）。
+> **DeepSeek 官方适配器密钥链**：seam（`DEEPSEEK_API_KEY`）→ 插件配置/环境变量
+> （provider `deepseek-official` → `DEEPSEEK_OFFICIAL_API_KEY`）→ 已知 ref 兜底
+> （`DEEPSEEK_API_KEY`，与 llm 层同源）→ 适配器内 `process.env.DEEPSEEK_API_KEY` 自查。
+> 全空时取数报 `no-api-key` 并降级 stale 帧（峰谷徽标仍渲染，胶囊追加最后成功更新时间）。
 
 ## 路由（全部 loopback 围栏）
 

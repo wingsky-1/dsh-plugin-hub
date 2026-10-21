@@ -172,6 +172,13 @@
   white-space: nowrap;
 }
 
+/* #1163 取数失败带旧值：最后成功更新时间的弱化标注（旧数值不得单独冒充实时值） */
+.dou-stale-age {
+  margin-left: 6px;
+  opacity: 0.75;
+  font-size: 11px;
+}
+
 /* #198 峰谷倒计时徽标：峰态橙（计费高）、谷态绿（折扣中）；
    窄断点（≤380px）下与余额同排 nowrap + 省略号截断，不撑破胶囊容器 */
 .dou-peak {

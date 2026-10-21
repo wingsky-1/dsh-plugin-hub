@@ -72,6 +72,7 @@ function healthContext(layerErrors: LayerErrorSurface): UiRoutesContext {
       registry: { snapshot: () => ({ infos: [], enabled: {}, enabledProviders: [], errors: [] }) },
       config: { provider: "opencode-go" },
       cacheSize: () => 0,
+      fetchErrors: () => [],
       historyRoot: "/tmp/dou-fake-root",
     },
     trend: { stats: () => ({ days: 0, pendingRows: 0, unpersistedRows: 0, lastFlushAt: null }) },

@@ -36,6 +36,7 @@ import {
   panelFootStamp,
   pillDotLevel,
   pillTitle,
+  staleAgeText,
   statsReason,
 } from "./float-view.ts";
 import type { PanelBodyKind } from "./float-view.ts";
@@ -275,8 +276,17 @@ function conversationHost(): HTMLElement {
  */
 function applyPillLabel(labelEl: Element | null, stats: StatsResponseV2 | null): void {
   if (labelEl === null) return;
-  if (stats?.capsuleHtml) labelEl.innerHTML = stats.capsuleHtml;
-  else if (stats !== null) labelEl.textContent = currentProvider;
+  if (stats?.capsuleHtml) {
+    labelEl.innerHTML = stats.capsuleHtml;
+    // 取数失败但带旧值降级时补「最后更新」：旧数字不能单独冒充实时值（#1163）。
+    const staleNote = staleAgeText(stats);
+    if (staleNote !== "") {
+      const note = document.createElement("span");
+      note.className = `${PILL_PREFIX}stale-age`;
+      note.textContent = ` · ${staleNote}`;
+      labelEl.appendChild(note);
+    }
+  } else if (stats !== null) labelEl.textContent = currentProvider;
   else labelEl.textContent = "";
 }
 

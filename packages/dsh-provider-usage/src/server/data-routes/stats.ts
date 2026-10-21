@@ -49,6 +49,7 @@ export async function handleStats(
       reason: result.reason,
       error: result.error,
       fetchedAt: result.fetchedAt,
+      lastSuccessAt: result.lastSuccessAt ?? null,
       adapterVersion: 0,
     });
   } catch {
