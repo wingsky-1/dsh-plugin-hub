@@ -19,13 +19,13 @@
  * profile-boot 消费的官方开关）。
  *
  * 用法：
- *   node verify-isolated.mjs --dsh <path> [--port <port>] [--browser] [--keep]
+ *   node verify-isolated.mjs [--port <port>] [--browser] [--keep]
  *                            [--no-build] [--evidence-dir <dir>] [--audit]
  *                            [--audit-extra-dirs <dir>] [--no-skip-onboarding]
  *                            [--json] [-- <pkg-path>...]
- *   --dsh <path>       必填：显式指定 dsh 0.2.1-rc.2 或 0.2.0-rc.2 入口。其它版本或
- *                      读取失败一律 fail-closed，避免产出不属于目标 runtime 的
- *                      preset/验证证据。
+ *   dsh 入口     从 PATH 解析 `dsh`，要求 `dsh --version` 为 0.2.1-rc.2。找不到、
+ *                不可用、读取失败或其它版本一律 fail-closed，避免产出不属于目标
+ *                runtime 的 preset/验证证据。
  *   --port <port>      默认 3456；--port 0 自动探测真实空闲端口并打印（修复打印 0）。
  *                      探测块贴近 dsh 启动，防 EADDRINUSE 窗口。
  *   --browser          额外启动独立浏览器实例（browser-driver.mjs）：独立
@@ -153,17 +153,15 @@ import { isInside, runAudit, scanSnapshot, SKIP_DEEP, WHITELIST_V } from "./lib/
 const SCRIPT_DIR = import.meta.dirname; // Node >= 22 全程可用
 const DRIVER = join(SCRIPT_DIR, "browser-driver.mjs");
 const DEFAULT_PORT = 3456;
-// #1140：目标 runtime 双版 allowlist（精确版本，不放宽成 semver range）。
-const SUPPORTED_DSH_VERSIONS = Object.freeze(["0.2.0-rc.2", "0.2.1-rc.2"]);
-const SUPPORTED_DSH_VERSION_LABEL = SUPPORTED_DSH_VERSIONS.join(" | ");
+// 目标 runtime 单版锚定（精确版本，不放宽成 semver range）。
+const TARGET_DSH_VERSION = "0.2.1-rc.2";
 const READY_TIMEOUT_MS = 15000;
 const URL_WAIT_MS = 5000; // 访问 URL 行晚于 HTTP 就绪的等待上限（见 9b 注释）
 const LOG_TAIL_LIMIT = 4096; // 防背压：收集缓冲限长（browser-driver stderrBuf 先例）
 
-const USAGE = `用法: node verify-isolated.mjs --dsh <path> [--port <port>] [--browser] [--keep] [--no-build] [--evidence-dir <dir>] [--audit] [--audit-extra-dirs <dir>] [--no-skip-onboarding] [--json] [-- <pkg-path>...]
+const USAGE = `用法: node verify-isolated.mjs [--port <port>] [--browser] [--keep] [--no-build] [--evidence-dir <dir>] [--audit] [--audit-extra-dirs <dir>] [--no-skip-onboarding] [--json] [-- <pkg-path>...]
 
 选项：
-  --dsh <path>         必须显式传入 --dsh <path> 指向 dsh 0.2.1-rc.2 或 0.2.0-rc.2 入口；缺失、不可用、版本读取失败或其它版本均拒绝
   --port <port>        端口（默认 3456；--port 0 自动探测真实空闲端口并打印）
   --browser            额外启动独立浏览器实例（browser-driver.mjs，raw CDP 零依赖）
   --keep               结束后保留临时 DSH_HOME（默认自动删除）
@@ -177,7 +175,7 @@ const USAGE = `用法: node verify-isolated.mjs --dsh <path> [--port <port>] [--
   --                   之后为要挂载的本地插件路径（相对路径基于 cwd 绝对化；npm 包名 / git URL 原样透传）
   --help               显示本帮助
 
-环境要求：Node >= 22（同 browser-driver）。
+环境要求：PATH 中存在 dsh 且 \`dsh --version\` 为 0.2.1-rc.2（找不到、读取失败或其它版本均拒绝）；Node >= 22（同 browser-driver）。
 退出码：0 正常 / 1 启动或就绪失败 / 2 参数错误 / 130 SIGINT / 143 SIGTERM。
 
 访问 URL：dsh web 的 GUI 带鉴权，裸端口只得到 401 文本页。脚本启动后打印带令牌的
@@ -240,13 +238,13 @@ class CliError extends Error {
 // --json 非法内联值、布尔内联值、--json 末位胜出——改造前这层一条断言都没有。
 // 三条刻意处置：
 //   1. 未知选项消息补 `错误: ` 前缀（旧版这两处是全脚本唯一没带前缀的 failUsage 调用点）；
-//   2. 单横线 token 不再能充当选项取值（--port -1 / --dsh -x 等改判 ambiguous）：退出码不变，
+//   2. 单横线 token 不再能充当选项取值（--port -1 / --evidence-dir -x 等改判 ambiguous）：退出码不变，
 //      仅 3 例「<选项> <单横线> --help」由 0 变 2——是收紧方向（拒绝歧义输入而非静默收下）；
 //   3. 未知选项与缺参走 rejectBadUsage 的中文自查（内置错误对象只带 code，既不带出错 token
 //      也不带选项名，拼不出可定位原文）；parseArgsStrict 只兜剩下的边缘形态。
 // jsonMode 只在 `--` 前段探测（`--` 之后为插件参数原样透传，不参与选项解析）；
 // `--json=false` 显式关闭；`--json --bogus` 等错误路径在循环内解析到 --json
-// 即置位，随后抛错时顶层 catch 仍按 JSON 输出（P1：修复 --dsh /x -- --json
+// 即置位，随后抛错时顶层 catch 仍按 JSON 输出（P1：修复 --port -1 -- --json
 // 误开全局 jsonMode 的边界外扫描）。
 function detectJsonMode(argv) {
   for (const a of argv) {
@@ -278,7 +276,6 @@ function parsePortNumber(raw) {
  * 多一个依赖就多一份自包含负担。
  */
 const OPTION_SPEC = {
-  dsh: { type: "string" },
   port: { type: "string" },
   browser: { type: "boolean" },
   keep: { type: "boolean" },
@@ -390,7 +387,6 @@ function parseCli(argv) {
   rejectBadUsage(args);
   const { values, positionals } = parseArgsStrict(args);
   const f = {
-    dsh: values.dsh ?? null,
     port: values.port === undefined ? DEFAULT_PORT : parsePortNumber(values.port),
     browser: values.browser === true,
     keep: values.keep === true,
@@ -924,32 +920,26 @@ function resolveAuditExtraDirs(f) {
   });
 }
 
-function resolveDshEntry(f) {
-  // 0. 显式入口 + 目标版本 allowlist 校验；必须在创建隔离目录与写 preset 之前 fail-closed。
-  if (!f.dsh) {
-    throw new CliError(
-      `错误: 必须显式传入 --dsh <path>（实际版本: 未检查；期望版本: ${SUPPORTED_DSH_VERSION_LABEL}）`,
-      EXIT.USAGE,
-    );
-  }
-  const rawDsh = f.dsh;
+function resolveDshEntry() {
+  // 0. PATH 解析 dsh + 单版目标校验；必须在创建隔离目录与写 preset 之前 fail-closed。
+  const rawDsh = "dsh";
   dshAbs = resolveDsh(rawDsh);
   if (!dshAbs) {
     throw new CliError(
-      `错误: 找不到 dsh 入口: ${rawDsh}（实际版本: 不可用；期望版本: ${SUPPORTED_DSH_VERSION_LABEL}）`,
+      `错误: PATH 中找不到 dsh 入口（请安装 dsh ${TARGET_DSH_VERSION} 并确认 PATH）`,
       EXIT.USAGE,
     );
   }
   dshVersion = readDshVersion(dshAbs);
   if (!dshVersion) {
     throw new CliError(
-      `错误: 无法读取 dsh 版本: ${dshAbs}（实际版本: 读取失败；期望版本: ${SUPPORTED_DSH_VERSION_LABEL}）`,
+      `错误: 无法读取 dsh 版本: ${dshAbs}（实际版本: 读取失败；期望版本: ${TARGET_DSH_VERSION}）`,
       EXIT.USAGE,
     );
   }
-  if (!SUPPORTED_DSH_VERSIONS.includes(dshVersion)) {
+  if (dshVersion !== TARGET_DSH_VERSION) {
     throw new CliError(
-      `错误: dsh 版本不匹配: ${dshAbs}（实际版本: ${dshVersion}；期望版本: ${SUPPORTED_DSH_VERSION_LABEL}）`,
+      `错误: dsh 版本不匹配: ${dshAbs}（实际版本: ${dshVersion}；期望版本: ${TARGET_DSH_VERSION}）`,
       EXIT.USAGE,
     );
   }
@@ -1276,7 +1266,7 @@ async function main() {
   // 0a + 0（分阶段 helpers，顺序不变：先参数校验，再 dsh 入口锚定）
   const extraDirsAbs = resolveAuditExtraDirs(f);
   auditExtraDirsAbs = extraDirsAbs;
-  resolveDshEntry(f);
+  resolveDshEntry();
 
   // 1 + 1b + 2 + 3 + 4（分阶段 helpers，顺序不变）
   setupIsolatedHome(f, extraDirsAbs);
