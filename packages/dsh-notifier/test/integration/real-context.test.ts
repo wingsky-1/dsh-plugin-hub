@@ -1009,8 +1009,8 @@ describe("新增会话事件下的完成证据与生命周期契约", () => {
     expect(countKind("error")).toBe(1);
     // 失败绝不能被误报成完成：这就是完成判定只看 kind 的那条分支。
     expect(countKind("done")).toBe(0);
-    // 失败路径不派发 turn-stopping，故也不该有 turn-end。
-    expect(countKind("turn-end")).toBe(0);
+    // 这里刻意不断言 turn-end：本链从未派发 agent/turn-stopping，而 turn-end 只由该事件的翻译
+    // 产出，计数恒为 0 与失败链判定无关；写了反而会被误读成这条链的 turn-end 语义已有覆盖。
     expect(kindLine("error")?.message).toContain("模型调用失败");
     expect(warns.some((line) => line.includes("完成判定跳过") && line.includes("kind=error"))).toBe(
       true,
@@ -1039,8 +1039,8 @@ describe("新增会话事件下的完成证据与生命周期契约", () => {
     await unmount();
   });
 
-  it("重放/重复事件：同一条 turn/end 推送两次、idle 再来一次，完成通知只有一条", async () => {
-    const { root, unmount } = await mount({});
+  it("重放/重复事件：完成后重新进入 running 再重放同一 turn/end，完成通知仍只有一条", async () => {
+    const { root, warns, unmount } = await mount({});
     const events: SessionEvent[] = [];
     const agent = fakeAgent("itest-replay", events);
     const session = fakeSession("itest-replay");
@@ -1053,10 +1053,25 @@ describe("新增会话事件下的完成证据与生命周期契约", () => {
     root.emit("session/event", session, completed);
     root.emit("agent/status", { agent, status: "idle" });
     root.emit("agent/status", { agent, status: "idle" });
-
     await pollUntil(() => countKind("done") === 1, "重放下的完成通知");
+
+    // 首次 done 之后重新进入 running，再重放同一条 completed：这一轮 running 标记重新置位，
+    // 必然进入结算，唯一能挡住第二条 done 的就是「turn 不比记忆里的新」这条去重判据。
+    root.emit("agent/status", { agent, status: "running" });
+    root.emit("session/event", session, completed);
+    root.emit("agent/status", { agent, status: "idle" });
+
     await settleHistory();
     expect(countKind("done")).toBe(1);
+    // 诊断能证伪「没进结算」：重放那一轮确实结算过，并被同一 turn 挡下（而不是被 running 标记跳过）。
+    expect(
+      warns.some(
+        (line) =>
+          line.includes("完成判定跳过") &&
+          line.includes("推送turn=4") &&
+          line.includes("记忆turn=4"),
+      ),
+    ).toBe(true);
     await unmount();
   });
 
