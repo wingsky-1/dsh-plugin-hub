@@ -19,6 +19,8 @@
 import { readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import type { Context } from "@deepseek-ai/cordis";
+import type { SettingsForms } from "@deepseek-ai/dsh-settings";
 import { dshHome as dshHomeShared, userHome } from "../../../../../shared/dsh-home.js";
 
 /** 插件配置提供的 apiEndpoint/apiKey（可选）。 */
@@ -78,6 +80,9 @@ export function opencodeAuthFile(): string {
   return join(userHome(), ".local", "share", "opencode", "auth.json");
 }
 
+/** seam 诊断出口（每条漂移面调一次；服务缺席不调用）。 */
+export type ProviderConfigDiagnosticSink = (message: string) => void;
+
 /**
  * 解析 provider 配置（DSH 凭据 seam + V1 配置链兜底）。
  *
@@ -85,6 +90,7 @@ export function opencodeAuthFile(): string {
  * @param ctx - 插件 apply 收到的 cordis 上下文；用于访问 llm/settings/credentials
  *   服务（经可选访问取用，缺席时回落 V1 链，不引入硬依赖）。
  * @param input - 插件配置提供（apiEndpoint/apiKey）。
+ * @param onDiagnostic - seam 诊断出口：服务在、方法不在时各面一条（服务缺席不调用）。
  *
  * apiKey 解析优先级：
  *   0. DSH 凭据 seam（见 resolveViaCredentialSeam）
@@ -98,11 +104,12 @@ export async function resolveProviderConfig(
   provider: string,
   ctx?: unknown,
   input?: ProviderConfigInput,
+  onDiagnostic?: ProviderConfigDiagnosticSink,
 ): Promise<ResolvedProviderConfig> {
   const apiEndpoint = input?.apiEndpoint?.trim() || undefined;
 
   // 0. DSH 通用凭据 seam（最高优先，且不替换 V1 链）
-  const seamKey = await resolveViaCredentialSeam(provider, ctx);
+  const seamKey = await resolveViaCredentialSeam(provider, ctx, onDiagnostic);
   if (seamKey !== undefined) return { apiEndpoint, apiKey: seamKey };
 
   // 1–5. V1 配置链兜底
@@ -114,24 +121,37 @@ export async function resolveProviderConfig(
   return { apiEndpoint, apiKey: await resolveViaKnownCredentialRef(provider, ctx) };
 }
 
-/** configurable provider 目录条目（seam 沿线形状）。 */
-interface ConfigurableProviderEntry {
-  provider: string;
-  settingsNs: string;
-  settingsPath?: string[];
-}
+/**
+ * configurable provider 目录条目：官方 `Context["llm"]` 目录读面的窄投影
+ * （只取 seam 用到的三键；官方条目其余字段不进入本域类型面）。
+ */
+type ConfigurableProviderEntry = Pick<
+  ReturnType<Context["llm"]["listConfigurableProviders"]>[number],
+  "provider" | "settingsNs" | "settingsPath"
+>;
 
 /** cordis 上下文在 seam 沿线关心的两个面（可选访问，缺席回落 V1 链）。 */
 interface CredentialSeamContext {
-  llm?: { listConfigurableProviders?: () => ConfigurableProviderEntry[] };
+  /** 官方 `Context["llm"]` 的目录读面（partial：服务在、方法可能不在）。 */
+  llm?: Partial<Pick<Context["llm"], "listConfigurableProviders">>;
+  /** cordis 按名取服务（`ctx.get(name)`）；宿主 ctx 恒有，测试鸭子可为空。 */
   get?: (name: string) => unknown;
 }
 
-interface SettingsService {
-  /** 当前宿主读面：返回按 ns 可定位的条目描述（含 value 层）。dsh 0.1.7-rc.1 起取代旧 get(ns)。 */
-  describe?: (options?: { redactSecrets?: boolean }) => unknown;
-}
+/**
+ * settings 读面：从官方 `SettingsForms` 派生（`@deepseek-ai/dsh-settings@0.2.1-rc.2`，
+ * 与 pnpm catalog 锁版一致）。Partial 表达「服务对象在、方法可能不在」——方法缺失不再
+ * 被当作无类型鸭子静默接受，而由 seamDiagnosticOf 判为宿主 API 漂移。
+ */
+type SettingsService = Partial<Pick<SettingsForms, "describe">>;
 
+/**
+ * credentials 服务面：**显式豁免**——官方 catalog 没有 `@deepseek-ai/dsh-credentials*`
+ * 类型包（`ctx.credentials` 由宿主运行时提供，其 .d.ts 未进 catalog），无法像
+ * SettingsService 一样从官方类型派生，故保留 duck 形状。方法存在性由 seamDiagnosticOf
+ * 在运行时判定（有对象无 resolve 即报 API 漂移），不靠类型层兜底。
+ * 若 catalog 日后收录官方 credentials 类型包，应改为与 SettingsService 同形的派生。
+ */
 interface CredentialsService {
   resolve?: (ref: string) => Promise<{ value?: string } | undefined>;
 }
@@ -168,9 +188,11 @@ export function findProviderDirEntry(
   provider: string,
 ): ConfigurableProviderEntry | undefined {
   if (!isCredentialSeamContext(ctx)) return undefined;
-  const listProviders = ctx.llm?.listConfigurableProviders;
+  const llm = ctx.llm;
+  if (llm === undefined) return undefined;
+  const listProviders = llm.listConfigurableProviders;
   if (typeof listProviders !== "function") return undefined;
-  return listProviders.call(ctx.llm).find((entry) => entry.provider === provider);
+  return listProviders.call(llm).find((entry) => entry.provider === provider);
 }
 
 /** 沿 settingsPath 下钻到 provider profile 对象（覆盖 pi-ai 等嵌套命名空间）。 */
@@ -225,6 +247,58 @@ export function seamServicesOf(ctx: unknown): CredentialSeamServices | undefined
   return { settingsGet, credentialsResolve: credentials.resolve };
 }
 
+/** seam 漂移诊断条目（service = 漂移面；message = 可直接登记进 health.errors 的文案）。 */
+export interface SeamDiagnostic {
+  service: "settings" | "credentials";
+  message: string;
+}
+
+/**
+ * seam 诊断（纯函数）：把运行时两种形态分开——
+ * - **服务缺席**：`ctx.get("settings"|"credentials")` 无对象，属正常回落（V1 链兜底），不报；
+ * - **方法不在**：服务对象在、`describe()`/`resolve()` 不在，属宿主 API 漂移，必须报。
+ * 旧 `settings.get(ns)` 形状同属「服务在、describe 不在」，文案会点明旧形状。
+ * @returns 漂移条目（空数组 = 无漂移；顺序固定 settings → credentials）。
+ */
+/** settings 面漂移判定（纯函数）：服务对象在但 describe() 不在时给出一条诊断。 */
+function settingsDriftOf(settings: unknown): SeamDiagnostic | undefined {
+  if (!isSettingsService(settings) || typeof settings.describe === "function") return undefined;
+  const asRecord: Record<string, unknown> | undefined = isIndexable(settings)
+    ? settings
+    : undefined;
+  const legacyGet = asRecord !== undefined && typeof asRecord.get === "function";
+  return {
+    service: "settings",
+    message: legacyGet
+      ? "settings 服务在但缺少 describe()，只见旧 get(ns) 形状（宿主 API 漂移：seam 读面自 dsh 0.1.7-rc.1 起为 describe()）"
+      : "settings 服务在但缺少 describe()（宿主 API 漂移，凭据 seam 已回落 V1 链）",
+  };
+}
+
+/** credentials 面漂移判定（纯函数）：服务对象在但 resolve() 不在时给出一条诊断。 */
+function credentialsDriftOf(credentials: unknown): SeamDiagnostic | undefined {
+  if (!isCredentialsService(credentials) || typeof credentials.resolve === "function") {
+    return undefined;
+  }
+  return {
+    service: "credentials",
+    message: "credentials 服务在但缺少 resolve(ref)（宿主 API 漂移，凭据 seam 已回落 V1 链）",
+  };
+}
+
+export function seamDiagnosticOf(ctx: unknown): SeamDiagnostic[] {
+  if (!isCredentialSeamContext(ctx) || typeof ctx.get !== "function") return [];
+  // 与 seamServicesOf 同款 anyCtx 别名：诊断只读同一 seam 面，不新增宿主服务消费点
+  // （upstream-contract-warn 的 S2 只认字面量 ctx 接收者，别名形态不计入）。
+  const anyCtx = ctx;
+  const out: SeamDiagnostic[] = [];
+  const settings = settingsDriftOf(anyCtx.get?.("settings"));
+  if (settings !== undefined) out.push(settings);
+  const credentials = credentialsDriftOf(anyCtx.get?.("credentials"));
+  if (credentials !== undefined) out.push(credentials);
+  return out;
+}
+
 /**
  * DSH 通用凭据 seam：由 configurable provider 目录驱动，读 provider 的 settings
  * 命名空间（llm adapter 声明的 `apiKeyEnv` 凭据引用名），再经 `credentials.resolve`
@@ -234,11 +308,16 @@ export function seamServicesOf(ctx: unknown): CredentialSeamServices | undefined
 async function resolveViaCredentialSeam(
   provider: string,
   ctx?: unknown,
+  onDiagnostic?: ProviderConfigDiagnosticSink,
 ): Promise<string | undefined> {
   const dir = findProviderDirEntry(ctx, provider);
   if (dir === undefined) return undefined;
   const services = seamServicesOf(ctx);
-  if (services === undefined) return undefined;
+  if (services === undefined) {
+    // 服务在、方法不在 = API 漂移（fail-loud）；服务缺席 = 正常回落（诊断为空）。
+    for (const diagnostic of seamDiagnosticOf(ctx)) onDiagnostic?.(diagnostic.message);
+    return undefined;
+  }
   const ref = apiKeyEnvOf(
     drillSettingsPath(services.settingsGet(dir.settingsNs), dir.settingsPath ?? []),
   );
