@@ -35,4 +35,6 @@ export const STEPS: readonly UpgradeStep<UpgradeDeps>[] = [
   { fromVersion: "0.2.7", targetVersion: "0.2.8", run: tickUpgradeVersion },
   // 0.2.8 → 0.2.9 为空步（本版无 provider-usage 存储形态变化）：run 指共享空函数。
   { fromVersion: "0.2.8", targetVersion: "0.2.9", run: tickUpgradeVersion },
+  // 0.2.9 → 0.2.10 为空步（本版无 provider-usage 存储形态变化）：run 指共享空函数，只推进刻度。
+  { fromVersion: "0.2.9", targetVersion: "0.2.10", run: tickUpgradeVersion },
 ];

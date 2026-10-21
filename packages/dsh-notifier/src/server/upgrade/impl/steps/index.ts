@@ -41,4 +41,6 @@ export const STEPS: readonly UpgradeStep<UpgradeDeps>[] = [
   { fromVersion: "0.2.7", targetVersion: "0.2.8", run: tickUpgradeVersionSync },
   // 0.2.8 → 0.2.9：配置形态清理（#1016 S3）——读面不再兜底，兜底搬到这里。
   { fromVersion: "0.2.8", targetVersion: "0.2.9", run: migrateToV029 },
+  // 0.2.9 → 0.2.10 为空步（本版无 notifier 存储形态变化）：run 指共享空函数，只推进刻度。
+  { fromVersion: "0.2.9", targetVersion: "0.2.10", run: tickUpgradeVersionSync },
 ];
