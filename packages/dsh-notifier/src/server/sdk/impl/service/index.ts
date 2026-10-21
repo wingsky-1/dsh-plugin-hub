@@ -8,6 +8,7 @@ import type {
   PipelinePort,
   SdkDeps,
 } from "../../deps.ts";
+import type { NotificationLocale } from "../../../shared/interface.ts";
 import { kindRegistry } from "../registry/index.ts";
 import type { KindRegistration, RegisteredKind } from "../registry/type.ts";
 import type { NotifierService, NotifyRequest } from "./type.ts";
@@ -18,7 +19,9 @@ type WriteOutcome = Awaited<ReturnType<ConfigPort["writeConfig"]>>;
 
 /** 缺省标题。不留空标题：系统通知里标题为空的表现是整条通知看起来像一条残缺记录；取值沿用重写前对外发送的缺省
  * 文案——用户看到的东西不该因为一次内部重构而变。 */
-const DEFAULT_TITLE = "DSH 通知";
+function defaultTitle(locale: NotificationLocale): string {
+  return locale === "en" ? "DSH notification" : "DSH 通知";
+}
 
 /** 未装配的告警文案：占位能力被真的读到，说明装配守卫有洞。 */
 const NOT_INSTALLED = "dsh-notifier: 对外服务面尚未装配";
@@ -50,6 +53,7 @@ const UNINSTALLED: SdkDeps = {
       throw new Error(NOT_INSTALLED);
     },
   },
+  readLocale: () => "zh",
 };
 
 /** 是不是「命名空间限定」的形态：冒号两侧都非空。`x:` 与 `:x` 在模板字面量类型里合法，到了裁决层却是两个查不到
@@ -89,7 +93,10 @@ class HostedService implements NotifierService {
   /** 类型取自契约上的字面量：改一处不改另一处是编译错误。 */
   readonly apiVersion: NotifierService["apiVersion"] = 2;
 
-  constructor(private readonly pipeline: PipelinePort) {}
+  constructor(
+    private readonly pipeline: PipelinePort,
+    private readonly readLocale: () => NotificationLocale,
+  ) {}
 
   /** 登记一种动态通知种类。非法入参**抛错**而不是静默忽略：静默的代价不在本插件——插件作者看到的现象是「通知没
    * 发出去」，而设置页上根本没有他那一项，没有任何线索指向「你的 id 拼错了」。 */
@@ -123,7 +130,8 @@ class HostedService implements NotifierService {
     const title = request.title;
     const submit: SubmitRequest = {
       kind,
-      title: typeof title === "string" && title.length > 0 ? title : DEFAULT_TITLE,
+      title:
+        typeof title === "string" && title.length > 0 ? title : defaultTitle(this.readLocale()),
       body,
     };
     const severity = request.severity;
@@ -140,13 +148,18 @@ class SdkService {
   private deps: SdkDeps = UNINSTALLED;
   /** 摘除器：本域挂在宿主上的东西只有服务面一件，但按清单收口，将来多一件不用改结构。 */
   private disposers: Array<() => void> = [];
+  /** 当前服务面的 locale 读取器；释放时切回中文，旧引用仍可安全调用。 */
+  private readLocale: () => NotificationLocale = () => "zh";
 
   /** 装配：构造服务对象并交出去。 */
   install(deps: SdkDeps): void {
     if (this.installed) throw new Error("dsh-notifier: sdk 域只能装配一次");
     this.installed = true;
     this.deps = deps;
-    this.disposers.push(deps.expose.provide(new HostedService(deps.pipeline)));
+    this.readLocale = deps.readLocale ?? (() => "zh");
+    this.disposers.push(
+      deps.expose.provide(new HostedService(deps.pipeline, () => this.readLocale())),
+    );
   }
 
   /** 卸载：把服务面从上下文上收回来。重复调用无害——卸载链可能走到不止一次。 */
@@ -155,6 +168,7 @@ class SdkService {
     this.disposers = [];
     this.installed = false;
     this.deps = UNINSTALLED;
+    this.readLocale = () => "zh";
   }
 
   /** 清单：登记项合并确认名单（确认名单实时读设置，不取装配期快照）。 */

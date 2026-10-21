@@ -1,6 +1,7 @@
 /** sdk 域依赖声明：只声明「我需要外部什么」，声明面**只有类型**；能力按提供方分组（本域将来多用一样时装配那侧不用改）。 */
 import type * as configApi from "../config/interface.ts";
 import type * as pipelineApi from "../pipeline/interface.ts";
+import type { NotificationLocale } from "../shared/interface.ts";
 import type { NotifierService } from "./impl/service/type.ts";
 
 /** config 域给下游的能力面：读确认名单，写确认动作。 */
@@ -25,6 +26,8 @@ export interface SdkDeps {
   readonly config: ConfigPort;
   /** 下游裁决管线：外部请求与宿主事件走**同一条**，不另开旁路。 */
   readonly pipeline: PipelinePort;
+  /** 补齐缺省标题时现读的语言；旧夹具不提供时回退中文。 */
+  readonly readLocale?: () => NotificationLocale;
 }
 
 export type {

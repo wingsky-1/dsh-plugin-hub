@@ -6,7 +6,7 @@
  */
 export type { FileWrite } from "./file-io.ts";
 export { readTextFileSync, writeTextAtomic, writeTextAtomicSync } from "./file-io.ts";
-export type { LoggerPort } from "./type.ts";
+export type { LoggerPort, NotificationLocale } from "./type.ts";
 export { truncateCodePoints } from "./text.ts";
 export type { DeliverReason, ProducedReason, ReasonCode, ReasonParams } from "./reason.ts";
 export {

@@ -2,6 +2,7 @@
  * dsh-notifier events 域 —— 订阅宿主事件、转交翻译、把请求递给下游。
  * 本块只做搬运不含判断；状态机的装配与卸载也在这里成对发生。
  */
+import type { NotificationLocale } from "../../../shared/interface.ts";
 import type { EventsDeps, PipelinePort } from "../../deps.ts";
 import { agentStates } from "../state/index.ts";
 import {
@@ -28,18 +29,27 @@ class EventListener {
     this.installed = true;
     agentStates.install({ logger: deps.logger, agents: deps.agents });
     const { events: port, pipeline } = deps;
+    const readLocale = deps.readLocale ?? (() => "zh" as NotificationLocale);
     this.releases.push(
-      port.onApprovalRequest((request) => forward(pipeline, translateApproval(request))),
-      port.onUserQuestion((request) => forward(pipeline, translateUserQuestion(request))),
+      port.onApprovalRequest((request) =>
+        forward(pipeline, translateApproval(request, readLocale())),
+      ),
+      port.onUserQuestion((request) =>
+        forward(pipeline, translateUserQuestion(request, readLocale())),
+      ),
       port.onSessionEvent((sessionId, event) =>
         forward(pipeline, translateSessionEvent(sessionId, event)),
       ),
       // agent 四个事件把官方载荷整份转给翻译：翻出哪一类通知要看会话日志、header 与
       // turn 证据，这些都在载荷里的 Agent 对象上，本块不做拆分。
-      port.onAgentStatus((payload) => forward(pipeline, translateAgentStatus(payload))),
+      port.onAgentStatus((payload) =>
+        forward(pipeline, translateAgentStatus(payload, readLocale())),
+      ),
       port.onAgentDisposed((payload) => forward(pipeline, translateAgentDisposed(payload))),
-      port.onAgentTurnStopping((payload) => forward(pipeline, translateTurnStopping(payload))),
-      port.onAgentError((payload) => forward(pipeline, translateAgentError(payload))),
+      port.onAgentTurnStopping((payload) =>
+        forward(pipeline, translateTurnStopping(payload, readLocale())),
+      ),
+      port.onAgentError((payload) => forward(pipeline, translateAgentError(payload, readLocale()))),
     );
   }
 

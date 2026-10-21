@@ -1,13 +1,24 @@
 /** api 域 probe 块 dry-run 的形状与预算常量。 */
 import type { NotifyRequest, RawSettingValue } from "../../../deps.ts";
+import type { NotificationLocale } from "../../../../shared/interface.ts";
 
-/** 测试通知的固定文案。不引入自由文本面：它验证的是链路本身而不是文案；取值沿用重写前的文案，
- * 用户看到的那两句不该因为一次内部重构而变（原先住在 probe/index.ts，dry-run 与老路共用，收到此处只留一份）。 */
-export const TEST_NOTIFICATION: NotifyRequest = {
-  kind: "test",
-  title: "DSH：测试通知",
-  body: "通知链路工作正常（此通知来自测试按钮）",
-};
+/** 测试通知的固定文案；每条请求按当前语言生成，dry-run 与普通测试共用。 */
+export function testNotification(locale: NotificationLocale): NotifyRequest {
+  return locale === "en"
+    ? {
+        kind: "test",
+        title: "DSH: Test notification",
+        body: "Notifications are working (sent using the test button)",
+      }
+    : {
+        kind: "test",
+        title: "DSH：测试通知",
+        body: "通知链路工作正常（此通知来自测试按钮）",
+      };
+}
+
+/** 中文固定文案，保留旧导出。 */
+export const TEST_NOTIFICATION: NotifyRequest = testNotification("zh");
 
 /** dry-run 结果状态：与 DeliverResult 同值（ok 无理由，failed/skipped 带理由）。 */
 export type DryRunStatus = "ok" | "failed" | "skipped";

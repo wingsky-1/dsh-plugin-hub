@@ -4,6 +4,10 @@
  */
 import type { Context } from "@deepseek-ai/cordis";
 import type {} from "@deepseek-ai/dsh-agent";
+import type {
+  LOCALE_SETTINGS_NAMESPACE as HostLocaleNamespace,
+  LOCALE_PREFERENCE_FIELD as HostLocalePreferenceField,
+} from "@deepseek-ai/dsh-client-locale";
 import type {} from "@deepseek-ai/dsh-session";
 import type {} from "@deepseek-ai/dsh-settings";
 import type {} from "@deepseek-ai/dsh-user-approval";
@@ -20,7 +24,7 @@ import type { LegacySettingsFace } from "./server/upgrade/deps.ts";
 import type { ExposePort } from "./server/sdk/deps.ts";
 import * as sdkApi from "./server/sdk/interface.ts";
 import type { NotifierService } from "./server/sdk/interface.ts";
-import type { LoggerPort } from "./server/shared/interface.ts";
+import type { LoggerPort, NotificationLocale } from "./server/shared/interface.ts";
 import * as storesApi from "./server/stores/interface.ts";
 import { installUpgrade, releaseUpgrade } from "./server/upgrade/interface.ts";
 import { createDisposerStack, type DisposerStack } from "./shared/interface.ts";
@@ -33,6 +37,10 @@ export type { NotifierService } from "./server/sdk/interface.ts";
 
 /** 宿主 settings 服务的名字。它是宿主的知识，不是本插件的 ABI。 */
 const SETTINGS_SERVICE = "settings";
+
+/** 这两个字面量归官方 locale 契约所有；类型锚让上游改名或改字段时编译期直接暴露。 */
+const LOCALE_NAMESPACE: typeof HostLocaleNamespace = "locale";
+const LOCALE_PREFERENCE_FIELD: typeof HostLocalePreferenceField = "preference";
 
 /** 稳定的 cordis 插件名。 */
 export const name = "notifier";
@@ -125,6 +133,8 @@ interface HostPort {
   readonly legacySettings: LegacySettingsFace;
   /** 宿主出口：把服务面挂上上下文。服务名是 sdk 域的 ABI，组合根不参与命名。 */
   readonly expose: ExposePort;
+  /** DSH 当前显式语言；每次调用现读，供各域在生成通知时选择产品文案。 */
+  readonly readLocale: () => NotificationLocale;
 }
 
 function bindHost(ctx: Context): HostPort {
@@ -154,6 +164,14 @@ function bindHost(ctx: Context): HostPort {
     expose: {
       provide: (service) =>
         ctx.provide<typeof sdkApi.NOTIFIER_SERVICE>(sdkApi.NOTIFIER_SERVICE, service),
+    },
+    readLocale: () => {
+      const locale = ctx.settings
+        .describe()
+        .find((descriptor) => descriptor.ns === LOCALE_NAMESPACE)?.value;
+      if (typeof locale !== "object" || locale === null) return "zh";
+      const preference = (locale as Record<string, unknown>)[LOCALE_PREFERENCE_FIELD];
+      return preference === "en" ? "en" : "zh";
     },
     events: {
       // 审批事件是 waterfall：本插件只旁观，转发之后必须 next()，漏掉就等于替所有人否决了
@@ -286,6 +304,7 @@ async function assemble(
     agents: host.agents,
     logger: host.logger,
     pipeline: pipelineApi,
+    readLocale: host.readLocale,
   });
   stack.own(eventsApi.releaseEvents);
 
@@ -294,6 +313,7 @@ async function assemble(
     expose: host.expose,
     config: configApi,
     pipeline: pipelineApi,
+    readLocale: host.readLocale,
   });
   stack.own(sdkApi.releaseSdk);
 
@@ -307,6 +327,7 @@ async function assemble(
     pipeline: pipelineApi,
     kinds: sdkApi,
     channels: channelsApi,
+    readLocale: host.readLocale,
   });
   stack.own(apiApi.releaseApi);
 }

@@ -1,139 +1,218 @@
 /**
- * dsh-notifier events 域 —— 通知文案单表（本域翻得出来的 6 个内置 kind），标题与正文逐字沿用旧实现。
- * `test` 不在这里：它不对应任何宿主事件，文案归唯一产出方（api 域的测试端点）。
+ * dsh-notifier events 域 —— 6 个内置通知的双语产品文案。
+ *
+ * 正文结构只有一份，语言只替换产品词和时长单位；任务名、问题、理由与错误原文始终是数据。
  */
-import type { KindText, NotifyDetail } from "./type.ts";
+import type { NotificationLocale } from "../../../shared/interface.ts";
+import type { KindText } from "./type.ts";
 
-/** 毫秒 → 人类可读耗时（如 "45 秒" / "2 分 15 秒" / "1 小时 2 分 5 秒"）。
- *  导出是为了让这条口径可表驱动：它的产物是纯字符串，走宿主事件断言要造一整条事件链。 */
-export function formatDuration(ms: number): string {
+interface LocaleText {
+  readonly askWithTask: (task: string, tool: string) => string;
+  readonly askWithoutTask: (tool: string) => string;
+  readonly reason: (reason: string) => string;
+  readonly askFooter: string;
+  readonly questionWithTask: (task: string) => string;
+  readonly questionWithoutTask: string;
+  readonly question: (question: string) => string;
+  readonly questionFooter: string;
+  readonly doneWithTask: (task: string) => string;
+  readonly doneWithoutTask: string;
+  readonly subagentDoneWithTask: (task: string) => string;
+  readonly subagentDoneWithoutTask: string;
+  readonly duration: (duration: string) => string;
+  readonly hours: (value: number) => string;
+  readonly minutes: (value: number) => string;
+  readonly seconds: (value: number) => string;
+  readonly errorWithTask: (task: string) => string;
+  readonly errorWithoutTask: string;
+  readonly errorTurn: (turn: number, step: number | undefined, message: string) => string;
+  readonly errorMessage: (message: string) => string;
+  readonly turnEndWithTaskTurn: (task: string, turn: number) => string;
+  readonly turnEndWithTaskWithoutTurn: (task: string) => string;
+  readonly turnEndWithoutTaskWithTurn: (turn: number) => string;
+  readonly turnEndWithoutTaskWithoutTurn: string;
+  readonly titles: Readonly<Record<TranslatedKind, string>>;
+}
+
+const ZH: LocaleText = {
+  askWithTask: (task, tool) => `任务「${task}」等待审批（工具「${tool}」）`,
+  askWithoutTask: (tool) => `工具「${tool}」等待审批`,
+  reason: (reason) => `理由：${reason}`,
+  askFooter: "请到 DSH 界面确认或拒绝",
+  questionWithTask: (task) => `任务「${task}」需要你回答`,
+  questionWithoutTask: "有提问需要你回答",
+  question: (question) => `问题：${question}`,
+  questionFooter: "请到 DSH 界面回答",
+  doneWithTask: (task) => `任务「${task}」已完成`,
+  doneWithoutTask: "后台任务已完成",
+  subagentDoneWithTask: (task) => `子任务「${task}」已完成`,
+  subagentDoneWithoutTask: "子任务已完成",
+  duration: (duration) => `耗时：${duration}`,
+  hours: (value) => `${value} 小时`,
+  minutes: (value) => `${value} 分`,
+  seconds: (value) => `${value} 秒`,
+  errorWithTask: (task) => `任务「${task}」执行出错`,
+  errorWithoutTask: "任务执行出错",
+  errorTurn: (turn, step, message) => `第 ${turn} 轮${step ? `第 ${step} 步` : ""}：${message}`,
+  errorMessage: (message) => `错误：${message}`,
+  turnEndWithTaskTurn: (task, turn) => `任务「${task}」第 ${turn} 轮工作已完成`,
+  turnEndWithTaskWithoutTurn: (task) => `任务「${task}」工作已完成`,
+  turnEndWithoutTaskWithTurn: (turn) => `第 ${turn} 轮工作已完成`,
+  turnEndWithoutTaskWithoutTurn: "工作已完成",
+  titles: {
+    ask: "DSH：等待审批",
+    question: "DSH：向你提问",
+    done: "DSH：任务完成",
+    "subagent-done": "DSH：子任务完成",
+    error: "DSH：任务出错",
+    "turn-end": "DSH：轮次完成",
+  },
+};
+
+const EN: LocaleText = {
+  askWithTask: (task, tool) => `Approval needed for task "${task}" (tool "${tool}")`,
+  askWithoutTask: (tool) => `Approval needed for tool "${tool}"`,
+  reason: (reason) => `Reason: ${reason}`,
+  askFooter: "Confirm or deny in the DSH window",
+  questionWithTask: (task) => `Task "${task}" is waiting for your answer`,
+  questionWithoutTask: "There is a question waiting for your answer",
+  question: (question) => `Question: ${question}`,
+  questionFooter: "Answer in the DSH window",
+  doneWithTask: (task) => `Task "${task}" completed`,
+  doneWithoutTask: "Background task completed",
+  subagentDoneWithTask: (task) => `Subagent task "${task}" completed`,
+  subagentDoneWithoutTask: "Subagent task completed",
+  duration: (duration) => `Duration: ${duration}`,
+  hours: (value) => `${value}h`,
+  minutes: (value) => `${value}m`,
+  seconds: (value) => `${value}s`,
+  errorWithTask: (task) => `Task "${task}" failed`,
+  errorWithoutTask: "Task failed",
+  errorTurn: (turn, step, message) => `Turn ${turn}${step ? `, step ${step}` : ""}: ${message}`,
+  errorMessage: (message) => `Error: ${message}`,
+  turnEndWithTaskTurn: (task, turn) => `Turn ${turn} of task "${task}" completed`,
+  turnEndWithTaskWithoutTurn: (task) => `A turn of task "${task}" completed`,
+  turnEndWithoutTaskWithTurn: (turn) => `Turn ${turn} completed`,
+  turnEndWithoutTaskWithoutTurn: "Turn completed",
+  titles: {
+    ask: "DSH: Approval needed",
+    question: "DSH: Question for you",
+    done: "DSH: Task completed",
+    "subagent-done": "DSH: Subagent task completed",
+    error: "DSH: Task failed",
+    "turn-end": "DSH: Turn completed",
+  },
+};
+
+const LOCALE_TEXT: Readonly<Record<NotificationLocale, LocaleText>> = { zh: ZH, en: EN };
+
+function durationParts(ms: number): readonly [number, number, number] {
   const totalSeconds = Math.max(0, Math.round(Number(ms) / 1000));
-  const hours = Math.floor(totalSeconds / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const seconds = totalSeconds % 60;
+  return [
+    Math.floor(totalSeconds / 3600),
+    Math.floor((totalSeconds % 3600) / 60),
+    totalSeconds % 60,
+  ];
+}
+
+/** 毫秒 → 指定语言的可读耗时。 */
+export function formatDurationForLocale(ms: number, locale: NotificationLocale): string {
+  const [hours, minutes, seconds] = durationParts(ms);
   const parts: string[] = [];
-  if (hours > 0) parts.push(`${hours} 小时`);
-  if (minutes > 0) parts.push(`${minutes} 分`);
-  if (seconds > 0 || parts.length === 0) parts.push(`${seconds} 秒`);
+  const text = LOCALE_TEXT[locale];
+  if (hours > 0) parts.push(text.hours(hours));
+  if (minutes > 0) parts.push(text.minutes(minutes));
+  if (seconds > 0 || parts.length === 0) parts.push(text.seconds(seconds));
   return parts.join(" ");
 }
 
-/** 常见工具名 → 中文可读名（用用户看得懂的动作描述，而不是内部标识）。 */
-const TOOL_LABELS: Record<string, string> = {
-  pwsh: "PowerShell 命令",
-  bash: "终端命令",
-  web_search: "联网搜索",
-  read: "读取文件",
-  write: "写入文件",
-  edit: "编辑文件",
-  grep: "搜索文件内容",
-  glob: "查找文件",
-  subagent: "子代理任务",
-  subagent_fork: "子代理任务",
-  ssh_exec: "SSH 远程执行",
-  ssh_upload: "SSH 上传文件",
-  ssh_download: "SSH 下载文件",
-  ssh_tunnel: "SSH 端口转发",
-  ssh_cluster: "SSH 集群执行",
-  ask_user_question: "向你提问",
-  todo_write: "更新任务清单",
-  job_list: "查看后台任务",
-  job_output: "查看任务输出",
-  job_kill: "停止后台任务",
-  workflow: "工作流编排",
-  ralph: "Ralph 循环执行",
-  memory_add: "写入项目记忆",
-  memory_search: "检索项目记忆",
-  skill: "加载技能",
-  create_goal: "创建目标",
-  get_goal: "查看目标",
-  update_goal: "更新目标",
-};
-
-/**
- * 工具名美化：常见工具查上表；`mcp__server__tool` 展开成「MCP 服务器 "server" 的工具 "tool"」；
- * 其余原样。导出是为了让映射表可表驱动：它不是事件的产物，而是文案口径。
- */
-export function prettyToolName(name?: string): string {
-  const text = name ?? "?";
-  if (Object.prototype.hasOwnProperty.call(TOOL_LABELS, text)) return TOOL_LABELS[text];
-  const parts = text.split("__");
-  if (parts.length >= 3 && parts[0] === "mcp") {
-    return `MCP 服务器 "${parts[1]}" 的工具 "${parts.slice(2).join("__")}"`;
-  }
-  return text;
+/** 毫秒 → 中文可读耗时；保留旧导出给现有调用方。 */
+export function formatDuration(ms: number): string {
+  return formatDurationForLocale(ms, "zh");
 }
 
-/**
- * kind → 文案单表：杜绝「表 + switch 分支」双份维护的漂移；时间由系统通知呈现，正文不重复时间戳。
- */
-export const NOTIFY_KINDS = {
-  ask: {
-    title: "DSH：等待审批",
-    body: (detail: NotifyDetail) => {
-      const lines: string[] = [];
-      if (detail.taskTitle)
-        lines.push(`任务「${detail.taskTitle}」等待审批（工具「${prettyToolName(detail.tool)}」）`);
-      else lines.push(`工具「${prettyToolName(detail.tool)}」等待审批`);
-      if (detail.reason) lines.push(`理由：${detail.reason}`);
-      lines.push("请到 DSH 界面确认或拒绝");
-      return lines.join("\n");
-    },
-  },
-  question: {
-    title: "DSH：向你提问",
-    body: (detail: NotifyDetail) => {
-      const lines: string[] = [];
-      if (detail.taskTitle) lines.push(`任务「${detail.taskTitle}」需要你回答`);
-      else lines.push("有提问需要你回答");
-      if (detail.question) lines.push(`问题：${detail.question}`);
-      lines.push("请到 DSH 界面回答");
-      return lines.join("\n");
-    },
-  },
-  done: {
-    title: "DSH：任务完成",
-    body: (detail: NotifyDetail) => {
-      const lines: string[] = [];
-      if (detail.taskTitle) lines.push(`任务「${detail.taskTitle}」已完成`);
-      else lines.push("后台任务已完成");
-      lines.push(`耗时：${formatDuration(detail.durationMs ?? 0)}`);
-      return lines.join("\n");
-    },
-  },
-  "subagent-done": {
-    title: "DSH：子任务完成",
-    body: (detail: NotifyDetail) => {
-      const lines: string[] = [];
-      if (detail.taskTitle) lines.push(`子任务「${detail.taskTitle}」已完成`);
-      else lines.push("子任务已完成");
-      lines.push(`耗时：${formatDuration(detail.durationMs ?? 0)}`);
-      return lines.join("\n");
-    },
-  },
-  error: {
-    title: "DSH：任务出错",
-    body: (detail: NotifyDetail) => {
-      const lines: string[] = [];
-      if (detail.taskTitle) lines.push(`任务「${detail.taskTitle}」执行出错`);
-      else lines.push("任务执行出错");
-      if (detail.turn)
-        lines.push(
-          `第 ${detail.turn} 轮${detail.step ? `第 ${detail.step} 步` : ""}：${detail.message ?? ""}`,
-        );
-      else if (detail.message) lines.push(`错误：${detail.message}`);
-      return lines.join("\n");
-    },
-  },
-  "turn-end": {
-    title: "DSH：轮次完成",
-    body: (detail: NotifyDetail) => {
-      const turn = detail.turn ? `第 ${detail.turn} 轮` : "";
-      if (detail.taskTitle) return `任务「${detail.taskTitle}」${turn}工作已完成`;
-      return `${turn}工作已完成`;
-    },
-  },
-} satisfies Record<string, KindText>;
+/** 工具 ID 原样展示；保留旧导出签名供现有消费方使用。 */
+export function prettyToolName(name?: string): string {
+  return name ?? "?";
+}
 
-/** 表里有的种类，也就是本域翻得出来的那些。 */
-export type TranslatedKind = keyof typeof NOTIFY_KINDS;
+export type TranslatedKind = "ask" | "question" | "done" | "subagent-done" | "error" | "turn-end";
+
+/** 生成六类通知的同构字典；正文只实现一次，两个语言包只提供产品词。 */
+export function getNotifyKinds(locale: NotificationLocale): Record<TranslatedKind, KindText> {
+  const text = LOCALE_TEXT[locale];
+  return {
+    ask: {
+      title: text.titles.ask,
+      body: (detail) => {
+        const lines = [
+          detail.taskTitle
+            ? text.askWithTask(detail.taskTitle, prettyToolName(detail.tool))
+            : text.askWithoutTask(prettyToolName(detail.tool)),
+        ];
+        if (detail.reason) lines.push(text.reason(detail.reason));
+        lines.push(text.askFooter);
+        return lines.join("\n");
+      },
+    },
+    question: {
+      title: text.titles.question,
+      body: (detail) => {
+        const lines = [
+          detail.taskTitle ? text.questionWithTask(detail.taskTitle) : text.questionWithoutTask,
+        ];
+        if (detail.question) lines.push(text.question(detail.question));
+        lines.push(text.questionFooter);
+        return lines.join("\n");
+      },
+    },
+    done: {
+      title: text.titles.done,
+      body: (detail) => {
+        const title = detail.taskTitle ? text.doneWithTask(detail.taskTitle) : text.doneWithoutTask;
+        return [title, text.duration(formatDurationForLocale(detail.durationMs ?? 0, locale))].join(
+          "\n",
+        );
+      },
+    },
+    "subagent-done": {
+      title: text.titles["subagent-done"],
+      body: (detail) => {
+        const title = detail.taskTitle
+          ? text.subagentDoneWithTask(detail.taskTitle)
+          : text.subagentDoneWithoutTask;
+        return [title, text.duration(formatDurationForLocale(detail.durationMs ?? 0, locale))].join(
+          "\n",
+        );
+      },
+    },
+    error: {
+      title: text.titles.error,
+      body: (detail) => {
+        const lines = [
+          detail.taskTitle ? text.errorWithTask(detail.taskTitle) : text.errorWithoutTask,
+        ];
+        if (detail.turn) {
+          lines.push(text.errorTurn(detail.turn, detail.step, detail.message ?? ""));
+        } else if (detail.message) {
+          lines.push(text.errorMessage(detail.message));
+        }
+        return lines.join("\n");
+      },
+    },
+    "turn-end": {
+      title: text.titles["turn-end"],
+      body: (detail) =>
+        detail.taskTitle
+          ? detail.turn
+            ? text.turnEndWithTaskTurn(detail.taskTitle, detail.turn)
+            : text.turnEndWithTaskWithoutTurn(detail.taskTitle)
+          : detail.turn
+            ? text.turnEndWithoutTaskWithTurn(detail.turn)
+            : text.turnEndWithoutTaskWithoutTurn,
+    },
+  };
+}
+
+/** 旧导出：中文默认字典。 */
+export const NOTIFY_KINDS = getNotifyKinds("zh");

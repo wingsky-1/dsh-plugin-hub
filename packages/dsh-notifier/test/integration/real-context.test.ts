@@ -20,6 +20,7 @@
  * 「断言红」退化成挂死。`afterEach` 仍还原一次，防将来有人在用例里钉。
  */
 import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import type { IncomingMessage } from "node:http";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -40,7 +41,7 @@ import {
   assertRealCordisContextSemantics,
 } from "../../../../test/smoke-lib.ts";
 import { DEFAULT_CONFIG } from "../../src/server/config/impl/model/index.ts";
-import { pollUntil, settleMicrotasks, tempDshHome } from "../helpers.ts";
+import { jsonReq, makeRes, pollUntil, settleMicrotasks, tempDshHome } from "../helpers.ts";
 
 // DSH_HOME 必须先于被测模块求值：三个单例的落盘路径在构造时定下，而静态 import 会在任何语句
 // 之前执行——顺序反了，本节全部落盘就写进真实 `~/.dsh`。
@@ -103,6 +104,7 @@ const BASE_SETTINGS = {
 /** 历史行：只取本文件当判据的字段（整体比较会把域内文案变化变成假红）。 */
 interface HistoryLine {
   kind?: string;
+  title?: string;
   message?: string;
   suppressed?: string;
   channels?: ReadonlyArray<{ channelId: string; status: string }>;
@@ -137,6 +139,11 @@ function countKind(kind: string): number {
 /** 磁盘上第一条某一种通知：`beforeEach` 清过历史，所以不受上一个用例干扰。 */
 function kindLine(kind: string): HistoryLine | undefined {
   return historyLines().find((line) => line.kind === kind);
+}
+
+/** 同一 kind 的第 N 条记录：动态 locale 用例要在同一次装配里比较前后两份文案。 */
+function kindLines(kind: string): HistoryLine[] {
+  return historyLines().filter((line) => line.kind === kind);
 }
 
 /** 界碑用的种类名：只出现在界碑行里，任何通知判据都不会撞上它。 */
@@ -222,9 +229,23 @@ function scopeRejecting<K extends keyof Events>(): ScopedThis<K> {
  * `describe()` 在真实宿主里只列**已注册**的命名空间，所以这里的 `user` 用三种取值对应三种真实形态：
  * `undefined` = 没注册这条命名空间（新架构的常态，服务面读不到）；`{}` = 注册了但 user 层为空；有键 = 注册且用户设过。
  */
-function fakeSettings(user: Record<string, unknown> | undefined): { describe: () => unknown[] } {
+function fakeSettings(
+  user: Record<string, unknown> | undefined,
+  locale?: () => { readonly value?: unknown },
+): { describe: () => unknown[] } {
   return {
-    describe: () => (user === undefined ? [] : [{ ns: "dsh-notifier", user }]),
+    describe: () => {
+      const entries = user === undefined ? [] : [{ ns: "dsh-notifier", value: user, user }];
+      if (locale === undefined) return entries;
+      return [
+        ...entries,
+        {
+          ns: "locale",
+          value: locale().value,
+          user: { preference: "zh" },
+        },
+      ];
+    },
   };
 }
 
@@ -301,10 +322,11 @@ let live: Fiber | null = null;
 async function mount(options: {
   config?: { enabled?: boolean };
   settings?: Record<string, unknown>;
+  locale?: () => { readonly value?: unknown };
   services?: Record<string, unknown>;
 }): Promise<Mounted> {
   const root = new Context();
-  root.provide("settings", fakeSettings(options.settings));
+  root.provide("settings", fakeSettings(options.settings, options.locale));
   for (const [name, value] of Object.entries(options.services ?? {})) root.provide(name, value);
   const warns = captureWarnings(root);
   const host = fakeWebServer(() => ({
@@ -324,6 +346,18 @@ async function mount(options: {
       await fiber.dispose();
     },
   };
+}
+
+/** 走组合根实际注册的路由，验证测试按钮端点也使用按请求现读的 locale。 */
+async function postTestNotification(routes: readonly WebRoute[]): Promise<void> {
+  const path = "/api/dsh-notifier/test";
+  const route = routes.find((item) => item.path === path);
+  if (route === undefined) throw new Error(`路由未注册: ${path}`);
+  const request = jsonReq({ method: "POST", url: path, body: {} }) as IncomingMessage;
+  const captured = makeRes();
+  route.handler(request, captured.res);
+  await pollUntil(() => captured.rec.headersSent, `${path} 未写出响应`);
+  expect(captured.rec.status).toBe(200);
 }
 
 /**
@@ -410,6 +444,111 @@ describe("装配与暴露", () => {
     // 卸载后消费方按「通知中心不在」降级：`get` 拿空而不是拿到半死对象。
     expect(root.get("wingsky.notifier", false)).toBeUndefined();
   });
+
+  it("宿主 locale 实时接线：显式 en 覆盖 user 层、同次装配切回 zh、生成后历史不重写", async () => {
+    let preference: unknown = "en";
+    const { root, host, unmount } = await mount({
+      locale: () => ({ value: { preference } }),
+    });
+
+    root.emit("agent/error", {
+      agent: fakeAgent("itest-locale-en"),
+      turn: 1,
+      step: 1,
+      error: new Error("failed"),
+    });
+    await pollUntil(() => countKind("error") === 1, "英文错误通知落史");
+    const englishError = kindLines("error")[0];
+    expect(englishError).toMatchObject({
+      title: "DSH: Task failed",
+      message: "Task failed\nTurn 1, step 1: failed",
+    });
+
+    await postTestNotification(host.routes);
+    await pollUntil(() => countKind("test") === 1, "英文测试通知落史");
+    expect(kindLines("test")[0]).toMatchObject({ title: "DSH: Test notification" });
+
+    const service = root.get("wingsky.notifier", false);
+    if (service === undefined) throw new Error("通知服务未装配");
+    service.registerKind({ id: "itest:locale", label: "locale" });
+    await service.send({ kind: "itest:locale", body: "body" });
+    await pollUntil(() => countKind("itest:locale") === 1, "英文 SDK 缺省标题落史");
+    expect(kindLines("itest:locale")[0]).toMatchObject({ title: "DSH notification" });
+
+    preference = "zh";
+    root.emit("agent/error", {
+      agent: fakeAgent("itest-locale-en"),
+      turn: 1,
+      step: 1,
+      error: new Error("failed"),
+    });
+    await pollUntil(() => countKind("error") === 2, "切换中文后的错误通知落史");
+    expect(kindLines("error")[1]).toMatchObject({
+      title: "DSH：任务出错",
+      message: "任务执行出错\n第 1 轮第 1 步：failed",
+    });
+
+    await postTestNotification(host.routes);
+    await pollUntil(() => countKind("test") === 2, "切换中文后的测试通知落史");
+    expect(kindLines("test")[1]).toMatchObject({ title: "DSH：测试通知" });
+
+    await service.send({ kind: "itest:locale", body: "正文" });
+    await pollUntil(() => countKind("itest:locale") === 2, "中文 SDK 缺省标题落史");
+    expect(kindLines("itest:locale")[1]).toMatchObject({ title: "DSH 通知" });
+
+    await settleHistory();
+    expect(kindLines("error")[0]).toMatchObject({
+      title: "DSH: Task failed",
+      message: "Task failed\nTurn 1, step 1: failed",
+    });
+    await unmount();
+  });
+
+  it.each(["unset", "ru", "malformed", "null", "non-string"] as const)(
+    "locale value=%s 回退中文，普通工具 ID 原样进入正文",
+    async (variant) => {
+      const values: Record<typeof variant, unknown> = {
+        unset: undefined,
+        ru: { preference: "ru" },
+        malformed: "broken",
+        null: null,
+        "non-string": { preference: 42 },
+      };
+      await assertLocaleFallback(values[variant], "read");
+    },
+  );
+
+  it.each(["unset", "ru", "malformed", "null", "non-string"] as const)(
+    "locale value=%s 回退中文，MCP 工具 ID 原样进入正文",
+    async (variant) => {
+      const values: Record<typeof variant, unknown> = {
+        unset: undefined,
+        ru: { preference: "ru" },
+        malformed: "broken",
+        null: null,
+        "non-string": { preference: 42 },
+      };
+      await assertLocaleFallback(values[variant], "mcp__filesystem__read_file");
+    },
+  );
+
+  async function assertLocaleFallback(value: unknown, toolName: string): Promise<void> {
+    const { root, unmount } = await mount({ locale: () => ({ value }) });
+    const approval = {
+      toolName,
+      reason: "Проверить",
+      agent: fakeAgent("itest-locale-fallback", [titleEvent("Разделение движка")]),
+    } as unknown as ApprovalRequest;
+
+    root.emit("approval/request", approval, async () => "unavailable");
+    await pollUntil(() => countKind("ask") === 1, "回退中文的审批通知落史");
+    const line = kindLine("ask");
+    expect(line?.title).toBe("DSH：等待审批");
+    expect(line?.message).toBe(
+      `任务「Разделение движка」等待审批（工具「${toolName}」）\n理由：Проверить\n请到 DSH 界面确认或拒绝`,
+    );
+    await unmount();
+  }
 
   it("inject 门：两条宿主服务（webServer / settings）都就绪才装配，缺一条都不跑", async () => {
     const root = new Context();

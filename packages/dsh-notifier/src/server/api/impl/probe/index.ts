@@ -12,11 +12,12 @@ import type {
   LoggerPort,
   PipelinePort,
 } from "../../deps.ts";
+import type { NotificationLocale } from "../../../shared/interface.ts";
 import { sendFailure, sendJson } from "../route/index.ts";
 import type { RouteHandler } from "../route/type.ts";
 import { streamHub } from "../stream/index.ts";
 import { DryRunGate, executeDryRun, withDryRunBudget } from "./dry-run/index.ts";
-import { DryRunInputError, DryRunTimeoutError, TEST_NOTIFICATION } from "./dry-run/type.ts";
+import { DryRunInputError, DryRunTimeoutError, testNotification } from "./dry-run/type.ts";
 import type { TestRequest } from "./type.ts";
 
 /**
@@ -73,6 +74,7 @@ export class ProbeEndpoints {
     private readonly channels: ChannelPort,
     private readonly logger: LoggerPort,
     private readonly config: ConfigPort,
+    private readonly readLocale: () => NotificationLocale = () => "zh",
   ) {}
 
   /**
@@ -130,10 +132,9 @@ export class ProbeEndpoints {
       await this.testDraft(res, channelId, body.draft);
       return;
     }
+    const notification = testNotification(this.readLocale());
     this.pipeline.submit(
-      channelId === undefined
-        ? TEST_NOTIFICATION
-        : { ...TEST_NOTIFICATION, onlyChannel: channelId },
+      channelId === undefined ? notification : { ...notification, onlyChannel: channelId },
     );
     sendJson(res, 200, { ok: true, sseConnections: streamHub.size() });
   };
@@ -169,7 +170,12 @@ export class ProbeEndpoints {
     try {
       const result = await withDryRunBudget(
         executeDryRun(
-          { config: this.config, pipeline: this.pipeline, channels: this.channels },
+          {
+            config: this.config,
+            pipeline: this.pipeline,
+            channels: this.channels,
+            readLocale: this.readLocale,
+          },
           channelId,
           draft,
         ),

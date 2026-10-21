@@ -22,6 +22,7 @@ import {
   releaseSdk,
 } from "../../src/server/sdk/interface.ts";
 import type { NotifierService } from "../../src/server/sdk/interface.ts";
+import type { NotificationLocale } from "../../src/server/shared/interface.ts";
 
 /** 服务面入参：经签名可达，不必请 impl 再导出一个名字。 */
 type SendInput = Parameters<NotifierService["send"]>[0];
@@ -86,11 +87,19 @@ function fakeExpose() {
 }
 
 /** 装配一次，交出四件观测物。 */
-function assemble(allowKinds: readonly string[] = []) {
+function assemble(
+  allowKinds: readonly string[] = [],
+  readLocale: () => NotificationLocale = () => "zh",
+) {
   const config = fakeConfig(allowKinds);
   const pipeline = fakePipeline();
   const expose = fakeExpose();
-  const deps: SdkDeps = { expose: expose.port, config: config.port, pipeline: pipeline.port };
+  const deps: SdkDeps = {
+    expose: expose.port,
+    config: config.port,
+    pipeline: pipeline.port,
+    readLocale,
+  };
   installSdk(deps);
   return { service: expose.provided[0], config, pipeline, expose };
 }
@@ -132,6 +141,16 @@ describe("send：本域只做形状收窄，不判该不该发", () => {
     await service.send({ kind: "done", body: "正文" });
     expect(pipeline.submitted).toEqual([{ kind: "done", title: "DSH 通知", body: "正文" }]);
     expect("severity" in pipeline.submitted[0]!).toBe(false);
+  });
+
+  it("readLocale=en 时缺省标题英文；调用方 title/body 原样不翻译", async () => {
+    const { service, pipeline } = assemble([], () => "en");
+    await service.send({ kind: "done", body: "正文" });
+    await service.send({ kind: "done", title: "Custom", body: "Body" });
+    expect(pipeline.submitted).toEqual([
+      { kind: "done", title: "DSH notification", body: "正文" },
+      { kind: "done", title: "Custom", body: "Body" },
+    ]);
   });
 
   it("自填标题与 severity 原样进管线", async () => {
