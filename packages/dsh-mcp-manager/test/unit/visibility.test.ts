@@ -21,7 +21,8 @@ import type { ProjectUnit } from "../../src/server/connection/runtime/interface.
 function fakeAgent(id: string, log: string[], onChange?: () => (() => void)[]): AgentFace {
   let seq = 0;
   return {
-    id,
+    // 夹具按可读字符串造 id；官方 Agent.id 是品牌化的 SessionId，测试侧显式收窄。
+    id: id as AgentFace["id"],
     tools: {
       restrict(filter: ToolRestriction) {
         seq += 1;
@@ -43,7 +44,8 @@ function flakyAgent(
 ): AgentFace {
   let seq = 0;
   return {
-    id,
+    // 同上：夹具 id 用可读字符串，官方品牌类型在此显式收窄。
+    id: id as AgentFace["id"],
     tools: {
       restrict(filter: ToolRestriction) {
         const joined = [...(filter.deny ?? [])].join("|");
