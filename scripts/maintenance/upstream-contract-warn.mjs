@@ -14,7 +14,11 @@
  * 加同文件 const 单跳（多跳、跨文件、重赋值不跟）；sdkApi 命名空间成员为祝福常量
  * （自家定义，不对 B 断言；其余参数透传等记 forwarding，不进 S1）。A3 取事件动词
  * 第一参的字面量加单跳，非字面非单跳记 S1 动态。A4 取 ctx.svc.method 直接调用
- * （service 已定型才断言方法）。每条带 site。export const inject 数组只记 inventory。
+ * （service 已定型才断言方法），并取 ctx.get("svc") / anyCtx.get?.("svc") 的返回值
+ * 绑定及其 .method() 调用（含 ctx.get("svc").m()）。anyCtx 形态只推导方法调用、不并入
+ * S2 服务消费面（否则基线漂移），记 ctx-alias 透传。方法表解析剔除非成员名（修饰符
+ * readonly/static/private 与访问器关键字 get/set），否则 `get writable()` 会伪造出
+ * 假成员 get、让缺方法断言失真。每条带 site。export const inject 数组只记 inventory。
  * B 侧 .d.ts 闭包（文本结构解析）：resolved 基线须与 catalog 锁版一致（B 恒 lock；
  * 同名多版本、版本漂移、cordis 不可解析即 exit 2；同名同版本多 peer 取并集）；自 types
  * 入口沿相对引用 BFS（export 星展开、循环截断、.ts 后缀归一、裸 side-effect import、计算键不透明），收成员名
@@ -96,6 +100,40 @@ function staticProp(member) {
     return null;
   }
   return member.property.name ?? null;
+}
+
+/** ctx 形态的接收者：字面量 `ctx`，或本仓既有的 `anyCtx` 别名（未类型化鸭子上下文）。 */
+const CTX_RECEIVER_NAMES = new Set(["ctx", "anyCtx"]);
+
+/** 解掉可选链外层（acorn 的 ChainExpression），拿到真正的表达式节点。 */
+function unwrapChain(node) {
+  return node !== null && node !== undefined && node.type === "ChainExpression"
+    ? node.expression
+    : node;
+}
+
+/** 接收者是 ctx / anyCtx 时返回标识符名（用于区分是否计入 S2）；不是返回 null。 */
+function ctxReceiverOf(node) {
+  const id = unwrapChain(node);
+  return id !== null &&
+    id !== undefined &&
+    id.type === "Identifier" &&
+    CTX_RECEIVER_NAMES.has(id.name)
+    ? id.name
+    : null;
+}
+
+/**
+ * `ctx.get("svc")` / `anyCtx.get?.("svc")` 的服务名：接收者是 ctx 形态、动词 get、首参静态串。
+ * 只用于推导「取回的服务上又调了什么方法」，不并入服务消费面（anyCtx 形态不进 S2 基线）。
+ */
+function getCallSvcName(node) {
+  const call = unwrapChain(node);
+  if (!call || call.type !== "CallExpression" || call.callee.type !== "MemberExpression")
+    return null;
+  if (ctxReceiverOf(call.callee.object) === null) return null;
+  if (staticProp(call.callee) !== "get") return null;
+  return staticString(call.arguments[0]);
 }
 
 function blessedShape(node) {
@@ -284,6 +322,12 @@ const SERVICE_VERBS = new Set(["get", "provide", "inject"]);
 function visitAService(node, acc, cx) {
   const prop = ctxCallProp(node);
   if (prop === null || !SERVICE_VERBS.has(prop)) return false;
+  if (ctxReceiverOf(node.callee.object) !== "ctx") {
+    // ctx 别名（anyCtx）上的 get 不并入服务消费面：S2 是「被消费但 B 面没声明」的基线，
+    // 别名形态只服务 R4/R5 的方法存在性推导；混进来会让基线漂移。列为透传以免静默丢弃。
+    acc.forwarding.push({ ...atNode(node), verb: prop, why: "ctx-alias" });
+    return true;
+  }
   if (prop === "inject") {
     if (node.arguments[0] && node.arguments[0].type === "ArrayExpression")
       visitServiceInject(node, acc, cx);
@@ -299,8 +343,7 @@ function visitAService(node, acc, cx) {
  */
 export function ctxCallProp(node) {
   if (node.type !== "CallExpression" || node.callee.type !== "MemberExpression") return null;
-  const recv = node.callee.object;
-  if (recv.type !== "Identifier" || recv.name !== "ctx") return null;
+  if (ctxReceiverOf(node.callee.object) === null) return null;
   return staticProp(node.callee);
 }
 
@@ -390,8 +433,65 @@ function visitACall(node, parent, acc) {
   if (node.type === "MemberExpression") visitServiceRef(node, parent, acc);
 }
 
+/** 记一条 const/let 声明的 get 绑定初值（非标识符/非 get 记 null，交给后续整名判定）。 */
+function collectGetBindingDecl(node, inits) {
+  if (node.type !== "VariableDeclaration") return;
+  if (node.kind !== "const" && node.kind !== "let") return;
+  for (const d of node.declarations) {
+    if (d.id.type !== "Identifier") continue;
+    if (!inits.has(d.id.name)) inits.set(d.id.name, []);
+    inits.get(d.id.name).push(getCallSvcName(d.init));
+  }
+}
+
+/** 记一条可能让绑定失去指向的左值名（赋值/自增）。 */
+function collectDirtyName(node, dirtied) {
+  if (node.type === "AssignmentExpression" && node.left.type === "Identifier") {
+    dirtied.add(node.left.name);
+    return;
+  }
+  if (node.type === "UpdateExpression" && node.argument.type === "Identifier")
+    dirtied.add(node.argument.name);
+}
+
+/**
+ * `const x = ctx.get("svc")` / `let x = ctx.get("svc")`（含 anyCtx 与可选链）的单跳绑定：
+ * x → svc。var（提升语义）不跟；同名多处声明、初值不是 get、被重赋值/自增的，一律不进表
+ * （宁缺勿错，避免跨作用域误判）。
+ */
+function collectGetBindings(ast) {
+  const inits = new Map();
+  const dirtied = new Set();
+  walkAst(ast, (node) => {
+    collectGetBindingDecl(node, inits);
+    collectDirtyName(node, dirtied);
+  });
+  const clean = new Map();
+  for (const [name, svcs] of inits) {
+    const uniq = new Set(svcs);
+    if (uniq.size === 1 && !uniq.has(null) && !dirtied.has(name)) clean.set(name, [...uniq][0]);
+  }
+  return clean;
+}
+
+/**
+ * 经 `ctx.get(...)` 取回的服务上的方法调用（R4/R5 的间接形态）：
+ * `ctx.get("svc").m()` / `anyCtx.get?.("svc")?.m()` / `const x = ctx.get("svc"); x.m()`。
+ * 直接 `ctx.<svc>.<method>()` 已由 visitMethodCall 记过，这里不重复。
+ */
+function visitIndirectMethodCall(node, bindings, acc) {
+  if (node.type !== "CallExpression" || node.callee.type !== "MemberExpression") return;
+  const method = staticProp(node.callee);
+  if (method === null) return;
+  const recv = node.callee.object;
+  const svc =
+    getCallSvcName(recv) ?? (recv.type === "Identifier" ? (bindings.get(recv.name) ?? null) : null);
+  if (svc !== null) acc.calls.push({ ...atNode(node), svc, method });
+}
+
 export function analyzeAFile(ast) {
   const { clean, nonliteral } = collectFileConsts(ast);
+  const bindings = collectGetBindings(ast);
   const acc = {
     services: [],
     provides: [],
@@ -412,6 +512,7 @@ export function analyzeAFile(ast) {
     visitAService(node, acc, cx);
     visitAEvent(node, acc, cx);
     visitACall(node, parent, acc);
+    visitIndirectMethodCall(node, bindings, acc);
   });
   return {
     services: acc.services,
@@ -721,6 +822,34 @@ function skipModifiersAt(body, i) {
   }
 }
 
+/** 访问器关键字 `get`/`set`：只有后面紧跟名字时才算访问器（`get(...)` 是名为 get 的方法）。 */
+function accessorKeywordEndAt(body, i) {
+  for (const w of ["get", "set"]) {
+    if (!matchWord(body, i, w)) continue;
+    const j = skipSpaces(body, i + w.length);
+    if (isIdStart(body[j] ?? "")) return j;
+  }
+  return -1;
+}
+
+/**
+ * 成员声明的前导：修饰符（readonly/static/…）与访问器关键字（get/set）都不是成员名。
+ * 旧实现把它们当成员收进方法表，导致 `get writable()` 产出假成员 `get`——R4/R5 会把
+ * 不存在的 `settings.get()` 判成命中。返回跳过后的下标；没有前导时原地返回。
+ */
+function skipMemberPreludeAt(body, i) {
+  for (;;) {
+    const afterMods = skipModifiersAt(body, i);
+    if (afterMods !== i) {
+      i = afterMods;
+      continue;
+    }
+    const afterAccessor = accessorKeywordEndAt(body, i);
+    if (afterAccessor === -1) return i;
+    i = afterAccessor;
+  }
+}
+
 function typeHeadAt(body, i) {
   let k = i;
   while (k < body.length && (isIdPart(body[k]) || body[k] === ".")) k += 1;
@@ -872,8 +1001,14 @@ export function extractMembers(body) {
     st.i = skipSpaces(body, st.i);
     if (st.i >= body.length) break;
     const kind = headKindAt(body, st.i);
-    if (kind === HEAD_IDENT) headIdentAt(st);
-    else if (kind === HEAD_QUOTED) headQuotedAt(st);
+    if (kind === HEAD_IDENT) {
+      const prelude = skipMemberPreludeAt(body, st.i);
+      if (prelude !== st.i) {
+        st.i = prelude;
+        continue;
+      }
+      headIdentAt(st);
+    } else if (kind === HEAD_QUOTED) headQuotedAt(st);
     else if (kind === HEAD_BRACKET) headBracketAt(st);
     else if (kind === HEAD_PARAMS)
       st.i = skipTerminatorAt(body, skipBalancedAt(body, st.i, "(", ")"));
@@ -1224,7 +1359,7 @@ function untrackedServiceNames(A, B, blessedValues) {
  *
  * 与 evaluate 分开同 S2：这里只产缺口清单，r4fail 的判定在调用方。
  */
-function scanMethodCalls(A, B) {
+export function scanMethodCalls(A, B) {
   const missingMethods = [];
   const untypedSvcs = new Map();
   for (const c of A.calls) {
