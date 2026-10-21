@@ -2053,6 +2053,61 @@ describe("#198 deepseek-official 内置适配器集成 · 场景 1（纯 builtin
   });
 });
 
+// ---------------------------------------------------------------- #1163 失败帧接线
+//
+// 评审 P1-3：lastSuccessAt 的 HTTP 透传与 health.fetchErrors 的实际登记此前无断言
+// （改坏接线仍 3749 全绿）。historyDir 用 mkdtemp 隔离，避免污染其它 describe 的
+// DSH_HOME 历史断言（如场景 1 的 A3「错误帧不落盘」）。
+
+describe("#1163 失败帧接线：lastSuccessAt 透传 + health.fetchErrors 登记", () => {
+  let lastSuccessAt: unknown;
+  let fetchErrors: HealthPayload["fetchErrors"];
+  const seeded = Date.now() - 2 * 86400000;
+
+  beforeAll(async () => {
+    const histDir = mkdtempSync(join(tmpdir(), "dou-lastok-"));
+    const histSub = join(histDir, DEEPSEEK_OFFICIAL_PROVIDER, DEEPSEEK_OFFICIAL_ADAPTER_ID);
+    mkdirSync(histSub, { recursive: true });
+    writeFileSync(
+      join(histSub, `${dayKey(seeded)}.jsonl`),
+      JSON.stringify({
+        time: seeded,
+        data: { isAvailable: true, balance: 36.79, toppedUp: 36.79, grantedBalance: 0 },
+      }) + "\n",
+      "utf8",
+    );
+
+    const { ctx, routes } = makeFakeCtx();
+    await apply(ctx, {
+      ...ISOLATED_CONFIG,
+      provider: DEEPSEEK_OFFICIAL_PROVIDER,
+      historyDir: histDir,
+      warmupIntervalMs: 0,
+    });
+
+    const statsRoute = routes.find((r) => r.path === ROUTES.stats);
+    const stats = await callHandler<StatsPayload>(
+      statsRoute!,
+      fakeReq({ url: `${ROUTES.stats}?provider=${DEEPSEEK_OFFICIAL_PROVIDER}` }),
+    );
+    lastSuccessAt = stats.lastSuccessAt;
+
+    const healthRoute = routes.find((r) => r.path === ROUTES.health);
+    const health = await callHandler<HealthPayload>(healthRoute!, fakeReq({ url: ROUTES.health }));
+    fetchErrors = health.fetchErrors;
+  });
+
+  it("stale 失败帧透传 lastSuccessAt（= 最后成功采样时刻）", () => {
+    expect(lastSuccessAt).toBe(seeded);
+  });
+
+  it("health.fetchErrors 登记该 provider 的取数失败（成功才清除）", () => {
+    const hit = fetchErrors?.find((e) => e.provider === DEEPSEEK_OFFICIAL_PROVIDER);
+    expect(hit).toMatchObject({ provider: DEEPSEEK_OFFICIAL_PROVIDER, error: "network" });
+    expect(typeof hit?.at).toBe("number");
+  });
+});
+
 describe("#198 deepseek-official 内置适配器集成 · 场景 2（三级密钥全空 E4/G8）", () => {
   let payloadStatus: string;
   let payloadError: unknown;

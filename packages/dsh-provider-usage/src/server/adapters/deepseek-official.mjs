@@ -1059,6 +1059,8 @@ function panelTimeLabel(t) {
  */
 export function staleSampleHintOf(anchor, now) {
   if (!Number.isFinite(anchor) || !Number.isFinite(now)) return "";
+  // 损坏历史分片可能给 0/负数时刻：不得渲染成「最后采样 01-01 08:00」（#1167 评审批次 P2）。
+  if (anchor <= 0 || now <= 0) return "";
   if (now - anchor <= DAY_MS) return "";
   return ` · 最后采样 ${panelTimeLabel(anchor)}`;
 }

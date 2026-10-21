@@ -7,8 +7,11 @@
  *   取证备份归集与轮转名单 / add 入参规整 / 穿越判定 / 相对路径围栏
  * - registry.ts：替换前收集旧条目 / 契约拒绝文案 / 改名撞名预检 / 旧启用关系快照
  *
- * 纪律：零 I/O（seam 与 add 路径全为纯判定）、零网络、零凭据。
+ * 纪律：零网络、零真实凭据（凭据链用例经临时 DSH_HOME 隔离，绝不读 ~/.dsh）。
  */
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   trimmedOrUndefined,
@@ -154,6 +157,27 @@ describe("provider-config seam 定位纯面", () => {
   });
 });
 
+/**
+ * 在隔离 DSH_HOME + 干净环境变量下执行：V1 链不得命中真实 ~/.dsh 或宿主环境
+ * （#1167 评审 P1-2：环境里存在 DEEPSEEK_OFFICIAL_API_KEY 时，known-ref 用例会假红）。
+ */
+async function withIsolatedCredentials<T>(fn: () => Promise<T>): Promise<T> {
+  const prevHome = process.env.DSH_HOME;
+  const prevKey = process.env.DEEPSEEK_OFFICIAL_API_KEY;
+  const dir = mkdtempSync(join(tmpdir(), "u-usage-provider-config-"));
+  process.env.DSH_HOME = dir;
+  delete process.env.DEEPSEEK_OFFICIAL_API_KEY;
+  try {
+    return await fn();
+  } finally {
+    if (prevHome === undefined) delete process.env.DSH_HOME;
+    else process.env.DSH_HOME = prevHome;
+    if (prevKey === undefined) delete process.env.DEEPSEEK_OFFICIAL_API_KEY;
+    else process.env.DEEPSEEK_OFFICIAL_API_KEY = prevKey;
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 describe("provider-config 凭据解析：describe seam + 已知 ref 兜底", () => {
   it("seam：describe 取 apiKeyEnv 后经 credentials.resolve 取值", async () => {
     const ctx = {
@@ -202,9 +226,11 @@ describe("provider-config 凭据解析：describe seam + 已知 ref 兜底", () 
             }
           : undefined,
     };
-    const r = await resolveProviderConfig("deepseek-official", ctx);
-    expect(r.apiKey).toBe("sk-known");
-    expect(calls).toEqual(["DEEPSEEK_API_KEY"]);
+    await withIsolatedCredentials(async () => {
+      const r = await resolveProviderConfig("deepseek-official", ctx);
+      expect(r.apiKey).toBe("sk-known");
+      expect(calls).toEqual(["DEEPSEEK_API_KEY"]);
+    });
   });
 
   it("非已知 provider 不触发已知 ref 兜底", async () => {
@@ -217,9 +243,60 @@ describe("provider-config 凭据解析：describe seam + 已知 ref 兜底", () 
         },
       }),
     };
-    const r = await resolveProviderConfig("mystery-provider", ctx);
-    expect(r.apiKey).toBeUndefined();
-    expect(calls).toEqual([]);
+    await withIsolatedCredentials(async () => {
+      const r = await resolveProviderConfig("mystery-provider", ctx);
+      expect(r.apiKey).toBeUndefined();
+      expect(calls).toEqual([]);
+    });
+  });
+
+  it("describe 以 redactSecrets:true 读取（最小权限）", async () => {
+    const seen: unknown[] = [];
+    const ctx = {
+      llm: {
+        listConfigurableProviders: () => [
+          { provider: "r-redact", settingsNs: "llm-redact", settingsPath: [] },
+        ],
+      },
+      get: (name: string) =>
+        name === "settings"
+          ? {
+              describe: (options: unknown) => {
+                seen.push(options);
+                return [{ ns: "llm-redact", value: { apiKeyEnv: "R_REF" } }];
+              },
+            }
+          : { resolve: async () => ({ value: "sk" }) },
+    };
+    await withIsolatedCredentials(async () => {
+      await resolveProviderConfig("r-redact", ctx);
+    });
+    expect(seen).toEqual([{ redactSecrets: true }]);
+  });
+
+  it("describe 抛错 → seam 回落而非 reject（仍能走 known-ref 兜底）", async () => {
+    const ctx = {
+      llm: {
+        listConfigurableProviders: () => [
+          { provider: "deepseek-official", settingsNs: "llm-deepseek", settingsPath: [] },
+        ],
+      },
+      get: (name: string) =>
+        name === "settings"
+          ? {
+              describe: () => {
+                throw new Error("describe-boom");
+              },
+            }
+          : {
+              resolve: async (ref: string) =>
+                ref === "DEEPSEEK_API_KEY" ? { value: "sk-known" } : undefined,
+            },
+    };
+    await withIsolatedCredentials(async () => {
+      const r = await resolveProviderConfig("deepseek-official", ctx);
+      expect(r.apiKey).toBe("sk-known");
+    });
   });
 });
 

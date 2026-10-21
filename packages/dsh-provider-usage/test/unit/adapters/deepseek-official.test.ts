@@ -1825,6 +1825,12 @@ describe("#1163 面板陈旧采样提示：末次采样早于 24h 标注时间",
     truncated: false,
     esc,
   });
+  const zeroPanel = deepSeekOfficialAdapter.formatPanel({
+    entries: [sample(0)],
+    range: { start: 0, end: now },
+    truncated: false,
+    esc,
+  });
 
   it("旧采样 → 副标题出现「最后采样」+ 具体时间", () => {
     expect(oldPanel.includes("最后采样")).toBeTruthy();
@@ -1834,6 +1840,10 @@ describe("#1163 面板陈旧采样提示：末次采样早于 24h 标注时间",
   it("24h 内采样 → 不出现陈旧提示", () => {
     expect(freshPanel.includes("最后采样")).toBe(false);
   });
+
+  it("时刻 0（损坏分片）→ 不出现陈旧提示", () => {
+    expect(zeroPanel.includes("最后采样")).toBe(false);
+  });
 });
 
 // ================================================================ 管线集成：runV2Pipeline 失败分支 stale 帧
@@ -1842,6 +1852,7 @@ describe("管线集成：runV2Pipeline 失败分支 stale 帧", () => {
   let result: V2PipelineResult;
   let resultWithHistory: V2PipelineResult;
   let resultBadHistory: V2PipelineResult;
+  let resultZeroTime: V2PipelineResult;
   let okResult: V2PipelineResult;
   let sanitized: string;
   let lastOkTime: number;
@@ -1872,6 +1883,22 @@ describe("管线集成：runV2Pipeline 失败分支 stale 帧", () => {
       timeoutMs: 2000,
       fetchImpl: netFail,
       history: { last: async () => lastOk },
+    });
+
+    // 损坏历史（time=0）：不把 0 当「最后成功时刻」透出（#1167 评审批次 P2）
+    resultZeroTime = await runV2Pipeline({
+      adapter: deepSeekOfficialAdapter,
+      provider: DEEPSEEK_OFFICIAL_PROVIDER,
+      config: { apiEndpoint: "http://127.0.0.1:9", apiKey: "sk-pipe" },
+      staticPath: "",
+      timeoutMs: 2000,
+      fetchImpl: netFail,
+      history: {
+        last: async () => ({
+          time: 0,
+          data: { isAvailable: true, balance: 88.88, toppedUp: 88.88, grantedBalance: 0 },
+        }),
+      },
     });
 
     // history 兜底读失败视同无历史：回退空 data 占位，绝不因兜底读失败放大错误
@@ -1950,9 +1977,10 @@ describe("管线集成：runV2Pipeline 失败分支 stale 帧", () => {
     expect(resultWithHistory.lastSuccessAt).toBe(lastOkTime);
   });
 
-  it("无历史 / 历史读失败时 lastSuccessAt 缺席", () => {
+  it("无历史 / 历史读失败 / time=0 时 lastSuccessAt 缺席", () => {
     expect(result.lastSuccessAt).toBeUndefined();
     expect(resultBadHistory.lastSuccessAt).toBeUndefined();
+    expect(resultZeroTime.lastSuccessAt).toBeUndefined();
   });
 
   it("不再跌无数据占位", () => {

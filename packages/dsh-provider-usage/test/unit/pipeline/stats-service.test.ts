@@ -327,6 +327,16 @@ describe("fetchErrors：取数失败登记 / 成功清除（#1163 health 观测�
     h.service.dispose();
     expect(h.service.fetchErrors()).toEqual([]);
   });
+
+  it("purge 后观测面不残留：全清清空，按 provider 只清命中项", async () => {
+    const h = makeService({ spy: { failFetch: true } });
+    await h.service.getStats("pv");
+    expect(h.service.fetchErrors()).toHaveLength(1);
+    h.service.purgeCachesForProviders(["other"]);
+    expect(h.service.fetchErrors()).toHaveLength(1);
+    h.service.purgeAllCaches();
+    expect(h.service.fetchErrors()).toEqual([]);
+  });
 });
 
 describe("generation 失效：在途 getStats 期间 purgeAllCaches → 旧结果不污染新缓存（评审 M1）", () => {

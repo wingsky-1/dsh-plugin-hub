@@ -220,8 +220,18 @@ export function seamServicesOf(ctx: unknown): CredentialSeamServices | undefined
   // （ns → value）；旧 `get(ns)` 已随 dsh 0.1.7-rc.1 删除，不再作为兜底——缺失即
   // 视为 seam 不可用并回落 V1 链（#1163：旧接口被删后 seam 静默失效 27 天）。
   const describe = settings.describe;
-  const settingsGet = (ns: string): unknown =>
-    settingsValueOf(describe.call(settings, { redactSecrets: false }), ns);
+  const settingsGet = (ns: string): unknown => {
+    try {
+      // redactSecrets:true 为最小权限读面：apiKeyEnv 是 credential-ref（非 secret），
+      // 仍会出现在 value 层；可避免其它 volatile secret 字段被物化（#1167 评审批次 P2）。
+      return settingsValueOf(describe.call(settings, { redactSecrets: true }), ns);
+    } catch {
+      // describe() 可失败（宿主自身也包 try/catch）。此处必须吞掉：seam 视同不可用，
+      // 回落 V1 链 / known-ref 兜底；否则抛错会击穿 resolveProviderConfig 的
+      // 「不抛错」契约，让 /stats 直接 504（#1167 评审批次 P1-1）。
+      return undefined;
+    }
+  };
   return { settingsGet, credentialsResolve: credentials.resolve };
 }
 
@@ -253,6 +263,10 @@ async function resolveViaCredentialSeam(
 /**
  * 已知 provider → llm 层凭据引用名（seam 不可用时的兜底，与官方 llm adapter 的默认
  * apiKeyEnv 同源）。新增条目必须附「llm 侧默认 ref」证据；无证据不要猜。
+ *
+ * 边界：仅当 seam 与 V1 链都取不到 key 时生效。若用户在 settings 里自定义了
+ * apiKeyEnv（另一把 key/账户），此处会回落默认 ref，可能取到默认账户的 key——
+ * 这是「最后兜底」的已知取舍，不覆盖显式配置/环境变量。
  */
 const KNOWN_CREDENTIAL_REFS: Readonly<Record<string, string>> = {
   "deepseek-official": "DEEPSEEK_API_KEY",
@@ -269,8 +283,9 @@ async function resolveViaKnownCredentialRef(
   const ref = KNOWN_CREDENTIAL_REFS[provider];
   if (ref === undefined) return undefined;
   if (!isCredentialSeamContext(ctx) || typeof ctx.get !== "function") return undefined;
-  // 沿用 seam 的 anyCtx 别名：upstream-contract-warn 的 S2 只认字面量 ctx 接收者，
-  // credentials 服务仍属无类型面（见 seamServicesOf 注释），此处不另开一处消费点。
+  // 沿用 seam 的 anyCtx 别名：upstream-contract-warn 的 S2 只认字面量 ctx 接收者。
+  // 注意这是 alias 口径而非「没有新增消费点」：credentials 消费点仍属无类型面，
+  // 正式的类型锚/存在性门禁跟踪见 #1164。
   const anyCtx = ctx;
   const credentials = anyCtx.get?.("credentials");
   if (!isCredentialsService(credentials) || typeof credentials.resolve !== "function") {
