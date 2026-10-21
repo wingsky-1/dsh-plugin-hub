@@ -415,6 +415,10 @@
       }
     },
     {
+      "path": "scripts/derive/host-service-diff.ts",
+      "consumers": ["scripts/test/host-service-diff.test.ts"]
+    },
+    {
       "path": "scripts/tsconfig.json",
       "consumers": ["scripts/test/verify-docs-typecheck.test.ts"]
     },
