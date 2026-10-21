@@ -18,6 +18,10 @@
 命中全局面时自动升级为 `gate:pr`，解析失败一律回退全量（fail-closed）。
 本地实现：`scripts/gate/local-gate.mjs --tier <changed|pr|full>`。
 
+> 本地门禁执行子步骤时会剥离 `NODE_USE_ENV_PROXY`（Node 24 的环境代理开关）。若不剥离，
+> notifier `secure-fetch` 的 `pinned.test` 回环用例会被送到宿主 `HTTP_PROXY`（IPv4 超时 /
+> IPv6 remoteAddress 熔断）。直接跑包级 `test` 时仍需 `env -u NODE_USE_ENV_PROXY`；CI 不设置该变量。
+
 最小集与收尾是**全仓对象面**（本地没有 PR 上下文可切，包面恒为全部包），
 全仓产物闸（`contract` / `pack:check` / `verify:npmlayout`）传全包包名；
 廉价全仓一致性闸：`threshold-monotonic`、`stryker:check`、`aggregate:check`、
