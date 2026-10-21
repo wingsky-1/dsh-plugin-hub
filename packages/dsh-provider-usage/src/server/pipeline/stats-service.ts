@@ -111,6 +111,9 @@ export class StatsService {
     this.cacheGeneration += 1;
     this.cache.clear();
     this.panelCache.clear();
+    // 选择切换/清空后失败面随之失效，避免 health 残留已停用 provider 的旧错误
+    // （#1167 评审批次 P2）。
+    this.fetchErrorByProvider.clear();
   }
 
   purgePanelCacheForProvider(provider: string): void {
@@ -125,6 +128,7 @@ export class StatsService {
     for (const p of providers) {
       this.cache.delete(p);
       this.purgePanelCacheForProvider(p);
+      this.fetchErrorByProvider.delete(p);
     }
   }
 

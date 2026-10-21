@@ -195,7 +195,8 @@ async function lastSuccessfulEntry(
   const lastEntry = await ctx.history.last(ctx.provider, ctx.adapter.name).catch(() => null);
   if (lastEntry === null || !lastEntry.data || typeof lastEntry.data !== "object") return null;
   const time = lastEntry.time;
-  if (typeof time !== "number" || !Number.isFinite(time)) return null;
+  // 非正时刻防御：损坏分片不得让客户端渲染出「2 万天前」（#1167 评审批次 P2）。
+  if (typeof time !== "number" || !Number.isFinite(time) || time <= 0) return null;
   return { time, data: lastEntry.data };
 }
 

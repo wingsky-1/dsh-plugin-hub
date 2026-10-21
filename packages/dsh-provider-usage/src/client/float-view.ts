@@ -35,11 +35,16 @@ export function statsReason(stats: StatsResponseV2 | null): string | null | unde
   return (stats as { reason?: string | null }).reason;
 }
 
-/** 状态点等级：fresh/cached → ok；stale → warn；未配置/错误 → err。 */
+/**
+ * 状态点等级：fresh/cached（成功取数）→ ok；stale 或带 error → warn；未配置 → err。
+ * 失败帧在缓存期内 status 可能是 cached：只要带 error 也必须是 warn，
+ * 不得出现「绿点 + 取数失败 + 最后更新」自相矛盾（#1167 评审批次 P2）。
+ */
 export function pillDotLevel(stats: StatsResponseV2 | null): "ok" | "warn" | "err" {
   if (stats === null) return "warn"; // 启动加载中：黄点（非错误）
   if (!stats.configured) return "err"; // 确实未配置/无启用适配器
   if (stats.status === "stale") return "warn"; // 降级陈旧（含 busy：取数进行中）
+  if (stats.error !== null && stats.error !== undefined) return "warn"; // cached 失败帧
   return "ok";
 }
 
@@ -52,7 +57,8 @@ export function staleAgeText(stats: StatsResponseV2 | null): string {
   if (stats === null) return "";
   if (stats.error === null || stats.error === undefined) return "";
   const at = stats.lastSuccessAt;
-  if (typeof at !== "number" || !Number.isFinite(at)) return "";
+  // 下界/未来值防御：损坏历史分片可能给 0/负数/未来时刻，不能渲染成「2 万天前」。
+  if (typeof at !== "number" || !Number.isFinite(at) || at <= 0 || at > Date.now()) return "";
   const age = fmtAge(at);
   return age === "" ? "" : t("pillLastSuccess", { t: age });
 }

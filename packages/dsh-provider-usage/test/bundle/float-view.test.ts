@@ -138,9 +138,14 @@ describe("float-view：pillDotLevel", () => {
     expect(pillDotLevel(stats({ status: "stale" }))).toBe("warn");
   });
 
-  it("fresh / cached → ok", () => {
+  it("fresh / cached → ok（成功帧）", () => {
     expect(pillDotLevel(stats({ status: "fresh" }))).toBe("ok");
     expect(pillDotLevel(stats({ status: "cached" }))).toBe("ok");
+  });
+
+  it("cached + error → warn（失败帧缓存期不得显示绿点）", () => {
+    expect(pillDotLevel(stats({ status: "cached", error: "no-api-key" }))).toBe("warn");
+    expect(pillDotLevel(stats({ status: "fresh", error: "no-api-key" }))).toBe("warn");
   });
 });
 
@@ -242,6 +247,12 @@ describe("float-view：staleAgeText（#1163 取数失败带旧值）", () => {
     expect(staleAgeText(stats({ status: "stale", error: "x", lastSuccessAt: Number.NaN }))).toBe(
       "",
     );
+  });
+
+  it("lastSuccessAt 为 0 / 负数 / 未来值 → 空串（损坏历史不得渲染成 2 万天前）", () => {
+    expect(staleAgeText(stats({ error: "x", lastSuccessAt: 0 }))).toBe("");
+    expect(staleAgeText(stats({ error: "x", lastSuccessAt: -1 }))).toBe("");
+    expect(staleAgeText(stats({ error: "x", lastSuccessAt: Date.now() + 60_000 }))).toBe("");
   });
 
   it("pillTitle 失败态追加最后更新时间", () => {

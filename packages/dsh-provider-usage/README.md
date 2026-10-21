@@ -381,7 +381,11 @@ v1 旧契约已随破坏性变更 #932 删除，仅支持 v2 契约（`fetchData
   仅加载你信任的本地文件，插件绝不从网络拉取执行代码
 - **密钥不进浏览器端**：apiKey 仅存于宿主进程内存，经入参注入 fetchData；
   适配器文件即使被静态服务暴露也不含密钥值（DeepSeek 官方内置适配器同样成立：
-  三级密钥链见上文，stats/history/adapters 响应体与胶囊/面板 HTML 均无密钥子串）
+  密钥链见上文「密钥解析顺序」（seam → 配置/env → 已知 ref → 适配器自查），
+  stats/history/adapters 响应体与胶囊/面板 HTML 均无密钥子串）
+- **失败可见性（#1163）**：取数失败帧经 `lastSuccessAt` 透出最后成功采样时刻，胶囊追加
+  「最后更新 X 前」；health 的 `fetchErrors` 按 provider 登记最近一次失败，成功取数即清除。
+  两者均不含密钥/凭据值（错误码沿用既有稳定码）
 - **XSS 双层防护**：外部 API 数据流入 HTML 前必须经 `esc()` 助手转义（文档义务）；
   插件在宿主端对所有 format 输出做结构化净化兜底（script/iframe/on* 属性/javascript: 协议移除），
   且兜底净化封闭 HTML 实体编码变体——具名 / 十进制 / 十六进制、有无分号均解出后匹配，
