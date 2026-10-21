@@ -85,6 +85,20 @@ built-in skill and becomes available to all sessions in the profile (check with
   `audit` field aligned with the verdict); `--json` emits only the final verdict
   JSON on stdout. Exit-code contract: 0 OK / 1 startup-or-readiness failure /
   2 argument error / 130 SIGINT / 143 SIGTERM.
+- **Optional real-host provider-usage probe** (`--probe-provider-usage`, not an
+  offline CI gate): once the isolated instance is ready, request
+  `/api/dsh-provider-usage/stats?provider=deepseek-official` and
+  `/api/dsh-provider-usage/health`, parse the whitelisted stats fields
+  (`ok/error/lastSuccessAt`) and health fields (`errors/fetchErrors`), print a
+  redacted report and exit immediately. If the isolated `DSH_HOME/.credentials.yaml`
+  has no `refs` entry (a `records`-only browser-session file does not count), the
+  probe skips with "未验证（无凭据）" (unverified: no credentials) and exits 0; with a
+  stored credential and `ok:true` or an `error` other than `no-api-key` it exits 0;
+  with a stored credential but `no-api-key` it exits 1 with actionable diagnostics.
+  The probe never reads or copies real `~/.dsh` credentials, never treats inherited
+  env keys as credential evidence (the V1 fallback would make it pass falsely),
+  strips URL tokens, and echoes no secrets. Pure functions and the fetch-injectable
+  thin I/O live in `scripts/lib/provider-usage-probe.mjs`.
 - **First-run popups are skipped by default**: a brand-new DSH_HOME opens on two
   **blocking** dialogs ("Internal Testing Notice" → "Add an API key to get
   started"); both set `#root` to `inert`, so every click on the page silently
@@ -124,6 +138,7 @@ skills/dsh-verify-isolated/
   scripts/lib/audit.mjs           # B4 isolated-audit pure functions (scanSnapshot/diffAgainstWhitelist/checkSymlinkEscape/runAudit + versioned whitelist WHITELIST_V)
   scripts/lib/emulation.mjs       # device-emulation pure functions (parseEmulationFlags / buildDeviceMetrics; CDP session semantics)
   scripts/lib/onboarding.mjs      # first-run popup skip pure functions (version and namespace constant lookup / settings doc / overlay probe expression / token redaction)
+  scripts/lib/provider-usage-probe.mjs # optional real-host provider-usage probe (credential evidence / stats-health parsing / verdict / redacted report)
   scripts/browser-driver.mjs      # self-contained browser driver (raw CDP, zero deps, --json atomic CLI)
 cordis.patch.yml                  # reuses official dsh-skill-filesystem + bundledSkillDir
 lib/index.js                      # host gate export (name + empty apply)
@@ -151,6 +166,10 @@ node "$SKILL_BASE/scripts/verify-isolated.mjs" --port 0 --evidence-dir /tmp/my-e
 # isolated audit (B4): changes outside the whitelist are reported as suspicious and do not block exit;
 # --keep writes $DSH_HOME/audit/audit.json
 node "$SKILL_BASE/scripts/verify-isolated.mjs" --port 0 --audit --keep <plugin-package-path>
+# optional real-host provider-usage probe: requests stats/health after readiness and exits;
+# no credentials -> skip (exit 0); stored credential + no-api-key -> exit 1.
+# Not an offline CI gate (offline judging stays with the package fixture tests)
+node "$SKILL_BASE/scripts/verify-isolated.mjs" --port 0 --probe-provider-usage <plugin-package-path>
 # keep the native first-run state (to verify the onboarding popups themselves;
 # the skip is preset by default, see SKILL.md §4.1)
 node "$SKILL_BASE/scripts/verify-isolated.mjs" --port 0 --no-skip-onboarding <plugin-package-path>
@@ -201,6 +220,13 @@ not navigate and therefore do not trigger this logic.
 - The isolated `dsh web` binds explicitly to loopback (`--host 127.0.0.1`, reachable
   from this machine only) and explicitly disables telemetry
   (`DSH_TELEMETRY_DISABLED=1`, no test data leaves the machine);
+- **Credential boundary of the provider-usage probe**: it reads only the isolated
+  `$DSH_HOME/.credentials.yaml` to check whether `refs` has an entry (no value is
+  parsed, stored, or echoed), and never reads or copies the real `~/.dsh`; inherited
+  environment variables are not treated as credential evidence (an env key would make
+  the probe pass falsely through the V1 fallback); stats/health output only whitelisted
+  fields, URLs drop query/token, and error text goes through `redactSecrets`; the probe
+  never appends the access token. skip means "unverified", not "passed";
 - Isolated verification covers the **loopback access shape** only (the script pins
   `--host 127.0.0.1`). To verify LAN/mobile access, start it yourself with the official
   `--trusted-host <authority>` and confirm the plugin under test authenticates as expected

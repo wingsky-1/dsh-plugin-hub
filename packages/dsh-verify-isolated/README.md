@@ -62,6 +62,15 @@ dsh plugin --profile web add @wingsky-1/dsh-verify-isolated
   `$DSH_HOME/audit/audit.json`，否则随 `--json` 终态 verdict 输出 `audit` 字段）；
   `--json` 时 stdout 只出最终 verdict JSON。退出码
   契约：0 正常 / 1 启动或就绪失败 / 2 参数错误 / 130 SIGINT / 143 SIGTERM。
+- **可选真实宿主 provider-usage 探针**（`--probe-provider-usage`，非离线 CI 门禁）：
+  隔离实例就绪后请求 `/api/dsh-provider-usage/stats?provider=deepseek-official` 与
+  `/api/dsh-provider-usage/health`，解析 stats 的 `ok/error/lastSuccessAt` 与 health 的
+  `errors/fetchErrors`（白名单字段），打印脱敏报告后立即退出。隔离 `DSH_HOME` 的
+  `.credentials.yaml` 无 `refs` 条目（仅 `records` 的浏览器会话不算凭据）→ skip 并
+  逐字输出「未验证（无凭据）」、退出 0；有存储凭据且 `ok:true` 或 `error` 非
+  `no-api-key` → 退出 0；有存储凭据但 `no-api-key` → 退出 1 并给可操作诊断。探针不读取/
+  复制用户 `~/.dsh` 凭据、不把继承的 env 凭据当证据（避免 V1 兜底假通过）、URL 去 token、
+  不回显任何密钥。纯函数与注入 fetch 的薄 I/O 在 `scripts/lib/provider-usage-probe.mjs`。
 - **首启弹窗默认跳过**：全新 DSH_HOME 的首屏是两个**阻断式**弹窗（「内测声明」→
   「添加 API Key」），两者都把 `#root` 置为 `inert`，页面上一切点击静默失效。脚本
   启动前预置 `settings.yaml` 的 `<namespace>.welcomeNoticeVersion`（命名空间与值仅从目标
@@ -93,6 +102,7 @@ skills/dsh-verify-isolated/
   scripts/lib/audit.mjs           # B4 隔离审计纯函数（scanSnapshot/diffAgainstWhitelist/checkSymlinkEscape/runAudit + 版本化白名单 WHITELIST_V）
   scripts/lib/emulation.mjs       # 设备模拟参数纯函数（parseEmulationFlags / buildDeviceMetrics；CDP 会话语义依据）
   scripts/lib/onboarding.mjs      # 首启弹窗跳过纯函数（版本与命名空间常量探测 / settings 文档 / 弹窗探针表达式 / 令牌脱敏）
+  scripts/lib/provider-usage-probe.mjs # 可选真实宿主 provider-usage 探针（凭据证据 / stats/health 解析 / 判定 / 脱敏报告）
   scripts/browser-driver.mjs      # 自带独立浏览器驱动（raw CDP 零依赖，--json 原子操作 CLI）
 cordis.patch.yml                  # 复用官方 dsh-skill-filesystem + bundledSkillDir
 lib/index.js                      # 宿主门禁出口（name + 空 apply）
@@ -117,6 +127,9 @@ node "$SKILL_BASE/scripts/verify-isolated.mjs" --port 0 --browser <插件包路�
 node "$SKILL_BASE/scripts/verify-isolated.mjs" --port 0 --evidence-dir /tmp/my-evidence --json <插件包路径>
 # 隔离审计（B4）：白名单外变化报「可疑」不阻断退出；--keep 落 $DSH_HOME/audit/audit.json
 node "$SKILL_BASE/scripts/verify-isolated.mjs" --port 0 --audit --keep <插件包路径>
+# 可选真实宿主 provider-usage 探针：就绪后请求 stats/health 即退出；无凭据 skip（退出 0），
+# 有存储凭据但 no-api-key 退出 1。不是离线 CI 门禁（离线判据仍是包内 fixture 测试）
+node "$SKILL_BASE/scripts/verify-isolated.mjs" --port 0 --probe-provider-usage <插件包路径>
 # 保留原生首启态（验证 onboarding 弹窗本身时用；默认预置跳过，见 SKILL.md §3.2）
 node "$SKILL_BASE/scripts/verify-isolated.mjs" --port 0 --no-skip-onboarding <插件包路径>
 ```
@@ -157,6 +170,11 @@ node "$SKILL_BASE/scripts/browser-driver.mjs" eval --state "$DSH_HOME/browser.st
   `web.url`——令牌不进 `--json` 输出、CI 日志与证据归档；
 - 隔离 `dsh web` 显式回环绑定（`--host 127.0.0.1`，仅本机可连）并显式禁用遥测
   （`DSH_TELEMETRY_DISABLED=1`，测试数据不外发）；
+- **provider-usage 探针的凭据边界**：只读隔离 `$DSH_HOME/.credentials.yaml` 判断
+  `refs` 是否有条目（不解析/不保存/不回显值），不读取也不复制用户 `~/.dsh`；不把
+  继承的环境变量当凭据证据（env key 经 V1 兜底会让探针假通过）；stats/health 只输出
+  白名单字段，URL 去 query/token，错误文本经 `redactSecrets` 兜底；探针不拼访问令牌。
+  skip 表示「未验证」，不表示通过；
 - 隔离验证只覆盖**回环访问形态**（脚本固定 `--host 127.0.0.1`）。要验证局域网/
   移动端访问形态，需自行用官方 `--trusted-host <authority>` 拉起，并自行确认被测
   插件在该形态下的鉴权与围栏行为；
