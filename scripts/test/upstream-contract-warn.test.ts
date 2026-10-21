@@ -36,6 +36,7 @@ import {
   ctxCallProp,
   evaluate,
   extractDeclareModules,
+  extractMembers,
   formatReport,
   HEAD_BRACKET,
   HEAD_IDENT,
@@ -49,6 +50,7 @@ import {
   isOwnedByParent,
   isTerminator,
   readCatalog,
+  scanMethodCalls,
   stepBracketAt,
   unquotedMemberName,
 } from "../maintenance/upstream-contract-warn.mjs";
@@ -301,6 +303,75 @@ test("R4-lite：无类型服务打印名与 sites", () => {
   assert.equal(R.untypedSvcs.length, 1);
   const lines = formatReport(A, B, R) as unknown as string[];
   assert.ok(lines.some((l) => l.includes("mystery") && l.includes("p/a.ts:7")));
+});
+
+test("A 侧间接方法调用：ctx.get(...).m() 与绑定变量 .m() 都进 calls", () => {
+  const getChain = analyze('ctx.get("settings").describe();') as unknown as {
+    calls: { svc: string; method: string }[];
+  };
+  assert.deepEqual(
+    getChain.calls.map((c) => [c.svc, c.method]),
+    [["settings", "describe"]],
+  );
+
+  const bound = analyze(
+    'const settings = anyCtx.get?.("settings"); settings.get("ns");',
+  ) as unknown as {
+    calls: { svc: string; method: string }[];
+    services: Named[];
+    forwarding: { verb: string; why?: string }[];
+  };
+  assert.deepEqual(
+    bound.calls.map((c) => [c.svc, c.method]),
+    [["settings", "get"]],
+  );
+  // anyCtx 形态不进 S2 服务消费面（否则无类型服务基线漂移），只记 ctx-alias 透传。
+  assert.equal(bound.services.length, 0);
+  assert.equal(bound.forwarding.filter((f) => f.verb === "get").length, 1);
+  assert.equal(bound.forwarding.find((f) => f.verb === "get")?.why, "ctx-alias");
+});
+
+test("A 侧间接方法调用：非 get 初值、var、重赋值不跟（宁缺勿错）", () => {
+  const callsOf = (src: string): { svc: string; method: string }[] =>
+    (analyze(src) as unknown as { calls: { svc: string; method: string }[] }).calls;
+  assert.equal(callsOf("const x = make(); x.go();").length, 0);
+  assert.equal(callsOf('var x = ctx.get("svc"); x.go();').length, 0);
+  // 未被重赋值的 let 可跟；一旦重赋值即失去指向，整名不跟。
+  assert.equal(callsOf('let x = ctx.get("svc"); x.go();').length, 1);
+  assert.equal(callsOf('let x = ctx.get("svc"); x = other; x.go();').length, 0);
+  assert.equal(callsOf('const x = ctx.get("svc"); x = other; x.go();').length, 0);
+  // 同名多处声明（可能不同作用域）无法证明指向同一服务：整名不跟。
+  assert.equal(callsOf('const x = ctx.get("a"); { const x = ctx.get("b"); } x.go();').length, 0);
+});
+
+test("R5 判据：scanMethodCalls 已定型缺方法 vs 无类型服务只观察", () => {
+  const A = emptyA();
+  A.calls = [
+    { ...site("p/a.ts", 1), svc: "settings", method: "get" },
+    { ...site("p/b.ts", 2), svc: "mystery", method: "doThing" },
+    { ...site("p/c.ts", 3), svc: "settings", method: "describe" },
+  ];
+  const B = emptyB();
+  B.methodTables.set("SettingsForms", new Set(["describe", "update"]));
+  B.links.set("settings", "SettingsForms");
+  const gaps = scanMethodCalls(A, B) as unknown as {
+    missingMethods: { svc: string; method: string; rel: string; line: number }[];
+    untypedSvcs: Map<string, string[]>;
+  };
+  assert.deepEqual(
+    gaps.missingMethods.map((m) => [m.svc, m.method, m.rel, m.line]),
+    [["settings", "get", "p/a.ts", 1]],
+  );
+  assert.deepEqual([...gaps.untypedSvcs.keys()], ["mystery"]);
+  assert.equal(gaps.missingMethods.length, 1);
+});
+
+test("B 侧方法表：修饰符与访问器关键字不算成员（get writable 不得伪造 get）", () => {
+  const m = extractMembers(
+    "private readonly a: T; static b(): void; get writable(): boolean; describe(): void;",
+  ) as unknown as { members: Set<string> };
+  for (const name of ["a", "b", "writable", "describe"]) assert.ok(m.members.has(name), name);
+  for (const bogus of ["private", "static", "get"]) assert.ok(!m.members.has(bogus), bogus);
 });
 
 test("F4：注释零派生（trend.ts:16 形，AST 确认）", () => {

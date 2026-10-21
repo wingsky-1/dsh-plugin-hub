@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 "use strict";
 /**
- * verify-host-seams — 宿主接缝结构门禁（R1-R4，四函数一次遍历）。
+ * verify-host-seams — 宿主接缝结构门禁（R1-R5，结构四函数一次遍历加 R5 方法存在性）。
  *
  * 背景：docs/host-contract.md 登记的四类宿主契约面（事件 / 路由与方法 / slot /
  * 复刻常量）在源码里以四种接缝形态出现。host-contract.mjs 派生器是只读观察
@@ -62,16 +62,26 @@
  * --observe 分组表（triple 等 disposition），不判红：它们的上游归属不在本包，阈值
  * 不由本闸定。
  *
- * 出口：fail-closed 一律经 lib\/gate-exit.mjs 的 failClosed，唯二两处——
+ * R5（宿主服务方法存在性，阻断）：复用 scripts\/maintenance\/upstream-contract-warn.mjs
+ * 的 B 侧 .d.ts 闭包（buildB）与方法表，A 侧复用其 analyzeAFile 的 calls——含
+ * ctx.<svc>.<method>()、ctx.get("svc").m()、anyCtx.get?.("svc") 绑定后的 x.m()。
+ * 已定型服务（B 侧 Context 有该服务且方法表可解析）缺方法即 exit 1；无类型服务
+ * （B 侧没有该服务类型）只列示观察；B 侧基线不可建立（缺 catalog\/peer\/声明入口）
+ * 是门禁故障 exit 2。--no-methods 关闭 R5（仅供 --root 小 fixture 自测；真实仓锚、
+ * gate-steps 与 CI 一律不开）。断言的诚实性依赖 B 侧解析剔除非成员名（见 warn 侧
+ * 注释）：否则 \`get writable()\` 会伪造成员 get，让缺方法判据失效。
+ *
+ * 出口：fail-closed 一律经 lib\/gate-exit.mjs 的 failClosed，三处——
  *   (1) CLI\/范围结构错误（--package 出现、--root 不可读、无 src 包、零扫描文件）；
- *   (2) AST 管线失败（任一文件 transform\/parse 异常，fail-closed 不读成通过）。
+ *   (2) AST 管线失败（任一文件 transform\/parse 异常，fail-closed 不读成通过）；
+ *   (3) R5 的 B 侧基线不可解析（buildB 抛错；不读成「无类型服务」放行）。
  * sourcemap 单点回映缺失不属上列：行号只定判词 site，不定红绿（命中与否只看 AST），
  * 故 best-effort 回退生成行，不计数、不 fail-closed。
  * 判据违例 exit 1（process.exit，非 gate-exit 口径）；通过 exit 0。--observe 只打印
  * 分组表（含 lan \/api\/remote.mux triple、?? 回退组、provider 镜像对的 disposition），
  * 结构错误与管线失败之外恒 exit 0。
  *
- * 用法：node scripts\/gate\/verify-host-seams.mjs [--root <dir>] [--observe]
+ * 用法：node scripts\/gate\/verify-host-seams.mjs [--root <dir>] [--observe] [--no-methods]
  * 退出码：0 通过（--observe 下为观察成功）；1 判据违例；2 门禁故障（failClosed）。
  */
 import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from "node:fs";
@@ -81,6 +91,7 @@ import { transform } from "esbuild";
 import * as acorn from "acorn";
 import { SourceMap } from "node:module";
 import { failClosed } from "../lib/gate-exit.mjs";
+import { analyzeAFile, buildB, scanMethodCalls } from "../maintenance/upstream-contract-warn.mjs";
 
 const DEFAULT_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const API_PREFIX = "/api/dsh-";
@@ -498,6 +509,7 @@ async function scanFile(root, file) {
   const t = await transform(content, { loader: loaderOf(file), sourcemap: true, sourcefile: rel });
   const ast = acorn.parse(t.code, { ecmaVersion: "latest", sourceType: "module", locations: true });
   const found = analyzeAst(ast);
+  const methods = analyzeAFile(ast);
   let map = null;
   try {
     map = new SourceMap(JSON.parse(t.map));
@@ -527,6 +539,7 @@ async function scanFile(root, file) {
     r3: withLine(found.r3),
     r4defs: withLine(found.r4defs).map((d) => ({ ...d, pkg: pkgOf(rel) })),
     exportNames: withLine(found.exportNames).map((e) => ({ ...e, pkg: pkgOf(rel) })),
+    aCalls: withLine(methods.calls),
   };
 }
 
@@ -680,7 +693,49 @@ function collectViolations(scanned) {
   for (const v of grouped.groupViolations) violations.push(v);
   return { violations: violations, rows: rows, dynamicOn: dynamicOn, allDefs: allDefs };
 }
-function reportVerify(observe, scope, result) {
+
+/**
+ * R5：A 侧 calls 对 B 侧 .d.ts 方法表求存在性。B 侧不可解析走 failClosed（exit 2），
+ * 不读成「全部无类型服务」放行；无类型服务只观察、不判红（与 upstream-contract-warn
+ * 的 R4-lite 同口径，区别是本闸把「已定型缺方法」升级为阻断）。
+ */
+function collectMethodGaps(root, scanned) {
+  let B = null;
+  try {
+    B = buildB(root);
+  } catch (e) {
+    failClosed(
+      `verify-host-seams: R5 B 侧基线不可解析（fail-closed）：${String(e?.message ?? e).slice(0, 300)}`,
+    );
+  }
+  const calls = [];
+  for (const s of scanned) calls.push(...s.aCalls);
+  const gaps = scanMethodCalls({ calls: calls }, B);
+  return {
+    missingMethods: gaps.missingMethods,
+    untypedSvcs: [...gaps.untypedSvcs.entries()],
+    calls: calls.length,
+  };
+}
+
+/** R5 的两行汇总：方法判定 + 无类型服务观察清单（--no-methods 时只报未启用）。 */
+function methodLines(methodReport, observe) {
+  if (methodReport === null) {
+    console.log("verify-host-seams: R5 方法未启用（--no-methods，只跑 R1-R4）");
+    return;
+  }
+  console.log(
+    `verify-host-seams: R5 方法 ${methodReport.missingMethods.length > 0 ? "FAIL" : "OK"}（调用 ${methodReport.calls} 处，未命中 ${methodReport.missingMethods.length}，无类型服务 ${methodReport.untypedSvcs.length}）`,
+  );
+  if (observe) {
+    for (const m of methodReport.missingMethods)
+      console.log(`verify-host-seams:   - 缺方法 ${m.svc}.${m.method}（${fmtSite(m)}）`);
+  }
+  for (const [svc, sites] of methodReport.untypedSvcs)
+    console.log(`verify-host-seams: R5 观察 无类型服务 ${svc}（${sites.join("，")}，不判红）`);
+}
+
+function reportVerify(observe, scope, result, methodReport) {
   if (observe) {
     console.log(
       `verify-host-seams: 分组表（${scope.files.length} 文件，${result.allDefs.length} 定义，动态 on 首参 ${result.dynamicOn} 处）`,
@@ -690,6 +745,7 @@ function reportVerify(observe, scope, result) {
       console.log(`  [${r.disposition}] (${r.pkg}, ${r.value})${fb}`);
       for (const h of r.holders) console.log(`    - ${h}`);
     }
+    methodLines(methodReport, true);
     console.log(`verify-host-seams: OBSERVE OK（观察模式不判红）`);
     return 0;
   }
@@ -700,6 +756,7 @@ function reportVerify(observe, scope, result) {
     );
     return 1;
   }
+  methodLines(methodReport, false);
   console.log(
     `verify-host-seams: OK（扫描 ${scope.files.length} 文件，${result.rows.length} 组，动态 on 首参 ${result.dynamicOn} 处只观察）`,
   );
@@ -710,9 +767,17 @@ async function main(argv) {
   const root = scope.root;
   const files = scope.files;
   const observe = argv.includes("--observe");
+  const useMethods = !argv.includes("--no-methods");
   const scanned = await scanAll(root, files);
   const result = collectViolations(scanned);
-  return reportVerify(observe, scope, result);
+  const methodReport = useMethods ? collectMethodGaps(root, scanned) : null;
+  if (methodReport !== null) {
+    for (const m of methodReport.missingMethods)
+      result.violations.push(
+        `R5 方法越位 ${fmtSite(m)} 服务 ${m.svc}.${m.method}（已定型服务缺方法）`,
+      );
+  }
+  return reportVerify(observe, scope, result, methodReport);
 }
 
 function isDirectExecution() {
