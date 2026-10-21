@@ -426,6 +426,31 @@ v1 旧契约已随破坏性变更 #932 删除，仅支持 v2 契约（`fetchData
 
 ## 验证
 
+### 真实宿主隔离探针（可选，非离线门禁）
+
+离线测试证明解析/判定逻辑，但证明不了「真实宿主 + 已存储凭据」能取到数。需要这一层
+证据时，用 `@wingsky-1/dsh-verify-isolated` 的 `--probe-provider-usage`（隔离
+`DSH_HOME` + 独立 profile/端口；不碰正在使用的 `~/.dsh`）：
+
+```bash
+node "<dsh-verify-isolated skill 的 scripts>/verify-isolated.mjs" \
+  --port 0 --probe-provider-usage <本插件包路径>
+```
+
+隔离实例就绪后请求 `/api/dsh-provider-usage/stats?provider=deepseek-official` 与
+`/api/dsh-provider-usage/health`，解析 `ok/error/lastSuccessAt` 与
+`errors/fetchErrors`（白名单字段）后立即退出：
+
+- 隔离 `DSH_HOME/.credentials.yaml` 无 `refs` 条目 → skip，输出「未验证（无凭据）」，
+  退出 0（探针不读取/复制用户 `~/.dsh` 凭据，也不把继承的 env 凭据当证据——env key
+  会经 V1 兜底让探针假通过）；
+- 有存储凭据 + `ok:true` 或 `error` 非 `no-api-key` → 退出 0；
+- 有存储凭据但 `no-api-key` → 退出 1，打印凭据 seam 的可操作诊断（settings 服务形态 /
+  provider 目录 / `apiKeyEnv` / `credentials.resolve` / health 错误面）。
+
+这是可选的真实宿主验证，不替代本包的离线测试与 CI 门禁；凭据由运行方以测试专用方式
+写入隔离 `DSH_HOME` 的存储，不得复制真实凭据或伪造凭据。输出不含 token/密钥。
+
 测试单份维护、变异自动覆盖：单元测试只维护 `test/*.test.ts`（`import "../lib/index.js"` 测产物）；stryker 经 lib→src hook 复用同一份断言，无需手工同步副本。
 
 ```sh

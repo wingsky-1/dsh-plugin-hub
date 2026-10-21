@@ -22,7 +22,7 @@
  *   node verify-isolated.mjs [--port <port>] [--browser] [--keep]
  *                            [--no-build] [--evidence-dir <dir>] [--audit]
  *                            [--audit-extra-dirs <dir>] [--no-skip-onboarding]
- *                            [--json] [-- <pkg-path>...]
+ *                            [--probe-provider-usage] [--json] [-- <pkg-path>...]
  *   dsh 入口     从 PATH 解析 `dsh`，要求 `dsh --version` 为 0.2.1-rc.2。找不到、
  *                不可用、读取失败或其它版本一律 fail-closed，避免产出不属于目标
  *                runtime 的 preset/验证证据。
@@ -55,6 +55,15 @@
  *                      缺失就不预置并交给 browser-driver 导航后兜底。
  *                      要验证 onboarding 弹窗本身时用它保留原生首启态。
  *   --json             stdout 只出最终 verdict JSON（人类文案全部走 stderr）。
+ *   --probe-provider-usage
+ *                      可选真实宿主验证（**不是离线 CI 门禁**）：隔离实例就绪后请求
+ *                      provider-usage 的 /stats?provider=deepseek-official 与 /health，
+ *                      解析 ok/error/lastSuccessAt 与 health.errors/fetchErrors 后
+ *                      **立即退出**（不进入前台等待）。隔离 DSH_HOME 的
+ *                      .credentials.yaml 无 refs 条目 → skip（输出「未验证（无凭据）」，
+ *                      退出 0）；有存储凭据且 ok:true 或 error 非 no-api-key → 退出 0；
+ *                      有存储凭据但 no-api-key → 退出 1 并给可操作诊断。不读取/复制
+ *                      用户 ~/.dsh 凭据，不把继承的 env 凭据当证据，不回显 token/密钥。
  *   --                 之后为要挂载的本地插件路径（相对路径基于当前 cwd 解析；
  *                      npm 包名 / git URL 原样透传，见 lib/verify-core.mjs
  *                      resolvePkgArg）。
@@ -69,6 +78,8 @@
  *   | 130 | SIGINT（Ctrl+C）：终态清理后透传                                   |
  *   | 143 | SIGTERM：终态清理后透传                                            |
  *   +-----+------------------------------------------------------------------+
+ *   （--probe-provider-usage 的 fail 也归 1：凭据存在但 no-api-key / stats 请求或
+ *    响应不可用；skip/pass 归 0。探针模式跑完即退出，不进入前台等待。）
  *   （其余：就绪后 dsh 自身异常退出码原样透传；信号退出归一为 130/143——与
  *     bash 版 wait 透传同语义，见 main() 中 child "exit" 处理注释。）
  *
@@ -149,6 +160,7 @@ import {
 } from "./lib/verify-core.mjs";
 import { findWelcomeNoticeVersion, welcomeSettingsDocument } from "./lib/onboarding.mjs";
 import { isInside, runAudit, scanSnapshot, SKIP_DEEP, WHITELIST_V } from "./lib/audit.mjs";
+import { formatProbeReport, runProviderUsageProbe } from "./lib/provider-usage-probe.mjs";
 
 const SCRIPT_DIR = import.meta.dirname; // Node >= 22 全程可用
 const DRIVER = join(SCRIPT_DIR, "browser-driver.mjs");
@@ -159,7 +171,7 @@ const READY_TIMEOUT_MS = 15000;
 const URL_WAIT_MS = 5000; // 访问 URL 行晚于 HTTP 就绪的等待上限（见 9b 注释）
 const LOG_TAIL_LIMIT = 4096; // 防背压：收集缓冲限长（browser-driver stderrBuf 先例）
 
-const USAGE = `用法: node verify-isolated.mjs [--port <port>] [--browser] [--keep] [--no-build] [--evidence-dir <dir>] [--audit] [--audit-extra-dirs <dir>] [--no-skip-onboarding] [--json] [-- <pkg-path>...]
+const USAGE = `用法: node verify-isolated.mjs [--port <port>] [--browser] [--keep] [--no-build] [--evidence-dir <dir>] [--audit] [--audit-extra-dirs <dir>] [--no-skip-onboarding] [--probe-provider-usage] [--json] [-- <pkg-path>...]
 
 选项：
   --port <port>        端口（默认 3456；--port 0 自动探测真实空闲端口并打印）
@@ -171,12 +183,17 @@ const USAGE = `用法: node verify-isolated.mjs [--port <port>] [--browser] [--k
   --audit-extra-dirs <dir>
                       额外审计目录（可重复；相对路径基于 cwd 绝对化；局限：不扫真实 home）
   --no-skip-onboarding 不预置首启弹窗跳过（默认预置 settings.yaml 的内测声明版本与命名空间，使其默认不弹；命名空间与版本均从 dsh 客户端产物现取）
+  --probe-provider-usage
+                      可选真实宿主验证（非离线 CI 门禁）：就绪后请求 provider-usage 的 stats/health，
+                      无存储凭据时 skip 并输出「未验证（无凭据）」（退出 0）；有凭据且 ok:true 或
+                      error 非 no-api-key 退出 0；有凭据但 no-api-key 退出 1 并给可操作诊断。
+                      探针模式跑完即退出，不进入前台等待；不读取/复制用户 ~/.dsh 凭据。
   --json               stdout 只出最终 verdict JSON（人类文案走 stderr）
   --                   之后为要挂载的本地插件路径（相对路径基于 cwd 绝对化；npm 包名 / git URL 原样透传）
   --help               显示本帮助
 
 环境要求：PATH 中存在 dsh 且 \`dsh --version\` 为 0.2.1-rc.2（找不到、读取失败或其它版本均拒绝）；Node >= 22（同 browser-driver）。
-退出码：0 正常 / 1 启动或就绪失败 / 2 参数错误 / 130 SIGINT / 143 SIGTERM。
+退出码：0 正常 / 1 启动或就绪失败（含 --probe-provider-usage 判失败）/ 2 参数错误 / 130 SIGINT / 143 SIGTERM。
 
 访问 URL：dsh web 的 GUI 带鉴权，裸端口只得到 401 文本页。脚本启动后打印带令牌的
 访问 URL，并把它写入 browser.state 的 dshWebUrl（0o600）——browser-driver 页面命令
@@ -208,6 +225,7 @@ let auditBaseline = null; // B4：t0 基线快照 [{ root, snapshot }]（--audit
 let auditResult = null; // B4：settle 审计输出（--audit 时；并入 verdict/audit.json）
 let auditExtraDirsAbs = []; // B4：绝对化后的 --audit-extra-dirs（settle 审计与 verdict 共用）
 let onboardingPreset = null; // 首启弹窗预置结果（--no-skip-onboarding 时为 disabled）
+let providerUsageResult = null; // 可选真实宿主探针结果（--probe-provider-usage 时进 verdict）
 let webUrl = null; // 带令牌的访问 URL（仅落 browser.state / 打印，不进 verdict）
 let webUrlBare = null; // 不含令牌的访问 URL（进 verdict，防 --json 日志泄漏令牌）
 
@@ -284,6 +302,7 @@ const OPTION_SPEC = {
   audit: { type: "boolean" },
   "audit-extra-dirs": { type: "string", multiple: true },
   "no-skip-onboarding": { type: "boolean" },
+  "probe-provider-usage": { type: "boolean" },
   json: { type: "boolean" },
   help: { type: "boolean" },
 };
@@ -396,6 +415,8 @@ function parseCli(argv) {
     auditExtraDirs: values["audit-extra-dirs"] ?? [],
     // 默认跳过首启弹窗，故这里是**反向**选项：给出即关掉跳过。
     skipOnboarding: values["no-skip-onboarding"] !== true,
+    // 可选真实宿主验证：就绪后跑一次 provider-usage 探针即退出（不是离线门禁）。
+    probeProviderUsage: values["probe-provider-usage"] === true,
     json: values.json === true,
     help: values.help === true,
   };
@@ -524,6 +545,9 @@ function makeVerdict(mut) {
     // browser.state.dshWebUrl 与 dsh.log（均 0o600），tokenSource 指明去哪取。
     web: { url: webUrlBare, tokenSource: webUrl ? "browser.state.dshWebUrl" : null },
     onboarding: onboardingPreset,
+    // 可选真实宿主探针（--probe-provider-usage）：结果已脱敏（URL 去 query、字段白名单），
+    // 未启用时为 null。探针不是离线 CI 门禁；skip 也如实进 verdict，防「没跑=通过」。
+    providerUsage: providerUsageResult,
     audit: auditResult, // B4：--audit 时 settle 审计结果；否则 null（--json 终态含同字段）
     cleanup: "running", // 中间态；终态由 writeVerdictTerminal 覆写为 done/kept
     ...mut,
@@ -1243,6 +1267,26 @@ function snapshotAuditBaseline(f, extraDirsAbs) {
   }
 }
 
+/**
+ * 11. 可选真实宿主 provider-usage 探针（--probe-provider-usage）。
+ *
+ * 就绪后请求 /api/dsh-provider-usage/stats?provider=deepseek-official 与
+ * /api/dsh-provider-usage/health，解析白名单字段并打印脱敏报告；返回探针退出码。
+ * 探针模式跑完即退出（不进入前台等待）：skip/pass=0，fail=1。无凭据时 skip 并
+ * 明示「未验证（无凭据）」——探针不是离线 CI 门禁，没跑不等于通过。
+ */
+async function runProviderUsageProbeStep() {
+  out("provider-usage 探针: 开始（可选真实宿主验证，不是离线 CI 门禁）...");
+  const result = await runProviderUsageProbe({
+    baseUrl: `http://127.0.0.1:${actualPort}/`,
+    credentialsPath: join(isolatedHome, ".credentials.yaml"),
+  });
+  providerUsageResult = result;
+  for (const line of formatProbeReport(result)) out(line);
+  out(`provider-usage 探针退出码: ${result.exitCode}（${result.status}）`);
+  return result.exitCode;
+}
+
 async function waitForDshExit() {
   // B6：就绪后写 verdict 中间态（cleanup:"running"，退出时更新终态）
   writeVerdictRunning();
@@ -1282,7 +1326,7 @@ async function main() {
   out(`隔离环境就绪: DSH_HOME=${isolatedHome}  profile=${profile}`);
   out(`启动 dsh web 于 http://127.0.0.1:${dshWebPort} （Ctrl+C 退出并自动清理）`);
 
-  // 8 + 9 + 9b + B4 + B6 + 10（分阶段 helpers，顺序不变）
+  // 8 + 9 + 9b + B4 + 10 + 11（分阶段 helpers，顺序不变）
   spawnDshChild();
   const collector = createDshLogCollector();
   dshChild.stdout.on("data", collector.onData);
@@ -1291,7 +1335,15 @@ async function main() {
   const verdictPort = dshWebPort;
   await awaitDshReady(collector, verdictPort);
   await resolveAccessUrl(f);
+  // 审计 t0 在探针请求之前：探针是运行期行为，写面增量应计入审计面。
   snapshotAuditBaseline(f, extraDirsAbs);
+  // 11. 可选真实宿主探针：跑完即退出，退出码由探针判定（skip/pass=0，fail=1）。
+  if (f.probeProviderUsage) {
+    const probeCode = await runProviderUsageProbeStep();
+    requestExit(probeCode, null);
+    await settle();
+    return;
+  }
   await waitForDshExit();
 }
 
