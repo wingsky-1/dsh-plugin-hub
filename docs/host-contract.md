@@ -1,9 +1,12 @@
 # 宿主契约面清单
 
 本仓插件集依赖上游宿主（dsh）的契约面登记：`inject` 覆盖的是服务级存在性，
-本清单登记 `inject` 覆盖不到的那一层（事件 / 字段与载荷 / slot / 路由与方法 / 复刻常量与版本锚）。
-全部单元格由派生回填：事实源是 [派生脚本](../scripts/derive/host-contract.mjs) 的实时输出（只读打印，默认输出完整派生 JSON，`--sample` 只输出 sample 节）。
+本清单登记 `inject` 覆盖不到的那一层（事件 / 字段与载荷 / slot / 路由与方法 / 复刻常量与版本锚 /
+宿主服务面类型锚与豁免）。
+表 1–7 的单元格由派生回填：事实源是 [派生脚本](../scripts/derive/host-contract.mjs) 的实时输出（只读打印，默认输出完整派生 JSON，`--sample` 只输出 sample 节）。
 本文不手写任何事件名 / slot key / 路由 / 方法 / 常量值；单元格与派生输出不一致时以派生输出为准。
+**表 8 例外**：类型锚与豁免是人工核对登记（证据 = 各包 src 的 `import type` 与 package.json 的
+catalog devDep/peer），派生脚本不扫描类型面，故该表不由派生回填。
 
 复核命令（仓库根执行）：
 
@@ -38,6 +41,7 @@ rc 升级流程引用：升级 dsh rc 时按本清单逐条核对上游变更（
 - [表 5 路由与方法白名单](#hc-t5)
 - [表 6 复刻常量与版本锚](#hc-t6)
 - [表 7 来源与断言](#hc-t7)
+- [表 8 宿主服务面类型锚与豁免](#hc-t8)
 
 <a id="hc-t1"></a>
 ## 表 1 包一览
@@ -199,7 +203,35 @@ provider-usage 经 `ctx.webServer.register`（`src/apply/apply.ts`）；notifier
 | 7 | 缺口 G2（载荷版本） | SESSION_FORMAT_VERSION 无代码符号锚；`assistant/message` 内嵌 stream / attempt 的字段级载荷版本无类型快照可派生 |
 | 8 | 缺口 G3（slot 协议） | `plugins.row.config` 的 canonical row id / bundle key 与 `settings.section` 的 label thunk 语义由当前实现和客户端产物断言；其它 runtime 不在本清单支持范围 |
 | 9 | 缺口 G4（DOM 锚） | 11 条选择器均为宿主 DOM 私有约定，无版本锚；派生只能列出当前在用 |
-| 10 | 缺口 G5（类型版本锚） | 锁版只是期望版本；`Session.fromRestore` 第 5 参与 `EpochHeader.system` 删除等破坏点只活在存档文档里 |
+| 10 | 缺口 G5（类型版本锚） | **已落地部分**：settings / llm / sessions / webServer / agents / configForms / slots / locale 八条服务面已按表 8 锚到官方 catalog 类型（settings 经 shared 的 `HostSettings*` 锚、lan-proxy 与 notifier 消费）；**仍缺**：credentials / attachments / loader / sessionProjections 无对应官方 catalog 类型包（表 8 豁免），且锚只覆盖本仓实际消费的最小面——未消费的方法/字段上游改名仍不可见。历史破坏点（`Session.fromRestore` 第 5 参、`EpochHeader.system` 删除）仍只活在存档文档里 |
 | 11 | 验证状态 | `pnpm gate:pr` exit 0；真实 DSH 0.1.7-rc.2 隔离 profile（本轮锁版 0.2.1-rc.2 后尚未重跑真机隔离验证）已加载 7 个插件，核验了 settings late-attach、LAN 端口热更新（39181/39182，`listening: true`）、MCP/用量入口、LAN health/root 与 390px 窄视口；隔离 profile 无 workspace/session，worktree Files 的会话级操作仍需有 workspace 的样本 |
+
+<a id="hc-t8"></a>
+## 表 8 宿主服务面类型锚与豁免
+
+形态为**类型锚**：能被本仓 `import type` 的官方 catalog 类型就锚定（上游改字段/签名即在本仓
+tsc 期判红）；官方没有 catalog 类型包的登记豁免，写明理由与出处，不把自持形状伪装成官方契约。
+直接 `import type` 官方包的锚，要求该包在消费包 `package.json` 的 devDependencies 以
+`catalog:` 登记、peer 与 `scripts/data/plugins-manifest.json` 合同一致（`#1164`）；
+经 shared 再导出的锚（settings）由 shared 持有官方 devDep，消费包只依赖 shared。
+豁免不改任何运行时语义。
+
+| # | 服务面 | 端 | 类型锚（官方包 / 类型）或豁免 | 状态 | 出处与断言 |
+| --- | --- | --- | --- | --- | --- |
+| 1 | settings | 宿主 | anchor：`@deepseek-ai/dsh-settings` 的 `SettingsForms` / `SettingsDescriptor` / `SettingsDescribeOptions`；本仓经 shared 的 `HostSettingsService` / `HostSettingsDescriptor` / `HostSettingsDescribeOptions` 再导出 | 已锚定（#1164 WP1） | `shared/settings-namespace.ts`；`packages/dsh-lan-proxy/src/server/config/impl/namespace.ts`；`packages/dsh-notifier/src/server/upgrade/impl/legacy/type.ts:2`（官方 import type，既有） |
+| 2 | credentials | 宿主 | exempt：catalog 无官方 credentials 包（0.2.1-rc.2 未发布类型层），只能经 settings seam 服务面注入 + 消费点自持最小形状 | 豁免（待上游发布官方类型包后改回锚定） | `pnpm-workspace.yaml` catalog 无 credentials 键；`packages/dsh-provider-usage/src/server/registry/provider-config.ts`（后续工作包跟进） |
+| 3 | llm | 宿主 | anchor：`@deepseek-ai/dsh-llm` 的 `LlmRuntime`（`Context["llm"]` 声明合并）；mcp-manager 的 `ModelInfoPort = Pick<Context["llm"], "resolveModelInfo">` | 已锚定（provider-usage 直接经 `ctx.llm`；mcp-manager 晚读 `ctx.get("llm")` 但形状以官方为唯一来源，#1164 mcp-manager 工作包） | `packages/dsh-provider-usage/src/apply/apply.ts:203`、`src/server/report-routes/reports.ts`；`packages/dsh-mcp-manager/src/server/shared/host-faces.ts:67-74` |
+| 4 | sessions | 宿主 + 客户端 | anchor：宿主 `@deepseek-ai/dsh-session` 的 `SessionStore`（`Context["sessions"]`）；客户端 `@deepseek-ai/dsh-api-session-controller` 的 `ISessions`（`client` 入口） | 已锚定 | `packages/dsh-provider-usage/src/apply/apply.ts:454`、`src/client/index.tsx:26`；`packages/dsh-mcp-manager/src/client/core/state.ts:15` |
+| 5 | webServer | 宿主 | anchor：`@deepseek-ai/dsh-host-webserver` 的 `WebServer`（`Context["webServer"]`） | 已锚定 | 四包 `export const inject`（表 3）；lan-proxy `src/server/apply.ts`；mcp-manager `src/server/shared/host-faces.ts:78` |
+| 6 | agents | 宿主 | anchor：`@deepseek-ai/dsh-agent` 的 `AgentRegistry`（`Context["agents"]`）；mcp-manager 的 `AgentFace` 从 `ReturnType<Context["agents"]["list"]>[number]` 派生，只取 `id` + `Pick<Agent["ctx"]["tools"], "restrict">` | 已锚定（不把整服务递给域，#1164 mcp-manager 工作包） | `packages/dsh-mcp-manager/src/server/shared/host-faces.ts:76-93`；`packages/dsh-notifier/src/server/events/interface.ts:14` |
+| 7 | attachments | 宿主 | exempt：官方类型在 `@deepseek-ai/dsh-attachment`（提供方 `dsh-attachment-local`），该包不在 catalog、非本包直接依赖，pnpm 严格布局下 `import type` 不可解析；服务晚读（`ctx.get("attachments")`），自持 `AttachmentsPort` 只声明 `saveImages`。退出条件：进 catalog 后改回 `import type` | 豁免 | `packages/dsh-mcp-manager/src/server/shared/host-faces.ts:54-65`；`pnpm-workspace.yaml` catalog 无该键 |
+| 8 | loader | 宿主 | exempt：服务面所有者是 `@deepseek-ai/cordis-plugin-loader`（`ctx.loader`），该包不在 catalog、不可解析（`Pick<Context, "loader">` 直接 tsc 红）；运行时经 `ctx.get("loader")` 现取，自持 `LoaderPort` 只保留 `load` / `mount`。退出条件：进 catalog 且服务面进 `Context` 后改回官方类型 | 豁免 | `packages/dsh-mcp-manager/src/server/shared/host-faces.ts:219-236`、`src/server/shared/compose.ts`（`ctx.get("loader")` 接线） |
+| 9 | sessionProjections | 宿主 | exempt：官方 `@deepseek-ai/dsh-session-projection` / `@deepseek-ai/dsh-working-directory` 不在 catalog、实测不可解析（硬引判 tsc 红）；自持 `SessionProjectionsPort` 只收 `stateOf`——要**原始可空投影**，不用官方 `get()` 的 cwd 兜底。退出条件：锁版后改回 `import type` | 豁免 | `packages/dsh-mcp-manager/src/server/shared/host-faces.ts:238-259`、`src/server/shared/compose.ts`（`ctx.get("sessionProjections")` 接线） |
+| 10 | configForms | 客户端 | anchor：`@deepseek-ai/dsh-client-ui-settings` 的 `ConfigForms`（客户端 `Context["configForms"]`） | 已锚定 | `packages/dsh-lan-proxy/src/client/index.ts:53`；`packages/dsh-mcp-manager/src/client/index.ts:58` |
+| 11 | slots | 客户端 | anchor：`@deepseek-ai/dsh-client-ui-renderer` 的 `SlotRegistry`（客户端 `Context["slots"]`）——注意服务声明在 renderer 包，`dsh-client-ui-slots` 只提供 SlotMap / slot 契约原语 | 已锚定 | `packages/dsh-lan-proxy/src/client/index.ts:52`；`packages/dsh-notifier/src/client/index.tsx:112`；`packages/dsh-mcp-manager/src/client/core/state.ts:17` |
+| 12 | locale | 客户端 | anchor：`@deepseek-ai/dsh-client-locale` 的 `LocaleRuntime`（客户端 `Context["locale"]`） | 已锚定 | lan-proxy `src/client/index.ts:54`；notifier `src/client/index.tsx:111`；mcp-manager `src/client/core/state.ts:16`；provider-usage `src/client/index.tsx:28` |
+
+锚只覆盖本仓实际消费的最小面：未消费的方法/字段上游改名或改型仍不可见（同表 7 G5）。
+豁免项一旦上游发布对应官方类型包，应先加 catalog 锁版、再改回 `import type` 锚定，并更新本表。
 
 共享分档的规范正文见 [DEVELOPMENT §2.4](./DEVELOPMENT.md)；跨包共享准入见 [shared/README.md](../shared/README.md)。

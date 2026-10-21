@@ -8,5 +8,8 @@
     "build": "tsc -b . --force",
     "typecheck": "tsc -b . --force",
     "test": "node ../scripts/test/run-vitest.mjs"
+  },
+  "devDependencies": {
+    "@deepseek-ai/dsh-settings": "catalog:"
   }
 }
