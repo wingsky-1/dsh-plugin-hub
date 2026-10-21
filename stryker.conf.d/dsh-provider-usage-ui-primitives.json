@@ -46,5 +46,5 @@
     "shared/**/*.d.ts",
     "shared/**/*.tsbuildinfo"
   ],
-  "_comment": "T1 五原语层（R2 档 C 上提到 shared/client/ui/）：Button/Field/SegmentedControl/Status+Badge/Surface 的行为契约面。R1 时原语层在本包 src/client/shared/ui/ 下拆 7 个文件，R2 上提为跨包单文件（原语层文件头记了为什么必须单文件：fanin 门禁按 shared/ 下每个 .js 枚举模块并各自要扇入≥2）。判据走 role/aria 查询，不锚 className，故换实现不破判据；判据文件随之上移到消费包 test/client-dom/（shared/test/ 不在任何 vitest project 的收集面内）。"
+  "_comment": "#1167：client-dom/pill-note.test.ts（胶囊「最后更新」DOM 接线）随客户端 DOM 判据并入本段；其被测 client 源码不进变异面，此处仅作层归属登记（杀灭力由 client-dom 本身提供）。T1 五原语层（R2 档 C 上提到 shared/client/ui/）：Button/Field/SegmentedControl/Status+Badge/Surface 的行为契约面。R1 时原语层在本包 src/client/shared/ui/ 下拆 7 个文件，R2 上提为跨包单文件（原语层文件头记了为什么必须单文件：fanin 门禁按 shared/ 下每个 .js 枚举模块并各自要扇入≥2）。判据走 role/aria 查询，不锚 className，故换实现不破判据；判据文件随之上移到消费包 test/client-dom/（shared/test/ 不在任何 vitest project 的收集面内）。"
 }

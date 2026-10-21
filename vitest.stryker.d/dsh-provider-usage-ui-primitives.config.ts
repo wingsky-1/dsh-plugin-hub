@@ -8,6 +8,7 @@ import { defineConfig } from 'vitest/config'
 export default defineConfig({
   test: {
     include: [
+      'packages/dsh-provider-usage/test/client-dom/pill-note.test.ts',
       'packages/dsh-provider-usage/test/client-dom/ui-primitives.test.ts',
     ],
     environment: 'node',
