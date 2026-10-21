@@ -144,6 +144,8 @@ export function makeAdapterRegistry(
   const registeredNames = new Set<string>();
   /** 最近一次错误登记（key = name 或 file:<basename>）。 */
   const lastErrors = new Map<string, AdapterErrorInfo>();
+  /** 最近一次已登记的 seam 诊断签名（同签名不重复登记，防每轮取数刷时间戳与日志）。 */
+  let lastSeamDiagnostic: string | undefined;
 
   /** 登记一次适配器错误（warn + 记录最近一次；同 key 覆盖）。 */
   function recordError(key: string, kind: "load" | "exec", message: string): void {
@@ -358,13 +360,33 @@ export function makeAdapterRegistry(
     return { ok: true, name: a.name };
   }
 
-  /** 模型配置读取（同域 provider-config.ts，管线经实例调用）。 */
-  function resolveProviderConfigBound(
+  /**
+   * 模型配置读取（同域 provider-config.ts，管线经实例调用）。
+   *
+   * seam 诊断接线（#1164）：provider-config 把「服务在、方法不在」的 API 漂移经
+   * onDiagnostic 传出，这里汇总成一条签名登记到 recordError("provider-config","load")
+   * ——health.errors 可见。同一签名只登记一次（配置面错误是静态的，不必每轮取数刷新
+   * 时间戳/日志）；签名变化（漂移换面或恢复后再次漂移）时按同 key 覆盖，成功取数不删除。
+   */
+  async function resolveProviderConfigBound(
     provider: string,
     ctx: unknown,
     input?: ProviderConfigInput,
   ): Promise<ResolvedProviderConfig> {
-    return resolveProviderConfig(provider, ctx, input);
+    const diagnostics: string[] = [];
+    const resolved = await resolveProviderConfig(provider, ctx, input, (message) => {
+      diagnostics.push(message);
+    });
+    const signature = diagnostics.join("；");
+    if (signature.length === 0) {
+      // 恢复正常：复位去重状态，让同一漂移再次出现时能重新登记（已登记的错误按
+      // 「配置面错误是静态的」保留在 health.errors，不在这里删除）。
+      lastSeamDiagnostic = undefined;
+    } else if (signature !== lastSeamDiagnostic) {
+      lastSeamDiagnostic = signature;
+      recordError("provider-config", "load", signature);
+    }
+    return resolved;
   }
 
   return {

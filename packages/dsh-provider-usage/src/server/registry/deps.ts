@@ -12,6 +12,9 @@
  * - sanitize：错误登记的路径脱敏出口（recordError 落盘前的绝对路径归约；
  *   默认恒等函数，信息面最小披露由调用方供给）。
  *
+ * provider-config 的 seam 漂移诊断（#1164）不新增注入面：它经既有
+ * recordError("provider-config","load") 登记，与适配器错误同一条 health.errors 通道。
+ *
  * 命名接缝与块内联双生子：makeAdapterRegistry 的 Options 保留内联函数类型
  * （与搬迁前逐字一致），不经 import type 引用本文件——入口 .d.ts 的声明块比较是
  * 文本级的，别名一改即漂移（export-surface-snapshot 零漂移证明要求搬迁前后声明块
