@@ -18,6 +18,7 @@ export default defineConfig({
       'packages/dsh-mcp-manager/test/unit/dispatch.test.ts',
       'packages/dsh-mcp-manager/test/unit/file-io-queue.test.ts',
       'packages/dsh-mcp-manager/test/unit/file-io.test.ts',
+      'packages/dsh-mcp-manager/test/unit/host-faces-anchors.test.ts',
       'packages/dsh-mcp-manager/test/unit/hotspot.test.ts',
       'packages/dsh-mcp-manager/test/unit/init-failure.test.ts',
       'packages/dsh-mcp-manager/test/unit/lifecycle-mount.test.ts',
