@@ -11,11 +11,11 @@
  *    解析 skills 目录）；
  * 4. bundledSkillDir 的 JS 表达式在模拟 profile baseUrl 下能解析到真实 skills 目录；
  * 5. browser-driver.mjs 存在，--help 参数契约覆盖全部原子命令，无参数非零退出；
- * 6. verify-isolated.mjs 关键契约：--dsh/--port 0/--browser/--keep/--no-build/
+ * 6. verify-isolated.mjs 关键契约：PATH dsh/--port 0/--browser/--keep/--no-build/
  *    --evidence-dir/verdict.json/dsh.log/退出码（0/1/2/130/143）文本锚定 +
  *    lib/verify-core.mjs import 行为断言（EXIT 常量 / poll / findFreePort /
  *    resolvePkgArg 归一化 / readDshPort parsed 通道）+ 子进程退出码实测
- *    （--help=0、--dsh 不存在=2、--json 错误=单 JSON）；
+ *    （--help=0、PATH 无 dsh=2、--json 错误=单 JSON）；
  * 7. SKILL.md 主线 + references/ 支线（渐进式披露）：主线判据与约束（四重隔离 / 并行 /
  *    DSH_HOME 感知 / 遥测 / 回环 / 版本锚定 / 访问形态边界）+ 每个 reference 都有指针
  *    与「读它的时机」+ 主线体量上限（防支线内容回灌）+ 各 reference 自包含锚点；
@@ -111,6 +111,8 @@ const SKILL_FILE = join(SKILL_DIR, "SKILL.md");
 const SCRIPTS_DIR = join(SKILL_DIR, "scripts");
 const scriptFile = join(SCRIPTS_DIR, "verify-isolated.mjs");
 const driverFile = join(SCRIPTS_DIR, "browser-driver.mjs");
+// #1140：目标 runtime 单版锚定（测试侧独立声明，防止实现误放宽）。
+const TARGET_DSH_VERSION = "0.2.1-rc.2";
 const REF_DIR = join(SKILL_DIR, "references");
 const REF_FILES = [
   "script-contracts.md",
@@ -624,7 +626,6 @@ describe("6b. verify-isolated.mjs 关键契约文本锚定", () => {
 
   // 归一化语义由 6a resolvePkgArg 行为断言覆盖——内建进 verify-core，不依赖独立文件
   const optionContracts = [
-    "--dsh",
     "--port 0",
     "--browser",
     "--keep",
@@ -735,7 +736,7 @@ describe("6b. verify-isolated.mjs 关键契约文本锚定", () => {
 });
 
 // ---------------------------------------------------------------- 6c. 子进程退出码实测
-describe("6c. 子进程退出码实测（不启动 dsh / 浏览器，走 --dsh 不存在与 --help 路径）", () => {
+describe("6c. 子进程退出码实测（不启动 dsh / 浏览器，走 PATH 缺 dsh 与 --help 路径）", () => {
   let h;
   let bad;
   let j;
@@ -743,18 +744,24 @@ describe("6c. 子进程退出码实测（不启动 dsh / 浏览器，走 --dsh �
   let parsed;
   let afterDash;
   let u;
-  let missingDsh;
   let missingPort;
   let jsonBad;
   let helpInline;
   let jsonThenFalse;
+  let noDsh;
+  let emptyPathDir;
 
   beforeAll(() => {
-    const run = (args) => {
+    emptyPathDir = mkdtempSync(join(tmpdir(), "dsh-verify-empty-path-"));
+    const noDshEnv = { PATH: emptyPathDir };
+    const run = (args, extraEnv = {}) => {
       let code = 0;
       let out = "";
       try {
-        out = execFileSync(process.execPath, [scriptFile, ...args], { encoding: "utf8" });
+        out = execFileSync(process.execPath, [scriptFile, ...args], {
+          encoding: "utf8",
+          env: { ...process.env, ...extraEnv },
+        });
       } catch (e) {
         code = e.status ?? -1;
         out = (e.stdout ?? "") + (e.stderr ?? "");
@@ -763,9 +770,9 @@ describe("6c. 子进程退出码实测（不启动 dsh / 浏览器，走 --dsh �
     };
     // --help：用法提示，退出码 0
     h = run(["--help"]);
-    // --dsh 不存在：参数错误退出码 2
+    // --dsh 已删除：未知选项退出码 2
     bad = run(["--dsh", "/nonexistent/dsh"]);
-    // --json --dsh 不存在：stdout **恰好 1 行** JSON（含 exitCode 2；锁定
+    // --json + 未知选项：stdout **恰好 1 行** JSON（含 exitCode 2；锁定
     // stdout 只出 JSON 的约束，人类文案不得混入）
     j = run(["--json", "--dsh", "/nonexistent/dsh"]);
     jLines = j.out
@@ -773,19 +780,25 @@ describe("6c. 子进程退出码实测（不启动 dsh / 浏览器，走 --dsh �
       .split("\n")
       .filter((l) => l.trim().length > 0);
     parsed = JSON.parse(jLines[0]);
-    // 回归：`--` 之后的 --json 是插件参数，不得误开全局 jsonMode
-    afterDash = run(["--dsh", "/nonexistent/dsh", "--", "--json"]);
+    // 回归：`--` 之后的 --json 是插件参数，不得误开全局 jsonMode；
+    // PATH 无 dsh，fail-closed 在隔离目录创建之前
+    afterDash = run(["--", "--json"], noDshEnv);
     // 未知选项：退出码 2
     u = run(["--bogus"]);
-    // 缺参：取值型选项不带值（parseArgs 内置文案是英文，故这两条锁住中文自查）
-    missingDsh = run(["--dsh"]);
+    // 缺参：取值型选项不带值（parseArgs 内置文案是英文，故这条锁住中文自查）
     missingPort = run(["--port"]);
     // --json 非法内联值
     jsonBad = run(["--json=bad"]);
     // 回归：布尔选项带内联值须被静默接受（内置 boolean 不接受内联值，由归一兜住）
     helpInline = run(["--help=1"]);
     // 回归：--json 与 --json=false 并存按**末位胜出**，即不进 json 模式（stdout 走人类文案）
-    jsonThenFalse = run(["--json", "--json=false", "--dsh", "/nonexistent/dsh"]);
+    jsonThenFalse = run(["--json", "--json=false"], noDshEnv);
+    // PATH 无 dsh：fail-closed，退出码 2
+    noDsh = run([], noDshEnv);
+  });
+
+  afterAll(() => {
+    rmSync(emptyPathDir, { recursive: true, force: true });
   });
 
   it("--help 退出码 0", () => {
@@ -796,13 +809,15 @@ describe("6c. 子进程退出码实测（不启动 dsh / 浏览器，走 --dsh �
     expect(h.out.includes("verify-isolated.mjs")).toBeTruthy();
   });
 
-  it("--help 显式锁定唯一目标 dsh 版本", () => {
-    expect(h.out).toContain("0.2.0-rc.2");
-    expect(h.out).toContain("必须显式传入 --dsh");
+  it("--help 显式锁定目标 dsh 单版本", () => {
+    expect(h.out).toContain(TARGET_DSH_VERSION);
+    expect(h.out).toContain("PATH");
+    expect(h.out).not.toContain("--dsh");
   });
 
-  it("--dsh 不存在退出码 2（找不到 dsh 入口）", () => {
+  it("--dsh 已删除：未知选项退出码 2", () => {
     expect(bad.code).toBe(2);
+    expect(bad.out).toContain("未知选项: --dsh");
   });
 
   it("--json 错误路径退出码 2", () => {
@@ -821,12 +836,10 @@ describe("6c. 子进程退出码实测（不启动 dsh / 浏览器，走 --dsh �
     expect(parsed.exitCode).toBe(2);
   });
 
-  it("-- 之后 --json 仍按参数错误退出码 2", () => {
+  it("-- 之后 --json 不误开 jsonMode（stdout 非 JSON，走 PATH 缺 dsh 错误）", () => {
     expect(afterDash.code).toBe(2);
-  });
-
-  it("-- 之后的 --json 不误开 jsonMode（stdout 非 JSON）", () => {
     expect(!afterDash.out.trim().startsWith("{")).toBeTruthy();
+    expect(afterDash.out).toContain("PATH 中找不到 dsh 入口");
   });
 
   it("未知选项退出码 2", () => {
@@ -840,8 +853,6 @@ describe("6c. 子进程退出码实测（不启动 dsh / 浏览器，走 --dsh �
   });
 
   it("缺参文案为中文且指出选项名", () => {
-    expect(missingDsh.code).toBe(2);
-    expect(missingDsh.out).toContain("错误: --dsh 需要一个参数");
     expect(missingPort.code).toBe(2);
     expect(missingPort.out).toContain("错误: --port 需要一个参数");
   });
@@ -859,7 +870,12 @@ describe("6c. 子进程退出码实测（不启动 dsh / 浏览器，走 --dsh �
   it("--json 与 --json=false 并存按末位胜出（不进 json 模式，stdout 走人类文案）", () => {
     expect(jsonThenFalse.code).toBe(2);
     expect(jsonThenFalse.out.trim().startsWith("{")).toBeFalsy();
-    expect(jsonThenFalse.out).toContain("错误: 找不到 dsh 入口");
+    expect(jsonThenFalse.out).toContain("PATH 中找不到 dsh 入口");
+  });
+
+  it("PATH 无 dsh 时 fail-closed，不创建隔离目录", () => {
+    expect(noDsh.code).toBe(2);
+    expect(noDsh.out).toContain("PATH 中找不到 dsh 入口");
   });
 });
 
@@ -888,7 +904,7 @@ describe("6d. 回归：dsh 就绪前退出 → 契约码 1 + 可操作诊断", (
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 const args = process.argv.slice(2);
-if (args.includes("--version")) { console.log("0.2.0-rc.2"); process.exit(0); }
+if (args.includes("--version")) { console.log("0.2.1-rc.2"); process.exit(0); }
 if (args[0] === "plugin" && args.includes("list")) {
   const i = args.indexOf("--profile");
   const dir = join(process.env.DSH_HOME, "profiles", args[i + 1]);
@@ -901,13 +917,29 @@ process.exit(Number(process.env.FAKE_DH_EXIT ?? "0"));
     );
     chmodSync(fakeDshScript, 0o755);
     const fakeDsh = winCmdShimFor(fakeDshScript);
+    // PATH 驱动：目录内置名 `dsh` 指向假 dsh，前置到 PATH 首位（node 取自当前进程目录）。
+    // win32 按 pathEntryFor 同口径提供 dsh.cmd 转发（裸 symlink 无扩展名会绕过 shell 回退）。
+    const fakePathDir = mkdtempSync(join(tmpDir, "path-bin-"));
+    if (process.platform === "win32") {
+      writeFileSync(
+        join(fakePathDir, "dsh.cmd"),
+        `@echo off\r\n"${process.execPath}" "${fakeDsh}" %*\r\n`,
+      );
+    } else {
+      symlinkSync(fakeDsh, join(fakePathDir, "dsh"));
+    }
+    const fakePathEnv = {
+      PATH: [fakePathDir, dirname(process.execPath), process.env.PATH]
+        .filter(Boolean)
+        .join(delimiter),
+    };
     const runWithFake = (exitCode) => {
       let code = 0;
       let out = "";
       try {
-        out = execFileSync(process.execPath, [scriptFile, "--dsh", fakeDsh, "--port", "0"], {
+        out = execFileSync(process.execPath, [scriptFile, "--port", "0"], {
           encoding: "utf8",
-          env: { ...process.env, FAKE_DH_EXIT: String(exitCode) },
+          env: { ...process.env, ...fakePathEnv, FAKE_DH_EXIT: String(exitCode) },
           timeout: 30000,
         });
       } catch (e) {
@@ -923,15 +955,11 @@ process.exit(Number(process.env.FAKE_DH_EXIT ?? "0"));
     // --json：错误路径 stdout 单 JSON（人类文案走 stderr，只解析 stdout）、exitCode=1
     let jout = "";
     try {
-      jout = execFileSync(
-        process.execPath,
-        [scriptFile, "--json", "--dsh", fakeDsh, "--port", "0"],
-        {
-          encoding: "utf8",
-          env: { ...process.env, FAKE_DH_EXIT: "0" },
-          timeout: 30000,
-        },
-      );
+      jout = execFileSync(process.execPath, [scriptFile, "--json", "--port", "0"], {
+        encoding: "utf8",
+        env: { ...process.env, ...fakePathEnv, FAKE_DH_EXIT: "0" },
+        timeout: 30000,
+      });
     } catch (e) {
       jcode = e.status ?? -1;
       jout = e.stdout ?? "";
@@ -1025,8 +1053,10 @@ describe("7. SKILL.md 主线 + references/ 支线（渐进式披露：内容随�
     expect(skillRaw.includes("--host 127.0.0.1")).toBeTruthy();
   });
 
-  it("SKILL.md 含 --dsh 版本锚定用法", () => {
-    expect(skillRaw.includes("--dsh")).toBeTruthy();
+  it("SKILL.md 含 PATH dsh 版本锚定用法", () => {
+    expect(skillRaw.includes("PATH")).toBeTruthy();
+    expect(skillRaw.includes("0.2.1-rc.2")).toBeTruthy();
+    expect(skillRaw.includes("--dsh")).toBeFalsy();
   });
 
   it("SKILL.md 声明非回环访问形态的边界与官方选项", () => {
@@ -1147,7 +1177,7 @@ describe("9a. 白名单版本化 + 模式全集存在", () => {
 
   // 预置模式数组，版本化 WHITELIST_V；v2 起含 dsh 自身写面
   // .credentials.yaml / storages/**；v3 起含 settings.yaml——首启弹窗跳过会预置它，
-  // 页面改设置也由 dsh 重写；v4 起含 settings.yaml.imported（0.2.0-rc.2 导入映射重命名残留，
+  // 页面改设置也由 dsh 重写；v4 起含 settings.yaml.imported（0.2.x-rc.2 导入映射重命名残留，
   // 待真机确认实际落盘形态）。
   it("WHITELIST_V 版本化格式", () => {
     expect(whitelistV).toMatch(/^v\d+$/);
@@ -1327,7 +1357,7 @@ import { mkdirSync, writeFileSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
 import http from "node:http";
 const args = process.argv.slice(2);
-if (args.includes("--version")) { console.log("0.2.0-rc.2"); process.exit(0); }
+if (args.includes("--version")) { console.log("0.2.1-rc.2"); process.exit(0); }
 if (args[0] === "plugin" && args.includes("list")) {
   const i = args.indexOf("--profile");
   const dir = join(process.env.DSH_HOME, "profiles", args[i + 1]);
@@ -1368,19 +1398,30 @@ process.exit(1);
     );
     chmodSync(fakeDsh, 0o755);
     const fakeDshEntry = winCmdShimFor(fakeDsh);
+    // PATH 驱动：目录内置名 `dsh` 指向假 dsh。
+    const auditPathDir = mkdtempSync(join(tmp2, "path-bin-"));
+    if (process.platform === "win32") {
+      writeFileSync(
+        join(auditPathDir, "dsh.cmd"),
+        `@echo off\r\n"${process.execPath}" "${fakeDshEntry}" %*\r\n`,
+      );
+    } else {
+      symlinkSync(fakeDshEntry, join(auditPathDir, "dsh"));
+    }
+    const auditPathEnv = {
+      PATH: [auditPathDir, dirname(process.execPath), process.env.PATH]
+        .filter(Boolean)
+        .join(delimiter),
+    };
     const runAuditE2E = (extraEnv) => {
       let code = 0;
       let out = "";
       try {
-        out = execFileSync(
-          process.execPath,
-          [scriptFile, "--audit", "--keep", "--dsh", fakeDshEntry, "--port", "0"],
-          {
-            encoding: "utf8",
-            env: { ...process.env, ...extraEnv },
-            timeout: 60000,
-          },
-        );
+        out = execFileSync(process.execPath, [scriptFile, "--audit", "--keep", "--port", "0"], {
+          encoding: "utf8",
+          env: { ...process.env, ...auditPathEnv, ...extraEnv },
+          timeout: 60000,
+        });
       } catch (e) {
         code = e.status ?? -1;
         out = (e.stdout ?? "") + (e.stderr ?? "");
@@ -1809,7 +1850,7 @@ describe("10a. 须知版本与命名空间提取", () => {
     expect(ob.extractWelcomeNoticeVersion(null)).toBe(null);
   });
 
-  it("从客户端产物提取须知命名空间（0.2.0-rc.2 形态）", () => {
+  it("从客户端产物提取须知命名空间（RC2 系列形态）", () => {
     expect(
       ob.extractWelcomeNoticeNamespace(
         'const WELCOME_NOTICE_SETTINGS_NAMESPACE = "ui-settings-general";',
@@ -1993,7 +2034,7 @@ describe("10c. dsh 安装根与产物定位（mkdtemp fixture 建模 npm 提升�
     expect(e2eVersion).toBe("2099-01-01.1");
   });
 
-  it("端到端解析命名空间（0.2.0-rc.2 形态）", () => {
+  it("端到端解析命名空间（RC2 系列形态）", () => {
     expect(e2eNamespace).toBe("ui-settings-general");
   });
 
@@ -2026,15 +2067,17 @@ describe("10c-2. presetWelcomeNotice 严格事实与预置报告", () => {
   let tmp;
   let missingCase;
   let validCase;
+  let legacyRejectedCase;
+  let tooNewVersionCase;
   let oldVersionCase;
   let versionReadFailureCase;
-  let omittedDshCase;
-  let wrongEntryCase;
+  let noDshCase;
+  let noDshDir;
 
   const makeDshInstall = (
     name: string,
     clientSource: string,
-    versionOutput: string | null = "0.2.0-rc.2",
+    versionOutput: string | null = "0.2.1-rc.2",
     versionExitCode = 0,
   ) => {
     const fixture = mkdtempSync(join(tmp, name));
@@ -2127,15 +2170,24 @@ process.exit(0);
     return { exists: true, content: readFileSync(settingsPath, "utf8") };
   };
 
-  const runCase = (entry: string | null, extraEnv: NodeJS.ProcessEnv = {}) => {
+  // PATH 驱动：pathDir 为含名 `dsh` 的目录（前置首位，假 dsh 必中）；
+  // null 表示 PATH 中无 dsh（空目录；注意 node 所在目录常与真 dsh 同目录，
+  // 故无 dsh 用例不得混入 node 目录或系统 PATH，否则真 dsh 会干扰 fail-closed 断言）。
+  // 系统 PATH 仅在有 pathDir 时追加（贴近真实环境，假 dsh 仍因首位必中）。
+  const runCase = (pathDir: string | null, extraEnv: NodeJS.ProcessEnv = {}) => {
     const runTmp = mkdtempSync(join(tmp, "runtime-"));
     const args = [scriptFile, "--json", "--keep", "--port", "0"];
-    if (entry !== null) args.push("--dsh", entry);
+    const pathValue = (
+      pathDir === null ? [noDshDir] : [pathDir, dirname(process.execPath), process.env.PATH]
+    )
+      .filter(Boolean)
+      .join(delimiter);
     const result = spawnSync(process.execPath, args, {
       encoding: "utf8",
       timeout: 30000,
       env: {
         ...process.env,
+        PATH: pathValue,
         TMPDIR: runTmp,
         TMP: runTmp,
         TEMP: runTmp,
@@ -2171,28 +2223,30 @@ process.exit(0);
     );
     const clientSource =
       'const WELCOME_NOTICE_SETTINGS_NAMESPACE = "ui-settings-general";\nconst WELCOME_NOTICE_VERSION = "2099-01-01.1";';
+    const legacyRejected = makeDshInstall("rejected-legacy-", clientSource, "0.2.0-rc.2");
+    const tooNewVersion = makeDshInstall("too-new-version-", clientSource, "0.2.2-rc.1");
     const oldVersion = makeDshInstall("old-version-", clientSource, "0.1.5-rc.1");
     const versionReadFailure = makeDshInstall("version-read-failure-", clientSource, null, 9);
-    const controlledPath = pathEntryFor(valid.entry);
+    noDshDir = mkdtempSync(join(tmp, "empty-path-"));
 
-    missingCase = runCase(missing.entry);
-    validCase = runCase(valid.entry);
-    oldVersionCase = runCase(oldVersion.entry);
-    versionReadFailureCase = runCase(versionReadFailure.entry);
-    omittedDshCase = runCase(null, {
-      PATH: [controlledPath, process.env.PATH].filter(Boolean).join(delimiter),
-    });
-    wrongEntryCase = runCase(join(tmp, "no-such-dsh-entry"));
+    missingCase = runCase(pathEntryFor(missing.entry));
+    validCase = runCase(pathEntryFor(valid.entry));
+    legacyRejectedCase = runCase(pathEntryFor(legacyRejected.entry));
+    tooNewVersionCase = runCase(pathEntryFor(tooNewVersion.entry));
+    oldVersionCase = runCase(pathEntryFor(oldVersion.entry));
+    versionReadFailureCase = runCase(pathEntryFor(versionReadFailure.entry));
+    noDshCase = runCase(null);
   }, 60_000);
 
   afterAll(() => {
     for (const result of [
       missingCase,
       validCase,
+      legacyRejectedCase,
+      tooNewVersionCase,
       oldVersionCase,
       versionReadFailureCase,
-      omittedDshCase,
-      wrongEntryCase,
+      noDshCase,
     ]) {
       const home = result?.verdict?.dshHome;
       if (home) rmSync(home, { recursive: true, force: true });
@@ -2200,36 +2254,42 @@ process.exit(0);
     rmSync(tmp, { recursive: true, force: true });
   });
 
-  it("未传 --dsh 时 fail-closed，不使用 PATH 中碰巧存在的目标入口", () => {
-    expect(omittedDshCase.status).toBe(2);
-    expect(omittedDshCase.report).toContain("必须显式传入 --dsh");
-    expect(omittedDshCase.report).toContain("0.2.0-rc.2");
+  it("PATH 无 dsh 时 fail-closed，不创建隔离目录", () => {
+    expect(noDshCase.status).toBe(2);
+    expect(noDshCase.report).toContain("PATH 中找不到 dsh 入口");
   });
 
   it("旧版本 0.1.5-rc.1 被拒绝，错误点名实际与期望版本", () => {
     expect(oldVersionCase.status).toBe(2);
     expect(oldVersionCase.report).toContain("实际版本: 0.1.5-rc.1");
-    expect(oldVersionCase.report).toContain("期望版本: 0.2.0-rc.2");
+    expect(oldVersionCase.report).toContain(`期望版本: ${TARGET_DSH_VERSION}`);
+  });
+
+  it("旧版本 0.2.0-rc.2 被拒绝（单版锚定，不兼容）", () => {
+    expect(legacyRejectedCase.status).toBe(2);
+    expect(legacyRejectedCase.report).toContain("实际版本: 0.2.0-rc.2");
+    expect(legacyRejectedCase.report).toContain(`期望版本: ${TARGET_DSH_VERSION}`);
+  });
+
+  it("越界版本 0.2.2-rc.1 被拒绝，不退化为 semver range", () => {
+    expect(tooNewVersionCase.status).toBe(2);
+    expect(tooNewVersionCase.report).toContain("实际版本: 0.2.2-rc.1");
+    expect(tooNewVersionCase.report).toContain(`期望版本: ${TARGET_DSH_VERSION}`);
   });
 
   it("--version 读取失败被拒绝，不降级为 unknown 后继续", () => {
     expect(versionReadFailureCase.status).toBe(2);
     expect(versionReadFailureCase.report).toContain("实际版本: 读取失败");
-    expect(versionReadFailureCase.report).toContain("期望版本: 0.2.0-rc.2");
+    expect(versionReadFailureCase.report).toContain(`期望版本: ${TARGET_DSH_VERSION}`);
     expect(versionReadFailureCase.report).not.toContain("(unknown)");
   });
 
-  it("不存在的 --dsh 入口被拒绝，错误点名不可用与期望版本", () => {
-    expect(wrongEntryCase.status).toBe(2);
-    expect(wrongEntryCase.report).toContain("实际版本: 不可用");
-    expect(wrongEntryCase.report).toContain("期望版本: 0.2.0-rc.2");
-  });
-
   it.each([
-    ["旧版本", () => oldVersionCase],
+    ["0.1.5 旧版本", () => oldVersionCase],
+    ["0.2.0 旧版本", () => legacyRejectedCase],
+    ["过新版本", () => tooNewVersionCase],
     ["版本读取失败", () => versionReadFailureCase],
-    ["未传 --dsh", () => omittedDshCase],
-    ["错误入口", () => wrongEntryCase],
+    ["PATH 无 dsh", () => noDshCase],
   ])("%s 不产出 settings 或 preset 目标证据", (_label, getResult) => {
     const result = getResult();
     expect(result.verdict.dshHome).toBeUndefined();
@@ -2254,6 +2314,7 @@ process.exit(0);
 
   it("目标 namespace+version 仍预置真实 settings，报告显式真实 namespace", () => {
     expect(validCase.status).toBe(0);
+    expect(validCase.report).toContain("0.2.1-rc.2");
     expect(validCase.verdict.onboarding).toMatchObject({
       skip: true,
       source: "preset",
@@ -2264,6 +2325,11 @@ process.exit(0);
     expect(validCase.settingsWrites).toHaveLength(1);
     expect(validCase.report).toContain("ui-settings-general.welcomeNoticeVersion=2099-01-01.1");
     expect(validCase.report).not.toContain("ui-onboarding");
+  });
+
+  it("单版锚定：0.2.0-rc.2 已不再被接受", () => {
+    expect(legacyRejectedCase.status).toBe(2);
+    expect(legacyRejectedCase.report).toContain("实际版本: 0.2.0-rc.2");
   });
 });
 
