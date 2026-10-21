@@ -161,19 +161,25 @@ describe("provider-config seam 定位纯面", () => {
  * 在隔离 DSH_HOME + 干净环境变量下执行：V1 链不得命中真实 ~/.dsh 或宿主环境
  * （#1167 评审 P1-2：环境里存在 DEEPSEEK_OFFICIAL_API_KEY 时，known-ref 用例会假红）。
  */
-async function withIsolatedCredentials<T>(fn: () => Promise<T>): Promise<T> {
+async function withIsolatedCredentials<T>(
+  fn: () => Promise<T>,
+  extraEnvKeys: readonly string[] = [],
+): Promise<T> {
+  const keys = ["DEEPSEEK_OFFICIAL_API_KEY", ...extraEnvKeys];
   const prevHome = process.env.DSH_HOME;
-  const prevKey = process.env.DEEPSEEK_OFFICIAL_API_KEY;
+  const prevKeys = new Map(keys.map((k) => [k, process.env[k]]));
   const dir = mkdtempSync(join(tmpdir(), "u-usage-provider-config-"));
   process.env.DSH_HOME = dir;
-  delete process.env.DEEPSEEK_OFFICIAL_API_KEY;
+  for (const k of keys) delete process.env[k];
   try {
     return await fn();
   } finally {
     if (prevHome === undefined) delete process.env.DSH_HOME;
     else process.env.DSH_HOME = prevHome;
-    if (prevKey === undefined) delete process.env.DEEPSEEK_OFFICIAL_API_KEY;
-    else process.env.DEEPSEEK_OFFICIAL_API_KEY = prevKey;
+    for (const [k, v] of prevKeys) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
     rmSync(dir, { recursive: true, force: true });
   }
 }
@@ -209,8 +215,10 @@ describe("provider-config 凭据解析：describe seam + 已知 ref 兜底", () 
           ? { get: () => ({ apiKeyEnv: "OLD_REF" }) }
           : { resolve: async () => ({ value: "sk-old" }) },
     };
-    const r = await resolveProviderConfig("r-old", ctx);
-    expect(r.apiKey).toBeUndefined();
+    await withIsolatedCredentials(async () => {
+      const r = await resolveProviderConfig("r-old", ctx);
+      expect(r.apiKey).toBeUndefined();
+    }, ["R_OLD_API_KEY"]);
   });
 
   it("已知 provider ref 兜底：settings 缺席时仍从 credentials 取 DEEPSEEK_API_KEY", async () => {

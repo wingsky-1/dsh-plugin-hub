@@ -330,10 +330,30 @@ describe("fetchErrors：取数失败登记 / 成功清除（#1163 health 观测�
 
   it("purge 后观测面不残留：全清清空，按 provider 只清命中项", async () => {
     const h = makeService({ spy: { failFetch: true } });
+    h.registry.register(
+      {
+        version: 2,
+        name: "spy2",
+        providers: ["pv2"],
+        async fetchData() {
+          throw new Error("fetch-boom-2");
+        },
+        formatCapsule() {
+          return "";
+        },
+        formatPanel() {
+          return "";
+        },
+      },
+      "builtin",
+    );
     await h.service.getStats("pv");
-    expect(h.service.fetchErrors()).toHaveLength(1);
+    await h.service.getStats("pv2");
+    expect(h.service.fetchErrors()).toHaveLength(2);
     h.service.purgeCachesForProviders(["other"]);
-    expect(h.service.fetchErrors()).toHaveLength(1);
+    expect(h.service.fetchErrors()).toHaveLength(2);
+    h.service.purgeCachesForProviders(["pv"]);
+    expect(h.service.fetchErrors().map((e) => e.provider)).toEqual(["pv2"]);
     h.service.purgeAllCaches();
     expect(h.service.fetchErrors()).toEqual([]);
   });

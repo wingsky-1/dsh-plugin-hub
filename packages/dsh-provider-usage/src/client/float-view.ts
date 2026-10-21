@@ -36,7 +36,7 @@ export function statsReason(stats: StatsResponseV2 | null): string | null | unde
 }
 
 /**
- * 状态点等级：fresh/cached → ok；stale → warn；未配置/错误 → err。
+ * 状态点等级：fresh/cached（成功取数）→ ok；stale 或带 error → warn；未配置 → err。
  * 失败帧在缓存期内 status 可能是 cached：只要带 error 也必须是 warn，
  * 不得出现「绿点 + 取数失败 + 最后更新」自相矛盾（#1167 评审批次 P2）。
  */
