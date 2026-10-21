@@ -22,6 +22,7 @@ export default defineConfig({
       'packages/dsh-provider-usage/test/integration/registry/composition-root.test.ts',
       'packages/dsh-provider-usage/test/integration/report-routes/composition-root.test.ts',
       'packages/dsh-provider-usage/test/integration/schedule/composition-root.test.ts',
+      'packages/dsh-provider-usage/test/integration/schedule/last-run-lost-update.test.ts',
       'packages/dsh-provider-usage/test/integration/ui-routes/composition-root.test.ts',
       'packages/dsh-provider-usage/test/integration/upgrade/upgrade-chain.test.ts',
       'packages/dsh-provider-usage/test/unit/adapters/adapters-pure.test.ts',

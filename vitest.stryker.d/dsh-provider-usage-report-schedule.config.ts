@@ -12,6 +12,7 @@ export default defineConfig({
       'packages/dsh-provider-usage/test/integration/config/composition-root.test.ts',
       'packages/dsh-provider-usage/test/integration/report-routes/composition-root.test.ts',
       'packages/dsh-provider-usage/test/integration/schedule/composition-root.test.ts',
+      'packages/dsh-provider-usage/test/integration/schedule/last-run-lost-update.test.ts',
       'packages/dsh-provider-usage/test/integration/upgrade/upgrade-chain.test.ts',
       'packages/dsh-provider-usage/test/unit/apply/apply.test.ts',
       'packages/dsh-provider-usage/test/unit/common/errsurf.test.ts',
