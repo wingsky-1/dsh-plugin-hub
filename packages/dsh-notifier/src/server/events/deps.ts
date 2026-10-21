@@ -6,7 +6,7 @@ import type { SessionId } from "@deepseek-ai/dsh-session/types";
 import type { ApprovalRequest } from "@deepseek-ai/dsh-user-approval";
 import type { AskUserQuestionRequest } from "@deepseek-ai/dsh-user-questions";
 import type * as pipelineApi from "../pipeline/interface.ts";
-import type { LoggerPort } from "../shared/interface.ts";
+import type { LoggerPort, NotificationLocale } from "../shared/interface.ts";
 
 export type { NotifyRequest } from "../pipeline/interface.ts";
 
@@ -68,4 +68,6 @@ export interface EventsDeps {
   /** 诊断出口：完成判定跳过（abort / max-tokens 每轮都走）时要说得出为什么。 */
   readonly logger: LoggerPort;
   readonly pipeline: PipelinePort;
+  /** 生成每条通知时现读的语言；旧夹具不提供时回退中文。 */
+  readonly readLocale?: () => NotificationLocale;
 }

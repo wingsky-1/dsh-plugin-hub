@@ -98,6 +98,7 @@ async function postTest(
     config?: ConfigPort;
     logger?: ReturnType<typeof makeLogger>;
     body?: unknown;
+    readLocale?: () => "zh" | "en";
   } = {},
 ): Promise<{
   rec: { status: number };
@@ -113,6 +114,7 @@ async function postTest(
     options.channels ?? fakeChannels(),
     logger,
     config,
+    options.readLocale,
   );
   const req: IncomingMessage = jsonReq({
     method: "POST",
@@ -140,6 +142,28 @@ describe("POST /test dry-run：只认 channels（B1）", () => {
     });
     expect(rec.status).toBe(200);
     expect(json()).toEqual({ ok: true, channelId: "browser", status: "ok" });
+  });
+
+  it("readLocale=en 时 dry-run finalize 使用英文测试通知", async () => {
+    const finalized: unknown[] = [];
+    const pipeline = fakePipeline();
+    const base = pipeline.finalizeRequest;
+    pipeline.finalizeRequest = (request, ts) => {
+      finalized.push(request);
+      return base(request, ts);
+    };
+    await postTest({
+      pipeline,
+      body: { channelId: "browser", draft: { channels: [DRAFT_BROWSER] } },
+      readLocale: () => "en",
+    });
+    expect(finalized).toEqual([
+      {
+        kind: "test",
+        title: "DSH: Test notification",
+        body: "Notifications are working (sent using the test button)",
+      },
+    ]);
   });
 
   it("draft 非对象 / channels 非数组 → 400（分支各钉 hint，非 any(String)）", async () => {

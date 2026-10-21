@@ -6,7 +6,7 @@ import type * as channelsApi from "../channels/interface.ts";
 import type * as pipelineApi from "../pipeline/interface.ts";
 import type * as sdkApi from "../sdk/interface.ts";
 import type * as storesApi from "../stores/interface.ts";
-import type { LoggerPort } from "../shared/interface.ts";
+import type { LoggerPort, NotificationLocale } from "../shared/interface.ts";
 
 /** config 域给下游的能力面：设置页要读视图写设置，另含原始设置的只读面；
  * 草稿测试（dry-run）另要它的纯函数（resolveDraftChannels + normalizeConfig）——只读内存，
@@ -72,4 +72,6 @@ export interface ApiDeps {
   kinds: KindPort;
   /** channels 域的能力面：能力自检与平台事实。api 域**不投递**通知，投递由管线承担。 */
   channels: ChannelPort;
+  /** 生成测试通知时现读的语言；旧夹具不提供时回退中文。 */
+  readonly readLocale?: () => NotificationLocale;
 }

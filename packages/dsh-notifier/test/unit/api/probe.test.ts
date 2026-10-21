@@ -129,6 +129,19 @@ async function postWith(req: IncomingMessage) {
   return { rec, json, pipeline };
 }
 
+async function postEnglish(request: { body?: unknown; rawBody?: string }) {
+  const pipeline = fakePipeline();
+  const { res, rec, json } = makeRes();
+  await new ProbeEndpoints(
+    pipeline.port,
+    fakeChannels().port,
+    makeLogger(),
+    fakeConfig(),
+    () => "en",
+  ).test(makeReq(request), res);
+  return { rec, json, pipeline };
+}
+
 /** POST 一次测试通知。 */
 function post(request: { body?: unknown; rawBody?: string }) {
   return postWith(makeReq(request));
@@ -206,6 +219,17 @@ describe("POST /test：测试通知走同一条裁决管线", () => {
       { kind: "test", title: "DSH：测试通知", body: "通知链路工作正常（此通知来自测试按钮）" },
     ]);
     expect(json()).toEqual({ ok: true, sseConnections: 1 });
+  });
+
+  it("readLocale=en 时测试通知使用英文标题与已审正文", async () => {
+    const { pipeline } = await postEnglish({});
+    expect(pipeline.submitted).toEqual([
+      {
+        kind: "test",
+        title: "DSH: Test notification",
+        body: "Notifications are working (sent using the test button)",
+      },
+    ]);
   });
 
   it("带 channelId 时只多一个 onlyChannel（指定出口不能变成另一条通知文案）", async () => {

@@ -33,7 +33,13 @@ class ApiService {
 
     const settings = new SettingsEndpoints(deps.config);
     const journal = new JournalEndpoints(deps.stores);
-    const probe = new ProbeEndpoints(deps.pipeline, deps.channels, deps.logger, deps.config);
+    const probe = new ProbeEndpoints(
+      deps.pipeline,
+      deps.channels,
+      deps.logger,
+      deps.config,
+      deps.readLocale,
+    );
     const kinds = new KindsEndpoints(deps.kinds);
     const endpoints: Endpoint[] = [
       { path: "/api/dsh-notifier/config", methods: { GET: settings.read, PUT: settings.write } },

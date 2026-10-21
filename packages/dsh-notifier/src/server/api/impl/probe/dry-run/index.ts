@@ -12,6 +12,7 @@
  */
 import { channelIdOf } from "../../../../../shared/interface.ts";
 import type { ChannelPort, ConfigPort, PipelinePort } from "../../../deps.ts";
+import type { NotificationLocale } from "../../../../shared/interface.ts";
 import type { EffectiveConfig } from "../../../../pipeline/deps.ts";
 import type { ProducedReason } from "../../../../shared/interface.ts";
 import {
@@ -19,7 +20,7 @@ import {
   DRY_RUN_MAX_INFLIGHT,
   DryRunInputError,
   DryRunTimeoutError,
-  TEST_NOTIFICATION,
+  testNotification,
 } from "./type.ts";
 import type { DryRunReason, DryRunResult } from "./type.ts";
 
@@ -28,6 +29,7 @@ export interface DryRunDeps {
   readonly config: ConfigPort;
   readonly pipeline: PipelinePort;
   readonly channels: ChannelPort;
+  readonly readLocale?: () => NotificationLocale;
 }
 
 /**
@@ -74,7 +76,8 @@ export async function executeDryRun(
   if (channel === undefined) {
     throw new DryRunInputError("draft.channels 里没有 channelId 对应的完整条目：" + channelId);
   }
-  const message = deps.pipeline.finalizeRequest({ ...TEST_NOTIFICATION }, Date.now());
+  const locale = deps.readLocale?.() ?? "zh";
+  const message = deps.pipeline.finalizeRequest(testNotification(locale), Date.now());
   const target = buildTarget(deps.pipeline, channel);
   const delivery = await deps.channels.dryRunTarget(target, message);
   if (delivery.status === "ok") {

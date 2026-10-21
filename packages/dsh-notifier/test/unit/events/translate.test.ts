@@ -19,6 +19,8 @@ import type { AgentErrorPayload, NotifyRequest } from "../../../src/server/event
 import { releaseEvents } from "../../../src/server/events/interface.ts";
 import { agentStates } from "../../../src/server/events/impl/state/index.ts";
 import {
+  formatDurationForLocale,
+  getNotifyKinds,
   NOTIFY_KINDS,
   formatDuration,
   prettyToolName,
@@ -92,7 +94,7 @@ function requestOf(translation: Translation): NotifyRequest {
 }
 
 describe("审批与提问：两条 waterfall 的旁路翻译", () => {
-  it("审批带上任务名、工具中文名与理由（用户要先看懂「在等什么」才谈得上确认）", () => {
+  it("审批带上任务名、原始工具 ID 与理由（用户要先看懂「在等什么」才谈得上确认）", () => {
     const request = requestOf(
       translateApproval(
         approval({ toolName: "bash", reason: "要跑测试", agent: makeAgent("a1", "修复登录") }),
@@ -101,7 +103,7 @@ describe("审批与提问：两条 waterfall 的旁路翻译", () => {
     expect(request.kind).toBe("ask");
     expect(request.title).toBe("DSH：等待审批");
     expect(request.body).toBe(
-      "任务「修复登录」等待审批（工具「终端命令」）\n理由：要跑测试\n请到 DSH 界面确认或拒绝",
+      "任务「修复登录」等待审批（工具「bash」）\n理由：要跑测试\n请到 DSH 界面确认或拒绝",
     );
   });
 
@@ -110,7 +112,7 @@ describe("审批与提问：两条 waterfall 的旁路翻译", () => {
       translateApproval(approval({ toolName: "mcp__chrome-devtools__click" })),
     );
     expect(request.body).toBe(
-      '工具「MCP 服务器 "chrome-devtools" 的工具 "click"」等待审批\n请到 DSH 界面确认或拒绝',
+      "工具「mcp__chrome-devtools__click」等待审批\n请到 DSH 界面确认或拒绝",
     );
   });
 
@@ -228,6 +230,17 @@ describe("文案表：本域翻得出来的种类恰好六个", () => {
       "turn-end",
     ]);
   });
+
+  it.each(["zh", "en"] as const)("%s 字典包含同构的六个内置种类", (locale) => {
+    expect(Object.keys(getNotifyKinds(locale)).sort()).toEqual([
+      "ask",
+      "done",
+      "error",
+      "question",
+      "subagent-done",
+      "turn-end",
+    ]);
+  });
 });
 
 describe("formatDuration：耗时的人类可读形式", () => {
@@ -246,14 +259,137 @@ describe("formatDuration：耗时的人类可读形式", () => {
   });
 });
 
-describe("prettyToolName：工具名的可读化", () => {
+describe("完整双语产品文案", () => {
+  it("英文六类通知的标题、正文与时长", () => {
+    const texts = getNotifyKinds("en");
+    expect(texts.ask.title).toBe("DSH: Approval needed");
+    expect(
+      texts.ask.body({
+        taskTitle: "Fix login",
+        tool: "mcp__browser__click",
+        reason: "Need a test",
+      }),
+    ).toBe(
+      'Approval needed for task "Fix login" (tool "mcp__browser__click")\nReason: Need a test\nConfirm or deny in the DSH window',
+    );
+    expect(texts.question.title).toBe("DSH: Question for you");
+    expect(texts.question.body({ taskTitle: "Write docs", question: "Which format?" })).toBe(
+      'Task "Write docs" is waiting for your answer\nQuestion: Which format?\nAnswer in the DSH window',
+    );
+    expect(texts.done.title).toBe("DSH: Task completed");
+    expect(texts.done.body({ taskTitle: "Build", durationMs: 135_000 })).toBe(
+      'Task "Build" completed\nDuration: 2m 15s',
+    );
+    expect(texts["subagent-done"].title).toBe("DSH: Subagent task completed");
+    expect(texts["subagent-done"].body({ taskTitle: "Review", durationMs: 45_000 })).toBe(
+      'Subagent task "Review" completed\nDuration: 45s',
+    );
+    expect(texts.error.title).toBe("DSH: Task failed");
+    expect(texts.error.body({ taskTitle: "Deploy", turn: 1, step: 2, message: "timeout" })).toBe(
+      'Task "Deploy" failed\nTurn 1, step 2: timeout',
+    );
+    expect(texts["turn-end"].title).toBe("DSH: Turn completed");
+  });
+
+  it("中文六类通知保留原产品文案，工具 ID 原样进入正文", () => {
+    const texts = getNotifyKinds("zh");
+    expect(texts.ask.title).toBe("DSH：等待审批");
+    expect(texts.ask.body({ tool: "bash", reason: "要跑测试" })).toBe(
+      "工具「bash」等待审批\n理由：要跑测试\n请到 DSH 界面确认或拒绝",
+    );
+    expect(texts.question.title).toBe("DSH：向你提问");
+    expect(texts.question.body({ taskTitle: "写文档", question: "要哪个格式？" })).toBe(
+      "任务「写文档」需要你回答\n问题：要哪个格式？\n请到 DSH 界面回答",
+    );
+    expect(texts.done.title).toBe("DSH：任务完成");
+    expect(texts.done.body({ taskTitle: "构建", durationMs: 135_000 })).toBe(
+      "任务「构建」已完成\n耗时：2 分 15 秒",
+    );
+    expect(texts["subagent-done"].title).toBe("DSH：子任务完成");
+    expect(texts["subagent-done"].body({ taskTitle: "复核", durationMs: 45_000 })).toBe(
+      "子任务「复核」已完成\n耗时：45 秒",
+    );
+    expect(texts.error.title).toBe("DSH：任务出错");
+    expect(texts.error.body({ taskTitle: "部署", turn: 1, step: 2, message: "超时" })).toBe(
+      "任务「部署」执行出错\n第 1 轮第 2 步：超时",
+    );
+    expect(texts["turn-end"].title).toBe("DSH：轮次完成");
+  });
+
+  it.each([
+    [
+      "ask 无 task/no reason/缺 tool",
+      "ask",
+      {},
+      'Approval needed for tool "?"\nConfirm or deny in the DSH window',
+    ],
+    [
+      "question 无 task/无 question",
+      "question",
+      {},
+      "There is a question waiting for your answer\nAnswer in the DSH window",
+    ],
+    ["done 无 task/缺 duration", "done", {}, "Background task completed\nDuration: 0s"],
+    [
+      "subagent-done 无 task/缺 duration",
+      "subagent-done",
+      {},
+      "Subagent task completed\nDuration: 0s",
+    ],
+    ["error 无 task/无 turn/有 message", "error", { message: "boom" }, "Task failed\nError: boom"],
+    ["error 无 task/无 turn/无 message", "error", {}, "Task failed"],
+    ["error 无 task/有 turn 无 step/message", "error", { turn: 2 }, "Task failed\nTurn 2: "],
+  ] as const)("英文缺字段：%s", (_label, kind, detail, expected) => {
+    expect(getNotifyKinds("en")[kind].body(detail)).toBe(expected);
+  });
+
+  it.each([
+    [{ taskTitle: "Fix", turn: 3 }, 'Turn 3 of task "Fix" completed'],
+    [{ taskTitle: "Fix" }, 'A turn of task "Fix" completed'],
+    [{ turn: 3 }, "Turn 3 completed"],
+    [{}, "Turn completed"],
+  ] as const)("英文 turn-end 的四种完整回退：%o", (detail, expected) => {
+    expect(getNotifyKinds("en")["turn-end"].body(detail)).toBe(expected);
+  });
+
+  it.each([
+    [{ taskTitle: "修复", turn: 3 }, "任务「修复」第 3 轮工作已完成"],
+    [{ taskTitle: "修复" }, "任务「修复」工作已完成"],
+    [{ turn: 3 }, "第 3 轮工作已完成"],
+    [{}, "工作已完成"],
+  ] as const)("中文 turn-end 的四种完整组合：%o", (detail, expected) => {
+    expect(getNotifyKinds("zh")["turn-end"].body(detail)).toBe(expected);
+  });
+});
+
+describe("formatDurationForLocale：单位来自 locale 字典", () => {
+  it.each<[number, "zh" | "en", string]>([
+    [0, "zh", "0 秒"],
+    [45_000, "zh", "45 秒"],
+    [135_000, "zh", "2 分 15 秒"],
+    [3_661_000, "zh", "1 小时 1 分 1 秒"],
+    [0, "en", "0s"],
+    [45_000, "en", "45s"],
+    [135_000, "en", "2m 15s"],
+    [3_661_000, "en", "1h 1m 1s"],
+  ])("%i 毫秒，%s → %s", (ms, locale, text) => {
+    expect(formatDurationForLocale(ms, locale)).toBe(text);
+  });
+
+  it("负耗时在两种语言都按零处理", () => {
+    expect(formatDurationForLocale(-1000, "zh")).toBe("0 秒");
+    expect(formatDurationForLocale(-1000, "en")).toBe("0s");
+  });
+});
+
+describe("prettyToolName：工具 ID 原样展示", () => {
   it.each<[string | undefined, string]>([
-    ["bash", "终端命令"],
-    ["subagent_fork", "子代理任务"],
+    ["bash", "bash"],
+    ["subagent_fork", "subagent_fork"],
     [undefined, "?"],
     ["my_custom_tool", "my_custom_tool"],
-    ["mcp__chrome-devtools__click", 'MCP 服务器 "chrome-devtools" 的工具 "click"'],
-    ["mcp__a__b__c", 'MCP 服务器 "a" 的工具 "b__c"'],
+    ["mcp__chrome-devtools__click", "mcp__chrome-devtools__click"],
+    ["mcp__a__b__c", "mcp__a__b__c"],
     ["mcp__only-two", "mcp__only-two"],
   ])("%s → %s", (name, text) => {
     expect(prettyToolName(name)).toBe(text);

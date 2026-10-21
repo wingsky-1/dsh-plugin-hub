@@ -12,10 +12,11 @@ import type {
   AgentStatusPayload,
   AgentTurnStoppingPayload,
 } from "../../deps.ts";
+import type { NotificationLocale } from "../../../shared/interface.ts";
 import { sessionTitleOf, turnEndEvidenceOf } from "../session/index.ts";
 import type { SessionTitle } from "../session/type.ts";
 import { agentStates } from "../state/index.ts";
-import { NOTIFY_KINDS } from "./catalog.ts";
+import { getNotifyKinds } from "./catalog.ts";
 import type { TranslatedKind } from "./catalog.ts";
 import type { NotifyDetail, Translation } from "./type.ts";
 
@@ -23,8 +24,12 @@ import type { NotifyDetail, Translation } from "./type.ts";
 const NOT_A_NOTIFICATION: Translation = { ok: false };
 
 /** 把详情渲染成一条请求；标题与正文只来自本目录的文案表（本域不填 severity）。 */
-function render(kind: TranslatedKind, detail: NotifyDetail): Translation {
-  const text = NOTIFY_KINDS[kind];
+function render(
+  kind: TranslatedKind,
+  detail: NotifyDetail,
+  locale: NotificationLocale = "zh",
+): Translation {
+  const text = getNotifyKinds(locale)[kind];
   return { ok: true, request: { kind, title: text.title, body: text.body(detail) } };
 }
 
@@ -34,23 +39,37 @@ function titleOf(agent?: Agent): SessionTitle {
 }
 
 /** 审批请求 → `ask`（工具名 + 理由 + 任务名）。 */
-export function translateApproval(request: ApprovalRequest): Translation {
+export function translateApproval(
+  request: ApprovalRequest,
+  locale: NotificationLocale = "zh",
+): Translation {
   const title = titleOf(request.agent);
-  return render("ask", {
-    tool: request.toolName,
-    taskTitle: title.found ? title.title : undefined,
-    reason: request.reason,
-  });
+  return render(
+    "ask",
+    {
+      tool: request.toolName,
+      taskTitle: title.found ? title.title : undefined,
+      reason: request.reason,
+    },
+    locale,
+  );
 }
 
 /** 用户提问 → `question`（首问摘要 + 任务名）。 */
-export function translateUserQuestion(request: AskUserQuestionRequest): Translation {
+export function translateUserQuestion(
+  request: AskUserQuestionRequest,
+  locale: NotificationLocale = "zh",
+): Translation {
   const first = request.questions[0];
   const title = titleOf(request.agent);
-  return render("question", {
-    taskTitle: title.found ? title.title : undefined,
-    question: first !== undefined && first.question.length > 0 ? first.question : undefined,
-  });
+  return render(
+    "question",
+    {
+      taskTitle: title.found ? title.title : undefined,
+      question: first !== undefined && first.question.length > 0 ? first.question : undefined,
+    },
+    locale,
+  );
 }
 
 /** 会话内事件 → 通知请求：只认 `turn/end`，只记账不产出。 */
@@ -61,10 +80,17 @@ export function translateSessionEvent(sessionId: string, event: SessionEvent): T
 }
 
 /** agent 生命周期迁移 → 完成通知；`idle` 是判据，`running` 只记账。 */
-export function translateAgentStatus(payload: AgentStatusPayload): Translation {
+export function translateAgentStatus(
+  payload: AgentStatusPayload,
+  locale: NotificationLocale = "zh",
+): Translation {
   const outcome = agentStates.observeStatus(payload);
   if (!outcome.ok) return NOT_A_NOTIFICATION;
-  return render(outcome.kind, { taskTitle: outcome.taskTitle, durationMs: outcome.durationMs });
+  return render(
+    outcome.kind,
+    { taskTitle: outcome.taskTitle, durationMs: outcome.durationMs },
+    locale,
+  );
 }
 
 /** agent 被销毁 → 清账（不产出：完成与否已由 `idle` 判过）。 */
@@ -74,19 +100,29 @@ export function translateAgentDisposed(payload: AgentDisposedPayload): Translati
 }
 
 /** turn 到停止边界 → `turn-end`（同一 turn 只发一次）。 */
-export function translateTurnStopping(payload: AgentTurnStoppingPayload): Translation {
+export function translateTurnStopping(
+  payload: AgentTurnStoppingPayload,
+  locale: NotificationLocale = "zh",
+): Translation {
   const outcome = agentStates.observeTurnStopping(payload);
   if (!outcome.ok) return NOT_A_NOTIFICATION;
-  return render("turn-end", { turn: outcome.turn, taskTitle: outcome.taskTitle });
+  return render("turn-end", { turn: outcome.turn, taskTitle: outcome.taskTitle }, locale);
 }
 
 /** agent 出错 → `error`（错误文本 + turn + step + 任务名）。 */
-export function translateAgentError(payload: AgentErrorPayload): Translation {
+export function translateAgentError(
+  payload: AgentErrorPayload,
+  locale: NotificationLocale = "zh",
+): Translation {
   const title = titleOf(payload.agent);
-  return render("error", {
-    message: payload.error,
-    taskTitle: title.found ? title.title : undefined,
-    turn: payload.turn,
-    step: payload.step,
-  });
+  return render(
+    "error",
+    {
+      message: payload.error,
+      taskTitle: title.found ? title.title : undefined,
+      turn: payload.turn,
+      step: payload.step,
+    },
+    locale,
+  );
 }
