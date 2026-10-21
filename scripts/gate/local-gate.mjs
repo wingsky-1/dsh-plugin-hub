@@ -289,6 +289,21 @@ function faultDetail(res) {
 }
 
 /**
+ * 子步骤环境：固定剥离 Node 24 的 `NODE_USE_ENV_PROXY`。
+ *
+ * 该开关会让核心 HTTP(S) 客户端读取宿主 `HTTP_PROXY` / `HTTPS_PROXY`，把离线回环用例
+ * （如 notifier `secure-fetch` 的 `pinned.test` 真实建连）送到宿主代理：IPv4 会超时，
+ * IPv6 会因代理的 remoteAddress 与钉定地址不符而熔断。本地门禁的对象是仓库自身，
+ * 不应随宿主代理开关变化；CI 不设置该变量，剥离对 CI 无影响。直接跑包级 test 时仍需
+ * `env -u NODE_USE_ENV_PROXY`（见 docs/GATE.md §1）。
+ */
+function gateEnv() {
+  const env = { ...process.env };
+  delete env.NODE_USE_ENV_PROXY;
+  return env;
+}
+
+/**
  * 顺序执行步骤表，首个非零退出即停（fail-fast），返回已跑步骤的结果。
  * 每项为 `{ label, code, fault }`：`fault` 非 null 即门禁故障（code 记 2），与判红分开。
  */
@@ -298,7 +313,11 @@ function runSteps(steps) {
     console.log(
       `\n[local-gate] ▶ ${step.label}\n[local-gate]   ${step.cmd ?? PNPM} ${step.args.join(" ")}`,
     );
-    const res = spawnSync(step.cmd ?? PNPM, step.args, { cwd: ROOT, stdio: "inherit" });
+    const res = spawnSync(step.cmd ?? PNPM, step.args, {
+      cwd: ROOT,
+      stdio: "inherit",
+      env: gateEnv(),
+    });
     const fault = stepFault(res);
     // 记录里的 code 取 2 而非 res.status（故障步的 res.status 是 null）：null 落进记录是雷——
     // 任何后续按 `code !== 0` 或按数值解释它的消费者都会读到「无退出码」这一假象。

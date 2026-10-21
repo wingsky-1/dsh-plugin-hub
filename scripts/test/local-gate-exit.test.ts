@@ -90,7 +90,7 @@ function patchedSource(steps: Step[]): string {
 }
 
 /** 跑注入副本并回报真实退出码；副本目录用后即删。 */
-function runInjected(steps: Step[]): Outcome {
+function runInjected(steps: Step[], extraEnv: NodeJS.ProcessEnv = {}): Outcome {
   const dir = mkdtempSync(join(tmpdir(), "dsh-local-gate-exit-"));
   try {
     const copy = join(dir, "probe.mjs");
@@ -98,6 +98,7 @@ function runInjected(steps: Step[]): Outcome {
     const r = spawnSync(process.execPath, [copy, "--tier", "pr"], {
       cwd: ROOT,
       encoding: "utf8",
+      env: { ...process.env, ...extraEnv },
     });
     return { status: r.status, signal: r.signal, out: `${r.stdout ?? ""}${r.stderr ?? ""}` };
   } finally {
@@ -124,6 +125,20 @@ test("exit 0：--dry-run 不执行任何步骤即 exit 0", () => {
     encoding: "utf8",
   });
   assert.equal(r.status, 0, `--dry-run 应 exit 0：${r.stderr}`);
+});
+
+test("exit 0：NODE_USE_ENV_PROXY 不传给门禁步骤（宿主代理不污染离线回环用例）", () => {
+  const out = runInjected(
+    [
+      {
+        label: "注入-环境变量",
+        cmd: process.execPath,
+        args: ["-e", "if (process.env.NODE_USE_ENV_PROXY !== undefined) process.exit(1)"],
+      },
+    ],
+    { NODE_USE_ENV_PROXY: "1" },
+  );
+  assertStatus(out, 0);
 });
 
 test("exit 0：注入的全过步骤走完即 exit 0，摘要无故障栏", () => {
