@@ -234,4 +234,20 @@ tsc 期判红）；官方没有 catalog 类型包的登记豁免，写明理由�
 锚只覆盖本仓实际消费的最小面：未消费的方法/字段上游改名或改型仍不可见（同表 7 G5）。
 豁免项一旦上游发布对应官方类型包，应先加 catalog 锁版、再改回 `import type` 锚定，并更新本表。
 
+### 升级时的服务面 diff（#1164 C）
+
+升级 dsh rc 时，除表 7 的 lib/事件/常量核对外，跑一次方法级 diff——它回答"旧版有、新版删了什么服务方法/事件"：
+
+```sh
+OLD="$(npm root -g)/@deepseek-ai/dsh/node_modules"
+TMP="$(mktemp -d)"
+npm install --prefix "$TMP/new" --no-save --ignore-scripts "@deepseek-ai/dsh@<target>"
+node scripts/derive/host-service-diff.ts \
+  --from "$OLD" --to "$TMP/new/node_modules" --check
+```
+
+- exit 0 = 无删除；exit 1 = 有服务/方法/事件删除（逐条打印）；exit 2 = 输入/声明入口不可解析，属工具故障，禁止继续升级。
+- 报告中的 untyped 项（credentials / attachments / loader / sessionProjections）不在官方类型面内，必须用真实宿主探针补证（见 `dsh-verify-isolated` 的 `--probe-provider-usage`）。
+- 限制：只比成员名集合，不比签名/参数/返回类型；完整升级流程见 [`.dsh/skills/dsh-upgrade/SKILL.md`](../.dsh/skills/dsh-upgrade/SKILL.md)。
+
 共享分档的规范正文见 [DEVELOPMENT §2.4](./DEVELOPMENT.md)；跨包共享准入见 [shared/README.md](../shared/README.md)。
