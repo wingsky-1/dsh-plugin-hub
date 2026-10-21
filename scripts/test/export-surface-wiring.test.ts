@@ -8,14 +8,14 @@ import { tierSteps } from "../gate/gate-steps.mjs";
 
 const ROOT = join(import.meta.dirname, "..", "..");
 const SCRIPT = "scripts/gate/export-surface-snapshot.mjs";
-const PACKAGE = "dsh-worktree-sidebar";
+const PACKAGE = "dsh-lan-proxy";
 const COMMAND = "node " + SCRIPT + " --package " + PACKAGE;
 
 function assertIndependent(commands: string[]) {
   assert.equal(
     commands.filter((command) => command.trim() === COMMAND).length,
     1,
-    "dsh-worktree-sidebar 必须有且仅有一条独立导出面命令",
+    "dsh-lan-proxy 必须有且仅有一条独立导出面命令",
   );
 }
 
@@ -66,13 +66,25 @@ for (const tier of ["pr", "full"]) {
 }
 test("本包资产必须存在且分类零 legacy", () => {
   const surface = JSON.parse(
-    readFileSync(join(ROOT, "scripts/data/dsh-worktree-sidebar-export-surface.json"), "utf8"),
+    readFileSync(join(ROOT, "scripts/data/dsh-lan-proxy-export-surface.json"), "utf8"),
   );
   const faces = JSON.parse(
-    readFileSync(join(ROOT, "scripts/data/dsh-worktree-sidebar-export-faces.json"), "utf8"),
+    readFileSync(join(ROOT, "scripts/data/dsh-lan-proxy-export-faces.json"), "utf8"),
   );
   assert.equal(surface.package, PACKAGE);
   assert.equal(faces.package, PACKAGE);
   assert.deepEqual(faces.legacy, []);
-  assert.deepEqual(Object.keys(faces.faces).sort(), ["ROUTES", "apply", "inject", "name"]);
+  assert.deepEqual(
+    Object.fromEntries(
+      Object.entries(faces.faces as Record<string, string>)
+        .filter(([, face]) => face === "安装面")
+        .sort(([a], [b]) => a.localeCompare(b)),
+    ),
+    {
+      ROUTES: "安装面",
+      apply: "安装面",
+      inject: "安装面",
+      name: "安装面",
+    },
+  );
 });

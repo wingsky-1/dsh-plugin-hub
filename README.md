@@ -55,7 +55,6 @@ DSH（DeepSeek Harness）Web GUI 插件集，npm 分发：一键装全家桶，�
 - `dsh-notifier` 自持配置文件；设置响应掩码频道凭据，但通知正文与出口错误详情不打码，可能进入日志、历史与推送服务。
 - `dsh-provider-usage` 的 API 密钥留在宿主端，不进浏览器。
 - `dsh-verify-isolated` 使用临时 DSH_HOME、独立 profile、端口与浏览器实例；这是验证隔离边界，不是全局安全承诺。
-- `dsh-worktree-sidebar` 只改变侧栏根目录；会话 cwd、`@` 引用与 `present` 仍锚定 cwd。
 
 各插件的威胁模型与加固细节见其 README 安全章节。
 
@@ -91,7 +90,6 @@ dsh plugin --profile web add @wingsky-1/dsh-lan-proxy
 | `@wingsky-1/dsh-lan-proxy` | 带 TLS、压缩与保活的局域网 HTTP/HTTPS/WebSocket 转发。 | [README](packages/dsh-lan-proxy/README.md) · [架构图解](docs/architecture/dsh-lan-proxy.md) | 已发布 |
 | `@wingsky-1/dsh-mcp-manager` | 按工作空间管理 MCP 配置与中间层工具接入。 | [README](packages/dsh-mcp-manager/README.md) · [架构图解](docs/architecture/dsh-mcp-manager.md) · [升级修复](#mcp-catalog-修复与升级须知) | 已发布 |
 | `@wingsky-1/dsh-verify-isolated` | 为 DSH 插件开发提供隔离环境浏览器验证。 | [README](packages/dsh-verify-isolated/README.md) · [架构图解](docs/architecture/dsh-verify-isolated.md) | 已发布 |
-| `@wingsky-1/dsh-worktree-sidebar` | 绑定会话侧栏 worktree，不改变会话 cwd；DSH 0.2.1-rc.2 提供不同语义的官方替代。 | [迁移与退役说明](packages/dsh-worktree-sidebar/README.md#退役迁移dsh-021-rc2) · [架构图解](docs/architecture/dsh-worktree-sidebar.md) | 已发布（0.2.9）；计划退役 |
 
 <a id="常用配置与维护"></a><a id="user-content-常用配置与维护"></a>
 ## 常用配置与维护
@@ -182,10 +180,6 @@ MCP 服务器管理器（stdio / streamable-http）：项目级/全局两级配�
 
 DSH 插件开发的隔离环境浏览器验证 skill：临时 DSH_HOME + 独立 profile + 独立端口 + 独立浏览器实例四重隔离，一键拉起、退出自动清理；自带 raw CDP 零依赖浏览器驱动（快照/点击/截图/求值，支持设备视口模拟），可选隔离审计；首启弹窗默认跳过
 
-### `@wingsky-1/dsh-worktree-sidebar`
-
-给 agent 三个工具（register / create / remove），把某个 git worktree 登记给当前会话，让该会话右侧栏文件树指向那个 worktree，而**会话 cwd 不变**（`@` 引用、`present` 落点仍锚 cwd）；子 agent 会话继承父会话的登记；只在「打开页签 / 点官方刷新 / 窗口重新可见」时重读，不轮询
-
 <details>
 <summary>低频安装变体：指定版本与 npx</summary>
 
@@ -242,6 +236,12 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-plugins-all
 - `@wingsky-1/dsh-web-file-preview`（把对话内「用默认应用打开」改写为官方右侧栏预览）
   已不再维护：官方 dsh 0.1.6 起交付物提及点击已改走官方侧栏预览，仅剩卡片菜单
   「用默认应用打开」这一显式外开入口，改写它与用户显式意图相反（#840）。
+- `@wingsky-1/dsh-worktree-sidebar`（把某个 git worktree 登记给当前会话的侧栏文件树）
+  已不再维护：DSH 0.2.1-rc.2 提供不同语义的官方替代，迁移与退役说明见
+  [docs/migrations/worktree-sidebar.md](docs/migrations/worktree-sidebar.md)。
+- `@wingsky-1/dsh-decision-gateway`（通用辅助决策网关，JEV 为首个 provider）
+  已不再维护：无直接替代；[退役说明](docs/archive/dsh-decision-gateway-retirement.md)
+  记录归档与残留清理方式。
 
 此前安装过上述退役包的用户请卸载：
 
@@ -252,6 +252,8 @@ dsh plugin --profile web remove @wingsky-1/dsh-subagent-model-inherit
 dsh plugin --profile web remove @wingsky-1/dsh-codegraph
 dsh plugin --profile web remove @wingsky-1/dsh-mem0
 dsh plugin --profile web remove @wingsky-1/dsh-web-file-preview
+dsh plugin --profile web remove @wingsky-1/dsh-worktree-sidebar
+dsh plugin --profile web remove @wingsky-1/dsh-decision-gateway
 ```
 
 > dsh-memory（项目长期记忆）暂未包含，规划中。

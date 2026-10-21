@@ -287,8 +287,10 @@ function checkAbsoluteBounds(guard, after, failures) {
  * 摘除语义本身（onRemoval）仍由调用方读——这里只处理「确实要判红」的那一支。
  */
 function checkRemovedLeaf(ctx, path, oldValue) {
-  const { guard, exemptions, usedExemptions, failures } = ctx;
+  const { guard, exemptions, usedExemptions, failures, retiredLeaves, removedLeaves } = ctx;
   if (guard.onRemoval !== "fail") return;
+  removedLeaves?.push({ guardId: guard.id, path, value: oldValue });
+  if (retiredLeaves?.has(guard.id + "\0" + path)) return;
   const removalKey = path + "#removal";
   if (exemptions.has(removalKey)) {
     usedExemptions.add(removalKey);
@@ -957,12 +959,16 @@ export function compareRegistry({
   textReaders = {},
   packages = [],
   exemptions = new Map(),
+  retiredLeaves = new Set(),
+  removedLeaves = [],
 }) {
   const ctx = {
     loadBase: makeSourceLoader({ read: readBase, textReaders, label: "基准" }),
     loadWorkspace: makeSourceLoader({ read: readWorkspace, textReaders, label: "工作区" }),
     packages,
     exemptions,
+    retiredLeaves,
+    removedLeaves,
     usedExemptions: new Set(),
     failures: [],
     warnings: [],
@@ -986,6 +992,7 @@ export function compareRegistry({
     warnings: ctx.warnings,
     envErrors: ctx.envErrors,
     skips: ctx.skips,
+    removedLeaves: ctx.removedLeaves,
   };
 }
 

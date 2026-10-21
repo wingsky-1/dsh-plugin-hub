@@ -26,7 +26,7 @@
 
 宿主围栏只有两份实现，均在仓库共享层：
 
-- [shared/loopback.js](../../shared/loopback.js) 导出的 `isLoopbackRequest`：回环
+- [shared/host-utils.js](../../shared/host-utils.js) 导出的 `isLoopbackRequest`：回环
   判定的唯一事实源，各包不得自抄一份。
 - [shared/host-utils.js](../../shared/host-utils.js) 导出的 `guardLoopbackMethod`
   与 `writeJson`：围栏执行顺序与拒绝体写法的唯一事实源；`readJsonBody` 与
@@ -78,8 +78,8 @@
 ### 4.1 干净模块
 
 有客户端面的包，其 `src/client` 入口均为干净模块：只导出 `apply` 函数与 `inject`
-数组；样式独立 `src/client/style.css`（`worktree-sidebar` 无独立样式文件，见
-5.5 节）；契约外壳由 [scripts/build/build-client.ts](../../scripts/build/build-client.ts)
+数组；样式独立 `src/client/style.css`；契约外壳由
+[scripts/build/build-client.ts](../../scripts/build/build-client.ts)
 统一生成，源码不写任何 loader。构建产物的硬契约（`load` 恰好一次、`load` 标识
 须等于完整包名、`materialize` 后导出键集恰为 `apply` 加 `inject`）由
 `client-contract-lib.ts` 判定。
@@ -91,10 +91,7 @@
 由各包 smoke 的一致性断言兜底。现状分两类：
 
 - 注入型：经 `__DSH_ROUTES__` 取值，缺席时回落。`provider-usage` 的
-  `src/client/core.ts` 与 `src/client/report.tsx` 以该方式覆盖其全部路由键；
-  `worktree-sidebar` 的 `src/client/index.ts` 以 `typeof` 守卫读取注入值，缺席时
-  回落到 `src/shared/contract.ts` 的 `ROUTES`（该守卫同时是其客户端单测的一条
-  判据：非 bundle 环境里标识符根本不存在，裸引用会抛错）。
+  `src/client/core.ts` 与 `src/client/report.tsx` 以该方式覆盖其全部路由键。
 - 镜像型：客户端手写与宿主一致的路径字面量。`lan-proxy` 的
   `src/client/settings-card.tsx` 的 `CONFIG_ROUTE` 与 `HEALTH_ROUTE`；
   `mcp-manager` 的 `src/client/core/constants.ts` 的 `API`；`notifier` 的
@@ -164,22 +161,6 @@
   （报表与界面面），均套 `guardLoopbackMethod` 守卫；
 - 客户端为注入型（见 4.2 节），`core.ts` 与 `report.tsx` 合计覆盖全部 16 键。
 
-### 5.5 worktree-sidebar
-
-源码位置：`packages/dsh-worktree-sidebar/`，详见
-[dsh-worktree-sidebar.md](dsh-worktree-sidebar.md)
-与 [包 README](../../packages/dsh-worktree-sidebar/README.md)。
-
-- 路由表 `ROUTES` 共 2 键（`bindings`、`health`），定义在
-  `src/shared/contract.ts`（宿主与浏览器共享的唯一必须一致的两件事之一，
-  另一件是绑定查询的响应形状），由 `src/index.ts` 组合根对外导出，同时是
-  `__DSH_ROUTES__` 的键来源；
-- 注册面为 `src/server/api/impl/route/index.ts` 的 `registerEndpoints`：以
-  方法表键集合为白名单套 `guardLoopbackMethod` 守卫；注册语义为要么全上、
-  要么全不上，中途失败回滚已挂路由后重抛；
-- 客户端为注入型（见 4.2 节），无独立样式文件、无定时轮询，请求只在页签挂载、
-  官方刷新与窗口可见性变化三类时机发出。
-
 ### 5.6 verify-isolated
 
 源码位置：`packages/dsh-verify-isolated/`，包 README 见
@@ -199,17 +180,14 @@
 
 - 宿主集：各包用假请求桩直调路由处理器，按路径断言 403、405 与 403 先于 405
   的顺序。`mcp-manager` 与 `provider-usage` 的 smoke 从 `lib/index.js` 构建产物
-  导入 `ROUTES`（构建产物依赖）；`notifier` 的 `route.test.ts` 与
-  `worktree-sidebar` 的 `api-routes.test.ts` 直连 `src` 源码面（含 405 `Allow`
-  头与拒答体形状断言）；`mcp-manager` 与 `provider-usage` 的 smoke 另对 405
-  围栏文案做逐字断言；
+  导入 `ROUTES`（构建产物依赖）；`notifier` 的 `route.test.ts` 直连 `src` 源码面
+  （含 405 `Allow` 头与拒答体形状断言）；`mcp-manager` 与 `provider-usage` 的
+  smoke 另对 405 围栏文案做逐字断言；
 - 客户端集：[test/smoke-lib.ts](../../test/smoke-lib.ts) 的
   `assertClientProductContract` 与 `assertClientSourceContract`（复用
   `client-contract-lib.ts`，与门禁同源）对 `lib/client.js` 产物做执行断言；
   [scripts/gate/verify-npm-layout.ts](../../scripts/gate/verify-npm-layout.ts)
-  对解包产物做同源断言（含带客户端面的包宿主入口须含 `ROUTES` 或路由字样）；
-  `worktree-sidebar` 的客户端单测直调 `src/client` 的 `apply`（源码依赖，含
-  `__DSH_ROUTES__` 缺席回落判据）。
+  对解包产物做同源断言（含带客户端面的包宿主入口须含 `ROUTES` 或路由字样）。
 
 ## 7. GUI 子集与 #769 边界（本片除外）
 
@@ -240,7 +218,7 @@
   （纯文档新增）的归属是 `pnpm docs:check`，对应 [docs/GATE.md](../GATE.md)
   改动类型矩阵中改文档的行。
 - 门禁语义的唯一出处是门禁代码与源码本身（`verify-npm-layout.ts`、
-  `client-contract-lib.ts`、`bundle-host.ts`、`loopback.js`、`host-utils.js`）；
+  `client-contract-lib.ts`、`bundle-host.ts`、`host-utils.js`）；
   本文档是现状记录，语义分歧以它们为准。
 
 ## 9. 已知风险与缺口
@@ -278,6 +256,5 @@
   （[scripts/gate/verify-npm-layout.ts](../../scripts/gate/verify-npm-layout.ts)、
   [scripts/lib/client-contract-lib.ts](../../scripts/lib/client-contract-lib.ts)、
   [scripts/build/bundle-host.ts](../../scripts/build/bundle-host.ts)、
-  [shared/loopback.js](../../shared/loopback.js)、
   [shared/host-utils.js](../../shared/host-utils.js)）；本文档是现状记录，
   语义分歧以它们为准。

@@ -53,7 +53,7 @@
 - **两类流量两种处理**：普通 HTTP(S) 走 http-proxy 转发 + 响应压缩；默认所有 WS
   都终结后桥接以保活，只有压缩开关开启、白名单命中且 UA 策略允许时才协商压缩；
 - **三条安全防线**：① `targetHost` 仅允许回环（防开放转发/SSRF）；② 入站 Host 仅接受
-  IP 字面量或 `localhost`（DNS 重绑定防护）；③ 配置/health 路由走 `shared/loopback.js`
+  IP 字面量或 `localhost`（DNS 重绑定防护）；③ 配置/health 路由走 `shared/host-utils.js`
   的 loopback 围栏。
 
 ---
@@ -366,7 +366,7 @@ true、`ownsHostCompat` 默认 false）与 `FILE_CONFIG_VALIDATORS`（`:225`）�
 |---|---|---|
 | targetHost 回环白名单 | `isLoopbackTarget`（`server/shared/net.ts#isLoopbackTarget`，配置校验与引擎入口共用的同一份实现）+ 配置层校验 + `createLanProxy` 入口强校验 | 只允许 `localhost`/`127.0.0.1`/`::1`，防开放转发/SSRF（三层防线） |
 | 入站 Host 校验（DNS 重绑定防御） | `hostnameAllowed`（`server/proxy/impl/proxy.ts#hostnameAllowed`） | 仅接受 IP 字面量或 `localhost`，任何 DNS 域名 403/断开；对 HTTP 与 WS 入站同样生效 |
-| 配置/health 路由围栏 | `isLoopbackRequest`（shared/loopback.js） | remoteAddress 回环 + Host 回环 + 非 cross-site + Origin 与 Host 一致 |
+| 配置/health 路由围栏 | `isLoopbackRequest`（shared/host-utils.js） | remoteAddress 回环 + Host 回环 + 非 cross-site + Origin 与 Host 一致 |
 | 凭据透传范围 | `rewriteHeaders` / `bridgeUpstreamHeaders` | 只覆盖 Host/Origin，Cookie/Authorization 原样透传；WS 桥接剥离 hop-by-hop 与 sec-websocket-* 头；上游被 targetHost 强制回环，凭据只向本机回环上游转发，不保证不跨进程 |
 | HTTPS 私钥 | `server/tls/impl/index.ts` | 自签名私钥落盘 0600；用户证书文件成对校验 |
 | injectToken | `server/proxy/impl/proxy.ts#withLaunchToken` / `#isTokenMintCandidate` | 仅「GET / 且无 token」注入；有 cookie 首次不注入；仅上游 401 时带 token 重放一次 |

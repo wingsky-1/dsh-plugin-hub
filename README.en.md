@@ -64,7 +64,6 @@ individual package, then restart.
 - `dsh-notifier` owns its configuration files; settings responses mask channel credentials, but notification text and outbound error details are not redacted and may reach logs, history and push services.
 - `dsh-provider-usage` keeps API keys on the host, never in the browser.
 - `dsh-verify-isolated` uses a temporary DSH_HOME, independent profile, port and browser instance; this is a verification boundary, not a global security guarantee.
-- `dsh-worktree-sidebar` changes only the sidebar root; session cwd, `@` references and `present` remain anchored to cwd.
 
 See each plugin README for its threat model and hardening details.
 
@@ -102,7 +101,6 @@ Restart `dsh web`, open its startup URL, and check the installed plugin cards un
 | `@wingsky-1/dsh-lan-proxy` | LAN HTTP/HTTPS/WebSocket forwarding with TLS, compression and keep-alive. | [README](packages/dsh-lan-proxy/README.en.md) · [Architecture](docs/architecture/dsh-lan-proxy.md) | Published |
 | `@wingsky-1/dsh-mcp-manager` | Per-workspace MCP configuration and middleware-based tool access. | [README](packages/dsh-mcp-manager/README.en.md) · [Architecture](docs/architecture/dsh-mcp-manager.md) · [Upgrade repair](#mcp-catalog-upgrade-notice-and-repair) | Published |
 | `@wingsky-1/dsh-verify-isolated` | Isolated browser verification for DSH plugin development. | [README](packages/dsh-verify-isolated/README.en.md) · [Architecture](docs/architecture/dsh-verify-isolated.md) | Published |
-| `@wingsky-1/dsh-worktree-sidebar` | Bind a worktree to the session sidebar without changing its cwd; DSH 0.2.1-rc.2 has a native alternative with different semantics. | [Retirement and migration](packages/dsh-worktree-sidebar/README.en.md#retirement-and-migration-dsh-021-rc2) · [Architecture](docs/architecture/dsh-worktree-sidebar.md) | Published (0.2.9); retirement planned |
 
 <a id="configuration-and-maintenance"></a><a id="user-content-configuration-and-maintenance"></a>
 ## Configuration and maintenance
@@ -233,10 +231,6 @@ MCP server manager (stdio / streamable-http): per-working-directory project/glob
 
 Isolated-environment browser verification skill for DSH plugin development: temp DSH_HOME + independent profile + independent port + independent browser instance (four-way isolation), one-command launch with automatic cleanup; bundled zero-dependency raw-CDP browser driver (snapshot / click / screenshot / eval, with device-viewport emulation), optional isolation audit, first-run dialogs skipped by default
 
-### `@wingsky-1/dsh-worktree-sidebar`
-
-Three agent tools (register / create / remove) bind a git worktree to the current session so its right-sidebar file tree uses that root, while the session cwd stays unchanged (`@` references and `present` still resolve against cwd); child sessions inherit the parent binding; rereads on tab open, official refresh, or window becoming visible, without polling
-
 <details>
 <summary>Installation variants: version pinning and npx</summary>
 
@@ -302,6 +296,14 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-plugins-all
   mention clicks to the built-in Sidebar preview, leaving only the card menu's explicit
   "open in default app" entry, which the plugin rewrote against the user's explicit intent
   (#840).
+- `@wingsky-1/dsh-worktree-sidebar` (binds a git worktree to the current session's
+  right-Sidebar file tree) is discontinued: DSH 0.2.1-rc.2 ships a native alternative with
+  different semantics; migration and retirement notes are in
+  [docs/migrations/worktree-sidebar.md](docs/migrations/worktree-sidebar.md).
+- `@wingsky-1/dsh-decision-gateway` (a general advisory decision gateway with JEV as
+  its first provider) is discontinued: there is no direct replacement. The
+  [retirement notes](docs/archive/dsh-decision-gateway-retirement.md) cover archival
+  information and leftover cleanup.
 
 Uninstall these packages if you installed them before:
 
@@ -312,6 +314,8 @@ dsh plugin --profile web remove @wingsky-1/dsh-subagent-model-inherit
 dsh plugin --profile web remove @wingsky-1/dsh-codegraph
 dsh plugin --profile web remove @wingsky-1/dsh-mem0
 dsh plugin --profile web remove @wingsky-1/dsh-web-file-preview
+dsh plugin --profile web remove @wingsky-1/dsh-worktree-sidebar
+dsh plugin --profile web remove @wingsky-1/dsh-decision-gateway
 ```
 
 > dsh-memory (project long-term memory) is not included yet; it is planned.

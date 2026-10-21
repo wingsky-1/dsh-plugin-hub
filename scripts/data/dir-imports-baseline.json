@@ -87,27 +87,6 @@
         "clientServerImports": [],
         "unitImportFaceViolations": []
       }
-    },
-    "dsh-worktree-sidebar": {
-      "modules": 7,
-      "scannedSrcFiles": 41,
-      "allSrcTsFiles": 47,
-      "interfaceFacades": 7,
-      "leafValueEdges": 2,
-      "fileValueEdges": 47,
-      "crossModuleRefs": 40,
-      "quality": {
-        "leafModuleCycles": [],
-        "fileCycles": [],
-        "implToOtherImpl": [],
-        "missingInterface": [],
-        "directImpl": [],
-        "uncoveredSrcFiles": [],
-        "crossDomainValueEdges": [],
-        "rootIndexImports": [],
-        "clientServerImports": [],
-        "unitImportFaceViolations": []
-      }
     }
   }
 }

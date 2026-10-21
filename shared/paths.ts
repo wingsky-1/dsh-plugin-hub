@@ -1,8 +1,8 @@
 // dsh 插件家族共享层 — 插件主目录拼装（单一事实源）。
 //
-// 历史：`join(dshHome(), PACKAGE_DIR)` 在 5 包 6 处逐字复制
-// （lan-proxy / mcp-manager / notifier 的包主目录、decision-gateway config/history 两域、
-// worktree-sidebar 绑定表）——分区策略变化时要改 6 处。统一由本模块承载：
+// 历史：`join(dshHome(), PACKAGE_DIR)` 曾在 5 包 6 处逐字复制
+// （lan-proxy / mcp-manager / notifier 的包主目录等，其中两包已退役）——
+// 分区策略变化时要改多处。统一由本模块承载：
 // `pluginHome(base, ...segments)` 即 `join(base, ...segments)`，默认形态路径逐字节不变。
 //
 // 只收敛「包主目录」一类拼装；以下 7 类排除，各有不可收敛的理由（函数 JSDoc 列清单）。
@@ -14,8 +14,8 @@ import { join } from "node:path";
 
 /**
  * 插件主目录拼装：`join(base, ...segments)` 的唯一入口。base 一般取
- * `dshHome()`（需参数化测试基时显式传 base，如 decision-gateway 两域的
- * `home ?? dshHome()`）。纯拼装、不做存在校验，默认形态路径逐字节不变。
+ * `dshHome()`（需参数化测试基时显式传 base，如 `home ?? dshHome()`）。
+ * 纯拼装、不做存在校验，默认形态路径逐字节不变。
  *
  * 只收敛「包主目录」直拼（`join(<DSH home>, PACKAGE_DIR[, 子段])`）；以下 7 类排除：
  * 1. legacy/旧根：旧版布局迁移读面（lan-proxy `legacyPluginDir`、

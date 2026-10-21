@@ -177,7 +177,7 @@ test("#764 A2：被忽略文件静默跳过（钩子 staged d.ts 不超预算，
   //（warnIgnored:false），被忽略文件 0 结果、不计预算。预算值本身不动（仍 0），超预算判红逻辑由
   // 上一测静态锁定（problems > budget）。本测锁钩子路径：staged 仅含 d.ts 即通过。
   for (const rel of [
-    "packages/dsh-decision-gateway/src/client/css.d.ts",
+    "packages/dsh-lan-proxy/src/client/css.d.ts",
     "packages/dsh-provider-usage/src/server/adapters/deepseek-official.d.mts",
   ]) {
     const probe = join(ROOT, rel);

@@ -7,6 +7,7 @@ import { dirname, join } from "node:path";
 import { spawnSync } from "node:child_process";
 import {
   COVERAGE_THRESHOLD_KEYS,
+  collectRetiredLeafIdentities,
   parseCoverageThresholds as parseCoverageThresholdsImpl,
   runThresholdMonotonic,
 } from "../gate/threshold-monotonic.mjs";
@@ -27,6 +28,7 @@ const TOPOLOGY = "scripts/data/mutation-topology.json";
 const WIRING = "scripts/data/gate-wiring-exceptions.json";
 const LEDGER = "scripts/data/gate-exemptions.json";
 const REGISTRY = "scripts/data/threshold-registry.json";
+const MANIFEST = "scripts/data/plugins-manifest.json";
 const VITEST = "vitest.config.ts";
 /** parseCoverageThresholds 结果归一：实现仍带 @ts-nocheck，动态装配的 global/scoped 被推断为
  * 空对象/空数组——测试侧按门禁自述的形态收，null 保持（无块分支另有专条用例）。 */
@@ -205,6 +207,41 @@ function runFixture(dir: string) {
   } finally {
     console.error = original;
   }
+}
+
+function writeManifest(
+  dir: string,
+  {
+    active = [],
+    standalone = [],
+    retired = [],
+  }: { active?: string[]; standalone?: string[]; retired?: string[] },
+) {
+  const configSurfaces = [...active, ...standalone].map((pkg) => ({
+    package: pkg,
+    surface: "none",
+    reason: "fixture",
+  }));
+  writeFixtureFile(
+    dir,
+    MANIFEST,
+    JSON.stringify({
+      active,
+      standalone,
+      retired: retired.map((name) => ({ name, reason: "fixture", successor: "" })),
+      configSurfaces,
+      dshPeerContracts: {},
+    }),
+  );
+}
+
+/** 新 fixture 会把 manifest 放上磁盘；按真实声明表的 every-json 覆盖规则登记为 not-a-gate。 */
+function withManifestNotAGate(guards: unknown, notAGate: unknown = []) {
+  const values = Array.isArray(notAGate) ? [...notAGate] : [];
+  if (!values.some((item) => item && item.source === MANIFEST)) {
+    values.push({ source: MANIFEST, why: "fixture：退役结构识别读取，不是阈值事实源" });
+  }
+  return { guards, notAGate: values };
 }
 
 function removeFixture(dir: string) {
@@ -1576,6 +1613,217 @@ test("#843: 整包退役未登记 #removal 时仍判红", () => {
     const r = runFixture(dir);
     assert.equal(r.exitCode, 1, "没有台账登记时删键仍须判红");
     assert.match(r.stderr, /被移除/);
+  } finally {
+    removeFixture(dir);
+  }
+});
+
+test("#退休结构识别：包目录消失且 manifest retired 时，两精确叶子放行并保留警告", () => {
+  const dir = gitFixture(
+    vitestText(80),
+    withPackages({
+      "dsh-x": { threshold: 60, fixedCovered: 70 },
+      "dsh-y": { threshold: 60, fixedCovered: 70 },
+    }),
+    {
+      ...withManifestNotAGate([...BASE_GUARDS, TIMEOUT_GUARD]),
+      extraFiles: {
+        ...packageFile,
+        [TOPOLOGY]: JSON.stringify({
+          sharedDefaults: { timeoutMS: 60000 },
+          packages: {
+            "dsh-x": { timeoutMS: 60000 },
+            "dsh-y": { timeoutMS: 60000 },
+          },
+        }),
+      },
+    },
+  );
+  try {
+    rmSync(join(dir, "packages/dsh-y"), { recursive: true, force: true });
+    writeGauntlet(dir, withPackages({ "dsh-x": { threshold: 60, fixedCovered: 70 } }));
+    writeFixtureFile(
+      dir,
+      TOPOLOGY,
+      JSON.stringify({
+        sharedDefaults: { timeoutMS: 60000 },
+        packages: { "dsh-x": { timeoutMS: 60000 } },
+      }),
+    );
+    writeManifest(dir, { active: ["dsh-x"], retired: ["dsh-y"] });
+    const warned = captureWarn(() => runFixture(dir));
+    assert.equal(warned.result.exitCode, 0);
+    assert.equal(warned.result.failures, 0);
+    const retiredWarning = warned.lines.find((line) => /retired-package dsh-y/.test(line));
+    assert.ok(retiredWarning);
+    assert.match(retiredWarning, /dsh-y\.threshold/);
+    assert.match(retiredWarning, /dsh-y\.timeoutMS/);
+  } finally {
+    removeFixture(dir);
+  }
+});
+
+test("#退休结构识别：同 id 的 source/fallback/keys/template 形变不获结构豁免", () => {
+  const manifest = {
+    active: ["dsh-x"],
+    standalone: [],
+    retired: [{ name: "dsh-y", reason: "fixture", successor: "" }],
+  };
+  const shapes = [
+    { ...THRESHOLD_GUARD, sources: [COVERAGE_CONFIG] },
+    { ...THRESHOLD_GUARD, fallbackSources: [COVERAGE_CONFIG] },
+    { ...THRESHOLD_GUARD, keys: ["threshold"] },
+    { ...THRESHOLD_GUARD, paths: ["mutation.packages.*.thresholds"] },
+    { ...THRESHOLD_GUARD, sources: [GAUNTLET, COVERAGE_CONFIG] },
+  ];
+  for (const guard of shapes) {
+    const result = collectRetiredLeafIdentities({
+      registry: { guards: [guard] },
+      repoRoot: "/nonexistent-retire-fixture",
+      manifest,
+      removedLeaves: [
+        {
+          guardId: "mutation.packageThreshold",
+          path: "mutation.packages.dsh-y.threshold",
+          value: 60,
+        },
+      ] as Array<{ guardId: string; path: string; value: number }>,
+    });
+    assert.equal(result.identities.size, 0, JSON.stringify(guard));
+    assert.deepEqual(result.warnings, []);
+  }
+});
+
+test("#退休结构识别：包目录仍在时不可伪装退役", () => {
+  const dir = gitFixture(
+    vitestText(80),
+    withPackages({
+      "dsh-x": { threshold: 60, fixedCovered: 70 },
+      "dsh-y": { threshold: 60, fixedCovered: 70 },
+    }),
+    { extraFiles: packageFile, ...withManifestNotAGate(BASE_GUARDS) },
+  );
+  try {
+    writeGauntlet(dir, withPackages({ "dsh-x": { threshold: 60, fixedCovered: 70 } }));
+    writeManifest(dir, { active: ["dsh-x"], retired: ["dsh-y"] });
+    assert.equal(runFixture(dir).exitCode, 1);
+  } finally {
+    removeFixture(dir);
+  }
+});
+
+test("#退休结构识别：manifest active 仍含包时不可放行", () => {
+  const dir = gitFixture(
+    vitestText(80),
+    withPackages({
+      "dsh-x": { threshold: 60, fixedCovered: 70 },
+      "dsh-y": { threshold: 60, fixedCovered: 70 },
+    }),
+    { extraFiles: packageFile, ...withManifestNotAGate(BASE_GUARDS) },
+  );
+  try {
+    rmSync(join(dir, "packages/dsh-y"), { recursive: true, force: true });
+    writeGauntlet(dir, withPackages({ "dsh-x": { threshold: 60, fixedCovered: 70 } }));
+    writeFixtureFile(
+      dir,
+      MANIFEST,
+      JSON.stringify({
+        active: ["dsh-x", "dsh-y"],
+        standalone: [],
+        retired: [{ name: "dsh-y", reason: "fixture", successor: "" }],
+        configSurfaces: [
+          { package: "dsh-x", surface: "none", reason: "fixture" },
+          { package: "dsh-y", surface: "none", reason: "fixture" },
+        ],
+        dshPeerContracts: {},
+      }),
+    );
+    assert.equal(runFixture(dir).exitCode, 2, "manifest 自身互斥冲突必须 fail-closed");
+  } finally {
+    removeFixture(dir);
+  }
+});
+
+test("#退休结构识别：只退役一条叶子且包目录仍在时仍判红", () => {
+  const dir = gitFixture(
+    vitestText(80),
+    withPackages({
+      "dsh-x": { threshold: 60, fixedCovered: 70 },
+      "dsh-y": { threshold: 60, fixedCovered: 70 },
+    }),
+    { extraFiles: packageFile, ...withManifestNotAGate(BASE_GUARDS) },
+  );
+  try {
+    writeGauntlet(
+      dir,
+      withPackages({
+        "dsh-x": { threshold: 60, fixedCovered: 70 },
+        "dsh-y": { fixedCovered: 70 },
+      }),
+    );
+    writeManifest(dir, { active: ["dsh-x", "dsh-y"] });
+    const r = runFixture(dir);
+    assert.equal(r.exitCode, 1);
+    assert.match(r.stderr, /dsh-y\.threshold 被移除/);
+  } finally {
+    removeFixture(dir);
+  }
+});
+
+test("#退休结构识别：同 PR 其他阈值下降仍判红", () => {
+  const dir = gitFixture(
+    vitestText(80),
+    withPackages({
+      "dsh-x": { threshold: 60, fixedCovered: 70 },
+      "dsh-y": { threshold: 60, fixedCovered: 70 },
+    }),
+    withManifestNotAGate(BASE_GUARDS),
+  );
+  try {
+    rmSync(join(dir, "packages/dsh-y"), { recursive: true, force: true });
+    writeGauntlet(
+      dir,
+      withPackages({
+        "dsh-x": { threshold: 30, fixedCovered: 70 },
+      }),
+    );
+    writeManifest(dir, { active: ["dsh-x"], retired: ["dsh-y"] });
+    const r = runFixture(dir);
+    assert.equal(r.exitCode, 1);
+    assert.match(r.stderr, /dsh-x\.threshold 放宽/);
+    assert.doesNotMatch(r.stderr, /dsh-y\.threshold 被移除/);
+  } finally {
+    removeFixture(dir);
+  }
+});
+
+test("#退休结构识别：基准移除后无需临时豁免，仍判绿", () => {
+  const dir = gitFixture(
+    vitestText(80),
+    withPackages({
+      "dsh-x": { threshold: 60, fixedCovered: 70 },
+      "dsh-y": { threshold: 60, fixedCovered: 70 },
+    }),
+    withManifestNotAGate(BASE_GUARDS),
+  );
+  try {
+    rmSync(join(dir, "packages/dsh-y"), { recursive: true, force: true });
+    writeGauntlet(dir, withPackages({ "dsh-x": { threshold: 60, fixedCovered: 70 } }));
+    writeManifest(dir, { active: ["dsh-x"] });
+    const git = (...args: string[]) => spawnSync("git", args, { cwd: dir, encoding: "utf8" });
+    git("add", "-A");
+    git("commit", "-qm", "retire package");
+    assert.equal(runFixture(dir).exitCode, 0);
+  } finally {
+    removeFixture(dir);
+  }
+});
+
+test("#退休结构识别：manifest 损坏时 fail-closed", () => {
+  const dir = gitFixture(vitestText(80));
+  try {
+    writeFixtureFile(dir, MANIFEST, "{ bad json");
+    assert.equal(runFixture(dir).exitCode, 2);
   } finally {
     removeFixture(dir);
   }

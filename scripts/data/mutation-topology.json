@@ -49,11 +49,11 @@
       "e2e": "test/e2e/**/*.test.ts"
     },
     "supportFiles": [
-      "test/tsconfig.json（6 个包各一份：dsh-decision-gateway / dsh-lan-proxy / dsh-mcp-manager / dsh-notifier / dsh-provider-usage / dsh-worktree-sidebar）",
+      "test/tsconfig.json（4 个包各一份：dsh-lan-proxy / dsh-mcp-manager / dsh-notifier / dsh-provider-usage）",
       "test/*.worker.mjs（dsh-provider-usage：client-fetch-timeout.worker.mjs、client-revalidate.worker.mjs）",
       "test/hotreload-probe.mjs（dsh-provider-usage）",
-      "test/helpers.ts（dsh-mcp-manager / dsh-notifier / dsh-provider-usage / dsh-worktree-sidebar）",
-      "test/client-helpers.ts（dsh-decision-gateway / dsh-notifier）",
+      "test/helpers.ts（dsh-mcp-manager / dsh-notifier / dsh-provider-usage）",
+      "test/client-helpers.ts（dsh-notifier）",
       "test/smoke-pure.ts（dsh-provider-usage）",
       "test/*/consumer-product-face.ts（dsh-notifier test/integration/）"
     ],
@@ -100,128 +100,6 @@
     }
   },
   "packages": {
-    "dsh-decision-gateway": {
-      "concurrency": 16,
-      "timeoutMS": 60000,
-      "segments": {
-        "api": {
-          "mutate": ["packages/dsh-decision-gateway/src/server/api/**/*.ts"],
-          "excludes": [],
-          "testFiles": [
-            "packages/dsh-decision-gateway/test/integration/api.test.ts",
-            "packages/dsh-decision-gateway/test/integration/routes-fence.test.ts"
-          ],
-          "comment": "按域分段（#943 对账后，单段 _single 按 server 目录名拆分）：api 域全量在面内（含 interface 门面与 deps 类型面）；面文件集与单段时代一致，仅执行分片变化；测试按段 testFiles 清单跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
-        },
-        "config": {
-          "mutate": ["packages/dsh-decision-gateway/src/server/config/**/*.ts"],
-          "excludes": [],
-          "testFiles": [
-            "packages/dsh-decision-gateway/test/integration/api.test.ts",
-            "packages/dsh-decision-gateway/test/integration/routes-fence.test.ts",
-            "packages/dsh-decision-gateway/test/unit/baseurl-guard.test.ts",
-            "packages/dsh-decision-gateway/test/unit/config.test.ts",
-            "packages/dsh-decision-gateway/test/unit/custom-presets.test.ts",
-            "packages/dsh-decision-gateway/test/unit/keys-hardening.test.ts",
-            "packages/dsh-decision-gateway/test/unit/put-envelope.test.ts"
-          ],
-          "comment": "按域分段（#943 对账后，单段 _single 按 server 目录名拆分）：config 域全量在面内（含 interface 门面与 deps 类型面）；面文件集与单段时代一致，仅执行分片变化；测试按段 testFiles 清单跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
-        },
-        "history": {
-          "mutate": ["packages/dsh-decision-gateway/src/server/history/**/*.ts"],
-          "excludes": [],
-          "testFiles": [
-            "packages/dsh-decision-gateway/test/integration/api.test.ts",
-            "packages/dsh-decision-gateway/test/integration/routes-fence.test.ts",
-            "packages/dsh-decision-gateway/test/unit/history-hardening.test.ts",
-            "packages/dsh-decision-gateway/test/unit/history.test.ts"
-          ],
-          "comment": "按域分段（#943 对账后，单段 _single 按 server 目录名拆分）：history 域全量在面内（含 interface 门面与 deps 类型面）；面文件集与单段时代一致，仅执行分片变化；测试按段 testFiles 清单跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
-        },
-        "store": {
-          "mutate": ["packages/dsh-decision-gateway/src/server/store/**/*.ts"],
-          "excludes": [],
-          "testFiles": [
-            "packages/dsh-decision-gateway/test/integration/api.test.ts",
-            "packages/dsh-decision-gateway/test/integration/routes-fence.test.ts",
-            "packages/dsh-decision-gateway/test/unit/config.test.ts",
-            "packages/dsh-decision-gateway/test/unit/history-hardening.test.ts",
-            "packages/dsh-decision-gateway/test/unit/history.test.ts",
-            "packages/dsh-decision-gateway/test/unit/keys-hardening.test.ts"
-          ],
-          "comment": "按域分段（#943 对账后，单段 _single 按 server 目录名拆分）：store 域全量在面内（含 interface 门面与 deps 类型面）；面文件集与单段时代一致，仅执行分片变化；测试按段 testFiles 清单跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
-        },
-        "tools": {
-          "mutate": ["packages/dsh-decision-gateway/src/server/tools/**/*.ts"],
-          "excludes": [],
-          "testFiles": [
-            "packages/dsh-decision-gateway/test/integration/api.test.ts",
-            "packages/dsh-decision-gateway/test/integration/routes-fence.test.ts",
-            "packages/dsh-decision-gateway/test/unit/baseurl-guard.test.ts",
-            "packages/dsh-decision-gateway/test/unit/decide-contract.test.ts",
-            "packages/dsh-decision-gateway/test/unit/precheck-noegress.test.ts",
-            "packages/dsh-decision-gateway/test/unit/tools.test.ts",
-            "packages/dsh-decision-gateway/test/unit/verdict-tiers.test.ts",
-            "packages/dsh-decision-gateway/test/unit/tool-description.test.ts",
-            "packages/dsh-decision-gateway/test/unit/signal-cancel.test.ts",
-            "packages/dsh-decision-gateway/test/unit/project-levels.test.ts"
-          ],
-          "comment": "按域分段（#943 对账后，单段 _single 按 server 目录名拆分）：tools 域全量在面内（含 interface 门面与 deps 类型面）；面文件集与单段时代一致，仅执行分片变化；测试按段 testFiles 清单跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
-        },
-        "upgrade": {
-          "mutate": ["packages/dsh-decision-gateway/src/server/upgrade/**/*.ts"],
-          "excludes": [],
-          "testFiles": [
-            "packages/dsh-decision-gateway/test/integration/api.test.ts",
-            "packages/dsh-decision-gateway/test/integration/routes-fence.test.ts"
-          ],
-          "comment": "按域分段（#943 对账后，单段 _single 按 server 目录名拆分）：upgrade 域全量在面内（含 interface 门面与 deps 类型面）；面文件集与单段时代一致，仅执行分片变化；测试按段 testFiles 清单跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
-        },
-        "entry": {
-          "mutate": [
-            "packages/dsh-decision-gateway/src/index.ts",
-            "packages/dsh-decision-gateway/src/shared/**/*.ts"
-          ],
-          "excludes": [],
-          "testFiles": [
-            "packages/dsh-decision-gateway/test/client-unit/routes-consistency.test.ts",
-            "packages/dsh-decision-gateway/test/integration/api.test.ts",
-            "packages/dsh-decision-gateway/test/integration/routes-fence.test.ts",
-            "packages/dsh-decision-gateway/test/unit/baseurl-guard.test.ts",
-            "packages/dsh-decision-gateway/test/unit/config.test.ts",
-            "packages/dsh-decision-gateway/test/unit/decide-contract.test.ts",
-            "packages/dsh-decision-gateway/test/unit/history-hardening.test.ts",
-            "packages/dsh-decision-gateway/test/unit/keys-hardening.test.ts",
-            "packages/dsh-decision-gateway/test/unit/precheck-noegress.test.ts",
-            "packages/dsh-decision-gateway/test/unit/tools.test.ts",
-            "packages/dsh-decision-gateway/test/unit/verdict-tiers.test.ts"
-          ],
-          "comment": "按域分段（对标 lan-proxy entry 段）：宿主唯一入口 src/index.ts + 双端共享 src/shared/**（contract 契约解析在面内）；面文件集与单段时代一致，仅执行分片变化；测试按段 testFiles 清单跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
-        },
-        "client": {
-          "mutate": [
-            "packages/dsh-decision-gateway/src/client/**/*.ts",
-            "packages/dsh-decision-gateway/src/client/**/*.tsx"
-          ],
-          "excludes": [],
-          "testFiles": [
-            "packages/dsh-decision-gateway/test/client-dom/custom-presets-ui.test.ts",
-            "packages/dsh-decision-gateway/test/client-dom/fold-hidden.test.ts",
-            "packages/dsh-decision-gateway/test/client-dom/locale-host.test.ts",
-            "packages/dsh-decision-gateway/test/client-dom/panes-probability.test.ts",
-            "packages/dsh-decision-gateway/test/client-dom/tabs-mask-history.test.ts",
-            "packages/dsh-decision-gateway/test/client-unit/format.test.ts",
-            "packages/dsh-decision-gateway/test/client-unit/locale-i18n.test.ts",
-            "packages/dsh-decision-gateway/test/client-unit/routes-consistency.test.ts",
-            "packages/dsh-decision-gateway/test/client-dom/pane-helpers.test.ts",
-            "packages/dsh-decision-gateway/test/client-unit/contract-parsers.test.ts",
-            "packages/dsh-decision-gateway/test/client-unit/history-entry.test.ts"
-          ],
-          "comment": "React 独立 tab（含 tsx 真实行为判据）：vanilla DOM 层已删，settings/*.tsx（密钥二选一、详情单开、保存守卫、清空两步、过滤）进变异面；css.d.ts 留面内保并集棘轮不收缩；测试按段 testFiles 清单跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
-        }
-      },
-      "testLayers": {}
-    },
     "dsh-lan-proxy": {
       "concurrency": 16,
       "timeoutMS": 60000,
@@ -1202,42 +1080,6 @@
           }
         ]
       }
-    },
-    "dsh-worktree-sidebar": {
-      "enableMutations": ["StringLiteral", "ArrayLiteral", "ObjectLiteral", "TemplateLiteral"],
-      "concurrency": 16,
-      "timeoutMS": 60000,
-      "segments": {
-        "_single": {
-          "mutate": ["packages/dsh-worktree-sidebar/src/**/*.ts"],
-          "excludes": [],
-          "testFiles": [
-            "packages/dsh-worktree-sidebar/test/client-dom/inject-visibility.test.ts",
-            "packages/dsh-worktree-sidebar/test/integration/apply-lifecycle.test.ts",
-            "packages/dsh-worktree-sidebar/test/integration/binding-store.test.ts",
-            "packages/dsh-worktree-sidebar/test/integration/git-real.test.ts",
-            "packages/dsh-worktree-sidebar/test/integration/tools-real.test.ts",
-            "packages/dsh-worktree-sidebar/test/unit/api-routes.test.ts",
-            "packages/dsh-worktree-sidebar/test/unit/binding-model.test.ts",
-            "packages/dsh-worktree-sidebar/test/client-unit/bindings.test.ts",
-            "packages/dsh-worktree-sidebar/test/client-unit/index.test.ts",
-            "packages/dsh-worktree-sidebar/test/client-unit/source.test.ts",
-            "packages/dsh-worktree-sidebar/test/client-unit/takeover.test.ts",
-            "packages/dsh-worktree-sidebar/test/unit/git-inspect.test.ts",
-            "packages/dsh-worktree-sidebar/test/unit/git-service.test.ts",
-            "packages/dsh-worktree-sidebar/test/unit/host-agents.test.ts",
-            "packages/dsh-worktree-sidebar/test/unit/host-sessions.test.ts",
-            "packages/dsh-worktree-sidebar/test/unit/host-typert.test.ts",
-            "packages/dsh-worktree-sidebar/test/client-unit/inject-attach.test.ts",
-            "packages/dsh-worktree-sidebar/test/unit/scope.test.ts",
-            "packages/dsh-worktree-sidebar/test/unit/tools.test.ts",
-            "packages/dsh-worktree-sidebar/test/client-unit/inject-keep-mounted.test.ts",
-            "packages/dsh-worktree-sidebar/test/integration/file-io-concurrency.test.ts"
-          ],
-          "comment": "#847：src/**/*.ts 单段覆盖宿主与客户端，无文件排除；通过 enableMutations 撤销共享默认的四类字面量排除，本包有效算子排除集合为空。incremental 基线随 observe 夜间全量班重建。"
-        }
-      },
-      "testLayers": {}
     }
   }
 }

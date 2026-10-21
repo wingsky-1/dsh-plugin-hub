@@ -176,13 +176,36 @@ test("P2c: 其余包段条目映射", () => {
     packagesToInvalidate(["vitest.stryker.d/dsh-lan-proxy-tls.config.ts"], reg, topo),
     ["dsh-lan-proxy:tls"],
   );
-  const jevClient = "packages/dsh-decision-gateway/test/client-unit/format.test.ts";
-  const got = packagesToInvalidate([jevClient], reg, topo);
-  assert.ok(got.includes("dsh-decision-gateway:client"), "client 测试须命中 client 段");
-  assert.ok(!got.includes("dsh-decision-gateway"), "不得连坐整包");
+  const maskClient = "packages/dsh-notifier/test/client-unit/mask.test.ts";
+  const got = packagesToInvalidate([maskClient], reg, topo);
+  assert.ok(got.includes("dsh-notifier:client"), "client 测试须命中 client 段");
+  assert.ok(!got.includes("dsh-notifier"), "不得连坐整包");
+  const proxyFile = "packages/dsh-lan-proxy/test/unit/proxy.test.ts";
+  const singleProxy = structuredClone(topo);
+  singleProxy.packages["dsh-lan-proxy"].segments = {
+    proxy: {
+      testFiles: [proxyFile],
+      mutate: [],
+      excludes: [],
+    },
+  };
   assert.deepEqual(
-    packagesToInvalidate(["packages/dsh-worktree-sidebar/test/unit/tools.test.ts"], reg, topo),
-    ["dsh-worktree-sidebar"],
+    packagesToInvalidate([proxyFile], reg, singleProxy),
+    ["dsh-lan-proxy"],
+    "单段覆盖该文件全部变异面时，等价于整包失效",
+  );
+  const narrowed = structuredClone(topo);
+  narrowed.packages["dsh-lan-proxy"].segments = {
+    proxy: { testFiles: [proxyFile], mutate: [], excludes: [] },
+    tls: { testFiles: [], mutate: [], excludes: [] },
+  };
+  assert.deepEqual(packagesToInvalidate([proxyFile], reg, narrowed), ["dsh-lan-proxy:proxy"]);
+  const missingTopology = structuredClone(topo);
+  delete missingTopology.packages["dsh-lan-proxy"];
+  assert.deepEqual(
+    packagesToInvalidate(["packages/dsh-lan-proxy/test/unit/proxy.test.ts"], reg, missingTopology),
+    ["dsh-lan-proxy"],
+    "包未登记拓扑时保持整包失效",
   );
 });
 

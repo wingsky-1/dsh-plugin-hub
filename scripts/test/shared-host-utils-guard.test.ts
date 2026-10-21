@@ -17,7 +17,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { guardLoopbackMethod } from "../../shared/host-utils.js";
+import { guardLoopbackMethod, isLoopbackRequest } from "../../shared/host-utils.js";
 
 /**
  * 请求桩的最小面：守卫只读 method / socket.remoteAddress / headers，IncomingMessage
@@ -131,8 +131,6 @@ test("loopback + 白名单内方法 → true 放行且不写响应", () => {
 });
 
 // ---- issue #549：serve 围栏放宽（cross-site no-cors 子资源）----
-
-import { isLoopbackRequest } from "../../shared/loopback.js";
 
 /** 构造带指定 Fetch Metadata 头的回环请求；site / mode 为 undefined 时即该头缺席。 */
 function metaReq(site?: string, mode?: string): IncomingMessage {

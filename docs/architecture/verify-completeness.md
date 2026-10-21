@@ -26,8 +26,7 @@
 ## 2. 术语：候选测量与正式锚
 
 - 候选测量指单次实测数值，未经第 4 节准入，不得当作回落锚点引用。
-  例：dsh-worktree-sidebar 的 baselineCovered 80.3 是 2026-09-18 本地全量冷跑，
-  面为零排除新面，旧面历史锚已作废，当前无 fixedCovered，语义是候选锚。
+  退役包的旧测量只保留作历史，不进入当前回落锚点事实源。
 - 正式锚指经第 4 节准入后写入 gauntlet 的回落锚点，
   事实源是 [gauntlet.config.json](../../scripts/data/gauntlet.config.json)
   的 mutation.packages 下各包条目。

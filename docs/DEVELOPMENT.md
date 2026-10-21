@@ -681,9 +681,9 @@ export const inject: string[] = []; // 声明 apply 用到的 ctx 服务（如 [
       `∪excludes`（它是变异面自身的定义面），因而同样能让文件退出 `uncoveredSrcFiles`：
       · `testLayers.coverageExcludes`：把文件写进该包的覆盖排除面 ⇒ 该文件退出
         `uncoveredSrcFiles` 质量证据，门禁输出称之为「质量证据改善（--write-baseline
-        会清理入库）」。**当前实际在用的是这条**（五包 coverageExcludes 合计 **15** 条：
-        dsh-mcp-manager 3 / dsh-notifier 5 / dsh-provider-usage 6 / dsh-lan-proxy 1 /
-        dsh-worktree-sidebar 0；条数以 `scripts/data/mutation-topology.json` 各包
+        会清理入库）」。**当前实际在用的是这条**（四包 coverageExcludes 合计 **15** 条：
+        dsh-mcp-manager 3 / dsh-notifier 5 / dsh-provider-usage 6 / dsh-lan-proxy 1；
+        条数以 `scripts/data/mutation-topology.json` 各包
         `testLayers.coverageExcludes` 为唯一事实源）。台账里 `gate=verify-dir-imports` 现有 11 条**全部是证据级条目**（#767
         lan-proxy unit-apply 1 条 + #847 sidebar 客户端单测 10 条；同批 unit-proxy / wfp /
         notifier-§5.3 存量已随主干演进消除而不登记），本通道（覆盖率排除面）自身零条目。条目形状与 vitest 面

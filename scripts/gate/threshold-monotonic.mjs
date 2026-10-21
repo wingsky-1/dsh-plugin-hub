@@ -70,6 +70,7 @@ import { fileURLToPath } from "node:url";
 import { parseExpressionAt, tokenizer } from "acorn";
 import { loadLedger } from "../lib/exemption-gate.ts";
 import { GATE_BASELINE_REF } from "../lib/gate-baseline.mjs";
+import { loadManifest as loadManifestImpl } from "../lib/plugins-manifest-lib.ts";
 import {
   RATCHET_BUCKETS,
   bucketSourceState,
@@ -98,6 +99,19 @@ const EXEMPTIONS = "scripts/data/gate-exemptions.json";
 const EXEMPTION_GATE = "threshold-registry";
 export const COVERAGE_THRESHOLD_KEYS = ["lines", "functions", "statements", "branches"];
 const ACORN_OPTIONS = { ecmaVersion: "latest", sourceType: "module" };
+const RETIRED_LEAF_GUARDS = {
+  "mutation.packageThreshold": {
+    source: "scripts/data/gauntlet.config.json",
+    template: "mutation.packages.*.threshold",
+    pathFor: (pkg) => "mutation.packages." + pkg + ".threshold",
+  },
+  "mutation.timeoutMS": {
+    source: "scripts/data/mutation-topology.json",
+    template: "packages.*.timeoutMS",
+    sharedTemplate: "sharedDefaults.timeoutMS",
+    pathFor: (pkg) => "packages." + pkg + ".timeoutMS",
+  },
+};
 
 /**
  * 定位 `thresholds: {` 的对象字面量边界，返回 { start, end }（含两端花括号）；无该形态返回 null。
@@ -526,6 +540,129 @@ function partitionRenameFailures(pairs, failures) {
   const suppressedSet = new Set(suppressed);
   if (failures.some((failure) => !suppressedSet.has(failure))) return null;
   return suppressedSet;
+}
+
+/**
+ * 读取工作区 manifest。文件不存在返回 null（fixture / 非仓根保持旧行为）；
+ * 存在却损坏则抛错，由调用方走 fail-closed，绝不当成「没有退役包」。
+ */
+function loadWorkspaceManifest(repoRoot, loadManifest = loadManifestImpl) {
+  if (!existsSync(join(repoRoot, "scripts", "data", "plugins-manifest.json"))) return null;
+  return loadManifest(repoRoot);
+}
+
+/**
+ * 真实整包退役：包目录不存在，manifest.retired 含该包，active/standalone 都不含。
+ * manifest 缺失返回空集（旧 fixture 行为）；manifest 损坏走 fail-closed。
+ *
+ * @param {object} args
+ * @param {{ guards: Array<Record<string, unknown>> }} args.registry
+ * @param {string} args.repoRoot
+ * @param {object|null} args.manifest
+ * @param {Array<{ guardId: string, path: string, value: number }>} [args.removedLeaves]
+ */
+export function collectRetiredLeafIdentities({ registry, repoRoot, manifest, removedLeaves = [] }) {
+  if (manifest === null) return { identities: new Set(), warnings: [] };
+  const retired = new Set(manifest.retired.map((entry) => entry.name));
+  const live = new Set([...manifest.active, ...(manifest.standalone ?? [])]);
+  const removed = new Set((removedLeaves ?? []).map((entry) => entry.guardId + "\0" + entry.path));
+  const identities = new Set();
+  const warnings = [];
+  for (const pkg of retired) {
+    if (live.has(pkg) || existsSync(join(repoRoot, "packages", pkg))) continue;
+    const pairs = retiredPairsForPackage(registry.guards ?? [], pkg, removed);
+    if (pairs.length === 0) continue;
+    addRetiredPackage(pkg, pairs, identities, warnings);
+  }
+  return { identities, warnings };
+}
+
+function addRetiredPackage(pkg, pairs, identities, warnings) {
+  for (const pair of pairs) identities.add(pair.guardId + "\0" + pair.path);
+  warnings.push(
+    "retired-package " +
+      pkg +
+      "：包目录不存在且 manifest retired 已登记；抑制精确叶子 " +
+      pairs.map((pair) => pair.guardId + "：" + pair.path).join(" / ") +
+      " 的删键判词（其他失败仍判红）",
+  );
+}
+
+/** guard 是否是支持结构退役的精确原模板。 */
+function isExactRetiredGuard(guard) {
+  const exact = RETIRED_LEAF_GUARDS[guard.id];
+  return (
+    exact !== undefined &&
+    guard.kind === "value" &&
+    guard.onRemoval === "fail" &&
+    hasExactRetiredSource(guard, exact) &&
+    guard.fallbackSources === undefined &&
+    guard.keys === undefined &&
+    hasExactRetiredPaths(guard, exact)
+  );
+}
+
+function hasExactRetiredSource(guard, exact) {
+  return (
+    Array.isArray(guard.sources) && guard.sources.length === 1 && guard.sources[0] === exact.source
+  );
+}
+
+function hasExactRetiredPaths(guard, exact) {
+  return (
+    Array.isArray(guard.paths) &&
+    guard.paths.every(
+      (declared) => declared === exact.template || declared === exact.sharedTemplate,
+    ) &&
+    guard.paths.includes(exact.template)
+  );
+}
+
+/** 一个退役包实际缺失、且声明形状精确匹配的叶子。 */
+function retiredPairsForPackage(guards, pkg, removed) {
+  const pairs = [];
+  for (const guard of guards) {
+    if (!isExactRetiredGuard(guard)) continue;
+    const path = RETIRED_LEAF_GUARDS[guard.id].pathFor(pkg);
+    if (removed.has(guard.id + "\0" + path)) pairs.push({ guardId: guard.id, path });
+  }
+  return pairs;
+}
+
+/** 先无抑制比较以取得真实缺口，再用事实交集做最终比较。 */
+function compareWithRetiredLeaves({
+  registry,
+  repoRoot,
+  loadManifest,
+  readBase,
+  readWorkspace,
+  exemptions,
+}) {
+  const manifest = loadWorkspaceManifest(repoRoot, loadManifest);
+  const probe = compareRegistry({
+    registry,
+    readBase,
+    readWorkspace,
+    textReaders: TEXT_READERS,
+    packages: listPackages(repoRoot),
+    exemptions,
+  });
+  const retired = collectRetiredLeafIdentities({
+    registry,
+    repoRoot,
+    manifest,
+    removedLeaves: probe.removedLeaves,
+  });
+  const result = compareRegistry({
+    registry,
+    readBase,
+    readWorkspace,
+    textReaders: TEXT_READERS,
+    packages: listPackages(repoRoot),
+    exemptions,
+    retiredLeaves: retired.identities,
+  });
+  return { manifest, retired, result };
 }
 
 /** 规则 6（面并集）：无证据／异常一律 false。拆出降复杂度，行为不变。 */
@@ -988,7 +1125,7 @@ function runPreStages({ baseRef, repoRoot, readBase, readWorkspace }) {
 
 export function runThresholdMonotonic(
   argv = process.argv.slice(2),
-  { repoRoot = process.cwd() } = {},
+  { repoRoot = process.cwd(), loadManifest = loadManifestImpl } = {},
 ) {
   // 缺省基准取单一常量（scripts/lib/gate-baseline.mjs）：CI 侧本步不再传 ref，两侧同源。
   const baseRef = argv[0] ?? GATE_BASELINE_REF;
@@ -1005,17 +1142,18 @@ export function runThresholdMonotonic(
   const compared = runStage(
     ["threshold-monotonic: 事实源比较失败：", " —— 环境故障按 fail-closed 处理"],
     () =>
-      compareRegistry({
+      compareWithRetiredLeaves({
         registry,
+        repoRoot,
+        loadManifest,
         readBase,
         readWorkspace,
-        textReaders: TEXT_READERS,
-        packages: listPackages(repoRoot),
         exemptions,
       }),
   );
   if (compared.failed) return EXIT_FAIL_CLOSED;
-  const result = recognizeRenameIfNeeded(compared.value, {
+  return finishThresholdComparison({
+    compared: compared.value,
     registry,
     readBase,
     readWorkspace,
@@ -1023,6 +1161,26 @@ export function runThresholdMonotonic(
     baseRef,
     exemptions,
   });
+}
+
+function finishThresholdComparison({
+  compared,
+  registry,
+  readBase,
+  readWorkspace,
+  repoRoot,
+  baseRef,
+  exemptions,
+}) {
+  const renamed = recognizeRenameIfNeeded(compared.result, {
+    registry,
+    readBase,
+    readWorkspace,
+    repoRoot,
+    baseRef,
+    exemptions,
+  });
+  renamed.warnings.push(...compared.retired.warnings);
   // 豁免台账**分桶只减棘轮**（维护者裁决：不落「计数 > 0 即红」的硬判红——那会今天就冻结全仓 PR，
   // 与 #765 两处明文裁决冲突；改落「新增一条即红、收口一条同 PR 下调一格」）。落点选本闸而不是
   // collect-exemptions.mjs：后者只在 gate:full 与 observe 跑（gate-steps.mjs 显式排除 pr 档），
@@ -1049,8 +1207,8 @@ export function runThresholdMonotonic(
       }),
   );
   if (ratchet.failed) return EXIT_FAIL_CLOSED;
-  result.failures.push(...ratchet.value);
-  return reportResult(result);
+  renamed.failures.push(...ratchet.value);
+  return reportResult(renamed);
 }
 
 function isDirectExecution() {

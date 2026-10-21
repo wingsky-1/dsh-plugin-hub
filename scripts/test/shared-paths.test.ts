@@ -5,8 +5,8 @@
  * shared/paths.js 行为契约单测（P2a 包主目录收敛）。
  *
  * 锁定 `pluginHome(base, ...segments)` 等同 `join(base, ...segments)`：6 处调用点
- * （lan-proxy / mcp-manager / notifier 二段、worktree-sidebar 三段、decision-gateway
- * config 显式 base 二段、decision-gateway history 显式 base 三段）收敛前后默认形态
+ * （lan-proxy / mcp-manager / notifier / provider-usage 二段、mcp-manager 三段、
+ * provider-usage 显式 base 二段、provider-usage 三段）收敛前后默认形态
  * 路径逐字节不变，且随 `DSH_HOME` 隔离切换落盘根。
  *
  * 断言纪律：期望一律手写字面量（`base + sep + 分段` 拼出），禁止以同源
@@ -42,24 +42,24 @@ test("二段默认形态逐字节不变（lan-proxy / mcp-manager / notifier / j
     );
     assert.equal(pluginHome(dir, "@wingsky-1/dsh-notifier"), dir + sep + "@wingsky-1/dsh-notifier");
     assert.equal(
-      pluginHome(dir, "@wingsky-1/dsh-decision-gateway"),
-      dir + sep + "@wingsky-1/dsh-decision-gateway",
+      pluginHome(dir, "@wingsky-1/dsh-provider-usage"),
+      dir + sep + "@wingsky-1/dsh-provider-usage",
     );
   } finally {
     cleanup();
   }
 });
 
-test("三段默认形态逐字节不变（worktree-sidebar 绑定表 / jev-history 形）", () => {
+test("三段默认形态逐字节不变（mcp-manager 配置 / provider-usage history 形）", () => {
   const { dir, cleanup } = tempBase();
   try {
     assert.equal(
-      pluginHome(dir, "@wingsky-1/dsh-worktree-sidebar", "bindings.json"),
-      dir + sep + "@wingsky-1/dsh-worktree-sidebar" + sep + "bindings.json",
+      pluginHome(dir, "@wingsky-1/dsh-mcp-manager", "mcp.json"),
+      dir + sep + "@wingsky-1/dsh-mcp-manager" + sep + "mcp.json",
     );
     assert.equal(
-      pluginHome(dir, "@wingsky-1/dsh-decision-gateway", "history"),
-      dir + sep + "@wingsky-1/dsh-decision-gateway" + sep + "history",
+      pluginHome(dir, "@wingsky-1/dsh-provider-usage", "history"),
+      dir + sep + "@wingsky-1/dsh-provider-usage" + sep + "history",
     );
   } finally {
     cleanup();
@@ -71,12 +71,12 @@ test("显式 base 透传（jev 两域 `home ?? dshHome()` 形：非 env 基原�
   try {
     const home = dir + sep + "fake-home";
     assert.equal(
-      pluginHome(home, "@wingsky-1/dsh-decision-gateway"),
-      home + sep + "@wingsky-1/dsh-decision-gateway",
+      pluginHome(home, "@wingsky-1/dsh-provider-usage"),
+      home + sep + "@wingsky-1/dsh-provider-usage",
     );
     assert.equal(
-      pluginHome(home, "@wingsky-1/dsh-decision-gateway", "history"),
-      home + sep + "@wingsky-1/dsh-decision-gateway" + sep + "history",
+      pluginHome(home, "@wingsky-1/dsh-provider-usage", "history"),
+      home + sep + "@wingsky-1/dsh-provider-usage" + sep + "history",
     );
   } finally {
     cleanup();
@@ -93,8 +93,8 @@ test("DSH_HOME 隔离：`pluginHome(dshHome(), ...)` 随 env 切换落盘根", (
       dir + sep + "@wingsky-1/dsh-notifier",
     );
     assert.equal(
-      pluginHome(dshHome(), "@wingsky-1/dsh-worktree-sidebar", "bindings.json"),
-      dir + sep + "@wingsky-1/dsh-worktree-sidebar" + sep + "bindings.json",
+      pluginHome(dshHome(), "@wingsky-1/dsh-mcp-manager", "mcp.json"),
+      dir + sep + "@wingsky-1/dsh-mcp-manager" + sep + "mcp.json",
     );
   } finally {
     if (prev !== undefined) process.env.DSH_HOME = prev;

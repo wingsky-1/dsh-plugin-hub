@@ -53,10 +53,11 @@ git worktree remove /mnt/ssd/worktree/dsh-plugin-hub-task-<n> && git worktree pr
 `git grep … origin/main`、`git ls-tree -r --name-only origin/main`）；② 基于 `origin/main` 建的
 worktree 内。在仓库根直接跑出的读数是「某个落后提交」的读数。
 
-需要侧边栏文件树跟随 worktree 时，用插件的 `ws_worktree_create` / `ws_worktree_register`
-（裸 `git worktree add` 不会让侧边栏换根）；本仓要求从 `origin/main` 起，
-故 `ws_worktree_create` 要显式传 `base: "origin/main"`——缺省是会话仓库当前 HEAD，
-主 checkout 落后时会静默产出旧基线。
+侧栏专用旧工具 `ws_worktree_create` / `ws_worktree_register` 已随
+`dsh-worktree-sidebar` 退役。需要切换会话活动工作目录时，可使用 DSH 官方可选的
+Git Worktrees 能力：`create_worktree` 新建或 `working_directory({ cd: ... })` 切换，
+二者改变执行 cwd 与 `@` / `present` 落点；不要把它们当成旧版的“只换侧栏根”。
+创建前核对目标检出确实基于 `origin/main`。仍可直接使用裸 `git worktree add`。
 
 独立验证（smoke / 需启动 dsh）用隔离环境（临时 `DSH_HOME`），防 flake 纪律见
 [DEVELOPMENT.md §5](docs/DEVELOPMENT.md#user-content-5-smoke-测试防-flake-纪律)。

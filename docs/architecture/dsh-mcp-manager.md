@@ -320,7 +320,7 @@ M3（能力缺口单列）：`allowTools`/`denyTools` 准入闸随策略键消�
 | --- | --- | --- |
 | env 净化 | `config/impl/env`（`SECRET_ENV_NAME` 形状） | 父进程环境过滤敏感变量后再合并显式 env（显式值支持 `${ENV}` 引用展开），避免把宿主机密透传给 MCP 子进程 |
 | redactor 脱敏 | `pipeline/impl/redact` | 从全部服务器配置收集 secret，错误消息逐值替换 `[REDACTED]` |
-| loopback 围栏 | `ROUTE_FENCE` + 仓库 `shared/loopback.js` | 403 先于 405；`config` GET 只读豁免。经 lan-proxy 回环上游的同源请求可满足围栏（见 [LAN proxy 架构](dsh-lan-proxy.md)） |
+| loopback 围栏 | `ROUTE_FENCE` + 仓库 `shared/host-utils.js` | 403 先于 405；`config` GET 只读豁免。经 lan-proxy 回环上游的同源请求可满足围栏（见 [LAN proxy 架构](dsh-lan-proxy.md)） |
 | 落盘权限 | `paths.ts` 登记表 + `file-io` | 配置 `0o600`，其余登记 `0o644`、项目随缘（见 §3.1）；未登记拒绝写 |
 | stdio 继承宿主权限 | 进程模型 | MCP 服务器命令在宿主进程权限下执行，仅配置可信服务器；工具结果可能含敏感信息，先确认再操作 |
 | 工作空间隔离 | `workspace` 全名归一 | 调用方会话 cwd 路由 + server 全名一致性校验，防跨空间串台；工具级禁用三入口统一经 `isToolDenied` 裁决 |

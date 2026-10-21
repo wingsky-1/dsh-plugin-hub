@@ -276,7 +276,7 @@ function main() {
   // 逐一登记，分母随测试面增长，刻意不写死）——它们因此**不在引用面里，但确实被消费**。
   // 不拆开时「未被引用且未登记 N 个」会被读成「N 个孤儿」，而判定口径其实与被消费无关。
   // 2026-10-08 实测该集合 86 个，构成为：78 个上述测试文件 + 6 个
-  // `scripts/data/{dsh-decision-gateway,dsh-mcp-manager,dsh-provider-usage}-export-{faces,surface}.json`
+  // `scripts/data/{dsh-mcp-manager,dsh-provider-usage}-export-{faces,surface}.json`
   // （被 `${pkgName}-export-{surface,faces}.json` 模板拼名消费，取数处
   // export-surface-snapshot.mjs:138/142 与 export-faces-admission.test.ts:39/40）
   // + `scripts/gate/baseline/README.md` + `scripts/lib/export-diagram-svg.py`

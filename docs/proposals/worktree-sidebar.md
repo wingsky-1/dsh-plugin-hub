@@ -1,8 +1,12 @@
 # dsh-worktree-sidebar 设计方案与调研结论
 
-> 状态：**已实施**（包未发布）。方案已过三轮独立评审，逐轮实现与复核台账都在本文；当前处置见 §24，本地门禁与 CI 读数见 PR #819 的回复评论。
+> 状态：**历史设计与实施记录；包已退役**。下文描述的是当时版本及其文件路径，不代表当前源码树仍存在；
+> 可按 [`a77b24d^`](https://github.com/wingsky-1/dsh-plugin-hub/tree/a77b24d54d5b163059ea38cb79dc74e2c36440e2)
+> 查看退役前的完整包、架构文档与证据。逐轮实现与复核台账都保留在本文；当前处置见 §24，
+> 本地门禁与 CI 读数见 PR #819 的回复评论。
 >
-> 架构速览（TOGAF 4A 四视图）见 [docs/architecture/dsh-worktree-sidebar.md](../architecture/dsh-worktree-sidebar.md)；面向使用者的包文档见 [packages/dsh-worktree-sidebar/README.md](../../packages/dsh-worktree-sidebar/README.md)。
+> 面向使用者的退役迁移说明见 [docs/migrations/worktree-sidebar.md](../migrations/worktree-sidebar.md)；
+> 原包 README 与原架构文档可从上述退役前快照查看。
 
 **怎么读这份文档**（多轮实施 + 多轮复核沉淀，全文 1600 余行）：
 
@@ -25,7 +29,7 @@
 | dsh-client-ui-slots 副本 | /tmp/782-probe2/node_modules/.pnpm/@deepseek-ai+dsh-client-ui-slots@0.1.5-rc.1_.../（该包未随 npm 分发） |
 | 仓库起点 | origin/main **114d0bd**（2026-09-14；本轮施工分支基于 origin/main **34957b6**） |
 | 最后更新 | 2026-09-15（第十轮：维护者复核五条处置，见 §24） |
-| 架构图解 | [docs/architecture/dsh-worktree-sidebar.md](../architecture/dsh-worktree-sidebar.md) |
+| 退役迁移 | [docs/migrations/worktree-sidebar.md](../migrations/worktree-sidebar.md) |
 | 工具链 | node v24.19.0 / pnpm 11.21.0 |
 | catalog 相关锁版 | cordis 4.0.2；dsh-tools、dsh-system-prompt、dsh-client-ui-slots、dsh-session 等 0.1.5-rc.1 |
 
@@ -115,7 +119,7 @@
 
 存储：`<DSH_HOME>/@wingsky-1/dsh-worktree-sidebar/bindings.json`，结构 `{version, revision, bindings: {[sessionId]: {repoRoot, worktreeRoot, branch, createdAt}}}`；临时文件 + rename 原子写（参考 notifier 的 file-io 模式）；损坏当空表。
 
-路由：`GET /api/dsh-worktree-sidebar/bindings?session=<id>` 返回 `{revision, worktreePath|null}`（**不回 repoRoot**，最小暴露）；`GET /api/dsh-worktree-sidebar/health`；path 走构建期 `__DSH_ROUTES__`；复用 `shared/loopback.js` 围栏与 `guardLoopbackMethod`（403 先于 405）。
+路由：`GET /api/dsh-worktree-sidebar/bindings?session=<id>` 返回 `{revision, worktreePath|null}`（**不回 repoRoot**，最小暴露）；`GET /api/dsh-worktree-sidebar/health`；path 走构建期 `__DSH_ROUTES__`；复用 `shared/host-utils.js` 围栏与 `guardLoopbackMethod`（403 先于 405）。
 
 ### 4.2 客户端
 

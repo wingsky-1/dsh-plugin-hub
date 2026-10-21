@@ -62,8 +62,7 @@ const ALLOWLIST = {
   "shared/client/i18n.ts": "t 活绑定 + bindLocale 装配（#348→#378），5 包客户端消费",
   "shared/dsh-home.ts": "DSH_HOME 解析单一事实源（#517），宿主端消费",
   "shared/host-utils.ts":
-    "路由应答与守卫工具（writeJson/readBody/guardLoopbackMethod 等），宿主端消费",
-  "shared/loopback.ts": "loopback 判定围栏，路由 403 前置，多包消费",
+    "路由应答、loopback 判定与守卫工具（writeJson/readBody/isLoopbackRequest 等），宿主端消费",
   "shared/paths.ts": "包主目录拼装单一事实源，5 包消费",
   "shared/settings-namespace.ts": "settings 命名空间安装，lan/mcp 共同接缝",
   "shared/sse-hub.ts": "SSE 长连接枢纽（#515），notifier/mcp 消费",

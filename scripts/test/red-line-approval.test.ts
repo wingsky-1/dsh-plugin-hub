@@ -468,9 +468,10 @@ test("基座面含已发布导出面基线——收窄已发布 ABI 须带 appro
   for (const pkg of [
     "dsh-notifier",
     "dsh-lan-proxy",
-    "dsh-worktree-sidebar",
     "dsh-mcp-manager",
     "dsh-provider-usage",
+    // 退役包的已发布 ABI 路径仍须由通用面保护；删文件不等于删历史发布事实。
+    "dsh-worktree-sidebar",
     "dsh-decision-gateway",
   ]) {
     assert.equal(

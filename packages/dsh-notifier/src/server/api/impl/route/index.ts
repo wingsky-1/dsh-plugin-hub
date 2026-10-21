@@ -3,7 +3,7 @@
  * 只给资源伺服路由）、方法围栏（方法不在表里给 405 而不是 404）、异常收口（漏出去的异常留下的不是错误页，是一个挂住的连接）。
  */
 import type { ServerResponse } from "node:http";
-import { isLoopbackRequest } from "../../../../../../../shared/loopback.js";
+import { isLoopbackRequest } from "../../../../../../../shared/host-utils.js";
 import { REFUSAL_CODES } from "../../../../shared/interface.ts";
 import type { RefusalCode } from "../../../../shared/interface.ts";
 import type { LoggerPort, RegisterRoute } from "../../deps.ts";

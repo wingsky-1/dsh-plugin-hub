@@ -64,8 +64,7 @@ const KNOWN_TRACKING = {
     "packages/dsh-lan-proxy/src/server/apply.ts 注释：官方 connection 服务，对等包未安装，typeof 守卫可选注入",
   locale: "客户端可选服务（宿主核心提供，if 守卫，peers 无类型声明）：3 处客户端消费点",
   slots: "客户端可选服务（宿主核心提供，if 守卫，peers 无类型声明）：4 包 client/index 共 4 处",
-  sessionPersistence:
-    "packages/dsh-worktree-sidebar/src/index.ts 注释：官方持久会话面可选，未提供回 undefined，peers 无类型声明",
+  sessionPersistence: "当前活动包未消费；旧 worktree-sidebar 已在 #1141 退役",
   sessionProjections:
     "packages/dsh-mcp-manager/src/server/shared/compose.ts:127 注释：逐 session 读原始工作目录投影，#1137 语义 A；catalog 锁定 rc 无该官方包类型",
 };

@@ -182,7 +182,7 @@ build 为 clean-lib→tsc→scripts/build/bundle-host.ts；esbuild 内联第三�
 
 八条 API 由 `src/server/api/impl/route/index.ts#registerEndpoints` 统一处理：先围栏 403，再方法 405（Allow），然后同步/异步异常收口；响应头已发则不重复写 500。围栏保留裸 error，加 code/status sibling；业务端点另用 ok:false/error 对象。
 
-仓库 `shared/loopback.js#isLoopbackRequest` 实际检查回环 socket peer、回环 Host、默认拒绝 cross-site，存在 Origin 时 authority 须匹配 Host；不是只看 IP，也不是 HTTPS 即放行。
+仓库 `shared/host-utils.js#isLoopbackRequest` 实际检查回环 socket peer、回环 Host、默认拒绝 cross-site，存在 Origin 时 authority 须匹配 Host；不是只看 IP，也不是 HTTPS 即放行。
 
 **经 LAN proxy 不等于一律 403。** 代理走回环上游，改写 Host 与存在的 Origin，保留 sec-fetch-site；合法同源请求可满足 notifier 围栏，直接非回环 peer/Host 则拒绝。HTTPS 主要解决浏览器安全上下文，不替代 API 准入或访问控制；代理扩大可达信任边界（跨包证据：`packages/dsh-lan-proxy/src/server/proxy/impl/proxy.ts#rewriteHeaders`；见 [LAN proxy 架构](dsh-lan-proxy.md)）。
 

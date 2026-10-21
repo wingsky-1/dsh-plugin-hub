@@ -10,7 +10,7 @@ Status: implemented
 
 代码模型是唯一事实源，README 附录只是镜像：每节标注来源符号（模块名、类型名、键名），弱化行号；转发语义只在 lan-proxy README 写全，notifier 侧只引用不复述；契约只暴露最小面（如 sidebar `BindingResponse` 不回 `repoRoot`）。
 
-实例：notifier 配置附录见 [notifier README](../../../../packages/dsh-notifier/README.md)，sidebar 契约节见 [sidebar README](../../../../packages/dsh-worktree-sidebar/README.md)。
+实例：notifier 配置附录见 [notifier README](../../../../packages/dsh-notifier/README.md)；sidebar 包及其 README 已随 #1141 退役。
 
 结构约定见[三插件 README 统一结构](./2026-09-18-unified-plugin-readme-structure.md)。
 

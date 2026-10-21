@@ -183,8 +183,7 @@ notifier 与 lan-proxy 曾各复刻的 `warnLog` 已经统一到这个导出（�
 - dsh-mcp-manager 有用户配置面（默认表、归一化、布尔键清单在
   `src/config/model/config-schema.ts`；计数上界表当前为空对象），
   经 `installSettingsNamespace` 注册 `dsh-mcp-manager`。
-- dsh-verify-isolated 与 dsh-worktree-sidebar 显式声明无用户配置面
-  （前者宿主侧无可配置项，后者唯一的 enabled 是挂载点总开关），跳过
+- dsh-verify-isolated 显式声明无用户配置面（宿主侧无可配置项），跳过
   N1 到 N4，但必须回显理由。
 
 ## 7. GUI 子集（依赖 3.1，本片除外）

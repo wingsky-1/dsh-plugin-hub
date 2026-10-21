@@ -127,15 +127,6 @@ const UNUSED_VARS_RULE = [
 // 规则块一并删除。留这段说明是为了让下一个人看到「这里曾有一份豁免」，以及它是**靠代码清零**
 // 移除的，而不是靠通配或留着腐烂。
 
-// dsh-worktree-sidebar 客户端的四个块文件（装配根 index.ts 与纯类型面 shared/ports.ts 不在内）。
-// 它们共用一个"块间零互引"的判据，见下面的 no-restricted-imports 块。
-const WORKTREE_SIDEBAR_CLIENT_BLOCKS = [
-  "packages/dsh-worktree-sidebar/src/client/source.ts",
-  "packages/dsh-worktree-sidebar/src/client/bindings.ts",
-  "packages/dsh-worktree-sidebar/src/client/takeover.ts",
-  "packages/dsh-worktree-sidebar/src/client/inject.ts",
-];
-
 export default [
   { ignores: IGNORES },
   {
@@ -199,38 +190,6 @@ export default [
       // 存量 52 处走 A4 的官方基线抑制（eslint-suppressions.json），不进 warn：warn 级既挂不上
       // 基线，又会撞穿零余量的警告预算（实测 warn 会让已有基线条目失效并 exit 2）。
       "sonarjs/deprecation": "error",
-    },
-  },
-
-  {
-    // dsh-worktree-sidebar 客户端的块间隔离（#819 S1b-3）：四个块文件彼此零互引、也不反向
-    // 依赖装配根；跨块只走 index.ts 的装配面与 shared/ports.ts 的类型面（它只许 import type）。
-    //
-    // 为什么需要一条自己的规则：产物是**单个** client.js 工厂闭包，而 verify-dir-imports
-    // 对 src/client/** 双向硬编码豁免（5 处特判、无收紧通道）——块间按值直引不会被任何闸看见。
-    // 这条只作用于上面登记的四个文件：装配根本来就要 import 它们，shared/ports.ts 不 import 任何值。
-    files: WORKTREE_SIDEBAR_CLIENT_BLOCKS,
-    rules: {
-      "@typescript-eslint/no-restricted-imports": [
-        "error",
-        {
-          paths: [
-            {
-              name: "./index.ts",
-              message: "块不得依赖装配根 index.ts（跨块只走它的装配面）。",
-            },
-            { name: "./source.ts", message: "客户端块间零互引（#819 S1b-3）。" },
-            { name: "./bindings.ts", message: "客户端块间零互引（#819 S1b-3）。" },
-            { name: "./takeover.ts", message: "客户端块间零互引（#819 S1b-3）。" },
-            { name: "./inject.ts", message: "客户端块间零互引（#819 S1b-3）。" },
-            {
-              name: "./shared/ports.ts",
-              allowTypeImports: true,
-              message: "shared/ports.ts 是纯类型面：只许 import type。",
-            },
-          ],
-        },
-      ],
     },
   },
 

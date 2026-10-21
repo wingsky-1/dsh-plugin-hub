@@ -44,14 +44,12 @@ rc 升级流程引用：升级 dsh rc 时按本清单逐条核对上游变更（
 
 | 包 | 角色 | 宿主入口 | 客户端面 | 派生覆盖 |
 | --- | --- | --- | --- | --- |
-| dsh-decision-gateway | 宿主 + 客户端 | `src/index.ts` | `src/client/index.ts` | 事件 0 条（`eventFiles` 未登记；全仓 `ctx.on` 字面量 0 命中）；路由 5 条在 `src/shared/contract.ts`（`routeFiles` 未登记，见表 5 未覆盖行） |
 | dsh-lan-proxy | 宿主 + 客户端 | `src/index.ts` | `src/client/index.ts` | 事件 0 条（`ctx.on` 全包 0 命中）；slot 1 条；路由 4 条 |
 | dsh-mcp-manager | 宿主 + 客户端 | `src/index.ts` | `src/client/index.ts` | 事件 6 条；slot 1 条；路由 11 条 |
 | dsh-notifier | 宿主 + 客户端 | `src/index.ts` | `src/client/index.tsx` | 事件 7 条；slot 1 条；路由 8 条 |
 | dsh-plugins-all | 聚合包 | 无 `src/`（仅 README / patch / package.json / build.ts） | 无 | 不适用：聚合包自身无运行时契约面，其契约面 = 被聚合包的并集 |
 | dsh-provider-usage | 宿主 + 客户端 | `src/apply/index.ts`（组合根） | `src/client/index.tsx` | 事件 4 条；slot 1 条；路由 16 条 |
 | dsh-verify-isolated | 隔离验证宿主（skill） | `src/index.ts`（仅此一个 `src` 文件） | 无 | 事件 / slot / 路由均为 0（无客户端面，无 inject 面） |
-| dsh-worktree-sidebar | 宿主 + 客户端 | `src/index.ts` | `src/client/index.ts` | 事件字面量 0 条（仅 `src/index.ts:63` 转发放行 `ctx.on(event, handler)`，无字面量事件名）；路由 2 条在 `src/shared/contract.ts`（`routeFiles` 未登记，见表 5 未覆盖行） |
 
 <a id="hc-t2"></a>
 ## 表 2 宿主事件
@@ -78,8 +76,6 @@ rc 升级流程引用：升级 dsh rc 时按本清单逐条核对上游变更（
 | dsh-provider-usage | session/disposed | packages/dsh-provider-usage/src/apply/apply.ts |
 | dsh-provider-usage | internal/service | packages/dsh-provider-usage/src/apply/apply.ts |
 | dsh-lan-proxy | （无，派生 0 条） | 全包 `ctx.on` 0 命中 |
-| dsh-decision-gateway | （派生未覆盖，观察值：全包 `ctx.on` 0 命中） | `eventFiles` 未登记 |
-| dsh-worktree-sidebar | （派生未覆盖，观察值：仅转发放行，无字面量事件名） | packages/dsh-worktree-sidebar/src/index.ts:63 |
 | dsh-verify-isolated | （无，观察值：全包 `ctx.on` 0 命中） | `eventFiles` 未登记 |
 | dsh-plugins-all | （不适用，聚合包） | 无 `src/` |
 
@@ -93,8 +89,6 @@ peer 含 cordis 框架底座与仅经 `ctx.on` 事件消费的包（如 notifier
 
 | 包 | 端 | inject 值 | peer（@deepseek-ai/*） | 出处 |
 | --- | --- | --- | --- | --- |
-| dsh-decision-gateway | 宿主 | webServer， tools | cordis， dsh-host-webserver， dsh-tools， dsh-session-title， dsh-client-locale， dsh-client-ui-renderer | | packages/dsh-decision-gateway/src/index.ts:32 |
-| dsh-decision-gateway | 客户端 | slots， locale | （同上） | | packages/dsh-decision-gateway/src/client/index.ts:210 |
 | dsh-lan-proxy | 宿主 | webServer | cordis， dsh-host-webserver， dsh-client-ui-slots， dsh-client-locale， dsh-client-ui-renderer， dsh-client-ui-settings， dsh-client-ui-plugin-manager | | packages/dsh-lan-proxy/src/index.ts:38 |
 | dsh-lan-proxy | 客户端 | slots， configForms， locale， remote | （同上） | | packages/dsh-lan-proxy/src/client/index.ts |
 | dsh-mcp-manager | 宿主 | tools， webServer， systemPrompt | cordis， dsh-host-webserver， dsh-agent， dsh-tools， dsh-system-prompt， dsh-client-ui-slots， dsh-llm， dsh-api-session-controller， dsh-client-ui-session， dsh-client-store， dsh-client-locale， dsh-client-ui-renderer， dsh-client-ui-settings， dsh-client-ui-plugin-manager | | packages/dsh-mcp-manager/src/index.ts |
@@ -103,8 +97,6 @@ peer 含 cordis 框架底座与仅经 `ctx.on` 事件消费的包（如 notifier
 | dsh-notifier | 客户端 | slots， locale | （同上） | | packages/dsh-notifier/src/client/index.tsx:1849 |
 | dsh-provider-usage | 宿主 | webServer， llm， sessions（`src/apply/index.ts:115`） | cordis， dsh-host-webserver， dsh-llm， dsh-session， dsh-client-ui-slots， dsh-api-session-controller， dsh-client-ui-session | | packages/dsh-provider-usage/src/apply/index.ts:115 |
 | dsh-provider-usage | 客户端 | locale， sessions， remote， remote.session， slots | （同上） | | packages/dsh-provider-usage/src/client/index.tsx:828 |
-| dsh-worktree-sidebar | 宿主 | webServer， agents， typert， sessions | cordis， dsh-agent， dsh-api-workspace-files， dsh-host-webserver， dsh-tools， dsh-typert-protocol， dsh-session | | packages/dsh-worktree-sidebar/src/index.ts:39 |
-| dsh-worktree-sidebar | 客户端 | slots， sidebarRightTabs， sessions， locale | （同上） | | packages/dsh-worktree-sidebar/src/client/index.ts:133 |
 | dsh-verify-isolated | 宿主 | （无服务访问） | dsh-skill-filesystem | | packages/dsh-verify-isolated/src 下无 `export const inject` |
 | dsh-verify-isolated | 客户端 | （无客户端面） | （同上） | | （同上） |
 | dsh-plugins-all | 宿主 | （不适用，聚合包） | （无 peer） | | 无 `src/` |
@@ -123,8 +115,6 @@ peer 含 cordis 框架底座与仅经 `ctx.on` 事件消费的包（如 notifier
 | dsh-mcp-manager | plugins.row.config | dsh-mcp-manager | `@wingsky-1/dsh-mcp-manager#dsh-mcp-manager` | — | packages/dsh-mcp-manager/src/client/index.ts；packages/dsh-mcp-manager/src/shared/constants.ts |
 | dsh-notifier | settings.section | dsh-notifier | — | 70 | packages/dsh-notifier/src/client/index.tsx |
 | dsh-provider-usage | settings.section | dsh-provider-usage | — | 90 | packages/dsh-provider-usage/src/client/index.tsx |
-| dsh-decision-gateway | （派生未覆盖，观察值：客户端未注册 settings slot） | — | — | — | `slotFiles` 未登记 |
-| dsh-worktree-sidebar | （派生未覆盖，观察值：客户端消费 slots 与 sidebarRightTabs，未注册 settings slot） | — | — | — | `slotFiles` 未登记 |
 | dsh-verify-isolated | （无客户端面） | — | — | — | `slotFiles` 未登记 |
 | dsh-plugins-all | （不适用，聚合包） | — | — | — | 无 `src/` |
 
@@ -175,18 +165,11 @@ peer 含 cordis 框架底座与仅经 `ctx.on` 事件消费的包（如 notifier
 | /api/dsh-notifier/health | dsh-notifier | GET | `src/server/api/impl/service/index.ts:44`（端点 `methods` 表） |
 | /api/dsh-notifier/diagnostics | dsh-notifier | GET | `src/server/api/impl/service/index.ts:45`（端点 `methods` 表） |
 | /api/dsh-notifier/events | dsh-notifier | GET（SSE） | `src/server/api/impl/service/index.ts:48-50`（端点 `methods` 表，经 `streamHub`） |
-| /api/dsh-decision-gateway/health | dsh-decision-gateway | GET | （派生未覆盖）`src/server/api/impl/handlers.ts:69`，路由定义 `src/shared/contract.ts:33` |
-| /api/dsh-decision-gateway/config | dsh-decision-gateway | GET， PUT | （派生未覆盖）`src/server/api/impl/handlers.ts:81`，路由定义 `src/shared/contract.ts:34` |
-| /api/dsh-decision-gateway/presets | dsh-decision-gateway | GET | （派生未覆盖）`src/server/api/impl/handlers.ts:111`，路由定义 `src/shared/contract.ts:35` |
-| /api/dsh-decision-gateway/history | dsh-decision-gateway | GET， DELETE | （派生未覆盖）`src/server/api/impl/handlers.ts:119`，路由定义 `src/shared/contract.ts:36` |
-| /api/dsh-decision-gateway/test-connection | dsh-decision-gateway | POST | （派生未覆盖）`src/server/api/impl/handlers.ts:151`，路由定义 `src/shared/contract.ts:37` |
-| /api/dsh-worktree-sidebar/bindings | dsh-worktree-sidebar | GET（只读，查询带自愈副作用） | （派生未覆盖）路由定义 `src/shared/contract.ts:14`，围栏 `src/server/api/impl/route/index.ts:41`（`Object.keys(endpoint.methods)`） |
-| /api/dsh-worktree-sidebar/health | dsh-worktree-sidebar | GET | （派生未覆盖）路由定义 `src/shared/contract.ts:15`，围栏同上 |
 | （dsh-verify-isolated 无路由） | dsh-verify-isolated | — | `routeFiles` 未登记，全包 `/api/dsh-` 0 命中 |
 | （dsh-plugins-all 不适用） | dsh-plugins-all | — | 无 `src/` |
 
 注册形态：lan-proxy 经 `ctx.webServer.register`（`src/server/apply.ts`）；mcp-manager 经 `ctx.webServer.register`（`src/index.ts`）；
-provider-usage 经 `ctx.webServer.register`（`src/apply/apply.ts`）；notifier / decision-gateway / worktree-sidebar 经端点表 + `registerEndpoints`（组合根转交 `RegisterRoute`窄面，见各包 `route.ts` / `service/index.ts`）。前三者即派生输出 `result.routes.registerSites`。
+provider-usage 经 `ctx.webServer.register`（`src/apply/apply.ts`）；notifier 经端点表 + `registerEndpoints`（组合根转交 `RegisterRoute`窄面，见各包 `route.ts` / `service/index.ts`）。前者即派生输出 `result.routes.registerSites`。
 
 <a id="hc-t6"></a>
 ## 表 6 复刻常量与版本锚

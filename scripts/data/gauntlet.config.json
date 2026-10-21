@@ -33,33 +33,6 @@
         "scope": "src 级十段（#733 按域重写 + client 段）：api HTTP 端点 / channels 出口 / client 客户端半区 / config 配置 / events 宿主事件 / pipeline 管线 / sdk 服务面+组合根 / shared 包内共享 / stores 存储 / upgrade 存量迁移；基线为 2026-09-13 夜间全量班（run 34752395124）实测 covered 92.27%（killed 2586 / survived 217 / noCov 37），九段墙钟合计 10m13s；client 段实测 covered 87.38%（4m03s，见拓扑 client 段注）",
         "threshold": 60
       },
-      "dsh-decision-gateway": {
-        "config": "stryker.conf.d/dsh-decision-gateway-{api,config,history,store,tools,upgrade,entry,client}.json",
-        "threshold": 60,
-        "fixedScore": 59.82,
-        "fixedCovered": 64.84,
-        "fixedDate": "2026-09-21",
-        "note": "本地实测锚（worktree feat/decision-gateway 非增量冷跑全量 8m12s：killed 1844 / timeout 2 / survived 1001 / noCov 239 / total 3086，covered 口径 64.84%；八段拆分仅改变执行分片、面文件集与单段实测一致；待 observe 夜间全量班按八段重测校准后回填正式锚",
-        "scope": "src 级八段（按域：api / config / history / store / tools / upgrade 六 server 域 + entry 宿主入口与双端共享 + client 客户端；client 段排除 components/atoms.ts 纯样式原子，其余全量在面内）"
-      },
-      "dsh-worktree-sidebar": {
-        "baselineScore": 79.29,
-        "baselineCovered": 80.3,
-        "baselineKilled": 1505,
-        "baselineTimeout": 11,
-        "baselineSurvived": 372,
-        "baselineTotal": 1912,
-        "baselineNoCoverage": 24,
-        "baselineErrors": 0,
-        "baselineDate": "2026-09-18",
-        "fixedScore": 79.31,
-        "fixedCovered": 80.32,
-        "fixedDate": "2026-09-18",
-        "config": "stryker.conf.d/dsh-worktree-sidebar.json",
-        "threshold": 60,
-        "scope": "src 级单段（#276 方案 A）：mutate = packages/dsh-worktree-sidebar/src/**/*.ts，零文件排除；经包级 enableMutations 撤销共享默认的 StringLiteral/ArrayLiteral/ObjectLiteral/TemplateLiteral 四类排除，有效算子排除集合为空（#847）",
-        "baselineScope": "正式锚（run 84 自然班确权）：2026-09-18 observe schedule run 35400446199（head 666ccd7c），单段全量实测，算子排除为空；计分 total 1914，covered 分母 1890，score 79.31% / covered 80.32%（killed 1507 / timeout 11 / survived 372 / noCov 24 / RuntimeError 3 按 lib 口径 excluded）。旧本地冷跑口径（79.29/80.30）与旧面历史锚（85.89/86.14，含 386 Ignored）均已作废。"
-      },
       "dsh-mcp-manager": {
         "baselineScore": 58.74,
         "baselineCovered": 74.66,

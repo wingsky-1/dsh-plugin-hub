@@ -98,7 +98,7 @@ export function tierSteps(tier, { hitPackages, withCoverage, base, scopeLabel })
     // （接线盲区）。迁成与兄弟闸同形的直接步骤后，两侧都可见：与 #733 3.1.2 把 module-state
     // 迁出 contract 的方向一致。
     {
-      label: "verify-dir-imports（目录门面：跨模块引用只走 interface.ts；4 包硬判）",
+      label: "verify-dir-imports（目录门面：跨模块引用只走 interface.ts；3 包硬判）",
       cmd: "node",
       args: [
         "scripts/gate/verify-dir-imports.mjs",
@@ -108,8 +108,6 @@ export function tierSteps(tier, { hitPackages, withCoverage, base, scopeLabel })
         "dsh-notifier",
         "--package",
         "dsh-lan-proxy",
-        "--package",
-        "dsh-worktree-sidebar",
       ],
     },
     {
@@ -128,11 +126,6 @@ export function tierSteps(tier, { hitPackages, withCoverage, base, scopeLabel })
       args: ["scripts/gate/export-surface-snapshot.mjs", "--package", "dsh-lan-proxy"],
     },
     {
-      label: "export-surface-snapshot（dsh-worktree-sidebar 导出面与基线零 diff）",
-      cmd: "node",
-      args: ["scripts/gate/export-surface-snapshot.mjs", "--package", "dsh-worktree-sidebar"],
-    },
-    {
       label: "export-surface-snapshot（dsh-mcp-manager 导出面与基线零 diff）",
       cmd: "node",
       args: ["scripts/gate/export-surface-snapshot.mjs", "--package", "dsh-mcp-manager"],
@@ -141,11 +134,6 @@ export function tierSteps(tier, { hitPackages, withCoverage, base, scopeLabel })
       label: "export-surface-snapshot（dsh-provider-usage 导出面与基线零 diff）",
       cmd: "node",
       args: ["scripts/gate/export-surface-snapshot.mjs", "--package", "dsh-provider-usage"],
-    },
-    {
-      label: "export-surface-snapshot（dsh-decision-gateway 导出面与基线零 diff）",
-      cmd: "node",
-      args: ["scripts/gate/export-surface-snapshot.mjs", "--package", "dsh-decision-gateway"],
     },
     {
       label: "verify-shared-fanin（shared 模块跨包扇入；#792）",

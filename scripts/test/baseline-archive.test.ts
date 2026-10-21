@@ -150,24 +150,25 @@ test("期望集合派生：dsh-/shared- 前缀剥离 + seg=0 单配置形态", (
   assert.deepEqual(expectedBaselineFiles(["README.md", null]), [], "非 .json 条目不得进期望集合");
 });
 
-test("期望集合与真实仓库一致：stryker.conf.d/*.json 一条不落（54 段）", () => {
+test("期望集合与真实仓库一致：stryker.conf.d/*.json 一条不落（45 段）", () => {
   const confNames = readdirSync(join(ROOT, "stryker.conf.d")).filter((f) => f.endsWith(".json"));
   const expected = expectedBaselineFiles(confNames);
   assert.equal(expected.length, confNames.length, "每个段配置都应对应一个基线文件");
   // 段数为显式哨兵：拆段/合段必须同时改这里（#720 把 dsh-notifier config 段拆三段 31 → 33；
   // #733 按域重写把 notifier 的 10 段重划为 9 段 33 → 32；#840 退役 dsh-web-file-preview 32 → 31；
-  // #769 客户端门禁加 client 段 31 → 32；新增 dsh-worktree-sidebar 单段 32 → 33；
+  // #769 客户端门禁加 client 段 31 → 32；新增单段包 32 → 33；
   // #826 把 dsh-lan-proxy 的 4 个数字段按模块目录重划为 6 段 33 → 35；
   // #856 新增 dsh-lan-proxy host-trust 域 35 → 36；#826 新增 dsh-lan-proxy client 段 36 → 37；
   // #767 S1-2b 新增 servers 段 37 → 38；#768 S3 新增 dsh-provider-usage upgrade 段 38 → 39；
   // #930 新增 dsh-lan-proxy ca 域 39 → 40；#947 新增 dsh-mcp-manager client-panel 段 40 → 41；
-  // 首登 dsh-decision-gateway 单段 41 → 42；#943 对账后 jev 按域拆八段 42 → 49；
+  // 首登单段包 41 → 42；#943 对账后 jev 按域拆八段 42 → 49；
   // #962 A 拆 dsh-provider-usage pipeline 大段为 pipeline-history/core/view 三段 49 → 51；
   // #1012 Phase 5 P2 接入 root shared settings-namespace 真实夜间段 51 → 52；
   // #1074 接入 root shared client 段（shared/client 直连 .ts 源判据）52 → 53；
-  // #1015 T1 原语层上提 shared/client/ui，dsh-provider-usage 新增 ui-primitives 段 53 → 54），
+  // #1015 T1 原语层上提 shared/client/ui，dsh-provider-usage 新增 ui-primitives 段 53 → 54；
+  // 本轮退役两个包（stryker.conf.d 实测共九段）后为 45），
   // 否则新增段静默漏进归档期望集合也无人察觉。
-  assert.equal(expected.length, 54, `段数应为 54，实际 ${expected.length}`);
+  assert.equal(expected.length, 45, `段数应为 45，实际 ${expected.length}`);
   for (const f of expected) assert.match(f, BASELINE_FILE_RE, `文件名应匹配归档形态：${f}`);
 });
 
