@@ -23,8 +23,9 @@
  *                            [--no-build] [--evidence-dir <dir>] [--audit]
  *                            [--audit-extra-dirs <dir>] [--no-skip-onboarding]
  *                            [--json] [-- <pkg-path>...]
- *   --dsh <path>       必填：显式指定 dsh 0.2.0-rc.2 入口。其它版本或读取失败一律
- *                      fail-closed，避免产出不属于目标 runtime 的 preset/验证证据。
+ *   --dsh <path>       必填：显式指定 dsh 0.2.1-rc.2 或 0.2.0-rc.2 入口。其它版本或
+ *                      读取失败一律 fail-closed，避免产出不属于目标 runtime 的
+ *                      preset/验证证据。
  *   --port <port>      默认 3456；--port 0 自动探测真实空闲端口并打印（修复打印 0）。
  *                      探测块贴近 dsh 启动，防 EADDRINUSE 窗口。
  *   --browser          额外启动独立浏览器实例（browser-driver.mjs）：独立
@@ -152,7 +153,9 @@ import { isInside, runAudit, scanSnapshot, SKIP_DEEP, WHITELIST_V } from "./lib/
 const SCRIPT_DIR = import.meta.dirname; // Node >= 22 全程可用
 const DRIVER = join(SCRIPT_DIR, "browser-driver.mjs");
 const DEFAULT_PORT = 3456;
-const TARGET_DSH_VERSION = "0.2.0-rc.2";
+// #1140：目标 runtime 双版 allowlist（精确版本，不放宽成 semver range）。
+const SUPPORTED_DSH_VERSIONS = Object.freeze(["0.2.0-rc.2", "0.2.1-rc.2"]);
+const SUPPORTED_DSH_VERSION_LABEL = SUPPORTED_DSH_VERSIONS.join(" | ");
 const READY_TIMEOUT_MS = 15000;
 const URL_WAIT_MS = 5000; // 访问 URL 行晚于 HTTP 就绪的等待上限（见 9b 注释）
 const LOG_TAIL_LIMIT = 4096; // 防背压：收集缓冲限长（browser-driver stderrBuf 先例）
@@ -160,7 +163,7 @@ const LOG_TAIL_LIMIT = 4096; // 防背压：收集缓冲限长（browser-driver 
 const USAGE = `用法: node verify-isolated.mjs --dsh <path> [--port <port>] [--browser] [--keep] [--no-build] [--evidence-dir <dir>] [--audit] [--audit-extra-dirs <dir>] [--no-skip-onboarding] [--json] [-- <pkg-path>...]
 
 选项：
-  --dsh <path>         必须显式传入 --dsh <path> 指向 dsh 0.2.0-rc.2 入口；缺失、不可用、版本读取失败或其它版本均拒绝
+  --dsh <path>         必须显式传入 --dsh <path> 指向 dsh 0.2.1-rc.2 或 0.2.0-rc.2 入口；缺失、不可用、版本读取失败或其它版本均拒绝
   --port <port>        端口（默认 3456；--port 0 自动探测真实空闲端口并打印）
   --browser            额外启动独立浏览器实例（browser-driver.mjs，raw CDP 零依赖）
   --keep               结束后保留临时 DSH_HOME（默认自动删除）
@@ -922,10 +925,10 @@ function resolveAuditExtraDirs(f) {
 }
 
 function resolveDshEntry(f) {
-  // 0. 显式入口 + 唯一目标版本校验；必须在创建隔离目录与写 preset 之前 fail-closed。
+  // 0. 显式入口 + 目标版本 allowlist 校验；必须在创建隔离目录与写 preset 之前 fail-closed。
   if (!f.dsh) {
     throw new CliError(
-      `错误: 必须显式传入 --dsh <path>（实际版本: 未检查；期望版本: ${TARGET_DSH_VERSION}）`,
+      `错误: 必须显式传入 --dsh <path>（实际版本: 未检查；期望版本: ${SUPPORTED_DSH_VERSION_LABEL}）`,
       EXIT.USAGE,
     );
   }
@@ -933,20 +936,20 @@ function resolveDshEntry(f) {
   dshAbs = resolveDsh(rawDsh);
   if (!dshAbs) {
     throw new CliError(
-      `错误: 找不到 dsh 入口: ${rawDsh}（实际版本: 不可用；期望版本: ${TARGET_DSH_VERSION}）`,
+      `错误: 找不到 dsh 入口: ${rawDsh}（实际版本: 不可用；期望版本: ${SUPPORTED_DSH_VERSION_LABEL}）`,
       EXIT.USAGE,
     );
   }
   dshVersion = readDshVersion(dshAbs);
   if (!dshVersion) {
     throw new CliError(
-      `错误: 无法读取 dsh 版本: ${dshAbs}（实际版本: 读取失败；期望版本: ${TARGET_DSH_VERSION}）`,
+      `错误: 无法读取 dsh 版本: ${dshAbs}（实际版本: 读取失败；期望版本: ${SUPPORTED_DSH_VERSION_LABEL}）`,
       EXIT.USAGE,
     );
   }
-  if (dshVersion !== TARGET_DSH_VERSION) {
+  if (!SUPPORTED_DSH_VERSIONS.includes(dshVersion)) {
     throw new CliError(
-      `错误: dsh 版本不匹配: ${dshAbs}（实际版本: ${dshVersion}；期望版本: ${TARGET_DSH_VERSION}）`,
+      `错误: dsh 版本不匹配: ${dshAbs}（实际版本: ${dshVersion}；期望版本: ${SUPPORTED_DSH_VERSION_LABEL}）`,
       EXIT.USAGE,
     );
   }

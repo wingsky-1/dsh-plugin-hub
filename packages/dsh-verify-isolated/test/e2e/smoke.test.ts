@@ -111,6 +111,9 @@ const SKILL_FILE = join(SKILL_DIR, "SKILL.md");
 const SCRIPTS_DIR = join(SKILL_DIR, "scripts");
 const scriptFile = join(SCRIPTS_DIR, "verify-isolated.mjs");
 const driverFile = join(SCRIPTS_DIR, "browser-driver.mjs");
+// #1140：目标 runtime 双版 allowlist（测试侧独立声明，防止实现误放宽/收窄）。
+const SUPPORTED_DSH_VERSIONS = ["0.2.0-rc.2", "0.2.1-rc.2"];
+const SUPPORTED_DSH_VERSION_LABEL = SUPPORTED_DSH_VERSIONS.join(" | ");
 const REF_DIR = join(SKILL_DIR, "references");
 const REF_FILES = [
   "script-contracts.md",
@@ -796,8 +799,9 @@ describe("6c. 子进程退出码实测（不启动 dsh / 浏览器，走 --dsh �
     expect(h.out.includes("verify-isolated.mjs")).toBeTruthy();
   });
 
-  it("--help 显式锁定唯一目标 dsh 版本", () => {
-    expect(h.out).toContain("0.2.0-rc.2");
+  it("--help 显式锁定目标 dsh 版本 allowlist", () => {
+    for (const version of SUPPORTED_DSH_VERSIONS) expect(h.out).toContain(version);
+    expect(h.out).toContain("0.2.1-rc.2 或 0.2.0-rc.2");
     expect(h.out).toContain("必须显式传入 --dsh");
   });
 
@@ -888,7 +892,7 @@ describe("6d. 回归：dsh 就绪前退出 → 契约码 1 + 可操作诊断", (
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 const args = process.argv.slice(2);
-if (args.includes("--version")) { console.log("0.2.0-rc.2"); process.exit(0); }
+if (args.includes("--version")) { console.log("0.2.1-rc.2"); process.exit(0); }
 if (args[0] === "plugin" && args.includes("list")) {
   const i = args.indexOf("--profile");
   const dir = join(process.env.DSH_HOME, "profiles", args[i + 1]);
@@ -1147,7 +1151,7 @@ describe("9a. 白名单版本化 + 模式全集存在", () => {
 
   // 预置模式数组，版本化 WHITELIST_V；v2 起含 dsh 自身写面
   // .credentials.yaml / storages/**；v3 起含 settings.yaml——首启弹窗跳过会预置它，
-  // 页面改设置也由 dsh 重写；v4 起含 settings.yaml.imported（0.2.0-rc.2 导入映射重命名残留，
+  // 页面改设置也由 dsh 重写；v4 起含 settings.yaml.imported（0.2.x-rc.2 导入映射重命名残留，
   // 待真机确认实际落盘形态）。
   it("WHITELIST_V 版本化格式", () => {
     expect(whitelistV).toMatch(/^v\d+$/);
@@ -1327,7 +1331,7 @@ import { mkdirSync, writeFileSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
 import http from "node:http";
 const args = process.argv.slice(2);
-if (args.includes("--version")) { console.log("0.2.0-rc.2"); process.exit(0); }
+if (args.includes("--version")) { console.log("0.2.1-rc.2"); process.exit(0); }
 if (args[0] === "plugin" && args.includes("list")) {
   const i = args.indexOf("--profile");
   const dir = join(process.env.DSH_HOME, "profiles", args[i + 1]);
@@ -1809,7 +1813,7 @@ describe("10a. 须知版本与命名空间提取", () => {
     expect(ob.extractWelcomeNoticeVersion(null)).toBe(null);
   });
 
-  it("从客户端产物提取须知命名空间（0.2.0-rc.2 形态）", () => {
+  it("从客户端产物提取须知命名空间（RC2 系列形态）", () => {
     expect(
       ob.extractWelcomeNoticeNamespace(
         'const WELCOME_NOTICE_SETTINGS_NAMESPACE = "ui-settings-general";',
@@ -1993,7 +1997,7 @@ describe("10c. dsh 安装根与产物定位（mkdtemp fixture 建模 npm 提升�
     expect(e2eVersion).toBe("2099-01-01.1");
   });
 
-  it("端到端解析命名空间（0.2.0-rc.2 形态）", () => {
+  it("端到端解析命名空间（RC2 系列形态）", () => {
     expect(e2eNamespace).toBe("ui-settings-general");
   });
 
@@ -2026,6 +2030,8 @@ describe("10c-2. presetWelcomeNotice 严格事实与预置报告", () => {
   let tmp;
   let missingCase;
   let validCase;
+  let legacyValidCase;
+  let tooNewVersionCase;
   let oldVersionCase;
   let versionReadFailureCase;
   let omittedDshCase;
@@ -2034,7 +2040,7 @@ describe("10c-2. presetWelcomeNotice 严格事实与预置报告", () => {
   const makeDshInstall = (
     name: string,
     clientSource: string,
-    versionOutput: string | null = "0.2.0-rc.2",
+    versionOutput: string | null = "0.2.1-rc.2",
     versionExitCode = 0,
   ) => {
     const fixture = mkdtempSync(join(tmp, name));
@@ -2171,12 +2177,16 @@ process.exit(0);
     );
     const clientSource =
       'const WELCOME_NOTICE_SETTINGS_NAMESPACE = "ui-settings-general";\nconst WELCOME_NOTICE_VERSION = "2099-01-01.1";';
+    const legacyValid = makeDshInstall("valid-legacy-", clientSource, "0.2.0-rc.2");
+    const tooNewVersion = makeDshInstall("too-new-version-", clientSource, "0.2.2-rc.1");
     const oldVersion = makeDshInstall("old-version-", clientSource, "0.1.5-rc.1");
     const versionReadFailure = makeDshInstall("version-read-failure-", clientSource, null, 9);
     const controlledPath = pathEntryFor(valid.entry);
 
     missingCase = runCase(missing.entry);
     validCase = runCase(valid.entry);
+    legacyValidCase = runCase(legacyValid.entry);
+    tooNewVersionCase = runCase(tooNewVersion.entry);
     oldVersionCase = runCase(oldVersion.entry);
     versionReadFailureCase = runCase(versionReadFailure.entry);
     omittedDshCase = runCase(null, {
@@ -2189,6 +2199,8 @@ process.exit(0);
     for (const result of [
       missingCase,
       validCase,
+      legacyValidCase,
+      tooNewVersionCase,
       oldVersionCase,
       versionReadFailureCase,
       omittedDshCase,
@@ -2203,30 +2215,37 @@ process.exit(0);
   it("未传 --dsh 时 fail-closed，不使用 PATH 中碰巧存在的目标入口", () => {
     expect(omittedDshCase.status).toBe(2);
     expect(omittedDshCase.report).toContain("必须显式传入 --dsh");
-    expect(omittedDshCase.report).toContain("0.2.0-rc.2");
+    expect(omittedDshCase.report).toContain(`期望版本: ${SUPPORTED_DSH_VERSION_LABEL}`);
   });
 
   it("旧版本 0.1.5-rc.1 被拒绝，错误点名实际与期望版本", () => {
     expect(oldVersionCase.status).toBe(2);
     expect(oldVersionCase.report).toContain("实际版本: 0.1.5-rc.1");
-    expect(oldVersionCase.report).toContain("期望版本: 0.2.0-rc.2");
+    expect(oldVersionCase.report).toContain(`期望版本: ${SUPPORTED_DSH_VERSION_LABEL}`);
+  });
+
+  it("越界版本 0.2.2-rc.1 被拒绝，allowlist 不退化为 semver range", () => {
+    expect(tooNewVersionCase.status).toBe(2);
+    expect(tooNewVersionCase.report).toContain("实际版本: 0.2.2-rc.1");
+    expect(tooNewVersionCase.report).toContain(`期望版本: ${SUPPORTED_DSH_VERSION_LABEL}`);
   });
 
   it("--version 读取失败被拒绝，不降级为 unknown 后继续", () => {
     expect(versionReadFailureCase.status).toBe(2);
     expect(versionReadFailureCase.report).toContain("实际版本: 读取失败");
-    expect(versionReadFailureCase.report).toContain("期望版本: 0.2.0-rc.2");
+    expect(versionReadFailureCase.report).toContain(`期望版本: ${SUPPORTED_DSH_VERSION_LABEL}`);
     expect(versionReadFailureCase.report).not.toContain("(unknown)");
   });
 
   it("不存在的 --dsh 入口被拒绝，错误点名不可用与期望版本", () => {
     expect(wrongEntryCase.status).toBe(2);
     expect(wrongEntryCase.report).toContain("实际版本: 不可用");
-    expect(wrongEntryCase.report).toContain("期望版本: 0.2.0-rc.2");
+    expect(wrongEntryCase.report).toContain(`期望版本: ${SUPPORTED_DSH_VERSION_LABEL}`);
   });
 
   it.each([
     ["旧版本", () => oldVersionCase],
+    ["过新版本", () => tooNewVersionCase],
     ["版本读取失败", () => versionReadFailureCase],
     ["未传 --dsh", () => omittedDshCase],
     ["错误入口", () => wrongEntryCase],
@@ -2254,6 +2273,7 @@ process.exit(0);
 
   it("目标 namespace+version 仍预置真实 settings，报告显式真实 namespace", () => {
     expect(validCase.status).toBe(0);
+    expect(validCase.report).toContain("0.2.1-rc.2");
     expect(validCase.verdict.onboarding).toMatchObject({
       skip: true,
       source: "preset",
@@ -2264,6 +2284,17 @@ process.exit(0);
     expect(validCase.settingsWrites).toHaveLength(1);
     expect(validCase.report).toContain("ui-settings-general.welcomeNoticeVersion=2099-01-01.1");
     expect(validCase.report).not.toContain("ui-onboarding");
+  });
+
+  it("0.2.0-rc.2 旧版入口仍被接受（双版 allowlist）", () => {
+    expect(legacyValidCase.status).toBe(0);
+    expect(legacyValidCase.report).toContain("0.2.0-rc.2");
+    expect(legacyValidCase.verdict.onboarding).toMatchObject({
+      skip: true,
+      source: "preset",
+      version: "2099-01-01.1",
+      namespace: "ui-settings-general",
+    });
   });
 });
 
