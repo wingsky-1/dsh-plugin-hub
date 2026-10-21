@@ -51,6 +51,8 @@ SKILL_BASE="<Base directory for this skill 一行的绝对路径，见 skill_res
 node "$SKILL_BASE/scripts/verify-isolated.mjs" --port 0 <插件包路径>
 # 要跑浏览器验证：加 --browser（自带独立浏览器实例，见 §4 并行约束）
 node "$SKILL_BASE/scripts/verify-isolated.mjs" --port 0 --browser <插件包路径>
+# 可选真实宿主 provider-usage 探针（就绪后请求 stats/health 即退出；无凭据 skip，见 §5.4）
+node "$SKILL_BASE/scripts/verify-isolated.mjs" --port 0 --probe-provider-usage <插件包路径>
 # 排查用：--keep 保留临时 DSH_HOME；--no-build 跳过挂载前的 pnpm build
 node "$SKILL_BASE/scripts/verify-isolated.mjs" --port 0 --keep --no-build <插件包路径>
 ```
@@ -190,6 +192,36 @@ node "$SKILL_BASE/scripts/browser-driver.mjs" snapshot --state "$DSH_HOME/browse
 - 页面状态：`eval` 轮询到目标值（如 `document.readyState`）。
 - 导航后异步挂载的组件（弹窗、懒加载区域）：轮询其存在性，而不是等固定时长。
 
+### 5.4 可选：真实宿主 provider-usage 探针（不是离线 CI 门禁）
+
+验证 provider-usage 的**真实宿主取数**（不是纯函数/单元测试）时，加
+`--probe-provider-usage`：隔离实例就绪后请求
+`/api/dsh-provider-usage/stats?provider=deepseek-official` 与
+`/api/dsh-provider-usage/health`，解析 stats 的 `ok/error/lastSuccessAt` 与
+health 的 `errors/fetchErrors`（白名单字段），打印脱敏报告后**立即退出**（不进入
+前台等待）。实现与纯函数在 `scripts/lib/provider-usage-probe.mjs`。
+
+| 隔离环境状态 | 探针结论 | 退出码 |
+|--------------|----------|--------|
+| 隔离 `DSH_HOME/.credentials.yaml` 无 `refs` 条目（含文件不存在；仅 `records` 的浏览器会话不算凭据） | skip，输出「未验证（无凭据）」 | 0 |
+| 有存储凭据 + stats `ok:true` | pass（真实宿主取数成功） | 0 |
+| 有存储凭据 + stats `error` 非 `no-api-key` | pass（凭据已解析，上游失败不算 seam 失败） | 0 |
+| 有存储凭据 + stats `error=no-api-key` | fail，打印可操作诊断 | 1 |
+| stats 请求失败 / HTTP 非 200 / 响应非 JSON | fail（探针拿不到判定） | 1 |
+
+边界（硬约束）：
+
+- **不碰用户 `~/.dsh`**：只读隔离 `$DSH_HOME/.credentials.yaml`，不复制、不打印任何凭据值；
+  探针也**不把继承的环境变量当凭据证据**——env key 会经 V1 兜底让探针假通过，掩盖
+  DSH 凭据 seam 漂移；无存储凭据时明确输出「未验证」而不是给一个不成立的 pass。
+- **输出脱敏**：URL 只回显 origin+pathname（去 query/token）；stats/health 只打印白名单
+  字段；错误文本经 `redactSecrets` 兜底。探针不拼访问令牌（API 路由只受宿主 loopback 围栏）。
+- **不是门禁**：这是可选的真实宿主验证，离线 CI 的判据仍是纯函数 fixture 测试；skip
+  不等于通过，结论里必须如实写「未验证（无凭据）」。
+- **凭据由运行方自行提供**：需要走 pass/no-api-key 分支时，由运行方把**测试专用**凭据
+  写入隔离 `DSH_HOME` 的存储（例如 CI 注入的隔离存储）；不得复制真实凭据，也不得为
+  让探针通过而伪造凭据。`--keep` 可保留 `verdict.json`/`dsh.log` 排查（不含密钥）。
+
 ## 6. 完成检查
 
 - [ ] 隔离实例已启动且不冲突主实例端口（`--port 0` 时脚本打印真实端口，超时未就绪
@@ -204,6 +236,8 @@ node "$SKILL_BASE/scripts/browser-driver.mjs" snapshot --state "$DSH_HOME/browse
 - [ ] §5.1 五个核验点按穷尽要求完成（每个 UI 触点都有成对的操作与读回证据）
 - [ ] 响应式/窄屏改动：`references/viewport-geometry.md` 的逐档核验与四项断言全过
 - [ ] 触控、软键盘、真机 UA 相关项已标注「仍需真机验证」或已真机复核
+- [ ] 若结论声明「真实宿主 provider-usage 取数已验证」：`--probe-provider-usage` 输出
+      pass 而非 skip；skip 必须如实写「未验证（无凭据）」
 - [ ] Console 无未处理错误（挂载失败仅 warn）
 - [ ] 截图已采集并按被测仓库约定归档，且证据内无 `token=` 明文
 - [ ] 隔离实例已停止、浏览器实例已清理（`browser.state` 不再存在）、临时 `DSH_HOME`

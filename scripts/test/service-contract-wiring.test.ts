@@ -142,6 +142,7 @@ const EXPECT_FILES: Record<string, string[]> = {
     "unit/erasure.test.ts",
     "unit/file-io-queue.test.ts",
     "unit/file-io.test.ts",
+    "unit/host-faces-anchors.test.ts",
     "unit/hotspot.test.ts",
     "unit/image-admission.test.ts",
     "unit/init-failure.test.ts",

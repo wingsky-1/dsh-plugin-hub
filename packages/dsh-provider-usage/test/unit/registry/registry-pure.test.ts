@@ -13,6 +13,12 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import type {
+  SettingsDescriptor,
+  SettingsForms,
+  SettingsNamespace,
+} from "@deepseek-ai/dsh-settings";
+import type { LlmConfigurableProvider } from "@deepseek-ai/dsh-llm";
 import {
   trimmedOrUndefined,
   providerApiKeyEnvVar,
@@ -21,6 +27,7 @@ import {
   drillSettingsPath,
   apiKeyEnvOf,
   seamServicesOf,
+  seamDiagnosticOf,
   resolveProviderConfig,
 } from "../../../src/server/registry/provider-config.ts";
 import {
@@ -40,6 +47,7 @@ import {
   invalidAdapterRejection,
   rejectDuplicateName,
   collectWasEnabledProviders,
+  makeAdapterRegistry,
 } from "../../../src/server/registry/registry.ts";
 import type { UsageStatsAdapter } from "../../../src/shared/interface.ts";
 
@@ -61,6 +69,57 @@ function adapter(name: string, providers: string[], file?: string): UsageStatsAd
     },
     ...(file === undefined ? {} : { file }),
   } as unknown as UsageStatsAdapter;
+}
+
+/** 官方目录条目（以官方类型构造；displayName 取 provider 名）。 */
+function providerEntry(
+  provider: string,
+  settingsNs: string,
+  settingsPath: readonly string[] = [],
+): LlmConfigurableProvider {
+  return { provider, displayName: provider, settingsNs, settingsPath };
+}
+
+/** 官方 SettingsDescriptor（完整字段；seam 只读 ns/value，其余按官方契约补齐）。 */
+function descriptor(ns: string, value: unknown): SettingsDescriptor {
+  return {
+    ns: ns as SettingsNamespace,
+    autoGenerate: false,
+    schema: {},
+    value,
+    revision: 1,
+    applies: "live",
+  };
+}
+
+/** 官方 settings 读面（Partial：缺 describe 即 API 漂移用例）。 */
+type SettingsFace = Partial<Pick<SettingsForms, "describe">>;
+
+/** seam 的 settings 面：官方派生形状，或 #1163 前的旧 get(ns) 形状（回归用例专用）。 */
+type SettingsSeamFake = SettingsFace | { get?: (ns: string) => unknown };
+
+/** credentials 面：官方 catalog 无类型包（见 provider-config.ts 的豁免注释），显式 duck。 */
+type CredentialsFace = { resolve?: (ref: string) => Promise<{ value?: string } | undefined> };
+
+/**
+ * 显式 unknown 鸭子上下文：llm/settings/credentials 各面经官方类型构造，
+ * ctx 本身保持 unknown（seam 的运行时收窄面，不把拼装形状当契约）。
+ */
+function seamCtx(opts: {
+  entries?: LlmConfigurableProvider[];
+  settings?: SettingsSeamFake;
+  credentials?: CredentialsFace;
+}): unknown {
+  return {
+    ...(opts.entries === undefined
+      ? {}
+      : { llm: { listConfigurableProviders: () => opts.entries } }),
+    get: (name: string): unknown => {
+      if (name === "settings") return opts.settings;
+      if (name === "credentials") return opts.credentials;
+      return undefined;
+    },
+  };
 }
 
 describe("provider-config 进程内密钥来源", () => {
@@ -97,24 +156,15 @@ describe("provider-config 进程内密钥来源", () => {
 });
 
 describe("provider-config seam 定位纯面", () => {
-  const ctx = {
-    llm: {
-      listConfigurableProviders: () => [
-        { provider: "pi-ai-r", settingsNs: "llm-pi-ai", settingsPath: ["providers", "pi-ai-r"] },
+  const ctx = seamCtx({
+    entries: [providerEntry("pi-ai-r", "llm-pi-ai", ["providers", "pi-ai-r"])],
+    settings: {
+      describe: () => [
+        descriptor("llm-pi-ai", { providers: { "pi-ai-r": { apiKeyEnv: "RJK_API_KEY" } } }),
       ],
     },
-    get: (name: string) =>
-      name === "settings"
-        ? {
-            describe: () => [
-              {
-                ns: "llm-pi-ai",
-                value: { providers: { "pi-ai-r": { apiKeyEnv: "RJK_API_KEY" } } },
-              },
-            ],
-          }
-        : { resolve: async () => ({ value: "sk" }) },
-  };
+    credentials: { resolve: async () => ({ value: "sk" }) },
+  });
 
   it("findProviderDirEntry：命中本 provider 条目（含 settingsPath）", () => {
     expect(findProviderDirEntry(ctx, "pi-ai-r")?.settingsPath).toEqual(["providers", "pi-ai-r"]);
@@ -157,6 +207,48 @@ describe("provider-config seam 定位纯面", () => {
   });
 });
 
+describe("seamDiagnosticOf：服务缺席不报 / 方法不在报（API 漂移 fail-loud）", () => {
+  const okCtx = seamCtx({
+    settings: { describe: () => [] },
+    credentials: { resolve: async () => undefined },
+  });
+
+  it("正常：describe + resolve 就位 → 空诊断", () => {
+    expect(seamDiagnosticOf(okCtx)).toEqual([]);
+  });
+
+  it("settings 服务在但缺 describe → 报 settings 漂移（文案可定位）", () => {
+    const out = seamDiagnosticOf(seamCtx({ settings: {} }));
+    expect(out).toHaveLength(1);
+    expect(out[0]?.service).toBe("settings");
+    expect(out[0]?.message).toContain("describe()");
+  });
+
+  it("旧 get(ns) 形状 → 报 settings 漂移且点明旧形状（#1163 回归）", () => {
+    const out = seamDiagnosticOf(seamCtx({ settings: { get: () => undefined } }));
+    expect(out).toHaveLength(1);
+    expect(out[0]?.service).toBe("settings");
+    expect(out[0]?.message).toContain("get(ns)");
+  });
+
+  it("credentials 服务在但缺 resolve → 报 credentials 漂移", () => {
+    const out = seamDiagnosticOf(seamCtx({ settings: { describe: () => [] }, credentials: {} }));
+    expect(out.map((d) => d.service)).toEqual(["credentials"]);
+    expect(out[0]?.message).toContain("resolve(ref)");
+  });
+
+  it("两服务同时漂移 → 固定顺序 settings → credentials", () => {
+    const out = seamDiagnosticOf(seamCtx({ settings: {}, credentials: {} }));
+    expect(out.map((d) => d.service)).toEqual(["settings", "credentials"]);
+  });
+
+  it("服务缺席（get 无对象 / ctx 无 get / ctx 非对象）→ 不报，按正常回落处理", () => {
+    expect(seamDiagnosticOf(seamCtx({}))).toEqual([]);
+    expect(seamDiagnosticOf({ llm: { listConfigurableProviders: () => [] } })).toEqual([]);
+    expect(seamDiagnosticOf(undefined)).toEqual([]);
+  });
+});
+
 /**
  * 在隔离 DSH_HOME + 干净环境变量下执行：V1 链不得命中真实 ~/.dsh 或宿主环境
  * （#1167 评审 P1-2：环境里存在 DEEPSEEK_OFFICIAL_API_KEY 时，known-ref 用例会假红）。
@@ -186,39 +278,42 @@ async function withIsolatedCredentials<T>(
 
 describe("provider-config 凭据解析：describe seam + 已知 ref 兜底", () => {
   it("seam：describe 取 apiKeyEnv 后经 credentials.resolve 取值", async () => {
-    const ctx = {
-      llm: {
-        listConfigurableProviders: () => [
-          { provider: "r-direct", settingsNs: "llm-r", settingsPath: [] },
-        ],
+    const ctx = seamCtx({
+      entries: [providerEntry("r-direct", "llm-r")],
+      settings: { describe: () => [descriptor("llm-r", { apiKeyEnv: "R_REF" })] },
+      credentials: {
+        resolve: async (ref: string) => (ref === "R_REF" ? { value: "sk-seam" } : undefined),
       },
-      get: (name: string) =>
-        name === "settings"
-          ? { describe: () => [{ ns: "llm-r", value: { apiKeyEnv: "R_REF" } }] }
-          : {
-              resolve: async (ref: string) => (ref === "R_REF" ? { value: "sk-seam" } : undefined),
-            },
-    };
+    });
     const r = await resolveProviderConfig("r-direct", ctx);
     expect(r.apiKey).toBe("sk-seam");
   });
 
-  it("旧 settings.get 形状不再被当作 seam（#1163 回归）", async () => {
-    const ctx = {
-      llm: {
-        listConfigurableProviders: () => [
-          { provider: "r-old", settingsNs: "llm-old", settingsPath: [] },
-        ],
-      },
-      get: (name: string) =>
-        name === "settings"
-          ? { get: () => ({ apiKeyEnv: "OLD_REF" }) }
-          : { resolve: async () => ({ value: "sk-old" }) },
-    };
+  it("旧 settings.get 形状不再被当作 seam，且诊断经 onDiagnostic 报出（#1163 回归）", async () => {
     await withIsolatedCredentials(async () => {
-      const r = await resolveProviderConfig("r-old", ctx);
+      const diagnostics: string[] = [];
+      const ctx = seamCtx({
+        entries: [providerEntry("r-old", "llm-old")],
+        settings: { get: () => ({ apiKeyEnv: "OLD_REF" }) },
+        credentials: { resolve: async () => ({ value: "sk-old" }) },
+      });
+      const r = await resolveProviderConfig("r-old", ctx, undefined, (message) => {
+        diagnostics.push(message);
+      });
       expect(r.apiKey).toBeUndefined();
+      expect(diagnostics).toHaveLength(1);
+      expect(diagnostics[0]).toContain("get(ns)");
     }, ["R_OLD_API_KEY"]);
+  });
+
+  it("服务缺席（无 settings/credentials）不产生诊断，按正常回落后走 V1 链", async () => {
+    const diagnostics: string[] = [];
+    const ctx = seamCtx({ entries: [providerEntry("r-absent", "llm-absent")] });
+    const r = await resolveProviderConfig("r-absent", ctx, undefined, (message) =>
+      diagnostics.push(message),
+    );
+    expect(r.apiKey).toBeUndefined();
+    expect(diagnostics).toEqual([]);
   });
 
   it("已知 provider ref 兜底：settings 缺席时仍从 credentials 取 DEEPSEEK_API_KEY", async () => {
@@ -463,5 +558,67 @@ describe("registry 替换预检纯面", () => {
       ]),
     );
     expect([...out]).toEqual(["p1"]);
+  });
+});
+describe("registry：seam 诊断登记 health.errors（去重 / 同 key 覆盖 / 正常与缺席不报）", () => {
+  const entries = [providerEntry("r-drift", "llm-drift")];
+
+  it("settings 漂移经 recordError(provider-config,load) 进 snapshot().errors；同签名只登记一次", async () => {
+    const diag: string[] = [];
+    const registry = makeAdapterRegistry({ diag: (m) => diag.push(m) });
+    const ctx = seamCtx({ entries, settings: {} });
+    await registry.resolveProviderConfig("r-drift", ctx);
+    await registry.resolveProviderConfig("r-drift", ctx);
+    const errors = registry.snapshot().errors.filter((e) => e.key === "provider-config");
+    expect(errors).toHaveLength(1);
+    expect(errors[0]?.kind).toBe("load");
+    expect(errors[0]?.message).toContain("describe()");
+    expect(typeof errors[0]?.at).toBe("number");
+    // diag 出口只响一次（去重防每轮取数刷时间戳/日志）
+    expect(diag.filter((m) => m.includes("provider-config"))).toHaveLength(1);
+  });
+
+  it("恢复后同一漂移再次出现 → 重新登记（去重状态复位，错误条目保留）", async () => {
+    const diag: string[] = [];
+    const registry = makeAdapterRegistry({ diag: (m) => diag.push(m) });
+    const drift = seamCtx({ entries, settings: {} });
+    const normal = seamCtx({
+      entries,
+      settings: { describe: () => [] },
+      credentials: { resolve: async () => undefined },
+    });
+    await registry.resolveProviderConfig("r-drift", drift);
+    await registry.resolveProviderConfig("r-drift", normal); // 恢复：复位去重状态
+    await registry.resolveProviderConfig("r-drift", drift); // 同一漂移再次出现
+    expect(diag.filter((m) => m.includes("provider-config"))).toHaveLength(2);
+    const errors = registry.snapshot().errors.filter((e) => e.key === "provider-config");
+    expect(errors).toHaveLength(1);
+    expect(errors[0]?.message).toContain("describe()");
+  });
+
+  it("正常 seam 与服务缺席均不登记 provider-config 错误", async () => {
+    const registry = makeAdapterRegistry({ diag: () => {} });
+    await registry.resolveProviderConfig(
+      "r-drift",
+      seamCtx({
+        entries,
+        settings: { describe: () => [] },
+        credentials: { resolve: async () => undefined },
+      }),
+    );
+    await registry.resolveProviderConfig("r-drift", seamCtx({ entries }));
+    expect(registry.snapshot().errors.filter((e) => e.key === "provider-config")).toEqual([]);
+  });
+
+  it("签名变化时同 key 覆盖（settings 漂移 → credentials 漂移）", async () => {
+    const registry = makeAdapterRegistry({ diag: () => {} });
+    await registry.resolveProviderConfig("r-drift", seamCtx({ entries, settings: {} }));
+    await registry.resolveProviderConfig(
+      "r-drift",
+      seamCtx({ entries, settings: { describe: () => [] }, credentials: {} }),
+    );
+    const errors = registry.snapshot().errors.filter((e) => e.key === "provider-config");
+    expect(errors).toHaveLength(1);
+    expect(errors[0]?.message).toContain("resolve(ref)");
   });
 });

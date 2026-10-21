@@ -16,7 +16,7 @@ DSH 插件家族共用的模块（构建期 esbuild 内联进各插件包，不�
 | 文件 | 端 | 内容与行为契约 |
 |------|----|------|
 | `host-utils.ts` | 宿主 | `isLoopbackRequest`（peer/Host 回环、默认拒绝 cross-site、可选放行 serve 的 no-cors 子资源、Origin 与 Host 同源）/ `writeJson` / `errorMessage` / `readBody`（限长显式化）/ `readJsonBody`（宽松版）/ `sseData`（SSE data 帧序列化 `data: <json>\n\n`；undefined / 含 `\n` payload 行为对齐历史消费方、非承诺契约）/ `guardLoopbackMethod`（loopback+方法白名单守卫；403 先于 405 为守卫自身执行顺序，仅适用于套守卫端点） |
-| `settings-namespace.ts` | 宿主 | `installSettingsNamespace`（settings 服务面注入） |
+| `settings-namespace.ts` | 宿主 | `installSettingsNamespace`（settings 服务面注入）+ 官方 settings 类型锚 `HostSettingsService` / `HostSettingsDescriptor` / `HostSettingsDescribeOptions`（`@deepseek-ai/dsh-settings` 仅 `import type`；`SettingsFormsService` / `SettingsFormsDescriptor` 由其派生，#1164） |
 | `dsh-home.ts` | 宿主 | `dshHome`（DSH home 解析单一事实源，#517：`DSH_HOME` 非空白原样采用、未设置或空白回落 `~/.dsh`——空白视同未设置对齐官方 `dsh-home-paths#resolveDshHome`；不 resolve/不展开 `~`，默认形态路径逐字节不变。豁免口径（非 dsh 生态凭据不跟随）与落盘纪律条款见 DEVELOPMENT.md §1，由 PR #523 承载）+ `userHome`（用户 home 接缝，#722：`HOME`（Windows 为 `USERPROFILE`）非空白原样采用、否则回落 `os.homedir()`；取值次序与 libuv 一致故默认形态逐字节不变，显式读 env 是为了在 worker_threads（Stryker 的 vitest-runner 强制 `pool: 'threads'`）下仍可被测试的 `process.env` 隔离） |
 | `paths.ts` | 宿主 | `pluginHome`（包主目录拼装单一事实源：`join(base, ...segments)`，默认形态路径逐字节不变；只收敛包主目录直拼，legacy 旧根/settings 文档/resolve 对比/用户输入解析/credentials-userHome/展示脱敏/包内反推 7 类排除，provider 旧 `pluginHome` 保留包内 facade） |
 | `upgrade-tick.ts` | 宿主 | `tickUpgradeVersion` 升级链空步单一事实源（立即完成、不碰存储；各包只登记版本号，不再为新版本加空函数） |

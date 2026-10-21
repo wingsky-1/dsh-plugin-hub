@@ -8,10 +8,12 @@
  * 直连 `inject/impl/image-admission/index.ts`——不 import src/index.ts（单元层导入面越界存量）。
  */
 import { describe, expect, it } from "vitest";
+import type { ModelModality } from "@deepseek-ai/dsh-llm/types";
 import type {
   AttachmentsPort,
   ModelAttachmentRef,
   ModelContentBlock,
+  ModelInfoPort,
   SaveImageInput,
 } from "../../src/server/shared/interface.ts";
 import type { ImageAdmissionRequest } from "../../src/server/inject/impl/image-admission/index.ts";
@@ -32,8 +34,16 @@ const routeAgent = {
   options: { provider: "p2", model: "m2" },
 };
 
-const IMAGE_MODEL = { resolveModelInfo: async () => ({ inputModalities: ["text", "image"] }) };
-const TEXT_MODEL = { resolveModelInfo: async () => ({ inputModalities: ["text"] }) };
+/** 官方 LlmResolvedModelInfo 的最小合法形状：本文件只关心模态，其余键是官方必填项。 */
+function modelInfo(inputModalities: readonly ModelModality[]) {
+  return { provider: "p", id: "m", name: "m", inputModalities };
+}
+const IMAGE_MODEL: ModelInfoPort = {
+  resolveModelInfo: async () => modelInfo(["text", "image"]),
+};
+const TEXT_MODEL: ModelInfoPort = {
+  resolveModelInfo: async () => modelInfo(["text"]),
+};
 
 function saveStore(refs: ModelAttachmentRef[], record: SaveImageInput[][]): AttachmentsPort {
   return {

@@ -73,6 +73,7 @@
 ## derive/（只读派生脚本，人工执行、不接门禁）
 
 - `derive/host-contract.mjs` — 宿主契约派生：ctx.on 事件名、settings slot、路由表、MCP_SECTION_ORDER、SESSION_FORMAT 锚、DOM 锚、catalog 锁版的字面量派生 + 五类形态缺口清单；仅 stdout 输出 JSON，不接任何门禁。
+- `derive/host-service-diff.ts` — 宿主服务面方法级 diff（#1164 C）：读取旧/新两棵官方 `.d.ts` 树，比较 `Context` 服务/事件与方法表；`--check` 对方法/事件删除 exit 1，解析失败 exit 2；默认输出 markdown，`--json` 输出结构化结果。人工升级时执行，不接门禁。
 
 ## maintenance/（升级/修复维护脚本，按需显式执行）
 

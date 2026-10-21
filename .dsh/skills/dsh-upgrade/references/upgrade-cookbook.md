@@ -29,7 +29,7 @@ cat ~/.dsh/profiles/web/package.json | node -e "const p=require('/dev/stdin');co
 > 原理：版本号全量升 rc ≠ 破坏性；**比对已装 lib/ 与目标 rc 的 lib/** 才是证据。
 
 ```bash
-SRC=~/.local/node/lib/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai
+SRC="$(npm root -g)/@deepseek-ai/dsh/node_modules/@deepseek-ai"
 mkdir -p /tmp/dsh-rc-check && cd /tmp/dsh-rc-check
 
 # 对插件消费的每个 dsh 包，逐一比对
@@ -52,14 +52,45 @@ grep -oE "export (const|function|class|async function) [A-Za-z0-9_]+|export \{[^
 
 ---
 
+## B2. 宿主服务面 diff（S1/S3）
+
+> 方法级补充：B 段的 lib diff 能看到导出面删除，但同名文件内方法被删可能被包装变化掩盖；B2 直接比较旧/新官方包树的 `Context` 服务、事件与方法集合。
+
+```bash
+# 旧树：当前全局 dsh 安装
+OLD="$(npm root -g)/@deepseek-ai/dsh/node_modules"
+
+# 新树：临时安装目标 rc（不改全局）
+TMP="$(mktemp -d)"
+npm install --prefix "$TMP/new" --no-save --ignore-scripts "@deepseek-ai/dsh@<target>"
+NEW="$TMP/new/node_modules"
+
+# 判红模式：有服务/方法/事件删除即 exit 1
+node scripts/derive/host-service-diff.ts --from "$OLD" --to "$NEW" --check
+
+# 结构化证据（写入升级计划）
+node scripts/derive/host-service-diff.ts --from "$OLD" --to "$NEW" --json \
+  > "/tmp/host-service-diff-<target>.json"
+```
+
+判定：
+
+- `exit 0`：无删除；
+- `exit 1`：有服务/方法/事件删除，逐条打印。`settings` 有任何方法删除即 P0；`credentials/attachments/loader/sessionProjections` 会以 untyped 列出，必须用真实宿主探针或宿主日志补证；
+- `exit 2`：旧/新树或声明入口不可解析，属工具故障，禁止继续升级，不得写成“无变化”。
+
+限制：只比成员名集合，不比签名/参数/返回类型；无官方 catalog 类型包的服务不在类型面内。
+
+---
+
 ## C. git tag 比对（S1，有 deepseek-harness clone 时）
 
 ```bash
 cd <deepseek-harness clone>
-git fetch --tags origin                                  # 取目标 rc tag（dsh-v0.1.0-rc.8）
-git diff --stat dsh-v0.1.0-rc.7 dsh-v0.1.0-rc.8         # 看规模，区分前端/验证工具 vs 运行时
-git diff --stat dsh-v0.1.0-rc.7 dsh-v0.1.0-rc.8 -- packages/<dir>   # 只看插件消费的包目录
-git log --oneline dsh-v0.1.0-rc.7..dsh-v0.1.0-rc.8 | grep -iE "breaking|migrat"  # 破坏性说明（常无）
+git fetch --tags origin                                  # 取目标 rc tag
+git diff --stat <old-tag> <new-tag>                      # 看规模，区分前端/验证工具 vs 运行时
+git diff --stat <old-tag> <new-tag> -- packages/<dir>    # 只看插件消费的包目录
+git log --oneline <old-tag>..<new-tag> | grep -iE "breaking|migrat"  # 破坏性说明（常无）
 ```
 
 ---
@@ -82,21 +113,20 @@ grep -rhoE "from ['\"](@deepseek-ai/[a-z0-9-]+|cordis|schemastery|cosmokit)['\"]
 ## E. github-pin 插件调查（S2）
 
 ```bash
-# 解析真实仓库（@dsh-external/xxx 只是 pnpm 别名，非 npm 包）
-grep -n "dsh-mobile-nav\|dsh-web-mobile" ~/.dsh/profiles/web/package.json
-# → 已转 npm 版本化：dsh-web-mobile@^2.3.0（原 github:mexiaosqwq/dsh-web-mobile#v1.0.0 形态退役）
+# 从 profile 里定位 github: / 已转 npm 的条目
+grep -n '"github:\|"@[^"]*"' ~/.dsh/profiles/web/package.json
 
-# 以下 github-pin 解析命令保留，供仍以 github: 形式安装的插件使用：
+# 仍以 github: 形式安装的插件，按 owner/repo#tag 排查：
 # 仓库本体 + 是否 fork（parent）
-gh repo view mexiaosqwq/dsh-web-mobile --json nameWithOwner,description,isFork,parent,licenseInfo
+gh repo view <owner>/<repo> --json nameWithOwner,description,isFork,parent,licenseInfo
 # 全部 tag / release（看是否有更新）
-gh api repos/mexiaosqwq/dsh-web-mobile/tags
-gh api repos/mexiaosqwq/dsh-web-mobile/releases
+gh api repos/<owner>/<repo>/tags
+gh api repos/<owner>/<repo>/releases
 # 目标 tag 的 peerDependencies（校验是否兼容目标 rc）
-gh api repos/mexiaosqwq/dsh-web-mobile/contents/package.json?ref=v1.5.0 | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const j=JSON.parse(s);const p=JSON.parse(Buffer.from(j.content,'base64').toString());console.log('peerDeps',JSON.stringify(p.peerDependencies||{}))})"
+gh api repos/<owner>/<repo>/contents/package.json?ref=<tag> | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const j=JSON.parse(s);const p=JSON.parse(Buffer.from(j.content,'base64').toString());console.log('peerDeps',JSON.stringify(p.peerDependencies||{}))})"
 ```
 
-> 注意：github-pin 插件的 peer 如 `@deepseek-ai/dsh-client-*@^0.1.0-rc.6`，semver caret+prerelease 下**包含** rc.8（同 base 0.1.0），故目标 rc 满足。
+> 注意：github-pin 插件的 peer 常形如 `@deepseek-ai/dsh-client-*@^<base>`；semver caret+prerelease 的包含关系要按目标 rc 实测（同 base 的 rc 通常包含，但不要假定）。
 > 解析仓库本体 / peerDependencies 的方法论与 github-pin 时代一致，仅示例插件的安装形态已从 `github:` 迁移为 npm 版本化。
 
 ---
@@ -126,7 +156,7 @@ dsh plugin --profile web list
 # 窄屏（iPad/iOS）实测移动端插件（mobile-nav）。
 
 # Phase 5 升版本化插件（dsh 稳定后）
-dsh plugin --profile web add @linxin666/dsh-client-ui-skill-explorer@0.3.10
+dsh plugin --profile web add <pkg>@<latest>
 dsh plugin --profile web install
 
 # 回滚
@@ -147,3 +177,5 @@ dsh plugin --profile web install
 - [ ] 版本化插件仍正常：skill-explorer（@linxin666/dsh-client-ui-skill-explorer）、archify-dsh、dsh-web-mobile（mobile-nav）
 - [ ] **窄屏实测（最关键）**：iPad / iOS 访问，验证 mobile-nav 抽屉/侧栏适配
 - [ ] 明暗双主题下插件 UI 正常（不硬编码配色）
+- [ ] 宿主服务面 diff 已跑：exit 0；exit 1 的删除项逐条处置（适配或回退）
+- [ ] provider-usage 真实宿主探针 pass（ok:true 或 error != no-api-key）；skip 时必须写“未验证（无凭据）”

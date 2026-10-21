@@ -65,6 +65,47 @@ function defValues(src: string): string[] {
     .sort();
 }
 
+/** dsh-settings 的两个历史形态：0.1.x 有 get(ns)，0.2.x 只有 describe/update/replace/mutate。 */
+function settingsDts(withGet: boolean): string {
+  const get = withGet ? "get(ns: string): unknown; " : "";
+  return `export interface SettingsForms { ${get}describe(): unknown; update(): void; replace(): void; mutate(): void; }
+`;
+}
+
+/**
+ * R5 的最小仓 fixture：catalog 锁版 + cordis Context 声明 settings + dsh-settings 的
+ * .d.ts（旧/新两形态）+ 一个消费点。只换 B 侧 .d.ts，源码不变，证明判红来自方法表。
+ */
+function writeMethodFixture(dir: string, withGet: boolean): void {
+  const write = (rel: string, text: string): void => {
+    const abs = join(dir, rel);
+    mkdirSync(dirname(abs), { recursive: true });
+    writeFileSync(abs, text);
+  };
+  write(
+    "pnpm-workspace.yaml",
+    "catalog:\n  @deepseek-ai/cordis: 4.0.5\n  @deepseek-ai/dsh-settings: 0.2.1\n",
+  );
+  write("packages/p/package.json", '{ "name": "p", "version": "1.0.0" }\n');
+  write(
+    "packages/p/src/server/x.ts",
+    'export function read(anyCtx: { get?: (name: string) => any }): unknown {\n  const settings = anyCtx.get?.("settings");\n  return settings.get("ns");\n}\n',
+  );
+  write(
+    "packages/p/node_modules/@deepseek-ai/cordis/package.json",
+    '{ "name": "@deepseek-ai/cordis", "version": "4.0.5", "types": "index.d.ts" }\n',
+  );
+  write(
+    "packages/p/node_modules/@deepseek-ai/cordis/index.d.ts",
+    "export interface Context { settings: SettingsForms; }\n",
+  );
+  write(
+    "packages/p/node_modules/@deepseek-ai/dsh-settings/package.json",
+    '{ "name": "@deepseek-ai/dsh-settings", "version": "0.2.1", "types": "index.d.ts" }\n',
+  );
+  write("packages/p/node_modules/@deepseek-ai/dsh-settings/index.d.ts", settingsDts(withGet));
+}
+
 test("T1：cond 两支都收", () => {
   assert.deepEqual(defValues("const A = cond ? '/a' : '/b';"), ["/a", "/b"]);
 });
@@ -207,10 +248,12 @@ test("锚定 R4：分组 disposition", () => {
   assert.equal(disp("p", "/api/remote.mux"), "upstream-triple");
 });
 
-test("fail-closed 唯二出口（调用点恰两处）", () => {
+test("fail-closed 三出口（调用点恰三处：范围 / 管线 / R5 B 侧基线）", () => {
+  // R5 新增第三处：B 侧 .d.ts 闭包不可解析（缺 catalog/peer/声明入口）时不得读成
+  // 「全部无类型服务」放行，必须 exit 2。三处分别是 establishScope、scanAll、collectMethodGaps。
   const text = readFileSync(GATE, "utf8");
   const parts = text.split("failClosed(");
-  assert.equal(parts.length - 1, 2);
+  assert.equal(parts.length - 1, 3);
 });
 
 test("fail-closed：禁 --package", () => {
@@ -238,7 +281,10 @@ test("红路径：越位文件真跑 exit 1 且判词格式", () => {
       join(dir, "packages", "p", "src", "shared", "x.ts"),
       "export function reg(ctx: any) { ctx.on('a/b', () => {}); }\n",
     );
-    const r = spawnSync(process.execPath, [GATE, "--root", dir], { encoding: "utf8" });
+    // 小 fixture 无 node_modules/catalog：--no-methods 关掉 R5，聚焦 R1-R4 判词。
+    const r = spawnSync(process.execPath, [GATE, "--root", dir, "--no-methods"], {
+      encoding: "utf8",
+    });
     assert.equal(r.status, 1);
     const err = String(r.stderr);
     assert.ok(err.includes("verify-host-seams: R1 根共享越位"));
@@ -256,7 +302,9 @@ test("红路径：R2-L/R2-B 同站真跑只报 R2-B 一条", () => {
       join(dir, "packages", "p", "src", "server", "config", "model.ts"),
       "export const u = X ?? '/api/dsh-x/y';\n",
     );
-    const r = spawnSync(process.execPath, [GATE, "--root", dir], { encoding: "utf8" });
+    const r = spawnSync(process.execPath, [GATE, "--root", dir, "--no-methods"], {
+      encoding: "utf8",
+    });
     assert.equal(r.status, 1);
     const err = String(r.stderr);
     assert.ok(err.includes("R2-B 拼接越位"));
@@ -265,6 +313,64 @@ test("红路径：R2-L/R2-B 同站真跑只报 R2-B 一条", () => {
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("R5 历史 fixture：旧 d.ts 有 get 通过、新 d.ts 无 get 判红", () => {
+  const dir = mkdtempSync(join(tmpdir(), "dsh-vhs-r5-"));
+  try {
+    // 0.1.x 形态：Context 的 settings 面有 get(ns) —— 同一源码必须通过。
+    writeMethodFixture(dir, true);
+    const ok = spawnSync(process.execPath, [GATE, "--root", dir], { encoding: "utf8" });
+    assert.equal(ok.status, 0, String(ok.stderr).slice(0, 800));
+    assert.ok(String(ok.stdout).includes("R5 方法 OK"));
+    // 0.2.x 形态：只删 get，源码与其余声明不变 —— 必须判红，且定位到 settings.get。
+    writeMethodFixture(dir, false);
+    const red = spawnSync(process.execPath, [GATE, "--root", dir], { encoding: "utf8" });
+    assert.equal(red.status, 1, String(red.stdout).slice(0, 800));
+    const err = String(red.stderr);
+    assert.ok(err.includes("R5 方法越位"));
+    assert.ok(err.includes("settings.get"));
+    assert.ok(err.includes("已定型服务缺方法"));
+    assert.ok(err.includes("FAIL（1 项"));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("R5 关闭开关：--no-methods 下同一判红 fixture 只跑 R1-R4", () => {
+  const dir = mkdtempSync(join(tmpdir(), "dsh-vhs-r5-off-"));
+  try {
+    writeMethodFixture(dir, false);
+    const r = spawnSync(process.execPath, [GATE, "--root", dir, "--no-methods"], {
+      encoding: "utf8",
+    });
+    assert.equal(r.status, 0, String(r.stderr).slice(0, 800));
+    assert.ok(String(r.stdout).includes("R5 方法未启用"));
+    assert.ok(!String(r.stdout).includes("R5 方法 OK"));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("fail-closed：R5 B 侧基线不可解析 exit 2", () => {
+  const dir = mkdtempSync(join(tmpdir(), "dsh-vhs-r5-broken-"));
+  try {
+    mkdirSync(join(dir, "packages", "p", "src", "server"), { recursive: true });
+    writeFileSync(join(dir, "packages", "p", "src", "server", "x.ts"), "export const a = 1;\n");
+    const r = spawnSync(process.execPath, [GATE, "--root", dir], { encoding: "utf8" });
+    assert.equal(r.status, 2, String(r.stdout).slice(0, 800));
+    const err = String(r.stderr);
+    assert.ok(err.includes("门禁故障"));
+    assert.ok(err.includes("R5 B 侧基线不可解析"));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("真实仓库锚：R5 方法面默认开启且 OK", () => {
+  const r = spawnSync(process.execPath, [GATE], { cwd: ROOT, encoding: "utf8" });
+  assert.equal(r.status, 0, String(r.stderr).slice(0, 800));
+  assert.ok(String(r.stdout).includes("R5 方法 OK"));
 });
 
 test("真实仓库锚：收敛后 exit 0", () => {

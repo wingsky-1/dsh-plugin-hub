@@ -5,6 +5,13 @@
  * normalizeConfig / provider-config 配置链 / opencode-go v2 解析 / 热更新加载校验。
  */
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+// 官方类型锚（#1164）：fake 一律以官方构造约束，不把手写 describe 形状当契约。
+import type {
+  SettingsDescriptor,
+  SettingsForms,
+  SettingsNamespace,
+} from "@deepseek-ai/dsh-settings";
+import type { LlmConfigurableProvider } from "@deepseek-ai/dsh-llm";
 console.error("EVAL-ORDER-TAG: PURE");
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -37,6 +44,8 @@ import {
   loadAndValidateAdapter,
   resolveProviderConfig,
 } from "../src/server/registry/interface.ts";
+// 白盒直连深路径（#768 B波）：seam 诊断是域内纯函数，不经门面（门面值出口有 21 项锁）。
+import { seamDiagnosticOf } from "../src/server/registry/provider-config.ts";
 // 白盒直连深路径（#768 B波）：定位/注册表/适配器纯面经域门面，不走组合根转发。
 import {
   composerDockedAtBottom,
@@ -744,23 +753,39 @@ import { judgeContained as sanContained, judgePad as pad } from "./helpers.ts";
   const r3 = await resolveProviderConfig("never-exists-prov", undefined, {});
   assert.equal(r3.apiKey, undefined);
 
+  // 官方类型约束的 fake 构造（#1164）：目录条目与 describe 条目按官方契约补齐，
+  // ctx 保持 unknown 鸭子（seam 的运行时收窄面）。
+  const providerEntry = (
+    provider: string,
+    settingsNs: string,
+    settingsPath: readonly string[] = [],
+  ): LlmConfigurableProvider => ({
+    provider,
+    displayName: provider,
+    settingsNs,
+    settingsPath,
+  });
+  const descriptor = (ns: string, value: unknown): SettingsDescriptor => ({
+    ns: ns as SettingsNamespace,
+    autoGenerate: false,
+    schema: {},
+    value,
+    revision: 1,
+    applies: "live",
+  });
+  type SettingsFace = Partial<Pick<SettingsForms, "describe">>;
+  const describeFace = (entries: SettingsDescriptor[]): SettingsFace => ({
+    describe: () => entries,
+  });
+
   // DSH 凭据 seam：fake ctx 提供 configurable provider + settings.describe + credentials.resolve
   const fakeCtx = {
     llm: {
-      listConfigurableProviders: () => [
-        {
-          provider: "deepseek-official",
-          displayName: "DeepSeek",
-          settingsNs: "llm-deepseek",
-          settingsPath: [],
-        },
-      ],
+      listConfigurableProviders: () => [providerEntry("deepseek-official", "llm-deepseek")],
     },
     get: (name: string) => {
       if (name === "settings")
-        return {
-          describe: () => [{ ns: "llm-deepseek", value: { apiKeyEnv: "DEEPSEEK_API_KEY" } }],
-        };
+        return describeFace([descriptor("llm-deepseek", { apiKeyEnv: "DEEPSEEK_API_KEY" })]);
       if (name === "credentials")
         return {
           resolve: async (ref: string) =>
@@ -780,16 +805,14 @@ import { judgeContained as sanContained, judgePad as pad } from "./helpers.ts";
   const fakeCtxNested = {
     llm: {
       listConfigurableProviders: () => [
-        { provider: "pi-ai-r", settingsNs: "llm-pi-ai", settingsPath: ["providers", "pi-ai-r"] },
+        providerEntry("pi-ai-r", "llm-pi-ai", ["providers", "pi-ai-r"]),
       ],
     },
     get: (name: string) => {
       if (name === "settings")
-        return {
-          describe: () => [
-            { ns: "llm-pi-ai", value: { providers: { "pi-ai-r": { apiKeyEnv: "RJK_API_KEY" } } } },
-          ],
-        };
+        return describeFace([
+          descriptor("llm-pi-ai", { providers: { "pi-ai-r": { apiKeyEnv: "RJK_API_KEY" } } }),
+        ]);
       if (name === "credentials")
         return {
           resolve: async (ref: string) =>
@@ -804,6 +827,59 @@ import { judgeContained as sanContained, judgePad as pad } from "./helpers.ts";
   // seam 缺席（ctx 无 llm / provider 不在目录）→ 回落 V1 链
   const r6 = await resolveProviderConfig("opencode-go", {}, { apiKey: "sk-explicit" });
   assert.equal(r6.apiKey, "sk-explicit", "seam 缺席时回落 V1 链");
+
+  // seam 诊断（#1164）：服务缺席不报（正常回落）；服务在、方法不在报 API 漂移。
+  assert.deepEqual(seamDiagnosticOf({ get: () => undefined }), [], "服务缺席不报");
+  assert.deepEqual(seamDiagnosticOf({}), [], "ctx 无 get 不报");
+  assert.deepEqual(
+    seamDiagnosticOf({
+      get: (name: string) =>
+        name === "settings" ? describeFace([]) : { resolve: async () => ({ value: "x" }) },
+    }),
+    [],
+    "正常两服务不报",
+  );
+  {
+    const legacy = seamDiagnosticOf({
+      get: (name: string) =>
+        name === "settings"
+          ? { get: () => ({ apiKeyEnv: "OLD_REF" }) }
+          : { resolve: async () => undefined },
+    });
+    assert.equal(legacy.length, 1, "旧 get 形状报一条");
+    assert.equal(legacy[0]?.service, "settings");
+    assert.ok(legacy[0]?.message.includes("get(ns)"), "诊断点明旧形状");
+  }
+  {
+    const credDrift = seamDiagnosticOf({
+      get: (name: string) => (name === "settings" ? describeFace([]) : {}),
+    });
+    assert.equal(credDrift.length, 1, "credentials 有对象无 resolve 报一条");
+    assert.equal(credDrift[0]?.service, "credentials");
+    assert.ok(credDrift[0]?.message.includes("resolve(ref)"));
+  }
+  {
+    // 诊断经 registry 去重登记到 health.errors（health 的 errors 数据源即 snapshot().errors）
+    const diag: string[] = [];
+    const registry = makeAdapterRegistry({ diag: (message) => diag.push(message) });
+    const driftCtx = {
+      llm: { listConfigurableProviders: () => [providerEntry("smoke-drift", "llm-smoke")] },
+      get: (name: string) => (name === "settings" ? {} : { resolve: async () => undefined }),
+    };
+    await registry.resolveProviderConfig("smoke-drift", driftCtx);
+    await registry.resolveProviderConfig("smoke-drift", driftCtx);
+    const providerErrors = registry
+      .snapshot()
+      .errors.filter((entry) => entry.key === "provider-config");
+    assert.equal(providerErrors.length, 1, "同签名只登记一次");
+    assert.equal(providerErrors[0]?.kind, "load");
+    assert.ok(providerErrors[0]?.message.includes("describe()"));
+    assert.equal(
+      diag.filter((message) => message.includes("provider-config")).length,
+      1,
+      "去重后 diag 只响一次",
+    );
+  }
 
   // credentials 文件路径
   assert.ok(credentialsFile("/tmp/dsh").endsWith(".credentials.yaml"));

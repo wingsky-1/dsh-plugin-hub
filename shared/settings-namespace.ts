@@ -6,11 +6,12 @@
 // 非空时才渲染。想让插件的设置卡片在该目标契约中显示（0.1.7-rc.2 沿用），宿主端必须把该插件的命名空间
 // 注册进 settings 服务（`settings.describe()` 才能返回它）。
 //
-// 为什么不用官方 `@deepseek-ai/dsh-settings`：
-// 该包由宿主 dsh 运行时提供，不在插件仓库依赖中；插件运行时沿自身 lib/ 路径
-// 向上解析不到（MODULE_NOT_FOUND），动态 import 会静默失败、命名空间从未注册，
-// 导致该目标契约下设置卡片空白。因此这里改用「服务面注入」：`ctx.inject(["settings"],…)`
-// 由宿主 cordis 上下文按名注入 settings 服务，零包依赖、与官方语义等值。
+// 为什么运行时不 import 官方 `@deepseek-ai/dsh-settings`：
+// 该包由宿主 dsh 运行时提供；插件运行时沿自身 lib/ 路径向上解析不到
+// （MODULE_NOT_FOUND），动态 import 会静默失败、命名空间从未注册，导致该目标
+// 契约下设置卡片空白。因此接线改用「服务面注入」：`ctx.inject(["settings"],…)`
+// 由宿主 cordis 上下文按名注入 settings 服务，产物零运行时依赖、与官方语义等值。
+// **类型面**则由该包仅 `import type` 锚定（编译期擦除，见下方「官方宿主类型锚」）。
 //
 // 语义：读经 `settings.describe()` 按 `ns` 定位后合成 `base + user`（无层字段时兼容取 `value`），
 // 写经 `settings.update/replace/mutate(ns, …)`，热更新经 `settings/document-updated`
@@ -21,10 +22,36 @@
 // 被 Settings 服务描述后回调，供存量配置迁移与写路径装配；warnLog 为单一事实源
 // （notifier / lan-proxy 曾各复刻一份，现统一引用本导出）。
 //
-// 约定：只 import Node 内置；零运行时依赖。#1028 起 shared/ 全量 TS 化（此前是
+// 约定：除官方宿主类型的 `import type` 外只 import Node 内置；**运行时零依赖**。
+// 官方类型在编译期擦除，产物不解析该包。#1028 起 shared/ 全量 TS 化（此前是
 // js + d.ts 双写，由 tsc rootDir 硬约束逼出），版本库里只允许 .ts 源码，
 // .js / .d.ts 是 tsc 原地 emit 的构建产物（已 gitignore，形状由
 // scripts/test/shared-ts-shape.test.ts 冻结守卫）。
+
+import type {
+  SettingsDescriptor,
+  SettingsDescribeOptions,
+  SettingsForms,
+} from "@deepseek-ai/dsh-settings";
+
+// ------------------------------------------------------------------ 官方宿主类型锚
+//
+// 本仓 settings 面类型的**唯一官方锚**。宿主升级换形时，下面的派生类型在 tsc 期
+// 判红（字段/方法消失或改名），而不是等到运行时才因 `describe` 返回形状漂移而静默降级。
+//
+// 为什么只 import type：运行期解析不到该包（见文件头），类型导入会被 tsc 擦除，
+// 构建产物里没有任何运行时引用；接线仍走 `ctx.inject(["settings"], …)` 服务面注入。
+//
+// 无官方 catalog 包可锚的服务面（豁免登记，逐条理由与出处见
+// docs/host-contract.md 表 8）：credentials / loader / attachments / sessionProjections。
+// 四条仍按服务面注入 + 自持最小形状消费，不得借本锚点伪造官方类型。
+
+/** 官方 settings 服务类型锚（宿主 `Context["settings"]`）。 */
+export type HostSettingsService = SettingsForms;
+/** 官方 settings 描述项类型锚（`describe()` 的元素）。 */
+export type HostSettingsDescriptor = SettingsDescriptor;
+/** 官方 describe 选项类型锚。 */
+export type HostSettingsDescribeOptions = SettingsDescribeOptions;
 
 /** `installSettingsNamespace` 的 hooks 面。 */
 export interface SettingsNamespaceHooks {
@@ -42,18 +69,23 @@ export interface SettingsNamespaceHooks {
   onScope?(scope: unknown, service: unknown): void;
 }
 
-/** 描述项窄面（按 ns 定位，合成 base + user，兼容 value 回退）。 */
+/**
+ * 描述项窄面（按 ns 定位，合成 base + user，兼容 value 回退）。
+ *
+ * 字段类型逐个引用官方 `SettingsDescriptor`（#1164）；可选性保持历史形态——
+ * 本模块的运行时按「字段是否存在」做兼容回退，不能假定官方必填字段恒在。
+ */
 export interface SettingsFormsDescriptor {
   /** 命名空间键。 */
-  ns?: unknown;
+  ns?: HostSettingsDescriptor["ns"];
   /** 运行时解析值（缺少分层字段时的兼容回退）。 */
-  value?: unknown;
+  value?: HostSettingsDescriptor["value"];
   /** 基础配置层。 */
-  base?: unknown;
+  base?: HostSettingsDescriptor["base"];
   /** 原始 user 覆盖层。 */
-  user?: unknown;
+  user?: HostSettingsDescriptor["user"];
   /** 乐观并发修订号。 */
-  revision?: unknown;
+  revision?: HostSettingsDescriptor["revision"];
 }
 
 /** owner scope 窄面（describe 定位读＋写委托；订阅由接缝内部直连）。 */
@@ -68,16 +100,20 @@ export interface SettingsFormsScope {
   mutate(ops: readonly unknown[], expectedRevision?: number): Promise<unknown>;
 }
 
-/** settings 服务窄面（describe/写）。 */
-export interface SettingsFormsService {
-  /** 按 entry id 定位描述项。 */
-  describe(options?: { redactSecrets?: boolean }): SettingsFormsDescriptor[];
+/**
+ * settings 服务窄面（describe/写）。
+ *
+ * `describe` 直接取官方 `SettingsForms` 的方法签名（#1164）；三个写面保持**可选**：
+ * 宿主/测试桩可能只暴露读面，本模块在缺方法时按 `missingWriteMethod` 拒绝写而不是
+ * 假定恒在——收窄成必选会改变既有降级语义。
+ */
+export interface SettingsFormsService extends Pick<HostSettingsService, "describe"> {
   /** 合并写。 */
-  update?(ns: string, patch: object, expectedRevision?: number): Promise<unknown>;
+  update?: HostSettingsService["update"];
   /** 整节写。 */
-  replace?(ns: string, section: object, expectedRevision?: number): Promise<unknown>;
+  replace?: HostSettingsService["replace"];
   /** 路径写（可选）。 */
-  mutate?(ns: string, ops: readonly unknown[], expectedRevision?: number): Promise<unknown>;
+  mutate?: HostSettingsService["mutate"];
 }
 
 /** 宿主 cordis 上下文的最小结构面（只取本模块真读到的键，其余按 unknown 收窄）。 */

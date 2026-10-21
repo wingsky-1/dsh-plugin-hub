@@ -29,6 +29,7 @@
 | `web` | `{ url, tokenSource }`：**不含令牌**的访问 URL（verdict 会经 `--json` 进 CI 日志，令牌只落 0o600 的 `browser.state` / `dsh.log`） |
 | `onboarding` | 首启弹窗预置结果：`source` 为 `preset`（已预置）/ `unavailable`（未取到版本）/ `disabled`（`--no-skip-onboarding`）/ `existing` / `write-failed` |
 | `audit` | `--audit` 时的审计结果；否则 `null`（错误路径的错误 JSON 也恒带该字段） |
+| `providerUsage` | `--probe-provider-usage` 时的探针结果（已脱敏：URL 去 query、字段白名单）；未启用为 `null` |
 | `ready` / `readyAt` | 就绪断言是否通过及其时刻 |
 
 `--json` 让 stdout 只出最终 verdict JSON，人类文案全部走 stderr。
@@ -69,12 +70,49 @@ dsh 启动期的自身写面与官方 bundle link 进基线，审计面 = dsh �
 的数据面不在判定面内（这类盲区按 SKILL.md「隔离自检」第 5 项处置）。`--keep` 时报告落
 `$DSH_HOME/audit/audit.json`，否则随 `--json` 终态 verdict 的 `audit` 字段输出。
 
+## 可选真实宿主 provider-usage 探针（`--probe-provider-usage`）
+
+就绪断言与访问 URL 解析之后，请求两个回环路由并**立即退出**（不进入前台等待）：
+
+- `GET /api/dsh-provider-usage/stats?provider=deepseek-official`
+- `GET /api/dsh-provider-usage/health`（provider-usage 插件的健康面；宿主没有独立的 `/health` 路由）
+
+stats 只解析白名单字段 `ok/error/reason/status/fetchedAt/lastSuccessAt/provider/adapterName`：
+当前路由不直接暴露 `lastSuccessAt`，故 `ok:true` 帧以 `fetchedAt` 为最后成功时刻
+（`ok:false` 不猜、恒为 `null`；未来若新增该字段则优先采用）。health 只取
+`errors`（`{key,at,kind,message}`，上限 10 条）与由 `kind=exec` 派生的
+`fetchErrors/fetchErrorCount`；`errors` 是适配器最近一次登记（load/exec），
+本次探针**只作诊断证据，不参与 pass/fail 判定**。
+
+判定（纯函数在 `scripts/lib/provider-usage-probe.mjs`，fixture 见包 `test/e2e`）：
+
+| 隔离环境状态 | 结论 | 退出码 |
+|--------------|------|--------|
+| `$ISOLATED_HOME/.credentials.yaml` 无 `refs` 条目（不存在 / 空 / 只有 `records` 的浏览器会话） | skip，逐字输出「未验证（无凭据）」 | 0 |
+| 有存储凭据 + stats `ok:true` | pass | 0 |
+| 有存储凭据 + stats `error` 非 `no-api-key` | pass（凭据链已解析到 key；上游失败不算 seam 失败） | 0 |
+| 有存储凭据 + stats `error=no-api-key` | fail + 可操作诊断 | 1 |
+| stats 请求失败 / HTTP 非 200 / 响应非 JSON | fail（探针拿不到判定） | 1 |
+
+**为什么以 `refs` 条目而不是文件存在为凭据证据**：隔离 `dsh web` 启动时会把浏览器
+会话密钥写进 `.credentials.yaml` 的 `records:`；若按文件存在判定，无凭据环境会被
+误判成有凭据。API key 只存 `refs:` 下（`dsh-credentials-local` 的 version 1 布局）。
+
+**安全边界**：只读隔离 `DSH_HOME`，不读取/复制用户 `~/.dsh`；不解析、不保存、不回显
+凭据值；不把继承的环境变量当凭据证据（env key 经 V1 兜底会让探针假通过，掩盖 seam
+漂移）；URL 只回显 origin+pathname（去 token/query），stats/health 只打印白名单字段，
+文本经 `redactSecrets` 兜底；不拼访问令牌（API 路由只受 loopback 围栏）。
+
+**非门禁**：可选真实宿主验证，离线 CI 判据仍是纯函数 fixture 测试；skip 不等于通过，
+结论须如实写「未验证（无凭据）」。需要 pass/no-api-key 分支时由运行方把**测试专用**
+凭据写入隔离 `DSH_HOME` 的存储，不得复制真实凭据或伪造凭据。
+
 ## 退出码契约
 
 | 码 | 含义 |
 |----|------|
 | 0 | 正常完成：启动 + 就绪 + 前台等待 dsh 退出，清理完毕 |
-| 1 | 启动或就绪失败：profile 初始化失败 / add 失败 / dsh 就绪前退出 / 15s 就绪超时 |
+| 1 | 启动或就绪失败：profile 初始化失败 / add 失败 / dsh 就绪前退出 / 15s 就绪超时；`--probe-provider-usage` 判失败（有凭据但 no-api-key / stats 请求或响应不可用） |
 | 2 | 参数错误：未知选项 / 缺参 / 找不到 dsh 入口 / `--no-build` 缺产物。选项由 `node:util` 内置 `parseArgs` 解析（与 `browser-driver.mjs` 等同包脚本同一口径，不引第三方命令行库）：未知选项与缺参由脚本自查出中文原文（内置错误对象不带出错 token 与选项名，拼不出可定位原文），其余边缘形态由内置抛错后归口到本退出码，文案含 Node 英文原文与 `ERR_PARSE_ARGS_*` code。未知选项消息带 `错误: ` 前缀（旧版该处无前缀，是全脚本唯一例外，本次对齐）。**收紧项**：单横线 token 不再能充当选项取值（`--port -1` 等改判 ambiguous，退出码不变） |
 | 130 / 143 | SIGINT / SIGTERM：终态清理后透传 |
 

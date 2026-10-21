@@ -36,6 +36,7 @@ export default defineConfig({
       'packages/dsh-mcp-manager/test/unit/erasure.test.ts',
       'packages/dsh-mcp-manager/test/unit/file-io-queue.test.ts',
       'packages/dsh-mcp-manager/test/unit/file-io.test.ts',
+      'packages/dsh-mcp-manager/test/unit/host-faces-anchors.test.ts',
       'packages/dsh-mcp-manager/test/unit/hotspot.test.ts',
       'packages/dsh-mcp-manager/test/unit/image-admission.test.ts',
       'packages/dsh-mcp-manager/test/unit/init-failure.test.ts',

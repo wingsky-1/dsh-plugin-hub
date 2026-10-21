@@ -413,6 +413,7 @@
           "excludes": [],
           "testFiles": [
             "packages/dsh-mcp-manager/test/integration/real-context.test.ts",
+            "packages/dsh-mcp-manager/test/unit/host-faces-anchors.test.ts",
             "packages/dsh-mcp-manager/test/unit/ports/catalog-ports.test.ts",
             "packages/dsh-mcp-manager/test/unit/ports/pipeline-ports.test.ts",
             "packages/dsh-mcp-manager/test/integration/apply-lifecycle.test.ts",

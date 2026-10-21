@@ -55,7 +55,7 @@ import type {
   CallResultTextHandlers,
   ProjectedCallResult,
 } from "../../src/server/pipeline/interface.ts";
-import type { SaveImageInput } from "../../src/server/shared/interface.ts";
+import type { ModelInfoPort, SaveImageInput } from "../../src/server/shared/interface.ts";
 
 /**
  * JSON 值面（render/value 入参口径）：从官方 ToolOutputDefinition 声明派生，不自造第二套
@@ -3172,7 +3172,15 @@ describe("#767 笔 1b：A+ 图片准入接线与 F4 转发去 agent", () => {
     session: { requestHeader: () => ({ config: { provider: "p", model: "m" } }) },
     options: {},
   };
-  const IMAGE_MODEL = { resolveModelInfo: async () => ({ inputModalities: ["text", "image"] }) };
+  /** 官方 LlmResolvedModelInfo 的最小合法形状：本组只关心模态，其余键是官方必填项。 */
+  const IMAGE_MODEL: ModelInfoPort = {
+    resolveModelInfo: async () => ({
+      provider: "p",
+      id: "m",
+      name: "m",
+      inputModalities: ["text", "image"],
+    }),
+  };
 
   /** 注册四个中间层工具（带 faces），交回 ws_mcp_call 定义与假工具服务（看转发出去的那次 exec）。 */
   async function callFixture({ value, faces }: { value: unknown; faces?: ImageAdmissionFaces }) {

@@ -42,6 +42,7 @@ import {
   handleEvents,
 } from "../../../src/server/ui-routes/interface.ts";
 import type { UiRoutesContextOptions } from "../../../src/server/ui-routes/interface.ts";
+import { makeAdapterRegistry } from "../../../src/server/registry/registry.ts";
 import {
   UiRoutesContext as ImplContext,
   createUiRoutes as ImplCreate,
@@ -196,14 +197,14 @@ function makeSseRes(): {
 // broadcast 缝以 UiRoutesBroadcast 注解（名称链接由 tsc 编译面校验可赋值性）。
 function stubUiCtx(
   historyRoot: string,
-  opts: { layerErrors?: LayerErrorSurface } = {},
+  opts: { layerErrors?: LayerErrorSurface; registry?: unknown } = {},
 ): { ctx: UiRoutesContext; broadcastSeen: string[] } {
   const broadcastSeen: string[] = [];
   const broadcastSeam: UiRoutesBroadcast = () => {
     broadcastSeen.push("broadcast");
   };
   const statsService = {
-    registry: {
+    registry: opts.registry ?? {
       snapshot: () => ({ infos: [], enabled: {}, errors: [] }),
     },
     config: { provider: "stub-provider", trendRetentionDays: 90 },
@@ -476,6 +477,40 @@ describe("D12四 健康读 errsurf + SSE 非可靠 + 路由单点 + 释放", () 
     const layerErrors = (got.body as { layerErrors?: Record<string, { count?: number }> })
       .layerErrors;
     expect(layerErrors?.aggregate?.count).toBe(1);
+  });
+
+  it("健康读 seam 诊断：registry 去重登记 → /health.errors 可见（#1164 全链）", async () => {
+    const root = isolatedDir("dou-uiroutesD12-");
+    // provider 在 configurable 目录内 + settings 服务在但缺 describe（旧 get 形状）= API 漂移
+    const registry = makeAdapterRegistry({ diag: () => {} });
+    await registry.resolveProviderConfig("r-health", {
+      llm: {
+        listConfigurableProviders: () => [
+          {
+            provider: "r-health",
+            displayName: "r-health",
+            settingsNs: "llm-health",
+            settingsPath: [],
+          },
+        ],
+      },
+      get: (name: string) =>
+        name === "settings"
+          ? { get: () => ({ apiKeyEnv: "LEGACY_REF" }) }
+          : name === "credentials"
+            ? { resolve: async () => undefined }
+            : undefined,
+    });
+    const { ctx } = stubUiCtx(root, { registry });
+    const got = await callStatus(handleHealth as AnyHandler, fakeReq({ method: "GET" }), ctx);
+    expect(got.code).toBe(200);
+    const errors = (
+      got.body as { errors?: Array<{ key?: string; kind?: string; message?: string }> }
+    ).errors;
+    const providerErrors = (errors ?? []).filter((e) => e.key === "provider-config");
+    expect(providerErrors).toHaveLength(1);
+    expect(providerErrors[0]?.kind).toBe("load");
+    expect(providerErrors[0]?.message).toContain("get(ns)");
   });
 
   it("trend 正路：默认面 200（封顶/留存回显，改坏即红）", async () => {
