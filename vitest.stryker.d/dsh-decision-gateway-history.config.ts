@@ -9,6 +9,7 @@ export default defineConfig({
   test: {
     include: [
       'packages/dsh-decision-gateway/test/integration/api.test.ts',
+      'packages/dsh-decision-gateway/test/integration/root-isolation.test.ts',
       'packages/dsh-decision-gateway/test/integration/routes-fence.test.ts',
       'packages/dsh-decision-gateway/test/unit/history-hardening.test.ts',
       'packages/dsh-decision-gateway/test/unit/history.test.ts',

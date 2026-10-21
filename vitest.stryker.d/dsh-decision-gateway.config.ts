@@ -20,6 +20,7 @@ export default defineConfig({
       'packages/dsh-decision-gateway/test/client-unit/locale-i18n.test.ts',
       'packages/dsh-decision-gateway/test/client-unit/routes-consistency.test.ts',
       'packages/dsh-decision-gateway/test/integration/api.test.ts',
+      'packages/dsh-decision-gateway/test/integration/root-isolation.test.ts',
       'packages/dsh-decision-gateway/test/integration/routes-fence.test.ts',
       'packages/dsh-decision-gateway/test/unit/baseurl-guard.test.ts',
       'packages/dsh-decision-gateway/test/unit/config.test.ts',
