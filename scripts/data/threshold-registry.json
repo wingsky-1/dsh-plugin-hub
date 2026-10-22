@@ -136,6 +136,39 @@
       "hint": "预算只许随存量清理下降；上调须原 issue 内 approved"
     },
     {
+      "id": "lint.maxLinesPerFunction",
+      "kind": "value",
+      "sources": ["scripts/data/gauntlet.config.json"],
+      "paths": ["lint.maxLinesPerFunction"],
+      "weaken": "increase",
+      "onRemoval": "fail",
+      "minAllowed": 1,
+      "why": "#1174 阶段 1：ESLint max-lines-per-function 的函数行数上限（tools/lint/eslint.config.js 消费）。上限调大即放宽，删键会让形状门禁失去事实源。",
+      "hint": "上限只许随存量拆分收紧；放宽须在原 issue 内 approved"
+    },
+    {
+      "id": "lint.maxLines",
+      "kind": "value",
+      "sources": ["scripts/data/gauntlet.config.json"],
+      "paths": ["lint.maxLines"],
+      "weaken": "increase",
+      "onRemoval": "fail",
+      "minAllowed": 1,
+      "why": "#1174 阶段 1：ESLint max-lines 的文件行数上限（tools/lint/eslint.config.js 消费）。上限调大即放宽，删键会让形状门禁失去事实源。",
+      "hint": "上限只许随存量拆分收紧；放宽须在原 issue 内 approved"
+    },
+    {
+      "id": "lint.maxDepth",
+      "kind": "value",
+      "sources": ["scripts/data/gauntlet.config.json"],
+      "paths": ["lint.maxDepth"],
+      "weaken": "increase",
+      "onRemoval": "fail",
+      "minAllowed": 1,
+      "why": "#1174 阶段 1：ESLint max-depth 的控制流嵌套上限（tools/lint/eslint.config.js 消费）。上限调大即放宽，删键会让形状门禁失去事实源。",
+      "hint": "上限只许随存量拆分收紧；放宽须在原 issue 内 approved"
+    },
+    {
       "id": "mutation.timeoutMS",
       "kind": "value",
       "sources": ["scripts/data/mutation-topology.json"],

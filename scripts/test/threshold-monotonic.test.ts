@@ -575,6 +575,208 @@ test("#764 A2: 首次引入 lint.maxWarnings（基准无该键）放行，不得
     removeFixture(dir);
   }
 });
+
+// ── #1174 阶段 1：三条形状阈值守卫（lint.maxLinesPerFunction / maxLines / maxDepth）──
+//
+// 三条守卫同形（kind=value、weaken=increase、onRemoval=fail、minAllowed=1），故用一张表驱动。
+// 两处口径都取自**实测**而非推断：
+//
+//  ① guard 从真实 registry 过滤得到，不在本文件手抄一份。手抄的字段一旦与真实声明表漂移
+//     （比如实现方改了 paths 或加了 maxAllowed），fixture 仍按旧形状绿，判据就钉在了
+//     「我以为的守卫」上；同时它也不进 BASE_GUARDS，故既有 fixture 不会被新键污染成幽灵。
+//  ② 「事实源损坏」的退出码逐档实测：0 / 负数 / 小数 / 字符串 / 删键都走 exit 1（判红），
+//     而**整个 lint 段消失也是 exit 1**（读作四个叶子同时被移除），不是 exit 2。
+//     exit 2 留给声明层故障（幽灵判据 / 影子源 / boolean 守卫缺 weakenValue）。
+const SHAPE_SPECS = [
+  { id: "lint.maxLinesPerFunction", key: "maxLinesPerFunction", base: 120 },
+  { id: "lint.maxLines", key: "maxLines", base: 600 },
+  { id: "lint.maxDepth", key: "maxDepth", base: 4 },
+] as const;
+
+/** 从真实 threshold-registry.json 过滤出三条形状守卫（registry 里没有就直接判红）。 */
+function realShapeGuards(): Array<Record<string, unknown>> {
+  const registry = JSON.parse(readFileSync(join(ROOT, REGISTRY), "utf8"));
+  const guards = (registry.guards ?? []) as Array<{ id: string }>;
+  const picked = SHAPE_SPECS.map((spec) => {
+    const found = guards.find((g) => g.id === spec.id);
+    assert.ok(
+      found,
+      `threshold-registry.json 必须登记 ${spec.id}——未登记即该阈值不受单调守卫（#1174 硬性验收）`,
+    );
+    return found as unknown as Record<string, unknown>;
+  });
+  return picked;
+}
+const SHAPE_FIXTURE_GUARDS = realShapeGuards();
+
+/** fixture 的 lint 段：带上三条形状阈值，使守卫在 fixture 仓里真能命中（否则是幽灵判据）。 */
+const gauntletWithShapes = (overrides: Record<string, unknown> = {}) => ({
+  ...defaultGauntlet(),
+  lint: {
+    maxWarnings: 671,
+    ...Object.fromEntries(SHAPE_SPECS.map((g) => [g.key, g.base])),
+    ...overrides,
+  },
+});
+
+/** 显式把真实 shape guards 加进 fixture 声明表；BASE_GUARDS 保持原样不动。 */
+function shapeFixture(options?: { gauntlet?: unknown }) {
+  return gitFixture(vitestText(80), options?.gauntlet ?? gauntletWithShapes(), {
+    guards: [...BASE_GUARDS, ...SHAPE_FIXTURE_GUARDS],
+  });
+}
+
+for (const g of SHAPE_SPECS) {
+  test(`#1174: ${g.id} 上调 ${g.base} → ${g.base + 1} 判红（阈值只许收紧）`, () => {
+    const dir = shapeFixture();
+    try {
+      writeGauntlet(dir, gauntletWithShapes({ [g.key]: g.base + 1 }));
+      const r = runFixture(dir);
+      assert.equal(r.exitCode, 1, `${g.key} 调大即放宽，必须判红`);
+      assert.equal(r.failures, 1);
+      assert.match(r.stderr, new RegExp(g.id.replace(".", "\\.")), "判词须点名该守卫");
+      assert.match(r.stderr, /放宽/, "须说清是放宽而不是别的原因");
+    } finally {
+      removeFixture(dir);
+    }
+  });
+
+  test(`#1174: ${g.id} 下调 ${g.base} → ${g.base - 1} 放行（收紧方向正确）`, () => {
+    const dir = shapeFixture();
+    try {
+      writeGauntlet(dir, gauntletWithShapes({ [g.key]: g.base - 1 }));
+      const r = runFixture(dir);
+      assert.equal(r.exitCode, 0, `收紧不得被拦（否则棘轮会锁死存量拆分）：${r.stderr}`);
+      assert.equal(r.failures, 0);
+    } finally {
+      removeFixture(dir);
+    }
+  });
+
+  test(`#1174: ${g.id} 删键判红（等价于摘除该维度的硬门禁）`, () => {
+    const dir = shapeFixture();
+    try {
+      writeGauntlet(dir, gauntletWithShapes({ [g.key]: undefined }));
+      const r = runFixture(dir);
+      assert.equal(r.exitCode, 1, "删键后形状门禁失去事实源，必须显式判红");
+      assert.match(r.stderr, /被移除/, "须报为「键被移除」而不是「放宽」");
+      assert.match(r.stderr, new RegExp(g.id.replace(".", "\\.")), "判词须点名该守卫");
+    } finally {
+      removeFixture(dir);
+    }
+  });
+
+  test(`#1174: ${g.id} 非法值（0 / 负数 / 小数 / 字符串）判红`, () => {
+    // minAllowed=1 兜住 0 与负数；小数与字符串走另一条路：小数是「上调」（120 → 120.5），
+    // 字符串取不到数值叶子 → 读作「被移除」。四档都必须判红，且都不能静默放行。
+    const bad: Array<[string, unknown]> = [
+      ["0", 0],
+      ["负数", -1],
+      ["小数", g.base + 0.5],
+      ["字符串", String(g.base)],
+    ];
+    for (const [label, value] of bad) {
+      const dir = shapeFixture();
+      try {
+        writeGauntlet(dir, gauntletWithShapes({ [g.key]: value }));
+        const r = runFixture(dir);
+        assert.equal(
+          r.exitCode,
+          1,
+          `${g.key} 取「${label}」必须判红（实际 ${r.exitCode}）：${r.stderr}`,
+        );
+        assert.match(r.stderr, new RegExp(g.id.replace(".", "\\.")), "判词须点名该守卫");
+      } finally {
+        removeFixture(dir);
+      }
+    }
+  });
+}
+
+test("#1174: 整个 lint 段消失判红（四个守卫的叶子同时被移除）", () => {
+  // 实测 exit 1 而非 exit 2：这段消失读作「键被移除」而不是「事实源故障」。
+  // 判红仍然成立（不得静默放行），但退出码的语义要与判词对上——写 2 会把一次判红
+  // 误标成门禁故障，让读日志的人去查工具而不是查配置。
+  const dir = shapeFixture();
+  try {
+    const gauntlet = gauntletWithShapes();
+    delete (gauntlet as { lint?: unknown }).lint;
+    writeGauntlet(dir, gauntlet);
+    const r = runFixture(dir);
+    assert.equal(r.exitCode, 1, `lint 段消失必须判红（实际 ${r.exitCode}）：${r.stderr}`);
+    for (const g of SHAPE_SPECS) {
+      assert.match(r.stderr, new RegExp(g.id.replace(".", "\\.")), `${g.id} 的叶子消失须被点名`);
+    }
+  } finally {
+    removeFixture(dir);
+  }
+});
+
+test("#1174: 三条形状守卫的判据形状不得被削弱（逐字段实测判红）", () => {
+  // 守卫本身也是判据。**基线提交必须带未改写的真实 shape guards**，否则改弱会被读成
+  // 「首次引入」而 exit 0（本条第一版就栽在这里：base commit 里没有这些 guard）。
+  // 逐字段实测结果：weaken / onRemoval / paths / minAllowed / 删整条 → exit 1；
+  // 另有两种声明层故障（kind 改 boolean、sources 换影子源）走 exit 2，不在本表内。
+  const weakened: Array<[string, string, (g: Record<string, unknown>) => unknown, RegExp]> = [
+    [
+      "lint.maxLinesPerFunction",
+      "weaken 翻成 decrease",
+      (g) => ({ ...g, weaken: "decrease" }),
+      /lint\.maxLinesPerFunction\.weaken 相对基准被改动/,
+    ],
+    [
+      "lint.maxLines",
+      "onRemoval 改 ignore",
+      (g) => ({ ...g, onRemoval: "ignore" }),
+      /lint\.maxLines\.onRemoval 相对基准被改动/,
+    ],
+    [
+      "lint.maxDepth",
+      "paths 改写",
+      // 换成**别的** guard 的路径：写回自身原值是空操作，判据会恒绿（实测踩过）。
+      (g) => ({ ...g, paths: ["lint.maxLines"] }),
+      /lint\.maxDepth\.paths 相对基准被改动/,
+    ],
+    [
+      "lint.maxLines",
+      "minAllowed 被删",
+      (g) => {
+        const { minAllowed: _drop, ...rest } = g;
+        return rest;
+      },
+      /lint\.maxLines\.minAllowed 相对基准被改动/,
+    ],
+  ];
+  for (const [target, label, mutate, expect] of weakened) {
+    const dir = shapeFixture();
+    try {
+      // 逐档改写**不同**的 guard：三条都能判红，但判词点名的是被改的那条，施加对象写死
+      // 成同一条会让期望判词对不上（实测踩过）。
+      writeRegistry(
+        dir,
+        [...BASE_GUARDS, ...SHAPE_FIXTURE_GUARDS].map((g) =>
+          g.id === target ? (mutate(g as Record<string, unknown>) as { id: string }) : g,
+        ),
+      );
+      const r = runFixture(dir);
+      assert.equal(r.exitCode, 1, `${label}必须判红（守卫削弱是一次判据退化）`);
+      assert.match(r.stderr, expect, "判词须点名被削弱的字段");
+    } finally {
+      removeFixture(dir);
+    }
+  }
+
+  // 删掉整条 guard：判词是「被整体移除」，与「字段被改」是两条不同判据，分开钉。
+  const dir = shapeFixture();
+  try {
+    writeRegistry(dir, [...BASE_GUARDS, ...SHAPE_FIXTURE_GUARDS.slice(1)]);
+    const r = runFixture(dir);
+    assert.equal(r.exitCode, 1, "删掉一条 shape guard 等于摘掉该阈值判据");
+    assert.match(r.stderr, /声明表：lint\.maxLinesPerFunction 被整体移除/);
+  } finally {
+    removeFixture(dir);
+  }
+});
 const withMutation = (overrides: Record<string, unknown>) => ({
   ...defaultGauntlet(),
   mutation: { ...defaultGauntlet().mutation, ...overrides },

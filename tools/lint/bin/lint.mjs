@@ -9,7 +9,7 @@
  * #764 落地项 A2：本入口同时是**警告预算**的执行点。ESLint 自带的 `--max-warnings` 在这里
  * 无效——参数会被下方的 `argv.filter` 静默丢弃，照抄 CLI 用法等于没有预算（实测）。故预算在
  * 此处对 errorCount + warningCount 求和判定，阈值取 scripts/data/gauntlet.config.json 的
- * `lint.maxWarnings`（与复杂度同一个阈值事实源、同一套治理）；预算只许降，上调由
+ * `lint.maxWarnings`（与复杂度、形状阈值同一个事实源、同一套治理）；预算只许降，上调由
  * scripts/gate/threshold-monotonic.mjs 判红。
  */
 import { dirname, join, relative } from "node:path";
@@ -52,22 +52,61 @@ const DEFAULT_PATTERNS = [
 ];
 
 /**
- * 读取警告预算。读不到或不是数字一律 fail-closed（exit 2）：预算被摘除时若静默放行，等于把
- * 「只增不减」原样还回去——而这条判据的全部价值就是它不会自己消失。
+ * 读取并校验 lint / complexity 阈值。失败一律 fail-closed（exit 2）：配置被摘除或写坏时若
+ * 静默放行，等于让既有规则自行消失。ESLint 配置也会独立校验；此处先校验是为了给入口保留明确
+ * 的 exit 2 故障分类，而不是让配置加载异常落成普通 lint error。
  */
-function readBudget() {
-  let config;
+function integerAtLeast(value, minimum) {
+  return typeof value === "number" && Number.isInteger(value) && value >= minimum;
+}
+
+function complexityConfigProblem(gauntlet) {
+  const { cyclomatic, cognitive } = gauntlet?.complexity ?? {};
+  if (typeof cyclomatic !== "number" || typeof cognitive !== "number") {
+    return `lint: gauntlet.config.json 的 complexity.cyclomatic / complexity.cognitive 必须是 number（实际 cyclomatic=${String(cyclomatic)}，cognitive=${String(cognitive)}）—— 复杂度阈值非法，fail-closed`;
+  }
+  return null;
+}
+
+function warningBudgetProblem(gauntlet) {
+  const budget = gauntlet?.lint?.maxWarnings;
+  if (!integerAtLeast(budget, 0)) {
+    return `lint: gauntlet.config.json 的 lint.maxWarnings 必须是非负整数（实际 ${String(budget)}）—— 警告预算非法，fail-closed`;
+  }
+  return null;
+}
+
+function shapeConfigProblem(gauntlet) {
+  for (const key of ["maxLinesPerFunction", "maxLines", "maxDepth"]) {
+    const value = gauntlet?.lint?.[key];
+    if (!integerAtLeast(value, 1)) {
+      return `lint: gauntlet.config.json 的 lint.${key} 必须是正整数（实际 ${String(value)}）—— 形状阈值非法，fail-closed`;
+    }
+  }
+  return null;
+}
+
+function lintConfigProblem(gauntlet) {
+  return (
+    complexityConfigProblem(gauntlet) ??
+    warningBudgetProblem(gauntlet) ??
+    shapeConfigProblem(gauntlet)
+  );
+}
+
+function readLintConfig() {
+  let gauntlet;
   try {
-    config = JSON.parse(readFileSync(GAUNTLET, "utf8"));
+    gauntlet = JSON.parse(readFileSync(GAUNTLET, "utf8"));
   } catch (err) {
-    console.error(`lint: 读取 ${GAUNTLET} 失败：${err.message} —— 预算事实源不可读，fail-closed`);
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`lint: 读取或解析 ${GAUNTLET} 失败：${message} —— 阈值事实源不可读，fail-closed`);
     process.exit(2);
   }
-  const budget = config?.lint?.maxWarnings;
-  if (typeof budget !== "number" || !Number.isInteger(budget) || budget < 0) {
-    console.error(
-      "lint: gauntlet.config.json 缺 lint.maxWarnings（正整数）—— 警告预算缺失，fail-closed",
-    );
+  const budget = gauntlet?.lint?.maxWarnings;
+  const problem = lintConfigProblem(gauntlet);
+  if (problem !== null) {
+    console.error(problem);
     process.exit(2);
   }
   return budget;
@@ -77,7 +116,8 @@ const argv = process.argv.slice(2);
 const fix = argv.includes("--fix");
 // 显式覆盖只服务于本地排查与用例（CI 与提交钩子一律走默认值，防绕过）
 const budgetArg = argv.find((a) => a.startsWith("--max-warnings="));
-const budget = budgetArg === undefined ? readBudget() : Number(budgetArg.split("=")[1]);
+const configuredBudget = readLintConfig();
+const budget = budgetArg === undefined ? configuredBudget : Number(budgetArg.split("=")[1]);
 if (!Number.isInteger(budget) || budget < 0) {
   console.error(`lint: --max-warnings= 需要一个非负整数（实际 ${budgetArg}）`);
   process.exit(2);
@@ -100,7 +140,7 @@ const eslint = new ESLint({
   warnIgnored: false,
   // #764 落地项 A4：应用官方 Bulk Suppressions 基线（存量挂账）。
   // 两个硬约束决定了它只能这么接：① 只有 **error** 级规则会被抑制（降为 warn 的规则挂不上账）；
-  // ② 创建/修剪只能走 ESLint CLI（--suppress-all / --prune-suppressions），Node API 只负责应用。
+  // ② 创建/修剪只能走 ESLint CLI（本仓用定向 --suppress-rule；修剪用 --prune-suppressions），Node API 只负责应用。
   // 基线文件缺失时官方实现按空基线处理，故此处无需存在性判断。
   applySuppressions: true,
   suppressionsLocation: suppressionsPath,
@@ -190,7 +230,7 @@ const warningCount = results.reduce((n, r) => n + r.warningCount, 0);
 const fileCount = results.length;
 const problems = errorCount + warningCount;
 console.log(
-  `lint: 检查 ${fileCount} 个文件，error ${errorCount}，warning ${warningCount}（合计 ${problems} / 预算 ${budget}，来源 scripts/data/gauntlet.config.json 的 lint.maxWarnings）；基线已抑制 ${suppressedCount} 处`,
+  `lint: 检查 ${fileCount} 个文件，error ${errorCount}，warning ${warningCount}（合计 ${problems} / 预算 ${budget}，来源 scripts/data/gauntlet.config.json 的 lint.maxWarnings）；已抑制 ${suppressedCount} 处（含 inline directive 与 bulk baseline）`,
 );
 if (errorCount > 0) fail(1);
 

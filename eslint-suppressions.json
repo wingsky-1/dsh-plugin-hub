@@ -1,4 +1,814 @@
 {
+  "packages/dsh-lan-proxy/src/client/settings-card.tsx": {
+    "max-lines": {
+      "count": 1
+    },
+    "max-lines-per-function": {
+      "count": 2
+    }
+  },
+  "packages/dsh-lan-proxy/src/server/apply.ts": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "packages/dsh-lan-proxy/src/server/proxy/impl/proxy.ts": {
+    "max-lines": {
+      "count": 1
+    },
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "packages/dsh-lan-proxy/test/bundle/style.test.ts": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "packages/dsh-lan-proxy/test/client-dom/settings-card.test.ts": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "packages/dsh-lan-proxy/test/client-unit/entry.test.ts": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "packages/dsh-lan-proxy/test/e2e/smoke.test.ts": {
+    "max-lines": {
+      "count": 1
+    },
+    "max-lines-per-function": {
+      "count": 10
+    }
+  },
+  "packages/dsh-lan-proxy/test/unit/apply.test.ts": {
+    "max-lines": {
+      "count": 1
+    },
+    "max-lines-per-function": {
+      "count": 7
+    }
+  },
+  "packages/dsh-lan-proxy/test/unit/ca.test.ts": {
+    "max-lines": {
+      "count": 1
+    },
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "packages/dsh-lan-proxy/test/unit/cacert.test.ts": {
+    "max-lines": {
+      "count": 1
+    },
+    "max-lines-per-function": {
+      "count": 2
+    }
+  },
+  "packages/dsh-lan-proxy/test/unit/proxy.test.ts": {
+    "max-lines": {
+      "count": 1
+    },
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "packages/dsh-mcp-manager/src/client/float/float.ts": {
+    "max-lines": {
+      "count": 1
+    },
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "packages/dsh-mcp-manager/src/client/float/quick-add.ts": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "packages/dsh-mcp-manager/src/client/index.ts": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "packages/dsh-mcp-manager/src/client/settings/settings-card.tsx": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "packages/dsh-mcp-manager/src/index.ts": {
+    "max-lines": {
+      "count": 1
+    },
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "packages/dsh-mcp-manager/src/server/connection/orchestrator/manager.ts": {
+    "max-lines": {
+      "count": 1
+    }
+  },
+  "packages/dsh-mcp-manager/src/server/inject/middleware-register.ts": {
+    "max-lines": {
+      "count": 1
+    }
+  },
+  "packages/dsh-mcp-manager/src/server/visibility/impl/mask/index.ts": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "packages/dsh-mcp-manager/test/client-dom/float-panel-mount.test.ts": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "packages/dsh-mcp-manager/test/client-dom/float-pill-render.test.ts": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "packages/dsh-mcp-manager/test/client-dom/float-quick-add-form.test.ts": {
+    "max-lines": {
+      "count": 1
+    }
+  },
+  "packages/dsh-mcp-manager/test/client-dom/float-servers-render.test.ts": {
+    "max-lines": {
+      "count": 1
+    },
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "packages/dsh-mcp-manager/test/client-unit/context-s2.test.ts": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "packages/dsh-mcp-manager/test/client-unit/summary-a3-guard.test.ts": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "packages/dsh-mcp-manager/test/e2e/smoke.test.ts": {
+    "max-lines": {
+      "count": 1
+    },
+    "max-lines-per-function": {
+      "count": 4
+    }
+  },
+  "packages/dsh-mcp-manager/test/integration/apply-lifecycle.test.ts": {
+    "max-lines": {
+      "count": 1
+    },
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "packages/dsh-mcp-manager/test/integration/dynamic-directory-concurrency.test.ts": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "packages/dsh-mcp-manager/test/unit/call-stats.test.ts": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "packages/dsh-mcp-manager/test/unit/catalog.test.ts": {
+    "max-lines": {
+      "count": 1
+    },
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "packages/dsh-mcp-manager/test/unit/dispatch.test.ts": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "packages/dsh-mcp-manager/test/unit/hotspot.test.ts": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "packages/dsh-mcp-manager/test/unit/image-admission.test.ts": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "packages/dsh-mcp-manager/test/unit/lifecycle-mount.test.ts": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "packages/dsh-mcp-manager/test/unit/lifecycle.test.ts": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "packages/dsh-mcp-manager/test/unit/manager2.test.ts": {
+    "max-lines": {
+      "count": 1
+    },
+    "max-lines-per-function": {
+      "count": 10
+    }
+  },
+  "packages/dsh-mcp-manager/test/unit/middleware.test.ts": {
+    "max-lines": {
+      "count": 1
+    },
+    "max-lines-per-function": {
+      "count": 8
+    }
+  },
+  "packages/dsh-mcp-manager/test/unit/routes-sse.test.ts": {
+    "max-lines": {
+      "count": 1
+    },
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "packages/dsh-mcp-manager/test/unit/stats-a4.test.ts": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "packages/dsh-mcp-manager/test/unit/store.test.ts": {
+    "max-lines": {
+      "count": 1
+    },
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "packages/dsh-mcp-manager/test/unit/visibility.test.ts": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "packages/dsh-notifier/src/client/index.tsx": {
+    "max-lines": {
+      "count": 1
+    },
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "packages/dsh-notifier/src/client/locales.ts": {
+    "max-lines": {
+      "count": 1
+    }
+  },
+  "packages/dsh-notifier/src/client/settings/channels/bark-card.tsx": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "packages/dsh-notifier/src/client/settings/channels/webhook-card.tsx": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "packages/dsh-notifier/src/client/settings/panes/channels.tsx": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "packages/dsh-notifier/src/client/settings/panes/events.tsx": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "packages/dsh-notifier/test/client-unit/capabilities.test.ts": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "packages/dsh-notifier/test/client-unit/settings-compare-912.test.ts": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "packages/dsh-notifier/test/client-unit/status-poll.test.ts": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "packages/dsh-notifier/test/client-unit/status-text.test.ts": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "packages/dsh-notifier/test/e2e/smoke.test.ts": {
+    "max-lines": {
+      "count": 1
+    },
+    "max-lines-per-function": {
+      "count": 2
+    }
+  },
+  "packages/dsh-notifier/test/integration/config-merge-roundtrip.test.ts": {
+    "max-lines": {
+      "count": 1
+    }
+  },
+  "packages/dsh-notifier/test/integration/real-context.test.ts": {
+    "max-lines": {
+      "count": 1
+    },
+    "max-lines-per-function": {
+      "count": 3
+    }
+  },
+  "packages/dsh-notifier/test/unit/channels/capabilities.test.ts": {
+    "max-lines": {
+      "count": 1
+    }
+  },
+  "packages/dsh-notifier/test/unit/channels/secure-fetch.test.ts": {
+    "max-lines": {
+      "count": 1
+    },
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "packages/dsh-notifier/test/unit/channels/system.test.ts": {
+    "max-lines": {
+      "count": 1
+    },
+    "max-lines-per-function": {
+      "count": 4
+    }
+  },
+  "packages/dsh-notifier/test/unit/channels/webhook.test.ts": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "packages/dsh-notifier/test/unit/config/input.test.ts": {
+    "max-lines": {
+      "count": 1
+    },
+    "max-lines-per-function": {
+      "count": 3
+    }
+  },
+  "packages/dsh-notifier/test/unit/config/service.test.ts": {
+    "max-lines": {
+      "count": 1
+    },
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "packages/dsh-notifier/test/unit/pipeline/dispatch.test.ts": {
+    "max-lines": {
+      "count": 1
+    },
+    "max-lines-per-function": {
+      "count": 3
+    }
+  },
+  "packages/dsh-notifier/test/unit/pipeline/route.test.ts": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "packages/dsh-notifier/test/unit/shared/file-io-concurrency.test.ts": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "packages/dsh-notifier/test/unit/stores/history.test.ts": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "packages/dsh-notifier/test/unit/stores/status.test.ts": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "packages/dsh-notifier/test/unit/upgrade/service.test.ts": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "packages/dsh-notifier/test/unit/upgrade/steps.test.ts": {
+    "max-lines": {
+      "count": 1
+    },
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "packages/dsh-provider-usage/src/apply/apply.ts": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "packages/dsh-provider-usage/src/client/history.tsx": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "packages/dsh-provider-usage/src/client/index.tsx": {
+    "max-lines": {
+      "count": 1
+    },
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "packages/dsh-provider-usage/src/client/locales.ts": {
+    "max-lines": {
+      "count": 1
+    }
+  },
+  "packages/dsh-provider-usage/src/client/report.tsx": {
+    "max-lines": {
+      "count": 1
+    },
+    "max-lines-per-function": {
+      "count": 3
+    }
+  },
+  "packages/dsh-provider-usage/src/client/settings/index.tsx": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "packages/dsh-provider-usage/src/client/settings/providers.tsx": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "packages/dsh-provider-usage/src/client/trend.tsx": {
+    "max-lines": {
+      "count": 1
+    },
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "packages/dsh-provider-usage/src/server/adapters/deepseek-official.mjs": {
+    "max-lines": {
+      "count": 1
+    }
+  },
+  "packages/dsh-provider-usage/src/server/execute/generate.ts": {
+    "max-lines": {
+      "count": 1
+    }
+  },
+  "packages/dsh-provider-usage/src/server/history/history.ts": {
+    "max-depth": {
+      "count": 1
+    }
+  },
+  "packages/dsh-provider-usage/src/server/registry/registry.ts": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "packages/dsh-provider-usage/src/server/schedule/retry-ledger.ts": {
+    "max-lines": {
+      "count": 1
+    },
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "packages/dsh-provider-usage/src/server/schedule/scheduler.ts": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "packages/dsh-provider-usage/test/bundle/trend-view.test.ts": {
+    "max-lines": {
+      "count": 1
+    }
+  },
+  "packages/dsh-provider-usage/test/client-dom/report-section.test.ts": {
+    "max-lines": {
+      "count": 1
+    },
+    "max-lines-per-function": {
+      "count": 2
+    }
+  },
+  "packages/dsh-provider-usage/test/client-revalidate.worker.mjs": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "packages/dsh-provider-usage/test/e2e/smoke.test.ts": {
+    "max-lines": {
+      "count": 1
+    },
+    "max-lines-per-function": {
+      "count": 11
+    }
+  },
+  "packages/dsh-provider-usage/test/integration/report-routes/composition-root.test.ts": {
+    "max-lines": {
+      "count": 1
+    },
+    "max-lines-per-function": {
+      "count": 2
+    }
+  },
+  "packages/dsh-provider-usage/test/integration/schedule/composition-root.test.ts": {
+    "max-lines": {
+      "count": 1
+    },
+    "max-lines-per-function": {
+      "count": 3
+    }
+  },
+  "packages/dsh-provider-usage/test/smoke-pure.ts": {
+    "max-lines": {
+      "count": 1
+    }
+  },
+  "packages/dsh-provider-usage/test/unit/adapters/deepseek-official.test.ts": {
+    "max-lines": {
+      "count": 1
+    },
+    "max-lines-per-function": {
+      "count": 2
+    }
+  },
+  "packages/dsh-provider-usage/test/unit/apply/apply.test.ts": {
+    "max-lines": {
+      "count": 1
+    },
+    "max-lines-per-function": {
+      "count": 3
+    }
+  },
+  "packages/dsh-provider-usage/test/unit/history/history.test.ts": {
+    "max-lines": {
+      "count": 1
+    }
+  },
+  "packages/dsh-provider-usage/test/unit/registry/hotreload.test.ts": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "packages/dsh-provider-usage/test/unit/registry/registry-pure.test.ts": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "packages/dsh-provider-usage/test/unit/report/report-b2-3.test.ts": {
+    "max-lines": {
+      "count": 1
+    }
+  },
+  "packages/dsh-provider-usage/test/unit/report/report-executor.test.ts": {
+    "max-lines": {
+      "count": 1
+    },
+    "max-lines-per-function": {
+      "count": 7
+    }
+  },
+  "packages/dsh-provider-usage/test/unit/report/report.test.ts": {
+    "max-lines": {
+      "count": 1
+    },
+    "max-lines-per-function": {
+      "count": 8
+    }
+  },
+  "packages/dsh-provider-usage/test/unit/routes/refactor-pure.test.ts": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "packages/dsh-provider-usage/test/unit/shared/chart.test.ts": {
+    "max-lines": {
+      "count": 1
+    },
+    "max-lines-per-function": {
+      "count": 2
+    }
+  },
+  "packages/dsh-provider-usage/test/unit/shared/config.test.ts": {
+    "max-lines": {
+      "count": 1
+    },
+    "max-lines-per-function": {
+      "count": 2
+    }
+  },
+  "packages/dsh-provider-usage/test/unit/shared/contract.test.ts": {
+    "max-lines": {
+      "count": 1
+    }
+  },
+  "packages/dsh-provider-usage/test/unit/trend/trend.test.ts": {
+    "max-lines": {
+      "count": 1
+    },
+    "max-lines-per-function": {
+      "count": 10
+    }
+  },
+  "packages/dsh-verify-isolated/test/e2e/smoke.test.ts": {
+    "max-lines": {
+      "count": 1
+    },
+    "max-lines-per-function": {
+      "count": 6
+    }
+  },
+  "scripts/gate/crap-check.mjs": {
+    "max-lines": {
+      "count": 1
+    }
+  },
+  "scripts/gate/gate-steps.mjs": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "scripts/gate/gen-stryker-conf.mjs": {
+    "max-lines": {
+      "count": 1
+    }
+  },
+  "scripts/gate/observe-check.mjs": {
+    "max-depth": {
+      "count": 2
+    }
+  },
+  "scripts/gate/pack-check.ts": {
+    "max-depth": {
+      "count": 6
+    }
+  },
+  "scripts/gate/threshold-monotonic.mjs": {
+    "max-lines": {
+      "count": 1
+    }
+  },
+  "scripts/gate/verify-dir-imports.mjs": {
+    "max-lines": {
+      "count": 1
+    }
+  },
+  "scripts/gate/verify-host-seams.mjs": {
+    "max-lines": {
+      "count": 1
+    }
+  },
+  "scripts/lib/catalog-peers-lib.ts": {
+    "max-lines": {
+      "count": 1
+    }
+  },
+  "scripts/lib/client-contract-lib.ts": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "scripts/lib/gate-endpoints.mjs": {
+    "max-lines": {
+      "count": 1
+    }
+  },
+  "scripts/lib/threshold-registry.mjs": {
+    "max-lines": {
+      "count": 1
+    }
+  },
+  "scripts/maintenance/equiv-check.ts": {
+    "max-lines": {
+      "count": 1
+    }
+  },
+  "scripts/maintenance/upstream-contract-warn.mjs": {
+    "max-lines": {
+      "count": 1
+    }
+  },
+  "scripts/test/catalog-peers.test.ts": {
+    "max-lines": {
+      "count": 1
+    }
+  },
+  "scripts/test/changed-test-packages.test.ts": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "scripts/test/equiv-check.test.ts": {
+    "max-lines": {
+      "count": 1
+    }
+  },
+  "scripts/test/gate-wiring-lib.test.ts": {
+    "max-lines": {
+      "count": 1
+    }
+  },
+  "scripts/test/gate-wiring.test.ts": {
+    "max-lines": {
+      "count": 1
+    }
+  },
+  "scripts/test/mutation-topology-coverage.test.ts": {
+    "max-lines": {
+      "count": 1
+    }
+  },
+  "scripts/test/orphan-baseline.test.ts": {
+    "max-lines": {
+      "count": 1
+    }
+  },
+  "scripts/test/red-line-approval.test.ts": {
+    "max-lines": {
+      "count": 1
+    }
+  },
+  "scripts/test/repair-mcp-catalog-sessions.test.ts": {
+    "max-lines": {
+      "count": 1
+    }
+  },
+  "scripts/test/stryker-conf-layers.test.ts": {
+    "max-lines": {
+      "count": 1
+    }
+  },
+  "scripts/test/threshold-monotonic-rename.test.ts": {
+    "max-lines": {
+      "count": 1
+    }
+  },
+  "scripts/test/threshold-monotonic.test.ts": {
+    "max-lines": {
+      "count": 1
+    }
+  },
+  "scripts/test/vendored-binaries.test.ts": {
+    "max-lines": {
+      "count": 1
+    }
+  },
+  "scripts/test/verify-coverage-scope.test.ts": {
+    "max-lines": {
+      "count": 1
+    }
+  },
+  "scripts/test/verify-dir-imports-criteria.test.ts": {
+    "max-lines": {
+      "count": 1
+    }
+  },
+  "scripts/test/verify-dir-imports-s0.test.ts": {
+    "max-lines": {
+      "count": 1
+    }
+  },
+  "scripts/test/workflow-assert.test.ts": {
+    "max-depth": {
+      "count": 1
+    },
+    "max-lines": {
+      "count": 1
+    },
+    "max-lines-per-function": {
+      "count": 2
+    }
+  },
+  "shared/sse-hub.ts": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "shared/test/settings-namespace.mutation.test.ts": {
+    "max-lines": {
+      "count": 1
+    },
+    "max-lines-per-function": {
+      "count": 2
+    }
+  },
   "tools/lint/fixtures/lint-probe-fixture.ts": {
     "@typescript-eslint/no-unused-vars": {
       "count": 2

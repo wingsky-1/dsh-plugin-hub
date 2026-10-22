@@ -11,7 +11,7 @@
  * 规则分三段，越靠后越具体：
  *   1. typescript-eslint 的 recommended —— **非 type-checked**：不建 program，全仓秒级完成；
  *      类型感知的规则集（strictTypeChecked）要 program、慢一个量级，留待单独评估；
- *   2. 复杂度阈值（唯一事实源是 scripts/data/gauntlet.config.json 的 complexity 段）；
+ *   2. 复杂度与形状阈值（唯一事实源是 scripts/data/gauntlet.config.json）；
  *   3. eslint-config-prettier 收尾：关掉与 Prettier 重叠的格式规则。格式只由 Prettier 定，
  *      两处都能改格式的代价不是多改一次，而是「lint 说对、编辑器保存后又变回去」。
  *
@@ -26,15 +26,37 @@ import prettierConfig from "eslint-config-prettier/flat";
 
 const REPO_ROOT = fileURLToPath(new URL("../../", import.meta.url));
 
-const gauntlet = JSON.parse(
-  readFileSync(new URL("../../scripts/data/gauntlet.config.json", import.meta.url), "utf8"),
-);
-const { cyclomatic, cognitive } = gauntlet.complexity;
+let gauntlet;
+try {
+  gauntlet = JSON.parse(
+    readFileSync(new URL("../../scripts/data/gauntlet.config.json", import.meta.url), "utf8"),
+  );
+} catch (err) {
+  throw new Error(
+    `gauntlet.config.json 读取或解析失败：${err instanceof Error ? err.message : String(err)} —— 阈值事实源不可读，fail-closed`,
+    { cause: err },
+  );
+}
+
+function positiveInteger(path, label) {
+  const value = path.split(".").reduce((node, key) => node?.[key], gauntlet);
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 1) {
+    throw new Error(
+      `gauntlet.config.json 的 ${label} 必须是正整数（实际 ${String(value)}）—— 阈值事实源非法，fail-closed`,
+    );
+  }
+  return value;
+}
+
+const { cyclomatic, cognitive } = gauntlet?.complexity ?? {};
 if (typeof cyclomatic !== "number" || typeof cognitive !== "number") {
   throw new Error(
     "gauntlet.config.json 缺少 complexity.cyclomatic / complexity.cognitive —— 阈值事实源不可读，fail-closed",
   );
 }
+const maxLinesPerFunction = positiveInteger("lint.maxLinesPerFunction", "lint.maxLinesPerFunction");
+const maxLines = positiveInteger("lint.maxLines", "lint.maxLines");
+const maxDepth = positiveInteger("lint.maxDepth", "lint.maxDepth");
 
 // 手写源码面：逐扩展名显式列出，花括号写法匹配不到 .d.mts 一类的多段后缀。
 const TS_SOURCES = ["**/*.ts", "**/*.tsx", "**/*.mts", "**/*.cts"];
@@ -54,11 +76,37 @@ const IGNORES = [
   "**/*.d.ts",
   "**/*.d.mts",
   "**/*.d.cts",
+  // shared/ 的 JS 是 **tsc 原地 emit 的构建产物**，与 .ts 源码同目录（#1028 起 shared 已
+  // TS 化，版本库里只允许有 .ts 源码，冻结守卫见 scripts/test/shared-ts-shape.test.ts）。
+  // 忽略理由与上面 `packages/*/lib/**` 同源——重复检查一份 emit 产物，而不是消化源码存量：
+  // 不加这三条时，`pnpm build` 之后 shared/*.js 会重新进入 lint 面并按形状规则判红
+  // （实测 sse-hub.js 的 134 行），而同一份逻辑的 .ts 源码仍会被正常检查。
+  //
+  // 三条 pattern 与 .gitignore:18/21/25 **逐位置对应**，且只覆盖 gitignore 已列的层级：
+  // 不写 `shared/**`（那会把 shared 下的 TS 源码整体踢出 lint 面），也不碰 scripts/lib
+  //（它是门禁源码而非产物，见本文件上方「**/lib/** 吞掉 scripts/lib」的说明）。
+  "shared/*.js",
+  "shared/client/*.js",
+  "shared/client/ui/*.js",
 ];
 
 const complexityRules = {
   complexity: ["error", cyclomatic],
   "sonarjs/cognitive-complexity": ["error", cognitive],
+};
+
+const shapeRules = {
+  "max-lines-per-function": [
+    "error",
+    {
+      max: maxLinesPerFunction,
+      skipComments: true,
+      skipBlankLines: true,
+      IIFEs: true,
+    },
+  ],
+  "max-lines": ["error", { max: maxLines, skipComments: true, skipBlankLines: true }],
+  "max-depth": ["error", maxDepth],
 };
 
 /**
@@ -143,6 +191,7 @@ export default [
     plugins: { sonarjs },
     rules: {
       ...complexityRules,
+      ...shapeRules,
       ...deadCodeRules,
       "no-var": "error",
       "@typescript-eslint/no-unused-vars": UNUSED_VARS_RULE,
@@ -153,6 +202,7 @@ export default [
     plugins: { sonarjs },
     rules: {
       ...complexityRules,
+      ...shapeRules,
       ...deadCodeRules,
       "no-var": "error",
       "@typescript-eslint/no-unused-vars": UNUSED_VARS_RULE,

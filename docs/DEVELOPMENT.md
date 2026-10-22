@@ -827,8 +827,9 @@ entries }`——兼容字段 `exports` = **主入口**的导出面、`declBlocks
     peer 成员删除/新增会在 catalog 门禁失败，聚合包不进入该合同。
   - 聚合包没有顶层 DSH peer，安装前 preflight 不会替子包做兼容判断；聚合安装后的 web 启动
     逐 row preflight/health 才是最终验证，不能只看 `dsh plugin add` 返回码。
-- **复杂度门禁（#722 阶段五）**：`pnpm lint` = ESLint `complexity` + `sonarjs/cognitive-complexity`，
-  跑在 `packages/*/src`、`packages/*/test`、`shared`、`scripts` 的手写源码上（秒级）。
+- **复杂度与维护性形状门禁（#722 阶段五，#1174）**：`pnpm lint` = ESLint `complexity` +
+  `sonarjs/cognitive-complexity` + `max-lines-per-function` / `max-lines` / `max-depth`，跑在
+  `packages/*/src`、`packages/*/test`、`shared`、`scripts` 的完整默认面上（不排除测试与脚本）。
   - **工具链隔离**：lint 工具链装在 `tools/lint`（刻意不在 `packages/` 下）——typescript-eslint
     需要 TypeScript 的 compiler API，而仓根 `typescript` 是 tsgo 7.x（无 API，且根 `tsc` 由它
     提供、各包 build/typecheck 依赖它）。pnpm 的子包隔离让 lint 专用的 TS 6 与根 tsgo 共存；
@@ -836,6 +837,10 @@ entries }`——兼容字段 `exports` = **主入口**的导出面、`declBlocks
     「lint 全绿但没在跑规则」或「build 悄悄换了编译器」，两者都不会自己报出来。
   - **阈值唯一事实源**：`scripts/data/gauntlet.config.json` 的 `complexity` 段。起步值 =
     全域实测最大值（cyclomatic 78 / cognitive 84），只拦新增劣化；收紧路线与目标见 issue #732。
+  - **维护性形状约束（#1174）**：三条规则均按 `error` 启用；事实源是
+    `scripts/data/gauntlet.config.json` 的 `lint.maxLinesPerFunction` / `lint.maxLines` / `lint.maxDepth`，
+    当前为 120 / 600 / 4。两个行数规则显式设 `skipComments:true` 与 `skipBlankLines:true`，
+    函数行数规则显式设 `IIFEs:true`。
   - **与 CRAP 的关系**：`pnpm crap` 的圈复杂度**取自同一条 ESLint 规则**（`Linter` API + 阈值 0
     枚举全部函数），不实现第二份算法——两者是同一事实源的消费方，不存在口径漂移面。
   - **规则面与类型感知（#764）**：非类型感知的 `tseslint.configs.recommended` 打底；三条
@@ -863,17 +868,26 @@ entries }`——兼容字段 `exports` = **主入口**的导出面、`declBlocks
   - **警告预算是硬判据**：阈值在 `gauntlet.config.json` 的 `lint.maxWarnings`（只许降，上调由
     `threshold-monotonic.mjs` 判红）；入口对 `errorCount + warningCount` 求和判定，**读不到预算
     即 fail-closed**。ESLint 自带的 `--max-warnings` 在本仓无效（参数会被入口的参数过滤丢弃）。
-  - **存量基线与「只许收缩」棘轮**：`eslint-suppressions.json` 承载已登记为 error 的规则的存量
-    （当前只有 `sonarjs/deprecation` 的 52 处 v1→v2 迁移债）。官方 Bulk Suppressions 的两个硬
+  - **存量基线与「只许收缩」棘轮**：`eslint-suppressions.json` 承载已登记为 error 的规则的存量；
+    正式形状存量及当前状态一律以该文件为准，本段不硬钉数量。既有面外测试探针的 `count:2` 单独保留；默认面
+    曾显示的「基线已抑制 2 处」实际来自
+    `packages/dsh-notifier/src/server/events/impl/session/index.ts` 的 2 条 inline
+    `sonarjs/deprecation`，并非 52 处 bulk 迁移债，旧说明已过期。官方 Bulk Suppressions 的两个硬
     约束决定了流程：只有 **error** 级规则会被抑制，且**创建/修剪只能走 CLI**（Node API 只应用）。
     维护动作（两条命令的口径都在这里，别处不再复述）：
-    - 收紧：`./tools/lint/node_modules/.bin/eslint --config tools/lint/eslint.config.js --prune-suppressions --suppressions-location eslint-suppressions.json <面>`
-    - 新增挂账：把上面的 `--prune-suppressions` 换成 `--suppress-all`（**只给确实要挂账的规则用**，
-      它会把该面上所有 error 全量入账）。
-    官方只在 CLI 侧检查「不再出现的条目」，Node API 的 `lintFiles` 会把 `unused` 直接丢弃——所以
-    `tools/lint/bin/lint.mjs` **自补了这条棘轮**：基线条目数 > 实际被抑制数即判红，并打印可照抄的
-    prune 命令。含义是「修掉存量必须同步收缩基线」，基线只能单向下行。
-  - **新规则的准入**（#764 A5 决议）：只收**实测零误报**的 correctness 规则，一次不进超过三条；
+    - 修剪（完整默认面）：`./tools/lint/node_modules/.bin/eslint --config tools/lint/eslint.config.js --prune-suppressions --suppressions-location eslint-suppressions.json <完整默认面>`
+    - 新增挂账只做定向生成：`./tools/lint/node_modules/.bin/eslint --config tools/lint/eslint.config.js
+      --suppress-rule max-lines-per-function --suppress-rule max-lines --suppress-rule max-depth
+      --suppressions-location eslint-suppressions.json <完整默认面>`；不用 `--suppress-all`，避免把
+      无关 error 一并入账。
+    官方只在 CLI 侧检查「不再出现的条目」，Node API 的 `lintFiles` 会把 `unused` 直接丢弃；CLI
+    prune 本身是收缩动作，不是失败。`tools/lint/bin/lint.mjs` 仍自补棘轮：已修复或删除的存量若保留
+    在基线中会判红，并打印可照抄的 prune 命令；增量子集只核对实际跑到的文件及已删除文件，完整默认面
+    覆盖全部当前文件与已删除文件。含义是「修掉存量必须同步收缩基线」，基线只能单向下行。
+    bulk 只识别「文件 + 规则 + count」，不能阻止同文件内旧债换新债，也不能阻止已挂账函数继续变长；
+    触及挂账区域的 PR 必须人工审 diff 补足。清债 PR 须保持行为等价，并在同一批同步 prune。
+  - **correctness 新规则的准入**（#764 A5 决议）：只收**实测零误报**的 correctness 规则，一次不进
+    超过三条；上述维护性形状约束与 correctness 准入是两类判据，不套用零误报口径，也不放宽这里的准入。
     `sonarjs` 的非类型感知 problem 面**整体不启用**（实测 242 处命中经逐条复核真问题为 0：门禁脚本
     调 `git`、`=== undefined` 防御判空、测试里的假 `/tmp/` 路径与负例夹具、字符串数组的确定性
     排序……），且那批规则无任何配置项可收窄误报。**升级 `eslint-plugin-sonarjs` 时新增规则默认

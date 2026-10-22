@@ -372,7 +372,10 @@ test("#764 A5：基线的只许收缩棘轮（官方只在 CLI 侧检查，Node 
 
     const exact = run(findings);
     assert.equal(exact.status, 0, `基线恰好应放行，实际 exit ${exact.status}：${exact.stdout}`);
-    assert.match(exact.stdout, /基线已抑制 2 处/);
+    // 数字 2 是本档的实测量（探针固件稳定 2 处发现），要钉的是它；措辞只要求中性——
+    // 抑制总数同时含 inline directive 与 bulk baseline（#1174 起口径修正），
+    // 故不钉「基线已抑制」这个已过期的口径词。
+    assert.match(exact.stdout, /已抑制 2 处/);
     assert.match(
       exact.stdout,
       /^lint: 检查/m,
@@ -477,7 +480,12 @@ test("#765 第 6 项：no-var 不在降级集里，且在常规规则面按 erro
   const level = (configured: unknown) => (Array.isArray(configured) ? configured[0] : configured);
 
   // 全仓命中数为 0 的规则留在 LEGACY_WARN 里 = 把一条不存在的债记成技术债，还让新写的 var 只拿 warn。
-  for (const rel of ["scripts/gate/verify-docs.ts", "shared/sse-hub.js"]) {
+  // JS 面取 scripts/gate 下的手写 .mjs（local-gate.mjs 是门禁入口本体）——**不是** shared/*.js：
+  // #1028 起 shared 已 TS 化，shared 下的 .js 是 tsc 原地 emit 的构建产物，与 .ts 源码同目录
+  // （版本库只留 .ts，冻结守卫见 scripts/test/shared-ts-shape.test.ts），因此已按产物被
+  // eslint.config.js 的 IGNORES 排除，calculateConfigForFile 对它返回 undefined。
+  // 用它取样会让本测在「产物被正确忽略」时误红，而那正是期望行为。
+  for (const rel of ["scripts/gate/verify-docs.ts", "scripts/gate/local-gate.mjs"]) {
     const configured = (await eslint.calculateConfigForFile(join(ROOT, rel))).rules?.["no-var"];
     assert.equal(
       level(configured),
