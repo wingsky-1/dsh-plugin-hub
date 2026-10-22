@@ -49,6 +49,180 @@ import type { MiddlewareHost } from "./deps.ts";
 import type { ProjectUnit, ConnectionEntry } from "./impl/middleware/type.ts";
 import type { DisabledToolsMap } from "../../store/interface.ts";
 
+// ------------------------------------------------------------ 每 root 初始化任务登记（#1168）
+
+/**
+ * 每实例的「root 初始化任务」登记表（root → 在飞 init）。#1168 窗口 B：解「同根并发首次
+ * 读各建一份单元（后写覆盖先写）/ 拿到未载入目录缓存的半初始化单元」。init 在读配置前同步
+ * 占位，所有并发 `projectUnitFor` 共享同一次 init。
+ *
+ * 用模块级 WeakMap 而非类成员：类成员会进入 .d.ts 声明块（加字段即导出面/ABI diff）。
+ * 按实例建键，不跨实例共享。`units` 保持 `Map<string, ProjectUnit>`（不存 Promise）。
+ */
+const pendingRootInits = new WeakMap<McpMiddleware, Map<string, InitTask>>();
+
+/**
+ * 一个 root 的在飞初始化任务句柄。
+ * - `promise`：整段 init（读配置 → 建单元 → 载入目录缓存 → 登记 enabled 连接）的共享任务；
+ *   **不等远端连接本身**（连接是 fire-and-forget）。
+ * - `cancelled`：teardown/dispose 撤销；迟到的 init 收敛时据此自我作废，绝不把已拆单元写回
+ *   `units`（防迟到复活）。
+ */
+interface InitTask {
+  promise: Promise<ProjectUnit | undefined>;
+  cancelled: boolean;
+}
+
+/** 取（或按实例惰性建）该中间层的 init 登记表。 */
+function initRegistryFor(self: McpMiddleware): Map<string, InitTask> {
+  const registry = pendingRootInits.get(self);
+  if (registry === undefined) {
+    const created = new Map<string, InitTask>();
+    pendingRootInits.set(self, created);
+    return created;
+  }
+  return registry;
+}
+
+/**
+ * 撤销某 root 在飞的 init（teardownUnit / dispose 共用）：标记作废**并同步**把登记摘掉，
+ * 于是「拆掉后紧接着重新 projectUnitFor」能立即开新一代 init，不必等旧代的配置/缓存
+ * await 收敛；旧代迟到时靠 cancelled + `registry.get(root) === task` 身份守卫自我作废，
+ * 既不会复活已拆单元，也不会误删新一代登记。
+ */
+function cancelPendingInit(self: McpMiddleware, root: string): void {
+  const registry = pendingRootInits.get(self);
+  if (registry === undefined) return;
+  const task = registry.get(root);
+  if (task === undefined) return;
+  task.cancelled = true;
+  // 身份守卫：只有仍指向本 task 才摘，避免与同 tick 内新登记的代际互相踩。
+  if (registry.get(root) === task) registry.delete(root);
+}
+
+/**
+ * 一次 root 初始化的真正工作：读配置 → 建单元 → 载入目录缓存 → 派发 enabled 连接的
+ * in-flight 任务，然后 resolve 单元（**不等远端连接本身**）。
+ *
+ * 身份/取消守卫：每个 await 之后、发布进 `units` 之前都复核 `registry.get(root) === task`
+ * 且 `!task.cancelled`——被 teardown/dispose 撤销或已被新一代取代的 init 一律返回 undefined，
+ * 既不把已拆单元写回 `units`（防迟到复活），也不让旧代摘掉新代的登记。
+ */
+async function runRootInit(
+  self: McpMiddleware,
+  root: string,
+  task: InitTask,
+): Promise<ProjectUnit | undefined> {
+  const registry = initRegistryFor(self);
+  // 已被撤销（teardown/dispose 在本任务真正开跑前就摘了登记）→ 直接退出。
+  if (!initOwned(registry, root, task)) return undefined;
+  const servers = await self.host.projectServersFor(root);
+  if (!initOwned(registry, root, task)) return undefined;
+  // 无项目标记（root 不可用）→ 不建单元。
+  if (servers === undefined) return undefined;
+  const unit = buildProjectUnit(self, root);
+  // 发布前最后一次守卫：配置读取期间的 teardown 会摘掉登记 → 不写表。
+  if (!initOwned(registry, root, task)) return undefined;
+  self.units.set(root, unit);
+  await loadRootCatalog(self, root, unit, task, registry);
+  // await 的续体是**新的微任务**：载入期间（或载入刚结束时）的 teardown 可能发生在 helper
+  // 守卫之后、这次续体之前——故此处再复核一次归属与「仍是本代单元」，被撤销/换代的 init
+  // 一律返回 undefined，既不派发连接也不把已拆单元当结果返回（防迟到复活）。
+  if (!initOwned(registry, root, task) || self.units.get(root) !== unit) return undefined;
+  // 后台惰性连接（fire-and-forget，不阻塞调用方）。单池（#767 笔 1a）后本层是唯一
+  // 连接路径：单元内**全部** enabled 服务器都归本层，不再有所有权过滤器。
+  // #903 M4：浮空拒绝即 unhandled——失败记 warn（错因已由 connectInternal 落
+  // entry.error，日志只记名，不重复泄露凭据面）。ensureConnected 内的登记在**任何
+  // await 之前**同步完成（#1168 窗口 A），故此处返回时 in-flight 标记已在册。
+  launchBackgroundConnects(self, root, servers);
+  unit.lastTouchedAt = Date.now();
+  return unit;
+}
+
+/** init 归属守卫：未被 teardown/dispose 撤销，且登记未被新一代顶替。 */
+function initOwned(registry: Map<string, InitTask>, root: string, task: InitTask): boolean {
+  return !task.cancelled && registry.get(root) === task;
+}
+
+/** 建空白单元（并发 init 的产物，形状固定在此）。 */
+function buildProjectUnit(self: McpMiddleware, root: string): ProjectUnit {
+  return {
+    root,
+    connections: new Map(),
+    userDisabled: new Set(self.disabledByRoot.get(root) ?? []),
+    lastTouchedAt: Date.now(),
+    inFlight: new Map(),
+  };
+}
+
+/**
+ * 载入 last-good 目录缓存（空采集不写盘；目录与连接分开淘汰）。目录内存态自 #767 S1-3b
+ * 起归 catalog 域，本层只负责「建单元时登记 root 并载入」。并发调用方等的是本 init 的
+ * promise，故它们拿到的单元一定已完成目录载入（不再是半初始化对象）。
+ *
+ * 只负责「载入 + 失败清理」，取消/换代判定归调用方（await 续体那道微任务缝只有调用方能
+ * 补上）。载入期间被撤销时，撤销方（teardownUnit / dispose）本身就会把已发布单元拆掉，
+ * 故此处无需再拆。
+ */
+async function loadRootCatalog(
+  self: McpMiddleware,
+  root: string,
+  unit: ProjectUnit,
+  task: InitTask,
+  registry: Map<string, InitTask>,
+): Promise<void> {
+  try {
+    await runtimePorts
+      .get()
+      .catalog.catalogDirectory.ensureRootLoaded(root, self.host.catalogCachePath(root));
+  } catch (error) {
+    // 载入失败：单元已发布但目录半载入，绝不能留在表里当下次读取的权威——按双守卫
+    // （仍是自己发布的这一代、且登记仍归本任务）拆掉后**重抛**：调用方见失败，且登记已由
+    // awaitPendingInit 的 finally 清掉，下次 projectUnitFor 可重试。
+    if (self.units.get(root) === unit && registry.get(root) === task) self.teardownUnit(root);
+    throw error;
+  }
+}
+
+/**
+ * 派发全部 enabled 服务器的后台惰性连接（fire-and-forget，不阻塞调用方）。
+ * ensureConnected 内的登记在**任何 await 之前**同步完成（#1168 窗口 A），故本函数
+ * 返回时 in-flight 标记已在册。
+ */
+function launchBackgroundConnects(
+  self: McpMiddleware,
+  root: string,
+  servers: ServerConfig[],
+): void {
+  for (const server of servers) {
+    if (server.enabled === false) continue;
+    void self.ensureConnected(root, server.name).catch(() => {
+      self.host.logger.warn(
+        `dsh-mcp-manager: background connect ${server.name}@${root} failed (see entry error)`,
+      );
+    });
+  }
+}
+
+/**
+ * 等一次 init 任务收敛并清理登记：成功/失败都把 `registry` 里这条（仅当仍指向本 task）
+ * 摘掉，使失败不留下永久 pending、下次调用可重试；已被 teardown 取消时 init 返回
+ * undefined（调用方视为「无单元」）。
+ */
+async function awaitPendingInit(
+  self: McpMiddleware,
+  root: string,
+  task: InitTask,
+): Promise<ProjectUnit | undefined> {
+  const registry = initRegistryFor(self);
+  try {
+    return await task.promise;
+  } finally {
+    // 所有权校验：仅当登记仍指向本 task 才清理，避免误删新一代 init 的占位。
+    if (registry.get(root) === task) registry.delete(root);
+  }
+}
+
 // ------------------------------------------------------------ 连接池
 
 /**
@@ -300,41 +474,34 @@ export class McpMiddleware {
     this.units = new Map();
   }
 
-  /** 读取/创建 root 的单元（root 无项目标记 → undefined）。 */
+  /** 读取/创建 root 的单元（root 无项目标记 → undefined）。
+   *
+   *  #1168 窗口 B（并发初始化去重）：先查在飞 init，再决定要不要建单元——同根的并发
+   *  首次调用共享同一个 init 任务（同一代单元），不再各建一份（后写覆盖先写）。init 在
+   *  **配置读取开始前**就同步占位（Promise.resolve().then 把真正工作推迟一拍，但登记
+   *  在同一同步段完成），堵住「两个调用都越过 units.get 判空」的窗口。
+   *
+   *  init 何时 resolve：目录缓存（last-good）已载入、且 enabled 连接的 in-flight 任务已
+   *  登记之后——不等远端连接本身（连接是 fire-and-forget）。于是并发首次读拿到的一定是
+   *  已完成目录载入的完整单元，而不是半初始化对象。
+   */
   async projectUnitFor(root: string | undefined): Promise<ProjectUnit | undefined> {
     if (root === undefined) return undefined;
-    let unit = this.units.get(root);
-    if (unit === undefined) {
-      const servers = await this.host.projectServersFor(root);
-      if (servers === undefined) return undefined;
-      unit = {
-        root,
-        connections: new Map(),
-        userDisabled: new Set(this.disabledByRoot.get(root) ?? []),
-        lastTouchedAt: Date.now(),
-        inFlight: new Map(),
-      };
-      this.units.set(root, unit);
-      // 加载 last-good 目录缓存（空采集不写盘；目录与连接分开淘汰）。目录内存态自
-      // #767 S1-3b 起归 catalog 域，本层只负责「建单元时登记 root 并载入」。
-      await runtimePorts
-        .get()
-        .catalog.catalogDirectory.ensureRootLoaded(root, this.host.catalogCachePath(root));
-      // 后台惰性连接（fire-and-forget，不阻塞调用方）。单池（#767 笔 1a）后本层是唯一
-      // 连接路径：单元内**全部** enabled 服务器都归本层，不再有所有权过滤器。
-      // #903 M4：浮空拒绝即 unhandled——失败记 warn（错因已由 connectInternal 落
-      // entry.error，日志只记名，不重复泄露凭据面）。
-      for (const server of servers) {
-        if (server.enabled === false) continue;
-        void this.ensureConnected(root, server.name).catch(() => {
-          this.host.logger.warn(
-            `dsh-mcp-manager: background connect ${server.name}@${root} failed (see entry error)`,
-          );
-        });
-      }
+    // 在飞 init 优先于 units 查询：同根并发首次读共享同一次 init（#1168 窗口 B）。
+    const registry = initRegistryFor(this);
+    const pending = registry.get(root);
+    if (pending !== undefined) return awaitPendingInit(this, root, pending);
+    // 无在飞 init 且已有成单元：直接触达。
+    const existing = this.units.get(root);
+    if (existing !== undefined) {
+      existing.lastTouchedAt = Date.now();
+      return existing;
     }
-    unit.lastTouchedAt = Date.now();
-    return unit;
+    // 同步占位后再排队真正的工作：登记与判空在同一同步段，杜绝并发各建一份。
+    const task: InitTask = { promise: Promise.resolve(undefined), cancelled: false };
+    task.promise = Promise.resolve().then(() => runRootInit(this, root, task));
+    registry.set(root, task);
+    return awaitPendingInit(this, root, task);
   }
 
   /** 连接一个服务器（in-flight 去重；失败后台重连）。
@@ -350,12 +517,17 @@ export class McpMiddleware {
     const unit = this.units.get(root);
     if (unit === undefined) return;
     if (unit.userDisabled.has(serverName)) return;
-    const servers = await this.host.projectServersFor(root);
-    const server = servers?.find((entry) => entry.name === serverName);
-    if (server === undefined || server.enabled === false) return;
+    // #1168 窗口 A：配置 await 早于登记 → 读工具采样时 inFlight 还空着，于是跳过发现等待
+    // 就去列目录，冷启动首列 0 servers。登记覆盖「配置校验 + 连接 + 投影」整段任务。
     const existing = unit.inFlight.get(serverName);
     if (existing !== undefined) return existing as Promise<void>;
-    const promise = this.connectInternal(root, serverName, opts);
+    // 推迟一拍再真调：让下面的 set 先落地，登记严格早于 connectInternal 执行体。闭包在
+    // 真调前复核 attempt 所有权——登记与调用之间隔着一个微任务，teardown / 换代会在这之间
+    // 发生，届时旧 attempt 不得挂到新一代单元上。
+    const promise: Promise<void> = Promise.resolve().then(() => {
+      if (this.units.get(root) !== unit || unit.inFlight.get(serverName) !== promise) return;
+      return this.connectInternal(root, serverName, opts);
+    });
     unit.inFlight.set(serverName, promise);
     try {
       await promise;
@@ -383,8 +555,17 @@ export class McpMiddleware {
     serverName: string,
     opts: { force?: boolean } = {},
   ): Promise<void> {
+    // 捕获本次 attempt 的身份（单元 + in-flight 登记）。每个 await 之后都复核：被 abandon /
+    // teardown 换代、被同名新 attempt 顶替、或已被用户禁用的 attempt 一律静默退出，绝不在
+    // 新一代单元上挂旧连接，也绝不越过禁用状态去挂（#1168 窗口 A 的身份守卫）。
     const unit = this.units.get(root);
     if (unit === undefined) return;
+    // 本 attempt 的 in-flight 登记就是调用方挂的那一条（调用方先 set 再经微任务调进来）。
+    const attempt = unit.inFlight.get(serverName);
+    const stillCurrent = (): boolean =>
+      this.units.get(root) === unit &&
+      unit.inFlight.get(serverName) === attempt &&
+      !unit.userDisabled.has(serverName);
     const force = opts.force === true;
     const { lifecycle } = runtimePorts.get();
     const entry = unit.connections.get(serverName);
@@ -393,15 +574,23 @@ export class McpMiddleware {
     // serverName 活体预留（实测 §2.9-16）。force（用户显式「连接」/切回前台恢复）忽略当前
     // 状态总是受控重建——修半开死连接卡在 connected 后 connect/refresh 均短路失效（#412）。
     if (shortCircuitsOnState(this.statusOf(root, serverName), force)) return;
-    await disposePreviousGeneration(entry, (id) => lifecycle.disposeServer(id));
+    // 配置校验先于 dispose（旧代际要拆，但若这台已不被启用/配置已消失就别白拆）。
     const servers = await this.host.projectServersFor(root);
     const server = connectableServer(servers, serverName);
-    if (server === undefined) return;
+    if (server === undefined || !stillCurrent()) return;
+    // 让位校验后再拆旧代际并等结算（官方 serverName 是活体预留，同 id 未释放就重挂当场抛）。
+    await disposePreviousGeneration(entry, (id) => lifecycle.disposeServer(id));
+    if (!stillCurrent()) return;
+    // 拆除窗口内宿主配置可能已变（删除 / enabled=false）——`server` 是拆除**前**读的旧配置，
+    // 直接挂它会把已移除的服务器照旧挂上（QA P1）。故拆后复读一次配置，按最新配置裁决并挂载。
+    const freshServers = await this.host.projectServersFor(root);
+    const freshServer = connectableServer(freshServers, serverName);
+    if (freshServer === undefined || !stillCurrent()) return;
     // 防双进程探测（#382 F5）与它的一次性重试已删除：换引擎后「同名服务器只能有一个实例」
     // 由官方 serverName 的活体预留保证（同 id 二次挂载当场抛，实测 §2.9-16），跨 root 同名
     // 各自由 (scope,name) 分配的 id 区分——探测与重试都是旧栈的补丁，留着只会与官方判重打架。
-    if (connectWrappedServer(unit, root, serverName, server, this.host)) return;
-    await mountRemoteServer(unit, root, serverName, server, entry, this.mountFaces());
+    if (connectWrappedServer(unit, root, serverName, freshServer, this.host)) return;
+    await mountRemoteServer(unit, root, serverName, freshServer, entry, this.mountFaces());
   }
 
   /**
@@ -646,6 +835,9 @@ export class McpMiddleware {
 
   /** 拆毁一个单元（逐条走账本拆除，保留目录缓存）。 */
   teardownUnit(root: string): void {
+    // 撤销在飞 init（在查 units 之前）：init 可能尚未发布单元，teardown 必须能取消它，
+    // 否则它稍后收敛会把单元写回 `units`（迟到复活），或让下次 projectUnitFor 等旧代。
+    cancelPendingInit(this, root);
     const unit = this.units.get(root);
     if (unit === undefined) return;
     for (const serverName of [...unit.connections.keys()]) {
@@ -661,6 +853,11 @@ export class McpMiddleware {
   /** 全部拆毁（插件卸载）。保持同步体：组合根的卸载链依赖这里同步摘账。 */
   async dispose(): Promise<void> {
     for (const root of [...this.units.keys()]) this.teardownUnit(root);
+    // 未发布单元的在飞 init 不在 units 键里，逐个摘登记防迟到复活/挂起。
+    const registry = pendingRootInits.get(this);
+    if (registry !== undefined) {
+      for (const root of [...registry.keys()]) cancelPendingInit(this, root);
+    }
     this.units.clear();
   }
 }
