@@ -401,6 +401,51 @@ describe("provider-config 凭据解析：describe seam + 已知 ref 兜底", () 
       expect(r.apiKey).toBe("sk-known");
     });
   });
+
+  it("seam：credentials.resolve 依赖 this 时仍能取值（#1167 回归：裸函数丢 receiver）", async () => {
+    // 形态对齐宿主 LocalCredentialProvider：resolve 读 this.values，不是箭头函数。
+    // 修复前这里抛 TypeError: Cannot read properties of undefined (reading 'get')。
+    const values = new Map([["R_BOUND_REF", "sk-bound"]]);
+    const ctx = {
+      llm: {
+        listConfigurableProviders: () => [
+          { provider: "r-bound", settingsNs: "llm-bound", settingsPath: [] },
+        ],
+      },
+      get: (name: string) =>
+        name === "settings"
+          ? { describe: () => [{ ns: "llm-bound", value: { apiKeyEnv: "R_BOUND_REF" } }] }
+          : {
+              values,
+              resolve(ref: string) {
+                const v = this.values.get(ref);
+                return Promise.resolve(v === undefined ? undefined : { value: v });
+              },
+            },
+    };
+    await withIsolatedCredentials(async () => {
+      const r = await resolveProviderConfig("r-bound", ctx);
+      expect(r.apiKey).toBe("sk-bound");
+    }, ["R_BOUND_API_KEY"]);
+  });
+
+  it("seam：credentials.resolve reject 被吞掉，不击穿取数入口（回落后续链）", async () => {
+    const ctx = {
+      llm: {
+        listConfigurableProviders: () => [
+          { provider: "r-reject", settingsNs: "llm-reject", settingsPath: [] },
+        ],
+      },
+      get: (name: string) =>
+        name === "settings"
+          ? { describe: () => [{ ns: "llm-reject", value: { apiKeyEnv: "R_REJECT_REF" } }] }
+          : { resolve: () => Promise.reject(new Error("resolve-boom")) },
+    };
+    await withIsolatedCredentials(async () => {
+      const r = await resolveProviderConfig("r-reject", ctx);
+      expect(r.apiKey).toBeUndefined();
+    }, ["R_REJECT_API_KEY"]);
+  });
 });
 
 describe("user-adapters 清单归一纯面", () => {

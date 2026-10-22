@@ -34,7 +34,6 @@ export default defineConfig({
       'packages/dsh-provider-usage/test/unit/pipeline/signal-lock.test.ts',
       'packages/dsh-provider-usage/test/unit/pipeline/stats-service.test.ts',
       'packages/dsh-provider-usage/test/unit/registry/hotreload.test.ts',
-      'packages/dsh-provider-usage/test/unit/registry/provider-config-seam-receiver.test.ts',
       'packages/dsh-provider-usage/test/unit/registry/registry-pure.test.ts',
       'packages/dsh-provider-usage/test/unit/report/report-b2-3.test.ts',
       'packages/dsh-provider-usage/test/unit/report/report-executor.test.ts',

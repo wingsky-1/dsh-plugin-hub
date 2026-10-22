@@ -856,8 +856,7 @@
             "packages/dsh-provider-usage/test/unit/pipeline/signal-lock.test.ts",
             "packages/dsh-provider-usage/test/integration/pipeline/composition-root.test.ts",
             "packages/dsh-provider-usage/test/integration/schedule/composition-root.test.ts",
-            "packages/dsh-provider-usage/test/unit/registry/registry-pure.test.ts",
-            "packages/dsh-provider-usage/test/unit/registry/provider-config-seam-receiver.test.ts"
+            "packages/dsh-provider-usage/test/unit/registry/registry-pure.test.ts"
           ],
           "comment": "#962 A 拆大段（三向之一：管线-注册表服务面）——原 pipeline 段的 v2/stats-service（#768 D6 随域迁 server/pipeline，净化缺席判据；阶段零补 stats-service 盲区）+ hotreload/path-resolve/provider-config（#768 D7 随域迁 server/registry，双启用判据）；testFiles 原样继承原段 22 个（零收窄，理由同 pipeline-history）；测试按段 testFiles 清单跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
         },

@@ -297,7 +297,6 @@ const EXPECT_FILES: Record<string, string[]> = {
     "unit/pipeline/signal-lock.test.ts",
     "unit/pipeline/stats-service.test.ts",
     "unit/registry/hotreload.test.ts",
-    "unit/registry/provider-config-seam-receiver.test.ts",
     "unit/registry/registry-pure.test.ts",
     "unit/report/report-b2-3.test.ts",
     "unit/report/report-executor.test.ts",
