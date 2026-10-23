@@ -8,7 +8,7 @@
 import { chmodSync, existsSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { X509Certificate } from "node:crypto";
 import * as forge from "node-forge";
@@ -32,6 +32,61 @@ const SAN_CASES: Array<[string, SanAltName]> = [
   ["myhost.lan", { type: 2, value: "myhost.lan" }],
   ["localhost", { type: 2, value: "localhost" }],
 ];
+
+describe("unit: cert module", () => {
+  const LAN_HOST = "192.168.1.50";
+  let certDir = "";
+  let tls!: ReturnType<typeof ensureSelfSignedTls>;
+
+  beforeAll(() => {
+    certDir = mkdtempSync(join(tmpdir(), "dsh-lan-proxy-test-"));
+    tls = ensureSelfSignedTls({ dir: certDir, extraSans: [LAN_HOST] });
+  });
+
+  afterAll(() => {
+    rmSync(certDir, { recursive: true, force: true });
+  });
+
+  describe("self-signed files written", () => {
+    it("证书文件已写入", () => {
+      expect(existsSync(join(certDir, SELF_SIGNED_CERT))).toBeTruthy();
+    });
+
+    it("私钥文件已写入", () => {
+      expect(existsSync(join(certDir, SELF_SIGNED_KEY))).toBeTruthy();
+    });
+  });
+
+  it("self-signed cert parses and is valid", () => {
+    expect(certStillValid(join(certDir, SELF_SIGNED_CERT))).toBe(true);
+  });
+
+  it("self-signed idempotent reuse (same materials)", () => {
+    const again = ensureSelfSignedTls({ dir: certDir, extraSans: [LAN_HOST] });
+    expect(again.cert.toString()).toBe(tls.cert.toString());
+  });
+
+  it("复用分支把历史宽权限私钥收敛回 0600", () => {
+    const keyPath = join(certDir, SELF_SIGNED_KEY);
+    // 造「历史缓存权限过宽」前置：缺了这步，断言可能因为 chmod 未生效而恒真。
+    chmodSync(keyPath, 0o644);
+    expect(statSync(keyPath).mode & 0o777).toBe(0o644);
+    ensureSelfSignedTls({ dir: certDir });
+    expect(statSync(keyPath).mode & 0o777).toBe(0o600);
+  });
+
+  it("loadTlsFromFiles reads provided PEMs", () => {
+    const loaded = loadTlsFromFiles(
+      join(certDir, SELF_SIGNED_CERT),
+      join(certDir, SELF_SIGNED_KEY),
+    );
+    expect(loaded.cert.toString()).toBe(tls.cert.toString());
+  });
+
+  it("loadTlsFromFiles rejects missing file", () => {
+    expect(() => loadTlsFromFiles("/nonexistent/cert.pem", "/nonexistent/key.pem")).toThrow();
+  });
+});
 
 describe("unit: toSanEntry 的 IP / DNS 判别", () => {
   it.each(SAN_CASES)("%s 编码为对应 SAN 条目", (input, expected) => {

@@ -344,7 +344,7 @@
       "invalidatesBaseline": true,
       "faces": ["dsh-lan-proxy", "dsh-mcp-manager", "dsh-notifier", "dsh-provider-usage"],
       "consumers": [
-        "packages/dsh-lan-proxy/test/e2e/smoke.test.ts",
+        "packages/dsh-lan-proxy/test/bundle/client-contract.test.ts",
         "packages/dsh-mcp-manager/test/e2e/smoke.test.ts",
         "packages/dsh-notifier/test/integration/real-context.test.ts",
         "packages/dsh-provider-usage/test/e2e/smoke.test.ts"

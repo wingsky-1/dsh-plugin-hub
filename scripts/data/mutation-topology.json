@@ -55,7 +55,9 @@
       "test/helpers.ts（dsh-mcp-manager / dsh-notifier / dsh-provider-usage）",
       "test/client-helpers.ts（dsh-notifier）",
       "test/smoke-pure.ts（dsh-provider-usage）",
-      "test/*/consumer-product-face.ts（dsh-notifier test/integration/）"
+      "test/*/consumer-product-face.ts（dsh-notifier test/integration/）",
+      "test/integration/apply-support.ts（dsh-lan-proxy：apply 装配两文件共享 fake settings/webServer/req/res）",
+      "test/e2e/forward-upstream.ts（dsh-lan-proxy：真实转发 e2e 的上游/proxy 生命周期与请求 helper）"
     ],
     "mixedTargets": ["routes.test.ts", "report-p0.test.ts"],
     "rootLayers": {
@@ -108,7 +110,9 @@
           "mutate": ["packages/dsh-lan-proxy/src/server/ca/impl/*.ts"],
           "excludes": [],
           "testFiles": [
+            "packages/dsh-lan-proxy/test/integration/apply-degraded.test.ts",
             "packages/dsh-lan-proxy/test/integration/apply-token-provider.test.ts",
+            "packages/dsh-lan-proxy/test/integration/apply-wiring.test.ts",
             "packages/dsh-lan-proxy/test/integration/entry-contract.test.ts",
             "packages/dsh-lan-proxy/test/unit/apply.test.ts",
             "packages/dsh-lan-proxy/test/unit/ca.test.ts",
@@ -122,11 +126,17 @@
           "excludes": [],
           "testFiles": [
             "packages/dsh-lan-proxy/test/client-unit/routes.test.ts",
+            "packages/dsh-lan-proxy/test/integration/apply-compress.test.ts",
+            "packages/dsh-lan-proxy/test/integration/apply-degraded.test.ts",
             "packages/dsh-lan-proxy/test/integration/apply-token-provider.test.ts",
+            "packages/dsh-lan-proxy/test/integration/apply-wiring.test.ts",
             "packages/dsh-lan-proxy/test/integration/entry-contract.test.ts",
             "packages/dsh-lan-proxy/test/unit/apply.test.ts",
             "packages/dsh-lan-proxy/test/unit/ca.test.ts",
             "packages/dsh-lan-proxy/test/unit/cacert.test.ts",
+            "packages/dsh-lan-proxy/test/unit/config-model.test.ts",
+            "packages/dsh-lan-proxy/test/unit/config-patch.test.ts",
+            "packages/dsh-lan-proxy/test/unit/config-routes.test.ts",
             "packages/dsh-lan-proxy/test/unit/host-trust.test.ts"
           ],
           "comment": "#826 域归位：段按模块目录划分（与 src/server/<域>/ 一一对应），config 域 impl（model 原根 config.ts / routes 原根 config-routes.ts / namespace 原根 settings.ts）；门面按 facade 口径进 coverageExcludes；测试按段 testFiles 清单跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
@@ -138,7 +148,10 @@
           ],
           "excludes": [],
           "testFiles": [
+            "packages/dsh-lan-proxy/test/integration/apply-compress.test.ts",
+            "packages/dsh-lan-proxy/test/integration/apply-degraded.test.ts",
             "packages/dsh-lan-proxy/test/integration/apply-token-provider.test.ts",
+            "packages/dsh-lan-proxy/test/integration/apply-wiring.test.ts",
             "packages/dsh-lan-proxy/test/integration/entry-contract.test.ts",
             "packages/dsh-lan-proxy/test/unit/apply.test.ts",
             "packages/dsh-lan-proxy/test/unit/ca.test.ts",
@@ -151,7 +164,9 @@
           "mutate": ["packages/dsh-lan-proxy/src/server/host-trust/impl/*.ts"],
           "excludes": [],
           "testFiles": [
+            "packages/dsh-lan-proxy/test/integration/apply-degraded.test.ts",
             "packages/dsh-lan-proxy/test/integration/apply-token-provider.test.ts",
+            "packages/dsh-lan-proxy/test/integration/apply-wiring.test.ts",
             "packages/dsh-lan-proxy/test/integration/entry-contract.test.ts",
             "packages/dsh-lan-proxy/test/unit/apply.test.ts",
             "packages/dsh-lan-proxy/test/unit/ca.test.ts",
@@ -167,8 +182,12 @@
           ],
           "excludes": [],
           "testFiles": [
+            "packages/dsh-lan-proxy/test/integration/apply-compress.test.ts",
+            "packages/dsh-lan-proxy/test/integration/apply-degraded.test.ts",
             "packages/dsh-lan-proxy/test/integration/apply-token-provider.test.ts",
+            "packages/dsh-lan-proxy/test/integration/apply-wiring.test.ts",
             "packages/dsh-lan-proxy/test/integration/entry-contract.test.ts",
+            "packages/dsh-lan-proxy/test/integration/migrate-file-config.test.ts",
             "packages/dsh-lan-proxy/test/unit/apply.test.ts",
             "packages/dsh-lan-proxy/test/unit/ca.test.ts",
             "packages/dsh-lan-proxy/test/unit/cacert.test.ts",
@@ -180,8 +199,12 @@
           "mutate": ["packages/dsh-lan-proxy/src/server/proxy/impl/proxy.ts"],
           "excludes": [],
           "testFiles": [
+            "packages/dsh-lan-proxy/test/integration/apply-compress.test.ts",
+            "packages/dsh-lan-proxy/test/integration/apply-degraded.test.ts",
             "packages/dsh-lan-proxy/test/integration/apply-token-provider.test.ts",
+            "packages/dsh-lan-proxy/test/integration/apply-wiring.test.ts",
             "packages/dsh-lan-proxy/test/integration/entry-contract.test.ts",
+            "packages/dsh-lan-proxy/test/integration/proxy-compress.test.ts",
             "packages/dsh-lan-proxy/test/unit/apply.test.ts",
             "packages/dsh-lan-proxy/test/unit/proxy.test.ts"
           ],
@@ -196,8 +219,12 @@
           ],
           "excludes": [],
           "testFiles": [
+            "packages/dsh-lan-proxy/test/integration/apply-compress.test.ts",
+            "packages/dsh-lan-proxy/test/integration/apply-degraded.test.ts",
             "packages/dsh-lan-proxy/test/integration/apply-token-provider.test.ts",
+            "packages/dsh-lan-proxy/test/integration/apply-wiring.test.ts",
             "packages/dsh-lan-proxy/test/integration/entry-contract.test.ts",
+            "packages/dsh-lan-proxy/test/integration/proxy-compress.test.ts",
             "packages/dsh-lan-proxy/test/unit/apply.test.ts",
             "packages/dsh-lan-proxy/test/unit/ca.test.ts",
             "packages/dsh-lan-proxy/test/unit/cacert.test.ts",

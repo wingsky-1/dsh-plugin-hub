@@ -35,14 +35,6 @@
       "count": 1
     }
   },
-  "packages/dsh-lan-proxy/test/e2e/smoke.test.ts": {
-    "max-lines": {
-      "count": 1
-    },
-    "max-lines-per-function": {
-      "count": 10
-    }
-  },
   "packages/dsh-lan-proxy/test/unit/apply.test.ts": {
     "max-lines": {
       "count": 1

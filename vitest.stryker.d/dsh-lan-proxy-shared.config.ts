@@ -8,8 +8,12 @@ import { defineConfig } from 'vitest/config'
 export default defineConfig({
   test: {
     include: [
+      'packages/dsh-lan-proxy/test/integration/apply-compress.test.ts',
+      'packages/dsh-lan-proxy/test/integration/apply-degraded.test.ts',
       'packages/dsh-lan-proxy/test/integration/apply-token-provider.test.ts',
+      'packages/dsh-lan-proxy/test/integration/apply-wiring.test.ts',
       'packages/dsh-lan-proxy/test/integration/entry-contract.test.ts',
+      'packages/dsh-lan-proxy/test/integration/proxy-compress.test.ts',
       'packages/dsh-lan-proxy/test/unit/apply.test.ts',
       'packages/dsh-lan-proxy/test/unit/ca.test.ts',
       'packages/dsh-lan-proxy/test/unit/cacert.test.ts',
