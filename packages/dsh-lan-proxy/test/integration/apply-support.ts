@@ -1,4 +1,4 @@
-// apply 装配族共享替身：只服务 test/integration/apply-*.test.ts 三个文件，
+// apply 装配族共享替身：只服务 test/integration/apply-*.test.ts 两个文件，
 // 不进任何测试层、不计 --min。假件只提供原始事实与调用记录，不替被测代码做决定
 // （testing skill §3）。不外扩为跨域通用 harness。
 import { EventEmitter } from "node:events";

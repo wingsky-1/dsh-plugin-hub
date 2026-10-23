@@ -3,7 +3,7 @@
 //
 // #1174 A1 自 test/e2e/smoke.test.ts 拆出。断言与 describe 名逐字保留。
 // 层归属：真实 apply 组合根 + fake webServer 装配面（DEVELOPMENT 测试分层表
-// integration 行）。共享替身见 ./apply-support.ts（只服务本族三个文件）。
+// integration 行）。共享替身见 ./apply-support.ts（只服务本族两个文件）。
 import { beforeAll, describe, expect, it } from "vitest";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { EventEmitter } from "node:events";
