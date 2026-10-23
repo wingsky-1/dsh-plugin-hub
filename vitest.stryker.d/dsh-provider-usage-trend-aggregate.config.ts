@@ -17,6 +17,8 @@ export default defineConfig({
       'packages/dsh-provider-usage/test/unit/trend/aggregator-core.test.ts',
       'packages/dsh-provider-usage/test/unit/trend/aggregator-stacked-window.test.ts',
       'packages/dsh-provider-usage/test/unit/trend/collector-attempt-ledger.test.ts',
+      'packages/dsh-provider-usage/test/unit/trend/store-lifecycle.test.ts',
+      'packages/dsh-provider-usage/test/unit/trend/store-shards.test.ts',
       'packages/dsh-provider-usage/test/unit/trend/trend-ledger.test.ts',
       'packages/dsh-provider-usage/test/unit/trend/trend.test.ts',
     ],

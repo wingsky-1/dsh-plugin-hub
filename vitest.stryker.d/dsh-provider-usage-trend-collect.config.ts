@@ -19,6 +19,7 @@ export default defineConfig({
       'packages/dsh-provider-usage/test/unit/trend/collector-lifecycle.test.ts',
       'packages/dsh-provider-usage/test/unit/trend/collector-settlement-core.test.ts',
       'packages/dsh-provider-usage/test/unit/trend/collector-usage-priority.test.ts',
+      'packages/dsh-provider-usage/test/unit/trend/store-shards.test.ts',
       'packages/dsh-provider-usage/test/unit/trend/trend-ledger.test.ts',
       'packages/dsh-provider-usage/test/unit/trend/trend-sanitize-dir.test.ts',
       'packages/dsh-provider-usage/test/unit/trend/trend-shard-row.test.ts',

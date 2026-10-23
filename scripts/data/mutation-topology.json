@@ -55,7 +55,7 @@
       "test/helpers.ts（dsh-mcp-manager / dsh-notifier / dsh-provider-usage）",
       "test/client-helpers.ts（dsh-notifier）",
       "test/smoke-pure.ts（dsh-provider-usage）",
-      "test/unit/trend/collector-test-support.ts（dsh-provider-usage：Collector 与旧 trend 共享事件/观测 helper，不进 runner / 变异分母）",
+      "test/unit/trend/collector-test-support.ts（dsh-provider-usage：Collector、Aggregator、Store 与旧 trend 共享日期/事件/观测 helper，不进 runner / 变异分母）",
       "test/unit/trend/aggregator-test-support.ts（dsh-provider-usage：Aggregator 与旧 trend 共享事件/观测 helper，不进 runner / 变异分母）",
       "test/*/consumer-product-face.ts（dsh-notifier test/integration/）",
       "test/integration/apply-support.ts（dsh-lan-proxy：apply 装配两文件共享 fake settings/webServer/req/res）",
@@ -859,6 +859,7 @@
           "excludes": [],
           "testFiles": [
             "packages/dsh-provider-usage/test/unit/history/history.test.ts",
+            "packages/dsh-provider-usage/test/unit/trend/store-lifecycle.test.ts",
             "packages/dsh-provider-usage/test/unit/trend/trend.test.ts",
             "packages/dsh-provider-usage/test/unit/apply/apply.test.ts",
             "packages/dsh-provider-usage/test/integration/history/composition-root.test.ts",
@@ -956,6 +957,8 @@
             "packages/dsh-provider-usage/test/unit/trend/aggregator-calendar.test.ts",
             "packages/dsh-provider-usage/test/unit/trend/aggregator-core.test.ts",
             "packages/dsh-provider-usage/test/unit/trend/aggregator-stacked-window.test.ts",
+            "packages/dsh-provider-usage/test/unit/trend/store-lifecycle.test.ts",
+            "packages/dsh-provider-usage/test/unit/trend/store-shards.test.ts",
             "packages/dsh-provider-usage/test/unit/trend/trend.test.ts",
             "packages/dsh-provider-usage/test/client-dom/trend-section.test.ts"
           ],
@@ -983,6 +986,7 @@
             "packages/dsh-provider-usage/test/unit/trend/collector-lifecycle.test.ts",
             "packages/dsh-provider-usage/test/unit/trend/collector-settlement-core.test.ts",
             "packages/dsh-provider-usage/test/unit/trend/collector-usage-priority.test.ts",
+            "packages/dsh-provider-usage/test/unit/trend/store-shards.test.ts",
             "packages/dsh-provider-usage/test/unit/trend/trend.test.ts"
           ],
           "comment": "阶段零新段（D17 分层变异）：E1 事件采集面——collector+types（折叠状态机/归属归一）；testFiles 含 unit-trend（杀灭面为该层测试）；#768 D9 采集两文件随域迁 server/collect（路径同步，零行为变更，杀灭面新增 test/integration/collect/composition-root）。"

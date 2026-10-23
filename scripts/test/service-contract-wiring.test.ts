@@ -336,6 +336,8 @@ const EXPECT_FILES: Record<string, string[]> = {
     "unit/trend/collector-settlement-core.test.ts",
     "unit/trend/collector-test-support.ts",
     "unit/trend/collector-usage-priority.test.ts",
+    "unit/trend/store-lifecycle.test.ts",
+    "unit/trend/store-shards.test.ts",
     "unit/trend/trend.test.ts",
   ],
 };

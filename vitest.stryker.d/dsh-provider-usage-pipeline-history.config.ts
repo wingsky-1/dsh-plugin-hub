@@ -12,6 +12,7 @@ export default defineConfig({
       'packages/dsh-provider-usage/test/integration/schedule/composition-root.test.ts',
       'packages/dsh-provider-usage/test/unit/apply/apply.test.ts',
       'packages/dsh-provider-usage/test/unit/history/history.test.ts',
+      'packages/dsh-provider-usage/test/unit/trend/store-lifecycle.test.ts',
       'packages/dsh-provider-usage/test/unit/trend/trend.test.ts',
     ],
     environment: 'node',
