@@ -603,7 +603,7 @@
       "count": 1
     },
     "max-lines-per-function": {
-      "count": 10
+      "count": 9
     }
   },
   "packages/dsh-verify-isolated/test/e2e/smoke.test.ts": {

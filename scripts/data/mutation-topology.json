@@ -55,6 +55,7 @@
       "test/helpers.ts（dsh-mcp-manager / dsh-notifier / dsh-provider-usage）",
       "test/client-helpers.ts（dsh-notifier）",
       "test/smoke-pure.ts（dsh-provider-usage）",
+      "test/unit/trend/collector-test-support.ts（dsh-provider-usage：Collector 与旧 trend 共享事件/观测 helper，不进 runner / 变异分母）",
       "test/*/consumer-product-face.ts（dsh-notifier test/integration/）",
       "test/integration/apply-support.ts（dsh-lan-proxy：apply 装配两文件共享 fake settings/webServer/req/res）",
       "test/e2e/forward-upstream.ts（dsh-lan-proxy：真实转发 e2e 的上游/proxy 生命周期与请求 helper）"
@@ -950,6 +951,7 @@
             "packages/dsh-provider-usage/test/unit/apply/apply.test.ts",
             "packages/dsh-provider-usage/test/unit/report/report.test.ts",
             "packages/dsh-provider-usage/test/unit/trend/trend-ledger.test.ts",
+            "packages/dsh-provider-usage/test/unit/trend/collector-attempt-ledger.test.ts",
             "packages/dsh-provider-usage/test/unit/trend/trend.test.ts",
             "packages/dsh-provider-usage/test/client-dom/trend-section.test.ts"
           ],
@@ -972,6 +974,11 @@
             "packages/dsh-provider-usage/test/unit/trend/trend-ledger.test.ts",
             "packages/dsh-provider-usage/test/unit/trend/trend-sanitize-dir.test.ts",
             "packages/dsh-provider-usage/test/unit/trend/trend-shard-row.test.ts",
+            "packages/dsh-provider-usage/test/unit/trend/collector-attempt-ledger.test.ts",
+            "packages/dsh-provider-usage/test/unit/trend/collector-attribution.test.ts",
+            "packages/dsh-provider-usage/test/unit/trend/collector-lifecycle.test.ts",
+            "packages/dsh-provider-usage/test/unit/trend/collector-settlement-core.test.ts",
+            "packages/dsh-provider-usage/test/unit/trend/collector-usage-priority.test.ts",
             "packages/dsh-provider-usage/test/unit/trend/trend.test.ts"
           ],
           "comment": "阶段零新段（D17 分层变异）：E1 事件采集面——collector+types（折叠状态机/归属归一）；testFiles 含 unit-trend（杀灭面为该层测试）；#768 D9 采集两文件随域迁 server/collect（路径同步，零行为变更，杀灭面新增 test/integration/collect/composition-root）。"
