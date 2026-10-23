@@ -120,18 +120,8 @@ export class HistoryStore {
         const raw = await readFile(file, "utf8");
         const lines = raw.trimEnd().split("\n");
         for (let j = lines.length - 1; j >= 0; j--) {
-          try {
-            const entry = JSON.parse(lines[j]) as HistoryEntry;
-            if (
-              typeof entry?.time === "number" &&
-              typeof entry.data === "object" &&
-              entry.data !== null
-            ) {
-              return entry;
-            }
-          } catch {
-            continue; // 坏行跳过
-          }
+          const parsed = parseHistoryLine(lines[j]);
+          if (parsed.found) return parsed.entry;
         }
       } catch {
         continue; // 文件读取失败跳过
@@ -254,6 +244,30 @@ export class HistoryStore {
 function dirSegment(s: string): string {
   const seg = safeSegment(s);
   return seg === "." || seg === ".." ? "unknown" : seg;
+}
+
+interface FoundHistoryLine {
+  found: true;
+  entry: HistoryEntry;
+}
+
+interface MissingHistoryLine {
+  found: false;
+}
+
+type HistoryLineResult = FoundHistoryLine | MissingHistoryLine;
+
+/** 解析并校验一条历史行；坏 JSON 或 shape 不符都归入未找到。 */
+function parseHistoryLine(line: string): HistoryLineResult {
+  try {
+    const entry = JSON.parse(line) as HistoryEntry;
+    if (typeof entry?.time === "number" && typeof entry.data === "object" && entry.data !== null) {
+      return { found: true, entry };
+    }
+  } catch {
+    return { found: false };
+  }
+  return { found: false };
 }
 
 /** 目录下的日分片清单（升序）；读不到目录返回 null = 无可清理对象（不抛）。 */

@@ -9,7 +9,7 @@
  * 直连深路径，同一引用）；本文件追加并发三条（#771 移交：大跨度 range / 同戳并发 /
  * 故障注入），全部落盘进 mkdtempSync 隔离目录，锚点相对当前（不钉墙钟）。
  */
-import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 console.error("EVAL-ORDER-TAG: HISTORY");
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -446,6 +446,33 @@ describe("last()", () => {
 
   it("last 仅非 jsonl 文件返回 null", () => {
     expect(lastNonJsonl).toBe(null);
+  });
+});
+
+describe("last 文件回退", () => {
+  it("新分片全坏时回退更旧分片", async () => {
+    const root = mkdtempSync(join(tmpdir(), "dou-hist-last-fallback-"));
+    try {
+      const dir = join(root, "p", "n");
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, "2026-01-01.jsonl"), '{"time":1,"data":{}}\n', "utf8");
+      writeFileSync(join(dir, "2026-01-02.jsonl"), "broken\n", "utf8");
+      expect(await new HistoryStore({ root }).last("p", "n")).toEqual({ time: 1, data: {} });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("新分片不可读时回退更旧分片", async () => {
+    const root = mkdtempSync(join(tmpdir(), "dou-hist-last-unreadable-"));
+    try {
+      const dir = join(root, "p", "n");
+      mkdirSync(join(dir, "2026-01-02.jsonl"), { recursive: true });
+      writeFileSync(join(dir, "2026-01-01.jsonl"), '{"time":1,"data":{}}\n', "utf8");
+      expect(await new HistoryStore({ root }).last("p", "n")).toEqual({ time: 1, data: {} });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });
 

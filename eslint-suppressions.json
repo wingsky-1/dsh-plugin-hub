@@ -471,11 +471,6 @@
       "count": 1
     }
   },
-  "packages/dsh-provider-usage/src/server/history/history.ts": {
-    "max-depth": {
-      "count": 1
-    }
-  },
   "packages/dsh-provider-usage/src/server/registry/registry.ts": {
     "max-lines-per-function": {
       "count": 1
