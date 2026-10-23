@@ -476,14 +476,6 @@
       "count": 1
     }
   },
-  "packages/dsh-provider-usage/src/server/schedule/retry-ledger.ts": {
-    "max-lines": {
-      "count": 1
-    },
-    "max-lines-per-function": {
-      "count": 1
-    }
-  },
   "packages/dsh-provider-usage/src/server/schedule/scheduler.ts": {
     "max-lines-per-function": {
       "count": 1
