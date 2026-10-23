@@ -56,6 +56,7 @@
       "test/client-helpers.ts（dsh-notifier）",
       "test/smoke-pure.ts（dsh-provider-usage）",
       "test/unit/trend/collector-test-support.ts（dsh-provider-usage：Collector 与旧 trend 共享事件/观测 helper，不进 runner / 变异分母）",
+      "test/unit/trend/aggregator-test-support.ts（dsh-provider-usage：Aggregator 与旧 trend 共享事件/观测 helper，不进 runner / 变异分母）",
       "test/*/consumer-product-face.ts（dsh-notifier test/integration/）",
       "test/integration/apply-support.ts（dsh-lan-proxy：apply 装配两文件共享 fake settings/webServer/req/res）",
       "test/e2e/forward-upstream.ts（dsh-lan-proxy：真实转发 e2e 的上游/proxy 生命周期与请求 helper）"
@@ -952,6 +953,9 @@
             "packages/dsh-provider-usage/test/unit/report/report.test.ts",
             "packages/dsh-provider-usage/test/unit/trend/trend-ledger.test.ts",
             "packages/dsh-provider-usage/test/unit/trend/collector-attempt-ledger.test.ts",
+            "packages/dsh-provider-usage/test/unit/trend/aggregator-calendar.test.ts",
+            "packages/dsh-provider-usage/test/unit/trend/aggregator-core.test.ts",
+            "packages/dsh-provider-usage/test/unit/trend/aggregator-stacked-window.test.ts",
             "packages/dsh-provider-usage/test/unit/trend/trend.test.ts",
             "packages/dsh-provider-usage/test/client-dom/trend-section.test.ts"
           ],
