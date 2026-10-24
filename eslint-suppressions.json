@@ -205,14 +205,6 @@
       "count": 1
     }
   },
-  "packages/dsh-mcp-manager/test/unit/middleware.test.ts": {
-    "max-lines": {
-      "count": 1
-    },
-    "max-lines-per-function": {
-      "count": 8
-    }
-  },
   "packages/dsh-mcp-manager/test/unit/routes-sse.test.ts": {
     "max-lines": {
       "count": 1
