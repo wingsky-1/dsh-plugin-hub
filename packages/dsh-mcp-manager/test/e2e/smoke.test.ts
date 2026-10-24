@@ -51,6 +51,7 @@ import {
   installCompositionPorts,
   pollUntil,
   releaseCompositionPorts,
+  tempCatalogCache,
 } from "../helpers.ts";
 const pkgDir = fileURLToPath(new URL("../../", import.meta.url));
 import {
@@ -123,8 +124,12 @@ beforeAll(() => {
   installCompositionPorts();
 });
 
+const catalogTempDirs: string[] = [];
+
 afterAll(() => {
   releaseCompositionPorts();
+  for (const dir of catalogTempDirs) rmSync(dir, { recursive: true, force: true });
+  catalogTempDirs.length = 0;
 });
 
 /** 假路由：fakeCtx.webServer 收到的注册项，只表达测试回读的面（path/handler）。 */
@@ -401,7 +406,7 @@ it("中间层工具注册（ws_mcp_search / ws_mcp_call / ws_mcp_list / ws_mcp_d
       cwd === "/proj" ? "/proj" : undefined,
     saveUserState: async () => {},
     emitStatus: () => {},
-    catalogCachePath: () => "/tmp/cache.json",
+    catalogCachePath: tempCatalogCache((dir) => catalogTempDirs.push(dir)),
     isGlobalServer: () => false,
     isRuntimeServer: () => false,
   };
@@ -527,7 +532,7 @@ it("search 早退分支（unit undefined）返回 truncated=false（P1-1）", as
       cwd === "/proj" ? "/proj" : undefined,
     saveUserState: async () => {},
     emitStatus: () => {},
-    catalogCachePath: () => "/tmp/cache.json",
+    catalogCachePath: tempCatalogCache((dir) => catalogTempDirs.push(dir)),
     isGlobalServer: () => false,
     isRuntimeServer: () => false,
   };
@@ -601,7 +606,7 @@ it("中间层 all 模式：@global 覆盖（list/search 可见全局，call 放�
       cwd === "/proj" ? "/proj" : undefined,
     saveUserState: async () => {},
     emitStatus: () => {},
-    catalogCachePath: () => "/tmp/cache.json",
+    catalogCachePath: tempCatalogCache((dir) => catalogTempDirs.push(dir)),
     isGlobalServer: () => false,
     isRuntimeServer: () => false,
   };
@@ -787,7 +792,7 @@ it("#362 A2 / #767 笔 1a：project root 会话下 @global 可达（「改 mcp__
       cwd === "/proj" ? "/proj" : undefined,
     saveUserState: async () => {},
     emitStatus: () => {},
-    catalogCachePath: () => "/tmp/cache.json",
+    catalogCachePath: tempCatalogCache((dir) => catalogTempDirs.push(dir)),
     isGlobalServer: (name: string) => name === "gctx",
     isRuntimeServer: () => false,
   };
@@ -892,7 +897,7 @@ it("#362 A1：ws_mcp_list 带 serverFilter 过滤 0 命中 → message 可归因
       cwd === "/proj" ? "/proj" : undefined,
     saveUserState: async () => {},
     emitStatus: () => {},
-    catalogCachePath: () => "/tmp/cache.json",
+    catalogCachePath: tempCatalogCache((dir) => catalogTempDirs.push(dir)),
     isGlobalServer: () => false,
     isRuntimeServer: () => false,
   };
@@ -1018,7 +1023,7 @@ it("#362 P0-1：工具级禁用三入口一致（callTool / pre-execute guard / 
       cwd === "/proj" ? "/proj" : undefined,
     saveUserState: async () => {},
     emitStatus: () => {},
-    catalogCachePath: () => "/tmp/cache.json",
+    catalogCachePath: tempCatalogCache((dir) => catalogTempDirs.push(dir)),
     isGlobalServer: () => false,
     isRuntimeServer: () => false,
   };

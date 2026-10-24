@@ -11,6 +11,9 @@
  *
  * 全部离线：假 loader 与假宿主动作面、真实 lifecycle/中间层接线、无子进程、无网络。
  */
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { Context } from "@deepseek-ai/cordis";
 import type { ToolDefinition } from "@deepseek-ai/dsh-tools";
@@ -33,6 +36,7 @@ const {
   fakeToolsService,
   installCompositionPorts,
   releaseCompositionPorts,
+  tempCatalogCache,
 } = await import("../helpers.ts");
 
 /** 假 id 表：按 (scope, name) 稳定分配注册 id（与既有 middleware/lifecycle 夹具同配方）。 */
@@ -149,11 +153,14 @@ interface RootSpec {
  */
 const P_ROOT = "/var/tmp/dsh-mcp-c/P";
 const W_ROOT = "/var/tmp/dsh-mcp-c/W";
+const tempDirs: string[] = [];
 
 describe("#1137 C01–C03 并发目录隔离与连接所有权", () => {
   afterEach(async () => {
     releaseLifecycle();
     await mountLedger.flushDisposals();
+    for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
+    tempDirs.length = 0;
   });
 
   /** 记录每次真实工具调用的落点与次数（判据是目标与次数，不是「没抛错」）。 */
@@ -173,7 +180,9 @@ describe("#1137 C01–C03 并发目录隔离与连接所有权", () => {
    */
   async function fixture(specs: readonly RootSpec[], gates: Map<string, Deferred> = new Map()) {
     const calls: CallRecord[] = [];
-    const store = new McpStore("/var/tmp/dsh-mcp-concurrency-global.json");
+    const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-concurrency-"));
+    tempDirs.push(dir);
+    const store = new McpStore(join(dir, "global.json"));
     store.data = { version: 1, servers: [] };
     const manager = new McpManager(fakeManagerCtx(), store);
 
@@ -225,8 +234,7 @@ describe("#1137 C01–C03 并发目录隔离与连接所有权", () => {
       normalizedProjectRoot: async (cwd: string | undefined) => cwd,
       saveUserState: async () => {},
       emitStatus: () => {},
-      catalogCachePath: (root: string) =>
-        `/var/tmp/dsh-mcp-concurrency-${root.replace(/\W/g, "_")}.json`,
+      catalogCachePath: tempCatalogCache((dir) => tempDirs.push(dir)),
     };
     fakeCtxTools.entries = currentToolSchemas;
     const mw = new McpMiddleware(host as never);

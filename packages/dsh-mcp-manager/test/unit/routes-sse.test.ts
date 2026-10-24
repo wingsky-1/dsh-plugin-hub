@@ -29,6 +29,7 @@ import {
   installCompositionPorts,
   pollUntil,
   releaseCompositionPorts,
+  tempCatalogCache,
 } from "../helpers.ts";
 import type { FakeResponseState } from "../helpers.ts";
 
@@ -499,7 +500,7 @@ describe("health 路由", () => {
       normalizedProjectRoot: async (cwd: string | undefined) => cwd,
       saveUserState: async () => {},
       emitStatus: () => {},
-      catalogCachePath: () => "/tmp/cache.json",
+      catalogCachePath: tempCatalogCache((dir) => tempDirs.push(dir)),
       isGlobalServer: () => false,
       isRuntimeServer: () => false,
     };

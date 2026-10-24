@@ -36,6 +36,7 @@ import {
   fakeLogsPort,
   fakeToolsService,
   installCompositionPorts,
+  markerFreeTempParent,
   pollUntil,
   releaseCompositionPorts,
 } from "../helpers.ts";
@@ -106,10 +107,7 @@ let trackedManagers: McpManagerType[] = [];
 let trackedTimers: Array<ReturnType<typeof setTimeout>> = [];
 
 function makeTempDir(prefix: string) {
-  // findProjectRoot 会向上找标记；本机 /tmp 可能有 .git，测试根不能放在那里，
-  // 否则「无标记目录回落自身」会被祖先标记污染。/var/tmp 是同样受 mkdtemp 隔离、
-  // 但默认无项目标记的测试根。
-  const dir = mkdtempSync(join("/var/tmp", prefix));
+  const dir = mkdtempSync(join(markerFreeTempParent(), prefix));
   tempDirs.push(dir);
   return dir;
 }

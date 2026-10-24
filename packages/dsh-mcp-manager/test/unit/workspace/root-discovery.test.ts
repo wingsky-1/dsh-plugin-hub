@@ -10,7 +10,7 @@
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { tempDshHome } from "../../helpers.ts";
+import { markerFreeTempParent, tempDshHome } from "../../helpers.ts";
 
 const { findProjectRoot, normalizedProjectRoot } =
   await import("../../../src/server/workspace/interface.ts");
@@ -23,7 +23,7 @@ describe("findProjectRoot 标记发现（#1137 D02）", () => {
     // findProjectRoot 会向上找标记；本机 /tmp 可能有 .git，测试根不能放在那里，
     // 否则「无标记目录回落自身」会被祖先标记污染。/var/tmp 是同样受 mkdtemp 隔离、
     // 但默认无项目标记的测试根。
-    root = mkdtempSync(join("/var/tmp", "dsh-mcp-root-"));
+    root = mkdtempSync(join(markerFreeTempParent(), "dsh-mcp-root-"));
     // DSH_HOME 必须隔离：.dsh 全局排除判据依赖它，且绝不能碰真实 ~/.dsh。
     home = tempDshHome();
   });

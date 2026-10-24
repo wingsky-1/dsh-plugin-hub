@@ -7,10 +7,42 @@
  * 禁止在测试里自行写固定 sleep。
  */
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { Context } from "@deepseek-ai/cordis";
-import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+
+/** findProjectRoot 用例的父根必须真实且整条祖先链无项目标记。 */
+export function markerFreeTempParent() {
+  const explicitTemp = ["TMPDIR", "TMP", "TEMP"].some((key) => process.env[key] !== undefined);
+  const parent = realpathSync(explicitTemp ? tmpdir() : "/var/tmp");
+  for (let dir = parent; ; dir = dirname(dir)) {
+    for (const marker of [".git", ".dsh", ".mcp.json"]) {
+      if (existsSync(join(dir, marker)))
+        throw new Error(`test temp ancestor has ${marker}: ${dir}`);
+    }
+    if (dirname(dir) === dir) return parent;
+  }
+}
+
+/** 每个host独享稳定的root映射；首次求路径才建根，由调用文件登记并负责收尾。 */
+export function tempCatalogCache(ownRoot: (dir: string) => void) {
+  let dir: string | undefined;
+  const paths = new Map<string, string>();
+  return (root: string) => {
+    if (dir === undefined) {
+      dir = mkdtempSync(join(tmpdir(), "dsh-mcp-catalog-fixture-"));
+      ownRoot(dir);
+    }
+    let file = paths.get(root);
+    if (file === undefined) {
+      file = join(dir, `${paths.size}.json`);
+      paths.set(root, file);
+    }
+    return file;
+  };
+}
 
 /**
  * 建一个隔离的 DSH_HOME（临时目录 + `DSH_HOME` 打桩），返回 `{ dir, dispose }`。
@@ -19,10 +51,7 @@ import { join } from "node:path";
  * （#218 产物零污染）。`dshHome()` 每次调用都读环境变量，故桩随 dispose 还原即可。
  */
 export function tempDshHome() {
-  // findProjectRoot 会向上找 .git/.dsh/.mcp.json；若测试 home 放在含标记的
-  // 系统临时根（例如本机 /tmp/.git）下，DSH_HOME 排除用例会被祖先标记截获。
-  // /var/tmp 仍由 mkdtemp 隔离，但默认不含项目标记。
-  const dir = mkdtempSync(join("/var/tmp", "dsh-mcp-home-"));
+  const dir = mkdtempSync(join(markerFreeTempParent(), "dsh-mcp-home-"));
   const previous = process.env.DSH_HOME;
   process.env.DSH_HOME = dir;
   return {

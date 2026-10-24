@@ -33,6 +33,7 @@ import {
   installCompositionPorts,
   pollUntil,
   releaseCompositionPorts,
+  tempCatalogCache,
 } from "../helpers.ts";
 import type { FakeToolEntry, FakeToolsScript } from "../helpers.ts";
 import type { MiddlewareHost } from "../../src/server/connection/runtime/deps.ts";
@@ -130,7 +131,7 @@ function makeHost(
     emitStatus: () => {
       log.emits += 1;
     },
-    catalogCachePath: (root: string) => join(root, ".dsh-mcp-catalog-test.json"),
+    catalogCachePath: fixtureCatalogCachePath,
   };
   return { host, log, tools };
 }
@@ -230,6 +231,15 @@ function identity(extra: Record<string, unknown> = {}): {
 
 /** 中间层与装载账本都是真实副作用：用例结束后统一收口。 */
 const trackedMw: McpMiddlewareType[] = [];
+const tempDirs: string[] = [];
+
+function ownTempDir(dir: string) {
+  tempDirs.push(dir);
+  return dir;
+}
+
+let fixtureCatalogCachePath = tempCatalogCache(ownTempDir);
+
 afterEach(async () => {
   for (const mw of trackedMw) {
     try {
@@ -244,6 +254,9 @@ afterEach(async () => {
     await mountLedger.flushDisposals();
     lifecycleInstalled = false;
   }
+  for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
+  tempDirs.length = 0;
+  fixtureCatalogCachePath = tempCatalogCache(ownTempDir);
 });
 
 function trackMw(mw: McpMiddlewareType) {
@@ -298,7 +311,7 @@ interface DiskSeedEntry {
 }
 
 function seedRootFromDisk(root: string, entries: Array<[string, DiskSeedEntry]>) {
-  const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-mw-seed-"));
+  const dir = ownTempDir(mkdtempSync(join(tmpdir(), "dsh-mcp-mw-seed-")));
   const cachePath = join(dir, `${root.replace(/[^a-z0-9]/gi, "_")}.json`);
   const payload: Record<
     string,
@@ -1479,7 +1492,7 @@ describe("evictIfNeeded LRU", () => {
 // userState 持久化 ----
 describe("userState 持久化", () => {
   async function saveAndLoad() {
-    const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-mw-"));
+    const dir = ownTempDir(mkdtempSync(join(tmpdir(), "dsh-mcp-mw-")));
     const file = join(dir, "user-state.json");
     // catalog 字段是目录域搬迁前的残留形状（ProjectUnit 已无此键）：saveUserState 只读写 userDisabled，
     // 此处不断言、只收窄。
@@ -1509,7 +1522,7 @@ describe("userState 持久化", () => {
   });
 
   it("双键互存 A 向：saveUserState 不抹 disabledTools（#903 S1）", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-s1a-"));
+    const dir = ownTempDir(mkdtempSync(join(tmpdir(), "dsh-mcp-s1a-")));
     const file = join(dir, "user-state.json");
     const tools: DisabledToolsMap = new Map([[ROOT, new Map([["srv", new Set(["toolA"])]])]]);
     await saveDisabledTools(file, tools);
@@ -1526,7 +1539,7 @@ describe("userState 持久化", () => {
   });
 
   it("双键互存 B 向：saveDisabledTools 不抹 disabled（#903 S1）", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-s1b-"));
+    const dir = ownTempDir(mkdtempSync(join(tmpdir(), "dsh-mcp-s1b-")));
     const file = join(dir, "user-state.json");
     const units = new Map([[ROOT, { userDisabled: new Set(["srv"]) }]]) as unknown as Map<
       string,
@@ -1553,7 +1566,7 @@ describe("userState 持久化", () => {
 // last-good 目录缓存：loadCatalogCache 读取 / persistCatalog 空采集不写盘 ----
 describe("last-good 目录缓存", () => {
   function cacheFixture() {
-    const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-mw-cat-"));
+    const dir = ownTempDir(mkdtempSync(join(tmpdir(), "dsh-mcp-mw-cat-")));
     const baseHost = makeHost(new Map());
     const catalogHost = {
       ...baseHost.host,
@@ -2328,7 +2341,7 @@ describe("#413：runtime 封装定义服务器中间层直呼", () => {
 
   // persistCatalog 跳过 runtime 条目（isRuntimeServer 命中 → 不写盘）。
   function persistFixture() {
-    const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-mw-wrapped-"));
+    const dir = ownTempDir(mkdtempSync(join(tmpdir(), "dsh-mcp-mw-wrapped-")));
     const { host } = makeHost(new Map());
     const persistHost = {
       ...host,
@@ -3060,7 +3073,7 @@ describe("B11：含连续双下划线名 fail-closed 拒绝并指往 ws_mcp_call
         cwd === "/proj" ? "/proj" : undefined,
       saveUserState: async () => {},
       emitStatus: () => {},
-      catalogCachePath: () => "/tmp/cache.json",
+      catalogCachePath: fixtureCatalogCachePath,
       isGlobalServer: () => false,
     };
     const resolveRoot = async (agent: unknown) =>
@@ -3262,7 +3275,7 @@ describe("#767 S1-4d：池的转发登记、拆除走账本与读时刷新", () 
   });
 
   it("discover：按 mcp__<id>__ 前缀从注册面投影目录（剥前缀 + description/parameters 映射）", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-mw-disc-"));
+    const dir = ownTempDir(mkdtempSync(join(tmpdir(), "dsh-mcp-mw-disc-")));
     const { host, tools } = makeHost(new Map([[ROOT, [PY]]]));
     const catalogHost = {
       ...host,
@@ -3312,7 +3325,7 @@ describe("#767 S1-4d：池的转发登记、拆除走账本与读时刷新", () 
   // #1014 B7：显式失效压过 TTL 短路。TTL 是 24h 的兜底上限，不是刷新策略——
   // 此前 tools/change / 重连 / 手工刷新都没有落点，模型会一直看着已删除的 schema。
   it("显式失效压过 TTL：未登记失效时 TTL 短路不重投影，登记后立刻重投影", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-mw-dirty-"));
+    const dir = ownTempDir(mkdtempSync(join(tmpdir(), "dsh-mcp-mw-dirty-")));
     const { host, tools } = makeHost(new Map([[ROOT, [PY]]]));
     const catalogHost = {
       ...host,
@@ -3361,7 +3374,7 @@ describe("#767 S1-4d：池的转发登记、拆除走账本与读时刷新", () 
   });
 
   it("投影失败保留失效标记（不让一次失败把该服务器冻结 24h）", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-mw-dirty2-"));
+    const dir = ownTempDir(mkdtempSync(join(tmpdir(), "dsh-mcp-mw-dirty2-")));
     const { host, tools } = makeHost(new Map([[ROOT, [PY]]]));
     const mw = trackMw(new McpMiddleware(host as unknown as MiddlewareHost));
     const unit = makeUnit();
@@ -3388,7 +3401,7 @@ describe("#767 S1-4d：池的转发登记、拆除走账本与读时刷新", () 
   });
 
   it("dropRoot 清该 root 的失效标记，不动别的 root", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-mw-dirty3-"));
+    const dir = ownTempDir(mkdtempSync(join(tmpdir(), "dsh-mcp-mw-dirty3-")));
     // 本条只验 catalog 域的账本生命周期，不碰连接层：makeHost 仍要调（它装池侧端口并复位）。
     makeHost(new Map([[ROOT, [PY]]]));
     // 用**私有 root**而不是共享的 ROOT：本条会 dropRoot，而 catalogDirectory 是跨用例的
@@ -3405,7 +3418,7 @@ describe("#767 S1-4d：池的转发登记、拆除走账本与读时刷新", () 
   });
 
   it("dropServer 只清真被删掉那台的失效标记", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-mw-dropserver-"));
+    const dir = ownTempDir(mkdtempSync(join(tmpdir(), "dsh-mcp-mw-dropserver-")));
     const { host, tools } = makeHost(new Map([[ROOT, [PY]]]));
     const catalogHost = {
       ...host,
@@ -3441,7 +3454,7 @@ describe("#767 S1-4d：池的转发登记、拆除走账本与读时刷新", () 
   });
 
   it("tools/change 后按 server diff 重投影：远端删掉的工具从目录消失（#1014 B7b）", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-mw-change-"));
+    const dir = ownTempDir(mkdtempSync(join(tmpdir(), "dsh-mcp-mw-change-")));
     const { host, tools } = makeHost(new Map([[ROOT, [PY]]]));
     const catalogHost = {
       ...host,
@@ -3490,7 +3503,7 @@ describe("#767 S1-4d：池的转发登记、拆除走账本与读时刷新", () 
   // #1014 复核 P0-1：list_changed 最常见的形态是**只改描述/参数 schema**、工具名集合不动。
   // 只比裸名集合会让目录继续发旧描述，模型照旧参数调用——而这正是 issue §2 的目标面。
   it("tools/change 后只改 description 也重投影（不止增删）", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-mw-desc-"));
+    const dir = ownTempDir(mkdtempSync(join(tmpdir(), "dsh-mcp-mw-desc-")));
     const { host, tools } = makeHost(new Map([[ROOT, [PY]]]));
     const catalogHost = {
       ...host,
@@ -3542,7 +3555,7 @@ describe("#767 S1-4d：池的转发登记、拆除走账本与读时刷新", () 
     // 同上一例：先让 root 在册，投影失败才会落在已有条目上翻成 unavailable。
     await catalogDirectory.ensureRootLoaded(
       ROOT,
-      join(mkdtempSync(join(tmpdir(), "dsh-mcp-mw-seed-")), "none.json"),
+      join(ownTempDir(mkdtempSync(join(tmpdir(), "dsh-mcp-mw-seed-"))), "none.json"),
     );
     await catalogDirectory.projectRegisteredTools({
       root: ROOT,
@@ -3576,7 +3589,8 @@ describe("#767 S1-4d：池的转发登记、拆除走账本与读时刷新", () 
 // 与「载入只发生一次」这两条契约，实现换写法不会误红。
 describe("#767 S1-3b：目录归属与载入不变式", () => {
   const DOMAIN_ROOT = "/tmp/ws-s1-3b-root";
-  const DOMAIN_CACHE = () => join(mkdtempSync(join(tmpdir(), "dsh-mcp-mw-s13b-")), "catalog.json");
+  const DOMAIN_CACHE = () =>
+    join(ownTempDir(mkdtempSync(join(tmpdir(), "dsh-mcp-mw-s13b-"))), "catalog.json");
 
   /** 写一份 last-good 文件（内容 → 该 root 的目录）；落点目录由 mkdtempSync 现建。 */
   function writeCache(file: string, root: string, entries: unknown) {
@@ -3717,7 +3731,7 @@ describe("#767 S1-4d：guard 判发起者", () => {
         cwd === "/proj" ? "/proj" : undefined,
       saveUserState: async () => {},
       emitStatus: () => {},
-      catalogCachePath: () => "/tmp/cache.json",
+      catalogCachePath: fixtureCatalogCachePath,
       isGlobalServer: () => false,
     };
     const resolveRoot = async (agent: unknown) =>
