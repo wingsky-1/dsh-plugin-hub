@@ -598,11 +598,6 @@
       "count": 1
     }
   },
-  "packages/dsh-provider-usage/test/unit/trend/trend.test.ts": {
-    "max-lines-per-function": {
-      "count": 2
-    }
-  },
   "packages/dsh-verify-isolated/test/e2e/smoke.test.ts": {
     "max-lines": {
       "count": 1
