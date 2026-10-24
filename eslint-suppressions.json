@@ -113,27 +113,6 @@
       "count": 1
     }
   },
-  "packages/dsh-mcp-manager/test/e2e/smoke.test.ts": {
-    "max-lines": {
-      "count": 1
-    },
-    "max-lines-per-function": {
-      "count": 4
-    }
-  },
-  "packages/dsh-mcp-manager/test/integration/apply-lifecycle.test.ts": {
-    "max-lines": {
-      "count": 1
-    },
-    "max-lines-per-function": {
-      "count": 1
-    }
-  },
-  "packages/dsh-mcp-manager/test/integration/dynamic-directory-concurrency.test.ts": {
-    "max-lines-per-function": {
-      "count": 1
-    }
-  },
   "packages/dsh-notifier/src/client/index.tsx": {
     "max-lines": {
       "count": 1

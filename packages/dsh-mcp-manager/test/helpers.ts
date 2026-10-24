@@ -26,7 +26,7 @@ export function markerFreeTempParent() {
   }
 }
 
-/** 每个host独享稳定的root映射；首次求路径才建根，由调用文件登记并负责收尾。 */
+/** 同一fixture持有稳定root映射；首次求路径才建根，由调用文件登记并负责收尾。 */
 export function tempCatalogCache(ownRoot: (dir: string) => void) {
   let dir: string | undefined;
   const paths = new Map<string, string>();

@@ -155,6 +155,142 @@ const P_ROOT = "/var/tmp/dsh-mcp-c/P";
 const W_ROOT = "/var/tmp/dsh-mcp-c/W";
 const tempDirs: string[] = [];
 
+/**
+ * 记录每次真实工具调用的落点与次数（判据是目标与次数，不是「没抛错」）。
+ */
+interface ConcurrencyCallRecord {
+  root: string;
+  server: string;
+  tool: string;
+}
+
+/**
+ * 装一套最小组合根：两个会话（各自 session 对象 + 各自活动目录）、同名 server/tool、
+ * 中间层单元表按 root 分开记账。
+ *
+ * 连接必须走**真实装载链**（lifecycle.mountServer → 假 loader）才能拿到 connected 的
+ * ConnectionEntry：手塞的条目会被 `ensureConnected` 重新装载，随后 dispatch 读到
+ * connecting 而拒。
+ *
+ * 提成模块级具名 fixture（原在 describe 回调内，是 max-lines-per-function 超限主体）：
+ * C01–C03 共用同一装配面，barrier/释放链不随拆分散开；`currentToolSchemas` /
+ * `fixtureWorkspaceIds` 的重置时机不变（仍是文件级模块变量 + 文件级 beforeEach）。
+ */
+async function makeConcurrencyFixture(
+  specs: readonly RootSpec[],
+  gates: Map<string, Deferred> = new Map(),
+) {
+  const calls: ConcurrencyCallRecord[] = [];
+  const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-concurrency-"));
+  tempDirs.push(dir);
+  const store = new McpStore(join(dir, "global.json"));
+  store.data = { version: 1, servers: [] };
+  const manager = new McpManager(fakeManagerCtx(), store);
+
+  // 活动目录读取面：按 session 归属取该会话**当前**的活动目录。
+  const activeBySession = new Map<unknown, string>();
+  const activeDirectory = (session: unknown): string | undefined => activeBySession.get(session);
+
+  const resolveRoot = makeResolveRoot(manager, activeDirectory);
+
+  // 真中间层：ws_mcp_call 经 mw.callTool → dispatch.executeMcpCall（真实路由与禁用裁决）。
+  // barrier 挂在**远端执行**这一步（官方执行器位置），而不是我方路由层——
+  // 判据要证明的是「在飞调用不因目录切换改投」，挂高层会绕过真实执行路径。
+  // 远端执行器收到的是注册名 `mcp__<id>__<tool>`，不是 `@<root>/<server>`：
+  // 先用同一份 id 表把注册名还原成 spec，确保 barrier 与落点记录仍按真实目标判定。
+  const targets = specs.map((spec) => ({
+    spec,
+    registeredName: publicToolName(fixtureWorkspaceIds.idFor(spec.root, spec.server), spec.tool),
+  }));
+  const fakeCtxTools = fakeToolsService({
+    execute: async (input: unknown) => {
+      const fullName = String((input as { name?: unknown }).name ?? "");
+      const target = targets.find((entry) => entry.registeredName === fullName);
+      if (target === undefined) throw new Error(`unexpected call target ${fullName}`);
+      const spec = target.spec;
+      const gate = gates.get(spec.root);
+      if (gate !== undefined) await gate.wait();
+      calls.push({ root: spec.root, server: spec.server, tool: spec.tool });
+      return {
+        isError: false,
+        content: [{ type: "text", text: spec.marker }],
+        value: { content: [{ type: "text", text: spec.marker }] },
+      };
+    },
+  });
+  const host = {
+    ctx: { tools: fakeCtxTools },
+    logger: { info: () => {}, warn: () => {}, error: () => {} },
+    projectServersFor: async (root: string) =>
+      specs
+        .filter((spec) => spec.root === root)
+        .map((spec) => ({
+          name: spec.server,
+          transport: "stdio",
+          command: "noop",
+          enabled: true,
+        })),
+    redactionServers: () => [],
+    globalServers: () => [],
+    normalizedProjectRoot: async (cwd: string | undefined) => cwd,
+    saveUserState: async () => {},
+    emitStatus: () => {},
+    catalogCachePath: tempCatalogCache((dir) => tempDirs.push(dir)),
+  };
+  fakeCtxTools.entries = currentToolSchemas;
+  const mw = new McpMiddleware(host as never);
+  // 真实装载链的 connected 前置：单元先由 projectUnitFor 建立（不触发惰性连接），
+  // 再同步 ensureConnected 到完成。随后 dispatch 才能读到就绪的条目并转发。
+  for (const spec of specs) {
+    await mw.projectUnitFor(spec.root);
+    await mw.ensureConnected(spec.root, spec.server);
+    expect(mw.statusOf(spec.root, spec.server)).toBe("connected");
+  }
+
+  const defs: ToolDefinition[] = [];
+  const ctx = {
+    tools: {
+      register: (definition: ToolDefinition) => {
+        defs.push(definition);
+        return () => {};
+      },
+    },
+    on: () => () => {},
+  };
+  registerMiddlewareTools(ctx as unknown as Context, mw, resolveRoot, {
+    disabledTools: new Map(),
+  });
+
+  const def = (name: string) => {
+    const found = defs.find((entry) => entry.name === name);
+    if (found === undefined) throw new Error(`tool ${name} not registered`);
+    return found;
+  };
+
+  /** 造一个会话：session 对象与活动目录绑定，后续可改活动目录模拟切换。 */
+  function session(initial: string) {
+    const session_ = { id: Math.random().toString(36).slice(2) };
+    activeBySession.set(session_, initial);
+    return {
+      session: session_,
+      switchTo(next: string) {
+        activeBySession.set(session_, next);
+      },
+    };
+  }
+
+  /** 以某会话身份执行 ws_mcp_call。 */
+  async function call(as: ReturnType<typeof session>, server: string, tool: string) {
+    return def("ws_mcp_call").execute(
+      // server 必须是 `@<root>/<name>` 全名（dispatch 契约），这里按当前活动目录拼。
+      { server: `@${activeBySession.get(as.session)}/${server}`, tool, arguments: "{}" },
+      { agent: { session: as.session }, signal: new AbortController().signal } as never,
+    );
+  }
+
+  return { calls, session, call, def, mw };
+}
+
 describe("#1137 C01–C03 并发目录隔离与连接所有权", () => {
   afterEach(async () => {
     releaseLifecycle();
@@ -163,135 +299,8 @@ describe("#1137 C01–C03 并发目录隔离与连接所有权", () => {
     tempDirs.length = 0;
   });
 
-  /** 记录每次真实工具调用的落点与次数（判据是目标与次数，不是「没抛错」）。 */
-  interface CallRecord {
-    root: string;
-    server: string;
-    tool: string;
-  }
-
-  /**
-   * 装一套最小组合根：两个会话（各自 session 对象 + 各自活动目录）、同名 server/tool、
-   * 中间层单元表按 root 分开记账。
-   *
-   * 连接必须走**真实装载链**（lifecycle.mountServer → 假 loader）才能拿到 connected 的
-   * ConnectionEntry：手塞的条目会被 `ensureConnected` 重新装载，随后 dispatch 读到
-   * connecting 而拒。
-   */
-  async function fixture(specs: readonly RootSpec[], gates: Map<string, Deferred> = new Map()) {
-    const calls: CallRecord[] = [];
-    const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-concurrency-"));
-    tempDirs.push(dir);
-    const store = new McpStore(join(dir, "global.json"));
-    store.data = { version: 1, servers: [] };
-    const manager = new McpManager(fakeManagerCtx(), store);
-
-    // 活动目录读取面：按 session 归属取该会话**当前**的活动目录。
-    const activeBySession = new Map<unknown, string>();
-    const activeDirectory = (session: unknown): string | undefined => activeBySession.get(session);
-
-    const resolveRoot = makeResolveRoot(manager, activeDirectory);
-
-    // 真中间层：ws_mcp_call 经 mw.callTool → dispatch.executeMcpCall（真实路由与禁用裁决）。
-    // barrier 挂在**远端执行**这一步（官方执行器位置），而不是我方路由层——
-    // 判据要证明的是「在飞调用不因目录切换改投」，挂高层会绕过真实执行路径。
-    // 远端执行器收到的是注册名 `mcp__<id>__<tool>`，不是 `@<root>/<server>`：
-    // 先用同一份 id 表把注册名还原成 spec，确保 barrier 与落点记录仍按真实目标判定。
-    const targets = specs.map((spec) => ({
-      spec,
-      registeredName: publicToolName(fixtureWorkspaceIds.idFor(spec.root, spec.server), spec.tool),
-    }));
-    const fakeCtxTools = fakeToolsService({
-      execute: async (input: unknown) => {
-        const fullName = String((input as { name?: unknown }).name ?? "");
-        const target = targets.find((entry) => entry.registeredName === fullName);
-        if (target === undefined) throw new Error(`unexpected call target ${fullName}`);
-        const spec = target.spec;
-        const gate = gates.get(spec.root);
-        if (gate !== undefined) await gate.wait();
-        calls.push({ root: spec.root, server: spec.server, tool: spec.tool });
-        return {
-          isError: false,
-          content: [{ type: "text", text: spec.marker }],
-          value: { content: [{ type: "text", text: spec.marker }] },
-        };
-      },
-    });
-    const host = {
-      ctx: { tools: fakeCtxTools },
-      logger: { info: () => {}, warn: () => {}, error: () => {} },
-      projectServersFor: async (root: string) =>
-        specs
-          .filter((spec) => spec.root === root)
-          .map((spec) => ({
-            name: spec.server,
-            transport: "stdio",
-            command: "noop",
-            enabled: true,
-          })),
-      redactionServers: () => [],
-      globalServers: () => [],
-      normalizedProjectRoot: async (cwd: string | undefined) => cwd,
-      saveUserState: async () => {},
-      emitStatus: () => {},
-      catalogCachePath: tempCatalogCache((dir) => tempDirs.push(dir)),
-    };
-    fakeCtxTools.entries = currentToolSchemas;
-    const mw = new McpMiddleware(host as never);
-    // 真实装载链的 connected 前置：单元先由 projectUnitFor 建立（不触发惰性连接），
-    // 再同步 ensureConnected 到完成。随后 dispatch 才能读到就绪的条目并转发。
-    for (const spec of specs) {
-      await mw.projectUnitFor(spec.root);
-      await mw.ensureConnected(spec.root, spec.server);
-      expect(mw.statusOf(spec.root, spec.server)).toBe("connected");
-    }
-
-    const defs: ToolDefinition[] = [];
-    const ctx = {
-      tools: {
-        register: (definition: ToolDefinition) => {
-          defs.push(definition);
-          return () => {};
-        },
-      },
-      on: () => () => {},
-    };
-    registerMiddlewareTools(ctx as unknown as Context, mw, resolveRoot, {
-      disabledTools: new Map(),
-    });
-
-    const def = (name: string) => {
-      const found = defs.find((entry) => entry.name === name);
-      if (found === undefined) throw new Error(`tool ${name} not registered`);
-      return found;
-    };
-
-    /** 造一个会话：session 对象与活动目录绑定，后续可改活动目录模拟切换。 */
-    function session(initial: string) {
-      const session_ = { id: Math.random().toString(36).slice(2) };
-      activeBySession.set(session_, initial);
-      return {
-        session: session_,
-        switchTo(next: string) {
-          activeBySession.set(session_, next);
-        },
-      };
-    }
-
-    /** 以某会话身份执行 ws_mcp_call。 */
-    async function call(as: ReturnType<typeof session>, server: string, tool: string) {
-      return def("ws_mcp_call").execute(
-        // server 必须是 `@<root>/<name>` 全名（dispatch 契约），这里按当前活动目录拼。
-        { server: `@${activeBySession.get(as.session)}/${server}`, tool, arguments: "{}" },
-        { agent: { session: as.session }, signal: new AbortController().signal } as never,
-      );
-    }
-
-    return { calls, session, call, def, mw };
-  }
-
   it("C01：两个会话各自的同名 server/tool 落自己的 root，互不见对方配置", async () => {
-    const { calls, session, call } = await fixture([
+    const { calls, session, call } = await makeConcurrencyFixture([
       { root: P_ROOT, server: "srv", tool: "tool", marker: "P" },
       { root: W_ROOT, server: "srv", tool: "tool", marker: "W" },
     ]);
@@ -310,7 +319,7 @@ describe("#1137 C01–C03 并发目录隔离与连接所有权", () => {
   it("C02：A 的 P 连接被 barrier 挂起 → A 切 W 并完成 W 调用 → 释放 P：W 状态不被 P 结果覆盖", async () => {
     const gateP = deferred();
     const gates = new Map([[P_ROOT, gateP]]);
-    const { calls, session, call } = await fixture(
+    const { calls, session, call } = await makeConcurrencyFixture(
       [
         { root: P_ROOT, server: "srv", tool: "tool", marker: "P" },
         { root: W_ROOT, server: "srv", tool: "tool", marker: "W" },
@@ -341,7 +350,7 @@ describe("#1137 C01–C03 并发目录隔离与连接所有权", () => {
 
   it("C03：调用开始后切目录：先前调用在原 root 完成，新调用返新 root，不自动重试改投", async () => {
     const gateP = deferred();
-    const { calls, session, call } = await fixture(
+    const { calls, session, call } = await makeConcurrencyFixture(
       [
         { root: P_ROOT, server: "srv", tool: "tool", marker: "P" },
         { root: W_ROOT, server: "srv", tool: "tool", marker: "W" },
