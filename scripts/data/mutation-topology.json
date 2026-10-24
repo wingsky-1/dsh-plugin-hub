@@ -850,7 +850,8 @@
             "packages/dsh-provider-usage/test/unit/shared/contract.test.ts",
             "packages/dsh-provider-usage/test/unit/shared/atomic-write.test.ts",
             "packages/dsh-provider-usage/test/unit/trend/trend.test.ts",
-            "packages/dsh-provider-usage/test/unit/registry/registry-pure.test.ts"
+            "packages/dsh-provider-usage/test/unit/registry/registry-pure.test.ts",
+            "packages/dsh-provider-usage/test/unit/shared/trend-retention-config.test.ts"
           ],
           "comment": "#342 v4：src 级文件组分段（1）——index+user-adapters+ui-config+config（配置/入口面）；#768 D7 注册表文件随域迁 server/registry（路径同步，行为零改 + 双启用判据）；#768 D13 包根入口 src/index.ts 落地（apply/index.ts 显式具名薄转发，导出面零漂移）并入本段；测试按段 testFiles 清单跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
         },
@@ -960,7 +961,10 @@
             "packages/dsh-provider-usage/test/unit/trend/store-lifecycle.test.ts",
             "packages/dsh-provider-usage/test/unit/trend/store-shards.test.ts",
             "packages/dsh-provider-usage/test/unit/trend/trend.test.ts",
-            "packages/dsh-provider-usage/test/client-dom/trend-section.test.ts"
+            "packages/dsh-provider-usage/test/client-dom/trend-section.test.ts",
+            "packages/dsh-provider-usage/test/unit/trend/tracker-rebuild.test.ts",
+            "packages/dsh-provider-usage/test/unit/trend/tracker-flush-lifecycle.test.ts",
+            "packages/dsh-provider-usage/test/unit/trend/tracker-compaction-snapshot.test.ts"
           ],
           "comment": "阶段零新段（D17 分层变异）：E2 聚合/压实/存储面——aggregator+store+index；阶段三（#670 D2）aggregator 拆分为 aggregate-rows（压实转换纯函数）+ aggregate-query（查询投影纯函数），两新文件并入 mutate 面（防新文件变异盲区）；testFiles 含 unit-trend/unit-trend-ledger/unit-trend-view（杀灭面为该层测试，R8 台账守恒断言覆盖守恒链）；#768 D8 聚合五文件随域迁 server/aggregate（路径同步 + deletePromises 注解 + A4(f)补dir + forgetPersisted 删除，杀灭面新增 test/integration/aggregate/composition-root）；aggregator 单文件 5-8 分钟，独立段防超时。"
         },
@@ -987,7 +991,11 @@
             "packages/dsh-provider-usage/test/unit/trend/collector-settlement-core.test.ts",
             "packages/dsh-provider-usage/test/unit/trend/collector-usage-priority.test.ts",
             "packages/dsh-provider-usage/test/unit/trend/store-shards.test.ts",
-            "packages/dsh-provider-usage/test/unit/trend/trend.test.ts"
+            "packages/dsh-provider-usage/test/unit/trend/trend.test.ts",
+            "packages/dsh-provider-usage/test/unit/trend/tracker-rebuild.test.ts",
+            "packages/dsh-provider-usage/test/unit/trend/tracker-flush-lifecycle.test.ts",
+            "packages/dsh-provider-usage/test/unit/trend/tracker-compaction-snapshot.test.ts",
+            "packages/dsh-provider-usage/test/unit/server-shared/s2-contracts.test.ts"
           ],
           "comment": "阶段零新段（D17 分层变异）：E1 事件采集面——collector+types（折叠状态机/归属归一）；testFiles 含 unit-trend（杀灭面为该层测试）；#768 D9 采集两文件随域迁 server/collect（路径同步，零行为变更，杀灭面新增 test/integration/collect/composition-root）。"
         },

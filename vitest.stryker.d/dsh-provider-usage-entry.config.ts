@@ -18,6 +18,7 @@ export default defineConfig({
       'packages/dsh-provider-usage/test/unit/shared/atomic-write.test.ts',
       'packages/dsh-provider-usage/test/unit/shared/config.test.ts',
       'packages/dsh-provider-usage/test/unit/shared/contract.test.ts',
+      'packages/dsh-provider-usage/test/unit/shared/trend-retention-config.test.ts',
       'packages/dsh-provider-usage/test/unit/trend/trend.test.ts',
     ],
     environment: 'node',

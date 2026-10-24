@@ -14,7 +14,7 @@
  */
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import {
   makeLayerErrorSurface,
   makeNoopLayerErrorSurface,
@@ -29,6 +29,7 @@ import {
   LAST_RUN_SCHEMA,
   deriveLastRun,
   alignLastRun,
+  sumToken,
 } from "../../../src/server/shared/interface.ts";
 import { normalizeReportConfig } from "../../../src/server/config/interface.ts";
 import {
@@ -181,5 +182,23 @@ describe("4) UpgradeDeps 窄面冻结 + 禁 file-io 叶", () => {
   it("禁新建 file-io 叶：src/server 下无 file-io.ts", () => {
     expect(existsSync(SERVER_DIR + "/shared/file-io.ts")).toBe(false);
     expect(existsSync(SERVER_DIR + "/upgrade/file-io.ts")).toBe(false);
+  });
+});
+
+describe("sumToken null 语义", () => {
+  let nullPlusNumber: number | null;
+  let nullPlusNull: number | null;
+
+  beforeAll(() => {
+    nullPlusNumber = sumToken(null, 5);
+    nullPlusNull = sumToken(null, null);
+  });
+
+  it("sumToken null+数字", () => {
+    expect(nullPlusNumber).toBe(5);
+  });
+
+  it("sumToken null+null", () => {
+    expect(nullPlusNull).toBe(null);
   });
 });

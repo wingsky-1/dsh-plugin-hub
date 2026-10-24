@@ -323,6 +323,7 @@ const EXPECT_FILES: Record<string, string[]> = {
     "unit/shared/atomic-write.test.ts",
     "unit/shared/config.test.ts",
     "unit/shared/contract.test.ts",
+    "unit/shared/trend-retention-config.test.ts",
     "unit/trend/trend-ledger.test.ts",
     "unit/trend/trend-sanitize-dir.test.ts",
     "unit/trend/trend-shard-row.test.ts",
@@ -339,6 +340,9 @@ const EXPECT_FILES: Record<string, string[]> = {
     "unit/trend/store-lifecycle.test.ts",
     "unit/trend/store-shards.test.ts",
     "unit/trend/trend.test.ts",
+    "unit/trend/tracker-rebuild.test.ts",
+    "unit/trend/tracker-flush-lifecycle.test.ts",
+    "unit/trend/tracker-compaction-snapshot.test.ts",
   ],
 };
 
