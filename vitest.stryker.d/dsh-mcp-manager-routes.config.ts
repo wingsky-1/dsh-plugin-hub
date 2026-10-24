@@ -27,6 +27,7 @@ export default defineConfig({
       'packages/dsh-mcp-manager/test/unit/ports/api-ports.test.ts',
       'packages/dsh-mcp-manager/test/unit/routes-a2.test.ts',
       'packages/dsh-mcp-manager/test/unit/routes-sse.test.ts',
+      'packages/dsh-mcp-manager/test/unit/unit-shape-routes-config.test.ts',
     ],
     environment: 'node',
     testTimeout: 60_000,

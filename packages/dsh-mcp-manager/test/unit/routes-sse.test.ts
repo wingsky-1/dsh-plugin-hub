@@ -11,12 +11,8 @@
  * - session 路由：body 校验 400、cwd 切换 200
  * - import/json：缺 json 字段 400、同名 skip 与 overwrite 更新
  */
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import type { IncomingMessage, ServerResponse } from "node:http";
-import type { McpManager as McpManagerType } from "../../src/server/connection/orchestrator/interface.ts";
+import type { ServerResponse } from "node:http";
 import type { McpMiddleware as McpMiddlewareType } from "../../src/server/connection/runtime/interface.ts";
 import type { MiddlewareHost } from "../../src/server/connection/runtime/deps.ts";
 import type { ProjectUnit } from "../../src/server/connection/runtime/interface.ts";
@@ -24,33 +20,35 @@ import type { ServerConfig } from "../../src/server/config/interface.ts";
 import {
   assertNoGrowth,
   callHandler,
-  fakeManagerCtx,
   fakeToolsService,
   installCompositionPorts,
   pollUntil,
   releaseCompositionPorts,
   tempCatalogCache,
 } from "../helpers.ts";
-import type { FakeResponseState } from "../helpers.ts";
+import {
+  ROUTES,
+  makeRoutes,
+  unitShapeCleanupRoutes,
+  unitShapeFakeReq as fakeReq,
+  unitShapeFakeRes as fakeRes,
+  unitShapeRoutesFixture,
+  unitShapeSetupRoutes,
+} from "./unit-shape-routes-support.ts";
 
 // I8①：单元层不得值引组合根 src/index.ts——路由工厂、管理器与中间层改经各自域门面直取，
 // sseData 取仓库共享层（包内无域门面，其物理定义本就在 shared/host-utils.js），
 // 组合根顶层那六张静态端口表由 helpers 以同实参、同顺序手装。
 const {
-  makeRoutes,
   makeEventsRoute,
   makeHealthRoute,
   uiConfigChangedFrame,
   broadcastFrame,
-  ROUTES,
   SSE_HEARTBEAT_MS,
   SSE_PING_FRAME,
 } = await import("../../src/server/api/interface.ts");
-const { McpManager } = await import("../../src/server/connection/orchestrator/interface.ts");
 const { McpMiddleware } = await import("../../src/server/connection/runtime/interface.ts");
 const { sseData } = await import("../../../../shared/host-utils.js");
-const { McpStore } = await import("../../src/server/store/interface.ts");
-const { normalizeServer } = await import("../../src/server/config/interface.ts");
 
 beforeAll(() => {
   installCompositionPorts();
@@ -60,93 +58,13 @@ afterAll(() => {
   releaseCompositionPorts();
 });
 
-// 伪造 req/res：只实现 handler 实际读取的面，其余按接缝收窄（`as unknown as`）。
-const fakeReq = (
-  method: string,
-  url: string,
-  body?: unknown,
-  opts: { remote?: string } = {},
-): IncomingMessage =>
-  ({
-    method,
-    url,
-    socket: { remoteAddress: opts.remote ?? "127.0.0.1" },
-    headers: {
-      host: "localhost:3080",
-      origin: "http://localhost:3080",
-      "sec-fetch-site": "same-origin",
-    },
-    async *[Symbol.asyncIterator]() {
-      if (body !== undefined)
-        yield Buffer.from(typeof body === "string" ? body : JSON.stringify(body));
-    },
-    on: () => {},
-  }) as unknown as IncomingMessage;
-
-const fakeRes = (): ServerResponse & { state: FakeResponseState } => {
-  const state: FakeResponseState = {
-    status: 200,
-    body: "",
-    headers: {},
-    destroyed: false,
-    writableEnded: false,
-  };
-  return {
-    state,
-    // routes.ts 心跳回调读 res.destroyed / res.writableEnded 判定自愈清理。
-    get destroyed() {
-      return state.destroyed;
-    },
-    get writableEnded() {
-      return state.writableEnded;
-    },
-    writeHead: (s: number, h?: Record<string, string>) => {
-      state.status = s;
-      state.headers = h ?? {};
-    },
-    write: (chunk: { toString(): string }) => {
-      state.body += chunk.toString();
-    },
-    end: (chunk?: { toString(): string }) => {
-      if (chunk) state.body += chunk.toString();
-      state.writableEnded = true;
-    },
-    setHeader: () => {},
-    on: (event: string, cb: () => void) => {
-      if (event === "close") state.onClose = cb;
-    },
-    destroy: () => {
-      state.destroyed = true;
-    },
-  } as unknown as ServerResponse & { state: FakeResponseState };
-};
-
+const fixture = unitShapeRoutesFixture();
 function setup() {
-  const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-sse-"));
-  tempDirs.push(dir);
-  const store = new McpStore(join(dir, "mcp.json"));
-  store.data = { version: 1, servers: [] };
-  store.upsert(normalizeServer({ name: "dup-a", transport: "stdio", command: "echo" }));
-  const manager = new McpManager(fakeManagerCtx(), store);
-  manager.catalogCache.set("cached", { summary: "s" });
-  managers.push(manager);
-  return { dir, store, manager };
+  return unitShapeSetupRoutes(fixture);
 }
 
-let tempDirs: string[] = [];
-let managers: McpManagerType[] = [];
-
 afterEach(() => {
-  for (const manager of managers) {
-    try {
-      manager.sseHub?.dispose();
-    } catch {
-      // 心跳清理失败不掩盖用例结论
-    }
-  }
-  managers = [];
-  for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
-  tempDirs = [];
+  unitShapeCleanupRoutes(fixture);
 });
 
 const countPing = (res: { state: { body: string } }) =>
@@ -393,46 +311,62 @@ describe("SSE 心跳：destroy 自愈路径", () => {
   });
 });
 
-describe("health 路由", () => {
-  function healthFixture() {
-    const { manager } = setup();
-    const route = makeHealthRoute(manager);
-    // 单池（#767 笔 1a）：/health 的顶层三计数与 middleware 子对象都按**连接池单元表**
-    // 聚合——旧直连账本（manager.supervisors）已整体退役。假池只回答「routes 是否经
-    // statusOf / toolCountOf 取数」这一条；读时刷新的真实语义由下面两条真 McpMiddleware
-    // 用例钉住。
-    const units = new Map([
-      [
-        "/root-a",
-        {
-          root: "/root-a",
-          connections: new Map([
-            ["x", { status: "connected" }],
-            ["y", { status: "failed" }],
-          ]),
-        },
-      ],
-      ["/root-b", { root: "/root-b", connections: new Map() }],
-    ]);
-    const toolCounts = new Map([["/root-a\u0000x", 2]]);
-    // 假池只回答「routes 是否经 statusOf / toolCountOf 取数」：按既有注释的意图收窄为端口面。
-    manager.middleware = {
-      units: units as unknown as Map<string, ProjectUnit>,
-      statusOf: (root: string, serverName: string) =>
-        units.get(root)?.connections.get(serverName)?.status,
-      toolCountOf: (root: string, serverName: string) =>
-        toolCounts.get(root + "\u0000" + serverName) ?? 0,
-    } as unknown as McpMiddlewareType;
-    return { manager, route };
-  }
+function healthFixture() {
+  const { manager } = setup();
+  const route = makeHealthRoute(manager);
+  // 单池（#767 笔 1a）：/health 的顶层三计数与 middleware 子对象都按**连接池单元表**
+  // 聚合——旧直连账本（manager.supervisors）已整体退役。假池只回答「routes 是否经
+  // statusOf / toolCountOf 取数」这一条；读时刷新的真实语义由下面两条真 McpMiddleware
+  // 用例钉住。
+  const units = new Map([
+    [
+      "/root-a",
+      {
+        root: "/root-a",
+        connections: new Map([
+          ["x", { status: "connected" }],
+          ["y", { status: "failed" }],
+        ]),
+      },
+    ],
+    ["/root-b", { root: "/root-b", connections: new Map() }],
+  ]);
+  const toolCounts = new Map([["/root-a\u0000x", 2]]);
+  // 假池只回答「routes 是否经 statusOf / toolCountOf 取数」：按既有注释的意图收窄为端口面。
+  manager.middleware = {
+    units: units as unknown as Map<string, ProjectUnit>,
+    statusOf: (root: string, serverName: string) =>
+      units.get(root)?.connections.get(serverName)?.status,
+    toolCountOf: (root: string, serverName: string) =>
+      toolCounts.get(root + "\u0000" + serverName) ?? 0,
+  } as unknown as McpMiddlewareType;
+  return { manager, route };
+}
 
-  function healthPayload() {
-    const { manager, route } = healthFixture();
-    const resOk = fakeRes();
-    route.handler(fakeReq("GET", ROUTES.health), resOk);
-    return { manager, status: resOk.state.status, payload: JSON.parse(resOk.state.body) };
-  }
+function healthPayload() {
+  const { manager, route } = healthFixture();
+  const resOk = fakeRes();
+  route.handler(fakeReq("GET", ROUTES.health), resOk);
+  return { manager, status: resOk.state.status, payload: JSON.parse(resOk.state.body) };
+}
 
+/** health 的计数判据必须打在真 statusOf 上：假池只能验「接线到没到」，验不了读时刷新。 */
+function realPoolHost(tools: unknown, servers: ServerConfig[]) {
+  return {
+    ctx: { tools },
+    logger: { info: () => {}, warn: () => {}, error: () => {} },
+    projectServersFor: async () => servers,
+    globalServers: () => [],
+    normalizedProjectRoot: async (cwd: string | undefined) => cwd,
+    saveUserState: async () => {},
+    emitStatus: () => {},
+    catalogCachePath: tempCatalogCache((dir) => fixture.tempDirs.push(dir)),
+    isGlobalServer: () => false,
+    isRuntimeServer: () => false,
+  };
+}
+
+function registerHealthFenceAndCountCases() {
   it("非 loopback → 403", () => {
     const { route } = healthFixture();
     const resForeign = fakeRes();
@@ -489,23 +423,9 @@ describe("health 路由", () => {
     expect("mode" in payload.middleware).toBe(false);
     expect(payload.middleware.units).toBe(2);
   });
+}
 
-  /** health 的计数判据必须打在真 statusOf 上：假池只能验「接线到没到」，验不了读时刷新。 */
-  function realPoolHost(tools: unknown, servers: ServerConfig[]) {
-    return {
-      ctx: { tools },
-      logger: { info: () => {}, warn: () => {}, error: () => {} },
-      projectServersFor: async () => servers,
-      globalServers: () => [],
-      normalizedProjectRoot: async (cwd: string | undefined) => cwd,
-      saveUserState: async () => {},
-      emitStatus: () => {},
-      catalogCachePath: tempCatalogCache((dir) => tempDirs.push(dir)),
-      isGlobalServer: () => false,
-      isRuntimeServer: () => false,
-    };
-  }
-
+function registerHealthRealPoolCountCases() {
   it("#767 S1-4d：计数随注册面变化（前缀工具消失 → middleware.connected 下降）", () => {
     // 真池（真 McpMiddleware + 真 projectServerState）：官方不暴露状态 API，六态只能读注册面，
     // 而 entry.status 只在装载窗口结算时写入——routes 若直读它会永远停在陈旧的 connected。
@@ -607,6 +527,10 @@ describe("health 路由", () => {
     expect(middlewarePayload().connected).toBe(0);
     expect(middlewarePayload().connections).toBe(1);
   });
+}
+describe("health 路由", () => {
+  registerHealthFenceAndCountCases();
+  registerHealthRealPoolCountCases();
 });
 
 describe("session / servers 边界", () => {
@@ -724,239 +648,6 @@ describe("connect/disconnect/reconnect 围栏（#903 M-B5）", () => {
   );
 });
 
-describe("import/json：字段校验与 skip/overwrite", () => {
-  function importFixture() {
-    const { manager } = setup();
-    const routes = makeRoutes(manager);
-    // 路由表静态装配：缺路由即装配损坏，此处断言存在。
-    const importRoute = routes.find((r) => r.path === ROUTES.importJson)!;
-    return { manager, importRoute };
-  }
-
-  it("非 POST 405", async () => {
-    const { importRoute } = importFixture();
-    const guard = await callHandler(importRoute, fakeReq("GET", ROUTES.importJson));
-    expect(guard.status).toBe(405);
-  });
-
-  it("body 缺 json 字符串 → 400", async () => {
-    const { importRoute } = importFixture();
-    const badBody = await callHandler(
-      importRoute,
-      fakeReq("POST", ROUTES.importJson, { json: 42 }),
-    );
-    expect(badBody.status).toBe(400);
-  });
-
-  it("缺 json 字符串文案含 must include a json string", async () => {
-    const { importRoute } = importFixture();
-    const badBody = await callHandler(
-      importRoute,
-      fakeReq("POST", ROUTES.importJson, { json: 42 }),
-    );
-    expect(JSON.stringify(badBody.payload)).toMatch(/must include a json string/);
-  });
-
-  it("同名默认跳过", async () => {
-    const { importRoute } = importFixture();
-    const payload = JSON.stringify({ "dup-a": { command: "echo2" }, fresh: { url: "http://f/" } });
-    const resSkip = await callHandler(
-      importRoute,
-      fakeReq("POST", ROUTES.importJson, { json: payload }),
-    );
-    expect((resSkip.payload as { skipped: unknown }).skipped).toEqual(["dup-a"]);
-  });
-
-  it("新名导入", async () => {
-    const { importRoute } = importFixture();
-    const payload = JSON.stringify({ "dup-a": { command: "echo2" }, fresh: { url: "http://f/" } });
-    const resSkip = await callHandler(
-      importRoute,
-      fakeReq("POST", ROUTES.importJson, { json: payload }),
-    );
-    expect((resSkip.payload as { imported: unknown }).imported).toEqual(["fresh"]);
-  });
-
-  it("overwrite 全部导入", async () => {
-    const { importRoute } = importFixture();
-    const payload = JSON.stringify({ "dup-a": { command: "echo2" }, fresh: { url: "http://f/" } });
-    const resOverwrite = await callHandler(
-      importRoute,
-      fakeReq("POST", ROUTES.importJson, { json: payload, overwrite: true }),
-    );
-    expect((resOverwrite.payload as { imported: string[] }).imported.sort()).toEqual([
-      "dup-a",
-      "fresh",
-    ]);
-  });
-
-  it("overwrite 后配置更新", async () => {
-    const { importRoute, manager } = importFixture();
-    const payload = JSON.stringify({ "dup-a": { command: "echo2" }, fresh: { url: "http://f/" } });
-    await callHandler(
-      importRoute,
-      fakeReq("POST", ROUTES.importJson, { json: payload, overwrite: true }),
-    );
-    expect(manager.store.find("dup-a")!.command).toBe("echo2");
-  });
-
-  it("非法条目整体 400", async () => {
-    const { importRoute } = importFixture();
-    const resInvalid = await callHandler(
-      importRoute,
-      fakeReq("POST", ROUTES.importJson, { json: '{"bad":1}' }),
-    );
-    expect(resInvalid.status).toBe(400);
-  });
-
-  it("非法条目文案含 entry must be an object", async () => {
-    const { importRoute } = importFixture();
-    const resInvalid = await callHandler(
-      importRoute,
-      fakeReq("POST", ROUTES.importJson, { json: '{"bad":1}' }),
-    );
-    expect(JSON.stringify(resInvalid.payload)).toMatch(/entry must be an object/);
-  });
-});
-
 // M7：POST /config 未知顶层键 → 400 拒绝（且不落盘） ----
-describe("M7：POST /config 未知顶层键 → 400 拒绝", () => {
-  function configFixture() {
-    const { manager } = setup();
-    const uiUpdates: unknown[] = [];
-    manager.uiUpdate = async (patch) => {
-      // 记录落盘意图：未知键不得触达 uiUpdate（知道错了就不许写）。
-      uiUpdates.push(patch);
-    };
-    const routes = makeRoutes(manager);
-    // 路由表静态装配：缺路由即装配损坏，此处断言存在。
-    const configRoute = routes.find((r) => r.path === ROUTES.config)!;
-    return { manager, configRoute, uiUpdates };
-  }
-
-  async function postBody(body: unknown) {
-    const fixture = configFixture();
-    const res = await callHandler(fixture.configRoute, fakeReq("POST", ROUTES.config, body));
-    return { ...fixture, res };
-  }
-
-  it("config 路由存在", () => {
-    const { configRoute } = configFixture();
-    expect(configRoute).toBeTruthy();
-  });
-
-  it("M7：未知顶层键应 400 拒绝", async () => {
-    const { res } = await postBody({ middleware: "all" });
-    expect(res.status).toBe(400);
-  });
-
-  it("M7：已删配置键 middleware / middlewarePolicy 一律按未知键拒绝", async () => {
-    const mw = await postBody({ middleware: "project" });
-    expect(mw.res.status).toBe(400);
-    const policy = await postBody({ middlewarePolicy: { denyTools: {} } });
-    expect(policy.res.status).toBe(400);
-  });
-
-  it("错误文案列出全部未知键", async () => {
-    const { res } = await postBody({ foo: 1, middleware: "all" });
-    expect((res.payload as { error: unknown }).error).toBe(
-      "unknown config key(s): foo, middleware",
-    );
-  });
-
-  it("未知键不触达 uiUpdate（不落盘）", async () => {
-    const { uiUpdates } = await postBody({ middleware: "all" });
-    expect(uiUpdates.length).toBe(0);
-  });
-
-  it("manager 上没有模式镜像字段（无第二事实源可写）", () => {
-    const { manager } = configFixture();
-    expect("middlewareMode" in manager).toBe(false);
-    expect("setMiddlewareMode" in manager).toBe(false);
-  });
-
-  it("合法扁平 UI 键 → 200 并落盘", async () => {
-    const { res, uiUpdates } = await postBody({ position: "top-left", offsetX: 12 });
-    expect(res.status).toBe(200);
-    expect(uiUpdates.length).toBe(1);
-  });
-});
 // CRAP-ZERO tool-disable 路由：分支覆盖（与 routes-controllers 解析拆分同批）
-describe("CRAP-ZERO tool-disable 路由", () => {
-  function toolFixture() {
-    const { manager } = setup();
-    const routes = makeRoutes(manager);
-    const route = routes.find((r) => r.path === ROUTES.toolDisable)!;
-    return { manager, route };
-  }
-
-  it("非 PATCH → 405", async () => {
-    const { route } = toolFixture();
-    const res = await callHandler(route, fakeReq("GET", ROUTES.toolDisable));
-    expect(res.status).toBe(405);
-  });
-
-  it("无 body → 400", async () => {
-    const { route } = toolFixture();
-    const res = await callHandler(route, fakeReq("PATCH", ROUTES.toolDisable));
-    expect(res.status).toBe(400);
-  });
-
-  it("body 缺字段 → 400 且文案含均为必填", async () => {
-    const { route } = toolFixture();
-    const res = await callHandler(route, fakeReq("PATCH", ROUTES.toolDisable, {}));
-    expect(res.status).toBe(400);
-    expect(JSON.stringify(res.payload)).toMatch(/均为必填/);
-  });
-
-  it("server 格式非法 → 400", async () => {
-    const { route } = toolFixture();
-    const res = await callHandler(
-      route,
-      fakeReq("PATCH", ROUTES.toolDisable, { server: "nope", tool: "t" }),
-    );
-    expect(res.status).toBe(400);
-    expect(JSON.stringify(res.payload)).toMatch(/格式非法/);
-  });
-
-  it("跨空间 root → 400 且文案含不属于当前工作空间", async () => {
-    const { route } = toolFixture();
-    const res = await callHandler(
-      route,
-      fakeReq("PATCH", ROUTES.toolDisable, { server: "@/tmp/proj/x", tool: "t" }),
-    );
-    expect(res.status).toBe(400);
-    expect(JSON.stringify(res.payload)).toMatch(/不属于当前工作空间/);
-  });
-
-  it("合法禁用 → 200 且透传 root/裸名/开关", async () => {
-    const { manager, route } = toolFixture();
-    const calls: Array<[string, string, string, boolean]> = [];
-    manager.setToolDisabled = (async (
-      root: string,
-      server: string,
-      tool: string,
-      disabled: boolean,
-    ) => {
-      calls.push([root, server, tool, disabled]);
-    }) as typeof manager.setToolDisabled;
-    const res = await callHandler(
-      route,
-      fakeReq("PATCH", ROUTES.toolDisable, { server: "@global/dup-a", tool: "t", disabled: true }),
-    );
-    expect(res.status).toBe(200);
-    expect((res.payload as { ok: unknown }).ok).toBe(true);
-    expect(calls).toEqual([["@global", "dup-a", "t", true]]);
-  });
-});
 // CRAP-ZERO resume route hit
-describe("CRAP-ZERO resume route", () => {
-  it("POST resume returns 200 ok", async () => {
-    const { manager } = setup();
-    const routes = makeRoutes(manager);
-    const route = routes.find((r) => r.path === ROUTES.resume)!;
-    const res = await callHandler(route, fakeReq("POST", ROUTES.resume));
-    expect(res.status).toBe(200);
-    expect((res.payload as { ok: unknown }).ok).toBe(true);
-  });
-});

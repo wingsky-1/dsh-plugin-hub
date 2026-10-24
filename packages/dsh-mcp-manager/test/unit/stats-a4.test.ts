@@ -84,12 +84,72 @@ describe("#770-A4 收集器保持纯（不引 pipeline）", () => {
   });
 });
 
-describe("#770-A4 调用方先脱敏再传入", () => {
+// 自然职责 fixture 与注册函数（#1174 阶段 2 形状清债）：原 124 行 describe 的两条用例
+// 共用同一套「统计收集器 + 假中间层 + 收集 ctx + 执行上下文」装配面，拆成模块级具名
+// fixture；两条用例各归一段职责注册函数，describe 体只按原顺序调用——fullName 的
+// describe 前缀与用例注册顺序均不变。
+interface StatsFixture {
+  statsFile: string;
+  stats: McpStatsCollector;
+}
+
+function makeStatsFixture(prefix: string): StatsFixture {
+  const dir = makeTempDir(prefix);
+  const statsFile = join(dir, "stats.json");
+  return { statsFile, stats: new McpStatsCollector({ enabled: true, filePath: statsFile }) };
+}
+
+/** 假中间层：只实现本域触达的面，抛出的错误里带待脱敏的明文。 */
+function makeRedactionMiddlewareFake(server: ServerConfig, errorMessage: string): McpMiddleware {
+  return {
+    host: { redactionServers: () => [server] },
+    projectUnitFor: async () => ({}),
+    ensureConnected: async () => {},
+    callTool: async () => {
+      throw new Error(errorMessage);
+    },
+    units: new Map(),
+    disabledTools: new Map(),
+  } as unknown as McpMiddleware;
+}
+
+/** 收集工具注册的假 ctx：注册表被登记进 defs，断言面从 defs 取。 */
+function makeCollectingCtx(): { defs: ToolDefinition[]; ctx: Context } {
+  const defs: ToolDefinition[] = [];
+  const ctx = {
+    tools: {
+      register: (def: ToolDefinition) => {
+        defs.push(def);
+        return () => {};
+      },
+    },
+    on: () => () => {},
+  } as unknown as Context;
+  return { defs, ctx };
+}
+
+function makeExecContext(callId: string): ToolRunContext {
+  return {
+    callId,
+    rootCallId: callId,
+    name: "ws_mcp_call",
+    arguments: {},
+    signal: new AbortController().signal,
+    agent: {},
+    token: "tok-a4-1",
+  } as unknown as ToolRunContext;
+}
+
+function findCallTool(defs: ToolDefinition[]) {
+  const call = defs.find((def) => def.name === "ws_mcp_call")!;
+  expect(call).toBeDefined();
+  return call;
+}
+
+function registerCallSiteRedactionCase() {
   it("失败错误经 executeCall 入 stats 时无明文，落盘文件亦无明文", async () => {
     installInjectPorts();
-    const dir = makeTempDir("dsh-mcp-a4-");
-    const statsFile = join(dir, "stats.json");
-    const stats = new McpStatsCollector({ enabled: true, filePath: statsFile });
+    const { statsFile, stats } = makeStatsFixture("dsh-mcp-a4-");
     const secretServer = {
       name: "srv",
       transport: "stdio",
@@ -97,41 +157,14 @@ describe("#770-A4 调用方先脱敏再传入", () => {
       enabled: true,
       env: { HIDDEN_TOKEN: A4_SECRET },
     } as unknown as ServerConfig;
-    const mwFake = {
-      host: { redactionServers: () => [secretServer] },
-      projectUnitFor: async () => ({}),
-      ensureConnected: async () => {},
-      callTool: async () => {
-        throw new Error("remote boom " + A4_SECRET);
-      },
-      units: new Map(),
-      disabledTools: new Map(),
-    } as unknown as McpMiddleware;
-    const defs: ToolDefinition[] = [];
-    const ctxFake = {
-      tools: {
-        register: (def: ToolDefinition) => {
-          defs.push(def);
-          return () => {};
-        },
-      },
-      on: () => () => {},
-    };
-    registerMiddlewareTools(ctxFake as unknown as Context, mwFake, async () => ROOT, {
+    const mwFake = makeRedactionMiddlewareFake(secretServer, "remote boom " + A4_SECRET);
+    const { defs, ctx } = makeCollectingCtx();
+    registerMiddlewareTools(ctx, mwFake, async () => ROOT, {
       stats,
       disabledTools: new Map(),
     });
-    const call = defs.find((def) => def.name === "ws_mcp_call")!;
-    expect(call).toBeDefined();
-    const exec = {
-      callId: "call-a4-1",
-      rootCallId: "call-a4-1",
-      name: "ws_mcp_call",
-      arguments: {},
-      signal: new AbortController().signal,
-      agent: {},
-      token: "tok-a4-1",
-    } as unknown as ToolRunContext;
+    const call = findCallTool(defs);
+    const exec = makeExecContext("call-a4-1");
     await expect(
       call.execute({ server: fullServerName(ROOT, "srv"), tool: "t" }, exec),
     ).rejects.toThrow();
@@ -148,14 +181,14 @@ describe("#770-A4 调用方先脱敏再传入", () => {
     expect(onDisk).toContain("[REDACTED]");
     stats.dispose();
   });
+}
 
+function registerTemplateExpansionRedactionCase() {
   it("模板展开值亦被抹（快照已展开，调用方无需二次展开）", async () => {
     installInjectPorts();
     process.env[ENV_VAR] = A4_ENV_SECRET;
     const { expandServerEnv } = await import("../../src/server/config/interface.ts");
-    const dir = makeTempDir("dsh-mcp-a4-tpl-");
-    const statsFile = join(dir, "stats.json");
-    const stats = new McpStatsCollector({ enabled: true, filePath: statsFile });
+    const { statsFile, stats } = makeStatsFixture("dsh-mcp-a4-tpl-");
     const tplServer = {
       name: "srv-tpl",
       transport: "stdio",
@@ -165,40 +198,14 @@ describe("#770-A4 调用方先脱敏再传入", () => {
     } as unknown as ServerConfig;
     const expanded = expandServerEnv(tplServer);
     expect(expanded.env?.["HIDDEN_TOKEN"]).toBe(A4_ENV_SECRET);
-    const mwFake = {
-      host: { redactionServers: () => [expanded] },
-      projectUnitFor: async () => ({}),
-      ensureConnected: async () => {},
-      callTool: async () => {
-        throw new Error("tpl boom " + A4_ENV_SECRET);
-      },
-      units: new Map(),
-      disabledTools: new Map(),
-    } as unknown as McpMiddleware;
-    const defs: ToolDefinition[] = [];
-    const ctxFake = {
-      tools: {
-        register: (def: ToolDefinition) => {
-          defs.push(def);
-          return () => {};
-        },
-      },
-      on: () => () => {},
-    };
-    registerMiddlewareTools(ctxFake as unknown as Context, mwFake, async () => ROOT, {
+    const mwFake = makeRedactionMiddlewareFake(expanded, "tpl boom " + A4_ENV_SECRET);
+    const { defs, ctx } = makeCollectingCtx();
+    registerMiddlewareTools(ctx, mwFake, async () => ROOT, {
       stats,
       disabledTools: new Map(),
     });
-    const call = defs.find((def) => def.name === "ws_mcp_call")!;
-    const exec = {
-      callId: "call-a4-2",
-      rootCallId: "call-a4-2",
-      name: "ws_mcp_call",
-      arguments: {},
-      signal: new AbortController().signal,
-      agent: {},
-      token: "tok-a4-2",
-    } as unknown as ToolRunContext;
+    const call = findCallTool(defs);
+    const exec = makeExecContext("call-a4-2");
     await expect(
       call.execute({ server: fullServerName(ROOT, "srv-tpl"), tool: "t" }, exec),
     ).rejects.toThrow();
@@ -208,4 +215,9 @@ describe("#770-A4 调用方先脱敏再传入", () => {
     expect(readFileSync(statsFile, "utf8")).not.toContain(A4_ENV_SECRET);
     stats.dispose();
   });
+}
+
+describe("#770-A4 调用方先脱敏再传入", () => {
+  registerCallSiteRedactionCase();
+  registerTemplateExpansionRedactionCase();
 });

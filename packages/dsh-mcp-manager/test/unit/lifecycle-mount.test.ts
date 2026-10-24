@@ -243,7 +243,10 @@ describe("官方 Config 映射（设计 §2.1 逐字段表）", () => {
   });
 });
 
-describe("装载链", () => {
+// 自然职责注册函数（#1174 阶段 2 形状清债）：「装载链」原 139 行 describe 按
+// 「装载成功路径与配置展开」「失败面与晚到结算守卫」两段职责落到模块级函数，describe 体
+// 只按原顺序调用——fullName 的 describe 前缀与用例注册顺序均不变。
+function registerMountSuccessPathCases() {
   it("id 经 workspace 端口按 (root, name) 取、scope 传 root；包名与 Config 原样交给 loader", async () => {
     const harness = installHarness({
       idFactory: () => "idseed",
@@ -320,7 +323,9 @@ describe("装载链", () => {
       delete process.env.ITEST_MCP_TOKEN;
     }
   });
+}
 
+function registerMountFailureGuardCases() {
   it("ready 永不结算 → 我方连接预算耗尽 failed，实例保留（官方仍在退避重连）", async () => {
     const harness = installHarness({ ready: "never" });
     const states: ServerState[] = [];
@@ -406,6 +411,11 @@ describe("装载链", () => {
     await disposal;
     expect(harness.loader.handles[0].state.disposeCalls).toBe(1);
   });
+}
+
+describe("装载链", () => {
+  registerMountSuccessPathCases();
+  registerMountFailureGuardCases();
 });
 
 describe("装载失败面", () => {

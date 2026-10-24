@@ -118,7 +118,7 @@ function makeLogger(): { warns: string[]; warn: (message: string) => void } {
   };
 }
 
-describe("visibility 域：mcp__* 的模型可见面隐藏", () => {
+function registerInitialRestrictionCases() {
   it("A1 agent/created：deny 含注册面全部形状良好的 mcp__ 名（#922 注册表优先，不再要求 id 属于单元）", () => {
     const log: string[] = [];
     const agent = fakeAgent("a1", log);
@@ -241,7 +241,9 @@ describe("visibility 域：mcp__* 的模型可见面隐藏", () => {
     expect(log).toEqual(["restrict:a1[mcp__id-a__echo]", "dispose:a1#1"]);
     dispose();
   });
+}
 
+function registerCleanupAndFallbackCases() {
   it("A5 agent/disposed 撤该 agent 的限制；域 disposer 撤全部并摘三个监听", () => {
     const log: string[] = [];
     const events = makeEvents();
@@ -349,7 +351,9 @@ describe("visibility 域：mcp__* 的模型可见面隐藏", () => {
     dispose();
     expect(log.length).toBe(4);
   });
+}
 
+function registerRegistryMismatchCases() {
   it("B1 错位其一（registry 有 / units 无）：照摘不误（#922 泄漏正例）", () => {
     const log: string[] = [];
     const agent = fakeAgent("a1", log);
@@ -421,7 +425,9 @@ describe("visibility 域：mcp__* 的模型可见面隐藏", () => {
     expect(logger.warns.length).toBe(1);
     dispose();
   });
+}
 
+function registerConvergenceCases() {
   it("B4 抖动收敛：逐轮新增工具精确追补，无变更的重同步冻结", () => {
     const log: string[] = [];
     const events = makeEvents();
@@ -484,7 +490,9 @@ describe("visibility 域：mcp__* 的模型可见面隐藏", () => {
     expect(logger.warns).toEqual([]);
     dispose();
   });
+}
 
+function registerFailureRecoveryCases() {
   it("B6 非未知错误：整单回滚+无假记忆+warn，下轮可重试", () => {
     const log: string[] = [];
     const events = makeEvents();
@@ -511,4 +519,11 @@ describe("visibility 域：mcp__* 的模型可见面隐藏", () => {
     expect(log).toEqual(["restrict:a1[mcp__id-a__bad|mcp__id-a__ok]"]);
     dispose();
   });
+}
+describe("visibility 域：mcp__* 的模型可见面隐藏", () => {
+  registerInitialRestrictionCases();
+  registerCleanupAndFallbackCases();
+  registerRegistryMismatchCases();
+  registerConvergenceCases();
+  registerFailureRecoveryCases();
 });

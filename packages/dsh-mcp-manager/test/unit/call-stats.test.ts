@@ -46,64 +46,38 @@ afterEach(() => {
   tempDirs = [];
 });
 
-describe("默认关闭时完全无 I/O，不写盘", () => {
-  function disabledFixture() {
-    const dir = tempDir();
-    const statsFile = join(dir, "stats.json");
-    const collector = new McpStatsCollector({ enabled: false, filePath: statsFile });
-    collector.recordCall("codegraph", "codegraph_search", 150, true);
-    collector.recordSearch("search query");
-    collector.recordList();
-    collector.recordDetail("codegraph", "codegraph_search");
-    collector.flushSync();
-    return { dir, statsFile, collector };
-  }
+// 自然职责注册函数（#1174 阶段 2 形状清债）：长 describe 的用例按「聚合指标 / 渐进式披露
+// 漏斗 / 重启恢复」三段职责落到模块级函数，describe 体只负责按原顺序调用——fullName 的
+// describe 前缀不变、注册顺序不变、fixture 构造面不变。
+function enabledFixture() {
+  const dir = tempDir();
+  const statsFile = join(dir, "stats.json");
+  const collector = new McpStatsCollector({ enabled: true, filePath: statsFile });
 
-  it("默认关闭时 isEnabled() 为 false", () => {
-    const { collector } = disabledFixture();
-    expect(collector.isEnabled()).toBe(false);
-  });
+  // 记录工具调用
+  collector.recordCall("codegraph", "codegraph_search", 100, true);
+  collector.recordCall("codegraph", "codegraph_search", 200, true);
+  collector.recordCall("codegraph", "codegraph_explore", 500, false, "timeout error");
+  collector.recordCall("mem0", "memory_search", 50, true);
 
-  it("关闭时不应生成统计文件", () => {
-    const { statsFile } = disabledFixture();
-    expect(existsSync(statsFile)).toBe(false);
-  });
+  // 记录渐进式披露漏斗
+  collector.recordSearch("find symbol");
+  collector.recordSearch("find symbol");
+  collector.recordSearch("");
+  collector.recordList("@global/codegraph");
+  collector.recordList();
+  collector.recordDetail("codegraph", "codegraph_search");
 
-  it("关闭时快照服务器数为 0", () => {
-    const { collector } = disabledFixture();
-    const snap = collector.snapshot();
-    expect(Object.keys(snap.servers).length).toBe(0);
-  });
-});
+  collector.flushSync();
+  return { statsFile, collector };
+}
 
-describe("开启时正确聚合调用与渐进式披露指标并原子落盘", () => {
-  function enabledFixture() {
-    const dir = tempDir();
-    const statsFile = join(dir, "stats.json");
-    const collector = new McpStatsCollector({ enabled: true, filePath: statsFile });
+function rawOf(statsFile: string) {
+  return JSON.parse(readFileSync(statsFile, "utf8"));
+}
 
-    // 记录工具调用
-    collector.recordCall("codegraph", "codegraph_search", 100, true);
-    collector.recordCall("codegraph", "codegraph_search", 200, true);
-    collector.recordCall("codegraph", "codegraph_explore", 500, false, "timeout error");
-    collector.recordCall("mem0", "memory_search", 50, true);
-
-    // 记录渐进式披露漏斗
-    collector.recordSearch("find symbol");
-    collector.recordSearch("find symbol");
-    collector.recordSearch("");
-    collector.recordList("@global/codegraph");
-    collector.recordList();
-    collector.recordDetail("codegraph", "codegraph_search");
-
-    collector.flushSync();
-    return { statsFile, collector };
-  }
-
-  function rawOf(statsFile: string) {
-    return JSON.parse(readFileSync(statsFile, "utf8"));
-  }
-
+/** 职责一：调用聚合与每工具指标（服务器级计数 + tools 明细表）。 */
+function registerAggregationCases() {
   it("开启时 isEnabled() 为 true", () => {
     const { collector } = enabledFixture();
     expect(collector.isEnabled()).toBe(true);
@@ -185,7 +159,10 @@ describe("开启时正确聚合调用与渐进式披露指标并原子落盘", (
     const { statsFile } = enabledFixture();
     expect(rawOf(statsFile).servers.mem0.tools.memory_search.calls).toBe(1);
   });
+}
 
+/** 职责二：渐进式披露漏斗（searches / lists / details 三个桶）。 */
+function registerDisclosureCases() {
   // 桶键是手写字面量哈希（sha256("find symbol") 前 12 位），刻意不 import 实现里的
   // 哈希函数——同源期望改坏了也一起绿，异源期望才打得住。
   it("disclosure searches 非空查询落哈希桶（不落明文）", () => {
@@ -214,7 +191,10 @@ describe("开启时正确聚合调用与渐进式披露指标并原子落盘", (
     const { statsFile } = enabledFixture();
     expect(rawOf(statsFile).disclosure.details["codegraph/codegraph_search"]).toBe(1);
   });
+}
 
+/** 职责三：重启恢复（读回既有盘面）与存量明文键的读时丢弃。 */
+function registerRestartRecoveryCases() {
   it("重启恢复：新实例读回 codegraph totalCalls 3", () => {
     // 测试重启恢复能力（从已存在的文件加载）
     const { statsFile } = enabledFixture();
@@ -302,6 +282,42 @@ describe("开启时正确聚合调用与渐进式披露指标并原子落盘", (
       expect(Object.keys(restored.servers).length, payload).toBe(0);
     }
   });
+}
+
+describe("默认关闭时完全无 I/O，不写盘", () => {
+  function disabledFixture() {
+    const dir = tempDir();
+    const statsFile = join(dir, "stats.json");
+    const collector = new McpStatsCollector({ enabled: false, filePath: statsFile });
+    collector.recordCall("codegraph", "codegraph_search", 150, true);
+    collector.recordSearch("search query");
+    collector.recordList();
+    collector.recordDetail("codegraph", "codegraph_search");
+    collector.flushSync();
+    return { dir, statsFile, collector };
+  }
+
+  it("默认关闭时 isEnabled() 为 false", () => {
+    const { collector } = disabledFixture();
+    expect(collector.isEnabled()).toBe(false);
+  });
+
+  it("关闭时不应生成统计文件", () => {
+    const { statsFile } = disabledFixture();
+    expect(existsSync(statsFile)).toBe(false);
+  });
+
+  it("关闭时快照服务器数为 0", () => {
+    const { collector } = disabledFixture();
+    const snap = collector.snapshot();
+    expect(Object.keys(snap.servers).length).toBe(0);
+  });
+});
+
+describe("开启时正确聚合调用与渐进式披露指标并原子落盘", () => {
+  registerAggregationCases();
+  registerDisclosureCases();
+  registerRestartRecoveryCases();
 });
 
 // McpManager & routes: 前端 POST /config 不会覆盖抹除已有的 debug 配置 ----

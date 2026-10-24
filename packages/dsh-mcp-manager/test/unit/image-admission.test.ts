@@ -83,7 +83,10 @@ function request(overrides: Partial<ImageAdmissionRequest> = {}) {
   };
 }
 
-describe("image-admission：A+ 自持图片准入（纯逻辑）", () => {
+// 自然职责注册函数（#1174 阶段 2 形状清债）：「A+ 自持图片准入」原 245 行 describe 按
+// 「准入主路径与降级」「路由解析」「限额面（#903）」三段职责落到模块级函数，describe 体
+// 只按原顺序调用——fullName 的 describe 前缀与用例注册顺序均不变。
+function registerAdmissionCases() {
   it("B8 合法图片 + 路由声明 image + 落库成功 → 原位换入 {type:image,attachment}，文本块保序", async () => {
     const record: SaveImageInput[][] = [];
     const out = await projectImageAdmission(
@@ -110,7 +113,9 @@ describe("image-admission：A+ 自持图片准入（纯逻辑）", () => {
     expect(record[0][0].mediaType).toBe("image/png");
     expect(Buffer.from(record[0][0].data).toString("base64")).toBe(PNG);
   });
+}
 
+function registerAdmissionDegradeCases() {
   it("B9 附件库缺席 → 诊断含 no attachment store is mounted，且不调用 saveImages", async () => {
     let called = 0;
     const out = await projectImageAdmission(
@@ -168,7 +173,9 @@ describe("image-admission：A+ 自持图片准入（纯逻辑）", () => {
     expect(out![0].type).toBe("text");
     expect(textAt(out, 0)).toContain('model "m" does not declare image input');
   });
+}
 
+function registerAdmissionInvalidInputCases() {
   it("B12 非法 media type / 非 canonical base64 → 逐条诊断，且整批都不进 saveImages", async () => {
     const record: SaveImageInput[][] = [];
     const out = await projectImageAdmission(
@@ -242,7 +249,9 @@ describe("image-admission：A+ 自持图片准入（纯逻辑）", () => {
     );
     expect(textAt(out, 0)).toContain("the tool call was canceled before image storage");
   });
+}
 
+function registerAdmissionMissCases() {
   it("未命中：无图片块 / 已是模型面图片块 → 不建投影（返回 undefined，交给 render 兜底）", async () => {
     expect(
       await projectImageAdmission(request({ content: [{ type: "text", text: "只有文本" }] })),
@@ -252,7 +261,9 @@ describe("image-admission：A+ 自持图片准入（纯逻辑）", () => {
     expect(containsRemoteImage(modelFace)).toBe(false);
     expect(await projectImageAdmission(request({ content: modelFace }))).toBe(undefined);
   });
+}
 
+function registerRouteResolutionCases() {
   it("resolveRoute：会话 header 优先，回落 agent.options；取不到给 undefined", () => {
     expect(resolveRoute(routeAgent)).toEqual({ provider: "p", model: "m" });
     expect(
@@ -274,7 +285,9 @@ describe("image-admission：A+ 自持图片准入（纯逻辑）", () => {
     ).toEqual({ provider: "p4", model: "m4" });
     expect(resolveRoute(undefined)).toEqual({ provider: undefined, model: undefined });
   });
+}
 
+function registerAdmissionLimitCases() {
   it("B-M1 超限单张（>8 MiB）→ 整批诊断且不落库（#903）", async () => {
     let saved = 0;
     const big = Buffer.alloc(8 * 1024 * 1024 + 1).toString("base64");
@@ -345,4 +358,13 @@ describe("image-admission：A+ 自持图片准入（纯逻辑）", () => {
     expect(textAt(out, 0)).toContain("too many images");
     expect(saved).toBe(0);
   });
+}
+
+describe("image-admission：A+ 自持图片准入（纯逻辑）", () => {
+  registerAdmissionCases();
+  registerAdmissionDegradeCases();
+  registerAdmissionInvalidInputCases();
+  registerAdmissionMissCases();
+  registerRouteResolutionCases();
+  registerAdmissionLimitCases();
 });

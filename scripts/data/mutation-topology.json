@@ -67,7 +67,9 @@
       "test/unit/manager-shape-catalog-view-fixture.ts（dsh-mcp-manager：Manager自然职责fixture，不进runner/变异分母）",
       "test/unit/middleware-shape-support.ts（dsh-mcp-manager：Middleware自然职责fixture，不进runner/变异分母）",
       "test/unit/middleware-shape-cold-start-fixture.ts（dsh-mcp-manager：Middleware自然职责fixture，不进runner/变异分母）",
-      "test/unit/middleware-shape-cold-start-latest-config.ts（dsh-mcp-manager：Middleware自然职责fixture，不进runner/变异分母）"
+      "test/unit/middleware-shape-cold-start-latest-config.ts（dsh-mcp-manager：Middleware自然职责fixture，不进runner/变异分母）",
+      "test/unit/unit-shape-routes-support.ts（dsh-mcp-manager：Unit自然职责fixture，不进runner/变异分母）",
+      "test/unit/unit-shape-store-support.ts（dsh-mcp-manager：Unit自然职责fixture，不进runner/变异分母）"
     ],
     "mixedTargets": ["routes.test.ts", "report-p0.test.ts"],
     "rootLayers": {
@@ -336,8 +338,10 @@
             "packages/dsh-mcp-manager/test/unit/redaction.test.ts",
             "packages/dsh-mcp-manager/test/unit/routes-a2.test.ts",
             "packages/dsh-mcp-manager/test/unit/routes-sse.test.ts",
+            "packages/dsh-mcp-manager/test/unit/unit-shape-routes-config.test.ts",
             "packages/dsh-mcp-manager/test/unit/stats-a4.test.ts",
             "packages/dsh-mcp-manager/test/unit/store.test.ts",
+            "packages/dsh-mcp-manager/test/unit/unit-shape-store-save.test.ts",
             "packages/dsh-mcp-manager/test/client-unit/summary-a3-guard.test.ts",
             "packages/dsh-mcp-manager/test/unit/summary-a3.test.ts",
             "packages/dsh-mcp-manager/test/unit/workspace-id.test.ts",
@@ -377,6 +381,7 @@
             "packages/dsh-mcp-manager/test/unit/redaction.test.ts",
             "packages/dsh-mcp-manager/test/unit/routes-a2.test.ts",
             "packages/dsh-mcp-manager/test/unit/routes-sse.test.ts",
+            "packages/dsh-mcp-manager/test/unit/unit-shape-routes-config.test.ts",
             "packages/dsh-mcp-manager/test/unit/summary-a3.test.ts",
             "packages/dsh-mcp-manager/test/unit/workspace.test.ts"
           ],
@@ -430,6 +435,7 @@
             "packages/dsh-mcp-manager/test/unit/middleware-shape-workspace-session.test.ts",
             "packages/dsh-mcp-manager/test/unit/redaction.test.ts",
             "packages/dsh-mcp-manager/test/unit/routes-sse.test.ts",
+            "packages/dsh-mcp-manager/test/unit/unit-shape-routes-config.test.ts",
             "packages/dsh-mcp-manager/test/unit/stats-a4.test.ts",
             "packages/dsh-mcp-manager/test/unit/visibility.test.ts"
           ],
@@ -457,7 +463,8 @@
             "packages/dsh-mcp-manager/test/unit/manager-shape-catalog-view.test.ts",
             "packages/dsh-mcp-manager/test/unit/manager-shape-disposal.test.ts",
             "packages/dsh-mcp-manager/test/unit/routes-a2.test.ts",
-            "packages/dsh-mcp-manager/test/unit/routes-sse.test.ts"
+            "packages/dsh-mcp-manager/test/unit/routes-sse.test.ts",
+            "packages/dsh-mcp-manager/test/unit/unit-shape-routes-config.test.ts"
           ],
           "comment": "#767 B2b 重画：routes——server/api（路由装配/端点控制器/查询辅助）；B2b 后文件归各域段，本段只留这一处。W11b2a 删除 src/types 与 src/integration 后，原两条排除已成 0 命中死条目，随本刀删除；excludes 仅保留 client 一条（另一端）。测试按段 testFiles 清单跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
         },
@@ -501,8 +508,10 @@
             "packages/dsh-mcp-manager/test/unit/redaction.test.ts",
             "packages/dsh-mcp-manager/test/unit/routes-a2.test.ts",
             "packages/dsh-mcp-manager/test/unit/routes-sse.test.ts",
+            "packages/dsh-mcp-manager/test/unit/unit-shape-routes-config.test.ts",
             "packages/dsh-mcp-manager/test/unit/stats-a4.test.ts",
             "packages/dsh-mcp-manager/test/unit/store.test.ts",
+            "packages/dsh-mcp-manager/test/unit/unit-shape-store-save.test.ts",
             "packages/dsh-mcp-manager/test/unit/summary-a3.test.ts"
           ],
           "comment": "#767 B2b 重画：supervisor——状态持久化（store）+统计（stats）；B2b 后文件归各域段。段名保留（段只是 glob 容器，ID 还绑着 stryker.conf.d 的 jsonReporter/incremental 与 mutation-segment-ledger）：#767 S1-5c 删自研连接栈后，原连接监督器与重连策略两条 glob（runtime/supervisor.ts+runtime/reconnect.ts）已是 0 命中死条目，随本刀删除，不再换新落点——本笔没有新增源文件，段名退役会连带 baseline-archive 段数哨兵 + ledger superseded + AGENTS.md 三处。W11b2a 删除 src/types 与 src/integration 后，原两条排除已成 0 命中死条目，随本刀删除；excludes 仅保留 client 一条（另一端）。测试按段 testFiles 清单跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
@@ -543,7 +552,8 @@
             "packages/dsh-mcp-manager/test/unit/middleware-shape-pool.test.ts",
             "packages/dsh-mcp-manager/test/unit/middleware-shape-workspace-session.test.ts",
             "packages/dsh-mcp-manager/test/unit/redaction.test.ts",
-            "packages/dsh-mcp-manager/test/unit/routes-sse.test.ts"
+            "packages/dsh-mcp-manager/test/unit/routes-sse.test.ts",
+            "packages/dsh-mcp-manager/test/unit/unit-shape-routes-config.test.ts"
           ],
           "comment": "新增（#767 S1-2b）：servers——面向官方引擎的服务器域族（装载生命周期 servers/lifecycle + 派发 servers/dispatch（#767 S1-3a 落地）；injection 不在本段，其实现在 src/server/catalog/impl/injection/）。为什么新建段而不是塞进旧段：源码全覆盖断言要求 src 下每个文件落在 ∪mutate ∪ ∪excludes 内，而 src/server/servers/** 不被既有任何段的 glob 覆盖；旧段的 comment 与文件归属也会因此失真。excludes 照同包其余段，仅保留 client 一条（另一端），不构成宿主侧变异面。测试按段 testFiles 清单跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
         },
@@ -565,6 +575,7 @@
             "packages/dsh-mcp-manager/test/unit/call-stats.test.ts",
             "packages/dsh-mcp-manager/test/unit/call-timeout.test.ts",
             "packages/dsh-mcp-manager/test/unit/catalog.test.ts",
+            "packages/dsh-mcp-manager/test/unit/unit-shape-catalog-injection.test.ts",
             "packages/dsh-mcp-manager/test/unit/catalog-pure.test.ts",
             "packages/dsh-mcp-manager/test/unit/config-env-policy.test.ts",
             "packages/dsh-mcp-manager/test/unit/dispatch.test.ts",
@@ -603,8 +614,10 @@
             "packages/dsh-mcp-manager/test/unit/redaction.test.ts",
             "packages/dsh-mcp-manager/test/unit/routes-a2.test.ts",
             "packages/dsh-mcp-manager/test/unit/routes-sse.test.ts",
+            "packages/dsh-mcp-manager/test/unit/unit-shape-routes-config.test.ts",
             "packages/dsh-mcp-manager/test/unit/stats-a4.test.ts",
             "packages/dsh-mcp-manager/test/unit/store.test.ts",
+            "packages/dsh-mcp-manager/test/unit/unit-shape-store-save.test.ts",
             "packages/dsh-mcp-manager/test/unit/summary-a3.test.ts",
             "packages/dsh-mcp-manager/test/unit/upgrade/steps.test.ts",
             "packages/dsh-mcp-manager/test/unit/upgrade/storage-layout.test.ts"

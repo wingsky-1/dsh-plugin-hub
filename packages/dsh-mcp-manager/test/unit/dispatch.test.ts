@@ -199,7 +199,10 @@ function makeInput(options: {
   } as unknown as DispatchCallInput;
 }
 
-describe("executeMcpCall：远端分支", () => {
+// 自然职责注册函数（#1174 阶段 2 形状清债）：「远端分支」原 149 行 describe 拆成
+// 「调用构造与身份透传」「结果投影与错误面」两段，describe 体只按原顺序调用，
+// fullName 的 describe 前缀与用例注册顺序均不变。
+function registerRemoteCallConstructionCases() {
   it("工具名归一 + 参数归一 + 注册名经 registeredNameFor + 预算读 server.toolCallTimeoutMs", async () => {
     const { pipeline, calls } = makePipeline();
     const remote = { content: [{ type: "text", text: "ok" }] };
@@ -275,7 +278,9 @@ describe("executeMcpCall：远端分支", () => {
     // 本层只剩「超时包装的预算 = 调用预算 + 2000」这一处可观测。
     expect(calls.timeout[0].ms).toBe(17000);
   });
+}
 
+function registerRemoteResultProjectionCases() {
   it("远端结果交给 projectCallToolResult，两个文案回调口径不变", async () => {
     const { pipeline, calls } = makePipeline();
     const remote = { content: [{ type: "text", text: "hi" }], structuredContent: { n: 1 } };
@@ -363,6 +368,11 @@ describe("executeMcpCall：远端分支", () => {
     expect((error?.message.match(/ws_mcp_detail/g) ?? []).length).toBe(1);
     expect(calls.project).toHaveLength(0);
   });
+}
+
+describe("executeMcpCall：远端分支", () => {
+  registerRemoteCallConstructionCases();
+  registerRemoteResultProjectionCases();
 });
 
 describe("executeMcpCall：封装直呼分支", () => {

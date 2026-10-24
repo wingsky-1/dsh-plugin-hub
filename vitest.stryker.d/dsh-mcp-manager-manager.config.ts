@@ -34,6 +34,7 @@ export default defineConfig({
       'packages/dsh-mcp-manager/test/unit/routes-a2.test.ts',
       'packages/dsh-mcp-manager/test/unit/routes-sse.test.ts',
       'packages/dsh-mcp-manager/test/unit/summary-a3.test.ts',
+      'packages/dsh-mcp-manager/test/unit/unit-shape-routes-config.test.ts',
       'packages/dsh-mcp-manager/test/unit/workspace.test.ts',
     ],
     environment: 'node',

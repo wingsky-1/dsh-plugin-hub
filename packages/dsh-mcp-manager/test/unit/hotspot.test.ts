@@ -42,94 +42,97 @@ afterEach(() => {
   tempDirs = [];
 });
 
-describe("路由 handlers：connect / disconnect / reconnect", () => {
-  function makeRoutesFixture() {
-    const dir = makeTempDir("dsh-mcp-manager-route-");
-    const store = new McpStore(join(dir, "mcp.json"));
-    store.data = { version: 1, servers: [] };
-    // 添加一个测试服务器（不真实连接，只验证路由 handler 可被调用）
-    store.upsert(normalizeServer({ name: "route-test", transport: "stdio", command: "echo" }));
-    const manager = new McpManager(fakeManagerCtx(), store);
+// 自然职责注册函数（#1174 阶段 2 形状清债）：「路由 handlers」原 159 行 describe 按
+// 「围栏与 scope 归一化」「三条路由的主路径」两段职责落到模块级函数，describe 体只按
+// 原顺序调用——fullName 的 describe 前缀与用例注册顺序均不变。
+function makeRoutesFixture() {
+  const dir = makeTempDir("dsh-mcp-manager-route-");
+  const store = new McpStore(join(dir, "mcp.json"));
+  store.data = { version: 1, servers: [] };
+  // 添加一个测试服务器（不真实连接，只验证路由 handler 可被调用）
+  store.upsert(normalizeServer({ name: "route-test", transport: "stdio", command: "echo" }));
+  const manager = new McpManager(fakeManagerCtx(), store);
 
-    const routes = makeRoutes(manager);
-    return { routes, manager, find: (path: string) => routes.find((r) => r.path === path) };
-  }
+  const routes = makeRoutes(manager);
+  return { routes, manager, find: (path: string) => routes.find((r) => r.path === path) };
+}
 
-  // 伪造 req/res：只实现 handler 实际读取的面，其余按接缝收窄（`as unknown as`）。
-  function fakeReq(method: string, url: string, body?: unknown): IncomingMessage {
-    return {
-      method,
-      url,
-      socket: { remoteAddress: "127.0.0.1" },
-      headers: {
-        host: "localhost:3080",
-        origin: "http://localhost:3080",
-        "sec-fetch-site": "same-origin",
-      },
-      async *[Symbol.asyncIterator]() {
-        if (body !== undefined) yield Buffer.from(JSON.stringify(body));
-      },
-    } as unknown as IncomingMessage;
-  }
+// 伪造 req/res：只实现 handler 实际读取的面，其余按接缝收窄（`as unknown as`）。
+function fakeReq(method: string, url: string, body?: unknown): IncomingMessage {
+  return {
+    method,
+    url,
+    socket: { remoteAddress: "127.0.0.1" },
+    headers: {
+      host: "localhost:3080",
+      origin: "http://localhost:3080",
+      "sec-fetch-site": "same-origin",
+    },
+    async *[Symbol.asyncIterator]() {
+      if (body !== undefined) yield Buffer.from(JSON.stringify(body));
+    },
+  } as unknown as IncomingMessage;
+}
 
-  function fakeRes(): ServerResponse & {
+function fakeRes(): ServerResponse & {
+  state: { status: number; body: string; headers: Record<string, string> };
+} {
+  const state: { status: number; body: string; headers: Record<string, string> } = {
+    status: 200,
+    body: "",
+    headers: {},
+  };
+  return {
+    state,
+    writeHead: (s: number, h?: Record<string, string>) => {
+      state.status = s;
+      if (h) state.headers = h;
+    },
+    write: (chunk: { toString(): string }) => {
+      state.body += chunk.toString();
+    },
+    end: (chunk?: { toString(): string }) => {
+      if (chunk) state.body += chunk.toString();
+    },
+    setHeader: () => {},
+    on: () => {},
+    destroy: () => {},
+  } as unknown as ServerResponse & {
     state: { status: number; body: string; headers: Record<string, string> };
-  } {
-    const state: { status: number; body: string; headers: Record<string, string> } = {
-      status: 200,
-      body: "",
-      headers: {},
-    };
-    return {
-      state,
-      writeHead: (s: number, h?: Record<string, string>) => {
-        state.status = s;
-        if (h) state.headers = h;
-      },
-      write: (chunk: { toString(): string }) => {
-        state.body += chunk.toString();
-      },
-      end: (chunk?: { toString(): string }) => {
-        if (chunk) state.body += chunk.toString();
-      },
-      setHeader: () => {},
-      on: () => {},
-      destroy: () => {},
-    } as unknown as ServerResponse & {
-      state: { status: number; body: string; headers: Record<string, string> };
-    };
-  }
+  };
+}
 
+// #767 S1-5b：scope 查询参数的归一化契约。五条吃 scope 的路由共用 routes.ts 的 scopeParam
+// 一处归一化（缺省/非法值 → normalizeScope），此前零判据。这里不挂真 McpManager，改挂一个
+// 记录实参的假 manager：判据要打的是「路由下传给 manager 的那一个值」，不是 manager 内部行为。
+function scopeCaptureFixture() {
+  const calls: [unknown, unknown][] = [];
+  const manager = {
+    async setSession() {},
+    async connect(name: string, scope?: string) {
+      calls.push([name, scope]);
+    },
+    async disconnect() {},
+    async reconnect() {},
+    async remove() {},
+    async update() {},
+    async add() {},
+    async projectStoreOrThrow() {
+      return { data: { version: 1, servers: [] } };
+    },
+    summary: () => ({ servers: [] }),
+    store: { data: { version: 1, servers: [] } },
+  };
+  return { calls, manager };
+}
+
+function registerRouteFenceAndScopeCases() {
   it("connect 缺 name → 400", async () => {
     const { find } = makeRoutesFixture();
     const res = fakeRes();
     await find(ROUTES.connect)!.handler(fakeReq("POST", ROUTES.connect), res);
     expect(res.state.status).toBe(400);
   });
-
-  // #767 S1-5b：scope 查询参数的归一化契约。五条吃 scope 的路由共用 routes.ts 的 scopeParam
-  // 一处归一化（缺省/非法值 → normalizeScope），此前零判据。这里不挂真 McpManager，改挂一个
-  // 记录实参的假 manager：判据要打的是「路由下传给 manager 的那一个值」，不是 manager 内部行为。
-  function scopeCaptureFixture() {
-    const calls: [unknown, unknown][] = [];
-    const manager = {
-      async setSession() {},
-      async connect(name: string, scope?: string) {
-        calls.push([name, scope]);
-      },
-      async disconnect() {},
-      async reconnect() {},
-      async remove() {},
-      async update() {},
-      async add() {},
-      async projectStoreOrThrow() {
-        return { data: { version: 1, servers: [] } };
-      },
-      summary: () => ({ servers: [] }),
-      store: { data: { version: 1, servers: [] } },
-    };
-    return { calls, manager };
-  }
 
   it("connect 不带 scope 与 scope=global 下传同一个归一化值（#767 S1-5b）", async () => {
     const { calls, manager } = scopeCaptureFixture();
@@ -160,7 +163,9 @@ describe("路由 handlers：connect / disconnect / reconnect", () => {
     );
     expect(calls[2][1], "显式 scope=project").toBe("project");
   });
+}
 
+function registerRouteMainPathCases() {
   it("connect 合法 name → 200", async () => {
     const { find, manager } = makeRoutesFixture();
     // 单池后连接只有中间层一条路径：装配实例（未装 lifecycle 时条目落 failed，仍 200）。
@@ -225,4 +230,9 @@ describe("路由 handlers：connect / disconnect / reconnect", () => {
     await find(ROUTES.connect)!.handler(extReq as unknown as IncomingMessage, res);
     expect(res.state.status).toBe(403);
   });
+}
+
+describe("路由 handlers：connect / disconnect / reconnect", () => {
+  registerRouteFenceAndScopeCases();
+  registerRouteMainPathCases();
 });

@@ -213,10 +213,13 @@ describe("六态投影", () => {
   });
 });
 
-describe("装载等待窗口", () => {
-  /** 连接预算取远大于测试内部等待的值：只有 ready 真不结算的用例才让它到期。 */
-  const CONNECT_MS = 60;
+// 自然职责注册函数（#1174 阶段 2 形状清债）：「装载等待窗口」原 142 行 describe 按
+// 「结算与失败文案」「晚到结算守卫」两段职责落到模块级函数，describe 体只按原顺序调用
+// ——fullName 的 describe 前缀与用例注册顺序均不变。
+/** 连接预算取远大于测试内部等待的值：只有 ready 真不结算的用例才让它到期。 */
+const CONNECT_MS = 60;
 
+function registerMountWindowSettlementCases() {
   // 本条刻意不传 connectTimeoutMs：ready 立刻结算，走的是预算缺省（共享层 CONNECT_TIMEOUT_MS）
   // 那条支路，顺手把「缺省预算可用」也钉住。
   it("immediate：ready 结算且工具面立刻出现 → connected", async () => {
@@ -308,7 +311,9 @@ describe("装载等待窗口", () => {
     expect(outcome).toMatchObject({ kind: "settled", state: "failed" });
     if (outcome.kind === "settled") expect(outcome.error).not.toMatch(/官方日志/);
   });
+}
 
+function registerMountWindowLateSettlementGuardCases() {
   it("deferred：settle 前投影 connecting，settleReady() 之后转 connected", async () => {
     const { loader, entry } = mountOne("srv-slow", "deferred");
     const states: ServerState[] = [];
@@ -387,4 +392,9 @@ describe("装载等待窗口", () => {
     expect(outcome).toEqual({ kind: "discarded" });
     expect(states).toEqual([]);
   });
+}
+
+describe("装载等待窗口", () => {
+  registerMountWindowSettlementCases();
+  registerMountWindowLateSettlementGuardCases();
 });

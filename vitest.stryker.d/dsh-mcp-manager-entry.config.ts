@@ -49,6 +49,8 @@ export default defineConfig({
       'packages/dsh-mcp-manager/test/unit/stats-a4.test.ts',
       'packages/dsh-mcp-manager/test/unit/store.test.ts',
       'packages/dsh-mcp-manager/test/unit/summary-a3.test.ts',
+      'packages/dsh-mcp-manager/test/unit/unit-shape-routes-config.test.ts',
+      'packages/dsh-mcp-manager/test/unit/unit-shape-store-save.test.ts',
       'packages/dsh-mcp-manager/test/unit/workspace-id.test.ts',
       'packages/dsh-mcp-manager/test/unit/workspace.test.ts',
       'packages/dsh-mcp-manager/test/unit/workspace/dynamic-root.test.ts',
