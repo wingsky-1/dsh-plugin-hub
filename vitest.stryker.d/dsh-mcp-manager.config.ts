@@ -9,10 +9,15 @@ export default defineConfig({
   test: {
     include: [
       'packages/dsh-mcp-manager/test/client-dom/core-dom.test.ts',
+      'packages/dsh-mcp-manager/test/client-dom/float-panel-lifecycle.test.ts',
       'packages/dsh-mcp-manager/test/client-dom/float-panel-mount.test.ts',
+      'packages/dsh-mcp-manager/test/client-dom/float-panel-summary.test.ts',
+      'packages/dsh-mcp-manager/test/client-dom/float-pill-actions.test.ts',
       'packages/dsh-mcp-manager/test/client-dom/float-pill-render.test.ts',
-      'packages/dsh-mcp-manager/test/client-dom/float-quick-add-form.test.ts',
-      'packages/dsh-mcp-manager/test/client-dom/float-servers-render.test.ts',
+      'packages/dsh-mcp-manager/test/client-dom/float-quick-add-fields.test.ts',
+      'packages/dsh-mcp-manager/test/client-dom/float-quick-add-save.test.ts',
+      'packages/dsh-mcp-manager/test/client-dom/float-server-actions.test.ts',
+      'packages/dsh-mcp-manager/test/client-dom/float-server-cards.test.ts',
       'packages/dsh-mcp-manager/test/client-dom/panel-aria-modal.test.ts',
       'packages/dsh-mcp-manager/test/client-dom/resume-visibility.test.ts',
       'packages/dsh-mcp-manager/test/client-dom/settings-card.test.ts',

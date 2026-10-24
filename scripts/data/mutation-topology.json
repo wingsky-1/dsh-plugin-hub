@@ -69,7 +69,12 @@
       "test/unit/middleware-shape-cold-start-fixture.ts（dsh-mcp-manager：Middleware自然职责fixture，不进runner/变异分母）",
       "test/unit/middleware-shape-cold-start-latest-config.ts（dsh-mcp-manager：Middleware自然职责fixture，不进runner/变异分母）",
       "test/unit/unit-shape-routes-support.ts（dsh-mcp-manager：Unit自然职责fixture，不进runner/变异分母）",
-      "test/unit/unit-shape-store-support.ts（dsh-mcp-manager：Unit自然职责fixture，不进runner/变异分母）"
+      "test/unit/unit-shape-store-support.ts（dsh-mcp-manager：Unit自然职责fixture，不进runner/变异分母）",
+      "test/client-dom/client-shape-float.ts（dsh-mcp-manager：Client自然职责fixture，不进runner/变异分母）",
+      "test/client-dom/client-shape-quick-add.ts（dsh-mcp-manager：Client自然职责fixture，不进runner/变异分母）",
+      "test/client-dom/client-shape-servers.ts（dsh-mcp-manager：Client自然职责fixture，不进runner/变异分母）",
+      "test/client-unit/client-shape-context.ts（dsh-mcp-manager：Client自然职责fixture，不进runner/变异分母）",
+      "test/client-unit/client-shape-guard.ts（dsh-mcp-manager：Client自然职责fixture，不进runner/变异分母）"
     ],
     "mixedTargets": ["routes.test.ts", "report-p0.test.ts"],
     "rootLayers": {
@@ -647,9 +652,14 @@
             "packages/dsh-mcp-manager/test/client-unit/float-pure.test.ts",
             "packages/dsh-mcp-manager/test/client-dom/core-dom.test.ts",
             "packages/dsh-mcp-manager/test/client-dom/float-panel-mount.test.ts",
+            "packages/dsh-mcp-manager/test/client-dom/float-panel-lifecycle.test.ts",
             "packages/dsh-mcp-manager/test/client-dom/float-pill-render.test.ts",
-            "packages/dsh-mcp-manager/test/client-dom/float-quick-add-form.test.ts",
-            "packages/dsh-mcp-manager/test/client-dom/float-servers-render.test.ts",
+            "packages/dsh-mcp-manager/test/client-dom/float-panel-summary.test.ts",
+            "packages/dsh-mcp-manager/test/client-dom/float-pill-actions.test.ts",
+            "packages/dsh-mcp-manager/test/client-dom/float-quick-add-fields.test.ts",
+            "packages/dsh-mcp-manager/test/client-dom/float-quick-add-save.test.ts",
+            "packages/dsh-mcp-manager/test/client-dom/float-server-actions.test.ts",
+            "packages/dsh-mcp-manager/test/client-dom/float-server-cards.test.ts",
             "packages/dsh-mcp-manager/test/client-dom/panel-aria-modal.test.ts",
             "packages/dsh-mcp-manager/test/client-dom/resume-visibility.test.ts",
             "packages/dsh-mcp-manager/test/client-dom/settings-card.test.ts"

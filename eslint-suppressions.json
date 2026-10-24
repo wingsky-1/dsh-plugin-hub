@@ -113,39 +113,6 @@
       "count": 1
     }
   },
-  "packages/dsh-mcp-manager/test/client-dom/float-panel-mount.test.ts": {
-    "max-lines-per-function": {
-      "count": 1
-    }
-  },
-  "packages/dsh-mcp-manager/test/client-dom/float-pill-render.test.ts": {
-    "max-lines-per-function": {
-      "count": 1
-    }
-  },
-  "packages/dsh-mcp-manager/test/client-dom/float-quick-add-form.test.ts": {
-    "max-lines": {
-      "count": 1
-    }
-  },
-  "packages/dsh-mcp-manager/test/client-dom/float-servers-render.test.ts": {
-    "max-lines": {
-      "count": 1
-    },
-    "max-lines-per-function": {
-      "count": 1
-    }
-  },
-  "packages/dsh-mcp-manager/test/client-unit/context-s2.test.ts": {
-    "max-lines-per-function": {
-      "count": 1
-    }
-  },
-  "packages/dsh-mcp-manager/test/client-unit/summary-a3-guard.test.ts": {
-    "max-lines-per-function": {
-      "count": 1
-    }
-  },
   "packages/dsh-mcp-manager/test/e2e/smoke.test.ts": {
     "max-lines": {
       "count": 1

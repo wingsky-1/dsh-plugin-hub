@@ -15,22 +15,21 @@
  */
 import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { apply, inject as clientInject } from "../../src/client/index.ts";
+import { inject as clientInject } from "../../src/client/index.ts";
 import { bindSession, rebindSession } from "../../src/client/core/session.ts";
 import { floatTopOffset } from "../../src/client/float/float.ts";
 import { createState } from "../../src/client/core/state.ts";
 import { MCP_MANAGER_IDENTITY } from "../../src/shared/interface.ts";
 import type { McpClientContext } from "../../src/client/core/state.ts";
 
-const SESSION_PATH = "/api/dsh-mcp/session";
+import { bootRowLifecycle, okFetch, realFetchRef } from "./client-shape-context.js";
 
-function okFetch(): void {
-  const fetchMock = vi.fn(async () => ({
-    ok: true,
-    json: async () => ({}),
-  }));
-  globalThis.fetch = fetchMock as unknown as typeof fetch;
-}
+afterEach(() => {
+  globalThis.fetch = realFetchRef.current;
+  vi.restoreAllMocks();
+});
+
+const SESSION_PATH = "/api/dsh-mcp/session";
 
 function fetchCalls(): string[] {
   const f = globalThis.fetch as unknown as { mock: { calls: unknown[][] } };
@@ -96,10 +95,6 @@ function makeActions(): { refresh: ReturnType<typeof vi.fn> } {
   return { refresh: vi.fn(async () => true) };
 }
 
-afterEach(() => {
-  vi.restoreAllMocks();
-});
-
 describe("bindSession 分支", () => {
   it("list 缺失时返回 noop，不发请求不抛错", async () => {
     okFetch();
@@ -112,7 +107,6 @@ describe("bindSession 分支", () => {
     expect(fetchCalls()).toEqual([]);
     expect(actions.refresh).not.toHaveBeenCalled();
   });
-
   it("getSnapshot 缺失时返回 noop", async () => {
     okFetch();
     const ctx = { sessions: { list: {} } } as unknown as McpClientContext;
@@ -122,7 +116,6 @@ describe("bindSession 分支", () => {
     dispose();
     expect(fetchCalls()).toEqual([]);
   });
-
   it("cwd 变化时 POST 会话并 refresh", async () => {
     okFetch();
     const ctx = {
@@ -143,7 +136,6 @@ describe("bindSession 分支", () => {
     expect(fetchBodies()[0]).toContain("/a");
     expect(actions.refresh).toHaveBeenCalledTimes(1);
   });
-
   it("cwd 未变时不 POST（短路）", async () => {
     okFetch();
     const ctx = {
@@ -161,7 +153,9 @@ describe("bindSession 分支", () => {
     expect(fetchCalls()).toEqual([]);
     expect(actions.refresh).not.toHaveBeenCalled();
   });
+});
 
+describe("bindSession 分支", () => {
   it("空 cwd 也显式通知宿主（body 为空串，防串台）", async () => {
     okFetch();
     const ctx = {
@@ -179,7 +173,6 @@ describe("bindSession 分支", () => {
     expect(fetchCalls()).toEqual([SESSION_PATH]);
     expect(fetchBodies()[0]).toContain('\"cwd\":\"\"');
   });
-
   it("快照抛错时回落未知：不上报，保住宿主绑定（#1028 回归）", async () => {
     okFetch();
     const ctx = {
@@ -202,7 +195,6 @@ describe("bindSession 分支", () => {
     expect(fetchCalls()).toEqual([]);
     expect(actions.refresh).not.toHaveBeenCalled();
   });
-
   it("旧快照形状（只有 current、无 mainView）判为未知且不发 POST（#1028 回归）", async () => {
     okFetch();
     const ctx = {
@@ -221,7 +213,6 @@ describe("bindSession 分支", () => {
     expect(state.currentCwd).toBeUndefined();
     expect(fetchCalls()).toEqual([]);
   });
-
   it("rebindSession：未知态不发 POST，已知 cwd 时 POST 且 body 恰为该 cwd（#1028 回归）", async () => {
     okFetch();
     const unknown = makeState(undefined, false);
@@ -233,7 +224,9 @@ describe("bindSession 分支", () => {
     expect(fetchCalls()).toEqual([SESSION_PATH]);
     expect(fetchBodies()[0]).toContain('"/a"');
   });
+});
 
+describe("bindSession 分支", () => {
   it("已知 blank 会话（行存在但无 cwd）显式上报空串防串台（#1028 回归）", async () => {
     okFetch();
     const ctx = {
@@ -247,7 +240,6 @@ describe("bindSession 分支", () => {
     expect(fetchCalls()).toEqual([SESSION_PATH]);
     expect(fetchBodies()[0]).toContain('"cwd":""');
   });
-
   it("首帧即已知 blank 会话（上一轮未知）仍必须上报空串，防跨页签串台（#1028 回归）", async () => {
     okFetch();
     const ctx = {
@@ -263,7 +255,38 @@ describe("bindSession 分支", () => {
     expect(fetchCalls()).toEqual([SESSION_PATH]);
     expect(fetchBodies()[0]).toContain('"cwd":""');
   });
+  it("subscribe 存在时返回其 disposer（配对），缺失时返回 noop", () => {
+    okFetch();
+    const disposer = vi.fn();
+    const subscribe = vi.fn(() => disposer);
+    const ctx = {
+      sessions: {
+        list: {
+          getSnapshot: () => listWith({ cwd: "/a" }),
+          subscribe,
+        },
+      },
+    } as unknown as McpClientContext;
+    const state = makeState(undefined);
+    const actions = makeActions();
+    const ret = bindSession(ctx, state as never, actions as never);
+    expect(subscribe).toHaveBeenCalledTimes(1);
+    expect(ret).toBe(disposer);
 
+    const ctx2 = {
+      sessions: {
+        list: {
+          getSnapshot: () => listWith({ cwd: "/a" }),
+        },
+      },
+    } as unknown as McpClientContext;
+    const ret2 = bindSession(ctx2, makeState(undefined) as never, makeActions() as never);
+    expect(typeof ret2).toBe("function");
+    ret2();
+  });
+});
+
+describe("bindSession 分支", () => {
   it("首帧未知保持安静，连续多帧仍未知才告警（#1028 隔离实测：冷启动竞态不是故障）", async () => {
     okFetch();
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
@@ -302,7 +325,6 @@ describe("bindSession 分支", () => {
     expect(warn).toHaveBeenCalledTimes(1);
     warn.mockRestore();
   });
-
   it("已解析过又读不到立即告警（#1028 失效签名，隔离实测口径）", async () => {
     okFetch();
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
@@ -342,36 +364,6 @@ describe("bindSession 分支", () => {
     expect(warn).toHaveBeenCalledTimes(1);
     expect(fetchBodies().at(-1)).toContain('"/a"');
     warn.mockRestore();
-  });
-
-  it("subscribe 存在时返回其 disposer（配对），缺失时返回 noop", () => {
-    okFetch();
-    const disposer = vi.fn();
-    const subscribe = vi.fn(() => disposer);
-    const ctx = {
-      sessions: {
-        list: {
-          getSnapshot: () => listWith({ cwd: "/a" }),
-          subscribe,
-        },
-      },
-    } as unknown as McpClientContext;
-    const state = makeState(undefined);
-    const actions = makeActions();
-    const ret = bindSession(ctx, state as never, actions as never);
-    expect(subscribe).toHaveBeenCalledTimes(1);
-    expect(ret).toBe(disposer);
-
-    const ctx2 = {
-      sessions: {
-        list: {
-          getSnapshot: () => listWith({ cwd: "/a" }),
-        },
-      },
-    } as unknown as McpClientContext;
-    const ret2 = bindSession(ctx2, makeState(undefined) as never, makeActions() as never);
-    expect(typeof ret2).toBe("function");
-    ret2();
   });
 });
 
@@ -441,128 +433,6 @@ describe("McpClientContext.effect 配对（对齐 apply 语义）", () => {
     expect(cleaned).toBe(true);
   });
 });
-
-type RowView = "summary" | "page";
-
-type RowRegister = (served: ReadonlySet<string>) => () => void;
-
-interface RowRegistration {
-  item: Record<string, unknown>;
-  render: (props: { view: RowView; form: unknown }) => unknown;
-}
-
-interface RowLifecycleHarness {
-  watchedNamespaces: readonly string[];
-  injectedSlots: readonly string[];
-  ledger: readonly RowRegistration[];
-  offCalls: () => number;
-  watchStops: () => number;
-  serve: (servedNamespaces: ReadonlySet<string>) => void;
-  unserved: () => void;
-  teardown: () => void;
-}
-
-/**
- * 用真实 apply 建立 row 生命周期；空 head 让样式 no-op，随后浮窗挂载在 DOM 面停止。
- * row effect 已在这两步之间建立，故夹具只观察装配与清理契约。
- */
-function bootRowLifecycle(): RowLifecycleHarness {
-  const watchedNamespaces: string[] = [];
-  const injectedSlots: string[] = [];
-  const ledger: RowRegistration[] = [];
-  const effectDisposers: (() => void)[] = [];
-  let registerRow: RowRegister | undefined;
-  let activeOff: (() => void) | undefined;
-  let offCalls = 0;
-  let watchStops = 0;
-
-  const slots = {
-    inject(name: string, setup: () => unknown): () => void {
-      injectedSlots.push(name);
-      const registered = setup();
-      let live = true;
-      return () => {
-        if (!live) return;
-        live = false;
-        offCalls += 1;
-        if (typeof registered === "function") registered();
-      };
-    },
-    register(item: Record<string, unknown>, render: RowRegistration["render"]): () => void {
-      const registration: RowRegistration = { item: { ...item }, render };
-      ledger.push(registration);
-      return () => {
-        const index = ledger.indexOf(registration);
-        if (index !== -1) ledger.splice(index, 1);
-      };
-    },
-  };
-  const unserved = (): void => {
-    const off = activeOff;
-    activeOff = undefined;
-    off?.();
-  };
-  const configForms = {
-    whileServed(namespaces: readonly string[], register: RowRegister): () => void {
-      watchedNamespaces.push(...namespaces);
-      registerRow = register;
-      return () => {
-        watchStops += 1;
-        unserved();
-      };
-    },
-  };
-  const ctx = {
-    get(name: string): unknown {
-      if (name === "slots") return slots;
-      if (name === "configForms") return configForms;
-      return undefined;
-    },
-    effect(fn: () => () => void): () => void {
-      const dispose = fn();
-      effectDisposers.push(dispose);
-      return dispose;
-    },
-    sessions: {},
-  } as unknown as McpClientContext;
-
-  const previousDocument = Object.getOwnPropertyDescriptor(globalThis, "document");
-  const previousWarn = console.warn;
-  Object.defineProperty(globalThis, "document", {
-    configurable: true,
-    value: { head: null },
-  });
-  console.warn = () => {};
-  try {
-    apply(ctx);
-  } finally {
-    console.warn = previousWarn;
-    if (previousDocument === undefined) delete (globalThis as { document?: unknown }).document;
-    else Object.defineProperty(globalThis, "document", previousDocument);
-  }
-
-  return {
-    watchedNamespaces,
-    injectedSlots,
-    ledger,
-    offCalls: () => offCalls,
-    watchStops: () => watchStops,
-    serve: (servedNamespaces) => {
-      if (registerRow === undefined) throw new Error("configForms did not capture row register");
-      unserved();
-      const intersects = [...servedNamespaces].some((namespace) =>
-        watchedNamespaces.includes(namespace),
-      );
-      if (intersects) activeOff = registerRow(new Set(servedNamespaces));
-    },
-    unserved,
-    teardown: () => {
-      const dispose = effectDisposers[0];
-      if (dispose === undefined) throw new Error("row registration was not held by ctx.effect");
-      dispose();
-    },
-  };
-}
 
 describe("0.1.7-rc.2 plugins.row.config 装配", () => {
   it("apply 只监听 canonical settings namespace，服务前 slot ledger 为空", () => {
