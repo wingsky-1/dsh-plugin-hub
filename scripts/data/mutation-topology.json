@@ -851,7 +851,13 @@
             "packages/dsh-provider-usage/test/unit/shared/atomic-write.test.ts",
             "packages/dsh-provider-usage/test/unit/trend/trend.test.ts",
             "packages/dsh-provider-usage/test/unit/registry/registry-pure.test.ts",
-            "packages/dsh-provider-usage/test/unit/shared/trend-retention-config.test.ts"
+            "packages/dsh-provider-usage/test/unit/shared/trend-retention-config.test.ts",
+            "packages/dsh-provider-usage/test/unit/trend/tracker-dir-attribution.test.ts",
+            "packages/dsh-provider-usage/test/unit/trend/tracker-dir-rollup.test.ts",
+            "packages/dsh-provider-usage/test/unit/trend/tracker-dir-roundtrip-query.test.ts",
+            "packages/dsh-provider-usage/test/unit/trend/tracker-dir-recovery.test.ts",
+            "packages/dsh-provider-usage/test/unit/trend/tracker-dir-projection.test.ts",
+            "packages/dsh-provider-usage/test/unit/trend/tracker-hour.test.ts"
           ],
           "comment": "#342 v4：src 级文件组分段（1）——index+user-adapters+ui-config+config（配置/入口面）；#768 D7 注册表文件随域迁 server/registry（路径同步，行为零改 + 双启用判据）；#768 D13 包根入口 src/index.ts 落地（apply/index.ts 显式具名薄转发，导出面零漂移）并入本段；测试按段 testFiles 清单跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
         },
@@ -864,7 +870,13 @@
             "packages/dsh-provider-usage/test/unit/trend/trend.test.ts",
             "packages/dsh-provider-usage/test/unit/apply/apply.test.ts",
             "packages/dsh-provider-usage/test/integration/history/composition-root.test.ts",
-            "packages/dsh-provider-usage/test/integration/schedule/composition-root.test.ts"
+            "packages/dsh-provider-usage/test/integration/schedule/composition-root.test.ts",
+            "packages/dsh-provider-usage/test/unit/trend/tracker-dir-attribution.test.ts",
+            "packages/dsh-provider-usage/test/unit/trend/tracker-dir-rollup.test.ts",
+            "packages/dsh-provider-usage/test/unit/trend/tracker-dir-roundtrip-query.test.ts",
+            "packages/dsh-provider-usage/test/unit/trend/tracker-dir-recovery.test.ts",
+            "packages/dsh-provider-usage/test/unit/trend/tracker-dir-projection.test.ts",
+            "packages/dsh-provider-usage/test/unit/trend/tracker-hour.test.ts"
           ],
           "comment": "#962 A 拆大段（三向之一：历史面）——原 pipeline 段的 history.ts 单列（#768 D5 随域迁 server/history，writeDirect 原子写硬化）；testFiles 原样继承原段 22 个：A 阶段无 per-mutant 杀灭证据，任何摘除都是杀灭力赌博，收窄是 B 阶段的事；测试按段 testFiles 清单跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
         },
@@ -902,7 +914,13 @@
             "packages/dsh-provider-usage/test/unit/shared/config.test.ts",
             "packages/dsh-provider-usage/test/unit/trend/trend.test.ts",
             "packages/dsh-provider-usage/test/unit/report/report.test.ts",
-            "packages/dsh-provider-usage/test/integration/schedule/composition-root.test.ts"
+            "packages/dsh-provider-usage/test/integration/schedule/composition-root.test.ts",
+            "packages/dsh-provider-usage/test/unit/trend/tracker-dir-attribution.test.ts",
+            "packages/dsh-provider-usage/test/unit/trend/tracker-dir-rollup.test.ts",
+            "packages/dsh-provider-usage/test/unit/trend/tracker-dir-roundtrip-query.test.ts",
+            "packages/dsh-provider-usage/test/unit/trend/tracker-dir-recovery.test.ts",
+            "packages/dsh-provider-usage/test/unit/trend/tracker-dir-projection.test.ts",
+            "packages/dsh-provider-usage/test/unit/trend/tracker-hour.test.ts"
           ],
           "comment": "#962 A 拆大段（三向之一：展示纯逻辑面）——原 pipeline 段的 placement-math/client-logic/charts 三纯逻辑文件（charts 纳入修复变异盲区）；testFiles 原样继承原段 22 个（零收窄，理由同 pipeline-history）；测试按段 testFiles 清单跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
         },
@@ -964,7 +982,13 @@
             "packages/dsh-provider-usage/test/client-dom/trend-section.test.ts",
             "packages/dsh-provider-usage/test/unit/trend/tracker-rebuild.test.ts",
             "packages/dsh-provider-usage/test/unit/trend/tracker-flush-lifecycle.test.ts",
-            "packages/dsh-provider-usage/test/unit/trend/tracker-compaction-snapshot.test.ts"
+            "packages/dsh-provider-usage/test/unit/trend/tracker-compaction-snapshot.test.ts",
+            "packages/dsh-provider-usage/test/unit/trend/tracker-dir-attribution.test.ts",
+            "packages/dsh-provider-usage/test/unit/trend/tracker-dir-rollup.test.ts",
+            "packages/dsh-provider-usage/test/unit/trend/tracker-dir-roundtrip-query.test.ts",
+            "packages/dsh-provider-usage/test/unit/trend/tracker-dir-recovery.test.ts",
+            "packages/dsh-provider-usage/test/unit/trend/tracker-dir-projection.test.ts",
+            "packages/dsh-provider-usage/test/unit/trend/tracker-hour.test.ts"
           ],
           "comment": "阶段零新段（D17 分层变异）：E2 聚合/压实/存储面——aggregator+store+index；阶段三（#670 D2）aggregator 拆分为 aggregate-rows（压实转换纯函数）+ aggregate-query（查询投影纯函数），两新文件并入 mutate 面（防新文件变异盲区）；testFiles 含 unit-trend/unit-trend-ledger/unit-trend-view（杀灭面为该层测试，R8 台账守恒断言覆盖守恒链）；#768 D8 聚合五文件随域迁 server/aggregate（路径同步 + deletePromises 注解 + A4(f)补dir + forgetPersisted 删除，杀灭面新增 test/integration/aggregate/composition-root）；aggregator 单文件 5-8 分钟，独立段防超时。"
         },
@@ -995,7 +1019,13 @@
             "packages/dsh-provider-usage/test/unit/trend/tracker-rebuild.test.ts",
             "packages/dsh-provider-usage/test/unit/trend/tracker-flush-lifecycle.test.ts",
             "packages/dsh-provider-usage/test/unit/trend/tracker-compaction-snapshot.test.ts",
-            "packages/dsh-provider-usage/test/unit/server-shared/s2-contracts.test.ts"
+            "packages/dsh-provider-usage/test/unit/server-shared/s2-contracts.test.ts",
+            "packages/dsh-provider-usage/test/unit/trend/tracker-dir-attribution.test.ts",
+            "packages/dsh-provider-usage/test/unit/trend/tracker-dir-rollup.test.ts",
+            "packages/dsh-provider-usage/test/unit/trend/tracker-dir-roundtrip-query.test.ts",
+            "packages/dsh-provider-usage/test/unit/trend/tracker-dir-recovery.test.ts",
+            "packages/dsh-provider-usage/test/unit/trend/tracker-dir-projection.test.ts",
+            "packages/dsh-provider-usage/test/unit/trend/tracker-hour.test.ts"
           ],
           "comment": "阶段零新段（D17 分层变异）：E1 事件采集面——collector+types（折叠状态机/归属归一）；testFiles 含 unit-trend（杀灭面为该层测试）；#768 D9 采集两文件随域迁 server/collect（路径同步，零行为变更，杀灭面新增 test/integration/collect/composition-root）。"
         },

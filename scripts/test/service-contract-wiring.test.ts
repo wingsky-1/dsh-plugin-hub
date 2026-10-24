@@ -343,6 +343,12 @@ const EXPECT_FILES: Record<string, string[]> = {
     "unit/trend/tracker-rebuild.test.ts",
     "unit/trend/tracker-flush-lifecycle.test.ts",
     "unit/trend/tracker-compaction-snapshot.test.ts",
+    "unit/trend/tracker-dir-attribution.test.ts",
+    "unit/trend/tracker-dir-rollup.test.ts",
+    "unit/trend/tracker-dir-roundtrip-query.test.ts",
+    "unit/trend/tracker-dir-recovery.test.ts",
+    "unit/trend/tracker-dir-projection.test.ts",
+    "unit/trend/tracker-hour.test.ts",
   ],
 };
 
