@@ -146,35 +146,6 @@
       "count": 1
     }
   },
-  "packages/dsh-notifier/test/unit/config/input.test.ts": {
-    "max-lines": {
-      "count": 1
-    },
-    "max-lines-per-function": {
-      "count": 3
-    }
-  },
-  "packages/dsh-notifier/test/unit/config/service.test.ts": {
-    "max-lines": {
-      "count": 1
-    },
-    "max-lines-per-function": {
-      "count": 1
-    }
-  },
-  "packages/dsh-notifier/test/unit/upgrade/service.test.ts": {
-    "max-lines-per-function": {
-      "count": 1
-    }
-  },
-  "packages/dsh-notifier/test/unit/upgrade/steps.test.ts": {
-    "max-lines": {
-      "count": 1
-    },
-    "max-lines-per-function": {
-      "count": 1
-    }
-  },
   "packages/dsh-provider-usage/src/apply/apply.ts": {
     "max-lines-per-function": {
       "count": 1
