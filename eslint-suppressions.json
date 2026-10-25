@@ -187,19 +187,6 @@
       "count": 3
     }
   },
-  "packages/dsh-notifier/test/unit/channels/capabilities.test.ts": {
-    "max-lines": {
-      "count": 1
-    }
-  },
-  "packages/dsh-notifier/test/unit/channels/secure-fetch.test.ts": {
-    "max-lines": {
-      "count": 1
-    },
-    "max-lines-per-function": {
-      "count": 1
-    }
-  },
   "packages/dsh-notifier/test/unit/channels/system.test.ts": {
     "max-lines": {
       "count": 1

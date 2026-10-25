@@ -16,6 +16,7 @@ export default defineConfig({
       'packages/dsh-notifier/test/unit/api/stream.test.ts',
       'packages/dsh-notifier/test/unit/channels/bark.test.ts',
       'packages/dsh-notifier/test/unit/channels/browser.test.ts',
+      'packages/dsh-notifier/test/unit/channels/capabilities-real-port.test.ts',
       'packages/dsh-notifier/test/unit/channels/capabilities.test.ts',
       'packages/dsh-notifier/test/unit/channels/deliver.test.ts',
       'packages/dsh-notifier/test/unit/channels/dry-run.test.ts',
