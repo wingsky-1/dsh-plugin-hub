@@ -174,11 +174,6 @@
       "count": 2
     }
   },
-  "packages/dsh-notifier/test/integration/config-merge-roundtrip.test.ts": {
-    "max-lines": {
-      "count": 1
-    }
-  },
   "packages/dsh-notifier/test/integration/real-context.test.ts": {
     "max-lines": {
       "count": 1
