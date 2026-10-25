@@ -56,6 +56,7 @@
       "test/client-helpers.ts（dsh-notifier）",
       "test/integration/config-merge-support.ts（dsh-notifier：config-merge 拆分的跨文件 fixture，不进 runner / 变异分母）",
       "test/integration/real-context-support.ts（dsh-notifier：real-context 拆分的跨文件 fixture，不进 runner / 变异分母）",
+      "test/e2e/smoke-support.ts（dsh-notifier：smoke 拆分的跨文件 fixture，不进 runner / 变异分母）",
       "test/unit/channels/secure-fetch-support.ts（dsh-notifier：secure-fetch 拆分的跨文件 fixture，不进 runner / 变异分母）",
       "test/unit/channels/system-test-support.ts（dsh-notifier：system 拆分的跨文件 fixture，不进 runner / 变异分母）",
       "test/unit/channels/webhook-test-support.ts（dsh-notifier：webhook 通用投递与 ntfy 拆分的跨文件 fixture，不进 runner / 变异分母）",

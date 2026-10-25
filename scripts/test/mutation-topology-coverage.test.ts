@@ -1457,7 +1457,7 @@ test("#843 判据⑦ 单元：载体自证 —— 包集合为空 / 基准 mutat
       assert.match(miss.errors.join(), /缺 testFiles 声明/);
       const bad = resolveSegmentTestFiles({
         root: ROOT,
-        segDef: { testFiles: ["packages/dsh-notifier/test/e2e/smoke.test.ts"] },
+        segDef: { testFiles: ["packages/dsh-notifier/test/e2e/smoke-http.test.ts"] },
         segLabel: "[p:s]",
         packageFace: face,
       });

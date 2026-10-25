@@ -817,7 +817,7 @@ leaves the gaps for the reader to guess. The current state is verifiable by comm
 **Real Linux notification prerequisites**: **Conditional coverage**: it actually runs only when the test machine has a real `notify-send` on the system PATH **and** a D-Bus session is available (`DBUS_SESSION_BUS_ADDRESS` set, or `$XDG_RUNTIME_DIR/bus` present); otherwise it skips with a reason. Whether it is covered therefore depends on the runtime environment and is not inferred here
 
 How platform-marked cases are written, and the original "pending a CI matrix" plan, live in the
-header comment of [test/e2e/smoke.test.ts](./test/e2e/smoke.test.ts).
+header comment of [test/e2e/smoke-support.ts](./test/e2e/smoke-support.ts).
 
 **Trigger condition (what would close these gaps)**: adding `windows-latest` / `macos-latest`
 runners to `.github/workflows/` to run the e2e project, plus platform-marked cases for those two

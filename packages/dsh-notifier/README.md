@@ -683,7 +683,7 @@ pnpm --filter @wingsky-1/dsh-notifier test
 **Linux 真机通知的条件覆盖前提**：**条件覆盖**：仅当跑测机器系统 PATH 里有真实 `notify-send`，**且** D-Bus 会话可用（`DBUS_SESSION_BUS_ADDRESS` 已设，或 `$XDG_RUNTIME_DIR/bus` 存在）时才真跑；否则带 reason 跳过。是否覆盖取决于运行环境，本登记不做推断
 
 平台标记用例的写法与「待后续 CI 矩阵」的原始规划见
-[test/e2e/smoke.test.ts](./test/e2e/smoke.test.ts) 文件头注释。
+[test/e2e/smoke-support.ts](./test/e2e/smoke-support.ts) 文件头注释。
 
 **触发条件（缺口何时才会被填上）**：需要在 `.github/workflows/` 增加 `windows-latest` /
 `macos-latest` runner 跑 e2e 项目，并为这两个分支补平台标记用例——即 issue #766 的方案 1。
