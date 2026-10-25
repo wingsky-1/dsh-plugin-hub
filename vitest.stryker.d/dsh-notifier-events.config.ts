@@ -8,7 +8,9 @@ import { defineConfig } from 'vitest/config'
 export default defineConfig({
   test: {
     include: [
-      'packages/dsh-notifier/test/integration/real-context.test.ts',
+      'packages/dsh-notifier/test/integration/real-context-assembly.test.ts',
+      'packages/dsh-notifier/test/integration/real-context-events.test.ts',
+      'packages/dsh-notifier/test/integration/real-context-lifecycle.test.ts',
       'packages/dsh-notifier/test/unit/events/listen.test.ts',
       'packages/dsh-notifier/test/unit/events/session.test.ts',
       'packages/dsh-notifier/test/unit/events/translate.test.ts',

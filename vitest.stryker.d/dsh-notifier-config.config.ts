@@ -10,7 +10,9 @@ export default defineConfig({
     include: [
       'packages/dsh-notifier/test/integration/config-merge-forms.test.ts',
       'packages/dsh-notifier/test/integration/config-merge-mask.test.ts',
-      'packages/dsh-notifier/test/integration/real-context.test.ts',
+      'packages/dsh-notifier/test/integration/real-context-assembly.test.ts',
+      'packages/dsh-notifier/test/integration/real-context-events.test.ts',
+      'packages/dsh-notifier/test/integration/real-context-lifecycle.test.ts',
       'packages/dsh-notifier/test/unit/api/dry-run.test.ts',
       'packages/dsh-notifier/test/unit/config/draft.test.ts',
       'packages/dsh-notifier/test/unit/config/input.test.ts',

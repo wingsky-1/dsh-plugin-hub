@@ -9,7 +9,9 @@ export default defineConfig({
   test: {
     include: [
       'packages/dsh-notifier/test/integration/consumer-types.test.ts',
-      'packages/dsh-notifier/test/integration/real-context.test.ts',
+      'packages/dsh-notifier/test/integration/real-context-assembly.test.ts',
+      'packages/dsh-notifier/test/integration/real-context-events.test.ts',
+      'packages/dsh-notifier/test/integration/real-context-lifecycle.test.ts',
       'packages/dsh-notifier/test/integration/service-contract.test.ts',
     ],
     environment: 'node',

@@ -154,14 +154,6 @@
       "count": 2
     }
   },
-  "packages/dsh-notifier/test/integration/real-context.test.ts": {
-    "max-lines": {
-      "count": 1
-    },
-    "max-lines-per-function": {
-      "count": 3
-    }
-  },
   "packages/dsh-notifier/test/unit/config/input.test.ts": {
     "max-lines": {
       "count": 1

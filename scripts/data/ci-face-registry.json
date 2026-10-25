@@ -346,7 +346,7 @@
       "consumers": [
         "packages/dsh-lan-proxy/test/bundle/client-contract.test.ts",
         "packages/dsh-mcp-manager/test/e2e/smoke-client-shape.test.ts",
-        "packages/dsh-notifier/test/integration/real-context.test.ts",
+        "packages/dsh-notifier/test/integration/real-context-assembly.test.ts",
         "packages/dsh-provider-usage/test/e2e/smoke.test.ts"
       ],
       "why": "根级共享 smoke 工具（与 contract-check 同源实现）。名单不是手写的：ci-face-coverage 断言按 packages/*/test 的真实 import 图核对，第 5 个包接入而漏登记即红。"
