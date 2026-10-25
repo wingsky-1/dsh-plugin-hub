@@ -375,7 +375,7 @@ describe("browserStatesOf：浏览器面判定（本地计算）", () => {
   });
 });
 
-describe("clientDiagnosticsOf：界面只做机械投影", () => {
+function registerHostDiagnosticsProjection(): void {
   it("宿主面缺席时整块不渲染，浏览器面照常有结论", () => {
     const view = clientDiagnosticsOf(null, factsOf(), t);
     expect(view.host).toBeUndefined();
@@ -458,7 +458,9 @@ describe("clientDiagnosticsOf：界面只做机械投影", () => {
       { label: zh.diagToneFileLabel, value: zh.diagToneFileNo },
     ]);
   });
+}
 
+function registerBrowserDiagnosticsProjection(): void {
   it("dim 文案把成因放进同一行；浏览器面来源标注跟着走", () => {
     const view = clientDiagnosticsOf(
       payloadOf(),
@@ -508,6 +510,11 @@ describe("clientDiagnosticsOf：界面只做机械投影", () => {
       'This browser page: popup undetermined（Without permission, browser system notifications cannot appear; while the page is hidden, only the title is updated. When the page is visible, an in-page banner appears only if the notification policy allows it. Permission has not been requested; click "Request permission" to grant it） · sound available',
     );
   });
+}
+
+describe("clientDiagnosticsOf：界面只做机械投影", () => {
+  registerHostDiagnosticsProjection();
+  registerBrowserDiagnosticsProjection();
 });
 
 describe("双语：新增 key 两边齐备", () => {

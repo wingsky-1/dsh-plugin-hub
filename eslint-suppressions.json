@@ -146,26 +146,6 @@
       "count": 1
     }
   },
-  "packages/dsh-notifier/test/client-unit/capabilities.test.ts": {
-    "max-lines-per-function": {
-      "count": 1
-    }
-  },
-  "packages/dsh-notifier/test/client-unit/settings-compare-912.test.ts": {
-    "max-lines-per-function": {
-      "count": 1
-    }
-  },
-  "packages/dsh-notifier/test/client-unit/status-poll.test.ts": {
-    "max-lines-per-function": {
-      "count": 1
-    }
-  },
-  "packages/dsh-notifier/test/client-unit/status-text.test.ts": {
-    "max-lines-per-function": {
-      "count": 1
-    }
-  },
   "packages/dsh-notifier/test/e2e/smoke.test.ts": {
     "max-lines": {
       "count": 1

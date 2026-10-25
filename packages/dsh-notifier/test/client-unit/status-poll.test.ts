@@ -63,7 +63,7 @@ describe("statusConverged：以条目出现/lastTs 推进为收敛", () => {
   });
 });
 
-describe("pollChannelStatus：有限轮询、失败保留旧态", () => {
+function registerPollingConvergence(): void {
   it("首轮即收敛时不再睡、不再读（一次 fetch 即停）", async () => {
     const clock = fakeSleep();
     let calls = 0;
@@ -171,7 +171,9 @@ describe("pollChannelStatus：有限轮询、失败保留旧态", () => {
     // 首轮同毫秒不等、次轮仍同毫秒不等，第三轮变新才停：睡 2 次默认间隔
     expect(clock.waits).toEqual([TEST_STATUS_INTERVAL_MS, TEST_STATUS_INTERVAL_MS]);
   });
+}
 
+function registerPollingBudgetAndFailures(): void {
   it("别频道的终态不触发收敛：耗尽返回最后所见", async () => {
     const clock = fakeSleep();
     let calls = 0;
@@ -218,4 +220,9 @@ describe("pollChannelStatus：有限轮询、失败保留旧态", () => {
     expect(TEST_STATUS_INTERVAL_MS).toBeGreaterThan(1000);
     expect(TEST_STATUS_ATTEMPTS * TEST_STATUS_INTERVAL_MS).toBeGreaterThanOrEqual(11_500);
   });
+}
+
+describe("pollChannelStatus：有限轮询、失败保留旧态", () => {
+  registerPollingConvergence();
+  registerPollingBudgetAndFailures();
 });

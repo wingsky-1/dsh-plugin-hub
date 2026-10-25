@@ -20,7 +20,7 @@ function historyRecord(
   return { ts: 1, kind: "test", title: "标题", message: "正文", channels, ...over };
 }
 
-describe("statusText 无终态条目时的 skipped 历史直达", () => {
+function registerSkippedHistoryLookup(): void {
   it("无条目、无历史时仍是“尚未投递”", () => {
     expect(statusText("system", {}, translateWithZh)).toBe(zh.chNeverSent);
     expect(statusText("system", {}, translateWithZh, null)).toBe(zh.chNeverSent);
@@ -125,7 +125,9 @@ describe("statusText 无终态条目时的 skipped 历史直达", () => {
     ];
     expect(statusText("system", empty, translateWithZh, history)).toContain(zh.reasonSkipConfig);
   });
+}
 
+function registerTerminalStatusText(): void {
   it("有 lastTs 但无 lastStatus 时按失败分支渲染（非 ok 一律失败）", () => {
     const map = { system: { lastTs: 100 } } as unknown as ChannelStatusMap;
     expect(statusText("system", map, translateWithZh)).toContain(zh.chLastFail);
@@ -204,4 +206,9 @@ describe("statusText 无终态条目时的 skipped 历史直达", () => {
     expect(text).toContain(en.soundWarnNoPlayback);
     expect(text).not.toContain(en.reasonSkipEnvironment);
   });
+}
+
+describe("statusText 无终态条目时的 skipped 历史直达", () => {
+  registerSkippedHistoryLookup();
+  registerTerminalStatusText();
 });

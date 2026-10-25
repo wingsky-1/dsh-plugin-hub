@@ -53,7 +53,7 @@ describe("stableEqual/stableJsonValue：键序无关、数组保序", () => {
   });
 });
 
-describe("normalizeChannelForCompare：双侧同一规范形", () => {
+function registerEmptyAndLevelNormalization(): void {
   it("反向 strip：base 侧残留空串、draft 侧缺键时不脏（旧单侧剥除的反例）", () => {
     const draft = { channels: [{ id: "bark-1", type: "bark", baseUrl: "https://x" }] };
     const base = { channels: [{ id: "bark-1", type: "bark", baseUrl: "https://x", token: "" }] };
@@ -111,7 +111,9 @@ describe("normalizeChannelForCompare：双侧同一规范形", () => {
       diffSettingsPayload({ channels: [{ ...wbare, timeoutSec: 10 }] }, { channels: [wbare] }),
     ).toEqual({ channels: [{ ...wbare, timeoutSec: 10 }] });
   });
+}
 
+function registerDomainDefaultNormalization(): void {
   it("headers 缺席与空对象同形（双向）；非空保留", () => {
     const bare = { id: "w", type: "webhook", url: "https://x", auth: "none" };
     expect(
@@ -203,7 +205,9 @@ describe("normalizeChannelForCompare：双侧同一规范形", () => {
     const arr = [{ id: "b" }];
     expect(normalizeChannelForCompare(arr)).toBe(arr);
   });
+}
 
+function registerCrossDomainRegression(): void {
   it("快照草稿编辑的提交形态不带跨域键（#912 回归：全量补曾让 bark 带 headers 空对象被 400）", () => {
     const base = snapshotBaseline({
       channels: [{ type: "bark", id: "b", enabled: true, baseUrl: "https://x", deviceKey: "k" }],
@@ -240,6 +244,12 @@ describe("normalizeChannelForCompare：双侧同一规范形", () => {
     expect(input).toEqual({ id: "b", token: "" });
     expect(out).not.toBe(input);
   });
+}
+
+describe("normalizeChannelForCompare：双侧同一规范形", () => {
+  registerEmptyAndLevelNormalization();
+  registerDomainDefaultNormalization();
+  registerCrossDomainRegression();
 });
 
 describe("snapshotBaseline 生命周期：load 空/discard 空/save 合并空/重拉一致", () => {
