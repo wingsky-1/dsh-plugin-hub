@@ -123,7 +123,7 @@ describe("装配的哨兵", () => {
   });
 });
 
-describe("读取语义", () => {
+function registerReadRoundtrips(): void {
   it("无历史文件：读面给空数组、清空给 0 条（「没有文件」与「没有记录」是同一件事，不是错误）", async () => {
     assemble();
     expect(await readHistory()).toEqual([]);
@@ -183,7 +183,9 @@ describe("读取语义", () => {
       detail: "timeout",
     });
   });
+}
 
+function registerReadNormalization(): void {
   // 新可选警告的写入读出：ok 随行的 soundWarning 落盘并读回，主状态不受影响。
   it("ok 随行的 soundWarning 落盘并读回（旧行无该字段照读）", async () => {
     assemble();
@@ -286,7 +288,9 @@ describe("读取语义", () => {
       "第三条",
     ]);
   });
+}
 
+function registerReadRetentionAndWindow(): void {
   it("损坏行跳过而不是整份读取失败（坏行是常态：一行坏掉不该让历史整页空白）", async () => {
     writeHistoryFile(
       [
@@ -403,6 +407,12 @@ describe("读取语义", () => {
     expect(records[0]?.title).toBe("第1条");
     expect(records.at(-1)?.title).toBe("第200条");
   });
+}
+
+describe("读取语义", () => {
+  registerReadRoundtrips();
+  registerReadNormalization();
+  registerReadRetentionAndWindow();
 });
 
 describe("写入侧的清理与截断", () => {

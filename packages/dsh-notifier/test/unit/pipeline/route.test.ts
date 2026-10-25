@@ -342,7 +342,7 @@ describe("内置频道池：启用决定发不发，弹窗与声音决定怎么�
   });
 });
 
-describe("出站目标构造", () => {
+function registerOutboundTargetConstruction(): void {
   // 空串当配置带走会覆盖 bark 端的默认值；levels[kind] 不优先，紧急度就永远按 level 走。
   it("bark：levels[kind] 命中优先于 level；空串是没配置，badge 0 与正超时有值就带", () => {
     const deps = { frames: framePort().port, logger: makeLogger() };
@@ -434,7 +434,9 @@ describe("出站目标构造", () => {
     );
     expect(timed.timeoutSec).toBe(30);
   });
+}
 
+function registerCredentialAndFailureSurfaces(): void {
   // 凭据空着却带上 auth 会发出一个「Bearer undefined」，none 却带凭据则是把凭据发给了不该收的端点。
   it("webhook 凭据：bearer/basic 出凭据对象，header 并入自定义头，空凭据与 none 都不给 auth", () => {
     const deps = { frames: framePort().port, logger: makeLogger() };
@@ -502,4 +504,9 @@ describe("出站目标构造", () => {
     expect(logger.warns).toHaveLength(1);
     expect(logger.warns[0]).toContain("频道读取失败");
   });
+}
+
+describe("出站目标构造", () => {
+  registerOutboundTargetConstruction();
+  registerCredentialAndFailureSurfaces();
 });

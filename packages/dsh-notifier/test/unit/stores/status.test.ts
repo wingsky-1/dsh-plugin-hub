@@ -272,7 +272,7 @@ describe("lastSoundWarning：成功但提示音未出", () => {
   });
 });
 
-describe("落盘与冷启动", () => {
+function registerStatusPersistence(): void {
   it("落盘延后合并但最终一致：文件里是该条目的完整 JSON（设置页重启后仍显示上次投递结果）", async () => {
     const logger = assemble();
     const before = Date.now();
@@ -345,7 +345,9 @@ describe("落盘与冷启动", () => {
     );
     expect(logger.warns.join("\n")).toContain("投递状态写入失败");
   });
+}
 
+function registerColdStartAndStorageIsolation(): void {
   it("冷启动从文件同步加载：连续失败计数跨重启延续（异步加载会与 fire-and-forget 的 record 抢跑）", async () => {
     assemble();
     recordStatus("bark:phone", "failed", { code: "reasonBarkRequestFailed", detail: "连接超时" });
@@ -443,4 +445,9 @@ describe("落盘与冷启动", () => {
     expect(() => releaseStores()).not.toThrow();
     assemble();
   });
+}
+
+describe("落盘与冷启动", () => {
+  registerStatusPersistence();
+  registerColdStartAndStorageIsolation();
 });

@@ -198,34 +198,6 @@
       "count": 1
     }
   },
-  "packages/dsh-notifier/test/unit/pipeline/dispatch.test.ts": {
-    "max-lines": {
-      "count": 1
-    },
-    "max-lines-per-function": {
-      "count": 3
-    }
-  },
-  "packages/dsh-notifier/test/unit/pipeline/route.test.ts": {
-    "max-lines-per-function": {
-      "count": 1
-    }
-  },
-  "packages/dsh-notifier/test/unit/shared/file-io-concurrency.test.ts": {
-    "max-lines-per-function": {
-      "count": 1
-    }
-  },
-  "packages/dsh-notifier/test/unit/stores/history.test.ts": {
-    "max-lines-per-function": {
-      "count": 1
-    }
-  },
-  "packages/dsh-notifier/test/unit/stores/status.test.ts": {
-    "max-lines-per-function": {
-      "count": 1
-    }
-  },
   "packages/dsh-notifier/test/unit/upgrade/service.test.ts": {
     "max-lines-per-function": {
       "count": 1

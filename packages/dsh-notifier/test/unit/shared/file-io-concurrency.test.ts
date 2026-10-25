@@ -129,7 +129,7 @@ afterEach(() => {
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
-describe("writeTextAtomic 并发双写", () => {
+function registerConcurrentWrites(): void {
   it("20 路同文件并发写全 ok、终态精确等于最后提交值（同路径 FIFO）", async () => {
     const dir = scratch();
     const file = join(dir, "concurrent.json");
@@ -228,7 +228,9 @@ describe("writeTextAtomic 并发双写", () => {
     // 原错误交回调用方：reason 必须是 rename 自己的文案，不是清理失败或固定兜底串顶替的。
     expect(result).toEqual({ ok: false, reason: expect.stringContaining("注入：改名失败") });
   });
+}
 
+function registerFileModesAndSynchronousWrites(): void {
   // POSIX 权限位语义在 win32 上不存在（NTFS 无 mode），故整条跳过而非放宽断言。
   it.skipIf(process.platform === "win32")(
     "新建文件 0600、插件自有目录 0700，父目录保持 umask 语义",
@@ -316,4 +318,9 @@ describe("writeTextAtomic 并发双写", () => {
     expect(statSync(join(own, "version")).mode & 0o777).toBe(0o600);
     expect(statSync(own).mode & 0o777).toBe(0o700);
   });
+}
+
+describe("writeTextAtomic 并发双写", () => {
+  registerConcurrentWrites();
+  registerFileModesAndSynchronousWrites();
 });
