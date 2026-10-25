@@ -182,19 +182,6 @@
       "count": 3
     }
   },
-  "packages/dsh-notifier/test/unit/channels/system.test.ts": {
-    "max-lines": {
-      "count": 1
-    },
-    "max-lines-per-function": {
-      "count": 4
-    }
-  },
-  "packages/dsh-notifier/test/unit/channels/webhook.test.ts": {
-    "max-lines-per-function": {
-      "count": 1
-    }
-  },
   "packages/dsh-notifier/test/unit/config/input.test.ts": {
     "max-lines": {
       "count": 1
