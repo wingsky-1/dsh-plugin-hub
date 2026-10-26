@@ -340,14 +340,6 @@
       "count": 1
     }
   },
-  "packages/dsh-verify-isolated/test/e2e/smoke.test.ts": {
-    "max-lines": {
-      "count": 1
-    },
-    "max-lines-per-function": {
-      "count": 6
-    }
-  },
   "scripts/gate/crap-check.mjs": {
     "max-lines": {
       "count": 1

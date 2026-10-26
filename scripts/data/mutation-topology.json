@@ -95,7 +95,17 @@
       "test/unit/config/service-write-cases.ts（dsh-notifier：service 入口原生命周期内注册模块，不进 runner / 变异分母）",
       "test/unit/config/service-merge-cases.ts（dsh-notifier：service 入口原生命周期内注册模块，不进 runner / 变异分母）",
       "test/unit/config/service-credentials-cases.ts（dsh-notifier：service 入口原生命周期内注册模块，不进 runner / 变异分母）",
-      "test/unit/upgrade/upgrade-steps-support.ts（dsh-notifier：配置与升级拆分专属 fixture，不进 runner / 变异分母）"
+      "test/unit/upgrade/upgrade-steps-support.ts（dsh-notifier：配置与升级拆分专属 fixture，不进 runner / 变异分母）",
+      "test/e2e/smoke-support.ts（dsh-verify-isolated：smoke 拆分的跨文件 fixture，不进 runner / 变异分母）",
+      "test/e2e/smoke-resources.ts（dsh-verify-isolated：资源与文档契约拆分的跨文件 fixture，不进 runner / 变异分母）",
+      "test/e2e/smoke-driver.ts（dsh-verify-isolated：驱动与设备模拟契约拆分的跨文件 fixture，不进 runner / 变异分母）",
+      "test/e2e/smoke-core.ts（dsh-verify-isolated：核心脚本与退出码契约拆分的跨文件 fixture，不进 runner / 变异分母）",
+      "test/e2e/smoke-audit-contract.ts（dsh-verify-isolated：隔离审计契约拆分的跨文件 fixture，不进 runner / 变异分母）",
+      "test/e2e/smoke-audit-end-contract.ts（dsh-verify-isolated：审计端到端契约拆分的跨文件 fixture，不进 runner / 变异分母）",
+      "test/e2e/smoke-audit-fixtures.ts（dsh-verify-isolated：审计累积 fixture 拆分的跨文件 fixture，不进 runner / 变异分母）",
+      "test/e2e/smoke-onboarding-api.ts（dsh-verify-isolated：onboarding API 契约拆分的跨文件 fixture，不进 runner / 变异分母）",
+      "test/e2e/smoke-onboarding-runtime.ts（dsh-verify-isolated：onboarding 预置运行时拆分的跨文件 fixture，不进 runner / 变异分母）",
+      "test/e2e/smoke-onboarding-contract.ts（dsh-verify-isolated：onboarding 脚本与文档契约拆分的跨文件 fixture，不进 runner / 变异分母）"
     ],
     "mixedTargets": ["routes.test.ts", "report-p0.test.ts"],
     "rootLayers": {
