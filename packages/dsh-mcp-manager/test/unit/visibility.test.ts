@@ -3,7 +3,7 @@
  *
  * 覆盖：A1 注册表优先（#922：在册形状良好的 mcp__* 全进名单，不再要求 id 属于单元；A1b 另锁
  * 四原子工具 ws_mcp_* 豁免与畸形名排除）、名单未变不重挂（防自激循环的两道闸）、后注册收敛且旧限制
- * 先 dispose、空名单不调用 restrict、disposed/域 disposer 的清理、事件面缺失的降级、装载时的初始
+ * 在新层成功后 dispose、空名单不调用 restrict、disposed/域 disposer 的清理、事件面缺失的降级、装载时的初始
  * 全量 reconcile；B1–B6 锁定 #922：双向错位、逐名 skip+warn、抖动收敛、tools/change 风暴封顶、
  * 非未知错误重抛语义（无假记忆+可重试）。
  *
@@ -11,112 +11,20 @@
  * 导入面越界是已登记存量，新增即判红）。
  */
 import { describe, expect, it } from "vitest";
-import type { ToolRestriction } from "@deepseek-ai/dsh-tools";
 import { startAgentVisibility } from "../../src/server/visibility/interface.ts";
-import type { VisibilityEventsPort } from "../../src/server/visibility/interface.ts";
 import type { AgentFace } from "../../src/server/shared/interface.ts";
-import type { ProjectUnit } from "../../src/server/connection/runtime/interface.ts";
 
-/** 假 agent：restrict 记一笔，返回的摘除器也记一笔（带句柄号，供顺序断言）。 */
-function fakeAgent(id: string, log: string[], onChange?: () => (() => void)[]): AgentFace {
-  let seq = 0;
-  return {
-    // 夹具按可读字符串造 id；官方 Agent.id 是品牌化的 SessionId，测试侧显式收窄。
-    id: id as AgentFace["id"],
-    tools: {
-      restrict(filter: ToolRestriction) {
-        seq += 1;
-        const handle = `${id}#${seq}`;
-        log.push(`restrict:${id}[${[...(filter.deny ?? [])].join("|")}]`);
-        // 宿主 restrict 会**同步**发 tools/change：夹具照做，才测得到重入闸。
-        if (onChange) for (const hook of onChange()) hook();
-        return () => log.push(`dispose:${handle}`);
-      },
-    },
-  };
-}
-
-/** 可抛错的假 agent：shouldThrow 按单次 deny 名（含批量 join 形）决定是否抛，抛错不记 seq。 */
-function flakyAgent(
-  id: string,
-  log: string[],
-  shouldThrow: (joined: string) => Error | undefined,
-): AgentFace {
-  let seq = 0;
-  return {
-    // 同上：夹具 id 用可读字符串，官方品牌类型在此显式收窄。
-    id: id as AgentFace["id"],
-    tools: {
-      restrict(filter: ToolRestriction) {
-        const joined = [...(filter.deny ?? [])].join("|");
-        const error = shouldThrow(joined);
-        if (error !== undefined) throw error;
-        seq += 1;
-        const handle = `${id}#${seq}`;
-        log.push(`restrict:${id}[${joined}]`);
-        return () => log.push(`dispose:${handle}`);
-      },
-    },
-  };
-}
-
-/** 假事件面：三个监听各自可注入、摘除器可观测；`liveAgents` 由调用方给。 */
-function makeEvents(liveAgents: () => readonly AgentFace[] = () => []) {
-  const handlers: {
-    created: ((agent: AgentFace) => void)[];
-    disposed: ((agent: { id: string }) => void)[];
-    changed: (() => void)[];
-  } = { created: [], disposed: [], changed: [] };
-  const unhooked: string[] = [];
-  const port: VisibilityEventsPort = {
-    onAgentCreated: (handler) => {
-      handlers.created.push(handler);
-      return () => {
-        unhooked.push("created");
-      };
-    },
-    onAgentDisposed: (handler) => {
-      handlers.disposed.push(handler);
-      return () => {
-        unhooked.push("disposed");
-      };
-    },
-    onToolsChange: (handler) => {
-      handlers.changed.push(handler);
-      return () => {
-        unhooked.push("changed");
-      };
-    },
-    liveAgents,
-  };
-  return {
-    handlers,
-    unhooked,
-    port,
-  };
-}
-
-/**
- * 单元表夹具：本域只读 `unit.connections[*].id`（注册名 `mcp__<id>__` 的前缀来源，见
- * `visibility/impl/mask/index.ts` 的装配循环）——其余 ProjectUnit/ConnectionEntry 字段（ServerConfig、
- * 六态、句柄等）与本域无关，全量构造会把 visibility 测试耦合到无关形状上，故按本仓既有惯例
- * （unit-lifecycle 的 `as unknown as LoaderPort`）做收窄断言，而不用 any。
- */
-function unitsWith(...ids: string[]): ReadonlyMap<string, ProjectUnit> {
-  return new Map([
-    ["/proj", { connections: new Map(ids.map((id) => [`srv-${id}`, { id }])) }],
-  ]) as unknown as ReadonlyMap<string, ProjectUnit>;
-}
-
-function makeLogger(): { warns: string[]; warn: (message: string) => void } {
-  const warns: string[] = [];
-  return {
-    warns,
-    warn: (message: string) => {
-      warns.push(message);
-    },
-  };
-}
+import {
+  fakeAgent,
+  flakyAgent,
+  makeEvents,
+  unitsWith,
+  makeLogger,
+} from "./visibility-test-support.ts";
+import {
+  registerFirstMountReentryCases,
+  registerRecordLifecycleCases,
+} from "./visibility-reentry-support.ts";
 
 function registerInitialRestrictionCases() {
   it("A1 agent/created：deny 含注册面全部形状良好的 mcp__ 名（#922 注册表优先，不再要求 id 属于单元）", () => {
@@ -200,7 +108,7 @@ function registerInitialRestrictionCases() {
     dispose();
   });
 
-  it("A3 后注册的 mcp__* 经 tools/change 进名单，且旧限制先被 dispose", () => {
+  it("A3 后注册的 mcp__* 同步进入新限制后才撤旧限制", () => {
     const log: string[] = [];
     const events = makeEvents();
     const agent = fakeAgent("a1", log);
@@ -217,8 +125,8 @@ function registerInitialRestrictionCases() {
     events.handlers.changed[0]();
     expect(log).toEqual([
       "restrict:a1[mcp__id-a__echo]",
-      "dispose:a1#1",
       "restrict:a1[mcp__id-a__echo|mcp__id-a__late]",
+      "dispose:a1#1",
     ]);
     dispose();
   });
@@ -452,14 +360,14 @@ function registerConvergenceCases() {
     events.handlers.changed[0]();
     expect(log).toEqual([
       "restrict:a1[mcp__idx__t1]",
+      "restrict:a1[mcp__idx__t1]",
+      "restrict:a1[mcp__idx__t2]",
       "dispose:a1#1",
       "restrict:a1[mcp__idx__t1]",
       "restrict:a1[mcp__idx__t2]",
+      "restrict:a1[mcp__idx__t3]",
       "dispose:a1#3",
       "dispose:a1#2",
-      "restrict:a1[mcp__idx__t1]",
-      "restrict:a1[mcp__idx__t2]",
-      "restrict:a1[mcp__idx__t3]",
     ]);
     expect(logger.warns).toEqual([]);
     dispose();
@@ -526,4 +434,6 @@ describe("visibility 域：mcp__* 的模型可见面隐藏", () => {
   registerRegistryMismatchCases();
   registerConvergenceCases();
   registerFailureRecoveryCases();
+  registerFirstMountReentryCases();
+  registerRecordLifecycleCases();
 });

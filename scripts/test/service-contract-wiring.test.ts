@@ -222,6 +222,8 @@ const EXPECT_FILES: Record<string, string[]> = {
     "unit/stats-a4.test.ts",
     "unit/store.test.ts",
     "unit/summary-a3.test.ts",
+    "unit/visibility-reentry-support.ts",
+    "unit/visibility-test-support.ts",
     "unit/visibility.test.ts",
     "unit/unit-shape-catalog-injection.test.ts",
     "unit/unit-shape-routes-config.test.ts",

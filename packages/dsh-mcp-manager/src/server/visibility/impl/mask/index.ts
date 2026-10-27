@@ -1,27 +1,6 @@
 /**
- * dsh-mcp-manager — visibility/impl/mask/index.ts：`mcp__*` 的模型可见面隐藏机制。
- *
- * 承重设计（四条互相咬合的机制，缺一条就会自激或漏网）：
- *
- * 1. **每 agent 记忆已应用的 deny 名单**（`WeakMap<agent, {key, dispose}>`）：`key` 是名单排序后的
- *    稳定串，未变直接返回。这是**防自激循环的唯一闸门**——本包自己的 `restrict` 也会让宿主发
- *    `tools/change`，靠这次比较收敛。
- * 2. **名单以注册面为准、单元表只做分级参考**（#922 方案 B）：`restrict` 会校验目标的
- *    `restrictableNames`，名字不在册当场抛，故名单不能靠我方账本猜。口径 = 活注册面里形状良好的
- *    `mcp__` 前缀名**全部**进 deny，不再要求其 id 同刻属于连接池单元（连接翻转期两边必然错位，
- *    交集口径会在此时系统性偏向泄漏）；单元表只决定**挂法**：id 命中的走批量直挂，其余逐名挂。
- * 3. **先写 key、再改限制面**：算出新 key 后先把记忆里的 key 更新成新值，然后 `prev.dispose()`、
- *    再调用新的 `restrict`。`restrict` 会**同步**发 `tools/change`，重入的 reconcile 必须已经
- *    看到新 key 才能立即返回；另加一个 reconcile 入口的重入闸防嵌套全量 reconcile。
- * 4. **逐名挂只吞“未知名字”**：注册与挂载之间有 TOCTOU 缝（名在收集时在册、挂载时已销），该类失败
- *    跳过并 warn+计数；其余错误整单回滚（已挂的逐个 dispose、不留假记忆）后重抛。
- *
- * 三触发点（照官方 `dsh-tool-subagent` 的正解形态）：`agent/created` / `agent/disposed` /
- * `tools/change`（宿主原话：无载荷、故意不做作用域过滤），装载时先全量 reconcile 一次。
- *
- * 为什么用 `Map<id, AgentFace>` 与 WeakMap 并列：`agent/disposed` 的载荷只有 `id`（宿主事件面
- * 如此），WeakMap 无法按 id 反查；这张 id 表同时承担**对象规范化**——同 id 的两次 `liveAgents()`
- * 调用会产出不同对象，不规范化就会让 WeakMap 恒 miss、每次 reconcile 都重挂一次限制面。
+ * 按当前 agent 生命周期记忆限制；新层挂好后撤旧层。
+ * 普通事件同步对账，只有 session 发布重入可在栈后重试一次。
  */
 import type { AgentFace } from "../../../shared/interface.ts";
 import type { ProjectUnit } from "../../../connection/runtime/interface.ts";
@@ -32,12 +11,12 @@ const MCP_PREFIX = "mcp__";
 /** id 段与工具段之间的分隔符（`mcp__<id>__<tool>`）。 */
 const ID_SEPARATOR = "__";
 
-/** 一条已应用的 agent 限制。 */
-interface Applied {
-  /** deny 名单的稳定串：`undefined` 与未应用区分（本表只有已应用项）。 */
-  key: string;
-  /** 宿主给的限制摘除器；名单为空时保持 no-op（那一轮只撤旧限制）。 */
-  dispose: () => void;
+interface AgentRecord {
+  face: AgentFace;
+  key?: string;
+  disposers: Array<() => void>;
+  cleanup: Array<() => void>;
+  disposed: boolean;
 }
 
 /** deny 名单的稳定串：排序后 join（名单同集合不同顺序视为同一份）。 */
@@ -102,34 +81,37 @@ function collectDenyNames(
   };
 }
 
-/** 逆序摘除一串摘除器：后挂的先撤。单个失败不阻断其余（宿主的 effect 也会兜一层）；
- *  清理路径一律不盖首因。回滚与正常摘除两条路径共用。 */
-function disposeAll(disposers: readonly (() => void)[]): void {
-  for (const dispose of [...disposers].reverse()) {
+/** 逆序清理；失败的句柄留下，兼容先 undo 再 notify 抛错的幂等摘除器。 */
+function disposeAll(disposers: Array<() => void>): unknown[] {
+  const errors: unknown[] = [];
+  for (const dispose of disposers.splice(0).reverse()) {
     try {
       dispose();
-    } catch {
-      // 清理路径不盖首因。
+    } catch (error) {
+      disposers.unshift(dispose);
+      errors.push(error);
     }
   }
+  return errors;
 }
 
-/**
- * 把整份 deny 名单挂到 face 上：批量层一次直挂，批量死在 TOCTOU 未知名字上时退化成逐名挂；
- *  其余错误整单回滚（已挂的逐个摘除）后重抛。返回本次挂上的摘除器。
- *
- * 挂载口径全在本函数（顺序、批量优先、TOCTOU 跳过、整单回滚），调用方只管「该不该挂、
- * 挂完记什么」——两者是两种变化原因。onUnknown 是逐名跳过时的出声口（warn + 计数）。
- */
+function isSessionReentry(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    error.message === "session append cannot reenter while another append is being published"
+  );
+}
+
+/** 逐步收集句柄，失败时由调用方回滚；回滚失败的句柄也不能丢。 */
 function mountDenyList(
   face: AgentFace,
-  deny: readonly string[],
-  batched: readonly string[],
+  lists: DenyLists,
+  disposers: Array<() => void>,
+  active: () => boolean,
   onUnknown: (name: string, error: unknown) => void,
-): Array<() => void> {
-  const disposers: Array<() => void> = [];
-  /** 逐名挂载（机制 4）：未知名字跳过并 warn+计数，其余错误上抛整单回滚。 */
+): void {
   const restrictOne = (name: string): void => {
+    if (!active()) return;
     try {
       disposers.push(face.tools.restrict({ deny: [name] }));
     } catch (error) {
@@ -137,28 +119,18 @@ function mountDenyList(
       onUnknown(name, error);
     }
   };
-  try {
-    if (batched.length > 0) {
-      try {
-        // 批量层一次直挂（稳态单调用，少一次 tools/change 自激）。
-        // 宿主先校验后生效，批量失败视为零生效（见下整单回滚）。
-        disposers.push(face.tools.restrict({ deny: [...batched] }));
-      } catch (error) {
-        // 批量只可能死在 TOCTOU 未知名字上：退化成逐名；其余错误直接走整单回滚。
-        if (!isUnknownNameError(error)) throw error;
-        for (const name of batched) restrictOne(name);
-      }
+  if (lists.batched.length > 0 && active()) {
+    try {
+      disposers.push(face.tools.restrict({ deny: [...lists.batched] }));
+    } catch (error) {
+      if (!isUnknownNameError(error)) throw error;
+      for (const name of lists.batched) restrictOne(name);
     }
-    const batchedSet = new Set(batched);
-    for (const name of deny) {
-      if (!batchedSet.has(name)) restrictOne(name);
-    }
-  } catch (error) {
-    // 整单回滚：已挂的逐个摘除、不留「已应用」的假记忆，下一次 reconcile 才有机会重试。
-    disposeAll(disposers);
-    throw error;
   }
-  return disposers;
+  const batched = new Set(lists.batched);
+  for (const name of lists.deny) {
+    if (!batched.has(name)) restrictOne(name);
+  }
 }
 
 /**
@@ -168,31 +140,34 @@ function mountDenyList(
  */
 export function startAgentVisibility(args: StartAgentVisibilityArgs): () => void {
   const { events, units, registeredNames, logger } = args;
-  const applied = new WeakMap<AgentFace, Applied>();
-  /** id → 规范化的 AgentFace（disposed 按 id 定位 + 同 id 的对象身份稳定）。 */
-  const live = new Map<string, AgentFace>();
+  const live = new Map<string, AgentRecord>();
+  const retired = new Set<AgentRecord>();
+  // true 允许重新挂载；false 只补清理，不把普通挂载失败变成自动重试。
+  const pending = new Map<AgentRecord, { retryMount: boolean; key: string }>();
+  const queued = new Set<AgentRecord>();
   const unhook: Array<() => void> = [];
   let reconciling = false;
+  let changed = false;
+  let stopped = false;
   let degradedWarned = false;
-  /** 累计跳过的 TOCTOU 未知名字个数（闭包态；随 warn 文案可见，供抖动期观测）。 */
   let skippedUnknownTotal = 0;
 
-  /** 降级出声：同一实例只报一次（服务缺席是持久状态，每轮 reconcile 都喊只会淹掉日志）。 */
   const warnDegraded = (message: string): void => {
     if (degradedWarned) return;
     degradedWarned = true;
     logger.warn(message);
   };
 
-  /** 同 id 复用首次见到的对象：WeakMap 的键身份必须跨多次 `liveAgents()` 稳定。 */
-  const canonical = (agent: AgentFace): AgentFace => {
-    const known = live.get(agent.id);
-    if (known !== undefined) return known;
-    live.set(agent.id, agent);
-    return agent;
+  // 活表可能每次返回新 wrapper；仅在当前生命周期内按 id 规范化。
+  const canonical = (face: AgentFace): AgentRecord => {
+    let record = live.get(face.id);
+    if (record === undefined) {
+      record = { face, disposers: [], cleanup: [], disposed: false };
+      live.set(face.id, record);
+    }
+    return record;
   };
 
-  /** 逐名挂载遇到 TOCTOU 未知名字时的出声口：累计计数 + warn（计数是闭包态，供抖动期观测）。 */
   const skipUnknown = (name: string, error: unknown): void => {
     skippedUnknownTotal += 1;
     logger.warn(
@@ -200,86 +175,152 @@ export function startAgentVisibility(args: StartAgentVisibilityArgs): () => void
     );
   };
 
-  const applyTo = (
-    face: AgentFace,
-    deny: readonly string[],
-    batched: readonly string[],
-    key: string,
-  ): void => {
-    const prev = applied.get(face);
-    // 机制 1：名单未变直接返回（本包 restrict 自发的 tools/change 在这里收敛）。
-    if (prev !== undefined && prev.key === key) return;
-    // 机制 3：先写 key（record 先入表），再动限制面——重入的 reconcile 立刻看到新 key。
-    const record: Applied = { key, dispose: () => {} };
-    applied.set(face, record);
-    if (prev !== undefined) prev.dispose();
-    // 空 filter 会被宿主当场拒（"Empty filters ... fail"）：名单为空时只撤旧限制、不调 restrict。
-    if (deny.length === 0) return;
-    let disposers: Array<() => void>;
+  const readLists = (): DenyLists | undefined => {
     try {
-      disposers = mountDenyList(face, deny, batched, skipUnknown);
+      return collectDenyNames(units, registeredNames);
     } catch (error) {
-      // 整单回滚已由 mountDenyList 做完（先摘已挂的，再上抛）；此处只去掉「已应用」的
-      // 假记忆——顺序照旧：摘除发生时 record 仍在表里，与改前一致。
-      applied.delete(face);
-      throw error;
+      warnDegraded(
+        `dsh-mcp-manager: 读取工具注册面失败，模型可见面隐藏降级为 no-op（mcp__* 保持可见）：${String(error)}`,
+      );
+      return undefined;
     }
-    record.dispose = () => disposeAll(disposers);
   };
 
-  /** 活 agent 表（服务缺席 → 空表；域不把它当错误）。 */
-  const liveFaces = (): readonly AgentFace[] => {
-    const read = events.liveAgents;
-    if (read === undefined) return [];
+  const failed = (
+    record: AgentRecord,
+    error: unknown,
+    allowRetry: boolean,
+    key: string,
+    cleanup = false,
+  ): void => {
+    // 普通挂载异常立即出声；清理失败保留句柄并至多补一次清理。
+    if (!isSessionReentry(error) || !allowRetry)
+      logger.warn(
+        `dsh-mcp-manager: 为 agent ${record.face.id} 应用工具可见面限制失败：${String(error)}`,
+      );
+    if (allowRetry && (isSessionReentry(error) || cleanup)) {
+      if (pending.has(record)) return;
+      pending.set(record, { retryMount: !cleanup, key });
+      queueMicrotask(() => {
+        const retry = pending.get(record);
+        if (!pending.delete(record)) return;
+        // 已退役的记录只清理自己的句柄，绝不重新挂载或按 id 找新生命周期。
+        reconcile(record, false, !retry?.retryMount);
+      });
+      return;
+    }
+  };
+
+  const replace = (record: AgentRecord, lists: DenyLists, allowRetry: boolean): void => {
+    const active = (): boolean => !stopped && !record.disposed;
+    const next: Array<() => void> = [];
     try {
-      return read();
+      mountDenyList(record.face, lists, next, active, skipUnknown);
+      if (active()) {
+        // 先成功挂新层，才把旧层转入待撤队列。
+        record.cleanup.push(...record.disposers);
+        record.disposers = next;
+        record.key = keyOf(lists.deny);
+      } else {
+        record.cleanup.push(...next);
+      }
+    } catch (error) {
+      record.cleanup.push(...next);
+      failed(record, error, allowRetry, keyOf(lists.deny));
+    }
+  };
+
+  const applyTo = (
+    record: AgentRecord,
+    lists: DenyLists | undefined,
+    allowRetry: boolean,
+  ): void => {
+    const key = keyOf(lists?.deny ?? []);
+    if (!stopped && !record.disposed && lists !== undefined && record.key !== key)
+      replace(record, lists, allowRetry);
+    for (const error of disposeAll(record.cleanup)) failed(record, error, allowRetry, key, true);
+    if (record.disposed && record.cleanup.length === 0) retired.delete(record);
+  };
+
+  const discover = (): void => {
+    try {
+      for (const face of events.liveAgents?.() ?? []) canonical(face);
     } catch (error) {
       logger.warn(`dsh-mcp-manager: 读取活 agent 表失败：${String(error)}`);
-      return [];
     }
   };
 
-  /** 全量 reconcile；`extra` 是此刻刚创建、可能还没进 liveAgents() 的那一个。 */
-  const reconcile = (extra: readonly AgentFace[] = []): void => {
-    // 重入闸：restrict 同步发 tools/change，嵌套的全量 reconcile 只放行最外层一次。
-    if (reconciling) return;
+  const applyQueued = (
+    record: AgentRecord,
+    lists: DenyLists | undefined,
+    attempted: Map<AgentRecord, Set<string>>,
+    allowRetry: boolean,
+    cleanupOnly: boolean,
+  ): void => {
+    const target = keyOf(lists?.deny ?? []);
+    const retry = pending.get(record);
+    if (retry !== undefined) {
+      // 与失败那轮的目标比较：同名单的清理通知不会触发普通挂载自动重试。
+      if (lists !== undefined && retry.key !== target) retry.retryMount = true;
+      return;
+    }
+    const key = record.disposed ? "disposed" : target;
+    const keys = attempted.get(record) ?? new Set<string>();
+    if (keys.has(key)) return;
+    keys.add(key);
+    attempted.set(record, keys);
+    applyTo(record, cleanupOnly ? undefined : lists, allowRetry);
+  };
+
+  const refreshLists = (lists: DenyLists | undefined): DenyLists | undefined => {
+    if (!changed || stopped) return lists;
+    const latest = readLists();
+    if (latest !== undefined && keyOf(latest.deny) !== keyOf(lists?.deny ?? [])) {
+      for (const record of live.values()) queued.add(record);
+    }
+    return latest;
+  };
+
+  const queueAll = (): void => {
+    if (!stopped) discover();
+    for (const record of [...live.values(), ...retired]) queued.add(record);
+  };
+
+  /** 重入只登记任务；相同 record/名单每轮至多尝试一次，失败通知不自激。 */
+  const reconcile = (only?: AgentRecord, allowRetry = true, cleanupOnly = false): void => {
+    if (only !== undefined) queued.add(only);
+    if (reconciling) {
+      changed = true;
+      return;
+    }
+    if (only === undefined) queueAll();
     reconciling = true;
+    const attempted = new Map<AgentRecord, Set<string>>();
     try {
-      let lists: DenyLists;
-      try {
-        lists = collectDenyNames(units, registeredNames);
-      } catch (error) {
-        // 注册面读口缺席（假 ctx 的 tools 只有 register、宿主服务未合并）：降级 no-op，
-        // 绝不把 apply 打断——隐藏面缺失是功能缺口，不是装配错误。
-        warnDegraded(
-          `dsh-mcp-manager: 读取工具注册面失败，模型可见面隐藏降级为 no-op（mcp__* 保持可见）：${String(error)}`,
-        );
-        return;
-      }
-      const key = keyOf(lists.deny);
-      // 目标 = 宿主活表 ∪ 本域已见过的 agent ∪ 刚创建的那个。只信宿主活表是不够的：
-      // agents 服务缺席（假 ctx）时活表恒空，而 tools/change 的重同步仍必须覆盖已知 agent。
-      for (const agent of [...liveFaces(), ...live.values(), ...extra]) {
-        try {
-          applyTo(canonical(agent), lists.deny, lists.batched, key);
-        } catch (error) {
-          // 单个 agent 挂不上限制不阻断其余（例如作用域已被拆除）：出声、继续。
-          logger.warn(
-            `dsh-mcp-manager: 为 agent ${agent.id} 应用工具可见面限制失败：${String(error)}`,
-          );
-        }
-      }
+      let lists = stopped ? undefined : readLists();
+      do {
+        changed = false;
+        const batch = [...queued];
+        queued.clear();
+        for (const record of batch)
+          applyQueued(record, lists, attempted, allowRetry, cleanupOnly && record === only);
+        lists = refreshLists(lists);
+      } while (queued.size > 0);
     } finally {
       reconciling = false;
     }
   };
 
   const disposeAgent = (id: string): void => {
-    const face = live.get(id);
-    if (face === undefined) return;
-    applied.get(face)?.dispose();
-    applied.delete(face);
+    const record = live.get(id);
+    if (record === undefined) return;
     live.delete(id);
+    pending.delete(record);
+    record.disposed = true;
+    record.cleanup.push(...record.disposers);
+    record.disposers = [];
+    retired.add(record);
+    reconcile(record);
   };
 
   const onCreated = events.onAgentCreated;
@@ -298,9 +339,22 @@ export function startAgentVisibility(args: StartAgentVisibilityArgs): () => void
     if (subscribe !== undefined) unhook.push(subscribe);
   };
   try {
-    if (onCreated !== undefined) hook(onCreated((agent) => reconcile([agent])));
+    if (onCreated !== undefined)
+      hook(
+        onCreated((agent) => {
+          if (!stopped) {
+            queued.add(canonical(agent));
+            reconcile();
+          }
+        }),
+      );
     if (onDisposed !== undefined) hook(onDisposed((agent) => disposeAgent(agent.id)));
-    if (onChanged !== undefined) hook(onChanged(() => reconcile()));
+    if (onChanged !== undefined)
+      hook(
+        onChanged(() => {
+          if (!stopped) reconcile();
+        }),
+      );
   } catch (error) {
     warnDegraded(
       `dsh-mcp-manager: 订阅 agent 事件面失败，模型可见面隐藏降级为 no-op：${String(error)}`,
@@ -311,6 +365,8 @@ export function startAgentVisibility(args: StartAgentVisibilityArgs): () => void
   reconcile();
 
   return () => {
+    stopped = true;
+    pending.clear();
     // 先摘监听再撤限制：撤限制本身也会发 tools/change，摘晚了会把卸载路径再拉进 reconcile。
     for (const stop of unhook.splice(0)) {
       try {
@@ -320,5 +376,7 @@ export function startAgentVisibility(args: StartAgentVisibilityArgs): () => void
       }
     }
     for (const id of [...live.keys()]) disposeAgent(id);
+    // 也重试此前失败、已从活表移出的清理句柄。
+    reconcile();
   };
 }

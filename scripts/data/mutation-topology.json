@@ -69,6 +69,8 @@
       "test/e2e/forward-upstream.ts（dsh-lan-proxy：真实转发 e2e 的上游/proxy 生命周期与请求 helper）",
       "test/unit/manager-shape-support.ts（dsh-mcp-manager：Manager自然职责fixture，不进runner/变异分母）",
       "test/unit/manager-http-connection-support.ts（dsh-mcp-manager：HTTP 连接用例注册，不进 runner / 变异分母）",
+      "test/unit/visibility-reentry-support.ts（dsh-mcp-manager：visibility 重入与生命周期用例注册，由 visibility.test.ts 唯一收集，不进 runner / 变异分母）",
+      "test/unit/visibility-test-support.ts（dsh-mcp-manager：visibility 共用事件与 agent fixture，不进 runner / 变异分母）",
       "test/unit/manager-shape-resume-fixture.ts（dsh-mcp-manager：Manager自然职责fixture，不进runner/变异分母）",
       "test/unit/manager-shape-runtime-injection-fixture.ts（dsh-mcp-manager：Manager自然职责fixture，不进runner/变异分母）",
       "test/unit/manager-shape-wrapped-dispatch-fixture.ts（dsh-mcp-manager：Manager自然职责fixture，不进runner/变异分母）",
