@@ -180,6 +180,7 @@ const EXPECT_FILES: Record<string, string[]> = {
     "unit/manager.test.ts",
     "unit/manager-pure.test.ts",
     "unit/manager2.test.ts",
+    "unit/manager-http-connection-support.ts",
     "unit/manager-shape-catalog-view-fixture.ts",
     "unit/manager-shape-catalog-view.test.ts",
     "unit/manager-shape-connection.test.ts",

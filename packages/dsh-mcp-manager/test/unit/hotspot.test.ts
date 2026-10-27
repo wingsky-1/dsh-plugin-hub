@@ -106,11 +106,12 @@ function fakeRes(): ServerResponse & {
 // 一处归一化（缺省/非法值 → normalizeScope），此前零判据。这里不挂真 McpManager，改挂一个
 // 记录实参的假 manager：判据要打的是「路由下传给 manager 的那一个值」，不是 manager 内部行为。
 function scopeCaptureFixture() {
-  const calls: [unknown, unknown][] = [];
+  const calls: [unknown, unknown, unknown][] = [];
   const manager = {
     async setSession() {},
-    async connect(name: string, scope?: string) {
-      calls.push([name, scope]);
+    async acceptConnection(name: string, scope?: string, cwd?: string) {
+      calls.push([name, scope, cwd]);
+      return "root";
     },
     async disconnect() {},
     async reconnect() {},
@@ -120,7 +121,7 @@ function scopeCaptureFixture() {
     async projectStoreOrThrow() {
       return { data: { version: 1, servers: [] } };
     },
-    summary: () => ({ servers: [] }),
+    summaryForRoot: (root: string) => ({ root, servers: [] }),
     store: { data: { version: 1, servers: [] } },
   };
   return { calls, manager };
@@ -158,21 +159,25 @@ function registerRouteFenceAndScopeCases() {
     ).toEqual(["scope-test", "scope-test"]);
     // 3) 对照：显式 scope=project 必须原样下传，归一化不是「一律 global」。
     await route!.handler(
-      fakeReq("POST", `${ROUTES.connect}?name=scope-test&scope=project`),
+      fakeReq("POST", `${ROUTES.connect}?name=scope-test&scope=project&cwd=%2Fproject`),
       fakeRes(),
     );
     expect(calls[2][1], "显式 scope=project").toBe("project");
+    expect(
+      calls.map((c) => c[2]),
+      "cwd 原样下传",
+    ).toEqual([undefined, undefined, "/project"]);
   });
 }
 
 function registerRouteMainPathCases() {
-  it("connect 合法 name → 200", async () => {
+  it("connect 合法 name → 202", async () => {
     const { find, manager } = makeRoutesFixture();
-    // 单池后连接只有中间层一条路径：装配实例（未装 lifecycle 时条目落 failed，仍 200）。
+    // 单池后连接只有中间层一条路径：装配实例（未装 lifecycle 时接受请求并返回 202）。
     await manager.initMiddleware();
     const res = fakeRes();
     await find(ROUTES.connect)!.handler(fakeReq("POST", `${ROUTES.connect}?name=route-test`), res);
-    expect(res.state.status).toBe(200);
+    expect(res.state.status).toBe(202);
   });
 
   it("disconnect 缺 name → 400", async () => {
@@ -182,14 +187,14 @@ function registerRouteMainPathCases() {
     expect(res.state.status).toBe(400);
   });
 
-  it("disconnect 合法 name → 200", async () => {
+  it("disconnect 合法 name → 202", async () => {
     const { find } = makeRoutesFixture();
     const res = fakeRes();
     await find(ROUTES.disconnect)!.handler(
       fakeReq("POST", `${ROUTES.disconnect}?name=route-test`),
       res,
     );
-    expect(res.state.status).toBe(200);
+    expect(res.state.status).toBe(202);
   });
 
   it("reconnect 缺 name → 400", async () => {
@@ -199,7 +204,7 @@ function registerRouteMainPathCases() {
     expect(res.state.status).toBe(400);
   });
 
-  it("reconnect 合法 name → 200", async () => {
+  it("reconnect 合法 name → 202", async () => {
     const { find, manager } = makeRoutesFixture();
     await manager.initMiddleware();
     const res = fakeRes();
@@ -207,7 +212,7 @@ function registerRouteMainPathCases() {
       fakeReq("POST", `${ROUTES.reconnect}?name=route-test`),
       res,
     );
-    expect(res.state.status).toBe(200);
+    expect(res.state.status).toBe(202);
   });
 
   it("connect GET → 405", async () => {

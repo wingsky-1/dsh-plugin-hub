@@ -7,7 +7,14 @@
  */
 
 import { el, pangu } from "../core/dom.ts";
-import { api, toolDisableServerKey, cwdQueryOf } from "../core/api.ts";
+import {
+  api,
+  toolDisableServerKey,
+  cwdQueryOf,
+  serverKey,
+  submitConnection,
+  assertActionSession,
+} from "../core/api.ts";
 import { STATUS_ORDER } from "../core/constants.ts";
 import { tStatus } from "../core/i18n.ts";
 import { t } from "../../../../../shared/client/i18n.js";
@@ -152,25 +159,36 @@ export function statusActions(
   cwdQuery: string,
 ): ActionSpec[] {
   const name = encodeURIComponent(server.name);
+  const generation = state.sessionGeneration;
+  if (server.status === "connecting" || server.status === "reconnecting") {
+    return [
+      {
+        label: t("disconnect"),
+        primary: false,
+        run: () =>
+          submitConnection(server, state, actions, "disconnect", () =>
+            api(`${state.API.disconnect}?name=${name}${scopeQuery}${cwdQuery}`, { method: "POST" }),
+          ),
+      },
+    ];
+  }
   if (server.status === "connected") {
     return [
       {
         label: t("disconnect"),
         primary: false,
-        run: postThenRefresh(
-          state,
-          actions,
-          `${state.API.disconnect}?name=${name}${scopeQuery}${cwdQuery}`,
-        ),
+        run: () =>
+          submitConnection(server, state, actions, "disconnect", () =>
+            api(`${state.API.disconnect}?name=${name}${scopeQuery}${cwdQuery}`, { method: "POST" }),
+          ),
       },
       {
         label: t("reconnect"),
         primary: false,
-        run: postThenRefresh(
-          state,
-          actions,
-          `${state.API.reconnect}?name=${name}${scopeQuery}${cwdQuery}`,
-        ),
+        run: () =>
+          submitConnection(server, state, actions, "connect", () =>
+            api(`${state.API.reconnect}?name=${name}${scopeQuery}${cwdQuery}`, { method: "POST" }),
+          ),
       },
     ];
   }
@@ -179,13 +197,14 @@ export function statusActions(
       {
         label: t("enableAndConnect"),
         primary: true,
-        run: async () => {
-          await api<unknown>(`${state.API.servers}?name=${name}${scopeQuery}`, jsonPatchInit(true));
-          await api<unknown>(`${state.API.connect}?name=${name}${scopeQuery}${cwdQuery}`, {
-            method: "POST",
-          });
-          await actions.refresh();
-        },
+        run: () =>
+          submitConnection(server, state, actions, "connect", async () => {
+            assertActionSession(state, server.scope, generation);
+            await api<unknown>(
+              `${state.API.servers}?name=${name}${scopeQuery}${cwdQuery}`,
+              jsonPatchInit(true),
+            );
+          }),
       },
     ];
   }
@@ -193,11 +212,10 @@ export function statusActions(
     {
       label: t("connect"),
       primary: true,
-      run: postThenRefresh(
-        state,
-        actions,
-        `${state.API.connect}?name=${name}${scopeQuery}${cwdQuery}`,
-      ),
+      run: () =>
+        submitConnection(server, state, actions, "connect", () =>
+          api(`${state.API.connect}?name=${name}${scopeQuery}${cwdQuery}`, { method: "POST" }),
+        ),
     },
   ];
 }
@@ -211,18 +229,21 @@ export function disableAction(
   cwdQuery: string,
 ): ActionSpec {
   const name = encodeURIComponent(server.name);
+  const generation = state.sessionGeneration;
   return {
     label: t("disable"),
     primary: false,
-    run: async () => {
-      // C7：disable 带 cwd（与 disconnect 对齐，#412 会话自愈）。
-      await api<unknown>(
-        `${state.API.servers}?name=${name}${scopeQuery}${cwdQuery}`,
-        jsonPatchInit(false),
-      );
-      if (state.editingName === server.name) actions.resetForm();
-      await actions.refresh();
-    },
+    run: () =>
+      submitConnection(server, state, actions, "disconnect", async () => {
+        assertActionSession(state, server.scope, generation);
+        // C7：disable 带 cwd（与 disconnect 对齐，#412 会话自愈）。
+        await api<unknown>(
+          `${state.API.servers}?name=${name}${scopeQuery}${cwdQuery}`,
+          jsonPatchInit(false),
+        );
+        if (state.sessionGeneration === generation && state.editingName === server.name)
+          actions.resetForm();
+      }),
   };
 }
 
@@ -234,13 +255,23 @@ export function deleteAction(
   scopeQuery: string,
 ): ActionSpec {
   const name = encodeURIComponent(server.name);
+  const cwdQuery = cwdQueryOf(state);
+  const generation = state.sessionGeneration;
   return {
     label: t("delete"),
     primary: false,
     danger: true,
     run: async () => {
       if (!window.confirm(t("confirmDelete", { name: server.name }))) return;
-      await api<unknown>(`${state.API.servers}?name=${name}${scopeQuery}`, { method: "DELETE" });
+      if (
+        state.sessionGeneration !== generation ||
+        (server.scope === "project" && (!state.sessionResolved || !state.currentCwd))
+      ) {
+        throw new Error(t("sessionUnavailable"));
+      }
+      await api<unknown>(`${state.API.servers}?name=${name}${scopeQuery}${cwdQuery}`, {
+        method: "DELETE",
+      });
       if (state.editingName === server.name) actions.resetForm();
       await actions.refresh();
     },
@@ -301,8 +332,10 @@ export function renderServer(
   opts: { tools: boolean; openTools?: Set<string> } = { tools: true },
 ): HTMLElement {
   const article = el("article", { class: serverCardClass(server) });
+  const pending = state.pending.get(serverKey(server))?.kind;
   const toolCount = Array.isArray(server.tools) ? server.tools.length : 0;
   article.appendChild(serverCardHeader(server, toolCount));
+  renderPendingBadge(article, server, pending);
 
   article.appendChild(el("div", { class: "dm-endpoint", text: endpointOf(server) }));
   if (server.error !== undefined && server.error !== "") {
@@ -336,8 +369,28 @@ export function renderServer(
     actionButton(remove.label, remove.run, remove.primary, remove.danger === true),
   );
   (actionsEl.children[actionsEl.children.length - 1] as HTMLButtonElement).disabled = busy;
+  disablePendingActions(actionsEl, pending);
   article.appendChild(actionsEl);
   return article;
+}
+
+function renderPendingBadge(
+  article: HTMLElement,
+  server: McpServerListEntry,
+  pending: "connect" | "disconnect" | undefined,
+): void {
+  if (pending === undefined) return;
+  const badge = article.querySelector(".dm-st-" + server.status);
+  if (badge !== null)
+    badge.textContent = t(pending === "connect" ? "stConnecting" : "stDisconnecting");
+}
+
+function disablePendingActions(
+  actionsEl: HTMLElement,
+  pending: "connect" | "disconnect" | undefined,
+): void {
+  if (pending === undefined) return;
+  for (const button of actionsEl.querySelectorAll("button")) button.disabled = true;
 }
 
 /** 渲染服务器列表页（#362 交互拍板 1a：项目级 / 全局级两大分组，各自内部再按状态）。

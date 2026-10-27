@@ -12,6 +12,7 @@ import {
   runThresholdMonotonic,
 } from "../gate/threshold-monotonic.mjs";
 import { judgeRedLine, redLinePatterns } from "../gate/red-line-approval.mjs";
+import { RATCHET_BUCKETS } from "../lib/exemption-ratchet.ts";
 import {
   booleanLeaves,
   isWeakenedBoolean,
@@ -206,6 +207,19 @@ function runFixture(dir: string) {
     return { ...result, stderr: lines.join("\n") };
   } finally {
     console.error = original;
+  }
+}
+
+/** 夹具基线有一条临时豁免；只在同步运行期间匹配其独立棘轮水位。 */
+function runFixtureWithOneExemption(dir: string) {
+  const bucket = RATCHET_BUCKETS.find((item) => item.file === LEDGER);
+  assert.ok(bucket);
+  const ceiling = bucket.ceiling;
+  Object.defineProperty(bucket, "ceiling", { value: 1 });
+  try {
+    return runFixture(dir);
+  } finally {
+    Object.defineProperty(bucket, "ceiling", { value: ceiling });
   }
 }
 
@@ -977,7 +991,11 @@ test("#843 M-1: 缺口按台账登记后可放行（唯一到期登记处，不�
       dir,
       withPackages({ "dsh-x": { threshold: 60, fixedCovered: 70 }, "dsh-y": { threshold: 60 } }),
     );
-    assert.equal(runFixture(dir).exitCode, 0, "登记豁免后必须放行，否则闸会锁死合入");
+    assert.equal(
+      runFixtureWithOneExemption(dir).exitCode,
+      0,
+      "登记豁免后必须放行，否则闸会锁死合入",
+    );
   } finally {
     removeFixture(dir);
   }
@@ -1791,7 +1809,7 @@ test("#843: 整包退役登记 #removal 后放行，未登记仍判红", () => {
     rmSync(join(dir, "packages/dsh-y"), { recursive: true, force: true });
     writeGauntlet(dir, withPackages({ "dsh-x": { threshold: 60, fixedCovered: 70 } }));
     assert.equal(
-      runFixture(dir).exitCode,
+      runFixtureWithOneExemption(dir).exitCode,
       0,
       "整包退役必须有一条显式台账通道，否则闸会锁死正常退役",
     );

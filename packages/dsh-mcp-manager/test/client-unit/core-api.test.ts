@@ -4,7 +4,7 @@
  * 守的事实（每条一句话）：
  * - toolDisableServerKey：全局形态 `@@global/<name>`、项目形态 `@<root>/<name>`、
  *   projectRoot 缺失/空串返回 undefined（防宿主 400 的非法 `@/name`）——任一改动必须红。
- * - cwdQueryOf：非空 cwd 编码后带 `&cwd=`、空串与非字符串回落空串——任一改动必须红。
+ * - cwdQueryOf：已知 cwd 编码，已知空会话显式带空 cwd，未知会话不带 cwd。
  * - api()：2xx 返回解析后的 body；非 2xx 优先抛 body.error、缺 error 时抛 `HTTP <status>`；
  *   body 解析失败时 not-ok 分支仍能给出 `HTTP <status>`；调用方自带 signal 时**不**装超时
  *   兜底（推钟后调用方 signal 仍未 abort），未自带时装上且按 timeoutMs 精确触发。
@@ -130,18 +130,22 @@ describe("api：toolDisableServerKey 全名归一", () => {
 
 describe("api：cwdQueryOf 会话 cwd 查询参数", () => {
   it("非空 cwd → &cwd=<encodeURIComponent 结果>，含空格与中文时正确编码", () => {
-    expect(cwdQueryOf(state({ currentCwd: "/w" }))).toBe("&cwd=%2Fw");
-    expect(cwdQueryOf(state({ currentCwd: "/a b/中" }))).toBe("&cwd=%2Fa%20b%2F%E4%B8%AD");
+    expect(cwdQueryOf(state({ sessionResolved: true, currentCwd: "/w" }))).toBe("&cwd=%2Fw");
+    expect(cwdQueryOf(state({ sessionResolved: true, currentCwd: "/a b/中" }))).toBe(
+      "&cwd=%2Fa%20b%2F%E4%B8%AD",
+    );
   });
 
-  it("空串 cwd → 空串（不产生悬空的 &cwd=）", () => {
-    expect(cwdQueryOf(state({ currentCwd: "" }))).toBe("");
+  it("已知空会话显式带空 cwd", () => {
+    expect(cwdQueryOf(state({ sessionResolved: true, currentCwd: "" }))).toBe("&cwd=");
+    expect(cwdQueryOf(state({ sessionResolved: true, currentCwd: undefined }))).toBe("&cwd=");
   });
 
   it("cwd 缺失或非字符串 → 空串", () => {
     expect(cwdQueryOf(state({}))).toBe("");
     expect(cwdQueryOf(state({ currentCwd: undefined }))).toBe("");
     expect(cwdQueryOf(state({ currentCwd: 7 }))).toBe("");
+    expect(cwdQueryOf(state({ sessionResolved: false, currentCwd: "/w" }))).toBe("");
   });
 });
 

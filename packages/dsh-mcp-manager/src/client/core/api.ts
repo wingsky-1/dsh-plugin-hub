@@ -7,6 +7,44 @@
  */
 
 import type { ApiRequestOptions, McpState, McpServerListEntry } from "./state.ts";
+import type { UiActions } from "./state.ts";
+import { t } from "../../../../../shared/client/i18n.js";
+
+export function assertActionSession(state: McpState, scope: string, generation: number): void {
+  if (
+    state.sessionGeneration !== generation ||
+    (scope === "project" && (!state.sessionResolved || !state.currentCwd))
+  ) {
+    throw new Error(t("sessionUnavailable"));
+  }
+}
+
+export function serverKey(server: McpServerListEntry): string {
+  return JSON.stringify([server.scope, server.name]);
+}
+
+export async function submitConnection(
+  server: McpServerListEntry,
+  state: McpState,
+  actions: UiActions,
+  kind: "connect" | "disconnect",
+  submit: () => Promise<unknown>,
+): Promise<void> {
+  const key = serverKey(server);
+  if (state.pending.has(key)) return;
+  const pending = { kind };
+  const generation = state.sessionGeneration;
+  state.pending.set(key, pending);
+  actions.render?.();
+  try {
+    await submit();
+  } finally {
+    // Do not reuse a snapshot requested before the submission completed.
+    if (state.sessionGeneration === generation) await actions.refresh(true);
+    if (state.pending.get(key) === pending) state.pending.delete(key);
+    actions.render?.();
+  }
+}
 
 /**
  * tool-disable 的服务器全名形态（C6/C-DTO-4）：`@@global/<name>` 或
@@ -30,9 +68,13 @@ export function toolDisableServerKey(
  * 宿主 setSession 幂等短路，正常时零副作用）。空 cwd 返回空串。
  */
 export function cwdQueryOf(state: McpState): string {
-  return typeof state.currentCwd === "string" && state.currentCwd !== ""
-    ? `&cwd=${encodeURIComponent(state.currentCwd)}`
-    : "";
+  return state.sessionResolved ? `&cwd=${encodeURIComponent(state.currentCwd ?? "")}` : "";
+}
+
+/** 已知空会话也必须显式携带 cwd，未知会话不可伪装为空会话。 */
+export function serversUrlOf(state: McpState): string | undefined {
+  if (!state.sessionResolved) return undefined;
+  return `${state.API.servers}?cwd=${encodeURIComponent(state.currentCwd ?? "")}`;
 }
 
 /**

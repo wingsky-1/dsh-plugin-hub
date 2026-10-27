@@ -102,6 +102,7 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-mcp-manager
 | 项目级 MCP | 服务器分「项目级 / 全局」两级：项目级存 `<项目根>/.dsh/@wingsky-1/dsh-mcp-manager/mcp.json`（随项目走、可提交 git），全局存 `<DSH_HOME>/@wingsky-1/dsh-mcp-manager/mcp.json` 常连 |
 | 分级展示 | 运行中 / 连接中 / 重连中 / 未连接 / 已停用 / 失败；每台显示传输、端点、工具数；客户端未知状态按「未连接」投影、不丢卡（C13 统一口径） |
 | 服务器管理 | 增删改查（可选项目级/全局）、连接 / 断开 / 重连；配置版本化 JSON，原子写入 |
+| 连接请求 | 界面连接、重连和停止请求异步受理：连接期间显示「连接中」，失败后显示「失败」及错误；刷新页面或切换会话时重新读取宿主内存中的状态。宿主直接调用 `connect` 仍等待连接完成。停止是逻辑停止，不保证底层连接或进程已完全释放；这些运行状态不跨宿主进程重启保留。HTTP `202 Accepted` 表示请求已受理而非操作已完成；兼容调用方应接受所有 2xx 成功响应，并通过状态确认结果。 |
 | 两种传输 | stdio（本地子进程，env 支持 `${ENV}` 引用）与 streamable-http（远程，header 支持 `${ENV}` 引用，自动回传 `Mcp-Session-Id`） |
 | JSON 导入 | 粘贴 mcpServers JSON 文本导入（仅 JSON 格式；不扫描任何应用配置文件） |
 | 模型工具 | 全部服务器（项目级 / 全局 / runtime 注入）一律经中间层四个原子工具访问：`ws_mcp_list` / `ws_mcp_detail` / `ws_mcp_search` / `ws_mcp_call`，不同工作空间互不冲突；宿主注册名 `mcp__<id>__<tool>`（`id` 按 (工作空间, 服务器名) 随机分配、同一次装配内稳定、不透明；工具名仍受 64 字符 / `[A-Za-z0-9_-]` / 冲突哈希后缀约束）会被从模型工具列表摘除——模型不可见、不得直呼 |

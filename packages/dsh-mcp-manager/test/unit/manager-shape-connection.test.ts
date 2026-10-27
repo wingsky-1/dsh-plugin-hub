@@ -5,8 +5,8 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { pollUntil } from "../helpers.ts";
-
 import type { FakeToolEntry } from "../helpers.ts";
+import { registerHttpConnectionTests } from "./manager-http-connection-support.ts";
 
 import {
   managerFixture,
@@ -72,6 +72,8 @@ async function withScopeDuplicate() {
   return { manager, store, dir, log };
 }
 setupManagerTestLifecycle();
+
+registerHttpConnectionTests();
 
 // onStatus 订阅注销 ----
 describe("onStatus 订阅注销", () => {

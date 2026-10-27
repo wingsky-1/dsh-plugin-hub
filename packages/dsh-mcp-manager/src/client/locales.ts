@@ -12,6 +12,8 @@ export const zh = {
   // 状态（constants.ts 状态表共用）
   stConnected: "运行中",
   stConnecting: "连接中",
+  stDisconnecting: "断开中",
+  sessionUnavailable: "当前项目会话已变化或不可用，请刷新后重试",
   stReconnecting: "重连中",
   stStopped: "未连接",
   stDisabled: "已停用",
@@ -117,6 +119,9 @@ export type McpLocaleKey = keyof typeof zh;
 export const en: Record<McpLocaleKey, string> = {
   stConnected: "Running",
   stConnecting: "Connecting",
+  stDisconnecting: "Disconnecting",
+  sessionUnavailable:
+    "The current project session changed or is unavailable; refresh and try again",
   stReconnecting: "Reconnecting",
   stStopped: "Disconnected",
   stDisabled: "Disabled",

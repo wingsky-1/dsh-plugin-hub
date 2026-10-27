@@ -148,6 +148,8 @@ export interface MountServerInput {
   readonly connectTimeoutMs?: number;
   /** 状态投影出口：窗口在起点与结算点各回调一次；被丢弃的结算不回调。 */
   readonly onState: (state: ServerState) => void;
+  readonly onMounted?: (id: string) => void;
+  readonly shouldMount?: () => boolean;
 }
 
 /** 一次装载的结果：id 与账本条目供调用方后续定位/拆除，outcome 是等待窗口的结算。 */
@@ -169,7 +171,10 @@ export async function mountServer(input: MountServerInput): Promise<MountServerR
   const id = workspace.idFor(input.root, input.server.name);
   const officialConfig = officialMcpConfig(input.server, id, config.expandServerEnv);
   const module = await loader.load(OFFICIAL_MCP_CLIENT_SPECIFIER);
+  await mountLedger.waitForRelease(id);
+  if (input.shouldMount?.() === false) throw new Error("connection attempt cancelled");
   const entry = mountLedger.mount(id, module, officialConfig);
+  input.onMounted?.(id);
   // 收集器只包住等待窗口：首连与首次发现都结算在官方 ready 之前，窗口内的原话就是这次装载的
   // 全部错因；窗口结束即摘除，常驻订阅只会让每个实例都挂一个导出器去收事后噪音。
   const collected = collectOfficialLogs(logs, id);

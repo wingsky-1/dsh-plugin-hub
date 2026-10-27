@@ -45,7 +45,7 @@
  * 文件即判红——两道判据不同源。
  *
  * 另一条判据：**豁免台账分桶只减棘轮**（scripts/lib/exemption-ratchet.ts）。台账跨三个事实源
- * （coverage.config.json 14 条 / gate-exemptions.json 1 条 / gauntlet.config.json 的 crap 1 条），
+ * （coverage.config.json 4 条 / gate-exemptions.json 0 条 / gauntlet.config.json 的 crap 1 条），
  * 每桶一个代码常量，要求「常量恒等于当下计数」且「不得比基准多」——收口一条就在同一 PR 下调一格，
  * 新增一条即红。分桶是必需的：钉单一总数时「A 桶 +1、B 桶 −1」总数持平、门禁全绿。落点选本闸而不是
  * collect-exemptions.mjs：后者只在 gate:full 与 observe 跑（gate-steps.mjs 显式排除 pr 档），

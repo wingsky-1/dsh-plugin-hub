@@ -48,6 +48,11 @@ type DesiredServer = { name: string; server: ServerConfig; scope: string };
 type DesiredServers = Map<string, DesiredServer>;
 /** 目录数据源条目（裸名 → 配置 + scope；catalogServersFor 的输出面）。 */
 type CatalogServers = Map<string, { server: ServerConfig; scope: string }>;
+type HttpConnection = {
+  state: "connecting" | "failed";
+  error?: string;
+  failedEntry?: ConnectionEntry;
+};
 
 /** 纯对象表判定（env/headers 表；null 与数组都不算表）。类型谓词，收窄后免断言。 */
 export function isPlainRecord(value: unknown): value is Record<string, unknown> {
@@ -544,6 +549,131 @@ export function summarizeAbsent(
  * 该项目时连接（跟随会话切换）。
  */
 export class McpManager {
+  private httpConnections = new Map<string, HttpConnection>();
+  private httpEpochs = new Map<string, number>();
+  private httpSequence = 0;
+  private userStateQueue: Promise<void> = Promise.resolve();
+
+  private connectionKey(root: string, scope: string, name: string): string {
+    return JSON.stringify([root, scope, name]);
+  }
+
+  private invalidateHttpConnection(root: string, scope: string, name: string): void {
+    const key = this.connectionKey(root, scope, name);
+    this.httpEpochs.set(key, ++this.httpSequence);
+    this.httpConnections.delete(key);
+  }
+
+  private markDisabled(mw: McpMiddleware, root: string, name: string): Set<string> {
+    const disabled = mw.disabledByRoot.get(root) ?? new Set<string>();
+    disabled.add(name);
+    mw.disabledByRoot.set(root, disabled);
+    return disabled;
+  }
+
+  async rootForRequest(scope: string, cwd?: string): Promise<string> {
+    if (scope !== SCOPE_PROJECT) return MIDDLEWARE_GLOBAL_ROOT;
+    const captured = this.projectRoot;
+    const root =
+      cwd !== undefined
+        ? await projectRootForCwd(cwd, orchestratorPorts.get().workspace.findProjectRoot)
+        : captured;
+    if (root === undefined)
+      throw new Error("no active project session (call session with a cwd first)");
+    return root;
+  }
+
+  /** HTTP 受理入口；宿主 connect 仍等待完整连接。 */
+  async acceptConnection(name: string, scope: string, cwd?: string): Promise<string> {
+    const started = this.httpSequence;
+    const root = await this.rootForRequest(scope, cwd);
+    const key = this.connectionKey(root, scope, name);
+    const epoch = this.httpEpochs.get(key) ?? 0;
+    if (epoch > started) throw new Error("connection request cancelled");
+    await this.validateHttpTarget(root, scope, name);
+    if ((this.httpEpochs.get(key) ?? 0) !== epoch) throw new Error("connection request cancelled");
+    const mw = this.middleware;
+    if (mw === undefined) throw new Error("middleware is not initialized (apply first)");
+    if (this.httpConnections.get(key)?.state === "connecting") return root;
+    const job: HttpConnection = { state: "connecting" };
+    this.httpConnections.set(key, job);
+    this.emitStatus();
+    void this.runHttpConnection(mw, root, name, key, job);
+    return root;
+  }
+
+  private async validateHttpTarget(root: string, scope: string, name: string): Promise<void> {
+    const store = scope === SCOPE_PROJECT ? await this.projectStoreFor(root) : this.store;
+    if (store === undefined) throw new Error(`workspace ${root} has no project MCP config`);
+    const server = resolveConnectableServer(store, this.runtimeRegistry, name, scope, (message) =>
+      this.logger.warn(message),
+    );
+    if (server === undefined) throw new Error(`server "${name}" not found in ${scope} scope`);
+    if (server.enabled === false) throw new Error(`server "${name}" is disabled`);
+  }
+
+  private async runHttpConnection(
+    mw: McpMiddleware,
+    root: string,
+    name: string,
+    key: string,
+    job: HttpConnection,
+  ): Promise<void> {
+    const current = () => this.httpConnections.get(key) === job;
+    try {
+      const unit = await mw.projectUnitFor(root);
+      if (!current()) return;
+      if (unit === undefined) throw new Error(`workspace ${root} has no project MCP config`);
+      unit.userDisabled.delete(name);
+      mw.disabledByRoot.get(root)?.delete(name);
+      await this.saveUserState(mw.units);
+      if (!current()) return;
+      await mw.ensureConnected(root, name, { force: true });
+      if (!current()) return;
+      if (!unit.connections.has(name)) throw new Error(`server "${name}" did not start`);
+      this.httpConnections.delete(key);
+    } catch (error) {
+      if (!current()) return;
+      job.state = "failed";
+      job.failedEntry = this.entryForRoot(root, name);
+      try {
+        job.error = this.redactError(error);
+      } catch {
+        job.error = "connection failed";
+      }
+    }
+    this.emitStatus();
+  }
+
+  private entryForRoot(root: string, name: string): ConnectionEntry | undefined {
+    return this.middleware?.units.get(root)?.connections.get(name);
+  }
+
+  async disconnectForRequest(name: string, scope: string, cwd?: string): Promise<string> {
+    const root = await this.rootForRequest(scope, cwd);
+    const mw = this.middleware;
+    this.invalidateHttpConnection(root, scope, name);
+    if (mw === undefined) return root;
+    const disabled = this.markDisabled(mw, root, name);
+    const unit = mw.units.get(root);
+    if (unit !== undefined) {
+      unit.userDisabled.add(name);
+      mw.releaseConnection(root, name);
+      unit.inFlight.delete(name);
+    }
+    this.emitStatus();
+    const units = new Map(mw.units);
+    if (unit === undefined)
+      units.set(root, {
+        root,
+        connections: new Map(),
+        inFlight: new Map(),
+        userDisabled: disabled,
+        lastTouchedAt: Date.now(),
+      });
+    await this.saveUserState(units);
+    return root;
+  }
   ctx: Context;
   store: McpStore;
   listeners: Set<() => void>;
@@ -857,7 +987,17 @@ export class McpManager {
 
   /** 中间层宿主：持久化 userDisabled。 */
   async saveUserState(units: Map<string, ProjectUnit>): Promise<void> {
-    await orchestratorPorts.get().configStore.saveUserState(this.userStatePath, units);
+    const snapshot = new Map(
+      [...units].map(([root, unit]) => [
+        root,
+        { ...unit, userDisabled: new Set(unit.userDisabled) },
+      ]),
+    );
+    const write = this.userStateQueue.then(() =>
+      orchestratorPorts.get().configStore.saveUserState(this.userStatePath, snapshot),
+    );
+    this.userStateQueue = write.catch(() => {});
+    await write;
   }
 
   /** 中间层宿主：root 的目录缓存文件路径。 */
@@ -1041,7 +1181,9 @@ export class McpManager {
     this.projectRoot = root;
     this.projectStore = undefined;
     if (root !== undefined) {
-      this.projectStore = await this.projectStoreFor(root);
+      const store = await this.projectStoreFor(root);
+      if (this.projectRoot !== root) return;
+      this.projectStore = store;
     }
     // 全局配置同样重读（外部手动编辑 <DSH_HOME>/@wingsky-1/dsh-mcp-manager/mcp.json）。
     await reloadStoreQuietly(this.store, (error) => {
@@ -1242,17 +1384,19 @@ export class McpManager {
    * userDisabled 命中不连（与浮窗断开语义一致）；无活动项目 root 静默返回
    * （与旧 touchMiddlewareUnit 同口径）。
    */
-  private ensureMiddlewareServer(name: string): void {
+  private ensureMiddlewareServer(name: string, requestedRoot = this.projectRoot): void {
     const mw = this.middleware;
-    if (mw === undefined || this.projectRoot === undefined) return;
+    if (mw === undefined || requestedRoot === undefined) return;
     // 入口捕获 root（评审 P2-3）：.then 回调内不再读 this.projectRoot——
     // setSession 切换后实例字段已变，沿用调用时快照保证 root 与 unit 配套。
-    const root = this.projectRoot;
+    const root = requestedRoot;
     void mw
       .projectUnitFor(root)
       .then(async (unit) => {
         if (unit === undefined || unit.userDisabled.has(name)) return;
-        const current = this.projectStore?.find(name);
+        const current =
+          this.projectStores.get(root)?.find(name) ??
+          (root === this.projectRoot ? this.projectStore?.find(name) : undefined);
         const entry = unit.connections.get(name);
         // 配置一致性比对（同源 store 实例）：未重载时 entry.server 与 current
         // 为同一对象引用恒等；真变更必经 reloadIfChanged → load() 整组换新
@@ -1281,11 +1425,12 @@ export class McpManager {
    * 不写 userDisabled——与 disconnect 的禁用语义区分）。此前 update/remove 仅
    * 处理项目单元，@global 池连接与目录残留导致「已删服务器仍可调用」。
    */
-  private dropMiddlewareConnection(name: string): void {
+  private dropMiddlewareConnection(name: string, root?: string): void {
     const mw = this.middleware;
     if (mw === undefined) return;
     let dropped = false;
     for (const unit of mw.units.values()) {
+      if (root !== undefined && unit.root !== root) continue;
       // 拆除落点统一走账本（裁定 X）：只发起 release、不等结算——拆除路径是同步语义。
       if (mw.releaseConnection(unit.root, name)) dropped = true;
       // #392 遗留①：目录条目随连接一并拆除——remove/update 后已删服务器不再以
@@ -1310,7 +1455,8 @@ export class McpManager {
     // 拆除即废弃同名在途建连标记：entry 被强拆后旧 attempt 仍可能 pending 至
     // CONNECT_TIMEOUT_MS，残留去重标记会吞掉 remove/update 后的同名重连（含
     // 重加配置立即重建）——详见 middleware.abandonInFlight 不变式。
-    mw.abandonInFlight(name);
+    if (root === undefined) mw.abandonInFlight(name);
+    else mw.units.get(root)?.inFlight.delete(name);
     if (dropped) this.emitStatus();
   }
 
@@ -1409,9 +1555,11 @@ export class McpManager {
     name: string,
     patch: Record<string, unknown>,
     scope: string = SCOPE_GLOBAL,
+    cwd?: string,
   ): Promise<ServerConfig> {
     const { configModel } = orchestratorPorts.get();
-    const store = scope === SCOPE_PROJECT ? await this.projectStoreOrThrow() : this.store;
+    const root = await this.rootForRequest(scope, cwd);
+    const store = await this.storeForRoot(root, scope);
     const existing = store.find(name);
     if (existing === undefined) throw new Error(`server "${name}" not found in ${scope} scope`);
     // #770-A3 回写 guard：投影值永不落盘——占位符 URL/键丢弃并沿用既有值（缺键即保留，
@@ -1423,22 +1571,81 @@ export class McpManager {
     });
     // #770-2 环境净化：写边界凭据策略门（审合并后落盘形态；与 add/import 同门）。
     configModel.assertEnvPolicy(merged.env, merged.headers, undefined, merged.url, merged.args);
+    const revision = this.reserveUpdate(root, scope, name);
     store.upsert(merged);
+    this.cancelDisabledUpdate(root, scope, name, merged);
     await store.save();
+    if (!this.ownsUpdate(revision)) return merged;
     // 单池后「拆旧配置连接」只有池账本一个落点（项目/全局单元统一处理；
     // #382 此前只拆项目单元，全局旧连接残留导致编辑不生效）。
-    this.dropMiddlewareConnection(name);
-    if (merged.enabled !== false) {
-      // 编辑后重新连接（即便此前未连接）
-      this.start(name, scope);
-    }
+    this.invalidateHttpConnection(root, scope, name);
+    this.dropMiddlewareConnection(name, root);
+    if (patch.enabled === true)
+      await this.acceptConnection(name, scope, scope === SCOPE_PROJECT ? root : undefined);
+    else this.startUpdatedServer(root, scope, name, merged);
     return merged;
   }
 
-  async remove(name: string, scope: string = SCOPE_GLOBAL): Promise<void> {
-    const store = scope === SCOPE_PROJECT ? await this.projectStoreOrThrow() : this.store;
+  private async storeForRoot(root: string, scope: string): Promise<McpStore> {
+    if (scope !== SCOPE_PROJECT) return this.store;
+    const store =
+      this.projectStores.get(root) ??
+      (this.projectRoot === root ? this.projectStore : undefined) ??
+      (await this.projectStoreFor(root));
+    if (store === undefined) throw new Error(`workspace ${root} has no project MCP config`);
+    return store;
+  }
+
+  private reserveUpdate(
+    root: string | undefined,
+    scope: string,
+    name: string,
+  ): { key: string; epoch: number } | undefined {
+    if (root === undefined) return undefined;
+    const key = this.connectionKey(root, scope, name);
+    const epoch = ++this.httpSequence;
+    this.httpEpochs.set(key, epoch);
+    return { key, epoch };
+  }
+
+  private ownsUpdate(revision: { key: string; epoch: number } | undefined): boolean {
+    return revision === undefined || this.httpEpochs.get(revision.key) === revision.epoch;
+  }
+
+  private cancelDisabledUpdate(
+    root: string | undefined,
+    scope: string,
+    name: string,
+    server: ServerConfig,
+  ): void {
+    if (root === undefined || server.enabled !== false) return;
+    const key = this.connectionKey(root, scope, name);
+    this.httpConnections.delete(key);
+    const unit = this.middleware?.units.get(root);
+    if (unit !== undefined) {
+      this.middleware?.releaseConnection(root, name);
+      unit.inFlight.delete(name);
+    }
+    this.emitStatus();
+  }
+
+  private startUpdatedServer(
+    root: string | undefined,
+    scope: string,
+    name: string,
+    server: ServerConfig,
+  ): void {
+    if (server.enabled === false) return;
+    if (scope === SCOPE_PROJECT) this.ensureMiddlewareServer(name, root);
+    else this.start(name, scope);
+  }
+
+  async remove(name: string, scope: string = SCOPE_GLOBAL, cwd?: string): Promise<void> {
+    const root = await this.rootForRequest(scope, cwd);
+    const store = await this.storeForRoot(root, scope);
+    this.invalidateHttpConnection(root, scope, name);
     // 单池后「拆」统一走池账本（含目录条目清理，防 remove 后 ws_mcp_call 仍可调用）。
-    this.dropMiddlewareConnection(name);
+    this.dropMiddlewareConnection(name, root);
     store.remove(name);
     await store.save();
   }
@@ -1466,6 +1673,7 @@ export class McpManager {
     const unit = await mw.projectUnitFor(root);
     if (unit === undefined) throw new Error(`workspace ${root} has no project MCP config`);
     unit.userDisabled.delete(name);
+    mw.disabledByRoot.get(root)?.delete(name);
     await this.saveUserState(mw.units);
     // force 受控重建（#412）：半开卡在 connected 的连接也强制重建（切回前台/刷新
     // 都走同一入口）。
@@ -1489,9 +1697,11 @@ export class McpManager {
     if (mw === undefined) return;
     let targetUnit: ProjectUnit | undefined;
     const scoped = orchestratorPorts.get().workspace.normalizeScope(scope ?? "");
+    const requestRoot = scoped === SCOPE_PROJECT ? this.projectRoot : MIDDLEWARE_GLOBAL_ROOT;
+    if (requestRoot !== undefined) this.invalidateHttpConnection(requestRoot, scoped, name);
     if (scoped === SCOPE_PROJECT) {
       targetUnit = this.projectRoot !== undefined ? mw.units.get(this.projectRoot) : undefined;
-    } else if (this.store.find(name) !== undefined && !this.runtimeRegistry.has(name)) {
+    } else if (scope !== undefined || this.store.find(name) !== undefined) {
       targetUnit = mw.units.get(MIDDLEWARE_GLOBAL_ROOT);
     } else {
       targetUnit = [...mw.units.values()].find(
@@ -1500,12 +1710,13 @@ export class McpManager {
     }
     if (targetUnit === undefined) return;
     targetUnit.userDisabled.add(name);
-    await this.saveUserState(mw.units);
+    this.markDisabled(mw, targetUnit.root, name);
     mw.releaseConnection(targetUnit.root, name);
     // 断开即废弃同名在途标记：拆除时旧 attempt 仍 pending（挂至超时）会吞掉
     // 紧随的显式「连接」（connect→ensureConnected 去重短路，force 也不豁免）。
-    mw.abandonInFlight(name);
+    targetUnit.inFlight.delete(name);
     this.emitStatus();
+    await this.saveUserState(mw.units);
   }
 
   async reconnect(name: string, scope: string = SCOPE_GLOBAL): Promise<void> {
@@ -1517,19 +1728,31 @@ export class McpManager {
 
   /** 面板数据：配置 + 实时状态 + 工具列表 + 项目信息。 */
   summary(): Record<string, unknown> {
+    return this.summaryForRoot(this.projectRoot ?? MIDDLEWARE_GLOBAL_ROOT);
+  }
+
+  async summaryForCwd(cwd: string): Promise<Record<string, unknown>> {
+    const root = await projectRootForCwd(cwd, orchestratorPorts.get().workspace.findProjectRoot);
+    if (root === undefined) return this.summaryForRoot(MIDDLEWARE_GLOBAL_ROOT);
+    await this.projectStoreFor(root);
+    return this.summaryForRoot(root);
+  }
+
+  summaryForRoot(root: string): Record<string, unknown> {
     const servers: Record<string, unknown>[] = [];
     for (const server of this.store.data.servers) {
-      servers.push(this.summarize(server, SCOPE_GLOBAL));
+      servers.push(this.summarizeForRoot(server, SCOPE_GLOBAL, root));
     }
-    if (this.projectStore !== undefined) {
-      for (const server of this.projectStore.data.servers) {
-        servers.push(this.summarize(server, SCOPE_PROJECT));
+    const projectStore = this.summaryStoreForRoot(root);
+    if (projectStore !== undefined) {
+      for (const server of projectStore.data.servers) {
+        servers.push(this.summarizeForRoot(server, SCOPE_PROJECT, root));
       }
     }
     // 查询面完整性（#329 评审修正）：runtime 条目并入 summary，
     // 否则 getStatus/list 看不到运行时注册的服务器（消费方无法感知状态）。
     for (const server of this.runtimeRegistry.values()) {
-      servers.push(this.summarize(server, SCOPE_GLOBAL));
+      servers.push(this.summarizeForRoot(server, SCOPE_GLOBAL, root));
     }
     // 六态计数键与键序的物理定义在 shared/status.ts（两端同一份）；必须展开成新对象，
     // 否则下面的计数会就地改动共享单例。
@@ -1537,25 +1760,40 @@ export class McpManager {
     for (const server of servers)
       byStatus[server.status as string] = (byStatus[server.status as string] ?? 0) + 1;
     return {
-      cwd: this.projectRoot ?? undefined,
-      projectRoot: this.projectRoot ?? undefined,
+      cwd: root === MIDDLEWARE_GLOBAL_ROOT ? undefined : root,
+      projectRoot: root === MIDDLEWARE_GLOBAL_ROOT ? undefined : root,
       servers,
       counts: byStatus,
     };
+  }
+
+  private summaryStoreForRoot(root: string): McpStore | undefined {
+    if (root === MIDDLEWARE_GLOBAL_ROOT) return undefined;
+    return (
+      this.projectStores.get(root) ?? (root === this.projectRoot ? this.projectStore : undefined)
+    );
   }
 
   /**
    * 投影单元：该 (server, scope) 归属的中间层单元。单池后全部条目都在池里，
    * 只剩「单元还没建出来 / 无项目 root」这两种缺失。
    */
-  private middlewareUnitFor(serverName: string, scope: string): ProjectUnit | undefined {
+  private middlewareUnitFor(
+    serverName: string,
+    scope: string,
+    projectRoot = this.projectRoot,
+  ): ProjectUnit | undefined {
     const mw = this.middleware;
     if (mw === undefined) return undefined;
-    const root = scope === SCOPE_PROJECT ? this.projectRoot : MIDDLEWARE_GLOBAL_ROOT;
+    const root = scope === SCOPE_PROJECT ? projectRoot : MIDDLEWARE_GLOBAL_ROOT;
     return root === undefined ? undefined : mw.units.get(root);
   }
 
   summarize(server: ServerConfig, scope: string): Record<string, unknown> {
+    return this.summarizeForRoot(server, scope, this.projectRoot ?? MIDDLEWARE_GLOBAL_ROOT);
+  }
+
+  summarizeForRoot(server: ServerConfig, scope: string, root: string): Record<string, unknown> {
     // 单池（#767 笔 1a）：状态与工具列表一律从连接池单元 + 目录投影取（旧实现的
     // 「直连账本兜底分支」随账本退役）。
     // #770-A3 只读投影：两分支共用同一基底（env/headers 省略、url 按 B8 仅脱敏
@@ -1563,7 +1801,9 @@ export class McpManager {
     // 此处产出（见 stripProjectionPatch）。
     const { catalog: catalogPort, pipeline } = orchestratorPorts.get();
     const base = projectServerForSummary(server, pipeline.maskSecretArgsForDisplay);
-    const unit = this.middlewareUnitFor(server.name, scope);
+    const httpSummary = this.httpSummary(server, scope, base, root);
+    if (httpSummary !== undefined) return httpSummary;
+    const unit = this.middlewareUnitFor(server.name, scope, root);
     const entry = unit?.connections.get(server.name);
     // 单元缺失 / 该服务器不在池里（未连接、userDisabled 断开、配置禁用）→ summarizeAbsent。
     if (unit === undefined || entry === undefined) return summarizeAbsent(base, scope, server);
@@ -1586,6 +1826,27 @@ export class McpManager {
       // redactError），lifecycle 域内原文不动；已脱敏源二次脱敏恒等无害。
       error: pooledErrorText(entry, catalog, (error) => this.redactError(error)),
     });
+  }
+
+  private httpSummary(
+    server: ServerConfig,
+    scope: string,
+    base: Record<string, unknown>,
+    projectRoot: string,
+  ): Record<string, unknown> | undefined {
+    const root = scope === SCOPE_PROJECT ? projectRoot : MIDDLEWARE_GLOBAL_ROOT;
+    const job = this.httpConnections.get(this.connectionKey(root, scope, server.name));
+    if (job === undefined || server.enabled === false) return undefined;
+    const current = this.middleware?.units.get(root)?.connections.get(server.name);
+    if (
+      job.state === "failed" &&
+      current !== job.failedEntry &&
+      this.middleware?.statusOf(root, server.name) === SERVER_STATES.connected
+    ) {
+      this.httpConnections.delete(this.connectionKey(root, scope, server.name));
+      return undefined;
+    }
+    return { ...summarizeAbsent(base, scope, server), status: job.state, error: job.error };
   }
 
   async dispose(): Promise<void> {

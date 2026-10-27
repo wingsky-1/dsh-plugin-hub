@@ -7,7 +7,7 @@
  * 贡献 0%**——它是被 index.ts:40 的顶层 import「加载即满」的，把 4 个字典值改成乱码后
  * dsh-mcp-manager 全部 1520 个测试仍全绿（exit 0）。
  *
- * 所以本文件刻意做**全量字面量镜像**（DICTIONARY 91 条 × zh/en 双向）：期望值全部手写
+ * 所以本文件刻意做**全量字面量镜像**（DICTIONARY 93 条 × zh/en 双向）：期望值全部手写
  * 在测试里，一行都不从 `zh` / `en` import。理由见 testing SKILL §6「不要同源期望」——
  * 期望值从被测实现 import 出来等于让实现自己判自己，常量改成任何值都绿。这里反过来：
  * 改 zh 或 en 的任何一个值、增删任何一个键、动任何一个占位符，本文件必红。
@@ -34,6 +34,12 @@ import { en, zh } from "../../src/client/locales.ts";
 const DICTIONARY: ReadonlyArray<readonly [string, string, string]> = [
   ["stConnected", "运行中", "Running"],
   ["stConnecting", "连接中", "Connecting"],
+  ["stDisconnecting", "断开中", "Disconnecting"],
+  [
+    "sessionUnavailable",
+    "当前项目会话已变化或不可用，请刷新后重试",
+    "The current project session changed or is unavailable; refresh and try again",
+  ],
   ["stReconnecting", "重连中", "Reconnecting"],
   ["stStopped", "未连接", "Disconnected"],
   ["stDisabled", "已停用", "Disabled"],

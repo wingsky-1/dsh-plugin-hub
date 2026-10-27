@@ -5,7 +5,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { mkdir, rename, rm, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import { dirname } from "node:path";
+import { dirname, resolve } from "node:path";
 import type { ProjectUnit } from "../../connection/interface.ts";
 import {
   catalogFile,
@@ -17,6 +17,19 @@ import {
 
 /** 用户已禁用的工具集合（root → server → tool 列表）。root 为 @global 时跨工作空间共享。 */
 export type DisabledToolsMap = Map<string, Map<string, Set<string>>>;
+
+/** 同一文件的两类状态共享读、合并、写事务队列。 */
+const stateTransactions = new Map<string, Promise<void>>();
+
+function enqueueStateTransaction(file: string, task: () => Promise<void>): Promise<void> {
+  const key = resolve(file);
+  const previous = stateTransactions.get(key) ?? Promise.resolve();
+  const current = previous.then(task, task);
+  stateTransactions.set(key, current);
+  return current.finally(() => {
+    if (stateTransactions.get(key) === current) stateTransactions.delete(key);
+  });
+}
 
 /**
  * 状态写盘（H2 等价接入，#767 S2-C）：登记路径经 file-io `writeFileAtomic`
@@ -98,9 +111,14 @@ async function otherKeyOf(file: string, key: "disabled" | "disabledTools"): Prom
  * root 的记录——防 LRU 淘汰/卸载后禁用记录被静默抹掉，P1 修复）。
  * 同文件 `disabledTools` 键原样保留（#903 S1 双键互抹修复）。 */
 export async function saveUserState(file: string, units: Map<string, ProjectUnit>): Promise<void> {
+  const snapshot = new Map([...units].map(([root, unit]) => [root, new Set(unit.userDisabled)]));
+  await enqueueStateTransaction(file, () => saveUserStateSnapshot(file, snapshot));
+}
+
+async function saveUserStateSnapshot(file: string, units: Map<string, Set<string>>): Promise<void> {
   const merged = await loadUserState(file);
-  for (const [root, unit] of units) {
-    if (unit.userDisabled.size > 0) merged.set(root, new Set(unit.userDisabled));
+  for (const [root, disabled] of units) {
+    if (disabled.size > 0) merged.set(root, disabled);
     else merged.delete(root);
   }
   const disabled: Record<string, string[]> = {};
@@ -243,6 +261,13 @@ export async function saveDisabledTools(
     }
     if (Object.keys(serverRec).length > 0) payload[root] = serverRec;
   }
+  await enqueueStateTransaction(file, () => saveDisabledToolsSnapshot(file, payload));
+}
+
+async function saveDisabledToolsSnapshot(
+  file: string,
+  payload: Record<string, Record<string, string[]>>,
+): Promise<void> {
   const kept = await otherKeyOf(file, "disabled");
   try {
     await writeStateFile(

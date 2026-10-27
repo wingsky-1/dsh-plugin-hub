@@ -37,8 +37,8 @@ import {
   type McpState,
   type UiActions,
 } from "./core/state.ts";
-import { api, resumeBodyOf } from "./core/api.ts";
-import { refresh, switchTab, close, showPanel, disposePanel } from "./float/panel.ts";
+import { api, resumeBodyOf, serversUrlOf } from "./core/api.ts";
+import { refresh, renderState, switchTab, close, showPanel, disposePanel } from "./float/panel.ts";
 import { resetForm, beginEdit } from "./float/quick-add.ts";
 import { toggleFloat, mountFloat, renderFloatPanel } from "./float/float.ts";
 import { bindSession, rebindSession } from "./core/session.ts";
@@ -67,7 +67,8 @@ declare module "@deepseek-ai/dsh-client-ui-slots" {
 export function apply(ctx: McpClientContext): void {
   const state: McpState = createState();
   const actions: UiActions = {
-    refresh: () => refresh(state, actions),
+    refresh: (fresh?: boolean) => refresh(state, actions, fresh),
+    render: () => renderState(state, actions),
     switchTab: (tab: string) => switchTab(state, actions, tab),
     close: () => close(state),
     showPanel: () => showPanel(state, actions),
@@ -281,8 +282,12 @@ export function apply(ctx: McpClientContext): void {
     const maybeRecoverSession = () => {
       const now = Date.now();
       if (now - lastRecoverAt < 10_000) return;
-      void api<{ projectRoot?: unknown } | undefined>(state.API.servers)
+      const url = serversUrlOf(state);
+      if (url === undefined) return;
+      const generation = state.sessionGeneration;
+      void api<{ projectRoot?: unknown } | undefined>(url)
         .then((payload: { projectRoot?: unknown } | undefined) => {
+          if (state.sessionGeneration !== generation) return;
           if (payload?.projectRoot !== undefined) return; // 宿主状态正常
           const cwd = state.currentCwd;
           if (typeof cwd !== "string" || cwd === "") return;

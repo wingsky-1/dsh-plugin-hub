@@ -29,6 +29,23 @@ class MountLedger {
   private readonly entries = new Map<string, LedgerEntry>();
   /** 释放后待结算的 dispose：只收不 await，见文件头「已知缺口」。 */
   private pending: Promise<void>[] = [];
+  private readonly disposing = new Map<string, Promise<void>>();
+
+  private trackDisposal(key: string, disposal: Promise<void>): void {
+    this.disposing.set(key, disposal);
+    void disposal.then(
+      () => {
+        if (this.disposing.get(key) === disposal) this.disposing.delete(key);
+      },
+      // 失败时保留拒因：不能确认同名预留已解除。
+      () => {},
+    );
+  }
+
+  async waitForRelease(key: string): Promise<void> {
+    const disposal = this.disposing.get(key);
+    if (disposal !== undefined) await disposal;
+  }
 
   /** 记账并**发起**装载：先查键再装，撞键当场抛（早失败 + 判词点名键）。 */
   mount(key: string, module: OfficialPluginModule, config: unknown): LedgerEntry {
@@ -65,6 +82,7 @@ class MountLedger {
     if (entry === undefined) return;
     this.entries.delete(key);
     const disposal = entry.handle.dispose();
+    this.trackDisposal(key, disposal);
     // 没有任何调用方 await 这个 promise，不吞掉拒绝就会变成 unhandled rejection 打崩进程；
     // pending 里仍放**原 promise**——上抛语义留给 flushDisposals（吞掉错因等于把泄漏变成静默）。
     void disposal.catch(() => {});
@@ -76,7 +94,9 @@ class MountLedger {
     const entry = this.entries.get(key);
     if (entry === undefined) return;
     this.entries.delete(key);
-    await entry.handle.dispose();
+    const disposal = entry.handle.dispose();
+    this.trackDisposal(key, disposal);
+    await disposal;
   }
 
   /** 域卸载：逐条摘账并发起 dispose，不等结算（见文件头「已知缺口」）。 */

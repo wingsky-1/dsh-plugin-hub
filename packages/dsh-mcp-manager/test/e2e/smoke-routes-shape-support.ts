@@ -48,6 +48,10 @@ export function makeRoutesFixture(): RoutesFixture {
     store,
     logger: fakeLogger(),
     summary: () => ({ servers: [], counts: {} }),
+    summaryForCwd: async (_cwd: string) => ({ servers: [], counts: {} }),
+    summaryForRoot: (_root: string) => ({ servers: [], counts: {} }),
+    rootForRequest: async (_scope: string, cwd?: string) => cwd ?? "@global",
+    summarizeForRoot: (server: unknown) => server,
     uiConfig: () => uiCfg,
     updateUiConfig: async (raw: unknown) => {
       uiCfg = normalizeUiConfig(raw) as unknown as RoutesFixture["uiCfg"];

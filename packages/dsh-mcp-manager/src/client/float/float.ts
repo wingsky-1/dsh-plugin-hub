@@ -7,7 +7,14 @@
  */
 
 import { el, pangu } from "../core/dom.ts";
-import { api, toolDisableServerKey, cwdQueryOf } from "../core/api.ts";
+import {
+  api,
+  toolDisableServerKey,
+  cwdQueryOf,
+  serverKey,
+  submitConnection,
+  assertActionSession,
+} from "../core/api.ts";
 import { STATUS_ORDER, statusDot } from "../core/constants.ts";
 import { tStatus } from "../core/i18n.ts";
 import { t } from "../../../../../shared/client/i18n.js";
@@ -176,7 +183,11 @@ export function primaryRowAction(
 ): RowAction {
   const query = `name=${encodeURIComponent(server.name)}&scope=${server.scope}${cwdQuery}`;
   const className = floatActionClass(server);
-  if (server.status === "connected") {
+  if (
+    server.status === "connected" ||
+    server.status === "connecting" ||
+    server.status === "reconnecting"
+  ) {
     return {
       className,
       label: t("disconnect"),
@@ -204,12 +215,12 @@ export function primaryRowAction(
   };
 }
 
-/** 禁用动作（仅非 disabled 行有）：URL 不带 cwd（历史形状如此，勿补）。 */
+/** 禁用动作（仅非 disabled 行有）：固定当前会话 cwd。 */
 export function disableRowAction(server: McpServerListEntry, state: McpState): RowAction {
   return {
     className: "dm-float-action",
     label: t("disable"),
-    url: `${state.API.servers}?name=${encodeURIComponent(server.name)}&scope=${server.scope}`,
+    url: `${state.API.servers}?name=${encodeURIComponent(server.name)}&scope=${server.scope}${cwdQueryOf(state)}`,
     method: "PATCH",
     tag: "disable",
     body: JSON.stringify({ enabled: false }),
@@ -230,14 +241,35 @@ export function rowRequestInit(action: RowAction): {
   };
 }
 
-/** 动作按钮：点一下打口 → 成功后整面板刷新；失败只 warn（面板下次刷新自然回正）。 */
-function rowActionButton(action: RowAction, actions: UiActions): HTMLElement {
+/** 动作按钮：成功后刷新，失败时显示错误。 */
+function rowActionButton(
+  action: RowAction,
+  server: McpServerListEntry,
+  state: McpState,
+  actions: UiActions,
+): HTMLElement {
   const button = el("button", { class: action.className });
   button.textContent = action.label;
+  button.disabled = state.pending.has(serverKey(server));
+  const generation = state.sessionGeneration;
   button.addEventListener("click", () => {
-    void api<unknown>(action.url, rowRequestInit(action))
-      .then(() => actions.refresh())
-      .catch((error: unknown) => console.warn(`[dsh-mcp-manager] ${action.tag} failed:`, error));
+    const submit = () => {
+      if (action.tag === "enable" || action.tag === "disable")
+        assertActionSession(state, server.scope, generation);
+      return api<unknown>(action.url, rowRequestInit(action));
+    };
+    const request = submitConnection(
+      server,
+      state,
+      actions,
+      action.tag === "connect" || action.tag === "enable" ? "connect" : "disconnect",
+      submit,
+    );
+    void request.catch((error: unknown) =>
+      window.alert(
+        t("actionFail", { msg: error instanceof Error ? error.message : String(error) }),
+      ),
+    );
   });
   return button;
 }
@@ -249,7 +281,8 @@ function renderFloatRow(
   actions: UiActions,
   opts: { tools: boolean; openTools?: Set<string>; stagger?: number } = { tools: true },
 ): HTMLElement {
-  const failed = server.status === "failed" || server.status === "reconnecting";
+  const failed = isAttentionStatus(server);
+  const pending = state.pending.get(serverKey(server))?.kind;
   const row = el("div", {
     class: `dm-float-row${failed ? " dm-float-row--fail" : ""}${opts.stagger !== undefined ? " dm-stagger" : ""}`,
   });
@@ -262,20 +295,38 @@ function renderFloatRow(
   row.appendChild(
     el("span", {
       class: "dm-float-meta",
-      text: pangu(t("serverMeta", { status: tStatus(server.status), tools })),
+      text: pangu(t("serverMeta", { status: pendingStatus(server, pending), tools })),
     }),
   );
   const actionsEl = el("div", { class: "dm-float-actions" });
   actionsEl.appendChild(
-    rowActionButton(primaryRowAction(server, state, cwdQueryOf(state)), actions),
+    rowActionButton(primaryRowAction(server, state, cwdQueryOf(state)), server, state, actions),
   );
   if (server.status !== "disabled") {
-    actionsEl.appendChild(rowActionButton(disableRowAction(server, state), actions));
+    actionsEl.appendChild(rowActionButton(disableRowAction(server, state), server, state, actions));
   }
   row.appendChild(actionsEl);
+  appendServerError(row, server);
   if (opts.tools)
     row.appendChild(renderFloatTools(server, state, actions, opts.openTools ?? new Set()));
   return row;
+}
+
+function appendServerError(row: HTMLElement, server: McpServerListEntry): void {
+  if (server.error) row.appendChild(el("div", { class: "dm-err", text: server.error }));
+}
+
+function pendingStatus(
+  server: McpServerListEntry,
+  pending: "connect" | "disconnect" | undefined,
+): string {
+  return pending === undefined
+    ? tStatus(server.status)
+    : t(pending === "connect" ? "stConnecting" : "stDisconnecting");
+}
+
+function isAttentionStatus(server: McpServerListEntry): boolean {
+  return server.status === "failed" || server.status === "reconnecting";
 }
 
 /** 浮窗健康摘要（一行：运行/连接/失败）。 */
@@ -414,6 +465,11 @@ export function renderFloatPanel(state: McpState, actions: UiActions): void {
   const headText = el("div", { class: "dm-float-head-text" });
   headText.appendChild(el("div", { class: "dm-float-title", text: floatProjectName(state) }));
   headText.appendChild(renderFloatHealth(state));
+  if (state.refreshError !== undefined) {
+    headText.appendChild(
+      el("div", { class: "dm-err", text: t("loadFail", { msg: state.refreshError }) }),
+    );
+  }
   head.appendChild(headText);
   head.appendChild(
     el("button", { text: t("floatManage"), onclick: () => openMainPanel(state, actions) }),

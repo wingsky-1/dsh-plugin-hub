@@ -35,6 +35,7 @@ export interface ConnectionEntry {
   id: string | undefined;
   /** 我方账本里这一代际的句柄；`disposed` 是六态投影的输入面（虚拟单元恒 undefined）。 */
   handle: MountedPlugin | undefined;
+  pendingMount?: { id: string; released: boolean };
   /** 连接状态（六态；换引擎后由 lifecycle 的投影写回，见 McpMiddleware.statusOf）。 */
   status: ServerState;
   error: unknown;

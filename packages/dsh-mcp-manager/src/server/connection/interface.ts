@@ -36,18 +36,29 @@ export interface RoutesManager {
   uiConfig(): ClientUiConfig;
   updateUiConfig(raw: unknown): Promise<ClientUiConfig>;
   summary(): Record<string, unknown>;
+  summaryForCwd(cwd: string): Promise<Record<string, unknown>>;
+  summaryForRoot(root: string): Record<string, unknown>;
+  rootForRequest(scope: string, cwd?: string): Promise<string>;
   /** 错误文案脱敏（#770-A2：经 getRedactionServers 全集快照，路由错误边界统一调用）。
    * 可选：旧夹具/外部实现缺省时路由回落原文（自身无秘密可泄）；真 manager 恒提供。 */
   redactError?(error: unknown): string;
   /** 单条只读投影（#770-L3：POST/PATCH 200 响应 server 字段经此投影，不再明文回显。
    * 可选：旧夹具/外部实现缺省时路由回落写路径原文；真 manager 恒提供。） */
   summarize?(server: ServerConfig, scope: string): Record<string, unknown>;
+  summarizeForRoot(server: ServerConfig, scope: string, root: string): Record<string, unknown>;
   add(server: Record<string, unknown>, scope?: string): Promise<ServerConfig>;
-  update(name: string, patch: Record<string, unknown>, scope?: string): Promise<ServerConfig>;
-  remove(name: string, scope?: string): Promise<void>;
+  update(
+    name: string,
+    patch: Record<string, unknown>,
+    scope?: string,
+    cwd?: string,
+  ): Promise<ServerConfig>;
+  remove(name: string, scope?: string, cwd?: string): Promise<void>;
   connect(name: string, scope?: string): Promise<void>;
   disconnect(name: string, scope?: string): Promise<void>;
   reconnect(name: string, scope?: string): Promise<void>;
+  acceptConnection(name: string, scope: string, cwd?: string): Promise<string>;
+  disconnectForRequest(name: string, scope: string, cwd?: string): Promise<string>;
   /** 设置/解除单个工具禁用（工具级，独立于服务器级 enabled）。 */
   setToolDisabled?(root: string, server: string, tool: string, disabled: boolean): Promise<void>;
   /** 切回前台可用性恢复（非强制）：复用官方管理机制的已存在状态投影与

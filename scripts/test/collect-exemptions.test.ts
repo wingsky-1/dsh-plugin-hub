@@ -146,14 +146,14 @@ test("非 JSON 文件不参与扫描（只看 scripts/data 下的 .json）", () 
   }
 });
 
-test("本仓真实快照：15 条在册（数字变即提示同步台账与 #765）", () => {
-  // 7 = coverage.config.json 4（#769 把一条 **/client/** 拆成 per-package 的 pending-project
+test("本仓真实快照：5 条在册（数字变即提示同步台账与 #765）", () => {
+  // 历史 7 = coverage.config.json 4（#769 把一条 **/client/** 拆成 per-package 的 pending-project
   //     条目：notifier 的 .tsx 渲染面 + 另外 3 个包的整个 client 面 + shared/client/**；
   //     #840 退役 dsh-web-file-preview 时删掉它那一条，7 → 6；
   //     #883 给 lan-proxy 客户端补直连判据后删掉它那一条，6 → 5 当中的覆盖率部分 5 → 4；
   //     #947 把 mcp-manager 的一条整个 client 面按文件拆成 11 条（panel.ts 与 state.ts 计入分母），覆盖率部分 4 → 14）
   //     + gauntlet.config.json 1（crap.strict 观察期：exitCriteria 解除条件 + reviewBy 2026-11-08 到期复看）
-  //     + gate-exemptions.json 1（#770 mcp panel 单飞句柄）
+  //     + gate-exemptions.json 1（#769 mcp panel 单飞句柄）
   // #875 4c：gate-exemptions.json 的 12 → 1——#767 lan-proxy unit-apply 1 条与 #847 sidebar
   //   客户端单测 10 条的 I8① 证据全部清零（迁 test/client-unit / 改直连域门面 / 入口契约
   //   判据迁集成层），11 条随证据消失按反向腐烂校验删除，27 → 16。
@@ -168,7 +168,8 @@ test("本仓真实快照：15 条在册（数字变即提示同步台账与 #765
   const r = spawnSync(process.execPath, [SCRIPT], { cwd: ROOT, encoding: "utf8" });
   assert.equal(r.status, 0, r.stderr);
   // #1074 清掉 shared/client/** 那条 pending-project 豁免 ⇒ 台账 7 → 6。
-  assert.match(r.stdout, /合计 6 条待办：已过期 0 /);
+  // #1187 删除 panel.ts 的失效豁免 ⇒ 台账 6 → 5。
+  assert.match(r.stdout, /合计 5 条待办：已过期 0 /);
   // 本 PR 给 crap 观察期补 reviewBy 2026-11-08 ⇒ 「只有解除条件、无到期日」的那一条归零
   // （#765：日期与解除条件平级入账，互不替代）。该计数只认 reviewBy 缺失，不随统计日推移变化，
   // 故此处钉的是「每条待办都带到期日」这个不变量，而不是某一天的剩余天数。
@@ -275,7 +276,7 @@ test("未识别 kind 落待办兜底并点名依据（多算不少算，漂移�
 // 名字即口径：两个来源各自的结构性条数相加得「结构性合计」，结构性之外才是待办。
 // 订正记录：#1074 之前本用例名写「5 + 16 结构性，合计待办 7 条」而断言体是 13/16/6 —— 名字与断言
 // 早就不自洽（漂移在 #1074 之前就有，不是它造成的），会让下一个读它的人重新困惑一遍，故一并订正。
-test("本仓真实快照：排除面 14（覆盖率面）+ 16（变异面）= 结构性 30 条，待办 6 条", () => {
+test("本仓真实快照：排除面 14（覆盖率面）+ 16（变异面）= 结构性 30 条，待办 5 条", () => {
   const r = spawnSync(process.execPath, [SCRIPT, "--today", "2026-09-28"], {
     cwd: ROOT,
     encoding: "utf8",
@@ -292,9 +293,7 @@ test("本仓真实快照：排除面 14（覆盖率面）+ 16（变异面）= �
     r.stdout,
     /结构性 16 条（不计入待办）：facade×4、not-mutated×4、not-source×1、type-only×7/,
   );
-  // 结构性合计 = 14 + 16 = 30（判据自己算的这行）；待办 6 条来自**另外三个**来源，与上两项不相加：
-  //   4 条 pending-project（coverage 面，带 reviewBy 2027-03-31）+ gate-exemptions 1 + gauntlet crap 1。
-  // collector 口径：已过期 0 / 90 天内到期 0 / 其余 5 / 仅解除条件（无到期日）1。
-  assert.match(r.stdout, /合计 6 条待办/);
+  // 结构性合计 = 14 + 16 = 30；待办 5 条为 coverage 的 4 条 pending-project 与 gauntlet crap 1 条。
+  assert.match(r.stdout, /合计 5 条待办/);
   assert.match(r.stdout, /结构性（按设计不计入待办）30/);
 });

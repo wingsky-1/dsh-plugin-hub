@@ -278,6 +278,8 @@ describe("健康摘要徽标：文案与失败标红", () => {
       projectRoot: "/tmp/proj",
     });
     const state = createState();
+    state.sessionResolved = true;
+    state.currentCwd = "/tmp/proj";
     const { actions } = makeActions();
     showPanel(state, actions);
     await refresh(state, actions);
@@ -335,6 +337,8 @@ describe("健康摘要徽标：文案与失败标红", () => {
       projectRoot: "/tmp/proj",
     });
     const state = createState();
+    state.sessionResolved = true;
+    state.currentCwd = "/tmp/proj";
     const ok = await refresh(state, makeActions().actions);
     expect(ok).toBe(true);
     expect(document.querySelector(".dm-counts")).toBeNull();

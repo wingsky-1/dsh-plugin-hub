@@ -6,7 +6,7 @@
  *
  * 守的事实（每条一句话）：
  * - endpointOf：streamable-http 出 URL、stdio 出 command+args、无 command 出空串。
- * - statusActions：connected 两键、disabled 走 PATCH 启用**再** POST 连接、其余一键；
+ * - statusActions：connected 两键、disabled 走 PATCH 启用并触发连接、其余一键；
  *   三条 URL 的 query 拼装（name 编码、scope、cwd）逐条钉。
  * - disableAction / deleteAction：PATCH/DELETE 的 method 与 body；delete 的 confirm 闸
  *   （未确认即中止，不得发请求）；正在编辑该条目才 resetForm。
@@ -30,6 +30,7 @@ import {
   endpointOf,
   jsonPatchInit,
   postThenRefresh,
+  renderServer,
   statusActions,
 } from "../../src/client/float/servers.ts";
 import {
@@ -116,6 +117,7 @@ describe("servers：状态动作规格", () => {
   const st = () => {
     const s = createState();
     s.currentCwd = "/w";
+    s.sessionResolved = true;
     return s;
   };
 
@@ -152,10 +154,10 @@ describe("servers：状态动作规格", () => {
     expect(calls).toEqual(["refresh"]);
   });
 
-  it("disabled → 单键「启用并连接」：先 PATCH enabled=true 再 POST connect，最后刷新", async () => {
+  it("disabled → 单键「启用并连接」：PATCH enabled=true 带 cwd，最后刷新", async () => {
     const { actions, calls } = makeActions();
     const specs = statusActions(
-      entry({ status: "disabled" }),
+      entry({ status: "disabled", scope: "project" }),
       st(),
       actions,
       "&scope=project",
@@ -166,21 +168,16 @@ describe("servers：状态动作规格", () => {
     await specs[0]!.run();
     expect(fetchFake.calls).toEqual([
       {
-        url: "/api/dsh-mcp/servers?name=ctx7&scope=project",
+        url: "/api/dsh-mcp/servers?name=ctx7&scope=project&cwd=%2Fw",
         method: "PATCH",
         body: '{"enabled":true}',
-      },
-      {
-        url: "/api/dsh-mcp/servers/connect?name=ctx7&scope=project&cwd=%2Fw",
-        method: "POST",
-        body: undefined,
       },
     ]);
     expect(calls).toEqual(["refresh"]);
   });
 
-  it("其余状态（stopped/connecting/failed）→ 单键「连接」且为 primary", async () => {
-    for (const status of ["stopped", "connecting", "failed"]) {
+  it("stopped/failed → 单键「连接」且为 primary", async () => {
+    for (const status of ["stopped", "failed"]) {
       fetchFake!.calls.length = 0;
       const { actions, calls } = makeActions();
       const specs = statusActions(entry({ status }), st(), actions, "&scope=global", "");
@@ -188,6 +185,24 @@ describe("servers：状态动作规格", () => {
       expect(specs[0]!.primary).toBe(true);
       await specs[0]!.run();
       expect(fetchFake.calls[0]!.url).toBe("/api/dsh-mcp/servers/connect?name=ctx7&scope=global");
+      expect(calls).toEqual(["refresh"]);
+    }
+  });
+
+  it("connecting/reconnecting → 单键「断开」并刷新", async () => {
+    for (const status of ["connecting", "reconnecting"]) {
+      fetchFake.calls.length = 0;
+      const { actions, calls } = makeActions();
+      const specs = statusActions(entry({ status }), st(), actions, "&scope=global", "");
+      expect(specs.map((spec) => [spec.label, spec.primary])).toEqual([["disconnect", false]]);
+      await specs[0]!.run();
+      expect(fetchFake.calls).toEqual([
+        {
+          url: "/api/dsh-mcp/servers/disconnect?name=ctx7&scope=global",
+          method: "POST",
+          body: undefined,
+        },
+      ]);
       expect(calls).toEqual(["refresh"]);
     }
   });
@@ -211,6 +226,37 @@ describe("servers：状态动作规格", () => {
 });
 
 describe("servers：禁用与删除动作", () => {
+  it("同名项目服务器删除时携带各自会话 cwd", async () => {
+    for (const cwd of ["/project a", "/project b"]) {
+      const state = createState();
+      state.sessionResolved = true;
+      state.currentCwd = cwd;
+      const card = renderServer(
+        entry({ name: "same", scope: "project", status: "stopped" }),
+        state,
+        makeActions().actions,
+      );
+      const remove = Array.from(
+        card.querySelectorAll<HTMLButtonElement>(".dm-actions button"),
+      ).find((button) => button.textContent === "delete")!;
+      remove.click();
+      await settle();
+    }
+    expect(confirms).toEqual([true, true]);
+    expect(fetchFake.calls).toEqual([
+      {
+        url: "/api/dsh-mcp/servers?name=same&scope=project&cwd=%2Fproject%20a",
+        method: "DELETE",
+        body: undefined,
+      },
+      {
+        url: "/api/dsh-mcp/servers?name=same&scope=project&cwd=%2Fproject%20b",
+        method: "DELETE",
+        body: undefined,
+      },
+    ]);
+  });
+
   it("disableAction：PATCH enabled=false 且带 cwd（#412 会话自愈）", async () => {
     const s = createState();
     s.currentCwd = "/w";
@@ -317,5 +363,89 @@ describe("servers：操作按钮", () => {
     btn.dispatchEvent(new Event("click"));
     await settle();
     expect(alerts[0]).toContain("plain string");
+  });
+});
+
+describe("servers：连接操作的 DOM 回归", () => {
+  it.each(["connecting", "reconnecting"])("%s 只提供断开动作，点击可停止", async (status) => {
+    const card = renderServer(entry({ status }), createState(), makeActions().actions);
+    const buttons = Array.from(card.querySelectorAll<HTMLButtonElement>(".dm-actions button"));
+    expect(buttons.map((button) => button.textContent)).toEqual([
+      "disconnect",
+      "disable",
+      "edit",
+      "delete",
+    ]);
+    expect(buttons[0]!.disabled).toBe(false);
+    buttons[0]!.click();
+    await settle();
+    expect(fetchFake.calls).toEqual([
+      {
+        url: "/api/dsh-mcp/servers/disconnect?name=ctx7&scope=global",
+        method: "POST",
+        body: undefined,
+      },
+    ]);
+  });
+
+  it("连接请求挂起时阻止重复提交，另一服务器仍可连接", async () => {
+    const state = createState();
+    const { actions } = makeActions();
+    const first = entry({ status: "stopped" });
+    const other = entry({ name: "other", status: "stopped" });
+    let release!: (response: Response) => void;
+    const calls: string[] = [];
+    globalThis.fetch = ((input: RequestInfo | URL) => {
+      const url = String(input);
+      calls.push(url);
+      if (url.includes("name=ctx7"))
+        return new Promise<Response>((resolve) => {
+          release = resolve;
+        });
+      return Promise.resolve(new Response("{}", { status: 200 }));
+    }) as typeof fetch;
+    const original = renderServer(first, state, actions).querySelector<HTMLButtonElement>(
+      ".dm-actions button",
+    )!;
+    original.click();
+    original.click();
+    const pending = renderServer(first, state, actions).querySelector<HTMLButtonElement>(
+      ".dm-actions button",
+    )!;
+    expect(pending.disabled).toBe(true);
+    pending.click();
+    const otherButton = renderServer(other, state, actions).querySelector<HTMLButtonElement>(
+      ".dm-actions button",
+    )!;
+    expect(otherButton.disabled).toBe(false);
+    otherButton.click();
+    expect(calls).toEqual([
+      "/api/dsh-mcp/servers/connect?name=ctx7&scope=global",
+      "/api/dsh-mcp/servers/connect?name=other&scope=global",
+    ]);
+    release(new Response("{}", { status: 200 }));
+    await settle();
+  });
+
+  it("连接失败显示错误并允许再次操作", async () => {
+    const state = createState();
+    const { actions } = makeActions();
+    const server = entry({ status: "stopped" });
+    fetchFake.failOnce();
+    renderServer(server, state, actions)
+      .querySelector<HTMLButtonElement>(".dm-actions button")!
+      .click();
+    await settle();
+    expect(alerts).toEqual(["操作失败：boom"]);
+    const retry = renderServer(server, state, actions).querySelector<HTMLButtonElement>(
+      ".dm-actions button",
+    )!;
+    expect(retry.disabled).toBe(false);
+    retry.click();
+    await settle();
+    expect(fetchFake.calls.map((call) => call.url)).toEqual([
+      "/api/dsh-mcp/servers/connect?name=ctx7&scope=global",
+      "/api/dsh-mcp/servers/connect?name=ctx7&scope=global",
+    ]);
   });
 });

@@ -68,6 +68,7 @@
       "test/integration/apply-support.ts（dsh-lan-proxy：apply 装配两文件共享 fake settings/webServer/req/res）",
       "test/e2e/forward-upstream.ts（dsh-lan-proxy：真实转发 e2e 的上游/proxy 生命周期与请求 helper）",
       "test/unit/manager-shape-support.ts（dsh-mcp-manager：Manager自然职责fixture，不进runner/变异分母）",
+      "test/unit/manager-http-connection-support.ts（dsh-mcp-manager：HTTP 连接用例注册，不进 runner / 变异分母）",
       "test/unit/manager-shape-resume-fixture.ts（dsh-mcp-manager：Manager自然职责fixture，不进runner/变异分母）",
       "test/unit/manager-shape-runtime-injection-fixture.ts（dsh-mcp-manager：Manager自然职责fixture，不进runner/变异分母）",
       "test/unit/manager-shape-wrapped-dispatch-fixture.ts（dsh-mcp-manager：Manager自然职责fixture，不进runner/变异分母）",

@@ -45,6 +45,16 @@ function warnUnknownOnce(state: McpState): void {
   );
 }
 
+function clearPending(state: McpState, actions: UiActions): void {
+  state.sessionGeneration = (state.sessionGeneration ?? 0) + 1;
+  state.pending?.clear();
+  state.servers = [];
+  state.counts = {};
+  state.projectRoot = undefined;
+  state.refreshError = undefined;
+  actions.render?.();
+}
+
 /** 跟随当前会话：cwd 变化 → 通知宿主切换项目级 MCP + 刷新浮窗。 */
 export function bindSession(
   ctx: McpClientContext,
@@ -62,6 +72,7 @@ export function bindSession(
       // 但**不上报**——保持宿主当前绑定，不把「读不到」变成「清空项目级」。
       state.currentCwd = undefined;
       state.sessionResolved = false;
+      if (prevResolved) clearPending(state, actions);
       state.unknownSessionFrames += 1;
       state.updateFloatState?.();
       // 告警口径（#1028 隔离实测后收敛）：官方会话快照要等 mainView 持有才就绪，
@@ -79,6 +90,8 @@ export function bindSession(
     state.updateFloatState?.();
     // cwd 未变且上一轮也是已知态 → 短路（宿主侧 setSession 同值亦幂等，这里省一次往返）。
     if (prevResolved && read.cwd === prevCwd) return;
+    clearPending(state, actions);
+    const generation = state.sessionGeneration;
     // 无论 cwd 是否为空都通知宿主切换：空 cwd（blank 会话/新会话还没选工作区）
     // 也要显式清空宿主的项目级 MCP，否则宿主全局单例会残留上一个会话的项目级服务器，
     // 别的会话就串台显示了。此处与「未知」不同——空 cwd 是**已知**无项目。
@@ -87,7 +100,9 @@ export function bindSession(
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ cwd: typeof read.cwd === "string" ? read.cwd : "" }),
     })
-      .then(() => actions.refresh())
+      .then(() => {
+        if (state.sessionGeneration === generation) return actions.refresh();
+      })
       .catch(() => {});
   };
   sync();

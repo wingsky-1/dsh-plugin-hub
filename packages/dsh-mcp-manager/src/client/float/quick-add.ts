@@ -6,7 +6,7 @@
  */
 
 import { el } from "../core/dom.ts";
-import { api } from "../core/api.ts";
+import { api, cwdQueryOf, assertActionSession } from "../core/api.ts";
 import { t } from "../../../../../shared/client/i18n.js";
 import type { McpState, UiActions } from "../core/state.ts";
 import type { McpManagerServerInput, McpServerListEntry } from "../../shared/interface.ts";
@@ -119,6 +119,7 @@ export function readForm(state: McpState): McpManagerServerInput {
 /** 重置表单为默认值。 */
 export function resetForm(state: McpState): void {
   state.editingName = undefined;
+  state.editingGeneration = undefined;
   state.editing = undefined;
   if (state.formName === undefined) return;
   state.formName.value = "";
@@ -228,6 +229,7 @@ export function isEditing(state: McpState): boolean {
 /** 保存表单（新增或更新）。 */
 export async function saveForm(state: McpState, actions: UiActions): Promise<void> {
   const server = readForm(state);
+  const generation = state.sessionGeneration;
   try {
     const payload: Record<string, unknown> = {
       ...server,
@@ -245,6 +247,7 @@ export async function saveForm(state: McpState, actions: UiActions): Promise<voi
     // env/headers 占位符同理（投影本不下发占位符，此处防手工粘贴/直调污染写路径）。
     stripProjectionTables(payload);
     if (!(await performSaveRequest(state, server, payload))) return;
+    if (state.sessionGeneration !== generation) return;
     resetForm(state);
     await actions.refresh();
   } catch (error) {
@@ -299,8 +302,13 @@ export async function performSaveRequest(
     return true;
   }
   if (isEditing(state)) {
+    assertActionSession(
+      state,
+      formScopeValue(state),
+      state.editingGeneration ?? state.sessionGeneration,
+    );
     const query = `name=${encodeURIComponent(state.editingName ?? "")}&scope=${formScopeValue(state)}`;
-    await api<unknown>(`${state.API.servers}?${query}`, {
+    await api<unknown>(`${state.API.servers}?${query}${cwdQueryOf(state)}`, {
       ...jsonWriteInit(payload),
       method: "PATCH",
     });
@@ -313,6 +321,7 @@ export async function performSaveRequest(
 /** 进入编辑模式：填充表单，切换到快速接入 tab。 */
 export function beginEdit(state: McpState, actions: UiActions, server: McpServerListEntry): void {
   state.editingName = server.name;
+  state.editingGeneration = state.sessionGeneration;
   state.editing = server;
   actions.switchTab("quick");
   fillForm(state, server);

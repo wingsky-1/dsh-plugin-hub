@@ -37,12 +37,15 @@ export interface McpState {
   activeTab: string;
   /** 服务器列表。 */
   servers: McpServerListEntry[];
+  pending: Map<string, { kind: "connect" | "disconnect" }>;
   /** 各状态计数。 */
   counts: McpCounts;
+  refreshError: string | undefined;
   /** 正在编辑的服务器名称（undefined 表示新建）。 */
   editingName: string | undefined;
   /** 正在编辑的服务器原始数据。 */
   editing: McpServerListEntry | undefined;
+  editingGeneration: number | undefined;
 
   // 表单 DOM 引用
   formName: HTMLInputElement | undefined;
@@ -66,6 +69,7 @@ export interface McpState {
    * 未知时不得向宿主上报 `cwd:""`，否则会把「读不到」变成「清空项目级绑定」。
    */
   sessionResolved: boolean;
+  sessionGeneration: number;
   /** 未知态的一次性告警闸（可观测性：未知态无 UI 表现，不告警等于静默失效）。 */
   warnedUnknownSession: boolean;
   /**
@@ -91,9 +95,12 @@ export function createState(): McpState {
     panelOpener: undefined,
     activeTab: "servers",
     servers: [],
+    pending: new Map(),
     counts: {},
+    refreshError: undefined,
     editingName: undefined,
     editing: undefined,
+    editingGeneration: undefined,
     formName: undefined,
     formScope: undefined,
     formTransport: undefined,
@@ -109,6 +116,7 @@ export function createState(): McpState {
     floatOpen: false,
     currentCwd: undefined,
     sessionResolved: false,
+    sessionGeneration: 0,
     warnedUnknownSession: false,
     unknownSessionFrames: 0,
     projectRoot: undefined,
@@ -130,7 +138,8 @@ export function createState(): McpState {
  * 其他模块的功能（如 servers.ts 调用 actions.refresh / actions.resetForm）。
  */
 export interface UiActions {
-  refresh: () => Promise<boolean>;
+  refresh: (fresh?: boolean) => Promise<boolean>;
+  render?: () => void;
   resetForm: () => void;
   beginEdit: (server: McpServerListEntry) => void;
   switchTab: (tab: string) => void;

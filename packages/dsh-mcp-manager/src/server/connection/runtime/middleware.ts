@@ -294,6 +294,33 @@ interface MountRemoteFaces {
  * 纯内部分拆放模块级才能让导出面零 diff。
  * @param entry 装载前在册的旧条目（让位校验用；让位即静默返回）。
  */
+function ownsMount(unit: ProjectUnit, name: string, entry: ConnectionEntry): boolean {
+  return !entry.disposed && unit.connections.get(name) === entry;
+}
+
+function recordPendingMount(
+  unit: ProjectUnit,
+  name: string,
+  entry: ConnectionEntry,
+  id: string,
+  release: (id: string) => void,
+): void {
+  const pending = { id, released: false };
+  entry.pendingMount = pending;
+  if (!ownsMount(unit, name, entry)) {
+    pending.released = true;
+    release(id);
+  }
+}
+
+function releaseDiscardedMount(
+  entry: ConnectionEntry,
+  id: string,
+  release: (id: string) => void,
+): void {
+  if (entry.pendingMount?.released !== true) release(id);
+}
+
 async function mountRemoteServer(
   unit: ProjectUnit,
   root: string,
@@ -325,14 +352,18 @@ async function mountRemoteServer(
     mounted = await lifecycle.mountServer({
       root,
       server,
+      shouldMount: () => ownsMount(unit, serverName, newEntry),
+      onMounted: (id) =>
+        recordPendingMount(unit, serverName, newEntry, id, lifecycle.releaseServer),
       // 六态窗口内只推进状态：装上之后 id/handle 才回得来，这里不能碰代际守卫。
       onState: (next: ServerState) => {
-        if (newEntry.disposed) return;
+        if (!ownsMount(unit, serverName, newEntry)) return;
         newEntry.status = next;
         faces.host.emitStatus();
       },
     });
   } catch (error) {
+    if (!ownsMount(unit, serverName, newEntry)) return;
     // 装载期异常（loader.load 失败 / 账本撞键等）：实例没挂上，只能落 failed 等人重试。
     newEntry.status = "failed";
     newEntry.error = faces.redact(error);
@@ -349,8 +380,8 @@ async function mountRemoteServer(
   newEntry.readySettled = true;
   // 代际守卫（拆除期竞态）：拆除动作到达后这一代已不在册，但实例已经挂上——必须发起释放，
   // 否则官方实例与它占着的 serverName 预留会永久泄漏。
-  if (newEntry.disposed || unit.connections.get(serverName) !== newEntry) {
-    lifecycle.releaseServer(mounted.id);
+  if (!ownsMount(unit, serverName, newEntry)) {
+    releaseDiscardedMount(newEntry, mounted.id, lifecycle.releaseServer);
     return;
   }
   if (mounted.outcome.kind === "settled") {
@@ -426,7 +457,12 @@ export async function disposePreviousGeneration(
 ): Promise<void> {
   if (entry === undefined || Array.isArray(entry.server.toolDefinitions)) return;
   entry.disposed = true;
-  if (entry.id !== undefined) await disposeServer(entry.id);
+  const pending = entry.pendingMount;
+  const id = entry.id ?? (pending?.released === true ? undefined : pending?.id);
+  if (id !== undefined) {
+    if (pending !== undefined) pending.released = true;
+    await disposeServer(id);
+  }
 }
 
 /** 可连接的服务器配置：缺省（未在册）或已启用=false 即 undefined。 */
@@ -809,7 +845,11 @@ export class McpMiddleware {
     const entry = unit?.connections.get(serverName);
     if (unit === undefined || entry === undefined) return false;
     entry.disposed = true;
-    if (entry.id !== undefined) runtimePorts.get().lifecycle.releaseServer(entry.id);
+    const id = entry.id ?? entry.pendingMount?.id;
+    if (id !== undefined) {
+      if (entry.pendingMount !== undefined) entry.pendingMount.released = true;
+      runtimePorts.get().lifecycle.releaseServer(id);
+    }
     unit.connections.delete(serverName);
     return true;
   }

@@ -183,7 +183,7 @@ async function createServer(
   }
 }
 
-/** PATCH /servers（更新）/ DELETE /servers（移除）：先 maybeSession 切会话再按方法分流。 */
+/** PATCH /servers（更新）/ DELETE /servers（移除）：按请求固定目标项目根。 */
 async function changeServer(
   method: string,
   name: string,
@@ -194,11 +194,12 @@ async function changeServer(
   helpers: RouteHelpers,
 ): Promise<void> {
   try {
-    await helpers.maybeSession(url);
     const scope = helpers.scopeParam(url);
+    const cwd = queryParam(url, "cwd");
+    const root = await manager.rootForRequest(scope, cwd);
     if (method === "DELETE") {
-      await manager.remove(name, scope);
-      writeJson(res, 200, { ok: true, summary: manager.summary() });
+      await manager.remove(name, scope, scope === SCOPE_PROJECT ? root : cwd);
+      writeJson(res, 200, { ok: true, summary: manager.summaryForRoot(root) });
       return;
     }
     const body = await readJsonBody(req);
@@ -206,11 +207,16 @@ async function changeServer(
       writeJson(res, 400, { error: "invalid JSON body" });
       return;
     }
-    const updated = await manager.update(name, body as Record<string, unknown>, scope);
+    const updated = await manager.update(
+      name,
+      body as Record<string, unknown>,
+      scope,
+      scope === SCOPE_PROJECT ? root : cwd,
+    );
     // #770-L3 只读投影：同 POST 分支（与 A3 同一红线伞；缺省回落原文口径同上）。
-    const server =
-      typeof manager.summarize === "function" ? manager.summarize(updated, scope) : updated;
-    writeJson(res, 200, { server, summary: manager.summary() });
+    const server = manager.summarizeForRoot(updated, scope, root);
+    const status = typeof (body as Record<string, unknown>).enabled === "boolean" ? 202 : 200;
+    writeJson(res, status, { server, summary: manager.summaryForRoot(root) });
   } catch (error) {
     helpers.handleError(res, error);
   }
@@ -227,13 +233,10 @@ export function buildServersRoute(manager: RoutesManager, helpers: RouteHelpers)
       if (!guardLoopbackMethod(req, res, ROUTE_FENCE.servers.guarded)) return;
       if (method === "GET") {
         try {
-          // 变更点驱动（#111/#228）：GET /servers 是纯读快照，零副作用——
-          // 磁盘变更由 fs.watch 事件驱动 reconcile，状态从内存 store 读。
-          // 历史 refreshFromDisk 副作用（mtime 轮询 + reconcile）已移除。
-          // cwd 查询参数不处理（#324）：GET 带 cwd 曾触发 setSession → emitStatus
-          // → SSE 广播 → 客户端再 GET 的自激循环（多页面互踩）。会话切换只走
-          // POST /api/dsh-mcp/session；此处忽略 cwd 以恢复纯读语义。
-          writeJson(res, 200, manager.summary());
+          // 按请求 cwd 读取对应项目，不切会话或广播 SSE，避免多页面互相切换。
+          const cwd = queryParam(url, "cwd");
+          const summary = cwd === undefined ? manager.summary() : await manager.summaryForCwd(cwd);
+          writeJson(res, 200, summary);
         } catch (error) {
           helpers.handleError(res, error);
         }
@@ -325,10 +328,10 @@ export function buildResumeRoute(manager: RoutesManager, helpers: RouteHelpers):
 
 // ------------------------------------------------------------ connect / disconnect / reconnect
 
-/** 单服务器连接/断开/重连三兄弟路由（同构：name 必填 + maybeSession + scope）。 */
+/** 单服务器连接/断开/重连路由：按请求固定目标项目根。 */
 function buildNameActionRoute(
   route: RouteName,
-  action: (name: string, scope: string) => Promise<void>,
+  action: (name: string, scope: string, cwd: string | undefined) => Promise<string>,
   manager: RoutesManager,
   helpers: RouteHelpers,
 ): WebRoute {
@@ -341,9 +344,8 @@ function buildNameActionRoute(
       const name = requireNameParam(url, res);
       if (name === undefined) return;
       try {
-        await helpers.maybeSession(url);
-        await action(name, helpers.scopeParam(url));
-        writeJson(res, 200, { ok: true, summary: manager.summary() });
+        const root = await action(name, helpers.scopeParam(url), queryParam(url, "cwd"));
+        writeJson(res, 202, { ok: true, summary: manager.summaryForRoot(root) });
       } catch (error) {
         helpers.handleError(res, error);
       }
@@ -355,7 +357,7 @@ function buildNameActionRoute(
 export function buildConnectRoute(manager: RoutesManager, helpers: RouteHelpers): WebRoute {
   return buildNameActionRoute(
     "connect",
-    (name, scope) => manager.connect(name, scope),
+    (name, scope, cwd) => manager.acceptConnection(name, scope, cwd),
     manager,
     helpers,
   );
@@ -365,7 +367,7 @@ export function buildConnectRoute(manager: RoutesManager, helpers: RouteHelpers)
 export function buildDisconnectRoute(manager: RoutesManager, helpers: RouteHelpers): WebRoute {
   return buildNameActionRoute(
     "disconnect",
-    (name, scope) => manager.disconnect(name, scope),
+    (name, scope, cwd) => manager.disconnectForRequest(name, scope, cwd),
     manager,
     helpers,
   );
@@ -375,7 +377,7 @@ export function buildDisconnectRoute(manager: RoutesManager, helpers: RouteHelpe
 export function buildReconnectRoute(manager: RoutesManager, helpers: RouteHelpers): WebRoute {
   return buildNameActionRoute(
     "reconnect",
-    (name, scope) => manager.reconnect(name, scope),
+    (name, scope, cwd) => manager.acceptConnection(name, scope, cwd),
     manager,
     helpers,
   );

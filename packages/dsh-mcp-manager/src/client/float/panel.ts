@@ -8,7 +8,7 @@
  */
 
 import { el } from "../core/dom.ts";
-import { api } from "../core/api.ts";
+import { api, serversUrlOf } from "../core/api.ts";
 import { t } from "../../../../../shared/client/i18n.js";
 import type { McpCounts, McpServerListEntry, McpState, UiActions } from "../core/state.ts";
 import { renderServers } from "./servers.ts";
@@ -16,7 +16,7 @@ import { buildQuickAdd } from "./quick-add.ts";
 import { renderPill, renderFloatPanel } from "./float.ts";
 
 /** 模块级单飞去重句柄（invalidate 单飞：同一时刻只有一个 in-flight 拉取）。 */
-let inflight: Promise<boolean> | undefined;
+const inflight = new WeakMap<McpState, { generation: number; promise: Promise<boolean> }>();
 
 /** C4：Escape keydown 清理回调登记（WeakMap 避免污染 McpState 接口）。 */
 const keydownCleanups = new WeakMap<McpState, () => void>();
@@ -25,12 +25,19 @@ const keydownCleanups = new WeakMap<McpState, () => void>();
  * 刷新服务器列表与浮窗摘要（单飞：in-flight 复用；#111 变更点驱动）。
  * 返回 true=成功；false=失败（调用方按退避重试）。
  */
-export function refresh(state: McpState, actions: UiActions): Promise<boolean> {
-  if (inflight !== undefined) return inflight;
-  inflight = doRefresh(state, actions).finally(() => {
-    inflight = undefined;
+export function refresh(state: McpState, actions: UiActions, fresh = false): Promise<boolean> {
+  const current = inflight.get(state);
+  const generation = state.sessionGeneration ?? 0;
+  if (current !== undefined && current.generation === generation) {
+    if (fresh) return current.promise.then(() => refresh(state, actions));
+    return current.promise;
+  }
+  const request = { generation, promise: Promise.resolve(false) };
+  request.promise = doRefresh(state, actions, generation).finally(() => {
+    if (inflight.get(state) === request) inflight.delete(state);
   });
-  return inflight;
+  inflight.set(state, request);
+  return request.promise;
 }
 
 /** 健康摘要文案：按 counts 逐档拼段，无段时退到「共 N 台」。缺档位按 0 读（服务端省略未发生的档）。 */
@@ -68,35 +75,46 @@ function renderCountsBadge(state: McpState): void {
 }
 
 /** 实际拉取（单飞内部）。 */
-async function doRefresh(state: McpState, actions: UiActions): Promise<boolean> {
+async function doRefresh(
+  state: McpState,
+  actions: UiActions,
+  generation: number,
+): Promise<boolean> {
+  const url = serversUrlOf(state);
+  if (url === undefined) return false;
   try {
-    // #324：GET /servers 不再带 cwd——服务端已忽略该参数（纯读快照，零副作用），
-    // 会话切换只走 POST /api/dsh-mcp/session（bindSession cwd 变化时触发）。
-    // 带 cwd 曾触发服务端 setSession → 广播 → 客户端再刷新的自激循环。
     const payload = await api<{
       servers?: McpServerListEntry[];
       counts?: McpCounts;
       projectRoot?: string;
-    }>(state.API.servers);
+    }>(url);
+    if ((state.sessionGeneration ?? 0) !== generation) return false;
     state.servers = payload.servers ?? [];
     state.counts = payload.counts ?? {};
     state.projectRoot = payload.projectRoot;
-    renderPill(state);
-    if (state.floatOpen) renderFloatPanel(state, actions);
-    renderCountsBadge(state);
-    if (state.bodyEl !== undefined && state.activeTab === "servers") renderServers(state, actions);
+    state.refreshError = undefined;
+    renderState(state, actions);
     return true;
   } catch (error) {
-    if (state.bodyEl !== undefined && state.activeTab === "servers") {
+    if ((state.sessionGeneration ?? 0) !== generation) return false;
+    state.refreshError = error instanceof Error ? error.message : String(error);
+    renderState(state, actions);
+    return false;
+  }
+}
+
+export function renderState(state: McpState, actions: UiActions): void {
+  renderPill(state);
+  if (state.floatOpen) renderFloatPanel(state, actions);
+  renderCountsBadge(state);
+  if (state.bodyEl !== undefined && state.activeTab === "servers") {
+    if (state.refreshError === undefined) renderServers(state, actions);
+    else {
       state.bodyEl.textContent = "";
       state.bodyEl.appendChild(
-        el("div", {
-          class: "dm-status",
-          text: t("loadFail", { msg: error instanceof Error ? error.message : String(error) }),
-        }),
+        el("div", { class: "dm-status", text: t("loadFail", { msg: state.refreshError }) }),
       );
     }
-    return false;
   }
 }
 
