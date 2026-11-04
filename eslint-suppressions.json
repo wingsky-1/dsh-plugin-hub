@@ -293,11 +293,6 @@
       "count": 1
     }
   },
-  "packages/dsh-provider-usage/test/unit/report/report-b2-3.test.ts": {
-    "max-lines": {
-      "count": 1
-    }
-  },
   "packages/dsh-provider-usage/test/unit/report/report-executor.test.ts": {
     "max-lines": {
       "count": 1

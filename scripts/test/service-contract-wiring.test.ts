@@ -440,6 +440,7 @@ const EXPECT_FILES: Record<string, string[]> = {
     "unit/trend/tracker-dir-recovery.test.ts",
     "unit/trend/tracker-dir-projection.test.ts",
     "unit/trend/tracker-hour.test.ts",
+    "unit/report/report-b2-3-presentation-cases.ts",
   ],
 };
 

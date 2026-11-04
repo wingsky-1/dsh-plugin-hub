@@ -106,7 +106,8 @@
       "test/e2e/smoke-audit-fixtures.ts（dsh-verify-isolated：审计累积 fixture 拆分的跨文件 fixture，不进 runner / 变异分母）",
       "test/e2e/smoke-onboarding-api.ts（dsh-verify-isolated：onboarding API 契约拆分的跨文件 fixture，不进 runner / 变异分母）",
       "test/e2e/smoke-onboarding-runtime.ts（dsh-verify-isolated：onboarding 预置运行时拆分的跨文件 fixture，不进 runner / 变异分母）",
-      "test/e2e/smoke-onboarding-contract.ts（dsh-verify-isolated：onboarding 脚本与文档契约拆分的跨文件 fixture，不进 runner / 变异分母）"
+      "test/e2e/smoke-onboarding-contract.ts（dsh-verify-isolated：onboarding 脚本与文档契约拆分的跨文件 fixture，不进 runner / 变异分母）",
+      "test/unit/report/report-b2-3-presentation-cases.ts（dsh-provider-usage：C1 B2-3 提示词与呈现接线按原入口时序注册，不进 runner / 变异分母）"
     ],
     "mixedTargets": ["routes.test.ts", "report-p0.test.ts"],
     "rootLayers": {
