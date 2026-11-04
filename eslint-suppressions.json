@@ -241,22 +241,6 @@
       "count": 11
     }
   },
-  "packages/dsh-provider-usage/test/integration/report-routes/composition-root.test.ts": {
-    "max-lines": {
-      "count": 1
-    },
-    "max-lines-per-function": {
-      "count": 2
-    }
-  },
-  "packages/dsh-provider-usage/test/integration/schedule/composition-root.test.ts": {
-    "max-lines": {
-      "count": 1
-    },
-    "max-lines-per-function": {
-      "count": 3
-    }
-  },
   "packages/dsh-provider-usage/test/smoke-pure.ts": {
     "max-lines": {
       "count": 1
