@@ -241,22 +241,6 @@
       "count": 11
     }
   },
-  "packages/dsh-provider-usage/test/integration/report-routes/composition-root.test.ts": {
-    "max-lines": {
-      "count": 1
-    },
-    "max-lines-per-function": {
-      "count": 2
-    }
-  },
-  "packages/dsh-provider-usage/test/integration/schedule/composition-root.test.ts": {
-    "max-lines": {
-      "count": 1
-    },
-    "max-lines-per-function": {
-      "count": 3
-    }
-  },
   "packages/dsh-provider-usage/test/smoke-pure.ts": {
     "max-lines": {
       "count": 1
@@ -291,27 +275,6 @@
   "packages/dsh-provider-usage/test/unit/registry/registry-pure.test.ts": {
     "max-lines-per-function": {
       "count": 1
-    }
-  },
-  "packages/dsh-provider-usage/test/unit/report/report-b2-3.test.ts": {
-    "max-lines": {
-      "count": 1
-    }
-  },
-  "packages/dsh-provider-usage/test/unit/report/report-executor.test.ts": {
-    "max-lines": {
-      "count": 1
-    },
-    "max-lines-per-function": {
-      "count": 7
-    }
-  },
-  "packages/dsh-provider-usage/test/unit/report/report.test.ts": {
-    "max-lines": {
-      "count": 1
-    },
-    "max-lines-per-function": {
-      "count": 8
     }
   },
   "packages/dsh-provider-usage/test/unit/routes/refactor-pure.test.ts": {
