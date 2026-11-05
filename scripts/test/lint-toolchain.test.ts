@@ -177,7 +177,7 @@ test("#764 A2：被忽略文件静默跳过（钩子 staged d.ts 不超预算，
   //（warnIgnored:false），被忽略文件 0 结果、不计预算。预算值本身不动（仍 0），超预算判红逻辑由
   // 上一测静态锁定（problems > budget）。本测锁钩子路径：staged 仅含 d.ts 即通过。
   for (const rel of [
-    "packages/dsh-lan-proxy/src/client/css.d.ts",
+    "packages/dsh-notifier/src/client/css.d.ts",
     "packages/dsh-provider-usage/src/server/adapters/deepseek-official.d.mts",
   ]) {
     const probe = join(ROOT, rel);
@@ -466,7 +466,7 @@ test("#765 第 2 项：客户端 var 豁免面 == 实际含 var 的客户端文�
   }
 
   // 面不再是通配：未列入清单的客户端文件必须按常规规则面处理（error，而不是静默豁免）。
-  const probe = join(ROOT, "packages", "dsh-lan-proxy", "src", "client", "probe-not-listed.ts");
+  const probe = join(ROOT, "packages", "dsh-notifier", "src", "client", "probe-not-listed.ts");
   const probeConfigured = (await eslint.calculateConfigForFile(probe)).rules?.["no-var"];
   assert.equal(level(probeConfigured), 2, "新客户端文件不得继承 no-var 豁免");
 });
@@ -612,7 +612,10 @@ test("#722 阶段五：lint 面完整性——同名源码目录不得被构建�
   }
 
   // 产物侧反向钉住：收窄忽略面不等于把 lib 目录一律放进来。
-  for (const rel of ["packages/dsh-notifier/lib/index.js", "packages/dsh-lan-proxy/lib/index.js"]) {
+  for (const rel of [
+    "packages/dsh-notifier/lib/index.js",
+    "packages/dsh-mcp-manager/lib/index.js",
+  ]) {
     assert.equal(
       await eslint.isPathIgnored(join(ROOT, rel)),
       true,

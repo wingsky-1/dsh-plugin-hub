@@ -25,7 +25,18 @@ import {
   notifierFile,
   readTextFileSync,
 } from "../../../src/server/shared/interface.ts";
-import { jsonReq, makeLogger, pollUntil, settleMicrotasks, tempDshHome } from "../../helpers.ts";
+import type {
+  RemoteAdmissionSource,
+  RemotePeerAdmissionSource,
+} from "../../../../../shared/host-utils.js";
+import {
+  jsonReq,
+  makeLogger,
+  makeRemoteAccess,
+  pollUntil,
+  settleMicrotasks,
+  tempDshHome,
+} from "../../helpers.ts";
 
 const home = tempDshHome();
 const { installApi, releaseApi } = await import("../../../src/server/api/interface.ts");
@@ -54,13 +65,13 @@ afterAll(() => {
 });
 
 /** 假请求：`url` 带 `?since=` 是补拉的关键。 */
-function makeReq(url: string): IncomingMessage {
-  return jsonReq({ method: "GET", url });
+function makeReq(url: string, overrides: Record<string, unknown> = {}): IncomingMessage {
+  return jsonReq({ method: "GET", url, ...overrides });
 }
 
 /** 假 SSE 响应：连接表要 `on`/`destroyed`/`destroy`，断言要 `text`。`writeOk=false` 用来造背压
  * （write 返回 false 是 stalled 回收唯一认的输入），别的用例都用默认的正常写。 */
-function makeRes(writeOk = true) {
+function makeRes(writeOk = true, emitCloseOnDestroy = true) {
   const rec = { status: 0, headers: {} as Record<string, string>, text: "", destroyed: false };
   const listeners = new Map<string, Array<() => void>>();
   const res = {
@@ -89,7 +100,7 @@ function makeRes(writeOk = true) {
     },
     destroy() {
       rec.destroyed = true;
-      for (const handler of listeners.get("close") ?? []) handler();
+      if (emitCloseOnDestroy) for (const handler of listeners.get("close") ?? []) handler();
     },
   };
   return { res: res as unknown as ServerResponse, rec };
@@ -102,7 +113,12 @@ function readSeqFromDisk(): number {
 }
 
 /** 装配一次 api 域，交出帧发布面（帧入口就是宿主接线的那一条）。 */
-function assemble() {
+function assemble(
+  remote: {
+    remoteAdmission?: RemoteAdmissionSource;
+    remotePeerAdmission?: RemotePeerAdmissionSource;
+  } = {},
+) {
   const routes: WebRoute[] = [];
   const frames: Array<(payload: OutgoingFrame) => void> = [];
   const deps: ApiDeps = {
@@ -117,6 +133,7 @@ function assemble() {
       },
     },
     logger: makeLogger(),
+    remote: makeRemoteAccess(remote),
     config: {
       readConfig: () => ({ ...DEFAULT_CONFIG }),
       readSettingsView: () => VIEW,
@@ -191,11 +208,12 @@ function connect(
   routes: WebRoute[],
   url = "/api/dsh-notifier/events",
   make: () => FakeRes = makeRes,
+  request: Record<string, unknown> = {},
 ) {
   const route = routes.find((item) => item.path === "/api/dsh-notifier/events");
   if (route === undefined) throw new Error("events 路由未注册");
   const captured = make();
-  route.handler(makeReq(url), captured.res);
+  route.handler(makeReq(url, request), captured.res);
   return captured;
 }
 
@@ -239,6 +257,85 @@ describe("线协议：内部帧 → 客户端读的字段名", () => {
     expect(rec.headers["content-type"]).toBe("text/event-stream; charset=utf-8");
     expect(rec.headers["x-accel-buffering"]).toBe("no");
     expect(rec.text.startsWith(": connected\n\n")).toBe(true);
+  });
+});
+
+describe("native LAN SSE：绑定官方 admitted Peer 生命周期", () => {
+  it("Peer 释放主动关闭连接、移出 hub 并停止后续广播", async () => {
+    let peerCleanup: (() => void) | undefined;
+    const peer = {
+      ctx: {
+        effect(execute: () => () => void, label?: string) {
+          expect(label).toContain("admitted Peer");
+          peerCleanup = execute();
+          return () => peerCleanup?.();
+        },
+      },
+    };
+    const { routes, publish } = assemble({
+      remoteAdmission: () => () => undefined,
+      remotePeerAdmission: () => () => ({ peer }),
+    });
+    const connected = connect(routes, "/api/dsh-notifier/events", () => makeRes(true, false), {
+      remoteAddress: "192.168.1.5",
+      host: "192.168.1.5:3080",
+    });
+    expect(connected.rec.status).toBe(200);
+    expect(streamHub.size()).toBe(1);
+
+    peerCleanup?.();
+    expect(connected.rec.destroyed, "Peer 释放必须关闭响应").toBe(true);
+    expect(streamHub.size(), "Peer 释放同步删除 hub 表项，不依赖 close 事件").toBe(0);
+    const before = connected.rec.text;
+    await publishAndSettle(publish, frame({ title: "Peer 释放后" }));
+    expect(connected.rec.text, "Peer 释放后不能继续写业务帧").toBe(before);
+  });
+
+  it("peer admission 拒绝或 effect 注册失败时不写 200、不注册连接", () => {
+    const rejected = assemble({
+      remoteAdmission: () => () => undefined,
+      remotePeerAdmission: () => () => ({ rejection: 401 }),
+    });
+    const first = connect(rejected.routes, "/api/dsh-notifier/events", makeRes, {
+      remoteAddress: "192.168.1.5",
+      host: "192.168.1.5:3080",
+    });
+    expect(first.rec.status).toBe(401);
+    expect(streamHub.size()).toBe(0);
+
+    releaseApi();
+    const broken = assemble({
+      remoteAdmission: () => () => undefined,
+      remotePeerAdmission: () => () => ({
+        peer: {
+          ctx: {
+            effect() {
+              throw new Error("peer disposed");
+            },
+          },
+        },
+      }),
+    });
+    const second = connect(broken.routes, "/api/dsh-notifier/events", makeRes, {
+      remoteAddress: "192.168.1.5",
+      host: "192.168.1.5:3080",
+    });
+    expect(second.rec.status).toBe(403);
+    expect(streamHub.size()).toBe(0);
+  });
+
+  it("loopback SSE 保留插件生命周期，不调用官方 peer admission", () => {
+    let calls = 0;
+    const { routes } = assemble({
+      remotePeerAdmission: () => {
+        calls += 1;
+        return () => ({ rejection: 403 });
+      },
+    });
+    const connected = connect(routes);
+    expect(connected.rec.status).toBe(200);
+    expect(streamHub.size()).toBe(1);
+    expect(calls).toBe(0);
   });
 });
 

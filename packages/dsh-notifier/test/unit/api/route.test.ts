@@ -9,8 +9,20 @@ import type { IncomingMessage } from "node:http";
 import { describe, expect, it } from "vitest";
 
 import { registerEndpoints, sendJson } from "../../../src/server/api/impl/route/index.ts";
-import type { Endpoint, RouteHandler } from "../../../src/server/api/impl/route/type.ts";
-import { jsonReq, makeLogger, makeRegister, makeRes, pollUntil } from "../../helpers.ts";
+import type {
+  Endpoint,
+  HttpMethod,
+  RouteHandler,
+} from "../../../src/server/api/impl/route/type.ts";
+import {
+  jsonReq,
+  makeLogger,
+  makeRegister,
+  makeRemoteAccess,
+  makeRes,
+  pollUntil,
+} from "../../helpers.ts";
+import type { RemoteAdmissionSource } from "../../../../../shared/host-utils.js";
 
 /** 假请求：默认是合法回环请求，`body` 由 async 迭代器吐出（`readJsonBody` 走的就是这条路）。 */
 function makeReq(
@@ -33,18 +45,29 @@ function makeReq(
 }
 
 /** 一个端点组，handler 可替换：围栏用例只关心 handler 有没有被调到。 */
-function endpointWith(handler: RouteHandler, methods: Array<"GET" | "POST"> = ["GET"]): Endpoint {
+function endpointWith(handler: RouteHandler, methods: HttpMethod[] = ["GET"]): Endpoint {
   return {
     path: "/api/dsh-notifier/probe",
-    methods: Object.fromEntries(methods.map((method) => [method, handler])),
+    methods: Object.fromEntries(methods.map((method) => [method, handler])) as Partial<
+      Record<HttpMethod, RouteHandler>
+    >,
   };
 }
 
 /** 注册一个端点并取回宿主真正会调用的那个 handler。 */
-function install(handler: RouteHandler, methods: Array<"GET" | "POST"> = ["GET"]) {
+function install(
+  handler: RouteHandler,
+  methods: HttpMethod[] = ["GET"],
+  remoteAdmission?: RemoteAdmissionSource,
+) {
   const hub = makeRegister();
   const logger = makeLogger();
-  const disposers = registerEndpoints(hub.register, [endpointWith(handler, methods)], logger);
+  const disposers = registerEndpoints(
+    hub.register,
+    [endpointWith(handler, methods)],
+    logger,
+    makeRemoteAccess({ remoteAdmission }),
+  );
   return { route: hub.routes[0]!, logger, disposers, hub };
 }
 
@@ -121,6 +144,73 @@ describe("方法围栏：表里没有的方法给 405 而不是 404", () => {
       code: "FORBIDDEN_LOOPBACK",
       status: 403,
     });
+  });
+});
+
+describe("native LAN：非回环路径复用官方 connection admission", () => {
+  it("官方 undefined 放行非回环请求，认证通过后错方法仍是 405", () => {
+    const allowed = install(
+      (_req, res) => sendJson(res, 200, { ok: true }),
+      ["GET"],
+      () => () => undefined,
+    );
+    const ok = makeRes();
+    allowed.route.handler(
+      makeReq({ remoteAddress: "192.168.1.5", host: "192.168.1.5:3080" }),
+      ok.res,
+    );
+    expect(ok.rec.status).toBe(200);
+
+    const wrongMethod = makeRes();
+    allowed.route.handler(
+      makeReq({
+        method: "POST",
+        remoteAddress: "192.168.1.5",
+        host: "192.168.1.5:3080",
+      }),
+      wrongMethod.res,
+    );
+    expect(wrongMethod.rec.status).toBe(405);
+  });
+
+  it("官方 401/403 原样返回，并保留结构化拒绝码", () => {
+    for (const status of [401, 403] as const) {
+      const { route } = install(
+        (_req, res) => sendJson(res, 200, { ok: true }),
+        ["DELETE"],
+        () => () => status,
+      );
+      const { res, rec, json } = makeRes();
+      route.handler(
+        makeReq({ method: "GET", remoteAddress: "192.168.1.5", host: "192.168.1.5:3080" }),
+        res,
+      );
+      expect(rec.status).toBe(status);
+      expect(json()).toMatchObject({
+        code: status === 401 ? "UNAUTHORIZED" : "FORBIDDEN_LOOPBACK",
+        status,
+      });
+    }
+  });
+
+  it("admission 缺失、读取异常或 connection 卸载均 403", () => {
+    const sources: Array<RemoteAdmissionSource | undefined> = [
+      undefined,
+      () => undefined,
+      () => {
+        throw new Error("connection unloaded");
+      },
+    ];
+    for (const remoteAdmission of sources) {
+      const { route } = install(
+        (_req, res) => sendJson(res, 200, { ok: true }),
+        ["GET"],
+        remoteAdmission,
+      );
+      const { res, rec } = makeRes();
+      route.handler(makeReq({ remoteAddress: "192.168.1.5", host: "192.168.1.5:3080" }), res);
+      expect(rec.status).toBe(403);
+    }
   });
 });
 
@@ -208,6 +298,7 @@ describe("注册与摘除", () => {
         },
       ],
       makeLogger(),
+      makeRemoteAccess(),
     );
     expect(disposers).toHaveLength(2);
     for (const dispose of disposers) dispose();

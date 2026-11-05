@@ -50,6 +50,56 @@ export function baseCtx(overrides: Record<string, unknown> = {}) {
         disposer();
       };
     },
+    // Cordis 4.1 的公开服务隔离口。结构夹具只记录挂载调用，不执行 wrapper apply，
+    // 因而复用自身作为子 Context 即可保持既有 apply 接线测试的观测面。
+    isolate() {
+      return this;
+    },
     ...overrides,
   };
+}
+
+interface FakePluginModule {
+  readonly name?: string;
+  apply?(ctx: unknown, config: unknown): unknown;
+}
+
+export interface FakePluginFiber {
+  await(): Promise<FakePluginFiber>;
+  dispose(): Promise<void>;
+}
+
+/**
+ * 结构宿主上的 plugin 桥：复刻生产接线需要的两层 ownership。
+ *
+ * 无 config 的调用是 attachments wrapper；有 `serverName` 的 config 是 wrapper 内的官方 child。
+ * 只模拟 fiber readiness/dispose，不重写 facade 或 cap 判定——那些由真 Cordis 测试守。
+ */
+export function fakePluginBridge(
+  ctx: Record<string, unknown>,
+  onOfficial: (module: FakePluginModule, config: { serverName: string }) => void,
+) {
+  const bridge = (module: FakePluginModule, config?: unknown): FakePluginFiber => {
+    let loading: unknown;
+    if (
+      typeof config === "object" &&
+      config !== null &&
+      "serverName" in config &&
+      typeof config.serverName === "string"
+    ) {
+      onOfficial(module, config as { serverName: string });
+      loading = module.apply?.(ctx, config);
+    } else {
+      loading = module.apply?.({ ...ctx, plugin: bridge, provide: () => () => {} }, config);
+    }
+    const fiber: FakePluginFiber = {
+      async await() {
+        await loading;
+        return fiber;
+      },
+      async dispose() {},
+    };
+    return fiber;
+  };
+  return bridge;
 }

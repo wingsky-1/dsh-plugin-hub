@@ -15,54 +15,6 @@
       "logSource": "gh run view 34536263640 --log",
       "segments": [
         {
-          "seg": "dsh-lan-proxy-1",
-          "startedAt": "2026-09-10T22:13:46.2135240",
-          "endedAt": "2026-09-10T22:17:04.5870062",
-          "wallSeconds": 198.4,
-          "mutants": 693,
-          "dryTests": 2,
-          "dryRunSeconds": 6,
-          "reused": null,
-          "reuseTotal": null,
-          "strykerReported": "3 minutes and 17 seconds"
-        },
-        {
-          "seg": "dsh-lan-proxy-2",
-          "startedAt": "2026-09-10T22:17:04.5886151",
-          "endedAt": "2026-09-10T22:18:50.5549645",
-          "wallSeconds": 106,
-          "mutants": 691,
-          "dryTests": 2,
-          "dryRunSeconds": 6,
-          "reused": null,
-          "reuseTotal": null,
-          "strykerReported": "1 minute and 44 seconds"
-        },
-        {
-          "seg": "dsh-lan-proxy-3",
-          "startedAt": "2026-09-10T22:18:50.5565501",
-          "endedAt": "2026-09-10T22:19:34.2101211",
-          "wallSeconds": 43.7,
-          "mutants": 313,
-          "dryTests": 2,
-          "dryRunSeconds": 6,
-          "reused": null,
-          "reuseTotal": null,
-          "strykerReported": "42 seconds"
-        },
-        {
-          "seg": "dsh-lan-proxy-4",
-          "startedAt": "2026-09-10T22:19:34.2116904",
-          "endedAt": "2026-09-10T22:19:54.6670322",
-          "wallSeconds": 20.5,
-          "mutants": 82,
-          "dryTests": 2,
-          "dryRunSeconds": 6,
-          "reused": null,
-          "reuseTotal": null,
-          "strykerReported": "19 seconds"
-        },
-        {
           "seg": "dsh-mcp-manager-entry",
           "startedAt": "2026-09-10T22:19:54.6685404",
           "endedAt": "2026-09-10T22:23:32.7331516",
@@ -221,54 +173,6 @@
       "measuredAt": "2026-09-12T04:35:31.489Z",
       "logSource": "gh run view 34579060425 --log",
       "segments": [
-        {
-          "seg": "dsh-lan-proxy-1",
-          "startedAt": "2026-09-11T08:25:17.5069391",
-          "endedAt": "2026-09-11T08:25:27.5328974",
-          "wallSeconds": 10,
-          "mutants": 693,
-          "dryTests": 2,
-          "dryRunSeconds": 5,
-          "reused": 533,
-          "reuseTotal": 693,
-          "strykerReported": "7 seconds"
-        },
-        {
-          "seg": "dsh-lan-proxy-2",
-          "startedAt": "2026-09-11T08:25:27.5340763",
-          "endedAt": "2026-09-11T08:25:36.1646441",
-          "wallSeconds": 8.6,
-          "mutants": 691,
-          "dryTests": 2,
-          "dryRunSeconds": 5,
-          "reused": 545,
-          "reuseTotal": 691,
-          "strykerReported": "7 seconds"
-        },
-        {
-          "seg": "dsh-lan-proxy-3",
-          "startedAt": "2026-09-11T08:25:36.1657798",
-          "endedAt": "2026-09-11T08:25:45.0025605",
-          "wallSeconds": 8.8,
-          "mutants": 313,
-          "dryTests": 2,
-          "dryRunSeconds": 5,
-          "reused": 237,
-          "reuseTotal": 313,
-          "strykerReported": "8 seconds"
-        },
-        {
-          "seg": "dsh-lan-proxy-4",
-          "startedAt": "2026-09-11T08:25:45.0036771",
-          "endedAt": "2026-09-11T08:25:53.7535627",
-          "wallSeconds": 8.8,
-          "mutants": 82,
-          "dryTests": 2,
-          "dryRunSeconds": 5,
-          "reused": 50,
-          "reuseTotal": 82,
-          "strykerReported": "8 seconds"
-        },
         {
           "seg": "dsh-mcp-manager-entry",
           "startedAt": "2026-09-11T08:25:53.7547029",
@@ -597,54 +501,6 @@
       "logSource": "gh run view 34681565987 --log",
       "segments": [
         {
-          "seg": "dsh-lan-proxy-1",
-          "startedAt": "2026-09-12T07:46:15.1262598",
-          "endedAt": "2026-09-12T07:50:50.9778820",
-          "wallSeconds": 275.9,
-          "mutants": 693,
-          "dryTests": 306,
-          "dryRunSeconds": 4,
-          "reused": null,
-          "reuseTotal": null,
-          "strykerReported": "4 minutes and 36 seconds"
-        },
-        {
-          "seg": "dsh-lan-proxy-2",
-          "startedAt": "2026-09-12T07:46:18.2759781",
-          "endedAt": "2026-09-12T07:48:26.9329704",
-          "wallSeconds": 128.7,
-          "mutants": 691,
-          "dryTests": 306,
-          "dryRunSeconds": 4,
-          "reused": null,
-          "reuseTotal": null,
-          "strykerReported": "2 minutes and 8 seconds"
-        },
-        {
-          "seg": "dsh-lan-proxy-3",
-          "startedAt": "2026-09-12T07:46:17.9844772",
-          "endedAt": "2026-09-12T07:47:52.1686544",
-          "wallSeconds": 94.2,
-          "mutants": 313,
-          "dryTests": 306,
-          "dryRunSeconds": 4,
-          "reused": null,
-          "reuseTotal": null,
-          "strykerReported": "1 minute and 34 seconds"
-        },
-        {
-          "seg": "dsh-lan-proxy-4",
-          "startedAt": "2026-09-12T07:46:20.9429252",
-          "endedAt": "2026-09-12T07:46:42.8165539",
-          "wallSeconds": 21.9,
-          "mutants": 82,
-          "dryTests": 306,
-          "dryRunSeconds": 4,
-          "reused": null,
-          "reuseTotal": null,
-          "strykerReported": "22 seconds"
-        },
-        {
           "seg": "dsh-mcp-manager-entry",
           "startedAt": "2026-09-12T07:46:16.5078081",
           "endedAt": "2026-09-12T07:50:17.8743376",
@@ -971,54 +827,6 @@
       "measuredAt": "2026-09-13T12:21:54.341Z",
       "logSource": "gh run view 34752395124 --log",
       "segments": [
-        {
-          "seg": "dsh-lan-proxy-1",
-          "startedAt": "2026-09-13T10:39:21.9916319",
-          "endedAt": "2026-09-13T10:44:03.4341470",
-          "wallSeconds": 281.4,
-          "mutants": 693,
-          "dryTests": 316,
-          "dryRunSeconds": 4,
-          "reused": null,
-          "reuseTotal": null,
-          "strykerReported": "4 minutes and 41 seconds"
-        },
-        {
-          "seg": "dsh-lan-proxy-2",
-          "startedAt": "2026-09-13T10:39:23.4610337",
-          "endedAt": "2026-09-13T10:41:16.3862609",
-          "wallSeconds": 112.9,
-          "mutants": 691,
-          "dryTests": 316,
-          "dryRunSeconds": 4,
-          "reused": null,
-          "reuseTotal": null,
-          "strykerReported": "1 minute and 53 seconds"
-        },
-        {
-          "seg": "dsh-lan-proxy-3",
-          "startedAt": "2026-09-13T10:39:18.0410623",
-          "endedAt": "2026-09-13T10:40:51.3063133",
-          "wallSeconds": 93.3,
-          "mutants": 313,
-          "dryTests": 316,
-          "dryRunSeconds": 4,
-          "reused": null,
-          "reuseTotal": null,
-          "strykerReported": "1 minute and 33 seconds"
-        },
-        {
-          "seg": "dsh-lan-proxy-4",
-          "startedAt": "2026-09-13T10:39:18.7501642",
-          "endedAt": "2026-09-13T10:39:40.0943063",
-          "wallSeconds": 21.3,
-          "mutants": 82,
-          "dryTests": 316,
-          "dryRunSeconds": 4,
-          "reused": null,
-          "reuseTotal": null,
-          "strykerReported": "21 seconds"
-        },
         {
           "seg": "dsh-mcp-manager-entry",
           "startedAt": "2026-09-13T10:39:17.3475801",
@@ -1347,35 +1155,6 @@
     }
   ],
   "superseded": {
-    "dsh-lan-proxy-1": {
-      "replacedBy": [
-        "dsh-lan-proxy-proxy",
-        "dsh-lan-proxy-shared"
-      ],
-      "reason": "#826 域归位：段键由数字改为模块目录名。本段旧面为 src/proxy.ts，现分裂为 proxy（server/proxy/impl/proxy.ts）与 shared（server/shared/{defaults,deflate,net}.ts——DEFAULT_OPTIONS / DEFAULT_DEFLATE_POLICY / DeflatePolicy / isLoopbackTarget 四个符号原本都定义在 proxy.ts 内，重排时整块上移为共享叶子）两段。历史 wallSeconds 描述的是旧文件面，不得用于新面的超时定标。"
-    },
-    "dsh-lan-proxy-2": {
-      "replacedBy": [
-        "dsh-lan-proxy-entry",
-        "dsh-lan-proxy-config"
-      ],
-      "reason": "#826 域归位：本段旧面为 src/apply.ts + src/config.ts（装配与配置），现按模块目录归入 entry（src/server/apply.ts）与 config（src/server/config/impl/model.ts）。历史 wallSeconds 描述的是旧合并面，不得用于新面的超时定标。"
-    },
-    "dsh-lan-proxy-3": {
-      "replacedBy": [
-        "dsh-lan-proxy-config",
-        "dsh-lan-proxy-migrate"
-      ],
-      "reason": "#826 域归位：本段旧面为 src/config-routes.ts + src/migrate.ts（配置面与存量迁移），现归入 config（server/config/impl/routes.ts）与 migrate（server/migrate/impl/file/index.ts）。历史 wallSeconds 描述的是旧文件路径。"
-    },
-    "dsh-lan-proxy-4": {
-      "replacedBy": [
-        "dsh-lan-proxy-config",
-        "dsh-lan-proxy-entry",
-        "dsh-lan-proxy-tls"
-      ],
-      "reason": "#826 域归位：本段旧面为 src/settings.ts + src/cert.ts + src/index.ts（入口与基础设施），现归入 entry（src/index.ts）、config（server/config/impl/namespace.ts，即原 settings.ts）与 tls（server/tls/impl/index.ts，即原 cert.ts）。历史 wallSeconds 描述的是旧合并面。"
-    },
     "dsh-notifier-config": {
       "replacedBy": [
         "dsh-notifier-config"
@@ -1424,15 +1203,6 @@
     }
   },
   "unmeasured": {
-    "dsh-lan-proxy-client": "#826 新增的客户端段（packages/dsh-lan-proxy/src/client 下的 .ts/.tsx，含设置卡保存生命周期）。历史上无同名段，尚无 Actions run 日志墙钟；待首次 CI 变异切片跑或夜间全量班由 mutation-ledger --record 入档。本地实测第二轮总分 67.52%/covered 76.25%，按台账口径不计入——本文件的值只能从 Actions run 日志解析，禁止手工编造数值。",
-    "dsh-lan-proxy-config": "#826 段按模块目录重划并改名（旧数字段键 1..4 → 模块目录名），本段尚无改名后的实测值；待首次 CI 变异切片跑或夜间全量班由 mutation-ledger --record 入档。旧段历史值见 superseded 中 replacedBy 含本段的条目。",
-    "dsh-lan-proxy-entry": "#826 段按模块目录重划并改名（旧数字段键 1..4 → 模块目录名），本段尚无改名后的实测值；待首次 CI 变异切片跑或夜间全量班由 mutation-ledger --record 入档。旧段历史值见 superseded 中 replacedBy 含本段的条目。",
-    "dsh-lan-proxy-host-trust": "#856 新增域（host trust 兼容注入：非回环页面 ownsHost 自条件脚本 + 官方 webServer.tapIndex 注册）。历史上无同名段，尚无实测值；待首次 CI 变异切片跑或夜间全量班由 mutation-ledger --record 入档。",
-    "dsh-lan-proxy-ca": "#930 新增域（一键生成本地 CA：三态判定 state.ts + POST 动作 actions.ts；forge 签发纯函数归 tls 域）。历史上无同名段，尚无实测值；待首次 CI 变异切片跑或夜间全量班由 mutation-ledger --record 入档。",
-    "dsh-lan-proxy-migrate": "#826 段按模块目录重划并改名（旧数字段键 1..4 → 模块目录名），本段尚无改名后的实测值；待首次 CI 变异切片跑或夜间全量班由 mutation-ledger --record 入档。旧段历史值见 superseded 中 replacedBy 含本段的条目。",
-    "dsh-lan-proxy-proxy": "#826 段按模块目录重划并改名（旧数字段键 1..4 → 模块目录名），本段尚无改名后的实测值；待首次 CI 变异切片跑或夜间全量班由 mutation-ledger --record 入档。旧段历史值见 superseded 中 replacedBy 含本段的条目。",
-    "dsh-lan-proxy-shared": "#826 段按模块目录重划并改名（旧数字段键 1..4 → 模块目录名），本段尚无改名后的实测值；待首次 CI 变异切片跑或夜间全量班由 mutation-ledger --record 入档。旧段历史值见 superseded 中 replacedBy 含本段的条目。",
-    "dsh-lan-proxy-tls": "#826 段按模块目录重划并改名（旧数字段键 1..4 → 模块目录名），本段尚无改名后的实测值；待首次 CI 变异切片跑或夜间全量班由 mutation-ledger --record 入档。旧段历史值见 superseded 中 replacedBy 含本段的条目。",
     "dsh-notifier-client": "#769 新增的客户端段（packages/dsh-notifier/src/client 下的纯 .ts 模块）。最近一次夜间全量班（observe.yml）早于本段的引入，故台账里没有它的 run 日志墙钟。本地 --force 实测 523 个变异体、concurrency 2 用时 4 分 03 秒（covered 87.38%），按台账口径不计入——本文件的值只能从 Actions run 日志解析，禁止手工编造数值；下一轮夜间全量班会把本段自动补进 measurements 并从 unmeasured 删除。",
     "dsh-mcp-manager-servers": "#767 S1-2b 新建段（servers/lifecycle 域骨架，尚未接线）：段面无历史测量值，wallSeconds 只能由 mutation-ledger 的生成模式从 Actions run 日志解析，不手工编造；待该段在 CI 变异切片上首次实跑后入库。",
     "dsh-mcp-manager-client-panel": "#947 新增的客户端段（packages/dsh-mcp-manager/src/client/float/panel.ts + core/state.ts，首个直连判据 test/client-dom/panel-aria-modal.test.ts）。历史上无同名段，尚无 Actions run 日志墙钟；待首次 CI 变异切片跑或夜间全量班由 mutation-ledger --record 入档。本地实测值按台账口径不计入——本文件的值只能从 Actions run 日志解析，禁止手工编造数值。",

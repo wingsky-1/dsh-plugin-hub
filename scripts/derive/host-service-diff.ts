@@ -18,6 +18,7 @@
  *   0 = 无删除（--check 下通过；默认报告模式也返回 0）；
  *   1 = --check 且有服务/方法/事件删除（判据按设计判红）；
  *   2 = 输入/声明入口不可解析（工具故障，fail-closed；不得读成"无变化"）。
+ *       静态/数据/WASM/平台包无声明且无根运行时 API 时显式分类，不按声明损坏处理。
  *
  * 限制（如实声明）：
  *   - 只比成员名集合，不比签名/参数/返回类型；
@@ -31,6 +32,12 @@
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import { closureMembers } from "../maintenance/upstream-contract-warn.mjs";
+import {
+  noDeclarationSection,
+  noDeclarationPackage,
+  resolvePackageEntries,
+  type NoDeclarationPackage,
+} from "./host-service-manifest.ts";
 
 /** 框架/事件动词不是"宿主服务名"（与 upstream-contract-warn 同口径）。 */
 const FRAMEWORK_ONLY = new Set([
@@ -74,7 +81,14 @@ interface SurfaceIface {
 /** 一棵树解析后的宿主服务面。 */
 export interface HostServiceSurface {
   root: string;
-  packages: Array<{ name: string; version: string; dir: string; entry: string; files: number }>;
+  packages: Array<{
+    name: string;
+    version: string;
+    dir: string;
+    entry: string | null;
+    files: number;
+  }>;
+  noDeclarationPackages: NoDeclarationPackage[];
   services: Set<string>;
   events: Set<string>;
   links: Map<string, string>;
@@ -112,6 +126,7 @@ export interface SurfaceDiff {
   addedEvents: string[];
   packageChanges: PackageChange[];
   untypedServices: string[];
+  noDeclarationPackages: { from: NoDeclarationPackage[]; to: NoDeclarationPackage[] };
   hasRemovals: boolean;
 }
 
@@ -177,27 +192,6 @@ function listDirs(dir: string): string[] {
   return out.sort();
 }
 
-/** 从 package.json 的 types/typings 或常见入口定位声明文件。 */
-function resolveEntry(pkgDir: string, pkgName: string): string {
-  const meta = readJson(join(pkgDir, "package.json"));
-  const candidates: string[] = [];
-  for (const key of ["types", "typings"]) {
-    const value = meta[key];
-    if (typeof value === "string") candidates.push(resolve(pkgDir, value));
-  }
-  candidates.push(
-    join(pkgDir, "lib", "types", "index.d.ts"),
-    join(pkgDir, "lib", "index.d.ts"),
-    join(pkgDir, "index.d.ts"),
-  );
-  for (const candidate of candidates) {
-    if (isFile(candidate)) return candidate;
-  }
-  throw new SurfaceError(
-    "包 " + pkgName + " 无声明入口：" + pkgDir + "（types 缺失且常见入口不存在）",
-  );
-}
-
 /** 在给定树里发现所有 @deepseek-ai/* 包目录。 */
 export function discoverPackageDirs(treeRoot: string): string[] {
   const root = resolve(treeRoot);
@@ -246,6 +240,13 @@ function mergeIface(ifaces: Map<string, SurfaceIface>, name: string, incoming: S
 interface LoadedPackages {
   ifaces: Map<string, SurfaceIface>;
   packages: HostServiceSurface["packages"];
+  noDeclarationPackages: NoDeclarationPackage[];
+  opaque: number;
+  files: number;
+}
+
+interface ClosedMembers {
+  ifaces: Map<string, SurfaceIface>;
   opaque: number;
   files: number;
 }
@@ -254,24 +255,36 @@ interface LoadedPackages {
 function loadPackages(pkgDirs: string[]): LoadedPackages {
   const ifaces = new Map<string, SurfaceIface>();
   const packages: HostServiceSurface["packages"] = [];
+  const noDeclarationPackages: NoDeclarationPackage[] = [];
   let opaque = 0;
   let files = 0;
   for (const pkgDir of pkgDirs) {
     const meta = readJson(join(pkgDir, "package.json"));
     const name = typeof meta.name === "string" ? meta.name : pkgDir;
     const version = typeof meta.version === "string" ? meta.version : "";
-    const entry = resolveEntry(pkgDir, name);
-    const closed = closureMembers(entry) as unknown as {
-      ifaces: Map<string, SurfaceIface>;
-      opaque: number;
-      files: number;
-    };
-    for (const [ifaceName, iface] of closed.ifaces) mergeIface(ifaces, ifaceName, iface);
-    opaque += closed.opaque;
-    files += closed.files;
-    packages.push({ name, version, dir: pkgDir, entry, files: closed.files });
+    const entries = resolvePackageEntries(pkgDir, name, meta);
+    if (entries === null) {
+      noDeclarationPackages.push(noDeclarationPackage(name, version));
+      packages.push({ name, version, dir: pkgDir, entry: null, files: 0 });
+      continue;
+    }
+    let packageFiles = 0;
+    for (const entry of entries) {
+      const closed = closureMembers(entry) as unknown as ClosedMembers;
+      for (const [ifaceName, iface] of closed.ifaces) mergeIface(ifaces, ifaceName, iface);
+      opaque += closed.opaque;
+      files += closed.files;
+      packageFiles += closed.files;
+    }
+    packages.push({
+      name,
+      version,
+      dir: pkgDir,
+      entry: entries[0] ?? null,
+      files: packageFiles,
+    });
   }
-  return { ifaces, packages, opaque, files };
+  return { ifaces, packages, noDeclarationPackages, opaque, files };
 }
 
 /** 从 Context 声明合并取服务/事件/类型链接。 */
@@ -309,6 +322,9 @@ export function buildHostServiceSurface(treeRoot: string): HostServiceSurface {
   return {
     root,
     packages: loaded.packages.sort((a, b) => a.name.localeCompare(b.name)),
+    noDeclarationPackages: loaded.noDeclarationPackages.sort((a, b) =>
+      a.name.localeCompare(b.name),
+    ),
     services,
     events,
     links,
@@ -472,6 +488,10 @@ export function diffHostServiceSurfaces(
     addedEvents,
     packageChanges: packageChanges(oldSurface, newSurface),
     untypedServices,
+    noDeclarationPackages: {
+      from: oldSurface.noDeclarationPackages,
+      to: newSurface.noDeclarationPackages,
+    },
     hasRemovals:
       removedServices.length > 0 ||
       removedEvents.length > 0 ||
@@ -555,10 +575,12 @@ export function formatSurfaceDiff(diff: SurfaceDiff): string {
   lines.push(...listSection("## 删除的事件", diff.removedEvents));
   lines.push(...listSection("## 新增项（非破坏性，供观察）", addedItems));
   lines.push(...listSection("## 无类型服务（不在类型面内，需运行时探针）", diff.untypedServices));
+  lines.push(...noDeclarationSection(diff.noDeclarationPackages));
   lines.push(...packageChangeSection(diff.packageChanges));
   lines.push("## 限制");
   lines.push("- 只比成员名集合，不比签名/参数/返回类型。");
   lines.push("- 无官方类型包的服务不在面内，untyped 项必须用真实宿主探针补证。");
+  lines.push("- 无声明包按静态/数据/WASM/平台面显式列出，不视作 typed。");
   lines.push("");
   lines.push("RESULT: " + (diff.hasRemovals ? "FAIL（存在删除项）" : "PASS（无删除项）"));
   return lines.join("\n");

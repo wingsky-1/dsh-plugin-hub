@@ -2,37 +2,14 @@
   "$comment": "S0 门禁基线（#690 / #733 后续）：结构型计数由 verify-dir-imports.mjs --write-baseline 登记；quality 段存质量型**证据集合**（边 from|to|kind、环签名、未覆盖源文件），新增证据判红、消失即清理、kind 降级（type→value）判红；放宽的唯一通道是 scripts/data/gate-exemptions.json 的登记条目（gate=verify-dir-imports，path=<包名>:<证据项> 或 <包名>:*（后者=本包无基线，不声称具体证据），必填 reason+trackingIssue，可选 reviewBy，条目失效由反向腐烂校验判红）。",
   "version": 2,
   "packages": {
-    "dsh-lan-proxy": {
-      "modules": 8,
-      "scannedSrcFiles": 25,
-      "allSrcTsFiles": 35,
-      "interfaceFacades": 8,
-      "leafValueEdges": 6,
-      "fileValueEdges": 37,
-      "crossModuleRefs": 51,
-      "quality": {
-        "leafModuleCycles": [],
-        "fileCycles": [],
-        "implToOtherImpl": [],
-        "missingInterface": [],
-        "directImpl": [],
-        "uncoveredSrcFiles": [],
-        "crossDomainValueEdges": [
-          "server/migrate|server/config"
-        ],
-        "rootIndexImports": [],
-        "clientServerImports": [],
-        "unitImportFaceViolations": []
-      }
-    },
     "dsh-mcp-manager": {
       "modules": 18,
       "scannedSrcFiles": 105,
       "allSrcTsFiles": 120,
       "interfaceFacades": 18,
       "leafValueEdges": 19,
-      "fileValueEdges": 150,
-      "crossModuleRefs": 189,
+      "fileValueEdges": 152,
+      "crossModuleRefs": 190,
       "quality": {
         "leafModuleCycles": [],
         "fileCycles": [],

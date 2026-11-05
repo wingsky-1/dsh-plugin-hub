@@ -18,6 +18,8 @@
 export const REFUSAL_CODES = {
   /** 非回环来源（含 Host 头不是回环）：回环围栏拒绝。 */
   FORBIDDEN_LOOPBACK: "FORBIDDEN_LOOPBACK",
+  /** 非回环调用未通过官方 connection 的 cookie / API peer 认证。 */
+  UNAUTHORIZED: "UNAUTHORIZED",
   /** 方法不在端点的方法表里：方法围栏拒绝。 */
   METHOD_NOT_ALLOWED: "METHOD_NOT_ALLOWED",
 } as const;

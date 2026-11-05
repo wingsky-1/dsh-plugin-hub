@@ -63,9 +63,9 @@ const KNOWN_TRACKING = {
   attachments:
     "packages/dsh-mcp-manager/src/server/shared/host-faces.ts 注释：附件库晚读，服务可能缺席，peers 无类型声明",
   configForms:
-    "packages/dsh-lan-proxy/src/client/index.ts、packages/dsh-mcp-manager/src/client/index.ts：客户端 settings configForms 可选注入面，peers 无类型声明",
+    "packages/dsh-mcp-manager/src/client/index.ts:109：客户端 settings configForms 可选注入面，peers 无类型声明",
   connection:
-    "packages/dsh-lan-proxy/src/server/apply.ts 注释：官方 connection 服务，对等包未安装，typeof 守卫可选注入",
+    "shared/host-utils.ts:143：官方 connection 服务按请求动态读取，缺失或方法异常时 fail-closed；peers 无类型声明",
   locale: "客户端可选服务（宿主核心提供，if 守卫，peers 无类型声明）：3 处客户端消费点",
   slots: "客户端可选服务（宿主核心提供，if 守卫，peers 无类型声明）：4 包 client/index 共 4 处",
   sessionPersistence: "当前活动包未消费；旧 worktree-sidebar 已在 #1141 退役",

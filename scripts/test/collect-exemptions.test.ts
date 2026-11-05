@@ -276,7 +276,9 @@ test("未识别 kind 落待办兜底并点名依据（多算不少算，漂移�
 // 名字即口径：两个来源各自的结构性条数相加得「结构性合计」，结构性之外才是待办。
 // 订正记录：#1074 之前本用例名写「5 + 16 结构性，合计待办 7 条」而断言体是 13/16/6 —— 名字与断言
 // 早就不自洽（漂移在 #1074 之前就有，不是它造成的），会让下一个读它的人重新困惑一遍，故一并订正。
-test("本仓真实快照：排除面 14（覆盖率面）+ 16（变异面）= 结构性 30 条，待办 5 条", () => {
+// dsh-lan-proxy 退役订正：变异面 16 → 14（facade×4→×3、type-only×7→×6，均来自被删的 lan 段），
+// 结构性合计随之 30 → 28；覆盖率面 14 与待办 5 条不变（lan 的排除项全在变异面）。
+test("本仓真实快照：排除面 14（覆盖率面）+ 14（变异面）= 结构性 28 条，待办 5 条", () => {
   const r = spawnSync(process.execPath, [SCRIPT, "--today", "2026-09-28"], {
     cwd: ROOT,
     encoding: "utf8",
@@ -287,13 +289,13 @@ test("本仓真实快照：排除面 14（覆盖率面）+ 16（变异面）= �
   // #1074 增一条 shared/test/shared-client.mutation.test.ts 的 not-source 排除，故 13→14、not-source 11→12；
   // 同笔删掉 shared/client/** 那条 pending-project，带 reviewBy 的条数 5→4。
   assert.match(r.stdout, /结构性 14 条（不计入待办）：not-source×12、type-only×2/);
-  // 来源二 = mutation-topology 的 coverageExcludes：16 条**全是**结构性的
+  // 来源二 = mutation-topology 的 coverageExcludes：14 条**全是**结构性的
   // （facade / not-mutated / type-only / not-source），该面按设计不产生待办。
   assert.match(
     r.stdout,
-    /结构性 16 条（不计入待办）：facade×4、not-mutated×4、not-source×1、type-only×7/,
+    /结构性 14 条（不计入待办）：facade×3、not-mutated×4、not-source×1、type-only×6/,
   );
-  // 结构性合计 = 14 + 16 = 30；待办 5 条为 coverage 的 4 条 pending-project 与 gauntlet crap 1 条。
+  // 结构性合计 = 14 + 14 = 28；待办 5 条为 coverage 的 4 条 pending-project 与 gauntlet crap 1 条。
   assert.match(r.stdout, /合计 5 条待办/);
-  assert.match(r.stdout, /结构性（按设计不计入待办）30/);
+  assert.match(r.stdout, /结构性（按设计不计入待办）28/);
 });

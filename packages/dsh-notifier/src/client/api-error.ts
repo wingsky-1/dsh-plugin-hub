@@ -55,7 +55,10 @@ export function apiFailureOf(error: unknown, t: FailureTranslator): ApiFailure {
   if (code !== undefined && REFUSAL_VALUES.includes(code)) {
     return {
       refused: true,
-      hint: code === REFUSAL_CODES.FORBIDDEN_LOOPBACK ? t("lanAccessHint") : "",
+      hint:
+        code === REFUSAL_CODES.FORBIDDEN_LOOPBACK || code === REFUSAL_CODES.UNAUTHORIZED
+          ? t("lanAccessHint")
+          : "",
       message,
     };
   }

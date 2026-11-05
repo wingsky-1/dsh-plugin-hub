@@ -276,7 +276,16 @@ export type ActiveWorkingDirectoryPort = (session: unknown) => string | undefine
  */
 export type HostContextPort = Pick<
   Context,
-  "logger" | "webServer" | "tools" | "on" | "systemPrompt" | "provide" | "effect" | "plugin" | "get"
+  | "logger"
+  | "webServer"
+  | "tools"
+  | "on"
+  | "systemPrompt"
+  | "provide"
+  | "effect"
+  | "plugin"
+  | "get"
+  | "isolate"
 >;
 
 /** 组合根收窄后递给各域的宿主能力面：域再从中 `Pick` 自己那一份。 */

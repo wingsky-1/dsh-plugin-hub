@@ -46,7 +46,7 @@ description: >
 # 工作目录：被测插件所在的仓库（插件参数的相对路径按当前 cwd 绝对化）
 # SKILL_BASE 取注入的「Base directory for this skill:」后面的绝对路径：
 SKILL_BASE="<Base directory for this skill 一行的绝对路径，见 skill_resources>"
-# 环境要求：PATH 中 `dsh --version` 为 `0.2.1-rc.2`（只支持该版本）。
+# 环境要求：PATH 中 `dsh --version` 为 `0.2.2-rc.1`（只支持该版本）。
 # 最小可用：起隔离实例（--port 0 自动探测空闲端口）
 node "$SKILL_BASE/scripts/verify-isolated.mjs" --port 0 <插件包路径>
 # 要跑浏览器验证：加 --browser（自带独立浏览器实例，见 §4 并行约束）
@@ -57,7 +57,7 @@ node "$SKILL_BASE/scripts/verify-isolated.mjs" --port 0 --probe-provider-usage <
 node "$SKILL_BASE/scripts/verify-isolated.mjs" --port 0 --keep --no-build <插件包路径>
 ```
 
-本 skill 只支持 dsh `0.2.1-rc.2`，不兼容其它 runtime。dsh 入口从 PATH 解析；
+本 skill 只支持 dsh `0.2.2-rc.1`，不兼容其它 runtime。dsh 入口从 PATH 解析；
 PATH 中找不到、版本读取失败或版本不匹配都立即失败。
 
 `--help` 是选项契约的唯一事实源（完整选项、退出码、verdict 字段、隔离审计细节都在
@@ -72,7 +72,7 @@ PATH 中找不到、版本读取失败或版本不匹配都立即失败。
   如 `@deepseek-ai/dsh-web-app` 按 [`references/manual-setup.md`](references/manual-setup.md)
   手动注入，不走 add）。
 
-脚本自动完成：建临时 `DSH_HOME` → 校验 PATH 中的 dsh 入口为 `0.2.1-rc.2` → 预置首启弹窗跳过 → 建
+脚本自动完成：建临时 `DSH_HOME` → 校验 PATH 中的 dsh 入口为 `0.2.2-rc.1` → 预置首启弹窗跳过 → 建
 `verify_<随机>` profile → 注入内置 web-app bundle → 构建并把插件 link 进 profile →
 （`--browser`）启动独立浏览器实例 → 启动隔离 `dsh web`（显式回环 + 遥测禁用）→
 就绪断言 → 打印带令牌 URL → 前台等待，`Ctrl+C` 退出时统一清理。dsh 直读插件的构建
@@ -125,7 +125,7 @@ node "$SKILL_BASE/scripts/browser-driver.mjs" snapshot --state "$DSH_HOME/browse
 跳过是**双保险**：目标产物事实齐全时预置消掉弹窗 1，事实缺失时由浏览器 overlay 探针兜底；
 弹窗 2 始终由浏览器侧处理。要点：
 
-- **版本号与命名空间现取，不硬编码**：脚本从 dsh `0.2.1-rc.2` 目标产物读同名常量（`scripts/lib/onboarding.mjs` 单源读取 `WELCOME_NOTICE_VERSION` / `WELCOME_NOTICE_SETTINGS_NAMESPACE`）；任一事实取不到就不预置，交给浏览器侧兜底。
+- **版本号与命名空间现取，不硬编码**：脚本从 dsh `0.2.2-rc.1` 目标产物读同名常量（`scripts/lib/onboarding.mjs` 单源读取 `WELCOME_NOTICE_VERSION` / `WELCOME_NOTICE_SETTINGS_NAMESPACE`）；任一事实取不到就不预置，交给浏览器侧兜底。
 - **识别不到跳过按钮时不猜**：弹窗里可能并列「保存并继续」这类有副作用的按钮，此时
   只输出 `onboardingBlocked` 并在 stderr 警告，由人决定怎么处置。
 - **预置只写隔离环境**：目标是 `$DSH_HOME/settings.yaml`，不触碰真实 `~/.dsh`；脚本也

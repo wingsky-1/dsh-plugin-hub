@@ -8,14 +8,14 @@ import { tierSteps } from "../gate/gate-steps.mjs";
 
 const ROOT = join(import.meta.dirname, "..", "..");
 const SCRIPT = "scripts/gate/export-surface-snapshot.mjs";
-const PACKAGE = "dsh-lan-proxy";
+const PACKAGE = "dsh-mcp-manager";
 const COMMAND = "node " + SCRIPT + " --package " + PACKAGE;
 
 function assertIndependent(commands: string[]) {
   assert.equal(
     commands.filter((command) => command.trim() === COMMAND).length,
     1,
-    "dsh-lan-proxy 必须有且仅有一条独立导出面命令",
+    "dsh-mcp-manager 必须有且仅有一条独立导出面命令",
   );
 }
 
@@ -66,10 +66,10 @@ for (const tier of ["pr", "full"]) {
 }
 test("本包资产必须存在且分类零 legacy", () => {
   const surface = JSON.parse(
-    readFileSync(join(ROOT, "scripts/data/dsh-lan-proxy-export-surface.json"), "utf8"),
+    readFileSync(join(ROOT, "scripts/data/dsh-mcp-manager-export-surface.json"), "utf8"),
   );
   const faces = JSON.parse(
-    readFileSync(join(ROOT, "scripts/data/dsh-lan-proxy-export-faces.json"), "utf8"),
+    readFileSync(join(ROOT, "scripts/data/dsh-mcp-manager-export-faces.json"), "utf8"),
   );
   assert.equal(surface.package, PACKAGE);
   assert.equal(faces.package, PACKAGE);

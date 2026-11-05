@@ -203,12 +203,29 @@ describe("middleware 与 dispatch 同一秘密源", () => {
     const idle = stdioServer("idle-srv", SECRET_MW_IDLE, { enabled: true });
     const fullSet = [connected, disabled, idle];
     const tools = fakeToolsService({
+      schemas: [
+        { name: "ws_mcp_call" },
+        { name: runtimeApi.publicToolName("id-connected-7708", "someTool") },
+      ],
       execute: async () => {
         throw new Error(`remote boom ${SECRET_MW_DISABLED} ${SECRET_MW_IDLE}`);
       },
     });
     const host = {
-      ctx: { tools },
+      ctx: {
+        tools,
+        get(name: string) {
+          if (name !== "loader") return undefined;
+          return {
+            import: async (specifier: string) => {
+              if (specifier !== "@deepseek-ai/dsh-tools/pipeline") {
+                throw new Error(`unexpected loader import ${specifier}`);
+              }
+              return tools.defaultPipelineModule;
+            },
+          };
+        },
+      },
       logger: { info: () => {}, warn: () => {}, error: () => {} },
       projectServersFor: async () => [connected],
       redactionServers: () => fullSet,
@@ -266,6 +283,7 @@ describe("middleware 与 dispatch 同一秘密源", () => {
     try {
       await mw.callTool(fullServerName(root, "connected-srv"), "someTool", {}, undefined, {
         callId: "call-7708" as unknown as ToolExecutionInput["callId"],
+        parent: Symbol("outer-call") as unknown as ToolExecutionInput["parent"],
       });
     } catch (error) {
       message = error instanceof Error ? error.message : String(error);
@@ -274,5 +292,20 @@ describe("middleware 与 dispatch 同一秘密源", () => {
     expect(message).not.toContain(SECRET_MW_DISABLED);
     expect(message).not.toContain(SECRET_MW_IDLE);
     expect(message).toContain("[REDACTED]");
+  });
+
+  it("callTool 宿主 UNKNOWN_TOOL 明确归因为依赖准入拒绝", async () => {
+    const { mw, root } = middlewareFixture();
+    let message = "";
+    try {
+      await mw.callTool(fullServerName(root, "connected-srv"), "someTool", {}, undefined, {
+        callId: "call-host-reject-7708" as unknown as ToolExecutionInput["callId"],
+      });
+    } catch (error) {
+      message = error instanceof Error ? error.message : String(error);
+    }
+    expect(message).toContain("调用失败（宿主 MCP 依赖准入拒绝）");
+    expect(message).toContain("no longer executable in the active caller execution");
+    expect(message).not.toContain("远端工具返回错误");
   });
 });

@@ -52,8 +52,9 @@ built-in skill and becomes available to all sessions in the profile (check with
   `@deepseek-ai/dsh-web-app` (built-in bundles are resolved by name from the dsh install
   directory, not via npm);
 - **One-shot script** `skills/dsh-verify-isolated/scripts/verify-isolated.mjs`
-  (Node implementation, requires Node ≥22): validate the dsh entry on PATH and require version
-  `0.2.1-rc.2` → create temp DSH_HOME → **preset the first-run popup
+  (Node implementation; the driver needs Node >=22, while the target DSH `0.2.2-rc.1`
+  runtime requires Node >=24.9): validate the dsh entry on PATH and require version
+  `0.2.2-rc.1` → create temp DSH_HOME → **preset the first-run popup
   skip** (writes the internal-testing notice version into the isolated
   `settings.yaml`, see below) → create profile (explicit
   `plugin list` init) → inject web-app bundle → normalize plugin args (relative
@@ -133,7 +134,7 @@ skills/dsh-verify-isolated/
   references/manual-setup.md      # branch: manual isolated-environment setup (the script's steps, expanded)
   references/browser-kernel.md    # branch: Chromium kernel detection chain, per-platform self-check and install
   references/viewport-geometry.md # branch: per-viewport device emulation and geometry-assertion methodology
-  scripts/verify-isolated.mjs     # one-shot isolated verification script (Node, requires dsh 0.2.1-rc.2 on PATH / --browser / --port 0 / --keep / --no-build / --evidence-dir / --audit / --audit-extra-dirs / --no-skip-onboarding / --json)
+  scripts/verify-isolated.mjs     # one-shot isolated verification script (Node, requires dsh 0.2.2-rc.1 on PATH / --browser / --port 0 / --keep / --no-build / --evidence-dir / --audit / --audit-extra-dirs / --no-skip-onboarding / --json)
   scripts/lib/verify-core.mjs     # shared base utilities (exit-code constants/poll/findFreePort/port and token-URL parsing/C11 normalization)
   scripts/lib/audit.mjs           # B4 isolated-audit pure functions (scanSnapshot/diffAgainstWhitelist/checkSymlinkEscape/runAudit + versioned whitelist WHITELIST_V)
   scripts/lib/emulation.mjs       # device-emulation pure functions (parseEmulationFlags / buildDeviceMetrics; CDP session semantics)
@@ -149,14 +150,15 @@ lib/index.js                      # host gate export (name + empty apply)
 Once the skill is loaded, follow its checklist; you can also call the package's one-shot
 script directly. The script's resource base directory relative to the skill (the
 `Base directory for this skill:` absolute path injected when the skill loads) is always
-`scripts/verify-isolated.mjs` (Node implementation, requires Node ≥22). It adapts to the
+`scripts/verify-isolated.mjs` (the driver needs Node >=22, while the target DSH
+`0.2.2-rc.1` runtime requires Node >=24.9). It adapts to the
 install shape (npm copy / `link:` dev mode / in-repo browsing); see SKILL.md §2.
 
-This package supports only dsh `0.2.1-rc.2` and is incompatible with every other runtime.
+This package supports only dsh `0.2.2-rc.1` and is incompatible with every other runtime.
 The dsh entry is resolved from PATH; a missing, unreadable, or mismatched runtime fails closed.
 
 ```bash
-# Requirement: `dsh --version` on PATH is `0.2.1-rc.2`
+# Requirement: `dsh --version` on PATH is `0.2.2-rc.1`
 node "$SKILL_BASE/scripts/verify-isolated.mjs" --port 3456 <plugin-package-path>
 # parallel sessions / browser verification: --port 0 auto-detects the port,
 # --browser launches a dedicated browser instance
@@ -228,9 +230,10 @@ not navigate and therefore do not trigger this logic.
   fields, URLs drop query/token, and error text goes through `redactSecrets`; the probe
   never appends the access token. skip means "unverified", not "passed";
 - Isolated verification covers the **loopback access shape** only (the script pins
-  `--host 127.0.0.1`). To verify LAN/mobile access, start it yourself with the official
-  `--trusted-host <authority>` and confirm the plugin under test authenticates as expected
-  in that shape;
+  `--host 127.0.0.1`). LAN/mobile access requires separate validation of the plugin under
+  test, including `requestRejection` identity admission, the admitted Peer lifecycle for
+  non-loopback long streams, Host/Origin behavior and WebSocket behavior. A successful TLS
+  handshake is not a terminal acceptance verdict;
 - It never stops/restarts the running main `dsh web` process (dedicated port);
 - The browser instance binds only to a loopback debug port
   (`--remote-debugging-address=127.0.0.1`), reachable from this machine only;

@@ -15,8 +15,31 @@ import { vi } from "vitest";
 import type { Agent } from "@deepseek-ai/dsh-agent";
 import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
 import type { DeliverResult } from "../src/server/channels/impl/deliver/type.ts";
+import type { RemoteAccessPort } from "../src/server/api/deps.ts";
 import type { AgentRegistryPort } from "../src/server/events/deps.ts";
 import type { DeliverReason, LoggerPort } from "../src/server/shared/interface.ts";
+import {
+  admitLongLivedRequest,
+  bindPeerLifecycle,
+  routeFenceRejection,
+  type RemoteAdmissionSource,
+  type RemotePeerAdmissionSource,
+} from "../../../shared/host-utils.js";
+
+/** 以真实 shared guard 实现 api 域的单次注入端口，仅允许测试替换两个动态源。 */
+export function makeRemoteAccess(
+  options: {
+    readonly remoteAdmission?: RemoteAdmissionSource;
+    readonly remotePeerAdmission?: RemotePeerAdmissionSource;
+  } = {},
+): RemoteAccessPort {
+  return {
+    fence: (req) => routeFenceRejection(req, { remoteAdmission: options.remoteAdmission }),
+    admitStream: (req) =>
+      admitLongLivedRequest(req, { remotePeerAdmission: options.remotePeerAdmission }),
+    bindPeer: bindPeerLifecycle,
+  };
+}
 
 /**
  * 临时改写环境变量，返回还原函数。

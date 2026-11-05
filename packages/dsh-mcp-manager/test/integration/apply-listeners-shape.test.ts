@@ -9,8 +9,10 @@
  * 覆盖：pre-step 监听注册与 signal 取消、decision / reject 透传、announceCatalog=false 不注册；events SSE 路由装配、连接未 dispose 前不销毁、disposer 幂等不抛。
  */
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Context } from "@deepseek-ai/cordis";
+import type { IncomingMessage } from "node:http";
+import { fakeRes } from "../helpers.ts";
 import { baseCtx, makeTempDir, releaseTempDirs } from "./remaining-apply-support.ts";
 
 const { apply } = await import("../../src/index.ts");
@@ -129,6 +131,87 @@ describe("apply 的 SSE broadcast 与 route disposer", () => {
   it("未 dispose 前连接不被销毁", async () => {
     const { destroyed } = await applyWithSse();
     expect(destroyed.length).toBe(0);
+  });
+});
+
+describe("apply raw route 官方 admission 接线", () => {
+  function remoteReq(method: string, path: string): IncomingMessage {
+    return {
+      method,
+      url: path,
+      socket: { remoteAddress: "8.8.8.8" },
+      headers: { host: "mcp.example.test", origin: "https://mcp.example.test" },
+      on: () => {},
+    } as unknown as IncomingMessage;
+  }
+
+  async function appliedRoutes() {
+    let connection: unknown;
+    const handlers = new Map<
+      string,
+      (req: IncomingMessage, res: ReturnType<typeof fakeRes>) => unknown
+    >();
+    const ctx = baseCtx({
+      get: (name: string) => (name === "connection" ? connection : undefined),
+      webServer: {
+        register: (route: {
+          path: string;
+          handler: (req: IncomingMessage, res: ReturnType<typeof fakeRes>) => unknown;
+        }) => {
+          handlers.set(route.path, route.handler);
+          return () => {};
+        },
+      },
+    });
+    await apply(ctx as unknown as Context, {
+      enabled: true,
+      storePath: join(makeTempDir("dsh-mcp-manager-admission-"), "mcp.json"),
+    });
+    return {
+      handler: (path: string) => handlers.get(path)!,
+      setConnection: (next: unknown) => {
+        connection = next;
+      },
+    };
+  }
+
+  it("普通路由每次现取 connection.requestRejection，不缓存 service", async () => {
+    const { handler, setConnection } = await appliedRoutes();
+    const denied = vi.fn(() => 401);
+    setConnection({ requestRejection: denied });
+    const first = fakeRes();
+    await handler("/api/dsh-mcp/config")(remoteReq("GET", "/api/dsh-mcp/config"), first);
+    expect(first.state.status).toBe(401);
+    expect(denied).toHaveBeenCalledTimes(1);
+
+    const admitted = vi.fn(() => undefined);
+    setConnection({ requestRejection: admitted });
+    const second = fakeRes();
+    await handler("/api/dsh-mcp/config")(remoteReq("GET", "/api/dsh-mcp/config"), second);
+    expect(second.state.status).toBe(200);
+    expect(admitted).toHaveBeenCalledTimes(1);
+  });
+
+  it("SSE 组合根接官方 admit，Peer cleanup 关闭响应", async () => {
+    const { handler, setConnection } = await appliedRoutes();
+    let peerCleanup: (() => void) | undefined;
+    const admit = vi.fn(() => ({
+      peer: {
+        ctx: {
+          effect: (execute: () => () => void) => {
+            peerCleanup = execute();
+            return () => {};
+          },
+        },
+      },
+    }));
+    setConnection({ admit });
+    const res = fakeRes();
+    await handler("/api/dsh-mcp/events")(remoteReq("GET", "/api/dsh-mcp/events"), res);
+    expect(admit).toHaveBeenCalledTimes(1);
+    expect(res.state.status).toBe(200);
+    peerCleanup!();
+    expect(res.state.destroyed).toBe(true);
   });
 });
 

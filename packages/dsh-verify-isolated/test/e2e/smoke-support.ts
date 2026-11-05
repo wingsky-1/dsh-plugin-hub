@@ -10,7 +10,14 @@ export const SKILL_FILE = join(SKILL_DIR, "SKILL.md");
 export const SCRIPTS_DIR = join(SKILL_DIR, "scripts");
 export const scriptFile = join(SCRIPTS_DIR, "verify-isolated.mjs");
 export const driverFile = join(SCRIPTS_DIR, "browser-driver.mjs");
-export const TARGET_DSH_VERSION = "0.2.1-rc.2";
+export const scriptSupportFiles = [
+  join(SCRIPTS_DIR, "lib", "verify-core.mjs"),
+  join(SCRIPTS_DIR, "lib", "cli.mjs"),
+  join(SCRIPTS_DIR, "lib", "dsh-entry.mjs"),
+  join(SCRIPTS_DIR, "lib", "onboarding-preset.mjs"),
+  join(SCRIPTS_DIR, "lib", "plugin-setup.mjs"),
+];
+export const TARGET_DSH_VERSION = "0.2.2-rc.1";
 export const REF_DIR = join(SKILL_DIR, "references");
 export const REF_FILES = [
   "script-contracts.md",

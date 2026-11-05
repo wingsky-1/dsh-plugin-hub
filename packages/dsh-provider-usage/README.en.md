@@ -243,7 +243,7 @@ together) — so no algebraic cancellation is applied; intervals are classified 
 > detail, not a shared provider-config special case). With all three absent, fetching
 > reports `no-api-key` and degrades to a stale frame (the peak/valley badge still renders).
 
-## Routes (all loopback-fenced)
+## Routes (loopback fast path + official LAN authentication)
 
 | Route | Description |
 | --- | --- |
@@ -443,7 +443,13 @@ are an optional overlay only.
   diagnosable errors
 - **History**: daily-sharded JSONL (`0600` permissions) with automatic age/size pruning;
   raw data is serialization-checked before persistence
-- All routes loopback-fenced (403 non-loopback / 405 wrong method); minimal information
+- Every route accepts the loopback fast path. Non-loopback requests must pass the official
+  `dsh-client-connection` browser/API session checks for Host, Origin, cross-site and
+  credentials; failures stay 401/403, and only an authenticated request reaches the
+  405 method check. A non-loopback SSE stream also retains the admitted PeerScope from
+  `connection.admit`; Peer release or connection unload immediately removes and closes
+  it, while rejected or lifecycle-binding failures never write 200 or register a stream.
+  Loopback SSE keeps its existing plugin lifecycle. Minimal information
   disclosure on admin endpoints (user files shown as basename only); request rate is
   bounded (polling ≤1/60s + warmup ≤1/5min + 60s TTL cache)
 

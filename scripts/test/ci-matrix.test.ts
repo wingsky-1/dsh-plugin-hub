@@ -85,18 +85,27 @@ test("ci-matrix: 场景 a - 正常命中单一 active 包 (via BASE_SET 空格�
     env: {
       GLOBAL_HIT: "false",
       FILTER_OUTCOME: "success",
-      BASE_SET: "dsh-lan-proxy",
+      BASE_SET: "dsh-mcp-manager",
       FILTER_OUTPUTS: "{}",
     },
     rootDir: ROOT,
   });
 
-  assert.deepEqual(res.hitPackages, ["dsh-lan-proxy"]);
-  assert.deepEqual(res.mutationPackages, ["dsh-lan-proxy"]);
+  assert.deepEqual(res.hitPackages, ["dsh-mcp-manager"]);
+  assert.deepEqual(res.mutationPackages, ["dsh-mcp-manager"]);
   assert.equal(res.hasMutations, "true");
   assert.deepEqual(
     res.mutationCombos.map((c) => c.seg),
-    ["ca", "client", "config", "entry", "host-trust", "migrate", "proxy", "shared", "tls"],
+    [
+      "client-panel",
+      "entry",
+      "manager",
+      "middleware",
+      "routes",
+      "runtime",
+      "servers",
+      "supervisor",
+    ],
   );
 });
 
@@ -206,24 +215,23 @@ test("ci-matrix: 场景 d - 变异段展开正确性 (多段配置 + 多包排�
     env: {
       GLOBAL_HIT: "false",
       FILTER_OUTCOME: "success",
-      BASE_SET: "dsh-lan-proxy dsh-notifier",
+      BASE_SET: "dsh-mcp-manager dsh-notifier",
       FILTER_OUTPUTS: "{}",
     },
     rootDir: ROOT,
   });
-  assert.deepEqual(resMulti.mutationPackages, ["dsh-lan-proxy", "dsh-notifier"]);
+  assert.deepEqual(resMulti.mutationPackages, ["dsh-mcp-manager", "dsh-notifier"]);
   assert.deepEqual(
     resMulti.mutationCombos.map((c) => ({ package: c.package, seg: c.seg })),
     [
-      { package: "dsh-lan-proxy", seg: "ca" },
-      { package: "dsh-lan-proxy", seg: "client" },
-      { package: "dsh-lan-proxy", seg: "config" },
-      { package: "dsh-lan-proxy", seg: "entry" },
-      { package: "dsh-lan-proxy", seg: "host-trust" },
-      { package: "dsh-lan-proxy", seg: "migrate" },
-      { package: "dsh-lan-proxy", seg: "proxy" },
-      { package: "dsh-lan-proxy", seg: "shared" },
-      { package: "dsh-lan-proxy", seg: "tls" },
+      { package: "dsh-mcp-manager", seg: "client-panel" },
+      { package: "dsh-mcp-manager", seg: "entry" },
+      { package: "dsh-mcp-manager", seg: "manager" },
+      { package: "dsh-mcp-manager", seg: "middleware" },
+      { package: "dsh-mcp-manager", seg: "routes" },
+      { package: "dsh-mcp-manager", seg: "runtime" },
+      { package: "dsh-mcp-manager", seg: "servers" },
+      { package: "dsh-mcp-manager", seg: "supervisor" },
       { package: "dsh-notifier", seg: "api" },
       { package: "dsh-notifier", seg: "channels" },
       { package: "dsh-notifier", seg: "client" },
@@ -297,7 +305,7 @@ test("#742 阶段 1.7: invalidateBaseline 由 test 变更清单决定，清单�
   const envOf = (over: Record<string, string | undefined>) => ({
     GLOBAL_HIT: "false",
     FILTER_OUTCOME: "success",
-    BASE_SET: "dsh-notifier dsh-lan-proxy",
+    BASE_SET: "dsh-notifier dsh-mcp-manager",
     FILTER_OUTPUTS: "{}",
     ...over,
   });
@@ -340,7 +348,7 @@ test("P1-D2: 段条目只失效该段（单段配置变更不再连坐整包）"
   const envOf = (over: Record<string, string | undefined>) => ({
     GLOBAL_HIT: "false",
     FILTER_OUTCOME: "success",
-    BASE_SET: "dsh-notifier dsh-lan-proxy",
+    BASE_SET: "dsh-notifier dsh-mcp-manager",
     FILTER_OUTPUTS: "{}",
     ...over,
   });
@@ -365,13 +373,13 @@ test("P1-D2: 段条目只失效该段（单段配置变更不再连坐整包）"
   // 混合：包条目仍整包失效，段条目只影响本段
   const mixed = pick(
     computeCiMatrix({
-      env: envOf({ TEST_CHANGED_PACKAGES: '["dsh-notifier", "dsh-lan-proxy:ca"]' }),
+      env: envOf({ TEST_CHANGED_PACKAGES: '["dsh-notifier", "dsh-mcp-manager:manager"]' }),
       rootDir: ROOT,
     }),
   );
   for (const [key, v] of Object.entries(mixed)) {
     if (key.startsWith("dsh-notifier-")) assert.equal(v, true, `${key} 跟包条目整包失效`);
-    else if (key === "dsh-lan-proxy-ca") assert.equal(v, true, "命中段失效");
+    else if (key === "dsh-mcp-manager-manager") assert.equal(v, true, "命中段失效");
     else assert.equal(v, false, `${key} 不得被跨包段条目连坐`);
   }
 
@@ -394,9 +402,9 @@ test("#742 阶段 1.7: parseTestChangedPackages 的非法形态一律 unknown（
     assert.equal(r.unknown, true, `${JSON.stringify(bad)} 必须判为 unknown`);
     assert.equal(r.packages.size, 0);
   }
-  const ok = parseTestChangedPackages('["dsh-notifier","dsh-lan-proxy"]');
+  const ok = parseTestChangedPackages('["dsh-notifier","dsh-mcp-manager"]');
   assert.equal(ok.unknown, false);
-  assert.deepEqual([...ok.packages].sort(), ["dsh-lan-proxy", "dsh-notifier"]);
+  assert.deepEqual([...ok.packages].sort(), ["dsh-mcp-manager", "dsh-notifier"]);
   assert.deepEqual([...ok.segments], []);
   // P1-D2：段条目拆到 segments 集，不进 packages 集
   const seg = parseTestChangedPackages('["dsh-notifier", "dsh-notifier:pipeline"]');
@@ -429,12 +437,12 @@ test("ci-matrix: 场景 e - 畸形输入与防御性回退", () => {
       GLOBAL_HIT: "false",
       FILTER_OUTCOME: "success",
       BASE_SET:
-        "origin/main 0000000000000000000000000000000000000000 dsh-lan-proxy non-existent-pkg",
+        "origin/main 0000000000000000000000000000000000000000 dsh-mcp-manager non-existent-pkg",
       FILTER_OUTPUTS: "{}",
     },
     rootDir: ROOT,
   });
-  assert.deepEqual(resTokens.hitPackages, ["dsh-lan-proxy"]);
+  assert.deepEqual(resTokens.hitPackages, ["dsh-mcp-manager"]);
 
   // 聚合包 dsh-plugins-all 不进入 mutationPackages
   const resAll = computeCiMatrix({

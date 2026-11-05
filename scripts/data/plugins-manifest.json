@@ -1,22 +1,7 @@
 {
-  "active": [
-    "dsh-lan-proxy",
-    "dsh-mcp-manager",
-    "dsh-notifier",
-    "dsh-provider-usage",
-    "dsh-verify-isolated"
-  ],
+  "active": ["dsh-mcp-manager", "dsh-notifier", "dsh-provider-usage", "dsh-verify-isolated"],
   "standalone": [],
   "dshPeerContracts": {
-    "dsh-lan-proxy": [
-      "@deepseek-ai/cordis",
-      "@deepseek-ai/dsh-host-webserver",
-      "@deepseek-ai/dsh-client-ui-slots",
-      "@deepseek-ai/dsh-client-locale",
-      "@deepseek-ai/dsh-client-ui-renderer",
-      "@deepseek-ai/dsh-client-ui-settings",
-      "@deepseek-ai/dsh-client-ui-plugin-manager"
-    ],
     "dsh-mcp-manager": [
       "@deepseek-ai/cordis",
       "@deepseek-ai/dsh-host-webserver",
@@ -60,25 +45,6 @@
     "dsh-verify-isolated": ["@deepseek-ai/dsh-skill-filesystem"]
   },
   "configSurfaces": [
-    {
-      "package": "dsh-lan-proxy",
-      "defaults": {
-        "module": "packages/dsh-lan-proxy/src/server/config/impl/model.ts",
-        "export": "DEFAULT_CONFIG"
-      },
-      "normalizer": {
-        "module": "packages/dsh-lan-proxy/src/server/config/impl/model.ts",
-        "export": "normalizeConfig"
-      },
-      "booleanKeys": {
-        "module": "packages/dsh-lan-proxy/src/server/config/impl/model.ts",
-        "export": "BOOLEAN_KEYS"
-      },
-      "countLimits": {
-        "module": "packages/dsh-lan-proxy/src/server/config/impl/model.ts",
-        "export": "COUNT_LIMITS"
-      }
-    },
     {
       "package": "dsh-notifier",
       "defaults": {
@@ -143,6 +109,11 @@
     }
   ],
   "retired": [
+    {
+      "name": "dsh-lan-proxy",
+      "reason": "退役不留兼容（#1159）：官方 dsh 0.2.1-rc.2 起已提供 bind 具体 LAN IP 与原生 TLS（host/tls 配置面 + --host/--tls-cert/--tls-key CLI flag，bind authority 由 isBindAddressAuthority 自动受信），HTTP 压缩为 none/gzip；但 WS permessage-deflate 压缩、WS 保活（Pong 代答/半开探活）、本地 CA 生命周期与 iOS 证书下发、injectToken 自动铸 cookie、域名入站 IP 字面量围栏在上游已检查范围内无对应实现，故退役不等于等价替代——逐项退化判定与迁移步骤见 docs/migrations/dsh-lan-proxy.md",
+      "successor": ""
+    },
     {
       "name": "dsh-gzip",
       "reason": "HTTP 响应 gzip 压缩能力合并进 dsh-lan-proxy 转发层（0.1.9 起），不再独立分发",

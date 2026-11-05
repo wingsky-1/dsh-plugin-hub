@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "DSH（DeepSeek Harness）Web GUI 插件集：通知、provider 用量、局域网代理、MCP 管理、闲置归档、文件预览——一键装全家桶或按需单装",
+  "description": "DSH（DeepSeek Harness）Web GUI 插件集：通知、provider 用量、MCP 管理与隔离验证——一键装全家桶或按需单装",
   "license": "MIT",
   "scripts": {
     "aggregate:check": "node scripts/gate/aggregate.ts --check",

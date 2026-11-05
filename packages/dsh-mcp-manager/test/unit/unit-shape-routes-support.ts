@@ -15,7 +15,15 @@ import type { FakeResponseState } from "../helpers.ts";
 import { fakeManagerCtx } from "../helpers.ts";
 
 // I8①：单元层不得值引组合根 src/index.ts——路由工厂与管理器改经各自域门面直取。
-const { makeRoutes, ROUTES } = await import("../../src/server/api/interface.ts");
+const {
+  makeEventsRoute,
+  makeEventsRouteWithAccess,
+  makeHealthRoute,
+  makeHealthRouteWithAccess,
+  makeRoutes,
+  makeRoutesWithAccess,
+  ROUTES,
+} = await import("../../src/server/api/interface.ts");
 const { McpManager } = await import("../../src/server/connection/orchestrator/interface.ts");
 const { McpStore } = await import("../../src/server/store/interface.ts");
 const { normalizeServer } = await import("../../src/server/config/interface.ts");
@@ -119,4 +127,12 @@ export function unitShapeCleanupRoutes(fixture: UnitShapeRoutesFixture) {
   fixture.tempDirs = [];
 }
 
-export { makeRoutes, ROUTES };
+export {
+  makeEventsRoute,
+  makeEventsRouteWithAccess,
+  makeHealthRoute,
+  makeHealthRouteWithAccess,
+  makeRoutes,
+  makeRoutesWithAccess,
+  ROUTES,
+};

@@ -27,26 +27,25 @@ without a global install, see "Without a global dsh install" below).
 <a id="deployment--how-to-access-important"></a><a id="user-content-deployment--how-to-access-important"></a>
 ## Deployment & how to access (important)
 
-All plugin endpoints are protected by a **loopback fence**: only calls originating from the local
-loopback interface (`127.0.0.1` / `localhost`) are accepted. Therefore, when you access
-`http://<server IP>:3080` directly from a LAN browser, `/api/dsh-notifier/*` always returns
-403 and the notification channels do not work — this is the expected behavior of the security
-guardrail, not a plugin fault; the page will show a guidance hint.
+Plugin endpoints keep the local loopback fast path. A request made through a LAN address must
+also pass the official `dsh-client-connection` Host/Origin/cross-site fence and browser or API
+session authentication; unauthenticated requests receive 401/403 and the plugin never grants
+access itself. HTTP over the LAN is still not a browser secure context, so system notifications
+use the fallback channel there; use native HTTPS for mobile PWA notifications.
 
 Pick one of the following access forms (both the settings card and the README surface a hint for each):
 
 | Form | How to access | Notes |
 |---|---|---|
 | Local desktop | `http://127.0.0.1:3080` | Secure context: both browser notifications and system notifications work |
-| LAN HTTPS (recommended) | `https://<server IP>:3443` (dsh-lan-proxy) | Satisfies loopback check via proxy + secure context; on mobile, "Add to Home Screen" enables PWA-grade notifications |
+| LAN HTTPS (recommended) | Same-origin address after binding `dsh web` to a concrete LAN address with TLS | Official authentication + secure context; on mobile, "Add to Home Screen" enables PWA-grade notifications |
 | Tunnel | After `ssh -L 3080:127.0.0.1:3080 <server>`, visit the local address | Loopback + secure context, same effect as local |
-
-> Verified (2026-08): `https://<IP>:3443/api/dsh-notifier/health` returns 200,
-> SSE long connection (`/api/dsh-notifier/events`) delivers its first frame normally via 3443.
 
 <a id="security--boundaries"></a><a id="user-content-security--boundaries"></a>
 ## Security model
 
+- **The LAN management surface reuses official session authentication**: loopback keeps its fast path; every non-loopback request re-reads `ctx.connection` and calls `requestRejection`, letting the official service validate Host, Origin, cross-site metadata and either a browser cookie or a live API peer. A 401/403 remains unchanged, and only successful admission reaches method dispatch. Missing, unloaded or throwing connections fail closed. The plugin does not trust a private LAN, TLS, `X-Forwarded-For`, or a client-reported source address.
+- **Non-loopback SSE is bound to its admitted Peer lifecycle**: ordinary requests keep the minimal `requestRejection` seam; `/events` first calls the official `connection.admit` and retains the public PeerScope before writing 200 or registering a connection. Peer release or connection unload synchronously unregisters the stream and destroys the response through the `peer.ctx.effect` callback, so later broadcasts and heartbeat passes cannot reach it. A released API socket also makes the next request fail instead of reusing stale admission. Loopback SSE does not call the official Peer admission and keeps the existing plugin lifecycle.
 - Notification text only contains metadata such as task title / tool name / request reason — **never tool parameters** (prevents sensitive info leakage)
 - **Notification body and title are no longer masked (#733 convergence)**: the old `sanitizeContent` rule table (paths / PEM private keys / connection-string credentials / tokens / emails …) has been deleted — notifications, history writes (including suppressed entries) and delivery all carry the original text; the body is not truncated here, and length is capped by each delivery channel's display limit. Deployments that need "a given kind of text never appears in logs" must handle it at the event source
 - **The only remaining credential masking is in the settings view**: channel credentials in `GET /config`'s `user` + `effective` and in `PUT` success responses (bark `deviceKey`, webhook `token` / `password` / `headerValue`) are always masked as `********`; submitting the full mask = keep the original value (backfilled aligned by instance id so a reordering never swaps credentials between instances); **a mask with no stored value to restore (a new instance, or a cross-type mask left over from retyping) returns 400 — the write path and the dry-run share that one sentence, and a placeholder never reaches disk** (`CHANNEL_SECRET_FIELDS` is the per-channel-type single source of truth)
@@ -58,7 +57,7 @@ Pick one of the following access forms (both the settings card and the README su
   - **Browser notifications** are pushed to **the browser client you are actually using** (your Mac / phone both count), and pop a native notification via the browser's Notification API; they require permission and by default only pop when the page is hidden (the settings card can enable "also when visible"). No matter which machine dsh web runs on, as long as browser notifications are allowed you receive them on your own Mac.
   - **System notifications (host toast)** are popped on the desktop of **the machine dsh web runs on**: if dsh web runs on a Linux server (headless, no desktop session) or some other machine, the toast appears on **that server**, not your Mac — see `/diagnostics` for system-channel availability and the settings card for browser-channel availability. To also get the system toast on your Mac, run dsh web directly on your Mac (it then uses macOS `osascript`); macOS has no `notify-send`, and the system notification is already implemented via `osascript` (zero dependencies, nothing to install)
 - **iOS difference**: Safari's normal tabs have no Web Notifications API (only the "Add to Home Screen" PWA does); on iOS the available channels are "in-page banner + sound when the page is visible" and system notifications after HTTPS + A2HS
-- **The capability self-check (as of 0.2.4) exposes a partial fingerprint of the host's software stack, and it is visible to the LAN once forwarded through `dsh-lan-proxy`**: `capabilities.host.sound.players` on `/diagnostics` lists the matched player executable names (in fallback-chain order, **all** matches: `paplay` → `pw-play` → `aplay` → `ffplay`; always `afplay` on darwin), and the `checked` arrays reveal whether `notify-send` is installed; `/health` carries only a **summary** (verdict / unknownDimensions / popup.state / sound.state, no players/checked details). This is a **deliberate trade-off** — users cannot act on "the host cannot play sound" unless they can see it — but be aware of what it means combined with lan-proxy's existing posture (that plugin's README states that requests forwarded through it are considered trusted by design). **Containment**: executable names only, tone-file availability as a boolean, **never absolute paths**, and `remediation` `params` come solely from an internal data table (never passed through input), so no `/etc/os-release` content or raw command output can appear in a response
+- **The capability self-check (as of 0.2.4) exposes a partial fingerprint of the host's software stack to LAN callers holding a valid official session**: `capabilities.host.sound.players` on `/diagnostics` lists the matched player executable names (in fallback-chain order, **all** matches: `paplay` → `pw-play` → `aplay` → `ffplay`; always `afplay` on darwin), and the `checked` arrays reveal whether `notify-send` is installed; `/health` carries only a **summary** (verdict / unknownDimensions / popup.state / sound.state, no players/checked details). This is a **deliberate trade-off** — users cannot act on "the host cannot play sound" unless they can see it. **Containment**: executable names only, tone-file availability as a boolean, **never absolute paths**, and `remediation` `params` come solely from an internal data table (never passed through input), so no `/etc/os-release` content or raw command output can appear in a response
 - **Probing has no side effects**: the capability self-check issues only two read-only queries to `org.freedesktop.DBus` (`NameHasOwner` and `ListActivatableNames`) and **never triggers service activation** (no `busctl status`/`list`, no `StartServiceByName`); on `darwin`/`win32` that child process is not even started
 - **Temporary audio files (as of 0.2.4)**: on Linux, when the themed event sound is missing, self-play creates a 0700 per-instance directory under the system temp directory and writes a 0600 WAV opened with `wx` (`wx` refuses pre-existing paths and symlinks); the file is deleted as soon as playback ends — only **this** delivery's file, so a concurrent delivery is unaffected — while the directory is removed when the process exits / the plugin unloads. On a read-only `/tmp` nothing is staged: a sound-only delivery is recorded as `skipped` (`reasonSystemToneUnwritable`), while popup+sound still counts as `ok` with one warn (the popup already went out, so sound is best-effort)
 - **On-disk permissions and write order (#1016)**: neither the plugin-private directory `<DSH_HOME>/@wingsky-1/dsh-notifier/` nor the data files in it (`config.json`, `history.jsonl`, `status.json`, `seq.json`, `version`) drift with the umask — a directory this plugin creates lands `0700`, and each file is written as a `0600` temporary name in the same directory that is then `rename`d over the target (`config.json` and `status.json` carry the bark device key, webhook credentials and failure reasons that may echo credentials). **Pre-existing directories are tightened to `mode & 0700`**: only the owner bits are kept, exactly as they are, so no permission bit is ever added. An older `0755`/`0777` directory is therefore pulled back to `0700`, while a directory an operator deliberately made read-only becomes `0500` and **stays read-only** — the plugin never re-opens it for writing. **The mask takes the special bits with it**: this plugin goes through the syscall-level `chmod` (Node `fs.chmod`), which sets only the bits present in its mode argument and clears every bit absent from it (coreutils' `chmod(1)` deliberately keeps setuid/setgid on directories — that is not what is meant here), so setuid/setgid/sticky outside the owner triple are cleared too — measured on the very same formula, `2770`, `1777`, `4755` and `7777` all end up `0700`, and the setgid of a team-shared `2770` is silently dropped (a hardening direction: those bits carry no practical meaning on a private data directory, but it is a **registered behavior change**). On a directory carrying a POSIX extended ACL the ACL mask is tightened to `0` as well, so named entries keep their own perm bits while their **effective** permissions drop to zero. **Within a single process**, **asynchronous** writes to the same path land in submission order (the queue is an in-process in-memory map: concurrent `rename` order was never guaranteed, and on the sequence file that showed up as the client silently dropping frames by seq; two processes sharing one `DSH_HOME` are not serialized against each other). The synchronous write `writeTextAtomicSync` is **not on that chain** — a synchronous function has no promise to hang it on, and it serves the exclusive path during an upgrade, so a **second assembly on hot reload can run it concurrently with an in-flight async write**; the serialization guarantee does not cover that. A failed write leaves no temporary file behind (unless the cleanup itself fails, in which case one stays: its name carries a random suffix, so the next write will not overwrite it, and it does not mask the real failure reason)
@@ -292,7 +291,7 @@ via `GET /api/dsh-notifier/status` (no polling, the D20 stance).
   - **SSRF posture**: `baseUrl` is limited to the http/https scheme and credential URLs (`user:pass@host`) are rejected. These criteria (plus URL parse failure) are checked one by one by a pre-egress gate (`deliver/url-gate.ts`) before `fetch`: a non-conforming target is never sent, and its reason lands in the failure reason's `detail` (`retryable=false`, no re-send — a URL is a configuration fact, re-sending only hits the same wrong address three times). **No domain allowlist** — pointing baseUrl at an intranet self-hosted bark-server is a legitimate case
   - **`/push` is joined onto the pathname via the URL API (#1016 P0)**: this used to be the string concat `baseUrl + "/push"`, where a base carrying a query dropped `/push` into the query string (the request actually hit the truncated path) and a base with a trailing slash produced a `//push` double slash; now `/push` always lands on the pathname and the query is preserved as-is after it
   - **Declared residual risk (security debt, the #1016 relaxation)**: this bullet used to promise "query/hash are dropped" to users. The current direction change **gives up machine enforcement** — credentials in the query (`?token=`, `?api_key=`) travel in the URL and land in the peer's access logs, and there is now **no machine check at all**, only this README's documented convention that credentials go in request headers only, never in the URL. A diagnostic warning for credential-shaped queries needs a new presentation surface (config batch scope), and blocking them on the write face by keyword would also hit a legitimate `?api_key=` on a user's self-hosted gateway — both are registered as follow-ups
-  - **Other known residual risk**: a caller able to reach dsh web from the LAN (through a lan-proxy reverse proxy it can cross the loopback fence, see the deployment doc) can use `/test` to trigger one outbound POST to `baseUrl` (semi-blind: the response error summary echoes only a truncated raw excerpt). Deployments sensitive to that risk can turn the plugin's `enabled` off or adopt a dedicated-port setup (a later version)
+  - **Other known residual risk**: a LAN caller holding a valid official browser/API session with access to the plugin can use `/test` to trigger one outbound POST to `baseUrl` (semi-blind: the response error summary echoes only a truncated raw excerpt). Deployments sensitive to that risk can turn the plugin's `enabled` off.
 
 ### Webhook push channel (#508)
 
@@ -543,6 +542,9 @@ settings will not lose it.
 > (alive for over 120 min with no business frames → actively disconnected; clients
 > auto-reconnect and replay with `since`, so it is transparent). Reclamation-path
 > counters are exposed as `sseEvicts` on `/api/dsh-notifier/health`.
+> Non-loopback connections also retain the official admitted Peer. Peer release calls
+> `unregister` before destroying the response; it does not wait for the asynchronous
+> close event, and subsequent broadcasts or heartbeat passes cannot reach the stream.
 >
 > The cap's config key `maxConnections` (default 16, range 1–1024) is retired as of
 > **0.2.5** too: the settings page no longer shows it and `effective` does not contain it.
@@ -554,7 +556,7 @@ settings will not lose it.
 > drop it, and it still appears verbatim in the `user` view of GET /config — delete the
 > line by hand in `config.json` to clean it up.
 
-### Routes (all behind the loopback fence)
+### Routes (loopback fast path + official LAN authentication)
 
 | Route | Method | Notes |
 |---|---|---|
@@ -573,7 +575,7 @@ settings will not lose it.
 
 #### `/events`
 
-SSE notification frames (browser EventSource subscription; `?since=<seq>` replays missed frames after reconnect)
+SSE notification frames (browser EventSource subscription; `?since=<seq>` replays missed frames after reconnect). Non-loopback connections must pass official authentication and bind to the admitted Peer lifecycle; rejected or lifecycle-binding failures never open a stream.
 
 #### `/test`
 
@@ -646,7 +648,7 @@ Error mapping (POST /kinds): kind-confirmation CAS retries (≤2) exhausted → 
 - Autoplay throttling: `PLAY_THROTTLE_MS` is 1500 ms and covers both autoplay paths (notification tones and sound-only delivery); previews bypass it (`gate()` in `src/client/notify/audio.ts`).
 - Gesture unlock: the browser autoplay policy requires one user interaction — the first click anywhere on the page calls `unlock()` to unlock the AudioContext; previews are in-gesture operations with explicit unlock plus throttle bypass (`src/client/index.tsx`).
 - Frame path: the decision pipeline emits frames through the composition-root-local `FrameBus` (`src/index.ts`), the browser exit subscribes via `onFrame` and serves them over the SSE route `/api/dsh-notifier/events`; the client subscribes with EventSource, actively reconnects with `?since=<seq>` for replay, and dedupes by seq (`src/client/notify/session.ts`).
-- Forwarding semantics via 3443 are only referenced, never restated here: see the "Security model" and "Verification and troubleshooting" sections of the `dsh-lan-proxy` README.
+- LAN access reuses official connection authentication and the Host/Origin fence; the plugin no longer depends on an extra reverse proxy rewriting the source to loopback.
 
 ### Uninstall plugins (remove)
 

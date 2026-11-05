@@ -26,7 +26,12 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { Context } from "@deepseek-ai/cordis";
 import { fakeManagerCtx, pollUntil } from "../helpers.ts";
 import type { FakeToolEntry } from "../helpers.ts";
-import { baseCtx, makeTempDir, releaseTempDirs } from "./remaining-apply-support.ts";
+import {
+  baseCtx,
+  fakePluginBridge,
+  makeTempDir,
+  releaseTempDirs,
+} from "./remaining-apply-support.ts";
 
 // apply 与 resolveDebugConfig 都是组合根内就地定义、单元层无合法导入面的符号——本层经包入口取
 // 它们（§8 矩阵：包产物入口是集成层的许可导入面）。
@@ -141,10 +146,6 @@ describe("组合根接线：装载生命周期域（#767 S1-4c）", () => {
         name === "loader"
           ? { import: async () => ({ name: "mcp-client", apply: () => {} }) }
           : undefined,
-      plugin: (mod: unknown, config: { serverName: string }) => {
-        mounts.push({ mod, config });
-        return { await: async () => {}, dispose: async () => {} };
-      },
       tools: {
         register: () => () => {},
         schemas: () =>
@@ -159,6 +160,10 @@ describe("组合根接线：装载生命周期域（#767 S1-4c）", () => {
           void inner();
         };
       },
+    });
+    Object.assign(ctx, {
+      isolate: () => ctx,
+      plugin: fakePluginBridge(ctx, (mod, config) => mounts.push({ mod, config })),
     });
     return { ctx, mounts, disposers };
   }
@@ -311,14 +316,11 @@ describe("#767 笔 1a：ctx.mcpManager.getTools 行为判据", () => {
       },
       get: (serviceName: string) =>
         serviceName === "loader" ? { import: async () => officialModule } : undefined,
-      plugin: (
-        module: { apply?: (ctx: unknown, config: { serverName: string }) => unknown },
-        config: { serverName: string },
-      ) => {
-        if (typeof module?.apply === "function") module.apply(ctx, config);
-        return { await: async () => undefined, dispose: async () => {} };
-      },
     };
+    Object.assign(ctx, {
+      isolate: () => ctx,
+      plugin: fakePluginBridge(ctx, () => {}),
+    });
     const store = new McpStore(join(homeDir, "mcp.json"));
     store.data = { version: 1, servers: [] };
     await store.save();

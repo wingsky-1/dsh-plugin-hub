@@ -58,9 +58,10 @@
  * 收集覆盖 N1 初值（变量初值，含 ?? 右操作数 T2 收 C）\/ N2 三元（T1 cond 收 A 与 B）\/
  * N3 对象属性（T3 register([{path}]) 收 D）\/ N4 数组 \/ N5 return（T4 收 E）\/
  * N6 类属性与参数默认 \/ N7 JSX 属性——实现上即全 AST 字面量遍历（除 C 层调用实参另判），
- * T1-T7 由自测向量逐条锁定。非 \/api\/dsh- 开头的值（如上游 \/api\/remote.mux）只进
- * --observe 分组表（triple 等 disposition），不判红：它们的上游归属不在本包，阈值
- * 不由本闸定。
+ * T1-T7 由自测向量逐条锁定。非 \/api\/dsh- 开头的值（如上游路径）只进 --observe
+ * 分组表（upstream-triple 等 disposition），不判红：它们的上游归属不在本包，阈值
+ * 不由本闸定。dsh-lan-proxy 退役前真实树上的 triple 样例是它持有的 \/api\/remote.mux，
+ * 退役后真实树只剩 upstream-single；triple 分支由自测 fixture 钉死，不依赖真实样例。
  *
  * R5（宿主服务方法存在性，阻断）：复用 scripts\/maintenance\/upstream-contract-warn.mjs
  * 的 B 侧 .d.ts 闭包（buildB）与方法表，A 侧复用其 analyzeAFile 的 calls——含
@@ -78,7 +79,7 @@
  * sourcemap 单点回映缺失不属上列：行号只定判词 site，不定红绿（命中与否只看 AST），
  * 故 best-effort 回退生成行，不计数、不 fail-closed。
  * 判据违例 exit 1（process.exit，非 gate-exit 口径）；通过 exit 0。--observe 只打印
- * 分组表（含 lan \/api\/remote.mux triple、?? 回退组、provider 镜像对的 disposition），
+ * 分组表（上游非 dsh 分组、?? 回退组、provider 与 notifier 镜像对的 disposition），
  * 结构错误与管线失败之外恒 exit 0。
  *
  * 用法：node scripts\/gate\/verify-host-seams.mjs [--root <dir>] [--observe] [--no-methods]

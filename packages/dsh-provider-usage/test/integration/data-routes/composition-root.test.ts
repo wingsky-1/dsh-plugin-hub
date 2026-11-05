@@ -313,6 +313,47 @@ describe("D10二 越围栏必须红（403 先于 405）", () => {
     },
   );
 
+  it("非回环 + 官方 admission undefined 放行，认证通过后错方法才 405", async () => {
+    const ctx = {
+      ...stubStatsCtx(),
+      remoteAdmission: () => () => undefined,
+    };
+    const ok = await callStatus(handleStats as AnyHandler, nonLoopbackReq({ method: "GET" }), ctx);
+    expect(ok.code).toBe(200);
+
+    const wrongMethod = await callStatus(
+      handleStats as AnyHandler,
+      nonLoopbackReq({ method: "POST" }),
+      ctx,
+    );
+    expect(wrongMethod.code).toBe(405);
+  });
+
+  it("非回环 + 官方 401/403 原样返回，connection 卸载 fail-closed", async () => {
+    for (const status of [401, 403] as const) {
+      const ctx = {
+        ...stubStatsCtx(),
+        remoteAdmission: () => () => status,
+      };
+      const got = await callStatus(
+        handleStats as AnyHandler,
+        nonLoopbackReq({ method: "GET" }),
+        ctx,
+      );
+      expect(got.code).toBe(status);
+    }
+    const unloaded = {
+      ...stubStatsCtx(),
+      remoteAdmission: () => undefined,
+    };
+    const got = await callStatus(
+      handleStats as AnyHandler,
+      nonLoopbackReq({ method: "GET" }),
+      unloaded,
+    );
+    expect(got.code).toBe(403);
+  });
+
   it.each(fenceTable.map((c) => ({ name: c.name, method: c.wrongMethod })))(
     "$name 回环 + 错 $method → 405 且文案逐字节锁定（文案漂移即红）",
     async ({ name, method }) => {

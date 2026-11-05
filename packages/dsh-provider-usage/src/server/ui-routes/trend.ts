@@ -148,7 +148,7 @@ export function handleTrend(
   res: ServerResponse,
   context: UiRoutesContext,
 ): void {
-  if (!guardLoopbackMethod(req, res, ["GET"])) return;
+  if (!guardLoopbackMethod(req, res, ["GET"], { remoteAdmission: context.remoteAdmission })) return;
   const { statsService, trend } = context;
   const url = new URL(req.url ?? "/", "http://localhost");
   const retentionDays = statsService.config.trendRetentionDays;

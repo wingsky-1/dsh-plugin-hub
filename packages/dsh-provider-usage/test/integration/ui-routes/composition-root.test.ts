@@ -61,6 +61,7 @@ import { makeLayerErrorSurface } from "../../../src/server/shared/interface.ts";
 import type { LayerErrorSurface } from "../../../src/server/shared/interface.ts";
 import { DEFAULT_UI_CONFIG } from "../../../src/shared/interface.ts";
 import { ROUTES } from "../../../src/apply/index.ts";
+import type { RemoteAdmissionSource } from "../../../../../shared/host-utils.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const srcDir = join(here, "..", "..", "..", "src");
@@ -163,28 +164,47 @@ function makeSseRes(): {
   chunks: string[];
   status: () => number;
   emitClose: () => void;
+  destroyCalls: () => number;
 } {
   const chunks: string[] = [];
   const handlers = new Map<string, Array<() => void>>();
   let status = 0;
+  let destroyed = false;
+  let destroys = 0;
   const res = {
+    get destroyed() {
+      return destroyed;
+    },
+    get writableEnded() {
+      return false;
+    },
     writeHead: (s: number) => {
       status = s;
     },
     write: (c: string) => {
       chunks.push(String(c));
     },
+    end: (c?: string) => {
+      if (c !== undefined) chunks.push(String(c));
+    },
     on: (evt: string, fn: () => void) => {
       const list = handlers.get(evt) ?? [];
       list.push(fn);
       handlers.set(evt, list);
+    },
+    destroy: () => {
+      destroys += 1;
+      destroyed = true;
+      for (const fn of handlers.get("close") ?? []) fn();
     },
   } as unknown as ServerResponse;
   return {
     res,
     chunks,
     status: () => status,
+    destroyCalls: () => destroys,
     emitClose: () => {
+      destroyed = true;
       for (const fn of handlers.get("close") ?? []) fn();
     },
   };
@@ -197,7 +217,11 @@ function makeSseRes(): {
 // broadcast 缝以 UiRoutesBroadcast 注解（名称链接由 tsc 编译面校验可赋值性）。
 function stubUiCtx(
   historyRoot: string,
-  opts: { layerErrors?: LayerErrorSurface; registry?: unknown } = {},
+  opts: {
+    layerErrors?: LayerErrorSurface;
+    registry?: unknown;
+    remoteAdmission?: RemoteAdmissionSource;
+  } = {},
 ): { ctx: UiRoutesContext; broadcastSeen: string[] } {
   const broadcastSeen: string[] = [];
   const broadcastSeam: UiRoutesBroadcast = () => {
@@ -227,6 +251,7 @@ function stubUiCtx(
     sseClients: new Set<ServerResponse>(),
     broadcastUiConfigChanged: broadcastSeam,
     layerErrors: opts.layerErrors ?? makeLayerErrorSurface(),
+    remoteAdmission: opts.remoteAdmission,
   };
   return { ctx: new UiRoutesContext(options), broadcastSeen };
 }
@@ -464,6 +489,33 @@ describe("D12三 越围栏必须红（403 先于 405）", () => {
       expect((body as { error?: string }).error).toBe("method not allowed: " + method);
     },
   );
+
+  it("非回环 + 官方 admission undefined 放行，401/403 保持且错方法后置", async () => {
+    const root = isolatedDir("dou-uiroutes-native-lan-");
+    const allowed = stubUiCtx(root, { remoteAdmission: () => () => undefined }).ctx;
+    const ok = await callStatus(
+      handleHealth as AnyHandler,
+      nonLoopbackReq({ method: "GET" }),
+      allowed,
+    );
+    expect(ok.code).toBe(200);
+    const wrongMethod = await callStatus(
+      handleHealth as AnyHandler,
+      nonLoopbackReq({ method: "POST" }),
+      allowed,
+    );
+    expect(wrongMethod.code).toBe(405);
+
+    for (const status of [401, 403] as const) {
+      const rejected = stubUiCtx(root, { remoteAdmission: () => () => status }).ctx;
+      const got = await callStatus(
+        handleHealth as AnyHandler,
+        nonLoopbackReq({ method: "POST" }),
+        rejected,
+      );
+      expect(got.code).toBe(status);
+    }
+  });
 });
 
 describe("D12四 健康读 errsurf + SSE 非可靠 + 路由单点 + 释放", () => {

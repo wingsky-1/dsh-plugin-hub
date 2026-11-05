@@ -5,10 +5,11 @@
  * config-matrix-lib — 配置平行事实源「字段覆盖矩阵」门禁的共享提取器与纯逻辑
  * （issue #471）。
  *
- * 背景：lan-proxy / notifier 的配置键存在多张平行维护表（schema / validators /
- * hints / normalize 分支 / 客户端渲染面），表间没有任何程序化同一性保证——
- * 新增配置键漏改一表即不一致。本模块从**源码 AST** 提取各表键集并做一致性
- * 断言（不 import 包 src、不依赖 lib/ 产物）。
+ * 背景：配置键存在多张平行维护表（schema / validators / hints / normalize 分支 /
+ * 客户端渲染面），表间没有任何程序化同一性保证——新增配置键漏改一表即不一致。
+ * 本模块从**源码 AST** 提取各表键集并做一致性断言（不 import 包 src、不依赖 lib/
+ * 产物）。lan-proxy 的 L1/L2 矩阵随该包 #1159 退役删包一并移除（见
+ * config-matrix-gate.ts 文件头）。
  *
  * 提取管线（P1-1 裁决，弃纯正则）：
  *   1. esbuild.transformSync(src, { loader: 'ts' })（仓库既有 devDep）——TS →
@@ -25,9 +26,6 @@
  * import 解析 / 无运行时）。
  *
  * 矩阵语义（对齐 issue #471 v2 方案，P1-2/P2 裁决）：
- *   - lan-proxy：Config / FILE_CONFIG_VALIDATORS / SETTING_FIELD_HINTS 三表
- *     全等（19 键，#911 加 tlsCaCertFile）；客户端 DEFAULTS ⊆ schema，差集 == 豁免白名单
- *     {host,targetHost,targetPort,wsDeflatePolicy}（每条豁免带原因注释，≤8）；
  *   - notifier：DEFAULT_CONFIG / SETTING_VALIDATORS / SETTING_HINTS 全等
  *     （19 键）；CONFIG_KEYS == DEFAULT_CONFIG 全部布尔键（10）；normalizeConfig
  *     分支目标键 ⊇ DEFAULT_CONFIG（CONFIG_KEYS ∪ 显式分支 ∪ M2 三键）；
@@ -376,7 +374,7 @@ function addEventKeysFromDecl(n: AstNode, keys: Set<string>): void {
 }
 
 /**
- * 客户端 UI 引用键收集（notifier 形态；lan-proxy 由 DEFAULTS 单表承载不适用）：
+ * 客户端 UI 引用键收集（notifier 形态）：
  *  = 顶层 EVENT_KEYS 二维数组首列（事件开关渲染）
  *  ∪ switchControl("…") 调用参数字符串（顶层设置键的行为参数）
  *  ∪ patch({…}) 字面量对象键（顶层配置键增量提交；chPatch 为频道子键，
@@ -455,40 +453,6 @@ export function booleanKeysOfObject(initNode: AstNode | null): string[] {
   return out;
 }
 
-/** 截取「## 配置」节正文行（到下一个二级/三级标题止）；无该节返回 null。 */
-function lanProxyConfigSection(text: string): string[] | null {
-  // 逐行截「## 配置」节（到下一个二级/三级标题止），避免 JS 正则无 \Z 的坑
-  const lines: string[] = text.split("\n");
-  const start = lines.findIndex((l) => /^## 配置[ \t]*$/.test(l));
-  if (start === -1) return null;
-  const secLines: string[] = [];
-  for (let i = start + 1; i < lines.length; i += 1) {
-    if (/^#{2,3}[ \t]/.test(lines[i])) break;
-    secLines.push(lines[i]);
-  }
-  return secLines;
-}
-
-function tableRowKeys(line: string, keys: string[]): void {
-  // 取表格行首列（第一个 | 与第二个 | 之间），支持合并键 `a` / `b`
-  const tm = line.match(/^\|\s*([^|]+?)\s*\|/);
-  if (!tm) return;
-  for (const span of tm[1].matchAll(/`([^`]+)`/g)) {
-    for (const part of span[1].split("/")) {
-      const k = part.trim();
-      if (/^[a-z][A-Za-z0-9]*$/.test(k) && !keys.includes(k)) keys.push(k);
-    }
-  }
-}
-
-function lanProxyReadmeKeys(text: string): { keys: string[]; section: string | null } {
-  const secLines = lanProxyConfigSection(text);
-  if (secLines === null) return { keys: [], section: null };
-  const keys: string[] = [];
-  for (const line of secLines) tableRowKeys(line, keys);
-  return { keys, section: "## 配置" };
-}
-
 function notifierReadmeKeys(text: string): { keys: string[]; section: string | null } {
   const m = text.match(/```json\n([\s\S]*?)\n```/);
   if (!m) return { keys: [], section: "```json" };
@@ -501,10 +465,10 @@ function notifierReadmeKeys(text: string): { keys: string[]; section: string | n
 }
 
 /**
- * README 配置节键提取（量级 #12：键集一致性仅 warn 不判红）。包形态不同：
- *   - lan-proxy：markdown 表格（`## 配置` 节），行首 `` | `key` | `` 或
- *     `` | `a` / `b` | ``（斜杠合并多键）；
+ * README 配置节键提取（量级 #12：键集一致性仅 warn 不判红）。按包形态分派：
  *   - notifier：首个 ```json 样例块顶层键。
+ * #1159 起 lan-proxy 退役删包，其 markdown 表格解析分支（`## 配置` 节 + 斜杠合并键）
+ * 随之移除；需要表格形态时可在 git 历史取回。
  * 只取「代码表键形态」（camelCase token），防 GET/api/true 等非键 token 误收。
  * @returns { keys: string[], section: string|null } section=定位到的节（诊断用）。
  */
@@ -512,7 +476,6 @@ export function extractReadmeConfigKeys(
   text: string,
   pkg: string,
 ): { keys: string[]; section: string | null } {
-  if (pkg === "lan-proxy") return lanProxyReadmeKeys(text);
   if (pkg === "notifier") return notifierReadmeKeys(text);
   return { keys: [], section: null };
 }

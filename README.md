@@ -22,6 +22,7 @@ DSH（DeepSeek Harness）Web GUI 插件集，npm 分发：一键装全家桶，�
 
 - 聚合包：`@wingsky-1/dsh-plugins-all`（一键装齐全部插件）
 - 单插件：`@wingsky-1/dsh-*`（按需安装）
+- 当前源码树维护 5 个包：1 个聚合包与 4 个功能包；聚合包包含这 4 个功能包
 
 ## 快速导航
 
@@ -32,26 +33,30 @@ DSH（DeepSeek Harness）Web GUI 插件集，npm 分发：一键装全家桶，�
 
 ### 版本适配（只适配 rc）
 
-本插件集当前只适配 DeepSeek Harness `0.2.1-rc.2`。
+本插件集当前只适配 DeepSeek Harness `0.2.2-rc.1`（Cordis `4.1.0`）。
 
-- `pnpm-workspace.yaml` 的官方类型层 catalog 是权威版本事实源；各包 peerDependencies 是维护流程生成的精确版本投影，锁定 `dsh 0.2.1-rc.2`；其他 DSH 版本不在本轮支持范围
-- 安装/更新时若 DSH 版本不匹配，npm/pnpm 会给出 peer 提示——先发布/安装与目标 DSH 精确匹配的插件版本，再切换 DSH 本体；不要用 `allow-version` 绕过不兼容
+> `0.2.11` 对应以下 rc.1 基线，`0.2.10` 对应旧 rc.2 基线。安装前请确认目标插件版本已在 registry 发布，并与使用的 DSH 版本匹配。
+
+- `pnpm-workspace.yaml` 的官方类型层 catalog 是权威版本事实源；本分支各包 peerDependencies 是维护流程生成的精确版本投影，锁定 `dsh 0.2.2-rc.1` 与 Cordis `4.1.0`；其他 DSH 版本不在本轮支持范围
+- 运行 DSH `0.2.2-rc.1` 要求 Node `>=24.9`；本仓本地测试直接用原生 type stripping 跑 TS 的 Node `>=23.6` 是开发工具门槛，两者不可混用
+- 升级顺序：先停止正在运行的旧 `dsh web` 并备份插件配置与会话数据，再把 DSH CLI 升级到 `0.2.2-rc.1`，然后通过 `dsh plugin ... update` 将插件更新到 `0.2.11`，最后启动并验收。发布或安装制品可以先于使用端升级，但旧 CLI 不能正常安装或加载新插件；不要用 `allow-version` 绕过 peer 校验
 - 每版的具体适配基线、破坏性变更与升级指南见 [Release Notes](docs/release-notes/)
 - catalog 更新前，不对 alpha、旧 runtime 或其他版本作兼容承诺
 
 ### 独立安装与全家桶：二选一
 
 独立包与聚合包的 patch `id` 相同（`dsh-*`）。**请只选一种安装方式**——
-同时装 `dsh-plugins-all` 与任一 `@wingsky-1/dsh-lan-proxy` 等独立包会导致同名 entry
+同时装 `dsh-plugins-all` 与任一 `@wingsky-1/dsh-notifier` 等独立包会导致同名 entry
 重复，`dsh web` 启动时报 duplicate 错误（可发现，不代表损坏）。需要调整时：
 卸载聚合包，或卸载对应独立包，重启即可。
 
 ### 逐插件安全说明
 
-- `dsh-lan-proxy` 装完即在 `0.0.0.0` 开放 HTTP/HTTPS 端口，**局域网所有设备可访问你的 dsh**——不需要时请卸载
-- `dsh-lan-proxy` 的启动令牌自动注入（`injectToken`）**默认开启**：局域网内任何能访问该端口的设备免 token 获得完整 dsh 控制权（等效信任整个局域网，bash 直通宿主机）——仅在可信内网开启，不可信网段务必在设置卡片关闭
+- DSH 原生 LAN 入口只应显式绑定一个具体的本机 IPv4/IPv6 地址；`--public-url` 只用于对外公布 URL，不授予信任，`--trusted-host` 只扩展接受的 Host/Origin authority
+- 原生 TLS 保护传输，但不单独认证请求者。插件 API 保留 loopback 快路径；非回环短请求只有在官方 `ctx.connection.requestRejection(req)` 返回 `undefined` 时才可准入。该校验覆盖 Host/Origin、跨站、cookie 与 API peer，异常必须 fail-closed。非回环 SSE 等长流还必须经 `ctx.connection.admit` 取得并保留 `PeerScope`，将关闭绑定到 Peer 生命周期；Peer 释放后必须立即停止广播并关闭流。新部署启用 LAN 前，应按插件完成认证、SSE/WebSocket 与真实设备验收；**HTTPS 握手成功本身不能证明插件可用**
+- TLS 证书链、私钥配对应由使用者管理，客户端需信任对应 CA，证书 SAN 必须覆盖实际访问 authority；不要把私钥、启动令牌或会话凭据写入仓库、日志或公开报告
 - `dsh-mcp-manager` 的 stdio 子进程继承宿主权限，只配置可信的 MCP 服务器
-- 插件管理路由有 loopback 围栏（非回环 403 / 方法错 405）；经 `dsh-lan-proxy` 转发的请求按设计视为受信，并不隔离局域网客户端。
+- 插件管理路由使用 loopback 快路径与官方身份准入；错误 Host/Origin、跨站、缺失凭据、401/403、admission 异常及长流生命周期绑定失败都保持 fail-closed，错误方法仍返回 405。
 - `dsh-notifier` 自持配置文件；设置响应掩码频道凭据，但通知正文与出口错误详情不打码，可能进入日志、历史与推送服务。
 - `dsh-provider-usage` 的 API 密钥留在宿主端，不进浏览器。
 - `dsh-verify-isolated` 使用临时 DSH_HOME、独立 profile、端口与浏览器实例；这是验证隔离边界，不是全局安全承诺。
@@ -71,14 +76,14 @@ dsh plugin --profile web add @wingsky-1/dsh-plugins-all
 
 # 或单独安装（按需）
 dsh plugin --profile web add @wingsky-1/dsh-notifier
-dsh plugin --profile web add @wingsky-1/dsh-lan-proxy
+dsh plugin --profile web add @wingsky-1/dsh-mcp-manager
 ```
 
 > 安装 / 卸载 / 更新后都需**重启一次** `dsh web`（bundle 层只在启动时组合），侧边栏/设置页才反映变化。
 
 ### 访问与验证
 
-重启 `dsh web`，打开启动时给出的 URL，在「设置 → 插件」确认已安装插件的卡片。notifier 可发送测试通知；局域网访问按 [lan-proxy 访问与健康检查](packages/dsh-lan-proxy/README.md#最短上手) 验证。
+重启 `dsh web`，打开启动时给出的 URL，在「设置 → 插件」确认已安装插件的卡片。notifier 可发送测试通知；`dsh-lan-proxy` 已退役，局域网访问的安全差异与迁移步骤见 [lan-proxy 退役迁移](docs/migrations/dsh-lan-proxy.md)。
 
 <a id="插件列表"></a><a id="user-content-插件列表"></a>
 ## 插件列表
@@ -87,7 +92,6 @@ dsh plugin --profile web add @wingsky-1/dsh-lan-proxy
 |---|---|---|---|
 | `@wingsky-1/dsh-notifier` | 浏览器、宿主 toast、Bark 与 Webhook 任务事件通知。 | [README](packages/dsh-notifier/README.md) · [架构图解](docs/architecture/dsh-notifier.md) | 已发布 |
 | `@wingsky-1/dsh-provider-usage` | 支持自定义适配器的多 provider 用量、趋势与报告。 | [README](packages/dsh-provider-usage/README.md) · [适配器开发指南](packages/dsh-provider-usage/docs/adapter-guide.md) · [架构图解](docs/architecture/dsh-provider-usage.md) | 已发布 |
-| `@wingsky-1/dsh-lan-proxy` | 带 TLS、压缩与保活的局域网 HTTP/HTTPS/WebSocket 转发。 | [README](packages/dsh-lan-proxy/README.md) · [架构图解](docs/architecture/dsh-lan-proxy.md) | 已发布 |
 | `@wingsky-1/dsh-mcp-manager` | 按工作空间管理 MCP 配置与中间层工具接入。 | [README](packages/dsh-mcp-manager/README.md) · [架构图解](docs/architecture/dsh-mcp-manager.md) · [升级修复](#mcp-catalog-修复与升级须知) | 已发布 |
 | `@wingsky-1/dsh-verify-isolated` | 为 DSH 插件开发提供隔离环境浏览器验证。 | [README](packages/dsh-verify-isolated/README.md) · [架构图解](docs/architecture/dsh-verify-isolated.md) | 已发布 |
 
@@ -168,10 +172,6 @@ dsh plugin --profile web update
 
 多 provider 用量统计框架（v2 适配器契约）：常驻胶囊 + 详情面板；内置 DeepSeek 官方（区间记账法推算每日用量 + 峰谷倒计时徽标，官方无用量接口也能算）与 OpenCode Go 开箱即用；自写一个 mjs 即可接入任意数据源、设置页热插拔；日/周/月用量报告（经宿主 llm 生成，含目录与时段维度观察）；密钥只在宿主端不进浏览器
 
-### `@wingsky-1/dsh-lan-proxy`
-
-局域网访问 dsh web UI：HTTP/HTTPS/WS 转发 + TLS（自签名/自定义证书）；HTTP（Brotli/gzip 自适应）与 WebSocket（permessage-deflate）双压缩；WS 半开探活，移动端切后台不僵死；启动令牌自动注入，LAN 设备免手工拿 token；DNS 重绑定防护 + 回环目标白名单
-
 ### `@wingsky-1/dsh-mcp-manager`
 
 MCP 服务器管理器（stdio / streamable-http）：项目级/全局两级配置分工作目录维护；全部 MCP 经中间层收敛为 4 个原子工具（模型不可见 `mcp__` 直呼工具）；工作空间隔离防串台；配置只存 `${ENV}` 引用不落盘密钥；提供运行时注册接口供其他插件注入 MCP；可选 MCP 调用统计与 debug 模式（metadata-only，默认关）
@@ -238,7 +238,13 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-plugins-all
   「用默认应用打开」这一显式外开入口，改写它与用户显式意图相反（#840）。
 - `@wingsky-1/dsh-worktree-sidebar`（把某个 git worktree 登记给当前会话的侧栏文件树）
   已不再维护：DSH 0.2.1-rc.2 提供不同语义的官方替代，迁移与退役说明见
-  [docs/migrations/worktree-sidebar.md](docs/migrations/worktree-sidebar.md)。
+  [docs/migrations/worktree-sidebar.md](docs/migrations/worktree-sidebar.md)。退役的是旧外部适配包；
+  DSH 官方可选 Git Worktrees bundle 在 `0.2.2-rc.1` 仍受支持，其 metadata 仍可按官方机制加载。
+- `@wingsky-1/dsh-lan-proxy`（局域网 HTTP/HTTPS/WebSocket 转发、TLS、压缩与保活）
+  已停止独立维护并退出当前源码树与聚合包：官方原生 LAN/TLS 覆盖了主要入口；native remote
+  mux 已实际协商 `permessage-deflate`，并提供 Ping/不活跃终止，但旧包的逐路径 WS 白名单、
+  压缩桥接与半开保活策略仍不承诺等价，认证、证书管理和插件 API 围栏也仍有真实差异；迁移见
+  [docs/migrations/dsh-lan-proxy.md](docs/migrations/dsh-lan-proxy.md)。
 - `@wingsky-1/dsh-decision-gateway`（通用辅助决策网关，JEV 为首个 provider）
   已不再维护：无直接替代；[退役说明](docs/archive/dsh-decision-gateway-retirement.md)
   记录归档与残留清理方式。
@@ -253,6 +259,7 @@ dsh plugin --profile web remove @wingsky-1/dsh-codegraph
 dsh plugin --profile web remove @wingsky-1/dsh-mem0
 dsh plugin --profile web remove @wingsky-1/dsh-web-file-preview
 dsh plugin --profile web remove @wingsky-1/dsh-worktree-sidebar
+dsh plugin --profile web remove @wingsky-1/dsh-lan-proxy
 dsh plugin --profile web remove @wingsky-1/dsh-decision-gateway
 ```
 
@@ -260,14 +267,17 @@ dsh plugin --profile web remove @wingsky-1/dsh-decision-gateway
 
 **旧包迁移（历史上发布过、现已不再分发）**：
 
-`@wingsky-1/dsh-gzip` → 已合并进 `@wingsky-1/dsh-lan-proxy`（0.1.9 起）
+`@wingsky-1/dsh-gzip` 与后续承接它的 `@wingsky-1/dsh-lan-proxy` 均已退役。
 
-HTTP 响应压缩能力整体并入 lan-proxy（默认开启，Brotli/gzip 按 Accept-Encoding 自适应协商，SSE 流式响应豁免，可配置）。
-卸载 dsh-gzip、安装 dsh-lan-proxy 即获得等价压缩能力：
+历史版本中，HTTP 响应压缩曾从 dsh-gzip 并入 lan-proxy；当前宿主原生压缩只承诺
+`none | gzip`；native remote mux 的 WebSocket 路径已实际协商 `permessage-deflate`，并以
+Ping/不活跃终止处理连接，但这不等于旧 lan-proxy 的逐路径 WS 压缩桥接、半开保活和移动端
+重连策略。需要原生 LAN 的用户应先阅读迁移页并接受这些非等价差异，不要再通过安装两个
+退役包完成迁移：
 
 ```sh
 dsh plugin --profile web remove @wingsky-1/dsh-gzip
-dsh plugin --profile web add @wingsky-1/dsh-lan-proxy
+dsh plugin --profile web remove @wingsky-1/dsh-lan-proxy
 ```
 
 `@wingsky-1/dsh-opencode-usage` → 已重构更名为 `@wingsky-1/dsh-provider-usage`
@@ -308,7 +318,8 @@ pnpm migrate:plugin-rows -- --home "$DSH_HOME" --apply
 <a id="开发与架构"></a><a id="user-content-开发与架构"></a>
 ## 开发与架构
 
-要求：Node ≥ 23.6（测试用原生 type stripping 直跑 TS）、pnpm ≥ 11。
+运行前提：DSH `0.2.2-rc.1` 要求 Node `>=24.9`。仓库开发和测试用原生 type stripping
+直跑 TS，工具门槛单独为 Node `>=23.6`；pnpm 要求 `>=11`。
 
 构建 / 契约 / 测试 / 打包命令、目录结构、宿主端与客户端写法规范，统一见
 [DEVELOPMENT.md](docs/DEVELOPMENT.md)（从 §0 构建总览开始）；贡献流程见

@@ -265,10 +265,10 @@ export function parseHealthResponse(httpStatus, payload) {
 /** no-api-key 的可操作诊断（不含任何凭据值，不提示复制真实凭据）。 */
 const NO_API_KEY_DIAGNOSTICS = [
   "隔离 DSH_HOME 存在存储凭据（refs 有条目），但 stats 返回 no-api-key —— 凭据 seam 未把 key 交给 provider。",
-  "排查顺序（目标 dsh 0.2.1-rc.2）：",
+  "排查顺序（目标 dsh 0.2.2-rc.1）：",
   "1) provider 是否在 llm.listConfigurableProviders 目录中（拼写 deepseek-official）；",
   "2) provider profile 的 apiKeyEnv 是否指向凭据引用名，且该 ref 在 .credentials.yaml 的 refs 下有条目；",
-  "3) settings 服务取用是否仍是已漂移的 get(ns) 形态（0.2.1-rc.2 的 SettingsForms 只有 describe/update/replace/mutate）；",
+  "3) settings 服务取用是否仍是已漂移的 get(ns) 形态（0.2.2-rc.1 的 SettingsForms 只有 describe/update/replace/mutate）；",
   "4) credentials.resolve(ref) 是否返回非空 value；health.errors / layerErrors 是否登记 provider-config 诊断。",
   "不要复制真实凭据到隔离环境；请用测试专用凭据或 CI 注入的隔离存储复现。",
 ];

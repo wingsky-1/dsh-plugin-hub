@@ -12,6 +12,7 @@ import {
   guardLoopbackMethod,
   readJsonBodyOutcome,
   writeJson,
+  type RemoteAdmissionSource,
 } from "../../../../../shared/host-utils.js";
 import { ADAPTER_CONTRACT_VERSION, type UsageStatsAdapter } from "../../shared/interface.ts";
 import type { StatsService } from "../pipeline/interface.ts";
@@ -20,6 +21,7 @@ import type { UserAdapterRecord } from "../registry/interface.ts";
 export interface AdapterRoutesContext {
   ctx: Context;
   statsService: StatsService;
+  remoteAdmission?: RemoteAdmissionSource;
   ensureHotReload: (file: string) => Promise<void>;
   /**
    * 路径准入注入（#768 B2：不直引 registry 门面值边；组合根供给，禁穿越口径留 registry 域）。
@@ -40,7 +42,7 @@ export function handleAdapters(
   res: ServerResponse,
   context: AdapterRoutesContext,
 ): void {
-  if (!guardLoopbackMethod(req, res, ["GET"])) return;
+  if (!guardLoopbackMethod(req, res, ["GET"], { remoteAdmission: context.remoteAdmission })) return;
   const { ctx, statsService } = context;
   const snap = statsService.registry.snapshot();
 
@@ -121,7 +123,8 @@ export async function handleSelect(
   res: ServerResponse,
   context: AdapterRoutesContext,
 ): Promise<void> {
-  if (!guardLoopbackMethod(req, res, ["POST"])) return;
+  if (!guardLoopbackMethod(req, res, ["POST"], { remoteAdmission: context.remoteAdmission }))
+    return;
   const { statsService } = context;
 
   const outcome = await readJsonBodyOutcome(req);
@@ -143,7 +146,8 @@ export async function handleInspect(
   res: ServerResponse,
   context: AdapterRoutesContext,
 ): Promise<void> {
-  if (!guardLoopbackMethod(req, res, ["POST"])) return;
+  if (!guardLoopbackMethod(req, res, ["POST"], { remoteAdmission: context.remoteAdmission }))
+    return;
 
   const outcome = await readJsonBodyOutcome(req);
   if (outcome.kind !== "json") return writeJson(res, 400, { error: "bad-json" });
@@ -180,7 +184,8 @@ export async function handleAdd(
   res: ServerResponse,
   context: AdapterRoutesContext,
 ): Promise<void> {
-  if (!guardLoopbackMethod(req, res, ["POST"])) return;
+  if (!guardLoopbackMethod(req, res, ["POST"], { remoteAdmission: context.remoteAdmission }))
+    return;
   const { statsService, ensureHotReload } = context;
 
   const outcome = await readJsonBodyOutcome(req);

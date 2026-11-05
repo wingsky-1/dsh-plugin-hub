@@ -7,8 +7,11 @@
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { Context } from "@deepseek-ai/cordis";
 import { expandServerEnv } from "../../src/server/config/impl/env/index.ts";
 import { withTimeout } from "../../src/server/pipeline/impl/timeout/index.ts";
+import { McpMiddleware } from "../../src/server/connection/runtime/interface.ts";
+import { registerMiddlewareTools } from "../../src/server/inject/interface.ts";
 import { OFFICIAL_MCP_CLIENT_SPECIFIER } from "../../src/server/shared/interface.ts";
 import {
   installLifecycle,
@@ -31,8 +34,18 @@ import type {
   McpMiddleware as McpMiddlewareType,
   ProjectUnit,
 } from "../../src/server/connection/runtime/interface.ts";
+import type { MiddlewareHost } from "../../src/server/connection/runtime/deps.ts";
 import type { ToolsRegistryPort } from "../../src/server/servers/lifecycle/deps.ts";
-import type { ToolExecutionInput, ToolExecutionToken } from "@deepseek-ai/dsh-tools";
+import type {
+  PreToolDecision,
+  ToolDefinition,
+  ToolExecution,
+  ToolExecutionInput,
+  ToolExecutionResult,
+  ToolExecutionToken,
+  ToolRunContext,
+} from "@deepseek-ai/dsh-tools";
+import type { ScheduledToolDispatch, ToolExecutionSource } from "@deepseek-ai/dsh-tools/pipeline";
 import type { ServerConfig } from "../../src/server/config/interface.ts";
 
 export const MIDDLEWARE_SHAPE_ROOT = "/tmp/ws-root-a";
@@ -98,6 +111,11 @@ export interface MiddlewareShapeSupport {
   readonly catalogCachePath: (root: string) => string;
 }
 
+export type GuardHandler = (
+  exec: Pick<ToolExecution, "callId" | "name" | "arguments" | "agent" | "parent" | "signal">,
+  next: () => Promise<PreToolDecision>,
+) => Promise<PreToolDecision>;
+
 function makeHostFactory(
   support: MiddlewareShapeState,
   serversByRoot: Map<string, ServerConfig[]> = new Map(),
@@ -108,7 +126,22 @@ function makeHostFactory(
   support.poolToolsView = () => tools.schemas();
   support.installPoolLifecycle();
   const host = {
-    ctx: { tools },
+    ctx: {
+      tools,
+      get(name: string) {
+        if (name === "loader") {
+          return {
+            import: async (specifier: string) => {
+              if (specifier !== "@deepseek-ai/dsh-tools/pipeline") {
+                throw new Error(`unexpected loader import ${specifier}`);
+              }
+              return toolsScript.pipelineModule ?? tools.defaultPipelineModule;
+            },
+          };
+        }
+        return undefined;
+      },
+    },
     logger: { info: () => {}, warn: () => {}, error: () => {} },
     projectServersFor: async (root: string) => serversByRoot.get(root),
     redactionServers: () => [...serversByRoot.values()].flat(),
@@ -199,7 +232,19 @@ class MiddlewareShapeState implements MiddlewareShapeSupport {
   }
 
   identity(extra: Record<string, unknown> = {}) {
-    return { callId: "call-1" as unknown as ToolExecutionInput["callId"], ...extra };
+    const outer = { name: "ws_mcp_call" } as ToolDefinition;
+    const toolSet = {
+      dispose() {},
+      view() {
+        return new Map([[outer.name, outer]]);
+      },
+    };
+    return {
+      callId: "call-1" as unknown as ToolExecutionInput["callId"],
+      parent: Symbol("outer-call") as ToolExecutionToken,
+      toolSet,
+      ...extra,
+    };
   }
 
   trackMw(mw: McpMiddlewareType) {
@@ -320,6 +365,223 @@ class MiddlewareShapeState implements MiddlewareShapeSupport {
 
 export function createMiddlewareShapeSupport(root = MIDDLEWARE_SHAPE_ROOT): MiddlewareShapeSupport {
   return new MiddlewareShapeState(root);
+}
+
+function lookupNestedDefinition(
+  source: ToolExecutionSource | undefined,
+  input: ToolExecutionInput,
+) {
+  if (source === undefined) return { definition: undefined, rejected: undefined };
+  const definition = source.get?.(input.name, input.agent, input.toolSet);
+  if (definition === undefined) return { definition, rejected: undefined };
+  const rejected = source.reject?.(input.name, input.parent !== undefined);
+  return { definition, rejected };
+}
+
+function createNestedExec(input: ToolExecutionInput): ToolRunContext {
+  return {
+    ...input,
+    rootCallId: input.rootCallId ?? input.callId,
+    token: Symbol("nested-token") as ToolExecutionToken,
+    deferContext() {},
+    concludeTurn() {},
+  };
+}
+
+function unknownNestedResult(rejected?: Error): ToolExecutionResult {
+  return {
+    isError: true,
+    error: {
+      message: "unknown tool",
+      info: {
+        name: "ToolNotFoundError",
+        code: "UNKNOWN_TOOL",
+        ...(rejected === undefined ? {} : { reason: rejected.message }),
+      },
+    },
+    content: [{ type: "text", text: "unknown tool" }],
+  };
+}
+
+function abortedNestedResult(): ToolExecutionResult {
+  return {
+    isError: true,
+    error: {
+      message: "aborted",
+      info: { name: "AbortError", code: "ABORTED_BEFORE_DISPATCH" },
+    },
+    content: [{ type: "text", text: "aborted" }],
+  };
+}
+
+function pipelineFixture(
+  dispatch: (input: ToolRunContext) => Promise<ToolExecutionResult> = async () => ({
+    isError: false,
+    content: [],
+    value: { content: [] },
+  }),
+) {
+  const inputs: ToolExecutionInput[] = [];
+  const sources: Array<ToolExecutionSource | undefined> = [];
+  const stages: string[] = [];
+  let dispatchCalls = 0;
+  const module = {
+    ToolExecutionPipeline: class {
+      constructor(
+        _ctx: Context,
+        readonly source: ToolExecutionSource | undefined,
+      ) {}
+
+      async prepare(input: ToolExecutionInput) {
+        stages.push("prepare");
+        inputs.push(input);
+        sources.push(this.source);
+        // 与官方 ToolExecutionPipeline.createExecution 同序：先完成 executor-owned lookup，
+        // 只有 lookup 命中后才调用 reject。未 lookup 的兼容调度器不得被生产 source 放行。
+        const { definition, rejected } = lookupNestedDefinition(this.source, input);
+        const exec = createNestedExec(input);
+        if (definition === undefined) {
+          return { kind: "final-result" as const, exec, result: unknownNestedResult() };
+        }
+        if (rejected !== undefined) {
+          return { kind: "final-result" as const, exec, result: unknownNestedResult(rejected) };
+        }
+        if (exec.signal.aborted) {
+          return { kind: "final-result" as const, exec, result: abortedNestedResult() };
+        }
+        return { kind: "dispatch" as const, exec };
+      }
+
+      async dispatch(exec: ToolRunContext): Promise<ScheduledToolDispatch> {
+        stages.push("dispatch");
+        dispatchCalls += 1;
+        return { kind: "post-result", result: await dispatch(exec) };
+      }
+
+      async complete(
+        _exec: ToolRunContext,
+        outcome: ScheduledToolDispatch,
+      ): Promise<ToolExecutionResult> {
+        stages.push("complete");
+        return outcome.result;
+      }
+    },
+  };
+  return {
+    module,
+    inputs,
+    sources,
+    stages,
+    get dispatchCalls() {
+      return dispatchCalls;
+    },
+  };
+}
+
+/**
+ * 构造 nested pipeline 的真实中间层夹具。
+ *
+ * 逻辑留在 support 里只为避免 crap-guard 测试文件超过 max-lines；装配顺序、fake pipeline
+ * lookup/reject 次序与实际调用断言均不在本函数内，调用方仍按原用例逐条断言。
+ */
+export function createForwardingFixture(support: MiddlewareShapeSupport) {
+  return (
+    dispatch?: (input: ToolRunContext) => Promise<ToolExecutionResult>,
+    projectNestedContent = false,
+    toolCallTimeoutMs?: number,
+  ) => {
+    const root = support.root;
+    const servers: ServerConfig[] = [
+      {
+        name: "py",
+        transport: "stdio",
+        command: "python",
+        enabled: true,
+        ...(toolCallTimeoutMs === undefined ? {} : { toolCallTimeoutMs }),
+      },
+    ];
+    const TOKEN = Symbol("outer-call") as unknown as ToolExecutionToken;
+    let guard: GuardHandler | undefined;
+    const pipeline = pipelineFixture(dispatch);
+    const { host } = support.makeHost(new Map([[root, servers]]), {
+      schemas: [
+        {
+          name: "mcp__id-py__echo",
+          ...(projectNestedContent ? { projectContent: () => undefined } : {}),
+        },
+      ],
+      pipelineModule: pipeline.module,
+    });
+    const mw = support.trackMw(new McpMiddleware(host as unknown as MiddlewareHost));
+    const unit = support.makeUnit();
+    mw.units.set(root, unit);
+    unit.connections.set("py", support.remoteEntry(servers[0], "id-py"));
+    const ctx = {
+      tools: {
+        register: host.ctx.tools.register,
+        schemas: () => host.ctx.tools.schemas(),
+      },
+      on: (event: string, handler: GuardHandler) => {
+        if (event === "tools/pre-execute") guard = handler;
+        return () => {};
+      },
+    };
+    registerMiddlewareTools(ctx as unknown as Context, mw, async () => root, {
+      disabledTools: new Map(),
+    });
+    const call = (host.ctx.tools.registered as ToolDefinition[]).find(
+      (definition) => definition.name === "ws_mcp_call",
+    )!;
+    const signal = new AbortController().signal;
+    const agent = {
+      id: "dispatch-agent",
+      session: { header: { cwd: root } },
+    } as unknown as NonNullable<ToolRunContext["agent"]>;
+    const outerDefinition = call;
+    const toolSetState = { disposed: false, admittedAgent: agent };
+    const toolSet = {
+      dispose() {
+        toolSetState.disposed = true;
+      },
+      view(viewingScope: unknown) {
+        if (toolSetState.disposed || viewingScope !== toolSetState.admittedAgent) return new Map();
+        return new Map([[outerDefinition.name, outerDefinition]]);
+      },
+    } as unknown as NonNullable<ToolRunContext["toolSet"]>;
+    const deferredContexts: unknown[] = [];
+    let concluded = 0;
+    const runContext = {
+      callId: "call-b5",
+      rootCallId: "call-b5",
+      name: "ws_mcp_call",
+      arguments: {},
+      signal,
+      token: TOKEN,
+      agent,
+      toolSet,
+      deferContext: (context: unknown) => deferredContexts.push(context),
+      concludeTurn: () => {
+        concluded += 1;
+      },
+    } as unknown as ToolRunContext;
+    return {
+      mw,
+      call,
+      guard: () => guard,
+      runContext,
+      signal,
+      TOKEN,
+      pipeline,
+      tools: host.ctx.tools,
+      agent,
+      toolSet,
+      toolSetState,
+      deferredContexts,
+      get concluded() {
+        return concluded;
+      },
+    };
+  };
 }
 
 /** 假 id 表：按 (scope, name) 稳定返回并自增。 */

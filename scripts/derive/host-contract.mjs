@@ -124,10 +124,6 @@ const EVENT_FILES = {
     "packages/dsh-mcp-manager/src/server/shared/compose.ts",
   ],
   "dsh-provider-usage": ["packages/dsh-provider-usage/src/apply/apply.ts"],
-  "dsh-lan-proxy": [
-    "packages/dsh-lan-proxy/src/server/apply.ts",
-    "packages/dsh-lan-proxy/src/client/index.ts",
-  ],
 };
 const events = {};
 for (const [pkg, files] of Object.entries(EVENT_FILES)) {
@@ -150,13 +146,6 @@ for (const [pkg, files] of Object.entries(EVENT_FILES)) {
 
 // ---- 2) 目标 runtime 的客户端设置注册（row config + 独立 section） ----
 const ROW_CONFIG_SOURCES = [
-  {
-    file: "packages/dsh-lan-proxy/src/client/index.ts",
-    identityFile: "packages/dsh-lan-proxy/src/shared/interface.ts",
-    patchFile: "packages/dsh-lan-proxy/cordis.patch.yml",
-    identity: "LAN_PROXY_IDENTITY",
-    slotConstant: "ROW_CONFIG_SLOT",
-  },
   {
     file: "packages/dsh-mcp-manager/src/client/index.ts",
     identityFile: "packages/dsh-mcp-manager/src/shared/constants.ts",
@@ -231,8 +220,6 @@ for (const f of SECTION_SLOT_FILES) {
 
 // ---- 3) server/api 路由注册（path 字面量 + ctx.webServer.register 站点） ----
 const ROUTE_FILES = [
-  "packages/dsh-lan-proxy/src/server/config/impl/routes.ts",
-  "packages/dsh-lan-proxy/src/server/apply.ts",
   "packages/dsh-mcp-manager/src/index.ts",
   "packages/dsh-mcp-manager/src/shared/routes.ts",
   "packages/dsh-provider-usage/src/apply/apply.ts",

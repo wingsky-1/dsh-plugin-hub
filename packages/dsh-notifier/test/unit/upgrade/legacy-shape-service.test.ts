@@ -157,22 +157,46 @@ function registerLegacyConfigMigrations() {
    * 空步登记：0.2.9 → 0.2.10 没有数据形态变化，但必须占一步刻度——漏登记会让存量安装的存储刻度
    * 永久停在 0.2.9（链以步骤为刻度）。
    *
-   * 判据：种子 0.2.9 → 跑链 → 刻度到 0.2.10，且存量数据正文逐字不变、重复启动可重入。
+   * 判据：种子 0.2.9 → 跨过 0.2.10 → 最新刻度，且存量数据正文逐字不变、重复启动可重入。
    */
-  describe("空步登记：0.2.9 → 0.2.10 只推进刻度", () => {
-    it("0.2.9 → 0.2.10 只推进刻度并可重复启动（判据：存储正文逐字不变，漏步或误写必须红）", async () => {
+  describe("历史空步：0.2.9 跨 0.2.10 推进到最新刻度", () => {
+    it("0.2.9 历史刻度跨链到最新并可重复启动（判据：存储正文逐字不变，漏步或误写必须红）", async () => {
       const storedData = '{"notifyAsk":false,"channels":[]}\n';
       seedStoredVersion("0.2.9");
       mkdirSync(dirname(notifierFile(CONFIG_FILE_NAME)), { recursive: true });
       writeFileSync(notifierFile(CONFIG_FILE_NAME), storedData, "utf8");
 
       await assemble();
-      expect(storedVersionOnDisk()).toBe("0.2.10");
+      expect(storedVersionOnDisk()).toBe("0.2.11");
       expect(readFileSync(notifierFile(CONFIG_FILE_NAME), "utf8")).toBe(storedData);
 
       releaseUpgrade();
       await assemble();
-      expect(storedVersionOnDisk()).toBe("0.2.10");
+      expect(storedVersionOnDisk()).toBe("0.2.11");
+      expect(readFileSync(notifierFile(CONFIG_FILE_NAME), "utf8")).toBe(storedData);
+    });
+  });
+
+  /**
+   * 空步登记：0.2.10 → 0.2.11 没有数据形态变化，但必须占一步刻度——rc.1 适配不能让存量
+   * 安装的存储刻度停在 0.2.10。
+   *
+   * 判据：种子 0.2.10 → 跑链 → 刻度到 0.2.11，且存量数据正文逐字不变、重复启动可重入。
+   */
+  describe("空步登记：0.2.10 → 0.2.11 只推进刻度", () => {
+    it("0.2.10 → 0.2.11 只推进刻度并可重复启动（判据：存储正文逐字不变，漏步或误写必须红）", async () => {
+      const storedData = '{"notifyAsk":false,"channels":[],"release":"0.2.10"}\n';
+      seedStoredVersion("0.2.10");
+      mkdirSync(dirname(notifierFile(CONFIG_FILE_NAME)), { recursive: true });
+      writeFileSync(notifierFile(CONFIG_FILE_NAME), storedData, "utf8");
+
+      await assemble();
+      expect(storedVersionOnDisk()).toBe("0.2.11");
+      expect(readFileSync(notifierFile(CONFIG_FILE_NAME), "utf8")).toBe(storedData);
+
+      releaseUpgrade();
+      await assemble();
+      expect(storedVersionOnDisk()).toBe("0.2.11");
       expect(readFileSync(notifierFile(CONFIG_FILE_NAME), "utf8")).toBe(storedData);
     });
   });

@@ -30,6 +30,7 @@ import {
   updateLastRun,
 } from "../../../src/server/schedule/interface.ts";
 import type { ReportTask } from "../../../src/server/schedule/interface.ts";
+import type { RemoteAdmissionSource } from "../../../../../shared/host-utils.js";
 
 // ---------------------------------------------------------------- fake 请求/响应
 //
@@ -152,6 +153,7 @@ export function stubReportCtx(
     capability?: LlmResolvedModelInfo;
     capabilityError?: string;
     capabilityNever?: boolean;
+    remoteAdmission?: RemoteAdmissionSource;
   } = {},
 ): {
   ctx: ReportRoutesContext;
@@ -178,6 +180,7 @@ export function stubReportCtx(
   };
   const ctx: ReportRoutesContext = {
     ctx: { llm } as unknown as ReportRoutesContext["ctx"],
+    remoteAdmission: opts.remoteAdmission,
     historyRoot,
     reportQueue: stubQueuePort(),
     reportCfgService: cfg,

@@ -12,7 +12,7 @@ import {
   SEQ_FILE_NAME,
   notifierFile,
 } from "../../../shared/interface.ts";
-import type { OutgoingFrame } from "../../deps.ts";
+import type { OutgoingFrame, RemoteAccessPort } from "../../deps.ts";
 import type { StreamBuildPort, StreamDeps, StreamEvent } from "./type.ts";
 
 /** 补拉缓冲上限（条）：断线重连能回放的窗口，超出后只能从最新开始接。 */
@@ -37,6 +37,7 @@ const UNINSTALLED: StreamDeps = {
  * 「已装配但一条都没淘汰」在 `/health` 上长得不一样。 */
 const UNINSTALLED_HUB: SseHub = {
   register: () => {},
+  unregister: () => {},
   broadcast: () => {},
   size: () => 0,
   evictStats: () => ({
@@ -117,11 +118,46 @@ class StreamHub {
   }
 
   /** GET /events：接上一条 SSE 连接，并回放 `?since` 之后的帧。 */
-  handle(req: IncomingMessage, res: ServerResponse): void {
+  handle(
+    req: IncomingMessage,
+    res: ServerResponse,
+    remote: RemoteAccessPort,
+  ): 401 | 403 | undefined {
     if (!this.installed) {
       res.writeHead(503);
       res.end();
-      return;
+      return undefined;
+    }
+    const admission = remote.admitStream(req);
+    if ("rejection" in admission) return admission.rejection;
+
+    let closed = false;
+    let peerEnded = false;
+    let disposePeer: (() => void) | undefined;
+    const closeStream = (): void => {
+      if (closed) return;
+      closed = true;
+      this.hub.unregister(res);
+    };
+    res.on("close", () => {
+      closeStream();
+      const dispose = disposePeer;
+      disposePeer = undefined;
+      if (!peerEnded) dispose?.();
+    });
+    if (admission.peer !== undefined) {
+      try {
+        disposePeer = remote.bindPeer(
+          admission.peer,
+          () => {
+            peerEnded = true;
+            closeStream();
+          },
+          "dsh-notifier: raw SSE bound to admitted Peer",
+        );
+      } catch {
+        return 403;
+      }
     }
     res.writeHead(200, {
       "content-type": "text/event-stream; charset=utf-8",
@@ -133,6 +169,7 @@ class StreamHub {
     res.write(CONNECTED);
     for (const event of this.since(sinceOf(req))) res.write(encode(event));
     this.hub.register(res);
+    return undefined;
   }
 
   /**

@@ -513,6 +513,7 @@ function registerPoolRefreshCases() {
 const PY: ServerConfig = { name: "py", transport: "stdio", command: "python", enabled: true };
 function poolFixture(toolsScript: FakeToolsScript = {}) {
   const { host, tools } = makeHost(new Map([[ROOT, [PY]]]), toolsScript);
+  tools.register({ name: "mcp__id-py__echo" });
   const mw = trackMw(new McpMiddleware(host as unknown as MiddlewareHost));
   const unit = makeUnit();
   mw.units.set(ROOT, unit);

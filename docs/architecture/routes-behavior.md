@@ -24,13 +24,16 @@
 
 ## 2. 事实源
 
-宿主围栏只有两份实现，均在仓库共享层：
+宿主围栏入口均收口在仓库共享层：
 
-- [shared/host-utils.js](../../shared/host-utils.js) 导出的 `isLoopbackRequest`：回环
+- [shared/host-utils.js](../../shared/host-utils.ts) 导出的 `isLoopbackRequest`：回环
   判定的唯一事实源，各包不得自抄一份。
-- [shared/host-utils.js](../../shared/host-utils.js) 导出的 `guardLoopbackMethod`
+- [shared/host-utils.js](../../shared/host-utils.ts) 导出的 `guardLoopbackMethod`
   与 `writeJson`：围栏执行顺序与拒绝体写法的唯一事实源；`readJsonBody` 与
   `readJsonBodyOutcome` 只解决请求体读取口径，不参与围栏判定。
+- [shared/host-utils.js](../../shared/host-utils.ts) 导出的 `routeFenceRejection`
+  与 `liveConnectionAdmission`：非回环请求实时读取官方
+  `ctx.connection.requestRejection`，不缓存 connection；认证缺失或异常 fail-closed。
 
 客户端围栏的事实源：
 
@@ -56,9 +59,15 @@
 
 ### 3.2 执行顺序
 
-`guardLoopbackMethod` 的顺序是：非 loopback 先回 403（`forbidden: loopback-only`），
-方法不在白名单再回 405。该顺序仅对套本守卫的端点成立。拒绝体经 `writeJson`
-写出，统一带 `referrer-policy` 头。
+`guardLoopbackMethod` 先走既有 loopback 快路径。非 loopback 请求交给官方
+`ctx.connection.requestRejection`：它先校验 Host/Origin/cross-site 与浏览器或
+API 凭据，401/403 原样返回；只有 admission 返回 `undefined` 后才检查方法并回
+405。connection 缺失、读取/判定抛错或返回未知值一律 403。非 loopback SSE 等
+长连接走 `connection.admit`，保留其公开 `PeerScope` 并把清理登记到
+`peer.ctx.effect`；Peer 释放或 connection 卸载时同步反注册并关闭流。拒绝必须在
+写 200 与注册连接之前完成。loopback 长连接不调用官方 Peer admission，保持既有
+插件生命周期。该顺序仅对套本守卫的端点成立。拒绝体经 `writeJson` 写出，统一带
+`referrer-policy` 头。
 
 ### 3.3 刻意例外
 
@@ -71,7 +80,8 @@
 - 白名单外方法由收尾分支直接回 405，不查 loopback：非 loopback 加白名单外方法
   返回 405 而非 403 是契约行为，禁止误套守卫纠正它。
 
-除该端点外，本规格登记的所有端点均为 403 先于 405，无其他例外。
+除该端点外，本规格登记的所有未认证请求或跨站/Host 围栏拒绝均先于 405；只有官方
+connection admission 已认证的请求才进入 405 方法判定。
 
 ## 4. 客户端围栏口径
 
@@ -100,10 +110,10 @@
 
 ## 5. 逐包现状登记
 
-### 5.1 lan-proxy
+### 5.1 lan-proxy（退役前历史）
 
-源码位置：`packages/dsh-lan-proxy/`，详见 [dsh-lan-proxy.md](dsh-lan-proxy.md)
-与 [包 README](../../packages/dsh-lan-proxy/README.md)。
+旧包源码位置：`packages/dsh-lan-proxy/`。架构快照见 [dsh-lan-proxy.md](dsh-lan-proxy.md)；
+该包已退役，当前迁移边界见 [lan-proxy 退役迁移](../migrations/dsh-lan-proxy.md)。
 
 - 路由表 `ROUTES` 共 2 键（`health`、`config`），定义在
   `src/server/config/impl/routes.ts`，经 `src/server/config/interface.ts` 转发，
@@ -126,6 +136,9 @@
   的 3.3 节例外外，其余端点均套 `guardLoopbackMethod` 守卫；方法白名单按端点
   划分（`servers` 为 `GET` 加 `POST` 加 `PATCH` 加 `DELETE`，`toolDisable` 为
   `PATCH`，会话与连接类端点为 `POST`，`events` 与 `health` 为 `GET`）；
+- `events` 是非 loopback 长连接接线点：必须从实时 `ctx.connection.admit` 取得
+  PeerScope，并在写 200/注册流前把关闭登记到 `peer.ctx.effect`；不得复用只查
+  principal 或建立后永久免检的旁路。
 - 客户端为镜像型（见 4.2 节）。
 
 ### 5.3 notifier
@@ -138,8 +151,12 @@
   （`GET` 加 `POST`）、`test`（`POST`）、`health`（`GET`）、`diagnostics`（`GET`）、
   `events`（`GET`，SSE 通道）。本包无模块级 `ROUTES` 常量，路径以端点表为准；
 - 围栏不套 `guardLoopbackMethod`，而由 `src/server/api/impl/route/index.ts` 的
-  `registerEndpoints` 直接调 `isLoopbackRequest` 默认参数再查端点方法表，顺序
-  同样是 403 先于 405；405 额外带 `Allow` 头列出支持的方法；
+  `registerEndpoints` 调 `routeFenceRejection` 后再查端点方法表，顺序同样是
+  loopback 快路径或官方认证拒绝先于 405；405 额外带 `Allow` 头列出支持的方法；
+- `events` 的非 loopback 请求在短请求围栏之后还必须通过 `connection.admit`，
+  在写 200/注册 hub 前绑定 admitted PeerScope。Peer 释放时通过
+  `SseHub.unregister` 同步出表并 destroy，不依赖稍后的 close 事件；loopback
+  继续使用既有连接表/heartbeat 生命周期；
 - 拒答体经 `sendRefused` 写出：`error` 保持裸字符串是刻意兼容（旧客户端靠它走
   状态码兜底），`code` 与 `status` 是与之并列的新增 sibling 字段。取值表为
   `src/shared/refusal.ts` 的 `REFUSAL_CODES`（`FORBIDDEN_LOOPBACK` 与
@@ -159,6 +176,9 @@
   `src/apply/apply.ts`，经 `src/apply/index.ts` 对外导出；
 - 处理器分散在 `src/domain1/routes`（用量与适配器面）与 `src/domain2/routes`
   （报表与界面面），均套 `guardLoopbackMethod` 守卫；
+- `events` 的非 loopback 长连接使用官方 `connection.admit` 并绑定 admitted
+  PeerScope；Peer 释放时从 `sseClients` 删除并关闭响应；loopback SSE 保持插件
+  生命周期；
 - 客户端为注入型（见 4.2 节），`core.ts` 与 `report.tsx` 合计覆盖全部 16 键。
 
 ### 5.6 verify-isolated
@@ -178,8 +198,9 @@
 
 宿主与客户端的测试依赖是两套，无交叉：
 
-- 宿主集：各包用假请求桩直调路由处理器，按路径断言 403、405 与 403 先于 405
-  的顺序。`mcp-manager` 与 `provider-usage` 的 smoke 从 `lib/index.js` 构建产物
+- 宿主集：各包用假请求桩直调路由处理器，按路径断言 loopback 快路径、非回环
+  官方 admission、401/403/405 的顺序与 fail-closed。shared guard 另有真实
+  `ctx.connection` 的 native LAN 隔离验证；`mcp-manager` 与 `provider-usage` 的 smoke 从 `lib/index.js` 构建产物
   导入 `ROUTES`（构建产物依赖）；`notifier` 的 `route.test.ts` 直连 `src` 源码面
   （含 405 `Allow` 头与拒答体形状断言）；`mcp-manager` 与 `provider-usage` 的
   smoke 另对 405 围栏文案做逐字断言；
@@ -206,9 +227,10 @@
 路由围栏无集中式判据矩阵（`pnpm contract` 的 config-matrix 段只覆盖配置面，
 路由围栏不在其内）。现行判据分散在各包测试与产物门禁中：
 
-- H1：非 loopback 请求一律 403；
-- H2：方法不在端点白名单一律 405（`notifier` 另带 `Allow` 头）；
-- H3：顺序为 403 先于 405；反向断言只允许一处：`mcp-manager` 的 `/config`
+- H1：loopback Host/Origin/cross-site 非法，或非 loopback 官方 admission 返回
+  401/403、缺失、异常或卸载时拒绝；
+- H2：loopback 或官方认证通过后，方法不在端点白名单一律 405（`notifier` 另带 `Allow` 头）；
+- H3：认证拒绝先于 405；反向断言只允许一处：`mcp-manager` 的 `/config`
   非 loopback 加白名单外方法返回 405（3.3 节的刻意例外）；
 - C1：客户端入口导出形态恰为 `apply` 函数加 `inject` 数组；
 - C2：客户端 `load` 标识须等于完整包名；
@@ -223,9 +245,8 @@
 
 ## 9. 已知风险与缺口
 
-1. 镜像型三包（`lan-proxy`、`mcp-manager`、`notifier`）的客户端路径与宿主路由
-   无构建期强一致，改路径须两端同改；一致性只靠各包 smoke 兜底，未收口为集中
-   门禁。
+1. 镜像型客户端包（`mcp-manager`、`notifier`）的客户端路径与宿主路由无构建期
+   强一致，改路径须两端同改；一致性只靠各包 smoke 兜底，未收口为集中门禁。
 2. `notifier` 无模块级 `ROUTES` 常量，路径分散在服务端点表与客户端常量两处，
    对账须两处同查。
 3. 跨站放行开关 `allowCrossSiteNoCors` 只允许 serve 类资源伺服路由使用；普通
@@ -256,5 +277,5 @@
   （[scripts/gate/verify-npm-layout.ts](../../scripts/gate/verify-npm-layout.ts)、
   [scripts/lib/client-contract-lib.ts](../../scripts/lib/client-contract-lib.ts)、
   [scripts/build/bundle-host.ts](../../scripts/build/bundle-host.ts)、
-  [shared/host-utils.js](../../shared/host-utils.js)）；本文档是现状记录，
+  [shared/host-utils.js](../../shared/host-utils.ts)）；本文档是现状记录，
   语义分歧以它们为准。

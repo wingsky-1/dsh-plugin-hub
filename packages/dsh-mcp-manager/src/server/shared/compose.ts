@@ -6,6 +6,7 @@
  * 必须 import 得到它。入口仍然是组合根：B2 由它调用这里的三个函数
  * （`bindHost(ctx)` → `assemble(host, domains)` → `ctx.effect(() => () => safeDisposeAll(disposers))`）。
  */
+import type { Context } from "@deepseek-ai/cordis";
 import type { Agent } from "@deepseek-ai/dsh-agent";
 import { isAbsolute } from "node:path";
 import type {
@@ -16,6 +17,7 @@ import type {
   MountedPlugin,
   OfficialPluginModule,
 } from "./host-faces.ts";
+import { assertMcpImageBatch } from "./constants.ts";
 
 /**
  * 宿主 loader 服务的收窄面：本包不引官方 loader 的类型（`@deepseek-ai/cordis-plugin-loader` 不在
@@ -34,8 +36,28 @@ interface ResolvedLoader {
  * 退化成 `never`，结构类型因此直接过不去。运行时官方插件的契约只有「带 `apply` 的对象」一条，
  * 所以这里只替换编译期推导，不放宽任何运行时校验。
  */
-interface MountableOfficialPlugin {
-  apply(ctx: unknown, config: unknown): unknown;
+interface MountablePlugin {
+  apply(ctx: Context, config: unknown): unknown;
+}
+
+/**
+ * 给单个官方 MCP client 提供 attachments facade。
+ *
+ * 官方 client 在自己的 definition 内直接调用 `ctx.get("attachments").saveImages()`；隔离 scope
+ * 让这次调用先落到本 facade。真实 store 必须从**未隔离的父 Context**逐次读取，不能缓存：
+ * 附件服务可能晚到、卸载或被替换，旧引用会让新批次继续写入已失效实例。
+ */
+function guardedAttachments(ctx: HostContextPort): AttachmentsPort {
+  return {
+    async saveImages(inputs) {
+      assertMcpImageBatch(inputs);
+      const store = ctx.get("attachments") as AttachmentsPort | undefined;
+      if (store === undefined || store === null || typeof store.saveImages !== "function") {
+        throw new Error("no attachment store is mounted");
+      }
+      return store.saveImages(inputs);
+    },
+  };
 }
 
 /**
@@ -68,10 +90,9 @@ export function bindHost(ctx: HostContextPort): HostFaces {
         // 异步那一半由宿主自己的 effect 负责——把 Promise 递到域里只会让域多一个不该管的等待点。
         //
         // 必须显式给 levels：宿主的投递闸是
-        // `(exporter.levels?.[name] ?? exporter.levels?.default ?? 发出方 level ?? 1) < level` 即丢，
-        // 不写就落到发出方缺省 INFO(1)，而官方客户端的重连提示是 warn(2)——整条诊断面会只剩
-        // error 级、把「正在退避重试」这类最需要让用户看到的话全丢掉。取 2（error/info/warn）：
-        // debug(3) 是官方内部噪音，不属于诊断口径。
+        // `(exporter.levels?.[name] ?? exporter.levels?.default ?? 发出方 level) < level` 即丢。
+        // Cordis 4.1 的等级为 ERROR=0 / WARN=1 / INFO=2 / DEBUG=3；取 2 保留
+        // error/warn/info。debug 是官方内部噪音，不属于本包诊断口径。
         const dispose = ctx.logger.exporter({
           levels: { default: 2 },
           export: (message) => handler(message),
@@ -158,7 +179,19 @@ export function bindHost(ctx: HostContextPort): HostFaces {
         return (await loader.import(specifier)) as OfficialPluginModule;
       },
       mount: (module, config) => {
-        const fiber = ctx.plugin(module as MountableOfficialPlugin, config);
+        // 每个官方 client 使用独立 label，仅替换该实例下方的 attachments；根 scope 与其他 client
+        // 保持原服务。wrapper 自身的 apply 等官方 child ready 后才结算，故 handle.ready 仍代表
+        // 官方实例 ready，而不是 facade 注册完成。wrapper fiber 同时拥有 facade 与 child，
+        // dispose 时沿同一条 Cordis ownership 链一起撤销。
+        const isolated = ctx.isolate("attachments");
+        const fiber = isolated.plugin({
+          name: "dsh-mcp-manager:guarded-mcp-client",
+          async apply(inner: Context) {
+            inner.provide("attachments", guardedAttachments(ctx));
+            const child = inner.plugin(module as MountablePlugin, config);
+            await child.await();
+          },
+        });
         // dispose 只置位不回滚：晚到的 ready 结算据此判断还能不能改状态。
         const state = { disposed: false };
         const handle: MountedPlugin = {

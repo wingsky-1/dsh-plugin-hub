@@ -16,7 +16,7 @@ export function handleHealth(
   res: ServerResponse,
   context: UiRoutesContext,
 ): void {
-  if (!guardLoopbackMethod(req, res, ["GET"])) return;
+  if (!guardLoopbackMethod(req, res, ["GET"], { remoteAdmission: context.remoteAdmission })) return;
   const { statsService, trend } = context;
   const snap = statsService.registry.snapshot();
 

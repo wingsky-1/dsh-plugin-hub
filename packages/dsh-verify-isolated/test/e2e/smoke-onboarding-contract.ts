@@ -3,7 +3,14 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { PKG_ROOT, SCRIPTS_DIR, SKILL_FILE, driverFile, scriptFile } from "./smoke-support";
+import {
+  PKG_ROOT,
+  SCRIPTS_DIR,
+  SKILL_FILE,
+  driverFile,
+  scriptFile,
+  scriptSupportFiles,
+} from "./smoke-support";
 
 export function overlayProbeContract() {
   describe("10d. 弹窗探针表达式", () => {
@@ -96,10 +103,14 @@ export function tokenRedactionContract() {
 export function verifyOnboardingContract() {
   describe("10g. verify-isolated 首启弹窗契约锚定", () => {
     let vScript;
+    let vContract;
     let viHelp;
 
     beforeAll(() => {
       vScript = readFileSync(scriptFile, "utf8");
+      vContract = [vScript, ...scriptSupportFiles.map((file) => readFileSync(file, "utf8"))].join(
+        "\n",
+      );
       viHelp = execFileSync(process.execPath, [scriptFile, "--help"], { encoding: "utf8" });
     });
 
@@ -110,7 +121,7 @@ export function verifyOnboardingContract() {
       "首启弹窗预置",
     ];
     it.each(onboardingContracts)("verify-isolated 含首启弹窗契约 %s", (opt) => {
-      expect(vScript.includes(opt)).toBeTruthy();
+      expect(vContract.includes(opt)).toBeTruthy();
     });
 
     const onboardingVerdictFields = ["web:", "onboarding:", "tokenSource:"];

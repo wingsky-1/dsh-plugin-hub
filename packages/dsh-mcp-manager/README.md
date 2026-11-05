@@ -116,7 +116,7 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-mcp-manager
 
 配置页入口：**Plugin Manager → dsh-mcp-manager → Configure**。浮窗按钮（MCP 胶囊）的位置与偏移（`position` / `offset`）在此保存，canonical row id 为 `dsh-mcp-manager`，settings namespace 为 `dsh-mcp-manager`，保存后即时生效。
 
-> 非回环 LAN 地址（例如 `192.168.*:3081`）默认不提供持久化设置面，Configure 按钮按 DSH 安全策略隐藏；请从 `127.0.0.1:3080` / `127.0.0.1:3081` 或 SSH 回环隧道管理。只有在可信 LAN、明确接受共享控制面风险时，才通过 dsh-lan-proxy 的 `ownsHostCompat` 恢复远程设置入口。
+> 非回环地址的持久化设置展示仍服从 DSH 官方页面与 settings 安全策略；Configure 按钮是否出现不改变 API 的官方身份校验。不要在可信性不明时自行绕过该策略；旧 `dsh-lan-proxy` 的远程兼容入口已退役。
 
 | 键 | 值域 | 默认 |
 | --- | --- | --- |
@@ -230,12 +230,12 @@ call 放行 `@global` root（全局配置跨工作空间共享，语义成立）
   `@/name`，C6）；浮窗与管理面板的连接 / 断开 / 重连 / 启停操作携带当前会话 cwd，
   宿主重启场景可自愈恢复会话（C7）。
 
-## 路由（全部 loopback 围栏）
+## 路由（loopback 快路径 + 官方身份准入）
 
 | 路由 | 说明 |
 | --- | --- |
 | `/api/dsh-mcp/health` | 健康检查（注意与目录名不同） |
-| `/api/dsh-mcp/tool-disable` | 工具级禁用开关（PATCH，loopback-only） |
+| `/api/dsh-mcp/tool-disable` | 工具级禁用开关（PATCH；loopback 直接访问或官方身份准入通过） |
 | `/api/dsh-mcp/*` | 服务器管理 / 连接控制 / 工具清单 / SSE 事件等 |
 
 ## 运行时注入（registerServer.toolDefinitions）
@@ -277,7 +277,10 @@ await ctx.mcpManager.registerServer({
 
 - 服务器配置：`<DSH_HOME>/@wingsky-1/dsh-mcp-manager/mcp.json`（仅存 `${ENV}` 引用，**不落盘密钥本身**）；
   落盘 0600 权限 + 同目录临时文件原子替换；Windows 上替换遇到 `EPERM` / `EBUSY` 时会有界异步重试，重试期间检测到外部修改则中止以保留外部内容
-- 所有 `/api/dsh-mcp/*` 路由仅限 loopback 访问（非回环 403 / 方法错 405）
+- 所有 `/api/dsh-mcp/*` 路由保留 loopback 快路径；非回环短请求必须通过官方
+  `requestRejection` 的 Host/Origin、跨站、cookie/API peer 校验，异常、401/403 或未知结果
+  fail-closed，通过后才判方法错 405。非回环 SSE 还须经 `connection.admit` 保留 admitted
+  PeerScope；Peer 释放时停止广播、从连接表移除并关闭响应
 - **stdio 子进程环境净化（官方 dsh-mcp-client 口径）**：净化只作用于**继承的父环境**——
   凭据词根（`KEY` / `PASSWORD` / `SECRET` / `TOKEN`）与全部 `DSH_*` 变量从父环境摘掉，
   避免把宿主机密隐式透传给 MCP 子进程；**用户在配置里显式声明的 `env` 原样传给子进程**
@@ -310,11 +313,21 @@ await ctx.mcpManager.registerServer({
   是唯一执行远端工具的入口，并受工具级禁用表约束；`ws_mcp_call` 错误消息按
   「显式 + 下一步」规范给出（确认 server 连接 / 用 `ws_mcp_detail` 核对参数 /
   检查工具级禁用状态）
+- **MCP 图片附件硬上限**：每个官方 MCP client 在独立 `attachments` scope 中挂载一个自持
+  `saveImages` facade。SDK 完成图片解码后、写入根附件库前，facade 统一执行每批最多 10 张、
+  每张最多 8 MiB 的硬校验；越界批次不会落库，模型面只收到 unavailable 诊断，raw MCP
+  result 仍交给程序调用方。facade 每次动态读取未隔离父 Context 的当前 store，缺失、晚到或
+  替换均 fail-closed，不缓存旧引用；正常图片只复用官方 projection 的一次持久化，不做第二次
+  `saveImages`。client wrapper 释放时只撤销自己的 facade 与官方 child，根 store 和其他
+  client 不受影响。该校验发生在 SDK 解码之后，不宣称限制解码前内存。
 - **禁直呼是机器强制的（#1014）**：`mcp__<id>__<tool>` 是内部注册名，pre-execute guard
   **默认拒绝**一切非我方转发的 `mcp__` 直呼——不再依赖模型遵守提示词，也不依赖声明面遮蔽
   （连接翻转期遮蔽必有泄漏窗口）。唯一放行位是宿主赋予的**飞行中** token：本包
-  `ws_mcp_call` → dispatch → `ctx.tools.execute` 的子调用凭 `parent` 放行，结算即摘除，
-  同一 token 重放会被拒。拒绝文案指路 `ws_mcp_call` 并写明不要重试本次调用。
+  `ws_mcp_call` 内经宿主 loader 取得公开 `ToolExecutionPipeline`，以精确注册名、
+  `agent` / `toolSet` / `rootCallId` / `signal` 与外层 `parent` token 执行受控子调用；
+  source 仅在目标 root/server/tool 策略、外层准入与 parent 活性同时成立时解析该依赖。
+  结算即摘除，同一 token 重放或依赖定义被移除/替换后都会拒绝。拒绝文案指路
+  `ws_mcp_call` 并写明不要重试本次调用。
 - **工具级禁用（三入口一致）**：`ws_mcp_call`（callTool 查禁用表）、
   pre-execute guard（`mcp__` 前缀直呼工具）、插件侧声明的纪律裸名工具
   统一走 `isToolDenied` 裁决；禁用只作用于 `mcp__` 前缀工具，拒绝原因附语义声明；

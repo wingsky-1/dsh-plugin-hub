@@ -26,32 +26,40 @@ dsh plugin --profile web add @wingsky-1/dsh-notifier
 <a id="部署与访问方式重要"></a><a id="user-content-部署与访问方式重要"></a>
 ## 部署与访问方式（重要）
 
-插件所有接口都受 **loopback 围栏**保护：仅接受本机回环（`127.0.0.1` /
-`localhost`）调用。因此**从局域网浏览器直连 `http://<服务器IP>:3080` 时，
-`/api/dsh-notifier/*` 一律返回 403，通知通道不工作**——这是安全护栏的预期行为，
-不是插件故障；此时页面内会给出引导提示。
+插件接口保留本机 loopback 快路径。从局域网地址直连时，请求还必须通过官方
+`dsh-client-connection` 的 Host/Origin/cross-site 围栏以及浏览器或 API 会话认证；
+未认证请求返回 401/403，认证失败不会被插件自行放行。HTTP LAN 仍不属于浏览器安全
+上下文，系统通知会走降级通道，移动端 PWA 系统通知应使用原生 HTTPS。
 
 请选用下列任一形态访问（均在设置卡片与 README 中给出提示）：
 
 | 形态 | 访问方式 | 说明 |
 |---|---|---|
 | 本机桌面 | `http://127.0.0.1:3080` | 安全上下文：浏览器通知 + 系统通知均可用 |
-| 局域网 HTTPS（推荐） | `https://<服务器IP>:3443`（dsh-lan-proxy） | 经代理满足回环校验 + 安全上下文；移动端「添加到主屏幕」后可获 PWA 级通知 |
+| 局域网 HTTPS（推荐） | `dsh web` 绑定具体 LAN 地址并配置 TLS 后的同源地址 | 官方认证 + 安全上下文；移动端「添加到主屏幕」后可获 PWA 级通知 |
 | 隧道 | `ssh -L 3080:127.0.0.1:3080 <服务器>` 后访问本机地址 | 回环 + 安全上下文，效果同本机 |
-
-> 已验证（2026-08）：`https://<IP>:3443/api/dsh-notifier/health` 返回 200，
-> SSE 长连接（`/api/dsh-notifier/events`）经 3443 首帧正常。
 
 <a id="安全与边界"></a><a id="user-content-安全与边界"></a>
 ## 安全模型
 
+- **LAN 管理面复用官方会话认证**：loopback 保持原有快路径；非回环请求每次现读
+  `ctx.connection` 并调用 `requestRejection`，由官方校验 Host、Origin、cross-site、
+  浏览器 cookie 或 live API peer。401/403 保持原状态，认证通过后才进入方法判定；
+  connection 缺失、卸载或异常一律拒绝。插件不信任 LAN 私网、TLS、`X-Forwarded-For`
+  或客户端自报来源。
+- **非回环 SSE 绑定 admitted Peer 生命周期**：普通请求仍走最小
+  `requestRejection` seam；`/events` 在写 200 与注册连接表前调用官方
+  `connection.admit` 并保留公开 PeerScope。Peer 释放或 connection 卸载时经
+  `peer.ctx.effect` 回调和 `SseHub.unregister` 同步出表、停止心跳处理并关闭响应；
+  API socket 释放后的下一次请求不能复用旧 admission。loopback SSE 不调用官方
+  Peer admission，保持既有插件生命周期。
 - 通知文本只含任务标题/工具名/申请理由等元信息，**不含工具参数**（防敏感信息外泄）
 - **通知正文与标题不再打码（#733 收敛）**：原 `sanitizeContent` 的规则表（路径 / PEM 私钥 / 连接串凭据 / 令牌 / 邮箱…）已删除——通知、历史落盘（含 suppressed 落史）与投递都是原文；正文不截断，长度由投递频道的展示上限截断。需要「日志里不出现某类文本」的部署，请自行在事件源侧处理
 - **仅存的凭据掩码在设置页视图**：`GET /config` 的 `user` + `effective` 与 `PUT` 成功响应中的频道凭据（bark `deviceKey`、webhook `token` / `password` / `headerValue`）一律掩码 `********`，提交整值掩码 = 保持原值（按实例 id 对齐回填，防数组序变化串凭据），**没有原值可还原的掩码（新实例、换型残留的跨 type 掩码）写面 400，dry-run 同一句——占位符不是凭据，绝不落盘**（`CHANNEL_SECRET_FIELDS` 按频道类型单一事实源）
 - **出口错误原因不再做凭据字面替换（实测风险，照实登记）**：Bark 4xx 响应体会回显 device key，webhook 的非 2xx 响应体也会回显收到的凭据——失败原因只做长度截断（webhook 响应体 200 字符；状态条目 300 字符），**不保证凭据不出现在错误文本里**。这些文本落在失败理由的 `detail` 字段里（0.2.4 起理由结构化，见「投递可靠性」），会进服务端日志、状态文件（`status.json`）与通知历史（`history.jsonl`），并随 `GET /status` 与 `GET /history` 出到设置页；对错误文本外泄敏感的部署请按上一条自行处置
 - **频道身份（`id`）唯一，含跨类型**（#1016）：同一个身份挂两条频道不是「界面显示重复」，而是**凭据销毁**——设置页对 `channels` 是整组提交，合并按裸 `id` 取首条、其余键沿用首条的值，于是第二条的真实凭据（bark `deviceKey`、webhook 凭据）被第一条覆盖，**每次保存毁一条**。跨类型同 `id` 更糟：掩码还原按裸 `id` 查找，一条 bark 写 `id: "browser"` 会命中内置 browser 条目，把它的掩码还原到 bark 的键上。写面因此对重复身份**绝对 400**（提示带 1 起的下标并指明「删掉其中一条」）；升级步**不再**按重复身份静默去重（那会在升级那一刻把第二条连凭据一起从磁盘删掉）；投递投影按身份只取首项，免得一次通知发两遍——**代价是落选的那条从此不再投递**，且占身份的是「数组里排在前面的那条」而非「能用的那条」：投递必需键为空串的半坏条目会先占掉身份，把后面一条健康的同 `id` 条目从投递池里挤掉（半坏条目本身则整条不进投递池）。**没有任何一条路径会隐藏或删除你的数据**：视图原样外发，删掉一张卡再保存即通过
 - server 内部错误仍只回固定文案（底层原因只进服务端日志）；dry-run 的 500 同样固定文案且不记日志（禁写面含全部 logger）
-- **草稿测试（dry-run）不落盘也不记日志**：只测 `draft.channels` 里的单条频道（掩码按 id 还原，跨类型残留掩码整体拒绝），结果同步返回且只进面板独立结果行（打标「草稿测试·未落盘」，通过不自动保存，改草稿即清、重载即丢、切 tab 保留）。回显反射残留（对端把请求体反射回来）与现行历史落盘同 exposure（原文截断后进 `reason.detail`），仅 loopback 可读，可接受
+- **草稿测试（dry-run）不落盘也不记日志**：只测 `draft.channels` 里的单条频道（掩码按 id 还原，跨类型残留掩码整体拒绝），结果同步返回且只进面板独立结果行（打标「草稿测试·未落盘」，通过不自动保存，改草稿即清、重载即丢、切 tab 保留）。回显反射残留（对端把请求体反射回来）与现行历史落盘同 exposure（原文截断后进 `reason.detail`），仅 loopback 或官方认证通过的 LAN 会话可读
 - **dry-run 出站安全**：bark / webhook 的 URL 必须可解析为 http(s) 且无 userinfo；主机名全量 DNS 解析逐条分类（回环 / 私网 / 链路本地（含云元数据）/ 未指定 / 组播 / 保留段一律拒绝，含十进制与十六进制等非点分写法），重定向手动逐跳复检（上限 5 跳），建连钉死核验过的 IP 并验 `remoteAddress` 熔断（关 TOCTOU），TLS 的 SNI 与证书校验仍走原始主机名
 - 系统通知失败不再静默：出口**执行过动作而失败**会写状态行（`failed`）并进通知记录的逐出口明细；**一条命令都构造不出来**时收成 `skipped` 且留一条 warn（0.2.4 起 linux / darwin 也有这条日志，此前只有 win32 分支有）。原生二进制缺失/不可执行（ENOENT 等）
   会被 `error` 事件接住，**绝不冒泡成 unhandled error 把宿主进程打挂**（见 issue #1）
@@ -60,7 +68,7 @@ dsh plugin --profile web add @wingsky-1/dsh-notifier
   - **系统通知（宿主 toast）**弹在 **dsh web 运行的宿主机器**桌面：若 dsh web 跑在 Linux 服务器（headless，无桌面会话）或别的机器上，toast 会出现在**那台服务器**而不是你的 Mac——**系统通道可用性见 `/diagnostics`**（宿主端探测，带处置建议）；**浏览器通道可用性见设置卡片**（本端计算，换设备会不同）。想让系统 toast 也出现在你的 Mac 上，需把 dsh web 直接跑在你的 Mac 上（此时走 macOS 的 `osascript`）；macOS 无 `notify-send`，系统通知已用系统自带的 `osascript` 实现（无需安装）
 - **iOS 差异**：Safari 普通标签页无 Web Notifications API（「添加到主屏幕」的 PWA
   才有）；iOS 上可用通道为「页面可见时横幅 + 提示音」及 HTTPS+A2HS 后的系统通知
-- **能力自检面（0.2.4 起）暴露宿主软件栈的局部指纹，且经 `dsh-lan-proxy` 转发后对局域网可见**：`/diagnostics` 的 `capabilities.host.sound.players` 会列出探测命中的播放器可执行文件名（按回退链顺序给出**全部**命中者：`paplay` → `pw-play` → `aplay` → `ffplay`；darwin 恒 `afplay`），`popup`/`sound` 的 `checked` 会暴露装了 `notify-send` 与否；`/health` 只给**摘要**（verdict / unknownDimensions / popup.state / sound.state，无 players/checked 明细）。这是**有意的设计取舍**——用户要能看见「宿主放不出声」才谈得上处置——但请知悉它与 lan-proxy 的既有姿态叠加后的含义（该插件 README 已自述「经本插件转发的请求按设计视为受信」）。**收敛手段**：只出可执行文件名、音色只出布尔，**绝不出绝对路径**，`remediation` 的 `params` 只由内置数据表产生、不经输入透传（响应体里不会出现 `/etc/os-release` 或任何命令原文）
+- **能力自检面（0.2.4 起）暴露宿主软件栈的局部指纹，并对持有有效官方会话的 LAN 调用方可见**：`/diagnostics` 的 `capabilities.host.sound.players` 会列出探测命中的播放器可执行文件名（按回退链顺序给出**全部**命中者：`paplay` → `pw-play` → `aplay` → `ffplay`；darwin 恒 `afplay`），`popup`/`sound` 的 `checked` 会暴露装了 `notify-send` 与否；`/health` 只给**摘要**（verdict / unknownDimensions / popup.state / sound.state，无 players/checked 明细）。这是**有意的设计取舍**——用户要能看见「宿主放不出声」才谈得上处置。**收敛手段**：只出可执行文件名、音色只出布尔，**绝不出绝对路径**，`remediation` 的 `params` 只由内置数据表产生、不经输入透传（响应体里不会出现 `/etc/os-release` 或任何命令原文）
 - **探测无副作用**：能力自检只向 `org.freedesktop.DBus` 发 `NameHasOwner` 与 `ListActivatableNames` 两个只读查询，**不触发任何服务激活**（不用 `busctl status`/`list`，不调 `StartServiceByName`）；`darwin`/`win32` 上连这个子进程都不起
 - **临时音频文件（0.2.4 起）**：Linux 上主题事件音缺失时，自播会在系统临时目录下建一个 0700 的实例目录，写入 0600 且以 `wx` 打开的 WAV（`wx` 拒绝已存在的路径与符号链接）；播放结束立即删掉**本次**文件，并发的另一笔投递因此不受影响，目录留到进程退出 / 插件卸载时统一清理。`/tmp` 只读挂载时本次不落盘：只响不弹记为 `skipped`（`reasonSystemToneUnwritable`），弹+响仍算 `ok` 并留一条 warn（弹窗已经出去，声音属尽力而为）
 - **落盘权限与写入顺序（#1016）**：本包私有目录 `<DSH_HOME>/@wingsky-1/dsh-notifier/` 与其下的数据文件（`config.json`、`history.jsonl`、`status.json`、`seq.json`、`version`）权限都不随 umask 漂移——新建的目录落 `0700`，文件每次先在同目录以 `0600` 建临时名再 `rename` 覆盖（`config.json` 与 `status.json` 内含 bark deviceKey、webhook 凭据与可能回显凭据的失败原因）。**已存在的目录按「只保留 owner 三位」收紧**（`mode & 0700`，永不新增任何权限位）：旧安装的 `0755`/`0777` 会被追溯收紧到 `0700`，运维刻意设成只读的目录收成 `0500`、**仍然只读**，本包不会替他重新打开可写。**这条掩码连特殊位一起清**：本包走的是系统调用层的 `chmod`（Node `fs.chmod`），只按 mode 参数里出现的位设置、参数里没有的位一律清掉，故 owner 之外的 setuid/setgid/sticky 同样被清——实测 `2770`/`1777`/`4755`/`7777` 一律落成 `0700`，团队共享目录常见的 `2770` 的 setgid 也会被静默清掉（方向是加固：私有数据目录上这些位本无实际语义；这是**已登记的行为变更**）。目录若带 POSIX 扩展 ACL，ACL mask 还会被收紧为 `0`，命名条目的**有效**权限随之归零（条目本身仍在）。**同一进程内**，同一路径的**异步**写按提交顺序串行落盘（写链是进程内的内存表：`rename` 的先后在并发下本无保证，落到序号文件上就是客户端按 seq 静默丢帧；两个进程共用同一个 `DSH_HOME` 时不适用）。同步写 `writeTextAtomicSync` **不进这条链**——同步函数没有 promise 可挂，它服务的是升级期的独占路径，所以**热重载二次装配时它可以与在飞的异步写并发**，这不在串行保证内。写失败不留临时文件残留（清理本身失败时会留下：文件名带随机后缀，不会被下次写覆盖，也不影响本次真正的失败原因）
@@ -256,7 +264,7 @@ http/https）、`deviceKey`（Bark App 内查看；响应中一律掩码 `******
   - **SSRF 姿态**：`baseUrl` 限 http/https scheme、拒绝内嵌凭据的 URL（`user:pass@host`）。这些判据（另加 URL 解析失败）由**出站前硬闸**（`deliver/url-gate.ts`）在 `fetch` 之前逐条判定：不合规的目标根本不发，原因进失败理由的 `detail`（`retryable=false`，不重投——URL 是配置事实，重投只是把同一个错地址打三遍）。**不做域名白名单**——baseUrl 指向内网自建 bark-server 是合法场景
   - **`/push` 用 URL API 拼到 pathname 上（#1016 P0）**：此前是 `baseUrl + "/push"` 字符串拼接，base 带 query 时 `/push` 会掉进 query 串（实际打到被截断的路径），base 带尾斜杠时拼出 `//push` 双斜杠；改后 `/push` 一定落在 pathname 上，query 原样留在后面
   - **明示残余风险（安全债务，#1016 放宽项）**：本条曾把「去 query/hash」写成对用户的承诺，本次方向变更**放弃机器强制**——query 里的凭据（如 `?token=`、`?api_key=`）会随 URL 进对端访问日志，现在**不再有任何机器拦截**，只剩本 README 的「凭据只走请求头、不拼 URL」文档约定。凭据型 query 的诊断告警需新的展示面（配置批次范围），写面按关键字拦又会误伤用户自建网关的正常 `?api_key=`，两侧均登记为 follow-up
-  - **其他已知残余风险**：局域网内可访问 dsh web 的调用方（经 lan-proxy 反代可穿透 loopback 围栏，见部署文档）可借 `/test` 触发一次对 `baseUrl` 的出站 POST（半盲，响应错误摘要仅回显一段截断后的原文）。对该风险敏感的部署可将插件 `enabled` 关闭或用独立端口方案（后续版本）
+  - **其他已知残余风险**：持有有效官方浏览器/API 会话且获得插件访问权限的 LAN 调用方可借 `/test` 触发一次对 `baseUrl` 的出站 POST（半盲，响应错误摘要仅回显一段截断后的原文）。对该风险敏感的部署可将插件 `enabled` 关闭。
 
 ### Webhook 推送频道（#508）
 
@@ -436,6 +444,8 @@ settings `describe()` 的已注册分节与更早的自建 `dsh-notifier.json`�
 > 移除——它当年是为「连接泄露」兜底的权宜设置。现存两路回收互补：**stalled 回收**（写被拒连续
 > 超 90s → 断开）、**maxAge 轮换**（存活超 120min 且无业务帧 → 主动断开，客户端自动重连 +
 > `since` 补拉无感知）。连接回收路径计数见 `/api/dsh-notifier/health` 的 `sseEvicts`。
+> 非回环连接另绑定官方 admitted Peer：Peer 释放时先 `unregister` 出表再 destroy，
+> 不等待异步 close 事件；此后广播与心跳不再触达该连接。
 >
 > 随之上限配置键 `maxConnections`（默认 16，范围 1~1024）也在 **0.2.5** 退役：设置页不再显示它，
 > `effective` 里没有它。写面口径与上文那批 0.2.3 渠道键一致——提交即 **400** 拒收，但原因不同
@@ -443,7 +453,7 @@ settings `describe()` 的已注册分节与更早的自建 `dsh-notifier.json`�
 > 刷新后重试。旧 `config.json` 里的残留值不会被自动清洗，也不进生效值；保存其它已知配置不会把它
 > 抹掉，并原样出现在 GET /config 的 `user` 视图里——想清理就在 `config.json` 里手动删掉那一行。
 
-### 路由（全部 loopback 围栏）
+### 路由（loopback 快路径 + 官方 LAN 认证）
 
 | 路由 | 方法 | 说明 |
 |---|---|---|
@@ -462,7 +472,8 @@ settings `describe()` 的已注册分节与更早的自建 `dsh-notifier.json`�
 
 #### `/events`
 
-SSE 通知帧（浏览器 EventSource 订阅；`?since=<seq>` 断线补拉）
+SSE 通知帧（浏览器 EventSource 订阅；`?since=<seq>` 断线补拉）。非回环连接必须
+通过官方认证并绑定 admitted Peer 生命周期；未认证或绑定失败不会开流。
 
 #### `/test`
 
@@ -525,7 +536,7 @@ GET 动态 kind 清单（含确认态）；POST `{kind, confirmed}` 写确认（
 - 自播节流：`PLAY_THROTTLE_MS` 为 1500 毫秒，覆盖通知音与只响不弹两条自播路径，试听不受限（`src/client/notify/audio.ts` 的 `gate()`）。
 - 手势解锁：浏览器自动播放策略要求一次用户交互，页面首次任意点击调用 `unlock()` 解锁 AudioContext；试听为显式解锁加绕过节流的手势内操作（`src/client/index.tsx`）。
 - 帧通路：裁决管线经组合根的本地 `FrameBus` 发帧（`src/index.ts`），浏览器出口经 `onFrame` 订阅后由 SSE 路由 `/api/dsh-notifier/events` 下发；客户端用 EventSource 订阅，重连主动带 `?since=<seq>` 补拉并按 seq 去重（`src/client/notify/session.ts`）。
-- 经 3443 转发语义只引用 `dsh-lan-proxy` 的架构节，不在此复述：见该包 README 的「安全模型」与「验证与排障」节。
+- LAN 访问复用官方 connection 的认证与 Host/Origin 围栏；插件不再依赖额外反向代理把来源改写成 loopback。
 
 ### 卸载插件（remove）
 

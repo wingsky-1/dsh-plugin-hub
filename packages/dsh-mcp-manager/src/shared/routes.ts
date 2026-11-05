@@ -37,9 +37,9 @@ export interface RouteFence {
 }
 
 /**
- * 每条路由的围栏数据。config 是唯一有 loopback 豁免的路由（GET 只读 UI 配置，供远程页面
- * 读取非敏感展示配置），且它的端点级方法分流先于 loopback——白名单外方法直接 405、不查
- * loopback，故 GET 不得并进 guarded（会漂移成 403）。#473 R2 的顺序是契约行为。
+ * 每条路由的围栏数据。config 是唯一有 loopback 豁免的路由（GET 只读 UI 配置）。所有非
+ * loopback 请求先经官方 admission；认证通过后才判方法白名单，失败则 401/403 先于 405。
+ * loopback 仍走快路径，直接经过同一方法白名单。
  */
 export const ROUTE_FENCE: Record<RouteName, RouteFence> = {
   servers: { guarded: ["GET", "POST", "PATCH", "DELETE"], loopbackExempt: [] },

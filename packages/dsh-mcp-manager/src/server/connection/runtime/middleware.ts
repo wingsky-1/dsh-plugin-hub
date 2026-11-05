@@ -21,8 +21,9 @@
  * #767 S1-4d：连接栈换成官方 @deepseek-ai/dsh-mcp-client。本类不再自建 transport / client，
  * 也不再自己排重连与防双进程探测——装载、拆卸与六态投影一律经 runtimePorts 的 lifecycle 端口
  * 交还 servers/lifecycle 的账本（官方 serverName 在应用根上活体预留，同 id 未释放就重挂当场抛）。
- * 目录改按 `ctx.tools.schemas()` 里 `mcp__<id>__` 前缀投影（裁定 W/K），执行路径改道
- * `ctx.tools.execute`（见 servers/dispatch）。
+ * 目录仍按 `ctx.tools.schemas()` 里 `mcp__<id>__` 前缀投影（裁定 W/K）；远端执行经
+ * servers/dispatch 从宿主 loader 取得公开 `ToolExecutionPipeline`，并保留完整
+ * `ToolRunContext` identity。
  *
  * W8 端口接线：跨域能力（catalog 新鲜判定与装箱、pipeline 投影/超时/取消息/脱敏/参数归一/
  * 策略裁决、workspace 全名解析与拼装、lifecycle 装载/拆卸/投影）一律经 `impl/service` 的
@@ -34,6 +35,7 @@ import type {
   ToolExecutionInput,
   ToolExecutionResult,
   ToolExecutionToken,
+  ToolRunContext,
 } from "@deepseek-ai/dsh-tools";
 import type { ServerConfig } from "../../config/interface.ts";
 import { DEFAULT_TOOL_CALL_TIMEOUT_MS, publicToolName } from "../../shared/interface.ts";
@@ -48,6 +50,8 @@ import { runtimePorts } from "./impl/service/index.ts";
 import type { MiddlewareHost } from "./deps.ts";
 import type { ProjectUnit, ConnectionEntry } from "./impl/middleware/type.ts";
 import type { DisabledToolsMap } from "../../store/interface.ts";
+
+type NestedModelContent = Extract<ToolExecutionResult, { isError: false }>["content"];
 
 // ------------------------------------------------------------ 每 root 初始化任务登记（#1168）
 
@@ -120,7 +124,7 @@ async function runRootInit(
   if (!initOwned(registry, root, task)) return undefined;
   // 无项目标记（root 不可用）→ 不建单元。
   if (servers === undefined) return undefined;
-  const unit = buildProjectUnit(self, root);
+  const unit = buildProjectUnit(root, self.disabledByRoot.get(root));
   // 发布前最后一次守卫：配置读取期间的 teardown 会摘掉登记 → 不写表。
   if (!initOwned(registry, root, task)) return undefined;
   self.units.set(root, unit);
@@ -144,12 +148,12 @@ function initOwned(registry: Map<string, InitTask>, root: string, task: InitTask
   return !task.cancelled && registry.get(root) === task;
 }
 
-/** 建空白单元（并发 init 的产物，形状固定在此）。 */
-function buildProjectUnit(self: McpMiddleware, root: string): ProjectUnit {
+/** 建空白单元；用户禁用集合按值复制，避免与持久化配置共享可变引用。 */
+function buildProjectUnit(root: string, userDisabled: Iterable<string> | undefined): ProjectUnit {
   return {
     root,
     connections: new Map(),
-    userDisabled: new Set(self.disabledByRoot.get(root) ?? []),
+    userDisabled: new Set(userDisabled ?? []),
     lastTouchedAt: Date.now(),
     inFlight: new Map(),
   };
@@ -498,8 +502,8 @@ export class McpMiddleware {
   /** 工具级禁用（root → server → Set<tool>；root=@global 跨工作空间共享）。 */
   disabledTools: DisabledToolsMap = new Map();
   /**
-   * 在飞的转发子调用登记表：我方 dispatch 经 `ctx.tools.execute` 派出去的子调用，其
-   * `parent` 就是这次外层调用的 token，派发前登记、结算后注销（try/finally）。
+   * 在飞的转发子调用登记表：我方 dispatch 经公开 nested `ToolExecutionPipeline` 派出去的
+   * 子调用，其 `parent` 就是这次外层调用的 token，派发前登记、结算后注销（try/finally）。
    * pre-execute guard 只按发起者放行（裁定 R/Z）——集合外的一律走工具级裁决，
    * 模型直呼不会因为名字像就被放行。集合随实例消亡，热切换重建中间层即清空。
    */
@@ -786,6 +790,10 @@ export class McpMiddleware {
       callId: ToolExecutionInput["callId"];
       rootCallId?: ToolExecutionInput["rootCallId"];
       parent?: ToolExecutionToken;
+      toolSet?: ToolRunContext["toolSet"];
+      deferContext?: ToolRunContext["deferContext"];
+      concludeTurn?: ToolRunContext["concludeTurn"];
+      onModelContent?: (content: NestedModelContent) => void;
     },
   ): Promise<unknown> {
     const { dispatch, pipeline, workspace, catalog: catalogPort } = runtimePorts.get();
@@ -795,9 +803,13 @@ export class McpMiddleware {
     // 不得自己拼 `mcp__<id>__<tool>`——哈希/截断规则一旦分叉，某些工具会永远查不到。
     const registeredNameFor = (id: string, tool: string): string => publicToolName(id, tool);
     // 必须箭头绑定：注册表方法裸引用会丢 this（dispatch 直接把它当能力调用）。
-    const execute = (input: ToolExecutionInput): Promise<ToolExecutionResult> =>
-      this.host.ctx.tools.execute(input);
     const parent = identity.parent;
+    const agent = dispatch.nestedExecutionAgent(identity.agent);
+    const execute = (input: ToolExecutionInput) =>
+      dispatch.executeNestedTool(this.host.ctx, input, {
+        ...identity,
+        isParentActive: () => parent !== undefined && this.forwarding.has(parent),
+      });
     if (parent !== undefined) this.forwarding.add(parent);
     try {
       return await dispatch.executeMcpCall({
@@ -805,10 +817,11 @@ export class McpMiddleware {
         toolRaw,
         rawArgs,
         signal,
-        agent: identity.agent,
+        agent,
         callId: identity.callId,
         ...(identity.rootCallId === undefined ? {} : { rootCallId: identity.rootCallId }),
         ...(parent === undefined ? {} : { parent }),
+        toolSet: identity.toolSet,
         forwarding: this.forwarding,
         registeredNameFor,
         execute,
@@ -922,7 +935,6 @@ function liveSignature(schemas: SchemaView, id: string): string {
   parts.sort();
   return parts.join("\u0001");
 }
-
 /**
  * 该不该为这台重投影：目录条目不存在、丢过 unavailable（已不是可信快照）、或**指纹**与
  * 注册面不一致，三者任一即需要。

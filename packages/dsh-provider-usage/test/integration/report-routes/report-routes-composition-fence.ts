@@ -86,6 +86,37 @@ function registerReportRoutesFenceTableCase(): void {
         expect((body as { error?: string }).error).toBe("method not allowed: " + method);
       },
     );
+
+    it("非回环 + 官方 admission undefined 放行，401/403 保持且错方法后置", async () => {
+      const root = isolatedDir("dou-reportroutes-native-lan-");
+      const allowed = stubReportCtx(root, {
+        remoteAdmission: () => () => undefined,
+      }).ctx;
+      const ok = await callStatus(
+        handleReportConfig as AnyHandler,
+        nonLoopbackReq({ method: "GET" }),
+        allowed,
+      );
+      expect(ok.code).toBe(200);
+      const wrongMethod = await callStatus(
+        handleReportConfig as AnyHandler,
+        nonLoopbackReq({ method: "DELETE" }),
+        allowed,
+      );
+      expect(wrongMethod.code).toBe(405);
+
+      for (const status of [401, 403] as const) {
+        const rejected = stubReportCtx(root, {
+          remoteAdmission: () => () => status,
+        }).ctx;
+        const got = await callStatus(
+          handleReportConfig as AnyHandler,
+          nonLoopbackReq({ method: "DELETE" }),
+          rejected,
+        );
+        expect(got.code).toBe(status);
+      }
+    });
   });
 }
 

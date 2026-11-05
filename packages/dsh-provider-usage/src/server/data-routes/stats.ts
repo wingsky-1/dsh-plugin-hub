@@ -3,12 +3,17 @@
  */
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
-import { guardLoopbackMethod, writeJson } from "../../../../../shared/host-utils.js";
+import {
+  guardLoopbackMethod,
+  writeJson,
+  type RemoteAdmissionSource,
+} from "../../../../../shared/host-utils.js";
 import { ADAPTER_CONTRACT_VERSION } from "../../shared/interface.ts";
 import type { StatsService } from "../pipeline/interface.ts";
 
 export interface StatsRoutesContext {
   statsService: StatsService;
+  remoteAdmission?: RemoteAdmissionSource;
 }
 
 export async function handleStats(
@@ -16,7 +21,7 @@ export async function handleStats(
   res: ServerResponse,
   ctx: StatsRoutesContext,
 ): Promise<void> {
-  if (!guardLoopbackMethod(req, res, ["GET"])) return;
+  if (!guardLoopbackMethod(req, res, ["GET"], { remoteAdmission: ctx.remoteAdmission })) return;
   const { statsService } = ctx;
   const url = new URL(req.url ?? "/", "http://localhost");
   const prov = url.searchParams.get("provider") ?? statsService.config.provider;
@@ -62,7 +67,7 @@ export async function handleHistory(
   res: ServerResponse,
   ctx: StatsRoutesContext,
 ): Promise<void> {
-  if (!guardLoopbackMethod(req, res, ["GET"])) return;
+  if (!guardLoopbackMethod(req, res, ["GET"], { remoteAdmission: ctx.remoteAdmission })) return;
   const { statsService } = ctx;
   const url = new URL(req.url ?? "/", "http://localhost");
   const prov = url.searchParams.get("provider") ?? statsService.config.provider;

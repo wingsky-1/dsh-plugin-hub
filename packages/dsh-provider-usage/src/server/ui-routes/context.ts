@@ -10,7 +10,7 @@
  * 特征块经 `import type` 取用本形状
  * （类型边，运行时无环：本文件按值引用四块，四块只按类型引用本文件）。
  */
-import type { ServerResponse } from "node:http";
+import type { IncomingMessage, ServerResponse } from "node:http";
 import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
 import type { UiPlacementConfig } from "../../shared/interface.ts";
 import type { LayerErrorSurface } from "../shared/interface.ts";
@@ -21,6 +21,24 @@ import { handleTrend } from "./trend.ts";
 import { handleUiConfig } from "./ui-config.ts";
 import { handleEvents } from "./events.ts";
 
+/** 官方 connection 短请求 admission 的最小结构面；具体实现由组合根一次注入。 */
+export type RemoteAdmissionSource = () =>
+  ((request: IncomingMessage) => 401 | 403 | undefined) | undefined;
+
+/** 官方 PeerScope 中 UI 长连接只需绑定的 Cordis 生命周期面。 */
+export interface RemotePeerScope {
+  readonly ctx: {
+    effect(execute: () => () => void, label?: string): unknown;
+  };
+}
+
+/** 官方 connection 长连接 admission 的最小结构面。 */
+export type RemotePeerAdmissionSource = () =>
+  | ((
+      request: IncomingMessage,
+    ) => { readonly peer: RemotePeerScope } | { readonly rejection: 401 | 403 })
+  | undefined;
+
 /** UiRoutesContext 依赖装配形状（路由 context 类的构造入口）。 */
 export interface UiRoutesContextOptions {
   statsService: StatsService;
@@ -30,6 +48,10 @@ export interface UiRoutesContextOptions {
   broadcastUiConfigChanged: () => void;
   /** 域2每层错误面：health 响应 per-layer 段数据源。 */
   layerErrors: LayerErrorSurface;
+  /** 非回环请求实时查询官方 connection admission；缺席时 shared guard fail-closed。 */
+  remoteAdmission?: RemoteAdmissionSource;
+  /** SSE 长连接专用：保留官方 PeerScope 并把关闭登记到 Peer 生命周期。 */
+  remotePeerAdmission?: RemotePeerAdmissionSource;
 }
 
 /**
@@ -43,6 +65,8 @@ export class UiRoutesContext {
   readonly sseClients: Set<ServerResponse>;
   readonly broadcastUiConfigChanged: () => void;
   readonly layerErrors: LayerErrorSurface;
+  readonly remoteAdmission?: RemoteAdmissionSource;
+  readonly remotePeerAdmission?: RemotePeerAdmissionSource;
 
   constructor(opts: UiRoutesContextOptions) {
     this.statsService = opts.statsService;
@@ -51,6 +75,8 @@ export class UiRoutesContext {
     this.sseClients = opts.sseClients;
     this.broadcastUiConfigChanged = opts.broadcastUiConfigChanged;
     this.layerErrors = opts.layerErrors;
+    this.remoteAdmission = opts.remoteAdmission;
+    this.remotePeerAdmission = opts.remotePeerAdmission;
   }
 }
 

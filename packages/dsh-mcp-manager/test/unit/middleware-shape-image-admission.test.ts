@@ -194,22 +194,30 @@ function registerImageAdmissionIdentityCases() {
 }
 
 function registerImageAdmissionForwardCases() {
-  it("B16 F4：远端转发不带 agent，parent = 外层 token，signal 照传", async () => {
+  it("B16：远端转发保留 agent/toolSet，parent = 外层 token，signal 照传", async () => {
     const fixture = await callFixture({
       value: { content: [{ type: "text", text: "hi" }] },
       faces: undefined,
     });
-    const exec = makeExec();
+    const toolSet = {
+      dispose() {},
+      view() {
+        return new Map([["ws_mcp_call", { name: "ws_mcp_call" } as ToolDefinition]]);
+      },
+    };
+    const exec = makeExec({ toolSet });
     await fixture.call.execute(callArgs, exec as unknown as ToolRunContext);
-    // 发送记录的形状由宿主执行面约定（name/agent/parent/signal 四键），此处只读不断言。
+    // 发送记录的形状由公开 pipeline 契约约定；此处核对中间层没有丢掉外层身份。
     const sent = fixture.tools.executed[0] as {
       name: unknown;
       agent: unknown;
+      toolSet: unknown;
       parent: unknown;
       signal: unknown;
     };
     expect(sent.name).toBe("mcp__id-py__echo");
-    expect(sent.agent, "远端分支去 agent（F4 收口）").toBe(undefined);
+    expect(sent.agent).toBe(exec.agent);
+    expect(sent.toolSet).toBe(toolSet);
     expect(sent.parent).toBe("tok-1");
     expect(sent.signal).toBe(exec.signal);
   });
@@ -237,6 +245,8 @@ async function callFixture({ value, faces }: { value: unknown; faces?: ImageAdmi
     schemas: [{ name: "mcp__id-py__echo" }],
     execute: async () => ({ isError: false, content: [], value }),
   });
+  tools.register({ name: "ws_mcp_call" });
+  tools.register({ name: "mcp__id-py__echo" });
   const mw = trackMw(new McpMiddleware(host as unknown as MiddlewareHost));
   const unit = makeUnit();
   mw.units.set(ROOT, unit);

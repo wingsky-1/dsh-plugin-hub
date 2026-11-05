@@ -77,7 +77,10 @@ export type WorkspacePort = Pick<
  * 与它签发的工具都还住在 connection/runtime，值只能经本子层的端口表递进来——直引新域门面会
  * 新增一条域间值边（I2①）。S1-4 接线后壳消失，本端口随 middleware.ts 一并删除。
  */
-export type DispatchPort = Pick<typeof dispatchApi, "executeMcpCall">;
+export type DispatchPort = Pick<
+  typeof dispatchApi,
+  "executeMcpCall" | "executeNestedTool" | "nestedExecutionAgent"
+>;
 
 /**
  * servers/lifecycle 域给本子层的能力面：装载 / 拆卸 / 六态投影。
@@ -130,7 +133,7 @@ export interface ManagerLite {
 
 /** 中间层宿主最小面（McpManager 实现；McpMiddleware 构造注入）。 */
 export interface MiddlewareHost {
-  ctx: Pick<Context, "tools">;
+  ctx: Context;
   logger: LoggerService;
   /** 按 root 读取项目级服务器配置（惰性；root 无标记 → undefined）。 */
   projectServersFor(root: string): Promise<ServerConfig[] | undefined>;

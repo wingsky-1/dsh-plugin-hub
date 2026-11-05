@@ -4,9 +4,22 @@
 > 定位原因。日常跑一次隔离验证不需要本文件——`node .../verify-isolated.mjs --help`
 > 是选项契约的唯一事实源，选项冲突时以 `--help` 为准。
 
+## 实现布局
+
+入口 `verify-isolated.mjs` 保留运行态、启动、就绪、清理与主流程编排；无状态职责放在同目录
+`lib/`：
+
+- `cli.mjs`：帮助文案、参数预扫/归一与严格解析；
+- `dsh-entry.mjs`：PATH 中的 dsh 可执行入口、Windows 脚本判定与版本读取；
+- `onboarding-preset.mjs`：首启弹窗设置文件预置；
+- `plugin-setup.mjs`：插件构建、`--no-build` 校验、`plugin add` 与 profile bundle 初始化；
+- `verify-core.mjs`：退出码、进程/端口等待、dsh 输出解析与插件参数归一。
+
+这是脚本内部维护边界，不改变命令行选项、输出、退出码、清理顺序或 skill 的公开调用方式。
+
 ## 脚本自动完成的链路
 
-建临时 `DSH_HOME` → 校验 PATH 中的 dsh 入口并打印版本（只认 `0.2.1-rc.2`）→ **预置首启弹窗跳过**
+建临时 `DSH_HOME` → 校验 PATH 中的 dsh 入口并打印版本（只认 `0.2.2-rc.1`）→ **预置首启弹窗跳过**
 （写隔离 `$DSH_HOME/settings.yaml` 的内测声明版本与命名空间，见 SKILL.md「首启弹窗默认跳过」；
 `--no-skip-onboarding` 关闭）→ 建 `verify_<8位随机>` profile
 （`dsh plugin --profile <p> list` 显式初始化，失败即报可操作错误）→ 注入内置

@@ -8,8 +8,7 @@
  *
  * 行为约束（与拆分前逐字节等价）：
  * - 路由路径与围栏（方法白名单 / loopback 豁免）取自 shared/routes.ts 单点；
- * - loopback 围栏与 405 分流顺序不变（#473 R2：config GET 豁免 loopback，
- *   白名单外方法先于 loopback 直接 405）；
+ * - loopback 走快路径；非回环先经官方 admission，认证通过后才判 405；
  * - JSON body 字节上限沿用 readJsonBody 的默认行为（历史上那个显式上限
  *   常量 MAX_JSON_BODY_BYTES 已不存在）。
  *
@@ -39,8 +38,15 @@ import type { RouteName } from "../../shared/interface.ts";
 import { apiPorts } from "./impl/service/index.ts";
 import { queryParam } from "./routes-helpers.ts";
 
+/** 路由组合根注入的官方短请求 admission；类型从已使用的公开值入口推导。 */
+export interface RouteAccess {
+  readonly remoteAdmission?: NonNullable<
+    Parameters<typeof guardLoopbackMethod>[3]
+  >["remoteAdmission"];
+}
+
 /** 控制器共享 helpers（原 makeRoutes 闭包三件套，提升为显式参数）。 */
-export interface RouteHelpers {
+export interface RouteHelpers extends RouteAccess {
   handleError(res: ServerResponse, error: unknown): void;
   scopeParam(url: URL): string;
   maybeSession(url: URL): Promise<void>;
@@ -48,6 +54,13 @@ export interface RouteHelpers {
 
 type Req = IncomingMessage;
 type Res = ServerResponse;
+
+/** 所有 raw route 共用的准入与方法守卫；认证失败先于 405。 */
+function guardRouteAccess(req: Req, res: Res, methods: string[], helpers: RouteHelpers): boolean {
+  return guardLoopbackMethod(req, res, methods, {
+    remoteAdmission: helpers.remoteAdmission,
+  });
+}
 
 /** 提取 name 查询参数；缺失时写 400 并返回 undefined。 */
 function requireNameParam(url: URL, res: Res): string | undefined {
@@ -74,14 +87,18 @@ const UI_CONFIG_KEYS: readonly string[] = [
   "zIndexBase",
 ];
 
-/** UI 配置读写（GET 豁免 loopback；写操作 loopback-only，未知顶层键 400）。 */
+/** UI 配置读写（loopback 快路径；非回环先经官方 admission，之后才分方法和校体）。 */
 export function buildConfigRoute(manager: RoutesManager, helpers: RouteHelpers): WebRoute {
   return {
     kind: "exact",
     path: ROUTES.config,
     handler: async (req: Req, res: Res) => {
-      // GET：只读 UI 配置（允许非 loopback，供远程页面读取非敏感的展示配置）。
-      if (ROUTE_FENCE.config.loopbackExempt.includes(String(req.method))) {
+      const method = String(req.method);
+      const methods = [...ROUTE_FENCE.config.loopbackExempt, ...ROUTE_FENCE.config.guarded];
+      // GET 的读取面、POST 的写入面和未知方法的 405 都排在认证之后。非回环 GET
+      // 不再因历史只读豁免绕过官方 Host/Origin/credential admission。
+      if (!guardRouteAccess(req, res, methods, helpers)) return;
+      if (ROUTE_FENCE.config.loopbackExempt.includes(method)) {
         try {
           writeJson(res, 200, manager.uiConfig());
         } catch (error) {
@@ -90,14 +107,13 @@ export function buildConfigRoute(manager: RoutesManager, helpers: RouteHelpers):
         return;
       }
       // POST：写入浮窗 UI 配置（position / offsetX / offsetY / blankY / zIndexBase）。
-      // 写操作只对 loopback 开放；经设置命名空间落盘（Config.ui），触发
+      // 写操作须为 loopback 或通过官方 admission；经设置命名空间落盘（Config.ui），触发
       // scope.watch → onChange → SSE 广播一帧，客户端收到后重新 GET /config 就地更新
       // 浮窗位置，无需重启/轮询。
       //
       // M7：**未知顶层键一律 400 且不落盘**（校验在任何 uiUpdate 之前）。静默丢键会让
       // 调用方以为写入生效——错就要说错，不能把「没生效」写成 200。
-      if (ROUTE_FENCE.config.guarded.includes(String(req.method))) {
-        if (!guardLoopbackMethod(req, res, ROUTE_FENCE.config.guarded)) return;
+      if (ROUTE_FENCE.config.guarded.includes(method)) {
         let body: unknown;
         try {
           body = await readJsonBody(req);
@@ -122,9 +138,7 @@ export function buildConfigRoute(manager: RoutesManager, helpers: RouteHelpers):
         }
         return;
       }
-      // 端点级方法分流先于 loopback 的刻意例外（#473 R2 结构 β）：本分支对
-      // 白名单外方法（PUT/DELETE/OPTIONS 等）直接 405、不查 loopback——非
-      // loopback+PUT 返回 405 而非 403 是契约行为，禁止误套守卫（会漂移为 403）。
+      // guardRouteAccess 已对白名单外方法写 405；保留兜底与共享守卫文案同形。
       writeJson(res, 405, { error: `method not allowed: ${req.method}` });
     },
   };
@@ -230,7 +244,7 @@ export function buildServersRoute(manager: RoutesManager, helpers: RouteHelpers)
     handler: async (req: Req, res: Res) => {
       const url = new URL(req.url ?? "/", "http://localhost");
       const method = req.method ?? "GET";
-      if (!guardLoopbackMethod(req, res, ROUTE_FENCE.servers.guarded)) return;
+      if (!guardRouteAccess(req, res, ROUTE_FENCE.servers.guarded, helpers)) return;
       if (method === "GET") {
         try {
           // 按请求 cwd 读取对应项目，不切会话或广播 SSE，避免多页面互相切换。
@@ -256,7 +270,7 @@ export function buildSessionRoute(manager: RoutesManager, helpers: RouteHelpers)
     kind: "exact",
     path: ROUTES.session,
     handler: async (req: Req, res: Res) => {
-      if (!guardLoopbackMethod(req, res, ROUTE_FENCE.session.guarded)) return;
+      if (!guardRouteAccess(req, res, ROUTE_FENCE.session.guarded, helpers)) return;
       const body = await readJsonBody(req);
       if (body === undefined || typeof (body as Record<string, unknown>).cwd !== "string") {
         writeJson(res, 400, { error: "body must include a cwd string" });
@@ -294,7 +308,7 @@ export function buildResumeRoute(manager: RoutesManager, helpers: RouteHelpers):
     kind: "exact",
     path: ROUTES.resume,
     handler: async (req: Req, res: Res) => {
-      if (!guardLoopbackMethod(req, res, ROUTE_FENCE.resume.guarded)) return;
+      if (!guardRouteAccess(req, res, ROUTE_FENCE.resume.guarded, helpers)) return;
       try {
         if (typeof manager.resumeReconnect !== "function")
           throw new Error("resumeReconnect unavailable");
@@ -339,7 +353,7 @@ function buildNameActionRoute(
     kind: "exact",
     path: ROUTES[route],
     handler: async (req: Req, res: Res) => {
-      if (!guardLoopbackMethod(req, res, ROUTE_FENCE[route].guarded)) return;
+      if (!guardRouteAccess(req, res, ROUTE_FENCE[route].guarded, helpers)) return;
       const url = new URL(req.url ?? "/", "http://localhost");
       const name = requireNameParam(url, res);
       if (name === undefined) return;
@@ -415,7 +429,7 @@ export function buildImportJsonRoute(manager: RoutesManager, helpers: RouteHelpe
     path: ROUTES.importJson,
     handler: async (req: Req, res: Res) => {
       const { workspace, configModel } = apiPorts.get();
-      if (!guardLoopbackMethod(req, res, ROUTE_FENCE.importJson.guarded)) return;
+      if (!guardRouteAccess(req, res, ROUTE_FENCE.importJson.guarded, helpers)) return;
       const body = await readJsonBody(req);
       if (body === undefined || typeof (body as Record<string, unknown>).json !== "string") {
         writeJson(res, 400, { error: "body must include a json string" });
@@ -488,7 +502,7 @@ export function buildToolDisableRoute(manager: RoutesManager, helpers: RouteHelp
     path: ROUTES.toolDisable,
     handler: async (req: Req, res: Res) => {
       const { workspace } = apiPorts.get();
-      if (!guardLoopbackMethod(req, res, ROUTE_FENCE.toolDisable.guarded)) return;
+      if (!guardRouteAccess(req, res, ROUTE_FENCE.toolDisable.guarded, helpers)) return;
       const url = new URL(req.url ?? "/", "http://localhost");
       const body = await readJsonBody(req);
       const parsedBody = parseToolDisableBody(body);

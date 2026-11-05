@@ -109,6 +109,7 @@ describe("apiFailureOf：结构化优先、状态码与文案兜底", () => {
     expect(apiFailureOf({ code: REFUSAL_CODES.FORBIDDEN_LOOPBACK }, zhT).hint).toBe(
       zh.lanAccessHint,
     );
+    expect(apiFailureOf({ code: REFUSAL_CODES.UNAUTHORIZED }, zhT).hint).toBe(zh.lanAccessHint);
     expect(apiFailureOf({ status: 403, message: "boom" }, zhT).hint).toBe(zh.lanAccessHint);
   });
 });

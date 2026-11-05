@@ -1,11 +1,11 @@
 /**
- * dsh-mcp-manager — inject/impl/image-admission/index.ts：ws_mcp_call 的 **A+ 自持图片准入**
- * （#767 笔 1b 交付物 B）。
+ * dsh-mcp-manager — inject/impl/image-admission/index.ts：ws_mcp_call 的 **A+ 图片策略与
+ * 诊断 fallback**（#767 笔 1b 交付物 B 的 0.2.2-rc.1 收口）。
  *
- * 背景：本包把远端转发改道宿主的 `ctx.tools.execute` 之后，官方执行器那次图片准入（它读
- * `exec.agent` 解模型路由）随 F4 收口一起去掉了——远端图片结果原本能落成真附件，去掉 agent 后
- * 只能退化成 `[image content]`。本模块把那次准入在本包内补回来：解模型路由 → 白名单解码 →
- * `attachments.saveImages` → 经官方 `finalizeContent` 接缝把模型面内容换成真附件块。
+ * 当前 nested 转发保留真实 `exec.agent`；官方 MCP definition 会先经 scoped attachments
+ * facade 准入并通过 `projectContent` 物化模型面。本模块仍先执行 10 张 / 每张 8 MiB 的统一
+ * 硬上限预检，再复用该官方投影，避免同一图片二次落库。custom tool 没有物化信号时，才执行
+ * 下方自持 fallback：解模型路由 → 白名单解码 → `attachments.saveImages` → `finalizeContent`。
  *
  * 判定顺序与文案**照官方 dsh-mcp-client 的 implement**（`resolveImageAdmission` /
  * `prepareImageProjection` / `imageDiagnostic`，逐字段一致，主控已逐条核实）；任何拒绝都只
@@ -20,24 +20,18 @@ import type {
   ModelInfoPort,
   SaveImageInput,
 } from "../../../shared/interface.ts";
+import {
+  MAX_MCP_IMAGE_BYTES,
+  MAX_MCP_IMAGES_PER_RESULT,
+  exceedsMcpImageBytes,
+  exceedsMcpImageCount,
+} from "../../../shared/interface.ts";
 
 /** 官方四值白名单（本地 store 会把 PNG 转码成 WebP，故返回的 mediaType 可能与之不同）。 */
 const IMAGE_MEDIA_TYPES: readonly string[] = ["image/png", "image/jpeg", "image/webp", "image/gif"];
 
 /** canonical base64：官方同款正则，且要求 decode→encode 往返逐字节相等（拒绝别名形态）。 */
 const CANONICAL_BASE64 = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
-
-/**
- * 单张解码上限 8 MiB（#903 B-M1 DoS 面：远端结果来自可信服务器也可能作恶，
- * 超大 base64 解码即占内存）。超限与非法同路——进 validationErrors 走既有整批诊断降级。
- */
-const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
-
-/**
- * 单次结果图片数上限（#903 B-M1：批量下发数百张即 O(n) 解码+落库）。超限整批转诊断，
- * 在解码前判定——一字节都不解。
- */
-const MAX_IMAGES_PER_RESULT = 10;
 
 /** 图片准入要用的两条宿主能力：**晚读** thunk（服务可能缺席，且 apply 期取不到）。 */
 export interface ImageAdmissionFaces {
@@ -51,6 +45,11 @@ export interface ImageAdmissionRequest {
   readonly agent: unknown;
   /** 待投影的**远端原始** content（必须是你 return 的那个 value 的 content，含 stale 前置提示）。 */
   readonly content: readonly unknown[];
+  /**
+   * nested 官方 MCP definition 已通过 `projectContent` 物化的模型内容。仅在远端原始 content
+   * 通过本包 count/decode 硬上限预检后复用，避免同一图片再次 `saveImages`。
+   */
+  readonly projectedContent?: readonly ModelContentBlock[];
   readonly signal: AbortSignal | undefined;
   readonly faces: ImageAdmissionFaces;
   /** 非图片块的文本化规则（接线点传 formatCallContentBlock，单一实现）。 */
@@ -143,7 +142,8 @@ function decodeImage(block: Record<string, unknown>): SaveImageInput {
   // #903 B-M1：canonical 正则在数 MB 输入上回溯爆栈（实测 8MB 输入抛
   // Maximum call stack size exceeded）——16MB base64 必超 8MiB 解码上限，直接硬拒，
   // 不进正则不解码；1MB 以上跳过正则、只用解码往返判定（文案一致）。
-  if (data.length > MAX_IMAGE_BYTES * 2) {
+  // 单张解码上限 8 MiB（#903 B-M1 DoS 面）：16MB base64 必超 8MiB 解码上限，直接硬拒。
+  if (data.length > MAX_MCP_IMAGE_BYTES * 2) {
     throw new Error("the image data exceeds 8 MiB");
   }
   if (data.length <= 1024 * 1024 && !CANONICAL_BASE64.test(data)) {
@@ -153,7 +153,7 @@ function decodeImage(block: Record<string, unknown>): SaveImageInput {
   if (bytes.toString("base64") !== data) {
     throw new Error("the image data is not canonical base64");
   }
-  if (bytes.length > MAX_IMAGE_BYTES) {
+  if (exceedsMcpImageBytes(bytes.length)) {
     throw new Error("the image data exceeds 8 MiB");
   }
   return {
@@ -214,16 +214,16 @@ function projectContent(
 export async function projectImageAdmission(
   request: ImageAdmissionRequest,
 ): Promise<ModelContentBlock[] | undefined> {
-  const { agent, content, signal, faces, formatBlock } = request;
+  const { agent, content, projectedContent, signal, faces, formatBlock } = request;
   if (!containsRemoteImage(content)) return undefined;
 
   // 批量上限先行（#903 B-M1）：超限整批转诊断，一字节都不解。
   const remoteCount = countRemoteImages(content);
-  if (remoteCount > MAX_IMAGES_PER_RESULT) {
+  if (exceedsMcpImageCount(remoteCount)) {
     return diagnosticProjection(
       content,
       formatBlock,
-      `too many images in one result (>${MAX_IMAGES_PER_RESULT})`,
+      `too many images in one result (>${MAX_MCP_IMAGES_PER_RESULT})`,
     );
   }
 
@@ -238,6 +238,10 @@ export async function projectImageAdmission(
       ),
     }));
   }
+
+  // 官方 nested definition 已完成同一模型的图片准入与 materialization；本包硬上限预检已通过，
+  // 直接复用官方投影，不能在 A+ 里对同批图片再次落库。custom tool 没有该信号时仍走下方自持准入。
+  if (projectedContent !== undefined) return [...projectedContent];
 
   let attachments: AttachmentsPort;
   try {

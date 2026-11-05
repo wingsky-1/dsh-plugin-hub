@@ -16,7 +16,7 @@ import {
 } from "./middleware-shape-support.ts";
 import type { MiddlewareHost } from "../../src/server/connection/runtime/deps.ts";
 import type { Context } from "@deepseek-ai/cordis";
-import type { ToolDefinition, ToolExecutionToken, ToolRunContext } from "@deepseek-ai/dsh-tools";
+import type { ToolDefinition, ToolRunContext } from "@deepseek-ai/dsh-tools";
 import type { DisabledToolsMap } from "../../src/server/store/interface.ts";
 /**
  * JSON 值面（render/value 入参口径）：从官方 ToolOutputDefinition 声明派生，不自造第二套
@@ -39,7 +39,6 @@ const { parseDisabledTools } = await import("../../src/server/store/interface.ts
 const middlewareShape = createMiddlewareShapeSupport();
 const ROOT = middlewareShape.root;
 const makeHost = middlewareShape.makeHost.bind(middlewareShape);
-const remoteEntry = middlewareShape.remoteEntry.bind(middlewareShape);
 const identity = middlewareShape.identity.bind(middlewareShape);
 const trackMw = middlewareShape.trackMw.bind(middlewareShape);
 const makeUnit = middlewareShape.makeUnit.bind(middlewareShape);
@@ -528,65 +527,6 @@ describe("B11：含连续双下划线名 fail-closed 拒绝并指往 ws_mcp_call
     )) as { kind: unknown; reason?: unknown };
     expect(decisionA.kind).toBe("deny");
     expect(String(decisionA.reason)).toMatch(/ws_mcp_call/);
-  });
-});
-
-describe("#1014 B5：我方转发的豁免身份由 dispatch 自然产生", () => {
-  it("execute 被调用时 parent 已在 forwarding 内，调用结束后已摘除", async () => {
-    const servers: ServerConfig[] = [
-      { name: "py", transport: "stdio", command: "python", enabled: true },
-    ];
-    const TOKEN = Symbol("outer-call") as unknown as ToolExecutionToken;
-    let parentSeen: unknown;
-    let inSetDuringCall: boolean | undefined;
-    // execute 闭包要在中间层实例建好**之前**就存在（实例依赖 makeHost 产出的 host），
-    // 故经 holder 间接取；execute 被调用时实例早已就位。
-    const holder: { mw?: InstanceType<typeof McpMiddleware> } = {};
-    const { host } = makeHost(new Map([[ROOT, servers]]), {
-      schemas: [{ name: "mcp__id-py__echo" }],
-      execute: async (input: unknown) => {
-        const parent = (input as { parent?: unknown }).parent;
-        parentSeen = parent;
-        inSetDuringCall =
-          parent !== undefined && holder.mw?.forwarding.has(parent as ToolExecutionToken) === true;
-        return { isError: false, content: [], value: { content: [] } };
-      },
-    });
-    const mw = trackMw(new McpMiddleware(host as unknown as MiddlewareHost));
-    holder.mw = mw;
-    const unit = makeUnit();
-    mw.units.set(ROOT, unit);
-    unit.connections.set("py", remoteEntry(servers[0], "id-py"));
-    const registered: ToolDefinition[] = [];
-    const ctx = {
-      tools: {
-        register: (def: ToolDefinition) => {
-          registered.push(def);
-          return () => {};
-        },
-        schemas: () => host.ctx.tools.schemas(),
-      },
-    };
-    registerMiddlewareTools(ctx as unknown as Context, mw, async () => ROOT, {
-      disabledTools: new Map(),
-    });
-    const call = registered.find((def) => def.name === "ws_mcp_call")!;
-    await call.execute({ server: fullServerName(ROOT, "py"), tool: "echo" }, {
-      callId: "call-b5",
-      rootCallId: "call-b5",
-      name: "ws_mcp_call",
-      arguments: {},
-      signal: new AbortController().signal,
-      token: TOKEN,
-      // ToolRunContext 在 ToolExecution 之外另带这两个面；本用例不碰，按接缝补最小实现。
-      deferContext: () => {},
-      concludeTurn: () => {},
-      // callId/rootCallId 是品牌类型，字面量不满足；按接缝收窄到 execute 的第二参位，
-      // 不去硬写 ToolRunContext（它随宿主版本变，测试不该跟着改）。
-    } as unknown as Parameters<typeof call.execute>[1]);
-    expect(parentSeen, "子调用必须带 parent").toBe(TOKEN);
-    expect(inSetDuringCall, "execute 被调用时 parent 必须在 forwarding 内").toBe(true);
-    expect(mw.forwarding.has(TOKEN), "结算后 finally 必须摘除 token").toBe(false);
   });
 });
 

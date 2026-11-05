@@ -17,7 +17,8 @@ Bark / webhook 出站实例三类出口。配置自持于 `<DSH_HOME>/@wingsky-1
   `impl/input/`（归一化、`RETIRED_KEYS` 退役键 400 话术）、`impl/redact/`（凭据掩码）。
 - `src/server/upgrade/` — 升级链：0.2.3 顶层渠道键搬进 `channels` 内置条目后删除。
 - `src/server/channels/` — 渠道出口（system / browser / bark / webhook）与投递管线。
-- `src/server/api/` — loopback 路由（含 `/events` SSE 与 `/config` 掩码视图）。
+- `src/server/api/` — loopback 快路径与官方身份准入路由（含 `/events` SSE 与
+  `/config` 掩码视图）。
 - `src/shared/` — 两端共享叶子（`sounds.ts` 音色白名单、`webhooks.ts` 认证与预设）。
 - `src/client/notify/` — 客户端通知面：`audio.ts`（节流 `PLAY_THROTTLE_MS`、手势解锁）、
   `session.ts`（EventSource 订阅、`since` 补拉与 seq 去重）。
@@ -26,8 +27,10 @@ Bark / webhook 出站实例三类出口。配置自持于 `<DSH_HOME>/@wingsky-1
 ## 改动前必守（本包特有）
 
 1. **改 `src/` 必须 build 才生效**：dsh 经 profile 直读 `lib/` 产物，不自动编译。
-2. **loopback 围栏**：全部路由仅接受回环调用（非回环 403）；smoke 必须含 403 / 405
-   围栏用例。经 `dsh-lan-proxy` 转发的请求按设计视为受信，语义只引用该包 README。
+2. **官方身份与 Peer 生命周期**：loopback 走快路径；非回环短请求必须通过官方
+   `requestRejection` 的 401/403/undefined/fail-closed 分支后才判方法错 405。`/events`
+   的非回环长流还须经 `connection.admit` 保留 admitted PeerScope，Peer 释放后停止
+   广播、移出连接表并关闭响应。smoke 必须覆盖这些反例与生命周期。
 3. **凭据红线**：凭据只走请求头与已知 secret 字段（`CHANNEL_SECRET_FIELDS` 单一事实源），
    不拼 URL；`GET /config` 与 PUT 成功响应一律掩码；新实例提交掩码 400；错误 `detail`
    按原文截断、不做凭据替换（见包 README「安全模型」）。

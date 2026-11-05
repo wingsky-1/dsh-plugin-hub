@@ -12,6 +12,7 @@ export default defineConfig({
       'packages/dsh-provider-usage/test/integration/report-routes/composition-root.test.ts',
       'packages/dsh-provider-usage/test/integration/schedule/composition-root.test.ts',
       'packages/dsh-provider-usage/test/integration/ui-routes/composition-root.test.ts',
+      'packages/dsh-provider-usage/test/integration/ui-routes/native-lan-sse.test.ts',
       'packages/dsh-provider-usage/test/unit/apply/apply.test.ts',
       'packages/dsh-provider-usage/test/unit/common/errsurf.test.ts',
       'packages/dsh-provider-usage/test/unit/report/report.test.ts',

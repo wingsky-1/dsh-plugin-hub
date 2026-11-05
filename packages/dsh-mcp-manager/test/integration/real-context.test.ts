@@ -256,15 +256,16 @@ describe("组合根：宿主上下文只到组合根", () => {
       return next();
     });
 
-    type PreStepNext = Parameters<Events["agent/pre-step"]>[1];
-    const next: PreStepNext = () => Promise.resolve(undefined as never);
-    const payload = {
+    type PreStep = Parameters<Events["agent/pre-step"]>;
+    const payload: PreStep[0] = {
       agent: { id: "itest-agent" } as Agent,
       messages: [],
       turn: 1,
       step: 1,
       signal: new AbortController().signal,
+      modelSelection: { provider: "test-provider", model: "test-model" },
     };
+    const next: PreStep[1] = () => Promise.resolve({ kind: "enter", messages: payload.messages });
     // 作用域派发：从组合根所在的 fiber 发，作用域才与本插件的订阅匹配。
     fiber.ctx.emit("agent/pre-step", payload, next);
     expect(seen).toEqual(["itest-agent"]);
@@ -315,17 +316,17 @@ describe("组合根：宿主上下文只到组合根", () => {
     });
 
     // 默认档位的宿主就得能收到 warn：这条面自带门槛（levels.default=2），不要求用户把日志级别
-    // 配够——否则「首连失败可见」会变成一条有前提的承诺。cordis 的投递闸只放阈值内的档位
-    // （LoggerLevel 数值越大越啰嗦），故这里同时钉住 debug 不进面（诊断不要官方内部噪音）。
+    // 配够——否则「首连失败可见」会变成一条有前提的承诺。Cordis 4.1 的
+    // LoggerLevel 为 ERROR=0 / WARN=1 / INFO=2 / DEBUG=3；这里同时钉住 debug 不进面。
     fiber.ctx.logger.warn("itest:log-one");
-    expect(seen).toEqual(["warn:2:itest:log-one"]);
+    expect(seen).toEqual(["warn:1:itest:log-one"]);
 
     fiber.ctx.logger.debug("itest:log-debug");
-    expect(seen).toEqual(["warn:2:itest:log-one"]);
+    expect(seen).toEqual(["warn:1:itest:log-one"]);
 
     off();
     fiber.ctx.logger.warn("itest:log-two");
-    expect(seen).toEqual(["warn:2:itest:log-one"]);
+    expect(seen).toEqual(["warn:1:itest:log-one"]);
   });
 });
 

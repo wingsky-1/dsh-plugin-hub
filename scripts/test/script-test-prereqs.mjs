@@ -14,13 +14,8 @@
  * 登记时会在 test:scripts 内判红（fail-closed）。
  *
  * 成员由「是否被某个 SUITES 接线」决定，不由「是否真的读 lib 产物」决定：
- * dsh-lan-proxy 的 test/tsconfig.json 只引 src、不需要产物，但它必须登记——
+ * 各包 test/tsconfig.json 的引用面不同，但只要被 SUITES 接线就必须登记——
  * 断言上看不出这个差异，漏登就是红。
  * 多建几个包是这里刻意接受的成本。
  */
-export const PREREQ_PACKAGES = [
-  "dsh-lan-proxy",
-  "dsh-mcp-manager",
-  "dsh-notifier",
-  "dsh-provider-usage",
-];
+export const PREREQ_PACKAGES = ["dsh-mcp-manager", "dsh-notifier", "dsh-provider-usage"];

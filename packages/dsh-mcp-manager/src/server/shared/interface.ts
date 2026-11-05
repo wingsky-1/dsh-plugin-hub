@@ -41,9 +41,14 @@ export {
   DEFAULT_TOOL_CALL_TIMEOUT_MS,
   DISCOVERY_TIMEOUT_MS,
   LIST_DEFAULT_TOOLS_PER_SERVER,
+  MAX_MCP_IMAGE_BYTES,
+  MAX_MCP_IMAGES_PER_RESULT,
   OFFICIAL_MCP_CLIENT_LOG_NAME,
   OFFICIAL_MCP_CLIENT_SPECIFIER,
   SERVER_NAME_PATTERN,
+  assertMcpImageBatch,
+  exceedsMcpImageBytes,
+  exceedsMcpImageCount,
 } from "./constants.ts";
 export { publicToolName } from "./tool-names.ts";
 export {

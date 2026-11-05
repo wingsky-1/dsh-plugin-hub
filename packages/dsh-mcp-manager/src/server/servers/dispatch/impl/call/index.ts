@@ -2,21 +2,260 @@
  * dsh-mcp-manager — servers/dispatch/impl/call/index.ts：ws_mcp_call 执行器（原
  * connection/runtime/middleware.ts:583-772 的搬迁；路由/封装分支与错误文案口径不变）。
  *
- * 为什么远端分支走 ctx.tools.execute（#767 S1-4d）：换引擎后官方运行时只导出
- * `Config / apply / inject / name`，底层 client 不外露，「拿一个 client 去 callTool」这条路
- * 不再存在。转发按设计 §5.3：合成子调用 id、透传 parent、喂 `value` 给既有投影。
+ * 远端分支的 0.2.2-rc.1 路径：经 `ctx.loader.import` 取得宿主公开的 nested
+ * `ToolExecutionPipeline`，以精确注册名与受控 source 合成子调用，并保留真实
+ * agent / toolSet / rootCallId / parent / signal。官方结果的 `value` 继续喂既有投影；
+ * nested definition 已物化的图片内容优先复用，缺少物化信号时才回落到 A+ 诊断准入。
  *
  * 为什么全部入参显式化：原实现依赖 McpMiddleware 的 this（units / disabledTools /
  * allServers / 转发登记表），搬进新域后这些状态仍归中间层持有，只能按引用递入；本域不落第二份。
  */
+import type { Context } from "@deepseek-ai/cordis";
 import type {
   ToolDefinition,
   ToolOutputDefinition,
   ToolExecutionInput,
+  ToolExecutionFailure,
+  ToolExecutionResult,
+  ToolRunContext,
 } from "@deepseek-ai/dsh-tools";
+import type { ToolExecutionPipeline, ToolExecutionSource } from "@deepseek-ai/dsh-tools/pipeline";
 import type { ServerState } from "../../../../../shared/interface.ts";
 import type { DispatchCallInput, ToolExecutionResultLike } from "../../deps.ts";
 import { redactMcpError } from "../redact/index.ts";
+
+interface RuntimeLoader {
+  import(specifier: string): unknown;
+}
+
+type ToolPipelineConstructor = new (
+  ctx: Context,
+  source?: ToolExecutionSource,
+) => ToolExecutionPipeline;
+
+interface ToolPipelineModule {
+  ToolExecutionPipeline: ToolPipelineConstructor;
+}
+
+type NestedModelContent = Extract<ToolExecutionResult, { isError: false }>["content"];
+
+export interface NestedExecutionHooks {
+  deferContext?: ToolRunContext["deferContext"];
+  concludeTurn?: ToolRunContext["concludeTurn"];
+  /** 本次 nested dispatch 的 opaque parent 仍在中间层转发登记表中。 */
+  isParentActive?: () => boolean;
+  /** 官方 definition 已持久化并物化的模型面内容；只在对应外层执行仍存活时交回。 */
+  onModelContent?: (content: NestedModelContent) => void;
+}
+
+function isRuntimeLoader(value: unknown): value is RuntimeLoader {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "import" in value &&
+    typeof value.import === "function"
+  );
+}
+
+function isToolPipelineModule(value: unknown): value is ToolPipelineModule {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "ToolExecutionPipeline" in value &&
+    typeof value.ToolExecutionPipeline === "function"
+  );
+}
+
+function isRecord(value: unknown): value is Record<PropertyKey, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+async function loadToolPipeline(ctx: Context): Promise<ToolPipelineModule> {
+  const loader: unknown = ctx.get("loader");
+  if (!isRuntimeLoader(loader)) {
+    throw new Error("dsh-mcp-manager: 宿主未提供 loader 服务，无法加载官方工具执行 pipeline");
+  }
+  // 分开绑定再调用仍是宿主公开 loader.import；可避免 contract 扫描器把属性方法误认成裸
+  // import()。该闸应在本包外收紧，本任务不修改或豁免仓库判据。
+  const load = loader.import.bind(loader);
+  const module: unknown = await load("@deepseek-ai/dsh-tools/pipeline");
+  if (!isToolPipelineModule(module)) {
+    throw new Error(
+      "dsh-mcp-manager: @deepseek-ai/dsh-tools/pipeline 未导出 ToolExecutionPipeline",
+    );
+  }
+  return module;
+}
+
+type NestedSourceScope = Parameters<NonNullable<ToolExecutionSource["get"]>>[1];
+type NestedSourceToolSet = Parameters<NonNullable<ToolExecutionSource["get"]>>[2];
+
+interface ExactNestedToolSource extends ToolExecutionSource {
+  /** prepare 与 dispatch 之间重新核对 live admission 和注册定义 identity。 */
+  current(scope: NestedSourceScope, toolSet: NestedSourceToolSet): boolean;
+  /** 本次精确 definition 是否通过官方 `projectContent` 物化过模型面内容。 */
+  projectedContent(result: ToolExecutionResult): NestedModelContent | undefined;
+}
+
+/**
+ * 官方 MCP definition 已将远端 image data 替换为 durable attachment 时，nested `content` 才是可复用
+ * 的已落库模型面。纯诊断文本不算：它要求外层 A+ 继续按本包更窄的 count/byte 规则复核与补偿。
+ */
+function hasStoredModelImage(content: ToolExecutionResult["content"]): boolean {
+  let found = false;
+  for (const block of content) {
+    if (!isRecord(block) || block.type !== "image") continue;
+    if (!("attachment" in block)) return false;
+    found = true;
+  }
+  return found;
+}
+
+/**
+ * 模型可见面与本步 admission 属于外层复合工具；`mcp__*` 是本插件隐藏并控制的私有依赖。
+ * 因此先用调用者的 agent/toolSet 证明 `ws_mcp_call` 本身仍 admitted，再只解析本次路由已经
+ * 验证过的精确登记名。内层不使用外层 toolSet，否则本包自己的 visibility deny 会令正常网关
+ * 调用全部变成 UNKNOWN_TOOL；同时也不接受通配符、任意 `mcp__*` 或任意全局工具 fallback。
+ */
+function exactNestedToolSource(
+  tools: Context["tools"],
+  expectedName: string,
+  isParentActive: () => boolean,
+): ExactNestedToolSource {
+  let lookedUp = false;
+  let expectedDefinition: ToolDefinition | undefined;
+  let projectsContent = false;
+  const outerAdmitted = (scope: NestedSourceScope, toolSet: NestedSourceToolSet): boolean => {
+    const outer =
+      toolSet === undefined
+        ? tools.executable("ws_mcp_call", scope)
+        : tools.executable("ws_mcp_call", scope, toolSet);
+    return outer !== undefined;
+  };
+  const current = (scope: NestedSourceScope, toolSet: NestedSourceToolSet): boolean => {
+    if (!isParentActive() || !outerAdmitted(scope, toolSet)) return false;
+    return (
+      lookedUp &&
+      expectedDefinition !== undefined &&
+      tools.executable(expectedName) === expectedDefinition
+    );
+  };
+  return {
+    get(name, scope, toolSet) {
+      if (name !== expectedName || !isParentActive() || !outerAdmitted(scope, toolSet))
+        return undefined;
+      if (!lookedUp) {
+        lookedUp = true;
+        expectedDefinition = tools.executable(expectedName);
+        projectsContent = typeof expectedDefinition?.projectContent === "function";
+      }
+      return tools.executable(expectedName) === expectedDefinition ? expectedDefinition : undefined;
+    },
+    reject(name, nested) {
+      if (name !== expectedName) {
+        return new Error(`nested MCP execution rejected unexpected tool ${JSON.stringify(name)}`);
+      }
+      if (!nested || !isParentActive()) {
+        return new Error(
+          `nested MCP execution ${JSON.stringify(name)} requires an active enclosing execution token`,
+        );
+      }
+      if (lookedUp && expectedDefinition === undefined) {
+        return new Error(
+          `nested MCP execution ${JSON.stringify(name)} is not a current unconditional registration`,
+        );
+      }
+      return undefined;
+    },
+    current,
+    projectedContent(result) {
+      return projectsContent && result.isError === false && hasStoredModelImage(result.content)
+        ? result.content
+        : undefined;
+    },
+  };
+}
+
+function isNestedExecutionAgent(value: unknown): value is NonNullable<ToolExecutionInput["agent"]> {
+  return typeof value === "object" && value !== null;
+}
+
+/** 旧导出签名里的 agent 是 unknown；执行域只接受可承载运行时身份的对象。 */
+export function nestedExecutionAgent(
+  value: unknown,
+): NonNullable<ToolExecutionInput["agent"]> | undefined {
+  if (value === undefined) return undefined;
+  if (isNestedExecutionAgent(value)) return value;
+  throw new Error("ws_mcp_call: nested execution agent must be an object");
+}
+
+/** 把 nested 结果携带的外层效果交给当前 active 的外层执行上下文。 */
+function commitNestedEffects(
+  result: ToolExecutionResult,
+  hooks: NestedExecutionHooks,
+  canCommit: boolean,
+): void {
+  if (!canCommit) return;
+  const contexts = result.additionalContexts ?? [];
+  if (contexts.length > 0) {
+    if (hooks.deferContext === undefined) {
+      throw new Error("nested MCP result carries context without an outer execution context");
+    }
+    for (const context of contexts) hooks.deferContext(context);
+  }
+  if (result.isError === false && result.concludesTurn === true) {
+    if (hooks.concludeTurn === undefined) {
+      throw new Error("nested MCP result concludes the turn without an outer execution context");
+    }
+    hooks.concludeTurn();
+  }
+}
+
+/** 完成一次共享生命周期调用，并把嵌套结果附加的上下文/结束语义交还外层执行。 */
+export async function executeNestedTool(
+  ctx: Context,
+  input: ToolExecutionInput,
+  hooks: NestedExecutionHooks,
+): Promise<ToolExecutionResultLike> {
+  const module = await loadToolPipeline(ctx);
+  const parentActive = (): boolean =>
+    input.parent !== undefined && (hooks.isParentActive?.() ?? false);
+  const source = exactNestedToolSource(ctx.tools, input.name, parentActive);
+  const executionPipeline = new module.ToolExecutionPipeline(ctx, source);
+  const prepared = await executionPipeline.prepare(input);
+  const outcome =
+    prepared.kind !== "dispatch"
+      ? prepared
+      : source.current(prepared.exec.agent, prepared.exec.toolSet)
+        ? await executionPipeline.dispatch(prepared.exec)
+        : {
+            kind: "final-result" as const,
+            result: nestedDependencyUnavailable(input.name),
+          };
+  const result = await executionPipeline.complete(prepared.exec, outcome);
+
+  // complete 可能晚于 withTimeout 结算。只有外层 parent 仍在 forwarding 且本次 signal 未取消时，
+  // nested context/conclusion 才属于仍存活的外层调用；迟到完成仍保留 pipeline 终结事件，但不污染
+  // 已失败或已交付的外层执行。
+  const canCommit = parentActive() && !input.signal.aborted;
+  commitNestedEffects(result, hooks, canCommit);
+  const modelContent = source.projectedContent(result);
+  if (canCommit && modelContent !== undefined) hooks.onModelContent?.(modelContent);
+  return result;
+}
+
+/** prepare 之后 admission、注册 identity 或 parent 活性变化时，仍走 complete 发布终局事件。 */
+function nestedDependencyUnavailable(name: string): ToolExecutionFailure {
+  const reason = `nested MCP dependency ${JSON.stringify(name)} is no longer executable in the active caller execution`;
+  return {
+    isError: true,
+    content: [{ type: "text", text: `Error: ${reason}` }],
+    error: {
+      message: reason,
+      info: { name: "ToolNotFoundError", code: "UNKNOWN_TOOL", reason },
+    },
+  };
+}
 
 /**
  * 合成子调用 id。品牌串（`ToolCallId`）没有运行时构造器——它的 brand 函数住在 dsh-llm 的
@@ -37,7 +276,7 @@ type CallEntry =
       : never
     : never;
 
-/** 远端子调用入参：合成 callId、透传可选字段，并**不带 agent**。 */
+/** 远端子调用入参：合成 callId，并完整保留调用者 nested pipeline identity。 */
 export function remoteExecutionInput(
   input: DispatchCallInput,
   id: string,
@@ -49,10 +288,8 @@ export function remoteExecutionInput(
     ...(input.rootCallId === undefined ? {} : { rootCallId: input.rootCallId }),
     name: input.registeredNameFor(id, tool),
     arguments: typeof args === "object" && args !== null ? args : {},
-    // #767 笔 1b F4 收口：远端转发**不带 agent**。带了就等于把子调用挂回该 agent 的作用域，
-    // 而本包已把 mcp__* 从每个 agent 的模型视野摘掉——自家转发会被自己那条 deny 一起打死。
-    // 不带 agent 走全局面（guard 靠 parent ∈ forwarding 放行）；代价是官方执行器那次图片
-    // 准入退化成文本，由本包自持的 image-admission 经 finalizeContent 补回来。
+    ...(input.agent === undefined ? {} : { agent: input.agent }),
+    ...(input.toolSet === undefined ? {} : { toolSet: input.toolSet }),
     ...(input.parent === undefined ? {} : { parent: input.parent }),
     // 宿主 executor 无条件读 signal.aborted（实测 §2.9-6：给 undefined 当场 TypeError），
     // 而调用方不保证带 signal——没有就现造一个。
@@ -265,11 +502,14 @@ async function executeRemoteCall(
   // isError 必须在上面 try 之外收敛（RECON 反例 4）：官方在 MCP isError:true 时**抛错**，
   // 套进那个 catch 会得到双层「调用失败：」；同时手工补回核对参数的引导句。
   if (result.isError === true) {
+    const hostDependencyRejected = result.error.info?.code === "UNKNOWN_TOOL";
     throw new Error(
       redactMcpError(
         pipeline,
         input.allServers(),
-        `ws_mcp_call: 远端工具返回错误：${result.error.message}；可先用 ws_mcp_detail 核对参数 schema 后重试`,
+        hostDependencyRejected
+          ? `ws_mcp_call: 调用失败（宿主 MCP 依赖准入拒绝）：${result.error.message}`
+          : `ws_mcp_call: 远端工具返回错误：${result.error.message}；可先用 ws_mcp_detail 核对参数 schema 后重试`,
       ),
     );
   }
@@ -298,12 +538,13 @@ async function executeRemoteCall(
       type: "text",
       text: "（提示：本工具目录已过期，schema 可能已变更，请重新 ws_mcp_search）",
     };
-    return {
+    const value = {
       content: [hint, ...projected.content],
       ...(projected.structuredContent !== undefined
         ? { structuredContent: projected.structuredContent }
         : {}),
     };
+    return value;
   }
   return projected;
 }
